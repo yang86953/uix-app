@@ -4,6 +4,113 @@
 //! Table, and similar lists.
 use std::cell::Cell;
 
+// 复用布局层对非有限值与测量哨兵的统一归一规则。
+use crate::ui::layout::engine::{finite_non_negative, finite_or_zero};
+
+// 限制一次刷新可创建的虚拟行数量，避免不可信视口或 overscan 耗尽资源。
+const MAX_MATERIALIZED_ITEMS: usize = 4_096;
+// 为累计坐标保留充足算术余量，避免后续加减重新溢出为无穷大。
+const MAX_VIRTUAL_EXTENT: f32 = f32::MAX / 4.0;
+
+// 把有效正度量提升为 f64，供索引与总高度计算使用。
+fn positive_measurement(value: f32) -> Option<f64> {
+    // f32::MAX 是布局层的无界测量哨兵，不能作为实际行高或视口。
+    (value.is_finite() && value > 0.0 && value < f32::MAX).then_some(value as f64)
+}
+
+// 将尺寸限制为布局树可以安全保存的有限非负范围。
+fn finite_virtual_size(value: f32) -> f32 {
+    // 先套用共享布局规则，再为后续算术保留余量。
+    finite_non_negative(value).min(MAX_VIRTUAL_EXTENT)
+}
+
+// 将滚动偏移限制为有限非负坐标。
+fn finite_scroll_offset(value: f32) -> f32 {
+    // 滚动状态与实际布局坐标采用同一安全上限。
+    finite_virtual_size(value)
+}
+
+// 计算可表示且有限的固定行高内容总高度。
+fn finite_total_height(item_count: usize, item_height: f32) -> f32 {
+    // 非法行高或空列表没有可滚动内容。
+    let Some(item_height) = positive_measurement(item_height) else {
+        // 返回稳定有限的空内容高度。
+        return 0.0;
+    };
+    // 使用 f64 避免 usize 到 f32 后的乘法提前溢出。
+    let total = item_count as f64 * item_height;
+    // 将超出布局坐标预算的内容夹到有限上限。
+    total.min(MAX_VIRTUAL_EXTENT as f64) as f32
+}
+
+// 计算固定行高列表的有限最大滚动偏移。
+fn finite_max_scroll_offset(item_count: usize, item_height: f32, viewport_height: f32) -> f32 {
+    // 内容高度已经在共享虚拟坐标预算内。
+    let total_height = finite_total_height(item_count, item_height);
+    // 非法视口按零处理，确保减法仍保持有限。
+    let viewport_height = finite_virtual_size(viewport_height);
+    // 内容不满视口时稳定停留在原点。
+    (total_height - viewport_height).max(0.0)
+}
+
+// 将一次滚动增量应用到有限内容区间。
+fn scroll_offset_after_delta(current: f32, delta: f32, max: f32) -> (f32, f32) {
+    // 最大偏移必须先满足有限非负不变量。
+    let max = finite_scroll_offset(max);
+    // 旧状态即使来自不可信恢复数据也先归一并夹到内容范围。
+    let current = finite_scroll_offset(current).min(max);
+    // NaN 没有方向语义，因此忽略；正负无穷分别表示滚到对应边界。
+    let next = if delta.is_nan() {
+        // 忽略无方向的非数增量。
+        current
+    } else if delta == f32::INFINITY {
+        // 正无穷只能抵达有限末端。
+        max
+    } else if delta == f32::NEG_INFINITY {
+        // 负无穷只能抵达有限原点。
+        0.0
+    } else {
+        // 使用 f64 累加，避免两个有限 f32 在夹取前先溢出。
+        (current as f64 + delta as f64).clamp(0.0, max as f64) as f32
+    };
+    // 同时返回有限的新状态和真正生效的位移。
+    (next, next - current)
+}
+
+// 将非负浮点索引向下取整并饱和到 usize。
+fn floor_index(value: f64) -> usize {
+    // Rust 的饱和转换负责处理超过平台索引范围的有限商值。
+    value.max(0.0).floor() as usize
+}
+
+// 将非负浮点索引向上取整并饱和到 usize。
+fn ceil_index(value: f64) -> usize {
+    // 可见窗口尾端采用开区间，因此向上覆盖最后一段行高。
+    value.max(0.0).ceil() as usize
+}
+
+// 将累计坐标夹到有限虚拟坐标预算。
+fn finite_virtual_coordinate(value: f64) -> f32 {
+    // NaN 没有可保留的位置语义，统一回退到原点。
+    if value.is_nan() {
+        // 返回稳定有限的坐标。
+        return 0.0;
+    }
+    // 正负溢出保留方向并夹到可安全参与后续算术的范围。
+    value.clamp(-(MAX_VIRTUAL_EXTENT as f64), MAX_VIRTUAL_EXTENT as f64) as f32
+}
+
+// 归一虚拟滚动接收或返回的实际矩形。
+fn finite_virtual_rect(frame: Rect) -> Rect {
+    // 坐标允许有限负值，尺寸则保持有限非负。
+    Rect::new(
+        finite_virtual_coordinate(frame.x as f64),
+        finite_virtual_coordinate(frame.y as f64),
+        finite_virtual_size(frame.w),
+        finite_virtual_size(frame.h),
+    )
+}
+
 /// Visible index range `[start, end)` for a fixed-height virtual list.
 pub fn virtual_list_index_range(
     item_count: usize,
@@ -12,21 +119,72 @@ pub fn virtual_list_index_range(
     viewport_height: f32,
     overscan: usize,
 ) -> (usize, usize) {
-    if item_count == 0 || item_height <= 0.0 {
+    // 空列表没有可物化内容。
+    if item_count == 0 {
+        // 返回规范空区间。
         return (0, 0);
     }
-    // A public scroll offset can come from restored state or external input.
-    // Keep invalid values at the safe origin instead of converting infinity or
-    // NaN into implementation-defined indices.
-    let scroll_offset = if scroll_offset.is_finite() {
-        scroll_offset.max(0.0)
-    } else {
-        0.0
+    // 无有效行高时无法建立索引到坐标的映射。
+    let Some(item_height) = positive_measurement(item_height) else {
+        // 非法度量统一返回有限空结果。
+        return (0, 0);
     };
-    let first = (scroll_offset / item_height).floor() as usize;
-    let last = ((scroll_offset + viewport_height) / item_height).ceil() as usize;
-    let start = first.saturating_sub(overscan).min(item_count);
-    let end = last.saturating_add(overscan).min(item_count).max(start);
+    // 无有效可见面积时 overscan 也不得单独触发行物化。
+    let Some(viewport_height) = positive_measurement(viewport_height) else {
+        // 非法或非正视口统一返回有限空结果。
+        return (0, 0);
+    };
+    // 用未截断的 f64 总高度计算恢复状态的真实末端边界。
+    let total_height = item_count as f64 * item_height;
+    // 滚动状态同时受内容末端与虚拟坐标预算约束。
+    let max_offset = (total_height - viewport_height)
+        .max(0.0)
+        .min(MAX_VIRTUAL_EXTENT as f64);
+    // 非有限恢复值回到原点，超范围有限值夹到内容末端。
+    let scroll_offset = (finite_scroll_offset(scroll_offset) as f64).min(max_offset);
+    // 首个可见索引采用向下取整并限制到数据长度。
+    let first = floor_index(scroll_offset / item_height).min(item_count);
+    // 开区间尾索引向上覆盖视口末端并限制到数据长度。
+    let last = ceil_index((scroll_offset + viewport_height) / item_height)
+        .min(item_count)
+        .max(first);
+    // 可见行始终优先于装饰性 overscan 占用物化预算。
+    let visible_len = last.saturating_sub(first);
+    // 超大视口本身就超过预算时，只保留从首个可见行开始的一窗。
+    if visible_len >= MAX_MATERIALIZED_ITEMS {
+        // 饱和加法避免平台极值索引发生整数溢出。
+        let end = first.saturating_add(MAX_MATERIALIZED_ITEMS).min(item_count);
+        // 返回严格有界且仍包含最前可见内容的窗口。
+        return (first, end);
+    }
+    // 计算可分配给窗口两侧 overscan 的剩余容量。
+    let remaining = MAX_MATERIALIZED_ITEMS - visible_len;
+    // 起始侧最多只能扩展到索引零。
+    let before_requested = overscan.min(first);
+    // 尾侧最多只能扩展到数据末端。
+    let after_requested = overscan.min(item_count.saturating_sub(last));
+    // 常规小窗口完整保留调用方请求的双侧 overscan。
+    if before_requested.saturating_add(after_requested) <= remaining {
+        // 两侧扩展均已由边界约束，无整数溢出风险。
+        return (first - before_requested, last + after_requested);
+    }
+    // 预算不足时先为两侧分配对称份额。
+    let mut before = before_requested.min(remaining / 2);
+    // 尾侧可使用未被起始侧占用的全部份额。
+    let mut after = after_requested.min(remaining - before);
+    // 若尾侧临近边界，则把剩余预算回填给起始侧。
+    let extra_before = (before_requested - before).min(remaining - before - after);
+    // 应用可用的起始侧回填。
+    before += extra_before;
+    // 若起始侧临近边界，则把最后的剩余预算回填给尾侧。
+    let extra_after = (after_requested - after).min(remaining - before - after);
+    // 应用可用的尾侧回填。
+    after += extra_after;
+    // 最终窗口包含完整优先可见区且不超过固定预算。
+    let start = first - before;
+    // 尾索引只增加最多 remaining，且已受数据末端约束。
+    let end = last + after;
+    // 返回有界半开区间。
     (start, end)
 }
 
@@ -59,15 +217,13 @@ impl VirtualListScroll {
     }
 
     pub fn scroll_offset(&self) -> f32 {
-        self.scroll_offset
+        // 对外只暴露有限非负的共享滚动状态。
+        finite_scroll_offset(self.scroll_offset)
     }
 
     pub fn set_scroll_offset(&mut self, offset: f32) {
-        self.scroll_offset = if offset.is_finite() {
-            offset.max(0.0)
-        } else {
-            0.0
-        };
+        // 外部恢复状态必须先满足有限非负坐标不变量。
+        self.scroll_offset = finite_scroll_offset(offset);
     }
 
     pub fn max_scroll_offset(
@@ -76,7 +232,8 @@ impl VirtualListScroll {
         item_height: f32,
         viewport_height: f32,
     ) -> f32 {
-        (item_count as f32 * item_height - viewport_height).max(0.0)
+        // 复用安全总高度与视口归一规则，避免乘法溢出。
+        finite_max_scroll_offset(item_count, item_height, viewport_height)
     }
 
     pub fn scroll_range(
@@ -102,11 +259,14 @@ impl VirtualListScroll {
         item_height: f32,
         viewport_height: f32,
     ) -> f32 {
-        let old = self.scroll_offset;
+        // 内容边界始终保持有限。
         let max = self.max_scroll_offset(item_count, item_height, viewport_height);
-        let new = (old + dy).clamp(0.0, max);
+        // 非数增量被忽略，无穷增量被夹到对应有限边界。
+        let (new, applied) = scroll_offset_after_delta(self.scroll_offset, dy, max);
+        // 保存已经归一化的新状态。
         self.scroll_offset = new;
-        new - old
+        // 返回真正生效且有限的滚动距离。
+        applied
     }
 
     /// Applies a normalized wheel delta; positive values move the viewport down.
@@ -126,8 +286,10 @@ impl VirtualListScroll {
     }
 
     pub fn clamp_to_content(&mut self, item_count: usize, item_height: f32, viewport_height: f32) {
+        // 先计算有限内容边界。
         let max = self.max_scroll_offset(item_count, item_height, viewport_height);
-        self.scroll_offset = self.scroll_offset.min(max);
+        // 恢复状态可能为非有限值，因此不能直接调用 min。
+        self.scroll_offset = finite_scroll_offset(self.scroll_offset).min(max);
     }
 }
 
@@ -172,62 +334,108 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if let SystemEvent::Wheel { delta, .. } = event {
+            // 读取已经归一化的实际视口高度。
             let view_h = self.viewport_height();
-            let max_offset = (self.total_height() - view_h).max(0.0);
-            let new_offset = (self.scroll_offset + delta.y * 40.0).clamp(0.0, max_offset);
-            if (new_offset - self.scroll_offset).abs() > 0.5 {
-                let old = self.scroll_offset;
-                self.scroll_offset = new_offset;
-                self.push_scroll_delta(0.0, new_offset - old);
+            // 计算有限内容边界，避免总高度与视口减法产生非有限值。
+            let max_offset = finite_max_scroll_offset(self.item_count, self.item_height, view_h);
+            // 乘法溢出会形成有方向的无穷增量，并由共享入口夹到边界。
+            let (new_offset, applied) = scroll_offset_after_delta(
+                self.scroll_offset,
+                delta.y * 40.0,
+                max_offset,
+            );
+            // 即使没有实际位移也要清理可能来自恢复状态的非法旧值。
+            self.scroll_offset = new_offset;
+            // 只有达到既有交互阈值的实际位移才触发滚动脏区。
+            if applied.abs() > 0.5 {
+                // 向脏区系统报告已经归一的有限位移。
+                self.push_scroll_delta(0.0, applied);
             }
+            // 滚轮事件由虚拟滚动容器消费。
             EventResult::Handled
         } else {
+            // 其余事件继续交给树中的其他处理器。
             EventResult::NotHandled
         }
     }
 
     scroll_delta_for_dirty => (&self) -> Option<(f32, f32)> {
+        // 清除历史状态中可能残留的非有限分量。
         let delta = self.scroll_delta_strip.get();
+        // 将两个轴都限制为安全有限坐标。
+        let delta = (
+            finite_virtual_coordinate(delta.0 as f64),
+            finite_virtual_coordinate(delta.1 as f64),
+        );
+        // 保留既有最小脏区阈值。
         if delta.0.abs() > 0.01 || delta.1.abs() > 0.01 {
+            // 已消费的累计位移回到原点。
             self.scroll_delta_strip.set((0.0, 0.0));
+            // 返回有限滚动位移。
             Some(delta)
         } else {
+            // 小位移继续保留，等待后续滚动累计越过阈值。
+            self.scroll_delta_strip.set(delta);
+            // 当前无需生成滚动脏区。
             None
         }
     }
 
     viewport_scroll_offset => (&self) -> Option<(f32, f32)> {
-        Some((0.0, self.scroll_offset))
+        // 对外只暴露有限非负的纵向偏移。
+        Some((0.0, finite_scroll_offset(self.scroll_offset)))
     }
 
     children_clip => (&self, frame: Rect) -> Option<Rect> {
-        Some(frame)
+        // 裁剪矩形也必须遵守最终布局有限几何不变量。
+        Some(finite_virtual_rect(frame))
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        frame
+        // 脏区不能携带非有限坐标或负尺寸。
+        finite_virtual_rect(frame)
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        // 在缓存和绘制前统一归一实际 frame。
+        let frame = finite_virtual_rect(frame);
+        // 保存有限视口供滚动范围计算使用。
         self.last_frame.set(Some(frame));
+        // 非内容绘制阶段无需填充背景。
         if ctx.paint_pass() != PaintPass::Content {
+            // 保持其他绘制阶段无副作用。
             return;
         }
+        // 读取容器背景语义色。
         let bg = ctx.tokens().color_bg_container();
+        // 使用已经归一化的矩形绘制背景。
         ctx.fill_rect(frame, bg, None);
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
+        // 父级输入先收敛到有限实际矩形。
+        let frame = finite_virtual_rect(frame);
+        // 无效行高退化为零高度，而不是向子树传播 NaN。
+        let item_height = finite_virtual_size(self.item_height);
+        // 运行态偏移先收敛到有限非负坐标。
+        let scroll_offset = finite_scroll_offset(self.scroll_offset) as f64;
+        // 读取当前物化窗口的绝对起始索引。
         let start = self.visible_start();
+        // 按物化顺序为每个行子树计算绝对位置。
         children
             .iter()
             .enumerate()
             .map(|(local_i, child)| {
-                let abs_i = start + local_i;
-                let y = frame.y + abs_i as f32 * self.item_height - self.scroll_offset;
-                (child.id, Rect::new(frame.x, y, frame.w, self.item_height))
+                // 防御不一致子项数量导致绝对索引整数溢出。
+                let abs_i = start.saturating_add(local_i);
+                // 使用 f64 完成索引乘法与偏移累加。
+                let y = frame.y as f64 + abs_i as f64 * item_height as f64 - scroll_offset;
+                // 最终纵坐标保留方向并夹到有限虚拟坐标范围。
+                let y = finite_virtual_coordinate(y);
+                // 子项 frame 只包含有限坐标与非负有限尺寸。
+                (child.id, Rect::new(frame.x, y, frame.w, item_height))
             })
             .collect()
     }
@@ -256,20 +464,33 @@ impl VirtualScroll {
 
     /// Apply declarative configuration while retaining framework-owned scroll state.
     pub(crate) fn sync_from(&mut self, next: Self) {
+        // 优先使用上次实际布局视口，否则使用下一版声明视口。
         let viewport_height = self
             .last_frame
             .get()
             .map(|frame| frame.h)
             .unwrap_or(next.fixed_height.unwrap_or(300.0));
+        // 保存框架拥有的滚动运行态，声明更新不能直接覆盖它。
         let scroll_offset = self.scroll_offset;
 
+        // 同步下一版列表长度。
         self.item_count = next.item_count;
+        // 同步下一版固定行高声明。
         self.item_height = next.item_height;
+        // 同步下一版固定宽度声明。
         self.fixed_width = next.fixed_width;
+        // 同步下一版固定高度声明。
         self.fixed_height = next.fixed_height;
+        // 同步下一版 overscan 声明。
         self.overscan = next.overscan;
+        // 配置变化后让协调器重新核对物化窗口。
         self.materialized_range.set(None);
-        self.scroll_offset = scroll_offset.min((self.total_height() - viewport_height).max(0.0));
+        // 根据新版有限内容边界归一并夹取旧滚动状态。
+        self.scroll_offset = finite_scroll_offset(scroll_offset).min(finite_max_scroll_offset(
+            self.item_count,
+            self.item_height,
+            viewport_height,
+        ));
     }
 
     pub fn item_count(mut self, n: usize) -> Self {
@@ -306,15 +527,20 @@ impl VirtualScroll {
 
     /// Total scrollable content height (fixed row height contract).
     pub fn total_height(&self) -> f32 {
-        self.item_count as f32 * self.item_height
+        // 使用饱和有限乘法，避免超大列表把无穷写入滚动状态。
+        finite_total_height(self.item_count, self.item_height)
     }
 
     /// Viewport height from last layout frame or configured fixed height.
     pub fn viewport_height(&self) -> f32 {
-        self.last_frame
+        // 优先读取实际布局 frame，否则回退到声明或默认高度。
+        let viewport_height = self
+            .last_frame
             .get()
             .map(|f| f.h)
-            .unwrap_or(self.fixed_height.unwrap_or(300.0))
+            .unwrap_or(self.fixed_height.unwrap_or(300.0));
+        // 对外只返回有限非负实际高度。
+        finite_virtual_size(viewport_height)
     }
 
     pub fn scroll_range(&self, viewport_height: f32) -> (usize, usize) {
@@ -339,7 +565,8 @@ impl VirtualScroll {
     }
 
     pub(crate) fn configured_viewport_height(&self) -> f32 {
-        self.fixed_height.unwrap_or(300.0)
+        // 初次物化也不能使用声明中的非有限或负高度。
+        finite_virtual_size(self.fixed_height.unwrap_or(300.0))
     }
 
     pub(crate) fn mark_children_materialized(&self, range: (usize, usize)) {
@@ -347,12 +574,21 @@ impl VirtualScroll {
     }
 
     pub fn scroll_offset(&self) -> f32 {
-        self.scroll_offset
+        // 对外隐藏任何来自旧状态或直接恢复的非法分量。
+        finite_scroll_offset(self.scroll_offset)
     }
 
     pub fn scroll_ratio(&self, viewport_height: f32) -> f32 {
-        let max_scroll = (self.total_height() - viewport_height).max(1.0);
-        (self.scroll_offset / max_scroll).clamp(0.0, 1.0)
+        // 使用与事件路径相同的有限内容边界。
+        let max_scroll =
+            finite_max_scroll_offset(self.item_count, self.item_height, viewport_height);
+        // 无可滚动距离时比例稳定为零。
+        if max_scroll <= 0.0 {
+            // 避免人为以一作为分母掩盖非法状态。
+            return 0.0;
+        }
+        // 有效偏移先夹到内容范围，再计算零到一比例。
+        (finite_scroll_offset(self.scroll_offset).min(max_scroll) / max_scroll).clamp(0.0, 1.0)
     }
 
     pub fn visible_start(&self) -> usize {
@@ -363,19 +599,31 @@ impl VirtualScroll {
     }
 
     fn intrinsic_size(&self) -> Size {
+        // 声明尺寸在进入约束求解前先满足有限非负规则。
         Size::new(
-            self.fixed_width.unwrap_or(300.0),
-            self.fixed_height.unwrap_or(300.0),
+            finite_virtual_size(self.fixed_width.unwrap_or(300.0)),
+            finite_virtual_size(self.fixed_height.unwrap_or(300.0)),
         )
     }
 
     fn push_scroll_delta(&self, dx: f32, dy: f32) {
+        // 输入位移先清除非有限值并限制到安全坐标范围。
+        let dx = finite_virtual_coordinate(finite_or_zero(dx) as f64);
+        // 纵轴采用相同归一规则。
+        let dy = finite_virtual_coordinate(finite_or_zero(dy) as f64);
+        // 保留既有微小位移过滤阈值。
         if dx.abs() <= 0.01 && dy.abs() <= 0.01 {
+            // 无有效位移时不修改累计状态。
             return;
         }
+        // 读取此前尚未被脏区系统消费的累计位移。
         let current = self.scroll_delta_strip.get();
-        self.scroll_delta_strip
-            .set((current.0 + dx, current.1 + dy));
+        // 使用 f64 累加并在写回前夹到有限坐标范围。
+        let next_x = finite_virtual_coordinate(current.0 as f64 + dx as f64);
+        // 纵轴同样避免两个有限 f32 相加溢出。
+        let next_y = finite_virtual_coordinate(current.1 as f64 + dy as f64);
+        // 保存可安全传播到脏区计算的累计位移。
+        self.scroll_delta_strip.set((next_x, next_y));
     }
 }
 

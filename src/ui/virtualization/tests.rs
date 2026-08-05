@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use crate::ui::adapter::ViewAdapter;
 // 导入访问组件树子项所需的核心 trait。
 use crate::ui::component::widget::WidgetCore;
+// 导入直接构造并调用布局入口所需的子项与 trait。
+use crate::ui::{LayoutChild, WidgetLayout};
 // 导入构造行 View 所需的节点类型。
 use crate::ui::view::ViewNode;
 // 导入最小文本行组件。
@@ -152,4 +154,115 @@ fn renderer_updates_patch_rows_without_replacing_ids() {
         .expect("first virtual label");
     // 原组件必须呈现新版 renderer 文本。
     assert_eq!(first.text(), "new-0");
+}
+
+// 验证正常有限输入仍按可见行与双侧 overscan 精确计算窗口。
+#[test]
+fn finite_range_preserves_visible_rows_and_overscan() {
+    // 五十像素偏移对应第五行，三十像素视口覆盖到第八行。
+    let range = virtual_list_index_range(100, 10.0, 50.0, 30.0, 2);
+    // 双侧各扩展两行后应物化索引三到九。
+    assert_eq!(range, (3, 10));
+    // 超出内容末端的恢复偏移必须先夹到最后一个完整视口。
+    let clamped = virtual_list_index_range(10, 10.0, 10_000.0, 30.0, 1);
+    // 末端三行与一行起始侧 overscan 应保持可见。
+    assert_eq!(clamped, (6, 10));
+}
+
+// 验证非法或无可见面积的度量统一退化为空窗口。
+#[test]
+fn invalid_measurements_return_an_empty_range() {
+    // 覆盖非有限、零值和负值行高。
+    for item_height in [f32::NAN, f32::INFINITY, 0.0, -1.0] {
+        // 非法行高不能产生任何物化行。
+        assert_eq!(
+            virtual_list_index_range(100, item_height, 50.0, 30.0, 2),
+            (0, 0)
+        );
+    }
+    // 覆盖非有限、零值和负值视口高度。
+    for viewport_height in [f32::NAN, f32::INFINITY, 0.0, -1.0] {
+        // 无有效可见面积时不得仅因 overscan 物化行。
+        assert_eq!(
+            virtual_list_index_range(100, 10.0, 50.0, viewport_height, 2),
+            (0, 0)
+        );
+    }
+}
+
+// 验证病理视口与 overscan 不能越过单次物化安全预算。
+#[test]
+fn extreme_range_is_bounded_by_the_materialization_budget() {
+    // 使用远超安全窗的可见范围和饱和 overscan 模拟不可信恢复状态。
+    let range = virtual_list_index_range(usize::MAX, 1.0, 50_000.0, 10_000.0, usize::MAX);
+    // 可见内容优先从首个可见行起保留四千零九十六项。
+    assert_eq!(range, (50_000, 54_096));
+    // 最终窗口无论输入规模如何都必须保持有界。
+    assert!(range.1.saturating_sub(range.0) <= 4_096);
+}
+
+// 验证共享滚动状态不会保存或返回非有限偏移。
+#[test]
+fn virtual_list_scroll_keeps_pathological_offsets_finite() {
+    // 构造默认有限滚动状态。
+    let mut scroll = VirtualListScroll::new();
+    // 超大列表的最大偏移也必须可用于后续有限几何计算。
+    let max = scroll.max_scroll_offset(usize::MAX, f32::MAX / 8.0, 1.0);
+    // 禁止总高度乘法溢出为无穷大。
+    assert!(max.is_finite());
+    // 有效超大内容仍应保留正的可滚动范围。
+    assert!(max > 0.0);
+    // 非数滚动增量应被忽略而非污染状态。
+    assert_eq!(scroll.scroll_by(f32::NAN, 100, 10.0, 20.0), 0.0);
+    // 忽略后状态仍停留在有限原点。
+    assert_eq!(scroll.scroll_offset(), 0.0);
+    // 正无穷增量只能夹到有限内容末端。
+    let applied = scroll.scroll_by(f32::INFINITY, usize::MAX, f32::MAX / 8.0, 1.0);
+    // 对外报告的实际增量必须有限。
+    assert!(applied.is_finite());
+    // 正无穷具有向下方向语义，应抵达有限内容末端。
+    assert!(applied > 0.0);
+    // 内部偏移也必须保持有限。
+    assert!(scroll.scroll_offset().is_finite());
+}
+
+// 验证虚拟滚动总高度与最终子项 frame 遵守有限几何不变量。
+#[test]
+fn virtual_scroll_sanitizes_total_height_and_layout_frames() {
+    // 构造乘法会溢出 f32 的超大但有限列表度量。
+    let huge = VirtualScroll::new()
+        .item_count(usize::MAX)
+        .item_height(f32::MAX / 8.0);
+    // 对外总高度必须夹到有限表示范围。
+    assert!(huge.total_height().is_finite());
+    // 有效超大列表不能被误判为空内容。
+    assert!(huge.total_height() > 0.0);
+
+    // 构造携带非法行高与偏移的最小物化窗口。
+    let mut scroll = VirtualScroll::new().item_count(1).item_height(f32::NAN);
+    // 模拟协调器已物化第一行。
+    scroll.materialized_range.set(Some((0, 1)));
+    // 模拟不可信恢复状态写入无穷偏移。
+    scroll.scroll_offset = f32::INFINITY;
+    // 构造一个无需读取树内容的布局子项。
+    let children = [LayoutChild::new(ComponentId::new(1), Size::new(10.0, 10.0))];
+    // 空树足以覆盖虚拟行的纯几何放置路径。
+    let tree = WidgetTree::new();
+    // 输入同时包含非法坐标、宽度与高度。
+    let positions = scroll.layout_children(
+        Rect::new(f32::NAN, f32::INFINITY, f32::NEG_INFINITY, f32::NAN),
+        &children,
+        &tree,
+    );
+    // 读取唯一子项的最终 frame。
+    let frame = positions[0].1;
+    // 所有坐标与尺寸都必须为有限值。
+    for value in [frame.x, frame.y, frame.w, frame.h] {
+        // 禁止任何非有限值进入布局树。
+        assert!(value.is_finite());
+    }
+    // 尺寸还必须满足非负约束。
+    assert!(frame.w >= 0.0 && frame.h >= 0.0);
+    // 非数行高应明确退化为零高度。
+    assert_eq!(frame.h, 0.0);
 }
