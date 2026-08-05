@@ -218,6 +218,11 @@ macro_rules! __component_build_method {
     (build; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn build($($p)*) -> $ret $body
     };
+    // 核心子节点通知不属于可选能力 trait，直接生成 WidgetComponent 方法。
+    (on_children_changed; ($($p:tt)*) $body:block) => {
+        // 保留声明中的参数与方法体，让组件自行同步派生运行态。
+        fn on_children_changed($($p)*) $body
+    };
     (build_view_children; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn as_view_children(
             &self,

@@ -813,7 +813,10 @@ impl ViewAdapter {
             .is_some_and(|parent| parent.children() != new_order.as_slice());
         if order_changed {
             if let Some(parent) = tree.get_mut(parent_id) {
+                // 原子替换为协调后的稳定子节点顺序。
                 *parent.children_mut() = new_order;
+                // 让父组件同步依赖直接子节点集合的派生运行态。
+                parent.notify_children_changed();
             }
             tree.tree_version += 1;
             structure_changed = true;

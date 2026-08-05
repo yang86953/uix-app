@@ -7,9 +7,7 @@ use crate::ui::theme::traits::ThemeTokens;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-
 impl WidgetTree {
-
     pub(crate) const ROOT_BOOTSTRAP_SIZE: Size = Size { w: 800.0, h: 600.0 };
 
     pub(crate) fn keyboard_focus_visible(&self) -> bool {
@@ -461,7 +459,10 @@ impl WidgetTree {
         }
         if let Some(pid) = parent_id {
             if let Some(parent) = self.get_mut(pid) {
+                // 从父节点的直接子节点集合中移除已销毁标识。
                 parent.children_mut().retain(|&c| c != id);
+                // 让父组件立即清理依赖旧子节点集合的派生运行态。
+                parent.notify_children_changed();
             }
         }
 
@@ -673,8 +674,4 @@ impl WidgetTree {
     pub(crate) fn take_layout_expand_ops(&self) -> u32 {
         self.layout_expand_ops.replace(0)
     }
-
-
 }
-
-

@@ -100,6 +100,14 @@ impl BoxedWidget {
         with_provider_context(&provider_context, || f(&mut *self.component))
     }
 
+    /// 通知组件其直接子节点集合已经完成一次结构变更。
+    pub(crate) fn notify_children_changed(&mut self) {
+        // 先读取稳定的子节点数量，避免组件回调与节点向量产生重叠借用。
+        let child_count = self.children.len();
+        // 在节点自己的 ProviderContext 中同步组件派生运行态。
+        self.with_component_context_mut(|component| component.on_children_changed(child_count));
+    }
+
     pub(crate) fn replace_component(&mut self, mut component: Box<dyn WidgetComponent>) {
         let was_attached = self.attached;
         let was_mounted = self.mounted;
@@ -759,4 +767,3 @@ impl WidgetCore for BoxedWidget {
         self.set_tab_index_override(Some(v));
     }
 }
-

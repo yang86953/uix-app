@@ -42,6 +42,14 @@ component! {
 
     visible => (&self) -> bool { self.style.visible }
 
+    on_children_changed => (&mut self, child_count: usize) {
+        // 最后一个子节点移除后，旧内容尺寸不再是有效的测量下限。
+        if child_count == 0 {
+            // 立即归零，避免下一轮布局跳过空节点时继续暴露陈旧尺寸。
+            self.cached_content_size.set(Size::zero());
+        }
+    }
+
     measure => (&self, constraints: Constraints) -> Size {
         let intrinsic = self.intrinsic_size();
         let clamped = constraints.clamp(intrinsic);
@@ -131,7 +139,13 @@ component! {
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
-        if children.is_empty() { return Vec::new(); }
+        // 直接调用空子布局时也清除缓存，保持组件布局契约自洽。
+        if children.is_empty() {
+            // 空集合没有可作为测量下限的内容范围。
+            self.cached_content_size.set(Size::zero());
+            // 空布局不产生任何子节点位置。
+            return Vec::new();
+        }
 
         let s = &self.style;
 

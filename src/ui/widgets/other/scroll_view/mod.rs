@@ -57,6 +57,14 @@ component! {
         self.children.take()
     }
 
+    on_children_changed => (&mut self, child_count: usize) {
+        // 只有空集合需要丢弃由旧滚动内容派生的运行态。
+        if child_count == 0 {
+            // 统一清除内容范围、偏移和交互残留。
+            self.reset_empty_content_state();
+        }
+    }
+
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
             SystemEvent::Wheel { delta, .. } => {
@@ -461,6 +469,28 @@ component! {
 }
 
 impl ScrollView {
+    /// 清除空视口不再有效的内容派生状态，同时保留声明配置与视口 frame。
+    fn reset_empty_content_state(&mut self) {
+        // 空视口没有已布局的内容范围。
+        self.content_bounds.set(None);
+        // 横向偏移必须回到当前空范围内。
+        self.scroll_x = 0.0;
+        // 纵向偏移必须回到当前空范围内。
+        self.scroll_y = 0.0;
+        // 旧内容产生的待消费滚动差量不应跨越结构变更。
+        self.scroll_delta_strip.set((0.0, 0.0));
+        // 子内容消失时终止纵向滑块拖动。
+        self.scrollbar_v.dragging = false;
+        // 子内容消失时清除纵向滑块悬停。
+        self.scrollbar_v.hover = false;
+        // 子内容消失时终止横向滑块拖动。
+        self.scrollbar_h.dragging = false;
+        // 子内容消失时清除横向滑块悬停。
+        self.scrollbar_h.hover = false;
+        // 若偏移受控，把归一后的零值同步回声明状态。
+        self.write_bound_offset();
+    }
+
     pub(crate) fn scroll_direction(&self) -> ScrollDirection {
         self.direction
     }

@@ -110,7 +110,10 @@ impl WidgetTree {
         self.register_focusable(child_id);
         self.attach_node(child_id);
         if let Some(parent) = self.get_mut(parent_id) {
+            // 先把新节点纳入父节点的直接子节点集合。
             parent.children_mut().push(child_id);
+            // 再让父组件基于完整的新集合同步派生运行态。
+            parent.notify_children_changed();
         }
         for child in children {
             self.add_child_with_context(child_id, child, provider_context.clone(), true);

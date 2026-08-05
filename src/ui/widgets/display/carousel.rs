@@ -86,14 +86,30 @@ impl CarouselRuntime {
     }
 
     fn set_child_count(&self, count: usize) {
+        // 先发布新的幻灯片数量，供其余运行态归一逻辑读取。
         self.child_count.set(count);
+        // 空轮播不应继续交付旧幻灯片产生的语义变化。
+        if count == 0 {
+            // 丢弃已经失去目标的待发选择事件。
+            self.pending_change.set(None);
+            // 结构失效已负责调度布局，无需保留旧动画的额外请求。
+            self.layout_requested.set(false);
+            // 重新加入幻灯片后允许自动播放恢复。
+            self.manually_paused.set(false);
+            // 空轮播没有需要重绘的淡入淡出脏区。
+            self.fade_dirty.set(false);
+        }
+        // 把活动索引限制在新的幻灯片范围内。
         let current = if count == 0 {
             0
         } else {
             self.current.get().min(count - 1)
         };
+        // 发布归一后的活动索引。
         self.current.set(current);
+        // 淡出来源越界时结束动画，避免重新加入后引用旧幻灯片。
         if self.fade_from.get().is_some_and(|index| index >= count) {
+            // 恢复稳定的单页显示状态。
             self.finish_fade();
         }
     }
@@ -222,6 +238,13 @@ component! {
             self.runtime.set_child_count(children.len());
         }
         children
+    }
+
+    on_children_changed => (&mut self, child_count: usize) {
+        // 自定义箭头是直接子节点但不是幻灯片，需要从结构计数中扣除。
+        let slide_count = child_count.saturating_sub(usize::from(self.has_custom_arrows()));
+        // 立即同步轮播运行态，避免空节点被布局阶段跳过后保留旧计数。
+        self.runtime.set_child_count(slide_count);
     }
 
     build_view_children => (&self) -> Vec<crate::ui::view::ViewNode> {

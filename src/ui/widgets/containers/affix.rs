@@ -33,6 +33,18 @@ component! {
 
     child_overflow_expands_parent => (&self) -> bool { false }
 
+    on_children_changed => (&mut self, child_count: usize) {
+        // 只有空集合需要丢弃由旧子树派生的吸顶状态。
+        if child_count == 0 {
+            // 空子树不再占用任何固有尺寸。
+            self.cached_child_size.set(Size::zero());
+            // 空子树没有可用于吸顶计算的自然位置。
+            self.natural_offset_y.set(0.0);
+            // 没有子树时组件必须退出吸顶状态。
+            self.affixed.set(false);
+        }
+    }
+
     build => (&self) -> Vec<Box<dyn WidgetComponent>> {
         self.children.take()
     }
@@ -55,8 +67,13 @@ component! {
         -> Vec<(ComponentId, Rect)>
     {
         if children.is_empty() {
+            // 空布局不再保留旧子树占位。
             self.cached_child_size.set(Size::zero());
+            // 空布局没有有效的自然位置。
+            self.natural_offset_y.set(0.0);
+            // 空布局必须退出吸顶状态。
             self.affixed.set(false);
+            // 空布局不产生任何子节点位置。
             return Vec::new();
         }
 

@@ -77,6 +77,11 @@ pub trait WidgetComponent: 'static {
     fn build(&self) -> Vec<Box<dyn WidgetComponent>> {
         vec![]
     }
+    /// 在直接子节点集合变化后同步组件拥有的派生运行态。
+    fn on_children_changed(&mut self, child_count: usize) {
+        // 默认组件不缓存子节点派生状态，因此只消费通知参数。
+        let _ = child_count;
+    }
     /// 声明期 View 子节点能力端口（SMC-04：由 System 私有边界
     /// `ViewChildrenProvider` 承载，避免 component → view 依赖）。
     ///
