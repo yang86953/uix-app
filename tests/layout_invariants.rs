@@ -2,8 +2,8 @@
 use uix::core::{ComponentId, EdgeInsets, Rect, Size};
 // 导入三个共享布局入口及其公开输出类型。
 use uix::ui::{
-    AlignItems, BoxModel, FlexLayout, GridLayout, GridTrack, JustifyContent, LayoutChild,
-    LayoutEngine, LayoutOutput,
+    AlignItems, BoxModel, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent,
+    LayoutChild, LayoutEngine, LayoutOutput,
 };
 
 // 断言实际布局坐标不是测量阶段的无界哨兵或非有限值。
@@ -513,4 +513,113 @@ fn grid_integer_extremes_remain_bounded_end_to_end() {
     assert_eq!(output.positions[1], Rect::zero());
     // 总尺寸仅包含有界行列、gap 与成功放置的内容。
     assert_eq!(output.total_size, Size::new(11.0, 4105.0));
+}
+
+// 验证 Grid 子项的 align-self 能覆盖容器级交叉轴对齐。
+#[test]
+// 使用非对称 margin 区分末端对齐与容器默认拉伸。
+fn grid_child_align_self_overrides_container_alignment() {
+    // 构造十乘十且带非对称上下外边距的子项。
+    let mut child = LayoutChild::new(ComponentId::new(32), Size::new(10.0, 10.0));
+    // 上边距为二、下边距为八，单元格交叉轴可用区因此为三十像素。
+    child.margin = EdgeInsets::new(0.0, 2.0, 0.0, 8.0);
+    // 子项显式覆盖容器默认拉伸并贴近交叉轴末端。
+    child.align_self = Some(AlignItems::End);
+    // 在四十乘四十固定单元格中执行 Grid 布局。
+    let output = GridLayout::new()
+        .with_columns(vec![GridTrack::Px(40.0)])
+        .with_rows(vec![GridTrack::Px(40.0)])
+        .with_align(AlignItems::Stretch)
+        .with_justify(JustifyContent::Start)
+        .layout(Rect::new(0.0, 0.0, 40.0, 40.0), &[child]);
+    // 子项底边应停在八像素下边距之前且保留自然高度。
+    assert_eq!(output.positions[0], Rect::new(0.0, 22.0, 10.0, 10.0));
+}
+
+// 验证溢出 Flex 在交叉轴对齐时先扣除两侧 margin。
+#[test]
+// 同时覆盖居中与末端对齐，防止非对称 margin 重复偏移。
+fn overflow_flex_cross_alignment_respects_asymmetric_margins() {
+    // 构造十乘十且带二像素上边距和八像素下边距的子项。
+    let mut child = LayoutChild::new(ComponentId::new(33), Size::new(10.0, 10.0));
+    // 非对称 margin 将交叉轴可用区从四十缩减到三十像素。
+    child.margin = EdgeInsets::new(0.0, 2.0, 0.0, 8.0);
+    // 构造保留自然主轴尺寸的居中布局。
+    let mut centered_layout = FlexLayout::row().with_align(AlignItems::Center);
+    // 开启溢出内容路径。
+    centered_layout.overflow_content = true;
+    // 在四十像素高的内容区执行居中布局。
+    let centered = centered_layout.layout(Rect::new(0.0, 0.0, 100.0, 40.0), &[child.clone()]);
+    // 子项应在扣除两侧 margin 后的三十像素区域内居中。
+    assert_eq!(centered.positions[0], Rect::new(0.0, 12.0, 10.0, 10.0));
+    // 构造保留自然主轴尺寸的末端布局。
+    let mut ended_layout = FlexLayout::row().with_align(AlignItems::End);
+    // 开启溢出内容路径。
+    ended_layout.overflow_content = true;
+    // 在同一内容区执行末端布局。
+    let ended = ended_layout.layout(Rect::new(0.0, 0.0, 100.0, 40.0), &[child]);
+    // 子项底边应停在八像素下边距之前。
+    assert_eq!(ended.positions[0], Rect::new(0.0, 22.0, 10.0, 10.0));
+}
+
+// 验证溢出 Flex 的反向主轴与标准 Flex 使用相同镜像语义。
+#[test]
+// 两个自然宽度子项应从容器右端向左排列。
+fn overflow_flex_reverse_starts_from_the_main_end() {
+    // 构造两个十乘八的自然尺寸子项。
+    let children = vec![
+        LayoutChild::new(ComponentId::new(34), Size::new(10.0, 8.0)),
+        LayoutChild::new(ComponentId::new(35), Size::new(10.0, 8.0)),
+    ];
+    // 构造五像素间距的反向水平布局。
+    let mut layout = FlexLayout::row()
+        .with_direction(FlexDirection::RowReverse)
+        .with_gap(5.0)
+        .with_justify(JustifyContent::Start)
+        .with_align(AlignItems::Start);
+    // 开启溢出内容路径以保留自然主轴尺寸。
+    layout.overflow_content = true;
+    // 在一百像素宽的内容区执行反向布局。
+    let output = layout.layout(Rect::new(0.0, 0.0, 100.0, 20.0), &children);
+    // 首项应贴住反向主轴起点，也就是容器右端。
+    assert_eq!(output.positions[0], Rect::new(90.0, 0.0, 10.0, 8.0));
+    // 次项应位于首项左侧并保留五像素间距。
+    assert_eq!(output.positions[1], Rect::new(75.0, 0.0, 10.0, 8.0));
+}
+
+// 验证溢出 Flex 保留自然尺寸时仍遵守主轴分布配置。
+#[test]
+// 同时覆盖整体居中与剩余空间均分到项目间隙。
+fn overflow_flex_honors_justify_content() {
+    // 构造两个十乘八的自然尺寸子项。
+    let children = vec![
+        LayoutChild::new(ComponentId::new(36), Size::new(10.0, 8.0)),
+        LayoutChild::new(ComponentId::new(37), Size::new(10.0, 8.0)),
+    ];
+    // 构造五像素间距的居中溢出布局。
+    let mut centered_layout = FlexLayout::row()
+        .with_gap(5.0)
+        .with_justify(JustifyContent::Center)
+        .with_align(AlignItems::Start);
+    // 开启溢出内容路径。
+    centered_layout.overflow_content = true;
+    // 在一百像素宽的内容区执行居中布局。
+    let centered = centered_layout.layout(Rect::new(0.0, 0.0, 100.0, 20.0), &children);
+    // 二十五像素自然内容应整体位于容器中央。
+    assert_eq!(centered.positions[0], Rect::new(37.5, 0.0, 10.0, 8.0));
+    // 第二项应保留五像素基础间距。
+    assert_eq!(centered.positions[1], Rect::new(52.5, 0.0, 10.0, 8.0));
+    // 构造把剩余空间分配到项目间隙的溢出布局。
+    let mut distributed_layout = FlexLayout::row()
+        .with_gap(5.0)
+        .with_justify(JustifyContent::SpaceBetween)
+        .with_align(AlignItems::Start);
+    // 开启溢出内容路径。
+    distributed_layout.overflow_content = true;
+    // 在同一内容区执行两端分布布局。
+    let distributed = distributed_layout.layout(Rect::new(0.0, 0.0, 100.0, 20.0), &children);
+    // 首项应贴住主轴起点。
+    assert_eq!(distributed.positions[0], Rect::new(0.0, 0.0, 10.0, 8.0));
+    // 次项应贴住主轴末端。
+    assert_eq!(distributed.positions[1], Rect::new(90.0, 0.0, 10.0, 8.0));
 }
