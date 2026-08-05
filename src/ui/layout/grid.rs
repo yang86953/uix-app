@@ -1,5 +1,10 @@
 use super::*;
 
+// 将 Grid 放置的轨道与单元格资源契约集中在独立模块。
+mod placement;
+// 引入有界列数、放置计划与后续尺寸求解所需的定位类型。
+use placement::{bounded_column_count, place_grid_children, CellAssignment};
+
 /// Compute grid layout from input constraints.
 /// Pure function: no side effects.
 pub fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
@@ -10,7 +15,8 @@ pub fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
         (input.container.h - input.padding.vertical()).max(0.0),
     );
 
-    let n_cols = input.columns.len();
+    // 列轨道同样纳入单轴资源上限。
+    let n_cols = bounded_column_count(input.columns.len());
     if n_cols == 0 || input.children.is_empty() {
         return GridOutput {
             child_rects: Vec::new(),
@@ -18,108 +24,20 @@ pub fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
         };
     }
 
-    // ── Phase 1: register explicit placements ──
-    let init_rows = input.rows.len().max(1);
-    let mut occupied = vec![false; n_cols * init_rows];
-    let mut assignments: Vec<CellAssignment> = Vec::with_capacity(input.children.len());
-
-    // 先登记显式 cell，同时扩展 occupied 矩阵
-    for (ci, child) in input.children.iter().enumerate() {
-        if let Some(cell) = child.cell {
-            let col = cell % n_cols;
-            let row = cell / n_cols;
-            let span_cols = (child.col_span as usize).clamp(1, n_cols - col);
-            let span_rows = (child.row_span as usize).max(1);
-            let needed_rows = row.saturating_add(span_rows);
-            let cur_rows = occupied.len() / n_cols;
-            if needed_rows > cur_rows {
-                occupied.resize(n_cols * needed_rows, false);
-            }
-            for r in 0..span_rows {
-                for c in 0..span_cols {
-                    occupied[(row + r) * n_cols + (col + c)] = true;
-                }
-            }
-            assignments.push(CellAssignment {
-                child_idx: ci,
-                col,
-                row,
-                col_span: span_cols as u32,
-                row_span: span_rows as u32,
-            });
-        }
-    }
-
-    // 再为 auto 项搜索完整可用矩形
-    for (ci, child) in input
-        .children
-        .iter()
-        .enumerate()
-        .filter(|(_, child)| child.cell.is_none())
-    {
-        // A span wider than the explicit grid can never fit and previously made
-        // the row-growth search loop forever. CSS-like grids clamp it to the
-        // available explicit columns while keeping row span semantics intact.
-        let span_cols = (child.col_span as usize).clamp(1, n_cols);
-        let span_rows = (child.row_span as usize).max(1);
-        // 搜索下一个完整可用矩形
-        let (col, row) = 'search: loop {
-            let mut cur_rows = occupied.len() / n_cols;
-            if span_rows > cur_rows {
-                occupied.resize(n_cols * span_rows, false);
-                cur_rows = span_rows;
-            }
-            for base_row in 0..cur_rows.max(1) {
-                'row_search: for base_col in 0..n_cols {
-                    // 验证完整 span 是否可用
-                    if base_col + span_cols > n_cols {
-                        continue 'row_search;
-                    }
-                    if base_row + span_rows > cur_rows.max(1) {
-                        // 需要扩展行
-                        break 'row_search;
-                    }
-                    for r in 0..span_rows {
-                        for c in 0..span_cols {
-                            if occupied[(base_row + r) * n_cols + (base_col + c)] {
-                                continue 'row_search;
-                            }
-                        }
-                    }
-                    break 'search (base_col, base_row);
-                }
-            }
-            // 当前矩阵没有可用矩形，扩展一行继续搜索。
-            let cur_rows = occupied.len() / n_cols;
-            occupied.resize(n_cols * (cur_rows + 1), false);
-        };
-
-        // 确保有足够行
-        let needed_rows = row + span_rows;
-        let cur_rows = occupied.len() / n_cols;
-        if needed_rows > cur_rows {
-            occupied.resize(n_cols * needed_rows, false);
-        }
-
-        for r in 0..span_rows {
-            for c in 0..span_cols {
-                occupied[(row + r) * n_cols + (col + c)] = true;
-            }
-        }
-
-        assignments.push(CellAssignment {
-            child_idx: ci,
-            col,
-            row,
-            col_span: span_cols as u32,
-            row_span: span_rows as u32,
-        });
-    }
-
-    let n_rows = occupied.len() / n_cols;
+    // 后续所有列尺寸与索引都只能使用收敛后的列窗口。
+    let columns = &input.columns[..n_cols];
+    // ── Phase 1: resolve bounded explicit and automatic placements ──
+    // 统一收敛 cell、span、行数、占用矩阵与自动搜索。
+    let placement = place_grid_children(n_cols, input.rows.len(), input.children);
+    // 后续轨道尺寸求解沿用有界定位账本。
+    let assignments = placement.assignments;
+    // 只物化显式行与成功放置子项真正需要的行。
+    let n_rows = placement.row_count;
 
     // ── Phase 2: build full rows (explicit + implicit auto) ──
-    let mut rows = input.rows.to_vec();
+    // 显式行只复制有界求解窗口内的部分。
+    let mut rows: Vec<GridTrack> = input.rows.iter().copied().take(n_rows).collect();
+    // 成功放置产生的隐式行继续使用 Auto 轨道。
     rows.resize(n_rows, GridTrack::Auto);
 
     // ── Phase 3: resolve track sizes ──
@@ -130,12 +48,12 @@ pub fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
 
     // 先汇总子项在自动列上的固有宽度贡献。
     let col_auto_sizes =
-        intrinsic_auto_track_sizes(input.columns, &assignments, input.children, col_gap, true);
+        intrinsic_auto_track_sizes(columns, &assignments, input.children, col_gap, true);
     // 再汇总子项在显式与隐式自动行上的固有高度贡献。
     let row_auto_sizes =
         intrinsic_auto_track_sizes(&rows, &assignments, input.children, row_gap, false);
     // Auto 保留内容宽度，Fr 列仅分配剩余水平空间。
-    let col_sizes = resolve_tracks(input.columns, inner.w, total_col_gap, &col_auto_sizes);
+    let col_sizes = resolve_tracks(columns, inner.w, total_col_gap, &col_auto_sizes);
     // Auto 保留内容高度，Fr 行仅分配剩余垂直空间。
     let row_sizes = resolve_tracks(&rows, inner.h, total_row_gap, &row_auto_sizes);
 
@@ -484,12 +402,4 @@ fn resolve_tracks(
 
     // 返回已完成 Px、Auto 与 Fr 分配的轨道尺寸。
     sizes
-}
-
-struct CellAssignment {
-    child_idx: usize,
-    col: usize,
-    row: usize,
-    col_span: u32,
-    row_span: u32,
 }
