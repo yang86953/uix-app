@@ -1,9 +1,11 @@
+// 复用父模块的 D3D12 类型与辅助函数。
 use super::*;
-
-use super::*;
+// 从同级辅助模块引入软回退像素边界计算。
+use super::helpers::visible_pixel_bounds;
 
 impl D3d12Pipeline {
-    pub(super) fn new(device: &ID3D12Device, frame_count: usize) -> Result<Self> {
+    // 在 D3D12 平台层内构造共享 pipeline。
+    pub(in super::super) fn new(device: &ID3D12Device, frame_count: usize) -> Result<Self> {
         let root_signature = create_root_signature(device)?;
         let rect_vs = compile_shader(RECT_HLSL, b"VSMain\0", b"vs_5_0\0")?;
         let rect_ps = compile_shader(RECT_HLSL, b"PSMain\0", b"ps_5_0\0")?;
@@ -98,7 +100,8 @@ impl D3d12Pipeline {
         })
     }
 
-    pub(super) fn begin_frame(&mut self, frame_index: usize) {
+    // 在 D3D12 平台层内切换当前帧资源。
+    pub(in super::super) fn begin_frame(&mut self, frame_index: usize) {
         if let Some(frame) = self.frame_uploads.get_mut(frame_index) {
             frame.transient.clear();
             frame.used = 0;
@@ -117,7 +120,8 @@ impl D3d12Pipeline {
         handle
     }
 
-    pub(super) fn draw_solid_rects(
+    // 在 D3D12 平台层内录制实心矩形绘制命令。
+    pub(in super::super) fn draw_solid_rects(
         &self,
         list: &ID3D12GraphicsCommandList,
         viewport_w: f32,
@@ -268,7 +272,10 @@ impl D3d12Pipeline {
         ]);
     }
 
-    pub(crate) fn plan_glyph_segments(&mut self, glyphs: &[GpuGlyphBlit]) -> Result<Vec<GlyphSegment>> {
+    pub(crate) fn plan_glyph_segments(
+        &mut self,
+        glyphs: &[GpuGlyphBlit],
+    ) -> Result<Vec<GlyphSegment>> {
         let mut segments = Vec::new();
         let mut current = GlyphSegment::default();
         for glyph in glyphs {
@@ -425,7 +432,8 @@ impl D3d12Pipeline {
         clippy::too_many_arguments,
         reason = "the explicit frame and viewport inputs match the D3D12 recording boundary"
     )]
-    pub(super) fn draw_glyphs(
+    // 在 D3D12 平台层内录制字形绘制命令。
+    pub(in super::super) fn draw_glyphs(
         &mut self,
         device: &ID3D12Device,
         list: &ID3D12GraphicsCommandList,
@@ -650,7 +658,8 @@ impl D3d12Pipeline {
             .map(|_| (GLYPH_ATLAS_SIZE, GLYPH_ATLAS_SIZE))
     }
 
-    pub(super) fn blit_soft_fallback(
+    // 在 D3D12 平台层内上传并绘制完整软回退缓冲。
+    pub(in super::super) fn blit_soft_fallback(
         &mut self,
         device: &ID3D12Device,
         list: &ID3D12GraphicsCommandList,
@@ -687,8 +696,10 @@ impl D3d12Pipeline {
         )
     }
 
-    #[allow(clippy::too_many_arguments)] // D3D12 command recording needs the device/list/frame plus API-neutral tile payload.
-    pub(super) fn blit_soft_fallback_tile(
+    // D3D12 命令录制边界需要同时接收设备、命令列表、帧与图块载荷。
+    #[allow(clippy::too_many_arguments)]
+    // 在 D3D12 平台层内上传并绘制软回退图块。
+    pub(in super::super) fn blit_soft_fallback_tile(
         &mut self,
         device: &ID3D12Device,
         list: &ID3D12GraphicsCommandList,
@@ -831,7 +842,8 @@ impl D3d12Pipeline {
         Ok(())
     }
 
-    pub(super) fn retain_gpu_objects_after_undrained_drop(&self) {
+    // 在未排空销毁路径保留仍可能被 GPU 使用的对象。
+    pub(in super::super) fn retain_gpu_objects_after_undrained_drop(&self) {
         std::mem::forget(self.root_signature.clone());
         std::mem::forget(self.solid_pso.clone());
         std::mem::forget(self.soft_pso.clone());
@@ -853,4 +865,3 @@ impl D3d12Pipeline {
         }
     }
 }
-

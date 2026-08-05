@@ -1,12 +1,13 @@
-//! 布局验证辅助。
+//! D3D12 pipeline 的布局验证辅助。
 
+// 复用父模块的 D3D12 类型与辅助函数。
 use super::*;
 
-//! 布局验证辅助。
-
-use super::*;
-
-pub(crate) fn visible_pixel_bounds(pixels: &[u32], width: i32, height: i32) -> Option<(i32, i32, i32, i32)> {
+pub(crate) fn visible_pixel_bounds(
+    pixels: &[u32],
+    width: i32,
+    height: i32,
+) -> Option<(i32, i32, i32, i32)> {
     if width <= 0 || height <= 0 {
         return None;
     }

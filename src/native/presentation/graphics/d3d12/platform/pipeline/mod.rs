@@ -833,8 +833,7 @@ fn scissor_rect(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32
     }
 }
 
+// 引入拆分后的布局验证辅助。
 mod helpers;
-mod pipeline;
-
-mod helpers;
+// 引入拆分后的 D3D12 pipeline 实现。
 mod pipeline;
