@@ -374,10 +374,14 @@ pub enum SnapshotFields {
         visibility_height: f32,
         visible: bool,
     },
+    // 导航 capability 关闭时同步收缩面包屑快照变体。
+    #[cfg(feature = "navigation")]
     Breadcrumb {
         items: Vec<BreadcrumbItem>,
         separator: String,
     },
+    // 导航 capability 关闭时同步收缩分页快照变体。
+    #[cfg(feature = "navigation")]
     Pagination {
         total: usize,
         page_size: usize,
@@ -387,18 +391,24 @@ pub enum SnapshotFields {
         size: f32,
         page_size_options: Vec<usize>,
     },
+    // 导航 capability 关闭时同步收缩锚点快照变体。
+    #[cfg(feature = "navigation")]
     Anchor {
         items: Vec<AnchorItem>,
         active_index: usize,
         offset_top: f32,
         bg_color: Option<Color>,
     },
+    // 导航 capability 关闭时同步收缩菜单快照变体。
+    #[cfg(feature = "navigation")]
     Menu {
         items: Vec<MenuItem>,
         active_key: String,
         mode: MenuMode,
         item_h: f32,
     },
+    // 导航 capability 关闭时同步收缩下拉菜单快照变体。
+    #[cfg(feature = "navigation")]
     Dropdown {
         label: String,
         items: Vec<String>,
@@ -406,6 +416,8 @@ pub enum SnapshotFields {
         selected_index: Option<usize>,
         highlighted_index: Option<usize>,
     },
+    // 导航 capability 关闭时同步收缩标签页快照变体。
+    #[cfg(feature = "navigation")]
     Tabs {
         tabs: Vec<Tab>,
         active_index: usize,
@@ -415,11 +427,15 @@ pub enum SnapshotFields {
         fixed_width: Option<f32>,
         fixed_height: Option<f32>,
     },
+    // 导航 capability 关闭时同步收缩步骤条快照变体。
+    #[cfg(feature = "navigation")]
     Steps {
         steps: Vec<Step>,
         current: usize,
         direction: StepsDirection,
     },
+    // 导航 capability 关闭时同步收缩导航项快照变体。
+    #[cfg(feature = "navigation")]
     NavItem {
         label: String,
         key: String,

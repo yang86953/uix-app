@@ -1,14 +1,20 @@
 use crate::ui::widgets::*;
 
 use super::super::accessibility::{
-    anchor_accessibility, avatar_accessibility, back_top_accessibility, badge_accessibility,
-    breadcrumb_accessibility, calendar_accessibility, card_accessibility, carousel_accessibility,
-    date_range_accessibility, dropdown_accessibility, first_non_empty, image_accessibility,
-    input_number_accessibility, menu_accessibility, pagination_accessibility,
-    popconfirm_accessibility, progress_accessibility, result_accessibility, select_accessibility,
-    selectable_list_accessibility, splitter_accessibility, steps_accessibility, tabs_accessibility,
-    tag_accessibility, theme_toggle_accessibility, timeline_accessibility, transfer_accessibility,
-    tree_accessibility, typography_accessibility, upload_accessibility,
+    avatar_accessibility, back_top_accessibility, badge_accessibility, calendar_accessibility,
+    card_accessibility, carousel_accessibility, date_range_accessibility, first_non_empty,
+    image_accessibility, input_number_accessibility, popconfirm_accessibility,
+    progress_accessibility, result_accessibility, select_accessibility,
+    selectable_list_accessibility, splitter_accessibility, tag_accessibility,
+    theme_toggle_accessibility, timeline_accessibility, transfer_accessibility, tree_accessibility,
+    typography_accessibility, upload_accessibility,
+};
+// 导航 capability 启用时才引入专属无障碍转换函数。
+#[cfg(feature = "navigation")]
+// 这些函数只处理同步门控的八种导航快照变体。
+use super::super::accessibility::{
+    anchor_accessibility, breadcrumb_accessibility, dropdown_accessibility, menu_accessibility,
+    pagination_accessibility, steps_accessibility, tabs_accessibility,
 };
 // 图表 capability 启用时才引入专属无障碍摘要辅助函数。
 #[cfg(feature = "charts")]
@@ -389,21 +395,31 @@ impl SnapshotFields {
                     ..AccessibilityState::default()
                 })
             }
+            // 导航 capability 启用时才匹配同步存在的分页快照变体。
+            #[cfg(feature = "navigation")]
             Self::Pagination {
                 current,
                 total,
                 page_size,
                 ..
             } => pagination_accessibility(*current, *total, *page_size),
+            // 导航 capability 启用时才匹配同步存在的锚点快照变体。
+            #[cfg(feature = "navigation")]
             Self::Anchor {
                 items,
                 active_index,
                 ..
             } => anchor_accessibility(items, *active_index),
+            // 导航 capability 启用时才匹配同步存在的面包屑快照变体。
+            #[cfg(feature = "navigation")]
             Self::Breadcrumb { items, .. } => breadcrumb_accessibility(items),
+            // 导航 capability 启用时才匹配同步存在的菜单快照变体。
+            #[cfg(feature = "navigation")]
             Self::Menu {
                 items, active_key, ..
             } => menu_accessibility(items, active_key),
+            // 导航 capability 启用时才匹配同步存在的下拉菜单快照变体。
+            #[cfg(feature = "navigation")]
             Self::Dropdown {
                 label,
                 items,
@@ -411,10 +427,16 @@ impl SnapshotFields {
                 selected_index,
                 ..
             } => dropdown_accessibility(label, items, *open, *selected_index),
+            // 导航 capability 启用时才匹配同步存在的标签页快照变体。
+            #[cfg(feature = "navigation")]
             Self::Tabs {
                 tabs, active_index, ..
             } => tabs_accessibility(tabs, *active_index),
+            // 导航 capability 启用时才匹配同步存在的步骤条快照变体。
+            #[cfg(feature = "navigation")]
             Self::Steps { steps, current, .. } => steps_accessibility(steps, *current),
+            // 导航 capability 启用时才匹配同步存在的导航项快照变体。
+            #[cfg(feature = "navigation")]
             Self::NavItem { label, active, .. } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Navigation, label.clone())
                     .with_state(AccessibilityState {

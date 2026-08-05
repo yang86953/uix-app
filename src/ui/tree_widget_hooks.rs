@@ -11,7 +11,10 @@
 
 use crate::ui::component::widget::{WidgetCore, WidgetId, WidgetTree};
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
-use crate::ui::widgets::{Container, Grid, Modal, NavItem, ScrollView, Space};
+use crate::ui::widgets::{Container, Grid, Modal, ScrollView, Space};
+// 导航 capability 启用时才引入兄弟项联动所需类型。
+#[cfg(feature = "navigation")]
+use crate::ui::widgets::NavItem;
 
 /// 最近 viewport 祖先允许内容溢出的轴。
 ///
@@ -130,13 +133,22 @@ pub(crate) fn is_drag_region(tree: &WidgetTree, id: WidgetId) -> bool {
 }
 /// NavItem 共享 active 索引时，刷新整组导航项（取消/选中态联动）。
 pub(crate) fn invalidate_nav_siblings(tree: &mut WidgetTree, clicked: WidgetId) {
-    let is_nav = tree
-        .get(clicked)
-        .is_some_and(|n| n.component().as_any().type_id() == std::any::TypeId::of::<NavItem>());
-    if !is_nav {
-        return;
+    // 导航能力启用时保留 NavItem 共享状态的整组重绘语义。
+    #[cfg(feature = "navigation")]
+    {
+        let is_nav = tree.get(clicked).is_some_and(|node| {
+            node.component().as_any().type_id() == std::any::TypeId::of::<NavItem>()
+        });
+        if !is_nav {
+            return;
+        }
+        if let Some(parent) = tree.get(clicked).and_then(|node| node.parent()) {
+            tree.invalidate_paint_subtree(parent);
+        }
     }
-    if let Some(parent) = tree.get(clicked).and_then(|n| n.parent()) {
-        tree.invalidate_paint_subtree(parent);
+    // 关闭导航能力时消费参数并退化为空操作，保持通用事件路径稳定。
+    #[cfg(not(feature = "navigation"))]
+    {
+        let _ = (tree, clicked);
     }
 }

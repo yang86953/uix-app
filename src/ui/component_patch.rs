@@ -2,13 +2,12 @@ use crate::ui::form::{Form, FormItem};
 use crate::ui::virtualization::virtual_scroll::VirtualScroll;
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
 use crate::ui::widgets::{
-    Affix, Alert, Anchor, AutoComplete, Avatar, BackTop, Badge, Breadcrumb, Button, Calendar, Card,
-    Carousel, Cascader, Checkbox, Collapse, ColorPicker, Container, Content, DatePicker,
-    DateRangePicker, Descriptions, Divider, Drawer, Dropdown, Empty, FloatButton, FloatButtonGroup,
-    Footer, Grid, Header, Icon, Image, ImageGroup, Input, InputNumber, Label, Layout, List,
-    Mentions, Menu, Message, Modal, NavItem, Notification, Pagination, Popconfirm, Popover,
-    ProgressBar, Radio, RangeSlider, Rate, ResultView, ScrollView, Segmented, Select,
-    SelectableList, Sider, Skeleton, Slider, Space, Spin, Splitter, Steps, Switch, Tabs, Tag,
+    Affix, Alert, AutoComplete, Avatar, BackTop, Badge, Button, Calendar, Card, Carousel, Cascader,
+    Checkbox, Collapse, ColorPicker, Container, Content, DatePicker, DateRangePicker, Descriptions,
+    Divider, Drawer, Empty, FloatButton, FloatButtonGroup, Footer, Grid, Header, Icon, Image,
+    ImageGroup, Input, InputNumber, Label, Layout, List, Mentions, Message, Modal, Notification,
+    Popconfirm, Popover, ProgressBar, Radio, RangeSlider, Rate, ResultView, ScrollView, Segmented,
+    Select, SelectableList, Sider, Skeleton, Slider, Space, Spin, Splitter, Switch, Tag,
     ThemeToggle, TimePicker, Timeline, Tooltip, Transfer, Tree, TreeSelect, Typography, Upload,
     Watermark,
 };
@@ -20,6 +19,10 @@ use crate::ui::widgets::{BarChart, ChartPlaceholder, LineChart, PieChart};
 #[cfg(feature = "table")]
 // 该导入仅供内建组件 patch 分派使用。
 use crate::ui::widgets::Table;
+// 导航 capability 启用时才引入对应 patch 目标类型。
+#[cfg(feature = "navigation")]
+// 该导入覆盖全部拥有运行时组件状态的导航目标。
+use crate::ui::widgets::{Anchor, Breadcrumb, Dropdown, Menu, NavItem, Pagination, Steps, Tabs};
 // 二维码 capability 启用时才引入对应组件类型。
 #[cfg(feature = "qrcode")]
 // 该导入仅供内建组件 patch 分派使用。
@@ -211,13 +214,29 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(Popconfirm);
     patch_as!(Modal);
     patch_as!(Drawer);
+    // 导航 capability 启用时才生成下拉菜单类型化 patch 分支。
+    #[cfg(feature = "navigation")]
     patch_as!(Dropdown);
+    // 导航 capability 启用时才生成菜单类型化 patch 分支。
+    #[cfg(feature = "navigation")]
     patch_as!(Menu);
+    // 导航 capability 启用时才生成标签页类型化 patch 分支。
+    #[cfg(feature = "navigation")]
     patch_as!(Tabs);
+    // 导航 capability 启用时才生成分页类型化 patch 分支。
+    #[cfg(feature = "navigation")]
     patch_as!(Pagination);
+    // 导航 capability 启用时才生成面包屑类型化 patch 分支。
+    #[cfg(feature = "navigation")]
     patch_as!(Breadcrumb);
+    // 导航 capability 启用时才生成导航项类型化 patch 分支。
+    #[cfg(feature = "navigation")]
     patch_as!(NavItem);
+    // 导航 capability 启用时才生成锚点类型化 patch 分支。
+    #[cfg(feature = "navigation")]
     patch_as!(Anchor);
+    // 导航 capability 启用时才生成步骤条类型化 patch 分支。
+    #[cfg(feature = "navigation")]
     patch_as!(Steps);
     patch_as!(TreeSelect);
     patch_as!(Cascader);
