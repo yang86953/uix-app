@@ -5,7 +5,7 @@
 - `minimal`：关闭默认 feature 的最小入口。
 - `minimal-linux`：复用 `minimal` 的 feature 集，显式绑定 `x86_64-unknown-linux-gnu`，要求 Linux 平台依赖存在且 Windows 依赖缺席，并执行真实 `cargo check`。
 - `d3d11-default`：使用当前默认 D3D11 feature 的入口。
-- `all-capabilities`：关闭默认 feature，显式启用全部使用方 capability 与五种公开 backend 选择面，调用各能力代表公开 API，并明确排除内部 `test-harness`。
+- `all-capabilities`：关闭默认 feature，显式启用全部使用方 capability 与五种公开 backend 选择面，调用具备公开使用面的各能力代表 API，并明确排除内部 `test-harness`。
 - `d3d11`：关闭默认 feature，仅启用 `d3d11` 并显式选择公开 `Direct3D11` 变体。
 - `opengles`：关闭默认 feature，仅启用 `opengles` 并显式选择公开 `OpenGlEs` 变体。
 - `d3d12-selection`：复用 `backend-selection`，只转发 `d3d12` 并选择公开 `Direct3D12` 变体；只证明选择面与清单 feature，不作为生产 backend 证据。
