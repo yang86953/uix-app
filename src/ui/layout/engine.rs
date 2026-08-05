@@ -16,7 +16,7 @@ use crate::draw::geometry::spatial::AABB3D;
 
 /// 统一盒模型 — 所有容器共享的 margin/border/padding 计算。
 ///
-/// 与 Web CSS 盒模型一致：frame → 扣除 margin → 扣除 border → 扣除 padding → 内容区域。
+/// 父布局先消费 margin；本层从 border-box frame 扣除 border 与 padding 得到内容区域。
 #[derive(Debug, Clone, Copy)]
 pub struct BoxModel {
     pub margin: EdgeInsets,
@@ -36,19 +36,33 @@ impl BoxModel {
     /// `frame` 是父级 flex/grid 分配的 border-box：**不含 margin**
     ///（margin 已由父级在放置时计入间距）。此处再扣 margin 会双重缩进。
     pub fn content_rect(&self, frame: Rect) -> Rect {
-        let bh = self.border_width.horizontal();
-        let bv = self.border_width.vertical();
-        Rect::new(
-            frame.x + self.border_width.left + self.padding.left,
-            frame.y + self.border_width.top + self.padding.top,
-            (frame.w - bh - self.padding.horizontal()).max(0.0),
-            (frame.h - bv - self.padding.vertical()).max(0.0),
-        )
+        // 先把测量哨兵和非法 frame 收敛为可写入布局树的实际几何。
+        let frame = normalize_layout_rect(frame);
+        // border 只能是有限非负厚度。
+        let border = normalize_non_negative_insets(self.border_width);
+        // padding 只能是有限非负厚度。
+        let padding = normalize_non_negative_insets(self.padding);
+        // 横向边框总量也要防止有限大数相加溢出。
+        let border_horizontal = finite_non_negative(border.horizontal());
+        // 纵向边框总量也要防止有限大数相加溢出。
+        let border_vertical = finite_non_negative(border.vertical());
+        // 横向内边距总量也要防止有限大数相加溢出。
+        let padding_horizontal = finite_non_negative(padding.horizontal());
+        // 纵向内边距总量也要防止有限大数相加溢出。
+        let padding_vertical = finite_non_negative(padding.vertical());
+        // 计算后再次归一，阻止坐标加法或尺寸减法溢出到最终 frame。
+        normalize_layout_rect(Rect::new(
+            frame.x + border.left + padding.left,
+            frame.y + border.top + padding.top,
+            (frame.w - border_horizontal - padding_horizontal).max(0.0),
+            (frame.h - border_vertical - padding_vertical).max(0.0),
+        ))
     }
 
     /// 视觉区域 = border-box（与 frame 同；margin 在 frame 外由父级留白）。
     pub fn visual_rect(&self, frame: Rect) -> Rect {
-        frame
+        // 视觉入口同样不得重新物化无界哨兵或非有限 frame。
+        normalize_layout_rect(frame)
     }
 }
 
@@ -156,6 +170,78 @@ pub trait LayoutEngine {
 pub struct LayoutOutput {
     pub positions: Vec<Rect>,
     pub total_size: Size,
+}
+
+impl LayoutOutput {
+    // 在共享引擎边界统一收敛最终 frame 与总尺寸。
+    fn normalized(mut self) -> Self {
+        // 逐项清除算法累加产生的非有限值或测量哨兵。
+        for frame in &mut self.positions {
+            // 保留有效几何，仅替换不能写入布局树的分量。
+            *frame = normalize_layout_rect(*frame);
+        }
+        // 总尺寸也必须是有限非负的实际值。
+        self.total_size = normalize_layout_size(self.total_size);
+        // 返回保持子项数量和顺序不变的输出。
+        self
+    }
+}
+
+// 把坐标值限制为有限且不是 f32::MAX 测量哨兵的实际值。
+fn finite_or_zero(value: f32) -> f32 {
+    // f32::MAX 及其负值不能进入实际 frame，非有限值同样回退为零。
+    if value.is_finite() && value.abs() < f32::MAX {
+        // 有效坐标保留原值，允许布局溢出产生有限负位置。
+        value
+    } else {
+        // 非法坐标采用稳定零值。
+        0.0
+    }
+}
+
+// 把尺寸值限制为有限、非负且不是无界哨兵的实际值。
+fn finite_non_negative(value: f32) -> f32 {
+    // 先清除非有限值和测量哨兵，再钳制负尺寸。
+    finite_or_zero(value).max(0.0)
+}
+
+// 归一最终或待求解的矩形。
+fn normalize_layout_rect(rect: Rect) -> Rect {
+    // Rect::new 继续承担 NaN 安全构造，传入值已满足布局层更强契约。
+    Rect::new(
+        finite_or_zero(rect.x),
+        finite_or_zero(rect.y),
+        finite_non_negative(rect.w),
+        finite_non_negative(rect.h),
+    )
+}
+
+// 归一最终或待求解的尺寸。
+fn normalize_layout_size(size: Size) -> Size {
+    // 两个轴都不得把测量阶段的无界哨兵写入实际输出。
+    Size::new(finite_non_negative(size.w), finite_non_negative(size.h))
+}
+
+// 归一允许负值语义的外边距。
+fn normalize_margin(insets: EdgeInsets) -> EdgeInsets {
+    // 负外边距保持既有语义，只清除非有限值和无界哨兵。
+    EdgeInsets::new(
+        finite_or_zero(insets.left),
+        finite_or_zero(insets.top),
+        finite_or_zero(insets.right),
+        finite_or_zero(insets.bottom),
+    )
+}
+
+// 归一不允许负值语义的 border/padding。
+fn normalize_non_negative_insets(insets: EdgeInsets) -> EdgeInsets {
+    // 各边独立钳制，避免一条非法边污染另一轴的内容尺寸。
+    EdgeInsets::new(
+        finite_non_negative(insets.left),
+        finite_non_negative(insets.top),
+        finite_non_negative(insets.right),
+        finite_non_negative(insets.bottom),
+    )
 }
 
 /// 3D 感知的布局输出：子节点位置（含 z 深度） + 内容总尺寸。
@@ -274,27 +360,36 @@ impl Default for FlexLayout {
 
 impl LayoutEngine for FlexLayout {
     fn layout(&self, content_rect: Rect, children: &[LayoutChild]) -> LayoutOutput {
+        // 布局求解前先把测量阶段的无界矩形转为实际有限输入。
+        let content_rect = normalize_layout_rect(content_rect);
         if children.is_empty() {
+            // 空子集也必须经过统一输出收敛，不能直传父级哨兵。
             return LayoutOutput {
                 positions: Vec::new(),
                 total_size: Size::new(content_rect.w, content_rect.h),
-            };
+            }
+            .normalized();
         }
 
         // 溢出模式：使用简单流式堆叠
         if self.overflow_content {
-            return overflow_layout(self, content_rect, children);
+            // 流式路径与标准路径共享同一最终几何契约。
+            return overflow_layout(self, content_rect, children).normalized();
         }
 
         // 标准 FlexBox 模式
         let flex_children: Vec<FlexChild> = children
             .iter()
             .map(|c| FlexChild {
-                flex_grow: c.flex_grow,
-                flex_shrink: c.flex_shrink,
+                // 弹性因子只接受有限非负实际值。
+                flex_grow: finite_non_negative(c.flex_grow),
+                // 压缩因子只接受有限非负实际值。
+                flex_shrink: finite_non_negative(c.flex_shrink),
                 align_self: c.align_self,
-                measured_size: c.measured_size,
-                margin: c.margin,
+                // 子项测量哨兵不能进入最终求解算术。
+                measured_size: normalize_layout_size(c.measured_size),
+                // 外边距保留有限负值语义并清除非法分量。
+                margin: normalize_margin(c.margin),
                 ..FlexChild::default()
             })
             .collect();
@@ -302,7 +397,8 @@ impl LayoutEngine for FlexLayout {
         let input = FlexInput {
             direction: self.direction,
             wrap: self.wrap,
-            gap: self.gap,
+            // gap 保留既有有限负值语义，但清除非有限值和哨兵。
+            gap: finite_or_zero(self.gap),
             padding: crate::core::EdgeInsets::zero(),
             container: content_rect,
             children: &flex_children,
@@ -313,10 +409,12 @@ impl LayoutEngine for FlexLayout {
 
         let output = compute_flex_layout(&input);
 
+        // 标准求解结果在公开边界执行最终有限化。
         LayoutOutput {
             positions: output.child_rects,
             total_size: output.total_size,
         }
+        .normalized()
     }
 }
 
@@ -444,22 +542,6 @@ fn overflow_layout(
     }
 }
 
-fn finite_non_negative(value: f32) -> f32 {
-    if value.is_finite() {
-        value.max(0.0)
-    } else {
-        0.0
-    }
-}
-
-fn finite_or_zero(value: f32) -> f32 {
-    if value.is_finite() {
-        value
-    } else {
-        0.0
-    }
-}
-
 // ── Grid 布局引擎 ─────────────────────────────────────────────────
 
 /// Grid 布局引擎组件。
@@ -517,11 +599,15 @@ impl GridLayout {
         rows: &[GridTrack],
         children: &[LayoutChild],
     ) -> LayoutOutput {
+        // Grid 与 Flex 共享同一实际 frame 输入边界。
+        let content_rect = normalize_layout_rect(content_rect);
         if columns.is_empty() || children.is_empty() {
+            // 空 track 或空子集不能把父级无界哨兵直传到输出。
             return LayoutOutput {
                 positions: Vec::new(),
                 total_size: Size::new(content_rect.w, content_rect.h),
-            };
+            }
+            .normalized();
         }
 
         let grid_children: Vec<GridChild> = children
@@ -530,8 +616,10 @@ impl GridLayout {
                 cell: c.grid_cell,
                 col_span: c.grid_column_span,
                 row_span: c.grid_row_span,
-                measured_size: c.measured_size,
-                margin: c.margin,
+                // 子项测量哨兵不能进入 cell 尺寸与对齐算术。
+                measured_size: normalize_layout_size(c.measured_size),
+                // 外边距保留有限负值语义并清除非法分量。
+                margin: normalize_margin(c.margin),
                 align: None,
                 justify: None,
             })
@@ -539,20 +627,26 @@ impl GridLayout {
 
         let output = compute_grid_layout(&GridInput {
             container: content_rect,
+            // 纯求解器逐值归一 track，保持普通布局继续借用列定义。
             columns,
+            // 行定义同样保持借用，避免每轮新增复制分配。
             rows,
-            col_gap: self.col_gap,
-            row_gap: self.row_gap,
+            // Grid gap 语义为非负距离。
+            col_gap: finite_non_negative(self.col_gap),
+            // Grid gap 语义为非负距离。
+            row_gap: finite_non_negative(self.row_gap),
             padding: crate::core::EdgeInsets::zero(),
             children: &grid_children,
             align_items: self.align_items,
             justify_items: self.justify_items,
         });
 
+        // Grid 求解结果在公开边界执行最终有限化。
         LayoutOutput {
             positions: output.child_rects,
             total_size: output.total_size,
         }
+        .normalized()
     }
 }
 

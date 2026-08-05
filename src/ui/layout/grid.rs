@@ -261,7 +261,8 @@ pub fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
 }
 
 fn finite_non_negative(value: f32) -> f32 {
-    if value.is_finite() {
+    // 非有限值与 f32::MAX 测量哨兵都不能进入实际布局算术。
+    if value.is_finite() && value.abs() < f32::MAX {
         value.max(0.0)
     } else {
         0.0
@@ -269,7 +270,8 @@ fn finite_non_negative(value: f32) -> f32 {
 }
 
 fn finite_or_zero(value: f32) -> f32 {
-    if value.is_finite() {
+    // 有限负 margin 保持既有语义，无界哨兵与非有限值回退为零。
+    if value.is_finite() && value.abs() < f32::MAX {
         value
     } else {
         0.0
