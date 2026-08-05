@@ -623,3 +623,53 @@ fn overflow_flex_honors_justify_content() {
     // 次项应贴住主轴末端。
     assert_eq!(distributed.positions[1], Rect::new(90.0, 0.0, 10.0, 8.0));
 }
+
+// 验证固有主轴的反向溢出布局按自然内容长度镜像。
+#[test]
+// 零高 ColumnReverse bootstrap 不得把全部子项镜像到负坐标。
+fn overflow_flex_intrinsic_reverse_uses_natural_main_extent() {
+    // 构造两个十乘十的自然尺寸子项。
+    let children = vec![
+        LayoutChild::new(ComponentId::new(38), Size::new(10.0, 10.0)),
+        LayoutChild::new(ComponentId::new(39), Size::new(10.0, 10.0)),
+    ];
+    // 构造五像素间距的反向垂直布局。
+    let mut layout = FlexLayout::column()
+        .with_direction(FlexDirection::ColumnReverse)
+        .with_gap(5.0)
+        .with_align(AlignItems::Start);
+    // 开启自然尺寸溢出路径。
+    layout.overflow_content = true;
+    // 声明主轴无显式尺寸，应由二十五像素自然内容撑开。
+    layout.intrinsic_main = true;
+    // 使用带非零原点的零高 frame 覆盖 bootstrap 镜像。
+    let output = layout.layout(Rect::new(4.0, 6.0, 20.0, 0.0), &children);
+    // 首项应位于自然内容主轴末端。
+    assert_eq!(output.positions[0], Rect::new(4.0, 21.0, 10.0, 10.0));
+    // 次项应位于自然内容主轴起点。
+    assert_eq!(output.positions[1], Rect::new(4.0, 6.0, 10.0, 10.0));
+    // 固有总高必须包含两个子项与中间 gap。
+    assert_eq!(output.total_size, Size::new(20.0, 25.0));
+}
+
+// 验证溢出 Flex 的零交叉轴 bootstrap 保留自然外尺寸。
+#[test]
+// 默认 Stretch 不得把未约束交叉轴压成零。
+fn overflow_flex_bootstrap_cross_axis_uses_natural_outer_size() {
+    // 构造二十乘十且四侧 margin 总计十像素的子项。
+    let mut child = LayoutChild::new(ComponentId::new(40), Size::new(20.0, 10.0));
+    // 左二、上三、右八、下七构成三十乘二十的自然外尺寸。
+    child.margin = EdgeInsets::new(2.0, 3.0, 8.0, 7.0);
+    // 构造默认 Stretch 的垂直自然尺寸布局。
+    let mut layout = FlexLayout::column();
+    // 开启自然尺寸溢出路径。
+    layout.overflow_content = true;
+    // 声明垂直主轴无显式尺寸。
+    layout.intrinsic_main = true;
+    // 使用双轴为零且带非零原点的 bootstrap frame。
+    let output = layout.layout(Rect::new(4.0, 6.0, 0.0, 0.0), &[child]);
+    // 子项应保留自然尺寸并从左上 margin 后开始。
+    assert_eq!(output.positions[0], Rect::new(6.0, 9.0, 20.0, 10.0));
+    // 总尺寸必须包含交叉轴与主轴两侧 margin。
+    assert_eq!(output.total_size, Size::new(30.0, 20.0));
+}
