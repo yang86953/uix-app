@@ -418,7 +418,7 @@ impl LayoutEngine for FlexLayout {
     }
 }
 
-/// 溢出模式：流式堆叠（不压缩，不分配剩余空间）。
+/// 溢出模式：保留自然主轴尺寸，同时遵守分布、对齐与反向语义。
 fn overflow_layout(
     engine: &FlexLayout,
     content_rect: Rect,
@@ -468,11 +468,13 @@ fn overflow_layout(
         Size::new(container_cross, total_main)
     };
 
-    let mut cursor = if is_reverse {
-        container_main - total_main
-    } else {
-        0.0
-    };
+    // 溢出时不增长或压缩子项，只把正剩余空间交给主轴分布规则。
+    let remaining_main = finite_non_negative(container_main - total_main);
+    // 与标准 Flex 共享 gap 和起始偏移计算，避免两条路径语义漂移。
+    let (effective_gap, start_offset) =
+        super::flex::compute_justify(remaining_main, count, gap, engine.justify);
+    // 反向布局也先按逻辑顺序正向放置，最后统一镜像。
+    let mut cursor = start_offset;
     let mut positions = Vec::with_capacity(count);
 
     for child in children {
@@ -493,16 +495,18 @@ fn overflow_layout(
         };
 
         let cross_align = child.align_self.unwrap_or(engine.align);
+        // 交叉轴先扣除两侧 margin，再在剩余区域内执行对齐。
+        let available_cross = (container_cross - margin_cross).max(0.0);
         let child_cross = if cross_align == AlignItems::Stretch {
-            (container_cross - margin_cross).max(0.0)
+            available_cross
         } else {
             cross_size
         };
 
         let cross_offset = match cross_align {
             AlignItems::Start => 0.0,
-            AlignItems::Center => (container_cross - child_cross) / 2.0,
-            AlignItems::End => container_cross - child_cross,
+            AlignItems::Center => (available_cross - child_cross) / 2.0,
+            AlignItems::End => available_cross - child_cross,
             AlignItems::Stretch => 0.0,
         };
 
@@ -529,10 +533,20 @@ fn overflow_layout(
         positions.push(Rect::new(x, y, w, h));
 
         let occupied_main = main + finite_or_zero(child.margin_main(engine.direction));
-        if is_reverse {
-            cursor -= occupied_main + gap;
-        } else {
-            cursor += occupied_main + gap;
+        cursor += occupied_main + effective_gap;
+    }
+
+    // 与标准 Flex 一致，反向方向沿容器主轴镜像已经完成的逻辑顺序。
+    if is_reverse {
+        // 逐项镜像可同时保留 justify-content、gap 与方向侧 margin 的语义。
+        for rect in &mut positions {
+            if is_row {
+                // 水平反向布局沿内容区右边界镜像。
+                rect.x = content_rect.x + container_main - (rect.x - content_rect.x) - rect.w;
+            } else {
+                // 垂直反向布局沿内容区下边界镜像。
+                rect.y = content_rect.y + container_main - (rect.y - content_rect.y) - rect.h;
+            }
         }
     }
 
@@ -620,7 +634,8 @@ impl GridLayout {
                 measured_size: normalize_layout_size(c.measured_size),
                 // 外边距保留有限负值语义并清除非法分量。
                 margin: normalize_margin(c.margin),
-                align: None,
+                // Grid 交叉轴继承公开 LayoutChild 的逐项对齐覆盖。
+                align: c.align_self,
                 justify: None,
             })
             .collect();

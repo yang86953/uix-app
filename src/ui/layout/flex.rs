@@ -343,7 +343,13 @@ fn distribute_shrink(base: &mut [f32], overflow: f32, children: &[FlexChild], is
     }
 }
 
-fn compute_justify(remaining: f32, count: usize, gap: f32, justify: JustifyContent) -> (f32, f32) {
+/// 计算主轴剩余空间对应的有效间距与起始偏移，供两条 Flex 路径共享。
+pub(super) fn compute_justify(
+    remaining: f32,
+    count: usize,
+    gap: f32,
+    justify: JustifyContent,
+) -> (f32, f32) {
     if remaining > 0.0 {
         let new_gap = match justify {
             JustifyContent::SpaceBetween => {
