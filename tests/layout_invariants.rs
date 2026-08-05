@@ -225,3 +225,92 @@ fn valid_layout_geometry_remains_stable() {
     // Grid 总宽度继续等于两列宽度与间距总和。
     assert_eq!(grid.total_size, Size::new(75.0, 20.0));
 }
+
+// 验证带 wrap 的固有主轴在零尺寸 bootstrap 阶段仍由子项自然尺寸撑开。
+#[test]
+// 覆盖 Space 等无显式主轴尺寸容器的首次布局边界。
+fn wrapped_intrinsic_flex_preserves_natural_main_extent() {
+    // 构造两个具有不同自然宽度的水平子项。
+    let children = [
+        // 第一个子项贡献三十像素自然宽度。
+        LayoutChild::new(ComponentId::new(10), Size::new(30.0, 10.0)),
+        // 第二个子项贡献四十像素自然宽度。
+        LayoutChild::new(ComponentId::new(11), Size::new(40.0, 12.0)),
+    ];
+    // 从水平 Flex 默认配置开始构造可换行布局。
+    let mut layout = FlexLayout::row()
+        .with_gap(5.0)
+        .with_align(AlignItems::Start);
+    // 开启换行路径以覆盖 wrapped 求解器。
+    layout.wrap = true;
+    // 声明主轴没有显式尺寸，应由子项自然尺寸撑开。
+    layout.intrinsic_main = true;
+    // 使用零宽 bootstrap frame 模拟父树首次布局。
+    let output = layout.layout(Rect::new(0.0, 0.0, 0.0, 0.0), &children);
+    // 首项不得因零宽 bootstrap 被压缩。
+    assert_eq!(output.positions[0], Rect::new(0.0, 0.0, 30.0, 10.0));
+    // 次项应在首项与 gap 之后继续自然排列。
+    assert_eq!(output.positions[1], Rect::new(35.0, 0.0, 40.0, 12.0));
+    // 固有总尺寸应由两项宽度、gap 与最大交叉尺寸共同决定。
+    assert_eq!(output.total_size, Size::new(75.0, 12.0));
+}
+
+// 验证 Flex 交叉轴居中和末端对齐先扣除两侧 margin。
+#[test]
+// 覆盖非对称交叉轴 margin 的对齐公式。
+fn flex_cross_alignment_respects_asymmetric_margins() {
+    // 构造十像素高并带非对称上下外边距的子项。
+    let mut child = LayoutChild::new(ComponentId::new(12), Size::new(10.0, 10.0));
+    // 上边距为二、下边距为八，交叉轴可用区因此为三十像素。
+    child.margin = EdgeInsets::new(0.0, 2.0, 0.0, 8.0);
+    // 在四十像素高容器中执行居中对齐。
+    let centered = FlexLayout::row()
+        .with_align(AlignItems::Center)
+        .layout(Rect::new(0.0, 0.0, 100.0, 40.0), &[child.clone()]);
+    // 子项应在扣除 margin 后的三十像素可用区内居中。
+    assert_eq!(centered.positions[0], Rect::new(0.0, 12.0, 10.0, 10.0));
+    // 在相同容器中执行交叉轴末端对齐。
+    let ended = FlexLayout::row()
+        .with_align(AlignItems::End)
+        .layout(Rect::new(0.0, 0.0, 100.0, 40.0), &[child]);
+    // 子项底边应停在下边距之前。
+    assert_eq!(ended.positions[0], Rect::new(0.0, 22.0, 10.0, 10.0));
+}
+
+// 验证 wrapped 单行的固有交叉尺寸包含两侧 margin。
+#[test]
+// 覆盖单行与多行共用行尺寸账本的边界。
+fn wrapped_single_line_total_cross_includes_margins() {
+    // 构造带二像素上边距和八像素下边距的子项。
+    let mut child = LayoutChild::new(ComponentId::new(13), Size::new(20.0, 10.0));
+    // 两侧 margin 应使单行总高从十增加到二十像素。
+    child.margin = EdgeInsets::new(0.0, 2.0, 0.0, 8.0);
+    // 从水平 Flex 默认配置开始构造 wrapped 路径。
+    let mut layout = FlexLayout::row().with_align(AlignItems::Start);
+    // 即使只有一项，也必须走 wrapped 行账本。
+    layout.wrap = true;
+    // 在已知主轴宽度和零交叉轴高度下执行布局。
+    let output = layout.layout(Rect::new(0.0, 0.0, 100.0, 0.0), &[child]);
+    // 子项从上边距之后开始绘制。
+    assert_eq!(output.positions[0], Rect::new(0.0, 2.0, 20.0, 10.0));
+    // 总高必须包含上下 margin，而不是只返回子项自身高度。
+    assert_eq!(output.total_size, Size::new(100.0, 20.0));
+}
+
+// 验证普通单行 Flex 的固有交叉尺寸同样包含两侧 margin。
+#[test]
+// 覆盖 non-wrap 与 wrapped 共用交叉轴占位语义的边界。
+fn single_line_total_cross_includes_margins() {
+    // 构造带二像素上边距和八像素下边距的子项。
+    let mut child = LayoutChild::new(ComponentId::new(14), Size::new(20.0, 10.0));
+    // 两侧 margin 应使单行自然总高达到二十像素。
+    child.margin = EdgeInsets::new(0.0, 2.0, 0.0, 8.0);
+    // 在已知主轴宽度和零交叉轴高度下执行普通单行布局。
+    let output = FlexLayout::row()
+        .with_align(AlignItems::Start)
+        .layout(Rect::new(0.0, 0.0, 100.0, 0.0), &[child]);
+    // 子项从上边距之后开始绘制。
+    assert_eq!(output.positions[0], Rect::new(0.0, 2.0, 20.0, 10.0));
+    // 总高必须包含上下 margin，而不是只返回子项自身高度。
+    assert_eq!(output.total_size, Size::new(100.0, 20.0));
+}
