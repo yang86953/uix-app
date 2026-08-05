@@ -14,6 +14,8 @@ use crate::draw::painting::PaintPass;
 use crate::ui::children::WidgetChildren;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::tree_measure::child_from_tree_with_constraints;
+// 复用共享布局边界的有限化与 margin 归一规则。
+use crate::ui::layout::engine::{finite_non_negative, finite_or_zero, normalize_margin};
 use crate::ui::layout::LayoutChild;
 use crate::ui::reactive::state::State;
 use crate::ui::{
@@ -302,89 +304,158 @@ component! {
     layout_children => (&self, frame: Rect, children: &[LayoutChild], tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
+        // 在组件布局边界清除无界哨兵与非有限 frame 分量。
+        let frame = Rect::new(
+            finite_or_zero(frame.x),
+            finite_or_zero(frame.y),
+            finite_non_negative(frame.w),
+            finite_non_negative(frame.h),
+        );
+        // 预分配最终子项位置列表。
         let mut result = Vec::new();
+        // 空视口直接记录有限的外框尺寸。
         if children.is_empty() {
             self.content_bounds.set(Some(Size::new(frame.w, frame.h)));
             return result;
         }
 
+        // 先根据自然外尺寸与上一轮内容范围判断滚动条。
         let need_v = self.needs_v_scrollbar(frame, children);
+        // 横向判断与纵向判断共同决定两个方向的沟槽。
         let need_h = self.needs_h_scrollbar(frame, children);
+        // 得到扣除当前滚动条沟槽后的真实内容视口。
         let content = self.content_frame(frame, need_v, need_h);
 
+        // 从内容原点开始追踪最右侧可见占用。
         let mut max_right = content.x;
+        // 从内容原点开始追踪最下侧可见占用。
         let mut max_bottom = content.y;
+        // 横向单行流从零推进。
         let mut cursor_x = 0.0f32;
+        // 纵向列流从零推进。
         let mut cursor_y = 0.0f32;
+        // 缓存横向滚动能力，避免循环内重复分支查询。
         let can_scroll_x = self.direction.can_scroll_x();
+        // 缓存纵向滚动能力，避免循环内重复分支查询。
         let can_scroll_y = self.direction.can_scroll_y();
+        // 仅横向模式采用单行推进，双向模式继续保持既有纵列语义。
         let horizontal_flow = can_scroll_x && !can_scroll_y;
+        // 按声明顺序放置全部直接子项。
         for child in children {
+            // 保留子项标识供最终布局树回写。
             let cid = child.id;
-            let pref = child.measured_size;
+            // 清除非有限 margin，同时保留负 margin 的重叠语义。
+            let margin = normalize_margin(child.margin);
+            // 自然宽度必须是可写入实际 frame 的有限非负值。
+            let natural_w = finite_non_negative(child.measured_size.w);
+            // 自然高度必须是可写入实际 frame 的有限非负值。
+            let natural_h = finite_non_negative(child.measured_size.h);
+            // 填充宽度由真实内容宽减去左右 margin 得到。
+            let available_w =
+                finite_non_negative(content.w - margin.left - margin.right);
+            // 填充高度由真实内容高减去上下 margin 得到。
+            let available_h =
+                finite_non_negative(content.h - margin.top - margin.bottom);
             // 非滚动轴填满 content（已扣除 gutter）；滚动轴保留自然尺寸。
             // Both：自然宽与视口取 max —— 窄于视口时拉满，宽于视口时允许横向滚动。
             let w = if can_scroll_x {
-                if pref.w <= 0.0 {
-                    content.w
+                if natural_w <= 0.0 {
+                    available_w
                 } else if can_scroll_y && need_h {
-                    pref.w.max(content.w)
+                    natural_w.max(available_w)
                 } else if can_scroll_y {
                     // Both + only vertical overflow: the vertical gutter reduces
                     // the usable cross axis. Keeping the pre-gutter measured width
                     // here would place content underneath the scrollbar.
-                    content.w
+                    available_w
                 } else {
-                    pref.w
+                    natural_w
                 }
             } else {
-                content.w
+                available_w
             };
-            // Dynamic descendants such as Collapse can measure to zero before the
-            // convergence loop has propagated their expanded content. Preserve the
-            // previous arranged height as viewport state; measured_size itself stays
-            // the exact result of this pass and is never overwritten with the frame.
-            let current_h = tree.get(cid).map(|c| c.frame().h).unwrap_or(0.0);
+            // Collapse 等动态后代可能在收敛传播展开内容前暂时测得零高度。
+            // 此处保留上一轮已排布高度作为视口状态，但不覆盖本轮精确测量值。
+            let current_h = finite_non_negative(
+                tree.get(cid).map(|c| c.frame().h).unwrap_or(0.0),
+            );
             let h = if can_scroll_y {
-                if pref.h > 0.0 {
-                    pref.h
+                if natural_h > 0.0 {
+                    natural_h
                 } else if current_h > 0.0 {
                     current_h
                 } else {
-                    content.h
+                    available_h
                 }
             } else {
-                content.h
+                available_h
             };
-            let r = if horizontal_flow {
-                Rect::new(content.x + cursor_x, content.y, w, h)
+            // 主轴起点先推进前侧 margin，交叉轴同样从 margin 后开始。
+            let (x, y) = if horizontal_flow {
+                (
+                    finite_or_zero(content.x + cursor_x + margin.left),
+                    finite_or_zero(content.y + margin.top),
+                )
             } else {
-                Rect::new(content.x, content.y + cursor_y, w, h)
+                (
+                    finite_or_zero(content.x + margin.left),
+                    finite_or_zero(content.y + cursor_y + margin.top),
+                )
             };
+            // 构造已有限化的子项内容 frame。
+            let r = Rect::new(x, y, finite_non_negative(w), finite_non_negative(h));
+            // 保持输入顺序写入布局结果。
             result.push((cid, r));
-            max_right = max_right.max(r.x + r.w);
-            max_bottom = max_bottom.max(r.y + r.h);
+            // 正右 margin 属于物理内容范围，负 margin 仅改变推进距离。
+            let occupied_right = finite_or_zero(r.x + r.w + margin.right.max(0.0));
+            // 正下 margin 属于物理内容范围，负 margin 仅改变推进距离。
+            let occupied_bottom = finite_or_zero(r.y + r.h + margin.bottom.max(0.0));
+            // 合并当前子项的横向可见占用。
+            max_right = max_right.max(occupied_right);
+            // 合并当前子项的纵向可见占用。
+            max_bottom = max_bottom.max(occupied_bottom);
+            // 主轴游标消费前 margin、内容尺寸和后 margin。
             if horizontal_flow {
-                cursor_x += w;
+                cursor_x = finite_or_zero(cursor_x + margin.left + w + margin.right);
             } else {
-                cursor_y += h;
+                cursor_y = finite_or_zero(cursor_y + margin.top + h + margin.bottom);
             }
         }
 
-        let raw_content_w = (max_right - content.x).max(content.w);
-        let raw_content_h = (max_bottom - content.y).max(content.h);
+        // 横向内容至少覆盖扣除沟槽后的真实视口。
+        let raw_content_w = finite_non_negative(max_right - content.x).max(content.w);
+        // 纵向内容至少覆盖扣除沟槽后的真实视口。
+        let raw_content_h = finite_non_negative(max_bottom - content.y).max(content.h);
+        // 可横向滚动时，对侧纵向沟槽也要进入滚动坐标总范围。
         let content_w = if can_scroll_x {
-            raw_content_w
+            finite_non_negative(
+                raw_content_w
+                    + if need_v {
+                        ScrollBar::gutter()
+                    } else {
+                        0.0
+                    },
+            )
         } else {
             // 非横向滚动：content_bounds 宽记视口宽（含 gutter），max_scroll_x 仍为 0。
             frame.w
         };
+        // 可纵向滚动时，对侧横向沟槽也要进入滚动坐标总范围。
         let content_h = if can_scroll_y {
-            raw_content_h
+            finite_non_negative(
+                raw_content_h
+                    + if need_h {
+                        ScrollBar::gutter()
+                    } else {
+                        0.0
+                    },
+            )
         } else {
             frame.h
         };
+        // 缓存完整滚动坐标范围，供事件、滑块和下一轮布局共同使用。
         self.content_bounds.set(Some(Size::new(content_w, content_h)));
+        // 返回已经与输入标识一一对应的子 frame。
         result
     }
 }
@@ -410,60 +481,106 @@ impl ScrollView {
 
     /// 内容排布区域：需要滚动条时从视口扣除 gutter，避免卡片与滑块重叠。
     fn content_frame(&self, frame: Rect, need_v: bool, need_h: bool) -> Rect {
-        let mut w = frame.w;
-        let mut h = frame.h;
+        // 内容宽度从有限非负的外框宽度开始。
+        let mut w = finite_non_negative(frame.w);
+        // 内容高度从有限非负的外框高度开始。
+        let mut h = finite_non_negative(frame.h);
+        // 纵向滚动条占用右侧固定沟槽。
         if need_v {
             w = (w - ScrollBar::gutter()).max(0.0);
         }
+        // 横向滚动条占用底部固定沟槽。
         if need_h {
             h = (h - ScrollBar::gutter()).max(0.0);
         }
-        Rect::new(frame.x, frame.y, w, h)
+        // 返回不会携带测量哨兵或非有限坐标的内容视口。
+        Rect::new(
+            finite_or_zero(frame.x),
+            finite_or_zero(frame.y),
+            finite_non_negative(w),
+            finite_non_negative(h),
+        )
+    }
+
+    // 计算父滚动流实际消费的子项外尺寸。
+    fn child_outer_size(child: &LayoutChild) -> Size {
+        // 共享规则只清除非法 margin，继续允许负 margin 形成重叠。
+        let margin = normalize_margin(child.margin);
+        // 自然宽度先收敛为可写入实际布局树的尺寸。
+        let width = finite_non_negative(child.measured_size.w);
+        // 自然高度先收敛为可写入实际布局树的尺寸。
+        let height = finite_non_negative(child.measured_size.h);
+        // 左右 margin 共同构成横向外尺寸。
+        let outer_width = finite_non_negative(width + margin.left + margin.right);
+        // 上下 margin 共同构成纵向外尺寸。
+        let outer_height = finite_non_negative(height + margin.top + margin.bottom);
+        // 返回供首轮滚动条判断使用的有限外尺寸。
+        Size::new(outer_width, outer_height)
     }
 
     fn needs_v_scrollbar(&self, frame: Rect, children: &[LayoutChild]) -> bool {
+        // 未启用纵向滚动条或方向不支持纵向滚动时不占沟槽。
         if !(self.scrollbar_v.show && self.direction.can_scroll_y()) {
             return false;
         }
+        // 上一轮仍有有效纵向范围时先保持沟槽，随后布局可继续收敛。
         if self.max_scroll_y() > 0.0 {
             return true;
         }
+        // 读取有限的当前视口高度作为比较基线。
+        let frame_h = finite_non_negative(frame.h);
+        // 上一轮内容范围已经溢出时继续显示纵向滚动条。
         if self
             .content_bounds
             .get()
-            .is_some_and(|b| b.h > frame.h + 0.5)
+            .is_some_and(|b| finite_non_negative(b.h) > frame_h + 0.5)
         {
             return true;
         }
-        let content_h: f32 = children.iter().map(|c| c.measured_size.h.max(0.0)).sum();
-        content_h > frame.h + 0.5
+        // 纵向与双向模式都按纵列累加完整子项外高度。
+        let content_h = children.iter().fold(0.0f32, |height, child| {
+            // 每一步有限化，避免极值子项累加为无穷大。
+            finite_non_negative(height + Self::child_outer_size(child).h)
+        });
+        // 留出半像素容差，避免浮点抖动反复切换沟槽。
+        content_h > frame_h + 0.5
     }
 
     pub(crate) fn needs_h_scrollbar(&self, frame: Rect, children: &[LayoutChild]) -> bool {
+        // 未启用横向滚动条或方向不支持横向滚动时不占沟槽。
         if !(self.scrollbar_h.show && self.direction.can_scroll_x()) {
             return false;
         }
+        // 上一轮仍有有效横向范围时先保持沟槽，随后布局可继续收敛。
         if self.max_scroll_x() > 0.0 {
             return true;
         }
+        // 读取有限的当前视口宽度作为比较基线。
+        let frame_w = finite_non_negative(frame.w);
+        // 上一轮内容范围已经溢出时继续显示横向滚动条。
         if self
             .content_bounds
             .get()
-            .is_some_and(|b| b.w > frame.w + 0.5)
+            .is_some_and(|b| finite_non_negative(b.w) > frame_w + 0.5)
         {
             return true;
         }
-        let content_w: f32 = children.iter().map(|c| c.measured_size.w.max(0.0)).sum();
-        // 仅横向流时用子项宽之和；Both 模式取 max 更稳妥
+        // 仅横向流按单行累加完整子项外宽。
+        let row_width = children.iter().fold(0.0f32, |width, child| {
+            // 每一步有限化，避免极值子项累加为无穷大。
+            finite_non_negative(width + Self::child_outer_size(child).w)
+        });
+        // 双向模式保持纵列语义，因此横向范围取各子项最大外宽。
         let content_w = if self.direction.can_scroll_y() {
             children
                 .iter()
-                .map(|c| c.measured_size.w.max(0.0))
+                .map(|child| Self::child_outer_size(child).w)
                 .fold(0.0f32, f32::max)
         } else {
-            content_w
+            row_width
         };
-        content_w > frame.w + 0.5
+        // 留出半像素容差，避免浮点抖动反复切换沟槽。
+        content_w > frame_w + 0.5
     }
 
     fn child_constraints(&self, frame: Rect, need_v: bool, need_h: bool) -> Constraints {
@@ -612,29 +729,39 @@ impl ScrollView {
     }
 
     pub fn max_scroll_x(&self) -> f32 {
+        // 只有完成至少一轮内容布局后才存在横向滚动范围。
         match self.content_bounds.get() {
+            // 用完整滚动坐标范围减去外视口宽度。
             Some(cs) => {
+                // 优先采用渲染记录的真实视口，否则回退到声明宽或默认宽。
                 let view_w = self
                     .last_frame
                     .get()
                     .map(|f| f.w)
                     .unwrap_or(self.fixed_width.unwrap_or(300.0));
-                (cs.w - view_w).max(0.0)
+                // 清除非有限值、无界哨兵与负范围。
+                finite_non_negative(finite_non_negative(cs.w) - finite_non_negative(view_w))
             }
+            // 尚无内容布局时保持零范围。
             None => 0.0,
         }
     }
 
     pub fn max_scroll_y(&self) -> f32 {
+        // 只有完成至少一轮内容布局后才存在纵向滚动范围。
         match self.content_bounds.get() {
+            // 用完整滚动坐标范围减去外视口高度。
             Some(cs) => {
+                // 优先采用渲染记录的真实视口，否则回退到声明高或默认高。
                 let view_h = self
                     .last_frame
                     .get()
                     .map(|f| f.h)
                     .unwrap_or(self.fixed_height.unwrap_or(200.0));
-                (cs.h - view_h).max(0.0)
+                // 清除非有限值、无界哨兵与负范围。
+                finite_non_negative(finite_non_negative(cs.h) - finite_non_negative(view_h))
             }
+            // 尚无内容布局时保持零范围。
             None => 0.0,
         }
     }
@@ -705,3 +832,8 @@ impl Default for ScrollView {
         Self::new(ScrollDirection::Vertical)
     }
 }
+
+// 仅在测试构建中加载 ScrollView 的内部布局契约。
+#[cfg(test)]
+// 将测试放在独立文件中，避免主实现文件接近九百行上限。
+mod tests;
