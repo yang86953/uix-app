@@ -14,6 +14,8 @@ DEMO_BASE_FEATURES = "d3d11,image-codecs,qrcode,form-pattern,rich-text,charts,ta
 DEMO_LOGGING_FEATURES = f"{DEMO_BASE_FEATURES},demo-logging"
 # 记录所有可独立选择的图形 backend feature，供最小与负向场景统一排除。
 GRAPHICS_BACKEND_FEATURES = ("d3d11", "d3d12", "metal", "opengles", "vulkan")
+# 记录外部使用方完整集合应显式选择的全部公开 capability，内部 test-harness 不在其中。
+FULL_CAPABILITY_FEATURES = (*GRAPHICS_BACKEND_FEATURES, "settings-serde", "image-codecs", "qrcode", "form-pattern", "rich-text", "charts", "table", "navigation", "feedback", "tree-widgets", "demo-logging", "agent-control")
 # 记录没有专属第三方 package、必须逐场景断言根 feature 的源码能力。
 PURE_SOURCE_CAPABILITY_FEATURES = (
     # 富文本通过实现、公开辅助函数与内部分派共同形成源码边界。
@@ -214,6 +216,26 @@ def scenario_specs(root: Path) -> list[Scenario]:
             required_uix_features=("d3d11", "charts", "feedback", "navigation", "rich-text", "table", "tree-widgets"),
             # Agent 控制与 OpenGL ES 不属于默认兼容集合。
             forbidden_uix_features=("agent-control", "opengles"),
+        ),
+        # 全能力入口证明全部使用方 capability 可在同一外部应用中组合并完成 release 链接。
+        Scenario(
+            # 使用稳定名称绑定完整集合的产物对照。
+            name="all-capabilities",
+            # 指向显式列出全部公开 capability 的独立 fixture。
+            manifest=root / "fixtures" / "usage-build" / "all-capabilities" / "Cargo.toml",
+            # 说明内部 test-harness 不属于使用方完整集合。
+            description="启用全部使用方 capability 与五种公开 backend 选择面的入口",
+            # 完整集合必须解析所有 optional capability package。
+            required_packages=("ash", "glow", "image", "qrcode", "regex", "serde", "serde_json", "tracing-subscriber"),
+            # Windows 完整集合不得混入 Unix EGL loader、已删除依赖或无用 derive package。
+            forbidden_packages=("bytemuck_derive", "khronos-egl", "raw-window-handle"),
+            # 五种 backend 合并后必须选择 D3D11/D3D12 的全部 Windows API feature。
+            required_package_features=GRAPHICS_WINDOWS_PACKAGE_FEATURES,
+            # metadata 必须证明全部使用方 capability 同时进入 uix resolve 节点。
+            required_uix_features=FULL_CAPABILITY_FEATURES,
+            # 仓库内部测试替身不得进入外部使用方完整集合。
+            forbidden_uix_features=("test-harness",),
+        # 结束全能力正向场景定义。
         ),
         # D3D11 单 backend 入口只打开对应实现与公开选择面。
         Scenario(

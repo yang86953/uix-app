@@ -37,6 +37,8 @@ DEMO_BASE_FEATURES = usage_build_scenarios.DEMO_BASE_FEATURES
 DEMO_LOGGING_FEATURES = usage_build_scenarios.DEMO_LOGGING_FEATURES
 # 重导出图形 backend feature 集合，供矩阵测试复核。
 GRAPHICS_BACKEND_FEATURES = usage_build_scenarios.GRAPHICS_BACKEND_FEATURES
+# 重导出完整公开能力 feature 集合，供矩阵测试复核。
+FULL_CAPABILITY_FEATURES = usage_build_scenarios.FULL_CAPABILITY_FEATURES
 # 重导出 D3D11 的 windows package feature 集合。
 D3D11_WINDOWS_PACKAGE_FEATURES = usage_build_scenarios.D3D11_WINDOWS_PACKAGE_FEATURES
 # 重导出 D3D11 专属的 windows package feature 集合。

@@ -1,0 +1,15 @@
+# 声明全公开能力使用方 fixture 的包信息。
+[package]
+# 使用稳定名称，便于 metadata 和报告匹配。
+name = "uix-usage-all-capabilities"
+# 与主 crate 保持当前基线版本。
+version = "0.0.1"
+# 使用仓库当前 Rust edition。
+edition = "2021"
+# 明确该 fixture 只用于仓库内验证。
+publish = false
+
+# 声明被测主 crate 依赖。
+[dependencies]
+# 关闭默认集合后显式启用全部使用方 capability 与五种公开 backend 选择面，但排除内部 test-harness。
+uix = { path = "../../../", default-features = false, features = ["d3d11", "d3d12", "metal", "opengles", "vulkan", "settings-serde", "image-codecs", "qrcode", "form-pattern", "rich-text", "charts", "table", "navigation", "feedback", "tree-widgets", "demo-logging", "agent-control"] }
