@@ -189,16 +189,21 @@ impl WidgetTree {
             .render_handler_table
             .render_virtual_scroll_items(id, range.0, range.1)
             .unwrap_or_default();
-        self.set_children(id, children);
+        // 按业务 key 或绝对索引后备 key 协调窗口，保留重叠行身份与状态。
+        let changed = ViewAdapter::reconcile_dynamic_children(self, id, children);
+        // 成功协调后记录当前物化范围，避免同一窗口重复构建。
         if let Some(scroll) = self
             .get(id)
             .and_then(|node| node.component().as_any().downcast_ref::<VirtualScroll>())
         {
             scroll.mark_children_materialized(range);
         }
+        // 绑定新进入窗口行捕获的响应式状态。
         self.bind_orphan_pending_states();
+        // 绑定新进入窗口行捕获的副作用。
         self.bind_pending_effects();
-        true
+        // 只有子结构或顺序变化时向调用方报告结构更新。
+        changed
     }
 
     // 表格 capability 启用时才刷新泛型单元格动态子树。
@@ -304,8 +309,9 @@ impl WidgetTree {
         self.render_handler_table.contains_select_options(id)
     }
 
-    #[cfg(test)]
+    // 供声明树协调器区分 VirtualScroll 动态子树与普通空子列表。
     pub(crate) fn has_virtual_scroll_renderer(&self, id: ComponentId) -> bool {
+        // sidecar 中存在行 renderer 即表示子项由虚拟窗口专用入口拥有。
         self.render_handler_table.contains_virtual_scroll_item(id)
     }
 }

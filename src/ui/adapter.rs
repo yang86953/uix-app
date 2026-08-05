@@ -526,6 +526,8 @@ impl ViewAdapter {
         #[cfg(not(feature = "table"))]
         let table_children_changed = None::<bool>;
         let select_options = tree.has_select_option_renderer(id);
+        // VirtualScroll 的物化行由专用 keyed 动态协调器拥有。
+        let virtual_scroll_items = tree.has_virtual_scroll_renderer(id);
         let collapse_content = tree.is_collapse_content_component(id);
         if select_options {
             tree.invalidate_select_option_component(id);
@@ -538,6 +540,9 @@ impl ViewAdapter {
             tree.refresh_collapse_content_component(id)
         } else if calendar_cells {
             tree.refresh_calendar_cell_component(id)
+        } else if virtual_scroll_items {
+            // 保留旧物化窗口，随后用新版 renderer 按稳定 key 原位协调。
+            false
         } else {
             let mut children = children;
             children.extend(component_view_children);
