@@ -2,7 +2,11 @@ use std::any::TypeId;
 use std::fmt;
 
 use crate::core::ComponentId;
-use crate::ui::widgets::{PopconfirmPlacement, TransferItem, TreeNode};
+use crate::ui::widgets::{TransferItem, TreeNode};
+// 反馈 capability 启用时才引入气泡确认框专属方位类型。
+#[cfg(feature = "feedback")]
+// 该类型只服务同步门控的公开快照模型。
+use crate::ui::widgets::PopconfirmPlacement;
 // 表格 capability 启用时才引入专属列配置类型。
 #[cfg(feature = "table")]
 // 这些类型仅用于同步门控的公开快照列模型。
@@ -16,6 +20,8 @@ mod source;
 pub use fields::SnapshotFields;
 pub use source::{snapshot_fields_from_any, SnapshotSource};
 
+// 反馈 capability 关闭时同步收缩气泡确认框快照模型。
+#[cfg(feature = "feedback")]
 #[doc(hidden)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct SnapshotPopconfirm {

@@ -11,7 +11,10 @@
 
 use crate::ui::component::widget::{WidgetCore, WidgetId, WidgetTree};
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
-use crate::ui::widgets::{Container, Grid, Modal, ScrollView, Space};
+use crate::ui::widgets::{Container, Grid, ScrollView, Space};
+// 反馈 capability 启用时才引入 Modal 生命周期类型。
+#[cfg(feature = "feedback")]
+use crate::ui::widgets::Modal;
 // 导航 capability 启用时才引入兄弟项联动所需类型。
 #[cfg(feature = "navigation")]
 use crate::ui::widgets::NavItem;
@@ -70,46 +73,75 @@ pub(crate) fn phase2_explicit_size_locks(tree: &WidgetTree, id: WidgetId) -> (bo
 
 /// 节点当前是否为在场（打开）的 Modal。
 pub(crate) fn modal_was_present(tree: &WidgetTree, id: WidgetId) -> bool {
-    tree.get(id)
-        .and_then(|node| node.component().as_any().downcast_ref::<Modal>())
-        .is_some_and(Modal::is_present)
+    // 反馈能力启用时保留 Modal 在场状态探测。
+    #[cfg(feature = "feedback")]
+    {
+        tree.get(id)
+            .and_then(|node| node.component().as_any().downcast_ref::<Modal>())
+            .is_some_and(Modal::is_present)
+    }
+    // 关闭反馈能力时通用动画流程不再识别 Modal。
+    #[cfg(not(feature = "feedback"))]
+    {
+        let _ = (tree, id);
+        false
+    }
 }
 
 /// 节点为「关闭动画结束、应销毁」的 Modal。
 pub(crate) fn modal_closed_for_destruction(tree: &WidgetTree, id: WidgetId) -> bool {
-    tree.get(id).is_some_and(|node| {
-        node.component()
-            .as_any()
-            .downcast_ref::<Modal>()
-            .is_some_and(|modal| modal.should_destroy_on_close() && !modal.is_present())
-    })
+    // 反馈能力启用时保留 Modal 关闭销毁状态探测。
+    #[cfg(feature = "feedback")]
+    {
+        tree.get(id).is_some_and(|node| {
+            node.component()
+                .as_any()
+                .downcast_ref::<Modal>()
+                .is_some_and(|modal| modal.should_destroy_on_close() && !modal.is_present())
+        })
+    }
+    // 关闭反馈能力时通用动画流程不产生 Modal 销毁请求。
+    #[cfg(not(feature = "feedback"))]
+    {
+        let _ = (tree, id);
+        false
+    }
 }
 
 /// 语义路径上存在请求上下文关闭的 Modal 时，逐个关闭并复位激活态。
 pub(crate) fn apply_modal_context_requests(tree: &mut WidgetTree, path: &[WidgetId]) {
-    let requested: Vec<WidgetId> = path
-        .iter()
-        .copied()
-        .filter(|&id| {
-            tree.get(id)
-                .and_then(|node| node.component().as_any().downcast_ref::<Modal>())
-                .is_some_and(|modal| modal.take_context_close_request())
-        })
-        .collect();
-    if requested.is_empty() {
-        return;
-    }
+    // 反馈能力启用时处理语义路径上的 Modal 上下文关闭请求。
+    #[cfg(feature = "feedback")]
+    {
+        let requested: Vec<WidgetId> = path
+            .iter()
+            .copied()
+            .filter(|&id| {
+                tree.get(id)
+                    .and_then(|node| node.component().as_any().downcast_ref::<Modal>())
+                    .is_some_and(|modal| modal.take_context_close_request())
+            })
+            .collect();
+        if requested.is_empty() {
+            return;
+        }
 
-    for id in requested {
-        if let Some(node) = tree.get_mut(id) {
-            if let Some(modal) = node.component_mut().as_any_mut().downcast_mut::<Modal>() {
-                modal.close();
-                node.set_active(true);
+        for id in requested {
+            if let Some(node) = tree.get_mut(id) {
+                if let Some(modal) = node.component_mut().as_any_mut().downcast_mut::<Modal>() {
+                    modal.close();
+                    node.set_active(true);
+                }
             }
         }
+        tree.mark_full_frame_dirty();
+        tree.rebuild_widget_overlays();
     }
-    tree.mark_full_frame_dirty();
-    tree.rebuild_widget_overlays();
+    // 关闭反馈能力时保留通用语义调用点并退化为空操作。
+    #[cfg(not(feature = "feedback"))]
+    {
+        let _ = (tree, path);
+    }
 }
 
 /// 文本输入组件的当前值（语义快照 value_text 用）。

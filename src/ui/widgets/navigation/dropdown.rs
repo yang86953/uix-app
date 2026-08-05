@@ -11,7 +11,8 @@ use crate::ui::{
 };
 use std::cell::RefCell;
 
-use crate::ui::widgets::feedback::TriggerMode;
+// 下拉菜单使用基础层共享的触发方式，不依赖反馈组件族。
+use crate::ui::widgets::TriggerMode;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DropdownItem {

@@ -7,7 +7,8 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::component::paint_context::PaintContext;
-use crate::ui::widgets::feedback::TriggerMode;
+// 浮动按钮使用基础层共享的触发方式，不依赖反馈组件族。
+use crate::ui::widgets::TriggerMode;
 use crate::ui::SnapshotFields;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, OverlayEntry, OverlayKind, SystemEvent, WidgetTree,

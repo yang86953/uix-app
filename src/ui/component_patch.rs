@@ -2,14 +2,19 @@ use crate::ui::form::{Form, FormItem};
 use crate::ui::virtualization::virtual_scroll::VirtualScroll;
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
 use crate::ui::widgets::{
-    Affix, Alert, AutoComplete, Avatar, BackTop, Badge, Button, Calendar, Card, Carousel, Cascader,
+    Affix, AutoComplete, Avatar, BackTop, Badge, Button, Calendar, Card, Carousel, Cascader,
     Checkbox, Collapse, ColorPicker, Container, Content, DatePicker, DateRangePicker, Descriptions,
-    Divider, Drawer, Empty, FloatButton, FloatButtonGroup, Footer, Grid, Header, Icon, Image,
-    ImageGroup, Input, InputNumber, Label, Layout, List, Mentions, Message, Modal, Notification,
-    Popconfirm, Popover, ProgressBar, Radio, RangeSlider, Rate, ResultView, ScrollView, Segmented,
-    Select, SelectableList, Sider, Skeleton, Slider, Space, Spin, Splitter, Switch, Tag,
-    ThemeToggle, TimePicker, Timeline, Tooltip, Transfer, Tree, TreeSelect, Typography, Upload,
+    Divider, Empty, FloatButton, FloatButtonGroup, Footer, Grid, Header, Icon, Image, ImageGroup,
+    Input, InputNumber, Label, Layout, List, Mentions, Radio, RangeSlider, Rate, ResultView,
+    ScrollView, Segmented, Select, SelectableList, Sider, Skeleton, Slider, Space, Splitter,
+    Switch, Tag, ThemeToggle, TimePicker, Timeline, Transfer, Tree, TreeSelect, Typography, Upload,
     Watermark,
+};
+// 反馈 capability 启用时才引入对应 patch 目标类型。
+#[cfg(feature = "feedback")]
+// 该导入覆盖反馈组件族全部拥有运行时状态的组件。
+use crate::ui::widgets::{
+    Alert, Drawer, Message, Modal, Notification, Popconfirm, Popover, ProgressBar, Spin, Tooltip,
 };
 // 图表 capability 启用时才引入对应 patch 目标类型。
 #[cfg(feature = "charts")]
@@ -163,11 +168,17 @@ pub(crate) fn patch_builtin_widget(
     #[cfg(feature = "table")]
     // 启用后保持表格组件的原位同步语义。
     patch_as!(Table);
+    // 反馈 capability 启用时才生成进度条类型化 patch 分支。
+    #[cfg(feature = "feedback")]
     patch_as!(ProgressBar);
+    // 反馈 capability 启用时才生成加载指示器类型化 patch 分支。
+    #[cfg(feature = "feedback")]
     patch_as!(Spin);
     patch_as!(FloatButton);
     patch_as!(FloatButtonGroup);
     patch_as!(BackTop);
+    // 反馈 capability 启用时才生成警告提示类型化 patch 分支。
+    #[cfg(feature = "feedback")]
     patch_as!(Alert);
     patch_as!(Tag);
     patch_as!(Empty);
@@ -209,10 +220,20 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(ScrollView);
     patch_as!(Select);
     patch_as!(Space);
+    // 反馈 capability 启用时才生成文字提示类型化 patch 分支。
+    #[cfg(feature = "feedback")]
     patch_as!(Tooltip);
+    // 反馈 capability 启用时才生成气泡卡片类型化 patch 分支。
+    #[cfg(feature = "feedback")]
     patch_as!(Popover);
+    // 反馈 capability 启用时才生成气泡确认框类型化 patch 分支。
+    #[cfg(feature = "feedback")]
     patch_as!(Popconfirm);
+    // 反馈 capability 启用时才生成对话框类型化 patch 分支。
+    #[cfg(feature = "feedback")]
     patch_as!(Modal);
+    // 反馈 capability 启用时才生成抽屉类型化 patch 分支。
+    #[cfg(feature = "feedback")]
     patch_as!(Drawer);
     // 导航 capability 启用时才生成下拉菜单类型化 patch 分支。
     #[cfg(feature = "navigation")]
@@ -246,7 +267,11 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(DateRangePicker);
     patch_as!(TimePicker);
     patch_as!(Mentions);
+    // 反馈 capability 启用时才生成全局消息容器类型化 patch 分支。
+    #[cfg(feature = "feedback")]
     patch_as!(Message);
+    // 反馈 capability 启用时才生成通知容器类型化 patch 分支。
+    #[cfg(feature = "feedback")]
     patch_as!(Notification);
     // 富文本 capability 启用时才参与内建组件 patch 分派。
     #[cfg(feature = "rich-text")]

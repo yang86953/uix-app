@@ -3,12 +3,15 @@ use crate::ui::widgets::*;
 use super::super::accessibility::{
     avatar_accessibility, back_top_accessibility, badge_accessibility, calendar_accessibility,
     card_accessibility, carousel_accessibility, date_range_accessibility, first_non_empty,
-    image_accessibility, input_number_accessibility, popconfirm_accessibility,
-    progress_accessibility, result_accessibility, select_accessibility,
+    image_accessibility, input_number_accessibility, result_accessibility, select_accessibility,
     selectable_list_accessibility, splitter_accessibility, tag_accessibility,
     theme_toggle_accessibility, timeline_accessibility, transfer_accessibility, tree_accessibility,
     typography_accessibility, upload_accessibility,
 };
+// 反馈 capability 启用时才引入专属无障碍转换函数。
+#[cfg(feature = "feedback")]
+// 两个函数只处理同步门控的进度条与气泡确认框快照。
+use super::super::accessibility::{popconfirm_accessibility, progress_accessibility};
 // 导航 capability 启用时才引入专属无障碍转换函数。
 #[cfg(feature = "navigation")]
 // 这些函数只处理同步门控的八种导航快照变体。
@@ -278,7 +281,11 @@ impl SnapshotFields {
                 text,
                 ..
             } => badge_accessibility(*count, *max, *dot, *status, *show_zero, text),
+            // 反馈 capability 启用时才匹配同步存在的进度条快照变体。
+            #[cfg(feature = "feedback")]
             Self::ProgressBar { mode, .. } => progress_accessibility(*mode),
+            // 反馈 capability 启用时才匹配同步存在的警告提示快照变体。
+            #[cfg(feature = "feedback")]
             Self::Alert {
                 message,
                 description,
@@ -288,6 +295,8 @@ impl SnapshotFields {
                     value_text: (!description.is_empty()).then(|| description.clone()),
                     ..AccessibilityState::default()
                 }),
+            // 反馈 capability 启用时才匹配同步存在的全局消息快照变体。
+            #[cfg(feature = "feedback")]
             Self::Message { contents, .. } if !contents.is_empty() => {
                 let name = contents
                     .iter()
@@ -304,6 +313,8 @@ impl SnapshotFields {
                     },
                 )
             }
+            // 反馈 capability 启用时才匹配同步存在的通知快照变体。
+            #[cfg(feature = "feedback")]
             Self::Notification {
                 titles,
                 descriptions,
@@ -334,6 +345,8 @@ impl SnapshotFields {
                     ..AccessibilityState::default()
                 })
             }
+            // 反馈 capability 启用时才匹配同步存在的气泡卡片快照变体。
+            #[cfg(feature = "feedback")]
             Self::Popover {
                 title,
                 content,
@@ -348,6 +361,8 @@ impl SnapshotFields {
                 value_text: (!content.is_empty()).then_some(content.clone()),
                 ..AccessibilityState::default()
             }),
+            // 反馈 capability 启用时才匹配同步存在的气泡确认框快照变体。
+            #[cfg(feature = "feedback")]
             Self::Popconfirm(popconfirm) => popconfirm_accessibility(
                 &popconfirm.title,
                 &popconfirm.confirm_text,
@@ -355,6 +370,8 @@ impl SnapshotFields {
                 popconfirm.visible,
                 popconfirm.focused_action,
             ),
+            // 反馈 capability 启用时才匹配同步存在的对话框快照变体。
+            #[cfg(feature = "feedback")]
             Self::Modal { title, open, .. } => {
                 let role = if *open {
                     AccessibilityRole::Dialog
@@ -375,6 +392,8 @@ impl SnapshotFields {
                     ..AccessibilityState::default()
                 })
             }
+            // 反馈 capability 启用时才匹配同步存在的抽屉快照变体。
+            #[cfg(feature = "feedback")]
             Self::Drawer { title, open, .. } => {
                 let role = if *open {
                     AccessibilityRole::Dialog
@@ -686,6 +705,8 @@ impl SnapshotFields {
                 extra_text,
                 ..
             } => result_accessibility(*result_type, title, subtitle, extra_text),
+            // 反馈 capability 启用时才匹配同步存在的加载指示器快照变体。
+            #[cfg(feature = "feedback")]
             Self::Spin { tip, spinning, .. } => AccessibilitySnapshot::named(
                 AccessibilityRole::Status,
                 if tip.is_empty() {

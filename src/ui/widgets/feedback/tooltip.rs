@@ -1,32 +1,17 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::resources::font::text_backend::estimate_text_metrics;
-use crate::draw::{Color, FillRule, PathBuilder, Radius};
+use crate::draw::Color;
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::component::paint_context::PaintContext;
+// 反馈组件复用基础层提示气泡原语。
+use crate::ui::widgets::tooltip_primitives::{
+    paint_tooltip_bubble, tooltip_bubble_rect, tooltip_dirty_rect,
+};
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, KeyCode, MouseButton, SystemEvent, WidgetTree};
 
-const TOOLTIP_FONT_SIZE: f32 = 12.0;
-const TOOLTIP_HORIZONTAL_PADDING: f32 = 16.0;
-const TOOLTIP_HEIGHT: f32 = 26.0;
-const TOOLTIP_ARROW_SIZE: f32 = 6.0;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum TooltipPlacement {
-    Top,
-    Bottom,
-    Left,
-    Right,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum TriggerMode {
-    Hover,
-    Click,
-    Focus,
-    ContextMenu,
-}
+// 复用基础层交互模型，并保持 feedback::tooltip 的既有公开路径。
+pub use crate::ui::widgets::overlay_types::{TooltipPlacement, TriggerMode};
 
 component! {
     pub struct Tooltip {
@@ -275,139 +260,6 @@ component! {
             Rect::zero()
         }
     }
-}
-
-fn tooltip_origin(
-    frame: Rect,
-    placement: TooltipPlacement,
-    text_w: f32,
-    text_h: f32,
-    gap: f32,
-) -> (f32, f32) {
-    match placement {
-        TooltipPlacement::Top => (
-            frame.x + frame.w * 0.5 - text_w * 0.5,
-            frame.y - text_h - gap,
-        ),
-        TooltipPlacement::Bottom => (
-            frame.x + frame.w * 0.5 - text_w * 0.5,
-            frame.y + frame.h + gap,
-        ),
-        TooltipPlacement::Left => (
-            frame.x - text_w - gap,
-            frame.y + frame.h * 0.5 - text_h * 0.5,
-        ),
-        TooltipPlacement::Right => (
-            frame.x + frame.w + gap,
-            frame.y + frame.h * 0.5 - text_h * 0.5,
-        ),
-    }
-}
-
-pub(crate) fn tooltip_dirty_rect(
-    text: &str,
-    arrow: bool,
-    placement: TooltipPlacement,
-    frame: Rect,
-) -> Rect {
-    frame.union(&tooltip_bubble_rect(text, arrow, placement, frame))
-}
-
-pub(crate) fn tooltip_bubble_rect(
-    text: &str,
-    arrow: bool,
-    placement: TooltipPlacement,
-    frame: Rect,
-) -> Rect {
-    let bubble = tooltip_bubble_size(text);
-    let text_w = bubble.w;
-    let text_h = bubble.h;
-    let gap = tooltip_gap(arrow);
-    let (tx, ty) = tooltip_origin(frame, placement, text_w, text_h, gap);
-    Rect::new(tx, ty, text_w, text_h)
-}
-
-pub(crate) fn paint_tooltip_bubble(
-    ctx: &mut PaintContext,
-    text: &str,
-    frame: Rect,
-    placement: TooltipPlacement,
-    bg: Color,
-    text_color: Color,
-    arrow: bool,
-) -> Rect {
-    let tip_frame = tooltip_bubble_rect(text, arrow, placement, frame);
-    ctx.fill_rect(tip_frame, bg, Some(Radius::uniform(4.0)));
-
-    if arrow {
-        let arrow_sz = TOOLTIP_ARROW_SIZE;
-        let (ax, ay, aw, ah) = match placement {
-            TooltipPlacement::Top => (
-                tip_frame.x + tip_frame.w * 0.5 - arrow_sz,
-                tip_frame.y + tip_frame.h - 1.0,
-                arrow_sz * 2.0,
-                arrow_sz,
-            ),
-            TooltipPlacement::Bottom => (
-                tip_frame.x + tip_frame.w * 0.5 - arrow_sz,
-                tip_frame.y - arrow_sz + 1.0,
-                arrow_sz * 2.0,
-                arrow_sz,
-            ),
-            TooltipPlacement::Left => (
-                tip_frame.x + tip_frame.w - 1.0,
-                tip_frame.y + tip_frame.h * 0.5 - arrow_sz,
-                arrow_sz,
-                arrow_sz * 2.0,
-            ),
-            TooltipPlacement::Right => (
-                tip_frame.x - arrow_sz + 1.0,
-                tip_frame.y + tip_frame.h * 0.5 - arrow_sz,
-                arrow_sz,
-                arrow_sz * 2.0,
-            ),
-        };
-        draw_arrow(ctx, ax, ay, aw, ah, placement, bg);
-    }
-
-    ctx.text_center(text, tip_frame, text_color, TOOLTIP_FONT_SIZE);
-    tip_frame
-}
-
-fn tooltip_bubble_size(text: &str) -> Size {
-    let text_width = estimate_text_metrics(text, f32::INFINITY, TOOLTIP_FONT_SIZE).max_line_width;
-    Size::new(text_width + TOOLTIP_HORIZONTAL_PADDING, TOOLTIP_HEIGHT)
-}
-
-fn tooltip_gap(arrow: bool) -> f32 {
-    if arrow {
-        TOOLTIP_ARROW_SIZE + 2.0
-    } else {
-        4.0
-    }
-}
-
-fn draw_arrow(
-    ctx: &mut PaintContext,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    dir: TooltipPlacement,
-    color: Color,
-) {
-    let (x1, y1, x2, y2, x3, y3) = match dir {
-        TooltipPlacement::Top => (x, y, x + w, y, x + w / 2.0, y + h),
-        TooltipPlacement::Bottom => (x, y + h, x + w, y + h, x + w / 2.0, y),
-        TooltipPlacement::Left => (x, y, x, y + h, x + w, y + h / 2.0),
-        TooltipPlacement::Right => (x + w, y, x + w, y + h, x, y + h / 2.0),
-    };
-    let mut pb = PathBuilder::new();
-    pb.move_to(x1, y1);
-    pb.line_to(x2, y2);
-    pb.line_to(x3, y3);
-    pb.close();
-    ctx.fill_path(&pb.build(), color, FillRule::NonZero);
 }
 
 fn fade_color(color: Color, opacity: f32) -> Color {

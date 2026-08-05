@@ -1,7 +1,11 @@
 use crate::ui::widgets::{
-    BadgeStatus, Date, OptGroup, ProgressMode, ResultType, SelectableItem, TimelineItem,
-    TypographyType, UploadFile, UploadStatus,
+    BadgeStatus, Date, OptGroup, ResultType, SelectableItem, TimelineItem, TypographyType,
+    UploadFile, UploadStatus,
 };
+// 反馈 capability 启用时才引入进度快照专属模式类型。
+#[cfg(feature = "feedback")]
+// 该类型只服务同步门控的进度条无障碍转换。
+use crate::ui::widgets::ProgressMode;
 // 导航 capability 启用时才引入专属条目模型。
 #[cfg(feature = "navigation")]
 // 这些类型仅供同步门控的导航无障碍转换使用。
@@ -176,6 +180,8 @@ pub(super) fn dropdown_accessibility(
     })
 }
 
+// 反馈 capability 启用时才编译气泡确认框无障碍转换。
+#[cfg(feature = "feedback")]
 pub(super) fn popconfirm_accessibility(
     title: &str,
     confirm_text: &str,
@@ -655,6 +661,8 @@ pub(super) fn tag_accessibility(
     })
 }
 
+// 反馈 capability 启用时才编译进度条无障碍转换。
+#[cfg(feature = "feedback")]
 pub(super) fn progress_accessibility(mode: ProgressMode) -> AccessibilitySnapshot {
     let state = match mode {
         ProgressMode::Determinate(progress) => {

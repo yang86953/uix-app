@@ -9,7 +9,8 @@ use crate::draw::{Color, Radius};
 use crate::native::windowing::input::ControlSize;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
-use crate::ui::widgets::feedback::tooltip::{paint_tooltip_bubble, tooltip_bubble_rect};
+// Slider 只依赖基础层提示气泡原语，不依赖反馈组件实现。
+use crate::ui::widgets::tooltip_primitives::{paint_tooltip_bubble, tooltip_bubble_rect};
 use crate::ui::widgets::TooltipPlacement;
 use crate::ui::SnapshotFields;
 use crate::ui::{

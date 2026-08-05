@@ -83,29 +83,35 @@ pub use crate::ui::{SnapshotTableColumn, SnapshotTableColumnGroup};
 pub use crate::Display;
 // ui / components
 pub use crate::ui::{
-    Affix, Alert, AutoComplete, Avatar, BackTop, Badge, BadgeColor, BadgeStatus, BreakpointError,
+    Affix, AutoComplete, Avatar, BackTop, Badge, BadgeColor, BadgeStatus, BreakpointError,
     Breakpoints, Button, ButtonGroup, ButtonGroupPosition, Calendar, CalendarCellInfo,
     CalendarEvent, Card, Carousel, CarouselEffect, Cascader, CascaderOption, CascaderValue,
     Checkbox, Col, Collapse, CollapsePanel, ColorPicker, Container, Content, Date, DatePicker,
     DateRangePicker, Descriptions, DescriptionsItem, Divider, DividerDirection, DividerOrientation,
-    Drawer, DrawerPlacement, DropPosition, Empty, FieldError, FloatButton, FloatButtonBackTop,
-    FloatButtonGroup, Footer, Form, FormBuilder, FormCheckboxItem, FormColorPickerItem,
-    FormDatePickerItem, FormDateRangePickerItem, FormInitialValues, FormInputItem,
-    FormInputNumberItem, FormItem, FormLayout, FormListBuilder, FormListError, FormListFieldError,
-    FormListFields, FormListItemId, FormListModel, FormListValues, FormModel, FormRadioItem,
-    FormRateItem, FormSegmentedItem, FormSelectItem, FormSliderItem, FormSwitchItem,
-    FormTimePickerItem, Grid, Header, Icon, Image, ImageGroup, Input, InputGroup, InputNumber,
-    InputNumberValue, InputSearchExt, InputStatus, IntoBadgeColor, IntoFormValue, Label, Layout,
-    List, Mentions, Message, MessageFacade, MessageItem, Modal, ModalBuilder, ModalContext,
-    MoveDirection, Notification, NotificationItem, OptGroup, PickerMode, Popconfirm,
-    PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger, PresetDate, ProgressBar,
-    ProgressMode, ProgressType, Radio, RadioDirection, RangeSlider, Rate, ResultType, ResultView,
+    DropPosition, Empty, FieldError, FloatButton, FloatButtonBackTop, FloatButtonGroup, Footer,
+    Form, FormBuilder, FormCheckboxItem, FormColorPickerItem, FormDatePickerItem,
+    FormDateRangePickerItem, FormInitialValues, FormInputItem, FormInputNumberItem, FormItem,
+    FormLayout, FormListBuilder, FormListError, FormListFieldError, FormListFields, FormListItemId,
+    FormListModel, FormListValues, FormModel, FormRadioItem, FormRateItem, FormSegmentedItem,
+    FormSelectItem, FormSliderItem, FormSwitchItem, FormTimePickerItem, Grid, Header, Icon, Image,
+    ImageGroup, Input, InputGroup, InputNumber, InputNumberValue, InputSearchExt, InputStatus,
+    IntoBadgeColor, IntoFormValue, Label, Layout, List, Mentions, MoveDirection, OptGroup,
+    PickerMode, PresetDate, Radio, RadioDirection, RangeSlider, Rate, ResultType, ResultView,
     ScrollView, Segmented, Select, SelectOptionGroup, SelectableItem, SelectableList, Sider,
-    Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize, Splitter, Switch, Tag,
-    TagColor, ThemeToggle, Time, TimePicker, Timeline, TimelineItem, Tooltip, TooltipPlacement,
-    Transfer, TransferItem, Tree, TreeNode, TreeSelect, Trigger, TriggerMode, Typography,
-    TypographyType, Upload, UploadFile, UploadStatus, ValidateStatus, Values, VirtualScroll,
-    VirtualScrollBuilder, Watermark, Weekday,
+    Skeleton, SkeletonShape, Slider, Space, SpaceSize, Splitter, Switch, Tag, TagColor,
+    ThemeToggle, Time, TimePicker, Timeline, TimelineItem, TooltipPlacement, Transfer,
+    TransferItem, Tree, TreeNode, TreeSelect, Trigger, TriggerMode, Typography, TypographyType,
+    Upload, UploadFile, UploadStatus, ValidateStatus, Values, VirtualScroll, VirtualScrollBuilder,
+    Watermark, Weekday,
+};
+// 反馈 capability 启用时才在 prelude 暴露组件、门面与专属模型。
+#[cfg(feature = "feedback")]
+// 共享的 TriggerMode 与 TooltipPlacement 已留在基础导入面。
+pub use crate::ui::{
+    Alert, Drawer, DrawerPlacement, Message, MessageFacade, MessageItem, Modal, ModalBuilder,
+    ModalContext, Notification, NotificationItem, Popconfirm, PopconfirmPlacement, Popover,
+    PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode, ProgressType, Spin, SpinSize,
+    Tooltip,
 };
 // 导航 capability 启用时才在 prelude 暴露组件、条目模型与状态类型。
 #[cfg(feature = "navigation")]
@@ -155,10 +161,14 @@ pub use crate::ui::{layout_rich_text_segments, parse_rich_text};
 // view
 
 pub use crate::ui::{
-    button, canvas, column, column_fit, dynamic_label, embed, grid, input, label, message, notify,
-    row, scroll, show, space, AccessibilityExt, ButtonBuilder, EventExt, GridBuilder, InputBuilder,
+    button, canvas, column, column_fit, dynamic_label, embed, grid, input, label, row, scroll,
+    show, space, AccessibilityExt, ButtonBuilder, EventExt, GridBuilder, InputBuilder,
     IntoLabelContent, IntoViewChildren, ScrollBuilder, StyleExt, TransitionExt, View, ViewNode,
 };
+// 反馈 capability 启用时才在 prelude 暴露全局消息与通知门面函数。
+#[cfg(feature = "feedback")]
+// 两个函数与反馈组件注册表共享同一能力边界。
+pub use crate::ui::{message, notify};
 pub use crate::views;
 pub use crate::with_cloned;
 

@@ -1,32 +1,54 @@
+// 反馈 capability 启用时才维护逐窗通知句柄表。
+#[cfg(feature = "feedback")]
 use std::collections::HashMap;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc, Mutex,
-};
-use std::time::{Duration, Instant};
+use std::sync::{atomic::AtomicBool, atomic::Ordering, Arc};
+// 反馈 capability 启用时才需要通知序号与同步容器。
+#[cfg(feature = "feedback")]
+use std::sync::{atomic::AtomicU64, Mutex};
+use std::time::Duration;
+// 反馈 capability 启用时才为外部通知记录创建时刻。
+#[cfg(feature = "feedback")]
+use std::time::Instant;
 
 use crate::app::application::di::Container;
 use crate::app::queues::app_timer::TimerHandle;
 use crate::app::session_runtime::AppRuntime;
 use crate::app::window::window_config::WindowConfig;
 pub use crate::core::WindowId;
-use crate::core::{ComponentId, Constraints, Errc, Error, Rect, Result, Size};
+use crate::core::{Errc, Error, Result};
+// 反馈 capability 启用时才构造通知浮层根组件。
+#[cfg(feature = "feedback")]
+use crate::core::{ComponentId, Constraints, Rect, Size};
 use crate::diagnostics::Diagnostics;
+// 反馈 capability 启用时才生成通知浮层根组件实现。
+#[cfg(feature = "feedback")]
 use crate::impl_widget_component;
+// 反馈 capability 启用时才把原生错误通知转换为 UI 项。
+#[cfg(feature = "feedback")]
 use crate::native::notification::ToastEntry;
 use crate::ui::adapter::ViewAdapter;
+// 反馈 capability 启用时才实现通知浮层根布局。
+#[cfg(feature = "feedback")]
 use crate::ui::component::traits::WidgetLayout;
 use crate::ui::view::{View, ViewNode};
+// 反馈 capability 启用时才连接应用通知状态与组件实现。
+#[cfg(feature = "feedback")]
 use crate::ui::widgets::feedback::notification::{
     Notification, NotificationHandle, NotificationItem,
 };
 use crate::ui::{AppState, Theme};
 
+// 反馈 capability 启用时才需要额外的应用浮层根节点。
+#[cfg(feature = "feedback")]
 #[derive(Default)]
 pub(crate) struct AppOverlayRoot;
 
+// 反馈 capability 启用时才生成浮层根组件能力集合。
+#[cfg(feature = "feedback")]
 impl_widget_component!(AppOverlayRoot; Layout);
 
+// 反馈 capability 启用时才参与通知浮层布局。
+#[cfg(feature = "feedback")]
 impl WidgetLayout for AppOverlayRoot {
     fn measure(&self, constraints: Constraints) -> Size {
         constraints.definite.unwrap_or_default()
@@ -44,20 +66,37 @@ impl WidgetLayout for AppOverlayRoot {
 
 #[derive(Clone)]
 pub(crate) struct AppNotificationState {
+    // 反馈能力启用时保存逐窗通知句柄。
+    #[cfg(feature = "feedback")]
     windows: Arc<Mutex<HashMap<WindowId, NotificationHandle>>>,
+    // 反馈能力启用时生成稳定外部通知 ID。
+    #[cfg(feature = "feedback")]
     next_id: Arc<AtomicU64>,
+    // 反馈能力启用时限制同时可见通知数。
+    #[cfg(feature = "feedback")]
     max_visible: usize,
 }
 
 impl AppNotificationState {
     pub(crate) fn new() -> Self {
-        Self {
-            windows: Arc::new(Mutex::new(HashMap::new())),
-            next_id: Arc::new(AtomicU64::new(0)),
-            max_visible: 5,
+        // 反馈能力启用时初始化完整逐窗通知状态。
+        #[cfg(feature = "feedback")]
+        {
+            Self {
+                windows: Arc::new(Mutex::new(HashMap::new())),
+                next_id: Arc::new(AtomicU64::new(0)),
+                max_visible: 5,
+            }
+        }
+        // 关闭反馈能力时保留零尺寸 DI 哨兵，通用应用流程无需分叉。
+        #[cfg(not(feature = "feedback"))]
+        {
+            Self {}
         }
     }
 
+    // 反馈 capability 启用时才暴露内部逐窗通知句柄。
+    #[cfg(feature = "feedback")]
     pub(crate) fn handle(&self, window_id: WindowId) -> NotificationHandle {
         self.windows
             .lock()
@@ -67,6 +106,8 @@ impl AppNotificationState {
             .clone()
     }
 
+    // 反馈 capability 启用时才把应用错误加入通知队列。
+    #[cfg(feature = "feedback")]
     pub(crate) fn notify_error(&self, window_id: WindowId, error: &Error) -> Option<u64> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let toast = ToastEntry::from_error(id, error, Instant::now())?;
@@ -77,6 +118,8 @@ impl AppNotificationState {
         Some(id)
     }
 
+    // 反馈 capability 启用时才清理逐窗通知状态。
+    #[cfg(feature = "feedback")]
     pub(crate) fn remove_window(&self, window_id: WindowId) {
         self.windows
             .lock()
@@ -90,11 +133,21 @@ pub(crate) fn wrap_root_with_notification_overlay(
     notifications: AppNotificationState,
     window_id: WindowId,
 ) -> ViewNode {
-    let notification = Notification::from_handle(notifications.handle(window_id));
-    ViewNode::new(
-        AppOverlayRoot,
-        vec![root, ViewNode::leaf(notification).z_index(10_000)],
-    )
+    // 反馈能力启用时把通知容器挂载到应用根节点上层。
+    #[cfg(feature = "feedback")]
+    {
+        let notification = Notification::from_handle(notifications.handle(window_id));
+        ViewNode::new(
+            AppOverlayRoot,
+            vec![root, ViewNode::leaf(notification).z_index(10_000)],
+        )
+    }
+    // 关闭反馈能力时根视图直通，且不构造通知组件。
+    #[cfg(not(feature = "feedback"))]
+    {
+        let _ = (notifications, window_id);
+        root
+    }
 }
 
 #[derive(Clone)]
@@ -220,6 +273,8 @@ impl AppHandle {
             .inject_graphics_surface_lost_for_test(self.window_id)
     }
 
+    // 反馈 capability 启用时才暴露应用错误通知入口。
+    #[cfg(feature = "feedback")]
     pub fn notify_error(&self, error: &Error) -> Option<u64> {
         if !self.alive.load(Ordering::Acquire) {
             return None;
@@ -230,6 +285,8 @@ impl AppHandle {
         Some(id)
     }
 
+    // 反馈 capability 启用时才暴露通知关闭入口。
+    #[cfg(feature = "feedback")]
     pub fn dismiss_notification(&self, id: u64) -> bool {
         if !self.alive.load(Ordering::Acquire) {
             return false;
@@ -289,8 +346,12 @@ impl AppHandle {
 
     pub(crate) fn mark_closed(&self) {
         self.alive.store(false, Ordering::Release);
-        if let Some(notifications) = self.container.resolve_clone::<AppNotificationState>() {
-            notifications.remove_window(self.window_id);
+        // 反馈能力启用时同步释放逐窗通知句柄。
+        #[cfg(feature = "feedback")]
+        {
+            if let Some(notifications) = self.container.resolve_clone::<AppNotificationState>() {
+                notifications.remove_window(self.window_id);
+            }
         }
         self.runtime.close_session(self.window_id);
     }
