@@ -50,8 +50,9 @@
 
 - 只有尺寸约束、布局属性、子结构、文本度量或可见性变化才标 Layout dirty。
 - Paint-only 主题色、hover、opacity 动画不触发布局；width/height 等几何动画触发布局。
-- 声明树原位协调分别报告 Paint 与 Layout 影响；`Label`、`Container`、`Grid` 按快照字段分类，未审计组件继续保守请求 Layout，不能以优化名义吞掉未知几何变化。
-- 布局 scratch 与输出快照可按窗口复用，但树版本、约束或相关属性变化时必须失效。
+- 声明树原位协调分别报告 Paint 与 Layout 影响；`Label`、`Container`、`Grid` 按快照字段分类，未审计组件及 `ProviderContext` 变化继续保守请求 Layout，不能以优化名义吞掉未知几何变化。
+- 直接子节点增加、移除或重排后，树通过组件核心通知同步依赖子结构的派生状态；空子树不能依赖 `layout_children([])` 清理，因为 Phase 1 会跳过没有直接子节点的节点。
+- `LayoutFrameScratch` / `LayoutTraversalScratch` 只跨帧复用存储，进入布局即清空本轮向量与集合；遍历缓存以 `tree_version` 为键，当前核心不持有跨帧 `LayoutOutput` 语义快照。
 - 虚拟滚动在范围与挂载数量稳定且没有新版声明时不调用 renderer 或 reconcile，滚动走 composite/paint 路径；范围或 renderer 声明变化时，以业务 key 或绝对索引后备 key 协调当前有界窗口，重叠行保留原组件身份。
 
 ## 不变量
@@ -74,4 +75,5 @@
 - `b5c4f152` 让 ScrollView 的放置、滚动条判断和内容范围共同消费子项 margin，并把对侧沟槽纳入双轴滚动坐标范围，同时在组件边界复用共享有限几何归一规则；三个聚焦断言修复前失败，修复后内部 ScrollView 4/4、公开布局契约 22/22、库测试 113/113、公开 API 2/2、使用门面 5/5、使用示例 11/11，两套特性组合检查均为 0 错误。
 - `5b45c0d9` 以绝对索引后备 key 和 keyed reconcile 替换 VirtualScroll 的破坏性 `set_children`，让窗口重叠行与 renderer 声明更新保留组件身份；`cca439f9` 再为非法度量、超限 offset、总高度、滚动增量和最终行 frame 建立有限值规则，并以 4096 行硬预算限制 viewport/overscan。三项身份门禁与四项病理资源门禁修复前失败，修复后内部 VirtualScroll 8/8、公开布局契约 22/22、库测试 121/121、公开 API 2/2、使用门面 5/5、使用示例 11/11，两套特性组合检查均为 0 错误，文档测试 47 通过/23 忽略。
 - `32a5cbf6` 将 `ViewAdapter` 的组件 patch 结果拆为 Paint/Layout 双通道，只抓取一次新旧公开快照，并为 `Label`、`Container`、`Grid` 区分颜色、背景等纯绘制字段与文本、盒模型、Flex/Grid 轨道等几何字段；未分类组件保持保守 Layout。两个纯视觉门禁修复前均错误产生 Layout，修复后协调分类 6/6、库测试 127/127、布局与公开门面 40/40，两套特性组合检查均为 0 错误，文档测试 47 通过/23 忽略。
-- 现有证据仍不替代 Grid 其余 justify/span 组合、Flex overflow 与 wrap 组合、其他组件 measure/paint/hit-test 一致性、其余组件失效分类、布局 scratch/输出缓存或真窗视觉矩阵。
+- `8530d29` 在建树、移除与声明重排三个直接子结构入口统一发送 `on_children_changed`，让 Container/Space/Affix 清除空内容尺寸、ScrollView 清除范围/偏移/滑块交互并回写受控零值、Carousel 清除旧数量且排除自定义箭头；同时确认 ProviderContext 继续保守 Layout、布局 scratch 每轮清空、遍历缓存受树版本约束且当前没有跨帧布局输出快照。新增六项结构状态门禁后适配器 12/12、库测试 133/133、集成测试 91 通过/1 忽略，两套特性检查均为 0 错误，文档测试 47 通过/23 忽略。
+- 现有证据仍不替代 Grid 其余 justify/span 组合、Flex overflow 与 wrap 组合、其他组件 measure/paint/hit-test 一致性、其余组件失效分类、可变行高缓存或真窗视觉矩阵。
