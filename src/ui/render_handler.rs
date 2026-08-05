@@ -93,12 +93,23 @@ impl RenderHandlerTable {
         component: ComponentId,
         start: usize,
         end: usize,
-    ) -> Option<Vec<WidgetNode>> {
+    ) -> Option<Vec<ViewNode>> {
+        // 读取该虚拟滚动节点当前声明的行渲染器。
         let renderer = self.virtual_scroll_item.get_mut(&component)?;
+        // 只构建当前有界物化窗口中的 View。
         Some(
             (start..end)
-                .map(|index| ViewAdapter::capture_root(|| renderer(index)))
-                .map(ViewAdapter::expand)
+                .map(|index| {
+                    // 在捕获上下文中构建绝对索引对应的声明行。
+                    let mut view = ViewAdapter::capture_root(|| renderer(index));
+                    // 用户业务 key 优先；缺省时用绝对索引提供确定性身份。
+                    if view.key.is_none() {
+                        // 后备 key 让重叠物化窗口可复用同一行组件。
+                        view = view.key(format!("virtual-scroll-item:{index}"));
+                    }
+                    // 保留 ViewNode 供动态协调器按 key 复用，而不提前展开。
+                    view
+                })
                 .collect(),
         )
     }
