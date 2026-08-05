@@ -13,6 +13,8 @@ pub mod display;
 pub mod feedback;
 pub mod general;
 pub mod input;
+// 导航 capability 启用时才编译完整组件族。
+#[cfg(feature = "navigation")]
 pub mod navigation;
 pub mod other;
 pub(crate) mod window_chrome;
@@ -24,6 +26,8 @@ pub use display::*;
 pub use feedback::*;
 pub use general::*;
 pub use input::*;
+// 导航 capability 启用时才保留扁平公开导入面。
+#[cfg(feature = "navigation")]
 pub use navigation::*;
 pub use other::*;
 

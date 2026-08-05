@@ -142,27 +142,43 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     if let Some(back_top) = component.downcast_ref::<BackTop>() {
         return back_top.snapshot_fields();
     }
+    // 导航 capability 启用时才引用面包屑组件类型。
+    #[cfg(feature = "navigation")]
     if let Some(breadcrumb) = component.downcast_ref::<Breadcrumb>() {
         return breadcrumb.snapshot_fields();
     }
+    // 导航 capability 启用时才引用分页组件类型。
+    #[cfg(feature = "navigation")]
     if let Some(pagination) = component.downcast_ref::<Pagination>() {
         return pagination.snapshot_fields();
     }
+    // 导航 capability 启用时才引用锚点组件类型。
+    #[cfg(feature = "navigation")]
     if let Some(anchor) = component.downcast_ref::<Anchor>() {
         return anchor.snapshot_fields();
     }
+    // 导航 capability 启用时才引用菜单组件类型。
+    #[cfg(feature = "navigation")]
     if let Some(menu) = component.downcast_ref::<Menu>() {
         return menu.snapshot_fields();
     }
+    // 导航 capability 启用时才引用下拉菜单组件类型。
+    #[cfg(feature = "navigation")]
     if let Some(dropdown) = component.downcast_ref::<Dropdown>() {
         return dropdown.snapshot_fields();
     }
+    // 导航 capability 启用时才引用标签页组件类型。
+    #[cfg(feature = "navigation")]
     if let Some(tabs) = component.downcast_ref::<Tabs>() {
         return tabs.snapshot_fields();
     }
+    // 导航 capability 启用时才引用步骤条组件类型。
+    #[cfg(feature = "navigation")]
     if let Some(steps) = component.downcast_ref::<Steps>() {
         return steps.snapshot_fields();
     }
+    // 导航 capability 启用时才引用导航项组件类型。
+    #[cfg(feature = "navigation")]
     if let Some(nav_item) = component.downcast_ref::<NavItem>() {
         return nav_item.snapshot_fields();
     }

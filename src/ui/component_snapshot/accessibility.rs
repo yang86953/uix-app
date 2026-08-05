@@ -1,7 +1,11 @@
 use crate::ui::widgets::{
-    AnchorItem, BadgeStatus, BreadcrumbItem, Date, MenuItem, OptGroup, ProgressMode, ResultType,
-    SelectableItem, Step, Tab, TimelineItem, TypographyType, UploadFile, UploadStatus,
+    BadgeStatus, Date, OptGroup, ProgressMode, ResultType, SelectableItem, TimelineItem,
+    TypographyType, UploadFile, UploadStatus,
 };
+// 导航 capability 启用时才引入专属条目模型。
+#[cfg(feature = "navigation")]
+// 这些类型仅供同步门控的导航无障碍转换使用。
+use crate::ui::widgets::{AnchorItem, BreadcrumbItem, MenuItem, Step, Tab};
 // 富文本 capability 启用时才引入其内容模型。
 #[cfg(feature = "rich-text")]
 // 该类型仅供富文本无障碍快照转换使用。
@@ -111,6 +115,8 @@ pub(super) fn avatar_accessibility(text: &str, src: &str) -> AccessibilitySnapsh
     )
 }
 
+// 导航 capability 启用时才编译步骤条无障碍转换。
+#[cfg(feature = "navigation")]
 pub(super) fn steps_accessibility(steps: &[Step], current: usize) -> AccessibilitySnapshot {
     AccessibilitySnapshot::new(AccessibilityRole::Navigation).with_state(AccessibilityState {
         value_text: steps.get(current).map(|step| step.title.clone()),
@@ -140,6 +146,8 @@ pub(super) fn card_accessibility(
     })
 }
 
+// 导航 capability 启用时才编译菜单无障碍转换。
+#[cfg(feature = "navigation")]
 pub(super) fn menu_accessibility(items: &[MenuItem], active_key: &str) -> AccessibilitySnapshot {
     AccessibilitySnapshot::new(AccessibilityRole::Menu).with_state(AccessibilityState {
         value_text: items
@@ -150,6 +158,8 @@ pub(super) fn menu_accessibility(items: &[MenuItem], active_key: &str) -> Access
     })
 }
 
+// 导航 capability 启用时才编译下拉菜单无障碍转换。
+#[cfg(feature = "navigation")]
 pub(super) fn dropdown_accessibility(
     label: &str,
     items: &[String],
@@ -192,6 +202,8 @@ pub(super) fn popconfirm_accessibility(
     })
 }
 
+// 导航 capability 启用时才编译标签页无障碍转换。
+#[cfg(feature = "navigation")]
 pub(super) fn tabs_accessibility(tabs: &[Tab], active_index: usize) -> AccessibilitySnapshot {
     AccessibilitySnapshot::new(AccessibilityRole::TabList).with_state(AccessibilityState {
         value_text: tabs.get(active_index).map(|tab| tab.label.clone()),
@@ -374,6 +386,8 @@ pub(super) fn theme_toggle_accessibility(dark: bool) -> AccessibilitySnapshot {
     )
 }
 
+// 导航 capability 启用时才编译面包屑无障碍转换。
+#[cfg(feature = "navigation")]
 pub(super) fn breadcrumb_accessibility(items: &[BreadcrumbItem]) -> AccessibilitySnapshot {
     let active = items
         .iter()
@@ -390,6 +404,8 @@ pub(super) fn breadcrumb_accessibility(items: &[BreadcrumbItem]) -> Accessibilit
     })
 }
 
+// 导航 capability 启用时才编译分页无障碍转换。
+#[cfg(feature = "navigation")]
 pub(super) fn pagination_accessibility(
     current: usize,
     total: usize,
@@ -407,6 +423,8 @@ pub(super) fn pagination_accessibility(
     })
 }
 
+// 导航 capability 启用时才编译锚点无障碍转换。
+#[cfg(feature = "navigation")]
 pub(super) fn anchor_accessibility(
     items: &[AnchorItem],
     active_index: usize,

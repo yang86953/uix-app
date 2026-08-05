@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # 记录 uix-demo 除日志订阅外必须启用的既有能力组合。
-DEMO_BASE_FEATURES = "d3d11,image-codecs,qrcode,form-pattern,rich-text,charts,table"
+DEMO_BASE_FEATURES = "d3d11,image-codecs,qrcode,form-pattern,rich-text,charts,table,navigation"
 # 记录在相同演示能力组合上额外启用日志订阅的对照集合。
 DEMO_LOGGING_FEATURES = f"{DEMO_BASE_FEATURES},demo-logging"
 # 记录所有可独立选择的图形 backend feature，供最小与负向场景统一排除。
@@ -118,7 +118,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 最小入口必须排除全部 D3D11/D3D12 图形 API feature。
             forbidden_package_features=GRAPHICS_WINDOWS_PACKAGE_FEATURES,
             # 最小入口必须证明 backend、非默认源码与数据能力未被 Cargo 选择。
-            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "agent-control", "charts", "rich-text", "settings-serde", "table"),
+            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "agent-control", "charts", "navigation", "rich-text", "settings-serde", "table"),
         ),
         # 复用最小入口建立真实的非 Windows 编译轴。
         Scenario(
@@ -163,7 +163,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 结束 Linux 禁用依赖集合。
             ),
             # Linux 最小入口同样不得选择 backend、Agent、富文本与设置能力。
-            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "agent-control", "charts", "rich-text", "settings-serde", "table"),
+            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "agent-control", "charts", "navigation", "rich-text", "settings-serde", "table"),
         # 结束 Linux 最小场景定义。
         ),
         # 默认入口覆盖当前 Windows 默认 D3D11 能力。
@@ -180,7 +180,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 默认 D3D11 入口不得合并 D3D12 专属 Windows API feature。
             forbidden_package_features=D3D12_ONLY_WINDOWS_PACKAGE_FEATURES,
             # 默认兼容集合必须继续包含 D3D11 与富文本公开能力。
-            required_uix_features=("d3d11", "charts", "rich-text", "table"),
+            required_uix_features=("d3d11", "charts", "navigation", "rich-text", "table"),
             # Agent 控制与 OpenGL ES 不属于默认兼容集合。
             forbidden_uix_features=("agent-control", "opengles"),
         ),
@@ -201,7 +201,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # metadata 必须证明 uix 实际选择了 D3D11 feature。
             required_uix_features=("d3d11",),
             # 单 backend 入口不得合并其他图形实现或源码能力。
-            forbidden_uix_features=("d3d12", "metal", "opengles", "vulkan", "agent-control", "charts", "rich-text", "settings-serde", "table"),
+            forbidden_uix_features=("d3d12", "metal", "opengles", "vulkan", "agent-control", "charts", "navigation", "rich-text", "settings-serde", "table"),
         # 结束 D3D11 正向场景定义。
         ),
         # OpenGL ES 单 backend 入口只打开对应实现与公开选择面。
@@ -221,7 +221,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # metadata 必须证明 uix 实际选择了 OpenGL ES feature。
             required_uix_features=("opengles",),
             # 单 backend 入口不得合并其他图形实现或源码能力。
-            forbidden_uix_features=("d3d11", "d3d12", "metal", "vulkan", "agent-control", "charts", "rich-text", "settings-serde", "table"),
+            forbidden_uix_features=("d3d11", "d3d12", "metal", "vulkan", "agent-control", "charts", "navigation", "rich-text", "settings-serde", "table"),
         # 结束 OpenGL ES 正向场景定义。
         ),
         # D3D12 当前只验证公开选择面与清单依赖，不宣称生产 registry 可用。
@@ -243,7 +243,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # metadata 必须证明 uix 实际选择 D3D12 feature。
             required_uix_features=("d3d12",),
             # 单选择面入口不得合并其他 backend 与源码 capability。
-            forbidden_uix_features=("d3d11", "metal", "opengles", "vulkan", "agent-control", "charts", "rich-text", "settings-serde", "table"),
+            forbidden_uix_features=("d3d11", "metal", "opengles", "vulkan", "agent-control", "charts", "navigation", "rich-text", "settings-serde", "table"),
         # 结束 D3D12 选择面正向场景定义。
         ),
         # Vulkan 当前验证公开选择面、ash 与可编译源码，但不宣称 registry 可用。
@@ -265,7 +265,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # metadata 必须证明 uix 实际选择 Vulkan feature。
             required_uix_features=("vulkan",),
             # 单选择面入口不得合并其他 backend 与源码 capability。
-            forbidden_uix_features=("d3d11", "d3d12", "metal", "opengles", "agent-control", "charts", "rich-text", "settings-serde", "table"),
+            forbidden_uix_features=("d3d11", "d3d12", "metal", "opengles", "agent-control", "charts", "navigation", "rich-text", "settings-serde", "table"),
         # 结束 Vulkan 选择面正向场景定义。
         ),
         # Metal 当前只验证无专属 package 的公开选择面，不宣称 Windows 生产实现。
@@ -285,7 +285,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # metadata 必须证明 uix 实际选择 Metal feature。
             required_uix_features=("metal",),
             # 单选择面入口不得合并其他 backend 与源码 capability。
-            forbidden_uix_features=("d3d11", "d3d12", "opengles", "vulkan", "agent-control", "charts", "rich-text", "settings-serde", "table"),
+            forbidden_uix_features=("d3d11", "d3d12", "opengles", "vulkan", "agent-control", "charts", "navigation", "rich-text", "settings-serde", "table"),
         # 结束 Metal 选择面正向场景定义。
         ),
         # 演示日志禁用入口直接构建根清单二进制。
@@ -309,7 +309,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 演示基础组合不得合并 D3D12 专属 Windows API feature。
             forbidden_package_features=D3D12_ONLY_WINDOWS_PACKAGE_FEATURES,
             # 演示基础组合必须显式保留 D3D11 与富文本组件能力。
-            required_uix_features=("d3d11", "charts", "rich-text", "table"),
+            required_uix_features=("d3d11", "charts", "navigation", "rich-text", "table"),
             # 演示日志对照不得意外启用 Agent 控制或 OpenGL ES。
             forbidden_uix_features=("agent-control", "opengles"),
         # 结束演示日志禁用场景定义。
@@ -335,7 +335,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 日志启用对照不得合并 D3D12 专属 Windows API feature。
             forbidden_package_features=D3D12_ONLY_WINDOWS_PACKAGE_FEATURES,
             # 日志对照只能增加订阅器，D3D11 与富文本能力必须保持一致。
-            required_uix_features=("d3d11", "charts", "rich-text", "table"),
+            required_uix_features=("d3d11", "charts", "navigation", "rich-text", "table"),
             # 日志启用场景同样不得合并 Agent 控制或 OpenGL ES。
             forbidden_uix_features=("agent-control", "opengles"),
         # 结束演示日志正向场景定义。
@@ -352,7 +352,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # metadata 必须证明只选择设置序列化而非 Agent 控制。
             required_uix_features=("settings-serde",),
             # 同时排除共享 JSON 依赖无法区分的两个源码能力。
-            forbidden_uix_features=("agent-control", "charts", "rich-text", "table"),
+            forbidden_uix_features=("agent-control", "charts", "navigation", "rich-text", "table"),
         ),
         # Agent 控制单能力入口只打开应用 builder 与本机 IPC 实现。
         Scenario(
@@ -369,7 +369,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # metadata 必须证明 uix 实际选择了 Agent 控制 feature。
             required_uix_features=("agent-control",),
             # 共享 JSON package 不得掩盖设置或富文本 feature 的误入。
-            forbidden_uix_features=("charts", "rich-text", "settings-serde", "table"),
+            forbidden_uix_features=("charts", "navigation", "rich-text", "settings-serde", "table"),
         ),
         # 复用 Agent 使用方入口建立 Linux GNU 最终链接证据。
         Scenario(
@@ -416,7 +416,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # metadata 必须证明 uix 实际选择 Agent 控制 feature。
             required_uix_features=("agent-control",),
             # Linux Agent 单能力入口不得合并 backend、富文本或设置能力。
-            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "charts", "rich-text", "settings-serde", "table"),
+            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "charts", "navigation", "rich-text", "settings-serde", "table"),
         # 结束 Linux Agent release 场景定义。
         ),
         # 图片编解码单能力入口只打开对应文件格式 capability。
@@ -432,8 +432,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             required_packages=("image",),
             # 图片编解码入口不得合并其他 capability 依赖或已删除的死依赖。
             forbidden_packages=("qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
-            # 图片编解码入口不得合并无专属 package 的图表或表格 capability。
-            forbidden_uix_features=("charts", "table"),
+            # 图片编解码入口不得合并无专属 package 的图表、导航或表格 capability。
+            forbidden_uix_features=("charts", "navigation", "table"),
         # 结束图片编解码正向场景定义。
         ),
         # 二维码单能力入口只打开对应组件 capability。
@@ -444,8 +444,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             required_packages=("qrcode",),
             # 二维码入口不得合并其他 capability 依赖或已删除的死依赖。
             forbidden_packages=("bytemuck", "image", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
-            # 二维码入口不得合并无专属 package 的图表或表格 capability。
-            forbidden_uix_features=("charts", "table"),
+            # 二维码入口不得合并无专属 package 的图表、导航或表格 capability。
+            forbidden_uix_features=("charts", "navigation", "table"),
         ),
         # 表单 pattern 单能力入口只打开正则规则 capability。
         Scenario(
@@ -455,8 +455,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             required_packages=("regex",),
             # 表单正则入口不得合并其他 capability 依赖或已删除的死依赖。
             forbidden_packages=("bytemuck", "image", "qrcode", "raw-window-handle", "serde_json", "tracing-subscriber"),
-            # 表单正则入口不得合并无专属 package 的图表或表格 capability。
-            forbidden_uix_features=("charts", "table"),
+            # 表单正则入口不得合并无专属 package 的图表、导航或表格 capability。
+            forbidden_uix_features=("charts", "navigation", "table"),
         ),
         # 富文本单能力入口只打开组件、解析、布局与快照公开面。
         Scenario(
@@ -470,8 +470,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             forbidden_packages=("bytemuck", "image", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
             # metadata 必须证明 uix 实际选择了富文本 feature。
             required_uix_features=("rich-text",),
-            # 富文本入口不得合并同为纯源码能力的图表或表格 feature。
-            forbidden_uix_features=("charts", "table"),
+            # 富文本入口不得合并同为纯源码能力的图表、导航或表格 feature。
+            forbidden_uix_features=("charts", "navigation", "table"),
         # 结束富文本正向场景定义。
         ),
         # 图表单能力入口只打开基础与高级图表公开面。
@@ -487,7 +487,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # metadata 必须证明 uix 实际选择了图表 feature。
             required_uix_features=("charts",),
             # 单图表入口不得合并 backend、Agent、富文本或设置能力。
-            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "agent-control", "rich-text", "settings-serde", "table"),
+            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "agent-control", "navigation", "rich-text", "settings-serde", "table"),
         # 结束图表正向场景定义。
         ),
         # 表格单能力入口只打开基础与泛型表格公开面。
@@ -503,8 +503,24 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # metadata 必须证明 uix 实际选择了表格 feature。
             required_uix_features=("table",),
             # 单表格入口不得合并 backend、Agent、图表、富文本或设置能力。
-            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "agent-control", "charts", "rich-text", "settings-serde"),
+            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "agent-control", "charts", "navigation", "rich-text", "settings-serde"),
         # 结束表格正向场景定义。
+        ),
+        # 导航单能力入口覆盖完整组件族及泛型页面绑定公开面。
+        Scenario(
+            # 记录报告中的稳定场景名称。
+            name="navigation",
+            # 指向导航正向 fixture 清单。
+            manifest=root / "fixtures" / "usage-build" / "navigation" / "Cargo.toml",
+            # 说明该入口同时覆盖基础导航组件与泛型导航容器。
+            description="只打开 navigation capability 的基础与泛型导航入口",
+            # 导航纯源码能力不得合并其他可选依赖或已删除的死依赖。
+            forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
+            # metadata 必须证明 uix 实际选择了导航 feature。
+            required_uix_features=("navigation",),
+            # 单导航入口不得合并 backend、Agent、图表、富文本、表格或设置能力。
+            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "agent-control", "charts", "rich-text", "settings-serde", "table"),
+        # 结束导航正向场景定义。
         ),
         # D3D11 禁用入口必须证明公开 backend 变体无法绕过 feature。
         Scenario(
@@ -519,7 +535,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # D3D11 禁用入口不得选择任何 D3D11/D3D12 Win32 API feature。
             forbidden_package_features=GRAPHICS_WINDOWS_PACKAGE_FEATURES,
             # metadata 必须证明全部 backend feature 都保持关闭。
-            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "charts", "table"),
+            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "charts", "navigation", "table"),
             # 标记该场景预期编译失败。
             expected_compile_failure=True,
             # 绑定缺失枚举变体的稳定诊断与公开名称。
@@ -539,7 +555,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # OpenGL ES 禁用入口同样不得合并 D3D11/D3D12 Win32 API feature。
             forbidden_package_features=GRAPHICS_WINDOWS_PACKAGE_FEATURES,
             # metadata 必须证明全部 backend feature 都保持关闭。
-            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "charts", "table"),
+            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "charts", "navigation", "table"),
             # 标记该场景预期编译失败。
             expected_compile_failure=True,
             # 绑定缺失枚举变体的稳定诊断与公开名称。
@@ -561,7 +577,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 禁用入口不得合并任何 D3D 图形 API feature。
             forbidden_package_features=GRAPHICS_WINDOWS_PACKAGE_FEATURES,
             # metadata 必须证明全部 backend feature 关闭。
-            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "charts", "table"),
+            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "charts", "navigation", "table"),
             # 标记该场景预期编译失败。
             expected_compile_failure=True,
             # 绑定缺失枚举变体与公开名称。
@@ -583,7 +599,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 禁用入口不得合并任何 D3D 图形 API feature。
             forbidden_package_features=GRAPHICS_WINDOWS_PACKAGE_FEATURES,
             # metadata 必须证明全部 backend feature 关闭。
-            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "charts", "table"),
+            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "charts", "navigation", "table"),
             # 标记该场景预期编译失败。
             expected_compile_failure=True,
             # 绑定缺失枚举变体与公开名称。
@@ -605,7 +621,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 禁用入口不得合并任何 D3D 图形 API feature。
             forbidden_package_features=GRAPHICS_WINDOWS_PACKAGE_FEATURES,
             # metadata 必须证明全部 backend feature 关闭。
-            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "charts", "table"),
+            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "charts", "navigation", "table"),
             # 标记该场景预期编译失败。
             expected_compile_failure=True,
             # 绑定缺失枚举变体与公开名称。
@@ -619,8 +635,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             description="关闭 qrcode capability 的公开入口 compile-fail",
             # 禁用入口必须排除全部专属依赖及已删除的死依赖。
             forbidden_packages=("bytemuck", "image", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
-            # 禁用入口必须证明图表与表格 feature 没有随其他源码能力误入。
-            forbidden_uix_features=("charts", "table"),
+            # 禁用入口必须证明图表、导航与表格 feature 没有随其他源码能力误入。
+            forbidden_uix_features=("charts", "navigation", "table"),
             expected_compile_failure=True,
             expected_error_fragments=("unresolved import", "QRCode"),
         ),
@@ -631,8 +647,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             description="关闭 form-pattern capability 的公开方法 compile-fail",
             # 禁用入口必须排除全部专属依赖及已删除的死依赖。
             forbidden_packages=("bytemuck", "image", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
-            # 禁用入口必须证明图表与表格 feature 没有随其他源码能力误入。
-            forbidden_uix_features=("charts", "table"),
+            # 禁用入口必须证明图表、导航与表格 feature 没有随其他源码能力误入。
+            forbidden_uix_features=("charts", "navigation", "table"),
             expected_compile_failure=True,
             expected_error_fragments=("no method named", "validate_pattern"),
         ),
@@ -647,8 +663,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             description="关闭 image-codecs capability 的公开方法 compile-fail",
             # 禁用入口必须排除全部专属依赖及已删除的死依赖。
             forbidden_packages=("bytemuck", "image", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
-            # 禁用入口必须证明图表与表格 feature 没有随其他源码能力误入。
-            forbidden_uix_features=("charts", "table"),
+            # 禁用入口必须证明图表、导航与表格 feature 没有随其他源码能力误入。
+            forbidden_uix_features=("charts", "navigation", "table"),
             # 标记该场景预期编译失败。
             expected_compile_failure=True,
             # 绑定稳定的缺失方法诊断片段。
@@ -666,7 +682,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 禁用入口必须排除全部专属依赖及已删除的死依赖。
             forbidden_packages=("bytemuck", "image", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
             # metadata 必须证明 uix 没有选择富文本 feature。
-            forbidden_uix_features=("charts", "rich-text", "table"),
+            forbidden_uix_features=("charts", "navigation", "rich-text", "table"),
             # 标记该场景预期编译失败。
             expected_compile_failure=True,
             # 同时绑定组件类型与解析辅助函数的缺失诊断。
@@ -684,7 +700,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 禁用入口必须排除全部专属依赖及已删除的死依赖。
             forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
             # metadata 必须证明 uix 没有选择图表 feature。
-            forbidden_uix_features=("charts", "table"),
+            forbidden_uix_features=("charts", "navigation", "table"),
             # 标记该场景预期编译失败。
             expected_compile_failure=True,
             # 同时绑定基础图表与高级图表类型的缺失诊断。
@@ -702,12 +718,30 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 禁用入口必须排除全部专属依赖及已删除的死依赖。
             forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
             # metadata 必须证明 uix 没有选择图表或表格 feature。
-            forbidden_uix_features=("charts", "table"),
+            forbidden_uix_features=("charts", "navigation", "table"),
             # 标记该场景预期编译失败。
             expected_compile_failure=True,
             # 同时绑定基础表格与泛型表格类型的缺失诊断。
             expected_error_fragments=("unresolved import", "Table", "DataTable"),
         # 结束表格负向场景定义。
+        ),
+        # 导航禁用入口必须证明基础与泛型导航类型都无法绕过 capability。
+        Scenario(
+            # 记录报告中的稳定场景名称。
+            name="navigation-disabled",
+            # 指向导航负向 fixture 清单。
+            manifest=root / "fixtures" / "usage-build" / "navigation-disabled" / "Cargo.toml",
+            # 说明该入口必须在公开导入阶段失败。
+            description="关闭 navigation capability 的基础与泛型导航入口 compile-fail",
+            # 禁用入口必须排除全部专属依赖及已删除的死依赖。
+            forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
+            # metadata 必须证明 uix 没有选择图表、导航或表格 feature。
+            forbidden_uix_features=("charts", "navigation", "table"),
+            # 标记该场景预期编译失败。
+            expected_compile_failure=True,
+            # 同时绑定基础面包屑与泛型导航容器的缺失诊断。
+            expected_error_fragments=("unresolved import", "Breadcrumb", "Navigation"),
+        # 结束导航负向场景定义。
         ),
         # Agent 控制禁用入口必须证明应用 builder 方法无法绕过 capability。
         Scenario(
@@ -720,7 +754,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 禁用入口必须排除共享序列化依赖、其他能力依赖与死依赖。
             forbidden_packages=("bytemuck", "image", "qrcode", "regex", "raw-window-handle", "serde", "serde_json", "tracing-subscriber"),
             # metadata 必须证明 uix 没有选择 Agent 控制 feature。
-            forbidden_uix_features=("agent-control", "charts", "table"),
+            forbidden_uix_features=("agent-control", "charts", "navigation", "table"),
             # 标记该场景预期编译失败。
             expected_compile_failure=True,
             # 绑定公开 builder 方法缺失的稳定诊断片段。

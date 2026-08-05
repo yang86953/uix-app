@@ -83,31 +83,37 @@ pub use crate::ui::{SnapshotTableColumn, SnapshotTableColumnGroup};
 pub use crate::Display;
 // ui / components
 pub use crate::ui::{
-    Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeColor,
-    BadgeStatus, Breadcrumb, BreadcrumbItem, BreakpointError, Breakpoints, Button, ButtonGroup,
-    ButtonGroupPosition, Calendar, CalendarCellInfo, CalendarEvent, Card, Carousel, CarouselEffect,
-    Cascader, CascaderOption, CascaderValue, Checkbox, Col, Collapse, CollapsePanel, ColorPicker,
-    Container, Content, Date, DatePicker, DateRangePicker, Descriptions, DescriptionsItem, Divider,
-    DividerDirection, DividerOrientation, Drawer, DrawerPlacement, DropPosition, Dropdown,
-    DropdownItem, Empty, FieldError, FloatButton, FloatButtonBackTop, FloatButtonGroup, Footer,
-    Form, FormBuilder, FormCheckboxItem, FormColorPickerItem, FormDatePickerItem,
-    FormDateRangePickerItem, FormInitialValues, FormInputItem, FormInputNumberItem, FormItem,
-    FormLayout, FormListBuilder, FormListError, FormListFieldError, FormListFields, FormListItemId,
-    FormListModel, FormListValues, FormModel, FormRadioItem, FormRateItem, FormSegmentedItem,
-    FormSelectItem, FormSliderItem, FormSwitchItem, FormTimePickerItem, Grid, Header, Icon, Image,
-    ImageGroup, Input, InputGroup, InputNumber, InputNumberValue, InputSearchExt, InputStatus,
-    IntoBadgeColor, IntoFormValue, Label, Layout, List, Mentions, Menu, MenuItem, MenuMode,
-    Message, MessageFacade, MessageItem, Modal, ModalBuilder, ModalContext, MoveDirection,
-    NavGroup, NavItem, Navigation, Notification, NotificationItem, OptGroup, Pagination,
-    PickerMode, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger,
-    PresetDate, ProgressBar, ProgressMode, ProgressType, Radio, RadioDirection, RangeSlider, Rate,
-    ResultType, ResultView, ScrollView, Segmented, Select, SelectOptionGroup, SelectableItem,
-    SelectableList, SharedActive, Sider, Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin,
-    SpinSize, Splitter, Step, StepStatus, Steps, Switch, Tab, TabPosition, Tabs, Tag, TagColor,
-    ThemeToggle, Time, TimePicker, Timeline, TimelineItem, Tooltip, TooltipPlacement, Transfer,
-    TransferItem, Tree, TreeNode, TreeSelect, Trigger, TriggerMode, Typography, TypographyType,
-    Upload, UploadFile, UploadStatus, ValidateStatus, Values, VirtualScroll, VirtualScrollBuilder,
-    Watermark, Weekday,
+    Affix, Alert, AutoComplete, Avatar, BackTop, Badge, BadgeColor, BadgeStatus, BreakpointError,
+    Breakpoints, Button, ButtonGroup, ButtonGroupPosition, Calendar, CalendarCellInfo,
+    CalendarEvent, Card, Carousel, CarouselEffect, Cascader, CascaderOption, CascaderValue,
+    Checkbox, Col, Collapse, CollapsePanel, ColorPicker, Container, Content, Date, DatePicker,
+    DateRangePicker, Descriptions, DescriptionsItem, Divider, DividerDirection, DividerOrientation,
+    Drawer, DrawerPlacement, DropPosition, Empty, FieldError, FloatButton, FloatButtonBackTop,
+    FloatButtonGroup, Footer, Form, FormBuilder, FormCheckboxItem, FormColorPickerItem,
+    FormDatePickerItem, FormDateRangePickerItem, FormInitialValues, FormInputItem,
+    FormInputNumberItem, FormItem, FormLayout, FormListBuilder, FormListError, FormListFieldError,
+    FormListFields, FormListItemId, FormListModel, FormListValues, FormModel, FormRadioItem,
+    FormRateItem, FormSegmentedItem, FormSelectItem, FormSliderItem, FormSwitchItem,
+    FormTimePickerItem, Grid, Header, Icon, Image, ImageGroup, Input, InputGroup, InputNumber,
+    InputNumberValue, InputSearchExt, InputStatus, IntoBadgeColor, IntoFormValue, Label, Layout,
+    List, Mentions, Message, MessageFacade, MessageItem, Modal, ModalBuilder, ModalContext,
+    MoveDirection, Notification, NotificationItem, OptGroup, PickerMode, Popconfirm,
+    PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger, PresetDate, ProgressBar,
+    ProgressMode, ProgressType, Radio, RadioDirection, RangeSlider, Rate, ResultType, ResultView,
+    ScrollView, Segmented, Select, SelectOptionGroup, SelectableItem, SelectableList, Sider,
+    Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize, Splitter, Switch, Tag,
+    TagColor, ThemeToggle, Time, TimePicker, Timeline, TimelineItem, Tooltip, TooltipPlacement,
+    Transfer, TransferItem, Tree, TreeNode, TreeSelect, Trigger, TriggerMode, Typography,
+    TypographyType, Upload, UploadFile, UploadStatus, ValidateStatus, Values, VirtualScroll,
+    VirtualScrollBuilder, Watermark, Weekday,
+};
+// 导航 capability 启用时才在 prelude 暴露组件、条目模型与状态类型。
+#[cfg(feature = "navigation")]
+// 该列表保持导航组件族既有的便捷导入面。
+pub use crate::ui::{
+    Anchor, AnchorItem, Breadcrumb, BreadcrumbItem, Dropdown, DropdownItem, Menu, MenuItem,
+    MenuMode, NavGroup, NavItem, Navigation, Pagination, SharedActive, Step, StepStatus, Steps,
+    Tab, TabPosition, Tabs,
 };
 // 表格 capability 启用时才在 prelude 暴露组件、构建器与数据模型。
 #[cfg(feature = "table")]
