@@ -5,7 +5,7 @@ use super::super::accessibility::{
     card_accessibility, carousel_accessibility, date_range_accessibility, first_non_empty,
     image_accessibility, input_number_accessibility, result_accessibility, select_accessibility,
     selectable_list_accessibility, splitter_accessibility, tag_accessibility,
-    theme_toggle_accessibility, timeline_accessibility, transfer_accessibility, tree_accessibility,
+    theme_toggle_accessibility, timeline_accessibility, transfer_accessibility,
     typography_accessibility, upload_accessibility,
 };
 // 反馈 capability 启用时才引入专属无障碍转换函数。
@@ -27,6 +27,10 @@ use super::super::accessibility::chart_accessibility;
 #[cfg(feature = "rich-text")]
 // 该函数只处理同步门控的 RichText 快照变体。
 use super::super::accessibility::rich_text_accessibility;
+// 树组件 capability 启用时才引入专属无障碍转换函数。
+#[cfg(feature = "tree-widgets")]
+// 该函数只处理同步门控的展示树快照变体。
+use super::super::accessibility::tree_accessibility;
 use super::super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState};
 use super::SnapshotFields;
 
@@ -463,6 +467,8 @@ impl SnapshotFields {
                         ..AccessibilityState::default()
                     })
             }
+            // 树组件 capability 启用时才转换展示树无障碍快照。
+            #[cfg(feature = "tree-widgets")]
             Self::Tree {
                 nodes,
                 selected_key,
@@ -515,6 +521,8 @@ impl SnapshotFields {
                 slide_count,
                 ..
             } => carousel_accessibility(*current, *slide_count),
+            // 树组件 capability 启用时才转换树选择器无障碍快照。
+            #[cfg(feature = "tree-widgets")]
             Self::TreeSelect {
                 placeholder,
                 value,

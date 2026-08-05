@@ -3,17 +3,32 @@
 # 启用未来注解，避免运行时解析类型前向引用。
 from __future__ import annotations
 
-# 导入数据类工具。
-from dataclasses import dataclass
+# 导入数据类声明与不可变场景复制工具。
+from dataclasses import dataclass, replace
 # 导入路径类型。
 from pathlib import Path
 
 # 记录 uix-demo 除日志订阅外必须启用的既有能力组合。
-DEMO_BASE_FEATURES = "d3d11,image-codecs,qrcode,form-pattern,rich-text,charts,table,navigation,feedback"
+DEMO_BASE_FEATURES = "d3d11,image-codecs,qrcode,form-pattern,rich-text,charts,table,navigation,feedback,tree-widgets"
 # 记录在相同演示能力组合上额外启用日志订阅的对照集合。
 DEMO_LOGGING_FEATURES = f"{DEMO_BASE_FEATURES},demo-logging"
 # 记录所有可独立选择的图形 backend feature，供最小与负向场景统一排除。
 GRAPHICS_BACKEND_FEATURES = ("d3d11", "d3d12", "metal", "opengles", "vulkan")
+# 记录没有专属第三方 package、必须逐场景断言根 feature 的源码能力。
+PURE_SOURCE_CAPABILITY_FEATURES = (
+    # 富文本通过实现、公开辅助函数与内部分派共同形成源码边界。
+    "rich-text",
+    # 图表通过基础与高级组件族共同形成源码边界。
+    "charts",
+    # 表格通过基础与泛型组件共同形成源码边界。
+    "table",
+    # 导航通过基础与泛型导航组件共同形成源码边界。
+    "navigation",
+    # 反馈通过组件、全局门面与应用覆盖层共同形成源码边界。
+    "feedback",
+    # 树组件通过展示树、节点模型、树选择器与快照共同形成源码边界。
+    "tree-widgets",
+)
 # 记录 D3D11 启用后必须进入 windows package 的精确 API feature。
 D3D11_WINDOWS_PACKAGE_FEATURES = (
     # Direct3D 基础类型属于 D3D11 实现依赖。
@@ -98,6 +113,22 @@ class Scenario:
     expected_error_fragments: tuple[str, ...] = ()
 
 
+# 为单个场景补齐全部纯源码 capability 的正向或负向断言。
+def _complete_pure_source_feature_guards(scenario: Scenario) -> Scenario:
+    # 汇总场景已经明确要求或禁止的根 feature。
+    guarded = {*scenario.required_uix_features, *scenario.forbidden_uix_features}
+    # 按稳定能力顺序找出尚未声明边界的纯源码 feature。
+    missing = tuple(feature for feature in PURE_SOURCE_CAPABILITY_FEATURES if feature not in guarded)
+    # 已完整声明的场景保持原对象与原顺序。
+    if not missing:
+        return scenario
+    # 缺失项统一追加到禁止列表，防止未选能力静默进入解析图。
+    return replace(
+        scenario,
+        forbidden_uix_features=(*scenario.forbidden_uix_features, *missing),
+    )
+
+
 # 返回仓库根目录。
 def project_root() -> Path:
     # 当前脚本位于仓库根目录下的 scripts 目录。
@@ -107,7 +138,7 @@ def project_root() -> Path:
 # 返回 ODC-01/ODC-07 的独立 fixture 与根二进制场景定义。
 def scenario_specs(root: Path) -> list[Scenario]:
     # 返回最小、默认、单能力、根二进制与禁用公开面入口。
-    return [
+    scenarios = [
         # 最小入口关闭所有默认 feature。
         Scenario(
             name="minimal",
@@ -180,7 +211,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 默认 D3D11 入口不得合并 D3D12 专属 Windows API feature。
             forbidden_package_features=D3D12_ONLY_WINDOWS_PACKAGE_FEATURES,
             # 默认兼容集合必须继续包含 D3D11 与富文本公开能力。
-            required_uix_features=("d3d11", "charts", "feedback", "navigation", "rich-text", "table"),
+            required_uix_features=("d3d11", "charts", "feedback", "navigation", "rich-text", "table", "tree-widgets"),
             # Agent 控制与 OpenGL ES 不属于默认兼容集合。
             forbidden_uix_features=("agent-control", "opengles"),
         ),
@@ -309,7 +340,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 演示基础组合不得合并 D3D12 专属 Windows API feature。
             forbidden_package_features=D3D12_ONLY_WINDOWS_PACKAGE_FEATURES,
             # 演示基础组合必须显式保留 D3D11 与富文本组件能力。
-            required_uix_features=("d3d11", "charts", "feedback", "navigation", "rich-text", "table"),
+            required_uix_features=("d3d11", "charts", "feedback", "navigation", "rich-text", "table", "tree-widgets"),
             # 演示日志对照不得意外启用 Agent 控制或 OpenGL ES。
             forbidden_uix_features=("agent-control", "opengles"),
         # 结束演示日志禁用场景定义。
@@ -335,7 +366,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 日志启用对照不得合并 D3D12 专属 Windows API feature。
             forbidden_package_features=D3D12_ONLY_WINDOWS_PACKAGE_FEATURES,
             # 日志对照只能增加订阅器，D3D11 与富文本能力必须保持一致。
-            required_uix_features=("d3d11", "charts", "feedback", "navigation", "rich-text", "table"),
+            required_uix_features=("d3d11", "charts", "feedback", "navigation", "rich-text", "table", "tree-widgets"),
             # 日志启用场景同样不得合并 Agent 控制或 OpenGL ES。
             forbidden_uix_features=("agent-control", "opengles"),
         # 结束演示日志正向场景定义。
@@ -537,6 +568,22 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 单反馈入口不得合并 backend、Agent、图表、导航、富文本、表格或设置能力。
             forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "agent-control", "charts", "navigation", "rich-text", "settings-serde", "table"),
         # 结束反馈正向场景定义。
+        ),
+        # 树组件族单能力入口覆盖展示树、树选择器与公开模型。
+        Scenario(
+            # 记录报告中的稳定场景名称。
+            name="tree-widgets",
+            # 指向树组件族正向 fixture 清单。
+            manifest=root / "fixtures" / "usage-build" / "tree-widgets" / "Cargo.toml",
+            # 说明该入口同时覆盖展示、输入与快照公开面。
+            description="只打开 tree-widgets capability 的展示树与树选择器入口",
+            # 树组件纯源码能力不得合并其他可选依赖或已删除的死依赖。
+            forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
+            # metadata 必须证明 uix 实际选择了树组件 feature。
+            required_uix_features=("tree-widgets",),
+            # 单树组件入口不得合并 backend、Agent 或其他纯源码能力。
+            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "agent-control", "charts", "feedback", "navigation", "rich-text", "settings-serde", "table"),
+        # 结束树组件正向场景定义。
         ),
         # D3D11 禁用入口必须证明公开 backend 变体无法绕过 feature。
         Scenario(
@@ -777,6 +824,24 @@ def scenario_specs(root: Path) -> list[Scenario]:
             expected_error_fragments=("unresolved import", "Alert", "Modal", "message", "notify"),
         # 结束反馈负向场景定义。
         ),
+        # 树组件禁用入口必须证明展示、输入与快照公开面都无法绕过 capability。
+        Scenario(
+            # 记录报告中的稳定场景名称。
+            name="tree-widgets-disabled",
+            # 指向树组件族负向 fixture 清单。
+            manifest=root / "fixtures" / "usage-build" / "tree-widgets-disabled" / "Cargo.toml",
+            # 说明该入口必须在公开导入阶段失败。
+            description="关闭 tree-widgets capability 的展示树与树选择器入口 compile-fail",
+            # 禁用入口必须排除全部专属依赖及已删除的死依赖。
+            forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
+            # metadata 必须证明 uix 没有选择树组件及其他纯源码 feature。
+            forbidden_uix_features=("charts", "feedback", "navigation", "rich-text", "table", "tree-widgets"),
+            # 标记该场景预期编译失败。
+            expected_compile_failure=True,
+            # 同时绑定展示、输入、拖拽与快照公开模型的缺失诊断。
+            expected_error_fragments=("unresolved import", "DropPosition", "SnapshotTreeNode", "Tree", "TreeSelect"),
+        # 结束树组件负向场景定义。
+        ),
         # Agent 控制禁用入口必须证明应用 builder 方法无法绕过 capability。
         Scenario(
             # 记录报告中的稳定场景名称。
@@ -796,3 +861,5 @@ def scenario_specs(root: Path) -> list[Scenario]:
         # 结束 Agent 控制负向场景定义。
         ),
     ]
+    # 返回已经补齐全部纯源码 capability 断言的稳定场景列表。
+    return [_complete_pure_source_feature_guards(scenario) for scenario in scenarios]

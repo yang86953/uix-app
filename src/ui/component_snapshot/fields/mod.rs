@@ -15,11 +15,15 @@ use crate::ui::widgets::*;
 #[cfg(feature = "feedback")]
 use crate::ui::Placement;
 
-use super::{SnapshotCollapsePanel, SnapshotField, SnapshotTransferItem, SnapshotTreeNode};
+use super::{SnapshotCollapsePanel, SnapshotField, SnapshotTransferItem};
 // 反馈 capability 启用时才引入专属气泡确认框快照模型。
 #[cfg(feature = "feedback")]
 // 该类型只服务同步门控的 Popconfirm 枚举变体。
 use super::SnapshotPopconfirm;
+// 树组件 capability 启用时才引入树节点快照模型。
+#[cfg(feature = "tree-widgets")]
+// 该类型只服务同步门控的 Tree 与 TreeSelect 枚举变体。
+use super::SnapshotTreeNode;
 // 表格 capability 启用时才引入专属快照列模型。
 #[cfg(feature = "table")]
 // 两个类型只服务同步门控的 Table 枚举变体。
@@ -471,6 +475,8 @@ pub enum SnapshotFields {
         compact: bool,
         active: bool,
     },
+    // 树组件 capability 关闭时不保留展示树快照变体。
+    #[cfg(feature = "tree-widgets")]
     Tree {
         nodes: Vec<SnapshotTreeNode>,
         selected_key: String,
@@ -519,6 +525,8 @@ pub enum SnapshotFields {
         value: String,
         open: bool,
     },
+    // 树组件 capability 关闭时不保留树选择器快照变体。
+    #[cfg(feature = "tree-widgets")]
     TreeSelect {
         placeholder: String,
         nodes: Vec<SnapshotTreeNode>,

@@ -17,8 +17,12 @@ use crate::ui::widgets::RichTextSegment;
 
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute,
-    SnapshotTransferItem, SnapshotTreeNode,
+    SnapshotTransferItem,
 };
+// 树组件 capability 启用时才引入树节点快照模型。
+#[cfg(feature = "tree-widgets")]
+// 该类型只服务同步门控的树无障碍转换。
+use super::SnapshotTreeNode;
 
 pub(super) fn timeline_accessibility(
     items: &[TimelineItem],
@@ -55,6 +59,8 @@ pub(super) fn timeline_accessibility(
     })
 }
 
+// 树组件 capability 关闭时不编译专属无障碍转换逻辑。
+#[cfg(feature = "tree-widgets")]
 pub(super) fn tree_accessibility(
     nodes: &[SnapshotTreeNode],
     selected_key: &str,

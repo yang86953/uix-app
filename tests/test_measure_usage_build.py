@@ -93,8 +93,8 @@ class ResolvedGraphTests(unittest.TestCase):
     def test_demo_logging_scenarios_bind_root_binary_and_feature_graph(self) -> None:
         # 读取当前仓库的全部场景定义。
         scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
-        # 文档声明的 schema v6 矩阵必须保持三十五个独立执行场景。
-        self.assertEqual(len(scenarios), 35)
+        # 文档声明的 schema v6 矩阵必须保持三十七个独立执行场景。
+        self.assertEqual(len(scenarios), 37)
         # 按稳定名称索引场景。
         by_name = {scenario.name: scenario for scenario in scenarios}
         # 场景名称必须全局唯一，避免字典索引静默覆盖配置。
@@ -112,7 +112,7 @@ class ResolvedGraphTests(unittest.TestCase):
         # 演示基础组合必须显式选择 D3D11 与无专属 package 的源码 capability。
         self.assertEqual(
             disabled.required_uix_features,
-            ("d3d11", "charts", "feedback", "navigation", "rich-text", "table"),
+            ("d3d11", "charts", "feedback", "navigation", "rich-text", "table", "tree-widgets"),
         )
         # 读取只启用演示日志的根二进制场景。
         enabled = by_name["demo-logging"]
@@ -123,7 +123,7 @@ class ResolvedGraphTests(unittest.TestCase):
         # 日志对照不得改变演示所需的 D3D11 与源码 capability。
         self.assertEqual(
             enabled.required_uix_features,
-            ("d3d11", "charts", "feedback", "navigation", "rich-text", "table"),
+            ("d3d11", "charts", "feedback", "navigation", "rich-text", "table", "tree-widgets"),
         )
         # 两个根二进制场景必须使用同一根清单以便比较。
         self.assertEqual(enabled.manifest, disabled.manifest)
@@ -150,7 +150,15 @@ class ResolvedGraphTests(unittest.TestCase):
         # 负向入口必须禁止全部 backend 与无依赖源码 feature 意外进入解析图。
         self.assertEqual(
             d3d11_disabled.forbidden_uix_features,
-            (*measure_usage_build.GRAPHICS_BACKEND_FEATURES, "charts", "feedback", "navigation", "table"),
+            (
+                *measure_usage_build.GRAPHICS_BACKEND_FEATURES,
+                "charts",
+                "feedback",
+                "navigation",
+                "table",
+                "rich-text",
+                "tree-widgets",
+            ),
         )
         # D3D11/D3D12 的 Win32 API feature 在禁用入口中必须全部缺席。
         self.assertEqual(
@@ -267,7 +275,15 @@ class ResolvedGraphTests(unittest.TestCase):
             # 全部 uix backend 与无依赖源码 feature 必须保持关闭。
             self.assertEqual(
                 disabled.forbidden_uix_features,
-                (*measure_usage_build.GRAPHICS_BACKEND_FEATURES, "charts", "feedback", "navigation", "table"),
+                (
+                    *measure_usage_build.GRAPHICS_BACKEND_FEATURES,
+                    "charts",
+                    "feedback",
+                    "navigation",
+                    "table",
+                    "rich-text",
+                    "tree-widgets",
+                ),
             )
             # 稳定诊断必须同时绑定错误类别与公开变体名。
             self.assertEqual(disabled.expected_error_fragments, fragments)
@@ -289,7 +305,7 @@ class ResolvedGraphTests(unittest.TestCase):
         # 负向入口必须禁止 rich-text feature 意外进入解析图。
         self.assertEqual(
             disabled.forbidden_uix_features,
-            ("charts", "feedback", "navigation", "rich-text", "table"),
+            ("charts", "feedback", "navigation", "rich-text", "table", "tree-widgets"),
         )
         # 负向入口必须以公开导入失败结束。
         self.assertTrue(disabled.expected_compile_failure)
@@ -298,6 +314,14 @@ class ResolvedGraphTests(unittest.TestCase):
             disabled.expected_error_fragments,
             ("unresolved import", "RichText", "parse_rich_text"),
         )
+        # 每个场景都必须对无专属 package 的 rich-text feature 作正向或负向断言。
+        for scenario in scenarios:
+            # 防止新增场景遗漏纯源码 capability 的解析图边界。
+            self.assertIn(
+                "rich-text",
+                (*scenario.required_uix_features, *scenario.forbidden_uix_features),
+                scenario.name,
+            )
 
     # 确认图表正反场景同时覆盖纯源码 feature 与基础/高级公开面收缩。
     def test_charts_scenarios_bind_feature_and_public_api_guards(self) -> None:
@@ -318,7 +342,10 @@ class ResolvedGraphTests(unittest.TestCase):
         # 读取关闭图表能力的负向入口。
         disabled = by_name["charts-disabled"]
         # 负向入口必须禁止 charts feature 意外进入解析图。
-        self.assertEqual(disabled.forbidden_uix_features, ("charts", "feedback", "navigation", "table"))
+        self.assertEqual(
+            disabled.forbidden_uix_features,
+            ("charts", "feedback", "navigation", "table", "rich-text", "tree-widgets"),
+        )
         # 负向入口必须以公开导入失败结束。
         self.assertTrue(disabled.expected_compile_failure)
         # 诊断必须同时覆盖基础图表和高级图表类型。
@@ -352,7 +379,10 @@ class ResolvedGraphTests(unittest.TestCase):
         # 读取关闭表格能力的负向入口。
         disabled = by_name["table-disabled"]
         # 负向入口必须禁止 table feature 意外进入解析图。
-        self.assertEqual(disabled.forbidden_uix_features, ("charts", "feedback", "navigation", "table"))
+        self.assertEqual(
+            disabled.forbidden_uix_features,
+            ("charts", "feedback", "navigation", "table", "rich-text", "tree-widgets"),
+        )
         # 负向入口必须以公开导入失败结束。
         self.assertTrue(disabled.expected_compile_failure)
         # 诊断必须同时覆盖基础表格和泛型表格类型。
@@ -388,7 +418,10 @@ class ResolvedGraphTests(unittest.TestCase):
         # 读取关闭导航能力的负向入口。
         disabled = by_name["navigation-disabled"]
         # 负向入口必须禁止 navigation feature 意外进入解析图。
-        self.assertEqual(disabled.forbidden_uix_features, ("charts", "feedback", "navigation", "table"))
+        self.assertEqual(
+            disabled.forbidden_uix_features,
+            ("charts", "feedback", "navigation", "table", "rich-text", "tree-widgets"),
+        )
         # 负向入口必须以公开导入失败结束。
         self.assertTrue(disabled.expected_compile_failure)
         # 诊断必须同时覆盖基础面包屑和泛型导航容器类型。
@@ -426,7 +459,7 @@ class ResolvedGraphTests(unittest.TestCase):
         # 负向入口必须禁止 feedback feature 意外进入解析图。
         self.assertEqual(
             disabled.forbidden_uix_features,
-            ("charts", "feedback", "navigation", "table"),
+            ("charts", "feedback", "navigation", "table", "rich-text", "tree-widgets"),
         )
         # 负向入口必须以公开导入失败结束。
         self.assertTrue(disabled.expected_compile_failure)
@@ -440,6 +473,47 @@ class ResolvedGraphTests(unittest.TestCase):
             # 防止新增场景遗漏纯源码 capability 的解析图边界。
             self.assertIn(
                 "feedback",
+                (*scenario.required_uix_features, *scenario.forbidden_uix_features),
+                scenario.name,
+            )
+
+    # 确认树组件正反场景同时覆盖纯源码 feature、组件族与快照公开面收缩。
+    def test_tree_widget_scenarios_bind_feature_and_public_api_guards(self) -> None:
+        # 读取当前仓库的全部场景定义。
+        scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
+        # 按稳定名称索引场景。
+        by_name = {scenario.name: scenario for scenario in scenarios}
+        # 读取只启用树组件能力的正向入口。
+        enabled = by_name["tree-widgets"]
+        # 树组件没有专属第三方 package，正向证据必须绑定根 feature。
+        self.assertEqual(enabled.required_packages, ())
+        # metadata 必须证明只选择 tree-widgets 源码 capability。
+        self.assertEqual(enabled.required_uix_features, ("tree-widgets",))
+        # 单树组件入口不得合并既有纯源码能力。
+        self.assertTrue(
+            {"charts", "feedback", "navigation", "rich-text", "table"}.issubset(
+                enabled.forbidden_uix_features
+            )
+        )
+        # 读取关闭树组件能力的负向入口。
+        disabled = by_name["tree-widgets-disabled"]
+        # 负向入口必须禁止全部纯源码 capability 意外进入解析图。
+        self.assertEqual(
+            disabled.forbidden_uix_features,
+            ("charts", "feedback", "navigation", "rich-text", "table", "tree-widgets"),
+        )
+        # 负向入口必须以公开导入失败结束。
+        self.assertTrue(disabled.expected_compile_failure)
+        # 诊断必须同时覆盖树、树节点、树选择器、拖放位置与快照节点。
+        self.assertEqual(
+            disabled.expected_error_fragments,
+            ("unresolved import", "DropPosition", "SnapshotTreeNode", "Tree", "TreeSelect"),
+        )
+        # 每个场景都必须对无专属 package 的 tree-widgets feature 作正向或负向断言。
+        for scenario in scenarios:
+            # 防止新增场景遗漏树组件源码 capability 的解析图边界。
+            self.assertIn(
+                "tree-widgets",
                 (*scenario.required_uix_features, *scenario.forbidden_uix_features),
                 scenario.name,
             )
@@ -489,7 +563,15 @@ class ResolvedGraphTests(unittest.TestCase):
         # 负向入口必须禁止 Agent feature 意外进入解析图。
         self.assertEqual(
             disabled.forbidden_uix_features,
-            ("agent-control", "charts", "feedback", "navigation", "table"),
+            (
+                "agent-control",
+                "charts",
+                "feedback",
+                "navigation",
+                "table",
+                "rich-text",
+                "tree-widgets",
+            ),
         )
         # 负向入口必须以公开 builder 方法不可用结束。
         self.assertTrue(disabled.expected_compile_failure)

@@ -42,6 +42,9 @@ pub use other::*;
 pub use overlay_types::*;
 
 // ── 常用子模块重导出──
+// 树组件 capability 启用时才保留兼容子模块路径。
+#[cfg(feature = "tree-widgets")]
+// 启用后保持 ui::widgets::tree 的既有导入路径。
 pub use display::tree;
 pub use general::icon;
 // 图表 capability 启用时才保留兼容子模块路径。

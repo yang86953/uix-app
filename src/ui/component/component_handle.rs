@@ -137,12 +137,14 @@ impl ComponentHandle {
             | SnapshotFields::InputNumber { placeholder, .. }
             | SnapshotFields::Select { placeholder, .. }
             | SnapshotFields::AutoComplete { placeholder, .. }
-            | SnapshotFields::TreeSelect { placeholder, .. }
             | SnapshotFields::Cascader { placeholder, .. }
             | SnapshotFields::DatePicker { placeholder, .. }
             | SnapshotFields::DateRangePicker { placeholder, .. }
             | SnapshotFields::TimePicker { placeholder, .. }
             | SnapshotFields::Mentions { placeholder, .. } => Some(placeholder.clone()),
+            // 树组件 capability 启用时才读取树选择器占位文本。
+            #[cfg(feature = "tree-widgets")]
+            SnapshotFields::TreeSelect { placeholder, .. } => Some(placeholder.clone()),
             _ => None,
         })
         .flatten()
