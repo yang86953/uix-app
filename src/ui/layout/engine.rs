@@ -187,6 +187,38 @@ impl LayoutOutput {
     }
 }
 
+/// 从已放置子 frame 与物理尾侧 margin 计算内容占用尺寸。
+pub(crate) fn content_size_from_children(
+    origin: Rect,
+    positions: &[Rect],
+    children: &[LayoutChild],
+) -> Size {
+    // 横向内容范围保留可见 frame，并把正右 margin 计入占位末端。
+    let content_w = positions
+        .iter()
+        .zip(children)
+        .map(|(rect, child)| {
+            // 负右 margin 只改变兄弟推进，不得裁掉子项自身可见宽度。
+            let trailing_margin = finite_or_zero(child.margin.right).max(0.0);
+            // 将绝对坐标末端转换为相对内容原点的有限非负尺寸。
+            finite_non_negative(rect.x + rect.w + trailing_margin - origin.x)
+        })
+        .fold(0.0, f32::max);
+    // 纵向内容范围保留可见 frame，并把正下 margin 计入占位末端。
+    let content_h = positions
+        .iter()
+        .zip(children)
+        .map(|(rect, child)| {
+            // 负下 margin 只改变兄弟推进，不得裁掉子项自身可见高度。
+            let trailing_margin = finite_or_zero(child.margin.bottom).max(0.0);
+            // 将绝对坐标末端转换为相对内容原点的有限非负尺寸。
+            finite_non_negative(rect.y + rect.h + trailing_margin - origin.y)
+        })
+        .fold(0.0, f32::max);
+    // 返回可供容器下一轮 measure 使用的物理内容尺寸。
+    Size::new(content_w, content_h)
+}
+
 // 把坐标值限制为有限且不是 f32::MAX 测量哨兵的实际值。
 fn finite_or_zero(value: f32) -> f32 {
     // f32::MAX 及其负值不能进入实际 frame，非有限值同样回退为零。
@@ -462,10 +494,38 @@ fn overflow_layout(
         .sum::<f32>()
         + total_margin_main
         + gap * (count as f32 - 1.0).max(0.0);
-    let total_size = if is_row {
-        Size::new(total_main, container_cross)
+    // 固有交叉轴占位必须包含子项自然尺寸与两侧 margin。
+    let max_child_cross = children
+        .iter()
+        .map(|child| {
+            // 按布局方向读取子项自然交叉轴尺寸。
+            let cross = finite_non_negative(if is_row {
+                child.measured_size.h
+            } else {
+                child.measured_size.w
+            });
+            // 按布局方向读取有限交叉轴 margin 总量。
+            let margin = finite_or_zero(if is_row {
+                child.margin.vertical()
+            } else {
+                child.margin.horizontal()
+            });
+            // 外尺寸不得因负 margin 或异常加法变为非法值。
+            finite_non_negative(cross + margin)
+        })
+        .fold(0.0, f32::max);
+    // 零交叉轴 bootstrap 由子项自然外尺寸撑开。
+    let effective_cross = if container_cross > 0.0 {
+        container_cross
     } else {
-        Size::new(container_cross, total_main)
+        max_child_cross
+    };
+    // 总交叉尺寸同时覆盖父级分配与实际自然内容。
+    let total_cross = effective_cross.max(max_child_cross);
+    let total_size = if is_row {
+        Size::new(total_main, total_cross)
+    } else {
+        Size::new(total_cross, total_main)
     };
 
     // 溢出时不增长或压缩子项，只把正剩余空间交给主轴分布规则。
@@ -496,9 +556,14 @@ fn overflow_layout(
 
         let cross_align = child.align_self.unwrap_or(engine.align);
         // 交叉轴先扣除两侧 margin，再在剩余区域内执行对齐。
-        let available_cross = (container_cross - margin_cross).max(0.0);
+        let available_cross = (effective_cross - margin_cross).max(0.0);
         let child_cross = if cross_align == AlignItems::Stretch {
-            available_cross
+            // 已知交叉轴时填满可用区，bootstrap 时至少保留自然尺寸。
+            if container_cross <= 1.0 {
+                available_cross.max(cross_size)
+            } else {
+                available_cross
+            }
         } else {
             cross_size
         };
@@ -538,14 +603,20 @@ fn overflow_layout(
 
     // 与标准 Flex 一致，反向方向沿容器主轴镜像已经完成的逻辑顺序。
     if is_reverse {
+        // 固有主轴必须以自然内容长度镜像，固定主轴继续使用父级分配。
+        let main_extent = if engine.intrinsic_main {
+            finite_non_negative(total_main)
+        } else {
+            container_main
+        };
         // 逐项镜像可同时保留 justify-content、gap 与方向侧 margin 的语义。
         for rect in &mut positions {
             if is_row {
                 // 水平反向布局沿内容区右边界镜像。
-                rect.x = content_rect.x + container_main - (rect.x - content_rect.x) - rect.w;
+                rect.x = content_rect.x + main_extent - (rect.x - content_rect.x) - rect.w;
             } else {
                 // 垂直反向布局沿内容区下边界镜像。
-                rect.y = content_rect.y + container_main - (rect.y - content_rect.y) - rect.h;
+                rect.y = content_rect.y + main_extent - (rect.y - content_rect.y) - rect.h;
             }
         }
     }

@@ -9,6 +9,8 @@ use crate::core::{Constraints, Rect, Size};
 use crate::ui::children::WidgetChildren;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::tree_measure::child_from_tree_with_constraints;
+// 导入共享的物理内容外尺寸计算。
+use crate::ui::layout::engine::content_size_from_children;
 use crate::ui::layout::LayoutChild;
 use crate::ui::layout::{
     flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
@@ -114,6 +116,8 @@ component! {
                 flex_shrink: 0.0,
                 align_self: child.align_self,
                 measured_size: child.measured_size,
+                // Space 与其他 Flex 容器一致地让 margin 推开兄弟并参与固有尺寸。
+                margin: child.margin,
                 ..FlexChild::default()
             })
             .collect();
@@ -136,19 +140,10 @@ component! {
         };
 
         let output = compute_flex_layout(&input);
-        // cached_content_size 记子布局后实际溢出尺寸（含 wrap/gap，measure 撑开用）；
-        // total_size 默认 layout 限到 frame，ScrollView 内子溢出视口时无法撑开 → max_scroll 恒 0。
-        let content_w = output
-            .child_rects
-            .iter()
-            .map(|r| (r.x + r.w - frame.x).max(0.0))
-            .fold(0.0, f32::max);
-        let content_h = output
-            .child_rects
-            .iter()
-            .map(|r| (r.y + r.h - frame.y).max(0.0))
-            .fold(0.0, f32::max);
-        self.cached_content_size.set(Size::new(content_w, content_h));
+        // 缓存子布局实际可见末端与正尾侧 margin，供下一轮固有测量撑开。
+        let content_size = content_size_from_children(frame, &output.child_rects, children);
+        // 写入不依赖求解器父级总尺寸的真实子内容范围。
+        self.cached_content_size.set(content_size);
         children
             .iter()
             .zip(output.child_rects)
@@ -311,5 +306,33 @@ impl Space {
 impl Default for Space {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// Space 布局参数与缓存的内部回归测试。
+#[cfg(test)]
+mod tests {
+    // 导入当前模块的 Space 与布局类型。
+    use super::*;
+    // 导入调用布局 trait 所需的公开接口。
+    use crate::ui::WidgetLayout;
+
+    // 验证 Space 把子项 margin 传入共享 Flex 并计入缓存。
+    #[test]
+    fn child_margins_affect_positions_and_cached_content_size() {
+        // 构造默认水平且无固定尺寸的 Space。
+        let space = Space::new();
+        // 构造二十乘十的自然尺寸子项。
+        let mut child = LayoutChild::new(ComponentId::new(1), Size::new(20.0, 10.0));
+        // 四侧 margin 使自然外尺寸达到三十乘二十。
+        child.margin = crate::core::EdgeInsets::new(2.0, 3.0, 8.0, 7.0);
+        // 空树足以满足无树读取的布局入口。
+        let tree = WidgetTree::new();
+        // 在零尺寸 bootstrap frame 中执行组件布局。
+        let positions = space.layout_children(Rect::zero(), &[child], &tree);
+        // 子项应从左上 margin 后开始并保留自然尺寸。
+        assert_eq!(positions[0].1, Rect::new(2.0, 3.0, 20.0, 10.0));
+        // 缓存必须记录包含右下 margin 的完整外尺寸。
+        assert_eq!(space.cached_content_size.get(), Size::new(30.0, 20.0));
     }
 }
