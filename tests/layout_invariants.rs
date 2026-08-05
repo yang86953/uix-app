@@ -314,3 +314,124 @@ fn single_line_total_cross_includes_margins() {
     // 总高必须包含上下 margin，而不是只返回子项自身高度。
     assert_eq!(output.total_size, Size::new(100.0, 20.0));
 }
+
+// 验证 Auto track 先采用子项外尺寸，再把剩余空间交给 Fr track。
+#[test]
+// 覆盖 mixed Auto+Fr 列与内容定高 Auto 行。
+fn grid_auto_tracks_resolve_intrinsic_size_before_fraction_space() {
+    // 构造位于首列且带非对称 margin 的内容子项。
+    let mut auto_child = LayoutChild::new(ComponentId::new(20), Size::new(30.0, 10.0));
+    // 显式放入首个 Auto 单元格。
+    auto_child.grid_cell = Some(0);
+    // 水平外尺寸为三十五，垂直外尺寸为十五。
+    auto_child.margin = EdgeInsets::new(2.0, 1.0, 3.0, 4.0);
+    // 构造位于 Fr 列且高度更大的第二个子项。
+    let mut fraction_child = LayoutChild::new(ComponentId::new(21), Size::new(10.0, 20.0));
+    // 显式放入第二列。
+    fraction_child.grid_cell = Some(1);
+    // 运行 Auto+1fr 两列、Auto 单行和五像素列 gap 的 Grid。
+    let output = GridLayout::new()
+        .with_columns(vec![GridTrack::Auto, GridTrack::Fr(1.0)])
+        .with_rows(vec![GridTrack::Auto])
+        .with_gap(5.0, 0.0)
+        .with_align(AlignItems::Start)
+        .with_justify(JustifyContent::Start)
+        .layout(
+            Rect::new(0.0, 0.0, 100.0, 40.0),
+            &[auto_child, fraction_child],
+        );
+    // 首项在三十五像素 Auto 列内扣除 margin 后保持三十像素宽。
+    assert_eq!(output.positions[0], Rect::new(2.0, 1.0, 30.0, 10.0));
+    // Fr 列应从 Auto 外宽三十五加五像素 gap 后开始。
+    assert_eq!(output.positions[1], Rect::new(40.0, 0.0, 10.0, 20.0));
+    // 列总宽占满容器，Auto 行总高只取最大子项外高二十。
+    assert_eq!(output.total_size, Size::new(100.0, 20.0));
+}
+
+// 验证没有 Fr 时 Auto track 保持内容尺寸而不吸收全部剩余空间。
+#[test]
+// 覆盖纯 Auto 列的固有宽度与列 gap 账本。
+fn grid_auto_tracks_remain_content_sized_without_fraction_tracks() {
+    // 构造首列二十乘十的内容子项。
+    let mut first = LayoutChild::new(ComponentId::new(22), Size::new(20.0, 10.0));
+    // 显式放入首列。
+    first.grid_cell = Some(0);
+    // 构造次列三十乘十二的内容子项。
+    let mut second = LayoutChild::new(ComponentId::new(23), Size::new(30.0, 12.0));
+    // 显式放入次列。
+    second.grid_cell = Some(1);
+    // 运行两列 Auto 与五像素列 gap 的 Grid。
+    let output = GridLayout::new()
+        .with_columns(vec![GridTrack::Auto, GridTrack::Auto])
+        .with_rows(vec![GridTrack::Auto])
+        .with_gap(5.0, 0.0)
+        .with_align(AlignItems::Start)
+        .with_justify(JustifyContent::Start)
+        .layout(Rect::new(0.0, 0.0, 100.0, 40.0), &[first, second]);
+    // 首项保持首列自然宽度。
+    assert_eq!(output.positions[0], Rect::new(0.0, 0.0, 20.0, 10.0));
+    // 次列从二十像素首列加五像素 gap 后开始。
+    assert_eq!(output.positions[1], Rect::new(25.0, 0.0, 30.0, 12.0));
+    // 总尺寸只包含两列内容宽、gap 与最大行高。
+    assert_eq!(output.total_size, Size::new(55.0, 12.0));
+}
+
+// 验证跨多个 Auto track 的内容贡献会扩展整个 span。
+#[test]
+// 覆盖 spanning 子项在两个 Auto 列间均分缺口的规则。
+fn grid_spanning_child_expands_auto_tracks() {
+    // 构造跨两列且自然宽七十的主子项。
+    let mut spanning = LayoutChild::new(ComponentId::new(24), Size::new(70.0, 12.0));
+    // 主子项从首格开始。
+    spanning.grid_cell = Some(0);
+    // 主子项横跨两个 Auto 列。
+    spanning.grid_column_span = 2;
+    // 构造零尺寸探针以观察第二列起点。
+    let mut probe = LayoutChild::new(ComponentId::new(25), Size::zero());
+    // 探针与 spanning 子项显式重叠在第二列，Grid 允许显式叠放。
+    probe.grid_cell = Some(1);
+    // 运行两列 Auto 与十像素列 gap 的 Grid。
+    let output = GridLayout::new()
+        .with_columns(vec![GridTrack::Auto, GridTrack::Auto])
+        .with_rows(vec![GridTrack::Auto])
+        .with_gap(10.0, 0.0)
+        .with_align(AlignItems::Start)
+        .with_justify(JustifyContent::Start)
+        .layout(Rect::new(0.0, 0.0, 100.0, 40.0), &[spanning, probe]);
+    // 跨列子项获得两列各三十加十像素 gap 的完整七十像素宽度。
+    assert_eq!(output.positions[0], Rect::new(0.0, 0.0, 70.0, 12.0));
+    // 第二列从三十像素首列和十像素 gap 后开始。
+    assert_eq!(output.positions[1], Rect::new(40.0, 0.0, 0.0, 0.0));
+    // Grid 总尺寸收敛到跨列内容宽与 Auto 行内容高。
+    assert_eq!(output.total_size, Size::new(70.0, 12.0));
+}
+
+// 验证跨多个 Auto 行的内容贡献使用与列轴对称的规则。
+#[test]
+// 覆盖 spanning 子项在两个 Auto 行间均分缺口的垂直分支。
+fn grid_row_spanning_child_expands_auto_tracks() {
+    // 构造跨两行且自然高五十的主子项。
+    let mut spanning = LayoutChild::new(ComponentId::new(26), Size::new(12.0, 50.0));
+    // 主子项从首行开始。
+    spanning.grid_cell = Some(0);
+    // 主子项纵向跨越两个 Auto 行。
+    spanning.grid_row_span = 2;
+    // 构造零尺寸探针以观察第二行起点。
+    let mut probe = LayoutChild::new(ComponentId::new(27), Size::zero());
+    // 单列 Grid 中的第二个单元格对应第二行。
+    probe.grid_cell = Some(1);
+    // 运行单列 Auto、两行 Auto 与十像素行 gap 的 Grid。
+    let output = GridLayout::new()
+        .with_columns(vec![GridTrack::Auto])
+        .with_rows(vec![GridTrack::Auto, GridTrack::Auto])
+        .with_gap(0.0, 10.0)
+        .with_align(AlignItems::Start)
+        .with_justify(JustifyContent::Start)
+        .layout(Rect::new(0.0, 0.0, 40.0, 100.0), &[spanning, probe]);
+    // 跨行子项获得两行各二十加十像素 gap 的完整五十像素高度。
+    assert_eq!(output.positions[0], Rect::new(0.0, 0.0, 12.0, 50.0));
+    // 第二行从二十像素首行和十像素 gap 后开始。
+    assert_eq!(output.positions[1], Rect::new(0.0, 30.0, 0.0, 0.0));
+    // Grid 总尺寸同时收敛到单列内容宽与跨行内容高。
+    assert_eq!(output.total_size, Size::new(12.0, 50.0));
+}
