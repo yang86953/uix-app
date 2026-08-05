@@ -35,12 +35,13 @@
 
 ## 组件：FlexLayout / GridLayout
 
-- Flex 支持主轴方向、wrap、grow/shrink、justify、align、gap 和 per-child `align_self`；`overflow_content` 只保留自然主轴尺寸，不取消分布、交叉轴对齐或反向语义。
+- Flex 支持主轴方向、wrap、grow/shrink、justify、align、gap 和 per-child `align_self`；`overflow_content` 只保留自然主轴尺寸，不取消分布、交叉轴对齐或反向语义，固有反向主轴按自然内容长度镜像，零交叉轴由自然外尺寸 bootstrap。
 - Grid 使用显式 column/row track、cell/span 与独立 row/column gap；空 track 或空 child 返回有限空输出，per-child `align_self` 覆盖容器级交叉轴对齐。
 - Grid 先确定 `Px` 与基于子项有限测量外尺寸的 `Auto`，再让正权重 `Fr` 按比例分配剩余空间；纯 `Auto` 轨道不为填满容器而膨胀。
 - 跨多轨道子项在 span 不含正权重 `Fr` 时，先扣除 span 内部 gap、`Px` 与已知 `Auto` 尺寸，再把未覆盖的外尺寸缺口均分给所覆盖的 `Auto` 轨道。
 - Grid 放置层以单轴 4096 条轨道和总计 65,536 个稠密单元格同时限制辅助分配；超限 cell/span 收敛到窗口边界，无可用矩形的自动子项留在零 frame。
 - 自动放置使用可复用的二维占用数前缀和，候选矩形查询为常数时间；每个子项至多在当前矩阵和一次有界扩行后各搜索一次，不保留无限增长循环。
+- `Container` 与 `Space` 共享子 frame 内容外尺寸计算：Space 必须传递子项 margin，缓存取可见 frame 末端并补入正右/下 margin，不用父级受限的求解器总尺寸冒充真实内容范围。
 - 容器组件组合 `FlexLayout`/`GridLayout`，不复制第二套算法。
 
 ## 增量与缓存
@@ -66,4 +67,5 @@
 - `33721e4a` 将 Grid `Auto` 从等权弹性轨道收敛为内容轨道，在列/行轴均统计测量尺寸与 margin，并为不含正权重 `Fr` 的 span 分摊未覆盖尺寸；修复前三个列轴聚焦断言失败，修复后公开布局契约 13/13、库测试 101/101、公开 API 2/2、使用门面 5/5，无默认特性库与全特性全目标检查均为 0 错误。
 - `f2ccba05` 把 Grid 放置拆入独立有界模块，统一处理轨道/单元格预算、整数极值、显式重叠、自动密集回填与窗口耗尽；两个 5000 行级安全断言在修复前失败，修复后公开布局契约 16/16、内部放置边界 6/6（含 3×3 全占用状态和 span 的 4608 组穷举对照）、库测试 107/107、公开 API 2/2、使用门面 5/5，两套特性组合检查均为 0 错误。
 - `40e66b65` 恢复 Grid 子项 `align_self` 到单元格求解器的传递，并让 Flex 溢出路径复用标准主轴分布、扣除交叉轴两侧 margin、先正向放置再沿容器主轴镜像；四个聚焦断言在修复前失败，修复后公开布局契约 20/20、库测试 107/107、公开 API 2/2、使用门面 5/5，两套特性组合检查均为 0 错误。
-- 现有证据仍不替代 Grid 其余 justify/span 组合、Flex overflow 与 wrap/固有轴组合、measure/paint/hit-test 一致性、增量缓存或真窗视觉矩阵。
+- `e7ad9d55` 让固有反向溢出按自然主轴镜像、零交叉轴 Stretch 保留自然外尺寸，并统一 Container/Space 的 margin 传递和内容缓存；两个公开与两个组件聚焦断言在修复前失败，修复后公开布局契约 22/22、组件缓存 2/2、库测试 109/109、公开 API 2/2、使用门面 5/5，两套特性组合检查均为 0 错误。
+- 现有证据仍不替代 Grid 其余 justify/span 组合、Flex overflow 与 wrap 组合、其他组件 measure/paint/hit-test 一致性、增量缓存或真窗视觉矩阵。
