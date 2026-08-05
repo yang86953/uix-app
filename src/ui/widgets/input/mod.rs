@@ -20,6 +20,9 @@ pub mod select;
 pub mod slider;
 pub mod switch;
 pub mod time_picker;
+// 树组件 capability 关闭时不解析树选择器实现。
+#[cfg(feature = "tree-widgets")]
+// 启用后保留既有 input::tree_select 子模块路径。
 pub mod tree_select;
 
 pub use autocomplete::*;
@@ -40,4 +43,7 @@ pub use select::*;
 pub use slider::*;
 pub use switch::*;
 pub use time_picker::*;
+// 树组件 capability 启用时才汇入 TreeSelect 公开面。
+#[cfg(feature = "tree-widgets")]
+// 启用后保持 TreeSelect 的既有扁平重导出。
 pub use tree_select::*;

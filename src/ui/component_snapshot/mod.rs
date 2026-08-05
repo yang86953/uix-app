@@ -2,7 +2,7 @@ use std::any::TypeId;
 use std::fmt;
 
 use crate::core::ComponentId;
-use crate::ui::widgets::{TransferItem, TreeNode};
+use crate::ui::widgets::TransferItem;
 // 反馈 capability 启用时才引入气泡确认框专属方位类型。
 #[cfg(feature = "feedback")]
 // 该类型只服务同步门控的公开快照模型。
@@ -11,6 +11,10 @@ use crate::ui::widgets::PopconfirmPlacement;
 #[cfg(feature = "table")]
 // 这些类型仅用于同步门控的公开快照列模型。
 use crate::ui::widgets::{Fixed, SortDirection, TableColumn};
+// 树组件 capability 启用时才引入树节点公开模型。
+#[cfg(feature = "tree-widgets")]
+// 该类型只服务同步门控的树快照模型。
+use crate::ui::widgets::TreeNode;
 
 mod accessibility;
 mod fields;
@@ -319,6 +323,8 @@ impl SnapshotField {
     }
 }
 
+// 树组件 capability 关闭时同步收缩树节点快照模型。
+#[cfg(feature = "tree-widgets")]
 #[derive(Debug, Clone, PartialEq)]
 pub struct SnapshotTreeNode {
     pub title: String,
@@ -332,6 +338,8 @@ pub struct SnapshotTreeNode {
     pub is_leaf: bool,
 }
 
+// 树组件 capability 启用时才提供树节点快照转换。
+#[cfg(feature = "tree-widgets")]
 impl SnapshotTreeNode {
     pub fn from_tree_node(node: &TreeNode) -> Self {
         Self {

@@ -202,6 +202,8 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     if let Some(nav_item) = component.downcast_ref::<NavItem>() {
         return nav_item.snapshot_fields();
     }
+    // 树组件 capability 启用时才引用展示树组件类型。
+    #[cfg(feature = "tree-widgets")]
     if let Some(tree) = component.downcast_ref::<Tree>() {
         return tree.snapshot_fields();
     }
@@ -220,6 +222,8 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     if let Some(autocomplete) = component.downcast_ref::<AutoComplete>() {
         return autocomplete.snapshot_fields();
     }
+    // 树组件 capability 启用时才引用树选择器组件类型。
+    #[cfg(feature = "tree-widgets")]
     if let Some(tree_select) = component.downcast_ref::<TreeSelect>() {
         return tree_select.snapshot_fields();
     }

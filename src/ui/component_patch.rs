@@ -7,8 +7,7 @@ use crate::ui::widgets::{
     Divider, Empty, FloatButton, FloatButtonGroup, Footer, Grid, Header, Icon, Image, ImageGroup,
     Input, InputNumber, Label, Layout, List, Mentions, Radio, RangeSlider, Rate, ResultView,
     ScrollView, Segmented, Select, SelectableList, Sider, Skeleton, Slider, Space, Splitter,
-    Switch, Tag, ThemeToggle, TimePicker, Timeline, Transfer, Tree, TreeSelect, Typography, Upload,
-    Watermark,
+    Switch, Tag, ThemeToggle, TimePicker, Timeline, Transfer, Typography, Upload, Watermark,
 };
 // 反馈 capability 启用时才引入对应 patch 目标类型。
 #[cfg(feature = "feedback")]
@@ -36,6 +35,10 @@ use crate::ui::widgets::QRCode;
 #[cfg(feature = "rich-text")]
 // 该导入仅供内建组件 patch 分派使用。
 use crate::ui::widgets::RichText;
+// 树组件 capability 启用时才引入展示树与树选择器 patch 目标。
+#[cfg(feature = "tree-widgets")]
+// 两个类型共享同一源码与公开面门禁。
+use crate::ui::widgets::{Tree, TreeSelect};
 use crate::ui::SnapshotFields;
 use crate::ui::WidgetComponent;
 
@@ -193,6 +196,9 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(ResultView);
     patch_as!(List);
     patch_as!(Timeline);
+    // 树组件 capability 启用时才生成展示树类型化 patch 分支。
+    #[cfg(feature = "tree-widgets")]
+    // 启用后保持展示树的原位同步语义。
     patch_as!(Tree);
     patch_as!(SelectableList);
     // 图表 capability 启用时才生成柱状图类型化 patch 分支。
@@ -259,6 +265,9 @@ pub(crate) fn patch_builtin_widget(
     // 导航 capability 启用时才生成步骤条类型化 patch 分支。
     #[cfg(feature = "navigation")]
     patch_as!(Steps);
+    // 树组件 capability 启用时才生成树选择器类型化 patch 分支。
+    #[cfg(feature = "tree-widgets")]
+    // 启用后保持树选择器的原位同步语义。
     patch_as!(TreeSelect);
     patch_as!(Cascader);
     patch_as!(ColorPicker);

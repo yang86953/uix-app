@@ -103,8 +103,12 @@ pub use component::{
 pub use component_snapshot::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute,
     ComponentConfigSnapshot, SelectionSnapshot, SnapshotCollapsePanel, SnapshotField,
-    SnapshotFields, SnapshotSource, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue,
+    SnapshotFields, SnapshotSource, SnapshotTransferItem, SnapshotValue,
 };
+// 树组件 capability 启用时才从 UI 门面导出树节点快照模型。
+#[cfg(feature = "tree-widgets")]
+// 该类型与 Tree 和 TreeSelect 的快照变体共享同一边界。
+pub use component_snapshot::SnapshotTreeNode;
 // 表格 capability 启用时才从 UI 门面导出专属快照列模型。
 #[cfg(feature = "table")]
 // 保持启用场景下既有的两个公开类型路径。

@@ -20,6 +20,9 @@ pub mod skeleton;
 pub mod table;
 pub mod tag;
 pub mod timeline;
+// 树组件 capability 关闭时不解析展示树实现目录。
+#[cfg(feature = "tree-widgets")]
+// 启用后保留既有 display::tree 子模块路径。
 pub mod tree;
 
 pub use avatar::*;
@@ -42,4 +45,7 @@ pub use skeleton::*;
 pub use table::*;
 pub use tag::*;
 pub use timeline::*;
+// 树组件 capability 启用时才汇入数据展示公开面。
+#[cfg(feature = "tree-widgets")]
+// 启用后保持 Tree 与 TreeNode 的既有扁平重导出。
 pub use tree::*;

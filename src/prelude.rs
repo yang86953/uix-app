@@ -69,8 +69,8 @@ pub use crate::ui::{
     IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, IntoWidgetNode, Locale,
     LocaleProvider, PaintContext, Placement, SemanticAction, SemanticActionKind, SemanticEvent,
     SemanticKind, SemanticPayload, SnapshotCollapsePanel, SnapshotField, SnapshotFields,
-    SnapshotSource, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEvent,
-    SystemEventKind, ThemeTokens, TokenProvider, WidgetChildren, WidgetComponent, WindowControl,
+    SnapshotSource, SnapshotTransferItem, SnapshotValue, SystemEvent, SystemEventKind, ThemeTokens,
+    TokenProvider, WidgetChildren, WidgetComponent, WindowControl,
 };
 pub use crate::ui::{
     Animated, Animation, AnimationConfig, AnimationGroup, AnimationGroupError, AnimationGroupItem,
@@ -88,8 +88,8 @@ pub use crate::ui::{
     CalendarEvent, Card, Carousel, CarouselEffect, Cascader, CascaderOption, CascaderValue,
     Checkbox, Col, Collapse, CollapsePanel, ColorPicker, Container, Content, Date, DatePicker,
     DateRangePicker, Descriptions, DescriptionsItem, Divider, DividerDirection, DividerOrientation,
-    DropPosition, Empty, FieldError, FloatButton, FloatButtonBackTop, FloatButtonGroup, Footer,
-    Form, FormBuilder, FormCheckboxItem, FormColorPickerItem, FormDatePickerItem,
+    Empty, FieldError, FloatButton, FloatButtonBackTop, FloatButtonGroup, Footer, Form,
+    FormBuilder, FormCheckboxItem, FormColorPickerItem, FormDatePickerItem,
     FormDateRangePickerItem, FormInitialValues, FormInputItem, FormInputNumberItem, FormItem,
     FormLayout, FormListBuilder, FormListError, FormListFieldError, FormListFields, FormListItemId,
     FormListModel, FormListValues, FormModel, FormRadioItem, FormRateItem, FormSegmentedItem,
@@ -100,9 +100,8 @@ pub use crate::ui::{
     ScrollView, Segmented, Select, SelectOptionGroup, SelectableItem, SelectableList, Sider,
     Skeleton, SkeletonShape, Slider, Space, SpaceSize, Splitter, Switch, Tag, TagColor,
     ThemeToggle, Time, TimePicker, Timeline, TimelineItem, TooltipPlacement, Transfer,
-    TransferItem, Tree, TreeNode, TreeSelect, Trigger, TriggerMode, Typography, TypographyType,
-    Upload, UploadFile, UploadStatus, ValidateStatus, Values, VirtualScroll, VirtualScrollBuilder,
-    Watermark, Weekday,
+    TransferItem, Trigger, TriggerMode, Typography, TypographyType, Upload, UploadFile,
+    UploadStatus, ValidateStatus, Values, VirtualScroll, VirtualScrollBuilder, Watermark, Weekday,
 };
 // 反馈 capability 启用时才在 prelude 暴露组件、门面与专属模型。
 #[cfg(feature = "feedback")]
@@ -147,6 +146,10 @@ pub use crate::ui::QRCode;
 #[cfg(feature = "rich-text")]
 // 保持启用场景下既有的富文本类型导入写法。
 pub use crate::ui::{RichText, RichTextSegment, RichTextStyle};
+// 树组件 capability 启用时才在 prelude 暴露组件、节点与快照模型。
+#[cfg(feature = "tree-widgets")]
+// 该列表覆盖展示树与树选择器的完整公开模型。
+pub use crate::ui::{DropPosition, SnapshotTreeNode, Tree, TreeNode, TreeSelect};
 
 // app
 
