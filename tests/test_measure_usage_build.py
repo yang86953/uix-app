@@ -93,8 +93,8 @@ class ResolvedGraphTests(unittest.TestCase):
     def test_demo_logging_scenarios_bind_root_binary_and_feature_graph(self) -> None:
         # 读取当前仓库的全部场景定义。
         scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
-        # 文档声明的 schema v6 矩阵必须保持三十七个独立执行场景。
-        self.assertEqual(len(scenarios), 37)
+        # 文档声明的 schema v6 矩阵必须保持三十八个独立执行场景。
+        self.assertEqual(len(scenarios), 38)
         # 按稳定名称索引场景。
         by_name = {scenario.name: scenario for scenario in scenarios}
         # 场景名称必须全局唯一，避免字典索引静默覆盖配置。
@@ -127,6 +127,41 @@ class ResolvedGraphTests(unittest.TestCase):
         )
         # 两个根二进制场景必须使用同一根清单以便比较。
         self.assertEqual(enabled.manifest, disabled.manifest)
+
+    # 确认全能力场景绑定完整公开 feature、optional package 与 Windows API 合并结果。
+    def test_all_capabilities_scenario_binds_complete_public_feature_graph(self) -> None:
+        # 读取当前仓库的全部场景定义。
+        scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
+        # 按稳定名称索引场景。
+        by_name = {scenario.name: scenario for scenario in scenarios}
+        # 读取外部使用方完整集合入口。
+        complete = by_name["all-capabilities"]
+        # 完整集合必须使用独立 fixture，不能借根二进制掩盖公开 API 缺口。
+        self.assertEqual(complete.manifest.parent.name, "all-capabilities")
+        # 所有直接 optional capability package 都必须进入解析图。
+        self.assertEqual(
+            complete.required_packages,
+            ("ash", "glow", "image", "qrcode", "regex", "serde", "serde_json", "tracing-subscriber"),
+        )
+        # Windows 完整集合必须排除 Unix loader、已删除依赖与无用 derive package。
+        self.assertEqual(
+            complete.forbidden_packages,
+            ("bytemuck_derive", "khronos-egl", "raw-window-handle"),
+        )
+        # 五种 backend 的 D3D11/D3D12 Windows API feature 必须共同存在。
+        self.assertEqual(
+            complete.required_package_features,
+            measure_usage_build.GRAPHICS_WINDOWS_PACKAGE_FEATURES,
+        )
+        # metadata 必须证明全部公开使用方 capability 同时被选择。
+        self.assertEqual(
+            complete.required_uix_features,
+            measure_usage_build.FULL_CAPABILITY_FEATURES,
+        )
+        # 内部测试替身不得混入使用方完整集合。
+        self.assertEqual(complete.forbidden_uix_features, ("test-harness",))
+        # 完整集合必须完成真实 release，而不是降级为 check 或预期失败。
+        self.assertFalse(complete.check_only or complete.expected_compile_failure)
 
     # 确认五种图形选择面的正反场景同时覆盖依赖、feature 与公开变体。
     def test_graphics_backend_scenarios_bind_dependency_and_public_api_guards(self) -> None:
@@ -585,11 +620,20 @@ class ResolvedGraphTests(unittest.TestCase):
     def test_serde_json_is_scoped_to_settings_and_agent_control(self) -> None:
         # 读取当前仓库的全部场景定义。
         scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
-        # 记录当前允许解析 serde_json 的三个能力入口。
-        json_scenarios = {"settings-serde", "agent-control", "agent-control-linux"}
+        # 记录当前允许解析 serde_json 的独立能力入口与完整集合入口。
+        json_scenarios = {
+            # 完整集合同时启用设置与 Agent 能力。
+            "all-capabilities",
+            # 设置序列化能力直接依赖 JSON package。
+            "settings-serde",
+            # Windows Agent 能力直接依赖 JSON package。
+            "agent-control",
+            # Linux Agent 能力直接依赖 JSON package。
+            "agent-control-linux",
+        }
         # 逐场景核对共享 package 的正反断言。
         for scenario in scenarios:
-            # 三个显式能力入口必须要求 JSON package 存在。
+            # 显式能力入口必须要求 JSON package 存在。
             if scenario.name in json_scenarios:
                 # 共享 package 必须进入对应正向解析图。
                 self.assertIn("serde_json", scenario.required_packages)
