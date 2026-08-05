@@ -128,49 +128,16 @@ pub fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
     let total_col_gap = col_gap * (n_cols.saturating_sub(1)) as f32;
     let total_row_gap = row_gap * (n_rows.saturating_sub(1)) as f32;
 
-    let resolve_tracks = |tracks: &[GridTrack], available: f32, total_gap: f32| -> Vec<f32> {
-        let mut sizes = vec![0.0f32; tracks.len()];
-        let mut used = 0.0f32;
-        let mut total_fr = 0.0f32;
-        let mut auto_count = 0usize;
-
-        for track in tracks.iter() {
-            match track {
-                GridTrack::Px(px) => {
-                    used += finite_non_negative(*px);
-                }
-                GridTrack::Fr(fr) => {
-                    total_fr += finite_non_negative(*fr);
-                }
-                GridTrack::Auto => {
-                    auto_count += 1;
-                }
-            }
-        }
-
-        let remaining = (available - total_gap - used).max(0.0);
-        let total_flexible = total_fr + auto_count as f32;
-        if total_flexible > 0.0 && remaining > 0.0 {
-            let unit = remaining / total_flexible;
-            for (i, track) in tracks.iter().enumerate() {
-                match track {
-                    GridTrack::Px(px) => sizes[i] = finite_non_negative(*px),
-                    GridTrack::Fr(fr) => sizes[i] = unit * finite_non_negative(*fr),
-                    GridTrack::Auto => sizes[i] = unit,
-                }
-            }
-        } else {
-            for (i, track) in tracks.iter().enumerate() {
-                if let GridTrack::Px(px) = track {
-                    sizes[i] = finite_non_negative(*px);
-                }
-            }
-        }
-        sizes
-    };
-
-    let col_sizes = resolve_tracks(input.columns, inner.w, total_col_gap);
-    let row_sizes = resolve_tracks(&rows, inner.h, total_row_gap);
+    // 先汇总子项在自动列上的固有宽度贡献。
+    let col_auto_sizes =
+        intrinsic_auto_track_sizes(input.columns, &assignments, input.children, col_gap, true);
+    // 再汇总子项在显式与隐式自动行上的固有高度贡献。
+    let row_auto_sizes =
+        intrinsic_auto_track_sizes(&rows, &assignments, input.children, row_gap, false);
+    // Auto 保留内容宽度，Fr 列仅分配剩余水平空间。
+    let col_sizes = resolve_tracks(input.columns, inner.w, total_col_gap, &col_auto_sizes);
+    // Auto 保留内容高度，Fr 行仅分配剩余垂直空间。
+    let row_sizes = resolve_tracks(&rows, inner.h, total_row_gap, &row_auto_sizes);
 
     // ── Phase 4: build cell positions ──
     let mut col_positions: Vec<(f32, f32)> = Vec::with_capacity(n_cols);
@@ -285,6 +252,238 @@ fn finite_insets(insets: EdgeInsets) -> EdgeInsets {
         finite_or_zero(insets.right),
         finite_or_zero(insets.bottom),
     )
+}
+
+// 计算单个子项在指定轴上的有限外尺寸。
+fn child_outer_extent(child: &GridChild, horizontal: bool) -> f32 {
+    // 水平轴取测量宽度，垂直轴取测量高度。
+    let measured = if horizontal {
+        // 拒绝宽度中的无界哨兵和非有限值。
+        finite_non_negative(child.measured_size.w)
+    } else {
+        // 拒绝高度中的无界哨兵和非有限值。
+        finite_non_negative(child.measured_size.h)
+    };
+    // 先将外边距收敛为可参与布局的有限值。
+    let margin = finite_insets(child.margin);
+    // 水平轴取左右外边距，垂直轴取上下外边距。
+    let margin_extent = if horizontal {
+        // 宽度贡献包含左右外边距。
+        margin.horizontal()
+    } else {
+        // 高度贡献包含上下外边距。
+        margin.vertical()
+    };
+    // 使用有限化边界防止外尺寸溢出或变为负数。
+    finite_non_negative(measured + margin_extent)
+}
+
+// 汇总 Auto 轨道的单格内容与跨格内容贡献。
+fn intrinsic_auto_track_sizes(
+    tracks: &[GridTrack],
+    assignments: &[CellAssignment],
+    children: &[GridChild],
+    gap: f32,
+    horizontal: bool,
+) -> Vec<f32> {
+    // 为每条轨道建立独立的固有尺寸账本。
+    let mut sizes = vec![0.0f32; tracks.len()];
+
+    // 先用单轨道子项确定每条 Auto 轨道的基础尺寸。
+    for assignment in assignments {
+        // 按当前轴选取起始轨道。
+        let start = if horizontal {
+            // 水平轴使用列起点。
+            assignment.col
+        } else {
+            // 垂直轴使用行起点。
+            assignment.row
+        };
+        // 按当前轴选取跨越的轨道数。
+        let span = if horizontal {
+            // 水平轴使用列 span。
+            assignment.col_span as usize
+        } else {
+            // 垂直轴使用行 span。
+            assignment.row_span as usize
+        };
+        // 将结束位置限制在实际轨道数量内。
+        let end = start.saturating_add(span).min(tracks.len());
+        // 这一轮只处理恰好占用一条轨道的子项。
+        if end.saturating_sub(start) != 1 {
+            // 多轨道子项留到第二轮分配。
+            continue;
+        }
+        // 固定和比例轨道不由固有内容改写。
+        if !matches!(tracks[start], GridTrack::Auto) {
+            // 非 Auto 轨道继续使用自身定义。
+            continue;
+        }
+        // 读取该子项在当前轴上的有限外尺寸。
+        let extent = child_outer_extent(&children[assignment.child_idx], horizontal);
+        // 同一 Auto 轨道取所有单格子项的最大贡献。
+        sizes[start] = sizes[start].max(extent);
+    }
+
+    // 再将跨格子项的尺寸缺口分摊到它覆盖的 Auto 轨道。
+    for assignment in assignments {
+        // 按当前轴选取起始轨道。
+        let start = if horizontal {
+            // 水平轴使用列起点。
+            assignment.col
+        } else {
+            // 垂直轴使用行起点。
+            assignment.row
+        };
+        // 按当前轴选取跨越的轨道数。
+        let span = if horizontal {
+            // 水平轴使用列 span。
+            assignment.col_span as usize
+        } else {
+            // 垂直轴使用行 span。
+            assignment.row_span as usize
+        };
+        // 将结束位置限制在实际轨道数量内。
+        let end = start.saturating_add(span).min(tracks.len());
+        // 单轨道子项已经在第一轮处理。
+        if end.saturating_sub(start) <= 1 {
+            // 不对空 span 或单轨道 span 重复计费。
+            continue;
+        }
+        // 含正比例 Fr 的 span 由后续剩余空间分配承担。
+        let contains_fraction = tracks[start..end].iter().any(|track| {
+            // 只有正且有限的 Fr 权重会参与空间分配。
+            matches!(track, GridTrack::Fr(fr) if finite_non_negative(*fr) > 0.0)
+        });
+        // 保留 Fr 轨道吸收剩余空间的既有语义。
+        if contains_fraction {
+            // 这类 span 不额外扩张 Auto 轨道。
+            continue;
+        }
+        // 统计 span 中可承担缺口的 Auto 轨道数。
+        let auto_count = tracks[start..end]
+            .iter()
+            .filter(|track| matches!(track, GridTrack::Auto))
+            .count();
+        // 没有 Auto 轨道时不应改写固定轨道。
+        if auto_count == 0 {
+            // 当前 span 没有可分摊的轨道。
+            continue;
+        }
+        // 用 f64 账本避免多条轨道求和时提前溢出。
+        let track_extent = tracks[start..end]
+            .iter()
+            .enumerate()
+            .map(|(offset, track)| {
+                // 固定轨道计入自身宽高，Auto 计入已汇总的固有尺寸。
+                match track {
+                    // 固定轨道使用安全化后的像素值。
+                    GridTrack::Px(px) => finite_non_negative(*px) as f64,
+                    // 当前 Auto 轨道使用第一轮已确定的尺寸。
+                    GridTrack::Auto => sizes[start + offset] as f64,
+                    // 非正 Fr 在这一固有尺寸账本中不占空间。
+                    GridTrack::Fr(_) => 0.0,
+                }
+            })
+            .sum::<f64>();
+        // span 内部的 gap 同样属于子项可用外尺寸。
+        let gap_extent = gap as f64 * end.saturating_sub(start + 1) as f64;
+        // 读取跨格子项在当前轴上的有限外尺寸。
+        let required = child_outer_extent(&children[assignment.child_idx], horizontal) as f64;
+        // 只需补足现有轨道和 gap 尚未覆盖的尺寸。
+        let deficit = (required - track_extent - gap_extent).max(0.0);
+        // 没有缺口时保留现有轨道尺寸。
+        if deficit <= 0.0 {
+            // 当前 span 已能容纳子项。
+            continue;
+        }
+        // 将缺口均匀分摊给 span 中的 Auto 轨道。
+        let share = deficit / auto_count as f64;
+        // 逐条更新 span 中的 Auto 轨道。
+        for index in start..end {
+            // 固定和比例轨道不承担 Auto 尺寸缺口。
+            if matches!(tracks[index], GridTrack::Auto) {
+                // 将累加结果收敛到有限非负尺寸。
+                sizes[index] = finite_non_negative((sizes[index] as f64 + share) as f32);
+            }
+        }
+    }
+
+    // 返回仅对 Auto 轨道有意义的固有尺寸账本。
+    sizes
+}
+
+// 在固定与 Auto 尺寸确定后把剩余空间分配给 Fr 轨道。
+fn resolve_tracks(
+    tracks: &[GridTrack],
+    available: f32,
+    total_gap: f32,
+    auto_sizes: &[f32],
+) -> Vec<f32> {
+    // 为每条轨道建立最终尺寸账本。
+    let mut sizes = vec![0.0; tracks.len()];
+    // 使用 f64 累加已确定尺寸，避免多轨道求和溢出。
+    let mut used = 0.0f64;
+    // 使用 f64 累加比例权重，避免极大权重求和溢出。
+    let mut total_fr = 0.0f64;
+
+    // 先锁定 Px 和 Auto 轨道，并汇总有效 Fr 权重。
+    for (index, track) in tracks.iter().enumerate() {
+        // 按轨道类型建立基础尺寸。
+        match track {
+            // 固定轨道直接使用有限非负像素值。
+            GridTrack::Px(px) => {
+                // 收敛外部传入的固定尺寸。
+                let size = finite_non_negative(*px);
+                // 写入当前轨道的最终尺寸。
+                sizes[index] = size;
+                // 固定尺寸优先占用可用空间。
+                used += size as f64;
+            }
+            // 自动轨道使用上一阶段的内容尺寸。
+            GridTrack::Auto => {
+                // 缺失的账本项安全回退为零。
+                let size = auto_sizes
+                    .get(index)
+                    .copied()
+                    .map(finite_non_negative)
+                    .unwrap_or(0.0);
+                // 写入当前 Auto 轨道的最终尺寸。
+                sizes[index] = size;
+                // Auto 内容尺寸先于 Fr 占用可用空间。
+                used += size as f64;
+            }
+            // 比例轨道留到第二轮分配剩余空间。
+            GridTrack::Fr(fr) => {
+                // 仅累加正且有限的比例权重。
+                total_fr += finite_non_negative(*fr) as f64;
+            }
+        }
+    }
+
+    // 可用空间先扣除 gap、固定轨道和 Auto 内容尺寸。
+    let remaining =
+        (finite_non_negative(available) as f64 - finite_non_negative(total_gap) as f64 - used)
+            .max(0.0);
+    // 没有可分配空间或有效 Fr 权重时直接保留基础尺寸。
+    if remaining <= 0.0 || total_fr <= 0.0 {
+        // 纯 Auto 网格因此不会无条件填满父容器。
+        return sizes;
+    }
+
+    // 按权重将全部剩余空间分配给 Fr 轨道。
+    for (index, track) in tracks.iter().enumerate() {
+        // 只有 Fr 轨道需要在这一轮更新。
+        if let GridTrack::Fr(fr) = track {
+            // 将当前轨道权重收敛为有限非负值。
+            let weight = finite_non_negative(*fr) as f64;
+            // 按权重比例写入该 Fr 轨道的最终尺寸。
+            sizes[index] = finite_non_negative((remaining * weight / total_fr) as f32);
+        }
+    }
+
+    // 返回已完成 Px、Auto 与 Fr 分配的轨道尺寸。
+    sizes
 }
 
 struct CellAssignment {
