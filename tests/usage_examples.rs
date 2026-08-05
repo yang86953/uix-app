@@ -98,11 +98,15 @@ fn tutorial_virtualized_todo_anchor_compiles() {
         .item_height(40.0)
         .render(move |index| {
             let todo = &render_todos.get()[index];
+            // 可变列表使用业务标识作为行 key，而不是依赖位置后备 key。
+            let key = todo.id.to_string();
             let done = done_flags.get()[index].clone();
             row((
                 embed(Checkbox::new("").checked(&done)),
                 label(&todo.text),
             ))
+            // 将稳定业务标识绑定到行根节点。
+            .key(key)
         })
         .build();
     let _ = view;
