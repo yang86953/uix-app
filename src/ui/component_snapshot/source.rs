@@ -88,33 +88,53 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     if let Some(float_button_group) = component.downcast_ref::<FloatButtonGroup>() {
         return float_button_group.snapshot_fields();
     }
+    // 反馈 capability 启用时才引用警告提示组件类型。
+    #[cfg(feature = "feedback")]
     if let Some(alert) = component.downcast_ref::<Alert>() {
         return alert.snapshot_fields();
     }
+    // 反馈 capability 启用时才引用全局消息组件类型。
+    #[cfg(feature = "feedback")]
     if let Some(message) = component.downcast_ref::<Message>() {
         return message.snapshot_fields();
     }
+    // 反馈 capability 启用时才引用通知组件类型。
+    #[cfg(feature = "feedback")]
     if let Some(notification) = component.downcast_ref::<Notification>() {
         return notification.snapshot_fields();
     }
+    // 反馈 capability 启用时才引用进度条组件类型。
+    #[cfg(feature = "feedback")]
     if let Some(progress) = component.downcast_ref::<ProgressBar>() {
         return progress.snapshot_fields();
     }
+    // 反馈 capability 启用时才引用加载指示器组件类型。
+    #[cfg(feature = "feedback")]
     if let Some(spin) = component.downcast_ref::<Spin>() {
         return spin.snapshot_fields();
     }
+    // 反馈 capability 启用时才引用文字提示组件类型。
+    #[cfg(feature = "feedback")]
     if let Some(tooltip) = component.downcast_ref::<Tooltip>() {
         return tooltip.snapshot_fields();
     }
+    // 反馈 capability 启用时才引用气泡卡片组件类型。
+    #[cfg(feature = "feedback")]
     if let Some(popover) = component.downcast_ref::<Popover>() {
         return popover.snapshot_fields();
     }
+    // 反馈 capability 启用时才引用气泡确认框组件类型。
+    #[cfg(feature = "feedback")]
     if let Some(popconfirm) = component.downcast_ref::<Popconfirm>() {
         return popconfirm.snapshot_fields();
     }
+    // 反馈 capability 启用时才引用对话框组件类型。
+    #[cfg(feature = "feedback")]
     if let Some(modal) = component.downcast_ref::<Modal>() {
         return modal.snapshot_fields();
     }
+    // 反馈 capability 启用时才引用抽屉组件类型。
+    #[cfg(feature = "feedback")]
     if let Some(drawer) = component.downcast_ref::<Drawer>() {
         return drawer.snapshot_fields();
     }

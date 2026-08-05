@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use crate::draw::geometry::spatial::PhysicalUnit;
 use crate::draw::Color;
+// 反馈 capability 启用时才需要警告提示状态级别。
+#[cfg(feature = "feedback")]
 use crate::native::capabilities::system::StatusLevel;
 use crate::native::windowing::input::{ControlSize, ScrollDirection};
 use crate::ui::form::FormLayout;
@@ -9,12 +11,15 @@ use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use crate::ui::theme::style::{Style, StyleSet};
 use crate::ui::widgets::window_chrome::WindowControl;
 use crate::ui::widgets::*;
+// 反馈 capability 启用时才需要消息与通知浮层方位。
+#[cfg(feature = "feedback")]
 use crate::ui::Placement;
 
-use super::{
-    SnapshotCollapsePanel, SnapshotField, SnapshotPopconfirm, SnapshotTransferItem,
-    SnapshotTreeNode,
-};
+use super::{SnapshotCollapsePanel, SnapshotField, SnapshotTransferItem, SnapshotTreeNode};
+// 反馈 capability 启用时才引入专属气泡确认框快照模型。
+#[cfg(feature = "feedback")]
+// 该类型只服务同步门控的 Popconfirm 枚举变体。
+use super::SnapshotPopconfirm;
 // 表格 capability 启用时才引入专属快照列模型。
 #[cfg(feature = "table")]
 // 两个类型只服务同步门控的 Table 枚举变体。
@@ -259,6 +264,8 @@ pub enum SnapshotFields {
         trigger: TriggerMode,
         expanded: bool,
     },
+    // 反馈 capability 关闭时同步收缩警告提示快照变体。
+    #[cfg(feature = "feedback")]
     Alert {
         message: String,
         description: String,
@@ -266,15 +273,21 @@ pub enum SnapshotFields {
         closable: bool,
         show_icon: bool,
     },
+    // 反馈 capability 关闭时同步收缩全局消息快照变体。
+    #[cfg(feature = "feedback")]
     Message {
         placement: Placement,
         contents: Vec<String>,
     },
+    // 反馈 capability 关闭时同步收缩通知快照变体。
+    #[cfg(feature = "feedback")]
     Notification {
         placement: Placement,
         titles: Vec<String>,
         descriptions: Vec<String>,
     },
+    // 反馈 capability 关闭时同步收缩进度条快照变体。
+    #[cfg(feature = "feedback")]
     ProgressBar {
         progress: f32,
         mode: ProgressMode,
@@ -285,6 +298,8 @@ pub enum SnapshotFields {
         round: bool,
         progress_type: ProgressType,
     },
+    // 反馈 capability 关闭时同步收缩加载指示器快照变体。
+    #[cfg(feature = "feedback")]
     Spin {
         size: SpinSize,
         color: Option<Color>,
@@ -292,6 +307,8 @@ pub enum SnapshotFields {
         tip: String,
         wrapper_mode: bool,
     },
+    // 反馈 capability 关闭时同步收缩文字提示快照变体。
+    #[cfg(feature = "feedback")]
     Tooltip {
         text: String,
         placement: TooltipPlacement,
@@ -302,6 +319,8 @@ pub enum SnapshotFields {
         timer_id: u32,
         arrow: bool,
     },
+    // 反馈 capability 关闭时同步收缩气泡卡片快照变体。
+    #[cfg(feature = "feedback")]
     Popover {
         title: String,
         content: String,
@@ -310,7 +329,11 @@ pub enum SnapshotFields {
         arrow: bool,
         visible: bool,
     },
+    // 反馈 capability 关闭时同步收缩气泡确认框快照变体。
+    #[cfg(feature = "feedback")]
     Popconfirm(SnapshotPopconfirm),
+    // 反馈 capability 关闭时同步收缩对话框快照变体。
+    #[cfg(feature = "feedback")]
     Modal {
         title: String,
         open: bool,
@@ -323,6 +346,8 @@ pub enum SnapshotFields {
         centered: bool,
         overlay: bool,
     },
+    // 反馈 capability 关闭时同步收缩抽屉快照变体。
+    #[cfg(feature = "feedback")]
     Drawer {
         title: String,
         open: bool,

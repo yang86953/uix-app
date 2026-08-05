@@ -178,6 +178,8 @@ impl ComponentHandle {
     pub fn numeric_value(&self) -> Option<f64> {
         self.map_snapshot_fields(|fields| match fields {
             SnapshotFields::Slider { value, .. } => Some(*value),
+            // 反馈 capability 启用时才读取同步存在的进度条快照。
+            #[cfg(feature = "feedback")]
             SnapshotFields::ProgressBar {
                 progress: value, ..
             } => Some(f64::from(*value)),

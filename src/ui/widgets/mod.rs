@@ -10,6 +10,8 @@
 pub(crate) mod combinators;
 pub mod containers;
 pub mod display;
+// 反馈 capability 启用时才编译完整组件族与全局门面。
+#[cfg(feature = "feedback")]
 pub mod feedback;
 pub mod general;
 pub mod input;
@@ -17,12 +19,18 @@ pub mod input;
 #[cfg(feature = "navigation")]
 pub mod navigation;
 pub mod other;
+// 触发方式与提示方位由输入、通用和导航组件共同使用，归基础交互层所有。
+mod overlay_types;
+// 输入与反馈组件共享提示气泡几何及绘制原语。
+pub(crate) mod tooltip_primitives;
 pub(crate) mod window_chrome;
 
 // ── 扁平重导出──
 pub use combinators::{button, canvas, column, embed, label, row};
 pub use containers::*;
 pub use display::*;
+// 反馈 capability 启用时才保留扁平公开导入面。
+#[cfg(feature = "feedback")]
 pub use feedback::*;
 pub use general::*;
 pub use input::*;
@@ -30,6 +38,8 @@ pub use input::*;
 #[cfg(feature = "navigation")]
 pub use navigation::*;
 pub use other::*;
+// 共享交互枚举不随反馈组件族关闭。
+pub use overlay_types::*;
 
 // ── 常用子模块重导出──
 pub use display::tree;
