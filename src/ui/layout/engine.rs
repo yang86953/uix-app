@@ -220,7 +220,7 @@ pub(crate) fn content_size_from_children(
 }
 
 // 把坐标值限制为有限且不是 f32::MAX 测量哨兵的实际值。
-fn finite_or_zero(value: f32) -> f32 {
+pub(crate) fn finite_or_zero(value: f32) -> f32 {
     // f32::MAX 及其负值不能进入实际 frame，非有限值同样回退为零。
     if value.is_finite() && value.abs() < f32::MAX {
         // 有效坐标保留原值，允许布局溢出产生有限负位置。
@@ -232,7 +232,7 @@ fn finite_or_zero(value: f32) -> f32 {
 }
 
 // 把尺寸值限制为有限、非负且不是无界哨兵的实际值。
-fn finite_non_negative(value: f32) -> f32 {
+pub(crate) fn finite_non_negative(value: f32) -> f32 {
     // 先清除非有限值和测量哨兵，再钳制负尺寸。
     finite_or_zero(value).max(0.0)
 }
@@ -255,7 +255,7 @@ fn normalize_layout_size(size: Size) -> Size {
 }
 
 // 归一允许负值语义的外边距。
-fn normalize_margin(insets: EdgeInsets) -> EdgeInsets {
+pub(crate) fn normalize_margin(insets: EdgeInsets) -> EdgeInsets {
     // 负外边距保持既有语义，只清除非有限值和无界哨兵。
     EdgeInsets::new(
         finite_or_zero(insets.left),
