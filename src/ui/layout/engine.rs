@@ -629,7 +629,7 @@ impl GridLayout {
             container: content_rect,
             // 纯求解器逐值归一 track，保持普通布局继续借用列定义。
             columns,
-            // 行定义同样保持借用，避免每轮新增复制分配。
+            // 纯求解器只复制有界窗口内的显式行，并按需追加隐式 Auto 行。
             rows,
             // Grid gap 语义为非负距离。
             col_gap: finite_non_negative(self.col_gap),

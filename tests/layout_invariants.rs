@@ -435,3 +435,82 @@ fn grid_row_spanning_child_expands_auto_tracks() {
     // Grid 总尺寸同时收敛到单列内容宽与跨行内容高。
     assert_eq!(output.total_size, Size::new(12.0, 50.0));
 }
+
+// 验证超出 Grid 资源窗口的显式 cell 会收敛到最后一个可地址单元格。
+#[test]
+// 使用五千行级输入在旧实现上安全复现无界隐式行扩张。
+fn grid_explicit_cell_is_clamped_to_the_placement_budget() {
+    // 构造具有有限自然尺寸的显式放置子项。
+    let mut child = LayoutChild::new(ComponentId::new(28), Size::new(10.0, 10.0));
+    // 在两列 Grid 中请求第五千行的第一列。
+    child.grid_cell = Some(10_000);
+    // 运行两列 Auto 与单像素双轴 gap 的 Grid。
+    let output = GridLayout::new()
+        .with_columns(vec![GridTrack::Auto, GridTrack::Auto])
+        .with_gap(1.0, 1.0)
+        .with_align(AlignItems::Start)
+        .with_justify(JustifyContent::Start)
+        .layout(Rect::new(0.0, 0.0, 20.0, 20.0), &[child]);
+    // 四千九十六行预算下的最后单元格位于次列与最后一行。
+    assert_eq!(output.positions[0], Rect::new(1.0, 4095.0, 10.0, 10.0));
+    // 总尺寸只包含有界轨道、gap 与子项内容。
+    assert_eq!(output.total_size, Size::new(11.0, 4105.0));
+}
+
+// 验证超大行 span 不会让隐式行和占用矩阵无界增长。
+#[test]
+// 使用五千行 span 在旧实现上安全复现超出资源预算的扩容。
+fn grid_row_span_is_clamped_to_the_track_budget() {
+    // 构造一个自然高二十的跨行子项。
+    let mut child = LayoutChild::new(ComponentId::new(29), Size::new(10.0, 20.0));
+    // 从首格开始显式放置。
+    child.grid_cell = Some(0);
+    // 请求超出四千九十六行资源窗口的 span。
+    child.grid_row_span = 5_000;
+    // 运行单列 Auto 与单像素行 gap 的 Grid。
+    let output = GridLayout::new()
+        .with_columns(vec![GridTrack::Auto])
+        .with_gap(0.0, 1.0)
+        .with_align(AlignItems::Start)
+        .with_justify(JustifyContent::Start)
+        .layout(Rect::new(0.0, 0.0, 20.0, 20.0), &[child]);
+    // 子项仍在有界 span 中保留自然尺寸。
+    assert_eq!(output.positions[0], Rect::new(0.0, 0.0, 10.0, 20.0));
+    // 四千九十六条零高 Auto 行之间只有四千九十五个 gap。
+    assert_eq!(output.total_size, Size::new(10.0, 4095.0));
+}
+
+// 验证公开 GridLayout 入口能端到端收敛整数极值与耗尽的自动放置。
+#[test]
+// 覆盖 usize::MAX cell、u32::MAX 双轴 span 与无剩余矩形的组合。
+fn grid_integer_extremes_remain_bounded_end_to_end() {
+    // 构造使用极大 cell 与双轴 span 的显式子项。
+    let mut explicit = LayoutChild::new(ComponentId::new(30), Size::new(10.0, 10.0));
+    // 显式位置使用 usize 可表示的最大索引。
+    explicit.grid_cell = Some(usize::MAX);
+    // 列 span 使用 u32 极值并由最后一列剩余空间收敛。
+    explicit.grid_column_span = u32::MAX;
+    // 行 span 使用 u32 极值并由最后一行剩余空间收敛。
+    explicit.grid_row_span = u32::MAX;
+    // 构造请求占满整个有界网格的自动子项。
+    let mut automatic = LayoutChild::new(ComponentId::new(31), Size::new(5.0, 5.0));
+    // 自动子项横向请求极大 span。
+    automatic.grid_column_span = u32::MAX;
+    // 自动子项纵向请求极大 span。
+    automatic.grid_row_span = u32::MAX;
+    // 运行两列 Auto 与单像素双轴 gap 的 Grid。
+    let output = GridLayout::new()
+        .with_columns(vec![GridTrack::Auto, GridTrack::Auto])
+        .with_gap(1.0, 1.0)
+        .with_align(AlignItems::Start)
+        .with_justify(JustifyContent::Start)
+        .layout(Rect::new(0.0, 0.0, 20.0, 20.0), &[explicit, automatic]);
+    // 全部公开输出仍须满足有限非负布局不变量。
+    assert_finite_layout_output(&output);
+    // 显式子项收敛到有界矩阵的最后一格。
+    assert_eq!(output.positions[0], Rect::new(1.0, 4095.0, 10.0, 10.0));
+    // 整个资源窗口内无法容纳自动矩形时，它保留零 frame。
+    assert_eq!(output.positions[1], Rect::zero());
+    // 总尺寸仅包含有界行列、gap 与成功放置的内容。
+    assert_eq!(output.total_size, Size::new(11.0, 4105.0));
+}
