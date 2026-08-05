@@ -25,7 +25,8 @@ use crate::ui::component::focus_handle::FocusHandle;
 use crate::ui::component::traits::WidgetComponent;
 use crate::ui::component::widget::{WidgetCore, WidgetNode};
 use crate::ui::component_patch::{
-    builtin_widget_config_changed, builtin_widget_runtime_changed, patch_builtin_widget,
+    builtin_widget_config_changed, builtin_widget_layout_changed, builtin_widget_runtime_changed,
+    patch_builtin_widget,
 };
 use crate::ui::component_snapshot::SnapshotFields;
 use crate::ui::event::system_event_handler::SystemEventHandlerRegistration;
@@ -60,6 +61,15 @@ pub(crate) fn view_children(widget: &dyn WidgetComponent) -> Vec<ViewNode> {
 
 /// View tree adapter.
 pub struct ViewAdapter;
+
+/// 组件原位 patch 对后续流水线的精细失效影响。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct WidgetPatchImpact {
+    /// 组件绘制输出是否变化。
+    paint_changed: bool,
+    /// 组件测量或布局输出是否变化。
+    layout_changed: bool,
+}
 
 impl ViewAdapter {
     fn stagger_deadline(
@@ -475,7 +485,7 @@ impl ViewAdapter {
             // 随后的 patch 才写入 disabled，避免 disabled 早退吞掉清理事件。
             tree.set_focus(None);
         }
-        let widget_changed = Self::patch_widget(tree, id, widget);
+        let widget_impact = Self::patch_widget(tree, id, widget);
         if style.visible {
             tree.set_node_visibility(id, true);
         }
@@ -485,8 +495,8 @@ impl ViewAdapter {
             current.set_accessibility_override(accessibility_override);
         }
 
-        let mut paint_changed = widget_changed || context_changed;
-        let mut layout_changed = widget_changed || context_changed;
+        let mut paint_changed = widget_impact.paint_changed || context_changed;
+        let mut layout_changed = widget_impact.layout_changed || context_changed;
         if tree.set_visual_transform(id, visual_transform) {
             paint_changed = true;
         }
@@ -669,24 +679,49 @@ impl ViewAdapter {
         tree: &mut WidgetTree,
         id: ComponentId,
         widget: Box<dyn WidgetComponent>,
-    ) -> bool {
+    ) -> WidgetPatchImpact {
         let Some(current) = tree.get_mut(id) else {
-            return false;
+            // 节点已不存在时没有可上报的 patch 影响。
+            return WidgetPatchImpact::default();
         };
 
+        // 先判断运行时受控值是否需要同步。
         let runtime_changed = builtin_widget_runtime_changed(current.component(), widget.as_ref());
+        // 在 patch 前只抓取一次当前组件公开快照。
+        let current_fields = current.component().snapshot_fields();
+        // 在 patch 前只抓取一次新版组件公开快照。
         let next_fields = widget.snapshot_fields();
-        let config_changed = builtin_widget_config_changed(current.component(), widget.as_ref())
-            .unwrap_or_else(|| current.component().snapshot_fields() != next_fields)
+        // 排除含运行时字段的特殊快照，再回退到完整快照比较。
+        let config_changed = builtin_widget_config_changed(&current_fields, &next_fields)
+            .unwrap_or_else(|| current_fields != next_fields)
             || next_fields == SnapshotFields::Unknown
             || runtime_changed;
+        // 已审计类型按字段分类，其他类型继续保守请求布局。
+        let layout_changed = config_changed
+            && builtin_widget_layout_changed(&current_fields, &next_fields).unwrap_or(true);
+        // 只有实际完成原位 patch 或替换后才报告失效影响。
         match patch_builtin_widget(current.component_mut(), widget) {
-            Ok(true) => config_changed,
+            // 原位同步成功时返回精细分类结果。
+            Ok(true) => WidgetPatchImpact {
+                // 任意声明配置变化至少需要重绘。
+                paint_changed: config_changed,
+                // 仅布局相关配置变化需要重新布局。
+                layout_changed,
+            },
+            // 无类型化 patch 时替换同型组件并沿用相同分类。
             Err(widget) => {
+                // 用新版组件替换无法类型化同步的旧实现。
                 current.replace_component(widget);
-                config_changed
+                // 返回替换后的精细失效分类。
+                WidgetPatchImpact {
+                    // 任意声明配置变化至少需要重绘。
+                    paint_changed: config_changed,
+                    // 未审计快照已经在上方保守归入布局变化。
+                    layout_changed,
+                }
             }
-            Ok(false) => false,
+            // 类型分派未完成同步时不产生额外失效。
+            Ok(false) => WidgetPatchImpact::default(),
         }
     }
 
@@ -794,3 +829,10 @@ impl ViewAdapter {
         Self::reconcile_children(tree, parent_id, children, None)
     }
 }
+
+// 仅在库测试中编译协调失效分类门禁。
+#[cfg(test)]
+// 将测试实现留在独立文件，避免适配器主体超过文件规模上限。
+#[path = "adapter_tests.rs"]
+// 挂载可访问适配器私有边界的同级测试模块。
+mod tests;

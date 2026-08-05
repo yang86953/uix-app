@@ -41,14 +41,16 @@ use crate::ui::widgets::RichText;
 use crate::ui::widgets::{Tree, TreeSelect};
 use crate::ui::SnapshotFields;
 use crate::ui::WidgetComponent;
+// 导入区分布局字段与纯绘制字段所需的统一样式快照。
+use crate::ui::theme::style::Style;
 
 /// Compare authored configuration for widgets whose public snapshot also
 /// contains runtime state. `None` falls back to ordinary snapshot equality.
 pub(crate) fn builtin_widget_config_changed(
-    current: &dyn WidgetComponent,
-    next: &dyn WidgetComponent,
+    current: &SnapshotFields,
+    next: &SnapshotFields,
 ) -> Option<bool> {
-    match (current.snapshot_fields(), next.snapshot_fields()) {
+    match (current, next) {
         (
             SnapshotFields::Collapse {
                 panels: current_panels,
@@ -65,7 +67,7 @@ pub(crate) fn builtin_widget_config_changed(
                 || current_panels.len() != next_panels.len()
                 || current_panels
                     .iter()
-                    .zip(&next_panels)
+                    .zip(next_panels)
                     .any(|(current, next)| {
                         current.header != next.header || current.content != next.content
                     }),
@@ -103,6 +105,120 @@ pub(crate) fn builtin_widget_config_changed(
                 ..
             },
         ) => Some(current_images != next_images || current_start != next_start),
+        _ => None,
+    }
+}
+
+// 比较统一样式中会改变测量、放置或可见性的字段。
+fn style_layout_changed(current: &Style, next: &Style) -> bool {
+    // 盒模型字段直接改变内容区域或父级占位。
+    current.margin != next.margin
+        || current.padding != next.padding
+        || current.border_width != next.border_width
+        // 固定尺寸字段改变组件约束结果。
+        || current.width != next.width
+        || current.height != next.height
+        // 容器布局字段改变 Flex 或 Grid 求解结果。
+        || current.display != next.display
+        || current.flex_direction != next.flex_direction
+        || current.flex_wrap != next.flex_wrap
+        || current.overflow_content != next.overflow_content
+        || current.justify_content != next.justify_content
+        || current.align_items != next.align_items
+        || current.gap != next.gap
+        || current.grid_template_columns != next.grid_template_columns
+        || current.grid_template_rows != next.grid_template_rows
+        || current.grid_column_gap != next.grid_column_gap
+        || current.grid_row_gap != next.grid_row_gap
+        // 子项布局字段改变父容器对当前节点的分配。
+        || current.flex_grow != next.flex_grow
+        || current.flex_shrink != next.flex_shrink
+        || current.align_self != next.align_self
+        || current.grid_cell != next.grid_cell
+        || current.grid_column_span != next.grid_column_span
+        || current.grid_row_span != next.grid_row_span
+        // 字号参与文本组件的固有尺寸测量。
+        || current.font_size != next.font_size
+        // 可见性决定节点是否参与布局。
+        || current.visible != next.visible
+}
+
+// 比较可选样式；样式是否存在会改变 Label 的字号回退语义。
+fn optional_style_layout_changed(current: &Option<Style>, next: &Option<Style>) -> bool {
+    // 同时存在时只比较布局相关字段，同时缺失时保持布局稳定。
+    match (current, next) {
+        // 两份样式使用统一的几何字段比较。
+        (Some(current), Some(next)) => style_layout_changed(current, next),
+        // 两边都没有样式时没有布局变化。
+        (None, None) => false,
+        // 样式出现或消失会改变 Label 的字号与尺寸回退。
+        _ => true,
+    }
+}
+
+/// 返回已审计内建组件的布局变化；未覆盖组件由调用方保守升级为 Layout。
+pub(crate) fn builtin_widget_layout_changed(
+    current: &SnapshotFields,
+    next: &SnapshotFields,
+) -> Option<bool> {
+    // 只对已核对 measure/layout 字段的快照类型作精细分类。
+    match (current, next) {
+        // Label 的颜色是纯绘制字段，其余公开快照字段参与度量或盒模型。
+        (
+            SnapshotFields::Label {
+                text: current_text,
+                font_size: current_font_size,
+                font_size_unit: current_font_size_unit,
+                color: _,
+                fixed_width: current_width,
+                fixed_height: current_height,
+                style: current_style,
+            },
+            SnapshotFields::Label {
+                text: next_text,
+                font_size: next_font_size,
+                font_size_unit: next_font_size_unit,
+                color: _,
+                fixed_width: next_width,
+                fixed_height: next_height,
+                style: next_style,
+            },
+        ) => Some(
+            // 文本、字号和固定尺寸都会改变固有测量。
+            current_text != next_text
+                || current_font_size != next_font_size
+                || current_font_size_unit != next_font_size_unit
+                || current_width != next_width
+                || current_height != next_height
+                // 样式只比较布局相关字段，颜色等视觉字段留在 Paint。
+                || optional_style_layout_changed(current_style, next_style),
+        ),
+        // Container 的声明快照完全由统一样式组成。
+        (
+            SnapshotFields::Container {
+                style: current_style,
+            },
+            SnapshotFields::Container { style: next_style },
+        ) => Some(style_layout_changed(current_style, next_style)),
+        // Grid 除统一样式外，响应式断点与列声明也参与放置。
+        (
+            SnapshotFields::Grid {
+                style: current_style,
+                breakpoints: current_breakpoints,
+                cols: current_cols,
+            },
+            SnapshotFields::Grid {
+                style: next_style,
+                breakpoints: next_breakpoints,
+                cols: next_cols,
+            },
+        ) => Some(
+            // 统一样式、断点或响应列变化都必须重新布局。
+            style_layout_changed(current_style, next_style)
+                || current_breakpoints != next_breakpoints
+                || current_cols != next_cols,
+        ),
+        // 未审计组件不在此处猜测其布局语义。
         _ => None,
     }
 }
