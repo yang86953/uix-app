@@ -50,6 +50,7 @@
 
 - 只有尺寸约束、布局属性、子结构、文本度量或可见性变化才标 Layout dirty。
 - Paint-only 主题色、hover、opacity 动画不触发布局；width/height 等几何动画触发布局。
+- 声明树原位协调分别报告 Paint 与 Layout 影响；`Label`、`Container`、`Grid` 按快照字段分类，未审计组件继续保守请求 Layout，不能以优化名义吞掉未知几何变化。
 - 布局 scratch 与输出快照可按窗口复用，但树版本、约束或相关属性变化时必须失效。
 - 虚拟滚动在范围与挂载数量稳定且没有新版声明时不调用 renderer 或 reconcile，滚动走 composite/paint 路径；范围或 renderer 声明变化时，以业务 key 或绝对索引后备 key 协调当前有界窗口，重叠行保留原组件身份。
 
@@ -72,4 +73,5 @@
 - `e7ad9d55` 让固有反向溢出按自然主轴镜像、零交叉轴 Stretch 保留自然外尺寸，并统一 Container/Space 的 margin 传递和内容缓存；两个公开与两个组件聚焦断言在修复前失败，修复后公开布局契约 22/22、组件缓存 2/2、库测试 109/109、公开 API 2/2、使用门面 5/5，两套特性组合检查均为 0 错误。
 - `b5c4f152` 让 ScrollView 的放置、滚动条判断和内容范围共同消费子项 margin，并把对侧沟槽纳入双轴滚动坐标范围，同时在组件边界复用共享有限几何归一规则；三个聚焦断言修复前失败，修复后内部 ScrollView 4/4、公开布局契约 22/22、库测试 113/113、公开 API 2/2、使用门面 5/5、使用示例 11/11，两套特性组合检查均为 0 错误。
 - `5b45c0d9` 以绝对索引后备 key 和 keyed reconcile 替换 VirtualScroll 的破坏性 `set_children`，让窗口重叠行与 renderer 声明更新保留组件身份；`cca439f9` 再为非法度量、超限 offset、总高度、滚动增量和最终行 frame 建立有限值规则，并以 4096 行硬预算限制 viewport/overscan。三项身份门禁与四项病理资源门禁修复前失败，修复后内部 VirtualScroll 8/8、公开布局契约 22/22、库测试 121/121、公开 API 2/2、使用门面 5/5、使用示例 11/11，两套特性组合检查均为 0 错误，文档测试 47 通过/23 忽略。
-- 现有证据仍不替代 Grid 其余 justify/span 组合、Flex overflow 与 wrap 组合、其他组件 measure/paint/hit-test 一致性、增量缓存或真窗视觉矩阵。
+- `32a5cbf6` 将 `ViewAdapter` 的组件 patch 结果拆为 Paint/Layout 双通道，只抓取一次新旧公开快照，并为 `Label`、`Container`、`Grid` 区分颜色、背景等纯绘制字段与文本、盒模型、Flex/Grid 轨道等几何字段；未分类组件保持保守 Layout。两个纯视觉门禁修复前均错误产生 Layout，修复后协调分类 6/6、库测试 127/127、布局与公开门面 40/40，两套特性组合检查均为 0 错误，文档测试 47 通过/23 忽略。
+- 现有证据仍不替代 Grid 其余 justify/span 组合、Flex overflow 与 wrap 组合、其他组件 measure/paint/hit-test 一致性、其余组件失效分类、布局 scratch/输出缓存或真窗视觉矩阵。
