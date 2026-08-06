@@ -601,11 +601,11 @@ impl NativeGpuCanvas2D {
                 return Ok(false);
             };
             // 追加当前连续 segment 的已验证 RHI 操作。
-            segments
-                .last_mut()
-                .expect("mixed RHI lowering always has one segment")
-                .1
-                .push(operation);
+            let Some((_, ops)) = segments.last_mut() else {
+                // 首个操作前必有开段逻辑，缺少段说明内部状态被破坏。
+                panic!("mixed RHI lowering always has one segment");
+            };
+            ops.push(operation);
         }
         // TextureMove 只能写入显式 retained texture，不能作用于易失 surface sentinel。
         let target_handle = segments

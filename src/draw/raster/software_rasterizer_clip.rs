@@ -218,9 +218,10 @@ mod tests {
             .line_to(1.0, 12.0)
             .close();
         // 路径裁剪应成功建立 mask。
-        rasterizer
-            .try_push_clip_path(&builder.build())
-            .expect("triangle path clip must be supported");
+        if let Err(error) = rasterizer.try_push_clip_path(&builder.build()) {
+            // 合法路径必须可裁剪。
+            panic!("triangle path clip must be supported: {error:?}");
+        }
         // 三角形内部的像素应可见。
         assert!(rasterizer.clip_mask_value(2, 2) > 0);
         // 三角形外部的像素应被完全裁掉。

@@ -857,62 +857,23 @@ impl RenderBackend for GpuBackend {
     }
 
     fn snapshot_overlay_backdrop(&mut self) -> bool {
-        if !self.surface.native_caps.retained_framebuffer {
-            return false;
-        }
-        if let Err(err) = self.gpu_ctx.make_current() {
-            tracing::warn!(
-                "GpuBackend: snapshot_overlay_backdrop make_current failed: {}",
-                err.short_what()
-            );
-            return false;
-        }
-        match self.gpu_ctx.snapshot_overlay_backdrop() {
-            Ok(()) => true,
-            Err(err) => {
-                tracing::warn!(
-                    "GpuBackend: snapshot_overlay_backdrop failed: {}",
-                    err.short_what()
-                );
-                false
-            }
-        }
+        // 叠加层 backdrop 职责在独立模块实现，保持本文件处于行数上限内。
+        self.snapshot_overlay_backdrop_impl()
     }
 
     fn restore_overlay_backdrop(&mut self) -> bool {
-        if !self.gpu_ctx.has_overlay_backdrop() {
-            return false;
-        }
-        if let Err(err) = self.gpu_ctx.make_current() {
-            tracing::warn!(
-                "GpuBackend: restore_overlay_backdrop make_current failed: {}",
-                err.short_what()
-            );
-            return false;
-        }
-        match self.gpu_ctx.restore_overlay_backdrop() {
-            Ok(()) => {
-                // 快照已写入保留缓冲：取消 begin_frame 挂起的全幅 clear。
-                self.surface.needs_gpu_clear = false;
-                self.surface.pending_clear_rects.clear();
-                true
-            }
-            Err(err) => {
-                tracing::warn!(
-                    "GpuBackend: restore_overlay_backdrop failed: {}",
-                    err.short_what()
-                );
-                false
-            }
-        }
+        // 恢复与释放委托给独立 backdrop 模块。
+        self.restore_overlay_backdrop_impl()
     }
 
     fn release_overlay_backdrop(&mut self) {
-        self.gpu_ctx.release_overlay_backdrop();
+        // 释放委托给独立 backdrop 模块。
+        self.release_overlay_backdrop_impl();
     }
 
     fn has_overlay_backdrop(&self) -> bool {
-        self.gpu_ctx.has_overlay_backdrop()
+        // 查询委托给独立 backdrop 模块。
+        self.has_overlay_backdrop_impl()
     }
 
     fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {
