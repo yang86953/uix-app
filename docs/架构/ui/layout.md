@@ -35,7 +35,7 @@
 
 ## 组件：FlexLayout / GridLayout / ScrollView / VirtualScroll
 
-- Flex 支持主轴方向、wrap、grow/shrink、justify、align、gap 和 per-child `align_self`；`overflow_content` 只保留自然主轴尺寸，不取消分布、交叉轴对齐或反向语义，固有反向主轴按自然内容长度镜像，零交叉轴由自然外尺寸 bootstrap。
+- Flex 支持主轴方向、wrap、grow/shrink、justify、align、gap 和 per-child `align_self`；`overflow_content` 只保留自然主轴尺寸，不取消分布、换行、交叉轴对齐或反向语义。固有反向主轴仅在零尺寸 bootstrap 按自然内容长度镜像，获得非零实际 frame 后与 justify 共用实际容器主轴；零交叉轴由自然外尺寸 bootstrap。
 - Grid 使用显式 column/row track、cell/span 与独立 row/column gap；空 track 或空 child 返回有限空输出，per-child `align_self` 覆盖容器级交叉轴对齐。
 - Grid 先确定 `Px` 与基于子项有限测量外尺寸的 `Auto`，再让正权重 `Fr` 按比例分配剩余空间；纯 `Auto` 轨道不为填满容器而膨胀。
 - 跨多轨道子项在 span 不含正权重 `Fr` 时，先扣除 span 内部 gap、`Px` 与已知 `Auto` 尺寸，再把未覆盖的外尺寸缺口均分给所覆盖的 `Auto` 轨道。
@@ -76,4 +76,5 @@
 - `5b45c0d9` 以绝对索引后备 key 和 keyed reconcile 替换 VirtualScroll 的破坏性 `set_children`，让窗口重叠行与 renderer 声明更新保留组件身份；`cca439f9` 再为非法度量、超限 offset、总高度、滚动增量和最终行 frame 建立有限值规则，并以 4096 行硬预算限制 viewport/overscan。三项身份门禁与四项病理资源门禁修复前失败，修复后内部 VirtualScroll 8/8、公开布局契约 22/22、库测试 121/121、公开 API 2/2、使用门面 5/5、使用示例 11/11，两套特性组合检查均为 0 错误，文档测试 47 通过/23 忽略。
 - `32a5cbf6` 将 `ViewAdapter` 的组件 patch 结果拆为 Paint/Layout 双通道，只抓取一次新旧公开快照，并为 `Label`、`Container`、`Grid` 区分颜色、背景等纯绘制字段与文本、盒模型、Flex/Grid 轨道等几何字段；未分类组件保持保守 Layout。两个纯视觉门禁修复前均错误产生 Layout，修复后协调分类 6/6、库测试 127/127、布局与公开门面 40/40，两套特性组合检查均为 0 错误，文档测试 47 通过/23 忽略。
 - `8530d29` 在建树、移除与声明重排三个直接子结构入口统一发送 `on_children_changed`，让 Container/Space/Affix 清除空内容尺寸、ScrollView 清除范围/偏移/滑块交互并回写受控零值、Carousel 清除旧数量且排除自定义箭头；同时确认 ProviderContext 继续保守 Layout、布局 scratch 每轮清空、遍历缓存受树版本约束且当前没有跨帧布局输出快照。新增六项结构状态门禁后适配器 12/12、库测试 133/133、集成测试 91 通过/1 忽略，两套特性检查均为 0 错误，文档测试 47 通过/23 忽略。
-- 现有证据仍不替代 Grid 其余 justify/span 组合、Flex overflow 与 wrap 组合、其他组件 measure/paint/hit-test 一致性、其余组件失效分类、可变行高缓存或真窗视觉矩阵。
+- `b7f7e5c7` 让单行溢出、标准固有主轴与溢出换行统一遵守实际 frame 镜像边界，并把 `overflow_content + wrap` 接回共享 Flex 分行器，同时冻结 grow/shrink 与 Stretch 增长。三个聚焦断言修复前分别产生负坐标或未换行，修复后布局契约 25/25、库测试 133/133、公开 API/使用门面/使用示例 18/18，两套特性组合检查均成功。
+- 现有证据仍不替代 Grid 其余 justify/span 组合、Flex 其他 overflow/wrap/固有轴组合、其他组件 measure/paint/hit-test 一致性、其余组件失效分类、可变行高缓存或真窗视觉矩阵。
