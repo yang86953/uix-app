@@ -652,6 +652,113 @@ fn overflow_flex_intrinsic_reverse_uses_natural_main_extent() {
     assert_eq!(output.total_size, Size::new(20.0, 25.0));
 }
 
+// 验证固有主轴在获得实际宽度后仍以该宽度完成反向镜像。
+#[test]
+// 居中布局不得先按容器定位、再按更短的自然内容长度镜像到负坐标。
+fn overflow_flex_intrinsic_reverse_with_allocated_main_uses_container_extent() {
+    // 构造两个十乘八的自然尺寸子项。
+    let children = vec![
+        // 第一个子项用于验证反向后的右侧位置。
+        LayoutChild::new(ComponentId::new(41), Size::new(10.0, 8.0)),
+        // 第二个子项用于验证反向后的左侧位置。
+        LayoutChild::new(ComponentId::new(42), Size::new(10.0, 8.0)),
+    ];
+    // 构造带五像素间距的水平反向布局。
+    let mut layout = FlexLayout::row()
+        // 切换为水平反向主轴。
+        .with_direction(FlexDirection::RowReverse)
+        // 保留两个子项之间的固定间距。
+        .with_gap(5.0)
+        // 让自然内容先按实际容器宽度居中。
+        .with_justify(JustifyContent::Center)
+        // 交叉轴从顶部开始，隔离主轴镜像结果。
+        .with_align(AlignItems::Start);
+    // 开启自然尺寸溢出路径。
+    layout.overflow_content = true;
+    // 声明主轴固有尺寸仍由内容决定。
+    layout.intrinsic_main = true;
+    // 为布局提供带非零原点的一百像素实际宽度。
+    let output = layout.layout(Rect::new(4.0, 6.0, 100.0, 20.0), &children);
+    // 第一项应位于居中内容的右侧，而不是被镜像到负坐标。
+    assert_eq!(output.positions[0], Rect::new(56.5, 6.0, 10.0, 8.0));
+    // 第二项应位于第一项左侧并保留五像素间距。
+    assert_eq!(output.positions[1], Rect::new(41.5, 6.0, 10.0, 8.0));
+    // 固有尺寸账本仍只记录两个子项与基础间距。
+    assert_eq!(output.total_size, Size::new(25.0, 20.0));
+}
+
+// 验证标准 Flex 的固有主轴同样使用已分配 frame 完成反向镜像。
+#[test]
+// 非溢出路径不得因固有尺寸账本较短而破坏实际容器内的居中位置。
+fn flex_intrinsic_reverse_with_allocated_main_uses_container_extent() {
+    // 构造两个十乘八的自然尺寸子项。
+    let children = vec![
+        // 第一项用于验证反向后的右侧位置。
+        LayoutChild::new(ComponentId::new(46), Size::new(10.0, 8.0)),
+        // 第二项用于验证反向后的左侧位置。
+        LayoutChild::new(ComponentId::new(47), Size::new(10.0, 8.0)),
+    ];
+    // 构造标准水平反向布局。
+    let mut layout = FlexLayout::row()
+        // 切换为水平反向主轴。
+        .with_direction(FlexDirection::RowReverse)
+        // 保留两个子项之间的五像素间距。
+        .with_gap(5.0)
+        // 让自然内容按实际容器宽度居中。
+        .with_justify(JustifyContent::Center)
+        // 交叉轴从顶部开始。
+        .with_align(AlignItems::Start);
+    // 声明主轴固有尺寸由内容决定，但不启用溢出专用路径。
+    layout.intrinsic_main = true;
+    // 为标准求解器提供一百像素实际宽度。
+    let output = layout.layout(Rect::new(4.0, 6.0, 100.0, 20.0), &children);
+    // 第一项应位于居中内容的右侧。
+    assert_eq!(output.positions[0], Rect::new(56.5, 6.0, 10.0, 8.0));
+    // 第二项应位于第一项左侧并保留间距。
+    assert_eq!(output.positions[1], Rect::new(41.5, 6.0, 10.0, 8.0));
+    // 固有尺寸继续记录自然内容宽度。
+    assert_eq!(output.total_size, Size::new(25.0, 20.0));
+}
+
+// 验证换行固有主轴在非零 frame 内逐行保持反向分布。
+#[test]
+// 不同行宽不得因按最大自然行长镜像而偏离各自的容器内对齐位置。
+fn wrapped_overflow_flex_reverse_uses_container_extent() {
+    // 构造三个二十乘八的自然尺寸子项。
+    let children = vec![
+        // 第一项与第二项共同占据首行。
+        LayoutChild::new(ComponentId::new(43), Size::new(20.0, 8.0)),
+        // 第二项验证首行反向顺序。
+        LayoutChild::new(ComponentId::new(44), Size::new(20.0, 8.0)),
+        // 第三项单独换到第二行并保持居中。
+        LayoutChild::new(ComponentId::new(45), Size::new(20.0, 8.0)),
+    ];
+    // 构造带五像素间距的水平反向布局。
+    let mut layout = FlexLayout::row()
+        // 切换为水平反向主轴。
+        .with_direction(FlexDirection::RowReverse)
+        // 同时作为行内和行间基础间距。
+        .with_gap(5.0)
+        // 让每一行在实际容器主轴内居中。
+        .with_justify(JustifyContent::Center)
+        // 让各行从交叉轴起点依次排列。
+        .with_align(AlignItems::Start);
+    // 开启多行换行路径。
+    layout.wrap = true;
+    // 开启自然尺寸溢出路径。
+    layout.overflow_content = true;
+    // 五十像素主轴使前两项同处首行、第三项换到次行。
+    let output = layout.layout(Rect::new(0.0, 0.0, 50.0, 30.0), &children);
+    // 首项应位于首行居中内容的右侧。
+    assert_eq!(output.positions[0], Rect::new(27.5, 0.0, 20.0, 8.0));
+    // 次项应位于首行左侧并保留五像素间距。
+    assert_eq!(output.positions[1], Rect::new(2.5, 0.0, 20.0, 8.0));
+    // 单独换行的第三项应继续位于实际容器中央。
+    assert_eq!(output.positions[2], Rect::new(15.0, 13.0, 20.0, 8.0));
+    // 固有主轴尺寸取首行自然宽，交叉轴沿用实际容器高度。
+    assert_eq!(output.total_size, Size::new(45.0, 30.0));
+}
+
 // 验证溢出 Flex 的零交叉轴 bootstrap 保留自然外尺寸。
 #[test]
 // 默认 Stretch 不得把未约束交叉轴压成零。
