@@ -9,7 +9,7 @@
 mod accessibility;
 #[path = "support/agent_gui_windows/component_visual.rs"]
 mod component_visual;
-#[path = "../demo/src/demos/component_qa/manifest.rs"]
+#[path = "../demo/gui-demo/src/demos/component_qa/manifest.rs"]
 mod component_visual_manifest;
 #[path = "support/agent_gui_windows/foreground.rs"]
 mod foreground;
@@ -166,6 +166,28 @@ struct DemoProcess {
 }
 
 impl DemoProcess {
+    // uix-demo 已迁入独立 workspace（demo/gui-demo），集成测试无法使用
+    // CARGO_BIN_EXE_ 编译期变量，改为定位 demo workspace 的构建产物。
+    fn demo_binary_path() -> PathBuf {
+        let profile = if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        };
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("demo")
+            .join("target")
+            .join(profile)
+            .join(if cfg!(windows) { "uix-demo.exe" } else { "uix-demo" });
+        if !path.is_file() {
+            panic!(
+                "demo 二进制不存在：{}；请先构建：\ncargo build --manifest-path demo/Cargo.toml --features agent-control --bin uix-demo",
+                path.display()
+            );
+        }
+        path
+    }
+
     fn spawn(graphics: GraphicsExpectation) -> Self {
         Self::spawn_with_args(graphics, &[])
     }
@@ -183,7 +205,7 @@ impl DemoProcess {
         fs::create_dir(discovery_root.join("uix-agent"))
             .expect("create pre-existing discovery directory");
 
-        let mut command = Command::new(env!("CARGO_BIN_EXE_uix-demo"));
+        let mut command = Command::new(Self::demo_binary_path());
         command
             .arg("--agent-control")
             .args(extra_args)

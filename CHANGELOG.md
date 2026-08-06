@@ -7,6 +7,7 @@
 ### 首发能力
 
 - 提供 Rust 声明式 View、State / Computed、应用壳、本地 Settings 与桌面组件体系。
+- `demo/` 调整为独立多项目工作区：`gui-demo`（`uix-demo` 多页应用与组件验收入口）与 `cli-demo`（CLI 功能域演示）各自独立构建，bin 名称与运行模式保持不变。
 - Windows 默认以 `Auto` 探测统一 wgpu 渲染器支持的 GPU backend，并在有界恢复耗尽后整体回退 Software。
 - 支持多窗口、IME、主题、定时与动画、浮层、结构化语义快照及显式启用的本机 Agent 开发预览。
 - 提供 `uix-demo`、公开 API 使用示例和 Windows 组件验收入口。

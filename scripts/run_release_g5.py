@@ -2129,6 +2129,8 @@ def build_release(root: Path, session_dir: Path) -> Path:
             "build",
             "--release",
             "--locked",
+            "--manifest-path",
+            "demo/Cargo.toml",
             "--bin",
             "uix-demo",
             "--target-dir",
@@ -2167,8 +2169,8 @@ def run_candidate(root: Path, output_root: Path, mode: str) -> tuple[Path, dict[
     if require_clean_commit(root) != commit:
         raise G5Error("candidate commit changed while building the release executable")
     executable_hash = file_sha256(executable)
-    lock_hash = file_sha256(root / "Cargo.lock")
-    shutil.copy2(root / "Cargo.lock", session_dir / "candidate-Cargo.lock")
+    lock_hash = file_sha256(root / "demo" / "Cargo.lock")
+    shutil.copy2(root / "demo" / "Cargo.lock", session_dir / "candidate-Cargo.lock")
     shutil.copy2(Path(__file__).resolve(), session_dir / "runner.py")
     started_at = utc_now()
     try:
@@ -2196,8 +2198,8 @@ def run_candidate(root: Path, output_root: Path, mode: str) -> tuple[Path, dict[
         "g5_gate_status": g5_gate_status,
         "g5_gate_reason": g5_gate_reason,
         "build_command": (
-            "cargo build --release --locked --bin uix-demo "
-            "--target-dir <isolated-empty-dir>"
+            "cargo build --release --locked --manifest-path demo/Cargo.toml "
+            "--bin uix-demo --target-dir <isolated-empty-dir>"
         ),
         "launch_arguments": ["--g5-release-scenario"],
         "default_backend_environment_override": None,

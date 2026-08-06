@@ -66,7 +66,7 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
                 .align(AlignItems::Center)
                 .gap(10.0),
                 space(8.0),
-                label("侧边栏浏览内置组件；CLI API：`cargo run --bin uix-demo -- --cli`")
+                label("侧边栏浏览内置组件；CLI API：`cargo run --manifest-path demo/Cargo.toml --bin uix-cli-demo`")
                     .font_size(12.0)
                     .color(ColorValue::Neutral(NeutralRole::TextSecondary)),
             ]),

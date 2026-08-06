@@ -99,10 +99,10 @@ class ResolvedGraphTests(unittest.TestCase):
         by_name = {scenario.name: scenario for scenario in scenarios}
         # 场景名称必须全局唯一，避免字典索引静默覆盖配置。
         self.assertEqual(len(by_name), len(scenarios))
-        # 读取关闭演示日志的根二进制场景。
+        # 读取关闭演示日志的 GUI 演示项目场景。
         disabled = by_name["demo-logging-disabled"]
-        # 禁用场景必须显式保留演示基础能力但不含日志 feature。
-        self.assertEqual(disabled.feature_args, ("--no-default-features", "--features", measure_usage_build.DEMO_BASE_FEATURES))
+        # 禁用场景必须关闭项目默认集（基础能力由项目依赖固定保留）。
+        self.assertEqual(disabled.feature_args, ("--no-default-features",))
         # 禁用场景必须只构建 uix-demo。
         self.assertEqual(disabled.build_args, ("--bin", "uix-demo"))
         # 禁用场景必须阻止日志订阅器进入解析图。
@@ -114,10 +114,10 @@ class ResolvedGraphTests(unittest.TestCase):
             disabled.required_uix_features,
             ("d3d11", "charts", "feedback", "navigation", "rich-text", "table", "tree-widgets"),
         )
-        # 读取只启用演示日志的根二进制场景。
+        # 读取只启用演示日志的 GUI 演示项目场景。
         enabled = by_name["demo-logging"]
         # 启用场景必须在同一基础组合上增加 demo-logging capability。
-        self.assertEqual(enabled.feature_args, ("--no-default-features", "--features", measure_usage_build.DEMO_LOGGING_FEATURES))
+        self.assertEqual(enabled.feature_args, ("--no-default-features", "--features", "demo-logging"))
         # 启用场景必须要求基础依赖与日志订阅器共同进入解析图。
         self.assertEqual(enabled.required_packages, ("image", "qrcode", "regex", "tracing-subscriber"))
         # 日志对照不得改变演示所需的 D3D11 与源码 capability。
@@ -125,7 +125,7 @@ class ResolvedGraphTests(unittest.TestCase):
             enabled.required_uix_features,
             ("d3d11", "charts", "feedback", "navigation", "rich-text", "table", "tree-widgets"),
         )
-        # 两个根二进制场景必须使用同一根清单以便比较。
+        # 两个演示项目场景必须使用同一清单以便比较。
         self.assertEqual(enabled.manifest, disabled.manifest)
 
     # 确认全能力场景绑定完整公开 feature、optional package 与 Windows API 合并结果。

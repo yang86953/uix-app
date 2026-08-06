@@ -1,4 +1,4 @@
-//! UIX 多页 GUI 演示 — `cargo run --bin uix-demo`
+//! UIX 多页 GUI 演示 — `cargo run --manifest-path demo/Cargo.toml --bin uix-demo`
 
 use std::time::{Duration, Instant};
 
@@ -87,7 +87,7 @@ fn sidebar(active: State<usize>, tk: &DesignTokens) -> ViewNode {
         embed(Divider::new()),
         navigation,
         embed(Divider::new()),
-        label("cargo run --bin uix-demo")
+        label("cargo run --manifest-path demo/Cargo.toml --bin uix-demo")
             .font_size(10.0)
             .color(ColorValue::Neutral(NeutralRole::TextQuaternary))
             .padding(EdgeInsets::new(12.0, 16.0, 2.0, 8.0)),

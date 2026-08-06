@@ -66,7 +66,7 @@ COMPONENT_TO_CASE: dict[str, str] = {
 }
 
 # Advanced chart rows are captured from the charts demo page (``--charts``
-# scene in ``demo/src/demos/charts.rs``) by the charts evidence collector.
+# scene in ``demo/gui-demo/src/demos/charts.rs``) by the charts evidence collector.
 CHART_SCENE_TITLES: dict[str, list[str]] = {
     "AreaChart": ["磁盘占用趋势"],
     "ScatterChart": ["散点分布", "气泡分布"],

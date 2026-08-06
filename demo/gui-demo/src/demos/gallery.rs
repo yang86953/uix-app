@@ -199,7 +199,7 @@ pub fn page_gallery(ctx: &DemoCtx<'_>) -> ViewNode {
         .push(info_note(
             tk,
             &format!(
-                "已展示 {shown}/{total} 项；点击“已展示”行可跳转到对应演示页。CLI 域：`cargo run --bin uix-demo -- --cli`。"
+                "已展示 {shown}/{total} 项；点击“已展示”行可跳转到对应演示页。CLI 域：`cargo run --manifest-path demo/Cargo.toml --bin uix-cli-demo`。"
             ),
         ))
         .push(backlog_note(

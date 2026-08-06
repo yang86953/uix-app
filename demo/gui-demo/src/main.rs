@@ -1,19 +1,17 @@
 // ============================================================================
-// UIX 演示入口 — GUI（默认）| CLI（--cli）
+// UIX GUI 演示入口（CLI 演示见独立项目 demo/cli-demo）
 // ============================================================================
-//   cargo run --bin uix-demo          → GUI 多页应用
-//   cargo run --bin uix-demo -- --cli → CLI 功能域演示
-//   cargo run --bin uix-demo -- --follow-system-theme
-//                                      → GUI 跟随系统主题
-//   cargo run --features agent-control --bin uix-demo -- --agent-control
+//   cargo run --manifest-path demo/Cargo.toml --bin uix-demo
+//                                      → GUI 多页应用
+//   ... -- --follow-system-theme       → GUI 跟随系统主题
+//   ... --features agent-control -- --agent-control
 //                                      → 启用 Agent Bridge 的 GUI
-//   cargo run --features test-harness --bin uix-demo -- --graphics-recovery-acceptance
+//   ... --features test-harness -- --graphics-recovery-acceptance
 //                                      → 显示图形故障恢复验收路径
-//   cargo run --release --bin uix-demo -- --g5-release-scenario
+//   ... --release -- --g5-release-scenario
 //                                      → 显式启动内部 G5 生产测量场景
 // ============================================================================
 
-mod cli;
 mod common;
 mod demos;
 mod gui;
@@ -22,7 +20,6 @@ use std::path::PathBuf;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 struct LaunchOptions {
-    cli: bool,
     agent_control: bool,
     follow_system_theme: bool,
     graphics_recovery_acceptance: bool,
@@ -37,7 +34,10 @@ fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions
     let mut args = args.into_iter();
     while let Some(argument) = args.next() {
         match argument.as_str() {
-            "--cli" => options.cli = true,
+            "--cli" => {
+                eprintln!("--cli 已迁移到独立项目，请运行：cargo run --manifest-path demo/Cargo.toml --bin uix-cli-demo");
+                std::process::exit(2);
+            }
             "--agent-control" => options.agent_control = true,
             "--follow-system-theme" => options.follow_system_theme = true,
             "--graphics-recovery-acceptance" => options.graphics_recovery_acceptance = true,
@@ -113,26 +113,6 @@ fn main() {
     init_tracing();
     let options = parse_launch_options(std::env::args().skip(1));
 
-    if options.cli && options.agent_control {
-        eprintln!("--agent-control 只适用于 GUI 模式，不能与 --cli 同时使用");
-        std::process::exit(2);
-    }
-    if options.cli && options.follow_system_theme {
-        eprintln!("--follow-system-theme 只适用于 GUI 模式，不能与 --cli 同时使用");
-        std::process::exit(2);
-    }
-    if options.cli && options.graphics_recovery_acceptance {
-        eprintln!("--graphics-recovery-acceptance 只适用于 GUI 模式，不能与 --cli 同时使用");
-        std::process::exit(2);
-    }
-    if options.cli && options.component_qa {
-        eprintln!("--component-qa 只适用于 GUI 模式，不能与 --cli 同时使用");
-        std::process::exit(2);
-    }
-    if options.cli && options.g5_release_scenario {
-        eprintln!("--g5-release-scenario 只适用于 GUI 模式，不能与 --cli 同时使用");
-        std::process::exit(2);
-    }
     if options.g5_release_scenario
         && (options.agent_control
             || options.follow_system_theme
@@ -145,25 +125,19 @@ fn main() {
     }
     #[cfg(not(feature = "agent-control"))]
     if options.agent_control {
-        eprintln!("--agent-control 需要同时启用 Cargo feature：--features agent-control");
+        eprintln!(
+            "--agent-control 需要同时启用 Cargo feature：\n  cargo run --manifest-path demo/Cargo.toml --features agent-control --bin uix-demo -- --agent-control"
+        );
         std::process::exit(2);
     }
     #[cfg(not(feature = "test-harness"))]
     if options.graphics_recovery_acceptance {
         eprintln!(
-            "--graphics-recovery-acceptance 需要同时启用 Cargo feature：--features test-harness"
+            "--graphics-recovery-acceptance 需要同时启用 Cargo feature：\n  cargo run --manifest-path demo/Cargo.toml --features test-harness --bin uix-demo -- --graphics-recovery-acceptance"
         );
         std::process::exit(2);
     }
 
-    if options.cli {
-        tracing::info!("UIX CLI 演示启动中...");
-        if let Err(e) = cli::run() {
-            eprintln!("CLI 演示出错: {}", e.short_what());
-            std::process::exit(1);
-        }
-    } else {
-        tracing::info!("UIX GUI 演示启动中...");
-        run_gui(options);
-    }
+    tracing::info!("UIX GUI 演示启动中...");
+    run_gui(options);
 }

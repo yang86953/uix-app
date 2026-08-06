@@ -20,7 +20,7 @@ def sample(pid):
     return c.WorkingSetSize, c.PrivateUsage
 
 def run(extra_args, seconds, label):
-    cmd = ["target/release/uix-demo.exe"] + extra_args
+    cmd = ["demo/target/release/uix-demo.exe"] + extra_args
     print(f"== {label}: {' '.join(extra_args) or '(默认)'} ==", flush=True)
     proc = subprocess.Popen(cmd, cwd="G:/code/uix-app")
     time.sleep(seconds)

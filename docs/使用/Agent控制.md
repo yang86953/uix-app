@@ -22,7 +22,7 @@ App::new()
     .run();
 ```
 
-demo 启用方式：`cargo run --features agent-control --bin uix-demo -- --agent-control`。
+demo 启用方式：`cargo run --manifest-path demo/Cargo.toml --features agent-control --bin uix-demo -- --agent-control`。
 
 ## 端点协议
 

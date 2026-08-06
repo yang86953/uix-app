@@ -222,11 +222,11 @@ fn real_demo_captures_component_semantic_evidence() {
 
 // ---- helpers mirroring the component visual harness (private per module) ----
 
-/// PAGE_CHARTS index in `demo/src/common/page.rs` (sidebar automation id
+/// PAGE_CHARTS index in `demo/gui-demo/src/common/page.rs` (sidebar automation id
 /// ``sidebar-page-8``).
 const CHARTS_PAGE_IDX: usize = 8;
 
-/// Advanced chart scene titles rendered by `demo/src/demos/charts.rs`.
+/// Advanced chart scene titles rendered by `demo/gui-demo/src/demos/charts.rs`.
 /// The collector matches semantic image nodes by these titles; the assembler
 /// maps them back to ledger rows.
 const CHARTS_SCENE_TITLES: &[&str] = &[

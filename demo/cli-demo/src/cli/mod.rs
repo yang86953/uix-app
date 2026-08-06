@@ -1,6 +1,6 @@
 //! CLI 演示 — 按功能域展示 `core` / `native` / `draw` / `ui` / `app` / `data` 能力。
 //!
-//! 运行：`cargo run --bin uix-demo -- --cli`
+//! 运行：`cargo run --manifest-path demo/Cargo.toml --bin uix-cli-demo`
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -9,11 +9,6 @@ use uix::data::SettingsService;
 use uix::diagnostics::{Diagnostics, RecoveryAction, RecoveryOutcome};
 use uix::draw::target::RenderTarget;
 use uix::prelude::*;
-
-#[allow(dead_code)]
-pub fn init_logging() {
-    tracing::info!("演示日志初始化完成");
-}
 
 pub fn demo_core_types() {
     println!("\n╔══ core：几何类型 ═══╗");

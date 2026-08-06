@@ -42,3 +42,6 @@ target-*/
 # 图形调试产物
 *.png
 *.log
+
+# demo 工作区构建产物
+demo/target/

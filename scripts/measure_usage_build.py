@@ -33,8 +33,6 @@ except ModuleNotFoundError:
 
 # 重导出演示基础 feature 常量，保持既有测试与调用方兼容。
 DEMO_BASE_FEATURES = usage_build_scenarios.DEMO_BASE_FEATURES
-# 重导出演示日志 feature 常量。
-DEMO_LOGGING_FEATURES = usage_build_scenarios.DEMO_LOGGING_FEATURES
 # 重导出图形 backend feature 集合，供矩阵测试复核。
 GRAPHICS_BACKEND_FEATURES = usage_build_scenarios.GRAPHICS_BACKEND_FEATURES
 # 重导出完整公开能力 feature 集合，供矩阵测试复核。
