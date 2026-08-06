@@ -37,9 +37,12 @@ if (-not $targetRoot.StartsWith($repoPrefix, [StringComparison]::OrdinalIgnoreCa
     throw "Refusing an internal release target outside the repository: $targetRoot"
 }
 
+# 演示二进制已迁入独立工作区（demo/gui-demo），其构建产物位于 demo/target。
+$demoTargetRoot = Join-Path $repoRoot 'demo\target'
+
 Push-Location $repoRoot
 try {
-    cargo build --release --locked --bin uix-demo
+    cargo build --release --locked --manifest-path demo\Cargo.toml --bin uix-demo
     if ($LASTEXITCODE -ne 0) {
         throw 'Release Demo build failed.'
     }
@@ -88,7 +91,7 @@ foreach ($existingPath in @($stageRoot, $zipPath)) {
 New-Item -ItemType Directory -Path $stageRoot | Out-Null
 
 $payload = [ordered]@{
-    'uix-demo.exe' = Join-Path $targetRoot 'release\uix-demo.exe'
+    'uix-demo.exe' = Join-Path $demoTargetRoot 'release\uix-demo.exe'
     "uix-$version.crate" = Join-Path $targetRoot "package\uix-$version.crate"
     'LICENSE' = Join-Path $repoRoot 'LICENSE'
     'THIRD_PARTY_NOTICES.md' = Join-Path $repoRoot 'THIRD_PARTY_NOTICES.md'

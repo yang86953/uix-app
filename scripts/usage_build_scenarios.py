@@ -8,10 +8,9 @@ from dataclasses import dataclass, replace
 # 导入路径类型。
 from pathlib import Path
 
-# 记录 uix-demo 除日志订阅外必须启用的既有能力组合。
+# 记录 GUI 演示项目固定依赖的 uix 基础能力组合（uix-gui-demo 的 Cargo.toml 内联声明，
+# 此处仅保留文档线索；场景 feature_args 只控制透传的 demo-logging）。
 DEMO_BASE_FEATURES = "d3d11,image-codecs,qrcode,form-pattern,rich-text,charts,table,navigation,feedback,tree-widgets"
-# 记录在相同演示能力组合上额外启用日志订阅的对照集合。
-DEMO_LOGGING_FEATURES = f"{DEMO_BASE_FEATURES},demo-logging"
 # 记录所有可独立选择的图形 backend feature，供最小与负向场景统一排除。
 GRAPHICS_BACKEND_FEATURES = ("d3d11", "d3d12", "metal", "opengles", "vulkan")
 # 记录外部使用方完整集合应显式选择的全部公开 capability，内部 test-harness 不在其中。
@@ -341,16 +340,16 @@ def scenario_specs(root: Path) -> list[Scenario]:
             forbidden_uix_features=("d3d11", "d3d12", "opengles", "vulkan", "agent-control", "charts", "feedback", "navigation", "rich-text", "settings-serde", "table"),
         # 结束 Metal 选择面正向场景定义。
         ),
-        # 演示日志禁用入口直接构建根清单二进制。
+        # 演示日志禁用入口直接构建 GUI 演示项目二进制。
         Scenario(
             # 记录报告中的稳定场景名称。
             name="demo-logging-disabled",
-            # 指向包含 uix-demo 的根清单。
-            manifest=root / "Cargo.toml",
+            # 指向 GUI 演示项目清单（demo 工作区成员）。
+            manifest=root / "demo" / "gui-demo" / "Cargo.toml",
             # 说明该入口验证保持演示基础能力但关闭订阅器的二进制。
             description="保持演示基础能力并关闭 demo-logging 的二进制入口",
-            # 关闭默认集合并显式启用演示所需的非日志能力。
-            feature_args=("--no-default-features", "--features", DEMO_BASE_FEATURES),
+            # 关闭演示项目默认集，基础能力由项目依赖固定保留。
+            feature_args=("--no-default-features",),
             # 只构建演示二进制目标。
             build_args=("--bin", "uix-demo"),
             # 禁用入口必须保留演示基础能力依赖。
@@ -367,16 +366,16 @@ def scenario_specs(root: Path) -> list[Scenario]:
             forbidden_uix_features=("agent-control", "opengles"),
         # 结束演示日志禁用场景定义。
         ),
-        # 演示日志单能力入口直接构建根清单二进制。
+        # 演示日志单能力入口直接构建 GUI 演示项目二进制。
         Scenario(
             # 记录报告中的稳定场景名称。
             name="demo-logging",
-            # 指向包含 uix-demo 的根清单。
-            manifest=root / "Cargo.toml",
+            # 指向 GUI 演示项目清单（demo 工作区成员）。
+            manifest=root / "demo" / "gui-demo" / "Cargo.toml",
             # 说明该入口在相同演示基础组合上启用日志订阅能力。
             description="保持演示基础能力并打开 demo-logging 的二进制入口",
-            # 关闭默认集合并显式启用演示基础能力及日志 capability。
-            feature_args=("--no-default-features", "--features", DEMO_LOGGING_FEATURES),
+            # 关闭默认集合并显式启用日志 capability（经项目透传）。
+            feature_args=("--no-default-features", "--features", "demo-logging"),
             # 只构建演示二进制目标。
             build_args=("--bin", "uix-demo"),
             # 启用入口必须解析演示基础依赖与日志订阅器。
