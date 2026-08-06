@@ -51,7 +51,11 @@ pub fn page_component_qa(ctx: &DemoCtx<'_>) -> ViewNode {
     let case_state = ctx.component_case();
     let total = COMPONENT_VISUAL_CASE_COUNT;
     let index = case_state.get().min(total.saturating_sub(1));
-    let case = &COMPONENT_VISUAL_CASES[index];
+    let case = COMPONENT_VISUAL_CASES
+        .iter()
+        .flat_map(|group| group.iter())
+        .nth(index)
+        .unwrap_or_else(|| panic!("component QA 索引 {index} 必须落在库存内"));
     let qa_tokens = if ctx.theme_control().is_some_and(|control| control.is_dark()) {
         DesignTokens::antd_dark()
     } else {
