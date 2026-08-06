@@ -580,9 +580,12 @@ mod tests {
     #[test]
     fn rhi_resize_extent_scales_logical_dimensions() {
         // 计算 900×640 在 1.5 DPR 下的物理 extent。
-        let extent = rhi_resize_extent_for_logical(900, 640, 1.5)
-            // 明确有效输入不应在转换阶段失败。
-            .expect("valid DPR must produce a physical RHI extent");
+        let extent = match rhi_resize_extent_for_logical(900, 640, 1.5) {
+            // 有效输入必须成功转换。
+            Ok(extent) => extent,
+            // 转换失败说明尺寸计算边界有缺口。
+            Err(error) => panic!("valid DPR must produce a physical RHI extent: {error:?}"),
+        };
         // 验证宽度按同一 DPR 转换。
         assert_eq!(extent.width, 1350);
         // 验证高度按同一 DPR 转换。

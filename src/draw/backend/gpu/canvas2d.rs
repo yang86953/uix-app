@@ -615,13 +615,11 @@ mod tests {
         // 验证没有生成可能污染 retained target 的 pending operation。
         assert!(canvas.pending_native.is_empty());
         // 验证错误仍保留在最终 present 边界消费。
-        assert_eq!(
-            canvas
-                .take_deferred_error()
-                .expect("invalid scroll must record an error")
-                .code(),
-            crate::core::Errc::NotImplemented
-        );
+        let Some(error) = canvas.take_deferred_error() else {
+            // 非法 scroll 必须留下可消费的错误。
+            panic!("invalid scroll must record an error");
+        };
+        assert_eq!(error.code(), crate::core::Errc::NotImplemented);
     }
 
     // hybrid canvas 在具备 solid mesh 时应把椭圆保留为 GPU native mesh。

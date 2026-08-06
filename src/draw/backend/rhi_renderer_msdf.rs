@@ -562,7 +562,12 @@ mod tests {
         // 准备一个可逐字节检查的 2x2 RGBA 输入。
         let payload = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
         // 执行单像素 gutter 的 padding lowering。
-        let padded = RhiRenderer::pad_msdf_payload(&payload, 2, 2).expect("valid padding");
+        let padded = match RhiRenderer::pad_msdf_payload(&payload, 2, 2) {
+            // 合法输入必须成功生成 padded payload。
+            Ok(padded) => padded,
+            // padding 失败说明低层校验与测试输入矛盾。
+            Err(error) => panic!("valid padding: {error:?}"),
+        };
         // 顶部 gutter、两行内容和底部 gutter 都应保留完整 4x4 RGBA 数据。
         assert_eq!(
             padded,

@@ -11,7 +11,10 @@ use crate::native::present::rhi::{RhiExtent, RhiViewport, TextureHandle};
 #[test]
 fn lower_frame_encoder_splits_scroll_boundary() {
     // 创建一个小尺寸、便于审计的编码器。
-    let mut encoder = FrameEncoder::new(8, 6).expect("test encoder dimensions are valid");
+    let Ok(mut encoder) = FrameEncoder::new(8, 6) else {
+        // 合法测试尺寸必须可构造。
+        panic!("test encoder dimensions are valid");
+    };
     // 记录 scroll 前的普通 shape。
     encoder.native(FrameRasterOp::FillRect {
         rect: FrameRect::new(0, 0, 2, 2),
@@ -29,7 +32,7 @@ fn lower_frame_encoder_splits_scroll_boundary() {
         color: Color::blue(),
     });
     // 执行只读 lowering，不触碰任何 native context。
-    let lowered = super::lower_frame_encoder(
+    let lowered = match super::lower_frame_encoder(
         &encoder,
         RhiViewport {
             width: 8.0,
@@ -37,9 +40,14 @@ fn lower_frame_encoder_splits_scroll_boundary() {
         },
         1.0,
         1.0,
-    )
-    .expect("scroll lowering should not fail")
-    .expect("all test operations should be representable");
+    ) {
+        // 合法测试操作必须全部可表示。
+        Ok(Some(lowered)) => lowered,
+        // 编码器内容不可表示说明 lowering 校验过严。
+        Ok(None) => panic!("all test operations should be representable"),
+        // 只读 lowering 不允许失败。
+        Err(error) => panic!("scroll lowering should not fail: {error:?}"),
+    };
     // 一个 scroll 应该把连续普通操作拆成两个片段。
     assert_eq!(lowered.segments.len(), 2);
     // 首段不能提前携带 move。
@@ -56,7 +64,7 @@ fn lower_frame_encoder_splits_scroll_boundary() {
 #[test]
 fn lower_frame_scroll_move_clips_and_scales() {
     // 创建一个 viewport source 向右偏移一个逻辑像素的搬移。
-    let movement = super::lower_frame_scroll_move(
+    let movement = match super::lower_frame_scroll_move(
         super::FrameScrollCopy {
             viewport: FrameRect::new(1, 1, 4, 3),
             dx: 1,
@@ -68,9 +76,14 @@ fn lower_frame_scroll_move_clips_and_scales() {
         1.0,
         1.0,
         RhiExtent::new(8, 6),
-    )
-    .expect("integral scroll should lower")
-    .expect("non-empty scroll should produce a move");
+    ) {
+        // 非空 scroll 必须产生一个物理搬移。
+        Ok(Some(movement)) => movement,
+        // 无搬移结果说明裁剪逻辑与编码器语义矛盾。
+        Ok(None) => panic!("non-empty scroll should produce a move"),
+        // 整数 DPR 的 scroll 不允许失败。
+        Err(error) => panic!("integral scroll should lower: {error:?}"),
+    };
     // source 起点是 viewport + delta，destination 起点保持 viewport 原点。
     assert_eq!(movement.source_x, 2);
     assert_eq!(movement.destination_x, 1);

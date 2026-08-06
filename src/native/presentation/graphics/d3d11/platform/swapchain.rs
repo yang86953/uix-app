@@ -123,9 +123,12 @@ mod tests {
     #[test]
     fn device_removed_reason_maps_device_loss() {
         // 把 DXGI 设备移除码交给统一分类边界。
-        let error = map_dxgi_device_removed_reason(DXGI_ERROR_DEVICE_REMOVED)
-            // 明确设备移除输入必须产生错误。
-            .expect_err("device removal HRESULT must be reported");
+        let error = match map_dxgi_device_removed_reason(DXGI_ERROR_DEVICE_REMOVED) {
+            // 已知移除码必须产生错误。
+            Err(error) => error,
+            // 设备移除被忽略会绕过恢复路径。
+            Ok(()) => panic!("device removal HRESULT must be reported"),
+        };
         // 验证恢复层可以按 GraphicsDeviceLost 选择重建 device。
         assert_eq!(error.code(), Errc::GraphicsDeviceLost);
     }

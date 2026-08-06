@@ -9,6 +9,8 @@ pub(crate) mod helpers;
 pub(crate) mod impl_frame;
 pub(crate) mod impl_main;
 pub(crate) mod render_backend;
+// 叠加层 backdrop 快照独立管理，保持 RenderBackend 文件处于行数上限内。
+pub(crate) mod render_backend_backdrop;
 // 主 surface 的最终 present 状态机独立管理，保持 RenderBackend 文件可维护。
 pub(crate) mod render_present;
 pub(crate) mod rhi_frame;
