@@ -406,6 +406,62 @@ fn grid_spanning_child_expands_auto_tracks() {
     assert_eq!(output.total_size, Size::new(70.0, 12.0));
 }
 
+// 验证同跨度重叠子项不会因声明顺序改变 Auto 轨道尺寸。
+#[test]
+// 相同约束必须在两个子项交换顺序后保持同一列起点与总尺寸。
+fn grid_overlapping_auto_spans_are_order_independent() {
+    // 构造从首列开始并横跨两列的百像素子项。
+    let mut leading = LayoutChild::new(ComponentId::new(48), Size::new(100.0, 10.0));
+    // 将首个跨列子项显式放入第一格。
+    leading.grid_cell = Some(0);
+    // 让首个子项覆盖前两条 Auto 列。
+    leading.grid_column_span = 2;
+    // 构造从第二列开始并横跨两列的同宽子项。
+    let mut trailing = LayoutChild::new(ComponentId::new(49), Size::new(100.0, 10.0));
+    // 将第二个跨列子项显式放入第二格。
+    trailing.grid_cell = Some(1);
+    // 让第二个子项覆盖后两条 Auto 列。
+    trailing.grid_column_span = 2;
+    // 构造第三列的零尺寸位置探针。
+    let mut probe = LayoutChild::new(ComponentId::new(50), Size::zero());
+    // 将探针显式放入第三格以读取末列起点。
+    probe.grid_cell = Some(2);
+    // 构造三条 Auto 列的共享 Grid 配置。
+    let grid = GridLayout::new()
+        // 三条轨道都只由内容约束决定宽度。
+        .with_columns(vec![GridTrack::Auto, GridTrack::Auto, GridTrack::Auto])
+        // 单行高度同样由内容决定。
+        .with_rows(vec![GridTrack::Auto])
+        // 隔离 span 贡献，不引入额外 gap。
+        .with_gap(0.0, 0.0)
+        // 子项保持自然高度。
+        .with_align(AlignItems::Start)
+        // 子项保持自然宽度以直接观察轨道范围。
+        .with_justify(JustifyContent::Start);
+    // 先按前跨列、后跨列的声明顺序求解。
+    let forward = grid.layout(
+        // 提供大于自然网格的实际容器。
+        Rect::new(0.0, 0.0, 200.0, 40.0),
+        // 保留两个跨列约束及末列探针。
+        &[leading.clone(), trailing.clone(), probe.clone()],
+    );
+    // 再交换两个跨列子项的声明顺序求解。
+    let reversed = grid.layout(
+        // 使用完全相同的父级约束。
+        Rect::new(0.0, 0.0, 200.0, 40.0),
+        // 只交换跨列子项，cell 与 span 保持不变。
+        &[trailing, leading, probe],
+    );
+    // 同跨度约束应让三条 Auto 列各承担五十像素贡献。
+    assert_eq!(forward.positions[2], Rect::new(100.0, 0.0, 0.0, 0.0));
+    // 交换声明顺序后，末列起点必须保持不变。
+    assert_eq!(reversed.positions[2], forward.positions[2]);
+    // 两次求解的自然 Grid 尺寸必须完全一致。
+    assert_eq!(reversed.total_size, forward.total_size);
+    // 重叠约束共同形成一百五十像素自然宽度。
+    assert_eq!(forward.total_size, Size::new(150.0, 10.0));
+}
+
 // 验证跨多个 Auto 行的内容贡献使用与列轴对称的规则。
 #[test]
 // 覆盖 spanning 子项在两个 Auto 行间均分缺口的垂直分支。

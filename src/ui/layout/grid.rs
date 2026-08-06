@@ -243,88 +243,169 @@ fn intrinsic_auto_track_sizes(
         sizes[start] = sizes[start].max(extent);
     }
 
-    // 再将跨格子项的尺寸缺口分摊到它覆盖的 Auto 轨道。
-    for assignment in assignments {
-        // 按当前轴选取起始轨道。
-        let start = if horizontal {
-            // 水平轴使用列起点。
-            assignment.col
+    // 只收集真正跨越多条轨道的子项，避免单轨道贡献重复结算。
+    let mut spanning_assignments: Vec<&CellAssignment> = assignments
+        // 借用既有定位账本，不复制子项或轨道数据。
+        .iter()
+        // 按当前轴过滤掉空 span 与单轨道 span。
+        .filter(|assignment| {
+            // 水平轴读取列 span，垂直轴读取行 span。
+            let span = if horizontal {
+                // 列 span 已由放置阶段收敛到轨道预算。
+                assignment.col_span as usize
+            } else {
+                // 行 span 已由放置阶段收敛到轨道预算。
+                assignment.row_span as usize
+            };
+            // 只有至少覆盖两条轨道的子项进入后续批次。
+            span > 1
+        })
+        // 物化有界引用表，供跨度排序和同批结算复用。
+        .collect();
+    // 较短 span 先建立基础尺寸，同跨度子项保持同批处理。
+    spanning_assignments.sort_by_key(|assignment| {
+        // 排序键只依赖布局约束，不依赖子项声明顺序。
+        if horizontal {
+            // 水平轴按有界列 span 升序排列。
+            assignment.col_span
         } else {
-            // 垂直轴使用行起点。
-            assignment.row
-        };
-        // 按当前轴选取跨越的轨道数。
-        let span = if horizontal {
-            // 水平轴使用列 span。
-            assignment.col_span as usize
+            // 垂直轴按有界行 span 升序排列。
+            assignment.row_span
+        }
+    });
+    // 每条轨道只记录当前跨度批次要求的最大计划增量。
+    let mut planned_increases = vec![0.0f32; tracks.len()];
+    // 从排序后的首个跨格子项开始扫描。
+    let mut group_start = 0usize;
+    // 每轮处理一组跨度相同的子项。
+    while group_start < spanning_assignments.len() {
+        // 读取当前批次在目标轴上的统一 span。
+        let group_span = if horizontal {
+            // 水平轴使用当前首项的列 span。
+            spanning_assignments[group_start].col_span
         } else {
-            // 垂直轴使用行 span。
-            assignment.row_span as usize
+            // 垂直轴使用当前首项的行 span。
+            spanning_assignments[group_start].row_span
         };
-        // 将结束位置限制在实际轨道数量内。
-        let end = start.saturating_add(span).min(tracks.len());
-        // 单轨道子项已经在第一轮处理。
-        if end.saturating_sub(start) <= 1 {
-            // 不对空 span 或单轨道 span 重复计费。
-            continue;
+        // 至少把当前首项纳入批次。
+        let mut group_end = group_start + 1;
+        // 向后收集所有跨度相同的连续子项。
+        while group_end < spanning_assignments.len() {
+            // 读取候选子项在目标轴上的 span。
+            let candidate_span = if horizontal {
+                // 水平轴读取候选列 span。
+                spanning_assignments[group_end].col_span
+            } else {
+                // 垂直轴读取候选行 span。
+                spanning_assignments[group_end].row_span
+            };
+            // 遇到下一种跨度时结束当前批次。
+            if candidate_span != group_span {
+                // 保留下一批的起始索引。
+                break;
+            }
+            // 将同跨度候选纳入当前批次。
+            group_end += 1;
         }
-        // 含正比例 Fr 的 span 由后续剩余空间分配承担。
-        let contains_fraction = tracks[start..end].iter().any(|track| {
-            // 只有正且有限的 Fr 权重会参与空间分配。
-            matches!(track, GridTrack::Fr(fr) if finite_non_negative(*fr) > 0.0)
-        });
-        // 保留 Fr 轨道吸收剩余空间的既有语义。
-        if contains_fraction {
-            // 这类 span 不额外扩张 Auto 轨道。
-            continue;
-        }
-        // 统计 span 中可承担缺口的 Auto 轨道数。
-        let auto_count = tracks[start..end]
-            .iter()
-            .filter(|track| matches!(track, GridTrack::Auto))
-            .count();
-        // 没有 Auto 轨道时不应改写固定轨道。
-        if auto_count == 0 {
-            // 当前 span 没有可分摊的轨道。
-            continue;
-        }
-        // 用 f64 账本避免多条轨道求和时提前溢出。
-        let track_extent = tracks[start..end]
-            .iter()
-            .enumerate()
-            .map(|(offset, track)| {
-                // 固定轨道计入自身宽高，Auto 计入已汇总的固有尺寸。
-                match track {
-                    // 固定轨道使用安全化后的像素值。
-                    GridTrack::Px(px) => finite_non_negative(*px) as f64,
-                    // 当前 Auto 轨道使用第一轮已确定的尺寸。
-                    GridTrack::Auto => sizes[start + offset] as f64,
-                    // 非正 Fr 在这一固有尺寸账本中不占空间。
-                    GridTrack::Fr(_) => 0.0,
+        // 清除上一批留下的计划值，同时复用同一有界缓冲。
+        planned_increases.fill(0.0);
+
+        // 同跨度子项全部基于批次开始时的同一轨道快照计算贡献。
+        for assignment in &spanning_assignments[group_start..group_end] {
+            // 按当前轴选取起始轨道。
+            let start = if horizontal {
+                // 水平轴使用列起点。
+                assignment.col
+            } else {
+                // 垂直轴使用行起点。
+                assignment.row
+            };
+            // 按当前轴选取跨越的轨道数。
+            let span = if horizontal {
+                // 水平轴使用列 span。
+                assignment.col_span as usize
+            } else {
+                // 垂直轴使用行 span。
+                assignment.row_span as usize
+            };
+            // 将结束位置限制在实际轨道数量内。
+            let end = start.saturating_add(span).min(tracks.len());
+            // 含正比例 Fr 的 span 由后续剩余空间分配承担。
+            let contains_fraction = tracks[start..end].iter().any(|track| {
+                // 只有正且有限的 Fr 权重会参与空间分配。
+                matches!(track, GridTrack::Fr(fr) if finite_non_negative(*fr) > 0.0)
+            });
+            // 保留 Fr 轨道吸收剩余空间的既有语义。
+            if contains_fraction {
+                // 这类 span 不额外扩张 Auto 轨道。
+                continue;
+            }
+            // 统计 span 中可承担缺口的 Auto 轨道数。
+            let auto_count = tracks[start..end]
+                // 遍历当前子项真正覆盖的轨道。
+                .iter()
+                // 固定与比例轨道不参与 Auto 缺口分摊。
+                .filter(|track| matches!(track, GridTrack::Auto))
+                // 得到可分摊轨道总数。
+                .count();
+            // 没有 Auto 轨道时不应改写固定轨道。
+            if auto_count == 0 {
+                // 当前 span 没有可分摊的轨道。
+                continue;
+            }
+            // 用 f64 账本避免多条轨道求和时提前溢出。
+            let track_extent = tracks[start..end]
+                // 遍历 span 内的轨道定义。
+                .iter()
+                // 保留相对起点以读取对应 Auto 尺寸。
+                .enumerate()
+                // 把不同轨道类型转换为当前已占用尺寸。
+                .map(|(offset, track)| {
+                    // 固定轨道计入自身宽高，Auto 计入批次开始时的尺寸。
+                    match track {
+                        // 固定轨道使用安全化后的像素值。
+                        GridTrack::Px(px) => finite_non_negative(*px) as f64,
+                        // 当前 Auto 轨道使用上一批已确定的尺寸。
+                        GridTrack::Auto => sizes[start + offset] as f64,
+                        // 非正 Fr 在这一固有尺寸账本中不占空间。
+                        GridTrack::Fr(_) => 0.0,
+                    }
+                })
+                // 汇总整个 span 已有的轨道尺寸。
+                .sum::<f64>();
+            // span 内部的 gap 同样属于子项可用外尺寸。
+            let gap_extent = gap as f64 * end.saturating_sub(start + 1) as f64;
+            // 读取跨格子项在当前轴上的有限外尺寸。
+            let required = child_outer_extent(&children[assignment.child_idx], horizontal) as f64;
+            // 只需补足现有轨道和 gap 尚未覆盖的尺寸。
+            let deficit = (required - track_extent - gap_extent).max(0.0);
+            // 没有缺口时保留现有轨道尺寸。
+            if deficit <= 0.0 {
+                // 当前 span 已能容纳子项。
+                continue;
+            }
+            // 将缺口均匀分摊给 span 中的 Auto 轨道。
+            let share = finite_non_negative((deficit / auto_count as f64) as f32);
+            // 为当前子项覆盖的每条 Auto 轨道登记计划增量。
+            for index in start..end {
+                // 固定和比例轨道不承担 Auto 尺寸缺口。
+                if matches!(tracks[index], GridTrack::Auto) {
+                    // 同批重叠约束取最大贡献，避免声明顺序重复累加。
+                    planned_increases[index] = planned_increases[index].max(share);
                 }
-            })
-            .sum::<f64>();
-        // span 内部的 gap 同样属于子项可用外尺寸。
-        let gap_extent = gap as f64 * end.saturating_sub(start + 1) as f64;
-        // 读取跨格子项在当前轴上的有限外尺寸。
-        let required = child_outer_extent(&children[assignment.child_idx], horizontal) as f64;
-        // 只需补足现有轨道和 gap 尚未覆盖的尺寸。
-        let deficit = (required - track_extent - gap_extent).max(0.0);
-        // 没有缺口时保留现有轨道尺寸。
-        if deficit <= 0.0 {
-            // 当前 span 已能容纳子项。
-            continue;
-        }
-        // 将缺口均匀分摊给 span 中的 Auto 轨道。
-        let share = deficit / auto_count as f64;
-        // 逐条更新 span 中的 Auto 轨道。
-        for index in start..end {
-            // 固定和比例轨道不承担 Auto 尺寸缺口。
-            if matches!(tracks[index], GridTrack::Auto) {
-                // 将累加结果收敛到有限非负尺寸。
-                sizes[index] = finite_non_negative((sizes[index] as f64 + share) as f32);
             }
         }
+
+        // 当前跨度的所有约束完成后再统一写回轨道尺寸。
+        for (index, increase) in planned_increases.iter().copied().enumerate() {
+            // 只有本批实际要求扩张的轨道需要写回。
+            if increase > 0.0 {
+                // 有界加法继续通过尺寸边界收敛。
+                sizes[index] = finite_non_negative((sizes[index] as f64 + increase as f64) as f32);
+            }
+        }
+        // 下一轮从后续跨度批次开始。
+        group_start = group_end;
     }
 
     // 返回仅对 Auto 轨道有意义的固有尺寸账本。
