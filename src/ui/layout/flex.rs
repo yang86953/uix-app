@@ -534,9 +534,9 @@ fn compute_single_line(
 
     // Reverse: 以主轴终点镜像子项位置
     if is_reverse {
-        // 固有主轴使用真实内容总长镜像，避免零尺寸 bootstrap 产生负坐标。
-        let main_extent = if intrinsic_main {
-            // 固有主轴包含子项、margin 与 gap。
+        // 固有主轴只在零尺寸 bootstrap 使用内容长度，实际 frame 继续作为镜像边界。
+        let main_extent = if intrinsic_main && bootstrap_main {
+            // bootstrap 的固有主轴包含子项、margin 与 gap。
             total_final + gaps
         } else if is_row {
             // 水平固定主轴使用内容区宽度。
@@ -805,9 +805,9 @@ fn compute_wrapped(
 
     // Reverse: 以主轴终点镜像子项位置
     if is_reverse {
-        // 固有主轴使用真实最大行长镜像，避免 bootstrap 生成负坐标。
-        let main_extent = if input.intrinsic_main {
-            // 固有尺寸取所有行的最大主轴占用。
+        // 固有主轴只在零尺寸 bootstrap 使用最大行长，实际 frame 继续作为镜像边界。
+        let main_extent = if input.intrinsic_main && bootstrap_main {
+            // bootstrap 的固有尺寸取所有行的最大主轴占用。
             max_line_main
         } else if is_row {
             // 水平固定主轴使用内容区宽度。

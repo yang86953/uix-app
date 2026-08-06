@@ -403,9 +403,9 @@ impl LayoutEngine for FlexLayout {
             .normalized();
         }
 
-        // 溢出模式：使用简单流式堆叠
-        if self.overflow_content {
-            // 流式路径与标准路径共享同一最终几何契约。
+        // 非换行溢出继续使用无弹性分配的简单流式堆叠。
+        if self.overflow_content && !self.wrap {
+            // 单行流式路径与标准路径共享同一最终几何契约。
             return overflow_layout(self, content_rect, children).normalized();
         }
 
@@ -413,10 +413,22 @@ impl LayoutEngine for FlexLayout {
         let flex_children: Vec<FlexChild> = children
             .iter()
             .map(|c| FlexChild {
-                // 弹性因子只接受有限非负实际值。
-                flex_grow: finite_non_negative(c.flex_grow),
-                // 压缩因子只接受有限非负实际值。
-                flex_shrink: finite_non_negative(c.flex_shrink),
+                // 溢出换行必须保留自然主轴尺寸，不执行增长。
+                flex_grow: if self.overflow_content {
+                    // 冻结增长因子，让正剩余空间只交给 justify。
+                    0.0
+                } else {
+                    // 标准路径保留有限非负增长因子。
+                    finite_non_negative(c.flex_grow)
+                },
+                // 溢出换行必须保留自然主轴尺寸，不执行压缩。
+                flex_shrink: if self.overflow_content {
+                    // 冻结压缩因子，允许自然内容形成多行。
+                    0.0
+                } else {
+                    // 标准路径保留有限非负压缩因子。
+                    finite_non_negative(c.flex_shrink)
+                },
                 align_self: c.align_self,
                 // 子项测量哨兵不能进入最终求解算术。
                 measured_size: normalize_layout_size(c.measured_size),
@@ -434,9 +446,17 @@ impl LayoutEngine for FlexLayout {
             padding: crate::core::EdgeInsets::zero(),
             container: content_rect,
             children: &flex_children,
-            justify_content: self.justify,
+            // 溢出模式的 Stretch 与单行流式路径一致，不增长自然尺寸。
+            justify_content: if self.overflow_content && self.justify == JustifyContent::Stretch {
+                // Start 保留原始间距和起点，等价于流式 Stretch 的既有行为。
+                JustifyContent::Start
+            } else {
+                // 其他分布模式继续按声明值逐行计算。
+                self.justify
+            },
             align_items: self.align,
-            intrinsic_main: self.intrinsic_main,
+            // 溢出换行与显式固有主轴都用最长自然行记录内容尺寸。
+            intrinsic_main: self.intrinsic_main || self.overflow_content,
         };
 
         let output = compute_flex_layout(&input);
@@ -603,10 +623,12 @@ fn overflow_layout(
 
     // 与标准 Flex 一致，反向方向沿容器主轴镜像已经完成的逻辑顺序。
     if is_reverse {
-        // 固有主轴必须以自然内容长度镜像，固定主轴继续使用父级分配。
-        let main_extent = if engine.intrinsic_main {
+        // 只有零尺寸 bootstrap 以自然内容长度镜像，已分配 frame 使用实际主轴。
+        let main_extent = if engine.intrinsic_main && container_main <= 1.0 {
+            // bootstrap 尚无可用主轴，只能使用自然内容长度。
             finite_non_negative(total_main)
         } else {
+            // 非零实际 frame 必须与前面的 justify 使用同一镜像边界。
             container_main
         };
         // 逐项镜像可同时保留 justify-content、gap 与方向侧 margin 的语义。
