@@ -114,6 +114,27 @@ fn parse_inline_range(text: &str, style: &RichTextStyle, segments: &mut Vec<Rich
     let mut cursor = 0;
     // 扫描整段内容中的代码、链接和样式标记。
     while cursor < text.len() {
+        // 先处理 Markdown 反斜杠转义，避免被转义的标记进入解析器。
+        if text[cursor..].starts_with('\\') {
+            // 读取反斜杠后的第一个 Unicode 字符。
+            if let Some(next) = text[cursor + 1..].chars().next() {
+                // 只解码 Markdown 标点，其他反斜杠保持原文。
+                if is_escaped_markdown_char(next) {
+                    // 计算被转义字符在 UTF-8 文本中的结束位置。
+                    let escaped_end = cursor + 1 + next.len_utf8();
+                    // 先输出转义符之前仍保持当前样式的普通文本。
+                    push_text_segment(&text[text_start..cursor], style, segments);
+                    // 输出去掉反斜杠后的字面标点。
+                    push_text_segment(&text[cursor + 1..escaped_end], style, segments);
+                    // 跳过反斜杠和被转义字符。
+                    cursor = escaped_end;
+                    // 下一段普通文本从转义字符之后开始累计。
+                    text_start = cursor;
+                    // 已经消费一个转义序列，继续扫描后续内容。
+                    continue;
+                }
+            }
+        }
         // 只有特殊起始字符才需要分配临时段列表并尝试解析。
         if may_start_inline_element(text, cursor) {
             // 使用临时段列表探测元素，避免元素先于前置文本写入结果。
@@ -236,6 +257,15 @@ fn may_start_inline_element(text: &str, cursor: usize) -> bool {
     matches!(ch, '`' | '[' | '*' | '_' | '~' | '+')
 }
 
+/// 判断反斜杠后的字符是否属于可转义 Markdown 标点。
+fn is_escaped_markdown_char(ch: char) -> bool {
+    // 覆盖常见行内标记、链接标点和块级标记的字面转义。
+    matches!(
+        ch,
+        '\\' | '`' | '*' | '_' | '[' | ']' | '(' | ')' | '~' | '+' | '#' | '>'
+    )
+}
+
 /// 返回 Markdown 标记对应的 RichTextStyle 增量。
 fn markdown_style(marker: &str) -> RichTextStyle {
     // 创建只包含当前标记效果的样式增量。
@@ -299,17 +329,46 @@ fn find_closing_marker(text: &str, start: usize, marker: &str) -> Option<usize> 
     // 允许跳过不满足边界的候选位置继续寻找。
     while let Some(relative) = text[search_from..].find(marker) {
         // 计算候选闭合标记的绝对位置。
-        let close = search_from + relative;
+        let candidate = search_from + relative;
+        // 三字符强调序列的末尾两个字符应优先闭合外层双字符样式。
+        let close = closing_marker_start(text, candidate, marker);
         // 空正文不构成有效样式段。
         if close > start && can_close_marker(text, close, marker) {
             // 返回第一个满足规则的闭合位置。
             return Some(close);
         }
         // 跳过当前候选，继续搜索后续位置。
-        search_from = close + marker.len();
+        // 从原始候选之后继续寻找，避免调整位置造成重复扫描。
+        search_from = candidate + marker.len();
     }
     // 没有找到有效的闭合标记。
     None
+}
+
+/// 调整连续同类标记中的闭合起点，支持常见嵌套强调写法。
+fn closing_marker_start(text: &str, candidate: usize, marker: &str) -> usize {
+    // 只有双字符星号或下划线标记需要处理三字符嵌套序列。
+    if marker.len() != 2 || !matches!(marker, "**" | "__") {
+        // 其他标记沿用第一个候选位置。
+        return candidate;
+    }
+    // 读取当前标记的 ASCII 字节。
+    let marker_byte = marker.as_bytes()[0];
+    // 从候选标记末尾开始寻找连续同类标记的结束位置。
+    let mut run_end = candidate + marker.len();
+    // 连续标记仍处于 UTF-8 单字节 ASCII 范围内。
+    while text.as_bytes().get(run_end) == Some(&marker_byte) {
+        // 把连续标记末尾向后扩展一个字节。
+        run_end += 1;
+    }
+    // 三个及以上标记时取末尾两个作为外层闭合。
+    if run_end - candidate > marker.len() {
+        // 返回连续标记末尾的双字符起点。
+        run_end - marker.len()
+    } else {
+        // 普通双字符序列直接使用候选起点。
+        candidate
+    }
 }
 
 /// 在无法识别元素时计算安全的 UTF-8 推进长度。
@@ -469,6 +528,48 @@ mod tests {
         let (_, height, _) = layout_rich_text(&segments, 320.0, 14.0, Color::black());
         // 默认字号的两行行高应为 14 × 1.5 × 2。
         assert_eq!(height, 42.0);
+    }
+
+    // 验证反斜杠转义与双层强调标记保持源文本顺序和继承样式。
+    #[test]
+    fn parses_escaped_punctuation_and_nested_styles() {
+        // 解析被转义的星号以及粗体包裹的斜体文本。
+        let segments = parse_rich_text(r"\*字面\* **粗体 *斜体***");
+        // 外层粗体样式应覆盖普通文字，内层斜体应叠加两种样式。
+        assert_eq!(
+            segments,
+            vec![
+                RichTextSegment::Text {
+                    content: "*字面* ".into(),
+                    style: RichTextStyle::default(),
+                },
+                RichTextSegment::Text {
+                    content: "粗体 ".into(),
+                    style: RichTextStyle {
+                        bold: true,
+                        ..Default::default()
+                    },
+                },
+                RichTextSegment::Text {
+                    content: "斜体".into(),
+                    style: RichTextStyle {
+                        bold: true,
+                        italic: true,
+                        ..Default::default()
+                    },
+                },
+            ]
+        );
+        // 链接和代码标点的转义结果应保留为普通文本。
+        let escaped = parse_rich_text(r"\[链接\] \`代码\`");
+        // 相邻同样式文本会合并为一个普通 Text 段。
+        assert_eq!(
+            escaped,
+            vec![RichTextSegment::Text {
+                content: "[链接] `代码`".into(),
+                style: RichTextStyle::default(),
+            }]
+        );
     }
 
     #[test]
