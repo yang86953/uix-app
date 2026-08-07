@@ -490,16 +490,19 @@ fn compute_single_line(
         let cross_align = input.children[i].align_self.unwrap_or(input.align_items);
         // 交叉轴先扣除两侧 margin，再在剩余区域内执行对齐。
         let available_cross = (effective_cross - margin_cross(margin, is_row)).max(0.0);
-        // Stretch：父级交叉轴已确定（>1）时填满父级，允许小于 measure（窗口缩小）；
-        // bootstrap（交叉轴仍 ≤1）时取 max(measured)，以便子项撑开容器。
+        // Stretch：父级交叉轴已确定（>1）时以可用区为候选，窗口缩小时允许小于 measure；
+        // bootstrap（交叉轴仍 ≤1）时至少取 measured，最终候选仍须遵守交叉轴 min/max。
         let child_cross_size = if cross_align == AlignItems::Stretch {
             // Stretch 填满已经扣除 margin 的交叉轴可用区域。
-            let filled = available_cross;
-            if container_cross <= 1.0 {
-                filled.max(cross_sizes[i])
+            let filled = if container_cross <= 1.0 {
+                available_cross.max(cross_sizes[i])
             } else {
-                filled
-            }
+                available_cross
+            };
+            // 读取当前子项交叉轴的有序上下限。
+            let (minimum, maximum) = child_cross_bounds(&input.children[i], is_row);
+            // 最终 Stretch 尺寸不得压破最小值或拉破最大值。
+            filled.max(minimum).min(maximum)
         } else {
             cross_sizes[i]
         };
@@ -798,8 +801,10 @@ fn compute_wrapped(
             // 每个子项先扣除当前行交叉轴两侧 margin 再执行对齐。
             let available_cross = (line_max_cross[li] - margin_cross(margin, is_row)).max(0.0);
             let child_cross_size = if cross_align == AlignItems::Stretch {
-                // Stretch 填满扣除 margin 后的可用交叉轴。
-                available_cross
+                // 读取当前子项交叉轴的有序上下限。
+                let (minimum, maximum) = child_cross_bounds(&input.children[i], is_row);
+                // Stretch 以行盒可用区为候选，但最终仍须遵守子项约束。
+                available_cross.max(minimum).min(maximum)
             } else {
                 cross_sizes[i]
             };
