@@ -100,20 +100,6 @@ impl CalendarPanelState<'_> {
     }
 }
 
-pub(crate) fn calendar_popup_rect(frame: Rect) -> Rect {
-    Rect::new(
-        frame.x,
-        frame.y + frame.h + 2.0,
-        frame.w.max(CALENDAR_PANEL_MIN_WIDTH),
-        CALENDAR_PANEL_HEIGHT,
-    )
-}
-
-pub(crate) fn hit_month_navigation(frame: Rect, position: Point) -> Option<MonthNavigation> {
-    // 保留旧调用者的自然尺寸包装接口。
-    hit_month_navigation_in_rect(calendar_popup_rect(frame), position)
-}
-
 // 在已解析的实际面板矩形内命中月份导航按钮。
 pub(crate) fn hit_month_navigation_in_rect(
     // 接收绘制与登记共享的实际面板矩形。
@@ -146,16 +132,6 @@ pub(crate) fn hit_month_navigation_in_rect(
         // 标题中部不属于导航按钮。
         None
     }
-}
-
-pub(crate) fn hit_calendar_date(
-    frame: Rect,
-    position: Point,
-    year: i32,
-    month: usize,
-) -> Option<Date> {
-    // 保留旧调用者的自然尺寸包装接口。
-    hit_calendar_date_in_rect(calendar_popup_rect(frame), position, year, month)
 }
 
 // 在已解析的实际面板矩形内命中日期单元格。
@@ -213,15 +189,6 @@ pub(crate) fn hit_calendar_date_in_rect(
     }
     let day = slot - first + 1;
     (day <= days_in_month(year, month)).then(|| Date::new(year, month, day))
-}
-
-pub(crate) fn draw_calendar_panel(
-    frame: Rect,
-    ctx: &mut PaintContext,
-    state: CalendarPanelState<'_>,
-) {
-    // 保留旧调用者的自然尺寸包装接口。
-    draw_calendar_panel_in_rect(calendar_popup_rect(frame), ctx, state);
 }
 
 // 在已解析的实际矩形内绘制可缩放月历面板。
