@@ -175,11 +175,15 @@ impl AppRuntime {
         }
     }
 
+    // 测试目标保留 agent 控制开关，供 transport/GUI 契约测试按需启动。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(any(test, feature = "agent-control"))]
     pub(crate) fn enable_agent_control(&self) -> bool {
         self.agent_bridge.enable()
     }
 
+    // 测试目标保留进程桥构造入口，供 transport/GUI 契约测试按需获取。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(any(test, feature = "agent-control"))]
     pub(crate) fn agent_bridge(&self) -> Option<AgentProcessBridge> {
         self.agent_bridge
@@ -205,6 +209,8 @@ impl AppRuntime {
         Ok(info)
     }
 
+    // 测试目标保留 transport 信息观测入口，供带 transport 的 GUI 契约测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(all(feature = "agent-control", test))]
     pub(crate) fn agent_transport_info(&self) -> Option<AgentTransportInfo> {
         self.agent_transport

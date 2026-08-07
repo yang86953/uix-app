@@ -117,6 +117,8 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
+// 测试目标保留默认时钟的窗口循环入口，供外部 GUI 测试按需调用。
+#[cfg_attr(test, allow(dead_code))]
 #[cfg(test)]
 pub(crate) fn run_window_session_loop<M, X, F>(
     platform: &mut dyn Platform,
@@ -155,6 +157,8 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
+// 测试目标保留系统主题兼容窗口循环入口，供外部 GUI 测试按需调用。
+#[cfg_attr(test, allow(dead_code))]
 #[cfg(test)]
 pub(crate) fn run_window_session_loop_with_system_theme<M, X, F>(
     platform: &mut dyn Platform,
@@ -245,6 +249,8 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
+// 测试目标保留可注入时钟的窗口循环入口，供外部 GUI 测试按需调用。
+#[cfg_attr(test, allow(dead_code))]
 #[cfg(test)]
 pub(crate) fn run_window_session_loop_with_clock<M, X, F>(
     platform: &mut dyn Platform,

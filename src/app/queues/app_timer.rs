@@ -97,6 +97,8 @@ impl AppTimerQueue {
         self.insert(interval, Some(interval), f)
     }
 
+    // 测试目标保留完整 deadline 快照入口，供时钟行为测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn deadlines(&self) -> Vec<(TimerId, Instant)> {
         let mut deadlines = Vec::new();
@@ -167,6 +169,8 @@ impl AppTimerQueue {
         true
     }
 
+    // 测试目标保留队列长度观测入口，供定时器行为测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.inner

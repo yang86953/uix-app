@@ -66,6 +66,8 @@ fn parse_graphics_backend_config(source: &str, value: &str) -> Option<NativeGrap
     }
 }
 
+// 测试目标保留默认图形后端的 pending-window 便捷入口，供外部 GUI 测试按需调用。
+#[cfg_attr(test, allow(dead_code))]
 #[cfg(test)]
 pub(crate) fn drain_pending_open_windows(
     platform: &mut dyn Platform,
@@ -129,6 +131,8 @@ pub(crate) fn drain_secondary_window_queues(
     drained
 }
 
+// 测试目标保留无平台参数的 secondary-window 帧便捷入口，供外部 GUI 测试按需调用。
+#[cfg_attr(test, allow(dead_code))]
 #[cfg(test)]
 pub(crate) fn drain_secondary_window_frames(
     secondary_windows: &mut [SecondaryWindowSession],
