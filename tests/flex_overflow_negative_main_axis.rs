@@ -160,6 +160,22 @@ fn wrapped_overflow_negative_main_axis_mirrors_all_directions() {
                 // 失败消息沿用当前方向与 frame 标识。
                 "total size diverged for {reverse_direction:?}, {frame:?}"
             );
+            // 负主轴 gap 与边距的自然主轴账本应保持首行的二十五像素占用。
+            let expected_main = 25.0;
+            // 按当前主轴方向读取自然总尺寸。
+            let actual_main = if pair_index == 0 {
+                // 水平布局从总宽度读取主轴账本。
+                forward_output.total_size.w
+            } else {
+                // 垂直布局从总高度读取主轴账本。
+                forward_output.total_size.h
+            };
+            // 要求固定主轴不被容器的三十五像素分配尺寸替代。
+            assert_eq!(
+                actual_main, expected_main,
+                // 失败消息标识自然主轴账本异常的组合。
+                "natural main extent diverged: pair={pair_index}, frame={frame_index}"
+            );
             // 要求第三个子项确实进入了不同的物理交叉轴位置。
             if pair_index == 0 {
                 // 水平布局应在纵轴上产生第二行。
