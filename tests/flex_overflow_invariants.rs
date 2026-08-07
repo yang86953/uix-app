@@ -335,6 +335,44 @@ fn wrapped_single_line_stretches_across_the_container() {
     assert_eq!(output.total_size, Size::new(100.0, 40.0));
 }
 
+// 验证启用换行但实际仍为单行时复用非换行路径的真实交叉轴行盒。
+#[test]
+// 同时覆盖较小容器内的 Stretch 收缩与逐项 End 对齐。
+fn wrapped_unbroken_line_matches_single_line_cross_alignment() {
+    // 构造自然外高度超过容器、并要求在行盒内 Stretch 的首项。
+    let mut stretched = LayoutChild::new(ComponentId::new(64), Size::new(20.0, 10.0));
+    // 上下各两像素 margin 让八像素容器只留下四像素可拉伸高度。
+    stretched.margin = EdgeInsets::new(0.0, 2.0, 0.0, 2.0);
+    // 首项显式覆盖容器级 Start，以验证逐项 Stretch 仍使用真实行盒。
+    stretched.align_self = Some(AlignItems::Stretch);
+    // 构造在同一真实行盒末端对齐的较矮次项。
+    let mut ended = LayoutChild::new(ComponentId::new(65), Size::new(20.0, 3.0));
+    // 次项显式覆盖为 End，以验证定位不再局限于自然行高。
+    ended.align_self = Some(AlignItems::End);
+    // 两个二十像素宽子项会稳定留在同一百像素主轴行内。
+    let children = [stretched, ended];
+    // 关闭换行建立同一公开布局契约的单行基准。
+    let baseline = FlexLayout::row()
+        // 容器级 Start 隔离逐项 align_self 的结果。
+        .with_align(AlignItems::Start)
+        // 在带非零原点的八像素交叉轴内执行基准布局。
+        .layout(Rect::new(4.0, 6.0, 100.0, 8.0), &children);
+    // 基准首项应扣除上下 margin 后收缩为四像素高。
+    assert_eq!(baseline.positions[0], Rect::new(4.0, 8.0, 20.0, 4.0));
+    // 基准次项应贴住八像素真实行盒的末端。
+    assert_eq!(baseline.positions[1], Rect::new(24.0, 11.0, 20.0, 3.0));
+    // 构造除 wrap 开关外与基准完全相同的布局。
+    let mut wrapped = FlexLayout::row().with_align(AlignItems::Start);
+    // 开启换行求解路径，但两个子项仍不会实际分行。
+    wrapped.wrap = true;
+    // 执行受测的未分行 wrapped 布局。
+    let output = wrapped.layout(Rect::new(4.0, 6.0, 100.0, 8.0), &children);
+    // wrap 开关不得改变未分行子项的最终矩形。
+    assert_eq!(output.positions, baseline.positions);
+    // wrap 开关也不得改变未分行布局的内容尺寸账本。
+    assert_eq!(output.total_size, baseline.total_size);
+}
+
 // 验证多行默认 Stretch 把交叉轴剩余空间均分到各行。
 #[test]
 // 逐项 align_self 只覆盖项内对齐，不得阻止其他行消费扩展后的行高。
