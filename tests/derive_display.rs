@@ -3,7 +3,6 @@
 //! 覆盖：单元变体枚举派生 Display（kebab-case）、与 `Navigation<K>` 的
 //! 语义事件/快照文本集成、多词变体与缩写拆分。
 
-use std::fmt::Display as _;
 use uix::prelude::*;
 
 #[derive(Clone, PartialEq, Debug, Display)]
