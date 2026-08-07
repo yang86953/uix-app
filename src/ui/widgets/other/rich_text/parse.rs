@@ -172,18 +172,20 @@ fn parse_inline_element(
     let remaining = &text[cursor..];
     // 内联代码优先于其他标记，保证代码内容按字面解释。
     if remaining.starts_with('`') {
-        // 查找配对的结束反引号。
-        if let Some(end) = remaining[1..].find('`') {
-            // 计算代码正文的结束位置。
-            let end = end + 1;
-            // 读取反引号之间的代码正文。
-            let code = &remaining[1..end];
+        // 统计开头连续反引号的 delimiter 长度。
+        let delimiter_len = backtick_run_len(remaining, 0);
+        // 只接受相同长度的连续反引号作为闭合 delimiter。
+        if let Some((code_end, delimiter_end)) =
+            find_code_closing_delimiter(remaining, delimiter_len, delimiter_len)
+        {
+            // 读取开闭 delimiter 之间的代码正文。
+            let code = &remaining[delimiter_len..code_end];
             // 生成内联代码段。
             segments.push(RichTextSegment::Code {
                 content: code.to_string(),
             });
-            // 返回两个反引号和正文的总字节数。
-            return Some(end + 1);
+            // 返回开闭 delimiter 和正文的总字节数。
+            return Some(delimiter_end);
         }
     }
     // Markdown 链接优先于样式标记，避免链接标签被拆成普通文本。
@@ -371,6 +373,50 @@ fn is_escaped_at(text: &str, index: usize) -> bool {
     slash_count % 2 == 1
 }
 
+/// 返回指定位置连续反引号的字节长度。
+fn backtick_run_len(text: &str, start: usize) -> usize {
+    // 从指定位置开始逐字节统计反引号数量。
+    let mut end = start;
+    // 连续反引号只占用单字节 ASCII 编码。
+    while text.as_bytes().get(end) == Some(&b'`') {
+        // 向连续 delimiter 末尾推进一个字节。
+        end += 1;
+    }
+    // 返回连续反引号的长度而不是绝对位置。
+    end - start
+}
+
+/// 查找与开头长度完全一致的内联代码闭合 delimiter。
+fn find_code_closing_delimiter(
+    text: &str,
+    search_from: usize,
+    delimiter_len: usize,
+) -> Option<(usize, usize)> {
+    // 从开 delimiter 之后开始扫描反引号候选位置。
+    let mut cursor = search_from;
+    // 防御非法长度，避免空 delimiter 造成无进展循环。
+    if delimiter_len == 0 {
+        // 空 delimiter 不是有效的 Markdown 代码标记。
+        return None;
+    }
+    // 逐个扫描后续反引号连续序列。
+    while let Some(relative) = text[cursor..].find('`') {
+        // 计算当前连续反引号序列的绝对起点。
+        let candidate = cursor + relative;
+        // 读取当前连续反引号序列的长度。
+        let run_len = backtick_run_len(text, candidate);
+        // 只有长度完全一致的序列才能闭合当前代码段。
+        if run_len == delimiter_len {
+            // 返回正文结束位置和闭合 delimiter 结束位置。
+            return Some((candidate, candidate + run_len));
+        }
+        // 跳过整段不匹配的反引号，避免把长 delimiter 拆成短 delimiter。
+        cursor = candidate + run_len;
+    }
+    // 没有找到匹配长度的闭合 delimiter。
+    None
+}
+
 /// 调整连续同类标记中的闭合起点，支持常见嵌套强调写法。
 fn closing_marker_start(text: &str, candidate: usize, marker: &str) -> usize {
     // 只有双字符星号或下划线标记需要处理三字符嵌套序列。
@@ -399,6 +445,11 @@ fn closing_marker_start(text: &str, candidate: usize, marker: &str) -> usize {
 
 /// 在无法识别元素时计算安全的 UTF-8 推进长度。
 fn literal_advance(text: &str, cursor: usize) -> usize {
+    // 未闭合内联代码 delimiter 整体保留，避免连续反引号被拆成多个尝试。
+    if text[cursor..].starts_with('`') {
+        // 返回当前连续反引号 run 的字节长度。
+        return backtick_run_len(text, cursor);
+    }
     // 双字符标记未闭合时整体保留，避免第二个字符被误判为单字符标记。
     for marker in ["**", "__", "~~", "++"] {
         // 当前切片以未闭合双字符标记开始时一次跳过它。
@@ -625,6 +676,30 @@ mod tests {
                     italic: true,
                     ..Default::default()
                 },
+            }]
+        );
+    }
+
+    // 验证连续反引号必须使用相同长度闭合，较短反引号保持代码字面量。
+    #[test]
+    fn code_spans_match_delimiter_length() {
+        // 解析包含单个反引号的双反引号代码 span。
+        let segments = parse_rich_text("``包含 ` 字面``");
+        // 双反引号应包裹完整正文，内部单反引号不能提前闭合。
+        assert_eq!(
+            segments,
+            vec![RichTextSegment::Code {
+                content: "包含 ` 字面".into(),
+            }]
+        );
+        // 未找到同长度闭合符时，整个开 delimiter 应保持普通文本。
+        let unmatched = parse_rich_text("``未闭合`文字");
+        // 未闭合的连续反引号不能误触发单反引号代码解析。
+        assert_eq!(
+            unmatched,
+            vec![RichTextSegment::Text {
+                content: "``未闭合`文字".into(),
+                style: RichTextStyle::default(),
             }]
         );
     }
