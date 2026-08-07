@@ -663,6 +663,8 @@ pub struct GridLayout {
     pub row_gap: f32,
     pub align_items: AlignItems,
     pub justify_items: JustifyContent,
+    // 整组列轨在父级水平剩余空间中的对齐方式。
+    pub justify_content: JustifyContent,
 }
 
 impl GridLayout {
@@ -674,6 +676,8 @@ impl GridLayout {
             row_gap: 0.0,
             align_items: AlignItems::Stretch,
             justify_items: JustifyContent::Start,
+            // 默认不移动或分散列轨组。
+            justify_content: JustifyContent::Start,
         }
     }
 
@@ -696,6 +700,14 @@ impl GridLayout {
     }
     pub fn with_justify(mut self, j: JustifyContent) -> Self {
         self.justify_items = j;
+        self
+    }
+
+    /// 设置整组 Grid 列轨在父级水平剩余空间中的对齐方式。
+    pub fn with_content_justify(mut self, justify: JustifyContent) -> Self {
+        // 内容对齐独立于单元格内子项对齐。
+        self.justify_content = justify;
+        // 返回更新后的布局构建器。
         self
     }
 
@@ -747,6 +759,8 @@ impl GridLayout {
             children: &grid_children,
             align_items: self.align_items,
             justify_items: self.justify_items,
+            // 把整组列轨对齐声明传给纯求解器。
+            justify_content: self.justify_content,
         });
 
         // Grid 求解结果在公开边界执行最终有限化。
