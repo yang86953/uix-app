@@ -27,6 +27,9 @@ fn derive_display_outputs_kebab_case() {
     assert_eq!(Page::About.to_string(), "about");
     assert_eq!(TabPage::UserProfile.to_string(), "user-profile");
     assert_eq!(TabPage::APIVersion.to_string(), "api-version");
+    // 覆盖所有无字段变体，确保派生实现不会遗漏基础路由页。
+    assert_eq!(TabPage::List.to_string(), "list");
+    assert_eq!(TabPage::Detail.to_string(), "detail");
 }
 
 #[test]
