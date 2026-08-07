@@ -1,4 +1,7 @@
-use super::{fade_color, Select, VisibleRow, DROPDOWN_ROW_HEIGHT};
+// 复用选择弹层的共享表面解析与绝对坐标转换。
+use super::{
+    fade_color, normalize_select_rect, select_popup_rect, Select, VisibleRow, DROPDOWN_ROW_HEIGHT,
+};
 use crate::core::{Point, Rect};
 use crate::draw::{Color, Radius};
 use crate::ui::component::paint_context::PaintContext;
@@ -79,7 +82,8 @@ impl Select {
         );
 
         if self.is_present() {
-            self.render_dropdown(frame, control_rect, ctx);
+            // 弹层几何由共享解析器从 frame 与当前表面派生。
+            self.render_dropdown(frame, ctx);
         }
     }
 
@@ -256,27 +260,42 @@ impl Select {
         ctx.pop_clip();
     }
 
-    fn render_dropdown(&self, frame: Rect, control_rect: Rect, ctx: &mut PaintContext) {
+    // 绘制受当前逻辑表面约束的选择弹层。
+    fn render_dropdown(&self, frame: Rect, ctx: &mut PaintContext) {
+        // 读取当前可见行集合。
         let visible_rows = self.visible_rows();
+        // 记录是否需要绘制空状态。
         let no_data = !self.loading && visible_rows.is_empty();
+        // 计算当前实际弹层行数。
         let row_count = self.dropdown_row_count();
-        let list_height = self.dropdown_viewport_height(row_count);
-        let surface_height = ctx.logical_surface_size().h;
-        let below_y = control_rect.y + control_rect.h;
-        let above_y = control_rect.y - list_height;
-        let list_y = if below_y + list_height <= surface_height || above_y < 0.0 {
-            below_y
-        } else {
-            above_y
-        };
-        let list_rect = Rect::new(frame.x, list_y, frame.w.max(0.0), list_height);
-        self.dropdown_rect.set(Rect::new(
-            list_rect.x - frame.x,
-            list_rect.y - frame.y,
-            list_rect.w,
-            list_rect.h,
+        // 读取绘制上下文的逻辑表面尺寸。
+        let surface_size = ctx.logical_surface_size();
+        // 将逻辑表面归一到窗口坐标原点。
+        let surface = normalize_select_rect(Rect::new(
+            // 表面横坐标固定为窗口原点。
+            0.0,
+            // 表面纵坐标固定为窗口原点。
+            0.0,
+            // 使用绘制上下文的逻辑宽度。
+            surface_size.w,
+            // 使用绘制上下文的逻辑高度。
+            surface_size.h,
         ));
+        // 解析并缓存与布局、命中和登记相同的相对弹层矩形。
+        let popup = self.remember_dropdown_rect(frame, surface, row_count);
+        // 将最终弹层转换为窗口绝对坐标。
+        let list_rect = select_popup_rect(frame, popup);
+        // 空表面或无可用空间时跳过弹层绘制。
+        if list_rect.w <= 0.0 || list_rect.h <= 0.0 {
+            // 保留已更新的空几何供其他管线复用。
+            return;
+        }
+        // 读取最终列表纵坐标供行布局复用。
+        let list_y = list_rect.y;
+        // 将阴影、背景、行与文字统一裁到当前逻辑表面。
+        ctx.push_clip(surface);
 
+        // 读取当前过渡透明度。
         let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
         let background = fade_color(ctx.tokens().color_bg_elevated(), opacity);
         let border = fade_color(ctx.tokens().color_border(), opacity);
@@ -299,18 +318,22 @@ impl Select {
         ctx.fill_rect(list_rect, background, radius);
         ctx.stroke_rect(list_rect, border, 1.0, radius);
 
+        // 读取当前列表滚动偏移。
         let scroll_offset = self.dropdown_scroll.scroll_offset();
+        // 使用受表面缩高后的实际列表高度计算物化范围。
         let (start, end) =
             self.dropdown_scroll
-                .scroll_range(row_count, DROPDOWN_ROW_HEIGHT, list_height);
+                .scroll_range(row_count, DROPDOWN_ROW_HEIGHT, list_rect.h);
+        // 行内容继续裁在弹层本体内。
         ctx.push_clip(list_rect);
         for flat_index in start..end {
             let item_y = list_y + flat_index as f32 * DROPDOWN_ROW_HEIGHT - scroll_offset;
-            if item_y + DROPDOWN_ROW_HEIGHT < list_y || item_y > list_y + list_height {
+            if item_y + DROPDOWN_ROW_HEIGHT < list_y || item_y > list_y + list_rect.h {
                 continue;
             }
             if self.loading {
-                let row = Rect::new(frame.x, item_y, frame.w, DROPDOWN_ROW_HEIGHT);
+                // 加载行使用最终弹层横向几何。
+                let row = Rect::new(list_rect.x, item_y, list_rect.w, DROPDOWN_ROW_HEIGHT);
                 let radius = 5.0_f32.min(row.w.min(row.h) * 0.25);
                 if radius > 0.0 {
                     ctx.stroke_arc(
@@ -324,7 +347,8 @@ impl Select {
                     );
                 }
             } else if no_data {
-                let row = Rect::new(frame.x, item_y, frame.w, DROPDOWN_ROW_HEIGHT);
+                // 空状态行使用最终弹层横向几何。
+                let row = Rect::new(list_rect.x, item_y, list_rect.w, DROPDOWN_ROW_HEIGHT);
                 let content = Rect::new(row.x + 10.0, row.y, (row.w - 20.0).max(0.0), row.h);
                 let y = ctx.visual_center_y(content, TEXT_SIZE);
                 ctx.push_clip(content);
@@ -337,7 +361,7 @@ impl Select {
                 ctx.pop_clip();
             } else if let Some(row) = visible_rows.get(flat_index).copied() {
                 self.render_dropdown_row(
-                    frame,
+                    list_rect,
                     item_y,
                     flat_index,
                     row,
@@ -351,13 +375,16 @@ impl Select {
                 );
             }
         }
+        // 恢复列表本体裁剪。
+        ctx.pop_clip();
+        // 恢复逻辑表面裁剪。
         ctx.pop_clip();
     }
 
     #[allow(clippy::too_many_arguments)]
     fn render_dropdown_row(
         &self,
-        frame: Rect,
+        popup_rect: Rect,
         item_y: f32,
         flat_index: usize,
         row: VisibleRow,
@@ -369,7 +396,17 @@ impl Select {
         text_secondary: Color,
         group_background: Color,
     ) {
-        let row_rect = Rect::new(frame.x, item_y, frame.w, DROPDOWN_ROW_HEIGHT);
+        // 每行使用受表面约束后的实际弹层横向几何。
+        let row_rect = Rect::new(
+            // 行起点跟随弹层横坐标。
+            popup_rect.x,
+            // 行纵坐标由滚动窗口决定。
+            item_y,
+            // 行宽度跟随弹层受限宽度。
+            popup_rect.w,
+            // 保持既有固定行高。
+            DROPDOWN_ROW_HEIGHT,
+        );
         match row {
             VisibleRow::Group(group_index) => {
                 ctx.fill_rect(row_rect, group_background, None);

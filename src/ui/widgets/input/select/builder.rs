@@ -1,8 +1,8 @@
 use crate::core::Rect;
 use crate::native::windowing::input::ControlSize;
 use crate::ui::animation::{presets, TransitionPlayer};
-use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::reactive::state::State;
+use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::SnapshotFields;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
@@ -52,6 +52,8 @@ impl Select {
             search_cursor_rect: Cell::new(Rect::zero()),
             control_rect: Cell::new(Rect::new(0.0, 0.0, 120.0, control_height)),
             dropdown_rect: Cell::new(Rect::zero()),
+            // 新选择器尚未接收布局或绘制表面。
+            surface_rect: Cell::new(None),
             multi_remove_rects: RefCell::new(Vec::new()),
             dropdown_scroll: VirtualListScroll::new(),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
@@ -310,4 +312,3 @@ impl Select {
         }
     }
 }
-
