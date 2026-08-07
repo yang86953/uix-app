@@ -182,7 +182,12 @@ impl FontService {
         self.glyph_cache.remove_font(handle.0);
         let idx = handle.0 as usize;
         if idx < self.registry.len() {
+            // 保留槽位编号稳定性，同时清除已卸载字体的族名与路径元数据。
             self.registry[idx].handle = FontHandle::new(u32::MAX);
+            // 释放反复加载字体时不再需要的族名字符串。
+            self.registry[idx].face.family = String::new();
+            // 释放文件字体路径字符串，避免失效槽位持续持有路径。
+            self.registry[idx].face.path = None;
         }
         self.fallback_handles.retain(|h| h.0 != handle.0);
         if self.loaded_font_handle.0 == handle.0 {
@@ -344,11 +349,7 @@ impl FontService {
         tracing::info!("No primary font found via platform, scanning for fallback...");
         if let Some(path) = system_info.scan_fallback_font_path() {
             if let Some(handle) = self.load_mapped_font(&path) {
-                self.install_primary_font(
-                    handle,
-                    self.primary_family.clone(),
-                    Some(path.clone()),
-                );
+                self.install_primary_font(handle, self.primary_family.clone(), Some(path.clone()));
                 tracing::info!(
                     "Loaded fallback font (random scan): {} (handle={:?})",
                     path,
@@ -688,5 +689,36 @@ impl std::fmt::Debug for FontService {
             .field("fallback_count", &self.fallback_handles.len())
             .field("cache_entries", &self.glyph_cache.len())
             .finish()
+    }
+}
+
+// 为字体卸载后的注册表元数据回收保留回归测试。
+#[cfg(test)]
+mod tests {
+    // 引入被测试的字体服务类型。
+    use super::FontService;
+    // 引入用于构造稳定槽位编号的字体句柄类型。
+    use crate::draw::FontHandle;
+
+    // 验证卸载不会让无效槽位继续持有族名和路径字符串。
+    #[test]
+    // 使用未被后端占用的句柄，隔离注册表元数据清理语义。
+    fn unload_releases_registry_metadata() {
+        // 创建默认字体服务。
+        let mut service = FontService::new();
+        // 选择一个稳定但尚未使用的槽位编号。
+        let handle = FontHandle::new(3);
+        // 写入带路径的字体元数据，模拟路径字体注册。
+        service.register_font(
+            handle,
+            "retained-family".to_owned(),
+            Some("retained-path.ttf".to_owned()),
+        );
+        // 执行卸载，验证后端无效句柄也不会阻止元数据清理。
+        service.unload_font(&handle);
+        // 确认族名字符串已清空。
+        assert!(service.registry[handle.0 as usize].face.family.is_empty());
+        // 确认路径字符串所有权已释放。
+        assert!(service.registry[handle.0 as usize].face.path.is_none());
     }
 }
