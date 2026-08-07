@@ -823,3 +823,43 @@ fn rich_text_measure_reflows_when_width_constraint_changes() {
     // 窄布局必须因新增折行而高于宽布局，不能复用旧高度。
     assert!(narrow.h > wide.h, "narrow={narrow:?}, wide={wide:?}");
 }
+
+// 验证 RichText 的段级字号同时影响测量高度和自然宽度。
+#[test]
+fn rich_text_measure_honors_segment_font_size() {
+    // 使用相同文本建立默认字号基线。
+    let base = RichText::new()
+        .font_size(12.0)
+        .content(vec![RichTextSegment::Text {
+            // 选择非空文本覆盖字形宽度测量路径。
+            content: "sized text".to_string(),
+            // 默认样式应继承组件的 12 像素字号。
+            style: RichTextStyle::default(),
+        }]);
+    // 使用段级字号建立更大的测量样本。
+    let large = RichText::new()
+        .font_size(12.0)
+        .content(vec![RichTextSegment::Text {
+            // 保持文本内容一致，隔离字号变量。
+            content: "sized text".to_string(),
+            // 段级字号应覆盖组件默认字号。
+            style: RichTextStyle {
+                font_size: Some(24.0),
+                ..Default::default()
+            },
+        }]);
+    // 在相同宽高约束下分别执行组件测量。
+    let base_size = base.measure(Constraints::loose(Size::new(400.0, 400.0)));
+    // 读取段级字号样本的测量结果。
+    let large_size = large.measure(Constraints::loose(Size::new(400.0, 400.0)));
+    // 24 像素段落的行高应高于 12 像素默认段落。
+    assert!(
+        large_size.h > base_size.h,
+        "large={large_size:?}, base={base_size:?}"
+    );
+    // 同一文本的字号放大后自然宽度也应增加。
+    assert!(
+        large_size.w > base_size.w,
+        "large={large_size:?}, base={base_size:?}"
+    );
+}
