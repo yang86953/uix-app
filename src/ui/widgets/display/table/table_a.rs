@@ -196,6 +196,16 @@ impl Table {
         }
         // 先解析当前横坐标上按绘制层级位于最上方的可见列。
         let column = self.column_at_x(point.x);
+        // 提前解析表体物理行，让最后绘制的展开控件先于其下方内容响应。
+        let row = self.row_index_at_y(point.y);
+        // 展开控件位于表体最上层，其尾部交互区覆盖选择列或普通列时优先。
+        if self.expandable && self.expand_toggle_hit(point.x) {
+            // 只有真实数据行才能产生展开动作，展开内容区保持不可切换。
+            if let Some(row) = row {
+                // 返回与最后绘制的物理行展开箭头一致的动作。
+                return Some(TablePointerAction::ToggleExpand(row));
+            }
+        }
         // 只有选择区未被更高绘制层的列覆盖时才响应复选框动作。
         if self.selection && point.x < self.selection_width() && column.is_none() {
             if point.y < self.total_header_height() {
@@ -218,15 +228,16 @@ impl Table {
             }
         }
 
-        let row = self.row_index_at_y(point.y)?;
-        if self.expandable && self.expand_toggle_hit(point.x) {
-            Some(TablePointerAction::ToggleExpand(row))
-        } else {
-            let row = column
-                .and_then(|column| self.cell_anchor(row, column))
-                .map_or(row, |(anchor_row, _)| anchor_row);
-            Some(TablePointerAction::SelectRow(row))
-        }
+        // 表头与非数据区域结束后要求命中真实数据行。
+        let row = row?;
+        // 普通单元格动作按合并单元格锚点回落到所属物理行。
+        let row = column
+            // 将可见列与当前物理行解析为合并单元格锚点。
+            .and_then(|column| self.cell_anchor(row, column))
+            // 没有合并单元格时保留当前物理行。
+            .map_or(row, |(anchor_row, _)| anchor_row);
+        // 返回普通行选择动作。
+        Some(TablePointerAction::SelectRow(row))
     }
 
     pub(crate) fn declared_row_span(&self, row: usize, column: usize) -> usize {
@@ -653,6 +664,43 @@ mod tests {
             Some(TablePointerAction::ToggleAll)
         );
         // 结束选择列重叠交互契约。
+    }
+
+    // 标记极窄表体中展开箭头覆盖选择复选框时的交互层级契约。
+    #[test]
+    // 验证最后绘制的展开箭头优先于被遮挡的行复选框响应指针。
+    fn expand_toggle_over_selection_uses_topmost_visible_action() {
+        // 构造带普通数据列和一行数据的可选择表格。
+        let mut table = Table::new()
+            // 安装从选择列右侧开始布局的普通列。
+            .columns(vec![TableColumn::new("数据", 80.0)])
+            // 添加一行以启用表体动作。
+            .rows(vec![vec!["值".to_string()]])
+            // 开启三十二像素选择列。
+            .selection(true)
+            // 把视口压窄到展开箭头与选择复选框重叠。
+            .size(24.0, 100.0);
+        // 启用物理行末尾最后绘制的展开箭头。
+        table.expandable = true;
+        // 模拟渲染阶段记录的实际极窄表格 frame。
+        table
+            // 写入与声明尺寸一致的运行态 frame。
+            .last_frame
+            // 让动作几何按二十四像素视口解析。
+            .set(Some(Rect::new(0.0, 0.0, 24.0, 100.0)));
+        // 表头没有展开箭头，仍应响应可见的全选复选框。
+        assert_eq!(
+            table.action_at_point(Point::new(10.0, 10.0)),
+            Some(TablePointerAction::ToggleAll)
+        );
+        // 计算第一行表体中的重叠测试纵坐标。
+        let body_y = table.total_header_height() + 2.0;
+        // 表体同一点显示展开箭头，必须切换展开而不是勾选行。
+        assert_eq!(
+            table.action_at_point(Point::new(10.0, body_y)),
+            Some(TablePointerAction::ToggleExpand(0))
+        );
+        // 结束展开箭头覆盖选择列的交互契约。
     }
     // 结束表格选择列重叠测试模块。
 }
