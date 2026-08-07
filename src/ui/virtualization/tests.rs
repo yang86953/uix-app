@@ -266,3 +266,91 @@ fn virtual_scroll_sanitizes_total_height_and_layout_frames() {
     // 非数行高应明确退化为零高度。
     assert_eq!(frame.h, 0.0);
 }
+
+// 验证稀疏测量能够修正项目起点、总高度和可见范围。
+#[test]
+fn variable_measurements_keep_prefix_offsets_and_total_height() {
+    // 使用十像素作为未知项目的估算高度。
+    let mut cache = VirtualListMeasurementCache::new();
+    // 第二项目的实际高度是估算值的两倍。
+    assert!(cache.record(1, 20.0));
+    // 第四项目的实际高度小于估算值。
+    assert!(cache.record(3, 5.0));
+    // 重复写入相同高度不应制造刷新。
+    assert!(!cache.record(1, 20.0));
+    // 非法高度不能污染已有缓存。
+    assert!(!cache.record(2, f32::NAN));
+    // 第一个项目起点仍然位于内容原点。
+    assert_eq!(cache.offset_for_index(0, 10.0), 0.0);
+    // 第二个项目起点只包含第一个估算项目。
+    assert_eq!(cache.offset_for_index(1, 10.0), 10.0);
+    // 第三个项目起点已经包含第二项目的实际增量。
+    assert_eq!(cache.offset_for_index(2, 10.0), 30.0);
+    // 第四个项目起点继续使用未知第三项目的估算高度。
+    assert_eq!(cache.offset_for_index(3, 10.0), 40.0);
+    // 五项目总高度等于十、二十、十、五、十的和。
+    assert_eq!(cache.total_height(5, 10.0), 55.0);
+    // 三十像素偏移和十五像素视口覆盖第二、第三项目。
+    assert_eq!(
+        virtual_list_index_range_with_measurements(5, 10.0, &cache, 30.0, 15.0, 0),
+        (2, 4)
+    );
+}
+
+// 验证可变行高模式会把已物化子项测量写回 frame 和滚动几何。
+#[test]
+fn variable_scroll_layout_uses_measured_item_frames() {
+    // 构造启用可变高度和零 overscan 的四项目列表。
+    let scroll = VirtualScroll::new()
+        .item_count(4)
+        .item_height(10.0)
+        .variable_height()
+        .overscan(0);
+    // 标记前三个项目已经物化，布局起点从绝对索引零开始。
+    scroll.materialized_range.set(Some((0, 3)));
+    // 为前三个项目提供不同的测量高度。
+    let children = [
+        LayoutChild::new(ComponentId::new(1), Size::new(10.0, 10.0)),
+        LayoutChild::new(ComponentId::new(2), Size::new(10.0, 20.0)),
+        LayoutChild::new(ComponentId::new(3), Size::new(10.0, 5.0)),
+    ];
+    // 使用有限视口直接调用虚拟列表布局入口。
+    let positions = scroll.layout_children(
+        Rect::new(0.0, 0.0, 100.0, 25.0),
+        &children,
+        &WidgetTree::new(),
+    );
+    // 第一项目从内容原点开始并保留估算高度。
+    assert_eq!(positions[0].1, Rect::new(0.0, 0.0, 100.0, 10.0));
+    // 第二项目起点只推进第一项目高度。
+    assert_eq!(positions[1].1, Rect::new(0.0, 10.0, 100.0, 20.0));
+    // 第三项目起点包含前两项目的实际高度。
+    assert_eq!(positions[2].1, Rect::new(0.0, 30.0, 100.0, 5.0));
+    // 未物化的第四项目仍按十像素估算，因此总高度为四十五像素。
+    assert_eq!(scroll.total_height(), 45.0);
+    // 已记录的第二项目高度可被外部读取。
+    assert_eq!(scroll.measured_item_height(1), Some(20.0));
+    // 零偏移和十五像素视口只覆盖前两项目。
+    assert_eq!(scroll.scroll_range(15.0), (0, 2));
+}
+
+// 验证测量版本变化会清除旧高度并回退到估算布局。
+#[test]
+fn measurement_version_change_reanchors_variable_scroll() {
+    // 构造一个带初始测量版本的可变列表。
+    let mut scroll = VirtualScroll::new()
+        .item_count(2)
+        .item_height(10.0)
+        .variable_height()
+        .measurement_version(1);
+    // 写入当前版本的第一项目实际高度。
+    assert!(scroll.measure_item(0, 25.0));
+    // 旧版本总高度应包含实际测量。
+    assert_eq!(scroll.total_height(), 35.0);
+    // 切换字体或宽度版本后清除旧测量。
+    scroll.set_measurement_version(2);
+    // 新版本回退到两个十像素估算项目。
+    assert_eq!(scroll.total_height(), 20.0);
+    // 旧测量不能再被读取。
+    assert_eq!(scroll.measured_item_height(0), None);
+}

@@ -2,7 +2,13 @@
 //!
 //! Renders only children near the viewport; useful for large Select, Tree,
 //! Table, and similar lists.
-use std::cell::Cell;
+// 记录布局回调中的滚动状态与可变高度缓存。
+use std::cell::{Cell, RefCell};
+
+// 导入可变行高的稀疏缓存和范围计算入口。
+pub use super::measurement_cache::{
+    virtual_list_index_range_with_measurements, VirtualListMeasurementCache,
+};
 
 // 复用布局层对非有限值与测量哨兵的统一归一规则。
 use crate::ui::layout::engine::{finite_non_negative, finite_or_zero};
@@ -47,6 +53,16 @@ fn finite_total_height(item_count: usize, item_height: f32) -> f32 {
 fn finite_max_scroll_offset(item_count: usize, item_height: f32, viewport_height: f32) -> f32 {
     // 内容高度已经在共享虚拟坐标预算内。
     let total_height = finite_total_height(item_count, item_height);
+    // 非法视口按零处理，确保减法仍保持有限。
+    let viewport_height = finite_virtual_size(viewport_height);
+    // 内容不满视口时稳定停留在原点。
+    (total_height - viewport_height).max(0.0)
+}
+
+// 由已知的有限总高度计算有限最大滚动偏移。
+fn finite_max_scroll_from_total(total_height: f32, viewport_height: f32) -> f32 {
+    // 内容高度已经在共享虚拟坐标预算内。
+    let total_height = finite_virtual_size(total_height);
     // 非法视口按零处理，确保减法仍保持有限。
     let viewport_height = finite_virtual_size(viewport_height);
     // 内容不满视口时稳定停留在原点。
@@ -148,6 +164,17 @@ pub fn virtual_list_index_range(
     let last = ceil_index((scroll_offset + viewport_height) / item_height)
         .min(item_count)
         .max(first);
+    // 可见区和 overscan 统一经过固定预算分配。
+    materialization_window(item_count, first, last, overscan)
+}
+
+// 把可见区扩展为不超过预算的半开物化窗口。
+fn materialization_window(
+    item_count: usize,
+    first: usize,
+    last: usize,
+    overscan: usize,
+) -> (usize, usize) {
     // 可见行始终优先于装饰性 overscan 占用物化预算。
     let visible_len = last.saturating_sub(first);
     // 超大视口本身就超过预算时，只保留从首个可见行开始的一窗。
@@ -314,12 +341,18 @@ component! {
     pub struct VirtualScroll {
         item_count: usize,
         item_height: f32,
+        variable_height: bool,
+        measurement_version: u64,
         scroll_offset: f32,
         fixed_width: Option<f32>,
         fixed_height: Option<f32>,
         overscan: usize,
         #[snapshot(skip)]
         materialized_range: Cell<Option<(usize, usize)>>,
+        #[snapshot(skip)]
+        materialized_measurement_generation: Cell<u64>,
+        #[snapshot(skip)]
+        measurement_cache: RefCell<VirtualListMeasurementCache>,
         pub(crate) last_frame: Cell<Option<Rect>>,
         scroll_delta_strip: Cell<(f32, f32)>,
     }
@@ -337,7 +370,7 @@ component! {
             // 读取已经归一化的实际视口高度。
             let view_h = self.viewport_height();
             // 计算有限内容边界，避免总高度与视口减法产生非有限值。
-            let max_offset = finite_max_scroll_offset(self.item_count, self.item_height, view_h);
+            let max_offset = self.max_scroll_offset_for_viewport(view_h);
             // 乘法溢出会形成有方向的无穷增量，并由共享入口夹到边界。
             let (new_offset, applied) = scroll_offset_after_delta(
                 self.scroll_offset,
@@ -417,8 +450,6 @@ component! {
     {
         // 父级输入先收敛到有限实际矩形。
         let frame = finite_virtual_rect(frame);
-        // 无效行高退化为零高度，而不是向子树传播 NaN。
-        let item_height = finite_virtual_size(self.item_height);
         // 运行态偏移先收敛到有限非负坐标。
         let scroll_offset = finite_scroll_offset(self.scroll_offset) as f64;
         // 读取当前物化窗口的绝对起始索引。
@@ -430,10 +461,19 @@ component! {
             .map(|(local_i, child)| {
                 // 防御不一致子项数量导致绝对索引整数溢出。
                 let abs_i = start.saturating_add(local_i);
-                // 使用 f64 完成索引乘法与偏移累加。
-                let y = frame.y as f64 + abs_i as f64 * item_height as f64 - scroll_offset;
+                // 可变模式先记录当前已物化子项的实际测量高度。
+                if self.variable_height {
+                    // 测量变化会让下一轮刷新重新确认窗口和锚点。
+                    self.measure_item(abs_i, child.measured_size.h);
+                }
+                // 使用缓存前缀或固定行高计算项目起点。
+                let item_offset = self.item_offset(abs_i) as f64;
+                // 使用 f64 完成坐标与偏移累加。
+                let y = frame.y as f64 + item_offset - scroll_offset;
                 // 最终纵坐标保留方向并夹到有限虚拟坐标范围。
                 let y = finite_virtual_coordinate(y);
+                // 可变模式返回实际高度，未测量项目回退到估算高度。
+                let item_height = self.item_height_for(abs_i).max(0.0);
                 // 子项 frame 只包含有限坐标与非负有限尺寸。
                 (child.id, Rect::new(frame.x, y, frame.w, item_height))
             })
@@ -452,11 +492,15 @@ impl VirtualScroll {
         Self {
             item_count: 0,
             item_height: 32.0,
+            variable_height: false,
+            measurement_version: 0,
             scroll_offset: 0.0,
             fixed_width: None,
             fixed_height: None,
             overscan: 5,
             materialized_range: Cell::new(None),
+            materialized_measurement_generation: Cell::new(0),
+            measurement_cache: RefCell::new(VirtualListMeasurementCache::new()),
             last_frame: Cell::new(None),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
         }
@@ -472,11 +516,31 @@ impl VirtualScroll {
             .unwrap_or(next.fixed_height.unwrap_or(300.0));
         // 保存框架拥有的滚动运行态，声明更新不能直接覆盖它。
         let scroll_offset = self.scroll_offset;
+        // 只有模式或测量版本变化时才整体丢弃旧缓存。
+        let reset_measurements = self.variable_height != next.variable_height
+            || self.measurement_version != next.measurement_version;
+        // 配置更新中的版本切换必须重新测量已物化项目。
+        if reset_measurements {
+            // 版本切换同步缓存版本并清理旧几何结果。
+            let mut cache = self.measurement_cache.borrow_mut();
+            // 模式切换但版本不变时也必须清理旧模式结果。
+            if self.measurement_version == next.measurement_version {
+                // 固定与可变模式不能共享同一轮测量。
+                cache.clear();
+            } else {
+                // 新字体、宽度、主题或数据版本通过缓存协议失效。
+                cache.set_version(next.measurement_version);
+            }
+        }
 
         // 同步下一版列表长度。
         self.item_count = next.item_count;
         // 同步下一版固定行高声明。
         self.item_height = next.item_height;
+        // 同步下一版可变行高模式。
+        self.variable_height = next.variable_height;
+        // 同步下一版测量版本。
+        self.measurement_version = next.measurement_version;
         // 同步下一版固定宽度声明。
         self.fixed_width = next.fixed_width;
         // 同步下一版固定高度声明。
@@ -485,12 +549,13 @@ impl VirtualScroll {
         self.overscan = next.overscan;
         // 配置变化后让协调器重新核对物化窗口。
         self.materialized_range.set(None);
+        // 数据缩短后丢弃超出新长度的稀疏测量。
+        self.measurement_cache
+            .borrow_mut()
+            .retain_item_count(self.item_count);
         // 根据新版有限内容边界归一并夹取旧滚动状态。
-        self.scroll_offset = finite_scroll_offset(scroll_offset).min(finite_max_scroll_offset(
-            self.item_count,
-            self.item_height,
-            viewport_height,
-        ));
+        self.scroll_offset = finite_scroll_offset(scroll_offset)
+            .min(self.max_scroll_offset_for_viewport(viewport_height));
     }
 
     pub fn item_count(mut self, n: usize) -> Self {
@@ -500,6 +565,20 @@ impl VirtualScroll {
 
     pub fn item_height(mut self, h: f32) -> Self {
         self.item_height = h;
+        self
+    }
+
+    // 开启按已物化项目实际测量高度布局的模式。
+    pub fn variable_height(mut self) -> Self {
+        // 固定行高仍作为尚未测量项目的估算高度。
+        self.variable_height = true;
+        self
+    }
+
+    // 为字体、宽度、主题或数据变化绑定新的测量版本。
+    pub fn measurement_version(mut self, version: u64) -> Self {
+        // 版本切换由 sync_from 统一触发缓存清理。
+        self.measurement_version = version;
         self
     }
 
@@ -527,7 +606,15 @@ impl VirtualScroll {
 
     /// Total scrollable content height (fixed row height contract).
     pub fn total_height(&self) -> f32 {
-        // 使用饱和有限乘法，避免超大列表把无穷写入滚动状态。
+        // 可变模式优先使用稀疏测量结果和固定估算高度。
+        if self.variable_height {
+            // 借用缓存只覆盖本次总高度计算。
+            return self
+                .measurement_cache
+                .borrow()
+                .total_height(self.item_count, self.item_height);
+        }
+        // 固定模式使用原有饱和有限乘法。
         finite_total_height(self.item_count, self.item_height)
     }
 
@@ -544,6 +631,19 @@ impl VirtualScroll {
     }
 
     pub fn scroll_range(&self, viewport_height: f32) -> (usize, usize) {
+        // 可变模式使用测量缓存提供的前缀坐标。
+        if self.variable_height {
+            // 借用缓存只覆盖本次范围计算。
+            return virtual_list_index_range_with_measurements(
+                self.item_count,
+                self.item_height,
+                &self.measurement_cache.borrow(),
+                self.scroll_offset,
+                viewport_height,
+                self.overscan,
+            );
+        }
+        // 固定模式保持原有等高范围契约。
         virtual_list_index_range(
             self.item_count,
             self.item_height,
@@ -560,8 +660,14 @@ impl VirtualScroll {
         mounted_children: usize,
     ) -> bool {
         let range = self.scroll_range(viewport_height);
+        // 可变高度测量变化时，即使索引窗口相同也必须重新协调。
+        let measurement_changed = self.variable_height
+            && self.materialized_measurement_generation.get()
+                != self.measurement_cache.borrow().generation();
+        // 同时检查索引窗口、挂载数量和测量代际。
         self.materialized_range.get() != Some(range)
             || mounted_children != range.1.saturating_sub(range.0)
+            || measurement_changed
     }
 
     pub(crate) fn configured_viewport_height(&self) -> f32 {
@@ -571,6 +677,9 @@ impl VirtualScroll {
 
     pub(crate) fn mark_children_materialized(&self, range: (usize, usize)) {
         self.materialized_range.set(Some(range));
+        // 记录本次窗口已经消费的测量代际。
+        self.materialized_measurement_generation
+            .set(self.measurement_cache.borrow().generation());
     }
 
     pub fn scroll_offset(&self) -> f32 {
@@ -580,8 +689,7 @@ impl VirtualScroll {
 
     pub fn scroll_ratio(&self, viewport_height: f32) -> f32 {
         // 使用与事件路径相同的有限内容边界。
-        let max_scroll =
-            finite_max_scroll_offset(self.item_count, self.item_height, viewport_height);
+        let max_scroll = self.max_scroll_offset_for_viewport(viewport_height);
         // 无可滚动距离时比例稳定为零。
         if max_scroll <= 0.0 {
             // 避免人为以一作为分母掩盖非法状态。
@@ -598,12 +706,91 @@ impl VirtualScroll {
             .unwrap_or(0)
     }
 
+    // 记录已物化项目的实际测量高度，并请求下一轮窗口复核。
+    pub fn measure_item(&self, index: usize, height: f32) -> bool {
+        // 固定模式不应意外改变既有等高布局。
+        if !self.variable_height || index >= self.item_count {
+            // 非可变模式或越界索引直接忽略测量。
+            return false;
+        }
+        // 缓存只接受有限正高度。
+        let changed = self.measurement_cache.borrow_mut().record(index, height);
+        // 缓存代际会让树协调器在下一次刷新时复核窗口。
+        changed
+    }
+
+    // 读取项目当前的实际或估算高度。
+    pub fn measured_item_height(&self, index: usize) -> Option<f32> {
+        // 固定模式没有对外暴露的实际测量结果。
+        if !self.variable_height || index >= self.item_count {
+            // 非可变模式和越界索引没有缓存值。
+            return None;
+        }
+        // 只返回当前版本已保存的实际高度。
+        self.measurement_cache.borrow().get(index)
+    }
+
+    // 显式清理当前版本的所有可变行高测量。
+    pub fn invalidate_measurements(&self) {
+        // 清空实际高度，后续项目回退到估算行高。
+        self.measurement_cache.borrow_mut().clear();
+        // 缓存代际会让下一轮保留当前索引起点并复核几何。
+    }
+
+    // 切换测量版本并清理旧缓存。
+    pub fn set_measurement_version(&mut self, version: u64) {
+        // 相同版本继续复用现有测量。
+        if self.measurement_version == version {
+            // 无版本变化时不触发无谓重排。
+            return;
+        }
+        // 保存新的测量失效边界。
+        self.measurement_version = version;
+        // 清理旧版本的所有实际高度并同步缓存版本。
+        self.measurement_cache.borrow_mut().set_version(version);
+        // 缓存代际会让下一轮保留当前索引起点并重新计算。
+    }
+
     fn intrinsic_size(&self) -> Size {
         // 声明尺寸在进入约束求解前先满足有限非负规则。
         Size::new(
             finite_virtual_size(self.fixed_width.unwrap_or(300.0)),
             finite_virtual_size(self.fixed_height.unwrap_or(300.0)),
         )
+    }
+
+    // 计算当前模式下给定视口的最大有限滚动偏移。
+    fn max_scroll_offset_for_viewport(&self, viewport_height: f32) -> f32 {
+        // 总高度统一从可变或固定实现读取。
+        finite_max_scroll_from_total(self.total_height(), viewport_height)
+    }
+
+    // 读取当前模式下某一项目的起点偏移。
+    fn item_offset(&self, index: usize) -> f32 {
+        // 可变模式用稀疏测量修正估算前缀。
+        if self.variable_height {
+            // 借用缓存只覆盖本次坐标计算。
+            return self
+                .measurement_cache
+                .borrow()
+                .offset_for_index(index, self.item_height);
+        }
+        // 固定模式使用安全的等高乘法。
+        finite_virtual_coordinate(index as f64 * finite_virtual_size(self.item_height) as f64)
+    }
+
+    // 读取当前模式下某一项目的实际或估算高度。
+    fn item_height_for(&self, index: usize) -> f32 {
+        // 可变模式优先使用已缓存的实际高度。
+        if self.variable_height {
+            // 借用缓存只覆盖本次 frame 计算。
+            return self
+                .measurement_cache
+                .borrow()
+                .height_for(index, self.item_height);
+        }
+        // 固定模式保持原有有限尺寸归一规则。
+        finite_virtual_size(self.item_height)
     }
 
     fn push_scroll_delta(&self, dx: f32, dy: f32) {
@@ -642,6 +829,20 @@ impl VirtualScrollBuilder {
 
     pub fn item_height(mut self, height: f32) -> Self {
         self.scroll.item_height = height;
+        self
+    }
+
+    // 开启按实际测量结果排列项目的模式。
+    pub fn variable_height(mut self) -> Self {
+        // 固定行高仍作为初次物化项目的估算值。
+        self.scroll.variable_height = true;
+        self
+    }
+
+    // 为本次声明绑定字体、宽度、主题或数据版本。
+    pub fn measurement_version(mut self, version: u64) -> Self {
+        // 重协调时由 VirtualScroll 统一执行版本失效。
+        self.scroll.measurement_version = version;
         self
     }
 

@@ -4,7 +4,7 @@
 
 > **接口**：声明 ui 系统的大数据视图物化、范围计算和复用策略。依赖：[component](component.md)、[layout](layout.md)、[view](view.md)。导出：虚拟列表状态、物化协议和 renderer 生命周期。
 >
-> **当前实现线索**：固定行高 `VirtualScroll` / `VirtualListScroll` 位于 `src/ui/virtualization/virtual_scroll.rs`，动态行 renderer 由 `src/ui/render_handler.rs` 的 owner side table 持有，并通过 `src/ui/adapter.rs` 的 keyed reconcile 接入组件树；表格和树仍可复用共享滚动状态并保留各自绘制路径。
+> **当前实现线索**：固定与可变行高 `VirtualScroll` / `VirtualListScroll` 位于 `src/ui/virtualization/virtual_scroll.rs`，可变行高的稀疏 measurement cache 位于 `src/ui/virtualization/measurement_cache.rs`；动态行 renderer 由 `src/ui/render_handler.rs` 的 owner side table 持有，并通过 `src/ui/adapter.rs` 的 keyed reconcile 接入组件树；表格和树仍可复用共享滚动状态并保留各自绘制路径。
 
 ## 组件清单
 
@@ -19,7 +19,7 @@
 
 ## 组件：VirtualViewport
 
-viewport、scroll offset、项目度量和 overscan 共同得到物化范围。固定行高与 viewport 必须是有限正值，否则返回 `(0, 0)`；offset 先夹到内容范围。单次窗口最多物化 4096 项：先保留从首个可见行开始的可见内容，再用剩余预算分配两侧 overscan，因此病理 viewport 或 `usize::MAX` overscan 不会扩张为整棵列表。
+viewport、scroll offset、项目度量和 overscan 共同得到物化范围。固定模式要求行高与 viewport 是有限正值；可变模式以 `.item_height(...)` 作为未知项目的有限正估算高度，再用已测量项目的前缀坐标修正范围；非法度量仍返回 `(0, 0)`。offset 先夹到内容范围。单次窗口最多物化 4096 项：先保留从首个可见行开始的可见内容，再用剩余预算分配两侧 overscan，因此病理 viewport 或 `usize::MAX` overscan 不会扩张为整棵列表。
 
 范围与已挂载数量都不变且没有新版声明时不调用 renderer 或 reconcile，只更新滚动 transform、damage 与暴露区域。范围改变或声明 renderer 更新时，renderer 声明当前有界窗口，keyed reconcile 原位复用重叠行组件、移除离开项并只为进入项分配新组件；renderer 回调本身可能重新声明窗口内的 `ViewNode`，不承诺只对进入索引调用。
 
@@ -29,12 +29,12 @@ renderer 是按 owner `ComponentId` 管理的 side-table 回调，不进入组�
 
 ## 组件：measurement cache
 
-当前生产实现只支持固定行高；非法或非有限行高返回有限空范围，总高度、最大偏移、滚动比例与最终行 frame 均在有限虚拟坐标预算内饱和。虚拟化协议为后续可变高度保留测量缓存边界；字体、宽度、主题几何或数据版本变化时，相关测量必须失效并重新锚定滚动位置。
+生产实现支持固定行高和显式 `.variable_height()` 模式。可变模式把已物化子项的 `measured_size.h` 写入稀疏缓存，未测量项目继续使用 `.item_height(...)` 估算；总高度、最大偏移、滚动比例、可见范围和最终行 frame 共用同一组缓存前缀坐标。非法或非有限测量不会覆盖旧值，字体、宽度、主题几何或数据版本变化时可切换 `measurement_version` 或显式失效缓存，并清除旧测量后重新锚定滚动位置。
 
 ## 模块不变量
 
-- offset 始终按内容和 viewport clamp；空数据、非正或非有限度量返回有限空结果或 typed error。
+- offset 始终按内容和 viewport clamp；空数据、非正或非有限度量返回有限空结果或 typed error，未知可变项目回退到估算高度。
 - 每次物化数量必须有硬上限；可见内容优先于 overscan，资源预算耗尽时不得扩张整棵列表。
 - 行身份优先采用业务稳定 key；只有顺序不可变时才能采用绝对索引后备 key。
 - hit-test、绘制、语义 bounds 和行 frame 使用同一 content-to-viewport 变换。
-- 虚拟化不维持固定帧；无滚动、数据或测量变化时不产生工作。
+- 虚拟化不维持固定帧；无滚动、数据或测量变化时不产生工作，测量变化才触发下一轮窗口复核。
