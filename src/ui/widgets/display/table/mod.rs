@@ -579,8 +579,15 @@ component! {
                 if cell_frame.intersect(&body_clip).is_none() {
                     continue;
                 }
-                let Some(zone_clip) =
-                    column_geometry.clip_for(laid_out.zone, cell_frame.y, cell_frame.h)
+                // 行合并锚点在全部普通列之后重绘，只能覆盖其最终可见列区片段。
+                let Some(zone_clip) = column_geometry.merged_repaint_clip_for(
+                    // 使用锚点所属列区解析最终层级裁剪。
+                    laid_out.zone,
+                    // 继承合并单元格纵坐标。
+                    cell_frame.y,
+                    // 继承合并单元格完整跨行高度。
+                    cell_frame.h,
+                )
                 else {
                     continue;
                 };

@@ -122,6 +122,49 @@ impl TableColumnGeometry {
         viewport.intersect(&zone_rect)
     }
 
+    // 解析行合并锚点在末尾重绘时可使用的最终可见裁剪。
+    pub fn merged_repaint_clip_for(
+        // 接收需要重绘的锚点所属列区。
+        &self,
+        // 接收重绘列区。
+        zone: ColumnZone,
+        // 接收重绘矩形纵坐标。
+        y: f32,
+        // 接收重绘矩形高度。
+        height: f32,
+    ) -> Option<Rect> {
+        // 先解析普通按层绘制使用的完整列区裁剪。
+        let clip = self.clip_for(zone, y, height)?;
+        // 中间区不会进入固定区重叠，最高层右区也无需再扣除覆盖。
+        if zone != ColumnZone::Left {
+            // 保留当前列区的完整可见裁剪。
+            return Some(clip);
+        }
+        // 没有可见右固定区时，左区末尾重绘不会越过其他层级。
+        let Some(right_clip) = self.clip_for(ColumnZone::Right, y, height) else {
+            // 返回未收缩的左区裁剪。
+            return Some(clip);
+        };
+        // 左区最终可见右边界不能越过更高层右固定区起点。
+        let visible_right = (clip.x + clip.w).min(right_clip.x);
+        // 右固定区覆盖整个左区时不再重绘左合并锚点。
+        if visible_right <= clip.x {
+            // 用空结果表示左区没有最终可见片段。
+            return None;
+        }
+        // 返回扣除右固定覆盖后的单一左侧可见片段。
+        Some(Rect::new(
+            // 保留左区可见起点。
+            clip.x,
+            // 保留规范化后的纵坐标。
+            clip.y,
+            // 使用收缩后的最终可见宽度。
+            visible_right - clip.x,
+            // 保留规范化后的可见高度。
+            clip.h,
+        ))
+    }
+
     pub fn column_at(&self, x: f32) -> Option<usize> {
         // 按绘制顺序逆序命中，使重叠区选择视觉上最上层的列。
         for zone in COLUMN_PAINT_ORDER.into_iter().rev() {
@@ -182,6 +225,42 @@ mod tests {
         // 右侧非重叠区继续由右固定列命中。
         assert_eq!(geometry.column_at(90.0), Some(1));
         // 结束固定列重叠命中契约。
+    }
+
+    // 标记行合并锚点末尾重绘不得覆盖更高固定区的契约。
+    #[test]
+    // 验证左固定合并重绘只保留未被右固定区覆盖的可见片段。
+    fn merged_repaint_clip_preserves_topmost_fixed_zone() {
+        // 构造宽于视口剩余区域的左固定列。
+        let left = TableColumn::new("左合并列", 80.0).fixed(Fixed::Left);
+        // 构造同样宽且视觉层级更高的右固定列。
+        let right = TableColumn::new("右普通列", 80.0).fixed(Fixed::Right);
+        // 在一百像素视口中形成二十到八十像素的固定区重叠。
+        let geometry = TableColumnGeometry::new(&[left, right], 0.0, 100.0, 0.0, 0.0);
+        // 初始按层绘制时左区仍可使用完整八十像素裁剪并等待右区覆盖。
+        assert_eq!(
+            // 查询普通绘制使用的左区裁剪。
+            geometry.clip_for(ColumnZone::Left, 32.0, 64.0),
+            // 左区从零到八十像素完整参与底层绘制。
+            Some(Rect::new(0.0, 32.0, 80.0, 64.0))
+        );
+        // 末尾重绘发生在右区之后，只能保留右区起点之前的二十像素。
+        assert_eq!(
+            // 查询行合并锚点使用的最终可见裁剪。
+            geometry.merged_repaint_clip_for(ColumnZone::Left, 32.0, 64.0),
+            // 左区最终仅有零到二十像素未被右固定区覆盖。
+            Some(Rect::new(0.0, 32.0, 20.0, 64.0))
+        );
+        // 右固定合并锚点仍可使用其完整八十像素顶层裁剪。
+        assert_eq!(
+            // 查询最高层右区的合并重绘裁剪。
+            geometry.merged_repaint_clip_for(ColumnZone::Right, 32.0, 64.0),
+            // 右区从二十到一百像素全部可见。
+            Some(Rect::new(20.0, 32.0, 80.0, 64.0))
+        );
+        // 重叠点命中继续返回最终可见的右固定列。
+        assert_eq!(geometry.column_at(50.0), Some(1));
+        // 结束行合并锚点重绘层级契约。
     }
     // 结束表格列几何测试模块。
 }
