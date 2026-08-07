@@ -15,6 +15,19 @@ use crate::ui::{
     WidgetTree,
 };
 
+// 声明时间面板的私有几何解析模块。
+mod geometry;
+// 声明时间选择器的私有弹层缓存方法模块。
+mod methods;
+
+// 引入时间面板绝对与本地坐标转换。
+use geometry::{
+    // 将本地时间面板转换为窗口绝对矩形。
+    absolute_time_popup_rect,
+    // 将触发器与时间面板占用区裁剪到当前表面。
+    time_surface_rect,
+};
+
 const POPUP_GAP: f32 = 2.0;
 const POPUP_HEIGHT: f32 = 200.0;
 const POPUP_MIN_WIDTH: f32 = 120.0;
@@ -76,6 +89,14 @@ component! {
         picker_size: ControlSize,
         last_frame: Cell<Option<Rect>>,
         pending_change: Cell<Option<Time>>,
+        // 缓存相对触发器原点的最终时间面板矩形。
+        popup_rect: Cell<Rect>,
+        // 缓存最近登记或绘制使用的逻辑表面。
+        surface_rect: Cell<Option<Rect>>,
+        // 缓存最近登记使用的绝对触发器锚点。
+        popup_anchor_frame: Cell<Option<Rect>>,
+        // 累计当前呈现周期内的绝对时间面板脏区。
+        popup_damage_rect: Cell<Rect>,
     }
 
 
@@ -163,7 +184,8 @@ component! {
                     return EventResult::NotHandled;
                 }
                 if let Some(frame) = self.last_frame.get() {
-                    let popup = time_popup_rect(frame);
+                    // 读取同帧登记、绘制和命中共享的实际时间面板。
+                    let popup = self.interaction_popup_rect(frame);
                     if popup.contains(*pos) {
                         let column = if pos.x < popup.x + popup.w * 0.5 {
                             TimeColumn::Hour
@@ -171,7 +193,8 @@ component! {
                             TimeColumn::Minute
                         };
                         self.active_column.set(column);
-                        if self.scroll_column(column, delta.y * WHEEL_STEP) {
+                        // 使用实际视口高度计算滚动上限。
+                        if self.scroll_column(column, delta.y * WHEEL_STEP, popup.h) {
                             return EventResult::Handled;
                         }
                     }
@@ -187,20 +210,34 @@ component! {
                         }
                         KeyCode::Left => {
                             self.active_column.set(TimeColumn::Hour);
-                            self.ensure_highlight_visible(TimeColumn::Hour);
+                            // 使用实际时间面板高度显露小时高亮。
+                            self.ensure_highlight_visible(
+                                // 指定小时列。
+                                TimeColumn::Hour,
+                                // 读取同帧实际视口高度。
+                                self.interaction_viewport_height(),
+                            );
                             EventResult::Handled
                         }
                         KeyCode::Right => {
                             self.active_column.set(TimeColumn::Minute);
-                            self.ensure_highlight_visible(TimeColumn::Minute);
+                            // 使用实际时间面板高度显露分钟高亮。
+                            self.ensure_highlight_visible(
+                                // 指定分钟列。
+                                TimeColumn::Minute,
+                                // 读取同帧实际视口高度。
+                                self.interaction_viewport_height(),
+                            );
                             EventResult::Handled
                         }
                         KeyCode::Up => {
-                            self.move_highlight(-1);
+                            // 在实际视口内向上移动当前列高亮。
+                            self.move_highlight(-1, self.interaction_viewport_height());
                             EventResult::Handled
                         }
                         KeyCode::Down => {
-                            self.move_highlight(1);
+                            // 在实际视口内向下移动当前列高亮。
+                            self.move_highlight(1, self.interaction_viewport_height());
                             EventResult::Handled
                         }
                         KeyCode::Enter => {
@@ -234,7 +271,14 @@ component! {
 
     hit_test_frame => (&self, frame: Rect) -> Rect {
         if self.open.get() {
-            picker_bounds(frame)
+            // 读取最近登记或绘制记录的当前逻辑表面。
+            let surface = self.surface_or_fallback(frame);
+            // 解析并缓存当前实际时间面板。
+            let popup = self.remember_popup_rect(frame, surface);
+            // 将相对时间面板转换为窗口绝对坐标。
+            let popup = absolute_time_popup_rect(frame, popup);
+            // 触发器与当前时间面板命中框共同收敛到表面内。
+            time_surface_rect(frame, popup, surface)
         } else {
             frame
         }
@@ -315,7 +359,17 @@ component! {
         ctx.pop_clip();
 
         if self.open.get() {
-            let popup = time_popup_rect(frame);
+            // 从绘制上下文读取当前逻辑表面尺寸。
+            let surface_size = ctx.logical_surface_size();
+            // 将窗口原点与逻辑尺寸组合为当前表面矩形。
+            let surface = Rect::new(0.0, 0.0, surface_size.w, surface_size.h);
+            // 在绘制前解析并缓存同帧最终时间面板几何。
+            let popup = self.remember_popup_rect(frame, surface);
+            // 将相对触发器缓存转换为窗口绝对时间面板矩形。
+            let popup = absolute_time_popup_rect(frame, popup);
+            // 将时间面板绘制限制在当前逻辑表面。
+            ctx.push_clip(surface);
+            // 将两列内容限制在最终实际视口内。
             ctx.push_clip(popup);
             ctx.fill_rect(popup, bg_elevated, radius);
             ctx.stroke_rect(popup, border_color, 1.0, radius);
@@ -375,33 +429,47 @@ component! {
                 None,
             );
             ctx.pop_clip();
+            // 结束当前逻辑表面裁剪。
+            ctx.pop_clip();
         }
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        picker_bounds(frame)
+        // 读取最近登记或绘制记录的当前逻辑表面。
+        let surface = self.surface_or_fallback(frame);
+        // 合并当前与本次呈现周期历史时间面板脏区。
+        let popup = self.damage_popup_rect(frame, surface);
+        // 将输入框和时间面板脏区限制在当前表面内。
+        time_surface_rect(frame, popup, surface)
     }
 
     overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         self.open.get().then(|| {
+            // 读取最近记录的表面或首次有限回退。
+            let surface = self.surface_or_fallback(frame);
+            // 解析并缓存当前实际时间面板。
+            let popup = self.remember_popup_rect(frame, surface);
+            // 将相对时间面板转换为窗口绝对坐标。
+            let bounds = absolute_time_popup_rect(frame, popup);
+            // 创建只覆盖实际时间面板的浮层登记。
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
-                .bounds(picker_bounds(frame))
+                // 登记最终时间面板而不并入触发器。
+                .bounds(bounds)
+                // 保持时间面板既有层级。
                 .z_index(900)
         })
     }
-}
 
-fn picker_bounds(frame: Rect) -> Rect {
-    frame.union(&time_popup_rect(frame))
-}
-
-fn time_popup_rect(frame: Rect) -> Rect {
-    Rect::new(
-        frame.x,
-        frame.y + frame.h + POPUP_GAP,
-        frame.w.max(POPUP_MIN_WIDTH),
-        POPUP_HEIGHT,
-    )
+    // 使用组件树提供的同帧表面创建时间面板登记。
+    overlay_entry_for_surface => (&self, id: ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+        // 仅在打开状态刷新表面与实际时间面板缓存。
+        if self.open.get() {
+            // 缓存组件树提供的真实表面。
+            self.remember_popup_rect(frame, surface);
+        }
+        // 复用统一的时间面板登记逻辑。
+        self.overlay_entry(id, frame)
+    }
 }
 
 impl TimePicker {
@@ -424,6 +492,14 @@ impl TimePicker {
             picker_size: config.size,
             last_frame: Cell::new(None),
             pending_change: Cell::new(None),
+            // 初始尚无最终时间面板。
+            popup_rect: Cell::new(Rect::zero()),
+            // 初始尚未记录逻辑表面。
+            surface_rect: Cell::new(None),
+            // 初始尚未记录绝对触发器锚点。
+            popup_anchor_frame: Cell::new(None),
+            // 初始呈现周期没有历史时间面板脏区。
+            popup_damage_rect: Cell::new(Rect::zero()),
         }
     }
 
@@ -487,7 +563,8 @@ impl TimePicker {
             self.value.set(value);
             self.value_configured.set(true);
             if self.open.get() {
-                self.sync_highlight_to_value(true);
+                // 使用当前实际视口同步受控值的高亮和滚动。
+                self.sync_highlight_to_value(true, self.interaction_viewport_height());
             }
         }
         self.placeholder = next.placeholder;
@@ -500,7 +577,8 @@ impl TimePicker {
             let changed = self.value.replace(value) != value;
             self.value_configured.set(true);
             if changed && self.open.get() {
-                self.sync_highlight_to_value(true);
+                // 使用当前实际视口同步外部值的高亮和滚动。
+                self.sync_highlight_to_value(true, self.interaction_viewport_height());
             }
         }
     }
@@ -526,9 +604,15 @@ impl TimePicker {
     }
 
     fn open_popup(&self) {
+        // 仅在关闭到开启的边沿开始新的面板呈现周期。
+        if !self.open.get() {
+            // 清除上一次呈现留下的表面与脏区缓存。
+            self.reset_popup_presentation();
+        }
         self.sync_bound_value();
         self.active_column.set(TimeColumn::Hour);
-        self.sync_highlight_to_value(true);
+        // 首次正式登记前按自然视口同步高亮和滚动。
+        self.sync_highlight_to_value(true, POPUP_HEIGHT);
         self.open.set(true);
     }
 
@@ -537,7 +621,8 @@ impl TimePicker {
     }
 
     fn item_at(&self, frame: Rect, pos: Point) -> Option<(TimeColumn, usize)> {
-        let popup = time_popup_rect(frame);
+        // 读取同帧登记、绘制和滚动共享的实际时间面板。
+        let popup = self.interaction_popup_rect(frame);
         if !popup.contains(pos) {
             return None;
         }
@@ -562,13 +647,22 @@ impl TimePicker {
         }
     }
 
-    fn max_scroll(column: TimeColumn) -> f32 {
-        (Self::row_count(column) as f32 * ITEM_HEIGHT - POPUP_HEIGHT).max(0.0)
+    // 按指定列与实际视口返回最大滚动偏移。
+    fn max_scroll(column: TimeColumn, viewport_height: f32) -> f32 {
+        // 归一化实际视口高度以避免非有限滚动范围。
+        let viewport_height = finite_viewport_height(viewport_height);
+        // 使用固定行高内容与实际视口计算最大滚动。
+        (Self::row_count(column) as f32 * ITEM_HEIGHT - viewport_height).max(0.0)
     }
 
-    fn centered_scroll(column: TimeColumn, index: usize) -> f32 {
-        let centered = index as f32 * ITEM_HEIGHT - (POPUP_HEIGHT - ITEM_HEIGHT) * 0.5;
-        centered.clamp(0.0, Self::max_scroll(column))
+    // 按实际视口返回目标选项的居中滚动偏移。
+    fn centered_scroll(column: TimeColumn, index: usize, viewport_height: f32) -> f32 {
+        // 归一化实际视口高度。
+        let viewport_height = finite_viewport_height(viewport_height);
+        // 计算让目标行尽量居中的滚动位置。
+        let centered = index as f32 * ITEM_HEIGHT - (viewport_height - ITEM_HEIGHT) * 0.5;
+        // 将居中位置限制在实际视口的合法范围内。
+        centered.clamp(0.0, Self::max_scroll(column, viewport_height))
     }
 
     fn scroll_offset(&self, column: TimeColumn) -> f32 {
@@ -585,12 +679,14 @@ impl TimePicker {
         }
     }
 
-    fn scroll_column(&self, column: TimeColumn, delta: f32) -> bool {
+    // 在实际视口范围内滚动指定时间列。
+    fn scroll_column(&self, column: TimeColumn, delta: f32, viewport_height: f32) -> bool {
         if !delta.is_finite() {
             return false;
         }
         let current = self.scroll_offset(column);
-        let next = (current + delta).clamp(0.0, Self::max_scroll(column));
+        // 使用实际视口高度限制下一滚动位置。
+        let next = (current + delta).clamp(0.0, Self::max_scroll(column, viewport_height));
         if (next - current).abs() <= f32::EPSILON {
             false
         } else {
@@ -599,7 +695,10 @@ impl TimePicker {
         }
     }
 
-    fn ensure_highlight_visible(&self, column: TimeColumn) {
+    // 保证指定列的当前高亮与实际视口相交。
+    fn ensure_highlight_visible(&self, column: TimeColumn, viewport_height: f32) {
+        // 归一化实际视口高度。
+        let viewport_height = finite_viewport_height(viewport_height);
         let index = match column {
             TimeColumn::Hour => self.hover_hour.get(),
             TimeColumn::Minute => self.hover_minute.get(),
@@ -609,15 +708,22 @@ impl TimePicker {
         let row_bottom = row_top + ITEM_HEIGHT;
         let next = if row_top < current {
             row_top
-        } else if row_bottom > current + POPUP_HEIGHT {
-            row_bottom - POPUP_HEIGHT
+        } else if row_bottom > current + viewport_height {
+            row_bottom - viewport_height
         } else {
             current
         };
-        self.set_scroll_offset(column, next.clamp(0.0, Self::max_scroll(column)));
+        // 将显露位置限制在实际视口的合法滚动范围内。
+        self.set_scroll_offset(
+            // 指定需要调整的时间列。
+            column,
+            // 使用实际视口计算最大滚动。
+            next.clamp(0.0, Self::max_scroll(column, viewport_height)),
+        );
     }
 
-    fn move_highlight(&self, delta: i32) {
+    // 在指定实际视口内移动当前列高亮。
+    fn move_highlight(&self, delta: i32, viewport_height: f32) {
         let column = self.active_column.get();
         let count = Self::row_count(column) as i32;
         let current = match column {
@@ -629,7 +735,8 @@ impl TimePicker {
             TimeColumn::Hour => self.hover_hour.set(next),
             TimeColumn::Minute => self.hover_minute.set(next),
         }
-        self.ensure_highlight_visible(column);
+        // 使用实际视口保证移动后的高亮可见。
+        self.ensure_highlight_visible(column, viewport_height);
     }
 
     fn reset_highlight_to_value(&self) -> bool {
@@ -640,18 +747,46 @@ impl TimePicker {
         hour_changed || minute_changed
     }
 
-    fn sync_highlight_to_value(&self, center: bool) {
+    // 将高亮与滚动同步到当前值和实际视口。
+    fn sync_highlight_to_value(&self, center: bool, viewport_height: f32) {
         let value = self.value.get();
         self.hover_hour.set(value.hour as usize);
         self.hover_minute.set(value.minute as usize);
         if center {
+            // 按实际视口居中小时选项。
             self.scroll_hour
-                .set(Self::centered_scroll(TimeColumn::Hour, value.hour as usize));
+                // 保存小时列居中滚动。
+                .set(Self::centered_scroll(
+                    // 指定小时列。
+                    TimeColumn::Hour,
+                    // 使用当前小时索引。
+                    value.hour as usize,
+                    // 使用实际视口高度。
+                    viewport_height,
+                ));
+            // 按实际视口居中分钟选项。
             self.scroll_min.set(Self::centered_scroll(
+                // 指定分钟列。
                 TimeColumn::Minute,
+                // 使用当前分钟索引。
                 value.minute as usize,
+                // 使用实际视口高度。
+                viewport_height,
             ));
         }
+    }
+}
+
+// 将任意视口高度收敛为有限非负值。
+fn finite_viewport_height(value: f32) -> f32 {
+    // 只保留有限输入。
+    if value.is_finite() {
+        // 负高度收敛为零。
+        value.max(0.0)
+    // 处理非有限输入。
+    } else {
+        // 非有限高度回退为零。
+        0.0
     }
 }
 
@@ -660,3 +795,10 @@ impl Default for TimePicker {
         Self::new()
     }
 }
+
+// 在测试构建中加载时间面板表面几何契约。
+#[cfg(test)]
+// 将契约保存在主组件文件之外以维持单文件行数门槛。
+#[path = "time_picker_tests.rs"]
+// 声明时间选择器的私有契约模块。
+mod time_picker_tests;
