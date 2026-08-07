@@ -371,6 +371,127 @@ fn wrapped_unbroken_line_matches_single_line_cross_alignment() {
     assert_eq!(output.total_size, baseline.total_size);
 }
 
+// 验证溢出模式在没有实际分行时不因 wrap 开关切换到不同几何语义。
+#[test]
+// 枚举方向、分布、对齐及两条轴的 bootstrap，覆盖两套求解器的公开等价边界。
+fn wrapped_unbroken_overflow_matches_streaming_overflow_matrix() {
+    // 构造带四侧非对称 margin 的首个自然尺寸子项。
+    let mut first = LayoutChild::new(ComponentId::new(66), Size::new(13.0, 7.0));
+    // 首项使用左二、上一、右四、下三的外边距。
+    first.margin = EdgeInsets::new(2.0, 1.0, 4.0, 3.0);
+    // 构造另一组非对称尺寸与 margin，避免交换轴后偶然对称。
+    let mut second = LayoutChild::new(ComponentId::new(67), Size::new(11.0, 9.0));
+    // 次项使用左五、上二、右一、下四的外边距。
+    second.margin = EdgeInsets::new(5.0, 2.0, 1.0, 4.0);
+    // 两个子项在八十乘六十的实际 frame 内沿任一主轴都不会换行。
+    let children = [first, second];
+    // 枚举两条主轴及其反向形式。
+    let directions = [
+        // 水平正向覆盖普通行流。
+        FlexDirection::Row,
+        // 水平反向覆盖容器末端镜像。
+        FlexDirection::RowReverse,
+        // 垂直正向覆盖普通列流。
+        FlexDirection::Column,
+        // 垂直反向覆盖容器末端镜像。
+        FlexDirection::ColumnReverse,
+    ];
+    // 枚举公开主轴分布的完整集合。
+    let justifications = [
+        // 起点分布保留自然游标。
+        JustifyContent::Start,
+        // 居中分布消费一半剩余空间。
+        JustifyContent::Center,
+        // 末端分布消费全部剩余空间。
+        JustifyContent::End,
+        // 两端分布把剩余空间加入项间。
+        JustifyContent::SpaceBetween,
+        // 环绕分布同时改变起点与项间距。
+        JustifyContent::SpaceAround,
+        // 均匀分布保留相等两端空间。
+        JustifyContent::SpaceEvenly,
+        // 溢出模式中的 Stretch 等价于自然起点流式排列。
+        JustifyContent::Stretch,
+    ];
+    // 枚举公开交叉轴对齐的完整集合。
+    let alignments = [
+        // 起点对齐保留自然交叉轴尺寸。
+        AlignItems::Start,
+        // 居中对齐覆盖非对称外边距。
+        AlignItems::Center,
+        // 末端对齐覆盖非对称外边距。
+        AlignItems::End,
+        // 拉伸对齐覆盖实际 frame 与 bootstrap。
+        AlignItems::Stretch,
+    ];
+    // 逐种方向构造轴向对称的实际与 bootstrap frame。
+    for direction in directions {
+        // 水平主轴使用宽度 bootstrap，垂直主轴使用高度 bootstrap。
+        let frames = if matches!(direction, FlexDirection::Row | FlexDirection::RowReverse) {
+            // 水平场景依次覆盖实际 frame、零主轴和零交叉轴。
+            [
+                // 两条轴均有实际尺寸。
+                Rect::new(4.0, 6.0, 80.0, 60.0),
+                // 零宽度触发自然主轴 bootstrap。
+                Rect::new(4.0, 6.0, 0.0, 60.0),
+                // 零高度触发自然交叉轴 bootstrap。
+                Rect::new(4.0, 6.0, 80.0, 0.0),
+            ]
+        } else {
+            // 垂直场景交换主轴与交叉轴的 bootstrap 尺寸。
+            [
+                // 两条轴均有实际尺寸。
+                Rect::new(4.0, 6.0, 80.0, 60.0),
+                // 零高度触发自然主轴 bootstrap。
+                Rect::new(4.0, 6.0, 80.0, 0.0),
+                // 零宽度触发自然交叉轴 bootstrap。
+                Rect::new(4.0, 6.0, 0.0, 60.0),
+            ]
+        };
+        // 逐种主轴分布比较两条溢出求解路径。
+        for justify in justifications {
+            // 逐种交叉轴对齐比较实际子项矩形与尺寸账本。
+            for align in alignments {
+                // 逐个 frame 覆盖实际分配与两种 bootstrap。
+                for frame in frames {
+                    // 构造不启用 wrap 的流式溢出基准。
+                    let mut streaming = FlexLayout::new()
+                        // 应用当前受测方向。
+                        .with_direction(direction)
+                        // 使用三像素固定间距。
+                        .with_gap(3.0)
+                        // 应用当前受测主轴分布。
+                        .with_justify(justify)
+                        // 应用当前受测交叉轴对齐。
+                        .with_align(align);
+                    // 开启自然尺寸溢出路径。
+                    streaming.overflow_content = true;
+                    // 执行单行流式基准布局。
+                    let baseline = streaming.layout(frame, &children);
+                    // 克隆相同布局参数以只改变 wrap 开关。
+                    let mut wrapped = streaming.clone();
+                    // 开启 wrapped 求解器，但当前子项不会在实际 frame 内分行。
+                    wrapped.wrap = true;
+                    // 执行受测 wrapped 溢出布局。
+                    let output = wrapped.layout(frame, &children);
+                    // wrap 开关不得改变任一子项的最终矩形。
+                    assert_eq!(
+                        output.positions, baseline.positions,
+                        // 失败消息标识完整组合，便于定位求解路径漂移。
+                        "positions diverged for {direction:?}, {justify:?}, {align:?}, {frame:?}"
+                    );
+                    // wrap 开关也不得改变自然内容尺寸账本。
+                    assert_eq!(
+                        output.total_size, baseline.total_size,
+                        // 失败消息沿用同一组合标识。
+                        "total size diverged for {direction:?}, {justify:?}, {align:?}, {frame:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
 // 验证多行默认 Stretch 把交叉轴剩余空间均分到各行。
 #[test]
 // 逐项 align_self 只覆盖项内对齐，不得阻止其他行消费扩展后的行高。
