@@ -313,18 +313,6 @@ impl Table {
         self.cell_anchor(row, column) != Some((row, column))
     }
 
-    pub(crate) fn span_width(&self, geometry: &TableColumnGeometry, column: usize, span: usize) -> f32 {
-        geometry
-            .columns
-            .iter()
-            .filter(|laid_out| {
-                laid_out.index >= column && laid_out.index < column.saturating_add(span)
-            })
-            .map(|laid_out| laid_out.width)
-            .sum::<f32>()
-            .max(self.columns.get(column).map_or(0.0, |column| column.width))
-    }
-
     pub(crate) fn span_height(&self, row: usize, span: usize) -> f32 {
         let mut height = self.row_h * span as f32;
         if self
