@@ -9,8 +9,8 @@ use crate::native::windowing::input::ControlSize;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 use crate::ui::widgets::input::date_calendar::{
-    calendar_popup_rect, draw_calendar_panel, hit_calendar_date, hit_month_navigation,
-    CalendarPanelState, MonthNavigation, CALENDAR_PANEL_HEIGHT,
+    draw_calendar_panel_in_rect, hit_calendar_date_in_rect, hit_month_navigation_in_rect,
+    CalendarPanelState, MonthNavigation,
 };
 use crate::ui::widgets::input::date_picker::{
     add_days, days_in_month, next_month, prev_month, Date, DisabledDate,
@@ -18,6 +18,17 @@ use crate::ui::widgets::input::date_picker::{
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
     WidgetTree,
+};
+
+// 声明 DateRangePicker 的表面约束几何模块。
+mod geometry;
+// 声明 DateRangePicker 的组合面板缓存方法模块。
+mod methods;
+
+// 引入组合面板绝对坐标转换、分区与表面裁剪函数。
+use geometry::{
+    absolute_date_range_popup_rect, date_range_popup_parts, date_range_surface_rect,
+    DateRangePopupParts,
 };
 
 const PRESET_GAP: f32 = 2.0;
@@ -95,6 +106,14 @@ component! {
         picker_size: ControlSize,
         last_frame: Cell<Option<Rect>>,
         pending_change: Cell<Option<(Date, Date)>>,
+        // 缓存相对触发器原点的最终组合面板矩形。
+        popup_rect: Cell<Rect>,
+        // 缓存最近登记或绘制使用的逻辑表面。
+        surface_rect: Cell<Option<Rect>>,
+        // 缓存最终组合面板对应的绝对触发器矩形。
+        popup_anchor_frame: Cell<Option<Rect>>,
+        // 累计当前呈现周期内旧新组合面板的绝对脏区。
+        popup_damage_rect: Cell<Rect>,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -121,7 +140,12 @@ component! {
                 }
 
                 if let Some(frame) = self.last_frame.get() {
-                    if let Some(index) = self.hit_preset(frame, *pos) {
+                    // 读取同帧登记、绘制和命中共享的实际组合面板。
+                    let popup = self.interaction_popup_rect(frame);
+                    // 从最终组合面板派生月历与预设分区。
+                    let parts = date_range_popup_parts(popup, self.presets.len());
+                    // 在缩放后的实际预设页脚中命中预设。
+                    if let Some(index) = self.hit_preset(parts, *pos) {
                         if let Some((_, preset)) = self.presets.get(index) {
                             if !self.range_has_disabled_endpoint(preset.start, preset.end) {
                                 self.commit_range(preset.start, preset.end);
@@ -130,7 +154,10 @@ component! {
                         }
                         return EventResult::Handled;
                     }
-                    if let Some(navigation) = hit_month_navigation(frame, *pos) {
+                    // 在缩放后的实际月历标题栏中命中月份导航。
+                    if let Some(navigation) =
+                        hit_month_navigation_in_rect(parts.calendar, *pos)
+                    {
                         let (year, month) = match navigation {
                             MonthNavigation::Previous => {
                                 prev_month(self.view_year.get(), self.view_month.get())
@@ -144,8 +171,9 @@ component! {
                         self.hover_date.set(None);
                         return EventResult::Handled;
                     }
-                    if let Some(date) = hit_calendar_date(
-                        frame,
+                    // 在缩放后的实际日期网格中命中日期。
+                    if let Some(date) = hit_calendar_date_in_rect(
+                        parts.calendar,
                         *pos,
                         self.view_year.get(),
                         self.view_month.get(),
@@ -166,8 +194,13 @@ component! {
             SystemEvent::PointerMove { pos, .. } => {
                 if self.open.get() {
                     if let Some(frame) = self.last_frame.get() {
-                        let hit = hit_calendar_date(
-                            frame,
+                        // 读取同帧登记、绘制和命中共享的实际组合面板。
+                        let popup = self.interaction_popup_rect(frame);
+                        // 从最终组合面板派生实际月历分区。
+                        let parts = date_range_popup_parts(popup, self.presets.len());
+                        // 在缩放后的实际日期网格中解析悬停日期。
+                        let hit = hit_calendar_date_in_rect(
+                            parts.calendar,
                             *pos,
                             self.view_year.get(),
                             self.view_month.get(),
@@ -242,7 +275,14 @@ component! {
 
     hit_test_frame => (&self, frame: Rect) -> Rect {
         if self.open.get() {
-            self.popup_bounds(frame)
+            // 读取最近登记或绘制记录的当前逻辑表面。
+            let surface = self.surface_or_fallback(frame);
+            // 解析并缓存当前实际组合面板。
+            let popup = self.remember_popup_rect(frame, surface);
+            // 将相对组合面板转换为窗口绝对坐标。
+            let popup = absolute_date_range_popup_rect(frame, popup);
+            // 触发器与当前组合面板命中框共同收敛到表面内。
+            date_range_surface_rect(frame, popup, surface)
         } else {
             frame
         }
@@ -347,12 +387,25 @@ component! {
         ctx.pop_clip();
 
         if self.open.get() {
+            // 从绘制上下文读取当前逻辑表面尺寸。
+            let surface_size = ctx.logical_surface_size();
+            // 将窗口原点与逻辑尺寸组合为当前表面矩形。
+            let surface = Rect::new(0.0, 0.0, surface_size.w, surface_size.h);
+            // 在绘制前解析并缓存同帧最终组合面板几何。
+            let popup = self.remember_popup_rect(frame, surface);
+            // 将相对触发器缓存转换为窗口绝对组合面板矩形。
+            let popup = absolute_date_range_popup_rect(frame, popup);
+            // 从最终组合面板派生月历与预设分区。
+            let parts = date_range_popup_parts(popup, self.presets.len());
             let pending = self.pending_start.get();
             let preview_range = pending
                 .zip(self.hover_date.get())
                 .map(|(start, end)| ordered_range(start, end));
-            draw_calendar_panel(
-                frame,
+            // 将组合弹层绘制限制在当前逻辑表面。
+            ctx.push_clip(surface);
+            // 使用最终月历分区驱动缩放月历绘制。
+            draw_calendar_panel_in_rect(
+                parts.calendar,
                 ctx,
                 CalendarPanelState {
                     year: self.view_year.get(),
@@ -363,20 +416,44 @@ component! {
                     disabled_date: self.disabled_date.as_ref(),
                 },
             );
-            self.draw_presets(frame, ctx);
+            // 使用同一组合分区绘制缩放后的预设页脚。
+            self.draw_presets(parts, ctx);
+            // 恢复组合弹层外层的逻辑表面裁剪。
+            ctx.pop_clip();
         }
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        self.popup_bounds(frame)
+        // 读取最近登记或绘制记录的当前逻辑表面。
+        let surface = self.surface_or_fallback(frame);
+        // 合并当前与本次呈现周期历史组合面板脏区。
+        let popup = self.damage_popup_rect(frame, surface);
+        // 将输入框和组合面板脏区限制在当前表面内。
+        date_range_surface_rect(frame, popup, surface)
     }
 
     overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         self.open.get().then(|| {
+            // 读取最近记录的表面或首次有限回退。
+            let surface = self.surface_or_fallback(frame);
+            // 解析并缓存当前实际组合面板。
+            let popup = self.remember_popup_rect(frame, surface);
+            // 将相对组合面板转换为窗口绝对坐标。
+            let bounds = absolute_date_range_popup_rect(frame, popup);
+            // 创建只覆盖实际组合面板的浮层登记。
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
-                .bounds(self.popup_bounds(frame))
+                // 登记边界与绘制、命中共用同一矩形。
+                .bounds(bounds)
                 .z_index(900)
         })
+    }
+
+    // 使用组件树提供的同帧表面创建日期范围面板登记。
+    overlay_entry_for_surface => (&self, id: ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+        // 在旧登记入口执行前刷新表面与实际组合面板缓存。
+        self.remember_popup_rect(frame, surface);
+        // 复用统一的组合面板登记逻辑。
+        self.overlay_entry(id, frame)
     }
 }
 
@@ -403,6 +480,14 @@ impl DateRangePicker {
             picker_size: config.size,
             last_frame: Cell::new(None),
             pending_change: Cell::new(None),
+            // 初始化为空的本地组合面板缓存。
+            popup_rect: Cell::new(Rect::zero()),
+            // 初始化为尚未取得真实逻辑表面。
+            surface_rect: Cell::new(None),
+            // 初始化为尚未记录绝对触发器锚点。
+            popup_anchor_frame: Cell::new(None),
+            // 初始化为空的组合面板历史脏区。
+            popup_damage_rect: Cell::new(Rect::zero()),
         }
     }
 
@@ -511,6 +596,11 @@ impl DateRangePicker {
     }
 
     fn open_from_current_value(&self) {
+        // 仅在关闭到开启的边沿开始新的组合面板呈现周期。
+        if !self.open.get() {
+            // 清除上一次呈现留下的表面与脏区缓存。
+            self.reset_popup_presentation();
+        }
         let anchor = self
             .current_range()
             .map(|(start, _)| start)
@@ -558,48 +648,55 @@ impl DateRangePicker {
         self.is_date_disabled(start) || self.is_date_disabled(end)
     }
 
-    fn hit_preset(&self, frame: Rect, position: Point) -> Option<usize> {
+    fn hit_preset(&self, parts: DateRangePopupParts, position: Point) -> Option<usize> {
+        // 无预设时不参与页脚命中。
         if self.presets.is_empty() {
+            // 返回未命中。
             return None;
         }
-        let popup = calendar_popup_rect(frame);
-        let footer_y = popup.y + CALENDAR_PANEL_HEIGHT + PRESET_GAP;
-        if position.x < popup.x
-            || position.x >= popup.x + popup.w
-            || position.y < footer_y + PRESET_VERTICAL_INSET
+        // 读取最终组合分区中的预设页脚。
+        let footer = parts.footer?;
+        // 无有效缩放行高时不参与命中。
+        if parts.preset_row_height <= 0.0 {
+            // 返回未命中。
+            return None;
+        }
+        // 检查页脚横向范围与缩放后首行起点。
+        if position.x < footer.x
+            // 检查页脚右边界。
+            || position.x >= footer.x + footer.w
+            // 检查缩放后的顶部内边距。
+            || position.y < footer.y + parts.preset_vertical_inset
+            // 检查页脚底边。
+            || position.y >= footer.y + footer.h
         {
+            // 页脚外返回未命中。
             return None;
         }
-        let index = ((position.y - footer_y - PRESET_VERTICAL_INSET) / PRESET_ROW_HEIGHT) as usize;
+        // 按最终页脚起点、内边距和行高解析预设索引。
+        let index = ((position.y - footer.y - parts.preset_vertical_inset)
+            // 使用缩放后的真实预设行高。
+            / parts.preset_row_height) as usize;
+        // 只返回当前预设集合内的索引。
         (index < self.presets.len()).then_some(index)
     }
 
-    fn popup_bounds(&self, frame: Rect) -> Rect {
-        let popup = calendar_popup_rect(frame);
-        let footer_height = if self.presets.is_empty() {
-            0.0
-        } else {
-            PRESET_GAP + PRESET_VERTICAL_INSET * 2.0 + PRESET_ROW_HEIGHT * self.presets.len() as f32
-        };
-        frame.union(&Rect::new(
-            popup.x,
-            popup.y,
-            popup.w,
-            CALENDAR_PANEL_HEIGHT + footer_height,
-        ))
-    }
-
-    fn draw_presets(&self, frame: Rect, ctx: &mut PaintContext) {
+    fn draw_presets(&self, parts: DateRangePopupParts, ctx: &mut PaintContext) {
+        // 无预设时不绘制页脚。
         if self.presets.is_empty() {
+            // 提前结束空页脚绘制。
             return;
         }
-        let popup = calendar_popup_rect(frame);
-        let footer = Rect::new(
-            popup.x,
-            popup.y + CALENDAR_PANEL_HEIGHT + PRESET_GAP,
-            popup.w,
-            PRESET_VERTICAL_INSET * 2.0 + PRESET_ROW_HEIGHT * self.presets.len() as f32,
-        );
+        // 读取最终组合分区中的预设页脚。
+        let Some(footer) = parts.footer else {
+            // 缩为空时不生成页脚绘制命令。
+            return;
+        };
+        // 空页脚或零字号不生成绘制命令。
+        if footer.w <= 0.0 || footer.h <= 0.0 || parts.preset_font_size <= 0.0 {
+            // 提前结束不可见页脚绘制。
+            return;
+        }
         let radius = Some(crate::draw::Radius::uniform(
             ctx.tokens().border_radius_sm(),
         ));
@@ -608,15 +705,23 @@ impl DateRangePicker {
         ctx.stroke_rect(footer, ctx.tokens().color_border(), 1.0, radius);
         let primary = ctx.tokens().color_primary();
         for (index, (label, _)) in self.presets.iter().enumerate() {
+            // 按最终页脚指标构造当前预设行。
             let row = Rect::new(
-                footer.x + 8.0,
-                footer.y + PRESET_VERTICAL_INSET + index as f32 * PRESET_ROW_HEIGHT,
-                footer.w - 16.0,
-                PRESET_ROW_HEIGHT,
+                footer.x + parts.preset_horizontal_inset,
+                footer.y + parts.preset_vertical_inset + index as f32 * parts.preset_row_height,
+                (footer.w - parts.preset_horizontal_inset * 2.0).max(0.0),
+                parts.preset_row_height,
             );
-            let text_y = ctx.visual_center_y(row, 12.0);
+            // 计算缩放后预设文字基线。
+            let text_y = ctx.visual_center_y(row, parts.preset_font_size);
             ctx.push_clip(row);
-            ctx.draw_text(label, Point::new(row.x, text_y), primary, 12.0);
+            // 在当前实际预设行内绘制文字。
+            ctx.draw_text(
+                label,
+                Point::new(row.x, text_y),
+                primary,
+                parts.preset_font_size,
+            );
             ctx.pop_clip();
         }
         ctx.pop_clip();
@@ -636,3 +741,10 @@ fn ordered_range(start: Date, end: Date) -> (Date, Date) {
         (end, start)
     }
 }
+
+// 将 DateRangePicker 表面约束契约放在独立测试文件中。
+#[cfg(test)]
+// 使用显式路径保持主实现文件低于行数上限。
+#[path = "date_range_picker_tests.rs"]
+// 声明当前模块的私有回归测试。
+mod tests;
