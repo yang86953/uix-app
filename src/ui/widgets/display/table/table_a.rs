@@ -13,13 +13,13 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::rc::Rc;
 
+use super::builder::TableBuilder;
 use super::config::{flatten_column_groups, merge_table_columns};
 use super::geometry::{ColumnZone, TableColumnGeometry};
-use super::builder::TableBuilder;
 use super::types::{
-    finite_nonnegative, SortDirection, TableChange, TableColumn, TableColumnGroup, DataTable,
-    TableDataError, TablePagination, TablePointerAction, TableRow, TableRowClickCallback,
-    implicit_row_keys,
+    finite_nonnegative, implicit_row_keys, DataTable, SortDirection, TableChange, TableColumn,
+    TableColumnGroup, TableDataError, TablePagination, TablePointerAction, TableRow,
+    TableRowClickCallback,
 };
 use super::Table;
 
@@ -287,25 +287,61 @@ impl Table {
     }
 
     pub(crate) fn cell_anchor(&self, row: usize, column: usize) -> Option<(usize, usize)> {
+        // 越过表格边界的查询没有对应逻辑单元格。
         if row >= self.rows.len() || column >= self.columns.len() {
             return None;
         }
+        // 没有任何跨度时直接返回当前物理单元格。
         if !self.has_spans() {
             return Some((row, column));
         }
+        // 以目标列宽建立已被更早锚点覆盖的扫描位图。
+        let scan_width = column.saturating_add(1);
+        // 只为目标左上矩形分配必要的覆盖状态。
+        let mut covered = vec![false; scan_width.saturating_mul(row.saturating_add(1))];
+        // 按行主序扫描所有可能的逻辑锚点。
         for anchor_row in 0..=row {
+            // 只需扫描目标列之前的逻辑列。
             for anchor_column in 0..=column {
+                // 读取当前候选在覆盖位图中的状态。
+                let covered_index = anchor_row * scan_width + anchor_column;
+                // 已被更早有效锚点覆盖的物理单元格不能再次声明新锚点。
+                if covered[covered_index] {
+                    continue;
+                }
+                // 读取当前未覆盖候选的有效行跨度。
                 let row_span = self.row_span(anchor_row, anchor_column);
+                // 读取当前未覆盖候选的有效列跨度。
                 let col_span = self.col_span(anchor_row, anchor_column);
-                if row_span > 0
-                    && col_span > 0
-                    && row < anchor_row.saturating_add(row_span)
+                // 零跨度候选不占用任何物理单元格。
+                if row_span == 0 || col_span == 0 {
+                    continue;
+                }
+                // 当前候选覆盖目标时，它就是目标的唯一有效锚点。
+                if row < anchor_row.saturating_add(row_span)
                     && column < anchor_column.saturating_add(col_span)
                 {
                     return Some((anchor_row, anchor_column));
                 }
+                // 计算当前候选在扫描矩形内的行覆盖排他末端。
+                let covered_row_end = anchor_row
+                    .saturating_add(row_span)
+                    .min(row.saturating_add(1));
+                // 计算当前候选在扫描矩形内的列覆盖排他末端。
+                let covered_column_end = anchor_column
+                    .saturating_add(col_span)
+                    .min(column.saturating_add(1));
+                // 将当前有效锚点覆盖的后续物理单元标记为不可再锚定。
+                for covered_row in anchor_row..covered_row_end {
+                    // 逐列标记当前锚点的物理覆盖范围。
+                    for covered_column in anchor_column..covered_column_end {
+                        // 保存该物理单元格已经属于更早锚点。
+                        covered[covered_row * scan_width + covered_column] = true;
+                    }
+                }
             }
         }
+        // 目标不在任何有效跨度内时保留无锚点结果。
         None
     }
 
@@ -596,7 +632,6 @@ impl Table {
         self.row_click = Some(Rc::new(callback));
         self
     }
-
 }
 
 // 仅在单元测试中编译表格选择列重叠交互契约。
