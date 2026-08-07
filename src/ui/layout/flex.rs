@@ -732,10 +732,30 @@ fn compute_wrapped(
     // Position children line by line
     let mut child_rects = vec![Rect::zero(); count];
 
-    // 交叉轴总尺寸：所有行/列的交叉轴尺寸 + 行间/列间 gap
-    // cursor_cross 已累加每行交叉轴 + line_gap，减去最后一个多余的 gap
-    let total_cross = (cursor_cross - line_gap).max(0.0);
+    // 自然交叉轴总尺寸由所有行高与行间 gap 组成。
+    let natural_total_cross = (cursor_cross - line_gap).max(0.0);
+    // 容器级 Stretch 同时承担多行交叉轴分布，让 wrap 开关不改变单行填充语义。
     let cross_align = input.align_items;
+    // 只有实际容器还存在正交叉轴剩余空间时才扩展行盒。
+    if cross_align == AlignItems::Stretch && container_cross > natural_total_cross {
+        // 扣除自然行高与固定 gap 后，把剩余空间等分到每一行。
+        let extra_per_line = (container_cross - natural_total_cross) / lines.len() as f32;
+        // 原位同步每行起点与行高，不复制子项或新增第二套行账本。
+        for (line_index, line_cross_size) in line_max_cross.iter_mut().enumerate() {
+            // 前置行获得的扩展量会共同推后当前行起点。
+            line_cross_positions[line_index] += extra_per_line * line_index as f32;
+            // 当前行自身消费一份交叉轴剩余空间。
+            *line_cross_size += extra_per_line;
+        }
+    }
+    // Stretch 使用实际容器交叉尺寸，其他对齐继续使用自然行组尺寸。
+    let total_cross = if cross_align == AlignItems::Stretch {
+        // 容器较小或 bootstrap 时不得压低自然行组尺寸。
+        natural_total_cross.max(container_cross)
+    } else {
+        // Center/End/Start 保留既有自然行组范围。
+        natural_total_cross
+    };
     let cross_start_offset = match cross_align {
         AlignItems::Center => (container_cross - total_cross) * 0.5,
         AlignItems::End => (container_cross - total_cross).max(0.0),
