@@ -332,6 +332,13 @@ fn find_closing_marker(text: &str, start: usize, marker: &str) -> Option<usize> 
         let candidate = search_from + relative;
         // 三字符强调序列的末尾两个字符应优先闭合外层双字符样式。
         let close = closing_marker_start(text, candidate, marker);
+        // 被反斜杠转义的标记不能结束当前样式段。
+        if is_escaped_at(text, candidate) {
+            // 跳过当前转义标记，继续寻找后续的真实闭合位置。
+            search_from = candidate + marker.len();
+            // 当前候选已确认不是闭合位置。
+            continue;
+        }
         // 空正文不构成有效样式段。
         if close > start && can_close_marker(text, close, marker) {
             // 返回第一个满足规则的闭合位置。
@@ -343,6 +350,25 @@ fn find_closing_marker(text: &str, start: usize, marker: &str) -> Option<usize> 
     }
     // 没有找到有效的闭合标记。
     None
+}
+
+/// 判断指定字节位置的标点是否被奇数个反斜杠转义。
+fn is_escaped_at(text: &str, index: usize) -> bool {
+    // 从标点前方向后统计连续反斜杠数量。
+    let mut slash_count = 0usize;
+    // 只检查紧邻标点的反斜杠，不影响更早的普通文本。
+    for byte in text.as_bytes()[..index].iter().rev() {
+        // 连续反斜杠构成转义判断依据。
+        if *byte == b'\\' {
+            // 累加一个紧邻的反斜杠。
+            slash_count += 1;
+        } else {
+            // 遇到其他字符后结束反向扫描。
+            break;
+        }
+    }
+    // 奇数个反斜杠转义标点，偶数个反斜杠则恢复标记语义。
+    slash_count % 2 == 1
 }
 
 /// 调整连续同类标记中的闭合起点，支持常见嵌套强调写法。
@@ -581,6 +607,24 @@ mod tests {
             vec![RichTextSegment::Text {
                 content: "未闭合 **粗体、路径 foo_bar_baz".into(),
                 style: RichTextStyle::default(),
+            }]
+        );
+    }
+
+    // 验证转义的闭合标记不会提前截断外层斜体段。
+    #[test]
+    fn escaped_style_closers_do_not_end_the_outer_style() {
+        // 解析正文中的字面星号和末尾真实斜体闭合标记。
+        let segments = parse_rich_text(r"*包含 \* 字面*");
+        // 被转义星号应保留在同一个斜体 Text 段内。
+        assert_eq!(
+            segments,
+            vec![RichTextSegment::Text {
+                content: "包含 * 字面".into(),
+                style: RichTextStyle {
+                    italic: true,
+                    ..Default::default()
+                },
             }]
         );
     }
