@@ -91,4 +91,3 @@ fn parse_inline_text(text: &str, segments: &mut Vec<RichTextSegment>) {
         });
     }
 }
-

@@ -218,7 +218,9 @@ component! {
             400.0_f32
         };
 
-        if self.layout_dirty.get() || self.layout_height.get() <= 0.0 {
+        // 宽度约束变化会改变折行与固有高度，必须参与测量缓存失效。
+        let width_changed = (self.last_layout_width.get() - est_width).abs() > 0.5;
+        if self.layout_dirty.get() || self.layout_height.get() <= 0.0 || width_changed {
             let dpi = 96.0;
             let fs = self.resolved_font_size_px(dpi);
             let (_, total_h, max_w) = layout_rich_text(
@@ -226,6 +228,14 @@ component! {
             );
             self.layout_height.set(total_h);
             self.content_width.set(max_w);
+            // 旧行坐标不再对应当前约束，等待绘制阶段用真实字体重新建立。
+            self.layout_lines.borrow_mut().clear();
+            // 旧代码复制区域同样不能继续参与新宽度下的命中。
+            self.code_regions.borrow_mut().clear();
+            // 记录本轮估算宽度，避免同一布局收敛周期重复测量。
+            self.last_layout_width.set(est_width);
+            // 清除真实布局颜色键，强制下一次绘制刷新真实字体几何。
+            self.last_layout_color.set(None);
             self.layout_dirty.set(false);
         }
         constraints.clamp(Size::new(self.content_width.get(), self.layout_height.get()))

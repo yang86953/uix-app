@@ -1,9 +1,9 @@
-// 导入布局契约测试使用的核心几何类型。
-use uix::core::{ComponentId, EdgeInsets, Rect, Size};
+// 导入布局契约测试使用的核心几何与测量约束类型。
+use uix::core::{ComponentId, Constraints, EdgeInsets, Rect, Size};
 // 导入三个共享布局入口及其公开输出类型。
 use uix::ui::{
     AlignItems, BoxModel, FlexLayout, GridLayout, GridTrack, JustifyContent, LayoutChild,
-    LayoutEngine, LayoutOutput,
+    LayoutEngine, LayoutOutput, RichText, RichTextSegment, RichTextStyle, WidgetLayout,
 };
 
 // 断言实际布局坐标不是测量阶段的无界哨兵或非有限值。
@@ -801,4 +801,25 @@ fn grid_item_justify_remains_independent_from_content_justify() {
     assert_eq!(output.positions[0], Rect::new(30.0, 0.0, 20.0, 10.0));
     // 固定列继续占满一百像素父级宽度。
     assert_eq!(output.total_size, Size::new(100.0, 20.0));
+}
+
+// 验证 RichText 的测量缓存把当前宽度约束纳入失效键。
+#[test]
+// 同一内容从宽约束缩窄后必须重新折行并增加固有高度。
+fn rich_text_measure_reflows_when_width_constraint_changes() {
+    // 构造足以在窄约束内折成多行的纯文本段。
+    let segment = RichTextSegment::Text {
+        // 使用多个带空格单词覆盖词级折行路径。
+        content: "alpha beta gamma delta epsilon zeta eta theta".to_string(),
+        // 使用默认字体样式隔离宽度缓存行为。
+        style: RichTextStyle::default(),
+    };
+    // 构造只包含受测文本段的富文本组件。
+    let rich_text = RichText::new().content(vec![segment]);
+    // 先在宽约束下建立单行或较少行数的测量缓存。
+    let wide = rich_text.measure(Constraints::loose(Size::new(400.0, 400.0)));
+    // 再用同一组件实例在显著更窄的宽度下测量。
+    let narrow = rich_text.measure(Constraints::loose(Size::new(80.0, 400.0)));
+    // 窄布局必须因新增折行而高于宽布局，不能复用旧高度。
+    assert!(narrow.h > wide.h, "narrow={narrow:?}, wide={wide:?}");
 }
