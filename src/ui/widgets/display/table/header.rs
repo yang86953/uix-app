@@ -2,7 +2,8 @@ use crate::core::Rect;
 use crate::draw::Radius;
 use crate::ui::component::paint_context::PaintContext;
 
-use super::geometry::{ColumnZone, TableColumnGeometry};
+// 引入共享列区绘制层级与列几何快照。
+use super::geometry::{TableColumnGeometry, COLUMN_PAINT_ORDER};
 use super::types::SortDirection;
 use super::Table;
 
@@ -65,7 +66,8 @@ pub(super) fn paint(
         paint_group_titles(table, header_rect, ctx, geometry);
     }
 
-    for zone in [ColumnZone::Middle, ColumnZone::Left, ColumnZone::Right] {
+    // 按共享层级绘制叶表头，确保固定区覆盖关系与命中一致。
+    for zone in COLUMN_PAINT_ORDER {
         let Some(zone_clip) = geometry.clip_for(zone, header_rect.y, header_rect.h) else {
             continue;
         };
@@ -185,7 +187,8 @@ fn paint_group_titles(
         let Some(title) = group.title.as_deref() else {
             continue;
         };
-        for zone in [ColumnZone::Middle, ColumnZone::Left, ColumnZone::Right] {
+        // 分组表头复用叶表头的列区层级。
+        for zone in COLUMN_PAINT_ORDER {
             let mut members = geometry.columns.iter().filter(|column| {
                 column.zone == zone
                     && column.index >= group.start

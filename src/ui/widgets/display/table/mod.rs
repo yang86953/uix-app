@@ -30,7 +30,8 @@ mod tests;
 pub(crate) mod types;
 
 use config::{flatten_column_groups, merge_table_columns};
-use geometry::{ColumnZone, TableColumnGeometry};
+// 引入共享列区绘制层级与列几何快照。
+use geometry::{TableColumnGeometry, COLUMN_PAINT_ORDER};
 use types::{
     finite_nonnegative, ColumnGroupRange, TablePaginationCallback, TablePointerAction,
     TableResizeDrag, TableRowClickCallback,
@@ -455,7 +456,8 @@ component! {
                 }
             }
 
-            for zone in [ColumnZone::Middle, ColumnZone::Left, ColumnZone::Right] {
+            // 表体复用表头的共享列区层级。
+            for zone in COLUMN_PAINT_ORDER {
                 let Some(clip) = column_geometry.clip_for(zone, row_rect.y, row_rect.h) else {
                     continue;
                 };
