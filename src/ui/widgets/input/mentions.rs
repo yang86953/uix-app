@@ -11,6 +11,19 @@ use crate::ui::{
 };
 use std::cell::{Cell, RefCell};
 
+// 将表面约束与坐标转换隔离到私有几何模块。
+mod geometry;
+// 将弹层缓存与实际视口方法隔离到私有实现模块。
+mod methods;
+
+// 复用所有 Mentions 消费端共享的最终几何函数。
+use geometry::{
+    // 将相对弹层转换为窗口绝对坐标。
+    absolute_mentions_popup_rect,
+    // 合并触发器、弹层与当前表面。
+    mentions_surface_rect,
+};
+
 const CONTROL_HEIGHT: f32 = 32.0;
 const SUGGESTION_ROW_HEIGHT: f32 = 28.0;
 const MAX_POPUP_HEIGHT: f32 = 280.0;
@@ -60,6 +73,16 @@ component! {
         scroll_delta_strip: Cell<(f32, f32)>,
         /// 最近一次实际布局尺寸对应的本地交互框。
         last_frame: Cell<Option<Rect>>,
+        /// 相对触发器原点的最终弹层矩形。
+        popup_rect: Cell<Rect>,
+        /// 弹层缓存对应的显示行数。
+        popup_row_count: Cell<usize>,
+        /// 最近登记或绘制使用的逻辑表面。
+        surface_rect: Cell<Option<Rect>>,
+        /// 最近登记时的绝对触发器锚点。
+        popup_anchor_frame: Cell<Option<Rect>>,
+        /// 当前呈现周期内新旧绝对弹层脏区。
+        popup_damage_rect: Cell<Rect>,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -156,7 +179,8 @@ component! {
                         delta.y,
                         self.filtered.len(),
                         SUGGESTION_ROW_HEIGHT,
-                        self.popup_height(self.filtered.len()),
+                        // 滚轮范围使用表面约束后的实际视口。
+                        self.effective_popup_viewport_height(self.filtered.len()),
                     );
                     if dy.abs() > 0.01 {
                         self.push_scroll_delta(0.0, dy);
@@ -254,7 +278,14 @@ component! {
 
     hit_test_frame => (&self, frame: Rect) -> Rect {
         if self.suggesting {
-            mentions_dirty_rect(frame, self.filtered.len())
+            // 读取最近登记或绘制记录的当前逻辑表面。
+            let surface = self.surface_or_fallback(frame, self.filtered.len());
+            // 命中只使用当前实际候选行数解析弹层。
+            let popup = self.remember_popup_rect(frame, surface, self.filtered.len());
+            // 将相对弹层转换为窗口绝对坐标。
+            let popup = absolute_mentions_popup_rect(frame, popup);
+            // 触发器与实际弹层命中框共同收敛到当前表面。
+            mentions_surface_rect(frame, popup, surface)
         } else {
             frame
         }
@@ -358,18 +389,33 @@ component! {
         ctx.pop_clip();
 
         if self.suggesting {
-            let popup = mentions_popup_rect(frame, self.filtered.len());
+            // 从绘制上下文读取当前逻辑表面尺寸。
+            let surface_size = ctx.logical_surface_size();
+            // 将窗口原点与逻辑尺寸组合为当前表面矩形。
+            let surface = Rect::new(0.0, 0.0, surface_size.w, surface_size.h);
+            // 在绘制弹层前解析并缓存同帧最终几何。
+            let popup = self.remember_popup_rect(frame, surface, self.filtered.len());
+            // 将相对触发器缓存转换为窗口绝对弹层矩形。
+            let menu_rect = absolute_mentions_popup_rect(frame, popup);
+            // 空表面不生成可见提及弹层。
+            if menu_rect.w <= 0.0 || menu_rect.h <= 0.0 {
+                // 保留输入框绘制结果并跳过弹层。
+                return;
+            }
             let panel_radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
-            ctx.push_clip(popup);
-            ctx.fill_rect(popup, ctx.tokens().color_bg_elevated(), panel_radius);
-            ctx.stroke_rect(popup, border, 1.0, panel_radius);
+            // 将整个提及弹层裁剪到当前逻辑表面。
+            ctx.push_clip(surface);
+            // 再按最终弹层矩形裁剪候选行与边框。
+            ctx.push_clip(menu_rect);
+            ctx.fill_rect(menu_rect, ctx.tokens().color_bg_elevated(), panel_radius);
+            ctx.stroke_rect(menu_rect, border, 1.0, panel_radius);
 
             if self.filtered.is_empty() {
                 let no_data_area = Rect::new(
-                    popup.x + 10.0,
-                    popup.y,
-                    (popup.w - 20.0).max(0.0),
-                    popup.h,
+                    menu_rect.x + 10.0,
+                    menu_rect.y,
+                    (menu_rect.w - 20.0).max(0.0),
+                    menu_rect.h,
                 );
                 let y = ctx.visual_center_y(no_data_area, FONT_SIZE);
                 ctx.push_clip(no_data_area);
@@ -381,6 +427,8 @@ component! {
                 );
                 ctx.pop_clip();
                 ctx.pop_clip();
+                // 恢复弹层外层的逻辑表面裁剪。
+                ctx.pop_clip();
                 return;
             }
 
@@ -388,14 +436,16 @@ component! {
             let (start, end) = self.dropdown_scroll.scroll_range(
                 self.filtered.len(),
                 SUGGESTION_ROW_HEIGHT,
-                popup.h,
+                menu_rect.h,
             );
             for (index, option) in self.filtered.iter().enumerate().take(end).skip(start) {
-                let y = popup.y + index as f32 * SUGGESTION_ROW_HEIGHT - scroll_offset;
-                if y + SUGGESTION_ROW_HEIGHT <= popup.y || y >= popup.y + popup.h {
+                let y = menu_rect.y + index as f32 * SUGGESTION_ROW_HEIGHT - scroll_offset;
+                if y + SUGGESTION_ROW_HEIGHT <= menu_rect.y
+                    || y >= menu_rect.y + menu_rect.h
+                {
                     continue;
                 }
-                let item_rect = Rect::new(popup.x, y, popup.w, SUGGESTION_ROW_HEIGHT);
+                let item_rect = Rect::new(menu_rect.x, y, menu_rect.w, SUGGESTION_ROW_HEIGHT);
                 if index == self.selected_index || self.hovered_option == Some(index) {
                     ctx.fill_rect(item_rect, ctx.tokens().color_fill_tertiary(), None);
                 }
@@ -411,19 +461,46 @@ component! {
                 ctx.pop_clip();
             }
             ctx.pop_clip();
+            // 恢复弹层外层的逻辑表面裁剪。
+            ctx.pop_clip();
         }
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        mentions_dirty_rect(frame, self.suggestion_damage_rows())
+        // 读取当前候选行数供表面回退与脏区解析共用。
+        let row_count = self.filtered.len();
+        // 读取最近登记或绘制记录的当前逻辑表面。
+        let surface = self.surface_or_fallback(frame, row_count);
+        // 合并当前与本次呈现周期历史弹层脏区。
+        let popup = self.damage_popup_rect(frame, surface, row_count);
+        // 将输入框和弹层脏区限制在当前表面内。
+        mentions_surface_rect(frame, popup, surface)
     }
 
     overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         self.suggesting.then(|| {
+            // 读取当前候选行数供表面回退与弹层解析共用。
+            let row_count = self.filtered.len();
+            // 读取最近记录的表面或首次有限回退。
+            let surface = self.surface_or_fallback(frame, row_count);
+            // 解析并缓存当前实际弹层。
+            let popup = self.remember_popup_rect(frame, surface, row_count);
+            // 将相对弹层转换为窗口绝对坐标。
+            let bounds = absolute_mentions_popup_rect(frame, popup);
+            // 创建只覆盖实际弹层的浮层登记。
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
-                .bounds(mentions_dirty_rect(frame, self.filtered.len()))
+                // 登记边界与绘制、命中共用同一矩形。
+                .bounds(bounds)
                 .z_index(900)
         })
+    }
+
+    // 使用组件树提供的同帧表面创建提及弹层登记。
+    overlay_entry_for_surface => (&self, id: ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+        // 在旧登记入口执行前刷新表面与实际弹层缓存。
+        self.remember_popup_rect(frame, surface, self.filtered.len());
+        // 复用统一的提及弹层登记逻辑。
+        self.overlay_entry(id, frame)
     }
 }
 
@@ -453,6 +530,16 @@ impl Mentions {
             dropdown_scroll: VirtualListScroll::new(),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
             last_frame: Cell::new(None),
+            // 首次表面解析前弹层缓存为空。
+            popup_rect: Cell::new(Rect::zero()),
+            // 零行标记尚未生成有效弹层缓存。
+            popup_row_count: Cell::new(0),
+            // 首次登记或绘制前尚未取得当前逻辑表面。
+            surface_rect: Cell::new(None),
+            // 首次登记前尚未取得绝对触发器锚点。
+            popup_anchor_frame: Cell::new(None),
+            // 首次呈现前没有历史弹层脏区。
+            popup_damage_rect: Cell::new(Rect::zero()),
         }
     }
 
@@ -484,18 +571,11 @@ impl Mentions {
         })
     }
 
-    fn popup_height(&self, row_count: usize) -> f32 {
-        (row_count.max(1) as f32 * SUGGESTION_ROW_HEIGHT).min(MAX_POPUP_HEIGHT)
-    }
-
     fn popup_local_rect(&self) -> Rect {
+        // 读取事件路径使用的本地触发器 frame。
         let frame = self.interaction_frame();
-        Rect::new(
-            0.0,
-            frame.h,
-            frame.w.max(MIN_POPUP_WIDTH),
-            self.popup_height(self.filtered.len()),
-        )
+        // 返回当前表面解析后的最终本地弹层。
+        self.interaction_popup_rect(frame, self.filtered.len())
     }
 
     fn dropdown_row_at(&self, pos: Point) -> Option<usize> {
@@ -504,6 +584,11 @@ impl Mentions {
             return None;
         }
         let local_y = pos.y - popup.y + self.dropdown_scroll.scroll_offset();
+        // 负向内容坐标不对应任何候选行。
+        if local_y < 0.0 {
+            // 避免负浮点转换为无意义索引。
+            return None;
+        }
         let index = (local_y / SUGGESTION_ROW_HEIGHT).floor() as usize;
         (index < self.filtered.len()).then_some(index)
     }
@@ -521,7 +606,8 @@ impl Mentions {
         if self.selected_index >= self.filtered.len() {
             return;
         }
-        let viewport_height = self.popup_height(self.filtered.len());
+        // 键盘显露使用表面约束后的实际视口高度。
+        let viewport_height = self.effective_popup_viewport_height(self.filtered.len());
         let old_offset = self.dropdown_scroll.scroll_offset();
         let row_top = self.selected_index as f32 * SUGGESTION_ROW_HEIGHT;
         let row_bottom = row_top + SUGGESTION_ROW_HEIGHT;
@@ -616,7 +702,23 @@ impl Mentions {
         }
 
         let query = query.to_owned();
-        let query_changed = !self.suggesting || self.search_text != query;
+        // 记录有效活动查询是否开始新的呈现周期。
+        let starts_presentation = !self.suggesting;
+        // 只有新呈现周期才丢弃上一周期的弹层历史。
+        if starts_presentation {
+            // 新呈现周期重新收集弹层脏区。
+            self.popup_damage_rect.set(Rect::zero());
+            // 新呈现周期等待当前帧重新解析弹层。
+            self.popup_row_count.set(0);
+            // 丢弃上一呈现周期的相对弹层缓存。
+            self.popup_rect.set(Rect::zero());
+            // 等待当前帧取得最新逻辑表面。
+            self.surface_rect.set(None);
+            // 等待当前帧取得最新绝对锚点。
+            self.popup_anchor_frame.set(None);
+        }
+        // 新呈现或光标查询变化都需要刷新候选集合。
+        let query_changed = starts_presentation || self.search_text != query;
         self.search_text = query;
         self.suggesting = true;
         if query_changed {
@@ -693,10 +795,6 @@ impl Mentions {
         self.pending_change.replace(Some(self.value.clone()));
     }
 
-    fn suggestion_damage_rows(&self) -> usize {
-        self.options.len().max(self.filtered.len()).max(1)
-    }
-
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Mentions {
             placeholder: self.placeholder.clone(),
@@ -717,20 +815,6 @@ impl Mentions {
     }
 }
 
-fn mentions_dirty_rect(frame: Rect, option_count: usize) -> Rect {
-    frame.union(&mentions_popup_rect(frame, option_count))
-}
-
-fn mentions_popup_rect(frame: Rect, option_count: usize) -> Rect {
-    let popup_height = (option_count.max(1) as f32 * SUGGESTION_ROW_HEIGHT).min(MAX_POPUP_HEIGHT);
-    Rect::new(
-        frame.x,
-        frame.y + frame.h,
-        frame.w.max(MIN_POPUP_WIDTH),
-        popup_height,
-    )
-}
-
 fn byte_index_for_char(value: &str, char_index: usize) -> usize {
     value
         .char_indices()
@@ -742,3 +826,10 @@ fn byte_index_for_char(value: &str, char_index: usize) -> usize {
 fn point_in_half_open_rect(rect: Rect, point: Point) -> bool {
     point.x >= rect.x && point.x < rect.x + rect.w && point.y >= rect.y && point.y < rect.y + rect.h
 }
+
+// 将 Mentions 表面约束契约放在独立测试文件中。
+#[cfg(test)]
+// 使用显式路径保持主实现文件低于行数上限。
+#[path = "mentions_tests.rs"]
+// 声明当前模块的私有回归测试。
+mod tests;
