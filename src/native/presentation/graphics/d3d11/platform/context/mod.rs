@@ -156,7 +156,9 @@ pub struct D3d11Context {
     /// surface 重建代际；同 extent 重建也必须推进该值。
     surface_generation: u64,
     /// 迁移期薄 RHI 的 D3D11 资源与 pass 状态。
-    pub(crate) rhi_device: D3d11RhiDevice,
+    // RHI 设备只在 context 及其实现子模块内流转，不扩大到整个 crate。
+    pub(in crate::native::presentation::graphics::d3d11::platform::context) rhi_device:
+        D3d11RhiDevice,
     /// test-harness 安排的下一次 owner-thread device-lost 预检。
     #[cfg(feature = "test-harness")]
     rhi_device_lost_for_test: bool,

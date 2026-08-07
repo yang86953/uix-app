@@ -126,6 +126,14 @@ impl Platform {
         let values: Vec<GpuAdapterInfo> = match backend {
             #[cfg(all(windows, feature = "d3d11"))]
             GraphicsBackend::Direct3D11 => enumerate_dxgi_adapters()?,
+            // 仅在存在其他 feature 或非 Windows D3D11 环境时保留兼容失败分支。
+            #[cfg(any(
+                not(all(windows, feature = "d3d11")),
+                feature = "vulkan",
+                feature = "d3d12",
+                feature = "metal",
+                feature = "opengles"
+            ))]
             _ => return Err(not_implemented_backend(backend)),
         };
         Ok(values.into_boxed_slice())
@@ -262,6 +270,14 @@ fn enumerate_dxgi_adapters() -> Result<Vec<GpuAdapterInfo>, Error> {
     Ok(adapters)
 }
 
+// 只有兼容失败分支存在时才需要构造该诊断错误。
+#[cfg(any(
+    not(all(windows, feature = "d3d11")),
+    feature = "vulkan",
+    feature = "d3d12",
+    feature = "metal",
+    feature = "opengles"
+))]
 fn not_implemented_backend(backend: GraphicsBackend) -> Error {
     Error::new(
         Errc::NotImplemented,
