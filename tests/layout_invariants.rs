@@ -639,6 +639,34 @@ fn grid_child_align_self_overrides_container_alignment() {
     assert_eq!(output.positions[0], Rect::new(0.0, 22.0, 10.0, 10.0));
 }
 
+// 验证低层 GridLayout 的单元格内 justify 与整组列轨内容对齐保持独立。
+#[test]
+// 新增内容对齐通道不能破坏既有 with_justify 构建器语义。
+fn grid_item_justify_remains_independent_from_content_justify() {
+    // 构造二十像素自然宽度并带非对称水平 margin 的子项。
+    let mut child = LayoutChild::new(ComponentId::new(54), Size::new(20.0, 10.0));
+    // 左 margin 十、右 margin 三十，使单元格内可用宽度为六十。
+    child.margin = EdgeInsets::new(10.0, 0.0, 30.0, 0.0);
+    // 在一百像素固定列中组合单元格居中与轨道组起始对齐。
+    let output = GridLayout::new()
+        // 固定列本身占满父级，隔离内容分布的额外空间。
+        .with_columns(vec![GridTrack::Px(100.0)])
+        // 固定行保留二十像素高度。
+        .with_rows(vec![GridTrack::Px(20.0)])
+        // 既有 with_justify 继续控制单元格内子项居中。
+        .with_justify(JustifyContent::Center)
+        // 新通道只控制整组列轨并保持起始对齐。
+        .with_content_justify(JustifyContent::Start)
+        // 子项高度保持自然尺寸。
+        .with_align(AlignItems::Start)
+        // 执行低层公开布局入口。
+        .layout(Rect::new(0.0, 0.0, 100.0, 20.0), &[child]);
+    // margin box 居中后子项横坐标应为三十像素。
+    assert_eq!(output.positions[0], Rect::new(30.0, 0.0, 20.0, 10.0));
+    // 固定列继续占满一百像素父级宽度。
+    assert_eq!(output.total_size, Size::new(100.0, 20.0));
+}
+
 // 验证溢出 Flex 在交叉轴对齐时先扣除两侧 margin。
 #[test]
 // 同时覆盖居中与末端对齐，防止非对称 margin 重复偏移。

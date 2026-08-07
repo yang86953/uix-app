@@ -167,6 +167,8 @@ pub(crate) struct GridInput<'a> {
     pub children: &'a [GridChild],
     pub align_items: AlignItems,
     pub justify_items: JustifyContent,
+    // 整组列轨在父级水平剩余空间中的对齐方式。
+    pub justify_content: JustifyContent,
 }
 
 impl Default for GridInput<'_> {
@@ -181,6 +183,8 @@ impl Default for GridInput<'_> {
             children: &[],
             align_items: AlignItems::Stretch,
             justify_items: JustifyContent::Start,
+            // 默认保持列轨组贴近水平起点。
+            justify_content: JustifyContent::Start,
         }
     }
 }
