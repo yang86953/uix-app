@@ -90,10 +90,10 @@ fn overflow_flex_honors_justify_content() {
     assert_eq!(distributed.positions[1], Rect::new(90.0, 0.0, 10.0, 8.0));
 }
 
-// 验证固有主轴的反向溢出布局按自然内容长度镜像。
+// 验证溢出模式自身足以让反向 bootstrap 按自然内容长度镜像。
 #[test]
 // 零高 ColumnReverse bootstrap 不得把全部子项镜像到负坐标。
-fn overflow_flex_intrinsic_reverse_uses_natural_main_extent() {
+fn overflow_flex_reverse_bootstrap_uses_natural_main_extent() {
     // 构造两个十乘十的自然尺寸子项。
     let children = vec![
         LayoutChild::new(ComponentId::new(38), Size::new(10.0, 10.0)),
@@ -106,8 +106,6 @@ fn overflow_flex_intrinsic_reverse_uses_natural_main_extent() {
         .with_align(AlignItems::Start);
     // 开启自然尺寸溢出路径。
     layout.overflow_content = true;
-    // 声明主轴无显式尺寸，应由二十五像素自然内容撑开。
-    layout.intrinsic_main = true;
     // 使用带非零原点的零高 frame 覆盖 bootstrap 镜像。
     let output = layout.layout(Rect::new(4.0, 6.0, 20.0, 0.0), &children);
     // 首项应位于自然内容主轴末端。

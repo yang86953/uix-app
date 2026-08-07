@@ -641,9 +641,9 @@ fn overflow_layout(
 
     // 与标准 Flex 一致，反向方向沿容器主轴镜像已经完成的逻辑顺序。
     if is_reverse {
-        // 只有零尺寸 bootstrap 以自然内容长度镜像，已分配 frame 使用实际主轴。
-        let main_extent = if engine.intrinsic_main && container_main <= 1.0 {
-            // bootstrap 尚无可用主轴，只能使用自然内容长度。
+        // 溢出路径在零尺寸 bootstrap 始终以自然内容长度镜像，已分配 frame 使用实际主轴。
+        let main_extent = if container_main <= 1.0 {
+            // overflow_content 已承诺自然主轴，无需额外依赖 intrinsic_main 标记。
             finite_non_negative(total_main)
         } else {
             // 非零实际 frame 必须与前面的 justify 使用同一镜像边界。
