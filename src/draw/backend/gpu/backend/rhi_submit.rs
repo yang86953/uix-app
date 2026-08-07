@@ -1,12 +1,12 @@
 //! GpuBackend 的迁移期 FramePlan 提交边界。
 
 // 引入当前 backend 的错误、damage 和类型。
-use crate::core::{DamageRegion, Errc, Error, PresentDamage, Rect};
+use crate::core::{DamageRegion, Errc, Error, PresentDamage};
 // 引入 FramePlan 的 surface/texture target 引用。
 use crate::draw::backend::frame_plan::RenderTargetRef;
 // 引入薄 RHI 的 load/color 类型。
 use crate::native::present::rhi::{
-    LoadAction, RenderTargetHandle, RhiColor, RhiViewport, TextureHandle,
+    LoadAction, RhiColor, RhiViewport, TextureHandle,
 };
 // 引入已有纹理 sampled quad 的通用 RHI 载荷。
 use crate::draw::backend::rhi_renderer::RhiSampledQuad;

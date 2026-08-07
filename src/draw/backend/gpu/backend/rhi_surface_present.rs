@@ -1,7 +1,7 @@
 //! 主 surface 的 solid/mixed RHI 最终 present lowering。
 
 // 引入最终提交 damage、错误和主 surface 访问类型。
-use crate::core::{DamageRegion, Errc, Error, PresentDamage};
+use crate::core::{DamageRegion, Errc, Error};
 // 引入统一 FramePlan 的目标类型。
 use crate::draw::backend::frame_plan::RenderTargetRef;
 // 引入薄 RHI 的 pass/load 和纹理目标类型。

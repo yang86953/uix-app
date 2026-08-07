@@ -21,12 +21,10 @@ use self::offscreen::RecordedPicturePayload;
 use crate::core::{DamageRegion, Errc, Error, Rect};
 use crate::draw::outcome::RenderOutcome;
 use crate::draw::painting::{
-    EncodedFrameExecution, EncodedPictureExecution, FrameEncoder, FrameImage, FrameOpacity,
-    FrameRasterOp, FrameRect, FrameSampledRect,
+    EncodedFrameExecution, EncodedPictureExecution, FrameEncoder, FrameImage, FrameOpacity, FrameRect, FrameSampledRect,
 };
 use crate::draw::{Canvas2D, GraphicsCapabilities, RenderTarget, UpdateStrategy};
 use crate::draw::geometry::types::ImageHandle;
-use crate::draw::raster::pixel_surface::PixelSurface;
 
 use self::canvas::FrameRecordingCanvas;
 

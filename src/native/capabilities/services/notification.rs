@@ -15,8 +15,6 @@ use crate::diagnostics::{Diagnostics, DiagnosticsConfig};
 use crate::native::capabilities::system::StatusLevel;
 use std::collections::VecDeque;
 
-/// 通知级别（统一使用 uix::native::capabilities::system::StatusLevel）。
-pub use crate::native::capabilities::system::StatusLevel as NotificationLevel;
 
 /// 单条通知条目，作为 Toast 组件的数据源。
 #[derive(Debug, Clone)]

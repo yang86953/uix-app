@@ -8,15 +8,13 @@ use crate::draw::geometry::path::{FillRule, Path};
 use crate::draw::geometry::stroker::StrokeOptions;
 use crate::draw::geometry::types::{BlendMode, GradientDirection, Radius, Transform};
 use crate::draw::painting::{
-    FrameEncoder, FrameGlyphBlit, FrameImage, FrameOpacity, FrameRadius, FrameRasterOp, FrameRect,
-    FrameSampledRect, FrameStrokeRect, FrameStrokeWidth,
+    FrameRadius, FrameRasterOp, FrameRect, FrameStrokeRect, FrameStrokeWidth,
 };
-use crate::draw::raster::shared_rasterizer::SharedRasterizer;
 use crate::draw::{Canvas2D, Color};
 use std::sync::Arc;
 
 use super::canvas::FrameRecordingCanvas;
-use super::geometry::{frame_encoder_error, pack_visible_scratch_tile, rect_to_frame};
+use super::geometry::{frame_encoder_error, rect_to_frame};
 
 impl Canvas2D for FrameRecordingCanvas {
     fn current_transform(&self) -> Transform {

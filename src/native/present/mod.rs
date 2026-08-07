@@ -2,7 +2,7 @@
 
 use crate::core::error::{Error, Result};
 pub use crate::core::{
-    PresentCoherency, PresentDamage, PresentImage, PresentSurface, PresentTransform,
+    PresentCoherency, PresentDamage, PresentImage, PresentSurface,
 };
 use std::fmt;
 use std::str::FromStr;

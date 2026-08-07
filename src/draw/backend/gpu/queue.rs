@@ -10,13 +10,12 @@ use crate::draw::geometry::color::Color;
 use crate::draw::geometry::path::{FillRule, Path, PathBuilder};
 use crate::draw::geometry::stroker::StrokeOptions;
 use crate::draw::geometry::tessellator;
-use crate::draw::geometry::types::{BlendMode, GradientDirection, ImageHandle, Radius, Transform};
-use crate::draw::painting::FrameRect;
+use crate::draw::geometry::types::{BlendMode, GradientDirection, Radius, Transform};
 use crate::draw::raster::rasterizer::core::align_rounded_rect;
 use crate::draw::Canvas2D;
 use crate::native::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
-    GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext, SoftFallbackTile,
+    GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
+    GpuSolidMesh, GpuSolidRect, GpuStrokeRect,
 };
 
 use super::canvas::NativeGpuCanvas2D;
@@ -25,7 +24,7 @@ use super::geometry::{
     scales_are_uniform, solid_mesh_from_affine_rect, stroke_options_for_transform,
 };
 use super::pending::{
-    PendingNativeGlyph, PendingNativeImage, PendingNativeLinearGrad, PendingNativeMesh,
+    PendingNativeLinearGrad, PendingNativeMesh,
     PendingNativeOp, PendingNativeRadialGrad, PendingNativeRect, PendingNativeSector,
     PendingNativeShadow, PendingNativeStroke,
 };

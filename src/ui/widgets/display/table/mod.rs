@@ -7,17 +7,12 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::component::paint_context::PaintContext;
-use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, LayoutChild, SemanticEvent, SnapshotFields,
-    SnapshotTableColumn, SnapshotTableColumnGroup, SystemEvent, WidgetTree,
+    ComponentId, EventResult, KeyCode, LayoutChild, SemanticEvent, SystemEvent, WidgetTree,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
-use std::error::Error;
-use std::fmt;
-use std::rc::Rc;
 
 mod builder;
 // 收拢自定义单元格子树的完整 frame 与片段裁剪布局。
@@ -31,10 +26,9 @@ mod table_b;
 mod tests;
 pub(crate) mod types;
 
-use config::{flatten_column_groups, merge_table_columns};
 // 引入共享列区绘制层级与列几何快照。
 pub use builder::TableBuilder;
-use geometry::{TableColumnGeometry, COLUMN_PAINT_ORDER};
+use geometry::COLUMN_PAINT_ORDER;
 pub(crate) use types::TableCellRenderer;
 use types::{
     finite_nonnegative, ColumnGroupRange, TablePaginationCallback, TablePointerAction,

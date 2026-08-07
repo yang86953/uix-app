@@ -15,6 +15,3 @@ pub(crate) mod window_actions;
 pub(crate) mod window_config;
 pub(crate) mod window_driver;
 pub(crate) mod window_session;
-
-pub use window::Window;
-pub use window_config::WindowConfig;

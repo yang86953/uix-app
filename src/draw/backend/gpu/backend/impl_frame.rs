@@ -5,20 +5,17 @@
 
 use std::sync::Arc;
 
-use crate::core::{Errc, Error, Point, Rect};
+use crate::core::{Errc, Error, Rect};
 use crate::draw::geometry::color::Color;
 use crate::draw::painting::{
-    FrameCommand, FrameEncoder, FrameGlyphBlit, FrameImage, FrameRasterOp, FrameRect,
+    FrameEncoder, FrameGlyphBlit, FrameRasterOp, FrameRect,
     FrameStrokeRect, ReferenceFrame,
 };
 use crate::draw::raster::pixel_surface::PixelSurface;
 use crate::native::present::{
-    GpuGlyphBlit, GpuImageBlit, GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext,
-    RasterMode, SoftFallbackTile,
+    GpuGlyphBlit, GpuImageBlit, GpuSolidRect, GpuStrokeRect, IGraphicsContext, SoftFallbackTile,
 };
 
-use super::super::canvas::NativeGpuCanvas2D;
-use super::super::pending::PendingNativeOp;
 use super::super::tile::pack_visible_soft_fallback_tile;
 use super::helpers::{glyph_visible_bounds, union_frame_rect_wide};
 use super::GpuBackend;

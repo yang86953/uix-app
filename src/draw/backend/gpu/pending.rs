@@ -5,8 +5,7 @@
 //! 裁剪与变换折叠后的设备几何。
 
 use crate::core::Rect;
-use crate::draw::geometry::color::Color;
-use crate::draw::geometry::types::{BlendMode, ImageHandle, Transform};
+use crate::draw::geometry::types::{BlendMode, Transform};
 use crate::native::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect,

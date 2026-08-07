@@ -42,6 +42,4 @@ pub mod test_harness;
 pub(crate) mod windowing;
 
 pub use crate::core::error::*;
-pub use capabilities::services::file_service;
 pub use capabilities::services::notification;
-pub use factory::{available_memory_bytes, create_platform};

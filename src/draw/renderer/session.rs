@@ -1,6 +1,6 @@
 //! 绘图层会话 — Pipeline + Backend 组合入口（Phase 1 骨架）。
 
-use crate::core::{Errc, Error};
+use crate::core::Error;
 use crate::draw::backend::GpuBackend;
 use crate::draw::backend::{
     create_backend, BackendCapabilities, BackendKind, CpuBackend, RenderBackend,

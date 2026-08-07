@@ -9,5 +9,4 @@
 #[allow(clippy::module_inception)]
 pub(crate) mod event_loop;
 
-pub use event_loop::run_widget_loop;
 pub(crate) use event_loop::run_window_session_loop_with_system_theme_and_tasks;

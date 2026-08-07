@@ -4,8 +4,7 @@ use std::sync::Arc;
 
 use crate::core::Rect;
 use crate::draw::geometry::color::Color;
-use crate::draw::geometry::types::{BlendMode, ImageHandle, Transform};
-use crate::draw::painting::{FrameCommand, FrameRect};
+use crate::draw::geometry::types::{BlendMode, Transform};
 use crate::native::present::{GpuImageBlit, IGraphicsContext};
 
 use super::canvas::NativeGpuCanvas2D;
