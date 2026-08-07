@@ -55,6 +55,8 @@ fn log_g5_idle_event(event: &UiEvent) {
 }
 
 /// 运行完整的 widget 渲染事件循环。
+// 保留旧的完整事件循环入口，供兼容组装方按需调用。
+#[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
 pub fn run_widget_loop<M, X, F>(
     platform: &mut dyn Platform,

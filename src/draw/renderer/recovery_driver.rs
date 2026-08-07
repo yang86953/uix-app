@@ -38,6 +38,8 @@ impl RebuildRequest {
     }
 
     /// Read-only check whether a rebuild is currently requested.
+    // 该读取入口只服务同模块单元测试，生产路径通过 take 消费请求。
+    #[cfg(test)]
     pub(crate) fn is_requested(&self) -> bool {
         self.requested.load(Ordering::Acquire)
     }

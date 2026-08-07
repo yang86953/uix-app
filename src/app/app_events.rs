@@ -30,9 +30,13 @@ pub(crate) struct ThemeApplied {
 /// 主题事实总线类型：app System 私有边界唯一拥有的实例。
 ///
 /// 组合根/应用组装处创建并注入窄能力；禁止全局单例或跨 System 共享。
+// 该窄总线是组装契约，当前默认应用路径尚未接入。
+#[allow(dead_code)]
 pub(crate) type ThemeEventBus = EventBus;
 
 /// 主题事实窄发布端口（P-06）：业务代码只取得本端口，不接触完整 Bus。
+// 该发布端口保留给主题组装根，当前默认应用路径尚未接入。
+#[allow(dead_code)]
 pub(crate) type ThemeEventPublisher = Publisher<ThemeApplied>;
 
 #[cfg(test)]

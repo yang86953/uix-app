@@ -14,12 +14,16 @@ impl fmt::Display for ReportId {
     }
 }
 
+// 保留经清洗的源位置 schema，供诊断快照与后续导出组件使用。
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub(crate) struct ReportSite {
     pub(crate) file: String,
     pub(crate) line: u32,
 }
 
+// 保留错误链的完整结构化字段，避免当前 tracing 简化输出丢失信息。
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub(crate) struct ErrorCause {
     pub(crate) code: Errc,
@@ -53,6 +57,8 @@ impl ReportOrigin {
         }
     }
 
+    // 保留框架来源构造器，供尚未接入的 framework reporting 调用点使用。
+    #[allow(dead_code)]
     pub(crate) const fn framework(target: &'static str, operation: &'static str) -> Self {
         Self {
             target,
@@ -61,6 +67,8 @@ impl ReportOrigin {
         }
     }
 
+    // 保留资源身份构造器，供框架资源诊断接入时复用。
+    #[allow(dead_code)]
     pub(crate) fn with_resource(
         mut self,
         kind: &'static str,
@@ -94,6 +102,8 @@ pub(crate) struct ReportDraft {
 /// Bounded, sanitized observation generated from a typed framework error.
 ///
 /// It intentionally does not retain the original `Error`.
+// 报告对象保留完整快照字段，公共 getter 只暴露当前稳定的安全子集。
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ErrorReport {
     pub(crate) id: ReportId,
