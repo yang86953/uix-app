@@ -68,6 +68,9 @@ fn settings_typed_struct_anchor_compiles() {
     struct AppPrefs {
         theme: String,
     }
+    // 构造并读取示例配置，确保类型示例本身参与编译契约。
+    let prefs = AppPrefs::default();
+    assert!(prefs.theme.is_empty());
     let app = App::new()
         .settings("app.settings.json")
         // 默认测试集合只启用 D3D11，因此显式选择同一公开 backend。
@@ -166,6 +169,10 @@ fn async_typed_three_state_anchor_compiles() {
         Ready(T),
         Failed(E),
     }
+    // 构造非 Loading 变体，覆盖异步三态示例的完整枚举定义。
+    let _ready = AsyncState::<Vec<String>, Error>::Ready(vec!["user".to_string()]);
+    let _failed =
+        AsyncState::<Vec<String>, Error>::Failed(Error::new(Errc::Unknown, "example failure"));
     let users: State<AsyncState<Vec<String>, Error>> = State::new(AsyncState::Loading);
     let view = users.map(|state| match state {
         AsyncState::Loading => embed(Spin::new().large()),
