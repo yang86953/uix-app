@@ -12,9 +12,8 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 
 use super::{
-    CascaderOption, CascaderSearchResult, CascaderValue, cascader_column_width,
-    cascader_dirty_rect, cascader_popup_rect, fade_color, paint_loading_spinner,
-    point_in_half_open_rect,
+    CascaderOption, CascaderSearchResult, CascaderValue, absolute_cascader_popup_rect,
+    cascader_dirty_rect, fade_color, paint_loading_spinner, point_in_half_open_rect,
 };
 
 const TRIGGER_HEIGHT: f32 = 32.0;
@@ -48,6 +47,14 @@ component! {
         pub(crate) placeholder: String,
         pub(crate) focused: bool,
         pub(crate) last_frame: Cell<Option<Rect>>,
+        // 缓存相对触发器原点的最终弹层矩形。
+        pub(crate) popup_rect: Cell<Rect>,
+        // 缓存受表面约束后的实际列宽。
+        pub(crate) popup_column_width: Cell<f32>,
+        // 记录当前缓存对应的可见列数。
+        pub(crate) popup_column_count: Cell<usize>,
+        // 缓存布局或绘制阶段取得的当前逻辑表面。
+        pub(crate) surface_rect: Cell<Option<Rect>>,
         pub(crate) pending_change: RefCell<Option<String>>,
     }
 
@@ -106,7 +113,10 @@ component! {
                         return EventResult::Handled;
                     }
                     if point_in_half_open_rect(
-                        cascader_popup_rect(frame, self.visible_column_count()),
+                        // 复用当前表面解析后的实际弹层。
+                        self.interaction_popup_geometry(frame, self.visible_column_count())
+                            // 只读取最终弹层矩形。
+                            .rect,
                         *pos,
                     ) {
                         return EventResult::Handled;
@@ -155,7 +165,10 @@ component! {
                     return EventResult::NotHandled;
                 }
                 let frame = self.interaction_frame();
-                let popup = cascader_popup_rect(frame, self.visible_column_count());
+                // 读取当前表面约束后的事件弹层几何。
+                let geometry = self.interaction_popup_geometry(frame, self.visible_column_count());
+                // 命中判断复用最终弹层矩形。
+                let popup = geometry.rect;
                 if !point_in_half_open_rect(popup, *pos) {
                     return EventResult::NotHandled;
                 }
@@ -166,7 +179,13 @@ component! {
                         EventResult::NotHandled
                     };
                 }
-                let column_width = cascader_column_width(frame);
+                // 多列命中使用最终总宽均分后的实际列宽。
+                let column_width = geometry.column_width;
+                // 空列宽无法确定滚动目标列。
+                if column_width <= 0.0 {
+                    // 不消费落在空弹层中的滚轮事件。
+                    return EventResult::NotHandled;
+                }
                 let level = ((pos.x - popup.x) / column_width).floor() as usize;
                 if self.scroll_level(level, delta.y * WHEEL_STEP) {
                     EventResult::Handled
@@ -408,9 +427,23 @@ component! {
             return;
         }
 
+        // 从绘制上下文读取当前逻辑表面尺寸。
+        let surface_size = ctx.logical_surface_size();
+        // 将窗口原点与逻辑尺寸组合为当前表面矩形。
+        let surface = Rect::new(0.0, 0.0, surface_size.w, surface_size.h);
+        // 在绘制弹层前解析并缓存同帧最终几何。
+        let geometry = self.remember_popup_geometry(frame, surface, self.visible_column_count());
+        // 将相对触发器缓存转换为窗口绝对弹层矩形。
+        let popup = absolute_cascader_popup_rect(frame, geometry.rect);
+        // 空表面不生成可见级联弹层。
+        if popup.w <= 0.0 || popup.h <= 0.0 {
+            // 保留触发器绘制结果并跳过弹层。
+            return;
+        }
+
         let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
-        let popup = cascader_popup_rect(frame, self.visible_column_count());
-        let column_width = cascader_column_width(frame);
+        // 所有列绘制使用表面约束后的实际列宽。
+        let column_width = geometry.column_width;
         let bg_elevated = fade_color(bg_elevated, opacity);
         let border_color = fade_color(border_color, opacity);
         let text_color = fade_color(text_color, opacity);
@@ -419,6 +452,9 @@ component! {
         let primary_bg = fade_color(ctx.tokens().color_primary_bg(), opacity);
         let panel_radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
 
+        // 将整个级联弹层裁剪到当前逻辑表面。
+        ctx.push_clip(surface);
+        // 再按最终弹层矩形裁剪行与边框。
         ctx.push_clip(popup);
         ctx.fill_rect(popup, bg_elevated, panel_radius);
 
@@ -534,15 +570,31 @@ component! {
         }
         ctx.stroke_rect(popup, border_color, 1.0, panel_radius);
         ctx.pop_clip();
+        // 恢复弹层外层的逻辑表面裁剪。
+        ctx.pop_clip();
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        cascader_dirty_rect(frame, self.damage_column_count())
+        // 读取最近登记或绘制记录的当前逻辑表面。
+        let surface = self.surface_or_fallback(frame);
+        // 合并实际列数与保守列数可能覆盖的弹层。
+        let popup = self.damage_popup_rect(frame, surface);
+        // 将触发器和弹层脏区限制在当前表面内。
+        cascader_dirty_rect(frame, popup, surface)
     }
 
     hit_test_frame => (&self, frame: Rect) -> Rect {
         if self.is_present() {
-            cascader_dirty_rect(frame, self.visible_column_count())
+            // 读取最近登记或绘制记录的当前逻辑表面。
+            let surface = self.surface_or_fallback(frame);
+            // 命中只使用当前实际可见列数解析弹层。
+            let popup = self
+                // 记录同一最终几何供事件路径复用。
+                .remember_popup_geometry(frame, surface, self.visible_column_count())
+                // 读取相对触发器矩形。
+                .rect;
+            // 触发器与弹层命中框共同收敛到当前表面。
+            cascader_dirty_rect(frame, popup, surface)
         } else {
             frame
         }
@@ -550,10 +602,30 @@ component! {
 
     overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         self.is_present().then(|| {
+            // 读取最近记录的表面或首次有限回退。
+            let surface = self.surface_or_fallback(frame);
+            // 解析并缓存当前实际可见弹层。
+            let popup = self
+                // 所有登记消费者复用同一最终几何。
+                .remember_popup_geometry(frame, surface, self.visible_column_count())
+                // 读取相对触发器矩形。
+                .rect;
+            // 将最终弹层转换为窗口绝对坐标。
+            let bounds = absolute_cascader_popup_rect(frame, popup);
+            // 创建只覆盖实际弹层的浮层登记。
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
-                .bounds(cascader_dirty_rect(frame, self.visible_column_count()))
+                // 登记边界与绘制、命中共用同一矩形。
+                .bounds(bounds)
                 .z_index(900)
         })
+    }
+
+    // 使用组件树提供的同帧表面创建级联选择弹层登记。
+    overlay_entry_for_surface => (&self, id: crate::ui::ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+        // 在旧登记入口执行前刷新表面与实际弹层缓存。
+        self.remember_popup_geometry(frame, surface, self.visible_column_count());
+        // 复用统一的级联弹层登记逻辑。
+        self.overlay_entry(id, frame)
     }
 
     update_animation => (&mut self, dt: f64) -> bool {
@@ -593,10 +665,189 @@ component! {
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty || self.loading_dirty {
-            cascader_dirty_rect(frame, self.visible_column_count())
+            // 动画脏区使用最近记录的当前逻辑表面。
+            let surface = self.surface_or_fallback(frame);
+            // 动画期间同时覆盖实际与保守列数的最终弹层。
+            let popup = self.damage_popup_rect(frame, surface);
+            // 将动画脏区限制在当前表面。
+            cascader_dirty_rect(frame, popup, surface)
         } else {
             Rect::zero()
         }
     }
 }
 
+// 验证级联选择弹层使用组件树提供的当前逻辑表面。
+#[cfg(test)]
+// 将打开状态与内部滚动几何限制在当前模块测试中。
+mod tests {
+    // 复用被测级联选择组件和选项类型。
+    use super::{Cascader, CascaderOption};
+    // 引入命中断言所需的点与矩形基础类型。
+    use crate::core::{Point, Rect};
+
+    // 构造指定数量的稳定叶子选项。
+    fn leaf_options(count: usize) -> Vec<CascaderOption> {
+        // 为每个序号创建不同标签和值。
+        (0..count)
+            // 将序号映射为叶子选项。
+            .map(|index| CascaderOption::new(format!("选项{index}"), format!("value-{index}")))
+            // 收集为组件构造函数所需列表。
+            .collect()
+    }
+
+    // 靠近表面底边时弹层必须翻转并按上方可用空间缩高。
+    #[test]
+    // 测试名称说明纵向表面约束职责。
+    fn overlay_entry_constrains_popup_near_surface_bottom() {
+        // 创建包含多行选项的级联选择器。
+        let mut cascader = Cascader::new(leaf_options(10), "请选择");
+        // 打开级联弹层参与登记。
+        cascader.open();
+        // 将触发器放在一百二十像素高表面的底部附近。
+        let frame = Rect::new(20.0, 80.0, 120.0, 32.0);
+        // 构造小于固定弹层高度的当前逻辑表面。
+        let surface = Rect::new(0.0, 0.0, 240.0, 120.0);
+        // 通过组件树使用的显式表面入口创建登记。
+        let overlay = crate::ui::component::traits::WidgetRender::overlay_entry_for_surface(
+            // 传入被测级联选择组件。
+            &cascader,
+            // 使用稳定的测试组件标识。
+            crate::core::ComponentId::new(8),
+            // 传入靠近底边的触发器 frame。
+            frame,
+            // 传入当前逻辑表面。
+            surface,
+        )
+        // 打开状态必须生成浮层登记。
+        .expect("打开的级联选择器应生成浮层登记")
+        // 读取登记的绝对弹层矩形。
+        .bounds_rect()
+        // 级联弹层登记必须声明边界。
+        .expect("级联选择弹层应声明边界");
+
+        // 下方空间不足时弹层应完整位于触发器上方。
+        assert!(overlay.y + overlay.h <= frame.y);
+        // 弹层顶边不得越出当前表面。
+        assert!(overlay.y >= surface.y);
+        // 弹层底边不得越出当前表面。
+        assert!(overlay.y + overlay.h <= surface.y + surface.h);
+    }
+
+    // 触发器靠近窄表面右边缘时弹层必须横向收敛。
+    #[test]
+    // 测试名称说明横向表面约束职责。
+    fn overlay_entry_constrains_popup_to_narrow_surface() {
+        // 创建单列级联选择器。
+        let mut cascader = Cascader::new(leaf_options(1), "请选择");
+        // 打开级联弹层参与登记。
+        cascader.open();
+        // 构造宽于表面且靠近右边界的触发器。
+        let frame = Rect::new(70.0, 20.0, 120.0, 32.0);
+        // 使用一百像素宽的窄逻辑表面。
+        let surface = Rect::new(0.0, 0.0, 100.0, 260.0);
+        // 通过显式表面入口创建弹层登记。
+        let overlay = crate::ui::component::traits::WidgetRender::overlay_entry_for_surface(
+            // 传入被测级联选择组件。
+            &cascader,
+            // 使用稳定的测试组件标识。
+            crate::core::ComponentId::new(9),
+            // 传入靠近右边界的触发器 frame。
+            frame,
+            // 传入当前窄表面。
+            surface,
+        )
+        // 打开状态必须生成浮层登记。
+        .expect("打开的级联选择器应生成浮层登记")
+        // 读取登记的绝对弹层矩形。
+        .bounds_rect()
+        // 级联弹层登记必须声明边界。
+        .expect("级联选择弹层应声明边界");
+
+        // 弹层左边不得越出当前表面。
+        assert!(overlay.x >= surface.x);
+        // 弹层右边不得越出当前表面。
+        assert!(overlay.x + overlay.w <= surface.x + surface.w);
+        // 弹层宽度不得超过当前表面宽度。
+        assert!(overlay.w <= surface.w);
+    }
+
+    // 弹层缩高后滚动范围必须使用实际视口而非固定二百像素。
+    #[test]
+    // 测试名称说明缩高视口与滚动账本的一致性。
+    fn constrained_popup_height_drives_scroll_range() {
+        // 创建十行选项使内容高度达到三百二十像素。
+        let mut cascader = Cascader::new(leaf_options(10), "请选择");
+        // 打开级联弹层参与表面解析。
+        cascader.open();
+        // 将触发器放在表面底部附近，使上方只有七十八像素。
+        let frame = Rect::new(20.0, 80.0, 120.0, 32.0);
+        // 使用一百二十像素高表面触发向上缩高。
+        let surface = Rect::new(0.0, 0.0, 240.0, 120.0);
+        // 先通过显式登记入口记录实际受约束视口。
+        let _ = crate::ui::component::traits::WidgetRender::overlay_entry_for_surface(
+            // 传入被测级联选择组件。
+            &cascader,
+            // 使用稳定的测试组件标识。
+            crate::core::ComponentId::new(10),
+            // 传入靠近底边的触发器 frame。
+            frame,
+            // 传入当前逻辑表面。
+            surface,
+        );
+        // 请求滚动到当前列末端。
+        assert!(cascader.scroll_level(0, 1000.0));
+
+        // 三百二十像素内容减七十八像素实际视口应留下二百四十二像素范围。
+        assert_eq!(cascader.scroll_offsets[0], 242.0);
+    }
+
+    // 多列总宽被表面压缩后事件映射必须使用实际等分列宽。
+    #[test]
+    // 测试名称说明绘制列宽与第二列命中的一致性。
+    fn constrained_multi_column_width_drives_hit_mapping() {
+        // 创建带两项子级的根选项。
+        let root = CascaderOption::new("根", "root")
+            // 子级在选择根项后形成第二列。
+            .children(leaf_options(2));
+        // 创建只含该根项的级联选择器。
+        let mut cascader = Cascader::new(vec![root], "请选择");
+        // 打开级联弹层并初始化根列。
+        cascader.open();
+        // 选择根项以展开第二列但不关闭弹层。
+        cascader.select_option(0, 0);
+        // 使用宽一百二十像素的触发器。
+        let frame = Rect::new(20.0, 20.0, 120.0, 32.0);
+        // 三百像素宽表面不足以容纳两列各二百像素自然宽。
+        let surface = Rect::new(0.0, 0.0, 300.0, 260.0);
+        // 通过显式表面入口解析并缓存两列最终几何。
+        let overlay = crate::ui::component::traits::WidgetRender::overlay_entry_for_surface(
+            // 传入被测级联选择组件。
+            &cascader,
+            // 使用稳定的测试组件标识。
+            crate::core::ComponentId::new(11),
+            // 传入当前触发器绝对 frame。
+            frame,
+            // 传入当前逻辑表面。
+            surface,
+        )
+        // 打开状态必须生成浮层登记。
+        .expect("打开的两列级联选择器应生成浮层登记")
+        // 读取最终绝对弹层矩形。
+        .bounds_rect()
+        // 两列弹层必须声明边界。
+        .expect("两列级联弹层应声明边界");
+
+        // 两列总宽应收敛为三百像素表面宽度。
+        assert_eq!(overlay.w, 300.0);
+        // 使用组件本地坐标命中压缩后的第二列首行。
+        let hit = cascader.option_at(
+            // 事件路径中的触发器 frame 以组件原点为基准。
+            Rect::new(0.0, 0.0, frame.w, frame.h),
+            // 横坐标落在实际一百五十像素列宽的第二列。
+            Point::new(160.0, 50.0),
+        );
+        // 命中必须映射到第二层首项而不是自然二百像素宽的第一列。
+        assert_eq!(hit, Some((1, 0)));
+    }
+}
