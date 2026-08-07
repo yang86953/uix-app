@@ -388,3 +388,36 @@ fn wrapped_zero_sized_item_still_forces_the_next_item_to_wrap() {
     // 固有主轴账本应记录最长的四十像素自然行宽。
     assert_eq!(output.total_size, Size::new(40.0, 30.0));
 }
+
+// 验证换行行组在交叉轴溢出时仍能执行末端对齐。
+#[test]
+// End 必须保留负剩余空间，让最后一行末端贴住实际容器末端。
+fn wrapped_overflow_flex_end_aligns_negative_cross_space() {
+    // 构造两个会各自占据一行的三十乘十子项。
+    let children = vec![
+        // 首项用于观察行组向交叉轴起点外溢后的负坐标。
+        LayoutChild::new(ComponentId::new(60), Size::new(30.0, 10.0)),
+        // 次项用于验证行组末端仍贴住容器末端。
+        LayoutChild::new(ComponentId::new(61), Size::new(30.0, 10.0)),
+    ];
+    // 构造交叉轴末端对齐的水平 Flex。
+    let mut layout = FlexLayout::row()
+        // 五像素间距同时形成两行之间的固定行距。
+        .with_gap(5.0)
+        // 每行主轴从起点排列，隔离交叉轴结果。
+        .with_justify(JustifyContent::Start)
+        // 整个自然行组贴住实际交叉轴末端。
+        .with_align(AlignItems::End);
+    // 开启换行，使两个三十像素子项在五十像素主轴内分成两行。
+    layout.wrap = true;
+    // 保留自然尺寸，明确覆盖换行溢出路径。
+    layout.overflow_content = true;
+    // 十五像素交叉轴小于两行和行距组成的二十五像素自然高度。
+    let output = layout.layout(Rect::new(4.0, 6.0, 50.0, 15.0), &children);
+    // 首行应向容器顶部之外溢出十像素。
+    assert_eq!(output.positions[0], Rect::new(4.0, -4.0, 30.0, 10.0));
+    // 第二行底边应精确贴住二十一像素的容器底边。
+    assert_eq!(output.positions[1], Rect::new(4.0, 11.0, 30.0, 10.0));
+    // 内容尺寸账本保留三十像素最长自然行与二十五像素自然交叉轴高度。
+    assert_eq!(output.total_size, Size::new(30.0, 25.0));
+}
