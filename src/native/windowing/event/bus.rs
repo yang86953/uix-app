@@ -30,8 +30,12 @@ pub type EventHandler = Box<dyn FnMut(&UiEvent)>;
 /// 默认优先级（中间值）。
 pub const PRIORITY_DEFAULT: i32 = 0;
 /// 最高优先级（最先执行）。
+// 保留优先级边界常量，供后续平台订阅者排序策略使用。
+#[allow(dead_code)]
 pub const PRIORITY_HIGHEST: i32 = i32::MAX;
 /// 最低优先级（最后执行）。
+// 保留优先级边界常量，供后续平台订阅者排序策略使用。
+#[allow(dead_code)]
 pub const PRIORITY_LOWEST: i32 = i32::MIN;
 
 struct SubscriberEntry {

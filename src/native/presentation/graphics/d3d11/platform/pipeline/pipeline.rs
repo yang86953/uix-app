@@ -696,6 +696,8 @@ impl D3d11Pipeline {
                 row_h: 0,
             },
             atlas_cache: HashMap::new(),
+            // 测试构造时初始化 atlas 上传诊断计数。
+            #[cfg(test)]
             atlas_upload_count: 0,
             atlas_upload: Vec::new(),
             glyph_verts: Vec::new(),

@@ -53,6 +53,8 @@ pub(crate) fn d3d12_warp_test_context_available() -> bool {
 }
 
 /// 创建当前平台对应的 Platform 实例。
+// 保留不带运行时队列的兼容平台工厂入口。
+#[allow(dead_code)]
 #[cfg(windows)]
 pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
     create_platform_with_pending(PendingFailureQueue::new())
@@ -69,6 +71,8 @@ pub(crate) fn create_platform_with_pending(
     ))
 }
 
+// 保留不带运行时队列的兼容平台工厂入口。
+#[allow(dead_code)]
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
     create_platform_with_pending(PendingFailureQueue::new())
@@ -82,6 +86,8 @@ pub(crate) fn create_platform_with_pending(
     Ok(Box::new(platform))
 }
 
+// 保留不带运行时队列的兼容平台工厂入口。
+#[allow(dead_code)]
 #[cfg(target_os = "macos")]
 pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
     create_platform_with_pending(PendingFailureQueue::new())
@@ -96,6 +102,8 @@ pub(crate) fn create_platform_with_pending(
     ))
 }
 
+// 保留不带运行时队列的兼容平台工厂入口。
+#[allow(dead_code)]
 #[cfg(not(any(windows, unix)))]
 pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
     create_platform_with_pending(PendingFailureQueue::new())
@@ -134,6 +142,8 @@ pub(crate) fn create_gpu_context_with_backend(
 }
 
 /// 探测系统可用空闲内存（字节）。
+// 保留平台诊断查询入口，默认应用路径不直接依赖它。
+#[allow(dead_code)]
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn available_memory_bytes() -> u64 {
     crate::native::backends::linux::system_info::LinuxSystemInfo::new()
@@ -142,6 +152,8 @@ pub fn available_memory_bytes() -> u64 {
         .unwrap_or(0)
 }
 
+// 保留平台诊断查询入口，默认应用路径不直接依赖它。
+#[allow(dead_code)]
 #[cfg(windows)]
 pub fn available_memory_bytes() -> u64 {
     crate::native::backends::windows::system_info::WindowsSystemInfo::new()
@@ -150,11 +162,15 @@ pub fn available_memory_bytes() -> u64 {
         .unwrap_or(0)
 }
 
+// 保留平台诊断查询入口，默认应用路径不直接依赖它。
+#[allow(dead_code)]
 #[cfg(target_os = "macos")]
 pub fn available_memory_bytes() -> u64 {
     512 * 1024 * 1024
 }
 
+// 保留平台诊断查询入口，默认应用路径不直接依赖它。
+#[allow(dead_code)]
 #[cfg(not(any(windows, all(unix, not(target_os = "macos")), target_os = "macos")))]
 pub fn available_memory_bytes() -> u64 {
     512 * 1024 * 1024

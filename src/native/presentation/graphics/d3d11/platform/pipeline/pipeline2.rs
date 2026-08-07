@@ -448,6 +448,9 @@ impl D3d11Pipeline {
     }
 
     /// 返回累计的 glyph atlas 上传次数（诊断）。
+    // 该诊断计数仅供 crate 内测试读取，生产 pipeline 不暴露此辅助入口。
+    #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn glyph_atlas_upload_count(&self) -> usize {
         self.atlas_upload_count
     }
