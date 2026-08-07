@@ -142,6 +142,8 @@ pub(crate) fn layout_rich_text(
                     seg_idx,
                     max_width,
                     seg_line_h,
+                    &mut current_line_h,
+                    default_line_h,
                     &mut lines,
                     &mut current_line_glyphs,
                     &mut current_x,
@@ -165,6 +167,8 @@ pub(crate) fn layout_rich_text(
                     seg_idx,
                     max_width,
                     seg_line_h,
+                    &mut current_line_h,
+                    default_line_h,
                     &mut lines,
                     &mut current_line_glyphs,
                     &mut current_x,
@@ -187,6 +191,8 @@ pub(crate) fn layout_rich_text(
                     seg_idx,
                     max_width,
                     seg_line_h,
+                    &mut current_line_h,
+                    default_line_h,
                     &mut lines,
                     &mut current_line_glyphs,
                     &mut current_x,
@@ -211,6 +217,59 @@ pub(crate) fn layout_rich_text(
 /// 布局一段文本内容（估算宽度版本）
 #[allow(clippy::too_many_arguments)]
 fn layout_text_content(
+    content: &str,
+    fs: f32,
+    color: Color,
+    bg_color: Option<Color>,
+    is_link: bool,
+    link_url: Option<&str>,
+    seg_idx: usize,
+    max_width: f32,
+    seg_line_h: f32,
+    current_line_h: &mut f32,
+    default_line_h: f32,
+    lines: &mut Vec<LayoutLine>,
+    glyphs: &mut Vec<LayoutGlyph>,
+    current_x: &mut f32,
+    max_line_w: &mut f32,
+) {
+    // 按显式换行把内容拆成多个逻辑行，保证估算布局与真实布局共享换行语义。
+    let mut remaining = content;
+    // 循环消费当前段中的每一行，保留末尾空行的边界行为。
+    loop {
+        // 只在当前行存在换行时切出后续内容。
+        let (line, next) = match remaining.split_once('\n') {
+            // 记录当前行和换行后的剩余内容。
+            Some((line, next)) => (line, Some(next)),
+            // 没有换行时当前剩余内容就是最后一行。
+            None => (remaining, None),
+        };
+        // 使用原有空白 token 逻辑布局当前行。
+        layout_text_content_line(
+            line, fs, color, bg_color, is_link, link_url, seg_idx, max_width, seg_line_h, lines,
+            glyphs, current_x, max_line_w,
+        );
+        // 没有后续换行时当前段布局完成。
+        let Some(next) = next else {
+            // 退出循环并保留最后一行的当前游标。
+            break;
+        };
+        // 显式换行前先结算当前行的最大宽度。
+        *max_line_w = (*max_line_w).max(*current_x);
+        // 使用当前行实际高度刷新行列表。
+        flush_line(lines, glyphs, (*current_line_h).max(seg_line_h));
+        // 换行后从行首重新开始布局。
+        *current_x = 0.0;
+        // 新行至少保留默认行高和当前段行高中的较大值。
+        *current_line_h = default_line_h.max(seg_line_h);
+        // 继续处理换行后的剩余内容。
+        remaining = next;
+    }
+}
+
+/// 使用空白 token 和逐字符回退布局单个逻辑行。
+#[allow(clippy::too_many_arguments)]
+fn layout_text_content_line(
     content: &str,
     fs: f32,
     color: Color,
@@ -388,6 +447,8 @@ pub(crate) fn layout_rich_text_real(
                     seg_idx,
                     max_width,
                     seg_line_h,
+                    &mut current_line_h,
+                    default_line_h,
                     &mut lines,
                     &mut current_line_glyphs,
                     &mut current_x,
@@ -413,6 +474,8 @@ pub(crate) fn layout_rich_text_real(
                     seg_idx,
                     max_width,
                     seg_line_h,
+                    &mut current_line_h,
+                    default_line_h,
                     &mut lines,
                     &mut current_line_glyphs,
                     &mut current_x,
@@ -437,6 +500,8 @@ pub(crate) fn layout_rich_text_real(
                     seg_idx,
                     max_width,
                     seg_line_h,
+                    &mut current_line_h,
+                    default_line_h,
                     &mut lines,
                     &mut current_line_glyphs,
                     &mut current_x,
@@ -463,6 +528,74 @@ pub(crate) fn layout_rich_text_real(
 /// 基于真实字体度量布局一段文本
 #[allow(clippy::too_many_arguments)]
 fn layout_text_content_real(
+    content: &str,
+    fs: f32,
+    color: Color,
+    bg_color: Option<Color>,
+    is_link: bool,
+    link_url: Option<&str>,
+    seg_idx: usize,
+    max_width: f32,
+    seg_line_h: f32,
+    current_line_h: &mut f32,
+    default_line_h: f32,
+    lines: &mut Vec<LayoutLine>,
+    glyphs: &mut Vec<LayoutGlyph>,
+    current_x: &mut f32,
+    max_line_w: &mut f32,
+    font_service: &FontService,
+    font: &FontHandle,
+) {
+    // 按显式换行拆分内容，保证真实字体度量也不会把换行当成字形。
+    let mut remaining = content;
+    // 循环消费每个逻辑行并在换行处刷新共享行缓存。
+    loop {
+        // 只在当前剩余内容含换行时切出下一行。
+        let (line, next) = match remaining.split_once('\n') {
+            // 记录当前行和换行后的剩余内容。
+            Some((line, next)) => (line, Some(next)),
+            // 没有换行时当前剩余内容就是最后一行。
+            None => (remaining, None),
+        };
+        // 使用真实字体 advance 布局当前逻辑行。
+        layout_text_content_real_line(
+            line,
+            fs,
+            color,
+            bg_color,
+            is_link,
+            link_url,
+            seg_idx,
+            max_width,
+            seg_line_h,
+            lines,
+            glyphs,
+            current_x,
+            max_line_w,
+            font_service,
+            font,
+        );
+        // 没有后续换行时当前段布局完成。
+        let Some(next) = next else {
+            // 退出循环并保留最后一行的当前游标。
+            break;
+        };
+        // 显式换行前先结算当前行的最大宽度。
+        *max_line_w = (*max_line_w).max(*current_x);
+        // 使用当前行实际高度刷新行列表。
+        flush_line(lines, glyphs, (*current_line_h).max(seg_line_h));
+        // 换行后从行首重新开始布局。
+        *current_x = 0.0;
+        // 新行至少保留默认行高和当前段行高中的较大值。
+        *current_line_h = default_line_h.max(seg_line_h);
+        // 继续处理换行后的剩余内容。
+        remaining = next;
+    }
+}
+
+/// 使用真实字体 advance 布局单个逻辑行。
+#[allow(clippy::too_many_arguments)]
+fn layout_text_content_real_line(
     content: &str,
     fs: f32,
     color: Color,
