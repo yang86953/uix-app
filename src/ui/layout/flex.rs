@@ -861,17 +861,28 @@ fn compute_wrapped(
         // 返回父级分配的实际主轴长度。
         container_main.max(0.0)
     };
+    // 可见交叉轴总量还须覆盖负尾侧 margin 未裁剪的子项末端。
+    let visible_cross_end = child_rects.iter().fold(0.0f32, |extent, rect| {
+        // 水平读取纵向末端，垂直读取横向末端。
+        let end = if is_row {
+            rect.y + rect.h - inner.y
+        } else {
+            rect.x + rect.w - inner.x
+        };
+        // 累积全部有限可见末端。
+        extent.max(finite_or_zero(end))
+    });
     // Total size
     let (total_w, total_h) = if is_row {
         // 水平布局的交叉轴总量统一使用行账本，单行也包含 margin。
-        let resolved_cross = total_cross.max(container_cross);
+        let resolved_cross = total_cross.max(container_cross).max(visible_cross_end);
         (
             resolved_main + input.padding.horizontal(),
             resolved_cross + input.padding.vertical(),
         )
     } else {
         // 垂直布局的交叉轴总量采用相同行账本语义。
-        let resolved_cross = total_cross.max(container_cross);
+        let resolved_cross = total_cross.max(container_cross).max(visible_cross_end);
         (
             resolved_cross + input.padding.horizontal(),
             resolved_main + input.padding.vertical(),
