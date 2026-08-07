@@ -35,7 +35,7 @@
 
 ## 组件：FlexLayout / GridLayout / ScrollView / VirtualScroll
 
-- Flex 支持主轴方向、wrap、grow/shrink、justify、align、gap 和 per-child `align_self`；`overflow_content` 只保留自然主轴尺寸，不取消分布、换行、交叉轴对齐或反向语义。单行溢出、标准固有主轴与超宽换行在获得真实 frame 后都把有限负剩余空间交给统一 justify：Center/End 分别使用半量/全量负偏移，Start 与 Space* 不产生负分布；零尺寸 bootstrap 仍从自然起点开始。wrapped 路径按当前行是否已有项目决定分行，而不是以累计占用是否大于零代替项目存在性；零主轴尺寸子项仍参与 gap 与换行边界。自然行盒形成后，默认 Stretch 再把实际交叉轴正剩余空间等分到各行并同步行起点；只有一行时与 non-wrap 填充语义一致，`align_self` 只覆盖项内对齐。单行和 wrapped 的 Stretch 最终尺寸统一经子项交叉轴 min/max 钳制；行盒可继续消费剩余空间，达到上限的子项保持行起点。非 Stretch 行组在实际交叉轴溢出时保留有限负剩余空间，Center 使用半量负偏移，End 使用全量负偏移使行组末端贴住容器末端；交叉轴 bootstrap 没有可分布的实际范围，两者都固定零偏移并由自然行组撑开输出。固有反向主轴仅在 bootstrap 按自然内容长度镜像，获得非零实际 frame 后与 justify 共用实际容器主轴；零交叉轴由自然外尺寸 bootstrap。
+- Flex 支持主轴方向、wrap、grow/shrink、justify、align、gap 和 per-child `align_self`；`overflow_content` 只保留自然主轴尺寸，不取消分布、换行、交叉轴对齐或反向语义。单行溢出、标准固有主轴与超宽换行在获得真实 frame 后都把有限负剩余空间交给统一 justify：Center/End 分别使用半量/全量负偏移，Start 与 Space* 不产生负分布；零尺寸 bootstrap 仍从自然起点开始。wrapped 路径按当前行是否已有项目决定分行，而不是以累计占用是否大于零代替项目存在性；零主轴尺寸子项仍参与 gap 与换行边界。自然行盒形成后，默认 Stretch 再把实际交叉轴正剩余空间等分到各行并同步行起点；只有一行时与 non-wrap 填充语义一致，`align_self` 只覆盖项内对齐。单行和 wrapped 的 Stretch 最终尺寸统一经子项交叉轴 min/max 钳制；行盒可继续消费剩余空间，达到上限的子项保持行起点。非 Stretch 行组在实际交叉轴溢出时保留有限负剩余空间，Center 使用半量负偏移，End 使用全量负偏移使行组末端贴住容器末端；交叉轴 bootstrap 没有可分布的实际范围，两者都固定零偏移并由自然行组撑开输出。固有反向主轴仅在 bootstrap 按自然内容长度镜像，获得非零实际 frame 后与 justify 共用实际容器主轴；零交叉轴由自然外尺寸 bootstrap。空子集的固定尺寸输出保留完整 frame；固有主轴或溢出模式按零个自然子项把主轴收敛为零，交叉轴继续使用父级分配值，四种方向只决定折叠宽度或高度。
 - Grid 使用显式 column/row track、cell/span 与独立 row/column gap；空 track 或空 child 返回有限空输出，per-child `align_self` 覆盖容器级交叉轴对齐。
 - Grid 先确定 `Px` 与基于子项有限测量外尺寸的 `Auto`，再让正权重 `Fr` 按比例分配剩余空间；纯 `Auto` 轨道不为填满容器而膨胀。
 - Grid 水平内容对齐与单元格内子项对齐使用独立通道：`Grid::justify` / `GridLayout::with_content_justify` 在轨道解析后移动或分散整组列轨，`GridLayout::with_justify` 继续只控制子项在单元格内的位置。Center/End 分配前置剩余空间，SpaceBetween/SpaceAround/SpaceEvenly 只增加轨道间或两端分布空间，Stretch 只均分扩展 `Auto` 列；没有正剩余空间或可扩展 `Auto` 时保持 Start 几何。
@@ -89,4 +89,5 @@
 - `bdccced7` 让单行与 wrapped 的交叉轴 Stretch 最终候选统一服从子项 min/max：过小容器不再压破最小值，宽裕容器或扩展行盒也不再拉破最大值。两个内部聚焦门禁修复前分别得到 10px 而非 20px 的单行最小高度、20px 而非 12px 的换行子项高度；修复后内部 Flex 6/6、两项新增门禁 2/2、公开布局契约 37/37、库测试 137/137，两套特性组合检查均成功。
 - `9cd3ae5a` 恢复 wrapped 行组在交叉轴负剩余空间下的 End 对齐：两行与固定 gap 形成 25px 自然高度、实际容器只有 15px 时，行组整体向起点外偏移 10px，使末行底边继续贴住容器末端。聚焦契约修复前首行错误停在 `y=6px`，修复后位于 `y=-4px`；公开布局契约 38/38、库测试 137/137，两套特性组合检查均成功。
 - `af35d11b` 把 wrapped 行组的交叉轴 Center/End 偏移限制在获得实际交叉轴之后：零高度 bootstrap 继续按两行与固定 gap 形成的 25px 自然高度从原点排列，不围绕零尺寸范围生成负坐标。聚焦契约修复前 Center 把首行从 `y=6px` 移到 `y=-6.5px`，修复后 Center/End 都从 `y=6px` 开始；公开布局契约 39/39、库测试 137/137，两套特性组合检查均成功。
+- `382dd1df` 修正公开 `FlexLayout` 空子集早返回的主轴账本：固定尺寸空布局保持父级 frame；`intrinsic_main` 与 `overflow_content` 按方向只折叠自然主轴并保留交叉轴。聚焦契约修复前水平固有布局把空内容记为 100×20px，修复后水平、垂直与溢出入口分别得到 0×20px、100×0px 与 0×20px；公开布局契约 40/40、库测试 137/137，两套特性组合检查均成功。
 - 现有证据仍不替代 Flex 其他 overflow/wrap/固有轴组合、其他组件 measure/paint/hit-test 一致性、其余组件失效分类、可变行高缓存或真窗视觉矩阵。
