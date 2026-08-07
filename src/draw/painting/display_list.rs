@@ -206,6 +206,8 @@ impl DisplayList {
         self.ops.len()
     }
 
+    // 测试目标保留绘制操作只读观测入口，供 display-list 语义测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn ops(&self) -> &[PaintOp] {
         &self.ops
@@ -215,6 +217,8 @@ impl DisplayList {
         Arc::make_mut(&mut self.ops).push(op);
     }
 
+    // 测试目标保留操作存储共享性观测入口，供写时复制测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn shares_operation_storage_with(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.ops, &other.ops)

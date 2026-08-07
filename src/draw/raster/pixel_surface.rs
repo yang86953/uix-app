@@ -183,6 +183,8 @@ impl PixelSurface {
     }
 
     /// 当前清除颜色。
+    // 测试目标保留清除颜色观测入口，供像素表面契约测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn clear_color(&self) -> Color {
         self.clear_color

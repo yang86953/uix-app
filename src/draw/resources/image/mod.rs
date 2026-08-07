@@ -188,7 +188,8 @@ impl ImageService {
     }
 
     /// 返回源位图的居中正方形裁切，结果按源句柄缓存。
-    #[cfg_attr(not(test), allow(dead_code))]
+    // 测试目标保留居中裁切入口，供图片资源契约测试按需调用。
+    #[allow(dead_code)]
     pub(crate) fn square_crop(&self, handle: BitmapHandle) -> Option<BitmapHandle> {
         let cached = self.square_cache.borrow().get(&handle).copied();
         if let Some(cached) = cached {
@@ -329,7 +330,8 @@ impl ImageService {
         Some(derived)
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    // 居中像素提取是图片裁切的兼容辅助入口，当前测试矩阵按需调用。
+    #[allow(dead_code)]
     fn centered_square_pixels(&self, handle: BitmapHandle) -> Option<(i32, Vec<u32>)> {
         self.with_slot(handle, |slot| {
             let side = slot.width.min(slot.height).max(0);

@@ -89,6 +89,8 @@ impl CommandRecorder {
         self.canvas.record_picture_blit(image, rect, rect)
     }
 
+    // 测试目标保留 scratch surface 尺寸观测入口，供 recorder 生命周期测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn scratch_surface_size(&self) -> (i32, i32) {
         (
@@ -97,6 +99,8 @@ impl CommandRecorder {
         )
     }
 
+    // 测试目标保留 offscreen scratch 尺寸观测入口，供 recorder 生命周期测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn offscreen_scratch_surface_size(
         &self,

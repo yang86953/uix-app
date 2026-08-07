@@ -102,6 +102,8 @@ impl CpuOffscreenPool {
         self.next_id = self.offscreens.len() as u32;
     }
 
+    // 测试目标保留槽位数量观测入口，供离屏池压缩测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn slot_len(&self) -> usize {
         self.offscreens.len()

@@ -62,6 +62,8 @@ fn gaussian_kernel(radius: f32) -> Arc<[f32]> {
     })
 }
 
+// 测试目标保留线程本地 kernel cache 长度观测入口，供模糊缓存测试按需调用。
+#[cfg_attr(test, allow(dead_code))]
 #[cfg(test)]
 pub(crate) fn kernel_cache_len_for_test() -> usize {
     KERNEL_CACHE.with(|cache| cache.borrow().len())
