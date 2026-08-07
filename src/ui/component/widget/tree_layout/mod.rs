@@ -2,9 +2,6 @@ use super::super::*;
 use crate::core::{Constraints, Rect, Size};
 use std::collections::HashSet;
 
-#[cfg(test)]
-use super::LAYOUT_TRACE_PHASE;
-
 fn frame_constraints(frame: Rect) -> Constraints {
     Constraints::loose(Size::new(frame.w, frame.h))
 }

@@ -496,9 +496,6 @@ mod tests {
     use crate::diagnostics::{Diagnostics, DiagnosticsConfig, RecoveryAction};
     use crate::native::capabilities::*;
     use crate::native::platform::Platform;
-    use crate::native::platform::*;
-    use crate::native::present::*;
-    use crate::native::presentation::*;
     use crate::native::windowing::event::EventBus;
     use crate::native::windowing::*;
     use std::collections::VecDeque;

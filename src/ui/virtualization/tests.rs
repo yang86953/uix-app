@@ -239,7 +239,7 @@ fn virtual_scroll_sanitizes_total_height_and_layout_frames() {
     assert!(huge.total_height() > 0.0);
 
     // 构造携带非法行高与偏移的最小物化窗口。
-    let mut scroll = VirtualScroll::new().item_count(1).item_height(f32::NAN);
+    let scroll = VirtualScroll::new().item_count(1).item_height(f32::NAN);
     // 模拟协调器已物化第一行。
     scroll.materialized_range.set(Some((0, 1)));
     // 模拟不可信恢复状态写入无穷偏移。
