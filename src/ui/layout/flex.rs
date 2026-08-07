@@ -703,8 +703,16 @@ fn compute_wrapped(
     // Position children line by line
     let mut child_rects = vec![Rect::zero(); count];
 
-    // 自然交叉轴总尺寸由所有行高与行间 gap 组成。
-    let natural_total_cross = (cursor_cross - line_gap).max(0.0);
+    // 自然交叉轴总尺寸必须覆盖所有行的最远物理末端。
+    let natural_total_cross = line_cross_positions
+        // 把每行起点与对应行高配对。
+        .iter()
+        // 负 gap 可能让较矮末行早于前面高行结束，因此不能只读取最终游标。
+        .zip(&line_max_cross)
+        // 逐行计算相对内容原点的有限物理末端。
+        .map(|(&start, &size)| finite_or_zero(start + size))
+        // 取所有行末端最大值，并把完全位于原点前的范围收敛为零。
+        .fold(0.0, f32::max);
     // 容器级 Stretch 同时承担多行交叉轴分布，让 wrap 开关不改变单行填充语义。
     let cross_align = input.align_items;
     // 实际未换行时应与非换行路径共享完整容器交叉轴行盒。
