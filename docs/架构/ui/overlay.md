@@ -39,6 +39,8 @@
 
 `ed758bb3` 将同一约束延伸到 Mentions，并把呈现周期绑定到光标前的有效活动 `@` 查询：从非建议状态进入查询时清空缓存，同一查询内连续输入过滤则保留旧脏区。当前 surface、绝对触发锚点、相对弹层与历史绝对脏区由绘制、dirty、命中、虚拟滚动、键盘显露和 OverlayStack bounds 共同消费；登记只覆盖当前实际弹层，不再并入输入框。六项聚焦契约与完整库 180 项测试通过。日期类选择弹层仍需逐项审计，不能仅因 Select/Cascader/TreeSelect/AutoComplete/Mentions 已闭合就视为全部 overlay placement 完成。
 
+`677e5a7d` 将同一约束延伸到 DatePicker：表面解析器在触发器上下保留 2px 间隙，横向收敛宽度与起点，纵向优先完整向下、其次完整向上、最后选择较大空间缩高。组件缓存同帧 surface、绝对触发锚点、相对月历与当前打开周期的历史绝对脏区；共享月历则从最终矩形派生标题栏、星期栏、六行日期、导航和字体比例，使绘制与命中在 78px 受限高度下仍一致。OverlayStack 只登记当前月历，dirty 合并 resize 前后区域。五项聚焦契约与完整库 185 项测试通过。DateRangePicker、TimePicker、ColorPicker 仍需逐项审计，不能据此视为日期时间颜色类 overlay placement 全部完成。
+
 ## 焦点
 
 - 模态浮层打开后把焦点移入第一个可聚焦节点，Tab/Shift+Tab 在 trap 内循环。
