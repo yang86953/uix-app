@@ -12,7 +12,6 @@ use crate::draw::scene::NodeId;
 mod layout;
 mod render;
 
-
 struct DebugHover {
     chain: HashSet<NodeId>,
     leaf: NodeId,
@@ -28,6 +27,8 @@ pub enum LayerNode {
         offscreen_handle: Option<ImageHandle>,
         /// widget 自身 Content 阶段的 DisplayList（Phase 7 离屏回放缓存）。
         display_list: Option<DisplayList>,
+        // 保存父布局限制当前节点子树的可见片段。
+        clip_regions: Option<Vec<Rect>>,
         children: Vec<LayerNode>,
         /// 离屏创建连续失败计数，rebuild 时重置为 0。
         retry_count: u8,
@@ -38,6 +39,8 @@ pub enum LayerNode {
         rect: Rect,
         transform: Transform,
         opacity: f32,
+        // 保存父布局限制当前节点子树的可见片段。
+        clip_regions: Option<Vec<Rect>>,
         children: Vec<LayerNode>,
     },
     /// 普通节点：直接渲染 widget 及其子树（无特殊图层语义，无离屏缓存）。
@@ -45,6 +48,8 @@ pub enum LayerNode {
         node_id: NodeId,
         transform: Transform,
         opacity: f32,
+        // 保存父布局限制当前节点子树的可见片段。
+        clip_regions: Option<Vec<Rect>>,
         children: Vec<LayerNode>,
     },
 }
@@ -58,6 +63,7 @@ impl std::fmt::Debug for LayerNode {
                 is_dirty,
                 offscreen_handle,
                 display_list,
+                clip_regions,
                 children,
                 retry_count,
             } => f
@@ -67,6 +73,13 @@ impl std::fmt::Debug for LayerNode {
                 .field("is_dirty", is_dirty)
                 .field("has_offscreen", &offscreen_handle.is_some())
                 .field("has_display_list", &display_list.is_some())
+                // 记录调试输出中的父级裁剪片段数量。
+                .field(
+                    // 使用稳定字段名暴露片段规模。
+                    "clip_regions_count",
+                    // 未声明片段时按零处理。
+                    &clip_regions.as_ref().map_or(0, Vec::len),
+                )
                 .field("children_count", &children.len())
                 .field("retry_count", retry_count)
                 .finish(),
@@ -75,6 +88,7 @@ impl std::fmt::Debug for LayerNode {
                 rect,
                 transform,
                 opacity,
+                clip_regions,
                 children,
             } => f
                 .debug_struct("ClipRectLayer")
@@ -82,18 +96,33 @@ impl std::fmt::Debug for LayerNode {
                 .field("rect", rect)
                 .field("transform", transform)
                 .field("opacity", opacity)
+                // 记录调试输出中的父级裁剪片段数量。
+                .field(
+                    // 使用稳定字段名暴露片段规模。
+                    "clip_regions_count",
+                    // 未声明片段时按零处理。
+                    &clip_regions.as_ref().map_or(0, Vec::len),
+                )
                 .field("children_count", &children.len())
                 .finish(),
             LayerNode::Direct {
                 node_id,
                 transform,
                 opacity,
+                clip_regions,
                 children,
             } => f
                 .debug_struct("DirectLayer")
                 .field("node_id", node_id)
                 .field("transform", transform)
                 .field("opacity", opacity)
+                // 记录调试输出中的父级裁剪片段数量。
+                .field(
+                    // 使用稳定字段名暴露片段规模。
+                    "clip_regions_count",
+                    // 未声明片段时按零处理。
+                    &clip_regions.as_ref().map_or(0, Vec::len),
+                )
                 .field("children_count", &children.len())
                 .finish(),
         }
@@ -161,6 +190,19 @@ impl LayerNode {
             LayerNode::ClipRect { opacity, .. } | LayerNode::Direct { opacity, .. } => *opacity,
         }
     }
+
+    // 读取父布局为当前节点子树声明的裁剪片段。
+    fn clip_regions(&self) -> Option<&[Rect]> {
+        // 三种节点都携带相同的父级片段元数据。
+        match self {
+            // 图片节点只会在没有片段时进入缓存，但仍保留统一字段。
+            LayerNode::Picture { clip_regions, .. }
+            // 普通裁剪节点继承父级片段限制。
+            | LayerNode::ClipRect { clip_regions, .. }
+            // 直接节点同样在自身变换之前消费片段。
+            | LayerNode::Direct { clip_regions, .. } => clip_regions.as_deref(),
+        }
+    }
 }
 
 pub struct LayerTree {
@@ -214,5 +256,3 @@ impl Default for LayerTree {
         Self::new()
     }
 }
-
-

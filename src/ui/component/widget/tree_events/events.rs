@@ -64,6 +64,17 @@ impl WidgetTree {
                 .children_clip(node.frame())
                 .is_none_or(|clip| clip.contains(layout_pos));
         if can_hit_children {
+            // 把父节点视口坐标转换为子内容坐标，供片段裁剪命中复用。
+            let child_clip_pos = node
+                // 读取父节点施加在全部子项上的滚动偏移。
+                .viewport_scroll_offset()
+                // 滚动内容坐标等于视口坐标加当前偏移。
+                .map(|(scroll_x, scroll_y)| {
+                    // 构造与子节点布局 frame 相同坐标系中的命中点。
+                    Point::new(layout_pos.x + scroll_x, layout_pos.y + scroll_y)
+                })
+                // 非滚动父节点直接沿用当前布局坐标。
+                .unwrap_or(layout_pos);
             let mut sorted: Vec<WidgetId> = node.children().to_vec();
             sorted.sort_by(|&a, &b| {
                 let za = self.get(a).map_or(0, |c| c.z_index());
@@ -82,6 +93,22 @@ impl WidgetTree {
                 start = end;
             }
             for &child_id in &sorted {
+                // 先按父布局为该子树声明的片段集合过滤命中。
+                let inside_parent_regions = self
+                    // 读取当前子节点保存的父级片段元数据。
+                    .get(child_id)
+                    // 缺少片段表示普通未裁剪子树，存在片段则要求命中任一矩形。
+                    .and_then(|child| child.parent_clip_regions())
+                    // 空片段集合自然拒绝全部命中。
+                    .is_none_or(|regions| {
+                        // 不连续片段使用集合命中，不能退化为联合包围盒。
+                        regions.iter().any(|region| region.contains(child_clip_pos))
+                    });
+                // 指针落在片段间隙时跳过整个子树。
+                if !inside_parent_regions {
+                    // 继续检查下一层视觉兄弟节点。
+                    continue;
+                }
                 if let Some(hit) = self.hit_test_internal(child_id, pos) {
                     return Some(hit);
                 }
@@ -95,6 +122,63 @@ impl WidgetTree {
         } else {
             None
         }
+    }
+
+    // 验证屏幕点是否位于目标节点及其祖先链的父级片段裁剪中。
+    pub(super) fn point_inside_parent_clip_regions(
+        // 接收需要验证的目标节点。
+        &self,
+        // 接收目标节点标识。
+        target: WidgetId,
+        // 接收屏幕坐标中的指针位置。
+        pos: Point,
+    ) -> bool {
+        // 从目标开始逐级检查每条父子边上的可选片段集合。
+        let mut current = Some(target);
+        // 祖先链有限，直到根节点结束。
+        while let Some(id) = current {
+            // 节点已移除时不能继续视为命中。
+            let Some(node) = self.get(id) else {
+                // 返回失败避免事件落到失效节点。
+                return false;
+            };
+            // 保存父节点标识供本轮片段换算与下一轮遍历。
+            let parent = node.parent();
+            // 只在父布局声明片段时执行集合命中。
+            if let Some(regions) = node.parent_clip_regions() {
+                // 根节点没有父坐标系，不能合法携带父级片段。
+                let Some(parent_id) = parent else {
+                    // 拒绝结构不完整的片段元数据。
+                    return false;
+                };
+                // 读取父节点以换算其滚动内容坐标。
+                let Some(parent_node) = self.get(parent_id) else {
+                    // 父节点丢失时拒绝命中。
+                    return false;
+                };
+                // 将屏幕点转换到父节点布局坐标。
+                let Some(mut parent_pos) = self.point_to_node_layout(parent_id, pos) else {
+                    // 不可逆变换下不能安全命中片段。
+                    return false;
+                };
+                // 父节点滚动时，片段与子 frame 位于内容坐标。
+                if let Some((scroll_x, scroll_y)) = parent_node.viewport_scroll_offset() {
+                    // 加回水平滚动偏移。
+                    parent_pos.x += scroll_x;
+                    // 加回垂直滚动偏移。
+                    parent_pos.y += scroll_y;
+                }
+                // 任一祖先片段集合未包含指针时立即拒绝。
+                if !regions.iter().any(|region| region.contains(parent_pos)) {
+                    // 不允许完整 frame 包围盒绕过不连续片段。
+                    return false;
+                }
+            }
+            // 上移到父节点继续检查更外层片段。
+            current = parent;
+        }
+        // 全部父级片段约束都通过后接受命中。
+        true
     }
 
     pub fn dispatch_event(&mut self, event: &SystemEvent) -> EventResult {

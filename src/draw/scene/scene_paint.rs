@@ -34,6 +34,13 @@ pub trait ScenePaint {
         1.0
     }
     fn node_children(&self, id: NodeId) -> &[NodeId];
+    // 返回父布局为节点子树声明的不连续裁剪片段。
+    fn node_clip_regions(&self, id: NodeId) -> Option<Vec<Rect>> {
+        // 默认场景节点不需要额外的父级片段裁剪。
+        let _ = id;
+        // 用空能力保持现有场景实现兼容。
+        None
+    }
     fn node_picture_policy(&self, id: NodeId) -> PicturePolicy {
         let _ = id;
         PicturePolicy::Never

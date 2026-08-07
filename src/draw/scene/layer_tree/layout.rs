@@ -7,10 +7,11 @@ use crate::draw::scene::NodeId;
 use crate::draw::scene::{PicturePolicy, ScenePaint};
 use crate::draw::RenderTarget;
 
-use super::{LayerTree, LayerNode, PictureCandidate, PictureSubtreeStats, PICTURE_CACHE_BUDGET_BYTES};
+use super::{
+    LayerNode, LayerTree, PictureCandidate, PictureSubtreeStats, PICTURE_CACHE_BUDGET_BYTES,
+};
 
 impl LayerTree {
-
     pub fn new() -> Self {
         Self {
             root: None,
@@ -195,6 +196,8 @@ impl LayerTree {
         let frame = scene.node_frame(id);
         let transform = scene.node_transform(id);
         let opacity = scene.node_opacity(id).clamp(0.0, 1.0);
+        // 捕获父布局为当前节点声明的不连续裁剪片段。
+        let clip_regions = scene.node_clip_regions(id);
         let descendants_support_offscreen = supports_offscreen && transform.is_identity();
 
         if supports_offscreen && selected_pictures.contains(&id) {
@@ -227,6 +230,8 @@ impl LayerTree {
                     || scene.node_dirty(id),
                 offscreen_handle,
                 display_list,
+                // 图片节点沿用统一的父级片段元数据。
+                clip_regions,
                 children,
                 retry_count: 0,
             })
@@ -246,6 +251,8 @@ impl LayerTree {
                 rect: adj,
                 transform,
                 opacity,
+                // 在节点自身变换之前应用父级片段。
+                clip_regions,
                 children,
             })
         } else {
@@ -261,6 +268,8 @@ impl LayerTree {
                 node_id: id,
                 transform,
                 opacity,
+                // 在节点自身变换之前应用父级片段。
+                clip_regions,
                 children,
             })
         }
@@ -279,10 +288,14 @@ impl LayerTree {
         }
         let transform = scene.node_transform(id);
         let opacity = scene.node_opacity(id).clamp(0.0, 1.0);
+        // overlay 通常没有父级片段，但仍保持节点结构一致。
+        let clip_regions = scene.node_clip_regions(id);
         Some(LayerNode::Direct {
             node_id: id,
             transform,
             opacity,
+            // 保存可选的父级片段快照。
+            clip_regions,
             children: Self::build_children_cached(
                 scene,
                 id,
@@ -447,6 +460,8 @@ impl LayerTree {
             && !scene.node_wants_continuous_pointer_move(id)
             && !scene.node_is_overlay(id)
             && !scene.node_focusable(id)
+            // 带父级片段的节点必须在主合成路径逐片重放，不能提升为单张 Picture。
+            && scene.node_clip_regions(id).is_none()
             && scene.children_clip(id, frame).is_none()
             && scene.scroll_offset(id).is_none()
             && scene.node_transform(id).is_identity()
@@ -494,9 +509,16 @@ impl LayerTree {
                 node_id,
                 bounds,
                 is_dirty,
+                clip_regions,
                 children,
                 ..
             } => {
+                // 同步父布局可能因滚动或重排改变的片段集合。
+                let next_clip_regions = scene.node_clip_regions(*node_id);
+                // 片段变化必须使所属图片节点失效。
+                let clip_regions_changed = *clip_regions != next_clip_regions;
+                // 保存最新片段快照。
+                *clip_regions = next_clip_regions;
                 // 窗口放大后若未 rebuild，仍须刷新 bounds，否则离屏/blit 卡在旧几何。
                 let frame = scene.node_frame(*node_id);
                 if *bounds != frame {
@@ -511,7 +533,7 @@ impl LayerTree {
                         child_dirty = true;
                     }
                 }
-                *is_dirty = *is_dirty || self_dirty || child_dirty;
+                *is_dirty = *is_dirty || clip_regions_changed || self_dirty || child_dirty;
                 *is_dirty
             }
             LayerNode::ClipRect {
@@ -519,6 +541,7 @@ impl LayerTree {
                 rect,
                 transform,
                 opacity,
+                clip_regions,
                 children,
             } => {
                 let next_transform = scene.node_transform(*node_id);
@@ -527,6 +550,12 @@ impl LayerTree {
                 let next_opacity = scene.node_opacity(*node_id).clamp(0.0, 1.0);
                 let opacity_changed = *opacity != next_opacity;
                 *opacity = next_opacity;
+                // 同步父布局可能因滚动或重排改变的片段集合。
+                let next_clip_regions = scene.node_clip_regions(*node_id);
+                // 记录片段集合是否发生变化。
+                let clip_regions_changed = *clip_regions != next_clip_regions;
+                // 保存最新片段快照。
+                *clip_regions = next_clip_regions;
                 let frame = scene.node_frame(*node_id);
                 if let Some(clip) = scene.children_clip(*node_id, frame) {
                     if *rect != clip {
@@ -540,12 +569,18 @@ impl LayerTree {
                         child_dirty = true;
                     }
                 }
-                transform_changed || opacity_changed || self_dirty || child_dirty
+                transform_changed
+                    || opacity_changed
+                    // 片段变化同样属于可见几何变化。
+                    || clip_regions_changed
+                    || self_dirty
+                    || child_dirty
             }
             LayerNode::Direct {
                 node_id,
                 transform,
                 opacity,
+                clip_regions,
                 children,
             } => {
                 let next_transform = scene.node_transform(*node_id);
@@ -554,6 +589,12 @@ impl LayerTree {
                 let next_opacity = scene.node_opacity(*node_id).clamp(0.0, 1.0);
                 let opacity_changed = *opacity != next_opacity;
                 *opacity = next_opacity;
+                // 同步父布局可能因滚动或重排改变的片段集合。
+                let next_clip_regions = scene.node_clip_regions(*node_id);
+                // 记录片段集合是否发生变化。
+                let clip_regions_changed = *clip_regions != next_clip_regions;
+                // 保存最新片段快照。
+                *clip_regions = next_clip_regions;
                 let self_dirty = scene.node_dirty(*node_id);
                 let mut child_dirty = false;
                 for child in children.iter_mut() {
@@ -561,10 +602,13 @@ impl LayerTree {
                         child_dirty = true;
                     }
                 }
-                transform_changed || opacity_changed || self_dirty || child_dirty
+                transform_changed
+                    || opacity_changed
+                    // 片段变化同样属于可见几何变化。
+                    || clip_regions_changed
+                    || self_dirty
+                    || child_dirty
             }
         }
     }
-
 }
-

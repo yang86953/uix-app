@@ -2,75 +2,75 @@
 
 use super::*;
 
-    #[derive(Clone)]
-    struct UserRow {
-        id: u64,
-        name: String,
-    }
+#[derive(Clone)]
+struct UserRow {
+    id: u64,
+    name: String,
+}
 
-    fn data_table(rows: Vec<UserRow>) -> DataTable<UserRow> {
-        let Ok(table) = Table::data(rows.clone(), |row| row.id.to_string()) else {
-            panic!("Table::data must accept a stable id extractor");
-        };
-        table
-            .columns(vec![
-                TableColumn::new("ID", 80.0).bind(|r: &UserRow| r.id.to_string())
-            ])
-            .row_height(32.0)
-    }
+fn data_table(rows: Vec<UserRow>) -> DataTable<UserRow> {
+    let Ok(table) = Table::data(rows.clone(), |row| row.id.to_string()) else {
+        panic!("Table::data must accept a stable id extractor");
+    };
+    table
+        .columns(vec![
+            TableColumn::new("ID", 80.0).bind(|r: &UserRow| r.id.to_string())
+        ])
+        .row_height(32.0)
+}
 
-    #[test]
-    fn virtualized_true_materializes_viewport_only() {
-        let rows = (0..1000)
-            .map(|id| UserRow {
-                id,
-                name: format!("row-{id}"),
-            })
-            .collect::<Vec<_>>();
-        let data = data_table(rows).virtualized(true);
-        let (table, _, _) = data.into_parts();
+#[test]
+fn virtualized_true_materializes_viewport_only() {
+    let rows = (0..1000)
+        .map(|id| UserRow {
+            id,
+            name: format!("row-{id}"),
+        })
+        .collect::<Vec<_>>();
+    let data = data_table(rows).virtualized(true);
+    let (table, _, _) = data.into_parts();
 
-        // 1000 行 + 32px 行高 + 320px 视口：只物化可视区与 overscan。
-        let (start, end) = table.visible_row_range(320.0);
-        assert!(
-            end - start <= 30,
-            "虚拟化应限制物化行数，实际 {}",
-            end - start
-        );
-        assert!(end > start);
-        assert_eq!(table.row_keys().len(), 1000, "行身份仍保留全量");
-    }
+    // 1000 行 + 32px 行高 + 320px 视口：只物化可视区与 overscan。
+    let (start, end) = table.visible_row_range(320.0);
+    assert!(
+        end - start <= 30,
+        "虚拟化应限制物化行数，实际 {}",
+        end - start
+    );
+    assert!(end > start);
+    assert_eq!(table.row_keys().len(), 1000, "行身份仍保留全量");
+}
 
-    #[test]
-    fn virtualized_false_materializes_all_rows() {
-        let rows = (0..1000)
-            .map(|id| UserRow {
-                id,
-                name: format!("row-{id}"),
-            })
-            .collect::<Vec<_>>();
-        let data = data_table(rows).virtualized(false);
-        let (table, _, _) = data.into_parts();
+#[test]
+fn virtualized_false_materializes_all_rows() {
+    let rows = (0..1000)
+        .map(|id| UserRow {
+            id,
+            name: format!("row-{id}"),
+        })
+        .collect::<Vec<_>>();
+    let data = data_table(rows).virtualized(false);
+    let (table, _, _) = data.into_parts();
 
-        assert_eq!(table.visible_row_range(320.0), (0, 1000));
-    }
+    assert_eq!(table.visible_row_range(320.0), (0, 1000));
+}
 
-    #[test]
-    fn virtualized_is_alias_of_virtual_scroll() {
-        let rows = (0..100)
-            .map(|id| UserRow {
-                id,
-                name: format!("row-{id}"),
-            })
-            .collect::<Vec<_>>();
-        let on = data_table(rows.clone()).virtualized(true);
-        let (table_on, _, _) = on.into_parts();
-        assert!(table_on.virtual_scroll);
+#[test]
+fn virtualized_is_alias_of_virtual_scroll() {
+    let rows = (0..100)
+        .map(|id| UserRow {
+            id,
+            name: format!("row-{id}"),
+        })
+        .collect::<Vec<_>>();
+    let on = data_table(rows.clone()).virtualized(true);
+    let (table_on, _, _) = on.into_parts();
+    assert!(table_on.virtual_scroll);
 
-        let off = data_table(rows).virtualized(false);
-        let (table_off, _, _) = off.into_parts();
-        assert!(!table_off.virtual_scroll);
-    }
+    let off = data_table(rows).virtualized(false);
+    let (table_off, _, _) = off.into_parts();
+    assert!(!table_off.virtual_scroll);
+}
 
 // 标记跨固定区列合并的命中必须回落到唯一锚点。
 #[test]
@@ -106,4 +106,129 @@ fn cross_zone_col_span_hit_uses_single_anchor() {
         Some((0, 0))
     );
     // 结束跨固定区列合并命中契约。
+}
+
+// 标记自定义 View 必须按完整逻辑合并矩形布局。
+#[test]
+// 验证跨固定区 View 不再收缩到锚点所属的单一列区片段。
+fn cross_zone_view_cell_uses_full_span_layout_frame() {
+    // 构造先声明且固定在视觉右侧的两列合并锚点。
+    let right_anchor = TableColumn::new("右侧视图锚点", 60.0)
+        // 让首列覆盖逻辑上紧随其后的左固定列。
+        .col_span(|_row, column| if column == 0 { 2 } else { 1 })
+        // 将自定义 View 锚点固定到视口右侧。
+        .fixed(Fixed::Right);
+    // 构造后声明但固定在视觉左侧的覆盖列。
+    let left_covered = TableColumn::new("左侧覆盖列", 40.0).fixed(Fixed::Left);
+    // 建立包含单行数据的表格并允许直接指定 View 列。
+    let mut table = Table::new()
+        // 保留右侧锚点先于左侧覆盖列的逻辑顺序。
+        .columns(vec![right_anchor, left_covered])
+        // 提供单行数据以物化首个自定义单元格。
+        .rows(vec![vec!["视图".to_string(), "覆盖".to_string()]]);
+    // 将首列标记为由动态 View 子树负责绘制。
+    table.view_columns = vec![0];
+    // 构造可保存布局片段元数据的真实组件树。
+    let mut tree = WidgetTree::new();
+    // 让唯一标签节点代表首行首列的有状态 View 子树。
+    let child_id = tree.set_root(Box::new(crate::ui::widgets::Label::new("片段")));
+    // 使用真实节点身份建立唯一物化 View 子节点的布局描述。
+    let child = LayoutChild::new(child_id, Size::zero());
+    // 在一百像素视口中执行自定义单元格布局。
+    let positions = crate::ui::component::traits::WidgetLayout::layout_children(
+        // 使用待审计的表格实例。
+        &table,
+        // 表头之后保留足够容纳首行的表体高度。
+        Rect::new(0.0, 0.0, 100.0, 100.0),
+        // 只布局首行首列的唯一 View 子树。
+        &[child],
+        // 传入真实组件树以同步验证片段裁剪元数据。
+        &tree,
+    );
+    // 唯一子项必须从视觉最左侧开始占满完整合并宽度。
+    assert_eq!(
+        // 读取首个 View 子树的最终布局矩形。
+        positions.first().map(|(_, frame)| *frame),
+        // 表体首行从三十三像素处开始并覆盖完整一百像素宽度。
+        Some(Rect::new(0.0, 33.0, 100.0, 28.0))
+    );
+    // 同一 View 子树必须记录视觉左右区的两个不连续绘制片段。
+    assert_eq!(
+        // 从真实节点读取布局阶段保存的父级裁剪片段。
+        tree.get(child_id)
+            // 节点存在时克隆片段集合用于稳定比较。
+            .and_then(|node| node.parent_clip_regions()),
+        // 左固定区先绘制，右固定锚点区随后绘制。
+        Some(vec![
+            // 左固定覆盖列贡献视觉左侧四十像素。
+            Rect::new(0.0, 33.0, 40.0, 28.0),
+            // 右固定锚点列贡献视觉右侧六十像素。
+            Rect::new(40.0, 33.0, 60.0, 28.0),
+        ])
+    );
+    // 结束跨固定区自定义 View 完整布局契约。
+}
+
+// 标记父级片段裁剪必须同时约束子树命中范围。
+#[test]
+// 验证命中可以进入任一片段，但不能穿过两个片段之间的空隙。
+fn parent_clip_regions_reject_hit_in_fragment_gap() {
+    // 构造承载分片子树的父级标签节点。
+    let mut tree = WidgetTree::new();
+    // 建立覆盖完整测试视口的根节点。
+    let root_id = tree.set_root(Box::new(crate::ui::widgets::Label::new("父级")));
+    // 在根节点下挂载唯一有状态子树。
+    let child_id = tree.add_child(
+        // 指定根节点为直接父级。
+        root_id,
+        // 使用标签提供可命中的普通组件节点。
+        Box::new(crate::ui::widgets::Label::new("子树")),
+    );
+    // 将父节点布局到一百乘二十像素的测试视口。
+    crate::ui::component::widget::WidgetCore::set_frame(
+        // 获取根节点的可变组件包装。
+        tree.get_mut(root_id).expect("根节点必须存在"),
+        // 父节点覆盖完整测试区域。
+        Rect::new(0.0, 0.0, 100.0, 20.0),
+    );
+    // 将子树同样布局到完整逻辑跨度，保持单一状态实例。
+    crate::ui::component::widget::WidgetCore::set_frame(
+        // 获取子节点的可变组件包装。
+        tree.get_mut(child_id).expect("子节点必须存在"),
+        // 子树逻辑 frame 横跨两个可见片段及其间隙。
+        Rect::new(0.0, 0.0, 100.0, 20.0),
+    );
+    // 为子树声明左右两个互不相连的父级可见片段。
+    tree.get(child_id)
+        // 真实子节点必须可以保存布局元数据。
+        .expect("子节点必须存在")
+        // 片段集合刻意在中间留下六十像素空隙。
+        .set_parent_clip_regions(Some(vec![
+            // 左侧片段覆盖前二十像素。
+            Rect::new(0.0, 0.0, 20.0, 20.0),
+            // 右侧片段覆盖最后二十像素。
+            Rect::new(80.0, 0.0, 20.0, 20.0),
+        ]));
+    // 左侧可见片段必须命中唯一子树。
+    assert_eq!(
+        // 使用屏幕坐标命中左侧可见区域。
+        tree.hit_test(crate::core::Point::new(10.0, 10.0)),
+        // 命中结果必须是唯一子树节点。
+        Some(child_id)
+    );
+    // 中间片段空隙必须回落到父节点，不能误命中子树。
+    assert_eq!(
+        // 使用屏幕坐标命中两个片段之间的空隙。
+        tree.hit_test(crate::core::Point::new(50.0, 10.0)),
+        // 空隙只允许命中仍覆盖该位置的父节点。
+        Some(root_id)
+    );
+    // 右侧可见片段同样必须命中同一个子树实例。
+    assert_eq!(
+        // 使用屏幕坐标命中右侧可见区域。
+        tree.hit_test(crate::core::Point::new(90.0, 10.0)),
+        // 左右片段必须共享同一子树身份。
+        Some(child_id)
+    );
+    // 结束父级多片段命中契约。
 }

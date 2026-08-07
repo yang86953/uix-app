@@ -10,6 +10,8 @@ pub struct BoxedWidget {
     key: Option<Box<str>>,
     automation_id: Option<Box<str>>,
     frame: Rect,
+    // 保存父布局为当前节点子树声明的不连续可见片段。
+    parent_clip_regions: std::cell::RefCell<Option<Vec<Rect>>>,
     visible: bool,
     parent_visible: bool,
     visual_transform: ViewTransform,
@@ -55,6 +57,8 @@ impl BoxedWidget {
             key: None,
             automation_id: None,
             frame: Rect::zero(),
+            // 普通节点默认不受父级片段裁剪限制。
+            parent_clip_regions: std::cell::RefCell::new(None),
             visible: true,
             parent_visible: true,
             visual_transform: ViewTransform::default(),
@@ -437,6 +441,16 @@ impl BoxedWidget {
         self.component()
             .as_render()
             .and_then(|r| r.children_clip(frame))
+    }
+    // 更新父布局为当前节点子树提供的可见片段。
+    pub(crate) fn set_parent_clip_regions(&self, regions: Option<Vec<Rect>>) {
+        // 用内部可变状态接收布局阶段生成的片段快照。
+        *self.parent_clip_regions.borrow_mut() = regions;
+    }
+    // 读取当前节点子树应使用的父级可见片段。
+    pub(crate) fn parent_clip_regions(&self) -> Option<Vec<Rect>> {
+        // 克隆最多数个矩形，避免把借用带入合成与命中遍历。
+        self.parent_clip_regions.borrow().clone()
     }
     pub fn dirty_rect(&self, frame: Rect) -> Rect {
         self.component()

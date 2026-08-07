@@ -109,11 +109,21 @@ impl WidgetTree {
             return false;
         }
 
+        // 捕获期间也必须遵守目标祖先链上的不连续父级片段。
+        if !self.point_inside_parent_clip_regions(target, pos) {
+            // 指针进入片段间隙时视为移出目标。
+            return false;
+        }
+
         self.point_to_node_layout(target, pos)
             .is_some_and(|pos| node.hit_test_frame(node.frame()).contains(pos))
     }
 
-    pub(super) fn capture_wheel_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
+    pub(super) fn capture_wheel_to(
+        &mut self,
+        target: WidgetId,
+        event: &SystemEvent,
+    ) -> EventResult {
         let mut path = Vec::new();
         let mut current = Some(target);
         while let Some(id) = current {
@@ -143,7 +153,11 @@ impl WidgetTree {
         EventResult::NotHandled
     }
 
-    pub(super) fn dispatch_wheel_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
+    pub(super) fn dispatch_wheel_to(
+        &mut self,
+        target: WidgetId,
+        event: &SystemEvent,
+    ) -> EventResult {
         let mut current = Some(target);
         while let Some(id) = current {
             let Some(localized) = self.localize_spatial_event(id, event) else {
@@ -165,7 +179,11 @@ impl WidgetTree {
         EventResult::NotHandled
     }
 
-    pub(super) fn finish_scroll_aware_dispatch(&mut self, id: WidgetId, event: &SystemEvent) -> EventResult {
+    pub(super) fn finish_scroll_aware_dispatch(
+        &mut self,
+        id: WidgetId,
+        event: &SystemEvent,
+    ) -> EventResult {
         if let Some(action) = self.get_mut(id).and_then(|node| node.take_window_action()) {
             self.pending_window_actions.push(action);
         }
@@ -361,7 +379,11 @@ impl WidgetTree {
         EventResult::NotHandled
     }
 
-    pub(super) fn dispatch_double_click_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
+    pub(super) fn dispatch_double_click_to(
+        &mut self,
+        target: WidgetId,
+        event: &SystemEvent,
+    ) -> EventResult {
         let mut current = Some(target);
         while let Some(id) = current {
             let Some(double_click) = self.localize_spatial_event(id, event) else {
@@ -393,7 +415,11 @@ impl WidgetTree {
         EventResult::NotHandled
     }
 
-    pub(super) fn localize_spatial_event(&self, id: WidgetId, event: &SystemEvent) -> Option<SystemEvent> {
+    pub(super) fn localize_spatial_event(
+        &self,
+        id: WidgetId,
+        event: &SystemEvent,
+    ) -> Option<SystemEvent> {
         let frame = self.get(id)?.frame();
         let map_point = |point: Point| {
             self.point_to_node_layout(id, point)
