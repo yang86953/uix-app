@@ -61,7 +61,7 @@ fn overlapping_materialized_rows_retain_component_ids() {
         .downcast_mut::<VirtualScroll>()
         .expect("virtual scroll component");
     // 写入事件路径会产生的有限滚动偏移。
-    scroll.scroll_offset = 20.0;
+    scroll.scroll_offset.set(20.0);
     // 刷新物化窗口并要求结构确实发生变化。
     assert!(tree.refresh_virtual_scroll_component(root, Some(30.0)));
     // 收集刷新后的稳定 key 与组件标识。
@@ -243,7 +243,7 @@ fn virtual_scroll_sanitizes_total_height_and_layout_frames() {
     // 模拟协调器已物化第一行。
     scroll.materialized_range.set(Some((0, 1)));
     // 模拟不可信恢复状态写入无穷偏移。
-    scroll.scroll_offset = f32::INFINITY;
+    scroll.scroll_offset.set(f32::INFINITY);
     // 构造一个无需读取树内容的布局子项。
     let children = [LayoutChild::new(ComponentId::new(1), Size::new(10.0, 10.0))];
     // 空树足以覆盖虚拟行的纯几何放置路径。
@@ -334,23 +334,39 @@ fn variable_scroll_layout_uses_measured_item_frames() {
     assert_eq!(scroll.scroll_range(15.0), (0, 2));
 }
 
-// 验证测量版本变化会清除旧高度并回退到估算布局。
+// 验证显式失效会清除旧高度并回退到估算布局。
 #[test]
-fn measurement_version_change_reanchors_variable_scroll() {
-    // 构造一个带初始测量版本的可变列表。
-    let mut scroll = VirtualScroll::new()
+fn measurement_invalidation_reanchors_variable_scroll() {
+    // 构造一个带已测量高度的可变列表。
+    let scroll = VirtualScroll::new()
         .item_count(2)
         .item_height(10.0)
-        .variable_height()
-        .measurement_version(1);
-    // 写入当前版本的第一项目实际高度。
+        .variable_height();
+    // 写入当前项目的实际高度。
     assert!(scroll.measure_item(0, 25.0));
-    // 旧版本总高度应包含实际测量。
+    // 当前总高度应包含实际测量。
     assert_eq!(scroll.total_height(), 35.0);
-    // 切换字体或宽度版本后清除旧测量。
-    scroll.set_measurement_version(2);
-    // 新版本回退到两个十像素估算项目。
+    // 字体或宽度变化后显式清除旧测量。
+    scroll.invalidate_measurements();
+    // 清理后回退到两个十像素估算项目。
     assert_eq!(scroll.total_height(), 20.0);
-    // 旧测量不能再被读取。
+    // 清理后的旧测量不能再被读取。
     assert_eq!(scroll.measured_item_height(0), None);
+}
+
+// 验证视口上方项目变高时滚动偏移会保持当前可见锚点。
+#[test]
+fn upper_measurement_change_preserves_visible_anchor() {
+    // 构造十像素估算高度和二十像素视口的长列表。
+    let scroll = VirtualScroll::new()
+        .item_count(10)
+        .item_height(10.0)
+        .variable_height()
+        .size(100.0, 20.0);
+    // 将视口定位到第二项目起点，当前可见锚点为索引二。
+    scroll.scroll_offset.set(20.0);
+    // 第一项目变高二十像素时，上方累计高度增加二十像素。
+    assert!(scroll.measure_item(0, 30.0));
+    // 滚动偏移同步增加二十像素，保持原索引二的视觉位置。
+    assert_eq!(scroll.scroll_offset(), 40.0);
 }

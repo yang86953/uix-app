@@ -343,7 +343,7 @@ component! {
         item_height: f32,
         variable_height: bool,
         measurement_version: u64,
-        scroll_offset: f32,
+        scroll_offset: Cell<f32>,
         fixed_width: Option<f32>,
         fixed_height: Option<f32>,
         overscan: usize,
@@ -373,12 +373,12 @@ component! {
             let max_offset = self.max_scroll_offset_for_viewport(view_h);
             // 乘法溢出会形成有方向的无穷增量，并由共享入口夹到边界。
             let (new_offset, applied) = scroll_offset_after_delta(
-                self.scroll_offset,
+                self.scroll_offset.get(),
                 delta.y * 40.0,
                 max_offset,
             );
             // 即使没有实际位移也要清理可能来自恢复状态的非法旧值。
-            self.scroll_offset = new_offset;
+            self.scroll_offset.set(new_offset);
             // 只有达到既有交互阈值的实际位移才触发滚动脏区。
             if applied.abs() > 0.5 {
                 // 向脏区系统报告已经归一的有限位移。
@@ -416,7 +416,7 @@ component! {
 
     viewport_scroll_offset => (&self) -> Option<(f32, f32)> {
         // 对外只暴露有限非负的纵向偏移。
-        Some((0.0, finite_scroll_offset(self.scroll_offset)))
+        Some((0.0, finite_scroll_offset(self.scroll_offset.get())))
     }
 
     children_clip => (&self, frame: Rect) -> Option<Rect> {
@@ -450,8 +450,6 @@ component! {
     {
         // 父级输入先收敛到有限实际矩形。
         let frame = finite_virtual_rect(frame);
-        // 运行态偏移先收敛到有限非负坐标。
-        let scroll_offset = finite_scroll_offset(self.scroll_offset) as f64;
         // 读取当前物化窗口的绝对起始索引。
         let start = self.visible_start();
         // 按物化顺序为每个行子树计算绝对位置。
@@ -468,6 +466,8 @@ component! {
                 }
                 // 使用缓存前缀或固定行高计算项目起点。
                 let item_offset = self.item_offset(abs_i) as f64;
+                // 每个项目都读取最新的可变行高重锚偏移。
+                let scroll_offset = finite_scroll_offset(self.scroll_offset.get()) as f64;
                 // 使用 f64 完成坐标与偏移累加。
                 let y = frame.y as f64 + item_offset - scroll_offset;
                 // 最终纵坐标保留方向并夹到有限虚拟坐标范围。
@@ -494,7 +494,7 @@ impl VirtualScroll {
             item_height: 32.0,
             variable_height: false,
             measurement_version: 0,
-            scroll_offset: 0.0,
+            scroll_offset: Cell::new(0.0),
             fixed_width: None,
             fixed_height: None,
             overscan: 5,
@@ -515,7 +515,7 @@ impl VirtualScroll {
             .map(|frame| frame.h)
             .unwrap_or(next.fixed_height.unwrap_or(300.0));
         // 保存框架拥有的滚动运行态，声明更新不能直接覆盖它。
-        let scroll_offset = self.scroll_offset;
+        let scroll_offset = self.scroll_offset.get();
         // 只有模式或测量版本变化时才整体丢弃旧缓存。
         let reset_measurements = self.variable_height != next.variable_height
             || self.measurement_version != next.measurement_version;
@@ -554,8 +554,10 @@ impl VirtualScroll {
             .borrow_mut()
             .retain_item_count(self.item_count);
         // 根据新版有限内容边界归一并夹取旧滚动状态。
-        self.scroll_offset = finite_scroll_offset(scroll_offset)
-            .min(self.max_scroll_offset_for_viewport(viewport_height));
+        self.scroll_offset.set(
+            finite_scroll_offset(scroll_offset)
+                .min(self.max_scroll_offset_for_viewport(viewport_height)),
+        );
     }
 
     pub fn item_count(mut self, n: usize) -> Self {
@@ -638,7 +640,7 @@ impl VirtualScroll {
                 self.item_count,
                 self.item_height,
                 &self.measurement_cache.borrow(),
-                self.scroll_offset,
+                self.scroll_offset.get(),
                 viewport_height,
                 self.overscan,
             );
@@ -647,7 +649,7 @@ impl VirtualScroll {
         virtual_list_index_range(
             self.item_count,
             self.item_height,
-            self.scroll_offset,
+            self.scroll_offset.get(),
             viewport_height,
             self.overscan,
         )
@@ -684,7 +686,7 @@ impl VirtualScroll {
 
     pub fn scroll_offset(&self) -> f32 {
         // 对外隐藏任何来自旧状态或直接恢复的非法分量。
-        finite_scroll_offset(self.scroll_offset)
+        finite_scroll_offset(self.scroll_offset.get())
     }
 
     pub fn scroll_ratio(&self, viewport_height: f32) -> f32 {
@@ -696,7 +698,8 @@ impl VirtualScroll {
             return 0.0;
         }
         // 有效偏移先夹到内容范围，再计算零到一比例。
-        (finite_scroll_offset(self.scroll_offset).min(max_scroll) / max_scroll).clamp(0.0, 1.0)
+        (finite_scroll_offset(self.scroll_offset.get()).min(max_scroll) / max_scroll)
+            .clamp(0.0, 1.0)
     }
 
     pub fn visible_start(&self) -> usize {
@@ -713,9 +716,24 @@ impl VirtualScroll {
             // 非可变模式或越界索引直接忽略测量。
             return false;
         }
-        // 缓存只接受有限正高度。
+        let anchor = self.visible_anchor_index();
+        let old_anchor_offset = self
+            .measurement_cache
+            .borrow()
+            .offset_for_index(anchor, self.item_height);
         let changed = self.measurement_cache.borrow_mut().record(index, height);
-        // 缓存代际会让树协调器在下一次刷新时复核窗口。
+        if changed && index < anchor {
+            let new_anchor_offset = self
+                .measurement_cache
+                .borrow()
+                .offset_for_index(anchor, self.item_height);
+            let delta = new_anchor_offset as f64 - old_anchor_offset as f64;
+            let adjusted = finite_virtual_coordinate(self.scroll_offset.get() as f64 + delta);
+            self.scroll_offset.set(
+                finite_scroll_offset(adjusted)
+                    .min(self.max_scroll_offset_for_viewport(self.viewport_height())),
+            );
+        }
         changed
     }
 
@@ -734,21 +752,21 @@ impl VirtualScroll {
     pub fn invalidate_measurements(&self) {
         // 清空实际高度，后续项目回退到估算行高。
         self.measurement_cache.borrow_mut().clear();
-        // 缓存代际会让下一轮保留当前索引起点并复核几何。
     }
 
-    // 切换测量版本并清理旧缓存。
-    pub fn set_measurement_version(&mut self, version: u64) {
-        // 相同版本继续复用现有测量。
-        if self.measurement_version == version {
-            // 无版本变化时不触发无谓重排。
-            return;
+    // 计算当前视口的首个可见项目，作为测量重锚基准。
+    fn visible_anchor_index(&self) -> usize {
+        // 固定模式无需基于测量变化调整偏移。
+        if !self.variable_height {
+            return 0;
         }
-        // 保存新的测量失效边界。
-        self.measurement_version = version;
-        // 清理旧版本的所有实际高度并同步缓存版本。
-        self.measurement_cache.borrow_mut().set_version(version);
-        // 缓存代际会让下一轮保留当前索引起点并重新计算。
+        // 只计算可见窗口，不把 overscan 当成视觉锚点。
+        self.measurement_cache.borrow().first_visible_index(
+            self.item_count,
+            self.item_height,
+            self.scroll_offset.get(),
+            self.viewport_height(),
+        )
     }
 
     fn intrinsic_size(&self) -> Size {
