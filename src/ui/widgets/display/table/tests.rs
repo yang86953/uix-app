@@ -273,3 +273,192 @@ fn fixed_column_row_span_keeps_anchor_and_height() {
     // 行跨度高度必须等于两行自然高度之和。
     assert_eq!(table.span_height(0, 2), 40.0);
 }
+
+// 标记二维合并在完整列区与自定义 View 中必须共享同一布局契约。
+#[test]
+// 验证跨行跨列、片段裁剪、覆盖子树隐藏和行命中都回落到同一锚点。
+fn cross_zone_row_and_col_span_keep_view_layout_and_hit_consistent() {
+    // 构造同时跨两行和四列的左固定合并锚点。
+    let merged_anchor = TableColumn::new("二维合并锚点", 40.0)
+        // 让首列锚点覆盖当前行之后的一行。
+        .row_span(|_row, column| if column == 0 { 2 } else { 1 })
+        // 让首列锚点覆盖左、中、右全部逻辑列。
+        .col_span(|_row, column| if column == 0 { 4 } else { 1 })
+        // 将锚点固定在视觉左侧。
+        .fixed(Fixed::Left);
+    // 构造第一列中间滚动区覆盖列。
+    let middle_first = TableColumn::new("中间覆盖一", 30.0);
+    // 构造第二列中间滚动区覆盖列。
+    let middle_second = TableColumn::new("中间覆盖二", 30.0);
+    // 构造视觉右侧覆盖列以闭合全部固定区组合。
+    let right_covered = TableColumn::new("右侧覆盖列", 30.0).fixed(Fixed::Right);
+    // 建立三行数据，使第一行锚点、第二行覆盖和第三行新锚点同时存在。
+    let mut table = Table::new()
+        // 保留左固定、中间滚动和右固定三种物理列区。
+        .columns(vec![
+            merged_anchor,
+            middle_first,
+            middle_second,
+            right_covered,
+        ])
+        // 提供首行、被覆盖行和跨度结束后的新行。
+        .rows(vec![
+            // 提供首行的四列数据。
+            vec![
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+                "d".to_string(),
+            ],
+            // 提供第二行的四列数据。
+            vec![
+                "e".to_string(),
+                "f".to_string(),
+                "g".to_string(),
+                "h".to_string(),
+            ],
+            // 提供第三行的四列数据。
+            vec![
+                "i".to_string(),
+                "j".to_string(),
+                "k".to_string(),
+                "l".to_string(),
+            ],
+        ])
+        // 使用明确行高，使二维跨度高度可直接核验。
+        .row_height(20.0);
+    // 首行首列必须保留声明的两行跨度。
+    assert_eq!(table.row_span(0, 0), 2);
+    // 首行首列必须保留声明的四列跨度。
+    assert_eq!(table.col_span(0, 0), 4);
+    // 被覆盖行的中间列必须回落到首行首列锚点。
+    assert_eq!(table.cell_anchor(1, 2), Some((0, 0)));
+    // 被覆盖行的右固定列也必须回落到同一锚点。
+    assert_eq!(table.cell_anchor(1, 3), Some((0, 0)));
+    // 跨度结束后的第三行右列必须回落到第三行首列新锚点。
+    assert_eq!(table.cell_anchor(2, 3), Some((2, 0)));
+    // 使用一百像素宽的视口形成固定区重叠与完整跨度。
+    let frame = Rect::new(0.0, 0.0, 100.0, 120.0);
+    // 读取表头与分隔线之后的表体起点。
+    let body_top = table.total_header_height() + 1.0;
+    // 建立与绘制、布局和命中共享的列几何快照。
+    let geometry = table.column_geometry(frame.x, frame.w);
+    // 解析首行二维锚点的完整逻辑合并矩形。
+    let first_frame = geometry
+        // 以首列为锚点并覆盖全部四列。
+        .span_bounds(0, 4, body_top, 40.0)
+        // 当前列声明一定能生成完整跨度。
+        .expect("二维首行跨度必须拥有物理范围");
+    // 解析第三行跨度结束后的新逻辑单元格矩形。
+    let third_frame = geometry
+        // 以第三行首列为锚点并覆盖全部四列。
+        .span_bounds(0, 4, body_top + 40.0, 20.0)
+        // 当前列声明一定能生成完整跨度。
+        .expect("二维末行跨度必须拥有物理范围");
+    // 共享列几何必须把四列合并为一百像素完整宽度。
+    assert_eq!(first_frame, Rect::new(0.0, body_top, 100.0, 40.0));
+    // 第三行新锚点必须复用同一完整物理跨度。
+    assert_eq!(third_frame, Rect::new(0.0, body_top + 40.0, 100.0, 20.0));
+    // 将首列声明为唯一自定义 View 列，检查组件级子树布局。
+    table.view_columns = vec![0];
+    // 构造承载三行 View 子树的真实组件树。
+    let mut tree = WidgetTree::new();
+    // 建立首行二维合并锚点的 View 根节点。
+    let first_id = tree.set_root(Box::new(crate::ui::widgets::Label::new("首行锚点")));
+    // 建立第二行被覆盖 View 子树节点。
+    let second_id = tree.add_child(
+        // 将覆盖节点挂到同一父级树中。
+        first_id,
+        // 使用标签代表被合并覆盖的物化子树。
+        Box::new(crate::ui::widgets::Label::new("被覆盖")),
+    );
+    // 建立第三行跨度结束后新锚点的 View 子树节点。
+    let third_id = tree.add_child(
+        // 将新锚点节点挂到同一父级树中。
+        first_id,
+        // 使用标签代表第三行新的逻辑单元格。
+        Box::new(crate::ui::widgets::Label::new("新锚点")),
+    );
+    // 为物化的三行 View 子树提供稳定布局子项身份。
+    let children = [
+        // 首行子项对应二维合并锚点。
+        LayoutChild::new(first_id, Size::zero()),
+        // 第二行子项对应被覆盖物理位置。
+        LayoutChild::new(second_id, Size::zero()),
+        // 第三行子项对应跨度结束后的新锚点。
+        LayoutChild::new(third_id, Size::zero()),
+    ];
+    // 执行真实表格组件的子树布局入口。
+    let positions = crate::ui::component::traits::WidgetLayout::layout_children(
+        // 使用待审计的表格组件。
+        &table,
+        // 传入会同时影响列几何、可视行和命中范围的真实 frame。
+        frame,     // 传入按行排列的三个 View 子树。
+        &children, // 传入用于保存父级片段元数据的组件树。
+        &tree,
+    );
+    // 首行 View 必须按完整二维跨度只布局一次。
+    assert_eq!(positions[0], (first_id, first_frame));
+    // 第二行被覆盖 View 必须收敛为零尺寸并阻止重复绘制。
+    assert_eq!(
+        positions[1],
+        (second_id, Rect::new(0.0, body_top + 20.0, 0.0, 0.0))
+    );
+    // 第三行必须按跨度结束后的新锚点重新布局。
+    assert_eq!(positions[2], (third_id, third_frame));
+    // 首行 View 必须记录中间、左固定、右固定三个最终可见片段。
+    assert_eq!(
+        tree.get(first_id)
+            // 读取布局阶段写入的父级裁剪片段。
+            .and_then(|node| node.parent_clip_regions()),
+        Some(vec![
+            // 中间滚动区保留四十到七十像素片段。
+            Rect::new(40.0, body_top, 30.0, 40.0),
+            // 左固定区保留零到四十像素片段。
+            Rect::new(0.0, body_top, 40.0, 40.0),
+            // 右固定区保留七十到一百像素片段。
+            Rect::new(70.0, body_top, 30.0, 40.0),
+        ])
+    );
+    // 被覆盖 View 必须记录空片段集合以同时阻止绘制和命中。
+    assert_eq!(
+        tree.get(second_id)
+            // 读取覆盖子树的父级片段元数据。
+            .and_then(|node| node.parent_clip_regions()),
+        Some(Vec::new())
+    );
+    // 第三行新锚点必须按相同列区顺序记录可见片段。
+    assert_eq!(
+        tree.get(third_id)
+            // 读取新锚点的父级片段元数据。
+            .and_then(|node| node.parent_clip_regions()),
+        Some(vec![
+            // 中间滚动区保留第三行的四十到七十像素片段。
+            Rect::new(40.0, body_top + 40.0, 30.0, 20.0),
+            // 左固定区保留第三行的零到四十像素片段。
+            Rect::new(0.0, body_top + 40.0, 40.0, 20.0),
+            // 右固定区保留第三行的七十到一百像素片段。
+            Rect::new(70.0, body_top + 40.0, 30.0, 20.0),
+        ])
+    );
+    // 被覆盖行的左固定区域点击必须回落到首行锚点。
+    assert_eq!(
+        table.action_at_point(crate::core::Point::new(10.0, body_top + 25.0)),
+        Some(TablePointerAction::SelectRow(0))
+    );
+    // 被覆盖行的中间区域点击必须回落到同一首行锚点。
+    assert_eq!(
+        table.action_at_point(crate::core::Point::new(50.0, body_top + 25.0)),
+        Some(TablePointerAction::SelectRow(0))
+    );
+    // 被覆盖行的右固定区域点击也必须回落到同一首行锚点。
+    assert_eq!(
+        table.action_at_point(crate::core::Point::new(85.0, body_top + 25.0)),
+        Some(TablePointerAction::SelectRow(0))
+    );
+    // 跨度结束后的第三行点击不得继续回落到旧锚点。
+    assert_eq!(
+        table.action_at_point(crate::core::Point::new(85.0, body_top + 45.0)),
+        Some(TablePointerAction::SelectRow(2))
+    );
+}
