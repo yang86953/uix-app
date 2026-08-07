@@ -768,10 +768,8 @@ fn compute_wrapped(
             .sum();
         let total_line_main: f32 =
             base_main_sizes[line.start..line.end].iter().sum::<f32>() + line_margin_main;
-        // 当前行真实占用包含行内 gap。
-        let occupied_line_main = (total_line_main + line_gaps_total).max(0.0);
-        // 更新所有行的最大主轴占用。
-        max_line_main = max_line_main.max(occupied_line_main);
+        // 更新所有行包含声明 gap 的最大主轴占用。
+        max_line_main = max_line_main.max((total_line_main + line_gaps_total).max(0.0));
         // bootstrap 保持自然行起点；实际主轴保留负剩余空间供 Center/End 对齐超宽行。
         let remaining = if bootstrap_main {
             // 首次测量沿用自然行起点，避免无约束对齐生成负坐标。
@@ -784,9 +782,9 @@ fn compute_wrapped(
             compute_justify(remaining, line_count, gap, input.justify_content);
 
         let mut cursor_main = start_offset;
-
+        // 可见末端账本独立于 justify 偏移，并按声明 gap 自然推进。
+        let mut natural_cursor_main = 0.0f32;
         let line_cross_base = line_cross_positions[li] + cross_start_offset;
-
         for i in line.start..line.end {
             let margin = child_margin(input, i);
             let cross_align = input.children[i].align_self.unwrap_or(input.align_items);
@@ -827,6 +825,14 @@ fn compute_wrapped(
 
             child_rects[i] = Rect::new(cx, cy, cw, ch);
             let occupied_main = base_main_sizes[i] + margin_main(margin, is_row);
+            // 负尾侧 margin 不得裁掉当前子项的自然可见末端。
+            let visible_main_end = natural_cursor_main
+                + margin_main_start(margin, is_row, is_reverse)
+                + base_main_sizes[i];
+            // 全部行共同保留最远的有限主轴可见末端。
+            max_line_main = max_line_main.max(finite_or_zero(visible_main_end));
+            // 下一项仍按包含 margin 与声明 gap 的自然占用推进。
+            natural_cursor_main += occupied_main + gap;
             cursor_main += occupied_main + effective_gap;
         }
     }
@@ -855,24 +861,19 @@ fn compute_wrapped(
 
     // 固有主轴由最大行长撑开，固定主轴继续占满父级分配空间。
     let resolved_main = if input.intrinsic_main {
-        // 返回自然内容主轴长度。
         max_line_main
     } else {
-        // 返回父级分配的实际主轴长度。
         container_main.max(0.0)
     };
     // 可见交叉轴总量还须覆盖负尾侧 margin 未裁剪的子项末端。
     let visible_cross_end = child_rects.iter().fold(0.0f32, |extent, rect| {
-        // 水平读取纵向末端，垂直读取横向末端。
         let end = if is_row {
             rect.y + rect.h - inner.y
         } else {
             rect.x + rect.w - inner.x
         };
-        // 累积全部有限可见末端。
         extent.max(finite_or_zero(end))
     });
-    // Total size
     let (total_w, total_h) = if is_row {
         // 水平布局的交叉轴总量统一使用行账本，单行也包含 margin。
         let resolved_cross = total_cross.max(container_cross).max(visible_cross_end);
@@ -888,7 +889,6 @@ fn compute_wrapped(
             resolved_main + input.padding.vertical(),
         )
     };
-
     FlexOutput {
         child_rects,
         total_size: Size::new(total_w, total_h),
