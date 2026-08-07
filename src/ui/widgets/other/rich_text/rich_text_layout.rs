@@ -131,6 +131,33 @@ mod tests {
         // 下方点的垂直坐标应保持不变。
         assert!((lower.y - 20.0).abs() < f32::EPSILON);
     }
+    // 验证 Unicode 空白作为独立 token 时，窄宽度换行不会拆散后续单词。
+    #[test]
+    fn unicode_whitespace_wraps_as_a_separate_token() {
+        // 构造前后两个普通文本段，模拟内联元素边界后的空白正文。
+        let segments = vec![
+            RichTextSegment::Text {
+                content: "a".into(),
+                style: Default::default(),
+            },
+            RichTextSegment::Text {
+                content: "\u{2003}bb".into(),
+                style: Default::default(),
+            },
+        ];
+        // 使用窄宽度使空白可以留在第一行而后续单词换到第二行。
+        let (lines, _, _) = layout_rich_text(&segments, 12.0, 10.0, Color::black());
+        // 断行结果应保持为两行而不是把空白与单词一起推入逐字回退。
+        assert_eq!(lines.len(), 2);
+        // 第一行应保留源文本中的字母和 Unicode 空白。
+        let first: String = lines[0].glyphs.iter().map(|glyph| glyph.ch).collect();
+        // 第二行应只包含后续单词。
+        let second: String = lines[1].glyphs.iter().map(|glyph| glyph.ch).collect();
+        // 两行字符顺序应与源文本一致。
+        assert_eq!(first, "a\u{2003}");
+        // 后续单词不应被空白 token 牵连到上一行。
+        assert_eq!(second, "bb");
+    }
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -374,7 +401,10 @@ fn layout_text_content_line(
     max_line_w: &mut f32,
 ) {
     let shared_url: Option<std::sync::Arc<str>> = link_url.map(std::sync::Arc::from);
-    let tokens: Vec<&str> = content.split_inclusive(' ').collect();
+    // 按所有 Unicode 空白结束逻辑 token，保持文档约定的空白断行语义。
+    let tokens: Vec<&str> = content
+        .split_inclusive(|ch: char| ch.is_whitespace())
+        .collect();
 
     for token in &tokens {
         let token_w = text_width(token, fs);
@@ -710,10 +740,14 @@ fn layout_text_content_real_line(
 
     while start < total {
         let mut end = start;
-        while end < total && chars[end] != ' ' {
+        // 从当前字符扫描到下一个 Unicode 空白，保持真实字体路径的 token 边界。
+        while end < total && !chars[end].is_whitespace() {
+            // 逐字符扩展当前非空白 token。
             end += 1;
         }
-        if end < total && chars[end] == ' ' {
+        // 将边界空白并入当前 token，保持源文本字符顺序不变。
+        if end < total && chars[end].is_whitespace() {
+            // 把当前空白字符留在当前 token 尾部，后续正文从下一个 token 开始。
             end += 1;
         }
         if end == start {
