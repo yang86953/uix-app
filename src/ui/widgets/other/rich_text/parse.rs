@@ -48,8 +48,11 @@ pub fn parse_rich_text(content: &str) -> Vec<RichTextSegment> {
             parse_inline_text(before, &mut segments);
         }
         // 只把围栏正文作为代码段内容，语言标注已经在边界辅助中跳过。
+        // 统一 CRLF 与孤立回车为 LF，避免回车作为代码字形进入布局和复制内容。
         segments.push(RichTextSegment::Code {
-            content: rest[code_start..close].to_string(),
+            content: rest[code_start..close]
+                .replace("\r\n", "\n")
+                .replace('\r', "\n"),
         });
         // 继续解析围栏结束标记之后的内容。
         rest = &rest[close + 3..];
