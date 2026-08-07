@@ -114,22 +114,27 @@ fn parse_inline_range(text: &str, style: &RichTextStyle, segments: &mut Vec<Rich
     let mut cursor = 0;
     // 扫描整段内容中的代码、链接和样式标记。
     while cursor < text.len() {
-        // 使用临时段列表探测元素，避免元素先于前置文本写入结果。
-        let mut element_segments = Vec::new();
-        // 识别当前位置的一个完整 Markdown 内联元素。
-        if let Some(consumed) = parse_inline_element(text, cursor, style, &mut element_segments) {
-            // 先输出元素之前仍保持当前样式的普通文本。
-            push_text_segment(&text[text_start..cursor], style, segments);
-            // 按源文档顺序追加刚刚解析出的内联元素。
-            segments.extend(element_segments);
-            // 当前元素已经由解析函数写入结果，跳过其源文本。
-            cursor += consumed;
-            // 下一段普通文本从元素之后开始累计。
-            text_start = cursor;
-        } else {
-            // 未识别的标记按原文推进，保证不成对标记保持字面值。
-            cursor += literal_advance(text, cursor);
+        // 只有特殊起始字符才需要分配临时段列表并尝试解析。
+        if may_start_inline_element(text, cursor) {
+            // 使用临时段列表探测元素，避免元素先于前置文本写入结果。
+            let mut element_segments = Vec::new();
+            // 识别当前位置的一个完整 Markdown 内联元素。
+            if let Some(consumed) = parse_inline_element(text, cursor, style, &mut element_segments)
+            {
+                // 先输出元素之前仍保持当前样式的普通文本。
+                push_text_segment(&text[text_start..cursor], style, segments);
+                // 按源文档顺序追加刚刚解析出的内联元素。
+                segments.extend(element_segments);
+                // 当前元素已经由解析函数写入结果，跳过其源文本。
+                cursor += consumed;
+                // 下一段普通文本从元素之后开始累计。
+                text_start = cursor;
+                // 已经消费一个完整元素，继续扫描其后的内容。
+                continue;
+            }
         }
+        // 未识别的标记按原文推进，保证不成对标记保持字面值。
+        cursor += literal_advance(text, cursor);
     }
     // 输出扫描结束后剩余的普通文本。
     push_text_segment(&text[text_start..], style, segments);
@@ -218,6 +223,17 @@ fn parse_inline_element(
     }
     // 当前字符不是可解析的完整元素。
     None
+}
+
+/// 判断当前位置是否可能开始一个 Markdown 内联元素。
+fn may_start_inline_element(text: &str, cursor: usize) -> bool {
+    // 读取当前位置的第一个 Unicode 字符。
+    let Some(ch) = text[cursor..].chars().next() else {
+        // 游标到达字符串末尾时没有可解析元素。
+        return false;
+    };
+    // 只有这些 ASCII 标点可能触发内联解析。
+    matches!(ch, '`' | '[' | '*' | '_' | '~' | '+')
 }
 
 /// 返回 Markdown 标记对应的 RichTextStyle 增量。
@@ -435,6 +451,24 @@ mod tests {
                 },
             ]
         );
+    }
+
+    // 验证围栏代码内部的换行进入共享 measure/render 布局路径。
+    #[test]
+    fn multiline_fenced_code_uses_shared_line_breaks() {
+        // 解析包含语言标注和两行正文的围栏代码块。
+        let segments = parse_rich_text("```rust\nfn main() {}\nprintln!();\n```");
+        // 只保留代码正文的段模型应包含内部换行。
+        assert_eq!(
+            segments,
+            vec![RichTextSegment::Code {
+                content: "fn main() {}\nprintln!();\n".into(),
+            }]
+        );
+        // 使用估算布局确认代码换行产生两行而不是换行字形。
+        let (_, height, _) = layout_rich_text(&segments, 320.0, 14.0, Color::black());
+        // 默认字号的两行行高应为 14 × 1.5 × 2。
+        assert_eq!(height, 42.0);
     }
 
     #[test]
