@@ -53,3 +53,24 @@ fn normalizes_fenced_code_line_endings() {
         ]
     );
 }
+
+// 验证闭合围栏后带非空白后缀时不会提前结束代码块。
+#[test]
+fn closing_fence_requires_only_trailing_whitespace() {
+    // 在代码正文中放置行首三反引号及其非空白后缀。
+    let segments = parse_rich_text("```rust\n代码\n```not-close\n正文\n```\n尾部");
+    // 带后缀的行应留在 Code 段，最后一个纯围栏才负责闭合。
+    assert_eq!(
+        segments,
+        vec![
+            RichTextSegment::Code {
+                content: "代码\n```not-close\n正文\n".into(),
+            },
+            RichTextSegment::NewLine,
+            RichTextSegment::Text {
+                content: "尾部".into(),
+                style: RichTextStyle::default(),
+            },
+        ]
+    );
+}
