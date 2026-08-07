@@ -184,3 +184,100 @@ fn wrapped_cross_minimum_advances_next_line() {
     // 次项从首项二十像素行高加五像素 gap 后开始。
     assert_eq!(output.child_rects[1], Rect::new(0.0, 25.0, 60.0, 20.0));
 }
+
+// 验证单行 Stretch 在交叉轴最终尺寸阶段仍遵守子项上下限。
+#[test]
+// 同时覆盖父容器过小时的最小值和父容器宽裕时的最大值。
+fn single_line_stretch_respects_cross_axis_bounds() {
+    // 构造自然高五但最小高二十的单个子项。
+    let minimum_children = [FlexChild {
+        // 交叉轴最小高度固定为二十。
+        min_size: Size::new(0.0, 20.0),
+        // 自然尺寸低于交叉轴最小值。
+        measured_size: Size::new(20.0, 5.0),
+        // 其余属性沿用稳定默认值。
+        ..FlexChild::default()
+    }];
+    // 在只有十像素高的容器内执行默认 Stretch。
+    let minimum_output = compute_flex_layout(&FlexInput {
+        // 使用水平主轴，使高度成为受测交叉轴。
+        direction: FlexDirection::Row,
+        // 父容器交叉轴小于子项最小高度。
+        container: Rect::new(0.0, 0.0, 100.0, 10.0),
+        // 传入最小值受测子项。
+        children: &minimum_children,
+        // 其余输入沿用默认 Stretch。
+        ..FlexInput::default()
+    });
+    // Stretch 不得把子项压到二十像素最小高度以下。
+    assert_eq!(minimum_output.child_rects[0].h, 20.0);
+
+    // 构造自然高十但最大高三十的单个子项。
+    let maximum_children = [FlexChild {
+        // 交叉轴最大高度固定为三十。
+        max_size: Size::new(f32::MAX, 30.0),
+        // 自然尺寸低于交叉轴最大值。
+        measured_size: Size::new(20.0, 10.0),
+        // 其余属性沿用稳定默认值。
+        ..FlexChild::default()
+    }];
+    // 在五十像素高的容器内执行默认 Stretch。
+    let maximum_output = compute_flex_layout(&FlexInput {
+        // 使用水平主轴，使高度成为受测交叉轴。
+        direction: FlexDirection::Row,
+        // 父容器交叉轴高于子项最大高度。
+        container: Rect::new(0.0, 0.0, 100.0, 50.0),
+        // 传入最大值受测子项。
+        children: &maximum_children,
+        // 其余输入沿用默认 Stretch。
+        ..FlexInput::default()
+    });
+    // Stretch 不得把子项拉到三十像素最大高度以上。
+    assert_eq!(maximum_output.child_rects[0].h, 30.0);
+}
+
+// 验证 wrapped Stretch 扩大行盒时仍遵守每个子项的交叉轴最大值。
+#[test]
+// 行盒可以消费剩余空间，但受限子项不能随行盒一起突破上限。
+fn wrapped_stretch_respects_cross_axis_maximum() {
+    // 构造两个宽六十且最大高度十二的子项。
+    let children = [
+        // 首项单独占据第一行。
+        FlexChild {
+            // 首项交叉轴最大高度固定为十二。
+            max_size: Size::new(f32::MAX, 12.0),
+            // 首项自然尺寸为六十乘十。
+            measured_size: Size::new(60.0, 10.0),
+            // 其余属性沿用稳定默认值。
+            ..FlexChild::default()
+        },
+        // 次项单独占据第二行。
+        FlexChild {
+            // 次项交叉轴最大高度同样固定为十二。
+            max_size: Size::new(f32::MAX, 12.0),
+            // 次项自然尺寸同样为六十乘十。
+            measured_size: Size::new(60.0, 10.0),
+            // 其余属性沿用稳定默认值。
+            ..FlexChild::default()
+        },
+    ];
+    // 在四十五像素交叉轴内执行两行默认 Stretch。
+    let output = compute_flex_layout(&FlexInput {
+        // 使用水平主轴。
+        direction: FlexDirection::Row,
+        // 开启换行，使两个六十像素子项分到两行。
+        wrap: true,
+        // 五像素间距同时作为行间固定 gap。
+        gap: 5.0,
+        // 二十像素自然行组之外的空间会扩展两个行盒。
+        container: Rect::new(0.0, 0.0, 100.0, 45.0),
+        // 传入两个受测子项。
+        children: &children,
+        // 其余输入沿用默认 Stretch。
+        ..FlexInput::default()
+    });
+    // 首项停在十二像素最大高度，行盒自身仍可更高。
+    assert_eq!(output.child_rects[0], Rect::new(0.0, 0.0, 60.0, 12.0));
+    // 次项从扩展后的第二行起点开始并同样停在最大高度。
+    assert_eq!(output.child_rects[1], Rect::new(0.0, 25.0, 60.0, 12.0));
+}
