@@ -762,7 +762,8 @@ fn compute_wrapped(
     };
     let cross_start_offset = match cross_align {
         AlignItems::Center => (container_cross - total_cross) * 0.5,
-        AlignItems::End => (container_cross - total_cross).max(0.0),
+        // End 保留负剩余空间，使溢出的自然行组末端仍贴住容器末端。
+        AlignItems::End => container_cross - total_cross,
         _ => 0.0,
     };
     // 记录所有行中真实占用的最大主轴长度，供固有尺寸与反向布局使用。
