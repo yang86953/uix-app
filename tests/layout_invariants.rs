@@ -348,6 +348,53 @@ fn grid_auto_tracks_resolve_intrinsic_size_before_fraction_space() {
     assert_eq!(output.total_size, Size::new(100.0, 20.0));
 }
 
+// 验证跨 Auto 与 Fr 的子项不会被 span 外的 Fr 轨道挤压到自然尺寸以下。
+#[test]
+// 覆盖同一剩余空间中有多条 Fr、但子项只跨越其中一条的竞争边界。
+fn grid_auto_fraction_span_preserves_intrinsic_extent() {
+    // 构造跨越首个 Auto 与第一条 Fr 的七十像素子项。
+    let mut spanning = LayoutChild::new(ComponentId::new(51), Size::new(70.0, 10.0));
+    // 将跨轨子项显式放入第一格。
+    spanning.grid_cell = Some(0);
+    // 让子项覆盖 Auto 与第一条 Fr，但不覆盖末尾的竞争 Fr。
+    spanning.grid_column_span = 2;
+    // 构造首条 Auto 轨道的二十像素单格基础贡献。
+    let mut auto_basis = LayoutChild::new(ComponentId::new(52), Size::new(20.0, 0.0));
+    // 让基础贡献与跨轨子项显式重叠在第一格。
+    auto_basis.grid_cell = Some(0);
+    // 构造末尾 Fr 轨道的零尺寸位置探针。
+    let mut trailing_probe = LayoutChild::new(ComponentId::new(53), Size::zero());
+    // 将探针显式放入第三格以读取前两条轨道的总宽度。
+    trailing_probe.grid_cell = Some(2);
+    // 在一百像素容器内运行 Auto、1fr、1fr 三列布局。
+    let output = GridLayout::new()
+        // 首列由内容定宽，后两列竞争剩余空间。
+        .with_columns(vec![
+            GridTrack::Auto,
+            GridTrack::Fr(1.0),
+            GridTrack::Fr(1.0),
+        ])
+        // 单行高度继续由内容决定。
+        .with_rows(vec![GridTrack::Auto])
+        // 保持子项自然尺寸以直接观察 span 是否足够。
+        .with_align(AlignItems::Start)
+        // 水平起始对齐会把不足的单元格宽度直接暴露为裁剪。
+        .with_justify(JustifyContent::Start)
+        // 执行混合轨道布局。
+        .layout(
+            // 一百像素总宽足以同时容纳七十像素 span 与末尾 Fr。
+            Rect::new(0.0, 0.0, 100.0, 20.0),
+            // 保留跨轨约束、Auto 基础贡献与末轨探针。
+            &[spanning, auto_basis, trailing_probe],
+        );
+    // 跨轨子项必须保留七十像素自然宽度。
+    assert_eq!(output.positions[0], Rect::new(0.0, 0.0, 70.0, 10.0));
+    // 末尾 Fr 必须从已满足的七十像素 span 之后开始。
+    assert_eq!(output.positions[2], Rect::new(70.0, 0.0, 0.0, 0.0));
+    // 三条轨道仍共同占满一百像素容器。
+    assert_eq!(output.total_size, Size::new(100.0, 10.0));
+}
+
 // 验证没有 Fr 时 Auto track 保持内容尺寸而不吸收全部剩余空间。
 #[test]
 // 覆盖纯 Auto 列的固有宽度与列 gap 账本。
