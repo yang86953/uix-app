@@ -11,10 +11,7 @@ use crate::draw::geometry::path::{FillRule, Path};
 use crate::draw::geometry::stroker::StrokeOptions;
 use crate::draw::geometry::types::{BlendMode, GradientDirection, Radius, Transform};
 use crate::draw::Canvas2D;
-use crate::native::present::{
-    GpuGlyphBlit,
-    GpuSolidMesh, GpuSolidRect, IGraphicsContext,
-};
+use crate::native::present::{GpuGlyphBlit, GpuSolidMesh, GpuSolidRect};
 
 use super::canvas::NativeGpuCanvas2D;
 use super::geometry::{

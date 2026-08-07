@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::core::Rect;
 use crate::draw::geometry::color::Color;
 use crate::draw::geometry::types::{BlendMode, Transform};
-use crate::native::present::{GpuImageBlit, IGraphicsContext};
+use crate::native::present::GpuImageBlit;
 
 use super::canvas::NativeGpuCanvas2D;
 use super::geometry::{
