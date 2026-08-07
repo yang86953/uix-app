@@ -3,11 +3,13 @@
 //! 提供字符级文本布局、断行、字形缓存等功能。
 //! 从 `rich_text.rs` 拆分出来以遵守 900 行文件限制。
 
+// 复用富文本的段类型定义。
 use super::RichTextSegment;
 use crate::core::Rect;
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::font::text_backend::TextLayoutOptions;
-use crate::draw::{Color, FontHandle};
+use crate::draw::{Color, FontHandle, Transform};
+use crate::ui::component::paint_context::PaintContext;
 
 // ══════════════════════════════════════════════════════════════════
 // 布局类型
@@ -42,6 +44,93 @@ pub(crate) struct LayoutLine {
 pub(crate) struct CodeCopyRegion {
     pub rect: Rect,
     pub segment_idx: usize,
+}
+
+// 统一定义富文本 faux italic 的倾斜比例。
+const RICH_TEXT_ITALIC_SHEAR: f32 = 0.18;
+
+// 绘制一个连续富文本 run，并在需要时应用粗体和斜体样式。
+pub(crate) fn draw_rich_text_run(
+    ctx: &mut PaintContext,
+    content: &str,
+    pos: crate::core::Point,
+    color: Color,
+    font_size: f32,
+    segment: Option<&RichTextSegment>,
+) {
+    // 从段模型读取当前 run 的文本样式。
+    let style = match segment {
+        // Text 段携带粗体和斜体等样式覆盖。
+        Some(RichTextSegment::Text { style, .. }) => Some(style),
+        // Link、Code 和换行段不使用 Text 样式覆盖。
+        _ => None,
+    };
+    // 读取当前 run 是否需要斜体倾斜。
+    let italic = style.is_some_and(|style| style.italic);
+    // 读取当前 run 是否需要粗体加描边。
+    let bold = style.is_some_and(|style| style.bold);
+    // 斜体只影响当前 run，先保存继承的画布变换状态。
+    if italic {
+        // 保存当前绘制状态，避免倾斜泄漏到后续 run。
+        ctx.save();
+        // 以文本顶部为轴应用局部水平剪切。
+        ctx.concat_transform(italic_transform(pos.y));
+    }
+    // 使用既有字体服务绘制原始 run，保持测量和光栅化入口一致。
+    ctx.draw_text(content, pos, color, font_size);
+    // 沿用现有粗体策略，避免改变已验证的字宽与字体选择。
+    if bold {
+        // 通过轻微水平偏移叠加字形形成粗体视觉效果。
+        ctx.draw_text(
+            content,
+            crate::core::Point::new(pos.x + 0.6, pos.y),
+            color,
+            font_size,
+        );
+    }
+    // 斜体 run 绘制结束后恢复外层画布状态。
+    if italic {
+        // 恢复保存前的变换，确保链接、代码和普通文本不受影响。
+        ctx.restore();
+    }
+}
+
+// 返回围绕文本顶部的局部斜体仿射变换。
+pub(crate) fn italic_transform(pivot_y: f32) -> Transform {
+    // 非有限坐标回退到原点，避免把无效状态写入绘制命令。
+    let pivot_y = if pivot_y.is_finite() { pivot_y } else { 0.0 };
+    // 先移到局部轴，再剪切，最后移回原坐标系。
+    Transform::translate(0.0, pivot_y)
+        .concat(Transform {
+            m: [1.0, RICH_TEXT_ITALIC_SHEAR, 0.0, 0.0, 1.0, 0.0],
+        })
+        .concat(Transform::translate(0.0, -pivot_y))
+}
+
+// 验证斜体变换只倾斜字形，不改变文本顶部的定位。
+#[cfg(test)]
+mod tests {
+    // 引入当前布局模块中的测试辅助函数和几何类型。
+    use super::*;
+
+    // 验证顶部锚点保持不动且下缘向右倾斜。
+    #[test]
+    fn italic_transform_keeps_top_edge_and_slants_lower_edge() {
+        // 构造一个以 y=10 为顶部轴的斜体变换。
+        let transform = italic_transform(10.0);
+        // 计算顶部点经过变换后的坐标。
+        let top = transform.transform_point(crate::core::Point::new(5.0, 10.0));
+        // 计算下方点经过变换后的坐标。
+        let lower = transform.transform_point(crate::core::Point::new(5.0, 20.0));
+        // 顶部点的水平坐标应保持不变。
+        assert!((top.x - 5.0).abs() < f32::EPSILON);
+        // 顶部点的垂直坐标应保持不变。
+        assert!((top.y - 10.0).abs() < f32::EPSILON);
+        // 下方点应按 0.18 的倾斜比例向右移动。
+        assert!((lower.x - 6.8).abs() < 0.0001);
+        // 下方点的垂直坐标应保持不变。
+        assert!((lower.y - 20.0).abs() < f32::EPSILON);
+    }
 }
 
 // ══════════════════════════════════════════════════════════════════

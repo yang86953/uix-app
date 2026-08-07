@@ -106,11 +106,10 @@ impl RichTextStyle {
 // ════════════════════════════════════════════════════════════════════════════
 mod rich_text_layout;
 pub(crate) use rich_text_layout::*;
-mod rich_text_interaction;
 mod parse;
+mod rich_text_interaction;
 
 pub use self::parse::{layout_rich_text_segments, parse_rich_text};
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RichTextPointerAction {
@@ -562,13 +561,8 @@ component! {
                 } else {
                     first.color
                 };
-                ctx.draw_text(&content, Point::new(gx, gy), color, fs);
-                if matches!(
-                    self.segments.get(segment_idx),
-                    Some(RichTextSegment::Text { style, .. }) if style.bold
-                ) {
-                    ctx.draw_text(&content, Point::new(gx + 0.6, gy), color, fs);
-                }
+                // 通过统一 run 绘制入口应用粗体与斜体，保持 DisplayList 可回放。
+                draw_rich_text_run(ctx, &content, Point::new(gx, gy), color, fs, self.segments.get(segment_idx));
                 start = end;
             }
         }
