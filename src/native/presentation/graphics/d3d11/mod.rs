@@ -16,6 +16,8 @@ pub(crate) fn create(
     platform::create(surface, width, height)
 }
 
+// 测试目标保留 D3D11 WARP 包装入口，供显式后端矩阵按需调用。
+#[cfg_attr(test, allow(dead_code))]
 #[cfg(all(test, feature = "d3d11"))]
 pub(crate) fn create_warp_test_context(
     surface: *mut c_void,
@@ -25,6 +27,8 @@ pub(crate) fn create_warp_test_context(
     platform::create_warp_test_context(surface, width, height)
 }
 
+// 测试目标保留 D3D11 WARP 可用性包装入口，供显式后端矩阵按需调用。
+#[cfg_attr(test, allow(dead_code))]
 #[cfg(all(test, feature = "d3d11"))]
 pub(crate) fn warp_test_context_available() -> bool {
     platform::warp_test_context_available()

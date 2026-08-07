@@ -323,7 +323,8 @@ pub(crate) fn try_create_gpu_recipe_with_queue(
 ///
 /// New bootstrap code must use [`try_create_gpu_recipe`] so it can continue to
 /// later recipe rows for the same API.
-#[cfg_attr(not(test), allow(dead_code))]
+// 单后端兼容工厂入口保留给旧调用方，默认测试矩阵不直接走该入口。
+#[allow(dead_code)]
 pub(crate) fn try_create_gpu_context(
     backend: GraphicsBackend,
     native_surface: *mut c_void,

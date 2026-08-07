@@ -43,16 +43,22 @@ pub(crate) struct TsfSession {
     _text_store: windows::core::ComObject<TsfTextStore>,
     store_state: TsfStoreHandle,
     hwnd: HWND,
+    // 测试目标保留 TSF client id 状态，供输入会话契约测试按需观测。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     client_id: u32,
 }
 
 impl TsfSession {
+    // 测试目标保留 TSF client id 观测入口，供输入会话契约测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn client_id(&self) -> u32 {
         self.client_id
     }
 
+    // 测试目标保留 composition 状态观测入口，供输入会话契约测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn composition_active(&self) -> bool {
         self.store_state
