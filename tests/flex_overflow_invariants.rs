@@ -358,3 +358,33 @@ fn wrapped_lines_stretch_cross_space_and_preserve_align_self() {
     // 多行账本必须完整占用四十像素实际交叉轴。
     assert_eq!(output.total_size, Size::new(100.0, 40.0));
 }
+
+// 验证零主轴尺寸子项仍会占据换行收集器中的一个项目位置。
+#[test]
+// 行内是否已有项目必须由索引判断，不能由当前行占用是否大于零判断。
+fn wrapped_zero_sized_item_still_forces_the_next_item_to_wrap() {
+    // 构造主轴宽度为零但交叉轴仍有高度的首项。
+    let first = LayoutChild::new(ComponentId::new(58), Size::new(0.0, 8.0));
+    // 构造恰好填满四十像素主轴的第二项。
+    let second = LayoutChild::new(ComponentId::new(59), Size::new(40.0, 8.0));
+    // 使用五像素间距并从两个轴的起点对齐。
+    let mut layout = FlexLayout::row()
+        // 间距会使两个项目的行占用超过四十像素。
+        .with_gap(5.0)
+        // 固定主轴从起点排列以直接观察换行结果。
+        .with_justify(JustifyContent::Start)
+        // 固定交叉轴从起点排列以隔离行高。
+        .with_align(AlignItems::Start);
+    // 开启换行求解路径。
+    layout.wrap = true;
+    // 保留自然主轴尺寸，避免第二项被压缩而掩盖分行错误。
+    layout.overflow_content = true;
+    // 在四十像素主轴与三十像素交叉轴的容器内执行布局。
+    let output = layout.layout(Rect::new(4.0, 6.0, 40.0, 30.0), &[first, second]);
+    // 零宽首项仍应留在第一行起点。
+    assert_eq!(output.positions[0], Rect::new(4.0, 6.0, 0.0, 8.0));
+    // 第二项必须在八像素行高与五像素行距之后另起一行。
+    assert_eq!(output.positions[1], Rect::new(4.0, 19.0, 40.0, 8.0));
+    // 固有主轴账本应记录最长的四十像素自然行宽。
+    assert_eq!(output.total_size, Size::new(40.0, 30.0));
+}

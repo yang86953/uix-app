@@ -629,7 +629,8 @@ fn compute_wrapped(
         let child_main = base_main_size + margin_main(child_margin(input, i), is_row);
         let item_gap = if i > line_start { gap } else { 0.0 };
 
-        if line_main + item_gap + child_main > wrap_limit && line_main > 0.0 {
+        // 当前行只要已经收集过子项，就必须让超出上限的新项另起一行。
+        if line_main + item_gap + child_main > wrap_limit && i > line_start {
             lines.push(Line {
                 start: line_start,
                 end: i,
