@@ -436,17 +436,6 @@ impl FontService {
         None
     }
 
-    /// 直接加载原始字体数据。
-    /// 字体集合必须由后端在完整文件上选择第一个 face；不能切片 TTC，
-    /// 因为集合内 table offset 是相对完整文件的，并且表数据允许跨 face 共享。
-    /// `TextBackend::load_font` 的成功返回就是解析/可用性边界；这里不以 Unicode
-    /// 码点冒充 glyph id 做二次验证，图标字体与重排字体的 glyph id 都不稳定。
-    fn load_raw_font(&mut self, data: Vec<u8>, _size: f32) -> Option<FontHandle> {
-        let handle = self.text_backend.load_font_owned(data).ok()?;
-        self.register_font(handle, self.primary_family.clone(), None);
-        Some(handle)
-    }
-
     /// 从文件路径内存映射加载字体（惰性分页：未触达字形不驻留 working set）。
     fn load_mapped_font(&mut self, path: impl AsRef<std::path::Path>) -> Option<FontHandle> {
         let file = std::fs::File::open(path.as_ref()).ok()?;

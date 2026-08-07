@@ -311,6 +311,8 @@ impl fmt::Display for PresentOcclusionSupport {
 /// Validates a CPU pixel payload before it crosses a native presentation
 /// boundary.  A short slice must be a typed error: native image constructors
 /// cannot infer the intended row layout safely from missing pixels.
+// 该校验只被 Unix 像素上传 presenter 使用，Windows GPU 路径不编译此入口。
+#[cfg(unix)]
 pub fn validate_pixel_buffer(pixels: &[u32], width: i32, height: i32) -> Result<(), Error> {
     if width <= 0 || height <= 0 {
         return Err(Error::new(
