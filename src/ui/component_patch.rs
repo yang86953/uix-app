@@ -156,7 +156,7 @@ fn optional_style_layout_changed(current: &Option<Style>, next: &Option<Style>) 
     }
 }
 
-/// 返回已审计内建组件的布局变化；未覆盖组件由调用方保守升级为 Layout。
+/// 返回已审计内建组件的布局变化；其余组件显式归入保守 Layout。
 pub(crate) fn builtin_widget_layout_changed(
     current: &SnapshotFields,
     next: &SnapshotFields,
@@ -218,8 +218,8 @@ pub(crate) fn builtin_widget_layout_changed(
                 || current_breakpoints != next_breakpoints
                 || current_cols != next_cols,
         ),
-        // 未审计组件不在此处猜测其布局语义。
-        _ => None,
+        // 其余所有快照类型显式归入保守布局，避免新增组件静默漏掉几何失效。
+        _ => Some(true),
     }
 }
 
@@ -406,4 +406,33 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(Upload);
 
     Err(next)
+}
+
+// 仅在测试构建中验证失效分类的保守兜底策略。
+#[cfg(test)]
+// 集中覆盖没有精细字段审计的 Unknown 与 Custom 快照。
+mod tests {
+    // 复用当前模块的快照类型与分类函数。
+    use super::*;
+
+    // 验证未知和自定义快照都显式进入布局失效分类。
+    #[test]
+    fn remaining_snapshot_fields_use_explicit_conservative_layout() {
+        // 构造未知快照作为旧声明状态。
+        let unknown = SnapshotFields::Unknown;
+        // 未知快照与自身比较也必须保留保守分类结果。
+        assert_eq!(
+            builtin_widget_layout_changed(&unknown, &unknown),
+            Some(true)
+        );
+        // 构造没有专用字段解析器的自定义快照。
+        let custom = SnapshotFields::Custom {
+            // 保存自定义组件的稳定类型名称。
+            widget: "custom",
+            // 使用空字段覆盖最小自定义声明。
+            fields: Vec::new(),
+        };
+        // 自定义快照也必须显式进入保守布局分类。
+        assert_eq!(builtin_widget_layout_changed(&unknown, &custom), Some(true));
+    }
 }

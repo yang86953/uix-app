@@ -61,6 +61,20 @@
 - `LayoutFrameScratch` / `LayoutTraversalScratch` 只跨帧复用存储，进入布局即清空本轮向量与集合；遍历缓存以 `tree_version` 为键，当前核心不持有跨帧 `LayoutOutput` 语义快照。
 - 虚拟滚动在范围与挂载数量稳定且没有新版声明时不调用 renderer 或 reconcile，滚动走 composite/paint 路径；范围或 renderer 声明变化时，以业务 key 或绝对索引后备 key 协调当前有界窗口，重叠行保留原组件身份。
 
+### 失效分类矩阵
+
+`ViewAdapter` 对声明更新统一先比较公开 `SnapshotFields`，再把结果拆为 Paint 与 Layout 两条通道。当前分类分为三层：
+
+| 分类 | 组件 | 规则 |
+|---|---|---|
+| 精细字段 | `Label`、`Container`、`Grid` | 颜色、背景等纯视觉字段只产生 Paint；文本、字号、盒模型、Flex/Grid 轨道、可见性和响应式列等几何字段产生 Layout + Paint。 |
+| 配置与运行态分离 | `Input`、`Collapse`、`Carousel`、`ImageGroup` | `Input` 的受控运行值、以及其余组件快照中明确标为运行态的字段不参与 authored config 比较；配置变化仍按保守 Layout 处理，避免漏掉未知几何。 |
+| 显式保守 | 其余全部内建快照、`Unknown`、`Custom` | `builtin_widget_layout_changed` 的兜底为 `Some(true)`，任何配置差异都产生 Layout + Paint；新快照变体在获得独立审计前自动落入此类。 |
+
+显式保守清单覆盖：`Button`、`WindowControl`、`Space`、`Divider`、`Icon`、`Typography`、`Checkbox`、`Radio`、`Switch`、`Slider`、`RangeSlider`、`Rate`、`InputNumber`、`Avatar`、`Badge`、`Card`、`Empty`、`Image`、`Tag`、`Timeline`、`Calendar`、`Skeleton`、`FloatButton`、`FloatButtonGroup`、`Layout`、`Header`、`Sider`、`Content`、`Footer`、`Splitter`、`Affix`、`BackTop`、`List`、`Select`、`AutoComplete`、`Cascader`、`ColorPicker`、`DatePicker`、`DateRangePicker`、`TimePicker`、`Mentions`、`Segmented`、`FormItem`、`Form`、`Descriptions`、`Result`、`SelectableList`、`ScrollView`、`ThemeToggle`、`Transfer`、`Upload`、`Watermark`，以及 feature-gated 的 `Alert`、`Message`、`Notification`、`ProgressBar`、`Spin`、`Tooltip`、`Popover`、`Popconfirm`、`Modal`、`Drawer`、`Breadcrumb`、`Pagination`、`Anchor`、`Menu`、`Dropdown`、`Tabs`、`Steps`、`NavItem`、`Tree`、`TreeSelect`、`Table`、`BarChart`、`LineChart`、`PieChart`、`ChartPlaceholder`、`QRCode`、`RichText`。
+
+本轮门禁由适配器精细分类、保守回退和 `Unknown`/`Custom` 兜底测试共同覆盖；以后新增 `SnapshotFields` 变体默认不会静默丢失布局失效，但必须在独立审计后才能晋升为精细分类。
+
 ## 不变量
 
 - 结果尺寸和 frame 有限、非负；无界轴使用约束语义，不能把 `f32::MAX` 写入实际 frame。
@@ -114,4 +128,4 @@
 - `c7586072` 修正实际多行负 gap 的自然交叉轴账本：旧实现只以最终行游标减去 gap 得到总量，30px 高首行与 5px 高末行重叠 8px 时误报 27px，漏掉首行最后 3px；现改为取全部行盒有限物理末端的最大值。水平与垂直失败契约修复后 2/2，通过弹性冻结 1/1、镜像 1/1、聚焦溢出 20/20、布局 24/24、库测试 205/205，两套特性组合与文档测试均成功。
 - `98bc0670` 修正实际多行负尾侧交叉轴 margin 的可见内容账本：行盒仍按外尺寸推进，但最终交叉轴总量额外覆盖全部已放置子项矩形的有限末端。30px 高/宽首项带 -10px 下/右 margin、5px 末行/末列按 20px 行盒推进时，旧结果误报 25px，现两轴均保持 30px；失败契约 2/2，负 gap 2/2、弹性冻结 1/1、镜像 1/1、聚焦溢出 20/20、布局 24/24、库测试 205/205，两套特性组合与文档测试均成功。
 - `5b418da0` 修正实际多行负尾侧主轴 margin 的可见内容账本：分行仍按包含 margin 的自然占用推进，同时用独立于 justify 偏移与反向物理坐标的逻辑游标累计每行最远可见末端。30px 宽/高首项带 -10px 右/下 margin 时自然占用为 20px，后续 10px 子项在 25px frame 中换行/换列；旧主轴总量误报 20px，现两轴均保持 30px。失败契约 2/2，负交叉轴 margin 2/2、负 gap 2/2、弹性冻结 1/1、镜像 1/1、聚焦溢出 20/20、布局 24/24、库测试 205/205，两套特性组合与文档测试均成功。
-- 现有证据仍不替代 Flex 实际分行 overflow/wrap/固有轴中负 margin/gap 其余组合、轴转置、正反向镜像与弹性冻结矩阵以外的组合、浮层、表格其他合并组合的 measure/paint/hit-test 一致性、其余组件失效分类、可变行高缓存或真窗视觉矩阵。
+- Flex 实际分行 overflow/wrap/固有轴中负 margin/gap 的联合矩阵、轴转置、正反向镜像与弹性冻结矩阵，及表格其他合并组合的 measure/paint/hit-test 一致性已有独立门禁；当前剩余审计为可变行高缓存与真窗视觉矩阵。
