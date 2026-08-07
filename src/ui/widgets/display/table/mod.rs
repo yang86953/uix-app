@@ -472,20 +472,28 @@ component! {
                     }
                     let row_span = self.row_span(actual_ri, laid_out.index);
                     let col_span = self.col_span(actual_ri, laid_out.index);
-                    let cell_width = self.span_width(&column_geometry, laid_out.index, col_span);
                     let cell_height = self.span_height(actual_ri, row_span);
+                    // 用共享列几何解析合并单元格矩形，避免绘制与子项布局各自推导。
+                    let Some(cell_frame) = column_geometry.span_bounds(
+                        // 以当前未覆盖列作为合并锚点。
+                        laid_out.index,
+                        // 传入当前锚点声明的逻辑列跨度。
+                        col_span,
+                        // 普通行绘制从当前物理行顶部开始。
+                        row_rect.y,
+                        // 保留行合并计算后的完整高度。
+                        cell_height,
+                    )
+                    else {
+                        // 缺少锚点几何时跳过当前单元格。
+                        continue;
+                    };
                     if !self.view_columns.contains(&laid_out.index) {
                         let cell = row
                             .get(laid_out.index)
                             .map(String::as_str)
                             .unwrap_or("");
                         let tc = if is_selected { primary } else { text_color };
-                        let cell_frame = Rect::new(
-                            laid_out.x,
-                            row_rect.y,
-                            cell_width,
-                            cell_height,
-                        );
                         if let Some(cell_frame) = cell_frame.intersect(&clip) {
                             let horizontal_inset = 8.0_f32.min(cell_frame.w * 0.25);
                             Self::paint_single_line(
@@ -505,7 +513,8 @@ component! {
                     if self.bordered {
                         ctx.fill_rect(
                             Rect::new(
-                                laid_out.x + cell_width - 1.0,
+                                // 纵向边界跟随合并矩形的真实物理右边缘。
+                                cell_frame.x + cell_frame.w - 1.0,
                                 row_rect.y,
                                 1.0,
                                 cell_height,
@@ -556,16 +565,8 @@ component! {
                 let Some(row) = self.rows.get(row_index) else {
                     continue;
                 };
-                let Some(laid_out) = column_geometry
-                    .columns
-                    .iter()
-                    .find(|column| column.index == column_index)
-                else {
-                    continue;
-                };
                 let row_span = self.row_span(row_index, column_index);
                 let col_span = self.col_span(row_index, column_index);
-                let cell_width = self.span_width(&column_geometry, column_index, col_span);
                 let cell_height = self.span_height(row_index, row_span);
                 let expanded_offset = if expanded.is_some_and(|expanded_row| row_index > expanded_row)
                 {
@@ -575,22 +576,25 @@ component! {
                 };
                 let row_y = body_top + row_index as f32 * self.row_h + expanded_offset
                     - self.body_scroll.scroll_offset();
-                let cell_frame = Rect::new(laid_out.x, row_y, cell_width, cell_height);
+                // 用共享列几何解析最终重绘与命中一致的合并矩形。
+                let Some(cell_frame) = column_geometry.span_bounds(
+                    // 传入当前合并锚点列。
+                    column_index,
+                    // 传入当前锚点声明的逻辑列跨度。
+                    col_span,
+                    // 传入滚动与展开偏移后的纵坐标。
+                    row_y,
+                    // 传入完整跨行高度。
+                    cell_height,
+                )
+                else {
+                    // 缺少锚点几何时跳过当前合并单元格。
+                    continue;
+                };
+                // 完整合并矩形与表体视口无交集时无需访问任何列区片段。
                 if cell_frame.intersect(&body_clip).is_none() {
                     continue;
                 }
-                // 行合并锚点在全部普通列之后重绘，只能覆盖其最终可见列区片段。
-                let Some(zone_clip) = column_geometry.merged_repaint_clip_for(
-                    // 使用锚点所属列区解析最终层级裁剪。
-                    laid_out.zone,
-                    // 继承合并单元格纵坐标。
-                    cell_frame.y,
-                    // 继承合并单元格完整跨行高度。
-                    cell_frame.h,
-                )
-                else {
-                    continue;
-                };
                 let is_selected = sel == Some(row_index);
                 let is_hovered = hover == Some(row_index);
                 let is_pressed = self
@@ -611,39 +615,69 @@ component! {
                     ctx.tokens().color_bg_container()
                 };
 
-                ctx.push_clip(zone_clip);
-                ctx.fill_rect(cell_frame, cell_bg, None);
-                if !self.view_columns.contains(&column_index) {
-                    let cell = row.get(column_index).map(String::as_str).unwrap_or("");
-                    let horizontal_inset = 8.0_f32.min(cell_frame.w * 0.25);
-                    Self::paint_single_line(
-                        ctx,
-                        cell,
-                        Rect::new(
-                            cell_frame.x + horizontal_inset,
-                            cell_frame.y,
-                            (cell_frame.w - horizontal_inset * 2.0).max(0.0),
-                            cell_frame.h,
-                        ),
-                        if is_selected { primary } else { text_color },
-                        12.0,
-                    );
+                // 按共享列区层级重绘跨度在每个固定区中的真实可见片段。
+                for zone in COLUMN_PAINT_ORDER {
+                    // 解析当前列区中属于该逻辑跨度且最终可见的裁剪。
+                    let Some(zone_clip) = column_geometry.merged_span_repaint_clip_for(
+                        // 传入当前合并锚点列。
+                        column_index,
+                        // 传入当前锚点声明的逻辑列跨度。
+                        col_span,
+                        // 传入当前共享绘制列区。
+                        zone,
+                        // 继承合并单元格纵坐标。
+                        cell_frame.y,
+                        // 继承合并单元格完整跨行高度。
+                        cell_frame.h,
+                    )
+                    else {
+                        // 当前跨度未覆盖该列区时直接进入下一层。
+                        continue;
+                    };
+                    // 将背景、内容与边框限制在当前列区的跨度片段内。
+                    ctx.push_clip(zone_clip);
+                    // 为当前可见片段补绘统一的合并单元格背景。
+                    ctx.fill_rect(cell_frame, cell_bg, None);
+                    // 普通文本列由表格自身绘制，自定义 View 列留给子树。
+                    if !self.view_columns.contains(&column_index) {
+                        // 从锚点列读取合并单元格唯一文本。
+                        let cell = row.get(column_index).map(String::as_str).unwrap_or("");
+                        // 水平留白按完整合并矩形收敛，跨区片段只负责裁剪。
+                        let horizontal_inset = 8.0_f32.min(cell_frame.w * 0.25);
+                        // 在统一矩形中绘制一次逻辑内容的当前可见切片。
+                        Self::paint_single_line(
+                            ctx,
+                            cell,
+                            Rect::new(
+                                cell_frame.x + horizontal_inset,
+                                cell_frame.y,
+                                (cell_frame.w - horizontal_inset * 2.0).max(0.0),
+                                cell_frame.h,
+                            ),
+                            if is_selected { primary } else { text_color },
+                            12.0,
+                        );
+                    }
+                    // 带边框表格沿完整逻辑矩形绘制外框并由片段裁剪。
+                    if self.bordered {
+                        // 提交完整合并矩形描边。
+                        ctx.stroke_rect(cell_frame, border, 1.0, None);
+                    } else {
+                        // 无边框表格只补绘合并单元格底部分隔线。
+                        ctx.fill_rect(
+                            Rect::new(
+                                cell_frame.x,
+                                cell_frame.y + cell_frame.h,
+                                cell_frame.w,
+                                1.0,
+                            ),
+                            border,
+                            None,
+                        );
+                    }
+                    // 恢复进入当前列区片段前的裁剪状态。
+                    ctx.pop_clip();
                 }
-                if self.bordered {
-                    ctx.stroke_rect(cell_frame, border, 1.0, None);
-                } else {
-                    ctx.fill_rect(
-                        Rect::new(
-                            cell_frame.x,
-                            cell_frame.y + cell_frame.h,
-                            cell_frame.w,
-                            1.0,
-                        ),
-                        border,
-                        None,
-                    );
-                }
-                ctx.pop_clip();
             }
         }
 
@@ -779,14 +813,42 @@ component! {
                 }
                 let row_span = self.row_span(row, column_index);
                 let col_span = self.col_span(row, column_index);
-                let cell_width = self.span_width(&column_geometry, column_index, col_span);
                 let cell_height = self.span_height(row, row_span);
-                let cell = Rect::new(column.x, row_y, cell_width, cell_height);
+                // 复用绘制路径的合并矩形解析，保持自定义子项布局起点一致。
+                let Some(cell) = column_geometry.span_bounds(
+                    // 传入当前自定义单元格锚点列。
+                    column_index,
+                    // 传入当前锚点声明的逻辑列跨度。
+                    col_span,
+                    // 子项保留内容坐标中的纵坐标。
+                    row_y,
+                    // 子项保留完整跨行高度。
+                    cell_height,
+                )
+                else {
+                    // 缺少锚点几何时给当前子项零尺寸。
+                    positions.push((child.id, Rect::new(column.x, row_y, 0.0, 0.0)));
+                    // 继续处理下一个物化子项。
+                    continue;
+                };
                 positions.push((
                     child.id,
+                    // 自定义子项保持在锚点列区内，且只占用逻辑跨度实际覆盖的片段。
                     column_geometry
-                        .clip_for(column.zone, row_y, cell_height)
-                        .and_then(|zone_clip| cell.intersect(&zone_clip))
+                        // 复用文本绘制使用的跨度列区裁剪。
+                        .span_clip_for(
+                            // 传入当前自定义单元格锚点列。
+                            column_index,
+                            // 传入当前锚点声明的逻辑列跨度。
+                            col_span,
+                            // 自定义子项仍归属其锚点固定区。
+                            column.zone,
+                            // 保留内容坐标中的纵坐标。
+                            row_y,
+                            // 保留完整跨行高度。
+                            cell_height,
+                        )
+                        // 缺少可见跨度片段时退化为锚点处零尺寸。
                         .unwrap_or_else(|| Rect::new(cell.x, cell.y, 0.0, 0.0)),
                 ));
             }
