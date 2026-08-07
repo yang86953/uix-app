@@ -1,5 +1,10 @@
 use super::*;
 
+// 把主轴分布辅助收敛到独立小模块，避免核心求解文件越过行数门禁。
+mod justify;
+// 继续向公开布局适配层暴露原有 crate 内共享入口。
+pub(super) use justify::compute_justify;
+
 /// Compute flex layout from input constraints.
 ///
 /// Pure function with no side effects. Handles all justify-content modes,
@@ -340,44 +345,6 @@ fn distribute_shrink(base: &mut [f32], overflow: f32, children: &[FlexChild], is
         }
         // 未吸收的溢出进入下一轮并排除已经触底的子项。
         overflow = (overflow - consumed).max(0.0);
-    }
-}
-
-/// 计算主轴剩余空间对应的有效间距与起始偏移，供两条 Flex 路径共享。
-pub(super) fn compute_justify(
-    remaining: f32,
-    count: usize,
-    gap: f32,
-    justify: JustifyContent,
-) -> (f32, f32) {
-    if remaining > 0.0 {
-        let new_gap = match justify {
-            JustifyContent::SpaceBetween => {
-                if count <= 1 {
-                    gap
-                } else {
-                    gap + remaining / (count - 1) as f32
-                }
-            }
-            JustifyContent::SpaceAround => gap + remaining / count as f32,
-            JustifyContent::SpaceEvenly => gap + remaining / (count + 1) as f32,
-            _ => gap,
-        };
-        let offset = match justify {
-            JustifyContent::Center => remaining * 0.5,
-            JustifyContent::End => remaining,
-            JustifyContent::SpaceAround => remaining * 0.5 / count as f32,
-            JustifyContent::SpaceEvenly => remaining / (count + 1) as f32,
-            _ => 0.0,
-        };
-        (new_gap, offset)
-    } else {
-        let offset = match justify {
-            JustifyContent::Center => remaining * 0.5,
-            JustifyContent::End => remaining,
-            _ => 0.0,
-        };
-        (gap, offset)
     }
 }
 
@@ -740,8 +707,14 @@ fn compute_wrapped(
     let natural_total_cross = (cursor_cross - line_gap).max(0.0);
     // 容器级 Stretch 同时承担多行交叉轴分布，让 wrap 开关不改变单行填充语义。
     let cross_align = input.align_items;
+    // 实际未换行时应与非换行路径共享完整容器交叉轴行盒。
+    let single_line_uses_container_cross = lines.len() == 1 && container_cross > 1.0;
+    // 单行直接采用真实行盒，让逐项 align_self 也能相对容器定位。
+    if single_line_uses_container_cross {
+        // 唯一行覆盖为容器交叉轴，子项最终尺寸仍会服从各自 min/max。
+        line_max_cross[0] = container_cross;
     // 只有实际容器还存在正交叉轴剩余空间时才扩展行盒。
-    if cross_align == AlignItems::Stretch && container_cross > natural_total_cross {
+    } else if cross_align == AlignItems::Stretch && container_cross > natural_total_cross {
         // 扣除自然行高与固定 gap 后，把剩余空间等分到每一行。
         let extra_per_line = (container_cross - natural_total_cross) / lines.len() as f32;
         // 原位同步每行起点与行高，不复制子项或新增第二套行账本。
@@ -752,20 +725,29 @@ fn compute_wrapped(
             *line_cross_size += extra_per_line;
         }
     }
-    // Stretch 使用实际容器交叉尺寸，其他对齐继续使用自然行组尺寸。
-    let total_cross = if cross_align == AlignItems::Stretch {
+    // Stretch 与真实单行都覆盖容器交叉尺寸，报告账本仍保留自然溢出。
+    let total_cross = if cross_align == AlignItems::Stretch || single_line_uses_container_cross {
         // 容器较小或 bootstrap 时不得压低自然行组尺寸。
         natural_total_cross.max(container_cross)
     } else {
         // Center/End/Start 保留既有自然行组范围。
         natural_total_cross
     };
-    let cross_start_offset = match cross_align {
-        // 只有获得实际交叉轴后才应用 Center，bootstrap 继续从自然起点开始。
-        AlignItems::Center if container_cross > 1.0 => (container_cross - total_cross) * 0.5,
-        // 获得实际交叉轴后 End 保留负剩余空间，使自然行组末端贴住容器末端。
-        AlignItems::End if container_cross > 1.0 => container_cross - total_cross,
-        _ => 0.0,
+    // 单行已经在真实行盒内逐项对齐，不再额外移动整组。
+    let cross_start_offset = if single_line_uses_container_cross {
+        // 唯一行从容器交叉轴起点开始。
+        0.0
+    // 多行继续沿用既有的自然行组对齐语义。
+    } else {
+        // 根据容器级对齐计算整组行盒偏移。
+        match cross_align {
+            // 只有获得实际交叉轴后才应用 Center，bootstrap 继续从自然起点开始。
+            AlignItems::Center if container_cross > 1.0 => (container_cross - total_cross) * 0.5,
+            // 获得实际交叉轴后 End 保留负剩余空间，使自然行组末端贴住容器末端。
+            AlignItems::End if container_cross > 1.0 => container_cross - total_cross,
+            // Start 与 Stretch 从自然交叉轴起点开始。
+            _ => 0.0,
+        }
     };
     // 记录所有行中真实占用的最大主轴长度，供固有尺寸与反向布局使用。
     let mut max_line_main = 0.0f32;
