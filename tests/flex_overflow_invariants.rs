@@ -492,6 +492,157 @@ fn wrapped_unbroken_overflow_matches_streaming_overflow_matrix() {
     }
 }
 
+// 验证实际分行的溢出布局在水平与垂直主轴之间保持完整转置对称。
+#[test]
+// 同时覆盖反向主轴、全部分布和对齐、非对称 margin、逐项对齐与交叉轴溢出。
+fn wrapped_overflow_multiline_is_axis_transpose_symmetric() {
+    // 构造首行第一个具有非对称尺寸与 margin 的子项。
+    let mut first = LayoutChild::new(ComponentId::new(68), Size::new(15.0, 7.0));
+    // 首项的水平外尺寸为二十像素。
+    first.margin = EdgeInsets::new(2.0, 1.0, 3.0, 4.0);
+    // 首项固定在各自行盒交叉轴起点。
+    first.align_self = Some(AlignItems::Start);
+    // 构造首行第二个自然尺寸不同的子项。
+    let mut second = LayoutChild::new(ComponentId::new(69), Size::new(14.0, 9.0));
+    // 次项的水平外尺寸为十七像素，并保留不同交叉轴 margin。
+    second.margin = EdgeInsets::new(1.0, 3.0, 2.0, 1.0);
+    // 构造第二行第一个较宽子项。
+    let mut third = LayoutChild::new(ComponentId::new(70), Size::new(20.0, 8.0));
+    // 第三项的水平外尺寸为二十五像素。
+    third.margin = EdgeInsets::new(4.0, 2.0, 1.0, 5.0);
+    // 第三项固定在各自行盒交叉轴末端。
+    third.align_self = Some(AlignItems::End);
+    // 构造第二行第二个较窄子项。
+    let mut fourth = LayoutChild::new(ComponentId::new(71), Size::new(12.0, 6.0));
+    // 第四项的水平外尺寸为十四像素。
+    fourth.margin = EdgeInsets::new(1.0, 4.0, 1.0, 2.0);
+    // 第四项显式拉伸以覆盖逐项 Stretch 的轴转置。
+    fourth.align_self = Some(AlignItems::Stretch);
+    // 四十五像素主轴与四像素 gap 会稳定形成每行两个子项。
+    let row_children = [first, second, third, fourth];
+    // 定义尺寸的轴转置，水平分量与垂直分量互换。
+    let transpose_size = |size: Size| Size::new(size.h, size.w);
+    // 定义物理 margin 的轴转置：左上右下映射为上左下右。
+    let transpose_margin = |margin: EdgeInsets| {
+        // 返回保持几何转置语义的四侧外边距。
+        EdgeInsets::new(margin.top, margin.left, margin.bottom, margin.right)
+    };
+    // 定义矩形的轴转置，同时交换原点与尺寸分量。
+    let transpose_rect = |rect: Rect| Rect::new(rect.y, rect.x, rect.h, rect.w);
+    // 从水平输入逐项构造完全转置的垂直输入。
+    let column_children = row_children.clone().map(|mut child| {
+        // 子项自然尺寸交换宽高。
+        child.measured_size = transpose_size(child.measured_size);
+        // 子项物理 margin 按相同坐标变换交换四侧。
+        child.margin = transpose_margin(child.margin);
+        // 返回保留身份与 align_self 的转置子项。
+        child
+    });
+    // 枚举正向与反向的轴对称方向配对。
+    let direction_pairs = [
+        // 水平正向应对应垂直正向。
+        (FlexDirection::Row, FlexDirection::Column),
+        // 水平反向应对应垂直反向。
+        (FlexDirection::RowReverse, FlexDirection::ColumnReverse),
+    ];
+    // 枚举公开主轴分布的完整集合。
+    let justifications = [
+        // 起点分布覆盖不同长度行的自然游标。
+        JustifyContent::Start,
+        // 居中分布覆盖每行独立偏移。
+        JustifyContent::Center,
+        // 末端分布覆盖每行独立末端贴合。
+        JustifyContent::End,
+        // 两端分布覆盖每行动态间距。
+        JustifyContent::SpaceBetween,
+        // 环绕分布覆盖行首与项间空间。
+        JustifyContent::SpaceAround,
+        // 均匀分布覆盖两端与项间空间。
+        JustifyContent::SpaceEvenly,
+        // 溢出模式中的 Stretch 保持自然主轴尺寸。
+        JustifyContent::Stretch,
+    ];
+    // 枚举容器级交叉轴对齐的完整集合。
+    let alignments = [
+        // 起点对齐覆盖自然行组位置。
+        AlignItems::Start,
+        // 居中对齐覆盖正负交叉轴剩余空间。
+        AlignItems::Center,
+        // 末端对齐覆盖正负交叉轴剩余空间。
+        AlignItems::End,
+        // 拉伸对齐覆盖多行剩余空间分配。
+        AlignItems::Stretch,
+    ];
+    // 枚举宽裕、溢出和 bootstrap 三种交叉轴范围，主轴始终保持实际分行上限。
+    let row_frames = [
+        // 五十像素交叉轴为两行提供正剩余空间。
+        Rect::new(4.0, 6.0, 45.0, 50.0),
+        // 十五像素交叉轴小于自然行组高度。
+        Rect::new(4.0, 6.0, 45.0, 15.0),
+        // 零交叉轴触发自然行组 bootstrap。
+        Rect::new(4.0, 6.0, 45.0, 0.0),
+    ];
+    // 逐对比较水平与垂直方向。
+    for (row_direction, column_direction) in direction_pairs {
+        // 逐种主轴分布核验每行独立结果。
+        for justify in justifications {
+            // 逐种交叉轴对齐核验行组和逐项覆盖。
+            for align in alignments {
+                // 逐种交叉轴范围执行轴转置比较。
+                for row_frame in row_frames {
+                    // 构造实际分行的水平溢出布局。
+                    let mut row_layout = FlexLayout::new()
+                        // 应用当前水平方向。
+                        .with_direction(row_direction)
+                        // 四像素同时作为项间距与行间距。
+                        .with_gap(4.0)
+                        // 应用当前逐行主轴分布。
+                        .with_justify(justify)
+                        // 应用当前容器级交叉轴对齐。
+                        .with_align(align);
+                    // 开启实际换行路径。
+                    row_layout.wrap = true;
+                    // 冻结增长与压缩并保留自然主轴尺寸。
+                    row_layout.overflow_content = true;
+                    // 执行水平参考布局。
+                    let row_output = row_layout.layout(row_frame, &row_children);
+                    // 克隆全部参数后只切换到轴对称的垂直方向。
+                    let mut column_layout = row_layout.clone();
+                    // 应用当前垂直方向。
+                    column_layout.direction = column_direction;
+                    // frame 交换两轴后保持相同主轴上限与交叉轴范围。
+                    let column_frame = transpose_rect(row_frame);
+                    // 执行垂直转置布局。
+                    let column_output = column_layout.layout(column_frame, &column_children);
+                    // 垂直输出的每个子项转置回水平坐标后必须完全一致。
+                    let transposed_positions: Vec<_> = column_output
+                        // 逐项读取垂直结果。
+                        .positions
+                        // 转为所有权迭代以避免额外克隆。
+                        .into_iter()
+                        // 对每个矩形交换两轴。
+                        .map(transpose_rect)
+                        // 收集为与水平输出相同顺序的矩形数组。
+                        .collect();
+                    // 轴分支不得改变任一子项的几何。
+                    assert_eq!(
+                        transposed_positions, row_output.positions,
+                        // 失败消息标识当前方向、分布、对齐与 frame。
+                        "positions diverged for {row_direction:?}, {justify:?}, {align:?}, {row_frame:?}"
+                    );
+                    // 垂直尺寸账本转置后也必须与水平结果一致。
+                    assert_eq!(
+                        transpose_size(column_output.total_size),
+                        row_output.total_size,
+                        // 失败消息沿用同一组合标识。
+                        "total size diverged for {row_direction:?}, {justify:?}, {align:?}, {row_frame:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
 // 验证多行默认 Stretch 把交叉轴剩余空间均分到各行。
 #[test]
 // 逐项 align_self 只覆盖项内对齐，不得阻止其他行消费扩展后的行高。
