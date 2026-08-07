@@ -10,7 +10,9 @@ use crate::native::windowing::input::ControlSize;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 // Slider 只依赖基础层提示气泡原语，不依赖反馈组件实现。
-use crate::ui::widgets::tooltip_primitives::{paint_tooltip_bubble, tooltip_bubble_rect};
+use crate::ui::widgets::tooltip_primitives::{
+    paint_tooltip_bubble, tooltip_bubble_rect, tooltip_fallback_surface,
+};
 use crate::ui::widgets::TooltipPlacement;
 use crate::ui::SnapshotFields;
 use crate::ui::{
@@ -49,6 +51,8 @@ component! {
         slider_size: ControlSize,
         last_frame: Cell<Option<Rect>>,
         last_tooltip_rect: Cell<Option<Rect>>,
+        // 缓存当前逻辑表面，统一拖动提示的绘制、脏区与登记边界。
+        surface_rect: Cell<Option<Rect>>,
         pending_change: Cell<Option<f64>>,
     }
 
@@ -136,6 +140,20 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
+        // 读取本次绘制使用的逻辑表面尺寸。
+        let surface_size = ctx.logical_surface_size();
+        // 缓存当前表面，供脏区和浮层登记复用。
+        self.surface_rect.set(Some(Rect::new(
+            // 表面横坐标固定为窗口原点。
+            0.0,
+            // 表面纵坐标固定为窗口原点。
+            0.0,
+            // 使用绘制上下文的逻辑宽度。
+            surface_size.w,
+            // 使用绘制上下文的逻辑高度。
+            surface_size.h,
+        )));
+        // 继续捕获受控值依赖。
         self.capture_bound_value_dependency();
         let control_height = frame.h.max(0.0).min(self.control_height());
         let control_rect = Rect::new(frame.x, frame.y, frame.w.max(0.0), control_height);
@@ -273,6 +291,7 @@ component! {
                 true,
                 placement,
                 target,
+                self.tooltip_surface_or_fallback(target),
             ));
         }
         dirty
@@ -287,9 +306,18 @@ component! {
                     true,
                     placement,
                     target,
+                    self.tooltip_surface_or_fallback(target),
                 ))
                 .z_index(1100),
         )
+    }
+
+    // 使用组件树提供的同帧表面创建滑块提示登记。
+    overlay_entry_for_surface => (&self, id: ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+        // 缓存当前逻辑表面，使登记与随后绘制使用同一边界。
+        self.surface_rect.set(Some(surface));
+        // 复用统一的滑块提示登记逻辑。
+        self.overlay_entry(id, frame)
     }
 }
 
@@ -439,6 +467,16 @@ impl Slider {
             ),
         ))
     }
+
+    // 返回当前表面，首次登记前按提示文字构造有限回退。
+    fn tooltip_surface_or_fallback(&self, target: Rect) -> Rect {
+        // 优先使用组件树或绘制上下文提供的真实表面。
+        self.surface_rect
+            // 读取可复制的可选表面缓存。
+            .get()
+            // 首次登记前根据当前值文字构造有限回退。
+            .unwrap_or_else(|| tooltip_fallback_surface(&self.value.to_string(), target))
+    }
 }
 
 impl Slider {
@@ -495,6 +533,8 @@ impl Slider {
             slider_size: config.size,
             last_frame: Cell::new(None),
             last_tooltip_rect: Cell::new(None),
+            // 新滑块尚未接收布局或绘制表面。
+            surface_rect: Cell::new(None),
             pending_change: Cell::new(None),
         }
     }
@@ -577,5 +617,72 @@ impl Slider {
     fn intrinsic_size(&self) -> Size {
         let marks_height = if self.marks.is_empty() { 0.0 } else { 18.0 };
         Size::new(200.0, self.control_height() + marks_height)
+    }
+}
+
+// 验证滑块拖动提示复用共享表面约束几何。
+#[cfg(test)]
+// 将拖动状态构造限制在当前模块的内部测试中。
+mod tests {
+    // 复用被测滑块与提示位置枚举。
+    use super::{Slider, TooltipPlacement};
+    // 引入几何基础类型。
+    use crate::core::Rect;
+    // 引入共享解析器以核对登记与绘制几何同源。
+    use crate::ui::widgets::tooltip_primitives::resolve_tooltip_geometry;
+
+    // 靠近表面上边缘拖动时，提示登记必须翻转并保持在表面内。
+    #[test]
+    // 测试名称说明显式表面入口的职责。
+    fn overlay_entry_uses_current_surface_geometry() {
+        // 创建带顶部拖动提示的滑块。
+        let mut slider = Slider::new(0.0..=100.0)
+            // 将滑块值置于轨道中点。
+            .default_value(50.0)
+            // 配置作者期望的顶部方向。
+            .tooltip(TooltipPlacement::Top);
+        // 模拟正在拖动，使提示参与浮层登记。
+        slider.dragging = true;
+        // 将滑块放在表面上边缘。
+        let frame = Rect::new(20.0, 0.0, 160.0, 28.0);
+        // 使用足以容纳翻转后气泡的逻辑表面。
+        let surface = Rect::new(0.0, 0.0, 200.0, 100.0);
+        // 读取滑块当前值对应的提示目标。
+        let (placement, target) = slider
+            // 使用与登记相同的滑块 frame。
+            .tooltip_target(frame)
+            // 拖动状态下必须存在提示目标。
+            .expect("拖动中的滑块应生成提示目标");
+        // 通过组件树使用的显式表面入口创建登记。
+        let overlay = crate::ui::component::traits::WidgetRender::overlay_entry_for_surface(
+            // 传入被测滑块。
+            &slider,
+            // 使用稳定的测试组件标识。
+            crate::core::ComponentId::new(4),
+            // 传入靠近上边缘的滑块 frame。
+            frame,
+            // 传入当前帧的逻辑表面。
+            surface,
+        )
+        // 拖动状态必须生成提示登记。
+        .expect("拖动中的滑块应生成浮层登记");
+        // 使用同一共享解析器计算预期几何。
+        let expected = resolve_tooltip_geometry(
+            // 使用滑块当前值的显示文字。
+            &slider.current_value().to_string(),
+            // 滑块拖动提示始终带箭头。
+            true,
+            // 使用提示目标返回的作者方向。
+            placement,
+            // 使用滑块拇指目标矩形。
+            target,
+            // 使用当前逻辑表面。
+            surface,
+        );
+
+        // 上方空间不足时应翻转到底部。
+        assert_eq!(expected.placement, TooltipPlacement::Bottom);
+        // 浮层登记必须与共享解析器的受限气泡完全一致。
+        assert_eq!(overlay.bounds_rect(), Some(expected.bubble));
     }
 }
