@@ -2,6 +2,10 @@
 
 use super::*;
 
+// 复用独立的块级 Markdown 解析辅助，避免主解析器继续膨胀。
+#[path = "parse_blocks.rs"]
+mod parse_blocks;
+
 pub fn layout_rich_text_segments(
     segments: &[RichTextSegment],
     max_width: f32,
@@ -102,84 +106,13 @@ fn parse_inline_text(text: &str, segments: &mut Vec<RichTextSegment>) {
 
 /// 解析不含显式换行的一行 Markdown 内联内容。
 fn parse_inline_line(text: &str, segments: &mut Vec<RichTextSegment>) {
-    // 行首 ATX 标题复用 Text 样式的字号和粗体能力。
-    if let Some((level, content)) = parse_atx_heading(text) {
-        // 以项目 Typography 的标题字号建立基础样式。
-        let style = heading_style(level);
-        // 在标题基础样式上继续解析链接和嵌套强调。
-        parse_inline_range(content, &style, segments);
-    } else {
-        // 普通行从默认样式开始递归解析嵌套的内联标记。
-        parse_inline_range(text, &RichTextStyle::default(), segments);
+    // 先处理行首块级标记，块级正文仍复用同一个内联解析器。
+    if parse_blocks::parse_block_line(text, segments) {
+        // 块级标记已经消费当前行，不再重复按普通文本解析。
+        return;
     }
-}
-
-/// 解析行首 ATX 标题并返回标题级别和去除标记后的正文。
-fn parse_atx_heading(text: &str) -> Option<(u8, &str)> {
-    // 统计行首连续井号数量。
-    let mut marker_len = 0usize;
-    // 只按 ASCII 字节读取标题标记，避免切断 UTF-8 正文。
-    while text.as_bytes().get(marker_len) == Some(&b'#') {
-        // 向下一个连续井号推进。
-        marker_len += 1;
-    }
-    // 标题必须包含一到六个井号和至少一个空白分隔符。
-    if !(1..=6).contains(&marker_len)
-        || !text[marker_len..]
-            .chars()
-            .next()
-            .is_some_and(|ch| ch == ' ' || ch == '\t')
-    {
-        // 不满足 ATX 边界时保留原始文本。
-        return None;
-    }
-    // 去除标题标记后的前置空白。
-    let content = text[marker_len..].trim_start_matches(|ch| ch == ' ' || ch == '\t');
-    // 去除可选的行尾闭合井号及其外围空白。
-    let content = trim_atx_heading_closer(content);
-    // 返回标题级别与可继续解析内联语法的正文。
-    Some((marker_len as u8, content))
-}
-
-/// 去除 ATX 标题末尾可选的闭合井号。
-fn trim_atx_heading_closer(content: &str) -> &str {
-    // 先去除标题正文末尾的空白，便于判断闭合标记。
-    let trimmed = content.trim_end();
-    // 只有末尾井号前存在空白时才把它视为闭合标记。
-    if trimmed.ends_with('#')
-        && trimmed[..trimmed.len() - 1]
-            .chars()
-            .next_back()
-            .is_some_and(|ch| ch == ' ' || ch == '\t')
-    {
-        // 去除闭合井号以及它前面的分隔空白。
-        return trimmed[..trimmed.len() - 1].trim_end();
-    }
-    // 普通正文中的末尾井号保持字面值。
-    trimmed
-}
-
-/// 返回与 Typography 标题级别一致的基础富文本样式。
-fn heading_style(level: u8) -> RichTextStyle {
-    // 将六级 Markdown 标题降级到现有五级 Typography 视觉契约。
-    let font_size = match level.min(5) {
-        // 一级标题沿用 Typography Heading1 的字号。
-        1 => 38.0,
-        // 二级标题沿用 Typography Heading2 的字号。
-        2 => 30.0,
-        // 三级标题沿用 Typography Heading3 的字号。
-        3 => 24.0,
-        // 四级标题沿用 Typography Heading4 的字号。
-        4 => 20.0,
-        // 五、六级标题沿用 Typography Heading5 的字号。
-        _ => 16.0,
-    };
-    // 标题默认使用粗体并覆盖当前默认字号。
-    RichTextStyle {
-        bold: true,
-        font_size: Some(font_size),
-        ..Default::default()
-    }
+    // 普通行从默认样式开始递归解析嵌套的内联标记。
+    parse_inline_range(text, &RichTextStyle::default(), segments);
 }
 
 /// 递归解析一段共享样式的 Markdown 内联内容。
@@ -654,6 +587,11 @@ fn push_text_segment(content: &str, style: &RichTextStyle, segments: &mut Vec<Ri
 #[cfg(test)]
 #[path = "parse_heading_tests.rs"]
 mod heading_tests;
+
+// 将块级语法专项测试拆出，保持解析实现文件结构清晰。
+#[cfg(test)]
+#[path = "parse_block_tests.rs"]
+mod block_tests;
 
 #[cfg(test)]
 mod tests {
