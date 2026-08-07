@@ -20,6 +20,8 @@ use std::fmt;
 use std::rc::Rc;
 
 mod builder;
+// 收拢自定义单元格子树的完整 frame 与片段裁剪布局。
+mod child_layout;
 mod config;
 pub(crate) mod geometry;
 mod header;
@@ -31,17 +33,17 @@ pub(crate) mod types;
 
 use config::{flatten_column_groups, merge_table_columns};
 // 引入共享列区绘制层级与列几何快照。
+pub use builder::TableBuilder;
 use geometry::{TableColumnGeometry, COLUMN_PAINT_ORDER};
+pub(crate) use types::TableCellRenderer;
 use types::{
     finite_nonnegative, ColumnGroupRange, TablePaginationCallback, TablePointerAction,
     TableResizeDrag, TableRowClickCallback,
 };
-pub use builder::TableBuilder;
 pub use types::{
-    DataTable, ExpandRenderer, SortDirection, Fixed, TableChange, TableColumn, TableColumnGroup,
+    DataTable, ExpandRenderer, Fixed, SortDirection, TableChange, TableColumn, TableColumnGroup,
     TableDataColumn, TableDataError, TableEmptyRenderer, TablePagination, TableRow,
 };
-pub(crate) use types::TableCellRenderer;
 
 component! {
     pub struct Table {
@@ -771,103 +773,11 @@ component! {
         ))
     }
 
-    layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
+    layout_children => (&self, frame: Rect, children: &[LayoutChild], tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
-        self.last_frame.set(Some(frame));
-        if !self.view_columns.is_empty() {
-            let (start, end) = self
-                .materialized_cell_range
-                .get()
-                .unwrap_or_else(|| self.visible_row_range(self.body_viewport_height()));
-            let column_geometry = self.column_geometry(frame.x, frame.w);
-            let body_top = frame.y + self.total_header_height() + 1.0;
-            let mut positions = Vec::with_capacity(children.len());
-            for (local_index, child) in children.iter().enumerate() {
-                let column_count = self.view_columns.len();
-                let row = start + local_index / column_count;
-                if row >= end {
-                    break;
-                }
-                let column_index = self.view_columns[local_index % column_count];
-                let Some(column) = column_geometry
-                    .columns
-                    .iter()
-                    .find(|column| column.index == column_index)
-                else {
-                    continue;
-                };
-                let expanded_offset = if self.expanded_row.get().is_some_and(|expanded| row > expanded)
-                {
-                    self.expand_height
-                } else {
-                    0.0
-                };
-                // View children stay in content coordinates. The compositor and
-                // hit-test path apply the viewport scroll offset, so unchanged
-                // cells do not need new frames for every vertical wheel event.
-                let row_y = body_top + row as f32 * self.row_h + expanded_offset;
-                if self.cell_anchor(row, column_index) != Some((row, column_index)) {
-                    positions.push((child.id, Rect::new(column.x, row_y, 0.0, 0.0)));
-                    continue;
-                }
-                let row_span = self.row_span(row, column_index);
-                let col_span = self.col_span(row, column_index);
-                let cell_height = self.span_height(row, row_span);
-                // 复用绘制路径的合并矩形解析，保持自定义子项布局起点一致。
-                let Some(cell) = column_geometry.span_bounds(
-                    // 传入当前自定义单元格锚点列。
-                    column_index,
-                    // 传入当前锚点声明的逻辑列跨度。
-                    col_span,
-                    // 子项保留内容坐标中的纵坐标。
-                    row_y,
-                    // 子项保留完整跨行高度。
-                    cell_height,
-                )
-                else {
-                    // 缺少锚点几何时给当前子项零尺寸。
-                    positions.push((child.id, Rect::new(column.x, row_y, 0.0, 0.0)));
-                    // 继续处理下一个物化子项。
-                    continue;
-                };
-                positions.push((
-                    child.id,
-                    // 自定义子项保持在锚点列区内，且只占用逻辑跨度实际覆盖的片段。
-                    column_geometry
-                        // 复用文本绘制使用的跨度列区裁剪。
-                        .span_clip_for(
-                            // 传入当前自定义单元格锚点列。
-                            column_index,
-                            // 传入当前锚点声明的逻辑列跨度。
-                            col_span,
-                            // 自定义子项仍归属其锚点固定区。
-                            column.zone,
-                            // 保留内容坐标中的纵坐标。
-                            row_y,
-                            // 保留完整跨行高度。
-                            cell_height,
-                        )
-                        // 缺少可见跨度片段时退化为锚点处零尺寸。
-                        .unwrap_or_else(|| Rect::new(cell.x, cell.y, 0.0, 0.0)),
-                ));
-            }
-            return positions;
-        }
-        let Some(expanded_row) = self.expanded_row.get() else {
-            return Vec::new();
-        };
-        let Some(child) = children.first() else {
-            return Vec::new();
-        };
-        let y = frame.y
-            + self.total_header_height()
-            + 1.0
-            + (expanded_row + 1) as f32 * self.row_h;
-        vec![(
-            child.id,
-            Rect::new(frame.x, y, frame.w, self.expand_height),
-        )]
+        // 由独立辅助统一生成完整 View frame 与父级片段裁剪。
+        self.layout_table_children(frame, children, tree)
     }
 }
 

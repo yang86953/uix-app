@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::core::{DirtyRegion, Point};
+use crate::core::{DirtyRegion, Point, Rect};
 use crate::draw::geometry::types::Transform;
 use crate::draw::painting::{PaintContext, PaintPass, PaintSurfaceConfig};
 use crate::draw::resources::font::font_service::FontService;
@@ -16,7 +16,6 @@ use crate::draw::{Canvas2D, FontHandle, RenderTarget};
 use super::{DebugHover, LayerNode, LayerTree};
 
 impl LayerTree {
-
     pub fn render(
         &mut self,
         engine: &mut dyn RenderTarget,
@@ -186,12 +185,9 @@ impl LayerTree {
             },
         )
     }
-
-
 }
 
 impl LayerTree {
-
     /// 递归渲染单个节点；脏剪枝使用 viewport 坐标变换（Phase 5）。
     fn render_node(
         node: &mut LayerNode,
@@ -204,14 +200,101 @@ impl LayerTree {
         debug_mode: bool,
         debug_hover: &Option<DebugHover>,
         depth: usize,
+        mut render_objects: Option<&mut RenderObjectTree>,
+    ) -> Result<(), crate::core::Error> {
+        // 克隆小型片段集合，避免在重复渲染期间借用可变节点。
+        let clip_regions = node.clip_regions().map(<[Rect]>::to_vec);
+        // 只有父布局显式声明片段时才进入逐片重放路径。
+        let Some(clip_regions) = clip_regions else {
+            // 普通节点保持原有单次绘制路径。
+            return Self::render_node_unclipped(
+                // 传入当前节点及共享渲染环境。
+                node,
+                engine,
+                scene,
+                dirty_region,
+                env,
+                surface_w,
+                surface_h,
+                debug_mode,
+                debug_hover,
+                depth,
+                render_objects,
+            );
+        };
+        // 片段为空表示父布局明确隐藏整个节点子树。
+        if clip_regions.is_empty() {
+            // 不提交任何内容也不穿透为未裁剪绘制。
+            return Ok(());
+        }
+        // 同一有状态节点按父布局提供的每个不连续片段重放。
+        for clip_region in clip_regions {
+            // 在节点自身变换之前压入父级内容坐标裁剪。
+            engine.canvas_2d().push_clip(clip_region);
+            // 在当前片段内执行一次完整节点与后代绘制。
+            let result = Self::render_node_unclipped(
+                // 复用同一节点实例，避免复制 View 状态。
+                node,
+                engine,
+                scene,
+                dirty_region,
+                env,
+                surface_w,
+                surface_h,
+                debug_mode,
+                debug_hover,
+                depth,
+                // 多片段重放共享同一 DisplayList 缓存索引。
+                render_objects.as_deref_mut(),
+            );
+            // 无论片段内绘制是否成功都恢复父级裁剪栈。
+            engine.canvas_2d().pop_clip();
+            // 在恢复画布状态后传播绘制错误。
+            result?;
+        }
+        // 所有片段均成功绘制后结束当前节点。
+        Ok(())
+    }
+
+    // 在不处理父级片段的前提下执行原有节点变换与绘制流程。
+    #[allow(clippy::too_many_arguments, reason = "节点渲染环境由合成递归完整传递")]
+    fn render_node_unclipped(
+        // 接收需要绘制的可变图层节点。
+        node: &mut LayerNode,
+        // 接收当前渲染目标。
+        engine: &mut dyn RenderTarget,
+        // 接收只读场景快照。
+        scene: &impl ScenePaint,
+        // 接收当前脏区域。
+        dirty_region: &DirtyRegion,
+        // 接收共享字体与图像资源环境。
+        env: &LayerRenderEnv<'_>,
+        // 接收目标表面宽度。
+        surface_w: i32,
+        // 接收目标表面高度。
+        surface_h: i32,
+        // 接收调试绘制开关。
+        debug_mode: bool,
+        // 接收当前调试命中链。
+        debug_hover: &Option<DebugHover>,
+        // 接收当前树深度。
+        depth: usize,
+        // 接收可选的显示列表缓存树。
         render_objects: Option<&mut RenderObjectTree>,
     ) -> Result<(), crate::core::Error> {
+        // 节点自身变换必须位于父级片段裁剪之内。
         let transform = node.transform();
+        // 读取节点自身透明度。
         let opacity = node.opacity();
+        // 保存进入节点前的画布状态。
         engine.canvas_2d().save();
+        // 应用节点及其后代共享的视觉变换。
         Self::apply_canvas_transform(engine.canvas_2d(), transform);
+        // 读取祖先已经累计的透明度。
         let inherited_opacity = engine.canvas_2d().opacity();
+        // 叠乘当前节点透明度。
         engine.canvas_2d().set_opacity(inherited_opacity * opacity);
+        // 执行节点类型对应的实际绘制逻辑。
         let result = Self::render_node_inner(
             node,
             engine,
@@ -225,7 +308,9 @@ impl LayerTree {
             depth,
             render_objects,
         );
+        // 恢复进入节点前的画布变换与透明度。
         engine.canvas_2d().restore();
+        // 返回节点绘制结果。
         result
     }
 
@@ -251,6 +336,8 @@ impl LayerTree {
                 display_list,
                 children,
                 retry_count,
+                // 父级片段已经由外层渲染入口处理。
+                ..
             } => {
                 let w = bounds.w.ceil() as i32;
                 let h = bounds.h.ceil() as i32;
@@ -539,6 +626,4 @@ impl LayerTree {
     ) -> bool {
         scene.node_is_overlay(node_id) || needs_paint(scene, node_id, dirty_region)
     }
-
 }
-

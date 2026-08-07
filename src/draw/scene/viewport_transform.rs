@@ -101,6 +101,24 @@ pub fn visible_viewport_rect(scene: &impl ScenePaint, node_id: NodeId) -> Option
         if !scene.node_visible(id) {
             return None;
         }
+        // 父级片段位于当前节点自身变换之前的父内容坐标系。
+        if index > 0 {
+            // 只在父布局显式声明不连续片段时收缩可见区域。
+            if let Some(regions) = scene.node_clip_regions(id) {
+                // 空片段集合表示当前节点子树完全不可见。
+                let mut regions = regions.into_iter();
+                // 读取首个片段作为保守联合边界初值。
+                let mut region_bounds = regions.next()?;
+                // 合并其余片段，仅用于可见性与脏区的保守矩形投影。
+                for region in regions {
+                    // 使用矩形联合保留全部实际片段。
+                    region_bounds = region_bounds.union(&region);
+                }
+                // 先用祖先与滚动变换投影片段，再同节点可见矩形求交。
+                rect = rect.intersect(&transform.transform_rect(region_bounds))?;
+            }
+        }
+        // 片段裁剪之后才应用当前节点自身视觉变换。
         transform = transform.concat(scene.node_transform(id));
         if index + 1 < path.len() {
             let node_frame = scene.node_frame(id);
@@ -121,10 +139,12 @@ pub fn needs_paint(scene: &impl ScenePaint, node_id: NodeId, dirty_region: &Dirt
     if scene.node_dirty(node_id) {
         return true;
     }
-    let frame = node_viewport_frame(scene, node_id);
-    if frame.w <= 0.0 || frame.h <= 0.0 {
+    // 使用同时累计祖先视口与父级片段的真实可见包围盒。
+    let Some(frame) = visible_viewport_rect(scene, node_id) else {
+        // 完全落在片段外或视口外的节点无需绘制。
         return false;
-    }
+    };
+    // 只在真实可见包围盒与脏区域相交时提交节点。
     dirty_region.intersects(frame)
 }
 

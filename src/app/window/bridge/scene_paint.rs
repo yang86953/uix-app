@@ -60,6 +60,14 @@ impl ScenePaint for WidgetTree {
         self.get(id).map(|n| n.children()).unwrap_or(EMPTY)
     }
 
+    // 暴露布局阶段存入节点的父级片段裁剪快照。
+    fn node_clip_regions(&self, id: NodeId) -> Option<Vec<Rect>> {
+        // 只在节点仍存在时读取其片段元数据。
+        self.get(id)
+            // 克隆小型矩形集合交给合成树独立消费。
+            .and_then(|node| node.parent_clip_regions())
+    }
+
     fn node_picture_policy(&self, id: NodeId) -> PicturePolicy {
         self.get(id)
             .map(|n| {
