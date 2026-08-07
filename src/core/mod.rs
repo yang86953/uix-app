@@ -41,6 +41,9 @@
 pub mod damage;
 pub mod error;
 pub mod geometry;
+// 该纯算法模块保留为跨系统私有基础能力，当前版本没有直接调用方。
+#[allow(dead_code)]
+// 保持旧路径的 crate-private 契约，禁止误提升为公开模块。
 pub(crate) mod glyph_outline;
 pub mod identity;
 pub mod perf_probe;
