@@ -79,15 +79,22 @@ fn parse_atx_heading(text: &str) -> Option<(u8, &str)> {
 fn trim_atx_heading_closer(content: &str) -> &str {
     // 先去除标题正文末尾的空白，便于判断闭合标记。
     let trimmed = content.trim_end();
-    // 只有末尾井号前存在空白时才把它视为闭合标记。
-    if trimmed.ends_with('#')
-        && trimmed[..trimmed.len() - 1]
+    // 从正文末尾向前扫描连续 ASCII 闭合井号。
+    let mut hash_start = trimmed.len();
+    // 连续井号均是单字节，回退后仍位于 UTF-8 边界。
+    while hash_start > 0 && trimmed.as_bytes()[hash_start - 1] == b'#' {
+        // 继续向前纳入同一闭合井号序列。
+        hash_start -= 1;
+    }
+    // 只有闭合井号序列前存在空白时才把它视为闭合标记。
+    if hash_start < trimmed.len()
+        && trimmed[..hash_start]
             .chars()
             .next_back()
-            .is_some_and(|ch| ch == ' ' || ch == '\t')
+            .is_some_and(char::is_whitespace)
     {
-        // 去除闭合井号以及它前面的分隔空白。
-        return trimmed[..trimmed.len() - 1].trim_end();
+        // 去除连续闭合井号以及它前面的分隔空白。
+        return trimmed[..hash_start].trim_end();
     }
     // 普通正文中的末尾井号保持字面值。
     trimmed
