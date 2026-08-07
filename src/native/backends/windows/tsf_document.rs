@@ -143,6 +143,8 @@ impl TsfStoreState {
         })
     }
 
+    // 测试目标保留 composition 状态观测入口，供 TSF 文档契约测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn composition_active(&self) -> bool {
         self.composition.active

@@ -120,6 +120,8 @@ pub(crate) fn priority_result_has_text(result: i32) -> bool {
     result > 0
 }
 
+// 测试目标保留全局内存文本往返入口，供 Windows 剪贴板契约测试按需调用。
+#[cfg_attr(test, allow(dead_code))]
 #[cfg(test)]
 pub(crate) fn global_memory_text_round_trip(text: &str) -> Option<String> {
     let memory = OwnedGlobalMemory::from_text(text)?;

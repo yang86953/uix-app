@@ -174,6 +174,8 @@ impl WindowsTextInput {
         self.tsf.is_some() && self.window_id == Some(window_id)
     }
 
+    // 测试目标保留 TSF client id 观测入口，供输入会话契约测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn tsf_client_id(&self) -> Option<u32> {
         self.tsf.as_ref().map(TsfSession::client_id)

@@ -22,6 +22,8 @@ pub use registry::{
     describe_backend_availability, gpu_recipe_candidates, graphics_runtime_platform, GraphicsRecipe,
 };
 
+// 测试目标保留 D3D11 WARP 工厂入口，供显式后端矩阵按需调用。
+#[cfg_attr(test, allow(dead_code))]
 #[cfg(all(test, feature = "d3d11"))]
 pub(crate) fn create_d3d11_warp_test_context(
     surface: *mut std::ffi::c_void,
@@ -32,6 +34,8 @@ pub(crate) fn create_d3d11_warp_test_context(
         .map(thread_bound::bind_to_current_thread)
 }
 
+// 测试目标保留 D3D11 WARP 可用性探测，供显式后端矩阵按需调用。
+#[cfg_attr(test, allow(dead_code))]
 #[cfg(all(test, feature = "d3d11"))]
 pub(crate) fn d3d11_warp_test_context_available() -> bool {
     crate::native::presentation::graphics::d3d11::warp_test_context_available()
@@ -119,13 +123,15 @@ pub(crate) fn create_platform_with_pending(
     ))
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+// 跨平台不支持分支保留统一错误文案，供兼容工厂和目标矩阵按需调用。
+#[allow(dead_code)]
 pub(crate) fn unsupported_platform_message() -> String {
     "Unsupported platform: only Windows, Linux, and macOS are supported".to_string()
 }
 
 /// 创建 GPU 图形上下文，指定单个 API；无 probe 循环。
-#[cfg_attr(not(test), allow(dead_code))]
+// 单后端工厂入口保留给兼容调用方，默认测试矩阵不直接启动图形上下文。
+#[allow(dead_code)]
 pub(crate) fn create_gpu_context_with_backend(
     native_surface: *mut c_void,
     width: i32,

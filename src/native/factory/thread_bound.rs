@@ -108,6 +108,8 @@ impl ThreadBoundGraphicsContext {
         );
     }
 
+    // 测试目标保留可注入 owner thread 的构造器，供线程归属契约测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn with_test_owner(
         inner: Box<dyn IGraphicsContext>,
