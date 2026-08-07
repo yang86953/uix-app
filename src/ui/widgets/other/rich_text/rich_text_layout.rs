@@ -199,6 +199,31 @@ mod tests {
         assert_eq!(measured_advance_for_char(&glyphs, 3, 7.0), 0.0);
         // 没有字形的索引应回退到估算宽度。
         assert_eq!(measured_advance_for_char(&glyphs, 1, 7.0), 7.0);
+        // 构造相邻字形的负 kerning，验证实际 x 间距会缩短当前 advance。
+        let kerned_glyphs = vec![
+            // 第一个字形的 advance 应由下一个源字形的 x 坐标决定。
+            PositionedGlyph {
+                x: 0.0,
+                y: 0.0,
+                width: 10.0,
+                height: 12.0,
+                glyph_id: 4,
+                char_index: 0,
+                font: FontHandle::new(0),
+            },
+            // 下一个字形左移到 9px，模拟字体后端返回的 kerning。
+            PositionedGlyph {
+                x: 9.0,
+                y: 0.0,
+                width: 8.0,
+                height: 12.0,
+                glyph_id: 5,
+                char_index: 1,
+                font: FontHandle::new(0),
+            },
+        ];
+        // 富文本游标应与最终 draw_text 的下一个字形起点保持一致。
+        assert_eq!(measured_advance_for_char(&kerned_glyphs, 0, 7.0), 9.0);
     }
 }
 
@@ -535,14 +560,26 @@ pub(crate) fn assign_global_indices(lines: &mut [LayoutLine], segments: &[RichTe
 
 // 根据后端字形的源字符索引读取真实 advance，避免 glyph 槽位缺失时错配宽度。
 fn measured_advance_for_char(glyphs: &[PositionedGlyph], char_index: usize, fallback: f32) -> f32 {
-    // 只接受有限正宽度，避免异常字体度量污染布局。
-    glyphs
-        .iter()
-        // 后端的 char_index 对应源文本 chars() 序号，而不是 glyph 数组下标。
-        .find(|glyph| glyph.char_index == char_index)
-        .map(|glyph| glyph.width)
-        // 缺字或异常宽度回退到估算值，同时保留后端合法的零宽字形。
-        .filter(|width| width.is_finite() && *width >= 0.0)
+    // 后端的 char_index 对应源文本 chars() 序号，而不是 glyph 数组下标。
+    let Some(glyph) = glyphs.iter().find(|glyph| glyph.char_index == char_index) else {
+        // 缺字时回退到估算宽度，保持布局可以继续收敛。
+        return fallback;
+    };
+    // 相邻源字形的 x 差包含当前字形宽度和字体 kerning 修正。
+    let positioned_advance = char_index
+        .checked_add(1)
+        .and_then(|next_char_index| {
+            // 只跨相邻源字符读取 x，避免把缺失字符的宽度错误吞并。
+            glyphs
+                .iter()
+                .find(|next_glyph| next_glyph.char_index == next_char_index)
+                .map(|next_glyph| next_glyph.x - glyph.x)
+        })
+        // 只接受有限非负间距，避免异常字体坐标污染布局。
+        .filter(|advance| advance.is_finite() && *advance >= 0.0);
+    // 没有相邻字形时保留当前字形宽度，并允许合法的零宽字形。
+    positioned_advance
+        .or_else(|| (glyph.width.is_finite() && glyph.width >= 0.0).then_some(glyph.width))
         .unwrap_or(fallback)
 }
 
