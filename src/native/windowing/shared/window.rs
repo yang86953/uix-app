@@ -250,6 +250,8 @@ impl<O: WindowOps> PlatformWindowCore<O> {
         }
     }
 
+    // 保留共享状态句柄访问器，供平台集成与测试按需读取。
+    #[allow(dead_code)]
     pub fn state_rc(&self) -> Rc<RefCell<WindowState>> {
         Rc::clone(&self.state)
     }

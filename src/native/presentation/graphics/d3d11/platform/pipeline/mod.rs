@@ -872,6 +872,8 @@ pub struct D3d11Pipeline {
     /// the atlas packing capacity.
     atlas_cache: HashMap<GlyphAtlasKey, GlyphAtlasEntry>,
     /// Atlas 上传次数统计（诊断）。
+    // 该计数仅由 crate 内测试诊断读取，生产 pipeline 不保留额外字段。
+    #[cfg(test)]
     atlas_upload_count: usize,
     /// Scratch for packing coverage into atlas rows (R8).
     atlas_upload: Vec<u8>,

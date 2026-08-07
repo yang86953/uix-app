@@ -267,6 +267,8 @@ pub fn describe_backend_availability(requested: GraphicsBackend) -> Option<&'sta
 ///
 /// This is intentionally lossy and must not drive bootstrap: repeated backend
 /// values represent distinct recipe rows.
+// 保留旧 backend-only 查询视图，新的 bootstrap 使用 recipe 级入口。
+#[allow(dead_code)]
 pub fn gpu_probe_candidates(requested: GraphicsBackend) -> Vec<GraphicsBackend> {
     gpu_recipe_candidates(requested)
         .into_iter()
@@ -275,6 +277,8 @@ pub fn gpu_probe_candidates(requested: GraphicsBackend) -> Vec<GraphicsBackend> 
 }
 
 /// Creates a context for one exact recipe row (no probe loop).
+// 保留无运行时队列的兼容创建入口，正式路径使用带队列版本。
+#[allow(dead_code)]
 pub fn try_create_gpu_recipe(
     recipe: GraphicsRecipe,
     native_surface: NativeSurfaceHandle,

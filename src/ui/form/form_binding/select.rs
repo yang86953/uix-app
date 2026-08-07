@@ -56,6 +56,8 @@ where
     }
 
     /// 绑定模型、值 State 与焦点句柄（由 `FormModel::select_item` 或 `Form::model` 内部调用）。
+    // 保留选择控件的内部绑定阶段入口，公开构造器由 FormModel 负责调用。
+    #[allow(dead_code)]
     pub(crate) fn bind(self, model: FormModel, value: State<T>, focus_handle: FocusHandle) -> Self {
         Self {
             model: Some(model),

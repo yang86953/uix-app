@@ -26,6 +26,8 @@ use super::GpuBackend;
 use super::{device_pixel_ratio_from_context, logical_extent_from_context};
 
 impl GpuBackend {
+    // 保留 hybrid GPU backend 的兼容构造器，当前 bootstrap 使用 new_gpu_only 或带模式入口。
+    #[allow(dead_code)]
     pub(crate) fn new(gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
         Self::new_with_mode(gpu_ctx, false, false)
     }

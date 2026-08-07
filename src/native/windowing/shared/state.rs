@@ -54,6 +54,8 @@ impl Default for WindowState {
 
 impl WindowState {
     /// 创建指定尺寸的初始窗口状态。
+    // 保留无 ID 的共享状态构造器，供平台测试和外部组装使用。
+    #[allow(dead_code)]
     pub fn with_size(width: i32, height: i32) -> Self {
         Self {
             width,
@@ -63,6 +65,8 @@ impl WindowState {
     }
 
     /// 创建指定 ID 与尺寸的初始窗口状态。
+    // 保留带窗口身份的共享状态构造器，供平台测试和外部组装使用。
+    #[allow(dead_code)]
     pub fn with_id_and_size(window_id: WindowId, width: i32, height: i32) -> Self {
         Self {
             window_id,
@@ -73,6 +77,8 @@ impl WindowState {
     }
 
     /// 返回窗口位置。
+    // 保留位置快照访问器，供平台状态同步方按需读取。
+    #[allow(dead_code)]
     pub fn position(&self) -> Point {
         Point::new(self.pos_x as f32, self.pos_y as f32)
     }

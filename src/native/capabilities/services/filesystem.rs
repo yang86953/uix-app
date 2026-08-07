@@ -27,6 +27,8 @@ impl<P: Default> FileSystemCore<P> {
     }
 }
 
+// 保留自定义 provider 注入与读取接口，供平台扩展和外部组装测试使用。
+#[allow(dead_code)]
 impl<P> FileSystemCore<P> {
     pub fn with_provider(provider: P) -> Self {
         Self { provider }
