@@ -217,6 +217,11 @@ fn parse_inline_element(
             // 当前标记不匹配时继续检查下一个候选标记。
             continue;
         }
+        // 单字符标记不能从未闭合双字符标记 run 的前缀启动。
+        if marker.len() == 1 && remaining[marker.len()..].starts_with(marker) {
+            // 保留双字符标记整体字面值，避免退化成另一种样式。
+            continue;
+        }
         // 单字符下划线在单词内部不作为强调标记。
         if !can_open_marker(text, cursor, marker) {
             // 不满足边界条件时保留原文字面值。
@@ -303,15 +308,20 @@ fn can_open_marker(text: &str, cursor: usize, marker: &str) -> bool {
 
 /// 判断指定结束位置是否适合作为 Markdown 标记的闭合位置。
 fn can_close_marker(text: &str, close: usize, marker: &str) -> bool {
-    // 双字符标记按 Markdown 的简单配对规则接受第一个闭合位置。
+    // 读取样式闭合标记前的相邻字符。
+    let before = text[..close].chars().next_back();
+    // 闭合标记前不能紧邻空白，否则应按普通文本保留标记。
+    if before.is_none_or(char::is_whitespace) {
+        // 让搜索器继续寻找后续满足边界的闭合位置。
+        return false;
+    }
+    // 双字符标记按 Markdown 的简单配对规则接受第一个有效闭合位置。
     if marker != "_" {
         // 双字符和星号标记不需要额外的单词边界判断。
         return true;
     }
     // 读取下划线后的相邻字符。
     let after = &text[close + marker.len()..];
-    // 读取下划线前的相邻字符。
-    let before = text[..close].chars().next_back();
     // 单词中间的下划线不能闭合强调。
     !(before.is_some_and(is_word_char) && after.chars().next().is_some_and(is_word_char))
 }
@@ -746,6 +756,34 @@ mod tests {
                 style: RichTextStyle::default(),
             }]
         );
+    }
+
+    // 验证所有样式闭合标记前的空白不会形成有效样式段。
+    #[test]
+    fn whitespace_before_style_closers_remains_plain_text() {
+        // 覆盖粗体、斜体、删除线和扩展下划线标记。
+        let inputs = [
+            "**粗体 **",
+            "__粗体 __",
+            "*斜体 *",
+            "_斜体 _",
+            "~~删除 ~~",
+            "++下划 ++",
+        ];
+        // 逐个确认尾随空白的闭合标记和正文均按字面保留。
+        for input in inputs {
+            // 解析包含闭合侧尾随空白的样式文本。
+            let segments = parse_rich_text(input);
+            // 未满足闭合边界时应只保留一个默认样式 Text 段。
+            assert_eq!(
+                segments,
+                vec![RichTextSegment::Text {
+                    content: input.into(),
+                    style: RichTextStyle::default(),
+                }],
+                "input: {input}"
+            );
+        }
     }
 
     // 验证转义的闭合标记不会提前截断外层斜体段。
