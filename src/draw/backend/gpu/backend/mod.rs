@@ -34,12 +34,7 @@ pub use surface::NativeGpuDrawSurface;
 use std::time::Instant;
 
 use crate::core::{Error, PresentDamageTracker};
-// 引入通用 RHI lowering 缓存。
-use crate::draw::backend::contract::{
-    DrawSurface, RenderBackend,
-};
 use crate::draw::backend::rhi_renderer::RhiRenderer;
-use crate::draw::Canvas2D;
 use crate::native::present::{IGraphicsContext, OffscreenTargetId};
 // 引入迁移期 RHI 的离屏纹理句柄。
 use crate::native::present::rhi::TextureHandle;

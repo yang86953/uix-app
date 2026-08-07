@@ -13,7 +13,7 @@ use crate::draw::painting::{
 };
 use crate::draw::raster::pixel_surface::PixelSurface;
 use crate::native::present::{
-    GpuGlyphBlit, GpuImageBlit, GpuSolidRect, GpuStrokeRect, IGraphicsContext, SoftFallbackTile,
+    GpuGlyphBlit, GpuImageBlit, GpuSolidRect, GpuStrokeRect, SoftFallbackTile,
 };
 
 use super::super::tile::pack_visible_soft_fallback_tile;
