@@ -395,10 +395,22 @@ impl LayoutEngine for FlexLayout {
         // 布局求解前先把测量阶段的无界矩形转为实际有限输入。
         let content_rect = normalize_layout_rect(content_rect);
         if children.is_empty() {
+            // 固定尺寸空布局继续占用父级分配的两条轴。
+            let mut total_size = Size::new(content_rect.w, content_rect.h);
+            // 固有主轴与溢出模式都必须按零个自然子项收敛主轴。
+            if self.intrinsic_main || self.overflow_content {
+                // 反向布局只改变排列方向，不改变主轴对应的尺寸分量。
+                match self.direction {
+                    // 水平主轴由空内容收敛为零宽度。
+                    FlexDirection::Row | FlexDirection::RowReverse => total_size.w = 0.0,
+                    // 垂直主轴由空内容收敛为零高度。
+                    FlexDirection::Column | FlexDirection::ColumnReverse => total_size.h = 0.0,
+                }
+            }
             // 空子集也必须经过统一输出收敛，不能直传父级哨兵。
             return LayoutOutput {
                 positions: Vec::new(),
-                total_size: Size::new(content_rect.w, content_rect.h),
+                total_size,
             }
             .normalized();
         }
