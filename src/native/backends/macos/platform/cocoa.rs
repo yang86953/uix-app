@@ -770,7 +770,6 @@
         let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         f(receiver, sel(selector), first, second)
     }
-}
 
 pub(crate) unsafe fn present_layer_pixels(
     layer: cocoa::Id,
