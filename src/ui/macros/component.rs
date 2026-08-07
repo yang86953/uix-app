@@ -380,6 +380,11 @@ macro_rules! __component_method_builder {
     (overlay_entry; WidgetRender; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn overlay_entry($($p)*) -> $ret $body
     };
+    // 将显式表面浮层方法归入渲染能力实现。
+    (overlay_entry_for_surface; WidgetRender; ($($p:tt)*) -> $ret:ty $body:block) => {
+        // 原样生成组件声明的方法签名与方法体。
+        fn overlay_entry_for_surface($($p)*) -> $ret $body
+    };
     (draw_margin; WidgetRender; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn draw_margin($($p)*) -> $ret $body
     };
@@ -529,6 +534,11 @@ macro_rules! __match_trait_method {
     };
     (WidgetRender, overlay_entry, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn overlay_entry($($p)*) -> $ret $body
+    };
+    // 将显式表面浮层方法匹配到渲染能力 trait。
+    (WidgetRender, overlay_entry_for_surface, ($($p:tt)*) -> $ret:ty $body:block) => {
+        // 原样生成组件声明的方法签名与方法体。
+        fn overlay_entry_for_surface($($p)*) -> $ret $body
     };
     (WidgetRender, draw_margin, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn draw_margin($($p)*) -> $ret $body

@@ -256,6 +256,21 @@ pub trait WidgetRender: WidgetComponent {
     fn overlay_entry(&self, _id: ComponentId, _frame: Rect) -> Option<OverlayEntry> {
         None
     }
+    /// 使用当前逻辑表面创建浮层登记，供依赖窗口边界的定位组件覆盖。
+    fn overlay_entry_for_surface(
+        // 借用当前渲染组件。
+        &self,
+        // 接收浮层所属组件标识。
+        id: ComponentId,
+        // 接收组件布局矩形。
+        frame: Rect,
+        // 接收当前逻辑表面矩形。
+        _surface: Rect,
+        // 返回与旧接口相同的可选浮层登记。
+    ) -> Option<OverlayEntry> {
+        // 默认委托旧接口，保持现有组件行为不变。
+        self.overlay_entry(id, frame)
+    }
 }
 
 /// 事件行为：输入事件处理、滚动偏移、命中测试。
