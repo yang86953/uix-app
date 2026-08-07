@@ -548,8 +548,14 @@ fn overflow_layout(
         Size::new(total_cross, total_main)
     };
 
-    // 溢出时不增长或压缩子项，只把正剩余空间交给主轴分布规则。
-    let remaining_main = finite_non_negative(container_main - total_main);
+    // 零尺寸 bootstrap 不偏移自然内容；实际容器保留负剩余空间供 Center/End 对齐溢出内容。
+    let remaining_main = if container_main <= 1.0 {
+        // 首次测量沿用自然内容起点，避免无约束对齐生成负坐标。
+        0.0
+    } else {
+        // 实际容器内保留有限差值，让分布器区分正负剩余空间。
+        finite_or_zero(container_main - total_main)
+    };
     // 与标准 Flex 共享 gap 和起始偏移计算，避免两条路径语义漂移。
     let (effective_gap, start_offset) =
         super::flex::compute_justify(remaining_main, count, gap, engine.justify);

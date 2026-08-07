@@ -1047,3 +1047,71 @@ fn overflow_flex_bootstrap_cross_axis_uses_natural_outer_size() {
     // 总尺寸必须包含交叉轴与主轴两侧 margin。
     assert_eq!(output.total_size, Size::new(30.0, 20.0));
 }
+
+// 验证单行溢出内容在主轴空间不足时仍执行居中分布。
+#[test]
+// 负剩余空间必须转化为向主轴起点外溢的半量偏移。
+fn overflow_flex_centers_negative_main_space() {
+    // 构造宽八十像素的单个自然尺寸子项。
+    let child = LayoutChild::new(ComponentId::new(52), Size::new(80.0, 8.0));
+    // 构造主轴居中的水平布局。
+    let mut layout = FlexLayout::row()
+        // 声明内容在主轴居中。
+        .with_justify(JustifyContent::Center)
+        // 固定交叉轴从起点对齐以隔离主轴结果。
+        .with_align(AlignItems::Start);
+    // 开启自然尺寸溢出路径。
+    layout.overflow_content = true;
+    // 在带非零原点且仅四十像素宽的容器内布局。
+    let output = layout.layout(Rect::new(10.0, 6.0, 40.0, 20.0), &[child]);
+    // 八十像素内容应在四十像素容器内居中并向两侧各溢出二十像素。
+    assert_eq!(output.positions[0], Rect::new(-10.0, 6.0, 80.0, 8.0));
+    // 内容尺寸账本继续保留自然主轴长度。
+    assert_eq!(output.total_size, Size::new(80.0, 20.0));
+}
+
+// 验证标准固有主轴在空间不足时仍执行末端分布。
+#[test]
+// End 必须把全部负剩余空间转化为向主轴起点外溢的偏移。
+fn intrinsic_flex_ends_negative_main_space() {
+    // 构造宽八十像素的单个自然尺寸子项。
+    let child = LayoutChild::new(ComponentId::new(53), Size::new(80.0, 8.0));
+    // 构造主轴末端对齐的标准水平布局。
+    let mut layout = FlexLayout::row()
+        // 声明内容贴住主轴末端。
+        .with_justify(JustifyContent::End)
+        // 固定交叉轴从起点对齐以隔离主轴结果。
+        .with_align(AlignItems::Start);
+    // 声明主轴尺寸由自然内容决定并跳过压缩。
+    layout.intrinsic_main = true;
+    // 在带非零原点且仅四十像素宽的实际容器内布局。
+    let output = layout.layout(Rect::new(10.0, 6.0, 40.0, 20.0), &[child]);
+    // 子项末端应贴住容器末端并向起点外溢四十像素。
+    assert_eq!(output.positions[0], Rect::new(-30.0, 6.0, 80.0, 8.0));
+    // 固有尺寸账本继续记录八十像素自然宽度。
+    assert_eq!(output.total_size, Size::new(80.0, 20.0));
+}
+
+// 验证换行溢出中的超宽单项仍执行逐行居中分布。
+#[test]
+// 单项超过换行上限时不得把负剩余空间钳零并退化为 Start。
+fn wrapped_overflow_flex_centers_oversized_line() {
+    // 构造宽八十像素且无法继续拆分的单个自然尺寸子项。
+    let child = LayoutChild::new(ComponentId::new(54), Size::new(80.0, 8.0));
+    // 构造逐行居中的水平布局。
+    let mut layout = FlexLayout::row()
+        // 声明每一行的内容在主轴居中。
+        .with_justify(JustifyContent::Center)
+        // 固定交叉轴从起点排列以隔离逐行主轴结果。
+        .with_align(AlignItems::Start);
+    // 开启换行求解路径。
+    layout.wrap = true;
+    // 开启自然尺寸溢出路径并冻结增长与压缩。
+    layout.overflow_content = true;
+    // 在带非零原点且仅四十像素宽的容器内布局。
+    let output = layout.layout(Rect::new(10.0, 6.0, 40.0, 20.0), &[child]);
+    // 超宽行应相对实际容器居中并向两侧各溢出二十像素。
+    assert_eq!(output.positions[0], Rect::new(-10.0, 6.0, 80.0, 8.0));
+    // 换行固有尺寸账本继续记录最长自然行宽。
+    assert_eq!(output.total_size, Size::new(80.0, 20.0));
+}
