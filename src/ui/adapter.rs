@@ -696,7 +696,7 @@ impl ViewAdapter {
             .unwrap_or_else(|| current_fields != next_fields)
             || next_fields == SnapshotFields::Unknown
             || runtime_changed;
-        // 已审计类型按字段分类，其他类型继续保守请求布局。
+        // 已审计类型按字段分类，其余类型由显式保守分类请求布局。
         let layout_changed = config_changed
             && builtin_widget_layout_changed(&current_fields, &next_fields).unwrap_or(true);
         // 只有实际完成原位 patch 或替换后才报告失效影响。

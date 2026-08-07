@@ -161,21 +161,21 @@ fn grid_style_change_distinguishes_paint_from_tracks() {
     assert_eq!(invalidation_flags(&tree), (true, true));
 }
 
-// 验证尚未精细审计的组件配置变化继续保守请求布局。
+// 验证其余组件的显式保守分类继续请求布局。
 #[test]
-fn unclassified_widget_change_conservatively_invalidates_layout() {
-    // 构建仍走保守分类的初始按钮树。
+fn conservative_widget_change_invalidates_layout() {
+    // 构建采用保守分类的按钮树。
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Button::new("short")));
     // 清除初始建树与布局失效。
     clear_initial_invalidations(&mut tree);
 
-    // 改变尚未纳入精细字段分类的按钮文本。
+    // 改变当前未纳入精细字段分类的按钮文本。
     ViewAdapter::reconcile_nodes(
         &mut tree,
         ViewNode::leaf(Button::new("a much longer button")),
     );
 
-    // 未分类配置变化必须同时请求 Layout 与 Paint，不能误吞布局工作。
+    // 保守配置变化必须同时请求 Layout 与 Paint，不能误吞布局工作。
     assert_eq!(invalidation_flags(&tree), (true, true));
 }
 
