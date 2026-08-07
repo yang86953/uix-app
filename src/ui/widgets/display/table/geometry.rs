@@ -9,6 +9,16 @@ pub(crate) enum ColumnZone {
     Right,
 }
 
+// 统一表头、表体与命中测试使用的列区绘制层级。
+pub(crate) const COLUMN_PAINT_ORDER: [ColumnZone; 3] = [
+    // 中间滚动区最先绘制。
+    ColumnZone::Middle,
+    // 左固定区覆盖中间滚动区。
+    ColumnZone::Left,
+    // 右固定区最后绘制并位于最上层。
+    ColumnZone::Right,
+];
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct LaidOutColumn {
     pub index: usize,
@@ -113,7 +123,8 @@ impl TableColumnGeometry {
     }
 
     pub fn column_at(&self, x: f32) -> Option<usize> {
-        for zone in [ColumnZone::Left, ColumnZone::Right, ColumnZone::Middle] {
+        // 按绘制顺序逆序命中，使重叠区选择视觉上最上层的列。
+        for zone in COLUMN_PAINT_ORDER.into_iter().rev() {
             if zone == ColumnZone::Middle
                 && !self.middle_clip.contains(Point::new(x, self.middle_clip.y))
             {
@@ -145,4 +156,32 @@ fn finite_nonnegative(value: f32) -> f32 {
     } else {
         0.0
     }
+}
+
+// 仅在单元测试中编译表格列几何契约。
+#[cfg(test)]
+// 将固定列重叠命中回归收拢在纯几何模块。
+mod tests {
+    // 复用列布局类型与父模块导入的列声明。
+    use super::*;
+
+    // 标记窄视口固定列绘制层级契约。
+    #[test]
+    // 验证重叠区命中最后绘制的右固定列。
+    fn overlapping_fixed_columns_hit_topmost_painted_zone() {
+        // 构造宽于视口的左固定列。
+        let left = TableColumn::new("左列", 80.0).fixed(Fixed::Left);
+        // 构造同样宽于剩余区域的右固定列。
+        let right = TableColumn::new("右列", 80.0).fixed(Fixed::Right);
+        // 在一百像素视口中形成二十到八十像素的重叠区。
+        let geometry = TableColumnGeometry::new(&[left, right], 0.0, 100.0, 0.0, 0.0);
+        // 左侧非重叠区仍由左固定列命中。
+        assert_eq!(geometry.column_at(10.0), Some(0));
+        // 重叠区必须命中绘制顺序中位于最上层的右固定列。
+        assert_eq!(geometry.column_at(50.0), Some(1));
+        // 右侧非重叠区继续由右固定列命中。
+        assert_eq!(geometry.column_at(90.0), Some(1));
+        // 结束固定列重叠命中契约。
+    }
+    // 结束表格列几何测试模块。
 }
