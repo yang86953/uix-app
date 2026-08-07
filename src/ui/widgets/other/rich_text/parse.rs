@@ -6,6 +6,10 @@ use super::*;
 #[path = "parse_blocks.rs"]
 mod parse_blocks;
 
+// 复用独立的围栏代码边界解析，区分块级围栏和行内反引号。
+#[path = "parse_fences.rs"]
+mod parse_fences;
+
 pub fn layout_rich_text_segments(
     segments: &[RichTextSegment],
     max_width: f32,
@@ -32,45 +36,25 @@ pub fn layout_rich_text_segments(
 pub fn parse_rich_text(content: &str) -> Vec<RichTextSegment> {
     // 创建按文档顺序保存解析结果的段列表。
     let mut segments = Vec::new();
-    // 保留尚未处理的输入切片，围栏代码块会从这里切出。
+    // 保留尚未处理的输入切片，行首围栏代码块会从这里切出。
     let mut rest = content;
-    // 先处理围栏代码块，避免代码内部的 Markdown 标记被再次解释。
-    while let Some(pos) = rest.find("```") {
+    // 先处理成对的行首围栏代码块，避免代码内部的 Markdown 标记被再次解释。
+    while let Some((open, code_start, close)) = parse_fences::find_fenced_block(rest) {
         // 解析围栏开始前的普通 Markdown 内联内容。
-        let before = &rest[..pos];
+        let before = &rest[..open];
         // 只有存在前置内容时才进入内联解析器。
         if !before.is_empty() {
             // 普通内容继续复用统一的内联解析路径。
             parse_inline_text(before, &mut segments);
         }
-        // 跳过围栏开始标记。
-        rest = &rest[pos + 3..];
-        // 查找对应的围栏结束标记。
-        if let Some(end) = rest.find("```") {
-            // 兼容围栏后的语言标注行。
-            let code_start = rest.find('\n').map(|n| n + 1).unwrap_or(0);
-            // 只把围栏正文作为代码段内容。
-            let code = if code_start < end {
-                // 语言标注存在且正文非空时跳过标注。
-                &rest[code_start..end]
-            } else {
-                // 没有可跳过的标注时保留围栏正文。
-                &rest[..end]
-            };
-            // 保持一个代码段，便于复制按钮继续对应整个代码块。
-            segments.push(RichTextSegment::Code {
-                content: code.to_string(),
-            });
-            // 继续解析围栏结束后的内容。
-            rest = &rest[end + 3..];
-        } else {
-            // 未闭合围栏按普通内联文本处理，避免吞掉后续内容。
-            parse_inline_text(rest, &mut segments);
-            // 标记剩余内容已经全部消费。
-            rest = "";
-        }
+        // 只把围栏正文作为代码段内容，语言标注已经在边界辅助中跳过。
+        segments.push(RichTextSegment::Code {
+            content: rest[code_start..close].to_string(),
+        });
+        // 继续解析围栏结束标记之后的内容。
+        rest = &rest[close + 3..];
     }
-    // 处理最后一个围栏之后剩余的 Markdown 内容。
+    // 处理最后一个围栏之后或未闭合围栏中的剩余 Markdown 内容。
     if !rest.is_empty() {
         // 统一交给内联解析器处理链接、样式与换行。
         parse_inline_text(rest, &mut segments);
@@ -592,6 +576,11 @@ mod heading_tests;
 #[cfg(test)]
 #[path = "parse_block_tests.rs"]
 mod block_tests;
+
+// 将围栏代码专项测试拆出，保持解析实现文件结构清晰。
+#[cfg(test)]
+#[path = "parse_fence_tests.rs"]
+mod fence_tests;
 
 #[cfg(test)]
 mod tests {
