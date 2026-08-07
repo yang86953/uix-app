@@ -191,11 +191,12 @@ impl D3d11Pipeline {
         ))
     }
 
+    // glyph 顶点辅助函数只由本 pipeline2 模块内部调用，保持顶点类型为私有实现细节。
     #[allow(
         clippy::too_many_arguments,
         reason = "the scalar coordinates mirror the fixed D3D11 vertex layout at this backend boundary"
     )]
-    pub(crate) fn push_glyph_quad(
+    fn push_glyph_quad(
         verts: &mut Vec<GlyphVertex>,
         x: f32,
         y: f32,

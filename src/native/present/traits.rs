@@ -45,6 +45,8 @@ pub trait IGraphicsContext {
     fn caps(&self) -> GraphicsContextCaps;
 
     /// 返回迁移期薄 RHI 的组合视图；不支持该路径的 context 保持 None。
+    // native::present 模块本身是 crate 私有边界，迁移期 RHI 不作为外部句柄暴露。
+    #[allow(private_interfaces)]
     fn rhi_context(&mut self) -> Option<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
         None
     }

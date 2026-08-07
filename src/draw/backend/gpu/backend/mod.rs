@@ -46,7 +46,8 @@ pub struct GpuBackend {
     pub(crate) width: i32,
     pub(crate) height: i32,
     pub(crate) surface: NativeGpuDrawSurface,
-    pub(crate) offscreens: Vec<Option<NativeGpuOffscreen>>,
+    // 离屏槽位只供 GPU backend 自身及其子模块访问，和元素类型保持同级可见性。
+    pub(super) offscreens: Vec<Option<NativeGpuOffscreen>>,
     pub(crate) free_offscreen_ids: Vec<u32>,
     next_offscreen_id: u32,
     /// Picture paint currently targeting this offscreen handle id.
