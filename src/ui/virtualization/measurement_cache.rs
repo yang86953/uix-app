@@ -186,6 +186,26 @@ impl VirtualListMeasurementCache {
         self.offset_for_index(item_count, estimated_height)
     }
 
+    // 计算指定滚动状态下的首个可见项目。
+    pub fn first_visible_index(
+        &self,
+        item_count: usize,
+        estimated_height: f32,
+        scroll_offset: f32,
+        viewport_height: f32,
+    ) -> usize {
+        // 复用范围计算并关闭 overscan，得到视觉锚点。
+        virtual_list_index_range_with_measurements(
+            item_count,
+            estimated_height,
+            self,
+            scroll_offset,
+            viewport_height,
+            0,
+        )
+        .0
+    }
+
     // 找到覆盖给定偏移的首个项目索引。
     fn index_at_offset(&self, item_count: usize, estimated_height: f32, offset: f64) -> usize {
         // 使用下界二分避免逐项扫描超大数据集。
