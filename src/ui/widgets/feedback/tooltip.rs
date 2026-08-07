@@ -5,7 +5,7 @@ use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::component::paint_context::PaintContext;
 // 反馈组件复用基础层提示气泡原语。
 use crate::ui::widgets::tooltip_primitives::{
-    paint_tooltip_bubble, tooltip_bubble_rect, tooltip_dirty_rect,
+    paint_tooltip_bubble, tooltip_bubble_rect, tooltip_dirty_rect, tooltip_fallback_surface,
 };
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, KeyCode, MouseButton, SystemEvent, WidgetTree};
@@ -31,6 +31,8 @@ component! {
         pressed_button: Option<MouseButton>,
         pressed_key: Option<KeyCode>,
         last_frame: std::cell::Cell<Rect>,
+        // 缓存当前逻辑表面，统一绘制、脏区与浮层登记的边界。
+        surface_rect: std::cell::Cell<Option<Rect>>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -196,6 +198,20 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        // 读取本次绘制使用的逻辑表面尺寸。
+        let surface_size = ctx.logical_surface_size();
+        // 归一化并缓存当前逻辑表面，供脏区与旧登记入口复用。
+        self.surface_rect.set(Some(Self::normalize_frame(Rect::new(
+            // 表面横坐标固定为窗口原点。
+            0.0,
+            // 表面纵坐标固定为窗口原点。
+            0.0,
+            // 使用绘制上下文的逻辑宽度。
+            surface_size.w,
+            // 使用绘制上下文的逻辑高度。
+            surface_size.h,
+        ))));
+        // 缓存归一化触发器 frame 供交互复用。
         self.last_frame.set(Self::normalize_frame(frame));
         if !self.is_present() {
             return;
@@ -216,7 +232,19 @@ component! {
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        tooltip_dirty_rect(&self.text, self.arrow, self.placement, frame)
+        // 使用最近布局或绘制获得的表面解析当前脏区。
+        tooltip_dirty_rect(
+            // 传入提示文字。
+            &self.text,
+            // 传入箭头开关。
+            self.arrow,
+            // 传入作者指定方向。
+            self.placement,
+            // 传入触发器矩形。
+            frame,
+            // 传入当前表面或有限回退。
+            self.surface_or_fallback(frame),
+        )
     }
 
     overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
@@ -231,9 +259,18 @@ component! {
                     self.arrow,
                     self.placement,
                     frame,
+                    self.surface_or_fallback(frame),
                 ))
                 .z_index(1100),
         )
+    }
+
+    // 使用组件树提供的同帧表面创建提示浮层登记。
+    overlay_entry_for_surface => (&self, id: crate::ui::ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+        // 缓存当前表面，使 dirty、旧入口和动画检查消费同一几何。
+        self.surface_rect.set(Some(Self::normalize_frame(surface)));
+        // 复用统一的浮层登记逻辑。
+        self.overlay_entry(id, frame)
     }
 
     update_animation => (&mut self, dt: f64) -> bool {
@@ -255,7 +292,19 @@ component! {
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty {
-            tooltip_dirty_rect(&self.text, self.arrow, self.placement, frame)
+            // 动画脏区也必须使用当前逻辑表面。
+            tooltip_dirty_rect(
+                // 传入提示文字。
+                &self.text,
+                // 传入箭头开关。
+                self.arrow,
+                // 传入作者指定方向。
+                self.placement,
+                // 传入触发器矩形。
+                frame,
+                // 传入当前表面或有限回退。
+                self.surface_or_fallback(frame),
+            )
         } else {
             Rect::zero()
         }
@@ -294,6 +343,8 @@ impl Tooltip {
             pressed_button: None,
             pressed_key: None,
             last_frame: std::cell::Cell::new(Rect::new(0.0, 0.0, 80.0, 28.0)),
+            // 新组件尚未接收布局或绘制表面。
+            surface_rect: std::cell::Cell::new(None),
         }
     }
 
@@ -408,6 +459,16 @@ impl Tooltip {
         )
     }
 
+    // 返回布局或绘制记录的当前表面，尚未记录时使用有限回退。
+    fn surface_or_fallback(&self, frame: Rect) -> Rect {
+        // 优先使用组件树或绘制上下文提供的真实表面。
+        self.surface_rect
+            // 读取可复制的可选表面缓存。
+            .get()
+            // 首次登记前根据文字自然尺寸构造有限回退。
+            .unwrap_or_else(|| tooltip_fallback_surface(&self.text, frame))
+    }
+
     fn intrinsic_size(&self) -> Size {
         Size::new(80.0, 28.0)
     }
@@ -440,5 +501,62 @@ impl Tooltip {
             self.pressed_button = None;
             self.pressed_key = None;
         }
+    }
+}
+
+// 验证反馈提示登记会消费组件树提供的同帧表面。
+#[cfg(test)]
+// 将表面约束契约限制在当前模块的内部测试中。
+mod tests {
+    // 复用被测组件与位置枚举。
+    use super::{Tooltip, TooltipPlacement};
+    // 引入几何基础类型。
+    use crate::core::Rect;
+    // 引入共享解析器以核对登记与绘制几何同源。
+    use crate::ui::widgets::tooltip_primitives::resolve_tooltip_geometry;
+
+    // 靠近表面上边缘时，登记必须使用翻转后的受限气泡。
+    #[test]
+    // 测试名称说明显式表面入口的职责。
+    fn overlay_entry_uses_current_surface_geometry() {
+        // 创建作者指定顶部方向的提示组件。
+        let mut tooltip = Tooltip::new("tip").placement(TooltipPlacement::Top);
+        // 打开提示，使其参与浮层登记。
+        tooltip.open();
+        // 将触发器放在表面上边缘附近。
+        let frame = Rect::new(80.0, 0.0, 40.0, 20.0);
+        // 使用足以容纳翻转后气泡的逻辑表面。
+        let surface = Rect::new(0.0, 0.0, 200.0, 100.0);
+        // 通过组件树使用的显式表面入口创建登记。
+        let overlay = crate::ui::component::traits::WidgetRender::overlay_entry_for_surface(
+            // 传入被测提示组件。
+            &tooltip,
+            // 使用稳定的测试组件标识。
+            crate::core::ComponentId::new(3),
+            // 传入靠近上边缘的触发器。
+            frame,
+            // 传入当前帧的逻辑表面。
+            surface,
+        )
+        // 打开状态必须生成提示登记。
+        .expect("打开的提示应生成浮层登记");
+        // 使用同一共享解析器计算预期几何。
+        let expected = resolve_tooltip_geometry(
+            // 保持提示文字一致。
+            "tip",
+            // 默认提示带箭头。
+            true,
+            // 保持作者指定的顶部方向。
+            TooltipPlacement::Top,
+            // 保持触发器不变。
+            frame,
+            // 使用当前逻辑表面。
+            surface,
+        );
+
+        // 上方空间不足时应翻转到底部。
+        assert_eq!(expected.placement, TooltipPlacement::Bottom);
+        // 浮层登记必须与共享解析器的受限气泡完全一致。
+        assert_eq!(overlay.bounds_rect(), Some(expected.bubble));
     }
 }
