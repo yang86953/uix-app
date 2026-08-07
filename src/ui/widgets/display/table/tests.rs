@@ -232,3 +232,44 @@ fn parent_clip_regions_reject_hit_in_fragment_gap() {
     );
     // 结束父级多片段命中契约。
 }
+
+// 标记固定列中的行合并必须保留唯一逻辑锚点。
+#[test]
+// 验证被覆盖行、跨度高度和跨度结束后的新单元格保持一致。
+fn fixed_column_row_span_keeps_anchor_and_height() {
+    // 构造一个固定在左侧且跨越两行的合并列。
+    let merged_left = TableColumn::new("行合并锚点", 40.0)
+        // 首行首列占用两行，其他位置保持普通单元格。
+        .row_span(|_row, column| if column == 0 { 2 } else { 1 })
+        // 将合并列固定在视口左侧。
+        .fixed(Fixed::Left);
+    // 构造一个不参与合并的中间列。
+    let middle = TableColumn::new("中间列", 30.0);
+    // 构造一个固定在右侧的普通列。
+    let right = TableColumn::new("右侧列", 30.0).fixed(Fixed::Right);
+    // 建立三行数据以观察合并跨度结束后的新锚点。
+    let table = Table::new()
+        // 保留左、中、右三种列区。
+        .columns(vec![merged_left, middle, right])
+        // 提供足够的行数据覆盖两行跨度与第三行锚点。
+        .rows(vec![
+            // 提供第一行的三列值。
+            vec!["a".to_string(), "b".to_string(), "c".to_string()],
+            // 提供第二行的三列值。
+            vec!["d".to_string(), "e".to_string(), "f".to_string()],
+            // 提供第三行的三列值。
+            vec!["g".to_string(), "h".to_string(), "i".to_string()],
+        ])
+        // 使用明确的行高使跨度高度可直接核验。
+        .row_height(20.0);
+    // 首行首列必须声明为两行跨度。
+    assert_eq!(table.row_span(0, 0), 2);
+    // 跨度中的第二行必须回落到首行首列锚点。
+    assert_eq!(table.cell_anchor(1, 0), Some((0, 0)));
+    // 跨度结束后的第三行必须拥有自己的首列锚点。
+    assert_eq!(table.cell_anchor(2, 0), Some((2, 0)));
+    // 同一行的中间列不得被左侧行合并覆盖。
+    assert_eq!(table.cell_anchor(1, 1), Some((1, 1)));
+    // 行跨度高度必须等于两行自然高度之和。
+    assert_eq!(table.span_height(0, 2), 40.0);
+}
