@@ -169,20 +169,23 @@ impl Popconfirm {
     }
 
     pub(super) fn absolute_popup_rect(&self, frame: Rect) -> Rect {
-        if self.last_frame.get() == frame && self.popup_rect.get().w >= 0.0 {
-            let popup = self.popup_rect.get();
-            Rect::new(frame.x + popup.x, frame.y + popup.y, popup.w, popup.h)
-        } else {
-            resolve_popconfirm_geometry(
-                frame,
-                self.surface_or_fallback(frame),
-                self.placement,
-                self.arrow,
-                POPCONFIRM_WIDTH,
-                POPCONFIRM_HEIGHT,
-            )
-            .popup
-        }
+        // 始终以当前表面重新解析，避免触发器不动时沿用旧窗口边界下的缓存。
+        resolve_popconfirm_geometry(
+            // 传入当前触发器矩形。
+            frame,
+            // 传入布局阶段或绘制阶段记录的最新表面。
+            self.surface_or_fallback(frame),
+            // 保留作者指定位置。
+            self.placement,
+            // 保留箭头间距配置。
+            self.arrow,
+            // 使用标准确认气泡宽度。
+            POPCONFIRM_WIDTH,
+            // 使用标准确认气泡高度。
+            POPCONFIRM_HEIGHT,
+        )
+        // 返回同一解析器生成的最终矩形。
+        .popup
     }
 
     pub(super) fn surface_or_fallback(&self, frame: Rect) -> Rect {
@@ -470,5 +473,94 @@ pub(super) fn popconfirm_arrow_anchor(desired: f32, start: f32, length: f32, ins
         start + length * 0.5
     } else {
         desired.clamp(start + inset, start + length - inset)
+    }
+}
+
+// 仅在测试构建中编译确认气泡几何契约。
+#[cfg(test)]
+// 将测试放在同模块内以核验私有缓存状态。
+mod tests {
+    // 复用被测模块中的组件与几何辅助函数。
+    use super::*;
+
+    // 标记表面缩放时缓存几何必须失效的回归契约。
+    #[test]
+    // 触发器不动时，缩小表面也必须重新约束确认气泡。
+    fn popup_cache_does_not_survive_surface_resize() {
+        // 构造顶部展开、会在窄表面内水平收敛的确认气泡。
+        let mut popconfirm = Popconfirm::new().placement(PopconfirmPlacement::Top);
+        // 打开确认气泡以覆盖真实的浮层登记路径。
+        popconfirm.open();
+        // 固定触发器位置以隔离表面尺寸这一项变量。
+        let frame = Rect::new(200.0, 140.0, 40.0, 20.0);
+        // 大表面允许气泡保持作者指定的水平位置。
+        let large_surface = Rect::new(0.0, 0.0, 500.0, 300.0);
+        // 小表面要求气泡向左约束到可见范围内。
+        let small_surface = Rect::new(0.0, 0.0, 260.0, 200.0);
+        // 计算大表面下已绘制并写入缓存的确认气泡矩形。
+        let cached = resolve_popconfirm_geometry(
+            // 传入固定触发器矩形。
+            frame,
+            // 传入初始大表面。
+            large_surface,
+            // 沿用组件作者指定位置。
+            PopconfirmPlacement::Top,
+            // 保留箭头间距。
+            true,
+            // 使用组件标准宽度。
+            POPCONFIRM_WIDTH,
+            // 使用组件标准高度。
+            POPCONFIRM_HEIGHT,
+        )
+        // 只取最终确认气泡矩形。
+        .popup;
+        // 模拟上一帧绘制留下的触发器缓存键。
+        popconfirm.last_frame.set(frame);
+        // 模拟上一帧绘制留下的相对气泡缓存。
+        popconfirm.popup_rect.set(Rect::new(
+            // 保存相对触发器的横坐标。
+            cached.x - frame.x,
+            // 保存相对触发器的纵坐标。
+            cached.y - frame.y,
+            // 保存缓存宽度。
+            cached.w,
+            // 保存缓存高度。
+            cached.h,
+        ));
+        // 先记录与缓存一致的大表面。
+        popconfirm.surface_rect.set(large_surface);
+        // 通过布局阶段的新能力注入缩小后的当前表面。
+        let overlay = crate::ui::component::traits::WidgetRender::overlay_entry_for_surface(
+            // 传入被测确认气泡组件。
+            &popconfirm,
+            // 使用稳定的测试组件标识。
+            crate::core::ComponentId::new(2),
+            // 保持触发器 frame 不变。
+            frame,
+            // 仅改变当前逻辑表面。
+            small_surface,
+        );
+        // 打开状态必须生成使用新表面的浮层登记。
+        assert!(overlay.is_some());
+        // 以新表面直接计算当前帧应使用的几何。
+        let expected = resolve_popconfirm_geometry(
+            // 触发器保持不变。
+            frame,
+            // 表面改为缩小后的尺寸。
+            small_surface,
+            // 位置配置保持不变。
+            PopconfirmPlacement::Top,
+            // 箭头配置保持不变。
+            true,
+            // 宽度配置保持不变。
+            POPCONFIRM_WIDTH,
+            // 高度配置保持不变。
+            POPCONFIRM_HEIGHT,
+        )
+        // 只比较最终确认气泡矩形。
+        .popup;
+
+        // 缓存读取必须与新表面下的绘制几何一致。
+        assert_eq!(popconfirm.absolute_popup_rect(frame), expected);
     }
 }

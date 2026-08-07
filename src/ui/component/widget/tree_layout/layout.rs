@@ -8,9 +8,7 @@ use super::super::LAYOUT_TRACE_PHASE;
 
 use super::{LayoutFrameScratch, LayoutTraversalScratch};
 
-
 impl WidgetTree {
-
     pub(crate) fn nearest_viewport_overflow_axes(&self, id: WidgetId) -> Option<(bool, bool)> {
         crate::ui::tree_widget_hooks::nearest_viewport_overflow_axes(self, id)
     }
@@ -333,6 +331,17 @@ impl WidgetTree {
                 )
             })
             .collect();
+        // 从当前根布局矩形提取逻辑表面，避免复用上一帧窗口尺寸。
+        let overlay_surface = self
+            // 获取当前组件树根节点。
+            .root_id
+            // 读取根节点的最新布局结果。
+            .and_then(|root_id| self.get(root_id))
+            // 将根节点尺寸归一到表面坐标原点。
+            .map(|root| Rect::new(0.0, 0.0, root.frame().w.max(0.0), root.frame().h.max(0.0)))
+            // 无根节点时使用空表面。
+            .unwrap_or_default();
+        // 以当前表面重建所有组件声明的浮层登记。
         let entries: Vec<_> = self
             .traverse()
             .iter()
@@ -342,7 +351,9 @@ impl WidgetTree {
                     return None;
                 }
                 let node = self.get(id)?;
-                let mut entry = node.overlay_entry(id, node.frame())?;
+                // 显式传入当前表面，使边界敏感浮层与同帧绘制几何一致。
+                let mut entry =
+                    node.overlay_entry_for_surface(id, node.frame(), overlay_surface)?;
                 if let Some(bounds) = entry.bounds_rect() {
                     entry = entry.bounds(self.node_visual_rect(id, bounds)?);
                 }
@@ -639,7 +650,4 @@ impl WidgetTree {
         }
         any_resized
     }
-
-
 }
-

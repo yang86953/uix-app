@@ -371,6 +371,14 @@ component! {
         )
     }
 
+    // 布局阶段以当前逻辑表面刷新气泡几何，再沿用既有登记策略。
+    overlay_entry_for_surface => (&self, id: crate::ui::ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+        // 记录与本次 OverlayStack 重建一致的表面边界。
+        self.surface_rect.set(Self::normalize_frame(surface));
+        // 复用统一的浮层登记与动画扫掠逻辑。
+        self.overlay_entry(id, frame)
+    }
+
     update_animation => (&mut self, dt: f64) -> bool {
         if !self.is_present() || self.transition.finished {
             self.transition_dirty = false;

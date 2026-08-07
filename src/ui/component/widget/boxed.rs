@@ -463,6 +463,25 @@ impl BoxedWidget {
             .as_render()
             .and_then(|r| r.overlay_entry(id, frame))
     }
+    // 使用当前逻辑表面查询组件浮层登记。
+    pub fn overlay_entry_for_surface(
+        // 借用装箱组件。
+        &self,
+        // 传入浮层所属组件标识。
+        id: ComponentId,
+        // 传入组件布局矩形。
+        frame: Rect,
+        // 传入当前逻辑表面矩形。
+        surface: Rect,
+        // 返回组件生成的可选浮层登记。
+    ) -> Option<crate::ui::OverlayEntry> {
+        // 获取组件渲染能力。
+        self.component()
+            // 仅渲染组件能够声明浮层。
+            .as_render()
+            // 将当前表面连同组件几何交给渲染能力。
+            .and_then(|render| render.overlay_entry_for_surface(id, frame, surface))
+    }
     pub fn scroll_delta(&self, frame: Rect) -> Option<(f32, f32)> {
         self.component()
             .as_event()
