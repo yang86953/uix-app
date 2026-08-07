@@ -470,10 +470,13 @@ fn compute_single_line(
     // Phase 3: justify-content positioning
     // Reuse the most recent total to avoid an extra sum() traversal
     let total_final = base_main_sizes.iter().sum::<f32>() + total_margin_main;
-    remaining = if container_main > 0.0 {
-        (container_main - total_final - gaps).max(0.0)
-    } else {
+    // bootstrap 保持自然起点；实际主轴保留负剩余空间供 Center/End 对齐未压缩的固有内容。
+    remaining = if bootstrap_main {
+        // 首次测量沿用自然内容起点，避免无约束对齐生成负坐标。
         0.0
+    } else {
+        // 实际容器内保留有限差值，让分布器处理固有内容溢出。
+        finite_or_zero(container_main - total_final - gaps)
     };
     let (effective_gap, start_offset) =
         compute_justify(remaining, count, gap, input.justify_content);
@@ -753,7 +756,14 @@ fn compute_wrapped(
         let occupied_line_main = (total_line_main + line_gaps_total).max(0.0);
         // 更新所有行的最大主轴占用。
         max_line_main = max_line_main.max(occupied_line_main);
-        let remaining = (container_main - total_line_main - line_gaps_total).max(0.0);
+        // bootstrap 保持自然行起点；实际主轴保留负剩余空间供 Center/End 对齐超宽行。
+        let remaining = if bootstrap_main {
+            // 首次测量沿用自然行起点，避免无约束对齐生成负坐标。
+            0.0
+        } else {
+            // 实际容器内保留有限差值，让分布器处理不可拆分的超宽行。
+            finite_or_zero(container_main - total_line_main - line_gaps_total)
+        };
         let (effective_gap, start_offset) =
             compute_justify(remaining, line_count, gap, input.justify_content);
 
