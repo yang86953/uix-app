@@ -31,7 +31,9 @@
 
 `d288e6c5` 进一步闭合 Select：布局从 `WidgetTree` 根 frame、绘制从 `PaintContext`、登记从 `overlay_entry_for_surface` 取得同帧 surface，共享解析器统一横向收敛、上下翻转与可用高度缩减；自定义选项布局、滚动、绘制、dirty、命中和 bounds 均复用最终矩形，过滤前后方向不同的 dirty 同时覆盖两侧。四项聚焦契约与完整库 159 项测试通过。
 
-`c386f992` 以同一原则闭合 Cascader，但把多列作为组件私有约束处理：共享解析器先把自然总宽限制到 surface，再按可见列数等分最终列宽；纵向翻转或缩高后的实际视口同时驱动列滚动、搜索滚动和键盘显露。登记与绘制记录同帧 surface，事件、绘制裁剪、dirty、命中与 bounds 复用相对弹层缓存。四项聚焦契约与完整库 163 项测试通过。TreeSelect、AutoComplete、Mentions 与日期类选择弹层仍需逐项审计，不能仅因 Select/Cascader 已闭合就视为全部 overlay placement 完成。
+`c386f992` 以同一原则闭合 Cascader，但把多列作为组件私有约束处理：共享解析器先把自然总宽限制到 surface，再按可见列数等分最终列宽；纵向翻转或缩高后的实际视口同时驱动列滚动、搜索滚动和键盘显露。登记与绘制记录同帧 surface，事件、绘制裁剪、dirty、命中与 bounds 复用相对弹层缓存。四项聚焦契约与完整库 163 项测试通过。
+
+`250ba978` 将同一约束延伸到 TreeSelect：组件缓存同帧 surface、触发器绝对锚点、相对弹层与跨帧绝对脏区；树节点展开或过滤改变可见行数时，仍以同一表面和锚点重算。事件命中、虚拟滚动、键盘显露、绘制裁剪、dirty、OverlayStack bounds 统一使用翻转或缩高后的实际视口，关闭动画和表面变化也保留旧弹层覆盖。五项聚焦契约与完整库 168 项测试通过。AutoComplete、Mentions 与日期类选择弹层仍需逐项审计，不能仅因 Select/Cascader/TreeSelect 已闭合就视为全部 overlay placement 完成。
 
 ## 焦点
 
