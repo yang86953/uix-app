@@ -3,7 +3,7 @@
 //! 预设色板选择，点击触发弹出面板。
 
 use crate::component;
-use crate::core::{Constraints, Point, Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::native::windowing::input::ControlSize;
 use crate::ui::animation::{presets, TransitionPlayer};
@@ -14,6 +14,14 @@ use crate::ui::{
     WidgetTree,
 };
 use std::cell::Cell;
+
+// 声明颜色面板的私有表面几何模块。
+mod geometry;
+// 声明颜色选择器的私有弹层缓存方法模块。
+mod methods;
+
+// 引入颜色面板的绝对坐标转换、表面裁剪与共享网格指标。
+use geometry::{absolute_color_popup_rect, color_surface_rect, ColorPanelGeometry};
 
 const PRESET_COLORS: &[u32] = &[
     0xF52222, 0xFA541C, 0xFA8C16, 0xFADB14, 0x52C41A, 0x13C2C2, 0x1677FF, 0x2F54EB, 0x722ED1,
@@ -41,6 +49,14 @@ component! {
         picker_size: ControlSize,
         last_frame: Cell<Option<Rect>>,
         pending_change: Cell<Option<Color>>,
+        // 缓存相对触发器原点的最终颜色面板矩形。
+        popup_rect: Cell<Rect>,
+        // 缓存最近登记或绘制使用的逻辑表面。
+        surface_rect: Cell<Option<Rect>>,
+        // 缓存最近登记使用的绝对触发器锚点。
+        popup_anchor_frame: Cell<Option<Rect>>,
+        // 累计当前呈现周期内的绝对颜色面板脏区。
+        popup_damage_rect: Cell<Rect>,
     }
 
 
@@ -69,17 +85,20 @@ component! {
                     return EventResult::Handled;
                 }
                 if self.open {
-                    if let Some(index) = color_index_at(
-                        frame,
-                        *pos,
-                        self.preset_colors.len(),
-                    ) {
+                    // 读取登记、绘制与命中共享的实际颜色面板。
+                    let popup = self.interaction_popup_rect(frame);
+                    // 使用实际缩放网格解析指针命中的颜色索引。
+                    if let Some(index) =
+                        // 构造与绘制共享的颜色面板指标。
+                        ColorPanelGeometry::new(popup, self.preset_colors.len()).index_at(*pos)
+                    {
                         self.highlighted_idx = Some(index);
                         self.commit_value(self.preset_colors[index]);
                         self.close();
                         return EventResult::Handled;
                     }
-                    if color_panel_rect(frame, self.preset_colors.len()).contains(*pos) {
+                    // 面板空白区域仍会关闭当前选择器。
+                    if popup.contains(*pos) {
                         self.close();
                         return EventResult::Handled;
                     }
@@ -92,11 +111,17 @@ component! {
                 let old_highlight = self.highlighted_idx;
                 if self.open {
                     self.hovered = frame.contains(*pos);
-                    self.highlighted_idx = color_index_at(
-                        frame,
-                        *pos,
+                    // 读取登记、绘制与悬停共享的实际颜色面板。
+                    let popup = self.interaction_popup_rect(frame);
+                    // 使用实际缩放网格解析悬停颜色。
+                    self.highlighted_idx = ColorPanelGeometry::new(
+                        // 传入当前面板矩形。
+                        popup,
+                        // 传入当前预设颜色数量。
                         self.preset_colors.len(),
                     )
+                    // 解析当前指针位置。
+                    .index_at(*pos)
                     .or_else(|| self.default_highlight());
                 } else {
                     self.hovered = frame.contains(*pos);
@@ -184,7 +209,14 @@ component! {
 
     hit_test_frame => (&self, frame: Rect) -> Rect {
         if self.is_present() {
-            color_picker_dirty_rect(frame, self.preset_colors.len())
+            // 读取最近登记或首帧有限回退表面。
+            let surface = self.surface_or_fallback(frame);
+            // 解析并缓存当前实际颜色面板。
+            let popup = self.remember_popup_rect(frame, surface);
+            // 将相对颜色面板转换为窗口绝对坐标。
+            let popup = absolute_color_popup_rect(frame, popup);
+            // 触发器与当前颜色面板命中框共同收敛到表面内。
+            color_surface_rect(frame, popup, surface)
         } else {
             frame
         }
@@ -240,20 +272,39 @@ component! {
         ctx.pop_clip();
 
         if self.is_present() {
+            // 从绘制上下文读取当前逻辑表面尺寸。
+            let surface_size = ctx.logical_surface_size();
+            // 将窗口原点与逻辑尺寸组合为当前表面矩形。
+            let surface = Rect::new(0.0, 0.0, surface_size.w, surface_size.h);
+            // 在绘制前解析并缓存同帧最终颜色面板几何。
+            let popup = self.remember_popup_rect(frame, surface);
+            // 将相对触发器缓存转换为窗口绝对颜色面板。
+            let panel_rect = absolute_color_popup_rect(frame, popup);
+            // 构造绘制与命中共享的缩放网格指标。
+            let panel_geometry =
+                // 使用实际颜色面板和当前预设数量。
+                ColorPanelGeometry::new(panel_rect, self.preset_colors.len());
             let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
             let bg = fade_color(ctx.tokens().color_bg_elevated(), opacity);
             let border = fade_color(border, opacity);
-            let panel_rect = color_panel_rect(frame, self.preset_colors.len());
             let panel_radius = Some(Radius::uniform(ctx.tokens().border_radius()));
+            // 将整个弹层绘制限制在当前逻辑表面内。
+            ctx.push_clip(surface);
             ctx.push_clip(panel_rect);
             ctx.fill_rect(panel_rect, bg, panel_radius);
             ctx.stroke_rect(panel_rect, border, 1.0, panel_radius);
 
             for (i, c) in self.preset_colors.iter().enumerate() {
-                let cx = panel_rect.x + PANEL_PADDING + (i % PANEL_COLUMNS) as f32 * PANEL_CELL;
-                let cy = panel_rect.y + PANEL_PADDING + (i / PANEL_COLUMNS) as f32 * PANEL_CELL;
-                let cell_rect = Rect::new(cx + 1.0, cy + 1.0, PANEL_CELL - 2.0, PANEL_CELL - 2.0);
-                ctx.fill_rect(cell_rect, fade_color(*c, opacity), Some(Radius::uniform(2.0)));
+                // 从共享网格读取当前色块的实际缩放矩形。
+                let Some(cell_rect) = panel_geometry.cell_rect(i) else {
+                    // 无效或不可见网格不生成色块绘制命令。
+                    continue;
+                };
+                // 使用较小轴比例缩放圆角、描边和选中图标。
+                let visual_scale = panel_geometry.visual_scale();
+                // 构造与实际色块尺寸一致的圆角。
+                let cell_radius = Some(Radius::uniform(2.0 * visual_scale));
+                ctx.fill_rect(cell_rect, fade_color(*c, opacity), cell_radius);
                 if self.highlighted_idx == Some(i) {
                     let highlight_color = if c.is_light() {
                         Color::black()
@@ -263,8 +314,10 @@ component! {
                     ctx.stroke_rect(
                         cell_rect,
                         fade_color(highlight_color, opacity),
-                        2.0,
-                        Some(Radius::uniform(2.0)),
+                        // 缩放描边以避免窄色块被边框完全覆盖。
+                        2.0 * visual_scale,
+                        // 复用当前色块圆角。
+                        cell_radius,
                     );
                 }
                 if self.value.get() == *c {
@@ -278,24 +331,43 @@ component! {
                         "check",
                         cell_rect,
                         fade_color(icon_color, opacity),
-                        12.0,
+                        // 缩放选中图标以保持在实际色块内。
+                        12.0 * visual_scale,
                     );
                 }
             }
+            ctx.pop_clip();
+            // 恢复颜色面板外层的逻辑表面裁剪。
             ctx.pop_clip();
         }
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        color_picker_dirty_rect(frame, self.preset_colors.len())
+        // 合并当前与本呈现周期历史颜色面板并裁剪到表面。
+        self.presentation_dirty_rect(frame)
     }
 
     overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         self.is_present().then(|| {
+            // 读取最近登记的表面或首帧有限回退。
+            let surface = self.surface_or_fallback(frame);
+            // 解析并缓存当前实际颜色面板。
+            let popup = self.remember_popup_rect(frame, surface);
+            // 将相对面板转换为窗口绝对登记边界。
+            let bounds = absolute_color_popup_rect(frame, popup);
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
-                .bounds(color_picker_dirty_rect(frame, self.preset_colors.len()))
+                // OverlayStack 只登记实际颜色面板，不并入触发器。
+                .bounds(bounds)
                 .z_index(900)
         })
+    }
+
+    // 使用组件树提供的同帧表面创建颜色面板登记。
+    overlay_entry_for_surface => (&self, id: ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+        // 在旧登记入口执行前刷新表面与实际面板缓存。
+        self.remember_popup_rect(frame, surface);
+        // 复用统一的颜色面板登记逻辑。
+        self.overlay_entry(id, frame)
     }
 
     update_animation => (&mut self, dt: f64) -> bool {
@@ -318,7 +390,8 @@ component! {
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty {
-            color_picker_dirty_rect(frame, self.preset_colors.len())
+            // 动画脏区复用当前呈现周期的完整表面约束结果。
+            self.presentation_dirty_rect(frame)
         } else {
             Rect::zero()
         }
@@ -356,6 +429,14 @@ impl ColorPicker {
             picker_size: config.size,
             last_frame: Cell::new(None),
             pending_change: Cell::new(None),
+            // 初始尚无最终颜色面板。
+            popup_rect: Cell::new(Rect::zero()),
+            // 初始尚未记录逻辑表面。
+            surface_rect: Cell::new(None),
+            // 初始尚未记录绝对触发器锚点。
+            popup_anchor_frame: Cell::new(None),
+            // 初始呈现周期没有历史颜色面板脏区。
+            popup_damage_rect: Cell::new(Rect::zero()),
         }
     }
     /// 将颜色绑定到外部 `State<Color>`。
@@ -391,6 +472,11 @@ impl ColorPicker {
     }
 
     pub fn open(&mut self) {
+        // 仅从完全未呈现状态进入时开始新的面板呈现周期。
+        if !self.is_present() {
+            // 清除上一次完整关闭后留下的表面与脏区缓存。
+            self.reset_popup_presentation();
+        }
         self.open = true;
         self.closing = false;
         self.highlighted_idx = self.default_highlight();
@@ -495,38 +581,6 @@ impl Default for ColorPicker {
     }
 }
 
-fn color_picker_dirty_rect(frame: Rect, color_count: usize) -> Rect {
-    frame.union(&color_panel_rect(frame, color_count))
-}
-
-fn color_panel_rect(frame: Rect, color_count: usize) -> Rect {
-    let panel_w = PANEL_COLUMNS as f32 * PANEL_CELL + PANEL_PADDING * 2.0;
-    let rows = color_count.div_ceil(PANEL_COLUMNS);
-    let panel_h = rows as f32 * PANEL_CELL + PANEL_PADDING * 2.0;
-    Rect::new(frame.x, frame.y + frame.h + PANEL_GAP, panel_w, panel_h)
-}
-
-fn color_index_at(frame: Rect, pos: Point, color_count: usize) -> Option<usize> {
-    let panel = color_panel_rect(frame, color_count);
-    let content = Rect::new(
-        panel.x + PANEL_PADDING,
-        panel.y + PANEL_PADDING,
-        PANEL_COLUMNS as f32 * PANEL_CELL,
-        color_count.div_ceil(PANEL_COLUMNS) as f32 * PANEL_CELL,
-    );
-    if pos.x < content.x
-        || pos.x >= content.x + content.w
-        || pos.y < content.y
-        || pos.y >= content.y + content.h
-    {
-        return None;
-    }
-    let column = ((pos.x - content.x) / PANEL_CELL).floor() as usize;
-    let row = ((pos.y - content.y) / PANEL_CELL).floor() as usize;
-    let index = row * PANEL_COLUMNS + column;
-    (index < color_count).then_some(index)
-}
-
 fn fade_color(color: Color, opacity: f32) -> Color {
     let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
         .round()
@@ -566,3 +620,10 @@ enum ColorMove {
     PreviousRow,
     NextRow,
 }
+
+// 在测试构建中加载颜色面板的表面几何契约。
+#[cfg(test)]
+// 将契约放在独立文件中，避免主组件文件超过维护阈值。
+#[path = "color_picker_tests.rs"]
+// 声明颜色选择器的私有契约模块。
+mod color_picker_tests;
