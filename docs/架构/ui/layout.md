@@ -35,7 +35,7 @@
 
 ## 组件：FlexLayout / GridLayout / ScrollView / VirtualScroll
 
-- Flex 支持主轴方向、wrap、grow/shrink、justify、align、gap 和 per-child `align_self`；`overflow_content` 只保留自然主轴尺寸，不取消分布、换行、交叉轴对齐或反向语义。单行溢出、标准固有主轴与超宽换行在获得真实 frame 后都把有限负剩余空间交给统一 justify：Center/End 分别使用半量/全量负偏移，Start 与 Space* 不产生负分布；零尺寸 bootstrap 仍从自然起点开始。wrapped 路径先形成自然行盒，默认 Stretch 再把实际交叉轴正剩余空间等分到各行并同步行起点；只有一行时与 non-wrap 填充语义一致，`align_self` 只覆盖项内对齐。固有反向主轴仅在 bootstrap 按自然内容长度镜像，获得非零实际 frame 后与 justify 共用实际容器主轴；零交叉轴由自然外尺寸 bootstrap。
+- Flex 支持主轴方向、wrap、grow/shrink、justify、align、gap 和 per-child `align_self`；`overflow_content` 只保留自然主轴尺寸，不取消分布、换行、交叉轴对齐或反向语义。单行溢出、标准固有主轴与超宽换行在获得真实 frame 后都把有限负剩余空间交给统一 justify：Center/End 分别使用半量/全量负偏移，Start 与 Space* 不产生负分布；零尺寸 bootstrap 仍从自然起点开始。wrapped 路径按当前行是否已有项目决定分行，而不是以累计占用是否大于零代替项目存在性；零主轴尺寸子项仍参与 gap 与换行边界。自然行盒形成后，默认 Stretch 再把实际交叉轴正剩余空间等分到各行并同步行起点；只有一行时与 non-wrap 填充语义一致，`align_self` 只覆盖项内对齐。固有反向主轴仅在 bootstrap 按自然内容长度镜像，获得非零实际 frame 后与 justify 共用实际容器主轴；零交叉轴由自然外尺寸 bootstrap。
 - Grid 使用显式 column/row track、cell/span 与独立 row/column gap；空 track 或空 child 返回有限空输出，per-child `align_self` 覆盖容器级交叉轴对齐。
 - Grid 先确定 `Px` 与基于子项有限测量外尺寸的 `Auto`，再让正权重 `Fr` 按比例分配剩余空间；纯 `Auto` 轨道不为填满容器而膨胀。
 - Grid 水平内容对齐与单元格内子项对齐使用独立通道：`Grid::justify` / `GridLayout::with_content_justify` 在轨道解析后移动或分散整组列轨，`GridLayout::with_justify` 继续只控制子项在单元格内的位置。Center/End 分配前置剩余空间，SpaceBetween/SpaceAround/SpaceEvenly 只增加轨道间或两端分布空间，Stretch 只均分扩展 `Auto` 列；没有正剩余空间或可扩展 `Auto` 时保持 Start 几何。
@@ -85,4 +85,5 @@
 - `41158b3f` 固化 Grid 不可转移的 Fr span 容量边界：`Auto + Fr` 覆盖全部 Fr 时，一百二十像素自然宽度收敛到一百像素父级；纯 Fr 的列/行 span 都保持三条等权轨道各三十像素，不把八十像素自然尺寸变成隐式轨道最小值。新增三项契约直接通过，布局契约 31/31、库测试 135/135、文档测试 47 通过/23 忽略，两套特性组合检查均成功。
 - `518adc67` 恢复 Flex 负剩余主轴空间的公开分布语义：单行 `overflow_content`、标准 `intrinsic_main` 与换行溢出的超宽行不再把负差值提前钳零，统一由既有 justify 分布器计算 Center/End 偏移；bootstrap 继续固定为零偏移。三项聚焦断言修复前均退化为 Start，修复后布局契约 34/34、库测试 135/135、文档测试 47 通过/23 忽略，两套特性组合检查均成功。
 - `6fe836a4` 让 wrapped 默认 Stretch 消费实际交叉轴正剩余空间：单行扣除 margin 后填满容器，多行保留固定 gap 后均分扩展行高，逐项 `align_self` 继续只覆盖项内对齐；同时把 1117 行的布局契约拆为 804 行基础目标与 360 行 Flex 高阶目标。两项聚焦断言修复前分别停在 10px 自然高与自然行起点，修复后两目标合计 36/36、库测试 135/135、文档测试 47 通过/23 忽略，两套特性组合检查均成功。
+- `952912e4` 将 wrapped 分行的“当前行非空”判据从累计主轴占用改为项目索引范围：零宽首项不再让后续满宽项连同 gap 错误留在同一行。聚焦断言修复前把第二项放在首行 `x=9px`，修复后移动到第二行 `y=19px`；两目标合计 37/37、库测试 135/135、文档测试 47 通过/23 忽略，两套特性组合检查均成功。
 - 现有证据仍不替代 Flex 其他 overflow/wrap/固有轴组合、其他组件 measure/paint/hit-test 一致性、其余组件失效分类、可变行高缓存或真窗视觉矩阵。
