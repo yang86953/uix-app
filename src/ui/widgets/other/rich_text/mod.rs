@@ -850,7 +850,7 @@ mod tests {
     fn on_link_callback_fires_when_submit_emitted() {
         let calls = Rc::new(RefCell::new(Vec::new()));
         let hook = calls.clone();
-        let mut rich = RichText::new().on_link(move |url| hook.borrow_mut().push(url.to_string()));
+        let rich = RichText::new().on_link(move |url| hook.borrow_mut().push(url.to_string()));
         rich.pending_submit
             .replace(Some("https://example.com".to_string()));
 
@@ -874,7 +874,7 @@ mod tests {
     fn on_link_and_submit_semantic_event_coexist() {
         let calls = Rc::new(RefCell::new(Vec::new()));
         let hook = calls.clone();
-        let mut rich = RichText::new().on_link(move |url| hook.borrow_mut().push(url.to_string()));
+        let rich = RichText::new().on_link(move |url| hook.borrow_mut().push(url.to_string()));
         rich.pending_submit
             .replace(Some("https://uix.dev/route".to_string()));
 

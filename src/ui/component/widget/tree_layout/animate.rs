@@ -4,11 +4,6 @@ use crate::core::Rect;
 use crate::ui::animation::AnimatedRegistration;
 use std::time::Instant;
 
-#[cfg(test)]
-use super::super::LAYOUT_TRACE_PHASE;
-
-
-
 impl WidgetTree {
 
     pub fn update(&mut self, dt: f64) -> bool {

@@ -539,7 +539,7 @@ mod tests {
     #[test]
     fn depth_limit_rejects_overflow() {
         // 嵌套深度达到上限时发布返回错误，本轮不执行处理器。
-        let mut bus = EventBus::new();
+        let bus = EventBus::new();
         // 直接置位嵌套深度（测试同模块可访问私有注册表）。
         bus.registry.borrow_mut().dispatch_depth = MAX_DISPATCH_DEPTH;
         let result = bus.publish(FactA(1));

@@ -829,7 +829,3 @@ use runtime::{
     create_preferred_engine, drain_platform_pending_failures,
     drain_secondary_window_frames_with_platform,
 };
-#[cfg(test)]
-pub(crate) use runtime::{
-    drain_pending_open_windows, drain_secondary_window_frames, format_gpu_probe_fallback,
-};

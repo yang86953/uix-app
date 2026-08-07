@@ -47,9 +47,6 @@ use support::{
     report_window_operation_error, update_scheduled_and_discovered_animations,
     with_platform_clipboard,
 };
-#[cfg(test)]
-pub(crate) use support::{graphics_failure_diagnostic, graphics_failure_is_error};
-
 pub(crate) struct WindowFrameContext<'a, 'platform> {
     pub(crate) tree: &'a mut WidgetTree,
     pub(crate) engine: &'a mut dyn RenderTarget,
