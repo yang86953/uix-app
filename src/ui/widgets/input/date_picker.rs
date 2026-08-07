@@ -12,13 +12,21 @@ use crate::native::windowing::input::ControlSize;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 use crate::ui::widgets::input::date_calendar::{
-    calendar_popup_rect, draw_calendar_panel, hit_calendar_date, hit_month_navigation,
+    draw_calendar_panel_in_rect, hit_calendar_date_in_rect, hit_month_navigation_in_rect,
     CalendarPanelState, MonthNavigation,
 };
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
     WidgetTree,
 };
+
+// 声明 DatePicker 的表面约束几何模块。
+mod geometry;
+// 声明 DatePicker 的弹层缓存方法模块。
+mod methods;
+
+// 引入日期面板绝对坐标转换与表面裁剪函数。
+use geometry::{absolute_date_picker_popup_rect, date_picker_surface_rect};
 
 /// 归一到合法年月日的公历日期。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -182,6 +190,14 @@ component! {
         picker_size: ControlSize,
         last_frame: Cell<Option<Rect>>,
         pending_change: Cell<Option<Date>>,
+        // 缓存相对触发器原点的最终日期面板矩形。
+        popup_rect: Cell<Rect>,
+        // 缓存最近登记或绘制使用的逻辑表面。
+        surface_rect: Cell<Option<Rect>>,
+        // 缓存最终日期面板对应的绝对触发器矩形。
+        popup_anchor_frame: Cell<Option<Rect>>,
+        // 累计当前呈现周期内旧新日期面板的绝对脏区。
+        popup_damage_rect: Cell<Rect>,
     }
 
 
@@ -206,7 +222,10 @@ component! {
                 }
 
                 if let Some(frame) = self.last_frame.get() {
-                    if let Some(navigation) = hit_month_navigation(frame, *pos) {
+                    // 读取同帧登记、绘制和命中共享的实际面板矩形。
+                    let popup = self.interaction_popup_rect(frame);
+                    // 在缩放后的实际标题栏中命中月份导航。
+                    if let Some(navigation) = hit_month_navigation_in_rect(popup, *pos) {
                         match navigation {
                             MonthNavigation::Next => {
                             let (y, m) = next_month(self.view_year.get(), self.view_month.get());
@@ -221,8 +240,9 @@ component! {
                         return EventResult::Handled;
                     }
 
-                    if let Some(hit_date) = hit_calendar_date(
-                        frame,
+                    // 在缩放后的实际日期网格中命中日期。
+                    if let Some(hit_date) = hit_calendar_date_in_rect(
+                        popup,
                         *pos,
                         self.view_year.get(),
                         self.view_month.get(),
@@ -238,8 +258,11 @@ component! {
             SystemEvent::PointerMove { pos, .. } => {
                 if self.open.get() {
                     if let Some(frame) = self.last_frame.get() {
-                        let hover = hit_calendar_date(
-                            frame,
+                        // 读取同帧登记、绘制和命中共享的实际面板矩形。
+                        let popup = self.interaction_popup_rect(frame);
+                        // 在缩放后的实际日期网格中解析悬停日期。
+                        let hover = hit_calendar_date_in_rect(
+                            popup,
                             *pos,
                             self.view_year.get(),
                             self.view_month.get(),
@@ -310,7 +333,14 @@ component! {
 
     hit_test_frame => (&self, frame: Rect) -> Rect {
         if self.open.get() {
-            picker_bounds(frame)
+            // 读取最近登记或绘制记录的当前逻辑表面。
+            let surface = self.surface_or_fallback(frame);
+            // 解析并缓存当前实际日期面板。
+            let popup = self.remember_popup_rect(frame, surface);
+            // 将相对面板转换为窗口绝对坐标。
+            let popup = absolute_date_picker_popup_rect(frame, popup);
+            // 触发器与当前面板命中框共同收敛到表面内。
+            date_picker_surface_rect(frame, popup, surface)
         } else {
             frame
         }
@@ -390,8 +420,19 @@ component! {
         ctx.pop_clip();
 
         if self.open.get() {
-            draw_calendar_panel(
-                frame,
+            // 从绘制上下文读取当前逻辑表面尺寸。
+            let surface_size = ctx.logical_surface_size();
+            // 将窗口原点与逻辑尺寸组合为当前表面矩形。
+            let surface = Rect::new(0.0, 0.0, surface_size.w, surface_size.h);
+            // 在绘制前解析并缓存同帧最终日期面板几何。
+            let popup = self.remember_popup_rect(frame, surface);
+            // 将相对触发器缓存转换为窗口绝对面板矩形。
+            let popup = absolute_date_picker_popup_rect(frame, popup);
+            // 将弹层绘制限制在当前逻辑表面。
+            ctx.push_clip(surface);
+            // 使用最终面板矩形驱动缩放月历绘制。
+            draw_calendar_panel_in_rect(
+                popup,
                 ctx,
                 CalendarPanelState {
                     year: self.view_year.get(),
@@ -402,24 +443,43 @@ component! {
                     disabled_date: self.disabled_date.as_ref(),
                 },
             );
+            // 恢复日期面板外层的逻辑表面裁剪。
+            ctx.pop_clip();
         }
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        picker_bounds(frame)
+        // 读取最近登记或绘制记录的当前逻辑表面。
+        let surface = self.surface_or_fallback(frame);
+        // 合并当前与本次呈现周期历史日期面板脏区。
+        let popup = self.damage_popup_rect(frame, surface);
+        // 将输入框和日期面板脏区限制在当前表面内。
+        date_picker_surface_rect(frame, popup, surface)
     }
 
     overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         self.open.get().then(|| {
+            // 读取最近记录的表面或首次有限回退。
+            let surface = self.surface_or_fallback(frame);
+            // 解析并缓存当前实际日期面板。
+            let popup = self.remember_popup_rect(frame, surface);
+            // 将相对面板转换为窗口绝对坐标。
+            let bounds = absolute_date_picker_popup_rect(frame, popup);
+            // 创建只覆盖实际日期面板的浮层登记。
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
-                .bounds(picker_bounds(frame))
+                // 登记边界与绘制、命中共用同一矩形。
+                .bounds(bounds)
                 .z_index(900)
         })
     }
-}
 
-fn picker_bounds(frame: Rect) -> Rect {
-    frame.union(&calendar_popup_rect(frame))
+    // 使用组件树提供的同帧表面创建日期面板登记。
+    overlay_entry_for_surface => (&self, id: ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+        // 在旧登记入口执行前刷新表面与实际面板缓存。
+        self.remember_popup_rect(frame, surface);
+        // 复用统一的日期面板登记逻辑。
+        self.overlay_entry(id, frame)
+    }
 }
 
 impl DatePicker {
@@ -449,6 +509,14 @@ impl DatePicker {
             picker_size: config.size,
             last_frame: Cell::new(None),
             pending_change: Cell::new(None),
+            // 初始化为空的本地日期面板缓存。
+            popup_rect: Cell::new(Rect::zero()),
+            // 初始化为尚未取得真实逻辑表面。
+            surface_rect: Cell::new(None),
+            // 初始化为尚未记录绝对触发器锚点。
+            popup_anchor_frame: Cell::new(None),
+            // 初始化为空的日期面板历史脏区。
+            popup_damage_rect: Cell::new(Rect::zero()),
         }
     }
 
@@ -532,6 +600,11 @@ impl DatePicker {
     }
 
     fn open_popup(&self) {
+        // 仅在关闭到开启的边沿开始新的面板呈现周期。
+        if !self.open.get() {
+            // 清除上一次呈现留下的表面与脏区缓存。
+            self.reset_popup_presentation();
+        }
         let value = self.selected_or_today();
         self.view_year.set(value.year);
         self.view_month.set(value.month);
@@ -628,3 +701,10 @@ fn date_from_civil_day_number(day_number: i64) -> Date {
     }
     Date::new(year as i32, month as usize, day as usize)
 }
+
+// 将 DatePicker 表面约束契约放在独立测试文件中。
+#[cfg(test)]
+// 使用显式路径保持主实现文件低于行数上限。
+#[path = "date_picker_tests.rs"]
+// 声明当前模块的私有回归测试。
+mod tests;
