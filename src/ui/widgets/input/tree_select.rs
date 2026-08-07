@@ -11,6 +11,19 @@ use crate::ui::{
 };
 use std::cell::{Cell, RefCell};
 
+// 将表面约束与坐标转换隔离到私有几何模块。
+mod geometry;
+// 将弹层缓存与实际视口方法隔离到私有实现模块。
+mod methods;
+
+// 复用所有 TreeSelect 消费端共享的最终几何函数。
+use geometry::{
+    // 将相对弹层转换为窗口绝对坐标。
+    absolute_tree_select_popup_rect,
+    // 合并触发器、弹层与当前表面。
+    tree_select_surface_rect,
+};
+
 const DROPDOWN_ROW_HEIGHT: f32 = 28.0;
 const DROPDOWN_TRIGGER_HEIGHT: f32 = 32.0;
 const MAX_DROPDOWN_VIEWPORT_HEIGHT: f32 = 280.0;
@@ -33,6 +46,16 @@ component! {
         pub(crate) dropdown_scroll: VirtualListScroll,
         scroll_delta_strip: Cell<(f32, f32)>,
         last_frame: Cell<Option<Rect>>,
+        // 缓存相对触发器原点的最终弹层矩形。
+        dropdown_rect: Cell<Rect>,
+        // 记录当前弹层缓存对应的显示行数。
+        dropdown_row_count: Cell<usize>,
+        // 缓存显式登记或绘制取得的当前逻辑表面。
+        surface_rect: Cell<Option<Rect>>,
+        // 缓存最终弹层对应的绝对触发器锚点。
+        popup_anchor_frame: Cell<Option<Rect>>,
+        // 累积当前呈现周期内需要清理的绝对弹层区域。
+        dropdown_damage_rect: Cell<Rect>,
     }
 
 
@@ -68,7 +91,10 @@ component! {
                     }
                     return EventResult::Handled;
                 }
-                if self.open && point_in_half_open_rect(self.dropdown_local_rect(), *pos) {
+                // 事件命中复用当前表面解析后的实际弹层。
+                let popup = self.interaction_popup_rect(frame, self.flatten_nodes().len());
+                // 只在打开状态与最终弹层内处理行选择。
+                if self.open && point_in_half_open_rect(popup, *pos) {
                     if let Some(idx) = self.dropdown_row_at_y(pos.y) {
                         let flat = self.flatten_nodes();
                         if flat.get(idx).is_some_and(|(_, _, _, disabled)| *disabled) {
@@ -87,7 +113,15 @@ component! {
                 if !self.open {
                     return EventResult::NotHandled;
                 }
-                let next = if point_in_half_open_rect(self.dropdown_local_rect(), *pos) {
+                // 悬停命中复用当前表面解析后的实际弹层。
+                let popup = self.interaction_popup_rect(
+                    // 使用组件本地触发器 frame。
+                    self.interaction_frame(),
+                    // 使用当前扁平行数。
+                    self.flatten_nodes().len(),
+                );
+                // 只在最终弹层内解析悬停行。
+                let next = if point_in_half_open_rect(popup, *pos) {
                     let idx = self.dropdown_row_at_y(pos.y);
                     let flat = self.flatten_nodes();
                     idx.and_then(|i| {
@@ -113,9 +147,14 @@ component! {
                 }
             }
             SystemEvent::Wheel { delta, pos, .. } => {
-                if self.open && point_in_half_open_rect(self.dropdown_local_rect(), *pos) {
-                    let row_count = self.flatten_nodes().len();
-                    let viewport_h = self.dropdown_viewport_height(row_count);
+                // 先读取当前扁平行数供几何与滚动共用。
+                let row_count = self.flatten_nodes().len();
+                // 滚轮命中与视口高度复用最终弹层。
+                let popup = self.interaction_popup_rect(self.interaction_frame(), row_count);
+                // 只在打开状态与最终弹层内处理滚轮。
+                if self.open && point_in_half_open_rect(popup, *pos) {
+                    // 使用受当前表面缩高后的实际视口。
+                    let viewport_h = popup.h;
                     let dy = self.dropdown_scroll.scroll_by_wheel(
                         delta.y,
                         row_count,
@@ -191,7 +230,14 @@ component! {
 
     hit_test_frame => (&self, frame: Rect) -> Rect {
         if self.is_present() {
-            tree_select_dirty_rect(frame, self.flatten_nodes().len())
+            // 读取最近登记或绘制记录的当前逻辑表面。
+            let surface = self.surface_or_fallback(frame, self.flatten_nodes().len());
+            // 命中只使用当前实际行数解析弹层。
+            let popup = self.remember_popup_rect(frame, surface, self.flatten_nodes().len());
+            // 将相对弹层转换为窗口绝对坐标。
+            let popup = absolute_tree_select_popup_rect(frame, popup);
+            // 触发器与实际弹层命中框共同收敛到当前表面。
+            tree_select_surface_rect(frame, popup, surface)
         } else {
             frame
         }
@@ -276,6 +322,22 @@ component! {
             return;
         }
 
+        // 从绘制上下文读取当前逻辑表面尺寸。
+        let surface_size = ctx.logical_surface_size();
+        // 将窗口原点与逻辑尺寸组合为当前表面矩形。
+        let surface = Rect::new(0.0, 0.0, surface_size.w, surface_size.h);
+        // 先读取当前扁平节点列表供几何与绘制共用。
+        let flat = self.flatten_nodes();
+        // 在绘制弹层前解析并缓存同帧最终几何。
+        let popup = self.remember_popup_rect(frame, surface, flat.len());
+        // 将相对触发器缓存转换为窗口绝对弹层矩形。
+        let list_rect = absolute_tree_select_popup_rect(frame, popup);
+        // 空表面不生成可见树选择弹层。
+        if list_rect.w <= 0.0 || list_rect.h <= 0.0 {
+            // 保留触发器绘制结果并跳过弹层。
+            return;
+        }
+
         let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
         let bg = fade_color(bg, opacity);
         let border = fade_color(border, opacity);
@@ -284,10 +346,11 @@ component! {
         let fill = fade_color(fill, opacity);
         let primary_bg = fade_color(ctx.tokens().color_primary_bg(), opacity);
         let text_tertiary = fade_color(text_tertiary, opacity);
-        let flat = self.flatten_nodes();
         let display_row_count = flat.len().max(1);
-        let list_rect = tree_select_popup_rect(frame, flat.len());
         let panel_radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
+        // 将整个树选择弹层裁剪到当前逻辑表面。
+        ctx.push_clip(surface);
+        // 再按最终弹层矩形裁剪行与边框。
         ctx.push_clip(list_rect);
         ctx.fill_rect(list_rect, bg, panel_radius);
         ctx.stroke_rect(list_rect, border, 1.0, panel_radius);
@@ -308,6 +371,8 @@ component! {
                 13.0,
             );
             ctx.pop_clip();
+            ctx.pop_clip();
+            // 恢复弹层外层的逻辑表面裁剪。
             ctx.pop_clip();
             return;
         }
@@ -367,18 +432,45 @@ component! {
         }
 
         ctx.pop_clip();
+        // 恢复弹层外层的逻辑表面裁剪。
+        ctx.pop_clip();
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        tree_select_dirty_rect(frame, self.flatten_nodes().len())
+        // 读取当前行数供表面回退与脏区解析共用。
+        let row_count = self.flatten_nodes().len();
+        // 读取最近登记或绘制记录的当前逻辑表面。
+        let surface = self.surface_or_fallback(frame, row_count);
+        // 合并当前与本次呈现周期历史弹层脏区。
+        let popup = self.damage_popup_rect(frame, surface, row_count);
+        // 将触发器和弹层脏区限制在当前表面内。
+        tree_select_surface_rect(frame, popup, surface)
     }
 
     overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         self.is_present().then(|| {
+            // 读取当前行数供表面回退与弹层解析共用。
+            let row_count = self.flatten_nodes().len();
+            // 读取最近记录的表面或首次有限回退。
+            let surface = self.surface_or_fallback(frame, row_count);
+            // 解析并缓存当前实际弹层。
+            let popup = self.remember_popup_rect(frame, surface, row_count);
+            // 将相对弹层转换为窗口绝对坐标。
+            let bounds = absolute_tree_select_popup_rect(frame, popup);
+            // 创建只覆盖实际弹层的浮层登记。
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
-                .bounds(tree_select_dirty_rect(frame, self.flatten_nodes().len()))
+                // 登记边界与绘制、命中共用同一矩形。
+                .bounds(bounds)
                 .z_index(900)
         })
+    }
+
+    // 使用组件树提供的同帧表面创建树选择弹层登记。
+    overlay_entry_for_surface => (&self, id: ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+        // 在旧登记入口执行前刷新表面与实际弹层缓存。
+        self.remember_popup_rect(frame, surface, self.flatten_nodes().len());
+        // 复用统一的树选择弹层登记逻辑。
+        self.overlay_entry(id, frame)
     }
 
     update_animation => (&mut self, dt: f64) -> bool {
@@ -413,7 +505,14 @@ component! {
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty {
-            tree_select_dirty_rect(frame, self.flatten_nodes().len())
+            // 读取当前行数供表面回退与脏区解析共用。
+            let row_count = self.flatten_nodes().len();
+            // 动画脏区使用最近记录的当前逻辑表面。
+            let surface = self.surface_or_fallback(frame, row_count);
+            // 动画期间同时覆盖当前与历史最终弹层。
+            let popup = self.damage_popup_rect(frame, surface, row_count);
+            // 将动画脏区限制在当前表面。
+            tree_select_surface_rect(frame, popup, surface)
         } else {
             Rect::zero()
         }
@@ -425,11 +524,8 @@ impl TreeSelect {
         Size::new(200.0, DROPDOWN_TRIGGER_HEIGHT)
     }
 
-    pub(crate) fn dropdown_viewport_height(&self, row_count: usize) -> f32 {
-        (row_count.max(1) as f32 * DROPDOWN_ROW_HEIGHT).min(MAX_DROPDOWN_VIEWPORT_HEIGHT)
-    }
-
     pub(crate) fn dropdown_row_at_y(&self, pos_y: f32) -> Option<usize> {
+        // 行命中复用当前表面约束后的实际弹层。
         let popup = self.dropdown_local_rect();
         if pos_y < popup.y || pos_y >= popup.y + popup.h {
             return None;
@@ -455,13 +551,10 @@ impl TreeSelect {
     }
 
     fn dropdown_local_rect(&self) -> Rect {
+        // 读取事件路径使用的本地触发器 frame。
         let frame = self.interaction_frame();
-        Rect::new(
-            0.0,
-            frame.h,
-            frame.w.max(MIN_DROPDOWN_WIDTH),
-            self.dropdown_viewport_height(self.flatten_nodes().len()),
-        )
+        // 返回当前表面解析后的最终本地弹层。
+        self.interaction_popup_rect(frame, self.flatten_nodes().len())
     }
 
     fn push_scroll_delta(&self, dx: f32, dy: f32) {
@@ -510,6 +603,16 @@ impl TreeSelect {
             dropdown_scroll: VirtualListScroll::new(),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
             last_frame: Cell::new(None),
+            // 首次表面解析前弹层缓存为空。
+            dropdown_rect: Cell::new(Rect::zero()),
+            // 零行标记尚未生成有效弹层缓存。
+            dropdown_row_count: Cell::new(0),
+            // 首次登记或绘制前尚未取得当前逻辑表面。
+            surface_rect: Cell::new(None),
+            // 首次登记前尚未取得绝对触发器锚点。
+            popup_anchor_frame: Cell::new(None),
+            // 首次呈现前没有历史弹层脏区。
+            dropdown_damage_rect: Cell::new(Rect::zero()),
         }
     }
     pub fn placeholder(mut self, p: &str) -> Self {
@@ -536,6 +639,16 @@ impl TreeSelect {
     }
 
     pub fn open(&mut self) {
+        // 新呈现周期重新收集弹层脏区。
+        self.dropdown_damage_rect.set(Rect::zero());
+        // 新呈现周期等待当前帧重新解析弹层。
+        self.dropdown_row_count.set(0);
+        // 丢弃上一呈现周期的相对弹层缓存。
+        self.dropdown_rect.set(Rect::zero());
+        // 等待当前帧取得最新逻辑表面。
+        self.surface_rect.set(None);
+        // 等待当前帧取得最新绝对锚点。
+        self.popup_anchor_frame.set(None);
         self.open = true;
         self.closing = false;
         self.dropdown_scroll.set_scroll_offset(0.0);
@@ -588,10 +701,13 @@ impl TreeSelect {
         self.placeholder = next.placeholder;
         self.nodes = next.nodes;
         let row_count = self.flatten_nodes().len();
+        // 在可变借用虚拟滚动器前计算当前实际视口。
+        let viewport_height = self.effective_dropdown_viewport_height(row_count);
         self.dropdown_scroll.clamp_to_content(
             row_count,
             DROPDOWN_ROW_HEIGHT,
-            self.dropdown_viewport_height(row_count),
+            // 动态节点变化使用当前实际视口收敛滚动状态。
+            viewport_height,
         );
         if self.is_present() && nodes_changed {
             let flat = self.flatten_nodes();
@@ -672,7 +788,8 @@ impl TreeSelect {
     }
 
     fn reveal_index(&mut self, index: usize, row_count: usize) {
-        let viewport_height = self.dropdown_viewport_height(row_count);
+        // 键盘显露使用受当前表面缩高后的实际视口。
+        let viewport_height = self.effective_dropdown_viewport_height(row_count);
         let old_offset = self.dropdown_scroll.scroll_offset();
         let row_top = index as f32 * DROPDOWN_ROW_HEIGHT;
         let row_bottom = row_top + DROPDOWN_ROW_HEIGHT;
@@ -693,20 +810,6 @@ impl TreeSelect {
     }
 }
 
-fn tree_select_dirty_rect(frame: Rect, item_count: usize) -> Rect {
-    frame.union(&tree_select_popup_rect(frame, item_count))
-}
-
-fn tree_select_popup_rect(frame: Rect, item_count: usize) -> Rect {
-    let list_h = (item_count.max(1) as f32 * DROPDOWN_ROW_HEIGHT).min(MAX_DROPDOWN_VIEWPORT_HEIGHT);
-    Rect::new(
-        frame.x,
-        frame.y + frame.h,
-        frame.w.max(MIN_DROPDOWN_WIDTH),
-        list_h,
-    )
-}
-
 fn point_in_half_open_rect(rect: Rect, point: Point) -> bool {
     point.x >= rect.x && point.x < rect.x + rect.w && point.y >= rect.y && point.y < rect.y + rect.h
 }
@@ -723,3 +826,10 @@ impl Default for TreeSelect {
         Self::new()
     }
 }
+
+// 将 TreeSelect 表面约束契约放在独立测试文件中。
+#[cfg(test)]
+// 使用显式路径保持主实现文件低于行数上限。
+#[path = "tree_select_tests.rs"]
+// 声明当前模块的私有回归测试。
+mod tests;
