@@ -778,16 +778,22 @@ impl Tabs {
         Rect::new(frame.x + local.x, frame.y + local.y, local.w, local.h)
     }
 
+    // 测试目标保留标签滚动偏移观测入口，供导航交互测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn tab_scroll_offset(&self) -> f32 {
         self.tab_scroll_offset.get()
     }
 
+    // 测试目标保留标签区域观测入口，供导航布局测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn tab_rect_for_test(&self, index: usize) -> Option<Rect> {
         self.local_tab_rect(index)
     }
 
+    // 测试目标保留新增标签按钮区域观测入口，供导航交互测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn add_rect_for_test(&self) -> Rect {
         self.add_rect()

@@ -241,16 +241,22 @@ impl Skeleton {
         }
     }
 
+    // 测试目标保留骨架头像区域观测入口，供占位布局测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn avatar_rect_for_test(&self, frame: Rect) -> Rect {
         self.avatar_rect(Self::normalized_frame(frame))
     }
 
+    // 测试目标保留骨架段落区域观测入口，供占位布局测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn paragraph_rects_for_test(&self, frame: Rect) -> Vec<Rect> {
         self.paragraph_rects(Self::normalized_frame(frame))
     }
 
+    // 测试目标保留骨架动画 phase 观测入口，供占位动画测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn phase_for_test(&self) -> f32 {
         self.phase.get()

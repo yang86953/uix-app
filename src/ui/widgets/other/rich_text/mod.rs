@@ -793,6 +793,8 @@ impl RichText {
         self.pending_copy.lock().ok().and_then(|mut pc| pc.take())
     }
 
+    // 测试目标保留代码复制区域观测入口，供富文本交互测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn code_copy_rect_for_test(&self, index: usize) -> Option<Rect> {
         self.code_regions
@@ -801,6 +803,8 @@ impl RichText {
             .map(|region| region.rect)
     }
 
+    // 测试目标保留布局行文本观测入口，供富文本换行测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn layout_line_texts_for_test(&self) -> Vec<String> {
         self.layout_lines
@@ -810,6 +814,8 @@ impl RichText {
             .collect()
     }
 
+    // 测试目标保留链接命中点观测入口，供富文本链接测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn link_point_for_test(&self, ordinal: usize) -> Option<Point> {
         let segment_idx = self.link_segment_at_ordinal(ordinal)?;

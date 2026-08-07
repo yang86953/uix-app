@@ -353,6 +353,8 @@ impl Table {
             .unwrap_or(0.0)
     }
 
+    // 测试目标保留表格横向滚动偏移观测入口，供表格交互测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn horizontal_scroll_offset(&self) -> f32 {
         self.horizontal_scroll.get()
@@ -590,6 +592,8 @@ impl Table {
         (start, end)
     }
 
+    // 测试目标保留分页控制区域观测入口，供表格交互测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn pagination_controls_for_test(&self, frame: Rect) -> Option<(Rect, Rect, Rect)> {
         self.pagination_controls(frame)

@@ -658,6 +658,8 @@ impl Message {
         target
     }
 
+    // 测试目标保留消息交互区域观测入口，供反馈组件命中测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn interaction_rects_for_test(
         &self,

@@ -136,6 +136,8 @@ impl AppState {
             .is_empty()
     }
 
+    // 测试目标保留语义事件队列长度观测入口，供语义事件测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn pending_semantic_event_count(&self) -> usize {
         self.inner

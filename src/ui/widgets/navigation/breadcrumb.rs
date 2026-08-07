@@ -709,6 +709,8 @@ impl Breadcrumb {
         text.chars().count() as f32 * glyph_width + 8.0
     }
 
+    // 测试目标保留面包屑可见槽位观测入口，供导航布局测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn visible_slots_for_test(&self) -> Vec<Option<usize>> {
         self.visible_slots()
@@ -720,6 +722,8 @@ impl Breadcrumb {
             .collect()
     }
 
+    // 测试目标保留面包屑溢出触发区域观测入口，供导航交互测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn overflow_trigger_rect_for_test(&self) -> Option<Rect> {
         self.line_layout()
@@ -727,6 +731,8 @@ impl Breadcrumb {
             .find_map(|(slot, rect)| (slot == BreadcrumbSlot::Overflow).then_some(rect))
     }
 
+    // 测试目标保留面包屑溢出行观测入口，供导航交互测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn overflow_rows_for_test(&self) -> Vec<(usize, Rect)> {
         self.overflow_layout()
@@ -734,11 +740,15 @@ impl Breadcrumb {
             .unwrap_or_default()
     }
 
+    // 测试目标保留面包屑溢出状态观测入口，供导航交互测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn overflow_state_for_test(&self) -> (bool, Option<usize>) {
         (self.overflow_open, self.overflow_highlighted)
     }
 
+    // 测试目标保留面包屑内容区域观测入口，供导航布局测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn item_content_rects_for_test(
         &self,

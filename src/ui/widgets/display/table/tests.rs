@@ -27,6 +27,8 @@ fn virtualized_true_materializes_viewport_only() {
             name: format!("row-{id}"),
         })
         .collect::<Vec<_>>();
+    // 读取示例行名称，确保 fixture 的展示字段也参与测试契约。
+    assert_eq!(rows[0].name, "row-0");
     let data = data_table(rows).virtualized(true);
     let (table, _, _) = data.into_parts();
 

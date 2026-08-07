@@ -30,6 +30,8 @@ pub use crate::ui::component::traits::{
 };
 
 pub trait WidgetCore {
+    // 测试与 test-harness 目标保留组件 id 观测契约，生产默认路径不直接读取它。
+    #[cfg_attr(any(test, feature = "test-harness"), allow(dead_code))]
     #[cfg(any(test, feature = "test-harness"))]
     fn id(&self) -> ComponentId;
     fn set_id(&mut self, id: ComponentId);

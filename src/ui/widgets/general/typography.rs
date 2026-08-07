@@ -610,11 +610,15 @@ impl Typography {
         ))
     }
 
+    // 测试目标保留复制按钮区域观测入口，供排版交互测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn copy_rect_for_test(&self) -> Option<Rect> {
         self.copy_rect.get()
     }
 
+    // 测试目标保留渲染行起点观测入口，供排版布局测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn rendered_line_origins_for_test(&self) -> Vec<Point> {
         let glyph_xs = self.glyph_xs.borrow();

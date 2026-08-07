@@ -189,6 +189,8 @@ impl Select {
             .collect()
     }
 
+    // 测试目标保留多选移除区域观测入口，供选择器交互测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn first_multi_remove_rect(&self) -> Option<Rect> {
         self.multi_remove_rects

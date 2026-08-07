@@ -20,6 +20,8 @@ pub(crate) struct BarPlot {
     pub(crate) chart_h: f32,
     pub(crate) y_label_w: f32,
     pub(crate) baseline: f32,
+    // 测试目标保留柱形几何列表，供图表布局观测入口按需读取。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) bars: Vec<Rect>,
     /// `(series_index, item_index, rect)` for grouped/stacked rendering.

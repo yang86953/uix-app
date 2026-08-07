@@ -808,12 +808,16 @@ impl LineChart {
         })
     }
 
+    // 测试目标保留折线几何观测入口，供图表布局测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn geometry_for_test(&self, frame: Rect) -> Option<(f32, Vec<Point>)> {
         self.plot_geometry(frame)
             .map(|plot| (plot.baseline, plot.points))
     }
 
+    // 测试目标保留折线序列点观测入口，供图表布局测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn series_points_for_test(&self, frame: Rect) -> Option<Vec<Vec<Point>>> {
         self.plot_geometry(frame).map(|plot| {
@@ -854,17 +858,23 @@ impl LineChart {
         self.zoom.set(if keeps_zoom { zoom } else { 1.0 });
     }
 
+    // 测试目标保留折线 tooltip 文本观测入口，供交互测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn tooltip_text_for_test(&self, pos: Point, frame: Rect) -> Option<String> {
         let config = self.tooltip_config.as_ref()?;
         Some(config.format(&self.tooltip_datum_at(pos, frame)?))
     }
 
+    // 测试目标保留折线交互状态观测入口，供交互测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn interaction_state_for_test(&self) -> (f32, f32) {
         (self.zoom.get(), self.pan_offset.get())
     }
 
+    // 测试目标保留折线 tooltip 位置观测入口，供交互测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn tooltip_position_for_test(&self) -> Option<Point> {
         self.tooltip_pos.get()
