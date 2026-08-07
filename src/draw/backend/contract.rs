@@ -84,6 +84,8 @@ impl BackendCapabilities {
         }
     }
 
+    // 测试目标保留独立的最小能力配置，供后端契约测试按需构造。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn test() -> Self {
         Self {

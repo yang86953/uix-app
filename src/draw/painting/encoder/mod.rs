@@ -532,7 +532,8 @@ impl FrameEncoder {
     /// Rasterizes one image segment directly into its visible destination
     /// tile. Native executors alpha-blit this exact segment at its recorded
     /// point without allocating or scanning a transparent frame-sized source.
-    #[cfg_attr(not(test), allow(dead_code))]
+    // CPU 分段参考 tile 是跨后端兼容诊断入口，当前测试矩阵按需调用。
+    #[allow(dead_code)]
     pub(crate) fn cpu_segment_reference_tile(
         &self,
         image: &FrameImage,

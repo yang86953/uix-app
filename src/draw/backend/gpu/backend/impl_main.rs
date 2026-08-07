@@ -143,6 +143,8 @@ impl GpuBackend {
     /// Flushes the current ordered segment without presenting, then reads the
     /// native drawable. This is a crate-local diagnostic/test boundary; it
     /// deliberately uses the same command ordering as a final present.
+    // 测试目标保留原生回读诊断入口，供启用具体 GPU feature 的契约测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(all(test, any(feature = "opengles", feature = "d3d11", feature = "d3d12")))]
     pub(crate) fn try_readback(&mut self) -> Result<Vec<u32>, Error> {
         if self.active_offscreen.is_some() {
@@ -157,6 +159,8 @@ impl GpuBackend {
         self.gpu_ctx.read_pixels(0, 0, width, height)
     }
 
+    // 测试目标保留 soft upload 字节数观测入口，供 GPU 诊断测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn last_soft_upload_bytes(&self) -> usize {
         self.surface.canvas.last_soft_upload_bytes

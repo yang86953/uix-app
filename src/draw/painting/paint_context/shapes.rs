@@ -35,6 +35,8 @@ impl<'a> PaintContext<'a> {
 
     /// crate 内部测试的紧凑构造。
     #[cfg(test)]
+    // 测试目标保留显式依赖注入构造器，供形状绘制契约测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[allow(
         clippy::too_many_arguments,
         reason = "test fixtures keep surface values inline for readability"

@@ -146,6 +146,8 @@ impl Renderer {
         &self.session
     }
 
+    // 测试目标保留渲染 session 可变观测入口，供 renderer 契约测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn session_mut(&mut self) -> &mut RenderSession {
         &mut self.session

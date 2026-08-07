@@ -76,6 +76,8 @@ impl GlyphCache {
         Self::with_limits(2048, 8 * 1024 * 1024)
     }
 
+    // 测试目标保留按条目数配置缓存的构造器，供淘汰策略测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn with_max_entries(max_entries: usize) -> Self {
         Self::with_limits(max_entries, usize::MAX)
