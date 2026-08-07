@@ -38,6 +38,7 @@
 - Flex 支持主轴方向、wrap、grow/shrink、justify、align、gap 和 per-child `align_self`；`overflow_content` 只保留自然主轴尺寸，不取消分布、换行、交叉轴对齐或反向语义。固有反向主轴仅在零尺寸 bootstrap 按自然内容长度镜像，获得非零实际 frame 后与 justify 共用实际容器主轴；零交叉轴由自然外尺寸 bootstrap。
 - Grid 使用显式 column/row track、cell/span 与独立 row/column gap；空 track 或空 child 返回有限空输出，per-child `align_self` 覆盖容器级交叉轴对齐。
 - Grid 先确定 `Px` 与基于子项有限测量外尺寸的 `Auto`，再让正权重 `Fr` 按比例分配剩余空间；纯 `Auto` 轨道不为填满容器而膨胀。
+- Grid 水平内容对齐与单元格内子项对齐使用独立通道：`Grid::justify` / `GridLayout::with_content_justify` 在轨道解析后移动或分散整组列轨，`GridLayout::with_justify` 继续只控制子项在单元格内的位置。Center/End 分配前置剩余空间，SpaceBetween/SpaceAround/SpaceEvenly 只增加轨道间或两端分布空间，Stretch 只均分扩展 `Auto` 列；没有正剩余空间或可扩展 `Auto` 时保持 Start 几何。
 - 跨多轨道子项在 span 不含正权重 `Fr` 时，先扣除 span 内部 gap、`Px` 与已知 `Auto` 尺寸，再把未覆盖的外尺寸缺口均分给所覆盖的 `Auto` 轨道；较短 span 先结算，同跨度重叠子项基于同一轨道快照登记每轨最大计划增量，子项声明顺序不得改变轨道尺寸。
 - 子项同时跨越 `Auto` 与部分正权重 `Fr`、且 span 外仍有竞争 `Fr` 时，在父级轨道容量内按全局 Fr 权重把 span 外可让出的份额转入 span 内 `Auto`；约束按 span、起点与自然外尺寸确定性排序，并以最多 64 轮单调松弛处理相互影响。没有 `Auto`、覆盖全部 Fr 或父级剩余空间耗尽的约束不伪造额外容量。
 - Grid 放置层以单轴 4096 条轨道和总计 65,536 个稠密单元格同时限制辅助分配；超限 cell/span 收敛到窗口边界，无可用矩形的自动子项留在零 frame。
@@ -80,4 +81,5 @@
 - `b7f7e5c7` 让单行溢出、标准固有主轴与溢出换行统一遵守实际 frame 镜像边界，并把 `overflow_content + wrap` 接回共享 Flex 分行器，同时冻结 grow/shrink 与 Stretch 增长。三个聚焦断言修复前分别产生负坐标或未换行，修复后布局契约 25/25、库测试 133/133、公开 API/使用门面/使用示例 18/18，两套特性组合检查均成功。
 - `b1aefee` 将 Grid 跨 `Auto` 轨道贡献按 span 升序分批，同跨度子项先从统一快照计算每条轨道的最大计划增量，再整批写回，消除重叠 span 的声明顺序依赖。聚焦断言修复前正序/反序的末列起点分别为 125px/100px，修复后布局契约 26/26、库测试 133/133，两套特性组合检查均成功。
 - `9d86578c` 为 Grid 的 `Auto + Fr` 混合 span 增加父约束内的份额转移：当 span 外 Fr 竞争把七十像素自然宽度裁成六十像素时，按内外 Fr 权重扩张 span 内 Auto 并同步缩减全局 Fr 余量，修复后跨轨宽度与末轨起点均为 70px。聚焦断言修复前失败，修复后布局契约 27/27、库测试 133/133，两套特性组合检查均成功。
-- 现有证据仍不替代 Grid 其余 justify、覆盖全部 Fr 或没有 Auto 可转移的 span/Fr 组合、Flex 其他 overflow/wrap/固有轴组合、其他组件 measure/paint/hit-test 一致性、其余组件失效分类、可变行高缓存或真窗视觉矩阵。
+- `d81dbe5b` 把公开 `Grid::justify` 从错误的单元格内子项接线拆为整组列轨内容对齐，并保留低层 `with_justify` 的既有逐项语义；修复前 Center 在百像素容器内把首项放到 5px，修复后六种固定轨道分布模式、Auto-only Stretch 与双通道兼容契约全部通过。公开布局契约 28/28、库测试 135/135、文档测试 47 通过/23 忽略，两套特性组合检查均成功。
+- 现有证据仍不替代 Grid 覆盖全部 Fr 或没有 Auto 可转移的 span/Fr 组合、Flex 其他 overflow/wrap/固有轴组合、其他组件 measure/paint/hit-test 一致性、其余组件失效分类、可变行高缓存或真窗视觉矩阵。
