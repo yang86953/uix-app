@@ -7,7 +7,8 @@
 use super::RichTextSegment;
 use crate::core::Rect;
 use crate::draw::resources::font::font_service::FontService;
-use crate::draw::resources::font::text_backend::TextLayoutOptions;
+// 读取真实字体布局选项与后端返回的源字符索引字形。
+use crate::draw::resources::font::text_backend::{PositionedGlyph, TextLayoutOptions};
 use crate::draw::{Color, FontHandle, Transform};
 use crate::ui::component::paint_context::PaintContext;
 
@@ -157,6 +158,36 @@ mod tests {
         assert_eq!(first, "a\u{2003}");
         // 后续单词不应被空白 token 牵连到上一行。
         assert_eq!(second, "bb");
+    }
+
+    // 验证真实 advance 使用源字符索引，而不是依赖 glyph 数组槽位。
+    #[test]
+    fn real_advance_uses_source_char_index() {
+        // 构造跳过一个源字符索引的后端字形序列。
+        let glyphs = vec![
+            PositionedGlyph {
+                x: 0.0,
+                y: 0.0,
+                width: 10.0,
+                height: 12.0,
+                glyph_id: 1,
+                char_index: 0,
+                font: FontHandle::new(0),
+            },
+            PositionedGlyph {
+                x: 10.0,
+                y: 0.0,
+                width: 20.0,
+                height: 12.0,
+                glyph_id: 2,
+                char_index: 2,
+                font: FontHandle::new(0),
+            },
+        ];
+        // 索引 2 应读取第二个字形的真实宽度，而不是索引 1 的槽位。
+        assert_eq!(measured_advance_for_char(&glyphs, 2, 7.0), 20.0);
+        // 没有字形的索引应回退到估算宽度。
+        assert_eq!(measured_advance_for_char(&glyphs, 1, 7.0), 7.0);
     }
 }
 
@@ -491,6 +522,19 @@ pub(crate) fn assign_global_indices(lines: &mut [LayoutLine], segments: &[RichTe
 // 真实字体度量布局（用于 render 阶段）
 // ══════════════════════════════════════════════════════════════════
 
+// 根据后端字形的源字符索引读取真实 advance，避免 glyph 槽位缺失时错配宽度。
+fn measured_advance_for_char(glyphs: &[PositionedGlyph], char_index: usize, fallback: f32) -> f32 {
+    // 只接受有限正宽度，避免异常字体度量污染布局。
+    glyphs
+        .iter()
+        // 后端的 char_index 对应源文本 chars() 序号，而不是 glyph 数组下标。
+        .find(|glyph| glyph.char_index == char_index)
+        .map(|glyph| glyph.width)
+        // 缺字、控制字符或异常宽度回退到估算值。
+        .filter(|width| width.is_finite() && *width > 0.0)
+        .unwrap_or(fallback)
+}
+
 /// 获取文本中每个字符的真实 advance 宽度
 fn real_char_advances(
     font_service: &FontService,
@@ -514,12 +558,10 @@ fn real_char_advances(
     let chars: Vec<char> = text.chars().collect();
     let mut advances = Vec::with_capacity(chars.len());
     for (i, ch) in chars.iter().enumerate() {
-        let measured = layout.glyphs.get(i).map(|glyph| glyph.width);
-        advances.push(
-            measured
-                .filter(|width| width.is_finite() && *width > 0.0)
-                .unwrap_or_else(|| char_width(fs, *ch)),
-        );
+        // 当前字符没有可用 glyph 时使用估算宽度保持布局可收敛。
+        let fallback = char_width(fs, *ch);
+        // 按后端提供的源字符索引读取真实宽度，保留缺口后的字符对齐。
+        advances.push(measured_advance_for_char(&layout.glyphs, i, fallback));
     }
     advances
 }
