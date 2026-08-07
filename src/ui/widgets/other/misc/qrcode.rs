@@ -107,6 +107,8 @@ impl QRCode {
         self.encoding_error.is_none() && self.module_count > 0
     }
 
+    // 测试目标保留二维码模块观测入口，供编码矩阵测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn module(&self, x: usize, y: usize) -> Option<bool> {
         (x < self.module_count && y < self.module_count)

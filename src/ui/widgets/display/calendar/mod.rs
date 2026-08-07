@@ -798,11 +798,15 @@ impl Calendar {
             .is_some_and(|predicate| predicate(date))
     }
 
+    // 测试目标保留日历控制区域观测入口，供交互几何测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn control_rect_for_test(&self) -> Option<Rect> {
         self.interaction_geometry().map(|geometry| geometry.control)
     }
 
+    // 测试目标保留日期中心点观测入口，供交互几何测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn day_center_for_test(&self, day: usize) -> Option<Point> {
         self.interaction_geometry()?

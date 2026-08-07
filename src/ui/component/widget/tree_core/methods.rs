@@ -627,6 +627,8 @@ impl WidgetTree {
         true
     }
 
+    // 测试目标保留布局帧 trace 取出入口，供布局收敛测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn take_layout_frame_trace(&self) -> Vec<(u8, ComponentId, i32, i32)> {
         std::mem::take(&mut *self.layout_frame_trace.borrow_mut())
@@ -655,21 +657,29 @@ impl WidgetTree {
         true
     }
 
+    // 测试目标保留布局写入计数取出入口，供布局收敛测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn take_layout_frame_writes(&self) -> u32 {
         self.layout_frame_writes.replace(0)
     }
 
+    // 测试目标保留 shrink 操作计数取出入口，供布局收敛测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn take_layout_shrink_ops(&self) -> u32 {
         self.layout_shrink_ops.replace(0)
     }
 
+    // 测试目标保留收敛 pass 计数取出入口，供布局收敛测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn take_layout_converge_passes(&self) -> u32 {
         self.layout_converge_passes.replace(0)
     }
 
+    // 测试目标保留 expand 操作计数取出入口，供布局收敛测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn take_layout_expand_ops(&self) -> u32 {
         self.layout_expand_ops.replace(0)

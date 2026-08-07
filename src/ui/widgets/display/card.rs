@@ -684,6 +684,8 @@ impl Card {
         }
     }
 
+    // 测试目标保留卡片 frame 注入入口，供交互几何测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn set_frame_for_test(&self, frame: Rect) {
         self.last_frame.set(Some(Rect::new(

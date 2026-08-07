@@ -70,6 +70,8 @@ impl SelectableList {
         self.geometry(frame).body.h
     }
 
+    // 测试目标保留行命中索引观测入口，供列表交互测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn row_index_at_y(&self, pos_y: f32) -> Option<usize> {
         let frame = self

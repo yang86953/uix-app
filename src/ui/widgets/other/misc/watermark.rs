@@ -152,11 +152,15 @@ impl Watermark {
         }
     }
 
+    // 测试目标保留水印有效颜色观测入口，供主题样式测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn effective_color_for_test(&self) -> Color {
         self.effective_color()
     }
 
+    // 测试目标保留水印旋转 advance 观测入口，供排版几何测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn rotated_advance_for_test(&self, origin: Point, advance: f32) -> Point {
         let (sin_a, cos_a) = self.rotate.to_radians().sin_cos();

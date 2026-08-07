@@ -300,6 +300,8 @@ impl Tree {
         self.refresh_search();
     }
 
+    // 测试目标保留树可见 key 观测入口，供树过滤与展开测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn visible_keys_for_test(&self) -> Vec<String> {
         self.flat.iter().map(|node| node.key.clone()).collect()

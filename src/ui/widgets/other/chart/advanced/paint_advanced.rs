@@ -773,6 +773,8 @@ impl ChartPlaceholder {
         self.animation_dirty.set(animation_dirty);
     }
 
+    // 测试目标保留组合图表类型观测入口，供图表语义测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn kind_for_test(&self) -> &'static str {
         use super::ChartKind;
@@ -792,21 +794,29 @@ impl ChartPlaceholder {
         }
     }
 
+    // 测试目标保留组合图表 tooltip 文本观测入口，供交互测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn tooltip_text_for_test(&self, pos: Point, frame: Rect) -> Option<String> {
         self.tooltip_text_at(pos, frame)
     }
 
+    // 测试目标保留组合图表交互状态观测入口，供交互测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn interaction_state_for_test(&self) -> (f32, f32) {
         (self.zoom.get(), self.pan_offset.get())
     }
 
+    // 测试目标保留组合图表 tooltip 位置观测入口，供交互测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn tooltip_position_for_test(&self) -> Option<Point> {
         self.tooltip_pos.get()
     }
 
+    // 测试目标保留组合图表图例布局观测入口，供布局测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn legend_layout_for_test(&self, frame: Rect) -> Option<(Rect, Rect)> {
         let mut plot = Rect::new(
@@ -827,6 +837,8 @@ impl ChartPlaceholder {
         legend.map(|legend| (plot, legend))
     }
 
+    // 测试目标保留组合图表动画进度观测入口，供动画测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn animation_progress_for_test(&self) -> Option<f32> {
         self.animation_player

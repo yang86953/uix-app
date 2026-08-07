@@ -598,6 +598,8 @@ impl AutoComplete {
         self.scroll_delta_strip.set((0.0, 0.0));
     }
 
+    // 测试目标保留过滤选项观测入口，供自动完成匹配测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn filtered_options(&self) -> &[String] {
         &self.filtered

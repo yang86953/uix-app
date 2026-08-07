@@ -202,6 +202,8 @@ impl Avatar {
         Some(handle)
     }
 
+    // 测试目标保留已加载位图句柄观测入口，供头像资源测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn loaded_handle_for_test(&self) -> Option<BitmapHandle> {
         self.cached.get()
