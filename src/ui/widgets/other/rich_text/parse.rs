@@ -290,8 +290,8 @@ fn can_open_marker(text: &str, cursor: usize, marker: &str) -> bool {
         // 让空标记保持普通文本。
         return false;
     }
-    // 下划线在字母数字单词内部属于普通字符。
-    if marker == "_" {
+    // 单下划线和双下划线在字母数字单词内部都属于普通字符。
+    if marker.starts_with('_') {
         // 读取标记前后的相邻字符。
         let before_char = text[..cursor].chars().next_back();
         // 读取标记后的第一个字符。
@@ -315,14 +315,14 @@ fn can_close_marker(text: &str, close: usize, marker: &str) -> bool {
         // 让搜索器继续寻找后续满足边界的闭合位置。
         return false;
     }
-    // 双字符标记按 Markdown 的简单配对规则接受第一个有效闭合位置。
-    if marker != "_" {
-        // 双字符和星号标记不需要额外的单词边界判断。
+    // 星号、删除线和下划线扩展标记均接受第一个有效闭合位置。
+    if !marker.starts_with('_') {
+        // 双字符星号和扩展标记不需要额外的单词边界判断。
         return true;
     }
     // 读取下划线后的相邻字符。
     let after = &text[close + marker.len()..];
-    // 单词中间的下划线不能闭合强调。
+    // 单词中间的单双下划线都不能闭合强调。
     !(before.is_some_and(is_word_char) && after.chars().next().is_some_and(is_word_char))
 }
 
@@ -753,6 +753,34 @@ mod tests {
             segments,
             vec![RichTextSegment::Text {
                 content: "未闭合 **粗体、路径 foo_bar_baz".into(),
+                style: RichTextStyle::default(),
+            }]
+        );
+    }
+
+    // 验证合法双下划线仍能加粗，而单词内部双下划线保持字面值。
+    #[test]
+    fn double_underscore_respects_word_boundaries() {
+        // 解析位于独立边界的双下划线粗体。
+        let styled = parse_rich_text("__粗体__");
+        // 独立双下划线应生成粗体 Text 段。
+        assert_eq!(
+            styled,
+            vec![RichTextSegment::Text {
+                content: "粗体".into(),
+                style: RichTextStyle {
+                    bold: true,
+                    ..Default::default()
+                },
+            }]
+        );
+        // 解析两侧都连接单词字符的双下划线。
+        let literal = parse_rich_text("foo__bar__baz");
+        // 单词内部双下划线不应拆分成粗体段。
+        assert_eq!(
+            literal,
+            vec![RichTextSegment::Text {
+                content: "foo__bar__baz".into(),
                 style: RichTextStyle::default(),
             }]
         );
