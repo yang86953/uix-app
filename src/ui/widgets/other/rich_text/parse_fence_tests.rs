@@ -36,3 +36,20 @@ fn closes_fences_only_at_line_start() {
         ]
     );
 }
+
+// 验证围栏代码中的 Windows 换行会归一化为统一的 LF。
+#[test]
+fn normalizes_fenced_code_line_endings() {
+    // 使用 CRLF 围栏、正文和闭合行模拟 Windows Markdown 输入。
+    let segments = parse_rich_text("```rust\r\nfn main() {}\r\n```\r\n");
+    // 代码段应保留正文换行，但不应把回车字符交给布局或复制逻辑。
+    assert_eq!(
+        segments,
+        vec![
+            RichTextSegment::Code {
+                content: "fn main() {}\n".into(),
+            },
+            RichTextSegment::NewLine,
+        ]
+    );
+}
