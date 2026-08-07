@@ -5,10 +5,10 @@
 //! CPU segment。
 
 use crate::core::{Errc, Error, Rect};
-use crate::draw::geometry::types::{BlendMode, ImageHandle, Radius, Transform};
+use crate::draw::geometry::types::BlendMode;
 use crate::draw::painting::{
-    FrameEncoder, FrameEncoderError, FrameGlyphBlit, FrameImage, FrameOpacity, FrameRasterOp,
-    FrameRect, FrameSampledRect, FrameStrokeRect, FrameStrokeWidth,
+    FrameEncoder, FrameGlyphBlit, FrameImage, FrameOpacity, FrameRasterOp,
+    FrameRect, FrameSampledRect,
 };
 use crate::draw::raster::pixel_surface::PixelSurface;
 use crate::draw::raster::shared_rasterizer::SharedRasterizer;

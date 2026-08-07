@@ -16,7 +16,7 @@ use crate::draw::backend::rhi_renderer::{
 };
 // 引入 GPU native 队列的几何载荷和 TextureMove 资源类型。
 use crate::native::present::rhi::{
-    GraphicsContextRhi, LoadAction, RenderTargetHandle, RhiExtent, RhiViewport, TextureHandle,
+    GraphicsContextRhi, LoadAction, RenderTargetHandle, RhiViewport, TextureHandle,
     TextureMove,
 };
 

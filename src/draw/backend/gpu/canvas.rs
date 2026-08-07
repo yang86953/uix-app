@@ -3,18 +3,15 @@
 //! 软回退（scratch）状态、裁剪/变换折叠与 GPU-only 模式判定；绘制操作在
 //! [`super::queue`] 入队、[`super::submit`] 提交、[`super::canvas2d`] 选择路径。
 
-use std::sync::Arc;
-use std::time::Duration;
 
 use crate::core::{Errc, Error, Rect};
 use crate::draw::geometry::types::{BlendMode, Transform};
-use crate::draw::painting::FrameRect;
 use crate::draw::raster::pixel_surface::PixelSurface;
 use crate::draw::raster::shared_rasterizer::SharedRasterizer;
 use crate::native::present::NativeRasterCaps;
 
 use super::pending::PendingNativeOp;
-use super::{StateSnapshot, SOFT_FALLBACK_IDLE_PRESENT_GRACE, SOFT_FALLBACK_IDLE_TIME_GRACE};
+use super::StateSnapshot;
 
 pub struct NativeGpuCanvas2D {
     pub(super) native_caps: NativeRasterCaps,

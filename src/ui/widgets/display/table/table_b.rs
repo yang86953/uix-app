@@ -1,24 +1,19 @@
 //! [`Table`] 组件实现（二）：布局、绘制与交互 — table 子模块。
 
-use crate::core::{Constraints, Point, Rect, Size};
+use crate::core::Rect;
 use crate::draw::Radius;
 use crate::ui::component::paint_context::PaintContext;
-use crate::ui::render_handler::RenderHandlerRegistration;
-use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, LayoutChild, SemanticEvent, SnapshotFields,
-    SnapshotTableColumn, SnapshotTableColumnGroup, SystemEvent, WidgetTree,
+    SnapshotFields,
+    SnapshotTableColumn, SnapshotTableColumnGroup,
 };
-use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
-use std::rc::Rc;
 
-use super::config::{flatten_column_groups, merge_table_columns};
+use super::config::merge_table_columns;
 // 引入共享列区绘制层级与列几何快照。
 use super::geometry::{TableColumnGeometry, COLUMN_PAINT_ORDER};
 use super::types::{
-    finite_nonnegative, SortDirection, TableChange, TableColumn, TableColumnGroup,
-    TablePointerAction, TableResizeDrag, TableRow, TableRowClickCallback,
+    finite_nonnegative, SortDirection, TableChange, TableResizeDrag,
     COLUMN_RESIZE_HANDLE_HALF_WIDTH, MIN_RESIZABLE_COLUMN_WIDTH, TABLE_PAGINATION_GAP,
     TABLE_PAGINATION_HEIGHT, TABLE_PAGINATION_INSET, TABLE_PAGINATION_ITEM_SIZE,
     TABLE_PAGINATION_LABEL_WIDTH,
@@ -632,6 +627,10 @@ impl Table {
 mod tests {
     // 复用表格实现与父模块已导入的几何类型。
     use super::*;
+    // 引入固定列回归测试使用的列类型。
+    use super::super::types::TableColumn;
+    // 引入固定列命中测试使用的坐标类型。
+    use crate::core::Point;
 
     // 标记固定列重叠句柄绘制层级契约。
     #[test]

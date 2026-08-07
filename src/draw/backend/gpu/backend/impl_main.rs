@@ -5,25 +5,21 @@
 
 use std::time::Instant;
 
-use crate::core::{Errc, Error, Point, PresentDamageTracker, Rect};
+use crate::core::{Errc, Error, PresentDamageTracker};
 use crate::draw::backend::contract::RenderBackend;
 use crate::draw::geometry::color::Color;
 use crate::draw::geometry::types::ImageHandle;
 use crate::draw::painting::{
-    EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder, FrameEncoderError,
-    FrameGlyphBlit, FrameRasterOp, FrameRect, FrameStrokeRect,
+    FrameCommand, FrameEncoder, FrameEncoderError, FrameRasterOp, FrameRect,
 };
 use crate::native::present::{
-    GpuGlyphBlit, GpuImageBlit, GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext,
-    OffscreenTargetId, PresentMode, PresentTestResult, RasterMode, SoftFallbackTile,
+    IGraphicsContext, PresentMode, RasterMode,
 };
 // 引入 RHI device 的测试注入契约。
 #[cfg(feature = "test-harness")]
 use crate::native::present::rhi::{GraphicsDevice, GraphicsSurface};
 
 use super::super::canvas::NativeGpuCanvas2D;
-use super::super::pending::PendingNativeOp;
-use super::super::tile::pack_visible_soft_fallback_tile;
 use super::super::SOFT_FALLBACK_IDLE_TIME_GRACE;
 use super::surface::NativeGpuDrawSurface;
 use super::GpuBackend;

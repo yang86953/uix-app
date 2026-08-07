@@ -5,7 +5,7 @@
 //! typed failure is returned first so the caller retains dirty state, then the
 //! next `begin_frame` runs exactly one bounded recovery action.
 
-use crate::core::{Errc, Error, Rect};
+use crate::core::{Error, Rect};
 use crate::draw::backend::DamageRegion;
 use crate::draw::geometry::types::ImageHandle;
 use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};

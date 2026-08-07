@@ -27,10 +27,5 @@ pub(crate) mod window_mode;
 pub(crate) mod window_target;
 
 pub use event_loop::OsEventSource;
-pub use ime_events::{
-    on_committed_text, on_committed_text_for_window, on_marked_text, on_marked_text_for_window,
-    on_unmark_text, on_unmark_text_for_window, ImeCompositionState,
-};
 pub use state::WindowState;
-pub use window::{unimpl, PlatformWindowCore, WindowOps};
-pub use window_lifecycle::{push_window_close, push_window_resize};
+pub use window::{PlatformWindowCore, WindowOps};

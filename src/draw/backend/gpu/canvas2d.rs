@@ -9,18 +9,11 @@ use crate::core::{Point, Rect};
 use crate::draw::geometry::color::Color;
 use crate::draw::geometry::path::{FillRule, Path};
 use crate::draw::geometry::stroker::StrokeOptions;
-use crate::draw::geometry::types::{BlendMode, GradientDirection, ImageHandle, Radius, Transform};
-use crate::draw::painting::{
-    FrameCommand, FrameEncoder, FrameEncoderError, FrameGlyphBlit, FrameRect, FrameRasterOp,
-    FrameStrokeRect, ReferenceFrame,
-};
-use crate::draw::raster::pixel_surface::PixelSurface;
-use crate::draw::raster::shared_rasterizer::SharedRasterizer;
+use crate::draw::geometry::types::{BlendMode, GradientDirection, Radius, Transform};
 use crate::draw::Canvas2D;
 use crate::native::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
-    GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps,
-    OffscreenTargetId, PresentFrame, PresentMode, PresentTestResult, RasterMode, SoftFallbackTile,
+    GpuGlyphBlit,
+    GpuSolidMesh, GpuSolidRect, IGraphicsContext,
 };
 
 use super::canvas::NativeGpuCanvas2D;
@@ -29,9 +22,9 @@ use super::geometry::{
 };
 use super::pending::StateSnapshot;
 use super::pending::{
-    DirectImageBlit, PendingNativeGlyph, PendingNativeImage, PendingNativeLinearGrad,
-    PendingNativeMesh, PendingNativeOp, PendingNativeRadialGrad, PendingNativeRect,
-    PendingNativeScroll, PendingNativeSector, PendingNativeShadow, PendingNativeStroke,
+    DirectImageBlit, PendingNativeGlyph, PendingNativeImage,
+    PendingNativeMesh, PendingNativeOp, PendingNativeRect,
+    PendingNativeScroll,
 };
 
 impl Canvas2D for NativeGpuCanvas2D {

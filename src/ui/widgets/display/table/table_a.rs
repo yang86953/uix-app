@@ -1,25 +1,17 @@
 //! [`Table`] 组件实现（一）：构造与装配 — table 子模块。
 
-use crate::core::{Constraints, Rect, Size};
-use crate::draw::Radius;
+use crate::core::{Rect, Size};
 use crate::ui::component::paint_context::PaintContext;
-use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
-use crate::ui::{
-    ComponentId, EventResult, KeyCode, LayoutChild, SemanticEvent, SnapshotFields, SystemEvent,
-    WidgetTree,
-};
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::rc::Rc;
 
 use super::builder::TableBuilder;
-use super::config::{flatten_column_groups, merge_table_columns};
-use super::geometry::{ColumnZone, TableColumnGeometry};
+use super::config::flatten_column_groups;
 use super::types::{
     finite_nonnegative, implicit_row_keys, DataTable, SortDirection, TableChange, TableColumn,
     TableColumnGroup, TableDataError, TablePagination, TablePointerAction, TableRow,
-    TableRowClickCallback,
 };
 use super::Table;
 

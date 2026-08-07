@@ -6,14 +6,11 @@
 use std::rc::Rc;
 
 use crate::ui::render_handler::RenderHandlerRegistration;
-use crate::ui::IntoWidgetNode;
-use crate::ui::view::{View, ViewNode};
 
 use super::config::flatten_column_groups;
 use super::types::{
     finite_nonnegative, resolve_table_empty_view, DataTable, ExpandRenderer, TableCellRenderer,
     TableColumn, TableColumnGroup, TableDataColumn, TableEmptyRenderer, TablePagination, TableRow,
-    TableRowClickCallback,
     implicit_row_keys,
 };
 use super::Table;

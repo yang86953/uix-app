@@ -31,23 +31,16 @@ pub(crate) mod surface;
 
 pub use surface::NativeGpuDrawSurface;
 
-use std::sync::Arc;
 use std::time::Instant;
 
-use crate::core::{Error, PresentDamageTracker, Rect};
+use crate::core::{Error, PresentDamageTracker};
 // 引入通用 RHI lowering 缓存。
 use crate::draw::backend::contract::{
-    BackendCapabilities, BackendKind, DrawSurface, RenderBackend,
+    DrawSurface, RenderBackend,
 };
 use crate::draw::backend::rhi_renderer::RhiRenderer;
-use crate::draw::geometry::color::Color;
-use crate::draw::geometry::types::ImageHandle;
-use crate::draw::painting::{
-    EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder, FrameEncoderError,
-    FrameGlyphBlit, FrameImage, FrameRasterOp, FrameRect, FrameStrokeRect,
-};
 use crate::draw::Canvas2D;
-use crate::native::present::{IGraphicsContext, NativeRasterCaps, OffscreenTargetId};
+use crate::native::present::{IGraphicsContext, OffscreenTargetId};
 // 引入迁移期 RHI 的离屏纹理句柄。
 use crate::native::present::rhi::TextureHandle;
 

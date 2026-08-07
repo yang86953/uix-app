@@ -2,7 +2,6 @@
 //!
 //! 叠加层 backdrop 快照、恢复与释放，仅在 retained framebuffer 能力可用时生效。
 
-use crate::core::Error;
 
 use super::GpuBackend;
 

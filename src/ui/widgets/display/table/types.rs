@@ -7,7 +7,6 @@ use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
 
-use crate::ui::view::ViewNode;
 
 use super::Table;
 

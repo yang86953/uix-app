@@ -12,4 +12,3 @@ pub mod measurement_cache;
 // 保留既有虚拟滚动入口。
 pub use virtual_scroll::*;
 // 让调用方可以直接构造独立测量缓存。
-pub use measurement_cache::*;

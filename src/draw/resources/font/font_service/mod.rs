@@ -368,7 +368,7 @@ impl FontService {
     /// 如果主字体本身已经包含中文字形则跳过，避免重复加载。
     fn load_cjk_fallback(
         &mut self,
-        size: f32,
+        _size: f32,
         system_info: &dyn crate::native::capabilities::system::ISystemInfo,
     ) {
         // 内存剖析开关：跳过 CJK 回退字体加载，量化中文字体常驻对 working set 的贡献。
@@ -423,7 +423,7 @@ impl FontService {
     fn load_family_font(
         &mut self,
         family: &str,
-        size: f32,
+        _size: f32,
         system_info: &dyn crate::native::capabilities::system::ISystemInfo,
     ) -> Option<FontHandle> {
         if let Some(p) = system_info.probe_family_font_path(family) {

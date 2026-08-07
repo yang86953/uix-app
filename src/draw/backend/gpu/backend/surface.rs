@@ -3,11 +3,8 @@
 //! 把 canvas 的软/硬清除与绘制转发到 [`NativeGpuCanvas2D`]，帧边界错误
 //! 通过 deferred error 消费。
 
-use crate::core::{Error, Point, PresentDamageTracker, Rect};
+use crate::core::{Error, Point, Rect};
 use crate::draw::backend::contract::DrawSurface;
-use crate::draw::geometry::color::Color;
-use crate::draw::geometry::types::{ImageHandle, Radius};
-use crate::draw::painting::FrameRect;
 use crate::draw::Canvas2D;
 use crate::native::present::{GpuSolidRect, NativeRasterCaps};
 
