@@ -4,7 +4,7 @@
 
 > **接口**：声明 ui 系统的窗口内浮层栈、层叠、焦点陷阱和进退场。依赖：[component](component.md)、[event](event.md)、[animation](animation.md)。导出：所有内置与自定义浮层共享的栈契约；公开用法见[使用 · 反馈](../../使用/反馈.md)。
 >
-> **当前实现线索**：相关实现暂位于 `src/ui/overlay.rs`、`src/ui/foundation/focus_trap.rs` 和 widgets 中的具体浮层组件；重构后栈机制归本模块。
+> **当前实现线索**：栈与 entry 位于 `src/ui/overlay/mod.rs`，组件树在 `src/ui/component/widget/tree_layout/layout.rs` 重建登记，焦点陷阱位于 `src/ui/foundation/focus_trap.rs`，具体 placement 由各浮层组件持有。
 
 ## 组件清单
 
@@ -22,7 +22,10 @@
 - 每个 WidgetTree 只有一个 OverlayStack；后打开或更高 z-index 的 entry 先命中。
 - overlay 命中先递归 owner 的浮层子树，再回退 owner/mask；底层树在 modal 遮罩下不可接收事件。
 - bounds 使用窗口 logical 坐标并收敛到当前 surface；placement、绘制、damage 与 hit-test 共用同一几何。
+- 组件树重建登记时通过 `WidgetRender::overlay_entry_for_surface` 显式传入当前根表面；默认实现向后兼容旧入口，依赖窗口边界的组件不得只凭触发器 frame 复用上一帧 surface 下的绝对矩形。
 - owner 移除、隐藏、换根或 generation 失效时，managed entry 自动清理。
+
+`f41fede8` 为该表面契约建立 Popover/Popconfirm 回归：触发器 frame 不变而 surface 缩小时，布局阶段的 OverlayStack bounds 与随后绘制共同消费新表面；旧缓存横坐标 150px/200px 分别收敛为 20px/60px。两项聚焦契约、布局 24 项、反馈门面 4 项与完整库 151 项测试通过。
 
 ## 焦点
 
