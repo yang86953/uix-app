@@ -41,3 +41,36 @@ fn parses_atx_headings_with_inline_styles() {
         }]
     );
 }
+
+// 验证多个连续闭合井号会被去除，而无空白分隔的井号仍保留为正文。
+#[test]
+fn trims_multiple_atx_closing_hashes() {
+    // 解析带有三个连续闭合井号的一级标题。
+    let closed = parse_rich_text("# 标题 ###");
+    // 连续闭合井号不应进入标题正文。
+    assert_eq!(
+        closed,
+        vec![RichTextSegment::Text {
+            content: "标题".into(),
+            style: RichTextStyle {
+                bold: true,
+                font_size: Some(38.0),
+                ..Default::default()
+            },
+        }]
+    );
+    // 解析正文与井号之间没有空白的标题文本。
+    let literal = parse_rich_text("# 标题###");
+    // 没有空白边界时井号应保持为标题正文的一部分。
+    assert_eq!(
+        literal,
+        vec![RichTextSegment::Text {
+            content: "标题###".into(),
+            style: RichTextStyle {
+                bold: true,
+                font_size: Some(38.0),
+                ..Default::default()
+            },
+        }]
+    );
+}
