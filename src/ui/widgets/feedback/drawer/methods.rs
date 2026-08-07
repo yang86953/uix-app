@@ -164,6 +164,19 @@ impl Drawer {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        // 记录声明式可见性变化，避免关闭动画期间每次重建都重启离场。
+        let visibility_changed = self.visible != next.visible;
+        // 只有声明值真正变化时才同步运行态，保留进行中的离场动画。
+        if visibility_changed {
+            // 声明式打开需要重置关闭状态并启动进入动画。
+            if next.visible {
+                // 复用正式打开路径，确保 present、transition 和布局请求一致。
+                self.open();
+            } else {
+                // 复用正式关闭路径，确保离场动画只启动一次。
+                self.close();
+            }
+        }
         let interaction_geometry_changed = self.width != next.width
             || self.height != next.height
             || self.placement != next.placement
@@ -420,5 +433,35 @@ impl Drawer {
             footer_visible: self.footer_visible,
             extra: self.extra.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Drawer;
+    use crate::ui::component::traits::WidgetAnimation;
+
+    #[test]
+    fn declarative_visibility_sync_updates_runtime_lifecycle() {
+        // 创建关闭的运行态 Drawer，模拟 G5 初始 overlay。
+        let mut drawer = Drawer::new("");
+        // 构造声明式打开配置，模拟 overlay_mode 切换到 Drawer。
+        let open = Drawer::new("").visible(true);
+        // 将声明式打开同步到复用中的运行节点。
+        drawer.sync_from(open);
+        // 打开后运行态必须参与呈现。
+        assert!(drawer.is_present());
+        // 构造声明式关闭配置，模拟 overlay_mode 离开 Drawer。
+        let close = Drawer::new("").visible(false);
+        // 将声明式关闭同步到同一个运行节点。
+        drawer.sync_from(close);
+        // 关闭请求应进入离场状态，而不是重新打开。
+        assert!(drawer.is_present());
+        // 再次同步相同关闭声明，验证离场动画不会被重复启动。
+        drawer.sync_from(Drawer::new("").visible(false));
+        // 推进足够长的时间完成离场动画。
+        drawer.update_animation(10.0);
+        // 离场完成后运行态必须完全释放呈现资格。
+        assert!(!drawer.is_present());
     }
 }
