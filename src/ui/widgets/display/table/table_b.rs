@@ -14,7 +14,8 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use super::config::{flatten_column_groups, merge_table_columns};
-use super::geometry::{ColumnZone, TableColumnGeometry};
+// 引入共享列区绘制层级与列几何快照。
+use super::geometry::{TableColumnGeometry, COLUMN_PAINT_ORDER};
 use super::types::{
     finite_nonnegative, SortDirection, TableChange, TableColumn, TableColumnGroup,
     TablePointerAction, TableResizeDrag, TableRow, TableRowClickCallback,
@@ -252,29 +253,59 @@ impl Table {
             return None;
         }
         let geometry = self.column_geometry(0.0, frame.w);
-        geometry
-            .columns
-            .iter()
-            .filter(|laid_out| {
-                self.columns
-                    .get(laid_out.index)
-                    .is_some_and(|column| column.resizable)
-                    && self.leaf_header_contains(point.y, Some(laid_out.index))
-                    && geometry
-                        .clip_for(laid_out.zone, point.y, 1.0)
-                        .is_some_and(|clip| {
+        // 按绘制层级逆序检查句柄，使重叠边缘优先选择视觉最上层列区。
+        for zone in COLUMN_PAINT_ORDER.into_iter().rev() {
+            // 获取当前列区在表头中的可见裁剪范围。
+            let Some(clip) = geometry.clip_for(zone, point.y, 1.0) else {
+                // 跳过没有可见面积的列区。
+                continue;
+                // 结束不可见列区分支。
+            };
+            // 在当前绘制层内选择距离指针最近的可调整句柄。
+            let candidate = geometry
+                .columns
+                .iter()
+                .filter(|laid_out| {
+                    // 排除其他绘制层中的列。
+                    laid_out.zone == zone
+                        // 只保留声明为可调整宽度的列。
+                        && self
+                            .columns
+                            .get(laid_out.index)
+                            .is_some_and(|column| column.resizable)
+                        // 分组表头的上层区域不能调整叶列宽度。
+                        && self.leaf_header_contains(point.y, Some(laid_out.index))
+                        // 只接受落在当前列区可见裁剪内的列右边缘。
+                        && {
+                            // 计算当前列的右边缘位置。
                             let edge = laid_out.x + laid_out.width;
+                            // 同时核对边缘可见性与句柄命中半径。
                             edge >= clip.x
                                 && edge <= clip.x + clip.w
                                 && (point.x - edge).abs() <= COLUMN_RESIZE_HANDLE_HALF_WIDTH
-                        })
-            })
-            .min_by(|left, right| {
-                let left_distance = (point.x - (left.x + left.width)).abs();
-                let right_distance = (point.x - (right.x + right.width)).abs();
-                left_distance.total_cmp(&right_distance)
-            })
-            .map(|column| column.index)
+                        }
+                    // 结束当前列候选过滤。
+                })
+                // 同一绘制层内仍以几何距离决定句柄。
+                .min_by(|left, right| {
+                    // 计算左候选到指针的距离。
+                    let left_distance = (point.x - (left.x + left.width)).abs();
+                    // 计算右候选到指针的距离。
+                    let right_distance = (point.x - (right.x + right.width)).abs();
+                    // 返回距离较近的候选顺序。
+                    left_distance.total_cmp(&right_distance)
+                    // 结束同层距离比较。
+                });
+            // 当前最高可见层存在句柄时立即返回，避免落到被遮挡的低层列。
+            if let Some(column) = candidate {
+                // 返回最高层候选的原始列索引。
+                return Some(column.index);
+                // 结束最高层候选分支。
+            }
+            // 继续检查下一绘制层。
+        }
+        // 所有可见列区都没有句柄时返回空。
+        None
     }
 
     pub(crate) fn resize_column_to_pointer(&mut self, drag: TableResizeDrag, pointer_x: f32) {
@@ -593,4 +624,47 @@ impl Table {
     pub(crate) fn mark_cells_materialized(&self, range: (usize, usize)) {
         self.materialized_cell_range.set(Some(range));
     }
+}
+
+// 仅在单元测试中编译表格列宽句柄契约。
+#[cfg(test)]
+// 将固定列重叠句柄回归收拢在交互几何模块。
+mod tests {
+    // 复用表格实现与父模块已导入的几何类型。
+    use super::*;
+
+    // 标记固定列重叠句柄绘制层级契约。
+    #[test]
+    // 验证重合边缘命中最后绘制的右固定列句柄。
+    fn overlapping_fixed_resize_handles_hit_topmost_painted_zone() {
+        // 构造宽八十像素的可调整左固定列。
+        let left = TableColumn::new("左列", 80.0)
+            // 启用左列调整宽度交互。
+            .resizable(true)
+            // 将第一列固定到视口左侧。
+            .fixed(super::super::types::Fixed::Left);
+        // 构造右固定区中边缘落在八十像素处的第一列。
+        let right_inner = TableColumn::new("右内列", 20.0)
+            // 启用右内列调整宽度交互。
+            .resizable(true)
+            // 将第二列固定到视口右侧。
+            .fixed(super::super::types::Fixed::Right);
+        // 构造右固定区最外侧的第二列。
+        let right_outer = TableColumn::new("右外列", 20.0)
+            // 将第三列固定到视口右侧。
+            .fixed(super::super::types::Fixed::Right);
+        // 在一百像素视口中让左列和右内列的右边缘同为八十像素。
+        let table = Table::new()
+            // 安装会形成重叠边缘的三列。
+            .columns(vec![left, right_inner, right_outer])
+            // 固定视口尺寸以触发左右固定区重叠。
+            .size(100.0, 80.0);
+        // 重合点必须选择绘制层级更高的右固定列句柄。
+        assert_eq!(
+            table.resize_handle_at_point(Point::new(80.0, 10.0)),
+            Some(1)
+        );
+        // 结束固定列重叠句柄命中契约。
+    }
+    // 结束表格列宽句柄测试模块。
 }
