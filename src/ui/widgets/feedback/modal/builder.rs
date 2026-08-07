@@ -216,5 +216,29 @@ mod tests {
         assert_eq!(view.children.len(), 1);
         let _ = view;
     }
+
+    #[test]
+    fn declarative_visibility_sync_updates_runtime_lifecycle() {
+        // 创建关闭的运行态 Modal，模拟 G5 初始 overlay。
+        let mut modal = Modal::new("");
+        // 构造声明式打开配置，模拟 overlay_mode 切换到 Modal。
+        let open = Modal::new("").visible(true);
+        // 将声明式打开同步到复用中的运行节点。
+        modal.sync_from(open);
+        // 打开后运行态必须参与呈现。
+        assert!(modal.is_present());
+        // 构造声明式关闭配置，模拟 overlay_mode 离开 Modal。
+        let close = Modal::new("").visible(false);
+        // 将声明式关闭同步到同一个运行节点。
+        modal.sync_from(close);
+        // 关闭请求应进入离场状态，而不是重新打开。
+        assert!(modal.is_present());
+        // 再次同步相同关闭声明，验证离场动画不会被重复启动。
+        modal.sync_from(Modal::new("").visible(false));
+        // 推进足够长的时间完成离场动画。
+        modal.update_animation(10.0);
+        // 离场完成后运行态必须完全释放呈现资格。
+        assert!(!modal.is_present());
+    }
 }
 

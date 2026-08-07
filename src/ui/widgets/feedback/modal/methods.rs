@@ -332,6 +332,19 @@ impl Modal {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        // 记录声明式可见性变化，避免关闭动画期间每次重建都重启离场。
+        let visibility_changed = self.visible != next.visible;
+        // 只有声明值真正变化时才同步运行态，保留进行中的离场动画。
+        if visibility_changed {
+            // 声明式打开需要重置关闭状态并启动进入动画。
+            if next.visible {
+                // 复用正式打开路径，确保 present、transition 和布局请求一致。
+                self.do_open();
+            } else {
+                // 复用正式关闭路径，确保离场动画只启动一次。
+                self.do_close();
+            }
+        }
         let interaction_geometry_changed = self.width != next.width
             || self.height != next.height
             || self.closable != next.closable
