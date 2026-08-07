@@ -5,6 +5,9 @@ mod placement;
 // 引入有界列数、放置计划与后续尺寸求解所需的定位类型。
 use placement::{bounded_column_count, place_grid_children, CellAssignment};
 
+// 混合 Auto/Fr 跨轨约束只做固定轮数的单调松弛，避免病理输入形成无界循环。
+const FRACTION_SPAN_RELAXATION_LIMIT: usize = 64;
+
 /// Compute grid layout from input constraints.
 /// Pure function: no side effects.
 pub fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
@@ -47,11 +50,49 @@ pub fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
     let total_row_gap = row_gap * (n_rows.saturating_sub(1)) as f32;
 
     // 先汇总子项在自动列上的固有宽度贡献。
-    let col_auto_sizes =
+    let mut col_auto_sizes =
         intrinsic_auto_track_sizes(columns, &assignments, input.children, col_gap, true);
+    // 把 span 外 Fr 可让出的份额转给 span 内 Auto，避免混合跨轨子项被竞争 Fr 裁剪。
+    fit_fraction_spanning_auto_tracks(
+        // 水平轴使用有界列定义。
+        columns,
+        // 复用放置阶段的有界子项账本。
+        &assignments,
+        // 读取子项自然外宽。
+        input.children,
+        // 列间距属于跨轨可用宽度。
+        col_gap,
+        // 水平容器约束限制可转移空间。
+        inner.w,
+        // 全部列间距先于 Fr 分配扣除。
+        total_col_gap,
+        // 选择水平尺寸分支。
+        true,
+        // 原位扩展 Auto 列固有尺寸。
+        &mut col_auto_sizes,
+    );
     // 再汇总子项在显式与隐式自动行上的固有高度贡献。
-    let row_auto_sizes =
+    let mut row_auto_sizes =
         intrinsic_auto_track_sizes(&rows, &assignments, input.children, row_gap, false);
+    // 行轴使用相同规则处理 Auto/Fr 混合跨轨约束。
+    fit_fraction_spanning_auto_tracks(
+        // 垂直轴使用显式与隐式行定义。
+        &rows,
+        // 复用同一放置账本。
+        &assignments,
+        // 读取子项自然外高。
+        input.children,
+        // 行间距属于跨轨可用高度。
+        row_gap,
+        // 垂直容器约束限制可转移空间。
+        inner.h,
+        // 全部行间距先于 Fr 分配扣除。
+        total_row_gap,
+        // 选择垂直尺寸分支。
+        false,
+        // 原位扩展 Auto 行固有尺寸。
+        &mut row_auto_sizes,
+    );
     // Auto 保留内容宽度，Fr 列仅分配剩余水平空间。
     let col_sizes = resolve_tracks(columns, inner.w, total_col_gap, &col_auto_sizes);
     // Auto 保留内容高度，Fr 行仅分配剩余垂直空间。
@@ -410,6 +451,270 @@ fn intrinsic_auto_track_sizes(
 
     // 返回仅对 Auto 轨道有意义的固有尺寸账本。
     sizes
+}
+
+// 在不扩大父级约束的前提下满足 Auto/Fr 混合 span 的自然尺寸。
+fn fit_fraction_spanning_auto_tracks(
+    // 当前轴的全部有界轨道。
+    tracks: &[GridTrack],
+    // 已成功放置的子项与 span 账本。
+    assignments: &[CellAssignment],
+    // 子项自然尺寸与 margin 来源。
+    children: &[GridChild],
+    // 当前轴相邻轨道间距。
+    gap: f32,
+    // 当前轴父级可用尺寸。
+    available: f32,
+    // 当前轴全部轨道间距之和。
+    total_gap: f32,
+    // true 表示列轴，false 表示行轴。
+    horizontal: bool,
+    // 前一阶段建立的 Auto 固有尺寸账本。
+    auto_sizes: &mut [f32],
+) {
+    // 汇总当前轴所有有效 Fr 权重，供 span 内外份额换算。
+    let total_fraction_weight = tracks
+        // 遍历有界轨道定义。
+        .iter()
+        // 只有 Fr 轨道贡献权重。
+        .map(|track| match track {
+            // 正且有限的权重参与剩余空间分配。
+            GridTrack::Fr(weight) => finite_non_negative(*weight) as f64,
+            // Px 与 Auto 不参与 Fr 权重。
+            _ => 0.0,
+        })
+        // 使用 f64 避免极大权重求和溢出。
+        .sum::<f64>();
+    // 没有有效 Fr 时，前一阶段已经完成全部 Auto 跨轨贡献。
+    if total_fraction_weight <= 0.0 {
+        // 直接保留既有 Auto 账本。
+        return;
+    }
+
+    // 收集真正跨越多轨道的约束，后续按约束本身确定顺序。
+    let mut spanning_assignments: Vec<&CellAssignment> = assignments
+        // 借用既有有界放置账本。
+        .iter()
+        // 单轨道子项已经在 Auto 基础阶段处理。
+        .filter(|assignment| {
+            // 水平轴读取列 span，垂直轴读取行 span。
+            let span = if horizontal {
+                // 列 span 已由放置预算收敛。
+                assignment.col_span
+            } else {
+                // 行 span 已由放置预算收敛。
+                assignment.row_span
+            };
+            // 只有真正跨轨的子项需要混合约束松弛。
+            span > 1
+        })
+        // 物化有界引用表以消除声明顺序影响。
+        .collect();
+    // 按 span、起点与自然外尺寸建立确定性处理顺序。
+    spanning_assignments.sort_by(|left, right| {
+        // 读取左侧约束的起始轨道。
+        let left_start = if horizontal { left.col } else { left.row };
+        // 读取右侧约束的起始轨道。
+        let right_start = if horizontal { right.col } else { right.row };
+        // 读取左侧约束的轨道跨度。
+        let left_span = if horizontal {
+            left.col_span
+        } else {
+            left.row_span
+        };
+        // 读取右侧约束的轨道跨度。
+        let right_span = if horizontal {
+            right.col_span
+        } else {
+            right.row_span
+        };
+        // 较短 span 先建立局部约束，再按起点稳定排序。
+        left_span
+            // 首要按跨度升序。
+            .cmp(&right_span)
+            // 同跨度按轨道起点升序。
+            .then_with(|| left_start.cmp(&right_start))
+            // 同范围优先处理较大的自然尺寸，减少重复松弛。
+            .then_with(|| {
+                // 读取右侧子项自然外尺寸。
+                let right_extent = child_outer_extent(&children[right.child_idx], horizontal);
+                // 读取左侧子项自然外尺寸。
+                let left_extent = child_outer_extent(&children[left.child_idx], horizontal);
+                // 使用浮点全序按尺寸降序排列。
+                right_extent.total_cmp(&left_extent)
+            })
+    });
+    // 没有跨轨约束时无需进入松弛循环。
+    if spanning_assignments.is_empty() {
+        // 保留已有 Auto 尺寸。
+        return;
+    }
+
+    // 计算固定 Px 与当前 Auto 已占用的全局空间。
+    let mut used_non_fraction = tracks
+        // 保留轨道索引以读取对应 Auto 尺寸。
+        .iter()
+        // 把每条非 Fr 轨道转换为已占用尺寸。
+        .enumerate()
+        // 汇总固定与内容轨道占用。
+        .map(|(index, track)| match track {
+            // 固定轨道使用有限非负像素值。
+            GridTrack::Px(size) => finite_non_negative(*size) as f64,
+            // Auto 轨道使用前一阶段的固有尺寸。
+            GridTrack::Auto => auto_sizes.get(index).copied().unwrap_or(0.0) as f64,
+            // Fr 留到剩余空间阶段分配。
+            GridTrack::Fr(_) => 0.0,
+        })
+        // 使用 f64 累加避免多轨道求和溢出。
+        .sum::<f64>();
+    // 父级可分配给轨道的空间先扣除全部 gap。
+    let track_capacity =
+        (finite_non_negative(available) as f64 - finite_non_negative(total_gap) as f64).max(0.0);
+
+    // 多个重叠混合 span 可能互相改变 Fr 余量，因此执行固定上限的单调松弛。
+    for _ in 0..FRACTION_SPAN_RELAXATION_LIMIT {
+        // 本轮尚未增加任何 Auto 尺寸。
+        let mut made_progress = false;
+        // 按确定性约束顺序逐项消除可由外部 Fr 让出的缺口。
+        for assignment in &spanning_assignments {
+            // 按当前轴读取起始轨道。
+            let start = if horizontal {
+                assignment.col
+            } else {
+                assignment.row
+            };
+            // 按当前轴读取有界 span。
+            let span = if horizontal {
+                // 水平轴使用列 span。
+                assignment.col_span as usize
+            } else {
+                // 垂直轴使用行 span。
+                assignment.row_span as usize
+            };
+            // 将结束位置限制在实际轨道窗口内。
+            let end = start.saturating_add(span).min(tracks.len());
+            // 统计 span 内可承接转移份额的 Auto 轨道数量。
+            let auto_count = tracks[start..end]
+                // 遍历当前 span 的轨道定义。
+                .iter()
+                // 只有 Auto 能在本阶段增长。
+                .filter(|track| matches!(track, GridTrack::Auto))
+                // 得到可均分转移量的轨道数。
+                .count();
+            // 没有 Auto 时不能在不改写 Fr 定义的前提下调整。
+            if auto_count == 0 {
+                // 保留既有 Fr 分配语义。
+                continue;
+            }
+            // 汇总 span 内的有效 Fr 权重。
+            let span_fraction_weight = tracks[start..end]
+                // 遍历当前 span 的轨道定义。
+                .iter()
+                // 只提取有效 Fr 权重。
+                .map(|track| match track {
+                    // 正且有限的 Fr 参与当前 span 的剩余份额。
+                    GridTrack::Fr(weight) => finite_non_negative(*weight) as f64,
+                    // 其他轨道不贡献 Fr 权重。
+                    _ => 0.0,
+                })
+                // 使用 f64 汇总权重。
+                .sum::<f64>();
+            // 不含正 Fr 的 span 已由前一阶段处理。
+            if span_fraction_weight <= 0.0 {
+                // 避免重复扩张纯 Auto/Px span。
+                continue;
+            }
+            // 只有 span 外 Fr 的份额能在保持总宽高不变时转入 span。
+            let external_fraction_share =
+                (1.0 - span_fraction_weight / total_fraction_weight).max(0.0);
+            // span 覆盖全部 Fr 时，内部转移只会等量替换自身份额。
+            if external_fraction_share <= f64::EPSILON {
+                // 该约束需要独立的溢出策略，本批不改写父级约束。
+                continue;
+            }
+            // 读取当前全局剩余空间。
+            let remaining = (track_capacity - used_non_fraction).max(0.0);
+            // Fr 已无剩余时不能继续在固定容器内转移。
+            if remaining <= f64::EPSILON {
+                // 保留当前已达到的最紧约束结果。
+                continue;
+            }
+            // 计算当前 span 已获得的固定、Auto 与 Fr 尺寸。
+            let span_track_extent = tracks[start..end]
+                // 保留相对索引以读取 Auto 账本。
+                .iter()
+                // 将各类轨道转换为当前实际份额。
+                .enumerate()
+                // 逐轨道建立当前尺寸。
+                .map(|(offset, track)| match track {
+                    // 固定轨道使用安全化像素值。
+                    GridTrack::Px(size) => finite_non_negative(*size) as f64,
+                    // Auto 轨道使用当前松弛后的尺寸。
+                    GridTrack::Auto => auto_sizes[start + offset] as f64,
+                    // Fr 轨道按全局权重分享当前剩余空间。
+                    GridTrack::Fr(weight) => {
+                        // 收敛当前轨道权重。
+                        let weight = finite_non_negative(*weight) as f64;
+                        // 按全局单位换算当前 Fr 尺寸。
+                        remaining * weight / total_fraction_weight
+                    }
+                })
+                // 汇总当前 span 的轨道尺寸。
+                .sum::<f64>();
+            // span 内部 gap 同样属于子项可用外尺寸。
+            let span_gap = gap as f64 * end.saturating_sub(start + 1) as f64;
+            // 读取当前子项的自然外尺寸要求。
+            let required = child_outer_extent(&children[assignment.child_idx], horizontal) as f64;
+            // 计算尚未覆盖的自然尺寸缺口。
+            let deficit = (required - span_track_extent - span_gap).max(0.0);
+            // 已满足的约束不需要调整。
+            if deficit <= 1.0e-6 {
+                // 继续检查后续混合 span。
+                continue;
+            }
+            // Auto 增量只有外部 Fr 占比部分会转化为当前 span 的净增长。
+            let requested_transfer = deficit / external_fraction_share;
+            // 转移量不能超过当前全部 Fr 剩余空间。
+            let transfer = requested_transfer.min(remaining);
+            // 极小转移不再改写 f32 账本。
+            if transfer <= 1.0e-6 {
+                // 防止浮点尾差导致空转。
+                continue;
+            }
+            // 把总转移量均匀分摊给 span 内 Auto 轨道。
+            let share = finite_non_negative((transfer / auto_count as f64) as f32);
+            // 记录本次实际写入的总增量。
+            let mut applied = 0.0f64;
+            // 逐条扩张 span 内的 Auto 轨道。
+            for index in start..end {
+                // 固定与 Fr 轨道不接收转移量。
+                if !matches!(tracks[index], GridTrack::Auto) {
+                    // 跳过非 Auto 轨道。
+                    continue;
+                }
+                // 保存写入前尺寸以计算实际 f32 增量。
+                let previous = auto_sizes[index];
+                // 使用有限化加法更新 Auto 尺寸。
+                auto_sizes[index] = finite_non_negative(previous + share);
+                // 累计实际写入量，保持后续 remaining 与 f32 账本一致。
+                applied += (auto_sizes[index] - previous) as f64;
+            }
+            // 没有可表示的 f32 增量时停止推进该约束。
+            if applied <= 0.0 {
+                // 避免后续轮次重复空转。
+                continue;
+            }
+            // 全局非 Fr 占用同步增加，后续约束读取最新 Fr 余量。
+            used_non_fraction += applied;
+            // 标记本轮发生了有效松弛。
+            made_progress = true;
+        }
+        // 一整轮没有任何可表示增量时已经收敛。
+        if !made_progress {
+            // 提前退出固定上限循环。
+            break;
+        }
+    }
 }
 
 // 在固定与 Auto 尺寸确定后把剩余空间分配给 Fr 轨道。
