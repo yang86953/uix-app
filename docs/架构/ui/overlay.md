@@ -35,7 +35,9 @@
 
 `250ba978` 将同一约束延伸到 TreeSelect：组件缓存同帧 surface、触发器绝对锚点、相对弹层与跨帧绝对脏区；树节点展开或过滤改变可见行数时，仍以同一表面和锚点重算。事件命中、虚拟滚动、键盘显露、绘制裁剪、dirty、OverlayStack bounds 统一使用翻转或缩高后的实际视口，关闭动画和表面变化也保留旧弹层覆盖。五项聚焦契约与完整库 168 项测试通过。
 
-`5117f4d7` 将同一约束延伸到 AutoComplete，并区分全新呈现与同一打开周期内的连续输入：只有从非呈现状态打开时才清空缓存；过滤改变候选数时，以同一 surface 和绝对锚点重算当前弹层，OverlayStack bounds 随当前行数缩短，dirty 继续合并过滤前区域。事件命中、虚拟滚动、键盘显露和绘制裁剪共同使用实际视口。六项聚焦契约与完整库 174 项测试通过。Mentions 与日期类选择弹层仍需逐项审计，不能仅因 Select/Cascader/TreeSelect/AutoComplete 已闭合就视为全部 overlay placement 完成。
+`5117f4d7` 将同一约束延伸到 AutoComplete，并区分全新呈现与同一打开周期内的连续输入：只有从非呈现状态打开时才清空缓存；过滤改变候选数时，以同一 surface 和绝对锚点重算当前弹层，OverlayStack bounds 随当前行数缩短，dirty 继续合并过滤前区域。事件命中、虚拟滚动、键盘显露和绘制裁剪共同使用实际视口。六项聚焦契约与完整库 174 项测试通过。
+
+`ed758bb3` 将同一约束延伸到 Mentions，并把呈现周期绑定到光标前的有效活动 `@` 查询：从非建议状态进入查询时清空缓存，同一查询内连续输入过滤则保留旧脏区。当前 surface、绝对触发锚点、相对弹层与历史绝对脏区由绘制、dirty、命中、虚拟滚动、键盘显露和 OverlayStack bounds 共同消费；登记只覆盖当前实际弹层，不再并入输入框。六项聚焦契约与完整库 180 项测试通过。日期类选择弹层仍需逐项审计，不能仅因 Select/Cascader/TreeSelect/AutoComplete/Mentions 已闭合就视为全部 overlay placement 完成。
 
 ## 焦点
 
