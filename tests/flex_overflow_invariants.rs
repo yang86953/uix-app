@@ -459,3 +459,39 @@ fn wrapped_cross_bootstrap_starts_from_natural_origin() {
         assert_eq!(output.total_size, Size::new(30.0, 25.0));
     }
 }
+
+// 验证空 Flex 的固有主轴由零个子项收敛为零，同时保留父级分配的交叉轴。
+#[test]
+// 水平、垂直和溢出入口必须共享相同的空内容自然尺寸语义。
+fn empty_intrinsic_flex_collapses_only_the_main_axis() {
+    // 构造具有非零原点与两条有限轴的父级内容区。
+    let content_rect = Rect::new(4.0, 6.0, 100.0, 20.0);
+    // 构造水平固有主轴布局。
+    let mut row = FlexLayout::row();
+    // 声明水平主轴由自然内容撑开。
+    row.intrinsic_main = true;
+    // 对空子集执行水平固有尺寸布局。
+    let row_output = row.layout(content_rect, &[]);
+    // 空子集不应生成任何位置。
+    assert!(row_output.positions.is_empty());
+    // 水平主轴应收敛为零，交叉轴继续占用父级分配高度。
+    assert_eq!(row_output.total_size, Size::new(0.0, 20.0));
+
+    // 构造垂直固有主轴布局。
+    let mut column = FlexLayout::column();
+    // 声明垂直主轴由自然内容撑开。
+    column.intrinsic_main = true;
+    // 对空子集执行垂直固有尺寸布局。
+    let column_output = column.layout(content_rect, &[]);
+    // 垂直主轴应收敛为零，交叉轴继续占用父级分配宽度。
+    assert_eq!(column_output.total_size, Size::new(100.0, 0.0));
+
+    // 构造以自然主轴记账的水平溢出布局。
+    let mut overflow = FlexLayout::row();
+    // 开启溢出内容路径，使其采用与固有主轴相同的自然尺寸语义。
+    overflow.overflow_content = true;
+    // 对空子集执行溢出布局。
+    let overflow_output = overflow.layout(content_rect, &[]);
+    // 空溢出内容也应只折叠主轴而保留分配的交叉轴。
+    assert_eq!(overflow_output.total_size, Size::new(0.0, 20.0));
+}
