@@ -183,9 +183,20 @@ mod tests {
                 char_index: 2,
                 font: FontHandle::new(0),
             },
+            PositionedGlyph {
+                x: 30.0,
+                y: 0.0,
+                width: 0.0,
+                height: 12.0,
+                glyph_id: 3,
+                char_index: 3,
+                font: FontHandle::new(0),
+            },
         ];
         // 索引 2 应读取第二个字形的真实宽度，而不是索引 1 的槽位。
         assert_eq!(measured_advance_for_char(&glyphs, 2, 7.0), 20.0);
+        // 后端明确返回的零宽字形不能被误回退为可见宽度。
+        assert_eq!(measured_advance_for_char(&glyphs, 3, 7.0), 0.0);
         // 没有字形的索引应回退到估算宽度。
         assert_eq!(measured_advance_for_char(&glyphs, 1, 7.0), 7.0);
     }
@@ -530,8 +541,8 @@ fn measured_advance_for_char(glyphs: &[PositionedGlyph], char_index: usize, fall
         // 后端的 char_index 对应源文本 chars() 序号，而不是 glyph 数组下标。
         .find(|glyph| glyph.char_index == char_index)
         .map(|glyph| glyph.width)
-        // 缺字、控制字符或异常宽度回退到估算值。
-        .filter(|width| width.is_finite() && *width > 0.0)
+        // 缺字或异常宽度回退到估算值，同时保留后端合法的零宽字形。
+        .filter(|width| width.is_finite() && *width >= 0.0)
         .unwrap_or(fallback)
 }
 
