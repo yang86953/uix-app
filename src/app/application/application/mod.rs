@@ -311,6 +311,8 @@ impl App {
         )
     }
 
+    // 测试目标保留根窗口句柄快捷入口，供外部 GUI 测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn app_handle(&self) -> AppHandle {
         self.app_handle_for_window(WindowId::ROOT)

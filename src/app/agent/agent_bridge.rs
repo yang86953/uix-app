@@ -21,6 +21,8 @@ use crate::core::WindowId;
 use crate::ui::accessibility::semantic_snapshot::SemanticTarget;
 use crate::ui::semantic_action::SemanticAction;
 
+// 默认库测试不启动 agent transport，但仍需编译并保留等待协议的上限契约。
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) const MAX_AGENT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,12 +38,16 @@ pub(crate) struct AgentWindowInfo {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// 默认库测试不启动 agent transport，但仍需保留跨边界等待条件契约。
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) enum AgentWaitCondition {
     RevisionAfter(u64),
     PresentedAtLeast(u64),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+// 默认库测试不启动 agent transport，但仍需保留跨边界等待结果契约。
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) enum AgentWaitOutcome {
     Changed(AgentWindowInfo),
     Presented(AgentWindowInfo),
@@ -49,6 +55,8 @@ pub(crate) enum AgentWaitOutcome {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+// 默认库测试不启动 agent transport，但仍需保留等待错误到协议错误码的映射。
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) enum AgentWaitError {
     InvalidTimeout { requested: Duration, max: Duration },
     WindowNotFound,
@@ -57,6 +65,8 @@ pub(crate) enum AgentWaitError {
     AppClosed,
 }
 
+// 仅在 agent transport 或专门 GUI 测试中消费等待错误码。
+#[cfg_attr(test, allow(dead_code))]
 impl AgentWaitError {
     pub(crate) const fn code(&self) -> AgentErrorCode {
         match self {
@@ -90,6 +100,8 @@ pub(crate) struct AgentBridgeDirectory {
     shared: Arc<AgentBridgeDirectoryShared>,
 }
 
+// 目录 API 由 agent transport/GUI 测试按需消费，默认库测试不启动其消费者。
+#[cfg_attr(test, allow(dead_code))]
 impl AgentBridgeDirectory {
     fn lock_state(&self) -> MutexGuard<'_, AgentBridgeDirectoryState> {
         self.shared
@@ -330,6 +342,8 @@ impl AgentBridgeDirectory {
     }
 }
 
+// 等待结果转换属于 agent transport 的内部契约，默认库测试没有阻塞等待调用。
+#[cfg_attr(test, allow(dead_code))]
 fn wait_outcome(
     window: &AgentWindowInfo,
     condition: AgentWaitCondition,
@@ -381,10 +395,14 @@ impl AgentSemanticsPort for AgentWindowRegistration {
 /// Snapshot/perform return tickets completed by the target UI turn; wait
 /// blocks only its calling transport worker on directory notifications.
 #[derive(Clone)]
+// 进程桥由认证 transport 或外部 GUI 测试创建，默认库测试不构造它。
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) struct AgentProcessBridge {
     runtime: AppRuntime,
 }
 
+// 进程桥的快照、动作与等待入口由 agent transport/GUI 测试按需调用。
+#[cfg_attr(test, allow(dead_code))]
 impl AgentProcessBridge {
     pub(crate) fn new(runtime: AppRuntime) -> Self {
         Self { runtime }

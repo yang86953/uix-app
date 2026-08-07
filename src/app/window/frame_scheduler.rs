@@ -101,11 +101,15 @@ impl FrameScheduler {
         }
     }
 
+    // 测试目标保留 surface generation 观测入口，供帧调度契约测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn generation(&self) -> u64 {
         self.generation
     }
 
+    // 测试目标保留 surface 状态观测入口，供帧调度契约测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn surface_state(&self) -> SurfaceState {
         self.surface_state
@@ -130,6 +134,8 @@ impl FrameScheduler {
         self.outstanding.is_some()
     }
 
+    // 测试目标保留请求 token 观测入口，供帧调度契约测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn outstanding_token(&self) -> Option<FrameRequestToken> {
         self.outstanding.map(|request| request.token)

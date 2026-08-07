@@ -30,6 +30,8 @@ pub(crate) const MAX_AGENT_SETTLE_PASSES: usize = 32;
 /// 窗口级自动化动作（测试 / agent-control 专用命令载荷）。
 #[cfg(any(test, feature = "agent-control"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
+// 默认库测试不启动 agent 消费者，但仍需保留窗口级动作载荷契约。
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) enum AgentWindowAction {
     PressKey { key: KeyCode, modifiers: KeyMod },
     ClickAt { position: Point },
@@ -40,6 +42,8 @@ pub(crate) enum AgentWindowAction {
 
 /// 命令请求契约：快照或执行语义动作。
 #[derive(Debug, Clone, PartialEq)]
+// 默认库测试不启动 agent 消费者，但仍需保留快照/语义动作请求契约。
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) enum AgentCommandRequest {
     Snapshot,
     Perform {
@@ -71,6 +75,8 @@ pub(crate) enum AgentCommandResponse {
 
 /// 面向传输层的错误码（agent-control 传输协议映射用）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// 默认库测试不启动传输层，但仍需保留错误码枚举供协议映射使用。
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) enum AgentErrorCode {
     #[cfg(feature = "agent-control")]
     Unauthorized,
@@ -103,6 +109,8 @@ pub(crate) enum AgentErrorCode {
     Internal,
 }
 
+// 错误码字符串映射只在 agent transport 或专门 GUI 测试中消费。
+#[cfg_attr(test, allow(dead_code))]
 impl AgentErrorCode {
     #[cfg(any(test, feature = "agent-control"))]
     pub(crate) const fn as_str(self) -> &'static str {
@@ -167,6 +175,8 @@ pub(crate) enum AgentCommandError {
     Internal,
 }
 
+// 命令错误码映射只在 agent transport 或专门 GUI 测试中消费。
+#[cfg_attr(test, allow(dead_code))]
 impl AgentCommandError {
     #[cfg(any(test, feature = "agent-control"))]
     pub(crate) const fn code(&self) -> AgentErrorCode {
@@ -191,6 +201,8 @@ pub(crate) type AgentCommandResult = Result<AgentCommandResponse, AgentCommandEr
 
 /// 提交命令的失败语义（队列满 / 已关闭 / 窗口不存在）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// 默认库测试不启动 agent 提交方，但仍需保留提交失败契约。
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) enum AgentSubmitError {
     WindowNotFound,
     QueueFull,
@@ -210,11 +222,15 @@ impl AgentSubmitError {
 
 /// 提交票据：携带响应通道，可同步等待执行结果。
 #[derive(Debug)]
+// 默认库测试不启动 agent 提交方，但仍需保留同步响应票据契约。
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) struct AgentCommandTicket {
     #[cfg_attr(not(any(test, feature = "agent-control")), allow(dead_code))]
     receiver: Receiver<AgentCommandResult>,
 }
 
+// 票据等待入口由 agent transport 或专门 GUI 测试按需消费。
+#[cfg_attr(test, allow(dead_code))]
 impl AgentCommandTicket {
     #[cfg(any(test, feature = "agent-control"))]
     pub(crate) fn recv_timeout(
@@ -230,6 +246,8 @@ pub(crate) struct AgentCommandEnvelope {
     pub(crate) response: SyncSender<AgentCommandResult>,
 }
 
+// 队列容量字段由 agent 提交路径读取，默认库测试不触发该路径。
+#[cfg_attr(test, allow(dead_code))]
 struct AgentQueueInner {
     pending: VecDeque<AgentCommandEnvelope>,
     capacity: usize,
@@ -248,6 +266,8 @@ impl Default for AgentCommandQueue {
     }
 }
 
+// 队列提交与消费 API 由 agent transport/窗口循环按需调用。
+#[cfg_attr(test, allow(dead_code))]
 impl AgentCommandQueue {
     pub(crate) fn new() -> Self {
         Self::with_capacity(DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY)

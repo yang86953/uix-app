@@ -84,6 +84,8 @@ impl MainThreadQueue {
             .clear();
     }
 
+    // 测试目标保留主线程队列长度观测入口，供队列行为测试按需调用。
+    #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.pending.lock().unwrap_or_else(|e| e.into_inner()).len()
