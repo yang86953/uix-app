@@ -395,6 +395,142 @@ fn grid_auto_fraction_span_preserves_intrinsic_extent() {
     assert_eq!(output.total_size, Size::new(100.0, 10.0));
 }
 
+// 验证覆盖全部 Fr 的混合跨轨子项服从父级容量，不通过 Auto 伪造溢出宽度。
+#[test]
+// 覆盖 Auto 与全部 Fr 同处一个 span 时没有外部 Fr 可转移的边界。
+fn grid_auto_fraction_span_covering_all_fractions_respects_parent_capacity() {
+    // 构造自然宽度超过父级的一百二十像素跨轨子项。
+    let mut spanning = LayoutChild::new(ComponentId::new(55), Size::new(120.0, 10.0));
+    // 将跨轨子项显式放入第一格。
+    spanning.grid_cell = Some(0);
+    // 让子项覆盖首个 Auto 与后续全部 Fr 列。
+    spanning.grid_column_span = 3;
+    // 构造首个 Auto 轨道的二十像素单格基础贡献。
+    let mut auto_basis = LayoutChild::new(ComponentId::new(56), Size::new(20.0, 0.0));
+    // 让基础贡献与跨轨子项显式重叠在第一格。
+    auto_basis.grid_cell = Some(0);
+    // 在一百像素父级内运行 Auto、1fr、1fr 三列布局。
+    let output = GridLayout::new()
+        // 首列由内容定宽，后两列共同覆盖全部有效 Fr。
+        .with_columns(vec![
+            // 首列只接受单格 Auto 基础贡献。
+            GridTrack::Auto,
+            // 第二列获得剩余空间的一半。
+            GridTrack::Fr(1.0),
+            // 第三列获得剩余空间的另一半。
+            GridTrack::Fr(1.0),
+        ])
+        // 单行高度继续由内容决定。
+        .with_rows(vec![GridTrack::Auto])
+        // 子项保持自然高度并在宽度不足时受单元格裁剪。
+        .with_align(AlignItems::Start)
+        // 水平起始对齐直接暴露跨轨可用宽度。
+        .with_justify(JustifyContent::Start)
+        // 执行覆盖全部 Fr 的混合跨轨布局。
+        .layout(
+            // 父级容量固定为一百像素，不能被自然宽度扩大。
+            Rect::new(0.0, 0.0, 100.0, 20.0),
+            // 保留跨轨约束与 Auto 基础贡献。
+            &[spanning, auto_basis],
+        );
+    // 跨轨子项必须收敛到父级一百像素容量。
+    assert_eq!(output.positions[0], Rect::new(0.0, 0.0, 100.0, 10.0));
+    // 三条轨道共同占满父级，但不能把总宽扩大到自然宽度。
+    assert_eq!(output.total_size, Size::new(100.0, 10.0));
+}
+
+// 验证没有 Auto 承接转移时，纯 Fr 列跨度保持声明权重。
+#[test]
+// 子项自然宽度不能改写 span 内外相同权重的 Fr 分配。
+fn grid_fraction_only_span_preserves_declared_weights() {
+    // 构造自然宽八十并覆盖前两列的子项。
+    let mut spanning = LayoutChild::new(ComponentId::new(57), Size::new(80.0, 10.0));
+    // 将跨轨子项显式放入第一格。
+    spanning.grid_cell = Some(0);
+    // 让子项覆盖三条 Fr 中的前两条。
+    spanning.grid_column_span = 2;
+    // 构造第三列的零尺寸位置探针。
+    let mut trailing_probe = LayoutChild::new(ComponentId::new(58), Size::zero());
+    // 将探针显式放入第三格以读取前两条 Fr 的总宽度。
+    trailing_probe.grid_cell = Some(2);
+    // 在九十像素父级内运行三条等权 Fr 列。
+    let output = GridLayout::new()
+        // 没有 Auto 轨道可以承接外部 Fr 份额。
+        .with_columns(vec![
+            // 第一列获得三十像素。
+            GridTrack::Fr(1.0),
+            // 第二列获得三十像素。
+            GridTrack::Fr(1.0),
+            // 第三列继续保留三十像素。
+            GridTrack::Fr(1.0),
+        ])
+        // 单行高度由内容决定。
+        .with_rows(vec![GridTrack::Auto])
+        // 子项保持自然高度。
+        .with_align(AlignItems::Start)
+        // 水平起始对齐直接暴露单元格裁剪结果。
+        .with_justify(JustifyContent::Start)
+        // 执行纯 Fr 跨轨布局。
+        .layout(
+            // 九十像素恰好按三份等权分配。
+            Rect::new(0.0, 0.0, 90.0, 20.0),
+            // 保留跨轨约束与末列位置探针。
+            &[spanning, trailing_probe],
+        );
+    // 前两条 Fr 只提供六十像素，子项必须收敛到该单元格宽度。
+    assert_eq!(output.positions[0], Rect::new(0.0, 0.0, 60.0, 10.0));
+    // 末列继续从两份等权 Fr 之后的六十像素处开始。
+    assert_eq!(output.positions[1], Rect::new(60.0, 0.0, 0.0, 0.0));
+    // 三条 Fr 仍共同占满九十像素父级。
+    assert_eq!(output.total_size, Size::new(90.0, 10.0));
+}
+
+// 验证没有 Auto 承接转移时，纯 Fr 行跨度与列轴保持对称。
+#[test]
+// 子项自然高度不能改写 span 内外相同权重的 Fr 行分配。
+fn grid_fraction_only_row_span_preserves_declared_weights() {
+    // 构造自然高八十并覆盖前两行的子项。
+    let mut spanning = LayoutChild::new(ComponentId::new(59), Size::new(10.0, 80.0));
+    // 单列 Grid 的第一格对应首行。
+    spanning.grid_cell = Some(0);
+    // 让子项覆盖三条 Fr 中的前两行。
+    spanning.grid_row_span = 2;
+    // 构造第三行的零尺寸位置探针。
+    let mut trailing_probe = LayoutChild::new(ComponentId::new(60), Size::zero());
+    // 单列 Grid 的第三格对应第三行。
+    trailing_probe.grid_cell = Some(2);
+    // 在九十像素高父级内运行三条等权 Fr 行。
+    let output = GridLayout::new()
+        // 单个 Auto 列由子项自然宽度决定。
+        .with_columns(vec![GridTrack::Auto])
+        // 三条行轨没有 Auto 可以承接外部 Fr 份额。
+        .with_rows(vec![
+            // 第一行获得三十像素。
+            GridTrack::Fr(1.0),
+            // 第二行获得三十像素。
+            GridTrack::Fr(1.0),
+            // 第三行继续保留三十像素。
+            GridTrack::Fr(1.0),
+        ])
+        // 垂直方向使用 Start，让自然高度受跨行单元格可用高度收敛。
+        .with_align(AlignItems::Start)
+        // 水平起始对齐避免无关宽度拉伸。
+        .with_justify(JustifyContent::Start)
+        // 执行纯 Fr 行跨度布局。
+        .layout(
+            // 父级高度固定为九十像素。
+            Rect::new(0.0, 0.0, 20.0, 90.0),
+            // 保留跨行约束与末行位置探针。
+            &[spanning, trailing_probe],
+        );
+    // 前两条 Fr 只提供六十像素，子项高度必须收敛到该范围。
+    assert_eq!(output.positions[0], Rect::new(0.0, 0.0, 10.0, 60.0));
+    // 末行继续从两份等权 Fr 之后的六十像素处开始。
+    assert_eq!(output.positions[1], Rect::new(0.0, 60.0, 0.0, 0.0));
+    // 单列自然宽度为十，三条 Fr 行共同占满九十像素父级。
+    assert_eq!(output.total_size, Size::new(10.0, 90.0));
+}
+
 // 验证没有 Fr 时 Auto track 保持内容尺寸而不吸收全部剩余空间。
 #[test]
 // 覆盖纯 Auto 列的固有宽度与列 gap 账本。
