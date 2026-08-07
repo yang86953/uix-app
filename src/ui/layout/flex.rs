@@ -761,9 +761,10 @@ fn compute_wrapped(
         natural_total_cross
     };
     let cross_start_offset = match cross_align {
-        AlignItems::Center => (container_cross - total_cross) * 0.5,
-        // End 保留负剩余空间，使溢出的自然行组末端仍贴住容器末端。
-        AlignItems::End => container_cross - total_cross,
+        // 只有获得实际交叉轴后才应用 Center，bootstrap 继续从自然起点开始。
+        AlignItems::Center if container_cross > 1.0 => (container_cross - total_cross) * 0.5,
+        // 获得实际交叉轴后 End 保留负剩余空间，使自然行组末端贴住容器末端。
+        AlignItems::End if container_cross > 1.0 => container_cross - total_cross,
         _ => 0.0,
     };
     // 记录所有行中真实占用的最大主轴长度，供固有尺寸与反向布局使用。

@@ -421,3 +421,41 @@ fn wrapped_overflow_flex_end_aligns_negative_cross_space() {
     // 内容尺寸账本保留三十像素最长自然行与二十五像素自然交叉轴高度。
     assert_eq!(output.total_size, Size::new(30.0, 25.0));
 }
+
+// 验证零交叉轴 bootstrap 不会提前应用换行行组对齐偏移。
+#[test]
+// Center 与 End 都应从自然起点开始，等待父级下一轮分配实际尺寸。
+fn wrapped_cross_bootstrap_starts_from_natural_origin() {
+    // 构造两个会在五十像素主轴内各自占据一行的子项。
+    let children = vec![
+        // 首项提供十像素自然行高。
+        LayoutChild::new(ComponentId::new(62), Size::new(30.0, 10.0)),
+        // 次项提供第二个十像素自然行高。
+        LayoutChild::new(ComponentId::new(63), Size::new(30.0, 10.0)),
+    ];
+    // 枚举会在实际负剩余空间下移动行组的两种对齐。
+    let alignments = [AlignItems::Center, AlignItems::End];
+    // 逐种验证 bootstrap 阶段都不生成负坐标。
+    for alignment in alignments {
+        // 构造带五像素固定行距的水平 Flex。
+        let mut layout = FlexLayout::row()
+            // 五像素间距使自然行组总高达到二十五像素。
+            .with_gap(5.0)
+            // 每行主轴从起点排列，隔离交叉轴结果。
+            .with_justify(JustifyContent::Start)
+            // 应用当前受测的交叉轴行组对齐。
+            .with_align(alignment);
+        // 开启换行，使两个三十像素子项分成两行。
+        layout.wrap = true;
+        // 保留自然内容尺寸以覆盖溢出布局入口。
+        layout.overflow_content = true;
+        // 使用非零原点和零交叉轴高度执行首次 bootstrap。
+        let output = layout.layout(Rect::new(4.0, 6.0, 50.0, 0.0), &children);
+        // 首行必须从父级交叉轴自然起点开始，不得向上产生负偏移。
+        assert_eq!(output.positions[0], Rect::new(4.0, 6.0, 30.0, 10.0));
+        // 次行在首行与固定行距之后继续自然排列。
+        assert_eq!(output.positions[1], Rect::new(4.0, 21.0, 30.0, 10.0));
+        // 输出账本由最长自然行与两行自然总高撑开。
+        assert_eq!(output.total_size, Size::new(30.0, 25.0));
+    }
+}
