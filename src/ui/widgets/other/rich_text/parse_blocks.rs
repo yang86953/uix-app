@@ -31,7 +31,7 @@ pub(super) fn parse_block_line(text: &str, segments: &mut Vec<RichTextSegment>) 
         return true;
     }
     // 识别引用行并用竖线前缀和斜体表达引用层级。
-    if let Some(content) = text.strip_prefix("> ") {
+    if let Some(content) = parse_block_quote(text) {
         // 输出稳定的引用视觉前缀。
         push_text_segment("│ ", &RichTextStyle::default(), segments);
         // 引用正文默认使用斜体，同时保留正文内联样式叠加。
@@ -46,6 +46,21 @@ pub(super) fn parse_block_line(text: &str, segments: &mut Vec<RichTextSegment>) 
     }
     // 当前行没有已支持的块级标记。
     false
+}
+
+// 解析行首一级引用，要求大于号后紧跟空格或制表符。
+fn parse_block_quote(text: &str) -> Option<&str> {
+    // 先移除引用的大于号标记。
+    let remaining = text.strip_prefix('>')?;
+    // 读取标记后的第一个字符作为语法分隔符。
+    let separator = remaining.chars().next()?;
+    // 只接受 Markdown 块级标记使用的 ASCII 空格或制表符。
+    if !matches!(separator, ' ' | '\t') {
+        // 没有合法分隔符时让原文继续走普通文本解析。
+        return None;
+    }
+    // 跳过一个分隔字符并返回可继续解析内联语法的正文。
+    Some(&remaining[separator.len_utf8()..])
 }
 
 // 解析行首 ATX 标题并返回标题级别和去除标记后的正文。
