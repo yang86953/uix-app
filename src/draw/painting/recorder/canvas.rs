@@ -5,7 +5,8 @@
 //! CPU segment。
 
 use crate::core::{Errc, Error, Rect};
-use crate::draw::geometry::types::BlendMode;
+// Additive 正交变换准入需要判断圆角是否在旋转或镜像下保持不变。
+use crate::draw::geometry::types::{BlendMode, Radius};
 use crate::draw::painting::{
     FrameEncoder, FrameGlyphBlit, FrameImage, FrameOpacity, FrameRasterOp, FrameRect,
     FrameSampledRect,
@@ -506,17 +507,31 @@ impl FrameRecordingCanvas {
         &self,
         rect: Rect,
         color: Color,
+        radius: Option<Radius>,
     ) -> Option<(FrameRect, FrameRect, Color)> {
-        // 读取当前 transform，并拆出纯平移准入需要的六个分量。
-        let [a, b, transform_x, c, d, transform_y] = self.scratch.current_transform().m;
+        // 读取当前 transform，并拆出单位正交准入需要的六个分量。
+        let transform = self.scratch.current_transform();
+        // 分离线性部分与 surface 平移量，避免把缩放或剪切误判为等距变换。
+        let [a, b, transform_x, c, d, transform_y] = transform.m;
+        // 保留坐标轴方向或镜像时，两个主对角分量必须分别为正负一。
+        let preserves_axes = b == 0.0 && c == 0.0 && a.abs() == 1.0 && d.abs() == 1.0;
+        // 交换坐标轴时，两个副对角分量必须分别为正负一。
+        let swaps_axes = a == 0.0 && d == 0.0 && b.abs() == 1.0 && c.abs() == 1.0;
+        // 两类有符号轴置换共同组成不会改变长度和抗锯齿尺度的单位正交集合。
+        let is_unit_orthogonal = preserves_axes || swaps_axes;
+        // 纯平移不会重排四角，因此仍可保留任意合法圆角组合。
+        let is_pure_translation = a == 1.0 && b == 0.0 && c == 0.0 && d == 1.0;
+        // 直角或四角统一半径在旋转和镜像后无需重排角载荷。
+        let has_transform_invariant_radius = radius.map_or(true, |radius| {
+            // 四个角必须精确相同，才能沿用同一 FrameRadius。
+            radius.tl == radius.tr && radius.tr == radius.br && radius.br == radius.bl
+        });
         // 读取软件路径用于缩放 premultiplied 颜色的同一全局 opacity。
         let opacity = self.scratch.opacity();
         // 只接受能够由固定 Additive shape pipeline 精确表达的画布状态。
         if self.blend_mode != BlendMode::Additive
-            || a != 1.0
-            || b != 0.0
-            || c != 0.0
-            || d != 1.0
+            || !is_unit_orthogonal
+            || (!is_pure_translation && !has_transform_invariant_radius)
             || !opacity.is_finite()
             || !(0.0..=1.0).contains(&opacity)
         {
@@ -538,13 +553,22 @@ impl FrameRecordingCanvas {
             // 分数或非有限 offset/transform 平移继续沿 typed failure 边界处理。
             return None;
         }
-        // 与软件 map_rect 顺序一致：先加 offset，再执行纯平移 transform。
-        let mapped = Rect::new(
-            (rect.x + offset_x) + transform_x,
-            (rect.y + offset_y) + transform_y,
+        // 负尺寸不能借由 transform_rect 的 AABB 归一化伪装成合法图元。
+        if !rect.w.is_finite() || !rect.h.is_finite() || rect.w <= 0.0 || rect.h <= 0.0 {
+            // 保持既有非法几何拒绝边界。
+            return None;
+        }
+        // 与软件 map_rect 顺序一致：先加 offset，再执行完整单位正交 transform。
+        let mapped = transform.transform_rect(Rect::new(
+            // 像素 offset 在本地 x 坐标上先行生效。
+            rect.x + offset_x,
+            // 像素 offset 在本地 y 坐标上先行生效。
+            rect.y + offset_y,
+            // 单位正交变换不会缩放本地宽度。
             rect.w,
+            // 单位正交变换不会缩放本地高度。
             rect.h,
-        );
+        ));
         // 映射后几何必须是完整位于 surface 内的有限正整数矩形。
         let rect = rect_to_frame(mapped).ok()?;
         // 当前纵切不放宽越界或负尺寸几何。

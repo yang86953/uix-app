@@ -4,7 +4,7 @@
 
 > **接口**：声明 graphics 系统的目标 `backend` 模块及 CPU/GPU 执行契约，权威持有“通用 UI GPU Renderer + 薄原生 RHI”的分层。依赖：[painting](painting.md)、[platform/presentation](../platform/presentation.md)。导出：renderer 内部 `RenderBackend`。
 
-> **设计状态**：🔄 迁移中（2026-08-04）。`FramePlan` / `RenderPassPlan` 与 platform 私有薄 RHI 契约已经落地，记录型 adapter 测试覆盖计划顺序与资源代际；D3D11 与可选 `opengles` feature 下的 WGL/EGL OpenGL ES adapter 已能执行 solid mesh、SrcOver/Additive textured quad、gradient、仿射 R8 glyph coverage、RGBA8 MSDF glyph、轴对齐 SrcOver/Additive 实心与圆角矩形、轴对齐 Additive 描边矩形与圆（含整数矩形裁剪、整数像素 offset、纯平移整数 transform 与有限全局 opacity）、变换圆角/描边矩形、原生扇形、共享仿射 box shadow、Picture texture 合成与两段 separable blur 的 RHI 子集，MSDF 已有带硬预算的多页 RGBA8 atlas、gutter 与子区域上传。两个生产 adapter 已启用 retained framebuffer profile，由跨帧 RHI 颜色纹理承接局部更新并在唯一最终边界采样到 swapchain；嵌套 Picture 会在目标首次提交前收敛到同一 RHI/legacy 资源所有者，提交后出现不兼容所有权时返回 typed 错误。CPU soft fallback 会按连续 SrcOver/Additive 语义封为有序 sampled segments，使 retained 主表面与已提交 Picture texture 均可保持 destination-dependent 混合顺序。现有生产 `IGraphicsContext` 和其余 UI pipeline 仍处于兼容迁移阶段；完成状态只以下方自动测试为准。
+> **设计状态**：🔄 迁移中（2026-08-04）。`FramePlan` / `RenderPassPlan` 与 platform 私有薄 RHI 契约已经落地，记录型 adapter 测试覆盖计划顺序与资源代际；D3D11 与可选 `opengles` feature 下的 WGL/EGL OpenGL ES adapter 已能执行 solid mesh、SrcOver/Additive textured quad、gradient、仿射 R8 glyph coverage、RGBA8 MSDF glyph、轴对齐 SrcOver/Additive 实心与圆角矩形、轴对齐 Additive 描边矩形与圆（含整数矩形裁剪、整数像素 offset、纯平移整数 transform、直角/统一圆角图元的单位正交 transform 与有限全局 opacity）、变换圆角/描边矩形、原生扇形、共享仿射 box shadow、Picture texture 合成与两段 separable blur 的 RHI 子集，MSDF 已有带硬预算的多页 RGBA8 atlas、gutter 与子区域上传。两个生产 adapter 已启用 retained framebuffer profile，由跨帧 RHI 颜色纹理承接局部更新并在唯一最终边界采样到 swapchain；嵌套 Picture 会在目标首次提交前收敛到同一 RHI/legacy 资源所有者，提交后出现不兼容所有权时返回 typed 错误。CPU soft fallback 会按连续 SrcOver/Additive 语义封为有序 sampled segments，使 retained 主表面与已提交 Picture texture 均可保持 destination-dependent 混合顺序。现有生产 `IGraphicsContext` 和其余 UI pipeline 仍处于兼容迁移阶段；完成状态只以下方自动测试为准。
 
 > **当前实现线索**：通用部分主要位于 `src/draw/backend/`，帧计划位于 `src/draw/backend/frame_plan.rs`，RHI lowering 位于 `src/draw/backend/rhi_renderer.rs`、`src/draw/backend/rhi_renderer_coverage.rs`、`src/draw/backend/rhi_renderer_msdf.rs`、`src/draw/backend/rhi_renderer_shape.rs`、`src/draw/backend/rhi_renderer_shadow.rs`、`src/draw/backend/rhi_renderer_blur.rs`、`src/draw/backend/rhi_renderer_mixed.rs` 与 `src/draw/backend/gpu/submit.rs`；薄 RHI 契约位于 `src/native/present/rhi.rs`，兼容接口位于 `src/native/present/`，D3D11 实现位于 `src/native/presentation/graphics/d3d11/`，OpenGL ES 实现位于 `src/native/presentation/graphics/opengl/raster/rhi*.rs`、`src/native/presentation/graphics/opengl/rhi_host.rs` 与 WGL/EGL platform context。
 
@@ -130,7 +130,7 @@ GPU 基线内的操作不能依赖常态 CPU fallback。可选效果可以显式
 - mock RHI 测试覆盖 pass 顺序、一次最终 present、受控 SurfaceLost，以及 resize 后旧代计划拒绝与新代计划恢复；失败帧不消费 damage。
 - 通用 canvas 单元测试覆盖 soft fallback 在 SrcOver/Additive 交替时的分段顺序与成功提交后的 staging 消费。
 - 通用 canvas 与 capability 单元测试覆盖生产 RHI profile 的 Additive shape 直达入队、可选能力门禁及无能力时的 soft 回退。
-- FrameRecordingCanvas、FrameEncoder 与 NativeGpuCanvas2D 单元测试覆盖 Additive 矩形/圆的填充与描边命令事实、整数矩形裁剪、正负整数像素 offset、纯平移整数 transform、有限全局 opacity 的 premultiplied 颜色折叠、目标相关 CPU 参考像素、能力/轴对齐门禁、blend 批隔离，以及带物理 scissor 的 `AdditiveShape` lowering。
+- FrameRecordingCanvas、FrameEncoder 与 NativeGpuCanvas2D 单元测试覆盖 Additive 矩形/圆的填充与描边命令事实、整数矩形裁剪、正负整数像素 offset、纯平移整数 transform、直角/统一圆角图元的单位正交 transform、有限全局 opacity 的 premultiplied 颜色折叠、目标相关 CPU 参考像素、非统一圆角/缩放拒绝边界、能力/轴对齐门禁、blend 批隔离，以及带物理 scissor 的 `AdditiveShape` lowering。
 - 缺少运行环境的组合记为未测试，不生成独立完成记录。
 
 ## 迁移约束与测试
