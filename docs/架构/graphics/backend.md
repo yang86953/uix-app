@@ -125,7 +125,7 @@ GPU 基线内的操作不能依赖常态 CPU fallback。可选效果可以显式
 
 - Windows 真窗测试覆盖 D3D11 与 OpenGL ES/WGL 的 RHI surface、`FramePlan`、present、resize 和兼容遍历。
 - `test-harness` 测试覆盖 DeviceLost、SurfaceLost、teardown/rebuild 与恢复后交互。
-- mock RHI 测试覆盖 pass 顺序、资源代际、一次最终 present 和失败帧不消费 damage。
+- mock RHI 测试覆盖 pass 顺序、一次最终 present、受控 SurfaceLost，以及 resize 后旧代计划拒绝与新代计划恢复；失败帧不消费 damage。
 - 缺少运行环境的组合记为未测试，不生成独立完成记录。
 
 ## 迁移约束与测试
