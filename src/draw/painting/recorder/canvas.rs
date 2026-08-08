@@ -226,6 +226,17 @@ impl FrameRecordingCanvas {
         if opacity.is_transparent() {
             return Ok(true);
         }
+        // Additive raw image 优先尝试复用现有 sampled textured pipeline。
+        if self.blend_mode == BlendMode::Additive {
+            // 只有完整 clip 与 identity transform 会在辅助模块中安全直达。
+            return self.record_additive_image_blit(
+                pixels,
+                source_width,
+                source_rect,
+                destination_rect,
+                opacity,
+            );
+        }
         let Ok(source_stride) = usize::try_from(source_width) else {
             return Ok(false);
         };
