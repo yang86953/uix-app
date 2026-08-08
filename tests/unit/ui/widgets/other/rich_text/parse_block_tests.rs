@@ -63,3 +63,39 @@ fn keeps_inline_emphasis_without_list_boundary() {
         }]
     );
 }
+
+// 验证引用接受制表符分隔，同时拒绝没有分隔符的相似文本。
+#[test]
+fn block_quotes_require_space_or_tab_separators() {
+    // 解析使用制表符分隔且包含粗体的引用行。
+    let quoted = parse_rich_text(">\t**引用**");
+    // 引用斜体应与正文粗体叠加，并保留稳定的可见前缀。
+    assert_eq!(
+        quoted,
+        vec![
+            RichTextSegment::Text {
+                content: "│ ".into(),
+                style: RichTextStyle::default(),
+            },
+            RichTextSegment::Text {
+                content: "引用".into(),
+                style: RichTextStyle {
+                    bold: true,
+                    italic: true,
+                    ..Default::default()
+                },
+            },
+        ]
+    );
+
+    // 解析大于号后没有任何空白分隔符的普通文本。
+    let literal = parse_rich_text(">不是引用");
+    // 不满足块级边界时应完整保留原始文本。
+    assert_eq!(
+        literal,
+        vec![RichTextSegment::Text {
+            content: ">不是引用".into(),
+            style: RichTextStyle::default(),
+        }]
+    );
+}
