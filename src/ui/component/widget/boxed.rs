@@ -31,6 +31,29 @@ pub struct BoxedWidget {
     accessibility_override: Option<AccessibilityOverride>,
 }
 
+// 在可能展开 panic 的操作之后恢复调用方提供的可变状态。
+fn run_with_unwind_restore<T, R>(
+    // 接收需要在操作结束后恢复的可变状态。
+    target: &mut T,
+    // 接收可能正常返回或触发 panic 的主体操作。
+    operation: impl FnOnce(&mut T) -> R,
+    // 接收无论主体结果如何都必须执行的恢复操作。
+    restore: impl FnOnce(&mut T),
+    // 返回主体操作的原始结果类型。
+) -> R {
+    // 捕获展开过程，以便先恢复状态再继续传播 panic。
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| operation(target)));
+    // 在正常返回和 panic 展开两条路径上都执行恢复。
+    restore(target);
+    // 保持调用方可观察到的返回值或 panic 载荷不变。
+    match result {
+        // 正常路径直接返回主体结果。
+        Ok(value) => value,
+        // 异常路径原样恢复展开，避免吞掉组件 panic。
+        Err(payload) => std::panic::resume_unwind(payload),
+    }
+}
+
 impl BoxedWidget {
     pub fn new(component: Box<dyn WidgetComponent>) -> Self {
         Self::new_with_context(component, current_provider_context())
@@ -745,12 +768,24 @@ impl BoxedWidget {
             .component_tokens
             .get(self.component.as_any().type_id());
         let previous_scope = ctx.replace_token_scope(theme, patch);
-        self.with_component_context(|component| {
-            if let Some(render) = component.as_render() {
-                render.render(frame, ctx, tree);
-            }
-        });
-        ctx.restore_token_scope(previous_scope);
+        // 将组件绘制包进必定恢复 TokenScope 的 panic 展开边界。
+        run_with_unwind_restore(
+            // 传入当前 UI 绘制上下文作为需要恢复的状态。
+            ctx,
+            // 在临时主题作用域内执行组件绘制。
+            |ctx| {
+                // 保持 ProviderContext 与组件调用约定不变。
+                self.with_component_context(|component| {
+                    // 仅调用具备绘制能力的组件。
+                    if let Some(render) = component.as_render() {
+                        // 把当前临时作用域中的上下文交给组件。
+                        render.render(frame, ctx, tree);
+                    }
+                });
+            },
+            // 无论正常返回或 panic 都恢复进入组件前的令牌作用域。
+            |ctx| ctx.restore_token_scope(previous_scope),
+        );
     }
 }
 
@@ -800,3 +835,10 @@ impl WidgetCore for BoxedWidget {
         self.set_tab_index_override(Some(v));
     }
 }
+
+// 仅在测试构建中编译 TokenScope 展开回归。
+#[cfg(test)]
+// 将子模块显式定位到 widget 目录中的独立测试文件。
+#[path = "boxed_scope_tests.rs"]
+// 从独立文件加载作用域恢复测试，保持本文件低于行数上限。
+mod boxed_scope_tests;
