@@ -8,7 +8,7 @@ use std::ffi::c_void;
 use crate::native::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps,
-    PresentCoherency, PresentDamage, PresentFrame, SoftFallbackTile,
+    PresentCoherency, PresentDamage, PresentFrame,
 };
 // 引入项目统一错误和结果类型。
 use crate::native::{Errc, Error, Result};
@@ -284,21 +284,6 @@ impl IGraphicsContext for WglContext {
         // 委托给 glyph atlas owner。
         self.pipeline
             .draw_glyphs(viewport_w, viewport_h, scissor, glyphs)
-    }
-
-    // 将 bounded soft fallback tile 覆盖到当前 target。
-    fn blit_soft_fallback_tile(
-        &mut self,
-        pixels: &[u32],
-        tile: SoftFallbackTile,
-    ) -> Result<(), Error> {
-        // 确保 upload 发生在创建 context 的 owner thread。
-        self.make_current_result()?;
-        // 读取当前 target 的逻辑尺寸。
-        let (target_width, target_height) = self.pipeline.current_target_size();
-        // 委托给 OpenGL soft texture owner。
-        self.pipeline
-            .blit_soft_fallback_tile(pixels, target_width, target_height, tile)
     }
 
     // 清理当前 target 的 bounded rects。

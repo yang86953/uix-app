@@ -132,33 +132,3 @@ void main() {
     fragColor = vec4(rgb, alpha) / 255.0;
 }
 "#;
-
-/// CPU fallback texture composite shader, including the little-endian BGRA
-/// swizzle required for AARRGGBB upload data.
-pub const BLIT_FRAG: &str = r#"#version 300 es
-precision highp float;
-
-in vec2 v_uv;
-uniform sampler2D u_tex;
-uniform vec4 u_uv_rect;
-
-out vec4 fragColor;
-
-void main() {
-    fragColor = texture(u_tex, u_uv_rect.xy + v_uv * u_uv_rect.zw).bgra;
-}
-"#;
-
-/// Full-screen quad vertex shader for blur and texture composite passes.
-pub const FULLSCREEN_VERT: &str = r#"#version 300 es
-precision highp float;
-
-in vec2 a_pos;
-out vec2 v_uv;
-
-void main() {
-    gl_Position = vec4(a_pos, 0.0, 1.0);
-    v_uv = a_pos * 0.5 + 0.5;
-    v_uv.y = 1.0 - v_uv.y;
-}
-"#;

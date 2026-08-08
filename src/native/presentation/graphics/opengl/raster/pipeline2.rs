@@ -1,72 +1,7 @@
 use super::*;
 
-// 复用主 raster 类型承载离屏、软回退和状态恢复操作。
+// 复用主 raster 类型承载状态恢复与 readback 操作。
 impl OpenGlRasterPipeline {
-    pub(crate) fn blit_soft_fallback_tile(
-        &mut self,
-        pixels: &[u32],
-        target_width: i32,
-        target_height: i32,
-        tile: SoftFallbackTile,
-    ) -> Result<()> {
-        validate_tile(pixels, target_width, target_height, tile)?;
-        self.ensure_soft_texture(target_width, target_height)?;
-        unsafe {
-            self.gl().disable(glow::SCISSOR_TEST);
-            self.gl().active_texture(glow::TEXTURE0);
-            self.gl().bind_texture(glow::TEXTURE_2D, self.soft_texture);
-            // GLES has no portable unpack-row-length state. The compact
-            // API-neutral tile is therefore uploaded one row at a time; its
-            // BGRA bytes are swizzled by BLIT_FRAG.
-            for row in 0..tile.height {
-                let start = row as usize * tile.width as usize;
-                let end = start + tile.width as usize;
-                let bytes = std::slice::from_raw_parts(
-                    pixels[start..end].as_ptr() as *const u8,
-                    tile.width as usize * std::mem::size_of::<u32>(),
-                );
-                self.gl().tex_sub_image_2d(
-                    glow::TEXTURE_2D,
-                    0,
-                    tile.dst_x,
-                    tile.dst_y + row,
-                    tile.width,
-                    1,
-                    glow::RGBA,
-                    glow::UNSIGNED_BYTE,
-                    glow::PixelUnpackData::Slice(Some(bytes)),
-                );
-            }
-            self.gl().enable(glow::BLEND);
-            self.gl()
-                // CPU fallback storage is premultiplied AARRGGBB. Its sampled
-                // RGB already contains alpha, so SRC_ALPHA would darken the
-                // segment a second time.
-                .blend_func(glow::ONE, glow::ONE_MINUS_SRC_ALPHA);
-            self.gl().use_program(Some(self.blit_bgra_program));
-            self.gl().uniform_1_i32(self.blit_bgra_texture.as_ref(), 0);
-            self.gl().uniform_4_f32(
-                self.blit_bgra_uv.as_ref(),
-                tile.dst_x as f32 / target_width as f32,
-                tile.dst_y as f32 / target_height as f32,
-                tile.width as f32 / target_width as f32,
-                tile.height as f32 / target_height as f32,
-            );
-            self.set_destination_viewport(
-                tile.dst_x as f32,
-                tile.dst_y as f32,
-                tile.width as f32,
-                tile.height as f32,
-            );
-            self.gl().bind_vertex_array(Some(self.blit_vao));
-            self.gl().draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
-            self.gl().bind_vertex_array(None);
-            self.gl().bind_texture(glow::TEXTURE_2D, None);
-        }
-        self.restore_full_viewport();
-        self.check_gl_error("blit_soft_fallback_tile")
-    }
-
     pub(crate) fn bind_swapchain_target(&mut self) {
         self.current = self.swapchain;
         self.bind_current_framebuffer();
@@ -134,28 +69,9 @@ impl OpenGlRasterPipeline {
             if let Some(texture) = self.glyph_atlas_texture.take() {
                 self.gl().delete_texture(texture);
             }
-            self.gl().delete_vertex_array(self.blit_vao);
-            self.gl().delete_buffer(self.blit_vbo);
-            self.gl().delete_program(self.blit_bgra_program);
-            if let Some(texture) = self.soft_texture.take() {
-                self.gl().delete_texture(texture);
-            }
         }
         self.glyph_atlas_cache.clear();
         self.glyph_vertices.clear();
-    }
-
-    pub(super) fn ensure_soft_texture(&mut self, width: i32, height: i32) -> Result<()> {
-        if self.soft_texture.is_some() && self.soft_width == width && self.soft_height == height {
-            return Ok(());
-        }
-        let texture = unsafe { create_texture(self.gl(), width, height)? };
-        if let Some(previous) = self.soft_texture.replace(texture) {
-            unsafe { self.gl().delete_texture(previous) };
-        }
-        self.soft_width = width;
-        self.soft_height = height;
-        Ok(())
     }
 
     pub(super) fn bind_current_framebuffer(&self) {
@@ -186,18 +102,6 @@ impl OpenGlRasterPipeline {
         unsafe {
             self.gl().enable(glow::SCISSOR_TEST);
             self.gl().scissor(x, y, width, height);
-        }
-    }
-
-    pub(super) fn set_destination_viewport(&self, x: f32, y: f32, width: f32, height: f32) {
-        let dpr = self.current.dpr.max(1.0);
-        unsafe {
-            self.gl().viewport(
-                (x * dpr).floor() as i32,
-                ((self.current.logical_height as f32 - y - height).max(0.0) * dpr).floor() as i32,
-                (width * dpr).ceil().max(1.0) as i32,
-                (height * dpr).ceil().max(1.0) as i32,
-            );
         }
     }
 }

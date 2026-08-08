@@ -24,7 +24,7 @@ use crate::core::{Errc, Error, Result};
 use crate::native::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect, GraphicsContextCaps, IGraphicsContext,
-    NativeRasterCaps, PresentDamage, PresentFrame, PresentTestResult, SoftFallbackTile,
+    NativeRasterCaps, PresentDamage, PresentFrame, PresentTestResult,
 };
 
 pub(crate) fn bind_to_current_thread(
@@ -251,7 +251,6 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
     forward_result!(draw_solid_meshes(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, meshes: &[GpuSolidMesh]) -> ());
     forward_result!(draw_box_shadows(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, shadows: &[GpuBoxShadow]) -> ());
     forward_result!(draw_image_blits(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, blits: &[GpuImageBlit]) -> ());
-    forward_result!(blit_soft_fallback_tile(pixels: &[u32], tile: SoftFallbackTile) -> ());
     forward_result!(clear_rects(viewport_w: f32, viewport_h: f32, rects: &[GpuSolidRect]) -> ());
     forward_result!(bind_swapchain_target() -> ());
 }

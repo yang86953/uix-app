@@ -24,15 +24,6 @@ impl OpenGlRasterPipeline {
         let glyph_program =
             unsafe { compile_program(gl, shaders::GLYPH_VERT, shaders::GLYPH_FRAG, "glyph")? };
         let (glyph_vao, glyph_vbo) = unsafe { create_glyph_buffer(gl)? };
-        let blit_bgra_program = unsafe {
-            compile_program(
-                gl,
-                shaders::FULLSCREEN_VERT,
-                shaders::BLIT_FRAG,
-                "bgra blit",
-            )?
-        };
-        let (blit_vao, blit_vbo) = unsafe { create_quad(gl, &FULLSCREEN_VERTICES)? };
         let swapchain = TargetState::swapchain(
             logical_width,
             logical_height,
@@ -73,16 +64,6 @@ impl OpenGlRasterPipeline {
             glyph_atlas_cursor: GlyphAtlasCursor::default(),
             glyph_atlas_cache: HashMap::new(),
             glyph_vertices: Vec::new(),
-            blit_vao,
-            blit_vbo,
-            blit_bgra_program,
-            blit_bgra_texture: unsafe { gl.get_uniform_location(blit_bgra_program, "u_tex") },
-            blit_bgra_uv: unsafe { gl.get_uniform_location(blit_bgra_program, "u_uv_rect") },
-            // Glyph-only/native-only frames must not retain an unused
-            // full-target RGBA soft-upload texture.
-            soft_texture: None,
-            soft_width: 0,
-            soft_height: 0,
             runtime,
             swapchain,
             current: swapchain,
@@ -139,10 +120,6 @@ impl OpenGlRasterPipeline {
         }
         self.restore_full_viewport();
         self.check_gl_error("clear_render_target")
-    }
-
-    pub(crate) fn current_target_size(&self) -> (i32, i32) {
-        (self.current.logical_width, self.current.logical_height)
     }
 
     pub(crate) fn clear_rects(&mut self, rects: &[GpuSolidRect]) -> Result<()> {

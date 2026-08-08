@@ -184,7 +184,6 @@ pub struct GpuImageBlit {
 pub struct NativeRasterCaps {
     pub clear_target: bool,
     pub clear_rects: bool,
-    pub soft_blit: bool,
     pub solid_rects: bool,
     pub stroke_rects: bool,
     pub glyphs: bool,
@@ -207,7 +206,6 @@ impl NativeRasterCaps {
         Self {
             clear_target: true,
             clear_rects: true,
-            soft_blit: true,
             solid_rects: true,
             stroke_rects: true,
             glyphs: true,
@@ -229,7 +227,6 @@ impl NativeRasterCaps {
         Self {
             clear_target: true,
             clear_rects: false,
-            soft_blit: false,
             solid_rects: true,
             stroke_rects: true,
             glyphs: true,
@@ -246,7 +243,8 @@ impl NativeRasterCaps {
     }
 
     pub const fn has_hybrid_baseline(self) -> bool {
-        self.clear_target && self.soft_blit
+        // hybrid soft segment 已由 thin RHI sampled texture 承载，不再依赖 adapter soft API。
+        self.clear_target
     }
 
     pub const fn has_gpu_only_baseline(self) -> bool {
@@ -277,7 +275,7 @@ mod native_raster_profile_tests {
         assert!(d3d11.retained_framebuffer);
         // D3D11 生产 profile 必须同步暴露真实的 RHI Additive 能力。
         assert!(d3d11.rhi_additive_blend);
-        // D3D11 仍须满足 hybrid 兼容基线。
+        // D3D11 仍须满足不依赖逐 UI soft upload 的 hybrid 录制基线。
         assert!(d3d11.has_hybrid_baseline());
 
         // 读取 WGL/EGL OpenGL ES 的 GPU-only profile。
@@ -366,69 +364,6 @@ pub fn validate_pixel_buffer(pixels: &[u32], width: i32, height: i32) -> Result<
         ));
     }
     Ok(())
-}
-
-/// Bounded, tightly packed CPU soft-raster segment.
-///
-/// `pixels` passed to [`IGraphicsContext::blit_soft_fallback_tile`] contain
-/// exactly this tile in top-left row-major order. The destination is separate
-/// from that compact source so callers never need to retain or upload a full
-/// frame merely to place one fallback segment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SoftFallbackTile {
-    pub dst_x: i32,
-    pub dst_y: i32,
-    pub width: i32,
-    pub height: i32,
-}
-
-impl SoftFallbackTile {
-    pub const fn at_destination(dst_x: i32, dst_y: i32, width: i32, height: i32) -> Self {
-        Self {
-            dst_x,
-            dst_y,
-            width,
-            height,
-        }
-    }
-
-    pub fn required_pixels(self) -> Option<usize> {
-        if self.width <= 0 || self.height <= 0 {
-            return None;
-        }
-        usize::try_from(i64::from(self.width) * i64::from(self.height)).ok()
-    }
-
-    pub fn validate_payload(self, pixels: &[u32]) -> Result<()> {
-        if self.dst_x < 0 || self.dst_y < 0 {
-            return Err(Error::new(
-                crate::core::error::Errc::InvalidArgument,
-                format!(
-                    "soft fallback destination must be nonnegative, got {},{}",
-                    self.dst_x, self.dst_y
-                ),
-            ));
-        }
-        let Some(required) = self.required_pixels() else {
-            return Err(Error::new(
-                crate::core::error::Errc::InvalidArgument,
-                format!(
-                    "soft fallback tile extent must be positive, got {}x{}",
-                    self.width, self.height
-                ),
-            ));
-        };
-        if pixels.len() != required {
-            return Err(Error::new(
-                crate::core::error::Errc::InvalidArgument,
-                format!(
-                    "soft fallback tile payload has {} pixels, need {required}",
-                    pixels.len()
-                ),
-            ));
-        }
-        Ok(())
-    }
 }
 
 /// CPU pixel presenter.

@@ -10,11 +10,11 @@ use crate::core::{Errc, Error, Rect};
 use crate::draw::geometry::types::{BlendMode, Transform};
 use crate::draw::raster::pixel_surface::PixelSurface;
 use crate::draw::raster::shared_rasterizer::SharedRasterizer;
-use crate::native::present::{NativeRasterCaps, SoftFallbackTile};
+use crate::native::present::NativeRasterCaps;
 
 use super::pending::PendingNativeOp;
 // 复用与 legacy/RHI 提交相同的最小可见 tile 打包规则。
-use super::tile::pack_visible_soft_fallback_tile;
+use super::tile::{pack_visible_soft_fallback_tile, SoftFallbackTile};
 use super::StateSnapshot;
 
 // 保存一个已经封口、可按固定 blend 语义提交的 CPU soft 段。
@@ -185,11 +185,7 @@ impl NativeGpuCanvas2D {
         // 取得当前 soft surface 的最小可见 tile。
         let (pixels, tile) = self.soft_fallback.as_ref().and_then(|soft| {
             // 使用目标逻辑尺寸裁剪并紧密打包。
-            pack_visible_soft_fallback_tile(
-                soft.surface().pixels(),
-                self.surface_w,
-                self.surface_h,
-            )
+            pack_visible_soft_fallback_tile(soft.surface().pixels(), self.surface_w, self.surface_h)
         })?;
         // 返回带固定 blend 事实的不可变段。
         Some(PackedSoftSegment {

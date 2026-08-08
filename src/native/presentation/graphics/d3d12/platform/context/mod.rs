@@ -11,7 +11,7 @@ use std::ffi::c_void;
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
     GpuGlyphBlit, GpuSolidRect, GraphicsApi, GraphicsContextCaps, IGraphicsContext,
-    NativeRasterCaps, PresentCoherency, PresentDamage, PresentFrame, SoftFallbackTile,
+    NativeRasterCaps, PresentCoherency, PresentDamage, PresentFrame,
 };
 use crate::native::presentation::graphics::platform::windows as win_surface;
 use ::windows::core::Interface;

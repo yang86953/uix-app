@@ -1,12 +1,11 @@
 //! D3D11 native geometry pipeline — solid/stroke rects + glyph atlas +
-//! path meshes + box shadow + soft blit.
+//! path meshes + box shadow.
 //!
 //! Hot Canvas2D paths: `fill_rect` / `fill_circle` / `stroke_rect` /
 //! `stroke_circle` (+ axis-aligned `draw_line` via solid fill), identity
 //! solid `blit_glyph` via coverage atlas, identity linear/radial gradient
 //! fills, identity simple `fill_path` / `stroke_path` (CPU tessellate →
 //! solid triangles), and identity box/ambient shadow (SDF outer glow).
-//! Soft blit for the rest (#169).
 
 #![allow(nonstandard_style)]
 
@@ -15,7 +14,7 @@ use std::{collections::HashMap, ffi::CStr, mem::size_of, sync::Arc};
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
-    GpuSolidMesh, GpuSolidRect, GpuStrokeRect, SoftFallbackTile,
+    GpuSolidMesh, GpuSolidRect, GpuStrokeRect,
 };
 use ::windows::core::PCSTR;
 use ::windows::Win32::Foundation::{FALSE, RECT, TRUE};
@@ -36,7 +35,6 @@ use ::windows::Win32::Graphics::Direct3D11::{
     D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC,
     D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_SUBRESOURCE_DATA, D3D11_TEX2D_SRV,
     D3D11_TEXTURE2D_DESC, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_USAGE_DEFAULT, D3D11_USAGE_DYNAMIC,
-    D3D11_VIEWPORT,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32_FLOAT,
@@ -521,14 +519,6 @@ struct RectConstants {
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-struct BlitConstants {
-    uv_rect: [f32; 4],
-    // 对 premultiplied 离屏采样结果执行组 opacity 缩放。
-    tint: [f32; 4],
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
 struct GlyphConstants {
     viewport: [f32; 2],
     _pad0: [f32; 2],
@@ -720,7 +710,6 @@ pub struct D3d11Pipeline {
     ps_rect: ID3D11PixelShader,
     layout: ID3D11InputLayout,
     vs_blit: ID3D11VertexShader,
-    ps_blit: ID3D11PixelShader,
     /// 可分离高斯模糊像素着色器。
     ps_blur: ID3D11PixelShader,
     vs_glyph: ID3D11VertexShader,
@@ -742,13 +731,11 @@ pub struct D3d11Pipeline {
     // 兼容层动态 BGRA 图片纹理与 SRV 的所有权。
     image: rhi_image::D3d11ImageOwner,
     vb_unit: ID3D11Buffer,
-    vb_fullscreen: ID3D11Buffer,
     vb_glyph: ID3D11Buffer,
     vb_glyph_capacity: usize,
     vb_mesh: ID3D11Buffer,
     vb_mesh_capacity_floats: usize,
     cb: ID3D11Buffer,
-    cb_blit: ID3D11Buffer,
     cb_glyph: ID3D11Buffer,
     cb_grad: ID3D11Buffer,
     cb_mesh: ID3D11Buffer,
@@ -760,10 +747,6 @@ pub struct D3d11Pipeline {
     blend_replace: ID3D11BlendState,
     rasterizer: ID3D11RasterizerState,
     sampler: ID3D11SamplerState,
-    soft_tex: Option<ID3D11Texture2D>,
-    soft_srv: Option<ID3D11ShaderResourceView>,
-    soft_w: i32,
-    soft_h: i32,
     atlas_tex: Option<ID3D11Texture2D>,
     atlas_srv: Option<ID3D11ShaderResourceView>,
     atlas_w: u32,

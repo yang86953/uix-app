@@ -206,10 +206,6 @@ impl D3d11Context {
         Ok(())
     }
 
-    pub(super) fn current_target_size(&self) -> (i32, i32) {
-        (self.width, self.height)
-    }
-
     pub(super) fn bind_current_draw_target(&mut self) -> Result<()> {
         self.ensure_rtv()?;
         if let Some(rtv) = self.rtv.as_ref() {

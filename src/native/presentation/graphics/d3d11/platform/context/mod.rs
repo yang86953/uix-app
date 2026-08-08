@@ -23,7 +23,7 @@ use crate::native::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect, GraphicsApi, GraphicsContextCaps, IGraphicsContext,
     NativeRasterCaps, PresentCoherency, PresentDamage, PresentFrame, PresentOcclusionSupport,
-    PresentTestResult, SoftFallbackTile,
+    PresentTestResult,
 };
 use crate::native::presentation::graphics::platform::windows as win_surface;
 use ::windows::core::Interface;

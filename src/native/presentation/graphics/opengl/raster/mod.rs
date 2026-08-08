@@ -9,9 +9,7 @@ use std::sync::Arc;
 use glow::HasContext as _;
 
 use crate::core::{Errc, Error, Result};
-use crate::native::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuSolidRect, GpuStrokeRect, SoftFallbackTile,
-};
+use crate::native::present::{GpuBoxShadow, GpuGlyphBlit, GpuSolidRect, GpuStrokeRect};
 
 use super::{shaders, NativeOpenGlRuntime};
 
@@ -126,14 +124,6 @@ pub(crate) struct OpenGlRasterPipeline {
     glyph_atlas_cursor: GlyphAtlasCursor,
     glyph_atlas_cache: HashMap<GlyphAtlasKey, GlyphAtlasEntry>,
     glyph_vertices: Vec<GlyphVertex>,
-    blit_vao: glow::VertexArray,
-    blit_vbo: glow::Buffer,
-    blit_bgra_program: glow::Program,
-    blit_bgra_texture: Option<glow::UniformLocation>,
-    blit_bgra_uv: Option<glow::UniformLocation>,
-    soft_texture: Option<glow::Texture>,
-    soft_width: i32,
-    soft_height: i32,
     swapchain: TargetState,
     current: TargetState,
     released: bool,
@@ -184,7 +174,6 @@ impl Drop for OpenGlRasterPipeline {
 }
 
 const RECT_VERTICES: [f32; 12] = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0];
-const FULLSCREEN_VERTICES: [f32; 8] = [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0];
 
 fn next_power_of_two(value: u32) -> u32 {
     value.max(1).checked_next_power_of_two().unwrap_or(u32::MAX)
@@ -370,30 +359,6 @@ unsafe fn compile_shader(
         ));
     }
     Ok(shader)
-}
-
-pub(crate) fn validate_tile(
-    pixels: &[u32],
-    target_width: i32,
-    target_height: i32,
-    tile: SoftFallbackTile,
-) -> Result<()> {
-    if target_width <= 0 || target_height <= 0 {
-        return Err(Error::new(
-            Errc::InvalidArgument,
-            "OpenGL soft target extent must be positive",
-        ));
-    }
-    tile.validate_payload(pixels)?;
-    if tile.dst_x.saturating_add(tile.width) > target_width
-        || tile.dst_y.saturating_add(tile.height) > target_height
-    {
-        return Err(Error::new(
-            Errc::InvalidArgument,
-            "OpenGL soft fallback tile is outside its destination target",
-        ));
-    }
-    Ok(())
 }
 
 fn gl_error(operation: &str, error: String) -> Error {

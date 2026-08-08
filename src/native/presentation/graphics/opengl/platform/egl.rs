@@ -13,7 +13,7 @@ use std::ptr;
 use crate::native::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps,
-    PresentCoherency, PresentDamage, SoftFallbackTile,
+    PresentCoherency, PresentDamage,
 };
 // 引入共享的 OpenGL RHI host 生命周期实现。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
@@ -598,17 +598,6 @@ impl IGraphicsContext for EglContext {
         self.make_current()?;
         self.pipeline
             .draw_glyphs(viewport_w, viewport_h, scissor, glyphs)
-    }
-
-    fn blit_soft_fallback_tile(
-        &mut self,
-        pixels: &[u32],
-        tile: SoftFallbackTile,
-    ) -> Result<(), Error> {
-        self.make_current()?;
-        let (target_width, target_height) = self.pipeline.current_target_size();
-        self.pipeline
-            .blit_soft_fallback_tile(pixels, target_width, target_height, tile)
     }
 
     fn clear_rects(
