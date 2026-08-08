@@ -12,6 +12,8 @@
 
 pub(crate) mod canvas;
 pub(crate) mod canvas2d;
+// recorder 只在可保真 source scratch 状态下接受路径 coverage clip。
+pub(crate) mod canvas_clip;
 // raw image 的 retained crop 与 Additive sampled 直达逻辑独立于画布主体。
 pub(crate) mod canvas_image;
 pub(crate) mod geometry;

@@ -30,7 +30,7 @@ impl FrameRecordingCanvas {
         opacity: FrameOpacity,
     ) -> Result<bool, Error> {
         // PictureBlit 当前不携带任意 canvas clip，只有完整 surface clip 才能直达。
-        if self.scratch.current_clip() != self.full_rect() {
+        if self.scratch.has_clip_mask() || self.scratch.current_clip() != self.full_rect() {
             // 部分 clip 必须由 software source tile 烘焙。
             return Ok(false);
         }

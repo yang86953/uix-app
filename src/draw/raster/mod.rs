@@ -17,6 +17,8 @@ pub(crate) mod software_rasterizer_clip;
 pub(crate) mod software_rasterizer_fill;
 // 渐变在共享软件执行器中统一保留 offset、仿射、裁剪与混合语义。
 pub(crate) mod software_rasterizer_gradient;
+// 字形 coverage 在共享软件执行器中统一保留仿射、裁剪、透明度与混合语义。
+pub(crate) mod software_rasterizer_glyph;
 // 图片采样在共享软件执行器中统一保留仿射、裁剪、透明度与混合语义。
 pub(crate) mod software_rasterizer_image;
 pub(crate) mod software_rasterizer_stroke;

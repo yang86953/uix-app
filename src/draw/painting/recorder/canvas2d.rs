@@ -524,8 +524,8 @@ impl Canvas2D for FrameRecordingCanvas {
         self.blend_mode = mode;
     }
 
-    fn push_clip_path(&mut self, _path: &Path) {
-        self.unsupported_state("path clip");
+    fn push_clip_path(&mut self, path: &Path) {
+        self.record_path_clip(path);
     }
 
     fn pixels(&self) -> &[u32] {
