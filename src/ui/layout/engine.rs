@@ -238,7 +238,7 @@ pub(crate) fn finite_non_negative(value: f32) -> f32 {
 }
 
 // 归一最终或待求解的矩形。
-fn normalize_layout_rect(rect: Rect) -> Rect {
+pub(crate) fn normalize_layout_rect(rect: Rect) -> Rect {
     // Rect::new 继续承担 NaN 安全构造，传入值已满足布局层更强契约。
     Rect::new(
         finite_or_zero(rect.x),
@@ -249,7 +249,7 @@ fn normalize_layout_rect(rect: Rect) -> Rect {
 }
 
 // 归一最终或待求解的尺寸。
-fn normalize_layout_size(size: Size) -> Size {
+pub(crate) fn normalize_layout_size(size: Size) -> Size {
     // 两个轴都不得把测量阶段的无界哨兵写入实际输出。
     Size::new(finite_non_negative(size.w), finite_non_negative(size.h))
 }

@@ -418,12 +418,15 @@ impl BoxedWidget {
     // ═══ 便捷分发方法 ═══
 
     pub fn measure(&self, constraints: Constraints) -> Size {
-        self.with_component_context(|component| {
+        // 先在组件上下文中执行组件自己的测量逻辑。
+        let measured = self.with_component_context(|component| {
             component
                 .as_layout()
                 .map(|layout| layout.measure(constraints))
                 .unwrap_or_default()
-        })
+        });
+        // 在统一组件边界清除无界哨兵、非有限值和负尺寸。
+        crate::ui::layout::engine::normalize_layout_size(measured)
     }
 
     pub fn flex_grow(&self) -> f32 {
@@ -813,7 +816,8 @@ impl WidgetCore for BoxedWidget {
         self.frame
     }
     fn set_frame(&mut self, rect: Rect) {
-        self.frame = rect;
+        // 所有直接或树内 frame 写入都在最终存储边界满足实际几何契约。
+        self.frame = crate::ui::layout::engine::normalize_layout_rect(rect);
     }
     fn visible(&self) -> bool {
         self.visible && self.parent_visible && self.with_component_context(WidgetComponent::visible)

@@ -1,7 +1,7 @@
 // 导入被测的声明树适配器。
 use super::ViewAdapter;
 // 导入构造布局几何变化、滚动偏移与固有尺寸断言所需的核心类型。
-use crate::core::{Constraints, EdgeInsets, Point, Size};
+use crate::core::{Constraints, EdgeInsets, Point, Rect, Size};
 // 导入构造绘制变化所需的颜色常量。
 use crate::draw::Color;
 // 导入建立最小组件树、缓存门禁与保守回退门禁所需的组件类型。
@@ -12,6 +12,8 @@ use crate::ui::{ScrollDirection, State};
 use crate::ui::GridTrack;
 // 导入把叶组件包装成声明节点所需的节点类型。
 use crate::ui::view::ViewNode;
+// 导入读取节点 frame 与直接子节点顺序所需的核心组件接口。
+use crate::ui::component::widget::WidgetCore;
 // 导入读取共享失效队列所需的组件树类型。
 use crate::ui::WidgetTree;
 
@@ -387,4 +389,41 @@ fn carousel_structure_count_excludes_custom_arrow() {
         .expect("测试根组件必须是 Carousel");
     // 唯一剩余的箭头子树不得形成虚假的幻灯片计数。
     assert_eq!(carousel.slide_count(), 0);
+}
+
+// 验证组件测量与公开 frame 写入都不会把无界哨兵或负尺寸写入布局树。
+#[test]
+fn widget_tree_normalizes_materialized_frames() {
+    // 构造会从组件测量边界返回无界宽度的根容器。
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
+        // 显式使用测量哨兵覆盖根节点 bootstrap 路径。
+        Container::new().size(f32::MAX, 20.0),
+    ));
+    // 运行布局，使根节点从组件测量结果建立实际 frame。
+    tree.layout();
+    // 读取首轮布局写入的根节点 frame。
+    let measured_frame = tree.root().expect("测试声明树必须存在根节点").frame();
+    // 实际宽度不得保留测量阶段的无界哨兵。
+    assert!(measured_frame.w.is_finite() && measured_frame.w < f32::MAX);
+    // 实际高度必须保持有限非负。
+    assert!(measured_frame.h.is_finite() && measured_frame.h >= 0.0);
+
+    // 取得根节点标识以覆盖公开脏 frame 写入路径。
+    let root_id = tree.root_id().expect("测试声明树必须存在根节点标识");
+    // 尝试写入非有限坐标、负宽度和无界高度。
+    tree.set_frame_dirty(
+        root_id,
+        // 组合覆盖坐标与尺寸的全部非法类别。
+        Rect::new(f32::INFINITY, f32::NEG_INFINITY, -10.0, f32::MAX),
+    );
+    // 读取统一写入边界保存的最终 frame。
+    let assigned_frame = tree.root().expect("测试声明树必须存在根节点").frame();
+    // 横坐标必须收敛到有限值。
+    assert!(assigned_frame.x.is_finite());
+    // 纵坐标必须收敛到有限值。
+    assert!(assigned_frame.y.is_finite());
+    // 宽度必须收敛到有限非负值。
+    assert!(assigned_frame.w.is_finite() && assigned_frame.w >= 0.0);
+    // 高度不得保留无界哨兵。
+    assert!(assigned_frame.h.is_finite() && assigned_frame.h < f32::MAX);
 }

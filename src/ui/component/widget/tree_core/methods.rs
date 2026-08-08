@@ -635,6 +635,8 @@ impl WidgetTree {
     }
 
     pub(crate) fn apply_frame_paint(&mut self, id: ComponentId, new_frame: Rect) -> bool {
+        // 比较与脏区计算前先归一，避免等价非法输入制造重复失效。
+        let new_frame = crate::ui::layout::engine::normalize_layout_rect(new_frame);
         match self.get(id) {
             Some(w) => {
                 let old = w.frame();
