@@ -128,7 +128,7 @@ GPU 基线内的操作不能依赖常态 CPU fallback。可选效果可以显式
 - mock RHI 测试覆盖 pass 顺序、一次最终 present、受控 SurfaceLost，以及 resize 后旧代计划拒绝与新代计划恢复；失败帧不消费 damage。
 - 通用 canvas 单元测试覆盖 soft fallback 在 SrcOver/Additive 交替时的分段顺序与成功提交后的 staging 消费。
 - 通用 canvas 与 capability 单元测试覆盖生产 RHI profile 的 Additive shape 直达入队、可选能力门禁及无能力时的 soft 回退。
-- FrameRecordingCanvas 与 FrameEncoder 单元测试覆盖 Additive 矩形/圆描边的显式命令事实、目标相关 CPU 参考像素、blend 批隔离及 `AdditiveShape` lowering。
+- FrameRecordingCanvas、FrameEncoder 与 NativeGpuCanvas2D 单元测试覆盖 Additive 矩形/圆描边的显式命令事实、目标相关 CPU 参考像素、能力/轴对齐门禁、blend 批隔离及 `AdditiveShape` lowering。
 - 缺少运行环境的组合记为未测试，不生成独立完成记录。
 
 ## 迁移约束与测试

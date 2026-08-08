@@ -131,13 +131,28 @@ impl NativeGpuCanvas2D {
         if rect.w <= 0.0 || rect.h <= 0.0 || lw <= 0.0 {
             return;
         }
-        let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
+        // Alpha 与 SrcOver 继续使用普通 native/RHI pipeline。
+        let native_src_over = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
+        // Additive 只在 adapter 明确暴露 retained RHI blend 时进入 shape queue。
+        let native_additive =
+            matches!(self.blend_mode, BlendMode::Additive) && self.native_caps.rhi_additive_blend;
+        // 统一决定轴对齐描边是否可以进入 native pending queue。
+        let native_blend = native_src_over || native_additive;
         if self.soft_has_content || !self.native_caps.stroke_rects || !native_blend {
             self.with_soft_clip(|soft| soft.stroke_rect(rect, color, lw, radius));
             self.mark_soft();
             return;
         }
         let Some((device, scale)) = self.try_axis_aligned_device_rect(rect) else {
+            // 当前 Additive 纵切只覆盖轴对齐 shape SDF，不能误入 SrcOver 仿射 mesh。
+            if native_additive {
+                // hybrid canvas 保持等价 soft fallback；GPU-only canvas 记录 typed failure。
+                self.with_soft_clip(|soft| soft.stroke_rect(rect, color, lw, radius));
+                // 记录目标相关 soft segment，供 retained owner 按原始顺序合成。
+                self.mark_soft();
+                // 禁止继续进入普通描边路径 tessellation。
+                return;
+            }
             // 任意仿射描边矩形转为闭合圆角路径，复用 solid mesh 与共享 stroker。
             if self.native_caps.solid_meshes {
                 // 描边宽度保持逻辑值，由 queue_path_mesh 按当前 transform 处理。
@@ -182,6 +197,8 @@ impl NativeGpuCanvas2D {
                     radius: r,
                     line_width: stroke_w,
                 },
+                // lowering 据此选择 Shape 或 AdditiveShape。
+                additive: native_additive,
                 scissor: self.scissor_aabb(),
             }));
     }
@@ -673,5 +690,103 @@ impl NativeGpuCanvas2D {
                 shadow,
                 scissor: self.scissor_aabb(),
             }));
+    }
+}
+
+// 验证 Additive 描边只在事实能力和几何证明同时成立时进入 native queue。
+#[cfg(test)]
+mod tests {
+    // 引入待测 Canvas 与 pending operation。
+    use super::{NativeGpuCanvas2D, PendingNativeOp};
+    // 引入矩形和仿射变换测试几何。
+    use crate::core::Rect;
+    // 引入 blend 与 transform 状态。
+    use crate::draw::geometry::types::{BlendMode, Transform};
+    // 引入公开 Canvas2D 方法。
+    use crate::draw::Canvas2D;
+    // 引入测试颜色。
+    use crate::draw::Color;
+    // 引入事实型 native capability。
+    use crate::native::present::NativeRasterCaps;
+
+    // 能力存在时直达，能力或轴对齐证明缺失时保持 Additive soft segment。
+    #[test]
+    fn additive_stroke_respects_rhi_capability_and_axis_alignment() {
+        // 只启用轴对齐描边与 retained RHI Additive 能力。
+        let native_caps = NativeRasterCaps {
+            // 允许描边矩形进入 native queue。
+            stroke_rects: true,
+            // 声明通用 RHI 可以执行 Additive shape pipeline。
+            rhi_additive_blend: true,
+            // 其余能力保持关闭，避免测试依赖无关图元。
+            ..NativeRasterCaps::default()
+        };
+        // 使用 hybrid canvas，确保错误分流会真实创建 soft staging。
+        let mut native = NativeGpuCanvas2D::new(32, 24, native_caps);
+        // 切换到目标相关 Additive blend。
+        native.set_blend_mode(BlendMode::Additive);
+        // 圆形描边应复用带圆角的 StrokeRect shape。
+        native.stroke_circle(10.0, 8.0, 3.0, Color::green(), 1.0);
+        // pending 载荷必须显式保留 Additive 与圆形半径事实。
+        assert!(matches!(
+            native.pending_native.as_slice(),
+            [PendingNativeOp::StrokeRect(stroke)]
+                if stroke.additive && stroke.rect.radius == [3.0; 4]
+        ));
+        // 直达 RHI shape 时不得创建 CPU surface。
+        assert!(native.soft_fallback.is_none());
+        // native 内容不能同时伪装成 soft segment。
+        assert!(!native.soft_has_content);
+
+        // 仅声明普通描边能力，刻意缺少 Additive RHI 事实。
+        let fallback_caps = NativeRasterCaps {
+            // 证明分流失败不是因为缺少描边能力。
+            stroke_rects: true,
+            // 其余能力包括 rhi_additive_blend 保持默认 false。
+            ..NativeRasterCaps::default()
+        };
+        // 使用允许 soft fallback 的第二个 hybrid canvas。
+        let mut fallback = NativeGpuCanvas2D::new(20, 12, fallback_caps);
+        // 请求 Additive 描边矩形。
+        fallback.set_blend_mode(BlendMode::Additive);
+        // 绘制有限轴对齐描边。
+        fallback.stroke_rect(Rect::new(2.0, 2.0, 6.0, 4.0), Color::red(), 1.0, None);
+        // 没有事实能力时不能生成 native operation。
+        assert!(fallback.pending_native.is_empty());
+        // 等价 CPU staging 必须存在。
+        assert!(fallback.soft_fallback.is_some());
+        // 快照应只包含一个 Additive soft segment。
+        let segments = fallback.packed_soft_segments();
+        // 单次绘制不能产生额外段。
+        assert_eq!(segments.len(), 1);
+        // 段的目标 blend 必须保持 Additive。
+        assert!(segments[0].additive);
+
+        // 同时启用 mesh，验证 Additive 仿射描边仍不会误入 SrcOver tessellation。
+        let transformed_caps = NativeRasterCaps {
+            // 允许轴对齐描边进入 native queue。
+            stroke_rects: true,
+            // 普通仿射描边具备 mesh 能力。
+            solid_meshes: true,
+            // Additive pipeline 能力本身存在。
+            rhi_additive_blend: true,
+            // 其余能力保持默认。
+            ..NativeRasterCaps::default()
+        };
+        // 使用第三个 hybrid canvas 覆盖非轴对齐边界。
+        let mut transformed = NativeGpuCanvas2D::new(24, 18, transformed_caps);
+        // 应用带剪切分量的可逆仿射变换。
+        transformed.set_transform(Transform {
+            // 非零 b 让矩形不再轴对齐。
+            m: [1.0, 0.25, 0.0, 0.0, 1.0, 0.0],
+        });
+        // 请求 Additive 语义。
+        transformed.set_blend_mode(BlendMode::Additive);
+        // 绘制一个变换后的描边矩形。
+        transformed.stroke_rect(Rect::new(3.0, 3.0, 8.0, 5.0), Color::blue(), 1.0, None);
+        // 非轴对齐 Additive 不得偷换成普通 solid mesh。
+        assert!(transformed.pending_native.is_empty());
+        // 当前非目标范围继续由等价 soft segment 承接。
+        assert!(transformed.soft_fallback.is_some());
     }
 }
