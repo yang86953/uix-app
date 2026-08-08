@@ -11,6 +11,8 @@
 > **离屏模糊边界**：`IGraphicsContext` 不再声明 `blur_offscreen_target`，D3D11 adapter 也不再持有高层 blur 方法、专属 scratch owner 或私有核计算。两个生产 adapter 只保留 `BLUR_PASS` 固定 shader 与底层资源/draw 原语；Picture 的双 pass、region、权重、资源清理和提交顺序全部由 graphics backend 决定。
 
 > **离屏资源边界**：`OffscreenTargetId` 与 `IGraphicsContext` 的 create/destroy/bind/blit offscreen 方法已经移除，thread-bound 门面不再转发这些高层操作；D3D11 context 和 OpenGL ES raster 也不再保存平行的离屏槽位、RTV/SRV/FBO、绑定标记或 legacy sampled-blit shader。Picture 创建失败或 queue 无法无损 lower 时由 graphics backend 返回 typed failure，platform 不选择 UI fallback。
+>
+> **软回退上传边界**：`IGraphicsContext::blit_soft_fallback` 整面透明混合入口及 D3D11/D3D12 对应实现已经移除；生产 soft fallback 只通过携带目标边界与严格 payload 校验的 `blit_soft_fallback_tile` 执行 SrcOver。`upload_surface_pixels` 继续仅承担目标相关操作在 CPU 参考合成后的整面替换上传，不能与透明混合协议互换。
 
 ## 组件清单
 

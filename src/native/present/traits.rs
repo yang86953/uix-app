@@ -396,21 +396,6 @@ pub trait IGraphicsContext {
         ))
     }
 
-    fn blit_soft_fallback(
-        &mut self,
-        _pixels: &[u32],
-        _width: i32,
-        _height: i32,
-    ) -> Result<(), Error> {
-        Err(Error::new(
-            crate::core::error::Errc::NotImplemented,
-            format!(
-                "GraphicsBackend {} does not support blit_soft_fallback",
-                self.graphics_backend()
-            ),
-        ))
-    }
-
     /// Alpha-blend one bounded CPU fallback segment without presenting.
     ///
     /// The payload is tightly packed to the tile extent; the implementation

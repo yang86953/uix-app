@@ -288,6 +288,33 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # OpenGL ES adapter 不得重新实现高层离屏采样 blit。
         self.assertNotIn("fn blit_offscreen_target", opengl)
 
+    # 校验整面 soft fallback 透明混合入口不会绕过有边界 tile 协议。
+    def test_soft_fallback_only_exposes_bounded_tile_protocol(self) -> None:
+        # 读取公共兼容接口与同目录声明。
+        present = read_rust_module(ROOT / "src/native/present")
+        # 读取 D3D11 adapter 的 context 与 pipeline 拆分模块。
+        d3d11_context = read_rust_module(ROOT / "src/native/presentation/graphics/d3d11/platform/context")
+        # 读取 D3D11 adapter 的底层 pipeline 拆分模块。
+        d3d11_pipeline = read_rust_module(ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline")
+        # 读取 D3D12 adapter 的 context 拆分模块。
+        d3d12_context = read_rust_module(ROOT / "src/native/presentation/graphics/d3d12/platform/context")
+        # 读取 D3D12 adapter 的底层 pipeline 拆分模块。
+        d3d12_pipeline = read_rust_module(ROOT / "src/native/presentation/graphics/d3d12/platform/pipeline")
+        # 公共门面不得重新声明整面透明混合入口。
+        self.assertNotIn("fn blit_soft_fallback(", present)
+        # D3D11 context 不得保留同名高层入口。
+        self.assertNotIn("fn blit_soft_fallback(", d3d11_context)
+        # D3D11 pipeline 不得保留同名底层入口。
+        self.assertNotIn("fn blit_soft_fallback(", d3d11_pipeline)
+        # D3D12 context 不得保留同名高层入口。
+        self.assertNotIn("fn blit_soft_fallback(", d3d12_context)
+        # D3D12 pipeline 不得保留同名底层入口。
+        self.assertNotIn("fn blit_soft_fallback(", d3d12_pipeline)
+        # 有边界 tile 协议仍必须留在公共接口。
+        self.assertIn("fn blit_soft_fallback_tile(", present)
+        # 目标相关整面替换上传仍必须保留独立语义。
+        self.assertIn("fn upload_surface_pixels(", present)
+
     def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
         # 组合读取 Vulkan context 的拆分模块，以保持顺序审计语义。
         context = read_rust_module(VULKAN_CONTEXT)

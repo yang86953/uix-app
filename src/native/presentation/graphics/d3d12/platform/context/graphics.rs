@@ -119,43 +119,6 @@ impl IGraphicsContext for D3d12Context {
             )
     }
 
-    fn blit_soft_fallback(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<()> {
-        self.ensure_healthy()?;
-        if width != self.width || height != self.height {
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                format!(
-                    "D3d12Context: soft blit dimensions {width}x{height} do not match drawable {}x{}",
-                    self.width, self.height
-                ),
-            ));
-        }
-        let expected = (width as usize)
-            .checked_mul(height as usize)
-            .ok_or_else(|| Error::new(Errc::InvalidArgument, "soft blit pixel count overflow"))?;
-        if pixels.len() < expected {
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                format!(
-                    "D3d12Context: soft blit buffer too small, got {}, need {expected}",
-                    pixels.len()
-                ),
-            ));
-        }
-        self.begin_commands()?;
-        self.pipeline
-            .as_mut()
-            .ok_or_else(|| platform_error("D3d12Context: raster pipeline is shut down"))?
-            .blit_soft_fallback(
-                &self.device,
-                &self.command_list,
-                self.frame_index,
-                pixels,
-                width,
-                height,
-            )
-    }
-
     /// Full-target replace upload of premultiplied AARRGGBB pixels. Used by
     /// destination-dependent FrameEncoder ops after CPU reference apply — must
     /// not alpha-over the previous RT contents.

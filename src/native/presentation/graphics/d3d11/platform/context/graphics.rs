@@ -340,13 +340,6 @@ impl IGraphicsContext for D3d11Context {
             .draw_box_shadows(&self.context, viewport_w, viewport_h, scissor, shadows)
     }
 
-    fn blit_soft_fallback(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<()> {
-        self.ensure_rtv()?;
-        self.make_current()?;
-        self.pipeline
-            .blit_soft_fallback(&self.device, &self.context, pixels, width, height)
-    }
-
     fn blit_soft_fallback_tile(&mut self, pixels: &[u32], tile: SoftFallbackTile) -> Result<()> {
         self.bind_current_draw_target()?;
         self.make_current()?;
