@@ -39,7 +39,9 @@ impl Canvas2D for FrameRecordingCanvas {
 
     fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
         // Additive 提升同时取得已经验证的几何与矩形裁剪事实。
-        if let Some((rect, clip, native_color)) = self.native_additive_shape(rect, color, radius) {
+        if let Some((rect, clip, native_color, radius)) =
+            self.native_additive_shape(rect, color, radius)
+        {
             // 完全被裁掉的操作是安全 no-op，不需要 flush 或命令载荷。
             if clip.is_empty() {
                 // 保持当前命令流不变。
@@ -190,7 +192,7 @@ impl Canvas2D for FrameRecordingCanvas {
 
     fn stroke_rect(&mut self, rect: Rect, color: Color, width: f32, radius: Option<Radius>) {
         // Additive 描边只能作为目标相关 Native 命令保留，禁止进入透明 CPU segment。
-        if let Some((native_rect, clip, native_color)) =
+        if let Some((native_rect, clip, native_color, radius)) =
             self.native_additive_shape(rect, color, radius)
         {
             // 完全不可见的描边不产生命令，也不需要触碰累计目标。
