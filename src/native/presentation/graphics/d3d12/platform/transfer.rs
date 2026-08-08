@@ -50,30 +50,6 @@ pub(super) fn create_readback_buffer(device: &ID3D12Device, size: u64) -> Result
     resource.ok_or_else(|| platform_error("D3d12Context: readback buffer was not created"))
 }
 
-pub(super) fn create_upload_buffer(device: &ID3D12Device, size: u64) -> Result<ID3D12Resource> {
-    let heap = D3D12_HEAP_PROPERTIES {
-        Type: D3D12_HEAP_TYPE_UPLOAD,
-        CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-        MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
-        CreationNodeMask: 0,
-        VisibleNodeMask: 0,
-    };
-    let desc = buffer_resource_desc(size);
-    let mut resource = None;
-    unsafe {
-        device.CreateCommittedResource(
-            &heap,
-            D3D12_HEAP_FLAG_NONE,
-            &desc,
-            D3D12_RESOURCE_STATE_GENERIC_READ,
-            None,
-            &mut resource,
-        )
-    }
-    .map_err(|error| d3d12_error("ID3D12Device::CreateCommittedResource(upload)", error))?;
-    resource.ok_or_else(|| platform_error("D3d12Context: upload buffer was not created"))
-}
-
 pub(super) fn record_transition(
     list: &ID3D12GraphicsCommandList,
     resource: &ID3D12Resource,

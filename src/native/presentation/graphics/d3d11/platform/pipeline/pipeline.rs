@@ -343,97 +343,6 @@ impl D3d11Pipeline {
             Error::new(Errc::PlatformError, "D3d11Pipeline: no glyph input layout")
         })?;
 
-        let unit: [f32; 12] = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0];
-        let vb_unit = create_static_vb(device, &unit)?;
-        let vb_glyph_capacity = GLYPH_VB_INITIAL_GLYPHS;
-        let vb_glyph = create_dynamic_vb(device, vb_glyph_capacity * 6 * size_of::<GlyphVertex>())?;
-        let vb_mesh_capacity_floats = MESH_VB_INITIAL_FLOATS;
-        let vb_mesh = create_dynamic_vb(device, vb_mesh_capacity_floats * size_of::<f32>())?;
-
-        let cb_desc = D3D11_BUFFER_DESC {
-            ByteWidth: size_of::<RectConstants>() as u32,
-            Usage: D3D11_USAGE_DYNAMIC,
-            BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
-            CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
-            MiscFlags: 0,
-            StructureByteStride: 0,
-        };
-        let mut cb = None;
-        unsafe {
-            device
-                .CreateBuffer(&cb_desc, None, Some(&mut cb))
-                .map_err(|e| d3d_error("CreateBuffer(cb)", e))?;
-        }
-        let cb = cb.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no CB"))?;
-
-        let cb_glyph_desc = D3D11_BUFFER_DESC {
-            ByteWidth: size_of::<GlyphConstants>() as u32,
-            Usage: D3D11_USAGE_DYNAMIC,
-            BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
-            CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
-            MiscFlags: 0,
-            StructureByteStride: 0,
-        };
-        let mut cb_glyph = None;
-        unsafe {
-            device
-                .CreateBuffer(&cb_glyph_desc, None, Some(&mut cb_glyph))
-                .map_err(|e| d3d_error("CreateBuffer(cb_glyph)", e))?;
-        }
-        let cb_glyph = cb_glyph
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no glyph CB"))?;
-
-        let cb_grad_desc = D3D11_BUFFER_DESC {
-            ByteWidth: size_of::<GradientConstants>() as u32,
-            Usage: D3D11_USAGE_DYNAMIC,
-            BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
-            CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
-            MiscFlags: 0,
-            StructureByteStride: 0,
-        };
-        let mut cb_grad = None;
-        unsafe {
-            device
-                .CreateBuffer(&cb_grad_desc, None, Some(&mut cb_grad))
-                .map_err(|e| d3d_error("CreateBuffer(cb_grad)", e))?;
-        }
-        let cb_grad =
-            cb_grad.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no grad CB"))?;
-
-        let cb_mesh_desc = D3D11_BUFFER_DESC {
-            ByteWidth: size_of::<MeshConstants>() as u32,
-            Usage: D3D11_USAGE_DYNAMIC,
-            BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
-            CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
-            MiscFlags: 0,
-            StructureByteStride: 0,
-        };
-        let mut cb_mesh = None;
-        unsafe {
-            device
-                .CreateBuffer(&cb_mesh_desc, None, Some(&mut cb_mesh))
-                .map_err(|e| d3d_error("CreateBuffer(cb_mesh)", e))?;
-        }
-        let cb_mesh =
-            cb_mesh.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no mesh CB"))?;
-
-        let cb_shadow_desc = D3D11_BUFFER_DESC {
-            ByteWidth: size_of::<ShadowConstants>() as u32,
-            Usage: D3D11_USAGE_DYNAMIC,
-            BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
-            CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
-            MiscFlags: 0,
-            StructureByteStride: 0,
-        };
-        let mut cb_shadow = None;
-        unsafe {
-            device
-                .CreateBuffer(&cb_shadow_desc, None, Some(&mut cb_shadow))
-                .map_err(|e| d3d_error("CreateBuffer(cb_shadow)", e))?;
-        }
-        let cb_shadow = cb_shadow
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no shadow CB"))?;
-
         let mut blend_alpha = None;
         let alpha_desc = D3D11_BLEND_DESC {
             AlphaToCoverageEnable: FALSE,
@@ -566,27 +475,6 @@ impl D3d11Pipeline {
         let rasterizer = rasterizer
             .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no rasterizer"))?;
 
-        let mut sampler = None;
-        let samp_desc = D3D11_SAMPLER_DESC {
-            Filter: D3D11_FILTER_MIN_MAG_MIP_POINT,
-            AddressU: D3D11_TEXTURE_ADDRESS_CLAMP,
-            AddressV: D3D11_TEXTURE_ADDRESS_CLAMP,
-            AddressW: D3D11_TEXTURE_ADDRESS_CLAMP,
-            MipLODBias: 0.0,
-            MaxAnisotropy: 1,
-            ComparisonFunc: D3D11_COMPARISON_NEVER,
-            BorderColor: [0.0; 4],
-            MinLOD: 0.0,
-            MaxLOD: 0.0,
-        };
-        unsafe {
-            device
-                .CreateSamplerState(&samp_desc, Some(&mut sampler))
-                .map_err(|e| d3d_error("CreateSamplerState", e))?;
-        }
-        let sampler =
-            sampler.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no sampler"))?;
-
         Ok(Self {
             vs_rect,
             ps_rect,
@@ -606,38 +494,11 @@ impl D3d11Pipeline {
             ps_shadow,
             vs_sector,
             ps_sector,
-            image: rhi_image::D3d11ImageOwner::default(),
-            vb_unit,
-            vb_glyph,
-            vb_glyph_capacity,
-            vb_mesh,
-            vb_mesh_capacity_floats,
-            cb,
-            cb_glyph,
-            cb_grad,
-            cb_mesh,
-            cb_shadow,
             blend_alpha,
             blend_premultiplied,
             blend_additive,
             blend_replace,
             rasterizer,
-            sampler,
-            atlas_tex: None,
-            atlas_srv: None,
-            atlas_w: 0,
-            atlas_h: 0,
-            atlas_cursor: AtlasCursor {
-                x: 0,
-                y: 0,
-                row_h: 0,
-            },
-            atlas_cache: HashMap::new(),
-            // 测试构造时初始化 atlas 上传诊断计数。
-            #[cfg(test)]
-            atlas_upload_count: 0,
-            atlas_upload: Vec::new(),
-            glyph_verts: Vec::new(),
         })
     }
 }

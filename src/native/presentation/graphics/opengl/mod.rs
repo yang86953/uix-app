@@ -15,7 +15,6 @@ pub(crate) mod rhi_host;
 
 // Shader sources are API artefacts: they live with the native GL runtime even
 // while the transitional draw-side canvas still owns program/FBO lifetime.
-pub(crate) mod shaders;
 
 /// Native-owned OpenGL ES runtime.
 ///

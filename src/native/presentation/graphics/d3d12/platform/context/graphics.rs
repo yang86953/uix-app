@@ -9,14 +9,6 @@ impl IGraphicsContext for D3d12Context {
         )
     }
 
-    fn native_raster_caps(&self) -> NativeRasterCaps {
-        NativeRasterCaps {
-            solid_rects: true,
-            glyphs: true,
-            ..NativeRasterCaps::default()
-        }
-    }
-
     fn initialize(&mut self, _native_window: *mut c_void, _width: i32, _height: i32) -> Result<()> {
         Ok(())
     }
@@ -61,48 +53,6 @@ impl IGraphicsContext for D3d12Context {
 
     fn device_pixel_ratio(&self) -> f32 {
         self.width as f32 / self.logical_width.max(1) as f32
-    }
-
-    fn draw_solid_rects(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        rects: &[GpuSolidRect],
-    ) -> Result<()> {
-        if rects.is_empty() {
-            return Ok(());
-        }
-        self.begin_commands()?;
-        self.pipeline
-            .as_ref()
-            .ok_or_else(|| platform_error("D3d12Context: raster pipeline is shut down"))?
-            .draw_solid_rects(&self.command_list, viewport_w, viewport_h, scissor, rects)
-    }
-
-    fn draw_glyphs(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        glyphs: &[GpuGlyphBlit],
-    ) -> Result<()> {
-        if glyphs.is_empty() {
-            return Ok(());
-        }
-        self.begin_commands()?;
-        self.pipeline
-            .as_mut()
-            .ok_or_else(|| platform_error("D3d12Context: raster pipeline is shut down"))?
-            .draw_glyphs(
-                &self.device,
-                &self.command_list,
-                self.frame_index,
-                viewport_w,
-                viewport_h,
-                scissor,
-                glyphs,
-            )
     }
 }
 

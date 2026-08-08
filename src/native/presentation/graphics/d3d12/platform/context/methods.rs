@@ -53,20 +53,6 @@ impl D3d12Context {
         Self::create_with_factory(native_window, width, height, factory, driver)
     }
 
-    #[cfg(test)]
-    pub(crate) fn glyph_atlas_upload_count(&self) -> usize {
-        self.pipeline
-            .as_ref()
-            .map_or(0, D3d12Pipeline::glyph_atlas_upload_count)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn glyph_atlas_extent(&self) -> Option<(u32, u32)> {
-        self.pipeline
-            .as_ref()
-            .and_then(D3d12Pipeline::glyph_atlas_extent)
-    }
-
     pub(super) fn create_with_factory(
         native_window: *mut c_void,
         width: i32,
@@ -136,7 +122,6 @@ impl D3d12Context {
         let command_list_base: ID3D12CommandList = command_list
             .cast()
             .map_err(|error| d3d12_error("command list cast", error))?;
-        let pipeline = D3d12Pipeline::new(&device, FRAME_COUNT)?;
         let fence: ID3D12Fence = unsafe { device.CreateFence(0, D3D12_FENCE_FLAG_NONE) }
             .map_err(|error| d3d12_error("ID3D12Device::CreateFence", error))?;
         let fence_event = unsafe { CreateEventW(None, false, false, None) }
@@ -156,7 +141,6 @@ impl D3d12Context {
             allocators,
             command_list,
             command_list_base,
-            pipeline: Some(pipeline),
             fence,
             fence_event: Some(fence_event),
             fence_values: [0; FRAME_COUNT],
@@ -274,9 +258,6 @@ impl D3d12Context {
         if let Err(error) = self.wait_for_fence(self.fence_values[self.frame_index]) {
             self.latch_fault("wait_for_frame", &error);
             return Err(error);
-        }
-        if let Some(pipeline) = self.pipeline.as_mut() {
-            pipeline.begin_frame(self.frame_index);
         }
         let allocator = &self.allocators[self.frame_index];
         if let Err(error) = unsafe { allocator.Reset() } {
@@ -619,9 +600,6 @@ impl D3d12Context {
         for resource in &self.pending_gpu_resources {
             std::mem::forget(resource.clone());
         }
-        if let Some(pipeline) = self.pipeline.as_ref() {
-            pipeline.retain_gpu_objects_after_undrained_drop();
-        }
         std::mem::forget(self.command_list.clone());
         std::mem::forget(self.command_list_base.clone());
         std::mem::forget(self.fence.clone());
@@ -636,7 +614,6 @@ impl D3d12Context {
             return Err(error);
         }
         self.pending_gpu_resources.clear();
-        self.pipeline.take();
         self.back_buffers.clear();
         if let Some(event) = self.fence_event.take() {
             unsafe {
@@ -647,4 +624,3 @@ impl D3d12Context {
         Ok(())
     }
 }
-

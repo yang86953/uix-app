@@ -9,41 +9,24 @@
 
 #![allow(nonstandard_style)]
 
-use std::{collections::HashMap, ffi::CStr, mem::size_of, sync::Arc};
+use std::{ffi::CStr, mem::size_of};
 
 use crate::core::{Errc, Error, Result};
-use crate::native::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
-    GpuSolidMesh, GpuSolidRect, GpuStrokeRect,
-};
 use ::windows::core::PCSTR;
-use ::windows::Win32::Foundation::{FALSE, RECT, TRUE};
+use ::windows::Win32::Foundation::{FALSE, TRUE};
 use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
-use ::windows::Win32::Graphics::Direct3D::{
-    ID3DBlob, D3D11_SRV_DIMENSION_TEXTURE2D, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
-};
+use ::windows::Win32::Graphics::Direct3D::{ID3DBlob, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST};
 use ::windows::Win32::Graphics::Direct3D11::{
     ID3D11BlendState, ID3D11Buffer, ID3D11Device, ID3D11DeviceContext, ID3D11InputLayout,
     ID3D11PixelShader, ID3D11RasterizerState, ID3D11RenderTargetView, ID3D11SamplerState,
-    ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11VertexShader, D3D11_BIND_CONSTANT_BUFFER,
-    D3D11_BIND_SHADER_RESOURCE, D3D11_BIND_VERTEX_BUFFER, D3D11_BLEND_DESC,
-    D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA,
-    D3D11_BLEND_ZERO, D3D11_BOX, D3D11_BUFFER_DESC, D3D11_COLOR_WRITE_ENABLE_ALL,
-    D3D11_COMPARISON_NEVER, D3D11_CPU_ACCESS_WRITE, D3D11_CULL_NONE, D3D11_FILL_SOLID,
-    D3D11_FILTER_MIN_MAG_MIP_POINT, D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA,
-    D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_WRITE_DISCARD, D3D11_RASTERIZER_DESC,
-    D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC,
-    D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_SUBRESOURCE_DATA, D3D11_TEX2D_SRV,
-    D3D11_TEXTURE2D_DESC, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_USAGE_DEFAULT, D3D11_USAGE_DYNAMIC,
+    ID3D11ShaderResourceView, ID3D11VertexShader, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA,
+    D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO,
+    D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_CULL_NONE, D3D11_FILL_SOLID, D3D11_INPUT_ELEMENT_DESC,
+    D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32_FLOAT,
-    DXGI_FORMAT_R32_UINT, DXGI_FORMAT_R8_UNORM, DXGI_SAMPLE_DESC,
+    DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32_UINT,
 };
-
-const ATLAS_MIN: u32 = 256;
-const ATLAS_MAX: u32 = 2048;
-const GLYPH_VB_INITIAL_GLYPHS: usize = 256;
 
 const RECT_HLSL: &str = r#"
 cbuffer RectCB : register(b0)
@@ -505,100 +488,6 @@ float4 PSMain(VSOut input) : SV_Target
 }
 "#;
 
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct RectConstants {
-    viewport: [f32; 2],
-    _pad0: [f32; 2],
-    rect: [f32; 4],
-    color: [f32; 4],
-    radius: [f32; 4],
-    /// x = half stroke width (0 = fill).
-    stroke: [f32; 4],
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct GlyphConstants {
-    viewport: [f32; 2],
-    _pad0: [f32; 2],
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct GradientConstants {
-    viewport: [f32; 2],
-    _pad0: [f32; 2],
-    origin_edge_x: [f32; 4],
-    edge_y: [f32; 4],
-    color_a: [f32; 4],
-    color_b: [f32; 4],
-    /// x=mode (0 linear / 1 radial), y=dir|inner_r, z=outer_r, w unused.
-    params: [f32; 4],
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct MeshConstants {
-    viewport: [f32; 2],
-    _pad0: [f32; 2],
-    color: [f32; 4],
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct ShadowConstants {
-    viewport: [f32; 2],
-    _pad0: [f32; 2],
-    rect: [f32; 4],
-    color: [f32; 4],
-    radius: [f32; 4],
-    /// x = blur, y = ambient (0/1).
-    params: [f32; 4],
-}
-
-const MESH_VB_INITIAL_FLOATS: usize = 1024;
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct GlyphVertex {
-    pos: [f32; 2],
-    uv: [f32; 2],
-    color: [f32; 4],
-}
-
-struct AtlasCursor {
-    x: u32,
-    y: u32,
-    row_h: u32,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-struct GlyphAtlasKey {
-    allocation: usize,
-    len: usize,
-    width: u32,
-    height: u32,
-}
-
-impl GlyphAtlasKey {
-    fn new(coverage: &Arc<[u8]>, width: u32, height: u32) -> Self {
-        Self {
-            allocation: Arc::as_ptr(coverage) as *const u8 as usize,
-            len: coverage.len(),
-            width,
-            height,
-        }
-    }
-}
-
-struct GlyphAtlasEntry {
-    /// Retaining the allocation prevents an evicted font-cache buffer from
-    /// being freed and reusing the pointer while this atlas entry is live.
-    _coverage: Arc<[u8]>,
-    uv: (f32, f32, f32, f32),
-}
-
 fn d3d_error(operation: &str, err: ::windows::core::Error) -> Error {
     Error::new(
         Errc::PlatformError,
@@ -650,61 +539,6 @@ fn compile_shader(source: &str, entry: &CStr, target: &CStr) -> Result<ID3DBlob>
     })
 }
 
-fn create_static_vb(device: &ID3D11Device, vertices: &[f32]) -> Result<ID3D11Buffer> {
-    let desc = D3D11_BUFFER_DESC {
-        ByteWidth: std::mem::size_of_val(vertices) as u32,
-        Usage: D3D11_USAGE_DEFAULT,
-        BindFlags: D3D11_BIND_VERTEX_BUFFER.0 as u32,
-        CPUAccessFlags: 0,
-        MiscFlags: 0,
-        StructureByteStride: 0,
-    };
-    let data = D3D11_SUBRESOURCE_DATA {
-        pSysMem: vertices.as_ptr().cast(),
-        SysMemPitch: 0,
-        SysMemSlicePitch: 0,
-    };
-    let mut vb = None;
-    unsafe {
-        device
-            .CreateBuffer(&desc, Some(&data), Some(&mut vb))
-            .map_err(|e| d3d_error("CreateBuffer(vb)", e))?;
-    }
-    vb.ok_or_else(|| {
-        Error::new(
-            Errc::PlatformError,
-            "D3d11Pipeline: CreateBuffer returned no VB",
-        )
-    })
-}
-
-fn create_dynamic_vb(device: &ID3D11Device, byte_width: usize) -> Result<ID3D11Buffer> {
-    let desc = D3D11_BUFFER_DESC {
-        ByteWidth: byte_width.max(size_of::<GlyphVertex>() * 6) as u32,
-        Usage: D3D11_USAGE_DYNAMIC,
-        BindFlags: D3D11_BIND_VERTEX_BUFFER.0 as u32,
-        CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
-        MiscFlags: 0,
-        StructureByteStride: 0,
-    };
-    let mut vb = None;
-    unsafe {
-        device
-            .CreateBuffer(&desc, None, Some(&mut vb))
-            .map_err(|e| d3d_error("CreateBuffer(dynamic vb)", e))?;
-    }
-    vb.ok_or_else(|| {
-        Error::new(
-            Errc::PlatformError,
-            "D3d11Pipeline: CreateBuffer(dynamic) returned no VB",
-        )
-    })
-}
-
-fn next_pow2_u32(v: u32) -> u32 {
-    v.next_power_of_two().max(1)
-}
-
 pub struct D3d11Pipeline {
     vs_rect: ID3D11VertexShader,
     ps_rect: ID3D11PixelShader,
@@ -728,57 +562,25 @@ pub struct D3d11Pipeline {
     // 薄 RHI 的原生扇形 VS/PS。
     vs_sector: ID3D11VertexShader,
     ps_sector: ID3D11PixelShader,
-    // 兼容层动态 BGRA 图片纹理与 SRV 的所有权。
-    image: rhi_image::D3d11ImageOwner,
-    vb_unit: ID3D11Buffer,
-    vb_glyph: ID3D11Buffer,
-    vb_glyph_capacity: usize,
-    vb_mesh: ID3D11Buffer,
-    vb_mesh_capacity_floats: usize,
-    cb: ID3D11Buffer,
-    cb_glyph: ID3D11Buffer,
-    cb_grad: ID3D11Buffer,
-    cb_mesh: ID3D11Buffer,
-    cb_shadow: ID3D11Buffer,
     blend_alpha: ID3D11BlendState,
     blend_premultiplied: ID3D11BlendState,
     // sampled Additive quad 使用源与目标都为 ONE 的 blend 状态。
     blend_additive: ID3D11BlendState,
     blend_replace: ID3D11BlendState,
     rasterizer: ID3D11RasterizerState,
-    sampler: ID3D11SamplerState,
-    atlas_tex: Option<ID3D11Texture2D>,
-    atlas_srv: Option<ID3D11ShaderResourceView>,
-    atlas_w: u32,
-    atlas_h: u32,
-    atlas_cursor: AtlasCursor,
-    /// Cross-call/cross-frame entries for the live atlas texture. Coverage is
-    /// shared, not copied, and total retained exact glyph bytes are bounded by
-    /// the atlas packing capacity.
-    atlas_cache: HashMap<GlyphAtlasKey, GlyphAtlasEntry>,
-    /// Atlas 上传次数统计（诊断）。
-    // 该计数仅由 crate 内测试诊断读取，生产 pipeline 不保留额外字段。
-    #[cfg(test)]
-    atlas_upload_count: usize,
-    /// Scratch for packing coverage into atlas rows (R8).
-    atlas_upload: Vec<u8>,
-    /// Scratch glyph vertices for Map/Draw.
-    glyph_verts: Vec<GlyphVertex>,
 }
 
 mod pipeline;
-mod pipeline2;
-mod pipeline3;
 // 将 MSDF shader 源拆出，保持 pipeline 主模块不超过文件行数边界。
 mod msdf_shader;
 mod rhi_blur;
 mod rhi_gradient;
+// 保留只接受薄 RHI packet 的实心网格编码。
+mod rhi_mesh;
 mod rhi_shadow;
 mod rhi_shape;
 // 将扇形 shader 与 draw ABI 拆到独立文件，保持 pipeline 主模块边界清晰。
 mod rhi_sector;
-// 将兼容层图片上传与 affine textured draw 拆到独立文件。
-mod rhi_image;
 mod rhi_textured;
 
 // 让 pipeline 构造模块复用 MSDF shader 源而不暴露原生 shader 对象。

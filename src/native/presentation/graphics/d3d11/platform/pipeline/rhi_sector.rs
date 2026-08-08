@@ -3,24 +3,6 @@
 // 复用 pipeline 父模块的 D3D11 类型、编译辅助和错误类型。
 use super::*;
 
-// 与 SECTOR_HLSL 的 SectorCB 保持 16 字节寄存器对齐。
-#[repr(C)]
-// 允许按值复制到动态 constant buffer。
-#[derive(Clone, Copy)]
-// 描述一个 viewport、外接矩形、颜色和角度范围。
-struct SectorConstants {
-    // 记录当前 drawable 的宽高。
-    viewport: [f32; 2],
-    // 对齐 HLSL 的下一个 float4 寄存器。
-    _pad0: [f32; 2],
-    // 记录 sector 的外接矩形。
-    rect: [f32; 4],
-    // 记录待 premultiply 的直通颜色。
-    color: [f32; 4],
-    // 记录起始角和顺时针 sweep 角。
-    angles: [f32; 4],
-}
-
 // 为轴对齐原生扇形定义固定的 SectorConstants 与单位 quad shader。
 pub(crate) const SECTOR_HLSL: &str = r#"
 cbuffer SectorCB : register(b0)
@@ -127,96 +109,8 @@ pub(super) fn create_sector_shaders(
     Ok((vs, ps))
 }
 
-// 为 D3D11 pipeline 编码一个 SectorConstants 单位 quad draw。
+// 为 D3D11 pipeline 编码薄 RHI sector draw packet。
 impl D3d11Pipeline {
-    // 执行兼容层的原生 sector batch，复用薄 RHI 的单位 quad 与 shader。
-    pub(crate) fn draw_sectors(
-        &mut self,
-        context: &ID3D11DeviceContext,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        sectors: &[GpuSector],
-    ) -> Result<()> {
-        // 空 batch 或无效 viewport 不产生 D3D11 状态变化。
-        if sectors.is_empty() || viewport_w <= 0.0 || viewport_h <= 0.0 {
-            return Ok(());
-        }
-        // 沿用其它兼容绘制的 scissor 约定，避免 sector 绕过裁剪边界。
-        let (sx, sy, sw, sh) =
-            scissor.unwrap_or((0, 0, viewport_w.ceil() as i32, viewport_h.ceil() as i32));
-        // 将逻辑 scissor 转换为 D3D11 的右下角坐标。
-        let scissor_rect = RECT {
-            left: sx,
-            top: sy,
-            right: sx + sw.max(0),
-            bottom: sy + sh.max(0),
-        };
-        // 为所有 sector 绑定同一个单位 quad、shader 与 premultiplied blend。
-        unsafe {
-            context.RSSetScissorRects(Some(&[scissor_rect]));
-        }
-        // 逐个上传常量并提交六顶点单位 quad。
-        for sector in sectors {
-            // 拒绝退化几何、越界角度和异常颜色，保持与 OpenGL owner 一致。
-            if !sector.cx.is_finite()
-                || !sector.cy.is_finite()
-                || !sector.radius.is_finite()
-                || sector.radius <= 0.0
-                || !sector.start_angle.is_finite()
-                || !sector.sweep_angle.is_finite()
-                || sector.start_angle < 0.0
-                || sector.start_angle >= std::f32::consts::TAU
-                || sector.sweep_angle <= 0.0
-                || sector.sweep_angle > std::f32::consts::TAU
-                || sector.rgba.iter().any(|component| !component.is_finite())
-            {
-                continue;
-            }
-            // 按 SectorCB 的 HLSL 16 字节寄存器布局构造常量。
-            let constants = SectorConstants {
-                viewport: [viewport_w, viewport_h],
-                _pad0: [0.0, 0.0],
-                rect: [
-                    sector.cx - sector.radius,
-                    sector.cy - sector.radius,
-                    sector.radius * 2.0,
-                    sector.radius * 2.0,
-                ],
-                color: sector.rgba,
-                angles: [sector.start_angle, sector.sweep_angle, 0.0, 0.0],
-            };
-            // 复用既有动态常量 buffer；sector shader 只读取前 64 字节。
-            let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-            unsafe {
-                context
-                    .Map(&self.cb, 0, D3D11_MAP_WRITE_DISCARD, 0, Some(&mut mapped))
-                    .map_err(|error| d3d_error("Map(cb sector)", error))?;
-                std::ptr::copy_nonoverlapping(
-                    (&constants as *const SectorConstants).cast::<u8>(),
-                    mapped.pData.cast(),
-                    size_of::<SectorConstants>(),
-                );
-                context.Unmap(&self.cb, 0);
-            }
-            // 使用 RHI draw ABI，确保 shader、layout 和混合状态保持同一所有权。
-            self.draw_rhi_sector(
-                context,
-                &self.vb_unit,
-                (2 * size_of::<f32>()) as u32,
-                None,
-                &self.cb,
-                6,
-                0,
-                0,
-                0,
-                0,
-            )?;
-        }
-        // 返回 sector batch 编码成功。
-        Ok(())
-    }
-
     // 执行薄 RHI 的原生扇形 draw packet。
     pub(crate) fn draw_rhi_sector(
         &self,

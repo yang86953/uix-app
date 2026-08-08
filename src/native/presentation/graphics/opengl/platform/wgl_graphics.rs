@@ -4,11 +4,9 @@ use super::WglContext;
 // 引入窗口初始化使用的原生句柄类型。
 use std::ffi::c_void;
 
-// 引入 OpenGL ES legacy native queue 的所有绘制 DTO。
+// 引入 OpenGL ES 图形上下文与呈现契约。
 use crate::native::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
-    GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps,
-    PresentCoherency, PresentDamage, PresentFrame,
+    IGraphicsContext, NativeRasterCaps, PresentCoherency, PresentDamage, PresentFrame,
 };
 // 引入项目统一错误和结果类型。
 use crate::native::{Errc, Error, Result};
@@ -33,10 +31,10 @@ impl IGraphicsContext for WglContext {
         Some(self)
     }
 
-    // 返回 legacy queue 与通用 RHI 共同兑现的能力表。
+    // 返回固定 RHI probe 已兑现的事实能力。
     fn native_raster_caps(&self) -> NativeRasterCaps {
-        // OpenGL ES 的 GPU-only 录制子集由通用 RHI 或 legacy compatibility owner 执行。
-        NativeRasterCaps::rhi_gpu_only_subset()
+        // WGL 只公布 retained surface 与 Additive pipeline 事实。
+        NativeRasterCaps::retained_rhi_with_additive()
     }
 
     // 返回当前图形 backend 标识。
@@ -141,141 +139,6 @@ impl IGraphicsContext for WglContext {
     fn height(&self) -> i32 {
         // 读取 WGL context 缓存的逻辑高度。
         self.height
-    }
-
-    // 绘制 OpenGL ES 原生 solid rect batch。
-    fn draw_solid_rects(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        rects: &[GpuSolidRect],
-    ) -> Result<(), Error> {
-        // 确保 draw 发生在创建 context 的 owner thread。
-        self.make_current_result()?;
-        // 委托给圆角 rect shader。
-        self.pipeline
-            .draw_solid_rects(viewport_w, viewport_h, scissor, rects)
-    }
-
-    // 绘制 OpenGL ES 原生 stroke rect batch。
-    fn draw_stroke_rects(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        rects: &[GpuStrokeRect],
-    ) -> Result<(), Error> {
-        // 确保 draw 发生在创建 context 的 owner thread。
-        self.make_current_result()?;
-        // 委托给共享圆角 SDF stroke shader。
-        self.pipeline
-            .draw_stroke_rects(viewport_w, viewport_h, scissor, rects)
-    }
-
-    // 绘制 OpenGL ES 原生线性渐变 batch。
-    fn draw_linear_gradients(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        rects: &[GpuLinearGradientRect],
-    ) -> Result<(), Error> {
-        // 确保 draw 发生在创建 context 的 owner thread。
-        self.make_current_result()?;
-        // 委托给 legacy gradient compatibility owner。
-        self.pipeline
-            .draw_linear_gradients(viewport_w, viewport_h, scissor, rects)
-    }
-
-    // 绘制 OpenGL ES 原生径向渐变 batch。
-    fn draw_radial_gradients(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        grads: &[GpuRadialGradient],
-    ) -> Result<(), Error> {
-        // 确保 draw 发生在创建 context 的 owner thread。
-        self.make_current_result()?;
-        // 委托给 legacy gradient compatibility owner。
-        self.pipeline
-            .draw_radial_gradients(viewport_w, viewport_h, scissor, grads)
-    }
-
-    // 绘制 OpenGL ES 原生 sector batch。
-    fn draw_sectors(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        sectors: &[GpuSector],
-    ) -> Result<(), Error> {
-        // 确保 draw 发生在创建 context 的 owner thread。
-        self.make_current_result()?;
-        // 委托给 legacy sector compatibility owner。
-        self.pipeline
-            .draw_sectors(viewport_w, viewport_h, scissor, sectors)
-    }
-
-    // 绘制 OpenGL ES 原生 solid triangle mesh batch。
-    fn draw_solid_meshes(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        meshes: &[GpuSolidMesh],
-    ) -> Result<(), Error> {
-        // 确保 draw 发生在创建 context 的 owner thread。
-        self.make_current_result()?;
-        // 委托给 legacy mesh compatibility owner。
-        self.pipeline
-            .draw_solid_meshes(viewport_w, viewport_h, scissor, meshes)
-    }
-
-    // 绘制 OpenGL ES 原生 box shadow batch。
-    fn draw_box_shadows(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        shadows: &[GpuBoxShadow],
-    ) -> Result<(), Error> {
-        // 确保 draw 发生在创建 context 的 owner thread。
-        self.make_current_result()?;
-        // 委托给共享仿射 SDF shadow shader。
-        self.pipeline
-            .draw_box_shadows(viewport_w, viewport_h, scissor, shadows)
-    }
-
-    // 绘制 OpenGL ES 原生图片 affine blit batch。
-    fn draw_image_blits(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        blits: &[GpuImageBlit],
-    ) -> Result<(), Error> {
-        // 确保 draw 发生在创建 context 的 owner thread。
-        self.make_current_result()?;
-        // 委托给 legacy textured compatibility owner。
-        self.pipeline
-            .draw_image_blits(viewport_w, viewport_h, scissor, blits)
-    }
-
-    // 绘制 OpenGL ES 原生 glyph batch。
-    fn draw_glyphs(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        glyphs: &[GpuGlyphBlit],
-    ) -> Result<(), Error> {
-        // 确保 draw 发生在创建 context 的 owner thread。
-        self.make_current_result()?;
-        // 委托给 glyph atlas owner。
-        self.pipeline
-            .draw_glyphs(viewport_w, viewport_h, scissor, glyphs)
     }
 
     // 返回当前 WGL device pixel ratio。

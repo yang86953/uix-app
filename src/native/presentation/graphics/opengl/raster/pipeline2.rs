@@ -51,27 +51,9 @@ impl OpenGlRasterPipeline {
             return;
         }
         self.released = true;
-        // 先释放 FramePlan/RHI 资源，再释放 legacy raster 对象。
+        // 先释放 FramePlan/RHI 资源，再恢复默认 framebuffer。
         self.rhi_release();
         self.bind_swapchain_target();
-        unsafe {
-            self.gl().delete_vertex_array(self.rect_vao);
-            self.gl().delete_buffer(self.rect_vbo);
-            self.gl().delete_program(self.rect_program);
-            // 释放 legacy queue 复用的仿射 shadow program。
-            self.gl().delete_program(self.shadow_program);
-            // 释放 legacy queue 的渐变、mesh、sector、图片资源。
-            let gl = self.runtime.context();
-            self.legacy.release(gl);
-            self.gl().delete_vertex_array(self.glyph_vao);
-            self.gl().delete_buffer(self.glyph_vbo);
-            self.gl().delete_program(self.glyph_program);
-            if let Some(texture) = self.glyph_atlas_texture.take() {
-                self.gl().delete_texture(texture);
-            }
-        }
-        self.glyph_atlas_cache.clear();
-        self.glyph_vertices.clear();
     }
 
     pub(super) fn bind_current_framebuffer(&self) {
@@ -90,18 +72,6 @@ impl OpenGlRasterPipeline {
                 self.current.drawable_height,
             );
             self.gl().disable(glow::SCISSOR_TEST);
-        }
-    }
-
-    pub(super) fn apply_scissor(&self, scissor: Option<(i32, i32, i32, i32)>) {
-        let Some(scissor) = scissor else {
-            unsafe { self.gl().disable(glow::SCISSOR_TEST) };
-            return;
-        };
-        let (x, y, width, height) = logical_scissor_to_drawable(self.current, scissor);
-        unsafe {
-            self.gl().enable(glow::SCISSOR_TEST);
-            self.gl().scissor(x, y, width, height);
         }
     }
 }

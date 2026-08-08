@@ -19,9 +19,8 @@ use super::geometry::{
 };
 use super::pending::StateSnapshot;
 use super::pending::{
-    DirectImageBlit, PendingNativeGlyph, PendingNativeImage,
-    PendingNativeMesh, PendingNativeOp, PendingNativeRect,
-    PendingNativeScroll,
+    DirectImageBlit, PendingNativeGlyph, PendingNativeImage, PendingNativeMesh, PendingNativeOp,
+    PendingNativeRect, PendingNativeScroll,
 };
 
 impl Canvas2D for NativeGpuCanvas2D {
@@ -95,7 +94,7 @@ impl Canvas2D for NativeGpuCanvas2D {
         let axis_aligned_horizontal = (p1.y - p2.y).abs() < 1e-6;
         if (axis_aligned_vertical || axis_aligned_horizontal)
             && !self.soft_has_content
-            && self.native_caps.solid_rects
+            && self.native_caps.retained_framebuffer
             && native_blend
         {
             let half = stroke_w * 0.5;
@@ -123,7 +122,7 @@ impl Canvas2D for NativeGpuCanvas2D {
             }
         }
         // 对角线：以设备坐标线段为中轴构造描边四边形网格。
-        if !self.soft_has_content && self.native_caps.solid_meshes && native_blend {
+        if !self.soft_has_content && self.native_caps.retained_framebuffer && native_blend {
             let dx = p2.x - p1.x;
             let dy = p2.y - p1.y;
             let len = (dx * dx + dy * dy).sqrt();
@@ -243,7 +242,7 @@ impl Canvas2D for NativeGpuCanvas2D {
         }
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
         // Soft path for exotic blend；任意仿射仍可走 atlas 纹理四边形。
-        if self.soft_has_content || !self.native_caps.glyphs || !native_blend {
+        if self.soft_has_content || !self.native_caps.retained_framebuffer || !native_blend {
             if self.gpu_only {
                 self.reject_unsupported("destination-dependent glyph blend");
                 return;
@@ -312,7 +311,7 @@ impl Canvas2D for NativeGpuCanvas2D {
             return;
         }
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        if self.soft_has_content || !self.native_caps.glyphs || !native_blend {
+        if self.soft_has_content || !self.native_caps.retained_framebuffer || !native_blend {
             if self.gpu_only {
                 self.reject_unsupported("destination-dependent glyph blend");
                 return;
@@ -618,12 +617,13 @@ mod tests {
         assert_eq!(error.code(), crate::core::Errc::NotImplemented);
     }
 
-    // hybrid canvas 在具备 solid mesh 时应把椭圆保留为 GPU native mesh。
+    // hybrid canvas 在具备 retained RHI 时应把椭圆保留为 GPU native mesh。
     #[test]
     fn hybrid_ellipse_uses_shared_mesh_lowering() {
-        // 只打开 ellipse 依赖的共享 mesh 能力，保持测试边界最小。
+        // 只打开固定 probe 依赖的 retained surface 事实，保持测试边界最小。
         let caps = NativeRasterCaps {
-            solid_meshes: true,
+            // retained surface 表示共享 mesh pipeline 已在构造前通过 probe。
+            retained_framebuffer: true,
             ..NativeRasterCaps::default()
         };
         // 使用 hybrid canvas 验证非 GPU-only 入口也能复用相同 lowering。
@@ -642,10 +642,10 @@ mod tests {
     // 生产 RHI capability 应让 Additive 圆角矩形绕过 CPU staging。
     #[test]
     fn additive_rounded_rect_uses_native_shape_when_capability_is_explicit() {
-        // 只启用当前纵切需要的 shape 与 Additive RHI 事实能力。
+        // 启用当前纵切需要的 retained 与 Additive RHI 事实能力。
         let caps = NativeRasterCaps {
-            // 允许轴对齐实心矩形进入 native queue。
-            solid_rects: true,
+            // retained surface 表示固定 shape pipeline 已通过 probe。
+            retained_framebuffer: true,
             // 声明 retained RHI 可以执行 Additive pipeline。
             rhi_additive_blend: true,
             // 其余能力保持关闭，避免测试依赖无关图元。
@@ -678,10 +678,10 @@ mod tests {
     // 未声明 RHI Additive 的 adapter 必须保留既有等价 soft fallback。
     #[test]
     fn additive_rect_without_rhi_capability_stays_in_soft_segment() {
-        // 仅打开普通 solid rect，刻意不声明 Additive RHI 能力。
+        // 仅打开 retained surface，刻意不声明 Additive RHI 能力。
         let caps = NativeRasterCaps {
-            // 证明分流只受可选 blend 能力控制，而不是缺少矩形能力。
-            solid_rects: true,
+            // 证明分流只受可选 blend 能力控制，而不是缺少 retained surface。
+            retained_framebuffer: true,
             // 其余能力包括 rhi_additive_blend 保持默认 false。
             ..NativeRasterCaps::default()
         };

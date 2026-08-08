@@ -240,21 +240,6 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("uniform.len() != 96", opengl)
         self.assertIn("GRADIENT_VERTEX", shaders)
 
-    # 校验 D3D11 legacy gradient 已经消费 affine 四角，而不是只使用旧 AABB。
-    def test_d3d11_legacy_gradient_consumes_affine_corners(self) -> None:
-        # 读取兼容队列的渐变常量和绘制入口。
-        pipeline = (ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline/pipeline3.rs").read_text(encoding="utf-8")
-        # 常量入口必须接收逻辑尺寸与设备空间四角。
-        self.assertIn("local_w: f32", pipeline)
-        self.assertIn("corners: [[f32; 2]; 4]", pipeline)
-        # legacy shader 常量必须由 TL、TR、BL 恢复两条 affine 边。
-        self.assertIn("let edge_x", pipeline)
-        self.assertIn("let edge_y", pipeline)
-        self.assertIn("origin_edge_x", pipeline)
-        # 线性和径向入口都必须把真实四角传入统一常量编码。
-        self.assertIn("rect.corners", pipeline)
-        self.assertIn("g.corners", pipeline)
-
     # 校验 Picture 离屏只保留一个 RHI owner，旧资源族不会复活。
     def test_picture_offscreen_has_one_rhi_owner_without_legacy_family(self) -> None:
         # 读取通用 backend 的离屏生命周期实现。
@@ -427,6 +412,93 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         opengl_pipeline = (ROOT / "src/native/presentation/graphics/opengl/raster/pipeline2.rs").read_text(encoding="utf-8")
         # OpenGL RHI pass 完成后仍须能恢复默认 framebuffer。
         self.assertIn("pub(crate) fn bind_swapchain_target", opengl_pipeline)
+
+    # 校验逐图元 legacy draw ABI 与平行 capability 表不会重新进入 adapter 门面。
+    def test_legacy_draw_methods_leave_the_graphics_context_facade(self) -> None:
+        # 读取公共兼容接口与事实型 capability profile。
+        present = read_rust_module(ROOT / "src/native/present")
+        # 读取 owner-thread 转发门面。
+        thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
+        # 读取四个原生 context 的 trait 实现。
+        adapters = (
+            # D3D11 context 的 IGraphicsContext 实现。
+            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            # D3D12 context 的 IGraphicsContext 实现。
+            ROOT / "src/native/presentation/graphics/d3d12/platform/context/graphics.rs",
+            # WGL context 的 IGraphicsContext 实现。
+            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            # EGL context 的 IGraphicsContext 实现。
+            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+        )
+        # 读取 adapter 私有 pipeline 目录，确认无消费者实现也已物理退出。
+        private_pipelines = (
+            # D3D11 只应保留薄 RHI packet 编码。
+            ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline",
+            # D3D12 尚无薄 RHI，旧逐 UI pipeline 目录应不存在。
+            ROOT / "src/native/presentation/graphics/d3d12/platform/pipeline",
+            # OpenGL raster 只应保留 retained RHI owner 与 surface bridge。
+            ROOT / "src/native/presentation/graphics/opengl/raster",
+        )
+        # 列出已经由固定 RHI probe 接管的全部逐图元入口。
+        methods = (
+            # 实心矩形批次。
+            "draw_solid_rects",
+            # 描边矩形批次。
+            "draw_stroke_rects",
+            # 字形批次。
+            "draw_glyphs",
+            # 线性渐变批次。
+            "draw_linear_gradients",
+            # 径向渐变批次。
+            "draw_radial_gradients",
+            # 扇形批次。
+            "draw_sectors",
+            # 实心网格批次。
+            "draw_solid_meshes",
+            # 阴影批次。
+            "draw_box_shadows",
+            # 图片批次。
+            "draw_image_blits",
+        )
+        # 每个高层入口都必须同时退出 trait、线程门面和 adapter wrapper。
+        for method in methods:
+            # 公共 trait 不得重新声明逐图元方法。
+            self.assertNotIn(f"fn {method}(", present)
+            # owner-thread wrapper 不得重新生成转发入口。
+            self.assertNotIn(f"forward_result!({method}", thread_bound)
+            # 逐个读取 adapter trait 实现，避免私有低层 pipeline 干扰断言。
+            for adapter in adapters:
+                # 原生 context 不得重新包装该高层绘制方法。
+                self.assertNotIn(f"fn {method}(", adapter.read_text(encoding="utf-8"))
+            # adapter 私有 pipeline 也不得保留无消费者的同名高层实现。
+            for pipeline in private_pipelines:
+                # 目录不存在时 read_rust_module 返回空源码，仍符合物理删除契约。
+                self.assertNotIn(f"fn {method}(", read_rust_module(pipeline))
+        # 逐图元布尔字段不得重新形成第二份能力真相。
+        for capability in (
+            # 实心矩形能力。
+            "solid_rects",
+            # 描边矩形能力。
+            "stroke_rects",
+            # 字形能力。
+            "glyphs",
+            # 线性渐变能力。
+            "linear_gradients",
+            # 径向渐变能力。
+            "radial_gradients",
+            # 扇形能力。
+            "sectors",
+            # 实心网格能力。
+            "solid_meshes",
+            # 阴影能力。
+            "box_shadows",
+        ):
+            # capability profile 不得重新导出对应布尔字段。
+            self.assertNotIn(f"pub {capability}: bool", present)
+        # capability profile 必须保留 retained surface 事实。
+        self.assertIn("pub retained_framebuffer: bool", present)
+        # capability profile 必须保留 Additive RHI 事实。
+        self.assertIn("pub rhi_additive_blend: bool", present)
 
     def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
         # 组合读取 Vulkan context 的拆分模块，以保持顺序审计语义。

@@ -1,8 +1,7 @@
 //! Direct3D 12 swapchain context for Windows.
 //!
 //! This first slice owns the explicit D3D12 resource lifecycle and synchronization
-//! contract. Draw-side activation stays gated until the native solid/soft pipelines
-//! are available.
+//! contract. Draw-side activation stays gated until a thin RHI provider is available.
 
 #![allow(nonstandard_style)]
 
@@ -10,8 +9,8 @@ use std::ffi::c_void;
 
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
-    GpuGlyphBlit, GpuSolidRect, GraphicsApi, GraphicsContextCaps, IGraphicsContext,
-    NativeRasterCaps, PresentCoherency, PresentDamage, PresentFrame,
+    GraphicsApi, GraphicsContextCaps, IGraphicsContext, PresentCoherency, PresentDamage,
+    PresentFrame,
 };
 use crate::native::presentation::graphics::platform::windows as win_surface;
 use ::windows::core::Interface;
@@ -30,11 +29,10 @@ use super::adapter::{
     select_hardware_adapter, select_warp_adapter, D3d12AdapterInfo, D3d12DriverKind,
 };
 use super::error::{d3d12_error, platform_error};
-use super::pipeline::D3d12Pipeline;
 use super::swap_chain::{swap_chain_desc, FRAME_COUNT};
 use super::transfer::{
-    copy_mapped_bgra_rows, create_readback_buffer, create_upload_buffer, record_transition,
-    release_copy_location, texture_copy_location_footprint, texture_copy_location_subresource,
+    copy_mapped_bgra_rows, create_readback_buffer, record_transition, release_copy_location,
+    texture_copy_location_footprint, texture_copy_location_subresource,
 };
 
 pub struct D3d12Context {
@@ -51,7 +49,6 @@ pub struct D3d12Context {
     allocators: Vec<ID3D12CommandAllocator>,
     command_list: ID3D12GraphicsCommandList,
     command_list_base: ID3D12CommandList,
-    pipeline: Option<D3d12Pipeline>,
     fence: ID3D12Fence,
     fence_event: Option<HANDLE>,
     fence_values: [u64; FRAME_COUNT],

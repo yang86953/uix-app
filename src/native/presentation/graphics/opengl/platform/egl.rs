@@ -10,11 +10,7 @@
 use std::ffi::c_void;
 use std::ptr;
 
-use crate::native::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
-    GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps,
-    PresentCoherency, PresentDamage,
-};
+use crate::native::present::{IGraphicsContext, NativeRasterCaps, PresentCoherency, PresentDamage};
 // 引入共享的 OpenGL RHI host 生命周期实现。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
 use crate::native::presentation::graphics::opengl::rhi_host::OpenGlRhiHost;
@@ -389,8 +385,8 @@ impl IGraphicsContext for EglContext {
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
-        // OpenGL ES 的首个 GPU-only 录制子集由通用 RHI lowering 执行。
-        NativeRasterCaps::rhi_gpu_only_subset()
+        // EGL 只公布固定 probe 已验证的 retained 与 Additive 事实。
+        NativeRasterCaps::retained_rhi_with_additive()
     }
 
     fn initialize(
@@ -466,133 +462,6 @@ impl IGraphicsContext for EglContext {
 
     fn height(&self) -> i32 {
         self.height
-    }
-
-    fn draw_solid_rects(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        rects: &[GpuSolidRect],
-    ) -> Result<(), Error> {
-        self.make_current()?;
-        self.pipeline
-            .draw_solid_rects(viewport_w, viewport_h, scissor, rects)
-    }
-
-    // 将 EGL OpenGL ES 原生描边矩形转发到共享圆角 SDF shader。
-    fn draw_stroke_rects(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        rects: &[GpuStrokeRect],
-    ) -> Result<(), Error> {
-        // 保证描边调用发生在创建上下文的 owner thread。
-        self.make_current()?;
-        self.pipeline
-            .draw_stroke_rects(viewport_w, viewport_h, scissor, rects)
-    }
-
-    // 将 EGL OpenGL ES 原生线性渐变转发到 legacy compatibility owner。
-    fn draw_linear_gradients(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        rects: &[GpuLinearGradientRect],
-    ) -> Result<(), Error> {
-        // 保证渐变调用发生在创建上下文的 owner thread。
-        self.make_current()?;
-        // 委托给 legacy gradient owner。
-        self.pipeline
-            .draw_linear_gradients(viewport_w, viewport_h, scissor, rects)
-    }
-
-    // 将 EGL OpenGL ES 原生径向渐变转发到 legacy compatibility owner。
-    fn draw_radial_gradients(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        grads: &[GpuRadialGradient],
-    ) -> Result<(), Error> {
-        // 保证渐变调用发生在创建上下文的 owner thread。
-        self.make_current()?;
-        // 委托给 legacy gradient owner。
-        self.pipeline
-            .draw_radial_gradients(viewport_w, viewport_h, scissor, grads)
-    }
-
-    // 将 EGL OpenGL ES 原生 sector 转发到 legacy compatibility owner。
-    fn draw_sectors(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        sectors: &[GpuSector],
-    ) -> Result<(), Error> {
-        // 保证 sector 调用发生在创建上下文的 owner thread。
-        self.make_current()?;
-        // 委托给 legacy sector owner。
-        self.pipeline
-            .draw_sectors(viewport_w, viewport_h, scissor, sectors)
-    }
-
-    // 将 EGL OpenGL ES 原生 solid mesh 转发到 legacy compatibility owner。
-    fn draw_solid_meshes(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        meshes: &[GpuSolidMesh],
-    ) -> Result<(), Error> {
-        // 保证 mesh 调用发生在创建上下文的 owner thread。
-        self.make_current()?;
-        // 委托给 legacy mesh owner。
-        self.pipeline
-            .draw_solid_meshes(viewport_w, viewport_h, scissor, meshes)
-    }
-
-    // 将 EGL OpenGL ES 原生 box shadow 转发到共享仿射 SDF shader。
-    fn draw_box_shadows(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        shadows: &[GpuBoxShadow],
-    ) -> Result<(), Error> {
-        // 保证阴影调用发生在创建上下文的 owner thread。
-        self.make_current()?;
-        self.pipeline
-            .draw_box_shadows(viewport_w, viewport_h, scissor, shadows)
-    }
-
-    // 将 EGL OpenGL ES 原生图片 affine blit 转发到 legacy compatibility owner。
-    fn draw_image_blits(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        blits: &[GpuImageBlit],
-    ) -> Result<(), Error> {
-        // 保证图片调用发生在创建上下文的 owner thread。
-        self.make_current()?;
-        // 委托给 legacy textured owner。
-        self.pipeline
-            .draw_image_blits(viewport_w, viewport_h, scissor, blits)
-    }
-
-    fn draw_glyphs(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        glyphs: &[GpuGlyphBlit],
-    ) -> Result<(), Error> {
-        self.make_current()?;
-        self.pipeline
-            .draw_glyphs(viewport_w, viewport_h, scissor, glyphs)
     }
 }
 
