@@ -132,13 +132,20 @@ impl Canvas2D for FrameRecordingCanvas {
     }
 
     fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
+        // 把圆形转换为共享 rounded-rect SDF 所需的正方形边界。
         let bounds = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
-        if r.is_finite() && r > 0.0 && self.native_src_over_rects(bounds).is_some() {
-            // A circle is exactly the shared rounded-rect SDF with a square
-            // extent and every corner radius equal to half that extent.
+        // SrcOver 与已证明安全的 Additive 圆都复用 fill_rect 的统一命令记录路径。
+        if r.is_finite()
+            && r > 0.0
+            && (self.can_emit_native_additive_rect(bounds)
+                || self.native_src_over_rects(bounds).is_some())
+        {
+            // 正方形四角半径等于圆半径时，与目标圆的共享 SDF 完全一致。
             self.fill_rect(bounds, color, Some(Radius::uniform(r)));
+            // 命令已经直接记录，禁止再生成 CPU segment。
             return;
         }
+        // 其余普通 blend 保持软件光栅；Additive 会沿既有边界记录 typed failure。
         self.draw_cpu(bounds, 1.0, |scratch| scratch.fill_circle(cx, cy, r, color));
     }
 
@@ -547,5 +554,60 @@ mod tests {
         );
         // 描边内部未覆盖像素必须继续保持原始红色目标。
         assert_eq!(reference.pixel(2, 2), Some(Color::red().premultiplied()));
+    }
+
+    // 合法 Additive 填充圆必须直接保留为圆角 shape，并对累计目标执行加法。
+    #[test]
+    fn records_additive_fill_circle_as_rounded_shape() {
+        // 创建能够明确区分圆内外像素的录制画布。
+        let mut canvas = FrameRecordingCanvas::new(8, 8);
+        // 开始一帧带透明 clear 的正式记录。
+        if let Err(error) = canvas.begin_recording(true) {
+            // 合法尺寸的记录初始化不得失败。
+            panic!("additive circle recording should begin: {error:?}");
+        }
+        // 先用不透明红色建立可观察的累计目标。
+        canvas.fill_rect(Rect::new(0.0, 0.0, 8.0, 8.0), Color::red(), None);
+        // 后续圆形填充切换到目标相关 Additive 混合。
+        canvas.set_blend_mode(BlendMode::Additive);
+        // 记录边界完全位于 surface 内的整数圆。
+        canvas.fill_circle(4.0, 4.0, 2.0, Color::green());
+        // 完成记录并取得不可变命令流。
+        let encoder = match canvas.finish_recording() {
+            // 保存成功的编码器供载荷和像素审计。
+            Ok(encoder) => encoder,
+            // 合法 Additive 圆不应产生 deferred failure。
+            Err(error) => panic!("additive circle recording should finish: {error:?}"),
+        };
+        // 精确匹配命令序列，同时证明没有插入透明 CPU segment。
+        let [FrameCommand::Clear { .. }, FrameCommand::Native {
+            operation: FrameRasterOp::FillRect { .. },
+        }, FrameCommand::Native {
+            operation:
+                FrameRasterOp::FillRoundedRectAdditive {
+                    rect,
+                    color,
+                    radius,
+                },
+        }] = encoder.commands()
+        else {
+            // 任何 CPU segment 或普通 blend shape 都说明准入路径仍然错误。
+            panic!("expected clear, fill, and one additive rounded circle");
+        };
+        // 圆应保留为以 (2, 2) 起始的 4×4 正方形。
+        assert_eq!(*rect, FrameRect::new(2, 2, 4, 4));
+        // Additive shape 必须保留调用方提供的绿色源色。
+        assert_eq!(*color, Color::green());
+        // 四角半径应等于原始圆半径，避免退化为直角矩形。
+        assert_eq!(radius.to_radius(), Radius::uniform(2.0));
+        // 执行 CPU 参考路径以核验真实目标相关混合。
+        let reference = encoder.render_reference();
+        // 红底圆心叠加绿色后应逐通道饱和为黄色。
+        assert_eq!(
+            reference.pixel(4, 4),
+            Some(Color::from_rgb(255, 255, 0).premultiplied())
+        );
+        // 圆外像素不得受 Additive shape 影响。
+        assert_eq!(reference.pixel(0, 0), Some(Color::red().premultiplied()));
     }
 }
