@@ -21,7 +21,8 @@ impl IGraphicsContext for D3d11Context {
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
-        NativeRasterCaps::d3d11_full()
+        // D3D11 固定 probe 已验证 retained surface 与 Additive pipeline。
+        NativeRasterCaps::retained_rhi_with_additive()
     }
 
     fn initialize(&mut self, _native_window: *mut c_void, _width: i32, _height: i32) -> Result<()> {
@@ -145,149 +146,6 @@ impl IGraphicsContext for D3d11Context {
 
     fn device_pixel_ratio(&self) -> f32 {
         self.width as f32 / self.logical_width.max(1) as f32
-    }
-
-    fn draw_solid_rects(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        rects: &[GpuSolidRect],
-    ) -> Result<()> {
-        self.ensure_rtv()?;
-        self.make_current()?;
-        self.pipeline
-            .draw_solid_rects(&self.context, viewport_w, viewport_h, scissor, rects)
-    }
-
-    fn draw_stroke_rects(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        rects: &[GpuStrokeRect],
-    ) -> Result<()> {
-        self.ensure_rtv()?;
-        self.make_current()?;
-        self.pipeline
-            .draw_stroke_rects(&self.context, viewport_w, viewport_h, scissor, rects)
-    }
-
-    fn draw_glyphs(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        glyphs: &[GpuGlyphBlit],
-    ) -> Result<()> {
-        self.ensure_rtv()?;
-        self.make_current()?;
-        self.pipeline.draw_glyphs(
-            &self.device,
-            &self.context,
-            viewport_w,
-            viewport_h,
-            scissor,
-            glyphs,
-        )
-    }
-
-    fn draw_linear_gradients(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        rects: &[GpuLinearGradientRect],
-    ) -> Result<()> {
-        self.ensure_rtv()?;
-        self.make_current()?;
-        self.pipeline
-            .draw_linear_gradients(&self.context, viewport_w, viewport_h, scissor, rects)
-    }
-
-    fn draw_radial_gradients(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        grads: &[GpuRadialGradient],
-    ) -> Result<()> {
-        self.ensure_rtv()?;
-        self.make_current()?;
-        self.pipeline
-            .draw_radial_gradients(&self.context, viewport_w, viewport_h, scissor, grads)
-    }
-
-    // 将兼容层 sector batch 转交 D3D11 原生 pipeline。
-    fn draw_sectors(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        sectors: &[GpuSector],
-    ) -> Result<()> {
-        // 先确保当前 render target 与 owner-thread context 有效。
-        self.ensure_rtv()?;
-        // 绑定当前 D3D11 context，统一处理 surface 重建边界。
-        self.make_current()?;
-        // 使用与薄 RHI 相同的 sector shader 和 blend ABI。
-        self.pipeline
-            .draw_sectors(&self.context, viewport_w, viewport_h, scissor, sectors)
-    }
-
-    // 将兼容层 BGRA 图片 affine batch 转交 D3D11 原生 pipeline。
-    fn draw_image_blits(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        blits: &[GpuImageBlit],
-    ) -> Result<()> {
-        // 先确保当前 render target 与 owner-thread context 有效。
-        self.ensure_rtv()?;
-        // 绑定当前 D3D11 context，统一处理 surface 重建边界。
-        self.make_current()?;
-        // 使用兼容图片 owner 执行 payload 上传与 affine draw。
-        self.pipeline.draw_image_blits(
-            &self.device,
-            &self.context,
-            viewport_w,
-            viewport_h,
-            scissor,
-            blits,
-        )
-    }
-
-    fn draw_solid_meshes(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        meshes: &[GpuSolidMesh],
-    ) -> Result<()> {
-        self.ensure_rtv()?;
-        self.make_current()?;
-        self.pipeline.draw_solid_meshes(
-            &self.device,
-            &self.context,
-            viewport_w,
-            viewport_h,
-            scissor,
-            meshes,
-        )
-    }
-
-    fn draw_box_shadows(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        shadows: &[GpuBoxShadow],
-    ) -> Result<()> {
-        self.ensure_rtv()?;
-        self.make_current()?;
-        self.pipeline
-            .draw_box_shadows(&self.context, viewport_w, viewport_h, scissor, shadows)
     }
 
     fn present(&mut self, frame: &PresentFrame<'_>) -> Result<()> {

@@ -174,22 +174,12 @@ pub struct GpuImageBlit {
     pub pixel_h: u32,
 }
 
-/// Fine-grained native raster capabilities exposed by a GPU context.
+/// 薄 RHI surface 已探明的事实能力。
 ///
-/// The draw-side native backend uses this table to route every Canvas2D
-/// operation either to a supported native command or to deterministic CPU
-/// soft fallback. A context must not advertise an operation whose trait method
-/// still returns `NotImplemented`.
+/// 逐图元支持由固定 RHI probe 一次性验证，不再与 `IGraphicsContext`
+/// 维护平行的 `draw_*` 布尔表。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct NativeRasterCaps {
-    pub solid_rects: bool,
-    pub stroke_rects: bool,
-    pub glyphs: bool,
-    pub linear_gradients: bool,
-    pub radial_gradients: bool,
-    pub sectors: bool,
-    pub solid_meshes: bool,
-    pub box_shadows: bool,
     /// 主色缓冲在提交间保留像素，允许绘制侧 partial redraw；
     /// 与 present coherency（仍可为 FullOnly）正交。
     pub retained_framebuffer: bool,
@@ -199,39 +189,13 @@ pub struct NativeRasterCaps {
 }
 
 impl NativeRasterCaps {
-    /// Complete capability set currently implemented by the D3D11 context.
-    pub const fn d3d11_full() -> Self {
+    /// 已通过固定 probe 的 retained RHI 与 Additive 组合能力。
+    pub const fn retained_rhi_with_additive() -> Self {
+        // 生产 adapter 只暴露 renderer 真正消费的两个事实。
         Self {
-            solid_rects: true,
-            stroke_rects: true,
-            glyphs: true,
-            linear_gradients: true,
-            radial_gradients: true,
-            sectors: true,
-            solid_meshes: true,
-            box_shadows: true,
-            // D3D11 生产路径使用跨帧 RHI 纹理并在最终边界采样到 swapchain。
+            // 主颜色目标跨帧保留并由最终 present 统一采样。
             retained_framebuffer: true,
-            // D3D11 薄 RHI 已实现独立 Additive shape/textured pipeline。
-            rhi_additive_blend: true,
-        }
-    }
-
-    /// 首个薄 RHI 绘制子集需要的 GPU-only 录制能力。
-    pub const fn rhi_gpu_only_subset() -> Self {
-        // 这些操作由通用 RhiRenderer lowering，不能再触发 CPU soft fallback。
-        Self {
-            solid_rects: true,
-            stroke_rects: true,
-            glyphs: true,
-            linear_gradients: true,
-            radial_gradients: true,
-            sectors: true,
-            solid_meshes: true,
-            box_shadows: true,
-            // WGL/EGL OpenGL ES 复用同一 retained texture 与最终合成路径。
-            retained_framebuffer: true,
-            // OpenGL ES 薄 RHI 已实现同一 Additive pipeline key。
+            // 固定 probe 已验证独立 Additive shape/textured pipeline。
             rhi_additive_blend: true,
         }
     }
@@ -242,15 +206,8 @@ impl NativeRasterCaps {
     }
 
     pub const fn has_gpu_only_baseline(self) -> bool {
-        // 已删除的 legacy clear API 不再参与 GPU-only 录制门禁。
-        self.solid_rects
-            && self.stroke_rects
-            && self.glyphs
-            && self.linear_gradients
-            && self.radial_gradients
-            && self.sectors
-            && self.solid_meshes
-            && self.box_shadows
+        // 逐图元 pipeline 已由固定 probe 验证，GPU-only 只需 retained surface 事实。
+        self.retained_framebuffer
     }
 }
 
@@ -264,7 +221,8 @@ mod native_raster_profile_tests {
     #[test]
     fn production_rhi_profiles_enable_retained_framebuffer() {
         // 读取 Windows 默认 D3D11 生产 profile。
-        let d3d11 = NativeRasterCaps::d3d11_full();
+        // 两个生产 adapter 共用同一份事实型 profile。
+        let d3d11 = NativeRasterCaps::retained_rhi_with_additive();
         // D3D11 必须启用跨帧主颜色目标。
         assert!(d3d11.retained_framebuffer);
         // D3D11 生产 profile 必须同步暴露真实的 RHI Additive 能力。
@@ -273,7 +231,8 @@ mod native_raster_profile_tests {
         assert!(d3d11.has_hybrid_baseline());
 
         // 读取 WGL/EGL OpenGL ES 的 GPU-only profile。
-        let opengles = NativeRasterCaps::rhi_gpu_only_subset();
+        // OpenGL ES 也只暴露已验证的 retained 与 Additive 事实。
+        let opengles = NativeRasterCaps::retained_rhi_with_additive();
         // OpenGL ES 必须启用同一 retained 主表面路径。
         assert!(opengles.retained_framebuffer);
         // OpenGL ES 生产 profile 必须同步暴露真实的 RHI Additive 能力。

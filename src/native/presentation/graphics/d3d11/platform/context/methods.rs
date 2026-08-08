@@ -1,15 +1,6 @@
 use super::*;
 
 impl D3d11Context {
-    // 该诊断计数仅供 crate 内测试读取，生产 context 不暴露此辅助入口。
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) fn glyph_atlas_upload_count(&self) -> usize {
-        self.pipeline.glyph_atlas_upload_count()
-    }
-}
-
-impl D3d11Context {
     pub(crate) fn new(native_window: *mut c_void, width: i32, height: i32) -> Result<Self> {
         if native_window.is_null() {
             return Err(Error::new(

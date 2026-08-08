@@ -22,9 +22,8 @@ use std::thread::{self, ThreadId};
 
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
-    GpuSolidMesh, GpuSolidRect, GpuStrokeRect, GraphicsContextCaps, IGraphicsContext,
-    NativeRasterCaps, PresentDamage, PresentFrame, PresentTestResult,
+    GraphicsContextCaps, IGraphicsContext, NativeRasterCaps, PresentDamage, PresentFrame,
+    PresentTestResult,
 };
 
 pub(crate) fn bind_to_current_thread(
@@ -240,14 +239,4 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
     fn device_pixel_ratio(&self) -> f32 {
         self.device_pixel_ratio
     }
-
-    forward_result!(draw_solid_rects(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, rects: &[GpuSolidRect]) -> ());
-    forward_result!(draw_stroke_rects(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, rects: &[GpuStrokeRect]) -> ());
-    forward_result!(draw_glyphs(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, glyphs: &[GpuGlyphBlit]) -> ());
-    forward_result!(draw_linear_gradients(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, rects: &[GpuLinearGradientRect]) -> ());
-    forward_result!(draw_radial_gradients(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, grads: &[GpuRadialGradient]) -> ());
-    forward_result!(draw_sectors(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, sectors: &[GpuSector]) -> ());
-    forward_result!(draw_solid_meshes(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, meshes: &[GpuSolidMesh]) -> ());
-    forward_result!(draw_box_shadows(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, shadows: &[GpuBoxShadow]) -> ());
-    forward_result!(draw_image_blits(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, blits: &[GpuImageBlit]) -> ());
 }
