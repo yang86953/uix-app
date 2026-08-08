@@ -229,22 +229,16 @@ impl D3d11RhiDevice {
 impl GraphicsDevice for D3d11Context {
     // 返回当前迁移期 device 的事实能力，能力只描述低层原语而非 UI 操作。
     fn capabilities(&self) -> GraphicsCapabilities {
-        // 资源和 pass 基础已可执行，通用 sampled draw 仍由 pipeline ABI 门禁。
-        GraphicsCapabilities {
-            dynamic_buffers: true,
-            texture_upload: true,
-            texture_copy: true,
-            texture_region_move: true,
-            clear_rect: true,
-            sampled_textures: true,
-            render_to_texture: true,
-            scissor: true,
-            premultiplied_alpha_blend: true,
-            additive_blend: true,
-            retained_framebuffer: false,
-            partial_present: false,
-            occlusion: true,
-        }
+        // D3D11 已实现跨帧颜色纹理与最终 sampled composite，采用 retained 基线。
+        let mut capabilities = GraphicsCapabilities::retained_gpu_baseline();
+        // D3D11 scratch texture 提供重叠安全的区域移动。
+        capabilities.texture_region_move = true;
+        // D3D11 scissor clear 已接入 FramePlan 局部清理。
+        capabilities.clear_rect = true;
+        // DXGI surface 能提供可靠的遮挡状态。
+        capabilities.occlusion = true;
+        // 窄 present 尚未启用，继续沿用基线中的 false。
+        capabilities
     }
 
     // 把设备健康检查委托给独立模块，避免资源实现超过文件行数边界。

@@ -227,6 +227,16 @@ impl GraphicsCapabilities {
         }
     }
 
+    // 创建已经具备跨帧主颜色目标的生产 GPU 基线能力。
+    pub(crate) const fn retained_gpu_baseline() -> Self {
+        // 从不依赖具体 API 的完整低层基线开始。
+        let mut capabilities = Self::full_gpu_baseline();
+        // retained 只在 adapter 已实现纹理持有和最终合成时显式开启。
+        capabilities.retained_framebuffer = true;
+        // 返回供生产 adapter 继续补充 API 特定事实的能力快照。
+        capabilities
+    }
+
     // 判断通用 GPU Renderer 的最小原语是否全部存在。
     pub(crate) const fn has_gpu_baseline(self) -> bool {
         // 基线缺一项就不能进入正常 GPU 渲染流程。
@@ -278,6 +288,30 @@ impl GraphicsCapabilities {
         }
         // 所有 GPU 基线能力都存在。
         None
+    }
+}
+
+// 覆盖通用 RHI capability profile 的自动化契约。
+#[cfg(test)]
+mod capability_profile_tests {
+    // 导入当前模块的事实型能力快照。
+    use super::GraphicsCapabilities;
+
+    // 验证 retained 必须由生产 profile 显式开启且不改变 GPU 基线。
+    #[test]
+    fn retained_profile_is_an_explicit_gpu_baseline_extension() {
+        // 通用最低基线不能假定 adapter 保存跨帧颜色。
+        let baseline = GraphicsCapabilities::full_gpu_baseline();
+        // 默认基线必须保持 retained 关闭。
+        assert!(!baseline.retained_framebuffer);
+        // 构造已实现跨帧目标的生产 profile。
+        let retained = GraphicsCapabilities::retained_gpu_baseline();
+        // 生产 profile 必须明确宣告 retained 能力。
+        assert!(retained.retained_framebuffer);
+        // 开启呈现能力不能破坏底层 GPU 基线。
+        assert!(retained.has_gpu_baseline());
+        // retained profile 不应制造新的基线缺口。
+        assert_eq!(retained.first_missing_gpu_baseline(), None);
     }
 }
 
