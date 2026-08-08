@@ -147,7 +147,11 @@ impl Canvas2D for FrameRecordingCanvas {
             }
             return;
         }
-        self.draw_cpu(rect, 1.0, |scratch| scratch.fill_rect(rect, color, radius));
+        // Native shape 不适用时，Additive 填充改走目标相关 sampled soft segment。
+        self.draw_cpu_fill(rect, 1.0, |scratch| {
+            // 由共享软件光栅保留完整 transform、clip 与圆角语义。
+            scratch.fill_rect(rect, color, radius)
+        });
     }
 
     fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
@@ -166,17 +170,26 @@ impl Canvas2D for FrameRecordingCanvas {
             // 命令已经直接记录，禁止再生成 CPU segment。
             return;
         }
-        // 其余普通 blend 保持软件光栅；Additive 会沿既有边界记录 typed failure。
-        self.draw_cpu(bounds, 1.0, |scratch| scratch.fill_circle(cx, cy, r, color));
+        // 其余圆形交给可按 blend 分段的软件填充路径。
+        self.draw_cpu_fill(bounds, 1.0, |scratch| {
+            // Additive 源贡献会在透明 scratch 中光栅化。
+            scratch.fill_circle(cx, cy, r, color)
+        });
     }
 
     fn fill_ellipse(&mut self, rect: Rect, color: Color) {
-        self.draw_cpu(rect, 1.0, |scratch| scratch.fill_ellipse(rect, color));
+        // 椭圆没有固定 FrameRasterOp，由 sampled soft segment 承接 Additive。
+        self.draw_cpu_fill(rect, 1.0, |scratch| {
+            // 软件椭圆入口负责完整仿射逆映射。
+            scratch.fill_ellipse(rect, color)
+        });
     }
 
     fn fill_sector(&mut self, cx: f32, cy: f32, r: f32, sa: f32, ea: f32, color: Color) {
         let bounds = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
-        self.draw_cpu(bounds, 1.0, |scratch| {
+        // 扇形与其他填充共享 blend-aware scratch 分段。
+        self.draw_cpu_fill(bounds, 1.0, |scratch| {
+            // 保留角度、transform 与局部裁剪语义。
             scratch.fill_sector(cx, cy, r, sa, ea, color)
         });
     }
@@ -185,7 +198,9 @@ impl Canvas2D for FrameRecordingCanvas {
         let bounds = path
             .bounds()
             .unwrap_or_else(|| Rect::new(0.0, 0.0, self.width as f32, self.height as f32));
-        self.draw_cpu(bounds, 1.0, |scratch| {
+        // 路径填充在软件端完成仿射几何后进入同一 sampled 分段。
+        self.draw_cpu_fill(bounds, 1.0, |scratch| {
+            // 保留调用方选择的填充规则。
             scratch.fill_path(path, color, fill_rule)
         });
     }
@@ -444,8 +459,21 @@ impl Canvas2D for FrameRecordingCanvas {
     }
 
     fn restore(&mut self) {
+        // 先取得即将恢复的 blend，用于判断 painter-order barrier。
+        let restored_blend = self.blend_stack.last().copied();
+        // 不同 blend 的透明源贡献不能共用一个最终合成命令。
+        if restored_blend.is_some_and(|mode| mode != self.blend_mode) {
+            // 在恢复 scratch 状态前提交当前批次。
+            if let Err(error) = self.flush_scratch() {
+                // 延迟报告 flush 失败。
+                self.remember_error(error);
+            }
+        }
+        // 恢复 transform、clip、opacity 与软件 blend 状态。
         self.scratch.restore();
+        // 恢复录制器持有的 blend 镜像。
         if let Some(mode) = self.blend_stack.pop() {
+            // 保存恢复后的 blend 事实。
             self.blend_mode = mode;
         }
     }
@@ -467,7 +495,17 @@ impl Canvas2D for FrameRecordingCanvas {
     }
 
     fn set_blend_mode(&mut self, mode: BlendMode) {
+        // blend 改变前必须封口当前透明 scratch，保持 painter order。
+        if mode != self.blend_mode {
+            // 将当前批次编码成其原始 blend 对应的命令。
+            if let Err(error) = self.flush_scratch() {
+                // 延迟报告 flush 或编码失败。
+                self.remember_error(error);
+            }
+        }
+        // 更新软件光栅 blend 状态。
         self.scratch.set_blend_mode(mode);
+        // 更新录制器用于命令选择的 blend 镜像。
         self.blend_mode = mode;
     }
 
@@ -486,6 +524,8 @@ impl Canvas2D for FrameRecordingCanvas {
             return self.scratch.pixels_mut();
         }
         self.scratch_dirty = true;
+        // 测试直接写像素时沿用当前 blend 的最终合成事实。
+        self.scratch_additive = self.blend_mode == BlendMode::Additive;
         self.scratch.pixels_mut()
     }
 
@@ -793,9 +833,9 @@ mod tests {
         );
     }
 
-    // 分数 offset 不能伪装成整数 FrameEncoder shape，必须保留 typed failure。
+    // 分数 offset 无法进入固定 Native shape 时应保留在 Additive sampled soft 分段中。
     #[test]
-    fn additive_shape_rejects_fractional_offset() {
+    fn additive_fill_preserves_fractional_offset_in_sampled_segment() {
         // 创建一个最小但足以容纳测试矩形的录制画布。
         let mut canvas = FrameRecordingCanvas::new(8, 8);
         // 开始一帧带透明 clear 的正式记录。
@@ -807,29 +847,35 @@ mod tests {
         canvas.set_offset(0.5, 0.0);
         // 选择目标相关 Additive 混合。
         canvas.set_blend_mode(BlendMode::Additive);
-        // 尝试记录 otherwise 合法的整数矩形。
+        // 记录一个 otherwise 合法的整数矩形。
         canvas.fill_rect(Rect::new(1.0, 1.0, 2.0, 2.0), Color::green(), None);
-        // 完成边界必须返回稳定的 NotImplemented typed failure。
-        let error = match canvas.finish_recording() {
-            // 错误结果就是本测试需要审计的门禁事实。
-            Err(error) => error,
-            // 成功会把分数几何错误提升到整数 shape。
-            Ok(_) => panic!("fractional additive offset must be rejected"),
+        // 完成记录并取得用于审计命令和像素的编码器。
+        let encoder = match canvas.finish_recording() {
+            // 合法分数 offset 应由软件光栅保真处理。
+            Ok(encoder) => encoder,
+            // typed failure 表示新 fallback 没有覆盖该几何。
+            Err(error) => panic!("fractional additive offset should finish: {error:?}"),
         };
-        // 拒绝原因必须保持在不能等价 lowering 的类型边界。
-        assert_eq!(error.code(), crate::core::Errc::NotImplemented);
-        // 失败前只能保留初始 clear，不能偷偷追加 Native 或 CPU segment。
+        // 分数几何不能伪装成整数 Native shape 或 SrcOver CPU segment。
+        assert!(matches!(
+            encoder.commands(),
+            [
+                FrameCommand::Clear { .. },
+                FrameCommand::PictureBlit { additive: true, .. }
+            ]
+        ));
+        // 矩形内部的完全覆盖像素应保留原始绿色源贡献。
         assert_eq!(
-            canvas
-                .encoder
-                .as_ref()
-                .map(|encoder| encoder.commands().len()),
-            Some(1)
+            encoder.render_reference().pixel(2, 2),
+            Some(Color::green().premultiplied())
         );
     }
 
     // 继续在同一测试模块内加载纯平移 transform 的独立回归测试。
     include!("canvas2d_test_tail.rs");
+
+    // 继续在同一测试模块内加载 Additive sampled soft 分段回归测试。
+    include!("canvas2d_additive_soft_tests.rs");
 
     // 继续在同一测试模块内加载 Additive opacity 的独立回归测试。
     include!("canvas2d_opacity_tests.rs");

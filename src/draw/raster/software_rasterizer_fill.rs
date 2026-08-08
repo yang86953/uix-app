@@ -281,15 +281,37 @@ impl SoftwareRasterizer {
         let inv_rx2 = 1.0 / (rx * rx);
         let inv_ry2 = 1.0 / (ry * ry);
         let expanded = Rect::new(rect.x - 1.0, rect.y - 1.0, rect.w + 2.0, rect.h + 2.0);
-        if let Some(cr) = self.intersect_clip(&expanded) {
+        // 非 identity transform 下先把保守局部边界映射到 surface。
+        let device_bounds = if Self::is_identity(&self.transform) {
+            // identity 继续沿用原始椭圆快速路径边界。
+            expanded
+        } else {
+            // 任意可逆仿射由 inverse sampling 恢复局部椭圆坐标。
+            self.transform_rect(&expanded)
+        };
+        // 只扫描变换后边界与当前 surface clip 的交集。
+        if let Some(cr) = self.intersect_clip(&device_bounds) {
             let x0 = cr.x as i32;
             let y0 = cr.y as i32;
             let x1 = (cr.x + cr.w) as i32;
             let y1 = (cr.y + cr.h) as i32;
             for py in y0..y1 {
                 for px in x0..x1 {
-                    let dx = px as f32 + 0.5 - cx;
-                    let dy = py as f32 + 0.5 - cy;
+                    // identity 直接使用 surface 像素中心；仿射路径先逆映射到局部。
+                    let Some((ux, uy)) = (if Self::is_identity(&self.transform) {
+                        // 无变换时避免每像素读取逆矩阵。
+                        Some((px as f32 + 0.5, py as f32 + 0.5))
+                    } else {
+                        // 退化或不可逆矩阵不产生像素。
+                        self.apply_inverse(px as f32 + 0.5, py as f32 + 0.5)
+                    }) else {
+                        // 当前像素无法映射到局部空间。
+                        continue;
+                    };
+                    // 计算局部椭圆归一化坐标。
+                    let dx = ux - cx;
+                    // 计算局部垂直距离。
+                    let dy = uy - cy;
                     let v = dx * dx * inv_rx2 + dy * dy * inv_ry2;
                     if v >= 1.15 {
                         continue;
@@ -404,10 +426,18 @@ impl SoftwareRasterizer {
         color: Color,
         fill_rule: FillRule,
     ) {
+        // 读取 transform 前先应用的本地像素 offset。
         let (ox, oy) = (self.offset_x, self.offset_y);
-        let path = if ox != 0.0 || oy != 0.0 {
-            &path.translated(ox, oy)
+        // 仅在状态确实改变几何时分配变换后的路径。
+        let transformed_path;
+        // 软件 polygon rasterizer 消费 surface-space 路径，因此在 flatten 前完成映射。
+        let path = if ox != 0.0 || oy != 0.0 || !Self::is_identity(&self.transform) {
+            // 严格保持 offset 后 transform 的 Canvas2D 顺序。
+            transformed_path = path.translated(ox, oy).transformed(self.transform);
+            // 借用本次调用内有效的 surface-space 路径。
+            &transformed_path
         } else {
+            // identity 且无 offset 时避免复制路径。
             path
         };
         let c = self.apply_opa(Self::premul(color));

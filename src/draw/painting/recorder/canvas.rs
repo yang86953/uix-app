@@ -2,7 +2,7 @@
 //!
 //! [`FrameRecordingCanvas`] 是 `Canvas2D` 的录制实现：绘制操作要么降级为
 //! 已证明的原生命令，要么落入共享软件光栅 scratch 并在 flush 时编码为透明
-//! CPU segment。
+//! SrcOver CPU segment 或 Additive sampled segment。
 
 use crate::core::{Errc, Error, Rect};
 // Additive 正交变换准入需要判断圆角是否在旋转或镜像下保持不变。
@@ -31,6 +31,8 @@ pub(super) struct FrameRecordingCanvas {
     pub(super) blend_mode: BlendMode,
     pub(super) blend_stack: Vec<BlendMode>,
     pub(super) scratch_dirty: bool,
+    /// 当前 scratch 批次是否必须以 Additive sampled texture 合成。
+    pub(super) scratch_additive: bool,
     /// Surface-space AABB covering pixels written since the last flush.
     /// Pack scans only this region (plus AA pad) instead of the full window.
     pub(super) scratch_pack_bounds: Option<FrameRect>,
@@ -51,6 +53,7 @@ impl FrameRecordingCanvas {
             blend_mode: BlendMode::default(),
             blend_stack: Vec::new(),
             scratch_dirty: false,
+            scratch_additive: false,
             scratch_pack_bounds: None,
             deferred_error: None,
             width,
@@ -75,6 +78,7 @@ impl FrameRecordingCanvas {
         self.blend_mode = BlendMode::default();
         self.blend_stack.clear();
         self.scratch_dirty = false;
+        self.scratch_additive = false;
         self.scratch_pack_bounds = None;
         self.deferred_error = None;
     }
@@ -91,6 +95,7 @@ impl FrameRecordingCanvas {
         self.blend_mode = BlendMode::default();
         self.blend_stack.clear();
         self.scratch_dirty = false;
+        self.scratch_additive = false;
         self.scratch_pack_bounds = None;
         self.deferred_error = None;
         let mut encoder =
@@ -137,6 +142,7 @@ impl FrameRecordingCanvas {
         self.blend_mode = BlendMode::default();
         self.blend_stack.clear();
         self.scratch_dirty = false;
+        self.scratch_additive = false;
         self.scratch_pack_bounds = None;
         self.deferred_error = None;
         self.release_scratch_allocation();
@@ -309,6 +315,76 @@ impl FrameRecordingCanvas {
             self.unsupported_state("destination-dependent Additive blend via CPU segment");
             return;
         }
+        // 普通软件操作继续写入 SrcOver CPU segment 批次。
+        self.draw_scratch(local_bounds, pad, false, draw);
+    }
+
+    /// 把已经证明可结合的 Additive 填充累积到透明 scratch，稍后以 Additive
+    /// sampled texture 对累计目标合成。
+    pub(super) fn draw_additive_cpu(
+        &mut self,
+        local_bounds: Rect,
+        pad: f32,
+        draw: impl FnOnce(&mut SharedRasterizer),
+    ) {
+        // 只允许显式 Additive 调用进入目标相关 sampled 批次。
+        if self.blend_mode != BlendMode::Additive {
+            // 错误调用保持稳定的 typed failure，而不是改变普通 blend 语义。
+            self.unsupported_state("Additive sampled scratch without Additive blend");
+            // 禁止继续写入错误批次。
+            return;
+        }
+        // 非有限 opacity 无法稳定烘焙为 premultiplied sampled tile。
+        if !self.scratch.opacity().is_finite() {
+            // 保留既有 deferred typed failure 契约。
+            self.unsupported_state("Additive sampled scratch with non-finite opacity");
+            // 禁止把 NaN 转换成静默透明的源贡献。
+            return;
+        }
+        // Additive 填充使用独立的目标相关 scratch 批次。
+        self.draw_scratch(local_bounds, pad, true, draw);
+    }
+
+    /// 根据当前 blend 选择普通 CPU segment 或 Additive sampled segment。
+    pub(super) fn draw_cpu_fill(
+        &mut self,
+        local_bounds: Rect,
+        pad: f32,
+        draw: impl FnOnce(&mut SharedRasterizer),
+    ) {
+        // Additive 填充必须在最终目标上执行饱和加法。
+        if self.blend_mode == BlendMode::Additive {
+            // 透明 scratch 只保存可结合的源贡献。
+            self.draw_additive_cpu(local_bounds, pad, draw);
+        } else {
+            // Alpha 与 SrcOver 保持既有 CPU segment 行为。
+            self.draw_cpu(local_bounds, pad, draw);
+        }
+    }
+
+    /// 向同一 blend 的透明 scratch 批次追加一个软件光栅操作。
+    fn draw_scratch(
+        &mut self,
+        local_bounds: Rect,
+        pad: f32,
+        additive: bool,
+        draw: impl FnOnce(&mut SharedRasterizer),
+    ) {
+        // 已有不同 blend 的像素必须先形成 painter-order barrier。
+        if self.scratch_dirty && self.scratch_additive != additive {
+            // flush 失败时保留原批次并延迟报告，不能混写后续像素。
+            if let Err(error) = self.flush_scratch() {
+                // 保存首个稳定错误。
+                self.remember_error(error);
+                // 停止当前操作。
+                return;
+            }
+        }
+        // 录制器已经失败时不再修改 scratch。
+        if self.deferred_error.is_some() {
+            // 保持首个错误及当前命令流。
+            return;
+        }
         if let Err(error) = self.ensure_scratch() {
             self.remember_error(error);
             return;
@@ -316,6 +392,8 @@ impl FrameRecordingCanvas {
         draw(&mut self.scratch);
         self.note_scratch_bounds(local_bounds, pad);
         self.scratch_dirty = true;
+        // 保存本批最终合成需要使用的 blend 事实。
+        self.scratch_additive = additive;
         // Defer flush until a painter-order barrier (native op / Picture blit /
         // finish). Per-op flush re-scanned and re-uploaded after every glyph
         // and rounded fill, dominating record time on dense pages.
@@ -336,7 +414,20 @@ impl FrameRecordingCanvas {
             let image =
                 FrameImage::new(dst.width, dst.height, pixels).map_err(frame_encoder_error)?;
             let src = FrameRect::new(0, 0, dst.width, dst.height);
-            self.encoder_mut()?.cpu_image_segment(image, src, dst);
+            // Additive scratch 已经把每笔 opacity、clip 与 transform 烘焙进源像素。
+            if self.scratch_additive {
+                // 以 opaque opacity 只执行一次最终目标相关饱和加法。
+                self.encoder_mut()?.blit_picture_with_opacity_blend(
+                    image,
+                    src,
+                    FrameSampledRect::from_integer(dst),
+                    FrameOpacity::opaque(),
+                    true,
+                );
+            } else {
+                // 普通透明 scratch 继续使用既有 SrcOver CPU segment。
+                self.encoder_mut()?.cpu_image_segment(image, src, dst);
+            }
         }
         // pack_bounds 是本批所有 draw bounds 的并集，不是最后一笔；清理该并集即可
         // 隔离下一批，同时避免每个 painter barrier 都扫完整窗口。
@@ -356,6 +447,8 @@ impl FrameRecordingCanvas {
             self.scratch.surface_mut().clear_all();
         }
         self.scratch_dirty = false;
+        // 空 scratch 不再携带上一批 Additive 事实。
+        self.scratch_additive = false;
         Ok(())
     }
 

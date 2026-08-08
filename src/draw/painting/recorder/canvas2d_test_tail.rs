@@ -356,10 +356,10 @@ fn additive_shapes_record_reordered_non_uniform_radius() {
     );
 }
 
-// 分数平移与非平移 transform 都不能伪装成整数轴对齐 shape。
+// Additive 描边尚无 sampled soft 语义，分数平移与缩放必须继续稳定拒绝。
 #[test]
-fn additive_shape_rejects_fractional_or_scaled_transform() {
-    // 依次覆盖分数纯平移与轴对齐缩放两个拒绝分支。
+fn additive_stroke_rejects_fractional_or_scaled_transform() {
+    // 依次覆盖分数纯平移与轴对齐缩放两个描边拒绝分支。
     for transform in [Transform::translate(0.5, 0.0), Transform::scale(2.0, 1.0)] {
         // 为每个拒绝场景创建独立录制画布。
         let mut canvas = FrameRecordingCanvas::new(8, 8);
@@ -372,14 +372,23 @@ fn additive_shape_rejects_fractional_or_scaled_transform() {
         canvas.set_transform(transform);
         // 选择目标相关 Additive 混合。
         canvas.set_blend_mode(BlendMode::Additive);
-        // 尝试记录 otherwise 合法的整数矩形。
-        canvas.fill_rect(Rect::new(1.0, 1.0, 2.0, 2.0), Color::green(), None);
+        // 尝试记录 otherwise 合法的一像素矩形描边。
+        canvas.stroke_rect(
+            // 使用完整位于 surface 内的本地矩形。
+            Rect::new(1.0, 1.0, 2.0, 2.0),
+            // 颜色不影响 transform 门禁。
+            Color::green(),
+            // 使用合法正有限线宽。
+            1.0,
+            // 直角描边排除圆角载荷干扰。
+            None,
+        );
         // 完成边界必须返回稳定的 NotImplemented typed failure。
         let error = match canvas.finish_recording() {
             // 错误结果就是本测试需要审计的门禁事实。
             Err(error) => error,
-            // 成功会把不支持的 transform 错误提升到整数 shape。
-            Ok(_) => panic!("unsupported additive transform must be rejected"),
+            // 成功会把尚未支持的描边 transform 错误提升或采样。
+            Ok(_) => panic!("unsupported additive stroke transform must be rejected"),
         };
         // 拒绝原因必须保持在不能等价 lowering 的类型边界。
         assert_eq!(error.code(), crate::core::Errc::NotImplemented);
