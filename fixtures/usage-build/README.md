@@ -46,7 +46,9 @@
 ```powershell
 python scripts/measure_usage_build.py --dry-run
 # Windows 等交叉宿主需把该变量指向可执行的 Linux GNU linker；例如调用 `zig cc -target x86_64-linux-gnu` 的包装器。
-$env:CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = "C:\tools\zigcc.exe"
+# 将 MSYS2 的 Zig 放入 PATH，使用仓库内可复核的 linker 包装器。
+$env:Path = "C:\msys64\clang64\bin;$env:Path"
+$env:CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = "$PWD\tools\zigcc.cmd"
 python scripts/measure_usage_build.py --locked
 ```
 
