@@ -18,6 +18,11 @@ opt-level = "s"
 strip = "symbols"
 lto = "fat"
 codegen-units = 1
+# 过程宏（uix-derive、windows_implement 等）与构建脚本不受 LTO 收益，
+# 单独提速：保持多 codegen 单元并行，避免被 fat LTO 拖慢全量构建。
+[profile.release.build-override]
+opt-level = 3
+codegen-units = 16
 
 [dependencies]
 uix-derive = { path = "uix-derive", version = "0.0.1" }
