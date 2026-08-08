@@ -159,14 +159,24 @@ pub(super) fn apply_raster_op_pixels(
                 apply_stroke_rect_pixels(width, height, pixels, *stroke, *clip, *additive);
             }
         }
-        FrameRasterOp::FillRectAdditive { rect, color } => {
-            fill_rect_additive_pixels(width, height, pixels, *rect, *color)
+        FrameRasterOp::FillRectAdditive { rect, color, clip } => {
+            // 对累计目标执行硬矩形裁剪后的饱和加法。
+            fill_rect_additive_pixels(width, height, pixels, *rect, *color, *clip)
         }
         FrameRasterOp::FillRoundedRectAdditive {
             rect,
             color,
             radius,
-        } => fill_rounded_rect_additive_pixels(width, height, pixels, *rect, *color, *radius),
+            clip,
+        } => {
+            // 先把命令裁剪限制到参考 surface，完全不可见时保持 no-op。
+            if let Some(clip) = clip.intersection(FrameRect::new(0, 0, width, height)) {
+                // 保留原始圆角几何，仅裁剪最终覆盖。
+                fill_rounded_rect_additive_pixels(
+                    width, height, pixels, *rect, *color, *radius, clip,
+                )
+            }
+        }
         FrameRasterOp::ScrollCopy { viewport, dx, dy } => {
             scroll_copy_pixels(width, height, pixels, *viewport, *dx, *dy)
         }
@@ -223,17 +233,24 @@ fn fill_rect_additive_pixels(
     pixels: &mut [u32],
     rect: FrameRect,
     color: Color,
+    clip: FrameRect,
 ) {
-    if rect.is_empty() {
+    // 同时裁到命令 clip 与真实 surface，避免任何越界写入。
+    let Some(visible) = rect
+        .intersection(clip)
+        .and_then(|visible| visible.intersection(FrameRect::new(0, 0, width, height)))
+    else {
+        // 完全不可见时保持累计目标不变。
         return;
-    }
-    let x0 = rect.x.max(0);
-    let y0 = rect.y.max(0);
-    let x1 = rect.x.saturating_add(rect.width).min(width);
-    let y1 = rect.y.saturating_add(rect.height).min(height);
-    if x0 >= x1 || y0 >= y1 {
-        return;
-    }
+    };
+    // 可见交集已经是 surface 内的安全半开区间。
+    let x0 = visible.x;
+    // 保存可见区顶部。
+    let y0 = visible.y;
+    // 计算可见区右边界。
+    let x1 = visible.x + visible.width;
+    // 计算可见区底边界。
+    let y1 = visible.y + visible.height;
     let source = color.premultiplied();
     for y in y0..y1 {
         for x in x0..x1 {
@@ -250,11 +267,23 @@ fn fill_rounded_rect_additive_pixels(
     rect: FrameRect,
     color: Color,
     radius: FrameRadius,
+    clip: FrameRect,
 ) {
-    if rect.is_empty() {
+    // 空几何或空裁剪都不产生覆盖。
+    if rect.is_empty() || clip.is_empty() {
+        // 保持累计目标不变。
         return;
     }
+    // 创建与目标尺寸一致的参考软件光栅器。
     let mut renderer = SoftwareRasterizer::new(width, height);
+    // 把 FrameEncoder 的整数 clip 注入软件光栅状态。
+    renderer.push_clip_surface(Rect::new(
+        clip.x as f32,
+        clip.y as f32,
+        clip.width as f32,
+        clip.height as f32,
+    ));
+    // 选择目标相关饱和加法语义。
     renderer.set_blend_mode(BlendMode::Additive);
     renderer.fill_rect(
         pixels,

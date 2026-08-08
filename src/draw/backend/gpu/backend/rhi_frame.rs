@@ -427,14 +427,15 @@ fn append_native_operation(
             Ok(true)
         }
         // Additive 矩形复用 shape SDF 与独立的加法 blend pipeline。
-        FrameRasterOp::FillRectAdditive { rect, color } => Ok(append_shape(
+        FrameRasterOp::FillRectAdditive { rect, color, clip } => Ok(append_shape(
             operations,
             *rect,
             *color,
             crate::draw::painting::FrameRadius::zero(),
             0.0,
             true,
-            None,
+            // 把命令携带的逻辑裁剪转换为当前物理 target 的 scissor。
+            Some(*clip),
             bounds,
             viewport,
             scale_x,
@@ -445,8 +446,20 @@ fn append_native_operation(
             rect,
             color,
             radius,
+            clip,
         } => Ok(append_shape(
-            operations, *rect, *color, *radius, 0.0, true, None, bounds, viewport, scale_x, scale_y,
+            operations,
+            *rect,
+            *color,
+            *radius,
+            0.0,
+            true,
+            // 圆角填充保留相同的矩形 scissor 事实。
+            Some(*clip),
+            bounds,
+            viewport,
+            scale_x,
+            scale_y,
         )),
         // ScrollCopy 仍需 surface image 级 copy，不能伪装成普通 draw。
         FrameRasterOp::ScrollCopy { .. } => Ok(false),
