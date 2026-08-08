@@ -24,53 +24,6 @@ use super::super::canvas::NativeGpuCanvas2D;
 use super::rhi_surface_soft::try_upload_rhi_canvas_soft;
 use super::{GpuBackend, NativeGpuOffscreen};
 
-// 为 RHI/legacy Picture 回退提供独立的资源所有权辅助。
-impl GpuBackend {
-    // 把尚未提交过 RHI 内容的 Picture slot 降级为唯一的 legacy target。
-    pub(super) fn downgrade_offscreen_rhi_texture(
-        &mut self,
-        handle: ImageHandle,
-    ) -> Result<(), Error> {
-        // 先从 slot 取出句柄，避免 owner-thread destroy 借用跨过 slot 修改。
-        let texture = self
-            .offscreens
-            .get_mut(handle.0 as usize)
-            .and_then(Option::as_mut)
-            .ok_or_else(|| {
-                Error::new(
-                    Errc::InvalidState,
-                    "Picture target disappeared before RHI fallback downgrade",
-                )
-            })?
-            .rhi_texture
-            .take();
-        // 没有 RHI 纹理时已经是 legacy-only slot，降级操作是幂等的。
-        let Some(texture) = texture else {
-            return Ok(());
-        };
-        // RHI 纹理必须由创建它的 owner-thread context 检查式释放。
-        let Some(context) = self.gpu_ctx.rhi_context() else {
-            // context 丢失时恢复句柄，禁止把未释放资源伪装成降级成功。
-            if let Some(Some(offscreen)) = self.offscreens.get_mut(handle.0 as usize) {
-                offscreen.rhi_texture = Some(texture);
-            }
-            return Err(Error::new(
-                Errc::InvalidState,
-                "RHI Picture texture lost its owner context before fallback downgrade",
-            ));
-        };
-        // 销毁失败同样恢复 slot，保证后续 shutdown 仍能重试资源回收。
-        if let Err(error) = context.destroy_texture(texture) {
-            if let Some(Some(offscreen)) = self.offscreens.get_mut(handle.0 as usize) {
-                offscreen.rhi_texture = Some(texture);
-            }
-            return Err(error);
-        }
-        // 成功后 slot 只保留已经准备好的 legacy target。
-        Ok(())
-    }
-}
-
 impl RenderBackend for GpuBackend {
     fn kind(&self) -> BackendKind {
         BackendKind::Gpu
@@ -519,66 +472,51 @@ impl RenderBackend for GpuBackend {
                     let has_native = !off.canvas.pending_native.is_empty();
                     // 记录当前 Picture 是否有尚未合成的 CPU soft 内容。
                     let has_soft = off.canvas.soft_has_content;
-                    // destination-dependent soft 不能被透明 SrcOver quad 等价替换。
-                    if has_soft && off.canvas.soft_uses_destination_blend {
-                        // 已初始化的 RHI target 不允许中途切换到失同步的 legacy 资源。
+                    // native 前缀存在时只提交已验证的 queue，保留后续 soft 分段合成机会。
+                    let native_submitted = if has_native {
+                        off.canvas.submit_rhi_mixed_for_geometry(
+                            renderer,
+                            context,
+                            load,
+                            crate::draw::backend::frame_plan::RenderTargetRef::Texture(rhi_target),
+                            PresentDamage::Full,
+                            viewport,
+                            1.0,
+                            1.0,
+                            has_soft,
+                        )?
+                    } else {
+                        true
+                    };
+                    // native queue 未完全 lowering 时不能继续消费 soft staging。
+                    if has_native && !native_submitted {
                         if self.offscreen_rhi_initialized {
                             return Err(Error::new(
                                 Errc::NotImplemented,
-                                "Picture RHI target cannot switch after destination-dependent soft blend",
+                                "Picture RHI target cannot switch to legacy rendering after commit",
                             ));
                         }
-                        // 首次提交保留完整兼容路径处理该 soft 语义。
                         false
                     } else {
-                        // native 前缀存在时只提交已验证的 queue，保留后续 soft 合成机会。
-                        let native_submitted = if has_native {
-                            off.canvas.submit_rhi_mixed_for_geometry(
-                                renderer,
-                                context,
-                                load,
-                                crate::draw::backend::frame_plan::RenderTargetRef::Texture(
-                                    rhi_target,
-                                ),
-                                PresentDamage::Full,
+                        // native 成功后 soft 段必须以 Load 继续写入同一离屏 target。
+                        let soft_submitted = if has_soft || !has_native {
+                            try_upload_rhi_canvas_soft(
+                                &mut off.canvas,
+                                off.width,
+                                off.height,
                                 viewport,
                                 1.0,
                                 1.0,
-                                has_soft,
+                                rhi_target,
+                                if has_native { LoadAction::Load } else { load },
+                                context,
+                                renderer,
                             )?
                         } else {
                             true
                         };
-                        // native queue 未完全 lowering 时不能继续消费 soft staging。
-                        if has_native && !native_submitted {
-                            if self.offscreen_rhi_initialized {
-                                return Err(Error::new(
-                                    Errc::NotImplemented,
-                                    "Picture RHI target cannot switch to legacy rendering after commit",
-                                ));
-                            }
-                            false
-                        } else {
-                            // native 成功后 soft tile 必须以 Load 继续写入同一离屏 target。
-                            let soft_submitted = if has_soft || !has_native {
-                                try_upload_rhi_canvas_soft(
-                                    &mut off.canvas,
-                                    off.width,
-                                    off.height,
-                                    viewport,
-                                    1.0,
-                                    1.0,
-                                    rhi_target,
-                                    if has_native { LoadAction::Load } else { load },
-                                    context,
-                                    renderer,
-                                )?
-                            } else {
-                                true
-                            };
-                            // 只有 native 与 soft 两段都成功才消费 Picture staging。
-                            native_submitted && soft_submitted
-                        }
+                        // 只有 native 与全部 soft blend 段都成功才消费 Picture staging。
+                        native_submitted && soft_submitted
                     }
                 } else {
                     // 当前 context 未暴露 RHI，使用 legacy target。

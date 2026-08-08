@@ -176,6 +176,57 @@ mod tests {
 
 // 为 GpuBackend 提供 RHI Picture texture 到当前 target 的保序合成。
 impl GpuBackend {
+    // 把尚未提交过 RHI 内容的 Picture slot 降级为唯一的 legacy target。
+    pub(super) fn downgrade_offscreen_rhi_texture(
+        &mut self,
+        handle: ImageHandle,
+    ) -> Result<(), Error> {
+        // 先从 slot 取出句柄，避免 owner-thread destroy 借用跨过 slot 修改。
+        let texture = self
+            .offscreens
+            .get_mut(handle.0 as usize)
+            .and_then(Option::as_mut)
+            .ok_or_else(|| {
+                // 丢失 slot 时返回稳定的状态错误。
+                Error::new(
+                    Errc::InvalidState,
+                    "Picture target disappeared before RHI fallback downgrade",
+                )
+            })?
+            .rhi_texture
+            .take();
+        // 没有 RHI 纹理时已经是 legacy-only slot，降级操作是幂等的。
+        let Some(texture) = texture else {
+            // 保持已经完成的降级状态。
+            return Ok(());
+        };
+        // RHI 纹理必须由创建它的 owner-thread context 检查式释放。
+        let Some(context) = self.gpu_ctx.rhi_context() else {
+            // context 丢失时恢复句柄，禁止把未释放资源伪装成降级成功。
+            if let Some(Some(offscreen)) = self.offscreens.get_mut(handle.0 as usize) {
+                // 恢复原有 RHI owner 供 shutdown 重试。
+                offscreen.rhi_texture = Some(texture);
+            }
+            // 返回 typed owner-state 失败。
+            return Err(Error::new(
+                Errc::InvalidState,
+                "RHI Picture texture lost its owner context before fallback downgrade",
+            ));
+        };
+        // 销毁失败同样恢复 slot，保证后续 shutdown 仍能重试资源回收。
+        if let Err(error) = context.destroy_texture(texture) {
+            // 尽量恢复尚未释放的资源句柄。
+            if let Some(Some(offscreen)) = self.offscreens.get_mut(handle.0 as usize) {
+                // 保留原 owner 身份。
+                offscreen.rhi_texture = Some(texture);
+            }
+            // 传播 adapter 的真实资源错误。
+            return Err(error);
+        }
+        // 成功后 slot 只保留已经准备好的 legacy target。
+        Ok(())
+    }
+
     // 在提交嵌套 Picture 目标队列前统一 source/destination 的资源所有权。
     pub(super) fn prepare_nested_picture_blit(
         &mut self,

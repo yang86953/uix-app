@@ -3,15 +3,30 @@
 //! 软回退（scratch）状态、裁剪/变换折叠与 GPU-only 模式判定；绘制操作在
 //! [`super::queue`] 入队、[`super::submit`] 提交、[`super::canvas2d`] 选择路径。
 
+// 引入共享像素载荷，避免 soft 分段在 RHI lowering 时重复复制。
+use std::sync::Arc;
 
 use crate::core::{Errc, Error, Rect};
 use crate::draw::geometry::types::{BlendMode, Transform};
 use crate::draw::raster::pixel_surface::PixelSurface;
 use crate::draw::raster::shared_rasterizer::SharedRasterizer;
-use crate::native::present::NativeRasterCaps;
+use crate::native::present::{NativeRasterCaps, SoftFallbackTile};
 
 use super::pending::PendingNativeOp;
+// 复用与 legacy/RHI 提交相同的最小可见 tile 打包规则。
+use super::tile::pack_visible_soft_fallback_tile;
 use super::StateSnapshot;
+
+// 保存一个已经封口、可按固定 blend 语义提交的 CPU soft 段。
+#[derive(Debug, Clone)]
+pub(crate) struct PackedSoftSegment {
+    // 保存紧密排列的 premultiplied BGRA 像素。
+    pub(crate) pixels: Arc<[u32]>,
+    // 保存该紧密载荷在目标中的逻辑位置。
+    pub(crate) tile: SoftFallbackTile,
+    // 标记该段必须使用 source + destination 的 Additive pipeline。
+    pub(crate) additive: bool,
+}
 
 pub struct NativeGpuCanvas2D {
     pub(super) native_caps: NativeRasterCaps,
@@ -22,6 +37,12 @@ pub struct NativeGpuCanvas2D {
     pub(crate) soft_fallback: Option<SharedRasterizer>,
     /// Soft buffer has content that must be composited (until full clear).
     pub(crate) soft_has_content: bool,
+    // 标记当前可变 soft surface 是否包含尚未封口的像素。
+    pub(crate) soft_current_has_content: bool,
+    // 保存 blend 切换时已经封口的 soft 段，并保持 painter order。
+    pub(crate) pending_soft_segments: Vec<PackedSoftSegment>,
+    // 保存当前可变 soft 段归一化后的固定 blend 语义。
+    pub(crate) soft_segment_blend: Option<BlendMode>,
     /// At least one soft operation contributed to the current swapchain frame.
     /// Segment commits do not reset this: ordered Picture boundaries may split
     /// one frame into several submissions before the final present.
@@ -29,8 +50,8 @@ pub struct NativeGpuCanvas2D {
     /// Successful swapchain presents since this canvas last used its soft
     /// fallback. A short grace avoids allocation churn in alternating frames.
     pub(super) soft_idle_presents: u8,
-    /// Destination-dependent blend cannot be faithfully composed from a
-    /// transparent CPU segment over native output.
+    /// Legacy soft-tile upload cannot faithfully compose a destination-dependent
+    /// blend; segmented RHI lowering uses this flag only to reject that fallback.
     pub(super) soft_uses_destination_blend: bool,
     /// Immediate Canvas2D calls that have no `Result` return channel record
     /// an error here. The frame boundary consumes it before any present.
@@ -55,7 +76,6 @@ pub struct NativeGpuCanvas2D {
     pub(crate) last_soft_upload_bytes: usize,
 }
 
-
 impl NativeGpuCanvas2D {
     pub(crate) fn new(width: i32, height: i32, native_caps: NativeRasterCaps) -> Self {
         Self::new_with_mode(width, height, native_caps, false)
@@ -79,6 +99,12 @@ impl NativeGpuCanvas2D {
             device_pixel_ratio: 1.0,
             soft_fallback: None,
             soft_has_content: false,
+            // 新画布没有尚未封口的 soft 像素。
+            soft_current_has_content: false,
+            // 新画布没有历史 soft 段。
+            pending_soft_segments: Vec::new(),
+            // 第一次 soft 操作再确定当前段的 blend。
+            soft_segment_blend: None,
             soft_used_since_present: false,
             soft_idle_presents: 0,
             soft_uses_destination_blend: false,
@@ -137,6 +163,94 @@ impl NativeGpuCanvas2D {
         })
     }
 
+    // 把 Alpha 与 SrcOver 归一化为同一个 premultiplied 合成段。
+    fn normalized_soft_blend(blend_mode: BlendMode) -> BlendMode {
+        // Additive 必须独立成段，其余公开模式都使用 SrcOver 等价式。
+        if matches!(blend_mode, BlendMode::Additive) {
+            // 保留加法段标识。
+            BlendMode::Additive
+        } else {
+            // Alpha 与 SrcOver 共用同一固定管线。
+            BlendMode::SrcOver
+        }
+    }
+
+    // 打包当前可变 surface，但不消费任何 staging 状态。
+    fn packed_current_soft_segment(&self) -> Option<PackedSoftSegment> {
+        // 没有当前段内容时不制造空 texture。
+        if !self.soft_current_has_content {
+            // 保持空段无提交语义。
+            return None;
+        }
+        // 取得当前 soft surface 的最小可见 tile。
+        let (pixels, tile) = self.soft_fallback.as_ref().and_then(|soft| {
+            // 使用目标逻辑尺寸裁剪并紧密打包。
+            pack_visible_soft_fallback_tile(
+                soft.surface().pixels(),
+                self.surface_w,
+                self.surface_h,
+            )
+        })?;
+        // 返回带固定 blend 事实的不可变段。
+        Some(PackedSoftSegment {
+            // 转为共享载荷供 RHI 临时 texture 上传。
+            pixels: Arc::from(pixels),
+            // 保留紧密 tile 的目标位置。
+            tile,
+            // 当前段只有归一化 Additive 时才使用加法管线。
+            additive: matches!(self.soft_segment_blend, Some(BlendMode::Additive)),
+        })
+    }
+
+    // 返回所有已封口段及当前段的只读快照，保持原始 painter order。
+    pub(crate) fn packed_soft_segments(&self) -> Vec<PackedSoftSegment> {
+        // 先复用已封口段的共享像素载荷。
+        let mut segments = self.pending_soft_segments.clone();
+        // 当前可变段始终位于所有已封口段之后。
+        if let Some(current) = self.packed_current_soft_segment() {
+            // 追加当前段完成本次提交快照。
+            segments.push(current);
+        }
+        // 返回不消费 staging 的完整顺序视图。
+        segments
+    }
+
+    // 在 blend 切换时封口当前段并清空可变像素 surface。
+    fn seal_current_soft_segment(&mut self) {
+        // 先打包当前内容，避免清理 surface 后丢失像素。
+        let segment = self.packed_current_soft_segment();
+        // 只有存在可见像素时才保存提交段。
+        if let Some(segment) = segment {
+            // 保持该段在后续段之前提交。
+            self.pending_soft_segments.push(segment);
+        }
+        // 清空可变 surface，让下一个 blend 段从透明背景开始。
+        if let Some(soft) = self.soft_fallback.as_mut() {
+            // 只清像素，不破坏 transform、clip 与状态栈。
+            soft.surface_mut().clear_all();
+        }
+        // 当前 surface 已经没有未封口内容。
+        self.soft_current_has_content = false;
+    }
+
+    // 在一次 soft 操作前建立与其 blend 匹配的连续段。
+    pub(super) fn prepare_soft_segment(&mut self, blend_mode: BlendMode) {
+        // 把公开 blend 模式收敛为两个可由 RHI 精确合成的类别。
+        let normalized = Self::normalized_soft_blend(blend_mode);
+        // 相同 blend 的连续操作继续写入当前段。
+        if self.soft_segment_blend == Some(normalized) {
+            // 不产生无意义的分段边界。
+            return;
+        }
+        // 已有像素必须在切换 blend 前封口。
+        if self.soft_current_has_content {
+            // 保存前一段并透明初始化可变 surface。
+            self.seal_current_soft_segment();
+        }
+        // 后续 soft 操作使用新的固定 blend 事实。
+        self.soft_segment_blend = Some(normalized);
+    }
+
     pub(super) fn resize(&mut self, width: i32, height: i32) {
         let w = width.max(1);
         let h = height.max(1);
@@ -150,6 +264,12 @@ impl NativeGpuCanvas2D {
         // Drop soft buffer on resize; recreate lazily at the new size.
         self.soft_fallback = None;
         self.soft_has_content = false;
+        // resize 丢弃当前段内容。
+        self.soft_current_has_content = false;
+        // resize 丢弃旧尺寸下的已封口段。
+        self.pending_soft_segments.clear();
+        // 新尺寸由下一次 soft 操作重新选择 blend。
+        self.soft_segment_blend = None;
         self.soft_used_since_present = false;
         self.soft_idle_presents = 0;
         self.soft_uses_destination_blend = false;
@@ -161,6 +281,12 @@ impl NativeGpuCanvas2D {
             soft.surface_mut().clear_all();
         }
         self.soft_has_content = false;
+        // 完整清理同时清除当前段标记。
+        self.soft_current_has_content = false;
+        // 完整清理丢弃尚未提交的历史段。
+        self.pending_soft_segments.clear();
+        // 后续操作重新建立 blend 段。
+        self.soft_segment_blend = None;
         self.soft_uses_destination_blend = false;
         self.pending_native.clear();
     }
@@ -171,6 +297,8 @@ impl NativeGpuCanvas2D {
             return;
         }
         self.soft_has_content = true;
+        // 当前可变 surface 已经包含本次 soft 操作。
+        self.soft_current_has_content = true;
         self.soft_used_since_present = true;
         self.soft_idle_presents = 0;
     }
@@ -189,6 +317,12 @@ impl NativeGpuCanvas2D {
             soft.reset_state_for_extent(self.surface_w, self.surface_h);
         }
         self.soft_has_content = false;
+        // repaint 会透明清理当前 soft surface。
+        self.soft_current_has_content = false;
+        // repaint 不保留上一帧已经封口的段。
+        self.pending_soft_segments.clear();
+        // 下一次 soft 操作重新确定段 blend。
+        self.soft_segment_blend = None;
         self.soft_uses_destination_blend = false;
         self.deferred_error = None;
         self.pending_native.clear();
@@ -236,6 +370,9 @@ impl NativeGpuCanvas2D {
         let blend_mode = self.blend_mode;
         let offset_x = self.offset_x;
         let offset_y = self.offset_y;
+        // 在写入像素前按 blend 变化封口前一段。
+        self.prepare_soft_segment(blend_mode);
+        // 取得与当前段对应的可变 soft renderer。
         let soft = self.ensure_soft();
         soft.set_transform(transform);
         soft.set_opacity(opacity);

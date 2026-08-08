@@ -134,15 +134,14 @@ impl GpuBackend {
             // 让调用方决定是否安全回退到 legacy target。
             return Ok(false);
         }
-        // soft 内容只能在无 destination-dependent blend 且无 soft 后 scroll 时合成。
+        // soft 内容已经按 blend 分段；只有 soft 后 scroll 仍缺少可重排边界。
         if self.surface.canvas.soft_has_content
-            && (self.surface.canvas.soft_uses_destination_blend
-                || self
-                    .surface
-                    .canvas
-                    .pending_native
-                    .iter()
-                    .any(|operation| matches!(operation, PendingNativeOp::ScrollCopy(_))))
+            && self
+                .surface
+                .canvas
+                .pending_native
+                .iter()
+                .any(|operation| matches!(operation, PendingNativeOp::ScrollCopy(_)))
         {
             // 保留完整兼容回退，避免改变软段与目标搬移的顺序。
             return Ok(false);
