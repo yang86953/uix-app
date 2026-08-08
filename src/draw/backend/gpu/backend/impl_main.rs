@@ -122,6 +122,10 @@ impl GpuBackend {
             rhi_surface_token: None,
             // 首帧还没有 FrameEncoder 写入 retained target。
             rhi_surface_frame_pending_present: false,
+            // 启动时尚未捕获 overlay 干净背景。
+            rhi_overlay_backdrop_texture: None,
+            // 没有 backdrop texture 时不存在对应 surface 代际。
+            rhi_overlay_backdrop_token: None,
             surface: NativeGpuDrawSurface {
                 canvas,
                 native_caps,

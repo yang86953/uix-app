@@ -536,39 +536,6 @@ pub trait IGraphicsContext {
             ),
         ))
     }
-
-    /// 将保留主色缓冲快照为 overlay 干净背景（GPU 纹理复制，无 CPU readback）。
-    ///
-    /// 仅 `retained_framebuffer` 后端可实现；默认未实现。须在 `begin_frame`
-    /// 清除之前调用。
-    fn snapshot_overlay_backdrop(&mut self) -> Result<(), Error> {
-        Err(Error::new(
-            crate::core::error::Errc::NotImplemented,
-            format!(
-                "GraphicsBackend {} does not support snapshot_overlay_backdrop",
-                self.graphics_backend()
-            ),
-        ))
-    }
-
-    /// 将 overlay 背景快照写回保留主色缓冲，供随后只绘制浮层。
-    fn restore_overlay_backdrop(&mut self) -> Result<(), Error> {
-        Err(Error::new(
-            crate::core::error::Errc::NotImplemented,
-            format!(
-                "GraphicsBackend {} does not support restore_overlay_backdrop",
-                self.graphics_backend()
-            ),
-        ))
-    }
-
-    /// 释放 overlay 背景快照。
-    fn release_overlay_backdrop(&mut self) {}
-
-    /// 是否持有有效的 overlay 背景快照。
-    fn has_overlay_backdrop(&self) -> bool {
-        false
-    }
 }
 
 // 验证逻辑尺寸到物理 RHI extent 的纯转换契约。
