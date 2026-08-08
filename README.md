@@ -16,11 +16,14 @@ UIX（/ˈjuːɪks/）是一个 Rust 原生 UI 框架。
 在已安装 Rust 与 Cargo 的环境中，从仓库根目录执行：
 
 ```powershell
-cargo check --workspace --all-targets
-cargo check --manifest-path demo/Cargo.toml --workspace --all-targets
-cargo test --quiet
+python -X utf8 -m unittest discover -s tests -p "test_*.py"
+cargo test --lib --quiet
+cargo test --tests --quiet
+cargo test --manifest-path demo/Cargo.toml -p uix-gui-demo --bin uix-demo --quiet
 cargo run --release --manifest-path demo/Cargo.toml --bin uix-demo
 ```
+
+项目完成状态只以这些测试目标通过为准，不维护独立验证命令。
 
 默认 feature 启用原生 D3D11；Windows 默认选择 D3D11，启用 `opengles` 时可构造 WGL/EGL OpenGL ES。运行环境不满足时，以[平台工程](docs/进度/平台工程.md)记录的支持边界为准。
 

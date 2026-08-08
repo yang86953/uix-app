@@ -56,7 +56,7 @@
 
 - 只有尺寸约束、布局属性、子结构、文本度量或可见性变化才标 Layout dirty。
 - Paint-only 主题色、hover、opacity 动画不触发布局；width/height 等几何动画触发布局。
-- 声明树原位协调分别报告 Paint 与 Layout 影响；`Label`、`Container`、`Grid` 按快照字段分类，未审计组件及 `ProviderContext` 变化继续保守请求 Layout，不能以优化名义吞掉未知几何变化。
+- 声明树原位协调分别报告 Paint 与 Layout 影响；`Label`、`Container`、`Grid` 按快照字段分类，尚无定向测试的组件及 `ProviderContext` 变化继续保守请求 Layout，不能以优化名义吞掉未知几何变化。
 - 直接子节点增加、移除或重排后，树通过组件核心通知同步依赖子结构的派生状态；空子树不能依赖 `layout_children([])` 清理，因为 Phase 1 会跳过没有直接子节点的节点。
 - `LayoutFrameScratch` / `LayoutTraversalScratch` 只跨帧复用存储，进入布局即清空本轮向量与集合；遍历缓存以 `tree_version` 为键，当前核心不持有跨帧 `LayoutOutput` 语义快照。
 - 虚拟滚动在范围与挂载数量稳定且没有新版声明时不调用 renderer 或 reconcile，滚动走 composite/paint 路径；范围或 renderer 声明变化时，以业务 key 或绝对索引后备 key 协调当前有界窗口，重叠行保留原组件身份。
@@ -69,7 +69,7 @@
 |---|---|---|
 | 精细字段 | `Label`、`Container`、`Grid` | 颜色、背景等纯视觉字段只产生 Paint；文本、字号、盒模型、Flex/Grid 轨道、可见性和响应式列等几何字段产生 Layout + Paint。 |
 | 配置与运行态分离 | `Input`、`Collapse`、`Carousel`、`ImageGroup` | `Input` 的受控运行值、以及其余组件快照中明确标为运行态的字段不参与 authored config 比较；配置变化仍按保守 Layout 处理，避免漏掉未知几何。 |
-| 显式保守 | 其余全部内建快照、`Unknown`、`Custom` | `builtin_widget_layout_changed` 的兜底为 `Some(true)`，任何配置差异都产生 Layout + Paint；新快照变体在获得独立审计前自动落入此类。 |
+| 显式保守 | 其余全部内建快照、`Unknown`、`Custom` | `builtin_widget_layout_changed` 的兜底为 `Some(true)`，任何配置差异都产生 Layout + Paint；新快照变体在获得定向测试前自动落入此类。 |
 
 显式保守清单覆盖：`Button`、`WindowControl`、`Space`、`Divider`、`Icon`、`Typography`、`Checkbox`、`Radio`、`Switch`、`Slider`、`RangeSlider`、`Rate`、`InputNumber`、`Avatar`、`Badge`、`Card`、`Empty`、`Image`、`Tag`、`Timeline`、`Calendar`、`Skeleton`、`FloatButton`、`FloatButtonGroup`、`Layout`、`Header`、`Sider`、`Content`、`Footer`、`Splitter`、`Affix`、`BackTop`、`List`、`Select`、`AutoComplete`、`Cascader`、`ColorPicker`、`DatePicker`、`DateRangePicker`、`TimePicker`、`Mentions`、`Segmented`、`FormItem`、`Form`、`Descriptions`、`Result`、`SelectableList`、`ScrollView`、`ThemeToggle`、`Transfer`、`Upload`、`Watermark`，以及 feature-gated 的 `Alert`、`Message`、`Notification`、`ProgressBar`、`Spin`、`Tooltip`、`Popover`、`Popconfirm`、`Modal`、`Drawer`、`Breadcrumb`、`Pagination`、`Anchor`、`Menu`、`Dropdown`、`Tabs`、`Steps`、`NavItem`、`Tree`、`TreeSelect`、`Table`、`BarChart`、`LineChart`、`PieChart`、`ChartPlaceholder`、`QRCode`、`RichText`。
 
@@ -86,4 +86,4 @@
 - `tests/layout_invariants.rs` 覆盖盒模型、Flex、Grid、ScrollView、VirtualScroll、RichText、Notification 与 Table 的布局不变量。
 - `tests/flex_overflow_invariants.rs` 与 `tests/flex_overflow_flexibility.rs` 覆盖溢出、换行、轴转置、镜像、负 margin/gap 和弹性冻结组合。
 - 组件内部测试覆盖缓存失效、子结构协调、绘制与命中一致性，以及病理数值的有界处理。
-- 本模块只以自动测试结果判断完成状态，不维护独立审计、截图证据或人工视觉矩阵。
+- 本模块只以自动测试结果判断完成状态。
