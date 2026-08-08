@@ -129,9 +129,10 @@ impl GpuBackend {
             || (self.surface.canvas.pending_native.is_empty()
                 && self.surface.pending_clear_rects.is_empty()
                 && self.surface.pending_scroll_copies.is_empty()
-                && !self.surface.canvas.soft_has_content)
+                && !self.surface.canvas.soft_has_content
+                && !self.surface.needs_gpu_clear)
         {
-            // 让调用方决定是否安全回退到 legacy target。
+            // 让调用方继续检查其它 RHI 纵切或返回 typed failure。
             return Ok(false);
         }
         // soft 内容已经按 blend 分段；只有 soft 后 scroll 仍缺少可重排边界。
@@ -143,12 +144,12 @@ impl GpuBackend {
                 .iter()
                 .any(|operation| matches!(operation, PendingNativeOp::ScrollCopy(_)))
         {
-            // 保留完整兼容回退，避免改变软段与目标搬移的顺序。
+            // 保持队列未消费，交由主 surface typed 门禁拒绝不可重排语义。
             return Ok(false);
         }
         // 先确保当前 surface generation 对应的 retained texture。
         let Some(target) = self.try_rhi_surface_target()? else {
-            // 缺少组合 RHI 时保留兼容 boundary。
+            // 缺少组合 RHI 时保持队列未消费并交回 typed 边界。
             return Ok(false);
         };
         // 有序 main segment 不能落到易失 swapchain sentinel。
@@ -163,19 +164,21 @@ impl GpuBackend {
         let had_surface_scroll = !self.surface.pending_scroll_copies.is_empty();
         // 记录本次 boundary 是否包含局部清理记录。
         let had_surface_clear = !self.surface.pending_clear_rects.is_empty();
+        // 记录新 retained target 是否需要在没有绘制命令时单独透明初始化。
+        let had_full_clear = self.surface.needs_gpu_clear;
         // 先按记录顺序搬移 retained 旧像素，再处理局部清理和 native draw。
         if !self.surface.pending_scroll_copies.is_empty() {
             // 使用同一代际的采样纹理句柄建立 TextureMove。
             let retained_texture_handle = self.ensure_rhi_surface_texture()?;
             // 不可表达的 scroll 必须整段回退，不能静默丢失旧像素。
             if !self.try_apply_rhi_surface_scroll_copies(retained_texture_handle)? {
-                // 保留原始记录，交给调用方执行安全兼容边界。
+                // 保留原始记录，交给调用方执行安全 typed 边界。
                 return Ok(false);
             }
         }
         // 先把 begin_frame 记录的局部清理落入 retained texture。
         if !self.surface.pending_clear_rects.is_empty() {
-            // ClearRect 失败时由调用方销毁 retained target 并回退兼容路径。
+            // ClearRect 失败时保持 retained 状态，禁止切换 direct swapchain 路径。
             if !self.try_clear_rhi_surface_rects(retained_texture)? {
                 // 不消费尚未成功写入的局部清理记录。
                 return Ok(false);
@@ -193,6 +196,41 @@ impl GpuBackend {
             // 同一代际继续保留之前已经交付的内容。
             LoadAction::Load
         };
+        // 只有真正的空新帧需要透明 dummy；已有 scroll/局部 clear 会自行形成提交。
+        let clear_only_submitted = had_full_clear
+            && !had_surface_scroll
+            && !had_surface_clear
+            && self.surface.canvas.pending_native.is_empty()
+            && !self.surface.canvas.soft_has_content;
+        // 空新帧也必须在 retained texture 内初始化，不能回到 direct swapchain clear。
+        if clear_only_submitted {
+            // 同时借用 owner-thread context、renderer cache 与 surface canvas。
+            let (gpu_ctx, rhi_renderer, surface) =
+                (&mut self.gpu_ctx, &mut self.rhi_renderer, &mut self.surface);
+            // 前置能力检查已经保证 renderer cache 存在。
+            let Some(renderer) = rhi_renderer.as_mut() else {
+                // 状态若在借用前发生破坏，保持原子 lowering 失败。
+                return Ok(false);
+            };
+            // retained target 只能由当前组合 RHI context 初始化。
+            let Some(context) = gpu_ctx.rhi_context() else {
+                // 缺失 owner 时不触碰 adapter 高层清空入口。
+                return Ok(false);
+            };
+            // 透明 clear 只提交到 retained texture，不获取或呈现 swapchain。
+            surface.canvas.submit_rhi_clear_only(
+                // 复用当前通用 renderer cache。
+                renderer,
+                // 在当前 owner-thread context 上执行。
+                context,
+                // 使用前面计算出的透明 Clear load。
+                load,
+                // 写入唯一 retained target。
+                target,
+                // 内部初始化使用完整 damage，不改变最终 damage tracker。
+                PresentDamage::Full,
+            )?;
+        }
         // 在短借用范围内完成 ordered native lowering；soft 段稍后独立合成。
         let native_submitted = if self.surface.canvas.pending_native.is_empty() {
             // 没有 native 前缀时保留 false，让 soft 段使用初始 load action。
@@ -203,12 +241,12 @@ impl GpuBackend {
                 (&mut self.gpu_ctx, &mut self.rhi_renderer, &mut self.surface);
             // 前置条件已经检查了 renderer cache。
             let Some(renderer) = rhi_renderer.as_mut() else {
-                // 缺少 renderer 时交回兼容 boundary。
+                // 缺少 renderer 时保持原队列并交回 typed boundary。
                 return Ok(false);
             };
             // 只有组合 RHI context 能执行 retained texture pass。
             let Some(context) = gpu_ctx.rhi_context() else {
-                // 当前 adapter 不具备通用 RHI 时交回兼容 boundary。
+                // 当前 adapter 不具备通用 RHI 时交回 typed boundary。
                 return Ok(false);
             };
             // 保留 native queue 内部的 painter order，并且不触发 swapchain present。
@@ -220,9 +258,9 @@ impl GpuBackend {
                 PresentDamage::Full,
             )?
         };
-        // 未覆盖的 queue 不应改变 retained/legacy 生命周期状态。
+        // 未覆盖的 queue 不应被伪装成 retained 提交成功。
         if !native_submitted && !self.surface.canvas.pending_native.is_empty() {
-            // 调用方会在需要时销毁临时 retained target 后回退。
+            // 调用方会保留清理标记并返回稳定 typed failure。
             return Ok(false);
         }
         // native 前缀成功后，后续 soft tile 必须以 Load 继续写入同一目标。
@@ -232,7 +270,7 @@ impl GpuBackend {
         }
         // 把透明 CPU soft segment 作为同一 retained target 的 SrcOver 采样段合成。
         if self.surface.canvas.soft_has_content {
-            // 非 1:1 DPR、空目标和 adapter 不支持时保持原子兼容回退。
+            // 非 1:1 DPR、空目标和 adapter 不支持时保持原子失败边界。
             let soft_load = if self.surface.needs_gpu_clear {
                 LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0]))
             } else {
@@ -252,8 +290,9 @@ impl GpuBackend {
             && self.surface.pending_scroll_copies.is_empty()
             && !had_surface_scroll
             && !had_surface_clear
+            && !clear_only_submitted
         {
-            // 理论上只可能由未来扩展触发，保留空边界的安全回退。
+            // 理论上只可能由未来扩展触发，保留空边界的 typed failure。
             return Ok(false);
         }
         // RHI pass 成功后取消全清，并等待后续 ordered operation 或最终 present。
@@ -275,7 +314,7 @@ impl GpuBackend {
     ) -> Result<bool, Error> {
         // 没有 FrameEncoder pending 标记时不改变既有 present 尝试顺序。
         if !self.rhi_surface_frame_pending_present {
-            // 让调用方继续检查 native queue 或兼容路径。
+            // 让调用方继续检查其它 RHI 路径。
             return Ok(false);
         }
         // pending 标记与 retained texture 必须成对存在。

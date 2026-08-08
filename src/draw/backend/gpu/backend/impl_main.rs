@@ -28,7 +28,7 @@ impl GpuBackend {
     // 把可控 device-lost 注入送入当前 owner-thread 的薄 RHI。
     #[cfg(feature = "test-harness")]
     pub(crate) fn inject_graphics_device_lost_for_test(&mut self) -> Result<(), Error> {
-        // 没有薄 RHI 的 GPU 后端继续使用恢复包装器兼容回退。
+        // 缺少薄 RHI 属于构造后状态破坏，测试注入必须返回 typed failure。
         let Some(context) = self.gpu_ctx.rhi_context() else {
             return Err(Error::new(
                 Errc::NotImplemented,
@@ -42,7 +42,7 @@ impl GpuBackend {
     // 把可控 surface-lost 注入送入当前 owner-thread 的薄 RHI surface。
     #[cfg(feature = "test-harness")]
     pub(crate) fn inject_graphics_surface_lost_for_test(&mut self) -> Result<(), Error> {
-        // 没有薄 RHI 的 GPU 后端继续使用恢复包装器兼容回退。
+        // 缺少薄 RHI 属于构造后状态破坏，测试注入必须返回 typed failure。
         let Some(context) = self.gpu_ctx.rhi_context() else {
             return Err(Error::new(
                 Errc::NotImplemented,
@@ -65,9 +65,12 @@ impl GpuBackend {
         } else {
             native_caps.has_hybrid_baseline()
         };
+        // 生产 GPU backend 必须持有已经通过 factory probe 的组合 thin RHI。
+        let has_rhi_context = gpu_ctx.rhi_context().is_some();
         if caps.raster != RasterMode::GpuNative
             || caps.present != PresentMode::Swapchain
             || !raster_baseline
+            || !has_rhi_context
         {
             let backend = caps.backend;
             let raster = caps.raster;
@@ -76,7 +79,7 @@ impl GpuBackend {
             return Err(Error::new(
                 Errc::InvalidArgument,
                 format!(
-                    "GpuBackend requires a complete {:?} raster baseline, got {backend} raster={raster} present={present} native={native_caps:?}",
+                    "GpuBackend requires a complete {:?} retained RHI baseline, got {backend} raster={raster} present={present} thin_rhi={has_rhi_context} native={native_caps:?}",
                     if gpu_only { "GPU-only" } else { "hybrid" }
                 ),
             ));
@@ -162,7 +165,6 @@ impl GpuBackend {
     pub(super) fn destroy_all_offscreens(&mut self) -> Result<(), Error> {
         self.active_offscreen = None;
         self.offscreen_flush_committed = false;
-        self.gpu_ctx.bind_swapchain_target()?;
         let handles = self
             .offscreens
             .iter()
@@ -260,11 +262,13 @@ impl GpuBackend {
     /// it only establishes the exact painter-order boundary inside the one
     /// frame and leaves final swap/present to [`RenderBackend::present`].
     pub(super) fn flush_main_segment_before_ordered_boundary(&mut self) -> Result<(), Error> {
-        // 已有 retained target 且没有待提交内容时，有序 boundary 不需要触碰 swapchain。
+        // 没有任何前置内容且 retained target 已初始化时，有序 boundary 可以安全 no-op。
         if self.rhi_surface_texture.is_some()
+            && !self.surface.needs_gpu_clear
             && !self.surface.canvas.soft_has_content
             && self.surface.canvas.pending_native.is_empty()
             && self.surface.pending_clear_rects.is_empty()
+            && self.surface.pending_scroll_copies.is_empty()
         {
             // 后续 RHI Picture blit 可以继续写入同一 retained target。
             return Ok(());
@@ -274,35 +278,14 @@ impl GpuBackend {
             // 最终 swapchain present 仍由统一帧边界完成。
             return Ok(());
         }
-        // legacy boundary 不能与旧 retained 副本并存，先安全丢弃 retained target。
-        self.abandon_rhi_surface_texture_for_legacy()?;
-        self.gpu_ctx.make_current()?;
-
-        if self.surface.needs_gpu_clear {
-            self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0)?;
-            self.surface.needs_gpu_clear = false;
-            self.surface.pending_clear_rects.clear();
-        } else if !self.surface.pending_clear_rects.is_empty() {
-            if let Err(err) = self.gpu_ctx.clear_rects(
-                self.surface.width as f32,
-                self.surface.height as f32,
-                &self.surface.pending_clear_rects,
-            ) {
-                self.surface.needs_gpu_clear = true;
-                return Err(err);
-            }
-            self.surface.pending_clear_rects.clear();
-        }
-
-        if let Err(err) = self.surface.canvas.submit_native(self.gpu_ctx.as_mut()) {
-            self.surface.needs_gpu_clear = true;
-            return Err(err);
-        }
-        if let Err(err) = self.surface.canvas.submit_soft(self.gpu_ctx.as_mut()) {
-            self.surface.needs_gpu_clear = true;
-            return Err(err);
-        }
-        self.surface.canvas.commit_presented_frame();
-        Ok(())
+        // 未完整提交的有序前缀必须让下一帧从确定的全清状态重试。
+        self.surface.needs_gpu_clear = true;
+        // 使用与最终 present 相同的 typed 门禁，禁止切换到逐 UI adapter 执行。
+        super::render_present::require_lossless_main_surface_submission(
+            // 到达此处说明 retained RHI 未完整消费当前前缀。
+            false,
+            // 明确失败发生在 Picture/effect 之前的主 surface 顺序边界。
+            "ordered main surface prefix cannot be lowered losslessly to retained RHI",
+        )
     }
 }

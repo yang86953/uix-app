@@ -1,4 +1,4 @@
-//! GPU-native 提交与软回退上传 — gpu 子模块。
+//! GPU-native 队列到通用 RHI 的提交实现 — gpu 子模块。
 
 use crate::core::{Errc, Error};
 // 引入 FramePlan 的显式 render target 引用。
@@ -8,14 +8,9 @@ use crate::draw::backend::rhi_renderer::{
     RhiCoverageQuad, RhiRenderer, RhiShadow, RhiShapeRect, RhiSolidMesh, RhiTexturedQuad,
 };
 use crate::draw::geometry::types::BlendMode;
+use super::{NativeGpuCanvas2D, SOFT_FALLBACK_IDLE_PRESENT_GRACE};
 // 引入薄 RHI 的组合 context、load 和 viewport 类型。
 use crate::native::present::rhi::{GraphicsContextRhi, LoadAction, RhiScissor, RhiViewport};
-// 引入兼容软提交仍需要的高层 graphics context 生命周期。
-use crate::native::present::IGraphicsContext;
-
-use super::pending::PendingNativeOp;
-use super::tile::pack_visible_soft_fallback_tile;
-use super::{NativeGpuCanvas2D, SOFT_FALLBACK_IDLE_PRESENT_GRACE};
 
 // 将保序混合 RHI lowering 拆到独立文件，避免继续膨胀提交模块。
 #[path = "rhi_lowering.rs"]
@@ -636,183 +631,8 @@ impl NativeGpuCanvas2D {
         Ok(true)
     }
 
-    pub(crate) fn submit_native(
-        &mut self,
-        gpu_ctx: &mut dyn IGraphicsContext,
-    ) -> Result<(), Error> {
-        let vw = self.surface_w as f32;
-        let vh = self.surface_h as f32;
-        let mut start = 0;
-        while start < self.pending_native.len() {
-            let scissor = self.pending_native[start].scissor();
-            let mut end = start + 1;
-            while end < self.pending_native.len()
-                && self.pending_native[start].same_kind(&self.pending_native[end])
-                && self.pending_native[end].scissor() == scissor
-            {
-                end += 1;
-            }
-
-            match &self.pending_native[start] {
-                PendingNativeOp::SolidRect(_) => {
-                    // 检查整个同类批次，不能只观察第一项而漏掉后续 Additive。
-                    let has_additive = self.pending_native[start..end]
-                        .iter()
-                        .any(PendingNativeOp::is_additive_solid_rect);
-                    // legacy draw_solid_rects 没有 blend 参数，禁止静默执行 Additive。
-                    if has_additive {
-                        // 组合 RHI 缺失时报告稳定的能力错误。
-                        return Err(Error::new(
-                            // 使用 NotImplemented 表示当前 adapter 缺少等价 lowering。
-                            Errc::NotImplemented,
-                            // 错误文本指出必须经过 retained RHI pipeline。
-                            "NativeGpuCanvas2D additive solid rect requires retained RHI lowering",
-                        ));
-                    }
-                    let batch = self.pending_native[start..end]
-                        .iter()
-                        .map(|op| match op {
-                            PendingNativeOp::SolidRect(op) => op.rect,
-                            _ => unreachable!("native batch kind changed"),
-                        })
-                        .collect::<Vec<_>>();
-                    gpu_ctx.draw_solid_rects(vw, vh, Some(scissor), &batch)?;
-                }
-                PendingNativeOp::StrokeRect(_) => {
-                    // 检查整个同类批次，不能只观察第一项而漏掉后续 Additive。
-                    let has_additive = self.pending_native[start..end]
-                        .iter()
-                        .any(PendingNativeOp::is_additive_stroke_rect);
-                    // legacy draw_stroke_rects 没有 blend 参数，禁止静默执行 Additive。
-                    if has_additive {
-                        // 组合 RHI 缺失时报告稳定的能力错误。
-                        return Err(Error::new(
-                            // 使用 NotImplemented 表示当前 adapter 缺少等价 lowering。
-                            Errc::NotImplemented,
-                            // 错误文本指出必须经过 retained RHI pipeline。
-                            "NativeGpuCanvas2D additive stroke rect requires retained RHI lowering",
-                        ));
-                    }
-                    let batch = self.pending_native[start..end]
-                        .iter()
-                        .map(|op| match op {
-                            PendingNativeOp::StrokeRect(op) => op.rect,
-                            _ => unreachable!("native batch kind changed"),
-                        })
-                        .collect::<Vec<_>>();
-                    gpu_ctx.draw_stroke_rects(vw, vh, Some(scissor), &batch)?;
-                }
-                PendingNativeOp::Glyph(_) => {
-                    let batch = self.pending_native[start..end]
-                        .iter()
-                        .map(|op| match op {
-                            PendingNativeOp::Glyph(op) => op.glyph.clone(),
-                            _ => unreachable!("native batch kind changed"),
-                        })
-                        .collect::<Vec<_>>();
-                    gpu_ctx.draw_glyphs(vw, vh, Some(scissor), &batch)?;
-                }
-                PendingNativeOp::LinearGradient(_) => {
-                    let batch = self.pending_native[start..end]
-                        .iter()
-                        .map(|op| match op {
-                            PendingNativeOp::LinearGradient(op) => op.rect,
-                            _ => unreachable!("native batch kind changed"),
-                        })
-                        .collect::<Vec<_>>();
-                    gpu_ctx.draw_linear_gradients(vw, vh, Some(scissor), &batch)?;
-                }
-                PendingNativeOp::RadialGradient(_) => {
-                    let batch = self.pending_native[start..end]
-                        .iter()
-                        .map(|op| match op {
-                            PendingNativeOp::RadialGradient(op) => op.grad,
-                            _ => unreachable!("native batch kind changed"),
-                        })
-                        .collect::<Vec<_>>();
-                    gpu_ctx.draw_radial_gradients(vw, vh, Some(scissor), &batch)?;
-                }
-                PendingNativeOp::Sector(_) => {
-                    let batch = self.pending_native[start..end]
-                        .iter()
-                        .map(|op| match op {
-                            PendingNativeOp::Sector(op) => op.sector,
-                            _ => unreachable!("native batch kind changed"),
-                        })
-                        .collect::<Vec<_>>();
-                    gpu_ctx.draw_sectors(vw, vh, Some(scissor), &batch)?;
-                }
-                PendingNativeOp::SolidMesh(_) => {
-                    let batch = self.pending_native[start..end]
-                        .iter()
-                        .map(|op| match op {
-                            PendingNativeOp::SolidMesh(op) => op.mesh.clone(),
-                            _ => unreachable!("native batch kind changed"),
-                        })
-                        .collect::<Vec<_>>();
-                    gpu_ctx.draw_solid_meshes(vw, vh, Some(scissor), &batch)?;
-                }
-                PendingNativeOp::BoxShadow(_) => {
-                    let batch = self.pending_native[start..end]
-                        .iter()
-                        .map(|op| match op {
-                            PendingNativeOp::BoxShadow(op) => op.shadow,
-                            _ => unreachable!("native batch kind changed"),
-                        })
-                        .collect::<Vec<_>>();
-                    gpu_ctx.draw_box_shadows(vw, vh, Some(scissor), &batch)?;
-                }
-                PendingNativeOp::ImageBlit(_) => {
-                    let batch = self.pending_native[start..end]
-                        .iter()
-                        .map(|op| match op {
-                            PendingNativeOp::ImageBlit(op) => op.blit.clone(),
-                            _ => unreachable!("native batch kind changed"),
-                        })
-                        .collect::<Vec<_>>();
-                    gpu_ctx.draw_image_blits(vw, vh, Some(scissor), &batch)?;
-                }
-                // scroll 已要求 retained RHI lowering；兼容 surface 没有同义 copy ABI。
-                PendingNativeOp::ScrollCopy(_) => {
-                    return Err(Error::new(
-                        Errc::NotImplemented,
-                        "NativeGpuCanvas2D scroll-region requires retained RHI lowering",
-                    ));
-                }
-            }
-            start = end;
-        }
-        Ok(())
-    }
-
     pub(crate) fn current_blend_mode(&self) -> BlendMode {
         self.blend_mode
-    }
-
-    pub(crate) fn submit_soft(&mut self, gpu_ctx: &mut dyn IGraphicsContext) -> Result<(), Error> {
-        if !self.soft_has_content {
-            return Ok(());
-        }
-        if self.soft_uses_destination_blend {
-            return Err(Error::new(
-                Errc::NotImplemented,
-                "NativeGpuCanvas2D: CPU fallback cannot emulate destination-dependent Additive blend",
-            ));
-        }
-        let w = self.surface_w;
-        let h = self.surface_h;
-        let packed = {
-            let pixels = self.ensure_soft().surface().pixels();
-            pack_visible_soft_fallback_tile(pixels, w, h)
-        };
-        let Some((pixels, tile)) = packed else {
-            return Ok(());
-        };
-        self.last_soft_upload_bytes = (tile.width as usize)
-            .saturating_mul(tile.height as usize)
-            .saturating_mul(std::mem::size_of::<u32>());
-        gpu_ctx.blit_soft_fallback_tile(&pixels, tile)?;
-        Ok(())
     }
 
     pub(crate) fn commit_presented_frame(&mut self) {
