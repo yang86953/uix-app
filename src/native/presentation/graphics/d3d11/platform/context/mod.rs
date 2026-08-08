@@ -21,9 +21,9 @@ pub(crate) use super::swapchain::{
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
-    GpuSolidMesh, GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps,
-    IGraphicsContext, NativeRasterCaps, OffscreenTargetId, PresentCoherency, PresentDamage,
-    PresentFrame, PresentOcclusionSupport, PresentTestResult, SoftFallbackTile,
+    GpuSolidMesh, GpuSolidRect, GpuStrokeRect, GraphicsApi, GraphicsContextCaps, IGraphicsContext,
+    NativeRasterCaps, OffscreenTargetId, PresentCoherency, PresentDamage, PresentFrame,
+    PresentOcclusionSupport, PresentTestResult, SoftFallbackTile,
 };
 use crate::native::presentation::graphics::platform::windows as win_surface;
 use ::windows::core::Interface;

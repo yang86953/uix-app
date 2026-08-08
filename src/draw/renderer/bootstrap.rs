@@ -10,13 +10,14 @@ use crate::native::factory::{
     GraphicsRecipe,
 };
 use crate::native::present::{
-    GraphicsBackend, IGraphicsContext, NativeSurfaceHandle, PresentOcclusionSupport,
+    GraphicsApi, GraphicsSelection, IGraphicsContext, NativeSurfaceHandle,
 };
 
 /// One failed probe attempt recorded for diagnostics and tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProbeFailure {
-    pub backend: GraphicsBackend,
+    /// 失败对应的具体候选；候选集合为空时为 None。
+    pub candidate: Option<GraphicsApi>,
     pub message: String,
 }
 
@@ -27,10 +28,6 @@ pub struct ProbeReport {
 }
 
 impl ProbeReport {
-    pub fn record_failure(&mut self, recipe: GraphicsRecipe, err: &Error) {
-        self.record_failure_at(recipe, ProbeStage::Unspecified, Some(recipe), err);
-    }
-
     pub(crate) fn record_failure_at(
         &mut self,
         candidate: GraphicsRecipe,
@@ -42,7 +39,7 @@ impl ProbeReport {
             .map(|recipe| recipe.to_string())
             .unwrap_or_else(|| "none".to_string());
         self.failures.push(ProbeFailure {
-            backend: candidate.backend,
+            candidate: Some(candidate.backend),
             message: format!(
                 "stage={}; recipe={candidate}; selected={selected}; error={}",
                 stage.as_str(),
@@ -51,9 +48,10 @@ impl ProbeReport {
         });
     }
 
-    fn record_no_candidates(&mut self, request: GraphicsBackend, err: &Error) {
+    fn record_no_candidates(&mut self, err: &Error) {
         self.failures.push(ProbeFailure {
-            backend: request,
+            // 没有 recipe 时不得把自动策略伪装成具体设备 API。
+            candidate: None,
             message: format!(
                 "stage={}; recipe=none; selected=none; error={}",
                 ProbeStage::CandidateSelection.as_str(),
@@ -65,7 +63,6 @@ impl ProbeReport {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProbeStage {
-    Unspecified,
     CandidateSelection,
     ContextCreate,
     RendererCreate,
@@ -75,7 +72,6 @@ pub(crate) enum ProbeStage {
 impl ProbeStage {
     const fn as_str(self) -> &'static str {
         match self {
-            Self::Unspecified => "unspecified",
             Self::CandidateSelection => "candidate_selection",
             Self::ContextCreate => "context_create",
             Self::RendererCreate => "renderer_create",
@@ -87,9 +83,8 @@ impl ProbeStage {
 /// Successful GPU bootstrap result.
 pub struct GpuBootstrap {
     pub renderer: Renderer,
-    pub selected: GraphicsBackend,
+    pub selected: GraphicsApi,
     pub selected_recipe: GraphicsRecipe,
-    pub present_occlusion: PresentOcclusionSupport,
     pub report: ProbeReport,
 }
 
@@ -148,25 +143,13 @@ pub(crate) fn assemble_renderer(
     Ok(renderer)
 }
 
-/// Probes GPU backends in platform order and returns the first working renderer.
-///
-/// CPU fallback (`Renderer::cpu`) stays in app; this function only handles native contexts.
-pub fn bootstrap_renderer(
-    surface: NativeSurfaceHandle,
-    width: i32,
-    height: i32,
-    request: GraphicsBackend,
-) -> Result<GpuBootstrap, ProbeReport> {
-    bootstrap_renderer_with_pending(surface, width, height, request, PendingFailureQueue::new())
-}
-
 /// Bootstrap entry used by an application runtime that owns callback failure
 /// delivery for every graphics context it creates.
 pub(crate) fn bootstrap_renderer_with_pending(
     surface: NativeSurfaceHandle,
     width: i32,
     height: i32,
-    request: GraphicsBackend,
+    request: GraphicsSelection,
     pending_failures: PendingFailureQueue,
 ) -> Result<GpuBootstrap, ProbeReport> {
     bootstrap_renderer_with(surface, width, height, request, |candidate| {
@@ -184,7 +167,7 @@ pub(crate) fn bootstrap_renderer_with<F>(
     _surface: NativeSurfaceHandle,
     width: i32,
     height: i32,
-    request: GraphicsBackend,
+    request: GraphicsSelection,
     try_create: F,
 ) -> Result<GpuBootstrap, ProbeReport>
 where
@@ -202,7 +185,7 @@ where
 pub(crate) fn bootstrap_renderer_with_candidates<F>(
     width: i32,
     height: i32,
-    request: GraphicsBackend,
+    request: GraphicsSelection,
     candidates: Vec<GraphicsRecipe>,
     mut try_create: F,
 ) -> Result<GpuBootstrap, ProbeReport>
@@ -215,15 +198,10 @@ where
         let availability = describe_backend_availability(request)
             .map(|reason| format!(" ({reason})"))
             .unwrap_or_default();
-        report.record_no_candidates(
-            request,
-            &Error::new(
-                Errc::PlatformError,
-                format!(
-                    "Graphics bootstrap: no GPU backend candidates for {request}{availability}"
-                ),
-            ),
-        );
+        report.record_no_candidates(&Error::new(
+            Errc::PlatformError,
+            format!("Graphics bootstrap: no GPU backend candidates for {request}{availability}"),
+        ));
         return Err(report);
     }
 
@@ -267,7 +245,6 @@ where
             renderer,
             selected: selected.backend,
             selected_recipe: selected,
-            present_occlusion,
             report,
         });
     }

@@ -42,7 +42,7 @@ use crate::native::factory::{
     try_create_gpu_recipe_with_queue, GraphicsRecipe,
 };
 use crate::native::platform::Platform;
-use crate::native::present::{GraphicsBackend as NativeGraphicsBackend, NativeSurfaceHandle};
+use crate::native::present::{GraphicsApi, GraphicsSelection, NativeSurfaceHandle};
 use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::windowing::window::{PlatformWindow, WindowOcclusionState};
 use crate::platform::graphics::GraphicsBackend;
@@ -101,7 +101,8 @@ pub struct App {
     cli: Option<Cli>,
     container: Container,
     settings_path: Option<String>,
-    pub(crate) graphics_backend: Option<NativeGraphicsBackend>,
+    /// 保存公开 builder 已显式选择的内部具体 API 身份。
+    pub(crate) graphics_backend: Option<GraphicsApi>,
     #[cfg(feature = "test-harness")]
     graphics_faults: GraphicsFaultSignal,
     #[cfg(feature = "agent-control")]
@@ -302,7 +303,8 @@ impl App {
         self
     }
 
-    pub(crate) fn configured_graphics_backend(&self) -> NativeGraphicsBackend {
+    /// 按 builder、环境变量与设置的优先级解析私有启动策略。
+    pub(crate) fn configured_graphics_backend(&self) -> GraphicsSelection {
         let env_value = std::env::var(GRAPHICS_BACKEND_ENV).ok();
         resolve_graphics_backend(
             self.graphics_backend,

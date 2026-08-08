@@ -57,14 +57,14 @@ impl Default for FakeGraphicsContext {
 impl IGraphicsContext for FakeGraphicsContext {
     fn caps(&self) -> crate::native::present::GraphicsContextCaps {
         crate::native::present::GraphicsContextCaps::gpu_native_swapchain(
-            crate::native::present::GraphicsBackend::OpenGlEs,
+            crate::native::present::GraphicsApi::OpenGlEs,
             crate::core::PresentCoherency::FullOnly,
             1.0,
         )
     }
 
-    fn graphics_backend(&self) -> crate::native::present::GraphicsBackend {
-        crate::native::present::GraphicsBackend::OpenGlEs
+    fn graphics_backend(&self) -> crate::native::present::GraphicsApi {
+        crate::native::present::GraphicsApi::OpenGlEs
     }
 
     fn initialize(&mut self, _native_window: *mut std::ffi::c_void, w: i32, h: i32) -> Result<()> {

@@ -7,9 +7,7 @@ use std::rc::Rc;
 use ash::vk;
 
 use crate::core::{Errc, Error, Result};
-use crate::native::present::{
-    GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage,
-};
+use crate::native::present::{GraphicsApi, GraphicsContextCaps, IGraphicsContext, PresentDamage};
 
 #[cfg(target_os = "macos")]
 use crate::native::backends::macos::platform as macos_surface;

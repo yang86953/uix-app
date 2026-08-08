@@ -1,9 +1,9 @@
-//! Table-driven pairing of [`GraphicsBackend`] to [`RenderBackend`] (P6.7 M6 / P6.8).
+//! Table-driven pairing of a native graphics API to [`RenderBackend`] (P6.7 M6 / P6.8).
 
 use crate::core::{Errc, Error, Result};
 use crate::draw::backend::contract::RenderBackend;
 use crate::draw::backend::gpu::GpuBackend;
-use crate::native::present::{GraphicsBackend, IGraphicsContext, RasterMode};
+use crate::native::present::{IGraphicsContext, RasterMode};
 
 /// Creates the GPU raster backend for a native graphics context.
 ///
@@ -21,20 +21,6 @@ pub(crate) fn create_native_raster_backend(
         ));
     }
 
-    match ctx.caps().backend {
-        GraphicsBackend::OpenGlEs
-        | GraphicsBackend::D3d11
-        | GraphicsBackend::D3d12
-        | GraphicsBackend::Vulkan
-        | GraphicsBackend::Metal => {
-            GpuBackend::new_gpu_only(ctx).map(|backend| Box::new(backend) as _)
-        }
-        other => {
-            ctx.try_shutdown()?;
-            Err(Error::new(
-                Errc::InvalidArgument,
-                format!("RenderBackendFactory: no native raster backend for {other}"),
-            ))
-        }
-    }
+    // 所有具体 GraphicsApi 共用唯一 GPU backend，差异只留在薄 RHI context。
+    GpuBackend::new_gpu_only(ctx).map(|backend| Box::new(backend) as _)
 }

@@ -84,7 +84,7 @@ pub trait IGraphicsContext {
         NativeRasterCaps::default()
     }
 
-    fn graphics_backend(&self) -> GraphicsBackend {
+    fn graphics_backend(&self) -> GraphicsApi {
         self.caps().backend
     }
 
@@ -126,8 +126,7 @@ pub trait IGraphicsContext {
     /// Legacy capability query retained for tests and diagnostics during the
     /// runtime-lease migration. It never exposes a raw proc loader.
     fn supports_gl_proc_address(&self) -> bool {
-        self.caps().raster == RasterMode::GpuNative
-            && self.caps().backend == GraphicsBackend::OpenGlEs
+        self.caps().raster == RasterMode::GpuNative && self.caps().backend == GraphicsApi::OpenGlEs
     }
 
     fn supports_pixel_present(&self) -> bool {

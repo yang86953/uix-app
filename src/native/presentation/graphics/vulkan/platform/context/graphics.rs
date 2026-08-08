@@ -4,11 +4,11 @@ use super::*;
 
 impl IGraphicsContext for VulkanContext {
     fn caps(&self) -> crate::native::present::GraphicsContextCaps {
-        GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::Vulkan, self.device_pixel_ratio())
+        GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan, self.device_pixel_ratio())
     }
 
-    fn graphics_backend(&self) -> GraphicsBackend {
-        GraphicsBackend::Vulkan
+    fn graphics_backend(&self) -> GraphicsApi {
+        GraphicsApi::Vulkan
     }
 
     fn initialize(&mut self, _native_window: *mut c_void, _width: i32, _height: i32) -> Result<()> {
@@ -105,4 +105,3 @@ impl IGraphicsContext for VulkanContext {
         device.observe(result)
     }
 }
-

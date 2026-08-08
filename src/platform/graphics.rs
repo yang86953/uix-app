@@ -22,25 +22,24 @@ pub enum GraphicsBackend {
 }
 
 impl GraphicsBackend {
-    pub(crate) const fn into_native(self) -> crate::native::present::GraphicsBackend {
-        use crate::native::present::GraphicsBackend as NativeGraphicsBackend;
-
+    /// 将公开具体 API 转换为 crate-private registry 身份。
+    pub(crate) const fn into_native(self) -> crate::native::present::GraphicsApi {
         match self {
             // 公开 D3D11 变体只在对应实现参与构建时存在。
             #[cfg(feature = "d3d11")]
-            Self::Direct3D11 => NativeGraphicsBackend::D3d11,
+            Self::Direct3D11 => crate::native::present::GraphicsApi::D3d11,
             // 公开 Vulkan 变体只在对应实现参与构建时存在。
             #[cfg(feature = "vulkan")]
-            Self::Vulkan => NativeGraphicsBackend::Vulkan,
+            Self::Vulkan => crate::native::present::GraphicsApi::Vulkan,
             // 公开 D3D12 变体只在对应实现参与构建时存在。
             #[cfg(feature = "d3d12")]
-            Self::Direct3D12 => NativeGraphicsBackend::D3d12,
+            Self::Direct3D12 => crate::native::present::GraphicsApi::D3d12,
             // 公开 Metal 变体只在对应实现参与构建时存在。
             #[cfg(feature = "metal")]
-            Self::Metal => NativeGraphicsBackend::Metal,
+            Self::Metal => crate::native::present::GraphicsApi::Metal,
             // 公开 OpenGL ES 变体只在对应实现参与构建时存在。
             #[cfg(feature = "opengles")]
-            Self::OpenGlEs => NativeGraphicsBackend::OpenGlEs,
+            Self::OpenGlEs => crate::native::present::GraphicsApi::OpenGlEs,
         }
     }
 }

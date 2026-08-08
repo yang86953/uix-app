@@ -3,7 +3,7 @@ use super::*;
 impl IGraphicsContext for D3d11Context {
     fn caps(&self) -> crate::native::present::GraphicsContextCaps {
         GraphicsContextCaps::gpu_native_swapchain(
-            GraphicsBackend::D3d11,
+            GraphicsApi::D3d11,
             PresentCoherency::FullOnly,
             self.device_pixel_ratio(),
         )
@@ -16,8 +16,8 @@ impl IGraphicsContext for D3d11Context {
         Some(self)
     }
 
-    fn graphics_backend(&self) -> GraphicsBackend {
-        GraphicsBackend::D3d11
+    fn graphics_backend(&self) -> GraphicsApi {
+        GraphicsApi::D3d11
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {

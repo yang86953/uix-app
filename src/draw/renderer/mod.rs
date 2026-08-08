@@ -1,7 +1,7 @@
 //! 单一 Renderer、帧生命周期与调度状态。
 
 pub mod animation;
-pub mod bootstrap;
+pub(crate) mod bootstrap;
 pub(crate) mod factory;
 pub mod invalidation;
 pub mod lifecycle;

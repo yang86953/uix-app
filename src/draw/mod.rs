@@ -44,6 +44,11 @@
 //! // NodeId 归 scene，renderer 路径不得复活。
 //! use uix::draw::renderer::NodeId;
 //! ```
+//!
+//! ```compile_fail
+//! // 自动探测与 CPU fallback 属于框架内部策略，不是第二套公开图形选择入口。
+//! use uix::draw::renderer::bootstrap::bootstrap_renderer;
+//! ```
 
 pub mod backend;
 pub mod debug;
