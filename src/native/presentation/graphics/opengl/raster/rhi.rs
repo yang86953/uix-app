@@ -31,8 +31,8 @@ impl OpenGlRasterPipeline {
 
     // 返回 OpenGL ES RHI 的事实能力快照。
     pub(crate) fn rhi_capabilities(&self) -> GraphicsCapabilities {
-        // GLES 3.0 当前支持通用 renderer 所需的最小低层原语。
-        let mut capabilities = GraphicsCapabilities::full_gpu_baseline();
+        // GLES 3.0 已实现跨帧颜色纹理与最终 sampled composite，采用 retained 基线。
+        let mut capabilities = GraphicsCapabilities::retained_gpu_baseline();
         // scratch texture 使同纹理重叠移动具有确定的 memmove 语义。
         capabilities.texture_region_move = true;
         // OpenGL scissor clear 已由 RHI owner 执行并恢复状态。

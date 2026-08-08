@@ -1,9 +1,7 @@
 //! Presentation contracts for CPU presenters and GPU graphics contexts.
 
 use crate::core::error::{Error, Result};
-pub use crate::core::{
-    PresentCoherency, PresentDamage, PresentImage, PresentSurface,
-};
+pub use crate::core::{PresentCoherency, PresentDamage, PresentImage, PresentSurface};
 use std::fmt;
 use std::str::FromStr;
 
@@ -218,7 +216,8 @@ impl NativeRasterCaps {
             solid_meshes: true,
             box_shadows: true,
             offscreen_targets: true,
-            retained_framebuffer: false,
+            // D3D11 生产路径使用跨帧 RHI 纹理并在最终边界采样到 swapchain。
+            retained_framebuffer: true,
         }
     }
 
@@ -238,7 +237,8 @@ impl NativeRasterCaps {
             solid_meshes: true,
             box_shadows: true,
             offscreen_targets: true,
-            retained_framebuffer: false,
+            // WGL/EGL OpenGL ES 复用同一 retained texture 与最终合成路径。
+            retained_framebuffer: true,
         }
     }
 
@@ -256,6 +256,31 @@ impl NativeRasterCaps {
             && self.sectors
             && self.solid_meshes
             && self.box_shadows
+    }
+}
+
+// 覆盖生产 native raster profile 的 capability 接线。
+#[cfg(test)]
+mod native_raster_profile_tests {
+    // 导入两个生产 adapter 共用的能力类型。
+    use super::NativeRasterCaps;
+
+    // 验证 D3D11 与 OpenGL ES 都进入 retained 主表面路径。
+    #[test]
+    fn production_rhi_profiles_enable_retained_framebuffer() {
+        // 读取 Windows 默认 D3D11 生产 profile。
+        let d3d11 = NativeRasterCaps::d3d11_full();
+        // D3D11 必须启用跨帧主颜色目标。
+        assert!(d3d11.retained_framebuffer);
+        // D3D11 仍须满足 hybrid 兼容基线。
+        assert!(d3d11.has_hybrid_baseline());
+
+        // 读取 WGL/EGL OpenGL ES 的 GPU-only profile。
+        let opengles = NativeRasterCaps::rhi_gpu_only_subset();
+        // OpenGL ES 必须启用同一 retained 主表面路径。
+        assert!(opengles.retained_framebuffer);
+        // OpenGL ES 仍须满足 GPU-only 绘制基线。
+        assert!(opengles.has_gpu_only_baseline());
     }
 }
 
