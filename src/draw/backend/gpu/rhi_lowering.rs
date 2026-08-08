@@ -130,8 +130,8 @@ fn lower_operation(
                 // 异常载荷交回兼容路径。
                 return None;
             }
-            // 返回描边 shape lowering 结果。
-            Some(RhiOp::Shape(RhiShapeRect {
+            // 构造 SrcOver/Additive 共用的描边 shape 载荷。
+            let shape = RhiShapeRect {
                 x: value.x * scale_x,
                 y: value.y * scale_y,
                 w: value.w * scale_x,
@@ -140,7 +140,9 @@ fn lower_operation(
                 radius,
                 half_stroke,
                 scissor: Some(scissor),
-            }))
+            };
+            // 依据描边事实与当前 RHI 能力选择固定 pipeline。
+            shape_rhi_op(shape, rect.additive, context.capabilities().additive_blend)
         }
         // 将已完成仿射 lowering 的 box shadow 降低为保留 painter order 的 shadow draw。
         PendingNativeOp::BoxShadow(shadow) => {
@@ -490,6 +492,25 @@ mod shape_blend_tests {
         let normal = shape_rhi_op(shape_fixture(), false, false);
         // 普通路径仍选择 Shape。
         assert!(matches!(normal, Some(RhiOp::Shape(_))));
+    }
+
+    // 带半描边宽度的 shape 必须沿用同一 Additive pipeline 与能力门禁。
+    #[test]
+    fn additive_stroke_shape_selection_requires_explicit_capability() {
+        // 从合法 shape fixture 构造一个真实描边载荷。
+        let mut stroke = shape_fixture();
+        // 非零半宽让测试明确覆盖描边 shader 分支。
+        stroke.half_stroke = 0.5;
+        // 能力存在时描边必须生成 AdditiveShape。
+        let supported = shape_rhi_op(stroke, true, true);
+        // 不得因为存在描边宽度而退回普通 Shape。
+        assert!(matches!(supported, Some(RhiOp::AdditiveShape(_))));
+        // 重新构造载荷验证缺少能力时的原子回退。
+        let mut unsupported = shape_fixture();
+        // 保持与支持分支相同的描边宽度。
+        unsupported.half_stroke = 0.5;
+        // adapter 未声明能力时不得生成任何 RHI operation。
+        assert!(shape_rhi_op(unsupported, true, false).is_none());
     }
 }
 

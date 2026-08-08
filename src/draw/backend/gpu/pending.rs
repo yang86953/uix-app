@@ -36,6 +36,8 @@ pub(crate) struct PendingNativeRect {
 
 pub(crate) struct PendingNativeStroke {
     pub(crate) rect: GpuStrokeRect,
+    // 保留通用 RHI shape pipeline 需要的目标混合语义。
+    pub(crate) additive: bool,
     pub(crate) scissor: (i32, i32, i32, i32),
 }
 
@@ -129,6 +131,12 @@ impl PendingNativeOp {
         matches!(self, Self::SolidRect(rect) if rect.additive)
     }
 
+    // 判断单个待决描边是否必须使用 retained RHI Additive shape pipeline。
+    pub(super) fn is_additive_stroke_rect(&self) -> bool {
+        // 只读取显式描边事实，禁止从同类批次首项推断后续操作。
+        matches!(self, Self::StrokeRect(stroke) if stroke.additive)
+    }
+
     pub(super) fn same_kind(&self, other: &Self) -> bool {
         matches!(
             (self, other),
@@ -150,9 +158,9 @@ impl PendingNativeOp {
 #[cfg(test)]
 mod tests {
     // 引入当前 pending 类型与原生矩形载荷。
-    use super::{PendingNativeOp, PendingNativeRect};
-    // 引入最小实心矩形 fixture 类型。
-    use crate::native::present::GpuSolidRect;
+    use super::{PendingNativeOp, PendingNativeRect, PendingNativeStroke};
+    // 引入最小实心与描边矩形 fixture 类型。
+    use crate::native::present::{GpuSolidRect, GpuStrokeRect};
 
     // 创建带指定 blend 标记的有限实心矩形操作。
     fn solid_rect(additive: bool) -> PendingNativeOp {
@@ -180,6 +188,34 @@ mod tests {
         })
     }
 
+    // 创建带指定 blend 标记的有限描边矩形操作。
+    fn stroke_rect(additive: bool) -> PendingNativeOp {
+        // 返回可参与同类批处理的 pending operation。
+        PendingNativeOp::StrokeRect(PendingNativeStroke {
+            // 使用有限正描边矩形，避免 fixture 混入几何无效因素。
+            rect: GpuStrokeRect {
+                // 使用原点 x 坐标。
+                x: 0.0,
+                // 使用原点 y 坐标。
+                y: 0.0,
+                // 保持宽度为正。
+                w: 2.0,
+                // 保持高度为正。
+                h: 2.0,
+                // 使用不透明白色常量。
+                rgba: [1.0; 4],
+                // fixture 不需要圆角。
+                radius: [0.0; 4],
+                // 使用正有限描边宽度。
+                line_width: 1.0,
+            },
+            // 注入本次测试需要的目标 blend 标记。
+            additive,
+            // 使用完整覆盖 fixture 的逻辑裁剪。
+            scissor: (0, 0, 2, 2),
+        })
+    }
+
     // 批尾 Additive 也必须阻止 legacy SrcOver 批提交。
     #[test]
     fn detects_additive_after_normal_solid_rect() {
@@ -195,5 +231,18 @@ mod tests {
         assert!(!normal
             .iter()
             .any(PendingNativeOp::is_additive_solid_rect));
+    }
+
+    // 批尾 Additive 描边也必须阻止 legacy SrcOver 批提交。
+    #[test]
+    fn detects_additive_stroke_after_normal_stroke_rect() {
+        // 构造普通项在前、Additive 项在后的连续描边批次。
+        let mixed = [stroke_rect(false), stroke_rect(true)];
+        // 扫描整个批次必须发现第二项的 Additive 标记。
+        assert!(mixed.iter().any(PendingNativeOp::is_additive_stroke_rect));
+        // 构造完全普通的描边对照批次。
+        let normal = [stroke_rect(false), stroke_rect(false)];
+        // 对照批次不得被误判为 Additive。
+        assert!(!normal.iter().any(PendingNativeOp::is_additive_stroke_rect));
     }
 }
