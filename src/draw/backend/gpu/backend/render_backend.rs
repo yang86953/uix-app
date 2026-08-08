@@ -24,21 +24,24 @@ use super::super::canvas::NativeGpuCanvas2D;
 use super::rhi_surface_soft::try_upload_rhi_canvas_soft;
 use super::{GpuBackend, NativeGpuOffscreen};
 
+// 迁移期的兼容回退仍可能直接清空并重绘 swapchain，因此不能向场景层承诺局部重绘。
+fn migration_safe_gpu_capabilities(offscreen_targets: bool) -> BackendCapabilities {
+    // 先采用不会依赖 swapchain 内容保留的完整重绘能力。
+    let mut capabilities = BackendCapabilities::gpu_full_redraw();
+    // 离屏 target 是独立事实能力，不应因主 surface 的保守策略而被关闭。
+    capabilities.offscreen = offscreen_targets;
+    // 返回供场景管线消费的迁移期能力快照。
+    capabilities
+}
+
 impl RenderBackend for GpuBackend {
     fn kind(&self) -> BackendKind {
         BackendKind::Gpu
     }
 
     fn capabilities(&self) -> BackendCapabilities {
-        // 保留主色缓冲证明绘制侧可局部更新；present 仍 FullOnly（全幅 blit）。
-        // 未声明 retained_framebuffer 的后端继续全帧绘制，避免 swapchain 未定义像素。
-        let mut caps = if self.surface.native_caps.retained_framebuffer {
-            BackendCapabilities::gpu_with_offscreen()
-        } else {
-            BackendCapabilities::gpu_full_redraw()
-        };
-        caps.offscreen = self.surface.native_caps.offscreen_targets;
-        caps
+        // 只有所有主 surface 路径都保持 retained 内容后，才可重新暴露 partial redraw。
+        migration_safe_gpu_capabilities(self.surface.native_caps.offscreen_targets)
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
@@ -832,5 +835,29 @@ impl RenderBackend for GpuBackend {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // 引入待验证的迁移期能力推导函数。
+    use super::migration_safe_gpu_capabilities;
+
+    #[test]
+    // 验证离屏支持不会重新开启不安全的主 surface 局部重绘。
+    fn migration_capabilities_keep_partial_redraw_disabled() {
+        // 构造支持离屏 target 的生产能力组合。
+        let with_offscreen = migration_safe_gpu_capabilities(true);
+        // 主 surface 必须保持完整重绘，避免兼容回退只留下 damage 区域。
+        assert!(!with_offscreen.partial_redraw);
+        // 独立离屏能力仍应透传给 Picture 与效果管线。
+        assert!(with_offscreen.offscreen);
+
+        // 构造不支持离屏 target 的生产能力组合。
+        let without_offscreen = migration_safe_gpu_capabilities(false);
+        // 无离屏能力时同样不得依赖 swapchain 内容保留。
+        assert!(!without_offscreen.partial_redraw);
+        // 原生 adapter 未声明的离屏能力不得被虚构。
+        assert!(!without_offscreen.offscreen);
     }
 }

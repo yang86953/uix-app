@@ -40,6 +40,8 @@ registry 只陈述可构造候选；graphics 决定选择和恢复策略。显�
 
 capability 只陈述可验证的底层事实，例如 sampled texture、render-to-texture、scissor、texture copy、retained framebuffer、partial present 与 occlusion。逐 UI 操作支持由这些事实和通用 GPU Renderer 推导，不由 adapter 维护平行的 `draw_*` 布尔表。
 
+`retained_framebuffer` 与 renderer 的 `partial_redraw` 必须保持分层：前者只描述 platform adapter 能否保存跨帧颜色纹理，后者还要求所有绘制与兼容回退都不会绕过该纹理。迁移期 platform 继续如实报告 retained 能力，由 graphics backend 在存在直接 swapchain 回退时保守关闭局部重绘。
+
 ## 组件：Presenter
 
 `Presenter` 是 renderer 面向的统一最终提交门面：GPU 路径委托 `GraphicsSurface::present`，CPU 路径执行平台像素上传/合成；同帧只能由一个所有者调用。CPU 写入 retained pixels 或 GPU submit 均不等于提交成功；最终 OS present 返回 typed Result，失败帧不能被标记为成功。

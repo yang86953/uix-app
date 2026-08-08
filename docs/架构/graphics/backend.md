@@ -101,6 +101,8 @@ RHI 只暴露实现上述 `FramePlan` 所需的概念：
 
 factory 在 backend bootstrap 时验证 GPU 基线。未满足基线的候选不得进入正常 GPU 渲染流程；普通 UI 操作也不得在运行到一半时才以 `NotImplemented` 暴露 adapter 缺口。高层 `BackendCapabilities` 由这些事实和通用 renderer 的确定性实现共同推导，而不是由 adapter 手工逐项宣称 `draw_*` 支持。
 
+底层 `retained framebuffer` 只证明 adapter 可以持有跨帧颜色纹理，不单独构成高层 `partial_redraw` 承诺。迁移期只要主 surface 仍可能回退到直接清空 swapchain 的兼容路径，`GpuBackend` 就必须向场景管线声明完整重绘，同时继续独立暴露 offscreen target；待所有主 surface 路径都能在 retained target 内完成有序合成后，才可重新启用局部重绘。
+
 ## 所有权、生命周期与恢复
 
 - 通用 GPU Renderer 拥有 UI 级缓存和 `FramePlan` 临时数据；RHI device 拥有 GPU 资源；surface 拥有 swapchain 与 surface generation；native adapter 独占原生 handle。
@@ -118,7 +120,7 @@ GPU 基线内的操作不能依赖常态 CPU fallback。可选效果可以显式
 
 - 已有唯一 `RenderBackend` 抽象、通用 `GpuBackend`、有序 `FramePlan`、薄 RHI 契约和 CPU backend。
 - `IGraphicsContext` 与 `NativeRasterCaps` 仍保留迁移期的逐 UI 操作；目标是把几何、batch、atlas、offscreen 与 effect 调度收回通用 GPU Renderer。
-- D3D11 与 OpenGL ES 已接入资源、pass、draw/copy、retained framebuffer、surface resize、submit/present、错误映射和恢复边界；未覆盖图元继续明确回退。
+- D3D11 与 OpenGL ES 已接入资源、pass、draw/copy、retained framebuffer、surface resize、submit/present、错误映射和恢复边界；未覆盖图元继续明确回退。当前高层场景仍执行完整重绘，以保证任何兼容回退清空 swapchain 后都能恢复全部页面像素。
 - 剩余差距包括更多仿射图元，以及跨 DPI、GPU 和操作系统的测试覆盖。
 
 ## 当前测试
