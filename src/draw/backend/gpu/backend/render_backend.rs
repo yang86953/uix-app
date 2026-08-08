@@ -16,8 +16,7 @@ use crate::draw::Canvas2D;
 use crate::native::present::PresentTestResult;
 // 引入迁移期 RHI 的离屏纹理描述。
 use crate::native::present::rhi::{
-    LoadAction, RenderTargetHandle, RhiColor, RhiExtent, RhiViewport, TextureDesc,
-    TextureFormat,
+    LoadAction, RenderTargetHandle, RhiColor, RhiExtent, RhiViewport, TextureDesc, TextureFormat,
 };
 
 use super::super::canvas::NativeGpuCanvas2D;
@@ -28,7 +27,10 @@ use super::{GpuBackend, NativeGpuOffscreen};
 // 为 RHI/legacy Picture 回退提供独立的资源所有权辅助。
 impl GpuBackend {
     // 把尚未提交过 RHI 内容的 Picture slot 降级为唯一的 legacy target。
-    fn downgrade_offscreen_rhi_texture(&mut self, handle: ImageHandle) -> Result<(), Error> {
+    pub(super) fn downgrade_offscreen_rhi_texture(
+        &mut self,
+        handle: ImageHandle,
+    ) -> Result<(), Error> {
         // 先从 slot 取出句柄，避免 owner-thread destroy 借用跨过 slot 修改。
         let texture = self
             .offscreens
@@ -714,6 +716,8 @@ impl RenderBackend for GpuBackend {
                     "Picture offscreen target cannot blit into itself",
                 ));
             }
+            // 在提交目标队列前统一源/目标资源所有权，避免 RHI 与 legacy 双写失同步。
+            self.prepare_nested_picture_blit(source_rhi_texture.is_some(), ImageHandle(active))?;
             // The destination is the currently bound Picture target. Submit
             // its queued native/soft commands before the immediate source
             // blit so painter order remains destination commands → blit.
