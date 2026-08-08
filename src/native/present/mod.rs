@@ -198,6 +198,9 @@ pub struct NativeRasterCaps {
     /// 主色缓冲在提交间保留像素，允许绘制侧 partial redraw；
     /// 与 present coherency（仍可为 FullOnly）正交。
     pub retained_framebuffer: bool,
+    /// retained RHI 路径可执行 premultiplied Additive pipeline；
+    /// 不代表 legacy `draw_*` ABI 支持 Additive。
+    pub rhi_additive_blend: bool,
 }
 
 impl NativeRasterCaps {
@@ -218,6 +221,8 @@ impl NativeRasterCaps {
             offscreen_targets: true,
             // D3D11 生产路径使用跨帧 RHI 纹理并在最终边界采样到 swapchain。
             retained_framebuffer: true,
+            // D3D11 薄 RHI 已实现独立 Additive shape/textured pipeline。
+            rhi_additive_blend: true,
         }
     }
 
@@ -239,6 +244,8 @@ impl NativeRasterCaps {
             offscreen_targets: true,
             // WGL/EGL OpenGL ES 复用同一 retained texture 与最终合成路径。
             retained_framebuffer: true,
+            // OpenGL ES 薄 RHI 已实现同一 Additive pipeline key。
+            rhi_additive_blend: true,
         }
     }
 
@@ -272,6 +279,8 @@ mod native_raster_profile_tests {
         let d3d11 = NativeRasterCaps::d3d11_full();
         // D3D11 必须启用跨帧主颜色目标。
         assert!(d3d11.retained_framebuffer);
+        // D3D11 生产 profile 必须同步暴露真实的 RHI Additive 能力。
+        assert!(d3d11.rhi_additive_blend);
         // D3D11 仍须满足 hybrid 兼容基线。
         assert!(d3d11.has_hybrid_baseline());
 
@@ -279,6 +288,8 @@ mod native_raster_profile_tests {
         let opengles = NativeRasterCaps::rhi_gpu_only_subset();
         // OpenGL ES 必须启用同一 retained 主表面路径。
         assert!(opengles.retained_framebuffer);
+        // OpenGL ES 生产 profile 必须同步暴露真实的 RHI Additive 能力。
+        assert!(opengles.rhi_additive_blend);
         // OpenGL ES 仍须满足 GPU-only 绘制基线。
         assert!(opengles.has_gpu_only_baseline());
     }

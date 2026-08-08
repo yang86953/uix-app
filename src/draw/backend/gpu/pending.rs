@@ -28,6 +28,8 @@ pub(crate) struct StateSnapshot {
 
 pub(crate) struct PendingNativeRect {
     pub(crate) rect: GpuSolidRect,
+    // 保留通用 RHI shape pipeline 需要的目标混合语义。
+    pub(crate) additive: bool,
     /// Logical scissor AABB (x, y, w, h).
     pub(crate) scissor: (i32, i32, i32, i32),
 }
@@ -121,6 +123,12 @@ impl PendingNativeOp {
         }
     }
 
+    // 判断单个 pending 操作是否需要 retained RHI Additive shape pipeline。
+    pub(super) fn is_additive_solid_rect(&self) -> bool {
+        // 只接受显式标记的实心矩形，不把其他图元混合语义外推到这里。
+        matches!(self, Self::SolidRect(rect) if rect.additive)
+    }
+
     pub(super) fn same_kind(&self, other: &Self) -> bool {
         matches!(
             (self, other),
@@ -135,5 +143,57 @@ impl PendingNativeOp {
                 | (Self::ImageBlit(_), Self::ImageBlit(_))
                 | (Self::ScrollCopy(_), Self::ScrollCopy(_))
         )
+    }
+}
+
+// 验证 legacy 批次扫描不会漏掉非首项 Additive 矩形。
+#[cfg(test)]
+mod tests {
+    // 引入当前 pending 类型与原生矩形载荷。
+    use super::{PendingNativeOp, PendingNativeRect};
+    // 引入最小实心矩形 fixture 类型。
+    use crate::native::present::GpuSolidRect;
+
+    // 创建带指定 blend 标记的有限实心矩形操作。
+    fn solid_rect(additive: bool) -> PendingNativeOp {
+        // 返回可参与同类批处理的 pending operation。
+        PendingNativeOp::SolidRect(PendingNativeRect {
+            // 使用有限正矩形，避免 fixture 混入几何无效因素。
+            rect: GpuSolidRect {
+                // 使用原点 x 坐标。
+                x: 0.0,
+                // 使用原点 y 坐标。
+                y: 0.0,
+                // 保持宽度为正。
+                w: 1.0,
+                // 保持高度为正。
+                h: 1.0,
+                // 使用不透明白色 premultiplied 常量。
+                rgba: [1.0; 4],
+                // fixture 不需要圆角。
+                radius: [0.0; 4],
+            },
+            // 注入本次测试需要的目标 blend 标记。
+            additive,
+            // 使用完整覆盖 fixture 的逻辑裁剪。
+            scissor: (0, 0, 1, 1),
+        })
+    }
+
+    // 批尾 Additive 也必须阻止 legacy SrcOver 批提交。
+    #[test]
+    fn detects_additive_after_normal_solid_rect() {
+        // 构造普通项在前、Additive 项在后的连续批次。
+        let mixed = [solid_rect(false), solid_rect(true)];
+        // 扫描整个批次必须发现第二项的 Additive 标记。
+        assert!(mixed
+            .iter()
+            .any(PendingNativeOp::is_additive_solid_rect));
+        // 构造完全普通的对照批次。
+        let normal = [solid_rect(false), solid_rect(false)];
+        // 对照批次不得被误判为 Additive。
+        assert!(!normal
+            .iter()
+            .any(PendingNativeOp::is_additive_solid_rect));
     }
 }

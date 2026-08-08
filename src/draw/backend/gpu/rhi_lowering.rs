@@ -31,6 +31,23 @@ fn finite_values(values: &[f32]) -> bool {
     values.iter().all(|value| value.is_finite())
 }
 
+// 按事实能力选择普通或 Additive shape pipeline。
+fn shape_rhi_op(shape: RhiShapeRect, additive: bool, additive_supported: bool) -> Option<RhiOp> {
+    // adapter 未声明 Additive 时必须保持原子回退，不能偷换为 SrcOver。
+    if additive && !additive_supported {
+        // 返回 None 让上层保留 pending queue 与 typed fallback 边界。
+        return None;
+    }
+    // 两种 blend 共享同一 shape 几何与常量，只切换固定 pipeline。
+    Some(if additive {
+        // 显式选择 Additive shape pipeline。
+        RhiOp::AdditiveShape(shape)
+    } else {
+        // 普通矩形继续使用 premultiplied SrcOver pipeline。
+        RhiOp::Shape(shape)
+    })
+}
+
 // 把单个待决操作降低为保序混合 RHI 载荷。
 fn lower_operation(
     operation: &PendingNativeOp,
@@ -77,8 +94,8 @@ fn lower_operation(
                 // 异常载荷交回兼容路径。
                 return None;
             }
-            // 返回填充 shape lowering 结果。
-            Some(RhiOp::Shape(RhiShapeRect {
+            // 构造两种 blend 共用的填充 shape 载荷。
+            let shape = RhiShapeRect {
                 x: value.x * scale_x,
                 y: value.y * scale_y,
                 w: value.w * scale_x,
@@ -87,7 +104,9 @@ fn lower_operation(
                 radius,
                 half_stroke: 0.0,
                 scissor: Some(scissor),
-            }))
+            };
+            // 依据 pending 语义与当前 RHI 事实能力选择固定 pipeline。
+            shape_rhi_op(shape, rect.additive, context.capabilities().additive_blend)
         }
         // 将圆角或直角描边矩形降低为 shape SDF。
         PendingNativeOp::StrokeRect(rect) => {
@@ -426,6 +445,51 @@ fn lower_operation(
         }
         // scroll 已在上层切成 TextureMove boundary，不能伪装成 sampled draw。
         PendingNativeOp::ScrollCopy(_) => None,
+    }
+}
+
+// 验证 native shape blend 到通用 RHI operation 的选择契约。
+#[cfg(test)]
+mod shape_blend_tests {
+    // 引入本文件的纯 lowering helper 与通用 RHI shape 类型。
+    use super::{shape_rhi_op, RhiOp, RhiShapeRect};
+
+    // 创建不依赖 native context 的有限 shape fixture。
+    fn shape_fixture() -> RhiShapeRect {
+        // 返回有效的圆角矩形常量。
+        RhiShapeRect {
+            // 使用有限正几何覆盖 shape ABI。
+            x: 1.0,
+            // 保持 y 坐标有限。
+            y: 2.0,
+            // 保持宽度为正。
+            w: 8.0,
+            // 保持高度为正。
+            h: 6.0,
+            // 使用 premultiplied 红色常量。
+            rgba: [1.0, 0.0, 0.0, 1.0],
+            // 使用统一的有限圆角。
+            radius: [2.0; 4],
+            // 填充 shape 不需要描边宽度。
+            half_stroke: 0.0,
+            // fixture 不需要裁剪。
+            scissor: None,
+        }
+    }
+
+    // Additive 必须选择独立 pipeline，并受事实能力门禁保护。
+    #[test]
+    fn additive_shape_selection_requires_explicit_capability() {
+        // 能力存在时必须生成 AdditiveShape。
+        let supported = shape_rhi_op(shape_fixture(), true, true);
+        // 不得把 Additive 偷换成普通 Shape。
+        assert!(matches!(supported, Some(RhiOp::AdditiveShape(_))));
+        // 能力缺失时必须原子回退。
+        assert!(shape_rhi_op(shape_fixture(), true, false).is_none());
+        // 普通 SrcOver shape 不依赖可选 Additive 能力。
+        let normal = shape_rhi_op(shape_fixture(), false, false);
+        // 普通路径仍选择 Shape。
+        assert!(matches!(normal, Some(RhiOp::Shape(_))));
     }
 }
 

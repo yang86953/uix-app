@@ -115,6 +115,8 @@ impl Canvas2D for NativeGpuCanvas2D {
                             rgba: self.solid_rgba(color),
                             radius: [0.0; 4],
                         },
+                        // 轴对齐线段仍只由普通 SrcOver 快路入队。
+                        additive: false,
                         scissor: self.scissor_aabb(),
                     }));
                 return;
@@ -574,10 +576,10 @@ mod tests {
     use super::super::pending::PendingNativeOp;
     use crate::core::Rect;
     use crate::draw::geometry::path::PathBuilder;
-    // 引入 soft 分段需要切换的公开混合模式。
-    use crate::draw::geometry::types::BlendMode;
-    use crate::draw::Color;
+    // 引入 Additive 分段与圆角矩形测试需要的公开几何类型。
+    use crate::draw::geometry::types::{BlendMode, Radius};
     use crate::draw::Canvas2D;
+    use crate::draw::Color;
     use crate::native::present::NativeRasterCaps;
 
     // 正常整数 scroll 不应在 Canvas2D 入口被降级为 deferred error。
@@ -635,6 +637,70 @@ mod tests {
         ));
         // 没有发生 CPU fallback allocation。
         assert!(canvas.soft_fallback.is_none());
+    }
+
+    // 生产 RHI capability 应让 Additive 圆角矩形绕过 CPU staging。
+    #[test]
+    fn additive_rounded_rect_uses_native_shape_when_capability_is_explicit() {
+        // 只启用当前纵切需要的 shape 与 Additive RHI 事实能力。
+        let caps = NativeRasterCaps {
+            // 允许轴对齐实心矩形进入 native queue。
+            solid_rects: true,
+            // 声明 retained RHI 可以执行 Additive pipeline。
+            rhi_additive_blend: true,
+            // 其余能力保持关闭，避免测试依赖无关图元。
+            ..NativeRasterCaps::default()
+        };
+        // 使用 hybrid canvas，确保若能力分流错误就会真实分配 soft staging。
+        let mut canvas = NativeGpuCanvas2D::new(32, 24, caps);
+        // 切换到 destination-dependent Additive 语义。
+        canvas.set_blend_mode(BlendMode::Additive);
+        // 记录一个轴对齐圆角矩形。
+        canvas.fill_rect(
+            // 使用有限正矩形覆盖 shape SDF 入队。
+            Rect::new(4.0, 3.0, 12.0, 8.0),
+            // 使用不透明红色验证正常颜色载荷。
+            Color::red(),
+            // 非零圆角确保同一路径覆盖 rounded shape。
+            Some(Radius::uniform(2.0)),
+        );
+        // pending queue 必须显式保留 Additive 事实。
+        assert!(matches!(
+            canvas.pending_native.as_slice(),
+            [PendingNativeOp::SolidRect(rect)] if rect.additive
+        ));
+        // 直达 RHI shape 时不得创建 CPU surface。
+        assert!(canvas.soft_fallback.is_none());
+        // native 内容不能同时伪装成 soft segment。
+        assert!(!canvas.soft_has_content);
+    }
+
+    // 未声明 RHI Additive 的 adapter 必须保留既有等价 soft fallback。
+    #[test]
+    fn additive_rect_without_rhi_capability_stays_in_soft_segment() {
+        // 仅打开普通 solid rect，刻意不声明 Additive RHI 能力。
+        let caps = NativeRasterCaps {
+            // 证明分流只受可选 blend 能力控制，而不是缺少矩形能力。
+            solid_rects: true,
+            // 其余能力包括 rhi_additive_blend 保持默认 false。
+            ..NativeRasterCaps::default()
+        };
+        // 使用允许 soft fallback 的 hybrid canvas。
+        let mut canvas = NativeGpuCanvas2D::new(20, 12, caps);
+        // 请求 Additive 矩形。
+        canvas.set_blend_mode(BlendMode::Additive);
+        // 绘制有限直角矩形。
+        canvas.fill_rect(Rect::new(2.0, 2.0, 6.0, 4.0), Color::green(), None);
+        // 不能把没有 RHI 事实支撑的操作放入 native queue。
+        assert!(canvas.pending_native.is_empty());
+        // 等价 CPU staging 必须存在。
+        assert!(canvas.soft_fallback.is_some());
+        // 快照应只包含一个 Additive soft segment。
+        let segments = canvas.packed_soft_segments();
+        // 单次绘制不能产生额外段。
+        assert_eq!(segments.len(), 1);
+        // 段的目标 blend 必须保持 Additive。
+        assert!(segments[0].additive);
     }
 
     // hybrid path clip 应建立 soft mask，并让随后绘制受 mask 约束。
