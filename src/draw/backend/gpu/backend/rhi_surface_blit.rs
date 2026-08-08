@@ -109,6 +109,21 @@ pub(super) fn lower_picture_blur_region(region: Rect) -> RhiScissor {
     }
 }
 
+// 要求 Picture blur 由通用 RHI texture owner 执行。
+pub(super) fn require_rhi_offscreen_blur_texture(
+    // 读取当前 Picture slot 的可选 RHI 资源。
+    texture: Option<TextureHandle>,
+) -> Result<TextureHandle, Error> {
+    // 只有通用 renderer 拥有的 texture 才能进入多阶段 blur 计划。
+    texture.ok_or_else(|| {
+        // legacy target 不再调用 adapter 的高层 blur 语义。
+        Error::new(
+            Errc::NotImplemented,
+            "Picture offscreen blur requires a RHI texture owner",
+        )
+    })
+}
+
 // 把已验证的 Picture blit 几何与当前合成状态组装为通用 sampled quad。
 fn lower_picture_sampled_quad(
     // 保存由 Picture slot 持有的 RHI texture。
@@ -184,6 +199,8 @@ mod tests {
         lower_picture_sampled_quad,
         // 测试嵌套 Picture 的资源所有权选择。
         nested_picture_path,
+        // 测试 Picture blur 只接受 RHI texture owner。
+        require_rhi_offscreen_blur_texture,
         // 引入所有权路径枚举用于模式匹配。
         NestedPicturePath,
     };
@@ -212,6 +229,25 @@ mod tests {
         assert_eq!((region.x, region.y), (0, 1));
         // 空尺寸确保后续 blur 不会创建 scratch texture。
         assert_eq!((region.width, region.height), (0, 0));
+    }
+
+    // Picture blur 不得再回落到 adapter 的高层离屏方法。
+    #[test]
+    fn picture_blur_requires_rhi_texture_owner() {
+        // 使用稳定 opaque texture 验证成功路径不替换资源身份。
+        let texture = TextureHandle::from_raw(57);
+        // 已有 RHI owner 时返回同一纹理。
+        assert_eq!(
+            require_rhi_offscreen_blur_texture(Some(texture)).ok(),
+            Some(texture)
+        );
+        // 缺少 RHI owner 时必须在触碰 adapter 前失败。
+        let missing = require_rhi_offscreen_blur_texture(None);
+        // typed failure 使用 NotImplemented 区分迁移缺口和资源损坏。
+        assert!(matches!(
+            missing,
+            Err(error) if error.code() == crate::core::Errc::NotImplemented
+        ));
     }
 
     // Picture blur 后的 sampled 合成必须保留当前目标的 opacity 与 Additive。

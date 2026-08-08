@@ -8,6 +8,8 @@
 
 > **当前实现线索**：通用部分主要位于 `src/draw/backend/`，帧计划位于 `src/draw/backend/frame_plan.rs`，RHI lowering 位于 `src/draw/backend/rhi_renderer.rs`、`src/draw/backend/rhi_renderer_coverage.rs`、`src/draw/backend/rhi_renderer_msdf.rs`、`src/draw/backend/rhi_renderer_shape.rs`、`src/draw/backend/rhi_renderer_shadow.rs`、`src/draw/backend/rhi_renderer_blur.rs`、`src/draw/backend/rhi_renderer_mixed.rs` 与 `src/draw/backend/gpu/submit.rs`；薄 RHI 契约位于 `src/native/present/rhi.rs`，兼容接口位于 `src/native/present/`，D3D11 实现位于 `src/native/presentation/graphics/d3d11/`，OpenGL ES 实现位于 `src/native/presentation/graphics/opengl/raster/rhi*.rs`、`src/native/presentation/graphics/opengl/rhi_host.rs` 与 WGL/EGL platform context。
 
+> **离屏模糊收敛**：D3D11 adapter 的 `blur_offscreen_target`、专属 scratch texture、高斯核/region 换算和旧常量缓冲已经移除。Picture/offscreen blur 只接受通用 renderer 拥有的 RHI texture，由 `RhiRenderer` 展开双 pass；缺少该 owner 时在触碰 adapter 前返回 typed `NotImplemented`，不再回落到平行 UI 语义。
+
 ## 设计结论
 
 后端采用**厚通用层、薄原生层**：矩形、路径、字形、图片、Picture、离屏、模糊、混合与批处理等 UI 图形语义只在通用 GPU Renderer 中实现一次；D3D11、D3D12、Vulkan、Metal、OpenGL 等原生 adapter 只实现资源、render pass、draw/copy、提交与呈现所需的最小 RHI。
@@ -114,12 +116,14 @@ factory 在 backend bootstrap 时验证 GPU 基线。未满足基线的候选不
 
 CPU backend 继续作为完整、可验证的 renderer，而不是每个 native adapter 的补丁集合。帧内 GPU→CPU fallback 只有在像素语义、painter order、clip/opacity/blend 与最终提交协议均可保持时才允许；否则返回 typed failure，由 renderer 的恢复策略选择整后端重建或下一帧重试。连续 Additive 填充、描边、渐变、raw image、glyph coverage 与 box shadow 可以利用逐通道饱和加法的结合律，在透明 scratch 中累积源贡献，再以不透明 opacity 封装为紧边界 Additive sampled tile；描边轮廓必须先在本地空间解析 width、cap、join 与 miter，再执行 offset 后的完整仿射；线性、径向渐变、raw image、glyph 与定向/环境阴影必须把设备像素中心逆映射到 offset 后的局部空间求值，图片与 coverage 保持 point sampling，字形颜色按 opacity 和 coverage 各调制一次，阴影 offset、corner radius、blur 与 coverage 曲线在 transform 前按局部语义解析。blend 切换与 `save`/`restore` 状态切换必须形成 painter barrier，变换、裁剪和 opacity 只能烘焙一次。路径 coverage clip 仅在可强制使用 source scratch 的 Additive 状态下准入。Picture/offscreen blur 在 Picture texture 空间裁剪 region，RHI 按 source→scratch→原 Picture 执行两个同核正交 pass；它不获取或呈现主 surface，scratch 在成功和提交失败后都检查式释放。blur 后的 Picture sampled quad 从当前目标继承有限 opacity 与 SrcOver/Additive；CPU 主表面合成会临时建立 identity/zero-offset 的 surface-space 几何，再恢复调用方状态。overlay 干净背景快照与恢复分别执行 retained→backdrop 和 backdrop→retained 的全幅 texture copy，二者只 submit device 命令、不 acquire/present；创建或 submit 失败不登记快照，resize、legacy 降级、shutdown 与显式 release 均检查式回收该纹理。该资源生命周期只为浮层重绘保留干净背景，不等同于 backdrop blur；backdrop blur 等尚未证明等价的多阶段效果仍返回 typed failure。
 
+Picture/offscreen blur 不允许把 legacy offscreen target 当作等价替代：没有 RHI texture owner 时直接返回 typed failure。这样 D3D11 与 OpenGL ES 都只执行同一个通用高斯核、区域裁剪、scratch 生命周期和提交计划，adapter 仅保留固定 `BLUR_PASS` shader ABI 与底层 draw 编码。
+
 GPU 基线内的操作不能依赖常态 CPU fallback。可选效果可以显式声明等价降级，但不能静默改变视觉结果。
 
 ## 当前映射与目标差距
 
 - 已有唯一 `RenderBackend` 抽象、通用 `GpuBackend`、有序 `FramePlan`、薄 RHI 契约和 CPU backend。
-- `IGraphicsContext` 与 `NativeRasterCaps` 仍保留迁移期的逐 UI 操作；overlay backdrop 的 snapshot/restore/release/has 四个高层入口已移除，目标是继续把几何、batch、atlas、offscreen 与 effect 调度收回通用 GPU Renderer。
+- `IGraphicsContext` 与 `NativeRasterCaps` 仍保留迁移期的逐 UI 操作；overlay backdrop 的 snapshot/restore/release/has 与离屏 blur 高层入口已移除，目标是继续把几何、batch、atlas、其余 offscreen 与 effect 调度收回通用 GPU Renderer。
 - D3D11 与 OpenGL ES 已接入资源、pass、draw/copy、retained framebuffer、surface resize、submit/present、错误映射和恢复边界；未覆盖图元继续明确回退。当前高层场景仍执行完整重绘，以保证任何兼容回退清空 swapchain 后都能恢复全部页面像素。
 - 剩余差距包括 backdrop blur 等尚未闭合的多阶段效果、`IGraphicsContext` 其余兼容门面移除，以及 Picture/offscreen blur 与 overlay backdrop 跨 DPI、真实 GPU 和操作系统的运行时矩阵覆盖。
 
@@ -129,6 +133,7 @@ GPU 基线内的操作不能依赖常态 CPU fallback。可选效果可以显式
 - `test-harness` 测试覆盖 DeviceLost、SurfaceLost、teardown/rebuild 与恢复后交互。
 - mock RHI 测试覆盖 pass 顺序、一次最终 present、受控 SurfaceLost，以及 resize 后旧代计划拒绝与新代计划恢复；失败帧不消费 damage。
 - Picture/offscreen blur 测试覆盖逻辑 region 不重复应用主 surface DPR、source→scratch→原 Picture 双 pass、同核水平/垂直 uniform、区域裁剪、单次 submit、无 acquire/present、失败清理与空区域无资源 no-op；sampled lowering 另覆盖目标 opacity、drawable 比例与 Additive 保真，CPU 参考覆盖真实 blur 后的目标相关 Additive 像素、clip 和状态恢复。
+- Picture blur owner 测试覆盖 RHI texture 身份透传，以及缺失 owner 时在 adapter 调用前返回 typed `NotImplemented`；D3D11 默认构建同时证明旧高层 blur、专属 scratch 和常量缓冲已退出生产依赖图。
 - overlay backdrop recording 测试覆盖 retained→backdrop 快照与 backdrop→retained 恢复的方向、全幅物理 extent、唯一 device submit、无 acquire/present，以及创建失败无半成品和 submit 失败检查式销毁。
 - 通用 canvas 单元测试覆盖 soft fallback 在 SrcOver/Additive 交替时的分段顺序与成功提交后的 staging 消费。
 - 通用 canvas 与 capability 单元测试覆盖生产 RHI profile 的 Additive shape 直达入队、可选能力门禁及无能力时的 soft 回退。

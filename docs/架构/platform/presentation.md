@@ -8,6 +8,8 @@
 
 > **当前实现线索**：目标接口位于 `src/native/present/rhi.rs`，兼容接口位于 `src/native/present/`，构造位于 `src/native/factory/`，presenter 位于 `src/native/presentation/`；D3D11 surface 迁移位于 `src/native/presentation/graphics/d3d11/platform/context/rhi.rs`，OpenGL ES surface host 位于 `src/native/presentation/graphics/opengl/rhi_host.rs`，两者的 device 资源与状态分别位于对应 raster/context 子目录，构造门禁位于 `src/native/factory/registry.rs`。
 
+> **离屏模糊边界**：`IGraphicsContext` 不再声明 `blur_offscreen_target`，D3D11 adapter 也不再持有高层 blur 方法、专属 scratch owner 或私有核计算。两个生产 adapter 只保留 `BLUR_PASS` 固定 shader 与底层资源/draw 原语；Picture 的双 pass、region、权重、资源清理和提交顺序全部由 graphics backend 决定。
+
 ## 组件清单
 
 | 组件 | 目标角色 | 职责 |
@@ -30,7 +32,7 @@ registry 只陈述可构造候选；graphics 决定选择和恢复策略。显�
 
 ## 组件：GraphicsDevice / GraphicsSurface
 
-`GraphicsDevice` 只提供 buffer、texture、sampler、pipeline、render target、pass、draw/copy、submit 和 device 恢复所需的最小原语；不得提供 `draw_glyphs`、`draw_rounded_rect`、`draw_picture` 等 UI 操作。固定 pipeline 语义、batch、atlas 与 effect pass 由 graphics/backend 持有。
+`GraphicsDevice` 只提供 buffer、texture、sampler、pipeline、render target、pass、draw/copy、submit 和 device 恢复所需的最小原语；不得提供 `draw_glyphs`、`draw_rounded_rect`、`draw_picture`、`blur_offscreen_target` 等 UI 操作。固定 pipeline 语义、batch、atlas 与 effect pass 由 graphics/backend 持有。
 
 `GraphicsSurface` 独立持有窗口 surface、swapchain、尺寸、DPR 相关像素 extent 与 generation。device 和 surface 可以由首个 adapter 在同一 owner-thread 对象中组合，但资源寿命、错误分类与重建范围必须保持可区分，也不把跨窗口 device 共享设为首版前置条件。
 

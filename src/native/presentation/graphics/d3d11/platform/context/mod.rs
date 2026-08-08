@@ -29,17 +29,15 @@ use crate::native::presentation::graphics::platform::windows as win_surface;
 use ::windows::core::Interface;
 use ::windows::Win32::Foundation::HMODULE;
 use ::windows::Win32::Graphics::Direct3D::{
-    D3D11_SRV_DIMENSION_TEXTURE2D, D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP,
-    D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0,
-    D3D_FEATURE_LEVEL_11_1,
+    D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL,
+    D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
 };
 use ::windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11RenderTargetView,
     ID3D11ShaderResourceView, ID3D11Texture2D, D3D11_BIND_RENDER_TARGET,
     D3D11_BIND_SHADER_RESOURCE, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-    D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_SDK_VERSION, D3D11_SHADER_RESOURCE_VIEW_DESC,
-    D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_TEX2D_SRV, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT,
-    D3D11_USAGE_STAGING, D3D11_VIEWPORT,
+    D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
+    D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING, D3D11_VIEWPORT,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
 use ::windows::Win32::Graphics::Dxgi::{
@@ -170,14 +168,6 @@ pub struct D3d11Context {
     next_offscreen_id: u32,
     /// When set, draw/clear target the offscreen instead of the swapchain.
     bound_offscreen: Option<u32>,
-    /// 模糊水平 pass 的中间纹理（tex, rtv, srv, width, height）。
-    blur_scratch: Option<(
-        ID3D11Texture2D,
-        ID3D11RenderTargetView,
-        ID3D11ShaderResourceView,
-        i32,
-        i32,
-    )>,
 }
 
 mod graphics;

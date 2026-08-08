@@ -529,19 +529,6 @@ struct BlitConstants {
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-struct BlurConstants {
-    /// xy = viewport 尺寸；zw = 源纹理尺寸（物理像素）。
-    sizes: [f32; 4],
-    /// xy = 目标 region 原点；zw = region 尺寸（物理像素）。
-    region: [f32; 4],
-    /// xy = 采样方向（像素）；z = tap 半径；w 保留。
-    dir_taps: [f32; 4],
-    /// 高斯权重，按 [-r..+r] 顺序、0 结尾，最多 64 taps。
-    weights: [f32; 64],
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
 struct GlyphConstants {
     viewport: [f32; 2],
     _pad0: [f32; 2],
@@ -845,8 +832,6 @@ pub struct D3d11Pipeline {
     vb_mesh_capacity_floats: usize,
     cb: ID3D11Buffer,
     cb_blit: ID3D11Buffer,
-    /// 模糊常量缓冲（方向、region、高斯权重）。
-    cb_blur: ID3D11Buffer,
     cb_glyph: ID3D11Buffer,
     cb_grad: ID3D11Buffer,
     cb_mesh: ID3D11Buffer,
