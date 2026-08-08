@@ -1,5 +1,8 @@
 //! GPU-native 队列到通用 RHI 的提交实现 — gpu 子模块。
 
+// 引入当前 canvas owner 与软资源闲置回收阈值。
+use super::{NativeGpuCanvas2D, SOFT_FALLBACK_IDLE_PRESENT_GRACE};
+
 use crate::core::{Errc, Error};
 // 引入 FramePlan 的显式 render target 引用。
 use crate::draw::backend::frame_plan::RenderTargetRef;
@@ -8,7 +11,6 @@ use crate::draw::backend::rhi_renderer::{
     RhiCoverageQuad, RhiRenderer, RhiShadow, RhiShapeRect, RhiSolidMesh, RhiTexturedQuad,
 };
 use crate::draw::geometry::types::BlendMode;
-use super::{NativeGpuCanvas2D, SOFT_FALLBACK_IDLE_PRESENT_GRACE};
 // 引入薄 RHI 的组合 context、load 和 viewport 类型。
 use crate::native::present::rhi::{GraphicsContextRhi, LoadAction, RhiScissor, RhiViewport};
 
