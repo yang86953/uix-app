@@ -427,3 +427,53 @@ fn widget_tree_normalizes_materialized_frames() {
     // 高度不得保留无界哨兵。
     assert!(assigned_frame.h.is_finite() && assigned_frame.h < f32::MAX);
 }
+
+// 验证保留身份的隐藏子节点完全退出父容器固有尺寸计算。
+#[test]
+fn hidden_space_child_does_not_affect_intrinsic_size() {
+    // 构造一项可见内容和一项更宽的隐藏内容。
+    let mut tree = ViewAdapter::build_nodes(ViewNode::new(
+        // 使用无显式尺寸的 Space 观察真实子内容范围。
+        Space::new(),
+        // 声明两个尺寸差异明显的直接子节点。
+        vec![
+            // 可见子节点决定最终固有尺寸。
+            ViewNode::leaf(Label::new("visible").size(20.0, 12.0)),
+            // 隐藏子节点保留身份但不得占用布局空间。
+            ViewNode::leaf(Label::new("hidden").size(80.0, 12.0)).visible(false),
+        ],
+    ));
+    // 完成布局并让 Space 缓存实际可见子内容范围。
+    clear_initial_invalidations(&mut tree);
+    // 读取由可见子树决定的固有尺寸。
+    let hidden_measure = root_measure(&tree);
+    // 隐藏项及其前置 gap 均不得增加横向固有尺寸。
+    assert_eq!(hidden_measure.w, 20.0);
+    // 可见项必须继续产生正的纵向固有尺寸。
+    assert!(hidden_measure.h > 0.0);
+
+    // 原位协调为同一结构并恢复第二项可见。
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        // 保持父组件类型和布局参数不变。
+        ViewNode::new(
+            // 复用无显式尺寸的 Space。
+            Space::new(),
+            // 第二项恢复为普通可见声明。
+            vec![
+                // 第一项保持原尺寸。
+                ViewNode::leaf(Label::new("visible").size(20.0, 12.0)),
+                // 恢复的第二项应重新进入布局。
+                ViewNode::leaf(Label::new("hidden").size(80.0, 12.0)),
+            ],
+        ),
+    );
+    // 完成恢复可见后的布局收敛。
+    clear_initial_invalidations(&mut tree);
+    // 读取包含两个可见项及默认 gap 的固有尺寸。
+    let visible_measure = root_measure(&tree);
+    // 20 + 8 gap + 80 应完整恢复。
+    assert_eq!(visible_measure.w, 108.0);
+    // 同高子项恢复可见不得改变父级纵向固有尺寸。
+    assert_eq!(visible_measure.h, hidden_measure.h);
+}

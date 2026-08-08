@@ -453,11 +453,23 @@ impl BoxedWidget {
         children: &[ComponentId],
         tree: &WidgetTree,
     ) -> Vec<(ComponentId, Rect)> {
+        // 在所有定制父布局的共同入口移除整棵有效不可见子树。
+        let visible_children: Vec<ComponentId> = children
+            // 保留声明顺序，确保恢复可见后的布局索引保持稳定。
+            .iter()
+            // 后续布局只需要复制轻量组件标识。
+            .copied()
+            // 同时尊重节点自身、父级门控和组件运行态可见性。
+            .filter(|child_id| tree.is_effectively_visible(*child_id))
+            // 物化切片以继续兼容现有 WidgetLayout 接口。
+            .collect();
         self.with_component_context(|component| {
             component
                 .as_layout()
                 .map(|layout| {
-                    let measured = layout.measure_children(frame, children, tree);
+                    // 测量阶段不得再观察或缓存隐藏子节点。
+                    let measured = layout.measure_children(frame, &visible_children, tree);
+                    // 放置阶段接收与测量一致的可见子集。
                     layout.layout_children(frame, &measured, tree)
                 })
                 .unwrap_or_default()
