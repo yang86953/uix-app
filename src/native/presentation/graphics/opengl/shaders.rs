@@ -133,31 +133,6 @@ void main() {
 }
 "#;
 
-/// Gaussian blur fragment shader.
-#[cfg(test)]
-pub const BLUR_FRAG: &str = r#"#version 300 es
-precision highp float;
-
-in vec2 v_uv;
-uniform sampler2D u_source;
-uniform vec2 u_texel_size;
-uniform vec2 u_direction;
-
-out vec4 fragColor;
-
-void main() {
-    vec2 dir = u_texel_size * u_direction;
-    vec4 color = vec4(0.0);
-    float weights[5] = float[](0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216);
-    color += texture(u_source, v_uv) * weights[0];
-    for (int i = 1; i < 5; i++) {
-        color += texture(u_source, v_uv + dir * float(i)) * weights[i];
-        color += texture(u_source, v_uv - dir * float(i)) * weights[i];
-    }
-    fragColor = color;
-}
-"#;
-
 /// CPU fallback texture composite shader, including the little-endian BGRA
 /// swizzle required for AARRGGBB upload data.
 pub const BLIT_FRAG: &str = r#"#version 300 es

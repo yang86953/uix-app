@@ -1,7 +1,10 @@
 //! OpenGL ES 薄 RHI 的健康和可控故障边界。
 
-// 引入统一错误分类和结果类型。
-use crate::core::{Errc, Error, Result};
+// 引入所有构建都会使用的统一结果类型。
+use crate::core::Result;
+// 仅 test-harness 故障注入需要构造 typed error。
+#[cfg(feature = "test-harness")]
+use crate::core::{Errc, Error};
 // 引入 OpenGL RHI 资源设备状态。
 use super::OpenGlRhiDevice;
 

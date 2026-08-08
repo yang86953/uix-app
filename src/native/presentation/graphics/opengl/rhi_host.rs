@@ -1,9 +1,10 @@
 //! WGL/EGL context 到 OpenGL ES 薄 RHI 的共享 host 实现。
 
-// 引入最终 present damage 和 typed error。
-use crate::core::{Errc, Error, PresentDamage, Result};
-// 引入 IGraphicsContext 作为 native resize/current/swap 的宿主边界。
-use crate::native::present::IGraphicsContext;
+// 引入最终 present damage 和通用 typed error。
+use crate::core::{Error, PresentDamage, Result};
+// 仅 test-harness surface lost 注入需要专用错误分类。
+#[cfg(feature = "test-harness")]
+use crate::core::Errc;
 // 引入薄 RHI 的所有组合 trait 与命令类型。
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsCapabilities, GraphicsDevice, GraphicsSurface,
