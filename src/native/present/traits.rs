@@ -516,26 +516,6 @@ pub trait IGraphicsContext {
             ),
         ))
     }
-
-    /// 对离屏颜色目标做可分离高斯模糊（水平→垂直；大半径可降采样）。
-    ///
-    /// `region` 为逻辑像素矩形；半径语义与 CPU `gaussian_blur` 一致
-    ///（`sigma = radius / 3`）。默认未实现；生产 D3D11 路径提供原生实现，
-    /// 禁止用 CPU PixelUpload 冒充。
-    fn blur_offscreen_target(
-        &mut self,
-        _id: OffscreenTargetId,
-        _region: crate::core::Rect,
-        _radius: f32,
-    ) -> Result<(), Error> {
-        Err(Error::new(
-            crate::core::error::Errc::NotImplemented,
-            format!(
-                "GraphicsBackend {} does not support blur_offscreen_target",
-                self.graphics_backend()
-            ),
-        ))
-    }
 }
 
 // 验证逻辑尺寸到物理 RHI extent 的纯转换契约。

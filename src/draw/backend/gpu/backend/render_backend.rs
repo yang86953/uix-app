@@ -400,6 +400,7 @@ impl RenderBackend for GpuBackend {
                 "Picture offscreen target does not exist",
             ));
         };
+        // 保存 legacy target，供没有 RHI texture 的兼容 slot 绑定。
         let target = off.target;
         let rhi_texture = off.rhi_texture;
         // RHI 离屏由 flush 时的 FramePlan Clear 初始化，不提前绑定 legacy target。
@@ -447,6 +448,7 @@ impl RenderBackend for GpuBackend {
         if let Some(error) = off.canvas.take_deferred_error() {
             return Err(error);
         }
+        // 保存 legacy target，供 RHI 首次 lowering 失败时原子降级。
         let target = off.target;
         let rhi_texture = off.rhi_texture;
         // 记录本次 flush 是否仍处于 RHI target 的首个提交边界。
@@ -745,7 +747,6 @@ impl RenderBackend for GpuBackend {
                 "Picture offscreen target does not exist before blur",
             ));
         };
-        let target = off.target;
         let rhi_texture = off.rhi_texture;
         let offscreen_width = off.width;
         let offscreen_height = off.height;
@@ -761,44 +762,41 @@ impl RenderBackend for GpuBackend {
         } else {
             self.flush_main_segment_before_ordered_boundary()?;
         }
-        // RHI texture 已经拥有完整 Picture 内容时，执行真正的两段 RHI blur。
-        if let Some(texture) = rhi_texture {
-            // Picture RHI texture 按自身逻辑 extent 创建，不能重复乘主 surface DPR。
-            let rhi_region = super::rhi_surface_blit::lower_picture_blur_region(region);
-            // 分开借用 owner-thread context 和通用 renderer cache。
-            let (gpu_ctx, rhi_renderer) = (&mut self.gpu_ctx, &mut self.rhi_renderer);
-            // RHI texture 不能在缺少 renderer 时静默切回不一致的 legacy target。
-            let Some(renderer) = rhi_renderer.as_mut() else {
-                // 返回稳定的迁移期未实现错误。
-                return Err(Error::new(
-                    Errc::NotImplemented,
-                    "RHI offscreen blur requires the RHI renderer cache",
-                ));
-            };
-            // 只有组合 RHI context 能执行 texture target 的多阶段计划。
-            let Some(context) = gpu_ctx.rhi_context() else {
-                // 返回稳定的迁移期未实现错误。
-                return Err(Error::new(
-                    Errc::NotImplemented,
-                    "RHI offscreen blur requires a composable RHI context",
-                ));
-            };
-            // 当前 Picture texture 同时作为 source 和最终 target，scratch 由 renderer 管理。
-            return renderer.execute_blur_without_present(
-                context,
-                PresentDamage::Full,
-                texture,
-                RhiExtent::new(offscreen_width as u32, offscreen_height as u32),
-                rhi_region,
-                radius,
-                TextureFormat::Bgra8Unorm,
-                crate::draw::backend::frame_plan::RenderTargetRef::Texture(
-                    RenderTargetHandle::from_raw(texture.raw()),
-                ),
-            );
-        }
-        // 没有 RHI texture 的 adapter 继续使用原有 checked blur 边界。
-        self.gpu_ctx.blur_offscreen_target(target, region, radius)
+        // Picture blur 只接受通用 renderer 拥有的 RHI texture。
+        let texture = super::rhi_surface_blit::require_rhi_offscreen_blur_texture(rhi_texture)?;
+        // Picture RHI texture 按自身逻辑 extent 创建，不能重复乘主 surface DPR。
+        let rhi_region = super::rhi_surface_blit::lower_picture_blur_region(region);
+        // 分开借用 owner-thread context 和通用 renderer cache。
+        let (gpu_ctx, rhi_renderer) = (&mut self.gpu_ctx, &mut self.rhi_renderer);
+        // RHI texture 不能在缺少 renderer 时静默切回不一致的 legacy target。
+        let Some(renderer) = rhi_renderer.as_mut() else {
+            // 返回稳定的迁移期未实现错误。
+            return Err(Error::new(
+                Errc::NotImplemented,
+                "RHI offscreen blur requires the RHI renderer cache",
+            ));
+        };
+        // 只有组合 RHI context 能执行 texture target 的多阶段计划。
+        let Some(context) = gpu_ctx.rhi_context() else {
+            // 返回稳定的迁移期未实现错误。
+            return Err(Error::new(
+                Errc::NotImplemented,
+                "RHI offscreen blur requires a composable RHI context",
+            ));
+        };
+        // 当前 Picture texture 同时作为 source 和最终 target，scratch 由 renderer 管理。
+        renderer.execute_blur_without_present(
+            context,
+            PresentDamage::Full,
+            texture,
+            RhiExtent::new(offscreen_width as u32, offscreen_height as u32),
+            rhi_region,
+            radius,
+            TextureFormat::Bgra8Unorm,
+            crate::draw::backend::frame_plan::RenderTargetRef::Texture(
+                RenderTargetHandle::from_raw(texture.raw()),
+            ),
+        )
     }
 
     fn snapshot_overlay_backdrop(&mut self) -> bool {

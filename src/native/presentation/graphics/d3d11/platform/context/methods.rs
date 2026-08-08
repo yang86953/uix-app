@@ -245,71 +245,6 @@ impl D3d11Context {
         Ok(())
     }
 
-    /// 确保模糊水平 pass 的中间纹理存在且与 `width`×`height` 匹配，
-    /// 返回其 (RTV, SRV)。尺寸变化时重建。
-    pub(super) fn ensure_blur_scratch(
-        &mut self,
-        width: i32,
-        height: i32,
-    ) -> Result<(ID3D11RenderTargetView, ID3D11ShaderResourceView), Error> {
-        if let Some((_, rtv, srv, w, h)) = &self.blur_scratch {
-            if *w == width && *h == height {
-                return Ok((rtv.clone(), srv.clone()));
-            }
-        }
-        let desc = D3D11_TEXTURE2D_DESC {
-            Width: width.max(1) as u32,
-            Height: height.max(1) as u32,
-            MipLevels: 1,
-            ArraySize: 1,
-            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-            SampleDesc: DXGI_SAMPLE_DESC {
-                Count: 1,
-                Quality: 0,
-            },
-            Usage: D3D11_USAGE_DEFAULT,
-            BindFlags: (D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_SHADER_RESOURCE.0) as u32,
-            CPUAccessFlags: 0,
-            MiscFlags: 0,
-        };
-        let mut tex = None;
-        unsafe {
-            self.device
-                .CreateTexture2D(&desc, None, Some(&mut tex))
-                .map_err(|e| d3d_error("CreateTexture2D(blur scratch)", e))?;
-        }
-        let tex =
-            tex.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Context: no blur scratch"))?;
-        let mut rtv = None;
-        unsafe {
-            self.device
-                .CreateRenderTargetView(&tex, None, Some(&mut rtv))
-                .map_err(|e| d3d_error("CreateRenderTargetView(blur scratch)", e))?;
-        }
-        let rtv = rtv
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Context: no blur scratch RTV"))?;
-        let mut srv = None;
-        let srv_desc = D3D11_SHADER_RESOURCE_VIEW_DESC {
-            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-            ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2D,
-            Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
-                Texture2D: D3D11_TEX2D_SRV {
-                    MostDetailedMip: 0,
-                    MipLevels: 1,
-                },
-            },
-        };
-        unsafe {
-            self.device
-                .CreateShaderResourceView(&tex, Some(&srv_desc), Some(&mut srv))
-                .map_err(|e| d3d_error("CreateShaderResourceView(blur scratch)", e))?;
-        }
-        let srv = srv
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Context: no blur scratch SRV"))?;
-        self.blur_scratch = Some((tex, rtv.clone(), srv.clone(), width, height));
-        Ok((rtv, srv))
-    }
-
     pub(super) fn present_result(&mut self) -> Result<()> {
         // 兼容 presenter 也必须消费同一 lower surface-lost 注入，避免故障
         // 因本帧没有进入 RHI acquire 而被静默跳过。
@@ -420,7 +355,6 @@ pub(crate) fn create_with_driver(
         free_offscreen_ids: Vec::new(),
         next_offscreen_id: 0,
         bound_offscreen: None,
-        blur_scratch: None,
     };
     tracing::info!(
         "D3d11Context: created {width}x{height} swapchain at feature level {:?}; {}",

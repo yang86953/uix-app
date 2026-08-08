@@ -86,7 +86,7 @@ impl D3d11Pipeline {
         let ps_blit =
             ps_blit.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blit PS"))?;
 
-        // 可分离高斯模糊 PS（blur_offscreen_target 使用）。
+        // 可分离高斯模糊 PS 只供通用 RHI BLUR_PASS 使用。
         let blur_ps_blob = compile_shader(BLUR_HLSL, c"PSMain", c"ps_4_0")?;
         let mut ps_blur = None;
         unsafe {
@@ -404,23 +404,6 @@ impl D3d11Pipeline {
         let cb_blit =
             cb_blit.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blit CB"))?;
 
-        let cb_blur_desc = D3D11_BUFFER_DESC {
-            ByteWidth: size_of::<BlurConstants>() as u32,
-            Usage: D3D11_USAGE_DYNAMIC,
-            BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
-            CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
-            MiscFlags: 0,
-            StructureByteStride: 0,
-        };
-        let mut cb_blur = None;
-        unsafe {
-            device
-                .CreateBuffer(&cb_blur_desc, None, Some(&mut cb_blur))
-                .map_err(|e| d3d_error("CreateBuffer(cb_blur)", e))?;
-        }
-        let cb_blur =
-            cb_blur.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blur CB"))?;
-
         let cb_glyph_desc = D3D11_BUFFER_DESC {
             ByteWidth: size_of::<GlyphConstants>() as u32,
             Usage: D3D11_USAGE_DYNAMIC,
@@ -671,7 +654,6 @@ impl D3d11Pipeline {
             vb_mesh_capacity_floats,
             cb,
             cb_blit,
-            cb_blur,
             cb_glyph,
             cb_grad,
             cb_mesh,
