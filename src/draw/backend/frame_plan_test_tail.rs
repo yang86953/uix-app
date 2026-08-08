@@ -147,18 +147,68 @@ fn failed_submit_does_not_present() {
     assert_eq!(surface.present_count, 0);
 }
 
-    // 验证 surface 代际变化会在 acquire 前拒绝旧计划。
+// 验证最终 present 的受控 surface lost 不会产生成功提交。
+#[test]
+fn failed_present_returns_surface_lost_without_commit() {
+    // 创建第一代 surface。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 创建能够完成全部设备命令的记录型 device。
+    let mut device = RecordingDevice {
+        // 从空调用日志开始。
+        log: VecDeque::new(),
+        // 提供执行 FramePlan 所需的完整 GPU 基线。
+        capabilities: GraphicsCapabilities::full_gpu_baseline(),
+        // 保持 submit 成功，让测试到达最终 present。
+        fail_submit: false,
+    };
+    // 创建只在最终 present 返回 surface lost 的记录型 surface。
+    let mut surface = RecordingSurface {
+        // 保持计划与 acquire 的代际一致。
+        token,
+        // 使用稳定的测试 surface target。
+        target: RenderTargetHandle::from_raw(2),
+        // 从尚未 present 的状态开始。
+        present_count: 0,
+        // 安排最终 present 返回受控 surface lost。
+        fail_present: true,
+    };
+    // 执行完整计划并取得最终失败结果。
+    let result = test_plan(token).execute(&mut device, &mut surface);
+    // 提取受控 surface lost 错误。
+    let error = match result {
+        // 返回错误时保留其 typed 分类。
+        Err(error) => error,
+        // present 失败不能被包装为成功 FrameCommit。
+        Ok(_) => panic!("present must fail"),
+    };
+    // 最终错误必须保持 surface lost 分类。
+    assert_eq!(error.code(), Errc::GraphicsSurfaceLost);
+    // 设备命令必须已经完成唯一一次 submit。
+    assert_eq!(device.log.back(), Some(&"submit"));
+    // 受控故障必须恰好发生在一次最终 present 边界。
+    assert_eq!(surface.present_count, 1);
+}
+
+    // 验证 surface resize 会拒绝旧计划并允许新代际继续提交。
     #[test]
-    fn stale_generation_is_rejected_before_acquire() {
+    fn resize_rejects_old_plan_and_accepts_new_generation() {
         // 创建旧一代 token。
         let old_token = SurfaceToken::new(1, RhiExtent::new(64, 64));
-        // 创建已经重建到新一代的 surface。
+        // 创建尚未 resize 的第一代 surface。
         let mut surface = RecordingSurface {
-            token: SurfaceToken::new(2, RhiExtent::new(64, 64)),
+            token: old_token,
             target: RenderTargetHandle::from_raw(2),
             present_count: 0,
             fail_present: false,
         };
+        // 通过 GraphicsSurface 契约执行一次受控 resize。
+        let new_token = surface
+            .resize(RhiExtent::new(96, 80))
+            .expect("recording surface resize must succeed");
+        // resize 必须推进一代 surface generation。
+        assert_eq!(new_token.generation, old_token.generation + 1);
+        // resize 必须保存新的物理 extent。
+        assert_eq!(new_token.extent, RhiExtent::new(96, 80));
         // 创建记录型 device。
         let mut device = RecordingDevice {
             log: VecDeque::new(),
@@ -179,6 +229,15 @@ fn failed_submit_does_not_present() {
         assert!(device.log.is_empty());
         // 验证旧计划没有进入最终 present。
         assert_eq!(surface.present_count, 0);
+        // 使用 resize 返回的新 token 生成下一帧计划。
+        let new_result = test_plan(new_token).execute(&mut device, &mut surface);
+        // 新代际计划必须恢复正常提交。
+        assert!(
+            new_result.is_ok(),
+            "new generation plan failed: {new_result:?}"
+        );
+        // 新代际计划只能触发一次最终 present。
+        assert_eq!(surface.present_count, 1);
     }
 
     // 验证缺少 GPU 基线时在 acquire 前被拒绝。
