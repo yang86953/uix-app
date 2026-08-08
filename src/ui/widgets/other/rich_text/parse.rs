@@ -10,6 +10,10 @@ mod parse_blocks;
 #[path = "parse_fences.rs"]
 mod parse_fences;
 
+// 复用独立的内联代码正文规范化，保持主解析器聚焦语法调度。
+#[path = "parse_code_span.rs"]
+mod parse_code_span;
+
 pub fn layout_rich_text_segments(
     segments: &[RichTextSegment],
     max_width: f32,
@@ -175,11 +179,9 @@ fn parse_inline_element(
             find_code_closing_delimiter(remaining, delimiter_len, delimiter_len)
         {
             // 读取开闭 delimiter 之间的代码正文。
-            let code = &remaining[delimiter_len..code_end];
+            let code = parse_code_span::normalize_code_span(&remaining[delimiter_len..code_end]);
             // 生成内联代码段。
-            segments.push(RichTextSegment::Code {
-                content: code.to_string(),
-            });
+            segments.push(RichTextSegment::Code { content: code });
             // 返回开闭 delimiter 和正文的总字节数。
             return Some(delimiter_end);
         }
@@ -584,6 +586,11 @@ fn push_text_segment(content: &str, style: &RichTextStyle, segments: &mut Vec<Ri
 #[cfg(test)]
 #[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_heading_tests.rs"]
 mod heading_tests;
+
+// 从仓库测试目录加载内联代码专项测试，覆盖 Markdown 空白边界。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_code_tests.rs"]
+mod code_tests;
 
 // 从仓库测试目录加载块级语法专项测试，保持解析实现文件结构清晰。
 #[cfg(test)]
