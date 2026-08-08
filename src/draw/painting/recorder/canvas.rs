@@ -7,8 +7,8 @@
 use crate::core::{Errc, Error, Rect};
 use crate::draw::geometry::types::BlendMode;
 use crate::draw::painting::{
-    FrameEncoder, FrameGlyphBlit, FrameImage, FrameOpacity, FrameRasterOp,
-    FrameRect, FrameSampledRect,
+    FrameEncoder, FrameGlyphBlit, FrameImage, FrameOpacity, FrameRasterOp, FrameRect,
+    FrameSampledRect,
 };
 use crate::draw::raster::pixel_surface::PixelSurface;
 use crate::draw::raster::shared_rasterizer::SharedRasterizer;
@@ -293,12 +293,17 @@ impl FrameRecordingCanvas {
         });
     }
 
-    pub(super) fn draw_cpu(&mut self, local_bounds: Rect, pad: f32, draw: impl FnOnce(&mut SharedRasterizer)) {
+    pub(super) fn draw_cpu(
+        &mut self,
+        local_bounds: Rect,
+        pad: f32,
+        draw: impl FnOnce(&mut SharedRasterizer),
+    ) {
         if self.deferred_error.is_some() {
             return;
         }
         // Transparent scratch + source-over upload cannot preserve Additive
-        // against prior commands; only Native FillRectAdditive is equivalent.
+        // against prior commands; only explicitly promoted destination-dependent Native ops are equivalent.
         if self.blend_mode == BlendMode::Additive {
             self.unsupported_state("destination-dependent Additive blend via CPU segment");
             return;
@@ -495,9 +500,9 @@ impl FrameRecordingCanvas {
         });
     }
 
-    /// Additive 填充依赖目标像素，因此只能进入 Native 命令。几何约束与
+    /// Additive 轴对齐矩形操作依赖目标像素，因此只能进入 Native 命令。几何约束与
     /// SrcOver 直达路径一致，但允许半透明源色。
-    pub(super) fn can_emit_native_additive_fill(&self, rect: Rect) -> bool {
+    pub(super) fn can_emit_native_additive_rect(&self, rect: Rect) -> bool {
         self.blend_mode == BlendMode::Additive
             && self.scratch.offset() == (0.0, 0.0)
             && self.scratch.current_transform().is_identity()
@@ -515,7 +520,11 @@ impl FrameRecordingCanvas {
             && rect.y + rect.h <= self.height as f32
     }
 
-    pub(super) fn direct_picture_rects(&self, src: Rect, dst: Rect) -> Option<(FrameRect, FrameRect)> {
+    pub(super) fn direct_picture_rects(
+        &self,
+        src: Rect,
+        dst: Rect,
+    ) -> Option<(FrameRect, FrameRect)> {
         if self.scratch.opacity() != 1.0 {
             return None;
         }
@@ -525,7 +534,11 @@ impl FrameRecordingCanvas {
     /// 整数 1:1 splice 几何（仍要求整像素 src/dst）。
     ///
     /// Additive 不参与 splice 收窄；采样路径见 [`Self::sampled_picture_geometry`]。
-    pub(super) fn direct_picture_geometry(&self, src: Rect, dst: Rect) -> Option<(FrameRect, FrameRect)> {
+    pub(super) fn direct_picture_geometry(
+        &self,
+        src: Rect,
+        dst: Rect,
+    ) -> Option<(FrameRect, FrameRect)> {
         let (offset_x, offset_y) = self.scratch.offset();
         if self.blend_mode == BlendMode::Additive
             || !offset_x.is_finite()
