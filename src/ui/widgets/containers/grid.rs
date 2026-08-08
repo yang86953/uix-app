@@ -1,6 +1,8 @@
 //! Grid widget - CSS Grid-like layout container.
 
 use std::borrow::Cow;
+// Grid 在布局轮次间保存由轨道求解得到的固有内容尺寸。
+use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, EdgeInsets, Rect, Size};
@@ -230,13 +232,21 @@ component! {
         pub style: Style,
         breakpoints: Option<Breakpoints>,
         cols: Vec<Col>,
+        /// 保存零轴启动后由轨道与子内容求得的自然内容尺寸。
+        cached_content_size: Cell<Size>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(Size::new(
-            self.style.width.unwrap_or(0.0),
-            self.style.height.unwrap_or(0.0),
-        ))
+        // 显式尺寸优先，无显式尺寸时由上一轮轨道内容撑开。
+        constraints.clamp(self.intrinsic_size())
+    }
+
+    on_children_changed => (&mut self, child_count: usize) {
+        // 移除最后一个子节点后旧轨道内容不再构成有效测量下限。
+        if child_count == 0 {
+            // 立即清除缓存，避免空 Grid 继续保留旧尺寸。
+            self.cached_content_size.set(Size::zero());
+        }
     }
 
     layout_margin => (&self) -> EdgeInsets { self.style.margin }
@@ -256,12 +266,8 @@ component! {
     picture_policy => (&self) -> PicturePolicy { PicturePolicy::Eligible }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        let visual = Rect::new(
-            frame.x + self.style.margin.left,
-            frame.y + self.style.margin.top,
-            (frame.w - self.style.margin.horizontal()).max(0.0),
-            (frame.h - self.style.margin.vertical()).max(0.0),
-        );
+        // 父布局已在 frame 外消费 margin，Grid 绘制只使用 border-box。
+        let visual = self.visual_rect(frame);
         if visual.w <= 0.0 || visual.h <= 0.0 { return; }
         paint_style(ctx, visual, &self.style);
     }
@@ -279,11 +285,25 @@ component! {
             padding: self.style.padding,
         }
         .content_rect(frame);
-        if content_rect.w <= 0.0 || content_rect.h <= 0.0 {
-            return Vec::new();
-        }
 
-        let constraints = Constraints::loose(Size::new(content_rect.w, content_rect.h));
+        // 无显式宽度时允许 Auto 列读取子项自然宽度完成首轮启动。
+        let max_width = if self.style.width.is_some_and(|width| width > 0.0) {
+            // 显式宽度继续约束横向子项测量。
+            content_rect.w
+        } else {
+            // 无界哨兵仅停留在测量阶段，不会写入实际 frame。
+            f32::MAX
+        };
+        // 无显式高度时允许 Auto 行读取子项自然高度完成首轮启动。
+        let max_height = if self.style.height.is_some_and(|height| height > 0.0) {
+            // 显式高度继续约束纵向子项测量。
+            content_rect.h
+        } else {
+            // 无界哨兵仅作为测量上限。
+            f32::MAX
+        };
+        // 使用逐轴明确的宽松约束测量 Grid 子项。
+        let constraints = Constraints::loose(Size::new(max_width, max_height));
         children
             .iter()
             .copied()
@@ -295,6 +315,8 @@ component! {
         -> Vec<(ComponentId, Rect)>
     {
         if self.style.grid_template_columns.is_empty() || children.is_empty() {
+            // 无有效轨道或子项时清除旧内容缓存。
+            self.cached_content_size.set(Size::zero());
             return Vec::new();
         }
 
@@ -304,9 +326,6 @@ component! {
             padding: self.style.padding,
         };
         let content_rect = box_model.content_rect(frame);
-        if content_rect.w <= 0.0 || content_rect.h <= 0.0 {
-            return Vec::new();
-        }
 
         let engine = GridLayout {
             columns: Vec::new(),
@@ -327,6 +346,20 @@ component! {
             &self.style.grid_template_rows,
             &responsive_children,
         );
+
+        // 在零可用空间中再求一次自然轨道占用，避免 Stretch 缓存父级分配尺寸。
+        let intrinsic_output = engine.layout_with_tracks(
+            // 保留内容原点，同时把两个可用轴设为未分配状态。
+            Rect::new(content_rect.x, content_rect.y, 0.0, 0.0),
+            // 使用与实际布局相同的列轨定义。
+            &self.style.grid_template_columns,
+            // 使用与实际布局相同的显式或隐式行定义。
+            &self.style.grid_template_rows,
+            // 响应式映射必须与当前实际宽度保持一致。
+            &responsive_children,
+        );
+        // 缓存不包含 border 与 padding 的自然内容尺寸。
+        self.cached_content_size.set(intrinsic_output.total_size);
 
         responsive_children
             .iter()
@@ -358,6 +391,8 @@ impl Grid {
             style: Style::default().with_display(DisplayMode::Grid),
             breakpoints: None,
             cols: Vec::new(),
+            // 新 Grid 尚无已求解的轨道内容。
+            cached_content_size: Cell::new(Size::zero()),
         }
     }
 
@@ -365,6 +400,71 @@ impl Grid {
         self.style = next.style;
         self.breakpoints = next.breakpoints;
         self.cols = next.cols;
+        // 保留 cached_content_size，避免无关声明协调丢失布局固有尺寸。
+    }
+
+    // 结合显式尺寸、内容缓存与盒模型计算 Grid 的自然 border-box 尺寸。
+    fn intrinsic_size(&self) -> Size {
+        // 读取上一轮由零空间轨道求解得到的内容尺寸。
+        let cached = self.cached_content_size.get();
+        // 有内容时把横向 padding 纳入自然 border-box。
+        let content_width = if cached.w > 0.0 {
+            // padding 位于内容与 border 之间。
+            cached.w + self.style.padding.horizontal()
+        } else {
+            // 空内容不单独物化 padding 尺寸，保持既有空 Grid 语义。
+            0.0
+        };
+        // 有内容时把纵向 padding 纳入自然 border-box。
+        let content_height = if cached.h > 0.0 {
+            // padding 位于内容与 border 之间。
+            cached.h + self.style.padding.vertical()
+        } else {
+            // 空内容不单独物化 padding 尺寸。
+            0.0
+        };
+        // flex-grow Grid 继续以零为未分配主尺寸，避免缓存阻止父级收缩。
+        let grows = self.style.flex_grow > 0.0;
+        // 显式正宽度优先，否则采用可用的内容缓存。
+        let width = match self.style.width {
+            // 正宽度保持作者声明。
+            Some(width) if width > 0.0 => width,
+            // grow 子项把剩余空间分配交给父级。
+            _ if grows => 0.0,
+            // 普通 Auto Grid 使用自然内容宽度。
+            _ => content_width,
+        };
+        // 显式正高度优先，否则采用可用的内容缓存。
+        let height = match self.style.height {
+            // 正高度保持作者声明。
+            Some(height) if height > 0.0 => height,
+            // grow 子项把剩余空间分配交给父级。
+            _ if grows => 0.0,
+            // 普通 Auto Grid 使用自然内容高度。
+            _ => content_height,
+        };
+        // border 始终属于最终 border-box 尺寸。
+        Size::new(
+            // 横向尺寸包含左右 border。
+            width + self.style.border_width.horizontal(),
+            // 纵向尺寸包含上下 border。
+            height + self.style.border_width.vertical(),
+        )
+    }
+
+    // 返回 Grid 应绘制的 border-box，margin 只由父布局在 frame 外消费。
+    fn visual_rect(&self, frame: Rect) -> Rect {
+        // 复用共享盒模型入口保证与 Container 一致。
+        BoxModel {
+            // margin 保留在模型中，但 visual_rect 不会重复扣除它。
+            margin: self.style.margin,
+            // 边框厚度属于视觉 border-box。
+            border_width: self.style.border_width,
+            // padding 只影响内容区。
+            padding: self.style.padding,
+        }
+        // 同时归一化最终实际视觉矩形。
+        .visual_rect(frame)
     }
 
     pub fn style(mut self, style: Style) -> Self {
@@ -668,5 +768,18 @@ mod tests {
         assert_eq!(positions[0].1, Rect::new(0.0, 0.0, 10.0, 10.0));
         // 第二条轨道从四十五像素首列与十像素 gap 后开始。
         assert_eq!(positions[1].1, Rect::new(55.0, 0.0, 10.0, 10.0));
+    }
+
+    // 验证 Grid 绘制不会在父级已经消费 margin 后再次缩小视觉矩形。
+    #[test]
+    fn visual_rect_keeps_parent_assigned_border_box() {
+        // 构造带非零外边距的 Grid。
+        let mut grid = Grid::new();
+        // 直接声明四侧不同 margin，覆盖坐标和尺寸的旧二次扣除路径。
+        grid.style.margin = EdgeInsets::new(3.0, 5.0, 7.0, 11.0);
+        // 父布局分配的 frame 已是不含 margin 的 border-box。
+        let frame = Rect::new(20.0, 30.0, 100.0, 60.0);
+        // Grid 视觉区域必须完整保留父级 border-box。
+        assert_eq!(grid.visual_rect(frame), frame);
     }
 }

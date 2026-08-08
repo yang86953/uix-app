@@ -477,3 +477,83 @@ fn hidden_space_child_does_not_affect_intrinsic_size() {
     // 同高子项恢复可见不得改变父级纵向固有尺寸。
     assert_eq!(visible_measure.h, hidden_measure.h);
 }
+
+// 验证嵌套 Grid 在没有显式高度时可由 Auto 轨道和子内容完成首轮启动。
+#[test]
+fn nested_grid_bootstraps_from_auto_track_content() {
+    // 构造具有确定视口但不替 Grid 声明显式尺寸的父容器。
+    let mut tree = ViewAdapter::build_nodes(ViewNode::new(
+        // 父容器提供有限可用空间。
+        Container::new().size(200.0, 100.0),
+        // 嵌套一个完全依赖 Auto 轨道固有尺寸的 Grid。
+        vec![ViewNode::new(
+            // 单列单行 Grid 不声明自身宽高。
+            Grid::new()
+                .columns(vec![GridTrack::Auto])
+                .rows(vec![GridTrack::Auto]),
+            // 固定尺寸内容应撑开 Grid 的 Auto 行。
+            vec![ViewNode::leaf(Label::new("content").size(60.0, 24.0))],
+        )],
+    ));
+    // 运行完整布局收敛循环。
+    clear_initial_invalidations(&mut tree);
+    // 定位嵌套 Grid 节点。
+    let grid_id = tree
+        .find_by_type::<Grid>()
+        .expect("测试声明树必须包含 Grid 节点");
+    // 复制 Grid 的唯一直接子节点标识，释放不可变借用。
+    let content_id = tree
+        .get(grid_id)
+        .and_then(|grid| grid.children().first().copied())
+        .expect("测试 Grid 必须包含内容节点");
+    // 读取 Grid 收敛后的实际 frame。
+    let grid_frame = tree.get(grid_id).expect("测试 Grid 节点必须存在").frame();
+    // Auto 行必须由内容撑开到固定内容高度。
+    assert!(
+        grid_frame.h >= 24.0,
+        "Grid 高度未由内容撑开: {grid_frame:?}"
+    );
+    // 读取 Grid 内容节点最终 frame。
+    let content_frame = tree
+        .get(content_id)
+        .expect("测试 Grid 内容节点必须存在")
+        .frame();
+    // 内容必须获得非零且不小于其固有高度的布局 frame。
+    assert!(
+        content_frame.h >= 24.0,
+        "Grid 内容未获得有效高度: {content_frame:?}"
+    );
+}
+
+// 验证 Grid 移除最后一个子节点时立即清除固有轨道尺寸缓存。
+#[test]
+fn grid_last_child_removal_clears_intrinsic_cache() {
+    // 构造由 Auto 轨道和固定内容撑开的无显式尺寸 Grid。
+    let mut tree = ViewAdapter::build_nodes(ViewNode::new(
+        // 单列单行都使用自然内容轨道。
+        Grid::new()
+            .columns(vec![GridTrack::Auto])
+            .rows(vec![GridTrack::Auto]),
+        // 唯一子项提供非零自然尺寸。
+        vec![ViewNode::leaf(Label::new("content").size(60.0, 24.0))],
+    ));
+    // 完成首轮布局并记录 Grid 内容缓存。
+    clear_initial_invalidations(&mut tree);
+    // 读取有内容时的自然尺寸。
+    let populated = root_measure(&tree);
+    // Auto Grid 必须已被内容撑开。
+    assert!(populated.w > 0.0 && populated.h > 0.0);
+
+    // 原位协调为同轨道但没有任何子节点的 Grid。
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        // 保留轨道声明以隔离子节点移除路径。
+        ViewNode::leaf(
+            Grid::new()
+                .columns(vec![GridTrack::Auto])
+                .rows(vec![GridTrack::Auto]),
+        ),
+    );
+    // 空 Grid 不得继续暴露旧内容尺寸。
+    assert_eq!(root_measure(&tree), Size::zero());
+}
