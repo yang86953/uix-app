@@ -11,6 +11,10 @@ pub(crate) mod impl_main;
 pub(crate) mod render_backend;
 // 叠加层 backdrop 快照独立管理，保持 RenderBackend 文件处于行数上限内。
 pub(crate) mod render_backend_backdrop;
+// 叠加层 backdrop 的薄 RHI 资源与命令契约由独立测试覆盖。
+#[cfg(test)]
+// 测试模块只编译 recording context，不进入生产依赖图。
+mod rhi_backdrop_tests;
 // 主 surface 的最终 present 状态机独立管理，保持 RenderBackend 文件可维护。
 pub(crate) mod render_present;
 pub(crate) mod rhi_frame;
@@ -79,6 +83,10 @@ pub struct GpuBackend {
     pub(crate) rhi_surface_token: Option<crate::native::present::rhi::SurfaceToken>,
     /// 标记 FrameEncoder 已写入 retained texture、等待最终合成 present。
     pub(crate) rhi_surface_frame_pending_present: bool,
+    /// 保存 overlay 干净背景的通用 RHI 纹理。
+    pub(crate) rhi_overlay_backdrop_texture: Option<TextureHandle>,
+    /// 记录 overlay 背景纹理所属的 surface generation 和 extent。
+    pub(crate) rhi_overlay_backdrop_token: Option<crate::native::present::rhi::SurfaceToken>,
 }
 
 pub(super) struct NativeGpuOffscreen {

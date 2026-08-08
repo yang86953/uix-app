@@ -5,9 +5,7 @@ use crate::core::error::{Errc, Error, Result};
 // 引入 FramePlan 的纹理 target 引用。
 use crate::draw::backend::frame_plan::RenderTargetRef;
 // 引入薄 RHI 的 surface token、纹理描述和颜色格式。
-use crate::native::present::rhi::{
-    RenderTargetHandle, TextureDesc, TextureFormat, TextureHandle,
-};
+use crate::native::present::rhi::{RenderTargetHandle, TextureDesc, TextureFormat, TextureHandle};
 
 // 引入当前 GPU backend owner。
 use super::GpuBackend;
@@ -29,9 +27,9 @@ impl GpuBackend {
         // 按当前 surface generation 确保纹理身份和 extent 一致。
         let texture = self.ensure_rhi_surface_texture()?;
         // 把同一 opaque texture 同时作为 render target 和 sampled source 使用。
-        Ok(Some(RenderTargetRef::Texture(RenderTargetHandle::from_raw(
-            texture.raw(),
-        ))))
+        Ok(Some(RenderTargetRef::Texture(
+            RenderTargetHandle::from_raw(texture.raw()),
+        )))
     }
 
     // 确保 retained texture 与当前 surface token 同代且尺寸一致。
@@ -117,6 +115,8 @@ impl GpuBackend {
 
     // 在 resize、device shutdown 或 surface 重建前释放 retained texture。
     pub(super) fn destroy_rhi_surface_texture(&mut self) -> Result<(), Error> {
+        // backdrop 与 retained surface 共享代际，必须先检查式释放快照。
+        self.destroy_rhi_overlay_backdrop_texture()?;
         // 没有纹理时只清理代际标记，保持幂等。
         let Some(texture) = self.rhi_surface_texture.take() else {
             // 空 owner 不应保留陈旧代际。
