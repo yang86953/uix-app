@@ -182,8 +182,6 @@ pub struct GpuImageBlit {
 /// still returns `NotImplemented`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct NativeRasterCaps {
-    pub clear_target: bool,
-    pub clear_rects: bool,
     pub solid_rects: bool,
     pub stroke_rects: bool,
     pub glyphs: bool,
@@ -204,8 +202,6 @@ impl NativeRasterCaps {
     /// Complete capability set currently implemented by the D3D11 context.
     pub const fn d3d11_full() -> Self {
         Self {
-            clear_target: true,
-            clear_rects: true,
             solid_rects: true,
             stroke_rects: true,
             glyphs: true,
@@ -225,8 +221,6 @@ impl NativeRasterCaps {
     pub const fn rhi_gpu_only_subset() -> Self {
         // 这些操作由通用 RhiRenderer lowering，不能再触发 CPU soft fallback。
         Self {
-            clear_target: true,
-            clear_rects: false,
             solid_rects: true,
             stroke_rects: true,
             glyphs: true,
@@ -243,13 +237,13 @@ impl NativeRasterCaps {
     }
 
     pub const fn has_hybrid_baseline(self) -> bool {
-        // hybrid soft segment 已由 thin RHI sampled texture 承载，不再依赖 adapter soft API。
-        self.clear_target
+        // hybrid 构造只接受 retained 与 Additive 事实均已验证的 thin RHI。
+        self.retained_framebuffer && self.rhi_additive_blend
     }
 
     pub const fn has_gpu_only_baseline(self) -> bool {
-        self.clear_target
-            && self.solid_rects
+        // 已删除的 legacy clear API 不再参与 GPU-only 录制门禁。
+        self.solid_rects
             && self.stroke_rects
             && self.glyphs
             && self.linear_gradients

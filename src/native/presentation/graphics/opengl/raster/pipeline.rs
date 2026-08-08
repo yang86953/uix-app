@@ -112,36 +112,6 @@ impl OpenGlRasterPipeline {
         }
     }
 
-    pub(crate) fn clear_render_target(&mut self, rgba: [f32; 4]) -> Result<()> {
-        unsafe {
-            self.gl().disable(glow::SCISSOR_TEST);
-            self.gl().clear_color(rgba[0], rgba[1], rgba[2], rgba[3]);
-            self.gl().clear(glow::COLOR_BUFFER_BIT);
-        }
-        self.restore_full_viewport();
-        self.check_gl_error("clear_render_target")
-    }
-
-    pub(crate) fn clear_rects(&mut self, rects: &[GpuSolidRect]) -> Result<()> {
-        for rect in rects {
-            if rect.w <= 0.0 || rect.h <= 0.0 {
-                continue;
-            }
-            self.apply_scissor(Some((
-                rect.x.floor() as i32,
-                rect.y.floor() as i32,
-                rect.w.ceil() as i32,
-                rect.h.ceil() as i32,
-            )));
-            unsafe {
-                self.gl().clear_color(0.0, 0.0, 0.0, 0.0);
-                self.gl().clear(glow::COLOR_BUFFER_BIT);
-            }
-        }
-        self.apply_scissor(None);
-        self.check_gl_error("clear_rects")
-    }
-
     pub(crate) fn draw_solid_rects(
         &mut self,
         viewport_width: f32,

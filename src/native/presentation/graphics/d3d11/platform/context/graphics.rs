@@ -147,20 +147,6 @@ impl IGraphicsContext for D3d11Context {
         self.width as f32 / self.logical_width.max(1) as f32
     }
 
-    fn clear_render_target(&mut self, r: f32, g: f32, b: f32, a: f32) -> Result<()> {
-        self.bind_current_draw_target()?;
-        let Some(rtv) = self.rtv.as_ref() else {
-            return Err(Error::new(
-                Errc::PlatformError,
-                "D3d11Context: clear_render_target without RTV",
-            ));
-        };
-        unsafe {
-            self.context.ClearRenderTargetView(rtv, &[r, g, b, a]);
-        }
-        Ok(())
-    }
-
     fn draw_solid_rects(
         &mut self,
         viewport_w: f32,
@@ -302,21 +288,6 @@ impl IGraphicsContext for D3d11Context {
         self.make_current()?;
         self.pipeline
             .draw_box_shadows(&self.context, viewport_w, viewport_h, scissor, shadows)
-    }
-
-    fn clear_rects(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        rects: &[GpuSolidRect],
-    ) -> Result<()> {
-        self.bind_current_draw_target()?;
-        self.pipeline
-            .clear_rects(&self.context, viewport_w, viewport_h, rects)
-    }
-
-    fn bind_swapchain_target(&mut self) -> Result<(), Error> {
-        self.bind_current_draw_target()
     }
 
     fn present(&mut self, frame: &PresentFrame<'_>) -> Result<()> {

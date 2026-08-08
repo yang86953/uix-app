@@ -183,20 +183,6 @@ pub trait IGraphicsContext {
         1.0
     }
 
-    /// Clear the current GPU render target (GpuNative × Swapchain).
-    ///
-    /// Default: not implemented. Non-GL native contexts advertise this through
-    /// [`NativeRasterCaps`].
-    fn clear_render_target(&mut self, _r: f32, _g: f32, _b: f32, _a: f32) -> Result<(), Error> {
-        Err(Error::new(
-            crate::core::error::Errc::NotImplemented,
-            format!(
-                "GraphicsBackend {} does not support clear_render_target",
-                self.graphics_backend()
-            ),
-        ))
-    }
-
     /// Draw solid-color (optionally rounded) quads into the current RTV.
     ///
     /// `scissor` is optional logical-pixel AABB `(x, y, w, h)` top-left origin.
@@ -375,30 +361,6 @@ pub trait IGraphicsContext {
                 self.graphics_backend()
             ),
         ))
-    }
-
-    /// Replace-blend clear of logical rects (partial dirty clear).
-    ///
-    /// Default: not implemented. D3D11 uses this because `ClearRenderTargetView`
-    /// always clears the full RTV.
-    fn clear_rects(
-        &mut self,
-        _viewport_w: f32,
-        _viewport_h: f32,
-        _rects: &[GpuSolidRect],
-    ) -> Result<(), Error> {
-        Err(Error::new(
-            crate::core::error::Errc::NotImplemented,
-            format!(
-                "GraphicsBackend {} does not support clear_rects",
-                self.graphics_backend()
-            ),
-        ))
-    }
-
-    /// Restore swapchain / default backbuffer as the draw target.
-    fn bind_swapchain_target(&mut self) -> Result<(), Error> {
-        Ok(())
     }
 }
 

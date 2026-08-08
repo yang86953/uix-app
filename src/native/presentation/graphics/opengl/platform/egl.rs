@@ -468,11 +468,6 @@ impl IGraphicsContext for EglContext {
         self.height
     }
 
-    fn clear_render_target(&mut self, r: f32, g: f32, b: f32, a: f32) -> Result<(), Error> {
-        self.make_current()?;
-        self.pipeline.clear_render_target([r, g, b, a])
-    }
-
     fn draw_solid_rects(
         &mut self,
         viewport_w: f32,
@@ -598,22 +593,6 @@ impl IGraphicsContext for EglContext {
         self.make_current()?;
         self.pipeline
             .draw_glyphs(viewport_w, viewport_h, scissor, glyphs)
-    }
-
-    fn clear_rects(
-        &mut self,
-        _viewport_w: f32,
-        _viewport_h: f32,
-        rects: &[GpuSolidRect],
-    ) -> Result<(), Error> {
-        self.make_current()?;
-        self.pipeline.clear_rects(rects)
-    }
-
-    fn bind_swapchain_target(&mut self) -> Result<(), Error> {
-        self.make_current()?;
-        self.pipeline.bind_swapchain_target();
-        Ok(())
     }
 }
 

@@ -143,14 +143,6 @@ impl IGraphicsContext for WglContext {
         self.height
     }
 
-    // 清理当前 render target。
-    fn clear_render_target(&mut self, r: f32, g: f32, b: f32, a: f32) -> Result<(), Error> {
-        // 清理前确保 context current。
-        self.make_current_result()?;
-        // 委托给 OpenGL raster owner。
-        self.pipeline.clear_render_target([r, g, b, a])
-    }
-
     // 绘制 OpenGL ES 原生 solid rect batch。
     fn draw_solid_rects(
         &mut self,
@@ -284,29 +276,6 @@ impl IGraphicsContext for WglContext {
         // 委托给 glyph atlas owner。
         self.pipeline
             .draw_glyphs(viewport_w, viewport_h, scissor, glyphs)
-    }
-
-    // 清理当前 target 的 bounded rects。
-    fn clear_rects(
-        &mut self,
-        _viewport_w: f32,
-        _viewport_h: f32,
-        rects: &[GpuSolidRect],
-    ) -> Result<(), Error> {
-        // 确保 clear 发生在创建 context 的 owner thread。
-        self.make_current_result()?;
-        // 委托给 OpenGL clear owner。
-        self.pipeline.clear_rects(rects)
-    }
-
-    // 绑定 WGL swapchain render target。
-    fn bind_swapchain_target(&mut self) -> Result<(), Error> {
-        // 确保绑定发生在 owner thread。
-        self.make_current_result()?;
-        // 委托给 OpenGL framebuffer owner。
-        self.pipeline.bind_swapchain_target();
-        // 绑定操作无额外失败分支。
-        Ok(())
     }
 
     // 返回当前 WGL device pixel ratio。

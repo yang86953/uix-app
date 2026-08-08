@@ -11,7 +11,6 @@ impl IGraphicsContext for D3d12Context {
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
         NativeRasterCaps {
-            clear_target: true,
             solid_rects: true,
             glyphs: true,
             ..NativeRasterCaps::default()
@@ -62,18 +61,6 @@ impl IGraphicsContext for D3d12Context {
 
     fn device_pixel_ratio(&self) -> f32 {
         self.width as f32 / self.logical_width.max(1) as f32
-    }
-
-    fn clear_render_target(&mut self, r: f32, g: f32, b: f32, a: f32) -> Result<()> {
-        self.begin_commands()?;
-        unsafe {
-            self.command_list.ClearRenderTargetView(
-                self.rtv_handle(self.frame_index),
-                &[r, g, b, a],
-                None,
-            );
-        }
-        Ok(())
     }
 
     fn draw_solid_rects(
