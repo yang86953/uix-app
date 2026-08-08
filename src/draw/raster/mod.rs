@@ -15,4 +15,6 @@ pub(crate) mod software_rasterizer;
 // 路径裁剪复用同一 tessellation 与 SoftwareRasterizer 状态边界。
 pub(crate) mod software_rasterizer_clip;
 pub(crate) mod software_rasterizer_fill;
+// 渐变在共享软件执行器中统一保留 offset、仿射、裁剪与混合语义。
+pub(crate) mod software_rasterizer_gradient;
 pub(crate) mod software_rasterizer_stroke;
