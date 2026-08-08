@@ -4,13 +4,33 @@
 use crate::core::{DamageRegion, Errc, Error};
 // 引入 RenderBackend trait，使 present 状态机可以结束 active offscreen。
 use crate::draw::backend::contract::RenderBackend;
-// 引入兼容 swapchain present 帧描述。
-use crate::native::present::PresentFrame;
 // 引入薄 RHI device 维护原语，确保最终提交前检查设备健康状态。
 use crate::native::present::rhi::GraphicsDevice;
 
 // 引入当前 GPU backend owner。
 use super::GpuBackend;
+
+// 把生产主 surface 未完整进入 retained RHI 的结果收敛为稳定 typed failure。
+pub(super) fn require_lossless_main_surface_submission(
+    // 指示本次有序队列是否已经完整写入 retained texture。
+    submitted: bool,
+    // 保存具体失败边界，供恢复层和诊断日志定位。
+    message: &'static str,
+    // 成功时保持无副作用，失败时拒绝任何 direct swapchain 兼容执行。
+) -> Result<(), Error> {
+    // 只有完整提交才允许最终 present 状态机继续。
+    if submitted {
+        // 不引入额外资源或状态变更。
+        return Ok(());
+    }
+    // 未覆盖 lowering 必须由上层按 NotImplemented 恢复或下一帧重试。
+    Err(Error::new(
+        // 明确区分 RHI 覆盖缺口与 surface/device 运行故障。
+        Errc::NotImplemented,
+        // 保留调用方提供的具体主 surface 阶段。
+        message,
+    ))
+}
 
 // 为 GpuBackend 提供 RenderBackend::present 的完整实现。
 impl GpuBackend {
@@ -20,7 +40,7 @@ impl GpuBackend {
         if self.active_offscreen.is_some() {
             self.end_offscreen_paint();
         }
-        // 在任何 RHI lowering 或兼容提交前执行 owner-thread device preflight。
+        // 在任何 RHI lowering 或最终提交前执行 owner-thread device preflight。
         if let Some(context) = self.gpu_ctx.rhi_context() {
             // device lost 必须在最终 present 前按 typed error 暴露给恢复 FSM。
             GraphicsDevice::maintain(context)?;
@@ -37,13 +57,26 @@ impl GpuBackend {
         }
         // 先把仅含 scroll/clear/native queue 的 retained boundary 写入持久纹理。
         if self.active_offscreen.is_none()
-            && (!self.surface.pending_scroll_copies.is_empty()
+            && (self.surface.needs_gpu_clear
+                || !self.surface.pending_scroll_copies.is_empty()
                 || !self.surface.pending_clear_rects.is_empty()
                 || !self.surface.canvas.pending_native.is_empty()
                 || self.surface.canvas.soft_has_content)
         {
-            // 失败时保留记录，后续专用 RHI 或兼容路径继续作能力判断。
+            // 失败时保留记录，后续专用 RHI 路径继续作能力判断。
             let _ = self.try_flush_main_segment_rhi()?;
+        }
+        // 没有新绘制但已有 retained 内容时，仍通过同一最终合成路径重新 present。
+        if self.rhi_surface_texture.is_some()
+            && !self.rhi_surface_frame_pending_present
+            && !self.surface.needs_gpu_clear
+            && self.surface.pending_scroll_copies.is_empty()
+            && self.surface.pending_clear_rects.is_empty()
+            && self.surface.canvas.pending_native.is_empty()
+            && !self.surface.canvas.soft_has_content
+        {
+            // 将既有 retained 内容登记为本帧唯一待 present 来源。
+            self.rhi_surface_frame_pending_present = true;
         }
         // FrameEncoder 主帧已经写入 retained texture 时，先完成唯一最终合成。
         let pending_frame_presented = self.try_present_pending_rhi_frame(damage)?;
@@ -86,85 +119,39 @@ impl GpuBackend {
         if gradients_presented {
             return Ok(());
         }
-        // 未覆盖的 scroll 绝不能被直接 swapchain 路径静默跳过。
-        if !self.surface.pending_scroll_copies.is_empty() {
-            return Err(Error::new(
-                Errc::NotImplemented,
-                "RHI scroll copy requires a retained surface lowering",
-            ));
-        }
-        // 所有 RHI 纵切都未覆盖时，legacy 目标不能继续读取旧 retained 副本。
-        self.abandon_rhi_surface_texture_for_legacy()?;
-        self.gpu_ctx.make_current()?;
+        // 所有 RHI 方案均拒绝当前非空语义时，保留下一帧完整清理边界。
+        self.surface.needs_gpu_clear = true;
+        // 禁止重新进入逐 UI adapter 调用或 direct swapchain present。
+        require_lossless_main_surface_submission(
+            // 到达此处说明没有任何 RHI 路径完整提交当前帧。
+            false,
+            // 给恢复层保留稳定、可检索的主 surface lowering 边界。
+            "main surface commands cannot be lowered losslessly to retained RHI",
+        )
+    }
+}
 
-        // 先执行整面清理或已经记录的局部清理。
-        if self.surface.needs_gpu_clear {
-            self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0)?;
-            self.surface.needs_gpu_clear = false;
-            self.surface.pending_clear_rects.clear();
-        } else if !self.surface.pending_clear_rects.is_empty() {
-            // legacy clear_rects 失败时保留 clear 标记，等待下次重试。
-            if let Err(err) = self.gpu_ctx.clear_rects(
-                self.surface.width as f32,
-                self.surface.height as f32,
-                &self.surface.pending_clear_rects,
-            ) {
-                self.surface.needs_gpu_clear = true;
-                return Err(err);
-            }
-            self.surface.pending_clear_rects.clear();
-        }
+// 验证生产 present 的无损 RHI 门禁不会把未覆盖队列伪装成成功。
+#[cfg(test)]
+mod tests {
+    // 引入待验证的 typed submission 门禁。
+    use super::require_lossless_main_surface_submission;
+    // 引入错误分类用于稳定断言。
+    use crate::core::Errc;
 
-        // 提交保序 native 队列，并在失败时保持帧未完成。
-        if let Err(err) = self.surface.canvas.submit_native(self.gpu_ctx.as_mut()) {
-            self.surface.needs_gpu_clear = true;
-            return Err(err);
-        }
-        // 提交软回退内容，保证兼容路径仍覆盖 RHI 未支持的操作。
-        if let Err(err) = self.surface.canvas.submit_soft(self.gpu_ctx.as_mut()) {
-            self.surface.needs_gpu_clear = true;
-            return Err(err);
-        }
-
-        // 生成与 RHI 路径相同的 damage 计划。
-        let caps = self.gpu_ctx.caps();
-        let present_surface = self.gpu_ctx.present_surface();
-        let present_image = self.gpu_ctx.present_image();
-        let damage_plan = self.present_damage_tracker.plan(
-            caps.present_coherency,
-            present_surface,
-            present_image,
-            damage,
-        );
-        // 将兼容内容送入 swapchain。
-        let frame = PresentFrame::Swapchain {
-            damage: damage_plan.present_damage,
-        };
-        let present_result = self.gpu_ctx.present(&frame);
-        // present 失败时保持下一帧的全清保护。
-        if let Err(err) = present_result {
-            self.surface.needs_gpu_clear = true;
-            return Err(err);
-        }
-        // 只有 swapchain 已提交才推进 damage 和 canvas 生命周期。
-        self.present_damage_tracker.commit(
-            caps.present_coherency,
-            present_surface,
-            present_image,
-            damage,
-        );
-        let mut used_soft = self.surface.canvas.finish_presented_frame();
-        // 主 surface 完成后推进各 Picture 软回退资源的 aging。
-        for off in self.offscreens.iter_mut().flatten() {
-            used_soft |= off.canvas.age_soft_fallback_after_present();
-        }
-        // 记录本帧是否使用了软回退资源。
-        self.soft_used_in_last_present = used_soft;
-        if !self.has_soft_fallback_allocation() {
-            // 没有软资源时取消空闲回收截止时间。
-            self.soft_fallback_idle_deadline = None;
-        }
-        // 告知 RenderBackend 兼容 present 已经完成。
-        Ok(())
+    // 完整提交应保持成功，未覆盖提交必须返回 NotImplemented。
+    #[test]
+    fn main_surface_submission_requires_lossless_rhi() {
+        // 成功 lowering 不应制造额外状态错误。
+        assert!(require_lossless_main_surface_submission(true, "unused").is_ok());
+        // 模拟所有 RHI 路径均无法无损覆盖当前队列。
+        let failure = require_lossless_main_surface_submission(false, "missing main RHI lowering");
+        // 恢复层必须能稳定识别覆盖缺口，而不是收到伪成功。
+        assert!(matches!(
+            // 检查 helper 返回的 typed error。
+            failure,
+            // 禁止把未覆盖队列归类为参数或平台故障。
+            Err(error) if error.code() == Errc::NotImplemented
+        ));
     }
 }

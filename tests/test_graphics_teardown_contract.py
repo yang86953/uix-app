@@ -336,6 +336,45 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 旧 FrameEncoder adapter 执行模块必须从源码树删除。
         self.assertFalse((ROOT / "src/draw/backend/gpu/backend/impl_frame.rs").exists())
 
+    # 校验主 surface 最终提交和有序边界不再进入 direct swapchain legacy 分支。
+    def test_main_surface_has_no_direct_swapchain_legacy_present(self) -> None:
+        # 读取最终 present 状态机。
+        present = (ROOT / "src/draw/backend/gpu/backend/render_present.rs").read_text(encoding="utf-8")
+        # 读取 Picture/effect 前的主 surface 有序边界。
+        lifecycle = (ROOT / "src/draw/backend/gpu/backend/impl_main.rs").read_text(encoding="utf-8")
+        # 读取 canvas 提交模块，确认旧消费者已经物理删除。
+        submit = (ROOT / "src/draw/backend/gpu/submit.rs").read_text(encoding="utf-8")
+        # 读取 retained surface 生命周期，确认 legacy 放弃 helper 不会复活。
+        retained = (ROOT / "src/draw/backend/gpu/backend/rhi_surface.rs").read_text(encoding="utf-8")
+        # 生产 backend 构造本身也必须拒绝缺少组合 thin RHI 的 context。
+        self.assertIn("|| !has_rhi_context", lifecycle)
+        # 最终状态机必须以统一 typed 门禁拒绝未覆盖语义。
+        self.assertIn("require_lossless_main_surface_submission", present)
+        # 读取 retained RHI 主 surface 提交状态机。
+        rhi_submit = (ROOT / "src/draw/backend/gpu/backend/rhi_submit.rs").read_text(encoding="utf-8")
+        # 空新帧必须在 retained texture 内执行透明初始化。
+        self.assertIn("submit_rhi_clear_only", rhi_submit)
+        # 最终状态机不得自行构造兼容 Swapchain present 帧。
+        self.assertNotIn("PresentFrame", present)
+        # 最终状态机不得直接调用 graphics context 的 present。
+        self.assertNotIn("self.gpu_ctx.present(", present)
+        # 两个主 surface 状态机均不得调用逐 UI adapter 清空或提交入口。
+        for source in (present, lifecycle):
+            # 禁止 direct render-target clear。
+            self.assertNotIn(".clear_render_target(", source)
+            # 禁止 adapter 局部清理分叉。
+            self.assertNotIn(".clear_rects(", source)
+            # 禁止旧 native queue 消费者。
+            self.assertNotIn(".submit_native(", source)
+            # 禁止旧 soft tile 消费者。
+            self.assertNotIn(".submit_soft(", source)
+        # canvas 提交模块只保留通用 RHI lowering，不再导出 legacy native 消费者。
+        self.assertNotIn("pub(crate) fn submit_native", submit)
+        # canvas 提交模块不再导出 adapter soft upload 消费者。
+        self.assertNotIn("pub(crate) fn submit_soft", submit)
+        # retained surface 生命周期不得再提供切回 direct swapchain 的入口。
+        self.assertNotIn("abandon_rhi_surface_texture_for_legacy", retained)
+
     def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
         # 组合读取 Vulkan context 的拆分模块，以保持顺序审计语义。
         context = read_rust_module(VULKAN_CONTEXT)

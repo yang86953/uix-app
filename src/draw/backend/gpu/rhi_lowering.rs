@@ -601,6 +601,46 @@ fn empty_mixed_draw(viewport: RhiViewport) -> RhiOp {
 
 // 为 NativeGpuCanvas2D 提供保序混合 RHI 提交入口。
 impl NativeGpuCanvas2D {
+    // 为没有绘制命令的新 retained surface 提交一次透明初始化 pass。
+    pub(crate) fn submit_rhi_clear_only(
+        // 借用通用 renderer 的固定资源与计划执行能力。
+        &self,
+        // 接收通用 renderer cache。
+        renderer: &mut RhiRenderer,
+        // 接收当前 owner-thread 的组合 RHI context。
+        context: &mut dyn GraphicsContextRhi,
+        // 接收必须为 Clear 的首段 load action。
+        load: LoadAction,
+        // 接收唯一 retained texture target。
+        target: RenderTargetRef,
+        // 接收内部提交使用的 damage 语义。
+        damage: PresentDamage,
+        // 返回资源、pass 或 submit 的真实 typed 结果。
+    ) -> Result<(), Error> {
+        // 使用 context token 和逻辑画布尺寸计算物理 viewport。
+        let (viewport, _, _) =
+            super::rhi_physical_geometry(context, self.surface_w, self.surface_h);
+        // 透明 SrcOver dummy 只触发 load clear，不改变初始化后的颜色。
+        let operations = [empty_mixed_draw(viewport)];
+        // 复用通用混合计划执行器，禁止为清空重新引入 adapter 高层入口。
+        renderer.execute_ops(
+            // 在当前组合 context 上创建并提交 pass。
+            context,
+            // 内部 retained 初始化不自行 present。
+            damage,
+            // 使用当前 drawable 的物理 viewport。
+            viewport,
+            // 由调用方固定透明清空颜色。
+            load,
+            // 写入同一代 retained texture。
+            target,
+            // 透明 dummy 保证计划具有一个合法 draw packet。
+            &operations,
+            // 最终 swapchain present 仍由 backend 统一边界完成。
+            false,
+        )
+    }
+
     // 尝试把一整个无 soft 内容队列降低为单个 painter-order FramePlan。
     pub(crate) fn submit_rhi_mixed(
         &self,

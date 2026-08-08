@@ -118,15 +118,15 @@ CPU backend 继续作为完整、可验证的 renderer，而不是每个 native 
 
 Picture/offscreen 的 create/destroy/paint/blit/blur 全部围绕唯一 RHI texture owner 执行；公共 `OffscreenTargetId`、`IGraphicsContext` 的 create/destroy/bind/blit 入口，以及 D3D11/OpenGL ES 的平行 texture/FBO、绑定、采样和释放状态均已移除。这样两个生产 adapter 只执行同一个通用 Picture 计划、高斯核、区域裁剪、scratch 生命周期和 sampled 合成，adapter 仅保留薄 RHI 资源与底层 draw 编码。
 
-soft fallback 的生产提交只保留有边界的 `blit_soft_fallback_tile` 协议：通用 renderer 负责裁出可见 tile，adapter 校验紧密 payload 与目标范围后执行 SrcOver。旧 `IGraphicsContext::blit_soft_fallback` 整面透明混合入口及 D3D11/D3D12 私有扫描、打包分叉已经移除。主 `FrameEncoder` 的 Additive、scroll、图片与 CPU segment 现在必须整条无损 lower 到 retained RHI；前置 damage 先以同代纹理上的 `ClearRect` 提交，任何缺失能力都返回 typed failure，不再读回 CPU 后整面 replace。`IGraphicsContext::upload_surface_pixels`、逐命令 legacy frame 执行器及各 adapter 的 replace 实现因此一并移除，CPU presenter 的 `PixelBuffer` present 保持独立。
+adapter 门面暂时仍定义有边界的 `blit_soft_fallback_tile` 协议，但 draw backend 已无该逐 UI 入口的消费者。主 `FrameEncoder` 的 Additive、scroll、图片与 CPU segment 现在必须整条无损 lower 到 retained RHI，其中 CPU segment 作为 sampled texture 合成；前置 damage 先以同代纹理上的 `ClearRect` 提交，任何缺失能力都返回 typed failure，不再读回 CPU 后整面 replace。旧 `IGraphicsContext::blit_soft_fallback`、`IGraphicsContext::upload_surface_pixels`、逐命令 legacy frame 执行器及各 adapter 的整面上传实现已经移除。主 surface 的最终 present 和 Picture/effect 前有序边界也只接受 retained RHI 完整提交：空新帧以透明 dummy pass 初始化 retained texture，无新绘制时重新采样既有 retained 内容；未覆盖的非空队列返回 typed failure，不再销毁 retained texture 后调用逐 UI adapter 或 direct present swapchain。CPU presenter 的 `PixelBuffer` present 保持独立。
 
 GPU 基线内的操作不能依赖常态 CPU fallback。可选效果可以显式声明等价降级，但不能静默改变视觉结果。
 
 ## 当前映射与目标差距
 
 - 已有唯一 `RenderBackend` 抽象、通用 `GpuBackend`、有序 `FramePlan`、薄 RHI 契约和 CPU backend。
-- `IGraphicsContext` 与 `NativeRasterCaps` 仍保留迁移期的其余逐 UI 操作；overlay backdrop 高层入口、离屏 blur 入口、legacy offscreen 资源族、整面 soft fallback 透明混合入口与整面 replace 上传均已移除，目标是继续把几何、batch、atlas 与其余 effect 调度收回通用 GPU Renderer。
-- D3D11 与 OpenGL ES 已接入资源、pass、draw/copy、retained framebuffer、surface resize、submit/present、错误映射和恢复边界；未覆盖图元继续明确回退。当前高层场景仍执行完整重绘，以保证任何兼容回退清空 swapchain 后都能恢复全部页面像素。
+- `IGraphicsContext` 与 `NativeRasterCaps` 仍保留迁移期的其余逐 UI 定义，但 draw backend 已无 direct swapchain legacy consumer；overlay backdrop 高层入口、离屏 blur 入口、legacy offscreen 资源族、整面 soft fallback 透明混合入口与整面 replace 上传均已移除，目标是继续物理删除无消费者的 adapter 高层实现，并把其余 effect 调度收回通用 GPU Renderer。
+- D3D11 与 OpenGL ES 已接入资源、pass、draw/copy、retained framebuffer、surface resize、submit/present、错误映射和恢复边界；主 surface 未覆盖语义返回明确 typed failure。当前高层场景仍执行完整重绘，后续再在 retained target 与 damage 语义稳定后收紧重绘范围。
 - 剩余差距包括 backdrop blur 等尚未闭合的多阶段效果、`IGraphicsContext` 其余兼容门面移除，以及 Picture/offscreen blur 与 overlay backdrop 跨 DPI、真实 GPU 和操作系统的运行时矩阵覆盖。
 
 ## 当前测试

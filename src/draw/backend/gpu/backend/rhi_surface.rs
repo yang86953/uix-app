@@ -152,23 +152,4 @@ impl GpuBackend {
         // 返回检查式释放成功。
         Ok(())
     }
-
-    // 放弃当前 retained surface，准备安全回到直接 swapchain 的兼容帧。
-    pub(super) fn abandon_rhi_surface_texture_for_legacy(&mut self) -> Result<(), Error> {
-        // 没有 retained texture 时无需改变当前兼容路径状态。
-        if self.rhi_surface_texture.is_none() {
-            // 保持调用幂等，避免无意义的 context 访问。
-            return Ok(());
-        }
-        // 先按 owner-thread 规则销毁旧纹理，避免 legacy 绘制读取陈旧副本。
-        self.destroy_rhi_surface_texture()?;
-        // 丢弃 retained 内容后，下一次直接绘制必须从透明全清开始。
-        self.surface.needs_gpu_clear = true;
-        // 旧代际的局部 clear 不能继续作用于新兼容目标。
-        self.surface.pending_clear_rects.clear();
-        // 旧 retained 内容已被销毁，尚未提交的 scroll 不能再被误应用。
-        self.surface.pending_scroll_copies.clear();
-        // 告知调用方已经安全切换到 legacy target。
-        Ok(())
-    }
 }
