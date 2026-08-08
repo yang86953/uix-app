@@ -109,13 +109,88 @@ pub(super) fn lower_picture_blur_region(region: Rect) -> RhiScissor {
     }
 }
 
+// 把已验证的 Picture blit 几何与当前合成状态组装为通用 sampled quad。
+fn lower_picture_sampled_quad(
+    // 保存由 Picture slot 持有的 RHI texture。
+    texture: TextureHandle,
+    // 目标矩形仍使用逻辑 target 空间。
+    dst_rect: Rect,
+    // 主 surface 才需要应用水平 drawable 比例。
+    scale_x: f32,
+    // 主 surface 才需要应用垂直 drawable 比例。
+    scale_y: f32,
+    // 当前目标的有限 opacity 作为 sampled tint。
+    opacity: f32,
+    // 当前目标的 blend 决定 SrcOver 或 Additive pipeline。
+    additive: bool,
+    // 保存已裁剪并归一化的 UV 边界。
+    uv: [f32; 4],
+) -> RhiSampledQuad {
+    // 把目标矩形映射到实际 render target 像素空间。
+    let physical = Rect::new(
+        // 映射左边界。
+        dst_rect.x * scale_x,
+        // 映射上边界。
+        dst_rect.y * scale_y,
+        // 映射宽度。
+        dst_rect.w * scale_x,
+        // 映射高度。
+        dst_rect.h * scale_y,
+    );
+    // 以单个已注释表达式生成物理四角，避免 formatter 把参数注释改成行尾注释。
+    let corners = crate::native::present::GpuGlyphBlit::axis_aligned_corners(
+        // 使用已完成单次目标缩放的物理矩形。
+        physical.x, physical.y, physical.w, physical.h,
+    );
+    // 返回不再依赖 backend 可变状态的不可变绘制事实。
+    RhiSampledQuad {
+        // 保存物理左边界。
+        x: physical.x,
+        // 保存物理上边界。
+        y: physical.y,
+        // 保存物理宽度。
+        w: physical.w,
+        // 保存物理高度。
+        h: physical.h,
+        // 保存与物理矩形完全一致的四角。
+        corners,
+        // premultiplied texture 的四通道统一应用 opacity。
+        rgba: [opacity; 4],
+        // 保留调用方已解析的目标 blend 事实。
+        additive,
+        // 保留 Picture texture 所有权身份。
+        texture,
+        // 保存左 UV。
+        u0: uv[0],
+        // 保存上 UV。
+        v0: uv[1],
+        // 保存右 UV。
+        u1: uv[2],
+        // 保存下 UV。
+        v1: uv[3],
+        // Picture 场景裁剪已在调用边界验证，当前 ABI 不重复携带 clip。
+        scissor: None,
+    }
+}
+
 // 验证 Picture blur 的 target-space 不会重复应用主 surface DPR。
 #[cfg(test)]
 mod tests {
-    // 引入当前区域 lowering 与嵌套资源路径 helper。
-    use super::{lower_picture_blur_region, nested_picture_path, NestedPicturePath};
+    // 引入当前区域、sampled 合成与嵌套资源路径 helper。
+    use super::{
+        // 测试 blur 区域转换。
+        lower_picture_blur_region,
+        // 测试 sampled quad 对当前 opacity/Additive 的保真。
+        lower_picture_sampled_quad,
+        // 测试嵌套 Picture 的资源所有权选择。
+        nested_picture_path,
+        // 引入所有权路径枚举用于模式匹配。
+        NestedPicturePath,
+    };
     // 引入统一逻辑矩形类型。
     use crate::core::Rect;
+    // 引入 opaque texture 句柄验证 Picture 身份不被替换。
+    use crate::native::present::rhi::TextureHandle;
 
     // 逻辑离屏纹理的 fractional region 应只做整数覆盖取整。
     #[test]
@@ -137,6 +212,40 @@ mod tests {
         assert_eq!((region.x, region.y), (0, 1));
         // 空尺寸确保后续 blur 不会创建 scratch texture。
         assert_eq!((region.width, region.height), (0, 0));
+    }
+
+    // Picture blur 后的 sampled 合成必须保留当前目标的 opacity 与 Additive。
+    #[test]
+    fn picture_sampled_quad_preserves_additive_and_target_scale() {
+        // 使用稳定 Picture texture 身份。
+        let texture = TextureHandle::from_raw(41);
+        // 组装主 surface 上的 Additive sampled quad。
+        let quad = lower_picture_sampled_quad(
+            // 指定 Picture texture。
+            texture,
+            // 使用逻辑目标矩形。
+            Rect::new(2.0, 3.0, 4.0, 5.0),
+            // 模拟水平二倍 drawable 比例。
+            2.0,
+            // 模拟垂直三倍 drawable 比例。
+            3.0,
+            // 使用有限半透明度。
+            0.25,
+            // 选择当前目标的 Additive blend。
+            true,
+            // 使用已归一化的裁剪 UV。
+            [0.1, 0.2, 0.7, 0.9],
+        );
+        // 几何只应用一次目标比例。
+        assert_eq!((quad.x, quad.y, quad.w, quad.h), (4.0, 9.0, 8.0, 15.0));
+        // tint 四通道必须共同保存 opacity。
+        assert_eq!(quad.rgba, [0.25; 4]);
+        // lowering 必须选择 Additive sampled pipeline 事实。
+        assert!(quad.additive);
+        // texture 身份必须仍属于原 Picture。
+        assert_eq!(quad.texture, texture);
+        // UV 必须原样保留，避免 blur 后二次裁剪漂移。
+        assert_eq!((quad.u0, quad.v0, quad.u1, quad.v1), (0.1, 0.2, 0.7, 0.9));
     }
 
     // 嵌套 Picture 必须在提交前收敛到单一资源所有者。
@@ -423,27 +532,23 @@ impl GpuBackend {
                 self.surface.height,
             )
         };
-        // 组装已有纹理的 sampled quad，保持 opacity 和 blend mode 事实。
-        let quad = RhiSampledQuad {
-            x: dst_rect.x * scale_x,
-            y: dst_rect.y * scale_y,
-            w: dst_rect.w * scale_x,
-            h: dst_rect.h * scale_y,
-            corners: crate::native::present::GpuGlyphBlit::axis_aligned_corners(
-                dst_rect.x * scale_x,
-                dst_rect.y * scale_y,
-                dst_rect.w * scale_x,
-                dst_rect.h * scale_y,
-            ),
-            rgba: [opacity; 4],
-            additive,
+        // 组装已有纹理的 sampled quad，保持 opacity、目标比例和 blend mode 事实。
+        let quad = lower_picture_sampled_quad(
+            // 保留 Picture texture 身份。
             texture,
-            u0,
-            v0,
-            u1,
-            v1,
-            scissor: None,
-        };
+            // 使用调用方已验证的逻辑目标矩形。
+            dst_rect,
+            // 主 surface 或 Picture target 对应的水平比例。
+            scale_x,
+            // 主 surface 或 Picture target 对应的垂直比例。
+            scale_y,
+            // 当前目标 canvas 的有限 opacity。
+            opacity,
+            // 当前目标 canvas 的 SrcOver/Additive 事实。
+            additive,
+            // 保留裁剪后的归一化 UV。
+            [u0, v0, u1, v1],
+        );
         // 无 present segment 只提交当前 ordered boundary，最终 present 仍由外层负责。
         let result = renderer.execute_sampled_quad_without_present(
             context,

@@ -21,7 +21,6 @@ pub mod core;
 pub mod fill;
 pub mod glyph;
 pub mod gradient;
-pub mod image;
 pub mod polygon;
 pub mod stroke;
 
