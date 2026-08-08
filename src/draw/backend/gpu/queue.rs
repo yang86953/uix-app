@@ -34,7 +34,13 @@ impl NativeGpuCanvas2D {
         if rect.w <= 0.0 || rect.h <= 0.0 {
             return;
         }
-        let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
+        // Alpha 与 SrcOver 继续使用普通 native/RHI pipeline。
+        let native_src_over = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
+        // Additive 只在 adapter 明确暴露 retained RHI blend 时进入 shape queue。
+        let native_additive =
+            matches!(self.blend_mode, BlendMode::Additive) && self.native_caps.rhi_additive_blend;
+        // 统一决定轴对齐矩形是否可以进入 native pending queue。
+        let native_blend = native_src_over || native_additive;
         if self.soft_has_content || !self.native_caps.solid_rects || !native_blend {
             self.with_soft_clip(|soft| soft.fill_rect(rect, color, radius));
             self.mark_soft();
@@ -69,8 +75,19 @@ impl NativeGpuCanvas2D {
                         rgba: self.solid_rgba(color),
                         radius: r,
                     },
+                    // lowering 据此选择 Shape 或 AdditiveShape。
+                    additive: native_additive,
                     scissor,
                 }));
+            return;
+        }
+        // 当前 Additive 纵切只覆盖 shape SDF，不把仿射 mesh 错交给 SrcOver pipeline。
+        if native_additive {
+            // hybrid canvas 保持既有等价 soft fallback；GPU-only canvas 记录 typed failure。
+            self.with_soft_clip(|soft| soft.fill_rect(rect, color, radius));
+            // 标记本次 soft 内容，供 retained owner 按 Additive segment 合成。
+            self.mark_soft();
+            // 禁止后续普通 mesh 分支丢失 Additive 语义。
             return;
         }
         // 一般仿射：直角矩形走三角形网格；圆角 SDF 不支持旋转/剪切。

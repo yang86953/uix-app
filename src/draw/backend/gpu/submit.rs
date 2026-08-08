@@ -297,6 +297,11 @@ impl NativeGpuCanvas2D {
             let rect = match operation {
                 // 填充矩形沿用 queue 已规整的圆角与直通颜色。
                 super::pending::PendingNativeOp::SolidRect(rect) => {
+                    // Additive 必须由 mixed renderer 选择独立 pipeline，不能进入 SrcOver 快路。
+                    if rect.additive {
+                        // 返回 false 时尚未提交任何 shape，mixed/兼容边界仍可安全接管。
+                        return Ok(false);
+                    }
                     let value = rect.rect;
                     let Some(radius) = scale_rhi_shape_radius(value.radius, scale_x, scale_y)
                     else {
@@ -645,6 +650,20 @@ impl NativeGpuCanvas2D {
 
             match &self.pending_native[start] {
                 PendingNativeOp::SolidRect(_) => {
+                    // 检查整个同类批次，不能只观察第一项而漏掉后续 Additive。
+                    let has_additive = self.pending_native[start..end]
+                        .iter()
+                        .any(PendingNativeOp::is_additive_solid_rect);
+                    // legacy draw_solid_rects 没有 blend 参数，禁止静默执行 Additive。
+                    if has_additive {
+                        // 组合 RHI 缺失时报告稳定的能力错误。
+                        return Err(Error::new(
+                            // 使用 NotImplemented 表示当前 adapter 缺少等价 lowering。
+                            Errc::NotImplemented,
+                            // 错误文本指出必须经过 retained RHI pipeline。
+                            "NativeGpuCanvas2D additive solid rect requires retained RHI lowering",
+                        ));
+                    }
                     let batch = self.pending_native[start..end]
                         .iter()
                         .map(|op| match op {
