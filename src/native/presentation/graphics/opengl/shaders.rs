@@ -149,24 +149,6 @@ void main() {
 }
 "#;
 
-/// Native GL texture composite shader without a BGRA swizzle.
-pub const BLIT_RGBA_FRAG: &str = r#"#version 300 es
-precision highp float;
-
-in vec2 v_uv;
-uniform sampler2D u_tex;
-uniform vec4 u_uv_rect;
-// 组 opacity 对已经 premultiplied 的离屏采样结果同步缩放 RGB 和 alpha。
-uniform float u_opacity;
-
-out vec4 fragColor;
-
-void main() {
-    // Picture texture 的结果必须按组 opacity 保持 premultiplied 语义。
-    fragColor = texture(u_tex, u_uv_rect.xy + v_uv * u_uv_rect.zw) * u_opacity;
-}
-"#;
-
 /// Full-screen quad vertex shader for blur and texture composite passes.
 pub const FULLSCREEN_VERT: &str = r#"#version 300 es
 precision highp float;

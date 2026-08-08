@@ -13,7 +13,7 @@ use std::ptr;
 use crate::native::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps,
-    OffscreenTargetId, PresentCoherency, PresentDamage, SoftFallbackTile,
+    PresentCoherency, PresentDamage, SoftFallbackTile,
 };
 // 引入共享的 OpenGL RHI host 生命周期实现。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
@@ -631,42 +631,10 @@ impl IGraphicsContext for EglContext {
         self.pipeline.clear_rects(rects)
     }
 
-    fn create_offscreen_target(
-        &mut self,
-        width: i32,
-        height: i32,
-    ) -> Result<OffscreenTargetId, Error> {
-        self.make_current()?;
-        self.pipeline.create_offscreen_target(width, height)
-    }
-
-    fn try_destroy_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
-        self.make_current()?;
-        self.pipeline.destroy_offscreen_target(id)
-    }
-
-    fn bind_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
-        self.make_current()?;
-        self.pipeline.bind_offscreen_target(id)
-    }
-
     fn bind_swapchain_target(&mut self) -> Result<(), Error> {
         self.make_current()?;
         self.pipeline.bind_swapchain_target();
         Ok(())
-    }
-
-    fn blit_offscreen_target(
-        &mut self,
-        id: OffscreenTargetId,
-        src: crate::core::Rect,
-        dst: crate::core::Rect,
-        opacity: f32,
-        additive: bool,
-    ) -> Result<(), Error> {
-        self.make_current()?;
-        self.pipeline
-            .blit_offscreen_target(id, src, dst, opacity, additive)
     }
 }
 

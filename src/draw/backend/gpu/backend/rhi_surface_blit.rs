@@ -4,8 +4,6 @@
 use crate::core::{Errc, Error, PresentDamage, Rect};
 // 引入 FramePlan 的明确 render target 引用。
 use crate::draw::backend::frame_plan::RenderTargetRef;
-// 引入嵌套 Picture 目标的稳定句柄。
-use crate::draw::geometry::types::ImageHandle;
 // 引入通用 sampled quad 和薄 RHI 的 pass/load 类型。
 use crate::draw::backend::rhi_renderer::RhiSampledQuad;
 use crate::native::present::rhi::{
@@ -14,53 +12,6 @@ use crate::native::present::rhi::{
 
 // 引入当前 GPU backend owner。
 use super::GpuBackend;
-
-// 描述嵌套 Picture blit 允许采用的单一资源路径。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum NestedPicturePath {
-    // 源与目标都由 RHI texture 持有。
-    Rhi,
-    // 源与目标都由 legacy offscreen target 持有。
-    Legacy,
-    // 目标尚未提交，可以在触碰队列前降级到 legacy。
-    DowngradeDestination,
-}
-
-// 在执行嵌套 Picture blit 前选择不会双写资源的路径。
-fn nested_picture_path(
-    source_has_rhi: bool,
-    destination_has_rhi: bool,
-    destination_rhi_committed: bool,
-) -> Result<NestedPicturePath, Error> {
-    // 同为 RHI 资源时保持 sampled texture 路径。
-    if source_has_rhi && destination_has_rhi {
-        // 返回唯一的 RHI owner 组合。
-        return Ok(NestedPicturePath::Rhi);
-    }
-    // 同为 legacy 资源时保持原生 offscreen blit 路径。
-    if !source_has_rhi && !destination_has_rhi {
-        // 返回唯一的 legacy owner 组合。
-        return Ok(NestedPicturePath::Legacy);
-    }
-    // legacy 源只能在目标首次提交前触发目标降级。
-    if !source_has_rhi && destination_has_rhi && !destination_rhi_committed {
-        // 调用方必须先销毁目标 RHI texture 并透明初始化 legacy target。
-        return Ok(NestedPicturePath::DowngradeDestination);
-    }
-    // 已提交的 RHI 目标不能再切换到 legacy 源。
-    if !source_has_rhi {
-        // 保持明确的资源所有权错误，不在错误目标上继续绘制。
-        return Err(Error::new(
-            Errc::NotImplemented,
-            "committed RHI Picture target cannot switch to a legacy Picture source",
-        ));
-    }
-    // RHI 源也不能被不认识其 texture 句柄的 legacy 目标采样。
-    Err(Error::new(
-        Errc::NotImplemented,
-        "RHI Picture source cannot be sampled by a legacy Picture target",
-    ))
-}
 
 // 将 Picture 的逻辑 blur 区域转换为其离屏纹理的像素区域。
 pub(super) fn lower_picture_blur_region(region: Rect) -> RhiScissor {
@@ -107,21 +58,6 @@ pub(super) fn lower_picture_blur_region(region: Rect) -> RhiScissor {
         // 保存已经转换的物理高度；这里不再乘窗口 DPR。
         height,
     }
-}
-
-// 要求 Picture blur 由通用 RHI texture owner 执行。
-pub(super) fn require_rhi_offscreen_blur_texture(
-    // 读取当前 Picture slot 的可选 RHI 资源。
-    texture: Option<TextureHandle>,
-) -> Result<TextureHandle, Error> {
-    // 只有通用 renderer 拥有的 texture 才能进入多阶段 blur 计划。
-    texture.ok_or_else(|| {
-        // legacy target 不再调用 adapter 的高层 blur 语义。
-        Error::new(
-            Errc::NotImplemented,
-            "Picture offscreen blur requires a RHI texture owner",
-        )
-    })
 }
 
 // 把已验证的 Picture blit 几何与当前合成状态组装为通用 sampled quad。
@@ -191,18 +127,12 @@ fn lower_picture_sampled_quad(
 // 验证 Picture blur 的 target-space 不会重复应用主 surface DPR。
 #[cfg(test)]
 mod tests {
-    // 引入当前区域、sampled 合成与嵌套资源路径 helper。
+    // 引入当前区域与 sampled 合成 helper。
     use super::{
         // 测试 blur 区域转换。
         lower_picture_blur_region,
         // 测试 sampled quad 对当前 opacity/Additive 的保真。
         lower_picture_sampled_quad,
-        // 测试嵌套 Picture 的资源所有权选择。
-        nested_picture_path,
-        // 测试 Picture blur 只接受 RHI texture owner。
-        require_rhi_offscreen_blur_texture,
-        // 引入所有权路径枚举用于模式匹配。
-        NestedPicturePath,
     };
     // 引入统一逻辑矩形类型。
     use crate::core::Rect;
@@ -229,25 +159,6 @@ mod tests {
         assert_eq!((region.x, region.y), (0, 1));
         // 空尺寸确保后续 blur 不会创建 scratch texture。
         assert_eq!((region.width, region.height), (0, 0));
-    }
-
-    // Picture blur 不得再回落到 adapter 的高层离屏方法。
-    #[test]
-    fn picture_blur_requires_rhi_texture_owner() {
-        // 使用稳定 opaque texture 验证成功路径不替换资源身份。
-        let texture = TextureHandle::from_raw(57);
-        // 已有 RHI owner 时返回同一纹理。
-        assert_eq!(
-            require_rhi_offscreen_blur_texture(Some(texture)).ok(),
-            Some(texture)
-        );
-        // 缺少 RHI owner 时必须在触碰 adapter 前失败。
-        let missing = require_rhi_offscreen_blur_texture(None);
-        // typed failure 使用 NotImplemented 区分迁移缺口和资源损坏。
-        assert!(matches!(
-            missing,
-            Err(error) if error.code() == crate::core::Errc::NotImplemented
-        ));
     }
 
     // Picture blur 后的 sampled 合成必须保留当前目标的 opacity 与 Additive。
@@ -283,143 +194,10 @@ mod tests {
         // UV 必须原样保留，避免 blur 后二次裁剪漂移。
         assert_eq!((quad.u0, quad.v0, quad.u1, quad.v1), (0.1, 0.2, 0.7, 0.9));
     }
-
-    // 嵌套 Picture 必须在提交前收敛到单一资源所有者。
-    #[test]
-    fn nested_picture_path_is_atomic_across_rhi_and_legacy_owners() {
-        // 两端都有 RHI texture 时保持 sampled 路径。
-        assert!(matches!(
-            nested_picture_path(true, true, false),
-            Ok(NestedPicturePath::Rhi)
-        ));
-        // 两端都没有 RHI texture 时保持 legacy 路径。
-        assert!(matches!(
-            nested_picture_path(false, false, false),
-            Ok(NestedPicturePath::Legacy)
-        ));
-        // 未提交的 RHI 目标允许在队列执行前降级。
-        assert!(matches!(
-            nested_picture_path(false, true, false),
-            Ok(NestedPicturePath::DowngradeDestination)
-        ));
-        // 已提交 RHI 内容后不能再接入 legacy 源。
-        let committed_target = nested_picture_path(false, true, true);
-        // 失败必须保持可恢复层识别的 NotImplemented 分类。
-        assert!(matches!(
-            committed_target,
-            Err(error) if error.code() == crate::core::Errc::NotImplemented
-        ));
-        // legacy 目标不能直接采样 RHI source handle。
-        let legacy_target = nested_picture_path(true, false, false);
-        // 反向所有权不兼容同样必须在触碰目标前失败。
-        assert!(matches!(
-            legacy_target,
-            Err(error) if error.code() == crate::core::Errc::NotImplemented
-        ));
-    }
 }
 
 // 为 GpuBackend 提供 RHI Picture texture 到当前 target 的保序合成。
 impl GpuBackend {
-    // 把尚未提交过 RHI 内容的 Picture slot 降级为唯一的 legacy target。
-    pub(super) fn downgrade_offscreen_rhi_texture(
-        &mut self,
-        handle: ImageHandle,
-    ) -> Result<(), Error> {
-        // 先从 slot 取出句柄，避免 owner-thread destroy 借用跨过 slot 修改。
-        let texture = self
-            .offscreens
-            .get_mut(handle.0 as usize)
-            .and_then(Option::as_mut)
-            .ok_or_else(|| {
-                // 丢失 slot 时返回稳定的状态错误。
-                Error::new(
-                    Errc::InvalidState,
-                    "Picture target disappeared before RHI fallback downgrade",
-                )
-            })?
-            .rhi_texture
-            .take();
-        // 没有 RHI 纹理时已经是 legacy-only slot，降级操作是幂等的。
-        let Some(texture) = texture else {
-            // 保持已经完成的降级状态。
-            return Ok(());
-        };
-        // RHI 纹理必须由创建它的 owner-thread context 检查式释放。
-        let Some(context) = self.gpu_ctx.rhi_context() else {
-            // context 丢失时恢复句柄，禁止把未释放资源伪装成降级成功。
-            if let Some(Some(offscreen)) = self.offscreens.get_mut(handle.0 as usize) {
-                // 恢复原有 RHI owner 供 shutdown 重试。
-                offscreen.rhi_texture = Some(texture);
-            }
-            // 返回 typed owner-state 失败。
-            return Err(Error::new(
-                Errc::InvalidState,
-                "RHI Picture texture lost its owner context before fallback downgrade",
-            ));
-        };
-        // 销毁失败同样恢复 slot，保证后续 shutdown 仍能重试资源回收。
-        if let Err(error) = context.destroy_texture(texture) {
-            // 尽量恢复尚未释放的资源句柄。
-            if let Some(Some(offscreen)) = self.offscreens.get_mut(handle.0 as usize) {
-                // 保留原 owner 身份。
-                offscreen.rhi_texture = Some(texture);
-            }
-            // 传播 adapter 的真实资源错误。
-            return Err(error);
-        }
-        // 成功后 slot 只保留已经准备好的 legacy target。
-        Ok(())
-    }
-
-    // 在提交嵌套 Picture 目标队列前统一 source/destination 的资源所有权。
-    pub(super) fn prepare_nested_picture_blit(
-        &mut self,
-        source_has_rhi: bool,
-        destination: ImageHandle,
-    ) -> Result<(), Error> {
-        // 读取目标的 legacy handle 与当前 RHI owner 状态。
-        let (legacy_target, destination_has_rhi) = self
-            .offscreens
-            .get(destination.0 as usize)
-            .and_then(Option::as_ref)
-            .map(|offscreen| (offscreen.target, offscreen.rhi_texture.is_some()))
-            .ok_or_else(|| {
-                // 目标在 painter-order 边界消失时保持 typed state error。
-                Error::new(
-                    Errc::InvalidState,
-                    "nested Picture destination disappeared before resource selection",
-                )
-            })?;
-        // 在任何 submit/bind 前计算原子的单一 owner 路径。
-        let path = nested_picture_path(
-            source_has_rhi,
-            destination_has_rhi,
-            self.offscreen_rhi_initialized,
-        )?;
-        // 已经同属一种资源模型时不改变目标状态。
-        if matches!(path, NestedPicturePath::Rhi | NestedPicturePath::Legacy) {
-            // 让调用方继续提交目标队列。
-            return Ok(());
-        }
-        // 首次提交前销毁目标 RHI texture，使后续 blit 只读取 legacy source。
-        self.downgrade_offscreen_rhi_texture(destination)?;
-        // begin 阶段因原有 RHI texture 未绑定 legacy target，此处补齐 owner 切换。
-        self.gpu_ctx.bind_offscreen_target(legacy_target)?;
-        // legacy target 可能保留旧缓存内容，必须以透明替换语义初始化。
-        if let Err(error) = self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0) {
-            // 清理失败后优先恢复主 target，保留原始失败作为 source。
-            return match self.gpu_ctx.bind_swapchain_target() {
-                // 主 target 恢复成功时返回原始清理失败。
-                Ok(()) => Err(error),
-                // 恢复也失败时用恢复错误包裹原始失败。
-                Err(restore_error) => Err(restore_error.with_source(error)),
-            };
-        }
-        // 目标已透明初始化，后续 legacy flush 可以安全使用 Load 语义。
-        Ok(())
-    }
-
     // 将 RHI 离屏 texture 作为已有 sampled source 合成到当前 target。
     pub(super) fn blit_rhi_offscreen_texture(
         &mut self,
@@ -468,7 +246,7 @@ impl GpuBackend {
         // 记录本次 blit 是否直接写入主 retained surface，以及对应的 load 语义。
         let (target, target_width, target_height, target_load, writes_main_retained) =
             if let Some(active) = active {
-                // 当前 Picture target 必须具备 RHI texture，才能继续使用同一条链路。
+                // 当前 Picture target 必须仍存在，才能继续使用同一条 RHI 链路。
                 let Some(Some(offscreen)) = self.offscreens.get(active as usize) else {
                     // 返回稳定的状态错误。
                     return Err(Error::new(
@@ -476,13 +254,8 @@ impl GpuBackend {
                         "active Picture target disappeared before RHI blit",
                     ));
                 };
-                let Some(target_texture) = offscreen.rhi_texture else {
-                    // 不在两个不同资源模型之间伪造同步。
-                    return Err(Error::new(
-                        Errc::NotImplemented,
-                        "active Picture target lacks an RHI texture",
-                    ));
-                };
+                // Picture slot 直接持有唯一且必需的 RHI target 纹理。
+                let target_texture = offscreen.rhi_texture;
                 // 将当前 Picture texture 转成通用 render target 身份。
                 (
                     RenderTargetRef::Texture(RenderTargetHandle::from_raw(target_texture.raw())),

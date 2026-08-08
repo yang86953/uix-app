@@ -177,10 +177,6 @@ impl D3d11Context {
     }
 
     pub(super) fn shutdown_result(&mut self) -> Result<()> {
-        self.bound_offscreen = None;
-        self.offscreens.clear();
-        self.free_offscreen_ids.clear();
-        self.next_offscreen_id = 0;
         self.release_rtv();
         Ok(())
     }
@@ -211,29 +207,10 @@ impl D3d11Context {
     }
 
     pub(super) fn current_target_size(&self) -> (i32, i32) {
-        if let Some(id) = self.bound_offscreen {
-            if let Some(Some(t)) = self.offscreens.get(id as usize) {
-                return (t.width, t.height);
-            }
-        }
         (self.width, self.height)
     }
 
     pub(super) fn bind_current_draw_target(&mut self) -> Result<()> {
-        if let Some(id) = self.bound_offscreen {
-            let Some(Some(target)) = self.offscreens.get(id as usize) else {
-                return Err(Error::new(
-                    Errc::InvalidArgument,
-                    format!("D3d11Context: bind_current_draw_target unknown offscreen {id}"),
-                ));
-            };
-            unsafe {
-                self.context
-                    .OMSetRenderTargets(Some(&[Some(target.rtv.clone())]), None);
-            }
-            self.bind_viewport_size(target.width, target.height);
-            return Ok(());
-        }
         self.ensure_rtv()?;
         if let Some(rtv) = self.rtv.as_ref() {
             unsafe {
@@ -351,10 +328,6 @@ pub(crate) fn create_with_driver(
         // 默认不安排测试 surface 丢失。
         #[cfg(feature = "test-harness")]
         rhi_surface_lost_for_test: false,
-        offscreens: Vec::new(),
-        free_offscreen_ids: Vec::new(),
-        next_offscreen_id: 0,
-        bound_offscreen: None,
     };
     tracing::info!(
         "D3d11Context: created {width}x{height} swapchain at feature level {:?}; {}",

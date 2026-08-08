@@ -193,8 +193,6 @@ pub struct NativeRasterCaps {
     pub sectors: bool,
     pub solid_meshes: bool,
     pub box_shadows: bool,
-    /// GPU texture RT + blit（Picture 离屏）；非 CPU 像素池。
-    pub offscreen_targets: bool,
     /// 主色缓冲在提交间保留像素，允许绘制侧 partial redraw；
     /// 与 present coherency（仍可为 FullOnly）正交。
     pub retained_framebuffer: bool,
@@ -218,7 +216,6 @@ impl NativeRasterCaps {
             sectors: true,
             solid_meshes: true,
             box_shadows: true,
-            offscreen_targets: true,
             // D3D11 生产路径使用跨帧 RHI 纹理并在最终边界采样到 swapchain。
             retained_framebuffer: true,
             // D3D11 薄 RHI 已实现独立 Additive shape/textured pipeline。
@@ -241,7 +238,6 @@ impl NativeRasterCaps {
             sectors: true,
             solid_meshes: true,
             box_shadows: true,
-            offscreen_targets: true,
             // WGL/EGL OpenGL ES 复用同一 retained texture 与最终合成路径。
             retained_framebuffer: true,
             // OpenGL ES 薄 RHI 已实现同一 Additive pipeline key。
@@ -294,10 +290,6 @@ mod native_raster_profile_tests {
         assert!(opengles.has_gpu_only_baseline());
     }
 }
-
-/// Opaque GPU offscreen render-target id ([`IGraphicsContext`] Picture cache).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct OffscreenTargetId(pub u32);
 
 /// Unified present payload for [`IGraphicsContext::present`] (M7).
 #[derive(Debug, Clone, PartialEq, Eq)]

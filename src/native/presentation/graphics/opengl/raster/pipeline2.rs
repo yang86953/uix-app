@@ -137,187 +137,10 @@ impl OpenGlRasterPipeline {
         self.check_gl_error("upload_surface_pixels")
     }
 
-    pub(crate) fn create_offscreen_target(
-        &mut self,
-        width: i32,
-        height: i32,
-    ) -> Result<OffscreenTargetId> {
-        if width <= 0 || height <= 0 {
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                format!("OpenGL offscreen extent must be positive, got {width}x{height}"),
-            ));
-        }
-        let gl = self.gl();
-        let texture = unsafe { create_texture(gl, width, height)? };
-        let framebuffer = match unsafe { gl.create_framebuffer() } {
-            Ok(framebuffer) => framebuffer,
-            Err(error) => {
-                unsafe { gl.delete_texture(texture) };
-                return Err(gl_error("create_framebuffer", error));
-            }
-        };
-        unsafe {
-            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(framebuffer));
-            gl.framebuffer_texture_2d(
-                glow::FRAMEBUFFER,
-                glow::COLOR_ATTACHMENT0,
-                glow::TEXTURE_2D,
-                Some(texture),
-                0,
-            );
-        }
-        let complete =
-            unsafe { gl.check_framebuffer_status(glow::FRAMEBUFFER) } == glow::FRAMEBUFFER_COMPLETE;
-        self.bind_current_framebuffer();
-        if !complete {
-            unsafe {
-                gl.delete_framebuffer(framebuffer);
-                gl.delete_texture(texture);
-            }
-            return Err(Error::new(
-                Errc::PlatformError,
-                "OpenGL offscreen framebuffer is incomplete",
-            ));
-        }
-        let id = self.free_offscreen_ids.pop().unwrap_or_else(|| {
-            let id = self.next_offscreen_id;
-            self.next_offscreen_id = self.next_offscreen_id.saturating_add(1);
-            id
-        });
-        while self.offscreens.len() <= id as usize {
-            self.offscreens.push(None);
-        }
-        self.offscreens[id as usize] = Some(OffscreenTarget {
-            framebuffer,
-            texture,
-            width,
-            height,
-        });
-        Ok(OffscreenTargetId(id))
-    }
-
-    pub(crate) fn destroy_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<()> {
-        let index = id.0 as usize;
-        let target = self
-            .offscreens
-            .get_mut(index)
-            .and_then(Option::take)
-            .ok_or_else(|| {
-                Error::new(Errc::InvalidState, "OpenGL offscreen target does not exist")
-            })?;
-        if self.current.framebuffer == Some(target.framebuffer) {
-            self.current = self.swapchain;
-            self.bind_current_framebuffer();
-            self.restore_full_viewport();
-        }
-        unsafe {
-            self.gl().delete_framebuffer(target.framebuffer);
-            self.gl().delete_texture(target.texture);
-        }
-        self.free_offscreen_ids.push(id.0);
-        Ok(())
-    }
-
-    pub(crate) fn bind_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<()> {
-        let target = self
-            .offscreens
-            .get(id.0 as usize)
-            .and_then(Option::as_ref)
-            .ok_or_else(|| {
-                Error::new(Errc::InvalidState, "OpenGL offscreen target does not exist")
-            })?;
-        self.current = TargetState::offscreen(target.framebuffer, target.width, target.height);
-        self.bind_current_framebuffer();
-        self.restore_full_viewport();
-        self.check_gl_error("bind_offscreen_target")
-    }
-
     pub(crate) fn bind_swapchain_target(&mut self) {
         self.current = self.swapchain;
         self.bind_current_framebuffer();
         self.restore_full_viewport();
-    }
-
-    pub(crate) fn blit_offscreen_target(
-        &mut self,
-        id: OffscreenTargetId,
-        src: Rect,
-        dst: Rect,
-        opacity: f32,
-        additive: bool,
-    ) -> Result<()> {
-        // 透明组不需要触碰源纹理或目标 framebuffer。
-        if !opacity.is_finite() || opacity <= 0.0 {
-            return Ok(());
-        }
-        let source = self
-            .offscreens
-            .get(id.0 as usize)
-            .and_then(Option::as_ref)
-            .ok_or_else(|| {
-                Error::new(Errc::InvalidState, "OpenGL offscreen target does not exist")
-            })?;
-        if self.current.framebuffer == Some(source.framebuffer) {
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                "OpenGL offscreen target cannot blit into itself",
-            ));
-        }
-        if dst.w <= 0.0 || dst.h <= 0.0 {
-            return Ok(());
-        }
-        let max_x = source.width as f32;
-        let max_y = source.height as f32;
-        let src_x = src.x.clamp(0.0, max_x);
-        let src_y = src.y.clamp(0.0, max_y);
-        let src_end_x = (src.x + src.w).clamp(src_x, max_x);
-        let src_end_y = (src.y + src.h).clamp(src_y, max_y);
-        if src_end_x <= src_x || src_end_y <= src_y {
-            return Ok(());
-        }
-        // The source can be sampled while a different Picture FBO is the
-        // destination. Rebind the tracked destination explicitly: callers
-        // may have submitted the destination segment immediately before this
-        // ordered boundary, and texture sampling must never inherit a stale
-        // framebuffer binding from that submission.
-        self.bind_current_framebuffer();
-        self.restore_full_viewport();
-        unsafe {
-            self.gl().disable(glow::SCISSOR_TEST);
-            self.gl().active_texture(glow::TEXTURE0);
-            self.gl()
-                .bind_texture(glow::TEXTURE_2D, Some(source.texture));
-            self.gl().enable(glow::BLEND);
-            // 离屏目标存储的是 premultiplied 颜色，Additive 只切换目标因子。
-            self.gl().blend_func(
-                glow::ONE,
-                if additive {
-                    glow::ONE
-                } else {
-                    glow::ONE_MINUS_SRC_ALPHA
-                },
-            );
-            self.gl().use_program(Some(self.blit_rgba_program));
-            self.gl().uniform_1_i32(self.blit_rgba_texture.as_ref(), 0);
-            // 统一缩放 premultiplied RGB 与 alpha，保持 Picture 组透明度。
-            self.gl()
-                .uniform_1_f32(self.blit_rgba_opacity.as_ref(), opacity.clamp(0.0, 1.0));
-            self.gl().uniform_4_f32(
-                self.blit_rgba_uv.as_ref(),
-                src_x / max_x,
-                src_y / max_y,
-                (src_end_x - src_x) / max_x,
-                (src_end_y - src_y) / max_y,
-            );
-            self.set_destination_viewport(dst.x, dst.y, dst.w, dst.h);
-            self.gl().bind_vertex_array(Some(self.blit_vao));
-            self.gl().draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
-            self.gl().bind_vertex_array(None);
-            self.gl().bind_texture(glow::TEXTURE_2D, None);
-        }
-        self.restore_full_viewport();
-        self.check_gl_error("blit_offscreen_target")
     }
 
     pub(crate) fn read_pixels(
@@ -366,13 +189,6 @@ impl OpenGlRasterPipeline {
         // 先释放 FramePlan/RHI 资源，再释放 legacy raster 对象。
         self.rhi_release();
         self.bind_swapchain_target();
-        let offscreens = std::mem::take(&mut self.offscreens);
-        for target in offscreens.into_iter().flatten() {
-            unsafe {
-                self.gl().delete_framebuffer(target.framebuffer);
-                self.gl().delete_texture(target.texture);
-            }
-        }
         unsafe {
             self.gl().delete_vertex_array(self.rect_vao);
             self.gl().delete_buffer(self.rect_vbo);
@@ -391,7 +207,6 @@ impl OpenGlRasterPipeline {
             self.gl().delete_vertex_array(self.blit_vao);
             self.gl().delete_buffer(self.blit_vbo);
             self.gl().delete_program(self.blit_bgra_program);
-            self.gl().delete_program(self.blit_rgba_program);
             if let Some(texture) = self.soft_texture.take() {
                 self.gl().delete_texture(texture);
             }

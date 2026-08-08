@@ -454,67 +454,9 @@ pub trait IGraphicsContext {
         ))
     }
 
-    /// Create a GPU offscreen color target (RTV+SRV). Default: not implemented.
-    fn create_offscreen_target(
-        &mut self,
-        _width: i32,
-        _height: i32,
-    ) -> Result<OffscreenTargetId, Error> {
-        Err(Error::new(
-            crate::core::error::Errc::NotImplemented,
-            format!(
-                "GraphicsBackend {} does not support create_offscreen_target",
-                self.graphics_backend()
-            ),
-        ))
-    }
-
-    /// Checked destruction boundary for a native offscreen target.
-    fn try_destroy_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
-        self.destroy_offscreen_target(id);
-        Ok(())
-    }
-
-    fn destroy_offscreen_target(&mut self, _id: OffscreenTargetId) {}
-
-    /// Bind offscreen as the current draw target (viewport = target size).
-    fn bind_offscreen_target(&mut self, _id: OffscreenTargetId) -> Result<(), Error> {
-        Err(Error::new(
-            crate::core::error::Errc::NotImplemented,
-            format!(
-                "GraphicsBackend {} does not support bind_offscreen_target",
-                self.graphics_backend()
-            ),
-        ))
-    }
-
     /// Restore swapchain / default backbuffer as the draw target.
     fn bind_swapchain_target(&mut self) -> Result<(), Error> {
         Ok(())
-    }
-
-    /// Sample offscreen SRV into the **current** RT as a textured quad.
-    ///
-    /// `src` / `dst` are in logical pixels (top-left origin), relative to the
-    /// offscreen and current target respectively. `opacity` scales the sampled
-    /// premultiplied color (group / parent canvas opacity)；values ≤ 0 are a
-    /// no-op, values ≥ 1 leave the sample unchanged。`additive` 为 true 时
-    /// 使用通道相加 blend（父画布 `BlendMode::Additive`），否则 SrcOver。
-    fn blit_offscreen_target(
-        &mut self,
-        _id: OffscreenTargetId,
-        _src: crate::core::Rect,
-        _dst: crate::core::Rect,
-        _opacity: f32,
-        _additive: bool,
-    ) -> Result<(), Error> {
-        Err(Error::new(
-            crate::core::error::Errc::NotImplemented,
-            format!(
-                "GraphicsBackend {} does not support blit_offscreen_target",
-                self.graphics_backend()
-            ),
-        ))
     }
 }
 

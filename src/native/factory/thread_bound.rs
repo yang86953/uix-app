@@ -24,8 +24,7 @@ use crate::core::{Errc, Error, Result};
 use crate::native::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect, GraphicsContextCaps, IGraphicsContext,
-    NativeRasterCaps, OffscreenTargetId, PresentDamage, PresentFrame, PresentTestResult,
-    SoftFallbackTile,
+    NativeRasterCaps, PresentDamage, PresentFrame, PresentTestResult, SoftFallbackTile,
 };
 
 pub(crate) fn bind_to_current_thread(
@@ -163,9 +162,7 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
     }
 
     // 只有 owner thread 可以借用 inner 的薄 RHI 组合视图。
-    fn rhi_context(
-        &mut self,
-    ) -> Option<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
+    fn rhi_context(&mut self) -> Option<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
         // 该查询无错误返回通道，跨线程时保守地报告不支持。
         if self.require_owner("rhi_context").is_err() {
             return None;
@@ -258,21 +255,5 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
     forward_result!(blit_soft_fallback(pixels: &[u32], width: i32, height: i32) -> ());
     forward_result!(blit_soft_fallback_tile(pixels: &[u32], tile: SoftFallbackTile) -> ());
     forward_result!(clear_rects(viewport_w: f32, viewport_h: f32, rects: &[GpuSolidRect]) -> ());
-    forward_result!(create_offscreen_target(width: i32, height: i32) -> OffscreenTargetId);
-
-    fn try_destroy_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<()> {
-        self.with_owner("try_destroy_offscreen_target", |inner| {
-            inner.try_destroy_offscreen_target(id)
-        })
-    }
-
-    fn destroy_offscreen_target(&mut self, id: OffscreenTargetId) {
-        if let Err(error) = self.try_destroy_offscreen_target(id) {
-            Self::log_legacy_rejection("destroy_offscreen_target", &error);
-        }
-    }
-
-    forward_result!(bind_offscreen_target(id: OffscreenTargetId) -> ());
     forward_result!(bind_swapchain_target() -> ());
-    forward_result!(blit_offscreen_target(id: OffscreenTargetId, src: crate::core::Rect, dst: crate::core::Rect, opacity: f32, additive: bool) -> ());
 }
