@@ -655,3 +655,6 @@ fn additive_raw_images_preserve_barriers_and_reject_non_finite_opacity() {
         Some(1)
     );
 }
+
+// 继续在同一测试模块内加载 Additive glyph sampled soft 分段回归测试。
+include!("canvas2d_additive_glyph_soft_tests.rs");

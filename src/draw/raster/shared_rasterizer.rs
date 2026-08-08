@@ -89,6 +89,12 @@ impl SharedRasterizer {
         self.renderer.map_rect(rect)
     }
 
+    // 暴露路径 coverage mask 事实，供 recorder 禁止不带 mask 的 Native/direct lowering。
+    pub(crate) fn has_clip_mask(&self) -> bool {
+        // 实际状态仍由 SoftwareRasterizer 唯一持有。
+        self.renderer.has_clip_mask()
+    }
+
     pub fn pop_clip(&mut self) {
         self.renderer.pop_clip();
     }
@@ -269,27 +275,13 @@ impl Canvas2D for SharedRasterizer {
             .blit_image(pixels, width, height, src, src_w, src_rect, dst_rect);
     }
     fn blit_glyph(&mut self, x: i32, y: i32, coverage: &[u8], w: usize, h: usize, color: Color) {
-        let (ox, oy) = self.renderer.offset();
-        let (x, y) = ((x as f32 + ox) as i32, (y as f32 + oy) as i32);
-        let (size, clip, opacity) = (
-            self.surface.surface_size(),
-            self.renderer.clip_rect(),
-            self.renderer.opacity(),
-        );
+        // 读取目标尺寸供共享像素入口做安全边界校验。
+        let (width, height) = (self.surface.width(), self.surface.height());
+        // 借用目标像素后进入状态完整的软件字形路径。
         let pixels = self.surface.pixels_mut();
-        crate::draw::raster::rasterizer::glyph::blit_glyph(
-            pixels,
-            size.w as i32,
-            size.h as i32,
-            clip,
-            opacity,
-            x,
-            y,
-            coverage,
-            w,
-            h,
-            color,
-        );
+        // 字形采样统一保留 offset 后仿射、coverage、clip、opacity 与实际 blend。
+        self.renderer
+            .blit_glyph(pixels, width, height, x, y, coverage, w, h, color);
     }
 
     fn save(&mut self) {

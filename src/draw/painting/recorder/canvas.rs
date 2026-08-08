@@ -559,7 +559,9 @@ impl FrameRecordingCanvas {
     }
 
     pub(super) fn native_src_over_fill_clip(&self) -> Option<FrameRect> {
-        if !matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver) {
+        if self.scratch.has_clip_mask()
+            || !matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver)
+        {
             return None;
         }
         let clip = rect_to_frame(self.scratch.current_clip()).ok()?;
@@ -594,8 +596,7 @@ impl FrameRecordingCanvas {
                 height,
                 native_color,
             ) else {
-                // The historical void Canvas API treats empty or malformed
-                // glyph coverage as a no-op; promotion must preserve it.
+                // 历史 void Canvas API 把空或畸形 glyph coverage 视为 no-op。
                 return;
             };
             if clip.width <= 0 || clip.height <= 0 {
@@ -616,13 +617,14 @@ impl FrameRecordingCanvas {
             return;
         };
         let bounds = Rect::new(x as f32, y as f32, width as f32, height as f32);
-        self.draw_cpu(bounds, 1.0, move |scratch| {
+        // 字形只产生源贡献，因此 Additive 可进入可结合的 sampled scratch。
+        self.draw_cpu_source(bounds, 1.0, move |scratch| {
+            // 共享软件字形负责 offset 后仿射、coverage、clip、opacity 与 blend。
             scratch.blit_glyph(x, y, glyph.coverage().as_ref(), width, height, color)
         });
     }
 
-    /// Additive 轴对齐矩形操作依赖目标像素，因此只能进入 Native 命令。返回已经
-    /// 验证的 surface-space 几何与裁到目标范围内的整数矩形 clip。
+    /// Additive 轴对齐矩形只进入 Native 命令，并返回已验证的 surface-space 几何与整数 clip。
     pub(super) fn native_additive_shape(
         &self,
         rect: Rect,
@@ -643,6 +645,7 @@ impl FrameRecordingCanvas {
         let opacity = self.scratch.opacity();
         // 只接受能够由固定 Additive shape pipeline 精确表达的画布状态。
         if self.blend_mode != BlendMode::Additive
+            || self.scratch.has_clip_mask()
             || !is_unit_orthogonal
             || !opacity.is_finite()
             || !(0.0..=1.0).contains(&opacity)
@@ -773,6 +776,7 @@ impl FrameRecordingCanvas {
     ) -> Option<(FrameRect, FrameRect)> {
         let (offset_x, offset_y) = self.scratch.offset();
         if self.blend_mode == BlendMode::Additive
+            || self.scratch.has_clip_mask()
             || !offset_x.is_finite()
             || !offset_y.is_finite()
             || offset_x.fract() != 0.0
@@ -825,7 +829,8 @@ impl FrameRecordingCanvas {
         dst: Rect,
     ) -> Option<(FrameRect, FrameSampledRect)> {
         let (offset_x, offset_y) = self.scratch.offset();
-        if !offset_x.is_finite()
+        if self.scratch.has_clip_mask()
+            || !offset_x.is_finite()
             || !offset_y.is_finite()
             || !self.scratch.current_transform().is_identity()
         {

@@ -91,6 +91,11 @@ impl SoftwareRasterizer {
     pub fn clip_rect(&self) -> Rect {
         self.clip_rect
     }
+    // 告知 recorder 当前裁剪是否包含不能降为矩形 scissor 的 coverage mask。
+    pub(crate) fn has_clip_mask(&self) -> bool {
+        // mask 存在即要求后续绘制经过共享软件像素入口。
+        self.clip_mask.is_some()
+    }
     pub fn opacity(&self) -> f32 {
         self.opacity
     }
