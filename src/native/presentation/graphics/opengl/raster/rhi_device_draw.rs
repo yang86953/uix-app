@@ -2,8 +2,8 @@
 
 // 引入 glow 的上下文扩展方法。
 use glow::HasContext as _;
-// 引入统一错误、结果和 draw packet 语义。
-use crate::core::error::{Errc, Error, Result};
+// 引入统一结果和 draw packet 语义。
+use crate::core::error::Result;
 use crate::native::present::rhi::{pipeline_keys, BufferUsage, DrawPacket, TextureFormat};
 // 复用父资源表、shader key 和错误辅助。
 use super::{rhi_invalid, OpenGlRhiDevice};

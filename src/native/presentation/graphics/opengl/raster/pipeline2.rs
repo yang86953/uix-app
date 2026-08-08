@@ -2,16 +2,6 @@ use super::*;
 
 // 复用主 raster 类型承载离屏、软回退和状态恢复操作。
 impl OpenGlRasterPipeline {
-    #[cfg(test)]
-    pub(crate) fn glyph_atlas_upload_count(&self) -> usize {
-        self.glyph_atlas_upload_count
-    }
-
-    #[cfg(test)]
-    pub(crate) fn has_soft_texture(&self) -> bool {
-        self.soft_texture.is_some()
-    }
-
     pub(crate) fn blit_soft_fallback_tile(
         &mut self,
         pixels: &[u32],

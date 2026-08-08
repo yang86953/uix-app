@@ -146,8 +146,6 @@ pub(crate) struct OpenGlRasterPipeline {
     glyph_atlas_cursor: GlyphAtlasCursor,
     glyph_atlas_cache: HashMap<GlyphAtlasKey, GlyphAtlasEntry>,
     glyph_vertices: Vec<GlyphVertex>,
-    #[cfg(test)]
-    glyph_atlas_upload_count: usize,
     blit_vao: glow::VertexArray,
     blit_vbo: glow::Buffer,
     blit_bgra_program: glow::Program,

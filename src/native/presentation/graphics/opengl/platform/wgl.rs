@@ -419,17 +419,6 @@ pub struct WglContext {
     pipeline: OpenGlRasterPipeline,
 }
 
-#[cfg(test)]
-impl WglContext {
-    pub(crate) fn glyph_atlas_upload_count(&self) -> usize {
-        self.pipeline.glyph_atlas_upload_count()
-    }
-
-    pub(crate) fn has_soft_texture(&self) -> bool {
-        self.pipeline.has_soft_texture()
-    }
-}
-
 impl WglContext {
     /// Create a WGL context on `native_window` (HWND).
     ///

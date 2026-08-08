@@ -81,8 +81,6 @@ impl OpenGlRasterPipeline {
             glyph_atlas_cursor: GlyphAtlasCursor::default(),
             glyph_atlas_cache: HashMap::new(),
             glyph_vertices: Vec::new(),
-            #[cfg(test)]
-            glyph_atlas_upload_count: 0,
             blit_vao,
             blit_vbo,
             blit_bgra_program,
@@ -577,10 +575,6 @@ impl OpenGlRasterPipeline {
             );
             self.gl().pixel_store_i32(glow::UNPACK_ALIGNMENT, 4);
             self.gl().bind_texture(glow::TEXTURE_2D, None);
-        }
-        #[cfg(test)]
-        {
-            self.glyph_atlas_upload_count = self.glyph_atlas_upload_count.saturating_add(1);
         }
         self.glyph_atlas_cursor.x = x.saturating_add(width).saturating_add(1);
         self.glyph_atlas_cursor.row_h = self.glyph_atlas_cursor.row_h.max(height.saturating_add(1));
