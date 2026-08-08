@@ -7,7 +7,7 @@ pub(super) fn create_secondary_window(
     runtime: &AppRuntime,
     app_state: &AppState,
     container: &Container,
-    graphics_backend: NativeGraphicsBackend,
+    graphics_backend: GraphicsSelection,
     recovery_request: RebuildRequest,
     request: OpenWindowRequest,
 ) -> Option<SecondaryWindowSession> {
@@ -193,7 +193,7 @@ pub(super) fn create_software_recovery_engine(
 
 pub(crate) fn graphics_recovery_rebuilder_with_pending(
     surface: NativeSurfaceHandle,
-    requested: NativeGraphicsBackend,
+    requested: GraphicsSelection,
     selected_recipe: GraphicsRecipe,
     pending_failures: PendingFailureQueue,
 ) -> RenderTargetRebuilder {
@@ -248,7 +248,7 @@ pub(crate) fn create_preferred_engine(
     platform_window: &mut dyn PlatformWindow,
     width: i32,
     height: i32,
-    graphics_backend: NativeGraphicsBackend,
+    graphics_backend: GraphicsSelection,
     diagnostics: Diagnostics,
     recovery_request: RebuildRequest,
     #[cfg(feature = "test-harness")] graphics_faults: GraphicsFaultSignal,
@@ -307,4 +307,3 @@ pub(crate) fn create_preferred_engine(
         }
     }
 }
-

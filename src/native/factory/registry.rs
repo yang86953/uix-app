@@ -6,7 +6,7 @@ use crate::core::error::{Errc, Error};
 use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::thread_bound::bind_to_current_thread;
 use crate::native::present::{
-    GraphicsBackend, IGraphicsContext, NativeSurfaceHandle, PresentMode, RasterMode,
+    GraphicsApi, GraphicsSelection, IGraphicsContext, NativeSurfaceHandle, PresentMode, RasterMode,
 };
 
 /// One probeable graphics configuration.
@@ -16,13 +16,13 @@ use crate::native::present::{
 /// validated independently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct GraphicsRecipe {
-    pub backend: GraphicsBackend,
+    pub backend: GraphicsApi,
     pub raster: RasterMode,
     pub present: PresentMode,
 }
 
 impl GraphicsRecipe {
-    pub const fn new(backend: GraphicsBackend, raster: RasterMode, present: PresentMode) -> Self {
+    pub const fn new(backend: GraphicsApi, raster: RasterMode, present: PresentMode) -> Self {
         Self {
             backend,
             raster,
@@ -59,7 +59,7 @@ pub(crate) type GraphicsContextFactory =
 /// Engine assembly still reads live [`IGraphicsContext::caps`]; these fields document
 /// the combination this entry is expected to provide ([架构 · 图形](docs/架构.md#图形-api与帧提交硬约束)).
 pub struct GraphicsBackendEntry {
-    pub id: GraphicsBackend,
+    pub id: GraphicsApi,
     pub priority: u8,
     pub status: BackendStatus,
     /// Declared raster axis for this registry row.
@@ -99,7 +99,7 @@ pub fn active_entries() -> &'static [GraphicsBackendEntry] {
 }
 
 /// Lookup a registry row by backend id.
-pub fn entry_for(backend: GraphicsBackend) -> Option<&'static GraphicsBackendEntry> {
+pub fn entry_for(backend: GraphicsApi) -> Option<&'static GraphicsBackendEntry> {
     PLATFORM_ENTRIES.iter().find(|entry| entry.id == backend)
 }
 
@@ -190,17 +190,18 @@ pub(crate) fn try_create_context(
 /// Ordered probe candidates for a backend request, with one item per recipe
 /// row.  An explicit backend request deliberately retains every active recipe
 /// for that backend instead of selecting the first matching row.
-fn matches_probe_request(entry: &GraphicsBackendEntry, requested: GraphicsBackend) -> bool {
-    if requested == GraphicsBackend::Auto {
-        entry.is_probe_candidate()
-    } else {
-        entry.id == requested
+fn matches_probe_request(entry: &GraphicsBackendEntry, requested: GraphicsSelection) -> bool {
+    match requested {
+        // 自动策略只接纳当前构建可探测的 Active recipe。
+        GraphicsSelection::Automatic => entry.is_probe_candidate(),
+        // 显式策略保留同一 API 的条目，让禁用或未实现状态产生 typed 错误。
+        GraphicsSelection::Explicit(api) => entry.id == api,
     }
 }
 
 pub(crate) fn active_recipes_by_priority(
     entries: &[GraphicsBackendEntry],
-    requested: GraphicsBackend,
+    requested: GraphicsSelection,
 ) -> Vec<GraphicsRecipe> {
     let mut entries = entries
         .iter()
@@ -244,16 +245,18 @@ pub fn graphics_runtime_platform() -> &'static str {
 }
 
 /// Recipe-level probe candidates used by graphics bootstrap.
-pub fn gpu_recipe_candidates(requested: GraphicsBackend) -> Vec<GraphicsRecipe> {
+pub fn gpu_recipe_candidates(requested: GraphicsSelection) -> Vec<GraphicsRecipe> {
     active_recipes_by_priority(active_entries(), requested)
 }
 
 /// Describes why an explicit backend request has no active registry row.
-pub fn describe_backend_availability(requested: GraphicsBackend) -> Option<&'static str> {
-    if requested == GraphicsBackend::Auto {
+pub fn describe_backend_availability(requested: GraphicsSelection) -> Option<&'static str> {
+    // 自动策略没有单一 API 可供可用性诊断。
+    let GraphicsSelection::Explicit(api) = requested else {
         return None;
-    }
-    match entry_for(requested) {
+    };
+    // 显式请求只描述同一具体 API 的 registry 状态。
+    match entry_for(api) {
         Some(entry) => match entry.status {
             BackendStatus::Active => None,
             BackendStatus::Planned => Some("planned but not implemented on this platform"),
@@ -269,7 +272,7 @@ pub fn describe_backend_availability(requested: GraphicsBackend) -> Option<&'sta
 /// values represent distinct recipe rows.
 // 保留旧 backend-only 查询视图，新的 bootstrap 使用 recipe 级入口。
 #[allow(dead_code)]
-pub fn gpu_probe_candidates(requested: GraphicsBackend) -> Vec<GraphicsBackend> {
+pub fn gpu_probe_candidates(requested: GraphicsSelection) -> Vec<GraphicsApi> {
     gpu_recipe_candidates(requested)
         .into_iter()
         .map(|recipe| recipe.backend)
@@ -326,7 +329,7 @@ pub(crate) fn try_create_gpu_recipe_with_queue(
 // 单后端兼容工厂入口保留给旧调用方，默认测试矩阵不直接走该入口。
 #[allow(dead_code)]
 pub(crate) fn try_create_gpu_context(
-    backend: GraphicsBackend,
+    backend: GraphicsApi,
     native_surface: *mut c_void,
     width: i32,
     height: i32,
@@ -344,4 +347,128 @@ pub(crate) fn try_create_gpu_context(
         height,
         PendingFailureQueue::new(),
     )
+}
+
+#[cfg(test)]
+mod selection_tests {
+    // 复用 registry 的私有候选筛选与排序实现。
+    use super::*;
+
+    // 测试 factory 永远不应被候选排序测试实际调用。
+    fn unused_factory(
+        _surface: *mut c_void,
+        _width: i32,
+        _height: i32,
+        _pending: PendingFailureQueue,
+    ) -> Result<Box<dyn IGraphicsContext>, Error> {
+        // 若误入构造路径则返回稳定 typed 错误。
+        Err(Error::new(Errc::InvalidState, "selection test factory"))
+    }
+
+    // 构造同时覆盖 Active、Disabled、GPU-native 与 CPU-present 的候选表。
+    const TEST_ENTRIES: &[GraphicsBackendEntry] = &[
+        GraphicsBackendEntry {
+            // 高优先级 CPU-present 条目用于验证 raster tier 优先级。
+            id: GraphicsApi::D3d11,
+            // CPU-present 故意使用最高数值优先级。
+            priority: 100,
+            // 自动策略应保留该 Active 条目。
+            status: BackendStatus::Active,
+            // 该条目属于 CPU raster tier。
+            raster: RasterMode::Cpu,
+            // CPU raster 通过像素上传呈现。
+            present: PresentMode::PixelUpload,
+            // 候选测试不会实际调用 factory。
+            create: unused_factory,
+        },
+        GraphicsBackendEntry {
+            // Vulkan 提供可用的 GPU-native 对照条目。
+            id: GraphicsApi::Vulkan,
+            // 较低数值优先级用于证明 tier 高于 priority。
+            priority: 10,
+            // 自动策略应保留该 Active 条目。
+            status: BackendStatus::Active,
+            // 该条目属于 GPU-native tier。
+            raster: RasterMode::GpuNative,
+            // GPU-native 使用 swapchain 呈现。
+            present: PresentMode::Swapchain,
+            // 候选测试不会实际调用 factory。
+            create: unused_factory,
+        },
+        GraphicsBackendEntry {
+            // Metal 提供禁用但可显式诊断的对照条目。
+            id: GraphicsApi::Metal,
+            // 最高 API 优先级不得让禁用条目进入自动候选。
+            priority: 200,
+            // 显式策略保留 Disabled 条目供 typed 失败使用。
+            status: BackendStatus::Disabled,
+            // 该条目声明 GPU-native raster。
+            raster: RasterMode::GpuNative,
+            // 该条目声明 swapchain 呈现。
+            present: PresentMode::Swapchain,
+            // 候选测试不会实际调用 factory。
+            create: unused_factory,
+        },
+        GraphicsBackendEntry {
+            // 第二个 D3D11 条目验证同一 API 可以保留多个 recipe。
+            id: GraphicsApi::D3d11,
+            // 最低数值优先级仍不改变 GPU-native tier 的先行顺序。
+            priority: 5,
+            // 自动策略应保留该 Active 条目。
+            status: BackendStatus::Active,
+            // 该条目属于 GPU-native tier。
+            raster: RasterMode::GpuNative,
+            // GPU-native 使用 swapchain 呈现。
+            present: PresentMode::Swapchain,
+            // 候选测试不会实际调用 factory。
+            create: unused_factory,
+        },
+    ];
+
+    #[test]
+    // 验证自动策略只探测 Active recipe，并保持 GPU-native 优先。
+    fn automatic_selection_filters_status_and_orders_raster_tiers() {
+        // 执行私有自动候选策略。
+        let recipes = active_recipes_by_priority(TEST_ENTRIES, GraphicsSelection::Automatic);
+        // 即使 CPU 条目 priority 更高，GPU-native 仍先于 CPU-present。
+        assert_eq!(
+            recipes,
+            vec![
+                GraphicsRecipe::new(
+                    GraphicsApi::Vulkan,
+                    RasterMode::GpuNative,
+                    PresentMode::Swapchain,
+                ),
+                GraphicsRecipe::new(
+                    GraphicsApi::D3d11,
+                    RasterMode::GpuNative,
+                    PresentMode::Swapchain,
+                ),
+                GraphicsRecipe::new(
+                    GraphicsApi::D3d11,
+                    RasterMode::Cpu,
+                    PresentMode::PixelUpload,
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    // 验证显式策略不偷换 API，并保留禁用条目供 typed 失败使用。
+    fn explicit_selection_keeps_only_requested_api_without_fallback() {
+        // 请求禁用的 Metal 时仍只返回 Metal 条目。
+        let recipes = active_recipes_by_priority(
+            TEST_ENTRIES,
+            GraphicsSelection::Explicit(GraphicsApi::Metal),
+        );
+        // 结果不得混入任何可用的其他 GPU API。
+        assert_eq!(
+            recipes,
+            vec![GraphicsRecipe::new(
+                GraphicsApi::Metal,
+                RasterMode::GpuNative,
+                PresentMode::Swapchain,
+            )]
+        );
+    }
 }

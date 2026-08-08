@@ -9,7 +9,7 @@ use std::ffi::c_void;
 use crate::core::{Errc, Error, Result};
 use crate::native::backends::macos::platform;
 use crate::native::present::{
-    validate_pixel_buffer, GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage,
+    validate_pixel_buffer, GraphicsApi, GraphicsContextCaps, IGraphicsContext, PresentDamage,
     PresentFrame,
 };
 
@@ -48,7 +48,7 @@ impl MetalPixelUploadContext {
 
 impl IGraphicsContext for MetalPixelUploadContext {
     fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::Metal, self.device_pixel_ratio)
+        GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Metal, self.device_pixel_ratio)
     }
 
     fn initialize(&mut self, _native_window: *mut c_void, width: i32, height: i32) -> Result<()> {

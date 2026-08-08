@@ -26,12 +26,13 @@ pub(crate) fn drain_platform_pending_failures(
 }
 
 pub(crate) fn resolve_graphics_backend(
-    builder: Option<NativeGraphicsBackend>,
+    builder: Option<GraphicsApi>,
     env_value: Option<&str>,
     settings: Option<&SettingsService>,
-) -> NativeGraphicsBackend {
+) -> GraphicsSelection {
     if let Some(backend) = builder {
-        return backend;
+        // 公开 builder 只产生显式具体 API 选择。
+        return GraphicsSelection::Explicit(backend);
     }
 
     if let Some(value) = env_value {
@@ -50,11 +51,13 @@ pub(crate) fn resolve_graphics_backend(
         }
     }
 
-    NativeGraphicsBackend::Auto
+    // 未配置时才启用私有自动策略。
+    GraphicsSelection::Automatic
 }
 
-fn parse_graphics_backend_config(source: &str, value: &str) -> Option<NativeGraphicsBackend> {
-    match value.parse::<NativeGraphicsBackend>() {
+fn parse_graphics_backend_config(source: &str, value: &str) -> Option<GraphicsSelection> {
+    // 环境变量与设置值共享同一个私有策略解析器。
+    match value.parse::<GraphicsSelection>() {
         Ok(backend) => Some(backend),
         Err(err) => {
             tracing::warn!(
@@ -82,7 +85,7 @@ pub(crate) fn drain_pending_open_windows(
         runtime,
         app_state,
         container,
-        NativeGraphicsBackend::Auto,
+        GraphicsSelection::Automatic,
         RebuildRequest::default(),
         on_window_start,
         secondary_windows,
@@ -94,7 +97,7 @@ pub(crate) fn drain_pending_open_windows_with_backend(
     runtime: &AppRuntime,
     app_state: &AppState,
     container: &Container,
-    graphics_backend: NativeGraphicsBackend,
+    graphics_backend: GraphicsSelection,
     recovery_request: RebuildRequest,
     on_window_start: Option<&Arc<dyn Fn(AppHandle) + Send + Sync>>,
     secondary_windows: &mut Vec<SecondaryWindowSession>,
@@ -302,9 +305,15 @@ fn format_probe_failures(report: &ProbeReport) -> String {
         .iter()
         .enumerate()
         .map(|(index, failure)| {
+            // 空候选报告使用 none，不能把自动策略伪装成设备 API。
+            let candidate = failure
+                .candidate
+                .map(|api| api.to_string())
+                .unwrap_or_else(|| "none".to_string());
+            // 保留稳定的失败序号、候选身份与阶段细节。
             format!(
                 "failure[{index}]={{candidate={}, detail={:?}}}",
-                failure.backend, failure.message
+                candidate, failure.message
             )
         })
         .collect::<Vec<_>>()
@@ -312,7 +321,7 @@ fn format_probe_failures(report: &ProbeReport) -> String {
 }
 
 pub(crate) fn format_gpu_probe_fallback(
-    request: NativeGraphicsBackend,
+    request: GraphicsSelection,
     report: &ProbeReport,
 ) -> String {
     format!(
@@ -635,6 +644,22 @@ mod tests {
 
         assert_eq!(handled.load(Ordering::SeqCst), 0);
         assert_eq!(diagnostics.snapshot().reports().len(), 1);
+    }
+
+    #[test]
+    // 验证公开 builder 的具体 API 优先级高于环境自动配置。
+    fn builder_backend_resolves_to_explicit_private_selection() {
+        // 用 auto 环境值对照 builder 的显式 D3D11 请求。
+        let resolved = resolve_graphics_backend(Some(GraphicsApi::D3d11), Some("auto"), None);
+        // builder 必须保持显式 API，不能被后续自动策略覆盖。
+        assert_eq!(
+            resolved,
+            GraphicsSelection::Explicit(GraphicsApi::D3d11)
+        );
+        // 完全省略配置时才启用自动策略。
+        let automatic = resolve_graphics_backend(None, None, None);
+        // 默认结果必须是 crate-private Automatic 策略。
+        assert_eq!(automatic, GraphicsSelection::Automatic);
     }
 
     #[test]

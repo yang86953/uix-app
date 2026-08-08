@@ -372,7 +372,7 @@ impl EglContext {
 impl IGraphicsContext for EglContext {
     fn caps(&self) -> crate::native::present::GraphicsContextCaps {
         crate::native::present::GraphicsContextCaps::gpu_native_swapchain(
-            crate::native::present::GraphicsBackend::OpenGlEs,
+            crate::native::present::GraphicsApi::OpenGlEs,
             PresentCoherency::FullOnly,
             1.0,
         )
@@ -384,8 +384,8 @@ impl IGraphicsContext for EglContext {
         Some(self)
     }
 
-    fn graphics_backend(&self) -> crate::native::present::GraphicsBackend {
-        crate::native::present::GraphicsBackend::OpenGlEs
+    fn graphics_backend(&self) -> crate::native::present::GraphicsApi {
+        crate::native::present::GraphicsApi::OpenGlEs
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {

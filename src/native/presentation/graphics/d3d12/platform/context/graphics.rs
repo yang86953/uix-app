@@ -3,7 +3,7 @@ use super::*;
 impl IGraphicsContext for D3d12Context {
     fn caps(&self) -> GraphicsContextCaps {
         GraphicsContextCaps::gpu_native_swapchain(
-            GraphicsBackend::D3d12,
+            GraphicsApi::D3d12,
             PresentCoherency::FullOnly,
             self.device_pixel_ratio(),
         )

@@ -3,7 +3,7 @@
 use crate::core::{Errc, Error};
 use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
-use crate::native::present::{GraphicsBackend, IGraphicsContext, PresentMode, RasterMode};
+use crate::native::present::{GraphicsApi, IGraphicsContext, PresentMode, RasterMode};
 use std::ffi::c_void;
 
 // 生产 GPU 后端：原生 D3D11（wgpu 已移除）。
@@ -100,7 +100,7 @@ const OPENGL_STATUS: BackendStatus = if cfg!(feature = "opengles") {
 
 pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
     GraphicsBackendEntry {
-        id: GraphicsBackend::D3d11,
+        id: GraphicsApi::D3d11,
         priority: 30,
         status: D3D11_STATUS,
         raster: RasterMode::GpuNative,
@@ -108,7 +108,7 @@ pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
         create: create_d3d11,
     },
     GraphicsBackendEntry {
-        id: GraphicsBackend::Vulkan,
+        id: GraphicsApi::Vulkan,
         priority: 20,
         status: VULKAN_STATUS,
         raster: RasterMode::GpuNative,
@@ -116,7 +116,7 @@ pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
         create: create_vulkan,
     },
     GraphicsBackendEntry {
-        id: GraphicsBackend::OpenGlEs,
+        id: GraphicsApi::OpenGlEs,
         priority: 10,
         status: OPENGL_STATUS,
         raster: RasterMode::GpuNative,

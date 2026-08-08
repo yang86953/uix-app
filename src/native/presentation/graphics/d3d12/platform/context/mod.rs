@@ -10,7 +10,7 @@ use std::ffi::c_void;
 
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
-    GpuGlyphBlit, GpuSolidRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext,
+    GpuGlyphBlit, GpuSolidRect, GraphicsApi, GraphicsContextCaps, IGraphicsContext,
     NativeRasterCaps, PresentCoherency, PresentDamage, PresentFrame, SoftFallbackTile,
 };
 use crate::native::presentation::graphics::platform::windows as win_surface;

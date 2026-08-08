@@ -3,7 +3,7 @@
 use crate::core::{Errc, Error};
 use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
-use crate::native::present::{GraphicsBackend, IGraphicsContext, PresentMode, RasterMode};
+use crate::native::present::{GraphicsApi, IGraphicsContext, PresentMode, RasterMode};
 use std::ffi::c_void;
 
 // 方案 A：wgpu 已移除，原生 Metal/Vulkan 后端仍为 test-only，
@@ -38,7 +38,7 @@ const VULKAN_STATUS: BackendStatus = BackendStatus::Disabled;
 
 pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
     GraphicsBackendEntry {
-        id: GraphicsBackend::Metal,
+        id: GraphicsApi::Metal,
         priority: 20,
         status: METAL_STATUS,
         raster: RasterMode::GpuNative,
@@ -46,7 +46,7 @@ pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
         create: create_metal,
     },
     GraphicsBackendEntry {
-        id: GraphicsBackend::Vulkan,
+        id: GraphicsApi::Vulkan,
         priority: 10,
         status: VULKAN_STATUS,
         raster: RasterMode::GpuNative,

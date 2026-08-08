@@ -9,12 +9,15 @@ pub(crate) mod registry_macos;
 pub(crate) mod registry_windows;
 pub(crate) mod thread_bound;
 
-use crate::core::error::{Errc, Error};
+use crate::core::error::Error;
+// 仅不受支持的平台构建需要统一的平台错误码。
+#[cfg(not(any(windows, unix)))]
+use crate::core::error::Errc;
 use crate::diagnostics::PendingFailureQueue;
 #[cfg(any(windows, all(unix, not(target_os = "macos"))))]
 use crate::native::capabilities::system::ISystemInfo;
 use crate::native::platform::Platform;
-use crate::native::present::{GraphicsBackend, IGraphicsContext};
+use crate::native::present::{GraphicsApi, IGraphicsContext};
 use std::ffi::c_void;
 
 pub(crate) use registry::try_create_gpu_recipe_with_queue;
@@ -136,14 +139,9 @@ pub(crate) fn create_gpu_context_with_backend(
     native_surface: *mut c_void,
     width: i32,
     height: i32,
-    requested: GraphicsBackend,
+    requested: GraphicsApi,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
-    if requested == GraphicsBackend::Auto {
-        return Err(Error::new(
-            Errc::PlatformError,
-            "create_gpu_context: Auto requires draw::bootstrap_renderer (sole probe loop)",
-        ));
-    }
+    // 单 API 工厂只接受具体内部身份，自动策略无法进入该边界。
     registry::try_create_gpu_context(requested, native_surface, width, height)
 }
 

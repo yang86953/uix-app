@@ -3,7 +3,7 @@
 use crate::core::{Errc, Error};
 use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
-use crate::native::present::{GraphicsBackend, IGraphicsContext, PresentMode, RasterMode};
+use crate::native::present::{GraphicsApi, IGraphicsContext, PresentMode, RasterMode};
 use std::ffi::c_void;
 
 // 原生 OpenGL ES 已接入同一 FramePlan/RHI；Vulkan 仍保留为诊断条目。
@@ -54,7 +54,7 @@ const OPENGL_STATUS: BackendStatus = if cfg!(feature = "opengles") {
 
 pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
     GraphicsBackendEntry {
-        id: GraphicsBackend::Vulkan,
+        id: GraphicsApi::Vulkan,
         priority: 20,
         status: VULKAN_STATUS,
         raster: RasterMode::GpuNative,
@@ -62,7 +62,7 @@ pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
         create: create_vulkan,
     },
     GraphicsBackendEntry {
-        id: GraphicsBackend::OpenGlEs,
+        id: GraphicsApi::OpenGlEs,
         priority: 10,
         status: OPENGL_STATUS,
         raster: RasterMode::GpuNative,

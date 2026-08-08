@@ -12,6 +12,8 @@
 
 | 组件 | 目标角色 | 职责 |
 |---|---|---|
+| `platform::graphics::GraphicsBackend` | public value | 只表达当前构建已启用的具体 GPU API |
+| `GraphicsApi` / `GraphicsSelection` | crate-private value / strategy | registry 的具体 API 身份，以及 `Automatic` / `Explicit` 启动策略 |
 | `GraphicsRecipe` | value | 平台、feature、API 与 fallback 候选 |
 | `GraphicsDevice` | thin RHI interface | GPU 资源、pipeline、pass、draw/copy、submit 与 device 维护 |
 | `GraphicsSurface` | surface interface | acquire、resize、present、surface generation 与呈现状态 |
@@ -23,6 +25,8 @@
 ## 组件：GraphicsRecipe
 
 registry 只陈述可构造候选；graphics 决定选择和恢复策略。显式 API 请求不偷换其他 API，自动模式可按固定候选顺序降级。
+
+公开选择面只有 `platform::graphics::GraphicsBackend`，且不包含 `Auto`。公开 builder 在边界处把具体 API 转换为 crate-private `GraphicsApi`；只有省略 builder、空配置或 `auto` 配置才构造私有 `GraphicsSelection::Automatic`。显式策略只保留同一 API 的 registry 行，自动策略只接纳 Active recipe 并保持 GPU-native 优先；CPU fallback 由 App 在 GPU 候选耗尽后整体执行，不进入任何设备/API 枚举。
 
 ## 组件：GraphicsDevice / GraphicsSurface
 

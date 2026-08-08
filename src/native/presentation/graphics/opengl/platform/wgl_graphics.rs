@@ -21,7 +21,7 @@ impl IGraphicsContext for WglContext {
     fn caps(&self) -> crate::native::present::GraphicsContextCaps {
         // WGL 目前只承诺完整交换，不伪造 partial present preservation。
         crate::native::present::GraphicsContextCaps::gpu_native_swapchain(
-            crate::native::present::GraphicsBackend::OpenGlEs,
+            crate::native::present::GraphicsApi::OpenGlEs,
             PresentCoherency::FullOnly,
             self.device_pixel_ratio(),
         )
@@ -40,9 +40,9 @@ impl IGraphicsContext for WglContext {
     }
 
     // 返回当前图形 backend 标识。
-    fn graphics_backend(&self) -> crate::native::present::GraphicsBackend {
+    fn graphics_backend(&self) -> crate::native::present::GraphicsApi {
         // WGL adapter 使用 OpenGL ES backend 标签。
-        crate::native::present::GraphicsBackend::OpenGlEs
+        crate::native::present::GraphicsApi::OpenGlEs
     }
 
     // 兼容生命周期初始化由 WGL constructor 完成。

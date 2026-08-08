@@ -475,7 +475,7 @@ pub trait IPresenter {
 
 /// Raster axis — how Canvas2D content is produced ([架构 · 图形](docs/架构.md#图形-api与帧提交硬约束)).
 ///
-/// Orthogonal to [`PresentMode`] and [`GraphicsBackend`].
+/// Orthogonal to [`PresentMode`] and [`GraphicsApi`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RasterMode {
     /// CPU Canvas2D (`CpuBackend`).
@@ -495,7 +495,7 @@ impl fmt::Display for RasterMode {
 
 /// Present axis — how pixels reach the screen ([架构 · 图形](docs/架构.md#图形-api与帧提交硬约束)).
 ///
-/// Orthogonal to [`RasterMode`] and [`GraphicsBackend`].
+/// Orthogonal to [`RasterMode`] and [`GraphicsApi`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PresentMode {
     /// GPU swapchain / equivalent via [`IGraphicsContext::present`].
@@ -522,7 +522,7 @@ impl fmt::Display for PresentMode {
 /// `raster` × `present` (× `backend` for GPU raster pairing).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GraphicsContextCaps {
-    pub backend: GraphicsBackend,
+    pub backend: GraphicsApi,
     pub raster: RasterMode,
     pub present: PresentMode,
     /// 当前 live recipe 的逐窗呈现遮挡能力。
@@ -535,7 +535,7 @@ pub struct GraphicsContextCaps {
 impl GraphicsContextCaps {
     /// Legal combo: [`RasterMode::GpuNative`] × [`PresentMode::Swapchain`].
     pub fn gpu_native_swapchain(
-        backend: GraphicsBackend,
+        backend: GraphicsApi,
         present_coherency: PresentCoherency,
         device_pixel_ratio: f32,
     ) -> Self {
@@ -550,7 +550,7 @@ impl GraphicsContextCaps {
     }
 
     /// Legal combo: [`RasterMode::Cpu`] × [`PresentMode::PixelUpload`].
-    pub fn cpu_pixel_upload(backend: GraphicsBackend, device_pixel_ratio: f32) -> Self {
+    pub fn cpu_pixel_upload(backend: GraphicsApi, device_pixel_ratio: f32) -> Self {
         Self {
             backend,
             raster: RasterMode::Cpu,
@@ -568,25 +568,27 @@ impl GraphicsContextCaps {
     }
 }
 
-/// Concrete GPU API selected by the native factory.
+/// 原生工厂内部使用的具体 GPU API 身份。
 ///
-/// This is diagnostic and init-time selection data; draw continues to expose
-/// `BackendKind` (draw system) as the engine-level raster preference
-/// (`Gpu` ≈ try GPU path, not a specific API).
+/// 该类型只承载 registry 与运行时诊断事实，不属于公开选择面，也不包含自动或回退策略。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum GraphicsBackend {
-    Auto,
+pub enum GraphicsApi {
+    /// Direct3D 12 的内部 registry 身份。
     D3d12,
+    /// Direct3D 11 的内部 registry 身份。
     D3d11,
+    /// Vulkan 的内部 registry 身份。
     Vulkan,
+    /// Metal 的内部 registry 身份。
     Metal,
+    /// OpenGL ES 的内部 registry 身份。
     OpenGlEs,
 }
 
-impl GraphicsBackend {
-    pub const fn as_str(self) -> &'static str {
+impl GraphicsApi {
+    /// 返回稳定的内部诊断名称。
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
-            Self::Auto => "auto",
             Self::D3d12 => "d3d12",
             Self::D3d11 => "d3d11",
             Self::Vulkan => "vulkan",
@@ -596,32 +598,97 @@ impl GraphicsBackend {
     }
 }
 
-impl fmt::Display for GraphicsBackend {
+impl fmt::Display for GraphicsApi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-impl FromStr for GraphicsBackend {
+/// 原生启动阶段的私有图形选择策略。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GraphicsSelection {
+    /// 未指定具体 API 时，按 registry 的 Active recipe 顺序自动探测。
+    Automatic,
+    /// 显式请求一个具体 API，失败时不得偷换为其他 GPU API。
+    Explicit(GraphicsApi),
+}
+
+impl fmt::Display for GraphicsSelection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            // 自动策略使用稳定名称写入诊断。
+            Self::Automatic => f.write_str("auto"),
+            // 显式策略沿用具体 API 的稳定名称。
+            Self::Explicit(api) => fmt::Display::fmt(api, f),
+        }
+    }
+}
+
+impl FromStr for GraphicsSelection {
     type Err = Error;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
+        // 配置输入统一忽略大小写与常见分隔符。
         let normalized = value
             .trim()
             .to_ascii_lowercase()
             .replace(['-', '_', ' '], "");
         match normalized.as_str() {
-            "" | "auto" => Ok(Self::Auto),
-            "d3d12" | "direct3d12" | "directx12" => Ok(Self::D3d12),
-            "d3d11" | "direct3d11" | "directx11" => Ok(Self::D3d11),
-            "vulkan" | "vk" => Ok(Self::Vulkan),
-            "metal" => Ok(Self::Metal),
-            "opengles" | "gles" | "gl" => Ok(Self::OpenGlEs),
+            // 空值与 auto 只构造私有自动策略。
+            "" | "auto" => Ok(Self::Automatic),
+            // D3D12 别名统一映射到显式具体 API。
+            "d3d12" | "direct3d12" | "directx12" => Ok(Self::Explicit(GraphicsApi::D3d12)),
+            // D3D11 别名统一映射到显式具体 API。
+            "d3d11" | "direct3d11" | "directx11" => Ok(Self::Explicit(GraphicsApi::D3d11)),
+            // Vulkan 别名统一映射到显式具体 API。
+            "vulkan" | "vk" => Ok(Self::Explicit(GraphicsApi::Vulkan)),
+            // Metal 配置统一映射到显式具体 API。
+            "metal" => Ok(Self::Explicit(GraphicsApi::Metal)),
+            // OpenGL ES 别名统一映射到显式具体 API。
+            "opengles" | "gles" | "gl" => Ok(Self::Explicit(GraphicsApi::OpenGlEs)),
+            // 未知名称保持 typed 配置错误。
             _ => Err(Error::new(
                 crate::core::error::Errc::InvalidArgument,
                 format!("unknown graphics backend: {value}"),
             )),
         }
+    }
+}
+
+#[cfg(test)]
+mod graphics_selection_tests {
+    // 复用被测私有选择策略与具体 API 身份。
+    use super::{GraphicsApi, GraphicsSelection};
+
+    #[test]
+    // 验证自动配置不会重新进入具体 API 枚举。
+    fn automatic_config_parses_as_private_selection_strategy() {
+        // 空配置保持历史上的自动选择语义。
+        assert_eq!("".parse(), Ok(GraphicsSelection::Automatic));
+        // 显式 auto 文本同样只构造私有策略。
+        assert_eq!("auto".parse(), Ok(GraphicsSelection::Automatic));
+        // 自动策略诊断名称保持稳定。
+        assert_eq!(GraphicsSelection::Automatic.to_string(), "auto");
+    }
+
+    #[test]
+    // 验证具体配置只产生显式 API 请求。
+    fn concrete_config_parses_as_explicit_api_selection() {
+        // 常见 D3D11 别名归一为同一个具体 API。
+        assert_eq!(
+            "Direct3D-11".parse(),
+            Ok(GraphicsSelection::Explicit(GraphicsApi::D3d11))
+        );
+        // OpenGL ES 简写归一为同一个具体 API。
+        assert_eq!(
+            "gles".parse(),
+            Ok(GraphicsSelection::Explicit(GraphicsApi::OpenGlEs))
+        );
+        // 显式策略诊断只展示所请求的具体 API。
+        assert_eq!(
+            GraphicsSelection::Explicit(GraphicsApi::OpenGlEs).to_string(),
+            "opengles"
+        );
     }
 }
 
@@ -657,10 +724,6 @@ impl NativeSurfaceHandle {
         }
     }
 
-    pub fn is_null(self) -> bool {
-        self.raw.is_null()
-    }
-
     pub(crate) fn as_raw(self) -> *mut std::ffi::c_void {
         self.raw
     }
@@ -682,4 +745,5 @@ pub(crate) mod rhi;
 // 兼容期高层 graphics context，逐步由 `rhi` 替代。
 mod traits;
 
-pub use self::traits::IGraphicsContext;
+// 图形 context SPI 只供 crate 内部 backend 与 bootstrap 使用。
+pub(crate) use self::traits::IGraphicsContext;

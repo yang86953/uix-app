@@ -12,8 +12,8 @@ use crate::native::present::PresentTestResult;
 /// Renderer backend preference ([架构 · 图形](docs/架构.md#图形-api与帧提交硬约束)).
 ///
 /// Aligned with orthogonal axes: `Cpu` / `Gpu` select raster path preference;
-/// concrete API is [`crate::native::traits::GraphicsBackend`]. Not a bundled
-/// pipeline enum — see `RasterMode` × `PresentMode` × `GraphicsBackend`.
+/// concrete public API is [`crate::platform::graphics::GraphicsBackend`]. Not a bundled
+/// pipeline enum — raster preference and concrete GPU API remain orthogonal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackendKind {
     /// Prefer CPU software raster (`RasterMode::Cpu`).
