@@ -5,7 +5,9 @@ use crate::core::{Constraints, EdgeInsets, Point, Rect, Size};
 // 导入构造绘制变化所需的颜色常量。
 use crate::draw::Color;
 // 导入建立最小组件树、缓存门禁与保守回退门禁所需的组件类型。
-use crate::ui::widgets::{Affix, Button, Carousel, Container, Grid, Label, ScrollView, Space};
+use crate::ui::widgets::{
+    Affix, Button, Card, Carousel, Container, Grid, Label, ScrollView, Space,
+};
 // 导入构造纵向滚动视口所需的方向类型。
 use crate::ui::{ScrollDirection, State};
 // 导入构造 Grid 轨道几何变化所需的轨道类型。
@@ -14,6 +16,8 @@ use crate::ui::GridTrack;
 use crate::ui::view::ViewNode;
 // 导入读取节点 frame 与直接子节点顺序所需的核心组件接口。
 use crate::ui::component::widget::WidgetCore;
+// 导入直接调用定制子布局与测量入口所需的布局接口。
+use crate::ui::WidgetLayout;
 // 导入读取共享失效队列所需的组件树类型。
 use crate::ui::WidgetTree;
 
@@ -556,4 +560,105 @@ fn grid_last_child_removal_clears_intrinsic_cache() {
     );
     // 空 Grid 不得继续暴露旧内容尺寸。
     assert_eq!(root_measure(&tree), Size::zero());
+}
+
+// 验证 Card 的定制纵向布局继续遵守共享 LayoutChild 外边距契约。
+#[test]
+fn card_layout_consumes_child_margins() {
+    // 构造无内部 padding 的固定尺寸 Card，隔离子项 margin 几何。
+    let mut tree = ViewAdapter::build_nodes(ViewNode::new(
+        // Card 的 body 与根 frame 重合，便于断言精确纵坐标。
+        Card::new().size(200.0, 120.0).padding(0.0),
+        // 两个固定高度子项分别声明不同的纵向外边距。
+        vec![
+            // 第一项应从顶部 margin 后开始。
+            ViewNode::leaf(
+                Container::new()
+                    .size(20.0, 10.0)
+                    .margin(EdgeInsets::new(0.0, 2.0, 0.0, 3.0)),
+            ),
+            // 第二项应同时被前一项底边距和自身顶边距推开。
+            ViewNode::leaf(
+                Container::new()
+                    .size(20.0, 10.0)
+                    .margin(EdgeInsets::new(0.0, 4.0, 0.0, 0.0)),
+            ),
+        ],
+    ));
+    // 运行 Card 定制布局。
+    clear_initial_invalidations(&mut tree);
+    // 复制根节点的直接子节点顺序。
+    let children = tree
+        .root()
+        .expect("测试声明树必须存在 Card 根节点")
+        .children()
+        .to_vec();
+    // 读取第一项最终 frame。
+    let first = tree
+        .get(children[0])
+        .expect("测试 Card 第一项必须存在")
+        .frame();
+    // 读取第二项最终 frame。
+    let second = tree
+        .get(children[1])
+        .expect("测试 Card 第二项必须存在")
+        .frame();
+    // 第一项起点必须包含自身顶部 margin。
+    assert_eq!(first.y, 2.0);
+    // 第二项起点必须包含前一项底部 margin 与自身顶部 margin。
+    assert_eq!(second.y, 19.0);
+}
+
+// 验证 Affix 的手写堆叠同时消费子项 margin 并保留 border-box frame。
+#[test]
+fn affix_layout_consumes_child_margins() {
+    // 构造不产生额外吸顶偏移的 Affix。
+    let affix = Affix::new(0.0);
+    // 构造第一项自然尺寸。
+    let mut first = crate::ui::layout::LayoutChild::new(
+        // 使用稳定测试标识。
+        crate::core::ComponentId::new(1),
+        // border-box 自然尺寸为二十乘十。
+        Size::new(20.0, 10.0),
+    );
+    // 第一项声明左右与上下 margin。
+    first.margin = EdgeInsets::new(1.0, 2.0, 2.0, 3.0);
+    // 构造第二项相同自然尺寸。
+    let mut second = crate::ui::layout::LayoutChild::new(
+        // 使用不同稳定标识。
+        crate::core::ComponentId::new(2),
+        // 保持相同 border-box 尺寸以隔离 margin。
+        Size::new(20.0, 10.0),
+    );
+    // 第二项只声明顶部 margin。
+    second.margin = EdgeInsets::new(0.0, 4.0, 0.0, 0.0);
+    // 空树足以覆盖不依赖真实祖先视口的自然布局分支。
+    let tree = WidgetTree::new();
+    // 在一百像素宽的父级 frame 中执行 Affix 定制布局。
+    let positions = affix.layout_children(
+        // 父级 frame 从原点开始且不触发吸顶补偿。
+        Rect::new(0.0, 0.0, 100.0, 100.0),
+        // 按声明顺序传入两个带 margin 子项。
+        &[first, second],
+        // 当前分支只在查找视口时读取空树并安全回退。
+        &tree,
+    );
+    // 第一项横坐标包含左 margin。
+    assert_eq!(positions[0].1.x, 1.0);
+    // 第一项纵坐标包含顶部 margin。
+    assert_eq!(positions[0].1.y, 2.0);
+    // 第一项 border-box 宽度只扣除左右 margin。
+    assert_eq!(positions[0].1.w, 97.0);
+    // 第二项纵坐标包含第一项底 margin 与自身顶 margin。
+    assert_eq!(positions[1].1.y, 19.0);
+    // 缓存宽度使用最大自然外宽二十三像素。
+    assert_eq!(
+        affix.measure(Constraints::loose(Size::new(500.0, 500.0))).w,
+        23.0
+    );
+    // 缓存高度包含两项 border-box 与全部纵向 margin。
+    assert_eq!(
+        affix.measure(Constraints::loose(Size::new(500.0, 500.0))).h,
+        29.0
+    );
 }

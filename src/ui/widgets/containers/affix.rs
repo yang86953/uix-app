@@ -12,6 +12,8 @@ use crate::ui::children::WidgetChildren;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::tree_measure::child_from_tree_with_constraints;
 use crate::ui::component::widget::WidgetCore;
+// Affix 的定制布局复用共享布局数值与 margin 归一化规则。
+use crate::ui::layout::engine::{finite_non_negative, finite_or_zero, normalize_margin};
 use crate::ui::layout::LayoutChild;
 use crate::ui::{ComponentId, SnapshotFields, WidgetComponent, WidgetTree};
 
@@ -83,22 +85,51 @@ component! {
 
         let width = children
             .iter()
-            .map(|child| child.measured_size.w.max(0.0))
+            .map(|child| {
+                // 先清除非有限 margin，同时保留有限负外边距语义。
+                let margin = normalize_margin(child.margin);
+                // 父级固有宽度使用子项自然 border-box 加横向 margin。
+                finite_non_negative(child.measured_size.w + margin.horizontal())
+            })
             .fold(0.0, f32::max);
         let height = children
             .iter()
-            .map(|child| child.measured_size.h.max(0.0))
-            .sum::<f32>();
+            .fold(0.0, |total, child| {
+                // 每个子项使用与宽度一致的有限 margin。
+                let margin = normalize_margin(child.margin);
+                // 单项纵向外尺寸包含顶部和底部 margin。
+                let outer_height =
+                    finite_non_negative(child.measured_size.h + margin.vertical());
+                // 每步有限化，避免大量子项累加溢出。
+                finite_non_negative(total + outer_height)
+            });
         self.cached_child_size.set(Size::new(width, height));
 
-        let child_width = if frame.w > 0.0 { frame.w } else { width };
-        let mut y = frame.y + self.sticky_compensation();
+        // 从吸顶补偿后的有限纵坐标开始依次消费子项外边距。
+        let mut y = finite_or_zero(frame.y + self.sticky_compensation());
         children
             .iter()
             .map(|child| {
-                let height = child.measured_size.h.max(0.0);
-                let rect = Rect::new(frame.x, y, child_width, height);
-                y += height;
+                // 使用共享规则清除非法 margin 分量。
+                let margin = normalize_margin(child.margin);
+                // 子项实际高度保持有限非负且不包含 margin。
+                let height = finite_non_negative(child.measured_size.h);
+                // 有父级宽度时在 margin 内拉伸 border-box，否则保留自然宽度。
+                let child_width = if frame.w > 0.0 {
+                    // 左右 margin 从父级可用宽度中扣除一次。
+                    finite_non_negative(frame.w - margin.horizontal())
+                } else {
+                    // 未分配宽度时使用子项自然 border-box 宽度。
+                    finite_non_negative(child.measured_size.w)
+                };
+                // 左 margin 决定子项 border-box 横坐标。
+                let child_x = finite_or_zero(frame.x + margin.left);
+                // 顶部 margin 在写入子项 frame 前推进纵坐标。
+                let child_y = finite_or_zero(y + margin.top);
+                // frame 只包含 border-box，不把 margin 包进尺寸。
+                let rect = Rect::new(child_x, child_y, child_width, height);
+                // 底部 margin 在当前 border-box 后推开下一个兄弟。
+                y = finite_or_zero(child_y + height + margin.bottom);
                 (child.id, rect)
             })
             .collect()
