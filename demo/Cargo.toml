@@ -8,3 +8,25 @@
 [workspace]
 members = ["gui-demo", "cli-demo"]
 resolver = "2"
+
+# ── 编译产物配置 ──────────────────────────────────────────────
+# demo 是独立工作区，不继承根 Cargo.toml 的 profile 设置；
+# 显式声明后产物配置入仓，不再依赖机器级 ~/.cargo/config.toml 调优。
+[profile.dev]
+debug = "line-tables-only"
+incremental = false
+
+[profile.test]
+debug = "line-tables-only"
+incremental = false
+
+[profile.release]
+# 与根包保持一致：体积优先（Demo 为分发载体），符号表全剥离。
+opt-level = "s"
+strip = "symbols"
+lto = "fat"
+codegen-units = 1
+# 过程宏与构建脚本不受 LTO 收益，单独提速编译。
+[profile.release.build-override]
+opt-level = 3
+codegen-units = 16
