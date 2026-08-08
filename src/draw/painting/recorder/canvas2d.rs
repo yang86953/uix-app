@@ -38,36 +38,42 @@ impl Canvas2D for FrameRecordingCanvas {
     }
 
     fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
-        let additive_radius = if self.blend_mode == BlendMode::Additive {
-            match radius.map(FrameRadius::new).transpose() {
-                Ok(radius) => radius,
-                Err(error) => {
-                    self.remember_error(frame_encoder_error(error));
-                    return;
-                }
-            }
-        } else {
-            None
-        };
         // Additive 提升同时取得已经验证的几何与矩形裁剪事实。
-        if let Some((rect, clip)) = self.native_additive_rects(rect) {
+        if let Some((rect, clip, native_color)) = self.native_additive_shape(rect, color) {
             // 完全被裁掉的操作是安全 no-op，不需要 flush 或命令载荷。
             if clip.is_empty() {
                 // 保持当前命令流不变。
                 return;
             }
+            // opacity 或源 alpha 量化为全透明时同样是安全 no-op。
+            if native_color.a == 0 {
+                // 不 flush 既有 scratch，也不追加无贡献 Native 命令。
+                return;
+            }
+            // 非透明操作才需要验证可编码的圆角载荷。
+            let additive_radius = match radius.map(FrameRadius::new).transpose() {
+                // 保存合法的可选圆角。
+                Ok(radius) => radius,
+                // 非法圆角继续转换为既有 deferred typed failure。
+                Err(error) => {
+                    // 记录统一的 encoder 错误。
+                    self.remember_error(frame_encoder_error(error));
+                    // 非法操作不能继续记录。
+                    return;
+                }
+            };
             if let Err(error) = self.flush_scratch().and_then(|()| {
                 let operation = match additive_radius {
                     Some(radius) => FrameRasterOp::FillRoundedRectAdditive {
                         rect,
-                        color,
+                        color: native_color,
                         radius,
                         // 保存当前整数矩形裁剪，供参考执行与 RHI scissor 共用。
                         clip,
                     },
                     None => FrameRasterOp::FillRectAdditive {
                         rect,
-                        color,
+                        color: native_color,
                         // 普通矩形也必须保留同一个 Additive 裁剪事实。
                         clip,
                     },
@@ -148,7 +154,7 @@ impl Canvas2D for FrameRecordingCanvas {
         // SrcOver 与已证明安全的 Additive 圆都复用 fill_rect 的统一命令记录路径。
         if r.is_finite()
             && r > 0.0
-            && (self.native_additive_rects(bounds).is_some()
+            && (self.native_additive_shape(bounds, color).is_some()
                 || self.native_src_over_rects(bounds).is_some())
         {
             // 正方形四角半径等于圆半径时，与目标圆的共享 SDF 完全一致。
@@ -182,10 +188,15 @@ impl Canvas2D for FrameRecordingCanvas {
 
     fn stroke_rect(&mut self, rect: Rect, color: Color, width: f32, radius: Option<Radius>) {
         // Additive 描边只能作为目标相关 Native 命令保留，禁止进入透明 CPU segment。
-        if let Some((native_rect, clip)) = self.native_additive_rects(rect) {
+        if let Some((native_rect, clip, native_color)) = self.native_additive_shape(rect, color) {
             // 完全不可见的描边不产生命令，也不需要触碰累计目标。
             if clip.is_empty() {
                 // 保持既有命令流和 staging 不变。
+                return;
+            }
+            // opacity 或源 alpha 量化为全透明时不应触碰累计目标。
+            if native_color.a == 0 {
+                // 透明 Additive 描边既不 flush，也不产生命令。
                 return;
             }
             // 在记录边界验证圆角，避免把非法浮点几何带入 FrameEncoder。
@@ -220,7 +231,7 @@ impl Canvas2D for FrameRecordingCanvas {
                         // 当前调用只产生一条描边，后续由 encoder 做安全批合并。
                         strokes: vec![FrameStrokeRect::new(
                             native_rect,
-                            color,
+                            native_color,
                             native_radius,
                             line_width,
                         )],
@@ -287,7 +298,7 @@ impl Canvas2D for FrameRecordingCanvas {
         let bounds = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
         if r.is_finite()
             && r > 0.0
-            && (self.native_additive_rects(bounds).is_some()
+            && (self.native_additive_shape(bounds, color).is_some()
                 || self.native_src_over_rects(bounds).is_some())
         {
             // A circle stroke is the shared rounded-rect stroke SDF over a
@@ -811,4 +822,7 @@ mod tests {
 
     // 继续在同一测试模块内加载纯平移 transform 的独立回归测试。
     include!("canvas2d_test_tail.rs");
+
+    // 继续在同一测试模块内加载 Additive opacity 的独立回归测试。
+    include!("canvas2d_opacity_tests.rs");
 }

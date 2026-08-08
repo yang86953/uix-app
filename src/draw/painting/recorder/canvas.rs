@@ -502,16 +502,23 @@ impl FrameRecordingCanvas {
 
     /// Additive 轴对齐矩形操作依赖目标像素，因此只能进入 Native 命令。返回已经
     /// 验证的 surface-space 几何与裁到目标范围内的整数矩形 clip。
-    pub(super) fn native_additive_rects(&self, rect: Rect) -> Option<(FrameRect, FrameRect)> {
+    pub(super) fn native_additive_shape(
+        &self,
+        rect: Rect,
+        color: Color,
+    ) -> Option<(FrameRect, FrameRect, Color)> {
         // 读取当前 transform，并拆出纯平移准入需要的六个分量。
         let [a, b, transform_x, c, d, transform_y] = self.scratch.current_transform().m;
+        // 读取软件路径用于缩放 premultiplied 颜色的同一全局 opacity。
+        let opacity = self.scratch.opacity();
         // 只接受能够由固定 Additive shape pipeline 精确表达的画布状态。
         if self.blend_mode != BlendMode::Additive
             || a != 1.0
             || b != 0.0
             || c != 0.0
             || d != 1.0
-            || self.scratch.opacity() != 1.0
+            || !opacity.is_finite()
+            || !(0.0..=1.0).contains(&opacity)
         {
             // 其余状态继续沿既有 deferred typed failure 边界处理。
             return None;
@@ -551,8 +558,11 @@ impl FrameRecordingCanvas {
         let clip = clip
             .intersection(FrameRect::new(0, 0, self.width, self.height))
             .unwrap_or(FrameRect::new(0, 0, 0, 0));
-        // 返回同一录制时刻的几何和裁剪事实。
-        Some((rect, clip))
+        // 按 CPU 路径顺序把 opacity 折进 premultiplied 颜色并编码回 Color。
+        let color =
+            crate::draw::raster::rasterizer::color_with_premultiplied_opacity(color, opacity);
+        // 返回同一录制时刻的几何、裁剪与位精确颜色事实。
+        Some((rect, clip, color))
     }
 
     pub(super) fn direct_picture_rects(
