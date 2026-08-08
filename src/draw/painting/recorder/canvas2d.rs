@@ -407,7 +407,8 @@ impl Canvas2D for FrameRecordingCanvas {
         radius: Option<Radius>,
     ) {
         let pad = blur.max(0.0) + offset_x.abs().max(offset_y.abs()) + 1.0;
-        self.draw_cpu(rect, pad, |scratch| {
+        // 阴影是可结合的纯源贡献，可安全进入 Additive sampled scratch。
+        self.draw_cpu_source(rect, pad, |scratch| {
             scratch.draw_box_shadow(rect, blur, offset_x, offset_y, color, radius)
         });
     }
@@ -422,7 +423,8 @@ impl Canvas2D for FrameRecordingCanvas {
         radius: Option<Radius>,
     ) {
         let pad = blur.max(0.0) + offset_x.abs().max(offset_y.abs()) + 1.0;
-        self.draw_cpu(rect, pad, |scratch| {
+        // 环境阴影与定向阴影共享相同的 Additive source scratch 边界。
+        self.draw_cpu_source(rect, pad, |scratch| {
             scratch.draw_box_shadow_ambient(rect, blur, offset_x, offset_y, color, radius)
         });
     }

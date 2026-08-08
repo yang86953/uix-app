@@ -23,7 +23,6 @@ pub mod glyph;
 pub mod gradient;
 pub mod image;
 pub mod polygon;
-pub mod shadow;
 pub mod stroke;
 
 pub use core::*;

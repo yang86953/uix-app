@@ -21,4 +21,6 @@ pub(crate) mod software_rasterizer_gradient;
 pub(crate) mod software_rasterizer_glyph;
 // 图片采样在共享软件执行器中统一保留仿射、裁剪、透明度与混合语义。
 pub(crate) mod software_rasterizer_image;
+// 盒阴影在共享软件执行器中统一保留仿射、裁剪、透明度与混合语义。
+pub(crate) mod software_rasterizer_shadow;
 pub(crate) mod software_rasterizer_stroke;
