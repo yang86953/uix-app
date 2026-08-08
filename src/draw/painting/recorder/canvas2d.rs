@@ -808,4 +808,7 @@ mod tests {
             Some(1)
         );
     }
+
+    // 继续在同一测试模块内加载纯平移 transform 的独立回归测试。
+    include!("canvas2d_test_tail.rs");
 }

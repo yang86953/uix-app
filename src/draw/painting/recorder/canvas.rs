@@ -503,9 +503,14 @@ impl FrameRecordingCanvas {
     /// Additive 轴对齐矩形操作依赖目标像素，因此只能进入 Native 命令。返回已经
     /// 验证的 surface-space 几何与裁到目标范围内的整数矩形 clip。
     pub(super) fn native_additive_rects(&self, rect: Rect) -> Option<(FrameRect, FrameRect)> {
+        // 读取当前 transform，并拆出纯平移准入需要的六个分量。
+        let [a, b, transform_x, c, d, transform_y] = self.scratch.current_transform().m;
         // 只接受能够由固定 Additive shape pipeline 精确表达的画布状态。
         if self.blend_mode != BlendMode::Additive
-            || !self.scratch.current_transform().is_identity()
+            || a != 1.0
+            || b != 0.0
+            || c != 0.0
+            || d != 1.0
             || self.scratch.opacity() != 1.0
         {
             // 其余状态继续沿既有 deferred typed failure 边界处理。
@@ -518,12 +523,21 @@ impl FrameRecordingCanvas {
             || !offset_y.is_finite()
             || offset_x.fract() != 0.0
             || offset_y.fract() != 0.0
+            || !transform_x.is_finite()
+            || !transform_y.is_finite()
+            || transform_x.fract() != 0.0
+            || transform_y.fract() != 0.0
         {
-            // 分数或非有限平移继续沿 typed failure 边界处理。
+            // 分数或非有限 offset/transform 平移继续沿 typed failure 边界处理。
             return None;
         }
-        // 与软件 identity fill 一致：offset 只改变 x/y，不缩放宽高或圆角。
-        let mapped = Rect::new(rect.x + offset_x, rect.y + offset_y, rect.w, rect.h);
+        // 与软件 map_rect 顺序一致：先加 offset，再执行纯平移 transform。
+        let mapped = Rect::new(
+            (rect.x + offset_x) + transform_x,
+            (rect.y + offset_y) + transform_y,
+            rect.w,
+            rect.h,
+        );
         // 映射后几何必须是完整位于 surface 内的有限正整数矩形。
         let rect = rect_to_frame(mapped).ok()?;
         // 当前纵切不放宽越界或负尺寸几何。
