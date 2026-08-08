@@ -9,6 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PLATFORM_WINDOWS = ROOT / "src/platform/imp/windows.rs"
 LEGACY_DISPLAY = ROOT / "src/native/backends/windows/display.rs"
+# 读取 Windows 窗口过程的 owner-thread failure queue 边界。
+WND_PROC = ROOT / "src/native/backends/windows/wnd_proc.rs"
 
 
 class WindowsCallbackGuardTests(unittest.TestCase):
@@ -36,6 +38,17 @@ class WindowsCallbackGuardTests(unittest.TestCase):
         self.assertIn("collect_monitor_unchecked", wrapper)
         self.assertIn("failed = true", wrapper)
         self.assertNotIn("monitors.push", wrapper)
+
+    # 确认 wnd_proc ABI panic 在安全 fallback 外仍通知 owner failure queue。
+    def test_wnd_proc_panic_reaches_owner_pending_source(self) -> None:
+        # 读取窗口过程完整的 panic boundary 与通知实现。
+        source = WND_PROC.read_text(encoding="utf-8")
+        # 外层 ABI 边界必须调用可恢复的 run helper。
+        self.assertIn("run_wnd_proc_boundary", source)
+        # panic 分支必须调用显式的队列通知函数。
+        self.assertIn("enqueue_wnd_proc_panic", source)
+        # 通知函数必须通过 Windows platform owner 入队。
+        self.assertIn("enqueue_callback_failure", source)
 
 
 if __name__ == "__main__":

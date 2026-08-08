@@ -43,6 +43,10 @@ class MacosCallbackGuardTests(unittest.TestCase):
                     self.assertIn("catch_unwind", body)
                 else:
                     self.assertIn("with_callback", body)
+        # 文本输入 callback 的 panic 必须由共享报告函数转换为 typed failure。
+        self.assertIn("report_callback_panic", source)
+        # typed failure 必须进入 callback 所属的 owner source。
+        self.assertIn("pending_failures.enqueue", source)
 
     def test_platform_forwards_the_pending_source_to_content_views(self) -> None:
         platform = PLATFORM.read_text(encoding="utf-8")
