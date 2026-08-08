@@ -13,11 +13,11 @@ use super::{
     RhiMsdfQuad, RhiRenderer, RhiSampledQuad, RhiShadow, RhiShapeRect, RhiSolidMesh,
     RhiTexturedQuad,
 };
-// 将混合操作 ABI 校验拆到独立文件，保持执行器文件边界清晰。
-#[path = "rhi_renderer_mixed_validation.rs"]
-mod validation;
-// 引入拆分后的统一校验入口。
-use validation::validate_op;
+// 将混合操作 ABI 约束检查拆到独立文件，保持执行器文件边界清晰。
+#[path = "rhi_renderer_mixed_contract.rs"]
+mod contract;
+// 引入拆分后的统一约束检查入口。
+use contract::check_op;
 // 保存一个已经完成物理 lowering 的轴对齐扇形 payload。
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RhiSector {
@@ -228,8 +228,8 @@ impl RhiRenderer {
             return Err(super::rhi_invalid("RhiRenderer mixed viewport is invalid"));
         }
         for operation in operations {
-            // 统一验证当前操作。
-            validate_op(operation)?;
+            // 统一检查当前操作的固定 ABI 约束。
+            check_op(operation)?;
         }
         let max_solid_bytes = operations
             .iter()

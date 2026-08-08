@@ -108,7 +108,6 @@ impl VulkanContext {
         self.wait_for_previous_upload()?;
         let needed_size = staging_size(width, height);
         self.recreate_upload_buffer(needed_size)?;
-        let copy_t0 = std::time::Instant::now();
         unsafe {
             let mapped = self
                 .device
@@ -126,10 +125,6 @@ impl VulkanContext {
             );
             self.device.unmap_memory(self.upload.memory);
         }
-        let upload_copy_us = copy_t0.elapsed().as_micros();
-        let mut sample = crate::core::perf_probe::take_present();
-        sample.upload_copy_us = upload_copy_us;
-        crate::core::perf_probe::record_present(sample);
         // 热路径不每帧全量复制 CPU shadow（约等于再拷一遍全屏）；
         // destination-dependent readback 时再 hydrate。
         self.cpu_shadow.clear();
@@ -138,15 +133,11 @@ impl VulkanContext {
 
     /// 单 staging buffer 会被连续帧复用；CPU 覆写或替换前必须确认上一提交已停止读取。
     fn wait_for_previous_upload(&mut self) -> Result<()> {
-        let fence_t0 = std::time::Instant::now();
         self.wait_for_frame_fence("vkWaitForFences before staging upload")?;
         if !self.present_fences.enabled() {
             self.present_lifetime
                 .complete_submission(&self.device, &self.swapchain_loader)?;
         }
-        let mut sample = crate::core::perf_probe::take_present();
-        sample.fence_wait_us = fence_t0.elapsed().as_micros();
-        crate::core::perf_probe::record_present(sample);
         Ok(())
     }
 

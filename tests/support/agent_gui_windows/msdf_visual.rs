@@ -23,8 +23,9 @@ fn run_large_msdf_case(graphics: GraphicsExpectation) {
     let _guard = REAL_GUI_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    // 直接进入组件验收页，避免其它页面遮蔽大字号场景。
-    let mut demo = DemoProcess::spawn_with_args(graphics, &["--component-qa"]);
+    // 直接进入组件测试页，避免其它页面遮蔽大字号场景。
+    // 大字号字形测试通过专用组件测试页面启动。
+    let mut demo = DemoProcess::spawn_with_args(graphics, &["--test-components"]);
     // 等待 demo 写出 agent discovery descriptor。
     let descriptor = demo.wait_for_descriptor();
     // 读取 agent pipe endpoint。
@@ -65,7 +66,7 @@ fn run_large_msdf_case(graphics: GraphicsExpectation) {
     assert_success(&listed, "msdf-visual-list");
     // 读取唯一 demo 窗口。
     let windows = listed["windows"].as_array().expect("listed windows");
-    // 组件验收场景不应偷偷创建额外窗口。
+    // 组件测试场景不应偷偷创建额外窗口。
     assert_eq!(windows.len(), 1);
     // 读取窗口身份。
     let window_id = windows[0]["window_id"].as_u64().expect("window id");
@@ -83,7 +84,7 @@ fn run_large_msdf_case(graphics: GraphicsExpectation) {
     // 逐页前进，直到定位显式的大字号旋转 Watermark 场景。
     let mut watermark_found = false;
     for index in 0..COMPONENT_VISUAL_CASE_COUNT {
-        // 获取当前组件验收页的语义快照。
+        // 获取当前组件测试页的语义快照。
         let snapshot_response = exchange(
             &mut connection,
             json!({

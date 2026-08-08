@@ -1,4 +1,4 @@
-//! 逐组件视觉验收页：一项库存对应一个隔离场景。
+//! 逐组件视觉测试页：一项清单对应一个隔离场景。
 
 mod display_feedback;
 mod general_layout;
@@ -43,7 +43,7 @@ fn build_case(case: &ComponentVisualCase, tk: &DesignTokens) -> ViewNode {
         .or_else(|| display_feedback::build(case.id, tk))
         .or_else(|| navigation_other::build(case.id, tk))
         .unwrap_or_else(|| {
-            embed(Alert::new(format!("组件验收场景缺失：{}", case.name)).type_(StatusLevel::Error))
+            embed(Alert::new(format!("组件测试场景缺失：{}", case.name)).type_(StatusLevel::Error))
         })
 }
 

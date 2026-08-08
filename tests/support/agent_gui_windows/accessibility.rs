@@ -1,11 +1,8 @@
-//! S4-03 accessibility evidence collector.
+//! 无障碍真窗集成测试。
 //!
 //! Walks every component QA case in a real window and persists the semantic
 //! evidence fields (role / name / state / value / actions / focus / keyboard)
-//! of the case target node as one JSON file per component. The per-component
-//! captures are later assembled into the 110-row accessibility manifest by
-//! `scripts/build_accessibility_manifest.py` (see
-//! `docs/进度/无障碍证据.md` for the schema).
+//! of the case target node as one JSON file per component for test assertions.
 
 use super::*;
 use std::path::Path;
@@ -163,7 +160,8 @@ fn real_demo_captures_component_semantic_evidence() {
         }
     }
 
-    let mut demo = DemoProcess::spawn_with_args(DEFAULT_D3D11_GRAPHICS, &["--component-qa"]);
+    // 无障碍组件测试通过专用测试页面启动。
+    let mut demo = DemoProcess::spawn_with_args(DEFAULT_D3D11_GRAPHICS, &["--test-components"]);
     let descriptor = demo.wait_for_descriptor();
     let endpoint = descriptor["endpoint"]
         .as_str()

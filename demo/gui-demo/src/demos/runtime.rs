@@ -15,9 +15,10 @@ const CHILD_SYSTEM_THEME_STATUS_ID: &str = "theme-window-system-theme-follow-sta
 const CHILD_WINDOW_CLOSE_ID: &str = "theme-window-close";
 const RUNTIME_SYSTEM_THEME_STATUS_ID: &str = "runtime-system-theme-follow-status";
 const GRAPHICS_RECOVERY_INJECT_ID: &str = "runtime-inject-device-lost";
-// 图形恢复页的 surface-lost lower injection 入口。
+// 图形恢复测试页的 surface-lost lower injection 入口。
 const GRAPHICS_RECOVERY_SURFACE_INJECT_ID: &str = "runtime-inject-surface-lost";
-const GRAPHICS_RECOVERY_VERIFY_ID: &str = "runtime-verify-recovered-interaction";
+// 图形恢复测试页的恢复后交互断言入口。
+const GRAPHICS_RECOVERY_ASSERT_ID: &str = "runtime-assert-recovered-interaction";
 const GRAPHICS_RECOVERY_STATUS_ID: &str = "runtime-graphics-recovery-status";
 
 fn theme_state(control: crate::demos::context::ThemeControl, automation_id: &str) -> ViewNode {
@@ -158,9 +159,10 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
         .filter(|control| control.enabled())
         .map(|control| {
             let inject_control = control.clone();
-            // surface 注入与 device 注入共享同一恢复状态和验证按钮。
+            // surface 注入与 device 注入共享同一恢复状态和断言按钮。
             let surface_inject_control = control.clone();
-            let verify_control = control.clone();
+            // 恢复后交互断言复用同一测试控制状态。
+            let assert_control = control.clone();
             column_fit([
                 control
                     .status()
@@ -180,10 +182,10 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
                         .on_click_fn(move || surface_inject_control.inject_surface_lost())
                         .automation_id(GRAPHICS_RECOVERY_SURFACE_INJECT_ID)
                         .build(),
-                    button("验证恢复后交互")
-                        .disabled(!control.can_verify())
-                        .on_click_fn(move || verify_control.verify_recovered_interaction())
-                        .automation_id(GRAPHICS_RECOVERY_VERIFY_ID)
+                    button("断言恢复后交互")
+                        .disabled(!control.can_assert())
+                        .on_click_fn(move || assert_control.assert_recovered_interaction())
+                        .automation_id(GRAPHICS_RECOVERY_ASSERT_ID)
                         .build(),
                 ])
                 .gap(8.0),
@@ -229,7 +231,7 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
         .gap(12.0),
     );
     let page = match graphics_recovery_block {
-        Some(block) => page.block("图形故障 / 恢复验收", block),
+        Some(block) => page.block("图形故障 / 恢复测试", block),
         None => page,
     };
     page

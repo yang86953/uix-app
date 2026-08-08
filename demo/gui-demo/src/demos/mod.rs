@@ -1,6 +1,8 @@
 //! 组件库分类页面 — 对照 `src/ui/widgets/` 与 Gallery 覆盖矩阵。
 
 pub mod charts;
+// 组件隔离页只供 test-harness 自动测试编译。
+#[cfg(feature = "test-harness")]
 pub mod component_qa;
 pub mod context;
 pub mod data;
@@ -18,6 +20,8 @@ pub mod runtime;
 use uix::prelude::*;
 
 pub use charts::page_charts;
+// 组件隔离页只向 test-harness 暴露构建函数。
+#[cfg(feature = "test-harness")]
 pub use component_qa::page_component_qa;
 pub use context::DemoCtx;
 pub use data::page_data;
@@ -33,9 +37,12 @@ pub use other::page_other;
 pub use runtime::page_runtime;
 
 use crate::common::page::{
-    PAGE_APP, PAGE_CHARTS, PAGE_COMPONENT_QA, PAGE_DATA, PAGE_FEEDBACK, PAGE_FRAMEWORK,
-    PAGE_GALLERY, PAGE_GENERAL, PAGE_HOME, PAGE_INPUT, PAGE_LAYOUT, PAGE_NAV, PAGE_OTHER,
+    PAGE_APP, PAGE_CHARTS, PAGE_DATA, PAGE_FEEDBACK, PAGE_FRAMEWORK, PAGE_GALLERY, PAGE_GENERAL,
+    PAGE_HOME, PAGE_INPUT, PAGE_LAYOUT, PAGE_NAV, PAGE_OTHER,
 };
+// 组件测试页面索引只随 test-harness 路由进入编译。
+#[cfg(feature = "test-harness")]
+use crate::common::page::PAGE_COMPONENT_QA;
 
 /// 按侧边栏索引构建对应分类页。
 pub fn build_page(page_index: usize, ctx: &DemoCtx<'_>) -> ViewNode {
@@ -52,6 +59,8 @@ pub fn build_page(page_index: usize, ctx: &DemoCtx<'_>) -> ViewNode {
         PAGE_OTHER => page_other(ctx),
         PAGE_FRAMEWORK => page_framework(ctx),
         PAGE_GALLERY => page_gallery(ctx),
+        // 组件隔离页只在 test-harness 构建中参与页面路由。
+        #[cfg(feature = "test-harness")]
         PAGE_COMPONENT_QA => page_component_qa(ctx),
         _ => page_home(ctx),
     }

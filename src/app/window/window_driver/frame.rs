@@ -26,13 +26,11 @@ impl WindowDriver {
             now,
             had_events,
             had_layout_event,
-            input_us,
             next_external_deadline,
             on_runtime_tasks,
             on_frame,
         } = context;
 
-        let frame_t0 = Instant::now();
         self.started_at.get_or_insert(now);
         self.publish_agent_window_availability(semantic_state, platform_window);
 
@@ -40,7 +38,6 @@ impl WindowDriver {
         self.sync_app_timers(active_work, app_timers);
         active_work.drain_due_into(now, &mut self.due_work_scratch);
         let due_work = self.due_work_scratch.as_slice();
-        let due_active_work_count = due_work.len();
         let had_registered_work = !due_work.is_empty();
         if due_work.contains(&ActiveWorkKind::GraphicsMaintenance) {
             engine.release_idle_resources(now);
@@ -266,9 +263,7 @@ impl WindowDriver {
         }
 
         let mut reconcile_ran = false;
-        let mut phase_reconcile_us = 0;
         if *reconcile_pending {
-            let reconcile_t0 = Instant::now();
             let root = pending_root
                 .take()
                 .or_else(|| view_factory.and_then(ViewFactorySlot::build));
@@ -277,7 +272,6 @@ impl WindowDriver {
                 reconcile_ran = true;
             }
             *reconcile_pending = false;
-            phase_reconcile_us = reconcile_t0.elapsed().as_micros();
         }
         if reconcile_ran {
             sync_animation_registrations(active_work, tree, &[]);
@@ -308,16 +302,12 @@ impl WindowDriver {
         let needs_layout =
             had_layout_event || surface_corrected || !self.rendered_first || has_layout;
 
-        let mut layout_calls_this_frame = 0u32;
         let mut laid_out = false;
-        let mut phase_layout_us = 0;
         if needs_layout {
-            let layout_t0 = Instant::now();
             let before_version = tree.tree_version();
             tree.layout();
             record_layout(metrics);
             laid_out = true;
-            layout_calls_this_frame += 1;
 
             sync_root_frame_to_engine(tree, engine);
             if let Some(platform) = platform.as_deref_mut() {
@@ -328,21 +318,16 @@ impl WindowDriver {
             if tree.tree_version() != before_version {
                 tree.layout();
                 record_layout(metrics);
-                layout_calls_this_frame += 1;
                 tree.mark_full_frame_dirty();
             }
-            phase_layout_us = layout_t0.elapsed().as_micros();
         }
 
         let need_render = !self.rendered_first || tree.has_render_work();
         if !self.rendered_first && need_render {
             tree.mark_full_frame_dirty();
             if !laid_out {
-                let layout_t0 = Instant::now();
                 tree.layout();
                 record_layout(metrics);
-                layout_calls_this_frame += 1;
-                phase_layout_us += layout_t0.elapsed().as_micros();
             }
         }
 
@@ -360,8 +345,6 @@ impl WindowDriver {
 
         let invalidation_revision_before_render = tree.invalidation_revision();
         let dirty_region = tree.dirty_region();
-        let dirty_full = dirty_region.full_frame;
-        let paint_t0 = Instant::now();
         // 记录 GPU 首帧前已经成功显示的窗口，避免成功后重复调用 show。
         let mut pre_present_shown = false;
         let (outcome, outcome_source) = if !need_render {
@@ -403,8 +386,6 @@ impl WindowDriver {
             );
             (frame_out.outcome, frame_out.inv_source)
         };
-        let mut phase_paint_us = paint_t0.elapsed().as_micros();
-
         if let Some(platform) = platform {
             let window_id = platform_window.window_id();
             let native_window = platform_window.native_handle().native_window();
@@ -418,7 +399,6 @@ impl WindowDriver {
             );
         }
 
-        let mut phase_present_us = 0u128;
         let mut frame_committed = false;
         let mut frame_failure = None;
         // begin_frame 可完成 GPU 到 Software 的恢复切换，提交分支须使用切换后的能力。
@@ -444,7 +424,6 @@ impl WindowDriver {
                     frame_failure = Some(protocol_failure(message));
                     self.rendered_first = false;
                 } else {
-                    let present_t0 = Instant::now();
                     let dpr = engine.device_pixel_ratio();
                     let canvas = engine.canvas_2d();
                     let width = canvas.width();
@@ -487,7 +466,6 @@ impl WindowDriver {
                             self.rendered_first = false;
                         }
                     }
-                    phase_present_us = present_t0.elapsed().as_micros();
                 }
             }
             RenderOutcome::Idle => {
@@ -536,46 +514,6 @@ impl WindowDriver {
             } else {
                 self.frame_scheduler.frame_failed(failure, frame_time);
             }
-        }
-
-        let present_probe = crate::core::perf_probe::take_present();
-        let paint_probe = crate::core::perf_probe::take_paint();
-        if present_probe.present_us > 0 || present_probe.skipped == 1 {
-            phase_present_us = present_probe.present_us;
-            phase_paint_us = phase_paint_us.saturating_sub(present_probe.present_us);
-        }
-
-        let log_frame = frame_committed
-            && (had_events
-                || reconcile_ran
-                || layout_calls_this_frame > 0
-                || crate::core::perf_probe::perf_probe_enabled());
-        if log_frame {
-            let monotonic_us = crate::core::perf_probe::process_monotonic_us();
-            let window_dpi = native_window_dpi(platform_window);
-            log_frame_metrics(
-                tree,
-                self.presented_sequence,
-                platform_window.window_id().raw(),
-                native_width,
-                native_height,
-                window_dpi,
-                monotonic_us,
-                active_work.len(),
-                due_active_work_count,
-                frame_t0.elapsed().as_micros(),
-                input_us,
-                phase_reconcile_us,
-                phase_layout_us,
-                phase_paint_us,
-                phase_present_us,
-                had_events,
-                reconcile_ran,
-                layout_calls_this_frame,
-                dirty_full,
-                paint_probe,
-                present_probe,
-            );
         }
 
         if frame_committed && self.deferred_show {

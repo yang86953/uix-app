@@ -20,7 +20,7 @@
 //! | [`widgets`] | 内置组件库与声明式组合子（combinators） | component、view、reactive、event、animation、layout、theme、overlay、accessibility |
 //! | [`form`] | 类型化表单模型与表单组件 | widgets、component、view、reactive、event |
 //!
-//! 兄弟隔离审计（SMC-04，rg 证据）：reactive / layout / overlay 对任何兄弟
+//! 兄弟隔离约束（SMC-04）：reactive / layout / overlay 对任何兄弟
 //! Module 引用为 0；event / animation / theme / accessibility 只消费依赖基座
 //! （reactive / component / layout）；component 不引用 view / widgets / form /
 //! virtualization（双向环已拆：build_view_children 归边界端口、Provider 组件归

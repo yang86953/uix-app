@@ -4,7 +4,6 @@ version = "0.0.1"
 edition = "2021"
 publish = false
 license-file = "LICENSE"
-exclude = ["test-reports/**"]
 
 [profile.dev]
 debug = "line-tables-only"

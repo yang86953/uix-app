@@ -9,7 +9,7 @@ UIX（/ˈjuːɪks/）是一个 Rust 原生 UI 框架。
 - 当前版本为 `0.0.1`，处于开发中，尚未发布。
 - Windows x64 是当前优先交付平台；其他平台与硬件的完成度以进度文档为准。
 - 版本与交付物口径见[首发状态](docs/进度/首发状态.md)，近期变化见[变更记录](CHANGELOG.md)。
-- 交付任务、负责人、阻塞与验收证据以 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 为准，仓库内进度页仅作稳定路由。
+- 交付任务、负责人、阻塞与测试结果以 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 为准，仓库内进度页仅作稳定路由。
 
 ## 快速开始
 
@@ -34,7 +34,7 @@ cargo run --release --manifest-path demo/Cargo.toml --bin uix-demo
 | [产品](docs/产品.md) | 查看定位、能力、边界与交付策略 |
 | [使用](docs/使用.md) | 查找公开 API、任务用法和示例 |
 | [架构](docs/架构.md) | 查看系统边界、依赖、不变量与设计映射 |
-| [当前进度](docs/进度.md) | 查看交付总览、活跃差距和执行证据 |
+| [当前进度](docs/进度.md) | 查看交付总览、活跃差距和测试结果 |
 | [首发状态](docs/进度/首发状态.md) | 查看版本、平台、许可与交付物范围 |
 | [变更记录](CHANGELOG.md) | 查看用户可观察的版本变化 |
 
@@ -58,11 +58,11 @@ cargo run --release --manifest-path demo/Cargo.toml --bin uix-demo
 | 路径 | 内容 |
 |---|---|
 | `src/` | 框架实现与公开 API |
-| `demo/` | 多项目演示工作区：`gui-demo`（`uix-demo` 多页应用与组件验收入口）、`cli-demo`（CLI 功能域演示） |
+| `demo/` | 多项目演示工作区：`gui-demo`（`uix-demo` 多页应用与组件测试入口）、`cli-demo`（CLI 功能域演示） |
 | `uix-derive/` | UIX 派生宏 |
 | `tests/` | 契约、集成与真窗测试入口 |
-| `scripts/` | 文档、证据、性能与内部打包工具 |
+| `scripts/` | 内部打包工具 |
 | `docs/` | 产品、使用、架构、进度文档 |
 | `assets/` | 编译期与 Demo 运行时资源 |
 
-文档改动可运行 `python scripts/check_docs_links.py` 检查结构、仓库内链接与锚点，并运行 `python tests/test_check_docs_links.py -q` 验证门禁契约。
+文档改动运行 `python tests/test_check_docs_links.py -q`。

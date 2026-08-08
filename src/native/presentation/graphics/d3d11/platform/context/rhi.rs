@@ -30,7 +30,7 @@ impl GraphicsSurface for super::D3d11Context {
         // 测试注入在 acquire 边界返回 surface lost，保证不写入失效目标。
         #[cfg(feature = "test-harness")]
         if std::mem::take(&mut self.rhi_surface_lost_for_test) {
-            // 只在 test-harness 记录 lower boundary，便于真实窗口验收定位。
+            // 只在 test-harness 记录 lower boundary，便于真实窗口测试定位。
             tracing::warn!("D3d11 RHI test surface lost");
             return Err(Error::new(
                 Errc::GraphicsSurfaceLost,

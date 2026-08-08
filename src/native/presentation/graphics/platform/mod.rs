@@ -26,15 +26,3 @@ pub(crate) fn native_client_logical_extent(platform_window: &dyn PlatformWindow)
     (cached_width, cached_height)
 }
 
-/// Returns the native window DPI without exposing a platform backend above the
-/// native boundary. Platforms without a window DPI API use the logical base.
-pub(crate) fn native_window_dpi(platform_window: &dyn PlatformWindow) -> u32 {
-    #[cfg(windows)]
-    {
-        let hwnd = platform_window.native_handle().native_window();
-        if !hwnd.is_null() {
-            return crate::native::backends::windows::dpi::dpi_for_window(hwnd);
-        }
-    }
-    96
-}

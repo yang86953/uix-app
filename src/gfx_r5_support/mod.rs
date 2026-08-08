@@ -3,7 +3,7 @@
 //!
 //! This module deliberately contains no test entry points. It keeps the
 //! native resource boundary inside the library while the test names,
-//! assertions, and evidence output remain integration-test code.
+//! assertions and observations remain integration-test code.
 
 use crate::core::{Errc, Error};
 use crate::draw::backend::cpu::noop_canvas_2d::NoopCanvas2D;

@@ -8,7 +8,7 @@
 //! - report draft construction, bounded storage, and tracing emission are
 //!   narrow Components selected and owned by the reporting Module.
 //!
-//! # 私有 Module 边界 deny 证据（compile-fail）
+//! # 私有 Module 边界 compile-fail 测试
 //!
 //! `reporting` / `recovery` 是 Diagnostics System 的私有 Module，`pending` /
 //! `report` / `config` 是 System 私有实现文件；它们对外一律不可达。以下契约

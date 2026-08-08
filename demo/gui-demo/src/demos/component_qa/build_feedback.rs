@@ -1,4 +1,4 @@
-//! 展示与反馈类验收场景：alert/drawer/message/modal/notification/popconfirm/popover/spin/tooltip。
+//! 展示与反馈类测试场景：alert/drawer/message/modal/notification/popconfirm/popover/spin/tooltip。
 //! 由 display_feedback.rs 以 `#[path]` 引入，build 在父模块按 id 分发。
 
 use uix::prelude::*;
@@ -60,7 +60,7 @@ pub(super) fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 (StatusLevel::Success, "视觉基线已通过"),
                 (
                     StatusLevel::Info,
-                    "正在归档超长中英文 mixed Message evidence，关闭槽前必须省略",
+                    "正在记录超长中英文 mixed Message 测试状态，关闭槽前必须省略",
                 ),
                 (StatusLevel::Warning, "一项需要复核"),
                 (StatusLevel::Error, "一项存在缺陷"),
@@ -92,16 +92,16 @@ pub(super) fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             for (type_, title, description) in [
                 (
                     StatusLevel::Success,
-                    "验收通过",
+                    "测试通过",
                     "Button 已符合全部适用状态",
                 ),
-                (StatusLevel::Info, "证据归档", "Light / Dark / Compact"),
+                (StatusLevel::Info, "测试状态", "Light / Dark / Compact"),
                 (
                     StatusLevel::Warning,
                     "需要复核超长中英文 mixed Notification title",
                     "检查说明文字 description 在关闭槽前安全省略",
                 ),
-                (StatusLevel::Error, "验收失败", "存在视觉阻断问题"),
+                (StatusLevel::Error, "测试失败", "存在视觉阻断问题"),
             ] {
                 notification.add(NotificationItem {
                     type_,
@@ -115,12 +115,12 @@ pub(super) fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
         }
         "popconfirm" => qa_target(
             Popconfirm::new()
-                .title("确认删除这条超长中英文 mixed visual baseline evidence？")
+                .title("确认删除这条超长中英文 mixed visual baseline result？")
                 .confirm_text("确认并永久删除")
                 .cancel_text("取消并保留全部内容"),
         ),
         "popover" => qa_target(
-            Popover::new("逐组件证据与状态矩阵 mixed popover content must stay inside the surface")
+            Popover::new("逐组件测试与状态矩阵 mixed popover content must stay inside the surface")
                 .title("质量详情与超长中英文 mixed title")
                 .placement(PopoverPlacement::Top),
         ),
@@ -237,7 +237,6 @@ pub(super) fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             .flex_grow(1.0)])
             .height(52.0),
         ),
-        _ => return None,
         _ => return None,
     };
     Some(view)

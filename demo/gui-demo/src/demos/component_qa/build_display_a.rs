@@ -1,9 +1,9 @@
-//! 展示与反馈类验收场景：avatar/badge/calendar/card/carousel/collapse。
+//! 展示与反馈类测试场景：avatar/badge/calendar/card/carousel/collapse。
 //! 由 display_feedback.rs 以 `#[path]` 引入，build 在父模块按 id 分发。
 
 use uix::prelude::*;
 
-use super::super::{qa_row, qa_target, qa_target_view, qa_variant};
+use super::super::{qa_row, qa_target, qa_variant};
 // 复用主文件的 frame 辅助与样例数据。
 use super::{avatar_frame, calendar_frame, card_frame, carousel_compact_slide, carousel_frame, carousel_slide, collapse_frame};
 

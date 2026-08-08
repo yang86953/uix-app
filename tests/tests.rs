@@ -1,4 +1,5 @@
-#![cfg(all(windows, feature = "vulkan"))]
+// Vulkan 真机测试仅在显式启用 test-harness 时编译。
+#![cfg(all(windows, feature = "vulkan", feature = "test-harness"))]
 
 mod tests {
     fn expected_vendor() -> (&'static str, u32) {

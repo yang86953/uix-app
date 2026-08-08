@@ -27,17 +27,11 @@ nul
 # Python cache
 __pycache__/
 
-# Test reports
-test-reports/
-
 # Rust documentation build
 # target/ already covers target/doc/
 
 # Reasonix 扩展机器状态（桌面会话主题元数据，不入库）
 .reasonix/
-
-# 独立构建目录（target-* 变体，验证用）
-target-*/
 
 # 图形调试产物
 *.png

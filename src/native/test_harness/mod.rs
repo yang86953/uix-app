@@ -61,8 +61,6 @@ use crate::core::Error;
 use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
 use crate::native::capabilities::*;
 use crate::native::platform::*;
-use crate::native::present::*;
-use crate::native::presentation::*;
 use crate::native::windowing::event::EventBus;
 use crate::native::windowing::event::EventLoopWaker;
 use crate::native::windowing::event::UiEvent;

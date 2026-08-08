@@ -4,7 +4,8 @@ const RECOVERY_STATUS_ID: &str = "runtime-graphics-recovery-status";
 const INJECT_DEVICE_LOST_ID: &str = "runtime-inject-device-lost";
 // SurfaceLost 使用独立语义入口，验证 RHI acquire 的 surface 边界。
 const INJECT_SURFACE_LOST_ID: &str = "runtime-inject-surface-lost";
-const VERIFY_RECOVERED_ID: &str = "runtime-verify-recovered-interaction";
+// 恢复后交互断言按钮的稳定自动化标识。
+const ASSERT_RECOVERED_ID: &str = "runtime-assert-recovered-interaction";
 
 #[test]
 #[ignore = "requires an interactive Windows desktop and the test-harness feature"]
@@ -58,7 +59,7 @@ fn real_opengles_demo_recovers_from_injected_surface_loss_and_accepts_followup_i
     );
 }
 
-// 运行一条指定 lower fault boundary 的真实窗口恢复验收。
+// 运行一条指定 lower fault boundary 的真实窗口恢复测试。
 fn run_graphics_recovery_case(
     graphics: GraphicsExpectation,
     inject_id: &str,
@@ -68,7 +69,8 @@ fn run_graphics_recovery_case(
     let _guard = REAL_GUI_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut demo = DemoProcess::spawn_with_args(graphics, &["--graphics-recovery-acceptance"]);
+    // 图形恢复测试通过故障注入测试入口启动。
+    let mut demo = DemoProcess::spawn_with_args(graphics, &["--test-graphics-recovery"]);
     let descriptor = demo.wait_for_descriptor();
     let endpoint = descriptor["endpoint"]
         .as_str()
@@ -133,10 +135,10 @@ fn run_graphics_recovery_case(
     let before = snapshot(&mut connection, "graphics-recovery-before", window_id);
     assert_eq!(
         node_by_automation_id(&before, RECOVERY_STATUS_ID)["name"],
-        "图形恢复验收：等待注入"
+        "图形恢复测试：等待注入"
     );
     assert_eq!(
-        node_by_automation_id(&before, VERIFY_RECOVERED_ID)["state"]["disabled"],
+        node_by_automation_id(&before, ASSERT_RECOVERED_ID)["state"]["disabled"],
         true
     );
 
@@ -156,10 +158,10 @@ fn run_graphics_recovery_case(
     let recovered = snapshot(&mut connection, "graphics-recovery-recovered", window_id);
     assert_eq!(
         node_by_automation_id(&recovered, RECOVERY_STATUS_ID)["name"],
-        "图形恢复验收：已注入，等待恢复后交互"
+        "图形恢复测试：已注入，等待恢复后交互"
     );
     assert_eq!(
-        node_by_automation_id(&recovered, VERIFY_RECOVERED_ID)["state"]["disabled"],
+        node_by_automation_id(&recovered, ASSERT_RECOVERED_ID)["state"]["disabled"],
         false
     );
 
@@ -168,7 +170,7 @@ fn run_graphics_recovery_case(
         &mut connection,
         window_id,
         generation,
-        VERIFY_RECOVERED_ID,
+        ASSERT_RECOVERED_ID,
     );
     wait_for_presented(
         &mut connection,
@@ -182,7 +184,7 @@ fn run_graphics_recovery_case(
     let after = snapshot(&mut connection, "graphics-recovery-after", window_id);
     assert_eq!(
         node_by_automation_id(&after, RECOVERY_STATUS_ID)["name"],
-        "图形恢复验收：恢复后交互成功"
+        "图形恢复测试：恢复后交互成功"
     );
 
     // 第一次恢复成功后继续注入同一类故障，验证重建后的 RHI owner 仍可再次进入 lower boundary。
@@ -209,7 +211,7 @@ fn run_graphics_recovery_case(
     // 第二轮仍应处于待验证状态，而不是沿用上一轮的成功状态。
     assert_eq!(
         node_by_automation_id(&second_recovered, RECOVERY_STATUS_ID)["name"],
-        "图形恢复验收：已注入，等待恢复后交互"
+        "图形恢复测试：已注入，等待恢复后交互"
     );
     // 执行第二轮恢复后的用户动作，并等待它实际提交。
     let second_verified = invoke_until_presentable(
@@ -217,7 +219,7 @@ fn run_graphics_recovery_case(
         &mut connection,
         window_id,
         generation,
-        VERIFY_RECOVERED_ID,
+        ASSERT_RECOVERED_ID,
     );
     // 第二轮 present revision 必须继续前进。
     wait_for_presented(
@@ -234,7 +236,7 @@ fn run_graphics_recovery_case(
     // 第二次 teardown/rebuild 后的交互不能退回 disabled 或错误状态。
     assert_eq!(
         node_by_automation_id(&second_after, RECOVERY_STATUS_ID)["name"],
-        "图形恢复验收：恢复后交互成功"
+        "图形恢复测试：恢复后交互成功"
     );
 
     // 两轮同类故障后切换另一类 lower fault，验证重建状态不会绑定单一故障类型。
@@ -289,7 +291,7 @@ fn run_graphics_recovery_case(
     // 交错故障不得沿用上一轮的成功状态。
     assert_eq!(
         node_by_automation_id(&interleaved_recovered, RECOVERY_STATUS_ID)["name"],
-        "图形恢复验收：已注入，等待恢复后交互"
+        "图形恢复测试：已注入，等待恢复后交互"
     );
     // 执行交错故障后的 follow-up interaction。
     let interleaved_verified = invoke_until_presentable(
@@ -297,7 +299,7 @@ fn run_graphics_recovery_case(
         &mut connection,
         window_id,
         generation,
-        VERIFY_RECOVERED_ID,
+        ASSERT_RECOVERED_ID,
     );
     // 交错故障后的交互必须真实完成 present。
     wait_for_presented(
@@ -318,7 +320,7 @@ fn run_graphics_recovery_case(
     // 交错 teardown/rebuild 后的 owner 仍必须接受后续交互。
     assert_eq!(
         node_by_automation_id(&interleaved_after, RECOVERY_STATUS_ID)["name"],
-        "图形恢复验收：恢复后交互成功"
+        "图形恢复测试：恢复后交互成功"
     );
 
     drop(connection);

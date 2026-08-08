@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Contract tests for the repository documentation link gate."""
+"""仓库文档链接测试。"""
 from __future__ import annotations
 
 import importlib.util
@@ -10,7 +10,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "check_docs_links.py"
+# 文档检查实现只作为测试辅助模块存在。
+SCRIPT = ROOT / "tests" / "support" / "check_docs_links.py"
 SPEC = importlib.util.spec_from_file_location("check_docs_links", SCRIPT)
 if SPEC is None or SPEC.loader is None:  # pragma: no cover - import guard
     raise RuntimeError(f"cannot load {SCRIPT}")

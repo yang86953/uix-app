@@ -161,9 +161,9 @@ pub const COVERAGE: &[(&str, &str, &str, bool)] = &[
         "--cli",
         true,
     ),
-    // ── 未实现 / 未单独展示 / 待验证（不得混为 Backlog） ──
+    // ── 未实现 / 未单独展示 / 待对应平台测试（不得混为 Backlog） ──
     ("Backlog", "屏幕阅读器平台桥 (#99)", "—", false),
-    ("待真机验证", "macOS AppKit + Metal CpuUpload", "—", false),
+    ("待对应平台测试", "macOS AppKit + Metal CpuUpload", "—", false),
     (
         "已实现 / 未单独展示",
         "semantic_handler! fingerprint (#159)",

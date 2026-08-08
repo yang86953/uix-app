@@ -811,7 +811,7 @@ impl GpuBackend {
         let Some(context) = gpu_ctx.rhi_context() else {
             return Ok(false);
         };
-        // 记录 FrameEncoder 已经实际进入通用 RHI 的证据，区分旧路径回退。
+        // 记录 FrameEncoder 已经实际进入通用 RHI 的调试信息，区分旧路径回退。
         tracing::debug!(
             "Graphics RHI FrameEncoder submit: target={target:?}, surface_retained={}, operations={}, present={present}",
             target_is_surface,

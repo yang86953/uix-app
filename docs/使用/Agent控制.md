@@ -46,7 +46,7 @@ demo 启用方式：`cargo run --manifest-path demo/Cargo.toml --features agent-
 ```rust uix-compile=agent-automation-id
 use uix::prelude::*;
 
-// Agent 只读语义树 + 执行稳定动作，作为验收与自动化通道
+// Agent 只读语义树并执行稳定动作，作为自动化测试通道
 let app = App::new()
     .enable_agent_control()
     .root(|| column((
@@ -59,7 +59,7 @@ let app = App::new()
 //   组件卸载/窗口关闭后，旧动作返回可识别失败
 ```
 
-- Agent 通道用于自动化、验收与辅助调试；业务交互不走 Agent。
+- Agent 通道用于自动化测试与辅助调试；业务交互不走 Agent。
 - 所有 UI 元素声明 `automation_id` 获得稳定身份，供语义树定位。
 - 敏感值（密码、令牌）默认不进快照、日志或错误回包。
 

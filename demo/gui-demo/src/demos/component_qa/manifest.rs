@@ -1,4 +1,4 @@
-//! 组件级视觉验收库存；每个条目必须有独立场景和证据。
+//! 组件级视觉测试清单；每个条目必须有独立测试场景。
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CaseKind {
@@ -76,10 +76,10 @@ pub const CASES_CORE: &[ComponentVisualCase] = manifest_cases_core!();
 pub const CASES_DISPLAY: &[ComponentVisualCase] = manifest_cases_display!();
 pub const CASES_EXTRA: &[ComponentVisualCase] = manifest_cases_extra!();
 
-// 总库存按分组展平为二维常量，页面与证据按线性索引访问。
+// 总清单按分组展平为二维常量，页面与测试结果按线性索引访问。
 pub const COMPONENT_VISUAL_CASES: &[&[ComponentVisualCase]] =
     &[CASES_CORE, CASES_DISPLAY, CASES_EXTRA];
 
-/// 组件 QA 的唯一冻结分母；页面、无窗契约与真窗证据都从 manifest 推导。
+/// 组件测试的唯一冻结分母；页面、无窗测试与真窗测试都从 manifest 推导。
 pub const COMPONENT_VISUAL_CASE_COUNT: usize =
     CASES_CORE.len() + CASES_DISPLAY.len() + CASES_EXTRA.len();

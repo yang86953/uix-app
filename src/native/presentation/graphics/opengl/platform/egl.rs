@@ -36,7 +36,7 @@ fn map_egl_swap_error(error: khronos_egl::Error) -> Error {
         // 其它 EGL 交换错误保留平台错误，不伪造更窄的恢复分类。
         _ => Errc::PlatformError,
     };
-    // 保留原始 EGL 枚举，便于日志和故障证据定位。
+    // 保留原始 EGL 枚举，便于日志和故障诊断定位。
     Error::new(
         code,
         format!("EglContext: eglSwapBuffers failed: {error:?}"),

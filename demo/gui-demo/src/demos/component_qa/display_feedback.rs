@@ -1,6 +1,6 @@
 use uix::prelude::*;
 
-use super::{qa_row, qa_target, qa_target_view, qa_variant, COMPONENT_VISUAL_CASE_COUNT};
+use super::COMPONENT_VISUAL_CASE_COUNT;
 
 fn inventory_count_label() -> String {
     format!("{} 个组件", COMPONENT_VISUAL_CASE_COUNT)
@@ -10,7 +10,7 @@ fn sample_tree() -> Vec<TreeNode> {
     let mut components = TreeNode::new("组件（展开后可滚动）", "components");
     for index in 0..32 {
         components = components.add(TreeNode::new(
-            &format!("组件验收项 {index:02}"),
+            &format!("组件测试项 {index:02}"),
             &format!("component-{index:02}"),
         ));
     }
@@ -287,7 +287,7 @@ fn card_frame(card: Card, width: f32, height: f32, automation_id: &'static str) 
         .align_self(AlignItems::Start)
 }
 
-// 展示与反馈类验收场景拆入独立文件，保持主文件处于行数上限内。
+// 展示与反馈类测试场景拆入独立文件，保持主文件处于行数上限内。
 #[path = "build_display_a.rs"]
 mod build_display_a;
 #[path = "build_display_b.rs"]

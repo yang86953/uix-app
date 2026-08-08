@@ -41,11 +41,10 @@ pub(crate) use support::{
     WindowFrameResult,
 };
 use support::{
-    dispatch_due_active_work, earliest_deadline, has_layout_work, log_frame_metrics,
-    native_window_dpi, next_loop_state, observe_agent_settle, protocol_failure, record_idle,
-    record_layout, record_present, report_graphics_frame_failure, report_graphics_resize_error,
-    report_window_operation_error, update_scheduled_and_discovered_animations,
-    with_platform_clipboard,
+    dispatch_due_active_work, earliest_deadline, has_layout_work, next_loop_state,
+    observe_agent_settle, protocol_failure, record_idle, record_layout, record_present,
+    report_graphics_frame_failure, report_graphics_resize_error, report_window_operation_error,
+    update_scheduled_and_discovered_animations, with_platform_clipboard,
 };
 pub(crate) struct WindowFrameContext<'a, 'platform> {
     pub(crate) tree: &'a mut WidgetTree,
@@ -71,7 +70,6 @@ pub(crate) struct WindowFrameContext<'a, 'platform> {
     pub(crate) now: Instant,
     pub(crate) had_events: bool,
     pub(crate) had_layout_event: bool,
-    pub(crate) input_us: u128,
     pub(crate) next_external_deadline: Option<Instant>,
     pub(crate) on_runtime_tasks: &'a mut dyn FnMut(&mut dyn Platform, &mut WidgetTree),
     pub(crate) on_frame: &'a dyn Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn Platform),

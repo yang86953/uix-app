@@ -1,27 +1,28 @@
-//! 展示与反馈类验收场景：descriptions/empty/image/list/result/selectable-list/skeleton/table/tag/timeline/tree/rich-text。
+//! 展示与反馈类测试场景：descriptions/empty/image/list/result/selectable-list/skeleton/table/tag/timeline/tree/rich-text。
 //! 由 display_feedback.rs 以 `#[path]` 引入，build 在父模块按 id 分发。
 
 use uix::prelude::*;
 
-use super::super::{qa_row, qa_target, qa_target_view, qa_variant};
+use super::super::{qa_row, qa_target, qa_variant};
 // 复用主文件的 frame 辅助与样例数据。
 use super::{descriptions_frame, empty_frame, image_frame, inventory_count_label, list_frame, result_frame, rich_text_frame, sample_tree, selectable_list_frame, skeleton_frame, tag_frame, timeline_frame, tree_frame};
 
-pub(super) fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
+// 当前分组不依赖主题令牌，但保留统一构建签名。
+pub(super) fn build(id: &str, _tk: &DesignTokens) -> Option<ViewNode> {
     let view = match id {
         "descriptions" => qa_row([
             qa_variant(
                 "Bordered / target",
                 descriptions_frame(
                     Descriptions::new()
-                        .title("组件验收信息")
+                        .title("组件测试信息")
                         .column(2)
                         .bordered(true)
                         .add(DescriptionsItem::new("状态", "执行中"))
                         .add(DescriptionsItem::new("平台", "Windows 原生窗口"))
                         .add(
                             DescriptionsItem::new(
-                                "证据",
+                                "结果",
                                 "Light / Dark / Compact visual quality gate",
                             )
                             .span(2),
@@ -166,9 +167,9 @@ pub(super) fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 "Success / target",
                 result_frame(
                     ResultView::new(ResultType::Success)
-                        .title("验收通过")
+                        .title("测试通过")
                         .subtitle("所有关键检查已通过")
-                        .extra_text("查看证据"),
+                        .extra_text("查看结果"),
                     172.0,
                     190.0,
                     "component-qa-target",
@@ -197,7 +198,7 @@ pub(super) fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 result_frame(
                     ResultView::new(ResultType::Warning)
                         .title("当前发布仍有需要人工确认的质量风险")
-                        .subtitle("请检查兼容性、可访问性与回归证据后再继续。")
+                        .subtitle("请检查兼容性、可访问性与回归测试后再继续。")
                         .extra_text("查看完整质量核验报告"),
                     140.0,
                     180.0,
@@ -222,7 +223,7 @@ pub(super) fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                         ])
                         .active(1)
                         .header_button("全选")
-                        .footer("3 个验收维度"),
+                        .footer("3 个测试维度"),
                     220.0,
                     190.0,
                     "component-qa-target",
@@ -233,12 +234,12 @@ pub(super) fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 selectable_list_frame(
                     SelectableList::new()
                         .items(vec![
-                            SelectableItem::new("visual", "视觉质量与主题一致性验收").icon("eye"),
+                            SelectableItem::new("visual", "视觉质量与主题一致性测试").icon("eye"),
                             SelectableItem::new("semantic", "Semantic accessibility regression")
                                 .icon("file-text"),
                         ])
                         .header_button("选择全部质量检查项")
-                        .footer("共 2 个超长验收维度"),
+                        .footer("共 2 个超长测试维度"),
                     132.0,
                     120.0,
                     "component-qa-selectable-constrained",
