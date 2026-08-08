@@ -29,7 +29,10 @@ use crate::native::windowing::shared::window_mode::{
     NativeMaximizeTransition, NativeWindowModeState,
 };
 use crate::native::windowing::shared::window_target::SurfaceWindowTargets;
-use crate::native::windowing::shared::{unimpl, WindowOps, WindowState};
+// 直接从共享窗口模块引入 Wayland 需要的未实现操作，避免其他目标产生未使用重导出。
+use crate::native::windowing::shared::window::{unimpl, WindowOps};
+// 引入跨平台共享的窗口状态。
+use crate::native::windowing::shared::WindowState;
 use crate::native::windowing::window::{NativeFrameRequest, NativeFrameRequestPhase};
 
 use super::compat::WaylandDispatchState;
