@@ -203,31 +203,13 @@ impl Canvas2D for SharedRasterizer {
         color: Color,
         rad: Option<Radius>,
     ) {
-        let (oxs, oys) = self.renderer.offset();
-        let rect = if oxs != 0.0 || oys != 0.0 {
-            Rect::new(rect.x + oxs, rect.y + oys, rect.w, rect.h)
-        } else {
-            rect
-        };
-        let (size, clip, opacity) = (
-            self.surface.surface_size(),
-            self.renderer.clip_rect(),
-            self.renderer.opacity(),
-        );
+        // 读取目标尺寸供共享阴影入口安全寻址。
+        let (width, height) = (self.surface.width(), self.surface.height());
+        // 借用像素目标后直接进入状态完整的软件阴影路径。
         let pixels = self.surface.pixels_mut();
-        crate::draw::raster::rasterizer::shadow::draw_box_shadow(
-            pixels,
-            size.w as i32,
-            size.h as i32,
-            clip,
-            opacity,
-            rect,
-            blur,
-            ox,
-            oy,
-            color,
-            rad,
-        );
+        // 定向阴影在局部空间求值，并复用当前 transform、clip、opacity 与 blend。
+        self.renderer
+            .draw_box_shadow(pixels, width, height, rect, blur, ox, oy, color, rad);
     }
     fn draw_box_shadow_ambient(
         &mut self,
@@ -238,31 +220,13 @@ impl Canvas2D for SharedRasterizer {
         color: Color,
         rad: Option<Radius>,
     ) {
-        let (oxs, oys) = self.renderer.offset();
-        let rect = if oxs != 0.0 || oys != 0.0 {
-            Rect::new(rect.x + oxs, rect.y + oys, rect.w, rect.h)
-        } else {
-            rect
-        };
-        let (size, clip, opacity) = (
-            self.surface.surface_size(),
-            self.renderer.clip_rect(),
-            self.renderer.opacity(),
-        );
+        // 读取目标尺寸供共享环境阴影入口安全寻址。
+        let (width, height) = (self.surface.width(), self.surface.height());
+        // 借用像素目标后执行同一状态边界。
         let pixels = self.surface.pixels_mut();
-        crate::draw::raster::rasterizer::shadow::draw_box_shadow_ambient(
-            pixels,
-            size.w as i32,
-            size.h as i32,
-            clip,
-            opacity,
-            rect,
-            blur,
-            ox,
-            oy,
-            color,
-            rad,
-        );
+        // 环境阴影只改变 coverage 曲线，不复制仿射或混合实现。
+        self.renderer
+            .draw_box_shadow_ambient(pixels, width, height, rect, blur, ox, oy, color, rad);
     }
 
     fn blit_image(&mut self, src: &[u32], src_w: i32, src_rect: Rect, dst_rect: Rect) {
