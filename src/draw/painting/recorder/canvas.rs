@@ -283,10 +283,25 @@ impl FrameRecordingCanvas {
     }
 
     pub(super) fn note_scratch_bounds(&mut self, local: Rect, pad: f32) {
-        let mapped = self.scratch.map_rect(local);
+        // 先在本地空间扩展线宽、模糊或抗锯齿边界，使缩放和剪切不会截断像素。
+        let local_pad = pad.max(0.0);
+        // 构造完整覆盖本地写区的保守矩形。
+        let expanded = Rect::new(
+            // 扩展本地左边界。
+            local.x - local_pad,
+            // 扩展本地上边界。
+            local.y - local_pad,
+            // 同时扩展左右两侧。
+            local.w + local_pad * 2.0,
+            // 同时扩展上下两侧。
+            local.h + local_pad * 2.0,
+        );
+        // 完整映射扩展后的本地 AABB，保守覆盖任意仿射写区。
+        let mapped = self.scratch.map_rect(expanded);
         let Some(bounds) = surface_pack_bounds(
             mapped,
-            pad,
+            // 映射后只保留一个设备像素的抗锯齿余量。
+            1.0,
             (0.0, 0.0),
             self.scratch.current_clip(),
             self.width,
@@ -319,7 +334,7 @@ impl FrameRecordingCanvas {
         self.draw_scratch(local_bounds, pad, false, draw);
     }
 
-    /// 把已经证明可结合的 Additive 填充累积到透明 scratch，稍后以 Additive
+    /// 把已经证明可结合的 Additive 源贡献累积到透明 scratch，稍后以 Additive
     /// sampled texture 对累计目标合成。
     pub(super) fn draw_additive_cpu(
         &mut self,
@@ -341,18 +356,19 @@ impl FrameRecordingCanvas {
             // 禁止把 NaN 转换成静默透明的源贡献。
             return;
         }
-        // Additive 填充使用独立的目标相关 scratch 批次。
+        // Additive 填充与描边使用同一目标相关 scratch 批次。
         self.draw_scratch(local_bounds, pad, true, draw);
     }
 
-    /// 根据当前 blend 选择普通 CPU segment 或 Additive sampled segment。
-    pub(super) fn draw_cpu_fill(
+    /// 根据当前 blend 为只产生源贡献的软件操作选择普通 CPU segment 或
+    /// Additive sampled segment。
+    pub(super) fn draw_cpu_source(
         &mut self,
         local_bounds: Rect,
         pad: f32,
         draw: impl FnOnce(&mut SharedRasterizer),
     ) {
-        // Additive 填充必须在最终目标上执行饱和加法。
+        // Additive 源贡献必须在最终目标上执行饱和加法。
         if self.blend_mode == BlendMode::Additive {
             // 透明 scratch 只保存可结合的源贡献。
             self.draw_additive_cpu(local_bounds, pad, draw);
