@@ -602,33 +602,4 @@ impl D3d11Pipeline {
         }
         Ok(())
     }
-
-    /// Replace-blend clear quads (partial dirty clear; D3D ClearRTV is full-surface).
-    pub fn clear_rects(
-        &mut self,
-        context: &ID3D11DeviceContext,
-        viewport_w: f32,
-        viewport_h: f32,
-        rects: &[GpuSolidRect],
-    ) -> Result<()> {
-        if rects.is_empty() || viewport_w <= 0.0 || viewport_h <= 0.0 {
-            return Ok(());
-        }
-        self.bind_rect_pipeline(context, viewport_w, viewport_h, None, true);
-        for rect in rects {
-            self.draw_rect_constants(
-                context,
-                viewport_w,
-                viewport_h,
-                rect.x,
-                rect.y,
-                rect.w,
-                rect.h,
-                rect.rgba,
-                rect.radius,
-                0.0,
-            )?;
-        }
-        Ok(())
-    }
 }

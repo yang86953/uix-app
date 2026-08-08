@@ -60,11 +60,7 @@ impl DrawSurface for NativeGpuDrawSurface {
         if self.needs_gpu_clear {
             return;
         }
-        if !self.native_caps.clear_rects {
-            self.pending_clear_rects.clear();
-            self.needs_gpu_clear = true;
-            return;
-        }
+        // 局部清理由通用 FramePlan 记录并交给 retained RHI 执行。
         self.pending_clear_rects.push(GpuSolidRect {
             x: x as f32,
             y: y as f32,

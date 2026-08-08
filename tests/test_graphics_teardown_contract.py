@@ -391,6 +391,43 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # retained surface 生命周期不得再提供切回 direct swapchain 的入口。
         self.assertNotIn("abandon_rhi_surface_texture_for_legacy", retained)
 
+    # 校验 legacy clear/bind 只剩 thin RHI 所需的低层 target 恢复。
+    def test_legacy_clear_and_bind_leave_the_graphics_context_facade(self) -> None:
+        # 读取公共兼容接口与 capability profile。
+        present = read_rust_module(ROOT / "src/native/present")
+        # 读取 owner-thread 转发门面。
+        thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
+        # 读取 D3D11 兼容 trait 实现。
+        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs").read_text(encoding="utf-8")
+        # 读取 D3D12 兼容 trait 实现。
+        d3d12 = (ROOT / "src/native/presentation/graphics/d3d12/platform/context/graphics.rs").read_text(encoding="utf-8")
+        # 读取 WGL 兼容 trait 实现。
+        wgl = (ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs").read_text(encoding="utf-8")
+        # 读取 EGL 兼容 trait 实现。
+        egl = (ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs").read_text(encoding="utf-8")
+        # 逐一检查被删除的高层 clear/bind 方法。
+        for method in ("clear_render_target", "clear_rects", "bind_swapchain_target"):
+            # 公共门面不得重新声明已退出的逐 UI 方法。
+            self.assertNotIn(f"fn {method}(", present)
+            # owner-thread 门面不得重新转发已退出的方法。
+            self.assertNotIn(f"forward_result!({method}", thread_bound)
+            # 四个 adapter 的 trait wrapper 均不得复活。
+            for adapter in (d3d11, d3d12, wgl, egl):
+                # 兼容实现中不能再出现该方法声明。
+                self.assertNotIn(f"fn {method}(", adapter)
+        # capability profile 不得继续宣称已删除的完整清理入口。
+        self.assertNotIn("pub clear_target:", present)
+        # capability profile 不得继续宣称已删除的局部清理入口。
+        self.assertNotIn("pub clear_rects:", present)
+        # 读取 D3D11 thin RHI 共用的低层 target 恢复 helper。
+        d3d11_methods = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/methods.rs").read_text(encoding="utf-8")
+        # D3D11 最终 present 与 RHI acquire 仍须能恢复 swapchain RTV。
+        self.assertIn("pub(super) fn bind_swapchain_target", d3d11_methods)
+        # 读取 OpenGL thin RHI 共用的低层 framebuffer 恢复 helper。
+        opengl_pipeline = (ROOT / "src/native/presentation/graphics/opengl/raster/pipeline2.rs").read_text(encoding="utf-8")
+        # OpenGL RHI pass 完成后仍须能恢复默认 framebuffer。
+        self.assertIn("pub(crate) fn bind_swapchain_target", opengl_pipeline)
+
     def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
         # 组合读取 Vulkan context 的拆分模块，以保持顺序审计语义。
         context = read_rust_module(VULKAN_CONTEXT)

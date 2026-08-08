@@ -241,7 +241,6 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
         self.device_pixel_ratio
     }
 
-    forward_result!(clear_render_target(r: f32, g: f32, b: f32, a: f32) -> ());
     forward_result!(draw_solid_rects(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, rects: &[GpuSolidRect]) -> ());
     forward_result!(draw_stroke_rects(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, rects: &[GpuStrokeRect]) -> ());
     forward_result!(draw_glyphs(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, glyphs: &[GpuGlyphBlit]) -> ());
@@ -251,6 +250,4 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
     forward_result!(draw_solid_meshes(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, meshes: &[GpuSolidMesh]) -> ());
     forward_result!(draw_box_shadows(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, shadows: &[GpuBoxShadow]) -> ());
     forward_result!(draw_image_blits(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, blits: &[GpuImageBlit]) -> ());
-    forward_result!(clear_rects(viewport_w: f32, viewport_h: f32, rects: &[GpuSolidRect]) -> ());
-    forward_result!(bind_swapchain_target() -> ());
 }

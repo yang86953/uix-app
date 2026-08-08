@@ -218,6 +218,12 @@ impl D3d11Context {
         Ok(())
     }
 
+    // 为 thin RHI 与最终 present 保留低层 swapchain target 绑定。
+    pub(super) fn bind_swapchain_target(&mut self) -> Result<()> {
+        // 复用 owner-thread RTV 与 viewport 的统一恢复逻辑。
+        self.bind_current_draw_target()
+    }
+
     pub(super) fn present_result(&mut self) -> Result<()> {
         // 兼容 presenter 也必须消费同一 lower surface-lost 注入，避免故障
         // 因本帧没有进入 RHI acquire 而被静默跳过。
