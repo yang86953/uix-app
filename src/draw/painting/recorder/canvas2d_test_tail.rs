@@ -356,12 +356,12 @@ fn additive_shapes_record_reordered_non_uniform_radius() {
     );
 }
 
-// Additive 描边尚无 sampled soft 语义，分数平移与缩放必须继续稳定拒绝。
+// 分数平移与缩放无法进入固定 Native shape 时必须改走 Additive sampled segment。
 #[test]
-fn additive_stroke_rejects_fractional_or_scaled_transform() {
-    // 依次覆盖分数纯平移与轴对齐缩放两个描边拒绝分支。
+fn additive_stroke_fractional_or_scaled_transform_uses_sampled_segment() {
+    // 依次覆盖分数纯平移与轴对齐缩放两个描边 fallback 分支。
     for transform in [Transform::translate(0.5, 0.0), Transform::scale(2.0, 1.0)] {
-        // 为每个拒绝场景创建独立录制画布。
+        // 为每个仿射场景创建独立录制画布。
         let mut canvas = FrameRecordingCanvas::new(8, 8);
         // 开始一帧带透明 clear 的正式记录。
         if let Err(error) = canvas.begin_recording(true) {
@@ -372,7 +372,7 @@ fn additive_stroke_rejects_fractional_or_scaled_transform() {
         canvas.set_transform(transform);
         // 选择目标相关 Additive 混合。
         canvas.set_blend_mode(BlendMode::Additive);
-        // 尝试记录 otherwise 合法的一像素矩形描边。
+        // 记录 otherwise 合法的一像素矩形描边。
         canvas.stroke_rect(
             // 使用完整位于 surface 内的本地矩形。
             Rect::new(1.0, 1.0, 2.0, 2.0),
@@ -383,22 +383,26 @@ fn additive_stroke_rejects_fractional_or_scaled_transform() {
             // 直角描边排除圆角载荷干扰。
             None,
         );
-        // 完成边界必须返回稳定的 NotImplemented typed failure。
-        let error = match canvas.finish_recording() {
-            // 错误结果就是本测试需要审计的门禁事实。
-            Err(error) => error,
-            // 成功会把尚未支持的描边 transform 错误提升或采样。
-            Ok(_) => panic!("unsupported additive stroke transform must be rejected"),
+        // 完成记录并取得 sampled 命令流。
+        let encoder = match canvas.finish_recording() {
+            // 合法仿射描边应由软件路径保真处理。
+            Ok(encoder) => encoder,
+            // typed failure 表示新 fallback 没有覆盖当前变换。
+            Err(error) => panic!("additive stroke transform should finish: {error:?}"),
         };
-        // 拒绝原因必须保持在不能等价 lowering 的类型边界。
-        assert_eq!(error.code(), crate::core::Errc::NotImplemented);
-        // 失败前只能保留初始 clear，不能偷偷追加 Native 或 CPU segment。
-        assert_eq!(
-            canvas
-                .encoder
-                .as_ref()
-                .map(|encoder| encoder.commands().len()),
-            Some(1)
-        );
+        // 不可固定编码的描边只能形成 Additive PictureBlit，禁止 CpuSegment。
+        assert!(matches!(
+            encoder.commands(),
+            [
+                FrameCommand::Clear { .. },
+                FrameCommand::PictureBlit { additive: true, .. }
+            ]
+        ));
+        // 软件描边必须实际产生可见像素，不能因忽略 transform 被扫描边界裁空。
+        assert!(encoder
+            .render_reference()
+            .pixels()
+            .iter()
+            .any(|pixel| pixel & 0xff00_0000 != 0));
     }
 }

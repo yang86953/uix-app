@@ -148,7 +148,7 @@ impl Canvas2D for FrameRecordingCanvas {
             return;
         }
         // Native shape 不适用时，Additive 填充改走目标相关 sampled soft segment。
-        self.draw_cpu_fill(rect, 1.0, |scratch| {
+        self.draw_cpu_source(rect, 1.0, |scratch| {
             // 由共享软件光栅保留完整 transform、clip 与圆角语义。
             scratch.fill_rect(rect, color, radius)
         });
@@ -171,7 +171,7 @@ impl Canvas2D for FrameRecordingCanvas {
             return;
         }
         // 其余圆形交给可按 blend 分段的软件填充路径。
-        self.draw_cpu_fill(bounds, 1.0, |scratch| {
+        self.draw_cpu_source(bounds, 1.0, |scratch| {
             // Additive 源贡献会在透明 scratch 中光栅化。
             scratch.fill_circle(cx, cy, r, color)
         });
@@ -179,7 +179,7 @@ impl Canvas2D for FrameRecordingCanvas {
 
     fn fill_ellipse(&mut self, rect: Rect, color: Color) {
         // 椭圆没有固定 FrameRasterOp，由 sampled soft segment 承接 Additive。
-        self.draw_cpu_fill(rect, 1.0, |scratch| {
+        self.draw_cpu_source(rect, 1.0, |scratch| {
             // 软件椭圆入口负责完整仿射逆映射。
             scratch.fill_ellipse(rect, color)
         });
@@ -188,7 +188,7 @@ impl Canvas2D for FrameRecordingCanvas {
     fn fill_sector(&mut self, cx: f32, cy: f32, r: f32, sa: f32, ea: f32, color: Color) {
         let bounds = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
         // 扇形与其他填充共享 blend-aware scratch 分段。
-        self.draw_cpu_fill(bounds, 1.0, |scratch| {
+        self.draw_cpu_source(bounds, 1.0, |scratch| {
             // 保留角度、transform 与局部裁剪语义。
             scratch.fill_sector(cx, cy, r, sa, ea, color)
         });
@@ -199,14 +199,14 @@ impl Canvas2D for FrameRecordingCanvas {
             .bounds()
             .unwrap_or_else(|| Rect::new(0.0, 0.0, self.width as f32, self.height as f32));
         // 路径填充在软件端完成仿射几何后进入同一 sampled 分段。
-        self.draw_cpu_fill(bounds, 1.0, |scratch| {
+        self.draw_cpu_source(bounds, 1.0, |scratch| {
             // 保留调用方选择的填充规则。
             scratch.fill_path(path, color, fill_rule)
         });
     }
 
     fn stroke_rect(&mut self, rect: Rect, color: Color, width: f32, radius: Option<Radius>) {
-        // Additive 描边只能作为目标相关 Native 命令保留，禁止进入透明 CPU segment。
+        // 已证明安全的固定 Additive 描边优先保留为目标相关 Native 命令。
         if let Some((native_rect, clip, native_color, radius)) =
             self.native_additive_shape(rect, color, radius)
         {
@@ -310,7 +310,9 @@ impl Canvas2D for FrameRecordingCanvas {
             }
             return;
         }
-        self.draw_cpu(rect, width.max(1.0), |scratch| {
+        // 固定 Native shape 不适用时，描边作为纯源贡献进入 blend-aware scratch。
+        self.draw_cpu_source(rect, width.max(1.0), |scratch| {
+            // 软件描边负责完整 transform、clip、opacity 与圆角语义。
             scratch.stroke_rect(rect, color, width, radius)
         });
     }
@@ -329,7 +331,9 @@ impl Canvas2D for FrameRecordingCanvas {
             self.stroke_rect(bounds, color, width, Some(Radius::uniform(r)));
             return;
         }
-        self.draw_cpu(bounds, width.max(1.0), |scratch| {
+        // 非固定圆形描边走与填充共享的 Additive sampled scratch。
+        self.draw_cpu_source(bounds, width.max(1.0), |scratch| {
+            // 软件圆形描边在本地空间保持线宽后再执行仿射映射。
             scratch.stroke_circle(cx, cy, r, color, width)
         });
     }
@@ -338,9 +342,18 @@ impl Canvas2D for FrameRecordingCanvas {
         let bounds = path
             .bounds()
             .unwrap_or_else(|| Rect::new(0.0, 0.0, self.width as f32, self.height as f32));
-        self.draw_cpu(bounds, options.width.max(1.0), |scratch| {
-            scratch.stroke_path(path, color, options)
-        });
+        // 路径描边轮廓是可结合的源贡献，可安全进入 Additive sampled segment。
+        self.draw_cpu_source(
+            // 路径控制点边界作为本地基准。
+            bounds,
+            // miter 可能扩展到线宽倍数，先保守扩大扫描范围。
+            options.width.max(1.0) * options.miter_limit.max(1.0),
+            // 在透明 scratch 中生成完整描边轮廓。
+            |scratch| {
+                // 软件 stroker 保留 cap、join、miter 与完整仿射语义。
+                scratch.stroke_path(path, color, options)
+            },
+        );
     }
 
     fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, color: Color, width: f32) {
@@ -350,7 +363,9 @@ impl Canvas2D for FrameRecordingCanvas {
             (x1 - x2).abs().max(1.0),
             (y1 - y2).abs().max(1.0),
         );
-        self.draw_cpu(bounds, width.max(1.0), |scratch| {
+        // 直线描边同样使用 blend-aware scratch，避免 Additive 被错误拒绝。
+        self.draw_cpu_source(bounds, width.max(1.0), |scratch| {
+            // 软件直线入口负责本地线宽与仿射映射。
             scratch.draw_line(x1, y1, x2, y2, color, width)
         });
     }
@@ -876,6 +891,9 @@ mod tests {
 
     // 继续在同一测试模块内加载 Additive sampled soft 分段回归测试。
     include!("canvas2d_additive_soft_tests.rs");
+
+    // 继续加载 Additive 仿射描边 sampled soft 分段回归测试。
+    include!("canvas2d_additive_stroke_soft_tests.rs");
 
     // 继续在同一测试模块内加载 Additive opacity 的独立回归测试。
     include!("canvas2d_opacity_tests.rs");
