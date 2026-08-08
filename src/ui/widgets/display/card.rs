@@ -330,6 +330,8 @@ component! {
                 flex_shrink: child.flex_shrink,
                 align_self: child.align_self,
                 measured_size: child.measured_size,
+                // Card 的定制 Flex 转换必须保留共享子项外边距契约。
+                margin: child.margin,
                 ..FlexChild::default()
             })
             .collect();
