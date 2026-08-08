@@ -4,6 +4,12 @@ pub(crate) mod canvas_2d;
 #[cfg(any(test, all(windows, feature = "vulkan")))]
 pub(crate) mod noop_canvas_2d;
 pub(crate) mod offscreen;
+// 将 Picture blur 与后续合成的 CPU 回归拆到独立测试文件。
+#[cfg(test)]
+// 保持生产模块主体低于单文件行数边界。
+#[path = "blur_tests.rs"]
+// 仅在测试构建中编译离屏模糊契约。
+mod blur_tests;
 
 use crate::core::{Error, Point, Rect};
 
@@ -14,10 +20,10 @@ use crate::draw::backend::contract::{
 use crate::draw::backend::cpu::canvas_2d::CpuCanvas2D;
 use crate::draw::backend::cpu::offscreen::CpuOffscreenPool;
 use crate::draw::geometry::color::Color;
-use crate::draw::geometry::types::ImageHandle;
+// Picture 合成需要显式建立不重复应用场景 transform 的 canonical 状态。
+use crate::draw::geometry::types::{ImageHandle, Transform};
 use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::raster::pixel_surface::PixelSurface;
-use crate::draw::raster::rasterizer::image::blit_image;
 use crate::draw::Canvas2D;
 
 /// CPU 主缓冲 DrawSurface 适配器。
@@ -142,22 +148,18 @@ impl CpuBackend {
         let surf = offscreen_canvas.surface();
         let src_pixels = surf.pixels();
         let src_w = surf.width();
+        // Picture bounds 已经位于目标 surface 空间，不能再次应用场景 transform 或 offset。
         let main = self.main.canvas_mut();
-        let size = main.width();
-        let h = main.height();
-        let clip = main.current_clip();
-        let opacity = main.opacity();
-        blit_image(
-            main.surface_mut().pixels_mut(),
-            size,
-            h,
-            clip,
-            opacity,
-            src_pixels,
-            src_w,
-            src_rect,
-            dst_rect,
-        );
+        // 保存调用方的 clip、opacity、blend 与坐标状态，合成结束后完整恢复。
+        main.save();
+        // 主表面 Picture 合成使用 canonical identity，保持旧路径的 surface-space 几何。
+        main.set_transform(Transform::identity());
+        // 清除调用方 offset，避免缓存 bounds 被平移两次。
+        main.set_offset(0.0, 0.0);
+        // 通过状态完整的软件采样入口保留当前 SrcOver/Additive、opacity 与 clip。
+        main.blit_image(src_pixels, src_w, src_rect, dst_rect);
+        // 恢复调用方状态，使后续 painter-order 操作不受 Picture 合成影响。
+        main.restore();
     }
 }
 
