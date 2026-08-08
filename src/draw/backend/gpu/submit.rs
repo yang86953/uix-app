@@ -782,8 +782,15 @@ impl NativeGpuCanvas2D {
         if self.soft_has_content {
             self.ensure_soft().surface_mut().clear_all();
             self.soft_has_content = false;
-            self.soft_uses_destination_blend = false;
         }
+        // 成功边界已经消费当前可变 soft 段。
+        self.soft_current_has_content = false;
+        // 成功边界已经按 painter order 消费所有已封口段。
+        self.pending_soft_segments.clear();
+        // 下一次 soft 操作重新建立与当前公开 blend 状态匹配的段。
+        self.soft_segment_blend = None;
+        // 成功后不再让 legacy fallback 看到上一段的 Additive 标记。
+        self.soft_uses_destination_blend = false;
     }
 
     /// Completes one successful swapchain present, then ages this canvas's idle

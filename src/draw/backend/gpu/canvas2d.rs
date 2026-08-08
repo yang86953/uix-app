@@ -519,6 +519,8 @@ impl Canvas2D for NativeGpuCanvas2D {
             self.reject_unsupported("direct CPU pixel access in GPU-only mode");
             return &mut self.rejected_pixels;
         }
+        // 测试直写像素也必须先建立与当前 blend 一致的 soft 段。
+        self.prepare_soft_segment(self.blend_mode);
         self.mark_soft();
         self.soft_uses_destination_blend |= matches!(self.blend_mode, BlendMode::Additive);
         self.ensure_soft().pixels_mut()
@@ -572,6 +574,8 @@ mod tests {
     use super::super::pending::PendingNativeOp;
     use crate::core::Rect;
     use crate::draw::geometry::path::PathBuilder;
+    // 引入 soft 分段需要切换的公开混合模式。
+    use crate::draw::geometry::types::BlendMode;
     use crate::draw::Color;
     use crate::draw::Canvas2D;
     use crate::native::present::NativeRasterCaps;
@@ -659,5 +663,79 @@ mod tests {
         canvas.pop_clip();
         canvas.fill_rect(Rect::new(24.0, 24.0, 4.0, 4.0), Color::blue(), None);
         assert!(canvas.pixels()[25 * 32 + 25] != 0);
+    }
+
+    // 连续 soft 操作必须按 SrcOver/Additive 切换封口并保持 painter order。
+    #[test]
+    fn soft_blend_changes_seal_ordered_segments() {
+        // 默认能力强制三个矩形都进入共享 soft renderer。
+        let mut canvas = NativeGpuCanvas2D::new(16, 8, NativeRasterCaps::default());
+        // 首段使用默认 SrcOver 等价语义。
+        canvas.fill_rect(Rect::new(1.0, 1.0, 2.0, 2.0), Color::red(), None);
+        // 第二段切换到 destination-dependent Additive。
+        canvas.set_blend_mode(BlendMode::Additive);
+        // 非重叠像素让每段都保留独立、可检查的紧密 tile。
+        canvas.fill_rect(Rect::new(5.0, 1.0, 2.0, 2.0), Color::green(), None);
+        // 第三段切回显式 SrcOver。
+        canvas.set_blend_mode(BlendMode::SrcOver);
+        // 触发 Additive 段封口并建立最后一个当前段。
+        canvas.fill_rect(Rect::new(9.0, 1.0, 2.0, 2.0), Color::blue(), None);
+        // 只读快照必须同时包含两个已封口段和当前段。
+        let segments = canvas.packed_soft_segments();
+        // blend 切换产生且只产生三个连续段。
+        assert_eq!(segments.len(), 3);
+        // 第一段使用普通 premultiplied SrcOver pipeline。
+        assert!(!segments[0].additive);
+        // 中间段保留 Additive pipeline 事实。
+        assert!(segments[1].additive);
+        // 最后一段恢复 SrcOver pipeline。
+        assert!(!segments[2].additive);
+        // 每个 2x2 紧密 tile 都只携带四个可见像素。
+        assert!(segments.iter().all(|segment| segment.pixels.len() == 4));
+        // 三段目标横坐标必须保持原始绘制顺序。
+        assert_eq!(
+            segments
+                .iter()
+                .map(|segment| segment.tile.dst_x)
+                .collect::<Vec<_>>(),
+            vec![1, 5, 9]
+        );
+    }
+
+    // 成功提交必须消费全部 soft 分段，后续操作不能重复上传旧像素。
+    #[test]
+    fn soft_segment_commit_clears_staging_without_changing_public_blend() {
+        // 默认能力让测试只观察 soft staging 生命周期。
+        let mut canvas = NativeGpuCanvas2D::new(12, 8, NativeRasterCaps::default());
+        // 建立一个普通 soft 段。
+        canvas.fill_rect(Rect::new(1.0, 1.0, 2.0, 2.0), Color::red(), None);
+        // 切换并建立一个 Additive 当前段。
+        canvas.set_blend_mode(BlendMode::Additive);
+        // 写入第二段以形成可消费的两段队列。
+        canvas.fill_rect(Rect::new(5.0, 1.0, 2.0, 2.0), Color::green(), None);
+        // 提交前必须能观察到两个有序段。
+        assert_eq!(canvas.packed_soft_segments().len(), 2);
+        // 模拟 RHI 全部提交成功后的统一消费边界。
+        canvas.commit_presented_frame();
+        // 旧段不能在下一次提交快照中再次出现。
+        assert!(canvas.packed_soft_segments().is_empty());
+        // 全局和当前 soft 内容标记都必须归零。
+        assert!(!canvas.soft_has_content && !canvas.soft_current_has_content);
+        // 已封口队列必须释放共享像素载荷。
+        assert!(canvas.pending_soft_segments.is_empty());
+        // 内部分段类别等待下一次真实绘制重新建立。
+        assert!(canvas.soft_segment_blend.is_none());
+        // Canvas 的公开 blend 状态仍由调用方控制，不在内部提交时篡改。
+        assert_eq!(canvas.current_blend_mode(), BlendMode::Additive);
+        // 下一次绘制应建立一个全新的 Additive 段。
+        canvas.fill_rect(Rect::new(8.0, 1.0, 2.0, 2.0), Color::blue(), None);
+        // 新快照只包含提交后的新段。
+        let segments = canvas.packed_soft_segments();
+        // 不得重新带出此前的两个段。
+        assert_eq!(segments.len(), 1);
+        // 新段继承仍然有效的公开 Additive 状态。
+        assert!(segments[0].additive);
+        // 新段目标位置必须来自提交后的绘制。
+        assert_eq!(segments[0].tile.dst_x, 8);
     }
 }
