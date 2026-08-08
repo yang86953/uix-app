@@ -611,16 +611,6 @@ impl IGraphicsContext for EglContext {
             .blit_soft_fallback_tile(pixels, target_width, target_height, tile)
     }
 
-    fn upload_surface_pixels(
-        &mut self,
-        pixels: &[u32],
-        width: i32,
-        height: i32,
-    ) -> Result<(), Error> {
-        self.make_current()?;
-        self.pipeline.upload_surface_pixels(pixels, width, height)
-    }
-
     fn clear_rects(
         &mut self,
         _viewport_w: f32,

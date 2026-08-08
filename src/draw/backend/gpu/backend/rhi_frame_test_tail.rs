@@ -10,7 +10,7 @@ use crate::draw::backend::rhi_renderer::RhiOp;
 // 引入测试颜色和底层物理尺寸。
 use crate::draw::Color;
 // 引入测试使用的通用纹理和 viewport 值。
-use crate::native::present::rhi::{RhiExtent, RhiViewport, TextureHandle};
+use crate::native::present::rhi::{RhiColor, RhiExtent, RhiViewport, TextureHandle};
 
 // 片段拆分必须保留 scroll 前后的普通 draw 顺序。
 #[test]
@@ -110,6 +110,70 @@ fn lower_frame_scroll_move_clips_and_scales() {
     );
     // 失败必须保持 NotImplemented，而不是返回错位的物理区域。
     assert!(matches!(result, Err(error) if error.code() == crate::core::Errc::NotImplemented));
+}
+
+// 中途 clear 必须成为新的 RHI pass，而不是迫使主帧切回 legacy adapter。
+#[test]
+fn lower_frame_encoder_splits_mid_frame_clear_boundary() {
+    // 创建一个小尺寸编码器。
+    let Ok(mut encoder) = FrameEncoder::new(8, 6) else {
+        // 合法测试尺寸必须可构造。
+        panic!("test encoder dimensions are valid");
+    };
+    // 记录 clear 之前的普通 shape。
+    encoder.native(FrameRasterOp::FillRect {
+        // 使用左上角小矩形。
+        rect: FrameRect::new(0, 0, 2, 2),
+        // 使用可区分的红色。
+        color: Color::red(),
+    });
+    // 在帧中途清为蓝色。
+    encoder.clear(Color::blue());
+    // 记录 clear 之后的普通 shape。
+    encoder.native(FrameRasterOp::FillRect {
+        // 使用右下区域小矩形。
+        rect: FrameRect::new(4, 3, 2, 2),
+        // 使用可区分的红色以外颜色。
+        color: Color::green(),
+    });
+    // 执行只读 lowering，不触碰 native context。
+    let lowered = match super::lower_frame_encoder(
+        // 传入完整命令流。
+        &encoder,
+        // 使用与逻辑尺寸一致的 viewport。
+        RhiViewport {
+            // 设置物理宽度。
+            width: 8.0,
+            // 设置物理高度。
+            height: 6.0,
+        },
+        // 使用单位水平比例。
+        1.0,
+        // 使用单位垂直比例。
+        1.0,
+    ) {
+        // 合法命令必须完整 lower。
+        Ok(Some(lowered)) => lowered,
+        // 中途 clear 不得被当成能力缺口。
+        Ok(None) => panic!("mid-frame clear should be representable"),
+        // 纯 lowering 不允许失败。
+        Err(error) => panic!("mid-frame clear lowering should not fail: {error:?}"),
+    };
+    // 中途 clear 应把命令流拆成前后两个 pass 片段。
+    assert_eq!(lowered.segments.len(), 2);
+    // 首段沿用调用方 load，不提前执行蓝色 clear。
+    assert!(lowered.segments[0].clear_before.is_none());
+    // 首段只保留 clear 前的 shape。
+    assert_eq!(lowered.segments[0].operations.len(), 1);
+    // 第二段必须以蓝色 clear 初始化目标。
+    assert_eq!(
+        // 读取第二段的显式清理颜色。
+        lowered.segments[1].clear_before,
+        // 蓝色使用直通 RGBA 浮点值。
+        Some(RhiColor([0.0, 0.0, 1.0, 1.0]))
+    );
+    // 第二段只保留 clear 后的 shape。
+    assert_eq!(lowered.segments[1].operations.len(), 1);
 }
 
 // 验证不同 blend 的相邻描边不会混批，并映射到对应 RHI shape 操作。

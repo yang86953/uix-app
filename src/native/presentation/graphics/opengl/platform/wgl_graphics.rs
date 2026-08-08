@@ -301,19 +301,6 @@ impl IGraphicsContext for WglContext {
             .blit_soft_fallback_tile(pixels, target_width, target_height, tile)
     }
 
-    // 将完整 CPU surface 像素替换上传到当前 target。
-    fn upload_surface_pixels(
-        &mut self,
-        pixels: &[u32],
-        width: i32,
-        height: i32,
-    ) -> Result<(), Error> {
-        // 确保 upload 发生在创建 context 的 owner thread。
-        self.make_current_result()?;
-        // 委托给 OpenGL soft texture owner。
-        self.pipeline.upload_surface_pixels(pixels, width, height)
-    }
-
     // 清理当前 target 的 bounded rects。
     fn clear_rects(
         &mut self,

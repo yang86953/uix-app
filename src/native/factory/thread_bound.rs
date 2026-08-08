@@ -242,7 +242,6 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
     }
 
     forward_result!(clear_render_target(r: f32, g: f32, b: f32, a: f32) -> ());
-    forward_result!(upload_surface_pixels(pixels: &[u32], width: i32, height: i32) -> ());
     forward_result!(draw_solid_rects(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, rects: &[GpuSolidRect]) -> ());
     forward_result!(draw_stroke_rects(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, rects: &[GpuStrokeRect]) -> ());
     forward_result!(draw_glyphs(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, glyphs: &[GpuGlyphBlit]) -> ());

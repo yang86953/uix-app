@@ -1,7 +1,7 @@
 //! CPU 参考执行与像素级光栅操作 — encoder 子模块。
 //!
 //! 参考执行器（[`super::FrameEncoder::render_reference`]）与 CPU backend /
-//! GPU readback 回退共用的像素填充、blit 与 blend 原语。
+//! CPU 参考执行与紧边界 source 构造共用的像素填充、blit 与 blend 原语。
 
 use crate::core::Rect;
 use crate::draw::geometry::types::BlendMode;
@@ -181,18 +181,6 @@ pub(super) fn apply_raster_op_pixels(
             scroll_copy_pixels(width, height, pixels, *viewport, *dx, *dy)
         }
     }
-}
-
-/// Applies one destination-dependent (or ordinary) raster op onto an existing
-/// premultiplied pixel buffer. Used by CPU execution and by NativeGpu when it
-/// lowers Additive/Scroll through readback → reference op → upload.
-pub(crate) fn apply_frame_raster_op(
-    width: i32,
-    height: i32,
-    pixels: &mut [u32],
-    operation: &FrameRasterOp,
-) {
-    apply_raster_op_pixels(width, height, pixels, operation);
 }
 
 fn fill_rect_pixels(width: i32, height: i32, pixels: &mut [u32], rect: FrameRect, color: Color) {
@@ -456,21 +444,6 @@ pub(super) fn blit_image_pixels_with_opacity_blend(
     } else {
         blit_image_pixels_impl::<true>(width, height, pixels, image, src, dst, opacity);
     }
-}
-
-/// 亚像素 / 缩放 Picture 目标的 CPU 参考采样（最近邻），与 GPU 纹理四边形落点对齐。
-pub(super) fn blit_sampled_image_pixels_with_opacity(
-    width: i32,
-    height: i32,
-    pixels: &mut [u32],
-    image: &FrameImage,
-    src: FrameRect,
-    dst: FrameSampledRect,
-    opacity: f32,
-) {
-    blit_sampled_image_pixels_with_opacity_blend(
-        width, height, pixels, image, src, dst, opacity, false,
-    );
 }
 
 #[allow(

@@ -197,25 +197,6 @@ pub trait IGraphicsContext {
         ))
     }
 
-    /// Upload CPU-rasterized pixels into the GPU backbuffer without presenting.
-    ///
-    /// Full overwrite of the backbuffer (test / legacy soft-only path). Prefer
-    /// [`Self::blit_soft_fallback`] when native geometry was already drawn.
-    fn upload_surface_pixels(
-        &mut self,
-        _pixels: &[u32],
-        _width: i32,
-        _height: i32,
-    ) -> Result<(), Error> {
-        Err(Error::new(
-            crate::core::error::Errc::NotImplemented,
-            format!(
-                "GraphicsBackend {} does not support upload_surface_pixels",
-                self.graphics_backend()
-            ),
-        ))
-    }
-
     /// Draw solid-color (optionally rounded) quads into the current RTV.
     ///
     /// `scissor` is optional logical-pixel AABB `(x, y, w, h)` top-left origin.
