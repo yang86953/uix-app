@@ -692,4 +692,120 @@ mod tests {
         // 裁剪外的相邻圆内像素必须继续保持原始红色目标。
         assert_eq!(reference.pixel(6, 3), Some(Color::red().premultiplied()));
     }
+
+    // 有限整数 offset 必须平移 Additive 几何，同时保持 surface-space clip 不变。
+    #[test]
+    fn additive_shapes_map_integral_offsets_without_moving_clip_twice() {
+        // 创建能够容纳正负平移后几何的录制画布。
+        let mut canvas = FrameRecordingCanvas::new(14, 10);
+        // 开始一帧带透明 clear 的正式记录。
+        if let Err(error) = canvas.begin_recording(true) {
+            // 合法尺寸的记录初始化不得失败。
+            panic!("offset additive recording should begin: {error:?}");
+        }
+        // 先用不透明红色建立可观察的累计目标。
+        canvas.fill_rect(Rect::new(0.0, 0.0, 14.0, 10.0), Color::red(), None);
+        // 后续几何先应用正整数像素 offset。
+        canvas.set_offset(2.0, 1.0);
+        // 局部 clip 也在当前状态下映射一次到 surface 坐标。
+        canvas.push_clip(Rect::new(1.0, 1.0, 3.0, 4.0));
+        // 后续填充与描边切换到目标相关 Additive 混合。
+        canvas.set_blend_mode(BlendMode::Additive);
+        // 本地圆形边界 (1,1,4,4) 应平移为 surface 矩形 (3,2,4,4)。
+        canvas.fill_circle(3.0, 3.0, 2.0, Color::green());
+        // 恢复完整 surface clip，避免后一命令与前一命令共享裁剪。
+        canvas.pop_clip();
+        // 切换到负整数 offset 以覆盖反方向映射。
+        canvas.set_offset(-2.0, -1.0);
+        // 本地矩形 (4,6,4,3) 应平移为 surface 矩形 (2,5,4,3)。
+        canvas.stroke_rect(Rect::new(4.0, 6.0, 4.0, 3.0), Color::green(), 1.0, None);
+        // 完成记录并取得不可变命令流。
+        let encoder = match canvas.finish_recording() {
+            // 保存成功的编码器供载荷和像素审计。
+            Ok(encoder) => encoder,
+            // 合法整数 offset 不应产生 deferred failure。
+            Err(error) => panic!("offset additive recording should finish: {error:?}"),
+        };
+        // 精确匹配命令序列，同时证明两条 Additive 操作都没有进入 CPU segment。
+        let [FrameCommand::Clear { .. }, FrameCommand::Native {
+            operation: FrameRasterOp::FillRect { .. },
+        }, FrameCommand::Native {
+            operation:
+                FrameRasterOp::FillRoundedRectAdditive {
+                    rect: fill_rect,
+                    clip: fill_clip,
+                    ..
+                },
+        }, FrameCommand::Native {
+            operation:
+                FrameRasterOp::StrokeRoundedRects {
+                    strokes,
+                    clip: stroke_clip,
+                    additive: true,
+                },
+        }] = encoder.commands()
+        else {
+            // CPU segment、错误几何或错误批次都会破坏这一精确事实。
+            panic!("expected offset additive fill and stroke commands");
+        };
+        // 正 offset 必须只平移圆的正方形几何一次。
+        assert_eq!(*fill_rect, FrameRect::new(3, 2, 4, 4));
+        // 当前 clip 已是 surface 坐标，必须保持 (3,2,3,4) 而不能再次平移。
+        assert_eq!(*fill_clip, FrameRect::new(3, 2, 3, 4));
+        // 负 offset 下当前调用只应产生一条描边。
+        assert_eq!(strokes.len(), 1);
+        // 负 offset 必须把本地描边矩形平移到 surface 左上侧。
+        assert_eq!(strokes[0].rect(), FrameRect::new(2, 5, 4, 3));
+        // pop_clip 后的描边必须恢复完整 surface 裁剪。
+        assert_eq!(*stroke_clip, FrameRect::new(0, 0, 14, 10));
+        // 执行 CPU 参考路径以核验平移和裁剪后的真实目标像素。
+        let reference = encoder.render_reference();
+        // 正 offset 后裁剪内的圆形像素应由红绿相加得到黄色。
+        assert_eq!(
+            reference.pixel(5, 3),
+            Some(Color::from_rgb(255, 255, 0).premultiplied())
+        );
+        // x=6 位于圆内但在 surface-space clip 外，必须保持原始红色。
+        assert_eq!(reference.pixel(6, 3), Some(Color::red().premultiplied()));
+        // 负 offset 后的描边左上像素也应对红色目标执行加法。
+        assert_eq!(
+            reference.pixel(2, 5),
+            Some(Color::from_rgb(255, 255, 0).premultiplied())
+        );
+    }
+
+    // 分数 offset 不能伪装成整数 FrameEncoder shape，必须保留 typed failure。
+    #[test]
+    fn additive_shape_rejects_fractional_offset() {
+        // 创建一个最小但足以容纳测试矩形的录制画布。
+        let mut canvas = FrameRecordingCanvas::new(8, 8);
+        // 开始一帧带透明 clear 的正式记录。
+        if let Err(error) = canvas.begin_recording(true) {
+            // 合法尺寸的记录初始化不得失败。
+            panic!("fractional offset recording should begin: {error:?}");
+        }
+        // 设置不能无损映射为 FrameRect 的水平分数 offset。
+        canvas.set_offset(0.5, 0.0);
+        // 选择目标相关 Additive 混合。
+        canvas.set_blend_mode(BlendMode::Additive);
+        // 尝试记录 otherwise 合法的整数矩形。
+        canvas.fill_rect(Rect::new(1.0, 1.0, 2.0, 2.0), Color::green(), None);
+        // 完成边界必须返回稳定的 NotImplemented typed failure。
+        let error = match canvas.finish_recording() {
+            // 错误结果就是本测试需要审计的门禁事实。
+            Err(error) => error,
+            // 成功会把分数几何错误提升到整数 shape。
+            Ok(_) => panic!("fractional additive offset must be rejected"),
+        };
+        // 拒绝原因必须保持在不能等价 lowering 的类型边界。
+        assert_eq!(error.code(), crate::core::Errc::NotImplemented);
+        // 失败前只能保留初始 clear，不能偷偷追加 Native 或 CPU segment。
+        assert_eq!(
+            canvas
+                .encoder
+                .as_ref()
+                .map(|encoder| encoder.commands().len()),
+            Some(1)
+        );
+    }
 }

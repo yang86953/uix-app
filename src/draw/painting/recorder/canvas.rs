@@ -505,15 +505,27 @@ impl FrameRecordingCanvas {
     pub(super) fn native_additive_rects(&self, rect: Rect) -> Option<(FrameRect, FrameRect)> {
         // 只接受能够由固定 Additive shape pipeline 精确表达的画布状态。
         if self.blend_mode != BlendMode::Additive
-            || self.scratch.offset() != (0.0, 0.0)
             || !self.scratch.current_transform().is_identity()
             || self.scratch.opacity() != 1.0
         {
             // 其余状态继续沿既有 deferred typed failure 边界处理。
             return None;
         }
-        // 几何必须是完整位于 surface 内的有限正整数矩形。
-        let rect = rect_to_frame(rect).ok()?;
+        // 取得 SoftwareRasterizer identity 路径同源的像素平移量。
+        let (offset_x, offset_y) = self.scratch.offset();
+        // 只有有限整数 offset 才能无损进入 FrameEncoder 整数几何。
+        if !offset_x.is_finite()
+            || !offset_y.is_finite()
+            || offset_x.fract() != 0.0
+            || offset_y.fract() != 0.0
+        {
+            // 分数或非有限平移继续沿 typed failure 边界处理。
+            return None;
+        }
+        // 与软件 identity fill 一致：offset 只改变 x/y，不缩放宽高或圆角。
+        let mapped = Rect::new(rect.x + offset_x, rect.y + offset_y, rect.w, rect.h);
+        // 映射后几何必须是完整位于 surface 内的有限正整数矩形。
+        let rect = rect_to_frame(mapped).ok()?;
         // 当前纵切不放宽越界或负尺寸几何。
         if !rect.is_within(self.width, self.height) {
             // 无法证明等价时拒绝提升。
