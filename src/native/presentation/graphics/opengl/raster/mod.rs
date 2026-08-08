@@ -8,9 +8,9 @@ use std::sync::Arc;
 
 use glow::HasContext as _;
 
-use crate::core::{Errc, Error, Rect, Result};
+use crate::core::{Errc, Error, Result};
 use crate::native::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuSolidRect, GpuStrokeRect, OffscreenTargetId, SoftFallbackTile,
+    GpuBoxShadow, GpuGlyphBlit, GpuSolidRect, GpuStrokeRect, SoftFallbackTile,
 };
 
 use super::{shaders, NativeOpenGlRuntime};
@@ -48,26 +48,6 @@ impl TargetState {
             dpr: drawable_width as f32 / logical_width as f32,
         }
     }
-
-    fn offscreen(framebuffer: glow::Framebuffer, width: i32, height: i32) -> Self {
-        let width = width.max(1);
-        let height = height.max(1);
-        Self {
-            framebuffer: Some(framebuffer),
-            logical_width: width,
-            logical_height: height,
-            drawable_width: width,
-            drawable_height: height,
-            dpr: 1.0,
-        }
-    }
-}
-
-struct OffscreenTarget {
-    framebuffer: glow::Framebuffer,
-    texture: glow::Texture,
-    width: i32,
-    height: i32,
 }
 
 const GLYPH_ATLAS_MIN: u32 = 256;
@@ -151,19 +131,11 @@ pub(crate) struct OpenGlRasterPipeline {
     blit_bgra_program: glow::Program,
     blit_bgra_texture: Option<glow::UniformLocation>,
     blit_bgra_uv: Option<glow::UniformLocation>,
-    blit_rgba_program: glow::Program,
-    blit_rgba_texture: Option<glow::UniformLocation>,
-    blit_rgba_uv: Option<glow::UniformLocation>,
-    // 缓存 Picture texture blit 的组 opacity uniform。
-    blit_rgba_opacity: Option<glow::UniformLocation>,
     soft_texture: Option<glow::Texture>,
     soft_width: i32,
     soft_height: i32,
     swapchain: TargetState,
     current: TargetState,
-    offscreens: Vec<Option<OffscreenTarget>>,
-    free_offscreen_ids: Vec<u32>,
-    next_offscreen_id: u32,
     released: bool,
     // 保存通用 FramePlan 使用的 OpenGL ES RHI 资源和 pass 状态。
     rhi: OpenGlRhiDevice,

@@ -255,15 +255,38 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("rect.corners", pipeline)
         self.assertIn("g.corners", pipeline)
 
-    # 校验 Picture 的 RHI/legacy 回退不会继续保留失同步的 RHI source。
-    def test_picture_rhi_fallback_downgrades_resource_owner(self) -> None:
-        # 读取离屏生命周期实现和资源销毁契约。
+    # 校验 Picture 离屏只保留一个 RHI owner，旧资源族不会复活。
+    def test_picture_offscreen_has_one_rhi_owner_without_legacy_family(self) -> None:
+        # 读取通用 backend 的离屏生命周期实现。
         backend = (ROOT / "src/draw/backend/gpu/backend/render_backend.rs").read_text(encoding="utf-8")
-        # 回退必须先检查式销毁 RHI texture，再允许 legacy target 接管。
-        self.assertIn("fn downgrade_offscreen_rhi_texture", backend)
-        self.assertIn("self.downgrade_offscreen_rhi_texture(*handle)?", backend)
-        self.assertIn("Picture RHI target cannot switch to legacy rendering after commit", backend)
-        self.assertIn("context.destroy_texture(texture)", backend)
+        # 读取 Picture slot 的唯一资源字段。
+        backend_owner = (ROOT / "src/draw/backend/gpu/backend/mod.rs").read_text(encoding="utf-8")
+        # 读取公共兼容接口和句柄声明。
+        present = read_rust_module(ROOT / "src/native/present/mod.rs")
+        # 读取 D3D11 adapter context 的完整拆分模块。
+        d3d11 = read_rust_module(ROOT / "src/native/presentation/graphics/d3d11/platform/context/mod.rs")
+        # 读取 OpenGL ES raster 的完整拆分模块。
+        opengl = read_rust_module(ROOT / "src/native/presentation/graphics/opengl/raster/mod.rs")
+        # Picture slot 必须直接保存必需的单一 RHI texture。
+        self.assertIn("rhi_texture: TextureHandle", backend_owner)
+        # slot 不得再保存平行的原生 offscreen target。
+        self.assertNotIn("target: OffscreenTargetId", backend_owner)
+        # 未覆盖 lowering 必须在 adapter 高层回退前返回 typed failure。
+        self.assertIn("fn require_lossless_picture_submission", backend)
+        # 旧降级 helper 不得重新进入生产实现。
+        self.assertNotIn("fn downgrade_offscreen_rhi_texture", backend)
+        # 公共 presenter 不得重新导出 legacy offscreen 句柄。
+        self.assertNotIn("pub struct OffscreenTargetId", present)
+        # 公共 IGraphicsContext 不得重新声明高层离屏创建入口。
+        self.assertNotIn("fn create_offscreen_target", present)
+        # D3D11 adapter 不得重新保存或绑定平行 offscreen 槽位。
+        self.assertNotIn("offscreens:", d3d11)
+        # D3D11 adapter 不得重新实现高层离屏采样 blit。
+        self.assertNotIn("fn blit_offscreen_target", d3d11)
+        # OpenGL ES adapter 不得重新保存平行 FBO 槽位。
+        self.assertNotIn("offscreens:", opengl)
+        # OpenGL ES adapter 不得重新实现高层离屏采样 blit。
+        self.assertNotIn("fn blit_offscreen_target", opengl)
 
     def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
         # 组合读取 Vulkan context 的拆分模块，以保持顺序审计语义。

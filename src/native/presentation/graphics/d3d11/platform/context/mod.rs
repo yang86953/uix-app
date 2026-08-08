@@ -22,8 +22,8 @@ use crate::core::{Errc, Error, Result};
 use crate::native::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect, GraphicsApi, GraphicsContextCaps, IGraphicsContext,
-    NativeRasterCaps, OffscreenTargetId, PresentCoherency, PresentDamage, PresentFrame,
-    PresentOcclusionSupport, PresentTestResult, SoftFallbackTile,
+    NativeRasterCaps, PresentCoherency, PresentDamage, PresentFrame, PresentOcclusionSupport,
+    PresentTestResult, SoftFallbackTile,
 };
 use crate::native::presentation::graphics::platform::windows as win_surface;
 use ::windows::core::Interface;
@@ -34,10 +34,9 @@ use ::windows::Win32::Graphics::Direct3D::{
 };
 use ::windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11RenderTargetView,
-    ID3D11ShaderResourceView, ID3D11Texture2D, D3D11_BIND_RENDER_TARGET,
-    D3D11_BIND_SHADER_RESOURCE, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+    ID3D11Texture2D, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
     D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
-    D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING, D3D11_VIEWPORT,
+    D3D11_USAGE_STAGING, D3D11_VIEWPORT,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
 use ::windows::Win32::Graphics::Dxgi::{
@@ -45,15 +44,6 @@ use ::windows::Win32::Graphics::Dxgi::{
 };
 
 type HWND_PTR = *mut c_void;
-
-struct OffscreenTarget {
-    #[allow(dead_code)] // kept alive for RTV/SRV; not read directly after create
-    texture: ID3D11Texture2D,
-    pub(crate) rtv: ID3D11RenderTargetView,
-    srv: ID3D11ShaderResourceView,
-    width: i32,
-    height: i32,
-}
 
 pub(crate) const D3D11_FEATURE_LEVELS: [D3D_FEATURE_LEVEL; 4] = [
     D3D_FEATURE_LEVEL_11_1,
@@ -163,11 +153,6 @@ pub struct D3d11Context {
     /// test-harness 安排的下一次 owner-thread surface-lost acquire。
     #[cfg(feature = "test-harness")]
     rhi_surface_lost_for_test: bool,
-    offscreens: Vec<Option<OffscreenTarget>>,
-    free_offscreen_ids: Vec<u32>,
-    next_offscreen_id: u32,
-    /// When set, draw/clear target the offscreen instead of the swapchain.
-    bound_offscreen: Option<u32>,
 }
 
 mod graphics;

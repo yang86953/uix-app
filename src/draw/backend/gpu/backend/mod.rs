@@ -39,7 +39,7 @@ use std::time::Instant;
 
 use crate::core::{Error, PresentDamageTracker};
 use crate::draw::backend::rhi_renderer::RhiRenderer;
-use crate::native::present::{IGraphicsContext, OffscreenTargetId};
+use crate::native::present::IGraphicsContext;
 // 引入迁移期 RHI 的离屏纹理句柄。
 use crate::native::present::rhi::TextureHandle;
 
@@ -90,10 +90,8 @@ pub struct GpuBackend {
 }
 
 pub(super) struct NativeGpuOffscreen {
-    // 保存兼容 presenter 使用的原生离屏 target。
-    target: OffscreenTargetId,
-    // 保存可选的 RHI texture；存在时由 FramePlan 负责绘制和采样。
-    pub(crate) rhi_texture: Option<TextureHandle>,
+    // 保存唯一的 RHI 离屏纹理所有权，绘制和采样都经由 FramePlan。
+    pub(crate) rhi_texture: TextureHandle,
     pub(crate) canvas: NativeGpuCanvas2D,
     pub(crate) width: i32,
     pub(crate) height: i32,

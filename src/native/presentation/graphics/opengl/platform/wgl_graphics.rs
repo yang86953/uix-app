@@ -8,7 +8,7 @@ use std::ffi::c_void;
 use crate::native::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps,
-    OffscreenTargetId, PresentCoherency, PresentDamage, PresentFrame, SoftFallbackTile,
+    PresentCoherency, PresentDamage, PresentFrame, SoftFallbackTile,
 };
 // 引入项目统一错误和结果类型。
 use crate::native::{Errc, Error, Result};
@@ -327,34 +327,6 @@ impl IGraphicsContext for WglContext {
         self.pipeline.clear_rects(rects)
     }
 
-    // 创建 Picture 离屏 render target。
-    fn create_offscreen_target(
-        &mut self,
-        width: i32,
-        height: i32,
-    ) -> Result<OffscreenTargetId, Error> {
-        // 确保资源创建发生在 owner thread。
-        self.make_current_result()?;
-        // 委托给 OpenGL framebuffer owner。
-        self.pipeline.create_offscreen_target(width, height)
-    }
-
-    // 销毁 Picture 离屏 render target。
-    fn try_destroy_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
-        // 确保资源销毁发生在 owner thread。
-        self.make_current_result()?;
-        // 委托给 OpenGL framebuffer owner。
-        self.pipeline.destroy_offscreen_target(id)
-    }
-
-    // 绑定 Picture 离屏 render target。
-    fn bind_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
-        // 确保绑定发生在 owner thread。
-        self.make_current_result()?;
-        // 委托给 OpenGL framebuffer owner。
-        self.pipeline.bind_offscreen_target(id)
-    }
-
     // 绑定 WGL swapchain render target。
     fn bind_swapchain_target(&mut self) -> Result<(), Error> {
         // 确保绑定发生在 owner thread。
@@ -363,22 +335,6 @@ impl IGraphicsContext for WglContext {
         self.pipeline.bind_swapchain_target();
         // 绑定操作无额外失败分支。
         Ok(())
-    }
-
-    // 将 Picture 离屏 texture blit 到当前 target。
-    fn blit_offscreen_target(
-        &mut self,
-        id: OffscreenTargetId,
-        src: crate::core::Rect,
-        dst: crate::core::Rect,
-        opacity: f32,
-        additive: bool,
-    ) -> Result<(), Error> {
-        // 确保 blit 发生在 owner thread。
-        self.make_current_result()?;
-        // 委托给 OpenGL framebuffer texture owner。
-        self.pipeline
-            .blit_offscreen_target(id, src, dst, opacity, additive)
     }
 
     // 返回当前 WGL device pixel ratio。

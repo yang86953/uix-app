@@ -609,45 +609,6 @@ struct GlyphAtlasEntry {
     uv: (f32, f32, f32, f32),
 }
 
-struct RasterState {
-    viewports: Vec<D3D11_VIEWPORT>,
-    scissors: Vec<RECT>,
-}
-
-impl RasterState {
-    fn capture(context: &ID3D11DeviceContext) -> Self {
-        unsafe {
-            let mut viewport_count = 0;
-            context.RSGetViewports(&mut viewport_count, None);
-            let mut viewports = vec![D3D11_VIEWPORT::default(); viewport_count as usize];
-            if !viewports.is_empty() {
-                context.RSGetViewports(&mut viewport_count, Some(viewports.as_mut_ptr()));
-                viewports.truncate(viewport_count as usize);
-            }
-
-            let mut scissor_count = 0;
-            context.RSGetScissorRects(&mut scissor_count, None);
-            let mut scissors = vec![RECT::default(); scissor_count as usize];
-            if !scissors.is_empty() {
-                context.RSGetScissorRects(&mut scissor_count, Some(scissors.as_mut_ptr()));
-                scissors.truncate(scissor_count as usize);
-            }
-
-            Self {
-                viewports,
-                scissors,
-            }
-        }
-    }
-
-    fn restore(&self, context: &ID3D11DeviceContext) {
-        unsafe {
-            context.RSSetViewports((!self.viewports.is_empty()).then_some(&self.viewports));
-            context.RSSetScissorRects((!self.scissors.is_empty()).then_some(&self.scissors));
-        }
-    }
-}
-
 fn d3d_error(operation: &str, err: ::windows::core::Error) -> Error {
     Error::new(
         Errc::PlatformError,

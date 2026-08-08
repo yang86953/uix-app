@@ -32,14 +32,6 @@ impl OpenGlRasterPipeline {
                 "bgra blit",
             )?
         };
-        let blit_rgba_program = unsafe {
-            compile_program(
-                gl,
-                shaders::FULLSCREEN_VERT,
-                shaders::BLIT_RGBA_FRAG,
-                "rgba blit",
-            )?
-        };
         let (blit_vao, blit_vbo) = unsafe { create_quad(gl, &FULLSCREEN_VERTICES)? };
         let swapchain = TargetState::swapchain(
             logical_width,
@@ -86,11 +78,6 @@ impl OpenGlRasterPipeline {
             blit_bgra_program,
             blit_bgra_texture: unsafe { gl.get_uniform_location(blit_bgra_program, "u_tex") },
             blit_bgra_uv: unsafe { gl.get_uniform_location(blit_bgra_program, "u_uv_rect") },
-            blit_rgba_program,
-            blit_rgba_texture: unsafe { gl.get_uniform_location(blit_rgba_program, "u_tex") },
-            blit_rgba_uv: unsafe { gl.get_uniform_location(blit_rgba_program, "u_uv_rect") },
-            // 缓存离屏 texture blit 的组 opacity uniform。
-            blit_rgba_opacity: unsafe { gl.get_uniform_location(blit_rgba_program, "u_opacity") },
             // Glyph-only/native-only frames must not retain an unused
             // full-target RGBA soft-upload texture.
             soft_texture: None,
@@ -99,9 +86,6 @@ impl OpenGlRasterPipeline {
             runtime,
             swapchain,
             current: swapchain,
-            offscreens: Vec::new(),
-            free_offscreen_ids: Vec::new(),
-            next_offscreen_id: 0,
             released: false,
             // 保存与 legacy raster 同 owner-thread 的薄 RHI 状态。
             rhi,
