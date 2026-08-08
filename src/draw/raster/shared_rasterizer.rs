@@ -260,29 +260,13 @@ impl Canvas2D for SharedRasterizer {
     }
 
     fn blit_image(&mut self, src: &[u32], src_w: i32, src_rect: Rect, dst_rect: Rect) {
-        let (ox, oy) = self.renderer.offset();
-        let dst = if ox != 0.0 || oy != 0.0 {
-            Rect::new(dst_rect.x + ox, dst_rect.y + oy, dst_rect.w, dst_rect.h)
-        } else {
-            dst_rect
-        };
-        let (size, clip, opacity) = (
-            self.surface.surface_size(),
-            self.renderer.clip_rect(),
-            self.renderer.opacity(),
-        );
+        // 读取目标尺寸供共享像素入口做安全边界校验。
+        let (width, height) = (self.surface.width(), self.surface.height());
+        // 借用目标像素后进入状态完整的软件图片路径。
         let pixels = self.surface.pixels_mut();
-        crate::draw::raster::rasterizer::image::blit_image(
-            pixels,
-            size.w as i32,
-            size.h as i32,
-            clip,
-            opacity,
-            src,
-            src_w,
-            src_rect,
-            dst,
-        );
+        // 图片采样统一保留 offset 后仿射、clip、opacity 与实际 blend。
+        self.renderer
+            .blit_image(pixels, width, height, src, src_w, src_rect, dst_rect);
     }
     fn blit_glyph(&mut self, x: i32, y: i32, coverage: &[u8], w: usize, h: usize, color: Color) {
         let (ox, oy) = self.renderer.offset();

@@ -12,6 +12,8 @@
 
 pub(crate) mod canvas;
 pub(crate) mod canvas2d;
+// raw image 的 retained crop 与 Additive sampled 直达逻辑独立于画布主体。
+pub(crate) mod canvas_image;
 pub(crate) mod geometry;
 pub(crate) mod offscreen;
 

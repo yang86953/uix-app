@@ -374,3 +374,284 @@ fn additive_gradients_preserve_barriers_and_reject_non_finite_opacity() {
         Some(1)
     );
 }
+
+// 完整 surface clip 下的 Additive raw image 应直接复用 sampled textured pipeline。
+#[test]
+fn additive_raw_image_records_direct_sampled_picture_blit() {
+    // 构造 2x2 的四象限预乘源图片。
+    let source = [
+        // 左上红色。
+        Color::red().premultiplied(),
+        // 右上绿色。
+        Color::green().premultiplied(),
+        // 左下蓝色。
+        Color::blue().premultiplied(),
+        // 右下白色。
+        Color::white().premultiplied(),
+    ];
+    // 创建能容纳四倍面积目标的画布。
+    let mut canvas = FrameRecordingCanvas::new(8, 6);
+    // 开始一帧带透明 clear 的正式记录。
+    if let Err(error) = canvas.begin_recording(true) {
+        // 合法尺寸不得初始化失败。
+        panic!("direct additive image recording should begin: {error:?}");
+    }
+    // 先建立完整蓝色累计目标。
+    canvas.fill_rect(Rect::new(0.0, 0.0, 8.0, 6.0), Color::blue(), None);
+    // 后续图片使用目标相关 Additive 混合。
+    canvas.set_blend_mode(BlendMode::Additive);
+    // PictureBlit 在最终目标上应用一半 opacity。
+    canvas.set_opacity(0.5);
+    // 将完整 2x2 源图片 nearest 放大到 4x4 目标。
+    canvas.blit_image(
+        // 传入完整源像素。
+        &source,
+        // 源行跨度为两个像素。
+        2,
+        // 采样完整源 crop。
+        Rect::new(0.0, 0.0, 2.0, 2.0),
+        // 目标保持轴对齐但执行整数缩放。
+        Rect::new(2.0, 1.0, 4.0, 4.0),
+    );
+    // 完成记录并取得不可变命令流。
+    let encoder = match canvas.finish_recording() {
+        // 保存编码器供载荷和参考像素审计。
+        Ok(encoder) => encoder,
+        // 合法 Additive textured quad 不应失败。
+        Err(error) => panic!("direct additive image should finish: {error:?}"),
+    };
+    // 命令必须为 clear、蓝底与一个直接 Additive PictureBlit。
+    let [FrameCommand::Clear { .. }, FrameCommand::Native {
+        operation: FrameRasterOp::FillRect { .. },
+    }, FrameCommand::PictureBlit {
+        image,
+        src,
+        dst,
+        opacity,
+        additive: true,
+    }] = encoder.commands()
+    else {
+        // CpuSegment 或 sampled soft tile 都说明直达路径没有生效。
+        panic!("expected direct additive raw image PictureBlit");
+    };
+    // retained 图片只保存调用方选定的紧 crop。
+    assert_eq!(image.pixels(), &source);
+    // retained 源从自身原点覆盖完整 2x2 图片。
+    assert_eq!(*src, FrameRect::new(0, 0, 2, 2));
+    // 整数目标应能无损还原为 4x4 FrameRect。
+    assert_eq!(dst.as_integer(), Some(FrameRect::new(2, 1, 4, 4)));
+    // 图片 opacity 必须由直接命令保留，而不是提前重复烘焙。
+    assert_eq!(opacity.value(), 0.5);
+    // 执行同一命令流的 CPU 参考路径。
+    let reference = encoder.render_reference();
+    // 半透明红源加到蓝底后得到预乘紫色。
+    assert_eq!(reference.pixel(2, 1), Some(0xff7f_00ff));
+    // 半透明绿源加到蓝底后得到预乘青蓝色。
+    assert_eq!(reference.pixel(5, 1), Some(0xff00_7fff));
+}
+
+// 部分 clip 或非 identity transform 的 raw image 必须进入仿射 source scratch。
+#[test]
+fn additive_affine_raw_images_batch_into_tight_sampled_segment() {
+    // 构造一行红绿预乘源图片。
+    let source = [
+        // 第一列为红色。
+        Color::red().premultiplied(),
+        // 第二列为绿色。
+        Color::green().premultiplied(),
+    ];
+    // 创建足以证明联合 tile 不等于完整 surface 的画布。
+    let mut canvas = FrameRecordingCanvas::new(20, 10);
+    // 开始一帧带透明 clear 的正式记录。
+    if let Err(error) = canvas.begin_recording(true) {
+        // 合法尺寸不得初始化失败。
+        panic!("affine additive image recording should begin: {error:?}");
+    }
+    // 所有源贡献切换到 Additive。
+    canvas.set_blend_mode(BlendMode::Additive);
+    // 每笔图片只贡献一半 opacity。
+    canvas.set_opacity(0.5);
+    // 分数 offset 必须先移动局部目标。
+    canvas.set_offset(0.5, 0.0);
+    // 非 identity 水平缩放迫使 raw image 使用软件逆映射。
+    canvas.set_transform(Transform::scale(2.0, 1.0));
+    // 局部 clip 只允许目标左半边写入。
+    canvas.push_clip(Rect::new(1.0, 1.0, 1.0, 2.0));
+    // 连续三次绘制同一图片，验证透明 source scratch 内的饱和累积。
+    for _ in 0..3 {
+        // 每笔都采样完整红绿源。
+        canvas.blit_image(
+            // 复用源像素。
+            &source,
+            // 源行跨度。
+            2,
+            // 完整源 crop。
+            Rect::new(0.0, 0.0, 2.0, 1.0),
+            // offset 后局部目标为 x=1.5..3.5，再映射为设备 x=3..7。
+            Rect::new(1.0, 1.0, 2.0, 2.0),
+        );
+    }
+    // 结束图片局部裁剪但保持同一 Additive 批次。
+    canvas.pop_clip();
+    // 后续 shape 使用最新状态并与图片共享 source tile。
+    canvas.set_offset(0.0, 0.0);
+    // 追加一个与图片分离的蓝色仿射椭圆。
+    canvas.fill_ellipse(Rect::new(6.0, 5.0, 1.0, 1.0), Color::blue());
+    // 完成记录并取得命令流。
+    let encoder = match canvas.finish_recording() {
+        // 保存成功编码器。
+        Ok(encoder) => encoder,
+        // 可逆仿射图片不应产生 deferred failure。
+        Err(error) => panic!("affine additive images should finish: {error:?}"),
+    };
+    // 图片与椭圆必须共同收敛为唯一 Additive sampled source tile。
+    let [FrameCommand::Clear { .. }, FrameCommand::PictureBlit {
+        image,
+        src,
+        dst,
+        opacity,
+        additive: true,
+    }] = encoder.commands()
+    else {
+        // direct PictureBlit、CpuSegment 或多个 tile 都表示 fallback 分段错误。
+        panic!("expected one affine additive image source tile");
+    };
+    // source scratch 已经烘焙每笔 opacity，最终合成保持 opaque。
+    assert!(opacity.is_opaque());
+    // 紧图片源从自身原点开始。
+    assert_eq!(*src, FrameRect::new(0, 0, image.width(), image.height()));
+    // sampled 目标宽度必须与紧图片一致。
+    assert_eq!(dst.width(), image.width() as f32);
+    // sampled 目标高度必须与紧图片一致。
+    assert_eq!(dst.height(), image.height() as f32);
+    // 联合写区不能退化为完整 surface 上传。
+    assert!(image.width() < 20 && image.height() < 10);
+    // 执行同一命令流的参考路径。
+    let reference = encoder.render_reference();
+    // clip 内红色 texel 连续三次半透明加法必须饱和为不透明红色。
+    assert_eq!(reference.pixel(3, 1), Some(Color::red().premultiplied()));
+    // clip 右界之外不得写入本应采样到的绿色 texel。
+    assert_eq!(
+        reference.pixel(5, 1),
+        Some(Color::transparent().premultiplied())
+    );
+    // 相邻仿射椭圆必须仍出现在同一最终 tile 中。
+    assert_ne!(
+        reference.pixel(12, 5),
+        Some(Color::transparent().premultiplied())
+    );
+}
+
+// 图片 fallback 必须保持 blend/restore barrier，并拒绝非有限 Additive opacity。
+#[test]
+fn additive_raw_images_preserve_barriers_and_reject_non_finite_opacity() {
+    // 使用单个红色预乘 texel简化顺序像素载荷。
+    let source = [Color::red().premultiplied()];
+    // 创建三个互不相交的图片区域。
+    let mut canvas = FrameRecordingCanvas::new(15, 5);
+    // 开始一帧带透明 clear 的正式记录。
+    if let Err(error) = canvas.begin_recording(true) {
+        // 合法尺寸不得初始化失败。
+        panic!("image barrier recording should begin: {error:?}");
+    }
+    // 非 identity transform 使三段都走 software image。
+    canvas.set_transform(Transform::scale(2.0, 1.0));
+    // 第一段使用 Additive。
+    canvas.set_blend_mode(BlendMode::Additive);
+    // 保存当前 Additive 状态供 restore 验证。
+    canvas.save();
+    // 左侧图片进入第一段 Additive source tile。
+    canvas.blit_image(
+        // 单 texel 源。
+        &source,
+        // 单像素行跨度。
+        1,
+        // 完整源 crop。
+        Rect::new(0.0, 0.0, 1.0, 1.0),
+        // 左侧局部目标。
+        Rect::new(0.0, 1.0, 1.0, 2.0),
+    );
+    // 切回 SrcOver 必须先封口第一段。
+    canvas.set_blend_mode(BlendMode::SrcOver);
+    // 中间图片进入普通 CPU segment。
+    canvas.blit_image(
+        // 复用单 texel 源。
+        &source,
+        // 单像素行跨度。
+        1,
+        // 完整源 crop。
+        Rect::new(0.0, 0.0, 1.0, 1.0),
+        // 中间局部目标映射到设备 x=6..8。
+        Rect::new(3.0, 1.0, 1.0, 2.0),
+    );
+    // restore 前必须封口普通 segment，并恢复 Additive。
+    canvas.restore();
+    // 右侧图片进入新的 Additive source tile。
+    canvas.blit_image(
+        // 复用单 texel 源。
+        &source,
+        // 单像素行跨度。
+        1,
+        // 完整源 crop。
+        Rect::new(0.0, 0.0, 1.0, 1.0),
+        // 右侧局部目标映射到设备 x=12..14。
+        Rect::new(6.0, 1.0, 1.0, 2.0),
+    );
+    // 完成记录并取得命令流。
+    let encoder = match canvas.finish_recording() {
+        // 保存成功编码器。
+        Ok(encoder) => encoder,
+        // 合法 barrier 不应失败。
+        Err(error) => panic!("image barriers should finish: {error:?}"),
+    };
+    // painter order 必须严格保持 Additive、SrcOver、Additive 三段。
+    assert!(matches!(
+        encoder.commands(),
+        [
+            FrameCommand::Clear { .. },
+            FrameCommand::PictureBlit { additive: true, .. },
+            FrameCommand::CpuSegment { .. },
+            FrameCommand::PictureBlit { additive: true, .. }
+        ]
+    ));
+
+    // 创建独立画布验证非有限 opacity 拒绝。
+    let mut non_finite = FrameRecordingCanvas::new(6, 6);
+    // 开始一帧带透明 clear 的正式记录。
+    if let Err(error) = non_finite.begin_recording(true) {
+        // 合法尺寸不得初始化失败。
+        panic!("non-finite image recording should begin: {error:?}");
+    }
+    // 注入不能稳定烘焙的 NaN opacity。
+    non_finite.set_opacity(f32::NAN);
+    // 选择目标相关 Additive 混合。
+    non_finite.set_blend_mode(BlendMode::Additive);
+    // 尝试记录 otherwise 合法的 raw image。
+    non_finite.blit_image(
+        // 单 texel 源。
+        &source,
+        // 单像素行跨度。
+        1,
+        // 完整源 crop。
+        Rect::new(0.0, 0.0, 1.0, 1.0),
+        // 合法目标。
+        Rect::new(1.0, 1.0, 2.0, 2.0),
+    );
+    // 完成边界必须返回稳定 typed failure。
+    let error = match non_finite.finish_recording() {
+        // 保存错误供类型审计。
+        Err(error) => error,
+        // 成功表示 NaN 被静默转换成错误像素。
+        Ok(_) => panic!("non-finite additive image opacity must be rejected"),
+    };
+    // 错误必须位于不可等价 lowering 边界。
+    assert_eq!(error.code(), crate::core::Errc::NotImplemented);
+    // 失败前只能保留初始 clear。
+    assert_eq!(
+        non_finite
+            .encoder
+            .as_ref()
+            .map(|encoder| encoder.commands().len()),
+        Some(1)
+    );
+}

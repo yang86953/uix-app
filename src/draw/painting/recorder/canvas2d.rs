@@ -426,7 +426,6 @@ impl Canvas2D for FrameRecordingCanvas {
             scratch.draw_box_shadow_ambient(rect, blur, offset_x, offset_y, color, radius)
         });
     }
-
     fn blit_image(&mut self, src: &[u32], src_w: i32, src_rect: Rect, dst_rect: Rect) {
         if self.deferred_error.is_some() {
             return;
@@ -439,11 +438,12 @@ impl Canvas2D for FrameRecordingCanvas {
                 return;
             }
         }
-        self.draw_cpu(dst_rect, 1.0, |scratch| {
+        // 不能直达的图片仍是可结合源贡献，可进入 Additive sampled scratch。
+        self.draw_cpu_source(dst_rect, 1.0, |scratch| {
+            // 共享软件图片负责 offset 后仿射、clip、opacity 与 nearest sampling。
             scratch.blit_image(src, src_w, src_rect, dst_rect)
         });
     }
-
     fn blit_glyph(
         &mut self,
         x: i32,
