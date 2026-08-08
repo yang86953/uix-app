@@ -54,12 +54,16 @@ pub enum FrameRasterOp {
     FillRectAdditive {
         rect: FrameRect,
         color: Color,
+        /// 把目标相关填充限制在已经验证的 surface-space 整数矩形内。
+        clip: FrameRect,
     },
     /// 使用共享 SDF coverage 对圆角区域执行逐通道饱和加法。
     FillRoundedRectAdditive {
         rect: FrameRect,
         color: Color,
         radius: FrameRadius,
+        /// 保留圆角原始几何，仅由该 surface-space 矩形裁剪最终覆盖。
+        clip: FrameRect,
     },
     /// 把 `viewport` 中按 `(dx, dy)` 平移后的像素复制回同一视口；
     /// 语义与 [`crate::draw::Canvas2D::scroll_region`] 一致，位移取整。

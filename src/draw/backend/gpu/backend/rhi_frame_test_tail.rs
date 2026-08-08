@@ -212,3 +212,63 @@ fn additive_stroke_stays_separate_and_lowers_to_additive_shape() {
     // 失败必须发生在编码器变更之前。
     assert!(cpu_encoder.commands().is_empty());
 }
+
+// Additive 填充载荷的逻辑 clip 必须按设备缩放成为物理 RHI scissor。
+#[test]
+fn additive_fill_clip_lowers_to_scaled_scissor() {
+    // 创建一个具有明确逻辑尺寸的测试编码器。
+    let Ok(mut encoder) = FrameEncoder::new(12, 8) else {
+        // 合法测试尺寸必须可构造。
+        panic!("test encoder dimensions are valid");
+    };
+    // 记录一个大于局部裁剪范围的 Additive 实心矩形。
+    encoder.native(FrameRasterOp::FillRectAdditive {
+        // 逻辑几何在 2 倍缩放后应成为 (4, 2, 16, 12)。
+        rect: FrameRect::new(2, 1, 8, 6),
+        // 使用可辨识的绿色源色。
+        color: Color::green(),
+        // 逻辑裁剪在 2 倍缩放后应成为 (6, 4, 8, 6)。
+        clip: FrameRect::new(3, 2, 4, 3),
+    });
+    // 以 2 倍设备缩放执行只读 lowering。
+    let lowered = match super::lower_frame_encoder(
+        &encoder,
+        RhiViewport {
+            // viewport 使用对应的物理宽度。
+            width: 24.0,
+            // viewport 使用对应的物理高度。
+            height: 16.0,
+        },
+        2.0,
+        2.0,
+    ) {
+        // 合法 Additive shape 必须完整降低。
+        Ok(Some(lowered)) => lowered,
+        // 该固定整数几何不允许被判为不可表示。
+        Ok(None) => panic!("clipped additive fill should be representable"),
+        // 只读 lowering 不允许失败。
+        Err(error) => panic!("clipped additive fill lowering should not fail: {error:?}"),
+    };
+    // 无 scroll 时应只产生一个 painter-order 片段。
+    let [segment] = lowered.segments.as_slice() else {
+        // 额外片段说明普通 shape 被错误拆分。
+        panic!("expected one lowered segment");
+    };
+    // 唯一操作必须进入 Additive shape pipeline。
+    let [RhiOp::AdditiveShape(shape)] = segment.operations.as_slice() else {
+        // 普通 shape 或额外操作都会丢失目标相关 blend 事实。
+        panic!("expected one additive shape operation");
+    };
+    // 物理几何必须按两个轴的设备比例缩放。
+    assert_eq!((shape.x, shape.y, shape.w, shape.h), (4.0, 2.0, 16.0, 12.0));
+    // 局部逻辑裁剪必须保留为一个非空物理 scissor。
+    let Some(scissor) = shape.scissor else {
+        // 丢失 scissor 会让 Additive 写入裁剪外目标。
+        panic!("additive shape should retain a physical scissor");
+    };
+    // scissor 坐标与范围必须精确反映 2 倍缩放。
+    assert_eq!(
+        (scissor.x, scissor.y, scissor.width, scissor.height),
+        (6, 4, 8, 6)
+    );
+}

@@ -500,24 +500,33 @@ impl FrameRecordingCanvas {
         });
     }
 
-    /// Additive 轴对齐矩形操作依赖目标像素，因此只能进入 Native 命令。几何约束与
-    /// SrcOver 直达路径一致，但允许半透明源色。
-    pub(super) fn can_emit_native_additive_rect(&self, rect: Rect) -> bool {
-        self.blend_mode == BlendMode::Additive
-            && self.scratch.offset() == (0.0, 0.0)
-            && self.scratch.current_transform().is_identity()
-            && self.scratch.opacity() == 1.0
-            && self.scratch.current_clip() == self.full_rect()
-            && rect.x.fract() == 0.0
-            && rect.y.fract() == 0.0
-            && rect.w.fract() == 0.0
-            && rect.h.fract() == 0.0
-            && rect.x >= 0.0
-            && rect.y >= 0.0
-            && rect.w > 0.0
-            && rect.h > 0.0
-            && rect.x + rect.w <= self.width as f32
-            && rect.y + rect.h <= self.height as f32
+    /// Additive 轴对齐矩形操作依赖目标像素，因此只能进入 Native 命令。返回已经
+    /// 验证的 surface-space 几何与裁到目标范围内的整数矩形 clip。
+    pub(super) fn native_additive_rects(&self, rect: Rect) -> Option<(FrameRect, FrameRect)> {
+        // 只接受能够由固定 Additive shape pipeline 精确表达的画布状态。
+        if self.blend_mode != BlendMode::Additive
+            || self.scratch.offset() != (0.0, 0.0)
+            || !self.scratch.current_transform().is_identity()
+            || self.scratch.opacity() != 1.0
+        {
+            // 其余状态继续沿既有 deferred typed failure 边界处理。
+            return None;
+        }
+        // 几何必须是完整位于 surface 内的有限正整数矩形。
+        let rect = rect_to_frame(rect).ok()?;
+        // 当前纵切不放宽越界或负尺寸几何。
+        if !rect.is_within(self.width, self.height) {
+            // 无法证明等价时拒绝提升。
+            return None;
+        }
+        // 矩形 clip 必须同样能够无损转换为 FrameEncoder 整数坐标。
+        let clip = rect_to_frame(self.scratch.current_clip()).ok()?;
+        // 把调用方裁剪限制到真实 surface；完全不可见时保留显式空 clip。
+        let clip = clip
+            .intersection(FrameRect::new(0, 0, self.width, self.height))
+            .unwrap_or(FrameRect::new(0, 0, 0, 0));
+        // 返回同一录制时刻的几何和裁剪事实。
+        Some((rect, clip))
     }
 
     pub(super) fn direct_picture_rects(
