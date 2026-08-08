@@ -175,47 +175,184 @@ fn additive_shapes_map_unit_orthogonal_transforms() {
     );
 }
 
-// 非统一圆角不能在旋转后沿用未重排的角载荷。
+// 八种单位正交线性变换都必须把非统一圆角映射到正确的 surface 角位。
 #[test]
-fn additive_shape_rejects_non_uniform_radius_under_rotation() {
-    // 创建足以容纳待拒绝圆角矩形的录制画布。
-    let mut canvas = FrameRecordingCanvas::new(8, 8);
+fn additive_shape_reorders_radius_for_all_unit_orthogonal_transforms() {
+    // 使用四个不同数值，使每个源角在重排后都可唯一识别。
+    let radius = Radius {
+        // 左上角使用一。
+        tl: 1.0,
+        // 右上角使用二。
+        tr: 2.0,
+        // 右下角使用三。
+        br: 3.0,
+        // 左下角使用四。
+        bl: 4.0,
+    };
+    // 列出 D4 中全部有符号轴置换及其期望 tl/tr/br/bl 顺序。
+    let cases = [
+        // 恒等变换不改变角位。
+        ([1.0, 0.0, 0.0, 1.0], [1.0, 2.0, 3.0, 4.0]),
+        // 水平镜像交换左右角。
+        ([-1.0, 0.0, 0.0, 1.0], [2.0, 1.0, 4.0, 3.0]),
+        // 垂直镜像交换上下角。
+        ([1.0, 0.0, 0.0, -1.0], [4.0, 3.0, 2.0, 1.0]),
+        // 半周旋转交换对角。
+        ([-1.0, 0.0, 0.0, -1.0], [3.0, 4.0, 1.0, 2.0]),
+        // 主对角镜像交换右上与左下。
+        ([0.0, 1.0, 1.0, 0.0], [1.0, 4.0, 3.0, 2.0]),
+        // 顺时针四分之一转依次推进四个角。
+        ([0.0, -1.0, 1.0, 0.0], [4.0, 1.0, 2.0, 3.0]),
+        // 逆时针四分之一转按反方向推进四个角。
+        ([0.0, 1.0, -1.0, 0.0], [2.0, 3.0, 4.0, 1.0]),
+        // 副对角镜像交换左上与右下。
+        ([0.0, -1.0, -1.0, 0.0], [3.0, 2.0, 1.0, 4.0]),
+    ];
+    // 逐一验证全部八种合法线性部分。
+    for ([a, b, c, d], expected) in cases {
+        // 调用生产准入路径共用的角位重排函数。
+        let mapped = FrameRecordingCanvas::unit_orthogonal_radius(radius, a, b, c, d);
+        // 比较公开 Radius 顺序，避免仅验证某个代表变换。
+        assert_eq!([mapped.tl, mapped.tr, mapped.br, mapped.bl], expected);
+    }
+}
+
+// 填充与描边必须把非统一圆角重排后直接编码，并保持目标相关参考像素。
+#[test]
+fn additive_shapes_record_reordered_non_uniform_radius() {
+    // 创建足以容纳旋转填充与镜像描边的录制画布。
+    let mut canvas = FrameRecordingCanvas::new(12, 10);
     // 开始一帧带透明 clear 的正式记录。
     if let Err(error) = canvas.begin_recording(true) {
         // 合法尺寸的记录初始化不得失败。
         panic!("non-uniform radius recording should begin: {error:?}");
     }
-    // 应用能够把测试几何保留在 surface 内的四分之一转矩阵。
-    canvas.set_transform(Transform {
-        m: [0.0, -1.0, 7.0, 1.0, 0.0, 0.0],
-    });
-    // 选择目标相关 Additive 混合。
+    // 先用红色建立可观察的累计目标。
+    canvas.fill_rect(Rect::new(0.0, 0.0, 12.0, 10.0), Color::red(), None);
+    // 后续两个圆角图元都选择目标相关 Additive 混合。
     canvas.set_blend_mode(BlendMode::Additive);
-    // 提供旋转后必须重排但当前命令模型尚未处理的四个不同角半径。
-    let radius = Radius {
-        tl: 0.0,
-        tr: 1.0,
-        br: 2.0,
-        bl: 3.0,
+    // 设置带整数平移的顺时针四分之一转。
+    canvas.set_transform(Transform {
+        // 该矩阵把本地矩形映射到 surface 内的整数 AABB。
+        m: [0.0, -1.0, 8.0, 1.0, 0.0, 1.0],
+    });
+    // 记录四角不同的旋转圆角填充。
+    canvas.fill_rect(
+        // 宽高在轴交换后应互换。
+        Rect::new(1.0, 1.0, 3.0, 4.0),
+        // 绿色用于与红色目标形成黄色参考像素。
+        Color::green(),
+        // 顺时针旋转后应得到 bl/tl/tr/br 顺序。
+        Some(Radius {
+            // 原左上半径为零。
+            tl: 0.0,
+            // 原右上半径为半像素。
+            tr: 0.5,
+            // 原右下半径为一像素。
+            br: 1.0,
+            // 原左下半径为一点五像素。
+            bl: 1.5,
+        }),
+    );
+    // 改用带整数平移的水平镜像。
+    canvas.set_transform(Transform {
+        // 镜像后的描边仍完整落在 surface 内。
+        m: [-1.0, 0.0, 11.0, 0.0, 1.0, 0.0],
+    });
+    // 记录共享同一重排逻辑的非统一圆角描边。
+    canvas.stroke_rect(
+        // 选择与填充不相交的本地矩形。
+        Rect::new(1.0, 6.0, 4.0, 3.0),
+        // 继续使用绿色观察 Additive 结果。
+        Color::green(),
+        // 使用可直接编码的一像素线宽。
+        1.0,
+        // 水平镜像后应交换左右圆角。
+        Some(Radius {
+            // 原左上半径为零。
+            tl: 0.0,
+            // 原右上半径为半像素。
+            tr: 0.5,
+            // 原右下半径为一像素。
+            br: 1.0,
+            // 原左下半径为一点五像素。
+            bl: 1.5,
+        }),
+    );
+    // 完成记录并取得不可变命令流。
+    let encoder = match canvas.finish_recording() {
+        // 保存成功编码器供命令与参考像素审计。
+        Ok(encoder) => encoder,
+        // 合法单位正交圆角不应产生 deferred failure。
+        Err(error) => panic!("non-uniform radius recording should finish: {error:?}"),
     };
-    // 尝试记录 otherwise 合法的整数圆角矩形。
-    canvas.fill_rect(Rect::new(1.0, 1.0, 2.0, 3.0), Color::green(), Some(radius));
-    // 完成边界必须返回稳定的 NotImplemented typed failure。
-    let error = match canvas.finish_recording() {
-        // 错误结果就是本测试需要审计的门禁事实。
-        Err(error) => error,
-        // 成功会错误复用旋转前的角半径顺序。
-        Ok(_) => panic!("rotated non-uniform additive radius must be rejected"),
+    // 精确匹配 clear、背景、圆角填充和圆角描边，排除 CPU segment。
+    let [FrameCommand::Clear { .. }, FrameCommand::Native {
+        operation: FrameRasterOp::FillRect { .. },
+    }, FrameCommand::Native {
+        operation:
+            FrameRasterOp::FillRoundedRectAdditive {
+                rect: fill_rect,
+                radius: fill_radius,
+                ..
+            },
+    }, FrameCommand::Native {
+        operation:
+            FrameRasterOp::StrokeRoundedRects {
+                strokes,
+                additive: true,
+                ..
+            },
+    }] = encoder.commands()
+    else {
+        // 任一 CPU 回退或错误命令类型都应使测试失败。
+        panic!("expected reordered additive rounded shape commands");
     };
-    // 拒绝原因必须保持在不能等价 lowering 的类型边界。
-    assert_eq!(error.code(), crate::core::Errc::NotImplemented);
-    // 失败前只能保留初始 clear，不能追加 Native 或 CPU segment。
+    // 四分之一转必须交换矩形宽高并保存 surface 几何。
+    assert_eq!(*fill_rect, FrameRect::new(3, 2, 4, 3));
+    // 填充半径必须按 bl/tl/tr/br 重排。
     assert_eq!(
-        canvas
-            .encoder
-            .as_ref()
-            .map(|encoder| encoder.commands().len()),
-        Some(1)
+        fill_radius.to_radius(),
+        Radius {
+            // 原左下角映射到左上角。
+            tl: 1.5,
+            // 原左上角映射到右上角。
+            tr: 0.0,
+            // 原右上角映射到右下角。
+            br: 0.5,
+            // 原右下角映射到左下角。
+            bl: 1.0,
+        }
+    );
+    // 当前调用只应产生一条镜像描边。
+    assert_eq!(strokes.len(), 1);
+    // 水平镜像必须保存归一化后的 surface 描边矩形。
+    assert_eq!(strokes[0].rect(), FrameRect::new(6, 6, 4, 3));
+    // 描边半径必须交换左右角位。
+    assert_eq!(
+        strokes[0].radius().to_radius(),
+        Radius {
+            // 原右上角映射到左上角。
+            tl: 0.5,
+            // 原左上角映射到右上角。
+            tr: 0.0,
+            // 原左下角映射到右下角。
+            br: 1.5,
+            // 原右下角映射到左下角。
+            bl: 1.0,
+        }
+    );
+    // 执行 CPU 参考路径以验证目标相关混合语义未因角位重排改变。
+    let reference = encoder.render_reference();
+    // 旋转圆角填充中央像素必须由红绿相加得到黄色。
+    assert_eq!(
+        reference.pixel(5, 3),
+        Some(Color::from_rgb(255, 255, 0).premultiplied())
+    );
+    // 镜像圆角描边顶部中央像素必须按半覆盖对目标执行 Additive 混合。
+    assert_eq!(
+        reference.pixel(8, 6),
+        Some(Color::from_rgb(255, 128, 0).premultiplied())
     );
 }
 

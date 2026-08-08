@@ -508,7 +508,7 @@ impl FrameRecordingCanvas {
         rect: Rect,
         color: Color,
         radius: Option<Radius>,
-    ) -> Option<(FrameRect, FrameRect, Color)> {
+    ) -> Option<(FrameRect, FrameRect, Color, Option<Radius>)> {
         // 读取当前 transform，并拆出单位正交准入需要的六个分量。
         let transform = self.scratch.current_transform();
         // 分离线性部分与 surface 平移量，避免把缩放或剪切误判为等距变换。
@@ -519,19 +519,11 @@ impl FrameRecordingCanvas {
         let swaps_axes = a == 0.0 && d == 0.0 && b.abs() == 1.0 && c.abs() == 1.0;
         // 两类有符号轴置换共同组成不会改变长度和抗锯齿尺度的单位正交集合。
         let is_unit_orthogonal = preserves_axes || swaps_axes;
-        // 纯平移不会重排四角，因此仍可保留任意合法圆角组合。
-        let is_pure_translation = a == 1.0 && b == 0.0 && c == 0.0 && d == 1.0;
-        // 直角或四角统一半径在旋转和镜像后无需重排角载荷。
-        let has_transform_invariant_radius = radius.map_or(true, |radius| {
-            // 四个角必须精确相同，才能沿用同一 FrameRadius。
-            radius.tl == radius.tr && radius.tr == radius.br && radius.br == radius.bl
-        });
         // 读取软件路径用于缩放 premultiplied 颜色的同一全局 opacity。
         let opacity = self.scratch.opacity();
         // 只接受能够由固定 Additive shape pipeline 精确表达的画布状态。
         if self.blend_mode != BlendMode::Additive
             || !is_unit_orthogonal
-            || (!is_pure_translation && !has_transform_invariant_radius)
             || !opacity.is_finite()
             || !(0.0..=1.0).contains(&opacity)
         {
@@ -585,8 +577,59 @@ impl FrameRecordingCanvas {
         // 按 CPU 路径顺序把 opacity 折进 premultiplied 颜色并编码回 Color。
         let color =
             crate::draw::raster::rasterizer::color_with_premultiplied_opacity(color, opacity);
-        // 返回同一录制时刻的几何、裁剪与位精确颜色事实。
-        Some((rect, clip, color))
+        // 按线性变换把本地四角半径重排到映射后的 surface 矩形四角。
+        let radius = radius.map(|radius| Self::unit_orthogonal_radius(radius, a, b, c, d));
+        // 返回同一录制时刻的几何、裁剪、位精确颜色与角位事实。
+        Some((rect, clip, color, radius))
+    }
+
+    /// 把本地 `tl/tr/br/bl` 半径重排到单位正交变换后的 surface 矩形四角。
+    pub(super) fn unit_orthogonal_radius(radius: Radius, a: f32, b: f32, c: f32, d: f32) -> Radius {
+        // 依照 Radius 的固定字段顺序保存四个本地角载荷。
+        let source = [radius.tl, radius.tr, radius.br, radius.bl];
+        // 使用单位正方形四角表达与具体矩形尺寸和平移无关的角位映射。
+        let local_corners = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)];
+        // 只应用已通过准入检查的线性部分，得到四个映射角。
+        let mapped_corners = local_corners.map(|(x, y)| (a * x + b * y, c * x + d * y));
+        // 找出映射矩形的左边界，用于区分左、右角。
+        let min_x = mapped_corners
+            .iter()
+            .map(|(x, _)| *x)
+            .fold(f32::INFINITY, f32::min);
+        // 找出映射矩形的上边界，用于区分上、下角。
+        let min_y = mapped_corners
+            .iter()
+            .map(|(_, y)| *y)
+            .fold(f32::INFINITY, f32::min);
+        // 按 surface 的 tl/tr/br/bl 顺序准备重排结果。
+        let mut mapped = [0.0; 4];
+        // 每个本地角恰好映射到一个 surface 角。
+        for ((x, y), value) in mapped_corners.into_iter().zip(source) {
+            // 用相对最小边界的位置选择目标角索引。
+            let index = match (x == min_x, y == min_y) {
+                // 左上角保持 Radius 的第一个槽位。
+                (true, true) => 0,
+                // 右上角写入第二个槽位。
+                (false, true) => 1,
+                // 右下角写入第三个槽位。
+                (false, false) => 2,
+                // 左下角写入第四个槽位。
+                (true, false) => 3,
+            };
+            // 保存原始半径数值，仅改变其所属角位。
+            mapped[index] = value;
+        }
+        // 以公开语义顺序重建供 FrameRadius 验证的半径。
+        Radius {
+            // 写回映射后的左上半径。
+            tl: mapped[0],
+            // 写回映射后的右上半径。
+            tr: mapped[1],
+            // 写回映射后的右下半径。
+            br: mapped[2],
+            // 写回映射后的左下半径。
+            bl: mapped[3],
+        }
     }
 
     pub(super) fn direct_picture_rects(
