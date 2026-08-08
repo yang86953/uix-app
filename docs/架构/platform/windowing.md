@@ -23,7 +23,7 @@ OS callback/poll 只采集数据并投递目标窗口事件；应用 callback �
 
 ## 组件：TextInputSession
 
-原生输入 owner 由窗口、native view 和 generation 约束；未 commit composition 不成为最终文本。Windows TSF session 将 `TsfEventSink`、`TsfTextStore` 和 `WindowsTextInput` 绑定到同一 `WindowId` 与 platform pending-failure source；composition callback 只把状态转换后的 `UiEvent` 写入共享队列，唤醒失败和 text-store 锁/借用失败由 owner-thread 取回 typed `Error`，不在 callback 栈执行应用逻辑。`wnd_proc` 外层捕获消息处理 panic 并返回 `DefWindowProcW`；TSF 的 windows-rs 生成 COM thunk 由 text-store trait guard 将 panic 转为 `E_FAIL` 和 owner failure，保证 unwind 不跨 ABI。
+原生输入 owner 由窗口、native view 和 generation 约束；未 commit composition 不成为最终文本。Windows TSF session 将 `TsfEventSink`、`TsfTextStore` 和 `WindowsTextInput` 绑定到同一 `WindowId` 与 platform pending-failure source；composition callback 只把状态转换后的 `UiEvent` 写入共享队列，唤醒失败和 text-store 锁/借用失败由 owner-thread 取回 typed `Error`，不在 callback 栈执行应用逻辑。`wnd_proc` 外层捕获消息处理 panic 并返回 `DefWindowProcW`；TSF 的 windows-rs 生成 COM thunk 由 text-store trait guard 将 panic 转为 `E_FAIL` 和 owner failure，保证 unwind 不跨 ABI。`ITextStoreACP` 与 `ITfContextOwnerCompositionSink` 两组真实生成 vtable 均有 panic 回归覆盖。
 
 ## 模块不变量
 
