@@ -40,7 +40,6 @@ use self::source_over::{
     stroke_batch_bounds, stroke_batches_can_merge, stroke_visible_bounds, PictureCropTranslation,
 };
 
-
 /// Ordered command recorder for exactly one frame.
 ///
 /// `present` consumes `self`.  This is intentional: an encoder owns one frame
@@ -283,7 +282,13 @@ impl FrameEncoder {
             });
             return;
         }
-        if let FrameRasterOp::StrokeRoundedRects { strokes, clip } = operation {
+        // 描边批次同时保留 clip 与 blend 事实，防止 SrcOver/Additive 越界合并。
+        if let FrameRasterOp::StrokeRoundedRects {
+            strokes,
+            clip,
+            additive,
+        } = operation
+        {
             if clip.is_empty() {
                 return;
             }
@@ -296,10 +301,12 @@ impl FrameEncoder {
                         FrameRasterOp::StrokeRoundedRects {
                             strokes: previous,
                             clip: previous_clip,
+                            additive: previous_additive,
                         },
                 }) = self.commands.last_mut()
                 {
                     if *previous_clip == clip
+                        && *previous_additive == additive
                         && stroke_batches_can_merge(
                             previous,
                             std::slice::from_ref(&stroke),
@@ -316,6 +323,8 @@ impl FrameEncoder {
                     operation: FrameRasterOp::StrokeRoundedRects {
                         strokes: vec![stroke],
                         clip,
+                        // 新批次继承调用方已经证明的 blend 事实。
+                        additive,
                     },
                 });
             }
@@ -340,7 +349,13 @@ impl FrameEncoder {
             | FrameRasterOp::FillRoundedRect { .. }
             | FrameRasterOp::FillRoundedRectClipped { .. }
             | FrameRasterOp::BlitGlyphs { .. }
-            | FrameRasterOp::StrokeRoundedRects { .. } => None,
+            | FrameRasterOp::StrokeRoundedRects {
+                additive: false, ..
+            } => None,
+            // Additive 描边必须读取累计目标，不能先画进透明分段再 SrcOver 合成。
+            FrameRasterOp::StrokeRoundedRects { additive: true, .. } => {
+                Some("StrokeRoundedRectsAdditive")
+            }
             FrameRasterOp::FillRectAdditive { .. } => Some("FillRectAdditive"),
             FrameRasterOp::FillRoundedRectAdditive { .. } => Some("FillRoundedRectAdditive"),
             FrameRasterOp::ScrollCopy { .. } => Some("ScrollCopy"),
@@ -679,6 +694,8 @@ impl FrameEncoder {
                 &mut pixels,
                 FrameStrokeRect::new(local_rect, stroke.color, stroke.radius, stroke.line_width),
                 local_clip,
+                // 透明参考 tile 只服务普通 SrcOver legacy fallback。
+                false,
             );
         }
         Ok(Some((

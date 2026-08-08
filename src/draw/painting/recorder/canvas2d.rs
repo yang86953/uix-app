@@ -49,7 +49,7 @@ impl Canvas2D for FrameRecordingCanvas {
         } else {
             None
         };
-        if self.can_emit_native_additive_fill(rect) {
+        if self.can_emit_native_additive_rect(rect) {
             if let Err(error) = self.flush_scratch().and_then(|()| {
                 let rect =
                     FrameRect::new(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32);
@@ -163,6 +163,63 @@ impl Canvas2D for FrameRecordingCanvas {
     }
 
     fn stroke_rect(&mut self, rect: Rect, color: Color, width: f32, radius: Option<Radius>) {
+        // Additive 描边只能作为目标相关 Native 命令保留，禁止进入透明 CPU segment。
+        if self.can_emit_native_additive_rect(rect) {
+            // 在记录边界验证圆角，避免把非法浮点几何带入 FrameEncoder。
+            let native_radius = match FrameRadius::new(radius.unwrap_or_default()) {
+                // 保存通过验证的圆角值。
+                Ok(radius) => radius,
+                // 将非法圆角转为既有 deferred typed failure。
+                Err(error) => {
+                    // 记录统一的 encoder 错误。
+                    self.remember_error(frame_encoder_error(error));
+                    // 非法操作不能继续记录。
+                    return;
+                }
+            };
+            // 在记录边界验证正有限描边宽度。
+            let line_width = match FrameStrokeWidth::new(width) {
+                // 保存通过验证的描边宽度。
+                Ok(width) => width,
+                // 将非法宽度转为既有 deferred typed failure。
+                Err(error) => {
+                    // 记录统一的 encoder 错误。
+                    self.remember_error(frame_encoder_error(error));
+                    // 非法操作不能继续记录。
+                    return;
+                }
+            };
+            // 目标相关命令前必须先提交此前累计的 source-independent scratch。
+            if let Err(error) = self.flush_scratch().and_then(|()| {
+                // helper 已证明几何是完整 surface 内的整数矩形。
+                let native_rect =
+                    FrameRect::new(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32);
+                // Additive 提升只允许完整 surface clip。
+                let clip = FrameRect::new(0, 0, self.width, self.height);
+                // 记录带显式 blend 事实的共享描边载荷。
+                self.encoder_mut()?
+                    .native(FrameRasterOp::StrokeRoundedRects {
+                        // 当前调用只产生一条描边，后续由 encoder 做安全批合并。
+                        strokes: vec![FrameStrokeRect::new(
+                            native_rect,
+                            color,
+                            native_radius,
+                            line_width,
+                        )],
+                        // 保存完整 surface clip。
+                        clip,
+                        // 标记该批必须使用饱和加法混合。
+                        additive: true,
+                    });
+                // 命令记录成功。
+                Ok(())
+            }) {
+                // 延迟报告 flush 或 encoder 状态错误。
+                self.remember_error(error);
+            }
+            // Additive 路径已经完整处理。
+            return;
+        }
         if let Some((native_rect, clip)) = self.native_src_over_rects(rect) {
             let native_radius = radius.unwrap_or_default();
             let (Ok(native_radius), Ok(line_width)) = (
@@ -194,6 +251,8 @@ impl Canvas2D for FrameRecordingCanvas {
                             line_width,
                         )],
                         clip,
+                        // 普通直达描边保持 SrcOver 语义。
+                        additive: false,
                     });
                 Ok(())
             }) {
@@ -208,7 +267,11 @@ impl Canvas2D for FrameRecordingCanvas {
 
     fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, width: f32) {
         let bounds = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
-        if r.is_finite() && r > 0.0 && self.native_src_over_rects(bounds).is_some() {
+        if r.is_finite()
+            && r > 0.0
+            && (self.can_emit_native_additive_rect(bounds)
+                || self.native_src_over_rects(bounds).is_some())
+        {
             // A circle stroke is the shared rounded-rect stroke SDF over a
             // square whose four radii equal half the extent.
             self.stroke_rect(bounds, color, width, Some(Radius::uniform(r)));
@@ -420,5 +483,69 @@ impl Canvas2D for FrameRecordingCanvas {
         }) {
             self.remember_error(error);
         }
+    }
+}
+
+// 验证 Additive 描边从 Canvas2D 记录到参考像素的完整语义。
+#[cfg(test)]
+mod tests {
+    // 引入当前 recorder 实现和 Canvas2D 依赖类型。
+    use super::*;
+    // 引入命令枚举以审计实际记录载荷。
+    use crate::draw::painting::FrameCommand;
+
+    // 矩形与圆形 Additive 描边应共享一个明确标记的安全批次。
+    #[test]
+    fn records_additive_stroke_and_reference_adds_destination() {
+        // 创建能够容纳两个互不相交描边的 recorder 画布。
+        let mut canvas = FrameRecordingCanvas::new(16, 8);
+        // 开始一帧带透明 clear 的正式记录。
+        if let Err(error) = canvas.begin_recording(true) {
+            // 合法尺寸的记录初始化不得失败。
+            panic!("additive stroke recording should begin: {error:?}");
+        }
+        // 先用不透明红色建立可观察的累计目标。
+        canvas.fill_rect(Rect::new(0.0, 0.0, 16.0, 8.0), Color::red(), None);
+        // 后续描边切换到目标相关 Additive 混合。
+        canvas.set_blend_mode(BlendMode::Additive);
+        // 记录一个整数轴对齐直角矩形描边。
+        canvas.stroke_rect(Rect::new(1.0, 1.0, 4.0, 4.0), Color::green(), 1.0, None);
+        // 记录一个与前一描边互不相交的整数轴对齐圆形描边。
+        canvas.stroke_circle(12.0, 3.0, 2.0, Color::green(), 1.0);
+        // 完成记录并取得不可变命令流。
+        let encoder = match canvas.finish_recording() {
+            // 保存成功的编码器供载荷和像素审计。
+            Ok(encoder) => encoder,
+            // 合法 Additive 描边不应产生 deferred failure。
+            Err(error) => panic!("additive stroke recording should finish: {error:?}"),
+        };
+        // 命令流应严格为 clear、红色底和一个 Additive 描边批次。
+        let [FrameCommand::Clear { .. }, FrameCommand::Native {
+            operation: FrameRasterOp::FillRect { .. },
+        }, FrameCommand::Native {
+            operation:
+                FrameRasterOp::StrokeRoundedRects {
+                    strokes,
+                    additive: true,
+                    ..
+                },
+        }] = encoder.commands()
+        else {
+            // 任何额外 CPU segment 或拆错顺序都说明记录路径退化。
+            panic!("expected clear, fill, and one additive stroke batch");
+        };
+        // 相同 clip/blend 且互不相交的矩形和圆应安全合为一批。
+        assert_eq!(strokes.len(), 2);
+        // 第二条圆形描边必须保留半径事实而不是退化为直角矩形。
+        assert_eq!(strokes[1].radius().to_radius().tl, 2.0);
+        // 执行 CPU 参考路径以核验真实目标相关混合。
+        let reference = encoder.render_reference();
+        // 红底上的绿色 Additive 描边应逐通道饱和为黄色。
+        assert_eq!(
+            reference.pixel(1, 1),
+            Some(Color::from_rgb(255, 255, 0).premultiplied())
+        );
+        // 描边内部未覆盖像素必须继续保持原始红色目标。
+        assert_eq!(reference.pixel(2, 2), Some(Color::red().premultiplied()));
     }
 }

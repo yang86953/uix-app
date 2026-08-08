@@ -396,7 +396,11 @@ fn append_native_operation(
             Ok(true)
         }
         // 描边矩形与普通圆角填充共享 shape ABI。
-        FrameRasterOp::StrokeRoundedRects { strokes, clip } => {
+        FrameRasterOp::StrokeRoundedRects {
+            strokes,
+            clip,
+            additive,
+        } => {
             let clip = clip.intersection(bounds);
             if clip.is_none() {
                 return Ok(true);
@@ -409,7 +413,8 @@ fn append_native_operation(
                     stroke.color(),
                     stroke.radius(),
                     stroke.line_width().value() * 0.5,
-                    false,
+                    // 共享 shape lowering 按命令事实选择 SrcOver 或 Additive pipeline。
+                    *additive,
                     clip,
                     bounds,
                     viewport,
@@ -749,7 +754,10 @@ impl GpuBackend {
             context.token().extent
         } else {
             // Picture texture 在进入 encoder 前已由调用方验证尺寸匹配。
-            RhiExtent::new(encoder.width().max(1) as u32, encoder.height().max(1) as u32)
+            RhiExtent::new(
+                encoder.width().max(1) as u32,
+                encoder.height().max(1) as u32,
+            )
         };
         // 预先降低每个 scroll boundary，任何一条不安全都不触碰 GPU submit。
         let mut moves = Vec::with_capacity(lowered.segments.len());
@@ -778,10 +786,15 @@ impl GpuBackend {
             }
         }
         // Additive 是可选 RHI 能力，缺失时保持整条 FrameEncoder 原子回退。
-        if lowered.segments.iter().flat_map(|segment| &segment.operations).any(|operation| {
-            matches!(operation, RhiOp::Textured(quad) if quad.additive)
-                || matches!(operation, RhiOp::AdditiveShape(_))
-        }) {
+        if lowered
+            .segments
+            .iter()
+            .flat_map(|segment| &segment.operations)
+            .any(|operation| {
+                matches!(operation, RhiOp::Textured(quad) if quad.additive)
+                    || matches!(operation, RhiOp::AdditiveShape(_))
+            })
+        {
             let Some(context) = self.gpu_ctx.rhi_context() else {
                 return Ok(false);
             };
@@ -822,12 +835,7 @@ impl GpuBackend {
                 .sum::<usize>()
         );
         // 依次执行 segment pass 与其前置 TextureMove，严格保留 painter order。
-        for (index, (segment, movement)) in lowered
-            .segments
-            .iter()
-            .zip(moves.iter())
-            .enumerate()
-        {
+        for (index, (segment, movement)) in lowered.segments.iter().zip(moves.iter()).enumerate() {
             // scroll 必须发生在后续 segment pass 之前。
             if let Some(movement) = movement {
                 // move boundary 只提交 retained texture，不获取或呈现 swapchain。

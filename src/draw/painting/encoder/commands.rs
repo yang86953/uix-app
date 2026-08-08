@@ -14,7 +14,8 @@ use super::geometry::{
 /// frame ordering or the presentation contract.
 ///
 /// 目标相关操作（[`Self::FillRectAdditive`]、
-/// [`Self::FillRoundedRectAdditive`]、[`Self::ScrollCopy`]）必须直接作用于
+/// [`Self::FillRoundedRectAdditive`]、Additive [`Self::StrokeRoundedRects`]、
+/// [`Self::ScrollCopy`]）必须直接作用于
 /// 累积目标（Native 命令或参考执行器）。把它们录进透明 CPU segment 后再做
 /// source-over 合成并不等价，禁止作为替代实现。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,10 +43,12 @@ pub enum FrameRasterOp {
         glyphs: Vec<FrameGlyphBlit>,
         clip: FrameRect,
     },
-    /// Ordered centered SrcOver rectangle strokes sharing one surface clip.
+    /// Ordered centered rectangle strokes sharing one surface clip and blend fact.
     StrokeRoundedRects {
         strokes: Vec<FrameStrokeRect>,
         clip: FrameRect,
+        /// 为 true 时逐通道饱和加到累计目标；为 false 时使用普通 SrcOver。
+        additive: bool,
     },
     /// Channel-wise saturating add into the destination (CPU Additive blend).
     FillRectAdditive {

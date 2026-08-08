@@ -10,7 +10,7 @@ use crate::draw::Color;
 
 use super::commands::FrameRasterOp;
 use super::error::FrameEncoderError;
-use super::geometry::{FrameImage, FrameRect, FrameRadius, FrameSampledRect, FrameStrokeRect};
+use super::geometry::{FrameImage, FrameRadius, FrameRect, FrameSampledRect, FrameStrokeRect};
 
 pub(super) fn full_frame_image_blit(
     width: i32,
@@ -39,10 +39,43 @@ pub(super) fn apply_stroke_rect_pixels(
     pixels: &mut [u32],
     stroke: FrameStrokeRect,
     clip: FrameRect,
+    additive: bool,
 ) {
     if stroke.rect.is_empty() {
         return;
     }
+    // Additive 必须直接读写已有目标像素，复用 SoftwareRasterizer 的真实 blend 规则。
+    if additive {
+        // 为当前目标构造无变换的参考 rasterizer。
+        let mut renderer = SoftwareRasterizer::new(width, height);
+        // 选择逐通道饱和加法混合。
+        renderer.set_blend_mode(BlendMode::Additive);
+        // FrameRasterOp 的 clip 已经位于 surface 空间。
+        renderer.push_clip_surface(Rect::new(
+            clip.x as f32,
+            clip.y as f32,
+            clip.width as f32,
+            clip.height as f32,
+        ));
+        // 直接在累计目标上执行与 Canvas2D 一致的描边。
+        renderer.stroke_rect(
+            pixels,
+            width,
+            height,
+            Rect::new(
+                stroke.rect.x as f32,
+                stroke.rect.y as f32,
+                stroke.rect.width as f32,
+                stroke.rect.height as f32,
+            ),
+            stroke.color,
+            stroke.line_width.value(),
+            Some(stroke.radius.to_radius()),
+        );
+        // Additive 已经完成，禁止继续执行 SrcOver 低层路径。
+        return;
+    }
+    // 普通描边继续复用既有低层 SrcOver 光栅函数。
     crate::draw::raster::rasterizer::stroke::stroke_rect(
         pixels,
         width,
@@ -66,7 +99,12 @@ pub(super) fn apply_stroke_rect_pixels(
     );
 }
 
-pub(super) fn apply_raster_op_pixels(width: i32, height: i32, pixels: &mut [u32], operation: &FrameRasterOp) {
+pub(super) fn apply_raster_op_pixels(
+    width: i32,
+    height: i32,
+    pixels: &mut [u32],
+    operation: &FrameRasterOp,
+) {
     match operation {
         FrameRasterOp::FillRect { rect, color } => {
             fill_rect_pixels(width, height, pixels, *rect, *color)
@@ -111,9 +149,14 @@ pub(super) fn apply_raster_op_pixels(width: i32, height: i32, pixels: &mut [u32]
                 );
             }
         }
-        FrameRasterOp::StrokeRoundedRects { strokes, clip } => {
+        FrameRasterOp::StrokeRoundedRects {
+            strokes,
+            clip,
+            additive,
+        } => {
             for stroke in strokes {
-                apply_stroke_rect_pixels(width, height, pixels, *stroke, *clip);
+                // 对累计目标应用命令携带的统一 blend 事实。
+                apply_stroke_rect_pixels(width, height, pixels, *stroke, *clip, *additive);
             }
         }
         FrameRasterOp::FillRectAdditive { rect, color } => {

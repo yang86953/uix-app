@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use super::commands::{FrameCommand, FrameRasterOp};
 use super::geometry::{
-    FrameGlyphBlit, FrameImage, FrameRect, FrameRadius, FrameSampledRect, FrameStrokeRect,
+    FrameGlyphBlit, FrameImage, FrameRadius, FrameRect, FrameSampledRect, FrameStrokeRect,
 };
 
 struct SourceOverWrite {

@@ -5,6 +5,11 @@
 
 use std::time::Instant;
 
+use super::super::canvas::NativeGpuCanvas2D;
+use super::super::SOFT_FALLBACK_IDLE_TIME_GRACE;
+use super::surface::NativeGpuDrawSurface;
+use super::GpuBackend;
+use super::{device_pixel_ratio_from_context, logical_extent_from_context};
 use crate::core::{Errc, Error, PresentDamageTracker};
 use crate::draw::backend::contract::RenderBackend;
 use crate::draw::geometry::color::Color;
@@ -12,14 +17,7 @@ use crate::draw::geometry::types::ImageHandle;
 use crate::draw::painting::{
     FrameCommand, FrameEncoder, FrameEncoderError, FrameRasterOp, FrameRect,
 };
-use crate::native::present::{
-    IGraphicsContext, PresentMode, RasterMode,
-};
-use super::super::canvas::NativeGpuCanvas2D;
-use super::super::SOFT_FALLBACK_IDLE_TIME_GRACE;
-use super::surface::NativeGpuDrawSurface;
-use super::GpuBackend;
-use super::{device_pixel_ratio_from_context, logical_extent_from_context};
+use crate::native::present::{IGraphicsContext, PresentMode, RasterMode};
 
 impl GpuBackend {
     // 保留 hybrid GPU backend 的兼容构造器，当前 bootstrap 使用 new_gpu_only 或带模式入口。
@@ -474,7 +472,12 @@ impl GpuBackend {
             FrameRasterOp::BlitGlyphs { glyphs, clip } => {
                 self.draw_frame_glyphs(target_width, target_height, glyphs, *clip)
             }
-            FrameRasterOp::StrokeRoundedRects { strokes, clip } => {
+            // legacy 原生描边入口只接受普通 SrcOver 批次。
+            FrameRasterOp::StrokeRoundedRects {
+                strokes,
+                clip,
+                additive: false,
+            } => {
                 let Some(clip) =
                     clip.intersection(FrameRect::new(0, 0, target_width, target_height))
                 else {
@@ -508,6 +511,8 @@ impl GpuBackend {
             }
             FrameRasterOp::FillRectAdditive { .. }
             | FrameRasterOp::FillRoundedRectAdditive { .. }
+            // Additive 描边必须对 readback 后的累计目标执行参考合成。
+            | FrameRasterOp::StrokeRoundedRects { additive: true, .. }
             | FrameRasterOp::ScrollCopy { .. } => {
                 self.execute_destination_dependent_frame_op(target_width, target_height, operation)
             }
