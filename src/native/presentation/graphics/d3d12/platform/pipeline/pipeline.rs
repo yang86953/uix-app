@@ -1,8 +1,5 @@
 // 复用父模块的 D3D12 类型与辅助函数。
 use super::*;
-// 从同级辅助模块引入软回退像素边界计算。
-use super::helpers::visible_pixel_bounds;
-
 impl D3d12Pipeline {
     // 在 D3D12 平台层内构造共享 pipeline。
     pub(in super::super) fn new(device: &ID3D12Device, frame_count: usize) -> Result<Self> {
@@ -656,44 +653,6 @@ impl D3d12Pipeline {
         self.glyph_atlas
             .as_ref()
             .map(|_| (GLYPH_ATLAS_SIZE, GLYPH_ATLAS_SIZE))
-    }
-
-    // 在 D3D12 平台层内上传并绘制完整软回退缓冲。
-    pub(in super::super) fn blit_soft_fallback(
-        &mut self,
-        device: &ID3D12Device,
-        list: &ID3D12GraphicsCommandList,
-        frame_index: usize,
-        pixels: &[u32],
-        width: i32,
-        height: i32,
-    ) -> Result<()> {
-        let expected = (width as usize)
-            .checked_mul(height as usize)
-            .ok_or_else(|| invalid_input("soft fallback pixel count overflow"))?;
-        if pixels.len() < expected {
-            return Err(invalid_input(format!(
-                "soft fallback buffer too small, got {}, need {expected}",
-                pixels.len()
-            )));
-        }
-        let Some((x, y, upload_w, upload_h)) = visible_pixel_bounds(pixels, width, height) else {
-            return Ok(());
-        };
-        let mut packed = Vec::with_capacity((upload_w as usize).saturating_mul(upload_h as usize));
-        for row in y..y + upload_h {
-            let start = row as usize * width as usize + x as usize;
-            packed.extend_from_slice(&pixels[start..start + upload_w as usize]);
-        }
-        self.blit_soft_fallback_tile(
-            device,
-            list,
-            frame_index,
-            &packed,
-            width,
-            height,
-            SoftFallbackTile::at_destination(x, y, upload_w, upload_h),
-        )
     }
 
     // D3D12 命令录制边界需要同时接收设备、命令列表、帧与图块载荷。

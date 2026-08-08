@@ -452,45 +452,6 @@ impl D3d11Pipeline {
         Ok(())
     }
 
-    pub fn blit_soft_fallback(
-        &mut self,
-        device: &ID3D11Device,
-        context: &ID3D11DeviceContext,
-        pixels: &[u32],
-        width: i32,
-        height: i32,
-    ) -> Result<()> {
-        if width <= 0 || height <= 0 {
-            return Ok(());
-        }
-        let expected = (width as usize).saturating_mul(height as usize);
-        if pixels.len() < expected {
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                format!(
-                    "D3d11Pipeline: soft blit buffer too small, got {}, need {expected}",
-                    pixels.len()
-                ),
-            ));
-        }
-        let Some((x, y, upload_w, upload_h)) = visible_pixel_bounds(pixels, width, height) else {
-            return Ok(());
-        };
-        let mut packed = Vec::with_capacity((upload_w as usize).saturating_mul(upload_h as usize));
-        for row in y..y + upload_h {
-            let start = row as usize * width as usize + x as usize;
-            packed.extend_from_slice(&pixels[start..start + upload_w as usize]);
-        }
-        self.blit_soft_fallback_tile(
-            device,
-            context,
-            &packed,
-            width,
-            height,
-            SoftFallbackTile::at_destination(x, y, upload_w, upload_h),
-        )
-    }
-
     pub fn blit_soft_fallback_tile(
         &mut self,
         device: &ID3D11Device,

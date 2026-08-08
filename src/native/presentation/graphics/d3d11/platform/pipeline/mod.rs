@@ -715,50 +715,6 @@ fn next_pow2_u32(v: u32) -> u32 {
     v.next_power_of_two().max(1)
 }
 
-/// Tight top-left pixel bounds of visible straight-alpha CPU fallback data.
-///
-/// The native soft texture persists between ordered segments, so callers must
-/// upload and sample exactly this box; sampling a fullscreen quad would draw
-/// stale texture contents outside the current CPU segment.
-pub(crate) fn visible_pixel_bounds(
-    pixels: &[u32],
-    width: i32,
-    height: i32,
-) -> Option<(i32, i32, i32, i32)> {
-    if width <= 0 || height <= 0 {
-        return None;
-    }
-    let width = width as usize;
-    let count = pixels.len().min(width.saturating_mul(height as usize));
-    let mut min_x = width;
-    let mut min_y = height as usize;
-    let mut max_x = 0usize;
-    let mut max_y = 0usize;
-    let mut any = false;
-
-    for (index, pixel) in pixels.iter().take(count).enumerate() {
-        if (pixel >> 24) == 0 {
-            continue;
-        }
-        let x = index % width;
-        let y = index / width;
-        min_x = min_x.min(x);
-        min_y = min_y.min(y);
-        max_x = max_x.max(x);
-        max_y = max_y.max(y);
-        any = true;
-    }
-
-    any.then(|| {
-        (
-            min_x as i32,
-            min_y as i32,
-            (max_x - min_x + 1) as i32,
-            (max_y - min_y + 1) as i32,
-        )
-    })
-}
-
 pub struct D3d11Pipeline {
     vs_rect: ID3D11VertexShader,
     ps_rect: ID3D11PixelShader,

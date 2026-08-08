@@ -118,12 +118,14 @@ CPU backend 继续作为完整、可验证的 renderer，而不是每个 native 
 
 Picture/offscreen 的 create/destroy/paint/blit/blur 全部围绕唯一 RHI texture owner 执行；公共 `OffscreenTargetId`、`IGraphicsContext` 的 create/destroy/bind/blit 入口，以及 D3D11/OpenGL ES 的平行 texture/FBO、绑定、采样和释放状态均已移除。这样两个生产 adapter 只执行同一个通用 Picture 计划、高斯核、区域裁剪、scratch 生命周期和 sampled 合成，adapter 仅保留薄 RHI 资源与底层 draw 编码。
 
+soft fallback 的生产提交只保留有边界的 `blit_soft_fallback_tile` 协议：通用 renderer 负责裁出可见 tile，adapter 校验紧密 payload 与目标范围后执行 SrcOver。旧 `IGraphicsContext::blit_soft_fallback` 整面透明混合入口及 D3D11/D3D12 私有扫描、打包分叉已经移除；目标相关操作仍可使用语义独立的 `upload_surface_pixels` 做整面替换，禁止把 replace 与 alpha-over 混为同一路径。
+
 GPU 基线内的操作不能依赖常态 CPU fallback。可选效果可以显式声明等价降级，但不能静默改变视觉结果。
 
 ## 当前映射与目标差距
 
 - 已有唯一 `RenderBackend` 抽象、通用 `GpuBackend`、有序 `FramePlan`、薄 RHI 契约和 CPU backend。
-- `IGraphicsContext` 与 `NativeRasterCaps` 仍保留迁移期的其余逐 UI 操作；overlay backdrop 高层入口、离屏 blur 入口和 legacy offscreen 资源族已移除，目标是继续把几何、batch、atlas 与其余 effect 调度收回通用 GPU Renderer。
+- `IGraphicsContext` 与 `NativeRasterCaps` 仍保留迁移期的其余逐 UI 操作；overlay backdrop 高层入口、离屏 blur 入口、legacy offscreen 资源族与整面 soft fallback 透明混合入口已移除，目标是继续把几何、batch、atlas 与其余 effect 调度收回通用 GPU Renderer。
 - D3D11 与 OpenGL ES 已接入资源、pass、draw/copy、retained framebuffer、surface resize、submit/present、错误映射和恢复边界；未覆盖图元继续明确回退。当前高层场景仍执行完整重绘，以保证任何兼容回退清空 swapchain 后都能恢复全部页面像素。
 - 剩余差距包括 backdrop blur 等尚未闭合的多阶段效果、`IGraphicsContext` 其余兼容门面移除，以及 Picture/offscreen blur 与 overlay backdrop 跨 DPI、真实 GPU 和操作系统的运行时矩阵覆盖。
 
