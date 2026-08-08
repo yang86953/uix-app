@@ -54,7 +54,7 @@ fn rhi_offscreen_extent(
 }
 
 // 把 Picture queue 的 RHI lowering 结果收敛为稳定的 typed failure。
-fn require_lossless_picture_submission(
+fn require_lossless_rhi_submission(
     // 指示当前 queue 是否已经完整提交到唯一 RHI texture。
     submitted: bool,
     // 保存具体 lowering 边界的诊断文本。
@@ -70,7 +70,7 @@ fn require_lossless_picture_submission(
     Err(Error::new(
         // 当前缺口属于通用 RHI lowering 尚未实现。
         Errc::NotImplemented,
-        // 保留调用点提供的具体 Picture 阶段。
+        // 保留调用点提供的具体 RHI lowering 阶段。
         message,
     ))
 }
@@ -309,7 +309,7 @@ impl RenderBackend for GpuBackend {
             false,
         )?;
         // 对未覆盖操作返回 typed failure，禁止静默降级到 legacy target。
-        require_lossless_picture_submission(
+        require_lossless_rhi_submission(
             // 传入完整 encoder 的实际提交结果。
             submitted,
             // 明确说明失败发生在无损 Picture lowering 边界。
@@ -350,41 +350,54 @@ impl RenderBackend for GpuBackend {
         }
 
         let execute = (|| {
-            self.gpu_ctx.make_current()?;
-            self.gpu_ctx.bind_swapchain_target()?;
             // 首条 Clear 可完整替代 begin_frame 的 pending damage clear。
             let starts_with_clear =
                 matches!(encoder.commands().first(), Some(FrameCommand::Clear { .. }));
             let rhi_load = if starts_with_clear {
                 // RHI lowering 会从 encoder 的首条 Clear 读取真实颜色。
-                Some(LoadAction::Load)
-            } else if !self.surface.pending_clear_rects.is_empty() {
-                // 当前 FramePlan 尚未表达局部 retained clear，交回兼容路径。
-                None
+                LoadAction::Load
             } else if self.surface.needs_gpu_clear {
                 // 无显式 Clear 时沿用 begin_frame 的透明初始化。
-                Some(LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0])))
+                LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0]))
             } else {
                 // 保留 retained surface 的前序像素。
-                Some(LoadAction::Load)
+                LoadAction::Load
             };
-            if let Some(load) = rhi_load {
-                if self.try_execute_frame_encoder_rhi(
-                    encoder,
-                    crate::draw::backend::frame_plan::RenderTargetRef::Surface,
-                    load,
-                    false,
-                )? {
-                    // RHI 片段已替代当前 encoder，外层仍负责最终 present。
-                    self.surface.needs_gpu_clear = false;
-                    self.surface.pending_clear_rects.clear();
-                    return Ok(());
-                }
+            // 没有全幅 clear 时，先把 begin_frame 记录的 damage 清理写入 retained texture。
+            if !starts_with_clear
+                && !self.surface.needs_gpu_clear
+                && !self.surface.pending_clear_rects.is_empty()
+            {
+                // 确保局部清理与后续 encoder 写入同一代 retained texture。
+                let retained_texture = self.ensure_rhi_surface_texture()?;
+                // 将纹理身份转换为局部 ClearRect 计划使用的 render target。
+                let clear_target = RenderTargetHandle::from_raw(retained_texture.raw());
+                // 清理必须完整 lower，不能在提交一半后切换到 legacy swapchain。
+                let cleared = self.try_clear_rhi_surface_rects(clear_target)?;
+                // 缺少 ClearRect 能力或几何无法证明时保持 typed failure。
+                require_lossless_rhi_submission(
+                    cleared,
+                    "main FrameEncoder pending clears cannot be lowered losslessly to retained RHI",
+                )?;
             }
-            // RHI lowering 若回退，先丢弃可能已创建但未提交的 retained target。
-            self.abandon_rhi_surface_texture_for_legacy()?;
-            let target_initialized = self.prepare_main_frame_encoder_target(encoder)?;
-            self.execute_frame_encoder(encoder, target_initialized)
+            // 主帧与 Picture 共用同一无损 RHI lowering 门禁。
+            let submitted = self.try_execute_frame_encoder_rhi(
+                encoder,
+                crate::draw::backend::frame_plan::RenderTargetRef::Surface,
+                rhi_load,
+                false,
+            )?;
+            // 未覆盖命令必须交给恢复层，不能复活整面 readback/replace 分叉。
+            require_lossless_rhi_submission(
+                submitted,
+                "main FrameEncoder cannot be lowered losslessly to retained RHI",
+            )?;
+            // RHI 片段已经替代当前 encoder，外层仍负责唯一最终 present。
+            self.surface.needs_gpu_clear = false;
+            // 局部清理只在后续整条 encoder 同样提交成功后消费。
+            self.surface.pending_clear_rects.clear();
+            // 返回无损主帧提交成功。
+            Ok(())
         })();
         if let Err(error) = execute {
             self.surface.needs_gpu_clear = true;
@@ -526,7 +539,7 @@ impl RenderBackend for GpuBackend {
         // 未完整 lowering 的 native queue 不得再提交到 adapter target。
         if has_native {
             // 在消费 soft staging 前检查 native queue 的完整提交事实。
-            require_lossless_picture_submission(
+            require_lossless_rhi_submission(
                 // 传入 native queue 的实际提交结果。
                 native_submitted,
                 // 明确禁止从唯一 RHI owner 切换到 legacy 绘制。
@@ -563,7 +576,7 @@ impl RenderBackend for GpuBackend {
             true
         };
         // soft staging 未完整提交时不能报告 Picture flush 成功。
-        require_lossless_picture_submission(
+        require_lossless_rhi_submission(
             // 传入 soft 上传的实际提交结果。
             soft_submitted,
             // 明确失败发生在 Picture soft 上传边界。
@@ -836,7 +849,7 @@ mod tests {
         // 验证高层能力只由 RHI owner 推导。
         migration_safe_gpu_capabilities,
         // 验证未覆盖 lowering 返回稳定 typed failure。
-        require_lossless_picture_submission,
+        require_lossless_rhi_submission,
         // 验证 Picture extent 的单一 owner 门禁。
         rhi_offscreen_extent,
     };
@@ -880,11 +893,11 @@ mod tests {
     // 验证未完整 lowering 会在 adapter 高层回退之前变成 typed failure。
     #[test]
     // 同时覆盖成功透传与失败分类，锁定兼容分叉不得复活。
-    fn picture_submission_requires_lossless_rhi_lowering() {
+    fn submissions_require_lossless_rhi_lowering() {
         // 完整提交应允许调用方继续消费 staging。
-        assert!(require_lossless_picture_submission(true, "unused").is_ok());
+        assert!(require_lossless_rhi_submission(true, "unused").is_ok());
         // 模拟通用 RHI 无法覆盖当前 Picture queue。
-        let failure = require_lossless_picture_submission(false, "missing RHI lowering");
+        let failure = require_lossless_rhi_submission(false, "missing RHI lowering");
         // 失败必须保持 NotImplemented 分类供恢复层识别。
         assert!(matches!(
             // 检查 helper 返回的 typed error。

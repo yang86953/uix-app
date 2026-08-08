@@ -1,12 +1,9 @@
 //! Native GPU surface 与后端资源、提交生命周期。
 //!
 //! 子模块划分（P2 行数治理）：[`surface`] `DrawSurface` 门面、[`impl_main`]
-//! 生命周期与帧编码执行、[`impl_frame`] 帧命令绘制降级、[`render_backend`]
-//! `RenderBackend` 实现、[`helpers`] 帧编码几何辅助、[`drop`] 析构。
+//! 生命周期与资源管理、[`render_backend`] `RenderBackend` 实现及 [`drop`] 析构。
 
 pub(crate) mod drop;
-pub(crate) mod helpers;
-pub(crate) mod impl_frame;
 pub(crate) mod impl_main;
 pub(crate) mod render_backend;
 // 叠加层 backdrop 快照独立管理，保持 RenderBackend 文件处于行数上限内。

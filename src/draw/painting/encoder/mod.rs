@@ -16,6 +16,7 @@ pub(crate) mod geometry;
 pub(crate) mod pixels;
 pub(crate) mod source_over;
 
+use crate::draw::Color;
 pub use commands::{
     EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FramePresenter, FrameRasterOp,
     GpuFrameAudit, GpuFrameViolationKind, PresentOutcome, ReferenceFrame,
@@ -25,19 +26,15 @@ pub use geometry::{
     FrameGlyphBlit, FrameImage, FrameOpacity, FrameRadius, FrameRect, FrameSampledRect,
     FrameStrokeRect, FrameStrokeWidth,
 };
-pub(crate) use pixels::apply_frame_raster_op;
-
-use crate::draw::Color;
 
 use self::pixels::{
-    apply_raster_op_pixels, apply_stroke_rect_pixels, blit_image_pixels,
-    blit_image_pixels_with_opacity, blit_image_pixels_with_opacity_blend,
-    blit_sampled_image_pixels_with_opacity, blit_sampled_image_pixels_with_opacity_blend,
+    apply_raster_op_pixels, blit_image_pixels, blit_image_pixels_with_opacity,
+    blit_image_pixels_with_opacity_blend, blit_sampled_image_pixels_with_opacity_blend,
     full_frame_image_blit, pixel_len,
 };
 use self::source_over::{
     crop_and_translate_source_over_command, source_over_commands_have_safe_grouping,
-    stroke_batch_bounds, stroke_batches_can_merge, stroke_visible_bounds, PictureCropTranslation,
+    stroke_batches_can_merge, stroke_visible_bounds, PictureCropTranslation,
 };
 
 /// Ordered command recorder for exactly one frame.
@@ -558,67 +555,6 @@ impl FrameEncoder {
         self.image_blit_reference_tile(image, src, dst, 1.0)
     }
 
-    /// Rasterizes one Picture blit directly into its visible destination tile
-    /// for API-native execution at its exact painter-order boundary.
-    pub(crate) fn picture_blit_reference_tile(
-        &self,
-        image: &FrameImage,
-        src: FrameRect,
-        dst: FrameSampledRect,
-        opacity: FrameOpacity,
-    ) -> Option<(ReferenceFrame, FrameRect)> {
-        if opacity.is_transparent() {
-            return None;
-        }
-        let Some(integer_dst) = dst.as_integer() else {
-            // 亚像素目标：覆盖整数 AABB 内做浮点采样参考。
-            return self.sampled_picture_blit_reference_tile(image, src, dst, opacity.value());
-        };
-        self.image_blit_reference_tile(image, src, integer_dst, opacity.value())
-    }
-
-    fn sampled_picture_blit_reference_tile(
-        &self,
-        image: &FrameImage,
-        src: FrameRect,
-        dst: FrameSampledRect,
-        opacity: f32,
-    ) -> Option<(ReferenceFrame, FrameRect)> {
-        let x0 = dst.x().floor().max(0.0) as i32;
-        let y0 = dst.y().floor().max(0.0) as i32;
-        let x1 = (dst.x() + dst.width()).ceil().min(self.width as f32) as i32;
-        let y1 = (dst.y() + dst.height()).ceil().min(self.height as f32) as i32;
-        if x0 >= x1 || y0 >= y1 {
-            return None;
-        }
-        let visible = FrameRect::new(x0, y0, x1 - x0, y1 - y0);
-        let pixel_count =
-            usize::try_from(i64::from(visible.width).checked_mul(i64::from(visible.height))?)
-                .ok()?;
-        let mut frame = ReferenceFrame {
-            width: visible.width,
-            height: visible.height,
-            pixels: vec![Color::transparent().premultiplied(); pixel_count],
-        };
-        let local_dst = FrameSampledRect::from_parts(
-            dst.x() - visible.x as f32,
-            dst.y() - visible.y as f32,
-            dst.width(),
-            dst.height(),
-        )
-        .ok()?;
-        blit_sampled_image_pixels_with_opacity(
-            visible.width,
-            visible.height,
-            &mut frame.pixels,
-            image,
-            src,
-            local_dst,
-            opacity,
-        );
-        Some((frame, visible))
-    }
-
     fn image_blit_reference_tile(
         &self,
         image: &FrameImage,
@@ -651,61 +587,6 @@ impl FrameEncoder {
             opacity,
         );
         Some((frame, visible))
-    }
-
-    /// Rasterizes one retained rectangle stroke into its conservative visible
-    /// tile for backends without native stroke-rect capability.
-    pub(crate) fn stroke_rects_reference_tile(
-        &self,
-        strokes: &[FrameStrokeRect],
-        clip: FrameRect,
-    ) -> Result<Option<(ReferenceFrame, FrameRect)>, FrameEncoderError> {
-        let Some((visible, _)) = stroke_batch_bounds(strokes, clip, self.width, self.height) else {
-            return Ok(None);
-        };
-        let pixel_count = pixel_len(visible.width, visible.height)?;
-        let mut pixels = Vec::new();
-        pixels
-            .try_reserve_exact(pixel_count)
-            .map_err(|_| FrameEncoderError::CommandAllocationFailed)?;
-        pixels.resize(pixel_count, Color::transparent().premultiplied());
-        let local_clip = FrameRect::new(0, 0, visible.width, visible.height);
-        for stroke in strokes {
-            let local_rect =
-                FrameRect::new(
-                    stroke.rect.x.checked_sub(visible.x).ok_or(
-                        FrameEncoderError::InvalidExtent {
-                            width: self.width,
-                            height: self.height,
-                        },
-                    )?,
-                    stroke.rect.y.checked_sub(visible.y).ok_or(
-                        FrameEncoderError::InvalidExtent {
-                            width: self.width,
-                            height: self.height,
-                        },
-                    )?,
-                    stroke.rect.width,
-                    stroke.rect.height,
-                );
-            apply_stroke_rect_pixels(
-                visible.width,
-                visible.height,
-                &mut pixels,
-                FrameStrokeRect::new(local_rect, stroke.color, stroke.radius, stroke.line_width),
-                local_clip,
-                // 透明参考 tile 只服务普通 SrcOver legacy fallback。
-                false,
-            );
-        }
-        Ok(Some((
-            ReferenceFrame {
-                width: visible.width,
-                height: visible.height,
-                pixels,
-            },
-            visible,
-        )))
     }
 
     fn transparent_reference(&self) -> ReferenceFrame {

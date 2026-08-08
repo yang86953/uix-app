@@ -161,42 +161,6 @@ impl IGraphicsContext for D3d11Context {
         Ok(())
     }
 
-    fn upload_surface_pixels(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<()> {
-        if width <= 0 || height <= 0 {
-            return Ok(());
-        }
-        if width != self.width || height != self.height {
-            self.resize(width, height)?;
-        }
-        let expected = (width as usize).saturating_mul(height as usize);
-        if pixels.len() < expected {
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                format!(
-                    "D3d11Context: pixel buffer too small, got {}, need {expected}",
-                    pixels.len()
-                ),
-            ));
-        }
-        self.ensure_rtv()?;
-        let back_buffer: ID3D11Texture2D = unsafe {
-            self.swap_chain
-                .GetBuffer(0)
-                .map_err(|err| d3d_error("IDXGISwapChain::GetBuffer", err))?
-        };
-        unsafe {
-            self.context.UpdateSubresource(
-                &back_buffer,
-                0,
-                None,
-                pixels.as_ptr().cast(),
-                (width as u32) * 4,
-                0,
-            );
-        }
-        Ok(())
-    }
-
     fn draw_solid_rects(
         &mut self,
         viewport_w: f32,
@@ -382,17 +346,5 @@ impl IGraphicsContext for D3d11Context {
                 damage,
             } => self.present_pixels(pixels, *width, *height, damage.clone()),
         }
-    }
-
-    /// Kept for low-level tests; not advertised via caps (`PresentMode::Swapchain`).
-    fn present_pixels(
-        &mut self,
-        pixels: &[u32],
-        width: i32,
-        height: i32,
-        _damage: PresentDamage,
-    ) -> Result<()> {
-        self.upload_surface_pixels(pixels, width, height)?;
-        self.present_result()
     }
 }

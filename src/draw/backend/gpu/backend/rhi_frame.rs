@@ -38,8 +38,6 @@ mod tests;
 
 // 保存一条已经完成物理坐标 lowering 的 FrameEncoder 计划。
 struct LoweredFrame {
-    // 保存首条 Clear 命令映射出的 pass load action。
-    clear: Option<RhiColor>,
     // 保存严格保持原始 painter order 的分段操作和纹理搬移。
     segments: Vec<LoweredFrameSegment>,
 }
@@ -48,6 +46,8 @@ struct LoweredFrame {
 struct LoweredFrameSegment {
     // 保存该片段之前必须执行的逻辑 scroll；首段为空。
     move_before: Option<FrameScrollCopy>,
+    // 保存该片段绘制前必须执行的全幅 clear；没有 clear 时保留前序颜色。
+    clear_before: Option<RhiColor>,
     // 保存该片段内按原始顺序排列的 RHI draw 操作。
     operations: Vec<RhiOp>,
 }
@@ -279,7 +279,7 @@ fn copy_image_crop(
     image: &FrameImage,
     source: crate::draw::painting::FrameRect,
 ) -> Result<Option<Arc<[u32]>>, Error> {
-    // 非法 source 不应让 RHI 猜测边界，交回完整兼容执行器。
+    // 非法 source 不应让 RHI 猜测边界，由调用方返回 typed lowering failure。
     if !source.is_within(image.width(), image.height()) {
         return Ok(None);
     }
@@ -466,7 +466,7 @@ fn append_native_operation(
     }
 }
 
-// 把一条 FrameEncoder 命令流降低为单一保序 RHI operation list。
+// 把一条 FrameEncoder 命令流降低为按 clear/scroll 分段的保序 RHI operation list。
 fn lower_frame_encoder(
     encoder: &FrameEncoder,
     viewport: RhiViewport,
@@ -475,47 +475,70 @@ fn lower_frame_encoder(
 ) -> Result<Option<LoweredFrame>, Error> {
     // 编码器尺寸就是逻辑 target 边界。
     let bounds = crate::draw::painting::FrameRect::new(0, 0, encoder.width(), encoder.height());
-    let mut clear = None;
-    // 当前连续片段暂存尚未跨过 scroll boundary 的 draw 操作。
-    let mut operations = Vec::new();
+    // 当前连续片段从帧首开始，不携带前置搬移或清理。
+    let mut current = LoweredFrameSegment {
+        // 首段之前没有 scroll。
+        move_before: None,
+        // 没有显式 clear 时沿用调用方给出的 load action。
+        clear_before: None,
+        // 预先创建空操作列表。
+        operations: Vec::new(),
+    };
     // 保存已经完成 lowering 的连续片段。
     let mut segments = Vec::new();
-    // 保存下一个片段开始前必须执行的 scroll。
-    let mut pending_move = None;
-    for (index, command) in encoder.commands().iter().enumerate() {
+    // 按原始命令顺序降低每一个 boundary。
+    for command in encoder.commands() {
         match command {
-            // FramePlan load action 只表达帧首 clear；中途 clear 必须整体回退。
+            // clear 形成新的 pass load boundary，连续 clear 只保留最后一个颜色。
             FrameCommand::Clear { color } => {
-                if index != 0 || clear.is_some() {
-                    return Ok(None);
+                // 已有绘制时先封存前一片段，保证 clear 不会提前覆盖它。
+                if !current.operations.is_empty() {
+                    // 保存 clear 之前的所有 ordered 操作。
+                    segments.push(current);
+                    // 新片段从全幅 clear 开始，不携带额外 move。
+                    current = LoweredFrameSegment {
+                        // 前一片段已经消费了自己的 move。
+                        move_before: None,
+                        // 将 clear 颜色转换为 RHI load action 数据。
+                        clear_before: Some(clear_color(*color)),
+                        // clear 后暂时没有绘制操作。
+                        operations: Vec::new(),
+                    };
+                } else {
+                    // 空片段可能携带前置 scroll；clear 必须在该 move 之后执行。
+                    current.clear_before = Some(clear_color(*color));
                 }
-                clear = Some(clear_color(*color));
             }
             // native geometry 直接降低为通用 RHI operation。
             FrameCommand::Native { operation } => {
                 if let FrameRasterOp::ScrollCopy { viewport, dx, dy } = operation {
                     // 先封存 scroll 之前的操作，保持 destination-dependent 顺序。
-                    segments.push(LoweredFrameSegment {
-                        move_before: pending_move.take(),
-                        operations,
-                    });
-                    // 为 scroll 之后的操作创建新的连续片段。
-                    operations = Vec::new();
-                    // 保存逻辑 scroll，物理坐标在 target 代际已确定后再计算。
-                    pending_move = Some(FrameScrollCopy {
-                        viewport: *viewport,
-                        dx: *dx,
-                        dy: *dy,
-                    });
+                    segments.push(current);
+                    // 为 scroll 之后的操作创建携带 move 的新片段。
+                    current = LoweredFrameSegment {
+                        // 保存逻辑 scroll，物理坐标在 target 代际已确定后再计算。
+                        move_before: Some(FrameScrollCopy {
+                            // 保留原始逻辑 viewport。
+                            viewport: *viewport,
+                            // 保留水平 source 偏移。
+                            dx: *dx,
+                            // 保留垂直 source 偏移。
+                            dy: *dy,
+                        }),
+                        // scroll 本身不清空目标。
+                        clear_before: None,
+                        // scroll 后从空操作列表继续记录。
+                        operations: Vec::new(),
+                    };
                 } else if !append_native_operation(
-                    &mut operations,
+                    &mut current.operations,
                     operation,
                     bounds,
                     viewport,
                     scale_x,
                     scale_y,
                 )? {
-                    // 任一普通操作不能无损表达时整条 encoder 原子回退。
+                    // 任一普通操作不能无损表达时拒绝整条 encoder。
                     return Ok(None);
                 }
             }
@@ -525,7 +548,7 @@ fn lower_frame_encoder(
                     return Ok(None);
                 };
                 if let Some((x, y, width, height)) = scaled_rect(*dst, scale_x, scale_y) {
-                    operations.push(RhiOp::Textured(RhiTexturedQuad {
+                    current.operations.push(RhiOp::Textured(RhiTexturedQuad {
                         x,
                         y,
                         w: width,
@@ -569,7 +592,7 @@ fn lower_frame_encoder(
                 {
                     return Ok(None);
                 }
-                operations.push(RhiOp::Textured(RhiTexturedQuad {
+                current.operations.push(RhiOp::Textured(RhiTexturedQuad {
                     x,
                     y,
                     w: width,
@@ -585,13 +608,10 @@ fn lower_frame_encoder(
             }
         }
     }
-    // 封存最后一个连续片段及其前置 scroll。
-    segments.push(LoweredFrameSegment {
-        move_before: pending_move,
-        operations,
-    });
+    // 封存最后一个连续片段及其前置 clear/scroll。
+    segments.push(current);
     // 空命令流仍需可执行的计划；调用方会为片段补透明 dummy draw。
-    Ok(Some(LoweredFrame { clear, segments }))
+    Ok(Some(LoweredFrame { segments }))
 }
 
 // 构造清空后无其它绘制时使用的透明 dummy mesh。
@@ -737,7 +757,7 @@ impl GpuBackend {
                     "surface scroll lowering lost its retained texture",
                 )
             })?;
-            // 不可表达的搬移交回整条 FrameEncoder 兼容回退。
+            // 不可表达的搬移拒绝整条 FrameEncoder lowering。
             if !self.try_apply_rhi_surface_scroll_copies(retained_texture)? {
                 // 不消费未成功 lower 的逻辑搬移记录。
                 return Ok(false);
@@ -761,7 +781,7 @@ impl GpuBackend {
         let target_extent = if target_is_surface {
             // 主 surface 的 extent 来自当前组合 context 代际。
             let Some(context) = self.gpu_ctx.rhi_context() else {
-                // context 丢失时交回整条兼容执行器。
+                // context 丢失时让调用方返回 typed lowering failure。
                 return Ok(false);
             };
             context.token().extent
@@ -792,13 +812,13 @@ impl GpuBackend {
             ) {
                 // 记录有效搬移；空 viewport 是安全 no-op。
                 Ok(movement) => moves.push(movement),
-                // 不能无损表达时整条 encoder 原子回退。
+                // 不能无损表达时拒绝整条 encoder。
                 Err(error) if error.code() == Errc::NotImplemented => return Ok(false),
                 // 其它几何或资源错误保持 typed error。
                 Err(error) => return Err(error),
             }
         }
-        // Additive 是可选 RHI 能力，缺失时保持整条 FrameEncoder 原子回退。
+        // Additive 是可选 RHI 能力，缺失时拒绝整条 FrameEncoder。
         if lowered
             .segments
             .iter()
@@ -822,8 +842,6 @@ impl GpuBackend {
                 segment.operations.push(empty_frame_draw(viewport));
             }
         }
-        // 首条 Clear 优先于调用方提供的 retained/load 状态。
-        let effective_load = lowered.clear.map(LoadAction::Clear).unwrap_or(load);
         // 主 surface segment 在本次提交前清除旧的待 present 标记。
         if target_is_surface {
             // 只有 execute_ops 成功后才重新标记等待最终合成。
@@ -837,7 +855,7 @@ impl GpuBackend {
         let Some(context) = gpu_ctx.rhi_context() else {
             return Ok(false);
         };
-        // 记录 FrameEncoder 已经实际进入通用 RHI 的调试信息，区分旧路径回退。
+        // 记录 FrameEncoder 已经实际进入通用 RHI 的调试信息。
         tracing::debug!(
             "Graphics RHI FrameEncoder submit: target={target:?}, surface_retained={}, operations={}, present={present}",
             target_is_surface,
@@ -854,12 +872,20 @@ impl GpuBackend {
                 // move boundary 只提交 retained texture，不获取或呈现 swapchain。
                 execute_frame_texture_move(context, target_handle, viewport, *movement)?;
             }
-            // 首个 segment 使用 encoder clear/load，之后的 segment 保留旧颜色。
-            let segment_load = if index == 0 {
-                effective_load
-            } else {
-                LoadAction::Load
-            };
+            // 每个显式 clear 都成为本段 load；否则首段使用调用方 load，后段保留颜色。
+            let segment_load = segment
+                .clear_before
+                .map(LoadAction::Clear)
+                .unwrap_or_else(|| {
+                    // 只有首段继承 surface 初始化策略。
+                    if index == 0 {
+                        // 使用调用方根据 retained 状态选择的 load。
+                        load
+                    } else {
+                        // 后续分段必须保留前一段已经提交的颜色。
+                        LoadAction::Load
+                    }
+                });
             // 最终 present 语义只传给最后一个 segment；主 surface 当前仍由外层 present。
             let segment_present = present && index + 1 == lowered.segments.len();
             // 提交当前连续 RHI 操作并保持其内部顺序。

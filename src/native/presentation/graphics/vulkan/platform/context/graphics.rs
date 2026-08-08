@@ -91,17 +91,4 @@ impl IGraphicsContext for VulkanContext {
             .and_then(|()| self.present_uploaded_pixels());
         device.observe(result)
     }
-
-    /// Stage a full replace pixel buffer into the upload heap without presenting.
-    /// Also refreshes the CPU shadow used by [`Self::read_pixels`] so destination-
-    /// dependent IR can round-trip through readback → apply → replace upload.
-    fn upload_surface_pixels(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<()> {
-        let device = self.active_device()?;
-        device.ensure_healthy()?;
-        if width <= 0 || height <= 0 {
-            return Ok(());
-        }
-        let result = self.upload_pixels(pixels, width, height);
-        device.observe(result)
-    }
 }

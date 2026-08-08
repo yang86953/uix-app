@@ -271,8 +271,8 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("rhi_texture: TextureHandle", backend_owner)
         # slot 不得再保存平行的原生 offscreen target。
         self.assertNotIn("target: OffscreenTargetId", backend_owner)
-        # 未覆盖 lowering 必须在 adapter 高层回退前返回 typed failure。
-        self.assertIn("fn require_lossless_picture_submission", backend)
+        # 未覆盖的 Picture 或主帧 lowering 必须在 adapter 高层回退前返回 typed failure。
+        self.assertIn("fn require_lossless_rhi_submission", backend)
         # 旧降级 helper 不得重新进入生产实现。
         self.assertNotIn("fn downgrade_offscreen_rhi_texture", backend)
         # 公共 presenter 不得重新导出 legacy offscreen 句柄。
@@ -312,8 +312,29 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertNotIn("fn blit_soft_fallback(", d3d12_pipeline)
         # 有边界 tile 协议仍必须留在公共接口。
         self.assertIn("fn blit_soft_fallback_tile(", present)
-        # 目标相关整面替换上传仍必须保留独立语义。
-        self.assertIn("fn upload_surface_pixels(", present)
+        # 整面 replace 上传也不得重新进入兼容门面。
+        self.assertNotIn("fn upload_surface_pixels(", present)
+
+    # 校验主 FrameEncoder 与 Picture 一样只能走无损 retained RHI。
+    def test_main_frame_encoder_has_no_legacy_replace_upload_fallback(self) -> None:
+        # 读取主 RenderBackend 的编码帧执行状态机。
+        backend = (ROOT / "src/draw/backend/gpu/backend/render_backend.rs").read_text(encoding="utf-8")
+        # 定位主 FrameEncoder 执行函数的起点。
+        start = backend.index("fn try_execute_encoded_frame")
+        # 定位紧随其后的 Picture 生命周期入口。
+        end = backend.index("fn begin_offscreen_paint", start)
+        # 截取主帧状态机，避免其它兼容路径干扰断言。
+        main_frame = backend[start:end]
+        # pending damage 必须先通过 retained texture ClearRect lowering。
+        self.assertIn("try_clear_rhi_surface_rects", main_frame)
+        # encoder 与前置清理都必须经过统一无损门禁。
+        self.assertIn("require_lossless_rhi_submission", main_frame)
+        # 主帧不得再进入旧的逐命令 adapter 执行器。
+        self.assertNotIn("self.execute_frame_encoder(", main_frame)
+        # 主帧不得因 lowering 缺口放弃 retained target 并切回 swapchain。
+        self.assertNotIn("abandon_rhi_surface_texture_for_legacy", main_frame)
+        # 旧 FrameEncoder adapter 执行模块必须从源码树删除。
+        self.assertFalse((ROOT / "src/draw/backend/gpu/backend/impl_frame.rs").exists())
 
     def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
         # 组合读取 Vulkan context 的拆分模块，以保持顺序审计语义。
