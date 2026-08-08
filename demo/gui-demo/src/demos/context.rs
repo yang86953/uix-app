@@ -305,6 +305,9 @@ impl<'a> DemoCtx<'a> {
         self.framework_control.cloned().unwrap_or_default()
     }
 
+    // 将组件隔离页状态限制在测试 feature。
+    #[cfg(feature = "test-harness")]
+    // 返回当前组件测试用例索引。
     pub fn component_case(&self) -> State<usize> {
         self.component_case
             .cloned()
