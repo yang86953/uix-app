@@ -580,19 +580,19 @@ fn push_text_segment(content: &str, style: &RichTextStyle, segments: &mut Vec<Ri
     });
 }
 
-// 将标题专项测试拆出，保持解析实现文件低于 900 行。
+// 从仓库测试目录加载标题专项测试，保持解析实现文件低于 900 行。
 #[cfg(test)]
-#[path = "parse_heading_tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_heading_tests.rs"]
 mod heading_tests;
 
-// 将块级语法专项测试拆出，保持解析实现文件结构清晰。
+// 从仓库测试目录加载块级语法专项测试，保持解析实现文件结构清晰。
 #[cfg(test)]
-#[path = "parse_block_tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_block_tests.rs"]
 mod block_tests;
 
-// 将围栏代码专项测试拆出，保持解析实现文件结构清晰。
+// 从仓库测试目录加载围栏代码专项测试，保持解析实现文件结构清晰。
 #[cfg(test)]
-#[path = "parse_fence_tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_fence_tests.rs"]
 mod fence_tests;
 
 #[cfg(test)]

@@ -15,7 +15,7 @@ use crate::draw::renderer::RenderSession;
 use crate::draw::renderer::{GraphicsFailure, RenderOutcome};
 use crate::draw::{Canvas2D, GraphicsCapabilities, RasterPipeline, RenderTarget, UpdateStrategy};
 use crate::native::present::{
-    IGraphicsContext, PresentDamage, PresentFrame, PresentMode, PresentTestResult, RasterMode,
+    IGraphicsContext, PresentFrame, PresentMode, PresentTestResult, RasterMode,
 };
 
 /// 最终呈现由谁完成。
@@ -199,59 +199,13 @@ impl Renderer {
                 present_damage,
             )
             .present_damage;
-        let damage_full = matches!(damage, PresentDamage::Full);
-        let pixels = (width as u64).saturating_mul(height as u64);
-        let backend_name = upload.context.graphics_backend().as_str();
-
-        if crate::core::perf_probe::skip_present_enabled() {
-            crate::core::perf_probe::record_present(crate::core::perf_probe::PresentProbeSample {
-                present_us: 0,
-                upload_copy_us: 0,
-                fence_wait_us: 0,
-                submit_present_us: 0,
-                surface_present_cpu_us: 0,
-                pixels,
-                drawable_pixels: 0,
-                drawable_width: 0,
-                drawable_height: 0,
-                damage_full: u8::from(damage_full),
-                skipped: 1,
-            });
-            tracing::info!(
-                "present_upload_us=0 pixels={} damage_full={} backend={} skipped=1",
-                pixels,
-                u8::from(damage_full),
-                backend_name,
-            );
-            return Ok(());
-        }
-
         let frame = PresentFrame::PixelBuffer {
             pixels: cpu.pixels(),
             width,
             height,
             damage,
         };
-        let present_t0 = Instant::now();
         let present_result = upload.context.present(&frame);
-        let present_us = present_t0.elapsed().as_micros();
-        let mut sample = crate::core::perf_probe::take_present();
-        sample.present_us = present_us;
-        sample.pixels = pixels;
-        sample.damage_full = u8::from(damage_full);
-        sample.skipped = 0;
-        crate::core::perf_probe::record_present(sample);
-        tracing::info!(
-            "present_upload_us={} upload_copy_us={} fence_wait_us={} submit_present_us={} \
-             pixels={} damage_full={} backend={}",
-            present_us,
-            sample.upload_copy_us,
-            sample.fence_wait_us,
-            sample.submit_present_us,
-            pixels,
-            u8::from(damage_full),
-            backend_name,
-        );
         present_result?;
         upload.damage_tracker.commit(
             caps.present_coherency,

@@ -8,7 +8,8 @@ fn real_demo_modal_and_drawer_first_frame_latency_does_not_accumulate() {
     let _guard = REAL_GUI_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut demo = DemoProcess::spawn_with_args(DEFAULT_D3D11_GRAPHICS, &["--component-qa"]);
+    // 浮层性能测试通过专用测试页面启动。
+    let mut demo = DemoProcess::spawn_with_args(DEFAULT_D3D11_GRAPHICS, &["--test-components"]);
     let descriptor = demo.wait_for_descriptor();
     let endpoint = descriptor["endpoint"]
         .as_str()
@@ -107,30 +108,7 @@ fn real_demo_modal_and_drawer_first_frame_latency_does_not_accumulate() {
     }
 
     let output = demo.close_and_wait();
-    if std::env::var_os("UIX_PERF_PROBE").is_some() {
-        let mut slow_full_frames = output
-            .lines()
-            .filter(|line| line.contains("frame_us=") && line.contains("backdrop_restore=1"))
-            .collect::<Vec<_>>();
-        slow_full_frames.sort_unstable_by_key(|line| {
-            std::cmp::Reverse(probe_metric(line, "paint_cpu").unwrap_or_default())
-        });
-        assert!(
-            !slow_full_frames.is_empty(),
-            "performance probe did not observe an overlay backdrop restore: {output}"
-        );
-        for line in slow_full_frames.into_iter().take(12) {
-            eprintln!("overlay backdrop frame: {line}");
-        }
-    }
     assert!(!output.contains("panicked at"), "demo panic: {output}");
-}
-
-fn probe_metric(line: &str, expected_key: &str) -> Option<u128> {
-    line.split_whitespace().find_map(|field| {
-        let (key, value) = field.split_once('=')?;
-        (key == expected_key).then(|| value.parse().ok()).flatten()
-    })
 }
 
 fn automation_node_is_visible(snapshot: &Value, automation_id: &str) -> bool {

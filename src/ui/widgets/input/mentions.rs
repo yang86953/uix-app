@@ -833,7 +833,7 @@ fn point_in_half_open_rect(rect: Rect, point: Point) -> bool {
 
 // 将 Mentions 表面约束契约放在独立测试文件中。
 #[cfg(test)]
-// 使用显式路径保持主实现文件低于行数上限。
-#[path = "mentions_tests.rs"]
+// 从仓库测试目录加载实现，同时保持主实现文件低于行数上限。
+#[path = "../../../../tests/unit/ui/widgets/input/mentions_tests.rs"]
 // 声明当前模块的私有回归测试。
 mod tests;

@@ -4,11 +4,11 @@ version = "0.0.1"
 edition = "2021"
 publish = false
 license-file = "../../LICENSE"
-description = "UIX GUI 多页演示（12 页应用 + Agent/恢复/组件 QA 验收模式）"
+description = "UIX GUI 多页演示（12 页应用 + Agent 与 test-harness 测试支撑）"
 
 [dependencies]
 # 演示固定使用 uix 的基础能力组合（与既有演示行为一致），
-# 日志订阅、Agent Bridge 与恢复验收作为本项目的可开关 feature 透传。
+# 日志订阅、Agent Bridge 与自动测试支撑作为本项目的可开关 feature 透传。
 uix = { path = "../..", default-features = false, features = [
     "d3d11",
     "image-codecs",

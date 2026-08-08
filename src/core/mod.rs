@@ -13,12 +13,11 @@
 //! | [`damage`] | 增量失效与提交前后真相 | `geometry`（窄契约） |
 //! | [`error`] | typed error 和统一结果语义 | 无 |
 //!
-//! `perf_probe` / `glyph_outline` 是跨 System 共享的模式外基础探针与纯算法
-//! （无独立契约、替换价值或变化原因），暂留 core 根，不作为角色登记。
+//! `glyph_outline` 是跨 System 共享的模式外纯算法，暂留 core 根，不作为角色登记。
 //!
 //! [系统列表]: <file:///C:/data/note/我的项目/软件/UIX App/架构/系统列表.md>
 //!
-//! # 旧路径 deny 证据（compile-fail）
+//! # 旧路径 compile-fail 测试
 //!
 //! 下列契约锁定 SMC-01 后的模块边界：旧平铺路径与私有基础算法对外不可达，
 //! 任何恢复旧路径或把 `glyph_outline` 提升为公开模块的改动都会编译失败。
@@ -46,7 +45,6 @@ pub mod geometry;
 // 保持旧路径的 crate-private 契约，禁止误提升为公开模块。
 pub(crate) mod glyph_outline;
 pub mod identity;
-pub mod perf_probe;
 
 pub use damage::*;
 pub use error::*;

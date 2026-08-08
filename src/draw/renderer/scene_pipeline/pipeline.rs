@@ -216,8 +216,6 @@ impl ScenePipeline {
         } else {
             requested_present_damage
         };
-        let strategy_full = region.full_frame as u8;
-
         // 恢复包装器可在 begin_frame 内切换到 Software，后续呈现协议须读取新引擎能力。
         let caps = engine.capabilities();
         let raster_pipeline = engine.raster_pipeline();
@@ -268,7 +266,6 @@ impl ScenePipeline {
             && engine.has_overlay_backdrop();
         let use_overlay_backdrop = use_cpu_overlay_backdrop || use_gpu_overlay_backdrop;
 
-        let layer_t0 = std::time::Instant::now();
         if self.last_tree_version != cur_version || !self.layer_tree.is_ready() {
             self.layer_tree.build(
                 scene,
@@ -293,7 +290,6 @@ impl ScenePipeline {
         }
         self.layer_tree.update_dirty(scene);
         self.render_object_tree.sync(scene);
-        let layer_build_us = layer_t0.elapsed().as_micros();
 
         if raster_pipeline == RasterPipeline::GpuNative {
             return self.render_gpu_native(
@@ -303,8 +299,6 @@ impl ScenePipeline {
                 cur_version,
                 region,
                 damage,
-                strategy_full,
-                layer_build_us,
                 use_gpu_overlay_backdrop,
             );
         }
@@ -313,8 +307,6 @@ impl ScenePipeline {
         // keep DirtyRegion::full(); dirty frames omit the recording Clear so
         // execute_into_pixels retains undamaged CPU pixels.
         let paint_region = region.clone();
-        crate::core::perf_probe::begin_record_acc();
-        let record_t0 = std::time::Instant::now();
         if let Err(error) = self.recorder.begin_recording(region.full_frame) {
             return FrameRenderOutput {
                 outcome: RenderOutcome::Failed(crate::draw::renderer::GraphicsFailure::from_error(
@@ -473,8 +465,6 @@ impl ScenePipeline {
                 };
             }
         };
-        let record_us = record_t0.elapsed().as_micros();
-        let execute_t0 = std::time::Instant::now();
         match engine.try_execute_encoded_frame(&encoded_frame) {
             Ok(EncodedFrameExecution::Executed) => {}
             Ok(EncodedFrameExecution::Unsupported) => {
@@ -504,19 +494,7 @@ impl ScenePipeline {
                 };
             }
         }
-        let execute_us = execute_t0.elapsed().as_micros();
-
-        let end_t0 = std::time::Instant::now();
         let end_outcome = engine.end_frame(&damage);
-        let end_frame_us = end_t0.elapsed().as_micros();
-        let mut paint_sample = crate::core::perf_probe::take_record_acc();
-        paint_sample.layer_build_us = layer_build_us;
-        paint_sample.record_us = record_us;
-        paint_sample.execute_us = execute_us;
-        paint_sample.end_frame_us = end_frame_us;
-        paint_sample.strategy_full = strategy_full;
-        paint_sample.backdrop_restore = u8::from(use_overlay_backdrop);
-        crate::core::perf_probe::record_paint(paint_sample);
         let outcome = match end_outcome {
             RenderOutcome::Present(_) if caps.uses_external_presenter() => {
                 RenderOutcome::PresentPending(damage)
@@ -565,8 +543,6 @@ impl ScenePipeline {
         cur_version: u64,
         region: DirtyRegion,
         damage: DamageRegion,
-        strategy_full: u8,
-        layer_build_us: u128,
         use_overlay_backdrop: bool,
     ) -> FrameRenderOutput {
         let mut use_overlay_backdrop = use_overlay_backdrop;
@@ -588,8 +564,6 @@ impl ScenePipeline {
         } else {
             Vec::new()
         };
-        crate::core::perf_probe::begin_record_acc();
-        let execute_t0 = std::time::Instant::now();
         let render_result = if !split_rects.is_empty() {
             let mut first = true;
             let mut result = Ok(());
@@ -690,19 +664,7 @@ impl ScenePipeline {
         if input.debug_mode {
             draw_debug_telemetry(engine, input.metrics, input.font, input.font_service);
         }
-        let execute_us = execute_t0.elapsed().as_micros();
-
-        let end_t0 = std::time::Instant::now();
         let end_outcome = engine.end_frame(&damage);
-        let end_frame_us = end_t0.elapsed().as_micros();
-        let mut paint_sample = crate::core::perf_probe::take_record_acc();
-        paint_sample.layer_build_us = layer_build_us;
-        paint_sample.record_us = 0;
-        paint_sample.execute_us = execute_us;
-        paint_sample.end_frame_us = end_frame_us;
-        paint_sample.strategy_full = strategy_full;
-        paint_sample.backdrop_restore = u8::from(use_overlay_backdrop);
-        crate::core::perf_probe::record_paint(paint_sample);
 
         let caps = engine.capabilities();
         let outcome = normalize_end_outcome(end_outcome, caps, damage);

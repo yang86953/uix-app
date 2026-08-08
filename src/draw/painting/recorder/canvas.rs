@@ -319,7 +319,6 @@ impl FrameRecordingCanvas {
         if !self.scratch_dirty {
             return Ok(());
         }
-        let flush_t0 = std::time::Instant::now();
         let pack_bounds = self.scratch_pack_bounds.take();
         let packed = pack_visible_scratch_tile(
             self.scratch.surface().pixels(),
@@ -351,7 +350,6 @@ impl FrameRecordingCanvas {
             self.scratch.surface_mut().clear_all();
         }
         self.scratch_dirty = false;
-        crate::core::perf_probe::add_cpu_flush(flush_t0.elapsed().as_micros());
         Ok(())
     }
 

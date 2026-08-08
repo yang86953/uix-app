@@ -140,12 +140,7 @@ impl GpuBackend {
         let frame = PresentFrame::Swapchain {
             damage: damage_plan.present_damage,
         };
-        // 记录兼容 present 的耗时样本。
-        let present_t0 = std::time::Instant::now();
         let present_result = self.gpu_ctx.present(&frame);
-        let mut present_sample = crate::core::perf_probe::take_present();
-        present_sample.present_us = present_t0.elapsed().as_micros();
-        crate::core::perf_probe::record_present(present_sample);
         // present 失败时保持下一帧的全清保护。
         if let Err(err) = present_result {
             self.surface.needs_gpu_clear = true;

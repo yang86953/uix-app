@@ -142,7 +142,6 @@ impl SecondaryWindowSession {
             now,
             had_events: false,
             had_layout_event: false,
-            input_us: 0,
             next_external_deadline: None,
             on_runtime_tasks: &mut no_runtime_tasks,
             on_frame: &no_frame,

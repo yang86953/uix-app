@@ -116,45 +116,27 @@ GPU 基线内的操作不能依赖常态 CPU fallback。可选效果可以显式
 
 ## 当前映射与目标差距
 
-- ✅ 已有唯一 `RenderBackend` 抽象、通用 `GpuBackend`、有序批处理与 CPU backend，证明共享执行层可行。
-- 🔄 当前 `IGraphicsContext` 同时承担 device/surface 生命周期和 `draw_solid_rects`、`draw_glyphs` 等逐 UI 操作；`NativeRasterCaps` 也以高层操作枚举能力。这是迁移期接口，不是目标 RHI。
-- ✅ 迁移第一步已完成：`src/draw/backend/frame_plan.rs` 固化有限有序的 pass/copy/draw 计划，`src/native/present/rhi.rs` 固化资源、pass、draw/copy、submit/present、代际和事实 capability 契约；记录型 adapter 已验证顺序、一次最终 present、surface 代际隔离和失败帧不提交，D3D11 与 OpenGL ES host 已接入 `GraphicsSurface` 的 acquire/resize/present 生命周期。
-- ✅ 迁移第二步已完成一个可执行子集：`RhiRenderer` 将无圆角 solid rect/solid mesh、SrcOver/Additive BGRA image blit、SrcOver/Additive shape rect、仿射线性/径向 gradient、仿射 R8 glyph coverage、RGBA8 MSDF glyph、轴对齐与变换圆角/描边矩形、原生扇形、仿射 box shadow、Picture texture 合成与两段 separable blur lowering 为 buffer update、texture upload、采样 draw、texture target pass 与一次最终 present；D3D11 与 OpenGL ES 资源、pass、viewport/scissor、solid/textured/gradient/coverage/MSDF/shape/sector/shadow/blur draw ABI 已接通，并在主 surface 使用物理 extent 与 DPR lowering；整条 `FrameEncoder` 的矩形、Additive 矩形、coverage glyph、CPU/Picture image blit 也已在可表达时复用同一 ordered RHI plan，最终 present 仍由外层持有。
-- ✅ 2026-08-03 底层增量已补齐 `FramePlan` 的局部 `ClearRect` 与同纹理 `TextureMove`：D3D11 使用原生 clear/copy，OpenGL ES 使用状态恢复后的 scissor clear 与 scratch texture copy，并由薄 RHI capability/probe 门禁；主 surface retained texture 以 `SurfaceToken` 代际管理，`DrawSurface`、`FrameEncoder` 和原生 `Canvas2D::scroll_region` 共享整数裁剪、DPR 证明和 memmove 顺序。主 surface 的连续 native→透明 soft tile、Picture 离屏 target 的 native→soft tile，以及 Picture source 接在主 surface soft 前缀之后，都可在同一 retained texture 链上按明确 target extent 和 DPR 采样合成；destination-dependent soft、soft 后 scroll 和其它未验证 Picture 交错仍安全回退。当前能力仍保持 `retained_framebuffer=false`，未把这条尚未完成完整兼容队列闭环的路径宣称为生产 partial redraw。
-- ✅ 2026-08-04 首帧可见性边界已补齐：隐藏窗口不再等待 GPU Present 成功后才显示；GPU backend-managed 路径在首个 `FramePlan` 绘制前显示窗口，首帧成功后只完成 `raise` 与状态消费，CPU external presenter 保持提交后显示。D3D11 与 OpenGL ES WGL 的正式 RHI surface present 均通过 1200×800 真窗截图，证明 backbuffer 已写入且最终交换链可见。
-- ✅ 2026-08-04 resize 入口已收口：`GpuBackend::resize` 先把逻辑尺寸按 DPR 转为物理 `RhiExtent`，交给 `GraphicsSurface::resize` 推进 surface generation；D3D11 的 RHI surface 直接执行 `ResizeBuffers → RTV 重建`，OpenGL WGL/EGL 直接更新 native drawable 与 RHI pipeline，兼容 `IGraphicsContext::resize` 只复用各 adapter 的底层 helper；线程绑定包装器在成功后刷新 drawable 元数据，未接入 RHI 的旧 adapter 才明确回退到兼容 resize。
-- ✅ 2026-08-04 RHI device/surface preflight 已接入：D3D11 在最终 present 状态机进入 lowering 前，于 owner thread 调用 `GetDeviceRemovedReason`，沿用 DXGI typed mapping 把移除/重置状态报告为 `GraphicsDeviceLost`；OpenGL ES 的共享 WGL/EGL RHI host 也接入同一 typed injection 边界；surface lost 同时覆盖薄 RHI acquire 与兼容 presenter 的共同 adapter present 边界。`test-harness` 的可控 DeviceLost/SurfaceLost lower injection 已分别通过 D3D11 与 Windows WGL OpenGL ES 的真实三轮 teardown/rebuild 后续交互验收，其中第三轮交错另一类故障；这不等同于物理设备拔除、窗口破坏或跨 GPU/OS 故障矩阵。
-- ✅ 2026-08-04 OpenGL ES legacy queue 补齐 native 描边矩形与 box shadow：描边复用圆角 SDF shader，阴影复用已验证的仿射 shadow shader 与 straight-alpha blend；WGL/EGL 均不再因这两类当前生产 UI 操作落入 trait 默认 `NotImplemented`。
-- ✅ OpenGL ES legacy queue 的 native compatibility owner 已继续补齐线性/径向渐变、扇形、solid mesh 与 BGRA 仿射 image blit；WGL/EGL 均转发到同一 raster owner，渐变 shader 统一把 straight-color 插值结果 premultiply 后写入目标，避免兼容路径与 RHI 路径的 alpha 语义分叉。
-- ✅ D3D11 legacy queue 已补齐紧密 BGRA 图片 payload 的尺寸复用纹理、仿射四角 quad、组 opacity 与 SrcOver/Additive blend；图片资源 owner 与 RHI textured shader 共享 viewport/采样 ABI，FrameEncoder 的兼容图片入口不再依赖 trait 默认 `NotImplemented`。
-- ✅ D3D11 legacy queue 的线性/径向 gradient 已接收真实 affine 四角：兼容 shader 由 TL、TR、BL 恢复两条设备空间边，同时保留逻辑宽高计算渐变参数；旋转/剪切不再被旧 AABB 几何吞掉。
-- ✅ D3D11 与 OpenGL ES 的 legacy offscreen texture blit 已补齐组 opacity 与 Additive：采样 shader 同步缩放 premultiplied RGB/alpha，SrcOver 使用 premultiplied blend，Additive 使用显式 `ONE + ONE` blend；Picture 兼容门面不再把这两类语义静默降为 `NotImplemented`。
-- ✅ 原生扇形 RHI 的 uniform ABI 已收口为共享的 64 字节四个 float4 常量块；D3D11 与 OpenGL ES 均按同一 `SECTOR_UNIFORM_BYTES` 校验，修复了扇形首次进入 mixed FramePlan 时 48/64 字节不一致的底层越界。
-- ✅ 2026-08-04 OpenGL 交换错误已进入 typed recovery：WGL `SwapBuffers` 失败报告 `GraphicsSurfaceLost`；EGL `BAD_SURFACE`/`BAD_NATIVE_WINDOW` 报告 `GraphicsSurfaceLost`，`CONTEXT_LOST` 报告 `GraphicsDeviceLost`，其它 EGL 错误仍保持 `PlatformError`。
-- ✅ 2026-08-04 代表性 resize 真窗验证已补齐：当前 D3D11 Upload 视觉用例通过 `1200×800 → 900×640 → 1200×800` 双向 resize，校验原生 adapter 选择、提交后的 presented revision 和恢复后的最终关闭。
-- ✅ 大字号 MSDF 真窗语义验收已补齐：D3D11 与 OpenGL ES 的 Watermark 专项均通过真实组件 manifest 翻页、目标可见性和后续 present；专项输出明确保留 `pixel_capture=manual-WGC-required` 边界。
-- 🔄 目标是把原生实现中的 UI 几何、batch、atlas、offscreen 与 effect 调度收回通用 GPU Renderer，仅保留本文的最小 RHI。其他未覆盖的仿射图元、专用大字号 WGC 像素快照、Picture 的完整语义 parity、surface/device lost 及多尺寸/多 DPI/GPU/OS 的完整运行矩阵仍未完成。交付状态由[交付方向](../../进度/交付方向.md)持有。
+- 已有唯一 `RenderBackend` 抽象、通用 `GpuBackend`、有序 `FramePlan`、薄 RHI 契约和 CPU backend。
+- `IGraphicsContext` 与 `NativeRasterCaps` 仍保留迁移期的逐 UI 操作；目标是把几何、batch、atlas、offscreen 与 effect 调度收回通用 GPU Renderer。
+- D3D11 与 OpenGL ES 已接入资源、pass、draw/copy、surface resize、submit/present、错误映射和恢复边界；未覆盖图元继续明确回退。
+- 剩余差距包括完整 Picture 交错语义、更多仿射图元，以及跨 DPI、GPU 和操作系统的测试覆盖。
 
-## 当前验证状态（2026-08-04）
+## 当前测试
 
-- **D3D11**：正式 RHI surface `FramePlan → present` 验证通过，`1200×800` 完整 UI 已见。
-- **OpenGL ES/WGL**：同一通用 `GpuRenderer` / `FramePlan` 与正式 RHI surface present 验证通过，结果与 D3D11 一致。
-- **OpenGL ES/WGL legacy compatibility**：全页面真实窗口 traversal 用例已通过；Windows Graphics Capture 捕获到 `1200×800` 硬件窗口的非空完整 UI，证明 legacy queue 的实际窗口呈现链路可见。
-- **生命周期结论**：此前隐藏窗口首帧截图为纯白，但 backbuffer 读回已包含侧栏与内容区像素；首个 GPU 绘制前显示窗口后两 adapter 均可见，故把窗口可见性作为 GPU Present 前置契约，而不是把失败归因到 lowering 或像素写入。
-- **D3D11 resize**：代表性 RHI resize 入口和 drawable 元数据刷新验证通过（`1200×800 → 900×640 → 1200×800` 双向 resize）。
-- **D3D11/WGL OpenGL ES recovery**：DeviceLost/SurfaceLost 真实窗口用例均完成三轮注入（前两轮同类、第三轮交错另一类故障），每轮 teardown/rebuild、重新 present 并完成恢复后交互；该验证属 test-harness lower injection，不代表物理拔除或跨环境故障矩阵。
-- **大字号 MSDF**：Watermark 专项通过真实组件翻页、目标可见性和最终 present；尚未做专用 WGC 像素快照验证。
-- **验证边界**：已验证代表性 Demo 首帧、正式 surface present、D3D11 双向 resize 和两个 Windows adapter；完整图元、surface/device lost、DPI、GPU/OS 矩阵尚未完成。
+- Windows 真窗测试覆盖 D3D11 与 OpenGL ES/WGL 的 RHI surface、`FramePlan`、present、resize 和兼容遍历。
+- `test-harness` 测试覆盖 DeviceLost、SurfaceLost、teardown/rebuild 与恢复后交互。
+- mock RHI 测试覆盖 pass 顺序、资源代际、一次最终 present 和失败帧不消费 damage。
+- 缺少运行环境的组合记为未测试，不生成独立截图清单、报告或人工验收任务。
 
-## 迁移约束与验收
+## 迁移约束与测试
 
-迁移不绑定版本、日期或执行顺序；完成声明至少需要以下验证：
+迁移不绑定版本、日期或执行顺序；完成状态只以相应自动测试通过为准：
 
-- D3D11 可作为参考 adapter 完整执行薄 RHI，且 adapter 内不再新增逐 UI 操作入口；
-- 至少第二个原生 API 复用同一 `GpuRenderer`、`FramePlan`、atlas、offscreen 与 effect 调度，新增 adapter 不复制 UI raster 算法；当前 OpenGL ES 已达到 ABI/编译、bootstrap gate、WGL 首帧 probe 与实际 RHI submit 里程碑，仍需视觉/像素运行验证；
-- bootstrap capability gate 能在首帧前拒绝缺失 GPU 基线的实现；
-- 矩形、路径、字形、图片、Picture、opacity、additive、离屏、模糊、resize、surface lost 与 device lost 均有真实 adapter 的视觉或像素验证；
-- mock RHI 能验证 pass 顺序、资源代际、一次最终 present 与失败帧不消费 damage。
+- D3D11 作为参考 adapter 完整执行薄 RHI，且 adapter 内不新增逐 UI 操作入口；
+- 至少第二个原生 API 复用同一 `GpuRenderer`、`FramePlan`、atlas、offscreen 与 effect 调度，新增 adapter 不复制 UI raster 算法；
+- bootstrap capability gate 测试覆盖首帧前拒绝缺失 GPU 基线的实现；
+- 矩形、路径、字形、图片、Picture、opacity、additive、离屏、模糊、resize、surface lost 与 device lost 由对应测试覆盖；
+- mock RHI 测试覆盖 pass 顺序、资源代际、一次最终 present 与失败帧不消费 damage。
 
 ## 模块不变量
 

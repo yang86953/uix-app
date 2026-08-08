@@ -411,7 +411,6 @@ impl VulkanContext {
     }
 
     pub(super) fn present_uploaded_pixels(&mut self) -> Result<()> {
-        let submit_t0 = std::time::Instant::now();
         let (image_index, acquire_suboptimal) = match unsafe {
             self.swapchain_loader.acquire_next_image(
                 self.swapchain,
@@ -487,10 +486,6 @@ impl VulkanContext {
                 .image_indices(std::slice::from_ref(&image_index));
             unsafe { self.swapchain_loader.queue_present(self.queue, &present) }
         };
-        let submit_present_us = submit_t0.elapsed().as_micros();
-        let mut sample = crate::core::perf_probe::take_present();
-        sample.submit_present_us = submit_present_us;
-        crate::core::perf_probe::record_present(sample);
         match present_match {
             Ok(present_suboptimal) => {
                 if present_fence.is_some() {

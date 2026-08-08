@@ -2,7 +2,7 @@
 //!
 //! 默认生产渲染使用原生 D3D11（Windows）；启用 `opengles` feature 时，
 //! WGL/EGL OpenGL ES adapter 也进入生产 registry，并复用同一套薄 RHI。
-//! D3D12、Vulkan 与 Metal 仍受各自 feature/target 门控，尚未完成同等验收。
+//! D3D12、Vulkan 与 Metal 仍受各自 feature/target 门控，尚未完成同等测试。
 
 #[cfg(feature = "d3d11")]
 pub mod d3d11;

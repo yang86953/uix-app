@@ -216,7 +216,7 @@ impl RenderTarget for RecoveryDriver {
             // 先尝试把注入送到真实 backend；D3D11 会在最终 present 预检报告失败。
             match self.engine.inject_graphics_device_lost_for_test() {
                 Ok(()) => {}
-                Err(error) if error.code() == Errc::NotImplemented => {
+                Err(error) if error.code() == crate::core::Errc::NotImplemented => {
                     // 未接入薄 RHI 的测试 backend 保留原有包装器级兼容语义。
                     let failure = GraphicsFailure::DeviceLost(Error::new(
                         crate::core::Errc::GraphicsDeviceLost,
@@ -244,7 +244,7 @@ impl RenderTarget for RecoveryDriver {
             // 让 D3D11 在下一次 RHI acquire 返回 GraphicsSurfaceLost。
             match self.engine.inject_graphics_surface_lost_for_test() {
                 Ok(()) => {}
-                Err(error) if error.code() == Errc::NotImplemented => {
+                Err(error) if error.code() == crate::core::Errc::NotImplemented => {
                     // 未接入薄 RHI 的测试 backend 保留包装器级兼容回退语义。
                     let failure = GraphicsFailure::SurfaceLost(Error::new(
                         crate::core::Errc::GraphicsSurfaceLost,

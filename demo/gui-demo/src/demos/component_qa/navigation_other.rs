@@ -26,10 +26,10 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             Breadcrumb::new()
                 .item(BreadcrumbItem::new("UIX"))
                 .item(BreadcrumbItem::new("组件"))
-                .item(BreadcrumbItem::new("视觉质量验收").active()),
+                .item(BreadcrumbItem::new("视觉质量测试").active()),
         ),
-        "dropdown" => qa_target(Dropdown::new("验收操作").items(vec![
-            "查看证据",
+        "dropdown" => qa_target(Dropdown::new("测试操作").items(vec![
+            "查看结果",
             "重新执行",
             "标记缺陷",
             "导出报告",
@@ -63,7 +63,7 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             qa_row([
                 qa_variant(
                     "Default / target",
-                    qa_target(NavItem::new("组件验收", 1, shared.clone()).icon("eye")),
+                    qa_target(NavItem::new("组件测试", 1, shared.clone()).icon("eye")),
                 ),
                 qa_variant(
                     "Selected",
@@ -109,9 +109,8 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 .height(190.0)
                 .show_version(false)
                 .build(tk);
-            // Title and divider occupy the first two slots; target the first
-            // (unselected) NavItem so hover/focus evidence exercises the
-            // actual navigation control rather than its layout container.
+            // 标题和分隔线占用前两个槽位，测试目标选择第一个未选中的 NavItem。
+            // 该目标直接覆盖 hover/focus 可见状态，不落到外层布局容器。
             if let Some(target) = navigation.children.get_mut(2) {
                 target.automation_id = Some("component-qa-target".into());
             }
@@ -164,7 +163,7 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                     Tabs::new()
                         .tab("组件", "components")
                         .tab("状态", "states")
-                        .tab("证据", "evidence")
+                        .tab("结果", "results")
                         .active(1)
                         .position(TabPosition::Top)
                         .size(300.0, 150.0) => [
@@ -180,13 +179,13 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                     Tabs::new()
                         .tab("组件", "components")
                         .tab("状态", "states")
-                        .tab("证据", "evidence")
+                        .tab("结果", "results")
                         .active(0)
                         .position(TabPosition::Bottom)
                         .size(240.0, 150.0) => [
                             label("组件"),
                             label("状态"),
-                            label("证据"),
+                            label("结果"),
                         ]
                 }),
             ),
@@ -321,7 +320,7 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                     .gap(120.0, 72.0),
                 vec![column_fit([
                     label("组件视觉质量报告").font_size(20.0),
-                    label("每个组件都有独立状态矩阵与真实窗口证据。"),
+                    label("每个组件都有独立状态矩阵与真实窗口测试。"),
                     label("Light / Dark / Desktop / Compact"),
                 ])
                 .gap(12.0)

@@ -15,10 +15,6 @@ use crate::draw::painting::{
 use crate::native::present::{
     IGraphicsContext, PresentMode, RasterMode,
 };
-// 引入 RHI device 的测试注入契约。
-#[cfg(feature = "test-harness")]
-use crate::native::present::rhi::{GraphicsDevice, GraphicsSurface};
-
 use super::super::canvas::NativeGpuCanvas2D;
 use super::super::SOFT_FALLBACK_IDLE_TIME_GRACE;
 use super::surface::NativeGpuDrawSurface;

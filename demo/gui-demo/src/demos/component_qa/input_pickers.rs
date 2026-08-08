@@ -1,9 +1,9 @@
-//! 输入组件验收场景：日期与选择器类。
+//! 输入组件测试场景：日期与选择器类。
 //! 由 input.rs 以 `#[path]` 引入，构建函数在父模块 build 中按 id 分发。
 
 use uix::prelude::*;
 
-use super::super::{qa_row, qa_target, qa_target_view, qa_variant};
+use super::super::{qa_row, qa_target, qa_variant};
 
 fn city_options() -> Vec<CascaderOption> {
     vec![

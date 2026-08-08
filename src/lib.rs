@@ -14,7 +14,7 @@
 //! | [`app`] | 应用能力 — 生命周期、主循环、CLI、DI |
 //! | [`data`] | 数据能力 — 配置持久化 |
 //!
-//! # 公开面 deny 证据（compile-fail）
+//! # 公开面 compile-fail 测试
 //!
 //! 下列 compile-fail 契约锁定系统边界：`native` 根、backend SPI、raw handle、
 //! context、厂商对象与旧运行保障入口对外不可达。若未来有人恢复 `pub mod native`
@@ -209,7 +209,8 @@ pub mod core;
 pub mod data;
 pub mod diagnostics;
 pub mod draw;
-#[cfg(all(windows, feature = "vulkan"))]
+// Vulkan 真机辅助仅随显式测试支撑 feature 编译。
+#[cfg(all(windows, feature = "vulkan", feature = "test-harness"))]
 #[doc(hidden)]
 pub mod gfx_r5_support;
 pub(crate) mod native;

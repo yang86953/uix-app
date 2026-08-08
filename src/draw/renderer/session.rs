@@ -245,7 +245,7 @@ impl RenderSession {
         // 只有薄 RHI GPU backend 能把注入推进到 adapter 维护边界。
         let Some(backend) = self.gpu_backend_mut() else {
             return Err(Error::new(
-                Errc::NotImplemented,
+                crate::core::Errc::NotImplemented,
                 "render session does not own a GPU backend",
             ));
         };
@@ -261,7 +261,7 @@ impl RenderSession {
         // 只有薄 RHI GPU backend 能把注入推进到 surface acquire 边界。
         let Some(backend) = self.gpu_backend_mut() else {
             return Err(Error::new(
-                Errc::NotImplemented,
+                crate::core::Errc::NotImplemented,
                 "render session does not own a GPU backend",
             ));
         };

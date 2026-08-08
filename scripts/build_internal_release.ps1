@@ -1,8 +1,3 @@
-[CmdletBinding()]
-param(
-    [switch]$AllowDirtyForVerification
-)
-
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
@@ -13,12 +8,10 @@ $dirtyEntries = @(git -C $repoRoot status --porcelain=v1 --untracked-files=all)
 if ($LASTEXITCODE -ne 0) {
     throw 'Unable to inspect the Git worktree.'
 }
-if ($dirtyEntries.Count -gt 0 -and -not $AllowDirtyForVerification) {
-    throw 'The internal release must be built from a clean worktree. Use -AllowDirtyForVerification only to test the packaging path.'
-}
+# 内部发布只接受干净工作树。
 if ($dirtyEntries.Count -gt 0) {
-    $artifactName += '-UNVERIFIED'
-    Write-Warning 'Building an UNVERIFIED packaging-path artifact from a dirty worktree.'
+    # 脏工作树不得生成内部发布包。
+    throw 'The internal release must be built from a clean worktree.'
 }
 
 $metadataJson = cargo metadata --format-version 1 --no-deps --locked
@@ -47,9 +40,8 @@ try {
         throw 'Release Demo build failed.'
     }
 
-    # Cargo rewrites the private path dependency to a registry dependency while
-    # packaging. Keep verification on the repository's local proc-macro source;
-    # the UIX crate is internal-only and is not resolved from crates.io.
+    # Cargo 打包时会把私有路径依赖改写为 registry 依赖。
+    # 包解析继续固定到仓库内的 proc-macro 源码，内部 UIX crate 不从 crates.io 解析。
     $derivePath = (Resolve-Path -LiteralPath (Join-Path $repoRoot 'uix-derive')).Path.Replace('\', '/')
     $packageArgs = @(
         'package'
@@ -58,9 +50,6 @@ try {
         '--config'
         "patch.crates-io.uix-derive.path='$derivePath'"
     )
-    if ($AllowDirtyForVerification) {
-        $packageArgs += '--allow-dirty'
-    }
     cargo @packageArgs
     if ($LASTEXITCODE -ne 0) {
         throw 'Internal cargo package build failed.'

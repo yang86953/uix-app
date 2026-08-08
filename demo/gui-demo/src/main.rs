@@ -6,10 +6,10 @@
 //   ... -- --follow-system-theme       → GUI 跟随系统主题
 //   ... --features agent-control -- --agent-control
 //                                      → 启用 Agent Bridge 的 GUI
-//   ... --features test-harness -- --graphics-recovery-acceptance
-//                                      → 显示图形故障恢复验收路径
-//   ... --release -- --g5-release-scenario
-//                                      → 显式启动内部 G5 生产测量场景
+//   ... --features test-harness -- --test-graphics-recovery
+//                                      → 运行图形故障恢复测试页面
+//   ... --features test-harness -- --test-components
+//                                      → 运行组件真窗测试页面
 // ============================================================================
 
 mod common;
@@ -22,10 +22,10 @@ use std::path::PathBuf;
 struct LaunchOptions {
     agent_control: bool,
     follow_system_theme: bool,
-    graphics_recovery_acceptance: bool,
-    component_qa: bool,
-    g5_release_scenario: bool,
-    empty: bool,
+    // 图形恢复测试仅在 test-harness 构建中可用。
+    graphics_recovery_test: bool,
+    // 组件真窗测试仅在 test-harness 构建中可用。
+    component_test: bool,
     crash_dir: Option<PathBuf>,
 }
 
@@ -40,10 +40,10 @@ fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions
             }
             "--agent-control" => options.agent_control = true,
             "--follow-system-theme" => options.follow_system_theme = true,
-            "--graphics-recovery-acceptance" => options.graphics_recovery_acceptance = true,
-            "--component-qa" => options.component_qa = true,
-            "--g5-release-scenario" => options.g5_release_scenario = true,
-            "--empty" => options.empty = true,
+            // 图形恢复测试入口只设置测试选项。
+            "--test-graphics-recovery" => options.graphics_recovery_test = true,
+            // 组件真窗测试入口只设置测试选项。
+            "--test-components" => options.component_test = true,
             "--crash-dir" => {
                 if let Some(directory) = args.next() {
                     options.crash_dir = Some(PathBuf::from(directory));
@@ -74,20 +74,16 @@ fn run_gui(options: LaunchOptions) {
         gui::run(
             options.agent_control,
             options.follow_system_theme,
-            options.graphics_recovery_acceptance,
-            options.component_qa,
-            options.g5_release_scenario,
-            options.empty,
+            options.graphics_recovery_test,
+            options.component_test,
             options.crash_dir,
         );
     };
 
     #[cfg(windows)]
     {
-        // Windows executable main threads default to a small stack. The component
-        // acceptance page intentionally constructs deeply nested, realistic view
-        // trees, so keep the Win32 message loop on a dedicated UI thread with a
-        // bounded stack large enough for build/reconcile/layout recursion.
+        // Windows 主线程默认栈较小；组件测试页会构造较深的真实视图树。
+        // Win32 消息循环使用有界的大栈 UI 线程承载构建、协调与布局递归。
         const WINDOWS_GUI_STACK_BYTES: usize = 8 * 1024 * 1024;
         let ui_thread = match std::thread::Builder::new()
             .name("uix-demo-gui".to_string())
@@ -113,16 +109,6 @@ fn main() {
     init_tracing();
     let options = parse_launch_options(std::env::args().skip(1));
 
-    if options.g5_release_scenario
-        && (options.agent_control
-            || options.follow_system_theme
-            || options.graphics_recovery_acceptance
-            || options.component_qa
-            || options.empty)
-    {
-        eprintln!("--g5-release-scenario 必须独占启动，不能与其他 GUI 验收模式组合");
-        std::process::exit(2);
-    }
     #[cfg(not(feature = "agent-control"))]
     if options.agent_control {
         eprintln!(
@@ -131,9 +117,9 @@ fn main() {
         std::process::exit(2);
     }
     #[cfg(not(feature = "test-harness"))]
-    if options.graphics_recovery_acceptance {
+    if options.graphics_recovery_test || options.component_test {
         eprintln!(
-            "--graphics-recovery-acceptance 需要同时启用 Cargo feature：\n  cargo run --manifest-path demo/Cargo.toml --features test-harness --bin uix-demo -- --graphics-recovery-acceptance"
+            "测试入口需要同时启用 Cargo feature：\n  cargo run --manifest-path demo/Cargo.toml --features test-harness --bin uix-demo -- --test-components"
         );
         std::process::exit(2);
     }

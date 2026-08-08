@@ -1,12 +1,14 @@
 //! UIX 多页 GUI 演示 — `cargo run --manifest-path demo/Cargo.toml --bin uix-demo`
 
-use std::time::{Duration, Instant};
+// 常规演示只需要秒级计时器。
+use std::time::Duration;
 
 use uix::prelude::*;
 
+// 演示只导入常规页面与组件测试页面索引。
 use crate::common::page::{
-    page_heading, INIT_H, INIT_W, PAGE_CHARTS, PAGE_COMPONENT_QA, PAGE_FEEDBACK, PAGE_GENERAL,
-    PAGE_HOME, PAGE_TITLES, SIDEBAR_GROUPS, SIDEBAR_W,
+    page_heading, INIT_H, INIT_W, PAGE_COMPONENT_QA, PAGE_HOME, PAGE_TITLES, SIDEBAR_GROUPS,
+    SIDEBAR_W,
 };
 use crate::demos::context::{FrameworkControl, GraphicsRecoveryControl, ThemeControl};
 use crate::demos::{build_page, DemoCtx};
@@ -296,382 +298,17 @@ fn app_shell_with_controls(
     .bg(ColorValue::Neutral(NeutralRole::BgLayout))
 }
 
-fn g5_overlay_layer(mode: &State<u8>) -> ViewNode {
-    let mode = mode.get();
-    row([
-        embed(
-            Modal::new("G5 Modal lifecycle")
-                .visible(mode == 1)
-                .overlay(true)
-                .closable(false)
-                .mask_closable(false)
-                .footer_visible(false),
-        )
-        .key("g5-modal-node")
-        .width(1.0)
-        .height(1.0)
-        .automation_id("g5-modal"),
-        embed(
-            Drawer::new("G5 Drawer lifecycle")
-                .visible(mode == 2)
-                .closable(false)
-                .mask_closable(false)
-                .placement(DrawerPlacement::Right),
-        )
-        .key("g5-drawer-node")
-        .width(1.0)
-        .height(1.0)
-        .automation_id("g5-drawer"),
-    ])
-    .height(1.0)
-    .automation_id("g5-overlay-lifecycle")
-}
-
-fn g5_release_root(shell: ViewNode, overlay_mode: &State<u8>) -> ViewNode {
-    column([shell.flex_grow(1.0), g5_overlay_layer(overlay_mode)])
-        .flex_grow(1.0)
-        .bg(ColorValue::Neutral(NeutralRole::BgLayout))
-}
-
-fn log_g5_scenario(
-    name: &str,
-    category: &str,
-    iteration: u64,
-    page: usize,
-    theme: &str,
-    overlay: &str,
-) {
-    uix::core::perf_probe::set_internal_g5_scenario(&format!("{name}.{iteration}"));
-    tracing::info!(
-        "G5_SCENARIO schema=1 name={name} category={category} iteration={iteration} page={page} theme={theme} overlay={overlay}"
-    );
-}
-
-const G5_MACRO_CYCLE_SECONDS: u64 = 10 * 60;
-const G5_IDLE_SECONDS: u64 = 60;
-const G5_WARMUP_SECONDS: u64 = 30;
-
-struct G5ScenarioState {
-    started: Instant,
-    macro_cycle: u64,
-    idle: bool,
-    pulse: u64,
-    phase: u8,
-    theme_iteration: u64,
-    modal_iteration: u64,
-    drawer_iteration: u64,
-}
-
-impl G5ScenarioState {
-    fn new() -> Self {
-        Self {
-            started: Instant::now(),
-            macro_cycle: u64::MAX,
-            idle: false,
-            pulse: 0,
-            phase: 0,
-            theme_iteration: 0,
-            modal_iteration: 0,
-            drawer_iteration: 0,
-        }
-    }
-}
-
-fn log_g5_phase(macro_cycle: u64, phase: &str, elapsed: Duration) {
-    tracing::info!(
-        "G5_PHASE schema=1 macro_cycle={macro_cycle} phase={phase} elapsed_us={}",
-        elapsed.as_micros()
-    );
-}
-
-fn set_g5_baseline(active: &State<usize>, overlay_mode: &State<u8>, theme_control: &ThemeControl) {
-    if theme_control.is_dark() && !theme_control.toggle() {
-        tracing::error!("G5 baseline theme transition failed");
-    }
-    active.set(PAGE_HOME);
-    overlay_mode.set(0);
-}
-
-fn advance_g5_state_machine(
-    active: &State<usize>,
-    ticks: &State<u32>,
-    overlay_mode: &State<u8>,
-    theme_control: &ThemeControl,
-    state: &mut G5ScenarioState,
-) -> Duration {
-    let elapsed = state.started.elapsed();
-    let warmup = Duration::from_secs(G5_WARMUP_SECONDS);
-    if elapsed < warmup {
-        return warmup.saturating_sub(elapsed).max(Duration::from_millis(1));
-    }
-    let protocol_elapsed = elapsed.saturating_sub(warmup);
-    let macro_cycle = protocol_elapsed.as_secs() / G5_MACRO_CYCLE_SECONDS;
-    let elapsed_in_cycle =
-        protocol_elapsed.saturating_sub(Duration::from_secs(macro_cycle * G5_MACRO_CYCLE_SECONDS));
-    let idle_start = Duration::from_secs(G5_MACRO_CYCLE_SECONDS - G5_IDLE_SECONDS);
-    let should_idle = elapsed_in_cycle >= idle_start;
-
-    if elapsed >= warmup && (macro_cycle != state.macro_cycle || should_idle != state.idle) {
-        state.macro_cycle = macro_cycle;
-        state.idle = should_idle;
-        set_g5_baseline(active, overlay_mode, theme_control);
-        if should_idle {
-            uix::core::perf_probe::set_internal_g5_scenario(&format!("idle.{macro_cycle}"));
-            log_g5_phase(macro_cycle, "idle", protocol_elapsed);
-        } else {
-            log_g5_scenario("page_home", "page", 0, PAGE_HOME, "light", "none");
-            log_g5_phase(macro_cycle, "interaction", protocol_elapsed);
-        }
-    }
-
-    if should_idle {
-        let cycle_end = warmup + Duration::from_secs((macro_cycle + 1) * G5_MACRO_CYCLE_SECONDS);
-        return cycle_end
-            .saturating_sub(elapsed)
-            .max(Duration::from_millis(1));
-    }
-
-    state.pulse = state.pulse.wrapping_add(1);
-    ticks.update(|value| *value = value.wrapping_add(1));
-    if state.pulse.is_multiple_of(125) {
-        state.phase = (state.phase + 1) % 8;
-        let (name, category, page, dark, overlay, iteration) = match state.phase {
-            0 => ("page_home", "page", PAGE_HOME, false, 0, 0),
-            1 => {
-                state.theme_iteration = state.theme_iteration.wrapping_add(1);
-                (
-                    "page_general_dark",
-                    "theme",
-                    PAGE_GENERAL,
-                    true,
-                    0,
-                    state.theme_iteration,
-                )
-            }
-            2 => (
-                "page_general_light",
-                "theme",
-                PAGE_GENERAL,
-                false,
-                0,
-                state.theme_iteration,
-            ),
-            3 => {
-                state.modal_iteration = state.modal_iteration.wrapping_add(1);
-                (
-                    "modal_feedback",
-                    "modal",
-                    PAGE_FEEDBACK,
-                    true,
-                    1,
-                    state.modal_iteration,
-                )
-            }
-            4 => (
-                "modal_closed",
-                "modal",
-                PAGE_FEEDBACK,
-                true,
-                0,
-                state.modal_iteration,
-            ),
-            5 => {
-                state.drawer_iteration = state.drawer_iteration.wrapping_add(1);
-                (
-                    "drawer_feedback",
-                    "drawer",
-                    PAGE_FEEDBACK,
-                    false,
-                    2,
-                    state.drawer_iteration,
-                )
-            }
-            6 => (
-                "drawer_closed",
-                "drawer",
-                PAGE_FEEDBACK,
-                false,
-                0,
-                state.drawer_iteration,
-            ),
-            7 => ("page_charts", "page", PAGE_CHARTS, false, 0, 0),
-            _ => unreachable!("G5 phase is modulo eight"),
-        };
-        if theme_control.is_dark() != dark && !theme_control.toggle() {
-            tracing::error!("G5 theme transition failed");
-        }
-        active.set(page);
-        overlay_mode.set(overlay);
-        log_g5_scenario(
-            name,
-            category,
-            iteration,
-            page,
-            if dark { "dark" } else { "light" },
-            match overlay {
-                1 => "modal",
-                2 => "drawer",
-                _ => "none",
-            },
-        );
-    }
-    Duration::from_millis(16)
-}
-
-fn schedule_g5_tick(
-    handle: AppHandle,
-    active: State<usize>,
-    ticks: State<u32>,
-    overlay_mode: State<u8>,
-    theme_control: ThemeControl,
-    mut state: G5ScenarioState,
-    delay: Duration,
-) {
-    let callback_handle = handle.clone();
-    handle
-        .run_after(delay, move || {
-            let next_delay = advance_g5_state_machine(
-                &active,
-                &ticks,
-                &overlay_mode,
-                &theme_control,
-                &mut state,
-            );
-            schedule_g5_tick(
-                callback_handle,
-                active,
-                ticks,
-                overlay_mode,
-                theme_control,
-                state,
-                next_delay,
-            );
-        })
-        .detach();
-}
-
-fn start_g5_control_watcher() {
-    let Some(path) = std::env::var_os("UIX_G5_STOP_FILE") else {
-        tracing::info!(
-            "G5_CAPABILITY schema=1 category=control status=blocked reason=missing_stop_file"
-        );
-        return;
-    };
-    let Ok(token) = std::env::var("UIX_G5_STOP_TOKEN") else {
-        tracing::info!(
-            "G5_CAPABILITY schema=1 category=control status=blocked reason=missing_stop_token"
-        );
-        return;
-    };
-    if token.is_empty() {
-        tracing::info!(
-            "G5_CAPABILITY schema=1 category=control status=blocked reason=empty_stop_token"
-        );
-        return;
-    }
-    if let Err(error) = std::thread::Builder::new()
-        .name("uix-g5-control".to_string())
-        .spawn(move || loop {
-            let requested = std::fs::read_to_string(&path)
-                .ok()
-                .is_some_and(|value| value.trim() == token);
-            if requested {
-                tracing::info!("G5_CONTROL schema=1 outcome=complete");
-                std::process::exit(0);
-            }
-            std::thread::sleep(Duration::from_millis(200));
-        })
-    {
-        tracing::error!("G5 control watcher failed: {error}");
-    }
-}
-
-fn start_g5_state_machine(
-    handle: &AppHandle,
-    active: &State<usize>,
-    timer_ticks: &State<u32>,
-    overlay_mode: &State<u8>,
-    theme_control: &ThemeControl,
-) {
-    let _ = uix::core::perf_probe::process_monotonic_us();
-    tracing::info!(
-        "G5_CAPABILITY schema=1 category=theme status=ready reason=post_present_tree_resource_baseline_observer"
-    );
-    tracing::info!(
-        "G5_CAPABILITY schema=1 category=modal status=ready reason=post_present_overlay_inventory_resource_baseline_observer"
-    );
-    tracing::info!(
-        "G5_CAPABILITY schema=1 category=drawer status=ready reason=post_present_overlay_inventory_resource_baseline_observer"
-    );
-    tracing::info!(
-        "G5_CAPABILITY schema=1 category=window status=blocked reason=no_release_safe_window_automation"
-    );
-    tracing::info!(
-        "G5_CAPABILITY schema=1 category=dpi status=blocked reason=requires_controlled_multi_dpi_environment"
-    );
-    log_g5_scenario("page_home", "page", 0, PAGE_HOME, "light", "none");
-    start_g5_control_watcher();
-    schedule_g5_tick(
-        handle.clone(),
-        active.clone(),
-        timer_ticks.clone(),
-        overlay_mode.clone(),
-        theme_control.clone(),
-        G5ScenarioState::new(),
-        Duration::from_millis(16),
-    );
-}
-
-#[cfg(all(test, feature = "test-harness"))]
-fn app_shell_with_counters(
-    active: State<usize>,
-    timer_ticks: State<u32>,
-    component_case: &State<usize>,
-    home_count: &State<i32>,
-    runtime_count: &State<i32>,
-    theme_control: &ThemeControl,
-    graphics_recovery_control: Option<&GraphicsRecoveryControl>,
-) -> ViewNode {
-    app_shell_with_controls(
-        active,
-        timer_ticks,
-        component_case,
-        home_count,
-        runtime_count,
-        theme_control,
-        graphics_recovery_control,
-        &FrameworkControl::default(),
-    )
-}
-
-#[cfg(all(test, feature = "test-harness"))]
-fn app_shell(active: State<usize>, timer_ticks: State<u32>) -> ViewNode {
-    let home_count = State::new(0i32);
-    let runtime_count = State::new(0i32);
-    let component_case = State::new(0usize);
-    app_shell_with_counters(
-        active,
-        timer_ticks,
-        &component_case,
-        &home_count,
-        &runtime_count,
-        &ThemeControl::default(),
-        None,
-    )
-}
-
 pub fn run(
     agent_control: bool,
     follow_system_theme: bool,
-    graphics_recovery_acceptance: bool,
-    component_qa: bool,
-    g5_release_scenario: bool,
-    empty: bool,
+    // 图形故障控制只供自动测试入口启用。
+    graphics_recovery_test: bool,
+    // 组件测试入口直接打开隔离测试页面。
+    component_test: bool,
     crash_dir: Option<std::path::PathBuf>,
 ) {
-    let active = State::new(if empty {
-        PAGE_HOME
-    } else if component_qa {
+    // 常规演示从首页启动，组件测试从隔离页面启动。
+    let active = State::new(if component_test {
         PAGE_COMPONENT_QA
     } else {
         PAGE_HOME
@@ -681,9 +318,9 @@ pub fn run(
     let home_count = State::new(0i32);
     let runtime_count = State::new(0i32);
     let theme_control = ThemeControl::new(follow_system_theme);
-    let graphics_recovery_control = GraphicsRecoveryControl::new(graphics_recovery_acceptance);
+    // 自动测试按启动参数决定是否启用图形故障控制。
+    let graphics_recovery_control = GraphicsRecoveryControl::new(graphics_recovery_test);
     let framework_control = FrameworkControl::default();
-    let g5_overlay_mode = State::new(0u8);
 
     let app = App::new()
         .title("UIX Demo")
@@ -697,88 +334,23 @@ pub fn run(
         ),
         None => app,
     };
-    let app = app.on_start(
-        with_cloned!(theme_control, graphics_recovery_control, timer_ticks, active, g5_overlay_mode; |handle| {
-                if empty {
-                    // 内存剖析空窗口基线：不启动任何定时器/状态机。
-                    return;
-                }
-                theme_control.set_handle(handle.clone());
-                graphics_recovery_control.set_handle(handle.clone());
-                if g5_release_scenario {
-                    start_g5_state_machine(
-                        &handle,
-                        &active,
-                        &timer_ticks,
-                        &g5_overlay_mode,
-                        &theme_control,
-                    );
-                } else {
-                    let ticks = timer_ticks.clone();
-                    handle
-                        .run_interval(Duration::from_secs(1), move || {
-                            ticks.update(|v| *v = v.wrapping_add(1));
-                        })
-                        .detach();
-                }
-                // 动画样例改走 WidgetAnimation（Spin 等）；不再全局 16ms 探活，
-                // 否则 RegisteredActive 永不 DeepIdle，且曾把 orphan State 绑成整树 reconcile。
-                // Component QA owns page navigation for deterministic real-window
-                // tests; the standalone startup scenario must not replace its page.
-                if !component_qa
-                    && !g5_release_scenario
-                    && std::env::var_os("UIX_PERF_PROBE").is_some()
-                {
-                    tracing::info!("PERF_SCENARIO=startup scheduled");
-                    let page = active.clone();
-                    // Delays are wall-clock from on_start; first paint can take seconds,
-                    // so keep later scenarios well after that cost settles.
-                    handle
-                        .run_after(Duration::from_millis(5000), {
-                            let page = page.clone();
-                            move || {
-                                tracing::info!("PERF_SCENARIO=page_switch_general");
-                                page.set(2);
-                            }
-                        })
-                        .detach();
-                    handle
-                        .run_after(Duration::from_millis(9000), {
-                            let page = page.clone();
-                            move || {
-                                tracing::info!("PERF_SCENARIO=page_switch_input");
-                                page.set(5);
-                            }
-                        })
-                        .detach();
-                    handle
-                        .run_after(Duration::from_millis(13000), {
-                            let page = page.clone();
-                            move || {
-                                tracing::info!("PERF_SCENARIO=page_switch_home");
-                                page.set(0);
-                            }
-                        })
-                        .detach();
-                    handle
-                        .run_after(Duration::from_millis(16000), || {
-                            tracing::info!("PERF_SCENARIO=await_timer_tick");
-                        })
-                        .detach();
-                    handle
-                        .run_after(Duration::from_millis(18500), || {
-                            tracing::info!("PERF_SCENARIO=idle_window_expect_no_frame");
-                        })
-                        .detach();
-                    handle
-                        .run_after(Duration::from_millis(20000), || {
-                            tracing::info!("PERF_SCENARIO=done");
-                            std::process::exit(0);
-                        })
-                        .detach();
-                }
-            })
-    );
+    // 启动后只注册演示本身需要的状态与秒级计时器。
+    let app = app.on_start(with_cloned!(
+        theme_control,
+        graphics_recovery_control,
+        timer_ticks;
+        |handle| {
+            theme_control.set_handle(handle.clone());
+            graphics_recovery_control.set_handle(handle.clone());
+            // 秒级计数器驱动常规演示中的时间变化。
+            let ticks = timer_ticks.clone();
+            handle
+                .run_interval(Duration::from_secs(1), move || {
+                    ticks.update(|value| *value = value.wrapping_add(1));
+                })
+                .detach();
+        }
+    ));
     #[cfg(feature = "agent-control")]
     let app = if agent_control {
         app.enable_agent_control()
@@ -791,6 +363,7 @@ pub fn run(
         app
     };
 
+    // 根视图始终渲染常规演示外壳，测试入口只改变初始页面和故障控制。
     app.root(with_cloned!(
         active,
         timer_ticks,
@@ -801,26 +374,16 @@ pub fn run(
         graphics_recovery_control,
         framework_control;
         {
-            if empty {
-                // 内存剖析空窗口基线：不渲染任何内容，评估框架+驱动固定开销。
-                column(())
-            } else {
-                let shell = demo_window(app_shell_with_controls(
-                    active,
-                    timer_ticks,
-                    &component_case,
-                    &home_count,
-                    &runtime_count,
-                    &theme_control,
-                    graphics_recovery_control.enabled().then_some(&graphics_recovery_control),
-                    &framework_control,
-                ));
-                if g5_release_scenario {
-                    g5_release_root(shell, &g5_overlay_mode)
-                } else {
-                    shell
-                }
-            }
+            demo_window(app_shell_with_controls(
+                active,
+                timer_ticks,
+                &component_case,
+                &home_count,
+                &runtime_count,
+                &theme_control,
+                graphics_recovery_control.enabled().then_some(&graphics_recovery_control),
+                &framework_control,
+            ))
         }
     ))
     .run();

@@ -835,7 +835,7 @@ impl ViewAdapter {
 
 // 仅在库测试中编译协调失效分类门禁。
 #[cfg(test)]
-// 将测试实现留在独立文件，避免适配器主体超过文件规模上限。
-#[path = "adapter_tests.rs"]
+// 将测试实现集中到仓库测试目录，并避免适配器主体超过文件规模上限。
+#[path = "../../tests/unit/ui/adapter_tests.rs"]
 // 挂载可访问适配器私有边界的同级测试模块。
 mod tests;

@@ -532,7 +532,7 @@ impl RhiRenderer {
     }
 }
 
-// 为 MSDF atlas 的固定预算、gutter 和 shelf 代际提供低层单元验收。
+// 为 MSDF atlas 的固定预算、gutter 和 shelf 代际提供低层单元测试。
 #[cfg(test)]
 mod tests {
     // 引入共享引用计数数组，构造最小的轮廓输入。

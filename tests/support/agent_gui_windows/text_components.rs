@@ -9,7 +9,8 @@ struct ComponentQaSession {
 
 impl ComponentQaSession {
     fn open(case_index: usize, request_prefix: &str) -> Self {
-        let mut demo = DemoProcess::spawn_with_args(DEFAULT_D3D11_GRAPHICS, &["--component-qa"]);
+        // 文本组件测试通过专用测试页面启动。
+        let mut demo = DemoProcess::spawn_with_args(DEFAULT_D3D11_GRAPHICS, &["--test-components"]);
         let descriptor = demo.wait_for_descriptor();
         let endpoint = descriptor["endpoint"]
             .as_str()
@@ -1487,7 +1488,7 @@ fn real_demo_descriptions_reflows_long_content_without_overflow() {
 
     let target = node_by_automation_id(&snapshot, "component-qa-target");
     assert_eq!(target["role"], "group");
-    assert_eq!(target["name"], "组件验收信息");
+    assert_eq!(target["name"], "组件测试信息");
     assert_eq!(target["visible_bounds"]["w"], 360.0);
     assert_eq!(target["visible_bounds"]["h"], 130.0);
     assert!(target["state"]["value_text"]
@@ -1670,7 +1671,7 @@ fn real_demo_result_view_keeps_status_and_action_inside_constrained_frames() {
     );
     let target = node_by_automation_id(&snapshot, "component-qa-target");
     assert_eq!(target["role"], "button");
-    assert_eq!(target["name"], "查看证据");
+    assert_eq!(target["name"], "查看结果");
     assert_eq!(target["visible_bounds"]["w"], 172.0);
     assert_eq!(target["visible_bounds"]["h"], 190.0);
 
@@ -3353,7 +3354,7 @@ fn real_demo_tree_clips_scrolls_and_commits_on_matching_release() {
         "tree-child-up",
     );
     let target = node_by_automation_id(&released, "component-qa-target");
-    assert_eq!(target["state"]["value_text"], "组件验收项 00");
+    assert_eq!(target["state"]["value_text"], "组件测试项 00");
     assert_eq!(target["state"]["value_now"], 2.0);
     for index in 0..12 {
         session.press_key("down", &format!("tree-scroll-{index}"));
@@ -3361,7 +3362,7 @@ fn real_demo_tree_clips_scrolls_and_commits_on_matching_release() {
     let scrolled = session.snapshot("tree-scrolled");
     assert_eq!(
         node_by_automation_id(&scrolled, "component-qa-target")["state"]["value_text"],
-        "组件验收项 12"
+        "组件测试项 12"
     );
     if let Ok(hold_ms) = std::env::var("UIX_TREE_QA_HOLD_LIGHT_MS") {
         let hold_ms = hold_ms

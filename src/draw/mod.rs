@@ -23,7 +23,7 @@
 //! | [`raster`] | 模式外基础算法：CPU 像素光栅化器与软渲染执行器（painting/backend/resources 共用） |
 //! | [`debug`] | 跨 painting/renderer 的调试绘制服务 |
 //!
-//! # 旧路径 deny 证据（compile-fail）
+//! # 旧路径 compile-fail 测试
 //!
 //! ```compile_fail
 //! // 旧平铺路径不得复活：Canvas2D 归 painting。

@@ -36,24 +36,6 @@ pub(crate) fn push_coalesced_event(events: &mut Vec<UiEvent>, event: &UiEvent) {
     events.push(event.clone());
 }
 
-/// Records the native event type that wakes a G5 idle phase without changing
-/// event routing or rendering behavior. The log is intentionally limited to
-/// perf-probe idle runs so ordinary applications do not pay for telemetry.
-fn log_g5_idle_event(event: &UiEvent) {
-    if !crate::core::perf_probe::perf_probe_enabled() {
-        return;
-    }
-    crate::core::perf_probe::with_internal_g5_scenario(|scenario| {
-        if scenario.starts_with("idle.") {
-            tracing::info!(
-                "G5_EVENT schema=1 scenario={} type={:?}",
-                scenario,
-                event.type_
-            );
-        }
-    });
-}
-
 /// 运行完整的 widget 渲染事件循环。
 // 保留旧的完整事件循环入口，供兼容组装方按需调用。
 #[allow(dead_code)]
@@ -422,7 +404,6 @@ where
     driver.sync_app_timers(active_work, &app_timers);
 
     let collect = |ev: &UiEvent| {
-        log_g5_idle_event(ev);
         if ev.window_id.is_some_and(|target| target != window_id) {
             push_coalesced_event(&mut foreign_events.borrow_mut(), ev);
             return true;
@@ -501,7 +482,6 @@ where
             on_foreign_event(&ev, platform);
         }
 
-        let input_t0 = Instant::now();
         let had_events = !pending_events.borrow().is_empty();
         let mut had_layout_event = false;
         for ev in pending_events.borrow_mut().drain(..) {
@@ -598,7 +578,6 @@ where
                 (*bus_ptr).event_bus().publish(&ev);
             }
         }
-        let phase_input_us = input_t0.elapsed().as_micros();
         if !running.get() {
             break;
         }
@@ -632,7 +611,6 @@ where
             now,
             had_events,
             had_layout_event,
-            input_us: phase_input_us,
             next_external_deadline: external_deadline,
             on_runtime_tasks: &mut on_runtime_tasks,
             on_frame: &on_frame,

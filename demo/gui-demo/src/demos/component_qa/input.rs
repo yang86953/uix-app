@@ -2,7 +2,7 @@ use uix::prelude::*;
 
 use super::{qa_row, qa_target, qa_target_view, qa_variant};
 
-// 日期与选择器类验收场景拆入独立文件，保持输入主文件处于行数上限内。
+// 日期与选择器类测试场景拆入独立文件，保持输入主文件处于行数上限内。
 #[path = "input_pickers.rs"]
 mod input_pickers;
 // 复用日期与选择器类场景构建。

@@ -1,4 +1,4 @@
-//! Dashboard 共享上下文 — 跨页 State 与可执行验收控制。
+//! Dashboard 共享上下文 — 跨页 State 与自动测试控制。
 
 use std::sync::{Arc, Mutex};
 use uix::prelude::*;
@@ -72,9 +72,12 @@ impl ThemeControl {
     }
 }
 
-pub const GRAPHICS_RECOVERY_READY: &str = "图形恢复验收：等待注入";
-pub const GRAPHICS_RECOVERY_PENDING: &str = "图形恢复验收：已注入，等待恢复后交互";
-pub const GRAPHICS_RECOVERY_VERIFIED: &str = "图形恢复验收：恢复后交互成功";
+// 图形恢复测试尚未注入故障。
+pub const GRAPHICS_RECOVERY_READY: &str = "图形恢复测试：等待注入";
+// 图形恢复测试正在等待恢复后断言。
+pub const GRAPHICS_RECOVERY_PENDING: &str = "图形恢复测试：已注入，等待恢复后交互";
+// 图形恢复测试已经通过恢复后交互断言。
+pub const GRAPHICS_RECOVERY_PASSED: &str = "图形恢复测试：恢复后交互成功";
 
 #[derive(Clone)]
 pub struct GraphicsRecoveryControl {
@@ -106,10 +109,11 @@ impl GraphicsRecoveryControl {
 
     pub fn can_inject(&self) -> bool {
         let status = self.status.get();
-        status == GRAPHICS_RECOVERY_READY || status == GRAPHICS_RECOVERY_VERIFIED
+        status == GRAPHICS_RECOVERY_READY || status == GRAPHICS_RECOVERY_PASSED
     }
 
-    pub fn can_verify(&self) -> bool {
+    // 只有故障注入完成后才能执行恢复交互断言。
+    pub fn can_assert(&self) -> bool {
         self.status.get() == GRAPHICS_RECOVERY_PENDING
     }
 
@@ -121,7 +125,7 @@ impl GraphicsRecoveryControl {
             .clone()
         else {
             self.status
-                .set("图形恢复验收：注入失败（AppHandle 尚未就绪）".to_string());
+                .set("图形恢复测试：注入失败（AppHandle 尚未就绪）".to_string());
             return;
         };
 
@@ -130,18 +134,18 @@ impl GraphicsRecoveryControl {
             Ok(()) => self.status.set(GRAPHICS_RECOVERY_PENDING.to_string()),
             Err(error) => self
                 .status
-                .set(format!("图形恢复验收：注入失败（{}）", error.short_what())),
+                .set(format!("图形恢复测试：注入失败（{}）", error.short_what())),
         }
 
         #[cfg(not(feature = "test-harness"))]
         {
             let _ = handle;
             self.status
-                .set("图形恢复验收：注入失败（未启用 test-harness）".to_string());
+                .set("图形恢复测试：注入失败（未启用 test-harness）".to_string());
         }
     }
 
-    // 触发 D3D11 RHI acquire 边界的可控 surface-lost 验收。
+    // 触发 D3D11 RHI acquire 边界的可控 surface-lost 测试。
     pub fn inject_surface_lost(&self) {
         // 读取已经绑定到当前 demo window 的 AppHandle。
         let Some(handle) = self
@@ -151,7 +155,7 @@ impl GraphicsRecoveryControl {
             .clone()
         else {
             self.status
-                .set("图形恢复验收：注入失败（AppHandle 尚未就绪）".to_string());
+                .set("图形恢复测试：注入失败（AppHandle 尚未就绪）".to_string());
             return;
         };
 
@@ -159,10 +163,10 @@ impl GraphicsRecoveryControl {
         match handle.inject_graphics_surface_lost_for_test() {
             // surface 错误会在下一次 RHI acquire 返回并进入恢复 FSM。
             Ok(()) => self.status.set(GRAPHICS_RECOVERY_PENDING.to_string()),
-            // 把 owner-thread 的 typed failure 显示给验收页面。
+            // 把 owner-thread 的 typed failure 显示给测试页面。
             Err(error) => self
                 .status
-                .set(format!("图形恢复验收：注入失败（{}）", error.short_what())),
+                .set(format!("图形恢复测试：注入失败（{}）", error.short_what())),
         }
 
         #[cfg(not(feature = "test-harness"))]
@@ -170,13 +174,14 @@ impl GraphicsRecoveryControl {
             // 未启用 test-harness 时保持页面可运行但不伪造恢复能力。
             let _ = handle;
             self.status
-                .set("图形恢复验收：注入失败（未启用 test-harness）".to_string());
+                .set("图形恢复测试：注入失败（未启用 test-harness）".to_string());
         }
     }
 
-    pub fn verify_recovered_interaction(&self) {
-        if self.can_verify() {
-            self.status.set(GRAPHICS_RECOVERY_VERIFIED.to_string());
+    // 恢复后交互动作到达时记录自动测试通过状态。
+    pub fn assert_recovered_interaction(&self) {
+        if self.can_assert() {
+            self.status.set(GRAPHICS_RECOVERY_PASSED.to_string());
         }
     }
 }
