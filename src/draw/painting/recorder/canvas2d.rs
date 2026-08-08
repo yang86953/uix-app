@@ -355,7 +355,6 @@ impl Canvas2D for FrameRecordingCanvas {
             },
         );
     }
-
     fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, color: Color, width: f32) {
         let bounds = Rect::new(
             x1.min(x2),
@@ -369,7 +368,6 @@ impl Canvas2D for FrameRecordingCanvas {
             scratch.draw_line(x1, y1, x2, y2, color, width)
         });
     }
-
     fn fill_linear_gradient(
         &mut self,
         rect: Rect,
@@ -377,11 +375,12 @@ impl Canvas2D for FrameRecordingCanvas {
         color_b: Color,
         dir: GradientDirection,
     ) {
-        self.draw_cpu(rect, 1.0, |scratch| {
+        // 渐变是可结合的纯源贡献，可安全进入 Additive sampled scratch。
+        self.draw_cpu_source(rect, 1.0, |scratch| {
+            // 软件渐变负责 offset 后的完整仿射、裁剪与 opacity。
             scratch.fill_linear_gradient(rect, color_a, color_b, dir)
         });
     }
-
     fn fill_radial_gradient(
         &mut self,
         cx: f32,
@@ -392,11 +391,12 @@ impl Canvas2D for FrameRecordingCanvas {
         outer_color: Color,
     ) {
         let bounds = Rect::new(cx - outer_r, cy - outer_r, outer_r * 2.0, outer_r * 2.0);
-        self.draw_cpu(bounds, 1.0, |scratch| {
+        // 径向渐变同样只生成源贡献，并与相邻填充/描边共享 Additive 批次。
+        self.draw_cpu_source(bounds, 1.0, |scratch| {
+            // 局部圆经过任意仿射后由 inverse sampling 保持渐变定义。
             scratch.fill_radial_gradient(cx, cy, inner_r, outer_r, inner_color, outer_color)
         });
     }
-
     fn draw_box_shadow(
         &mut self,
         rect: Rect,

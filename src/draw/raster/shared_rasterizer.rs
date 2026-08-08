@@ -170,56 +170,22 @@ impl Canvas2D for SharedRasterizer {
     }
 
     fn fill_linear_gradient(&mut self, rect: Rect, ca: Color, cb: Color, dir: GradientDirection) {
-        let (ox, oy) = self.renderer.offset();
-        let rect = if ox != 0.0 || oy != 0.0 {
-            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h)
-        } else {
-            rect
-        };
-        let (size, clip, opacity) = (
-            self.surface.surface_size(),
-            self.renderer.clip_rect(),
-            self.renderer.opacity(),
-        );
+        // 共享执行器统一应用 offset、仿射、clip、opacity 与 blend。
+        let (width, height) = (self.surface.width(), self.surface.height());
+        // 借用像素目标后直接进入状态完整的软件渐变路径。
         let pixels = self.surface.pixels_mut();
-        crate::draw::raster::rasterizer::gradient::fill_linear_gradient(
-            pixels,
-            size.w as i32,
-            size.h as i32,
-            clip,
-            opacity,
-            rect,
-            ca,
-            cb,
-            dir,
-        );
+        // 线性渐变在局部空间求值并写回设备像素。
+        self.renderer
+            .fill_linear_gradient(pixels, width, height, rect, ca, cb, dir);
     }
     fn fill_radial_gradient(&mut self, cx: f32, cy: f32, ir: f32, or: f32, ic: Color, oc: Color) {
-        let (ox, oy) = self.renderer.offset();
-        let (cx, cy) = if ox != 0.0 || oy != 0.0 {
-            (cx + ox, cy + oy)
-        } else {
-            (cx, cy)
-        };
-        let (size, clip, opacity) = (
-            self.surface.surface_size(),
-            self.renderer.clip_rect(),
-            self.renderer.opacity(),
-        );
+        // 读取目标尺寸供共享像素入口做边界校验。
+        let (width, height) = (self.surface.width(), self.surface.height());
+        // 借用目标像素缓冲。
         let pixels = self.surface.pixels_mut();
-        crate::draw::raster::rasterizer::gradient::fill_radial_gradient(
-            pixels,
-            size.w as i32,
-            size.h as i32,
-            clip,
-            opacity,
-            cx,
-            cy,
-            ir,
-            or,
-            ic,
-            oc,
-        );
+        // 径向渐变复用同一仿射与混合状态。
+        self.renderer
+            .fill_radial_gradient(pixels, width, height, cx, cy, ir, or, ic, oc);
     }
 
     fn draw_box_shadow(
