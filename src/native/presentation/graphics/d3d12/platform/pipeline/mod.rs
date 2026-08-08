@@ -1,4 +1,4 @@
-//! Minimal D3D12 native raster pipeline: rounded solid rectangles + soft fallback.
+//! Minimal D3D12 native raster pipeline: rounded solid rectangles and glyphs.
 
 #![allow(nonstandard_style)]
 
@@ -8,7 +8,7 @@ use std::mem::{size_of, ManuallyDrop};
 use std::sync::Arc;
 
 use crate::core::{Errc, Error, Result};
-use crate::native::present::{GpuGlyphBlit, GpuSolidRect, SoftFallbackTile};
+use crate::native::present::{GpuGlyphBlit, GpuSolidRect};
 use ::windows::core::PCSTR;
 use ::windows::Win32::Foundation::{FALSE, RECT, TRUE};
 use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
@@ -27,9 +27,10 @@ use super::transfer::{
 const RECT_ROOT_DWORDS: u32 = 20;
 const GLYPH_ATLAS_SIZE: u32 = 2048;
 const GLYPH_RETAINED_UPLOAD_LIMIT: usize = 8 * 1024 * 1024;
-const SOFT_SRV_SLOT: usize = 0;
-const GLYPH_SRV_SLOT: usize = 1;
-const SRV_DESCRIPTOR_COUNT: u32 = 2;
+// compact soft upload 移除后，glyph atlas 独占第一个 SRV 槽位。
+const GLYPH_SRV_SLOT: usize = 0;
+// descriptor heap 只需为 glyph atlas 保留一个可见描述符。
+const SRV_DESCRIPTOR_COUNT: u32 = 1;
 
 const RECT_HLSL: &str = r#"
 cbuffer RectCB : register(b0)
@@ -94,41 +95,6 @@ float4 PSMain(VSOut input) : SV_Target
     float4 color = floor(saturate(u_color) * 255.0 + 0.5);
     float3 premul = floor(color.rgb * color.a / 255.0);
     return float4(premul * mask, color.a * mask) / 255.0;
-}
-"#;
-
-const BLIT_HLSL: &str = r#"
-Texture2D u_tex : register(t0);
-SamplerState u_samp : register(s0);
-
-cbuffer BlitCB : register(b0)
-{
-    float4 u_uv_rect;
-};
-
-static const float2 CLIP_POS[6] = {
-    float2(-1.0, -1.0), float2(1.0, -1.0), float2(-1.0, 1.0),
-    float2(-1.0, 1.0), float2(1.0, -1.0), float2(1.0, 1.0)
-};
-
-struct VSOut {
-    float4 pos : SV_POSITION;
-    float2 uv : TEXCOORD0;
-};
-
-VSOut VSMain(uint vertex_id : SV_VertexID)
-{
-    VSOut o;
-    float2 pos = CLIP_POS[vertex_id];
-    o.pos = float4(pos, 0.0, 1.0);
-    float2 unit = float2(pos.x * 0.5 + 0.5, 0.5 - pos.y * 0.5);
-    o.uv = u_uv_rect.xy + unit * u_uv_rect.zw;
-    return o;
-}
-
-float4 PSMain(VSOut input) : SV_Target
-{
-    return u_tex.Sample(u_samp, input.uv);
 }
 "#;
 
@@ -330,14 +296,9 @@ struct FrameUploads {
 pub(super) struct D3d12Pipeline {
     root_signature: ID3D12RootSignature,
     solid_pso: ID3D12PipelineState,
-    soft_pso: ID3D12PipelineState,
     glyph_pso: ID3D12PipelineState,
     srv_heap: ID3D12DescriptorHeap,
     srv_stride: u32,
-    soft_texture: Option<ID3D12Resource>,
-    soft_texture_state: D3D12_RESOURCE_STATES,
-    soft_width: i32,
-    soft_height: i32,
     glyph_atlas: Option<ID3D12Resource>,
     glyph_atlas_state: D3D12_RESOURCE_STATES,
     glyph_state: GlyphAtlasState,
@@ -648,43 +609,6 @@ fn create_upload_buffer(device: &ID3D12Device, size: usize) -> Result<ID3D12Reso
     })
 }
 
-fn create_soft_texture(device: &ID3D12Device, width: i32, height: i32) -> Result<ID3D12Resource> {
-    let heap = default_heap_properties();
-    let desc = D3D12_RESOURCE_DESC {
-        Dimension: D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-        Alignment: 0,
-        Width: width as u64,
-        Height: height as u32,
-        DepthOrArraySize: 1,
-        MipLevels: 1,
-        Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-        SampleDesc: DXGI_SAMPLE_DESC {
-            Count: 1,
-            Quality: 0,
-        },
-        Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
-        Flags: D3D12_RESOURCE_FLAG_NONE,
-    };
-    let mut resource = None;
-    unsafe {
-        device.CreateCommittedResource(
-            &heap,
-            D3D12_HEAP_FLAG_NONE,
-            &desc,
-            D3D12_RESOURCE_STATE_COPY_DEST,
-            None,
-            &mut resource,
-        )
-    }
-    .map_err(|error| pipeline_error("CreateCommittedResource(soft texture)", error))?;
-    resource.ok_or_else(|| {
-        Error::new(
-            Errc::PlatformError,
-            "D3d12Pipeline: soft texture was not created",
-        )
-    })
-}
-
 fn create_glyph_atlas(device: &ID3D12Device) -> Result<ID3D12Resource> {
     let heap = default_heap_properties();
     let desc = D3D12_RESOURCE_DESC {
@@ -779,44 +703,6 @@ pub(crate) fn glyph_upload_fits_retained_budget(
         || retained_capacity
             .and_then(|total| total.checked_add(total_bytes.saturating_sub(current_slot_capacity)))
             .is_some_and(|total| total <= GLYPH_RETAINED_UPLOAD_LIMIT)
-}
-
-pub(crate) fn validated_soft_layout(
-    width: i32,
-    height: i32,
-    pixels_len: usize,
-) -> Result<(usize, usize)> {
-    if width <= 0 || height <= 0 {
-        return Err(invalid_input(format!(
-            "D3d12Pipeline: soft dimensions must be positive, got {width}x{height}"
-        )));
-    }
-    let width = width as usize;
-    let height = height as usize;
-    let expected = width
-        .checked_mul(height)
-        .ok_or_else(|| invalid_input("D3d12Pipeline: soft pixel count overflow"))?;
-    if pixels_len < expected {
-        return Err(invalid_input(format!(
-            "D3d12Pipeline: soft buffer too small, got {pixels_len}, need {expected}"
-        )));
-    }
-    let row_bytes = width
-        .checked_mul(std::mem::size_of::<u32>())
-        .ok_or_else(|| invalid_input("D3d12Pipeline: soft row byte count overflow"))?;
-    let row_pitch = row_bytes
-        .checked_add(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as usize - 1)
-        .ok_or_else(|| invalid_input("D3d12Pipeline: soft row pitch overflow"))?
-        & !(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as usize - 1);
-    if u32::try_from(row_pitch).is_err() {
-        return Err(invalid_input(
-            "D3d12Pipeline: soft row pitch exceeds D3D12 footprint range",
-        ));
-    }
-    let total_bytes = row_pitch
-        .checked_mul(height)
-        .ok_or_else(|| invalid_input("D3d12Pipeline: soft upload byte count overflow"))?;
-    Ok((row_pitch, total_bytes))
 }
 
 fn scissor_rect(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>) -> RECT {

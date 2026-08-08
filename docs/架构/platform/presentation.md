@@ -12,7 +12,7 @@
 
 > **离屏资源边界**：`OffscreenTargetId` 与 `IGraphicsContext` 的 create/destroy/bind/blit offscreen 方法已经移除，thread-bound 门面不再转发这些高层操作；D3D11 context 和 OpenGL ES raster 也不再保存平行的离屏槽位、RTV/SRV/FBO、绑定标记或 legacy sampled-blit shader。Picture 创建失败或 queue 无法无损 lower 时由 graphics backend 返回 typed failure，platform 不选择 UI fallback。
 >
-> **软回退上传边界**：`IGraphicsContext::blit_soft_fallback` 整面透明混合入口及 D3D11/D3D12 对应实现已经移除；生产 soft fallback 只通过通用 renderer 的 retained RHI sampled segment 执行。主 `FrameEncoder` 现在与 Picture 一样要求整条无损 RHI lowering，前置 damage 由 retained texture `ClearRect` 执行；`upload_surface_pixels` 兼容入口及 adapter 整面 replace 实现也已移除。最终 present 与 Picture/effect 前的主 surface 顺序边界不再放弃 retained texture 或调用逐 UI adapter：空新帧在 retained target 内透明初始化，idle 帧重新采样既有 retained 内容，未覆盖语义返回 typed failure。CPU presenter 的正式 `PixelBuffer` present 仍保持独立，不属于该兼容分叉。
+> **软回退上传边界**：`IGraphicsContext::blit_soft_fallback` 整面透明混合入口、`blit_soft_fallback_tile` compact tile 入口及 D3D11/D3D12/OpenGL 对应实现和私有上传资源已经移除；紧边界 tile 只在 draw backend 内描述 staging，生产 soft fallback 只通过通用 renderer 的 retained RHI sampled segment 执行。主 `FrameEncoder` 现在与 Picture 一样要求整条无损 RHI lowering，前置 damage 由 retained texture `ClearRect` 执行；`upload_surface_pixels` 兼容入口及 adapter 整面 replace 实现也已移除。最终 present 与 Picture/effect 前的主 surface 顺序边界不再放弃 retained texture 或调用逐 UI adapter：空新帧在 retained target 内透明初始化，idle 帧重新采样既有 retained 内容，未覆盖语义返回 typed failure。CPU presenter 的正式 `PixelBuffer` present 仍保持独立，不属于该兼容分叉。
 
 ## 组件清单
 

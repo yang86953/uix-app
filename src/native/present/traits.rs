@@ -377,30 +377,6 @@ pub trait IGraphicsContext {
         ))
     }
 
-    /// Alpha-blend one bounded CPU fallback segment without presenting.
-    ///
-    /// The payload is tightly packed to the tile extent; the implementation
-    /// must validate both its byte count and its destination against the
-    /// currently bound target. The default rejects the new compact protocol
-    /// rather than silently expanding it to a full texture transfer.
-    fn blit_soft_fallback_tile(
-        &mut self,
-        _pixels: &[u32],
-        tile: SoftFallbackTile,
-    ) -> Result<(), Error> {
-        Err(Error::new(
-            crate::core::error::Errc::NotImplemented,
-            format!(
-                "GraphicsBackend {} does not support compact CPU soft fallback uploads to {},{} {}x{}",
-                self.graphics_backend(),
-                tile.dst_x,
-                tile.dst_y,
-                tile.width,
-                tile.height
-            ),
-        ))
-    }
-
     /// Replace-blend clear of logical rects (partial dirty clear).
     ///
     /// Default: not implemented. D3D11 uses this because `ClearRenderTargetView`

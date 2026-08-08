@@ -12,7 +12,6 @@ impl IGraphicsContext for D3d12Context {
     fn native_raster_caps(&self) -> NativeRasterCaps {
         NativeRasterCaps {
             clear_target: true,
-            soft_blit: true,
             solid_rects: true,
             glyphs: true,
             ..NativeRasterCaps::default()
@@ -116,23 +115,6 @@ impl IGraphicsContext for D3d12Context {
                 viewport_h,
                 scissor,
                 glyphs,
-            )
-    }
-
-    fn blit_soft_fallback_tile(&mut self, pixels: &[u32], tile: SoftFallbackTile) -> Result<()> {
-        self.ensure_healthy()?;
-        self.begin_commands()?;
-        self.pipeline
-            .as_mut()
-            .ok_or_else(|| platform_error("D3d12Context: raster pipeline is shut down"))?
-            .blit_soft_fallback_tile(
-                &self.device,
-                &self.command_list,
-                self.frame_index,
-                pixels,
-                self.width,
-                self.height,
-                tile,
             )
     }
 }

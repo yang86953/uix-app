@@ -288,8 +288,8 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # OpenGL ES adapter 不得重新实现高层离屏采样 blit。
         self.assertNotIn("fn blit_offscreen_target", opengl)
 
-    # 校验整面 soft fallback 透明混合入口不会绕过有边界 tile 协议。
-    def test_soft_fallback_only_exposes_bounded_tile_protocol(self) -> None:
+    # 校验 soft fallback 只保留 draw 私有 staging，不再进入逐 UI adapter。
+    def test_soft_fallback_uses_only_draw_private_rhi_staging(self) -> None:
         # 读取公共兼容接口与同目录声明。
         present = read_rust_module(ROOT / "src/native/present")
         # 读取 D3D11 adapter 的 context 与 pipeline 拆分模块。
@@ -300,6 +300,10 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         d3d12_context = read_rust_module(ROOT / "src/native/presentation/graphics/d3d12/platform/context")
         # 读取 D3D12 adapter 的底层 pipeline 拆分模块。
         d3d12_pipeline = read_rust_module(ROOT / "src/native/presentation/graphics/d3d12/platform/pipeline")
+        # 读取 OpenGL ES context 与 raster pipeline 的组合源码。
+        opengl = read_rust_module(ROOT / "src/native/presentation/graphics/opengl")
+        # 读取通用 renderer 私有的 soft tile 打包模块。
+        draw_tile = (ROOT / "src/draw/backend/gpu/tile.rs").read_text(encoding="utf-8")
         # 公共门面不得重新声明整面透明混合入口。
         self.assertNotIn("fn blit_soft_fallback(", present)
         # D3D11 context 不得保留同名高层入口。
@@ -310,8 +314,20 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertNotIn("fn blit_soft_fallback(", d3d12_context)
         # D3D12 pipeline 不得保留同名底层入口。
         self.assertNotIn("fn blit_soft_fallback(", d3d12_pipeline)
-        # 有边界 tile 协议仍必须留在公共接口。
-        self.assertIn("fn blit_soft_fallback_tile(", present)
+        # 公共接口不得重新声明 compact tile adapter 方法。
+        self.assertNotIn("fn blit_soft_fallback_tile(", present)
+        # 三个 native adapter 均不得保留 compact tile 高层或私有上传方法。
+        for adapter in (d3d11_context, d3d11_pipeline, d3d12_context, d3d12_pipeline, opengl):
+            # 防止逐 UI soft tile 分支在任一 adapter 中复活。
+            self.assertNotIn("blit_soft_fallback_tile", adapter)
+        # platform capability 不得继续宣称已经删除的 soft upload API。
+        self.assertNotIn("soft_blit", present)
+        # tight tile 只作为 draw backend 的 sampled staging 私有类型存在。
+        self.assertIn("pub(crate) struct SoftFallbackTile", draw_tile)
+        # 通用 renderer 必须继续保留可见像素的紧边界打包。
+        self.assertIn("fn pack_visible_soft_fallback_tile", draw_tile)
+        # platform present 门面不得继续持有 renderer staging DTO。
+        self.assertNotIn("pub struct SoftFallbackTile", present)
         # 整面 replace 上传也不得重新进入兼容门面。
         self.assertNotIn("fn upload_surface_pixels(", present)
 

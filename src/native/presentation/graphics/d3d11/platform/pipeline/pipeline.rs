@@ -5,7 +5,6 @@ impl D3d11Pipeline {
         let vs_blob = compile_shader(RECT_HLSL, c"VSMain", c"vs_4_0")?;
         let ps_blob = compile_shader(RECT_HLSL, c"PSMain", c"ps_4_0")?;
         let blit_vs_blob = compile_shader(BLIT_HLSL, c"VSMain", c"vs_4_0")?;
-        let blit_ps_blob = compile_shader(BLIT_HLSL, c"PSMain", c"ps_4_0")?;
         let glyph_vs_blob = compile_shader(GLYPH_HLSL, c"VSMain", c"vs_4_0")?;
         let glyph_ps_blob = compile_shader(GLYPH_HLSL, c"PSMain", c"ps_4_0")?;
         // 编译 RGBA8 MSDF 字形的共享 VS/PS 源，保证其 constant ABI 自洽。
@@ -69,22 +68,6 @@ impl D3d11Pipeline {
         }
         let vs_blit =
             vs_blit.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blit VS"))?;
-
-        let mut ps_blit = None;
-        unsafe {
-            device
-                .CreatePixelShader(
-                    std::slice::from_raw_parts(
-                        blit_ps_blob.GetBufferPointer() as *const u8,
-                        blit_ps_blob.GetBufferSize(),
-                    ),
-                    None,
-                    Some(&mut ps_blit),
-                )
-                .map_err(|e| d3d_error("CreatePixelShader(blit)", e))?;
-        }
-        let ps_blit =
-            ps_blit.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blit PS"))?;
 
         // 可分离高斯模糊 PS 只供通用 RHI BLUR_PASS 使用。
         let blur_ps_blob = compile_shader(BLUR_HLSL, c"PSMain", c"ps_4_0")?;
@@ -361,11 +344,7 @@ impl D3d11Pipeline {
         })?;
 
         let unit: [f32; 12] = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0];
-        let fullscreen: [f32; 12] = [
-            -1.0, -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0,
-        ];
         let vb_unit = create_static_vb(device, &unit)?;
-        let vb_fullscreen = create_static_vb(device, &fullscreen)?;
         let vb_glyph_capacity = GLYPH_VB_INITIAL_GLYPHS;
         let vb_glyph = create_dynamic_vb(device, vb_glyph_capacity * 6 * size_of::<GlyphVertex>())?;
         let vb_mesh_capacity_floats = MESH_VB_INITIAL_FLOATS;
@@ -386,23 +365,6 @@ impl D3d11Pipeline {
                 .map_err(|e| d3d_error("CreateBuffer(cb)", e))?;
         }
         let cb = cb.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no CB"))?;
-
-        let cb_blit_desc = D3D11_BUFFER_DESC {
-            ByteWidth: size_of::<BlitConstants>() as u32,
-            Usage: D3D11_USAGE_DYNAMIC,
-            BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
-            CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
-            MiscFlags: 0,
-            StructureByteStride: 0,
-        };
-        let mut cb_blit = None;
-        unsafe {
-            device
-                .CreateBuffer(&cb_blit_desc, None, Some(&mut cb_blit))
-                .map_err(|e| d3d_error("CreateBuffer(cb_blit)", e))?;
-        }
-        let cb_blit =
-            cb_blit.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blit CB"))?;
 
         let cb_glyph_desc = D3D11_BUFFER_DESC {
             ByteWidth: size_of::<GlyphConstants>() as u32,
@@ -630,7 +592,6 @@ impl D3d11Pipeline {
             ps_rect,
             layout,
             vs_blit,
-            ps_blit,
             ps_blur,
             vs_glyph,
             ps_glyph,
@@ -647,13 +608,11 @@ impl D3d11Pipeline {
             ps_sector,
             image: rhi_image::D3d11ImageOwner::default(),
             vb_unit,
-            vb_fullscreen,
             vb_glyph,
             vb_glyph_capacity,
             vb_mesh,
             vb_mesh_capacity_floats,
             cb,
-            cb_blit,
             cb_glyph,
             cb_grad,
             cb_mesh,
@@ -664,10 +623,6 @@ impl D3d11Pipeline {
             blend_replace,
             rasterizer,
             sampler,
-            soft_tex: None,
-            soft_srv: None,
-            soft_w: 0,
-            soft_h: 0,
             atlas_tex: None,
             atlas_srv: None,
             atlas_w: 0,
@@ -684,66 +639,5 @@ impl D3d11Pipeline {
             atlas_upload: Vec::new(),
             glyph_verts: Vec::new(),
         })
-    }
-
-    pub(crate) fn ensure_soft_texture(
-        &mut self,
-        device: &ID3D11Device,
-        width: i32,
-        height: i32,
-    ) -> Result<()> {
-        let w = width.max(1);
-        let h = height.max(1);
-        if self.soft_tex.is_some() && self.soft_w == w && self.soft_h == h {
-            return Ok(());
-        }
-        self.soft_srv = None;
-        self.soft_tex = None;
-        let desc = D3D11_TEXTURE2D_DESC {
-            Width: w as u32,
-            Height: h as u32,
-            MipLevels: 1,
-            ArraySize: 1,
-            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-            SampleDesc: DXGI_SAMPLE_DESC {
-                Count: 1,
-                Quality: 0,
-            },
-            Usage: D3D11_USAGE_DEFAULT,
-            BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
-            CPUAccessFlags: 0,
-            MiscFlags: 0,
-        };
-        let mut tex = None;
-        unsafe {
-            device
-                .CreateTexture2D(&desc, None, Some(&mut tex))
-                .map_err(|e| d3d_error("CreateTexture2D(soft)", e))?;
-        }
-        let tex =
-            tex.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no soft texture"))?;
-        let srv_desc = D3D11_SHADER_RESOURCE_VIEW_DESC {
-            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-            ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2D,
-            Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
-                Texture2D: D3D11_TEX2D_SRV {
-                    MostDetailedMip: 0,
-                    MipLevels: 1,
-                },
-            },
-        };
-        let mut srv = None;
-        unsafe {
-            device
-                .CreateShaderResourceView(&tex, Some(&srv_desc), Some(&mut srv))
-                .map_err(|e| d3d_error("CreateShaderResourceView", e))?;
-        }
-        let srv =
-            srv.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no soft SRV"))?;
-        self.soft_tex = Some(tex);
-        self.soft_srv = Some(srv);
-        self.soft_w = w;
-        self.soft_h = h;
-        Ok(())
     }
 }

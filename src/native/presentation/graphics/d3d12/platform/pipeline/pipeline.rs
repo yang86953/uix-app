@@ -6,8 +6,6 @@ impl D3d12Pipeline {
         let root_signature = create_root_signature(device)?;
         let rect_vs = compile_shader(RECT_HLSL, b"VSMain\0", b"vs_5_0\0")?;
         let rect_ps = compile_shader(RECT_HLSL, b"PSMain\0", b"ps_5_0\0")?;
-        let blit_vs = compile_shader(BLIT_HLSL, b"VSMain\0", b"vs_5_0\0")?;
-        let blit_ps = compile_shader(BLIT_HLSL, b"PSMain\0", b"ps_5_0\0")?;
         let glyph_vs = compile_shader(GLYPH_HLSL, b"VSMain\0", b"vs_5_0\0")?;
         let glyph_ps = compile_shader(GLYPH_HLSL, b"PSMain\0", b"ps_5_0\0")?;
         let glyph_input_layout = [
@@ -48,15 +46,6 @@ impl D3d12Pipeline {
             true,
             "CreateGraphicsPipelineState(solid)",
         )?;
-        let soft_pso = create_pso(
-            device,
-            &root_signature,
-            &blit_vs,
-            &blit_ps,
-            &[],
-            true,
-            "CreateGraphicsPipelineState(soft blit)",
-        )?;
         let glyph_pso = create_pso(
             device,
             &root_signature,
@@ -80,14 +69,9 @@ impl D3d12Pipeline {
         Ok(Self {
             root_signature,
             solid_pso,
-            soft_pso,
             glyph_pso,
             srv_heap,
             srv_stride,
-            soft_texture: None,
-            soft_texture_state: D3D12_RESOURCE_STATE_COPY_DEST,
-            soft_width: 0,
-            soft_height: 0,
             glyph_atlas: None,
             glyph_atlas_state: D3D12_RESOURCE_STATE_COPY_DEST,
             glyph_state: GlyphAtlasState::default(),
@@ -173,43 +157,6 @@ impl D3d12Pipeline {
                 list.DrawInstanced(6, 1, 0, 0);
             }
         }
-        Ok(())
-    }
-
-    pub(crate) fn ensure_soft_texture(
-        &mut self,
-        device: &ID3D12Device,
-        width: i32,
-        height: i32,
-    ) -> Result<()> {
-        if self.soft_texture.is_some() && self.soft_width == width && self.soft_height == height {
-            return Ok(());
-        }
-        let texture = create_soft_texture(device, width, height)?;
-        let srv_desc = D3D12_SHADER_RESOURCE_VIEW_DESC {
-            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-            ViewDimension: D3D12_SRV_DIMENSION_TEXTURE2D,
-            Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-            Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
-                Texture2D: D3D12_TEX2D_SRV {
-                    MostDetailedMip: 0,
-                    MipLevels: 1,
-                    PlaneSlice: 0,
-                    ResourceMinLODClamp: 0.0,
-                },
-            },
-        };
-        unsafe {
-            device.CreateShaderResourceView(
-                &texture,
-                Some(&srv_desc),
-                self.srv_cpu_handle(SOFT_SRV_SLOT),
-            );
-        }
-        self.soft_texture = Some(texture);
-        self.soft_texture_state = D3D12_RESOURCE_STATE_COPY_DEST;
-        self.soft_width = width;
-        self.soft_height = height;
         Ok(())
     }
 
@@ -655,162 +602,12 @@ impl D3d12Pipeline {
             .map(|_| (GLYPH_ATLAS_SIZE, GLYPH_ATLAS_SIZE))
     }
 
-    // D3D12 命令录制边界需要同时接收设备、命令列表、帧与图块载荷。
-    #[allow(clippy::too_many_arguments)]
-    // 在 D3D12 平台层内上传并绘制软回退图块。
-    pub(in super::super) fn blit_soft_fallback_tile(
-        &mut self,
-        device: &ID3D12Device,
-        list: &ID3D12GraphicsCommandList,
-        frame_index: usize,
-        pixels: &[u32],
-        target_width: i32,
-        target_height: i32,
-        tile: SoftFallbackTile,
-    ) -> Result<()> {
-        if target_width <= 0 || target_height <= 0 {
-            return Err(invalid_input(format!(
-                "invalid soft target {target_width}x{target_height}"
-            )));
-        }
-        tile.validate_payload(pixels)?;
-        if tile.dst_x.saturating_add(tile.width) > target_width
-            || tile.dst_y.saturating_add(tile.height) > target_height
-        {
-            return Err(invalid_input(format!(
-                "soft tile {}x{} at {},{} exceeds {target_width}x{target_height}",
-                tile.width, tile.height, tile.dst_x, tile.dst_y
-            )));
-        }
-        let tile_pixels = (tile.width as usize)
-            .checked_mul(tile.height as usize)
-            .ok_or_else(|| invalid_input("soft fallback tile pixel count overflow"))?;
-        let (row_pitch, total_bytes) = validated_soft_layout(tile.width, tile.height, tile_pixels)?;
-        self.ensure_soft_texture(device, target_width, target_height)?;
-        let upload = self.acquire_upload(device, frame_index, total_bytes)?;
-
-        let empty_read = D3D12_RANGE { Begin: 0, End: 0 };
-        let mut mapped = std::ptr::null_mut();
-        unsafe { upload.Map(0, Some(&empty_read), Some(&mut mapped)) }
-            .map_err(|error| pipeline_error("ID3D12Resource::Map(soft upload)", error))?;
-        if mapped.is_null() {
-            unsafe { upload.Unmap(0, None) };
-            return Err(Error::new(
-                Errc::PlatformError,
-                "D3d12Pipeline: soft upload Map returned null",
-            ));
-        }
-        let row_bytes = tile.width as usize * std::mem::size_of::<u32>();
-        for row in 0..tile.height as usize {
-            let source = row * tile.width as usize;
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    pixels.as_ptr().add(source).cast::<u8>(),
-                    mapped.cast::<u8>().add(row * row_pitch),
-                    row_bytes,
-                );
-            }
-        }
-        let written = D3D12_RANGE {
-            Begin: 0,
-            End: total_bytes,
-        };
-        unsafe { upload.Unmap(0, Some(&written)) };
-
-        let texture = self.soft_texture.as_ref().cloned().ok_or_else(|| {
-            Error::new(
-                Errc::PlatformError,
-                "D3d12Pipeline: soft texture missing after creation",
-            )
-        })?;
-        record_transition(
-            list,
-            &texture,
-            self.soft_texture_state,
-            D3D12_RESOURCE_STATE_COPY_DEST,
-        );
-        let footprint = D3D12_PLACED_SUBRESOURCE_FOOTPRINT {
-            Offset: 0,
-            Footprint: D3D12_SUBRESOURCE_FOOTPRINT {
-                Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                Width: tile.width as u32,
-                Height: tile.height as u32,
-                Depth: 1,
-                RowPitch: row_pitch as u32,
-            },
-        };
-        let mut destination = texture_copy_location_subresource(&texture);
-        let mut source = texture_copy_location_footprint(&upload, footprint);
-        unsafe {
-            list.CopyTextureRegion(
-                &destination,
-                tile.dst_x as u32,
-                tile.dst_y as u32,
-                0,
-                &source,
-                None,
-            );
-        }
-        release_copy_location(&mut destination);
-        release_copy_location(&mut source);
-        record_transition(
-            list,
-            &texture,
-            D3D12_RESOURCE_STATE_COPY_DEST,
-            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-        );
-        self.soft_texture_state = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-
-        let viewport = D3D12_VIEWPORT {
-            TopLeftX: tile.dst_x as f32,
-            TopLeftY: tile.dst_y as f32,
-            Width: tile.width as f32,
-            Height: tile.height as f32,
-            MinDepth: 0.0,
-            MaxDepth: 1.0,
-        };
-        let scissor = RECT {
-            left: tile.dst_x,
-            top: tile.dst_y,
-            right: tile.dst_x + tile.width,
-            bottom: tile.dst_y + tile.height,
-        };
-        let gpu_handle = self.srv_gpu_handle(SOFT_SRV_SLOT);
-        unsafe {
-            list.SetDescriptorHeaps(&[Some(self.srv_heap.clone())]);
-            list.SetGraphicsRootSignature(&self.root_signature);
-            list.SetPipelineState(&self.soft_pso);
-            let uv_rect = [
-                tile.dst_x as f32 / target_width as f32,
-                tile.dst_y as f32 / target_height as f32,
-                tile.width as f32 / target_width as f32,
-                tile.height as f32 / target_height as f32,
-            ];
-            list.SetGraphicsRoot32BitConstants(
-                0,
-                uv_rect.len() as u32,
-                uv_rect.as_ptr().cast::<c_void>(),
-                0,
-            );
-            list.SetGraphicsRootDescriptorTable(1, gpu_handle);
-            list.RSSetViewports(&[viewport]);
-            list.RSSetScissorRects(&[scissor]);
-            list.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            list.DrawInstanced(6, 1, 0, 0);
-        }
-        Ok(())
-    }
-
     // 在未排空销毁路径保留仍可能被 GPU 使用的对象。
     pub(in super::super) fn retain_gpu_objects_after_undrained_drop(&self) {
         std::mem::forget(self.root_signature.clone());
         std::mem::forget(self.solid_pso.clone());
-        std::mem::forget(self.soft_pso.clone());
         std::mem::forget(self.glyph_pso.clone());
         std::mem::forget(self.srv_heap.clone());
-        if let Some(texture) = self.soft_texture.as_ref() {
-            std::mem::forget(texture.clone());
-        }
         if let Some(texture) = self.glyph_atlas.as_ref() {
             std::mem::forget(texture.clone());
         }
