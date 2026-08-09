@@ -11,6 +11,8 @@ use crate::native::present::{
 
 // 保存已经通过 GPU-native recipe 门禁的原生 context owner。
 pub(crate) struct GpuRecipeOwner {
+    // 固化构造门禁验证过的静态 recipe 与 backend 事实。
+    caps: GraphicsContextCaps,
     // 兼容 context 只留在本门面内部，draw backend 不再直接依赖可选视图。
     context: Box<dyn IGraphicsContext>,
 }
@@ -46,13 +48,13 @@ impl GpuRecipeOwner {
             ));
         }
         // 只有通过完整门禁的 context 才能进入 draw backend。
-        Ok(Self { context })
+        Ok(Self { caps, context })
     }
 
     // 返回构造期已验证的静态 recipe 事实。
     pub(crate) fn caps(&self) -> GraphicsContextCaps {
-        // 静态事实仍由唯一 native context 提供。
-        self.context.caps()
+        // 返回构造期快照，禁止运行期 recipe 身份漂移。
+        self.caps
     }
 
     // 返回当前 drawable extent、DPR、transform 与 generation 的原子快照。
@@ -64,7 +66,7 @@ impl GpuRecipeOwner {
     // 借用构造期已验证的组合 thin RHI；运行期破坏保持 typed error。
     pub(crate) fn rhi_context(&mut self) -> Result<&mut dyn GraphicsContextRhi> {
         // 保存 backend 身份，避免可变借用后再次访问 context。
-        let backend = self.context.caps().backend;
+        let backend = self.caps.backend;
         // 将迁移期 Option 收口为 GPU owner 的稳定 Result 契约。
         self.context.rhi_context().ok_or_else(|| {
             // 构造后丢失必需视图属于可恢复层识别的状态破坏。
@@ -78,7 +80,7 @@ impl GpuRecipeOwner {
     // 通过 recipe 专用生命周期视图重建 surface。
     pub(crate) fn resize_surface(&mut self, width: i32, height: i32) -> Result<()> {
         // 保存 backend 身份，供缺失生命周期视图时构造稳定错误。
-        let backend = self.context.caps().backend;
+        let backend = self.caps.backend;
         // 将可选兼容查询收口在 native owner 边界内。
         let lifecycle = self.context.rhi_surface_lifecycle().ok_or_else(|| {
             // GPU recipe 构造后丢失 resize 视图属于状态破坏。

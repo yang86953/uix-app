@@ -9,6 +9,8 @@ use crate::native::present::{
 
 // 保存已经通过 CPU PixelUpload recipe 门禁的原生 context owner。
 pub(crate) struct PixelUploadRecipeOwner {
+    // 固化构造门禁验证过的静态 recipe 与 backend 事实。
+    caps: GraphicsContextCaps,
     // 兼容 context 只留在本门面内部，renderer 不再直接依赖可选 surface 视图。
     context: Box<dyn IGraphicsContext>,
 }
@@ -56,13 +58,13 @@ impl PixelUploadRecipeOwner {
             };
         }
         // 只有通过完整门禁的 context 才能进入 renderer presentation。
-        Ok(Self { context })
+        Ok(Self { caps, context })
     }
 
     // 返回构造期已验证的静态 recipe 事实。
     pub(crate) fn caps(&self) -> GraphicsContextCaps {
-        // 静态事实仍由唯一 native context 提供。
-        self.context.caps()
+        // 返回构造期快照，禁止运行期 recipe 身份漂移。
+        self.caps
     }
 
     // 返回当前 drawable extent、DPR、transform 与 generation 的原子快照。
