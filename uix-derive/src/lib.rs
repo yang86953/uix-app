@@ -17,6 +17,10 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields};
 
+// 编译期语言转换器按 Gate 逐步接入，当前先编译并测试核心解析事实层。
+#[allow(dead_code)]
+mod uix_lang;
+
 /// 为路由枚举派生 `Display`（E-06）。
 #[proc_macro_derive(Display)]
 pub fn derive_display(input: TokenStream) -> TokenStream {
