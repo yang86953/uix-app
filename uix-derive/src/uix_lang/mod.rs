@@ -7,6 +7,15 @@ mod codegen;
 mod codegen_tests;
 // 定义 Component、props 与 state 的结构化 AST。
 mod component_ast;
+// 定义 Component props 与私有状态的类型化 Rust 绑定。
+mod component_binding_codegen;
+// 定义完整文档中的组件调用展开。
+mod component_codegen;
+// 集中验证组件展开、状态与拒绝路径。
+#[cfg(test)]
+mod component_codegen_tests;
+// 定义组件字段表达式改写与 setState 降低。
+mod component_expression_lower;
 // 定义 Component 声明级语法与类型白名单解析。
 mod component_parser;
 // 集中验证 Component props、state 与名称诊断。
@@ -47,6 +56,8 @@ pub(crate) use ast::*;
 pub(crate) use codegen::generate_view;
 // 向组件解析与代码生成暴露结构化组件声明。
 pub(crate) use component_ast::*;
+// 向过程宏入口暴露组件感知文档生成函数。
+pub(crate) use component_codegen::generate_document_view;
 // 向后续转换 Gate 暴露稳定诊断类型。
 pub(crate) use diagnostic::*;
 // 向文档解析器暴露 Component 声明验证入口。

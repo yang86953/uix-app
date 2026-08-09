@@ -1,0 +1,180 @@
+// 引入组件感知生成入口与文档解析器。
+use super::{generate_document_view, parse_document};
+
+// 验证私有状态、回调 prop 与静态组件组合生成确定性令牌。
+#[test]
+fn generates_state_callback_and_composition_tokens() {
+    // 解析两层组件组合与私有计数状态。
+    let document = parse_document(
+        // 使用静态字符串保存完整消费场景。
+        r#"
+        <Component name="Counter" props="label: String, onDone: () -> bool" state="count: 0">
+          <Column>
+            <Text>{label}: {count}</Text>
+            <Button @click="setState(count: count + 1)">+</Button>
+            <Button @click="onDone()">Done</Button>
+          </Column>
+        </Component>
+        <Component name="Panel" props="title: String, onClose: () -> bool">
+          <Counter label={title} onDone={onClose} />
+        </Component>
+        <Panel title="Count" onClose={do_close} />
+        "#,
+    )
+    // 合法组件文档必须解析成功。
+    .expect("组合组件文档应解析成功");
+    // 生成完整组件感知 View 令牌。
+    let tokens = generate_document_view(&document)
+        // 合法组件文档必须生成成功。
+        .expect("组合组件应生成成功")
+        // 转成稳定文本便于检查关键语义。
+        .to_string();
+    // 私有 number 状态应固定为 f64 State。
+    assert!(tokens.contains("State < f64 >"));
+    // setState 应降低为公开 State::set。
+    assert!(tokens.contains(". set"));
+    // 回调应生成显式 Fn 类型适配器。
+    assert!(tokens.contains("Arc < dyn Fn () -> bool >"));
+    // Rust 外层回调名称应保留到最终令牌。
+    assert!(tokens.contains("do_close"));
+    // 自定义标签名不应泄漏给核心元素生成器。
+    assert!(!tokens.contains("Panel"));
+    // 嵌套自定义标签也应完成展开。
+    assert!(!tokens.contains("Counter"));
+}
+
+// 验证 State<T> prop 读取与写入同一共享句柄。
+#[test]
+fn generates_shared_state_prop_tokens() {
+    // 解析共享状态组件。
+    let document = parse_document(
+        // 使用公开 State<number> 契约。
+        r#"
+        <Component name="SharedCounter" props="count: State<number>">
+          <Column>
+            <Text>{count}</Text>
+            <Button @click="setState(count: count + 1)">+</Button>
+          </Column>
+        </Component>
+        <SharedCounter count={shared_count} />
+        "#,
+    )
+    // 合法共享状态文档必须解析成功。
+    .expect("共享状态文档应解析成功");
+    // 生成完整令牌。
+    let tokens = generate_document_view(&document)
+        // 合法共享状态应生成成功。
+        .expect("共享状态组件应生成成功")
+        // 转换为文本。
+        .to_string();
+    // 共享句柄应保留调用方名称。
+    assert!(tokens.contains("shared_count"));
+    // State prop 应固定内部 number 类型。
+    assert!(tokens.contains("State < f64 >"));
+    // 读取应调用同一句柄的 get。
+    assert!(tokens.contains(". get"));
+    // 更新应调用句柄的 set。
+    assert!(tokens.contains(". set"));
+}
+
+// 验证缺失与未知 props 在生成阶段给出结构化诊断。
+#[test]
+fn rejects_missing_and_unknown_component_props() {
+    // 解析缺少必需 prop 的组件调用。
+    let missing = parse_document(
+        // 声明一个必需 String prop。
+        r#"<Component name="Greeting" props="name: String"><Text>{name}</Text></Component><Greeting />"#,
+    )
+    // 声明本身合法。
+    .expect("缺失 prop 应在生成阶段诊断");
+    // 读取缺失 prop 诊断。
+    let missing_error = generate_document_view(&missing)
+        // 调用必须被拒绝。
+        .expect_err("缺失必需 prop 必须失败");
+    // 诊断应指出缺失字段。
+    assert!(missing_error.message.contains("缺少必需 prop name"));
+
+    // 解析包含未知 prop 的组件调用。
+    let unknown = parse_document(
+        // 额外传入组件未声明字段。
+        r#"<Component name="Greeting" props="name: String"><Text>{name}</Text></Component><Greeting name="UIX" extra="x" />"#,
+    )
+    // 声明本身合法。
+    .expect("未知 prop 应在生成阶段诊断");
+    // 读取未知 prop 诊断。
+    let unknown_error = generate_document_view(&unknown)
+        // 调用必须被拒绝。
+        .expect_err("未知 prop 必须失败");
+    // 诊断应指出未知字段。
+    assert!(unknown_error.message.contains("未声明 prop extra"));
+}
+
+// 验证 setState 只能写入私有或共享响应式状态。
+#[test]
+fn rejects_read_only_and_unknown_set_state_targets() {
+    // 解析尝试写入普通 prop 的组件。
+    let read_only = parse_document(
+        // setState 目标为 String 普通 prop。
+        r#"<Component name="Editor" props="label: String"><Button @click="setState(label: 'x')">Edit</Button></Component><Editor label="A" />"#,
+    )
+    // 声明本身合法。
+    .expect("只读写入应在生成阶段诊断");
+    // 读取只读 prop 诊断。
+    let read_only_error = generate_document_view(&read_only)
+        // 只读 prop 更新必须失败。
+        .expect_err("setState 不能写入普通 prop");
+    // 诊断应明确只读性质。
+    assert!(read_only_error.message.contains("不能写入只读 prop label"));
+
+    // 解析尝试写入不存在状态的组件。
+    let unknown = parse_document(
+        // setState 目标未在 state 或 props 声明。
+        r#"<Component name="Editor"><Button @click="setState(missing: 1)">Edit</Button></Component><Editor />"#,
+    )
+    // 声明本身合法。
+    .expect("越界目标应在生成阶段诊断");
+    // 读取越界目标诊断。
+    let unknown_error = generate_document_view(&unknown)
+        // 越界更新必须失败。
+        .expect_err("setState 越界目标必须失败");
+    // 诊断应指出目标来源范围。
+    assert!(unknown_error.message.contains("不是当前组件的 state"));
+}
+
+// 验证 setState 不能越过事件处理器作用域。
+#[test]
+fn rejects_set_state_outside_component_event() {
+    // 解析在文本插值中执行状态更新的组件。
+    let document = parse_document(
+        // setState 位于普通插值而不是事件属性。
+        r#"<Component name="Counter" state="count: 0"><Text>{setState(count: count + 1)}</Text></Component><Counter />"#,
+    )
+    // 语法形状合法但语义作用域应由生成器判断。
+    .expect("越界 setState 应在组件生成阶段诊断");
+    // 读取作用域诊断。
+    let error = generate_document_view(&document)
+        // 普通插值中的状态更新必须失败。
+        .expect_err("setState 不能用于普通插值");
+    // 诊断应明确事件处理器边界。
+    assert!(error
+        .message
+        .contains("只能在 Component 的事件处理器中使用"));
+}
+
+// 验证组件递归调用在代码生成前被拒绝。
+#[test]
+fn rejects_recursive_component_composition() {
+    // 解析直接自调用组件。
+    let document = parse_document(
+        // 组件体再次调用自身。
+        r#"<Component name="Loop"><Loop /></Component><Loop />"#,
+    )
+    // 名称与结构解析合法。
+    .expect("递归应在组件展开阶段诊断");
+    // 读取递归诊断。
+    let error = generate_document_view(&document)
+        // 递归展开必须失败。
+        .expect_err("递归组件必须失败");
+    // 诊断应包含确定性闭环路径。
+    assert!(error.message.contains("Loop -> Loop"));
+}
