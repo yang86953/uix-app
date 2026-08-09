@@ -466,79 +466,130 @@ impl Style {
 #[macro_export]
 macro_rules! style {
     // 单对 key: value
-    (@inner $s:ident bg $v:expr_2021) => { $s.background = Some($v.into()); };
-    (@inner $s:ident background $v:expr_2021) => { $s.background = Some($v.into()); };
-    (@inner $s:ident background_hover $v:expr_2021) => { $s.background_hover = Some($v.into()); };
-    (@inner $s:ident background_focus $v:expr_2021) => { $s.background_focus = Some($v.into()); };
-    (@inner $s:ident background_active $v:expr_2021) => { $s.background_active = Some($v.into()); };
-    (@inner $s:ident color $v:expr_2021) => { $s.color = $v.into(); };
-    (@inner $s:ident fs $v:expr_2021) => { $s.font_size = $crate::ui::theme::style::TypographyToken::Custom($v as f32); };
-    (@inner $s:ident font_size $v:expr_2021) => { $s.font_size = $crate::ui::theme::style::TypographyToken::Custom($v as f32); };
-    (@inner $s:ident opacity $v:expr_2021) => { $s.opacity = $v as f32; };
-    (@inner $s:ident visible $v:expr_2021) => { $s.visible = $v; };
-    (@inner $s:ident w $v:expr_2021) => { $s.width = Some($v as f32); };
-    (@inner $s:ident width $v:expr_2021) => { $s.width = Some($v as f32); };
-    (@inner $s:ident h $v:expr_2021) => { $s.height = Some($v as f32); };
-    (@inner $s:ident height $v:expr_2021) => { $s.height = Some($v as f32); };
-    (@inner $s:ident margin $v:expr_2021) => { $s.margin = $crate::ui::theme::style::edge_insets_from_expr($v); };
-    (@inner $s:ident padding $v:expr_2021) => { $s.padding = $crate::ui::theme::style::edge_insets_from_expr($v); };
+    // 背景简写值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident bg $v:expr) => { $s.background = Some($v.into()); };
+    // 背景值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident background $v:expr) => { $s.background = Some($v.into()); };
+    // 悬停背景值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident background_hover $v:expr) => { $s.background_hover = Some($v.into()); };
+    // 焦点背景值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident background_focus $v:expr) => { $s.background_focus = Some($v.into()); };
+    // 激活背景值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident background_active $v:expr) => { $s.background_active = Some($v.into()); };
+    // 前景色值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident color $v:expr) => { $s.color = $v.into(); };
+    // 字号简写值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident fs $v:expr) => { $s.font_size = $crate::ui::theme::style::TypographyToken::Custom($v as f32); };
+    // 字号值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident font_size $v:expr) => { $s.font_size = $crate::ui::theme::style::TypographyToken::Custom($v as f32); };
+    // 不透明度值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident opacity $v:expr) => { $s.opacity = $v as f32; };
+    // 可见性值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident visible $v:expr) => { $s.visible = $v; };
+    // 宽度简写值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident w $v:expr) => { $s.width = Some($v as f32); };
+    // 宽度值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident width $v:expr) => { $s.width = Some($v as f32); };
+    // 高度简写值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident h $v:expr) => { $s.height = Some($v as f32); };
+    // 高度值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident height $v:expr) => { $s.height = Some($v as f32); };
+    // 外边距值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident margin $v:expr) => { $s.margin = $crate::ui::theme::style::edge_insets_from_expr($v); };
+    // 内边距值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident padding $v:expr) => { $s.padding = $crate::ui::theme::style::edge_insets_from_expr($v); };
     // 元组语法：`border: (RED, 1)` — 使用括号而非 bracket，确保 `$val:expr` 正确捕获为元组
-    (@inner $s:ident border $v:expr_2021) => {
+    // 边框元组采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident border $v:expr) => {
         let (c, w) = $v;
         $s.border_color = Some(c.into());
         $s.border_width = $crate::core::EdgeInsets::uniform(w);
     };
-    (@inner $s:ident border_color $v:expr_2021) => { $s.border_color = Some($v.into()); };
-    (@inner $s:ident border_width $v:expr_2021) => { $s.border_width = $crate::ui::theme::style::edge_insets_from_expr($v); };
-    (@inner $s:ident rounded $v:expr_2021) => { $s.border_radius = $v as f32; };
-    (@inner $s:ident border_radius $v:expr_2021) => { $s.border_radius = $v as f32; };
-    (@inner $s:ident display $v:expr_2021) => { $s.display = $v; };
-    (@inner $s:ident direction $v:expr_2021) => { $s.flex_direction = $v; };
-    (@inner $s:ident flex_direction $v:expr_2021) => { $s.flex_direction = $v; };
-    (@inner $s:ident flex_wrap $v:expr_2021) => { $s.flex_wrap = $v; };
-    (@inner $s:ident wrap $v:expr_2021) => { $s.flex_wrap = $v; };
-    (@inner $s:ident justify $v:expr_2021) => { $s.justify_content = $v; };
-    (@inner $s:ident justify_content $v:expr_2021) => { $s.justify_content = $v; };
-    (@inner $s:ident align $v:expr_2021) => { $s.align_items = $v; };
-    (@inner $s:ident align_items $v:expr_2021) => { $s.align_items = $v; };
-    (@inner $s:ident align_self $v:expr_2021) => { $s.align_self = Some($v); };
-    (@inner $s:ident gap $v:expr_2021) => { $s.gap = $v as f32; };
-    (@inner $s:ident grid_columns $v:expr_2021) => { $s.grid_template_columns = $v; };
-    (@inner $s:ident grid_template_columns $v:expr_2021) => { $s.grid_template_columns = $v; };
-    (@inner $s:ident grid_rows $v:expr_2021) => { $s.grid_template_rows = $v; };
-    (@inner $s:ident grid_template_rows $v:expr_2021) => { $s.grid_template_rows = $v; };
-    (@inner $s:ident grid_column_gap $v:expr_2021) => { $s.grid_column_gap = $v as f32; };
-    (@inner $s:ident grid_row_gap $v:expr_2021) => { $s.grid_row_gap = $v as f32; };
-    (@inner $s:ident grid_cell $v:expr_2021) => { $s.grid_cell = Some($v); };
-    (@inner $s:ident grid_column_span $v:expr_2021) => { $s.grid_column_span = ($v as u32).max(1); };
-    (@inner $s:ident grid_row_span $v:expr_2021) => { $s.grid_row_span = ($v as u32).max(1); };
-    (@inner $s:ident grid_span $v:expr_2021) => {
+    // 边框颜色值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident border_color $v:expr) => { $s.border_color = Some($v.into()); };
+    // 边框宽度值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident border_width $v:expr) => { $s.border_width = $crate::ui::theme::style::edge_insets_from_expr($v); };
+    // 圆角简写值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident rounded $v:expr) => { $s.border_radius = $v as f32; };
+    // 圆角值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident border_radius $v:expr) => { $s.border_radius = $v as f32; };
+    // 显示模式值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident display $v:expr) => { $s.display = $v; };
+    // 主轴方向简写值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident direction $v:expr) => { $s.flex_direction = $v; };
+    // 主轴方向值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident flex_direction $v:expr) => { $s.flex_direction = $v; };
+    // 换行模式值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident flex_wrap $v:expr) => { $s.flex_wrap = $v; };
+    // 换行简写值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident wrap $v:expr) => { $s.flex_wrap = $v; };
+    // 主轴对齐简写值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident justify $v:expr) => { $s.justify_content = $v; };
+    // 主轴对齐值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident justify_content $v:expr) => { $s.justify_content = $v; };
+    // 交叉轴对齐简写值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident align $v:expr) => { $s.align_items = $v; };
+    // 交叉轴对齐值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident align_items $v:expr) => { $s.align_items = $v; };
+    // 单项对齐值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident align_self $v:expr) => { $s.align_self = Some($v); };
+    // 间距值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident gap $v:expr) => { $s.gap = $v as f32; };
+    // 网格列简写值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident grid_columns $v:expr) => { $s.grid_template_columns = $v; };
+    // 网格列值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident grid_template_columns $v:expr) => { $s.grid_template_columns = $v; };
+    // 网格行简写值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident grid_rows $v:expr) => { $s.grid_template_rows = $v; };
+    // 网格行值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident grid_template_rows $v:expr) => { $s.grid_template_rows = $v; };
+    // 网格列间距值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident grid_column_gap $v:expr) => { $s.grid_column_gap = $v as f32; };
+    // 网格行间距值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident grid_row_gap $v:expr) => { $s.grid_row_gap = $v as f32; };
+    // 网格单元值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident grid_cell $v:expr) => { $s.grid_cell = Some($v); };
+    // 网格列跨度值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident grid_column_span $v:expr) => { $s.grid_column_span = ($v as u32).max(1); };
+    // 网格行跨度值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident grid_row_span $v:expr) => { $s.grid_row_span = ($v as u32).max(1); };
+    // 网格双向跨度元组采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident grid_span $v:expr) => {
         let (col_span, row_span) = $v;
         $s.grid_column_span = (col_span as u32).max(1);
         $s.grid_row_span = (row_span as u32).max(1);
     };
-    (@inner $s:ident grid_gap $v:expr_2021) => {
+    // 网格双向间距元组采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident grid_gap $v:expr) => {
         let (col_gap, row_gap) = $v;
         $s.grid_column_gap = col_gap as f32;
         $s.grid_row_gap = row_gap as f32;
     };
-    (@inner $s:ident grow $v:expr_2021) => { $s.flex_grow = $v as f32; };
-    (@inner $s:ident flex_grow $v:expr_2021) => { $s.flex_grow = $v as f32; };
-    (@inner $s:ident shrink $v:expr_2021) => { $s.flex_shrink = $v as f32; };
-    (@inner $s:ident flex_shrink $v:expr_2021) => { $s.flex_shrink = $v as f32; };
+    // 扩张简写值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident grow $v:expr) => { $s.flex_grow = $v as f32; };
+    // 扩张值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident flex_grow $v:expr) => { $s.flex_grow = $v as f32; };
+    // 收缩简写值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident shrink $v:expr) => { $s.flex_shrink = $v as f32; };
+    // 收缩值采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident flex_shrink $v:expr) => { $s.flex_shrink = $v as f32; };
     // 元组语法：`shadow: (BLACK, 4, 2, 2)`
-    (@inner $s:ident shadow $v:expr_2021) => {
+    // 阴影元组采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident shadow $v:expr) => {
         let (sc, sb, sox, soy): ($crate::draw::Color, f32, f32, f32) = $v;
         $s.box_shadow = Some($crate::ui::theme::style::BoxShadowDef::new(sc, sb, sox, soy));
     };
-    (@inner $s:ident box_shadow $v:expr_2021) => { $s.box_shadow = Some($v); };
+    // 阴影对象采用 Rust 2024 表达式片段语义。
+    (@inner $s:ident box_shadow $v:expr) => { $s.box_shadow = Some($v); };
 
     // 递归处理多对
-    (@each $s:ident $key:ident : $val:expr_2021, $($rest:tt)*) => {
+    // 递归条目的中间表达式采用 Rust 2024 片段语义。
+    (@each $s:ident $key:ident : $val:expr, $($rest:tt)*) => {
         $crate::style!(@inner $s $key $val);
         $crate::style!(@each $s $($rest)*);
     };
-    (@each $s:ident $key:ident : $val:expr_2021) => {
+    // 递归条目的末尾表达式采用 Rust 2024 片段语义。
+    (@each $s:ident $key:ident : $val:expr) => {
         $crate::style!(@inner $s $key $val);
     };
     (@each $s:ident $key:ident : [$($v:tt),+], $($rest:tt)*) => {
@@ -561,7 +612,8 @@ macro_rules! style {
             __style
         }
     };
-    ($($key:ident : $val:expr_2021),+ $(,)?) => {
+    // 顶层样式值采用 Rust 2024 表达式片段语义。
+    ($($key:ident : $val:expr),+ $(,)?) => {
         {
             let mut __style = $crate::ui::theme::style::Style::default();
             $(
@@ -573,4 +625,23 @@ macro_rules! style {
     () => {
         $crate::ui::theme::style::Style::default()
     };
+}
+
+// 只在样式模块内部验证导出宏的 Rust 2024 表达式片段语义。
+#[cfg(test)]
+// 隔离宏语义回归，避免进入生产模块命名空间。
+mod rust_2024_macro_tests {
+    // 验证样式宏接受顶层 const 块表达式。
+    #[test]
+    // 保证表达式片段升级后仍写入原有字段。
+    fn style_accepts_rust_2024_const_expressions() {
+        // 同时覆盖数值和布尔 const 块。
+        let style = crate::style! { width: const { 64.0 }, visible: const { true } };
+        // 宽度应保留宏输入值。
+        assert_eq!(style.width, Some(64.0));
+        // 可见性应保留宏输入值。
+        assert!(style.visible);
+        // 结束样式宏 Rust 2024 回归。
+    }
+    // 结束内部宏语义回归模块。
 }

@@ -219,7 +219,8 @@ const fn rgb(hex: u32) -> Color {
 }
 
 macro_rules! color_scale {
-    ($($hex:expr_2021),+ $(,)?) => {
+    // 调色板颜色值采用 Rust 2024 表达式片段语义。
+    ($($hex:expr),+ $(,)?) => {
         ColorScale::new([$(rgb($hex)),+])
     };
 }

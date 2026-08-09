@@ -19,7 +19,8 @@ pub use types::Error;
 /// 类似 ? 操作符，但用于 UIX Result 类型。
 #[macro_export]
 macro_rules! uix_try {
-    ($expr:expr_2021) => {
+    // Rust 2024 表达式片段同时接受 const 块与下划线表达式。
+    ($expr:expr) => {
         match $expr {
             Ok(v) => v,
             Err(e) => return Err(e),
@@ -30,7 +31,8 @@ macro_rules! uix_try {
 /// 类似 ? 操作符，自动将 std Result 转换为 UIX Result。
 #[macro_export]
 macro_rules! uix_try_std {
-    ($expr:expr_2021) => {
+    // Rust 2024 表达式片段同时接受 const 块与下划线表达式。
+    ($expr:expr) => {
         match $expr {
             Ok(v) => v,
             Err(e) => return Err(e.into()),

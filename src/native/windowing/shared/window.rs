@@ -196,13 +196,15 @@ pub(crate) fn validate_window_extent_constraints(
 // ════════════════════════════════════════════════════════════════════════════
 
 macro_rules! state_read {
-    ($state:expr_2021, $field:ident) => {
+    // 状态读取入口采用 Rust 2024 表达式片段语义。
+    ($state:expr, $field:ident) => {
         $state.borrow().$field
     };
 }
 
 macro_rules! state_write {
-    ($state:expr_2021, $field:ident, $value:expr_2021) => {
+    // 状态对象和值均采用 Rust 2024 表达式片段语义。
+    ($state:expr, $field:ident, $value:expr) => {
         $state.borrow_mut().$field = $value;
     };
 }

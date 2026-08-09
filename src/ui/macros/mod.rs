@@ -22,7 +22,8 @@ macro_rules! impl_widget_component {
     (
         $T:ty;
         $($cap:ident),+ $(,)?
-        $(; tab_index => $tab:expr_2021)?
+        // 可选 tab 索引采用 Rust 2024 表达式片段语义。
+        $(; tab_index => $tab:expr)?
     ) => {
         impl $crate::ui::__private::traits::WidgetComponent for $T {
             fn as_any(&self) -> &dyn std::any::Any {
@@ -115,13 +116,15 @@ macro_rules! impl_widget_component {
 
 #[macro_export]
 macro_rules! tree {
-    ($parent:expr_2021 => [$($child:expr_2021),+ $(,)?]) => {
+    // 父组件与子组件列表均采用 Rust 2024 表达式片段语义。
+    ($parent:expr => [$($child:expr),+ $(,)?]) => {
         $crate::ui::__private::WidgetNode::new(
             Box::new($parent),
             vec![$($crate::ui::IntoWidgetNode::into_node($child)),+],
         )
     };
-    ($widget:expr_2021) => {
+    // 单组件入口采用 Rust 2024 表达式片段语义。
+    ($widget:expr) => {
         $crate::ui::__private::WidgetNode::leaf(Box::new($widget))
     };
 }

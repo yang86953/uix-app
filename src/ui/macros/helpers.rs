@@ -1,7 +1,8 @@
 #[macro_export]
 macro_rules! semantic_handler {
     (
-        $kind:expr_2021,
+        // 语义类型参数采用 Rust 2024 表达式片段语义。
+        $kind:expr,
         $(state [$($state:ident),* $(,)?],)?
         $(computed [$($computed:ident),* $(,)?],)?
         $(window [$($window:ident),* $(,)?],)?
@@ -46,7 +47,8 @@ macro_rules! semantic_handler {
 /// 两三个子节点时优先元组：`column((a, b))`。
 #[macro_export]
 macro_rules! views {
-    ($($child:expr_2021),* $(,)?) => {{
+    // 子视图列表采用 Rust 2024 表达式片段语义。
+    ($($child:expr),* $(,)?) => {{
         {
             use $crate::ui::View;
             vec![$(View::build($child),)*]
@@ -134,14 +136,16 @@ macro_rules! keyframe {
 /// ```
 #[macro_export]
 macro_rules! with_cloned {
-    ($($name:ident),+ $(,)? ; |$arg:ident| $body:expr_2021) => {{
+    // 带参数闭包体采用 Rust 2024 表达式片段语义。
+    ($($name:ident),+ $(,)? ; |$arg:ident| $body:expr) => {{
         $(let $name = $name.clone();)+
         move |$arg| {
             $(let $name = $name.clone();)+
             $body
         }
     }};
-    ($($name:ident),+ $(,)? ; $body:expr_2021) => {{
+    // 无参数闭包体采用 Rust 2024 表达式片段语义。
+    ($($name:ident),+ $(,)? ; $body:expr) => {{
         $(let $name = $name.clone();)+
         move || {
             $(let $name = $name.clone();)+
