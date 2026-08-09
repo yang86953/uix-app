@@ -8,8 +8,10 @@ pub(crate) mod glyph_outline;
 pub(crate) mod bidi;
 // 在字体服务与富文本估算布局之间共享 UAX #14 断行边界。
 pub(crate) mod line_break;
+// 在编辑控件与文本渲染之间共享显式的字节、字符、字素簇和 shaping cluster 索引契约。
 pub mod text;
 pub mod text_backend;
 pub mod text_backends;
+pub mod text_index;
 
 pub use backend::TextBackend;
