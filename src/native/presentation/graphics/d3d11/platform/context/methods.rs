@@ -96,19 +96,6 @@ impl D3d11Context {
         Ok(())
     }
 
-    // 把逻辑尺寸转换和原生 swapchain 重建统一收敛到 context 底层。
-    pub(super) fn resize_surface_logical(&mut self, width: i32, height: i32) -> Result<()> {
-        // 使用平台 drawable 规则得到实际物理尺寸和逻辑元数据。
-        let drawable = win_surface::drawable_size(self.hwnd, width, height);
-        // 由同一条原生路径执行 ResizeBuffers、代际推进和 RTV 重建。
-        self.resize_surface_extent(
-            drawable.width,
-            drawable.height,
-            drawable.logical_width,
-            drawable.logical_height,
-        )
-    }
-
     // 直接执行 D3D11 surface 的物理尺寸重建，不再依赖兼容 resize 入口。
     pub(super) fn resize_surface_extent(
         &mut self,
@@ -300,7 +287,6 @@ pub(crate) fn create_with_driver(
     });
     let pipeline = D3d11Pipeline::new(&device)?;
     let mut ctx = D3d11Context {
-        hwnd,
         device,
         context,
         swap_chain,

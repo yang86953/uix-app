@@ -625,5 +625,5 @@ pub(crate) mod rhi;
 // 兼容期高层 graphics context，逐步由 `rhi` 替代。
 mod traits;
 
-// 图形 context SPI 只供 crate 内部 backend 与 bootstrap 使用。
-pub(crate) use self::traits::IGraphicsContext;
+// 图形 context 与 PixelUpload surface SPI 只供 crate 内部 backend 与 bootstrap 使用。
+pub(crate) use self::traits::{IGraphicsContext, PixelUploadSurface};

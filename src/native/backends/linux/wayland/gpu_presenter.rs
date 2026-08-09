@@ -32,6 +32,7 @@ impl IPresenter for GpuPresenter {
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        self.gpu_ctx.resize(width, height)
+        // Wayland GPU presenter 只通过 thin RHI surface 重建 EGL drawable。
+        self.gpu_ctx.resize_rhi_surface(width, height)
     }
 }

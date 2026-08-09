@@ -48,7 +48,12 @@ pub fn run_vendor_resize_present_readback(
         let initial_readback = readback_one(&mut context)?;
 
         window.resize(211, 149)?;
-        context.resize(211, 149).map_err(map_error)?;
+        // Vulkan GFX-R5 通过专用 PixelUpload surface 执行 resize。
+        context
+            // 使用与生产 PixelUpload runtime 相同的 typed 契约。
+            .resize_pixel_upload_surface(211, 149)
+            // 将 UIX 错误转换为公开测试证据错误。
+            .map_err(map_error)?;
         let resized_drawable = (context.width(), context.height());
         present_solid(&mut context, 0xFF9A5C21)?;
         let resized_readback = readback_one(&mut context)?;
@@ -110,8 +115,11 @@ pub fn run_native_out_of_date_recovery(
         };
         let logical_extent = (223, 157);
 
+        // out-of-date 恢复通过专用 PixelUpload surface 重建 swapchain。
         context
-            .resize(logical_extent.0, logical_extent.1)
+            // 使用证据场景请求的目标逻辑尺寸。
+            .resize_pixel_upload_surface(logical_extent.0, logical_extent.1)
+            // 映射为 GFX-R5 稳定错误证据。
             .map_err(map_error)?;
         let resized_drawable = (context.width(), context.height());
         present_solid(&mut context, 0xFFB7642D)?;
@@ -190,7 +198,8 @@ impl RenderTarget for VulkanRecoveryTarget {
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        self.context.resize(width, height)
+        // 恢复 target 复用 Vulkan PixelUpload 的专用 surface resize。
+        self.context.resize_pixel_upload_surface(width, height)
     }
 
     fn begin_frame(&mut self, _strategy: UpdateStrategy) -> RenderOutcome {
@@ -382,7 +391,12 @@ fn soak_round(
         (211, 149, 0xFF9A5C21)
     };
     window.resize(width, height)?;
-    context.resize(width, height).map_err(map_error)?;
+    // soak 每轮都通过专用 PixelUpload surface 更新 swapchain。
+    context
+        // 保持与生产 runtime 相同的 resize 生命周期。
+        .resize_pixel_upload_surface(width, height)
+        // 映射为 GFX-R5 稳定错误证据。
+        .map_err(map_error)?;
     present_solid(context, color)
 }
 

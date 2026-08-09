@@ -25,10 +25,6 @@ impl IGraphicsContext for D3d11Context {
         NativeRasterCaps::retained_rhi_with_additive()
     }
 
-    fn resize(&mut self, width: i32, height: i32) -> Result<()> {
-        self.resize_surface_logical(width, height)
-    }
-
     // 把 D3D11 当前 drawable 元数据提供给兼容 present 边界。
     fn present_surface(&self) -> crate::native::present::PresentSurface {
         // 使用同一代际值保证旧 damage 不会跨 swapchain 重建复用。

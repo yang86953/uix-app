@@ -53,13 +53,52 @@ struct PixelUploadPresentation {
 }
 
 impl PixelUploadPresentation {
-    fn new(context: Box<dyn IGraphicsContext>) -> Self {
-        Self {
-            context,
-            damage_tracker: PresentDamageTracker::new(),
-            logical_width: 1,
-            logical_height: 1,
+    // 只接受显式提供 PixelUpload surface 生命周期的 context。
+    fn try_new(mut context: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
+        // recipe capability 与专用 surface 契约必须同时存在。
+        if context.pixel_upload_surface().is_none() {
+            // 构造不变量缺失时返回稳定 typed error。
+            let error = Error::new(
+                // 使用参数错误标记 factory 交付了不完整 recipe。
+                Errc::InvalidArgument,
+                // 明确指出缺失的专用执行边界。
+                "CPU PixelUpload recipe requires a dedicated resize surface",
+            );
+            // 失败构造仍必须在 owner thread 检查式关闭 native context。
+            return match context.try_shutdown() {
+                // shutdown 成功时保留原始 recipe 错误。
+                Ok(()) => Err(error),
+                // shutdown 失败时保留清理错误并链接原始原因。
+                Err(cleanup_error) => Err(cleanup_error.with_source(error)),
+            };
         }
+        // 保存已经通过 recipe 门禁的 context。
+        Ok(Self {
+            // PixelUpload presentation 独占 native context。
+            context,
+            // 新 presentation 尚未提交任何 damage。
+            damage_tracker: PresentDamageTracker::new(),
+            // 首次同步前使用最小逻辑宽度。
+            logical_width: 1,
+            // 首次同步前使用最小逻辑高度。
+            logical_height: 1,
+        })
+    }
+
+    // 通过专用 PixelUpload surface 契约执行逻辑尺寸 resize。
+    fn resize_surface(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        // 构造后能力消失属于 native context 状态破坏。
+        let Some(surface) = self.context.pixel_upload_surface() else {
+            // 返回 typed 状态错误，禁止回退旧 IGraphicsContext resize。
+            return Err(Error::new(
+                // 使用 InvalidState 进入既有恢复路径。
+                Errc::InvalidState,
+                // 明确指出专用 surface 在生命周期中丢失。
+                "PixelUpload presentation lost its dedicated resize surface",
+            ));
+        };
+        // 归一化逻辑尺寸后交给专用 native surface。
+        surface.resize_pixel_upload_surface(width.max(1), height.max(1))
     }
 
     fn sync_logical_extent(&mut self) {
@@ -112,18 +151,28 @@ impl Renderer {
                 ))
             }
             (RasterMode::Cpu, PresentMode::PixelUpload) => {
+                // 在创建 CPU session 前验证 native PixelUpload surface 契约。
+                let mut upload = PixelUploadPresentation::try_new(context)?;
+                // 创建 CPU raster session 承接待上传的 retained pixels。
                 let session = match RenderSession::new(BackendKind::Cpu) {
+                    // 保存可用的 CPU session。
                     Ok(session) => session,
+                    // session 构造失败时关闭已经通过门禁的 native context。
                     Err(error) => {
-                        return match context.try_shutdown() {
+                        return match upload.context.try_shutdown() {
+                            // native shutdown 成功时返回 CPU session 错误。
                             Ok(()) => Err(error),
+                            // native shutdown 失败时链接 CPU session 错误。
                             Err(cleanup_error) => Err(cleanup_error.with_source(error)),
                         };
                     }
                 };
+                // 组合唯一 CPU session 与已经验证的 PixelUpload presentation。
                 Ok(Self::with_session(
+                    // CPU raster 继续由统一 RenderSession 持有。
                     session,
-                    Presentation::PixelUpload(PixelUploadPresentation::new(context)),
+                    // 专用 presentation 持有 native PixelUpload surface。
+                    Presentation::PixelUpload(upload),
                 ))
             }
             (raster, present) => {
@@ -280,11 +329,17 @@ impl RenderTarget for Renderer {
             // resize 只更新 surface；后续帧由 prepare_frame 恢复 owner-context 状态。
             Presentation::BackendManaged => self.session.resize(width, height),
             Presentation::PixelUpload(upload) => {
-                upload.context.resize(width.max(1), height.max(1))?;
+                // CPU PixelUpload 只通过专用 surface 契约重建 native drawable。
+                upload.resize_surface(width, height)?;
+                // 读取 adapter resize 后的实际物理宽度。
                 let actual_width = upload.context.width().max(1);
+                // 读取 adapter resize 后的实际物理高度。
                 let actual_height = upload.context.height().max(1);
+                // 让 CPU retained surface 与 native drawable 像素尺寸保持一致。
                 self.session.resize(actual_width, actual_height)?;
+                // 更新上层窗口使用的逻辑尺寸缓存。
                 upload.sync_logical_extent();
+                // 返回两侧 surface 已同步的成功结果。
                 Ok(())
             }
         }

@@ -11,11 +11,10 @@ impl IGraphicsContext for VulkanContext {
         GraphicsApi::Vulkan
     }
 
-    fn resize(&mut self, width: i32, height: i32) -> Result<()> {
-        let device = self.active_device()?;
-        device.ensure_healthy()?;
-        let result = self.resize_active(width, height);
-        device.observe(result)
+    // Vulkan PixelUpload recipe 显式暴露专用 surface resize。
+    fn pixel_upload_surface(&mut self) -> Option<&mut dyn PixelUploadSurface> {
+        // 返回同一 owner context 上的专用视图。
+        Some(self)
     }
 
     fn try_shutdown(&mut self) -> Result<()> {
@@ -75,6 +74,21 @@ impl IGraphicsContext for VulkanContext {
                 "VulkanContext: Swapchain payload is invalid for the PixelUpload recipe",
             )),
         }
+    }
+}
+
+// 为 Vulkan CPU PixelUpload recipe 实现专用 surface 生命周期。
+impl PixelUploadSurface for VulkanContext {
+    // 重建 Vulkan swapchain 并保持 device-lost typed 映射。
+    fn resize_pixel_upload_surface(&mut self, width: i32, height: i32) -> Result<()> {
+        // 获取当前共享 device lease。
+        let device = self.active_device()?;
+        // resize 前拒绝已经丢失的 device。
+        device.ensure_healthy()?;
+        // 执行 Vulkan surface 的实际 resize。
+        let result = self.resize_active(width, height);
+        // 让共享 device 观察并分类 resize 结果。
+        device.observe(result)
     }
 }
 
