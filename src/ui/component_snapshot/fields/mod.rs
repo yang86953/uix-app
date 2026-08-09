@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
-use crate::draw::geometry::spatial::PhysicalUnit;
 use crate::draw::Color;
+use crate::draw::geometry::spatial::PhysicalUnit;
 // 反馈 capability 启用时才需要警告提示状态级别。
 #[cfg(feature = "feedback")]
 use crate::native::capabilities::system::StatusLevel;
 use crate::native::windowing::input::{ControlSize, ScrollDirection};
 use crate::ui::form::FormLayout;
 use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
-use crate::ui::theme::style::{Style, StyleSet};
+// 引入主题感知颜色值与通用样式快照类型。
+use crate::ui::theme::style::{ColorValue, Style, StyleSet};
 use crate::ui::widgets::window_chrome::WindowControl;
 use crate::ui::widgets::*;
 // 反馈 capability 启用时才需要消息与通知浮层方位。
@@ -112,6 +113,8 @@ pub enum SnapshotFields {
         strong: bool,
         italic: bool,
         copyable: bool,
+        // 保存主题感知的语义文字颜色身份。
+        semantic_color: Option<ColorValue>,
         color_override: Option<Color>,
     },
     Checkbox {
