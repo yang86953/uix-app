@@ -1,0 +1,442 @@
+// 引入过程宏令牌与标识符类型。
+use proc_macro2::{Ident, TokenStream};
+// 引入确定性令牌拼接宏。
+use quote::quote;
+
+// 引入表达式语法树、运算符与结构化诊断。
+use super::{
+    BinaryOperator, CallArgument, Diagnostic, Expression, ExpressionKind, SourceSpan, UnaryOperator,
+};
+
+// 把已验证表达式转换为 Rust 表达式令牌。
+pub(crate) fn generate_expression(
+    // 接收确定性表达式语法树。
+    expression: &Expression,
+    // 接收可选的事件载荷局部变量。
+    event: Option<&Ident>,
+) -> Result<TokenStream, Diagnostic> {
+    // 按表达式结构生成等价 Rust 代码。
+    match &expression.kind {
+        // 普通标识符直接映射为 Rust 标识符。
+        ExpressionKind::Identifier(name) => generate_identifier(name, expression.span, event),
+        // 数字保持经过验证的源码表示。
+        ExpressionKind::Number(source) => generate_number(source, expression.span),
+        // 单引号字符串转换为 Rust 字符串字面量。
+        ExpressionKind::String(value) => Ok(quote! { #value }),
+        // 布尔值转换为 Rust 布尔字面量。
+        ExpressionKind::Boolean(value) => Ok(quote! { #value }),
+        // 一元表达式递归生成操作数。
+        ExpressionKind::Unary { operator, operand } => {
+            // 生成一元操作数。
+            let operand = generate_expression(operand, event)?;
+            // 按运算符拼接 Rust 一元表达式。
+            Ok(match operator {
+                // 逻辑非保持 Rust 语义。
+                UnaryOperator::Not => quote! { !(#operand) },
+                // 数值取负保持 Rust 语义。
+                UnaryOperator::Negate => quote! { -(#operand) },
+            })
+        }
+        // 二元表达式递归生成两侧操作数。
+        ExpressionKind::Binary {
+            left,
+            operator,
+            right,
+        } => {
+            // 生成左操作数。
+            let left = generate_expression(left, event)?;
+            // 生成右操作数。
+            let right = generate_expression(right, event)?;
+            // 按运算符拼接 Rust 二元表达式。
+            Ok(generate_binary(&left, *operator, &right))
+        }
+        // 三元表达式翻译为 Rust if/else 表达式。
+        ExpressionKind::Ternary {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            // 生成条件表达式。
+            let condition = generate_expression(condition, event)?;
+            // 生成真分支表达式。
+            let then_branch = generate_expression(then_branch, event)?;
+            // 生成假分支表达式。
+            let else_branch = generate_expression(else_branch, event)?;
+            // 返回类型由 Rust 编译器统一检查的条件表达式。
+            Ok(quote! { if #condition { #then_branch } else { #else_branch } })
+        }
+        // 成员访问处理 length 与事件坐标的语义映射。
+        ExpressionKind::Member { object, member } => {
+            // 委托成员生成器处理特殊成员。
+            generate_member(object, member, expression.span, event)
+        }
+        // 下标访问保持 Rust 索引语义。
+        ExpressionKind::Index { object, index } => {
+            // 生成被索引对象。
+            let object = generate_expression(object, event)?;
+            // 生成索引表达式。
+            let index = generate_expression(index, event)?;
+            // 返回带括号的 Rust 索引表达式。
+            Ok(quote! { (#object)[#index] })
+        }
+        // 调用表达式处理普通调用和不可变数组操作。
+        ExpressionKind::Call { callee, arguments } => {
+            // 委托调用生成器验证当前 Gate 的语义边界。
+            generate_call(callee, arguments, expression.span, event)
+        }
+    }
+}
+
+// 生成事件处理器主体，并兼容无括号处理器名。
+pub(crate) fn generate_handler_expression(
+    // 接收事件属性中的表达式。
+    expression: &Expression,
+    // 接收可选事件载荷变量。
+    event: Option<&Ident>,
+) -> Result<TokenStream, Diagnostic> {
+    // 裸标识符按文档约定视为零参数处理器调用。
+    if let ExpressionKind::Identifier(name) = &expression.kind {
+        // 保留事件保留参数自身的普通表达式含义。
+        if name != "$event" {
+            // 生成可调用标识符。
+            let handler = generate_identifier(name, expression.span, event)?;
+            // 返回零参数调用。
+            return Ok(quote! { (#handler)() });
+        }
+    }
+    // 其他结构按普通受限表达式生成。
+    generate_expression(expression, event)
+}
+
+// 判断表达式是否读取事件保留参数。
+pub(crate) fn expression_uses_event(expression: &Expression) -> bool {
+    // 递归检查全部表达式结构。
+    match &expression.kind {
+        // 只有事件保留标识符直接命中。
+        ExpressionKind::Identifier(name) => name == "$event",
+        // 一元表达式递归检查操作数。
+        ExpressionKind::Unary { operand, .. } => expression_uses_event(operand),
+        // 二元表达式递归检查两侧。
+        ExpressionKind::Binary { left, right, .. } => {
+            // 任一侧命中即需要事件载荷。
+            expression_uses_event(left) || expression_uses_event(right)
+        }
+        // 三元表达式递归检查条件与两分支。
+        ExpressionKind::Ternary {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            // 任一子表达式命中即需要事件载荷。
+            expression_uses_event(condition)
+                || expression_uses_event(then_branch)
+                || expression_uses_event(else_branch)
+        }
+        // 成员访问递归检查对象。
+        ExpressionKind::Member { object, .. } => expression_uses_event(object),
+        // 索引访问递归检查对象与索引。
+        ExpressionKind::Index { object, index } => {
+            // 任一子表达式命中即需要事件载荷。
+            expression_uses_event(object) || expression_uses_event(index)
+        }
+        // 调用递归检查目标与全部参数。
+        ExpressionKind::Call { callee, arguments } => {
+            // 检查调用目标或任一参数。
+            expression_uses_event(callee)
+                || arguments
+                    // 遍历参数列表。
+                    .iter()
+                    // 检查每个参数值。
+                    .any(|argument| expression_uses_event(&argument.value))
+        }
+        // 其余字面量不读取事件。
+        ExpressionKind::Number(_) | ExpressionKind::String(_) | ExpressionKind::Boolean(_) => {
+            // 返回未命中。
+            false
+        }
+    }
+}
+
+// 生成普通或保留标识符。
+fn generate_identifier(
+    // 接收语言标识符文本。
+    name: &str,
+    // 接收诊断跨度。
+    span: SourceSpan,
+    // 接收可选事件载荷变量。
+    event: Option<&Ident>,
+) -> Result<TokenStream, Diagnostic> {
+    // 事件保留标识符必须位于事件闭包内。
+    if name == "$event" {
+        // 返回已经绑定的事件载荷变量。
+        return event.map(|event| quote! { #event }).ok_or_else(|| {
+            // 构造越界使用诊断。
+            Diagnostic::new(
+                // 指向保留标识符。
+                span,
+                // 说明事件参数作用域。
+                "$event 只能在事件处理器中使用",
+                // 给出修复动作。
+                "把 $event 移入 @click 处理器或改用普通 Rust 变量",
+            )
+        });
+    }
+    // 使用 syn 验证标识符也能作为 Rust 名称。
+    let identifier = syn::parse_str::<Ident>(name).map_err(|_| {
+        // 构造 Rust 名称不兼容诊断。
+        Diagnostic::new(
+            // 指向语言标识符。
+            span,
+            // 说明映射失败原因。
+            format!("标识符 {name} 不是合法 Rust 标识符"),
+            // 给出改名建议。
+            "改用非 Rust 关键字的 ASCII 标识符",
+        )
+    })?;
+    // 返回标识符令牌。
+    Ok(quote! { #identifier })
+}
+
+// 生成保持源码精度的数字令牌。
+fn generate_number(
+    // 接收已经通过词法验证的数字。
+    source: &str,
+    // 接收诊断跨度。
+    span: SourceSpan,
+) -> Result<TokenStream, Diagnostic> {
+    // 解析为 Rust 令牌流以保留整数或小数形状。
+    source.parse::<TokenStream>().map_err(|_| {
+        // 构造数字映射诊断。
+        Diagnostic::new(
+            // 指向数字字面量。
+            span,
+            // 说明 Rust 令牌映射失败。
+            format!("数字 {source} 无法转换为 Rust 字面量"),
+            // 给出规范数字格式。
+            "使用十进制整数或小数",
+        )
+    })
+}
+
+// 生成二元运算表达式。
+fn generate_binary(
+    // 接收左侧令牌。
+    left: &TokenStream,
+    // 接收语言二元运算符。
+    operator: BinaryOperator,
+    // 接收右侧令牌。
+    right: &TokenStream,
+) -> TokenStream {
+    // 对每个允许运算符生成明确 Rust 结构。
+    match operator {
+        // 生成加法。
+        BinaryOperator::Add => quote! { (#left) + (#right) },
+        // 生成减法。
+        BinaryOperator::Subtract => quote! { (#left) - (#right) },
+        // 生成乘法。
+        BinaryOperator::Multiply => quote! { (#left) * (#right) },
+        // 生成除法。
+        BinaryOperator::Divide => quote! { (#left) / (#right) },
+        // 生成取余。
+        BinaryOperator::Remainder => quote! { (#left) % (#right) },
+        // 生成相等比较。
+        BinaryOperator::Equal => quote! { (#left) == (#right) },
+        // 生成不等比较。
+        BinaryOperator::NotEqual => quote! { (#left) != (#right) },
+        // 生成小于比较。
+        BinaryOperator::Less => quote! { (#left) < (#right) },
+        // 生成小于等于比较。
+        BinaryOperator::LessEqual => quote! { (#left) <= (#right) },
+        // 生成大于比较。
+        BinaryOperator::Greater => quote! { (#left) > (#right) },
+        // 生成大于等于比较。
+        BinaryOperator::GreaterEqual => quote! { (#left) >= (#right) },
+        // 生成短路逻辑与。
+        BinaryOperator::And => quote! { (#left) && (#right) },
+        // 生成短路逻辑或。
+        BinaryOperator::Or => quote! { (#left) || (#right) },
+    }
+}
+
+// 生成普通成员、length 或事件坐标访问。
+fn generate_member(
+    // 接收成员所属对象。
+    object: &Expression,
+    // 接收成员名称。
+    member: &str,
+    // 接收成员表达式跨度。
+    span: SourceSpan,
+    // 接收可选事件载荷变量。
+    event: Option<&Ident>,
+) -> Result<TokenStream, Diagnostic> {
+    // 识别 $event 的坐标简写。
+    if matches!(&object.kind, ExpressionKind::Identifier(name) if name == "$event") {
+        // 要求事件闭包已经绑定点击载荷。
+        let event = event.ok_or_else(|| {
+            // 构造越界事件访问诊断。
+            Diagnostic::new(
+                // 指向成员表达式。
+                span,
+                // 说明保留参数作用域。
+                "$event 成员只能在事件处理器中使用",
+                // 给出修复动作。
+                "把事件成员访问移入 @click 处理器",
+            )
+        })?;
+        // x 与 y 映射到公开 ClickEvent.pos 坐标。
+        return match member {
+            // 生成 x 坐标读取。
+            "x" => Ok(quote! { (#event).pos.x }),
+            // 生成 y 坐标读取。
+            "y" => Ok(quote! { (#event).pos.y }),
+            // 其他成员按 ClickEvent 的公开字段映射。
+            _ => {
+                // 验证成员名可映射为 Rust 标识符。
+                let member = rust_member(member, span)?;
+                // 返回公开字段访问。
+                Ok(quote! { (#event).#member })
+            }
+        };
+    }
+    // 生成普通对象表达式。
+    let object = generate_expression(object, event)?;
+    // length 按语言契约映射为 Rust len 调用。
+    if member == "length" {
+        // 返回集合长度。
+        return Ok(quote! { (#object).len() });
+    }
+    // 验证普通成员名。
+    let member = rust_member(member, span)?;
+    // 返回 Rust 字段访问。
+    Ok(quote! { (#object).#member })
+}
+
+// 生成普通调用或不可变数组操作。
+fn generate_call(
+    // 接收调用目标。
+    callee: &Expression,
+    // 接收有序调用参数。
+    arguments: &[CallArgument],
+    // 接收完整调用跨度。
+    span: SourceSpan,
+    // 接收可选事件载荷变量。
+    event: Option<&Ident>,
+) -> Result<TokenStream, Diagnostic> {
+    // setState 由下一 Component Gate 统一生成。
+    if matches!(&callee.kind, ExpressionKind::Identifier(name) if name == "setState") {
+        // 返回明确的阶段边界诊断。
+        return Err(Diagnostic::new(
+            // 指向完整调用。
+            span,
+            // 说明当前尚无状态上下文。
+            "setState 需要 Component state 代码生成上下文",
+            // 指向后续合法位置。
+            "在 Component 内使用 setState，并由组件代码生成阶段处理",
+        ));
+    }
+    // 识别不可变数组操作。
+    if let ExpressionKind::Member { object, member } = &callee.kind {
+        // push 与 removeAt 都要求一个位置参数。
+        if matches!(member.as_str(), "push" | "removeAt") {
+            // 验证参数数量和形状。
+            let argument = single_positional_argument(arguments, member, span)?;
+            // 生成数组对象。
+            let object = generate_expression(object, event)?;
+            // 生成操作参数。
+            let value = generate_expression(&argument.value, event)?;
+            // 为生成局部变量选择固定卫生名称。
+            let array = Ident::new("__uix_array_value", proc_macro2::Span::mixed_site());
+            // push 克隆后追加并返回新数组。
+            if member == "push" {
+                // 返回不可变更新块。
+                return Ok(quote! {{
+                    // 克隆原数组以保持语言的不可变更新语义。
+                    let mut #array = (#object).clone();
+                    // 向新数组追加元素。
+                    #array.push(#value);
+                    // 返回新数组。
+                    #array
+                }});
+            }
+            // removeAt 克隆后移除指定下标并返回新数组。
+            return Ok(quote! {{
+                // 克隆原数组以保持语言的不可变更新语义。
+                let mut #array = (#object).clone();
+                // 从新数组移除指定位置。
+                #array.remove(#value);
+                // 返回新数组。
+                #array
+            }});
+        }
+    }
+    // 普通调用不允许命名参数。
+    if arguments.iter().any(|argument| argument.name.is_some()) {
+        // 返回命名参数边界诊断。
+        return Err(Diagnostic::new(
+            // 指向完整调用。
+            span,
+            // 说明命名参数限制。
+            "普通 Rust 调用不支持命名参数",
+            // 给出位置参数修复建议。
+            "删除参数名并按 Rust 函数签名顺序传参",
+        ));
+    }
+    // 生成普通调用目标。
+    let callee = generate_expression(callee, event)?;
+    // 生成全部位置参数。
+    let arguments = arguments
+        // 遍历有序参数。
+        .iter()
+        // 转换每个参数表达式。
+        .map(|argument| generate_expression(&argument.value, event))
+        // 收集或返回首个诊断。
+        .collect::<Result<Vec<_>, _>>()?;
+    // 返回 Rust 调用表达式。
+    Ok(quote! { (#callee)(#(#arguments),*) })
+}
+
+// 验证数组操作只有一个位置参数。
+fn single_positional_argument<'a>(
+    // 接收调用参数。
+    arguments: &'a [CallArgument],
+    // 接收操作名称。
+    operation: &str,
+    // 接收完整调用跨度。
+    span: SourceSpan,
+) -> Result<&'a CallArgument, Diagnostic> {
+    // 要求恰好一个无名称参数。
+    if arguments.len() == 1 && arguments[0].name.is_none() {
+        // 返回唯一参数。
+        return Ok(&arguments[0]);
+    }
+    // 返回数组操作参数诊断。
+    Err(Diagnostic::new(
+        // 指向完整调用。
+        span,
+        // 说明参数数量要求。
+        format!("{operation} 必须接收一个位置参数"),
+        // 给出对应规范示例。
+        format!("使用 array.{operation}(value)"),
+    ))
+}
+
+// 把语言成员名验证并转换为 Rust 标识符。
+fn rust_member(
+    // 接收成员文本。
+    member: &str,
+    // 接收诊断跨度。
+    span: SourceSpan,
+) -> Result<Ident, Diagnostic> {
+    // 使用 syn 校验 Rust 标识符规则。
+    syn::parse_str::<Ident>(member).map_err(|_| {
+        // 构造非法成员诊断。
+        Diagnostic::new(
+            // 指向成员表达式。
+            span,
+            // 说明成员映射失败。
+            format!("成员 {member} 不是合法 Rust 字段名"),
+            // 给出改名建议。
+            "改用非 Rust 关键字的 ASCII 成员名",
+        )
+    })
+}
