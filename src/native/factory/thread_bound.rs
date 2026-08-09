@@ -22,7 +22,7 @@ use std::thread::{self, ThreadId};
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
     GraphicsContextCaps, IGraphicsContext, PixelUploadSurface, PresentDamage, PresentSurface,
-    SwapchainPresentation,
+    RhiSurfaceLifecycle, SwapchainPresentation,
 };
 
 pub(crate) fn bind_to_current_thread(
@@ -151,6 +151,19 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
         self.inner.rhi_context()
     }
 
+    // 只有 owner thread 可以借用 GPU-native surface 生命周期视图。
+    fn rhi_surface_lifecycle(&mut self) -> Option<&mut dyn RhiSurfaceLifecycle> {
+        // 无错误返回通道的 capability 查询在跨线程时保守返回不支持。
+        if self.require_owner("rhi_surface_lifecycle").is_err() {
+            // 禁止把 wrapper 自身暴露给错误线程。
+            return None;
+        }
+        // 先确认真实 context 明确提供专用 RHI surface 生命周期。
+        self.inner.rhi_surface_lifecycle()?;
+        // 返回继续执行 owner-thread 检查与元数据刷新的 wrapper 视图。
+        Some(self)
+    }
+
     // 只有 owner thread 可以借用 inner 的 PixelUpload surface 视图。
     fn pixel_upload_surface(&mut self) -> Option<&mut dyn PixelUploadSurface> {
         // 无错误返回通道的 capability 查询在跨线程时保守返回不支持。
@@ -177,18 +190,6 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
         Some(self)
     }
 
-    // 在线程绑定边界内执行 RHI surface resize，并同步外层 drawable 元数据。
-    fn resize_rhi_surface(&mut self, width: i32, height: i32) -> Result<()> {
-        // 把实际 resize 委托给创建线程上的 native context。
-        self.with_owner("resize_rhi_surface", |inner| {
-            inner.resize_rhi_surface(width, height)
-        })?;
-        // RHI 可能改变物理 drawable，成功后刷新 wrapper 的缓存查询值。
-        self.refresh_metadata();
-        // 返回已经通过 owner-thread 和 surface generation 边界的成功结果。
-        Ok(())
-    }
-
     // 返回 owner-thread 最近一次确认的完整 surface 元数据快照。
     fn present_surface(&self) -> PresentSurface {
         // 非失败查询只读取 wrapper 缓存，不跨线程触碰 native context。
@@ -197,6 +198,30 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
 
     fn try_shutdown(&mut self) -> Result<()> {
         self.with_owner("try_shutdown", |inner| inner.try_shutdown())
+    }
+}
+
+// 在线程绑定边界实现 GPU-native RHI surface 的专用生命周期视图。
+impl RhiSurfaceLifecycle for ThreadBoundGraphicsContext {
+    // 在 owner thread 执行 resize，并仅在成功后同步外层 drawable 元数据。
+    fn resize_rhi_surface(&mut self, width: i32, height: i32) -> Result<()> {
+        // 把实际 resize 委托给创建线程上的 native 专用视图。
+        self.with_owner("resize_rhi_surface", |inner| {
+            // recipe 宣称 GPU-native 却未提供生命周期视图属于状态破坏。
+            let lifecycle = inner.rhi_surface_lifecycle().ok_or_else(|| {
+                // 返回稳定的 typed 状态错误，禁止恢复通用 context resize。
+                Error::new(
+                    Errc::InvalidState,
+                    "graphics context lost its dedicated RHI surface lifecycle view",
+                )
+            })?;
+            // 让真实 native owner 执行唯一 GraphicsSurface::resize 路径。
+            lifecycle.resize_rhi_surface(width, height)
+        })?;
+        // RHI 可能改变物理 drawable，成功后原子刷新完整 surface 快照。
+        self.refresh_metadata();
+        // 返回已经通过 owner-thread 和 surface generation 边界的成功结果。
+        Ok(())
     }
 }
 
@@ -275,5 +300,140 @@ impl SwapchainPresentation for ThreadBoundGraphicsContext {
             // 在同一 owner-thread 借用范围内提交 swapchain。
             presentation.present_swapchain(damage)
         })
+    }
+}
+
+// 集中验证 thread-bound RHI surface 生命周期的元数据事务边界。
+#[cfg(test)]
+mod tests {
+    // 引入当前模块的 thread-bound wrapper 与专用生命周期契约。
+    use super::{RhiSurfaceLifecycle, ThreadBoundGraphicsContext};
+    // 引入构造测试错误与结果所需的核心类型。
+    use crate::core::{Errc, Error, PresentCoherency, Result};
+    // 引入测试 context 需要实现的最小图形上下文类型。
+    use crate::native::present::{
+        // 引入 GPU recipe 的后端身份。
+        GraphicsApi,
+        // 引入静态 context 能力快照。
+        GraphicsContextCaps,
+        // 引入统一 context 门面。
+        IGraphicsContext,
+        // 引入 live surface 原子快照。
+        PresentSurface,
+    };
+
+    // 提供可独立控制 resize 成败的最小 RHI 生命周期 context。
+    struct TestRhiLifecycleContext {
+        // 保存 native owner 当前公开的完整 surface 快照。
+        surface: PresentSurface,
+        // 决定下一次 resize 是否返回 typed failure。
+        fail_resize: bool,
+    }
+
+    // 实现测试 context 的统一 recipe 与元数据门面。
+    impl IGraphicsContext for TestRhiLifecycleContext {
+        // 声明该测试 owner 使用 GPU-native swapchain recipe。
+        fn caps(&self) -> GraphicsContextCaps {
+            // 使用 D3D11 身份表达 Windows 生产路径的静态能力。
+            GraphicsContextCaps::gpu_native_swapchain(
+                // 选择稳定存在的 D3D11 后端枚举。
+                GraphicsApi::D3d11,
+                // 测试不声明跨帧内容保持能力。
+                PresentCoherency::FullOnly,
+            )
+        }
+
+        // 显式暴露测试 owner 的专用 RHI surface 生命周期。
+        fn rhi_surface_lifecycle(&mut self) -> Option<&mut dyn RhiSurfaceLifecycle> {
+            // 返回当前 owner 作为唯一生命周期视图。
+            Some(self)
+        }
+
+        // 返回当前完整 drawable 元数据快照。
+        fn present_surface(&self) -> PresentSurface {
+            // PresentSurface 可复制，因此测试不会借用内部 native 状态。
+            self.surface
+        }
+
+        // 测试 owner 没有需要失败的 native teardown。
+        fn try_shutdown(&mut self) -> Result<()> {
+            // 保持 wrapper Drop 路径可验证且无额外副作用。
+            Ok(())
+        }
+    }
+
+    // 实现可成功或失败的专用 RHI surface 生命周期。
+    impl RhiSurfaceLifecycle for TestRhiLifecycleContext {
+        // 按测试配置更新 surface 或返回 typed failure。
+        fn resize_rhi_surface(&mut self, width: i32, height: i32) -> Result<()> {
+            // 失败分支必须在修改 native 元数据前返回。
+            if self.fail_resize {
+                // 使用稳定的图形状态错误供恢复层分类。
+                return Err(Error::new(
+                    // 标记测试中的 native surface 状态失败。
+                    Errc::InvalidState,
+                    // 保留可诊断的测试错误文本。
+                    "injected RHI surface resize failure",
+                ));
+            }
+            // 成功分支整体替换 native owner 的 surface 快照。
+            self.surface = PresentSurface::identity(
+                // 记录成功 resize 后的 drawable 宽度。
+                width,
+                // 记录成功 resize 后的 drawable 高度。
+                height,
+                // 测试固定使用 identity DPR。
+                1.0,
+                // 每次成功重建都推进 surface generation。
+                self.surface.generation + 1,
+            );
+            // 报告 native surface 已完整重建。
+            Ok(())
+        }
+    }
+
+    // 构造带稳定初始快照的测试 context。
+    fn test_context(fail_resize: bool) -> TestRhiLifecycleContext {
+        // 返回可由每条测试独立拥有的 native owner。
+        TestRhiLifecycleContext {
+            // 固定初始 drawable extent、DPR 与 generation。
+            surface: PresentSurface::identity(100, 80, 1.0, 7),
+            // 注入当前测试所需的 resize 结果。
+            fail_resize,
+        }
+    }
+
+    // 验证成功 resize 后 wrapper 一次刷新完整 surface 快照。
+    #[test]
+    fn successful_rhi_resize_refreshes_present_surface_snapshot() {
+        // 把可成功 resize 的 native owner 绑定到当前测试线程。
+        let mut bound = ThreadBoundGraphicsContext::new(Box::new(test_context(false)));
+        // 通过专用生命周期视图执行一次成功重建。
+        let result = RhiSurfaceLifecycle::resize_rhi_surface(&mut bound, 320, 240);
+        // 成功结果必须越过 thread-bound 边界返回调用方。
+        assert!(result.is_ok());
+        // 读取 wrapper 在成功事务后缓存的完整 surface 快照。
+        let surface = bound.present_surface();
+        // drawable 宽度必须与 native owner 的新快照一致。
+        assert_eq!(surface.drawable_width, 320);
+        // drawable 高度必须与 native owner 的新快照一致。
+        assert_eq!(surface.drawable_height, 240);
+        // 同尺寸或异尺寸重建都必须推进 generation。
+        assert_eq!(surface.generation, 8);
+    }
+
+    // 验证失败 resize 不会污染 wrapper 已确认的 surface 快照。
+    #[test]
+    fn failed_rhi_resize_preserves_present_surface_snapshot() {
+        // 把会拒绝 resize 的 native owner 绑定到当前测试线程。
+        let mut bound = ThreadBoundGraphicsContext::new(Box::new(test_context(true)));
+        // 保存失败事务前 wrapper 的原子快照。
+        let before = bound.present_surface();
+        // 通过专用生命周期视图触发可观察的 typed failure。
+        let result = RhiSurfaceLifecycle::resize_rhi_surface(&mut bound, 640, 480);
+        // 失败必须保留稳定的错误分类。
+        assert!(matches!(result, Err(error) if error.code() == Errc::InvalidState));
+        // wrapper 只允许在成功后刷新，因此失败前后快照必须完全相等。
+        assert_eq!(bound.present_surface(), before);
     }
 }

@@ -41,6 +41,16 @@ impl IPresenter for GpuPresenter {
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         // Wayland GPU presenter 只通过 thin RHI surface 重建 EGL drawable。
-        self.gpu_ctx.resize_rhi_surface(width, height)
+        let Some(lifecycle) = self.gpu_ctx.rhi_surface_lifecycle() else {
+            // 外部 GPU presenter recipe 丢失专用生命周期属于状态破坏。
+            return Err(Error::new(
+                // 使用 InvalidState 进入既有恢复路径。
+                Errc::InvalidState,
+                // 明确指出缺失的是 resize 专用视图。
+                "Wayland GPU presenter lost its dedicated RHI surface lifecycle view",
+            ));
+        };
+        // 让 EGL owner 经唯一 GraphicsSurface::resize 路径推进代际。
+        lifecycle.resize_rhi_surface(width, height)
     }
 }

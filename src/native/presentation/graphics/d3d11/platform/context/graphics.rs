@@ -12,6 +12,14 @@ impl IGraphicsContext for D3d11Context {
         Some(self)
     }
 
+    // 暴露只含 GPU-native surface resize 的专用生命周期视图。
+    fn rhi_surface_lifecycle(
+        &mut self,
+    ) -> Option<&mut dyn crate::native::present::RhiSurfaceLifecycle> {
+        // D3D11 已实现唯一 GraphicsSurface::resize owner 路径。
+        Some(self)
+    }
+
     // 把 D3D11 当前 drawable 元数据提供给兼容 present 边界。
     fn present_surface(&self) -> crate::native::present::PresentSurface {
         // 使用同一代际值保证旧 damage 不会跨 swapchain 重建复用。
@@ -26,6 +34,15 @@ impl IGraphicsContext for D3d11Context {
 
     fn try_shutdown(&mut self) -> Result<()> {
         self.shutdown_result()
+    }
+}
+
+// 把 D3D11 逻辑尺寸 resize 收敛到专用 RHI surface 生命周期。
+impl crate::native::present::RhiSurfaceLifecycle for D3d11Context {
+    // 复用统一 DPR、范围检查与 GraphicsSurface::resize 调用。
+    fn resize_rhi_surface(&mut self, width: i32, height: i32) -> Result<()> {
+        // 直接借用当前原生 owner，不经过 IGraphicsContext 高层方法。
+        crate::native::present::resize_native_rhi_surface(self, width, height)
     }
 }
 

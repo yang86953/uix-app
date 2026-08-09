@@ -41,6 +41,12 @@ fn rhi_resize_extent_for_logical(
     ))
 }
 
+// 定义只属于 GPU-native recipe 的 RHI surface 生命周期视图。
+pub(crate) trait RhiSurfaceLifecycle {
+    // 按逻辑窗口尺寸重建薄 RHI surface 并推进代际。
+    fn resize_rhi_surface(&mut self, width: i32, height: i32) -> Result<(), Error>;
+}
+
 // 定义只属于 CPU PixelUpload recipe 的 surface 生命周期与提交契约。
 pub(crate) trait PixelUploadSurface {
     // 按逻辑窗口尺寸重建像素上传 surface。
@@ -79,6 +85,13 @@ pub trait IGraphicsContext {
         None
     }
 
+    // 返回 GPU-native recipe 的专用 RHI surface 生命周期视图。
+    #[allow(private_interfaces)]
+    fn rhi_surface_lifecycle(&mut self) -> Option<&mut dyn RhiSurfaceLifecycle> {
+        // CPU PixelUpload 与不支持薄 RHI 的 context 默认不暴露该契约。
+        None
+    }
+
     // 返回 CPU PixelUpload recipe 的专用 surface 视图。
     #[allow(private_interfaces)]
     fn pixel_upload_surface(&mut self) -> Option<&mut dyn PixelUploadSurface> {
@@ -93,36 +106,6 @@ pub trait IGraphicsContext {
         None
     }
 
-    // 优先通过薄 RHI 的物理 surface extent 执行逻辑尺寸 resize。
-    fn resize_rhi_surface(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        // 把非法或零尺寸归一化为窗口生命周期允许的最小逻辑尺寸。
-        let logical_width = width.max(1);
-        // 把非法或零尺寸归一化为窗口生命周期允许的最小逻辑尺寸。
-        let logical_height = height.max(1);
-        // 从单一 live surface 快照读取设备像素比，避免分离元数据发生撕裂。
-        let device_pixel_ratio = self.present_surface().device_pixel_ratio;
-        // 统一把逻辑尺寸和 DPR 转成经过范围证明的物理 RHI extent。
-        let extent =
-            rhi_resize_extent_for_logical(logical_width, logical_height, device_pixel_ratio)?;
-        // 在借用可变 RHI 视图前保存静态 backend 事实，供 typed error 使用。
-        let backend = self.caps().backend;
-        // 只有暴露组合 RHI 的 native adapter 才进入这条迁移期生产入口。
-        let Some(context) = self.rhi_context() else {
-            // 让调用方把 NotImplemented 识别为兼容路径回退，而非运行时故障。
-            return Err(Error::new(
-                crate::core::error::Errc::NotImplemented,
-                format!(
-                    "GraphicsBackend {} does not expose a thin RHI surface",
-                    backend
-                ),
-            ));
-        };
-        // 将逻辑窗口尺寸转换后的物理 extent 交给 surface 生命周期实现。
-        context.resize(extent)?;
-        // 只报告 RHI surface 重建成功，不在此处触碰最终 present。
-        Ok(())
-    }
-
     // 返回当前 drawable extent、DPR、transform 与 generation 的原子快照。
     fn present_surface(&self) -> PresentSurface;
 
@@ -131,6 +114,44 @@ pub trait IGraphicsContext {
     /// Callers and Drop paths must use this method. Teardown failures stay
     /// typed so recovery can retain the previous owner instead of logging only.
     fn try_shutdown(&mut self) -> Result<(), Error>;
+}
+
+// 为直接拥有薄 RHI 的原生 context 执行共享 resize 事务。
+pub(crate) fn resize_native_rhi_surface(
+    // 借用同时暴露 IGraphicsContext 元数据和组合薄 RHI 的原生 owner。
+    context: &mut dyn IGraphicsContext,
+    // 接收逻辑窗口宽度。
+    width: i32,
+    // 接收逻辑窗口高度。
+    height: i32,
+) -> Result<(), Error> {
+    // 把非法或零尺寸归一化为窗口生命周期允许的最小逻辑尺寸。
+    let logical_width = width.max(1);
+    // 把非法或零尺寸归一化为窗口生命周期允许的最小逻辑尺寸。
+    let logical_height = height.max(1);
+    // 从单一 live surface 快照读取设备像素比，避免分离元数据发生撕裂。
+    let device_pixel_ratio = context.present_surface().device_pixel_ratio;
+    // 统一把逻辑尺寸和 DPR 转成经过范围证明的物理 RHI extent。
+    let extent = rhi_resize_extent_for_logical(logical_width, logical_height, device_pixel_ratio)?;
+    // 在借用可变 RHI 视图前保存静态 backend 事实，供 typed error 使用。
+    let backend = context.caps().backend;
+    // 只有暴露组合 RHI 的 native adapter 才能实现专用生命周期视图。
+    let Some(rhi) = context.rhi_context() else {
+        // recipe 声明与薄 RHI owner 不一致时返回稳定的 typed 状态错误。
+        return Err(Error::new(
+            // 该缺口是构造状态破坏，不是可静默回退的可选能力。
+            crate::core::error::Errc::InvalidState,
+            // 保留具体 backend 便于诊断错误 adapter 注册。
+            format!(
+                "GraphicsBackend {} exposed RHI surface lifecycle without a thin RHI owner",
+                backend
+            ),
+        ));
+    };
+    // 将逻辑窗口尺寸转换后的物理 extent 交给唯一 GraphicsSurface 生命周期。
+    rhi.resize(extent)?;
+    // 只报告 RHI surface 重建成功，不在此处触碰最终 present。
+    Ok(())
 }
 
 // 验证逻辑尺寸到物理 RHI extent 的纯转换契约。

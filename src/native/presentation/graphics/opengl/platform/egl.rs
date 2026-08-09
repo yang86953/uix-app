@@ -408,6 +408,14 @@ impl IGraphicsContext for EglContext {
         Some(self)
     }
 
+    // 暴露只含 GPU-native surface resize 的专用生命周期视图。
+    fn rhi_surface_lifecycle(
+        &mut self,
+    ) -> Option<&mut dyn crate::native::present::RhiSurfaceLifecycle> {
+        // EGL 已实现唯一 GraphicsSurface::resize owner 路径。
+        Some(self)
+    }
+
     // Wayland external presenter 显式借用 EGL swapchain 提交视图。
     fn swapchain_presentation(&mut self) -> Option<&mut dyn SwapchainPresentation> {
         // 仅 EGL external presenter recipe 暴露该专用视图。
@@ -431,6 +439,15 @@ impl IGraphicsContext for EglContext {
 
     fn try_shutdown(&mut self) -> Result<(), Error> {
         self.shutdown_result()
+    }
+}
+
+// 把 EGL 逻辑尺寸 resize 收敛到专用 RHI surface 生命周期。
+impl crate::native::present::RhiSurfaceLifecycle for EglContext {
+    // 复用统一 DPR、范围检查与 GraphicsSurface::resize 调用。
+    fn resize_rhi_surface(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        // 直接借用当前原生 owner，不经过 IGraphicsContext 高层方法。
+        crate::native::present::resize_native_rhi_surface(self, width, height)
     }
 }
 
