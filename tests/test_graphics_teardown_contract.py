@@ -114,7 +114,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("fn probe(&mut self)", rhi)
         # registry 必须在 owner thread 绑定前执行 probe 并记录成功事实。
         self.assertIn("rhi.probe()", registry)
-        self.assertIn("thin RHI probe passed", registry)
+        self.assertIn("atomic GPU recipe probe passed", registry)
         # MSDF atlas 必须有 renderer 状态、混合 lowering 入口和 shutdown 释放边界。
         self.assertIn("msdf_atlas_pages", renderer)
         self.assertIn("msdf_atlas_cache", renderer)
@@ -582,7 +582,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # resize 必须通过已验证 GPU owner 的专用 surface 事务。
         self.assertIn("self.gpu_ctx.resize_surface(logical_w, logical_h)?", resize)
         # backend 不得重新从兼容 context 借用可选生命周期视图。
-        self.assertNotIn("self.gpu_ctx.rhi_surface_lifecycle()", resize)
+        self.assertNotIn("self.gpu_ctx.gpu_recipe_context()", resize)
         # 兼容 IGraphicsContext::resize 不得作为 NotImplemented 回退。
         self.assertNotIn("self.gpu_ctx.resize(", resize)
         # 构造后视图缺失必须进入状态恢复，而不是能力回退。

@@ -41,10 +41,16 @@ fn rhi_resize_extent_for_logical(
     ))
 }
 
-// 定义只属于 GPU-native recipe 的 RHI surface 生命周期视图。
-pub(crate) trait RhiSurfaceLifecycle {
-    // 按逻辑窗口尺寸重建薄 RHI surface 并推进代际。
-    fn resize_rhi_surface(&mut self, width: i32, height: i32) -> Result<(), Error>;
+// 定义 GPU-native recipe 不可拆分的 thin RHI 与 surface 生命周期视图。
+pub(crate) trait GpuRecipeContext {
+    // 借用当前 recipe 唯一的 thin RHI owner，并保留 typed failure。
+    fn rhi_context(
+        // 借用 GPU recipe owner。
+        &mut self,
+    ) -> Result<&mut dyn crate::native::present::rhi::GraphicsContextRhi, Error>;
+
+    // 按逻辑窗口尺寸重建同一 owner 的 thin RHI surface 并推进代际。
+    fn resize_surface(&mut self, width: i32, height: i32) -> Result<(), Error>;
 }
 
 // 定义只属于 CPU PixelUpload recipe 的 surface 生命周期与提交契约。
@@ -70,17 +76,11 @@ pub(crate) trait PixelUploadSurface {
 pub trait IGraphicsContext {
     fn caps(&self) -> GraphicsContextCaps;
 
-    /// 返回迁移期薄 RHI 的组合视图；不支持该路径的 context 保持 None。
-    // native::present 模块本身是 crate 私有边界，迁移期 RHI 不作为外部句柄暴露。
+    // 返回不可拆分的 GPU-native recipe 视图；其它 recipe 保持 None。
+    // native::present 模块本身是 crate 私有边界，thin RHI 不作为外部句柄暴露。
     #[allow(private_interfaces)]
-    fn rhi_context(&mut self) -> Option<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
-        None
-    }
-
-    // 返回 GPU-native recipe 的专用 RHI surface 生命周期视图。
-    #[allow(private_interfaces)]
-    fn rhi_surface_lifecycle(&mut self) -> Option<&mut dyn RhiSurfaceLifecycle> {
-        // CPU PixelUpload 与不支持薄 RHI 的 context 默认不暴露该契约。
+    fn gpu_recipe_context(&mut self) -> Option<&mut dyn GpuRecipeContext> {
+        // CPU PixelUpload 与不支持 GPU recipe 的 context 默认不暴露该契约。
         None
     }
 
@@ -103,8 +103,10 @@ pub trait IGraphicsContext {
 
 // 为直接拥有薄 RHI 的原生 context 执行共享 resize 事务。
 pub(crate) fn resize_native_rhi_surface(
-    // 借用同时暴露 IGraphicsContext 元数据和组合薄 RHI 的原生 owner。
-    context: &mut dyn IGraphicsContext,
+    // 借用不可拆分的 GPU recipe owner。
+    context: &mut dyn GpuRecipeContext,
+    // 接收调用前取得的完整 live surface 快照。
+    present_surface: PresentSurface,
     // 接收逻辑窗口宽度。
     width: i32,
     // 接收逻辑窗口高度。
@@ -115,24 +117,11 @@ pub(crate) fn resize_native_rhi_surface(
     // 把非法或零尺寸归一化为窗口生命周期允许的最小逻辑尺寸。
     let logical_height = height.max(1);
     // 从单一 live surface 快照读取设备像素比，避免分离元数据发生撕裂。
-    let device_pixel_ratio = context.present_surface().device_pixel_ratio;
+    let device_pixel_ratio = present_surface.device_pixel_ratio;
     // 统一把逻辑尺寸和 DPR 转成经过范围证明的物理 RHI extent。
     let extent = rhi_resize_extent_for_logical(logical_width, logical_height, device_pixel_ratio)?;
-    // 在借用可变 RHI 视图前保存静态 backend 事实，供 typed error 使用。
-    let backend = context.caps().backend;
-    // 只有暴露组合 RHI 的 native adapter 才能实现专用生命周期视图。
-    let Some(rhi) = context.rhi_context() else {
-        // recipe 声明与薄 RHI owner 不一致时返回稳定的 typed 状态错误。
-        return Err(Error::new(
-            // 该缺口是构造状态破坏，不是可静默回退的可选能力。
-            crate::core::error::Errc::InvalidState,
-            // 保留具体 backend 便于诊断错误 adapter 注册。
-            format!(
-                "GraphicsBackend {} exposed RHI surface lifecycle without a thin RHI owner",
-                backend
-            ),
-        ));
-    };
+    // 原子 GPU recipe 视图直接返回唯一 thin RHI owner 或 typed failure。
+    let rhi = context.rhi_context()?;
     // 将逻辑窗口尺寸转换后的物理 extent 交给唯一 GraphicsSurface 生命周期。
     rhi.resize(extent)?;
     // 只报告 RHI surface 重建成功，不在此处触碰最终 present。

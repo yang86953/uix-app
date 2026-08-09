@@ -6,17 +6,9 @@ impl IGraphicsContext for D3d11Context {
             .with_present_occlusion(PresentOcclusionSupport::PresentStatusAndTest)
     }
 
-    // 暴露同一 owner-thread context 上的薄 RHI device/surface 组合视图。
-    fn rhi_context(&mut self) -> Option<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
-        // D3D11 是当前参考 adapter；其他 backend 继续走兼容接口。
-        Some(self)
-    }
-
-    // 暴露只含 GPU-native surface resize 的专用生命周期视图。
-    fn rhi_surface_lifecycle(
-        &mut self,
-    ) -> Option<&mut dyn crate::native::present::RhiSurfaceLifecycle> {
-        // D3D11 已实现唯一 GraphicsSurface::resize owner 路径。
+    // 暴露同一 owner-thread context 上不可拆分的 GPU recipe 视图。
+    fn gpu_recipe_context(&mut self) -> Option<&mut dyn crate::native::present::GpuRecipeContext> {
+        // D3D11 同时拥有 thin RHI 与唯一 GraphicsSurface::resize 路径。
         Some(self)
     }
 
@@ -37,12 +29,23 @@ impl IGraphicsContext for D3d11Context {
     }
 }
 
-// 把 D3D11 逻辑尺寸 resize 收敛到专用 RHI surface 生命周期。
-impl crate::native::present::RhiSurfaceLifecycle for D3d11Context {
+// 把 D3D11 thin RHI 与逻辑 surface resize 收敛到同一 recipe owner。
+impl crate::native::present::GpuRecipeContext for D3d11Context {
+    // 借用 D3D11 owner 已实现的组合 thin RHI。
+    fn rhi_context(
+        // 借用当前 D3D11 owner。
+        &mut self,
+    ) -> Result<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
+        // 同一实例完整实现 GraphicsDevice 与 GraphicsSurface。
+        Ok(self)
+    }
+
     // 复用统一 DPR、范围检查与 GraphicsSurface::resize 调用。
-    fn resize_rhi_surface(&mut self, width: i32, height: i32) -> Result<()> {
-        // 直接借用当前原生 owner，不经过 IGraphicsContext 高层方法。
-        crate::native::present::resize_native_rhi_surface(self, width, height)
+    fn resize_surface(&mut self, width: i32, height: i32) -> Result<()> {
+        // 在可变借用前取得当前完整 surface 快照。
+        let present_surface = IGraphicsContext::present_surface(self);
+        // 直接借用当前原子 recipe owner，不经过分裂兼容视图。
+        crate::native::present::resize_native_rhi_surface(self, present_surface, width, height)
     }
 }
 
