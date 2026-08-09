@@ -2,9 +2,10 @@
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::ui::component::paint_context::PaintContext;
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
+use crate::ui::component::paint_context::PaintContext;
+// 引入事件、键盘、声明式状态与组件树公开契约。
+use crate::ui::{EventResult, KeyCode, State, SystemEvent, WidgetTree};
 
 const DEFAULT_VISIBILITY_HEIGHT: f32 = 400.0;
 
@@ -17,6 +18,8 @@ component! {
         visible: bool,
         /// 声明式滚动位置；None 表示由 update_visibility 维护运行态
         controlled_scroll_y: Option<f32>,
+        /// 应用拥有的滚动状态句柄；组件只克隆句柄并在激活时写回顶部。
+        scroll_binding: Option<State<f32>>,
         focused: bool,
     }
 
@@ -40,7 +43,12 @@ component! {
             | SystemEvent::KeyDown {
                 key: KeyCode::Enter | KeyCode::Space,
                 ..
-            } => EventResult::Handled,
+            } => {
+                // 激活事实同步写回绑定状态并立即隐藏按钮。
+                self.request_top();
+                // 阻止同一次激活继续冒泡。
+                EventResult::Handled
+            },
             SystemEvent::FocusIn => {
                 self.focused = true;
                 EventResult::Handled
@@ -96,21 +104,41 @@ impl BackTop {
             visibility_height: DEFAULT_VISIBILITY_HEIGHT,
             visible: false,
             controlled_scroll_y: None,
+            // 默认手动模式不持有应用状态句柄。
+            scroll_binding: None,
             focused: false,
         }
     }
 
     /// 手动模式下更新当前滚动位置；返回可见性是否发生变化。
     pub fn update_visibility(&mut self, scroll_y: f32) -> bool {
+        // 手动更新显式退出声明式状态绑定模式。
+        self.scroll_binding = None;
         self.controlled_scroll_y = None;
         self.set_scroll_y(scroll_y)
     }
 
     /// 声明式设置当前滚动位置，适合从 `State<f32>` 读取后随 reconcile 更新。
     pub fn scroll_y(mut self, scroll_y: f32) -> Self {
+        // 数值快照模式不保留旧 State 句柄。
+        self.scroll_binding = None;
         let scroll_y = Self::normalize_scroll_y(scroll_y);
         self.controlled_scroll_y = Some(scroll_y);
         self.set_scroll_y(scroll_y);
+        self
+    }
+
+    /// 双向绑定应用拥有的滚动位置；激活 BackTop 时写回零。
+    pub fn scroll_state(mut self, state: &State<f32>) -> Self {
+        // 克隆轻量状态句柄而不复制或夺取应用状态所有权。
+        self.scroll_binding = Some(state.clone());
+        // 读取当前快照供本轮可见性计算与 reconcile 使用。
+        let scroll_y = Self::normalize_scroll_y(state.get());
+        // 标记本轮声明式滚动值。
+        self.controlled_scroll_y = Some(scroll_y);
+        // 立即同步当前可见性。
+        self.set_scroll_y(scroll_y);
+        // 返回可继续配置的组件。
         self
     }
 
@@ -142,10 +170,31 @@ impl BackTop {
 
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.visibility_height = Self::normalize_visibility_height(next.visibility_height);
+        // reconcile 接管新 View 中同一应用状态的轻量句柄。
+        self.scroll_binding = next.scroll_binding;
         self.controlled_scroll_y = next.controlled_scroll_y;
-        if let Some(scroll_y) = self.controlled_scroll_y {
+        // 绑定模式优先读取当前应用事实，避免采用生成阶段后的过期快照。
+        if let Some(scroll_y) = self.scroll_binding.as_ref().map(State::get) {
+            // 同步绑定值派生的可见性。
+            self.controlled_scroll_y = Some(scroll_y);
+            // 应用规范化后的滚动值。
+            self.set_scroll_y(scroll_y);
+        } else if let Some(scroll_y) = self.controlled_scroll_y {
             self.set_scroll_y(scroll_y);
         }
+    }
+
+    // 处理指针或键盘激活请求。
+    fn request_top(&mut self) {
+        // 绑定存在时把应用滚动事实更新为顶部。
+        if let Some(state) = &self.scroll_binding {
+            // State 自己负责通知声明式依赖。
+            state.set(0.0);
+        }
+        // 当前组件同步保存顶部快照。
+        self.controlled_scroll_y = Some(0.0);
+        // 立即隐藏组件并清理焦点状态。
+        self.set_scroll_y(0.0);
     }
 
     fn set_scroll_y(&mut self, scroll_y: f32) -> bool {
@@ -172,5 +221,42 @@ impl BackTop {
         } else {
             0.0
         }
+    }
+}
+
+// 只在本组件边界验证声明式滚动状态与激活回写。
+#[cfg(test)]
+mod tests {
+    // 引入待验证组件与事件处理 trait。
+    use super::*;
+    // 引入构造指针事件所需的几何与修饰键类型。
+    use crate::core::Point;
+    // 引入事件处理 trait 以调用组件契约。
+    use crate::ui::{EventHandler, KeyMod, MouseButton};
+
+    // 验证绑定状态决定可见性且激活写回顶部。
+    #[test]
+    fn bound_state_activation_writes_top() {
+        // 创建超过默认阈值的应用滚动状态。
+        let scroll_y = State::new(450.0_f32);
+        // 绑定公开 BackTop 组件。
+        let mut back_top = BackTop::new().scroll_state(&scroll_y);
+        // 初始滚动位置应使按钮可见。
+        assert!(back_top.is_visible());
+        // 构造主指针激活事件。
+        let result = back_top.on_event(&SystemEvent::PointerDown {
+            // 坐标不影响组件自身的激活语义。
+            pos: Point::zero(),
+            // 只允许主按钮激活。
+            button: MouseButton::Left,
+            // 本测试不使用修饰键。
+            mods: KeyMod::NONE,
+        });
+        // 激活必须由组件消费。
+        assert_eq!(result, EventResult::Handled);
+        // 应用拥有的状态必须被写回顶部。
+        assert_eq!(scroll_y.get(), 0.0);
+        // 当前组件必须立即隐藏。
+        assert!(!back_top.is_visible());
     }
 }
