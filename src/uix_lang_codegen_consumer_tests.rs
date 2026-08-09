@@ -174,6 +174,12 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _input: ViewNode = crate::uix!(
         r#"<Input value={input_name} placeholder="请输入名称" type="password" disabled @change="on_name_change($event)" width="240px" />"#
     );
+    // 提供 InputNumber 泛型整数双向绑定状态。
+    let input_number = State::new(50_i32);
+    // 验证数值绑定、范围、步长、精度和公共样式只依赖公开 prelude。
+    let _input_number: ViewNode = crate::uix!(
+        r#"<InputNumber value={input_number} min="0" max="100" step="5" precision="0" width="160px" />"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。

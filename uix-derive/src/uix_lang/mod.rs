@@ -72,6 +72,11 @@ mod input_codegen;
 // 集中验证 Input 生成与拒绝路径。
 #[cfg(test)]
 mod input_codegen_tests;
+// 定义 InputNumber 数值绑定、范围、步长与精度的公开 API 代码生成边界。
+mod input_number_codegen;
+// 集中验证 InputNumber 生成与拒绝路径。
+#[cfg(test)]
+mod input_number_codegen_tests;
 // 定义 FloatButton 内置组件的公开 API 代码生成边界。
 mod float_button_codegen;
 // 定义布局容器、Row/Col 栅格与 Grid/Col 的公开 API 代码生成边界。
@@ -158,6 +163,8 @@ pub(crate) use splitter_codegen::generate_splitter;
 pub(crate) use app_layout_codegen::generate_app_layout;
 // 向核心元素生成器暴露 Input 专用映射。
 pub(crate) use input_codegen::generate_input;
+// 向核心元素生成器暴露 InputNumber 专用映射。
+pub(crate) use input_number_codegen::generate_input_number;
 // 向核心元素生成器暴露 FloatButton 专用映射。
 pub(crate) use float_button_codegen::generate_float_button;
 // 向核心元素生成器暴露布局组件专用映射。
