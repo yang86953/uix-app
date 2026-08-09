@@ -164,6 +164,8 @@ pub enum SnapshotFields {
         min: f64,
         max: f64,
         step: f64,
+        // 保存声明式小数位精度。
+        precision: Option<u8>,
         placeholder: String,
         disabled: bool,
         keyboard: bool,

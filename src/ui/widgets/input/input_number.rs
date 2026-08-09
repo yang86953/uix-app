@@ -6,9 +6,9 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::native::windowing::input::{ControlSize, KeyMod};
+use crate::ui::SnapshotFields;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
-use crate::ui::SnapshotFields;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
 };
@@ -62,6 +62,9 @@ type ReadNumber = Box<dyn Fn() -> f64 + Send + Sync>;
 type WriteNumber = Box<dyn Fn(f64) -> f64 + Send + Sync>;
 type NumberFormatter = Box<dyn Fn(f64) -> String + Send + Sync>;
 
+// f64 在十进制量化时最多保留十五位有效精度。
+const MAX_PRECISION: u8 = 15;
+
 impl Clone for InputNumber {
     /// 配置克隆：复制公开配置（值/值域/步进/占位/尺寸/禁用/键盘）。
     ///
@@ -73,6 +76,8 @@ impl Clone for InputNumber {
             min: self.min,
             max: self.max,
             step: self.step,
+            // 保留声明式精度配置。
+            precision: self.precision,
             value_configured: self.value_configured,
             value_binding: None,
             placeholder: self.placeholder.clone(),
@@ -140,6 +145,8 @@ component! {
         min: f64,
         max: f64,
         step: f64,
+        // 保存声明式小数位精度；None 表示沿用数值本身。
+        precision: Option<u8>,
         value_configured: bool,
         value_binding: Option<InputNumberValueBinding>,
         placeholder: String,
@@ -417,6 +424,8 @@ impl InputNumber {
             min: f64::MIN,
             max: f64::MAX,
             step: 1.0,
+            // 默认不强制小数位精度。
+            precision: None,
             value_configured: false,
             value_binding: None,
             placeholder: String::new(),
@@ -436,7 +445,8 @@ impl InputNumber {
     /// 将数值绑定到外部 `State`。
     pub fn value<T: InputNumberValue>(mut self, state: &State<T>) -> Self {
         let binding = InputNumberValueBinding::new(state);
-        self.value = self.clamp_value((binding.read)());
+        // 受控初值同时遵守已声明的精度与范围。
+        self.value = self.clamp_value(self.quantize_value((binding.read)()));
         self.value_configured = true;
         self.text_buffer = self.raw_value_text();
         self.value_binding = Some(binding);
@@ -446,7 +456,8 @@ impl InputNumber {
     /// 设置非受控数字输入框的初始值。
     pub fn default_value<T: InputNumberValue>(mut self, value: T) -> Self {
         self.value_binding = None;
-        self.value = self.clamp_value(value.to_f64());
+        // 非受控初值同时遵守已声明的精度与范围。
+        self.value = self.clamp_value(self.quantize_value(value.to_f64()));
         self.value_configured = true;
         self.text_buffer = self.raw_value_text();
         self
@@ -481,6 +492,16 @@ impl InputNumber {
 
     pub fn step(mut self, v: f64) -> Self {
         self.step = if v.is_finite() && v > 0.0 { v } else { 1.0 };
+        self
+    }
+
+    /// 设置数值量化与显示使用的小数位精度。
+    pub fn precision(mut self, precision: u8) -> Self {
+        // f64 超过十五位小数无法稳定兑现，因此统一收敛到有效上限。
+        self.precision = Some(precision.min(MAX_PRECISION));
+        // 已配置值立即按新精度归一化，避免构建顺序影响显示。
+        self.clamp_current_value();
+        // 返回可继续配置的组件。
         self
     }
 
@@ -564,8 +585,10 @@ impl InputNumber {
     }
 
     fn set_value(&mut self, value: f64) {
-        let value = self.clamp_value(value);
-        let value = self.clamp_value(self.write_bound_value(value));
+        // 用户提交值先按精度量化再限制到声明范围。
+        let value = self.clamp_value(self.quantize_value(value));
+        // 外部绑定写回可能转换类型，因此返回值再次精度化并限制范围。
+        let value = self.clamp_value(self.quantize_value(self.write_bound_value(value)));
         let changed = !self.value_configured || value != self.value;
         self.value = value;
         self.value_configured = true;
@@ -580,9 +603,13 @@ impl InputNumber {
             self.commit_buffer();
         }
         let raw = self.value + self.step * direction;
-        let precision = decimal_places(self.value)
-            .max(decimal_places(self.step))
-            .min(15);
+        // 显式精度优先，否则保持既有按当前值与步长推导的行为。
+        let precision = self.precision.map(i32::from).unwrap_or_else(|| {
+            // 推导精度同样受 f64 有效位数上限约束。
+            decimal_places(self.value)
+                .max(decimal_places(self.step))
+                .min(i32::from(MAX_PRECISION))
+        });
         let factor = 10.0f64.powi(precision);
         let scaled = raw * factor;
         let stepped = if factor.is_finite() && scaled.is_finite() {
@@ -598,11 +625,32 @@ impl InputNumber {
         value.clamp(self.min, self.max)
     }
 
+    // 按显式精度量化有限值，未配置精度时保持原值。
+    fn quantize_value(&self, value: f64) -> f64 {
+        // 没有显式精度时不改变业务数值。
+        let Some(precision) = self.precision else {
+            // 返回原始输入。
+            return value;
+        };
+        // 构造稳定的十进制缩放因子。
+        let factor = 10.0_f64.powi(i32::from(precision));
+        // 缩放结果用于四舍五入到目标小数位。
+        let scaled = value * factor;
+        // 非有限输入交给后续范围归一化处理。
+        if !scaled.is_finite() {
+            // 保留原始值避免溢出扩散。
+            return value;
+        }
+        // 执行十进制量化并恢复原单位。
+        scaled.round() / factor
+    }
+
     fn clamp_current_value(&mut self) {
         if !self.value_configured {
             return;
         }
-        self.value = self.clamp_value(self.value);
+        // 精度量化后再次应用范围，确保舍入不会越过边界。
+        self.value = self.clamp_value(self.quantize_value(self.value));
         self.text_buffer = self.raw_value_text();
     }
 
@@ -615,16 +663,26 @@ impl InputNumber {
     }
 
     fn display_value_text(&self) -> String {
-        self.formatter
-            .as_ref()
-            .map_or_else(|| self.raw_value_text(), |formatter| formatter(self.value))
+        // 自定义 formatter 具有最高显示优先级。
+        if let Some(formatter) = self.formatter.as_ref() {
+            // 返回调用方自定义的显示文本。
+            return formatter(self.value);
+        }
+        // 显式精度生成固定小数位文本。
+        if let Some(precision) = self.precision {
+            // Rust 动态精度格式化接收 usize。
+            return format!("{:.*}", usize::from(precision), self.value);
+        }
+        // 未配置格式化时沿用最短数值文本。
+        self.raw_value_text()
     }
 
     fn sync_bound_value(&mut self) {
         let Some(value) = self.value_binding.as_ref().map(|binding| (binding.read)()) else {
             return;
         };
-        let value = self.clamp_value(value);
+        // 外部受控值按当前精度与范围归一化后进入运行时缓存。
+        let value = self.clamp_value(self.quantize_value(value));
         if !self.value_configured || self.value != value {
             self.value = value;
             self.value_configured = true;
@@ -658,10 +716,13 @@ impl InputNumber {
             min: self.min,
             max: self.max,
             step: self.step,
+            // 暴露声明式精度供配置差异比较。
+            precision: self.precision,
             placeholder: self.placeholder.clone(),
             disabled: self.disabled,
             keyboard: self.keyboard,
-            formatted: self.formatter.is_some(),
+            // 自定义格式化或固定精度都会改变可访问显示文本。
+            formatted: self.formatter.is_some() || self.precision.is_some(),
             display_value: self.value_configured.then(|| self.display_value_text()),
         }
     }
@@ -671,6 +732,8 @@ impl InputNumber {
         self.min = next.min;
         self.max = next.max;
         self.step = next.step;
+        // 同步声明式精度配置。
+        self.precision = next.precision;
         self.placeholder = next.placeholder;
         self.disabled = next.disabled;
         self.keyboard = next.keyboard;
@@ -681,7 +744,10 @@ impl InputNumber {
             self.focused = false;
         }
 
-        let next_value = controlled_value.unwrap_or_else(|| self.clamp_value(self.value));
+        // 未受控组件也必须在 precision 变更后重新量化现有值。
+        let next_value = controlled_value
+            // 没有外部值时归一化当前运行时值。
+            .unwrap_or_else(|| self.clamp_value(self.quantize_value(self.value)));
         if controlled_value.is_some() {
             self.value_configured = true;
         }
@@ -699,5 +765,82 @@ impl InputNumber {
             };
             self.cursor_rect.set(Rect::zero());
         }
+    }
+}
+
+// 验证 InputNumber 精度配置、状态回写与显示快照。
+#[cfg(test)]
+mod tests {
+    // 引入当前组件的私有行为与公开构建器。
+    use super::*;
+
+    // 验证显式精度同时控制值量化、步进与显示文本。
+    #[test]
+    fn precision_quantizes_bound_value_step_and_display() {
+        // 构造带多余小数位的受控状态。
+        let state = State::new(1.239_f64);
+        // 先声明精度再绑定，验证构建顺序的主路径。
+        let mut input = InputNumber::new()
+            // 保留两位小数。
+            .precision(2)
+            // 设置百分位步长。
+            .step(0.01)
+            // 绑定外部状态。
+            .value(&state);
+        // 运行时缓存必须量化为两位小数。
+        assert!((input.current_value() - 1.24).abs() < f64::EPSILON);
+        // 向上步进一次必须得到稳定的百分位结果。
+        input.step_by(1.0);
+        // 内部值应更新为一点二五。
+        assert!((input.current_value() - 1.25).abs() < f64::EPSILON);
+        // 双向绑定必须收到同一量化值。
+        assert!((state.get() - 1.25).abs() < f64::EPSILON);
+        // 读取公开组件快照。
+        let SnapshotFields::InputNumber {
+            // 提取精度配置。
+            precision,
+            // 提取最终显示文本。
+            display_value,
+            // 忽略本测试不关心的其他字段。
+            ..
+        } = input.snapshot_fields()
+        else {
+            // 组件快照类型不匹配表示实现错误。
+            panic!("InputNumber 必须生成数值输入快照");
+        };
+        // 快照必须保留精度配置和固定小数位文本。
+        assert_eq!(precision, Some(2));
+        // 显示文本必须稳定保留两位小数。
+        assert_eq!(display_value.as_deref(), Some("1.25"));
+        // 另建状态验证 value 在 precision 之前声明也保持一致。
+        let reverse_state = State::new(1.239_f64);
+        // 先绑定再声明精度，覆盖公开构建器的反向顺序。
+        let reverse = InputNumber::new().value(&reverse_state).precision(2);
+        // 反向构建顺序同样必须量化为两位小数。
+        assert!((reverse.current_value() - 1.24).abs() < f64::EPSILON);
+    }
+
+    // 验证过高精度统一收敛到 f64 可兑现上限。
+    #[test]
+    fn precision_is_bounded_by_f64_contract() {
+        // 直接 API 的动态精度可能越界，运行时必须归一化。
+        let input = InputNumber::new().precision(u8::MAX).default_value(1.2_f64);
+        // 读取声明式配置快照。
+        let SnapshotFields::InputNumber {
+            // 提取归一化后的精度。
+            precision,
+            // 提取固定小数位显示文本。
+            display_value,
+            // 忽略其他配置字段。
+            ..
+        } = input.snapshot_fields()
+        else {
+            // 组件快照类型不匹配表示实现错误。
+            panic!("InputNumber 必须生成数值输入快照");
+        };
+        // 精度必须收敛到十五位。
+        assert_eq!(precision, Some(MAX_PRECISION));
+        // 显示文本必须兑现归一化后的固定精度。
+        assert_eq!(display_value.as_deref(), Some("1.200000000000000"));
     }
 }
