@@ -44,8 +44,8 @@ class GraphicsPresentContractTests(unittest.TestCase):
         self.assertNotIn("SwapchainPresentation", thread_bound)
         # 统一 PresentFrame forwarding 宏必须退出。
         self.assertNotIn("forward_result!", thread_bound)
-        # Renderer 必须借用 PixelUploadSurface 再提交像素。
-        self.assertIn("surface.present_pixels(cpu.pixels(), width, height, damage)?", runtime)
+        # Renderer 必须通过已验证 PixelUpload owner 提交像素。
+        self.assertIn(".present_pixels(cpu.pixels(), width, height, damage)?", runtime)
 
     # 校验各 adapter 只实现其被选择 recipe 所需的提交视图。
     def test_adapters_only_implement_their_selected_present_recipe(self) -> None:

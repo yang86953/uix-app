@@ -867,12 +867,14 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("fn pixel_upload_surface(&mut self)", vulkan)
         # Metal 不能依赖 runtime 猜测 recipe。
         self.assertIn("fn pixel_upload_surface(&mut self)", metal)
-        # runtime 构造必须先验证专用契约。
-        self.assertIn("PixelUploadPresentation::try_new(context)?", runtime)
+        # runtime 构造必须先验证 PixelUpload recipe owner。
+        self.assertIn("PixelUploadRecipeOwner::try_new(context)?", runtime)
+        # presentation 只能接收已经通过门禁的 owner。
+        self.assertIn("PixelUploadPresentation::new(owner)", runtime)
         # runtime resize 必须通过专用 presentation helper。
         self.assertIn("upload.resize_surface(width, height)?", runtime)
         # runtime 不得调用已经删除的通用 context resize。
-        self.assertNotIn("upload.context.resize(", runtime)
+        self.assertNotIn("upload.context", runtime)
         # Vulkan GFX-R5 必须显式使用 PixelUpload surface 契约。
         self.assertGreaterEqual(gfx_r5.count(".resize_pixel_upload_surface("), 3)
         # GFX-R5 不得再通过 IGraphicsContext resize 驱动 Vulkan。
