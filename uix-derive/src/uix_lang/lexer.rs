@@ -574,6 +574,8 @@ impl<'a> Cursor<'a> {
         let mut quoted = false;
         // 跟踪字符串内转义状态。
         let mut escaped = false;
+        // 跟踪对象字面量带来的嵌套花括号深度。
+        let mut nested_depth = 0usize;
         // 扫描到未被字符串包裹的结束花括号。
         loop {
             // 读取下一字符或报告未闭合。
@@ -609,7 +611,21 @@ impl<'a> Cursor<'a> {
                 // 继续扫描。
                 continue;
             }
-            // 非字符串内的花括号结束表达式。
+            // 非字符串内的左花括号进入嵌套对象。
+            if !quoted && next == '{' {
+                // 增加对象嵌套深度。
+                nested_depth += 1;
+                // 继续扫描对象内容。
+                continue;
+            }
+            // 嵌套对象的右花括号只退出一层。
+            if !quoted && next == '}' && nested_depth > 0 {
+                // 减少对象嵌套深度。
+                nested_depth -= 1;
+                // 继续寻找外层属性闭合花括号。
+                continue;
+            }
+            // 非字符串且不在嵌套对象内的花括号结束表达式。
             if !quoted && next == '}' {
                 // 结束偏移排除闭合花括号。
                 let content_end = self.offset - next.len_utf8();

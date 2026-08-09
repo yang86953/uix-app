@@ -1,7 +1,7 @@
 // 引入文档与表达式解析入口及 AST 联合。
 use super::{
-    parse_expression, parser::parse_document, AttributeValue, BinaryOperator, ControlBinding,
-    ExpressionKind, Node, SourceSpan, UnaryOperator,
+    AttributeValue, BinaryOperator, ControlBinding, ExpressionKind, Node, SourceSpan,
+    UnaryOperator, generate_expression, parse_expression, parser::parse_document,
 };
 
 // 构造独立表达式测试使用的绝对起点。
@@ -234,7 +234,7 @@ fn parses_if_for_bindings_and_event_calls() {
 // 验证规范列出的非法结构返回稳定原因与修复建议。
 #[test]
 fn rejects_forbidden_expression_structures() {
-    // 覆盖闭包、match、数组、对象、类型标注、语句与赋值。
+    // 覆盖闭包、match、数组、类型标注、语句与赋值。
     for (source, expected) in [
         // 闭包必须失败。
         ("|value| value", "闭包"),
@@ -244,8 +244,6 @@ fn rejects_forbidden_expression_structures() {
         ("match value", "match"),
         // 数组字面量必须失败。
         ("[1, 2]", "数组字面量"),
-        // 对象字面量必须失败。
-        ("{name: 1}", "对象字面量"),
         // 类型标注必须失败。
         ("value: i32", "类型标注"),
         // 语句必须失败。
@@ -260,6 +258,107 @@ fn rejects_forbidden_expression_structures() {
         // 每个错误必须携带修复建议。
         assert!(!error.suggestion.is_empty());
     }
+}
+
+// 验证受限对象字面量保存字段顺序、值结构与 UTF-8 位置。
+#[test]
+fn parses_ordered_object_fields_for_registered_attributes() {
+    // 解析包含中文字符串和动态字段值的单层对象。
+    let expression = parse_expression("{ count: total + 1, dot: false, label: '新' }", origin())
+        // 合法对象必须成功。
+        .expect("受限对象应成功解析");
+    // 提取对象字段序列。
+    let ExpressionKind::Object(fields) = &expression.kind else {
+        // 非对象结构立即失败。
+        panic!("应生成对象节点");
+    };
+    // 字段必须保持源码顺序。
+    assert_eq!(
+        // 收集字段名称。
+        fields
+            // 遍历字段借用。
+            .iter()
+            // 借用字段名。
+            .map(|field| field.name.as_str())
+            // 收集成稳定序列。
+            .collect::<Vec<_>>(),
+        // 对照源顺序。
+        vec!["count", "dot", "label"]
+    );
+    // 首字段值必须复用现有二元表达式 AST。
+    assert!(matches!(
+        fields[0].value.kind,
+        ExpressionKind::Binary { .. }
+    ));
+    // 中文字符串前的字段跨度必须保持绝对 UTF-8 字节位置。
+    assert_eq!(fields[2].span.start, 132);
+    // 对象起点沿用外部表达式绝对位置。
+    assert_eq!(expression.span.start, 100);
+}
+
+// 验证双花括号属性扫描完整保留内部对象。
+#[test]
+fn parses_object_attribute_with_nested_brace_scanning() {
+    // 使用文档要求的 badge 双花括号写法。
+    let document = parse_document("<FloatButton badge={{ count: 7, dot: false }} />")
+        // 外层属性扫描必须成功。
+        .expect("对象属性应成功解析");
+    // 提取根元素属性。
+    let attribute = &document.root.attributes[0];
+    // 属性表达式必须保存对象 AST。
+    assert!(matches!(
+        // 检查属性值形状。
+        attribute.value,
+        // 要求对象表达式。
+        AttributeValue::Expression(ref node)
+            if matches!(node.expression.kind, ExpressionKind::Object(ref fields) if fields.len() == 2)
+    ));
+}
+
+// 验证对象字面量拒绝歧义结构并报告精确原因。
+#[test]
+fn rejects_invalid_object_literal_shapes() {
+    // 覆盖重复、分隔符、非法键、嵌套、方法和赋值结构。
+    for (source, expected) in [
+        // 重复字段必须失败。
+        ("{ count: 1, count: 2 }", "重复声明"),
+        // 缺少冒号必须失败。
+        ("{ count 1 }", "缺少 :"),
+        // 缺少逗号必须失败。
+        ("{ count: 1 dot: false }", "缺少逗号"),
+        // 缺少右花括号必须失败。
+        ("{ count: 1", "缺少 }"),
+        // 计算键必须失败。
+        ("{ [name]: 1 }", "键必须是标识符"),
+        // spread 必须失败。
+        ("{ ...value }", "键必须是标识符"),
+        // 方法结构必须失败。
+        ("{ count() }", "缺少 :"),
+        // 赋值结构必须失败。
+        ("{ count = 1 }", "赋值"),
+        // 嵌套对象必须失败。
+        ("{ badge: { dot: true } }", "嵌套对象"),
+        // 分支内的间接嵌套对象同样必须失败。
+        ("{ badge: ready ? { dot: true } : false }", "嵌套对象"),
+    ] {
+        // 解析并取得预期诊断。
+        let error = parse_expression(source, origin()).expect_err("非法对象必须失败");
+        // 原因必须命中对应结构名称。
+        assert!(error.message.contains(expected), "{}", error.message);
+        // 每个错误必须携带修复建议。
+        assert!(!error.suggestion.is_empty());
+    }
+}
+
+// 验证普通表达式生成路径不会猜测对象目标类型。
+#[test]
+fn rejects_object_in_generic_expression_codegen() {
+    // 解析一个合法的单层对象。
+    let expression = parse_expression("{ count: 7 }", origin()).expect("对象应成功解析");
+    // 普通生成器必须返回结构属性边界诊断。
+    let error = generate_expression(&expression, None).expect_err("普通生成路径必须拒绝对象");
+    // 诊断必须指向已登记结构属性。
+    assert!(error.message.contains("已登记的结构属性"));
 }
 
 // 验证内置调用和 For 绑定执行专用形状约束。
