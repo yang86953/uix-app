@@ -132,6 +132,8 @@ Picture/offscreen 的 create/destroy/paint/blit/blur 全部围绕唯一 RHI text
 
 `IGraphicsContext::blit_soft_fallback_tile` 及 D3D11、D3D12、OpenGL adapter 内对应的私有上传纹理、pipeline 和转发已经移除；紧边界 `SoftFallbackTile` 只作为 draw backend 的 staging 描述存在。`clear_render_target`、`clear_rects`、`bind_swapchain_target` legacy 门面和对应逐 UI capability 也已删除，局部与整面清理由通用 `FramePlan` 的 `Clear` / `ClearRect` 在 retained RHI target 上执行；adapter 内部仅保留 acquire、pass 和最终 present 所需的低层 target 恢复。solid/stroke rect、glyph、linear/radial gradient、sector、solid mesh、box shadow 与 image blit 的 `IGraphicsContext::draw_*` ABI、thread-bound 转发和原生 context wrapper 同样已经移除；`NativeRasterCaps` 是 graphics backend 从薄 RHI `GraphicsCapabilities` 投影出的 renderer 内部值，只陈述 retained framebuffer 与 RHI Additive 事实，逐图元 pipeline 由固定 RHI probe 验证。主 `FrameEncoder` 的 Additive、scroll、图片与 CPU segment 现在必须整条无损 lower 到 retained RHI，其中 CPU segment 作为 sampled texture 合成；前置 damage 先以同代纹理上的 `ClearRect` 提交，任何缺失能力都返回 typed failure，不再读回 CPU 后整面 replace。旧 `IGraphicsContext::blit_soft_fallback`、`IGraphicsContext::upload_surface_pixels`、逐命令 legacy frame 执行器及各 adapter 的整面上传实现也已经移除。主 surface 的最终 present 和 Picture/effect 前有序边界只接受 retained RHI 完整提交：空新帧以透明 dummy pass 初始化 retained texture，无新绘制时重新采样既有 retained 内容；未覆盖的非空队列返回 typed failure，不再销毁 retained texture 后调用逐 UI adapter 或 direct present swapchain。CPU presenter 的 `PixelBuffer` present 保持独立。
 
+页面销毁或切换阶段产生的空源、空目标或全透明 `PictureBlit` 是无像素贡献的 canonical no-op：录制入口不再把它加入新命令流，retained RHI lowering 仍能安全消费历史命令流中的同类记录。非空越界源和无法保持像素语义的输入继续返回 typed failure。
+
 GPU 基线内的操作不能依赖常态 CPU fallback。可选效果可以显式声明等价降级，但不能静默改变视觉结果。
 
 ## 当前映射与目标差距

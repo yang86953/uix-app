@@ -33,8 +33,8 @@ use self::pixels::{
     full_frame_image_blit, pixel_len,
 };
 use self::source_over::{
-    crop_and_translate_source_over_command, source_over_commands_have_safe_grouping,
-    stroke_batches_can_merge, stroke_visible_bounds, PictureCropTranslation,
+    PictureCropTranslation, crop_and_translate_source_over_command,
+    source_over_commands_have_safe_grouping, stroke_batches_can_merge, stroke_visible_bounds,
 };
 
 /// Ordered command recorder for exactly one frame.
@@ -414,6 +414,11 @@ impl FrameEncoder {
         opacity: FrameOpacity,
         additive: bool,
     ) {
+        // 页面销毁阶段的空图片或透明图片与 CPU 参考执行一致，属于安全 no-op。
+        if src.is_empty() || dst.is_empty() || opacity.is_transparent() {
+            // 不把无像素贡献的命令交给 retained RHI lowering。
+            return;
+        }
         self.commands.push(FrameCommand::PictureBlit {
             image,
             src,

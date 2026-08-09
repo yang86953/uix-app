@@ -570,7 +570,8 @@ fn lower_frame_encoder(
                 opacity,
                 additive,
             } => {
-                if opacity.is_transparent() {
+                // 历史命令流中的透明或空图片与 CPU 参考执行一样保持 no-op。
+                if opacity.is_transparent() || src.is_empty() || dst.is_empty() {
                     continue;
                 }
                 let Some(pixels) = copy_image_crop(image, *src)? else {
@@ -610,7 +611,6 @@ fn lower_frame_encoder(
     // 空命令流仍需可执行的计划；调用方会为片段补透明 dummy draw。
     Ok(Some(LoweredFrame { segments }))
 }
-
 // 构造清空后无其它绘制时使用的透明 dummy mesh。
 fn empty_frame_draw(viewport: RhiViewport) -> RhiOp {
     // 透明 SrcOver draw 不改变已经由 load action 初始化的目标。
