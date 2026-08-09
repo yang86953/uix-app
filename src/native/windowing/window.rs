@@ -4,7 +4,7 @@ use super::event::FrameRequestToken;
 use crate::core::error::{Error, Result};
 use crate::core::geometry::Point;
 use crate::core::WindowId;
-use crate::native::present::{IGraphicsContext, IPresenter};
+use crate::native::present::IPresenter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeFrameRequestPhase {
@@ -134,10 +134,6 @@ pub trait PlatformWindow {
     /// cancel the OS object must at least suppress delivery for this token.
     fn cancel_native_frame(&mut self, _token: FrameRequestToken) -> Result<()> {
         Ok(())
-    }
-
-    fn graphics_context(&mut self) -> Option<&mut dyn IGraphicsContext> {
-        None
     }
 
     fn native_surface_ptr(&self) -> *mut std::ffi::c_void {

@@ -14,7 +14,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::core::error::{Errc, Error, Result};
-use crate::native::present::{IGraphicsContext, IPresenter};
+use crate::native::present::IPresenter;
 use crate::native::windowing::event::FrameRequestToken;
 use crate::native::windowing::shared::state::WindowState;
 use crate::native::windowing::window::{
@@ -217,8 +217,6 @@ pub struct PlatformWindowCore<O: WindowOps> {
     state: Rc<RefCell<WindowState>>,
     ops: O,
     presenter: Box<dyn IPresenter>,
-    /// GPU 图形上下文（GPU/Hybrid 模式时设置，CPU 模式为 None）。
-    gpu_ctx: Option<Box<dyn IGraphicsContext>>,
     closed: bool,
 }
 
@@ -228,24 +226,6 @@ impl<O: WindowOps> PlatformWindowCore<O> {
             state,
             ops,
             presenter,
-            gpu_ctx: None,
-            closed: false,
-        }
-    }
-
-    /// 创建带 GPU 上下文的窗口（GPU/Hybrid 渲染模式）。
-    #[allow(dead_code)] // Reserved for crate-local platform assembly only (#187).
-    pub(crate) fn with_gpu(
-        state: Rc<RefCell<WindowState>>,
-        ops: O,
-        presenter: Box<dyn IPresenter>,
-        gpu_ctx: Box<dyn IGraphicsContext>,
-    ) -> Self {
-        Self {
-            state,
-            ops,
-            presenter,
-            gpu_ctx: Some(gpu_ctx),
             closed: false,
         }
     }
@@ -279,9 +259,6 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
     fn close(&mut self) -> Result<()> {
         if self.closed {
             return Ok(());
-        }
-        if let Some(gpu_ctx) = self.gpu_ctx.as_mut() {
-            gpu_ctx.try_shutdown()?;
         }
         self.ops.os_close()?;
         self.closed = true;
@@ -349,13 +326,6 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
     }
     fn native_handle(&self) -> &dyn INativeHandle {
         self
-    }
-
-    fn graphics_context(&mut self) -> Option<&mut dyn IGraphicsContext> {
-        match self.gpu_ctx {
-            Some(ref mut ctx) => Some(&mut **ctx),
-            None => None,
-        }
     }
 
     fn native_surface_ptr(&self) -> *mut std::ffi::c_void {

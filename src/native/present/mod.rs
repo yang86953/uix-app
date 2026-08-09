@@ -354,8 +354,6 @@ pub enum PresentMode {
     Swapchain,
     /// CPU pixels uploaded via the dedicated [`PixelUploadSurface`] contract.
     PixelUpload,
-    /// Pure CPU + [`IPresenter`]; no [`IGraphicsContext`] (app/bootstrap only).
-    CpuPresenter,
 }
 
 impl fmt::Display for PresentMode {
@@ -363,7 +361,6 @@ impl fmt::Display for PresentMode {
         f.write_str(match self {
             Self::Swapchain => "swapchain",
             Self::PixelUpload => "pixel_upload",
-            Self::CpuPresenter => "cpu_presenter",
         })
     }
 }
