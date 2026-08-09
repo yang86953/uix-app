@@ -48,6 +48,62 @@ pub(super) fn parse_block_line(text: &str, segments: &mut Vec<RichTextSegment>) 
     false
 }
 
+// 解析正文行与下一行组成的 Setext 标题，并返回统一标题样式和正文。
+pub(super) fn parse_setext_heading<'a>(
+    // 正文生命周期独立于仅用于判定的下划线行。
+    text: &'a str,
+    // 下划线行只在当前调用中读取。
+    underline: &str,
+) -> Option<(RichTextStyle, &'a str)> {
+    // 空正文或只含空白的行不能形成标题。
+    if text.trim().is_empty() {
+        // 让下划线行回到原有字面解析路径。
+        return None;
+    }
+    // 已经属于其他受支持块级语法的正文不能被 Setext 重新解释。
+    if parse_atx_heading(text).is_some()
+        // 无序列表保持列表优先级。
+        || parse_unordered_list(text).is_some()
+        // 有序列表保持列表优先级。
+        || parse_ordered_list(text).is_some()
+        // 引用行保持引用优先级。
+        || parse_block_quote(text).is_some()
+        // 孤立 Setext 标记行本身保持字面语义，不能成为下一标记的正文。
+        || parse_setext_underline(text).is_some()
+    {
+        // 当前正文按原块级语法处理。
+        return None;
+    }
+    // 下划线必须由单一种类的等号或连字符组成。
+    let level = parse_setext_underline(underline)?;
+    // 返回与 ATX 标题共享的 Typography 样式。
+    Some((heading_style(level), text))
+}
+
+// 解析 Setext 下划线并返回对应标题级别。
+fn parse_setext_underline(text: &str) -> Option<u8> {
+    // 只移除块级标记允许的 ASCII 空格和制表符外围空白。
+    let marker = text.trim_matches(|ch| ch == ' ' || ch == '\t');
+    // 标记至少包含一个可见字符。
+    let first = marker.as_bytes().first().copied()?;
+    // 一级使用等号，二级使用连字符，其他起始字符无效。
+    let level = match first {
+        // 等号下划线映射 Heading1。
+        b'=' => 1,
+        // 连字符下划线映射 Heading2。
+        b'-' => 2,
+        // 其他字符让整行保持原有字面语义。
+        _ => return None,
+    };
+    // 标记内部只能重复同一个 ASCII 字符。
+    if !marker.as_bytes().iter().all(|byte| *byte == first) {
+        // 混合或带其他字符的下划线不是 Setext 标记。
+        return None;
+    }
+    // 返回已经验证的标题级别。
+    Some(level)
+}
+
 // 解析行首一级引用，要求大于号后紧跟空格或制表符。
 fn parse_block_quote(text: &str) -> Option<&str> {
     // 先移除引用的大于号标记。
