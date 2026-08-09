@@ -82,6 +82,11 @@ mod input_group_codegen;
 // 集中验证 InputGroup 生成与拒绝路径。
 #[cfg(test)]
 mod input_group_codegen_tests;
+// 定义 Slider 范围、步长与状态绑定的公开 API 代码生成边界。
+mod slider_codegen;
+// 集中验证 Slider 生成与拒绝路径。
+#[cfg(test)]
+mod slider_codegen_tests;
 // 定义 FloatButton 内置组件的公开 API 代码生成边界。
 mod float_button_codegen;
 // 定义布局容器、Row/Col 栅格与 Grid/Col 的公开 API 代码生成边界。
@@ -172,6 +177,8 @@ pub(crate) use input_codegen::generate_input;
 pub(crate) use input_number_codegen::generate_input_number;
 // 向核心元素生成器暴露 InputGroup 专用映射。
 pub(crate) use input_group_codegen::generate_input_group;
+// 向核心元素生成器暴露 Slider 专用映射。
+pub(crate) use slider_codegen::generate_slider;
 // 向核心元素生成器暴露 FloatButton 专用映射。
 pub(crate) use float_button_codegen::generate_float_button;
 // 向核心元素生成器暴露布局组件专用映射。
