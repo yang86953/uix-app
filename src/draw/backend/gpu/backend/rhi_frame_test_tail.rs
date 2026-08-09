@@ -2,8 +2,8 @@
 
 // 引入测试所需的编码器几何和 raster 操作。
 use crate::draw::painting::{
-    FrameEncoder, FrameEncoderError, FrameRadius, FrameRasterOp, FrameRect, FrameStrokeRect,
-    FrameStrokeWidth,
+    FrameCommand, FrameEncoder, FrameEncoderError, FrameImage, FrameOpacity, FrameRadius,
+    FrameRasterOp, FrameRect, FrameSampledRect, FrameStrokeRect, FrameStrokeWidth,
 };
 // 引入 RHI 操作枚举以区分普通与加法 shape pipeline。
 use crate::draw::backend::rhi_renderer::RhiOp;
@@ -11,6 +11,83 @@ use crate::draw::backend::rhi_renderer::RhiOp;
 use crate::draw::Color;
 // 引入测试使用的通用纹理和 viewport 值。
 use crate::native::present::rhi::{RhiColor, RhiExtent, RhiViewport, TextureHandle};
+
+// 页面销毁产生的空 PictureBlit 必须与 CPU 参考执行保持相同的 no-op 语义。
+#[test]
+// 同时锁定录制入口和历史命令流的 retained RHI 兼容边界。
+fn empty_picture_blit_is_a_lossless_no_op() {
+    // 创建一张有效的一像素图片，隔离空目标这一具体页面切换事实。
+    let image = match FrameImage::solid(1, 1, Color::red()) {
+        // 合法图片应成功构造。
+        Ok(image) => image,
+        // 测试载荷构造失败属于测试错误。
+        Err(error) => panic!("test picture should be valid: {error:?}"),
+    };
+    // 创建公开录制入口使用的主帧编码器。
+    let mut recorded = match FrameEncoder::new(8, 6) {
+        // 合法尺寸应成功构造。
+        Ok(encoder) => encoder,
+        // 测试尺寸失败属于测试错误。
+        Err(error) => panic!("test encoder should be valid: {error:?}"),
+    };
+    // 模拟页面销毁后宽度归零的 Picture 目标。
+    recorded.blit_picture(
+        // 图片本身保持有效。
+        image.clone(),
+        // 源区域覆盖完整图片。
+        FrameRect::new(0, 0, 1, 1),
+        // 目标宽度为零，因此没有像素贡献。
+        FrameRect::new(4, 3, 0, 1),
+    );
+    // 新录制入口不应保留这个安全 no-op。
+    assert!(recorded.commands().is_empty());
+
+    // 创建一个模拟旧缓存命令流的独立编码器。
+    let mut retained = match FrameEncoder::new(8, 6) {
+        // 合法尺寸应成功构造。
+        Ok(encoder) => encoder,
+        // 测试尺寸失败属于测试错误。
+        Err(error) => panic!("retained test encoder should be valid: {error:?}"),
+    };
+    // 直接追加旧版可能保留下来的空 PictureBlit。
+    let append = retained.append_validated_commands(vec![FrameCommand::PictureBlit {
+        // 保留有效图片载荷。
+        image,
+        // 保留有效源区域。
+        src: FrameRect::new(0, 0, 1, 1),
+        // 复现整数空目标被规范化为零 sampled rect 的事实。
+        dst: FrameSampledRect::from_integer(FrameRect::new(4, 3, 0, 1)),
+        // 使用可见 opacity，证明 no-op 来自空几何。
+        opacity: FrameOpacity::opaque(),
+        // 页面切换图片沿用普通 SrcOver。
+        additive: false,
+    }]);
+    // 已验证命令追加不应引入参数错误。
+    assert!(append.is_ok());
+    // 对旧命令流执行纯 lowering，不触碰原生设备。
+    let lowered = super::lower_frame_encoder(
+        // 传入包含空 PictureBlit 的完整命令流。
+        &retained,
+        // 使用与逻辑尺寸相同的物理 viewport。
+        RhiViewport {
+            // 设置物理宽度。
+            width: 8.0,
+            // 设置物理高度。
+            height: 6.0,
+        },
+        // 使用单位水平比例。
+        1.0,
+        // 使用单位垂直比例。
+        1.0,
+    );
+    // 空图片必须完整 lower，而不是返回 Unsupported。
+    let Some(lowered) = lowered.expect("empty picture lowering should not fail") else {
+        // None 会重新触发主 surface typed failure。
+        panic!("empty picture should lower as a no-op");
+    };
+    // 空图片不应生成任何 draw 操作。
+    assert!(lowered.segments[0].operations.is_empty());
+}
 
 // 片段拆分必须保留 scroll 前后的普通 draw 顺序。
 #[test]

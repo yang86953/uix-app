@@ -4,8 +4,8 @@
 //! 由命令契约（[`super::commands`]）与执行路径（[`super::pixels`]）共享。
 
 use crate::core::Rect;
-use crate::draw::geometry::types::Radius;
 use crate::draw::Color;
+use crate::draw::geometry::types::Radius;
 use std::sync::Arc;
 
 use super::error::FrameEncoderError;
@@ -128,6 +128,12 @@ impl FrameSampledRect {
 
     pub const fn height(self) -> f32 {
         f32::from_bits(self.height_bits)
+    }
+
+    // 判断采样目标是否没有任何像素贡献。
+    pub const fn is_empty(self) -> bool {
+        // 构造器只可能通过整数兼容入口产生规范化零尺寸。
+        self.width() <= 0.0 || self.height() <= 0.0
     }
 
     /// 当坐标均为整数像素时返回 [`FrameRect`]，供 splice / 精确裁剪使用。
