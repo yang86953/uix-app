@@ -123,6 +123,7 @@ pub(crate) use float_button_codegen::generate_float_button;
 // 向核心元素生成器暴露布局组件专用映射。
 pub(crate) use layout_codegen::{
     generate_column, generate_container, generate_grid, generate_orphan_col, generate_row,
+    generate_scroll_view,
 };
 // 向核心解析器暴露 UTF-8 安全词法游标。
 pub(crate) use lexer::Cursor;

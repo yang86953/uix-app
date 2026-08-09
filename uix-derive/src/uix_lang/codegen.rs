@@ -12,8 +12,8 @@ use super::{
 use super::{
     expression_uses_event, generate_button_group, generate_column, generate_container,
     generate_divider, generate_expression, generate_float_button, generate_grid,
-    generate_handler_expression, generate_orphan_col, generate_row, generate_space,
-    generate_theme_toggle, generate_typography, generate_window_control,
+    generate_handler_expression, generate_orphan_col, generate_row, generate_scroll_view,
+    generate_space, generate_theme_toggle, generate_typography, generate_window_control,
 };
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
@@ -72,6 +72,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "Column" => generate_column(element),
         // 显式 Grid 映射到公开轨道构建器。
         "Grid" => generate_grid(element),
+        // 滚动容器映射到公开 ScrollBuilder，并保留状态所有权。
+        "ScrollView" => generate_scroll_view(element),
         // Col 只能由 Row 或 Grid 解释其父级布局语义。
         "Col" => generate_orphan_col(element),
         // 图标映射到公开 Icon 组件。
@@ -102,7 +104,7 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column 或 Grid，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid 或 ScrollView，或先登记组件状态",
         )),
     }
 }
@@ -518,8 +520,8 @@ fn generate_child_statements(
     Ok(quote! { #(#statements)* })
 }
 
-// 生成一个非控制节点的 View 表达式。
-fn generate_node_view(node: &Node) -> Result<TokenStream, Diagnostic> {
+// 生成一个非控制节点的 View 表达式，并向专用布局映射共享单子节点入口。
+pub(super) fn generate_node_view(node: &Node) -> Result<TokenStream, Diagnostic> {
     // 按节点类型生成公开 View。
     match node {
         // 普通元素递归生成。
