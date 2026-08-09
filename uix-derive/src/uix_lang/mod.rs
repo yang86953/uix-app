@@ -47,6 +47,8 @@ mod expression_codegen;
 mod expression_lexer;
 // 定义受限表达式优先级解析与语义验证。
 mod expression_parser;
+// 定义 FloatButton 内置组件的公开 API 代码生成边界。
+mod float_button_codegen;
 // 集中验证表达式与控制绑定 Gate。
 #[cfg(test)]
 mod expression_tests;
@@ -111,6 +113,8 @@ pub(crate) use expression_codegen::{
 pub(crate) use expression_lexer::*;
 // 向核心解析器暴露受限表达式入口。
 pub(crate) use expression_parser::parse_expression;
+// 向核心元素生成器暴露 FloatButton 专用映射。
+pub(crate) use float_button_codegen::generate_float_button;
 // 向核心解析器暴露 UTF-8 安全词法游标。
 pub(crate) use lexer::Cursor;
 // 向过程宏入口暴露文档解析函数。

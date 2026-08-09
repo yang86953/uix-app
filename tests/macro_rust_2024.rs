@@ -97,3 +97,18 @@ fn public_macros_accept_rust_2024_const_expressions() {
     let _translated = uix::t!("macro.rust.2024", const { 13 });
     // 结束公开宏 Rust 2024 回归。
 }
+
+// 定义 FloatButton 公开宏消费者使用的点击处理器。
+fn open_feedback() {
+    // 编译 Gate 不需要运行时副作用。
+}
+
+// 验证真实消费 crate 可编译完整 FloatButton 标签契约。
+#[test]
+fn public_uix_macro_compiles_float_button() {
+    // 让过程宏生成现有 FloatButton、Placement、badge 与点击绑定。
+    let _view = uix::uix!(
+        r#"<FloatButton icon="message" description="反馈" tooltip="打开反馈" position="leftTop" badge={{ count: 7, dot: true }} @click="open_feedback" />"#
+    );
+    // 编译成功即证明公开路径与类型契约闭合。
+}

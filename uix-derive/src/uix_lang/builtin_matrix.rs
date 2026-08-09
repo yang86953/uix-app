@@ -16,11 +16,6 @@ const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
         name: "App",
         category: "标签语法 / App 应用入口",
     },
-    // 通用组件规划项。
-    PlannedBuiltin {
-        name: "FloatButton",
-        category: "内置组件 / 通用组件",
-    },
     // 布局组件规划项。
     PlannedBuiltin {
         name: "Col",
@@ -434,7 +429,7 @@ pub(crate) fn planned_builtin_diagnostic(element: &Element) -> Option<Diagnostic
             element.name, entry.category
         ),
         // 给出当前真实支持集合。
-        "当前使用 Text、Label、Button、ButtonGroup、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row 或 Column，或先完成该组件的属性映射 Gate",
+        "当前使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row 或 Column，或先完成该组件的属性映射 Gate",
     ))
 }
 
@@ -461,9 +456,8 @@ mod tests {
             .iter()
             .map(|entry| entry.category)
             .collect::<BTreeSet<_>>();
-        // 六类内置组件必须全部出现。
+        // 仍有规划中标签的五类内置组件必须全部出现。
         for category in [
-            "内置组件 / 通用组件",
             "内置组件 / 布局组件",
             "内置组件 / 输入组件",
             "内置组件 / 展示组件",
