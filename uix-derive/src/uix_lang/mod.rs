@@ -54,6 +54,11 @@ mod layout_codegen;
 // 集中验证布局标签生成、父子形状与拒绝路径。
 #[cfg(test)]
 mod layout_codegen_tests;
+// 定义 VirtualScroll 数据快照与惰性行模板的公开 API 代码生成边界。
+mod virtual_scroll_codegen;
+// 集中验证 VirtualScroll 生成、身份与拒绝路径。
+#[cfg(test)]
+mod virtual_scroll_codegen_tests;
 // 集中验证表达式与控制绑定 Gate。
 #[cfg(test)]
 mod expression_tests;
@@ -125,6 +130,8 @@ pub(crate) use layout_codegen::{
     generate_column, generate_container, generate_grid, generate_orphan_col, generate_row,
     generate_scroll_view,
 };
+// 向核心元素生成器暴露 VirtualScroll 专用映射。
+pub(crate) use virtual_scroll_codegen::generate_virtual_scroll;
 // 向核心解析器暴露 UTF-8 安全词法游标。
 pub(crate) use lexer::Cursor;
 // 向过程宏入口暴露文档解析函数。

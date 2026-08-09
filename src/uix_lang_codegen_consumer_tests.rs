@@ -132,6 +132,17 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _scroll_view: ViewNode = crate::uix!(
         r#"<ScrollView direction="both" offset={scroll_offset} height="320px"><Column><Text>First</Text><Text>Second</Text></Column></ScrollView>"#
     );
+    // 提供 VirtualScroll 拥有所有权的数据快照来源。
+    let virtual_items = vec![ConsumerItem {
+        // 设置稳定业务身份。
+        id: 11,
+        // 设置可插值行内容。
+        name: "Virtual".to_string(),
+    }];
+    // 验证 VirtualScroll 的数据、行高、索引、key 与公共样式只依赖公开 prelude。
+    let _virtual_scroll: ViewNode = crate::uix!(
+        r#"<VirtualScroll data={virtual_items} rowHeight="32px" item={item} height="160px"><For {item} {index} in {virtual_items} key={item.id}><Container direction="row"><Text>{index}</Text><Text>{item.name}</Text></Container></For></VirtualScroll>"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
