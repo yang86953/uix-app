@@ -223,7 +223,8 @@ macro_rules! t {
     ($key:literal) => {
         $crate::ui::t_lookup($key)
     };
-    ($key:literal $(, $arg:expr_2021)+) => {
+    // 格式化参数遵循当前 crate 的 Rust 2024 表达式语义。
+    ($key:literal $(, $arg:expr)+) => {
         $crate::ui::t_lookup_fmt($key, &[$($crate::t_fmt_arg!($arg)),+])
     };
 }
@@ -232,7 +233,8 @@ macro_rules! t {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! t_fmt_arg {
-    ($arg:expr_2021) => {
+    // 单个格式化参数允许使用 Rust 2024 新增的表达式形式。
+    ($arg:expr) => {
         ::std::string::ToString::to_string(&$arg)
     };
 }

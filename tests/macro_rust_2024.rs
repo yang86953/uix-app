@@ -1,0 +1,99 @@
+//! Rust 2024 宏表达式片段回归。
+
+// 导入公开 UI 与几何契约，确保测试站在应用调用方边界。
+use uix::prelude::*;
+// 显式导入未纳入应用 prelude 的布局能力契约。
+use uix::ui::WidgetLayout;
+
+// 定义可在 const 块中构造的零尺寸测试组件。
+#[derive(Clone, Copy)]
+// 保存不携带运行时状态的测试组件身份。
+struct Rust2024Widget;
+
+// 为测试组件提供最小布局能力。
+impl WidgetLayout for Rust2024Widget {
+    // 返回稳定的零尺寸自然大小。
+    fn measure(&self, _constraints: Constraints) -> Size {
+        // 测试只验证宏解析，不引入布局噪声。
+        Size::zero()
+        // 结束最小测量实现。
+    }
+    // 结束测试组件布局能力。
+}
+
+// 让公开组件胶水宏直接接收 Rust 2024 const 块表达式。
+uix::impl_widget_component!(Rust2024Widget; Layout; tab_index => const { 4 });
+
+// 定义可在 views 宏中由 const 块产生的零状态视图。
+#[derive(Clone, Copy)]
+// 保存测试视图身份。
+struct Rust2024View;
+
+// 把测试视图构造成公开视图节点。
+impl View for Rust2024View {
+    // 构建只包含测试组件的叶节点。
+    fn build(self) -> ViewNode {
+        // 返回公开叶节点以验证 views 宏的应用侧契约。
+        ViewNode::leaf(Rust2024Widget)
+        // 结束测试视图构建。
+    }
+    // 结束测试视图实现。
+}
+
+// 验证错误传播宏接受顶层 const 块表达式。
+fn rust_2024_uix_try() -> uix::core::Result<i32> {
+    // 通过 const 块构造稳定成功值。
+    let value = uix::uix_try!(const { Ok::<i32, uix::core::Error>(7) });
+    // 返回宏解包后的值。
+    Ok(value)
+    // 结束 UIX 错误传播辅助函数。
+}
+
+// 验证标准错误传播宏同样接受顶层 const 块表达式。
+fn rust_2024_uix_try_std() -> uix::core::Result<i32> {
+    // 使用同一错误类型避免给测试引入无关转换。
+    let value = uix::uix_try_std!(const { Ok::<i32, uix::core::Error>(9) });
+    // 返回宏解包后的值。
+    Ok(value)
+    // 结束标准错误传播辅助函数。
+}
+
+// 将编译期覆盖和运行时结果绑定在同一个公开宏回归中。
+#[test]
+// 验证所有代表性公开宏采用 Rust 2024 表达式语义。
+fn public_macros_accept_rust_2024_const_expressions() {
+    // 验证两个错误传播宏保留原有成功语义。
+    assert_eq!(rust_2024_uix_try().expect("uix_try 应返回成功值"), 7);
+    // 验证标准错误传播宏保留原有成功语义。
+    assert_eq!(
+        rust_2024_uix_try_std().expect("uix_try_std 应返回成功值"),
+        9
+    );
+    // 验证组件胶水宏确实使用 const 块给出的索引。
+    assert_eq!(WidgetComponent::tab_index(&Rust2024Widget), 4);
+    // 以 const 块同时构造父组件与子组件。
+    let _tree = uix::tree!(const { Rust2024Widget } => [const { Rust2024Widget }]);
+    // 以 const 块构造公开视图列表元素。
+    let views = uix::views![const { Rust2024View }];
+    // 确认视图列表仍只产生一个节点。
+    assert_eq!(views.len(), 1);
+    // 以 const 块构造语义类型并生成处理器登记。
+    let registration = uix::semantic_handler!(const { SemanticKind::Change }, |event| {
+        // 保持事件参数已被显式消费。
+        let _ = event;
+        // 结束无副作用语义处理体。
+    });
+    // 确认语义类型没有在宏展开中改变。
+    assert_eq!(registration.kind, SemanticKind::Change);
+    // 准备需要由闭包宏捕获的值。
+    let captured = String::from("captured");
+    // 让闭包体本身成为 Rust 2024 顶层 const 块表达式。
+    let closure = uix::with_cloned!(captured; const { 11 });
+    // 确认闭包宏保留返回值。
+    assert_eq!(closure(), 11);
+    // 验证公开格式化参数宏接受 const 块。
+    assert_eq!(uix::t_fmt_arg!(const { 13 }), "13");
+    // 验证翻译宏的可变参数入口接受 const 块。
+    let _translated = uix::t!("macro.rust.2024", const { 13 });
+    // 结束公开宏 Rust 2024 回归。
+}

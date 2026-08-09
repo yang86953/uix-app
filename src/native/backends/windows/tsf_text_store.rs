@@ -44,7 +44,8 @@ fn panic_if_requested(operation: &str) {
 fn panic_if_requested(_: &str) {}
 
 macro_rules! ffi_guard {
-    ($event_sink:expr_2021, $operation:literal, $body:block) => {{
+    // 事件接收器参数采用 Rust 2024 表达式片段语义。
+    ($event_sink:expr, $operation:literal, $body:block) => {{
         let event_sink = $event_sink;
         match catch_unwind(AssertUnwindSafe(|| {
             panic_if_requested($operation);

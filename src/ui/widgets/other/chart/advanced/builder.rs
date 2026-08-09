@@ -109,7 +109,8 @@ impl ChartPlaceholder {
     pub fn data<T: 'static>(mut self, data: T) -> Self {
         let mut any: Box<dyn Any> = Box::new(data);
         macro_rules! take_payload {
-            ($ty:ty, $payload:expr_2021, $kind:expr_2021) => {
+            // 图表载荷与类型标记采用 Rust 2024 表达式片段语义。
+            ($ty:ty, $payload:expr, $kind:expr) => {
                 match any.downcast::<$ty>() {
                     Ok(value) => {
                         self.payload = $payload(*value);
