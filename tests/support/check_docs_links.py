@@ -11,10 +11,10 @@ from urllib.parse import unquote, urlparse
 ROOT = Path(__file__).resolve().parents[2]
 
 # Unicode escapes avoid source-encoding issues on Windows consoles.
-PROGRESS = "\u8fdb\u5ea6.md"
 PRODUCT = "\u4ea7\u54c1.md"
 USAGE = "\u4f7f\u7528.md"
 ARCHITECTURE = "\u67b6\u6784.md"
+FEATURE = "\u529f\u80fd.md"
 DOMAIN = "\u9886\u57df"
 DEMAND = "\u6309\u9700\u9a71\u52a8.md"
 PUBLIC_API = "\u516c\u5f00API.md"
@@ -42,15 +42,15 @@ REQUIRED_FILES = (
     ROOT / "README.md",
     ROOT / "docs" / "README.md",
     ROOT / "docs" / PRODUCT,
+    ROOT / "docs" / FEATURE,
     ROOT / "docs" / USAGE,
     ROOT / "docs" / ARCHITECTURE,
-    ROOT / "docs" / PROGRESS,
 )
 ROLE_DIRECTORIES = (
     ROOT / "docs" / PRODUCT.removesuffix(".md"),
+    ROOT / "docs" / FEATURE.removesuffix(".md"),
     ROOT / "docs" / USAGE.removesuffix(".md"),
     ROOT / "docs" / ARCHITECTURE.removesuffix(".md"),
-    ROOT / "docs" / PROGRESS.removesuffix(".md"),
 )
 FORBIDDEN_GENERATED_INDEXES = frozenset(
     {"\u76ee\u5f55\u7d22\u5f15.md", "\u9879\u76ee\u4e0a\u4e0b\u6587\u7d22\u5f15.md"}

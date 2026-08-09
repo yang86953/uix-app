@@ -36,7 +36,7 @@ class CheckDocsLinksTests(unittest.TestCase):
         self.assertTrue(CHECK.is_external_target(raw))
         self.assertTrue(CHECK.is_external_document_target(raw))
         self.assertIsNone(
-            CHECK.validate_local_target(CHECK.ROOT / "docs/进度.md", raw, {})
+            CHECK.validate_local_target(CHECK.ROOT / "docs/功能.md", raw, {})
         )
 
     def test_angle_bracket_target_preserves_spaces(self) -> None:
@@ -46,8 +46,8 @@ class CheckDocsLinksTests(unittest.TestCase):
         self.assertEqual(fragment, "An Anchor")
 
     def test_relative_target_still_uses_local_validation(self) -> None:
-        md = CHECK.ROOT / "docs/进度.md"
-        raw = "<进度/理想使用演进.md#进度总览>"
+        md = CHECK.ROOT / "docs/功能.md"
+        raw = "<功能/能力.md#能力与边界>"
 
         self.assertFalse(CHECK.is_external_target(raw))
         self.assertIsNone(CHECK.validate_local_target(md, raw, {}))
@@ -55,7 +55,7 @@ class CheckDocsLinksTests(unittest.TestCase):
     def test_all_four_role_indexes_are_required(self) -> None:
         required_names = {path.name for path in CHECK.REQUIRED_FILES}
 
-        self.assertTrue({"产品.md", "使用.md", "架构.md", "进度.md"}.issubset(required_names))
+        self.assertTrue({"产品.md", "功能.md", "使用.md", "架构.md"}.issubset(required_names))
 
     def test_legacy_vault_project_path_is_detected(self) -> None:
         text = r"C:\data\note\我的项目\软件\UIX App\使用.md"
