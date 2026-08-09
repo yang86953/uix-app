@@ -9,7 +9,6 @@ use ash::vk;
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
     GraphicsApi, GraphicsContextCaps, IGraphicsContext, PixelUploadSurface, PresentDamage,
-    PresentFrame,
 };
 
 #[cfg(target_os = "macos")]

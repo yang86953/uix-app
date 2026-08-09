@@ -242,20 +242,6 @@ mod native_raster_profile_tests {
     }
 }
 
-/// Unified present payload for [`IGraphicsContext::present`] (M7).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PresentFrame<'a> {
-    /// GPU swapchain / equivalent (native raster path).
-    Swapchain { damage: PresentDamage },
-    /// CPU raster upload (upload-present path).
-    PixelBuffer {
-        pixels: &'a [u32],
-        width: i32,
-        height: i32,
-        damage: PresentDamage,
-    },
-}
-
 /// Result of a non-presenting availability test while a swapchain is idle.
 ///
 /// This probe is not an entry detector: callers invoke it only after a normal
@@ -378,9 +364,9 @@ impl fmt::Display for RasterMode {
 /// Orthogonal to [`RasterMode`] and [`GraphicsApi`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PresentMode {
-    /// GPU swapchain / equivalent via [`IGraphicsContext::present`].
+    /// GPU swapchain / equivalent via thin RHI or a dedicated external presenter view.
     Swapchain,
-    /// CPU pixels uploaded via [`IGraphicsContext::present`] (`PixelBuffer`).
+    /// CPU pixels uploaded via the dedicated [`PixelUploadSurface`] contract.
     PixelUpload,
     /// Pure CPU + [`IPresenter`]; no [`IGraphicsContext`] (app/bootstrap only).
     CpuPresenter,
@@ -618,5 +604,5 @@ pub(crate) mod rhi;
 // 兼容期高层 graphics context，逐步由 `rhi` 替代。
 mod traits;
 
-// 图形 context 与 PixelUpload surface SPI 只供 crate 内部 backend 与 bootstrap 使用。
-pub(crate) use self::traits::{IGraphicsContext, PixelUploadSurface};
+// 图形 context 与 recipe 专用呈现 SPI 只供 crate 内部 backend 与 bootstrap 使用。
+pub(crate) use self::traits::{IGraphicsContext, PixelUploadSurface, SwapchainPresentation};

@@ -41,10 +41,32 @@ fn rhi_resize_extent_for_logical(
     ))
 }
 
-// 定义只属于 CPU PixelUpload recipe 的 surface 尺寸契约。
+// 定义只属于 CPU PixelUpload recipe 的 surface 生命周期与提交契约。
 pub(crate) trait PixelUploadSurface {
     // 按逻辑窗口尺寸重建像素上传 surface。
     fn resize_pixel_upload_surface(&mut self, width: i32, height: i32) -> Result<(), Error>;
+
+    // 把 CPU retained pixels 提交给当前 PixelUpload surface。
+    fn present_pixels(
+        // 借用当前 PixelUpload surface owner。
+        &mut self,
+        // 接收 premultiplied BGRA 像素。
+        pixels: &[u32],
+        // 接收物理像素宽度。
+        width: i32,
+        // 接收物理像素高度。
+        height: i32,
+        // 接收最终提交 damage。
+        damage: PresentDamage,
+    ) -> Result<(), Error>;
+}
+
+// 定义 external presenter 专用的 swapchain 提交契约。
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+// 仅为需要 external swapchain 交换的 context 暴露提交能力。
+pub(crate) trait SwapchainPresentation {
+    // 提交已经由外部 GPU renderer 完成绘制的 swapchain surface。
+    fn present_swapchain(&mut self, damage: PresentDamage) -> Result<(), Error>;
 }
 
 pub trait IGraphicsContext {
@@ -61,6 +83,13 @@ pub trait IGraphicsContext {
     #[allow(private_interfaces)]
     fn pixel_upload_surface(&mut self) -> Option<&mut dyn PixelUploadSurface> {
         // GPU-native 与不支持像素上传的 context 默认不暴露该契约。
+        None
+    }
+
+    // 返回 external presenter 专用的 swapchain 提交视图。
+    #[allow(private_interfaces)]
+    fn swapchain_presentation(&mut self) -> Option<&mut dyn SwapchainPresentation> {
+        // 生产 thin RHI 与 PixelUpload context 默认不暴露外部提交入口。
         None
     }
 
@@ -107,33 +136,6 @@ pub trait IGraphicsContext {
     /// Callers and Drop paths must use this method. Teardown failures stay
     /// typed so recovery can retain the previous owner instead of logging only.
     fn try_shutdown(&mut self) -> Result<(), Error>;
-
-    /// Acquired image identity required by tracked multi-buffer presentation.
-    fn present_image(&self) -> Option<PresentImage> {
-        None
-    }
-
-    fn present_pixels(
-        &mut self,
-        _pixels: &[u32],
-        _width: i32,
-        _height: i32,
-        _damage: PresentDamage,
-    ) -> Result<(), Error> {
-        // 从静态 recipe 快照读取 backend，不扩张派生查询门面。
-        let backend = self.caps().backend;
-        // 返回包含具体 adapter 身份的 typed unsupported 错误。
-        Err(Error::new(
-            crate::core::error::Errc::NotImplemented,
-            format!(
-                "GraphicsBackend {} does not support CPU pixel present",
-                backend
-            ),
-        ))
-    }
-
-    /// 唯一兼容 present 入口；每个 context 必须显式处理自己的 payload。
-    fn present(&mut self, frame: &PresentFrame) -> Result<(), Error>;
 }
 
 // 验证逻辑尺寸到物理 RHI extent 的纯转换契约。

@@ -5,8 +5,8 @@
 // EGL 帧缓冲，present() 时调用 eglSwapBuffers 实现零拷贝呈现。
 // ============================================================================
 
-use crate::core::Error;
-use crate::native::present::{IGraphicsContext, IPresenter, PresentDamage, PresentFrame};
+use crate::core::{Errc, Error};
+use crate::native::present::{IGraphicsContext, IPresenter, PresentDamage};
 pub(crate) struct GpuPresenter {
     gpu_ctx: Box<dyn IGraphicsContext>,
 }
@@ -25,10 +25,18 @@ impl IPresenter for GpuPresenter {
         _height: i32,
         damage: PresentDamage,
     ) -> Result<(), Error> {
-        // 把外部 presenter 的 damage 封装为唯一的 context present payload。
-        let frame = PresentFrame::Swapchain { damage };
-        // 禁止 Wayland presenter 绕过统一 present 边界直接交换 EGL surface。
-        self.gpu_ctx.present(&frame)
+        // 构造后专用 swapchain 提交视图消失属于 native context 状态破坏。
+        let Some(presentation) = self.gpu_ctx.swapchain_presentation() else {
+            // 返回 typed 状态错误，禁止回退已移除的统一 present。
+            return Err(Error::new(
+                // 使用 InvalidState 进入既有恢复路径。
+                Errc::InvalidState,
+                // 明确指出 Wayland external presenter 契约缺失。
+                "Wayland GPU presenter lost its dedicated swapchain presentation view",
+            ));
+        };
+        // 只经 external presenter 专用视图提交已绘制的 EGL swapchain。
+        presentation.present_swapchain(damage)
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {

@@ -31,53 +31,42 @@ impl IGraphicsContext for VulkanContext {
             0,
         )
     }
-
-    fn present_pixels(
-        &mut self,
-        pixels: &[u32],
-        width: i32,
-        height: i32,
-        _damage: PresentDamage,
-    ) -> Result<()> {
-        let device = self.active_device()?;
-        device.ensure_healthy()?;
-        if width <= 0 || height <= 0 {
-            return Ok(());
-        }
-        let result = self
-            .upload_pixels(pixels, width, height)
-            .and_then(|()| self.present_uploaded_pixels());
-        device.observe(result)
-    }
-
-    // 统一 present 入口只允许当前 Vulkan PixelUpload recipe 的载荷。
-    fn present(&mut self, frame: &PresentFrame<'_>) -> Result<()> {
-        // 根据显式 payload 保持 CPU upload 与 swapchain recipe 正交。
-        match frame {
-            // PixelBuffer 复用已经检查 device health 的上传入口。
-            PresentFrame::PixelBuffer {
-                // 借用调用方提供的 premultiplied 像素。
-                pixels,
-                // 保留 payload 的物理宽度。
-                width,
-                // 保留 payload 的物理高度。
-                height,
-                // 保留最终 present damage。
-                damage,
-            } => self.present_pixels(pixels, *width, *height, damage.clone()),
-            // 当前 recipe 不允许无像素载荷的 swapchain 提交。
-            PresentFrame::Swapchain { .. } => Err(Error::new(
-                // 使用参数错误标记 recipe 与 payload 不匹配。
-                Errc::InvalidArgument,
-                // 明确要求调用方使用 PixelBuffer，而不是寻找旁路。
-                "VulkanContext: Swapchain payload is invalid for the PixelUpload recipe",
-            )),
-        }
-    }
 }
 
 // 为 Vulkan CPU PixelUpload recipe 实现专用 surface 生命周期。
 impl PixelUploadSurface for VulkanContext {
+    // 上传 CPU retained pixels 并提交当前 Vulkan PixelUpload swapchain。
+    fn present_pixels(
+        // 借用 Vulkan PixelUpload owner。
+        &mut self,
+        // 接收 premultiplied BGRA 像素。
+        pixels: &[u32],
+        // 接收物理像素宽度。
+        width: i32,
+        // 接收物理像素高度。
+        height: i32,
+        // Vulkan 当前执行完整上传，保留 damage 作为 recipe 语义输入。
+        _damage: PresentDamage,
+    ) -> Result<()> {
+        // 获取当前共享 device lease。
+        let device = self.active_device()?;
+        // present 前拒绝已经丢失的 device。
+        device.ensure_healthy()?;
+        // 非正 extent 没有可提交像素，保持既有空操作语义。
+        if width <= 0 || height <= 0 {
+            // 空像素提交成功且不触碰 swapchain。
+            return Ok(());
+        }
+        // 先上传 staging pixels，再提交已经取得的 swapchain image。
+        let result = self
+            // 把 CPU pixels 写入当前 Vulkan upload buffer。
+            .upload_pixels(pixels, width, height)
+            // 只有上传成功才进入唯一 WSI present。
+            .and_then(|()| self.present_uploaded_pixels());
+        // 让共享 device 观察并分类提交结果。
+        device.observe(result)
+    }
+
     // 重建 Vulkan swapchain 并保持 device-lost typed 映射。
     fn resize_pixel_upload_surface(&mut self, width: i32, height: i32) -> Result<()> {
         // 获取当前共享 device lease。

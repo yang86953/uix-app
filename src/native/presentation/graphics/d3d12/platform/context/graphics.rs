@@ -20,16 +20,6 @@ impl IGraphicsContext for D3d12Context {
         )
     }
 
-    fn present(&mut self, frame: &PresentFrame<'_>) -> Result<()> {
-        match frame {
-            PresentFrame::Swapchain { .. } => self.present_result(),
-            PresentFrame::PixelBuffer { .. } => Err(Error::new(
-                Errc::InvalidArgument,
-                "D3d12Context: PixelBuffer present is not supported",
-            )),
-        }
-    }
-
     fn try_shutdown(&mut self) -> Result<()> {
         self.shutdown_result()
     }
