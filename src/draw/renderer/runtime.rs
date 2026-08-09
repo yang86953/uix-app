@@ -396,7 +396,13 @@ impl RenderTarget for Renderer {
                 "external-presenter Renderer does not support idle present tests",
             )),
             Presentation::BackendManaged => self.session.backend_mut().test_present(),
-            Presentation::PixelUpload(upload) => upload.context.test_present(),
+            // PixelUpload 没有 swapchain idle 状态，不借用 context 兼容入口。
+            Presentation::PixelUpload(_) => Err(Error::new(
+                // 保持与外部 presenter 相同的明确未支持分类。
+                Errc::NotImplemented,
+                // 把不适用原因绑定到当前 presentation recipe。
+                "pixel-upload Renderer does not support idle present tests",
+            )),
         }
     }
 

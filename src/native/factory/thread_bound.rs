@@ -22,7 +22,7 @@ use std::thread::{self, ThreadId};
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
     GraphicsContextCaps, IGraphicsContext, NativeRasterCaps, PixelUploadSurface, PresentDamage,
-    PresentFrame, PresentSurface, PresentTestResult,
+    PresentFrame, PresentSurface,
 };
 
 pub(crate) fn bind_to_current_thread(
@@ -215,7 +215,6 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
     }
 
     forward_result!(present(frame: &PresentFrame) -> ());
-    forward_result!(test_present() -> PresentTestResult);
 }
 
 // 在线程绑定边界实现 CPU PixelUpload 的专用 surface resize。

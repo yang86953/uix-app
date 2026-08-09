@@ -134,22 +134,6 @@ pub trait IGraphicsContext {
 
     /// 唯一兼容 present 入口；每个 context 必须显式处理自己的 payload。
     fn present(&mut self, frame: &PresentFrame) -> Result<(), Error>;
-
-    /// Tests whether an already-occluded swapchain can leave idle state
-    /// without submitting frame data. Contexts that can report occlusion from
-    /// normal presentation must override this method.
-    fn test_present(&mut self) -> Result<PresentTestResult, Error> {
-        // 从静态 recipe 快照读取 backend，不要求 adapter 重复实现派生 helper。
-        let backend = self.caps().backend;
-        // 返回保留具体 adapter 身份的 typed unsupported 错误。
-        Err(Error::new(
-            crate::core::error::Errc::NotImplemented,
-            format!(
-                "GraphicsBackend {} does not support idle present tests",
-                backend
-            ),
-        ))
-    }
 }
 
 // 验证逻辑尺寸到物理 RHI extent 的纯转换契约。

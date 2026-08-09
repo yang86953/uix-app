@@ -30,6 +30,8 @@
 >
 > **recipe 查询边界**：`IGraphicsContext` 不再声明由 `GraphicsContextCaps` 重复派生的 `graphics_backend`、`supports_gl_proc_address` 或 `supports_pixel_present`。需要 adapter 身份的 typed error 一次读取 `caps().backend`；是否可借用 thin RHI 或 `PixelUploadSurface` 仍由对应专用视图决定，不能通过无消费者布尔查询猜测 recipe。
 >
+> **idle present probe 边界**：`IGraphicsContext` 与 thread-bound wrapper 不再声明或转发 `test_present`。无帧遮挡退出探测属于 `GraphicsSurface` 生命周期：D3D11 在该接口内执行 `Present(0, DXGI_PRESENT_TEST)` 并保留 `Presentable` / `Occluded` / typed error 映射；GPU backend 只借用组合 thin RHI surface，CPU PixelUpload 与 external presenter 明确拒绝不适用的 probe。
+>
 > **surface readback 边界**：`IGraphicsContext` 与 thread-bound wrapper 不再声明或转发 `read_pixels`。同步窗口 surface 回读是 `GraphicsCapabilities::surface_readback` 声明的可选 `GraphicsSurface::read_surface_pixels` 操作；D3D11 和 OpenGL ES adapter 如实启用，缺少能力时返回 typed failure。Vulkan GFX-R5 与 D3D12 测试期保留的内部诊断辅助不属于通用 thin RHI surface 能力。
 
 ## 组件清单
@@ -40,7 +42,7 @@
 | `GraphicsApi` / `GraphicsSelection` | crate-private value / strategy | registry 的具体 API 身份，以及 `Automatic` / `Explicit` 启动策略 |
 | `GraphicsRecipe` | value | 平台、feature、API 与 fallback 候选 |
 | `GraphicsDevice` | thin RHI interface | GPU 资源、pipeline、pass、draw/copy、submit 与 device 维护 |
-| `GraphicsSurface` | surface interface | acquire、resize、present、surface generation 与呈现状态 |
+| `GraphicsSurface` | surface interface | acquire、resize、present、idle present probe、surface generation 与呈现状态 |
 | `GraphicsCapabilities` | value | RHI 原语、retained、occlusion 与 present 的事实能力 |
 | `GraphicsContext` | 迁移期门面 | 当前组合 device/surface、生命周期、thin RHI 借用与显式 `PresentFrame`；目标拆分后继续收窄 |
 | `Presenter` | 提交接口 | CPU/GPU 结果到原生窗口的最终 present |
@@ -56,7 +58,7 @@ registry 只陈述可构造候选；graphics 决定选择和恢复策略。显�
 
 `GraphicsDevice` 只提供 buffer、texture、sampler、pipeline、render target、pass、draw/copy、submit 和 device 恢复所需的最小原语；不得提供 `draw_glyphs`、`draw_rounded_rect`、`draw_picture`、`create/bind/blit_offscreen_target`、`blur_offscreen_target` 等 UI 操作。固定 pipeline 语义、batch、atlas 与 effect pass 由 graphics/backend 持有。
 
-`GraphicsSurface` 独立持有窗口 surface、swapchain、尺寸、DPR 相关像素 extent 与 generation。device 和 surface 可以由首个 adapter 在同一 owner-thread 对象中组合，但资源寿命、错误分类与重建范围必须保持可区分，也不把跨窗口 device 共享设为首版前置条件。
+`GraphicsSurface` 独立持有窗口 surface、swapchain、尺寸、DPR 相关像素 extent、generation 与不提交帧数据的遮挡退出探测。device 和 surface 可以由首个 adapter 在同一 owner-thread 对象中组合，但资源寿命、错误分类与重建范围必须保持可区分，也不把跨窗口 device 共享设为首版前置条件。
 
 原生 adapter 负责 API/OS 专属的 adapter/device/surface 创建、资源映射、命令编码、同步、acquire/present 和错误翻译；不得决定 Picture 缓存、字形 atlas、路径细分或 UI fallback。
 

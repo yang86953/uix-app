@@ -29,12 +29,6 @@ impl IGraphicsContext for D3d11Context {
         )
     }
 
-    fn test_present(&mut self) -> Result<PresentTestResult> {
-        // DXGI_PRESENT_TEST is the documented exit probe for an already-idle
-        // bitblt swapchain. It submits no frame data and must use sync 0.
-        map_dxgi_present_test_result(unsafe { self.swap_chain.Present(0, DXGI_PRESENT_TEST) })
-    }
-
     fn try_shutdown(&mut self) -> Result<()> {
         self.shutdown_result()
     }
