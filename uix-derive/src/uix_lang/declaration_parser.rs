@@ -30,6 +30,7 @@ pub(crate) fn register_declaration_name(
     declaration: &Declaration,
     style_names: &mut HashSet<String>,
     theme_names: &mut HashSet<String>,
+    component_names: &mut HashSet<String>,
 ) -> Result<(), Diagnostic> {
     // 样式类名称不得重复。
     if let Declaration::StyleClass(style) = declaration {
@@ -63,6 +64,23 @@ pub(crate) fn register_declaration_name(
             format!("主题 {} 重复声明", theme.name),
             // 给出修复建议。
             "合并同名主题或使用不同名称",
+        ));
+    }
+    // 自定义组件名称不得重复。
+    if let Declaration::Component(component) = declaration {
+        // 首次插入成功时通过。
+        if component_names.insert(component.name.clone()) {
+            // 返回成功。
+            return Ok(());
+        }
+        // 返回重复组件诊断。
+        return Err(Diagnostic::new(
+            // 指向重复声明。
+            component.span,
+            // 陈述失败原因。
+            format!("组件 {} 重复声明", component.name),
+            // 给出修复建议。
+            "合并同名组件或使用不同名称",
         ));
     }
     // 其他声明不占用样式或主题命名空间。
