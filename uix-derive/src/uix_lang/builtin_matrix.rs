@@ -18,11 +18,6 @@ const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
     },
     // 输入组件规划项。
     PlannedBuiltin {
-        name: "RangeSlider",
-        category: "内置组件 / 输入组件",
-    },
-    // 输入组件规划项。
-    PlannedBuiltin {
         name: "Rate",
         category: "内置组件 / 输入组件",
     },
@@ -349,7 +344,7 @@ pub(crate) fn planned_builtin_diagnostic(element: &Element) -> Option<Diagnostic
             element.name, entry.category
         ),
         // 给出当前真实支持集合。
-        "当前使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Input、InputNumber、InputGroup 或 Slider；Col 仅作为 Row/Grid 的直接子项，或先完成该组件的属性映射 Gate",
+        "当前使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Input、InputNumber、InputGroup、Slider 或 RangeSlider；Col 仅作为 Row/Grid 的直接子项，或先完成该组件的属性映射 Gate",
     ))
 }
 

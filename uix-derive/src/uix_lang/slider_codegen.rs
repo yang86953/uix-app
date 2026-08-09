@@ -24,18 +24,18 @@ pub(crate) fn generate_slider(element: &Element) -> Result<TokenStream, Diagnost
     }
 
     // 同时为静态范围执行编译期顺序校验。
-    validate_literal_range(element)?;
+    validate_literal_range(element, "Slider")?;
     // 生成显式或默认最小值。
-    let minimum = range_endpoint(element, "min", 0.0)?;
+    let minimum = range_endpoint(element, "min", 0.0, "Slider")?;
     // 生成显式或默认最大值。
-    let maximum = range_endpoint(element, "max", 100.0)?;
+    let maximum = range_endpoint(element, "max", 100.0, "Slider")?;
     // 通过公开构造器一次建立完整范围契约。
     let mut widget = quote! { ::uix::prelude::Slider::new((#minimum)..=(#maximum)) };
 
     // 步长必须为正的有限数值。
     if let Some(attribute) = find_attribute(element, "step") {
         // 静态字面量在编译期拒绝非正值。
-        validate_literal_step(attribute)?;
+        validate_literal_step(attribute, "Slider")?;
         // 生成 f64 步长。
         let value = f64_value(attribute, "Slider step")?;
         // 在状态绑定前应用公开步长构建器。
@@ -75,25 +75,32 @@ pub(crate) fn generate_slider(element: &Element) -> Result<TokenStream, Diagnost
 }
 
 // 生成显式端点或文档默认端点。
-fn range_endpoint(
+pub(super) fn range_endpoint(
     // 借用完整 Slider 元素。
     element: &Element,
     // 指定待读取的端点属性名。
     name: &str,
     // 提供缺省端点值。
     default: f64,
+    // 指定诊断中的组件名称。
+    component: &str,
 ) -> Result<TokenStream, Diagnostic> {
     // 显式端点沿用统一有限 f64 生成契约。
     if let Some(attribute) = find_attribute(element, name) {
         // 生成类型明确的动态或静态端点。
-        return f64_value(attribute, &format!("Slider {name}"));
+        return f64_value(attribute, &format!("{component} {name}"));
     }
     // 缺失属性映射为文档声明的 f64 默认值。
     Ok(quote! { #default })
 }
 
 // 生成有限 f64 字面量或受限表达式。
-fn f64_value(attribute: &Attribute, label: &str) -> Result<TokenStream, Diagnostic> {
+pub(super) fn f64_value(
+    // 借用待生成的数值属性。
+    attribute: &Attribute,
+    // 提供诊断使用的属性标签。
+    label: &str,
+) -> Result<TokenStream, Diagnostic> {
     // 按属性值形状生成数值。
     match &attribute.value {
         // 字面量必须能解析为有限 f64。
@@ -163,11 +170,16 @@ fn parse_literal_f64(attribute: &Attribute, label: &str) -> Result<f64, Diagnost
 }
 
 // 校验静态 min/max 不构成反向范围。
-fn validate_literal_range(element: &Element) -> Result<(), Diagnostic> {
+pub(super) fn validate_literal_range(
+    // 借用声明范围的滑块元素。
+    element: &Element,
+    // 指定诊断中的组件名称。
+    component: &str,
+) -> Result<(), Diagnostic> {
     // 读取可比较的静态最小值，缺失时采用文档默认值。
-    let minimum = literal_endpoint(element, "min", 0.0)?;
+    let minimum = literal_endpoint(element, "min", 0.0, component)?;
     // 读取可比较的静态最大值，缺失时采用文档默认值。
-    let maximum = literal_endpoint(element, "max", 100.0)?;
+    let maximum = literal_endpoint(element, "max", 100.0, component)?;
     // 任一动态端点都交给运行时公开归一化契约。
     let (Some(minimum), Some(maximum)) = (minimum, maximum) else {
         // 动态范围无法在编译期比较。
@@ -183,7 +195,7 @@ fn validate_literal_range(element: &Element) -> Result<(), Diagnostic> {
         // 指向完整 Slider。
         element.span,
         // 说明实际反向范围。
-        format!("Slider min={minimum} 不能大于 max={maximum}"),
+        format!("{component} min={minimum} 不能大于 max={maximum}"),
         // 给出修复建议。
         "调整 min/max，使 min <= max",
     ))
@@ -197,6 +209,8 @@ fn literal_endpoint(
     name: &str,
     // 提供缺失属性的静态默认值。
     default: f64,
+    // 指定诊断中的组件名称。
+    component: &str,
 ) -> Result<Option<f64>, Diagnostic> {
     // 缺失属性可直接参与静态范围比较。
     let Some(attribute) = find_attribute(element, name) else {
@@ -209,18 +223,23 @@ fn literal_endpoint(
         return Ok(None);
     }
     // 解析并返回静态有限端点。
-    parse_literal_f64(attribute, &format!("Slider {name}")).map(Some)
+    parse_literal_f64(attribute, &format!("{component} {name}")).map(Some)
 }
 
 // 校验静态步长为正。
-fn validate_literal_step(attribute: &Attribute) -> Result<(), Diagnostic> {
+pub(super) fn validate_literal_step(
+    // 借用步长属性。
+    attribute: &Attribute,
+    // 指定诊断中的组件名称。
+    component: &str,
+) -> Result<(), Diagnostic> {
     // 动态表达式由运行时 step 归一化。
     if !matches!(attribute.value, AttributeValue::Literal(_)) {
         // 返回校验成功。
         return Ok(());
     }
     // 复用有限数值解析。
-    let value = parse_literal_f64(attribute, "Slider step")?;
+    let value = parse_literal_f64(attribute, &format!("{component} step"))?;
     // 正有限值符合运行时步进契约。
     if value > 0.0 {
         // 返回校验成功。
@@ -231,14 +250,14 @@ fn validate_literal_step(attribute: &Attribute) -> Result<(), Diagnostic> {
         // 指向非法 step。
         attribute.span,
         // 说明步长约束。
-        "Slider step 必须大于 0",
+        format!("{component} step 必须大于 0"),
         // 给出修复建议。
         "使用正的有限步长",
     ))
 }
 
 // 查找元素上的具名属性。
-fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a Attribute> {
+pub(super) fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a Attribute> {
     // 解析器已保证同名属性唯一。
     element
         // 借用有序属性列表。
