@@ -13,6 +13,19 @@ struct ConsumerItem {
 // 提供无事件参数的 Rust 侧回调。
 fn on_confirm() {}
 
+// 提供带 bool 返回值的组件回调 prop。
+fn confirm_delete() -> bool {
+    // 返回确定的确认结果。
+    true
+}
+
+// 提供带 String 参数的组件回调 prop。
+fn submit_search(
+    // 接收组件传出的拥有所有权字符串。
+    _query: String,
+) {
+}
+
 // 提供接收点击坐标的 Rust 侧回调。
 fn on_point(
     // 接收点击 x 坐标。
@@ -51,5 +64,45 @@ fn generated_view_compiles_against_public_uix_api() {
           </For>
         </Column>
     "#
+    );
+}
+
+// 验证组件私有状态、共享状态、回调与组合在真实公开 API 中通过类型检查。
+#[test]
+fn generated_components_compile_against_public_uix_api() {
+    // 创建 Rust 侧持有的共享 number 状态。
+    let shared_count = State::new(4_f64);
+    // 展开多层组件并要求最终结果为公开 ViewNode。
+    let _view: ViewNode = uix_derive::__uix_view_internal!(
+        r#"
+        <Component name="Counter" props="label: String, onConfirm: () -> bool" state="count: 0">
+          <Column>
+            <Text>{label}: {count}</Text>
+            <Button @click="setState(count: count + 1)">+1</Button>
+            <Button @click="onConfirm()">Confirm</Button>
+          </Column>
+        </Component>
+        <Component name="Panel" props="title: String, onClose: () -> bool">
+          <Counter label={title} onConfirm={onClose} />
+        </Component>
+        <Component name="SharedCounter" props="count: State<number>">
+          <Column>
+            <Text>Shared: {count}</Text>
+            <Button @click="setState(count: count + 1)">Share +1</Button>
+          </Column>
+        </Component>
+        <Component name="Message" state="text: 'A'">
+          <Button @click="setState(text: 'B')">{text}</Button>
+        </Component>
+        <Component name="SearchAction" props="onSearch: (String)">
+          <Button @click="onSearch('needle')">Search</Button>
+        </Component>
+        <Column>
+          <Panel title="Clicks" onClose={confirm_delete} />
+          <SharedCounter count={shared_count} />
+          <Message />
+          <SearchAction onSearch={submit_search} />
+        </Column>
+        "#
     );
 }

@@ -80,8 +80,8 @@ pub fn __uix_view_internal(input: TokenStream) -> TokenStream {
     let source = input.value();
     // 解析并生成公开 View API 令牌。
     match uix_lang::parse_document(&source)
-        // 解析成功后生成根 View。
-        .and_then(|document| uix_lang::generate_view(&document.root))
+        // 解析成功后使用完整文档生成组件感知 View。
+        .and_then(|document| uix_lang::generate_document_view(&document))
     {
         // 成功时直接返回生成令牌。
         Ok(tokens) => tokens.into(),

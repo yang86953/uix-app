@@ -1,0 +1,535 @@
+// 引入数值字面量与令牌流。
+use proc_macro2::{Literal, TokenStream};
+// 引入确定性令牌拼接宏。
+use quote::quote;
+
+// 引入组件展开器与字段绑定类型。
+use super::component_codegen::{Binding, BindingKind, Bindings, ComponentExpander};
+// 引入组件字段、属性、表达式与诊断 AST。
+use super::{
+    Attribute, AttributeValue, ComponentProp, ComponentPropType, ComponentState,
+    ComponentStateInitial, ComponentValueType, Diagnostic, ExpressionKind, ExpressionNode,
+};
+// 引入既有受限表达式生成入口。
+use super::generate_expression;
+
+// 实现 props、私有状态与调用参数的类型化绑定。
+impl ComponentExpander {
+    // 生成一个类型化 prop 的 Rust 局部绑定。
+    pub(super) fn emit_prop_binding(
+        // 可变借用展开状态。
+        &mut self,
+        // 接收 prop 声明。
+        prop: &ComponentProp,
+        // 接收调用处同名属性。
+        attribute: &Attribute,
+        // 接收调用方组件绑定。
+        outer_bindings: &Bindings,
+        // 接收被调用组件的绑定表。
+        bindings: &mut Bindings,
+    ) -> Result<(), Diagnostic> {
+        // 为字段值分配卫生名称。
+        let value_ident = self.fresh_ident("prop", &prop.name);
+        // 按 prop 类别生成准备语句。
+        match &prop.kind {
+            // 基础值 prop 使用显式 Rust 类型检查。
+            ComponentPropType::Value(value_type) => {
+                // 生成调用属性值。
+                let value = self.component_value_tokens(attribute, outer_bindings, *value_type)?;
+                // 生成目标 Rust 类型。
+                let rust_type = value_type_tokens(*value_type);
+                // 声明类型化局部值。
+                self.setup.push(quote! {
+                    // 让 Rust 编译器验证基础 prop 类型。
+                    let #value_ident: #rust_type = #value;
+                });
+                // 登记组件体中的值读取绑定。
+                bindings.insert(
+                    // 使用源码 prop 名称作为键。
+                    prop.name.clone(),
+                    // 保存生成后的字段绑定。
+                    Binding {
+                        // 记录卫生局部名称。
+                        value_name: value_ident.to_string(),
+                        // 普通值不能由 setState 写入。
+                        state_name: None,
+                        // 标记基础值类别。
+                        kind: BindingKind::Value,
+                    },
+                );
+            }
+            // 共享状态 prop 保留同一 State 句柄。
+            ComponentPropType::State(value_type) => {
+                // 生成调用方 State 表达式。
+                let value = self.state_argument_tokens(attribute, outer_bindings)?;
+                // 生成 State 内部值类型。
+                let rust_type = value_type_tokens(*value_type);
+                // 为当前读值分配卫生名称。
+                let read_ident = self.fresh_ident("state_value", &prop.name);
+                // 克隆共享句柄并读取当前值。
+                self.setup.push(quote! {
+                    // 克隆句柄并保持同一底层状态槽。
+                    let #value_ident: ::uix::prelude::State<#rust_type> = (#value).clone();
+                    // 在 View 构建期读取响应式依赖。
+                    let #read_ident: #rust_type = #value_ident.get();
+                });
+                // 登记可读写共享状态。
+                bindings.insert(
+                    // 使用源码 prop 名称作为键。
+                    prop.name.clone(),
+                    // 保存读值与句柄绑定。
+                    Binding {
+                        // 普通表达式读取当前值。
+                        value_name: read_ident.to_string(),
+                        // setState 写回共享句柄。
+                        state_name: Some(value_ident.to_string()),
+                        // 标记响应式状态类别。
+                        kind: BindingKind::State,
+                    },
+                );
+            }
+            // 回调 prop 适配为可克隆的类型擦除 Fn。
+            ComponentPropType::Callback {
+                // 借用参数类型列表。
+                parameters,
+                // 借用可选返回类型。
+                returns,
+            } => {
+                // 生成调用方回调表达式。
+                let callback = self.callback_argument_tokens(attribute, outer_bindings)?;
+                // 为适配器参数生成卫生名称。
+                let arguments = parameters
+                    // 遍历参数位置。
+                    .iter()
+                    // 同时读取位置编号。
+                    .enumerate()
+                    // 按位置分配标识符。
+                    .map(|(index, _)| self.fresh_ident("callback_arg", &index.to_string()))
+                    // 收集全部参数名称。
+                    .collect::<Vec<_>>();
+                // 生成每个参数的 Rust 类型。
+                let parameter_types = parameters
+                    // 遍历参数类型。
+                    .iter()
+                    // 复制基础类型枚举。
+                    .copied()
+                    // 映射为 Rust 类型。
+                    .map(value_type_tokens)
+                    // 收集类型列表。
+                    .collect::<Vec<_>>();
+                // 无显式返回值时使用单元类型。
+                let return_type = returns
+                    // 复制存在的返回类型。
+                    .as_ref()
+                    // 复制基础类型枚举。
+                    .copied()
+                    // 映射为 Rust 类型。
+                    .map(value_type_tokens)
+                    // 回退为单元类型。
+                    .unwrap_or_else(|| quote! { () });
+                // 生成类型擦除回调适配器。
+                self.setup.push(quote! {
+                    // 显式 Fn 签名验证回调参数和返回值。
+                    let #value_ident: ::std::sync::Arc<dyn Fn(#(#parameter_types),*) -> #return_type> =
+                        // 捕获调用方函数或闭包并提供可克隆句柄。
+                        ::std::sync::Arc::new(move |#(#arguments: #parameter_types),*| {
+                            // 按声明顺序转发全部参数。
+                            (#callback)(#(#arguments),*)
+                        });
+                });
+                // 登记组件体中的回调绑定。
+                bindings.insert(
+                    // 使用源码 prop 名称作为键。
+                    prop.name.clone(),
+                    // 保存回调字段绑定。
+                    Binding {
+                        // 记录类型擦除回调名称。
+                        value_name: value_ident.to_string(),
+                        // 回调不能由 setState 写入。
+                        state_name: None,
+                        // 标记回调类别。
+                        kind: BindingKind::Callback,
+                    },
+                );
+            }
+        }
+        // 报告当前 prop 绑定成功。
+        Ok(())
+    }
+
+    // 生成一个私有 State 句柄和当前读值。
+    pub(super) fn emit_private_state(
+        // 可变借用展开状态。
+        &mut self,
+        // 接收 state 声明。
+        state: &ComponentState,
+        // 接收当前组件绑定表。
+        bindings: &mut Bindings,
+    ) -> Result<(), Diagnostic> {
+        // 为 State 句柄生成卫生名称。
+        let state_ident = self.fresh_ident("state", &state.name);
+        // 为当前读值生成卫生名称。
+        let read_ident = self.fresh_ident("state_value", &state.name);
+        // 生成规范化初始值与可选显式类型。
+        let (initial, rust_type) = self.private_state_initial(&state.initial, bindings)?;
+        // 基础类型使用显式 State 类型。
+        if let Some(rust_type) = rust_type {
+            // 写入显式类型准备语句。
+            self.setup.push(quote! {
+                // 创建组件私有响应式状态槽。
+                let #state_ident: ::uix::prelude::State<#rust_type> =
+                    // 使用规范化初始值。
+                    ::uix::prelude::State::new(#initial);
+                // 读取当前值并登记 View 依赖。
+                let #read_ident: #rust_type = #state_ident.get();
+            });
+        } else {
+            // 复合表达式或空数组由 Rust 推断类型。
+            self.setup.push(quote! {
+                // 创建由 Rust 推断内部类型的状态槽。
+                let #state_ident = ::uix::prelude::State::new(#initial);
+                // 读取当前值供组件体使用。
+                let #read_ident = #state_ident.get();
+            });
+        }
+        // 登记私有状态读写绑定。
+        bindings.insert(
+            // 使用源码 state 名称作为键。
+            state.name.clone(),
+            // 保存读值与句柄。
+            Binding {
+                // 普通表达式读取当前值。
+                value_name: read_ident.to_string(),
+                // setState 写回私有句柄。
+                state_name: Some(state_ident.to_string()),
+                // 标记响应式状态类别。
+                kind: BindingKind::State,
+            },
+        );
+        // 报告私有状态绑定成功。
+        Ok(())
+    }
+
+    // 生成私有状态初始值并固定基础字面量类型。
+    fn private_state_initial(
+        // 可变借用展开状态。
+        &mut self,
+        // 接收解析后的初始值。
+        initial: &ComponentStateInitial,
+        // 接收此前声明的字段绑定。
+        bindings: &Bindings,
+    ) -> Result<(TokenStream, Option<TokenStream>), Diagnostic> {
+        // 按初始值形状生成 Rust 表达式。
+        match initial {
+            // 空数组映射为可推断元素类型的 Vec。
+            ComponentStateInitial::EmptyArray => Ok((
+                // 生成空向量。
+                quote! { ::std::vec::Vec::new() },
+                // 元素类型留给后续使用推断。
+                None,
+            )),
+            // 普通表达式按顶层字面量固定基础类型。
+            ComponentStateInitial::Expression(expression) => {
+                // 克隆表达式以改写此前字段读取。
+                let mut expanded = expression.clone();
+                // 初始值不能执行 setState。
+                self.transform_expression(&mut expanded, bindings, false)?;
+                // 按表达式形状生成拥有所有权的值。
+                match &expanded.kind {
+                    // 字符串状态映射为 String。
+                    ExpressionKind::String(value) => Ok((
+                        // 复制字符串字面量。
+                        quote! { ::std::string::String::from(#value) },
+                        // 固定 String 类型。
+                        Some(quote! { ::std::string::String }),
+                    )),
+                    // 数字状态固定为 f64。
+                    ExpressionKind::Number(_) => {
+                        // 生成原始数值令牌。
+                        let value = generate_expression(&expanded, None)?;
+                        // 返回显式 f64 转换。
+                        Ok((
+                            // 统一整数与小数初始值。
+                            quote! { (#value) as f64 },
+                            // 固定 f64 类型。
+                            Some(quote! { f64 }),
+                        ))
+                    }
+                    // 布尔状态固定为 bool。
+                    ExpressionKind::Boolean(_) => {
+                        // 生成布尔值令牌。
+                        let value = generate_expression(&expanded, None)?;
+                        // 返回值与显式类型。
+                        Ok((value, Some(quote! { bool })))
+                    }
+                    // 复合表达式交给 Rust 完整推断。
+                    _ => {
+                        // 生成复合表达式。
+                        let value = generate_expression(&expanded, None)?;
+                        // 不增加额外类型约束。
+                        Ok((value, None))
+                    }
+                }
+            }
+        }
+    }
+
+    // 为一个事件克隆全部组件字段。
+    pub(super) fn clone_event_bindings(&mut self, bindings: &Bindings) -> Bindings {
+        // 保存事件专用字段表。
+        let mut event_bindings = Bindings::new();
+        // 按名称顺序遍历字段。
+        for (name, binding) in bindings {
+            // 为事件值分配卫生名称。
+            let value_ident = self.fresh_ident("event_value", name);
+            // State 在注册事件时读取当前值。
+            if binding.kind == BindingKind::State {
+                // 读取必有的 State 句柄。
+                let state_ident = super::component_expression_lower::ident_from_name(
+                    // State 类别保证句柄存在。
+                    binding
+                        .state_name
+                        .as_deref()
+                        .expect("State 绑定必须包含句柄"),
+                );
+                // 生成事件专用状态值。
+                self.setup.push(quote! {
+                    // 每个事件持有独立状态值副本。
+                    let #value_ident = #state_ident.get();
+                });
+            } else {
+                // 读取普通值或 Arc 回调名称。
+                let source_ident = super::component_expression_lower::ident_from_name(
+                    // 借用卫生字段名称。
+                    &binding.value_name,
+                );
+                // 克隆所有权给当前 move 闭包。
+                self.setup.push(quote! {
+                    // 避免多个事件闭包争用同一字段局部值。
+                    let #value_ident = (#source_ident).clone();
+                });
+            }
+            // 保存事件专用绑定并复用 State 句柄。
+            event_bindings.insert(
+                // 保留源码字段名。
+                name.clone(),
+                // 写入事件字段绑定。
+                Binding {
+                    // 事件表达式读取专用副本。
+                    value_name: value_ident.to_string(),
+                    // setState 仍写入同一槽。
+                    state_name: binding.state_name.clone(),
+                    // 保留字段类别。
+                    kind: binding.kind,
+                },
+            );
+        }
+        // 返回事件字段表。
+        event_bindings
+    }
+
+    // 生成基础值 prop 的调用参数。
+    fn component_value_tokens(
+        // 可变借用展开状态。
+        &mut self,
+        // 接收调用属性。
+        attribute: &Attribute,
+        // 接收调用方字段绑定。
+        outer_bindings: &Bindings,
+        // 接收目标基础类型。
+        value_type: ComponentValueType,
+    ) -> Result<TokenStream, Diagnostic> {
+        // 按属性值形状生成表达式。
+        match &attribute.value {
+            // 字面量按目标类型严格解析。
+            AttributeValue::Literal(value) => match value_type {
+                // String prop 获取拥有所有权的字符串。
+                ComponentValueType::String => {
+                    // 返回 String 构造表达式。
+                    Ok(quote! { ::std::string::String::from(#value) })
+                }
+                // number prop 解析为有限 f64。
+                ComponentValueType::Number => {
+                    // 解析十进制字面量。
+                    let number = value.parse::<f64>().map_err(|_| {
+                        // 构造数值类型诊断。
+                        Diagnostic::new(
+                            // 指向完整属性。
+                            attribute.span,
+                            // 说明类型不符。
+                            format!("prop {} 需要 number，收到 {value:?}", attribute.name),
+                            // 给出合法写法。
+                            "使用十进制数字字面量或 {number_expression}",
+                        )
+                    })?;
+                    // 拒绝非有限数值。
+                    if !number.is_finite() {
+                        // 返回有限数值诊断。
+                        return Err(Diagnostic::new(
+                            // 指向完整属性。
+                            attribute.span,
+                            // 说明 number 必须有限。
+                            format!("prop {} 的 number 必须是有限值", attribute.name),
+                            // 给出修复建议。
+                            "使用有限十进制数",
+                        ));
+                    }
+                    // 生成无后缀 f64 字面量。
+                    let literal = Literal::f64_unsuffixed(number);
+                    // 返回数值令牌。
+                    Ok(quote! { #literal })
+                }
+                // bool prop 只接受 true 或 false。
+                ComponentValueType::Bool => match value.as_str() {
+                    // 生成 true。
+                    "true" => Ok(quote! { true }),
+                    // 生成 false。
+                    "false" => Ok(quote! { false }),
+                    // 拒绝其他字面量。
+                    _ => Err(Diagnostic::new(
+                        // 指向完整属性。
+                        attribute.span,
+                        // 说明类型不符。
+                        format!("prop {} 需要 bool，收到 {value:?}", attribute.name),
+                        // 给出合法值。
+                        "使用 \"true\"、\"false\" 或 {boolean_expression}",
+                    )),
+                },
+            },
+            // 表达式由显式局部类型完成检查。
+            AttributeValue::Expression(expression) => {
+                // 生成改写后的表达式参数。
+                self.expression_argument_tokens(expression, outer_bindings, true)
+            }
+            // 内联样式不能作为组件 prop。
+            AttributeValue::InlineStyle(_) => Err(Diagnostic::new(
+                // 指向完整属性。
+                attribute.span,
+                // 说明值形状不兼容。
+                format!("组件 prop {} 不能使用内联样式值", attribute.name),
+                // 给出普通值写法。
+                "使用字面量或花括号表达式",
+            )),
+        }
+    }
+
+    // 生成 State<T> prop 的调用方句柄。
+    fn state_argument_tokens(
+        // 可变借用展开状态。
+        &mut self,
+        // 接收调用属性。
+        attribute: &Attribute,
+        // 接收调用方字段绑定。
+        outer_bindings: &Bindings,
+    ) -> Result<TokenStream, Diagnostic> {
+        // State prop 必须使用表达式。
+        let AttributeValue::Expression(expression) = &attribute.value else {
+            // 返回句柄形状诊断。
+            return Err(Diagnostic::new(
+                // 指向完整属性。
+                attribute.span,
+                // 说明字面量不能表示 State。
+                format!("State<T> prop {} 必须接收响应式状态表达式", attribute.name),
+                // 给出规范写法。
+                format!("使用 {}={{shared_state}}", attribute.name),
+            ));
+        };
+        // 组件内状态字段要传递句柄而非读值。
+        if let ExpressionKind::Identifier(name) = &expression.expression.kind {
+            // 查找调用方字段。
+            if let Some(binding) = outer_bindings.get(name) {
+                // 来源必须可写。
+                let state_name = binding.state_name.as_deref().ok_or_else(|| {
+                    // 构造普通值冒充 State 的诊断。
+                    Diagnostic::new(
+                        // 指向完整属性。
+                        attribute.span,
+                        // 说明来源字段类型错误。
+                        format!("{name} 不是 State<T> prop 或私有 state"),
+                        // 给出合法来源。
+                        "传入 Rust 侧 State<T>，或转发组件内的 State<T> 字段",
+                    )
+                })?;
+                // 恢复句柄标识符。
+                let state_ident = super::component_expression_lower::ident_from_name(state_name);
+                // 返回共享句柄表达式。
+                return Ok(quote! { #state_ident });
+            }
+        }
+        // Rust 外层 State 名称保持普通解析。
+        self.expression_argument_tokens(expression, outer_bindings, false)
+    }
+
+    // 生成回调 prop 的调用方表达式。
+    fn callback_argument_tokens(
+        // 可变借用展开状态。
+        &mut self,
+        // 接收调用属性。
+        attribute: &Attribute,
+        // 接收调用方字段绑定。
+        outer_bindings: &Bindings,
+    ) -> Result<TokenStream, Diagnostic> {
+        // 回调 prop 必须使用表达式。
+        let AttributeValue::Expression(expression) = &attribute.value else {
+            // 返回回调值形状诊断。
+            return Err(Diagnostic::new(
+                // 指向完整属性。
+                attribute.span,
+                // 说明字符串不是可调用值。
+                format!("回调 prop {} 必须接收函数或闭包表达式", attribute.name),
+                // 给出规范写法。
+                format!("使用 {}={{handler}}", attribute.name),
+            ));
+        };
+        // 生成可调用表达式并支持字段转发。
+        self.expression_argument_tokens(expression, outer_bindings, true)
+    }
+
+    // 生成组件调用表达式参数并可克隆简单字段。
+    fn expression_argument_tokens(
+        // 可变借用展开状态。
+        &mut self,
+        // 接收表达式节点。
+        expression: &ExpressionNode,
+        // 接收调用方绑定。
+        outer_bindings: &Bindings,
+        // 标记简单字段是否克隆。
+        clone_binding: bool,
+    ) -> Result<TokenStream, Diagnostic> {
+        // 简单字段转发可显式克隆所有权。
+        if clone_binding {
+            // 只特判单一标识符。
+            if let ExpressionKind::Identifier(name) = &expression.expression.kind {
+                // 查找调用方组件字段。
+                if let Some(binding) = outer_bindings.get(name) {
+                    // 恢复字段标识符。
+                    let ident = super::component_expression_lower::ident_from_name(
+                        // 借用卫生字段名称。
+                        &binding.value_name,
+                    );
+                    // 返回拥有所有权的克隆值。
+                    return Ok(quote! { (#ident).clone() });
+                }
+            }
+        }
+        // 克隆表达式以改写组件字段。
+        let mut expanded = expression.expression.clone();
+        // props 传值不能执行 setState。
+        self.transform_expression(&mut expanded, outer_bindings, false)?;
+        // 委托既有表达式生成器。
+        generate_expression(&expanded, None)
+    }
+}
+
+// 把语言基础类型映射为 Rust 类型。
+fn value_type_tokens(value_type: ComponentValueType) -> TokenStream {
+    // 按白名单类型生成令牌。
+    match value_type {
+        // String 对应拥有所有权的字符串。
+        ComponentValueType::String => quote! { ::std::string::String },
+        // number 对应规范约定的 f64。
+        ComponentValueType::Number => quote! { f64 },
+        // bool 对应 Rust 布尔类型。
+        ComponentValueType::Bool => quote! { bool },
+    }
+}
