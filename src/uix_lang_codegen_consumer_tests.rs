@@ -210,6 +210,14 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _checkbox: ViewNode = crate::uix!(
         r#"<Checkbox checked={accepted} text="同意协议" disabled="false" width="180px" />"#
     );
+    // 提供 Switch 双向开关状态。
+    let switch_enabled = State::new(false);
+    // 提供 Switch 动态禁用状态。
+    let switch_locked = false;
+    // 验证禁用、开关绑定和公共样式只依赖公开 prelude。
+    let _switch: ViewNode = crate::uix!(
+        r#"<Switch checked={switch_enabled} disabled={switch_locked} width="180px" />"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。

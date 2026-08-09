@@ -102,6 +102,11 @@ mod checkbox_codegen;
 // 集中验证 Checkbox 生成与拒绝路径。
 #[cfg(test)]
 mod checkbox_codegen_tests;
+// 定义 Switch 禁用与双向勾选的公开 API 代码生成边界。
+mod switch_codegen;
+// 集中验证 Switch 生成与拒绝路径。
+#[cfg(test)]
+mod switch_codegen_tests;
 // 定义 FloatButton 内置组件的公开 API 代码生成边界。
 mod float_button_codegen;
 // 定义布局容器、Row/Col 栅格与 Grid/Col 的公开 API 代码生成边界。
@@ -200,6 +205,8 @@ pub(crate) use range_slider_codegen::generate_range_slider;
 pub(crate) use rate_codegen::generate_rate;
 // 向核心元素生成器暴露 Checkbox 专用映射。
 pub(crate) use checkbox_codegen::generate_checkbox;
+// 向核心元素生成器暴露 Switch 专用映射。
+pub(crate) use switch_codegen::generate_switch;
 // 向核心元素生成器暴露 FloatButton 专用映射。
 pub(crate) use float_button_codegen::generate_float_button;
 // 向核心元素生成器暴露布局组件专用映射。
