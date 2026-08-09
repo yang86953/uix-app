@@ -23,11 +23,6 @@ const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
     },
     // 布局组件规划项。
     PlannedBuiltin {
-        name: "Affix",
-        category: "内置组件 / 布局组件",
-    },
-    // 布局组件规划项。
-    PlannedBuiltin {
         name: "BackTop",
         category: "内置组件 / 布局组件",
     },

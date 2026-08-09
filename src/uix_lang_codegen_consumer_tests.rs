@@ -143,6 +143,14 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _virtual_scroll: ViewNode = crate::uix!(
         r#"<VirtualScroll data={virtual_items} rowHeight="32px" item={item} height="160px"><For {item} {index} in {virtual_items} key={item.id}><Container direction="row"><Text>{index}</Text><Text>{item.name}</Text></Container></For></VirtualScroll>"#
     );
+    // 提供 Affix 声明式滚动位置状态。
+    let affix_scroll_y = State::new(24_f32);
+    // 提供 Affix 动态顶部偏移。
+    let affix_offset_top = 8_f32;
+    // 验证 Affix 的状态读取、动态偏移、唯一内容与公共样式只依赖公开 prelude。
+    let _affix: ViewNode = crate::uix!(
+        r#"<Affix offsetTop={affix_offset_top} scrollY={affix_scroll_y} width="320px"><Container><Text>Sticky toolbar</Text></Container></Affix>"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
