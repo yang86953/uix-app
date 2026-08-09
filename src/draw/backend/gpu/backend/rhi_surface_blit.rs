@@ -316,13 +316,8 @@ impl GpuBackend {
                 "RHI offscreen blit requires the RHI renderer cache",
             ));
         };
-        let Some(context) = self.gpu_ctx.rhi_context() else {
-            // 当前 adapter 未暴露组合 RHI，不能采样 RHI source。
-            return Err(Error::new(
-                Errc::NotImplemented,
-                "RHI offscreen blit requires a composable RHI context",
-            ));
-        };
+        // 已验证 owner 保证 sampled blit 只使用组合 RHI。
+        let context = self.gpu_ctx.rhi_context()?;
         // 主 surface 需要按 drawable extent 缩放，Picture target 使用自身物理尺寸。
         let (viewport, scale_x, scale_y) = if active.is_some() {
             (

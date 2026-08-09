@@ -1,7 +1,7 @@
 //! 主 surface retained 颜色目标的 owner-thread 生命周期。
 
 // 引入统一错误和结果类型。
-use crate::core::error::{Errc, Error, Result};
+use crate::core::error::{Error, Result};
 // 引入 FramePlan 的纹理 target 引用。
 use crate::draw::backend::frame_plan::RenderTargetRef;
 // 引入薄 RHI 的 surface token、纹理描述和颜色格式。
@@ -20,10 +20,8 @@ impl GpuBackend {
             return Ok(None);
         }
         // 只有暴露组合 RHI 的 adapter 才能创建并提交 retained texture。
-        if self.gpu_ctx.rhi_context().is_none() {
-            // 其他原生后端暂不改变原有 surface 路径。
-            return Ok(None);
-        }
+        // 构造期已验证 owner；运行期丢失时不能伪装成不支持。
+        self.gpu_ctx.rhi_context()?;
         // 按当前 surface generation 确保纹理身份和 extent 一致。
         let texture = self.ensure_rhi_surface_texture()?;
         // 把同一 opaque texture 同时作为 render target 和 sampled source 使用。
@@ -38,14 +36,8 @@ impl GpuBackend {
         let token = self
             .gpu_ctx
             .rhi_context()
-            .map(|context| context.token())
-            .ok_or_else(|| {
-                // 没有 context 时不能把空句柄当作 retained target。
-                Error::new(
-                    Errc::InvalidState,
-                    "retained RHI surface requires a composable graphics context",
-                )
-            })?;
+            // 从已验证组合 RHI 读取唯一 surface token。
+            .map(|context| context.token())?;
         // 同一代际和 extent 可以安全复用现有颜色纹理。
         if self.rhi_surface_token == Some(token) {
             // token 相同意味着已有纹理已经通过本边界创建。
@@ -64,13 +56,6 @@ impl GpuBackend {
             let destroy_result = self
                 .gpu_ctx
                 .rhi_context()
-                .ok_or_else(|| {
-                    // context 丢失时恢复旧句柄，交给 shutdown/recovery 重试。
-                    Error::new(
-                        Errc::InvalidState,
-                        "retained RHI surface lost its owner context during rebuild",
-                    )
-                })
                 .and_then(|context| context.destroy_texture(texture));
             // 资源销毁失败不能伪造新 target 已准备好。
             if let Err(error) = destroy_result {
@@ -85,14 +70,8 @@ impl GpuBackend {
         // 创建与 drawable 物理 extent 完全一致的 BGRA retained target。
         let texture = self
             .gpu_ctx
-            .rhi_context()
-            .ok_or_else(|| {
-                // context 在生命周期中途消失时保持 typed state error。
-                Error::new(
-                    Errc::InvalidState,
-                    "retained RHI surface context disappeared before creation",
-                )
-            })?
+            .rhi_context()?
+            // 已验证 owner 丢失时由统一 typed error 阻止创建。
             .create_texture(TextureDesc {
                 // retained image 必须覆盖整个当前 drawable。
                 extent: token.extent,
@@ -130,13 +109,6 @@ impl GpuBackend {
         let result = self
             .gpu_ctx
             .rhi_context()
-            .ok_or_else(|| {
-                // context 消失时不能丢弃尚未释放的 opaque handle。
-                Error::new(
-                    Errc::InvalidState,
-                    "retained RHI surface lost its owner context during destroy",
-                )
-            })
             .and_then(|context| context.destroy_texture(texture));
         // 销毁失败时恢复 owner 状态，禁止资源泄漏被隐藏。
         if let Err(error) = result {

@@ -41,10 +41,10 @@ impl GpuBackend {
             self.end_offscreen_paint();
         }
         // 在任何 RHI lowering 或最终提交前执行 owner-thread device preflight。
-        if let Some(context) = self.gpu_ctx.rhi_context() {
-            // device lost 必须在最终 present 前按 typed error 暴露给恢复 FSM。
-            GraphicsDevice::maintain(context)?;
-        }
+        // 已验证 owner 必须在最终 present 前完成 owner-thread device preflight。
+        let context = self.gpu_ctx.rhi_context()?;
+        // device lost 必须在最终 present 前按 typed error 暴露给恢复 FSM。
+        GraphicsDevice::maintain(context)?;
         // 读取 draw-time deferred error，并保持当前帧 dirty。
         if let Some(error) = self.surface.canvas.take_deferred_error() {
             self.surface.needs_gpu_clear = true;

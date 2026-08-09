@@ -587,6 +587,9 @@ impl std::fmt::Debug for NativeSurfaceHandle {
 // 薄 RHI 作为迁移期 platform 私有契约，不向使用方公开原生句柄。
 pub(crate) mod rhi;
 
+// 生产 GPU recipe 通过构造期验证的窄 owner 进入 draw backend。
+mod gpu_recipe_owner;
+
 // 兼容期高层 graphics context，逐步由 `rhi` 替代。
 mod traits;
 
@@ -594,3 +597,5 @@ mod traits;
 pub(crate) use self::traits::{
     resize_native_rhi_surface, IGraphicsContext, PixelUploadSurface, RhiSurfaceLifecycle,
 };
+// 只向 crate 内图形装配与 backend 暴露已验证 GPU owner。
+pub(crate) use gpu_recipe_owner::GpuRecipeOwner;

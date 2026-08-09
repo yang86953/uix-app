@@ -26,14 +26,8 @@ impl GpuBackend {
         let extent = self
             .gpu_ctx
             .rhi_context()
-            .map(|context| context.token().extent)
-            .ok_or_else(|| {
-                // retained target 必须由同一个组合 RHI context 完成最终合成。
-                Error::new(
-                    Errc::InvalidState,
-                    "retained RHI surface lost its composable context before present",
-                )
-            })?;
+            // retained target 必须由同一个已验证组合 RHI 完成最终合成。
+            .map(|context| context.token().extent)?;
         // 构造全幅 sampled quad，保持 retained image 的原始 premultiplied 像素。
         let viewport = RhiViewport {
             // 采样目标宽度使用物理 drawable extent。
@@ -88,13 +82,8 @@ impl GpuBackend {
                 ));
             };
             // 只有组合 RHI context 能执行 surface acquire/submit/present。
-            let Some(context) = gpu_ctx.rhi_context() else {
-                // 保留 typed state error，禁止绕过 RHI 合成到旧路径。
-                return Err(Error::new(
-                    Errc::InvalidState,
-                    "retained RHI surface has no composable context",
-                ));
-            };
+            // 已验证 owner 丢失时保留 typed state error，禁止绕过 RHI 合成。
+            let context = gpu_ctx.rhi_context()?;
             // swapchain 每次 acquire 都以透明清理开始，再采样 retained image。
             renderer.execute_sampled_quad(
                 context,
@@ -211,10 +200,8 @@ impl GpuBackend {
                 return Ok(false);
             };
             // retained target 只能由当前组合 RHI context 初始化。
-            let Some(context) = gpu_ctx.rhi_context() else {
-                // 缺失 owner 时不触碰 adapter 高层清空入口。
-                return Ok(false);
-            };
+            // 缺失已验证 owner 时返回 typed failure，不触碰 adapter 高层入口。
+            let context = gpu_ctx.rhi_context()?;
             // 透明 clear 只提交到 retained texture，不获取或呈现 swapchain。
             surface.canvas.submit_rhi_clear_only(
                 // 复用当前通用 renderer cache。
@@ -243,10 +230,8 @@ impl GpuBackend {
                 return Ok(false);
             };
             // 只有组合 RHI context 能执行 retained texture pass。
-            let Some(context) = gpu_ctx.rhi_context() else {
-                // 当前 adapter 不具备通用 RHI 时交回 typed boundary。
-                return Ok(false);
-            };
+            // 当前 adapter 的组合 RHI 已在构造期验证。
+            let context = gpu_ctx.rhi_context()?;
             // 保留 native queue 内部的 painter order，并且不触发 swapchain present。
             surface.canvas.submit_rhi_native_prefix(
                 renderer,
@@ -426,10 +411,8 @@ impl GpuBackend {
                 return Ok(false);
             };
             // 只有 native context 暴露组合 RHI 才能执行 FramePlan。
-            let Some(context) = gpu_ctx.rhi_context() else {
-                // 其他 backend 暂不改变既有路径。
-                return Ok(false);
-            };
+            // 已验证 owner 丢失时返回 typed failure，不能恢复旧路径。
+            let context = gpu_ctx.rhi_context()?;
             // 将纯 shape 队列 lowering 为 FramePlan；不支持的操作返回 false。
             surface.canvas.submit_rhi_shapes(
                 renderer,
@@ -533,10 +516,8 @@ impl GpuBackend {
                 return Ok(false);
             };
             // 只有 native context 暴露组合 RHI 才能执行 FramePlan。
-            let Some(context) = gpu_ctx.rhi_context() else {
-                // 其他 backend 暂不改变既有路径。
-                return Ok(false);
-            };
+            // 已验证 owner 丢失时返回 typed failure，不能恢复旧路径。
+            let context = gpu_ctx.rhi_context()?;
             // 将纯阴影队列 lowering 为 FramePlan；不支持的队列返回 false。
             surface.canvas.submit_rhi_shadows(
                 renderer,
@@ -636,10 +617,8 @@ impl GpuBackend {
                 return Ok(false);
             };
             // 只有 native context 暴露组合 RHI 才能执行 FramePlan。
-            let Some(context) = gpu_ctx.rhi_context() else {
-                // 其他 backend 暂不改变既有路径。
-                return Ok(false);
-            };
+            // 已验证 owner 丢失时返回 typed failure，不能恢复旧路径。
+            let context = gpu_ctx.rhi_context()?;
             // 将纯 glyph 队列 lowering 为 FramePlan；不支持的操作返回 false。
             surface.canvas.submit_rhi_glyphs(
                 renderer,
@@ -741,10 +720,8 @@ impl GpuBackend {
                 return Ok(false);
             };
             // 只有 native context 暴露组合 RHI 才能执行 FramePlan。
-            let Some(context) = gpu_ctx.rhi_context() else {
-                // 其他 backend 暂不改变既有路径。
-                return Ok(false);
-            };
+            // 已验证 owner 丢失时返回 typed failure，不能恢复旧路径。
+            let context = gpu_ctx.rhi_context()?;
             // 将纯图片队列 lowering 为 FramePlan；不支持的操作返回 false。
             surface.canvas.submit_rhi_textured(
                 renderer,
@@ -842,10 +819,8 @@ impl GpuBackend {
                 return Ok(false);
             };
             // 只有 native context 暴露组合 RHI 才能执行 FramePlan。
-            let Some(context) = gpu_ctx.rhi_context() else {
-                // 其他 backend 暂不改变既有路径。
-                return Ok(false);
-            };
+            // 已验证 owner 丢失时返回 typed failure，不能恢复旧路径。
+            let context = gpu_ctx.rhi_context()?;
             // 将纯渐变队列 lowering 为 FramePlan；不支持的操作返回 false。
             surface.canvas.submit_rhi_gradients(
                 renderer,

@@ -70,10 +70,8 @@ impl GpuBackend {
                 return Ok(false);
             };
             // 只有 native context 暴露组合 RHI 才能执行 FramePlan。
-            let Some(context) = gpu_ctx.rhi_context() else {
-                // 其他 backend 暂不改变既有路径。
-                return Ok(false);
-            };
+            // 已验证 owner 丢失时返回 typed failure，不能回退 legacy 路径。
+            let context = gpu_ctx.rhi_context()?;
             // 将混合 pending queue lowering 为保序 FramePlan。
             surface.canvas.submit_rhi_mixed(
                 renderer,
@@ -174,10 +172,8 @@ impl GpuBackend {
                 return Ok(false);
             };
             // 只有 native context 暴露组合 RHI 才能执行 FramePlan。
-            let Some(context) = gpu_ctx.rhi_context() else {
-                // 其他 backend 暂不改变既有路径。
-                return Ok(false);
-            };
+            // 已验证 owner 丢失时返回 typed failure，不能回退 legacy 路径。
+            let context = gpu_ctx.rhi_context()?;
             // 将纯 solid 队列 lowering 为 FramePlan；不支持的操作返回 false。
             surface.canvas.submit_rhi_solid(
                 renderer,
