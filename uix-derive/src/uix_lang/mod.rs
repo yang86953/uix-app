@@ -52,6 +52,11 @@ mod affix_codegen;
 // 集中验证 Affix 生成、状态绑定与拒绝路径。
 #[cfg(test)]
 mod affix_codegen_tests;
+// 定义 BackTop 状态回写与叶组件映射的公开 API 代码生成边界。
+mod back_top_codegen;
+// 集中验证 BackTop 生成与拒绝路径。
+#[cfg(test)]
+mod back_top_codegen_tests;
 // 定义 FloatButton 内置组件的公开 API 代码生成边界。
 mod float_button_codegen;
 // 定义布局容器、Row/Col 栅格与 Grid/Col 的公开 API 代码生成边界。
@@ -130,6 +135,8 @@ pub(crate) use expression_lexer::*;
 pub(crate) use expression_parser::parse_expression;
 // 向核心元素生成器暴露 Affix 专用映射。
 pub(crate) use affix_codegen::generate_affix;
+// 向核心元素生成器暴露 BackTop 专用映射。
+pub(crate) use back_top_codegen::generate_back_top;
 // 向核心元素生成器暴露 FloatButton 专用映射。
 pub(crate) use float_button_codegen::generate_float_button;
 // 向核心元素生成器暴露布局组件专用映射。

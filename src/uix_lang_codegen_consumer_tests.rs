@@ -151,6 +151,11 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _affix: ViewNode = crate::uix!(
         r#"<Affix offsetTop={affix_offset_top} scrollY={affix_scroll_y} width="320px"><Container><Text>Sticky toolbar</Text></Container></Affix>"#
     );
+    // 提供 BackTop 双向滚动位置状态。
+    let back_top_scroll_y = State::new(480_f32);
+    // 验证 BackTop 的阈值、状态回写入口与公共样式只依赖公开 prelude。
+    let _back_top: ViewNode =
+        crate::uix!(r#"<BackTop threshold="400" scrollY={back_top_scroll_y} margin="8px" />"#);
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
