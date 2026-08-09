@@ -255,6 +255,8 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertIn("caps: GraphicsContextCaps", owner_contract)
         # 生产 owner 只能在构造门禁读取一次兼容 context caps。
         self.assertEqual(owner_contract.count("context.caps()"), 1)
+        # GPU owner 必须在 backend 构造前证明专用 resize lifecycle 存在。
+        self.assertIn("if context.rhi_surface_lifecycle().is_none()", owner_contract)
         # owner 必须将可选 thin RHI 查询收口为 Result。
         self.assertIn("fn rhi_context(&mut self) -> Result<&mut dyn GraphicsContextRhi>", owner)
         # owner 必须独立承接 recipe 专用 resize。

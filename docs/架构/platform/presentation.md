@@ -10,6 +10,8 @@
 
 > **GPU recipe owner 边界**：生产 `GpuBackend` 不再直接持有 `Box<dyn IGraphicsContext>`，而是由 draw factory 先构造 `GpuRecipeOwner`。该 owner 在进入 backend 前验证 GPU-native × swapchain 与组合 thin RHI，并把运行期视图丢失统一映射为 typed state error；FramePlan/RHI 代码只借用其必需 Result 契约，不再把兼容期 `Option` 查询解释为可降级能力。
 
+> **GPU lifecycle 构造门禁**：GPU recipe 还必须在进入 backend 前暴露专用 `RhiSurfaceLifecycle`；只有组合 RHI 而缺少 resize owner 的 context 会在构造失败路径 checked shutdown。这样首个窗口 resize 不再承担发现错误 adapter 注册的职责。
+
 > **PixelUpload recipe owner 边界**：统一 renderer 的 CPU PixelUpload presentation 不再直接持有 `Box<dyn IGraphicsContext>`，而是在分派 recipe 后先构造 `PixelUploadRecipeOwner`。该 owner 验证 CPU × PixelUpload 与专用 surface，并统一承接 resize、最终 pixels 提交、`PresentSurface` 和 checked shutdown；presentation 不再直接查询可选 `pixel_upload_surface()`。
 
 > **静态 capability 快照**：两个 recipe owner 都只在构造门禁读取一次 `GraphicsContextCaps`，并在其生命周期内固定 backend/raster/present/coherency/occlusion 事实。运行期只让 `PresentSurface` 保持 live，recipe 身份与 owner-loss 诊断不再依赖兼容 context 的重复 `caps()` 查询。
