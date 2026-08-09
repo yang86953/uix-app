@@ -39,3 +39,4 @@ __pycache__/
 
 # demo 工作区构建产物
 demo/target/
+Cargo.lock
