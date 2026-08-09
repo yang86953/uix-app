@@ -12,11 +12,6 @@ impl IGraphicsContext for D3d11Context {
         Some(self)
     }
 
-    fn native_raster_caps(&self) -> NativeRasterCaps {
-        // D3D11 固定 probe 已验证 retained surface 与 Additive pipeline。
-        NativeRasterCaps::retained_rhi_with_additive()
-    }
-
     // 把 D3D11 当前 drawable 元数据提供给兼容 present 边界。
     fn present_surface(&self) -> crate::native::present::PresentSurface {
         // 使用同一代际值保证旧 damage 不会跨 swapchain 重建复用。

@@ -21,8 +21,8 @@ use std::thread::{self, ThreadId};
 
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
-    GraphicsContextCaps, IGraphicsContext, NativeRasterCaps, PixelUploadSurface, PresentDamage,
-    PresentSurface, SwapchainPresentation,
+    GraphicsContextCaps, IGraphicsContext, PixelUploadSurface, PresentDamage, PresentSurface,
+    SwapchainPresentation,
 };
 
 pub(crate) fn bind_to_current_thread(
@@ -38,7 +38,6 @@ pub(crate) struct ThreadBoundGraphicsContext {
     /// only after successful owner-thread lifecycle changes, so foreign-thread
     /// queries never touch the native context.
     caps: GraphicsContextCaps,
-    native_raster_caps: NativeRasterCaps,
     // 把 live drawable 元数据保存为不可撕裂的单一快照。
     present_surface: PresentSurface,
     // `Rc` is intentionally !Send + !Sync. `Cell` makes the intent equally
@@ -49,14 +48,12 @@ pub(crate) struct ThreadBoundGraphicsContext {
 impl ThreadBoundGraphicsContext {
     fn new(inner: Box<dyn IGraphicsContext>) -> Self {
         let caps = inner.caps();
-        let native_raster_caps = inner.native_raster_caps();
         // 在 owner thread 一次读取完整 surface 元数据。
         let present_surface = inner.present_surface();
         Self {
             owner_thread: thread::current().id(),
             inner: ManuallyDrop::new(inner),
             caps,
-            native_raster_caps,
             present_surface,
             _thread_bound: PhantomData,
         }
@@ -64,7 +61,6 @@ impl ThreadBoundGraphicsContext {
 
     fn refresh_metadata(&mut self) {
         self.caps = self.inner.caps();
-        self.native_raster_caps = self.inner.native_raster_caps();
         // 生命周期变更成功后原子替换完整 surface 快照。
         self.present_surface = self.inner.present_surface();
     }
@@ -191,10 +187,6 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
         self.refresh_metadata();
         // 返回已经通过 owner-thread 和 surface generation 边界的成功结果。
         Ok(())
-    }
-
-    fn native_raster_caps(&self) -> NativeRasterCaps {
-        self.native_raster_caps
     }
 
     // 返回 owner-thread 最近一次确认的完整 surface 元数据快照。

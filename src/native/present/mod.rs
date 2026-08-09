@@ -174,10 +174,10 @@ pub struct GpuImageBlit {
     pub pixel_h: u32,
 }
 
-/// 薄 RHI surface 已探明的事实能力。
+/// 通用 renderer 从薄 RHI 能力快照派生的绘制事实。
 ///
 /// 逐图元支持由固定 RHI probe 一次性验证，不再与 `IGraphicsContext`
-/// 维护平行的 `draw_*` 布尔表。
+/// 或原生 adapter 维护平行的 capability 声明。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct NativeRasterCaps {
     /// 主色缓冲在提交间保留像素，允许绘制侧 partial redraw；
@@ -189,20 +189,15 @@ pub struct NativeRasterCaps {
 }
 
 impl NativeRasterCaps {
-    /// 已通过固定 probe 的 retained RHI 与 Additive 组合能力。
-    pub const fn retained_rhi_with_additive() -> Self {
-        // 生产 adapter 只暴露 renderer 真正消费的两个事实。
+    /// 从同一次薄 RHI 事实快照投影 renderer 真正消费的能力。
+    pub(crate) const fn from_rhi_capabilities(capabilities: rhi::GraphicsCapabilities) -> Self {
+        // 只复制绘制侧需要的事实，不建立第二份 adapter capability 来源。
         Self {
-            // 主颜色目标跨帧保留并由最终 present 统一采样。
-            retained_framebuffer: true,
-            // 固定 probe 已验证独立 Additive shape/textured pipeline。
-            rhi_additive_blend: true,
+            // 主颜色目标的跨帧保留语义直接来自薄 RHI 快照。
+            retained_framebuffer: capabilities.retained_framebuffer,
+            // Additive pipeline 事实直接来自同一个薄 RHI 快照。
+            rhi_additive_blend: capabilities.additive_blend,
         }
-    }
-
-    pub const fn has_hybrid_baseline(self) -> bool {
-        // hybrid 构造只接受 retained 与 Additive 事实均已验证的 thin RHI。
-        self.retained_framebuffer && self.rhi_additive_blend
     }
 
     pub const fn has_gpu_only_baseline(self) -> bool {
@@ -214,31 +209,22 @@ impl NativeRasterCaps {
 // 覆盖生产 native raster profile 的 capability 接线。
 #[cfg(test)]
 mod native_raster_profile_tests {
-    // 导入两个生产 adapter 共用的能力类型。
-    use super::NativeRasterCaps;
+    // 导入薄 RHI 事实快照与 renderer 投影类型。
+    use super::{rhi::GraphicsCapabilities, NativeRasterCaps};
 
-    // 验证 D3D11 与 OpenGL ES 都进入 retained 主表面路径。
+    // 验证 renderer profile 只从 retained 薄 RHI 快照派生。
     #[test]
-    fn production_rhi_profiles_enable_retained_framebuffer() {
-        // 读取 Windows 默认 D3D11 生产 profile。
-        // 两个生产 adapter 共用同一份事实型 profile。
-        let d3d11 = NativeRasterCaps::retained_rhi_with_additive();
-        // D3D11 必须启用跨帧主颜色目标。
-        assert!(d3d11.retained_framebuffer);
-        // D3D11 生产 profile 必须同步暴露真实的 RHI Additive 能力。
-        assert!(d3d11.rhi_additive_blend);
-        // D3D11 仍须满足不依赖逐 UI soft upload 的 hybrid 录制基线。
-        assert!(d3d11.has_hybrid_baseline());
-
-        // 读取 WGL/EGL OpenGL ES 的 GPU-only profile。
-        // OpenGL ES 也只暴露已验证的 retained 与 Additive 事实。
-        let opengles = NativeRasterCaps::retained_rhi_with_additive();
-        // OpenGL ES 必须启用同一 retained 主表面路径。
-        assert!(opengles.retained_framebuffer);
-        // OpenGL ES 生产 profile 必须同步暴露真实的 RHI Additive 能力。
-        assert!(opengles.rhi_additive_blend);
-        // OpenGL ES 仍须满足 GPU-only 绘制基线。
-        assert!(opengles.has_gpu_only_baseline());
+    fn renderer_profile_projects_retained_and_additive_facts() {
+        // 构造 D3D11 与 OpenGL ES 生产实现共同满足的 retained RHI 快照。
+        let rhi_capabilities = GraphicsCapabilities::retained_gpu_baseline();
+        // 从唯一事实来源派生 renderer 使用的窄能力投影。
+        let renderer_capabilities = NativeRasterCaps::from_rhi_capabilities(rhi_capabilities);
+        // 投影必须保留跨帧主颜色目标事实。
+        assert!(renderer_capabilities.retained_framebuffer);
+        // 投影必须保留真实的 RHI Additive 能力。
+        assert!(renderer_capabilities.rhi_additive_blend);
+        // retained 事实必须继续满足生产 GPU-only 绘制基线。
+        assert!(renderer_capabilities.has_gpu_only_baseline());
     }
 }
 

@@ -123,11 +123,6 @@ pub trait IGraphicsContext {
         Ok(())
     }
 
-    /// Per-operation native raster support for `GpuNative` contexts.
-    fn native_raster_caps(&self) -> NativeRasterCaps {
-        NativeRasterCaps::default()
-    }
-
     // 返回当前 drawable extent、DPR、transform 与 generation 的原子快照。
     fn present_surface(&self) -> PresentSurface;
 

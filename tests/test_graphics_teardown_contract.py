@@ -347,8 +347,8 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         submit = (ROOT / "src/draw/backend/gpu/submit.rs").read_text(encoding="utf-8")
         # 读取 retained surface 生命周期，确认 legacy 放弃 helper 不会复活。
         retained = (ROOT / "src/draw/backend/gpu/backend/rhi_surface.rs").read_text(encoding="utf-8")
-        # 生产 backend 构造本身也必须拒绝缺少组合 thin RHI 的 context。
-        self.assertIn("|| !has_rhi_context", lifecycle)
+        # 生产 backend 构造必须以能力快照存在性拒绝缺少组合 thin RHI 的 context。
+        self.assertIn(".is_some_and(|capabilities| capabilities.has_gpu_baseline())", lifecycle)
         # 最终状态机必须以统一 typed 门禁拒绝未覆盖语义。
         self.assertIn("require_lossless_main_surface_submission", present)
         # 读取 retained RHI 主 surface 提交状态机。
@@ -687,6 +687,46 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("pub retained_framebuffer: bool", present)
         # capability profile 必须保留 Additive RHI 事实。
         self.assertIn("pub rhi_additive_blend: bool", present)
+
+    # 校验 renderer 能力只从 thin RHI 快照派生，不恢复 adapter 平行声明。
+    def test_native_raster_caps_are_derived_from_thin_rhi(self) -> None:
+        # 读取迁移期 graphics context trait。
+        facade = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        # 读取 owner-thread 包装层。
+        thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
+        # 读取 renderer 能力投影定义。
+        present = (ROOT / "src/native/present/mod.rs").read_text(encoding="utf-8")
+        # 读取生产 GPU backend 构造门禁。
+        backend = (ROOT / "src/draw/backend/gpu/backend/impl_main.rs").read_text(encoding="utf-8")
+        # 枚举曾经硬编码 renderer profile 的生产 adapter。
+        adapters = (
+            # Windows 默认 D3D11 adapter。
+            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            # Windows OpenGL ES/WGL adapter。
+            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            # Linux OpenGL ES/EGL adapter。
+            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+        )
+        # 公共 context 门面不得重新声明 renderer 能力查询。
+        self.assertNotIn("fn native_raster_caps(", facade)
+        # 线程包装层不得缓存或转发第二份能力真相。
+        self.assertNotIn("native_raster_caps", thread_bound)
+        # 所有生产 adapter 都必须退出硬编码 profile。
+        for adapter in adapters:
+            # adapter wrapper 不得重新声明 renderer 能力查询。
+            self.assertNotIn("native_raster_caps", adapter.read_text(encoding="utf-8"))
+        # renderer 投影必须显式接收薄 RHI capability 快照。
+        self.assertIn("from_rhi_capabilities(capabilities: rhi::GraphicsCapabilities)", present)
+        # retained 事实必须直接复制自同一薄 RHI 快照。
+        self.assertIn("retained_framebuffer: capabilities.retained_framebuffer", present)
+        # Additive 事实必须直接复制自同一薄 RHI 快照。
+        self.assertIn("rhi_additive_blend: capabilities.additive_blend", present)
+        # 构造门禁必须从组合 RHI 读取唯一能力来源。
+        self.assertIn(".map(|context| context.capabilities())", backend)
+        # 构造门禁必须验证完整 GPU 原语基线。
+        self.assertIn("capabilities.has_gpu_baseline()", backend)
+        # 构造门禁必须从同一快照派生 renderer 投影。
+        self.assertIn(".map(NativeRasterCaps::from_rhi_capabilities)", backend)
 
     # 校验 surface readback 已成为事实声明的可选 thin RHI 能力。
     def test_surface_readback_is_an_optional_thin_rhi_capability(self) -> None:
