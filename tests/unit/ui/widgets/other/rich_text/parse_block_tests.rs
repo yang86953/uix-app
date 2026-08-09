@@ -99,3 +99,43 @@ fn block_quotes_require_space_or_tab_separators() {
         }]
     );
 }
+
+// 验证列表只接受 ASCII 空格或制表符，避免 Unicode 空白误触发块级语义。
+#[test]
+fn list_markers_require_ascii_space_or_tab_separators() {
+    // 解析以制表符分隔的无序列表和有序列表。
+    let tabbed = parse_rich_text("-\t项目\n1.\t步骤");
+    // 制表符是受支持的 Markdown 列表分隔符。
+    assert_eq!(
+        tabbed,
+        vec![
+            RichTextSegment::Text {
+                content: "• 项目".into(),
+                style: RichTextStyle::default(),
+            },
+            RichTextSegment::NewLine,
+            RichTextSegment::Text {
+                content: "1.\t步骤".into(),
+                style: RichTextStyle::default(),
+            },
+        ]
+    );
+
+    // 解析使用不换行空格分隔的相似文本。
+    let unicode_whitespace = parse_rich_text("-\u{a0}项目\n1.\u{a0}步骤");
+    // Unicode 空白不属于列表分隔契约，原文必须完整保留。
+    assert_eq!(
+        unicode_whitespace,
+        vec![
+            RichTextSegment::Text {
+                content: "-\u{a0}项目".into(),
+                style: RichTextStyle::default(),
+            },
+            RichTextSegment::NewLine,
+            RichTextSegment::Text {
+                content: "1.\u{a0}步骤".into(),
+                style: RichTextStyle::default(),
+            },
+        ]
+    );
+}
