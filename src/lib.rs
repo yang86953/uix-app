@@ -179,6 +179,10 @@ extern crate windows_core;
 
 // E-06：路由 key 派生宏（`#[derive(uix::Display)]` 免除手写 Display）。
 pub use uix_derive::Display;
+// 真实消费者编译 Gate 仅在测试构建中接入。
+#[cfg(test)]
+// 隔离 uix-lang 核心生成物的公开 API 编译测试。
+mod uix_lang_codegen_consumer_tests;
 
 /// 按 key 取当前资源表文案（E-08）：`t!("common.save")`。
 ///

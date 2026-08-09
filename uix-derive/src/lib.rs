@@ -69,22 +69,62 @@ pub fn derive_display(input: TokenStream) -> TokenStream {
     .into()
 }
 
+// 为根 crate 的真实消费者编译 Gate 暂时暴露内部 View 展开入口。
+#[doc(hidden)]
+// 声明内部过程宏；正式 uix! 文件与应用入口由后续 Gate 接通。
+#[proc_macro]
+pub fn __uix_view_internal(input: TokenStream) -> TokenStream {
+    // 要求测试入口接收单个内嵌字符串字面量。
+    let input = syn::parse_macro_input!(input as syn::LitStr);
+    // 读取字面量中的 UIX 源码。
+    let source = input.value();
+    // 解析并生成公开 View API 令牌。
+    match uix_lang::parse_document(&source)
+        // 解析成功后生成根 View。
+        .and_then(|document| uix_lang::generate_view(&document.root))
+    {
+        // 成功时直接返回生成令牌。
+        Ok(tokens) => tokens.into(),
+        // 失败时把结构化诊断转换为调用点编译错误。
+        Err(error) => syn::Error::new(
+            // 当前内部入口暂以字符串字面量为编译器跨度。
+            input.span(),
+            // 在消息中保留 UIX 精确行列、原因与修复建议。
+            format!(
+                // 统一内部 Gate 的诊断文本格式。
+                "UIX {}:{}: {}；建议：{}",
+                // 写入一基行号。
+                error.span.line,
+                // 写入一基列号。
+                error.span.column,
+                // 写入失败原因。
+                error.message,
+                // 写入可执行修复建议。
+                error.suggestion
+            ),
+        )
+        // 生成 compile_error! 令牌。
+        .to_compile_error()
+        // 转换为过程宏返回类型。
+        .into(),
+    }
+}
+
 /// `CamelCase` → `kebab-case`（连续大写缩写按词边界拆分：`APIVersion` → `api-version`）。
 fn kebab_case(name: &str) -> String {
     let chars: Vec<char> = name.chars().collect();
     let mut out = String::with_capacity(name.len() + 4);
     for (index, &ch) in chars.iter().enumerate() {
-        let boundary = index > 0
-            && {
-                let prev = chars[index - 1];
-                ((prev.is_ascii_lowercase() || prev.is_ascii_digit())
-                    && (ch.is_ascii_uppercase() || ch.is_ascii_digit()))
-                    || (prev.is_ascii_uppercase()
-                        && ch.is_ascii_uppercase()
-                        && chars
-                            .get(index + 1)
-                            .is_some_and(|next| next.is_ascii_lowercase()))
-            };
+        let boundary = index > 0 && {
+            let prev = chars[index - 1];
+            ((prev.is_ascii_lowercase() || prev.is_ascii_digit())
+                && (ch.is_ascii_uppercase() || ch.is_ascii_digit()))
+                || (prev.is_ascii_uppercase()
+                    && ch.is_ascii_uppercase()
+                    && chars
+                        .get(index + 1)
+                        .is_some_and(|next| next.is_ascii_lowercase()))
+        };
         if boundary {
             out.push('-');
         }
