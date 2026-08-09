@@ -139,3 +139,57 @@ fn list_markers_require_ascii_space_or_tab_separators() {
         ]
     );
 }
+
+// 验证有序列表接受点号与右括号标记，并保留作者选择的前缀。
+#[test]
+fn ordered_lists_accept_dot_and_closing_parenthesis_markers() {
+    // 解析点号列表以及正文包含粗体的右括号列表。
+    let segments = parse_rich_text("1. 点号项目\n2) **括号项目**");
+    // 两种标记都应启动一级有序列表，右括号前缀不得被改写。
+    assert_eq!(
+        segments,
+        vec![
+            // 默认样式的点号前缀与正文会合并为同一文本段。
+            RichTextSegment::Text {
+                content: "1. 点号项目".into(),
+                style: RichTextStyle::default(),
+            },
+            // 源文档中的换行继续保留。
+            RichTextSegment::NewLine,
+            // 右括号编号前缀保持作者输入。
+            RichTextSegment::Text {
+                content: "2) ".into(),
+                style: RichTextStyle::default(),
+            },
+            // 列表正文继续复用内联强调解析。
+            RichTextSegment::Text {
+                content: "括号项目".into(),
+                style: RichTextStyle {
+                    bold: true,
+                    ..Default::default()
+                },
+            },
+        ]
+    );
+
+    // 解析缺少 ASCII 分隔符和使用 NBSP 的右括号相似文本。
+    let literal = parse_rich_text("3)无空格\n4)\u{a0}非断行空格");
+    // 两行都不满足列表边界，必须保持普通文本。
+    assert_eq!(
+        literal,
+        vec![
+            // 无分隔符的输入保持完整字面值。
+            RichTextSegment::Text {
+                content: "3)无空格".into(),
+                style: RichTextStyle::default(),
+            },
+            // 源文档中的换行继续保留。
+            RichTextSegment::NewLine,
+            // Unicode 空白不属于块级标记分隔符。
+            RichTextSegment::Text {
+                content: "4)\u{a0}非断行空格".into(),
+                style: RichTextStyle::default(),
+            },
+        ]
+    );
+}

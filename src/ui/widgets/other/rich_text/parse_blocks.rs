@@ -1,5 +1,5 @@
 // 富文本行首块级 Markdown 解析辅助。
-use super::{parse_inline_range, push_text_segment, RichTextSegment, RichTextStyle};
+use super::{RichTextSegment, RichTextStyle, parse_inline_range, push_text_segment};
 
 // 解析当前行的一级块级标记，并返回是否已经消费整行。
 pub(super) fn parse_block_line(text: &str, segments: &mut Vec<RichTextSegment>) -> bool {
@@ -21,9 +21,9 @@ pub(super) fn parse_block_line(text: &str, segments: &mut Vec<RichTextSegment>) 
         // 返回当前行已经由无序列表分支消费。
         return true;
     }
-    // 识别有序列表并保留源文档中的数字前缀。
+    // 识别有序列表并保留源文档中的数字与标记前缀。
     if let Some((prefix, content)) = parse_ordered_list(text) {
-        // 输出原始数字和点号，避免改变作者的编号语义。
+        // 输出原始数字和列表标记，避免改变作者的编号语义。
         push_text_segment(prefix, &RichTextStyle::default(), segments);
         // 列表正文继续复用普通内联 Markdown 解析。
         parse_inline_range(content, &RichTextStyle::default(), segments);
@@ -150,19 +150,28 @@ fn parse_ordered_list(text: &str) -> Option<(&str, &str)> {
         // 向下一个连续数字推进。
         digit_len += 1;
     }
-    // 有序列表至少需要一个数字和一个点号。
-    if digit_len == 0 || text.as_bytes().get(digit_len) != Some(&b'.') {
+    // 有序列表至少需要一个数字和点号或右括号标记。
+    if digit_len == 0
+        // 标准 Markdown 的两种有序列表标记都在这里统一识别。
+        || !text
+            // 读取数字序列后的单字节标记。
+            .as_bytes()
+            // 点号和右括号以外的字符不启动有序列表。
+            .get(digit_len)
+            // 只接受两种公开标记。
+            .is_some_and(|marker| matches!(marker, b'.' | b')'))
+    {
         // 不满足列表标记边界时保留原始文本。
         return None;
     }
-    // 读取点号后的第一个 Unicode 字符。
+    // 读取列表标记后的第一个 Unicode 字符。
     let separator = text[digit_len + 1..].chars().next()?;
-    // 点号后只接受 Markdown 块级标记使用的 ASCII 空格或制表符。
+    // 列表标记后只接受 Markdown 块级标记使用的 ASCII 空格或制表符。
     if !matches!(separator, ' ' | '\t') {
         // 例如 1.test 应保持普通文本。
         return None;
     }
-    // 计算列表正文起点，保留数字、点号和一个分隔字符作为前缀。
+    // 计算列表正文起点，保留数字、原始标记和一个分隔字符作为前缀。
     let content_start = digit_len + 1 + separator.len_utf8();
     // 返回可见数字前缀和内联正文。
     Some((&text[..content_start], &text[content_start..]))
