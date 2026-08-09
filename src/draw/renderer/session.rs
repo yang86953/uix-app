@@ -7,7 +7,6 @@ use crate::draw::backend::{
 };
 use crate::draw::outcome::RenderOutcome;
 use crate::draw::{Canvas2D, GraphicsCapabilities, UpdateStrategy};
-use crate::native::present::IGraphicsContext;
 use std::thread::ThreadId;
 
 /// 绘图层会话：持有可切换后端与共享帧逻辑。
@@ -17,8 +16,6 @@ pub struct RenderSession {
     height: i32,
     /// 后端切换后下一帧强制全帧重绘。
     force_full_frame: bool,
-    /// 保留 GPU 上下文以便 Cpu ↔ Gpu 切换。
-    gpu_ctx: Option<Box<dyn IGraphicsContext>>,
     /// The construction thread owns every live backend/context beneath this
     /// session. Backends are non-Send; this makes the affinity explicit at
     /// lifecycle boundaries as well.
@@ -29,13 +26,13 @@ impl RenderSession {
     /// 以指定后端种类创建会话。
     pub fn new(kind: BackendKind) -> Result<Self, Error> {
         let resolved = resolve_kind(kind);
-        let backend = create_backend(resolved, None)?;
+        // 通用会话构造只委托不依赖原生 recipe 的 backend kind factory。
+        let backend = create_backend(resolved)?;
         Ok(Self {
             backend,
             width: 0,
             height: 0,
             force_full_frame: false,
-            gpu_ctx: None,
             owner_thread: std::thread::current().id(),
         })
     }
@@ -47,36 +44,8 @@ impl RenderSession {
             width: 0,
             height: 0,
             force_full_frame: false,
-            gpu_ctx: None,
             owner_thread: std::thread::current().id(),
         }
-    }
-
-    /// Binds a GPU context for a later `set_backend(Gpu)` call.
-    ///
-    /// A staged context is still a live thread-affine native resource. Replacing
-    /// it therefore closes the old one on the owner thread rather than letting
-    /// `Drop` silently skip its native shutdown protocol.
-    #[allow(dead_code)] // Retained for crate-local staged recipe transitions and regression coverage.
-    pub(crate) fn set_gpu_context(
-        &mut self,
-        mut ctx: Box<dyn IGraphicsContext>,
-    ) -> Result<(), Error> {
-        self.require_owner("set_gpu_context")?;
-        if let Some(mut previous) = self.gpu_ctx.take() {
-            if let Err(error) = previous.try_shutdown() {
-                // The old native resource remains live after a failed checked
-                // teardown. Keep it owned by this session and close the
-                // incoming resource before returning the typed failure.
-                self.gpu_ctx = Some(previous);
-                return match ctx.try_shutdown() {
-                    Ok(()) => Err(error),
-                    Err(cleanup_error) => Err(cleanup_error.with_source(error)),
-                };
-            }
-        }
-        self.gpu_ctx = Some(ctx);
-        Ok(())
     }
 
     pub fn backend_kind(&self) -> BackendKind {
@@ -123,18 +92,11 @@ impl RenderSession {
         }
     }
 
-    /// Closes the active backend and any staged context on the owner thread.
-    /// A failure deliberately leaves the still-live owner in place for a
-    /// later retry by the recovery or Drop path.
+    /// 在 owner thread 上关闭当前后端。
+    /// 失败时保留仍存活的 owner，供恢复层或 Drop 路径稍后重试。
     pub(crate) fn try_shutdown(&mut self) -> Result<(), Error> {
         self.require_owner("shutdown")?;
         self.backend.try_shutdown()?;
-        if let Some(mut staged_context) = self.gpu_ctx.take() {
-            if let Err(error) = staged_context.try_shutdown() {
-                self.gpu_ctx = Some(staged_context);
-                return Err(error);
-            }
-        }
         self.width = 0;
         self.height = 0;
         Ok(())
@@ -162,14 +124,8 @@ impl RenderSession {
     pub fn set_backend(&mut self, kind: BackendKind) -> Result<(), Error> {
         self.require_owner("set_backend")?;
         let resolved = resolve_kind(kind);
-        // CPU/Test backends do not consume a staged GPU context. Keep it
-        // alive for a later explicit GPU switch; shutdown owns it otherwise.
-        let gpu_ctx = if resolved == BackendKind::Gpu {
-            self.gpu_ctx.take()
-        } else {
-            None
-        };
-        let replacement = create_backend(resolved, gpu_ctx)?;
+        // GPU 会在通用工厂中被拒绝，正式路径必须直接注入已验证 backend。
+        let replacement = create_backend(resolved)?;
         let _ = self.backend.try_shutdown();
         self.backend = replacement;
         if self.width > 0 && self.height > 0 {
@@ -319,6 +275,31 @@ mod prepare_frame_tests {
     use super::*;
     // 引入 downcast 契约需要的 Any。
     use std::any::Any;
+
+    // 锁定 GPU 只能通过已验证原生 recipe factory 进入会话。
+    #[test]
+    fn gpu_selection_requires_validated_native_recipe_factory() {
+        // 通用会话构造器不得接收缺少 recipe 校验的 GPU 选择。
+        let creation_error = RenderSession::new(BackendKind::Gpu)
+            // 提取稳定错误而不要求 RenderSession 实现 Debug。
+            .err()
+            // GPU 通用构造必须失败。
+            .expect("generic GPU session creation must fail");
+        // 错误分类必须保持为调用方可修正的非法参数。
+        assert_eq!(creation_error.code(), crate::core::Errc::InvalidArgument);
+        // 创建可安全切换的 CPU 会话基线。
+        let mut session = RenderSession::new(BackendKind::Cpu).expect("CPU session must construct");
+        // 运行时通用切换同样不得绕过 native recipe factory。
+        let switch_error = session
+            // 请求未经 recipe 校验的 GPU 切换。
+            .set_backend(BackendKind::Gpu)
+            // GPU 通用切换必须失败。
+            .expect_err("generic GPU session switch must fail");
+        // 运行时切换使用与构造一致的稳定错误分类。
+        assert_eq!(switch_error.code(), crate::core::Errc::InvalidArgument);
+        // 失败切换不得替换当前可用后端。
+        assert_eq!(session.backend_kind(), BackendKind::Cpu);
+    }
 
     // 用 CPU surface 承载测试，但在语义型帧准备入口注入设备丢失。
     struct FailingPrepareBackend {

@@ -260,6 +260,21 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 装配层必须先完成 owner 校验再构造 backend。
         self.assertIn("let owner = GpuRecipeOwner::try_new(ctx)?;", factory)
 
+    # 校验通用会话不再保留第二条 staged GPU context 装配链。
+    def test_render_session_has_no_staged_gpu_context_path(self) -> None:
+        # 读取通用后端工厂。
+        backend_factory = (ROOT / "src/draw/backend/mod.rs").read_text(encoding="utf-8")
+        # 读取会话生命周期实现。
+        session = (ROOT / "src/draw/renderer/session.rs").read_text(encoding="utf-8")
+        # 通用工厂不得接收兼容 context trait object。
+        self.assertNotIn("IGraphicsContext", backend_factory)
+        # 通用 GPU 选择必须返回稳定 typed error。
+        self.assertIn("GPU 后端必须由已验证的原生图形配方构造", backend_factory)
+        # 会话不得持有 staged context 字段。
+        self.assertNotIn("gpu_ctx", session)
+        # 会话不得恢复 staged context 注入入口。
+        self.assertNotIn("set_gpu_context", session)
+
     # 校验 CPU PixelUpload presentation 只持有构造期已验证的 recipe owner。
     def test_pixel_upload_presentation_uses_validated_recipe_owner(self) -> None:
         # 读取 PixelUpload owner 的唯一 native 边界实现。
