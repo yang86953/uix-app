@@ -162,6 +162,10 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _splitter: ViewNode = crate::uix!(
         r#"<Splitter direction="horizontal" defaultRatio={splitter_ratio} height="320px"><Container><Text>Navigation</Text></Container><Container><Text>Content</Text></Container></Splitter>"#
     );
+    // 验证完整应用布局壳、布尔简写和嵌套区域只依赖公开 prelude。
+    let _app_layout: ViewNode = crate::uix!(
+        r#"<Layout direction="row"><Sider collapsible><Text>Navigation</Text></Sider><Layout><Header><Text>Header</Text></Header><Content><Text>Content</Text></Content><Footer><Text>Footer</Text></Footer></Layout></Layout>"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。

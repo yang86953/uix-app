@@ -16,31 +16,6 @@ const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
         name: "App",
         category: "标签语法 / App 应用入口",
     },
-    // 布局组件规划项。
-    PlannedBuiltin {
-        name: "Layout",
-        category: "内置组件 / 布局组件",
-    },
-    // 布局组件规划项。
-    PlannedBuiltin {
-        name: "Sider",
-        category: "内置组件 / 布局组件",
-    },
-    // 布局组件规划项。
-    PlannedBuiltin {
-        name: "Header",
-        category: "内置组件 / 布局组件",
-    },
-    // 布局组件规划项。
-    PlannedBuiltin {
-        name: "Content",
-        category: "内置组件 / 布局组件",
-    },
-    // 布局组件规划项。
-    PlannedBuiltin {
-        name: "Footer",
-        category: "内置组件 / 布局组件",
-    },
     // 输入组件规划项。
     PlannedBuiltin {
         name: "Input",
@@ -421,9 +396,8 @@ mod tests {
             .iter()
             .map(|entry| entry.category)
             .collect::<BTreeSet<_>>();
-        // 仍有规划中标签的五类内置组件必须全部出现。
+        // 仍有规划中标签的四类内置组件必须全部出现。
         for category in [
-            "内置组件 / 布局组件",
             "内置组件 / 输入组件",
             "内置组件 / 展示组件",
             "内置组件 / 导航组件",
