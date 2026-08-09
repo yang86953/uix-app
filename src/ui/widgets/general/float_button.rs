@@ -1,17 +1,26 @@
 //! FloatButton widget — 浮动按钮，Ant Design 风格。
 //!
-//! 固定在屏幕角落的圆形按钮，支持图标、tooltip、badge 等。
+//! 固定在屏幕角落的操作按钮，支持图标、description、tooltip、badge 与窗口 placement。
 
+// 声明 FloatButton 私有几何实现。
+mod geometry;
+// 测试模块集中验证公开 authored config 与共享几何契约。
+#[cfg(test)]
+mod tests;
+
+// 引入单一几何解析入口与输入输出类型。
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
-use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::component::paint_context::PaintContext;
+use geometry::{FloatButtonGeometry, FloatButtonGeometryInput, resolve_float_button_geometry};
 // 浮动按钮使用基础层共享的触发方式，不依赖反馈组件族。
-use crate::ui::widgets::TriggerMode;
 use crate::ui::SnapshotFields;
+use crate::ui::widgets::TriggerMode;
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, OverlayEntry, OverlayKind, SystemEvent, WidgetTree,
+    EventResult, KeyCode, MouseButton, OverlayEntry, OverlayKind, Placement, SystemEvent,
+    WidgetTree,
 };
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -23,17 +32,26 @@ const FLOAT_BUTTON_GROUP_GAP: f32 = 8.0;
 component! {
     pub struct FloatButton {
         icon: String,
+        // 保存按钮展开说明文字。
+        description: String,
         tooltip: String,
         badge_count: i32,
+        // 保存圆点徽标语义。
+        badge_dot: bool,
         size: f32,
         x: f32,
         y: f32,
+        // 保存作者显式声明的窗口放置方向。
+        placement: Option<Placement>,
         reserve_layout_space: bool,
         trigger_mode: TriggerMode,
         hovered: bool,
         pressed: bool,
         focused: bool,
         in_group: bool,
+        // 表面缓存是派生几何输入，不属于 authored config 快照。
+        #[snapshot(skip)]
+        last_surface: Cell<Rect>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -43,7 +61,8 @@ component! {
     tab_index => (&self) -> i32 { 1 }
 
     hit_test_frame => (&self, frame: Rect) -> Rect {
-        self.button_rect(frame)
+        // 命中区域与绘制、浮层登记消费同一几何结果。
+        self.geometry(frame).control
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -87,21 +106,32 @@ component! {
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        self.paint_bounds(frame)
+        // 损伤区域与绘制、命中消费同一几何结果。
+        self.geometry(frame).paint_bounds
     }
 
     overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<OverlayEntry> {
-        if self.reserve_layout_space {
-            return None;
-        }
-        Some(
-            OverlayEntry::new(id, OverlayKind::Custom)
-                .bounds(self.button_rect(frame))
-                .z_index(900),
-        )
+        // 旧入口仅作为当前缓存表面的兼容委托。
+        self.overlay_for_surface(id, frame, self.last_surface.get())
+    }
+
+    // 显式接收当前窗口逻辑表面，避免复用旧尺寸下的锚点。
+    overlay_entry_for_surface => (&self, id: crate::ui::ComponentId, frame: Rect, surface: Rect) -> Option<OverlayEntry> {
+        // 保存组件树本帧提供的权威表面。
+        self.last_surface.set(surface);
+        // 使用同一表面解析浮层登记区域。
+        self.overlay_for_surface(id, frame, surface)
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
+        // 读取当前绘制表面的逻辑尺寸。
+        let surface_size = ctx.logical_surface_size();
+        // 把逻辑尺寸映射为窗口客户区矩形。
+        let surface = Rect::new(0.0, 0.0, surface_size.w, surface_size.h);
+        // 保存绘制阶段使用的当前表面。
+        self.last_surface.set(surface);
+        // 一次解析本帧全部 FloatButton 几何。
+        let geometry = self.geometry_for_surface(frame, surface);
         let loc = crate::ui::component::locale::use_locale();
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();
@@ -114,10 +144,10 @@ component! {
         } else {
             primary
         };
-        let r = Radius::uniform(self.size * 0.5);
-        let btn_rect = self.button_rect(frame);
-        let cx = btn_rect.x + btn_rect.w * 0.5;
-        let cy = btn_rect.y + btn_rect.h * 0.5;
+        // 以最终控件高度派生圆角，说明模式保持胶囊形状。
+        let r = Radius::uniform(geometry.control.h * 0.5);
+        // 借用共享几何中的完整控件区域。
+        let btn_rect = geometry.control;
         // 阴影
         ctx.draw_box_shadow(btn_rect, 8.0, 0.0, 4.0, Color::from_rgba(0, 0, 0, 40), Some(r));
         ctx.fill_rect(btn_rect, bg, Some(r));
@@ -126,22 +156,59 @@ component! {
         }
         let icon_fs = 16.0;
         crate::ui::widgets::general::icon::Icon::paint_in_frame(
-            ctx, &self.icon, btn_rect, white, icon_fs,
+            // 传入绘制上下文。
+            ctx,
+            // 传入 Lucide 图标名称。
+            &self.icon,
+            // 只在共享图标区域内绘制。
+            geometry.icon,
+            // 浮动主按钮使用高对比前景色。
+            white,
+            // 沿用既有图标字号。
+            icon_fs,
         );
+        // 展开说明存在时绘制到共享说明区域。
+        if let Some(description) = geometry.description {
+            // 说明文字与图标共享主按钮前景色。
+            ctx.text_center(&self.description, description, white, 12.0);
+        }
         // Badge
-        if self.badge_count > 0 {
+        if let Some(badge_rect) = geometry.badge {
+            // 计算共享徽标区域的中心点。
+            let badge_center = Point::new(
+                // 计算横向中心。
+                badge_rect.x + badge_rect.w * 0.5,
+                // 计算纵向中心。
+                badge_rect.y + badge_rect.h * 0.5,
+            );
+            // 绘制数字或圆点共用的错误色底。
+            ctx.fill_circle(
+                // 使用共享中心点。
+                badge_center.x,
+                // 使用共享中心点。
+                badge_center.y,
+                // 半径由最终徽标区域派生。
+                badge_rect.w * 0.5,
+                // 使用主题错误色。
+                ctx.tokens().color_error(),
+            );
+            // 圆点徽标不绘制数字。
+            if !self.badge_dot && self.badge_count > 0 {
+                // 构造本地化溢出前的数字文本。
             let badge_count = self.badge_count.to_string();
+                // 超过上限时使用本地化溢出文案。
             let badge = if self.badge_count > 99 { loc.float_badge_overflow } else { &badge_count };
-            ctx.fill_circle(cx + self.size * 0.3, cy - self.size * 0.3, 10.0, ctx.tokens().color_error());
-            ctx.draw_text(badge, Point::new(cx + self.size * 0.3 - 7.0, cy - self.size * 0.3 - 7.0), white, 10.0);
+                // 把数字居中绘制到同一徽标区域。
+                ctx.text_center(badge, badge_rect, white, 10.0);
+            }
         }
         let show_tooltip = match self.trigger_mode {
             TriggerMode::Hover => self.hovered,
             TriggerMode::Focus => self.focused,
             TriggerMode::Click | TriggerMode::ContextMenu => self.pressed,
         };
-        if show_tooltip && !self.tooltip.is_empty() {
-            let tip = self.tooltip_rect(frame);
+        // 只有触发状态满足且共享几何包含提示框时才绘制。
+        if show_tooltip && let Some(tip) = geometry.tooltip {
             let tip_radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
             ctx.fill_rect(tip, ctx.tokens().color_bg_elevated(), tip_radius);
             ctx.stroke_rect(tip, ctx.tokens().color_border_secondary(), 1.0, tip_radius);
@@ -155,25 +222,54 @@ impl FloatButton {
     pub fn new(icon: &str) -> Self {
         Self {
             icon: icon.to_string(),
+            // 默认不显示展开说明。
+            description: String::new(),
             tooltip: String::new(),
             badge_count: 0,
+            // 默认不显示圆点徽标。
+            badge_dot: false,
             size: 40.0,
             x: 0.0,
             y: 0.0,
+            // 未显式 placement 时保留既有 frame-relative 行为。
+            placement: None,
             reserve_layout_space: false,
             trigger_mode: TriggerMode::Hover,
             hovered: false,
             pressed: false,
             focused: false,
             in_group: false,
+            // 新组件尚未获得窗口逻辑表面。
+            last_surface: Cell::new(Rect::zero()),
         }
     }
-    /// 设置相对零布局槽左上角的视觉偏移。
+
+    /// 设置相对当前 frame 或显式 placement 锚点的作者偏移。
     pub fn position(mut self, x: f32, y: f32) -> Self {
+        // 非有限横向偏移回退为零。
         self.x = finite_or_zero(x);
+        // 非有限纵向偏移回退为零。
         self.y = finite_or_zero(y);
+        // 返回更新后的构建值。
         self
     }
+
+    /// 设置相对窗口逻辑客户区的放置方向。
+    pub fn placement(mut self, placement: Placement) -> Self {
+        // 保存 overlay 模块拥有的公开放置语义。
+        self.placement = Some(placement);
+        // 返回更新后的构建值。
+        self
+    }
+
+    /// 设置按钮内部展开显示的说明文字。
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        // 保存作者说明文字。
+        self.description = description.into();
+        // 返回更新后的构建值。
+        self
+    }
+
     pub fn tooltip(mut self, t: &str) -> Self {
         self.tooltip = t.to_string();
         self
@@ -182,6 +278,15 @@ impl FloatButton {
         self.badge_count = count.max(0);
         self
     }
+
+    /// 设置圆点徽标；启用时视觉上优先于数字徽标。
+    pub fn badge_dot(mut self, dot: bool) -> Self {
+        // 保存作者圆点徽标配置。
+        self.badge_dot = dot;
+        // 返回更新后的构建值。
+        self
+    }
+
     pub fn size(mut self, s: f32) -> Self {
         self.size = positive_or(s, 40.0);
         self
@@ -206,34 +311,69 @@ impl FloatButton {
         }
     }
 
-    fn button_rect(&self, frame: Rect) -> Rect {
-        Rect::new(frame.x + self.x, frame.y + self.y, self.size, self.size)
+    // 使用最近一次权威 surface 解析共享几何。
+    fn geometry(&self, frame: Rect) -> FloatButtonGeometry {
+        // 委托显式表面入口。
+        self.geometry_for_surface(frame, self.last_surface.get())
     }
 
-    fn tooltip_rect(&self, frame: Rect) -> Rect {
-        let button = self.button_rect(frame);
-        let width = (self.tooltip.chars().count() as f32 * 7.0 + 20.0).max(44.0);
-        Rect::new(
-            button.x - width - 8.0,
-            button.y + (button.h - 28.0) * 0.5,
-            width,
-            28.0,
-        )
+    // 使用调用方提供的当前 surface 解析共享几何。
+    fn geometry_for_surface(&self, frame: Rect, surface: Rect) -> FloatButtonGeometry {
+        // 构造只读 authored config 输入。
+        resolve_float_button_geometry(FloatButtonGeometryInput {
+            // 传入组件布局矩形。
+            frame,
+            // 传入当前窗口逻辑表面。
+            surface,
+            // 传入可选窗口 placement。
+            placement: self.placement,
+            // 传入有限作者偏移。
+            offset: Point::new(self.x, self.y),
+            // 传入按钮直径。
+            size: self.size,
+            // 借用展开说明。
+            description: &self.description,
+            // 借用提示文字。
+            tooltip: &self.tooltip,
+            // 传入数字徽标。
+            badge_count: self.badge_count,
+            // 传入圆点徽标。
+            badge_dot: self.badge_dot,
+            // 传入组内布局标记。
+            in_group: self.in_group,
+            // 传入普通布局占位标记。
+            reserve_layout_space: self.reserve_layout_space,
+        })
     }
 
-    fn paint_bounds(&self, frame: Rect) -> Rect {
-        let button = self.button_rect(frame);
-        let shadow = Rect::new(
-            button.x - 10.0,
-            button.y - 10.0,
-            button.w + 20.0,
-            button.h + 24.0,
-        );
-        if self.tooltip.is_empty() {
-            shadow
-        } else {
-            shadow.union(&self.tooltip_rect(frame))
+    // 使用共享几何创建 FloatButton 的非模态浮层登记。
+    fn overlay_for_surface(
+        // 借用当前组件。
+        &self,
+        // 接收组件树稳定标识。
+        id: crate::ui::ComponentId,
+        // 接收组件布局矩形。
+        frame: Rect,
+        // 接收当前窗口逻辑表面。
+        surface: Rect,
+        // 返回可选浮层登记。
+    ) -> Option<OverlayEntry> {
+        // 普通布局占位模式不进入 OverlayStack。
+        if self.reserve_layout_space {
+            // 返回缺省登记。
+            return None;
         }
+        // 一次解析浮层命中所需的共享几何。
+        let geometry = self.geometry_for_surface(frame, surface);
+        // 返回非模态自定义浮层登记。
+        Some(
+            // 创建当前组件拥有的 Custom entry。
+            OverlayEntry::new(id, OverlayKind::Custom)
+                // 命中 bounds 使用完整 description 控件区域。
+                .bounds(geometry.control)
+                // 保持既有浮动按钮层级。
+                .z_index(900),
+        )
     }
 
     fn pointer_boundary_result(&self) -> EventResult {
@@ -247,22 +387,34 @@ impl FloatButton {
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::FloatButton {
             icon: self.icon.clone(),
+            // 保存展开说明 authored config。
+            description: self.description.clone(),
             tooltip: self.tooltip.clone(),
             badge_count: self.badge_count,
+            // 保存圆点徽标 authored config。
+            badge_dot: self.badge_dot,
             size: self.size,
             x: self.x,
             y: self.y,
+            // 保存显式窗口 placement。
+            placement: self.placement,
             reserve_layout_space: self.reserve_layout_space,
         }
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.icon = next.icon;
+        // 同步展开说明 authored config。
+        self.description = next.description;
         self.tooltip = next.tooltip;
         self.badge_count = next.badge_count;
+        // 同步圆点徽标 authored config。
+        self.badge_dot = next.badge_dot;
         self.size = next.size;
         self.x = next.x;
         self.y = next.y;
+        // 同步显式窗口 placement。
+        self.placement = next.placement;
         self.reserve_layout_space = next.reserve_layout_space;
         self.trigger_mode = next.trigger_mode;
         self.in_group = next.in_group;
@@ -277,9 +429,11 @@ impl Default for FloatButton {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct FloatButtonGroupItemLayout {
+    // 保存组内子按钮的基础直径。
     size: f32,
-    x: f32,
-    y: f32,
+    // 保存包含 description 的相对命中区域。
+    hit_bounds: Rect,
+    // 保存包含阴影、徽标与提示框的相对绘制区域。
     paint_bounds: Rect,
 }
 
@@ -540,15 +694,23 @@ impl FloatButtonGroup {
 
     pub fn buttons(mut self, mut buttons: Vec<FloatButton>) -> Self {
         for button in &mut buttons {
+            // 组内按钮的 placement 由父组件相对布局覆盖。
             button.in_group = true;
         }
         self.item_layouts = buttons
             .iter()
-            .map(|button| FloatButtonGroupItemLayout {
-                size: button.size,
-                x: button.x,
-                y: button.y,
-                paint_bounds: button.paint_bounds(Rect::zero()),
+            .map(|button| {
+                // 组内按钮使用零 frame 生成相对共享几何。
+                let geometry = button.geometry_for_surface(Rect::zero(), Rect::zero());
+                // 保存父组件布局与命中所需的相对矩形。
+                FloatButtonGroupItemLayout {
+                    // 保留展开动画使用的基础直径。
+                    size: button.size,
+                    // 命中区域包含可选 description。
+                    hit_bounds: geometry.control,
+                    // 损伤区域包含阴影、徽标与提示框。
+                    paint_bounds: geometry.paint_bounds,
+                }
             })
             .collect();
         self.buttons = Rc::new(RefCell::new(Some(buttons)));
@@ -676,11 +838,17 @@ impl FloatButtonGroup {
         let progress = self.expansion_progress();
         for (index, item) in self.item_layouts.iter().enumerate() {
             let child = self.child_frame(frame, index, progress);
+            // 把子按钮相对命中区域平移到当前动画 frame。
+            let hit = item.hit_bounds;
             bounds = bounds.union(&Rect::new(
-                child.x + item.x,
-                child.y + item.y,
-                item.size,
-                item.size,
+                // 平移相对横坐标。
+                child.x + hit.x,
+                // 平移相对纵坐标。
+                child.y + hit.y,
+                // 使用 description 扩展后的命中宽度。
+                hit.w,
+                // 使用最终控件高度。
+                hit.h,
             ));
         }
         bounds
@@ -770,9 +938,5 @@ fn positive_or(value: f32, fallback: f32) -> f32 {
 }
 
 fn finite_or_zero(value: f32) -> f32 {
-    if value.is_finite() {
-        value
-    } else {
-        0.0
-    }
+    if value.is_finite() { value } else { 0.0 }
 }
