@@ -166,6 +166,14 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _app_layout: ViewNode = crate::uix!(
         r#"<Layout direction="row"><Sider collapsible><Text>Navigation</Text></Sider><Layout><Header><Text>Header</Text></Header><Content><Text>Content</Text></Content><Footer><Text>Footer</Text></Footer></Layout></Layout>"#
     );
+    // 提供 Input 双向绑定的文本状态。
+    let input_name = State::new(String::from("Belldandy"));
+    // 提供读取 Change 文本载荷的消费者回调。
+    let on_name_change = |_value: &str| {};
+    // 验证 Input 的密码类型、绑定、禁用状态、事件载荷与公共样式只依赖公开 prelude。
+    let _input: ViewNode = crate::uix!(
+        r#"<Input value={input_name} placeholder="请输入名称" type="password" disabled @change="on_name_change($event)" width="240px" />"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
