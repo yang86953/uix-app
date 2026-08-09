@@ -234,7 +234,7 @@ pub(crate) unsafe fn handle_nc_calc_size(
     wparam: usize,
     lparam: isize,
     maximized: bool,
-) -> Option<isize> {
+) -> Option<isize> { unsafe {
     if lparam == 0 || !uses_extended_client(style) {
         return None;
     }
@@ -263,7 +263,7 @@ pub(crate) unsafe fn handle_nc_calc_size(
         }
     }
     Some(0)
-}
+}}
 
 pub(crate) fn screen_point_from_lparam(lparam: isize) -> (i32, i32) {
     let x = (lparam & 0xFFFF) as i16 as i32;
@@ -280,7 +280,7 @@ pub(crate) unsafe fn handle_nc_hit_test(
     style: u32,
     lparam: isize,
     resizable: bool,
-) -> Result<Option<isize>> {
+) -> Result<Option<isize>> { unsafe {
     if !uses_extended_client(style) {
         return Ok(None);
     }
@@ -317,4 +317,4 @@ pub(crate) unsafe fn handle_nc_hit_test(
         _ => HTCLIENT,
     };
     Ok(Some(hit as isize))
-}
+}}

@@ -49,9 +49,9 @@ impl WidgetTree {
             if next.contains_key(&work_id) {
                 continue;
             }
-            if let Some(bound) = previous.remove(&work_id) {
+            match previous.remove(&work_id) { Some(bound) => {
                 next.insert(work_id, bound);
-            } else if source.bind_owner(self.tree_scope) {
+            } _ => if source.bind_owner(self.tree_scope) {
                 next.insert(
                     work_id,
                     BoundAnimatedSource {
@@ -59,7 +59,7 @@ impl WidgetTree {
                         source,
                     },
                 );
-            }
+            }}
         }
         self.animated_sources = next;
     }

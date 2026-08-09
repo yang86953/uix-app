@@ -466,7 +466,7 @@ impl Message {
         &self,
         frame: Rect,
         entries: &'a [ToastMotionEntry<MessageItem>],
-    ) -> impl Iterator<Item = (Rect, &'a ToastMotionEntry<MessageItem>)> + 'a {
+    ) -> impl Iterator<Item = (Rect, &'a ToastMotionEntry<MessageItem>)> + 'a + use<'a> {
         let frame = Self::normalize_frame(frame);
         let item_height = frame.h.min(Self::MSG_HEIGHT);
         let message_width = (frame.w - Self::MSG_INSET * 2.0).clamp(0.0, Self::MSG_WIDTH);

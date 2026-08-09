@@ -1,7 +1,7 @@
 [package]
 name = "uix-gui-demo"
 version = "0.0.1"
-edition = "2021"
+edition = "2024"
 publish = false
 license-file = "../../LICENSE"
 description = "UIX GUI 多页演示（12 页应用 + Agent 与 test-harness 测试支撑）"

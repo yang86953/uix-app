@@ -191,7 +191,7 @@ const WM_APP_NOTIFY: u32 = 0x8000;
 const IDI_APPLICATION: u16 = 32512;
 
 #[link(name = "shell32")]
-extern "system" {
+unsafe extern "system" {
     fn Shell_NotifyIconW(dwMessage: u32, lpdata: *mut NOTIFYICONDATAW) -> i32;
 }
 

@@ -128,7 +128,7 @@ fn is_key_down(vk: u32) -> bool {
 }
 
 #[link(name = "user32")]
-extern "system" {
+unsafe extern "system" {
     fn GetLastInputInfo(plii: *mut LASTINPUTINFO) -> i32;
     fn GetTickCount() -> u32;
     fn GetDoubleClickTime() -> u32;

@@ -556,8 +556,8 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         let dep_pairs: Vec<_> = deps
             .into_iter()
             .map(|dep| {
-                let gen = (dep.check_generation)();
-                (dep.check_generation, gen)
+                let r#gen = (dep.check_generation)();
+                (dep.check_generation, r#gen)
             })
             .collect();
 
@@ -625,8 +625,8 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
             let new_pairs: Vec<_> = new_deps
                 .into_iter()
                 .map(|dep| {
-                    let gen = (dep.check_generation)();
-                    (dep.check_generation, gen)
+                    let r#gen = (dep.check_generation)();
+                    (dep.check_generation, r#gen)
                 })
                 .collect();
 
@@ -649,8 +649,8 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         let new_pairs: Vec<_> = new_deps
             .into_iter()
             .map(|dep| {
-                let gen = (dep.check_generation)();
-                (dep.check_generation, gen)
+                let r#gen = (dep.check_generation)();
+                (dep.check_generation, r#gen)
             })
             .collect();
         let mut cached = self.cached.write().unwrap_or_else(|e| e.into_inner());
@@ -732,8 +732,8 @@ impl Effect {
             if subscriptions.insert(dep.slot_id) {
                 (dep.subscribe_pending)(self.inner.pending.clone());
             }
-            let gen = (dep.check_generation)();
-            dep_pairs.push((dep.check_generation, gen));
+            let r#gen = (dep.check_generation)();
+            dep_pairs.push((dep.check_generation, r#gen));
         }
 
         *self.inner.deps.write().unwrap_or_else(|e| e.into_inner()) = dep_pairs;

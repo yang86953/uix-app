@@ -22,7 +22,7 @@ macro_rules! impl_widget_component {
     (
         $T:ty;
         $($cap:ident),+ $(,)?
-        $(; tab_index => $tab:expr)?
+        $(; tab_index => $tab:expr_2021)?
     ) => {
         impl $crate::ui::__private::traits::WidgetComponent for $T {
             fn as_any(&self) -> &dyn std::any::Any {
@@ -115,13 +115,13 @@ macro_rules! impl_widget_component {
 
 #[macro_export]
 macro_rules! tree {
-    ($parent:expr => [$($child:expr),+ $(,)?]) => {
+    ($parent:expr_2021 => [$($child:expr_2021),+ $(,)?]) => {
         $crate::ui::__private::WidgetNode::new(
             Box::new($parent),
             vec![$($crate::ui::IntoWidgetNode::into_node($child)),+],
         )
     };
-    ($widget:expr) => {
+    ($widget:expr_2021) => {
         $crate::ui::__private::WidgetNode::leaf(Box::new($widget))
     };
 }

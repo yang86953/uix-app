@@ -259,7 +259,7 @@ struct WIN32_FIND_DATAW {
 }
 
 #[link(name = "kernel32")]
-extern "system" {
+unsafe extern "system" {
     fn GetLastError() -> u32;
     fn GetWindowsDirectoryW(lpBuffer: *mut u16, uSize: u32) -> u32;
     fn GetFileAttributesW(lpFileName: *const u16) -> u32;

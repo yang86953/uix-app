@@ -1,7 +1,7 @@
 #[macro_export]
 macro_rules! semantic_handler {
     (
-        $kind:expr,
+        $kind:expr_2021,
         $(state [$($state:ident),* $(,)?],)?
         $(computed [$($computed:ident),* $(,)?],)?
         $(window [$($window:ident),* $(,)?],)?
@@ -46,7 +46,7 @@ macro_rules! semantic_handler {
 /// 两三个子节点时优先元组：`column((a, b))`。
 #[macro_export]
 macro_rules! views {
-    ($($child:expr),* $(,)?) => {{
+    ($($child:expr_2021),* $(,)?) => {{
         {
             use $crate::ui::View;
             vec![$(View::build($child),)*]
@@ -134,14 +134,14 @@ macro_rules! keyframe {
 /// ```
 #[macro_export]
 macro_rules! with_cloned {
-    ($($name:ident),+ $(,)? ; |$arg:ident| $body:expr) => {{
+    ($($name:ident),+ $(,)? ; |$arg:ident| $body:expr_2021) => {{
         $(let $name = $name.clone();)+
         move |$arg| {
             $(let $name = $name.clone();)+
             $body
         }
     }};
-    ($($name:ident),+ $(,)? ; $body:expr) => {{
+    ($($name:ident),+ $(,)? ; $body:expr_2021) => {{
         $(let $name = $name.clone();)+
         move || {
             $(let $name = $name.clone();)+

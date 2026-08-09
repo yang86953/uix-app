@@ -219,7 +219,7 @@ const fn rgb(hex: u32) -> Color {
 }
 
 macro_rules! color_scale {
-    ($($hex:expr),+ $(,)?) => {
+    ($($hex:expr_2021),+ $(,)?) => {
         ColorScale::new([$(rgb($hex)),+])
     };
 }

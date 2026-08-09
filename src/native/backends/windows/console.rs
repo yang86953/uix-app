@@ -205,7 +205,7 @@ struct CONSOLE_CURSOR_INFO {
 }
 
 #[link(name = "kernel32")]
-extern "system" {
+unsafe extern "system" {
     fn GetStdHandle(nStdHandle: u32) -> RawHandle;
     fn SetConsoleTextAttribute(hConsoleOutput: RawHandle, wAttributes: u16) -> i32;
     fn WriteConsoleA(

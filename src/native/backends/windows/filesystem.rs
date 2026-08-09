@@ -179,17 +179,17 @@ const MAX_WIN32_PATH_UNITS: usize = 32_768;
 // ════════════════════════════════════════════════════════════════════════════
 
 #[link(name = "kernel32")]
-extern "system" {
+unsafe extern "system" {
     fn GetTempPathW(nBufferLength: u32, lpBuffer: *mut u16) -> u32;
 }
 
 #[link(name = "ole32")]
-extern "system" {
+unsafe extern "system" {
     fn CoTaskMemFree(pv: *mut std::ffi::c_void);
 }
 
 #[link(name = "shell32")]
-extern "system" {
+unsafe extern "system" {
     fn SHGetKnownFolderPath(
         rfid: *const GUID,
         dwFlags: u32,
