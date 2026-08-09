@@ -43,7 +43,7 @@ pub fn layout_rich_text_segments(
 
 /// 将 Markdown 内容解析为 RichTextSegment 列表。
 ///
-/// 当前覆盖围栏/内联代码、链接、ATX/Setext 标题、一级列表/引用、样式与换行。
+/// 当前覆盖围栏/缩进/内联代码、链接、ATX/Setext 标题、一级列表/引用、样式与换行。
 pub fn parse_rich_text(content: &str) -> Vec<RichTextSegment> {
     // 创建按文档顺序保存解析结果的段列表。
     let mut segments = Vec::new();
