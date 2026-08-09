@@ -8,9 +8,10 @@ use crate::native::factory::{
     describe_backend_availability, gpu_recipe_candidates, try_create_gpu_recipe_with_queue,
     GraphicsRecipe,
 };
-use crate::native::present::{
-    GraphicsApi, GraphicsSelection, IGraphicsContext, NativeSurfaceHandle,
-};
+// 引入 native factory 已验证的 renderer 装配输入。
+use crate::native::present::GraphicsRecipeOwner;
+// 引入 bootstrap 的 recipe 诊断与 surface 输入。
+use crate::native::present::{GraphicsApi, GraphicsSelection, NativeSurfaceHandle};
 
 /// One failed probe attempt recorded for diagnostics and tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,18 +117,18 @@ impl RendererAssemblyFailure {
     }
 }
 
-/// Assembles and starts the unique renderer from one factory-created context.
+/// Assembles and starts the unique renderer from one factory-validated recipe owner.
 ///
 /// Both bootstrap and runtime recovery use this one path so renderer-creation
 /// failures, startup failures, and their checked cleanup cannot drift.
 pub(crate) fn assemble_renderer(
-    context: Box<dyn IGraphicsContext>,
+    owner: GraphicsRecipeOwner,
     width: i32,
     height: i32,
 ) -> Result<Renderer, RendererAssemblyFailure> {
-    // 直接进入唯一 renderer recipe 分派，避免平行 context factory 门面。
+    // 直接进入唯一 renderer owner 分派，避免兼容 context 跨越 native factory。
     let mut renderer =
-        Renderer::from_context(context).map_err(|error| RendererAssemblyFailure {
+        Renderer::from_recipe_owner(owner).map_err(|error| RendererAssemblyFailure {
             stage: RendererAssemblyStage::Create,
             error,
         })?;
@@ -172,7 +173,7 @@ pub(crate) fn bootstrap_renderer_with<F>(
     try_create: F,
 ) -> Result<GpuBootstrap, ProbeReport>
 where
-    F: FnMut(GraphicsRecipe) -> Result<Box<dyn IGraphicsContext>, Error>,
+    F: FnMut(GraphicsRecipe) -> Result<GraphicsRecipeOwner, Error>,
 {
     bootstrap_renderer_with_candidates(
         width,
@@ -191,7 +192,7 @@ pub(crate) fn bootstrap_renderer_with_candidates<F>(
     mut try_create: F,
 ) -> Result<GpuBootstrap, ProbeReport>
 where
-    F: FnMut(GraphicsRecipe) -> Result<Box<dyn IGraphicsContext>, Error>,
+    F: FnMut(GraphicsRecipe) -> Result<GraphicsRecipeOwner, Error>,
 {
     let mut report = ProbeReport::default();
 
@@ -208,8 +209,10 @@ where
 
     for candidate in candidates {
         tracing::info!("Graphics bootstrap: probing recipe {candidate}");
-        let context = match try_create(candidate) {
-            Ok(context) => context,
+        // native factory 返回已经完成正交门禁的 recipe owner。
+        let owner = match try_create(candidate) {
+            // 保存已验证 owner 供 renderer 装配。
+            Ok(owner) => owner,
             Err(err) => {
                 tracing::warn!(
                     "Graphics bootstrap: recipe {candidate} unavailable: {}",
@@ -219,11 +222,12 @@ where
                 continue;
             }
         };
-        let caps = context.caps();
+        // 从专用 owner 的构造期快照读取稳定 recipe 事实。
+        let caps = owner.caps();
         let selected = GraphicsRecipe::new(caps.backend, caps.raster, caps.present);
         let present_occlusion = caps.present_occlusion;
 
-        let renderer = match assemble_renderer(context, width, height) {
+        let renderer = match assemble_renderer(owner, width, height) {
             Ok(renderer) => renderer,
             Err(failure) => {
                 tracing::warn!(

@@ -15,11 +15,10 @@ use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, Fram
 use crate::draw::renderer::RenderSession;
 use crate::draw::renderer::{GraphicsFailure, RenderOutcome};
 use crate::draw::{Canvas2D, GraphicsCapabilities, RasterPipeline, RenderTarget, UpdateStrategy};
-// 引入 GPU recipe 构造门禁，收敛迁移期兼容 context。
-use crate::native::present::GpuRecipeOwner;
-use crate::native::present::{
-    IGraphicsContext, PixelUploadRecipeOwner, PresentMode, PresentTestResult, RasterMode,
-};
+// 引入 factory 已验证的正交 recipe owner。
+use crate::native::present::GraphicsRecipeOwner;
+// 引入 PixelUpload presentation 的窄 owner 与 present 状态。
+use crate::native::present::{PixelUploadRecipeOwner, PresentTestResult};
 
 /// 最终呈现由谁完成。
 enum Presentation {
@@ -124,13 +123,12 @@ impl Renderer {
         Self::with_session(session, Presentation::External)
     }
 
-    /// 根据 native context 的正交 raster/present 能力构造统一运行时。
-    pub(crate) fn from_context(mut context: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
-        let caps = context.caps();
-        match (caps.raster, caps.present) {
-            (RasterMode::GpuNative, PresentMode::Swapchain) => {
-                // 在唯一 renderer 装配入口把兼容 context 收敛为已验证 GPU owner。
-                let owner = GpuRecipeOwner::try_new(context)?;
+    /// 根据 native factory 已验证的正交 recipe owner 构造统一运行时。
+    pub(crate) fn from_recipe_owner(owner: GraphicsRecipeOwner) -> Result<Self, Error> {
+        // renderer 只分派稳定 owner 枚举，不再查询迁移期 context capability。
+        match owner {
+            // GPU recipe 已经完成 thin RHI 与 lifecycle 构造门禁。
+            GraphicsRecipeOwner::Gpu(owner) => {
                 // 所有具体 GraphicsApi 共用同一个薄 RHI GPU backend。
                 let backend = GpuBackend::new_gpu_only(owner)?;
                 // 将唯一 GPU backend 直接注入通用会话。
@@ -141,10 +139,8 @@ impl Renderer {
                     Presentation::BackendManaged,
                 ))
             }
-            (RasterMode::Cpu, PresentMode::PixelUpload) => {
-                // 在创建 CPU session 前验证 native PixelUpload surface 契约。
-                // 在进入 presentation 前验证 CPU × PixelUpload 与专用 surface。
-                let owner = PixelUploadRecipeOwner::try_new(context)?;
+            // PixelUpload recipe 已经完成 CPU raster 与专用 surface 构造门禁。
+            GraphicsRecipeOwner::PixelUpload(owner) => {
                 // presentation 只持有已验证 owner。
                 let mut upload = PixelUploadPresentation::new(owner);
                 // 创建 CPU raster session 承接待上传的 retained pixels。
@@ -168,19 +164,6 @@ impl Renderer {
                     // 专用 presentation 持有 native PixelUpload surface。
                     Presentation::PixelUpload(upload),
                 ))
-            }
-            (raster, present) => {
-                let error = Error::new(
-                    Errc::InvalidArgument,
-                    format!(
-                        "Renderer::from_context: unsupported RasterMode × PresentMode combination: \
-                         {raster} × {present}"
-                    ),
-                );
-                match context.try_shutdown() {
-                    Ok(()) => Err(error),
-                    Err(cleanup_error) => Err(cleanup_error.with_source(error)),
-                }
             }
         }
     }

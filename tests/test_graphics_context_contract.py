@@ -176,6 +176,10 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertIn("pending_failures: PendingFailureQueue", registry)
         # recipe 必须通过精确 registry 行查找，不能退化为 backend-only 查找。
         self.assertIn("let entry = entry_for_recipe(recipe)", registry)
+        # recipe factory 返回值必须是已验证 owner，而不是兼容 context trait object。
+        self.assertIn(") -> Result<GraphicsRecipeOwner, Error>", registry)
+        # context 必须在离开 native factory 前完成正交 owner 构造。
+        self.assertIn("GraphicsRecipeOwner::try_new(context)", registry)
 
     # 校验 RHI surface resize 只通过 recipe 专用生命周期视图传播。
     def test_rhi_surface_resize_uses_dedicated_lifecycle_view(self) -> None:
@@ -247,6 +251,8 @@ class GraphicsContextContractTests(unittest.TestCase):
         backend = (ROOT / "src/draw/backend/gpu/backend/mod.rs").read_text(encoding="utf-8")
         # 读取唯一 renderer 装配入口。
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
+        # 读取 native factory 使用的正交 recipe owner。
+        recipe_owner = (ROOT / "src/native/present/recipe_owner.rs").read_text(encoding="utf-8")
         # 截取生产 owner 实现，排除测试 context 的 caps 方法。
         owner_contract = owner[: owner.index("#[cfg(test)]")]
         # 兼容 trait object 只能封装在 native owner 内。
@@ -265,8 +271,8 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertIn("pub(crate) gpu_ctx: GpuRecipeOwner", backend)
         # GPU backend 不得重新持有兼容 trait object。
         self.assertNotIn("Box<dyn IGraphicsContext>", backend)
-        # 唯一 renderer 装配入口必须先完成 owner 校验再构造 backend。
-        self.assertIn("let owner = GpuRecipeOwner::try_new(context)?;", runtime)
+        # native recipe owner 必须在进入 renderer 前完成 GPU owner 校验。
+        self.assertIn("GpuRecipeOwner::try_new(context).map(Self::Gpu)", recipe_owner)
         # owner 校验后必须直接构造唯一 GPU backend。
         self.assertIn("let backend = GpuBackend::new_gpu_only(owner)?;", runtime)
         # draw backend 模块不得恢复兼容 context factory。
@@ -311,7 +317,16 @@ class GraphicsContextContractTests(unittest.TestCase):
         # renderer 模块不得重新声明 forwarding factory。
         self.assertNotIn("mod factory", renderer_module)
         # 共享装配入口必须直接调用唯一 recipe 分派。
-        self.assertIn("Renderer::from_context(context)", bootstrap)
+        self.assertIn("Renderer::from_recipe_owner(owner)", bootstrap)
+        # 汇总 renderer 生产源码，锁定兼容 context 不再跨越 native factory。
+        renderer_sources = "\n".join(
+            # 逐文件读取 renderer 模块源码。
+            path.read_text(encoding="utf-8")
+            # 覆盖 renderer 下的全部生产 Rust 文件。
+            for path in (ROOT / "src/draw/renderer").rglob("*.rs")
+        )
+        # renderer 层不得重新依赖迁移期 IGraphicsContext。
+        self.assertNotIn("IGraphicsContext", renderer_sources)
         # bootstrap 不得重新导入平行 create_renderer 门面。
         self.assertNotIn("create_renderer", bootstrap)
 
@@ -342,6 +357,8 @@ class GraphicsContextContractTests(unittest.TestCase):
         owner = (ROOT / "src/native/present/pixel_upload_recipe_owner.rs").read_text(encoding="utf-8")
         # 读取统一 renderer 的 presentation 状态机。
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
+        # 读取离开 native factory 前的正交 owner 分派。
+        recipe_owner = (ROOT / "src/native/present/recipe_owner.rs").read_text(encoding="utf-8")
         # 截取生产 owner 实现，排除测试 context 的 caps 方法。
         owner_contract = owner[: owner.index("#[cfg(test)]")]
         # 兼容 trait object 只能封装在 native owner 内。
@@ -366,8 +383,11 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertNotIn("Box<dyn IGraphicsContext>", presentation)
         # 局部方法不得直接查询可选 surface 视图。
         self.assertNotIn("pixel_upload_surface()", presentation)
-        # renderer 必须先完成 owner 校验再构造 presentation。
-        self.assertIn("let owner = PixelUploadRecipeOwner::try_new(context)?;", runtime)
+        # native recipe owner 必须在进入 renderer 前完成 PixelUpload owner 校验。
+        self.assertIn(
+            "PixelUploadRecipeOwner::try_new(context).map(Self::PixelUpload)",
+            recipe_owner,
+        )
     # 校验无帧遮挡探测只属于 thin RHI surface 生命周期。
     def test_idle_present_probe_belongs_to_graphics_surface(self) -> None:
         # 读取迁移期 context 门面。
