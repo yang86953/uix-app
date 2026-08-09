@@ -13,7 +13,8 @@ use super::{
     expression_uses_event, generate_button_group, generate_column, generate_container,
     generate_divider, generate_expression, generate_float_button, generate_grid,
     generate_handler_expression, generate_orphan_col, generate_row, generate_scroll_view,
-    generate_space, generate_theme_toggle, generate_typography, generate_window_control,
+    generate_space, generate_theme_toggle, generate_typography, generate_virtual_scroll,
+    generate_window_control,
 };
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
@@ -74,6 +75,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "Grid" => generate_grid(element),
         // 滚动容器映射到公开 ScrollBuilder，并保留状态所有权。
         "ScrollView" => generate_scroll_view(element),
+        // 虚拟滚动映射到公开 VirtualScroll 惰性 renderer。
+        "VirtualScroll" => generate_virtual_scroll(element),
         // Col 只能由 Row 或 Grid 解释其父级布局语义。
         "Col" => generate_orphan_col(element),
         // 图标映射到公开 Icon 组件。
@@ -104,7 +107,7 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid 或 ScrollView，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView 或 VirtualScroll，或先登记组件状态",
         )),
     }
 }
