@@ -88,6 +88,16 @@ fn mapped_inline_styles_compile_against_public_uix_api() {
     );
 }
 
+// 验证样式类继承和内联优先级在公开宏消费者中通过类型检查。
+#[test]
+fn style_classes_compile_against_public_uix_api() {
+    // 展开父类、子类、多 class 与内联覆盖组合。
+    let _styled: ViewNode = uix!(
+        // 后声明类覆盖前一类，内联样式具有最高优先级。
+        r##"baseCard { padding: 4px; color: red; } elevatedCard { extends: baseCard; boxShadow: 0 2px 4px rgba(0,0,0,0.2); } blueCard { color: blue; } <Text class="elevatedCard blueCard" style="padding: 8px;">Class style</Text>"##
+    );
+}
+
 // 验证组件私有状态、共享状态、回调与组合在真实公开 API 中通过类型检查。
 #[test]
 fn generated_components_compile_against_public_uix_api() {

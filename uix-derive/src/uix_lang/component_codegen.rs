@@ -9,7 +9,7 @@ use quote::quote;
 // 引入组件、文档、表达式与视图 AST。
 use super::{
     Attribute, AttributeValue, ComponentDeclaration, ControlBinding, Declaration, Diagnostic,
-    Document, Element, Node,
+    Document, Element, Node, StyleClassResolver,
 };
 // 引入既有核心 View 生成入口。
 use super::generate_view;
@@ -42,7 +42,7 @@ pub(super) type Bindings = BTreeMap<String, Binding>;
 // 把完整文档中的自定义组件展开为现有核心 View 代码。
 pub(crate) fn generate_document_view(document: &Document) -> Result<TokenStream, Diagnostic> {
     // 创建组件感知展开器。
-    let mut expander = ComponentExpander::new(document);
+    let mut expander = ComponentExpander::new(document)?;
     // 展开根元素与全部组件调用。
     let root = expander.expand_root(&document.root)?;
     // 委托核心映射生成 ViewNode。
@@ -68,12 +68,14 @@ pub(super) struct ComponentExpander {
     pub(super) next_id: usize,
     // 保存当前组件展开栈以拒绝递归定义。
     pub(super) stack: Vec<String>,
+    // 保存已经展开继承的样式类注册表。
+    pub(super) styles: StyleClassResolver,
 }
 
 // 实现文档级组件展开与结构校验。
 impl ComponentExpander {
     // 从顶层声明构造组件注册表。
-    fn new(document: &Document) -> Self {
+    fn new(document: &Document) -> Result<Self, Diagnostic> {
         // 收集全部已完成名称去重验证的组件声明。
         let components = document
             // 遍历顶层声明。
@@ -92,8 +94,10 @@ impl ComponentExpander {
             })
             // 收集到有序映射。
             .collect();
+        // 构造并验证样式类继承注册表。
+        let styles = StyleClassResolver::new(document)?;
         // 返回初始展开状态。
-        Self {
+        Ok(Self {
             // 写入组件注册表。
             components,
             // 初始没有准备语句。
@@ -102,7 +106,9 @@ impl ComponentExpander {
             next_id: 0,
             // 初始不在任何组件体内。
             stack: Vec::new(),
-        }
+            // 写入样式类注册表。
+            styles,
+        })
     }
 
     // 展开根元素，并为多根组件体补充 Column。
@@ -176,6 +182,8 @@ impl ComponentExpander {
         }
         // 克隆普通核心或未知元素。
         let mut expanded = element.clone();
+        // 在表达式改写前合并 class、继承与内联 style。
+        self.styles.apply(&mut expanded)?;
         // 逐个改写普通属性与事件表达式。
         for attribute in &mut expanded.attributes {
             // 只有表达式属性需要字段改写。
