@@ -29,6 +29,8 @@ uix-derive = { path = "uix-derive", version = "0.0.1" }
 ab_glyph = "0.2.32"
 # 使用纯 Rust OpenType shaping，保留源文本 cluster 与复杂脚本定位。
 rustybuzz = "0.20.1"
+# 使用完整 UAX #9 算法解析段落方向、嵌入级别与视觉顺序。
+unicode-bidi = "0.3.18"
 # 使用扩展字素簇边界，确保字体回退不拆开组合文本。
 unicode-segmentation = "1.13.3"
 # 使用 Unicode 15 默认 UAX #14 算法生成强制与允许断行机会。
