@@ -78,6 +78,16 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _root_export: ViewNode = crate::uix!(r#"<Button>Root export</Button>"#);
 }
 
+// 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
+#[test]
+fn mapped_inline_styles_compile_against_public_uix_api() {
+    // 展开覆盖布局、Grid、盒模型、状态色、阴影和可见性的代表样式。
+    let _styled: ViewNode = uix!(
+        // 只使用样式参考中当前标记为已映射的值。
+        r##"<Column style="display: grid; gridTemplateColumns: 1fr 120px; gridTemplateRows: auto; gridColumnGap: 8px; gridRowGap: 4px; flexWrap: true; justifyContent: space-between; alignItems: center; margin: 1px 2px 3px 4px; padding: 8px 12px; borderColor: #336699; borderWidth: 1px; borderRadius: 6px; width: 320px; height: auto; backgroundColor: rgba(10,20,30,0.5); backgroundColor:hover: #fff; opacity: 0.9; overflow: hidden; boxShadow: 0 2px 4px rgba(0,0,0,0.2); visible: true;"><Text style="color: blue; fontSize: heading3; flexGrow: 1; flexShrink: 0; alignSelf: flex-start; gridColumnSpan: 2; gridRowSpan: 1;">Styled</Text></Column>"##
+    );
+}
+
 // 验证组件私有状态、共享状态、回调与组合在真实公开 API 中通过类型检查。
 #[test]
 fn generated_components_compile_against_public_uix_api() {

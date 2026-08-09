@@ -123,6 +123,12 @@ pub trait StyleExt: Into<ViewNode> + Sized {
         self.into().font_size(size)
     }
 
+    /// 通过受控闭包精确更新节点样式，避免覆盖未声明字段。
+    fn map_style(self, update: impl FnOnce(&mut Style)) -> ViewNode {
+        // 先物化节点，再委托唯一的样式更新实现。
+        self.into().map_style(update)
+    }
+
     fn bg(self, color: impl Into<ColorValue>) -> ViewNode {
         self.into().bg(color)
     }

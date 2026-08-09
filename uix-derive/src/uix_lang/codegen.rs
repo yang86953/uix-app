@@ -12,8 +12,8 @@ use super::{
 use super::{expression_uses_event, generate_expression, generate_handler_expression};
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
-    align_value, boolean_value, deferred_style_diagnostic, justify_value, literal_string,
-    numeric_value, rust_identifier, string_value, typography_value,
+    align_value, apply_inline_style, boolean_value, deferred_style_diagnostic, justify_value,
+    literal_string, numeric_value, rust_identifier, string_value, typography_value,
 };
 
 // 生成一个可直接消费的公开 UIX View 表达式。
@@ -432,8 +432,8 @@ fn apply_common_attributes(
             }
             // 内联样式由完整样式映射 Gate 处理。
             "style" => {
-                // 返回明确阶段边界诊断。
-                return Err(deferred_style_diagnostic(attribute, "style"));
+                // 把结构化样式属性精确写入当前 ViewNode 的 Style。
+                apply_inline_style(view, attribute)?
             }
             // 未登记属性禁止静默丢弃。
             _ => {

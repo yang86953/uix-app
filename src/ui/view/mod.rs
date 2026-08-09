@@ -125,6 +125,14 @@ impl ViewNode {
         self
     }
 
+    /// 通过受控闭包精确更新节点样式，供声明式转换器保留未声明字段。
+    pub fn map_style(mut self, update: impl FnOnce(&mut Style)) -> Self {
+        // 只把当前节点的样式借给同步更新闭包。
+        update(&mut self.style);
+        // 返回完成样式更新的节点。
+        self
+    }
+
     pub fn bg(mut self, color: impl Into<ColorValue>) -> Self {
         self.style.background = Some(color.into());
         self
@@ -695,7 +703,6 @@ impl crate::ui::IntoWidgetNode for ViewNode {
 }
 
 /// 为所有可转换为 [`ViewNode`] 的 builder 提供原始事件声明。
-
 mod ext;
 
 pub use self::ext::*;
