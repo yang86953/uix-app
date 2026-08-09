@@ -191,6 +191,14 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     // 验证范围、步长、状态绑定和公共样式只依赖公开 prelude。
     let _slider: ViewNode =
         crate::uix!(r#"<Slider value={slider_volume} min="0" max="100" step="5" width="240px" />"#);
+    // 提供 RangeSlider 起点双向绑定状态。
+    let range_start = State::new(20_f64);
+    // 提供 RangeSlider 终点双向绑定状态。
+    let range_end = State::new(80_f64);
+    // 验证对象区间绑定、范围、步长和公共样式只依赖公开 prelude。
+    let _range_slider: ViewNode = crate::uix!(
+        r#"<RangeSlider value={{ start: range_start, end: range_end }} min="0" max="100" step="5" width="260px" />"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
