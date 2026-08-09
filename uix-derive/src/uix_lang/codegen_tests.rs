@@ -301,6 +301,50 @@ fn validates_typography_defaults_and_attribute_contract() {
     assert!(unknown_attribute.message.contains("mystery"));
 }
 
+// 验证 ThemeToggle 生成只调用现有公开组件与 View API。
+#[test]
+fn generates_theme_toggle_from_public_component() {
+    // 构造带公共样式的文档化 ThemeToggle。
+    let snapshot = generate(r#"<ThemeToggle margin="4px" />"#)
+        // ThemeToggle 与公共样式必须生成成功。
+        .expect("文档化 ThemeToggle 应生成 Rust View");
+    // 必须从现有公开 ThemeToggle 默认构造器开始。
+    assert!(snapshot.contains("ThemeToggle :: new"));
+    // 组件必须通过公开叶 View 组合。
+    assert!(snapshot.contains("ViewNode :: leaf"));
+    // 公共样式仍由统一 View 映射处理。
+    assert!(snapshot.contains("margin"));
+    // 生成物不得包含运行时标签解析器或第二个组件实现。
+    assert!(!snapshot.contains("parse_theme_toggle"));
+}
+
+// 验证 ThemeToggle 的叶子形状与属性边界保持确定诊断。
+#[test]
+fn validates_theme_toggle_shape_and_attribute_contract() {
+    // 默认自闭合 ThemeToggle 应直接复用组件默认契约。
+    let default = generate(r#"<ThemeToggle />"#).expect("默认 ThemeToggle 应可生成");
+    // 默认路径不应伪造暗色状态或应用级主题控制。
+    assert!(!default.contains("dark") && !default.contains("set_theme"));
+    // 可见文本不能被叶子组件静默丢弃。
+    let text_error = generate(r#"<ThemeToggle>dark</ThemeToggle>"#)
+        // 提取预期结构诊断。
+        .expect_err("ThemeToggle 文本子节点必须失败");
+    // 诊断必须说明叶子形状。
+    assert!(text_error.message.contains("不接受子节点"));
+    // 元素子节点同样不能被静默丢弃。
+    let element_error = generate(r#"<ThemeToggle><Icon name="moon" /></ThemeToggle>"#)
+        // 提取预期结构诊断。
+        .expect_err("ThemeToggle 元素子节点必须失败");
+    // 修复建议必须给出文档化自闭合写法。
+    assert!(element_error.suggestion.contains("<ThemeToggle />"));
+    // ThemeToggle 未登记属性必须继续走统一拒绝路径。
+    let unknown_attribute = generate(r#"<ThemeToggle dark="true" />"#)
+        // 提取预期属性映射诊断。
+        .expect_err("ThemeToggle 未登记属性必须失败");
+    // 诊断必须包含具体未知属性名。
+    assert!(unknown_attribute.message.contains("dark"));
+}
+
 // 验证 If 与 For 生成真实 Rust 控制流、索引和稳定 key。
 #[test]
 fn generates_if_for_and_key_snapshot() {

@@ -104,6 +104,8 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _typography: ViewNode = crate::uix!(
         r#"<Typography level={typography_level} type="danger" mark={typography_marked} underline="true" copyable={typography_copyable}>Level {typography_level}</Typography>"#
     );
+    // 验证 ThemeToggle 叶组件只依赖公开 prelude API。
+    let _theme_toggle: ViewNode = crate::uix!(r#"<ThemeToggle />"#);
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
