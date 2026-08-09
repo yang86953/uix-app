@@ -26,6 +26,8 @@
 >
 > **resize 边界**：生产 `GpuBackend` 只接收 native factory 已准备并通过 probe 的 GPU-only thin RHI context。初始化只同步 drawable 元数据；后续 resize 释放旧代 retained/overlay 资源后调用 RHI surface resize，任何 typed failure 都直接进入恢复层。`IGraphicsContext` 不再声明通用 `resize`；CPU × PixelUpload recipe 在构造时必须暴露独立 `PixelUploadSurface`，Vulkan/Metal 只通过该契约重建上传 surface，GPU adapter 不实现它。
 >
+> **live surface 元数据边界**：`GraphicsContextCaps` 只描述 backend、raster/present recipe、coherency 与遮挡能力，不携带动态 DPR。`IGraphicsContext` 不再分离暴露 `width`、`height` 或 DPR；所有 context 必须一次返回完整 `PresentSurface`，GPU backend、PixelUpload runtime 与诊断场景从同一快照派生 drawable extent 和 DPR，不能拼装可能跨 generation 的状态。thread-bound wrapper 也只缓存并在成功生命周期变更后整体刷新该快照。
+>
 > **surface readback 边界**：`IGraphicsContext` 与 thread-bound wrapper 不再声明或转发 `read_pixels`。同步窗口 surface 回读是 `GraphicsCapabilities::surface_readback` 声明的可选 `GraphicsSurface::read_surface_pixels` 操作；D3D11 和 OpenGL ES adapter 如实启用，缺少能力时返回 typed failure。Vulkan GFX-R5 与 D3D12 测试期保留的内部诊断辅助不属于通用 thin RHI surface 能力。
 
 ## 组件清单

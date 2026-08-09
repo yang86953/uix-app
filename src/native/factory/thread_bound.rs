@@ -22,7 +22,7 @@ use std::thread::{self, ThreadId};
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
     GraphicsContextCaps, IGraphicsContext, NativeRasterCaps, PixelUploadSurface, PresentDamage,
-    PresentFrame, PresentTestResult,
+    PresentFrame, PresentSurface, PresentTestResult,
 };
 
 pub(crate) fn bind_to_current_thread(
@@ -35,14 +35,12 @@ pub(crate) struct ThreadBoundGraphicsContext {
     owner_thread: ThreadId,
     inner: ManuallyDrop<Box<dyn IGraphicsContext>>,
     /// Read-only metadata is captured on the creation thread and refreshed
-    /// only after successful owner-thread lifecycle changes. These legacy
-    /// non-fallible queries can therefore never touch a native context from a
-    /// foreign thread.
+    /// only after successful owner-thread lifecycle changes, so foreign-thread
+    /// queries never touch the native context.
     caps: GraphicsContextCaps,
     native_raster_caps: NativeRasterCaps,
-    width: i32,
-    height: i32,
-    device_pixel_ratio: f32,
+    // 把 live drawable 元数据保存为不可撕裂的单一快照。
+    present_surface: PresentSurface,
     // `Rc` is intentionally !Send + !Sync. `Cell` makes the intent equally
     // explicit to readers inspecting the wrapper's auto-trait boundary.
     _thread_bound: PhantomData<Rc<Cell<()>>>,
@@ -52,17 +50,14 @@ impl ThreadBoundGraphicsContext {
     fn new(inner: Box<dyn IGraphicsContext>) -> Self {
         let caps = inner.caps();
         let native_raster_caps = inner.native_raster_caps();
-        let width = inner.width();
-        let height = inner.height();
-        let device_pixel_ratio = inner.device_pixel_ratio();
+        // 在 owner thread 一次读取完整 surface 元数据。
+        let present_surface = inner.present_surface();
         Self {
             owner_thread: thread::current().id(),
             inner: ManuallyDrop::new(inner),
             caps,
             native_raster_caps,
-            width,
-            height,
-            device_pixel_ratio,
+            present_surface,
             _thread_bound: PhantomData,
         }
     }
@@ -70,9 +65,8 @@ impl ThreadBoundGraphicsContext {
     fn refresh_metadata(&mut self) {
         self.caps = self.inner.caps();
         self.native_raster_caps = self.inner.native_raster_caps();
-        self.width = self.inner.width();
-        self.height = self.inner.height();
-        self.device_pixel_ratio = self.inner.device_pixel_ratio();
+        // 生命周期变更成功后原子替换完整 surface 快照。
+        self.present_surface = self.inner.present_surface();
     }
 
     fn require_owner(&self, operation: &str) -> Result<()> {
@@ -198,16 +192,14 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
         self.native_raster_caps
     }
 
+    // 返回 owner-thread 最近一次确认的完整 surface 元数据快照。
+    fn present_surface(&self) -> PresentSurface {
+        // 非失败查询只读取 wrapper 缓存，不跨线程触碰 native context。
+        self.present_surface
+    }
+
     fn try_shutdown(&mut self) -> Result<()> {
         self.with_owner("try_shutdown", |inner| inner.try_shutdown())
-    }
-
-    fn width(&self) -> i32 {
-        self.width
-    }
-
-    fn height(&self) -> i32 {
-        self.height
     }
 
     fn present_pixels(
@@ -224,10 +216,6 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
 
     forward_result!(present(frame: &PresentFrame) -> ());
     forward_result!(test_present() -> PresentTestResult);
-
-    fn device_pixel_ratio(&self) -> f32 {
-        self.device_pixel_ratio
-    }
 }
 
 // 在线程绑定边界实现 CPU PixelUpload 的专用 surface resize。
@@ -249,7 +237,7 @@ impl PixelUploadSurface for ThreadBoundGraphicsContext {
             // 在同一 owner-thread 借用范围内执行 adapter resize。
             surface.resize_pixel_upload_surface(width, height)
         })?;
-        // resize 成功后同步 drawable 与 DPR 缓存。
+        // resize 成功后同步完整 drawable surface 快照。
         self.refresh_metadata();
         // 返回已经完成线程检查和元数据同步的成功结果。
         Ok(())

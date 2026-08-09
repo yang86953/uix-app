@@ -2,12 +2,8 @@ use super::*;
 
 impl IGraphicsContext for D3d11Context {
     fn caps(&self) -> crate::native::present::GraphicsContextCaps {
-        GraphicsContextCaps::gpu_native_swapchain(
-            GraphicsApi::D3d11,
-            PresentCoherency::FullOnly,
-            self.device_pixel_ratio(),
-        )
-        .with_present_occlusion(PresentOcclusionSupport::PresentStatusAndTest)
+        GraphicsContextCaps::gpu_native_swapchain(GraphicsApi::D3d11, PresentCoherency::FullOnly)
+            .with_present_occlusion(PresentOcclusionSupport::PresentStatusAndTest)
     }
 
     // 暴露同一 owner-thread context 上的薄 RHI device/surface 组合视图。
@@ -31,7 +27,8 @@ impl IGraphicsContext for D3d11Context {
         crate::native::present::PresentSurface::identity(
             self.width,
             self.height,
-            self.device_pixel_ratio(),
+            // 从同一 context 状态计算本次快照的 drawable 比例。
+            self.width as f32 / self.logical_width.max(1) as f32,
             self.surface_generation,
         )
     }
@@ -44,18 +41,6 @@ impl IGraphicsContext for D3d11Context {
 
     fn try_shutdown(&mut self) -> Result<()> {
         self.shutdown_result()
-    }
-
-    fn width(&self) -> i32 {
-        self.width
-    }
-
-    fn height(&self) -> i32 {
-        self.height
-    }
-
-    fn device_pixel_ratio(&self) -> f32 {
-        self.width as f32 / self.logical_width.max(1) as f32
     }
 
     fn present(&mut self, frame: &PresentFrame<'_>) -> Result<()> {

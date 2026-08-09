@@ -13,7 +13,6 @@ impl IGraphicsContext for WglContext {
         crate::native::present::GraphicsContextCaps::gpu_native_swapchain(
             crate::native::present::GraphicsApi::OpenGlEs,
             PresentCoherency::FullOnly,
-            self.device_pixel_ratio(),
         )
     }
 
@@ -33,6 +32,29 @@ impl IGraphicsContext for WglContext {
     fn graphics_backend(&self) -> crate::native::present::GraphicsApi {
         // WGL adapter 使用 OpenGL ES backend 标签。
         crate::native::present::GraphicsApi::OpenGlEs
+    }
+
+    // 返回 WGL drawable 的完整 live surface 快照。
+    fn present_surface(&self) -> crate::native::present::PresentSurface {
+        // 逻辑宽度无效时保留既有安全比例。
+        let device_pixel_ratio = if self.logical_width <= 0 {
+            // 避免除零并保留可验证的 identity 映射。
+            1.0
+        } else {
+            // 从同一次状态读取计算当前 drawable 比例。
+            self.width as f32 / self.logical_width as f32
+        };
+        // 同时返回 extent、DPR 与真实 surface generation。
+        crate::native::present::PresentSurface::identity(
+            // 记录当前物理 drawable 宽度。
+            self.width,
+            // 记录当前物理 drawable 高度。
+            self.height,
+            // 记录上方计算的稳定 DPR。
+            device_pixel_ratio,
+            // resize 重建时推进的 generation 拒绝迟到帧。
+            self.surface_generation,
+        )
     }
 
     // 统一 present 入口只接受 native swapchain frame。
@@ -68,28 +90,5 @@ impl IGraphicsContext for WglContext {
     fn try_shutdown(&mut self) -> Result<(), Error> {
         // 委托给包含 pipeline release 的 shutdown helper。
         self.shutdown_result()
-    }
-
-    // 返回当前 logical width。
-    fn width(&self) -> i32 {
-        // 读取 WGL context 缓存的逻辑宽度。
-        self.width
-    }
-
-    // 返回当前 logical height。
-    fn height(&self) -> i32 {
-        // 读取 WGL context 缓存的逻辑高度。
-        self.height
-    }
-
-    // 返回当前 WGL device pixel ratio。
-    fn device_pixel_ratio(&self) -> f32 {
-        // 逻辑宽度无效时使用安全默认值。
-        if self.logical_width <= 0 {
-            // 避免除零并保持旧兼容语义。
-            return 1.0;
-        }
-        // 由 drawable 与逻辑宽度求出当前 ratio。
-        self.width as f32 / self.logical_width as f32
     }
 }

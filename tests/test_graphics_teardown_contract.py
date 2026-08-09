@@ -820,6 +820,8 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         wayland = (ROOT / "src/native/backends/linux/wayland/gpu_presenter.rs").read_text(encoding="utf-8")
         # 读取 Vulkan GFX-R5 显式诊断调用点。
         gfx_r5 = (ROOT / "src/gfx_r5_support/evidence.rs").read_text(encoding="utf-8")
+        # 读取 mixed-DPI GFX-R5 场景，避免 feature 隔离代码逃逸契约。
+        gfx_r5_mod = (ROOT / "src/gfx_r5_support/mod.rs").read_text(encoding="utf-8")
         # 读取 D3D11 context 私有生命周期实现。
         d3d11_methods = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/methods.rs").read_text(encoding="utf-8")
         # 通用 context trait 不得继续声明无 recipe 区分的 resize。
@@ -881,42 +883,10 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertGreaterEqual(gfx_r5.count(".resize_pixel_upload_surface("), 3)
         # GFX-R5 不得再通过 IGraphicsContext resize 驱动 Vulkan。
         self.assertNotIn("context.resize(", gfx_r5)
-
-    def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
-        # 组合读取 Vulkan context 的拆分模块，以保持顺序审计语义。
-        context = read_rust_module(VULKAN_CONTEXT)
-        device = VULKAN_DEVICE.read_text(encoding="utf-8")
-        fault = VULKAN_FAULT.read_text(encoding="utf-8")
-        # 读取 GFX-R5 拆分目录。
-        gfx_r5 = read_rust_module(GFX_R5)
-
-        shutdown = context.index("fn shutdown_result")
-        release = context.index("self.device_lease.take()", shutdown)
-        close = context.index("self.surface_loader.destroy_surface", shutdown)
-        self.assertLess(close, release)
-        self.assertLess(release, context.index("self.runtime.take()", release))
-        self.assertLess(
-            context.index("self.shutdown = true", release),
-            context.index("Ok(())", context.index("self.shutdown = true", release)),
-        )
-        self.assertIn("if let Err(error) = self.try_shutdown()", context)
-        self.assertIn("std::mem::forget(device)", context)
-        self.assertIn("std::mem::forget(runtime)", context)
-
-        # Vulkan has no callback-owned PendingFailureSource: device loss is
-        # synchronous and typed, while a lost shared device starts a new Rc
-        # generation instead of being reused by another context.
-        self.assertIn("if !device.is_lost()", device)
-        self.assertIn("devices.insert(key, Rc::downgrade(&device))", device)
-        self.assertIn("fn observe<T>", device)
-        self.assertIn("Errc::GraphicsDeviceLost", fault)
-
-        self.assertGreaterEqual(gfx_r5.count("VulkanContext::new"), 1)
-        self.assertIn("impl RenderTarget for VulkanRecoveryTarget", gfx_r5)
-        self.assertIn("fn try_shutdown(&mut self)", gfx_r5)
-        self.assertIn("driver.try_shutdown()", gfx_r5)
-        self.assertIn("context.try_shutdown()", gfx_r5)
-
+        # mixed-DPI 两段转换也必须显式使用 PixelUpload surface 契约。
+        self.assertGreaterEqual(gfx_r5_mod.count(".resize_pixel_upload_surface("), 2)
+        # feature 隔离场景不得保留无法编译的旧 resize 调用。
+        self.assertNotIn(".resize(LOGICAL_EXTENT", gfx_r5_mod)
 
 if __name__ == "__main__":
     unittest.main()

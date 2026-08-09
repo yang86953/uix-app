@@ -409,35 +409,28 @@ pub struct GraphicsContextCaps {
     pub present_occlusion: PresentOcclusionSupport,
     /// Typed proof controlling partial redraw and present damage.
     pub present_coherency: PresentCoherency,
-    pub device_pixel_ratio: f32,
 }
 
 impl GraphicsContextCaps {
     /// Legal combo: [`RasterMode::GpuNative`] × [`PresentMode::Swapchain`].
-    pub fn gpu_native_swapchain(
-        backend: GraphicsApi,
-        present_coherency: PresentCoherency,
-        device_pixel_ratio: f32,
-    ) -> Self {
+    pub fn gpu_native_swapchain(backend: GraphicsApi, present_coherency: PresentCoherency) -> Self {
         Self {
             backend,
             raster: RasterMode::GpuNative,
             present: PresentMode::Swapchain,
             present_occlusion: PresentOcclusionSupport::Unsupported,
             present_coherency,
-            device_pixel_ratio,
         }
     }
 
     /// Legal combo: [`RasterMode::Cpu`] × [`PresentMode::PixelUpload`].
-    pub fn cpu_pixel_upload(backend: GraphicsApi, device_pixel_ratio: f32) -> Self {
+    pub fn cpu_pixel_upload(backend: GraphicsApi) -> Self {
         Self {
             backend,
             raster: RasterMode::Cpu,
             present: PresentMode::PixelUpload,
             present_occlusion: PresentOcclusionSupport::Unsupported,
             present_coherency: PresentCoherency::FullOnly,
-            device_pixel_ratio,
         }
     }
 

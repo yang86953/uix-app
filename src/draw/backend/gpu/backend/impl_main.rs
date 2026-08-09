@@ -6,9 +6,9 @@ use std::time::Instant;
 
 use super::super::canvas::NativeGpuCanvas2D;
 use super::super::SOFT_FALLBACK_IDLE_TIME_GRACE;
+use super::logical_metadata_from_surface;
 use super::surface::NativeGpuDrawSurface;
 use super::GpuBackend;
-use super::{device_pixel_ratio_from_context, logical_extent_from_context};
 use crate::core::{Errc, Error, PresentDamageTracker};
 use crate::draw::backend::contract::RenderBackend;
 use crate::draw::geometry::types::ImageHandle;
@@ -85,8 +85,11 @@ impl GpuBackend {
                 ),
             ));
         }
-        let (logical_w, logical_h) = logical_extent_from_context(gpu_ctx.as_ref());
-        let device_pixel_ratio = device_pixel_ratio_from_context(gpu_ctx.as_ref());
+        // 一次读取 live surface，避免 extent 与 DPR 来自不同生命周期时刻。
+        let present_surface = gpu_ctx.present_surface();
+        // 从同一快照派生逻辑 canvas 元数据。
+        let ((logical_w, logical_h), device_pixel_ratio) =
+            logical_metadata_from_surface(present_surface);
         // 只有已暴露薄 RHI 组合视图的参考 adapter 创建 lowering cache。
         let rhi_renderer = gpu_ctx
             .rhi_context()
@@ -146,10 +149,12 @@ impl GpuBackend {
             ));
         }
         self.flush_main_segment_before_ordered_boundary()?;
-        // 在借用组合 RHI 前保存当前 drawable 宽度。
-        let width = self.gpu_ctx.width().max(1);
-        // 在借用组合 RHI 前保存当前 drawable 高度。
-        let height = self.gpu_ctx.height().max(1);
+        // 在借用组合 RHI 前一次读取完整 drawable 元数据。
+        let present_surface = self.gpu_ctx.present_surface();
+        // 从同一快照保存当前 drawable 宽度。
+        let width = present_surface.drawable_width.max(1);
+        // 从同一快照保存当前 drawable 高度。
+        let height = present_surface.drawable_height.max(1);
         // 构造后丢失组合 RHI 属于生命周期状态破坏。
         let Some(context) = self.gpu_ctx.rhi_context() else {
             // 返回 typed 状态错误，禁止重新进入兼容门面。
@@ -219,8 +224,11 @@ impl GpuBackend {
     }
 
     pub(super) fn adopt_factory_drawable_extent(&mut self) -> (i32, i32) {
-        let (logical_w, logical_h) = logical_extent_from_context(self.gpu_ctx.as_ref());
-        let device_pixel_ratio = device_pixel_ratio_from_context(self.gpu_ctx.as_ref());
+        // factory/surface 变更后一次读取新的完整元数据快照。
+        let present_surface = self.gpu_ctx.present_surface();
+        // 从同一快照更新逻辑 canvas extent 与 DPR。
+        let ((logical_w, logical_h), device_pixel_ratio) =
+            logical_metadata_from_surface(present_surface);
         self.width = logical_w;
         self.height = logical_h;
         self.surface.width = logical_w;

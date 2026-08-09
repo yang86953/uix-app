@@ -34,7 +34,7 @@ pub use surface::NativeGpuDrawSurface;
 
 use std::time::Instant;
 
-use crate::core::{Error, PresentDamageTracker};
+use crate::core::{Error, PresentDamageTracker, PresentSurface};
 use crate::draw::backend::rhi_renderer::RhiRenderer;
 use crate::native::present::IGraphicsContext;
 // 引入迁移期 RHI 的离屏纹理句柄。
@@ -89,20 +89,34 @@ pub(super) struct NativeGpuOffscreen {
     pub(crate) height: i32,
 }
 
-/// Canvas coordinates are logical pixels. Native contexts report their
-/// drawable extent through `width`/`height`, so derive the matching logical
-/// extent from their single DPR source before allocating draw-side state.
-pub(super) fn device_pixel_ratio_from_context(gpu_ctx: &dyn IGraphicsContext) -> f32 {
-    let dpr = gpu_ctx.caps().device_pixel_ratio;
+// 从单一 surface 快照规范化 draw backend 使用的设备像素比。
+pub(super) fn device_pixel_ratio_from_surface(surface: PresentSurface) -> f32 {
+    // 只接受可稳定映射逻辑坐标的有限正 DPR。
+    let dpr = surface.device_pixel_ratio;
+    // 有效 DPR 原样进入 canvas 空间换算。
     if dpr.is_finite() && dpr > 0.0 {
+        // 返回 native context 报告的真实比例。
         dpr
     } else {
+        // 无效 native 元数据保守退回 identity 比例。
         1.0
     }
 }
 
-pub(super) fn logical_extent_from_context(gpu_ctx: &dyn IGraphicsContext) -> (i32, i32) {
-    let dpr = device_pixel_ratio_from_context(gpu_ctx);
+// 从同一个 PresentSurface 快照派生逻辑 extent 与 DPR。
+pub(super) fn logical_metadata_from_surface(surface: PresentSurface) -> ((i32, i32), f32) {
+    // 先规范化快照内的设备像素比。
+    let dpr = device_pixel_ratio_from_surface(surface);
+    // 使用同一比例把物理 drawable 尺寸转换为逻辑尺寸。
     let logical = |drawable: i32| ((drawable.max(1) as f32 / dpr).round() as i32).max(1);
-    (logical(gpu_ctx.width()), logical(gpu_ctx.height()))
+    // 返回不可撕裂的逻辑 extent 与对应 DPR。
+    (
+        // 同时换算快照内的物理宽高。
+        (
+            logical(surface.drawable_width),
+            logical(surface.drawable_height),
+        ),
+        // 保留本次快照使用的规范化 DPR。
+        dpr,
+    )
 }

@@ -22,7 +22,7 @@ use crate::native::present::rhi::{
 use super::super::canvas::NativeGpuCanvas2D;
 // 复用通用 soft staging helper，保证主 surface 与 Picture 使用同一采样契约。
 use super::rhi_surface_soft::try_upload_rhi_canvas_soft;
-use super::{GpuBackend, NativeGpuOffscreen};
+use super::{device_pixel_ratio_from_surface, GpuBackend, NativeGpuOffscreen};
 
 // 迁移期的主 surface 仍采用完整重绘，但 Picture 能力只由通用 RHI 所有者决定。
 fn migration_safe_gpu_capabilities(has_rhi_offscreen_owner: bool) -> BackendCapabilities {
@@ -139,7 +139,8 @@ impl RenderBackend for GpuBackend {
     }
 
     fn device_pixel_ratio(&self) -> f32 {
-        self.gpu_ctx.device_pixel_ratio()
+        // 每次查询只读取一个完整 surface 快照。
+        device_pixel_ratio_from_surface(self.gpu_ctx.present_surface())
     }
 
     fn create_offscreen(&mut self, width: i32, height: i32) -> Option<ImageHandle> {

@@ -3,8 +3,8 @@
 use super::*;
 
 pub(super) fn present_solid(context: &mut VulkanContext, color: u32) -> GfxR5Result<()> {
-    let width = context.width();
-    let height = context.height();
+    // 一次读取当前 Vulkan drawable 的完整 surface 快照。
+    let (width, height) = drawable_extent(context);
     let pixels = vec![color; (width as usize) * (height as usize)];
     context
         .present_pixels(&pixels, width, height, PresentDamage::Full)
@@ -43,7 +43,7 @@ pub fn run_vendor_resize_present_readback(
         let adapter_diagnostic = context.adapter_info.diagnostic_summary();
         let vendor_id = context.adapter_info.vendor_id;
         let swapchain_maintenance1 = context.swapchain_maintenance1_enabled_for_test();
-        let initial_drawable = (context.width(), context.height());
+        let initial_drawable = drawable_extent(&context);
         present_solid(&mut context, 0xFF3478BC)?;
         let initial_readback = readback_one(&mut context)?;
 
@@ -54,7 +54,7 @@ pub fn run_vendor_resize_present_readback(
             .resize_pixel_upload_surface(211, 149)
             // 将 UIX 错误转换为公开测试证据错误。
             .map_err(map_error)?;
-        let resized_drawable = (context.width(), context.height());
+        let resized_drawable = drawable_extent(&context);
         present_solid(&mut context, 0xFF9A5C21)?;
         let resized_readback = readback_one(&mut context)?;
 
@@ -93,7 +93,7 @@ pub fn run_native_out_of_date_recovery(
     let mut context = VulkanContext::new(surface, 137, 103).map_err(map_error)?;
     let evidence = (|| {
         let adapter_diagnostic = context.adapter_info.diagnostic_summary();
-        let initial_drawable = (context.width(), context.height());
+        let initial_drawable = drawable_extent(&context);
         present_solid(&mut context, 0xFF3478BC)?;
 
         window.resize(223, 157)?;
@@ -121,7 +121,7 @@ pub fn run_native_out_of_date_recovery(
             .resize_pixel_upload_surface(logical_extent.0, logical_extent.1)
             // 映射为 GFX-R5 稳定错误证据。
             .map_err(map_error)?;
-        let resized_drawable = (context.width(), context.height());
+        let resized_drawable = drawable_extent(&context);
         present_solid(&mut context, 0xFFB7642D)?;
         let recovered_readback = readback_one(&mut context)?;
 
@@ -211,8 +211,8 @@ impl RenderTarget for VulkanRecoveryTarget {
     }
 
     fn test_present(&mut self) -> Result<PresentTestResult, Error> {
-        let width = self.context.width();
-        let height = self.context.height();
+        // 一次读取恢复 target 的 drawable extent。
+        let (width, height) = drawable_extent(&self.context);
         let pixels = vec![0xFFB7642D; (width as usize) * (height as usize)];
         self.context
             .present_pixels(&pixels, width, height, PresentDamage::Full)?;
@@ -231,7 +231,8 @@ impl RenderTarget for VulkanRecoveryTarget {
     }
 
     fn logical_extent(&mut self) -> (i32, i32) {
-        (self.context.width(), self.context.height())
+        // GFX-R5 target 直接报告当前 PixelUpload drawable extent。
+        drawable_extent(&self.context)
     }
 }
 
@@ -256,8 +257,8 @@ pub fn run_engine_recovery_boundary(
     present_solid(&mut context, 0xFF3478BC)?;
 
     window.resize(229, 163)?;
-    let stale_width = context.width();
-    let stale_height = context.height();
+    // 从同一 surface 快照保存 fault 前的 stale drawable extent。
+    let (stale_width, stale_height) = drawable_extent(&context);
     let stale_pixels = vec![0xFF3478BC; (stale_width as usize) * (stale_height as usize)];
     let fault = match context.present_pixels(
         &stale_pixels,
