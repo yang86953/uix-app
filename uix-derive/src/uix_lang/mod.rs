@@ -4,6 +4,8 @@ mod ast;
 mod builtin_matrix;
 // 定义核心元素、属性、事件与控制流的 Rust View 代码生成。
 mod codegen;
+// 定义 Divider 内置组件的公开 API 代码生成边界。
+mod divider_codegen;
 // 集中验证代码生成快照、消费者编译与拒绝路径。
 #[cfg(test)]
 mod codegen_tests;
@@ -64,6 +66,8 @@ pub(crate) use ast::*;
 pub(crate) use builtin_matrix::planned_builtin_diagnostic;
 // 向过程宏入口暴露核心 View 生成函数。
 pub(crate) use codegen::generate_view;
+// 向核心元素生成器暴露 Divider 专用映射。
+pub(crate) use divider_codegen::generate_divider;
 // 向组件解析与代码生成暴露结构化组件声明。
 pub(crate) use component_ast::*;
 // 向过程宏入口暴露组件感知文档生成函数。

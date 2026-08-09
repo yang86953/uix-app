@@ -27,6 +27,91 @@ fn generates_core_view_snapshot_in_source_order() {
     );
 }
 
+// 验证 Divider 生成只调用现有公开组件与 View API。
+#[test]
+fn generates_divider_with_documented_properties() {
+    // 构造覆盖文字、动态虚线、垂直方向和公共样式的 Divider。
+    let source =
+        r#"<Divider text={title} dashed={show_dashes} direction="vertical" margin="8px" />"#;
+    // 生成稳定令牌文本。
+    let snapshot = generate(source).expect("文档化 Divider 属性应生成 Rust View");
+    // 必须从公开 Divider 默认构造器开始。
+    assert!(snapshot.contains("Divider :: new"));
+    // 文字必须通过现有拥有所有权的构建器进入组件。
+    assert!(snapshot.contains("with_text") && snapshot.contains("title"));
+    // 动态虚线必须保持 true/false 两条同类型路径。
+    assert!(snapshot.contains("if show_dashes") && snapshot.contains("dashed"));
+    // 垂直方向必须调用现有构建器。
+    assert!(snapshot.contains("vertical"));
+    // 公共样式仍由统一 View 映射处理。
+    assert!(snapshot.contains("margin"));
+    // 生成物不得包含运行时标签解析或第二个 Divider 实现。
+    assert!(!snapshot.contains("parse_divider"));
+    // 字面属性应遵守同一公开构建路径。
+    let literal = generate(
+        // 同时覆盖文字字面量、false 虚线与默认水平方向。
+        r#"<Divider text="Section" dashed="false" direction="horizontal" />"#,
+    )
+    // 字面属性必须生成成功。
+    .expect("Divider 字面属性应生成 Rust View");
+    // 文字字面量必须进入现有构建器。
+    assert!(literal.contains("with_text") && literal.contains("Section"));
+    // false 必须保留显式分支而不强制启用虚线。
+    assert!(literal.contains("if false") && !literal.contains("vertical"));
+}
+
+// 验证 Divider 的默认值与非法边界保持确定诊断。
+#[test]
+fn validates_divider_shape_and_direction() {
+    // 默认自闭合 Divider 应直接复用组件默认契约。
+    let default = generate(r#"<Divider />"#).expect("默认 Divider 应可生成");
+    // 默认路径不应伪造文字、虚线或垂直状态。
+    assert!(
+        // 同时检查三个可选构建器均未出现。
+        !default.contains("with_text")
+            // 默认不启用虚线。
+            && !default.contains("dashed")
+            // 默认保持水平方向。
+            && !default.contains("vertical")
+    );
+    // 非法方向必须在代码生成期失败。
+    let direction_error = generate(r#"<Divider direction="diagonal" />"#)
+        // 提取预期诊断。
+        .expect_err("未知 Divider 方向必须失败");
+    // 诊断必须包含具体方向和合法集合提示。
+    assert!(
+        // 消息指出不支持的方向值。
+        direction_error.message.contains("diagonal")
+            // 修复建议给出两个合法值。
+            && direction_error.suggestion.contains("horizontal")
+            // 修复建议同时包含垂直值。
+            && direction_error.suggestion.contains("vertical")
+    );
+    // 可见子内容不能被叶子组件静默丢弃。
+    let child_error = generate(r#"<Divider>label</Divider>"#)
+        // 提取预期结构诊断。
+        .expect_err("Divider 可见子节点必须失败");
+    // 诊断必须说明叶子形状并指向 text 属性。
+    assert!(
+        // 消息说明不接受子节点。
+        child_error.message.contains("不接受子节点")
+            // 修复建议指向文档化文字属性。
+            && child_error.suggestion.contains("text")
+    );
+    // 动态 direction 无法在编译期选择构建器，必须明确拒绝。
+    let dynamic_direction = generate(r#"<Divider direction={axis} />"#)
+        // 提取预期字面量诊断。
+        .expect_err("动态 Divider direction 必须失败");
+    // 诊断必须指出方向需要字符串字面量。
+    assert!(dynamic_direction.message.contains("必须使用字符串字面量"));
+    // Divider 未登记属性必须继续走统一拒绝路径。
+    let unknown_attribute = generate(r#"<Divider mystery="value" />"#)
+        // 提取预期属性映射诊断。
+        .expect_err("Divider 未登记属性必须失败");
+    // 诊断必须包含具体未知属性名。
+    assert!(unknown_attribute.message.contains("mystery"));
+}
+
 // 验证 If 与 For 生成真实 Rust 控制流、索引和稳定 key。
 #[test]
 fn generates_if_for_and_key_snapshot() {

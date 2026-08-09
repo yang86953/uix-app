@@ -9,7 +9,9 @@ use super::{
     SourceSpan,
 };
 // 引入受限表达式与事件处理器生成入口。
-use super::{expression_uses_event, generate_expression, generate_handler_expression};
+use super::{
+    expression_uses_event, generate_divider, generate_expression, generate_handler_expression,
+};
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
     align_value, apply_inline_style, boolean_value, deferred_style_diagnostic, justify_value,
@@ -67,6 +69,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "Column" => generate_container(element, Some(ContainerDirection::Column)),
         // 图标映射到公开 Icon 组件。
         "Icon" => generate_icon(element),
+        // 分割线映射到现有 Divider Component。
+        "Divider" => generate_divider(element),
         // 文档内置组件按登记类别返回规划中诊断。
         _ if planned_builtin_diagnostic(element).is_some() => {
             // 前置条件保证诊断存在。
@@ -304,7 +308,7 @@ fn generate_icon(element: &Element) -> Result<TokenStream, Diagnostic> {
 }
 
 // 应用所有核心元素共享的公开 View 属性与事件。
-fn apply_common_attributes(
+pub(super) fn apply_common_attributes(
     // 接收已经生成的基础 View 表达式。
     mut view: TokenStream,
     // 接收源顺序属性。
@@ -846,7 +850,7 @@ fn generate_text_content(
 }
 
 // 判断节点是否会生成可见 View。
-fn is_renderable_node(node: &Node) -> bool {
+pub(super) fn is_renderable_node(node: &Node) -> bool {
     // 空白文本仅用于格式化源文件，不生成节点。
     !matches!(node, Node::Text(text) if text.value.trim().is_empty())
 }
