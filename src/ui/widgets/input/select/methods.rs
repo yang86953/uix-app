@@ -7,8 +7,8 @@ use crate::ui::WidgetTree;
 use super::search::VisibleRow;
 // 复用选择弹层的共享表面解析原语。
 use super::{
-    normalize_select_rect, resolve_select_popup_rect, select_fallback_surface, Select,
-    DROPDOWN_ROW_HEIGHT,
+    DROPDOWN_ROW_HEIGHT, Select, normalize_select_rect, resolve_select_popup_rect,
+    select_fallback_surface,
 };
 
 impl Select {
@@ -26,7 +26,8 @@ impl Select {
         for option in &self.options {
             max_text_width = max_text_width.max(
                 crate::draw::resources::font::text_backend::estimate_text_metrics(
-                    option,
+                    // 固有宽度由实际显示文案决定，而不是内部稳定值。
+                    &option.label,
                     f32::INFINITY,
                     13.0,
                 )

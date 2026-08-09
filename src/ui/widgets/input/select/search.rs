@@ -1,4 +1,4 @@
-use super::{Select, DROPDOWN_ROW_HEIGHT};
+use super::{DROPDOWN_ROW_HEIGHT, Select};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum VisibleRow {
@@ -14,7 +14,11 @@ impl Select {
                 .flat_map(|group| group.options.iter().map(String::as_str))
                 .collect()
         } else {
-            self.options.iter().map(String::as_str).collect()
+            // 状态绑定只读取稳定值，不依赖可变的显示文案。
+            self.options
+                .iter()
+                .map(|option| option.value.as_str())
+                .collect()
         }
     }
 
@@ -24,8 +28,9 @@ impl Select {
         }
 
         let query = self.search_query.to_lowercase();
-        let matches = |option: &str| {
-            !self.search || query.is_empty() || option.to_lowercase().contains(&query)
+        let matches = |label: &str| {
+            // 搜索面向用户可见文案，不泄漏内部稳定值。
+            !self.search || query.is_empty() || label.to_lowercase().contains(&query)
         };
 
         if self.optgroups.is_empty() {
@@ -33,7 +38,10 @@ impl Select {
                 .options
                 .iter()
                 .enumerate()
-                .filter_map(|(index, option)| matches(option).then_some(VisibleRow::Option(index)))
+                .filter_map(|(index, option)| {
+                    // 平铺选项按显示文案参与过滤。
+                    matches(&option.label).then_some(VisibleRow::Option(index))
+                })
                 .collect();
         }
 
@@ -69,7 +77,11 @@ impl Select {
 
     pub(super) fn option_label(&self, option_index: usize) -> Option<&str> {
         if self.optgroups.is_empty() {
-            return self.options.get(option_index).map(String::as_str);
+            // 平铺结构始终返回面向用户的显示文案。
+            return self
+                .options
+                .get(option_index)
+                .map(|option| option.label.as_str());
         }
 
         let mut remaining = option_index;

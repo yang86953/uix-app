@@ -11,13 +11,13 @@ use crate::ui::{
 use std::cell::{Cell, RefCell};
 
 use super::search::VisibleRow;
-use super::{select_dirty_rect, select_popup_rect, OptGroup, SelectValueBinding};
+use super::{OptGroup, SelectOption, SelectValueBinding, select_dirty_rect, select_popup_rect};
 
 const DROPDOWN_ROW_HEIGHT: f32 = 28.0;
 
 component! {
     pub struct Select {
-        pub(crate) options: Vec<String>,
+        pub(crate) options: Vec<SelectOption>,
         pub(crate) optgroups: Vec<OptGroup>,
         pub(crate) selected: usize,
         pub(crate) selected_multi: Vec<usize>,
@@ -460,14 +460,41 @@ component! {
 #[cfg(test)]
 // 将打开状态与内部几何构造限制在当前模块测试中。
 mod tests {
-    // 复用被测选择组件。
-    use super::Select;
+    // 复用被测选择组件和结构化选项模型。
+    use super::{Select, SelectOption};
     // 引入布局断言所需的基础几何类型。
     use crate::core::{Rect, Size};
     // 引入根节点 frame 读写所需的组件核心 trait。
     use crate::ui::component::widget::WidgetCore;
     // 引入直接执行组件布局与设置根表面所需的树接口。
     use crate::ui::{ComponentId, LayoutChild, WidgetLayout, WidgetTree};
+
+    // 验证显示文案、状态值和快照观测保持各自契约。
+    #[test]
+    // 覆盖结构化选项的读取与观测路径。
+    fn structured_options_keep_labels_separate_from_bound_values() {
+        // 使用不同的显示文案和稳定值构造两个选项。
+        let mut select = Select::new().select_options([
+            // 中文文案映射到稳定地区代码。
+            SelectOption::new("中国", "cn"),
+            // 另一项文案映射到另一个稳定地区代码。
+            SelectOption::new("美国", "us"),
+        ]);
+        // 选择第二项以覆盖读取稳定值的路径。
+        select.select_single(1);
+
+        // 当前业务值必须是稳定值，而不是显示文案。
+        assert_eq!(select.current_value().as_deref(), Some("us"));
+        // 绘制和搜索入口必须仍然返回显示文案。
+        assert_eq!(select.option_label(1), Some("美国"));
+        // 快照必须保留既有的显示文案观测语义。
+        let crate::ui::SnapshotFields::Select { options, .. } = select.snapshot_fields() else {
+            // 选择器只能生成选择器快照分支。
+            panic!("选择器应生成 Select 快照");
+        };
+        // 快照列表不应暴露内部稳定值。
+        assert_eq!(options, vec!["中国".to_owned(), "美国".to_owned()]);
+    }
 
     // 自定义选项必须在绘制前的布局阶段直接使用组件树根表面。
     #[test]
@@ -518,14 +545,14 @@ mod tests {
         let mut select = Select::searchable().options([
             // 唯一匹配项用于形成一行实际弹层。
             "匹配", // 其余九项用于扩大过滤前保守高度。
-            "二", // 保留第三个不匹配选项。
-            "三", // 保留第四个不匹配选项。
-            "四", // 保留第五个不匹配选项。
-            "五", // 保留第六个不匹配选项。
-            "六", // 保留第七个不匹配选项。
-            "七", // 保留第八个不匹配选项。
-            "八", // 保留第九个不匹配选项。
-            "九", // 保留第十个不匹配选项。
+            "二",   // 保留第三个不匹配选项。
+            "三",   // 保留第四个不匹配选项。
+            "四",   // 保留第五个不匹配选项。
+            "五",   // 保留第六个不匹配选项。
+            "六",   // 保留第七个不匹配选项。
+            "七",   // 保留第八个不匹配选项。
+            "八",   // 保留第九个不匹配选项。
+            "九",   // 保留第十个不匹配选项。
             "十",
         ]);
         // 打开选择弹层参与脏区解析。

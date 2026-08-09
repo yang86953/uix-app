@@ -1,14 +1,15 @@
 use crate::core::Rect;
 use crate::native::windowing::input::ControlSize;
-use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::SnapshotFields;
+use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::reactive::state::State;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
-use crate::ui::SnapshotFields;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 
 use super::{
-    OptGroup, Select, SelectOptionGroup, SelectOptionView, SelectValue, SelectValueBinding,
+    OptGroup, Select, SelectOption, SelectOptionGroup, SelectOptionView, SelectValue,
+    SelectValueBinding,
 };
 
 const DROPDOWN_ROW_HEIGHT: f32 = 28.0;
@@ -81,9 +82,24 @@ impl Select {
     {
         self.options = opts
             .into_iter()
-            .map(|option| option.as_ref().to_owned())
+            // 兼容既有字符串选项：显示文案与稳定值保持一致。
+            .map(|option| SelectOption::new(option.as_ref(), option.as_ref()))
             .collect();
         self.sync_bound_selection();
+        self
+    }
+
+    /// 设置具有独立显示文案与稳定值的选择项。
+    pub fn select_options<I>(mut self, options: I) -> Self
+    where
+        // 接受数组、向量和其他任意可迭代选项集合。
+        I: IntoIterator<Item = SelectOption>,
+    {
+        // 保留调用方声明顺序作为稳定的交互索引顺序。
+        self.options = options.into_iter().collect();
+        // 新选项集合写入后立即同步外部绑定的当前值。
+        self.sync_bound_selection();
+        // 返回更新后的流式构造器。
         self
     }
 
@@ -241,7 +257,12 @@ impl Select {
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Select {
-            options: self.options.clone(),
+            // 快照继续暴露实际显示文案，保持既有观测契约。
+            options: self
+                .options
+                .iter()
+                .map(|option| option.label.clone())
+                .collect(),
             optgroups: self.optgroups.clone(),
             selected: self.selected,
             selected_multi: self.selected_multi.clone(),
