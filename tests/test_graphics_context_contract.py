@@ -247,8 +247,14 @@ class GraphicsContextContractTests(unittest.TestCase):
         backend = (ROOT / "src/draw/backend/gpu/backend/mod.rs").read_text(encoding="utf-8")
         # 读取进入 GPU backend 前的装配门禁。
         factory = (ROOT / "src/draw/backend/factory.rs").read_text(encoding="utf-8")
+        # 截取生产 owner 实现，排除测试 context 的 caps 方法。
+        owner_contract = owner[: owner.index("#[cfg(test)]")]
         # 兼容 trait object 只能封装在 native owner 内。
         self.assertIn("context: Box<dyn IGraphicsContext>", owner)
+        # owner 必须固化构造期验证过的静态 capability 快照。
+        self.assertIn("caps: GraphicsContextCaps", owner_contract)
+        # 生产 owner 只能在构造门禁读取一次兼容 context caps。
+        self.assertEqual(owner_contract.count("context.caps()"), 1)
         # owner 必须将可选 thin RHI 查询收口为 Result。
         self.assertIn("fn rhi_context(&mut self) -> Result<&mut dyn GraphicsContextRhi>", owner)
         # owner 必须独立承接 recipe 专用 resize。
@@ -317,8 +323,14 @@ class GraphicsContextContractTests(unittest.TestCase):
         owner = (ROOT / "src/native/present/pixel_upload_recipe_owner.rs").read_text(encoding="utf-8")
         # 读取统一 renderer 的 presentation 状态机。
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
+        # 截取生产 owner 实现，排除测试 context 的 caps 方法。
+        owner_contract = owner[: owner.index("#[cfg(test)]")]
         # 兼容 trait object 只能封装在 native owner 内。
         self.assertIn("context: Box<dyn IGraphicsContext>", owner)
+        # owner 必须固化构造期验证过的静态 capability 快照。
+        self.assertIn("caps: GraphicsContextCaps", owner_contract)
+        # 生产 owner 只能在构造门禁读取一次兼容 context caps。
+        self.assertEqual(owner_contract.count("context.caps()"), 1)
         # owner 必须独立承接 PixelUpload resize。
         self.assertIn("fn resize_surface(&mut self, width: i32, height: i32) -> Result<()>", owner)
         # owner 必须独立承接最终像素提交。
