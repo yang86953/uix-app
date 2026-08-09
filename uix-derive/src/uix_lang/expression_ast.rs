@@ -21,6 +21,8 @@ pub(crate) enum ExpressionKind {
     String(String),
     // 保存布尔字面量。
     Boolean(bool),
+    // 保存仅供已登记结构属性消费的对象字面量。
+    Object(Vec<ObjectField>),
     // 保存一元运算。
     Unary {
         // 保存一元运算符。
@@ -67,6 +69,17 @@ pub(crate) enum ExpressionKind {
         // 保存源码顺序中的调用参数。
         arguments: Vec<CallArgument>,
     },
+}
+
+// 表示对象字面量中一个按源码顺序保存的字段。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ObjectField {
+    // 保存经过词法验证的标识符键。
+    pub(crate) name: String,
+    // 保存字段值的受限表达式。
+    pub(crate) value: Expression,
+    // 保存从键到字段值末尾的完整跨度。
+    pub(crate) span: SourceSpan,
 }
 
 // 表示位置参数或 setState 命名参数。

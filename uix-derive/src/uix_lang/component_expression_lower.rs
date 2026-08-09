@@ -161,6 +161,14 @@ impl ComponentExpander {
                     )?;
                 }
             }
+            // 对象字段值继续复用现有表达式降低规则。
+            ExpressionKind::Object(fields) => {
+                // 按源码顺序降低全部字段值。
+                for field in fields {
+                    // 递归改写字段值中的绑定与调用。
+                    self.transform_expression(&mut field.value, bindings, allow_set_state)?;
+                }
+            }
             // 组件 number 语义统一为 f64，整数形态补充小数点。
             ExpressionKind::Number(source) => {
                 // 只改写没有小数点或指数的整数形态。

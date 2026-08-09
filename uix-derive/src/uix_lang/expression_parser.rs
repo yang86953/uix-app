@@ -1,7 +1,10 @@
+// 把对象字面量解析隔离到解析器子模块。
+mod object;
+
 // 引入表达式 AST、词法标记、诊断和跨度。
 use super::{
-    lex_expression, BinaryOperator, CallArgument, Diagnostic, Expression, ExpressionKind,
-    ExpressionToken, ExpressionTokenKind, SourceSpan, UnaryOperator,
+    BinaryOperator, CallArgument, Diagnostic, Expression, ExpressionKind, ExpressionToken,
+    ExpressionTokenKind, SourceSpan, UnaryOperator, lex_expression,
 };
 
 // 解析并验证一段受限表达式源码。
@@ -533,15 +536,8 @@ impl ExpressionParser {
                 // 给出修复建议。
                 "在 Rust 侧创建数组并通过绑定引用传入",
             )),
-            // 左花括号位于原子位置表示对象字面量。
-            ExpressionTokenKind::LeftBrace => Err(Diagnostic::new(
-                // 指向左花括号。
-                token.span,
-                // 陈述失败原因。
-                "表达式不支持对象字面量",
-                // 给出修复建议。
-                "在 Rust 侧创建结构化数据并通过绑定引用传入",
-            )),
+            // 左花括号位于原子位置表示受限对象字面量。
+            ExpressionTokenKind::LeftBrace => self.parse_object(token),
             // 单竖线表示闭包起点。
             ExpressionTokenKind::Pipe => Err(Diagnostic::new(
                 // 指向闭包标记。

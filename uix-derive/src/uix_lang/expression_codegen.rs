@@ -25,6 +25,15 @@ pub(crate) fn generate_expression(
         ExpressionKind::String(value) => Ok(quote! { #value }),
         // 布尔值转换为 Rust 布尔字面量。
         ExpressionKind::Boolean(value) => Ok(quote! { #value }),
+        // 对象字面量必须由声明了字段契约的结构属性生成器消费。
+        ExpressionKind::Object(_) => Err(Diagnostic::new(
+            // 指向完整对象。
+            expression.span,
+            // 陈述普通生成路径没有目标类型。
+            "对象字面量只能用于已登记的结构属性",
+            // 给出可审计的使用边界。
+            "把对象用于文档明确声明的结构属性，或改用普通绑定表达式",
+        )),
         // 一元表达式递归生成操作数。
         ExpressionKind::Unary { operator, operand } => {
             // 生成一元操作数。
@@ -149,6 +158,12 @@ pub(crate) fn expression_uses_event(expression: &Expression) -> bool {
                     // 检查每个参数值。
                     .any(|argument| expression_uses_event(&argument.value))
         }
+        // 对象递归检查全部字段值。
+        ExpressionKind::Object(fields) => fields
+            // 遍历有序字段。
+            .iter()
+            // 任一字段值读取事件即命中。
+            .any(|field| expression_uses_event(&field.value)),
         // 其余字面量不读取事件。
         ExpressionKind::Number(_) | ExpressionKind::String(_) | ExpressionKind::Boolean(_) => {
             // 返回未命中。
