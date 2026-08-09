@@ -805,7 +805,8 @@ impl RichText {
 
     pub(crate) fn set_cross_text_range(&self, range: Option<(usize, usize)>) {
         match range {
-            Some((a, b)) if a != b => self.selection.set(Some((a.min(b), a.max(b)))),
+            // 跨节点选择仍复用完整富文本字素簇归一规则。
+            Some((a, b)) if a != b => self.set_selection_range(a, b),
             _ => self.selection.set(None),
         }
     }

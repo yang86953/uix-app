@@ -9,6 +9,8 @@ use std::cell::RefCell;
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::geometry::spatial::PhysicalUnit;
+// 引入共享扩展字素簇边界模型。
+use crate::draw::resources::font::text_index::{BoundaryBias, CharIndex, TextIndexMap};
 use crate::draw::TextLayoutOptions;
 use crate::ui::component::clipboard;
 use crate::ui::component::paint_context::PaintContext;
@@ -416,7 +418,8 @@ impl Label {
             return;
         }
         match range {
-            Some((a, b)) if a != b => self.selection.set(Some((a.min(b), a.max(b)))),
+            // 跨节点选择仍复用本节点完整字素簇归一规则。
+            Some((a, b)) if a != b => self.set_selection_range(a, b),
             _ => self.selection.set(None),
         }
     }
@@ -461,7 +464,8 @@ impl Label {
         }
     }
 
-    fn char_at_xy(&self, text_x: f32, text_y: f32) -> usize {
+    // 先保留布局层给出的原始 shaping cluster 字符边界。
+    fn raw_char_at_xy(&self, text_x: f32, text_y: f32) -> usize {
         let xs = self.glyph_xs.borrow();
         let widths = self.glyph_widths.borrow();
         let cis = self.glyph_char_indices.borrow();
@@ -509,18 +513,54 @@ impl Label {
         }
     }
 
+    // 把普通文本命中统一约束到扩展字素簇边界。
+    fn char_at_xy(&self, text_x: f32, text_y: f32) -> usize {
+        // 查询现有布局几何给出的原始字符位置。
+        let raw_index = self.raw_char_at_xy(text_x, text_y);
+        // 命中采用最近合法字素簇边界。
+        TextIndexMap::new(&self.text)
+            // 归一显式字符位置。
+            .normalize_char(CharIndex(raw_index), BoundaryBias::Nearest)
+            // 返回兼容字符下标。
+            .0
+    }
+
     pub(crate) fn set_selection_range(&self, a: usize, b: usize) {
+        // 同一逻辑位置始终表示空选择，不因旧位置非法而扩展文本。
         if a == b {
+            // 清除空选择。
+            self.selection.set(None);
+            // 无需构造范围。
+            return;
+        }
+        // 把无方向选择向外扩展到完整字素簇边界。
+        let (start, end) = TextIndexMap::new(&self.text)
+            // 归一显式字符范围。
+            .normalize_selection(CharIndex(a), CharIndex(b));
+        // 空范围不保留选择。
+        if start == end {
             self.selection.set(None);
         } else {
-            self.selection.set(Some((a.min(b), a.max(b))));
+            // 保存合法字符边界组成的选择范围。
+            self.selection.set(Some((start.0, end.0)));
         }
     }
 
     fn slice_range(&self, start_char: usize, end_char: usize) -> String {
-        let chars: Vec<char> = self.text.chars().collect();
-        let e = end_char.min(chars.len());
-        let s = start_char.min(e);
-        chars[s..e].iter().collect()
+        // 建立字符到 UTF-8 字节的显式转换表。
+        let index_map = TextIndexMap::new(&self.text);
+        // 防御性地把调用范围扩展到完整字素簇。
+        let (start, end) = index_map.normalize_selection(
+            // 包装字符起点。
+            CharIndex(start_char),
+            // 包装字符终点。
+            CharIndex(end_char),
+        );
+        // 转换合法字符起点为字节偏移。
+        let byte_start = index_map.char_to_byte(start).0;
+        // 转换合法字符终点为字节偏移。
+        let byte_end = index_map.char_to_byte(end).0;
+        // 返回完整 UTF-8 字素簇片段。
+        self.text[byte_start..byte_end].to_owned()
     }
 }

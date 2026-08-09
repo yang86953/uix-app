@@ -1,7 +1,11 @@
 //! RichText 的 frame 命中、链接导航和文本选择内部逻辑。
 
 use super::{LayoutLine, RichText, RichTextPointerAction, RichTextSegment};
+// 复用富文本完整逻辑源文本拼接。
+use super::layout_metrics::source_text;
 use crate::core::{Point, Rect};
+// 引入共享扩展字素簇边界模型。
+use crate::draw::resources::font::text_index::{BoundaryBias, CharIndex, TextIndexMap};
 
 impl RichText {
     pub(super) fn local_frame(&self) -> Rect {
@@ -66,7 +70,8 @@ impl RichText {
         }
     }
 
-    pub(super) fn char_at_pos(&self, pos: Point, lines: &[LayoutLine]) -> usize {
+    // 先保留视觉布局给出的原始 shaping cluster 字符边界。
+    fn raw_char_at_pos(&self, pos: Point, lines: &[LayoutLine]) -> usize {
         for line in lines {
             if pos.y < line.y || pos.y >= line.y + line.height {
                 continue;
@@ -160,6 +165,20 @@ impl RichText {
             })
     }
 
+    // 把富文本视觉命中统一约束到扩展字素簇边界。
+    pub(super) fn char_at_pos(&self, pos: Point, lines: &[LayoutLine]) -> usize {
+        // 查询现有双向视觉几何给出的原始字符位置。
+        let raw_index = self.raw_char_at_pos(pos, lines);
+        // 拼接跨样式段的完整逻辑源文本。
+        let text = source_text(&self.segments);
+        // 命中采用最近合法字素簇边界。
+        TextIndexMap::new(&text)
+            // 归一显式字符位置。
+            .normalize_char(CharIndex(raw_index), BoundaryBias::Nearest)
+            // 返回兼容字符下标。
+            .0
+    }
+
     pub(super) fn link_count(&self) -> usize {
         self.segments
             .iter()
@@ -224,14 +243,39 @@ impl RichText {
     }
 
     pub(super) fn set_selection_range(&self, a: usize, b: usize) {
+        // 同一逻辑位置始终表示空选择，不因旧位置非法而扩展文本。
         if a == b {
+            // 清除空选择。
+            self.selection.set(None);
+            // 无需构造范围。
+            return;
+        }
+        // 拼接跨样式段的完整逻辑源文本。
+        let text = source_text(&self.segments);
+        // 把无方向选择向外扩展到完整字素簇边界。
+        let (start, end) = TextIndexMap::new(&text)
+            // 归一显式字符范围。
+            .normalize_selection(CharIndex(a), CharIndex(b));
+        // 空范围不保留选择。
+        if start == end {
             self.selection.set(None);
         } else {
-            self.selection.set(Some((a.min(b), a.max(b))));
+            // 保存合法字符边界组成的选择范围。
+            self.selection.set(Some((start.0, end.0)));
         }
     }
 
     pub(super) fn extract_text_range(&self, start: usize, end: usize) -> String {
+        // 拼接跨样式段的完整逻辑源文本以归一选择边界。
+        let text = source_text(&self.segments);
+        // 防御性地把提取范围扩展到完整字素簇。
+        let (start, end) = TextIndexMap::new(&text)
+            // 归一显式字符范围。
+            .normalize_selection(CharIndex(start), CharIndex(end));
+        // 恢复现有分段提取逻辑使用的数值字符起点。
+        let start = start.0;
+        // 恢复现有分段提取逻辑使用的数值字符终点。
+        let end = end.0;
         let mut result = String::new();
         let mut offset = 0;
         for segment in &self.segments {

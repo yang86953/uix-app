@@ -566,6 +566,8 @@ impl FontService {
         opts: &TextLayoutOptions,
         point: Point,
     ) -> Option<usize> {
+        // 为命中结果建立扩展字素簇边界约束。
+        let index_map = crate::draw::resources::font::text_index::TextIndexMap::new(text);
         if text.is_empty() {
             return None;
         }
@@ -578,20 +580,65 @@ impl FontService {
                     let end = li.glyph_start + li.glyph_count;
                     let glyphs = &layout.glyphs[li.glyph_start..end.min(layout.glyphs.len())];
                     if glyphs.is_empty() {
-                        return Some(li.start_char.min(total_chars));
+                        // 空视觉行的逻辑起点也必须是完整字素簇边界。
+                        return Some(
+                            // 归一当前行逻辑起点。
+                            index_map
+                                // 空行向前收敛到所属字素簇起点。
+                                .normalize_char(
+                                    // 包装真实字符范围内的行起点。
+                                    crate::draw::resources::font::text_index::CharIndex(
+                                        li.start_char.min(total_chars),
+                                    ),
+                                    // 指定向后归一。
+                                    crate::draw::resources::font::text_index::BoundaryBias::Backward,
+                                )
+                                // 返回兼容字符下标。
+                                .0,
+                        );
                     }
                     // 使用视觉 cluster 与行级 UAX #9 方向解析逻辑边界。
-                    return crate::draw::resources::font::text_backend::glyph_hit_test_index(
-                        // 传入当前视觉行字形。
-                        glyphs, // 传入行内水平坐标。
-                        point.x,
-                    )
-                    // 所有返回边界都限制在真实源字符数量内。
-                    .map(|index| index.min(total_chars));
+                    let raw_index =
+                        crate::draw::resources::font::text_backend::glyph_hit_test_index(
+                            // 传入当前视觉行字形。
+                            glyphs, // 传入行内水平坐标。
+                            point.x,
+                        )
+                        // 所有返回边界都限制在真实源字符数量内。
+                        .map(|index| index.min(total_chars));
+                    // 把 shaping cluster 命中归一到最近的扩展字素簇边界。
+                    return raw_index.map(|index| {
+                        // 使用显式字符索引避免与字节偏移混淆。
+                        index_map
+                            // 点击命中采用最近边界，距离相同时向前。
+                            .normalize_char(
+                                // 包装后端返回的逻辑字符下标。
+                                crate::draw::resources::font::text_index::CharIndex(index),
+                                // 指定点击归一偏向。
+                                crate::draw::resources::font::text_index::BoundaryBias::Nearest,
+                            )
+                            // 向旧有公共接口返回字符下标数值。
+                            .0
+                    });
                 }
             }
             if let Some(last) = layout.lines.last() {
-                return Some(last.end_char.min(total_chars));
+                // 行外命中也必须停在完整扩展字素簇边界。
+                return Some(
+                    // 归一最后一行逻辑终点。
+                    index_map
+                        // 行尾使用向后偏向，避免越入下一字素簇。
+                        .normalize_char(
+                            // 包装真实字符范围内的行尾。
+                            crate::draw::resources::font::text_index::CharIndex(
+                                last.end_char.min(total_chars),
+                            ),
+                            // 指定行尾向后归一。
+                            crate::draw::resources::font::text_index::BoundaryBias::Backward,
+                        )
+                        // 返回兼容字符下标。
+                        .0,
+                );
             }
         }
         Some(0)
@@ -609,6 +656,19 @@ impl FontService {
             return 0.0;
         }
         let f = *font;
+        // 建立源文本字素簇边界表。
+        let index_map = crate::draw::resources::font::text_index::TextIndexMap::new(text);
+        // 外部传入的任意字符位置必须先收敛到可停靠边界。
+        let char_index = index_map
+            // 光标查询使用最近字素簇边界。
+            .normalize_char(
+                // 显式标注输入单位为字符下标。
+                crate::draw::resources::font::text_index::CharIndex(char_index),
+                // 距离相同时沿前进方向收敛。
+                crate::draw::resources::font::text_index::BoundaryBias::Nearest,
+            )
+            // 继续复用现有布局接口的数值字符下标。
+            .0;
         let layout = self.layout_text(&f, text, opts);
         // 逐行从同一视觉 cluster 数据查询方向感知光标边界。
         for line in &layout.lines {

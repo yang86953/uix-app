@@ -380,9 +380,19 @@ impl<'a> TextRenderService<'a> {
         if layout.glyphs.is_empty() {
             return Vec::new();
         }
-        let total_chars = text.chars().count();
-        let end = end.min(total_chars);
-        let start = start.min(end);
+        // 为直接渲染选择建立完整扩展字素簇约束。
+        let index_map = crate::draw::resources::font::text_index::TextIndexMap::new(text);
+        // 把任意调用方范围向外扩展到合法字素簇边界。
+        let (start, end) = index_map.normalize_selection(
+            // 显式标注选择起点使用字符下标。
+            crate::draw::resources::font::text_index::CharIndex(start),
+            // 显式标注选择终点使用字符下标。
+            crate::draw::resources::font::text_index::CharIndex(end),
+        );
+        // 还原布局几何接口使用的数值起点。
+        let start = start.0;
+        // 还原布局几何接口使用的数值终点。
+        let end = end.0;
         let fs = crate::draw::resources::font::text_backend::bounded_font_size(font_size);
         let visual_h = self
             .font_service

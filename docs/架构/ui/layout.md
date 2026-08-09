@@ -32,6 +32,7 @@
 - measure 不写最终位置；layout 不能返回超出已归一约束的非有限尺寸。
 - margin 推开兄弟；border/padding 从外框收敛到 content rect；阴影只影响视觉 damage，不改变 content box。
 - 子节点 frame 收敛后同步父级 `child_visible`，不可见子树退出后续阶段。
+- 文本交互通过 `TextIndexMap` 显式区分 UTF-8 `ByteIndex`、Unicode 标量 `CharIndex`、扩展字素簇 `GraphemeIndex` 与 `ShapingCluster`；字节/字符转换只能经过边界表，命中、光标、删除和选择对外只返回扩展字素簇边界。
 
 ## 组件：FlexLayout / GridLayout / ScrollView / VirtualScroll
 
