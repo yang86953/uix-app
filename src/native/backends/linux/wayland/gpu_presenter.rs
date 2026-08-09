@@ -6,7 +6,7 @@
 // ============================================================================
 
 use crate::core::Error;
-use crate::native::present::{IGraphicsContext, IPresenter, PresentDamage};
+use crate::native::present::{IGraphicsContext, IPresenter, PresentDamage, PresentFrame};
 pub(crate) struct GpuPresenter {
     gpu_ctx: Box<dyn IGraphicsContext>,
 }
@@ -25,7 +25,10 @@ impl IPresenter for GpuPresenter {
         _height: i32,
         damage: PresentDamage,
     ) -> Result<(), Error> {
-        self.gpu_ctx.swap_buffers(damage)
+        // 把外部 presenter 的 damage 封装为唯一的 context present payload。
+        let frame = PresentFrame::Swapchain { damage };
+        // 禁止 Wayland presenter 绕过统一 present 边界直接交换 EGL surface。
+        self.gpu_ctx.present(&frame)
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {

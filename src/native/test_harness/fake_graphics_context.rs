@@ -1,7 +1,7 @@
 //! Fake 图形上下文 — 空操作实现，记录调用。
 
-use crate::core::error::Result;
-use crate::native::present::{IGraphicsContext, PresentDamage};
+use crate::core::{Errc, Error, Result};
+use crate::native::present::{IGraphicsContext, PresentDamage, PresentFrame};
 use std::cell::Cell;
 
 #[derive(Debug, Clone)]
@@ -10,8 +10,8 @@ pub struct FakeGraphicsContextState {
     pub height: Cell<i32>,
     pub initialized: bool,
     pub make_current_calls: usize,
-    pub swap_buffers_calls: usize,
-    pub last_swap_damage: Option<PresentDamage>,
+    pub present_calls: usize,
+    pub last_present_damage: Option<PresentDamage>,
     pub shutdown_called: bool,
 }
 
@@ -22,8 +22,8 @@ impl FakeGraphicsContextState {
             height: Cell::new(height),
             initialized: false,
             make_current_calls: 0,
-            swap_buffers_calls: 0,
-            last_swap_damage: None,
+            present_calls: 0,
+            last_present_damage: None,
             shutdown_called: false,
         }
     }
@@ -87,13 +87,6 @@ impl IGraphicsContext for FakeGraphicsContext {
         Ok(())
     }
 
-    fn swap_buffers(&mut self, damage: PresentDamage) -> crate::core::Result<()> {
-        self.state.swap_buffers_calls += 1;
-        self.state.last_swap_damage = Some(damage);
-
-        Ok(())
-    }
-
     fn try_shutdown(&mut self) -> crate::core::Result<()> {
         self.state.shutdown_called = true;
         Ok(())
@@ -115,5 +108,28 @@ impl IGraphicsContext for FakeGraphicsContext {
 
     fn height(&self) -> i32 {
         self.state.height.get()
+    }
+
+    // 测试 context 显式记录统一 swapchain payload，不提供旧交换旁路。
+    fn present(&mut self, frame: &PresentFrame<'_>) -> crate::core::Result<()> {
+        // 按测试 context 宣称的 GPU-native recipe 校验 payload。
+        match frame {
+            // 记录统一 swapchain 提交及其 damage 事实。
+            PresentFrame::Swapchain { damage } => {
+                // 统计通过唯一 present 边界的调用。
+                self.state.present_calls += 1;
+                // 保存本次 damage 供恢复与提交测试断言。
+                self.state.last_present_damage = Some(damage.clone());
+                // fake 不执行原生提交，直接返回成功。
+                Ok(())
+            }
+            // GPU-native fake 不接受 CPU pixel upload payload。
+            PresentFrame::PixelBuffer { .. } => Err(Error::new(
+                // payload 与 context recipe 不匹配。
+                Errc::InvalidArgument,
+                // 明确测试失败来源，避免误判为原生 surface 故障。
+                "FakeGraphicsContext: PixelBuffer payload is unsupported",
+            )),
+        }
     }
 }

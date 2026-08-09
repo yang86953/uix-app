@@ -5,9 +5,7 @@ use super::WglContext;
 use std::ffi::c_void;
 
 // 引入 OpenGL ES 图形上下文与呈现契约。
-use crate::native::present::{
-    IGraphicsContext, NativeRasterCaps, PresentCoherency, PresentDamage, PresentFrame,
-};
+use crate::native::present::{IGraphicsContext, NativeRasterCaps, PresentCoherency, PresentFrame};
 // 引入项目统一错误和结果类型。
 use crate::native::{Errc, Error, Result};
 // 引入 WGL drawable 尺寸换算辅助函数。
@@ -66,24 +64,6 @@ impl IGraphicsContext for WglContext {
     fn make_current(&mut self) -> Result<(), Error> {
         // 保持 typed native error 语义。
         self.make_current_result()
-    }
-
-    // 交换 WGL surface 并消费 surface-lost 注入。
-    fn swap_buffers(&mut self, damage: PresentDamage) -> Result<(), Error> {
-        // 兼容 presenter 也必须消费共享 OpenGL lower surface-lost 注入。
-        #[cfg(feature = "test-harness")]
-        if self.pipeline.rhi_take_surface_lost_for_test() {
-            // 保留与共享 RHI surface host 相同的故障 marker。
-            tracing::warn!("OpenGL RHI test surface lost");
-            return Err(Error::new(
-                Errc::GraphicsSurfaceLost,
-                "OpenGL RHI test surface lost before present",
-            ));
-        }
-        // WGL 交换暂不使用 damage hint。
-        let _ = damage;
-        // 将 SwapBuffers 失败映射为 GraphicsSurfaceLost。
-        self.swap_buffers_result()
     }
 
     // 统一 present 入口只接受 native swapchain frame。

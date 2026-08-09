@@ -97,7 +97,6 @@ pub trait IGraphicsContext {
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error>;
     fn make_current(&mut self) -> Result<(), Error>;
-    fn swap_buffers(&mut self, damage: PresentDamage) -> Result<(), Error>;
 
     /// Checked shutdown boundary for thread-affine native resources.
     ///
@@ -149,21 +148,8 @@ pub trait IGraphicsContext {
         ))
     }
 
-    /// Unified present entry (M7). Default forwards to legacy methods.
-    fn present(&mut self, frame: &PresentFrame) -> Result<(), Error> {
-        match frame {
-            PresentFrame::Swapchain { damage } => {
-                self.make_current()?;
-                self.swap_buffers(damage.clone())
-            }
-            PresentFrame::PixelBuffer {
-                pixels,
-                width,
-                height,
-                damage,
-            } => self.present_pixels(pixels, *width, *height, damage.clone()),
-        }
-    }
+    /// 唯一兼容 present 入口；每个 context 必须显式处理自己的 payload。
+    fn present(&mut self, frame: &PresentFrame) -> Result<(), Error>;
 
     /// Tests whether an already-occluded swapchain can leave idle state
     /// without submitting frame data. Contexts that can report occlusion from

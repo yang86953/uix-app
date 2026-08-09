@@ -26,13 +26,6 @@ impl IGraphicsContext for VulkanContext {
         Ok(())
     }
 
-    fn swap_buffers(&mut self, _damage: PresentDamage) -> Result<()> {
-        Err(Error::new(
-            Errc::NotImplemented,
-            "VulkanContext: swapchain present is not supported for the PixelUpload recipe; use PresentFrame::PixelBuffer",
-        ))
-    }
-
     fn try_shutdown(&mut self) -> Result<()> {
         self.shutdown_result()
     }
@@ -90,5 +83,30 @@ impl IGraphicsContext for VulkanContext {
             .upload_pixels(pixels, width, height)
             .and_then(|()| self.present_uploaded_pixels());
         device.observe(result)
+    }
+
+    // 统一 present 入口只允许当前 Vulkan PixelUpload recipe 的载荷。
+    fn present(&mut self, frame: &PresentFrame<'_>) -> Result<()> {
+        // 根据显式 payload 保持 CPU upload 与 swapchain recipe 正交。
+        match frame {
+            // PixelBuffer 复用已经检查 device health 的上传入口。
+            PresentFrame::PixelBuffer {
+                // 借用调用方提供的 premultiplied 像素。
+                pixels,
+                // 保留 payload 的物理宽度。
+                width,
+                // 保留 payload 的物理高度。
+                height,
+                // 保留最终 present damage。
+                damage,
+            } => self.present_pixels(pixels, *width, *height, damage.clone()),
+            // 当前 recipe 不允许无像素载荷的 swapchain 提交。
+            PresentFrame::Swapchain { .. } => Err(Error::new(
+                // 使用参数错误标记 recipe 与 payload 不匹配。
+                Errc::InvalidArgument,
+                // 明确要求调用方使用 PixelBuffer，而不是寻找旁路。
+                "VulkanContext: Swapchain payload is invalid for the PixelUpload recipe",
+            )),
+        }
     }
 }

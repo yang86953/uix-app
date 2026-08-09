@@ -9,8 +9,7 @@ use std::ffi::c_void;
 
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
-    GraphicsApi, GraphicsContextCaps, IGraphicsContext, PresentCoherency, PresentDamage,
-    PresentFrame,
+    GraphicsApi, GraphicsContextCaps, IGraphicsContext, PresentCoherency, PresentFrame,
 };
 use crate::native::presentation::graphics::platform::windows as win_surface;
 use ::windows::core::Interface;

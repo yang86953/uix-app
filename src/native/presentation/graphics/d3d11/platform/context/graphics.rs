@@ -48,10 +48,6 @@ impl IGraphicsContext for D3d11Context {
         self.bind_current_draw_target()
     }
 
-    fn swap_buffers(&mut self, _damage: PresentDamage) -> Result<()> {
-        self.present_result()
-    }
-
     fn test_present(&mut self) -> Result<PresentTestResult> {
         // DXGI_PRESENT_TEST is the documented exit probe for an already-idle
         // bitblt swapchain. It submits no frame data and must use sync 0.

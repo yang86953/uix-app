@@ -413,6 +413,52 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # OpenGL RHI pass 完成后仍须能恢复默认 framebuffer。
         self.assertIn("pub(crate) fn bind_swapchain_target", opengl_pipeline)
 
+    # 校验所有 context present 都经过显式 PresentFrame 载荷边界。
+    def test_swap_buffers_compatibility_entry_leaves_graphics_context(self) -> None:
+        # 读取 IGraphicsContext 的唯一兼容 present 契约。
+        graphics_trait = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        # 读取 owner-thread wrapper，确认没有旧交换转发。
+        thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
+        # 收集所有直接实现 IGraphicsContext 的测试与原生 context。
+        contexts = (
+            # fake context 也必须模拟统一载荷，而不是保留测试旁路。
+            ROOT / "src/native/test_harness/fake_graphics_context.rs",
+            # D3D11 context 只实现显式 present。
+            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            # D3D12 context 只实现显式 present。
+            ROOT / "src/native/presentation/graphics/d3d12/platform/context/graphics.rs",
+            # Vulkan PixelUpload context 必须拒绝 Swapchain payload。
+            ROOT / "src/native/presentation/graphics/vulkan/platform/context/graphics.rs",
+            # Metal PixelUpload context 必须拒绝 Swapchain payload。
+            ROOT / "src/native/presentation/graphics/metal/platform/context.rs",
+            # WGL context 显式处理 Swapchain payload。
+            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            # EGL context 显式处理 Swapchain payload。
+            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+        )
+        # 公共 trait 不得再暴露绕过 PresentFrame 的交换方法。
+        self.assertNotIn("fn swap_buffers(", graphics_trait)
+        # 公共 present 必须是实现方不可跳过的必需方法。
+        self.assertIn("fn present(&mut self, frame: &PresentFrame) -> Result<(), Error>;", graphics_trait)
+        # owner-thread wrapper 不得重新生成旧交换入口。
+        self.assertNotIn("forward_result!(swap_buffers", thread_bound)
+        # 每个直接 context 都必须显式处理统一 present payload。
+        for context in contexts:
+            # 读取单个实现文件，避免低层原生 swap API 造成误判。
+            source = context.read_text(encoding="utf-8")
+            # trait wrapper 中不得存在旧交换方法声明。
+            self.assertNotIn("fn swap_buffers(", source)
+            # 每个实现必须提供自己的 payload 校验与提交边界。
+            self.assertIn("fn present(", source)
+        # 读取 Wayland 的 IPresenter 桥接实现。
+        wayland = (ROOT / "src/native/backends/linux/wayland/gpu_presenter.rs").read_text(encoding="utf-8")
+        # Wayland 必须构造统一 Swapchain payload。
+        self.assertIn("PresentFrame::Swapchain", wayland)
+        # Wayland 必须调用 context 的统一 present 方法。
+        self.assertIn("self.gpu_ctx.present(&frame)", wayland)
+        # Wayland 不得再直接调用 context 交换旁路。
+        self.assertNotIn("self.gpu_ctx.swap_buffers", wayland)
+
     # 校验逐图元 legacy draw ABI 与平行 capability 表不会重新进入 adapter 门面。
     def test_legacy_draw_methods_leave_the_graphics_context_facade(self) -> None:
         # 读取公共兼容接口与事实型 capability profile。
