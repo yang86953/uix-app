@@ -204,6 +204,12 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     // 验证星数、半星、状态绑定和公共样式只依赖公开 prelude。
     let _rate: ViewNode =
         crate::uix!(r#"<Rate value={rating} count="5" allowHalf width="180px" />"#);
+    // 提供 Checkbox 双向勾选状态。
+    let accepted = State::new(true);
+    // 验证标签、禁用、勾选绑定和公共样式只依赖公开 prelude。
+    let _checkbox: ViewNode = crate::uix!(
+        r#"<Checkbox checked={accepted} text="同意协议" disabled="false" width="180px" />"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
