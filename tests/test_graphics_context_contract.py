@@ -275,6 +275,27 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 会话不得恢复 staged context 注入入口。
         self.assertNotIn("set_gpu_context", session)
 
+    # 校验 windowing 不再重复拥有 renderer 的图形 context。
+    def test_platform_window_has_no_graphics_context_owner(self) -> None:
+        # 读取窗口公共契约。
+        window_contract = (ROOT / "src/native/windowing/window.rs").read_text(encoding="utf-8")
+        # 读取平台共享窗口实现。
+        shared_window = (ROOT / "src/native/windowing/shared/window.rs").read_text(encoding="utf-8")
+        # 读取测试窗口实现，避免测试门面复活兼容所有权。
+        fake_window = (ROOT / "src/native/test_harness/fake_window.rs").read_text(encoding="utf-8")
+        # 窗口公共契约不得暴露 renderer context 借用入口。
+        self.assertNotIn("graphics_context", window_contract)
+        # 平台共享窗口不得持有或关闭图形 context。
+        self.assertNotIn("IGraphicsContext", shared_window)
+        # 零调用的带 GPU 窗口构造入口必须物理删除。
+        self.assertNotIn("with_gpu", shared_window)
+        # 测试窗口也不得保留平行 GPU context 状态。
+        self.assertNotIn("gpu_ctx", fake_window)
+        # live context 的 present recipe 不得混入没有 context 的 app-only presenter。
+        present_contract = (ROOT / "src/native/present/mod.rs").read_text(encoding="utf-8")
+        # 删除没有任何构造者的 CpuPresenter 枚举值。
+        self.assertNotIn("CpuPresenter", present_contract)
+
     # 校验 CPU PixelUpload presentation 只持有构造期已验证的 recipe owner。
     def test_pixel_upload_presentation_uses_validated_recipe_owner(self) -> None:
         # 读取 PixelUpload owner 的唯一 native 边界实现。

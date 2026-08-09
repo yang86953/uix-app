@@ -14,6 +14,10 @@
 
 > **会话装配边界**：`RenderSession` 与通用 backend kind factory 不再持有或暂存 `IGraphicsContext`。生产 GPU bootstrap 与恢复只能从 `Renderer::from_context` 进入 native recipe factory，在完成 GPU recipe、thin RHI 与专用 owner 校验后直接注入会话；没有完整 recipe 的通用 GPU 构造或运行时切换返回稳定 typed error，不建立第二条 native 资源生命周期。
 
+> **窗口所有权边界**：`PlatformWindow::graphics_context`、共享窗口的 staged GPU context 与测试门面已经删除。窗口只持有 native surface 与 presenter；图形 context 从 bootstrap 开始由 renderer/recovery owner 唯一管理，窗口关闭不再执行第二次 checked shutdown。
+
+> **present recipe 值域**：`PresentMode` 只描述 live `IGraphicsContext` 的实际提交配方，即 GPU `Swapchain` 与 CPU `PixelUpload`。没有 context 的纯 CPU app presenter 不再伪装成 native context recipe，零构造的 `CpuPresenter` 枚举值已经删除。
+
 > **离屏模糊边界**：`IGraphicsContext` 不再声明 `blur_offscreen_target`，D3D11 adapter 也不再持有高层 blur 方法、专属 scratch owner 或私有核计算。两个生产 adapter 只保留 `BLUR_PASS` 固定 shader 与底层资源/draw 原语；Picture 的双 pass、region、权重、资源清理和提交顺序全部由 graphics backend 决定。
 
 > **离屏资源边界**：`OffscreenTargetId` 与 `IGraphicsContext` 的 create/destroy/bind/blit offscreen 方法已经移除，thread-bound 门面不再转发这些高层操作；D3D11 context 和 OpenGL ES raster 也不再保存平行的离屏槽位、RTV/SRV/FBO、绑定标记或 legacy sampled-blit shader。Picture 创建失败或 queue 无法无损 lower 时由 graphics backend 返回 typed failure，platform 不选择 UI fallback。

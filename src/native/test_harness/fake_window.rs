@@ -3,8 +3,7 @@
 use crate::core::error::Result;
 use crate::core::geometry::Point;
 use crate::core::WindowId;
-use crate::native::present::{IGraphicsContext, IPresenter};
-use crate::native::test_harness::fake_graphics_context::FakeGraphicsContext;
+use crate::native::present::IPresenter;
 use crate::native::test_harness::fake_presenter::FakePresenter;
 use crate::native::windowing::event::FrameRequestToken;
 use crate::native::windowing::shared::window::validate_window_extent_constraints;
@@ -258,7 +257,6 @@ pub struct FakeWindowState {
     pub icon_path: String,
     pub resize_notify_calls: Vec<(i32, i32)>,
     pub set_title_calls: Vec<String>,
-    pub has_gpu: bool,
     pub native_frame_requests_supported: bool,
     pub native_frame_requests: Vec<NativeFrameRequest>,
     pub native_frame_presented: Vec<FrameRequestToken>,
@@ -271,7 +269,6 @@ pub struct FakeWindow {
     pub props: FakeWindowProperties,
     pub presenter: FakePresenter,
     pub native_handle: FakeNativeHandle,
-    pub gpu_ctx: Option<FakeGraphicsContext>,
     pub state: FakeWindowState,
     visibility_signal: Option<Arc<AtomicBool>>,
     occlusion_signal: Option<Arc<AtomicBool>>,
@@ -288,7 +285,6 @@ impl FakeWindow {
             props,
             presenter: FakePresenter::new(),
             native_handle: FakeNativeHandle::new(),
-            gpu_ctx: None,
             state: FakeWindowState {
                 id,
                 title: title.to_string(),
@@ -305,7 +301,6 @@ impl FakeWindow {
                 icon_path: String::new(),
                 resize_notify_calls: Vec::new(),
                 set_title_calls: Vec::new(),
-                has_gpu: false,
                 native_frame_requests_supported: false,
                 native_frame_requests: Vec::new(),
                 native_frame_presented: Vec::new(),
@@ -314,12 +309,6 @@ impl FakeWindow {
             visibility_signal: None,
             occlusion_signal: None,
         }
-    }
-
-    pub fn with_gpu(mut self) -> Self {
-        self.gpu_ctx = Some(FakeGraphicsContext::new());
-        self.state.has_gpu = true;
-        self
     }
 
     pub fn with_native_frame_requests(mut self) -> Self {
@@ -461,11 +450,6 @@ impl PlatformWindow for FakeWindow {
     }
     fn native_handle(&self) -> &dyn INativeHandle {
         &self.native_handle
-    }
-    fn graphics_context(&mut self) -> Option<&mut dyn IGraphicsContext> {
-        self.gpu_ctx
-            .as_mut()
-            .map(|g| g as &mut dyn IGraphicsContext)
     }
     fn native_surface_ptr(&self) -> *mut std::ffi::c_void {
         std::ptr::null_mut()

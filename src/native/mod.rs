@@ -9,7 +9,7 @@
 //! | 归属 | 内容 |
 //! |------|------|
 //! | [`platform`] | System 共享契约：`Platform` trait（capabilities / windowing / presentation 共同依赖的窄能力） |
-//! | [`present`] | System 共享契约：presentation 契约集（`IGraphicsContext` / `IPresenter` / 私有 `GraphicsApi` 等；`PlatformWindow` 的 presenter/graphics 访问器与其互引用，按无环规则归 System 边界） |
+//! | [`present`] | System 共享契约：presentation 契约集（`IGraphicsContext` / `IPresenter` / 私有 `GraphicsApi` 等；`PlatformWindow` 只借用 presenter，图形 context 由 renderer owner 独立持有） |
 //! | [`factory`] | 组合根：`create_platform_with_pending` / `available_memory_bytes` 与 `GraphicsRecipe` 登记（只负责选择、创建、注入，不拥有领域规则） |
 //! | [`backends`] | OS 适配层：唯一允许 `#[cfg(target_os = ...)]` 的目录，实现各 Module 的窄能力契约 |
 //! | [`test_harness`] | 测试替身（`test-harness` feature） |
