@@ -1,6 +1,8 @@
 use crate::core::{Point, Rect, Size};
 use crate::ui::SnapshotFields;
 use crate::ui::animation::{TransitionPlayer, presets};
+// 引入公开双向状态句柄。
+use crate::ui::reactive::state::State;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 
@@ -23,6 +25,8 @@ impl Cascader {
                 labels: vec![],
                 values: vec![],
             },
+            // 未调用 value 前保持非受控模式。
+            value_binding: None,
             current_levels: vec![options],
             level_indices: vec![0],
             scroll_offsets: vec![0.0],
@@ -56,6 +60,16 @@ impl Cascader {
             surface_rect: Cell::new(None),
             pending_change: RefCell::new(None),
         }
+    }
+
+    /// 将选中路径双向绑定到外部状态。
+    pub fn value(mut self, state: &State<CascaderValue>) -> Self {
+        // 首次构造直接读取业务状态作为显示真值。
+        self.selected = state.get();
+        // 保存句柄供叶选项提交时回写。
+        self.value_binding = Some(state.clone());
+        // 返回更新后的流式构造器。
+        self
     }
 
     pub(crate) fn init_levels(&mut self) {
@@ -99,6 +113,8 @@ impl Cascader {
             self.level_indices.push(child_highlight);
             self.scroll_offsets.push(0.0);
         } else {
+            // 只有完整叶路径才提交业务状态。
+            self.publish_bound_value();
             self.pending_change
                 .replace(Some(self.selected.values.join("/")));
             self.close();
@@ -143,6 +159,20 @@ impl Cascader {
 
     pub fn selected(&self) -> &CascaderValue {
         &self.selected
+    }
+
+    // 将当前完整路径提交给声明式外部状态。
+    fn publish_bound_value(&self) {
+        // 非受控模式不产生额外副作用。
+        let Some(state) = self.value_binding.as_ref() else {
+            // 直接返回并保留内部选择行为。
+            return;
+        };
+        // 避免相同路径触发无意义状态版本更新。
+        if state.get() != self.selected {
+            // 克隆拥有所有权的标签和值路径写入状态。
+            state.set(self.selected.clone());
+        }
     }
 
     pub fn placeholder(mut self, p: impl Into<String>) -> Self {
@@ -234,6 +264,10 @@ impl Cascader {
         let searchable_changed = self.searchable != next.searchable;
         let loading_changed = self.loading_children != next.loading_children;
         self.options = next.options;
+        // 声明式重建时以外部状态快照覆盖内部显示值。
+        self.selected = next.selected;
+        // 更新下一轮叶路径提交使用的状态句柄。
+        self.value_binding = next.value_binding;
         self.placeholder = next.placeholder;
         self.loading_children = next.loading_children;
         self.searchable = next.searchable;
@@ -330,6 +364,8 @@ impl Cascader {
         if result.loading {
             return true;
         }
+        // 搜索结果叶路径与逐列选择使用同一状态提交端口。
+        self.publish_bound_value();
         self.pending_change
             .replace(Some(self.selected.values.join("/")));
         self.close();
