@@ -6,14 +6,17 @@
 use std::time::Instant;
 
 use crate::core::{Errc, Error, PresentDamageTracker, Rect};
-use crate::draw::backend::factory::create_native_raster_backend;
 use crate::draw::backend::{BackendKind, CpuBackend, DamageRegion};
+// 引入唯一通用 GPU backend，避免经由单函数兼容 factory 转发。
+use crate::draw::backend::gpu::GpuBackend;
 use crate::draw::geometry::color::Color;
 use crate::draw::geometry::types::ImageHandle;
 use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::renderer::RenderSession;
 use crate::draw::renderer::{GraphicsFailure, RenderOutcome};
 use crate::draw::{Canvas2D, GraphicsCapabilities, RasterPipeline, RenderTarget, UpdateStrategy};
+// 引入 GPU recipe 构造门禁，收敛迁移期兼容 context。
+use crate::native::present::GpuRecipeOwner;
 use crate::native::present::{
     IGraphicsContext, PixelUploadRecipeOwner, PresentMode, PresentTestResult, RasterMode,
 };
@@ -126,9 +129,15 @@ impl Renderer {
         let caps = context.caps();
         match (caps.raster, caps.present) {
             (RasterMode::GpuNative, PresentMode::Swapchain) => {
-                let backend = create_native_raster_backend(context)?;
+                // 在唯一 renderer 装配入口把兼容 context 收敛为已验证 GPU owner。
+                let owner = GpuRecipeOwner::try_new(context)?;
+                // 所有具体 GraphicsApi 共用同一个薄 RHI GPU backend。
+                let backend = GpuBackend::new_gpu_only(owner)?;
+                // 将唯一 GPU backend 直接注入通用会话。
                 Ok(Self::with_session(
-                    RenderSession::with_backend(backend),
+                    // RenderSession 只接收已经完成 recipe 门禁的 backend。
+                    RenderSession::with_backend(Box::new(backend)),
+                    // GPU recipe 的最终呈现由 backend 管理。
                     Presentation::BackendManaged,
                 ))
             }

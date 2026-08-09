@@ -10,6 +10,8 @@
 
 > **renderer 装配入口**：bootstrap 与 recovery 共用的 `assemble_renderer` 直接调用 `Renderer::from_context`，并统一保留 create/initialize stage 与失败后的 checked cleanup。只做同名转发的 `draw::renderer::factory` 已删除，不再形成第二层 context factory。
 
+> **GPU backend 装配入口**：只做 `GpuRecipeOwner::try_new` 与 `GpuBackend::new_gpu_only` 转发的 `draw::backend::factory` 已删除。`Renderer::from_context` 现在直接完成 GPU recipe owner 门禁并把唯一 GPU backend 注入会话，`draw/backend` 模块不再依赖 `IGraphicsContext`。
+
 > **recipe 静态事实**：`GpuRecipeOwner` 与 `PixelUploadRecipeOwner` 在构造门禁中一次捕获 `GraphicsContextCaps`，运行期 capability 投影与 owner-loss 诊断都使用该不可漂移快照，不再回读兼容 context。drawable extent、DPR、transform 与 generation 仍只从 live `PresentSurface` 原子读取。
 
 > **GPU lifecycle 门禁**：`GpuRecipeOwner` 在进入 draw backend 前同时验证组合 thin RHI 与 `RhiSurfaceLifecycle`。有 RHI 但没有专用 resize owner 的 context 会先 checked shutdown，再返回 typed `InvalidState`；运行期 lifecycle 视图丢失仍作为可恢复的状态破坏传播。

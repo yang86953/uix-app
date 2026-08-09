@@ -245,8 +245,8 @@ class GraphicsContextContractTests(unittest.TestCase):
         owner = (ROOT / "src/native/present/gpu_recipe_owner.rs").read_text(encoding="utf-8")
         # 读取 GPU backend 的状态定义。
         backend = (ROOT / "src/draw/backend/gpu/backend/mod.rs").read_text(encoding="utf-8")
-        # 读取进入 GPU backend 前的装配门禁。
-        factory = (ROOT / "src/draw/backend/factory.rs").read_text(encoding="utf-8")
+        # 读取唯一 renderer 装配入口。
+        runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
         # 截取生产 owner 实现，排除测试 context 的 caps 方法。
         owner_contract = owner[: owner.index("#[cfg(test)]")]
         # 兼容 trait object 只能封装在 native owner 内。
@@ -265,8 +265,25 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertIn("pub(crate) gpu_ctx: GpuRecipeOwner", backend)
         # GPU backend 不得重新持有兼容 trait object。
         self.assertNotIn("Box<dyn IGraphicsContext>", backend)
-        # 装配层必须先完成 owner 校验再构造 backend。
-        self.assertIn("let owner = GpuRecipeOwner::try_new(ctx)?;", factory)
+        # 唯一 renderer 装配入口必须先完成 owner 校验再构造 backend。
+        self.assertIn("let owner = GpuRecipeOwner::try_new(context)?;", runtime)
+        # owner 校验后必须直接构造唯一 GPU backend。
+        self.assertIn("let backend = GpuBackend::new_gpu_only(owner)?;", runtime)
+        # draw backend 模块不得恢复兼容 context factory。
+        self.assertFalse((ROOT / "src/draw/backend/factory.rs").exists())
+        # 读取 backend 模块根，锁定兼容依赖退出。
+        backend_module = (ROOT / "src/draw/backend/mod.rs").read_text(encoding="utf-8")
+        # 汇总整个 draw backend 目录的 Rust 源码。
+        backend_sources = "\n".join(
+            # 逐文件读取源码，避免只验证模块根形成假阴性。
+            path.read_text(encoding="utf-8")
+            # 覆盖 backend 下的所有拆分模块。
+            for path in (ROOT / "src/draw/backend").rglob("*.rs")
+        )
+        # 整个 draw backend 不再依赖 IGraphicsContext。
+        self.assertNotIn("IGraphicsContext", backend_sources)
+        # 模块根不再声明 factory 子模块。
+        self.assertNotIn("mod factory", backend_module)
 
     # 校验通用会话不再保留第二条 staged GPU context 装配链。
     def test_render_session_has_no_staged_gpu_context_path(self) -> None:

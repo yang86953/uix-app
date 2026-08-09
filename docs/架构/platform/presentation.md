@@ -18,6 +18,8 @@
 
 > **会话装配边界**：`RenderSession` 与通用 backend kind factory 不再持有或暂存 `IGraphicsContext`。生产 GPU bootstrap 与恢复只能从 `Renderer::from_context` 进入 native recipe factory，在完成 GPU recipe、thin RHI 与专用 owner 校验后直接注入会话；没有完整 recipe 的通用 GPU 构造或运行时切换返回稳定 typed error，不建立第二条 native 资源生命周期。
 
+> **draw backend 装配边界**：单调用点的 `draw::backend::factory` 已删除。迁移期 `IGraphicsContext` 只到达 `Renderer::from_context`，并在同一分支立即收敛为 `GpuRecipeOwner` 或 `PixelUploadRecipeOwner`；`draw/backend` 不再持有兼容 context 依赖。
+
 > **窗口所有权边界**：`PlatformWindow::graphics_context`、共享窗口的 staged GPU context 与测试门面已经删除。窗口只持有 native surface 与 presenter；图形 context 从 bootstrap 开始由 renderer/recovery owner 唯一管理，窗口关闭不再执行第二次 checked shutdown。
 
 > **present recipe 值域**：`PresentMode` 只描述 live `IGraphicsContext` 的实际提交配方，即 GPU `Swapchain` 与 CPU `PixelUpload`。没有 context 的纯 CPU app presenter 不再伪装成 native context recipe，零构造的 `CpuPresenter` 枚举值已经删除。
