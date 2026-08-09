@@ -5,10 +5,15 @@
 
 // 复用富文本的段类型定义。
 use super::RichTextSegment;
+// 复用独立的 shaping cluster advance 映射逻辑。
+use super::shaped_advance::measured_advance_for_char;
 use crate::core::Rect;
 use crate::draw::resources::font::font_service::FontService;
-// 读取真实字体布局选项与后端返回的源字符索引字形。
-use crate::draw::resources::font::text_backend::{PositionedGlyph, TextLayoutOptions};
+// 读取真实字体布局选项。
+use crate::draw::resources::font::text_backend::TextLayoutOptions;
+// 测试使用后端字形构造稀疏索引和 kerning 场景。
+#[cfg(test)]
+use crate::draw::resources::font::text_backend::PositionedGlyph;
 use crate::draw::{Color, FontHandle, Transform};
 use crate::ui::component::paint_context::PaintContext;
 
@@ -172,6 +177,8 @@ mod tests {
                 height: 12.0,
                 glyph_id: 1,
                 char_index: 0,
+                // 测试字形覆盖第一个源字符。
+                char_end: 1,
                 font: FontHandle::new(0),
             },
             PositionedGlyph {
@@ -181,6 +188,8 @@ mod tests {
                 height: 12.0,
                 glyph_id: 2,
                 char_index: 2,
+                // 测试字形覆盖第三个源字符。
+                char_end: 3,
                 font: FontHandle::new(0),
             },
             PositionedGlyph {
@@ -190,6 +199,8 @@ mod tests {
                 height: 12.0,
                 glyph_id: 3,
                 char_index: 3,
+                // 测试字形覆盖第四个源字符。
+                char_end: 4,
                 font: FontHandle::new(0),
             },
         ];
@@ -209,6 +220,8 @@ mod tests {
                 height: 12.0,
                 glyph_id: 4,
                 char_index: 0,
+                // 测试字形覆盖第一个源字符。
+                char_end: 1,
                 font: FontHandle::new(0),
             },
             // 下一个字形左移到 9px，模拟字体后端返回的 kerning。
@@ -219,6 +232,8 @@ mod tests {
                 height: 12.0,
                 glyph_id: 5,
                 char_index: 1,
+                // 测试字形覆盖第二个源字符。
+                char_end: 2,
                 font: FontHandle::new(0),
             },
         ];
@@ -557,31 +572,6 @@ pub(crate) fn assign_global_indices(lines: &mut [LayoutLine], segments: &[RichTe
 // ══════════════════════════════════════════════════════════════════
 // 真实字体度量布局（用于 render 阶段）
 // ══════════════════════════════════════════════════════════════════
-
-// 根据后端字形的源字符索引读取真实 advance，避免 glyph 槽位缺失时错配宽度。
-fn measured_advance_for_char(glyphs: &[PositionedGlyph], char_index: usize, fallback: f32) -> f32 {
-    // 后端的 char_index 对应源文本 chars() 序号，而不是 glyph 数组下标。
-    let Some(glyph) = glyphs.iter().find(|glyph| glyph.char_index == char_index) else {
-        // 缺字时回退到估算宽度，保持布局可以继续收敛。
-        return fallback;
-    };
-    // 相邻源字形的 x 差包含当前字形宽度和字体 kerning 修正。
-    let positioned_advance = char_index
-        .checked_add(1)
-        .and_then(|next_char_index| {
-            // 只跨相邻源字符读取 x，避免把缺失字符的宽度错误吞并。
-            glyphs
-                .iter()
-                .find(|next_glyph| next_glyph.char_index == next_char_index)
-                .map(|next_glyph| next_glyph.x - glyph.x)
-        })
-        // 只接受有限非负间距，避免异常字体坐标污染布局。
-        .filter(|advance| advance.is_finite() && *advance >= 0.0);
-    // 没有相邻字形时保留当前字形宽度，并允许合法的零宽字形。
-    positioned_advance
-        .or_else(|| (glyph.width.is_finite() && glyph.width >= 0.0).then_some(glyph.width))
-        .unwrap_or(fallback)
-}
 
 /// 获取文本中每个字符的真实 advance 宽度
 fn real_char_advances(
