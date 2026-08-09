@@ -132,8 +132,8 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertNotIn("fn supports_gl_proc_address(&self)", facade)
         # 无消费者的 PixelUpload 查询不得保留在生产门面。
         self.assertNotIn("fn supports_pixel_present(&self)", facade)
-        # 剩余两条默认错误路径都应直接读取同一静态 recipe 事实。
-        self.assertGreaterEqual(facade.count("let backend = self.caps().backend;"), 2)
+        # 最后一条 thin RHI resize 默认错误路径直接读取同一静态 recipe 事实。
+        self.assertEqual(facade.count("let backend = self.caps().backend;"), 1)
         # 逐个核对曾重复声明 backend 的 adapter 已删除派生实现。
         for adapter in (
             # D3D11 生产 context。

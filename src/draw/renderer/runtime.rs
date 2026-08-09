@@ -14,9 +14,7 @@ use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, Fram
 use crate::draw::renderer::RenderSession;
 use crate::draw::renderer::{GraphicsFailure, RenderOutcome};
 use crate::draw::{Canvas2D, GraphicsCapabilities, RasterPipeline, RenderTarget, UpdateStrategy};
-use crate::native::present::{
-    IGraphicsContext, PresentFrame, PresentMode, PresentTestResult, RasterMode,
-};
+use crate::native::present::{IGraphicsContext, PresentMode, PresentTestResult, RasterMode};
 
 /// 最终呈现由谁完成。
 enum Presentation {
@@ -242,7 +240,8 @@ impl Renderer {
         let height = cpu.height();
         let caps = upload.context.caps();
         let present_surface = upload.context.present_surface();
-        let present_image = upload.context.present_image();
+        // PixelUpload recipe 只提交单一 CPU retained buffer，不持有 acquired image 身份。
+        let present_image = None;
         let damage = upload
             .damage_tracker
             .plan(
@@ -252,14 +251,18 @@ impl Renderer {
                 present_damage,
             )
             .present_damage;
-        let frame = PresentFrame::PixelBuffer {
-            pixels: cpu.pixels(),
-            width,
-            height,
-            damage,
+        // 构造后专用提交视图消失属于 native context 状态破坏。
+        let Some(surface) = upload.context.pixel_upload_surface() else {
+            // 返回 typed 状态错误，禁止回退已移除的统一 present。
+            return Err(Error::new(
+                // 使用 InvalidState 进入既有恢复路径。
+                Errc::InvalidState,
+                // 明确指出专用 PixelUpload 提交边界缺失。
+                "PixelUpload presentation lost its dedicated presentation surface",
+            ));
         };
-        let present_result = upload.context.present(&frame);
-        present_result?;
+        // 直接经 PixelUpload recipe 的专用 surface 提交 CPU retained pixels。
+        surface.present_pixels(cpu.pixels(), width, height, damage)?;
         upload.damage_tracker.commit(
             caps.present_coherency,
             present_surface,

@@ -22,7 +22,7 @@ use std::thread::{self, ThreadId};
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
     GraphicsContextCaps, IGraphicsContext, NativeRasterCaps, PixelUploadSurface, PresentDamage,
-    PresentFrame, PresentSurface,
+    PresentSurface, SwapchainPresentation,
 };
 
 pub(crate) fn bind_to_current_thread(
@@ -140,14 +140,6 @@ impl Drop for ThreadBoundGraphicsContext {
     }
 }
 
-macro_rules! forward_result {
-    ($name:ident($($argument:ident : $argument_type:ty),* $(,)?) -> $output:ty) => {
-        fn $name(&mut self, $($argument: $argument_type),*) -> Result<$output> {
-            self.with_owner(stringify!($name), |inner| inner.$name($($argument),*))
-        }
-    };
-}
-
 impl IGraphicsContext for ThreadBoundGraphicsContext {
     fn caps(&self) -> GraphicsContextCaps {
         self.caps
@@ -176,6 +168,19 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
         Some(self)
     }
 
+    // 只有 owner thread 可以借用 inner 的 external swapchain 提交视图。
+    fn swapchain_presentation(&mut self) -> Option<&mut dyn SwapchainPresentation> {
+        // 无错误返回通道的 capability 查询在跨线程时保守返回不支持。
+        if self.require_owner("swapchain_presentation").is_err() {
+            // 禁止把 wrapper 自身暴露给错误线程。
+            return None;
+        }
+        // 先确认真实 context 明确提供 external presenter 提交能力。
+        self.inner.swapchain_presentation()?;
+        // 返回继续执行 owner-thread 检查的 wrapper 视图。
+        Some(self)
+    }
+
     // 在线程绑定边界内执行 RHI surface resize，并同步外层 drawable 元数据。
     fn resize_rhi_surface(&mut self, width: i32, height: i32) -> Result<()> {
         // 把实际 resize 委托给创建线程上的 native context。
@@ -201,20 +206,6 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
     fn try_shutdown(&mut self) -> Result<()> {
         self.with_owner("try_shutdown", |inner| inner.try_shutdown())
     }
-
-    fn present_pixels(
-        &mut self,
-        pixels: &[u32],
-        width: i32,
-        height: i32,
-        damage: PresentDamage,
-    ) -> Result<()> {
-        self.with_owner("present_pixels", |inner| {
-            inner.present_pixels(pixels, width, height, damage)
-        })
-    }
-
-    forward_result!(present(frame: &PresentFrame) -> ());
 }
 
 // 在线程绑定边界实现 CPU PixelUpload 的专用 surface resize。
@@ -240,5 +231,57 @@ impl PixelUploadSurface for ThreadBoundGraphicsContext {
         self.refresh_metadata();
         // 返回已经完成线程检查和元数据同步的成功结果。
         Ok(())
+    }
+
+    // 在线程绑定边界内提交 CPU PixelUpload 像素。
+    fn present_pixels(
+        // 借用 thread-bound wrapper。
+        &mut self,
+        // 转发 premultiplied BGRA 像素。
+        pixels: &[u32],
+        // 转发物理像素宽度。
+        width: i32,
+        // 转发物理像素高度。
+        height: i32,
+        // 转发最终提交 damage。
+        damage: PresentDamage,
+    ) -> Result<()> {
+        // 在 owner thread 上借用 inner 的专用 PixelUpload surface。
+        self.with_owner("present_pixels", |inner| {
+            // recipe 能力在构造后消失属于 native context 状态破坏。
+            let Some(surface) = inner.pixel_upload_surface() else {
+                // 返回 typed 状态错误，禁止回退已移除的统一 present。
+                return Err(Error::new(
+                    // 使用稳定状态分类交给恢复层。
+                    Errc::InvalidState,
+                    // 明确指出专用提交契约缺失。
+                    "PixelUpload graphics context lost its dedicated presentation surface",
+                ));
+            };
+            // 在同一 owner-thread 借用范围内执行像素提交。
+            surface.present_pixels(pixels, width, height, damage)
+        })
+    }
+}
+
+// 在线程绑定边界内实现 external presenter 的专用 swapchain 提交。
+impl SwapchainPresentation for ThreadBoundGraphicsContext {
+    // 把提交委托给真实 context 暴露的专用视图。
+    fn present_swapchain(&mut self, damage: PresentDamage) -> Result<()> {
+        // 在创建线程上借用真实 external swapchain 提交 owner。
+        self.with_owner("present_swapchain", |inner| {
+            // capability 在构造后消失属于 native context 状态破坏。
+            let Some(presentation) = inner.swapchain_presentation() else {
+                // 返回 typed 状态错误，禁止回退已移除的统一 present。
+                return Err(Error::new(
+                    // 使用稳定状态分类交给恢复层。
+                    Errc::InvalidState,
+                    // 明确指出 external presenter 契约缺失。
+                    "graphics context lost its external swapchain presentation view",
+                ));
+            };
+            // 在同一 owner-thread 借用范围内提交 swapchain。
+            presentation.present_swapchain(damage)
+        })
     }
 }

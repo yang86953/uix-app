@@ -21,7 +21,7 @@ pub(crate) use super::swapchain::{
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
     GraphicsApi, GraphicsContextCaps, IGraphicsContext, NativeRasterCaps, PresentCoherency,
-    PresentFrame, PresentOcclusionSupport,
+    PresentOcclusionSupport,
 };
 use crate::native::presentation::graphics::platform::windows as win_surface;
 use ::windows::core::Interface;

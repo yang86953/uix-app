@@ -10,7 +10,7 @@ use crate::core::{Errc, Error, Result};
 use crate::native::backends::macos::platform;
 use crate::native::present::{
     validate_pixel_buffer, GraphicsApi, GraphicsContextCaps, IGraphicsContext, PixelUploadSurface,
-    PresentDamage, PresentFrame,
+    PresentDamage,
 };
 
 type LayerId = *mut c_void;
@@ -76,47 +76,44 @@ impl IGraphicsContext for MetalPixelUploadContext {
             0,
         )
     }
+}
 
+// 为 Metal CPU PixelUpload recipe 实现专用 surface 生命周期。
+impl PixelUploadSurface for MetalPixelUploadContext {
+    // 把 CPU retained pixels 上传到 CAMetalLayer 并完成最终提交。
     fn present_pixels(
+        // 借用当前 Metal PixelUpload owner。
         &mut self,
+        // 接收 premultiplied BGRA 像素。
         pixels: &[u32],
+        // 接收物理像素宽度。
         width: i32,
+        // 接收物理像素高度。
         height: i32,
+        // 接收最终提交 damage。
         damage: PresentDamage,
     ) -> Result<()> {
+        // checked shutdown 后禁止继续访问 AppKit-owned layer。
         if !self.initialized {
+            // 返回稳定参数错误，保持既有调用方分类。
             return Err(Error::new(
+                // shutdown 后提交属于无效调用状态。
                 Errc::InvalidArgument,
                 // false 只可能来自 checked shutdown，不再代表等待第二阶段初始化。
                 "MetalPixelUploadContext: present after shutdown",
             ));
         }
+        // 提交前验证像素长度与物理 extent 一致。
         validate_pixel_buffer(pixels, width, height)?;
         // SAFETY: layer pointer comes from AppKit-owned CAMetalLayer on the UI thread.
         unsafe {
+            // 把专用 PixelUpload payload 交给平台 CAMetalLayer helper。
             platform::present_layer_pixels(self.layer, pixels, width, height, damage)?;
         }
+        // 只有平台 helper 成功后才报告提交完成。
         Ok(())
     }
 
-    fn present(&mut self, frame: &PresentFrame) -> Result<()> {
-        match frame {
-            PresentFrame::PixelBuffer {
-                pixels,
-                width,
-                height,
-                damage,
-            } => self.present_pixels(pixels, *width, *height, damage.clone()),
-            PresentFrame::Swapchain { .. } => Err(Error::new(
-                Errc::NotImplemented,
-                "MetalPixelUploadContext: swapchain present requires native Metal raster (planned)",
-            )),
-        }
-    }
-}
-
-// 为 Metal CPU PixelUpload recipe 实现专用 surface 生命周期。
-impl PixelUploadSurface for MetalPixelUploadContext {
     // 保存归一化后的逻辑 PixelUpload surface 尺寸。
     fn resize_pixel_upload_surface(&mut self, width: i32, height: i32) -> Result<()> {
         // 将非正宽度归一化为最小可用值。

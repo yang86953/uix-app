@@ -1,10 +1,10 @@
 // 复用父模块中的 WGL context 及 owner-thread 原生辅助方法。
 use super::WglContext;
 
-// 引入 OpenGL ES 图形上下文与呈现契约。
-use crate::native::present::{IGraphicsContext, NativeRasterCaps, PresentCoherency, PresentFrame};
+// 引入 OpenGL ES 图形上下文与事实能力契约。
+use crate::native::present::{IGraphicsContext, NativeRasterCaps, PresentCoherency};
 // 引入项目统一错误和结果类型。
-use crate::native::{Errc, Error, Result};
+use crate::native::{Error, Result};
 // 为 WGL context 实现共享的 IGraphicsContext forwarding 合约。
 impl IGraphicsContext for WglContext {
     // 返回 OpenGL ES swapchain 能力和当前 device pixel ratio。
@@ -49,35 +49,6 @@ impl IGraphicsContext for WglContext {
             // resize 重建时推进的 generation 拒绝迟到帧。
             self.surface_generation,
         )
-    }
-
-    // 统一 present 入口只接受 native swapchain frame。
-    fn present(&mut self, frame: &PresentFrame) -> Result<(), Error> {
-        // 按 present payload 区分 native swapchain 与 CPU pixel buffer。
-        match frame {
-            // native swapchain 进入 owner-thread current 和交换。
-            PresentFrame::Swapchain { .. } => {
-                // 先确保 WGL context 为 current。
-                self.make_current_result()?;
-                // 统一 presenter 入口不能绕过 lower surface-lost 故障。
-                #[cfg(feature = "test-harness")]
-                if self.pipeline.rhi_take_surface_lost_for_test() {
-                    // 保留同一 typed surface-lost 分类。
-                    tracing::warn!("OpenGL RHI test surface lost");
-                    return Err(Error::new(
-                        Errc::GraphicsSurfaceLost,
-                        "OpenGL RHI test surface lost before present",
-                    ));
-                }
-                // 交换 WGL double-buffer surface。
-                self.swap_buffers_result()
-            }
-            // WGL 不支持 CPU pixel buffer present。
-            PresentFrame::PixelBuffer { .. } => Err(Error::new(
-                Errc::NotImplemented,
-                "WglContext: CPU pixel present is unsupported",
-            )),
-        }
     }
 
     // 关闭 WGL context 并释放 owner-thread GPU 资源。

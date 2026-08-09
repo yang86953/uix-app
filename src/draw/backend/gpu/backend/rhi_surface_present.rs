@@ -50,8 +50,8 @@ impl GpuBackend {
         let caps = self.gpu_ctx.caps();
         // 读取当前 surface 身份。
         let present_surface = self.gpu_ctx.present_surface();
-        // 读取当前 retained image 身份。
-        let present_image = self.gpu_ctx.present_image();
+        // 当前 thin RHI surface 尚未暴露 acquired image 身份，保持既有未跟踪语义。
+        let present_image = None;
         // 计算本次提交携带的 damage 语义。
         let damage_plan = self.present_damage_tracker.plan(
             caps.present_coherency,
@@ -152,9 +152,10 @@ impl GpuBackend {
         };
         // 在 execute 之前生成与兼容 present 相同的 damage 计划。
         let caps = self.gpu_ctx.caps();
-        // 读取当前 surface 和 present image 身份。
+        // 读取当前 surface 身份。
         let present_surface = self.gpu_ctx.present_surface();
-        let present_image = self.gpu_ctx.present_image();
+        // 当前 thin RHI surface 尚未暴露 acquired image 身份，保持既有未跟踪语义。
+        let present_image = None;
         // 计算本次提交携带的 damage 语义。
         let damage_plan = self.present_damage_tracker.plan(
             caps.present_coherency,

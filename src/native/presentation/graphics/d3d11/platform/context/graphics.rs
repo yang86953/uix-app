@@ -32,21 +32,6 @@ impl IGraphicsContext for D3d11Context {
     fn try_shutdown(&mut self) -> Result<()> {
         self.shutdown_result()
     }
-
-    fn present(&mut self, frame: &PresentFrame<'_>) -> Result<()> {
-        match frame {
-            PresentFrame::Swapchain { .. } => {
-                self.bind_swapchain_target()?;
-                self.present_result()
-            }
-            PresentFrame::PixelBuffer {
-                pixels,
-                width,
-                height,
-                damage,
-            } => self.present_pixels(pixels, *width, *height, damage.clone()),
-        }
-    }
 }
 
 // 为 D3D11 surface adapter 保留私有回读实现，不再扩张兼容门面。
