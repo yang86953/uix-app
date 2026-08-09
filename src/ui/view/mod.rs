@@ -625,6 +625,24 @@ impl ViewNode {
         self
     }
 
+    /// 注册文本值变化处理器，并只向调用方暴露已验证的文本载荷。
+    pub fn on_change_fn<F: FnMut(&str) + 'static>(mut self, mut f: F) -> Self {
+        // 把文本载荷筛选集中在公开 View 契约，避免宏依赖内部处理器结构。
+        let handler = Box::new(move |event: &mut SemanticEvent| {
+            // 非文本 Change 事件不触发文本输入回调。
+            if let Some(value) = event.text_payload() {
+                // 把当前文本借用交给调用方处理。
+                f(value);
+            }
+        });
+        // 登记统一的 Change 语义类型。
+        let registration = HandlerRegistration::new(SemanticKind::Change, handler);
+        // 保留与其他 View 事件相同的注册顺序。
+        self.handlers.push(registration);
+        // 返回可继续应用样式与自动化属性的节点。
+        self
+    }
+
     /// 兼容别名：指纹同 [`Self::on_click`]，闭包不接收 `&State`。
     ///
     /// 新代码优先 `on_click(&state, |s| …)`；无 State 用 [`Self::on_click_fn`]。
@@ -706,3 +724,34 @@ impl crate::ui::IntoWidgetNode for ViewNode {
 mod ext;
 
 pub use self::ext::*;
+
+// 验证公开 View 事件便利入口的载荷筛选契约。
+#[cfg(test)]
+mod tests {
+    // 引入当前模块公开与内部测试边界。
+    use super::*;
+    // 引入可共享修改的测试观察值。
+    use std::cell::RefCell;
+    // 引入单线程共享所有权。
+    use std::rc::Rc;
+
+    // 验证 Change 事件只转发文本载荷。
+    #[test]
+    fn on_change_fn_forwards_text_payload() {
+        // 保存处理器观察到的最新文本。
+        let observed = Rc::new(RefCell::new(String::new()));
+        // 克隆所有权给静态事件闭包。
+        let callback_observed = Rc::clone(&observed);
+        // 创建最小输入节点并登记公开 Change 处理器。
+        let mut node = ViewNode::leaf(crate::ui::widgets::Input::new("")).on_change_fn(
+            // 把回调文本复制到测试观察值。
+            move |value| *callback_observed.borrow_mut() = value.to_string(),
+        );
+        // 构造带文本载荷的语义变更事件。
+        let mut event = SemanticEvent::change(crate::core::ComponentId::new(1), "Belldandy");
+        // 调用节点登记的唯一处理器。
+        (node.handlers[0].handler)(&mut event);
+        // 回调必须收到完整当前文本。
+        assert_eq!(&*observed.borrow(), "Belldandy");
+    }
+}

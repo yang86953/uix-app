@@ -617,8 +617,8 @@ fn rejects_event_parameter_outside_handler() {
 // 验证文档规划中内置组件返回所属类别诊断。
 #[test]
 fn rejects_planned_builtin_with_document_category() {
-    // 解析已登记为规划中的 Input。
-    let document = parse_document(r#"<Input value={name} />"#).expect("语法本身应合法");
+    // 解析仍登记为规划中的 InputNumber。
+    let document = parse_document(r#"<InputNumber value={number} />"#).expect("语法本身应合法");
     // 代码生成必须返回规划中诊断。
     let error = generate_view(&document.root).expect_err("规划中组件必须失败");
     // 诊断必须明确组件状态和所属输入组件文档。

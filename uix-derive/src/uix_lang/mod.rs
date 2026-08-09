@@ -67,6 +67,11 @@ mod app_layout_codegen;
 // 集中验证布局壳嵌套、布尔简写与拒绝路径。
 #[cfg(test)]
 mod app_layout_codegen_tests;
+// 定义 Input 文本绑定、类型与变更事件的公开 API 代码生成边界。
+mod input_codegen;
+// 集中验证 Input 生成与拒绝路径。
+#[cfg(test)]
+mod input_codegen_tests;
 // 定义 FloatButton 内置组件的公开 API 代码生成边界。
 mod float_button_codegen;
 // 定义布局容器、Row/Col 栅格与 Grid/Col 的公开 API 代码生成边界。
@@ -151,6 +156,8 @@ pub(crate) use back_top_codegen::generate_back_top;
 pub(crate) use splitter_codegen::generate_splitter;
 // 向核心元素生成器暴露应用布局壳专用映射。
 pub(crate) use app_layout_codegen::generate_app_layout;
+// 向核心元素生成器暴露 Input 专用映射。
+pub(crate) use input_codegen::generate_input;
 // 向核心元素生成器暴露 FloatButton 专用映射。
 pub(crate) use float_button_codegen::generate_float_button;
 // 向核心元素生成器暴露布局组件专用映射。

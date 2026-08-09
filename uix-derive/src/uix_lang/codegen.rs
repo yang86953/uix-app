@@ -13,8 +13,9 @@ use super::{
     expression_uses_event, generate_affix, generate_app_layout, generate_back_top,
     generate_button_group, generate_column, generate_container, generate_divider,
     generate_expression, generate_float_button, generate_grid, generate_handler_expression,
-    generate_orphan_col, generate_row, generate_scroll_view, generate_space, generate_splitter,
-    generate_theme_toggle, generate_typography, generate_virtual_scroll, generate_window_control,
+    generate_input, generate_orphan_col, generate_row, generate_scroll_view, generate_space,
+    generate_splitter, generate_theme_toggle, generate_typography, generate_virtual_scroll,
+    generate_window_control,
 };
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
@@ -85,6 +86,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "Splitter" => generate_splitter(element),
         // 应用布局壳五类标签共享公开运行时组合生成入口。
         "Layout" | "Sider" | "Header" | "Content" | "Footer" => generate_app_layout(element),
+        // 文本输入映射到公开 Input 与 View Change 事件契约。
+        "Input" => generate_input(element),
         // Col 只能由 Row 或 Grid 解释其父级布局语义。
         "Col" => generate_orphan_col(element),
         // 图标映射到公开 Icon 组件。
@@ -115,7 +118,7 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content 或 Footer，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer 或 Input，或先登记组件状态",
         )),
     }
 }
@@ -406,6 +409,11 @@ pub(super) fn apply_common_attributes(
     }
     // 在全部普通属性物化后应用事件。
     for attribute in attributes {
+        // 专用生成器已经消费的事件不能再次进入核心点击映射。
+        if consumed.contains(&attribute.name.as_str()) {
+            // 继续处理下一事件属性。
+            continue;
+        }
         // 只处理事件属性。
         if attribute.name.starts_with('@') {
             // 生成事件链式调用。

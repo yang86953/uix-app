@@ -36,7 +36,7 @@
 //!
 //! ```compile_fail
 //! use uix::prelude::*;
-//! let _: ViewNode = uix!("<Input />");
+//! let _: ViewNode = uix!(r#"<Input type="search" />"#);
 //! ```
 //!
 //! ```compile_fail
