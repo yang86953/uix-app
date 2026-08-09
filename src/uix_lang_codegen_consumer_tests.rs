@@ -60,7 +60,7 @@ fn generated_view_compiles_against_public_uix_api() {
           <Button @click="on_point($event.x, $event.y)">Point</Button>
           <If {visible}><Icon name="star" size="16px" /></If>
           <For {item} {index} in {items} key={item.id}>
-            <Row><Text>{index}</Text><Text>{item.name}</Text></Row>
+            <Container direction="row"><Text>{index}</Text><Text>{item.name}</Text></Container>
           </For>
         </Column>
     "#
@@ -117,6 +117,14 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     // 验证 WindowControl 组合与动态布尔属性只依赖公开 prelude API。
     let _window_controls: ViewNode = crate::uix!(
         r#"<WindowControl showMinimize="true" showMaximize={show_maximize} showClose="false" />"#
+    );
+    // 验证 Row/Col 24 栅格只依赖公开 GridBuilder 与 Col 配置。
+    let _responsive_grid: ViewNode = crate::uix!(
+        r#"<Row gap="16px"><Col span={12} lg={8}><Text>Left</Text></Col><Col span={12} lg={16}><Text>Right</Text></Col></Row>"#
+    );
+    // 验证 Grid/Col 显式轨道、独立间距与跨轨道样式只依赖公开 prelude。
+    let _explicit_grid: ViewNode = crate::uix!(
+        r#"<Grid columns="1fr 200px auto" rows="auto" gap="16px" colGap="8px" rowGap="4px" padding="12px"><Col span={2}><Text>Wide</Text></Col><Col gridColumnSpan={1} gridRowSpan={1}><Text>Narrow</Text></Col></Grid>"#
     );
 }
 

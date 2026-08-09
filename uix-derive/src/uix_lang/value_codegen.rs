@@ -182,11 +182,11 @@ pub(crate) fn align_value(attribute: &Attribute) -> Result<TokenStream, Diagnost
     // 映射公开 AlignItems 变体。
     match value.as_str() {
         // 映射起始对齐。
-        "start" => Ok(quote! { ::uix::prelude::AlignItems::Start }),
+        "start" | "flex-start" => Ok(quote! { ::uix::prelude::AlignItems::Start }),
         // 映射居中对齐。
         "center" => Ok(quote! { ::uix::prelude::AlignItems::Center }),
         // 映射末端对齐。
-        "end" => Ok(quote! { ::uix::prelude::AlignItems::End }),
+        "end" | "flex-end" => Ok(quote! { ::uix::prelude::AlignItems::End }),
         // 映射拉伸对齐。
         "stretch" => Ok(quote! { ::uix::prelude::AlignItems::Stretch }),
         // 未登记值返回诊断。
@@ -196,7 +196,7 @@ pub(crate) fn align_value(attribute: &Attribute) -> Result<TokenStream, Diagnost
             // 说明未知对齐值。
             format!("align={value:?} 不受支持"),
             // 给出合法集合。
-            "使用 start、center、end 或 stretch",
+            "使用 start/flex-start、center、end/flex-end 或 stretch",
         )),
     }
 }
@@ -208,17 +208,26 @@ pub(crate) fn justify_value(attribute: &Attribute) -> Result<TokenStream, Diagno
     // 映射公开 JustifyContent 变体。
     match value.as_str() {
         // 映射起始对齐。
-        "start" => Ok(quote! { ::uix::prelude::JustifyContent::Start }),
+        "start" | "flex-start" => Ok(quote! { ::uix::prelude::JustifyContent::Start }),
         // 映射居中对齐。
         "center" => Ok(quote! { ::uix::prelude::JustifyContent::Center }),
         // 映射末端对齐。
-        "end" => Ok(quote! { ::uix::prelude::JustifyContent::End }),
+        "end" | "flex-end" => Ok(quote! { ::uix::prelude::JustifyContent::End }),
         // 映射两端分布。
-        "spaceBetween" => Ok(quote! { ::uix::prelude::JustifyContent::SpaceBetween }),
+        "spaceBetween" | "space-between" => {
+            // 同时接受语言驼峰值与布局文档 CSS 关键字。
+            Ok(quote! { ::uix::prelude::JustifyContent::SpaceBetween })
+        }
         // 映射环绕分布。
-        "spaceAround" => Ok(quote! { ::uix::prelude::JustifyContent::SpaceAround }),
+        "spaceAround" | "space-around" => {
+            // 同时接受语言驼峰值与布局文档 CSS 关键字。
+            Ok(quote! { ::uix::prelude::JustifyContent::SpaceAround })
+        }
         // 映射均匀分布。
-        "spaceEvenly" => Ok(quote! { ::uix::prelude::JustifyContent::SpaceEvenly }),
+        "spaceEvenly" | "space-evenly" => {
+            // 同时接受语言驼峰值与布局文档 CSS 关键字。
+            Ok(quote! { ::uix::prelude::JustifyContent::SpaceEvenly })
+        }
         // 映射拉伸。
         "stretch" => Ok(quote! { ::uix::prelude::JustifyContent::Stretch }),
         // 未登记值返回诊断。
@@ -228,7 +237,7 @@ pub(crate) fn justify_value(attribute: &Attribute) -> Result<TokenStream, Diagno
             // 说明未知对齐值。
             format!("justify={value:?} 不受支持"),
             // 给出合法集合。
-            "使用 start、center、end、spaceBetween、spaceAround、spaceEvenly 或 stretch",
+            "使用 start/flex-start、center、end/flex-end、space-between、space-around、space-evenly 或对应驼峰值",
         )),
     }
 }

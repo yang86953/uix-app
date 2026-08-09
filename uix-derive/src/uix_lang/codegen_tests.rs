@@ -552,7 +552,7 @@ fn validates_float_button_defaults_shape_and_attributes() {
 #[test]
 fn generates_if_for_and_key_snapshot() {
     // 构造条件与带索引、key 的循环文档。
-    let source = r#"<Column><If {visible}><Text>{title}</Text></If><For {item} {index} in {items} key={item.id}><Row><Text>{index}</Text><Text>{item.name}</Text></Row></For></Column>"#;
+    let source = r#"<Column><If {visible}><Text>{title}</Text></If><For {item} {index} in {items} key={item.id}><Container direction="row"><Text>{index}</Text><Text>{item.name}</Text></Container></For></Column>"#;
     // 生成确定性令牌快照。
     let snapshot = generate(source).expect("If 与 For 应生成 Rust 控制流");
     // 锁定完整 TokenStream 快照。
