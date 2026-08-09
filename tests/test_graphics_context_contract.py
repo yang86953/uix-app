@@ -275,6 +275,21 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 会话不得恢复 staged context 注入入口。
         self.assertNotIn("set_gpu_context", session)
 
+    # 校验 renderer 装配只保留共享 assemble_renderer 入口。
+    def test_renderer_assembly_has_no_forwarding_context_factory(self) -> None:
+        # 读取 renderer 模块声明。
+        renderer_module = (ROOT / "src/draw/renderer/mod.rs").read_text(encoding="utf-8")
+        # 读取 bootstrap 与 recovery 共用的装配函数。
+        bootstrap = (ROOT / "src/draw/renderer/bootstrap.rs").read_text(encoding="utf-8")
+        # 单函数转发模块必须物理删除。
+        self.assertFalse((ROOT / "src/draw/renderer/factory.rs").exists())
+        # renderer 模块不得重新声明 forwarding factory。
+        self.assertNotIn("mod factory", renderer_module)
+        # 共享装配入口必须直接调用唯一 recipe 分派。
+        self.assertIn("Renderer::from_context(context)", bootstrap)
+        # bootstrap 不得重新导入平行 create_renderer 门面。
+        self.assertNotIn("create_renderer", bootstrap)
+
     # 校验 windowing 不再重复拥有 renderer 的图形 context。
     def test_platform_window_has_no_graphics_context_owner(self) -> None:
         # 读取窗口公共契约。

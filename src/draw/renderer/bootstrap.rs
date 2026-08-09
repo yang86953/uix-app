@@ -2,7 +2,6 @@
 
 use crate::core::{Errc, Error, Result};
 use crate::diagnostics::PendingFailureQueue;
-use crate::draw::renderer::factory::create_renderer;
 use crate::draw::renderer::Renderer;
 use crate::draw::target::RenderTarget;
 use crate::native::factory::{
@@ -126,10 +125,12 @@ pub(crate) fn assemble_renderer(
     width: i32,
     height: i32,
 ) -> Result<Renderer, RendererAssemblyFailure> {
-    let mut renderer = create_renderer(context).map_err(|error| RendererAssemblyFailure {
-        stage: RendererAssemblyStage::Create,
-        error,
-    })?;
+    // 直接进入唯一 renderer recipe 分派，避免平行 context factory 门面。
+    let mut renderer =
+        Renderer::from_context(context).map_err(|error| RendererAssemblyFailure {
+            stage: RendererAssemblyStage::Create,
+            error,
+        })?;
     if let Err(error) = renderer.initialize(width, height) {
         let error = match renderer.try_shutdown() {
             Ok(()) => error,

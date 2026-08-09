@@ -2,7 +2,6 @@
 
 pub mod animation;
 pub(crate) mod bootstrap;
-pub(crate) mod factory;
 pub mod invalidation;
 pub mod lifecycle;
 pub mod metrics;
