@@ -262,6 +262,25 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _multiple_select: ViewNode = crate::uix!(
         r#"<Select value={cities} options={multiple_city_options} multiple width="240px" />"#
     );
+    // 提供 Cascader 当前完整选中路径的双向状态。
+    let region = State::new(CascaderValue {
+        // 初始显示路径保持为空。
+        labels: Vec::new(),
+        // 初始稳定值路径保持为空。
+        values: Vec::new(),
+    });
+    // 提供 Cascader 层级选项树。
+    let region_options = vec![
+        // 省级根项包含城市叶项。
+        CascaderOption::new("浙江", "zj").children(vec![
+            // 城市叶项提交完整路径。
+            CascaderOption::new("杭州", "hz"),
+        ]),
+    ];
+    // 验证选项树、路径绑定和公共样式只依赖公开 prelude。
+    let _cascader: ViewNode = crate::uix!(
+        r#"<Cascader value={region} options={region_options} width="240px" automationId="region" />"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
