@@ -247,6 +247,8 @@ impl TextBackend for AbGlyphBackend {
                     font_h,
                     // 复用调用方解析后的行高。
                     line_h,
+                    // 独立后端入口保留首强字符自动方向推断。
+                    None,
                 )
             })
         // shaping 成功时直接返回 cluster 感知结果。
@@ -323,6 +325,8 @@ impl TextBackend for AbGlyphBackend {
                 char_index,
                 // 逐字符回退路径的 cluster 只覆盖当前字符。
                 char_end: char_index + 1,
+                // 兼容布局默认使用 LTR，FontService 会回填行级双向级别。
+                bidi_level: 0,
                 font: *font,
             });
 
@@ -371,6 +375,97 @@ impl TextBackend for AbGlyphBackend {
             width: tw,
             height: max_h.max(text_h),
         }
+    }
+
+    // 使用段落级 UAX #9 方向执行单一视觉 run 的 OpenType shaping。
+    fn layout_text_directional(
+        // 借用字体后端。
+        &self,
+        // 指定当前 run 使用的字体句柄。
+        font: &FontHandle,
+        // 指定当前 run 的逻辑源文本。
+        text: &str,
+        // 复用调用方布局约束。
+        opts: &TextLayoutOptions,
+        // 使用 UAX #9 已解析方向覆盖局部猜测。
+        direction: TextDirection,
+    ) -> TextLayout {
+        // 无效句柄沿用统一后端的空布局行为。
+        let Some(idx) = self.idx(font) else {
+            // 通过既有入口生成兼容结果。
+            return self.layout_text(font, text, opts);
+        };
+        // 有效槽位必须保留已解析字体。
+        let parsed_font = self.fonts[idx]
+            // 借用字体解析结果。
+            .font
+            // 转为只读引用。
+            .as_ref()
+            // 有效句柄不允许出现空字体槽位。
+            .expect("valid font slot must retain its parsed font");
+        // 约束异常字号以避免非有限 shaping 缩放。
+        let font_size = text_backend::bounded_font_size(opts.font_size);
+        // 建立与普通入口一致的像素缩放字体。
+        let scaled_font = parsed_font.as_scaled(PxScale {
+            // 水平方向使用统一字号。
+            x: font_size,
+            // 垂直方向使用统一字号。
+            y: font_size,
+        });
+        // 读取像素 ascent 供 shaping 基线定位。
+        let ascent = scaled_font.ascent();
+        // 读取 descent 供行盒高度计算。
+        let descent = scaled_font.descent();
+        // 读取字体行间距。
+        let line_gap = scaled_font.line_gap();
+        // 形成与普通入口一致的有限字体行盒。
+        let font_height = (ascent - descent + line_gap).max(font_size);
+        // 优先使用调用方显式行高。
+        let line_height = if opts.line_height > 0.0 {
+            // 保留正显式行高。
+            opts.line_height
+        // 缺少显式行高时使用字体自然行盒。
+        } else {
+            // 返回字体自然高度。
+            font_height
+        };
+        // 尝试使用同一字体数据执行显式方向 shaping。
+        let shaped = self.fonts[idx]
+            // 借用字体文件所有权容器。
+            ._data
+            // 缺少字体数据时不能构造 rustybuzz 字体面。
+            .as_ref()
+            // 对完整字体文件执行显式方向 shaping。
+            .and_then(|data| {
+                // 调用共享 OpenType shaping 实现。
+                super::shaping::layout_text(
+                    // 传入完整字体文件字节。
+                    data.as_slice(),
+                    // 当前后端固定使用字体集合首个面。
+                    0,
+                    // 保留稳定字体句柄。
+                    *font,
+                    // 传入当前单向 run 文本。
+                    text,
+                    // 复用布局约束。
+                    opts,
+                    // 传入像素 ascent。
+                    ascent,
+                    // 传入字体行盒高度。
+                    font_height,
+                    // 传入解析后的行高。
+                    line_height,
+                    // 显式覆盖 rustybuzz 的局部方向猜测。
+                    Some(direction),
+                )
+            });
+        // shaping 成功时直接返回视觉字形与逻辑 cluster。
+        if let Some(layout) = shaped {
+            // 返回显式方向布局。
+            return layout;
+        }
+        // 控制字符或异常字体数据使用既有兼容布局，后续仍由 FontService 重排。
+        self.layout_text(font, text, opts)
     }
 
     fn rasterize_glyph(&self, font: &FontHandle, glyph_id: u32, pixel_size: f32) -> GlyphRaster {

@@ -8,6 +8,8 @@ use crate::draw::resources::font::text_backend::{
     LineInfo,
     // 引入定位字形类型。
     PositionedGlyph,
+    // 引入 UAX #9 已解析的 shaping 方向。
+    TextDirection,
     // 引入文本布局聚合类型。
     TextLayout,
     // 引入本次 shaping 的约束类型。
@@ -125,6 +127,8 @@ pub(super) fn layout_text(
     font_height: f32,
     // 调用方解析后的行高。
     line_height: f32,
+    // 可选的 UAX #9 已解析方向；空值保留独立后端自动推断。
+    direction: Option<TextDirection>,
     // 解析或索引异常时返回空值以启用旧后端回退。
 ) -> Option<TextLayout> {
     // 控制换行与制表符继续交给已有兼容路径处理。
@@ -157,6 +161,16 @@ pub(super) fn layout_text(
     buffer.push_str(text);
     // 由脚本首个强字符推断脚本、语言与方向。
     buffer.guess_segment_properties();
+    // FontService 提供段落级解析方向时覆盖局部首强字符猜测。
+    if let Some(direction) = direction {
+        // 将内部稳定方向映射为 rustybuzz 缓冲区方向。
+        buffer.set_direction(match direction {
+            // 偶数嵌入级别使用从左向右 shaping。
+            TextDirection::LeftToRight => rustybuzz::Direction::LeftToRight,
+            // 奇数嵌入级别使用从右向左 shaping。
+            TextDirection::RightToLeft => rustybuzz::Direction::RightToLeft,
+        });
+    }
     // 使用字体默认 OpenType 特性执行 GSUB 与 GPOS。
     let shaped = rustybuzz::shape(&face, &[], buffer);
     // 字形信息保存 glyph id 与源 cluster。
@@ -293,6 +307,8 @@ pub(super) fn layout_text(
                 char_index,
                 // 保存 cluster 的排他逻辑字符终点。
                 char_end,
+                // 行级 UAX #9 重排由 FontService 统一回填。
+                bidi_level: 0,
                 // 保存加载该字形的字体句柄。
                 font,
                 // 结束定位字形构造。
@@ -485,6 +501,8 @@ mod tests {
             24.0,
             // 使用稳定调用方行高。
             30.0,
+            // 独立 shaping 测试保留自动方向推断。
+            None,
             // 字体解析或 shaping 失败应直接暴露。
         )
         // 说明本测试要求完整 shaping 路径。
@@ -554,6 +572,8 @@ mod tests {
             24.0,
             // 使用稳定行高。
             30.0,
+            // Indic 独立测试保留自动方向推断。
+            None,
             // Indic shaping 必须成功。
         )
         // 失败时明确指出字体与脚本契约。
@@ -590,6 +610,8 @@ mod tests {
             24.0,
             // 使用稳定行高。
             30.0,
+            // 组合文本独立测试保留自动方向推断。
+            None,
             // 组合音标 shaping 必须成功。
         )
         // 失败时明确指出组合文本契约。
@@ -631,6 +653,8 @@ mod tests {
             24.0,
             // 使用稳定行高。
             30.0,
+            // Latin 独立测试保留自动方向推断。
+            None,
             // Latin shaping 必须成功。
         )
         // 失败时明确指出 ligature 契约。

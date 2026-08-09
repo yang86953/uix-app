@@ -1,0 +1,122 @@
+//! 验证 FontService 的 UAX #9 视觉顺序与方向感知交互几何。
+
+// 引入可控等宽测试字体服务与布局选项。
+use super::line_break_tests::{options, service};
+// 引入共享选择片段几何辅助。
+use crate::draw::resources::font::text_backend::glyph_selection_x_ranges;
+// 引入命中测试坐标。
+use crate::core::Point;
+// 引入测试字体句柄。
+use crate::draw::FontHandle;
+
+// 验证 LTR 段落中的 Hebrew 与数字按 UAX #9 视觉顺序排列。
+#[test]
+fn mixed_runs_preserve_logical_indices_and_number_order() {
+    // 使用可控单字符六像素 advance 的字体服务。
+    let service = service();
+    // 构造 Latin、Hebrew、中性空格与欧洲数字混排。
+    let text = "abc אבג 123";
+    // 执行完整字体分段、逻辑换行与视觉 run 重排。
+    let layout = service.layout_text(&FontHandle::new(0), text, &options(4096.0));
+    // 提取最终视觉字形保存的逻辑源索引。
+    let visual_indices = layout
+        // 遍历视觉顺序字形。
+        .glyphs
+        // 借用以保留布局供后续几何断言。
+        .iter()
+        // 读取稳定逻辑字符起点。
+        .map(|glyph| glyph.char_index)
+        // 收集视觉到逻辑索引映射。
+        .collect::<Vec<_>>();
+    // 数字保持 LTR，Hebrew 字母按视觉顺序反向。
+    assert_eq!(visual_indices, vec![0, 1, 2, 3, 8, 9, 10, 7, 6, 5, 4]);
+    // 全部视觉字形 x 坐标必须保持单调，供绘制与命中共享。
+    assert!(layout
+        // 遍历相邻视觉字形窗口。
+        .glyphs
+        // 取得连续二元窗口。
+        .windows(2)
+        // 每个后继字形都不得位于前驱左侧。
+        .all(|pair| pair[0].x <= pair[1].x));
+    // Hebrew 字形必须保存奇数嵌入级别。
+    assert!(layout
+        // 遍历 Hebrew 逻辑源索引对应字形。
+        .glyphs
+        // 只保留三个 Hebrew 字符。
+        .iter()
+        // 判断逻辑源范围。
+        .filter(|glyph| (4..7).contains(&glyph.char_index))
+        // 全部 Hebrew 字形必须为 RTL 奇数级。
+        .all(|glyph| glyph.bidi_level % 2 == 1));
+    // 欧洲数字必须保留偶数嵌入级别和内部 LTR 顺序。
+    assert!(layout
+        // 遍历数字逻辑源索引对应字形。
+        .glyphs
+        // 只保留三个数字。
+        .iter()
+        // 判断逻辑源范围。
+        .filter(|glyph| (8..11).contains(&glyph.char_index))
+        // 全部数字字形必须为偶数级。
+        .all(|glyph| glyph.bidi_level % 2 == 0));
+}
+
+// 验证 RTL cluster 的左右半区命中返回相反逻辑边界。
+#[test]
+fn rtl_hit_testing_and_cursor_use_visual_cluster_direction() {
+    // 使用可控等宽字体服务。
+    let service = service();
+    // 构造包含 RTL run 的稳定单行混排。
+    let text = "abc אבג 123";
+    // 使用足够宽约束避免自动换行。
+    let options = options(4096.0);
+    // RTL 字符 ג 位于视觉区间 48..54，左半区对应逻辑排他终点七。
+    assert_eq!(
+        service.hit_test_text(
+            // 使用测试字体。
+            &FontHandle::new(0),
+            // 使用混排源文本。
+            text,
+            // 复用同一布局选项。
+            &options,
+            // 命中 RTL cluster 左半区。
+            Point::new(49.0, 1.0),
+        ),
+        // RTL 左缘必须返回逻辑排他终点。
+        Some(7),
+    );
+    // 同一 RTL cluster 右半区对应逻辑起点六。
+    assert_eq!(
+        service.hit_test_text(
+            // 使用测试字体。
+            &FontHandle::new(0),
+            // 使用同一混排源文本。
+            text,
+            // 复用同一布局选项。
+            &options,
+            // 命中 RTL cluster 右半区。
+            Point::new(53.0, 1.0),
+        ),
+        // RTL 右缘必须返回逻辑起点。
+        Some(6),
+    );
+    // RTL 逻辑边界六位于字符 ג 的视觉右缘五十四像素。
+    assert_eq!(
+        service.text_cursor_x(&FontHandle::new(0), text, &options, 6),
+        54.0,
+    );
+}
+
+// 验证跨双向 run 的逻辑选择形成多个连续视觉片段。
+#[test]
+fn mixed_selection_returns_disjoint_visual_ranges() {
+    // 使用可控等宽字体服务。
+    let service = service();
+    // 构造包含分离视觉区域的逻辑连续选择源文本。
+    let text = "abc אבג 123";
+    // 执行完整混排布局。
+    let layout = service.layout_text(&FontHandle::new(0), text, &options(4096.0));
+    // 选择逻辑区间 5..9，覆盖 Hebrew 尾部、空格与首个数字。
+    let ranges = glyph_selection_x_ranges(&layout.glyphs, 5, 9);
+    // 首个数字与 RTL 片段之间存在未选数字形成的视觉间隔。
+    assert_eq!(ranges, vec![(24.0, 30.0), (42.0, 60.0)]);
+}

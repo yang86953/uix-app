@@ -252,23 +252,30 @@ component! {
                     for line in &layout.lines {
                         let gs = line.glyph_start;
                         let ge = (gs + line.glyph_count).min(layout.glyphs.len());
-                        let Some((line_x0, line_x1)) =
-                            crate::draw::resources::font::text_backend::glyph_selection_x_range(
+                        // 双向行的逻辑选择区按连续视觉片段分别绘制。
+                        for (line_x0, line_x1) in
+                            crate::draw::resources::font::text_backend::glyph_selection_x_ranges(
+                                // 传入当前视觉行字形。
                                 &layout.glyphs[gs..ge],
+                                // 传入逻辑选择起点。
                                 sel_s,
+                                // 传入逻辑选择终点。
                                 sel_e,
                             )
-                        else {
-                            continue;
-                        };
-                        let x0 = abs_pos.x + line_x0;
-                        let x1 = abs_pos.x + line_x1;
-                        let y0 = abs_pos.y + line.y;
-                        ctx.fill_rect(
-                            Rect::new(x0, y0, (x1 - x0).max(0.0), visual_h),
-                            ctx.tokens().color_primary().with_alpha(64),
-                            None,
-                        );
+                        {
+                            // 将片段左缘平移到绝对绘制坐标。
+                            let x0 = abs_pos.x + line_x0;
+                            // 将片段右缘平移到绝对绘制坐标。
+                            let x1 = abs_pos.x + line_x1;
+                            // 使用当前视觉行顶部。
+                            let y0 = abs_pos.y + line.y;
+                            // 绘制当前连续选择片段。
+                            ctx.fill_rect(
+                                Rect::new(x0, y0, (x1 - x0).max(0.0), visual_h),
+                                ctx.tokens().color_primary().with_alpha(64),
+                                None,
+                            );
+                        }
                     }
                 }
             }

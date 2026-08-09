@@ -197,6 +197,15 @@ pub(crate) fn normalized_raster_pixel_size(pixel_size: f32) -> Option<u32> {
     Some(pixel_size.round().clamp(1.0, MAX_RASTER_PIXEL_SIZE) as u32)
 }
 
+/// 描述一次 OpenType shaping 使用的已解析行内方向。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextDirection {
+    // 指定从左向右 shaping。
+    LeftToRight,
+    // 指定从右向左 shaping。
+    RightToLeft,
+}
+
 /// A single glyph positioned by text layout.
 #[derive(Debug, Clone, Copy)]
 pub struct PositionedGlyph {
@@ -209,29 +218,187 @@ pub struct PositionedGlyph {
     pub char_index: usize,
     /// 当前 shaping cluster 在源文本中的排他字符终点。
     pub char_end: usize,
+    /// 当前视觉行应用 UAX #9 L1 后的嵌入级别；奇数表示 RTL。
+    pub bidi_level: u8,
     pub font: crate::draw::FontHandle,
 }
 
-/// 返回字符区间在一行字形中的可见水平范围。
-///
-/// 选择区使用源字符下标，而不是假设一个 Unicode 标量必然对应一个字形槽；
-/// 同时以最小/最大边界兼容未来后端返回视觉顺序字形。
-pub(crate) fn glyph_selection_x_range(
+/// 返回逻辑选择区在视觉行中的全部连续水平片段。
+pub(crate) fn glyph_selection_x_ranges(
+    // 借用按视觉顺序排列的行字形。
     glyphs: &[PositionedGlyph],
+    // 指定逻辑选择起点。
     start_char: usize,
+    // 指定逻辑选择排他终点。
     end_char: usize,
-) -> Option<(f32, f32)> {
-    let mut left = f32::INFINITY;
-    let mut right = f32::NEG_INFINITY;
-    for glyph in glyphs
-        .iter()
-        // 选择区与 cluster 源区间相交时纳入完整字形几何。
-        .filter(|glyph| glyph.char_index < end_char && glyph.char_end > start_char)
-    {
-        left = left.min(glyph.x);
-        right = right.max(glyph.x + glyph.width.max(0.0));
+) -> Vec<(f32, f32)> {
+    // 保存可能因双向 run 分离而形成的多个视觉片段。
+    let mut ranges: Vec<(f32, f32)> = Vec::new();
+    // 依次观察视觉字形，逻辑区间相交时纳入选择。
+    for glyph in glyphs.iter().filter(|glyph| {
+        // cluster 源区间与逻辑选择区间相交。
+        glyph.char_index < end_char && glyph.char_end > start_char
+    }) {
+        // 当前字形可见左缘。
+        let left = glyph.x;
+        // 当前字形可见右缘。
+        let right = glyph.x + glyph.width.max(0.0);
+        // 与上一视觉片段接触或重叠时合并。
+        if let Some(last) = ranges.last_mut().filter(|last| left <= last.1 + 0.01) {
+            // 扩展上一片段右缘。
+            last.1 = last.1.max(right);
+        // 存在视觉间隔时开始新的选择片段。
+        } else {
+            // 登记有限非逆的新片段。
+            ranges.push((left, right.max(left)));
+        }
     }
-    (left.is_finite() && right.is_finite()).then_some((left, right.max(left)))
+    // 返回同一视觉布局派生的全部选择片段。
+    ranges
+}
+
+/// 在一行视觉字形中命中逻辑光标边界。
+pub(crate) fn glyph_hit_test_index(glyphs: &[PositionedGlyph], x: f32) -> Option<usize> {
+    // 空视觉行没有可命中的 cluster。
+    if glyphs.is_empty() {
+        // 返回空值交由行信息兜底。
+        return None;
+    }
+    // 从首个视觉字形开始按 cluster 分组。
+    let mut start = 0usize;
+    // 记录最后一个视觉 cluster 的逻辑右侧边界。
+    let mut trailing_boundary = None;
+    // 遍历当前视觉行全部 cluster。
+    while start < glyphs.len() {
+        // 当前 cluster 的完整逻辑源区间。
+        let source_range = glyphs[start].char_index..glyphs[start].char_end;
+        // 查找相邻同源区间字形的排他终点。
+        let mut end = start + 1;
+        // 同一 shaping cluster 的多个字形必须共享命中区域。
+        while end < glyphs.len()
+            && glyphs[end].char_index == source_range.start
+            && glyphs[end].char_end == source_range.end
+        {
+            // 扩展 cluster 字形范围。
+            end += 1;
+        }
+        // 聚合 cluster 视觉左缘。
+        let left = glyphs[start..end]
+            // 遍历 cluster 字形。
+            .iter()
+            // 提取水平坐标。
+            .map(|glyph| glyph.x)
+            // 聚合最小值。
+            .fold(f32::INFINITY, f32::min);
+        // 聚合 cluster 视觉右缘。
+        let right = glyphs[start..end]
+            // 遍历 cluster 字形。
+            .iter()
+            // 提取非负右缘。
+            .map(|glyph| glyph.x + glyph.width.max(0.0))
+            // 聚合最大值。
+            .fold(f32::NEG_INFINITY, f32::max);
+        // 奇数嵌入级别表示视觉左侧对应逻辑排他终点。
+        let rtl = glyphs[start].bidi_level % 2 == 1;
+        // 指针位于 cluster 中点左侧时返回其视觉左边界。
+        if x < left + (right - left).max(0.0) * 0.5 {
+            // RTL 与 LTR 的视觉左边界对应相反逻辑边界。
+            return Some(if rtl {
+                // RTL 左缘对应逻辑排他终点。
+                source_range.end
+            // LTR 左缘对应逻辑起点。
+            } else {
+                // LTR 左缘对应逻辑起点。
+                source_range.start
+            });
+        }
+        // 保存当前 cluster 视觉右缘对应的逻辑边界。
+        trailing_boundary = Some(if rtl {
+            // RTL 右缘对应逻辑起点。
+            source_range.start
+        // LTR 右缘对应逻辑排他终点。
+        } else {
+            // LTR 右缘对应逻辑排他终点。
+            source_range.end
+        });
+        // 继续下一个视觉 cluster。
+        start = end;
+    }
+    // 行右侧命中返回最后一个视觉 cluster 的右边界。
+    trailing_boundary
+}
+
+/// 返回逻辑字符边界在一行视觉字形中的主光标 x 坐标。
+pub(crate) fn glyph_cursor_x(
+    // 借用按视觉顺序排列的行字形。
+    glyphs: &[PositionedGlyph],
+    // 指定逻辑光标边界。
+    char_index: usize,
+) -> Option<f32> {
+    // 从视觉行首开始按 shaping cluster 分组。
+    let mut start = 0usize;
+    // 遍历全部 cluster 查找共享逻辑边界。
+    while start < glyphs.len() {
+        // 保存当前 cluster 源区间。
+        let source_range = glyphs[start].char_index..glyphs[start].char_end;
+        // 查找相邻同源区间字形终点。
+        let mut end = start + 1;
+        // 完整 cluster 共享一个光标边界对。
+        while end < glyphs.len()
+            && glyphs[end].char_index == source_range.start
+            && glyphs[end].char_end == source_range.end
+        {
+            // 扩展 cluster 字形范围。
+            end += 1;
+        }
+        // 当前逻辑边界不接触此 cluster 时继续。
+        if char_index != source_range.start && char_index != source_range.end {
+            // 跳到下一个 cluster。
+            start = end;
+            // 继续扫描。
+            continue;
+        }
+        // 聚合 cluster 视觉左缘。
+        let left = glyphs[start..end]
+            // 遍历 cluster 字形。
+            .iter()
+            // 提取水平坐标。
+            .map(|glyph| glyph.x)
+            // 聚合最小值。
+            .fold(f32::INFINITY, f32::min);
+        // 聚合 cluster 视觉右缘。
+        let right = glyphs[start..end]
+            // 遍历 cluster 字形。
+            .iter()
+            // 提取可见右缘。
+            .map(|glyph| glyph.x + glyph.width.max(0.0))
+            // 聚合最大值。
+            .fold(f32::NEG_INFINITY, f32::max);
+        // 奇数嵌入级别交换逻辑起止边界的视觉侧。
+        let rtl = glyphs[start].bidi_level % 2 == 1;
+        // 返回当前逻辑边界对应的视觉坐标。
+        return Some(if char_index == source_range.start {
+            // 逻辑起点在 RTL cluster 右侧、LTR cluster 左侧。
+            if rtl {
+                // RTL 起点使用视觉右缘。
+                right
+            // LTR 起点使用视觉左缘。
+            } else {
+                // LTR 起点使用视觉左缘。
+                left
+            }
+        // 当前边界等于 cluster 排他终点。
+        } else if rtl {
+            // RTL 终点使用视觉左缘。
+            left
+        // LTR 终点使用视觉右缘。
+        } else {
+            // LTR 终点使用视觉右缘。
+            right
+        });
+    }
+    // 当前行没有覆盖指定逻辑边界。
+    None
 }
 
 /// 一行文本的布局信息。

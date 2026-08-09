@@ -25,7 +25,7 @@ use crate::draw::{FontHandle, HAlign, TextBackend, VAlign};
 
 // 使用固定六像素 advance 的纯内存后端。
 #[derive(Debug)]
-struct MonospaceBackend;
+pub(super) struct MonospaceBackend;
 
 // 实现最小文本后端以隔离系统字体差异。
 impl TextBackend for MonospaceBackend {
@@ -84,6 +84,8 @@ impl TextBackend for MonospaceBackend {
                 char_index,
                 // 排他终点紧随源字符起点。
                 char_end: char_index + 1,
+                // 测试后端默认使用 LTR，FontService 会回填行级双向级别。
+                bidi_level: 0,
                 // 保留调用方字体句柄。
                 font: *font,
                 // 结束定位字形构造。
@@ -162,7 +164,7 @@ impl TextBackend for MonospaceBackend {
 }
 
 // 构造使用纯内存等宽后端的字体服务。
-fn service() -> FontService {
+pub(super) fn service() -> FontService {
     // 从默认服务复用注册表和缓存初始化。
     let mut service = FontService::new();
     // 替换为不依赖系统字体的等宽后端。
@@ -174,7 +176,7 @@ fn service() -> FontService {
 }
 
 // 构造启用自动换行的稳定布局选项。
-fn options(max_width: f32) -> TextLayoutOptions {
+pub(super) fn options(max_width: f32) -> TextLayoutOptions {
     // 返回固定字号、行高与左上对齐约束。
     TextLayoutOptions {
         // 使用调用方宽度。

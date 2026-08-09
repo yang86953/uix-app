@@ -9,12 +9,16 @@ use super::RichTextSegment;
 use super::layout_types::{LayoutGlyph, LayoutLine};
 // 复用独立的估算字符宽度、行刷新与完整逻辑源拼接。
 use super::layout_metrics::{char_width, flush_line, source_text};
+// 引入富文本视觉 run 重排与定位。
+use super::bidi_layout::reorder_lines;
 // 复用独立的真实字体逐字符度量逻辑。
 use super::shaped_advance::real_char_advances;
 // 测试直接验证 shaping cluster advance 映射。
 #[cfg(test)]
 use super::shaped_advance::measured_advance_for_char;
 use crate::draw::resources::font::font_service::FontService;
+// 引入共享段落级 UAX #9 分析。
+use crate::draw::resources::font::bidi::BidiAnalysis;
 // 让估算与真实富文本布局共享 UAX #14 断行边界和强制换行切分。
 use crate::draw::resources::font::line_break::{split_once_mandatory, LineBreakMap};
 // 测试使用后端字形构造稀疏索引和 kerning 场景。
@@ -150,6 +154,8 @@ mod tests {
                 char_index: 0,
                 // 测试字形覆盖第一个源字符。
                 char_end: 1,
+                // 测试字形默认使用 LTR 嵌入级别。
+                bidi_level: 0,
                 font: FontHandle::new(0),
             },
             PositionedGlyph {
@@ -161,6 +167,8 @@ mod tests {
                 char_index: 2,
                 // 测试字形覆盖第三个源字符。
                 char_end: 3,
+                // 测试字形默认使用 LTR 嵌入级别。
+                bidi_level: 0,
                 font: FontHandle::new(0),
             },
             PositionedGlyph {
@@ -172,6 +180,8 @@ mod tests {
                 char_index: 3,
                 // 测试字形覆盖第四个源字符。
                 char_end: 4,
+                // 测试字形默认使用 LTR 嵌入级别。
+                bidi_level: 0,
                 font: FontHandle::new(0),
             },
         ];
@@ -193,6 +203,8 @@ mod tests {
                 char_index: 0,
                 // 测试字形覆盖第一个源字符。
                 char_end: 1,
+                // 测试字形默认使用 LTR 嵌入级别。
+                bidi_level: 0,
                 font: FontHandle::new(0),
             },
             // 下一个字形左移到 9px，模拟字体后端返回的 kerning。
@@ -205,6 +217,8 @@ mod tests {
                 char_index: 1,
                 // 测试字形覆盖第二个源字符。
                 char_end: 2,
+                // 测试字形默认使用 LTR 嵌入级别。
+                bidi_level: 0,
                 font: FontHandle::new(0),
             },
         ];
@@ -213,13 +227,9 @@ mod tests {
     }
 }
 
-// ══════════════════════════════════════════════════════════════════
-// 估算布局（不依赖 FontService）
-// ══════════════════════════════════════════════════════════════════
+// 估算布局（不依赖 FontService）。
 
-/// 执行富文本布局（字符宽度估算版本）
-///
-/// 返回 (行列表, 总高度, 最大行宽)。
+/// 执行富文本估算布局，返回 (行列表, 总高度, 最大行宽)。
 pub(crate) fn layout_rich_text(
     segments: &[RichTextSegment],
     max_width: f32,
@@ -349,6 +359,9 @@ pub(crate) fn layout_rich_text(
     if !current_line_glyphs.is_empty() || lines.is_empty() {
         flush_line(&mut lines, &mut current_line_glyphs, current_line_h);
     }
+
+    // 使用完整逻辑源对已完成 UAX #14 折行的行应用段落级 UAX #9。
+    max_line_w = max_line_w.max(reorder_lines(&mut lines, &BidiAnalysis::new(&full_source)));
 
     let total_height = lines
         .last()
@@ -500,6 +513,8 @@ fn layout_text_content_line(
                     segment_idx: seg_idx,
                     // 直接保存完整源字符索引，保留 CRLF 与跨样式段偏移。
                     global_char_idx: source_offset + start + relative_index,
+                    // 视觉行完成后由共享 UAX #9 分析回填。
+                    bidi_level: 0,
                     ch: *ch,
                     x: word_chars_x,
                     width: cw,
@@ -519,6 +534,8 @@ fn layout_text_content_line(
                     segment_idx: seg_idx,
                     // 直接保存完整源字符索引，保留 CRLF 与跨样式段偏移。
                     global_char_idx: source_offset + start + relative_index,
+                    // 视觉行完成后由共享 UAX #9 分析回填。
+                    bidi_level: 0,
                     ch: *ch,
                     x: *current_x,
                     width: cw,
@@ -536,9 +553,7 @@ fn layout_text_content_line(
     }
 }
 
-// ══════════════════════════════════════════════════════════════════
-// 真实字体度量布局（用于 render 阶段）
-// ══════════════════════════════════════════════════════════════════
+// 真实字体度量布局（用于 render 阶段）。
 
 /// 基于真实字体度量执行富文本布局
 pub(crate) fn layout_rich_text_real(
@@ -678,6 +693,9 @@ pub(crate) fn layout_rich_text_real(
     if !current_line_glyphs.is_empty() || lines.is_empty() {
         flush_line(&mut lines, &mut current_line_glyphs, current_line_h);
     }
+
+    // 真实字体路径与估算路径共享同一段落级 UAX #9 视觉 run 数据。
+    max_line_w = max_line_w.max(reorder_lines(&mut lines, &BidiAnalysis::new(&full_source)));
 
     let total_height = lines
         .last()
@@ -835,6 +853,8 @@ fn layout_text_content_real_line(
                     segment_idx: seg_idx,
                     // 直接保存完整源字符索引，保留 CRLF 与跨样式段偏移。
                     global_char_idx: source_offset + start + relative_index,
+                    // 视觉行完成后由共享 UAX #9 分析回填。
+                    bidi_level: 0,
                     ch,
                     x: word_x,
                     width: cw,
@@ -860,6 +880,8 @@ fn layout_text_content_real_line(
                     segment_idx: seg_idx,
                     // 直接保存完整源字符索引，保留 CRLF 与跨样式段偏移。
                     global_char_idx: source_offset + start + relative_index,
+                    // 视觉行完成后由共享 UAX #9 分析回填。
+                    bidi_level: 0,
                     ch,
                     x: *current_x,
                     width: cw,

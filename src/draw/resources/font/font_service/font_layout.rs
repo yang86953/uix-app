@@ -1,20 +1,28 @@
 //! 文本布局：按字体分段、逐段布局、行拼接与对齐。
 
 use crate::draw::resources::font::text_backend::{self as tb, TextLayout, TextLayoutOptions};
+// 引入共享段落级 UAX #9 分析。
+use crate::draw::resources::font::bidi::BidiAnalysis;
+// 引入显式 shaping 方向。
+use crate::draw::resources::font::text_backend::TextDirection;
 use crate::draw::{FontHandle, HAlign, VAlign};
 // 使用扩展字素簇边界选择回退字体，避免拆开组合文本。
 use unicode_segmentation::UnicodeSegmentation;
 
 // 引入字体模块共享的 UAX #14 断行边界。
 use super::super::line_break::LineBreakMap;
+// 引入字体段方向切分与视觉 cluster 重排辅助。
+use super::bidi_layout::{
+    logical_cluster_order, reorder_line, split_font_segments, BidiFontSegment, LineGlyph,
+};
 use super::FontService;
 
 /// 布局辅助：按字体分割的文本段（追踪字节偏移）。
-struct FontSegment {
-    byte_start: usize,
-    byte_end: usize,
-    font: FontHandle,
-    line_break_chars: usize,
+pub(super) struct FontSegment {
+    pub(super) byte_start: usize,
+    pub(super) byte_end: usize,
+    pub(super) font: FontHandle,
+    pub(super) line_break_chars: usize,
 }
 
 impl FontService {
@@ -140,7 +148,7 @@ impl FontService {
     )]
     fn layout_segments(
         &self,
-        segments: &[FontSegment],
+        segments: &[BidiFontSegment],
         text: &str,
         // 复用完整源文本生成的 UAX #14 字符边界。
         breaks: &LineBreakMap,
@@ -151,13 +159,9 @@ impl FontService {
         do_wrap: bool,
         max_w: f32,
         h_align: HAlign,
+        // 复用完整源文本生成的段落级 UAX #9 分析。
+        bidi: &BidiAnalysis,
     ) -> (Vec<tb::PositionedGlyph>, Vec<tb::LineInfo>) {
-        #[derive(Clone, Copy)]
-        struct LineGlyph {
-            glyph: tb::PositionedGlyph,
-            source_char: char,
-        }
-
         #[derive(Default)]
         struct LineAccum {
             glyphs: Vec<LineGlyph>,
@@ -261,7 +265,24 @@ impl FontService {
 
             // 用 &str 切片代替 String 分配
             let seg_text = &text[seg.byte_start..seg.byte_end];
-            let seg_layout = self.text_backend.layout_text(&seg.font, seg_text, seg_opts);
+            // 使用段落级已解析方向执行单向 run shaping。
+            let seg_layout = self.text_backend.layout_text_directional(
+                // 保留字体回退选择。
+                &seg.font,
+                // 传入当前单向 run 的逻辑文本。
+                seg_text,
+                // 禁止后端自行换行，由 FontService 统一应用 UAX #14。
+                seg_opts,
+                // 嵌入级别奇偶决定 shaping 方向。
+                if seg.bidi_level % 2 == 0 {
+                    // 偶数级别使用 LTR shaping。
+                    TextDirection::LeftToRight
+                // 奇数级别使用 RTL shaping。
+                } else {
+                    // 奇数级别使用 RTL shaping。
+                    TextDirection::RightToLeft
+                },
+            );
             let seg_char_count = seg_text.chars().count();
             let baseline_offset = primary_ascent - seg_ascent;
             let mut chunk_source_x = 0.0f32;
@@ -271,7 +292,8 @@ impl FontService {
 
             // 后端 layout 的 char_index 是段内相对值。这里按字形推进，保证
             // 同一字体形成的长段也能在 max_width 内折行，而不是只能在字体段之间换行。
-            for mut g in seg_layout.glyphs {
+            // UAX #14 必须先按逻辑 cluster 顺序决定行边界。
+            for mut g in logical_cluster_order(seg_layout.glyphs) {
                 // 按 cluster 逻辑起点读取代表字符，不依赖字形视觉顺序。
                 let source_char = source_chars.get(g.char_index).copied().unwrap_or('\0');
                 // 将段内 cluster 起点转换为全文逻辑字符起点。
@@ -428,6 +450,19 @@ impl FontService {
         }
         flush_line(&mut lines, &mut line, cx, cy, line_h, char_idx);
 
+        // 每个已确定逻辑边界的视觉行统一应用 UAX #9 L1/L2。
+        for line in &mut lines {
+            // 从同一视觉数据重新定位字形并取得实际行宽。
+            line.width = reorder_line(
+                // 传入当前行逻辑 cluster 字形。
+                &mut line.glyphs,
+                // 传入当前视觉行逻辑源范围。
+                line.char_start..line.char_end,
+                // 复用完整段落分析。
+                bidi,
+            );
+        }
+
         // 水平对齐：以 max_width（如果有限）或最大行宽度为容器
         let container_w = if max_w.is_finite() && max_w > 0.0 {
             max_w
@@ -508,7 +543,12 @@ impl FontService {
             ..opts.clone()
         };
 
-        let segments = self.segment_text(font, text);
+        // 先按字体回退选择形成不拆扩展字素簇的逻辑段。
+        let font_segments = self.segment_text(font, text);
+        // 对完整源文本只执行一次段落级 UAX #9 分析。
+        let bidi = BidiAnalysis::new(text);
+        // 在字素簇边界继续切分为单一字体且单一方向的 shaping run。
+        let segments = split_font_segments(&font_segments, text, &bidi);
         // 以完整源文本构建一次 UAX #14 边界，跨字体段保持一致。
         let breaks = LineBreakMap::new(text);
         let (mut all_glyphs, mut line_infos) = self.layout_segments(
@@ -523,6 +563,8 @@ impl FontService {
             do_wrap,
             max_w,
             opts.h_align,
+            // 同一分析结果同时驱动 shaping 方向与视觉行重排。
+            &bidi,
         );
 
         let natural_height = line_infos.last().map_or(0.0, |l| l.y + l.height);
@@ -649,6 +691,8 @@ mod tests {
                     char_index: 0,
                     // cluster 覆盖基字与组合符。
                     char_end,
+                    // 测试后端默认使用 LTR，FontService 会回填行级双向级别。
+                    bidi_level: 0,
                     // 保留回退字体句柄。
                     font: *font,
                     // 结束基字字形构造。
@@ -669,6 +713,8 @@ mod tests {
                     char_index: 0,
                     // 两个输出字形共享 cluster 终点。
                     char_end,
+                    // 测试后端默认使用 LTR，FontService 会回填行级双向级别。
+                    bidi_level: 0,
                     // 保留回退字体句柄。
                     font: *font,
                     // 结束组合符字形构造。

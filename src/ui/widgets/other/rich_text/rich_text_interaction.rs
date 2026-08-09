@@ -71,13 +71,35 @@ impl RichText {
             if pos.y < line.y || pos.y >= line.y + line.height {
                 continue;
             }
-            for glyph in &line.glyphs {
+            // 按实际 x 排序字符；RTL run 内数组仍保留逻辑文本顺序供 shaping。
+            let mut visual_glyphs = line.glyphs.iter().collect::<Vec<_>>();
+            // 使用有限布局坐标形成稳定视觉顺序。
+            visual_glyphs.sort_by(|left, right| left.x.total_cmp(&right.x));
+            // 按视觉顺序判断每个字符中点。
+            for glyph in &visual_glyphs {
                 if pos.x < glyph.x + glyph.width * 0.5 {
-                    return glyph.global_char_idx;
+                    // RTL 视觉左半区对应逻辑排他终点，LTR 对应逻辑起点。
+                    return if glyph.bidi_level % 2 == 1 {
+                        // RTL 字符左缘返回逻辑后一边界。
+                        glyph.global_char_idx + 1
+                    // LTR 字符左缘返回逻辑起点。
+                    } else {
+                        // LTR 字符左缘返回逻辑起点。
+                        glyph.global_char_idx
+                    };
                 }
             }
-            if let Some(last) = line.glyphs.last() {
-                return last.global_char_idx + 1;
+            // 行右侧命中使用最后一个视觉字符的方向解析逻辑边界。
+            if let Some(last) = visual_glyphs.last() {
+                // RTL 右缘对应逻辑起点，LTR 右缘对应逻辑排他终点。
+                return if last.bidi_level % 2 == 1 {
+                    // RTL 字符右缘返回逻辑起点。
+                    last.global_char_idx
+                // LTR 字符右缘返回逻辑排他终点。
+                } else {
+                    // LTR 字符右缘返回逻辑排他终点。
+                    last.global_char_idx + 1
+                };
             }
         }
         if lines.is_empty() {
@@ -97,11 +119,45 @@ impl RichText {
                 best_line = index;
             }
         }
-        lines[best_line]
-            .glyphs
-            .last()
-            .map(|glyph| glyph.global_char_idx + usize::from(pos.x > glyph.x + glyph.width * 0.5))
-            .unwrap_or(0)
+        // 最近视觉行仍按实际 x 排序后解析方向感知边界。
+        let mut visual_glyphs = lines[best_line].glyphs.iter().collect::<Vec<_>>();
+        // 使用有限布局坐标形成稳定视觉顺序。
+        visual_glyphs.sort_by(|left, right| left.x.total_cmp(&right.x));
+        // 查找指针左侧最近的视觉字符。
+        visual_glyphs
+            // 遍历视觉顺序字符。
+            .iter()
+            // 从右向左查找不晚于指针的字符。
+            .rev()
+            // 使用字符中点判断主光标侧。
+            .find(|glyph| pos.x >= glyph.x + glyph.width * 0.5)
+            // 按当前字符方向返回视觉右侧边界。
+            .map(|glyph| {
+                // RTL 视觉右侧对应逻辑起点。
+                if glyph.bidi_level % 2 == 1 {
+                    // 返回 RTL 逻辑起点。
+                    glyph.global_char_idx
+                // LTR 视觉右侧对应逻辑排他终点。
+                } else {
+                    // 返回 LTR 逻辑排他终点。
+                    glyph.global_char_idx + 1
+                }
+            })
+            // 指针位于整行左侧时按首字符方向返回视觉左边界。
+            .unwrap_or_else(|| {
+                // 查询首个视觉字符。
+                visual_glyphs.first().map_or(0, |glyph| {
+                    // RTL 视觉左侧对应逻辑排他终点。
+                    if glyph.bidi_level % 2 == 1 {
+                        // 返回 RTL 逻辑排他终点。
+                        glyph.global_char_idx + 1
+                    // LTR 视觉左侧对应逻辑起点。
+                    } else {
+                        // 返回 LTR 逻辑起点。
+                        glyph.global_char_idx
+                    }
+                })
+            })
     }
 
     pub(super) fn link_count(&self) -> usize {
