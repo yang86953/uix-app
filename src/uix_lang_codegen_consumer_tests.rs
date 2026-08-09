@@ -234,6 +234,34 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _segmented: ViewNode = crate::uix!(
         r#"<Segmented value={view_mode} options={view_options} width="240px" automationId="view-mode" />"#
     );
+    // 提供 Select 当前稳定值的单选双向状态。
+    let city = State::new(String::from("cn"));
+    // 提供 Select 独立显示文案与稳定值的结构化选项。
+    let city_options = vec![
+        // 中文文案绑定稳定地区代码。
+        SelectOption::new("中国", "cn"),
+        // 另一项用于覆盖多个结构化选项。
+        SelectOption::new("美国", "us"),
+    ];
+    // 提供动态可搜索开关。
+    let can_search = true;
+    // 验证结构化选项、单选绑定、搜索和占位文本只依赖公开 prelude。
+    let _select: ViewNode = crate::uix!(
+        r#"<Select value={city} options={city_options} searchable={can_search} placeholder="请选择城市" width="240px" />"#
+    );
+    // 提供 Select 多选稳定值集合状态。
+    let cities = State::new(::std::collections::HashSet::<String>::new());
+    // 为多选消费者准备独立拥有所有权的结构化选项。
+    let multiple_city_options = vec![
+        // 首个多选项保留独立身份。
+        SelectOption::new("中国", "cn"),
+        // 第二个多选项保留独立身份。
+        SelectOption::new("美国", "us"),
+    ];
+    // 验证 multiple 简写在编译期约束集合状态类型。
+    let _multiple_select: ViewNode = crate::uix!(
+        r#"<Select value={cities} options={multiple_city_options} multiple width="240px" />"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。

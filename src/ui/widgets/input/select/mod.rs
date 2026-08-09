@@ -143,6 +143,15 @@ impl SelectValue for HashSet<String> {
     }
 }
 
+/// 把声明式单选或多选模式约束到对应的状态值类型。
+pub trait SelectValueMode<const MULTIPLE: bool>: SelectValue {}
+
+// 单选模式只接受单字符串状态。
+impl SelectValueMode<false> for String {}
+
+// 多选模式只接受字符串集合状态。
+impl SelectValueMode<true> for HashSet<String> {}
+
 type ReadSelection = Box<dyn Fn(&[&str]) -> Vec<usize> + Send + Sync>;
 type WriteSelection = Box<dyn Fn(&[&str], &[usize]) + Send + Sync>;
 

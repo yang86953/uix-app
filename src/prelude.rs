@@ -102,11 +102,12 @@ pub use crate::ui::{
     ImageGroup, Input, InputGroup, InputNumber, InputNumberValue, InputSearchExt, InputStatus,
     IntoBadgeColor, IntoFormValue, Label, Layout, List, Mentions, MoveDirection, OptGroup,
     PickerMode, PresetDate, Radio, RadioDirection, RangeSlider, Rate, ResultType, ResultView,
-    ScrollView, Segmented, Select, SelectOptionGroup, SelectableItem, SelectableList, Sider,
-    Skeleton, SkeletonShape, Slider, Space, SpaceSize, Splitter, Switch, Tag, TagColor,
-    ThemeToggle, Time, TimePicker, Timeline, TimelineItem, TooltipPlacement, Transfer,
-    TransferItem, Trigger, TriggerMode, Typography, TypographyType, Upload, UploadFile,
-    UploadStatus, ValidateStatus, Values, VirtualScroll, VirtualScrollBuilder, Watermark, Weekday,
+    ScrollView, Segmented, Select, SelectOption, SelectOptionGroup, SelectValueMode,
+    SelectableItem, SelectableList, Sider, Skeleton, SkeletonShape, Slider, Space, SpaceSize,
+    Splitter, Switch, Tag, TagColor, ThemeToggle, Time, TimePicker, Timeline, TimelineItem,
+    TooltipPlacement, Transfer, TransferItem, Trigger, TriggerMode, Typography, TypographyType,
+    Upload, UploadFile, UploadStatus, ValidateStatus, Values, VirtualScroll, VirtualScrollBuilder,
+    Watermark, Weekday,
 };
 // 反馈 capability 启用时才在 prelude 暴露组件、门面与专属模型。
 #[cfg(feature = "feedback")]
