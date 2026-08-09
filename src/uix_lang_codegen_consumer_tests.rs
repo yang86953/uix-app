@@ -199,6 +199,11 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _range_slider: ViewNode = crate::uix!(
         r#"<RangeSlider value={{ start: range_start, end: range_end }} min="0" max="100" step="5" width="260px" />"#
     );
+    // 提供 Rate u32 双向绑定状态；启用半星时一个单位代表半星。
+    let rating = State::new(7_u32);
+    // 验证星数、半星、状态绑定和公共样式只依赖公开 prelude。
+    let _rate: ViewNode =
+        crate::uix!(r#"<Rate value={rating} count="5" allowHalf width="180px" />"#);
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
