@@ -20,7 +20,7 @@ use crate::draw::resources::font::font_service::FontService;
 // 引入共享段落级 UAX #9 分析。
 use crate::draw::resources::font::bidi::BidiAnalysis;
 // 让估算与真实富文本布局共享 UAX #14 断行边界和强制换行切分。
-use crate::draw::resources::font::line_break::{split_once_mandatory, LineBreakMap};
+use crate::draw::resources::font::line_break::{LineBreakMap, split_once_mandatory};
 // 测试使用后端字形构造稀疏索引和 kerning 场景。
 #[cfg(test)]
 use crate::draw::resources::font::text_backend::PositionedGlyph;
@@ -245,7 +245,6 @@ pub(crate) fn layout_rich_text(
     let mut current_x: f32 = 0.0;
     let line_height_factor: f32 = 1.5;
     let default_line_h = default_font_size * line_height_factor;
-    let mut current_line_h: f32 = default_line_h;
     let mut max_line_w: f32 = 0.0;
     // 保存当前 segment 在完整逻辑源中的字符起点。
     let mut source_offset = 0usize;
@@ -254,9 +253,9 @@ pub(crate) fn layout_rich_text(
         match segment {
             RichTextSegment::NewLine => {
                 max_line_w = max_line_w.max(current_x);
-                flush_line(&mut lines, &mut current_line_glyphs, current_line_h);
+                // 以默认行高为下限，并由刷新入口保留当前行最大字形行高。
+                flush_line(&mut lines, &mut current_line_glyphs, default_line_h);
                 current_x = 0.0;
-                current_line_h = default_line_h;
                 // 显式换行在完整逻辑源中占一个字符位置。
                 source_offset += 1;
             }
@@ -265,8 +264,6 @@ pub(crate) fn layout_rich_text(
                 let color = style.resolved_color(default_color);
                 let bg = style.bg_color;
                 let seg_line_h = fs * line_height_factor;
-                current_line_h = current_line_h.max(seg_line_h);
-
                 layout_text_content(
                     content,
                     fs,
@@ -277,7 +274,6 @@ pub(crate) fn layout_rich_text(
                     seg_idx,
                     max_width,
                     seg_line_h,
-                    &mut current_line_h,
                     default_line_h,
                     &mut lines,
                     &mut current_line_glyphs,
@@ -296,8 +292,6 @@ pub(crate) fn layout_rich_text(
                 let color = Color::from_rgb(230, 180, 100);
                 let bg = Color::from_rgb(40, 40, 45);
                 let seg_line_h = fs * line_height_factor;
-                current_line_h = current_line_h.max(seg_line_h);
-
                 layout_text_content(
                     content,
                     fs,
@@ -308,7 +302,6 @@ pub(crate) fn layout_rich_text(
                     seg_idx,
                     max_width,
                     seg_line_h,
-                    &mut current_line_h,
                     default_line_h,
                     &mut lines,
                     &mut current_line_glyphs,
@@ -326,8 +319,6 @@ pub(crate) fn layout_rich_text(
                 let fs = default_font_size;
                 let color = Color::from_rgb(55, 110, 255);
                 let seg_line_h = fs * line_height_factor;
-                current_line_h = current_line_h.max(seg_line_h);
-
                 layout_text_content(
                     content,
                     fs,
@@ -338,7 +329,6 @@ pub(crate) fn layout_rich_text(
                     seg_idx,
                     max_width,
                     seg_line_h,
-                    &mut current_line_h,
                     default_line_h,
                     &mut lines,
                     &mut current_line_glyphs,
@@ -357,7 +347,8 @@ pub(crate) fn layout_rich_text(
 
     max_line_w = max_line_w.max(current_x);
     if !current_line_glyphs.is_empty() || lines.is_empty() {
-        flush_line(&mut lines, &mut current_line_glyphs, current_line_h);
+        // 结算末行时不复用前序行状态，由字形几何决定实际行高。
+        flush_line(&mut lines, &mut current_line_glyphs, default_line_h);
     }
 
     // 使用完整逻辑源对已完成 UAX #14 折行的行应用段落级 UAX #9。
@@ -382,7 +373,6 @@ fn layout_text_content(
     seg_idx: usize,
     max_width: f32,
     seg_line_h: f32,
-    current_line_h: &mut f32,
     default_line_h: f32,
     lines: &mut Vec<LayoutLine>,
     glyphs: &mut Vec<LayoutGlyph>,
@@ -429,12 +419,10 @@ fn layout_text_content(
         };
         // 显式换行前先结算当前行的最大宽度。
         *max_line_w = (*max_line_w).max(*current_x);
-        // 使用当前行实际高度刷新行列表。
-        flush_line(lines, glyphs, (*current_line_h).max(seg_line_h));
+        // 以默认与当前段行高为下限，并保留同一行前序段的更大字号。
+        flush_line(lines, glyphs, default_line_h.max(seg_line_h));
         // 换行后从行首重新开始布局。
         *current_x = 0.0;
-        // 新行至少保留默认行高和当前段行高中的较大值。
-        *current_line_h = default_line_h.max(seg_line_h);
         // 计算本轮逻辑行和强制换行分隔符共同消费的字符数量。
         consumed_chars += remaining.chars().count() - next.chars().count();
         // 继续处理换行后的剩余内容。
@@ -573,7 +561,6 @@ pub(crate) fn layout_rich_text_real(
     let mut current_x: f32 = 0.0;
     let line_height_factor: f32 = 1.5;
     let default_line_h = default_font_size * line_height_factor;
-    let mut current_line_h: f32 = default_line_h;
     let mut max_line_w: f32 = 0.0;
     // 保存当前 segment 在完整逻辑源中的字符起点。
     let mut source_offset = 0usize;
@@ -582,9 +569,9 @@ pub(crate) fn layout_rich_text_real(
         match segment {
             RichTextSegment::NewLine => {
                 max_line_w = max_line_w.max(current_x);
-                flush_line(&mut lines, &mut current_line_glyphs, current_line_h);
+                // 真实布局同样以默认行高为下限，并扫描当前行实际字形。
+                flush_line(&mut lines, &mut current_line_glyphs, default_line_h);
                 current_x = 0.0;
-                current_line_h = default_line_h;
                 // 显式换行在完整逻辑源中占一个字符位置。
                 source_offset += 1;
             }
@@ -593,8 +580,6 @@ pub(crate) fn layout_rich_text_real(
                 let color = style.resolved_color(default_color);
                 let bg = style.bg_color;
                 let seg_line_h = fs * line_height_factor;
-                current_line_h = current_line_h.max(seg_line_h);
-
                 layout_text_content_real(
                     content,
                     fs,
@@ -605,7 +590,6 @@ pub(crate) fn layout_rich_text_real(
                     seg_idx,
                     max_width,
                     seg_line_h,
-                    &mut current_line_h,
                     default_line_h,
                     &mut lines,
                     &mut current_line_glyphs,
@@ -626,8 +610,6 @@ pub(crate) fn layout_rich_text_real(
                 let color = Color::from_rgb(230, 180, 100);
                 let bg = Color::from_rgb(40, 40, 45);
                 let seg_line_h = fs * line_height_factor;
-                current_line_h = current_line_h.max(seg_line_h);
-
                 layout_text_content_real(
                     content,
                     fs,
@@ -638,7 +620,6 @@ pub(crate) fn layout_rich_text_real(
                     seg_idx,
                     max_width,
                     seg_line_h,
-                    &mut current_line_h,
                     default_line_h,
                     &mut lines,
                     &mut current_line_glyphs,
@@ -658,8 +639,6 @@ pub(crate) fn layout_rich_text_real(
                 let fs = default_font_size;
                 let color = Color::from_rgb(55, 110, 255);
                 let seg_line_h = fs * line_height_factor;
-                current_line_h = current_line_h.max(seg_line_h);
-
                 layout_text_content_real(
                     content,
                     fs,
@@ -670,7 +649,6 @@ pub(crate) fn layout_rich_text_real(
                     seg_idx,
                     max_width,
                     seg_line_h,
-                    &mut current_line_h,
                     default_line_h,
                     &mut lines,
                     &mut current_line_glyphs,
@@ -691,7 +669,8 @@ pub(crate) fn layout_rich_text_real(
 
     max_line_w = max_line_w.max(current_x);
     if !current_line_glyphs.is_empty() || lines.is_empty() {
-        flush_line(&mut lines, &mut current_line_glyphs, current_line_h);
+        // 真实布局末行只使用本行字形决定放大后的行盒高度。
+        flush_line(&mut lines, &mut current_line_glyphs, default_line_h);
     }
 
     // 真实字体路径与估算路径共享同一段落级 UAX #9 视觉 run 数据。
@@ -716,7 +695,6 @@ fn layout_text_content_real(
     seg_idx: usize,
     max_width: f32,
     seg_line_h: f32,
-    current_line_h: &mut f32,
     default_line_h: f32,
     lines: &mut Vec<LayoutLine>,
     glyphs: &mut Vec<LayoutGlyph>,
@@ -767,12 +745,10 @@ fn layout_text_content_real(
         };
         // 显式换行前先结算当前行的最大宽度。
         *max_line_w = (*max_line_w).max(*current_x);
-        // 使用当前行实际高度刷新行列表。
-        flush_line(lines, glyphs, (*current_line_h).max(seg_line_h));
+        // 以默认与当前段行高为下限，并保留同一行前序段的更大字号。
+        flush_line(lines, glyphs, default_line_h.max(seg_line_h));
         // 换行后从行首重新开始布局。
         *current_x = 0.0;
-        // 新行至少保留默认行高和当前段行高中的较大值。
-        *current_line_h = default_line_h.max(seg_line_h);
         // 计算本轮逻辑行和强制换行分隔符共同消费的字符数量。
         consumed_chars += remaining.chars().count() - next.chars().count();
         // 继续处理换行后的剩余内容。
