@@ -8,6 +8,8 @@
 
 > **会话装配收口**：通用 `RenderSession` 与 backend kind factory 已删除零生产调用的 staged `IGraphicsContext` 所有权。生产 GPU bootstrap 与恢复只能从 `Renderer::from_context` 进入 native recipe factory，在完成 GPU recipe、thin RHI 与专用 owner 校验后直接注入会话；没有完整 recipe 的通用 GPU 构造或运行时切换返回稳定 typed error。
 
+> **renderer 装配入口**：bootstrap 与 recovery 共用的 `assemble_renderer` 直接调用 `Renderer::from_context`，并统一保留 create/initialize stage 与失败后的 checked cleanup。只做同名转发的 `draw::renderer::factory` 已删除，不再形成第二层 context factory。
+
 > **当前实现线索**：通用部分主要位于 `src/draw/backend/`，帧计划位于 `src/draw/backend/frame_plan.rs`，RHI lowering 位于 `src/draw/backend/rhi_renderer.rs`、`src/draw/backend/rhi_renderer_coverage.rs`、`src/draw/backend/rhi_renderer_msdf.rs`、`src/draw/backend/rhi_renderer_shape.rs`、`src/draw/backend/rhi_renderer_shadow.rs`、`src/draw/backend/rhi_renderer_blur.rs`、`src/draw/backend/rhi_renderer_mixed.rs` 与 `src/draw/backend/gpu/submit.rs`；薄 RHI 契约位于 `src/native/present/rhi.rs`，兼容接口位于 `src/native/present/`，D3D11 实现位于 `src/native/presentation/graphics/d3d11/`，OpenGL ES 实现位于 `src/native/presentation/graphics/opengl/raster/rhi*.rs`、`src/native/presentation/graphics/opengl/rhi_host.rs` 与 WGL/EGL platform context。
 
 > **离屏模糊收敛**：D3D11 adapter 的 `blur_offscreen_target`、专属 scratch texture、高斯核/region 换算和旧常量缓冲已经移除。Picture/offscreen blur 只接受通用 renderer 拥有的 RHI texture，由 `RhiRenderer` 展开双 pass；缺少该 owner 时在触碰 adapter 前返回 typed `NotImplemented`，不再回落到平行 UI 语义。
