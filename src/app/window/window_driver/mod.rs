@@ -81,7 +81,6 @@ pub(crate) struct WindowDriver {
     present_damage_tracker: PresentDamageTracker,
     frame_scheduler: FrameScheduler,
     last_frame: Option<Instant>,
-    initial_size: (i32, i32),
     deferred_show: bool,
     started_at: Option<Instant>,
     presented_sequence: u64,

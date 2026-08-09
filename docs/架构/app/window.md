@@ -42,6 +42,8 @@ due work / queue / Agent / Effect
 
 只有成功提交后才能消费对应 present dirty；提交失败保留真实 damage 并交由 graphics/app 的 typed 恢复协议分类。event-loop 不复制这条逐窗 pipeline。
 
+原生最大化与还原分别形成 `WindowMaximize` / `WindowRestore` 状态事实，并由同一次平台生命周期同时提供当前 logical 客户区的 `WindowResize`。只有 `WindowResize` 拥有 `RenderTarget`、platform presenter、surface generation 与根 frame 的几何事务；状态事实只恢复或保持调度并请求完整重绘，不得从显示器边界或初始窗口配置合成尺寸。该约束使 Windows 的“状态后 resize”和 Wayland 的“resize 后状态”得到相同结果，也避免重复 surface 重建。
+
 ## 组件：WindowTextInputState
 
 同一共享原生输入能力在任一时刻只有一个有效 owner，由 WindowId、native view identity 和 generation 共同约束。焦点切换、节点隐藏/移除和窗口关闭都先停止旧 IME 会话，再让目标身份失效；未 commit composition 不写入受控状态。

@@ -485,14 +485,8 @@ where
         let had_events = !pending_events.borrow().is_empty();
         let mut had_layout_event = false;
         for ev in pending_events.borrow_mut().drain(..) {
-            had_layout_event |= driver.handle_window_event(
-                &ev,
-                tree,
-                engine,
-                platform_window,
-                platform,
-                text_input,
-            );
+            had_layout_event |=
+                driver.handle_window_event(&ev, tree, engine, platform_window, text_input);
 
             match ev.type_ {
                 UiEventType::PointerMove => {
