@@ -5,52 +5,23 @@
 
 // 复用富文本的段类型定义。
 use super::RichTextSegment;
-// 复用独立的 shaping cluster advance 映射逻辑。
+// 复用独立的布局字形、行与代码复制区域类型。
+use super::layout_types::{LayoutGlyph, LayoutLine};
+// 复用独立的估算字符宽度、行刷新与完整逻辑源拼接。
+use super::layout_metrics::{char_width, flush_line, source_text};
+// 复用独立的真实字体逐字符度量逻辑。
+use super::shaped_advance::real_char_advances;
+// 测试直接验证 shaping cluster advance 映射。
+#[cfg(test)]
 use super::shaped_advance::measured_advance_for_char;
-use crate::core::Rect;
 use crate::draw::resources::font::font_service::FontService;
-// 读取真实字体布局选项。
-use crate::draw::resources::font::text_backend::TextLayoutOptions;
+// 让估算与真实富文本布局共享 UAX #14 断行边界和强制换行切分。
+use crate::draw::resources::font::line_break::{split_once_mandatory, LineBreakMap};
 // 测试使用后端字形构造稀疏索引和 kerning 场景。
 #[cfg(test)]
 use crate::draw::resources::font::text_backend::PositionedGlyph;
 use crate::draw::{Color, FontHandle, Transform};
 use crate::ui::component::paint_context::PaintContext;
-
-// ══════════════════════════════════════════════════════════════════
-// 布局类型
-// ══════════════════════════════════════════════════════════════════
-
-/// 布局后的字形（带样式信息）
-#[derive(Debug, Clone)]
-pub(crate) struct LayoutGlyph {
-    pub segment_idx: usize,
-    pub global_char_idx: usize,
-    pub ch: char,
-    pub x: f32,
-    pub width: f32,
-    pub font_size: f32,
-    pub color: Color,
-    pub bg_color: Option<Color>,
-    pub is_link: bool,
-    /// 链接 URL（使用 Arc 共享，避免每个字形都分配新 String）
-    pub link_url: Option<std::sync::Arc<str>>,
-}
-
-/// 布局后的行
-#[derive(Debug, Clone)]
-pub(crate) struct LayoutLine {
-    pub y: f32,
-    pub height: f32,
-    pub glyphs: Vec<LayoutGlyph>,
-}
-
-/// 代码块复制按钮区域
-#[derive(Debug, Clone)]
-pub(crate) struct CodeCopyRegion {
-    pub rect: Rect,
-    pub segment_idx: usize,
-}
 
 // 统一定义富文本 faux italic 的倾斜比例。
 const RICH_TEXT_ITALIC_SHEAR: f32 = 0.18;
@@ -243,58 +214,6 @@ mod tests {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// 字符宽度估算
-// ══════════════════════════════════════════════════════════════════
-
-/// 估算字符宽度（px），基于字体大小的比例
-fn char_width(fs: f32, ch: char) -> f32 {
-    match ch {
-        ' ' => fs * 0.35,
-        '\t' => fs * 2.0,
-        'm' | 'M' | 'W' | 'w' => fs * 0.7,
-        'i' | 'I' | 'l' | '1' | '.' | ',' | ':' | ';' | '\'' => fs * 0.3,
-        c if is_cjk(c) => fs * 1.0,
-        c if ('\u{3000}'..='\u{303f}').contains(&c) => fs * 0.9,
-        _ => fs * 0.55,
-    }
-}
-
-/// 判断字符是否属于 CJK（可用于断行）
-fn is_cjk(ch: char) -> bool {
-    matches!(ch,
-        '\u{4E00}'..='\u{9FFF}'
-        | '\u{3400}'..='\u{4DBF}'
-        | '\u{20000}'..='\u{2A6DF}'
-        | '\u{3040}'..='\u{309F}'
-        | '\u{30A0}'..='\u{30FF}'
-        | '\u{FF66}'..='\u{FF9F}'
-        | '\u{AC00}'..='\u{D7AF}'
-        | '\u{1100}'..='\u{11FF}'
-        | '\u{1200}'..='\u{137F}'
-    )
-}
-
-/// 估算文本宽度
-pub(crate) fn text_width(text: &str, fs: f32) -> f32 {
-    text.chars().map(|c| char_width(fs, c)).sum()
-}
-
-/// 刷新当前行到行列表
-pub(crate) fn flush_line(
-    lines: &mut Vec<LayoutLine>,
-    glyphs: &mut Vec<LayoutGlyph>,
-    line_height: f32,
-) {
-    let y = lines.last().map(|l| l.y + l.height).unwrap_or(0.0);
-    let g = std::mem::take(glyphs);
-    lines.push(LayoutLine {
-        y,
-        height: line_height.max(1.0),
-        glyphs: g,
-    });
-}
-
-// ══════════════════════════════════════════════════════════════════
 // 估算布局（不依赖 FontService）
 // ══════════════════════════════════════════════════════════════════
 
@@ -307,6 +226,10 @@ pub(crate) fn layout_rich_text(
     default_font_size: f32,
     default_color: Color,
 ) -> (Vec<LayoutLine>, f32, f32) {
+    // 以完整富文本源生成跨样式段共享的 UAX #14 边界。
+    let full_source = source_text(segments);
+    // 同一边界表贯穿 Text、Code 与 Link 段。
+    let breaks = LineBreakMap::new(&full_source);
     let mut lines: Vec<LayoutLine> = Vec::new();
     let mut current_line_glyphs: Vec<LayoutGlyph> = Vec::new();
     let mut current_x: f32 = 0.0;
@@ -314,6 +237,8 @@ pub(crate) fn layout_rich_text(
     let default_line_h = default_font_size * line_height_factor;
     let mut current_line_h: f32 = default_line_h;
     let mut max_line_w: f32 = 0.0;
+    // 保存当前 segment 在完整逻辑源中的字符起点。
+    let mut source_offset = 0usize;
 
     for (seg_idx, segment) in segments.iter().enumerate() {
         match segment {
@@ -322,6 +247,8 @@ pub(crate) fn layout_rich_text(
                 flush_line(&mut lines, &mut current_line_glyphs, current_line_h);
                 current_x = 0.0;
                 current_line_h = default_line_h;
+                // 显式换行在完整逻辑源中占一个字符位置。
+                source_offset += 1;
             }
             RichTextSegment::Text { content, style } => {
                 let fs = style.resolved_font_size(default_font_size);
@@ -346,7 +273,13 @@ pub(crate) fn layout_rich_text(
                     &mut current_line_glyphs,
                     &mut current_x,
                     &mut max_line_w,
+                    // 传入完整源断行表。
+                    &breaks,
+                    // 传入当前文本段全局字符起点。
+                    source_offset,
                 );
+                // 推进到下一 segment 的全局字符起点。
+                source_offset += content.chars().count();
             }
             RichTextSegment::Code { content } => {
                 let fs = default_font_size * 0.9;
@@ -371,7 +304,13 @@ pub(crate) fn layout_rich_text(
                     &mut current_line_glyphs,
                     &mut current_x,
                     &mut max_line_w,
+                    // 传入完整源断行表。
+                    &breaks,
+                    // 传入当前代码段全局字符起点。
+                    source_offset,
                 );
+                // 推进到下一 segment 的全局字符起点。
+                source_offset += content.chars().count();
             }
             RichTextSegment::Link { content, url } => {
                 let fs = default_font_size;
@@ -395,7 +334,13 @@ pub(crate) fn layout_rich_text(
                     &mut current_line_glyphs,
                     &mut current_x,
                     &mut max_line_w,
+                    // 传入完整源断行表。
+                    &breaks,
+                    // 传入当前链接段全局字符起点。
+                    source_offset,
                 );
+                // 推进到下一 segment 的全局字符起点。
+                source_offset += content.chars().count();
             }
         }
     }
@@ -430,22 +375,39 @@ fn layout_text_content(
     glyphs: &mut Vec<LayoutGlyph>,
     current_x: &mut f32,
     max_line_w: &mut f32,
+    breaks: &LineBreakMap,
+    source_offset: usize,
 ) {
     // 按显式换行把内容拆成多个逻辑行，保证估算布局与真实布局共享换行语义。
     let mut remaining = content;
+    // 保存当前逻辑行相对于 segment 起点已消费的字符数量。
+    let mut consumed_chars = 0usize;
     // 循环消费当前段中的每一行，保留末尾空行的边界行为。
     loop {
         // 只在当前行存在换行时切出后续内容。
-        let (line, next) = match remaining.split_once('\n') {
-            // 记录当前行和换行后的剩余内容。
-            Some((line, next)) => (line, Some(next)),
-            // 没有换行时当前剩余内容就是最后一行。
-            None => (remaining, None),
-        };
+        // 使用共享辅助整体消费 CRLF、CR 或 LF。
+        let (line, next) = split_once_mandatory(remaining);
+        // 计算当前逻辑行在完整富文本源中的字符起点。
+        let line_source_offset = source_offset + consumed_chars;
         // 使用原有空白 token 逻辑布局当前行。
         layout_text_content_line(
-            line, fs, color, bg_color, is_link, link_url, seg_idx, max_width, seg_line_h, lines,
-            glyphs, current_x, max_line_w,
+            line,
+            fs,
+            color,
+            bg_color,
+            is_link,
+            link_url,
+            seg_idx,
+            max_width,
+            seg_line_h,
+            lines,
+            glyphs,
+            current_x,
+            max_line_w,
+            // 传入跨 segment 共享的断行表。
+            breaks,
+            // 传入当前逻辑行全局字符起点。
+            line_source_offset,
         );
         // 没有后续换行时当前段布局完成。
         let Some(next) = next else {
@@ -460,12 +422,14 @@ fn layout_text_content(
         *current_x = 0.0;
         // 新行至少保留默认行高和当前段行高中的较大值。
         *current_line_h = default_line_h.max(seg_line_h);
+        // 计算本轮逻辑行和强制换行分隔符共同消费的字符数量。
+        consumed_chars += remaining.chars().count() - next.chars().count();
         // 继续处理换行后的剩余内容。
         remaining = next;
     }
 }
 
-/// 使用空白 token 和逐字符回退布局单个逻辑行。
+/// 使用 UAX #14 机会和受控长单词兜底布局单个逻辑行。
 #[allow(clippy::too_many_arguments)]
 fn layout_text_content_line(
     content: &str,
@@ -481,35 +445,62 @@ fn layout_text_content_line(
     glyphs: &mut Vec<LayoutGlyph>,
     current_x: &mut f32,
     max_line_w: &mut f32,
+    breaks: &LineBreakMap,
+    source_offset: usize,
 ) {
     let shared_url: Option<std::sync::Arc<str>> = link_url.map(std::sync::Arc::from);
-    // 按所有 Unicode 空白结束逻辑 token，保持文档约定的空白断行语义。
-    let tokens: Vec<&str> = content
-        .split_inclusive(|ch: char| ch.is_whitespace())
-        .collect();
+    // 固化逻辑字符以按字符索引查询 UAX 边界。
+    let chars = content.chars().collect::<Vec<_>>();
+    // 从首个字符开始消费相邻 UAX 机会之间的原子片段。
+    let mut start = 0usize;
+    // 逐段消费直到完整逻辑行结束。
+    while start < chars.len() {
+        // 至少把当前字符纳入片段。
+        let mut end = start + 1;
+        // 扩展到下一个标准允许或强制边界。
+        while end < chars.len() && !breaks.allows_at(source_offset + end) {
+            // 继续保留禁止断行的后继字符。
+            end += 1;
+        }
+        // 计算当前 UAX 原子片段的估算宽度。
+        let token_w = chars[start..end]
+            // 遍历片段字符。
+            .iter()
+            // 使用共享字符宽度估算。
+            .map(|ch| char_width(fs, *ch))
+            // 聚合完整片段宽度。
+            .sum::<f32>();
 
-    for token in &tokens {
-        let token_w = text_width(token, fs);
-
-        if *current_x + token_w > max_width && !glyphs.is_empty() {
+        if breaks.allows_at(source_offset + start)
+            && *current_x + token_w > max_width
+            && !glyphs.is_empty()
+        {
             *max_line_w = (*max_line_w).max(*current_x);
             flush_line(lines, glyphs, seg_line_h);
             *current_x = 0.0;
         }
 
-        if *current_x + token_w > max_width && glyphs.is_empty() {
+        if *current_x + token_w > max_width {
             let mut word_chars_x = *current_x;
-            for ch in token.chars() {
-                let cw = char_width(fs, ch);
-                if word_chars_x + cw > max_width && word_chars_x > 0.0 && !glyphs.is_empty() {
+            for (relative_index, ch) in chars[start..end].iter().enumerate() {
+                let cw = char_width(fs, *ch);
+                // 只有长字母数字词的紧急边界可以绕过标准 UAX 机会。
+                let emergency_break =
+                    breaks.emergency_allows_at(source_offset + start + relative_index);
+                if word_chars_x + cw > max_width
+                    && word_chars_x > 0.0
+                    && !glyphs.is_empty()
+                    && emergency_break
+                {
                     *max_line_w = (*max_line_w).max(word_chars_x);
                     flush_line(lines, glyphs, seg_line_h);
                     word_chars_x = 0.0;
                 }
                 glyphs.push(LayoutGlyph {
                     segment_idx: seg_idx,
-                    global_char_idx: 0,
-                    ch,
+                    // 直接保存完整源字符索引，保留 CRLF 与跨样式段偏移。
+                    global_char_idx: source_offset + start + relative_index,
+                    ch: *ch,
                     x: word_chars_x,
                     width: cw,
                     font_size: fs,
@@ -522,12 +513,13 @@ fn layout_text_content_line(
             }
             *current_x = word_chars_x;
         } else {
-            for ch in token.chars() {
-                let cw = char_width(fs, ch);
+            for (relative_index, ch) in chars[start..end].iter().enumerate() {
+                let cw = char_width(fs, *ch);
                 glyphs.push(LayoutGlyph {
                     segment_idx: seg_idx,
-                    global_char_idx: 0,
-                    ch,
+                    // 直接保存完整源字符索引，保留 CRLF 与跨样式段偏移。
+                    global_char_idx: source_offset + start + relative_index,
+                    ch: *ch,
                     x: *current_x,
                     width: cw,
                     font_size: fs,
@@ -539,70 +531,14 @@ fn layout_text_content_line(
                 *current_x += cw;
             }
         }
-    }
-}
-
-/// 按原始 segment（含显式换行）为每个字形分配全局字符索引。
-pub(crate) fn assign_global_indices(lines: &mut [LayoutLine], segments: &[RichTextSegment]) {
-    let mut offsets = Vec::with_capacity(segments.len());
-    let mut offset = 0;
-    for segment in segments {
-        offsets.push(offset);
-        offset += match segment {
-            RichTextSegment::Text { content, .. }
-            | RichTextSegment::Code { content }
-            | RichTextSegment::Link { content, .. } => content.chars().count(),
-            RichTextSegment::NewLine => 1,
-        };
-    }
-    let mut seen = vec![0; segments.len()];
-    for line in lines.iter_mut() {
-        for glyph in line.glyphs.iter_mut() {
-            if let (Some(offset), Some(seen)) = (
-                offsets.get(glyph.segment_idx),
-                seen.get_mut(glyph.segment_idx),
-            ) {
-                glyph.global_char_idx = offset + *seen;
-                *seen += 1;
-            }
-        }
+        // 从当前 UAX 边界继续处理后续片段。
+        start = end;
     }
 }
 
 // ══════════════════════════════════════════════════════════════════
 // 真实字体度量布局（用于 render 阶段）
 // ══════════════════════════════════════════════════════════════════
-
-/// 获取文本中每个字符的真实 advance 宽度
-fn real_char_advances(
-    font_service: &FontService,
-    font: &FontHandle,
-    text: &str,
-    fs: f32,
-) -> Vec<f32> {
-    if text.is_empty() {
-        return Vec::new();
-    }
-    let opts = TextLayoutOptions {
-        font_size: fs,
-        max_width: f32::MAX,
-        max_height: 0.0,
-        line_height: 0.0,
-        word_wrap: false,
-        h_align: crate::draw::HAlign::Left,
-        v_align: crate::draw::VAlign::Top,
-    };
-    let layout = font_service.layout_text(font, text, &opts);
-    let chars: Vec<char> = text.chars().collect();
-    let mut advances = Vec::with_capacity(chars.len());
-    for (i, ch) in chars.iter().enumerate() {
-        // 当前字符没有可用 glyph 时使用估算宽度保持布局可收敛。
-        let fallback = char_width(fs, *ch);
-        // 按后端提供的源字符索引读取真实宽度，保留缺口后的字符对齐。
-        advances.push(measured_advance_for_char(&layout.glyphs, i, fallback));
-    }
-    advances
-}
 
 /// 基于真实字体度量执行富文本布局
 pub(crate) fn layout_rich_text_real(
@@ -613,6 +549,10 @@ pub(crate) fn layout_rich_text_real(
     font_service: &FontService,
     font: &FontHandle,
 ) -> (Vec<LayoutLine>, f32, f32) {
+    // 以完整富文本源生成跨样式段共享的 UAX #14 边界。
+    let full_source = source_text(segments);
+    // 同一边界表贯穿 Text、Code 与 Link 的真实字体路径。
+    let breaks = LineBreakMap::new(&full_source);
     let mut lines: Vec<LayoutLine> = Vec::new();
     let mut current_line_glyphs: Vec<LayoutGlyph> = Vec::new();
     let mut current_x: f32 = 0.0;
@@ -620,6 +560,8 @@ pub(crate) fn layout_rich_text_real(
     let default_line_h = default_font_size * line_height_factor;
     let mut current_line_h: f32 = default_line_h;
     let mut max_line_w: f32 = 0.0;
+    // 保存当前 segment 在完整逻辑源中的字符起点。
+    let mut source_offset = 0usize;
 
     for (seg_idx, segment) in segments.iter().enumerate() {
         match segment {
@@ -628,6 +570,8 @@ pub(crate) fn layout_rich_text_real(
                 flush_line(&mut lines, &mut current_line_glyphs, current_line_h);
                 current_x = 0.0;
                 current_line_h = default_line_h;
+                // 显式换行在完整逻辑源中占一个字符位置。
+                source_offset += 1;
             }
             RichTextSegment::Text { content, style } => {
                 let fs = style.resolved_font_size(default_font_size);
@@ -654,7 +598,13 @@ pub(crate) fn layout_rich_text_real(
                     &mut max_line_w,
                     font_service,
                     font,
+                    // 传入完整源断行表。
+                    &breaks,
+                    // 传入当前文本段全局字符起点。
+                    source_offset,
                 );
+                // 推进到下一 segment 的全局字符起点。
+                source_offset += content.chars().count();
             }
             RichTextSegment::Code { content } => {
                 let fs = default_font_size * 0.9;
@@ -681,7 +631,13 @@ pub(crate) fn layout_rich_text_real(
                     &mut max_line_w,
                     font_service,
                     font,
+                    // 传入完整源断行表。
+                    &breaks,
+                    // 传入当前代码段全局字符起点。
+                    source_offset,
                 );
+                // 推进到下一 segment 的全局字符起点。
+                source_offset += content.chars().count();
             }
             RichTextSegment::Link { content, url } => {
                 let fs = default_font_size;
@@ -707,7 +663,13 @@ pub(crate) fn layout_rich_text_real(
                     &mut max_line_w,
                     font_service,
                     font,
+                    // 传入完整源断行表。
+                    &breaks,
+                    // 传入当前链接段全局字符起点。
+                    source_offset,
                 );
+                // 推进到下一 segment 的全局字符起点。
+                source_offset += content.chars().count();
             }
         }
     }
@@ -744,18 +706,20 @@ fn layout_text_content_real(
     max_line_w: &mut f32,
     font_service: &FontService,
     font: &FontHandle,
+    breaks: &LineBreakMap,
+    source_offset: usize,
 ) {
     // 按显式换行拆分内容，保证真实字体度量也不会把换行当成字形。
     let mut remaining = content;
+    // 保存当前逻辑行相对于 segment 起点已消费的字符数量。
+    let mut consumed_chars = 0usize;
     // 循环消费每个逻辑行并在换行处刷新共享行缓存。
     loop {
         // 只在当前剩余内容含换行时切出下一行。
-        let (line, next) = match remaining.split_once('\n') {
-            // 记录当前行和换行后的剩余内容。
-            Some((line, next)) => (line, Some(next)),
-            // 没有换行时当前剩余内容就是最后一行。
-            None => (remaining, None),
-        };
+        // 使用共享辅助整体消费 CRLF、CR 或 LF。
+        let (line, next) = split_once_mandatory(remaining);
+        // 计算当前逻辑行在完整富文本源中的字符起点。
+        let line_source_offset = source_offset + consumed_chars;
         // 使用真实字体 advance 布局当前逻辑行。
         layout_text_content_real_line(
             line,
@@ -773,6 +737,10 @@ fn layout_text_content_real(
             max_line_w,
             font_service,
             font,
+            // 传入跨 segment 共享的断行表。
+            breaks,
+            // 传入当前逻辑行全局字符起点。
+            line_source_offset,
         );
         // 没有后续换行时当前段布局完成。
         let Some(next) = next else {
@@ -787,6 +755,8 @@ fn layout_text_content_real(
         *current_x = 0.0;
         // 新行至少保留默认行高和当前段行高中的较大值。
         *current_line_h = default_line_h.max(seg_line_h);
+        // 计算本轮逻辑行和强制换行分隔符共同消费的字符数量。
+        consumed_chars += remaining.chars().count() - next.chars().count();
         // 继续处理换行后的剩余内容。
         remaining = next;
     }
@@ -810,6 +780,8 @@ fn layout_text_content_real_line(
     max_line_w: &mut f32,
     font_service: &FontService,
     font: &FontHandle,
+    breaks: &LineBreakMap,
+    source_offset: usize,
 ) {
     let advances = real_char_advances(font_service, font, content, fs);
     let chars: Vec<char> = content.chars().collect();
@@ -819,42 +791,50 @@ fn layout_text_content_real_line(
     let total = chars.len();
 
     while start < total {
-        let mut end = start;
-        // 从当前字符扫描到下一个 Unicode 空白，保持真实字体路径的 token 边界。
-        while end < total && !chars[end].is_whitespace() {
-            // 逐字符扩展当前非空白 token。
+        // 至少把当前字符纳入 UAX 原子片段。
+        let mut end = start + 1;
+        // 扩展到下一个标准允许或强制断行边界。
+        while end < total && !breaks.allows_at(source_offset + end) {
+            // 继续保留禁止断行的后继字符。
             end += 1;
-        }
-        // 将边界空白并入当前 token，保持源文本字符顺序不变。
-        if end < total && chars[end].is_whitespace() {
-            // 把当前空白字符留在当前 token 尾部，后续正文从下一个 token 开始。
-            end += 1;
-        }
-        if end == start {
-            start = end;
-            continue;
         }
 
         let word_advances = &advances[start..end.min(advances.len())];
         let word_w: f32 = word_advances.iter().sum();
 
-        if *current_x + word_w > max_width && !glyphs.is_empty() {
+        if breaks.allows_at(source_offset + start)
+            && *current_x + word_w > max_width
+            && !glyphs.is_empty()
+        {
             *max_line_w = (*max_line_w).max(*current_x);
             flush_line(lines, glyphs, seg_line_h);
             *current_x = 0.0;
         }
 
-        if *current_x + word_w > max_width && glyphs.is_empty() {
+        if *current_x + word_w > max_width {
             let mut word_x = *current_x;
-            for (&ch, &cw) in chars[start..end].iter().zip(word_advances) {
-                if word_x + cw > max_width && word_x > 0.0 && !glyphs.is_empty() {
+            for (relative_index, (&ch, &cw)) in chars[start..end]
+                // 遍历片段字符与真实 advance。
+                .iter()
+                // 保持字符和宽度一一对应。
+                .zip(word_advances)
+                // 保留片段内逻辑字符索引。
+                .enumerate()
+            {
+                // 零 advance 的 ligature 后继字符不能形成紧急断点。
+                let emergency_break = cw > 0.0
+                    // 共享表必须允许当前长单词边界。
+                    && breaks.emergency_allows_at(source_offset + start + relative_index);
+                if word_x + cw > max_width && word_x > 0.0 && !glyphs.is_empty() && emergency_break
+                {
                     *max_line_w = (*max_line_w).max(word_x);
                     flush_line(lines, glyphs, seg_line_h);
                     word_x = 0.0;
                 }
                 glyphs.push(LayoutGlyph {
                     segment_idx: seg_idx,
-                    global_char_idx: 0,
+                    // 直接保存完整源字符索引，保留 CRLF 与跨样式段偏移。
+                    global_char_idx: source_offset + start + relative_index,
                     ch,
                     x: word_x,
                     width: cw,
@@ -868,10 +848,18 @@ fn layout_text_content_real_line(
             }
             *current_x = word_x;
         } else {
-            for (&ch, &cw) in chars[start..end].iter().zip(word_advances) {
+            for (relative_index, (&ch, &cw)) in chars[start..end]
+                // 遍历片段字符与真实 advance。
+                .iter()
+                // 保持字符和宽度一一对应。
+                .zip(word_advances)
+                // 保留片段内逻辑字符索引。
+                .enumerate()
+            {
                 glyphs.push(LayoutGlyph {
                     segment_idx: seg_idx,
-                    global_char_idx: 0,
+                    // 直接保存完整源字符索引，保留 CRLF 与跨样式段偏移。
+                    global_char_idx: source_offset + start + relative_index,
                     ch,
                     x: *current_x,
                     width: cw,
