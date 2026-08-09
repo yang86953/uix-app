@@ -12,6 +12,8 @@ pub(crate) struct LayoutGlyph {
     pub segment_idx: usize,
     // 保存完整逻辑源中的 Unicode 标量索引。
     pub global_char_idx: usize,
+    // 保存当前视觉行应用 UAX #9 L1 后的嵌入级别。
+    pub bidi_level: u8,
     // 保存源字符。
     pub ch: char,
     // 保存行内水平位置。

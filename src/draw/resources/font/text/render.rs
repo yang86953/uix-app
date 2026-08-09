@@ -395,17 +395,20 @@ impl<'a> TextRenderService<'a> {
             let gc = line.glyph_count;
             let ge = gs + gc;
             let glyphs = &layout.glyphs[gs..ge.min(layout.glyphs.len())];
-            let Some((line_x0, line_x1)) =
-                crate::draw::resources::font::text_backend::glyph_selection_x_range(
-                    glyphs, start, end,
-                )
-            else {
-                continue;
-            };
-            let x0 = pos.x + line_x0;
-            let x1 = pos.x + line_x1;
             let y0 = pos.y + line.y;
-            rects.push(Rect::new(x0, y0, (x1 - x0).max(0.0), visual_h));
+            // 双向行的一个逻辑选择区可能形成多个不连续视觉片段。
+            let line_ranges = crate::draw::resources::font::text_backend::glyph_selection_x_ranges(
+                glyphs, start, end,
+            );
+            // 逐个绘制连续视觉选择片段。
+            for (line_x0, line_x1) in line_ranges {
+                // 将行内片段左缘平移到绘制原点。
+                let x0 = pos.x + line_x0;
+                // 将行内片段右缘平移到绘制原点。
+                let x1 = pos.x + line_x1;
+                // 每个连续视觉片段独立形成选择矩形。
+                rects.push(Rect::new(x0, y0, (x1 - x0).max(0.0), visual_h));
+            }
         }
         rects
     }

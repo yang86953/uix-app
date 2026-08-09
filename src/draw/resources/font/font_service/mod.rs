@@ -6,9 +6,14 @@
 
 mod font_cache;
 mod font_layout;
+// 保存 FontService 的 UAX #9 字体段切分与视觉 cluster 重排。
+mod bidi_layout;
 // 使用独立纯内存后端覆盖 FontService 的 UAX #14 集成契约。
 #[cfg(test)]
 mod line_break_tests;
+// 验证 FontService 的混排视觉顺序与方向感知交互几何。
+#[cfg(test)]
+mod bidi_layout_tests;
 
 pub use font_cache::{FontFace, GlyphCache};
 
@@ -575,18 +580,14 @@ impl FontService {
                     if glyphs.is_empty() {
                         return Some(li.start_char.min(total_chars));
                     }
-                    for g in glyphs {
-                        if point.x < g.x + g.width * 0.5 {
-                            return Some(g.char_index.min(total_chars));
-                        }
-                    }
-                    return Some(
-                        glyphs
-                            .last()
-                            // cluster 右侧命中返回排他的源字符终点。
-                            .map(|g| g.char_end.min(total_chars))
-                            .unwrap_or(li.end_char.min(total_chars)),
-                    );
+                    // 使用视觉 cluster 与行级 UAX #9 方向解析逻辑边界。
+                    return crate::draw::resources::font::text_backend::glyph_hit_test_index(
+                        // 传入当前视觉行字形。
+                        glyphs, // 传入行内水平坐标。
+                        point.x,
+                    )
+                    // 所有返回边界都限制在真实源字符数量内。
+                    .map(|index| index.min(total_chars));
                 }
             }
             if let Some(last) = layout.lines.last() {
@@ -609,8 +610,25 @@ impl FontService {
         }
         let f = *font;
         let layout = self.layout_text(&f, text, opts);
-        if let Some(g) = layout.glyphs.iter().find(|g| g.char_index == char_index) {
-            return g.x;
+        // 逐行从同一视觉 cluster 数据查询方向感知光标边界。
+        for line in &layout.lines {
+            // 逻辑边界必须落在当前行源范围内。
+            if char_index < line.start_char || char_index > line.end_char {
+                // 继续检查下一视觉行。
+                continue;
+            }
+            // 取得当前行字形范围。
+            let glyph_end = (line.glyph_start + line.glyph_count).min(layout.glyphs.len());
+            // 使用共享几何辅助查询 RTL 或 LTR 边界位置。
+            if let Some(x) = crate::draw::resources::font::text_backend::glyph_cursor_x(
+                // 传入当前视觉行字形。
+                &layout.glyphs[line.glyph_start..glyph_end],
+                // 传入逻辑光标边界。
+                char_index,
+            ) {
+                // 返回同一布局派生的主光标坐标。
+                return x;
+            }
         }
         // 落在末尾或缺口：取最后一个 char_index < 目标 的右缘
         layout

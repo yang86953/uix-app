@@ -112,6 +112,8 @@ mod layout_types;
 pub(crate) use layout_types::*;
 // 集中保存估算字符宽度、行刷新与完整逻辑源拼接。
 mod layout_metrics;
+// 保存 RichText 的段落级 UAX #9 视觉 run 定位。
+mod bidi_layout;
 mod parse;
 mod rich_text_interaction;
 // 将 shaping cluster 到富文本 advance 的映射隔离为小型内部模块。
@@ -119,6 +121,9 @@ mod shaped_advance;
 // 将 UAX #14 富文本验收矩阵放入独立测试模块，保持生产文件规模受控。
 #[cfg(test)]
 mod line_break_tests;
+// 验证跨样式段的 UAX #9 视觉 run 布局。
+#[cfg(test)]
+mod bidi_layout_tests;
 
 pub use self::parse::{layout_rich_text_segments, parse_rich_text};
 
@@ -548,15 +553,28 @@ component! {
             let mut start = 0;
             while start < line.glyphs.len() {
                 let segment_idx = line.glyphs[start].segment_idx;
+                // 同一绘制 run 还必须共享 UAX #9 行级方向。
+                let bidi_level = line.glyphs[start].bidi_level;
                 let mut end = start + 1;
-                while end < line.glyphs.len() && line.glyphs[end].segment_idx == segment_idx {
+                while end < line.glyphs.len()
+                    && line.glyphs[end].segment_idx == segment_idx
+                    && line.glyphs[end].bidi_level == bidi_level
+                {
                     end += 1;
                 }
                 let run = &line.glyphs[start..end];
                 let content = run.iter().map(|glyph| glyph.ch).collect::<String>();
                 let first = &run[0];
                 let fs = first.font_size;
-                let gx = frame.x + first.x;
+                // RTL run 内保留逻辑文本顺序，因此绘制原点取全部字符视觉左缘。
+                let gx = frame.x
+                    + run
+                        // 遍历当前单向 run 字符。
+                        .iter()
+                        // 提取字符视觉左缘。
+                        .map(|glyph| glyph.x)
+                        // 聚合 run 左缘。
+                        .fold(f32::INFINITY, f32::min);
                 let gy = line.y + (line.height - fs) * 0.5
                     + if matches!(self.segments.get(segment_idx), Some(RichTextSegment::Code { .. })) { 2.0 } else { 0.0 };
                 let focused_link = self.focused
@@ -837,73 +855,6 @@ impl RichText {
     }
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// 公共渲染辅助函数（供非 RichText widget 直接渲染富文本内容使用）
-// ════════════════════════════════════════════════════════════════════════════
-
-/// 计算富文本布局并返回尺寸信息
-///
-/// 可用于非 RichText widget 中直接测量富文本尺寸。
-/// 返回 (总高度, 总字符数, 最大行宽)。
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::core::Point;
-    use crate::ui::component::traits::EventHandler;
-    use crate::ui::event::SystemEvent;
-    use crate::ui::{KeyMod, MouseButton};
-
-    fn dummy_event() -> SystemEvent {
-        SystemEvent::PointerUp {
-            pos: Point::new(0.0, 0.0),
-            button: MouseButton::Left,
-            mods: KeyMod::NONE,
-        }
-    }
-
-    #[test]
-    fn on_link_callback_fires_when_submit_emitted() {
-        let calls = Rc::new(RefCell::new(Vec::new()));
-        let hook = calls.clone();
-        let rich = RichText::new().on_link(move |url| hook.borrow_mut().push(url.to_string()));
-        rich.pending_submit
-            .replace(Some("https://example.com".to_string()));
-
-        let event = rich.semantic_event(ComponentId::default(), &dummy_event());
-        assert!(event.is_some(), "应发出 Submit 语义事件");
-        assert_eq!(*calls.borrow(), vec!["https://example.com".to_string()]);
-    }
-
-    #[test]
-    fn on_link_not_called_without_pending_submit() {
-        let calls = Rc::new(RefCell::new(0usize));
-        let hook = calls.clone();
-        let rich = RichText::new().on_link(move |_| *hook.borrow_mut() += 1);
-
-        let event = rich.semantic_event(ComponentId::default(), &dummy_event());
-        assert!(event.is_none());
-        assert_eq!(*calls.borrow(), 0, "无待提交链接时不应触发回调");
-    }
-
-    #[test]
-    fn on_link_and_submit_semantic_event_coexist() {
-        let calls = Rc::new(RefCell::new(Vec::new()));
-        let hook = calls.clone();
-        let rich = RichText::new().on_link(move |url| hook.borrow_mut().push(url.to_string()));
-        rich.pending_submit
-            .replace(Some("https://uix.dev/route".to_string()));
-
-        let Some(event) = rich.semantic_event(ComponentId::default(), &dummy_event()) else {
-            panic!("Submit 语义事件保留");
-        };
-        assert_eq!(
-            event.kind,
-            crate::ui::SemanticKind::Submit,
-            "与 SemanticKind::Submit 共存"
-        );
-        assert!(
-            matches!(&event.payload, crate::ui::SemanticPayload::Text(url) if url == "https://uix.dev/route")
-        );
-        assert_eq!(*calls.borrow(), vec!["https://uix.dev/route".to_string()]);
-    }
-}
+#[path = "mod_tests.rs"]
+mod tests;

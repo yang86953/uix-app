@@ -97,6 +97,7 @@ impl BidiAnalysis {
     }
 
     /// 返回全部段落及其自动解析的基准级别。
+    #[cfg(test)]
     pub(crate) fn paragraphs(&self) -> &[BidiParagraph] {
         // 只读借用稳定段落表。
         &self.paragraphs
