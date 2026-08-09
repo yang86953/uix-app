@@ -1,5 +1,5 @@
-// 引入受限表达式 AST。
-use super::Expression;
+// 引入受限表达式与顶层声明 AST。
+use super::{Declaration, Expression, StyleProperty};
 
 // 表示源码中的半开字节区间及其一基行列位置。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,6 +17,8 @@ pub(crate) struct SourceSpan {
 // 表示一个已经通过唯一根约束的 UIX 文档。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Document {
+    // 保存根元素之前的顶层声明顺序。
+    pub(crate) declarations: Vec<Declaration>,
     // 保存文档的唯一根元素。
     pub(crate) root: Element,
 }
@@ -54,6 +56,8 @@ pub(crate) enum AttributeValue {
     Literal(String),
     // 保存已经完成受限语法验证的表达式。
     Expression(ExpressionNode),
+    // 保存使用共享样式语法解析的内联属性。
+    InlineStyle(Vec<StyleProperty>),
 }
 
 // 表示条件渲染或循环元素的专用绑定。
@@ -73,6 +77,8 @@ pub(crate) enum ControlBinding {
         index_span: Option<SourceSpan>,
         // 保存数据源表达式。
         iterable: ExpressionNode,
+        // 保存可选稳定行身份表达式。
+        key: Option<ExpressionNode>,
     },
 }
 

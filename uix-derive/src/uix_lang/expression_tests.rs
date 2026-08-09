@@ -153,13 +153,19 @@ fn parses_paths_indexes_and_allowed_calls() {
     parse_expression("todos.removeAt(i)", origin()).expect("removeAt 应成功解析");
     // push 同样属于允许的数组操作。
     parse_expression("todos.push(item)", origin()).expect("push 应成功解析");
+    // 保留事件参数允许成员访问。
+    parse_expression("onClick($event.x)", origin()).expect("$event 应成功解析");
+    // 其他美元前缀标识符必须失败。
+    let error = parse_expression("$other", origin()).expect_err("未知美元标识符必须失败");
+    // 诊断必须指出 $event 保留规则。
+    assert!(error.message.contains("$event"));
 }
 
 // 验证 If、For 与事件属性直接携带已验证表达式 AST。
 #[test]
 fn parses_if_for_bindings_and_event_calls() {
     // 构造覆盖两类控制元素与事件调用的文档。
-    let source = "<App><If {count > 0}><Text>{count}</Text></If><For {item} {index} in {items}><Button @click=\"setState(items: items.removeAt(index))\">{item.name}</Button></For></App>";
+    let source = "<App><If {count > 0}><Text>{count}</Text></If><For {item} {index} in {items} key={item.id}><Button @click=\"setState(items: items.removeAt(index))\">{item.name}</Button></For></App>";
     // 解析完整文档。
     let document = parse_document(source).expect("控制绑定文档应成功解析");
     // 提取 If 元素。
@@ -187,6 +193,8 @@ fn parses_if_for_bindings_and_event_calls() {
         iterable,
         // 借用可选索引名。
         index_binding,
+        // 借用稳定行身份。
+        key,
         // 忽略已单独验证的绑定跨度。
         ..
     }) = &for_element.control
@@ -198,6 +206,13 @@ fn parses_if_for_bindings_and_event_calls() {
     assert_eq!(binding, "item");
     // 第二绑定必须保留 index。
     assert_eq!(index_binding.as_deref(), Some("index"));
+    // key 必须解析为成员访问表达式。
+    assert!(matches!(
+        // 借用 key 表达式。
+        key,
+        // 要求成员访问 AST。
+        Some(node) if matches!(node.expression.kind, ExpressionKind::Member { .. })
+    ));
     // 数据源必须是 items 标识符。
     assert!(
         matches!(iterable.expression.kind, ExpressionKind::Identifier(ref value) if value == "items")
@@ -284,6 +299,18 @@ fn rejects_invalid_call_and_for_shapes() {
         .expect_err("For 重复绑定必须失败");
     // 诊断必须明确重名约束。
     assert!(error.message.contains("不能同名"));
+    // For key 必须使用表达式而非双引号字面量。
+    let error = parse_document("<For {item} in {items} key=\"item.id\" />")
+        // 字面 key 必须失败。
+        .expect_err("For 字面 key 必须失败");
+    // 诊断必须明确花括号要求。
+    assert!(error.message.contains("花括号表达式"));
+    // For key 只能声明一次。
+    let error = parse_document("<For {item} in {items} key={item.id} key={item.id} />")
+        // 重复 key 必须失败。
+        .expect_err("For 重复 key 必须失败");
+    // 诊断必须明确重复属性。
+    assert!(error.message.contains("重复声明"));
 }
 
 // 验证多行表达式跨度使用文档绝对行列。
