@@ -14,9 +14,9 @@ use super::{
     generate_button_group, generate_column, generate_container, generate_divider,
     generate_expression, generate_float_button, generate_grid, generate_handler_expression,
     generate_input, generate_input_group, generate_input_number, generate_orphan_col,
-    generate_range_slider, generate_row, generate_scroll_view, generate_slider, generate_space,
-    generate_splitter, generate_theme_toggle, generate_typography, generate_virtual_scroll,
-    generate_window_control,
+    generate_range_slider, generate_rate, generate_row, generate_scroll_view, generate_slider,
+    generate_space, generate_splitter, generate_theme_toggle, generate_typography,
+    generate_virtual_scroll, generate_window_control,
 };
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
@@ -97,6 +97,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "Slider" => generate_slider(element),
         // 区间滑块映射到公开 RangeSlider 范围、步长与双状态绑定契约。
         "RangeSlider" => generate_range_slider(element),
+        // 评分组件映射到公开 Rate 星数、半星与状态绑定契约。
+        "Rate" => generate_rate(element),
         // Col 只能由 Row 或 Grid 解释其父级布局语义。
         "Col" => generate_orphan_col(element),
         // 图标映射到公开 Icon 组件。
@@ -127,7 +129,7 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider 或 RangeSlider，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider 或 Rate，或先登记组件状态",
         )),
     }
 }
