@@ -57,14 +57,6 @@ pub(crate) fn d3d12_warp_test_context_available() -> bool {
     crate::native::presentation::graphics::d3d12::warp_test_context_available()
 }
 
-/// 创建当前平台对应的 Platform 实例。
-// 保留不带运行时队列的兼容平台工厂入口。
-#[allow(dead_code)]
-#[cfg(windows)]
-pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
-    create_platform_with_pending(PendingFailureQueue::new())
-}
-
 #[cfg(windows)]
 pub(crate) fn create_platform_with_pending(
     pending_failures: PendingFailureQueue,
@@ -76,26 +68,12 @@ pub(crate) fn create_platform_with_pending(
     ))
 }
 
-// 保留不带运行时队列的兼容平台工厂入口。
-#[allow(dead_code)]
-#[cfg(all(unix, not(target_os = "macos")))]
-pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
-    create_platform_with_pending(PendingFailureQueue::new())
-}
-
 #[cfg(all(unix, not(target_os = "macos")))]
 pub(crate) fn create_platform_with_pending(
     pending_failures: PendingFailureQueue,
 ) -> Result<Box<dyn Platform>, Error> {
     let platform = crate::native::backends::linux::platform::LinuxPlatform::new(pending_failures)?;
     Ok(Box::new(platform))
-}
-
-// 保留不带运行时队列的兼容平台工厂入口。
-#[allow(dead_code)]
-#[cfg(target_os = "macos")]
-pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
-    create_platform_with_pending(PendingFailureQueue::new())
 }
 
 #[cfg(target_os = "macos")]
@@ -105,13 +83,6 @@ pub(crate) fn create_platform_with_pending(
     Ok(Box::new(
         crate::native::backends::macos::platform::MacosPlatform::new(pending_failures),
     ))
-}
-
-// 保留不带运行时队列的兼容平台工厂入口。
-#[allow(dead_code)]
-#[cfg(not(any(windows, unix)))]
-pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
-    create_platform_with_pending(PendingFailureQueue::new())
 }
 
 #[cfg(not(any(windows, unix)))]

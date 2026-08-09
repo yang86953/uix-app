@@ -20,7 +20,7 @@
 >
 > **按 recipe 呈现边界**：`PresentFrame` 载荷并集与 `IGraphicsContext::present`、`present_pixels`、`present_image` 已物理移除。CPU × PixelUpload 只能经 `PixelUploadSurface::present_pixels` 上传并提交 retained pixels；D3D11 与 WGL/EGL 生产 GPU backend 的最终提交只由 thin RHI `GraphicsSurface::present` 持有。零构造调用的 Wayland `GpuPresenter`、`SwapchainPresentation` 及其 thread-bound/EGL 平行实现已经删除；D3D12 测试 context 与 fake 也不伪造无消费者的兼容 present。
 >
-> **构造生命周期边界**：`IGraphicsContext` 不再声明二阶段 `initialize`，thread-bound wrapper 与 D3D11/D3D12/Vulkan/Metal/WGL/EGL 实现也不再转发或提供空操作。registry 只接收已经完成 surface 绑定和初始尺寸归一化的 context；构造失败直接返回 typed error，成功值可立即接受 resize、RHI probe 与呈现。仓库内部零调用的单 `GraphicsApi` raw-surface 工厂链已经删除，生产构造与恢复只通过完整 `GraphicsRecipe` 和运行时 `PendingFailureQueue` 进入精确 registry 行。
+> **构造生命周期边界**：`IGraphicsContext` 不再声明二阶段 `initialize`，thread-bound wrapper 与 D3D11/D3D12/Vulkan/Metal/WGL/EGL 实现也不再转发或提供空操作。registry 只接收已经完成 surface 绑定和初始尺寸归一化的 context；构造失败直接返回 typed error，成功值可立即接受 resize、RHI probe 与呈现。仓库内部零调用的单 `GraphicsApi` raw-surface 工厂链、backend-only 候选投影与自动创建空故障队列的 platform/recipe 构造入口已经删除，生产构造与恢复只通过完整 `GraphicsRecipe` 和运行时 `PendingFailureQueue` 进入精确 registry 行。
 >
 > **设备准备边界**：`IGraphicsContext` 与 `RenderBackend` 不再声明平台语义的 `make_current`。`RenderSession::begin_frame` 只调用语义型 `prepare_frame`，GPU 实现把它收敛到 `GraphicsDevice::maintain`；OpenGL adapter 在该薄 RHI 维护入口内恢复 WGL/EGL owner context，D3D11 在同一入口执行设备健康检查。无 acquire 的 overlay texture copy 事务也复用这一设备准备边界。
 >
@@ -52,7 +52,7 @@
 
 ## 组件：GraphicsRecipe
 
-registry 只陈述可构造候选；graphics 决定选择和恢复策略。显式 API 请求不偷换其他 API，自动模式可按固定候选顺序降级。内部构造不得把 recipe 降为单 backend 查找，因为同一 API 可以拥有多个 raster × present 行；bootstrap 与运行时恢复必须携带完整 `GraphicsRecipe` 和同一作用域的 callback 故障队列。
+registry 只陈述可构造候选；graphics 决定选择和恢复策略。显式 API 请求不偷换其他 API，自动模式可按固定候选顺序降级。内部构造不得把 recipe 降为单 backend 查找或候选投影，因为同一 API 可以拥有多个 raster × present 行；bootstrap、平台创建与运行时恢复必须携带完整 `GraphicsRecipe` 和同一作用域的 callback 故障队列，不能在兼容入口内临时创建空队列。
 
 公开选择面只有 `platform::graphics::GraphicsBackend`，且不包含 `Auto`。公开 builder 在边界处把具体 API 转换为 crate-private `GraphicsApi`；只有省略 builder、空配置或 `auto` 配置才构造私有 `GraphicsSelection::Automatic`。显式策略只保留同一 API 的 registry 行，自动策略只接纳 Active recipe 并保持 GPU-native 优先；CPU fallback 由 App 在 GPU 候选耗尽后整体执行，不进入任何设备/API 枚举。
 

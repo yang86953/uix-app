@@ -10,7 +10,7 @@
 //! |------|------|
 //! | [`platform`] | System 共享契约：`Platform` trait（capabilities / windowing / presentation 共同依赖的窄能力） |
 //! | [`present`] | System 共享契约：presentation 契约集（`IGraphicsContext` / `IPresenter` / 私有 `GraphicsApi` 等；`PlatformWindow` 的 presenter/graphics 访问器与其互引用，按无环规则归 System 边界） |
-//! | [`factory`] | 组合根：`create_platform` / `available_memory_bytes` 与 `GraphicsRecipe` 登记（只负责选择、创建、注入，不拥有领域规则） |
+//! | [`factory`] | 组合根：`create_platform_with_pending` / `available_memory_bytes` 与 `GraphicsRecipe` 登记（只负责选择、创建、注入，不拥有领域规则） |
 //! | [`backends`] | OS 适配层：唯一允许 `#[cfg(target_os = ...)]` 的目录，实现各 Module 的窄能力契约 |
 //! | [`test_harness`] | 测试替身（`test-harness` feature） |
 //!
@@ -24,7 +24,7 @@
 //! | `diagnostics` | runtime 级观察、报告与恢复协调 | 无（见 `crate::diagnostics`） |
 //! | `agent_transport` | 可选同用户本机 IPC 与 discovery | `windowing` / `diagnostics`（feature `agent-control`） |
 //!
-//! 业务流向由 System 编排（`create_platform` 与公开门面），Module 之间除上表
+//! 业务流向由 System 编排（`create_platform_with_pending` 与公开门面），Module 之间除上表
 //! 窄契约外零依赖；禁止 Module 直接引用、持有、发现或回调兄弟 Module。
 //!
 //! [系统列表]: <file:///C:/data/note/我的项目/软件/UIX App/架构/系统列表.md>
