@@ -62,10 +62,6 @@ impl IGraphicsContext for FakeGraphicsContext {
         )
     }
 
-    fn graphics_backend(&self) -> crate::native::present::GraphicsApi {
-        crate::native::present::GraphicsApi::OpenGlEs
-    }
-
     fn try_shutdown(&mut self) -> crate::core::Result<()> {
         self.state.shutdown_called = true;
         Ok(())

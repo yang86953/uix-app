@@ -28,12 +28,6 @@ impl IGraphicsContext for WglContext {
         NativeRasterCaps::retained_rhi_with_additive()
     }
 
-    // 返回当前图形 backend 标识。
-    fn graphics_backend(&self) -> crate::native::present::GraphicsApi {
-        // WGL adapter 使用 OpenGL ES backend 标签。
-        crate::native::present::GraphicsApi::OpenGlEs
-    }
-
     // 返回 WGL drawable 的完整 live surface 快照。
     fn present_surface(&self) -> crate::native::present::PresentSurface {
         // 逻辑宽度无效时保留既有安全比例。

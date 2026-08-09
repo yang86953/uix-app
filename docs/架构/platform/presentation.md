@@ -28,6 +28,8 @@
 >
 > **live surface 元数据边界**：`GraphicsContextCaps` 只描述 backend、raster/present recipe、coherency 与遮挡能力，不携带动态 DPR。`IGraphicsContext` 不再分离暴露 `width`、`height` 或 DPR；所有 context 必须一次返回完整 `PresentSurface`，GPU backend、PixelUpload runtime 与诊断场景从同一快照派生 drawable extent 和 DPR，不能拼装可能跨 generation 的状态。thread-bound wrapper 也只缓存并在成功生命周期变更后整体刷新该快照。
 >
+> **recipe 查询边界**：`IGraphicsContext` 不再声明由 `GraphicsContextCaps` 重复派生的 `graphics_backend`、`supports_gl_proc_address` 或 `supports_pixel_present`。需要 adapter 身份的 typed error 一次读取 `caps().backend`；是否可借用 thin RHI 或 `PixelUploadSurface` 仍由对应专用视图决定，不能通过无消费者布尔查询猜测 recipe。
+>
 > **surface readback 边界**：`IGraphicsContext` 与 thread-bound wrapper 不再声明或转发 `read_pixels`。同步窗口 surface 回读是 `GraphicsCapabilities::surface_readback` 声明的可选 `GraphicsSurface::read_surface_pixels` 操作；D3D11 和 OpenGL ES adapter 如实启用，缺少能力时返回 typed failure。Vulkan GFX-R5 与 D3D12 测试期保留的内部诊断辅助不属于通用 thin RHI surface 能力。
 
 ## 组件清单
