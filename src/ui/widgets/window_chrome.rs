@@ -11,10 +11,15 @@ use crate::ui::component::traits::{
 use crate::ui::component_snapshot::SnapshotFields;
 use crate::ui::event::WindowAction;
 use crate::ui::layout::engine::BoxModel;
-use crate::ui::layout::{AlignItems, LayoutChild};
-use crate::ui::theme::style::{apply_style, Style, StyleState};
+// 引入标准窗口控件组合使用的对齐契约。
+use crate::ui::layout::{AlignItems, JustifyContent, LayoutChild};
+// 引入主题中性颜色角色。
+use crate::ui::theme::NeutralRole;
+// 引入窗口交互区域与标准外观使用的样式类型。
+use crate::ui::theme::style::{ColorValue, Style, StyleState, apply_style};
 use crate::ui::view::{View, ViewNode};
-use crate::ui::widgets::Container;
+// 引入标准窗口控件的容器、图标与行组合原语。
+use crate::ui::widgets::{Container, Icon, row};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 /// 自定义标题栏可触发的标准窗口控制。
@@ -25,6 +30,13 @@ pub enum WindowControl {
     MaximizeRestore,
     Close,
 }
+
+// 定义标准窗口控制的默认宽度。
+const STANDARD_WINDOW_CONTROL_WIDTH: f32 = 46.0;
+// 定义标准窗口控制的默认高度。
+const STANDARD_WINDOW_CONTROL_HEIGHT: f32 = 40.0;
+// 定义标准窗口控制图标尺寸。
+const STANDARD_WINDOW_CONTROL_ICON_SIZE: f32 = 14.0;
 
 impl WindowControl {
     const fn default_accessible_name(self) -> &'static str {
@@ -409,4 +421,152 @@ pub fn window_control_named(
         WindowInteractionRegion::control(control, accessible_name.into()),
         vec![content.build()],
     )
+}
+
+// 构造一个带标准外观与默认无障碍语义的窗口控制。
+fn standard_window_control(
+    // 接收平台窗口动作。
+    control: WindowControl,
+    // 接收 Lucide 图标名称。
+    icon: &'static str,
+) -> ViewNode {
+    // 复用窗口交互包装器并只把图标作为展示内容。
+    window_control(
+        // 传入平台窗口动作。
+        control,
+        // 构造不形成嵌套交互目标的图标叶视图。
+        ViewNode::leaf(Icon::new(icon).size(STANDARD_WINDOW_CONTROL_ICON_SIZE)),
+    )
+    // 采用标准标题栏控制宽度。
+    .width(STANDARD_WINDOW_CONTROL_WIDTH)
+    // 采用标准标题栏高度。
+    .height(STANDARD_WINDOW_CONTROL_HEIGHT)
+    // 在交叉轴居中图标。
+    .align(AlignItems::Center)
+    // 在主轴居中图标。
+    .justify(JustifyContent::Center)
+    // 使用当前主题的中性悬停背景。
+    .bg_hover(ColorValue::Neutral(NeutralRole::FillSecondary))
+    // 使用当前主题的中性焦点背景。
+    .bg_focus(ColorValue::Neutral(NeutralRole::Fill))
+    // 使用当前主题的中性按下背景。
+    .bg_active(ColorValue::Neutral(NeutralRole::FillTertiary))
+}
+
+/// 构造标准最小化、最大化/还原与关闭窗口控制组合。
+pub fn window_controls(
+    // 控制是否包含最小化动作。
+    show_minimize: bool,
+    // 控制是否包含最大化/还原动作。
+    show_maximize: bool,
+    // 控制是否包含关闭动作。
+    show_close: bool,
+) -> ViewNode {
+    // 按文档顺序预留最多三个控制节点。
+    let mut controls = Vec::with_capacity(3);
+    // 按声明决定是否加入最小化控制。
+    if show_minimize {
+        // 添加带标准语义与图标的最小化控制。
+        controls.push(standard_window_control(
+            // 使用平台最小化动作。
+            WindowControl::Minimize,
+            // 使用标准最小化图标。
+            "minus",
+        ));
+    }
+    // 按声明决定是否加入最大化/还原控制。
+    if show_maximize {
+        // 添加带标准语义与图标的最大化/还原控制。
+        controls.push(standard_window_control(
+            // 使用平台最大化/还原动作。
+            WindowControl::MaximizeRestore,
+            // 使用标准最大化图标。
+            "maximize-2",
+        ));
+    }
+    // 按声明决定是否加入关闭控制。
+    if show_close {
+        // 添加带标准语义与图标的关闭控制。
+        controls.push(standard_window_control(
+            // 使用平台关闭动作。
+            WindowControl::Close,
+            // 使用标准关闭图标。
+            "x",
+        ));
+    }
+    // 使用无间距行容器保持标准标题栏排列。
+    row(controls)
+}
+
+// 集中验证标准窗口控制组合的公开结构契约。
+#[cfg(test)]
+mod tests {
+    // 引入当前模块的窗口控制构造器与快照类型。
+    use super::*;
+
+    // 提取组合节点直接子项的窗口动作顺序。
+    fn child_controls(node: &ViewNode) -> Vec<WindowControl> {
+        // 把每个交互包装器快照投影为窗口动作。
+        node.children
+            // 按源码顺序遍历直接子项。
+            .iter()
+            // 要求每个子项都是窗口控制交互包装器。
+            .map(|child| match child.widget.snapshot_fields() {
+                // 返回快照持有的窗口动作。
+                SnapshotFields::WindowControl { control, .. } => control,
+                // 非窗口控制子项表示组合契约被破坏。
+                _ => panic!("window_controls 只能包含窗口控制子项"),
+            })
+            // 收集稳定动作顺序。
+            .collect()
+    }
+
+    // 验证默认三按钮集合保持文档顺序。
+    #[test]
+    fn standard_controls_preserve_documented_order() {
+        // 构造全部标准窗口控制。
+        let controls = window_controls(true, true, true);
+        // 顺序必须固定为最小化、最大化/还原、关闭。
+        assert_eq!(
+            // 提取实际动作顺序。
+            child_controls(&controls),
+            // 声明文档化动作顺序。
+            vec![
+                // 首项为最小化。
+                WindowControl::Minimize,
+                // 次项为最大化/还原。
+                WindowControl::MaximizeRestore,
+                // 末项为关闭。
+                WindowControl::Close,
+            ]
+        );
+        // 每个标准动作必须保留非空的默认无障碍名称。
+        assert!(controls.children.iter().all(
+            // 检查每个交互包装器的快照语义。
+            |child| matches!(
+                // 读取组件公开快照字段。
+                child.widget.snapshot_fields(),
+                // 只接受带非空名称的窗口控制快照。
+                SnapshotFields::WindowControl { accessible_name, .. } if !accessible_name.is_empty()
+            )
+        ));
+    }
+
+    // 验证显示开关只影响对应动作节点。
+    #[test]
+    fn standard_controls_respect_visibility_flags() {
+        // 只构造最大化/还原控制。
+        let maximize_only = window_controls(false, true, false);
+        // 组合中只能保留最大化/还原动作。
+        assert_eq!(
+            // 提取选择性组合动作。
+            child_controls(&maximize_only),
+            // 声明唯一预期动作。
+            vec![WindowControl::MaximizeRestore]
+        );
+        // 全部关闭时仍返回合法的空行视图。
+        let hidden = window_controls(false, false, false);
+        // 空组合不能残留任何交互节点。
+        assert!(hidden.children.is_empty());
+    }
 }

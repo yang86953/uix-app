@@ -75,6 +75,8 @@ pub use crate::ui::{
     SnapshotSource, SnapshotTransferItem, SnapshotValue, SystemEvent, SystemEventKind, ThemeTokens,
     TokenProvider, WidgetChildren, WidgetComponent, WindowControl,
 };
+// 在便捷导入面公开标准窗口控制组合构造器。
+pub use crate::ui::window_controls;
 pub use crate::ui::{
     Animated, Animation, AnimationConfig, AnimationGroup, AnimationGroupError, AnimationGroupItem,
     Easing, Keyframe, KeyframeAnimation, KeyframeError, Spring, SpringAnimation, Transition,

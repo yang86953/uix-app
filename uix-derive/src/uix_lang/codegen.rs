@@ -11,7 +11,7 @@ use super::{
 // 引入受限表达式与事件处理器生成入口。
 use super::{
     expression_uses_event, generate_divider, generate_expression, generate_handler_expression,
-    generate_space, generate_theme_toggle, generate_typography,
+    generate_space, generate_theme_toggle, generate_typography, generate_window_control,
 };
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
@@ -78,6 +78,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "Typography" => generate_typography(element),
         // 主题切换映射到现有 ThemeToggle Component。
         "ThemeToggle" => generate_theme_toggle(element),
+        // 窗口控制映射到 window_chrome 公开组合函数。
+        "WindowControl" => generate_window_control(element),
         // 文档内置组件按登记类别返回规划中诊断。
         _ if planned_builtin_diagnostic(element).is_some() => {
             // 前置条件保证诊断存在。
@@ -90,7 +92,7 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、Icon、Divider、Space、Typography、ThemeToggle、Container、Row 或 Column，或先登记组件状态",
+            "使用 Text、Label、Button、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row 或 Column，或先登记组件状态",
         )),
     }
 }

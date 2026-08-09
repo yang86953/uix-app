@@ -148,6 +148,8 @@ pub use widgets::combinators::{
 pub use widgets::window_chrome::{
     window_control, window_control_named, window_drag_region, WindowControl,
 };
+// 公开标准窗口控制组合构造器。
+pub use widgets::window_chrome::window_controls;
 pub use widgets::*;
 
 // 保持既有公开模块路径（公开面收口前的兼容层）：组件配置 / i18n / 剪贴板 /
