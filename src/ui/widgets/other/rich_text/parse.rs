@@ -36,7 +36,7 @@ pub fn layout_rich_text_segments(
 
 /// 将 Markdown 内容解析为 RichTextSegment 列表。
 ///
-/// 当前批次覆盖围栏代码、内联代码、链接、强调、删除线、下划线和换行。
+/// 当前批次覆盖围栏代码、内联代码、链接、HTTP(S) 自动链接、强调、删除线、下划线和换行。
 pub fn parse_rich_text(content: &str) -> Vec<RichTextSegment> {
     // 创建按文档顺序保存解析结果的段列表。
     let mut segments = Vec::new();
@@ -215,6 +215,21 @@ fn parse_inline_element(
             }
         }
     }
+    // 尖括号 HTTP(S) 自动链接复用现有 Link 段和统一交互路径。
+    if remaining.starts_with('<') {
+        // 只接受具有受支持 scheme 且不含空白或控制字符的完整目标。
+        if let Some(url) = parse_http_autolink(remaining) {
+            // 显示文本与提交目标都保留作者输入的原始 URL。
+            segments.push(RichTextSegment::Link {
+                // 自动链接没有独立标签，直接显示 URL。
+                content: url.to_string(),
+                // 链接提交继续使用同一个 URL。
+                url: url.to_string(),
+            });
+            // 开闭尖括号各占一个 ASCII 字节。
+            return Some(url.len() + 2);
+        }
+    }
     // 依次尝试双字符和单字符的 Markdown 样式标记。
     for marker in ["**", "__", "~~", "++", "*", "_"] {
         // 只在当前位置确实出现目标标记时继续。
@@ -258,7 +273,7 @@ fn may_start_inline_element(text: &str, cursor: usize) -> bool {
         return false;
     };
     // 只有这些 ASCII 标点可能触发内联解析。
-    matches!(ch, '`' | '[' | '*' | '_' | '~' | '+')
+    matches!(ch, '`' | '[' | '<' | '*' | '_' | '~' | '+')
 }
 
 /// 判断反斜杠后的字符是否属于可转义 Markdown 标点。
@@ -266,8 +281,56 @@ fn is_escaped_markdown_char(ch: char) -> bool {
     // 覆盖常见行内标记、链接标点和块级标记的字面转义。
     matches!(
         ch,
-        '\\' | '`' | '*' | '_' | '[' | ']' | '(' | ')' | '~' | '+' | '#' | '>'
+        '\\' | '`' | '*' | '_' | '[' | ']' | '(' | ')' | '<' | '>' | '~' | '+' | '#'
     )
+}
+
+// 解析尖括号包裹的 HTTP(S) 自动链接，并返回不含尖括号的原始 URL。
+fn parse_http_autolink(text: &str) -> Option<&str> {
+    // 自动链接必须从左尖括号开始。
+    let remaining = text.strip_prefix('<')?;
+    // 第一个右尖括号结束自动链接，未闭合输入保持字面文本。
+    let close = remaining.find('>')?;
+    // 提取尖括号内部的候选 URL。
+    let url = &remaining[..close];
+    // HTTP 与 HTTPS scheme 按 ASCII 大小写不敏感匹配，同时保留原文。
+    let scheme_len = if url
+        // 安全读取 HTTPS scheme 的 ASCII 前缀。
+        .get(..8)
+        // 仅在前缀完整匹配时接受 HTTPS。
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("https://"))
+    {
+        // HTTPS scheme 固定占八个 ASCII 字节。
+        8
+    } else if url
+        // 安全读取 HTTP scheme 的 ASCII 前缀。
+        .get(..7)
+        // 仅在前缀完整匹配时接受 HTTP。
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("http://"))
+    {
+        // HTTP scheme 固定占七个 ASCII 字节。
+        7
+    } else {
+        // 其他 scheme 继续作为普通文本处理。
+        return None;
+    };
+    // scheme 后必须存在目标内容，避免创建空交互链接。
+    if url.len() == scheme_len {
+        // 空目标保持作者输入的字面形式。
+        return None;
+    }
+    // 自动链接内部禁止空白、控制字符和嵌套左尖括号。
+    if url
+        // 逐 Unicode 字符检查确定性边界。
+        .chars()
+        // 任一非法字符都会让整个候选保持字面文本。
+        .any(|ch| ch.is_whitespace() || ch.is_control() || ch == '<')
+    {
+        // 不完整或歧义目标不进入链接交互链。
+        return None;
+    }
+    // 返回已验证且保持原始拼写的 URL。
+    Some(url)
 }
 
 /// 返回 Markdown 标记对应的 RichTextStyle 增量。
@@ -596,6 +659,11 @@ mod code_tests;
 #[cfg(test)]
 #[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_block_tests.rs"]
 mod block_tests;
+
+// 从仓库测试目录加载自动链接专项测试，锁定有效与字面回退边界。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_autolink_tests.rs"]
+mod autolink_tests;
 
 // 从仓库测试目录加载围栏代码专项测试，保持解析实现文件结构清晰。
 #[cfg(test)]
