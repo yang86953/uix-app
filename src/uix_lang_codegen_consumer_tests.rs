@@ -86,6 +86,14 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _divider: ViewNode = crate::uix!(
         r#"<Divider text={divider_text} dashed={divider_dashed} direction="vertical" margin="8px" />"#
     );
+    // 提供 Space 动态间距属性的消费者值。
+    let space_gap = 12_f32;
+    // 提供 Space 动态换行属性的消费者值。
+    let space_wrap = true;
+    // 验证 Space 专有属性、有序子节点与公共样式只依赖公开 prelude API。
+    let _space: ViewNode = crate::uix!(
+        r#"<Space direction="vertical" gap={space_gap} wrap={space_wrap} margin="4px"><Label>First</Label><Button>Second</Button></Space>"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。

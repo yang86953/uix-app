@@ -36,7 +36,7 @@
 
 ## 语言规范（推荐方式，已实现入口与目标设计）
 
-[UIX Lang](uix-lang/README.md) 是 UIX 的 UI 描述语言：写应用用 uix-lang 描述界面，编译时由 uix-app 框架自动转换为 Rust 声明式代码。按产品方向声明（[定位与原则](产品/定位与原则.md#定位)），界面描述**支持两种方式**：uix-lang 为推荐方式，Rust 声明式 API 为支持方式（二者语义一一对应）。公开 `uix!` 已支持内嵌源码与相对调用 crate 的 `.uix` 文件，编译期生成 `ViewNode`；当前已登记 `Text`、`Label`、`Button`、`Container`、`Row`、`Column`、`Icon` 与 `Divider`。完整 `App` 应用入口及未登记组件仍是**目标设计、领先实现**，实现差距由 Vikunja 项目 4 跟踪。本语言规范不参与四类文档的事实分工。
+[UIX Lang](uix-lang/README.md) 是 UIX 的 UI 描述语言：写应用用 uix-lang 描述界面，编译时由 uix-app 框架自动转换为 Rust 声明式代码。按产品方向声明（[定位与原则](产品/定位与原则.md#定位)），界面描述**支持两种方式**：uix-lang 为推荐方式，Rust 声明式 API 为支持方式（二者语义一一对应）。公开 `uix!` 已支持内嵌源码与相对调用 crate 的 `.uix` 文件，编译期生成 `ViewNode`；当前已登记 `Text`、`Label`、`Button`、`Container`、`Row`、`Column`、`Icon`、`Divider` 与 `Space`。完整 `App` 应用入口及未登记组件仍是**目标设计、领先实现**，实现差距由 Vikunja 项目 4 跟踪。本语言规范不参与四类文档的事实分工。
 通用 System / Module / Component 定义以仓库内[通用 SMC 文档](架构/System%20Module%20Component%20设计模式.md)为唯一权威；本项目只维护[系统列表](架构/系统列表.md)和[路由清单](架构/路由清单.md)。
 
 ## 维护约定

@@ -112,6 +112,101 @@ fn validates_divider_shape_and_direction() {
     assert!(unknown_attribute.message.contains("mystery"));
 }
 
+// 验证 Space 生成只调用现有公开组件与 View API。
+#[test]
+fn generates_space_with_documented_properties_and_children() {
+    // 构造覆盖动态间距、动态换行、垂直方向、公共样式与有序子节点的 Space。
+    let source = r#"<Space direction="vertical" gap={space_gap} wrap={should_wrap} margin="4px"><Text>First</Text><Button>Second</Button></Space>"#;
+    // 生成稳定令牌文本。
+    let snapshot = generate(source).expect("文档化 Space 属性与子节点应生成 Rust View");
+    // 必须从公开 Space 默认构造器开始。
+    assert!(snapshot.contains("Space :: new"));
+    // 动态 gap 必须进入现有 SpaceSize 自定义值。
+    assert!(snapshot.contains("SpaceSize :: Custom (space_gap)"));
+    // 动态 wrap 必须直接传入现有构建器。
+    assert!(snapshot.contains("wrap (should_wrap)"));
+    // 垂直方向必须调用现有构建器。
+    assert!(snapshot.contains("vertical"));
+    // Space 与子树必须通过公开 ViewNode 组合。
+    assert!(snapshot.contains("ViewNode :: new"));
+    // 两个子节点必须保持源码顺序生成。
+    let first = snapshot.find("First").expect("首个 Space 子节点应存在");
+    // 定位第二个子节点文字。
+    let second = snapshot.find("Second").expect("第二个 Space 子节点应存在");
+    // 首个子节点必须先于第二个子节点。
+    assert!(first < second);
+    // 公共样式仍由统一 View 映射处理。
+    assert!(snapshot.contains("margin"));
+    // 生成物不得包含运行时标签解析或第二个 Space 实现。
+    assert!(!snapshot.contains("parse_space"));
+    // 字面属性应遵守同一公开构建路径。
+    let literal = generate(
+        // 同时覆盖数值字面量、false 换行与默认水平方向。
+        r#"<Space direction="horizontal" gap="12px" wrap="false"><Text>Only</Text></Space>"#,
+    )
+    // 字面属性必须生成成功。
+    .expect("Space 字面属性应生成 Rust View");
+    // 十二像素必须进入公开自定义间距枚举。
+    assert!(literal.contains("SpaceSize :: Custom (12.0)"));
+    // false 必须原样传给换行构建器且不切换方向。
+    assert!(literal.contains("wrap (false)") && !literal.contains("vertical"));
+}
+
+// 验证 Space 的默认值与非法边界保持确定诊断。
+#[test]
+fn validates_space_defaults_and_attribute_contract() {
+    // 默认 Space 应保留水平、八像素与不换行的组件默认契约。
+    let default = generate(r#"<Space><Text>Default</Text></Space>"#)
+        // 默认容器与子节点必须生成成功。
+        .expect("默认 Space 应可生成");
+    // 默认路径不应伪造方向、间距或换行构建器。
+    assert!(
+        // 默认保持水平方向。
+        !default.contains("vertical")
+            // 默认保留 SpaceSize::Small 八像素间距。
+            && !default.contains("SpaceSize :: Custom")
+            // 默认保持不换行。
+            && !default.contains("wrap")
+    );
+    // 非法方向必须在代码生成期失败。
+    let direction_error = generate(r#"<Space direction="diagonal" />"#)
+        // 提取预期诊断。
+        .expect_err("未知 Space 方向必须失败");
+    // 诊断必须包含具体方向和合法集合提示。
+    assert!(
+        // 消息指出不支持的方向值。
+        direction_error.message.contains("diagonal")
+            // 修复建议给出水平值。
+            && direction_error.suggestion.contains("horizontal")
+            // 修复建议同时包含垂直值。
+            && direction_error.suggestion.contains("vertical")
+    );
+    // 动态 direction 无法在编译期选择构建器，必须明确拒绝。
+    let dynamic_direction = generate(r#"<Space direction={axis} />"#)
+        // 提取预期字面量诊断。
+        .expect_err("动态 Space direction 必须失败");
+    // 诊断必须指出方向需要字符串字面量。
+    assert!(dynamic_direction.message.contains("必须使用字符串字面量"));
+    // 非数值 gap 必须由共享数值映射拒绝。
+    let gap_error = generate(r#"<Space gap="wide" />"#)
+        // 提取预期数值诊断。
+        .expect_err("非数值 Space gap 必须失败");
+    // 诊断必须指出无法映射为数值。
+    assert!(gap_error.message.contains("无法映射为 f32"));
+    // 非布尔 wrap 必须由共享布尔映射拒绝。
+    let wrap_error = generate(r#"<Space wrap="yes" />"#)
+        // 提取预期布尔诊断。
+        .expect_err("非布尔 Space wrap 必须失败");
+    // 诊断必须指出 wrap 需要布尔值。
+    assert!(wrap_error.message.contains("wrap") && wrap_error.message.contains("布尔"));
+    // Space 未登记属性必须继续走统一拒绝路径。
+    let unknown_attribute = generate(r#"<Space mystery="value" />"#)
+        // 提取预期属性映射诊断。
+        .expect_err("Space 未登记属性必须失败");
+    // 诊断必须包含具体未知属性名。
+    assert!(unknown_attribute.message.contains("mystery"));
+}
+
 // 验证 If 与 For 生成真实 Rust 控制流、索引和稳定 key。
 #[test]
 fn generates_if_for_and_key_snapshot() {
