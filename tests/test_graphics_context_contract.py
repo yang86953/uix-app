@@ -232,10 +232,33 @@ class GraphicsContextContractTests(unittest.TestCase):
             # 固定 GPU backend 生命周期实现路径。
             ROOT / "src/draw/backend/gpu/backend/render_backend.rs"
         ).read_text(encoding="utf-8")
-        # GPU backend 必须借用专用生命周期视图。
-        self.assertIn("self.gpu_ctx.rhi_surface_lifecycle()", gpu_backend)
+        # GPU backend 必须通过已验证 recipe owner 执行专用生命周期事务。
+        self.assertIn("self.gpu_ctx.resize_surface(logical_w, logical_h)?", gpu_backend)
+        # GPU backend 不得重新直接查询兼容 trait 的可选生命周期视图。
+        self.assertNotIn("self.gpu_ctx.rhi_surface_lifecycle()", gpu_backend)
         # GPU backend 不得调用已退出 IGraphicsContext 的 resize 方法。
         self.assertNotIn("self.gpu_ctx.resize_rhi_surface", gpu_backend)
+
+    # 校验生产 GPU backend 只持有构造期已验证的 recipe owner。
+    def test_gpu_backend_uses_validated_recipe_owner(self) -> None:
+        # 读取 GPU owner 的唯一 native 边界实现。
+        owner = (ROOT / "src/native/present/gpu_recipe_owner.rs").read_text(encoding="utf-8")
+        # 读取 GPU backend 的状态定义。
+        backend = (ROOT / "src/draw/backend/gpu/backend/mod.rs").read_text(encoding="utf-8")
+        # 读取进入 GPU backend 前的装配门禁。
+        factory = (ROOT / "src/draw/backend/factory.rs").read_text(encoding="utf-8")
+        # 兼容 trait object 只能封装在 native owner 内。
+        self.assertIn("context: Box<dyn IGraphicsContext>", owner)
+        # owner 必须将可选 thin RHI 查询收口为 Result。
+        self.assertIn("fn rhi_context(&mut self) -> Result<&mut dyn GraphicsContextRhi>", owner)
+        # owner 必须独立承接 recipe 专用 resize。
+        self.assertIn("fn resize_surface(&mut self, width: i32, height: i32) -> Result<()>", owner)
+        # GPU backend 状态只持有已验证 owner。
+        self.assertIn("pub(crate) gpu_ctx: GpuRecipeOwner", backend)
+        # GPU backend 不得重新持有兼容 trait object。
+        self.assertNotIn("Box<dyn IGraphicsContext>", backend)
+        # 装配层必须先完成 owner 校验再构造 backend。
+        self.assertIn("let owner = GpuRecipeOwner::try_new(ctx)?;", factory)
     # 校验无帧遮挡探测只属于 thin RHI surface 生命周期。
     def test_idle_present_probe_belongs_to_graphics_surface(self) -> None:
         # 读取迁移期 context 门面。

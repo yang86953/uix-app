@@ -182,9 +182,8 @@ impl GpuBackend {
         // 读取当前组合 context 的物理 viewport 与逻辑到物理比例。
         let (viewport, scale_x, scale_y) = {
             // 缺少组合 RHI 时不能让 soft staging 跳过 retained owner。
-            let Some(context) = self.gpu_ctx.rhi_context() else {
-                return Ok(false);
-            };
+            // 已验证 owner 丢失时返回 typed failure，不能绕过 retained owner。
+            let context = self.gpu_ctx.rhi_context()?;
             // 复用 native queue 使用的 surface geometry 证明。
             super::super::submit::rhi_physical_geometry(
                 context,
@@ -193,16 +192,18 @@ impl GpuBackend {
             )
         };
         // 在 owner-thread 借用边界内复用通用 canvas soft 上传 helper。
-        let (canvas, gpu_ctx, rhi_renderer) =
-            (&mut self.surface.canvas, &mut self.gpu_ctx, &mut self.rhi_renderer);
+        let (canvas, gpu_ctx, rhi_renderer) = (
+            &mut self.surface.canvas,
+            &mut self.gpu_ctx,
+            &mut self.rhi_renderer,
+        );
         // retained soft 合成必须具备通用 renderer cache。
         let Some(renderer) = rhi_renderer.as_mut() else {
             return Ok(false);
         };
         // 当前 adapter 必须暴露组合 RHI context。
-        let Some(context) = gpu_ctx.rhi_context() else {
-            return Ok(false);
-        };
+        // 当前 adapter 的组合 RHI 已在构造期验证。
+        let context = gpu_ctx.rhi_context()?;
         // 主 surface 按自身逻辑尺寸与物理 viewport 执行 SrcOver 上传。
         try_upload_rhi_canvas_soft(
             canvas,

@@ -49,14 +49,8 @@ fn physical_clear_scissor(
     // 用绝对远端换算并裁剪，避免缩放后少覆盖一列像素。
     let x0 = (rect.x * scale_x).floor().max(0.0).min(max_x);
     let y0 = (rect.y * scale_y).floor().max(0.0).min(max_y);
-    let x1 = ((rect.x + rect.w) * scale_x)
-        .ceil()
-        .max(0.0)
-        .min(max_x);
-    let y1 = ((rect.y + rect.h) * scale_y)
-        .ceil()
-        .max(0.0)
-        .min(max_y);
+    let x1 = ((rect.x + rect.w) * scale_x).ceil().max(0.0).min(max_x);
+    let y1 = ((rect.y + rect.h) * scale_y).ceil().max(0.0).min(max_y);
     // 完全不可见的清理不应被误译成全幅清理。
     if x1 <= x0 || y1 <= y0 {
         // 上层会把这类不确定记录交回兼容路径。
@@ -99,10 +93,8 @@ impl GpuBackend {
         // 读取当前 RHI context 的 surface 代际和物理几何。
         let (surface, viewport, scale_x, scale_y) = {
             // 只有组合 RHI context 能写入 owner-thread retained texture。
-            let Some(context) = self.gpu_ctx.rhi_context() else {
-                // 交回兼容 boundary，而不是伪造局部清除成功。
-                return Ok(false);
-            };
+            // 已验证 owner 丢失时返回 typed failure，不能伪造可回退能力。
+            let context = self.gpu_ctx.rhi_context()?;
             // adapter 未声明 ClearRect 时不得把可选原语当成已执行。
             if !context.capabilities().clear_rect {
                 // 调用方继续使用兼容 clear_rects 路径。
@@ -140,10 +132,8 @@ impl GpuBackend {
         // 追加唯一离屏 pass，保持同一 owner-thread 的顺序提交。
         plan.push_pass(pass);
         // 在同一个组合 context 上执行计划，不获取也不呈现 swapchain image。
-        let Some(context) = self.gpu_ctx.rhi_context() else {
-            // context 在构造计划后失效时交回兼容边界。
-            return Ok(false);
-        };
+        // context 在计划构造后失效时返回 typed failure。
+        let context = self.gpu_ctx.rhi_context()?;
         // 返回底层执行的真实结果，禁止吞掉平台错误。
         match plan.execute_offscreen_on_context(context) {
             // 局部清理成功落入 retained texture。

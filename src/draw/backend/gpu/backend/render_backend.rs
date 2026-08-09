@@ -91,23 +91,8 @@ impl RenderBackend for GpuBackend {
         // swapchain resize 会推进 surface generation，先释放旧代际 retained texture。
         self.destroy_rhi_surface_texture()?;
         // 生产 GPU adapter 只由薄 RHI surface 执行实际重建和代际推进。
-        // 读取静态 backend 身份，供缺失专用视图时构造 typed failure。
-        let backend = self.gpu_ctx.caps().backend;
-        // GPU resize 只借用 recipe 专用的 RHI surface 生命周期。
-        let lifecycle = self.gpu_ctx.rhi_surface_lifecycle().ok_or_else(|| {
-            // 构造后缺失视图表示 GPU-native context 状态已经破坏。
-            Error::new(
-                // 使用 InvalidState 进入既有有界恢复，不把缺口解释为能力回退。
-                Errc::InvalidState,
-                // 明确指出发生缺口的具体 backend。
-                format!(
-                    "GraphicsBackend {} does not expose RHI surface lifecycle",
-                    backend
-                ),
-            )
-        })?;
-        // 生命周期视图与 native resize 的 typed failure 均直接交给恢复层。
-        lifecycle.resize_rhi_surface(logical_w, logical_h)?;
+        // 已验证 owner 通过 recipe 专用视图执行唯一 surface resize 事务。
+        self.gpu_ctx.resize_surface(logical_w, logical_h)?;
         // D3D11/D3D12 等会按 HWND GetClientRect 校正缓冲尺寸；canvas/布局必须跟
         // 实际 RT 一致，否则清出更大黑底而 UI 仍画旧几何 → 窗口黑边。
         self.adopt_factory_drawable_extent();
@@ -131,11 +116,10 @@ impl RenderBackend for GpuBackend {
         self.destroy_rhi_surface_texture()?;
         // 在 owner-thread context 关闭前释放 RHI renderer 持有的跨帧 MSDF atlas pages。
         if let Some(renderer) = self.rhi_renderer.as_mut() {
-            // 只有暴露薄 RHI 的 native context 才有对应资源表可释放。
-            if let Some(context) = self.gpu_ctx.rhi_context() {
-                // 失败时保留 typed error，禁止在资源仍存活时伪造 shutdown 成功。
-                renderer.release_msdf_atlas(context)?;
-            }
+            // 已验证 owner 丢失时必须返回 typed error，不能跳过资源释放。
+            let context = self.gpu_ctx.rhi_context()?;
+            // 失败时保留 typed error，禁止在资源仍存活时伪造 shutdown 成功。
+            renderer.release_msdf_atlas(context)?;
         }
         self.gpu_ctx.try_shutdown()?;
         self.shutdown = true;
@@ -161,11 +145,19 @@ impl RenderBackend for GpuBackend {
         // 只接受能由通用 RHI renderer 独占的有效 Picture extent。
         let extent = rhi_offscreen_extent(self.rhi_renderer.is_some(), width, height)?;
         // 离屏资源必须由当前 owner-thread 的薄 RHI context 创建。
-        let Some(context) = self.gpu_ctx.rhi_context() else {
-            // 记录能力快照和 context 暂时不一致的诊断信息。
-            tracing::warn!("GpuBackend: RHI offscreen owner context is unavailable");
-            // 不降级到原生 adapter 的 legacy target。
-            return None;
+        let context = match self.gpu_ctx.rhi_context() {
+            // 有效 owner 继续创建唯一 RHI 纹理。
+            Ok(context) => context,
+            // `RenderBackend` 的兼容返回值无法携带 typed error，只记录明确诊断。
+            Err(error) => {
+                // 保留 owner 状态破坏的短错误文本。
+                tracing::warn!(
+                    "GpuBackend: RHI offscreen owner unavailable: {}",
+                    error.short_what()
+                );
+                // 不降级到原生 adapter 的 legacy target。
+                return None;
+            }
         };
         // 创建唯一一份同时可渲染和可采样的通用纹理。
         let rhi_texture = context
@@ -218,15 +210,8 @@ impl RenderBackend for GpuBackend {
         // 复制唯一 RHI 纹理身份，释放 slot 借用后进入 owner context。
         let rhi_texture = off.rhi_texture;
         // 离屏纹理必须仍由同一 owner-thread context 管理。
-        let Some(context) = self.gpu_ctx.rhi_context() else {
-            // 不在无法回收唯一资源时静默丢弃 slot。
-            return Err(Error::new(
-                // 使用状态错误区分资源泄漏风险与不支持能力。
-                Errc::InvalidState,
-                // 给上层保留明确的 owner 丢失原因。
-                "RHI offscreen texture lost its owner context before destroy",
-            ));
-        };
+        // 已验证 owner 丢失时直接返回 typed 状态错误。
+        let context = self.gpu_ctx.rhi_context()?;
         // 只有 RHI 销毁成功后才释放 backend 槽位。
         context.destroy_texture(rhi_texture)?;
         // 清除已完成资源回收的 Picture slot。
@@ -489,15 +474,8 @@ impl RenderBackend for GpuBackend {
             ));
         };
         // Picture 纹理必须仍由创建它的 owner-thread RHI context 管理。
-        let Some(context) = self.gpu_ctx.rhi_context() else {
-            // owner 消失属于资源状态不一致，不能解释为可降级路径。
-            return Err(Error::new(
-                // 使用状态错误提示调用方终止当前帧。
-                Errc::InvalidState,
-                // 明确指出唯一资源的 owner context 已丢失。
-                "Picture offscreen texture lost its RHI owner context before flush",
-            ));
-        };
+        // 已验证 owner 丢失时终止当前帧并保留 typed failure。
+        let context = self.gpu_ctx.rhi_context()?;
         // 使用离屏 texture 的同一不透明身份作为 render target。
         let rhi_target = RenderTargetHandle::from_raw(rhi_texture.raw());
         // 离屏 target 使用自身物理尺寸，不借用主窗口 drawable 的 DPR。
@@ -783,13 +761,8 @@ impl RenderBackend for GpuBackend {
             ));
         };
         // 只有组合 RHI context 能执行 texture target 的多阶段计划。
-        let Some(context) = gpu_ctx.rhi_context() else {
-            // 返回稳定的迁移期未实现错误。
-            return Err(Error::new(
-                Errc::NotImplemented,
-                "RHI offscreen blur requires a composable RHI context",
-            ));
-        };
+        // 已验证 owner 保证多阶段计划只借用组合 RHI。
+        let context = gpu_ctx.rhi_context()?;
         // 当前 Picture texture 同时作为 source 和最终 target，scratch 由 renderer 管理。
         renderer.execute_blur_without_present(
             context,
@@ -831,15 +804,8 @@ impl RenderBackend for GpuBackend {
 
     fn test_present(&mut self) -> Result<PresentTestResult, Error> {
         // 构造门禁已经要求 backend-managed GPU 始终提供组合 thin RHI。
-        let Some(context) = self.gpu_ctx.rhi_context() else {
-            // 构造后丢失 surface 视图属于状态破坏，不能回退兼容门面。
-            return Err(Error::new(
-                // 使用稳定状态错误交给既有恢复层。
-                Errc::InvalidState,
-                // 明确指出无帧探测所需的低层 owner 已丢失。
-                "GPU backend lost its thin RHI surface during idle present test",
-            ));
-        };
+        // 已验证 owner 丢失时由统一 typed 状态错误进入恢复层。
+        let context = self.gpu_ctx.rhi_context()?;
         // 只通过 surface 生命周期契约执行无帧遮挡退出探测。
         context.test_present()
     }

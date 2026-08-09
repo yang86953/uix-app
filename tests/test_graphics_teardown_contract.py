@@ -555,6 +555,8 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         canvas = (ROOT / "src/draw/backend/gpu/canvas.rs").read_text(encoding="utf-8")
         # 读取 RenderBackend 的 resize、initialize 与 Picture 实现。
         backend = (ROOT / "src/draw/backend/gpu/backend/render_backend.rs").read_text(encoding="utf-8")
+        # 读取构造期已验证的 GPU recipe owner。
+        gpu_owner = (ROOT / "src/native/present/gpu_recipe_owner.rs").read_text(encoding="utf-8")
         # dormant hybrid 构造入口不得复活。
         self.assertNotIn("pub(crate) fn new(gpu_ctx", lifecycle)
         # 构造器不得重新按模式分叉。
@@ -577,22 +579,22 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         initialize_start = backend.index("fn initialize_prepared", resize_start)
         # 提取 resize 方法，避免其它生命周期代码干扰断言。
         resize = backend[resize_start:initialize_start]
-        # resize 必须通过 recipe 专用 thin RHI surface 生命周期。
-        self.assertIn(".resize_rhi_surface(logical_w, logical_h)?", resize)
-        # backend 必须从 context 借用专用生命周期视图。
-        self.assertIn("self.gpu_ctx.rhi_surface_lifecycle()", resize)
+        # resize 必须通过已验证 GPU owner 的专用 surface 事务。
+        self.assertIn("self.gpu_ctx.resize_surface(logical_w, logical_h)?", resize)
+        # backend 不得重新从兼容 context 借用可选生命周期视图。
+        self.assertNotIn("self.gpu_ctx.rhi_surface_lifecycle()", resize)
         # 兼容 IGraphicsContext::resize 不得作为 NotImplemented 回退。
         self.assertNotIn("self.gpu_ctx.resize(", resize)
         # 构造后视图缺失必须进入状态恢复，而不是能力回退。
         self.assertNotIn("Errc::NotImplemented", resize)
-        # 缺失专用视图必须使用稳定的状态错误分类。
-        self.assertIn("Errc::InvalidState", resize)
+        # 缺失专用视图必须由 owner 使用稳定的状态错误分类。
+        self.assertIn("Errc::InvalidState", gpu_owner)
         # 旧代 retained 资源必须先于 surface generation 推进释放。
         self.assertLess(
             # 定位旧代 retained 资源销毁。
             resize.index("self.destroy_rhi_surface_texture()?"),
-            # 定位 thin RHI resize 调用。
-            resize.index(".resize_rhi_surface(logical_w, logical_h)?"),
+            # 定位已验证 owner 的 thin RHI resize 调用。
+            resize.index("self.gpu_ctx.resize_surface(logical_w, logical_h)?"),
         )
         # 定位 initialize 方法的结束边界。
         shutdown_start = backend.index("fn try_shutdown", initialize_start)
@@ -725,8 +727,8 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("retained_framebuffer: capabilities.retained_framebuffer", present)
         # Additive 事实必须直接复制自同一薄 RHI 快照。
         self.assertIn("rhi_additive_blend: capabilities.additive_blend", present)
-        # 构造门禁必须从组合 RHI 读取唯一能力来源。
-        self.assertIn(".map(|context| context.capabilities())", backend)
+        # 构造门禁必须从已验证组合 RHI 读取唯一能力来源。
+        self.assertIn("Some(gpu_ctx.rhi_context()?.capabilities())", backend)
         # 构造门禁必须验证完整 GPU 原语基线。
         self.assertIn("capabilities.has_gpu_baseline()", backend)
         # 构造门禁必须从同一快照派生 renderer 投影。

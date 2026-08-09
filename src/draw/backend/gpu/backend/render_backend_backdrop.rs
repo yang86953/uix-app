@@ -4,7 +4,7 @@
 //! 只执行 create/copy/submit/destroy，不理解 overlay 或 backdrop 语义。
 
 // 引入统一错误和结果类型。
-use crate::core::error::{Errc, Error, Result};
+use crate::core::error::{Error, Result};
 // 引入薄 RHI 的资源、复制与代际值。
 use crate::native::present::rhi::{
     // device 原语用于执行资源事务。
@@ -128,14 +128,6 @@ impl GpuBackend {
             .gpu_ctx
             // 只借用一次底层资源表。
             .rhi_context()
-            // context 丢失时不能丢弃 opaque handle。
-            .ok_or_else(|| {
-                // 返回可恢复层识别的稳定状态错误。
-                Error::new(
-                    Errc::InvalidState,
-                    "overlay backdrop lost its owner context during destroy",
-                )
-            })
             // 由 adapter 执行底层 texture 释放。
             .and_then(|context| context.destroy_texture(texture));
         // 失败时保留资源身份，禁止把泄漏伪装为成功。
@@ -171,10 +163,8 @@ impl GpuBackend {
         // 将 context 借用限制在 token 校验与创建提交事务内。
         let result = {
             // 只有暴露组合 RHI 的 adapter 才能执行通用快照。
-            let Some(context) = self.gpu_ctx.rhi_context() else {
-                // 兼容 adapter 不应声明 retained RHI 快照成功。
-                return Ok(false);
-            };
+            // 构造期已验证的 owner 丢失时必须返回 typed failure。
+            let context = self.gpu_ctx.rhi_context()?;
             // surface 重建后旧 retained handle 不能进入复制。
             if context.token() != token {
                 // 代际不一致由调用方退回整树重绘。
@@ -221,10 +211,8 @@ impl GpuBackend {
         // 将 context 借用限制在代际校验和一次复制提交内。
         let result = {
             // 只有组合 RHI 可以恢复通用 texture。
-            let Some(context) = self.gpu_ctx.rhi_context() else {
-                // context 丢失时保留快照 owner 供显式释放或恢复。
-                return Ok(false);
-            };
+            // context 丢失时保留快照 owner，并把 typed failure 交给恢复层。
+            let context = self.gpu_ctx.rhi_context()?;
             // 当前 native surface token 也必须与 retained owner 完全一致。
             if context.token() != surface_token {
                 // 迟到恢复不能写入重建后的资源表。

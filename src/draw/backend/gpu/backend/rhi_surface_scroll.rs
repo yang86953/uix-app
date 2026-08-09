@@ -210,10 +210,8 @@ impl GpuBackend {
         // 读取当前 RHI context 的物理几何和 surface token。
         let (surface, viewport, scale_x, scale_y) = {
             // 只有组合 RHI context 能写入 owner-thread retained texture。
-            let Some(context) = self.gpu_ctx.rhi_context() else {
-                // 不伪造搬移成功。
-                return Ok(false);
-            };
+            // 已验证 owner 丢失时返回 typed failure，不伪造搬移成功。
+            let context = self.gpu_ctx.rhi_context()?;
             // 复用主 surface 的 mixed-DPI 几何规则。
             let (viewport, scale_x, scale_y) = super::super::submit::rhi_physical_geometry(
                 context,
@@ -256,7 +254,8 @@ impl GpuBackend {
         // 同一 opaque texture 同时承担 move source/destination 和 pass target。
         let render_target = RenderTargetHandle::from_raw(target.raw());
         // 创建一个保留旧颜色的 retained target pass。
-        let mut pass = RenderPassPlan::new(RenderTargetRef::Texture(render_target), LoadAction::Load);
+        let mut pass =
+            RenderPassPlan::new(RenderTargetRef::Texture(render_target), LoadAction::Load);
         // 加入非破坏性的 viewport 命令，使 move-only 计划满足 FramePlan 的 pass 契约。
         pass.push(FramePlanCommand::SetViewport(viewport));
         // 创建严格匹配当前 surface generation 的计划。
@@ -269,10 +268,8 @@ impl GpuBackend {
         // 追加唯一 retained target pass。
         plan.push_pass(pass);
         // 在同一个组合 context 上执行，不获取也不呈现 swapchain image。
-        let Some(context) = self.gpu_ctx.rhi_context() else {
-            // context 在计划构造后失效时交回兼容路径。
-            return Ok(false);
-        };
+        // context 在计划构造后失效时返回 typed failure。
+        let context = self.gpu_ctx.rhi_context()?;
         // 返回底层执行的真实结果，禁止吞掉设备错误。
         plan.execute_offscreen_on_context(context)?;
         // 只有 move plan 成功提交后才消费原始逻辑 copy。

@@ -15,21 +15,14 @@ use crate::draw::geometry::types::ImageHandle;
 // 使用薄 RHI 的设备维护入口承接每帧 owner-context 准备。
 use crate::native::present::rhi::GraphicsDevice;
 // 引入 context recipe 与 renderer 能力投影契约。
-use crate::native::present::{IGraphicsContext, NativeRasterCaps, PresentMode, RasterMode};
+use crate::native::present::{GpuRecipeOwner, NativeRasterCaps};
 
 impl GpuBackend {
     // 在通用 renderer 不感知平台 current API 的前提下准备本帧 RHI device。
     pub(super) fn prepare_rhi_device(&mut self) -> Result<(), Error> {
         // 生产 GPU backend 的构造门禁已经要求组合 thin RHI 始终存在。
-        let Some(context) = self.gpu_ctx.rhi_context() else {
-            // 构造后的能力消失属于状态破坏，而不是可降级的功能缺口。
-            return Err(Error::new(
-                // 使用稳定状态错误触发既有恢复流程。
-                Errc::InvalidState,
-                // 明确指出 owner context 已丢失。
-                "GPU backend lost its thin RHI context before frame preparation",
-            ));
-        };
+        // 已验证 owner 将运行期状态破坏直接映射为 typed error。
+        let context = self.gpu_ctx.rhi_context()?;
         // adapter 在这里完成设备健康检查；OpenGL 同时恢复 owner context current。
         GraphicsDevice::maintain(context)
     }
@@ -38,12 +31,8 @@ impl GpuBackend {
     #[cfg(feature = "test-harness")]
     pub(crate) fn inject_graphics_device_lost_for_test(&mut self) -> Result<(), Error> {
         // 缺少薄 RHI 属于构造后状态破坏，测试注入必须返回 typed failure。
-        let Some(context) = self.gpu_ctx.rhi_context() else {
-            return Err(Error::new(
-                Errc::NotImplemented,
-                "GPU backend does not expose a thin RHI device",
-            ));
-        };
+        // 测试注入沿用已验证 owner 的 typed 借用边界。
+        let context = self.gpu_ctx.rhi_context()?;
         // 由 adapter 自己保存一次性注入状态，最终 present 才报告 typed failure。
         context.inject_device_lost_for_test()
     }
@@ -52,26 +41,19 @@ impl GpuBackend {
     #[cfg(feature = "test-harness")]
     pub(crate) fn inject_graphics_surface_lost_for_test(&mut self) -> Result<(), Error> {
         // 缺少薄 RHI 属于构造后状态破坏，测试注入必须返回 typed failure。
-        let Some(context) = self.gpu_ctx.rhi_context() else {
-            return Err(Error::new(
-                Errc::NotImplemented,
-                "GPU backend does not expose a thin RHI surface",
-            ));
-        };
+        // 测试注入沿用已验证 owner 的 typed 借用边界。
+        let context = self.gpu_ctx.rhi_context()?;
         // 由 adapter 自己保存一次性注入状态，下一次 acquire 才报告 typed failure。
         context.inject_surface_lost_for_test()
     }
 
     // 构造已经由 native factory 完成 surface 准备的 GPU-only backend。
-    pub(crate) fn new_gpu_only(mut gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
+    pub(crate) fn new_gpu_only(mut gpu_ctx: GpuRecipeOwner) -> Result<Self, Error> {
         // 一次读取静态 recipe 事实，供构造门禁和 typed error 复用。
         let caps = gpu_ctx.caps();
         // 从组合 thin RHI 一次取得已由 factory probe 验证的事实快照。
-        let rhi_capabilities = gpu_ctx
-            // 只在这个局部借用 owner context，随后保存可复制的能力值。
-            .rhi_context()
-            // 通过薄 RHI device 读取唯一 capability 来源。
-            .map(|context| context.capabilities());
+        // 只在这个局部借用已验证 owner，随后保存可复制的能力值。
+        let rhi_capabilities = Some(gpu_ctx.rhi_context()?.capabilities());
         // 从同一快照派生通用 renderer 真正消费的窄能力投影。
         let native_caps = rhi_capabilities
             // 保留 retained 与 Additive 两项绘制事实。
@@ -84,10 +66,7 @@ impl GpuBackend {
             .is_some_and(|capabilities| capabilities.has_gpu_baseline())
             // GPU-only canvas 还必须持有跨帧 retained 事实。
             && native_caps.has_gpu_only_baseline();
-        if caps.raster != RasterMode::GpuNative
-            || caps.present != PresentMode::Swapchain
-            || !raster_baseline
-        {
+        if !raster_baseline {
             // 保存诊断所需的静态 backend 身份。
             let backend = caps.backend;
             // 保存诊断所需的 raster recipe。
@@ -177,15 +156,8 @@ impl GpuBackend {
         // 从同一快照保存当前 drawable 高度。
         let height = present_surface.drawable_height.max(1);
         // 构造后丢失组合 RHI 属于生命周期状态破坏。
-        let Some(context) = self.gpu_ctx.rhi_context() else {
-            // 返回 typed 状态错误，禁止重新进入兼容门面。
-            return Err(Error::new(
-                // 使用稳定状态错误参与既有恢复流程。
-                Errc::InvalidState,
-                // 明确指出 readback 所需 owner context 已丢失。
-                "GPU backend lost its thin RHI context before surface readback",
-            ));
-        };
+        // 已验证 owner 将运行期 context 状态破坏收敛为 typed error。
+        let context = self.gpu_ctx.rhi_context()?;
         // 只调用 adapter 事实声明支持的可选能力。
         if !context.capabilities().surface_readback {
             // 缺少可选能力必须返回 typed 错误，不能伪造空结果。

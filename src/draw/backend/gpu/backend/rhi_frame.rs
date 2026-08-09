@@ -1,8 +1,6 @@
 //! FrameEncoder 到通用 RHI 的整帧 lowering。
-
 // 引入共享引用计数载荷，避免临时图片跨计划生命周期失效。
 use std::sync::Arc;
-
 // 引入统一错误和提交 damage 类型。
 // 引入统一错误、几何和提交 damage 类型。
 use crate::core::{Errc, Error, Point, PresentDamage, Rect};
@@ -27,7 +25,6 @@ use crate::native::present::rhi::{
     GraphicsContextRhi, LoadAction, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor,
     RhiViewport, TextureHandle, TextureMove,
 };
-
 // 引入当前 GPU backend。
 use super::GpuBackend;
 
@@ -704,7 +701,6 @@ fn execute_frame_texture_move(
     // 返回已完成的 move boundary。
     Ok(())
 }
-
 // 为 GpuBackend 提供 FrameEncoder 的 RHI 片段执行入口。
 impl GpuBackend {
     // 尝试整条无损 lowering；任何目标相关或不完整操作都返回 false。
@@ -716,16 +712,15 @@ impl GpuBackend {
         present: bool,
     ) -> Result<bool, Error> {
         // 没有通用 renderer 时不能只迁移其中一部分命令。
-        if self.rhi_renderer.is_none() || self.gpu_ctx.rhi_context().is_none() {
+        if self.rhi_renderer.is_none() {
             return Ok(false);
         }
         // 保存调用方的主 surface 身份，后续把它改写为 retained texture target。
         let target_is_surface = matches!(target, RenderTargetRef::Surface);
         // 主 surface 使用 drawable extent，Picture texture 使用自身逻辑尺寸。
         let (viewport, scale_x, scale_y) = if target_is_surface {
-            let Some(context) = self.gpu_ctx.rhi_context() else {
-                return Ok(false);
-            };
+            // 已验证 owner 丢失时返回 typed failure，不能伪造 lowering 不支持。
+            let context = self.gpu_ctx.rhi_context()?;
             super::super::submit::rhi_physical_geometry(context, encoder.width(), encoder.height())
         } else {
             (
@@ -780,10 +775,8 @@ impl GpuBackend {
         // 读取 scroll 边界校验所需的物理纹理 extent。
         let target_extent = if target_is_surface {
             // 主 surface 的 extent 来自当前组合 context 代际。
-            let Some(context) = self.gpu_ctx.rhi_context() else {
-                // context 丢失时让调用方返回 typed lowering failure。
-                return Ok(false);
-            };
+            // context 丢失时直接返回 typed lowering failure。
+            let context = self.gpu_ctx.rhi_context()?;
             context.token().extent
         } else {
             // Picture texture 在进入 encoder 前已由调用方验证尺寸匹配。
@@ -828,9 +821,8 @@ impl GpuBackend {
                     || matches!(operation, RhiOp::AdditiveShape(_))
             })
         {
-            let Some(context) = self.gpu_ctx.rhi_context() else {
-                return Ok(false);
-            };
+            // Additive 能力只从已验证组合 RHI 查询。
+            let context = self.gpu_ctx.rhi_context()?;
             if !context.capabilities().additive_blend {
                 return Ok(false);
             }
@@ -852,9 +844,8 @@ impl GpuBackend {
         let Some(renderer) = rhi_renderer.as_mut() else {
             return Ok(false);
         };
-        let Some(context) = gpu_ctx.rhi_context() else {
-            return Ok(false);
-        };
+        // 执行计划只借用构造期已验证的组合 RHI。
+        let context = gpu_ctx.rhi_context()?;
         // 记录 FrameEncoder 已经实际进入通用 RHI 的调试信息。
         tracing::debug!(
             "Graphics RHI FrameEncoder submit: target={target:?}, surface_retained={}, operations={}, present={present}",

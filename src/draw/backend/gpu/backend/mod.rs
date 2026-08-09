@@ -36,14 +36,15 @@ use std::time::Instant;
 
 use crate::core::{Error, PresentDamageTracker, PresentSurface};
 use crate::draw::backend::rhi_renderer::RhiRenderer;
-use crate::native::present::IGraphicsContext;
+use crate::native::present::GpuRecipeOwner;
 // 引入迁移期 RHI 的离屏纹理句柄。
 use crate::native::present::rhi::TextureHandle;
 
 use super::canvas::NativeGpuCanvas2D;
 
 pub struct GpuBackend {
-    pub(crate) gpu_ctx: Box<dyn IGraphicsContext>,
+    // 保存构造期已验证的 GPU recipe owner，不直接依赖迁移期兼容 trait object。
+    pub(crate) gpu_ctx: GpuRecipeOwner,
     pub(crate) width: i32,
     pub(crate) height: i32,
     pub(crate) surface: NativeGpuDrawSurface,
