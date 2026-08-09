@@ -93,14 +93,25 @@ fn rejects_event_parameter_outside_handler() {
     assert!(error.message.contains("只能在事件处理器中使用"));
 }
 
-// 验证未登记元素不会被静默猜测为 Rust API。
+// 验证文档规划中内置组件返回所属类别诊断。
 #[test]
-fn rejects_unregistered_element_mapping() {
-    // 解析尚未进入核心矩阵的 Input。
+fn rejects_planned_builtin_with_document_category() {
+    // 解析已登记为规划中的 Input。
     let document = parse_document(r#"<Input value={name} />"#).expect("语法本身应合法");
-    // 代码生成必须返回登记诊断。
-    let error = generate_view(&document.root).expect_err("未登记元素必须失败");
-    // 诊断必须明确缺少 Rust API 映射。
+    // 代码生成必须返回规划中诊断。
+    let error = generate_view(&document.root).expect_err("规划中组件必须失败");
+    // 诊断必须明确组件状态和所属输入组件文档。
+    assert!(error.message.contains("规划中") && error.message.contains("输入组件"));
+}
+
+// 验证文档外未知元素仍返回普通映射诊断。
+#[test]
+fn rejects_unknown_element_mapping() {
+    // 解析未在任何矩阵登记的元素。
+    let document = parse_document(r#"<UnknownWidget />"#).expect("PascalCase 标签语法应合法");
+    // 代码生成必须拒绝未知元素。
+    let error = generate_view(&document.root).expect_err("未知元素必须失败");
+    // 诊断必须明确缺少登记映射。
     assert!(error.message.contains("尚无已登记的 Rust API 映射"));
 }
 

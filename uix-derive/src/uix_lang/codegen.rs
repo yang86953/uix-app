@@ -13,7 +13,8 @@ use super::{expression_uses_event, generate_expression, generate_handler_express
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
     align_value, apply_inline_style, boolean_value, deferred_style_diagnostic, justify_value,
-    literal_string, numeric_value, rust_identifier, string_value, typography_value,
+    literal_string, numeric_value, planned_builtin_diagnostic, rust_identifier, string_value,
+    typography_value,
 };
 
 // 生成一个可直接消费的公开 UIX View 表达式。
@@ -54,6 +55,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
     match element.name.as_str() {
         // 文本映射到公开 label 构造器。
         "Text" => generate_text(element),
+        // 文档通用组件 Label 与 Text 使用同一公开构造器。
+        "Label" => generate_text(element),
         // 按钮映射到公开 button 构建器。
         "Button" => generate_button(element),
         // 通用容器按 direction 映射到 row 或 column。
@@ -64,23 +67,19 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "Column" => generate_container(element, Some(ContainerDirection::Column)),
         // 图标映射到公开 Icon 组件。
         "Icon" => generate_icon(element),
-        // App 入口由后续宏契约 Gate 组装。
-        "App" => Err(Diagnostic::new(
-            // 指向 App 根元素。
-            element.span,
-            // 说明当前函数只生成 View。
-            "<App> 需要 uix! 应用入口代码生成上下文",
-            // 给出当前可测试根或后续入口。
-            "由 uix! 入口生成 App；独立 View 使用 Container、Row 或 Column",
-        )),
-        // Component 与完整内置组件矩阵由后续 Gate 登记。
+        // 文档内置组件按登记类别返回规划中诊断。
+        _ if planned_builtin_diagnostic(element).is_some() => {
+            // 前置条件保证诊断存在。
+            Err(planned_builtin_diagnostic(element).expect("已确认规划中内置组件已登记"))
+        }
+        // 真正未知元素仍返回普通映射诊断。
         _ => Err(Diagnostic::new(
             // 指向未登记元素。
             element.span,
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Button、Container、Row、Column 或 Icon，或等待组件映射 Gate",
+            "使用 Text、Label、Button、Container、Row、Column 或 Icon，或先登记组件状态",
         )),
     }
 }

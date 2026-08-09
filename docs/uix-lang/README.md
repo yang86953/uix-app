@@ -42,6 +42,8 @@ UIX Lang 继承产品四原则（见[定位与原则](../产品/定位与原则.
 | [内置组件/反馈组件](内置组件/反馈组件.md) | Message / Modal / Drawer / Popover / ProgressBar / Spin 等反馈组件 |
 | [内置组件/导航组件](内置组件/导航组件.md) | Menu / Tabs / Breadcrumb / Steps / Pagination 等导航组件 |
 
+当前生成矩阵真实支持 `Text`、`Label`、`Button`、`Icon`、`Container`、`Row` 与 `Column`，以及文档内自定义 `Component` 展开。六类内置组件文档中的其他 PascalCase 标签均已登记为“规划中”：使用时会在宏展开期报告组件名、所属文档类别与修复建议，不会静默生成占位 View。
+
 图表组件（BarChart / LineChart / PieChart 等 12 个）的规范文档尚未编写（规划中），对应组件能力以 [组件速查](../使用/组件速查.md) 与[图表使用文档](../使用/图表.md)为准。
 
 ## 与 Rust API 的映射关系
@@ -50,8 +52,8 @@ UIX Lang 是 UIX Rust API 的文本投影，**转换由 uix-app 框架在编译�
 
 | UIX Lang | Rust API |
 |---|---|
-| `<Button class="primary" @click="...">` | `button("...").class("primary").on_click(...)` |
-| `styleName { ... }` 样式类 | `Style` 定义 + `apply_style` |
+| `<Button class="primary" @click="...">` | 编译期展开样式类后生成 `button("...").map_style(...).on_click(...)` |
+| `styleName { ... }` 样式类 | 编译期展开 `extends` 与同名属性覆盖，再精确更新 `Style` |
 | `@theme light { ... }` | 主题令牌（`ThemeTokens`） |
 | `<Component name="X">` | `component!` 宏或函数组件 |
 | `<For {item} in {items}>` | `for` 循环生成 `ViewNode` 列表 |

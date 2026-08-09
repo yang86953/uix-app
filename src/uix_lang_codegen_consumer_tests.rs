@@ -76,6 +76,8 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _file: ViewNode = uix!("tests/fixtures/uix_lang/public_entry.uix");
     // 通过 crate 根路径再次验证宏导出。
     let _root_export: ViewNode = crate::uix!(r#"<Button>Root export</Button>"#);
+    // 验证通用组件文档中的 Label 别名真实生成。
+    let _label: ViewNode = crate::uix!(r#"<Label>Documented label</Label>"#);
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
