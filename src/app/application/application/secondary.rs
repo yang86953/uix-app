@@ -40,7 +40,6 @@ impl SecondaryWindowSession {
             parts.tree,
             parts.engine,
             self._window.as_mut(),
-            platform,
             parts.text_input,
         );
 
