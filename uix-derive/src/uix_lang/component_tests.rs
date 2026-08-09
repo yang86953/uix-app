@@ -1,0 +1,133 @@
+// 引入组件 AST 与文档解析入口。
+use super::{
+    parse_document, ComponentPropType, ComponentStateInitial, ComponentValueType, Declaration,
+};
+
+// 验证四类 props 与私有 state 按源码顺序结构化解析。
+#[test]
+fn parses_component_props_and_state_contract() {
+    // 构造基础值、共享 State、回调与私有状态声明。
+    let source = r#"<Component name="Editor" props="title: String, count: number, enabled: bool, shared: State<number>, onSave: (String) -> bool" state="draft: 'new', retries: 0, dirty: false, items: []"><Text>{title}</Text></Component><Editor title="A" count={1} enabled={true} shared={shared} onSave={save} />"#;
+    // 解析完整文档。
+    let document = parse_document(source).expect("组件声明契约应成功解析");
+    // 提取组件声明。
+    let Declaration::Component(component) = &document.declarations[0] else {
+        // 结构不匹配时失败。
+        panic!("首个声明应为 Component");
+    };
+    // 组件名必须保存。
+    assert_eq!(component.name, "Editor");
+    // 五个 props 必须全部保留。
+    assert_eq!(component.props.len(), 5);
+    // String 映射为基础值 prop。
+    assert_eq!(
+        // 检查首个 prop 类型。
+        component.props[0].kind,
+        // 要求 String 基础值。
+        ComponentPropType::Value(ComponentValueType::String)
+    );
+    // number 映射为基础值 prop。
+    assert_eq!(
+        // 检查第二个 prop 类型。
+        component.props[1].kind,
+        // 要求 number 基础值。
+        ComponentPropType::Value(ComponentValueType::Number)
+    );
+    // bool 映射为基础值 prop。
+    assert_eq!(
+        // 检查第三个 prop 类型。
+        component.props[2].kind,
+        // 要求 bool 基础值。
+        ComponentPropType::Value(ComponentValueType::Bool)
+    );
+    // State<number> 映射为共享状态 prop。
+    assert_eq!(
+        // 检查第四个 prop 类型。
+        component.props[3].kind,
+        // 要求 number 状态引用。
+        ComponentPropType::State(ComponentValueType::Number)
+    );
+    // 回调必须保存参数与返回类型。
+    assert!(matches!(
+        // 借用第五个 prop 类型。
+        &component.props[4].kind,
+        // 验证 String 参数和 bool 返回值。
+        ComponentPropType::Callback { parameters, returns }
+            if parameters == &[ComponentValueType::String]
+                && *returns == Some(ComponentValueType::Bool)
+    ));
+    // 四个私有状态必须保留顺序。
+    assert_eq!(component.states.len(), 4);
+    // 最后一个状态必须识别为空数组初始值。
+    assert_eq!(
+        // 检查空数组状态。
+        component.states[3].initial,
+        // 要求专用空数组事实。
+        ComponentStateInitial::EmptyArray
+    );
+}
+
+// 验证非法 prop 类型得到声明级诊断。
+#[test]
+fn rejects_unsupported_prop_type() {
+    // 解析超出白名单的类型。
+    let error = parse_document(
+        r#"<Component name="Bad" props="value: Vec<String>"><Text>A</Text></Component><Bad value={value} />"#,
+    )
+    // 未知类型必须失败。
+    .expect_err("未知 prop 类型不得通过");
+    // 诊断必须指出类型不支持。
+    assert!(error.message.contains("不支持 prop 类型"));
+}
+
+// 验证 props 内重复字段得到确定诊断。
+#[test]
+fn rejects_duplicate_prop_name() {
+    // 解析重复 prop。
+    let error = parse_document(
+        r#"<Component name="Bad" props="value: String, value: bool"><Text>A</Text></Component><Bad value="A" />"#,
+    )
+    // 重复字段必须失败。
+    .expect_err("重复 prop 不得通过");
+    // 诊断必须包含重复名称。
+    assert!(error.message.contains("prop value 重复声明"));
+}
+
+// 验证 state 内重复字段得到确定诊断。
+#[test]
+fn rejects_duplicate_state_name() {
+    // 解析重复 state。
+    let error = parse_document(
+        r#"<Component name="Bad" state="count: 0, count: 1"><Text>A</Text></Component><Bad />"#,
+    )
+    // 重复状态必须失败。
+    .expect_err("重复 state 不得通过");
+    // 诊断必须包含重复名称。
+    assert!(error.message.contains("state count 重复声明"));
+}
+
+// 验证 prop 与 state 不能共用组件体名称。
+#[test]
+fn rejects_prop_state_name_collision() {
+    // 解析跨类别重名字段。
+    let error = parse_document(
+        r#"<Component name="Bad" props="count: number" state="count: 0"><Text>A</Text></Component><Bad count={1} />"#,
+    )
+    // 重名字段必须失败。
+    .expect_err("prop/state 重名不得通过");
+    // 诊断必须说明两个类别。
+    assert!(error.message.contains("同时声明为 prop 与 state"));
+}
+
+// 验证顶层组件名称唯一。
+#[test]
+fn rejects_duplicate_component_name() {
+    // 解析两个同名组件。
+    let error = parse_document(
+        r#"<Component name="Card"><Text>A</Text></Component><Component name="Card"><Text>B</Text></Component><Card />"#,
+    )
+    // 重复组件必须失败。
+    .expect_err("重复组件名不得通过");
+    // 诊断必须包含组件名。
+    assert!(error.message.contains("组件 Card 重复声明"));
+}

@@ -1,9 +1,9 @@
 // 引入核心 AST、词法游标和诊断。
 use super::{
-    parse_at_declaration, parse_expression, parse_style_class, parse_style_properties,
-    register_declaration_name, starts_component_declaration, Attribute, AttributeValue,
-    ControlBinding, Cursor, Declaration, Diagnostic, Document, Element, ExpressionKind,
-    ExpressionNode, Node, SourceSpan, TextNode,
+    parse_at_declaration, parse_component_declaration, parse_expression, parse_style_class,
+    parse_style_properties, register_declaration_name, starts_component_declaration, Attribute,
+    AttributeValue, ControlBinding, Cursor, Declaration, Diagnostic, Document, Element,
+    ExpressionKind, ExpressionNode, Node, SourceSpan, TextNode,
 };
 // 引入顶层名称去重集合。
 use std::collections::HashSet;
@@ -20,6 +20,8 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
     let mut style_names = HashSet::new();
     // 保存已声明主题名。
     let mut theme_names = HashSet::new();
+    // 保存已声明组件名。
+    let mut component_names = HashSet::new();
     // 解析根元素之前的声明区。
     loop {
         // @ 前缀开始导入、导出或主题声明。
@@ -35,10 +37,14 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
         {
             // 解析具名样式类。
             Some(parse_style_class(&mut cursor)?)
-        // 保留顶层 Component 给后续组件 Gate。
+        // 解析并验证顶层 Component 声明。
         } else if starts_component_declaration(&cursor) {
-            // 解析顶层组件元素。
-            Some(Declaration::Component(parse_element(&mut cursor, true)?))
+            // 先复用通用元素解析器读取组件体。
+            let element = parse_element(&mut cursor, true)?;
+            // 再验证 Component 元数据与字段类型。
+            Some(Declaration::Component(parse_component_declaration(
+                element,
+            )?))
         } else {
             // 当前输入应为文档根元素。
             None
@@ -49,7 +55,16 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
             break;
         };
         // 验证具名声明唯一性。
-        register_declaration_name(&declaration, &mut style_names, &mut theme_names)?;
+        register_declaration_name(
+            // 传递当前声明。
+            &declaration,
+            // 传递样式名称集合。
+            &mut style_names,
+            // 传递主题名称集合。
+            &mut theme_names,
+            // 传递组件名称集合。
+            &mut component_names,
+        )?;
         // 保存声明顺序。
         declarations.push(declaration);
         // 跳过声明间 trivia。

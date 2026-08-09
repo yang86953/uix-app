@@ -5,6 +5,13 @@ mod codegen;
 // 集中验证代码生成快照、消费者编译与拒绝路径。
 #[cfg(test)]
 mod codegen_tests;
+// 定义 Component、props 与 state 的结构化 AST。
+mod component_ast;
+// 定义 Component 声明级语法与类型白名单解析。
+mod component_parser;
+// 集中验证 Component props、state 与名称诊断。
+#[cfg(test)]
+mod component_tests;
 // 定义包含位置、原因与修复建议的解析诊断。
 mod diagnostic;
 // 定义顶层指令、样式类与主题解析。
@@ -38,8 +45,12 @@ mod value_codegen;
 pub(crate) use ast::*;
 // 向过程宏入口暴露核心 View 生成函数。
 pub(crate) use codegen::generate_view;
+// 向组件解析与代码生成暴露结构化组件声明。
+pub(crate) use component_ast::*;
 // 向后续转换 Gate 暴露稳定诊断类型。
 pub(crate) use diagnostic::*;
+// 向文档解析器暴露 Component 声明验证入口。
+pub(crate) use component_parser::parse_component_declaration;
 // 向文档解析器暴露顶层声明入口。
 pub(crate) use declaration_parser::{
     parse_at_declaration, parse_style_class, register_declaration_name,

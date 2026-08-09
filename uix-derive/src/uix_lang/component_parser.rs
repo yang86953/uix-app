@@ -1,0 +1,562 @@
+// 引入组件 AST、通用元素、表达式解析与诊断。
+use super::{
+    parse_expression, AttributeValue, ComponentDeclaration, ComponentProp, ComponentPropType,
+    ComponentState, ComponentStateInitial, ComponentValueType, Diagnostic, Element, SourceSpan,
+};
+// 引入名称去重集合。
+use std::collections::HashSet;
+
+// 把通用顶层 Component 元素验证为结构化组件声明。
+pub(crate) fn parse_component_declaration(
+    // 接收已经完成标签级解析的 Component。
+    element: Element,
+) -> Result<ComponentDeclaration, Diagnostic> {
+    // 防御性检查调用方只传入保留标签。
+    if element.name != "Component" {
+        // 返回内部路由诊断。
+        return Err(Diagnostic::new(
+            // 指向完整元素。
+            element.span,
+            // 说明元素类型不匹配。
+            "组件声明解析器只接受 <Component>",
+            // 给出正确路由。
+            "把普通元素交给 View 解析器",
+        ));
+    }
+    // 保存已出现的 Component 属性名。
+    let mut attribute_names = HashSet::new();
+    // 保存必需组件名。
+    let mut name = None;
+    // 保存可选 props 声明及跨度。
+    let mut props_source = None;
+    // 保存可选 state 声明及跨度。
+    let mut state_source = None;
+    // 验证 Component 只包含三个声明属性。
+    for attribute in &element.attributes {
+        // 拒绝重复属性。
+        if !attribute_names.insert(attribute.name.as_str()) {
+            // 返回重复属性诊断。
+            return Err(Diagnostic::new(
+                // 指向重复属性。
+                attribute.span,
+                // 说明重复名称。
+                format!("Component 属性 {} 重复声明", attribute.name),
+                // 给出修复动作。
+                "合并重复属性并只保留一次",
+            ));
+        }
+        // Component 元数据必须使用字符串字面量。
+        let AttributeValue::Literal(value) = &attribute.value else {
+            // 返回元数据值形状诊断。
+            return Err(Diagnostic::new(
+                // 指向完整属性。
+                attribute.span,
+                // 说明不接受运行期表达式。
+                format!("Component {} 必须使用字符串字面量", attribute.name),
+                // 给出规范形式。
+                "使用 name=\"Name\"、props=\"name: Type\" 或 state=\"name: value\"",
+            ));
+        };
+        // 按保留属性名保存源码。
+        match attribute.name.as_str() {
+            // 保存组件名。
+            "name" => name = Some((value.clone(), attribute.span)),
+            // 保存 props 声明。
+            "props" => props_source = Some((value.as_str(), attribute.span)),
+            // 保存 state 声明。
+            "state" => state_source = Some((value.as_str(), attribute.span)),
+            // 其他属性不属于 Component 元数据。
+            _ => {
+                // 返回未知属性诊断。
+                return Err(Diagnostic::new(
+                    // 指向完整属性。
+                    attribute.span,
+                    // 说明未知元数据。
+                    format!("Component 不支持属性 {}", attribute.name),
+                    // 给出允许集合。
+                    "只使用 name、props 与 state",
+                ));
+            }
+        }
+    }
+    // name 是组件声明的必需属性。
+    let Some((name, name_span)) = name else {
+        // 返回缺失名称诊断。
+        return Err(Diagnostic::new(
+            // 指向完整组件。
+            element.span,
+            // 说明缺少必需名称。
+            "<Component> 缺少必需的 name 属性",
+            // 给出规范示例。
+            "使用 <Component name=\"Counter\">...</Component>",
+        ));
+    };
+    // 组件名必须可映射为 PascalCase Rust 标识符。
+    validate_component_name(&name, name_span)?;
+    // 解析可选 props 字符串。
+    let props = match props_source {
+        // 解析存在的 props。
+        Some((source, span)) => parse_props(source, span)?,
+        // 未声明 props 时使用空列表。
+        None => Vec::new(),
+    };
+    // 解析可选私有 state 字符串。
+    let states = match state_source {
+        // 解析存在的 state。
+        Some((source, span)) => parse_states(source, span)?,
+        // 未声明 state 时使用空列表。
+        None => Vec::new(),
+    };
+    // props 与 state 共享组件体标识符命名空间。
+    for state in &states {
+        // 查找同名 prop。
+        if props.iter().any(|prop| prop.name == state.name) {
+            // 返回跨类别重复诊断。
+            return Err(Diagnostic::new(
+                // 指向 state 声明。
+                state.span,
+                // 说明名称冲突。
+                format!("组件字段 {} 同时声明为 prop 与 state", state.name),
+                // 给出改名建议。
+                "为 prop 与私有 state 使用不同名称",
+            ));
+        }
+    }
+    // 返回结构化组件声明。
+    Ok(ComponentDeclaration {
+        // 保存组件名。
+        name,
+        // 保存 props。
+        props,
+        // 保存 states。
+        states,
+        // 转移有序组件体。
+        children: element.children,
+        // 保存完整声明跨度。
+        span: element.span,
+    })
+}
+
+// 解析逗号分隔的 props 声明。
+fn parse_props(source: &str, span: SourceSpan) -> Result<Vec<ComponentProp>, Diagnostic> {
+    // 空字符串表示没有 props。
+    if source.trim().is_empty() {
+        // 返回空列表。
+        return Ok(Vec::new());
+    }
+    // 保存有序 props。
+    let mut props = Vec::new();
+    // 保存名称去重集合。
+    let mut names = HashSet::new();
+    // 按顶层逗号切分字段，并允许 State<T> 泛型类型。
+    for entry in split_top_level(source, span, true)? {
+        // 切分字段名与类型。
+        let (name, type_source) = split_field(entry, "props", span)?;
+        // 验证字段名。
+        validate_field_name(name, span)?;
+        // 拒绝重复 prop。
+        if !names.insert(name) {
+            // 返回重复字段诊断。
+            return Err(Diagnostic::new(
+                // 指向 props 属性。
+                span,
+                // 说明重复名称。
+                format!("prop {name} 重复声明"),
+                // 给出修复动作。
+                "合并同名 prop 或使用不同名称",
+            ));
+        }
+        // 解析类型白名单。
+        let kind = parse_prop_type(type_source, span)?;
+        // 保存有序 prop。
+        props.push(ComponentProp {
+            // 保存名称。
+            name: name.to_string(),
+            // 保存类型。
+            kind,
+            // 保存所属属性跨度。
+            span,
+        });
+    }
+    // 返回完整 props 列表。
+    Ok(props)
+}
+
+// 解析逗号分隔的私有 state 声明。
+fn parse_states(source: &str, span: SourceSpan) -> Result<Vec<ComponentState>, Diagnostic> {
+    // 空字符串表示没有私有状态。
+    if source.trim().is_empty() {
+        // 返回空列表。
+        return Ok(Vec::new());
+    }
+    // 保存有序状态槽。
+    let mut states = Vec::new();
+    // 保存名称去重集合。
+    let mut names = HashSet::new();
+    // 按顶层逗号切分状态，保留初始值中的小于号比较。
+    for entry in split_top_level(source, span, false)? {
+        // 切分名称与初始值。
+        let (name, initial_source) = split_field(entry, "state", span)?;
+        // 验证状态名。
+        validate_field_name(name, span)?;
+        // 拒绝重复状态。
+        if !names.insert(name) {
+            // 返回重复状态诊断。
+            return Err(Diagnostic::new(
+                // 指向 state 属性。
+                span,
+                // 说明重复名称。
+                format!("state {name} 重复声明"),
+                // 给出修复动作。
+                "合并同名 state 或使用不同名称",
+            ));
+        }
+        // 空数组是 state 初始值专用结构。
+        let initial = if initial_source == "[]" {
+            // 保存空数组事实。
+            ComponentStateInitial::EmptyArray
+        } else {
+            // 使用受限表达式语法验证普通初始值。
+            ComponentStateInitial::Expression(parse_expression(initial_source, span)?)
+        };
+        // 保存有序状态槽。
+        states.push(ComponentState {
+            // 保存名称。
+            name: name.to_string(),
+            // 保存初始值。
+            initial,
+            // 保存所属属性跨度。
+            span,
+        });
+    }
+    // 返回完整状态列表。
+    Ok(states)
+}
+
+// 解析基础值、State<T> 或回调类型。
+fn parse_prop_type(source: &str, span: SourceSpan) -> Result<ComponentPropType, Diagnostic> {
+    // 基础类型直接映射。
+    if let Some(value) = parse_value_type(source) {
+        // 返回基础值 prop。
+        return Ok(ComponentPropType::Value(value));
+    }
+    // 解析 State<T> 共享状态引用。
+    if let Some(inner) = source
+        // 去除 State< 前缀。
+        .strip_prefix("State<")
+        // 去除末尾右尖括号。
+        .and_then(|value| value.strip_suffix('>'))
+    {
+        // State 泛型只允许基础类型。
+        let value =
+            parse_value_type(inner.trim()).ok_or_else(|| invalid_prop_type(source, span))?;
+        // 返回响应式状态 prop。
+        return Ok(ComponentPropType::State(value));
+    }
+    // 回调类型必须以左括号开始。
+    if let Some(rest) = source.strip_prefix('(') {
+        // 查找参数列表的闭合右括号。
+        let Some(close) = rest.find(')') else {
+            // 返回未闭合回调诊断。
+            return Err(invalid_prop_type(source, span));
+        };
+        // 提取参数类型列表。
+        let parameters_source = &rest[..close];
+        // 提取可选返回类型后缀。
+        let suffix = rest[close + 1..].trim();
+        // 解析逗号分隔基础参数类型。
+        let parameters = if parameters_source.trim().is_empty() {
+            // 空括号表示无参数回调。
+            Vec::new()
+        } else {
+            // 转换每个参数基础类型。
+            parameters_source
+                // 按逗号切分。
+                .split(',')
+                // 去除空白并解析白名单。
+                .map(|value| {
+                    // 返回基础类型或统一诊断。
+                    parse_value_type(value.trim()).ok_or_else(|| invalid_prop_type(source, span))
+                })
+                // 收集或返回首个错误。
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        // 解析可选返回类型。
+        let returns = if suffix.is_empty() {
+            // 无后缀表示无返回值。
+            None
+        } else if let Some(value) = suffix.strip_prefix("->") {
+            // 箭头后只允许基础返回类型。
+            Some(
+                // 解析返回类型。
+                parse_value_type(value.trim()).ok_or_else(|| invalid_prop_type(source, span))?,
+            )
+        } else {
+            // 其他后缀不是合法回调类型。
+            return Err(invalid_prop_type(source, span));
+        };
+        // 返回回调类型。
+        return Ok(ComponentPropType::Callback {
+            // 保存参数类型。
+            parameters,
+            // 保存可选返回类型。
+            returns,
+        });
+    }
+    // 其他结构不在类型白名单。
+    Err(invalid_prop_type(source, span))
+}
+
+// 解析三个基础类型关键字。
+fn parse_value_type(source: &str) -> Option<ComponentValueType> {
+    // 按精确关键字映射。
+    match source {
+        // 映射 String。
+        "String" => Some(ComponentValueType::String),
+        // 映射 number。
+        "number" => Some(ComponentValueType::Number),
+        // 映射 bool。
+        "bool" => Some(ComponentValueType::Bool),
+        // 其他名称不在白名单。
+        _ => None,
+    }
+}
+
+// 构造统一非法 prop 类型诊断。
+fn invalid_prop_type(source: &str, span: SourceSpan) -> Diagnostic {
+    // 返回白名单诊断。
+    Diagnostic::new(
+        // 指向 props 属性。
+        span,
+        // 说明未知类型。
+        format!("不支持 prop 类型 {source:?}"),
+        // 给出完整允许集合。
+        "使用 String、number、bool、State<T> 或基础类型组成的回调签名",
+    )
+}
+
+// 按不位于括号、方括号、可选尖括号或字符串内的逗号切分。
+fn split_top_level(
+    source: &str,
+    span: SourceSpan,
+    track_angle_brackets: bool,
+) -> Result<Vec<&str>, Diagnostic> {
+    // 保存切分结果。
+    let mut entries = Vec::new();
+    // 保存当前片段起点。
+    let mut start = 0;
+    // 保存三类嵌套深度。
+    let (mut paren, mut angle, mut bracket) = (0_i32, 0_i32, 0_i32);
+    // 保存单引号字符串状态。
+    let mut quoted = false;
+    // 保存反斜杠转义状态。
+    let mut escaped = false;
+    // 遍历 UTF-8 字符边界。
+    for (index, character) in source.char_indices() {
+        // 字符串内只处理转义与闭合引号。
+        if quoted {
+            // 前一字符为反斜杠时消费转义。
+            if escaped {
+                // 清除转义状态。
+                escaped = false;
+            } else if character == '\\' {
+                // 标记下一字符被转义。
+                escaped = true;
+            } else if character == '\'' {
+                // 结束单引号字符串。
+                quoted = false;
+            }
+            // 字符串内容不参与结构计数。
+            continue;
+        }
+        // 更新结构深度或切分顶层逗号。
+        match character {
+            // 开始单引号字符串。
+            '\'' => quoted = true,
+            // 增加圆括号深度。
+            '(' => paren += 1,
+            // 减少圆括号深度。
+            ')' => paren -= 1,
+            // props 类型中增加尖括号深度。
+            '<' if track_angle_brackets => angle += 1,
+            // props 类型中减少尖括号深度。
+            '>' if track_angle_brackets && angle > 0 => angle -= 1,
+            // 增加方括号深度。
+            '[' => bracket += 1,
+            // 减少方括号深度。
+            ']' => bracket -= 1,
+            // 顶层逗号结束当前字段。
+            ',' if paren == 0 && angle == 0 && bracket == 0 => {
+                // 提取并规范化字段。
+                let entry = source[start..index].trim();
+                // 空字段违反声明语法。
+                if entry.is_empty() {
+                    // 返回空字段诊断。
+                    return Err(Diagnostic::new(
+                        // 指向完整属性。
+                        span,
+                        // 说明多余逗号。
+                        "组件字段列表包含空声明",
+                        // 给出修复动作。
+                        "删除连续逗号或补充字段声明",
+                    ));
+                }
+                // 保存字段。
+                entries.push(entry);
+                // 下一字段从逗号后开始。
+                start = index + character.len_utf8();
+            }
+            // 其他字符不改变结构。
+            _ => {}
+        }
+        // 任一深度为负表示定界符不匹配。
+        if paren < 0 || angle < 0 || bracket < 0 {
+            // 返回定界符诊断。
+            return Err(invalid_field_list(span));
+        }
+    }
+    // 未闭合字符串或定界符违反语法。
+    if quoted || paren != 0 || angle != 0 || bracket != 0 {
+        // 返回定界符诊断。
+        return Err(invalid_field_list(span));
+    }
+    // 保存最后一个字段。
+    let tail = source[start..].trim();
+    // 尾随逗号产生空字段。
+    if tail.is_empty() {
+        // 返回空尾字段诊断。
+        return Err(Diagnostic::new(
+            // 指向完整属性。
+            span,
+            // 说明尾随逗号。
+            "组件字段列表不能以逗号结尾",
+            // 给出修复动作。
+            "删除末尾逗号",
+        ));
+    }
+    // 保存尾字段。
+    entries.push(tail);
+    // 返回有序字段列表。
+    Ok(entries)
+}
+
+// 切分单个 name: value 字段。
+fn split_field<'a>(
+    // 接收完整字段。
+    entry: &'a str,
+    // 接收字段类别名称。
+    kind: &str,
+    // 接收诊断跨度。
+    span: SourceSpan,
+) -> Result<(&'a str, &'a str), Diagnostic> {
+    // 第一个冒号分隔名称与其余值。
+    let Some((name, value)) = entry.split_once(':') else {
+        // 返回缺少冒号诊断。
+        return Err(Diagnostic::new(
+            // 指向完整属性。
+            span,
+            // 说明字段结构错误。
+            format!("{kind} 字段 {entry:?} 缺少冒号"),
+            // 给出规范结构。
+            format!(
+                "使用 name: {}",
+                if kind == "props" {
+                    "Type"
+                } else {
+                    "initialValue"
+                }
+            ),
+        ));
+    };
+    // 去除名称和值周围空白。
+    let (name, value) = (name.trim(), value.trim());
+    // 两侧都必须非空。
+    if name.is_empty() || value.is_empty() {
+        // 返回空名称或值诊断。
+        return Err(Diagnostic::new(
+            // 指向完整属性。
+            span,
+            // 说明字段不完整。
+            format!("{kind} 字段 {entry:?} 不完整"),
+            // 给出规范结构。
+            "在冒号两侧补充名称和值",
+        ));
+    }
+    // 返回规范化两部分。
+    Ok((name, value))
+}
+
+// 验证组件名为 PascalCase Rust 标识符。
+fn validate_component_name(name: &str, span: SourceSpan) -> Result<(), Diagnostic> {
+    // 首字符必须是 ASCII 大写且整体是合法字段字符。
+    if name.starts_with(|value: char| value.is_ascii_uppercase()) && is_identifier(name) {
+        // Component、If 与 For 是保留标签。
+        if !matches!(name, "Component" | "If" | "For") {
+            // 返回合法。
+            return Ok(());
+        }
+    }
+    // 返回组件名称诊断。
+    Err(Diagnostic::new(
+        // 指向 name 属性。
+        span,
+        // 说明命名要求。
+        format!("组件名 {name:?} 不是可用的 PascalCase 名称"),
+        // 给出规范示例。
+        "使用非保留 PascalCase 名称，例如 Counter",
+    ))
+}
+
+// 验证 props/state 字段名为 Rust 兼容标识符。
+fn validate_field_name(name: &str, span: SourceSpan) -> Result<(), Diagnostic> {
+    // 要求小写或下划线开头并通过 syn 校验。
+    if name
+        // 读取首字符。
+        .chars()
+        // 检查 camelCase 或 snake_case 起始形状。
+        .next()
+        // 返回首字符结果。
+        .is_some_and(|value| value.is_ascii_lowercase() || value == '_')
+        // 要求其余字符也在语言标识符集合。
+        && is_identifier(name)
+        // 要求不是 Rust 关键字。
+        && syn::parse_str::<syn::Ident>(name).is_ok()
+    {
+        // 返回合法。
+        return Ok(());
+    }
+    // 返回字段名诊断。
+    Err(Diagnostic::new(
+        // 指向所属属性。
+        span,
+        // 说明字段名不可映射。
+        format!("组件字段名 {name:?} 不是合法 Rust 标识符"),
+        // 给出规范示例。
+        "使用 camelCase 或 snake_case 非关键字名称",
+    ))
+}
+
+// 检查 ASCII 标识符字符集合。
+fn is_identifier(name: &str) -> bool {
+    // 要求非空且全部字符合法。
+    !name.is_empty()
+        // 检查全部字符。
+        && name
+            // 遍历字符。
+            .chars()
+            // 只允许 ASCII 字母、数字与下划线。
+            .all(|value| value.is_ascii_alphanumeric() || value == '_')
+}
+
+// 构造字段列表定界符诊断。
+fn invalid_field_list(span: SourceSpan) -> Diagnostic {
+    // 返回统一结构诊断。
+    Diagnostic::new(
+        // 指向完整属性。
+        span,
+        // 说明定界符未配对。
+        "组件字段列表包含未配对的括号、尖括号、方括号或引号",
+        // 给出修复动作。
+        "补齐定界符并确保逗号只分隔顶层字段",
+    )
+}

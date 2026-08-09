@@ -1,5 +1,5 @@
 // 引入共享元素与源码跨度。
-use super::{Element, SourceSpan};
+use super::{ComponentDeclaration, SourceSpan};
 
 // 表示根元素之前按源码顺序出现的顶层声明。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -12,8 +12,8 @@ pub(crate) enum Declaration {
     StyleClass(StyleClassDeclaration),
     // 保存主题声明。
     Theme(ThemeDeclaration),
-    // 暂存由后续组件 Gate 继续验证的顶层组件定义。
-    Component(Element),
+    // 保存已经验证 props、state 与视图体的顶层组件定义。
+    Component(ComponentDeclaration),
 }
 
 // 表示一个文件导入及可选具名组件。

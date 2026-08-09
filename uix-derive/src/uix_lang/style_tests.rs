@@ -45,12 +45,12 @@ fn parses_top_level_declarations_in_source_order() {
         // 验证主题名。
         Declaration::Theme(value) if value.name == "light"
     ));
-    // 第六个声明暂存 Component 元素供后续 Gate。
+    // 第六个声明必须是完成声明级验证的 Component。
     assert!(matches!(
         // 借用组件声明。
         &document.declarations[5],
-        // 验证保留标签名。
-        Declaration::Component(value) if value.name == "Component"
+        // 验证组件声明名。
+        Declaration::Component(value) if value.name == "LocalCard"
     ));
     // 根元素必须在声明之后独立保存。
     assert_eq!(document.root.name, "App");
@@ -248,13 +248,13 @@ fn preserves_utf8_style_diagnostic_position() {
 
 // 验证 Component 声明中的普通子元素仍保持顺序。
 #[test]
-fn preserves_component_placeholder_children_for_next_gate() {
+fn preserves_component_children_after_declaration_validation() {
     // 解析顶层组件定义和根元素。
     let document = parse_document(
         "<Component name=\"Card\"><Container><Text>内容</Text></Container></Component><App><Card /></App>",
     )
-    // 组件占位结构必须成功。
-    .expect("顶层 Component 应保留给后续 Gate");
+    // 组件结构必须成功。
+    .expect("顶层 Component 应完成声明级验证");
     // 提取组件声明。
     let Declaration::Component(component) = &document.declarations[0] else {
         // 结构不匹配时失败。
