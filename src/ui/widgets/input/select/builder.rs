@@ -9,7 +9,7 @@ use std::collections::HashSet;
 
 use super::{
     OptGroup, Select, SelectOption, SelectOptionGroup, SelectOptionView, SelectValue,
-    SelectValueBinding,
+    SelectValueBinding, SelectValueMode,
 };
 
 const DROPDOWN_ROW_HEIGHT: f32 = 28.0;
@@ -73,6 +73,14 @@ impl Select {
         let mut select = Self::new();
         select.search = true;
         select
+    }
+
+    /// 按声明式布尔值启用或关闭搜索能力。
+    pub fn searchable_enabled(mut self, enabled: bool) -> Self {
+        // 保存调用侧解析后的搜索开关。
+        self.search = enabled;
+        // 返回更新后的流式构造器。
+        self
     }
 
     pub fn options<I, S>(mut self, opts: I) -> Self
@@ -158,6 +166,16 @@ impl Select {
         self.multiple = T::MULTIPLE;
         self.sync_bound_selection();
         self
+    }
+
+    /// 绑定状态并在编译期验证声明的单选或多选模式。
+    pub fn value_mode<const MULTIPLE: bool, T>(self, state: &State<T>) -> Self
+    where
+        // 只有与声明模式匹配的公开状态类型才能进入绑定入口。
+        T: SelectValueMode<MULTIPLE>,
+    {
+        // 复用统一状态绑定和首次同步生命周期。
+        self.value(state)
     }
 
     pub fn placeholder(mut self, p: impl Into<String>) -> Self {
