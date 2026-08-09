@@ -1,6 +1,7 @@
 //! Fake 图形上下文 — 空操作实现，记录调用。
 
-use crate::core::{Errc, Error, Result};
+// 引入 fake context 显式呈现校验所需的错误类型。
+use crate::core::{Errc, Error};
 use crate::native::present::{IGraphicsContext, PresentDamage, PresentFrame};
 use std::cell::Cell;
 
@@ -20,7 +21,8 @@ impl FakeGraphicsContextState {
         Self {
             width: Cell::new(width),
             height: Cell::new(height),
-            initialized: false,
+            // fake context 与生产 adapter 一样在构造成功后立即可用。
+            initialized: true,
             make_current_calls: 0,
             present_calls: 0,
             last_present_damage: None,
@@ -65,13 +67,6 @@ impl IGraphicsContext for FakeGraphicsContext {
 
     fn graphics_backend(&self) -> crate::native::present::GraphicsApi {
         crate::native::present::GraphicsApi::OpenGlEs
-    }
-
-    fn initialize(&mut self, _native_window: *mut std::ffi::c_void, w: i32, h: i32) -> Result<()> {
-        self.state.width.set(w);
-        self.state.height.set(h);
-        self.state.initialized = true;
-        Ok(())
     }
 
     fn resize(&mut self, w: i32, h: i32) -> crate::core::Result<()> {

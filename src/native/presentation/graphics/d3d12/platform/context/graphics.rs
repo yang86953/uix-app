@@ -9,10 +9,6 @@ impl IGraphicsContext for D3d12Context {
         )
     }
 
-    fn initialize(&mut self, _native_window: *mut c_void, _width: i32, _height: i32) -> Result<()> {
-        Ok(())
-    }
-
     fn resize(&mut self, width: i32, height: i32) -> Result<()> {
         self.resize_result(width, height)
     }

@@ -88,13 +88,6 @@ pub trait IGraphicsContext {
         self.caps().backend
     }
 
-    fn initialize(
-        &mut self,
-        native_window: *mut std::ffi::c_void,
-        width: i32,
-        height: i32,
-    ) -> Result<(), Error>;
-
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error>;
     fn make_current(&mut self) -> Result<(), Error>;
 

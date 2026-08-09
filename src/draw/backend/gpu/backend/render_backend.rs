@@ -110,9 +110,8 @@ impl RenderBackend for GpuBackend {
     }
 
     fn initialize_prepared(&mut self, width: i32, height: i32) -> Result<(i32, i32), Error> {
-        // `IGraphicsContext::initialize` already ran in the factory against
-        // the real surface. Startup only synchronizes draw-owned state to the
-        // factory-reported drawable; it must not recreate the swapchain.
+        // native context 构造成功时已经绑定真实 surface 并进入可用状态。
+        // 启动只同步 draw-owned state 与 factory-reported drawable，不能重建 swapchain。
         if !self.factory_prepared {
             self.gpu_ctx.resize(width.max(1), height.max(1))?;
             self.factory_prepared = true;

@@ -459,6 +459,56 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # Wayland 不得再直接调用 context 交换旁路。
         self.assertNotIn("self.gpu_ctx.swap_buffers", wayland)
 
+    # 校验 native context 构造成功即就绪，不再保留二阶段初始化门面。
+    def test_initialize_compatibility_entry_leaves_graphics_context(self) -> None:
+        # 读取公共图形上下文 trait。
+        graphics_trait = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        # 读取 owner-thread wrapper。
+        thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
+        # 读取 registry 的单候选构造路径。
+        registry = (ROOT / "src/native/factory/registry.rs").read_text(encoding="utf-8")
+        # 收集所有直接实现 IGraphicsContext 的测试与原生 context。
+        contexts = (
+            # fake context 必须模拟构造即就绪事实。
+            ROOT / "src/native/test_harness/fake_graphics_context.rs",
+            # D3D11 context 不再保留空初始化实现。
+            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            # D3D12 context 不再保留空初始化实现。
+            ROOT / "src/native/presentation/graphics/d3d12/platform/context/graphics.rs",
+            # Vulkan context 不再保留空初始化实现。
+            ROOT / "src/native/presentation/graphics/vulkan/platform/context/graphics.rs",
+            # Metal context 在构造阶段进入就绪态。
+            ROOT / "src/native/presentation/graphics/metal/platform/context.rs",
+            # WGL context 由 constructor 完成原生初始化。
+            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            # EGL context 由 constructor 完成原生初始化。
+            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+        )
+        # 公共 trait 不得重新声明二阶段初始化入口。
+        self.assertNotIn("fn initialize(", graphics_trait)
+        # owner-thread wrapper 不得重新转发已经删除的入口。
+        self.assertNotIn('with_owner("initialize"', thread_bound)
+        # registry 不得在构造成功后再次初始化 context。
+        self.assertNotIn("ctx.initialize(", registry)
+        # 所有直接 context 实现都不得复活兼容方法。
+        for context in contexts:
+            # 读取单个实现文件以排除 renderer 的独立初始化语义。
+            source = context.read_text(encoding="utf-8")
+            # trait wrapper 中不能出现同名方法。
+            self.assertNotIn("fn initialize(", source)
+        # 读取可观察构造状态的 fake context。
+        fake = contexts[0].read_text(encoding="utf-8")
+        # fake 构造必须直接标记为就绪。
+        self.assertIn("initialized: true", fake)
+        # 读取保留 checked shutdown 状态的 Metal context。
+        metal = contexts[4].read_text(encoding="utf-8")
+        # Metal 构造必须直接标记为就绪。
+        self.assertIn("initialized: true", metal)
+        # Metal 的失败诊断只描述构造后发生的 checked shutdown。
+        self.assertIn("present after shutdown", metal)
+        # 陈旧的二阶段初始化诊断不得复活。
+        self.assertNotIn("present before initialize", metal)
+
     # 校验逐图元 legacy draw ABI 与平行 capability 表不会重新进入 adapter 门面。
     def test_legacy_draw_methods_leave_the_graphics_context_facade(self) -> None:
         # 读取公共兼容接口与事实型 capability profile。
