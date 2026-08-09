@@ -460,57 +460,65 @@ fn parse_attribute(cursor: &mut Cursor<'_>) -> Result<Attribute, Diagnostic> {
     };
     // 跳过等号前空白。
     cursor.skip_trivia()?;
-    // 属性必须显式赋值。
-    if !cursor.consume("=") {
-        // 返回缺少等号诊断。
-        return Err(Diagnostic::new(
-            // 覆盖属性名。
-            cursor.span_from(start),
-            // 陈述失败原因。
-            format!("属性 {name} 缺少 = 和属性值"),
-            // 给出合法写法。
-            format!("使用 {name}=\"value\" 或 {name}={{expression}}"),
-        ));
-    }
-    // 跳过等号后空白。
-    cursor.skip_trivia()?;
-    // 事件属性的双引号内容按受限表达式解析。
-    let value = if is_event {
-        // 读取未解码的事件表达式源码和内容跨度。
-        let (source, content_span) = cursor.quoted_expression_source()?;
-        // 使用完整属性跨度作为外围节点跨度。
-        let span = cursor.span_from(start);
-        // 保存已验证事件表达式。
-        AttributeValue::Expression(parse_expression_node(source, span, content_span)?)
-    // style 双引号属性使用共享样式语法。
-    } else if name == "style" && cursor.starts_with("\"") {
-        // 读取内联样式源码和内容位置。
-        let (source, content_span) = cursor.quoted_style_source()?;
-        // 解析内联属性并禁止 extends。
-        let (_, properties) = parse_style_properties(&source, content_span, false)?;
-        // 保存结构化内联样式。
-        AttributeValue::InlineStyle(properties)
-    // 普通双引号属性保持字面量。
-    } else if cursor.starts_with("\"") {
-        // 解析双引号字面量。
-        AttributeValue::Literal(cursor.quoted_literal()?)
-    // 花括号属性值保存已验证表达式。
-    } else if cursor.starts_with("{") {
-        // 解析并验证表达式节点。
-        let expression = parse_braced_expression_node(cursor)?;
-        // 保存表达式值。
-        AttributeValue::Expression(expression)
-    // 其他写法违反属性值语法。
+    // 记录属性是否显式提供值。
+    let has_explicit_value = cursor.consume("=");
+    // 普通无值属性生成等价 true 的布尔简写。
+    let value = if !has_explicit_value {
+        // 事件处理器不能省略回调表达式。
+        if is_event {
+            // 返回缺少事件值诊断。
+            return Err(Diagnostic::new(
+                // 覆盖事件属性名。
+                cursor.span_from(start),
+                // 陈述失败原因。
+                format!("事件属性 {name} 缺少 = 和处理器"),
+                // 给出合法事件写法。
+                format!("使用 {name}=\"handler()\""),
+            ));
+        }
+        // 统一交给后续布尔属性所有者验证类型。
+        AttributeValue::Literal("true".to_string())
     } else {
-        // 返回非法属性值诊断。
-        return Err(Diagnostic::new(
-            // 指向属性值位置。
-            cursor.point_span(),
-            // 陈述失败原因。
-            format!("属性 {name} 的值格式无效"),
-            // 给出合法写法。
-            "属性值必须使用双引号或花括号",
-        ));
+        // 跳过等号后空白。
+        cursor.skip_trivia()?;
+        // 事件属性的双引号内容按受限表达式解析。
+        if is_event {
+            // 读取未解码的事件表达式源码和内容跨度。
+            let (source, content_span) = cursor.quoted_expression_source()?;
+            // 使用完整属性跨度作为外围节点跨度。
+            let span = cursor.span_from(start);
+            // 保存已验证事件表达式。
+            AttributeValue::Expression(parse_expression_node(source, span, content_span)?)
+        // style 双引号属性使用共享样式语法。
+        } else if name == "style" && cursor.starts_with("\"") {
+            // 读取内联样式源码和内容位置。
+            let (source, content_span) = cursor.quoted_style_source()?;
+            // 解析内联属性并禁止 extends。
+            let (_, properties) = parse_style_properties(&source, content_span, false)?;
+            // 保存结构化内联样式。
+            AttributeValue::InlineStyle(properties)
+        // 普通双引号属性保持字面量。
+        } else if cursor.starts_with("\"") {
+            // 解析双引号字面量。
+            AttributeValue::Literal(cursor.quoted_literal()?)
+        // 花括号属性值保存已验证表达式。
+        } else if cursor.starts_with("{") {
+            // 解析并验证表达式节点。
+            let expression = parse_braced_expression_node(cursor)?;
+            // 保存表达式值。
+            AttributeValue::Expression(expression)
+        // 其他写法违反属性值语法。
+        } else {
+            // 返回非法属性值诊断。
+            return Err(Diagnostic::new(
+                // 指向属性值位置。
+                cursor.point_span(),
+                // 陈述失败原因。
+                format!("属性 {name} 的值格式无效"),
+                // 给出合法写法。
+                "属性值必须使用双引号或花括号",
+            ));
+        }
     };
     // 返回完整属性。
     Ok(Attribute {
@@ -825,7 +833,6 @@ mod tests {
         // 尾部文本必须保留标点。
         assert!(matches!(&text.children[2], Node::Text(node) if node.value == "!"));
     }
-
     // 验证文本花括号转义不会被误判为插值。
     #[test]
     fn decodes_escaped_text_braces() {
@@ -839,7 +846,6 @@ mod tests {
         // 转义结果必须是字面花括号。
         assert_eq!(text.value, "签名: {name}");
     }
-
     // 验证 UTF-8 文本后的错误位置使用字符列而不是字节列。
     #[test]
     fn reports_utf8_line_and_column_for_mismatched_tag() {
@@ -856,7 +862,6 @@ mod tests {
         // 修复建议必须给出正确结束标签。
         assert!(error.suggestion.contains("</Text>"));
     }
-
     // 验证文档严格执行唯一根元素约束。
     #[test]
     fn rejects_multiple_roots() {
@@ -869,7 +874,6 @@ mod tests {
         // 失败原因必须明确指出根元素缺失。
         assert!(error.message.contains("缺少根元素"));
     }
-
     // 验证三类未闭合词法结构都提供修复建议。
     #[test]
     fn rejects_unclosed_lexical_structures() {

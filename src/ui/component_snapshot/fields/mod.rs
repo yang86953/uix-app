@@ -375,6 +375,8 @@ pub enum SnapshotFields {
     },
     Layout {
         bg_color: Option<Color>,
+        // 保存会改变直接子区域排列的主轴方向。
+        direction: FlexDirection,
     },
     Header {
         height: f32,
