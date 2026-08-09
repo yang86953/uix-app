@@ -7,9 +7,9 @@ UIX（/ˈjuːɪks/）是一个 Rust 原生 UI 框架。
 ## 当前状态
 
 - 当前版本为 `0.0.1`，处于开发中，尚未发布。
-- Windows x64 是当前优先交付平台；其他平台与硬件的完成度以进度文档为准。
-- 版本与交付物口径见[首发状态](docs/进度/首发状态.md)，近期变化见[变更记录](CHANGELOG.md)。
-- 交付任务、负责人、阻塞与测试结果以 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 为准，仓库内进度页仅作稳定路由。
+- Windows x64 是当前优先交付平台；其他平台与硬件的完成度以 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 为准。
+- 版本与交付物口径见[交付与许可](docs/产品/交付与许可.md)，近期变化见[变更记录](CHANGELOG.md)。
+- 交付任务、负责人、阻塞与测试结果以 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 为准。
 
 ## 快速开始
 
@@ -25,7 +25,7 @@ cargo run --release --manifest-path demo/Cargo.toml --bin uix-demo
 
 项目完成状态只以这些测试目标通过为准，不维护独立验证命令。
 
-默认 feature 启用原生 D3D11；Windows 默认选择 D3D11，启用 `opengles` 时可构造 WGL/EGL OpenGL ES。运行环境不满足时，以[平台工程](docs/进度/平台工程.md)记录的支持边界为准。
+默认 feature 启用原生 D3D11；Windows 默认选择 D3D11，启用 `opengles` 时可构造 WGL/EGL OpenGL ES。运行环境不满足时，以 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 记录的支持边界为准。
 
 完整依赖配置、第一个应用和示例说明见[使用 · 快速开始](docs/使用/快速开始.md)。
 
@@ -34,14 +34,14 @@ cargo run --release --manifest-path demo/Cargo.toml --bin uix-demo
 | 入口 | 用途 |
 |---|---|
 | [文档中心](docs/README.md) | 按问题选择对应的事实角色和权威文档 |
-| [产品](docs/产品.md) | 查看定位、能力、边界与交付策略 |
+| [产品](docs/产品.md) | 查看项目定位、目标用户与交付策略 |
+| [功能](docs/功能.md) | 查看功能能力清单与边界 |
 | [使用](docs/使用.md) | 查找公开 API、任务用法和示例 |
 | [架构](docs/架构.md) | 查看系统边界、依赖、不变量与设计映射 |
-| [当前进度](docs/进度.md) | 查看交付总览、活跃差距和测试结果 |
-| [首发状态](docs/进度/首发状态.md) | 查看版本、平台、许可与交付物范围 |
+| [交付与许可](docs/产品/交付与许可.md) | 查看版本、平台、许可与交付物范围 |
 | [变更记录](CHANGELOG.md) | 查看用户可观察的版本变化 |
 
-产品、使用、架构与进度文档均随本项目维护；事实归属和交叉引用规则见[文档中心](docs/README.md#文档边界)。
+产品、功能、架构与使用文档均随本项目维护；事实归属和交叉引用规则见[文档中心](docs/README.md#文档边界)。
 
 ## 功能域
 
@@ -65,7 +65,7 @@ cargo run --release --manifest-path demo/Cargo.toml --bin uix-demo
 | `uix-derive/` | UIX 派生宏 |
 | `tests/` | 契约、集成与真窗测试入口 |
 | `scripts/` | 内部打包工具 |
-| `docs/` | 产品、使用、架构、进度文档 |
+| `docs/` | 产品、功能、架构、使用文档 |
 | `assets/` | 编译期与 Demo 运行时资源 |
 
 文档改动运行 `python tests/test_check_docs_links.py -q`。
