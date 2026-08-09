@@ -2,7 +2,7 @@
 
 > **定位**：UIX Lang 是 UIX 框架的 UI 描述语言，也是**使用方编写界面的推荐方式（产品方向声明）**——写应用时用 uix-lang 描述界面结构与样式，编译时 uix-app 框架自动将 `.uix` 文档转换为 Rust 声明式代码（过程宏 / 构建期转换），运行期零解释器开销。本文档是语言规范的唯一当前位置。
 >
-> **状态声明**：本规范包含**已实现能力与目标设计**。界面描述支持两种方式（见[定位与原则](../产品/定位与原则.md#定位)）：uix-lang 为**推荐方式**，Rust 声明式 API 为**支持方式**。公开 `uix!` 已支持内嵌源码与相对调用 crate 的 `.uix` 文件，并在编译期生成 `ViewNode`；当前已登记 `Text`、`Label`、`Button`、`Container`、`Row`、`Column`、`Icon`、`Divider` 与 `Space`。完整 `App` 应用入口及其他未登记组件仍为规划中；转换器会对未登记或规划中能力产生带来源位置和修复建议的编译错误，不会静默降级。实现差距由 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 跟踪。
+> **状态声明**：本规范包含**已实现能力与目标设计**。界面描述支持两种方式（见[定位与原则](../产品/定位与原则.md#定位)）：uix-lang 为**推荐方式**，Rust 声明式 API 为**支持方式**。公开 `uix!` 已支持内嵌源码与相对调用 crate 的 `.uix` 文件，并在编译期生成 `ViewNode`；当前已登记 `Text`、`Label`、`Button`、`ButtonGroup`、`Icon`、`Divider`、`Space`、`Typography`、`ThemeToggle`、`WindowControl`、`Container`、`Row` 与 `Column`。完整 `App` 应用入口及其他未登记组件仍为规划中；转换器会对未登记或规划中能力产生带来源位置和修复建议的编译错误，不会静默降级。实现差距由 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 跟踪。
 
 ## 为什么需要 UIX Lang
 
@@ -42,7 +42,7 @@ UIX Lang 继承产品四原则（见[定位与原则](../产品/定位与原则.
 | [内置组件/反馈组件](内置组件/反馈组件.md) | Message / Modal / Drawer / Popover / ProgressBar / Spin 等反馈组件 |
 | [内置组件/导航组件](内置组件/导航组件.md) | Menu / Tabs / Breadcrumb / Steps / Pagination 等导航组件 |
 
-当前生成矩阵真实支持 `Text`、`Label`、`Button`、`Icon`、`Divider`、`Space`、`Container`、`Row` 与 `Column`，以及文档内自定义 `Component` 展开。六类内置组件文档中的其他 PascalCase 标签均已登记为“规划中”：使用时会在宏展开期报告组件名、所属文档类别与修复建议，不会静默生成占位 View。
+当前生成矩阵真实支持 `Text`、`Label`、`Button`、`ButtonGroup`、`Icon`、`Divider`、`Space`、`Typography`、`ThemeToggle`、`WindowControl`、`Container`、`Row` 与 `Column`，以及文档内自定义 `Component` 展开。六类内置组件文档中的其他 PascalCase 标签均已登记为“规划中”：使用时会在宏展开期报告组件名、所属文档类别与修复建议，不会静默生成占位 View。
 
 图表组件（BarChart / LineChart / PieChart 等 12 个）的规范文档尚未编写（规划中），对应组件能力以 [组件速查](../使用/组件速查.md) 与[图表使用文档](../使用/图表.md)为准。
 
