@@ -816,6 +816,8 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取统一 renderer 的 PixelUpload 生命周期。
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
+        # 读取离开 native factory 前的正交 recipe owner。
+        recipe_owner = (ROOT / "src/native/present/recipe_owner.rs").read_text(encoding="utf-8")
         # 读取 Vulkan GFX-R5 显式诊断调用点。
         gfx_r5 = (ROOT / "src/gfx_r5_support/evidence.rs").read_text(encoding="utf-8")
         # 读取 mixed-DPI GFX-R5 场景，避免 feature 隔离代码逃逸契约。
@@ -867,8 +869,11 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("fn pixel_upload_surface(&mut self)", vulkan)
         # Metal 不能依赖 runtime 猜测 recipe。
         self.assertIn("fn pixel_upload_surface(&mut self)", metal)
-        # runtime 构造必须先验证 PixelUpload recipe owner。
-        self.assertIn("PixelUploadRecipeOwner::try_new(context)?", runtime)
+        # native recipe 出口必须先验证 PixelUpload owner。
+        self.assertIn(
+            "PixelUploadRecipeOwner::try_new(context).map(Self::PixelUpload)",
+            recipe_owner,
+        )
         # presentation 只能接收已经通过门禁的 owner。
         self.assertIn("PixelUploadPresentation::new(owner)", runtime)
         # runtime resize 必须通过专用 presentation helper。

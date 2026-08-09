@@ -590,6 +590,9 @@ mod gpu_recipe_owner;
 // CPU PixelUpload recipe 通过构造期验证的窄 owner 进入 renderer presentation。
 mod pixel_upload_recipe_owner;
 
+// 所有 native context 在离开 factory 前收敛为已验证 recipe owner。
+mod recipe_owner;
+
 // 兼容期高层 graphics context，逐步由 `rhi` 替代。
 mod traits;
 
@@ -601,3 +604,5 @@ pub(crate) use self::traits::{
 pub(crate) use gpu_recipe_owner::GpuRecipeOwner;
 // 只向 crate 内 renderer 暴露已验证 PixelUpload owner。
 pub(crate) use pixel_upload_recipe_owner::PixelUploadRecipeOwner;
+// 只向 crate 内 factory 与 renderer 暴露正交 recipe owner。
+pub(crate) use recipe_owner::GraphicsRecipeOwner;

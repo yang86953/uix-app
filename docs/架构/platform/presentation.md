@@ -8,17 +8,19 @@
 
 > **当前实现线索**：目标接口位于 `src/native/present/rhi.rs`，兼容接口位于 `src/native/present/`，构造位于 `src/native/factory/`，presenter 位于 `src/native/presentation/`；D3D11 surface 迁移位于 `src/native/presentation/graphics/d3d11/platform/context/rhi.rs`，OpenGL ES surface host 位于 `src/native/presentation/graphics/opengl/rhi_host.rs`，两者的 device 资源与状态分别位于对应 raster/context 子目录，构造门禁位于 `src/native/factory/registry.rs`。
 
-> **GPU recipe owner 边界**：生产 `GpuBackend` 不再直接持有 `Box<dyn IGraphicsContext>`，而是由 draw factory 先构造 `GpuRecipeOwner`。该 owner 在进入 backend 前验证 GPU-native × swapchain 与组合 thin RHI，并把运行期视图丢失统一映射为 typed state error；FramePlan/RHI 代码只借用其必需 Result 契约，不再把兼容期 `Option` 查询解释为可降级能力。
+> **GPU recipe owner 边界**：生产 `GpuBackend` 不再直接持有 `Box<dyn IGraphicsContext>`，而是由 native recipe factory 先构造 `GpuRecipeOwner`。该 owner 在进入 backend 前验证 GPU-native × swapchain、组合 thin RHI 与 surface lifecycle，并把运行期视图丢失统一映射为 typed state error；FramePlan/RHI 代码只借用其必需 Result 契约，不再把兼容期 `Option` 查询解释为可降级能力。
 
 > **GPU lifecycle 构造门禁**：GPU recipe 还必须在进入 backend 前暴露专用 `RhiSurfaceLifecycle`；只有组合 RHI 而缺少 resize owner 的 context 会在构造失败路径 checked shutdown。这样首个窗口 resize 不再承担发现错误 adapter 注册的职责。
 
-> **PixelUpload recipe owner 边界**：统一 renderer 的 CPU PixelUpload presentation 不再直接持有 `Box<dyn IGraphicsContext>`，而是在分派 recipe 后先构造 `PixelUploadRecipeOwner`。该 owner 验证 CPU × PixelUpload 与专用 surface，并统一承接 resize、最终 pixels 提交、`PresentSurface` 和 checked shutdown；presentation 不再直接查询可选 `pixel_upload_surface()`。
+> **PixelUpload recipe owner 边界**：统一 renderer 的 CPU PixelUpload presentation 不再直接持有 `Box<dyn IGraphicsContext>`；native recipe factory 在分派 recipe 时先构造 `PixelUploadRecipeOwner`。该 owner 验证 CPU × PixelUpload 与专用 surface，并统一承接 resize、最终 pixels 提交、`PresentSurface` 和 checked shutdown；presentation 不再直接查询可选 `pixel_upload_surface()`。
 
 > **静态 capability 快照**：两个 recipe owner 都只在构造门禁读取一次 `GraphicsContextCaps`，并在其生命周期内固定 backend/raster/present/coherency/occlusion 事实。运行期只让 `PresentSurface` 保持 live，recipe 身份与 owner-loss 诊断不再依赖兼容 context 的重复 `caps()` 查询。
 
-> **会话装配边界**：`RenderSession` 与通用 backend kind factory 不再持有或暂存 `IGraphicsContext`。生产 GPU bootstrap 与恢复只能从 `Renderer::from_context` 进入 native recipe factory，在完成 GPU recipe、thin RHI 与专用 owner 校验后直接注入会话；没有完整 recipe 的通用 GPU 构造或运行时切换返回稳定 typed error，不建立第二条 native 资源生命周期。
+> **会话装配边界**：`RenderSession` 与通用 backend kind factory 不再持有或暂存 `IGraphicsContext`。生产 GPU bootstrap 与恢复只能从 native recipe factory 取得已验证 `GraphicsRecipeOwner`，再进入 `Renderer::from_recipe_owner`；没有完整 recipe 的通用 GPU 构造或运行时切换返回稳定 typed error，不建立第二条 native 资源生命周期。
 
-> **draw backend 装配边界**：单调用点的 `draw::backend::factory` 已删除。迁移期 `IGraphicsContext` 只到达 `Renderer::from_context`，并在同一分支立即收敛为 `GpuRecipeOwner` 或 `PixelUploadRecipeOwner`；`draw/backend` 不再持有兼容 context 依赖。
+> **draw backend 装配边界**：单调用点的 `draw::backend::factory` 已删除。迁移期 `IGraphicsContext` 在 native factory 内立即收敛为 `GpuRecipeOwner` 或 `PixelUploadRecipeOwner`；`draw/backend` 与 `draw/renderer` 不再持有兼容 context 依赖。
+
+> **recipe owner 出口**：native recipe factory 现在返回 `GraphicsRecipeOwner`，在平台边界内完成 GPU/PixelUpload 正交分派与专用 owner 门禁。bootstrap、runtime recovery 和 renderer 只传递该已验证枚举，迁移期 `IGraphicsContext` 不再跨入 `draw/renderer`。
 
 > **窗口所有权边界**：`PlatformWindow::graphics_context`、共享窗口的 staged GPU context 与测试门面已经删除。窗口只持有 native surface 与 presenter；图形 context 从 bootstrap 开始由 renderer/recovery owner 唯一管理，窗口关闭不再执行第二次 checked shutdown。
 

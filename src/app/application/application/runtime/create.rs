@@ -175,9 +175,11 @@ pub(super) fn recreate_exact_graphics_recipe(
     recipe: GraphicsRecipe,
     pending_failures: &PendingFailureQueue,
 ) -> Result<Box<dyn RenderTarget>, Error> {
-    let context =
+    // native factory 在返回前已经把兼容 context 收敛为 recipe owner。
+    let owner =
         try_create_gpu_recipe_with_queue(recipe, surface, width, height, pending_failures.clone())?;
-    assemble_renderer(context, width, height)
+    // 恢复路径与首次 bootstrap 复用同一个 owner 装配入口。
+    assemble_renderer(owner, width, height)
         .map(|renderer| Box::new(renderer) as Box<dyn RenderTarget>)
         .map_err(|failure| failure.into_error())
 }

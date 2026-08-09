@@ -5,6 +5,9 @@ use std::ffi::c_void;
 use crate::core::error::{Errc, Error};
 use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::thread_bound::bind_to_current_thread;
+// 引入离开 native factory 前必须构造的已验证 recipe owner。
+use crate::native::present::GraphicsRecipeOwner;
+// 引入 registry 的 recipe 事实、兼容 context 与原生 surface 句柄。
 use crate::native::present::{
     GraphicsApi, GraphicsSelection, IGraphicsContext, NativeSurfaceHandle, PresentMode, RasterMode,
 };
@@ -56,8 +59,10 @@ pub(crate) type GraphicsContextFactory =
 
 /// One graphics API factory row — API identity plus declared raster × present axes.
 ///
-/// Engine assembly still reads live [`IGraphicsContext::caps`]; these fields document
-/// the combination this entry is expected to provide ([架构 · 图形](docs/架构.md#图形-api与帧提交硬约束)).
+/// Native factory validation reads live [`IGraphicsContext::caps`]; renderer assembly
+/// receives the immutable snapshot carried by the validated recipe owner. These fields
+/// document the combination this entry is expected to provide
+/// ([架构 · 图形](docs/架构.md#图形-api与帧提交硬约束)).
 pub struct GraphicsBackendEntry {
     pub id: GraphicsApi,
     pub priority: u8,
@@ -273,7 +278,7 @@ pub(crate) fn try_create_gpu_recipe_with_queue(
     width: i32,
     height: i32,
     pending_failures: PendingFailureQueue,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
+) -> Result<GraphicsRecipeOwner, Error> {
     let entry = entry_for_recipe(recipe).ok_or_else(|| {
         Error::new(
             Errc::PlatformError,
@@ -282,13 +287,16 @@ pub(crate) fn try_create_gpu_recipe_with_queue(
     })?;
     // Only the native factory bridge unwraps the opaque surface handle before
     // it reaches an API/platform constructor.
-    try_create_context(
+    // 先通过精确 registry 行创建并 probe 迁移期 context。
+    let context = try_create_context(
         entry,
         native_surface.as_raw(),
         width,
         height,
         pending_failures,
-    )
+    )?;
+    // context 不得跨越 native factory，离开前收敛为已验证 recipe owner。
+    GraphicsRecipeOwner::try_new(context)
 }
 
 #[cfg(test)]
