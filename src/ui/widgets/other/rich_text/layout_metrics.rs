@@ -33,6 +33,18 @@ pub(super) fn flush_line(
     // 接收当前行实际高度。
     line_height: f32,
 ) {
+    // 非空行以全部实际字形的最大字号计算行高，避免后续小字号段压缩前序大字号段。
+    let line_height = glyphs
+        // 遍历当前行全部待结算字形。
+        .iter()
+        // 将每个字形字号转换为统一的一点五倍行高。
+        .map(|glyph| glyph.font_size * 1.5)
+        // 选择当前视觉行需要的最大行高。
+        .reduce(f32::max)
+        // 实际字形行高不得低于调用方提供的稳定默认行高。
+        .map(|actual_height| actual_height.max(line_height))
+        // 空行没有字形，继续使用调用方提供的默认行高。
+        .unwrap_or(line_height);
     // 新行顶部紧随前一行底部，首行从零开始。
     let y = lines.last().map(|line| line.y + line.height).unwrap_or(0.0);
     // 转移当前行字形所有权并清空复用缓冲区。
