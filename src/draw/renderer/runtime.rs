@@ -14,7 +14,9 @@ use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, Fram
 use crate::draw::renderer::RenderSession;
 use crate::draw::renderer::{GraphicsFailure, RenderOutcome};
 use crate::draw::{Canvas2D, GraphicsCapabilities, RasterPipeline, RenderTarget, UpdateStrategy};
-use crate::native::present::{IGraphicsContext, PresentMode, PresentTestResult, RasterMode};
+use crate::native::present::{
+    IGraphicsContext, PixelUploadRecipeOwner, PresentMode, PresentTestResult, RasterMode,
+};
 
 /// 最终呈现由谁完成。
 enum Presentation {
@@ -44,59 +46,33 @@ impl Presentation {
 }
 
 struct PixelUploadPresentation {
-    context: Box<dyn IGraphicsContext>,
+    // 保存构造期已验证的 PixelUpload recipe owner。
+    owner: PixelUploadRecipeOwner,
     damage_tracker: PresentDamageTracker,
     logical_width: i32,
     logical_height: i32,
 }
 
 impl PixelUploadPresentation {
-    // 只接受显式提供 PixelUpload surface 生命周期的 context。
-    fn try_new(mut context: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
-        // recipe capability 与专用 surface 契约必须同时存在。
-        if context.pixel_upload_surface().is_none() {
-            // 构造不变量缺失时返回稳定 typed error。
-            let error = Error::new(
-                // 使用参数错误标记 factory 交付了不完整 recipe。
-                Errc::InvalidArgument,
-                // 明确指出缺失的专用执行边界。
-                "CPU PixelUpload recipe requires a dedicated resize surface",
-            );
-            // 失败构造仍必须在 owner thread 检查式关闭 native context。
-            return match context.try_shutdown() {
-                // shutdown 成功时保留原始 recipe 错误。
-                Ok(()) => Err(error),
-                // shutdown 失败时保留清理错误并链接原始原因。
-                Err(cleanup_error) => Err(cleanup_error.with_source(error)),
-            };
-        }
-        // 保存已经通过 recipe 门禁的 context。
-        Ok(Self {
-            // PixelUpload presentation 独占 native context。
-            context,
+    // 只接受已经通过构造期门禁的 PixelUpload owner。
+    fn new(owner: PixelUploadRecipeOwner) -> Self {
+        // 保存已验证 owner 与 presentation 私有状态。
+        Self {
+            // PixelUpload presentation 独占 native owner。
+            owner,
             // 新 presentation 尚未提交任何 damage。
             damage_tracker: PresentDamageTracker::new(),
             // 首次同步前使用最小逻辑宽度。
             logical_width: 1,
             // 首次同步前使用最小逻辑高度。
             logical_height: 1,
-        })
+        }
     }
 
     // 通过专用 PixelUpload surface 契约执行逻辑尺寸 resize。
     fn resize_surface(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        // 构造后能力消失属于 native context 状态破坏。
-        let Some(surface) = self.context.pixel_upload_surface() else {
-            // 返回 typed 状态错误，禁止回退旧 IGraphicsContext resize。
-            return Err(Error::new(
-                // 使用 InvalidState 进入既有恢复路径。
-                Errc::InvalidState,
-                // 明确指出专用 surface 在生命周期中丢失。
-                "PixelUpload presentation lost its dedicated resize surface",
-            ));
-        };
-        // 归一化逻辑尺寸后交给专用 native surface。
-        surface.resize_pixel_upload_surface(width.max(1), height.max(1))
+        // 已验证 owner 统一处理视图丢失与逻辑尺寸归一化。
+        self.owner.resize_surface(width, height)
     }
 
     // 从调用方已经读取的单一 surface 快照同步逻辑尺寸。
@@ -158,14 +134,17 @@ impl Renderer {
             }
             (RasterMode::Cpu, PresentMode::PixelUpload) => {
                 // 在创建 CPU session 前验证 native PixelUpload surface 契约。
-                let mut upload = PixelUploadPresentation::try_new(context)?;
+                // 在进入 presentation 前验证 CPU × PixelUpload 与专用 surface。
+                let owner = PixelUploadRecipeOwner::try_new(context)?;
+                // presentation 只持有已验证 owner。
+                let mut upload = PixelUploadPresentation::new(owner);
                 // 创建 CPU raster session 承接待上传的 retained pixels。
                 let session = match RenderSession::new(BackendKind::Cpu) {
                     // 保存可用的 CPU session。
                     Ok(session) => session,
                     // session 构造失败时关闭已经通过门禁的 native context。
                     Err(error) => {
-                        return match upload.context.try_shutdown() {
+                        return match upload.owner.try_shutdown() {
                             // native shutdown 成功时返回 CPU session 错误。
                             Ok(()) => Err(error),
                             // native shutdown 失败时链接 CPU session 错误。
@@ -238,8 +217,8 @@ impl Renderer {
         })?;
         let width = cpu.width();
         let height = cpu.height();
-        let caps = upload.context.caps();
-        let present_surface = upload.context.present_surface();
+        let caps = upload.owner.caps();
+        let present_surface = upload.owner.present_surface();
         // PixelUpload recipe 只提交单一 CPU retained buffer，不持有 acquired image 身份。
         let present_image = None;
         let damage = upload
@@ -251,18 +230,10 @@ impl Renderer {
                 present_damage,
             )
             .present_damage;
-        // 构造后专用提交视图消失属于 native context 状态破坏。
-        let Some(surface) = upload.context.pixel_upload_surface() else {
-            // 返回 typed 状态错误，禁止回退已移除的统一 present。
-            return Err(Error::new(
-                // 使用 InvalidState 进入既有恢复路径。
-                Errc::InvalidState,
-                // 明确指出专用 PixelUpload 提交边界缺失。
-                "PixelUpload presentation lost its dedicated presentation surface",
-            ));
-        };
-        // 直接经 PixelUpload recipe 的专用 surface 提交 CPU retained pixels。
-        surface.present_pixels(cpu.pixels(), width, height, damage)?;
+        // 直接经已验证 PixelUpload owner 提交 CPU retained pixels。
+        upload
+            .owner
+            .present_pixels(cpu.pixels(), width, height, damage)?;
         upload.damage_tracker.commit(
             caps.present_coherency,
             present_surface,
@@ -313,7 +284,7 @@ impl RenderTarget for Renderer {
             Presentation::BackendManaged => self.session.initialize_prepared(width, height),
             Presentation::PixelUpload(upload) => {
                 // 一次读取初始化后的完整 PixelUpload surface 快照。
-                let present_surface = upload.context.present_surface();
+                let present_surface = upload.owner.present_surface();
                 // 从同一快照读取实际物理宽度。
                 let actual_width = present_surface.drawable_width.max(1);
                 // 从同一快照读取实际物理高度。
@@ -332,7 +303,7 @@ impl RenderTarget for Renderer {
         }
         self.session.try_shutdown()?;
         if let Presentation::PixelUpload(upload) = &mut self.presentation {
-            upload.context.try_shutdown()?;
+            upload.owner.try_shutdown()?;
         }
         self.shutdown = true;
         Ok(())
@@ -348,7 +319,7 @@ impl RenderTarget for Renderer {
                 // CPU PixelUpload 只通过专用 surface 契约重建 native drawable。
                 upload.resize_surface(width, height)?;
                 // resize 成功后一次读取完整 PixelUpload surface 快照。
-                let present_surface = upload.context.present_surface();
+                let present_surface = upload.owner.present_surface();
                 // 从同一快照读取 adapter 的实际物理宽度。
                 let actual_width = present_surface.drawable_width.max(1);
                 // 从同一快照读取 adapter 的实际物理高度。
@@ -490,7 +461,7 @@ impl RenderTarget for Renderer {
         match &self.presentation {
             Presentation::PixelUpload(upload) => {
                 // PixelUpload 只从完整 live surface 快照读取 DPR。
-                let dpr = upload.context.present_surface().device_pixel_ratio;
+                let dpr = upload.owner.present_surface().device_pixel_ratio;
                 // 无效 native 元数据保守回退 identity 比例。
                 if dpr.is_finite() && dpr > 0.0 {
                     // 返回当前有效 DPR。

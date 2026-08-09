@@ -10,6 +10,8 @@
 
 > **GPU recipe owner 边界**：生产 `GpuBackend` 不再直接持有 `Box<dyn IGraphicsContext>`，而是由 draw factory 先构造 `GpuRecipeOwner`。该 owner 在进入 backend 前验证 GPU-native × swapchain 与组合 thin RHI，并把运行期视图丢失统一映射为 typed state error；FramePlan/RHI 代码只借用其必需 Result 契约，不再把兼容期 `Option` 查询解释为可降级能力。
 
+> **PixelUpload recipe owner 边界**：统一 renderer 的 CPU PixelUpload presentation 不再直接持有 `Box<dyn IGraphicsContext>`，而是在分派 recipe 后先构造 `PixelUploadRecipeOwner`。该 owner 验证 CPU × PixelUpload 与专用 surface，并统一承接 resize、最终 pixels 提交、`PresentSurface` 和 checked shutdown；presentation 不再直接查询可选 `pixel_upload_surface()`。
+
 > **离屏模糊边界**：`IGraphicsContext` 不再声明 `blur_offscreen_target`，D3D11 adapter 也不再持有高层 blur 方法、专属 scratch owner 或私有核计算。两个生产 adapter 只保留 `BLUR_PASS` 固定 shader 与底层资源/draw 原语；Picture 的双 pass、region、权重、资源清理和提交顺序全部由 graphics backend 决定。
 
 > **离屏资源边界**：`OffscreenTargetId` 与 `IGraphicsContext` 的 create/destroy/bind/blit offscreen 方法已经移除，thread-bound 门面不再转发这些高层操作；D3D11 context 和 OpenGL ES raster 也不再保存平行的离屏槽位、RTV/SRV/FBO、绑定标记或 legacy sampled-blit shader。Picture 创建失败或 queue 无法无损 lower 时由 graphics backend 返回 typed failure，platform 不选择 UI fallback。

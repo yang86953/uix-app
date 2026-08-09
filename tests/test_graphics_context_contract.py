@@ -259,6 +259,33 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertNotIn("Box<dyn IGraphicsContext>", backend)
         # 装配层必须先完成 owner 校验再构造 backend。
         self.assertIn("let owner = GpuRecipeOwner::try_new(ctx)?;", factory)
+
+    # 校验 CPU PixelUpload presentation 只持有构造期已验证的 recipe owner。
+    def test_pixel_upload_presentation_uses_validated_recipe_owner(self) -> None:
+        # 读取 PixelUpload owner 的唯一 native 边界实现。
+        owner = (ROOT / "src/native/present/pixel_upload_recipe_owner.rs").read_text(encoding="utf-8")
+        # 读取统一 renderer 的 presentation 状态机。
+        runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
+        # 兼容 trait object 只能封装在 native owner 内。
+        self.assertIn("context: Box<dyn IGraphicsContext>", owner)
+        # owner 必须独立承接 PixelUpload resize。
+        self.assertIn("fn resize_surface(&mut self, width: i32, height: i32) -> Result<()>", owner)
+        # owner 必须独立承接最终像素提交。
+        self.assertIn("fn present_pixels(", owner)
+        # presentation 状态只持有已验证 owner。
+        self.assertIn("owner: PixelUploadRecipeOwner", runtime)
+        # presentation 不得重新持有兼容 trait object。
+        presentation_start = runtime.index("struct PixelUploadPresentation")
+        # 截取 presentation 实现结束前的局部源码。
+        presentation_end = runtime.index("/// UIX 唯一的图形运行时类型。", presentation_start)
+        # 保存只属于 PixelUpload presentation 的状态与方法。
+        presentation = runtime[presentation_start:presentation_end]
+        # 局部状态不得恢复兼容 context 字段。
+        self.assertNotIn("Box<dyn IGraphicsContext>", presentation)
+        # 局部方法不得直接查询可选 surface 视图。
+        self.assertNotIn("pixel_upload_surface()", presentation)
+        # renderer 必须先完成 owner 校验再构造 presentation。
+        self.assertIn("let owner = PixelUploadRecipeOwner::try_new(context)?;", runtime)
     # 校验无帧遮挡探测只属于 thin RHI surface 生命周期。
     def test_idle_present_probe_belongs_to_graphics_surface(self) -> None:
         # 读取迁移期 context 门面。

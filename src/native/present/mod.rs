@@ -590,6 +590,9 @@ pub(crate) mod rhi;
 // 生产 GPU recipe 通过构造期验证的窄 owner 进入 draw backend。
 mod gpu_recipe_owner;
 
+// CPU PixelUpload recipe 通过构造期验证的窄 owner 进入 renderer presentation。
+mod pixel_upload_recipe_owner;
+
 // 兼容期高层 graphics context，逐步由 `rhi` 替代。
 mod traits;
 
@@ -599,3 +602,5 @@ pub(crate) use self::traits::{
 };
 // 只向 crate 内图形装配与 backend 暴露已验证 GPU owner。
 pub(crate) use gpu_recipe_owner::GpuRecipeOwner;
+// 只向 crate 内 renderer 暴露已验证 PixelUpload owner。
+pub(crate) use pixel_upload_recipe_owner::PixelUploadRecipeOwner;
