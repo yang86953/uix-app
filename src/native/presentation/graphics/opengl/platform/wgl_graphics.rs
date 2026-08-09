@@ -1,8 +1,8 @@
 // 复用父模块中的 WGL context 及 owner-thread 原生辅助方法。
 use super::WglContext;
 
-// 引入 OpenGL ES 图形上下文与事实能力契约。
-use crate::native::present::{IGraphicsContext, NativeRasterCaps, PresentCoherency};
+// 引入 OpenGL ES 图形上下文与呈现一致性契约。
+use crate::native::present::{IGraphicsContext, PresentCoherency};
 // 引入项目统一错误和结果类型。
 use crate::native::{Error, Result};
 // 为 WGL context 实现共享的 IGraphicsContext forwarding 合约。
@@ -20,12 +20,6 @@ impl IGraphicsContext for WglContext {
     fn rhi_context(&mut self) -> Option<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
         // WGL adapter 已经实现共享 GraphicsDevice/GraphicsSurface。
         Some(self)
-    }
-
-    // 返回固定 RHI probe 已兑现的事实能力。
-    fn native_raster_caps(&self) -> NativeRasterCaps {
-        // WGL 只公布 retained surface 与 Additive pipeline 事实。
-        NativeRasterCaps::retained_rhi_with_additive()
     }
 
     // 返回 WGL drawable 的完整 live surface 快照。

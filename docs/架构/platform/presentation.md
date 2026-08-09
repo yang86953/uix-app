@@ -4,7 +4,7 @@
 
 > **接口**：声明 platform 系统的目标 `presentation` 模块，权威持有原生 surface、图形 recipe、thin RHI provider、presenter 与提交能力。依赖：[windowing](windowing.md)、core。导出：供 graphics [backend](../graphics/backend.md) bootstrap/执行使用的平台图形边界。
 
-> **设计状态**：🔄 迁移中（2026-08-09）。`GraphicsDevice`、`GraphicsSurface`、事实型 `GraphicsCapabilities` 和 surface generation 已在 `src/native/present/rhi.rs` 建立；D3D11 与可选 `opengles` feature 下的 WGL/EGL OpenGL ES adapter 已接通资源/采样器/pipeline、pass、solid/textured（含 SrcOver/Additive）/gradient/coverage/MSDF/shape/仿射 shadow/单方向 blur draw 与 surface 生命周期，Picture texture 只由同一 RHI owner 管理，原生 adapter 的平行 offscreen texture/FBO 资源族已经移除，MSDF 已加入有界跨帧 RGBA8 texture cache；`FramePlan` 的局部 `ClearRect`、同纹理 `TextureMove`、主 surface native→soft sampled 合成、Picture native→soft 离屏合成和 surface generation 代际检查也已在两个 adapter 接通，并由生产 capability profile 显式启用 retained framebuffer。共享 CPU rasterizer 另已提供带 save/restore 的路径裁剪 mask，供 hybrid soft staging 保持 Canvas2D clip 语义。现有 `IGraphicsContext` 只保留静态能力、组合 thin RHI、recipe 专用视图、live surface 元数据、迁移期 resize helper 与 checked shutdown；逐 UI `draw_*` ABI、二阶段 `initialize`、`make_current`、`swap_buffers`、统一 `present`、通用 `resize` 与 readback 已从公共 trait、thread-bound wrapper 和原生 adapter 实现移除，GPU resize 与最终提交由 thin RHI 承接，CPU PixelUpload resize/提交由专用 `PixelUploadSurface` 承接，Wayland external presenter 只借用 `SwapchainPresentation`，surface readback 改由事实 capability 约束的可选 thin RHI 操作承接；所有 context 构造成功即处于可用状态，每帧 owner-context 准备由 thin RHI 设备维护承担。完成状态只以对应自动测试为准。
+> **设计状态**：🔄 迁移中（2026-08-09）。`GraphicsDevice`、`GraphicsSurface`、事实型 `GraphicsCapabilities` 和 surface generation 已在 `src/native/present/rhi.rs` 建立；D3D11 与可选 `opengles` feature 下的 WGL/EGL OpenGL ES adapter 已接通资源/采样器/pipeline、pass、solid/textured（含 SrcOver/Additive）/gradient/coverage/MSDF/shape/仿射 shadow/单方向 blur draw 与 surface 生命周期，Picture texture 只由同一 RHI owner 管理，原生 adapter 的平行 offscreen texture/FBO 资源族已经移除，MSDF 已加入有界跨帧 RGBA8 texture cache；`FramePlan` 的局部 `ClearRect`、同纹理 `TextureMove`、主 surface native→soft sampled 合成、Picture native→soft 离屏合成和 surface generation 代际检查也已在两个 adapter 接通，并由生产 capability profile 显式启用 retained framebuffer。共享 CPU rasterizer 另已提供带 save/restore 的路径裁剪 mask，供 hybrid soft staging 保持 Canvas2D clip 语义。现有 `IGraphicsContext` 只保留静态 recipe 能力、组合 thin RHI、recipe 专用视图、live surface 元数据、迁移期 resize helper 与 checked shutdown；逐 UI `draw_*` ABI、二阶段 `initialize`、`make_current`、`swap_buffers`、统一 `present`、通用 `resize`、readback 与 `native_raster_caps` 已从公共 trait、thread-bound wrapper 和原生 adapter 实现移除，GPU backend 从同一次 thin RHI 能力快照校验基线并派生 renderer 投影，GPU resize 与最终提交由 thin RHI 承接，CPU PixelUpload resize/提交由专用 `PixelUploadSurface` 承接，Wayland external presenter 只借用 `SwapchainPresentation`，surface readback 改由事实 capability 约束的可选 thin RHI 操作承接；所有 context 构造成功即处于可用状态，每帧 owner-context 准备由 thin RHI 设备维护承担。完成状态只以对应自动测试为准。
 
 > **当前实现线索**：目标接口位于 `src/native/present/rhi.rs`，兼容接口位于 `src/native/present/`，构造位于 `src/native/factory/`，presenter 位于 `src/native/presentation/`；D3D11 surface 迁移位于 `src/native/presentation/graphics/d3d11/platform/context/rhi.rs`，OpenGL ES surface host 位于 `src/native/presentation/graphics/opengl/rhi_host.rs`，两者的 device 资源与状态分别位于对应 raster/context 子目录，构造门禁位于 `src/native/factory/registry.rs`。
 
@@ -16,7 +16,7 @@
 >
 > **主表面清理边界**：`IGraphicsContext` 不再声明 `clear_render_target`、`clear_rects` 或 `bind_swapchain_target`，thread-bound 门面与 D3D11、D3D12、WGL/EGL 的 legacy wrapper 也已移除；`NativeRasterCaps` 不再用逐 UI clear 布尔值描述能力。整面和局部清理由通用 `FramePlan` 在 retained RHI texture 上编码，adapter 只在 acquire、pass 与最终 present 内部恢复真实 swapchain target。
 >
-> **逐图元绘制边界**：`IGraphicsContext` 不再声明 solid/stroke rect、glyph、linear/radial gradient、sector、solid mesh、box shadow 或 image blit 等 `draw_*` 方法，owner-thread wrapper 与各原生 context 也不再转发这些高层 batch。D3D11/OpenGL ES 对应的无消费者 shader、buffer、atlas 与图片上传 owner 已物理删除，D3D12 的测试期逐 UI raster pipeline 也已删除；adapter 仅保留薄 RHI packet 所需的固定 shader 与编码。`NativeRasterCaps` 只保留 retained framebuffer 与 RHI Additive 两项事实；逐图元 pipeline 是否可用由 registry 的固定 RHI probe 在首帧前一次性验证。
+> **逐图元绘制边界**：`IGraphicsContext` 不再声明 solid/stroke rect、glyph、linear/radial gradient、sector、solid mesh、box shadow 或 image blit 等 `draw_*` 方法，owner-thread wrapper 与各原生 context 也不再转发这些高层 batch。D3D11/OpenGL ES 对应的无消费者 shader、buffer、atlas 与图片上传 owner 已物理删除，D3D12 的测试期逐 UI raster pipeline 也已删除；adapter 仅保留薄 RHI packet 所需的固定 shader 与编码。`NativeRasterCaps` 是 graphics backend 从 `GraphicsCapabilities` 派生的 renderer 投影，只保留 retained framebuffer 与 RHI Additive 两项事实；逐图元 pipeline 是否可用由 registry 的固定 RHI probe 在首帧前一次性验证。
 >
 > **按 recipe 呈现边界**：`PresentFrame` 载荷并集与 `IGraphicsContext::present`、`present_pixels`、`present_image` 已物理移除。CPU × PixelUpload 只能经 `PixelUploadSurface::present_pixels` 上传并提交 retained pixels；Wayland external `GpuPresenter` 只能借用 EGL 显式提供的 `SwapchainPresentation`。D3D11 与 WGL/EGL 生产 GPU backend 的最终提交继续由 thin RHI `GraphicsSurface::present` 持有；D3D12 测试 context 与 fake 不再伪造无消费者的兼容 present。thread-bound wrapper 对两个专用视图分别执行 owner-thread 门禁，能力在构造后消失时返回 typed `InvalidState`。
 >
@@ -29,6 +29,8 @@
 > **live surface 元数据边界**：`GraphicsContextCaps` 只描述 backend、raster/present recipe、coherency 与遮挡能力，不携带动态 DPR。`IGraphicsContext` 不再分离暴露 `width`、`height` 或 DPR；所有 context 必须一次返回完整 `PresentSurface`，GPU backend、PixelUpload runtime 与诊断场景从同一快照派生 drawable extent 和 DPR，不能拼装可能跨 generation 的状态。thread-bound wrapper 也只缓存并在成功生命周期变更后整体刷新该快照。
 >
 > **recipe 查询边界**：`IGraphicsContext` 不再声明由 `GraphicsContextCaps` 重复派生的 `graphics_backend`、`supports_gl_proc_address` 或 `supports_pixel_present`。需要 adapter 身份的 typed error 一次读取 `caps().backend`；是否可借用 thin RHI 或 `PixelUploadSurface` 仍由对应专用视图决定，不能通过无消费者布尔查询猜测 recipe。
+>
+> **renderer 能力投影边界**：`IGraphicsContext::native_raster_caps` 已移除，thread-bound wrapper 不再缓存该值，D3D11、WGL 与 EGL adapter 也不再硬编码平行 profile。生产 GPU backend 只从一次 `GraphicsDevice::capabilities` 快照验证完整 GPU 原语与 retained 事实，并把 retained framebuffer、Additive 两项 renderer 所需事实投影为 `NativeRasterCaps`；固定 probe 仍是能力声明可执行性的权威验证。
 >
 > **idle present probe 边界**：`IGraphicsContext` 与 thread-bound wrapper 不再声明或转发 `test_present`。无帧遮挡退出探测属于 `GraphicsSurface` 生命周期：D3D11 在该接口内执行 `Present(0, DXGI_PRESENT_TEST)` 并保留 `Presentable` / `Occluded` / typed error 映射；GPU backend 只借用组合 thin RHI surface，CPU PixelUpload 与 external presenter 明确拒绝不适用的 probe。
 >
@@ -44,7 +46,7 @@
 | `GraphicsDevice` | thin RHI interface | GPU 资源、pipeline、pass、draw/copy、submit 与 device 维护 |
 | `GraphicsSurface` | surface interface | acquire、resize、present、idle present probe、surface generation 与呈现状态 |
 | `GraphicsCapabilities` | value | RHI 原语、retained、occlusion 与 present 的事实能力 |
-| `GraphicsContext` | 迁移期门面 | 当前组合静态能力、live surface、生命周期、thin RHI 与 recipe 专用视图；不再持有统一最终提交 |
+| `GraphicsContext` | 迁移期门面 | 当前组合静态 recipe 能力、live surface、生命周期、thin RHI 与 recipe 专用视图；不再持有 renderer capability 投影或统一最终提交 |
 | `Presenter` | 提交接口 | CPU/GPU 结果到原生窗口的最终 present |
 | `SurfaceToken` | generation value | surface 重建与迟到 callback 隔离 |
 

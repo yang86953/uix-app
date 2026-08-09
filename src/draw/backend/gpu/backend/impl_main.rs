@@ -14,7 +14,8 @@ use crate::draw::backend::contract::RenderBackend;
 use crate::draw::geometry::types::ImageHandle;
 // 使用薄 RHI 的设备维护入口承接每帧 owner-context 准备。
 use crate::native::present::rhi::GraphicsDevice;
-use crate::native::present::{IGraphicsContext, PresentMode, RasterMode};
+// 引入 context recipe 与 renderer 能力投影契约。
+use crate::native::present::{IGraphicsContext, NativeRasterCaps, PresentMode, RasterMode};
 
 impl GpuBackend {
     // 在通用 renderer 不感知平台 current API 的前提下准备本帧 RHI device。
@@ -63,25 +64,45 @@ impl GpuBackend {
 
     // 构造已经由 native factory 完成 surface 准备的 GPU-only backend。
     pub(crate) fn new_gpu_only(mut gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
+        // 一次读取静态 recipe 事实，供构造门禁和 typed error 复用。
         let caps = gpu_ctx.caps();
-        let native_caps = gpu_ctx.native_raster_caps();
-        // 生产 GPU backend 不再接受依赖兼容 soft upload 的 hybrid 基线。
-        let raster_baseline = native_caps.has_gpu_only_baseline();
-        // 生产 GPU backend 必须持有已经通过 factory probe 的组合 thin RHI。
-        let has_rhi_context = gpu_ctx.rhi_context().is_some();
+        // 从组合 thin RHI 一次取得已由 factory probe 验证的事实快照。
+        let rhi_capabilities = gpu_ctx
+            // 只在这个局部借用 owner context，随后保存可复制的能力值。
+            .rhi_context()
+            // 通过薄 RHI device 读取唯一 capability 来源。
+            .map(|context| context.capabilities());
+        // 从同一快照派生通用 renderer 真正消费的窄能力投影。
+        let native_caps = rhi_capabilities
+            // 保留 retained 与 Additive 两项绘制事实。
+            .map(NativeRasterCaps::from_rhi_capabilities)
+            // 缺少薄 RHI 时使用空投影进入统一 typed failure。
+            .unwrap_or_default();
+        // 构造门禁同时要求完整 GPU 原语基线和 retained 主颜色目标。
+        let raster_baseline = rhi_capabilities
+            // 缺少薄 RHI 或任一 GPU 基线原语都不能构造生产 backend。
+            .is_some_and(|capabilities| capabilities.has_gpu_baseline())
+            // GPU-only canvas 还必须持有跨帧 retained 事实。
+            && native_caps.has_gpu_only_baseline();
         if caps.raster != RasterMode::GpuNative
             || caps.present != PresentMode::Swapchain
             || !raster_baseline
-            || !has_rhi_context
         {
+            // 保存诊断所需的静态 backend 身份。
             let backend = caps.backend;
+            // 保存诊断所需的 raster recipe。
             let raster = caps.raster;
+            // 保存诊断所需的 present recipe。
             let present = caps.present;
+            // 构造失败前检查式关闭已经创建的 native owner。
             gpu_ctx.try_shutdown()?;
+            // 返回稳定参数错误，交由上层选择其它 recipe。
             return Err(Error::new(
+                // 能力不完整属于构造参数与 recipe 不匹配。
                 Errc::InvalidArgument,
+                // 同时记录唯一 RHI 快照与 renderer 投影，避免平行声明掩盖差异。
                 format!(
-                    "GpuBackend requires a complete GPU-only retained RHI baseline, got {backend} raster={raster} present={present} thin_rhi={has_rhi_context} native={native_caps:?}"
+                    "GpuBackend requires a complete GPU-only retained RHI baseline, got {backend} raster={raster} present={present} rhi={rhi_capabilities:?} renderer={native_caps:?}"
                 ),
             ));
         }
@@ -90,9 +111,9 @@ impl GpuBackend {
         // 从同一快照派生逻辑 canvas 元数据。
         let ((logical_w, logical_h), device_pixel_ratio) =
             logical_metadata_from_surface(present_surface);
-        // 只有已暴露薄 RHI 组合视图的参考 adapter 创建 lowering cache。
-        let rhi_renderer = gpu_ctx
-            .rhi_context()
+        // 只有已取得完整薄 RHI 能力快照的参考 adapter 创建 lowering cache。
+        let rhi_renderer = rhi_capabilities
+            // 能力值只作为已存在组合 RHI 的构造证明。
             .map(|_| super::super::super::rhi_renderer::RhiRenderer::default());
         // 生产主 surface 固定使用禁止 legacy soft upload 的 GPU-only canvas。
         let mut canvas = NativeGpuCanvas2D::new_gpu_only(logical_w, logical_h, native_caps);

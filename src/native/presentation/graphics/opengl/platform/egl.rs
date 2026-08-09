@@ -11,7 +11,7 @@ use std::ffi::c_void;
 use std::ptr;
 
 use crate::native::present::{
-    IGraphicsContext, NativeRasterCaps, PresentCoherency, PresentDamage, SwapchainPresentation,
+    IGraphicsContext, PresentCoherency, PresentDamage, SwapchainPresentation,
 };
 // 引入共享的 OpenGL RHI host 生命周期实现。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
@@ -412,11 +412,6 @@ impl IGraphicsContext for EglContext {
     fn swapchain_presentation(&mut self) -> Option<&mut dyn SwapchainPresentation> {
         // 仅 EGL external presenter recipe 暴露该专用视图。
         Some(self)
-    }
-
-    fn native_raster_caps(&self) -> NativeRasterCaps {
-        // EGL 只公布固定 probe 已验证的 retained 与 Additive 事实。
-        NativeRasterCaps::retained_rhi_with_additive()
     }
 
     // 返回 EGL drawable 的完整 live surface 快照。
