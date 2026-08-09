@@ -126,8 +126,8 @@ fn parse_unordered_list(text: &str) -> Option<&str> {
     }
     // 读取项目符号后的第一个 Unicode 字符。
     let separator = text[1..].chars().next()?;
-    // 没有空白分隔时保留星号等内联标记的原始语义。
-    if !separator.is_whitespace() {
+    // 只接受 Markdown 块级标记使用的 ASCII 空格或制表符。
+    if !matches!(separator, ' ' | '\t') {
         // 例如 *不是列表* 应继续解析为斜体。
         return None;
     }
@@ -157,8 +157,8 @@ fn parse_ordered_list(text: &str) -> Option<(&str, &str)> {
     }
     // 读取点号后的第一个 Unicode 字符。
     let separator = text[digit_len + 1..].chars().next()?;
-    // 点号后没有空白时不视为有序列表。
-    if !separator.is_whitespace() {
+    // 点号后只接受 Markdown 块级标记使用的 ASCII 空格或制表符。
+    if !matches!(separator, ' ' | '\t') {
         // 例如 1.test 应保持普通文本。
         return None;
     }
