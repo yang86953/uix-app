@@ -75,6 +75,8 @@ pub trait IGraphicsContext {
         // 统一把逻辑尺寸和 DPR 转成经过范围证明的物理 RHI extent。
         let extent =
             rhi_resize_extent_for_logical(logical_width, logical_height, device_pixel_ratio)?;
+        // 在借用可变 RHI 视图前保存静态 backend 事实，供 typed error 使用。
+        let backend = self.caps().backend;
         // 只有暴露组合 RHI 的 native adapter 才进入这条迁移期生产入口。
         let Some(context) = self.rhi_context() else {
             // 让调用方把 NotImplemented 识别为兼容路径回退，而非运行时故障。
@@ -82,7 +84,7 @@ pub trait IGraphicsContext {
                 crate::core::error::Errc::NotImplemented,
                 format!(
                     "GraphicsBackend {} does not expose a thin RHI surface",
-                    self.graphics_backend()
+                    backend
                 ),
             ));
         };
@@ -95,10 +97,6 @@ pub trait IGraphicsContext {
     /// Per-operation native raster support for `GpuNative` contexts.
     fn native_raster_caps(&self) -> NativeRasterCaps {
         NativeRasterCaps::default()
-    }
-
-    fn graphics_backend(&self) -> GraphicsApi {
-        self.caps().backend
     }
 
     // 返回当前 drawable extent、DPR、transform 与 generation 的原子快照。
@@ -115,16 +113,6 @@ pub trait IGraphicsContext {
         None
     }
 
-    /// Legacy capability query retained for tests and diagnostics during the
-    /// runtime-lease migration. It never exposes a raw proc loader.
-    fn supports_gl_proc_address(&self) -> bool {
-        self.caps().raster == RasterMode::GpuNative && self.caps().backend == GraphicsApi::OpenGlEs
-    }
-
-    fn supports_pixel_present(&self) -> bool {
-        self.caps().present == PresentMode::PixelUpload
-    }
-
     fn present_pixels(
         &mut self,
         _pixels: &[u32],
@@ -132,11 +120,14 @@ pub trait IGraphicsContext {
         _height: i32,
         _damage: PresentDamage,
     ) -> Result<(), Error> {
+        // 从静态 recipe 快照读取 backend，不扩张派生查询门面。
+        let backend = self.caps().backend;
+        // 返回包含具体 adapter 身份的 typed unsupported 错误。
         Err(Error::new(
             crate::core::error::Errc::NotImplemented,
             format!(
                 "GraphicsBackend {} does not support CPU pixel present",
-                self.graphics_backend()
+                backend
             ),
         ))
     }
@@ -148,11 +139,14 @@ pub trait IGraphicsContext {
     /// without submitting frame data. Contexts that can report occlusion from
     /// normal presentation must override this method.
     fn test_present(&mut self) -> Result<PresentTestResult, Error> {
+        // 从静态 recipe 快照读取 backend，不要求 adapter 重复实现派生 helper。
+        let backend = self.caps().backend;
+        // 返回保留具体 adapter 身份的 typed unsupported 错误。
         Err(Error::new(
             crate::core::error::Errc::NotImplemented,
             format!(
                 "GraphicsBackend {} does not support idle present tests",
-                self.graphics_backend()
+                backend
             ),
         ))
     }

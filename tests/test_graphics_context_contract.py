@@ -122,6 +122,36 @@ class GraphicsContextContractTests(unittest.TestCase):
         # PixelUpload runtime 不得恢复分离的 context height 查询。
         self.assertNotIn("upload.context.height()", runtime)
 
+    # 校验 recipe 派生查询不会继续扩张通用 context 门面。
+    def test_context_recipe_queries_are_not_duplicated_by_adapters(self) -> None:
+        # 读取统一 context trait。
+        facade = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        # backend 身份只通过静态 caps 快照读取。
+        self.assertNotIn("fn graphics_backend(&self)", facade)
+        # 无消费者的 GL proc 查询不得保留在生产门面。
+        self.assertNotIn("fn supports_gl_proc_address(&self)", facade)
+        # 无消费者的 PixelUpload 查询不得保留在生产门面。
+        self.assertNotIn("fn supports_pixel_present(&self)", facade)
+        # 三条默认错误路径都应直接读取同一静态 recipe 事实。
+        self.assertGreaterEqual(facade.count("let backend = self.caps().backend;"), 3)
+        # 逐个核对曾重复声明 backend 的 adapter 已删除派生实现。
+        for adapter in (
+            # D3D11 生产 context。
+            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            # WGL 生产 context。
+            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            # EGL 生产 context。
+            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+            # Vulkan PixelUpload context。
+            ROOT / "src/native/presentation/graphics/vulkan/platform/context/graphics.rs",
+            # GPU-native 测试 fake。
+            ROOT / "src/native/test_harness/fake_graphics_context.rs",
+        ):
+            # adapter 只能在 caps 构造中陈述 backend 身份。
+            adapter_source = adapter.read_text(encoding="utf-8")
+            # 禁止重新引入重复的 trait 方法实现。
+            self.assertNotIn("fn graphics_backend(&self)", adapter_source)
+
     # 校验 Vulkan owner shutdown 与 lost-device generation 契约。
     def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
         # 组合读取 Vulkan context 的拆分模块，以保持顺序审计语义。

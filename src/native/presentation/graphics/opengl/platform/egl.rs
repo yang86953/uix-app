@@ -408,10 +408,6 @@ impl IGraphicsContext for EglContext {
         Some(self)
     }
 
-    fn graphics_backend(&self) -> crate::native::present::GraphicsApi {
-        crate::native::present::GraphicsApi::OpenGlEs
-    }
-
     fn native_raster_caps(&self) -> NativeRasterCaps {
         // EGL 只公布固定 probe 已验证的 retained 与 Additive 事实。
         NativeRasterCaps::retained_rhi_with_additive()

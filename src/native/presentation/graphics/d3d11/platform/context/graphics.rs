@@ -12,10 +12,6 @@ impl IGraphicsContext for D3d11Context {
         Some(self)
     }
 
-    fn graphics_backend(&self) -> GraphicsApi {
-        GraphicsApi::D3d11
-    }
-
     fn native_raster_caps(&self) -> NativeRasterCaps {
         // D3D11 固定 probe 已验证 retained surface 与 Additive pipeline。
         NativeRasterCaps::retained_rhi_with_additive()
