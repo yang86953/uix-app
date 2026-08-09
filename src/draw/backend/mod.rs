@@ -16,20 +16,19 @@ pub use cpu::CpuBackend;
 pub use gpu::GpuBackend;
 
 use crate::core::{Errc, Error};
-use crate::native::present::IGraphicsContext;
 
 /// 按种类创建后端实例。
-pub(crate) fn create_backend(
-    kind: BackendKind,
-    gpu_ctx: Option<Box<dyn IGraphicsContext>>,
-) -> Result<Box<dyn RenderBackend>, Error> {
+pub(crate) fn create_backend(kind: BackendKind) -> Result<Box<dyn RenderBackend>, Error> {
+    // 通用工厂只负责不依赖原生 recipe 的后端。
     match kind {
+        // Auto 已在上层解析，保留 CPU 映射作为防御性契约。
         BackendKind::Cpu | BackendKind::Auto => Ok(Box::new(CpuBackend::new())),
-        BackendKind::Gpu => {
-            let ctx = gpu_ctx.ok_or_else(|| {
-                Error::new(Errc::InvalidArgument, "Gpu 后端需要 IGraphicsContext")
-            })?;
-            factory::create_native_raster_backend(ctx)
-        }
+        // GPU 必须先经过原生 recipe factory 的能力与专用 owner 校验。
+        BackendKind::Gpu => Err(Error::new(
+            // 调用方缺少完整 recipe，属于可修正的参数错误。
+            Errc::InvalidArgument,
+            // 诊断明确指出唯一合法装配入口。
+            "GPU 后端必须由已验证的原生图形配方构造",
+        )),
     }
 }

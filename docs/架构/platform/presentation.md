@@ -12,6 +12,8 @@
 
 > **PixelUpload recipe owner 边界**：统一 renderer 的 CPU PixelUpload presentation 不再直接持有 `Box<dyn IGraphicsContext>`，而是在分派 recipe 后先构造 `PixelUploadRecipeOwner`。该 owner 验证 CPU × PixelUpload 与专用 surface，并统一承接 resize、最终 pixels 提交、`PresentSurface` 和 checked shutdown；presentation 不再直接查询可选 `pixel_upload_surface()`。
 
+> **会话装配边界**：`RenderSession` 与通用 backend kind factory 不再持有或暂存 `IGraphicsContext`。生产 GPU bootstrap 与恢复只能从 `Renderer::from_context` 进入 native recipe factory，在完成 GPU recipe、thin RHI 与专用 owner 校验后直接注入会话；没有完整 recipe 的通用 GPU 构造或运行时切换返回稳定 typed error，不建立第二条 native 资源生命周期。
+
 > **离屏模糊边界**：`IGraphicsContext` 不再声明 `blur_offscreen_target`，D3D11 adapter 也不再持有高层 blur 方法、专属 scratch owner 或私有核计算。两个生产 adapter 只保留 `BLUR_PASS` 固定 shader 与底层资源/draw 原语；Picture 的双 pass、region、权重、资源清理和提交顺序全部由 graphics backend 决定。
 
 > **离屏资源边界**：`OffscreenTargetId` 与 `IGraphicsContext` 的 create/destroy/bind/blit offscreen 方法已经移除，thread-bound 门面不再转发这些高层操作；D3D11 context 和 OpenGL ES raster 也不再保存平行的离屏槽位、RTV/SRV/FBO、绑定标记或 legacy sampled-blit shader。Picture 创建失败或 queue 无法无损 lower 时由 graphics backend 返回 typed failure，platform 不选择 UI fallback。
