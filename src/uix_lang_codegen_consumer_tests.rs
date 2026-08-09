@@ -226,6 +226,14 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _radio: ViewNode = crate::uix!(
         r#"<Radio value={gender} options={gender_options} width="240px" automationId="gender" />"#
     );
+    // 提供 Segmented 当前选中视图的双向状态。
+    let view_mode = State::new(String::from("grid"));
+    // 提供 Segmented 可迭代字符串选项数据。
+    let view_options = vec![String::from("grid"), String::from("list")];
+    // 验证构造器选项、值绑定和公共样式只依赖公开 prelude。
+    let _segmented: ViewNode = crate::uix!(
+        r#"<Segmented value={view_mode} options={view_options} width="240px" automationId="view-mode" />"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
