@@ -117,17 +117,58 @@ fn rejects_unregistered_attribute_mapping() {
     assert!(error.message.contains("mystery"));
 }
 
-// 验证样式映射明确留给对应后续 Gate。
+// 验证已映射内联样式生成精确 Style 字段更新。
 #[test]
-fn rejects_style_until_style_mapping_gate() {
-    // 解析带内联样式的 Text。
-    let document = parse_document(r#"<Text style="color: #fff;">Hello</Text>"#)
-        // 样式语法应已由前置 Gate 验证。
-        .expect("样式语法本身应合法");
-    // 核心 View Gate 不得伪装支持样式。
-    let error = generate_view(&document.root).expect_err("样式应明确延后");
-    // 诊断必须指向样式映射阶段。
-    assert!(error.message.contains("样式映射"));
+fn generates_mapped_inline_style_fields() {
+    // 解析覆盖布局、盒模型、颜色、Grid 与显示状态的代表样式。
+    let document = parse_document(
+        // 使用样式参考中标记为已映射的属性。
+        r#"<Text style="display: grid; gridTemplateColumns: 1fr 100px; margin: 1px 2px 3px 4px; paddingLeft: 5px; color: #fff; backgroundColor:hover: rgba(0,0,0,0.5); boxShadow: 0 2px 4px #000; visible: true;">Hello</Text>"#,
+    )
+    // 样式语法与映射都应成功。
+    .expect("已映射样式语法应合法");
+    // 生成可消费 View 令牌。
+    let tokens = generate_view(&document.root)
+        // 已映射属性不得再返回阶段边界诊断。
+        .expect("已映射样式应生成 Rust 令牌")
+        // 规范化令牌便于断言字段事实。
+        .to_string();
+    // 令牌必须通过受控样式更新入口。
+    assert!(tokens.contains("map_style"));
+    // 令牌必须更新 Grid 显示模式与轨道。
+    assert!(tokens.contains("display") && tokens.contains("grid_template_columns"));
+    // 令牌必须保留四边简写和单边覆盖。
+    assert!(tokens.contains("EdgeInsets :: new") && tokens.contains("padding . left"));
+    // 令牌必须更新颜色状态与阴影。
+    assert!(tokens.contains("background_hover") && tokens.contains("box_shadow"));
+    // 生成物不得包含运行时样式解析器。
+    assert!(!tokens.contains("parse_style"));
+}
+
+// 验证规划中样式不会伪装为已支持。
+#[test]
+fn rejects_planned_inline_style_at_compile_time() {
+    // 解析文档明确标为规划中的定位属性。
+    let document = parse_document(r#"<Text style="position: absolute;">Hello</Text>"#)
+        // 语法层允许规划中属性进入映射矩阵。
+        .expect("规划中样式语法应合法");
+    // 代码生成必须明确拒绝缺失的 Rust 字段。
+    let error = generate_view(&document.root).expect_err("规划中样式不得伪装支持");
+    // 诊断必须包含具体属性和文档状态。
+    assert!(error.message.contains("position") && error.message.contains("规划中"));
+}
+
+// 验证已映射字段的未实现子取值也不会被静默近似。
+#[test]
+fn rejects_percentage_dimension_without_rust_equivalent() {
+    // 解析百分比宽度。
+    let document = parse_document(r#"<Text style="width: 50%;">Hello</Text>"#)
+        // 语法层保留目标设计值。
+        .expect("百分比尺寸语法应合法");
+    // 映射层必须拒绝当前 Style 无法表达的百分比。
+    let error = generate_view(&document.root).expect_err("百分比不得伪装为像素值");
+    // 诊断必须说明等价表示缺失。
+    assert!(error.message.contains("百分比") && error.message.contains("等价"));
 }
 
 // 验证 setState 明确需要后续 Component 上下文。
