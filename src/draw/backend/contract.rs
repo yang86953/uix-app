@@ -4,8 +4,8 @@ use std::any::Any;
 
 use crate::core::{DamageRegion, Error, Point, Rect, Size};
 
-use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::ImageHandle;
+use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::{Canvas2D, PresentationMode};
 use crate::native::present::PresentTestResult;
 
@@ -315,6 +315,12 @@ pub trait RenderBackend {
 
     /// 捕获保留主色缓冲为 overlay 干净背景；资源失败保持 typed error。
     fn snapshot_overlay_backdrop(&mut self) -> Result<bool, Error> {
+        Ok(false)
+    }
+
+    /// 对已捕获的 overlay 干净背景执行区域高斯模糊；不支持时返回 `Ok(false)`。
+    fn blur_overlay_backdrop(&mut self, _region: Rect, _radius: f32) -> Result<bool, Error> {
+        // 默认 backend 不拥有 GPU backdrop，保留可检测的不支持语义。
         Ok(false)
     }
 

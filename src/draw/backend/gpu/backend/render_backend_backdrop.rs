@@ -4,13 +4,17 @@
 //! 只执行 create/copy/submit/destroy，不理解 overlay 或 backdrop 语义。
 
 // 引入统一错误和结果类型。
-use crate::core::error::{Error, Result};
+use crate::core::error::{Errc, Error, Result};
+// 引入无帧 blur 的逻辑区域值。
+use crate::core::Rect;
 // 引入薄 RHI 的资源、复制与代际值。
 use crate::native::present::rhi::{
     // device 原语用于执行资源事务。
     GraphicsDevice,
     // 物理尺寸限定全幅复制范围。
     RhiExtent,
+    // 物理 scissor 保存主 surface DPR lowering 结果。
+    RhiScissor,
     // 提交句柄保留恢复事务的 typed 结果。
     SubmissionHandle,
     // 复制载荷只携带底层资源事实。
@@ -25,6 +29,92 @@ use crate::native::present::rhi::{
 
 // 引入当前 GPU backend owner。
 use super::GpuBackend;
+
+// 将逻辑 overlay 区域 lower 为当前 backdrop extent 内的物理 scissor。
+pub(super) fn lower_overlay_blur_region(
+    // 接收 UI 逻辑坐标中的目标区域。
+    region: Rect,
+    // 接收与快照同一 surface 元数据中的 DPR。
+    device_pixel_ratio: f32,
+    // 使用快照代际登记的物理边界裁剪结果。
+    extent: RhiExtent,
+) -> RhiScissor {
+    // 非有限、非正区域或非法 DPR 不能生成 native 命令。
+    if !region.x.is_finite()
+        // 校验逻辑纵坐标。
+        || !region.y.is_finite()
+        // 校验逻辑宽度。
+        || !region.w.is_finite()
+        // 校验逻辑高度。
+        || !region.h.is_finite()
+        // 拒绝空或反向宽度。
+        || region.w <= 0.0
+        // 拒绝空或反向高度。
+        || region.h <= 0.0
+        // DPR 必须来自有效的原子 surface 快照。
+        || !device_pixel_ratio.is_finite()
+        // 非正 DPR 无法定义逻辑到物理映射。
+        || device_pixel_ratio <= 0.0
+    {
+        // 空 scissor 由通用 blur renderer 作为无资源 no-op。
+        return RhiScissor {
+            // 保持合法零起点。
+            x: 0,
+            // 保持合法零起点。
+            y: 0,
+            // 零宽度表示不可见。
+            width: 0,
+            // 零高度表示不可见。
+            height: 0,
+        };
+    }
+    // 左上边界向外取整，避免逻辑区域遗漏覆盖像素。
+    let left = (region.x * device_pixel_ratio).floor();
+    // 顶边同样向外取整。
+    let top = (region.y * device_pixel_ratio).floor();
+    // 右边界从逻辑终点独立换算，避免宽度累计取整误差。
+    let right = ((region.x + region.w) * device_pixel_ratio).ceil();
+    // 底边从逻辑终点独立换算。
+    let bottom = ((region.y + region.h) * device_pixel_ratio).ceil();
+    // 溢出后的非有限边界不能进入整数转换。
+    if [left, top, right, bottom]
+        // 逐边检查浮点有效性。
+        .iter()
+        // 任一异常都退化为空区域。
+        .any(|edge| !edge.is_finite())
+    {
+        // 复用空区域返回值。
+        return RhiScissor {
+            // 保持合法零起点。
+            x: 0,
+            // 保持合法零起点。
+            y: 0,
+            // 零宽度表示不可见。
+            width: 0,
+            // 零高度表示不可见。
+            height: 0,
+        };
+    }
+    // 将物理边界裁到快照纹理宽度。
+    let left = left.clamp(0.0, extent.width as f32) as i32;
+    // 将物理顶边裁到快照纹理高度。
+    let top = top.clamp(0.0, extent.height as f32) as i32;
+    // 将物理右边界裁到相同宽度。
+    let right = right.clamp(0.0, extent.width as f32) as i32;
+    // 将物理底边界裁到相同高度。
+    let bottom = bottom.clamp(0.0, extent.height as f32) as i32;
+    // 返回已经完成 DPR 和 extent 裁剪的区域。
+    RhiScissor {
+        // 保存裁剪后的左边界。
+        x: left,
+        // 保存裁剪后的顶边界。
+        y: top,
+        // 终点不大于起点时形成稳定空宽度。
+        width: right.saturating_sub(left),
+        // 终点不大于起点时形成稳定空高度。
+        height: bottom.saturating_sub(top),
+    }
+}
 
 // 构造覆盖完整物理纹理范围的有向复制。
 fn full_texture_copy(
@@ -187,6 +277,99 @@ impl GpuBackend {
             // 失败事务未登记任何快照，并保留底层 typed failure。
             Err(error) => Err(error),
         }
+    }
+
+    // 对当前同代 overlay backdrop 执行区域高斯模糊。
+    pub(super) fn blur_overlay_backdrop_impl(
+        // 借用唯一 GPU backend owner。
+        &mut self,
+        // 接收主 surface 的逻辑区域。
+        region: Rect,
+        // 使用与 Picture blur 相同的逻辑半径语义。
+        radius: f32,
+    ) -> Result<bool, Error> {
+        // 缺失任一资源身份时不能伪造已执行。
+        let (Some(backdrop), Some(backdrop_token), Some(surface_token)) = (
+            // 读取已捕获纹理。
+            self.rhi_overlay_backdrop_texture,
+            // 读取快照代际。
+            self.rhi_overlay_backdrop_token,
+            // 读取当前 retained surface 代际。
+            self.rhi_surface_token,
+        ) else {
+            // 首帧、legacy 回退或释放后的 owner 不支持本次操作。
+            return Ok(false);
+        };
+        // resize 或 recovery 后禁止改写旧代纹理。
+        if backdrop_token != surface_token {
+            // 交由上层重新捕获干净背景。
+            return Ok(false);
+        }
+        // 非有限或负半径是调用契约错误，不能静默伪装成功。
+        if !radius.is_finite() || radius < 0.0 {
+            // 返回稳定 typed 参数错误。
+            return Err(Error::new(
+                // 使用统一无效参数分类。
+                Errc::InvalidArgument,
+                // 提供不依赖 adapter 的诊断文本。
+                "overlay backdrop blur radius is invalid",
+            ));
+        }
+        // 小于半像素的半径按现有 blur 语义保持无资源 no-op。
+        if radius < 0.5 {
+            // owner 有效且请求无需改写，报告事务已处理。
+            return Ok(true);
+        }
+        // 从与 recipe owner 同一原子 surface 快照读取 DPR。
+        let device_pixel_ratio = super::device_pixel_ratio_from_surface(
+            // 不拆分查询 drawable extent 与比例。
+            self.gpu_ctx.present_surface(),
+        );
+        // 使用快照代际的 extent 完成逻辑区域 lowering。
+        let physical_region = lower_overlay_blur_region(
+            // 传入调用方逻辑区域。
+            region,
+            // 传入规范化后的有效 DPR。
+            device_pixel_ratio,
+            // 以 backdrop 的物理尺寸为唯一裁剪边界。
+            backdrop_token.extent,
+        );
+        // 无帧多阶段事务也必须先执行 device maintenance。
+        self.prepare_rhi_device()?;
+        // 分开借用组合 context 与通用 renderer cache。
+        let (gpu_ctx, rhi_renderer) = (&mut self.gpu_ctx, &mut self.rhi_renderer);
+        // 缺失 renderer cache 时禁止走平台专属效果路径。
+        let Some(renderer) = rhi_renderer.as_mut() else {
+            // 返回稳定的迁移期未实现错误。
+            return Err(Error::new(
+                // 能力未装配归类为未实现。
+                Errc::NotImplemented,
+                // 诊断明确要求通用 renderer owner。
+                "overlay backdrop blur requires the RHI renderer cache",
+            ));
+        };
+        // 只有构造期验证的组合 RHI context 可以执行计划。
+        let context = gpu_ctx.rhi_context()?;
+        // native surface 代际也必须仍与快照一致。
+        if context.token() != backdrop_token {
+            // 迟到事务不触碰重建后的资源表。
+            return Ok(false);
+        }
+        // 复用通用 renderer 的 backdrop 原位双 pass 入口。
+        renderer.execute_overlay_backdrop_blur(
+            // 传入 owner-thread context。
+            context,
+            // backdrop 同时作为 source 和最终 target。
+            backdrop,
+            // 使用登记代际的物理 extent。
+            backdrop_token.extent,
+            // 使用已经完成 DPR lowering 的 scissor。
+            physical_region,
+            // 保留调用方半径。
+            radius,
+        )?;
+        // 事务完整提交且 scratch 已清理。
+        Ok(true)
     }
 
     // 将已验证同代的干净背景恢复到 retained surface。

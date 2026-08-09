@@ -14,8 +14,8 @@ use crate::draw::renderer::test_harness::GraphicsFaultSignal;
 use crate::draw::renderer::{GraphicsFailure, GraphicsRecovery, RecoveryAction, RenderOutcome};
 use crate::draw::{Canvas2D, GraphicsCapabilities, RenderTarget, UpdateStrategy};
 use crate::native::present::PresentTestResult;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 /// One app-owned rebuild request shared by a Diagnostics recovery registration
@@ -414,6 +414,19 @@ impl RenderTarget for RecoveryDriver {
             self.record_failure(GraphicsFailure::from_error(error.clone()));
         }
         // 向 ScenePipeline 原样返回 typed result。
+        result
+    }
+
+    // 对已捕获背景执行 blur，并把无帧事务失败登记到统一恢复状态机。
+    fn blur_overlay_backdrop(&mut self, region: Rect, radius: f32) -> Result<bool, Error> {
+        // 先保留底层原始结果，避免重建错误分类。
+        let result = self.engine.blur_overlay_backdrop(region, radius);
+        // blur 的资源、提交或设备失败必须驱动下一帧有界恢复。
+        if let Err(error) = &result {
+            // 复用统一分类保存首个未处理失败。
+            self.record_failure(GraphicsFailure::from_error(error.clone()));
+        }
+        // 向上层原样返回是否执行及 typed failure。
         result
     }
 

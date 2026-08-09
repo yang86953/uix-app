@@ -521,7 +521,8 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # overlay 不得再直接调用兼容 context current。
         self.assertNotIn("gpu_ctx.make_current", overlay)
         # snapshot 与 restore 都必须复用 thin RHI 设备准备。
-        self.assertEqual(overlay.count("self.prepare_rhi_device()"), 2)
+        # snapshot、blur 与 restore 各自必须通过唯一 device maintenance 入口。
+        self.assertEqual(overlay.count("self.prepare_rhi_device()"), 3)
         # 定位 OpenGL 设备维护实现。
         maintain = opengl_host.index("fn maintain(&mut self)")
         # current 必须先于设备健康检查执行。

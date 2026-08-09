@@ -3,9 +3,9 @@
 pub use crate::draw::outcome::RenderOutcome;
 
 use crate::core::{Error, Point, Rect};
+use crate::draw::Canvas2D;
 use crate::draw::geometry::types::ImageHandle;
 use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
-use crate::draw::Canvas2D;
 use crate::native::present::PresentTestResult;
 use std::time::Instant;
 
@@ -286,6 +286,12 @@ pub trait RenderTarget: 'static {
     /// 资源与设备失败保持 typed error，交由 renderer recovery 处理。
     /// 成功后 [`Self::has_overlay_backdrop`] 为 true；不支持时返回 `Ok(false)`。
     fn snapshot_overlay_backdrop(&mut self) -> Result<bool, Error> {
+        Ok(false)
+    }
+
+    /// 对引擎持有的 overlay 干净背景执行区域高斯模糊，不获取或呈现主表面。
+    fn blur_overlay_backdrop(&mut self, _region: Rect, _radius: f32) -> Result<bool, Error> {
+        // 普通 target 没有 GPU backdrop，向调用方报告未执行。
         Ok(false)
     }
 
