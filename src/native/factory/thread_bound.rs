@@ -22,7 +22,7 @@ use std::thread::{self, ThreadId};
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
     GraphicsContextCaps, IGraphicsContext, PixelUploadSurface, PresentDamage, PresentSurface,
-    RhiSurfaceLifecycle, SwapchainPresentation,
+    RhiSurfaceLifecycle,
 };
 
 pub(crate) fn bind_to_current_thread(
@@ -177,19 +177,6 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
         Some(self)
     }
 
-    // 只有 owner thread 可以借用 inner 的 external swapchain 提交视图。
-    fn swapchain_presentation(&mut self) -> Option<&mut dyn SwapchainPresentation> {
-        // 无错误返回通道的 capability 查询在跨线程时保守返回不支持。
-        if self.require_owner("swapchain_presentation").is_err() {
-            // 禁止把 wrapper 自身暴露给错误线程。
-            return None;
-        }
-        // 先确认真实 context 明确提供 external presenter 提交能力。
-        self.inner.swapchain_presentation()?;
-        // 返回继续执行 owner-thread 检查的 wrapper 视图。
-        Some(self)
-    }
-
     // 返回 owner-thread 最近一次确认的完整 surface 元数据快照。
     fn present_surface(&self) -> PresentSurface {
         // 非失败查询只读取 wrapper 缓存，不跨线程触碰 native context。
@@ -277,28 +264,6 @@ impl PixelUploadSurface for ThreadBoundGraphicsContext {
             };
             // 在同一 owner-thread 借用范围内执行像素提交。
             surface.present_pixels(pixels, width, height, damage)
-        })
-    }
-}
-
-// 在线程绑定边界内实现 external presenter 的专用 swapchain 提交。
-impl SwapchainPresentation for ThreadBoundGraphicsContext {
-    // 把提交委托给真实 context 暴露的专用视图。
-    fn present_swapchain(&mut self, damage: PresentDamage) -> Result<()> {
-        // 在创建线程上借用真实 external swapchain 提交 owner。
-        self.with_owner("present_swapchain", |inner| {
-            // capability 在构造后消失属于 native context 状态破坏。
-            let Some(presentation) = inner.swapchain_presentation() else {
-                // 返回 typed 状态错误，禁止回退已移除的统一 present。
-                return Err(Error::new(
-                    // 使用稳定状态分类交给恢复层。
-                    Errc::InvalidState,
-                    // 明确指出 external presenter 契约缺失。
-                    "graphics context lost its external swapchain presentation view",
-                ));
-            };
-            // 在同一 owner-thread 借用范围内提交 swapchain。
-            presentation.present_swapchain(damage)
         })
     }
 }

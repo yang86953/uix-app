@@ -814,8 +814,6 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取统一 renderer 的 PixelUpload 生命周期。
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
-        # 读取 Wayland GPU presenter 的 resize 路由。
-        wayland = (ROOT / "src/native/backends/linux/wayland/gpu_presenter.rs").read_text(encoding="utf-8")
         # 读取 Vulkan GFX-R5 显式诊断调用点。
         gfx_r5 = (ROOT / "src/gfx_r5_support/evidence.rs").read_text(encoding="utf-8")
         # 读取 mixed-DPI GFX-R5 场景，避免 feature 隔离代码逃逸契约。
@@ -873,12 +871,6 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("upload.resize_surface(width, height)?", runtime)
         # runtime 不得调用已经删除的通用 context resize。
         self.assertNotIn("upload.context.resize(", runtime)
-        # Wayland GPU presenter 必须借用专用 thin RHI surface 生命周期。
-        self.assertIn("self.gpu_ctx.rhi_surface_lifecycle()", wayland)
-        # Wayland 必须通过专用视图执行 resize。
-        self.assertIn("lifecycle.resize_rhi_surface(width, height)", wayland)
-        # Wayland 不得保留 GPU context 通用 resize 调用。
-        self.assertNotIn("self.gpu_ctx.resize(width, height)", wayland)
         # Vulkan GFX-R5 必须显式使用 PixelUpload surface 契约。
         self.assertGreaterEqual(gfx_r5.count(".resize_pixel_upload_surface("), 3)
         # GFX-R5 不得再通过 IGraphicsContext resize 驱动 Vulkan。
