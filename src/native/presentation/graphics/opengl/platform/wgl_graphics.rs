@@ -22,6 +22,14 @@ impl IGraphicsContext for WglContext {
         Some(self)
     }
 
+    // 暴露只含 GPU-native surface resize 的专用生命周期视图。
+    fn rhi_surface_lifecycle(
+        &mut self,
+    ) -> Option<&mut dyn crate::native::present::RhiSurfaceLifecycle> {
+        // WGL 已实现唯一 GraphicsSurface::resize owner 路径。
+        Some(self)
+    }
+
     // 返回 WGL drawable 的完整 live surface 快照。
     fn present_surface(&self) -> crate::native::present::PresentSurface {
         // 逻辑宽度无效时保留既有安全比例。
@@ -49,5 +57,14 @@ impl IGraphicsContext for WglContext {
     fn try_shutdown(&mut self) -> Result<(), Error> {
         // 委托给包含 pipeline release 的 shutdown helper。
         self.shutdown_result()
+    }
+}
+
+// 把 WGL 逻辑尺寸 resize 收敛到专用 RHI surface 生命周期。
+impl crate::native::present::RhiSurfaceLifecycle for WglContext {
+    // 复用统一 DPR、范围检查与 GraphicsSurface::resize 调用。
+    fn resize_rhi_surface(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        // 直接借用当前原生 owner，不经过 IGraphicsContext 高层方法。
+        crate::native::present::resize_native_rhi_surface(self, width, height)
     }
 }

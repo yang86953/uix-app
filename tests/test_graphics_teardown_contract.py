@@ -577,12 +577,16 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         initialize_start = backend.index("fn initialize_prepared", resize_start)
         # 提取 resize 方法，避免其它生命周期代码干扰断言。
         resize = backend[resize_start:initialize_start]
-        # resize 必须通过 thin RHI surface helper。
+        # resize 必须通过 recipe 专用 thin RHI surface 生命周期。
         self.assertIn(".resize_rhi_surface(logical_w, logical_h)?", resize)
+        # backend 必须从 context 借用专用生命周期视图。
+        self.assertIn("self.gpu_ctx.rhi_surface_lifecycle()", resize)
         # 兼容 IGraphicsContext::resize 不得作为 NotImplemented 回退。
         self.assertNotIn("self.gpu_ctx.resize(", resize)
-        # NotImplemented 必须像其它 typed failure 一样直接传播。
+        # 构造后视图缺失必须进入状态恢复，而不是能力回退。
         self.assertNotIn("Errc::NotImplemented", resize)
+        # 缺失专用视图必须使用稳定的状态错误分类。
+        self.assertIn("Errc::InvalidState", resize)
         # 旧代 retained 资源必须先于 surface generation 推进释放。
         self.assertLess(
             # 定位旧代 retained 资源销毁。
@@ -869,8 +873,10 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("upload.resize_surface(width, height)?", runtime)
         # runtime 不得调用已经删除的通用 context resize。
         self.assertNotIn("upload.context.resize(", runtime)
-        # Wayland GPU presenter 必须改走 thin RHI surface。
-        self.assertIn("self.gpu_ctx.resize_rhi_surface(width, height)", wayland)
+        # Wayland GPU presenter 必须借用专用 thin RHI surface 生命周期。
+        self.assertIn("self.gpu_ctx.rhi_surface_lifecycle()", wayland)
+        # Wayland 必须通过专用视图执行 resize。
+        self.assertIn("lifecycle.resize_rhi_surface(width, height)", wayland)
         # Wayland 不得保留 GPU context 通用 resize 调用。
         self.assertNotIn("self.gpu_ctx.resize(width, height)", wayland)
         # Vulkan GFX-R5 必须显式使用 PixelUpload surface 契约。

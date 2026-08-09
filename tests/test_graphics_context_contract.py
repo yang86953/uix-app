@@ -58,8 +58,8 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertNotIn("fn height(&self)", facade)
         # 通用 trait 不得继续拆分暴露 DPR。
         self.assertNotIn("fn device_pixel_ratio(&self)", facade)
-        # RHI resize 必须从单一 surface 快照读取 DPR。
-        self.assertIn("self.present_surface().device_pixel_ratio", facade)
+        # RHI resize helper 必须从传入 owner 的单一 surface 快照读取 DPR。
+        self.assertIn("context.present_surface().device_pixel_ratio", facade)
         # 读取 owner-thread wrapper。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 截取 wrapper 字段定义，避免把方法参数误判为缓存字段。
@@ -132,8 +132,8 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertNotIn("fn supports_gl_proc_address(&self)", facade)
         # 无消费者的 PixelUpload 查询不得保留在生产门面。
         self.assertNotIn("fn supports_pixel_present(&self)", facade)
-        # 最后一条 thin RHI resize 默认错误路径直接读取同一静态 recipe 事实。
-        self.assertEqual(facade.count("let backend = self.caps().backend;"), 1)
+        # 专用 thin RHI resize helper 直接读取同一静态 recipe 事实。
+        self.assertEqual(facade.count("let backend = context.caps().backend;"), 1)
         # 逐个核对曾重复声明 backend 的 adapter 已删除派生实现。
         for adapter in (
             # D3D11 生产 context。
@@ -151,6 +151,75 @@ class GraphicsContextContractTests(unittest.TestCase):
             adapter_source = adapter.read_text(encoding="utf-8")
             # 禁止重新引入重复的 trait 方法实现。
             self.assertNotIn("fn graphics_backend(&self)", adapter_source)
+
+    # 校验 RHI surface resize 只通过 recipe 专用生命周期视图传播。
+    def test_rhi_surface_resize_uses_dedicated_lifecycle_view(self) -> None:
+        # 读取统一 context trait 与原生 resize helper。
+        facade = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        # 定位统一 context trait 的起点。
+        context_start = facade.index("pub trait IGraphicsContext")
+        # 以原生 helper 起点作为 trait 定义终点。
+        context_end = facade.index("pub(crate) fn resize_native_rhi_surface", context_start)
+        # 保存只包含 IGraphicsContext 定义的片段。
+        context_trait = facade[context_start:context_end]
+        # 通用 context 门面不得重新声明 resize 操作。
+        self.assertNotIn("fn resize_rhi_surface", context_trait)
+        # 通用 context 只允许返回 recipe 专用生命周期视图。
+        self.assertIn("fn rhi_surface_lifecycle", context_trait)
+        # 独立生命周期契约必须显式承载 typed resize。
+        self.assertIn("trait RhiSurfaceLifecycle", facade)
+        # 原生 adapter 必须共享同一 DPR 与 extent 校验 helper。
+        self.assertIn("fn resize_native_rhi_surface", facade)
+        # 读取 owner-thread wrapper 的生命周期事务实现。
+        thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(
+            # 保持源码契约读取编码稳定。
+            encoding="utf-8"
+        )
+        # wrapper 必须独立实现 recipe 专用生命周期契约。
+        self.assertIn("impl RhiSurfaceLifecycle for ThreadBoundGraphicsContext", thread_bound)
+        # wrapper 必须先从真实 owner 借用同一专用视图。
+        self.assertIn("inner.rhi_surface_lifecycle()", thread_bound)
+        # 定位真实 owner resize 调用。
+        resize_call = thread_bound.index("lifecycle.resize_rhi_surface(width, height)")
+        # 定位随后发生的原子元数据刷新。
+        metadata_refresh = thread_bound.index("self.refresh_metadata();", resize_call)
+        # 元数据只能在成功 resize 返回后刷新。
+        self.assertLess(resize_call, metadata_refresh)
+        # 三个生产 GPU-native adapter 都必须显式暴露并实现专用视图。
+        for adapter in (
+            # D3D11 生产 context。
+            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            # WGL 生产 context。
+            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            # EGL 生产 context。
+            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+        ):
+            # 读取当前 native adapter 的生命周期实现。
+            adapter_source = adapter.read_text(encoding="utf-8")
+            # adapter 必须通过 IGraphicsContext 暴露专用视图。
+            self.assertIn("fn rhi_surface_lifecycle", adapter_source)
+            # adapter 必须实现独立的生命周期契约。
+            self.assertIn("RhiSurfaceLifecycle for", adapter_source)
+            # adapter 必须复用统一的原生 resize helper。
+            self.assertIn("resize_native_rhi_surface(self, width, height)", adapter_source)
+        # 读取生产 GPU backend 的 resize 消费者。
+        gpu_backend = (
+            # 固定 GPU backend 生命周期实现路径。
+            ROOT / "src/draw/backend/gpu/backend/render_backend.rs"
+        ).read_text(encoding="utf-8")
+        # GPU backend 必须借用专用生命周期视图。
+        self.assertIn("self.gpu_ctx.rhi_surface_lifecycle()", gpu_backend)
+        # GPU backend 不得调用已退出 IGraphicsContext 的 resize 方法。
+        self.assertNotIn("self.gpu_ctx.resize_rhi_surface", gpu_backend)
+        # 读取 Wayland external GPU presenter 的 resize 消费者。
+        wayland = (
+            # 固定 Wayland GPU presenter 实现路径。
+            ROOT / "src/native/backends/linux/wayland/gpu_presenter.rs"
+        ).read_text(encoding="utf-8")
+        # Wayland presenter 同样只能借用专用生命周期视图。
+        self.assertIn("self.gpu_ctx.rhi_surface_lifecycle()", wayland)
+        # Wayland presenter 不得调用通用 context resize。
+        self.assertNotIn("self.gpu_ctx.resize_rhi_surface", wayland)
 
     # 校验无帧遮挡探测只属于 thin RHI surface 生命周期。
     def test_idle_present_probe_belongs_to_graphics_surface(self) -> None:

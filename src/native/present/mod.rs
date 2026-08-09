@@ -591,4 +591,7 @@ pub(crate) mod rhi;
 mod traits;
 
 // 图形 context 与 recipe 专用呈现 SPI 只供 crate 内部 backend 与 bootstrap 使用。
-pub(crate) use self::traits::{IGraphicsContext, PixelUploadSurface, SwapchainPresentation};
+pub(crate) use self::traits::{
+    resize_native_rhi_surface, IGraphicsContext, PixelUploadSurface, RhiSurfaceLifecycle,
+    SwapchainPresentation,
+};

@@ -91,9 +91,23 @@ impl RenderBackend for GpuBackend {
         // swapchain resize 会推进 surface generation，先释放旧代际 retained texture。
         self.destroy_rhi_surface_texture()?;
         // 生产 GPU adapter 只由薄 RHI surface 执行实际重建和代际推进。
-        self.gpu_ctx
-            // NotImplemented 与其它 typed failure 均直接交给恢复层，禁止兼容回退。
-            .resize_rhi_surface(logical_w, logical_h)?;
+        // 读取静态 backend 身份，供缺失专用视图时构造 typed failure。
+        let backend = self.gpu_ctx.caps().backend;
+        // GPU resize 只借用 recipe 专用的 RHI surface 生命周期。
+        let lifecycle = self.gpu_ctx.rhi_surface_lifecycle().ok_or_else(|| {
+            // 构造后缺失视图表示 GPU-native context 状态已经破坏。
+            Error::new(
+                // 使用 InvalidState 进入既有有界恢复，不把缺口解释为能力回退。
+                Errc::InvalidState,
+                // 明确指出发生缺口的具体 backend。
+                format!(
+                    "GraphicsBackend {} does not expose RHI surface lifecycle",
+                    backend
+                ),
+            )
+        })?;
+        // 生命周期视图与 native resize 的 typed failure 均直接交给恢复层。
+        lifecycle.resize_rhi_surface(logical_w, logical_h)?;
         // D3D11/D3D12 等会按 HWND GetClientRect 校正缓冲尺寸；canvas/布局必须跟
         // 实际 RT 一致，否则清出更大黑底而 UI 仍画旧几何 → 窗口黑边。
         self.adopt_factory_drawable_extent();
