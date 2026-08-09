@@ -67,6 +67,17 @@ fn generated_view_compiles_against_public_uix_api() {
     );
 }
 
+// 验证 crate 根与 prelude 导出的公开 uix! 内嵌及文件入口。
+#[test]
+fn public_uix_macro_compiles_inline_and_file_entries() {
+    // 通过 prelude 导入的公开宏展开内嵌 UIX 源码。
+    let _inline: ViewNode = uix!(r#"<Text>Inline entry</Text>"#);
+    // 以调用 crate 清单目录为基准读取并展开 .uix 文件。
+    let _file: ViewNode = uix!("tests/fixtures/uix_lang/public_entry.uix");
+    // 通过 crate 根路径再次验证宏导出。
+    let _root_export: ViewNode = crate::uix!(r#"<Button>Root export</Button>"#);
+}
+
 // 验证组件私有状态、共享状态、回调与组合在真实公开 API 中通过类型检查。
 #[test]
 fn generated_components_compile_against_public_uix_api() {

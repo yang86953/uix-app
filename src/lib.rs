@@ -14,6 +14,26 @@
 //! | [`app`] | 应用能力 — 生命周期、主循环、CLI、DI |
 //! | [`data`] | 数据能力 — 配置持久化 |
 //!
+//! # uix-lang 入口 compile-fail 测试
+//!
+//! 下列契约确认公开 `uix!` 会在编译期拒绝路径、语法与映射错误，而不是把失败
+//! 延迟到运行期 parser。
+//!
+//! ```compile_fail
+//! use uix::prelude::*;
+//! let _: ViewNode = uix!("tests/fixtures/uix_lang/does_not_exist.uix");
+//! ```
+//!
+//! ```compile_fail
+//! use uix::prelude::*;
+//! let _: ViewNode = uix!("<Column>\n<Text>x</Column>");
+//! ```
+//!
+//! ```compile_fail
+//! use uix::prelude::*;
+//! let _: ViewNode = uix!("<Mystery />");
+//! ```
+//!
 //! # 公开面 compile-fail 测试
 //!
 //! 下列 compile-fail 契约锁定系统边界：`native` 根、backend SPI、raw handle、
@@ -177,8 +197,8 @@ extern crate self as uix;
 // 宏生成代码从 crate 根查找 `windows_core`。
 extern crate windows_core;
 
-// E-06：路由 key 派生宏（`#[derive(uix::Display)]` 免除手写 Display）。
-pub use uix_derive::Display;
+// 导出 uix-lang 编译期入口与路由 key 派生宏。
+pub use uix_derive::{uix, Display};
 // 真实消费者编译 Gate 仅在测试构建中接入。
 #[cfg(test)]
 // 隔离 uix-lang 核心生成物的公开 API 编译测试。
