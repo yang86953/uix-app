@@ -123,9 +123,12 @@ impl Input {
         // 逐行绘制
         let line_h = LINE_HEIGHT;
         let mut y = text_area.y;
-        let mut line_glyph_xs = self.line_glyph_xs.borrow_mut();
-        line_glyph_xs.clear();
-        line_glyph_xs.resize_with(lines.len(), Vec::new);
+        // 刷新多行方向感知命中使用的真实 shaping 字形。
+        let mut line_glyphs = self.line_glyphs.borrow_mut();
+        // 清除上一帧逐行字形缓存。
+        line_glyphs.clear();
+        // 为每个逻辑行准备独立视觉字形数组。
+        line_glyphs.resize_with(lines.len(), Vec::new);
         for (li, line) in lines.iter().enumerate() {
             if li < adj_scroll {
                 continue;
@@ -154,19 +157,31 @@ impl Input {
                             value_line.chars().count()
                         };
                         // 估算选中区域的 x 位置
-                        let before_sel: String = line.chars().take(sel_in_line_start).collect();
-                        let sel_text: String = line
-                            .chars()
-                            .skip(sel_in_line_start)
-                            .take(sel_in_line_end - sel_in_line_start)
-                            .collect();
-                        let x0 = text_area.x + ctx.measure_text(&before_sel, FONT_SIZE).w;
-                        let sel_w = ctx.measure_text(&sel_text, FONT_SIZE).w;
-                        ctx.fill_rect(
-                            Rect::new(x0, y, sel_w, line_h),
-                            primary.with_alpha(64),
-                            None,
+                        // 使用共享 shaping、双向与字素簇选择几何生成视觉片段。
+                        let selection_rects = ctx.selection_rects(
+                            // 选择几何使用未注入 composition 的真实值行。
+                            value_line,
+                            // 使用输入控件字体大小。
+                            FONT_SIZE,
+                            // 把行内几何平移到文本区域。
+                            Point::new(text_area.x, y),
+                            // 传入行内合法选择起点。
+                            sel_in_line_start,
+                            // 传入行内合法选择终点。
+                            sel_in_line_end,
                         );
+                        // 双向文本可能产生多个不连续视觉选择片段。
+                        for selection_rect in selection_rects {
+                            // 绘制当前视觉选择片段。
+                            ctx.fill_rect(
+                                // 保留共享排版计算出的几何。
+                                selection_rect,
+                                // 使用主题选择背景色。
+                                primary.with_alpha(64),
+                                // 选择背景不使用圆角。
+                                None,
+                            );
+                        }
                     }
                 }
             }
@@ -178,14 +193,36 @@ impl Input {
 
             // 收集该行每个字符的 x 坐标（用于 char_at_xy 命中）
             let hit_text = if showing_placeholder { "" } else { *line };
-            let mut xs = Vec::with_capacity(hit_text.chars().count() + 1);
-            let mut prefix = String::new();
-            xs.push(0.0); // 相对 text area 的行首光标
-            for ch in hit_text.chars() {
-                prefix.push(ch);
-                xs.push(ctx.measure_text(&prefix, FONT_SIZE).w);
-            }
-            line_glyph_xs[li] = xs;
+            // 构造与绘制一致的单行文本布局选项。
+            let hit_options = crate::draw::TextLayoutOptions {
+                // 多行控件按逻辑换行拆分后不再限制单行宽度。
+                max_width: f32::MAX,
+                // 命中布局不限制高度。
+                max_height: 0.0,
+                // 保持输入控件现有行高。
+                line_height: LINE_HEIGHT,
+                // 当前逻辑行禁止再次自动换行。
+                word_wrap: false,
+                // 使用左侧行盒对齐并由 UAX #9 决定 run 视觉顺序。
+                h_align: crate::draw::HAlign::Left,
+                // 使用顶部行盒对齐。
+                v_align: crate::draw::VAlign::Top,
+                // 使用输入控件字体大小。
+                font_size: FONT_SIZE,
+            };
+            // 转换为字体后端布局选项。
+            let backend_options =
+                crate::draw::resources::font::text_backend::TextLayoutOptions::from(hit_options);
+            // 读取当前绘制字体句柄。
+            let font = *ctx.font();
+            // 执行真实 shaping 与双向视觉重排。
+            let hit_layout = ctx
+                // 借用字体服务。
+                .font_service()
+                // 布局当前显示逻辑行。
+                .layout_text(&font, hit_text, &backend_options);
+            // 保存视觉顺序字形及其逻辑 cluster 范围。
+            line_glyphs[li] = hit_layout.glyphs;
 
             if li == cursor_line {
                 let col = self.cursor_line_col().1;
@@ -194,16 +231,15 @@ impl Input {
                 } else {
                     0
                 };
-                let before: String = line.chars().take(col + composition_chars).collect();
-                let cx = text_area.x + ctx.measure_text(&before, FONT_SIZE).w;
+                // 使用方向感知光标几何定位当前合法字符边界。
+                let cx = text_area.x + ctx.text_cursor_x(line, FONT_SIZE, col + composition_chars);
                 let caret_h = (line_h - 4.0).max(FONT_SIZE * 0.8);
                 let caret_y = y + (line_h - caret_h) * 0.5;
                 self.caret_rect.set(Rect::new(cx, caret_y, 1.5, caret_h));
 
                 if has_composition {
-                    let before_composition: String = line.chars().take(col).collect();
-                    let composition_x =
-                        text_area.x + ctx.measure_text(&before_composition, FONT_SIZE).w;
+                    // composition 起点同样使用方向感知字符边界几何。
+                    let composition_x = text_area.x + ctx.text_cursor_x(line, FONT_SIZE, col);
                     let composition_w = ctx.measure_text(&self.composition, FONT_SIZE).w;
                     ctx.fill_rect(
                         Rect::new(composition_x, y + line_h - 2.0, composition_w.max(1.5), 1.5),
@@ -438,7 +474,16 @@ impl Input {
         } else {
             0.0
         };
-        let caret_text_w = text_before_w + composition_w;
+        // composition 会在显示文本中占据额外字符位置。
+        let display_cursor = self.cursor_char + self.composition.chars().count();
+        // 使用共享 UAX #9 与字素簇光标几何替代逻辑前缀宽度。
+        let caret_text_w = if display_text.is_empty() {
+            // 空文本光标停在行起点。
+            0.0
+        } else {
+            // 查询方向感知主光标水平坐标。
+            ctx.text_cursor_x(&display_text, FONT_SIZE, display_cursor)
+        };
 
         let right_margin = 10.0;
         if caret_text_w - scroll_off > text_area_w - right_margin {
@@ -472,15 +517,20 @@ impl Input {
 
             let abs_pos = Point::new(draw_x, draw_y);
             {
-                let mut xs = self.glyph_xs.borrow_mut();
-                xs.clear();
+                // 刷新单行方向感知命中使用的真实 shaping 字形。
+                let mut glyphs = self.glyphs.borrow_mut();
+                // 清除上一帧字形缓存。
+                glyphs.clear();
                 if !showing_placeholder {
+                    // 保存布局中的视觉顺序字形和逻辑 cluster 范围。
                     for g in &layout.glyphs {
-                        xs.push(g.x);
+                        // 字形为可复制的小型布局记录。
+                        glyphs.push(*g);
                     }
                 }
             }
-            self.line_glyph_xs.borrow_mut().clear();
+            // 单行模式不保留多行字形缓存。
+            self.line_glyphs.borrow_mut().clear();
             if !self.value.is_empty() && !has_composition {
                 if let Some((sel_s, sel_e)) = self.selection.get() {
                     if sel_s < sel_e {
@@ -489,26 +539,42 @@ impl Input {
                             .horizontal_line_metrics(&fh, FONT_SIZE)
                             .map(|m| m.ascent + m.descent)
                             .unwrap_or(FONT_SIZE * 1.2);
-                        let end = sel_e.min(layout.glyphs.len());
-                        let start = sel_s.min(end);
                         for line in &layout.lines {
                             let gs = line.glyph_start;
                             let gc = line.glyph_count;
                             let ge = gs + gc;
-                            let ls = start.max(gs);
-                            let le = end.min(ge);
-                            if ls >= le {
-                                continue;
-                            }
-                            let glyphs = &layout.glyphs[ls..le];
-                            let x0 = abs_pos.x + glyphs[0].x;
-                            let last = glyphs[glyphs.len() - 1];
-                            let x1 = abs_pos.x + last.x + last.width.max(0.0);
-                            ctx.fill_rect(
-                                Rect::new(x0, abs_pos.y + line.y, (x1 - x0).max(0.0), visual_h),
-                                primary.with_alpha(64),
-                                None,
+                            // 取得当前视觉行的完整字形范围。
+                            let line_glyphs = &layout.glyphs[gs..ge.min(layout.glyphs.len())];
+                            // 双向选择可能形成多个不连续视觉片段。
+                            let ranges = crate::draw::resources::font::text_backend::glyph_selection_x_ranges(
+                                // 传入视觉行字形。
+                                line_glyphs,
+                                // 传入已归一选择起点。
+                                sel_s,
+                                // 传入已归一选择终点。
+                                sel_e,
                             );
+                            // 分别绘制每个连续视觉选择片段。
+                            for (line_x0, line_x1) in ranges {
+                                // 把行内片段平移到控件绘制坐标。
+                                ctx.fill_rect(
+                                    // 构造当前视觉片段矩形。
+                                    Rect::new(
+                                        // 平移片段左边界。
+                                        abs_pos.x + line_x0,
+                                        // 平移当前行垂直坐标。
+                                        abs_pos.y + line.y,
+                                        // 使用非负片段宽度。
+                                        (line_x1 - line_x0).max(0.0),
+                                        // 使用字体视觉行高。
+                                        visual_h,
+                                    ),
+                                    // 使用主题选择背景色。
+                                    primary.with_alpha(64),
+                                    // 选择背景不使用圆角。
+                                    None,
+                                );
+                            }
                         }
                     }
                 }

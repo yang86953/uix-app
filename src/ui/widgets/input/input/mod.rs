@@ -10,6 +10,10 @@ use std::cell::{Cell, RefCell};
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::resources::font::text_backend::estimate_text_metrics;
+// 保存单行真实 shaping 字形，以便方向感知命中。
+use crate::draw::resources::font::text_backend::PositionedGlyph;
+// 引入可停靠字素簇边界与显式字符索引。
+use crate::draw::resources::font::text_index::{BoundaryBias, CharIndex, TextIndexMap};
 use crate::native::windowing::input::ControlSize;
 use crate::ui::component::clipboard;
 use crate::ui::component::paint_context::PaintContext;
@@ -78,9 +82,11 @@ component! {
         scroll_offset_x: Cell<f32>,
         /// 垂直滚动行偏移（多行模式）
         scroll_line: Cell<usize>,
-        glyph_xs: RefCell<Vec<f32>>,
+        /// 单行模式的视觉字形簇，命中时不得按字形数组下标冒充字符下标。
+        glyphs: RefCell<Vec<PositionedGlyph>>,
         /// 多行模式每行 glyph x 位置（行索引 → glyph x 数组）
-        line_glyph_xs: RefCell<Vec<Vec<f32>>>,
+        /// 多行模式逐行保存真实 shaping 字形簇，供方向感知命中使用。
+        line_glyphs: RefCell<Vec<Vec<PositionedGlyph>>>,
         selection: Cell<Option<(usize, usize)>>,
         sel_anchor: Cell<usize>,
         sel_dragging: Cell<bool>,
@@ -266,36 +272,22 @@ component! {
                     }
                     KeyCode::Backspace => {
                         if self.selection.get().is_some() { self.delete_selection(); }
-                        else if self.cursor_char > 0 {
-                            let chars: Vec<char> = self.value.chars().collect();
-                            let len = chars.len();
-                            if self.cursor_char > len { self.cursor_char = len; }
-                            if self.cursor_char == 0 { return EventResult::NotHandled; }
-                            let byte_start: usize = chars[..self.cursor_char - 1].iter().map(|c| c.len_utf8()).sum();
-                            let byte_end = byte_start + chars[self.cursor_char - 1].len_utf8();
-                            self.value.replace_range(byte_start..byte_end, "");
-                            self.cursor_char -= 1;
-                        } else { return EventResult::NotHandled; }
+                        // 无选择时删除前一个完整扩展字素簇。
+                        else if !self.delete_previous_grapheme() { return EventResult::NotHandled; }
                         self.publish_change();
                         EventResult::Handled
                     }
                     KeyCode::Delete => {
                         if self.selection.get().is_some() { self.delete_selection(); }
-                        else {
-                            let chars: Vec<char> = self.value.chars().collect();
-                            let len = chars.len();
-                            if self.cursor_char > len { self.cursor_char = len; }
-                            if self.cursor_char < len {
-                                let byte_start: usize = chars[..self.cursor_char].iter().map(|c| c.len_utf8()).sum();
-                                let byte_end = byte_start + chars[self.cursor_char].len_utf8();
-                                self.value.replace_range(byte_start..byte_end, "");
-                            } else { return EventResult::NotHandled; }
-                        }
+                        // 无选择时删除后一个完整扩展字素簇。
+                        else if !self.delete_next_grapheme() { return EventResult::NotHandled; }
                         self.publish_change();
                         EventResult::Handled
                     }
-                    KeyCode::Left => { self.move_cursor_left(ctrl); EventResult::Handled }
-                    KeyCode::Right => { self.move_cursor_right(ctrl); EventResult::Handled }
+                    // 左移同时传递 Shift 扩展选择语义。
+                    KeyCode::Left => { self.move_cursor_left(ctrl, shift); EventResult::Handled }
+                    // 右移同时传递 Shift 扩展选择语义。
+                    KeyCode::Right => { self.move_cursor_right(ctrl, shift); EventResult::Handled }
                     KeyCode::Up if self.textarea => { self.move_cursor_up(); EventResult::Handled }
                     KeyCode::Down if self.textarea => { self.move_cursor_down(); EventResult::Handled }
                     KeyCode::Home => {
@@ -390,14 +382,18 @@ component! {
     }
 }
 
-mod input_render;
 mod ext;
+mod input_render;
 mod methods;
+// 仅在单元测试中编译输入控件字素簇交互回归。
+#[cfg(test)]
+// 使用独立文件避免继续膨胀核心控件模块。
+#[path = "grapheme_tests.rs"]
+// 注册输入控件字素簇测试模块。
+mod grapheme_tests;
 
 pub use self::ext::*;
-
 
 // ════════════════════════════════════════════════════════════════════════════
 // 公共方法
 // ════════════════════════════════════════════════════════════════════════════
-

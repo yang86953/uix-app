@@ -8,6 +8,8 @@ use crate::draw::resources::font::text_backend::glyph_selection_x_ranges;
 use crate::core::Point;
 // 引入测试字体句柄。
 use crate::draw::FontHandle;
+// 引入共享字素簇边界模型以核对交互结果。
+use crate::draw::resources::font::text_index::{CharIndex, TextIndexMap};
 
 // 验证 LTR 段落中的 Hebrew 与数字按 UAX #9 视觉顺序排列。
 #[test]
@@ -119,4 +121,45 @@ fn mixed_selection_returns_disjoint_visual_ranges() {
     let ranges = glyph_selection_x_ranges(&layout.glyphs, 5, 9);
     // 首个数字与 RTL 片段之间存在未选数字形成的视觉间隔。
     assert_eq!(ranges, vec![(24.0, 30.0), (42.0, 60.0)]);
+}
+
+// 验证混合 RTL 组合序列的命中与光标查询不会暴露内部标量位置。
+#[test]
+fn mixed_rtl_grapheme_hit_and_cursor_stay_on_grapheme_boundaries() {
+    // 使用可控等宽测试字体服务。
+    let service = service();
+    // 希伯来字母与元音点组成一个 RTL 扩展字素簇。
+    let text = "Aא\u{05B7}בZ";
+    // 使用足够宽约束保持单行混排。
+    let options = options(4096.0);
+    // 执行完整 shaping 与 UAX #9 视觉重排。
+    let layout = service.layout_text(&FontHandle::new(0), text, &options);
+    // 建立合法扩展字素簇边界表。
+    let index_map = TextIndexMap::new(text);
+    // 覆盖文本左右外侧和全部视觉像素位置。
+    for sample in -4..=(layout.width.ceil() as i32 + 4) {
+        // 查询当前视觉位置对应的逻辑字符边界。
+        let hit = service
+            // 执行方向感知命中。
+            .hit_test_text(
+                // 使用测试字体句柄。
+                &FontHandle::new(0),
+                // 使用混合方向组合文本。
+                text,
+                // 复用单行布局选项。
+                &options,
+                // 采样当前水平像素中心。
+                Point::new(sample as f32 + 0.5, 1.0),
+            )
+            // 非空文本命中必须产生字符位置。
+            .expect("混合方向非空文本应返回命中边界");
+        // 任意视觉命中都不得返回希伯来组合序列内部位置二。
+        assert!(index_map.is_grapheme_boundary(CharIndex(hit)));
+    }
+    // 查询旧调用方传入的组合序列内部字符位置。
+    let internal_x = service.text_cursor_x(&FontHandle::new(0), text, &options, 2);
+    // 查询该位置按最近规则归一后的合法字素簇终点。
+    let boundary_x = service.text_cursor_x(&FontHandle::new(0), text, &options, 3);
+    // 内部位置必须与合法边界共享同一主光标几何。
+    assert_eq!(internal_x, boundary_x);
 }
