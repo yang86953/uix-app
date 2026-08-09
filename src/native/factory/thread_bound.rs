@@ -14,7 +14,6 @@
 //! on an owner violation rather than panicking or reaching native state.
 
 use std::cell::Cell;
-use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
@@ -184,14 +183,6 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
         self.native_raster_caps
-    }
-
-    fn initialize(&mut self, native_window: *mut c_void, width: i32, height: i32) -> Result<()> {
-        self.with_owner("initialize", |inner| {
-            inner.initialize(native_window, width, height)
-        })?;
-        self.refresh_metadata();
-        Ok(())
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<()> {

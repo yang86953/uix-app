@@ -1,9 +1,6 @@
 // 复用父模块中的 WGL context 及 owner-thread 原生辅助方法。
 use super::WglContext;
 
-// 引入窗口初始化使用的原生句柄类型。
-use std::ffi::c_void;
-
 // 引入 OpenGL ES 图形上下文与呈现契约。
 use crate::native::present::{IGraphicsContext, NativeRasterCaps, PresentCoherency, PresentFrame};
 // 引入项目统一错误和结果类型。
@@ -39,17 +36,6 @@ impl IGraphicsContext for WglContext {
     fn graphics_backend(&self) -> crate::native::present::GraphicsApi {
         // WGL adapter 使用 OpenGL ES backend 标签。
         crate::native::present::GraphicsApi::OpenGlEs
-    }
-
-    // 兼容生命周期初始化由 WGL constructor 完成。
-    fn initialize(
-        &mut self,
-        _native_window: *mut c_void,
-        _width: i32,
-        _height: i32,
-    ) -> Result<(), Error> {
-        // 构造阶段已经完成所有原生初始化。
-        Ok(())
     }
 
     // 按逻辑窗口尺寸重建 WGL drawable。

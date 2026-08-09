@@ -4,7 +4,7 @@
 
 > **接口**：声明 platform 系统的目标 `presentation` 模块，权威持有原生 surface、图形 recipe、thin RHI provider、presenter 与提交能力。依赖：[windowing](windowing.md)、core。导出：供 graphics [backend](../graphics/backend.md) bootstrap/执行使用的平台图形边界。
 
-> **设计状态**：🔄 迁移中（2026-08-09）。`GraphicsDevice`、`GraphicsSurface`、事实型 `GraphicsCapabilities` 和 surface generation 已在 `src/native/present/rhi.rs` 建立；D3D11 与可选 `opengles` feature 下的 WGL/EGL OpenGL ES adapter 已接通资源/采样器/pipeline、pass、solid/textured（含 SrcOver/Additive）/gradient/coverage/MSDF/shape/仿射 shadow/单方向 blur draw 与 surface 生命周期，Picture texture 只由同一 RHI owner 管理，原生 adapter 的平行 offscreen texture/FBO 资源族已经移除，MSDF 已加入有界跨帧 RGBA8 texture cache；`FramePlan` 的局部 `ClearRect`、同纹理 `TextureMove`、主 surface native→soft sampled 合成、Picture native→soft 离屏合成和 surface generation 代际检查也已在两个 adapter 接通，并由生产 capability profile 显式启用 retained framebuffer。共享 CPU rasterizer 另已提供带 save/restore 的路径裁剪 mask，供 hybrid soft staging 保持 Canvas2D clip 语义。现有 `IGraphicsContext` 只保留生产生命周期、组合 thin RHI 与最终 present 等迁移门面；逐 UI `draw_*` ABI 已从公共 trait、thread-bound wrapper 和 D3D11/D3D12/WGL/EGL adapter 实现移除。完成状态只以对应自动测试为准。
+> **设计状态**：🔄 迁移中（2026-08-09）。`GraphicsDevice`、`GraphicsSurface`、事实型 `GraphicsCapabilities` 和 surface generation 已在 `src/native/present/rhi.rs` 建立；D3D11 与可选 `opengles` feature 下的 WGL/EGL OpenGL ES adapter 已接通资源/采样器/pipeline、pass、solid/textured（含 SrcOver/Additive）/gradient/coverage/MSDF/shape/仿射 shadow/单方向 blur draw 与 surface 生命周期，Picture texture 只由同一 RHI owner 管理，原生 adapter 的平行 offscreen texture/FBO 资源族已经移除，MSDF 已加入有界跨帧 RGBA8 texture cache；`FramePlan` 的局部 `ClearRect`、同纹理 `TextureMove`、主 surface native→soft sampled 合成、Picture native→soft 离屏合成和 surface generation 代际检查也已在两个 adapter 接通，并由生产 capability profile 显式启用 retained framebuffer。共享 CPU rasterizer 另已提供带 save/restore 的路径裁剪 mask，供 hybrid soft staging 保持 Canvas2D clip 语义。现有 `IGraphicsContext` 只保留生产生命周期、组合 thin RHI 与最终 present 等迁移门面；逐 UI `draw_*` ABI、二阶段 `initialize` 与 `swap_buffers` 已从公共 trait、thread-bound wrapper 和原生 adapter 实现移除，所有 context 构造成功即处于可用状态。完成状态只以对应自动测试为准。
 
 > **当前实现线索**：目标接口位于 `src/native/present/rhi.rs`，兼容接口位于 `src/native/present/`，构造位于 `src/native/factory/`，presenter 位于 `src/native/presentation/`；D3D11 surface 迁移位于 `src/native/presentation/graphics/d3d11/platform/context/rhi.rs`，OpenGL ES surface host 位于 `src/native/presentation/graphics/opengl/rhi_host.rs`，两者的 device 资源与状态分别位于对应 raster/context 子目录，构造门禁位于 `src/native/factory/registry.rs`。
 
@@ -19,6 +19,8 @@
 > **逐图元绘制边界**：`IGraphicsContext` 不再声明 solid/stroke rect、glyph、linear/radial gradient、sector、solid mesh、box shadow 或 image blit 等 `draw_*` 方法，owner-thread wrapper 与各原生 context 也不再转发这些高层 batch。D3D11/OpenGL ES 对应的无消费者 shader、buffer、atlas 与图片上传 owner 已物理删除，D3D12 的测试期逐 UI raster pipeline 也已删除；adapter 仅保留薄 RHI packet 所需的固定 shader 与编码。`NativeRasterCaps` 只保留 retained framebuffer 与 RHI Additive 两项事实；逐图元 pipeline 是否可用由 registry 的固定 RHI probe 在首帧前一次性验证。
 >
 > **统一呈现边界**：`IGraphicsContext` 不再声明 `swap_buffers`，也不再用默认 `present` 隐式串联 `make_current` 与交换操作。每个 native context 必须显式匹配 `PresentFrame::Swapchain` 或 `PresentFrame::PixelBuffer`，不符合所选 recipe 的 payload 返回 typed error；Wayland `GpuPresenter` 同样构造 `PresentFrame::Swapchain` 后进入唯一兼容 present 入口。D3D11/OpenGL ES 的薄 RHI 最终提交继续直接调用 `GraphicsSurface::present`，adapter 内部的 DXGI/WGL/EGL 原生交换函数只属于该低层实现。
+>
+> **构造生命周期边界**：`IGraphicsContext` 不再声明二阶段 `initialize`，thread-bound wrapper 与 D3D11/D3D12/Vulkan/Metal/WGL/EGL 实现也不再转发或提供空操作。registry 只接收已经完成 surface 绑定和初始尺寸归一化的 context；构造失败直接返回 typed error，成功值可立即接受 resize、RHI probe 与呈现。
 
 ## 组件清单
 

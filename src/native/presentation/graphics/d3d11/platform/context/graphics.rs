@@ -25,10 +25,6 @@ impl IGraphicsContext for D3d11Context {
         NativeRasterCaps::retained_rhi_with_additive()
     }
 
-    fn initialize(&mut self, _native_window: *mut c_void, _width: i32, _height: i32) -> Result<()> {
-        Ok(())
-    }
-
     fn resize(&mut self, width: i32, height: i32) -> Result<()> {
         self.resize_surface_logical(width, height)
     }

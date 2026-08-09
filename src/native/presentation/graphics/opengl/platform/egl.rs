@@ -391,16 +391,6 @@ impl IGraphicsContext for EglContext {
         NativeRasterCaps::retained_rhi_with_additive()
     }
 
-    fn initialize(
-        &mut self,
-        _native_window: *mut c_void,
-        _width: i32,
-        _height: i32,
-    ) -> Result<(), Error> {
-        // EglContext 在 new() 中初始化完毕；initialize 表达 trait 生命周期入口。
-        Ok(())
-    }
-
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.make_current()?;
         self.resize_surface_extent(width, height)

@@ -36,7 +36,8 @@ impl MetalPixelUploadContext {
             width: width.max(1),
             height: height.max(1),
             device_pixel_ratio: 1.0,
-            initialized: false,
+            // 构造成功即表示 CAMetalLayer 与初始 drawable 尺寸已经就绪。
+            initialized: true,
         })
     }
 
@@ -49,13 +50,6 @@ impl MetalPixelUploadContext {
 impl IGraphicsContext for MetalPixelUploadContext {
     fn caps(&self) -> GraphicsContextCaps {
         GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Metal, self.device_pixel_ratio)
-    }
-
-    fn initialize(&mut self, _native_window: *mut c_void, width: i32, height: i32) -> Result<()> {
-        self.width = width.max(1);
-        self.height = height.max(1);
-        self.initialized = true;
-        Ok(())
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<()> {
@@ -97,7 +91,8 @@ impl IGraphicsContext for MetalPixelUploadContext {
         if !self.initialized {
             return Err(Error::new(
                 Errc::InvalidArgument,
-                "MetalPixelUploadContext: present before initialize",
+                // false 只可能来自 checked shutdown，不再代表等待第二阶段初始化。
+                "MetalPixelUploadContext: present after shutdown",
             ));
         }
         validate_pixel_buffer(pixels, width, height)?;
