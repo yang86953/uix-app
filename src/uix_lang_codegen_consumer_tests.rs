@@ -156,6 +156,12 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     // 验证 BackTop 的阈值、状态回写入口与公共样式只依赖公开 prelude。
     let _back_top: ViewNode =
         crate::uix!(r#"<BackTop threshold="400" scrollY={back_top_scroll_y} margin="8px" />"#);
+    // 提供 Splitter 动态初始比例。
+    let splitter_ratio = 0.3_f32;
+    // 验证 Splitter 的双面板、方向、比例与公共样式只依赖公开 prelude。
+    let _splitter: ViewNode = crate::uix!(
+        r#"<Splitter direction="horizontal" defaultRatio={splitter_ratio} height="320px"><Container><Text>Navigation</Text></Container><Container><Text>Content</Text></Container></Splitter>"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。

@@ -18,11 +18,6 @@ const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
     },
     // 布局组件规划项。
     PlannedBuiltin {
-        name: "Splitter",
-        category: "内置组件 / 布局组件",
-    },
-    // 布局组件规划项。
-    PlannedBuiltin {
         name: "Layout",
         category: "内置组件 / 布局组件",
     },
