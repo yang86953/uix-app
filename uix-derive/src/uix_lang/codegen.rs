@@ -10,9 +10,10 @@ use super::{
 };
 // 引入受限表达式与事件处理器生成入口。
 use super::{
-    expression_uses_event, generate_button_group, generate_divider, generate_expression,
-    generate_float_button, generate_handler_expression, generate_space, generate_theme_toggle,
-    generate_typography, generate_window_control,
+    expression_uses_event, generate_button_group, generate_column, generate_container,
+    generate_divider, generate_expression, generate_float_button, generate_grid,
+    generate_handler_expression, generate_orphan_col, generate_row, generate_space,
+    generate_theme_toggle, generate_typography, generate_window_control,
 };
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
@@ -63,12 +64,16 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "Label" => generate_text(element),
         // 按钮映射到公开 button 构建器。
         "Button" => generate_button(element),
-        // 通用容器按 direction 映射到 row 或 column。
-        "Container" => generate_container(element, None),
-        // 显式行容器映射到 row。
-        "Row" => generate_container(element, Some(ContainerDirection::Row)),
-        // 显式列容器映射到 column。
-        "Column" => generate_container(element, Some(ContainerDirection::Column)),
+        // 通用容器按 direction 映射到 Flex row 或 column。
+        "Container" => generate_container(element),
+        // 文档 Row 映射到 24 单元响应式栅格。
+        "Row" => generate_row(element),
+        // 显式列容器保留 Flex column 兼容入口。
+        "Column" => generate_column(element),
+        // 显式 Grid 映射到公开轨道构建器。
+        "Grid" => generate_grid(element),
+        // Col 只能由 Row 或 Grid 解释其父级布局语义。
+        "Col" => generate_orphan_col(element),
         // 图标映射到公开 Icon 组件。
         "Icon" => generate_icon(element),
         // 分割线映射到现有 Divider Component。
@@ -97,7 +102,7 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row 或 Column，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column 或 Grid，或先登记组件状态",
         )),
     }
 }
@@ -181,102 +186,6 @@ pub(super) fn generate_button_with_group_position(
     }
     // 在按钮专有属性之后应用公共 View 属性与事件。
     apply_common_attributes(view, &element.attributes, &["type", "disabled", "block"])
-}
-
-// 表示容器的确定布局方向。
-#[derive(Clone, Copy)]
-enum ContainerDirection {
-    // 映射到公开 row 构造器。
-    Row,
-    // 映射到公开 column 构造器。
-    Column,
-}
-
-// 生成 Container、Row 或 Column。
-fn generate_container(
-    // 接收容器元素。
-    element: &Element,
-    // 接收显式标签固定方向。
-    fixed_direction: Option<ContainerDirection>,
-) -> Result<TokenStream, Diagnostic> {
-    // 显式 Row/Column 不允许重复 direction 属性。
-    if fixed_direction.is_some()
-        // 检查是否声明 direction。
-        && element
-            // 借用属性列表。
-            .attributes
-            // 遍历属性。
-            .iter()
-            // 匹配方向属性。
-            .any(|attribute| attribute.name == "direction")
-    {
-        // 定位重复方向属性。
-        let attribute = element
-            // 遍历属性列表。
-            .attributes
-            // 获取迭代器。
-            .iter()
-            // 查找方向属性。
-            .find(|attribute| attribute.name == "direction")
-            // 前置条件保证一定存在。
-            .expect("已确认存在 direction 属性");
-        // 返回标签与属性冲突诊断。
-        return Err(Diagnostic::new(
-            // 指向冲突属性。
-            attribute.span,
-            // 说明标签已固定方向。
-            format!("<{}> 已固定布局方向", element.name),
-            // 给出修复动作。
-            "删除 direction 属性，或改用 <Container direction=...>",
-        ));
-    }
-    // Container 默认采用列方向。
-    let mut direction = fixed_direction.unwrap_or(ContainerDirection::Column);
-    // 读取 Container 的可选方向属性。
-    if fixed_direction.is_none() {
-        // 查找方向属性。
-        if let Some(attribute) = element
-            // 借用属性列表。
-            .attributes
-            // 遍历属性。
-            .iter()
-            // 匹配方向属性。
-            .find(|attribute| attribute.name == "direction")
-        {
-            // 方向必须是确定字面量。
-            let value = literal_string(attribute, "Container direction")?;
-            // 映射登记的方向值。
-            direction = match value.as_str() {
-                // row 映射为行布局。
-                "row" => ContainerDirection::Row,
-                // column 映射为列布局。
-                "column" => ContainerDirection::Column,
-                // 未登记方向返回诊断。
-                _ => {
-                    // 返回方向值诊断。
-                    return Err(Diagnostic::new(
-                        // 指向方向属性。
-                        attribute.span,
-                        // 说明未知方向。
-                        format!("Container direction={value:?} 不受支持"),
-                        // 给出合法值。
-                        "使用 direction=\"row\" 或 direction=\"column\"",
-                    ));
-                }
-            };
-        }
-    }
-    // 生成保持源码顺序的子节点向量。
-    let children = generate_children(&element.children)?;
-    // 按方向调用当前公开布局构造器。
-    let base = match direction {
-        // 生成行布局。
-        ContainerDirection::Row => quote! { ::uix::prelude::row(#children) },
-        // 生成列布局。
-        ContainerDirection::Column => quote! { ::uix::prelude::column(#children) },
-    };
-    // Container 消费 direction 后应用公共属性与事件。
-    apply_common_attributes(base, &element.attributes, &["direction"])
 }
 
 // 生成图标元素。
