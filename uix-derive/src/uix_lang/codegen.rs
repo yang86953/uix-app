@@ -11,7 +11,7 @@ use super::{
 // 引入受限表达式与事件处理器生成入口。
 use super::{
     expression_uses_event, generate_divider, generate_expression, generate_handler_expression,
-    generate_space,
+    generate_space, generate_typography,
 };
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
@@ -74,6 +74,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "Divider" => generate_divider(element),
         // 间距容器映射到现有 Space Component。
         "Space" => generate_space(element),
+        // 排版文本映射到现有 Typography Component。
+        "Typography" => generate_typography(element),
         // 文档内置组件按登记类别返回规划中诊断。
         _ if planned_builtin_diagnostic(element).is_some() => {
             // 前置条件保证诊断存在。
@@ -86,7 +88,7 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、Icon、Divider、Space、Container、Row 或 Column，或先登记组件状态",
+            "使用 Text、Label、Button、Icon、Divider、Space、Typography、Container、Row 或 Column，或先登记组件状态",
         )),
     }
 }
@@ -768,7 +770,7 @@ fn generate_for(
 }
 
 // 把文本与插值组合成一个拥有所有权的内容表达式。
-fn generate_text_content(
+pub(super) fn generate_text_content(
     // 接收有序文本子节点。
     children: &[Node],
     // 接收所属元素跨度。
@@ -784,7 +786,7 @@ fn generate_text_content(
             // 指向所属文本型元素。
             span,
             // 说明当前公开构造器只接收文本。
-            "当前 Text/Button 核心映射只接受文本与插值子节点",
+            "当前 Text/Button/Typography 核心映射只接受文本与插值子节点",
             // 给出布局修复建议。
             "把图标或其他元素移到相邻 Container/Row 中",
         ));

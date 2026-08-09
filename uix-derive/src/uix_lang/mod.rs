@@ -8,6 +8,8 @@ mod codegen;
 mod divider_codegen;
 // 定义 Space 内置组件的公开 API 代码生成边界。
 mod space_codegen;
+// 定义 Typography 内置组件的公开 API 代码生成边界。
+mod typography_codegen;
 // 集中验证代码生成快照、消费者编译与拒绝路径。
 #[cfg(test)]
 mod codegen_tests;
@@ -72,6 +74,8 @@ pub(crate) use codegen::generate_view;
 pub(crate) use divider_codegen::generate_divider;
 // 向核心元素生成器暴露 Space 专用映射。
 pub(crate) use space_codegen::generate_space;
+// 向核心元素生成器暴露 Typography 专用映射。
+pub(crate) use typography_codegen::generate_typography;
 // 向组件解析与代码生成暴露结构化组件声明。
 pub(crate) use component_ast::*;
 // 向过程宏入口暴露组件感知文档生成函数。

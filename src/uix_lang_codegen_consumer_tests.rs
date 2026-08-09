@@ -94,6 +94,16 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _space: ViewNode = crate::uix!(
         r#"<Space direction="vertical" gap={space_gap} wrap={space_wrap} margin="4px"><Label>First</Label><Button>Second</Button></Space>"#
     );
+    // 提供 Typography 动态层级属性的 u8 消费者值。
+    let typography_level = 2_u8;
+    // 提供 Typography 动态标记属性的消费者值。
+    let typography_marked = true;
+    // 提供 Typography 动态复制属性的消费者值。
+    let typography_copyable = true;
+    // 验证 Typography 专有属性、主题语义色与文本插值只依赖公开 prelude API。
+    let _typography: ViewNode = crate::uix!(
+        r#"<Typography level={typography_level} type="danger" mark={typography_marked} underline="true" copyable={typography_copyable}>Level {typography_level}</Typography>"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。

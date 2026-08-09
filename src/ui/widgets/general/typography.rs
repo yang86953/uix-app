@@ -11,11 +11,14 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 // 引入共享扩展字素簇边界模型。
 use crate::draw::resources::font::text_index::{BoundaryBias, CharIndex, TextIndexMap};
+// 引入排版快照契约。
+use crate::ui::SnapshotFields;
 use crate::ui::component::clipboard;
 use crate::ui::component::paint_context::PaintContext;
-use crate::ui::SnapshotFields;
+// 引入主题颜色值与组件运行契约。
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
+    ColorValue, ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent,
+    WidgetTree,
 };
 
 use super::icon::Icon;
@@ -52,6 +55,8 @@ component! {
         strong: bool,
         italic: bool,
         copyable: bool,
+        // 保存由主题模块拥有的可选语义文字颜色。
+        semantic_color: Option<ColorValue>,
         color_override: Option<Color>,
         spacing: f32,
         indent: f32,
@@ -196,9 +201,8 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let (fs, fw) = self.compute_font_style();
-        let text_c = self.color_override.unwrap_or_else(|| {
-            if self.disabled { ctx.tokens().color_text_quaternary() } else { ctx.tokens().color_text() }
-        });
+        // 在绘制阶段通过当前 Provider 主题解析语义颜色。
+        let text_c = self.resolved_text_color(ctx.tokens());
         let copy_space = if self.copyable { 28.0 } else { 0.0 };
         let text_width = (frame.w - copy_space).max(1.0);
         let wraps = matches!(self.type_, TypographyType::Paragraph);
@@ -417,6 +421,8 @@ impl Typography {
             strong: false,
             italic: false,
             copyable: false,
+            // 默认沿用当前主题的正文颜色。
+            semantic_color: None,
             color_override: None,
             spacing: 0.0,
             indent: 0.0,
@@ -481,7 +487,24 @@ impl Typography {
         self
     }
     pub fn color(mut self, c: Color) -> Self {
+        // 固定颜色成为最新局部颜色配置。
         self.color_override = Some(c);
+        // 清除较早的语义颜色以保持构建器后调用优先。
+        self.semantic_color = None;
+        self
+    }
+    // 通过主题颜色值配置可随 Provider 变化的语义文字颜色。
+    pub fn semantic_color(
+        // 接收主题模块拥有的稳定颜色值契约。
+        mut self,
+        // 保存待绘制阶段解析的颜色值。
+        color: ColorValue,
+    ) -> Self {
+        // 记录局部语义颜色，并保持固定颜色覆盖入口兼容。
+        self.semantic_color = Some(color);
+        // 清除较早的固定颜色以保持构建器后调用优先。
+        self.color_override = None;
+        // 返回构建后的排版组件。
         self
     }
     pub fn copyable(mut self, v: bool) -> Self {
@@ -691,6 +714,30 @@ impl Typography {
         }
     }
 
+    // 按局部属性优先级解析当前文字颜色。
+    fn resolved_text_color(
+        // 借用当前排版组件。
+        &self,
+        // 借用绘制阶段恢复的主题令牌。
+        tokens: &dyn crate::ui::ThemeTokens,
+    ) -> Color {
+        // 固定颜色保持最高优先级，兼容既有 color 构建器。
+        self.color_override
+            // 没有固定覆盖时解析主题感知颜色。
+            .or_else(|| self.semantic_color.map(|color| color.resolve(tokens)))
+            // 没有局部颜色时按禁用状态读取主题文字令牌。
+            .unwrap_or_else(|| {
+                // 禁用文字使用四级文本色。
+                if self.disabled {
+                    // 返回主题禁用色。
+                    tokens.color_text_quaternary()
+                } else {
+                    // 返回主题正文色。
+                    tokens.color_text()
+                }
+            })
+    }
+
     // 把排版文本命中统一约束到扩展字素簇边界。
     fn char_at_xy(&self, text_x: f32, text_y: f32) -> usize {
         // 查询现有布局几何给出的原始字符位置。
@@ -764,6 +811,8 @@ impl Typography {
         self.strong = next.strong;
         self.italic = next.italic;
         self.copyable = next.copyable;
+        // 同步声明式语义颜色，确保主题切换仍在绘制阶段解析。
+        self.semantic_color = next.semantic_color;
         self.color_override = next.color_override;
         self.spacing = next.spacing;
         self.indent = next.indent;
@@ -787,7 +836,56 @@ impl Typography {
             strong: self.strong,
             italic: self.italic,
             copyable: self.copyable,
+            // 快照保留主题值身份而不是提前固化为某个主题的 RGB。
+            semantic_color: self.semantic_color,
             color_override: self.color_override,
         }
+    }
+}
+
+// 只在单元测试目标验证主题值解析契约。
+#[cfg(test)]
+mod tests {
+    // 引入待验证的排版组件与主题颜色值。
+    use super::*;
+    // 引入预设主题和语义角色。
+    use crate::ui::{NeutralRole, PaletteColor, Theme};
+
+    // 验证排版语义颜色由当前主题令牌解析。
+    #[test]
+    fn semantic_color_resolves_against_current_theme_tokens() {
+        // 创建亮色主题令牌快照。
+        let light = Theme::antd_light().tokens_arc();
+        // 创建暗色主题令牌快照。
+        let dark = Theme::antd_dark().tokens_arc();
+        // 配置次要文字语义色。
+        let secondary = Typography::text("secondary")
+            // 使用中性次要文字角色。
+            .semantic_color(ColorValue::neutral(NeutralRole::TextSecondary));
+        // 亮色主题必须解析为自身的次要文字令牌。
+        assert_eq!(
+            // 调用组件内部绘制颜色解析边界。
+            secondary.resolved_text_color(light.as_ref()),
+            // 读取亮色主题期望值。
+            light.color_text_secondary()
+        );
+        // 暗色主题必须重新解析而不是复用亮色 RGB。
+        assert_eq!(
+            // 使用同一声明式组件解析暗色主题。
+            secondary.resolved_text_color(dark.as_ref()),
+            // 读取暗色主题期望值。
+            dark.color_text_secondary()
+        );
+        // 配置危险语义色对应的错误色板角色。
+        let danger = Typography::text("danger")
+            // 使用主题错误色而非固定颜色常量。
+            .semantic_color(ColorValue::palette(PaletteColor::Error));
+        // 危险文字必须解析为当前主题错误色。
+        assert_eq!(
+            // 解析亮色主题危险色。
+            danger.resolved_text_color(light.as_ref()),
+            // 读取亮色主题错误令牌。
+            light.color_error()
+        );
     }
 }

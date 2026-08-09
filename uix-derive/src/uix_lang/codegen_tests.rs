@@ -207,6 +207,100 @@ fn validates_space_defaults_and_attribute_contract() {
     assert!(unknown_attribute.message.contains("mystery"));
 }
 
+// 验证 Typography 生成只调用公开组件、主题值与 View API。
+#[test]
+fn generates_typography_with_documented_properties_and_text() {
+    // 构造覆盖标题、危险色、动态标记、下划线、复制与插值的排版标签。
+    let source = r#"<Typography level={1} type="danger" mark={marked} underline="true" copyable={copyable} margin="4px">Hello {name}</Typography>"#;
+    // 生成稳定令牌文本。
+    let snapshot = generate(source).expect("文档化 Typography 属性与文本应生成 Rust View");
+    // 必须从公开 Typography 文本构造器开始。
+    assert!(snapshot.contains("Typography :: text"));
+    // 标题表达式必须进入现有 level 构建器。
+    assert!(snapshot.contains("level (1)"));
+    // danger 必须使用主题感知的错误色板角色。
+    assert!(
+        // 检查语义颜色构建器。
+        snapshot.contains("semantic_color")
+            // 检查错误色板角色。
+            && snapshot.contains("PaletteColor :: Error")
+    );
+    // 动态 mark 必须形成保持同类型的条件构建。
+    assert!(snapshot.contains("if marked") && snapshot.contains("mark ()"));
+    // true 下划线必须调用现有启用式构建器。
+    assert!(snapshot.contains("if true") && snapshot.contains("underline ()"));
+    // 动态复制状态必须直接传给公开构建器。
+    assert!(snapshot.contains("copyable (copyable)"));
+    // 动态文本必须保留源码顺序并转换插值。
+    assert!(snapshot.contains("Hello") && snapshot.contains("name"));
+    // Typography 必须作为公开叶视图组合。
+    assert!(snapshot.contains("ViewNode :: leaf"));
+    // 公共样式仍由统一 View 映射处理。
+    assert!(snapshot.contains("margin"));
+    // 生成物不得包含运行时标签解析器。
+    assert!(!snapshot.contains("parse_typography"));
+}
+
+// 验证 Typography 默认值与非法边界保持确定诊断。
+#[test]
+fn validates_typography_defaults_and_attribute_contract() {
+    // 默认 Typography 应保留正文、主题正文色与关闭装饰的组件默认契约。
+    let default = generate(r#"<Typography>Body</Typography>"#)
+        // 默认排版文本必须生成成功。
+        .expect("默认 Typography 应可生成");
+    // 默认路径不应伪造标题、语义色或装饰构建器。
+    assert!(
+        // 默认不设置标题层级。
+        !default.contains("level")
+            // 默认沿用主题正文色。
+            && !default.contains("semantic_color")
+            // 默认不启用标记。
+            && !default.contains("mark ()")
+            // 默认不启用下划线。
+            && !default.contains("underline ()")
+            // 默认不配置复制按钮。
+            && !default.contains("copyable")
+    );
+    // 越界标题层级必须在代码生成期失败。
+    let range_error = generate(r#"<Typography level="0">Zero</Typography>"#)
+        // 提取预期范围诊断。
+        .expect_err("越界 Typography level 必须失败");
+    // 诊断必须包含具体范围。
+    assert!(range_error.message.contains("1~5"));
+    // 非整数层级必须在代码生成期失败。
+    let integer_error = generate(r#"<Typography level="title">Bad</Typography>"#)
+        // 提取预期整数诊断。
+        .expect_err("非整数 Typography level 必须失败");
+    // 诊断必须指出整数要求。
+    assert!(integer_error.message.contains("整数"));
+    // 动态 type 无法在编译期选择语义枚举，必须明确拒绝。
+    let dynamic_type = generate(r#"<Typography type={kind}>Dynamic</Typography>"#)
+        // 提取预期字面量诊断。
+        .expect_err("动态 Typography type 必须失败");
+    // 诊断必须指出 type 需要字符串字面量。
+    assert!(dynamic_type.message.contains("必须使用字符串字面量"));
+    // 未登记语义类型必须返回枚举诊断。
+    let type_error = generate(r#"<Typography type="info">Info</Typography>"#)
+        // 提取预期枚举诊断。
+        .expect_err("未登记 Typography type 必须失败");
+    // 修复建议必须列出合法语义色。
+    assert!(
+        type_error.suggestion.contains("secondary") && type_error.suggestion.contains("danger")
+    );
+    // 元素子节点不能被文本组件静默丢弃。
+    let child_error = generate(r#"<Typography><Icon name="star" /></Typography>"#)
+        // 提取预期内容形状诊断。
+        .expect_err("Typography 元素子节点必须失败");
+    // 诊断必须指出 Typography 的文本边界。
+    assert!(child_error.message.contains("Typography"));
+    // Typography 未登记属性必须继续走统一拒绝路径。
+    let unknown_attribute = generate(r#"<Typography mystery="value">Text</Typography>"#)
+        // 提取预期属性映射诊断。
+        .expect_err("Typography 未登记属性必须失败");
+    // 诊断必须包含具体未知属性名。
+    assert!(unknown_attribute.message.contains("mystery"));
+}
+
 // 验证 If 与 For 生成真实 Rust 控制流、索引和稳定 key。
 #[test]
 fn generates_if_for_and_key_snapshot() {
