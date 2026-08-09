@@ -9,8 +9,8 @@ use std::ffi::c_void;
 use crate::core::{Errc, Error, Result};
 use crate::native::backends::macos::platform;
 use crate::native::present::{
-    validate_pixel_buffer, GraphicsApi, GraphicsContextCaps, IGraphicsContext, PresentDamage,
-    PresentFrame,
+    validate_pixel_buffer, GraphicsApi, GraphicsContextCaps, IGraphicsContext, PixelUploadSurface,
+    PresentDamage, PresentFrame,
 };
 
 type LayerId = *mut c_void;
@@ -52,10 +52,10 @@ impl IGraphicsContext for MetalPixelUploadContext {
         GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Metal, self.device_pixel_ratio)
     }
 
-    fn resize(&mut self, width: i32, height: i32) -> Result<()> {
-        self.width = width.max(1);
-        self.height = height.max(1);
-        Ok(())
+    // Metal PixelUpload recipe 显式暴露专用 surface resize。
+    fn pixel_upload_surface(&mut self) -> Option<&mut dyn PixelUploadSurface> {
+        // 返回当前 CAMetalLayer pixel-upload owner。
+        Some(self)
     }
 
     fn try_shutdown(&mut self) -> Result<()> {
@@ -105,5 +105,18 @@ impl IGraphicsContext for MetalPixelUploadContext {
                 "MetalPixelUploadContext: swapchain present requires native Metal raster (planned)",
             )),
         }
+    }
+}
+
+// 为 Metal CPU PixelUpload recipe 实现专用 surface 生命周期。
+impl PixelUploadSurface for MetalPixelUploadContext {
+    // 保存归一化后的逻辑 PixelUpload surface 尺寸。
+    fn resize_pixel_upload_surface(&mut self, width: i32, height: i32) -> Result<()> {
+        // 将非正宽度归一化为最小可用值。
+        self.width = width.max(1);
+        // 将非正高度归一化为最小可用值。
+        self.height = height.max(1);
+        // Metal layer 的实际 drawable 更新由 present helper 负责。
+        Ok(())
     }
 }

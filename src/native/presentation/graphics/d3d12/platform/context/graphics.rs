@@ -9,10 +9,6 @@ impl IGraphicsContext for D3d12Context {
         )
     }
 
-    fn resize(&mut self, width: i32, height: i32) -> Result<()> {
-        self.resize_result(width, height)
-    }
-
     fn present(&mut self, frame: &PresentFrame<'_>) -> Result<()> {
         match frame {
             PresentFrame::Swapchain { .. } => self.present_result(),

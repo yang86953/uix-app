@@ -21,8 +21,8 @@ use std::thread::{self, ThreadId};
 
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
-    GraphicsContextCaps, IGraphicsContext, NativeRasterCaps, PresentDamage, PresentFrame,
-    PresentTestResult,
+    GraphicsContextCaps, IGraphicsContext, NativeRasterCaps, PixelUploadSurface, PresentDamage,
+    PresentFrame, PresentTestResult,
 };
 
 pub(crate) fn bind_to_current_thread(
@@ -169,6 +169,19 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
         self.inner.rhi_context()
     }
 
+    // 只有 owner thread 可以借用 inner 的 PixelUpload surface 视图。
+    fn pixel_upload_surface(&mut self) -> Option<&mut dyn PixelUploadSurface> {
+        // 无错误返回通道的 capability 查询在跨线程时保守返回不支持。
+        if self.require_owner("pixel_upload_surface").is_err() {
+            // 禁止把 wrapper 自身暴露给错误线程。
+            return None;
+        }
+        // 只有真实 context 明确实现专用契约时 wrapper 才提供同一能力。
+        self.inner.pixel_upload_surface()?;
+        // 返回继续执行 owner-thread 检查与元数据同步的 wrapper 视图。
+        Some(self)
+    }
+
     // 在线程绑定边界内执行 RHI surface resize，并同步外层 drawable 元数据。
     fn resize_rhi_surface(&mut self, width: i32, height: i32) -> Result<()> {
         // 把实际 resize 委托给创建线程上的 native context。
@@ -183,12 +196,6 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
         self.native_raster_caps
-    }
-
-    fn resize(&mut self, width: i32, height: i32) -> Result<()> {
-        self.with_owner("resize", |inner| inner.resize(width, height))?;
-        self.refresh_metadata();
-        Ok(())
     }
 
     fn try_shutdown(&mut self) -> Result<()> {
@@ -220,5 +227,31 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
 
     fn device_pixel_ratio(&self) -> f32 {
         self.device_pixel_ratio
+    }
+}
+
+// 在线程绑定边界实现 CPU PixelUpload 的专用 surface resize。
+impl PixelUploadSurface for ThreadBoundGraphicsContext {
+    // 把 resize 委托给真实 PixelUpload adapter 并刷新只读元数据。
+    fn resize_pixel_upload_surface(&mut self, width: i32, height: i32) -> Result<()> {
+        // 在创建线程上借用 inner 的专用 surface 契约。
+        self.with_owner("resize_pixel_upload_surface", |inner| {
+            // recipe 宣称 PixelUpload 却未提供专用 surface 属于状态破坏。
+            let Some(surface) = inner.pixel_upload_surface() else {
+                // 返回 typed 状态错误，禁止回退已经删除的兼容入口。
+                return Err(Error::new(
+                    // 使用稳定状态分类交给恢复层。
+                    Errc::InvalidState,
+                    // 明确指出 factory/context 契约不一致。
+                    "PixelUpload graphics context does not expose its dedicated surface",
+                ));
+            };
+            // 在同一 owner-thread 借用范围内执行 adapter resize。
+            surface.resize_pixel_upload_surface(width, height)
+        })?;
+        // resize 成功后同步 drawable 与 DPR 缓存。
+        self.refresh_metadata();
+        // 返回已经完成线程检查和元数据同步的成功结果。
+        Ok(())
     }
 }

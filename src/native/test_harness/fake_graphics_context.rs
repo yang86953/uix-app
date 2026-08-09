@@ -67,13 +67,6 @@ impl IGraphicsContext for FakeGraphicsContext {
         crate::native::present::GraphicsApi::OpenGlEs
     }
 
-    fn resize(&mut self, w: i32, h: i32) -> crate::core::Result<()> {
-        self.state.width.set(w);
-        self.state.height.set(h);
-
-        Ok(())
-    }
-
     fn try_shutdown(&mut self) -> crate::core::Result<()> {
         self.state.shutdown_called = true;
         Ok(())

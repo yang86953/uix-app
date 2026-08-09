@@ -128,7 +128,6 @@ fn query_adapter_info(device: &ID3D11Device, driver: D3d11DriverKind) -> Result<
 }
 
 pub struct D3d11Context {
-    hwnd: HWND_PTR,
     device: ID3D11Device,
     pub(crate) context: ID3D11DeviceContext,
     swap_chain: IDXGISwapChain,

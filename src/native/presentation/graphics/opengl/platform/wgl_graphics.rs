@@ -5,9 +5,6 @@ use super::WglContext;
 use crate::native::present::{IGraphicsContext, NativeRasterCaps, PresentCoherency, PresentFrame};
 // 引入项目统一错误和结果类型。
 use crate::native::{Errc, Error, Result};
-// 引入 WGL drawable 尺寸换算辅助函数。
-use crate::native::presentation::graphics::platform::windows::drawable_size_from_hdc;
-
 // 为 WGL context 实现共享的 IGraphicsContext forwarding 合约。
 impl IGraphicsContext for WglContext {
     // 返回 OpenGL ES swapchain 能力和当前 device pixel ratio。
@@ -36,14 +33,6 @@ impl IGraphicsContext for WglContext {
     fn graphics_backend(&self) -> crate::native::present::GraphicsApi {
         // WGL adapter 使用 OpenGL ES backend 标签。
         crate::native::present::GraphicsApi::OpenGlEs
-    }
-
-    // 按逻辑窗口尺寸重建 WGL drawable。
-    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        // 将逻辑尺寸换算为真实 drawable 尺寸。
-        let drawable = drawable_size_from_hdc(self.hwnd, self.hdc, width, height);
-        // 委托给 owner-thread resize helper。
-        self.resize_surface_drawable(drawable)
     }
 
     // 统一 present 入口只接受 native swapchain frame。

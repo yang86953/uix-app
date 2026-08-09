@@ -41,6 +41,12 @@ fn rhi_resize_extent_for_logical(
     ))
 }
 
+// 定义只属于 CPU PixelUpload recipe 的 surface 尺寸契约。
+pub(crate) trait PixelUploadSurface {
+    // 按逻辑窗口尺寸重建像素上传 surface。
+    fn resize_pixel_upload_surface(&mut self, width: i32, height: i32) -> Result<(), Error>;
+}
+
 pub trait IGraphicsContext {
     fn caps(&self) -> GraphicsContextCaps;
 
@@ -48,6 +54,13 @@ pub trait IGraphicsContext {
     // native::present 模块本身是 crate 私有边界，迁移期 RHI 不作为外部句柄暴露。
     #[allow(private_interfaces)]
     fn rhi_context(&mut self) -> Option<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
+        None
+    }
+
+    // 返回 CPU PixelUpload recipe 的专用 surface 视图。
+    #[allow(private_interfaces)]
+    fn pixel_upload_surface(&mut self) -> Option<&mut dyn PixelUploadSurface> {
+        // GPU-native 与不支持像素上传的 context 默认不暴露该契约。
         None
     }
 
@@ -87,8 +100,6 @@ pub trait IGraphicsContext {
     fn graphics_backend(&self) -> GraphicsApi {
         self.caps().backend
     }
-
-    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error>;
 
     /// Checked shutdown boundary for thread-affine native resources.
     ///

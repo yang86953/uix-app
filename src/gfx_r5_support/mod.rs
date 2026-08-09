@@ -17,7 +17,9 @@ use crate::native::backends::windows::display::WindowsDisplay;
 use crate::native::backends::windows::dpi::dpi_for_window;
 use crate::native::backends::windows::platform::WindowsPlatform;
 use crate::native::capabilities::display::IDisplay;
-use crate::native::present::{IGraphicsContext, PresentDamage, PresentTestResult};
+use crate::native::present::{
+    IGraphicsContext, PixelUploadSurface, PresentDamage, PresentTestResult,
+};
 use crate::native::presentation::graphics::vulkan::platform::VulkanContext;
 use crate::native::windowing::{IWindowManager, PlatformWindow};
 use std::ffi::c_void;

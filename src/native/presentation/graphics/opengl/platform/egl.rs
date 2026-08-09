@@ -418,11 +418,6 @@ impl IGraphicsContext for EglContext {
         NativeRasterCaps::retained_rhi_with_additive()
     }
 
-    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        self.make_current_result()?;
-        self.resize_surface_extent(width, height)
-    }
-
     fn try_shutdown(&mut self) -> Result<(), Error> {
         self.shutdown_result()
     }

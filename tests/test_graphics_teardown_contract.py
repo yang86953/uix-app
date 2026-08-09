@@ -808,6 +808,80 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # GFX-R5 不得继续依赖兼容 trait 方法。
         self.assertNotIn(".read_pixels(", gfx_r5)
 
+    # 校验通用 context resize 已拆分为 GPU RHI 与 CPU PixelUpload 两条 typed 契约。
+    def test_context_resize_is_split_by_surface_recipe(self) -> None:
+        # 读取兼容 context 与 PixelUpload surface trait。
+        facade = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        # 读取 owner-thread wrapper。
+        thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
+        # 读取统一 renderer 的 PixelUpload 生命周期。
+        runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
+        # 读取 Wayland GPU presenter 的 resize 路由。
+        wayland = (ROOT / "src/native/backends/linux/wayland/gpu_presenter.rs").read_text(encoding="utf-8")
+        # 读取 Vulkan GFX-R5 显式诊断调用点。
+        gfx_r5 = (ROOT / "src/gfx_r5_support/evidence.rs").read_text(encoding="utf-8")
+        # 读取 D3D11 context 私有生命周期实现。
+        d3d11_methods = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/methods.rs").read_text(encoding="utf-8")
+        # 通用 context trait 不得继续声明无 recipe 区分的 resize。
+        self.assertNotIn("fn resize(&mut self", facade)
+        # PixelUpload 必须拥有独立的专用 surface trait。
+        self.assertIn("pub(crate) trait PixelUploadSurface", facade)
+        # 专用 trait 必须使用显式 recipe 名称。
+        self.assertIn("fn resize_pixel_upload_surface(", facade)
+        # context 只借出可选 PixelUpload surface 视图。
+        self.assertIn("fn pixel_upload_surface(&mut self)", facade)
+        # thread-bound 不得恢复通用 resize wrapper。
+        self.assertNotIn("fn resize(&mut self", thread_bound)
+        # thread-bound 必须实现专用契约。
+        self.assertIn("impl PixelUploadSurface for ThreadBoundGraphicsContext", thread_bound)
+        # 专用 wrapper 必须保持 owner-thread 检查。
+        self.assertIn('self.with_owner("resize_pixel_upload_surface"', thread_bound)
+        # 专用 wrapper 成功后必须刷新 drawable 元数据。
+        self.assertIn("self.refresh_metadata();", thread_bound)
+        # 逐个核对 GPU context 与测试 fake 已退出兼容 resize wrapper。
+        for adapter in (
+            # D3D11 GPU context。
+            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            # D3D12 测试期 GPU context。
+            ROOT / "src/native/presentation/graphics/d3d12/platform/context/graphics.rs",
+            # WGL GPU context。
+            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            # EGL GPU context。
+            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+            # GPU-native test fake。
+            ROOT / "src/native/test_harness/fake_graphics_context.rs",
+        ):
+            # adapter 的 IGraphicsContext 实现不得重新包装通用 resize。
+            self.assertNotIn("fn resize(&mut self", adapter.read_text(encoding="utf-8"))
+        # D3D11 已无消费者的逻辑兼容 helper 必须物理删除。
+        self.assertNotIn("fn resize_surface_logical(", d3d11_methods)
+        # 读取 Vulkan PixelUpload context 实现。
+        vulkan = (ROOT / "src/native/presentation/graphics/vulkan/platform/context/graphics.rs").read_text(encoding="utf-8")
+        # 读取 Metal PixelUpload context 实现。
+        metal = (ROOT / "src/native/presentation/graphics/metal/platform/context.rs").read_text(encoding="utf-8")
+        # 两个 PixelUpload adapter 必须实现专用 surface trait。
+        self.assertIn("impl PixelUploadSurface for VulkanContext", vulkan)
+        # Metal 同样必须实现专用 surface trait。
+        self.assertIn("impl PixelUploadSurface for MetalPixelUploadContext", metal)
+        # 两个 adapter 都必须显式暴露专用 surface 视图。
+        self.assertIn("fn pixel_upload_surface(&mut self)", vulkan)
+        # Metal 不能依赖 runtime 猜测 recipe。
+        self.assertIn("fn pixel_upload_surface(&mut self)", metal)
+        # runtime 构造必须先验证专用契约。
+        self.assertIn("PixelUploadPresentation::try_new(context)?", runtime)
+        # runtime resize 必须通过专用 presentation helper。
+        self.assertIn("upload.resize_surface(width, height)?", runtime)
+        # runtime 不得调用已经删除的通用 context resize。
+        self.assertNotIn("upload.context.resize(", runtime)
+        # Wayland GPU presenter 必须改走 thin RHI surface。
+        self.assertIn("self.gpu_ctx.resize_rhi_surface(width, height)", wayland)
+        # Wayland 不得保留 GPU context 通用 resize 调用。
+        self.assertNotIn("self.gpu_ctx.resize(width, height)", wayland)
+        # Vulkan GFX-R5 必须显式使用 PixelUpload surface 契约。
+        self.assertGreaterEqual(gfx_r5.count(".resize_pixel_upload_surface("), 3)
+        # GFX-R5 不得再通过 IGraphicsContext resize 驱动 Vulkan。
+        self.assertNotIn("context.resize(", gfx_r5)
+
     def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
         # 组合读取 Vulkan context 的拆分模块，以保持顺序审计语义。
         context = read_rust_module(VULKAN_CONTEXT)
