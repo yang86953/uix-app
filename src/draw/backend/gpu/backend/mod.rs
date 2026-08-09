@@ -66,11 +66,6 @@ pub struct GpuBackend {
     present_damage_tracker: PresentDamageTracker,
     soft_fallback_idle_deadline: Option<Instant>,
     soft_used_in_last_present: bool,
-    gpu_only: bool,
-    /// `new` is a crate-local hybrid fixture path and may receive an
-    /// unprepared context; the production GPU registry always marks its
-    /// factory-created context as prepared.
-    factory_prepared: bool,
     pub(crate) shutdown: bool,
     /// D3D11 参考 adapter 的迁移期 FramePlan resource cache。
     pub(crate) rhi_renderer: Option<RhiRenderer>,

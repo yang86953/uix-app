@@ -77,6 +77,9 @@ pub struct NativeGpuCanvas2D {
 }
 
 impl NativeGpuCanvas2D {
+    // hybrid canvas 只作为 soft fallback 参考语义的回归测试 fixture 保留。
+    #[cfg(test)]
+    // 创建允许测试显式进入 hybrid 分支的 canvas。
     pub(crate) fn new(width: i32, height: i32, native_caps: NativeRasterCaps) -> Self {
         Self::new_with_mode(width, height, native_caps, false)
     }

@@ -90,32 +90,21 @@ impl RenderBackend for GpuBackend {
         let logical_h = height.max(1);
         // swapchain resize 会推进 surface generation，先释放旧代际 retained texture。
         self.destroy_rhi_surface_texture()?;
-        // 生产 GPU adapter 优先由薄 RHI surface 执行实际重建和代际推进。
-        match self.gpu_ctx.resize_rhi_surface(logical_w, logical_h) {
-            // RHI resize 成功后不再穿过逐 UI 兼容生命周期。
-            Ok(()) => {}
-            // 尚未接入 RHI 的旧 adapter 才保留兼容 resize 回退。
-            Err(error) if error.code() == Errc::NotImplemented => {
-                // 兼容回退只处理明确的迁移期能力缺口。
-                self.gpu_ctx.resize(logical_w, logical_h)?;
-            }
-            // surface lost、device lost、参数错误等真实失败不能被回退吞掉。
-            Err(error) => return Err(error),
-        }
+        // 生产 GPU adapter 只由薄 RHI surface 执行实际重建和代际推进。
+        self.gpu_ctx
+            // NotImplemented 与其它 typed failure 均直接交给恢复层，禁止兼容回退。
+            .resize_rhi_surface(logical_w, logical_h)?;
         // D3D11/D3D12 等会按 HWND GetClientRect 校正缓冲尺寸；canvas/布局必须跟
         // 实际 RT 一致，否则清出更大黑底而 UI 仍画旧几何 → 窗口黑边。
-        self.factory_prepared = true;
         self.adopt_factory_drawable_extent();
         Ok(())
     }
 
-    fn initialize_prepared(&mut self, width: i32, height: i32) -> Result<(i32, i32), Error> {
+    // factory 已完成原生 surface 准备，初始化只同步 drawable 元数据。
+    fn initialize_prepared(&mut self, _width: i32, _height: i32) -> Result<(i32, i32), Error> {
         // native context 构造成功时已经绑定真实 surface 并进入可用状态。
         // 启动只同步 draw-owned state 与 factory-reported drawable，不能重建 swapchain。
-        if !self.factory_prepared {
-            self.gpu_ctx.resize(width.max(1), height.max(1))?;
-            self.factory_prepared = true;
-        }
+        // 不再保留 unprepared hybrid fixture 分支或二次 native resize。
         Ok(self.adopt_factory_drawable_extent())
     }
 
@@ -198,11 +187,8 @@ impl RenderBackend for GpuBackend {
         self.offscreens[idx] = Some(NativeGpuOffscreen {
             // Picture slot 只保存这一份 RHI 纹理身份。
             rhi_texture,
-            canvas: if self.gpu_only {
-                NativeGpuCanvas2D::new_gpu_only(width, height, self.surface.native_caps)
-            } else {
-                NativeGpuCanvas2D::new(width, height, self.surface.native_caps)
-            },
+            // Picture 与主 surface 共用 GPU-only 语义，不得复活 hybrid soft upload owner。
+            canvas: NativeGpuCanvas2D::new_gpu_only(width, height, self.surface.native_caps),
             width,
             height,
         });
