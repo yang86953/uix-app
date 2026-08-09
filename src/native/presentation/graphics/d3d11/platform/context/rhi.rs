@@ -7,8 +7,8 @@
 use crate::core::error::{Errc, Error, Result};
 // 引入最终提交 damage 类型。
 use crate::core::PresentDamage;
-// 引入 context 上已有的 DPR 和 swapchain 绑定能力。
-use crate::native::present::IGraphicsContext;
+// 引入 context 上已有的 DPR 快照与无帧探测结果。
+use crate::native::present::{IGraphicsContext, PresentTestResult};
 // 引入薄 RHI 的 surface 原语。
 use crate::native::present::rhi::{
     GraphicsSurface, RenderTargetHandle, RhiExtent, SurfaceFrame, SurfaceToken,
@@ -112,6 +112,15 @@ impl GraphicsSurface for super::D3d11Context {
         self.bind_swapchain_target()?;
         // 复用现有的 Present 前后 RTV 生命周期和 DXGI 错误映射。
         self.present_result()
+    }
+
+    // 探测已经因遮挡进入 idle 的 D3D11 swapchain 是否恢复可呈现。
+    fn test_present(&mut self) -> Result<PresentTestResult> {
+        // DXGI_PRESENT_TEST 不提交帧数据，并固定使用同步间隔零。
+        super::map_dxgi_present_test_result(unsafe {
+            // 把 Windows 专属探测严格留在 D3D11 surface adapter 内。
+            self.swap_chain.Present(0, super::DXGI_PRESENT_TEST)
+        })
     }
 
     // 安排下一次 surface acquire 的 typed surface-lost 结果。

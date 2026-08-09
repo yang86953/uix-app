@@ -816,7 +816,18 @@ impl RenderBackend for GpuBackend {
     }
 
     fn test_present(&mut self) -> Result<PresentTestResult, Error> {
-        self.gpu_ctx.test_present()
+        // 构造门禁已经要求 backend-managed GPU 始终提供组合 thin RHI。
+        let Some(context) = self.gpu_ctx.rhi_context() else {
+            // 构造后丢失 surface 视图属于状态破坏，不能回退兼容门面。
+            return Err(Error::new(
+                // 使用稳定状态错误交给既有恢复层。
+                Errc::InvalidState,
+                // 明确指出无帧探测所需的低层 owner 已丢失。
+                "GPU backend lost its thin RHI surface during idle present test",
+            ));
+        };
+        // 只通过 surface 生命周期契约执行无帧遮挡退出探测。
+        context.test_present()
     }
 
     fn as_any(&self) -> &dyn Any {

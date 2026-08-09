@@ -9,6 +9,8 @@
 use crate::core::error::{Errc, Error, Result};
 // 使用统一的最终呈现 damage 值，RHI 不重新定义呈现损坏语义。
 use crate::core::PresentDamage;
+// 引入无帧 surface 探测的统一结果类型。
+use super::PresentTestResult;
 
 // 定义 GPU 资源尺寸，避免把平台 API 的 extent 类型泄漏到通用层。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -825,6 +827,12 @@ pub(crate) trait GraphicsSurface {
         submission: SubmissionHandle,
         damage: PresentDamage,
     ) -> Result<()>;
+
+    // 探测已经遮挡的 surface 是否可恢复呈现，不提交任何帧数据。
+    fn test_present(&mut self) -> Result<PresentTestResult> {
+        // 未声明该低层能力的 surface 必须返回 typed 未实现错误。
+        Err(rhi_not_implemented("test_present"))
+    }
 
     // 进行 surface 级维护，不产生新的 frame。
     fn maintain(&mut self) -> Result<()> {

@@ -132,8 +132,8 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertNotIn("fn supports_gl_proc_address(&self)", facade)
         # 无消费者的 PixelUpload 查询不得保留在生产门面。
         self.assertNotIn("fn supports_pixel_present(&self)", facade)
-        # 三条默认错误路径都应直接读取同一静态 recipe 事实。
-        self.assertGreaterEqual(facade.count("let backend = self.caps().backend;"), 3)
+        # 剩余两条默认错误路径都应直接读取同一静态 recipe 事实。
+        self.assertGreaterEqual(facade.count("let backend = self.caps().backend;"), 2)
         # 逐个核对曾重复声明 backend 的 adapter 已删除派生实现。
         for adapter in (
             # D3D11 生产 context。
@@ -151,6 +151,53 @@ class GraphicsContextContractTests(unittest.TestCase):
             adapter_source = adapter.read_text(encoding="utf-8")
             # 禁止重新引入重复的 trait 方法实现。
             self.assertNotIn("fn graphics_backend(&self)", adapter_source)
+
+    # 校验无帧遮挡探测只属于 thin RHI surface 生命周期。
+    def test_idle_present_probe_belongs_to_graphics_surface(self) -> None:
+        # 读取迁移期 context 门面。
+        facade = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        # 通用 context 不得继续声明 surface 专属探测。
+        self.assertNotIn("fn test_present(&mut self)", facade)
+        # 读取 thin RHI 契约。
+        rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        # GraphicsSurface 必须显式声明无帧探测入口。
+        self.assertIn("fn test_present(&mut self) -> Result<PresentTestResult>", rhi)
+        # 默认 surface 必须通过 typed RHI 错误拒绝未实现能力。
+        self.assertIn('rhi_not_implemented("test_present")', rhi)
+        # 读取 D3D11 兼容 context 实现。
+        d3d11_context = (
+            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs"
+        ).read_text(encoding="utf-8")
+        # D3D11 context 门面不得重复实现无帧探测。
+        self.assertNotIn("fn test_present(&mut self)", d3d11_context)
+        # 读取 D3D11 thin RHI surface 实现。
+        d3d11_surface = (
+            ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi.rs"
+        ).read_text(encoding="utf-8")
+        # Windows 专属探测必须落在 GraphicsSurface 实现中。
+        self.assertIn("fn test_present(&mut self) -> Result<PresentTestResult>", d3d11_surface)
+        # 探测继续使用无帧数据的 DXGI 标志。
+        self.assertIn("DXGI_PRESENT_TEST", d3d11_surface)
+        # 既有 Presentable/Occluded/error 映射必须继续复用。
+        self.assertIn("map_dxgi_present_test_result", d3d11_surface)
+        # 读取 owner-thread context wrapper。
+        thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
+        # wrapper 不得继续转发已经下沉的兼容方法。
+        self.assertNotIn("forward_result!(test_present", thread_bound)
+        # 读取 GPU backend 的最终 surface 入口。
+        gpu_backend = (
+            ROOT / "src/draw/backend/gpu/backend/render_backend.rs"
+        ).read_text(encoding="utf-8")
+        # backend 必须借用组合 RHI 后调用 surface 探测。
+        self.assertIn("context.test_present()", gpu_backend)
+        # backend 不得继续调用 IGraphicsContext 兼容探测。
+        self.assertNotIn("self.gpu_ctx.test_present()", gpu_backend)
+        # 读取统一 renderer 的 presentation 分派。
+        runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
+        # PixelUpload 不得继续借用 context 的 swapchain 探测。
+        self.assertNotIn("upload.context.test_present()", runtime)
+        # PixelUpload 必须保留 recipe 级 typed 未支持说明。
+        self.assertIn("pixel-upload Renderer does not support idle present tests", runtime)
 
     # 校验 Vulkan owner shutdown 与 lost-device generation 契约。
     def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
