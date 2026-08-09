@@ -78,6 +78,14 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _root_export: ViewNode = crate::uix!(r#"<Button>Root export</Button>"#);
     // 验证通用组件文档中的 Label 别名真实生成。
     let _label: ViewNode = crate::uix!(r#"<Label>Documented label</Label>"#);
+    // 提供 Divider 动态文字属性的消费者值。
+    let divider_text = "Documented divider".to_string();
+    // 提供 Divider 动态虚线属性的消费者值。
+    let divider_dashed = true;
+    // 验证 Divider 专有属性与公共样式只依赖公开 prelude API。
+    let _divider: ViewNode = crate::uix!(
+        r#"<Divider text={divider_text} dashed={divider_dashed} direction="vertical" margin="8px" />"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
