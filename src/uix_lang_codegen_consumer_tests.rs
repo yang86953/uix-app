@@ -186,6 +186,11 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _input_group: ViewNode = crate::uix!(
         r#"<InputGroup addonBefore="¥" value={grouped_amount} addonAfter="元" width="200px" />"#
     );
+    // 提供 Slider f64 双向绑定状态。
+    let slider_volume = State::new(35_f64);
+    // 验证范围、步长、状态绑定和公共样式只依赖公开 prelude。
+    let _slider: ViewNode =
+        crate::uix!(r#"<Slider value={slider_volume} min="0" max="100" step="5" width="240px" />"#);
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。

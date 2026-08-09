@@ -14,8 +14,8 @@ use super::{
     generate_button_group, generate_column, generate_container, generate_divider,
     generate_expression, generate_float_button, generate_grid, generate_handler_expression,
     generate_input, generate_input_group, generate_input_number, generate_orphan_col, generate_row,
-    generate_scroll_view, generate_space, generate_splitter, generate_theme_toggle,
-    generate_typography, generate_virtual_scroll, generate_window_control,
+    generate_scroll_view, generate_slider, generate_space, generate_splitter,
+    generate_theme_toggle, generate_typography, generate_virtual_scroll, generate_window_control,
 };
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
@@ -92,6 +92,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "InputNumber" => generate_input_number(element),
         // 复合文本输入映射到公开 InputGroup 附加文本与状态绑定契约。
         "InputGroup" => generate_input_group(element),
+        // 单值滑块映射到公开 Slider 范围、步长与状态绑定契约。
+        "Slider" => generate_slider(element),
         // Col 只能由 Row 或 Grid 解释其父级布局语义。
         "Col" => generate_orphan_col(element),
         // 图标映射到公开 Icon 组件。
@@ -122,7 +124,7 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber 或 InputGroup，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup 或 Slider，或先登记组件状态",
         )),
     }
 }
