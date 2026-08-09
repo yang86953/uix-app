@@ -17,8 +17,6 @@ use crate::diagnostics::PendingFailureQueue;
 #[cfg(any(windows, all(unix, not(target_os = "macos"))))]
 use crate::native::capabilities::system::ISystemInfo;
 use crate::native::platform::Platform;
-use crate::native::present::{GraphicsApi, IGraphicsContext};
-use std::ffi::c_void;
 
 pub(crate) use registry::try_create_gpu_recipe_with_queue;
 pub use registry::{
@@ -130,19 +128,6 @@ pub(crate) fn create_platform_with_pending(
 #[allow(dead_code)]
 pub(crate) fn unsupported_platform_message() -> String {
     "Unsupported platform: only Windows, Linux, and macOS are supported".to_string()
-}
-
-/// 创建 GPU 图形上下文，指定单个 API；无 probe 循环。
-// 单后端工厂入口保留给兼容调用方，默认测试矩阵不直接启动图形上下文。
-#[allow(dead_code)]
-pub(crate) fn create_gpu_context_with_backend(
-    native_surface: *mut c_void,
-    width: i32,
-    height: i32,
-    requested: GraphicsApi,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
-    // 单 API 工厂只接受具体内部身份，自动策略无法进入该边界。
-    registry::try_create_gpu_context(requested, native_surface, width, height)
 }
 
 /// 探测系统可用空闲内存（字节）。

@@ -68,7 +68,7 @@ pub struct GraphicsBackendEntry {
     pub present: PresentMode,
     /// Construction stays inside native factory routing so every context is
     /// recipe-validated and can later receive the shared thread-affinity
-    /// binding. External callers must use `try_create_gpu_recipe` instead of
+    /// binding. Callers must use a recipe-level factory entry instead of
     /// bypassing the lifecycle contract through a raw function pointer.
     pub(crate) create: GraphicsContextFactory,
 }
@@ -319,33 +319,6 @@ pub(crate) fn try_create_gpu_recipe_with_queue(
         width,
         height,
         pending_failures,
-    )
-}
-
-/// Creates a single GPU context for one backend (compatibility helper).
-///
-/// New bootstrap code must use [`try_create_gpu_recipe`] so it can continue to
-/// later recipe rows for the same API.
-// 单后端兼容工厂入口保留给旧调用方，默认测试矩阵不直接走该入口。
-#[allow(dead_code)]
-pub(crate) fn try_create_gpu_context(
-    backend: GraphicsApi,
-    native_surface: *mut c_void,
-    width: i32,
-    height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
-    let entry = entry_for(backend).ok_or_else(|| {
-        Error::new(
-            Errc::PlatformError,
-            format!("Graphics factory: no registry entry for {backend}"),
-        )
-    })?;
-    try_create_context(
-        entry,
-        native_surface,
-        width,
-        height,
-        PendingFailureQueue::new(),
     )
 }
 
