@@ -62,5 +62,8 @@ pub struct ScenePipeline {
 
 mod damage;
 mod pipeline;
+// 单元测试锁定 backdrop typed failure 的场景边界传播。
+#[cfg(test)]
+mod tests;
 
 use self::damage::*;

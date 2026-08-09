@@ -791,19 +791,19 @@ impl RenderBackend for GpuBackend {
         )
     }
 
-    fn snapshot_overlay_backdrop(&mut self) -> bool {
+    fn snapshot_overlay_backdrop(&mut self) -> Result<bool, Error> {
         // 叠加层 backdrop 职责在独立模块实现，保持本文件处于行数上限内。
         self.snapshot_overlay_backdrop_impl()
     }
 
-    fn restore_overlay_backdrop(&mut self) -> bool {
+    fn restore_overlay_backdrop(&mut self) -> Result<bool, Error> {
         // 恢复与释放委托给独立 backdrop 模块。
         self.restore_overlay_backdrop_impl()
     }
 
-    fn release_overlay_backdrop(&mut self) {
+    fn release_overlay_backdrop(&mut self) -> Result<(), Error> {
         // 释放委托给独立 backdrop 模块。
-        self.release_overlay_backdrop_impl();
+        self.release_overlay_backdrop_impl()
     }
 
     fn has_overlay_backdrop(&self) -> bool {

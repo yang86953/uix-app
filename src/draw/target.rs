@@ -283,18 +283,21 @@ pub trait RenderTarget: 'static {
     }
 
     /// GPU 保留色缓冲快照为 overlay 干净背景（无 CPU readback）。
-    /// 成功后 [`Self::has_overlay_backdrop`] 为 true；不支持时返回 false。
-    fn snapshot_overlay_backdrop(&mut self) -> bool {
-        false
+    /// 资源与设备失败保持 typed error，交由 renderer recovery 处理。
+    /// 成功后 [`Self::has_overlay_backdrop`] 为 true；不支持时返回 `Ok(false)`。
+    fn snapshot_overlay_backdrop(&mut self) -> Result<bool, Error> {
+        Ok(false)
     }
 
-    /// 将 overlay 背景写回主表面并取消本帧全幅 clear。
-    fn restore_overlay_backdrop(&mut self) -> bool {
-        false
+    /// 将 overlay 背景写回主表面并取消本帧全幅 clear；提交失败保持 typed error。
+    fn restore_overlay_backdrop(&mut self) -> Result<bool, Error> {
+        Ok(false)
     }
 
-    /// 释放引擎持有的 overlay 背景快照。
-    fn release_overlay_backdrop(&mut self) {}
+    /// 检查式释放引擎持有的 overlay 背景快照。
+    fn release_overlay_backdrop(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
 
     /// 是否持有有效的 overlay 背景快照（CPU `FrameImage` 路径不经此查询）。
     fn has_overlay_backdrop(&self) -> bool {
