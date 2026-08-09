@@ -180,6 +180,12 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _input_number: ViewNode = crate::uix!(
         r#"<InputNumber value={input_number} min="0" max="100" step="5" precision="0" width="160px" />"#
     );
+    // 提供 InputGroup 文本双向绑定状态。
+    let grouped_amount = State::new(String::from("12.50"));
+    // 验证前后附加文本、状态绑定和公共样式只依赖公开 prelude。
+    let _input_group: ViewNode = crate::uix!(
+        r#"<InputGroup addonBefore="¥" value={grouped_amount} addonAfter="元" width="200px" />"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
