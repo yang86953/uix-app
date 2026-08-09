@@ -130,7 +130,7 @@ impl Error {
     pub fn depth(&self) -> usize {
         let mut d = 0;
         let mut current = &self.source;
-        while let Some(ref source) = current {
+        while let Some(source) = current {
             d += 1;
             current = &source.source;
         }

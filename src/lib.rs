@@ -223,7 +223,7 @@ macro_rules! t {
     ($key:literal) => {
         $crate::ui::t_lookup($key)
     };
-    ($key:literal $(, $arg:expr)+) => {
+    ($key:literal $(, $arg:expr_2021)+) => {
         $crate::ui::t_lookup_fmt($key, &[$($crate::t_fmt_arg!($arg)),+])
     };
 }
@@ -232,7 +232,7 @@ macro_rules! t {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! t_fmt_arg {
-    ($arg:expr) => {
+    ($arg:expr_2021) => {
         ::std::string::ToString::to_string(&$arg)
     };
 }

@@ -22,7 +22,7 @@ pub(crate) struct Rect {
 }
 
 #[link(name = "user32")]
-extern "system" {
+unsafe extern "system" {
     fn GetClientRect(hwnd: *mut c_void, lp_rect: *mut Rect) -> i32;
     #[cfg(feature = "opengles")]
     fn GetDC(hwnd: *mut c_void) -> *mut c_void;
@@ -41,7 +41,7 @@ pub(crate) struct DrawableSize {
     pub(crate) height: i32,
 }
 
-pub(crate) unsafe fn query_client_rect(hwnd: *mut c_void) -> Option<Rect> {
+pub(crate) unsafe fn query_client_rect(hwnd: *mut c_void) -> Option<Rect> { unsafe {
     let mut rect = Rect {
         left: 0,
         top: 0,
@@ -53,7 +53,7 @@ pub(crate) unsafe fn query_client_rect(hwnd: *mut c_void) -> Option<Rect> {
     } else {
         Some(rect)
     }
-}
+}}
 
 fn physical_client_size(hwnd: *mut c_void) -> Option<(i32, i32)> {
     unsafe {

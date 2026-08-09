@@ -297,12 +297,12 @@ const UNLEN: usize = 256;
 // ════════════════════════════════════════════════════════════════════════════
 
 #[link(name = "ntdll")]
-extern "system" {
+unsafe extern "system" {
     fn RtlGetVersion(lpVersionInformation: *mut RTL_OSVERSIONINFOW) -> i32;
 }
 
 #[link(name = "kernel32")]
-extern "system" {
+unsafe extern "system" {
     fn GetNativeSystemInfo(lpSystemInfo: *mut SYSTEM_INFO);
     fn GlobalMemoryStatusEx(lpBuffer: *mut MEMORYSTATUSEX) -> i32;
     fn GetComputerNameW(lpBuffer: *mut u16, nSize: *mut u32) -> i32;
@@ -310,12 +310,12 @@ extern "system" {
 }
 
 #[link(name = "advapi32")]
-extern "system" {
+unsafe extern "system" {
     fn GetUserNameW(lpBuffer: *mut u16, nSize: *mut u32) -> i32;
 }
 
 #[link(name = "psapi")]
-extern "system" {
+unsafe extern "system" {
     fn GetProcessMemoryInfo(
         hProcess: *mut std::ffi::c_void,
         ppmem_counters: *mut PROCESS_MEMORY_COUNTERS,
@@ -343,6 +343,6 @@ pub fn get_process_memory() -> Result<(usize, usize)> {
 }
 
 #[link(name = "kernel32")]
-extern "system" {
+unsafe extern "system" {
     fn GetCurrentProcess() -> *mut std::ffi::c_void;
 }

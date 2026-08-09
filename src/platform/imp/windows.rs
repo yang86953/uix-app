@@ -554,14 +554,14 @@ const FOLDERID_DOWNLOADS: Guid = Guid {
 };
 
 #[link(name = "ole32")]
-extern "system" {
+unsafe extern "system" {
     fn CoInitializeEx(reserved: *mut c_void, coinit: u32) -> i32;
     fn CoUninitialize();
     fn CoTaskMemFree(memory: *mut c_void);
 }
 
 #[link(name = "shell32")]
-extern "system" {
+unsafe extern "system" {
     fn SHGetKnownFolderPath(
         folder: *const Guid,
         flags: u32,
@@ -571,12 +571,12 @@ extern "system" {
 }
 
 #[link(name = "ntdll")]
-extern "system" {
+unsafe extern "system" {
     fn RtlGetVersion(version: *mut RtlOsVersionInfo) -> i32;
 }
 
 #[link(name = "kernel32")]
-extern "system" {
+unsafe extern "system" {
     fn CloseHandle(handle: *mut c_void) -> i32;
     fn CreateToolhelp32Snapshot(flags: u32, process_id: u32) -> *mut c_void;
     fn GetCurrentProcessId() -> u32;

@@ -19,7 +19,7 @@ pub use types::Error;
 /// 类似 ? 操作符，但用于 UIX Result 类型。
 #[macro_export]
 macro_rules! uix_try {
-    ($expr:expr) => {
+    ($expr:expr_2021) => {
         match $expr {
             Ok(v) => v,
             Err(e) => return Err(e),
@@ -30,7 +30,7 @@ macro_rules! uix_try {
 /// 类似 ? 操作符，自动将 std Result 转换为 UIX Result。
 #[macro_export]
 macro_rules! uix_try_std {
-    ($expr:expr) => {
+    ($expr:expr_2021) => {
         match $expr {
             Ok(v) => v,
             Err(e) => return Err(e.into()),

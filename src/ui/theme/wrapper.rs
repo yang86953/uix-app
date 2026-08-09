@@ -167,7 +167,7 @@ impl DynTokens {
 // 使用 unwrap_or_else 处理 RwLock 被 poisoned 的情况，
 // 从 PoisonError 中恢复内部值。
 macro_rules! read_copy {
-    ($self:expr, $field:ident) => {
+    ($self:expr_2021, $field:ident) => {
         $self.inner.read().unwrap_or_else(|e| e.into_inner()).$field
     };
 }

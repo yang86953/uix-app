@@ -106,7 +106,7 @@ where
     }
 }
 
-unsafe fn enqueue_wnd_proc_panic(hwnd: *mut std::ffi::c_void, msg: u32) {
+unsafe fn enqueue_wnd_proc_panic(hwnd: *mut std::ffi::c_void, msg: u32) { unsafe {
     let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
     if ptr == 0 {
         return;
@@ -116,14 +116,14 @@ unsafe fn enqueue_wnd_proc_panic(hwnd: *mut std::ffi::c_void, msg: u32) {
         Errc::PlatformError,
         format!("Windows wnd_proc ABI callback panicked while handling message 0x{msg:04x}"),
     ));
-}
+}}
 
 unsafe fn wnd_proc_inner(
     hwnd: *mut std::ffi::c_void,
     msg: u32,
     wparam: usize,
     lparam: isize,
-) -> isize {
+) -> isize { unsafe {
     if msg == WM_NCCREATE {
         let cs = lparam as *const CREATESTRUCTW;
         let this_ptr = (*cs).lpCreateParams;
@@ -150,7 +150,7 @@ unsafe fn wnd_proc_inner(
         clear_pending_frame(&binding.frame_pacer);
     }
     platform.handle_message(hwnd, &binding.state, &binding.ime, msg, wparam, lparam)
-}
+}}
 
 #[cfg(test)]
 mod tests {

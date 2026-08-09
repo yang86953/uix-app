@@ -19,7 +19,7 @@ use crate::native::{Errc, Error};
 // ── Windows FFI declarations ────────────────────────────────────────────────
 
 #[link(name = "gdi32")]
-extern "system" {
+unsafe extern "system" {
     fn CreateDIBSection(
         hdc: *mut std::ffi::c_void,
         pbmi: *const BITMAPINFO,

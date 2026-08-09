@@ -17,7 +17,7 @@ impl Notification {
         &self,
         frame: Rect,
         entries: &'a [ToastMotionEntry<NotificationItem>],
-    ) -> impl Iterator<Item = (Rect, &'a ToastMotionEntry<NotificationItem>)> + 'a {
+    ) -> impl Iterator<Item = (Rect, &'a ToastMotionEntry<NotificationItem>)> + 'a + use<'a> {
         let frame = Self::normalize_frame(frame);
         // 先为两侧保留固定留白，再以通知设计宽度限制剩余可用区。
         let width = (frame.w - Self::HORIZONTAL_INSET * 2.0).clamp(0.0, Self::WIDTH);

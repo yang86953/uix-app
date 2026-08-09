@@ -19,7 +19,7 @@ use super::bindings::{
 // ════════════════════════════════════════════════════════════════════════════
 
 #[link(name = "dwmapi")]
-extern "system" {
+unsafe extern "system" {
     /// Blocks the calling thread until the next DWM compositor present.
     pub(crate) fn DwmFlush() -> i32;
 }
@@ -29,7 +29,7 @@ extern "system" {
 // ════════════════════════════════════════════════════════════════════════════
 
 #[link(name = "kernel32")]
-extern "system" {
+unsafe extern "system" {
     pub(crate) fn GetModuleHandleW(lpModuleName: *const u16) -> *mut std::ffi::c_void;
     pub(crate) fn GetLastError() -> u32;
     pub(crate) fn SetLastError(dwErrCode: u32);
@@ -47,7 +47,7 @@ extern "system" {
 // ════════════════════════════════════════════════════════════════════════════
 
 #[link(name = "user32")]
-extern "system" {
+unsafe extern "system" {
     pub(super) fn RegisterClassExW(lpwcx: *const WNDCLASSEXW) -> u16;
     pub(crate) fn CreateWindowExW(
         dwExStyle: u32,
@@ -239,7 +239,7 @@ pub const REG_DWORD: u32 = 4;
 pub const ERROR_SUCCESS: i32 = 0;
 
 #[link(name = "advapi32")]
-extern "system" {
+unsafe extern "system" {
     pub(crate) fn RegOpenKeyExW(
         hKey: *mut std::ffi::c_void,
         lpSubKey: *const u16,
@@ -263,7 +263,7 @@ extern "system" {
 // ════════════════════════════════════════════════════════════════════════════
 
 #[link(name = "imm32")]
-extern "system" {
+unsafe extern "system" {
     pub(crate) fn ImmAssociateContextEx(
         hwnd: *mut std::ffi::c_void,
         himc: *mut std::ffi::c_void,

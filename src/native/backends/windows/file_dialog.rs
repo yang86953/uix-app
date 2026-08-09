@@ -233,7 +233,7 @@ const OFN_PATHMUSTEXIST: u32 = 0x00000800;
 const OFN_OVERWRITEPROMPT: u32 = 0x00000002;
 
 #[link(name = "comdlg32")]
-extern "system" {
+unsafe extern "system" {
     fn GetOpenFileNameW(lpofn: *mut OPENFILENAMEW) -> i32;
     fn GetSaveFileNameW(lpofn: *mut OPENFILENAMEW) -> i32;
     fn CommDlgExtendedError() -> u32;
@@ -257,12 +257,12 @@ const BIF_RETURNONLYFSDIRS: u32 = 0x0001;
 const BIF_NEWDIALOGSTYLE: u32 = 0x0040;
 
 #[link(name = "shell32")]
-extern "system" {
+unsafe extern "system" {
     fn SHBrowseForFolderW(lpbi: *mut BROWSEINFOW) -> *mut std::ffi::c_void;
     fn SHGetPathFromIDListW(pidl: *mut std::ffi::c_void, pszPath: *mut u16) -> i32;
 }
 
 #[link(name = "ole32")]
-extern "system" {
+unsafe extern "system" {
     fn CoTaskMemFree(pv: *mut std::ffi::c_void);
 }

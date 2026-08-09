@@ -109,7 +109,7 @@ impl ChartPlaceholder {
     pub fn data<T: 'static>(mut self, data: T) -> Self {
         let mut any: Box<dyn Any> = Box::new(data);
         macro_rules! take_payload {
-            ($ty:ty, $payload:expr, $kind:expr) => {
+            ($ty:ty, $payload:expr_2021, $kind:expr_2021) => {
                 match any.downcast::<$ty>() {
                     Ok(value) => {
                         self.payload = $payload(*value);

@@ -44,7 +44,7 @@ fn panic_if_requested(operation: &str) {
 fn panic_if_requested(_: &str) {}
 
 macro_rules! ffi_guard {
-    ($event_sink:expr, $operation:literal, $body:block) => {{
+    ($event_sink:expr_2021, $operation:literal, $body:block) => {{
         let event_sink = $event_sink;
         match catch_unwind(AssertUnwindSafe(|| {
             panic_if_requested($operation);

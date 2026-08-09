@@ -196,13 +196,13 @@ pub(crate) fn validate_window_extent_constraints(
 // ════════════════════════════════════════════════════════════════════════════
 
 macro_rules! state_read {
-    ($state:expr, $field:ident) => {
+    ($state:expr_2021, $field:ident) => {
         $state.borrow().$field
     };
 }
 
 macro_rules! state_write {
-    ($state:expr, $field:ident, $value:expr) => {
+    ($state:expr_2021, $field:ident, $value:expr_2021) => {
         $state.borrow_mut().$field = $value;
     };
 }

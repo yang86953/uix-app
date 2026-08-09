@@ -466,79 +466,79 @@ impl Style {
 #[macro_export]
 macro_rules! style {
     // 单对 key: value
-    (@inner $s:ident bg $v:expr) => { $s.background = Some($v.into()); };
-    (@inner $s:ident background $v:expr) => { $s.background = Some($v.into()); };
-    (@inner $s:ident background_hover $v:expr) => { $s.background_hover = Some($v.into()); };
-    (@inner $s:ident background_focus $v:expr) => { $s.background_focus = Some($v.into()); };
-    (@inner $s:ident background_active $v:expr) => { $s.background_active = Some($v.into()); };
-    (@inner $s:ident color $v:expr) => { $s.color = $v.into(); };
-    (@inner $s:ident fs $v:expr) => { $s.font_size = $crate::ui::theme::style::TypographyToken::Custom($v as f32); };
-    (@inner $s:ident font_size $v:expr) => { $s.font_size = $crate::ui::theme::style::TypographyToken::Custom($v as f32); };
-    (@inner $s:ident opacity $v:expr) => { $s.opacity = $v as f32; };
-    (@inner $s:ident visible $v:expr) => { $s.visible = $v; };
-    (@inner $s:ident w $v:expr) => { $s.width = Some($v as f32); };
-    (@inner $s:ident width $v:expr) => { $s.width = Some($v as f32); };
-    (@inner $s:ident h $v:expr) => { $s.height = Some($v as f32); };
-    (@inner $s:ident height $v:expr) => { $s.height = Some($v as f32); };
-    (@inner $s:ident margin $v:expr) => { $s.margin = $crate::ui::theme::style::edge_insets_from_expr($v); };
-    (@inner $s:ident padding $v:expr) => { $s.padding = $crate::ui::theme::style::edge_insets_from_expr($v); };
+    (@inner $s:ident bg $v:expr_2021) => { $s.background = Some($v.into()); };
+    (@inner $s:ident background $v:expr_2021) => { $s.background = Some($v.into()); };
+    (@inner $s:ident background_hover $v:expr_2021) => { $s.background_hover = Some($v.into()); };
+    (@inner $s:ident background_focus $v:expr_2021) => { $s.background_focus = Some($v.into()); };
+    (@inner $s:ident background_active $v:expr_2021) => { $s.background_active = Some($v.into()); };
+    (@inner $s:ident color $v:expr_2021) => { $s.color = $v.into(); };
+    (@inner $s:ident fs $v:expr_2021) => { $s.font_size = $crate::ui::theme::style::TypographyToken::Custom($v as f32); };
+    (@inner $s:ident font_size $v:expr_2021) => { $s.font_size = $crate::ui::theme::style::TypographyToken::Custom($v as f32); };
+    (@inner $s:ident opacity $v:expr_2021) => { $s.opacity = $v as f32; };
+    (@inner $s:ident visible $v:expr_2021) => { $s.visible = $v; };
+    (@inner $s:ident w $v:expr_2021) => { $s.width = Some($v as f32); };
+    (@inner $s:ident width $v:expr_2021) => { $s.width = Some($v as f32); };
+    (@inner $s:ident h $v:expr_2021) => { $s.height = Some($v as f32); };
+    (@inner $s:ident height $v:expr_2021) => { $s.height = Some($v as f32); };
+    (@inner $s:ident margin $v:expr_2021) => { $s.margin = $crate::ui::theme::style::edge_insets_from_expr($v); };
+    (@inner $s:ident padding $v:expr_2021) => { $s.padding = $crate::ui::theme::style::edge_insets_from_expr($v); };
     // 元组语法：`border: (RED, 1)` — 使用括号而非 bracket，确保 `$val:expr` 正确捕获为元组
-    (@inner $s:ident border $v:expr) => {
+    (@inner $s:ident border $v:expr_2021) => {
         let (c, w) = $v;
         $s.border_color = Some(c.into());
         $s.border_width = $crate::core::EdgeInsets::uniform(w);
     };
-    (@inner $s:ident border_color $v:expr) => { $s.border_color = Some($v.into()); };
-    (@inner $s:ident border_width $v:expr) => { $s.border_width = $crate::ui::theme::style::edge_insets_from_expr($v); };
-    (@inner $s:ident rounded $v:expr) => { $s.border_radius = $v as f32; };
-    (@inner $s:ident border_radius $v:expr) => { $s.border_radius = $v as f32; };
-    (@inner $s:ident display $v:expr) => { $s.display = $v; };
-    (@inner $s:ident direction $v:expr) => { $s.flex_direction = $v; };
-    (@inner $s:ident flex_direction $v:expr) => { $s.flex_direction = $v; };
-    (@inner $s:ident flex_wrap $v:expr) => { $s.flex_wrap = $v; };
-    (@inner $s:ident wrap $v:expr) => { $s.flex_wrap = $v; };
-    (@inner $s:ident justify $v:expr) => { $s.justify_content = $v; };
-    (@inner $s:ident justify_content $v:expr) => { $s.justify_content = $v; };
-    (@inner $s:ident align $v:expr) => { $s.align_items = $v; };
-    (@inner $s:ident align_items $v:expr) => { $s.align_items = $v; };
-    (@inner $s:ident align_self $v:expr) => { $s.align_self = Some($v); };
-    (@inner $s:ident gap $v:expr) => { $s.gap = $v as f32; };
-    (@inner $s:ident grid_columns $v:expr) => { $s.grid_template_columns = $v; };
-    (@inner $s:ident grid_template_columns $v:expr) => { $s.grid_template_columns = $v; };
-    (@inner $s:ident grid_rows $v:expr) => { $s.grid_template_rows = $v; };
-    (@inner $s:ident grid_template_rows $v:expr) => { $s.grid_template_rows = $v; };
-    (@inner $s:ident grid_column_gap $v:expr) => { $s.grid_column_gap = $v as f32; };
-    (@inner $s:ident grid_row_gap $v:expr) => { $s.grid_row_gap = $v as f32; };
-    (@inner $s:ident grid_cell $v:expr) => { $s.grid_cell = Some($v); };
-    (@inner $s:ident grid_column_span $v:expr) => { $s.grid_column_span = ($v as u32).max(1); };
-    (@inner $s:ident grid_row_span $v:expr) => { $s.grid_row_span = ($v as u32).max(1); };
-    (@inner $s:ident grid_span $v:expr) => {
+    (@inner $s:ident border_color $v:expr_2021) => { $s.border_color = Some($v.into()); };
+    (@inner $s:ident border_width $v:expr_2021) => { $s.border_width = $crate::ui::theme::style::edge_insets_from_expr($v); };
+    (@inner $s:ident rounded $v:expr_2021) => { $s.border_radius = $v as f32; };
+    (@inner $s:ident border_radius $v:expr_2021) => { $s.border_radius = $v as f32; };
+    (@inner $s:ident display $v:expr_2021) => { $s.display = $v; };
+    (@inner $s:ident direction $v:expr_2021) => { $s.flex_direction = $v; };
+    (@inner $s:ident flex_direction $v:expr_2021) => { $s.flex_direction = $v; };
+    (@inner $s:ident flex_wrap $v:expr_2021) => { $s.flex_wrap = $v; };
+    (@inner $s:ident wrap $v:expr_2021) => { $s.flex_wrap = $v; };
+    (@inner $s:ident justify $v:expr_2021) => { $s.justify_content = $v; };
+    (@inner $s:ident justify_content $v:expr_2021) => { $s.justify_content = $v; };
+    (@inner $s:ident align $v:expr_2021) => { $s.align_items = $v; };
+    (@inner $s:ident align_items $v:expr_2021) => { $s.align_items = $v; };
+    (@inner $s:ident align_self $v:expr_2021) => { $s.align_self = Some($v); };
+    (@inner $s:ident gap $v:expr_2021) => { $s.gap = $v as f32; };
+    (@inner $s:ident grid_columns $v:expr_2021) => { $s.grid_template_columns = $v; };
+    (@inner $s:ident grid_template_columns $v:expr_2021) => { $s.grid_template_columns = $v; };
+    (@inner $s:ident grid_rows $v:expr_2021) => { $s.grid_template_rows = $v; };
+    (@inner $s:ident grid_template_rows $v:expr_2021) => { $s.grid_template_rows = $v; };
+    (@inner $s:ident grid_column_gap $v:expr_2021) => { $s.grid_column_gap = $v as f32; };
+    (@inner $s:ident grid_row_gap $v:expr_2021) => { $s.grid_row_gap = $v as f32; };
+    (@inner $s:ident grid_cell $v:expr_2021) => { $s.grid_cell = Some($v); };
+    (@inner $s:ident grid_column_span $v:expr_2021) => { $s.grid_column_span = ($v as u32).max(1); };
+    (@inner $s:ident grid_row_span $v:expr_2021) => { $s.grid_row_span = ($v as u32).max(1); };
+    (@inner $s:ident grid_span $v:expr_2021) => {
         let (col_span, row_span) = $v;
         $s.grid_column_span = (col_span as u32).max(1);
         $s.grid_row_span = (row_span as u32).max(1);
     };
-    (@inner $s:ident grid_gap $v:expr) => {
+    (@inner $s:ident grid_gap $v:expr_2021) => {
         let (col_gap, row_gap) = $v;
         $s.grid_column_gap = col_gap as f32;
         $s.grid_row_gap = row_gap as f32;
     };
-    (@inner $s:ident grow $v:expr) => { $s.flex_grow = $v as f32; };
-    (@inner $s:ident flex_grow $v:expr) => { $s.flex_grow = $v as f32; };
-    (@inner $s:ident shrink $v:expr) => { $s.flex_shrink = $v as f32; };
-    (@inner $s:ident flex_shrink $v:expr) => { $s.flex_shrink = $v as f32; };
+    (@inner $s:ident grow $v:expr_2021) => { $s.flex_grow = $v as f32; };
+    (@inner $s:ident flex_grow $v:expr_2021) => { $s.flex_grow = $v as f32; };
+    (@inner $s:ident shrink $v:expr_2021) => { $s.flex_shrink = $v as f32; };
+    (@inner $s:ident flex_shrink $v:expr_2021) => { $s.flex_shrink = $v as f32; };
     // 元组语法：`shadow: (BLACK, 4, 2, 2)`
-    (@inner $s:ident shadow $v:expr) => {
+    (@inner $s:ident shadow $v:expr_2021) => {
         let (sc, sb, sox, soy): ($crate::draw::Color, f32, f32, f32) = $v;
         $s.box_shadow = Some($crate::ui::theme::style::BoxShadowDef::new(sc, sb, sox, soy));
     };
-    (@inner $s:ident box_shadow $v:expr) => { $s.box_shadow = Some($v); };
+    (@inner $s:ident box_shadow $v:expr_2021) => { $s.box_shadow = Some($v); };
 
     // 递归处理多对
-    (@each $s:ident $key:ident : $val:expr, $($rest:tt)*) => {
+    (@each $s:ident $key:ident : $val:expr_2021, $($rest:tt)*) => {
         $crate::style!(@inner $s $key $val);
         $crate::style!(@each $s $($rest)*);
     };
-    (@each $s:ident $key:ident : $val:expr) => {
+    (@each $s:ident $key:ident : $val:expr_2021) => {
         $crate::style!(@inner $s $key $val);
     };
     (@each $s:ident $key:ident : [$($v:tt),+], $($rest:tt)*) => {
@@ -561,7 +561,7 @@ macro_rules! style {
             __style
         }
     };
-    ($($key:ident : $val:expr),+ $(,)?) => {
+    ($($key:ident : $val:expr_2021),+ $(,)?) => {
         {
             let mut __style = $crate::ui::theme::style::Style::default();
             $(
