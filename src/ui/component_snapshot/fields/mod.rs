@@ -12,8 +12,7 @@ use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use crate::ui::theme::style::{ColorValue, Style, StyleSet};
 use crate::ui::widgets::window_chrome::WindowControl;
 use crate::ui::widgets::*;
-// 反馈 capability 启用时才需要消息与通知浮层方位。
-#[cfg(feature = "feedback")]
+// FloatButton 与可选反馈组件共同使用公开浮层方位。
 use crate::ui::Placement;
 
 use super::{SnapshotCollapsePanel, SnapshotField, SnapshotTransferItem};
@@ -259,11 +258,17 @@ pub enum SnapshotFields {
     },
     FloatButton {
         icon: String,
+        // 保存展开说明 authored config。
+        description: String,
         tooltip: String,
         badge_count: i32,
+        // 保存圆点徽标 authored config。
+        badge_dot: bool,
         size: f32,
         x: f32,
         y: f32,
+        // 保存可选窗口放置方向；None 保留 frame-relative 兼容语义。
+        placement: Option<Placement>,
         reserve_layout_space: bool,
     },
     FloatButtonGroup {

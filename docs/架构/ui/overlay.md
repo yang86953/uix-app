@@ -25,6 +25,8 @@
 - 组件树重建登记时通过 `WidgetRender::overlay_entry_for_surface` 显式传入当前根表面；默认实现向后兼容旧入口，依赖窗口边界的组件不得只凭触发器 frame 复用上一帧 surface 下的绝对矩形。
 - owner 移除、隐藏、换根或 generation 失效时，managed entry 自动清理。
 
+`FloatButton` 的显式 `Placement` 由本模块解释为窗口 logical 客户区锚点；组件只保存 placement、有限作者偏移与内容配置，并用同一个私有几何结果驱动 control、description、badge、tooltip、damage、命中和 entry bounds。未显式 placement、普通布局占位及 `FloatButtonGroup` 子按钮继续服从所属布局 frame，避免 overlay 模块夺取容器布局所有权。
+
 `f41fede8` 为该表面契约建立 Popover/Popconfirm 回归：触发器 frame 不变而 surface 缩小时，布局阶段的 OverlayStack bounds 与随后绘制共同消费新表面；旧缓存横坐标 150px/200px 分别收敛为 20px/60px。两项聚焦契约、布局 24 项、反馈门面 4 项与完整库 151 项测试通过。
 
 `5fefe2ed` 把同一契约扩展到共享提示气泡原语：Tooltip 与 Slider 的提示登记显式接收当前 surface，作者方向与主轴反向候选按越界量择优，再将最终尺寸和坐标约束到窗口内；绘制箭头使用解析后的真实方向，文字裁在最终气泡中。两项原语契约、两项组件集成契约与完整库 155 项测试通过。

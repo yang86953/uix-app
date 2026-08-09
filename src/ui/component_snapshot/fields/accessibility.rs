@@ -261,10 +261,53 @@ impl SnapshotFields {
                 pending,
                 reverse,
             } => timeline_accessibility(items, *pending, *reverse),
-            Self::FloatButton { icon, tooltip, .. } => AccessibilitySnapshot::named(
-                AccessibilityRole::Button,
-                first_non_empty([tooltip.as_str(), icon.as_str()]),
-            ),
+            Self::FloatButton {
+                // 借用图标名称作为最终语义回退。
+                icon,
+                // 借用展开说明作为首选语义名称。
+                description,
+                // 借用提示文字作为次选语义名称。
+                tooltip,
+                // 借用数字徽标状态。
+                badge_count,
+                // 借用圆点徽标状态。
+                badge_dot,
+                // 忽略不影响无障碍语义的几何字段。
+                ..
+            } => {
+                // 圆点徽标优先表达未读状态。
+                let value_text = if *badge_dot {
+                    // 使用不依赖视觉形状的状态描述。
+                    Some("有新通知".to_string())
+                } else if *badge_count > 0 {
+                    // 数字徽标暴露确定数量。
+                    Some(format!("{badge_count} 条通知"))
+                } else {
+                    // 无徽标时不暴露额外状态。
+                    None
+                };
+                // 构造带可读名称与徽标状态的按钮快照。
+                AccessibilitySnapshot::named(
+                    // FloatButton 继续使用按钮角色。
+                    AccessibilityRole::Button,
+                    // 说明优先于提示，图标名称只作为最后回退。
+                    first_non_empty([
+                        // 首选展开说明。
+                        description.as_str(),
+                        // 次选提示文字。
+                        tooltip.as_str(),
+                        // 最后使用 Lucide 图标名称。
+                        icon.as_str(),
+                    ]),
+                )
+                // 附加可选徽标状态文本。
+                .with_state(AccessibilityState {
+                    // 保存数字或圆点状态描述。
+                    value_text,
+                    // 其他按钮状态保持默认。
+                    ..AccessibilityState::default()
+                })
+            }
             Self::FloatButtonGroup {
                 button_count,
                 expanded,
