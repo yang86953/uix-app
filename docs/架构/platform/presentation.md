@@ -17,6 +17,8 @@
 > **主表面清理边界**：`IGraphicsContext` 不再声明 `clear_render_target`、`clear_rects` 或 `bind_swapchain_target`，thread-bound 门面与 D3D11、D3D12、WGL/EGL 的 legacy wrapper 也已移除；`NativeRasterCaps` 不再用逐 UI clear 布尔值描述能力。整面和局部清理由通用 `FramePlan` 在 retained RHI texture 上编码，adapter 只在 acquire、pass 与最终 present 内部恢复真实 swapchain target。
 >
 > **逐图元绘制边界**：`IGraphicsContext` 不再声明 solid/stroke rect、glyph、linear/radial gradient、sector、solid mesh、box shadow 或 image blit 等 `draw_*` 方法，owner-thread wrapper 与各原生 context 也不再转发这些高层 batch。D3D11/OpenGL ES 对应的无消费者 shader、buffer、atlas 与图片上传 owner 已物理删除，D3D12 的测试期逐 UI raster pipeline 也已删除；adapter 仅保留薄 RHI packet 所需的固定 shader 与编码。`NativeRasterCaps` 只保留 retained framebuffer 与 RHI Additive 两项事实；逐图元 pipeline 是否可用由 registry 的固定 RHI probe 在首帧前一次性验证。
+>
+> **统一呈现边界**：`IGraphicsContext` 不再声明 `swap_buffers`，也不再用默认 `present` 隐式串联 `make_current` 与交换操作。每个 native context 必须显式匹配 `PresentFrame::Swapchain` 或 `PresentFrame::PixelBuffer`，不符合所选 recipe 的 payload 返回 typed error；Wayland `GpuPresenter` 同样构造 `PresentFrame::Swapchain` 后进入唯一兼容 present 入口。D3D11/OpenGL ES 的薄 RHI 最终提交继续直接调用 `GraphicsSurface::present`，adapter 内部的 DXGI/WGL/EGL 原生交换函数只属于该低层实现。
 
 ## 组件清单
 
@@ -28,7 +30,7 @@
 | `GraphicsDevice` | thin RHI interface | GPU 资源、pipeline、pass、draw/copy、submit 与 device 维护 |
 | `GraphicsSurface` | surface interface | acquire、resize、present、surface generation 与呈现状态 |
 | `GraphicsCapabilities` | value | RHI 原语、retained、occlusion 与 present 的事实能力 |
-| `GraphicsContext` | 迁移期门面 | 当前组合 device/surface 与高层 raster；目标拆分后移除高层操作 |
+| `GraphicsContext` | 迁移期门面 | 当前组合 device/surface、生命周期、thin RHI 借用与显式 `PresentFrame`；目标拆分后继续收窄 |
 | `Presenter` | 提交接口 | CPU/GPU 结果到原生窗口的最终 present |
 | `SurfaceToken` | generation value | surface 重建与迟到 callback 隔离 |
 
@@ -54,7 +56,7 @@ capability 只陈述可验证的底层事实，例如 sampled texture、render-t
 
 ## 组件：Presenter
 
-`Presenter` 是 renderer 面向的统一最终提交门面：GPU 路径委托 `GraphicsSurface::present`，CPU 路径执行平台像素上传/合成；同帧只能由一个所有者调用。CPU 写入 retained pixels 或 GPU submit 均不等于提交成功；最终 OS present 返回 typed Result，失败帧不能被标记为成功。
+`Presenter` 是 renderer 面向的统一最终提交门面：GPU 路径委托 `GraphicsSurface::present`，CPU 路径执行平台像素上传/合成；迁移期 `IGraphicsContext::present` 也只接受显式 `PresentFrame`，不存在独立 `swap_buffers` 旁路。同帧只能由一个所有者调用。CPU 写入 retained pixels 或 GPU submit 均不等于提交成功；最终 OS present 返回 typed Result，失败帧不能被标记为成功。
 
 ## 模块不变量
 

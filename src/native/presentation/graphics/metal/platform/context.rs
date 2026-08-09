@@ -68,13 +68,6 @@ impl IGraphicsContext for MetalPixelUploadContext {
         Ok(())
     }
 
-    fn swap_buffers(&mut self, _damage: PresentDamage) -> Result<()> {
-        Err(Error::new(
-            Errc::NotImplemented,
-            "MetalPixelUploadContext: swapchain present requires native Metal raster (planned)",
-        ))
-    }
-
     fn try_shutdown(&mut self) -> Result<()> {
         self.shutdown_result()
     }

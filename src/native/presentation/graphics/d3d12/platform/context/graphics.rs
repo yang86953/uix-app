@@ -21,10 +21,6 @@ impl IGraphicsContext for D3d12Context {
         self.begin_commands()
     }
 
-    fn swap_buffers(&mut self, _damage: PresentDamage) -> Result<()> {
-        self.present_result()
-    }
-
     fn present(&mut self, frame: &PresentFrame<'_>) -> Result<()> {
         match frame {
             PresentFrame::Swapchain { .. } => self.present_result(),
