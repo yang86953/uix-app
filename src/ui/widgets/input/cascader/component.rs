@@ -5,6 +5,8 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::animation::TransitionPlayer;
 use crate::ui::component::paint_context::PaintContext;
+// 引入级联选中路径的双向状态句柄。
+use crate::ui::reactive::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
 };
@@ -24,6 +26,8 @@ component! {
     pub struct Cascader {
         pub(crate) options: Vec<CascaderOption>,
         pub(crate) selected: CascaderValue,
+        // 保存声明式选中路径的双向绑定端口。
+        pub(crate) value_binding: Option<State<CascaderValue>>,
         pub(crate) current_levels: Vec<Vec<CascaderOption>>,
         pub(crate) level_indices: Vec<usize>,
         pub(crate) scroll_offsets: Vec<f32>,
@@ -685,6 +689,8 @@ mod tests {
     use super::{Cascader, CascaderOption};
     // 引入命中断言所需的点与矩形基础类型。
     use crate::core::{Point, Rect};
+    // 引入绑定测试所需的状态和值模型。
+    use crate::ui::{CascaderValue, State};
 
     // 构造指定数量的稳定叶子选项。
     fn leaf_options(count: usize) -> Vec<CascaderOption> {
@@ -694,6 +700,37 @@ mod tests {
             .map(|index| CascaderOption::new(format!("选项{index}"), format!("value-{index}")))
             // 收集为组件构造函数所需列表。
             .collect()
+    }
+
+    // 验证叶路径选择回写声明式业务状态。
+    #[test]
+    // 覆盖构造读取和叶选项提交两个方向。
+    fn value_binding_reads_and_writes_complete_paths() {
+        // 准备带既有路径的业务状态。
+        let state = State::new(CascaderValue {
+            // 初始显示标签由业务状态提供。
+            labels: vec!["旧标签".to_owned()],
+            // 初始稳定值由业务状态提供。
+            values: vec!["old".to_owned()],
+        });
+        // 创建包含一个可提交叶项的受控级联选择器。
+        let mut cascader = Cascader::new(
+            // 叶项标签和值相互独立。
+            vec![CascaderOption::new("新标签", "new")],
+            // 占位文本不影响绑定验证。
+            "请选择",
+        )
+        // 绑定业务状态句柄。
+        .value(&state);
+
+        // 构造阶段必须读取既有业务状态。
+        assert_eq!(cascader.selected().values, vec!["old".to_owned()]);
+        // 选择完整叶路径并触发状态提交。
+        cascader.select_option(0, 0);
+        // 外部状态必须收到新的稳定值路径。
+        assert_eq!(state.get().values, vec!["new".to_owned()]);
+        // 外部状态同时保留对应显示标签路径。
+        assert_eq!(state.get().labels, vec!["新标签".to_owned()]);
     }
 
     // 靠近表面底边时弹层必须翻转并按上方可用空间缩高。
