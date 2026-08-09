@@ -178,3 +178,59 @@ fn rejects_recursive_component_composition() {
     // 诊断应包含确定性闭环路径。
     assert!(error.message.contains("Loop -> Loop"));
 }
+
+// 验证样式类继承与内联覆盖在完整文档入口展开。
+#[test]
+fn expands_style_class_inheritance_before_view_codegen() {
+    // 解析父子样式类和更高优先级的内联样式。
+    let document = parse_document(
+        // 子类覆盖颜色，内联样式覆盖父类内边距。
+        r#"baseText { color: #ff0000; padding: 4px; } derivedText { extends: baseText; color: #0000ff; } <Text class="derivedText" style="padding: 8px;">Styled</Text>"#,
+    )
+    // 完整样式类文档必须解析成功。
+    .expect("样式类文档应解析成功");
+    // 展开完整文档并取得稳定令牌。
+    let tokens = generate_document_view(&document)
+        // 样式继承与覆盖必须生成成功。
+        .expect("样式类应在编译期展开")
+        // 规范化令牌文本。
+        .to_string();
+    // 最终生成物必须使用统一受控样式入口。
+    assert!(tokens.contains("map_style"));
+    // 颜色与内边距都必须进入 Style 更新。
+    assert!(tokens.contains("color") && tokens.contains("padding"));
+    // 生成物不得包含运行时 class 或 extends 解析。
+    assert!(!tokens.contains("derivedText") && !tokens.contains("extends"));
+}
+
+// 验证未知样式类在使用位置产生明确诊断。
+#[test]
+fn rejects_unknown_style_class_reference() {
+    // 解析引用缺失样式类的元素。
+    let document = parse_document(r#"<Text class="missingStyle">Styled</Text>"#)
+        // class 名称本身语法合法。
+        .expect("未知 class 应在文档生成阶段诊断");
+    // 展开必须拒绝缺失声明。
+    let error = generate_document_view(&document).expect_err("未知 class 必须失败");
+    // 诊断必须包含具体缺失类名。
+    assert!(error.message.contains("missingStyle") && error.message.contains("未声明"));
+}
+
+// 验证样式类循环继承在任何 View 生成前被拒绝。
+#[test]
+fn rejects_style_class_inheritance_cycle() {
+    // 解析两个互相继承的样式类。
+    let document = parse_document(
+        // 根元素引用其中一个类。
+        r#"first { extends: second; color: red; } second { extends: first; color: blue; } <Text class="first">Styled</Text>"#,
+    )
+    // 声明语法本身合法。
+    .expect("继承环应在样式解析器构造阶段诊断");
+    // 构造解析器必须拒绝继承环。
+    let error = generate_document_view(&document).expect_err("样式继承环必须失败");
+    // 诊断必须给出闭合路径。
+    assert!(
+        error.message.contains("first -> second -> first")
+            || error.message.contains("second -> first -> second")
+    );
+}

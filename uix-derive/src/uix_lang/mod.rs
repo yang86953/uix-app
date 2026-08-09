@@ -44,6 +44,8 @@ mod parser;
 mod style_ast;
 // 定义已映射内联样式到公开 Style 字段的编译期转换。
 mod style_codegen;
+// 定义样式类继承、引用与内联优先级改写。
+mod style_class_resolver;
 // 定义样式值、颜色、边距与枚举的编译期映射。
 mod style_value_codegen;
 // 定义样式块与内联样式共享解析器。
@@ -89,6 +91,8 @@ pub(crate) use parser::parse_document;
 pub(crate) use style_ast::*;
 // 向 View 生成器暴露内联样式映射入口。
 pub(crate) use style_codegen::apply_inline_style;
+// 向组件展开器暴露样式类解析器。
+pub(crate) use style_class_resolver::StyleClassResolver;
 // 向文档解析器暴露共享样式入口。
 pub(crate) use style_parser::parse_style_properties;
 // 向 View 生成器暴露属性值共享映射入口。
