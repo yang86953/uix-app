@@ -211,16 +211,6 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertIn("self.gpu_ctx.rhi_surface_lifecycle()", gpu_backend)
         # GPU backend 不得调用已退出 IGraphicsContext 的 resize 方法。
         self.assertNotIn("self.gpu_ctx.resize_rhi_surface", gpu_backend)
-        # 读取 Wayland external GPU presenter 的 resize 消费者。
-        wayland = (
-            # 固定 Wayland GPU presenter 实现路径。
-            ROOT / "src/native/backends/linux/wayland/gpu_presenter.rs"
-        ).read_text(encoding="utf-8")
-        # Wayland presenter 同样只能借用专用生命周期视图。
-        self.assertIn("self.gpu_ctx.rhi_surface_lifecycle()", wayland)
-        # Wayland presenter 不得调用通用 context resize。
-        self.assertNotIn("self.gpu_ctx.resize_rhi_surface", wayland)
-
     # 校验无帧遮挡探测只属于 thin RHI surface 生命周期。
     def test_idle_present_probe_belongs_to_graphics_surface(self) -> None:
         # 读取迁移期 context 门面。

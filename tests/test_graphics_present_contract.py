@@ -36,12 +36,12 @@ class GraphicsPresentContractTests(unittest.TestCase):
         self.assertIn("trait PixelUploadSurface", graphics_traits)
         # 专用 PixelUpload trait 必须声明像素提交方法。
         self.assertIn("fn present_pixels(", graphics_traits)
-        # external presenter 必须使用独立 swapchain 提交视图。
-        self.assertIn("trait SwapchainPresentation", graphics_traits)
-        # owner-thread wrapper 必须转发两类专用视图。
+        # 未接线的 external presenter 视图不得继续扩张通用 context。
+        self.assertNotIn("trait SwapchainPresentation", graphics_traits)
+        # owner-thread wrapper 必须转发仍有生产消费者的 PixelUpload 视图。
         self.assertIn("impl PixelUploadSurface for ThreadBoundGraphicsContext", thread_bound)
-        # owner-thread wrapper 必须保留 external swapchain 线程门禁。
-        self.assertIn("impl SwapchainPresentation for ThreadBoundGraphicsContext", thread_bound)
+        # owner-thread wrapper 不得保留无构造消费者的平行 swapchain 视图。
+        self.assertNotIn("SwapchainPresentation", thread_bound)
         # 统一 PresentFrame forwarding 宏必须退出。
         self.assertNotIn("forward_result!", thread_bound)
         # Renderer 必须借用 PixelUploadSurface 再提交像素。
@@ -66,6 +66,8 @@ class GraphicsPresentContractTests(unittest.TestCase):
             ROOT / "src/native/presentation/graphics/d3d12/platform/context/graphics.rs",
             # WGL 最终提交由共享 OpenGL thin RHI surface 持有。
             ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            # EGL 最终提交同样由共享 OpenGL thin RHI surface 持有。
+            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
         )
         # 每个 PixelUpload adapter 都必须只在专用 trait 中提交 pixels。
         for context in pixel_upload_contexts:
@@ -86,18 +88,36 @@ class GraphicsPresentContractTests(unittest.TestCase):
             # 实现文件不得再依赖 payload 并集。
             self.assertNotIn("PresentFrame", source)
 
-    # 校验 Wayland external presenter 只经 EGL 专用 swapchain 视图提交。
-    def test_wayland_uses_the_external_swapchain_presentation_view(self) -> None:
-        # 读取 Wayland 的 external presenter 桥接实现。
-        wayland = (ROOT / "src/native/backends/linux/wayland/gpu_presenter.rs").read_text(encoding="utf-8")
-        # Wayland 必须先借用专用 swapchain presentation 视图。
-        self.assertIn("self.gpu_ctx.swapchain_presentation()", wayland)
-        # Wayland 必须只经专用视图提交 damage。
-        self.assertIn("presentation.present_swapchain(damage)", wayland)
-        # 读取 EGL 的专用 external presenter 实现。
+    # 校验未接线的 Wayland 平行 GPU presenter 已被物理移除。
+    def test_wayland_parallel_gpu_presenter_is_removed(self) -> None:
+        # 固定曾经承载平行 GPU presenter 的文件路径。
+        wayland_presenter = ROOT / "src/native/backends/linux/wayland/gpu_presenter.rs"
+        # 零构造调用的平行提交模块不得继续编译或制造第二 owner。
+        self.assertFalse(wayland_presenter.exists())
+        # 读取 Wayland 子模块清单。
+        wayland_module = (ROOT / "src/native/backends/linux/wayland/mod.rs").read_text(
+            # 保持源码读取编码稳定。
+            encoding="utf-8"
+        )
+        # 子模块清单不得恢复已删除的平行 presenter。
+        self.assertNotIn("mod gpu_presenter", wayland_module)
+        # 读取统一 context trait。
+        graphics_traits = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        # 通用 context 不得再暴露平行 swapchain 提交视图。
+        self.assertNotIn("SwapchainPresentation", graphics_traits)
+        # 读取 EGL 的生产 context 实现。
         egl = (ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs").read_text(encoding="utf-8")
-        # EGL 必须显式暴露且实现该专用视图。
-        self.assertIn("impl SwapchainPresentation for EglContext", egl)
+        # EGL 不得保留第二套 swapchain 提交 owner。
+        self.assertNotIn("SwapchainPresentation", egl)
+        # 读取共享 OpenGL thin RHI surface 实现。
+        rhi_host = (ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs").read_text(
+            # 保持源码读取编码稳定。
+            encoding="utf-8"
+        )
+        # 最终提交必须继续由 GraphicsSurface::present 持有。
+        self.assertIn("fn present(", rhi_host)
+        # 唯一 thin RHI present 必须继续调用同一原生 swap_buffers。
+        self.assertIn("self.rhi_swap_buffers(damage)", rhi_host)
         # EGL 不得重新引入统一 payload。
         self.assertNotIn("PresentFrame", egl)
 

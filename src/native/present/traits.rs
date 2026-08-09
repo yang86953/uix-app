@@ -67,14 +67,6 @@ pub(crate) trait PixelUploadSurface {
     ) -> Result<(), Error>;
 }
 
-// 定义 external presenter 专用的 swapchain 提交契约。
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-// 仅为需要 external swapchain 交换的 context 暴露提交能力。
-pub(crate) trait SwapchainPresentation {
-    // 提交已经由外部 GPU renderer 完成绘制的 swapchain surface。
-    fn present_swapchain(&mut self, damage: PresentDamage) -> Result<(), Error>;
-}
-
 pub trait IGraphicsContext {
     fn caps(&self) -> GraphicsContextCaps;
 
@@ -96,13 +88,6 @@ pub trait IGraphicsContext {
     #[allow(private_interfaces)]
     fn pixel_upload_surface(&mut self) -> Option<&mut dyn PixelUploadSurface> {
         // GPU-native 与不支持像素上传的 context 默认不暴露该契约。
-        None
-    }
-
-    // 返回 external presenter 专用的 swapchain 提交视图。
-    #[allow(private_interfaces)]
-    fn swapchain_presentation(&mut self) -> Option<&mut dyn SwapchainPresentation> {
-        // 生产 thin RHI 与 PixelUpload context 默认不暴露外部提交入口。
         None
     }
 

@@ -10,9 +10,7 @@
 use std::ffi::c_void;
 use std::ptr;
 
-use crate::native::present::{
-    IGraphicsContext, PresentCoherency, PresentDamage, SwapchainPresentation,
-};
+use crate::native::present::{IGraphicsContext, PresentCoherency, PresentDamage};
 // 引入共享的 OpenGL RHI host 生命周期实现。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
 use crate::native::presentation::graphics::opengl::rhi_host::OpenGlRhiHost;
@@ -416,12 +414,6 @@ impl IGraphicsContext for EglContext {
         Some(self)
     }
 
-    // Wayland external presenter 显式借用 EGL swapchain 提交视图。
-    fn swapchain_presentation(&mut self) -> Option<&mut dyn SwapchainPresentation> {
-        // 仅 EGL external presenter recipe 暴露该专用视图。
-        Some(self)
-    }
-
     // 返回 EGL drawable 的完整 live surface 快照。
     fn present_surface(&self) -> crate::native::present::PresentSurface {
         // EGL 当前逻辑与物理尺寸保持 identity 映射，并保留真实重建代际。
@@ -448,30 +440,6 @@ impl crate::native::present::RhiSurfaceLifecycle for EglContext {
     fn resize_rhi_surface(&mut self, width: i32, height: i32) -> Result<(), Error> {
         // 直接借用当前原生 owner，不经过 IGraphicsContext 高层方法。
         crate::native::present::resize_native_rhi_surface(self, width, height)
-    }
-}
-
-// 为 Wayland external presenter 实现独立的 EGL swapchain 提交边界。
-impl SwapchainPresentation for EglContext {
-    // 提交已经由外部 GPU renderer 完成绘制的 EGL window surface。
-    fn present_swapchain(&mut self, damage: PresentDamage) -> Result<(), Error> {
-        // 交换前恢复 owner-thread current context。
-        self.rhi_make_current()?;
-        // external presenter 也必须消费共享 OpenGL lower surface-lost 注入。
-        #[cfg(feature = "test-harness")]
-        if self.pipeline.rhi_take_surface_lost_for_test() {
-            // 保留与 thin RHI surface 共用的故障 marker。
-            tracing::warn!("OpenGL RHI test surface lost");
-            // 返回可由恢复 FSM 分类的 surface-lost 错误。
-            return Err(Error::new(
-                // 标记 surface 需要重建而不是重试同一帧。
-                Errc::GraphicsSurfaceLost,
-                // 保留稳定的测试与诊断文本。
-                "OpenGL RHI test surface lost before present",
-            ));
-        }
-        // 委托 EGL host 的单一原生交换实现，不伪造局部 preservation。
-        self.rhi_swap_buffers(damage)
     }
 }
 

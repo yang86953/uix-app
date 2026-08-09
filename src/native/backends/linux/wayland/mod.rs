@@ -11,7 +11,6 @@ pub(crate) mod compat;
 pub(crate) mod cursor;
 pub(crate) mod display;
 pub(crate) mod event_loop;
-pub(crate) mod gpu_presenter;
 pub(crate) mod keyboard;
 pub(crate) mod keycode;
 pub(crate) mod output;
