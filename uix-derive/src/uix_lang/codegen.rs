@@ -15,8 +15,8 @@ use super::{
     generate_divider, generate_expression, generate_float_button, generate_grid,
     generate_handler_expression, generate_input, generate_input_group, generate_input_number,
     generate_orphan_col, generate_range_slider, generate_rate, generate_row, generate_scroll_view,
-    generate_slider, generate_space, generate_splitter, generate_theme_toggle, generate_typography,
-    generate_virtual_scroll, generate_window_control,
+    generate_slider, generate_space, generate_splitter, generate_switch, generate_theme_toggle,
+    generate_typography, generate_virtual_scroll, generate_window_control,
 };
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
@@ -101,6 +101,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "Rate" => generate_rate(element),
         // 复选框映射到公开 Checkbox 标签、禁用与双向勾选契约。
         "Checkbox" => generate_checkbox(element),
+        // 开关映射到公开 Switch 禁用与双向勾选契约。
+        "Switch" => generate_switch(element),
         // Col 只能由 Row 或 Grid 解释其父级布局语义。
         "Col" => generate_orphan_col(element),
         // 图标映射到公开 Icon 组件。
@@ -131,7 +133,7 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate 或 Checkbox，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox 或 Switch，或先登记组件状态",
         )),
     }
 }
