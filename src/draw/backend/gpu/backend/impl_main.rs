@@ -17,16 +17,6 @@ use crate::native::present::rhi::GraphicsDevice;
 use crate::native::present::{IGraphicsContext, PresentMode, RasterMode};
 
 impl GpuBackend {
-    // 保留 hybrid GPU backend 的兼容构造器，当前 bootstrap 使用 new_gpu_only 或带模式入口。
-    #[allow(dead_code)]
-    pub(crate) fn new(gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
-        Self::new_with_mode(gpu_ctx, false, false)
-    }
-
-    pub(crate) fn new_gpu_only(gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
-        Self::new_with_mode(gpu_ctx, true, true)
-    }
-
     // 在通用 renderer 不感知平台 current API 的前提下准备本帧 RHI device。
     pub(super) fn prepare_rhi_device(&mut self) -> Result<(), Error> {
         // 生产 GPU backend 的构造门禁已经要求组合 thin RHI 始终存在。
@@ -71,18 +61,12 @@ impl GpuBackend {
         context.inject_surface_lost_for_test()
     }
 
-    pub(super) fn new_with_mode(
-        mut gpu_ctx: Box<dyn IGraphicsContext>,
-        gpu_only: bool,
-        factory_prepared: bool,
-    ) -> Result<Self, Error> {
+    // 构造已经由 native factory 完成 surface 准备的 GPU-only backend。
+    pub(crate) fn new_gpu_only(mut gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
         let caps = gpu_ctx.caps();
         let native_caps = gpu_ctx.native_raster_caps();
-        let raster_baseline = if gpu_only {
-            native_caps.has_gpu_only_baseline()
-        } else {
-            native_caps.has_hybrid_baseline()
-        };
+        // 生产 GPU backend 不再接受依赖兼容 soft upload 的 hybrid 基线。
+        let raster_baseline = native_caps.has_gpu_only_baseline();
         // 生产 GPU backend 必须持有已经通过 factory probe 的组合 thin RHI。
         let has_rhi_context = gpu_ctx.rhi_context().is_some();
         if caps.raster != RasterMode::GpuNative
@@ -97,8 +81,7 @@ impl GpuBackend {
             return Err(Error::new(
                 Errc::InvalidArgument,
                 format!(
-                    "GpuBackend requires a complete {:?} retained RHI baseline, got {backend} raster={raster} present={present} thin_rhi={has_rhi_context} native={native_caps:?}",
-                    if gpu_only { "GPU-only" } else { "hybrid" }
+                    "GpuBackend requires a complete GPU-only retained RHI baseline, got {backend} raster={raster} present={present} thin_rhi={has_rhi_context} native={native_caps:?}"
                 ),
             ));
         }
@@ -108,11 +91,8 @@ impl GpuBackend {
         let rhi_renderer = gpu_ctx
             .rhi_context()
             .map(|_| super::super::super::rhi_renderer::RhiRenderer::default());
-        let mut canvas = if gpu_only {
-            NativeGpuCanvas2D::new_gpu_only(logical_w, logical_h, native_caps)
-        } else {
-            NativeGpuCanvas2D::new(logical_w, logical_h, native_caps)
-        };
+        // 生产主 surface 固定使用禁止 legacy soft upload 的 GPU-only canvas。
+        let mut canvas = NativeGpuCanvas2D::new_gpu_only(logical_w, logical_h, native_caps);
         canvas.set_device_pixel_ratio(device_pixel_ratio);
         Ok(Self {
             gpu_ctx,
@@ -129,8 +109,6 @@ impl GpuBackend {
             present_damage_tracker: PresentDamageTracker::new(),
             soft_fallback_idle_deadline: None,
             soft_used_in_last_present: false,
-            gpu_only,
-            factory_prepared,
             rhi_renderer,
             // 启动时延迟创建 retained texture，避免在 context 尚未完成 probe 前占用资源。
             rhi_surface_texture: None,

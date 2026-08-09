@@ -591,6 +591,62 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # EGL 同样保留 adapter 私有 helper。
         self.assertIn("fn make_current_result(&self)", contexts[6].read_text(encoding="utf-8"))
 
+    # 校验生产 GPU backend 不再保留 hybrid 构造和 native resize 兼容回退。
+    def test_gpu_resize_only_uses_factory_prepared_thin_rhi_surface(self) -> None:
+        # 读取 GPU backend 的状态字段。
+        backend_state = (ROOT / "src/draw/backend/gpu/backend/mod.rs").read_text(encoding="utf-8")
+        # 读取 GPU backend 构造与资源生命周期。
+        lifecycle = (ROOT / "src/draw/backend/gpu/backend/impl_main.rs").read_text(encoding="utf-8")
+        # 读取 GPU canvas 的生产与测试构造边界。
+        canvas = (ROOT / "src/draw/backend/gpu/canvas.rs").read_text(encoding="utf-8")
+        # 读取 RenderBackend 的 resize、initialize 与 Picture 实现。
+        backend = (ROOT / "src/draw/backend/gpu/backend/render_backend.rs").read_text(encoding="utf-8")
+        # dormant hybrid 构造入口不得复活。
+        self.assertNotIn("pub(crate) fn new(gpu_ctx", lifecycle)
+        # 构造器不得重新按模式分叉。
+        self.assertNotIn("fn new_with_mode", lifecycle)
+        # 生产 backend 不再保存 hybrid/GPU-only 运行时开关。
+        self.assertNotIn("gpu_only: bool", backend_state)
+        # factory-prepared 是构造不变量，不再保存第二份状态。
+        self.assertNotIn("factory_prepared", backend_state + lifecycle + backend)
+        # 构造门禁只接受 GPU-only retained RHI baseline。
+        self.assertIn("native_caps.has_gpu_only_baseline()", lifecycle)
+        # hybrid baseline 不得重新进入生产构造分支。
+        self.assertNotIn("native_caps.has_hybrid_baseline()", lifecycle)
+        # 主 surface 固定创建 GPU-only canvas。
+        self.assertIn("NativeGpuCanvas2D::new_gpu_only(logical_w, logical_h, native_caps)", lifecycle)
+        # hybrid canvas 构造只能作为单测 fixture 编译。
+        self.assertIn("#[cfg(test)]\n    // 创建允许测试显式进入 hybrid 分支的 canvas。\n    pub(crate) fn new", canvas)
+        # 定位显式 resize 实现。
+        resize_start = backend.index("fn resize(&mut self, width: i32, height: i32)")
+        # 定位 initialize 边界以截取完整 resize 方法。
+        initialize_start = backend.index("fn initialize_prepared", resize_start)
+        # 提取 resize 方法，避免其它生命周期代码干扰断言。
+        resize = backend[resize_start:initialize_start]
+        # resize 必须通过 thin RHI surface helper。
+        self.assertIn(".resize_rhi_surface(logical_w, logical_h)?", resize)
+        # 兼容 IGraphicsContext::resize 不得作为 NotImplemented 回退。
+        self.assertNotIn("self.gpu_ctx.resize(", resize)
+        # NotImplemented 必须像其它 typed failure 一样直接传播。
+        self.assertNotIn("Errc::NotImplemented", resize)
+        # 旧代 retained 资源必须先于 surface generation 推进释放。
+        self.assertLess(
+            # 定位旧代 retained 资源销毁。
+            resize.index("self.destroy_rhi_surface_texture()?"),
+            # 定位 thin RHI resize 调用。
+            resize.index(".resize_rhi_surface(logical_w, logical_h)?"),
+        )
+        # 定位 initialize 方法的结束边界。
+        shutdown_start = backend.index("fn try_shutdown", initialize_start)
+        # 提取 initialize 方法以锁定无二次 native resize。
+        initialize = backend[initialize_start:shutdown_start]
+        # factory-prepared 初始化不得触碰任何 resize 入口。
+        self.assertNotIn(".resize(", initialize)
+        # Picture canvas 同样固定采用 GPU-only 语义。
+        self.assertIn("canvas: NativeGpuCanvas2D::new_gpu_only", backend)
+        # Picture 创建不得保留 runtime hybrid 分叉。
+        self.assertNotIn("if self.gpu_only", backend)
+
     # 校验逐图元 legacy draw ABI 与平行 capability 表不会重新进入 adapter 门面。
     def test_legacy_draw_methods_leave_the_graphics_context_facade(self) -> None:
         # 读取公共兼容接口与事实型 capability profile。

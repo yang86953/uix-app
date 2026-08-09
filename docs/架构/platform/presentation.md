@@ -23,6 +23,8 @@
 > **构造生命周期边界**：`IGraphicsContext` 不再声明二阶段 `initialize`，thread-bound wrapper 与 D3D11/D3D12/Vulkan/Metal/WGL/EGL 实现也不再转发或提供空操作。registry 只接收已经完成 surface 绑定和初始尺寸归一化的 context；构造失败直接返回 typed error，成功值可立即接受 resize、RHI probe 与呈现。
 >
 > **设备准备边界**：`IGraphicsContext` 与 `RenderBackend` 不再声明平台语义的 `make_current`。`RenderSession::begin_frame` 只调用语义型 `prepare_frame`，GPU 实现把它收敛到 `GraphicsDevice::maintain`；OpenGL adapter 在该薄 RHI 维护入口内恢复 WGL/EGL owner context，D3D11 在同一入口执行设备健康检查。无 acquire 的 overlay texture copy 事务也复用这一设备准备边界。
+>
+> **GPU resize 边界**：生产 `GpuBackend` 只接收 native factory 已准备并通过 probe 的 GPU-only thin RHI context。初始化只同步 drawable 元数据；后续 resize 释放旧代 retained/overlay 资源后调用 RHI surface resize，任何 typed failure 都直接进入恢复层，不再切换到 `IGraphicsContext::resize`。兼容 resize 目前只为尚未迁移的 pixel-upload presenter 保留。
 
 ## 组件清单
 
