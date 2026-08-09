@@ -1,60 +1,13 @@
 //! 字体布局与字形光栅化的共享数据类型。
 
+// 复用字体与富文本共享的 UAX #14 断行边界。
+use crate::draw::resources::font::line_break::LineBreakMap;
+
 /// 缺字占位（tofu）字形 ID。后端无真实轮廓时由 `FontService::rasterize_glyph` 合成方框。
 pub const TOFU_GLYPH_ID: u32 = u32::MAX - 1;
 
 /// 只占 advance、没有可见轮廓的空白字形 ID。
 pub(crate) const WHITESPACE_GLYPH_ID: u32 = u32::MAX - 2;
-
-pub(crate) fn prohibited_at_line_start(ch: char) -> bool {
-    matches!(
-        ch,
-        '，' | '。'
-            | '、'
-            | '；'
-            | '：'
-            | '！'
-            | '？'
-            | '）'
-            | '】'
-            | '》'
-            | '〉'
-            | '〕'
-            | '］'
-            | '｝'
-            | '”'
-            | '’'
-            | '…'
-            | '—'
-            | ','
-            | '.'
-            | ';'
-            | ':'
-            | '!'
-            | '?'
-            | ')'
-            | ']'
-            | '}'
-    )
-}
-
-pub(crate) fn prohibited_at_line_end(ch: char) -> bool {
-    matches!(
-        ch,
-        '（' | '【' | '《' | '〈' | '〔' | '［' | '｛' | '“' | '‘' | '(' | '[' | '{'
-    )
-}
-
-pub(crate) fn soft_wrap_opportunity_after(ch: char) -> bool {
-    if matches!(ch, '\u{00a0}' | '\u{202f}' | '\u{2060}') {
-        return false;
-    }
-    ch.is_whitespace() || matches!(ch, '\u{200b}' | '-' | '\u{2010}')
-}
-
-pub(crate) fn collapsible_wrap_whitespace(ch: char) -> bool {
-    soft_wrap_opportunity_after(ch) && (ch.is_whitespace() || ch == '\u{200b}')
-}
 
 fn is_wide_scalar(ch: char) -> bool {
     matches!(ch,
@@ -96,129 +49,132 @@ pub(crate) fn estimate_text_metrics(
     max_width: f32,
     font_size: f32,
 ) -> EstimatedTextMetrics {
-    let mut line_width = 0.0f32;
+    // 单个估算字符保存字符值、宽度和排他源终点。
+    type EstimatedScalar = (char, f32, usize);
+    // 使用完整文本生成一次标准 UAX #14 边界。
+    let breaks = LineBreakMap::new(text);
+    // 固化字符序列以正确识别 CRLF 与字符索引。
+    let chars = text.chars().collect::<Vec<_>>();
+    // 计算当前估算行的完整 advance。
+    let line_width = |line: &[EstimatedScalar]| {
+        // 聚合全部字符宽度。
+        line.iter().map(|(_, width, _)| *width).sum::<f32>()
+    };
+    // 计算折行结算时去除尾随可折叠空白的可见宽度。
+    let visible_width = |line: &[EstimatedScalar]| {
+        // 从行尾剔除普通空白但保留 NBSP 等非断空白。
+        line.iter()
+            // 反向查找最后一个不可折叠字符。
+            .rposition(|(ch, _, _)| !LineBreakMap::collapsible_whitespace(*ch))
+            // 聚合到最后一个可见字符为止。
+            .map_or(0.0, |end| line_width(&line[..=end]))
+    };
+    // 保存当前尚未结算的逻辑行。
+    let mut line = Vec::<EstimatedScalar>::new();
+    // 保存全部已结算行中的最大可见宽度。
     let mut widest_line = 0.0f32;
+    // 非空输入至少包含一个逻辑行。
     let mut line_count = 1usize;
+    // 记录是否发生过宽度驱动的自动折行。
     let mut width_wrapped = false;
-    let mut line_char_count = 0usize;
-    let mut last_width = 0.0f32;
-    let mut last_char = '\0';
-    let mut last_soft_break: Option<(f32, f32, usize)> = None;
-    let mut trailing_wrap_whitespace = 0.0f32;
-    let mut line_has_content = false;
-    let mut collapse_auto_line_start_whitespace = false;
+    // 仅有限正宽度启用自动折行。
     let wraps = max_width.is_finite() && max_width > 0.0;
-
-    let mut chars = text.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if matches!(ch, '\n' | '\r') {
-            if ch == '\r' && chars.peek() == Some(&'\n') {
-                chars.next();
-            }
-            widest_line = widest_line.max(line_width);
-            line_width = 0.0;
+    // 从首个 Unicode 标量开始消费。
+    let mut char_index = 0usize;
+    // 逐个处理逻辑字符并保留 CRLF 原子语义。
+    while char_index < chars.len() {
+        // 读取当前 Unicode 标量。
+        let ch = chars[char_index];
+        // 显式换行独立于宽度直接结算当前行。
+        if matches!(ch, '\r' | '\n') {
+            // 把当前行宽登记到全局最大值。
+            widest_line = widest_line.max(line_width(&line));
+            // 清空当前行以开始下一逻辑行。
+            line.clear();
+            // 一个 CRLF 序列只增加一个逻辑行。
             line_count += 1;
-            line_char_count = 0;
-            last_width = 0.0;
-            last_char = '\0';
-            last_soft_break = None;
-            trailing_wrap_whitespace = 0.0;
-            line_has_content = false;
-            collapse_auto_line_start_whitespace = false;
+            // CR 后紧跟 LF 时整体跳过两个标量。
+            char_index += if ch == '\r' && chars.get(char_index + 1) == Some(&'\n') {
+                // CRLF 同时消费两个标量。
+                2
+            // 单独 CR 或 LF 只消费一个标量。
+            } else {
+                // 推进单个换行标量。
+                1
+            };
+            // 跳过换行字符的宽度处理。
             continue;
         }
-        let mut width = estimated_scalar_width(ch, font_size);
+        // 使用与既有估算路径相同的字符宽度模型。
+        let width = estimated_scalar_width(ch, font_size);
+        // 有限宽度下反复寻找当前溢出的最佳 UAX 边界。
         if wraps {
+            // 尾部移动到新行后可能仍然溢出，因此允许重复结算。
             loop {
-                if collapse_auto_line_start_whitespace && collapsible_wrap_whitespace(ch) {
-                    width = 0.0;
-                }
-                if !line_has_content || line_width + width <= max_width {
+                // 空行或加入当前字符后仍可容纳时停止折行。
+                if line.is_empty() || line_width(&line) + width <= max_width {
+                    // 当前字符可以进入本行。
                     break;
                 }
-
-                if let Some((visible_break_width, consumed_width, break_count)) =
-                    last_soft_break.take()
-                {
-                    if break_count < line_char_count {
-                        line_width -= consumed_width;
-                        line_char_count -= break_count;
-                        widest_line = widest_line.max(visible_break_width);
-                        line_has_content = line_char_count > 0;
-                        collapse_auto_line_start_whitespace = false;
-                    } else {
-                        widest_line = widest_line.max(visible_break_width);
-                        line_width = 0.0;
-                        line_char_count = 0;
-                        last_width = 0.0;
-                        last_char = '\0';
-                        line_has_content = false;
-                        collapse_auto_line_start_whitespace = true;
-                    }
+                // 在当前行内查找最后一个完整 UAX 断行边界。
+                let soft_break = line
+                    // 遍历当前行全部字符。
+                    .iter()
+                    // 保留行内字符索引。
+                    .enumerate()
+                    // 从后向前选择最近边界。
+                    .rposition(|(_, (_, _, char_end))| breaks.allows_at(*char_end))
+                    // 将字符索引转换为排他切分位置。
+                    .map(|index| index + 1);
+                // 标准 UAX 机会优先于任何紧急折行。
+                if let Some(break_index) = soft_break {
+                    // 将断点后的尾部字符移动到下一行。
+                    let tail = line.split_off(break_index);
+                    // 结算断点前一行的可见宽度。
+                    widest_line = widest_line.max(visible_width(&line));
+                    // 记录一次自动折行。
                     line_count += 1;
+                    // 标记宽度确实触发过折行。
                     width_wrapped = true;
-                    trailing_wrap_whitespace = 0.0;
+                    // 使用移动后的尾部继续当前行。
+                    line = tail;
+                    // 重新检查尾部与当前字符是否仍然溢出。
                     continue;
                 }
-
-                let move_previous = line_char_count > 1
-                    && (prohibited_at_line_start(ch) || prohibited_at_line_end(last_char));
-                if move_previous {
-                    line_width -= last_width;
-                    widest_line = widest_line.max(line_width);
-                    line_width = last_width;
-                    line_char_count = 1;
-                    line_count += 1;
-                    width_wrapped = true;
-                    line_has_content = true;
-                    collapse_auto_line_start_whitespace = false;
-                    continue;
-                }
-
-                if prohibited_at_line_start(ch) {
+                // 没有标准机会时只允许超长字母数字词紧急断行。
+                let emergency_break = line.last().is_some_and(|(_, _, char_end)| {
+                    // 前一字符必须紧邻当前字符边界。
+                    *char_end == char_index
+                        // 共享表必须显式允许该紧急边界。
+                        && breaks.emergency_allows_at(char_index)
+                });
+                // 非法边界宁可保持单行溢出也不能拆开。
+                if !emergency_break {
+                    // 停止自动折行并让当前字符进入溢出行。
                     break;
                 }
-
-                widest_line = widest_line.max(line_width);
-                line_width = 0.0;
-                line_char_count = 0;
-                last_width = 0.0;
-                last_char = '\0';
+                // 结算超长单词的当前前缀。
+                widest_line = widest_line.max(line_width(&line));
+                // 清空前缀以从当前字符开始下一行。
+                line.clear();
+                // 记录紧急自动折行。
                 line_count += 1;
+                // 标记宽度确实触发过折行。
                 width_wrapped = true;
-                trailing_wrap_whitespace = 0.0;
-                line_has_content = false;
-                collapse_auto_line_start_whitespace = true;
             }
         }
-
-        line_width += width;
-        line_char_count += 1;
-        last_width = width;
-        last_char = ch;
-        if !collapsible_wrap_whitespace(ch) || width > 0.0 {
-            line_has_content = true;
-        }
-        if !collapsible_wrap_whitespace(ch) {
-            collapse_auto_line_start_whitespace = false;
-        }
-        if collapsible_wrap_whitespace(ch) {
-            trailing_wrap_whitespace += width;
-        } else {
-            trailing_wrap_whitespace = 0.0;
-        }
-        if line_has_content && soft_wrap_opportunity_after(ch) {
-            last_soft_break = Some((
-                line_width - trailing_wrap_whitespace,
-                line_width,
-                line_char_count,
-            ));
-        }
+        // 将当前字符加入尚未结算的逻辑行。
+        line.push((ch, width, char_index + 1));
+        // 推进到下一个 Unicode 标量。
+        char_index += 1;
     }
-
+    // 返回估算布局的最大宽度、行数和自动折行标记。
     EstimatedTextMetrics {
-        max_line_width: widest_line.max(line_width),
+        // 最后一行使用完整宽度，保持无折行度量的尾随空白契约。
+        max_line_width: widest_line.max(line_width(&line)),
+        // 返回强制与自动换行共同形成的行数。
         line_count,
+        // 返回是否发生过宽度折行。
         width_wrapped,
     }
 }

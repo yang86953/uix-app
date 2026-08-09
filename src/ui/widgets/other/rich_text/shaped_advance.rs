@@ -1,7 +1,13 @@
 //! 将文本后端返回的 shaping cluster 几何映射为富文本字符 advance。
 
+// 复用富文本的估算字符宽度作为缺字兜底。
+use super::layout_metrics::char_width;
+// 读取统一字体服务以执行无换行的真实 shaping。
+use crate::draw::resources::font::font_service::FontService;
 // 读取携带源字符区间的定位字形。
-use crate::draw::resources::font::text_backend::PositionedGlyph;
+use crate::draw::resources::font::text_backend::{PositionedGlyph, TextLayoutOptions};
+// 读取字体句柄与布局对齐枚举。
+use crate::draw::{FontHandle, HAlign, VAlign};
 
 // 根据后端字形的源字符索引读取真实 advance，避免 glyph 槽位缺失时错配宽度。
 pub(super) fn measured_advance_for_char(
@@ -59,4 +65,63 @@ pub(super) fn measured_advance_for_char(
         })
         // 所有真实几何都异常时回退估算宽度。
         .unwrap_or(fallback)
+}
+
+// 获取文本中每个字符的真实 advance 宽度。
+pub(super) fn real_char_advances(
+    // 使用统一字体服务执行 shaping。
+    font_service: &FontService,
+    // 使用调用方选定的字体句柄。
+    font: &FontHandle,
+    // 接收待测量的完整文本段。
+    text: &str,
+    // 接收当前文本段字号。
+    fs: f32,
+    // 返回与源字符索引一一对应的 advance。
+) -> Vec<f32> {
+    // 空文本无需调用字体后端。
+    if text.is_empty() {
+        // 返回稳定空宽度数组。
+        return Vec::new();
+    }
+    // 禁用换行以获得当前文本段的连续 shaping 几何。
+    let options = TextLayoutOptions {
+        // 使用当前文本段字号。
+        font_size: fs,
+        // 连续度量不施加水平宽度约束。
+        max_width: f32::MAX,
+        // 高度由字体自身决定。
+        max_height: 0.0,
+        // 使用字体服务默认行高。
+        line_height: 0.0,
+        // 禁止本次度量自行折行。
+        word_wrap: false,
+        // 从左侧原点读取原始字形位置。
+        h_align: HAlign::Left,
+        // 从顶部原点读取原始行位置。
+        v_align: VAlign::Top,
+        // 结束布局选项构造。
+    };
+    // 执行真实字体 shaping 与多字体回退。
+    let layout = font_service.layout_text(font, text, &options);
+    // 固化源字符以构建逐字符 advance 数组。
+    let chars = text.chars().collect::<Vec<_>>();
+    // 为每个源字符预留一个宽度槽位。
+    let mut advances = Vec::with_capacity(chars.len());
+    // 按源字符索引读取 shaping cluster 几何。
+    for (char_index, ch) in chars.iter().enumerate() {
+        // 当前字符没有可用字形时使用估算宽度保持布局可收敛。
+        let fallback = char_width(fs, *ch);
+        // cluster 起点消费完整 advance，后继源字符保持零宽。
+        advances.push(measured_advance_for_char(
+            // 传入连续 shaping 的字形列表。
+            &layout.glyphs,
+            // 传入当前源字符索引。
+            char_index,
+            // 传入缺字估算宽度。
+            fallback,
+        ));
+    }
+    // 返回逐字符真实 advance。
+    advances
 }

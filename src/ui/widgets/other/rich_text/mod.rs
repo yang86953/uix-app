@@ -106,10 +106,19 @@ impl RichTextStyle {
 // ════════════════════════════════════════════════════════════════════════════
 mod rich_text_layout;
 pub(crate) use rich_text_layout::*;
+// 集中保存富文本布局字形、行与代码复制区域类型。
+mod layout_types;
+// 向富文本组件根暴露内部布局类型。
+pub(crate) use layout_types::*;
+// 集中保存估算字符宽度、行刷新与完整逻辑源拼接。
+mod layout_metrics;
 mod parse;
 mod rich_text_interaction;
 // 将 shaping cluster 到富文本 advance 的映射隔离为小型内部模块。
 mod shaped_advance;
+// 将 UAX #14 富文本验收矩阵放入独立测试模块，保持生产文件规模受控。
+#[cfg(test)]
+mod line_break_tests;
 
 pub use self::parse::{layout_rich_text_segments, parse_rich_text};
 
@@ -443,8 +452,6 @@ component! {
                 &self.segments, max_w, fs, resolved_default_color,
                 ctx.font_service(), &font,
             );
-            let mut lines = lines;
-            assign_global_indices(&mut lines, &self.segments);
             // 缓存相对坐标（y 从 0 开始），渲染时再加 frame.y
             self.layout_lines.replace(lines.clone());
             self.layout_height.set(h);

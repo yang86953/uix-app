@@ -5,6 +5,8 @@ use crate::draw::{FontHandle, HAlign, VAlign};
 // 使用扩展字素簇边界选择回退字体，避免拆开组合文本。
 use unicode_segmentation::UnicodeSegmentation;
 
+// 引入字体模块共享的 UAX #14 断行边界。
+use super::super::line_break::LineBreakMap;
 use super::FontService;
 
 /// 布局辅助：按字体分割的文本段（追踪字节偏移）。
@@ -140,6 +142,8 @@ impl FontService {
         &self,
         segments: &[FontSegment],
         text: &str,
+        // 复用完整源文本生成的 UAX #14 字符边界。
+        breaks: &LineBreakMap,
         seg_opts: &TextLayoutOptions,
         fs: f32,
         line_h: f32,
@@ -171,25 +175,40 @@ impl FontService {
         };
         let last_soft_break = |line: &LineAccum| {
             let first_content = line.glyphs.iter().position(|glyph| {
-                !tb::collapsible_wrap_whitespace(glyph.source_char) || glyph.glyph.width > 0.0
+                !LineBreakMap::collapsible_whitespace(glyph.source_char) || glyph.glyph.width > 0.0
             })?;
             line.glyphs
                 .iter()
                 .enumerate()
                 .skip(first_content)
-                .rposition(|(_, glyph)| tb::soft_wrap_opportunity_after(glyph.source_char))
+                // 只在完整 shaping cluster 的尾部接受标准 UAX 断行机会。
+                .rposition(|(index, glyph)| {
+                    // 同一 cluster 的后续视觉字形仍在当前行时不能拆开。
+                    let cluster_ends = line
+                        // 检查当前字形之后的相邻视觉字形。
+                        .glyphs
+                        // 索引相对于 skip 后的迭代器，需要恢复完整行索引。
+                        .get(first_content + index + 1)
+                        // 不同 cluster 或行尾都表示当前 cluster 已完整。
+                        .map_or(true, |next| {
+                            // 相同逻辑起点代表仍是同一 shaping cluster。
+                            next.glyph.char_index != glyph.glyph.char_index
+                        });
+                    // cluster 完整且其排他源终点存在 UAX 机会时才可断行。
+                    cluster_ends && breaks.allows_at(glyph.glyph.char_end)
+                })
                 .map(|index| first_content + index + 1)
         };
         let line_has_content = |line: &LineAccum| {
             line.glyphs.iter().any(|glyph| {
-                !tb::collapsible_wrap_whitespace(glyph.source_char) || glyph.glyph.width > 0.0
+                !LineBreakMap::collapsible_whitespace(glyph.source_char) || glyph.glyph.width > 0.0
             })
         };
         let collapse_trailing_wrap_whitespace = |line: &mut LineAccum| {
             let trailing_start = line
                 .glyphs
                 .iter()
-                .rposition(|glyph| !tb::collapsible_wrap_whitespace(glyph.source_char))
+                .rposition(|glyph| !LineBreakMap::collapsible_whitespace(glyph.source_char))
                 .map_or(0, |index| index + 1);
             if let Some(x) = line.glyphs.get(trailing_start).map(|glyph| glyph.glyph.x) {
                 for glyph in &mut line.glyphs[trailing_start..] {
@@ -272,7 +291,7 @@ impl FontService {
                 let mut target_x = chunk_target_x + (g.x - chunk_source_x);
                 if do_wrap
                     && collapse_auto_line_start_whitespace
-                    && tb::collapsible_wrap_whitespace(source_char)
+                    && LineBreakMap::collapsible_whitespace(source_char)
                 {
                     g.width = 0.0;
                     target_x = 0.0;
@@ -335,47 +354,22 @@ impl FontService {
                             chunk_target_x = 0.0;
                             target_x = 0.0;
                             collapse_auto_line_start_whitespace = true;
-                            if tb::collapsible_wrap_whitespace(source_char) {
+                            if LineBreakMap::collapsible_whitespace(source_char) {
                                 g.width = 0.0;
                                 chunk_source_x = source_x + source_advance;
                             }
                             continue;
                         }
 
-                        let move_previous = line.glyphs.len() > 1
-                            && (tb::prohibited_at_line_start(source_char)
-                                || line.glyphs.last().is_some_and(|glyph| {
-                                    tb::prohibited_at_line_end(glyph.source_char)
-                                }));
-                        if move_previous {
-                            if let Some(mut previous) = line.glyphs.pop() {
-                                let previous_origin = previous.glyph.x;
-                                let previous_char_index = previous.glyph.char_index;
-                                let completed_width = line_width(&line);
-                                flush_line(
-                                    &mut lines,
-                                    &mut line,
-                                    completed_width,
-                                    cy,
-                                    line_h,
-                                    previous_char_index,
-                                );
-                                cy += line_h;
-                                previous.glyph.x = 0.0;
-                                previous.glyph.y += line_h;
-                                line.char_start = previous_char_index;
-                                // 移动整个字形 cluster 时保留其排他源终点。
-                                line.char_end = previous.glyph.char_end;
-                                line.glyphs.push(previous);
-                                cx = line_width(&line);
-                                chunk_target_x -= previous_origin;
-                                target_x -= previous_origin;
-                                collapse_auto_line_start_whitespace = false;
-                                continue;
-                            }
-                        }
-
-                        if tb::prohibited_at_line_start(source_char) {
+                        // 没有标准机会时只允许超长字母数字词在 cluster 边界紧急折行。
+                        let emergency_break = line.glyphs.last().is_some_and(|previous| {
+                            // 前一 cluster 必须恰好结束于当前 cluster 的逻辑起点。
+                            previous.glyph.char_end == global_char_index
+                                // 共享断行表必须显式允许此紧急边界。
+                                && breaks.emergency_allows_at(global_char_index)
+                        });
+                        // 标点、NBSP、emoji 与组合序列等不合法边界宁可溢出也不能拆行。
+                        if !emergency_break {
                             break;
                         }
 
@@ -394,14 +388,14 @@ impl FontService {
                         chunk_target_x = 0.0;
                         target_x = 0.0;
                         collapse_auto_line_start_whitespace = true;
-                        if tb::collapsible_wrap_whitespace(source_char) {
+                        if LineBreakMap::collapsible_whitespace(source_char) {
                             g.width = 0.0;
                             chunk_source_x = source_x + source_advance;
                         }
                     }
                 }
 
-                if !tb::collapsible_wrap_whitespace(source_char) {
+                if !LineBreakMap::collapsible_whitespace(source_char) {
                     collapse_auto_line_start_whitespace = false;
                 }
 
@@ -474,7 +468,7 @@ impl FontService {
     /// - 逐行内分段：连续相同字体的字符组成一段，每段调用后端 layout_text。
     /// - 段间 x 坐标累积：同一行内后一段的 glyph.x += 前一段总宽度。
     /// - 垂直基线对齐：不同字体段共享同一行基线，用段 ascent 修正 y 偏移。
-    /// - 换行：CRLF / CR / LF 强制换行；word_wrap 优先词边界并以字形级折行为兜底。
+    /// - 换行：CRLF / CR / LF 强制换行；word_wrap 使用 UAX #14，并仅为超长字母数字词保留 cluster 级紧急折行。
     /// - LineInfo：按实际行构建，每行包含正确的起止字符偏移、glyph 索引、宽度和高度。
     /// - 水平对齐：根据 opts.h_align（Left/Center/Right）在容器宽度内对齐各行。
     pub fn layout_text(
@@ -515,9 +509,13 @@ impl FontService {
         };
 
         let segments = self.segment_text(font, text);
+        // 以完整源文本构建一次 UAX #14 边界，跨字体段保持一致。
+        let breaks = LineBreakMap::new(text);
         let (mut all_glyphs, mut line_infos) = self.layout_segments(
             &segments,
             text,
+            // 将同一断行表传给全部字体段。
+            &breaks,
             &seg_opts,
             fs,
             line_h,

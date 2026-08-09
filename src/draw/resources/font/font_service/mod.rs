@@ -6,6 +6,9 @@
 
 mod font_cache;
 mod font_layout;
+// 使用独立纯内存后端覆盖 FontService 的 UAX #14 集成契约。
+#[cfg(test)]
+mod line_break_tests;
 
 pub use font_cache::{FontFace, GlyphCache};
 
