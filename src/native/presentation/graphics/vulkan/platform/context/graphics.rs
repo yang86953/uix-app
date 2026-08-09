@@ -22,31 +22,6 @@ impl IGraphicsContext for VulkanContext {
         self.shutdown_result()
     }
 
-    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
-        let device = self.active_device()?;
-        device.ensure_healthy()?;
-        let result = (|| {
-            self.hydrate_cpu_shadow_from_staging()?;
-            let expected = (self.width as usize).saturating_mul(self.height as usize);
-            if self.cpu_shadow.len() != expected {
-                return Err(Error::new(
-                    Errc::InvalidState,
-                    "VulkanContext: no uploaded frame to read back (cpu_shadow empty)",
-                ));
-            }
-            crop_cpu_shadow(
-                &self.cpu_shadow,
-                self.width,
-                self.height,
-                x,
-                y,
-                width,
-                height,
-            )
-        })();
-        device.observe(result)
-    }
-
     fn width(&self) -> i32 {
         self.width
     }
@@ -100,5 +75,45 @@ impl IGraphicsContext for VulkanContext {
                 "VulkanContext: Swapchain payload is invalid for the PixelUpload recipe",
             )),
         }
+    }
+}
+
+// 为 GFX-R5 保留 Vulkan PixelUpload recipe 的显式诊断回读。
+impl VulkanContext {
+    // 从 staging hydration 后的 CPU shadow 读取指定区域。
+    pub(crate) fn readback_pixels(
+        // 借用当前 Vulkan owner context。
+        &mut self,
+        // 接收回读区域左上角横坐标。
+        x: i32,
+        // 接收回读区域左上角纵坐标。
+        y: i32,
+        // 接收回读区域宽度。
+        width: i32,
+        // 接收回读区域高度。
+        height: i32,
+    ) -> Result<Vec<u32>> {
+        let device = self.active_device()?;
+        device.ensure_healthy()?;
+        let result = (|| {
+            self.hydrate_cpu_shadow_from_staging()?;
+            let expected = (self.width as usize).saturating_mul(self.height as usize);
+            if self.cpu_shadow.len() != expected {
+                return Err(Error::new(
+                    Errc::InvalidState,
+                    "VulkanContext: no uploaded frame to read back (cpu_shadow empty)",
+                ));
+            }
+            crop_cpu_shadow(
+                &self.cpu_shadow,
+                self.width,
+                self.height,
+                x,
+                y,
+                width,
+                height,
+            )
+        })();
+        device.observe(result)
     }
 }

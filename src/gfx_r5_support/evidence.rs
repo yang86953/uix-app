@@ -12,8 +12,10 @@ pub(super) fn present_solid(context: &mut VulkanContext, color: u32) -> GfxR5Res
 }
 
 pub(super) fn readback_one(context: &mut VulkanContext) -> GfxR5Result<u32> {
+    // 通过 Vulkan PixelUpload recipe 的显式诊断辅助读取证据像素。
     context
-        .read_pixels(0, 0, 1, 1)
+        // 读取左上角单像素区域。
+        .readback_pixels(0, 0, 1, 1)
         .map(|pixels| pixels[0])
         .map_err(map_error)
 }
@@ -205,7 +207,8 @@ impl RenderTarget for VulkanRecoveryTarget {
         let pixels = vec![0xFFB7642D; (width as usize) * (height as usize)];
         self.context
             .present_pixels(&pixels, width, height, PresentDamage::Full)?;
-        let readback = self.context.read_pixels(0, 0, 1, 1)?[0];
+        // 通过显式诊断辅助读取恢复后的左上角证据像素。
+        let readback = self.context.readback_pixels(0, 0, 1, 1)?[0];
         // 毒锁恢复：Mutex 中毒时取回内部值，不把锁竞争转化为 panic。
         *self
             .recovery_evidence

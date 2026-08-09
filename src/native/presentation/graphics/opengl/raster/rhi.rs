@@ -37,6 +37,8 @@ impl OpenGlRasterPipeline {
         capabilities.texture_region_move = true;
         // OpenGL scissor clear 已由 RHI owner 执行并恢复状态。
         capabilities.clear_rect = true;
+        // OpenGL raster owner 已实现当前 framebuffer 的同步回读。
+        capabilities.surface_readback = true;
         // 返回包含可选 retained framebuffer 原语的事实快照。
         capabilities
     }

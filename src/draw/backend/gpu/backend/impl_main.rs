@@ -146,9 +146,32 @@ impl GpuBackend {
             ));
         }
         self.flush_main_segment_before_ordered_boundary()?;
+        // 在借用组合 RHI 前保存当前 drawable 宽度。
         let width = self.gpu_ctx.width().max(1);
+        // 在借用组合 RHI 前保存当前 drawable 高度。
         let height = self.gpu_ctx.height().max(1);
-        self.gpu_ctx.read_pixels(0, 0, width, height)
+        // 构造后丢失组合 RHI 属于生命周期状态破坏。
+        let Some(context) = self.gpu_ctx.rhi_context() else {
+            // 返回 typed 状态错误，禁止重新进入兼容门面。
+            return Err(Error::new(
+                // 使用稳定状态错误参与既有恢复流程。
+                Errc::InvalidState,
+                // 明确指出 readback 所需 owner context 已丢失。
+                "GPU backend lost its thin RHI context before surface readback",
+            ));
+        };
+        // 只调用 adapter 事实声明支持的可选能力。
+        if !context.capabilities().surface_readback {
+            // 缺少可选能力必须返回 typed 错误，不能伪造空结果。
+            return Err(Error::new(
+                // 使用未实现错误区分 adapter 能力缺口。
+                Errc::NotImplemented,
+                // 提供稳定的诊断消息。
+                "GPU backend thin RHI does not support surface readback",
+            ));
+        }
+        // 通过组合 RHI surface 执行 owner-thread 回读。
+        context.read_surface_pixels(0, 0, width, height)
     }
 
     // 测试目标保留 soft upload 字节数观测入口，供 GPU 诊断测试按需调用。

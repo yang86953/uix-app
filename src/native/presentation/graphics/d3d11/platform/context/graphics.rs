@@ -50,7 +50,49 @@ impl IGraphicsContext for D3d11Context {
         self.shutdown_result()
     }
 
-    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
+    fn width(&self) -> i32 {
+        self.width
+    }
+
+    fn height(&self) -> i32 {
+        self.height
+    }
+
+    fn device_pixel_ratio(&self) -> f32 {
+        self.width as f32 / self.logical_width.max(1) as f32
+    }
+
+    fn present(&mut self, frame: &PresentFrame<'_>) -> Result<()> {
+        match frame {
+            PresentFrame::Swapchain { .. } => {
+                self.bind_swapchain_target()?;
+                self.present_result()
+            }
+            PresentFrame::PixelBuffer {
+                pixels,
+                width,
+                height,
+                damage,
+            } => self.present_pixels(pixels, *width, *height, damage.clone()),
+        }
+    }
+}
+
+// 为 D3D11 surface adapter 保留私有回读实现，不再扩张兼容门面。
+impl D3d11Context {
+    // 通过 staging texture 同步读取当前 swapchain backbuffer。
+    pub(super) fn read_surface_pixels_result(
+        // 借用当前 D3D11 owner context。
+        &mut self,
+        // 接收回读区域左上角横坐标。
+        x: i32,
+        // 接收回读区域左上角纵坐标。
+        y: i32,
+        // 接收回读区域宽度。
+        width: i32,
+        // 接收回读区域高度。
+        height: i32,
+    ) -> Result<Vec<u32>> {
         let x0 = x.clamp(0, self.width);
         let y0 = y.clamp(0, self.height);
         let x1 = x.saturating_add(width).clamp(x0, self.width);
@@ -122,32 +164,5 @@ impl IGraphicsContext for D3d11Context {
             }
             Ok(pixels)
         })()
-    }
-
-    fn width(&self) -> i32 {
-        self.width
-    }
-
-    fn height(&self) -> i32 {
-        self.height
-    }
-
-    fn device_pixel_ratio(&self) -> f32 {
-        self.width as f32 / self.logical_width.max(1) as f32
-    }
-
-    fn present(&mut self, frame: &PresentFrame<'_>) -> Result<()> {
-        match frame {
-            PresentFrame::Swapchain { .. } => {
-                self.bind_swapchain_target()?;
-                self.present_result()
-            }
-            PresentFrame::PixelBuffer {
-                pixels,
-                width,
-                height,
-                damage,
-            } => self.present_pixels(pixels, *width, *height, damage.clone()),
-        }
     }
 }
