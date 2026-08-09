@@ -6,12 +6,12 @@
 use std::sync::Arc;
 
 // 引入错误、damage 和有限的 RHI 执行类型。
-use crate::core::error::{Errc, Error, Result};
 use crate::core::PresentDamage;
+use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
-    pipeline_keys, BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsContextRhi,
-    LoadAction, PipelineDesc, RhiColor, RhiExtent, RhiScissor, RhiViewport, SamplerDesc,
-    SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
+    BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsContextRhi, LoadAction,
+    PipelineDesc, RhiColor, RhiExtent, RhiScissor, RhiViewport, SamplerDesc, SamplerHandle,
+    TextureDesc, TextureFormat, TextureHandle, pipeline_keys,
 };
 
 // 引入父 renderer 已导入的有序 FramePlan 类型和资源缓存。
@@ -67,6 +67,45 @@ fn blur_region_vertices(extent: RhiExtent, region: RhiScissor) -> Arc<[u8]> {
 
 // 为 RhiRenderer 增加 blur 资源缓存和两阶段执行入口。
 impl RhiRenderer {
+    // 对已捕获的 overlay backdrop 执行原位双 pass blur。
+    pub(crate) fn execute_overlay_backdrop_blur(
+        // 复用 renderer 内唯一的 blur 资源缓存。
+        &mut self,
+        // 通过组合 RHI owner 执行全部资源与提交命令。
+        context: &mut dyn GraphicsContextRhi,
+        // backdrop texture 同时是第一 pass 的源和最终写回目标。
+        backdrop: TextureHandle,
+        // 使用创建快照时登记的物理 extent。
+        extent: RhiExtent,
+        // 区域已经由 backend 从逻辑空间 lower 到物理 scissor。
+        region: RhiScissor,
+        // 半径保持与 Picture blur 相同的 sigma 语义。
+        radius: f32,
+    ) -> Result<()> {
+        // 复用唯一通用双 pass 实现，避免 overlay 形成平行 shader 路径。
+        self.execute_blur_without_present(
+            // 传递 owner-thread 组合 context。
+            context,
+            // 无帧离屏事务不消费最终 present damage。
+            PresentDamage::Full,
+            // 水平 pass 从已捕获 backdrop 采样。
+            backdrop,
+            // 两个 pass 都使用快照的完整物理尺寸。
+            extent,
+            // 只改写调用方要求的物理区域。
+            region,
+            // 复用统一高斯核构造。
+            radius,
+            // retained surface 与 backdrop 统一使用预乘 BGRA。
+            TextureFormat::Bgra8Unorm,
+            // 垂直 pass 原位写回同一 backdrop texture。
+            RenderTargetRef::Texture(
+                // opaque texture 与 render-target 句柄保持同一资源身份。
+                crate::native::present::rhi::RenderTargetHandle::from_raw(backdrop.raw()),
+            ),
+        )
+    }
+
     // 确保 blur pipeline、区域 quad、uniform 和 sampler 已存在。
     fn ensure_blur_resources(
         &mut self,

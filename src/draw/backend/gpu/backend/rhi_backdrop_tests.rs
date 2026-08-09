@@ -1,11 +1,13 @@
 //! overlay backdrop 薄 RHI 复制与失败清理测试。
 
 // 引入统一错误和结果类型。
-use crate::core::{Errc, Error, PresentDamage, Result};
+use crate::core::{Errc, Error, PresentDamage, Rect, Result};
 // 引入被测 helper。
 use super::render_backend_backdrop::{
     // 快照 helper 负责创建、复制、提交和失败清理。
     create_rhi_overlay_backdrop,
+    // 区域 helper 负责逻辑坐标、DPR 与物理 extent 的唯一 lowering。
+    lower_overlay_blur_region,
     // 恢复 helper 负责反向复制与唯一提交。
     restore_rhi_overlay_backdrop,
 };
@@ -366,4 +368,75 @@ fn snapshot_submit_failure_destroys_new_texture_without_present() {
     assert_eq!((context.copies.len(), context.submits), (1, 1));
     // 失败清理仍不得 acquire 或 present。
     assert_eq!((context.acquires, context.presents), (0, 0));
+}
+
+// 验证 overlay blur 区域只应用一次主 surface DPR 并裁到快照 extent。
+#[test]
+fn overlay_blur_region_uses_surface_dpr_and_snapshot_extent() {
+    // 使用会产生分数物理边界的逻辑区域。
+    let region = Rect::new(1.25, 2.5, 4.0, 3.0);
+    // 以 1.5 DPR lower 到 10x8 的 backdrop texture。
+    let physical = lower_overlay_blur_region(
+        // 传入逻辑区域。
+        region,
+        // 传入原子 surface 快照中的 DPR。
+        1.5,
+        // 底边会越过物理高度并被裁剪。
+        RhiExtent::new(10, 8),
+    );
+    // 左上向外取整，右下按物理 extent 裁剪。
+    assert_eq!(
+        // 比较完整物理 scissor。
+        physical,
+        // 逻辑边界映射为 [1,3] 到 [8,8]。
+        RhiScissor {
+            // floor(1.25 * 1.5)。
+            x: 1,
+            // floor(2.5 * 1.5)。
+            y: 3,
+            // ceil(5.25 * 1.5) - 1。
+            width: 7,
+            // 物理底边裁到 8。
+            height: 5,
+        },
+    );
+}
+
+// 验证非法逻辑区域不会创建可执行的物理 scissor。
+#[test]
+fn overlay_blur_region_rejects_invalid_geometry() {
+    // 使用非有限横坐标触发稳定空区域。
+    let physical = lower_overlay_blur_region(
+        // 直接构造异常值，避免 Rect::new 的 NaN 安全归一化改变测试输入。
+        Rect {
+            // 保留非有限横坐标。
+            x: f32::NAN,
+            // 其余几何保持合法。
+            y: 0.0,
+            // 使用正宽度。
+            w: 4.0,
+            // 使用正高度。
+            h: 4.0,
+        },
+        // 使用合法 DPR。
+        2.0,
+        // 使用合法快照 extent。
+        RhiExtent::new(8, 8),
+    );
+    // 空区域由通用 renderer 作为无资源 no-op。
+    assert_eq!(
+        // 比较完整空 scissor。
+        physical,
+        // 零尺寸不会进入 render pass。
+        RhiScissor {
+            // 保持零起点。
+            x: 0,
+            // 保持零起点。
+            y: 0,
+            // 空宽度。
+            width: 0,
+            // 空高度。
+            height: 0,
+        },
+    );
 }

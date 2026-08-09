@@ -5,6 +5,7 @@
 use std::any::Any;
 
 use crate::core::{DamageRegion, Errc, Error, PresentDamage, Rect};
+use crate::draw::Canvas2D;
 use crate::draw::backend::contract::{
     BackendCapabilities, BackendKind, DrawSurface, RenderBackend,
 };
@@ -12,7 +13,6 @@ use crate::draw::geometry::types::{BlendMode, ImageHandle};
 use crate::draw::painting::{
     EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder,
 };
-use crate::draw::Canvas2D;
 use crate::native::present::PresentTestResult;
 // 引入迁移期 RHI 的离屏纹理描述。
 use crate::native::present::rhi::{
@@ -22,7 +22,7 @@ use crate::native::present::rhi::{
 use super::super::canvas::NativeGpuCanvas2D;
 // 复用通用 soft staging helper，保证主 surface 与 Picture 使用同一采样契约。
 use super::rhi_surface_soft::try_upload_rhi_canvas_soft;
-use super::{device_pixel_ratio_from_surface, GpuBackend, NativeGpuOffscreen};
+use super::{GpuBackend, NativeGpuOffscreen, device_pixel_ratio_from_surface};
 
 // 迁移期的主 surface 仍采用完整重绘，但 Picture 能力只由通用 RHI 所有者决定。
 fn migration_safe_gpu_capabilities(has_rhi_offscreen_owner: bool) -> BackendCapabilities {
@@ -781,6 +781,12 @@ impl RenderBackend for GpuBackend {
     fn snapshot_overlay_backdrop(&mut self) -> Result<bool, Error> {
         // 叠加层 backdrop 职责在独立模块实现，保持本文件处于行数上限内。
         self.snapshot_overlay_backdrop_impl()
+    }
+
+    // 对已捕获 backdrop 执行通用 RHI 双 pass blur。
+    fn blur_overlay_backdrop(&mut self, region: Rect, radius: f32) -> Result<bool, Error> {
+        // 多阶段效果仍委托独立 backdrop 模块，native adapter 不理解 overlay。
+        self.blur_overlay_backdrop_impl(region, radius)
     }
 
     fn restore_overlay_backdrop(&mut self) -> Result<bool, Error> {

@@ -429,6 +429,62 @@ fn blur_executes_two_clipped_passes_without_surface_present() {
     assert!((weight_sum - 1.0).abs() < 1.0e-6);
 }
 
+// 验证 overlay wrapper 复用已捕获 texture 并保持最终 present 所有权。
+#[test]
+fn overlay_backdrop_blur_writes_back_to_captured_texture_without_present() {
+    // 创建独立 renderer 缓存。
+    let mut renderer = RhiRenderer::default();
+    // 创建成功型 recording context。
+    let mut context = RecordingContext::new(false);
+    // 使用已捕获 overlay backdrop 的 opaque 纹理身份。
+    let backdrop = TextureHandle::from_raw(72);
+    // 执行完整区域的 overlay backdrop blur。
+    renderer
+        // 调用语义型 wrapper，不让 backend 重复组装目标身份。
+        .execute_overlay_backdrop_blur(
+            // 记录全部 RHI 命令事实。
+            &mut context,
+            // source 与最终 target 必须是同一快照纹理。
+            backdrop,
+            // 使用快照登记的物理 extent。
+            RhiExtent::new(6, 4),
+            // 模糊完整快照。
+            RhiScissor {
+                // 从左边界开始。
+                x: 0,
+                // 从顶边开始。
+                y: 0,
+                // 覆盖完整宽度。
+                width: 6,
+                // 覆盖完整高度。
+                height: 4,
+            },
+            // 使用有效半径生成两个方向的高斯核。
+            2.0,
+        )
+        // 合法 backdrop 事务必须成功。
+        .expect("overlay backdrop blur should execute");
+    // 每次事务只创建一个 scratch texture。
+    assert_eq!(context.created_textures.len(), 1);
+    // 保存 scratch 身份供顺序断言。
+    let scratch = context.created_textures[0];
+    // 水平 pass 写 scratch，垂直 pass 原位写回 backdrop。
+    assert_eq!(
+        // 比较两个 pass 的 target 和 load 动作。
+        context.passes,
+        // 保持 backdrop→scratch→backdrop 的严格顺序。
+        vec![(scratch.raw(), true), (backdrop.raw(), false)],
+    );
+    // 两个 pass 共享唯一 device submit。
+    assert_eq!(context.submit_count, 1);
+    // texture 事务不得 acquire 原生 surface。
+    assert_eq!(context.acquire_count, 0);
+    // texture 事务不得提前 present。
+    assert_eq!(context.present_count, 0);
+    // scratch 必须在提交后检查式销毁。
+    assert_eq!(context.destroyed_textures, vec![scratch]);
+}
+
 // 验证执行失败仍会释放已经创建的 scratch texture。
 #[test]
 fn blur_submit_failure_still_destroys_scratch() {

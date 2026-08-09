@@ -520,6 +520,16 @@ impl RenderTarget for Renderer {
         self.session.backend_mut().snapshot_overlay_backdrop()
     }
 
+    // 将 overlay backdrop blur 交给当前 backend 的唯一资源 owner。
+    fn blur_overlay_backdrop(&mut self, region: Rect, radius: f32) -> Result<bool, Error> {
+        // 保留 backend 的执行结果和 typed failure。
+        self.session
+            // 只借用当前 owner-thread backend。
+            .backend_mut()
+            // 不在 Renderer 门面复制多阶段效果语义。
+            .blur_overlay_backdrop(region, radius)
+    }
+
     fn restore_overlay_backdrop(&mut self) -> Result<bool, Error> {
         self.session.backend_mut().restore_overlay_backdrop()
     }

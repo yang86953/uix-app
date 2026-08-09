@@ -457,6 +457,11 @@ class GraphicsContextContractTests(unittest.TestCase):
             # 固定独立 backdrop 模块路径。
             ROOT / "src/draw/backend/gpu/backend/render_backend_backdrop.rs"
         ).read_text(encoding="utf-8")
+        # 读取通用 RHI blur wrapper，确认 overlay 不形成平行 shader 路径。
+        blur_renderer = (ROOT / "src/draw/backend/rhi_renderer_blur.rs").read_text(
+            # 保持源码契约读取编码稳定。
+            encoding="utf-8"
+        )
         # 读取场景管线失败边界。
         pipeline = (
             # 固定 ScenePipeline 实现路径。
@@ -473,6 +478,10 @@ class GraphicsContextContractTests(unittest.TestCase):
             self.assertIn(
                 "fn snapshot_overlay_backdrop(&mut self) -> Result<bool, Error>", contract
             )
+            # blur 必须以可检测未支持和 typed failure 的 Result 暴露。
+            self.assertIn("fn blur_overlay_backdrop", contract)
+            # blur 返回值必须区分已执行与不支持。
+            self.assertIn("-> Result<bool, Error>", contract)
             # 恢复不支持使用 Ok(false)，真实失败使用 Error。
             self.assertIn(
                 "fn restore_overlay_backdrop(&mut self) -> Result<bool, Error>", contract
@@ -484,7 +493,17 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 替换旧快照前的检查式销毁失败必须原样传播。
         self.assertIn("self.destroy_rhi_overlay_backdrop_texture()?;", backdrop)
         # snapshot 与 restore 的 device maintenance 都必须传播失败。
-        self.assertGreaterEqual(backdrop.count("self.prepare_rhi_device()?;"), 2)
+        self.assertGreaterEqual(backdrop.count("self.prepare_rhi_device()?;"), 3)
+        # backdrop blur 必须使用当前同代 owner 的显式实现。
+        self.assertIn("fn blur_overlay_backdrop_impl", backdrop)
+        # 逻辑区域只能在 backend 边界应用一次 surface DPR。
+        self.assertIn("fn lower_overlay_blur_region", backdrop)
+        # backend 必须委托通用 renderer 的语义型 wrapper。
+        self.assertIn("renderer.execute_overlay_backdrop_blur", backdrop)
+        # wrapper 必须复用唯一通用双 pass 实现。
+        self.assertIn("self.execute_blur_without_present(", blur_renderer)
+        # overlay blur 的最终 target 必须保持同一 backdrop 资源身份。
+        self.assertIn("RenderTargetHandle::from_raw(backdrop.raw())", blur_renderer)
         # 恢复 copy/submit 事务不得只记录日志后返回 false。
         self.assertIn("result?;", backdrop)
         # 显式 release 必须直接返回检查式销毁结果。
@@ -499,6 +518,8 @@ class GraphicsContextContractTests(unittest.TestCase):
         )
         # RecoveryDriver 必须观察 snapshot 的 begin_frame 外失败。
         self.assertIn("let result = self.engine.snapshot_overlay_backdrop();", recovery)
+        # RecoveryDriver 必须观察无帧 blur 事务的 typed failure。
+        self.assertIn("let result = self.engine.blur_overlay_backdrop(region, radius);", recovery)
         # RecoveryDriver 必须观察 begin_frame 后的 restore 失败。
         self.assertIn("let result = self.engine.restore_overlay_backdrop();", recovery)
         # RecoveryDriver 必须观察 idle 前的 release 失败。
