@@ -1,6 +1,6 @@
 // 复用选择弹层的共享表面解析与绝对坐标转换。
 use super::{
-    fade_color, normalize_select_rect, select_popup_rect, Select, VisibleRow, DROPDOWN_ROW_HEIGHT,
+    DROPDOWN_ROW_HEIGHT, Select, VisibleRow, fade_color, normalize_select_rect, select_popup_rect,
 };
 use crate::core::{Point, Rect};
 use crate::draw::{Color, Radius};
@@ -195,11 +195,10 @@ impl Select {
         let tag_y = control_rect.y + (control_rect.h - tag_height) * 0.5;
         let mut x = text_area.x;
         let right = text_area.x + text_area.w;
-        let all_options = self.all_options();
-
         ctx.push_clip(text_area);
         for &option_index in &self.selected_multi {
-            let Some(label) = all_options.get(option_index).copied() else {
+            // 多选标签绘制显示文案，状态提交仍由稳定值负责。
+            let Some(label) = self.option_label(option_index) else {
                 continue;
             };
             let remaining = (right - x).max(0.0);

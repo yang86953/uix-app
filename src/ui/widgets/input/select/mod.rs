@@ -13,6 +13,28 @@ const MAX_DROPDOWN_VIEWPORT_HEIGHT: f32 = 280.0;
 
 pub(crate) type SelectOptionRenderer = Box<dyn Fn(&str) -> crate::ui::view::ViewNode>;
 
+/// 为选择器提供相互独立的显示文案与稳定值。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectOption {
+    /// 供界面绘制和搜索使用的显示文案。
+    pub label: String,
+    /// 供状态绑定和业务逻辑使用的稳定值。
+    pub value: String,
+}
+
+impl SelectOption {
+    /// 创建一项具备独立显示文案与稳定值的选择项。
+    pub fn new(label: impl Into<String>, value: impl Into<String>) -> Self {
+        // 同时固化显示文案与稳定值，避免后续借用输入数据。
+        Self {
+            // 保存面向用户的显示文案。
+            label: label.into(),
+            // 保存面向状态绑定的稳定值。
+            value: value.into(),
+        }
+    }
+}
+
 /// 选项组。
 #[derive(Debug, Clone, PartialEq)]
 pub struct OptGroup {
