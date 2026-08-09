@@ -160,8 +160,16 @@ class GraphicsContextContractTests(unittest.TestCase):
         registry = (ROOT / "src/native/factory/registry.rs").read_text(encoding="utf-8")
         # 内部 factory 不得恢复只接收 GraphicsApi 的兼容入口。
         self.assertNotIn("fn create_gpu_context_with_backend", factory)
+        # 平台组合根不得静默创建脱离 runtime 的空故障队列。
+        self.assertNotIn("fn create_platform()", factory)
+        # 正式平台构造必须显式接收 runtime-scoped 故障队列。
+        self.assertIn("fn create_platform_with_pending", factory)
         # registry 不得恢复选择同一 API 首行的 raw surface 构造入口。
         self.assertNotIn("fn try_create_gpu_context", registry)
+        # registry 不得把多行 recipe 候选压缩成有损 backend-only 列表。
+        self.assertNotIn("fn gpu_probe_candidates", registry)
+        # recipe 构造不得静默创建脱离 runtime 的空故障队列。
+        self.assertNotIn("fn try_create_gpu_recipe(", registry)
         # 正式运行时构造必须继续接收完整 GraphicsRecipe。
         self.assertIn("fn try_create_gpu_recipe_with_queue", registry)
         # 正式运行时构造必须继续携带 callback 故障队列。

@@ -266,37 +266,6 @@ pub fn describe_backend_availability(requested: GraphicsSelection) -> Option<&'s
     }
 }
 
-/// Legacy backend-only view of recipe candidates.
-///
-/// This is intentionally lossy and must not drive bootstrap: repeated backend
-/// values represent distinct recipe rows.
-// 保留旧 backend-only 查询视图，新的 bootstrap 使用 recipe 级入口。
-#[allow(dead_code)]
-pub fn gpu_probe_candidates(requested: GraphicsSelection) -> Vec<GraphicsApi> {
-    gpu_recipe_candidates(requested)
-        .into_iter()
-        .map(|recipe| recipe.backend)
-        .collect()
-}
-
-/// Creates a context for one exact recipe row (no probe loop).
-// 保留无运行时队列的兼容创建入口，正式路径使用带队列版本。
-#[allow(dead_code)]
-pub fn try_create_gpu_recipe(
-    recipe: GraphicsRecipe,
-    native_surface: NativeSurfaceHandle,
-    width: i32,
-    height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
-    try_create_gpu_recipe_with_queue(
-        recipe,
-        native_surface,
-        width,
-        height,
-        PendingFailureQueue::new(),
-    )
-}
-
 /// Creates one exact recipe context using the runtime-scoped callback queue.
 pub(crate) fn try_create_gpu_recipe_with_queue(
     recipe: GraphicsRecipe,
