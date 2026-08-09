@@ -126,6 +126,12 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _explicit_grid: ViewNode = crate::uix!(
         r#"<Grid columns="1fr 200px auto" rows="auto" gap="16px" colGap="8px" rowGap="4px" padding="12px"><Col span={2}><Text>Wide</Text></Col><Col gridColumnSpan={1} gridRowSpan={1}><Text>Narrow</Text></Col></Grid>"#
     );
+    // 提供 ScrollView 双向绑定的滚动位置状态。
+    let scroll_offset = State::new(Point::new(0.0, 0.0));
+    // 验证 ScrollView 方向、偏移绑定与单一内容 View 只依赖公开 prelude。
+    let _scroll_view: ViewNode = crate::uix!(
+        r#"<ScrollView direction="both" offset={scroll_offset} height="320px"><Column><Text>First</Text><Text>Second</Text></Column></ScrollView>"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。

@@ -4,10 +4,13 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 // 引入核心 View 生成器拥有的有序子树与公共属性映射。
-use super::codegen::{apply_common_attributes, generate_children, is_renderable_node};
+use super::codegen::{
+    apply_common_attributes, generate_children, generate_node_view, is_renderable_node,
+};
 // 引入布局映射所需的语言 AST、诊断与共享属性值解析。
 use super::{
-    Attribute, AttributeValue, Diagnostic, Element, Node, SourceSpan, literal_string, numeric_value,
+    generate_expression, literal_string, numeric_value, Attribute, AttributeValue, Diagnostic,
+    Element, Node, SourceSpan,
 };
 
 // 生成通用 Flex Container。
@@ -62,6 +65,101 @@ pub(crate) fn generate_column(element: &Element) -> Result<TokenStream, Diagnost
     let base = quote! { ::uix::prelude::column(#children) };
     // 应用统一公共属性。
     apply_common_attributes(base, &element.attributes, &[])
+}
+
+// 生成持有滚动生命周期与偏移状态的 ScrollView。
+pub(crate) fn generate_scroll_view(element: &Element) -> Result<TokenStream, Diagnostic> {
+    // 滚动构建器只接收一个内容 View，避免宏层引入隐式布局容器。
+    let child = single_scroll_child(element)?;
+    // 递归生成唯一内容 View。
+    let child = generate_node_view(child)?;
+    // 默认方向直接复用公开 scroll 构造器的垂直契约。
+    let mut base = quote! { ::uix::prelude::scroll(#child) };
+    // 可选方向必须在编译期确定。
+    if let Some(attribute) = find_attribute(element, "direction") {
+        // 读取文档登记的方向关键字。
+        let direction = literal_string(attribute, "ScrollView direction")?;
+        // 把关键字映射为公开 ScrollBuilder 方法。
+        base = match direction.as_str() {
+            // vertical 显式保持默认方向。
+            "vertical" => quote! { (#base).vertical() },
+            // horizontal 切换为横向滚动。
+            "horizontal" => quote! { (#base).horizontal() },
+            // both 同时开放两条滚动轴。
+            "both" => quote! { (#base).both() },
+            // 未登记关键字不能静默回退。
+            _ => {
+                // 返回带属性位置的确定性诊断。
+                return Err(Diagnostic::new(
+                    // 指向非法方向属性。
+                    attribute.span,
+                    // 保留用户输入值以便修复。
+                    format!("ScrollView direction={direction:?} 不受支持"),
+                    // 给出完整合法关键字集合。
+                    "使用 direction=\"vertical\"、direction=\"horizontal\" 或 direction=\"both\"",
+                ));
+            }
+        };
+    }
+    // 可选 offset 必须双向绑定现有 State<Point>。
+    if let Some(attribute) = find_attribute(element, "offset") {
+        // 绑定只接受表达式形状，字符串不能表达状态句柄。
+        let AttributeValue::Expression(expression) = &attribute.value else {
+            // 返回绑定形状诊断。
+            return Err(Diagnostic::new(
+                // 指向非法 offset 属性。
+                attribute.span,
+                // 说明公开运行时要求 State<Point>。
+                "ScrollView offset 必须绑定 State<Point> 表达式",
+                // 给出最小合法写法。
+                "使用 offset={scroll_offset}",
+            ));
+        };
+        // 把受限绑定表达式生成为 Rust 值。
+        let offset = generate_expression(&expression.expression, None)?;
+        // 公开构建器借用并克隆 State，运行态仍由 ScrollView 与应用状态共同持有。
+        base = quote! { (#base).scroll_offset(&(#offset)) };
+    }
+    // 消费专有属性后，把尺寸、样式和自动化属性交给统一契约。
+    apply_common_attributes(base, &element.attributes, &["direction", "offset"])
+}
+
+// 提取 ScrollView 唯一的可渲染直接子节点。
+fn single_scroll_child(element: &Element) -> Result<&Node, Diagnostic> {
+    // 忽略用于排版源码的纯空白文本。
+    let mut children = element
+        // 遍历原始直接子节点。
+        .children
+        // 借用节点以保持源码顺序和位置。
+        .iter()
+        // 只保留会生成 View 的节点。
+        .filter(|child| is_renderable_node(child));
+    // 空滚动容器没有可建立内容范围的子 View。
+    let Some(child) = children.next() else {
+        // 返回完整元素位置上的缺失内容诊断。
+        return Err(Diagnostic::new(
+            // 指向空 ScrollView。
+            element.span,
+            // 说明单子节点契约。
+            "<ScrollView> 必须包含一个可渲染直接子节点",
+            // 给出显式内容容器示例。
+            "在 ScrollView 内放置一个 Column、Container、Grid 或其他 View",
+        ));
+    };
+    // 第二个可渲染节点会破坏 ScrollBuilder 的单内容所有权。
+    if children.next().is_some() {
+        // 返回父元素位置上的形状诊断。
+        return Err(Diagnostic::new(
+            // 指向多子节点 ScrollView。
+            element.span,
+            // 说明不能隐式包裹多个内容节点。
+            "<ScrollView> 只能包含一个可渲染直接子节点",
+            // 引导调用方显式选择内容布局语义。
+            "用 Column、Container、Row 或 Grid 包裹多个内容节点",
+        ));
+    }
+    // 返回唯一内容 View。
+    Ok(child)
 }
 
 // 生成文档定义的 Row/Col 24 单元响应式栅格。

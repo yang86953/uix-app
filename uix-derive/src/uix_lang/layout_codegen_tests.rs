@@ -1,5 +1,5 @@
 // 引入文档解析与公开 View 生成入口。
-use super::{Diagnostic, generate_view, parse_document};
+use super::{generate_view, parse_document, Diagnostic};
 
 // 解析单根布局文档并返回稳定令牌文本。
 fn generate(source: &str) -> Result<String, Diagnostic> {
@@ -191,4 +191,63 @@ fn validates_explicit_grid_contract_errors() {
         .expect_err("孤立 Col 必须失败");
     // 诊断必须列出两个合法父级。
     assert!(orphan.message.contains("Row") && orphan.message.contains("Grid"));
+}
+
+// 验证 ScrollView 生成公开滚动构建器、方向与双向偏移绑定。
+#[test]
+fn generates_scroll_view_contract() {
+    // 构造双轴滚动、状态绑定与公共尺寸属性。
+    let source = r#"<ScrollView direction="both" offset={scroll_offset} height="320px"><Column><Text>A</Text><Text>B</Text></Column></ScrollView>"#;
+    // 生成确定性滚动布局令牌。
+    let tokens = generate(source).expect("ScrollView 文档契约应生成 Rust View");
+    // 标签必须复用公开 scroll 构造器。
+    assert!(tokens.contains("prelude :: scroll"));
+    // 双轴关键字必须映射到公开 both 方法。
+    assert!(tokens.contains("both"));
+    // offset 必须以引用形式进入公开双向 State 绑定。
+    assert!(tokens.contains("scroll_offset") && tokens.contains("& (scroll_offset)"));
+    // 公共高度属性继续走统一 StyleExt 契约。
+    assert!(tokens.contains("height (320"));
+    // 唯一 Column 内容必须保持两个文本节点的源码顺序。
+    let first = tokens.find("A").expect("首个滚动内容应存在");
+    // 定位第二个滚动内容。
+    let second = tokens.find("B").expect("第二个滚动内容应存在");
+    // 源码顺序不得被滚动包装改变。
+    assert!(first < second);
+}
+
+// 验证 ScrollView 在编译期拒绝无内容、多内容与非法专有属性。
+#[test]
+fn validates_scroll_view_contract_errors() {
+    // 空滚动容器没有内容范围，必须失败。
+    let empty = generate(r#"<ScrollView />"#)
+        // 提取预期的缺失内容诊断。
+        .expect_err("空 ScrollView 必须失败");
+    // 诊断必须说明唯一可渲染子节点要求。
+    assert!(empty.message.contains("一个可渲染直接子节点"));
+    // 多个直接内容节点不得被宏静默包裹。
+    let multiple = generate(r#"<ScrollView><Text>A</Text><Text>B</Text></ScrollView>"#)
+        // 提取预期的父子形状诊断。
+        .expect_err("多子节点 ScrollView 必须失败");
+    // 修复建议必须要求显式内容布局容器。
+    assert!(multiple.message.contains("只能包含一个") && multiple.suggestion.contains("Column"));
+    // 字符串 offset 不能表达 State<Point> 绑定。
+    let offset = generate(r#"<ScrollView offset="0,0"><Text>A</Text></ScrollView>"#)
+        // 提取预期的绑定形状诊断。
+        .expect_err("字面量 offset 必须失败");
+    // 诊断必须指向 State<Point> 与表达式写法。
+    assert!(offset.message.contains("State<Point>") && offset.suggestion.contains("offset={"));
+    // 未登记方向不得回退到默认垂直方向。
+    let direction = generate(r#"<ScrollView direction="diagonal"><Text>A</Text></ScrollView>"#)
+        // 提取预期的关键字诊断。
+        .expect_err("非法 ScrollView direction 必须失败");
+    // 修复建议必须列出全部合法方向。
+    assert!(
+        // 检查垂直方向关键字。
+        direction.suggestion.contains("vertical")
+            // 检查水平方向关键字。
+            && direction.suggestion.contains("horizontal")
+            // 检查双轴方向关键字。
+            && direction.suggestion.contains("both")
+    );
 }
