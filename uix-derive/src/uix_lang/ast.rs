@@ -1,3 +1,6 @@
+// 引入受限表达式 AST。
+use super::Expression;
+
 // 表示源码中的半开字节区间及其一基行列位置。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SourceSpan {
@@ -27,6 +30,8 @@ pub(crate) struct Element {
     pub(crate) attributes: Vec<Attribute>,
     // 保存 painter 与组合语义所需的子节点顺序。
     pub(crate) children: Vec<Node>,
+    // 保存 If 或 For 元素专用的控制绑定。
+    pub(crate) control: Option<ControlBinding>,
     // 保存从开始标签到结束标签的完整跨度。
     pub(crate) span: SourceSpan,
 }
@@ -47,8 +52,28 @@ pub(crate) struct Attribute {
 pub(crate) enum AttributeValue {
     // 保存已经去除双引号的字面值。
     Literal(String),
-    // 保存已经去除外层花括号的表达式源码。
-    Expression(String),
+    // 保存已经完成受限语法验证的表达式。
+    Expression(ExpressionNode),
+}
+
+// 表示条件渲染或循环元素的专用绑定。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ControlBinding {
+    // 保存 If 条件表达式。
+    If(ExpressionNode),
+    // 保存 For 单标识符绑定与数据源。
+    For {
+        // 保存循环项绑定名称。
+        binding: String,
+        // 保存绑定声明跨度。
+        binding_span: SourceSpan,
+        // 保存可选索引绑定名称。
+        index_binding: Option<String>,
+        // 保存可选索引绑定声明跨度。
+        index_span: Option<SourceSpan>,
+        // 保存数据源表达式。
+        iterable: ExpressionNode,
+    },
 }
 
 // 表示元素内部的有序节点联合。
@@ -76,6 +101,8 @@ pub(crate) struct TextNode {
 pub(crate) struct ExpressionNode {
     // 保存去除外层花括号后的源码。
     pub(crate) source: String,
+    // 保存确定性表达式 AST。
+    pub(crate) expression: Expression,
     // 保存包含花括号的完整跨度。
     pub(crate) span: SourceSpan,
 }

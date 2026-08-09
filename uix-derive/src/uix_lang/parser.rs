@@ -1,7 +1,7 @@
 // 引入核心 AST、词法游标和诊断。
 use super::{
-    Attribute, AttributeValue, Cursor, Diagnostic, Document, Element, ExpressionNode, Node,
-    TextNode,
+    parse_expression, Attribute, AttributeValue, ControlBinding, Cursor, Diagnostic, Document,
+    Element, ExpressionKind, ExpressionNode, Node, SourceSpan, TextNode,
 };
 
 // 把 UIX 源码解析为具有唯一根元素的核心文档 AST。
@@ -84,12 +84,16 @@ fn parse_element(cursor: &mut Cursor<'_>) -> Result<Element, Diagnostic> {
     }
     // 保存声明顺序中的属性。
     let mut attributes = Vec::new();
+    // 保存 If 或 For 专用控制绑定。
+    let mut control = None;
     // 解析到标签结束标记。
     loop {
         // 跳过标签内空白和注释。
         cursor.skip_trivia()?;
         // 自闭合标签立即完成元素。
         if cursor.consume("/>") {
+            // 控制元素必须声明专用绑定。
+            require_control_binding(&name, control.as_ref(), cursor.point_span())?;
             // 返回无子节点元素。
             return Ok(Element {
                 // 保存标签名。
@@ -98,12 +102,16 @@ fn parse_element(cursor: &mut Cursor<'_>) -> Result<Element, Diagnostic> {
                 attributes,
                 // 自闭合元素没有子节点。
                 children: Vec::new(),
+                // 保存可选控制绑定。
+                control,
                 // 保存完整跨度。
                 span: cursor.span_from(start),
             });
         }
         // 普通开始标签进入子节点阶段。
         if cursor.consume(">") {
+            // 控制元素必须声明专用绑定。
+            require_control_binding(&name, control.as_ref(), cursor.point_span())?;
             // 结束属性循环。
             break;
         }
@@ -117,6 +125,49 @@ fn parse_element(cursor: &mut Cursor<'_>) -> Result<Element, Diagnostic> {
                 "开始标签缺少 > 或 />",
                 // 给出确定修复动作。
                 "在开始标签末尾添加 > 或 />",
+            ));
+        }
+        // 花括号在开始标签内只允许作为 If 或 For 控制绑定。
+        if cursor.starts_with("{") {
+            // 控制元素不能把普通属性放在绑定之前。
+            if !attributes.is_empty() {
+                // 返回绑定顺序诊断。
+                return Err(Diagnostic::new(
+                    // 指向控制绑定起点。
+                    cursor.point_span(),
+                    // 陈述失败原因。
+                    "If/For 控制绑定必须紧跟标签名",
+                    // 给出规范顺序。
+                    "使用 <If {condition}> 或 <For {item} in {items}>",
+                ));
+            }
+            // 同一元素只能有一个控制绑定。
+            if control.is_some() {
+                // 返回重复绑定诊断。
+                return Err(Diagnostic::new(
+                    // 指向重复绑定。
+                    cursor.point_span(),
+                    // 陈述失败原因。
+                    "控制元素只能声明一个绑定",
+                    // 给出规范结构。
+                    "保留一个 If 条件或一个 For 绑定",
+                ));
+            }
+            // 解析对应控制绑定。
+            control = Some(parse_control_binding(cursor, &name)?);
+            // 继续读取标签结束标记。
+            continue;
+        }
+        // 控制绑定后不允许普通属性混入专用语法。
+        if control.is_some() {
+            // 返回控制结构形状诊断。
+            return Err(Diagnostic::new(
+                // 指向多余内容。
+                cursor.point_span(),
+                // 陈述失败原因。
+                "If/For 控制绑定后不允许普通属性",
+                // 给出规范结构。
+                "把条件或循环逻辑完整写在控制绑定中",
             ));
         }
         // 解析一个属性。
@@ -195,6 +246,8 @@ fn parse_element(cursor: &mut Cursor<'_>) -> Result<Element, Diagnostic> {
                 attributes,
                 // 保存有序子节点。
                 children,
+                // 保存可选控制绑定。
+                control,
                 // 保存完整跨度。
                 span: cursor.span_from(start),
             });
@@ -208,10 +261,10 @@ fn parse_element(cursor: &mut Cursor<'_>) -> Result<Element, Diagnostic> {
         }
         // 花括号开始文本插值。
         if cursor.starts_with("{") {
-            // 解析表达式源码与跨度。
-            let (source, span) = cursor.braced_expression()?;
+            // 解析并验证插值表达式。
+            let expression = parse_braced_expression_node(cursor)?;
             // 保存表达式节点。
-            children.push(Node::Interpolation(ExpressionNode { source, span }));
+            children.push(Node::Interpolation(expression));
             // 继续解析下一节点。
             continue;
         }
@@ -224,8 +277,10 @@ fn parse_element(cursor: &mut Cursor<'_>) -> Result<Element, Diagnostic> {
 fn parse_attribute(cursor: &mut Cursor<'_>) -> Result<Attribute, Diagnostic> {
     // 保存属性起点。
     let start = cursor.offset();
+    // 事件属性以 @ 前缀区分。
+    let is_event = cursor.consume("@");
     // 解析属性名。
-    let (name, _) = cursor.identifier().ok_or_else(|| {
+    let (base_name, _) = cursor.identifier().ok_or_else(|| {
         // 构造非法属性名诊断。
         Diagnostic::new(
             // 指向当前位置。
@@ -233,9 +288,17 @@ fn parse_attribute(cursor: &mut Cursor<'_>) -> Result<Attribute, Diagnostic> {
             // 陈述失败原因。
             "标签内存在非法属性名",
             // 给出命名规则。
-            "属性名必须以 ASCII 字母或下划线开头",
+            "属性名必须以 ASCII 字母或下划线开头，事件使用 @click",
         )
     })?;
+    // 恢复事件属性的语义前缀。
+    let name = if is_event {
+        // 保存带 @ 的事件名。
+        format!("@{base_name}")
+    } else {
+        // 普通属性保持原名。
+        base_name
+    };
     // 跳过等号前空白。
     cursor.skip_trivia()?;
     // 属性必须显式赋值。
@@ -252,16 +315,24 @@ fn parse_attribute(cursor: &mut Cursor<'_>) -> Result<Attribute, Diagnostic> {
     }
     // 跳过等号后空白。
     cursor.skip_trivia()?;
-    // 按首字符选择属性值类型。
-    let value = if cursor.starts_with("\"") {
+    // 事件属性的双引号内容按受限表达式解析。
+    let value = if is_event {
+        // 读取未解码的事件表达式源码和内容跨度。
+        let (source, content_span) = cursor.quoted_expression_source()?;
+        // 使用完整属性跨度作为外围节点跨度。
+        let span = cursor.span_from(start);
+        // 保存已验证事件表达式。
+        AttributeValue::Expression(parse_expression_node(source, span, content_span)?)
+    // 普通双引号属性保持字面量。
+    } else if cursor.starts_with("\"") {
         // 解析双引号字面量。
         AttributeValue::Literal(cursor.quoted_literal()?)
-    // 花括号属性值保存表达式源码。
+    // 花括号属性值保存已验证表达式。
     } else if cursor.starts_with("{") {
-        // 解析表达式源码。
-        let (source, _) = cursor.braced_expression()?;
+        // 解析并验证表达式节点。
+        let expression = parse_braced_expression_node(cursor)?;
         // 保存表达式值。
-        AttributeValue::Expression(source)
+        AttributeValue::Expression(expression)
     // 其他写法违反属性值语法。
     } else {
         // 返回非法属性值诊断。
@@ -282,6 +353,205 @@ fn parse_attribute(cursor: &mut Cursor<'_>) -> Result<Attribute, Diagnostic> {
         value,
         // 保存完整跨度。
         span: cursor.span_from(start),
+    })
+}
+
+// 解析 If 或 For 开始标签中的专用控制绑定。
+fn parse_control_binding(
+    cursor: &mut Cursor<'_>,
+    element_name: &str,
+) -> Result<ControlBinding, Diagnostic> {
+    // If 直接保存一个条件表达式。
+    if element_name == "If" {
+        // 解析并返回条件绑定。
+        return Ok(ControlBinding::If(parse_braced_expression_node(cursor)?));
+    }
+    // 其他标签除 For 外不允许匿名花括号绑定。
+    if element_name != "For" {
+        // 返回控制绑定位置诊断。
+        return Err(Diagnostic::new(
+            // 指向花括号起点。
+            cursor.point_span(),
+            // 陈述失败原因。
+            format!("元素 <{element_name}> 不支持控制绑定"),
+            // 给出支持结构。
+            "只在 <If {condition}> 或 <For {item} in {items}> 中使用",
+        ));
+    }
+    // 解析 For 的单标识符绑定声明。
+    let binding_expression = parse_braced_expression_node(cursor)?;
+    // 绑定必须是没有成员或运算的单标识符。
+    let binding = match &binding_expression.expression.kind {
+        // 提取合法标识符。
+        ExpressionKind::Identifier(value) => value.clone(),
+        // 其他表达式不能声明循环项。
+        _ => {
+            // 返回绑定形状诊断。
+            return Err(Diagnostic::new(
+                // 指向绑定表达式。
+                binding_expression.expression.span,
+                // 陈述失败原因。
+                "For 绑定必须是单个标识符",
+                // 给出合法示例。
+                "使用 <For {item} in {items}>",
+            ));
+        }
+    };
+    // 跳过绑定后的空白或注释。
+    cursor.skip_trivia()?;
+    // 可选解析第二个索引绑定。
+    let (index_binding, index_span) = if cursor.starts_with("{") {
+        // 解析索引绑定表达式。
+        let index_expression = parse_braced_expression_node(cursor)?;
+        // 索引绑定同样必须是单标识符。
+        let index_name = match &index_expression.expression.kind {
+            // 提取合法索引标识符。
+            ExpressionKind::Identifier(value) => value.clone(),
+            // 其他表达式不能声明索引。
+            _ => {
+                // 返回索引绑定形状诊断。
+                return Err(Diagnostic::new(
+                    // 指向索引绑定表达式。
+                    index_expression.expression.span,
+                    // 陈述失败原因。
+                    "For 索引绑定必须是单个标识符",
+                    // 给出合法示例。
+                    "使用 <For {item} {index} in {items}>",
+                ));
+            }
+        };
+        // 循环项和索引不能声明为同名绑定。
+        if index_name == binding {
+            // 返回重复绑定诊断。
+            return Err(Diagnostic::new(
+                // 指向重复索引绑定。
+                index_expression.expression.span,
+                // 陈述失败原因。
+                "For 的循环项与索引绑定不能同名",
+                // 给出不同名称示例。
+                "使用 <For {item} {index} in {items}>",
+            ));
+        }
+        // 保存名称与声明跨度。
+        (
+            // 保存索引名称。
+            Some(index_name),
+            // 保存索引跨度。
+            Some(index_expression.expression.span),
+        )
+    } else {
+        // 没有第二绑定时保持空值。
+        (None, None)
+    };
+    // 跳过可选索引绑定后的空白或注释。
+    cursor.skip_trivia()?;
+    // 要求小写 in 关键字。
+    let Some((keyword, keyword_span)) = cursor.identifier() else {
+        // 返回缺少 in 诊断。
+        return Err(Diagnostic::new(
+            // 指向当前位置。
+            cursor.point_span(),
+            // 陈述失败原因。
+            "For 绑定缺少 in",
+            // 给出合法示例。
+            "使用 <For {item} in {items}>",
+        ));
+    };
+    // 拒绝其他标识符充当 in。
+    if keyword != "in" {
+        // 返回错误关键字诊断。
+        return Err(Diagnostic::new(
+            // 指向错误关键字。
+            keyword_span,
+            // 陈述失败原因。
+            format!("For 绑定期望 in，但得到 {keyword}"),
+            // 给出合法示例。
+            "使用 <For {item} in {items}>",
+        ));
+    }
+    // 跳过 in 后空白或注释。
+    cursor.skip_trivia()?;
+    // 数据源必须使用花括号表达式。
+    if !cursor.starts_with("{") {
+        // 返回缺失数据源诊断。
+        return Err(Diagnostic::new(
+            // 指向数据源位置。
+            cursor.point_span(),
+            // 陈述失败原因。
+            "For 的数据源必须是花括号表达式",
+            // 给出合法示例。
+            "使用 <For {item} in {items}>",
+        ));
+    }
+    // 解析并验证数据源表达式。
+    let iterable = parse_braced_expression_node(cursor)?;
+    // 返回完整 For 绑定。
+    Ok(ControlBinding::For {
+        // 保存绑定名。
+        binding,
+        // 保存单标识符跨度。
+        binding_span: binding_expression.expression.span,
+        // 保存可选索引绑定。
+        index_binding,
+        // 保存可选索引跨度。
+        index_span,
+        // 保存数据源。
+        iterable,
+    })
+}
+
+// 验证 If 与 For 元素没有遗漏规范要求的绑定。
+fn require_control_binding(
+    element_name: &str,
+    control: Option<&ControlBinding>,
+    span: SourceSpan,
+) -> Result<(), Diagnostic> {
+    // 普通元素或已有绑定的控制元素直接通过。
+    if !matches!(element_name, "If" | "For") || control.is_some() {
+        // 报告结构有效。
+        return Ok(());
+    }
+    // 返回缺失控制绑定诊断。
+    Err(Diagnostic::new(
+        // 指向开始标签结束位置。
+        span,
+        // 陈述失败原因。
+        format!("<{element_name}> 缺少控制绑定"),
+        // 给出对应合法结构。
+        if element_name == "If" {
+            // 返回 If 修复示例。
+            "使用 <If {condition}>"
+        } else {
+            // 返回 For 修复示例。
+            "使用 <For {item} in {items}>"
+        },
+    ))
+}
+
+// 读取花括号内容并构造已验证表达式节点。
+fn parse_braced_expression_node(cursor: &mut Cursor<'_>) -> Result<ExpressionNode, Diagnostic> {
+    // 读取规范化源码、外围跨度与内容位置。
+    let (source, span, content_span) = cursor.braced_expression()?;
+    // 解析并返回表达式节点。
+    parse_expression_node(source, span, content_span)
+}
+
+// 把表达式源码和位置组合成确定性节点。
+fn parse_expression_node(
+    source: String,
+    span: SourceSpan,
+    content_span: SourceSpan,
+) -> Result<ExpressionNode, Diagnostic> {
+    // 解析受限表达式 AST。
+    let expression = parse_expression(&source, content_span)?;
+    // 返回同时保留源码与 AST 的节点。
+    Ok(ExpressionNode {
+        // 保存源码供后续诊断和代码生成。
+        source,
+        // 保存确定性 AST。
+        expression,
+        // 保存外围结构跨度。
+        span,
     })
 }
 
@@ -373,10 +643,12 @@ mod tests {
             panic!("第一个子节点应为元素");
         };
         // 表达式属性必须保留源码。
-        assert_eq!(
-            text.attributes[0].value,
-            AttributeValue::Expression("titleSize".to_string())
-        );
+        assert!(matches!(
+            // 借用表达式属性以检查源码。
+            &text.attributes[0].value,
+            // 要求表达式节点保留原始内容。
+            AttributeValue::Expression(node) if node.source == "titleSize"
+        ));
         // 文本、插值、文本必须保持源顺序。
         assert!(matches!(&text.children[0], Node::Text(node) if node.value == "你好，"));
         // 中间节点必须是名称表达式。

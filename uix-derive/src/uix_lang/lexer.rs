@@ -72,6 +72,12 @@ impl<'a> Cursor<'a> {
 
     // 构造从给定起点到当前偏移的源码跨度。
     pub(crate) fn span_from(&self, start: usize) -> SourceSpan {
+        // 复用任意半开区间跨度构造。
+        self.span_between(start, self.offset)
+    }
+
+    // 构造输入内任意半开字节区间的源码跨度。
+    pub(crate) fn span_between(&self, start: usize, end: usize) -> SourceSpan {
         // 计算起点的一基行列。
         let (line, column) = self.line_column(start);
         // 返回半开区间跨度。
@@ -79,7 +85,7 @@ impl<'a> Cursor<'a> {
             // 保存起始偏移。
             start,
             // 保存当前结束偏移。
-            end: self.offset,
+            end,
             // 保存一基行号。
             line,
             // 保存一基字符列号。
@@ -233,8 +239,70 @@ impl<'a> Cursor<'a> {
         }
     }
 
+    // 读取双引号包裹但不解码的事件表达式源码。
+    pub(crate) fn quoted_expression_source(&mut self) -> Result<(String, SourceSpan), Diagnostic> {
+        // 保存外层引号起点。
+        let start = self.offset;
+        // 要求起始双引号。
+        if !self.consume("\"") {
+            // 返回缺少事件表达式诊断。
+            return Err(Diagnostic::new(
+                // 指向当前位置。
+                self.point_span(),
+                // 陈述失败原因。
+                "事件处理器必须使用双引号包裹",
+                // 给出合法示例。
+                "使用 @click=\"onConfirm()\"",
+            ));
+        }
+        // 保存内容起点。
+        let content_start = self.offset;
+        // 跟踪反斜杠是否转义下一字符。
+        let mut escaped = false;
+        // 扫描到未转义的结束双引号。
+        loop {
+            // 读取下一字符或报告未闭合。
+            let Some(next) = self.bump() else {
+                // 返回未闭合处理器诊断。
+                return Err(Diagnostic::new(
+                    // 覆盖整个事件属性值。
+                    self.span_from(start),
+                    // 陈述失败原因。
+                    "事件处理器缺少结束双引号",
+                    // 给出确定修复动作。
+                    "在事件处理器末尾添加双引号",
+                ));
+            };
+            // 已转义字符不会结束外层字符串。
+            if escaped {
+                // 清除转义状态。
+                escaped = false;
+                // 继续扫描。
+                continue;
+            }
+            // 反斜杠转义下一字符。
+            if next == '\\' {
+                // 标记下一字符被转义。
+                escaped = true;
+                // 继续扫描。
+                continue;
+            }
+            // 未转义双引号结束内容。
+            if next == '"' {
+                // 计算不含结束引号的内容终点。
+                let content_end = self.offset - next.len_utf8();
+                // 复制原始表达式源码。
+                let source = self.source[content_start..content_end].to_string();
+                // 返回源码与内容跨度。
+                return Ok((source, self.span_between(content_start, content_end)));
+            }
+        }
+    }
+
     // 解析并返回去除外层花括号的表达式源码。
-    pub(crate) fn braced_expression(&mut self) -> Result<(String, SourceSpan), Diagnostic> {
+    pub(crate) fn braced_expression(
+        &mut self,
+    ) -> Result<(String, SourceSpan, SourceSpan), Diagnostic> {
         // 保存表达式起点。
         let start = self.offset;
         // 消费起始花括号。
@@ -284,8 +352,12 @@ impl<'a> Cursor<'a> {
             if !quoted && next == '}' {
                 // 结束偏移排除闭合花括号。
                 let content_end = self.offset - next.len_utf8();
+                // 借用未去空白的表达式内容。
+                let raw = &self.source[content_start..content_end];
+                // 计算首个非空白字节相对位置。
+                let leading = raw.len() - raw.trim_start().len();
                 // 去除外围空白但保留内部源码。
-                let source = self.source[content_start..content_end].trim().to_string();
+                let source = raw.trim().to_string();
                 // 空表达式没有可映射语义。
                 if source.is_empty() {
                     // 返回明确空表达式诊断。
@@ -298,8 +370,19 @@ impl<'a> Cursor<'a> {
                         "在花括号内填写受限表达式",
                     ));
                 }
-                // 返回表达式源码和完整跨度。
-                return Ok((source, self.span_from(start)));
+                // 计算去空白后内容的绝对起点。
+                let trimmed_start = content_start + leading;
+                // 计算去空白后内容的绝对终点。
+                let trimmed_end = trimmed_start + source.len();
+                // 返回表达式源码、外围跨度和内容跨度。
+                return Ok((
+                    // 返回规范化源码。
+                    source,
+                    // 返回包含花括号的完整跨度。
+                    self.span_from(start),
+                    // 返回用于表达式标记定位的内容跨度。
+                    self.span_between(trimmed_start, trimmed_end),
+                ));
             }
         }
     }
