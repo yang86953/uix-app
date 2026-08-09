@@ -218,6 +218,14 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _switch: ViewNode = crate::uix!(
         r#"<Switch checked={switch_enabled} disabled={switch_locked} width="180px" />"#
     );
+    // 提供 Radio 当前选中值的双向状态。
+    let gender = State::new(String::from("female"));
+    // 提供 Radio 可迭代字符串选项数据。
+    let gender_options = vec![String::from("female"), String::from("male")];
+    // 验证选项数据、值绑定和公共样式只依赖公开 prelude。
+    let _radio: ViewNode = crate::uix!(
+        r#"<Radio value={gender} options={gender_options} width="240px" automationId="gender" />"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
