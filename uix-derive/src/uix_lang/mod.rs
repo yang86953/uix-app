@@ -107,6 +107,11 @@ mod switch_codegen;
 // 集中验证 Switch 生成与拒绝路径。
 #[cfg(test)]
 mod switch_codegen_tests;
+// 定义 Radio 选项与双向值绑定的公开 API 代码生成边界。
+mod radio_codegen;
+// 集中验证 Radio 生成与拒绝路径。
+#[cfg(test)]
+mod radio_codegen_tests;
 // 定义 FloatButton 内置组件的公开 API 代码生成边界。
 mod float_button_codegen;
 // 定义布局容器、Row/Col 栅格与 Grid/Col 的公开 API 代码生成边界。
@@ -207,6 +212,8 @@ pub(crate) use rate_codegen::generate_rate;
 pub(crate) use checkbox_codegen::generate_checkbox;
 // 向核心元素生成器暴露 Switch 专用映射。
 pub(crate) use switch_codegen::generate_switch;
+// 向核心元素生成器暴露 Radio 专用映射。
+pub(crate) use radio_codegen::generate_radio;
 // 向核心元素生成器暴露 FloatButton 专用映射。
 pub(crate) use float_button_codegen::generate_float_button;
 // 向核心元素生成器暴露布局组件专用映射。
