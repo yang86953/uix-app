@@ -253,6 +253,16 @@ impl Splitter {
         self
     }
 
+    /// 设置文档化双面板的初始左侧或上侧比例。
+    pub fn default_ratio(mut self, ratio: f32) -> Self {
+        // 把动态输入收敛到运行时可维护的比例范围。
+        let ratio = Self::normalize_ratio(ratio);
+        // Splitter 文档契约固定拥有两个互补面板。
+        self.ratios = vec![ratio, 1.0 - ratio];
+        // 返回已经归一化的构建器。
+        self
+    }
+
     pub fn vertical(mut self, v: bool) -> Self {
         self.vertical = v;
         self
@@ -429,5 +439,49 @@ impl Splitter {
         } else {
             0.0
         }
+    }
+
+    // 把声明式初始比例收敛到稳定的双面板区间。
+    fn normalize_ratio(ratio: f32) -> f32 {
+        // 有限值按文档规定限制在闭区间内。
+        if ratio.is_finite() {
+            // 防止动态表达式破坏布局不变量。
+            ratio.clamp(0.0, 1.0)
+        } else {
+            // 非有限输入回退到文档默认等分比例。
+            0.5
+        }
+    }
+}
+
+// 验证公开构建器维护文档化双面板比例不变量。
+#[cfg(test)]
+mod tests {
+    // 引入当前模块公开组件。
+    use super::Splitter;
+
+    // 验证合法、越界与非有限初始比例的归一化结果。
+    #[test]
+    fn default_ratio_builds_normalized_two_panel_contract() {
+        // 构造常规三七比例。
+        let split = Splitter::new().default_ratio(0.3);
+        // 两个面板必须保留互补比例。
+        assert!((split.ratios()[0] - 0.3).abs() < f32::EPSILON);
+        // 互补面板允许浮点减法产生机器精度误差。
+        assert!((split.ratios()[1] - 0.7).abs() < f32::EPSILON);
+        // 越界动态值必须夹紧而不是破坏总和。
+        assert_eq!(
+            // 读取夹紧后的双面板比例。
+            Splitter::new().default_ratio(2.0).ratios(),
+            // 上界对应第一个面板占满。
+            &[1.0, 0.0]
+        );
+        // 非有限输入必须恢复文档默认值。
+        assert_eq!(
+            // 读取非有限输入的回退比例。
+            Splitter::new().default_ratio(f32::NAN).ratios(),
+            // 默认契约为均分。
+            &[0.5, 0.5]
+        );
     }
 }
