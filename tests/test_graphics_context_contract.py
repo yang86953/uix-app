@@ -152,6 +152,23 @@ class GraphicsContextContractTests(unittest.TestCase):
             # 禁止重新引入重复的 trait 方法实现。
             self.assertNotIn("fn graphics_backend(&self)", adapter_source)
 
+    # 校验生产 context 构造只接受完整 recipe 与运行时故障队列。
+    def test_internal_context_factory_has_no_single_backend_shortcut(self) -> None:
+        # 读取 native factory 的公开组合入口。
+        factory = (ROOT / "src/native/factory/mod.rs").read_text(encoding="utf-8")
+        # 读取 registry 的 recipe 校验与构造实现。
+        registry = (ROOT / "src/native/factory/registry.rs").read_text(encoding="utf-8")
+        # 内部 factory 不得恢复只接收 GraphicsApi 的兼容入口。
+        self.assertNotIn("fn create_gpu_context_with_backend", factory)
+        # registry 不得恢复选择同一 API 首行的 raw surface 构造入口。
+        self.assertNotIn("fn try_create_gpu_context", registry)
+        # 正式运行时构造必须继续接收完整 GraphicsRecipe。
+        self.assertIn("fn try_create_gpu_recipe_with_queue", registry)
+        # 正式运行时构造必须继续携带 callback 故障队列。
+        self.assertIn("pending_failures: PendingFailureQueue", registry)
+        # recipe 必须通过精确 registry 行查找，不能退化为 backend-only 查找。
+        self.assertIn("let entry = entry_for_recipe(recipe)", registry)
+
     # 校验 RHI surface resize 只通过 recipe 专用生命周期视图传播。
     def test_rhi_surface_resize_uses_dedicated_lifecycle_view(self) -> None:
         # 读取统一 context trait 与原生 resize helper。
