@@ -14,6 +14,13 @@ mod parse_fences;
 #[path = "parse_code_span.rs"]
 mod parse_code_span;
 
+// 尖括号自动链接校验独立归入链接解析辅助模块。
+#[path = "parse_autolink.rs"]
+mod parse_autolink;
+// 跨行扫描与 Setext 消费独立归入行解析辅助模块。
+#[path = "parse_lines.rs"]
+mod parse_lines;
+
 pub fn layout_rich_text_segments(
     segments: &[RichTextSegment],
     max_width: f32,
@@ -36,7 +43,7 @@ pub fn layout_rich_text_segments(
 
 /// 将 Markdown 内容解析为 RichTextSegment 列表。
 ///
-/// 当前批次覆盖围栏代码、内联代码、链接、HTTP(S) 自动链接、强调、删除线、下划线和换行。
+/// 当前覆盖围栏/内联代码、链接、ATX/Setext 标题、一级列表/引用、样式与换行。
 pub fn parse_rich_text(content: &str) -> Vec<RichTextSegment> {
     // 创建按文档顺序保存解析结果的段列表。
     let mut segments = Vec::new();
@@ -49,7 +56,7 @@ pub fn parse_rich_text(content: &str) -> Vec<RichTextSegment> {
         // 只有存在前置内容时才进入内联解析器。
         if !before.is_empty() {
             // 普通内容继续复用统一的内联解析路径。
-            parse_inline_text(before, &mut segments);
+            parse_lines::parse_inline_text(before, &mut segments);
         }
         // 只把围栏正文作为代码段内容，语言标注已经在边界辅助中跳过。
         // 统一 CRLF 与孤立回车为 LF，避免回车作为代码字形进入布局和复制内容。
@@ -64,35 +71,10 @@ pub fn parse_rich_text(content: &str) -> Vec<RichTextSegment> {
     // 处理最后一个围栏之后或未闭合围栏中的剩余 Markdown 内容。
     if !rest.is_empty() {
         // 统一交给内联解析器处理链接、样式与换行。
-        parse_inline_text(rest, &mut segments);
+        parse_lines::parse_inline_text(rest, &mut segments);
     }
     // 返回保持源文档顺序的段列表。
     segments
-}
-
-/// 解析内联 Markdown，并把显式换行转换为 NewLine 段。
-fn parse_inline_text(text: &str, segments: &mut Vec<RichTextSegment>) {
-    // 记录当前行在原始字符串中的起点。
-    let mut line_start = 0;
-    // 逐字符寻找显式换行，保留空行语义。
-    for (offset, ch) in text.char_indices() {
-        // 只把换行符本身转换为 NewLine，其他字符交给内联解析器。
-        if ch == '\n' {
-            // 兼容 Windows 文本中的 CRLF，避免把回车渲染出来。
-            let line = text[line_start..offset].trim_end_matches('\r');
-            // 解析当前行内的 Markdown 标记。
-            parse_inline_line(line, segments);
-            // 把源文档中的换行加入统一段模型。
-            segments.push(RichTextSegment::NewLine);
-            // 从换行之后继续解析下一行。
-            line_start = offset + ch.len_utf8();
-        }
-    }
-    // 解析最后一行，尾随换行对应的空行无需额外文本段。
-    if line_start < text.len() {
-        // 兼容没有换行结尾的普通 Markdown 内容。
-        parse_inline_line(&text[line_start..], segments);
-    }
 }
 
 /// 解析不含显式换行的一行 Markdown 内联内容。
@@ -218,7 +200,7 @@ fn parse_inline_element(
     // 尖括号 HTTP(S) 自动链接复用现有 Link 段和统一交互路径。
     if remaining.starts_with('<') {
         // 只接受具有受支持 scheme 且不含空白或控制字符的完整目标。
-        if let Some(url) = parse_http_autolink(remaining) {
+        if let Some(url) = parse_autolink::parse_http_autolink(remaining) {
             // 显示文本与提交目标都保留作者输入的原始 URL。
             segments.push(RichTextSegment::Link {
                 // 自动链接没有独立标签，直接显示 URL。
@@ -283,54 +265,6 @@ fn is_escaped_markdown_char(ch: char) -> bool {
         ch,
         '\\' | '`' | '*' | '_' | '[' | ']' | '(' | ')' | '<' | '>' | '~' | '+' | '#'
     )
-}
-
-// 解析尖括号包裹的 HTTP(S) 自动链接，并返回不含尖括号的原始 URL。
-fn parse_http_autolink(text: &str) -> Option<&str> {
-    // 自动链接必须从左尖括号开始。
-    let remaining = text.strip_prefix('<')?;
-    // 第一个右尖括号结束自动链接，未闭合输入保持字面文本。
-    let close = remaining.find('>')?;
-    // 提取尖括号内部的候选 URL。
-    let url = &remaining[..close];
-    // HTTP 与 HTTPS scheme 按 ASCII 大小写不敏感匹配，同时保留原文。
-    let scheme_len = if url
-        // 安全读取 HTTPS scheme 的 ASCII 前缀。
-        .get(..8)
-        // 仅在前缀完整匹配时接受 HTTPS。
-        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("https://"))
-    {
-        // HTTPS scheme 固定占八个 ASCII 字节。
-        8
-    } else if url
-        // 安全读取 HTTP scheme 的 ASCII 前缀。
-        .get(..7)
-        // 仅在前缀完整匹配时接受 HTTP。
-        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("http://"))
-    {
-        // HTTP scheme 固定占七个 ASCII 字节。
-        7
-    } else {
-        // 其他 scheme 继续作为普通文本处理。
-        return None;
-    };
-    // scheme 后必须存在目标内容，避免创建空交互链接。
-    if url.len() == scheme_len {
-        // 空目标保持作者输入的字面形式。
-        return None;
-    }
-    // 自动链接内部禁止空白、控制字符和嵌套左尖括号。
-    if url
-        // 逐 Unicode 字符检查确定性边界。
-        .chars()
-        // 任一非法字符都会让整个候选保持字面文本。
-        .any(|ch| ch.is_whitespace() || ch.is_control() || ch == '<')
-    {
-        // 不完整或歧义目标不进入链接交互链。
-        return None;
-    }
-    // 返回已验证且保持原始拼写的 URL。
-    Some(url)
 }
 
 /// 返回 Markdown 标记对应的 RichTextStyle 增量。
@@ -649,6 +583,11 @@ fn push_text_segment(content: &str, style: &RichTextStyle, segments: &mut Vec<Ri
 #[cfg(test)]
 #[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_heading_tests.rs"]
 mod heading_tests;
+
+// 从仓库测试目录加载 Setext 标题专项测试，锁定跨行消费与 EOF 边界。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_setext_tests.rs"]
+mod setext_tests;
 
 // 从仓库测试目录加载内联代码专项测试，覆盖 Markdown 空白边界。
 #[cfg(test)]
