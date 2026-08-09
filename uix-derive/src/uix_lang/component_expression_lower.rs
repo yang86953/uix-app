@@ -165,8 +165,12 @@ impl ComponentExpander {
             ExpressionKind::Object(fields) => {
                 // 按源码顺序降低全部字段值。
                 for field in fields {
+                    // 结构属性保留作者数字形状，由专用 codegen 决定目标类型。
+                    let authored_numbers = collect_number_sources(&field.value);
                     // 递归改写字段值中的绑定与调用。
                     self.transform_expression(&mut field.value, bindings, allow_set_state)?;
+                    // 恢复对象字段中被通用组件语义改写的数字源码。
+                    restore_number_sources(&mut field.value, &authored_numbers);
                 }
             }
             // 组件 number 语义统一为 f64，整数形态补充小数点。
@@ -315,6 +319,163 @@ impl ComponentExpander {
         };
         // 报告 setState 降低成功。
         Ok(())
+    }
+}
+
+// 收集表达式树中全部数字节点的作者源码。
+fn collect_number_sources(expression: &Expression) -> Vec<(super::SourceSpan, String)> {
+    // 保存按遍历顺序发现的数字。
+    let mut sources = Vec::new();
+    // 递归收集当前表达式。
+    visit_numbers(expression, &mut |number| {
+        // 只保存数字节点。
+        if let ExpressionKind::Number(source) = &number.kind {
+            // 记录稳定跨度与作者源码。
+            sources.push((number.span, source.clone()));
+        }
+    });
+    // 返回全部数字来源。
+    sources
+}
+
+// 按跨度恢复结构属性中的作者数字源码。
+fn restore_number_sources(expression: &mut Expression, sources: &[(super::SourceSpan, String)]) {
+    // 递归访问当前表达式中的数字节点。
+    visit_numbers_mut(expression, &mut |number| {
+        // 只处理数字节点。
+        if let ExpressionKind::Number(source) = &mut number.kind {
+            // 查找同一源码跨度的作者数字。
+            if let Some((_, authored)) = sources.iter().find(|(span, _)| *span == number.span) {
+                // 恢复精确作者形状。
+                *source = authored.clone();
+            }
+        }
+    });
+}
+
+// 递归只读访问表达式树中的全部节点。
+fn visit_numbers(expression: &Expression, visitor: &mut impl FnMut(&Expression)) {
+    // 先访问当前节点。
+    visitor(expression);
+    // 再按结构访问子节点。
+    match &expression.kind {
+        // 一元表达式访问操作数。
+        ExpressionKind::Unary { operand, .. } => visit_numbers(operand, visitor),
+        // 二元表达式访问两侧。
+        ExpressionKind::Binary { left, right, .. } => {
+            // 访问左侧。
+            visit_numbers(left, visitor);
+            // 访问右侧。
+            visit_numbers(right, visitor);
+        }
+        // 三元表达式访问条件与两分支。
+        ExpressionKind::Ternary {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            // 访问条件。
+            visit_numbers(condition, visitor);
+            // 访问真分支。
+            visit_numbers(then_branch, visitor);
+            // 访问假分支。
+            visit_numbers(else_branch, visitor);
+        }
+        // 成员访问递归对象。
+        ExpressionKind::Member { object, .. } => visit_numbers(object, visitor),
+        // 索引访问递归对象与下标。
+        ExpressionKind::Index { object, index } => {
+            // 访问对象。
+            visit_numbers(object, visitor);
+            // 访问下标。
+            visit_numbers(index, visitor);
+        }
+        // 调用访问目标与全部参数。
+        ExpressionKind::Call { callee, arguments } => {
+            // 访问调用目标。
+            visit_numbers(callee, visitor);
+            // 访问全部参数值。
+            for argument in arguments {
+                // 递归参数值。
+                visit_numbers(&argument.value, visitor);
+            }
+        }
+        // 对象访问全部字段值。
+        ExpressionKind::Object(fields) => {
+            // 按字段顺序访问。
+            for field in fields {
+                // 递归字段值。
+                visit_numbers(&field.value, visitor);
+            }
+        }
+        // 叶节点没有子表达式。
+        ExpressionKind::Identifier(_)
+        | ExpressionKind::Number(_)
+        | ExpressionKind::String(_)
+        | ExpressionKind::Boolean(_) => {}
+    }
+}
+
+// 递归可变访问表达式树中的全部节点。
+fn visit_numbers_mut(expression: &mut Expression, visitor: &mut impl FnMut(&mut Expression)) {
+    // 先访问当前节点。
+    visitor(expression);
+    // 再按结构访问子节点。
+    match &mut expression.kind {
+        // 一元表达式访问操作数。
+        ExpressionKind::Unary { operand, .. } => visit_numbers_mut(operand, visitor),
+        // 二元表达式访问两侧。
+        ExpressionKind::Binary { left, right, .. } => {
+            // 访问左侧。
+            visit_numbers_mut(left, visitor);
+            // 访问右侧。
+            visit_numbers_mut(right, visitor);
+        }
+        // 三元表达式访问条件与两分支。
+        ExpressionKind::Ternary {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            // 访问条件。
+            visit_numbers_mut(condition, visitor);
+            // 访问真分支。
+            visit_numbers_mut(then_branch, visitor);
+            // 访问假分支。
+            visit_numbers_mut(else_branch, visitor);
+        }
+        // 成员访问递归对象。
+        ExpressionKind::Member { object, .. } => visit_numbers_mut(object, visitor),
+        // 索引访问递归对象与下标。
+        ExpressionKind::Index { object, index } => {
+            // 访问对象。
+            visit_numbers_mut(object, visitor);
+            // 访问下标。
+            visit_numbers_mut(index, visitor);
+        }
+        // 调用访问目标与全部参数。
+        ExpressionKind::Call { callee, arguments } => {
+            // 访问调用目标。
+            visit_numbers_mut(callee, visitor);
+            // 访问全部参数值。
+            for argument in arguments {
+                // 递归参数值。
+                visit_numbers_mut(&mut argument.value, visitor);
+            }
+        }
+        // 对象访问全部字段值。
+        ExpressionKind::Object(fields) => {
+            // 按字段顺序访问。
+            for field in fields {
+                // 递归字段值。
+                visit_numbers_mut(&mut field.value, visitor);
+            }
+        }
+        // 叶节点没有子表达式。
+        ExpressionKind::Identifier(_)
+        | ExpressionKind::Number(_)
+        | ExpressionKind::String(_)
+        | ExpressionKind::Boolean(_) => {}
     }
 }
 

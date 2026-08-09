@@ -469,6 +469,85 @@ fn validates_window_controls_defaults_shape_and_attributes() {
     assert!(unknown_attribute.message.contains("action"));
 }
 
+// 验证 FloatButton 完整属性映射到现有公开运行时组件。
+#[test]
+fn generates_float_button_with_documented_contract() {
+    // 构造覆盖字符串表达式、四角、badge、事件与公共样式的标签。
+    let snapshot = generate(
+        r#"<FloatButton icon="message" description={label} tooltip="反馈" position="leftTop" badge={{ count: unread, dot: true }} @click="openFeedback" margin="4px" />"#,
+    )
+    // 完整文档契约必须生成成功。
+    .expect("FloatButton 应生成公开 Rust View");
+    // 必须调用现有 FloatButton 构建器。
+    assert!(snapshot.contains("FloatButton :: new"));
+    // 四角关键字必须映射公开 Placement。
+    assert!(snapshot.contains("Placement :: TopLeft"));
+    // 说明、提示和两个 badge 字段必须保留。
+    assert!(
+        snapshot.contains("description")
+            && snapshot.contains("tooltip")
+            && snapshot.contains("badge (unread)")
+            && snapshot.contains("badge_dot (true)")
+    );
+    // 点击与公共样式继续走统一 View 映射。
+    assert!(snapshot.contains("on_click_fn") && snapshot.contains("margin"));
+}
+
+// 验证 FloatButton 缺省值、叶子形状和专有属性诊断。
+#[test]
+fn validates_float_button_defaults_shape_and_attributes() {
+    // 缺省位置必须显式映射右下角。
+    let default = generate(r#"<FloatButton icon="message" />"#).expect("最小 FloatButton 应可生成");
+    // 检查文档默认 Placement。
+    assert!(default.contains("Placement :: BottomRight"));
+    // 缺失 icon 必须返回必填属性诊断。
+    let missing = generate(r#"<FloatButton />"#).expect_err("缺失 icon 必须失败");
+    // 诊断必须点名 icon。
+    assert!(missing.message.contains("icon"));
+    // 可见子节点必须被拒绝。
+    let child = generate(r#"<FloatButton icon="x">Text</FloatButton>"#)
+        // 提取叶子形状诊断。
+        .expect_err("FloatButton 子节点必须失败");
+    // 诊断必须说明叶子边界。
+    assert!(child.message.contains("不接受子节点"));
+    // 未知 position 必须列出合法集合。
+    let position = generate(r#"<FloatButton icon="x" position="center" />"#)
+        // 提取位置诊断。
+        .expect_err("未知 position 必须失败");
+    // 诊断必须包含未知值和合法值。
+    assert!(position.message.contains("center") && position.suggestion.contains("rightBottom"));
+    // badge 必须使用对象字面量。
+    let badge = generate(r#"<FloatButton icon="x" badge={count} />"#)
+        // 提取 badge 结构诊断。
+        .expect_err("非对象 badge 必须失败");
+    // 诊断必须指向对象字面量。
+    assert!(badge.message.contains("对象字面量"));
+    // badge 未知字段必须失败。
+    let unknown_field = generate(r#"<FloatButton icon="x" badge={{ total: 1 }} />"#)
+        // 提取未知字段诊断。
+        .expect_err("未知 badge 字段必须失败");
+    // 诊断必须点名字段。
+    assert!(unknown_field.message.contains("total"));
+    // 负数 count 必须失败。
+    let negative = generate(r#"<FloatButton icon="x" badge={{ count: -1 }} />"#)
+        // 提取 count 边界诊断。
+        .expect_err("负数 count 必须失败");
+    // 诊断必须说明非负约束。
+    assert!(negative.message.contains("不能为负数"));
+    // 非布尔 dot 必须失败。
+    let dot = generate(r#"<FloatButton icon="x" badge={{ dot: 1 }} />"#)
+        // 提取 dot 类型诊断。
+        .expect_err("非布尔 dot 必须失败");
+    // 诊断必须说明布尔类型。
+    assert!(dot.message.contains("布尔"));
+    // 未登记属性继续走统一拒绝路径。
+    let unknown = generate(r#"<FloatButton icon="x" mystery="value" />"#)
+        // 提取未知属性诊断。
+        .expect_err("未知 FloatButton 属性必须失败");
+    // 诊断必须点名属性。
+    assert!(unknown.message.contains("mystery"));
+}
+
 // 验证 If 与 For 生成真实 Rust 控制流、索引和稳定 key。
 #[test]
 fn generates_if_for_and_key_snapshot() {
