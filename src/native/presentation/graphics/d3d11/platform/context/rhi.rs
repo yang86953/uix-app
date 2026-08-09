@@ -78,6 +78,12 @@ impl GraphicsSurface for super::D3d11Context {
         Ok(self.token())
     }
 
+    // 读取当前 D3D11 swapchain surface 的 BGRA 像素。
+    fn read_surface_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
+        // 复用 context 私有的 staging texture 实现。
+        self.read_surface_pixels_result(x, y, width, height)
+    }
+
     // 只接受当前代际的 surface frame，并把提交交给 D3D11 Present。
     fn present(
         &mut self,

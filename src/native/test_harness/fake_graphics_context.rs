@@ -79,16 +79,6 @@ impl IGraphicsContext for FakeGraphicsContext {
         Ok(())
     }
 
-    fn read_pixels(
-        &mut self,
-        _x: i32,
-        _y: i32,
-        _width: i32,
-        _height: i32,
-    ) -> crate::core::Result<Vec<u32>> {
-        Ok(Vec::new())
-    }
-
     fn width(&self) -> i32 {
         self.state.width.get()
     }

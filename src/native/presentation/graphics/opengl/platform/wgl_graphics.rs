@@ -81,14 +81,6 @@ impl IGraphicsContext for WglContext {
         self.shutdown_result()
     }
 
-    // 读取当前 WGL framebuffer 的 RGBA 像素。
-    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>, Error> {
-        // readback 前确保 context current。
-        self.make_current_result()?;
-        // 委托给 OpenGL raster owner。
-        self.pipeline.read_pixels(x, y, width, height)
-    }
-
     // 返回当前 logical width。
     fn width(&self) -> i32 {
         // 读取 WGL context 缓存的逻辑宽度。

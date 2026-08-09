@@ -62,13 +62,6 @@ impl IGraphicsContext for MetalPixelUploadContext {
         self.shutdown_result()
     }
 
-    fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Result<Vec<u32>> {
-        Err(Error::new(
-            Errc::NotImplemented,
-            "MetalPixelUploadContext: native readback is not supported",
-        ))
-    }
-
     fn width(&self) -> i32 {
         self.width
     }

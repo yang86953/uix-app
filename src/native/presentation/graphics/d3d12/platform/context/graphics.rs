@@ -27,10 +27,6 @@ impl IGraphicsContext for D3d12Context {
         self.shutdown_result()
     }
 
-    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
-        self.read_pixels_result(x, y, width, height)
-    }
-
     fn width(&self) -> i32 {
         self.width
     }

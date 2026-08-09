@@ -96,10 +96,6 @@ pub trait IGraphicsContext {
     /// typed so recovery can retain the previous owner instead of logging only.
     fn try_shutdown(&mut self) -> Result<(), Error>;
 
-    /// Reads native pixels through the checked, thread-affine lifecycle
-    /// boundary. Readback failure is never represented as an empty pixel
-    /// buffer: callers must receive the typed error and retain recovery state.
-    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>, Error>;
     fn width(&self) -> i32;
     fn height(&self) -> i32;
 

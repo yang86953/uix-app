@@ -235,6 +235,14 @@ where
         Ok(self.token())
     }
 
+    // 读取当前 OpenGL drawable 的 RGBA 像素。
+    fn read_surface_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
+        // 回读前恢复 owner-thread current context。
+        self.rhi_make_current()?;
+        // 委托给共享 OpenGL raster owner。
+        self.rhi_pipeline_mut().read_pixels(x, y, width, height)
+    }
+
     // 只接受当前代际、当前 surface target 和最近一次提交。
     fn present(
         &mut self,

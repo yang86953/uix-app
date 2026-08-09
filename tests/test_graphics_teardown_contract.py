@@ -734,6 +734,80 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # capability profile 必须保留 Additive RHI 事实。
         self.assertIn("pub rhi_additive_blend: bool", present)
 
+    # 校验 surface readback 已成为事实声明的可选 thin RHI 能力。
+    def test_surface_readback_is_an_optional_thin_rhi_capability(self) -> None:
+        # 读取兼容 graphics context trait。
+        facade = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        # 读取 owner-thread 兼容转发门面。
+        thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
+        # 读取 thin RHI 契约。
+        rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        # 读取 D3D11 surface 与 capability 实现。
+        d3d11_surface = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi.rs").read_text(encoding="utf-8")
+        # 读取 D3D11 device capability 实现。
+        d3d11_device = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs").read_text(encoding="utf-8")
+        # 读取共享 OpenGL surface bridge。
+        opengl_surface = (ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs").read_text(encoding="utf-8")
+        # 读取共享 OpenGL capability profile。
+        opengl_rhi = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi.rs").read_text(encoding="utf-8")
+        # 读取 GPU backend 的测试诊断入口。
+        backend = (ROOT / "src/draw/backend/gpu/backend/impl_main.rs").read_text(encoding="utf-8")
+        # 读取 Vulkan 的显式 GFX-R5 诊断辅助。
+        vulkan = (ROOT / "src/native/presentation/graphics/vulkan/platform/context/graphics.rs").read_text(encoding="utf-8")
+        # 读取 GFX-R5 证据调用点。
+        gfx_r5 = (ROOT / "src/gfx_r5_support/evidence.rs").read_text(encoding="utf-8")
+        # 兼容 trait 不得重新声明 readback。
+        self.assertNotIn("fn read_pixels(", facade)
+        # owner-thread 兼容 wrapper 不得转发 readback。
+        self.assertNotIn("fn read_pixels(", thread_bound)
+        # 逐个核对原生 context wrapper 已退出旧入口。
+        for adapter in (
+            # D3D11 兼容实现。
+            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            # D3D12 兼容实现。
+            ROOT / "src/native/presentation/graphics/d3d12/platform/context/graphics.rs",
+            # Vulkan 兼容实现。
+            ROOT / "src/native/presentation/graphics/vulkan/platform/context/graphics.rs",
+            # Metal 兼容实现。
+            ROOT / "src/native/presentation/graphics/metal/platform/context.rs",
+            # WGL 兼容实现。
+            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            # EGL 兼容实现。
+            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+            # 测试 context 兼容实现。
+            ROOT / "src/native/test_harness/fake_graphics_context.rs",
+        ):
+            # 兼容实现不得私自复活旧 trait 方法。
+            self.assertNotIn("fn read_pixels(", adapter.read_text(encoding="utf-8"))
+        # capability 必须显式陈述可选 surface 回读事实。
+        self.assertIn("pub(crate) surface_readback: bool", rhi)
+        # 通用 GPU 基线默认不能宣称可回读。
+        self.assertIn("surface_readback: false", rhi)
+        # surface trait 必须提供 typed 可选操作。
+        self.assertIn("fn read_surface_pixels(", rhi)
+        # D3D11 必须如实启用 capability。
+        self.assertIn("capabilities.surface_readback = true;", d3d11_device)
+        # OpenGL 必须如实启用 capability。
+        self.assertIn("capabilities.surface_readback = true;", opengl_rhi)
+        # D3D11 surface 必须委托私有 staging 实现。
+        self.assertIn("self.read_surface_pixels_result(x, y, width, height)", d3d11_surface)
+        # 截取 OpenGL surface 回读方法。
+        opengl_readback = opengl_surface[opengl_surface.index("fn read_surface_pixels(") : opengl_surface.index("fn present(")]
+        # OpenGL 回读必须先恢复 current context。
+        self.assertLess(opengl_readback.index("self.rhi_make_current()?"), opengl_readback.index("self.rhi_pipeline_mut().read_pixels"))
+        # GPU backend 不得回退兼容 context readback。
+        self.assertNotIn("self.gpu_ctx.read_pixels", backend)
+        # GPU backend 必须检查 capability 事实。
+        self.assertIn("context.capabilities().surface_readback", backend)
+        # GPU backend 必须通过 thin RHI surface 执行回读。
+        self.assertIn("context.read_surface_pixels(0, 0, width, height)", backend)
+        # Vulkan pixel-upload readback 必须保留显式诊断名称。
+        self.assertIn("pub(crate) fn readback_pixels(", vulkan)
+        # GFX-R5 证据必须调用显式诊断辅助。
+        self.assertIn(".readback_pixels(0, 0, 1, 1)", gfx_r5)
+        # GFX-R5 不得继续依赖兼容 trait 方法。
+        self.assertNotIn(".read_pixels(", gfx_r5)
+
     def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
         # 组合读取 Vulkan context 的拆分模块，以保持顺序审计语义。
         context = read_rust_module(VULKAN_CONTEXT)

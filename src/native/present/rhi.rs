@@ -199,6 +199,8 @@ pub(crate) struct GraphicsCapabilities {
     pub(crate) additive_blend: bool,
     // 记录主 framebuffer 是否在提交间保留。
     pub(crate) retained_framebuffer: bool,
+    // 记录 surface 是否支持同步像素回读。
+    pub(crate) surface_readback: bool,
     // 记录 surface 是否支持窄 partial present。
     pub(crate) partial_present: bool,
     // 记录 surface 是否能提供可靠的遮挡状态。
@@ -222,6 +224,8 @@ impl GraphicsCapabilities {
             premultiplied_alpha_blend: true,
             additive_blend: true,
             retained_framebuffer: false,
+            // 可选 surface 回读必须由具体 adapter 显式开启。
+            surface_readback: false,
             partial_present: false,
             occlusion: false,
         }
@@ -304,6 +308,8 @@ mod capability_profile_tests {
         let baseline = GraphicsCapabilities::full_gpu_baseline();
         // 默认基线必须保持 retained 关闭。
         assert!(!baseline.retained_framebuffer);
+        // 默认基线不能假定 adapter 支持 surface 回读。
+        assert!(!baseline.surface_readback);
         // 构造已实现跨帧目标的生产 profile。
         let retained = GraphicsCapabilities::retained_gpu_baseline();
         // 生产 profile 必须明确宣告 retained 能力。
@@ -794,6 +800,23 @@ pub(crate) trait GraphicsSurface {
 
     // 重建 surface 并推进代际。
     fn resize(&mut self, extent: RhiExtent) -> Result<SurfaceToken>;
+
+    // 可选地同步读取当前 surface 的像素，默认返回 typed 未实现错误。
+    fn read_surface_pixels(
+        // 借用 owner-thread surface。
+        &mut self,
+        // 接收回读区域左上角横坐标。
+        _x: i32,
+        // 接收回读区域左上角纵坐标。
+        _y: i32,
+        // 接收回读区域宽度。
+        _width: i32,
+        // 接收回读区域高度。
+        _height: i32,
+    ) -> Result<Vec<u32>> {
+        // 未声明能力的 adapter 不得伪造空像素结果。
+        Err(rhi_not_implemented("read_surface_pixels"))
+    }
 
     // 将一次 device submit 最终呈现到原生窗口。
     fn present(

@@ -235,6 +235,8 @@ impl GraphicsDevice for D3d11Context {
         capabilities.texture_region_move = true;
         // D3D11 scissor clear 已接入 FramePlan 局部清理。
         capabilities.clear_rect = true;
+        // D3D11 staging texture 已实现同步 surface 回读。
+        capabilities.surface_readback = true;
         // DXGI surface 能提供可靠的遮挡状态。
         capabilities.occlusion = true;
         // 窄 present 尚未启用，继续沿用基线中的 false。

@@ -427,11 +427,6 @@ impl IGraphicsContext for EglContext {
         self.shutdown_result()
     }
 
-    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>, Error> {
-        self.make_current_result()?;
-        self.pipeline.read_pixels(x, y, width, height)
-    }
-
     fn width(&self) -> i32 {
         self.width
     }

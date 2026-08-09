@@ -195,12 +195,6 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
         self.with_owner("try_shutdown", |inner| inner.try_shutdown())
     }
 
-    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
-        self.with_owner("read_pixels", |inner| {
-            inner.read_pixels(x, y, width, height)
-        })
-    }
-
     fn width(&self) -> i32 {
         self.width
     }
