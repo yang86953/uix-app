@@ -2,11 +2,11 @@
 
 > **定位**：UIX Lang 是 UIX 框架的 UI 描述语言，也是**使用方编写界面的推荐方式（产品方向声明）**——写应用时用 uix-lang 描述界面结构与样式，编译时 uix-app 框架自动将 `.uix` 文档转换为 Rust 声明式代码（过程宏 / 构建期转换），运行期零解释器开销。本文档是语言规范的唯一当前位置。
 >
-> **状态声明**：本规范包含**已实现能力与目标设计**。界面描述支持两种方式（见[定位与原则](../产品/定位与原则.md#定位)）：uix-lang 为**推荐方式**，Rust 声明式 API 为**支持方式**。公开 `uix!` 已支持内嵌源码与相对调用 crate 的 `.uix` 文件，并在编译期生成 Rust View；转换器只接受已经登记的标签、属性与样式映射，未登记或标记为规划中的能力会产生带来源位置和修复建议的编译错误，不会静默降级。实现差距由 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 跟踪。
+> **状态声明**：本规范包含**已实现能力与目标设计**。界面描述支持两种方式（见[定位与原则](../产品/定位与原则.md#定位)）：uix-lang 为**推荐方式**，Rust 声明式 API 为**支持方式**。公开 `uix!` 已支持内嵌源码与相对调用 crate 的 `.uix` 文件，并在编译期生成 `ViewNode`；当前已登记 `Text`、`Label`、`Button`、`Container`、`Row`、`Column` 与 `Icon`。完整 `App` 应用入口及其他未登记组件仍为规划中；转换器会对未登记或规划中能力产生带来源位置和修复建议的编译错误，不会静默降级。实现差距由 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 跟踪。
 
 ## 为什么需要 UIX Lang
 
-UIX 产品原则是「Rust 优先——没有第二门运行语言」，Rust 声明式 API 是当前唯一可用入口。UIX Lang 让**应用开发以 uix-lang 描述 UI 为主路径**：`.uix` 文档是应用源码的一部分，编译时由 uix-app 框架自动转换为 Rust 声明式代码，写界面不再直接面对组件构造代码。
+UIX 产品原则是「Rust 优先——没有第二门运行语言」。公开 `uix!` 已是已登记 View 子集的可用编译期入口；Rust 声明式 API 继续持有应用 / 窗口生命周期和尚未登记的完整组件能力。UIX Lang 让**应用开发以 uix-lang 描述 UI 为主路径**：`.uix` 文档是应用源码的一部分，编译时由 uix-app 框架自动转换为 Rust 声明式代码，运行时不再解析界面文本。
 
 ```text
 .uix 文档（应用源码）──uix-app 编译期转换（uix! 宏）──> Rust 声明式代码 ──cargo 编译──> 原生可执行文件
@@ -50,13 +50,13 @@ UIX Lang 继承产品四原则（见[定位与原则](../产品/定位与原则.
 
 UIX Lang 是 UIX Rust API 的文本投影，**转换由 uix-app 框架在编译时自动完成**：转换器按下列规则把 `.uix` 结构展开为 Rust 声明式代码，再交由 cargo 编译；不生成任何运行期解释逻辑。
 
-| UIX Lang | Rust API |
-|---|---|
-| `<Button class="primary" @click="...">` | 编译期展开样式类后生成 `button("...").map_style(...).on_click(...)` |
-| `styleName { ... }` 样式类 | 编译期展开 `extends` 与同名属性覆盖，再精确更新 `Style` |
-| `@theme light { ... }` | 主题令牌（`ThemeTokens`） |
-| `<Component name="X">` | `component!` 宏或函数组件 |
-| `<For {item} in {items}>` | `for` 循环生成 `ViewNode` 列表 |
+| UIX Lang | Rust API | 当前状态 |
+|---|---|---|
+| `<Button class="primary" @click="...">` | 编译期展开样式类后生成 `button("...").map_style(...).on_click(...)` | 已实现（限已登记属性与事件） |
+| `styleName { ... }` 样式类 | 编译期展开 `extends` 与同名属性覆盖，再精确更新 `Style` | 已实现（限已登记样式属性） |
+| `@theme light { ... }` | 主题令牌（`ThemeTokens`） | 语法解析已实现，主题生成仍为目标设计 |
+| `<Component name="X">` | 编译期展开 props、state、回调与组件体 | 已实现（组件体限已登记标签） |
+| `<For {item} in {items}>` | `for` 循环生成 `ViewNode` 列表 | 已实现（须位于容器内） |
 
 本规范只描述语言本身；Rust API 的用法以[使用文档](../使用.md)为权威。
 
