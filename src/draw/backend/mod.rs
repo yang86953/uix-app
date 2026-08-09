@@ -7,7 +7,6 @@ pub(crate) mod rhi_renderer;
 
 pub mod contract;
 pub mod cpu;
-pub mod factory;
 pub mod gpu;
 
 pub use crate::core::DamageRegion;
