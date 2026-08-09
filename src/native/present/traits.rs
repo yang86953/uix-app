@@ -89,7 +89,6 @@ pub trait IGraphicsContext {
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error>;
-    fn make_current(&mut self) -> Result<(), Error>;
 
     /// Checked shutdown boundary for thread-affine native resources.
     ///

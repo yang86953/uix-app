@@ -191,8 +191,6 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
         Ok(())
     }
 
-    forward_result!(make_current() -> ());
-
     fn try_shutdown(&mut self) -> Result<()> {
         self.with_owner("try_shutdown", |inner| inner.try_shutdown())
     }

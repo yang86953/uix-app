@@ -168,10 +168,6 @@ impl Renderer {
         }
     }
 
-    fn make_backend_current(&mut self) -> Result<(), Error> {
-        self.session.backend_mut().make_current()
-    }
-
     fn present_uploaded_pixels(&mut self, present_damage: &DamageRegion) -> Result<(), Error> {
         let Presentation::PixelUpload(upload) = &mut self.presentation else {
             return Err(Error::new(
@@ -253,10 +249,8 @@ impl RenderTarget for Renderer {
         self.sync_clear_color();
         match &mut self.presentation {
             Presentation::External => self.session.initialize(width, height),
-            Presentation::BackendManaged => {
-                self.session.initialize_prepared(width, height)?;
-                self.session.backend_mut().make_current()
-            }
+            // 原生 GPU context 已由 factory 构造完成；首帧准备统一在 session.begin_frame 执行。
+            Presentation::BackendManaged => self.session.initialize_prepared(width, height),
             Presentation::PixelUpload(upload) => {
                 let actual_width = upload.context.width().max(1);
                 let actual_height = upload.context.height().max(1);
@@ -283,10 +277,8 @@ impl RenderTarget for Renderer {
         self.sync_clear_color();
         match &mut self.presentation {
             Presentation::External => self.session.resize(width, height),
-            Presentation::BackendManaged => {
-                self.session.resize(width, height)?;
-                self.session.backend_mut().make_current()
-            }
+            // resize 只更新 surface；后续帧由 prepare_frame 恢复 owner-context 状态。
+            Presentation::BackendManaged => self.session.resize(width, height),
             Presentation::PixelUpload(upload) => {
                 upload.context.resize(width.max(1), height.max(1))?;
                 let actual_width = upload.context.width().max(1);
@@ -300,11 +292,6 @@ impl RenderTarget for Renderer {
 
     fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
         self.sync_clear_color();
-        if matches!(self.presentation.kind(), PresentationKind::BackendManaged) {
-            if let Err(error) = self.make_backend_current() {
-                return RenderOutcome::Failed(GraphicsFailure::from_error(error));
-            }
-        }
         self.session.begin_frame(strategy)
     }
 

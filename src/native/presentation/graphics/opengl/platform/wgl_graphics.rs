@@ -46,12 +46,6 @@ impl IGraphicsContext for WglContext {
         self.resize_surface_drawable(drawable)
     }
 
-    // 切换当前线程的 WGL context。
-    fn make_current(&mut self) -> Result<(), Error> {
-        // 保持 typed native error 语义。
-        self.make_current_result()
-    }
-
     // 统一 present 入口只接受 native swapchain frame。
     fn present(&mut self, frame: &PresentFrame) -> Result<(), Error> {
         // 按 present payload 区分 native swapchain 与 CPU pixel buffer。

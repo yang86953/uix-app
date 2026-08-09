@@ -10,7 +10,6 @@ pub struct FakeGraphicsContextState {
     pub width: Cell<i32>,
     pub height: Cell<i32>,
     pub initialized: bool,
-    pub make_current_calls: usize,
     pub present_calls: usize,
     pub last_present_damage: Option<PresentDamage>,
     pub shutdown_called: bool,
@@ -23,7 +22,6 @@ impl FakeGraphicsContextState {
             height: Cell::new(height),
             // fake context 与生产 adapter 一样在构造成功后立即可用。
             initialized: true,
-            make_current_calls: 0,
             present_calls: 0,
             last_present_damage: None,
             shutdown_called: false,
@@ -72,12 +70,6 @@ impl IGraphicsContext for FakeGraphicsContext {
     fn resize(&mut self, w: i32, h: i32) -> crate::core::Result<()> {
         self.state.width.set(w);
         self.state.height.set(h);
-
-        Ok(())
-    }
-
-    fn make_current(&mut self) -> crate::core::Result<()> {
-        self.state.make_current_calls += 1;
 
         Ok(())
     }

@@ -339,6 +339,33 @@ impl EglContext {
         Ok(())
     }
 
+    // 在 EGL adapter 内部恢复 owner-thread 的原生 current context。
+    fn make_current_result(&self) -> Result<(), Error> {
+        // 委托给 EGL 实例并保留 typed platform error。
+        self.egl
+            // 同时绑定 draw 与 read surface，供 RHI device 和 present 共用。
+            .make_current(
+                // 使用构造阶段验证过的 display。
+                self.display,
+                // 绑定当前 window draw surface。
+                Some(self.surface),
+                // 绑定同一 window read surface。
+                Some(self.surface),
+                // 恢复当前 context。
+                Some(self.context),
+            )
+            // 把原生错误收敛为统一平台错误。
+            .map_err(|err| {
+                // 返回稳定错误分类与 EGL 诊断。
+                Error::new(
+                    // current 失败属于平台生命周期错误。
+                    Errc::PlatformError,
+                    // 保留底层 EGL 状态文本。
+                    format!("EglContext: eglMakeCurrent failed: {err:?}"),
+                )
+            })
+    }
+
     // 直接更新 EGL surface、Wayland window 和 OpenGL RHI 的 drawable 状态。
     fn resize_surface_extent(&mut self, width: i32, height: i32) -> Result<(), Error> {
         // 相同物理尺寸无需重复触碰 Wayland 或推进 surface generation。
@@ -392,24 +419,8 @@ impl IGraphicsContext for EglContext {
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        self.make_current()?;
+        self.make_current_result()?;
         self.resize_surface_extent(width, height)
-    }
-
-    fn make_current(&mut self) -> Result<(), Error> {
-        self.egl
-            .make_current(
-                self.display,
-                Some(self.surface),
-                Some(self.surface),
-                Some(self.context),
-            )
-            .map_err(|err| {
-                Error::new(
-                    Errc::PlatformError,
-                    format!("EglContext: eglMakeCurrent failed: {err:?}"),
-                )
-            })
     }
 
     fn try_shutdown(&mut self) -> Result<(), Error> {
@@ -417,7 +428,7 @@ impl IGraphicsContext for EglContext {
     }
 
     fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>, Error> {
-        self.make_current()?;
+        self.make_current_result()?;
         self.pipeline.read_pixels(x, y, width, height)
     }
 
@@ -436,7 +447,7 @@ impl IGraphicsContext for EglContext {
             // swapchain 提交先恢复 owner-thread current context。
             PresentFrame::Swapchain { damage } => {
                 // 保持与旧默认入口相同的 current 前置条件。
-                self.make_current()?;
+                self.make_current_result()?;
                 // 统一 presenter 也必须消费共享 OpenGL lower surface-lost 注入。
                 #[cfg(feature = "test-harness")]
                 if self.pipeline.rhi_take_surface_lost_for_test() {
@@ -499,7 +510,8 @@ impl OpenGlRhiHost for EglContext {
 
     // 切换到 EGL owner-thread context。
     fn rhi_make_current(&mut self) -> Result<(), Error> {
-        <Self as IGraphicsContext>::make_current(self)
+        // current 只作为 adapter 私有 RHI host 操作存在。
+        self.make_current_result()
     }
 
     // 返回 EGL surface generation。

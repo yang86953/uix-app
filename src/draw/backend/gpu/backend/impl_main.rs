@@ -12,6 +12,8 @@ use super::{device_pixel_ratio_from_context, logical_extent_from_context};
 use crate::core::{Errc, Error, PresentDamageTracker};
 use crate::draw::backend::contract::RenderBackend;
 use crate::draw::geometry::types::ImageHandle;
+// 使用薄 RHI 的设备维护入口承接每帧 owner-context 准备。
+use crate::native::present::rhi::GraphicsDevice;
 use crate::native::present::{IGraphicsContext, PresentMode, RasterMode};
 
 impl GpuBackend {
@@ -23,6 +25,22 @@ impl GpuBackend {
 
     pub(crate) fn new_gpu_only(gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
         Self::new_with_mode(gpu_ctx, true, true)
+    }
+
+    // 在通用 renderer 不感知平台 current API 的前提下准备本帧 RHI device。
+    pub(super) fn prepare_rhi_device(&mut self) -> Result<(), Error> {
+        // 生产 GPU backend 的构造门禁已经要求组合 thin RHI 始终存在。
+        let Some(context) = self.gpu_ctx.rhi_context() else {
+            // 构造后的能力消失属于状态破坏，而不是可降级的功能缺口。
+            return Err(Error::new(
+                // 使用稳定状态错误触发既有恢复流程。
+                Errc::InvalidState,
+                // 明确指出 owner context 已丢失。
+                "GPU backend lost its thin RHI context before frame preparation",
+            ));
+        };
+        // adapter 在这里完成设备健康检查；OpenGL 同时恢复 owner context current。
+        GraphicsDevice::maintain(context)
     }
 
     // 把可控 device-lost 注入送入当前 owner-thread 的薄 RHI。

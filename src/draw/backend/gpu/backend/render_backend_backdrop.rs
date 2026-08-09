@@ -174,11 +174,11 @@ impl GpuBackend {
             // 向无错误返回值的场景边界报告失败。
             return false;
         }
-        // OpenGL adapter 的 RHI 复制仍要求 owner-thread context 处于 current 状态。
-        if let Err(error) = self.gpu_ctx.make_current() {
-            // 生命周期失败时不进入资源创建事务。
+        // overlay 的无帧 RHI 事务也复用同一设备准备入口。
+        if let Err(error) = self.prepare_rhi_device() {
+            // 设备维护失败时不进入资源创建事务。
             tracing::warn!(
-                "GpuBackend: RHI overlay backdrop snapshot make_current failed: {}",
+                "GpuBackend: RHI overlay backdrop snapshot device preparation failed: {}",
                 error.short_what()
             );
             // 没有创建新纹理，场景可安全退回整树重绘。
@@ -240,11 +240,11 @@ impl GpuBackend {
             // resize 或 recovery 后交由场景整树重绘。
             return false;
         }
-        // OpenGL adapter 的 RHI 恢复复制也必须在 current context 上执行。
-        if let Err(error) = self.gpu_ctx.make_current() {
+        // 恢复复制同样通过 thin RHI device maintenance 准备 owner context。
+        if let Err(error) = self.prepare_rhi_device() {
             // 保留快照 owner，等待场景释放或下一次恢复。
             tracing::warn!(
-                "GpuBackend: RHI overlay backdrop restore make_current failed: {}",
+                "GpuBackend: RHI overlay backdrop restore device preparation failed: {}",
                 error.short_what()
             );
             // begin_frame 的清理状态保持不变，后续整树重绘仍安全。

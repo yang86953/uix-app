@@ -13,10 +13,6 @@ impl IGraphicsContext for D3d12Context {
         self.resize_result(width, height)
     }
 
-    fn make_current(&mut self) -> Result<()> {
-        self.begin_commands()
-    }
-
     fn present(&mut self, frame: &PresentFrame<'_>) -> Result<()> {
         match frame {
             PresentFrame::Swapchain { .. } => self.present_result(),

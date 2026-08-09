@@ -58,10 +58,6 @@ impl IGraphicsContext for MetalPixelUploadContext {
         Ok(())
     }
 
-    fn make_current(&mut self) -> Result<()> {
-        Ok(())
-    }
-
     fn try_shutdown(&mut self) -> Result<()> {
         self.shutdown_result()
     }

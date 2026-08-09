@@ -173,8 +173,10 @@ pub trait RenderBackend {
 
     fn surface(&mut self) -> &mut dyn DrawSurface;
 
-    /// Bind or begin recording against the backend's current graphics target.
-    fn make_current(&mut self) -> Result<(), Error> {
+    /// 在一帧开始前准备后端自有状态。
+    /// 原生 GPU 后端把该 hook 映射到薄 RHI 设备维护，
+    /// 不向 renderer 暴露平台 current-context 操作。
+    fn prepare_frame(&mut self) -> Result<(), Error> {
         Ok(())
     }
 
