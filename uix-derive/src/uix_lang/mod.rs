@@ -1,5 +1,7 @@
 // 定义转换器内部共享的带跨度语法树。
 mod ast;
+// 定义六类文档内置组件的已登记与规划中矩阵。
+mod builtin_matrix;
 // 定义核心元素、属性、事件与控制流的 Rust View 代码生成。
 mod codegen;
 // 集中验证代码生成快照、消费者编译与拒绝路径。
@@ -58,6 +60,8 @@ mod value_codegen;
 
 // 向后续转换 Gate 暴露核心语法树类型。
 pub(crate) use ast::*;
+// 向核心 View 生成器暴露规划中内置组件诊断。
+pub(crate) use builtin_matrix::planned_builtin_diagnostic;
 // 向过程宏入口暴露核心 View 生成函数。
 pub(crate) use codegen::generate_view;
 // 向组件解析与代码生成暴露结构化组件声明。
