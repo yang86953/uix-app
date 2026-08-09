@@ -47,6 +47,26 @@ impl GpuRecipeOwner {
                 format!("GraphicsBackend {backend} GPU recipe lacks a thin RHI owner"),
             ));
         }
+        // 构造期必须同时证明 GPU resize 的专用 lifecycle owner 存在。
+        if context.rhi_surface_lifecycle().is_none() {
+            // 保存 lifecycle 缺失错误，供 cleanup 失败时链接原始原因。
+            let error = Error::new(
+                // recipe 已声明 GPU 但缺失必需 owner，属于构造状态破坏。
+                Errc::InvalidState,
+                // 保留具体 backend 便于诊断错误 adapter 注册。
+                format!(
+                    "GraphicsBackend {} GPU recipe lacks an RHI surface lifecycle",
+                    caps.backend
+                ),
+            );
+            // 构造失败前检查式释放原生资源并保留原始原因。
+            return match context.try_shutdown() {
+                // shutdown 成功时返回 lifecycle 缺失错误。
+                Ok(()) => Err(error),
+                // shutdown 失败时链接 lifecycle 缺失错误。
+                Err(cleanup_error) => Err(cleanup_error.with_source(error)),
+            };
+        }
         // 只有通过完整门禁的 context 才能进入 draw backend。
         Ok(Self { caps, context })
     }
@@ -110,9 +130,15 @@ mod tests {
     use super::GpuRecipeOwner;
     // 引入错误分类与 coherency 事实。
     use crate::core::{Errc, PresentCoherency};
+    // 引入最小 thin RHI 测试适配器所需契约和值。
+    use crate::native::present::rhi::{
+        DrawPacket, GraphicsCapabilities, GraphicsDevice, GraphicsSurface, LoadAction,
+        RenderTargetHandle, RhiExtent, RhiScissor, RhiViewport, SubmissionHandle, SurfaceFrame,
+        SurfaceToken, TextureCopy,
+    };
     // 引入最小测试 context 所需契约。
     use crate::native::present::{
-        GraphicsApi, GraphicsContextCaps, IGraphicsContext, PresentSurface,
+        GraphicsApi, GraphicsContextCaps, IGraphicsContext, PresentDamage, PresentSurface,
     };
 
     // 提供不暴露 thin RHI 的最小 context。
@@ -121,6 +147,105 @@ mod tests {
         shutdown: Rc<Cell<bool>>,
         // 控制测试 context 声明的静态 recipe。
         caps: GraphicsContextCaps,
+        // 控制测试 context 是否暴露组合 thin RHI。
+        expose_rhi: bool,
+    }
+
+    // 为 lifecycle 缺失场景提供最小 device 事实。
+    impl GraphicsDevice for MissingRhiContext {
+        // 返回满足 GPU owner 类型要求的事实能力快照。
+        fn capabilities(&self) -> GraphicsCapabilities {
+            // 测试不执行 probe，只需提供稳定 GPU baseline。
+            GraphicsCapabilities::full_gpu_baseline()
+        }
+
+        // 接受最小测试 render pass；owner 构造不会执行该方法。
+        fn begin_render_pass(
+            // 借用测试 device owner。
+            &mut self,
+            // 忽略未执行的 render target。
+            _target: RenderTargetHandle,
+            // 忽略未执行的 load action。
+            _load: LoadAction,
+        ) -> crate::core::Result<()> {
+            // 最小适配器固定报告成功。
+            Ok(())
+        }
+
+        // 接受最小测试 viewport；owner 构造不会执行该方法。
+        fn set_viewport(&mut self, _viewport: RhiViewport) -> crate::core::Result<()> {
+            // 最小适配器固定报告成功。
+            Ok(())
+        }
+
+        // 接受最小测试 scissor；owner 构造不会执行该方法。
+        fn set_scissor(&mut self, _scissor: Option<RhiScissor>) -> crate::core::Result<()> {
+            // 最小适配器固定报告成功。
+            Ok(())
+        }
+
+        // 接受最小测试 draw packet；owner 构造不会执行该方法。
+        fn draw(&mut self, _packet: DrawPacket) -> crate::core::Result<()> {
+            // 最小适配器固定报告成功。
+            Ok(())
+        }
+
+        // 接受最小测试 texture copy；owner 构造不会执行该方法。
+        fn copy_texture(&mut self, _copy: TextureCopy) -> crate::core::Result<()> {
+            // 最小适配器固定报告成功。
+            Ok(())
+        }
+
+        // 结束最小测试 render pass；owner 构造不会执行该方法。
+        fn end_render_pass(&mut self) -> crate::core::Result<()> {
+            // 最小适配器固定报告成功。
+            Ok(())
+        }
+
+        // 返回固定测试 submission；owner 构造不会执行该方法。
+        fn submit(&mut self) -> crate::core::Result<SubmissionHandle> {
+            // 使用非零不透明 submission handle。
+            Ok(SubmissionHandle::from_raw(1))
+        }
+    }
+
+    // 为 lifecycle 缺失场景提供不触碰真实 OS surface 的最小契约。
+    impl GraphicsSurface for MissingRhiContext {
+        // 返回固定测试 surface token。
+        fn token(&self) -> SurfaceToken {
+            // 使用 1×1 正 extent 与初始代际。
+            SurfaceToken::new(0, RhiExtent::new(1, 1))
+        }
+
+        // 返回固定 acquired frame；owner 构造不会执行该方法。
+        fn acquire(&mut self) -> crate::core::Result<SurfaceFrame> {
+            // 使用非零不透明 target handle。
+            Ok(SurfaceFrame::new(
+                self.token(),
+                RenderTargetHandle::from_raw(1),
+            ))
+        }
+
+        // 返回请求 extent 的下一代 token；owner 构造不会执行该方法。
+        fn resize(&mut self, extent: RhiExtent) -> crate::core::Result<SurfaceToken> {
+            // 保留测试传入 extent 并推进代际。
+            Ok(SurfaceToken::new(1, extent))
+        }
+
+        // 接受最小测试提交；owner 构造不会执行该方法。
+        fn present(
+            // 借用测试 surface owner。
+            &mut self,
+            // 忽略未执行的 acquired frame。
+            _frame: SurfaceFrame,
+            // 忽略未执行的 submission handle。
+            _submission: SubmissionHandle,
+            // 忽略未执行的 damage。
+            _damage: PresentDamage,
+        ) -> crate::core::Result<()> {
+            // 最小适配器固定报告成功。
+            Ok(())
+        }
     }
 
     // 实现构造门禁消费的最小兼容 context 契约。
@@ -129,6 +254,15 @@ mod tests {
         fn caps(&self) -> GraphicsContextCaps {
             // 复制无动态状态的能力快照。
             self.caps
+        }
+
+        // 按测试场景选择是否暴露组合 thin RHI。
+        fn rhi_context(
+            // 借用测试 context。
+            &mut self,
+        ) -> Option<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
+            // 只有 lifecycle 缺失用例需要越过 thin RHI 门禁。
+            self.expose_rhi.then_some(self)
         }
 
         // 返回稳定的最小 surface 元数据。
@@ -157,6 +291,8 @@ mod tests {
             shutdown: Rc::clone(&shutdown),
             // 使用合法但不属于 GPU backend 的 PixelUpload recipe。
             caps: GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan),
+            // recipe 门禁会先拒绝，无需暴露 thin RHI。
+            expose_rhi: false,
         };
         // 尝试构造 GPU owner 并取得稳定失败。
         let result = GpuRecipeOwner::try_new(Box::new(context));
@@ -182,10 +318,39 @@ mod tests {
                 // 测试只需要稳定的完整重绘 coherency。
                 PresentCoherency::FullOnly,
             ),
+            // 让该用例停在 thin RHI 门禁。
+            expose_rhi: false,
         };
         // 尝试构造 GPU owner 并取得稳定失败。
         let result = GpuRecipeOwner::try_new(Box::new(context));
         // 必需 thin RHI 缺失必须保持状态错误分类。
+        assert!(matches!(result, Err(error) if error.code() == Errc::InvalidState));
+        // 构造拒绝前必须检查式关闭 native owner。
+        assert!(shutdown.get());
+    }
+
+    // 验证有 thin RHI 但缺少 resize lifecycle 的 context 仍在构造期被拒绝。
+    #[test]
+    fn rejects_gpu_recipe_without_surface_lifecycle_owner() {
+        // 保存 owner 消费后仍可观察的关闭标记。
+        let shutdown = Rc::new(Cell::new(false));
+        // 构造暴露组合 RHI 但不实现 RhiSurfaceLifecycle 的错误 context。
+        let context = MissingRhiContext {
+            // 共享关闭状态给测试断言。
+            shutdown: Rc::clone(&shutdown),
+            // 声明正式 GPU-native × swapchain recipe。
+            caps: GraphicsContextCaps::gpu_native_swapchain(
+                // 使用默认 Windows 参考 backend 身份。
+                GraphicsApi::D3d11,
+                // 测试只需要稳定的完整重绘 coherency。
+                PresentCoherency::FullOnly,
+            ),
+            // 越过 thin RHI 门禁以精确触发 lifecycle 缺失。
+            expose_rhi: true,
+        };
+        // 尝试构造 GPU owner 并取得稳定失败。
+        let result = GpuRecipeOwner::try_new(Box::new(context));
+        // 必需 lifecycle 缺失必须保持状态错误分类。
         assert!(matches!(result, Err(error) if error.code() == Errc::InvalidState));
         // 构造拒绝前必须检查式关闭 native owner。
         assert!(shutdown.get());
