@@ -97,6 +97,11 @@ mod rate_codegen;
 // 集中验证 Rate 生成与拒绝路径。
 #[cfg(test)]
 mod rate_codegen_tests;
+// 定义 Checkbox 标签、禁用与双向勾选的公开 API 代码生成边界。
+mod checkbox_codegen;
+// 集中验证 Checkbox 生成与拒绝路径。
+#[cfg(test)]
+mod checkbox_codegen_tests;
 // 定义 FloatButton 内置组件的公开 API 代码生成边界。
 mod float_button_codegen;
 // 定义布局容器、Row/Col 栅格与 Grid/Col 的公开 API 代码生成边界。
@@ -193,6 +198,8 @@ pub(crate) use slider_codegen::generate_slider;
 pub(crate) use range_slider_codegen::generate_range_slider;
 // 向核心元素生成器暴露 Rate 专用映射。
 pub(crate) use rate_codegen::generate_rate;
+// 向核心元素生成器暴露 Checkbox 专用映射。
+pub(crate) use checkbox_codegen::generate_checkbox;
 // 向核心元素生成器暴露 FloatButton 专用映射。
 pub(crate) use float_button_codegen::generate_float_button;
 // 向核心元素生成器暴露布局组件专用映射。
