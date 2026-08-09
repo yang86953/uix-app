@@ -197,19 +197,19 @@ fn parse_inline_element(
             }
         }
     }
-    // 尖括号 HTTP(S) 自动链接复用现有 Link 段和统一交互路径。
+    // 尖括号 HTTP(S)/邮件自动链接复用现有 Link 段和统一交互路径。
     if remaining.starts_with('<') {
-        // 只接受具有受支持 scheme 且不含空白或控制字符的完整目标。
-        if let Some(url) = parse_autolink::parse_http_autolink(remaining) {
-            // 显示文本与提交目标都保留作者输入的原始 URL。
+        // 只接受通过 URL 或邮件边界校验的完整目标。
+        if let Some((display, url)) = parse_autolink::parse_angle_autolink(remaining) {
+            // 邮件目标增加 mailto，HTTP(S) 目标保持原始 URL。
             segments.push(RichTextSegment::Link {
-                // 自动链接没有独立标签，直接显示 URL。
-                content: url.to_string(),
-                // 链接提交继续使用同一个 URL。
-                url: url.to_string(),
+                // 自动链接没有独立标签，直接显示原始候选文本。
+                content: display.to_string(),
+                // 使用自动链接校验器生成的提交目标。
+                url,
             });
             // 开闭尖括号各占一个 ASCII 字节。
-            return Some(url.len() + 2);
+            return Some(display.len() + 2);
         }
     }
     // 依次尝试双字符和单字符的 Markdown 样式标记。
