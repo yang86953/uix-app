@@ -43,7 +43,9 @@ where
 
     // 在最终提交前消费 OpenGL RHI 的 owner-thread 健康检查。
     fn maintain(&mut self) -> Result<()> {
-        // 维护状态不进入高层兼容绘制入口。
+        // 所有无 acquire 的设备操作先恢复创建线程上的原生 GL context。
+        self.rhi_make_current()?;
+        // current 成功后再消费设备健康状态，不进入高层兼容绘制入口。
         self.rhi_pipeline_mut().rhi_maintain()
     }
 

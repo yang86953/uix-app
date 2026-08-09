@@ -18,10 +18,6 @@ impl IGraphicsContext for VulkanContext {
         device.observe(result)
     }
 
-    fn make_current(&mut self) -> Result<()> {
-        Ok(())
-    }
-
     fn try_shutdown(&mut self) -> Result<()> {
         self.shutdown_result()
     }

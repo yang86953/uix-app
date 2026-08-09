@@ -509,6 +509,88 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 陈旧的二阶段初始化诊断不得复活。
         self.assertNotIn("present before initialize", metal)
 
+    # 校验平台 current 语义只存在于 adapter 私有 RHI host，不再穿透通用 renderer。
+    def test_make_current_compatibility_entry_leaves_renderer_and_graphics_context(self) -> None:
+        # 读取公共图形上下文 trait。
+        graphics_trait = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        # 读取 owner-thread context wrapper。
+        thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
+        # 读取通用 backend 契约。
+        backend_contract = (ROOT / "src/draw/backend/contract.rs").read_text(encoding="utf-8")
+        # 读取 RenderSession 的帧入口。
+        session = (ROOT / "src/draw/renderer/session.rs").read_text(encoding="utf-8")
+        # 读取 Renderer 的 presentation 路由。
+        runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
+        # 读取 GPU backend 的 RHI 准备 helper。
+        gpu_lifecycle = (ROOT / "src/draw/backend/gpu/backend/impl_main.rs").read_text(encoding="utf-8")
+        # 读取 GPU RenderBackend 实现。
+        gpu_backend = (ROOT / "src/draw/backend/gpu/backend/render_backend.rs").read_text(encoding="utf-8")
+        # 读取 overlay 无帧 RHI 事务。
+        overlay = (ROOT / "src/draw/backend/gpu/backend/render_backend_backdrop.rs").read_text(encoding="utf-8")
+        # 读取 OpenGL 的 thin RHI host。
+        opengl_host = (ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs").read_text(encoding="utf-8")
+        # 收集所有直接实现 IGraphicsContext 的测试与原生 context。
+        contexts = (
+            # fake context 不得保留调用计数旁路。
+            ROOT / "src/native/test_harness/fake_graphics_context.rs",
+            # D3D11 context 的 target 绑定只属于低层 RHI helper。
+            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            # D3D12 context 的 command list 开始只属于 adapter 内部。
+            ROOT / "src/native/presentation/graphics/d3d12/platform/context/graphics.rs",
+            # Vulkan context 不再提供空 current 实现。
+            ROOT / "src/native/presentation/graphics/vulkan/platform/context/graphics.rs",
+            # Metal context 不再提供空 current 实现。
+            ROOT / "src/native/presentation/graphics/metal/platform/context.rs",
+            # WGL trait wrapper 不再暴露 current。
+            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            # EGL trait wrapper 不再暴露 current。
+            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+        )
+        # IGraphicsContext 不得重新声明平台 current 方法。
+        self.assertNotIn("fn make_current(", graphics_trait)
+        # thread-bound wrapper 不得重新转发平台 current 方法。
+        self.assertNotIn("forward_result!(make_current", thread_bound)
+        # RenderBackend 不得重新泄露平台 current 方法。
+        self.assertNotIn("fn make_current(", backend_contract)
+        # 通用 backend 只保留语义型帧准备 hook。
+        self.assertIn("fn prepare_frame(&mut self)", backend_contract)
+        # RenderSession 必须在帧开始前调用统一准备 hook。
+        self.assertIn("self.backend.prepare_frame()", session)
+        # Renderer 不得再按 presentation 类型直接切换 current。
+        self.assertNotIn("make_backend_current", runtime)
+        # Renderer 不得再绕过 session 调用 backend current。
+        self.assertNotIn("backend_mut().make_current", runtime)
+        # GPU helper 必须进入 thin RHI device maintenance。
+        self.assertIn("GraphicsDevice::maintain(context)", gpu_lifecycle)
+        # GPU backend 的 prepare_frame 必须复用单一 helper。
+        self.assertIn("self.prepare_rhi_device()", gpu_backend)
+        # overlay 不得再直接调用兼容 context current。
+        self.assertNotIn("gpu_ctx.make_current", overlay)
+        # snapshot 与 restore 都必须复用 thin RHI 设备准备。
+        self.assertEqual(overlay.count("self.prepare_rhi_device()"), 2)
+        # 定位 OpenGL 设备维护实现。
+        maintain = opengl_host.index("fn maintain(&mut self)")
+        # current 必须先于设备健康检查执行。
+        current = opengl_host.index("self.rhi_make_current()?", maintain)
+        # 设备健康检查必须位于同一维护方法内。
+        health = opengl_host.index("self.rhi_pipeline_mut().rhi_maintain()", current)
+        # 明确锁定 owner context 准备顺序。
+        self.assertLess(current, health)
+        # 所有 IGraphicsContext wrapper 均不得复活 current 方法。
+        for context in contexts:
+            # 读取单个 wrapper 文件，避免 adapter 私有 helper 造成误判。
+            source = context.read_text(encoding="utf-8")
+            # trait 实现中不能出现同名平台入口。
+            self.assertNotIn("fn make_current(", source)
+        # fake context 不得继续记录已删除的调用事实。
+        self.assertNotIn("make_current_calls", contexts[0].read_text(encoding="utf-8"))
+        # WGL 原生 helper 必须保留给 OpenGlRhiHost 使用。
+        wgl_native = (ROOT / "src/native/presentation/graphics/opengl/platform/wgl.rs").read_text(encoding="utf-8")
+        # helper 不进入公共 trait，只在 adapter 内维护。
+        self.assertIn("fn make_current_result(&self)", wgl_native)
+        # EGL 同样保留 adapter 私有 helper。
+        self.assertIn("fn make_current_result(&self)", contexts[6].read_text(encoding="utf-8"))
+
     # 校验逐图元 legacy draw ABI 与平行 capability 表不会重新进入 adapter 门面。
     def test_legacy_draw_methods_leave_the_graphics_context_facade(self) -> None:
         # 读取公共兼容接口与事实型 capability profile。
