@@ -106,6 +106,12 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     );
     // 验证 ThemeToggle 叶组件只依赖公开 prelude API。
     let _theme_toggle: ViewNode = crate::uix!(r#"<ThemeToggle />"#);
+    // 提供 ButtonGroup 子按钮的动态禁用状态。
+    let group_disabled = false;
+    // 验证 ButtonGroup 保留 Button 专有属性、事件与公共样式的公开消费路径。
+    let _button_group: ViewNode = crate::uix!(
+        r#"<ButtonGroup margin="4px"><Button type="primary" disabled={group_disabled} @click="on_confirm()">Left</Button><Button style="padding: 8px;">Middle</Button><Button type="ghost">Right</Button></ButtonGroup>"#
+    );
     // 提供 WindowControl 动态显示属性的消费者值。
     let show_maximize = false;
     // 验证 WindowControl 组合与动态布尔属性只依赖公开 prelude API。
