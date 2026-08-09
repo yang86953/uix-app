@@ -108,6 +108,8 @@ mod rich_text_layout;
 pub(crate) use rich_text_layout::*;
 mod parse;
 mod rich_text_interaction;
+// 将 shaping cluster 到富文本 advance 的映射隔离为小型内部模块。
+mod shaped_advance;
 
 pub use self::parse::{layout_rich_text_segments, parse_rich_text};
 

@@ -28,6 +28,23 @@ pub(crate) enum FontData {
     Owned(Arc<[u8]>),
 }
 
+// 为 shaping 提供不复制的字体字节视图。
+impl FontData {
+    // 返回当前所有权变体持有的完整字体文件。
+    fn as_slice(&self) -> &[u8] {
+        // 两种所有权都只借用底层稳定字节。
+        match self {
+            // 内存映射可直接解引用为字节切片。
+            Self::Mapped(data) => data.as_ref(),
+            // 共享所有权数据可直接解引用为字节切片。
+            Self::Owned(data) => data.as_ref(),
+            // 结束所有权变体匹配。
+        }
+        // 结束字体字节视图方法。
+    }
+    // 结束字体数据辅助实现。
+}
+
 impl FontSlot {
     /// 从自有数据构造借用槽位。
     ///
@@ -122,12 +139,9 @@ impl TextBackend for AbGlyphBackend {
         let data: Arc<[u8]> = Arc::from(data);
         let f = FontRef::try_from_slice_and_index(&data, 0)
             .map_err(|e| Error::new(Errc::FormatError, format!("ab_glyph: {:?}", e)))?;
-        let f = unsafe {
-            std::mem::transmute::<FontRef<'_>, FontRef<'static>>(f)
-        };
-        self.fonts.push(unsafe {
-            FontSlot::new_borrowed(FontHandle::new(id), f, FontData::Owned(data))
-        });
+        let f = unsafe { std::mem::transmute::<FontRef<'_>, FontRef<'static>>(f) };
+        self.fonts
+            .push(unsafe { FontSlot::new_borrowed(FontHandle::new(id), f, FontData::Owned(data)) });
         Ok(FontHandle::new(id))
     }
 
@@ -137,12 +151,9 @@ impl TextBackend for AbGlyphBackend {
         let data: Arc<[u8]> = Arc::from(data);
         let f = FontRef::try_from_slice_and_index(&data, 0)
             .map_err(|e| Error::new(Errc::FormatError, format!("ab_glyph: {:?}", e)))?;
-        let f = unsafe {
-            std::mem::transmute::<FontRef<'_>, FontRef<'static>>(f)
-        };
-        self.fonts.push(unsafe {
-            FontSlot::new_borrowed(FontHandle::new(id), f, FontData::Owned(data))
-        });
+        let f = unsafe { std::mem::transmute::<FontRef<'_>, FontRef<'static>>(f) };
+        self.fonts
+            .push(unsafe { FontSlot::new_borrowed(FontHandle::new(id), f, FontData::Owned(data)) });
         Ok(FontHandle::new(id))
     }
 
@@ -152,9 +163,7 @@ impl TextBackend for AbGlyphBackend {
             .map_err(|e| Error::new(Errc::FormatError, format!("ab_glyph: {:?}", e)))?;
         let id = self.fonts.len() as u32;
         // SAFETY: f 借用 boxed 的映射内容；boxed 由槽位持有，堆地址稳定（见 new_borrowed 契约）。
-        let f = unsafe {
-            std::mem::transmute::<FontRef<'_>, FontRef<'static>>(f)
-        };
+        let f = unsafe { std::mem::transmute::<FontRef<'_>, FontRef<'static>>(f) };
         self.fonts.push(unsafe {
             FontSlot::new_borrowed(FontHandle::new(id), f, FontData::Mapped(boxed))
         });
@@ -212,6 +221,40 @@ impl TextBackend for AbGlyphBackend {
         } else {
             font_h
         };
+        // 优先使用 OpenType shaping；解析失败时保留原有逐字符回退路径。
+        if let Some(layout) = self.fonts[idx]
+            // 只借用当前有效槽位持有的完整字体文件。
+            ._data
+            // 缺少底层数据时不能构造 rustybuzz 字体面。
+            .as_ref()
+            // 将所有权变体统一成字节切片并执行 shaping。
+            .and_then(|data| {
+                // shaping 模块负责复杂脚本、cluster 与字形定位。
+                super::shaping::layout_text(
+                    // 传入完整字体文件以保留 TTC/OTC 表共享语义。
+                    data.as_slice(),
+                    // 当前后端与 ab_glyph 一致选择第一个字体面。
+                    0,
+                    // 保留字形所属字体句柄供后续光栅化。
+                    *font,
+                    // 传入本段原始 UTF-8 文本。
+                    text,
+                    // 复用调用方布局约束。
+                    opts,
+                    // 复用 ab_glyph 的像素 ascent。
+                    asc,
+                    // 复用 ab_glyph 的实际字体行盒高度。
+                    font_h,
+                    // 复用调用方解析后的行高。
+                    line_h,
+                )
+            })
+        // shaping 成功时直接返回 cluster 感知结果。
+        {
+            // 避免后续逐字符路径破坏复杂脚本定位。
+            return layout;
+            // 结束 shaping 快速路径。
+        }
         let max_w = opts.max_width.is_finite() && opts.max_width > 0.0;
         let tofu_adv = (fs * 0.55).max(4.0);
         let space_id = f.glyph_id(' ');
@@ -278,6 +321,8 @@ impl TextBackend for AbGlyphBackend {
                 height: font_h,
                 glyph_id,
                 char_index,
+                // 逐字符回退路径的 cluster 只覆盖当前字符。
+                char_end: char_index + 1,
                 font: *font,
             });
 
@@ -474,6 +519,12 @@ mod tests {
     use super::AbGlyphBackend;
     // 引入字体后端 trait，使测试可以调用加载、卸载和内存统计接口。
     use crate::draw::TextBackend;
+    // 引入字体布局选项与对齐枚举，验证 shaping 到光栅的完整链路。
+    #[cfg(target_os = "windows")]
+    use crate::draw::{HAlign, VAlign};
+    // 引入后端内部布局选项类型。
+    #[cfg(target_os = "windows")]
+    use super::TextLayoutOptions;
 
     #[test]
     fn unload_releases_owned_font_data() {
@@ -493,5 +544,59 @@ mod tests {
         assert!(!backend.is_valid(&handle));
         // 卸载后不应残留字体数据占用。
         assert_eq!(backend.memory_usage(), 0);
+    }
+
+    // 验证 rustybuzz glyph id 可由既有 ab_glyph 光栅路径直接消费。
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn shaped_glyph_ids_rasterize_with_existing_backend() {
+        // 读取包含阿拉伯 GSUB/GPOS 的标准 Windows 字体。
+        let data = std::fs::read(r"C:\Windows\Fonts\segoeui.ttf")
+            // 缺少标准字体时明确暴露环境不满足 Windows 目标矩阵。
+            .expect("应能读取 Segoe UI 复杂脚本测试字体");
+        // 创建独立后端，隔离其他字体槽位。
+        let mut backend = AbGlyphBackend::new();
+        // 通过正式加载入口同时建立 ab_glyph 与 rustybuzz 所需数据。
+        let handle = backend
+            // 加载完整字体文件。
+            .load_font(&data)
+            // 解析失败时明确指出字体后端契约。
+            .expect("Segoe UI 应能由字体后端加载");
+        // 构造不换行的标准 shaping 约束。
+        let options = TextLayoutOptions {
+            // 使用足够大的有限宽度。
+            max_width: 4096.0,
+            // 高度由文本自身决定。
+            max_height: 0.0,
+            // 使用稳定行高。
+            line_height: 30.0,
+            // 本测试不触发自动换行。
+            word_wrap: false,
+            // 使用左对齐观察原始视觉字形。
+            h_align: HAlign::Left,
+            // 使用顶部对齐观察原始基线。
+            v_align: VAlign::Top,
+            // 使用稳定测试字号。
+            font_size: 20.0,
+            // 结束布局选项构造。
+        };
+        // 通过正式 TextBackend 接口执行阿拉伯 shaping。
+        let layout = backend.layout_text(&handle, "سلام", &options);
+        // shaping 必须产生可供光栅化的字形。
+        assert!(!layout.glyphs.is_empty());
+        // 至少一个真实字形必须由既有轮廓光栅路径成功解析。
+        assert!(layout
+            // 遍历 shaping 输出字形。
+            .glyphs
+            // 尝试通过同一字体句柄光栅化。
+            .iter()
+            // 要求至少一个字形产生非空像素或轮廓网格。
+            .any(|glyph| {
+                // 执行既有统一字形光栅入口。
+                let raster = backend.rasterize_glyph(&handle, glyph.glyph_id, options.font_size);
+                // 面积覆盖或轮廓网格任一存在即证明编号兼容。
+                !raster.coverage.is_empty() || raster.outline_mesh.is_some()
+            }));
+        // 结束 shaping 到光栅兼容测试。
     }
 }

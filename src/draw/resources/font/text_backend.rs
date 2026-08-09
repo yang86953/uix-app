@@ -251,6 +251,8 @@ pub struct PositionedGlyph {
     pub glyph_id: u32,
     /// 对应源文本中的 Unicode 标量下标（`chars()` 序），与 glyph 下标解耦。
     pub char_index: usize,
+    /// 当前 shaping cluster 在源文本中的排他字符终点。
+    pub char_end: usize,
     pub font: crate::draw::FontHandle,
 }
 
@@ -267,7 +269,8 @@ pub(crate) fn glyph_selection_x_range(
     let mut right = f32::NEG_INFINITY;
     for glyph in glyphs
         .iter()
-        .filter(|glyph| glyph.char_index >= start_char && glyph.char_index < end_char)
+        // 选择区与 cluster 源区间相交时纳入完整字形几何。
+        .filter(|glyph| glyph.char_index < end_char && glyph.char_end > start_char)
     {
         left = left.min(glyph.x);
         right = right.max(glyph.x + glyph.width.max(0.0));

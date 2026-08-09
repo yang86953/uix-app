@@ -243,23 +243,6 @@ impl FontService {
         self.text_backend.set_fallback_fonts(&self.fallback_handles);
     }
 
-    /// 为指定字符查找可用的字体句柄。
-    ///
-    /// 按优先级：primary（主字体）→ fallback_chain → 返回 None（使用 BitmapFont）。
-    fn find_font_for_char(&self, primary: &FontHandle, ch: char) -> Option<FontHandle> {
-        // 主字体有 glyph？
-        if self.text_backend.is_valid(primary) && self.text_backend.has_glyph(primary, ch) {
-            return Some(*primary);
-        }
-        // 回退链？
-        for fb in &self.fallback_handles {
-            if self.text_backend.is_valid(fb) && self.text_backend.has_glyph(fb, ch) {
-                return Some(*fb);
-            }
-        }
-        None
-    }
-
     /// 加载系统默认字体（自动检测平台）。
     /// 第一个成功加载的字体作为主字体，其余作为回退链。
     /// 始终在注册表中记录 family 信息。
@@ -597,7 +580,8 @@ impl FontService {
                     return Some(
                         glyphs
                             .last()
-                            .map(|g| (g.char_index + 1).min(total_chars))
+                            // cluster 右侧命中返回排他的源字符终点。
+                            .map(|g| g.char_end.min(total_chars))
                             .unwrap_or(li.end_char.min(total_chars)),
                     );
                 }
