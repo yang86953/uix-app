@@ -28,11 +28,6 @@ const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
     },
     // 通用组件规划项。
     PlannedBuiltin {
-        name: "Space",
-        category: "内置组件 / 通用组件",
-    },
-    // 通用组件规划项。
-    PlannedBuiltin {
         name: "ThemeToggle",
         category: "内置组件 / 通用组件",
     },
@@ -459,7 +454,7 @@ pub(crate) fn planned_builtin_diagnostic(element: &Element) -> Option<Diagnostic
             element.name, entry.category
         ),
         // 给出当前真实支持集合。
-        "当前使用 Text、Label、Button、Icon、Divider、Container、Row 或 Column，或先完成该组件的属性映射 Gate",
+        "当前使用 Text、Label、Button、Icon、Divider、Space、Container、Row 或 Column，或先完成该组件的属性映射 Gate",
     ))
 }
 
