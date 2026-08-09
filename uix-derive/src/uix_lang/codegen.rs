@@ -10,8 +10,9 @@ use super::{
 };
 // 引入受限表达式与事件处理器生成入口。
 use super::{
-    expression_uses_event, generate_divider, generate_expression, generate_handler_expression,
-    generate_space, generate_theme_toggle, generate_typography, generate_window_control,
+    expression_uses_event, generate_button_group, generate_divider, generate_expression,
+    generate_handler_expression, generate_space, generate_theme_toggle, generate_typography,
+    generate_window_control,
 };
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
@@ -78,6 +79,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "Typography" => generate_typography(element),
         // 主题切换映射到现有 ThemeToggle Component。
         "ThemeToggle" => generate_theme_toggle(element),
+        // 按钮组映射到静态直接 Button 子项的连体组合。
+        "ButtonGroup" => generate_button_group(element),
         // 窗口控制映射到 window_chrome 公开组合函数。
         "WindowControl" => generate_window_control(element),
         // 文档内置组件按登记类别返回规划中诊断。
@@ -92,7 +95,7 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row 或 Column，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row 或 Column，或先登记组件状态",
         )),
     }
 }
@@ -109,6 +112,17 @@ fn generate_text(element: &Element) -> Result<TokenStream, Diagnostic> {
 
 // 生成按钮元素。
 fn generate_button(element: &Element) -> Result<TokenStream, Diagnostic> {
+    // 普通按钮不声明 ButtonGroup 连体位置。
+    generate_button_with_group_position(element, None)
+}
+
+// 生成按钮，并在公共样式物化前应用可选 ButtonGroup 连体位置。
+pub(super) fn generate_button_with_group_position(
+    // 接收 Button 元素。
+    element: &Element,
+    // 接收可选的公开 ButtonGroupPosition 表达式。
+    group_position: Option<TokenStream>,
+) -> Result<TokenStream, Diagnostic> {
     // 按钮当前公开 API 只接收文本内容。
     let content = generate_text_content(&element.children, element.span)?;
     // 构造公开按钮构建器。
@@ -157,6 +171,11 @@ fn generate_button(element: &Element) -> Result<TokenStream, Diagnostic> {
             // 应用块级状态。
             view = quote! { (#view).block(#value) };
         }
+    }
+    // ButtonGroup 子按钮在公共样式与事件物化前写入连体位置。
+    if let Some(position) = group_position {
+        // 调用 ButtonBuilder 的公开连体位置物化入口。
+        view = quote! { (#view).group_position(#position) };
     }
     // 在按钮专有属性之后应用公共 View 属性与事件。
     apply_common_attributes(view, &element.attributes, &["type", "disabled", "block"])

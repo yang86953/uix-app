@@ -2,6 +2,8 @@
 mod ast;
 // 定义六类文档内置组件的已登记与规划中矩阵。
 mod builtin_matrix;
+// 定义 ButtonGroup 内置组件的公开 API 代码生成边界。
+mod button_group_codegen;
 // 定义核心元素、属性、事件与控制流的 Rust View 代码生成。
 mod codegen;
 // 定义 Divider 内置组件的公开 API 代码生成边界。
@@ -72,6 +74,8 @@ mod value_codegen;
 pub(crate) use ast::*;
 // 向核心 View 生成器暴露规划中内置组件诊断。
 pub(crate) use builtin_matrix::planned_builtin_diagnostic;
+// 向核心元素生成器暴露 ButtonGroup 专用映射。
+pub(crate) use button_group_codegen::generate_button_group;
 // 向过程宏入口暴露核心 View 生成函数。
 pub(crate) use codegen::generate_view;
 // 向核心元素生成器暴露 Divider 专用映射。

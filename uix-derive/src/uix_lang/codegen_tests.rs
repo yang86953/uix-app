@@ -345,6 +345,81 @@ fn validates_theme_toggle_shape_and_attribute_contract() {
     assert!(unknown_attribute.message.contains("dark"));
 }
 
+// 验证 ButtonGroup 保留子按钮能力并生成稳定连体位置。
+#[test]
+fn generates_button_group_with_positioned_button_contracts() {
+    // 构造覆盖类型、动态禁用、事件、公共样式与外层样式的三按钮组。
+    let snapshot = generate(
+        r#"<ButtonGroup margin="4px"><Button type="primary" disabled={busy} @click="save()">Left</Button><Button style="padding: 8px;">Middle</Button><Button type="ghost">Right</Button></ButtonGroup>"#,
+    )
+    // 文档化 ButtonGroup 与完整 Button 能力必须生成成功。
+    .expect("文档化 ButtonGroup 应生成 Rust View");
+    // 外层必须使用零间距行容器。
+    assert!(snapshot.contains("row") && snapshot.contains("gap (0.0)"));
+    // 三个位置必须按源码顺序出现。
+    let left = snapshot
+        .find("ButtonGroupPosition :: Left")
+        .expect("首按钮应标记 Left");
+    // 定位中间按钮位置。
+    let middle = snapshot
+        .find("ButtonGroupPosition :: Middle")
+        // 中间位置必须存在。
+        .expect("中间按钮应标记 Middle");
+    // 定位末按钮位置。
+    let right = snapshot
+        .find("ButtonGroupPosition :: Right")
+        // 右侧位置必须存在。
+        .expect("末按钮应标记 Right");
+    // 连体位置必须保持源码顺序。
+    assert!(left < middle && middle < right);
+    // Button 专有类型与动态禁用必须保留。
+    assert!(snapshot.contains("primary") && snapshot.contains("disabled (busy)"));
+    // 子按钮点击事件与内联样式必须保留。
+    assert!(snapshot.contains("on_click_fn") && snapshot.contains("padding"));
+    // 外层公共样式必须继续应用。
+    assert!(snapshot.contains("margin"));
+}
+
+// 验证 ButtonGroup 单项、空组与非法子树边界。
+#[test]
+fn validates_button_group_shape_and_attribute_contract() {
+    // 单按钮组必须使用完整圆角位置。
+    let single = generate(r#"<ButtonGroup><Button>Only</Button></ButtonGroup>"#)
+        // 单按钮组必须生成成功。
+        .expect("单按钮 ButtonGroup 应可生成");
+    // 单项只能出现 Single 位置。
+    assert!(single.contains("ButtonGroupPosition :: Single"));
+    // 空组沿用现有 ButtonGroup 的合法空行契约。
+    let empty = generate(r#"<ButtonGroup />"#).expect("空 ButtonGroup 应可生成");
+    // 空组不能伪造任何按钮位置。
+    assert!(!empty.contains("ButtonGroupPosition"));
+    // 裸文本不能被静默转换为按钮。
+    let text_error = generate(r#"<ButtonGroup>Loose</ButtonGroup>"#)
+        // 提取预期文本形状诊断。
+        .expect_err("ButtonGroup 裸文本必须失败");
+    // 修复建议必须指向直接 Button 子项。
+    assert!(text_error.suggestion.contains("<Button>"));
+    // 非 Button 元素不能进入连体位置计算。
+    let element_error = generate(r#"<ButtonGroup><Icon name="x" /></ButtonGroup>"#)
+        // 提取预期元素形状诊断。
+        .expect_err("ButtonGroup 非 Button 子项必须失败");
+    // 诊断必须包含非法元素名。
+    assert!(element_error.message.contains("Icon"));
+    // 动态控制子树无法在编译期确定位置，必须明确拒绝。
+    let control_error =
+        generate(r#"<ButtonGroup><If {visible}><Button>Conditional</Button></If></ButtonGroup>"#)
+            // 提取预期动态形状诊断。
+            .expect_err("ButtonGroup 动态 If 子树必须失败");
+    // 修复建议必须指向动态 Row 组合。
+    assert!(control_error.suggestion.contains("Row"));
+    // 未登记外层属性必须走统一拒绝路径。
+    let attribute_error = generate(r#"<ButtonGroup compact="true" />"#)
+        // 提取预期属性诊断。
+        .expect_err("ButtonGroup 未登记属性必须失败");
+    // 诊断必须包含具体未知属性名。
+    assert!(attribute_error.message.contains("compact"));
+}
+
 // 验证 WindowControl 生成只调用运行时公开组合函数。
 #[test]
 fn generates_window_controls_with_documented_flags() {

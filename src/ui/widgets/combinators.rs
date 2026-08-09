@@ -563,7 +563,8 @@ pub fn space(height: f32) -> ViewNode {
 
 use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};
 use crate::ui::theme::style::StyleSet;
-use crate::ui::widgets::Button;
+// 引入按钮组件与连体位置契约。
+use crate::ui::widgets::{Button, ButtonGroupPosition};
 
 /// 按钮构建器 — `button("text").primary().on_click(&state, |s| …)`。
 ///
@@ -598,7 +599,6 @@ impl ButtonBuilder {
     pub fn widget(self) -> Button {
         self.into_parts().0
     }
-
     pub fn style_set(mut self, style_set: StyleSet) -> Self {
         self.style_set = style_set;
         self
@@ -608,30 +608,37 @@ impl ButtonBuilder {
         self.style_set = StyleSet::button_primary();
         self
     }
-
     pub fn ghost(mut self) -> Self {
         self.style_set = StyleSet::button_ghost();
         self
     }
-
     pub fn danger(mut self) -> Self {
         self.style_set = StyleSet::button_danger();
         self
     }
-
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self
     }
-
     pub fn block(mut self, v: bool) -> Self {
         self.block = v;
         self
     }
-
     pub fn size(mut self, size: crate::native::windowing::input::ControlSize) -> Self {
         self.size = size;
         self
+    }
+
+    /// 将底层按钮标记为 ButtonGroup 中的连体位置并物化为 ViewNode。
+    pub fn group_position(self, position: ButtonGroupPosition) -> ViewNode {
+        // 拆分底层按钮与已登记事件处理器。
+        let (button, handlers) = self.into_parts();
+        // 把连体位置交给既有 Button 视觉语义。
+        let mut node = ViewNode::leaf(button.group_position(position));
+        // 保留物化前已经登记的按钮事件。
+        node.handlers = handlers;
+        // 返回可继续应用公共样式与事件的节点。
+        node
     }
 
     /// 默认点击路径：绑定 `State` 指纹，reconcile 可稳定复用（知识库：`C:\data\note\我的项目\软件\UIX App\使用.md`）。
