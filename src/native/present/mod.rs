@@ -598,7 +598,7 @@ mod traits;
 
 // 图形 context 与 recipe 专用呈现 SPI 只供 crate 内部 backend 与 bootstrap 使用。
 pub(crate) use self::traits::{
-    resize_native_rhi_surface, IGraphicsContext, PixelUploadSurface, RhiSurfaceLifecycle,
+    resize_native_rhi_surface, GpuRecipeContext, IGraphicsContext, PixelUploadSurface,
 };
 // 只向 crate 内图形装配与 backend 暴露已验证 GPU owner。
 pub(crate) use gpu_recipe_owner::GpuRecipeOwner;

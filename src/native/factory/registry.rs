@@ -150,18 +150,22 @@ pub(crate) fn try_create_context(
         ctx.try_shutdown()?;
         return Err(Error::new(Errc::PlatformError, msg));
     }
-    // 首帧前强制检查迁移期薄 RHI，避免 registry 把只有 legacy draw
-    // 接口的 context 宣称为产品 GPU recipe。
+    // 首帧前强制检查原子 GPU recipe 视图，避免 registry 接受不完整 owner。
     let missing_rhi_capability = {
-        // 只在这个局部借用内读取组合 RHI 能力快照。
-        match ctx.rhi_context() {
-            // 真实 adapter 需要满足文档冻结的 GPU 原语基线。
-            Some(rhi) => rhi
-                .capabilities()
-                .first_missing_gpu_baseline()
-                .map(str::to_string),
-            // 没有薄 RHI 的 legacy context 不能进入生产 recipe。
-            None => Some("thin_rhi".to_string()),
+        // 只在这个局部借用内取得完整 recipe，再读取 RHI 能力快照。
+        match ctx.gpu_recipe_context() {
+            // 真实 GPU adapter 必须一次提供不可拆分的 recipe owner。
+            Some(recipe) => match recipe.rhi_context() {
+                // 真实 adapter 需要满足文档冻结的 GPU 原语基线。
+                Ok(rhi) => rhi
+                    .capabilities()
+                    .first_missing_gpu_baseline()
+                    .map(str::to_string),
+                // 构造期借用失败视为完整 recipe owner 不可用。
+                Err(_) => Some("gpu_recipe_context".to_string()),
+            },
+            // 没有原子 GPU recipe 视图的 context 不能进入生产 recipe。
+            None => Some("gpu_recipe_context".to_string()),
         }
     };
     // 能力缺口必须在返回前关闭已经创建的 native context。
@@ -172,23 +176,32 @@ pub(crate) fn try_create_context(
             format!("Graphics recipe {expected} lacks required RHI capability: {missing}"),
         ));
     }
-    // 首帧前执行真实资源与固定 pipeline probe，拒绝只声明 capability 的 context。
-    if let Some(rhi) = ctx.rhi_context() {
-        // probe 失败时保持原始 typed error，并先释放已经创建的 owner 资源。
-        if let Err(error) = rhi.probe() {
-            ctx.try_shutdown()?;
-            return Err(error);
-        }
-        // 记录首帧前已经通过真实资源与固定 pipeline 编译的 adapter。
-        tracing::info!("Graphics recipe {expected}: thin RHI probe passed");
-    } else {
-        // capability gate 已处理 None；这里保留显式分支防止未来逻辑回归。
-        ctx.try_shutdown()?;
-        return Err(Error::new(
+    // 首帧前从同一原子视图执行真实资源与固定 pipeline probe。
+    let probe_result = match ctx.gpu_recipe_context() {
+        // 原子 recipe 存在时继续取得其必需 RHI owner。
+        Some(recipe) => match recipe.rhi_context() {
+            // 在同一借用内执行真实资源与 pipeline probe。
+            Ok(rhi) => rhi.probe(),
+            // 保留 owner-thread 或设备状态的 typed failure。
+            Err(error) => Err(error),
+        },
+        // capability gate 已处理 None；这里保留显式失败防止未来逻辑回归。
+        None => Err(Error::new(
+            // 缺失完整 recipe 属于不满足生产实现。
             Errc::NotImplemented,
-            format!("Graphics recipe {expected} lacks thin_rhi probe"),
-        ));
+            // 保留具体 registry recipe 便于定位错误行。
+            format!("Graphics recipe {expected} lacks atomic GPU recipe context"),
+        )),
+    };
+    // probe 失败时保持原始 typed error，并先释放已经创建的 owner 资源。
+    if let Err(error) = probe_result {
+        // 检查式关闭已创建的原生资源。
+        ctx.try_shutdown()?;
+        // 把原始 probe 或 owner 状态失败返回给候选选择层。
+        return Err(error);
     }
+    // 记录首帧前已经通过真实资源与固定 pipeline 编译的 adapter。
+    tracing::info!("Graphics recipe {expected}: atomic GPU recipe probe passed");
     Ok(bind_to_current_thread(ctx))
 }
 

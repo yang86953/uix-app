@@ -400,17 +400,9 @@ impl IGraphicsContext for EglContext {
         )
     }
 
-    // 暴露同一 owner-thread context 上的 OpenGL ES 薄 RHI 组合视图。
-    fn rhi_context(&mut self) -> Option<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
-        // EGL adapter 已经实现共享 GraphicsDevice/GraphicsSurface。
-        Some(self)
-    }
-
-    // 暴露只含 GPU-native surface resize 的专用生命周期视图。
-    fn rhi_surface_lifecycle(
-        &mut self,
-    ) -> Option<&mut dyn crate::native::present::RhiSurfaceLifecycle> {
-        // EGL 已实现唯一 GraphicsSurface::resize owner 路径。
+    // 暴露同一 owner-thread context 上不可拆分的 OpenGL ES GPU recipe 视图。
+    fn gpu_recipe_context(&mut self) -> Option<&mut dyn crate::native::present::GpuRecipeContext> {
+        // EGL 同时拥有 thin RHI 与唯一 GraphicsSurface::resize 路径。
         Some(self)
     }
 
@@ -434,12 +426,23 @@ impl IGraphicsContext for EglContext {
     }
 }
 
-// 把 EGL 逻辑尺寸 resize 收敛到专用 RHI surface 生命周期。
-impl crate::native::present::RhiSurfaceLifecycle for EglContext {
+// 把 EGL thin RHI 与逻辑 surface resize 收敛到同一 recipe owner。
+impl crate::native::present::GpuRecipeContext for EglContext {
+    // 借用 EGL owner 已实现的组合 thin RHI。
+    fn rhi_context(
+        // 借用当前 EGL owner。
+        &mut self,
+    ) -> Result<&mut dyn crate::native::present::rhi::GraphicsContextRhi, Error> {
+        // 同一实例完整实现 GraphicsDevice 与 GraphicsSurface。
+        Ok(self)
+    }
+
     // 复用统一 DPR、范围检查与 GraphicsSurface::resize 调用。
-    fn resize_rhi_surface(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        // 直接借用当前原生 owner，不经过 IGraphicsContext 高层方法。
-        crate::native::present::resize_native_rhi_surface(self, width, height)
+    fn resize_surface(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        // 在可变借用前取得当前完整 surface 快照。
+        let present_surface = IGraphicsContext::present_surface(self);
+        // 直接借用当前原子 recipe owner，不经过分裂兼容视图。
+        crate::native::present::resize_native_rhi_surface(self, present_surface, width, height)
     }
 }
 
