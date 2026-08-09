@@ -239,6 +239,267 @@ impl<'a> Cursor<'a> {
         }
     }
 
+    // 解析指令参数使用的单引号字符串。
+    pub(crate) fn single_quoted_literal(&mut self) -> Result<String, Diagnostic> {
+        // 保存字符串起点。
+        let start = self.offset;
+        // 要求起始单引号。
+        if !self.consume("'") {
+            // 返回缺少指令参数诊断。
+            return Err(Diagnostic::new(
+                // 指向当前位置。
+                self.point_span(),
+                // 陈述失败原因。
+                "指令参数必须使用单引号字符串",
+                // 给出合法示例。
+                "使用 @import('./component.uix')",
+            ));
+        }
+        // 保存解码内容。
+        let mut value = String::new();
+        // 扫描到结束单引号。
+        loop {
+            // 读取下一字符或报告未闭合。
+            let Some(next) = self.bump() else {
+                // 返回未闭合字符串诊断。
+                return Err(Diagnostic::new(
+                    // 覆盖完整字符串。
+                    self.span_from(start),
+                    // 陈述失败原因。
+                    "指令字符串缺少结束单引号",
+                    // 给出修复建议。
+                    "在参数末尾添加单引号",
+                ));
+            };
+            // 单引号结束字符串。
+            if next == '\'' {
+                // 返回解码结果。
+                return Ok(value);
+            }
+            // 反斜杠转义下一字符。
+            if next == '\\' {
+                // 读取转义目标。
+                let Some(escaped) = self.bump() else {
+                    // 返回悬空转义诊断。
+                    return Err(Diagnostic::new(
+                        // 覆盖完整字符串。
+                        self.span_from(start),
+                        // 陈述失败原因。
+                        "指令字符串含未完成转义",
+                        // 给出修复建议。
+                        "补充被转义字符或删除反斜杠",
+                    ));
+                };
+                // 保存被转义字符。
+                value.push(escaped);
+            } else {
+                // 保存普通字符。
+                value.push(next);
+            }
+        }
+    }
+
+    // 读取双引号包裹的内联样式源码。
+    pub(crate) fn quoted_style_source(&mut self) -> Result<(String, SourceSpan), Diagnostic> {
+        // 保存外层引号起点。
+        let start = self.offset;
+        // 要求起始双引号。
+        if !self.consume("\"") {
+            // 返回内联样式格式诊断。
+            return Err(Diagnostic::new(
+                // 指向当前位置。
+                self.point_span(),
+                // 陈述失败原因。
+                "内联 style 必须使用双引号包裹",
+                // 给出合法示例。
+                "使用 style=\"color: red;\"",
+            ));
+        }
+        // 保存内容起点。
+        let content_start = self.offset;
+        // 跟踪外层转义状态。
+        let mut escaped = false;
+        // 扫描到未转义双引号。
+        loop {
+            // 读取下一字符或报告未闭合。
+            let Some(next) = self.bump() else {
+                // 返回未闭合样式诊断。
+                return Err(Diagnostic::new(
+                    // 覆盖整个属性值。
+                    self.span_from(start),
+                    // 陈述失败原因。
+                    "内联 style 缺少结束双引号",
+                    // 给出修复建议。
+                    "在内联样式末尾添加双引号",
+                ));
+            };
+            // 已转义字符没有结构语义。
+            if escaped {
+                // 清除转义状态。
+                escaped = false;
+                // 继续扫描。
+                continue;
+            }
+            // 反斜杠转义下一字符。
+            if next == '\\' {
+                // 标记转义状态。
+                escaped = true;
+                // 继续扫描。
+                continue;
+            }
+            // 未转义双引号结束内容。
+            if next == '"' {
+                // 计算内容终点。
+                let content_end = self.offset - 1;
+                // 返回原始内容与精确跨度。
+                return Ok((
+                    // 复制样式源码。
+                    self.source[content_start..content_end].to_string(),
+                    // 保存内容跨度。
+                    self.span_between(content_start, content_end),
+                ));
+            }
+        }
+    }
+
+    // 读取顶层样式或主题花括号块源码。
+    pub(crate) fn braced_style_source(
+        &mut self,
+    ) -> Result<(String, SourceSpan, SourceSpan), Diagnostic> {
+        // 保存外围花括号起点。
+        let start = self.offset;
+        // 要求左花括号。
+        if !self.consume("{") {
+            // 返回缺少样式块诊断。
+            return Err(Diagnostic::new(
+                // 指向当前位置。
+                self.point_span(),
+                // 陈述失败原因。
+                "样式声明缺少 {",
+                // 给出修复建议。
+                "在声明名后添加 { ... }",
+            ));
+        }
+        // 保存内容起点。
+        let content_start = self.offset;
+        // 跟踪单引号字符串状态。
+        let mut quoted = false;
+        // 跟踪字符串转义状态。
+        let mut escaped = false;
+        // 扫描到块结束花括号。
+        loop {
+            // 输入结束表示样式块未闭合。
+            if self.is_eof() {
+                // 未闭合单引号优先报告样式值字符串错误。
+                if quoted {
+                    // 返回字符串专用诊断。
+                    return Err(Diagnostic::new(
+                        // 覆盖整个声明块。
+                        self.span_from(start),
+                        // 陈述失败原因。
+                        "样式值中的字符串缺少结束单引号",
+                        // 给出修复建议。
+                        "在字符串末尾添加单引号",
+                    ));
+                }
+                // 返回未闭合块诊断。
+                return Err(Diagnostic::new(
+                    // 覆盖整个声明块。
+                    self.span_from(start),
+                    // 陈述失败原因。
+                    "样式声明缺少结束花括号",
+                    // 给出修复建议。
+                    "在样式属性之后添加 }",
+                ));
+            }
+            // 字符串外单行注释需要忽略内部花括号。
+            if !quoted && self.consume("//") {
+                // 推进到换行。
+                while self.peek().is_some_and(|value| value != '\n') {
+                    // 消费注释字符。
+                    self.bump();
+                }
+                // 继续扫描。
+                continue;
+            }
+            // 字符串外块注释需要忽略内部花括号。
+            if !quoted && self.consume("/*") {
+                // 保存注释起点。
+                let comment_start = self.offset - 2;
+                // 搜索结束标记。
+                while !self.starts_with("*/") {
+                    // 输入结束表示注释未闭合。
+                    if self.is_eof() {
+                        // 返回注释诊断。
+                        return Err(Diagnostic::new(
+                            // 覆盖未闭合注释。
+                            self.span_from(comment_start),
+                            // 陈述失败原因。
+                            "样式注释缺少结束标记 */",
+                            // 给出修复建议。
+                            "在注释末尾添加 */",
+                        ));
+                    }
+                    // 消费注释字符。
+                    self.bump();
+                }
+                // 消费结束标记。
+                self.consume("*/");
+                // 继续扫描。
+                continue;
+            }
+            // 读取下一字符。
+            let next = self.bump().expect("已确认样式块未结束");
+            // 已转义字符没有结构语义。
+            if escaped {
+                // 清除转义状态。
+                escaped = false;
+                // 继续扫描。
+                continue;
+            }
+            // 字符串内反斜杠开始转义。
+            if quoted && next == '\\' {
+                // 标记下一字符被转义。
+                escaped = true;
+                // 继续扫描。
+                continue;
+            }
+            // 单引号切换字符串状态。
+            if next == '\'' {
+                // 切换字符串状态。
+                quoted = !quoted;
+                // 继续扫描。
+                continue;
+            }
+            // 字符串外左花括号不属于样式值语法。
+            if !quoted && next == '{' {
+                // 返回非法嵌套诊断。
+                return Err(Diagnostic::new(
+                    // 指向嵌套花括号。
+                    self.span_between(self.offset - 1, self.offset),
+                    // 陈述失败原因。
+                    "样式块不支持嵌套花括号",
+                    // 给出修复建议。
+                    "把每个样式类或主题声明放在顶层",
+                ));
+            }
+            // 字符串外右花括号结束样式块。
+            if !quoted && next == '}' {
+                // 计算内容终点。
+                let content_end = self.offset - 1;
+                // 返回源码、外围跨度与内容跨度。
+                return Ok((
+                    // 复制块内容。
+                    self.source[content_start..content_end].to_string(),
+                    // 保存包含花括号的跨度。
+                    self.span_from(start),
+                    // 保存块内容跨度。
+                    self.span_between(content_start, content_end),
+                ));
+            }
+        }
+    }
+
     // 读取双引号包裹但不解码的事件表达式源码。
     pub(crate) fn quoted_expression_source(&mut self) -> Result<(String, SourceSpan), Diagnostic> {
         // 保存外层引号起点。

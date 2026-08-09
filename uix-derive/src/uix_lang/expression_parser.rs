@@ -449,12 +449,29 @@ impl ExpressionParser {
         // 按标记构造 AST 或专用诊断。
         match token.kind {
             // 普通标识符映射引用。
-            ExpressionTokenKind::Identifier(value) if value != "match" => Ok(Expression {
-                // 保存标识符。
-                kind: ExpressionKind::Identifier(value),
-                // 保存标记跨度。
-                span: token.span,
-            }),
+            ExpressionTokenKind::Identifier(value)
+                if value != "match" && (!value.starts_with('$') || value == "$event") =>
+            {
+                // 返回普通或保留事件标识符。
+                Ok(Expression {
+                    // 保存标识符。
+                    kind: ExpressionKind::Identifier(value),
+                    // 保存标记跨度。
+                    span: token.span,
+                })
+            }
+            // 只有保留事件参数允许美元符号前缀。
+            ExpressionTokenKind::Identifier(value) if value.starts_with('$') => {
+                // 返回保留标识符诊断。
+                Err(Diagnostic::new(
+                    // 指向非法美元标识符。
+                    token.span,
+                    // 陈述失败原因。
+                    format!("表达式只允许保留事件参数 $event，不能使用 {value}"),
+                    // 给出修复建议。
+                    "使用 $event 或移除美元符号前缀",
+                ))
+            }
             // match 明确不属于界面表达式。
             ExpressionTokenKind::Identifier(_) => Err(Diagnostic::new(
                 // 指向 match。

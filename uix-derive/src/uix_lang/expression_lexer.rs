@@ -148,7 +148,7 @@ impl<'a> ExpressionLexer<'a> {
             return Ok(self.token(ExpressionTokenKind::End, start));
         };
         // 标识符和关键字使用统一扫描。
-        if next.is_ascii_alphabetic() || next == '_' {
+        if next.is_ascii_alphabetic() || matches!(next, '_' | '$') {
             // 返回标识符类标记。
             return Ok(self.identifier(start));
         }
