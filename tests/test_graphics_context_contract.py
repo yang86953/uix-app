@@ -199,6 +199,64 @@ class GraphicsContextContractTests(unittest.TestCase):
         # PixelUpload 必须保留 recipe 级 typed 未支持说明。
         self.assertIn("pixel-upload Renderer does not support idle present tests", runtime)
 
+    # 校验 overlay backdrop 的资源失败不会重新退化为布尔 fallback。
+    def test_overlay_backdrop_lifecycle_preserves_typed_failures(self) -> None:
+        # 读取 backend 与 renderer 的两层生命周期契约。
+        backend_contract = (ROOT / "src/draw/backend/contract.rs").read_text(encoding="utf-8")
+        # 读取场景侧 RenderTarget 契约。
+        target_contract = (ROOT / "src/draw/target.rs").read_text(encoding="utf-8")
+        # 读取 GPU owner 事务实现。
+        backdrop = (
+            # 固定独立 backdrop 模块路径。
+            ROOT / "src/draw/backend/gpu/backend/render_backend_backdrop.rs"
+        ).read_text(encoding="utf-8")
+        # 读取场景管线失败边界。
+        pipeline = (
+            # 固定 ScenePipeline 实现路径。
+            ROOT / "src/draw/renderer/scene_pipeline/pipeline.rs"
+        ).read_text(encoding="utf-8")
+        # 读取有界恢复包装器，确认场景外错误会登记到下一帧。
+        recovery = (ROOT / "src/draw/renderer/recovery_driver.rs").read_text(
+            # 保持源码契约读取编码稳定。
+            encoding="utf-8"
+        )
+        # 两层快照契约都必须返回 typed Result。
+        for contract in (backend_contract, target_contract):
+            # 快照不支持使用 Ok(false)，真实失败使用 Error。
+            self.assertIn(
+                "fn snapshot_overlay_backdrop(&mut self) -> Result<bool, Error>", contract
+            )
+            # 恢复不支持使用 Ok(false)，真实失败使用 Error。
+            self.assertIn(
+                "fn restore_overlay_backdrop(&mut self) -> Result<bool, Error>", contract
+            )
+            # 释放必须允许 owner-thread 销毁失败越过接口。
+            self.assertIn(
+                "fn release_overlay_backdrop(&mut self) -> Result<(), Error>", contract
+            )
+        # 替换旧快照前的检查式销毁失败必须原样传播。
+        self.assertIn("self.destroy_rhi_overlay_backdrop_texture()?;", backdrop)
+        # snapshot 与 restore 的 device maintenance 都必须传播失败。
+        self.assertGreaterEqual(backdrop.count("self.prepare_rhi_device()?;"), 2)
+        # 恢复 copy/submit 事务不得只记录日志后返回 false。
+        self.assertIn("result?;", backdrop)
+        # 显式 release 必须直接返回检查式销毁结果。
+        self.assertIn("self.destroy_rhi_overlay_backdrop_texture()", backdrop)
+        # 场景管线必须统一生成不可提交的失败帧。
+        self.assertIn("fn failed_backdrop_frame", pipeline)
+        # 禁止恢复曾经吞掉快照错误的无结果调用。
+        self.assertNotIn("let _ = engine.snapshot_overlay_backdrop()", pipeline)
+        # 恢复失败必须在 end_frame 前直接返回失败帧。
+        self.assertIn(
+            "Err(error) => return Self::failed_backdrop_frame(error, cur_version)", pipeline
+        )
+        # RecoveryDriver 必须观察 snapshot 的 begin_frame 外失败。
+        self.assertIn("let result = self.engine.snapshot_overlay_backdrop();", recovery)
+        # RecoveryDriver 必须观察 begin_frame 后的 restore 失败。
+        self.assertIn("let result = self.engine.restore_overlay_backdrop();", recovery)
+        # RecoveryDriver 必须观察 idle 前的 release 失败。
+        self.assertIn("let result = self.engine.release_overlay_backdrop();", recovery)
+
     # 校验 Vulkan owner shutdown 与 lost-device generation 契约。
     def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
         # 组合读取 Vulkan context 的拆分模块，以保持顺序审计语义。

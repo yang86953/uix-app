@@ -553,16 +553,16 @@ impl RenderTarget for Renderer {
         Some((cpu.pixels().to_vec(), cpu.width()))
     }
 
-    fn snapshot_overlay_backdrop(&mut self) -> bool {
+    fn snapshot_overlay_backdrop(&mut self) -> Result<bool, Error> {
         self.session.backend_mut().snapshot_overlay_backdrop()
     }
 
-    fn restore_overlay_backdrop(&mut self) -> bool {
+    fn restore_overlay_backdrop(&mut self) -> Result<bool, Error> {
         self.session.backend_mut().restore_overlay_backdrop()
     }
 
-    fn release_overlay_backdrop(&mut self) {
-        self.session.backend_mut().release_overlay_backdrop();
+    fn release_overlay_backdrop(&mut self) -> Result<(), Error> {
+        self.session.backend_mut().release_overlay_backdrop()
     }
 
     fn has_overlay_backdrop(&self) -> bool {

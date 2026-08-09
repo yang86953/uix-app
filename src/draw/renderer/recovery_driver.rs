@@ -405,16 +405,40 @@ impl RenderTarget for RecoveryDriver {
         self.engine.copy_frame_pixels()
     }
 
-    fn snapshot_overlay_backdrop(&mut self) -> bool {
-        self.engine.snapshot_overlay_backdrop()
+    fn snapshot_overlay_backdrop(&mut self) -> Result<bool, Error> {
+        // 先保留底层原始结果，避免把错误文本或错误码重建一遍。
+        let result = self.engine.snapshot_overlay_backdrop();
+        // backdrop 失败发生在 begin_frame 外，也必须登记到下一帧恢复边界。
+        if let Err(error) = &result {
+            // 复用统一分类保存首个未处理失败。
+            self.record_failure(GraphicsFailure::from_error(error.clone()));
+        }
+        // 向 ScenePipeline 原样返回 typed result。
+        result
     }
 
-    fn restore_overlay_backdrop(&mut self) -> bool {
-        self.engine.restore_overlay_backdrop()
+    fn restore_overlay_backdrop(&mut self) -> Result<bool, Error> {
+        // 先保留底层原始结果，避免把错误文本或错误码重建一遍。
+        let result = self.engine.restore_overlay_backdrop();
+        // restore 位于 begin_frame 之后，失败仍需驱动下一帧有界恢复。
+        if let Err(error) = &result {
+            // 复用统一分类保存首个未处理失败。
+            self.record_failure(GraphicsFailure::from_error(error.clone()));
+        }
+        // 向 ScenePipeline 原样返回 typed result。
+        result
     }
 
-    fn release_overlay_backdrop(&mut self) {
-        self.engine.release_overlay_backdrop();
+    fn release_overlay_backdrop(&mut self) -> Result<(), Error> {
+        // 先保留底层原始结果，确保 owner-thread 清理错误不丢失。
+        let result = self.engine.release_overlay_backdrop();
+        // release 可能发生在 idle 判断前，同样必须进入恢复 FSM。
+        if let Err(error) = &result {
+            // 复用统一分类保存首个未处理失败。
+            self.record_failure(GraphicsFailure::from_error(error.clone()));
+        }
+        // 向 ScenePipeline 原样返回 typed result。
+        result
     }
 
     fn has_overlay_backdrop(&self) -> bool {
@@ -513,6 +537,8 @@ mod tests {
     struct StubTarget {
         frames: u32,
         fail_next: bool,
+        // 单独控制 backdrop 快照失败，验证 begin_frame 外的错误登记。
+        fail_backdrop_snapshot: bool,
         shutdown: bool,
         canvas: NoopCanvas2D,
     }
@@ -522,6 +548,8 @@ mod tests {
             Self {
                 frames: 0,
                 fail_next: false,
+                // 普通 target 不注入 backdrop 失败。
+                fail_backdrop_snapshot: false,
                 shutdown: false,
                 canvas: NoopCanvas2D,
             }
@@ -531,7 +559,26 @@ mod tests {
             Self {
                 frames: 0,
                 fail_next: true,
+                // 帧失败用例不同时注入 backdrop 失败。
+                fail_backdrop_snapshot: false,
                 shutdown: false,
+                canvas: NoopCanvas2D,
+            }
+        }
+
+        // 创建只在 backdrop 快照边界报告设备丢失的 target。
+        fn new_backdrop_failing() -> Self {
+            // 初始化独立故障 target。
+            Self {
+                // 尚未开始任何帧。
+                frames: 0,
+                // begin_frame 自身保持成功。
+                fail_next: false,
+                // 下一次快照调用返回 typed failure。
+                fail_backdrop_snapshot: true,
+                // target 尚未 shutdown。
+                shutdown: false,
+                // 测试不需要真实画布。
                 canvas: NoopCanvas2D,
             }
         }
@@ -569,6 +616,22 @@ mod tests {
 
         fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
             &mut self.canvas
+        }
+
+        // 在专用用例中从 begin_frame 外注入设备丢失。
+        fn snapshot_overlay_backdrop(&mut self) -> Result<bool, Error> {
+            // 只让专用构造器触发故障。
+            if self.fail_backdrop_snapshot {
+                // 返回恢复 FSM 可识别的稳定设备丢失错误。
+                return Err(Error::new(
+                    // 保留真实 GraphicsDeviceLost 分类。
+                    Errc::GraphicsDeviceLost,
+                    // 提供可诊断的测试文本。
+                    "stub overlay backdrop device lost",
+                ));
+            }
+            // 普通测试 target 不支持 GPU backdrop。
+            Ok(false)
         }
     }
 
@@ -640,6 +703,38 @@ mod tests {
         // 请求是一次性的：后续帧不再重复恢复。
         let outcome = driver.begin_frame(UpdateStrategy::FullRedraw);
         assert!(matches!(outcome, RenderOutcome::FrameReady(_)));
+        assert_eq!(rebuilds.load(AtomicOrdering::SeqCst), 1);
+    }
+
+    // 验证 backdrop typed failure 会登记并在下一帧执行有界恢复。
+    #[test]
+    fn backdrop_failure_runs_bounded_recovery_at_next_frame_boundary() {
+        // 记录 rebuilder 的实际调用次数。
+        let rebuilds = Arc::new(AtomicUsize::new(0));
+        // 用只在 backdrop 快照失败的底层 target 构造恢复包装器。
+        let mut driver = RecoveryDriver::new(
+            // 注入 begin_frame 外的设备丢失。
+            Box::new(StubTarget::new_backdrop_failing()),
+            // 使用可计数的成功 rebuilder。
+            counting_rebuilder(&rebuilds),
+        )
+        // 提供重建所需的稳定 surface extent。
+        .with_extent(100, 100);
+        // 先触发 backdrop 快照失败并保留原始错误码。
+        let error = driver
+            // 调用新增 typed lifecycle 边界。
+            .snapshot_overlay_backdrop()
+            // 测试 target 必须返回失败。
+            .expect_err("backdrop snapshot should report device lost");
+        // 确认错误没有退化为不支持。
+        assert_eq!(error.code(), Errc::GraphicsDeviceLost);
+        // 失败发生当帧不应立即重建。
+        assert_eq!(rebuilds.load(AtomicOrdering::SeqCst), 0);
+        // 下一帧边界消费 pending failure 并重建。
+        let outcome = driver.begin_frame(UpdateStrategy::FullRedraw);
+        // 重建后应继续返回可绘制帧。
+        assert!(matches!(outcome, RenderOutcome::FrameReady(_)));
+        // 有界恢复只调用一次 rebuilder。
         assert_eq!(rebuilds.load(AtomicOrdering::SeqCst), 1);
     }
 }

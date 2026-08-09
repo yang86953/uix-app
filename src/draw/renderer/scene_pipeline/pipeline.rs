@@ -26,6 +26,22 @@ impl ScenePipeline {
         &mut self.layer_tree
     }
 
+    // 将 backdrop 资源事务失败统一转换为不可提交的帧结果。
+    fn failed_backdrop_frame(error: Error, tree_version: u64) -> FrameRenderOutput {
+        // 保留底层错误分类，供 RecoveryDriver 选择 surface 或 device 恢复动作。
+        FrameRenderOutput {
+            // 禁止把资源事务失败伪装成普通整树重绘。
+            outcome: RenderOutcome::Failed(
+                // 使用统一图形错误映射保留 DeviceLost、SurfaceLost 与 OOM。
+                crate::draw::renderer::GraphicsFailure::from_error(error),
+            ),
+            // 失败帧不得消费任何 invalidation 来源。
+            inv_source: InvalidationSource::None,
+            // 回传当前场景代际，调用方仍可保留对应 dirty 状态。
+            tree_version,
+        }
+    }
+
     /// 执行单 Pass 渲染（Content + AfterChildren）；返回 Present damage 与 invalidation 来源。
     pub fn render_frame<S: ScenePaint>(
         &mut self,
@@ -39,7 +55,11 @@ impl ScenePipeline {
             .is_some_and(|root| Self::scene_has_overlay(scene, root));
         if !has_overlay {
             self.overlay_backdrop = None;
-            engine.release_overlay_backdrop();
+            // 浮层离场时的资源释放失败必须在任何新帧动作前进入恢复路径。
+            if let Err(error) = engine.release_overlay_backdrop() {
+                // 不再继续 idle、begin_frame、paint 或 present。
+                return Self::failed_backdrop_frame(error, cur_version);
+            }
             self.overlay_backdrop_blocked = false;
         }
         if input.rendered_first && input.dirty_region.is_empty() && input.scroll_move.is_none() {
@@ -103,7 +123,11 @@ impl ScenePipeline {
                 .is_some_and(|root| Self::scene_normal_tree_dirty(scene, root));
         if has_overlay && normal_tree_dirty {
             self.overlay_backdrop = None;
-            engine.release_overlay_backdrop();
+            // 正常树变化会使快照失效；销毁失败不能被整树重绘掩盖。
+            if let Err(error) = engine.release_overlay_backdrop() {
+                // 保留资源 owner，交由有界 recovery 或 shutdown 重试。
+                return Self::failed_backdrop_frame(error, cur_version);
+            }
             self.overlay_backdrop_blocked = true;
         } else if has_overlay
             && self.overlay_backdrop.is_none()
@@ -118,7 +142,11 @@ impl ScenePipeline {
                     .copy_frame_pixels()
                     .and_then(|(pixels, width)| Self::frame_image(pixels, width));
                 if self.overlay_backdrop.is_none() {
-                    let _ = engine.snapshot_overlay_backdrop();
+                    // GPU 快照的真实资源错误必须越过场景边界进入 recovery。
+                    if let Err(error) = engine.snapshot_overlay_backdrop() {
+                        // 快照失败后不允许继续 begin_frame 或绘制浮层。
+                        return Self::failed_backdrop_frame(error, cur_version);
+                    }
                 }
                 self.overlay_backdrop_blocked =
                     self.overlay_backdrop.is_none() && !engine.has_overlay_backdrop();
@@ -227,7 +255,11 @@ impl ScenePipeline {
             self.render_object_tree = RenderObjectTree::new();
             self.last_tree_version = 0;
             self.overlay_backdrop = None;
-            engine.release_overlay_backdrop();
+            // raster pipeline 切换前先检查式回收旧引擎的 backdrop owner。
+            if let Err(error) = engine.release_overlay_backdrop() {
+                // begin_frame 已开始，但失败后仍禁止 paint、end_frame 与 present。
+                return Self::failed_backdrop_frame(error, cur_version);
+            }
             self.overlay_backdrop_blocked = has_overlay;
             self.raster_pipeline = Some(raster_pipeline);
         }
@@ -546,11 +578,26 @@ impl ScenePipeline {
         use_overlay_backdrop: bool,
     ) -> FrameRenderOutput {
         let mut use_overlay_backdrop = use_overlay_backdrop;
-        if use_overlay_backdrop && !engine.restore_overlay_backdrop() {
-            // 恢复失败时退回整树重绘，并阻塞后续快照直至浮层离场。
-            use_overlay_backdrop = false;
-            engine.release_overlay_backdrop();
-            self.overlay_backdrop_blocked = true;
+        if use_overlay_backdrop {
+            // 不支持或代际不匹配仍可退回整树重绘，真实 typed failure 则终止本帧。
+            match engine.restore_overlay_backdrop() {
+                // 完整恢复后只重绘 overlay。
+                Ok(true) => {}
+                // 普通不可用保留既有整树重绘降级。
+                Ok(false) => {
+                    // 禁止后续路径继续使用失效快照。
+                    use_overlay_backdrop = false;
+                    // 清理失败同样必须传播，不能被 fallback 覆盖。
+                    if let Err(error) = engine.release_overlay_backdrop() {
+                        // begin_frame 后的失败不再进入 paint 或 end_frame。
+                        return Self::failed_backdrop_frame(error, cur_version);
+                    }
+                    // 浮层离场前不再重复尝试捕获当前受污染表面。
+                    self.overlay_backdrop_blocked = true;
+                }
+                // copy/submit/device maintenance 的 typed failure 直接进入 recovery。
+                Err(error) => return Self::failed_backdrop_frame(error, cur_version),
+            }
         }
 
         let paint_region = region.clone();
@@ -756,4 +803,3 @@ impl ScenePipeline {
         }
     }
 }
-
