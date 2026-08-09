@@ -49,7 +49,7 @@ impl MetalPixelUploadContext {
 
 impl IGraphicsContext for MetalPixelUploadContext {
     fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Metal, self.device_pixel_ratio)
+        GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Metal)
     }
 
     // Metal PixelUpload recipe 显式暴露专用 surface resize。
@@ -62,12 +62,19 @@ impl IGraphicsContext for MetalPixelUploadContext {
         self.shutdown_result()
     }
 
-    fn width(&self) -> i32 {
-        self.width
-    }
-
-    fn height(&self) -> i32 {
-        self.height
+    // 返回 CAMetalLayer PixelUpload 的完整 drawable 快照。
+    fn present_surface(&self) -> crate::native::present::PresentSurface {
+        // Metal PixelUpload 当前不声明同尺寸重建代际，保留零 generation。
+        crate::native::present::PresentSurface::identity(
+            // 记录当前 layer 上传宽度。
+            self.width,
+            // 记录当前 layer 上传高度。
+            self.height,
+            // 记录构造时确定的设备像素比。
+            self.device_pixel_ratio,
+            // 保持此前默认 PresentSurface 的 generation。
+            0,
+        )
     }
 
     fn present_pixels(

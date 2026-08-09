@@ -70,8 +70,8 @@ pub trait IGraphicsContext {
         let logical_width = width.max(1);
         // 把非法或零尺寸归一化为窗口生命周期允许的最小逻辑尺寸。
         let logical_height = height.max(1);
-        // 读取当前 context 的设备像素比，RHI 只接收物理 drawable 尺寸。
-        let device_pixel_ratio = self.device_pixel_ratio();
+        // 从单一 live surface 快照读取设备像素比，避免分离元数据发生撕裂。
+        let device_pixel_ratio = self.present_surface().device_pixel_ratio;
         // 统一把逻辑尺寸和 DPR 转成经过范围证明的物理 RHI extent。
         let extent =
             rhi_resize_extent_for_logical(logical_width, logical_height, device_pixel_ratio)?;
@@ -101,20 +101,14 @@ pub trait IGraphicsContext {
         self.caps().backend
     }
 
+    // 返回当前 drawable extent、DPR、transform 与 generation 的原子快照。
+    fn present_surface(&self) -> PresentSurface;
+
     /// Checked shutdown boundary for thread-affine native resources.
     ///
     /// Callers and Drop paths must use this method. Teardown failures stay
     /// typed so recovery can retain the previous owner instead of logging only.
     fn try_shutdown(&mut self) -> Result<(), Error>;
-
-    fn width(&self) -> i32;
-    fn height(&self) -> i32;
-
-    /// Current drawable metadata used at the final damage conversion boundary.
-    /// A non-identity or same-extent-rebuilding context must override this.
-    fn present_surface(&self) -> PresentSurface {
-        PresentSurface::identity(self.width(), self.height(), self.device_pixel_ratio(), 0)
-    }
 
     /// Acquired image identity required by tracked multi-buffer presentation.
     fn present_image(&self) -> Option<PresentImage> {
@@ -161,11 +155,6 @@ pub trait IGraphicsContext {
                 self.graphics_backend()
             ),
         ))
-    }
-
-    /// Drawable pixels per logical client pixel (HiDPI). Default `1.0`.
-    fn device_pixel_ratio(&self) -> f32 {
-        1.0
     }
 }
 

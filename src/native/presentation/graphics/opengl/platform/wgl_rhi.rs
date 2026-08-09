@@ -48,7 +48,8 @@ impl OpenGlRhiHost for WglContext {
             return Ok(());
         }
         // 读取当前窗口的 device pixel ratio。
-        let dpr = self.device_pixel_ratio().max(0.0001);
+        // 从单一 surface 快照读取 DPR，避免分离元数据发生撕裂。
+        let dpr = self.present_surface().device_pixel_ratio.max(0.0001);
         // 将物理宽度换算为至少一个像素的逻辑宽度。
         let logical_width = (extent.width as f32 / dpr).round().max(1.0) as i32;
         // 将物理高度换算为至少一个像素的逻辑高度。

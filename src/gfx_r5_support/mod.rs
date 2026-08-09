@@ -81,6 +81,14 @@ pub(crate) fn support_failure(message: impl Into<String>) -> GfxR5Error {
     }
 }
 
+// 从单一 PresentSurface 快照读取 GFX-R5 诊断使用的 drawable extent。
+pub(crate) fn drawable_extent(context: &dyn IGraphicsContext) -> (i32, i32) {
+    // 一次读取 extent、DPR 与 generation，避免诊断证据由分离查询拼接。
+    let surface = context.present_surface();
+    // 返回诊断场景需要的物理 drawable 宽高。
+    (surface.drawable_width, surface.drawable_height)
+}
+
 /// A visible Windows window whose native handle remains valid for the whole
 /// lifetime of the Vulkan surface under test.
 pub struct NativeWindow {
@@ -274,13 +282,15 @@ pub fn run_mixed_dpi_transition(window: &mut NativeWindow) -> GfxR5Result<MixedD
             logical_resize: None,
             target_monitor_reached: initial_reached,
             logical_extent: LOGICAL_EXTENT,
-            drawable_extent: (context.width(), context.height()),
+            drawable_extent: drawable_extent(&context),
         };
 
         let (forward_dpi, forward_reached, forward_bounds) =
             move_to_monitor(window, forward_target)?;
+        // mixed-DPI 诊断显式使用 PixelUpload surface 生命周期。
         context
-            .resize(LOGICAL_EXTENT.0, LOGICAL_EXTENT.1)
+            // 以相同逻辑 extent 重建目标监视器上的 Vulkan drawable。
+            .resize_pixel_upload_surface(LOGICAL_EXTENT.0, LOGICAL_EXTENT.1)
             .map_err(map_error)?;
         present_solid(&mut context, 0xFF9A5C21)?;
         let forward = DpiTransitionEvidence {
@@ -288,12 +298,14 @@ pub fn run_mixed_dpi_transition(window: &mut NativeWindow) -> GfxR5Result<MixedD
             logical_resize: Some(LOGICAL_EXTENT),
             target_monitor_reached: forward_reached,
             logical_extent: LOGICAL_EXTENT,
-            drawable_extent: (context.width(), context.height()),
+            drawable_extent: drawable_extent(&context),
         };
 
         let (return_dpi, return_reached, return_bounds) = move_to_monitor(window, initial_target)?;
+        // 返回初始监视器时继续使用同一 PixelUpload surface 契约。
         context
-            .resize(LOGICAL_EXTENT.0, LOGICAL_EXTENT.1)
+            // 以相同逻辑 extent 重建返回路径的 Vulkan drawable。
+            .resize_pixel_upload_surface(LOGICAL_EXTENT.0, LOGICAL_EXTENT.1)
             .map_err(map_error)?;
         present_solid(&mut context, 0xFFB7642D)?;
         let return_transition = DpiTransitionEvidence {
@@ -301,7 +313,7 @@ pub fn run_mixed_dpi_transition(window: &mut NativeWindow) -> GfxR5Result<MixedD
             logical_resize: Some(LOGICAL_EXTENT),
             target_monitor_reached: return_reached,
             logical_extent: LOGICAL_EXTENT,
-            drawable_extent: (context.width(), context.height()),
+            drawable_extent: drawable_extent(&context),
         };
 
         if initial_dpi == forward_dpi || (initial_dpi <= 96 && forward_dpi <= 96) {

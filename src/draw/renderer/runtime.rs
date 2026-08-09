@@ -101,16 +101,24 @@ impl PixelUploadPresentation {
         surface.resize_pixel_upload_surface(width.max(1), height.max(1))
     }
 
-    fn sync_logical_extent(&mut self) {
-        let dpr = self.context.caps().device_pixel_ratio;
+    // 从调用方已经读取的单一 surface 快照同步逻辑尺寸。
+    fn sync_logical_extent(&mut self, surface: crate::core::PresentSurface) {
+        // 只接受可稳定映射逻辑坐标的有限正 DPR。
+        let dpr = surface.device_pixel_ratio;
+        // 无效 native 元数据保守退回 identity 比例。
         let dpr = if dpr.is_finite() && dpr > 0.0 {
+            // 有效比例原样用于逻辑换算。
             dpr
         } else {
+            // 使用安全的 identity 映射。
             1.0
         };
+        // 把同一快照内的物理尺寸换算为逻辑尺寸。
         let logical = |physical: i32| ((physical.max(1) as f32 / dpr).round() as i32).max(1);
-        self.logical_width = logical(self.context.width());
-        self.logical_height = logical(self.context.height());
+        // 同步逻辑宽度。
+        self.logical_width = logical(surface.drawable_width);
+        // 同步逻辑高度。
+        self.logical_height = logical(surface.drawable_height);
     }
 }
 
@@ -301,10 +309,15 @@ impl RenderTarget for Renderer {
             // 原生 GPU context 已由 factory 构造完成；首帧准备统一在 session.begin_frame 执行。
             Presentation::BackendManaged => self.session.initialize_prepared(width, height),
             Presentation::PixelUpload(upload) => {
-                let actual_width = upload.context.width().max(1);
-                let actual_height = upload.context.height().max(1);
+                // 一次读取初始化后的完整 PixelUpload surface 快照。
+                let present_surface = upload.context.present_surface();
+                // 从同一快照读取实际物理宽度。
+                let actual_width = present_surface.drawable_width.max(1);
+                // 从同一快照读取实际物理高度。
+                let actual_height = present_surface.drawable_height.max(1);
                 self.session.initialize(actual_width, actual_height)?;
-                upload.sync_logical_extent();
+                // 复用同一快照同步逻辑 extent。
+                upload.sync_logical_extent(present_surface);
                 Ok(())
             }
         }
@@ -331,14 +344,16 @@ impl RenderTarget for Renderer {
             Presentation::PixelUpload(upload) => {
                 // CPU PixelUpload 只通过专用 surface 契约重建 native drawable。
                 upload.resize_surface(width, height)?;
-                // 读取 adapter resize 后的实际物理宽度。
-                let actual_width = upload.context.width().max(1);
-                // 读取 adapter resize 后的实际物理高度。
-                let actual_height = upload.context.height().max(1);
+                // resize 成功后一次读取完整 PixelUpload surface 快照。
+                let present_surface = upload.context.present_surface();
+                // 从同一快照读取 adapter 的实际物理宽度。
+                let actual_width = present_surface.drawable_width.max(1);
+                // 从同一快照读取 adapter 的实际物理高度。
+                let actual_height = present_surface.drawable_height.max(1);
                 // 让 CPU retained surface 与 native drawable 像素尺寸保持一致。
                 self.session.resize(actual_width, actual_height)?;
                 // 更新上层窗口使用的逻辑尺寸缓存。
-                upload.sync_logical_extent();
+                upload.sync_logical_extent(present_surface);
                 // 返回两侧 surface 已同步的成功结果。
                 Ok(())
             }
@@ -464,7 +479,18 @@ impl RenderTarget for Renderer {
 
     fn device_pixel_ratio(&self) -> f32 {
         match &self.presentation {
-            Presentation::PixelUpload(upload) => upload.context.device_pixel_ratio(),
+            Presentation::PixelUpload(upload) => {
+                // PixelUpload 只从完整 live surface 快照读取 DPR。
+                let dpr = upload.context.present_surface().device_pixel_ratio;
+                // 无效 native 元数据保守回退 identity 比例。
+                if dpr.is_finite() && dpr > 0.0 {
+                    // 返回当前有效 DPR。
+                    dpr
+                } else {
+                    // 保持 renderer 对非法元数据的既有安全语义。
+                    1.0
+                }
+            }
             Presentation::External | Presentation::BackendManaged => {
                 self.session.backend().device_pixel_ratio()
             }

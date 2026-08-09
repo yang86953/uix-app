@@ -62,7 +62,8 @@ impl GraphicsSurface for super::D3d11Context {
             return Ok(self.token());
         }
         // 使用当前 DPR 把物理尺寸转换为兼容 context 的逻辑尺寸。
-        let dpr = self.device_pixel_ratio().max(0.0001);
+        // 从单一 surface 快照读取 DPR，避免分离元数据发生撕裂。
+        let dpr = self.present_surface().device_pixel_ratio.max(0.0001);
         // 计算传给 Win32 drawable 查询的逻辑宽度。
         let logical_width = (extent.width as f32 / dpr).round().max(1.0) as i32;
         // 计算传给 Win32 drawable 查询的逻辑高度。

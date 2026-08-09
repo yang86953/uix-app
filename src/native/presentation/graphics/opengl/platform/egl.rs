@@ -399,7 +399,6 @@ impl IGraphicsContext for EglContext {
         crate::native::present::GraphicsContextCaps::gpu_native_swapchain(
             crate::native::present::GraphicsApi::OpenGlEs,
             PresentCoherency::FullOnly,
-            1.0,
         )
     }
 
@@ -418,16 +417,23 @@ impl IGraphicsContext for EglContext {
         NativeRasterCaps::retained_rhi_with_additive()
     }
 
+    // 返回 EGL drawable 的完整 live surface 快照。
+    fn present_surface(&self) -> crate::native::present::PresentSurface {
+        // EGL 当前逻辑与物理尺寸保持 identity 映射，并保留真实重建代际。
+        crate::native::present::PresentSurface::identity(
+            // 记录当前 EGL drawable 宽度。
+            self.width,
+            // 记录当前 EGL drawable 高度。
+            self.height,
+            // 保留既有 EGL identity DPR 语义。
+            1.0,
+            // resize 时递增的 generation 隔离旧 FramePlan。
+            self.surface_generation,
+        )
+    }
+
     fn try_shutdown(&mut self) -> Result<(), Error> {
         self.shutdown_result()
-    }
-
-    fn width(&self) -> i32 {
-        self.width
-    }
-
-    fn height(&self) -> i32 {
-        self.height
     }
 
     // 统一 present 入口显式区分 EGL swapchain 与不支持的像素上传载荷。

@@ -59,7 +59,6 @@ impl IGraphicsContext for FakeGraphicsContext {
         crate::native::present::GraphicsContextCaps::gpu_native_swapchain(
             crate::native::present::GraphicsApi::OpenGlEs,
             crate::core::PresentCoherency::FullOnly,
-            1.0,
         )
     }
 
@@ -72,12 +71,19 @@ impl IGraphicsContext for FakeGraphicsContext {
         Ok(())
     }
 
-    fn width(&self) -> i32 {
-        self.state.width.get()
-    }
-
-    fn height(&self) -> i32 {
-        self.state.height.get()
+    // 返回测试 context 的完整 drawable 元数据快照。
+    fn present_surface(&self) -> crate::native::present::PresentSurface {
+        // fake 使用 identity DPR 和稳定零 generation。
+        crate::native::present::PresentSurface::identity(
+            // 读取测试记录的 drawable 宽度。
+            self.state.width.get(),
+            // 读取测试记录的 drawable 高度。
+            self.state.height.get(),
+            // fake 不模拟 HiDPI。
+            1.0,
+            // fake 不模拟同尺寸 surface 重建。
+            0,
+        )
     }
 
     // 测试 context 显式记录统一 swapchain payload，不提供旧交换旁路。

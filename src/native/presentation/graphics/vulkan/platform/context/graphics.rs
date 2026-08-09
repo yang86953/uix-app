@@ -4,7 +4,7 @@ use super::*;
 
 impl IGraphicsContext for VulkanContext {
     fn caps(&self) -> crate::native::present::GraphicsContextCaps {
-        GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan, self.device_pixel_ratio())
+        GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan)
     }
 
     fn graphics_backend(&self) -> GraphicsApi {
@@ -21,16 +21,19 @@ impl IGraphicsContext for VulkanContext {
         self.shutdown_result()
     }
 
-    fn width(&self) -> i32 {
-        self.width
-    }
-
-    fn height(&self) -> i32 {
-        self.height
-    }
-
-    fn device_pixel_ratio(&self) -> f32 {
-        self.width as f32 / self.logical_width.max(1) as f32
+    // 返回 Vulkan PixelUpload swapchain 的完整 drawable 快照。
+    fn present_surface(&self) -> crate::native::present::PresentSurface {
+        // FullOnly recipe 不消费 generation，保留此前默认零代际语义。
+        crate::native::present::PresentSurface::identity(
+            // 记录当前 swapchain 物理宽度。
+            self.width,
+            // 记录当前 swapchain 物理高度。
+            self.height,
+            // 从同一状态计算逻辑到物理的 DPR。
+            self.width as f32 / self.logical_width.max(1) as f32,
+            // 保持 PixelUpload damage tracker 的既有 generation。
+            0,
+        )
     }
 
     fn present_pixels(
