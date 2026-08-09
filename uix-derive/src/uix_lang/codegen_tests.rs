@@ -345,6 +345,55 @@ fn validates_theme_toggle_shape_and_attribute_contract() {
     assert!(unknown_attribute.message.contains("dark"));
 }
 
+// 验证 WindowControl 生成只调用运行时公开组合函数。
+#[test]
+fn generates_window_controls_with_documented_flags() {
+    // 构造覆盖字面量、受限表达式与公共样式的窗口控制标签。
+    let snapshot = generate(
+        r#"<WindowControl showMinimize="false" showMaximize={show_maximize} showClose="true" margin="4px" />"#,
+    )
+    // 文档化 WindowControl 属性必须生成成功。
+    .expect("文档化 WindowControl 应生成 Rust View");
+    // 必须调用 window_chrome 公开组合函数。
+    assert!(snapshot.contains("window_controls"));
+    // 三项显示值必须按最小化、最大化/还原、关闭顺序传递。
+    assert!(
+        // 最小化字面量保持 false。
+        snapshot.contains("window_controls (false , show_maximize , true)")
+    );
+    // 公共样式仍由统一 View 映射处理。
+    assert!(snapshot.contains("margin"));
+    // 过程宏不得重复持有平台窗口动作或外观策略。
+    assert!(!snapshot.contains("WindowControl :: Minimize") && !snapshot.contains("Icon :: new"));
+}
+
+// 验证 WindowControl 默认值、叶子形状与属性边界。
+#[test]
+fn validates_window_controls_defaults_shape_and_attributes() {
+    // 默认自闭合标签必须显示全部三个标准动作。
+    let default = generate(r#"<WindowControl />"#).expect("默认 WindowControl 应可生成");
+    // 默认值必须按文档传入三个 true。
+    assert!(default.contains("window_controls (true , true , true)"));
+    // 可见子节点不能被组合叶标签静默丢弃。
+    let child_error = generate(r#"<WindowControl><Icon name="x" /></WindowControl>"#)
+        // 提取预期结构诊断。
+        .expect_err("WindowControl 可见子节点必须失败");
+    // 诊断必须说明叶子形状。
+    assert!(child_error.message.contains("不接受子节点"));
+    // 非布尔显示属性必须由共享布尔映射拒绝。
+    let boolean_error = generate(r#"<WindowControl showClose="yes" />"#)
+        // 提取预期布尔诊断。
+        .expect_err("WindowControl 非布尔显示属性必须失败");
+    // 诊断必须指出具体属性与布尔要求。
+    assert!(boolean_error.message.contains("showClose") && boolean_error.message.contains("布尔"));
+    // 未登记属性必须继续走统一拒绝路径。
+    let unknown_attribute = generate(r#"<WindowControl action="close" />"#)
+        // 提取预期属性映射诊断。
+        .expect_err("WindowControl 未登记属性必须失败");
+    // 诊断必须包含具体未知属性名。
+    assert!(unknown_attribute.message.contains("action"));
+}
+
 // 验证 If 与 For 生成真实 Rust 控制流、索引和稳定 key。
 #[test]
 fn generates_if_for_and_key_snapshot() {

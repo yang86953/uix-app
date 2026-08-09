@@ -26,11 +26,6 @@ const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
         name: "ButtonGroup",
         category: "内置组件 / 通用组件",
     },
-    // 通用组件规划项。
-    PlannedBuiltin {
-        name: "WindowControl",
-        category: "内置组件 / 通用组件",
-    },
     // 布局组件规划项。
     PlannedBuiltin {
         name: "Col",
@@ -444,7 +439,7 @@ pub(crate) fn planned_builtin_diagnostic(element: &Element) -> Option<Diagnostic
             element.name, entry.category
         ),
         // 给出当前真实支持集合。
-        "当前使用 Text、Label、Button、Icon、Divider、Space、Typography、ThemeToggle、Container、Row 或 Column，或先完成该组件的属性映射 Gate",
+        "当前使用 Text、Label、Button、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row 或 Column，或先完成该组件的属性映射 Gate",
     ))
 }
 

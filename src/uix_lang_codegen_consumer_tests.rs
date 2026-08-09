@@ -106,6 +106,12 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     );
     // 验证 ThemeToggle 叶组件只依赖公开 prelude API。
     let _theme_toggle: ViewNode = crate::uix!(r#"<ThemeToggle />"#);
+    // 提供 WindowControl 动态显示属性的消费者值。
+    let show_maximize = false;
+    // 验证 WindowControl 组合与动态布尔属性只依赖公开 prelude API。
+    let _window_controls: ViewNode = crate::uix!(
+        r#"<WindowControl showMinimize="true" showMaximize={show_maximize} showClose="false" />"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
