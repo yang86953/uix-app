@@ -187,6 +187,21 @@ fn public_uix_macro_compiles_tag() {
     // 编译成功即证明 Rust 2024 外部消费契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 Card 标题、操作项与异质子树。
+#[test]
+// 声明 Card 外部消费编译测试。
+fn public_uix_macro_compiles_card() {
+    // 使用 Rust 2024 into 迭代器构造操作项字符串集合。
+    let card_actions = ["编辑", "删除"].into_iter().collect::<Vec<_>>();
+    // 使用拥有所有权的字符串验证标题借用只持续到构造调用。
+    let card_title = String::from("用户信息");
+    // 让过程宏生成公开 Card、ViewNode 子树与公共自动化属性。
+    let _view: ViewNode = uix::uix!(
+        r#"<Card title={card_title} actions={card_actions} automationId="profile-card"><Text>姓名</Text><Button>编辑</Button></Card>"#
+    );
+    // 编译成功即证明 Rust 2024 外部消费与子树生命周期契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译类型化开关与滑块表单。
 #[test]
 fn public_uix_macro_compiles_typed_form_switch_and_slider_items() {

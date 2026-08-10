@@ -388,6 +388,14 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _tag: ViewNode = crate::uix!(
         r#"<Tag color={tag_color} closable={tag_closable} checkable={tag_checkable} width="160px" automationId="tag">状态：{tag_label}</Tag>"#
     );
+    // 提供 Card 动态标题。
+    let card_title = String::from("用户信息");
+    // 提供 Card 公开构建器消费的操作项字符串集合。
+    let card_actions = vec!["编辑", "删除"];
+    // 验证 Card 专有属性、异质子树和公共属性只依赖公开 prelude。
+    let _card: ViewNode = crate::uix!(
+        r#"<Card title={card_title} actions={card_actions} width="320px" automationId="profile-card"><Text>姓名</Text><Button>编辑</Button></Card>"#
+    );
     // 提供 Form 绑定的类型化业务状态。
     let profile = State::new(ProfileForm {
         // 提供通过邮箱规则的初始值。

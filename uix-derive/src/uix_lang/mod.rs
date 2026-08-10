@@ -182,6 +182,11 @@ mod tag_codegen;
 // 集中验证 Tag 生成与拒绝路径。
 #[cfg(test)]
 mod tag_codegen_tests;
+// 定义 Card 标题、操作项与完整子树的公开 API 代码生成边界。
+mod card_codegen;
+// 集中验证 Card 生成、控制子树与拒绝路径。
+#[cfg(test)]
+mod card_codegen_tests;
 // 定义 Form 与类型化字段的公开 API 代码生成边界。
 mod form_codegen;
 // 定义 FormSliderItem 类型化 f64 字段的独立生成边界。
@@ -319,6 +324,8 @@ pub(crate) use empty_codegen::generate_empty;
 pub(crate) use result_view_codegen::generate_result_view;
 // 向核心元素生成器暴露 Tag 专用映射。
 pub(crate) use tag_codegen::generate_tag;
+// 向核心元素生成器暴露 Card 容器专用映射。
+pub(crate) use card_codegen::generate_card;
 // 向核心元素生成器暴露 Form 与越界字段项映射。
 pub(crate) use form_codegen::{
     generate_form, generate_orphan_form_checkbox_item, generate_orphan_form_input_item,
