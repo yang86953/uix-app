@@ -2,6 +2,47 @@
 use super::AutoComplete;
 // 引入断言所需的点与矩形基础类型。
 use crate::core::{Point, Rect};
+// 引入受控输入测试所需的响应式状态。
+use crate::ui::reactive::state::State;
+
+// 受控绑定必须同步外部文本并接收编辑与候选提交。
+#[test]
+// 测试名称说明文本状态双向同步契约。
+fn controlled_value_reads_edits_selects_and_reconciles() {
+    // 初始状态提供待过滤查询文本。
+    let value = State::new("ap".to_owned());
+    // 构造两个匹配查询的候选项并绑定外部文本。
+    let mut autocomplete = AutoComplete::new()
+        // 提供稳定的字符串候选集合。
+        .options(vec!["apple", "apricot"])
+        // 绑定外部输入状态。
+        .bind_value(&value);
+
+    // 初始输入必须来自外部状态。
+    assert_eq!(autocomplete.value(), "ap");
+    // 模拟在光标末尾继续输入一个字符。
+    assert!(autocomplete.insert_text("p"));
+    // 本地编辑必须立即写回外部状态。
+    assert_eq!(value.get(), "app");
+    // 选择首个过滤候选必须成功。
+    assert!(autocomplete.commit_index(0));
+    // 候选提交必须把完整选项写回状态。
+    assert_eq!(value.get(), "apple");
+
+    // 模拟业务逻辑从外部切换到另一个候选。
+    value.set("apricot".to_owned());
+    // 声明式重建必须把最新状态同步进既有实例。
+    autocomplete.sync_from(
+        // 新声明保持相同候选与绑定句柄。
+        AutoComplete::new()
+            // 重建候选集合。
+            .options(vec!["apple", "apricot"])
+            // 重建受控状态绑定。
+            .bind_value(&value),
+    );
+    // 重建后的输入文本必须服从外部状态。
+    assert_eq!(autocomplete.value(), "apricot");
+}
 
 // 构造指定数量的稳定候选项。
 fn options(count: usize) -> Vec<String> {

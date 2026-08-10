@@ -5,8 +5,10 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
-use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::component::paint_context::PaintContext;
+// 引入自动完成文本的受控状态句柄。
+use crate::ui::reactive::state::State;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
@@ -38,6 +40,8 @@ component! {
     pub struct AutoComplete {
         placeholder: String,
         value: String,
+        // 保存外部输入文本的受控绑定。
+        value_binding: Option<State<String>>,
         options: Vec<String>,
         filtered: Vec<String>,
         open: bool,
@@ -89,6 +93,8 @@ component! {
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        // 交互前接收外部状态的最新文本。
+        self.sync_bound_value();
         match event {
             SystemEvent::PointerDown {
                 pos,
@@ -531,6 +537,8 @@ impl AutoComplete {
         Self {
             placeholder: String::new(),
             value: String::new(),
+            // 默认保持非受控输入模式。
+            value_binding: None,
             options: Vec::new(),
             filtered: Vec::new(),
             open: false,
@@ -569,6 +577,14 @@ impl AutoComplete {
         self.options = opts.into_iter().map(|s| s.into()).collect();
         self
     }
+    // 将输入文本与选中结果绑定到外部字符串状态。
+    pub fn bind_value(mut self, state: &State<String>) -> Self {
+        // 克隆轻量状态句柄供后续交互提交使用。
+        self.value_binding = Some(state.clone());
+        // 构造时立即同步文本并登记响应式依赖。
+        self.sync_bound_value();
+        self
+    }
     pub fn value(&self) -> &str {
         &self.value
     }
@@ -578,6 +594,17 @@ impl AutoComplete {
         self.text_scroll_x.set(0.0);
         if self.is_present() || self.focus {
             self.filter();
+        }
+    }
+    // 从外部受控状态同步当前输入文本。
+    fn sync_bound_value(&mut self) {
+        // 非受控模式保留组件内部文本。
+        let Some(value) = self.value_binding.as_ref().map(State::get) else {
+            return;
+        };
+        // 仅在外部值变化时重置光标与过滤结果。
+        if value != self.value {
+            self.set_value(&value);
         }
     }
     fn filter(&mut self) {
@@ -661,9 +688,19 @@ impl AutoComplete {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        // 受控实例以新声明中的状态值为权威。
+        let controlled_value = next.value_binding.as_ref().map(|_| next.value.clone());
         let options_changed = self.options != next.options;
         self.placeholder = next.placeholder;
         self.options = next.options;
+        // 同步声明式重建携带的状态句柄。
+        self.value_binding = next.value_binding;
+        // 外部文本变化时更新光标与当前过滤结果。
+        if let Some(value) = controlled_value {
+            if value != self.value {
+                self.set_value(&value);
+            }
+        }
         self.cursor_char = self.cursor_char.min(self.value.chars().count());
         if (self.is_present() || self.focus) && options_changed {
             self.filter();
@@ -801,6 +838,14 @@ impl AutoComplete {
     }
 
     fn publish_change(&self) {
+        // 受控模式先把本地编辑结果写回外部状态。
+        if let Some(state) = self.value_binding.as_ref() {
+            // 避免重复发布相同文本。
+            if state.get() != self.value {
+                state.set(self.value.clone());
+            }
+        }
+        // 再保留既有语义 Change 事件负载。
         self.pending_change.replace(Some(self.value.clone()));
     }
 }
