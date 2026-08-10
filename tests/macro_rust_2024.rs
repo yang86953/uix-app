@@ -242,6 +242,23 @@ fn public_uix_macro_compiles_timeline() {
     // 编译成功即证明 Rust 2024 数组、bool 与叶节点契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 QRCode 动态内容与尺寸。
+#[test]
+// 声明 QRCode 外部消费编译测试。
+fn public_uix_macro_compiles_qrcode() {
+    // 使用拥有所有权的字符串验证生成器只在构造期间借用内容。
+    let qr_value = String::from("https://example.com/download");
+    // 使用 Rust 2024 const 块产生动态 f32 尺寸。
+    let qr_size = const { 196.0_f32 };
+    // 让过程宏生成 qrcode capability 下的公开 QRCode 与高纠错等级。
+    let _view: ViewNode = uix::uix!(
+        r#"<QRCode value={qr_value} size={qr_size} errorLevel="H" automationId="download-code" />"#
+    );
+    // QRCode 构造完成后调用方仍持有原字符串所有权。
+    assert_eq!(qr_value, "https://example.com/download");
+    // 编译成功即证明 Rust 2024 String 借用、f32 与叶节点契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译类型化开关与滑块表单。
 #[test]
 fn public_uix_macro_compiles_typed_form_switch_and_slider_items() {
