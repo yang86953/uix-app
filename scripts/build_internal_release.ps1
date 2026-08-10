@@ -127,19 +127,26 @@ try {
         $sourcePath = Join-Path $stageRoot $name
         # ZIP 条目统一使用规范正斜杠，避免依赖 Windows 解压器解释反斜杠。
         $entryName = $name.Replace('\', '/')
-        # 使用最佳压缩级别创建一个且仅一个规范条目。
-        $archiveEntry = [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-            # 传入当前唯一 ZIP owner。
-            $archive,
-            # 传入 staging 中的可信源文件。
-            $sourcePath,
-            # 传入经过规范化的 archive 路径。
-            $entryName,
-            # 保持既有最佳压缩策略。
-            [IO.Compression.CompressionLevel]::Optimal
-        )
-        # 所有条目使用同一确定时间，保证相同载荷不因文件时间产生不同 ZIP 字节。
+        # 使用最佳压缩级别创建一个且仅一个尚未打开的规范条目。
+        $archiveEntry = $archive.CreateEntry($entryName, [IO.Compression.CompressionLevel]::Optimal)
+        # 在条目 stream 打开前写入确定时间，满足 ZipArchive Create 模式生命周期。
         $archiveEntry.LastWriteTime = $archiveTimestamp
+        # 以只读方式打开已经在 staging 目录验证过的源文件。
+        $sourceStream = [IO.File]::OpenRead($sourcePath)
+        # 时间戳固定后再打开唯一条目写入流。
+        $entryStream = $archiveEntry.Open()
+        # 两个流必须在下一个条目创建前同时关闭。
+        try {
+            # 流式复制载荷，避免把可执行文件或 crate 整体读入内存。
+            $sourceStream.CopyTo($entryStream)
+        }
+        # 成功或失败都释放源文件与 archive 条目流。
+        finally {
+            # 先关闭目标流，使当前条目的压缩数据完整写回 archive。
+            $entryStream.Dispose()
+            # 再关闭只读源文件句柄。
+            $sourceStream.Dispose()
+        }
     }
 }
 # ZIP owner 必须在哈希与独立校验前关闭并写完中央目录。
