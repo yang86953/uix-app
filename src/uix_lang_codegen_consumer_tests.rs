@@ -10,6 +10,13 @@ struct ConsumerItem {
     name: String,
 }
 
+// 定义 UIX Form 首批使用的类型化业务模型。
+#[derive(Clone)]
+struct ProfileForm {
+    // 保存邮箱字段。
+    email: String,
+}
+
 // 提供无事件参数的 Rust 侧回调。
 fn on_confirm() {}
 
@@ -335,6 +342,17 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     // 验证颜色绑定和公共属性只依赖公开 prelude。
     let _color_picker: ViewNode =
         crate::uix!(r#"<ColorPicker value={selected_color} width="200px" automationId="color" />"#);
+    // 提供 Form 绑定的类型化业务状态。
+    let profile = State::new(ProfileForm {
+        // 提供通过邮箱规则的初始值。
+        email: "owner@example.com".to_string(),
+    });
+    // 提供返回类型化业务结果的提交回调。
+    let on_profile_submit = |_profile: ProfileForm| Ok::<(), String>(());
+    // 验证模型投影、规则和 submitForm 只依赖公开 prelude。
+    let _form: ViewNode = crate::uix!(
+        r#"<Form model={profile} @submit="on_profile_submit"><FormInputItem field="email" label="邮箱" rules="required,email" /><Button type="primary" @click="submitForm">提交</Button></Form>"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
