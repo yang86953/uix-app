@@ -6,6 +6,8 @@ import shutil
 import subprocess
 # 引入隔离测试目录。
 import tempfile
+# 引入标准 TOML 解析器以读取 Cargo package 事实。
+import tomllib
 # 引入标准单元测试框架。
 import unittest
 # 引入稳定路径拼接。
@@ -36,6 +38,42 @@ PAYLOAD_NAMES = (
     # Demo 运行时图片。
     "assets/images/demo.png",
 )
+
+
+# 验证内部 crate 身份与发布组合根门禁。
+class PackageMetadataContractTests(unittest.TestCase):
+    # 固化根 package 的内部交付元数据。
+    def test_root_package_has_stable_internal_release_identity(self) -> None:
+        # 读取仓库权威 Cargo manifest。
+        manifest = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))
+        # 取得根 package 表。
+        package = manifest["package"]
+        # crate 名称必须保持为 uix。
+        self.assertEqual(package["name"], "uix")
+        # 首发候选版本必须保持为 0.0.1。
+        self.assertEqual(package["version"], "0.0.1")
+        # 内部 crate 不得误开放 crates.io 发布。
+        self.assertFalse(package["publish"])
+        # 专有许可文件必须继续进入 Cargo package。
+        self.assertEqual(package["license-file"], "LICENSE")
+        # 描述必须准确表达产品形态与授权边界。
+        self.assertEqual(
+            # 读取实际 package 描述。
+            package["description"],
+            # 对照冻结的内部交付文案。
+            "UIX cross-platform native app framework for authorized internal use",
+        )
+
+    # 固化发布组合根必须拒绝空描述。
+    def test_release_builder_requires_non_empty_package_description(self) -> None:
+        # 读取发布构建器源码。
+        builder = (ROOT / "scripts" / "build_internal_release.ps1").read_text(encoding="utf-8")
+        # 构建器必须从 cargo metadata 取得描述。
+        self.assertIn("$packageDescription = [string]$package[0].description", builder)
+        # 构建器必须把空白描述作为失败条件。
+        self.assertIn("[string]::IsNullOrWhiteSpace($packageDescription)", builder)
+        # 缺失描述必须产生稳定诊断。
+        self.assertIn("declare a non-empty description", builder)
 
 
 # 只在 Windows PowerShell 可用时执行发布包行为测试。
