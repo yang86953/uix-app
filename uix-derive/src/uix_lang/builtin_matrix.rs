@@ -83,11 +83,6 @@ const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
     },
     // 展示组件规划项。
     PlannedBuiltin {
-        name: "QRCode",
-        category: "内置组件 / 展示组件",
-    },
-    // 展示组件规划项。
-    PlannedBuiltin {
         name: "Watermark",
         category: "内置组件 / 展示组件",
     },
@@ -219,7 +214,7 @@ pub(crate) fn planned_builtin_diagnostic(element: &Element) -> Option<Diagnostic
             element.name, entry.category
         ),
         // 给出当前真实支持集合。
-        "当前使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Skeleton、Empty、ResultView、Tag、Card、Descriptions 或 Timeline；Col 仅作为 Row/Grid 的直接子项，或先完成该组件的属性映射 Gate",
+        "当前使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline 或 QRCode；Col 仅作为 Row/Grid 的直接子项，或先完成该组件的属性映射 Gate",
     ))
 }
 
