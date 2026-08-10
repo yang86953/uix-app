@@ -19,7 +19,6 @@ nul
 
 # CodeGraph local index
 .codegraph/
-.cargo/
 
 # Pi agent system files (auto-generated, per-session state)
 .pi/
