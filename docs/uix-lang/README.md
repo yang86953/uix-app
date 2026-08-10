@@ -42,7 +42,7 @@ UIX Lang 继承产品四原则（见[定位与原则](../产品/定位与原则.
 | [内置组件/反馈组件](内置组件/反馈组件.md) | Message / Alert / Modal / Drawer / Popover / ProgressBar / Spin 等反馈组件 |
 | [内置组件/导航组件](内置组件/导航组件.md) | Menu / Tabs / Breadcrumb / Steps / Pagination 等导航组件 |
 
-当前生成矩阵真实支持上述登记标签，以及只在 `Row` / `Grid` 直接子项位置有效的 `Col` 和文档内自定义 `Component` 展开。展示组件除 `Avatar`、`Skeleton`、`Empty`、`ResultView`、`Tag`、`Card`、`Descriptions`、`Timeline`、`Calendar`、`Tree`、`QRCode`、`Watermark` 外的 PascalCase 标签、反馈组件除 `Alert`、`Tooltip`、`FocusTrap` 与 `Spin` 外的 PascalCase 标签、导航组件文档中的全部 PascalCase 标签，以及输入 / 布局文档中未登记的标签（如 `Upload`）均已登记为“规划中”：使用时会在宏展开期报告组件名、所属文档类别与修复建议，不会静默生成占位 View。
+当前生成矩阵真实支持上述登记标签，以及只在 `Row` / `Grid` 直接子项位置有效的 `Col` 和文档内自定义 `Component` 展开。展示组件除 `Avatar`、`Skeleton`、`Empty`、`ResultView`、`Tag`、`Card`、`Descriptions`、`Timeline`、`Calendar`、`Tree`、`QRCode`、`Watermark` 外的 PascalCase 标签、反馈组件除 `Alert`、`Popover`、`Tooltip`、`FocusTrap` 与 `Spin` 外的 PascalCase 标签、导航组件文档中的全部 PascalCase 标签，以及输入 / 布局文档中未登记的标签（如 `Upload`）均已登记为“规划中”：使用时会在宏展开期报告组件名、所属文档类别与修复建议，不会静默生成占位 View。
 
 图表组件（BarChart / LineChart / PieChart 等 12 个）的规范文档尚未编写（规划中），对应组件能力以 [组件速查](../使用/组件速查.md) 与[图表使用文档](../使用/图表.md)为准。
 

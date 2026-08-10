@@ -363,6 +363,21 @@ fn public_uix_macro_compiles_tooltip() {
     // 编译成功即证明 String 借用、默认触发语义与唯一子树契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 Popover 动态内容与唯一触发子树。
+#[test]
+// 声明 Popover 外部消费编译测试。
+fn public_uix_macro_compiles_popover() {
+    // 调用方持有 String，宏展开只能临时借用。
+    let popover_content = String::from("气泡详情");
+    // 让过程宏生成公开 Popover、悬停触发模式、按钮子树与公共自动化属性。
+    let _view: ViewNode = uix::uix!(
+        r#"<Popover content={popover_content} trigger="hover" automationId="details-popover"><Button>查看</Button></Popover>"#
+    );
+    // Popover 构造完成后调用方仍持有原字符串所有权。
+    assert_eq!(popover_content, "气泡详情");
+    // 编译成功即证明 String 借用、枚举映射与唯一触发子树契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译 FocusTrap 有序焦点作用域子树。
 #[test]
 // 声明 FocusTrap 外部消费编译测试。
