@@ -321,19 +321,82 @@ impl View for FormRateItem {
 
 /// 一个已登记字段的声明式单选组输入项。
 pub struct FormRadioItem {
-    model: FormModel,
-    field: String,
-    value: State<String>,
-    focus_handle: FocusHandle,
-    group_name: String,
-    options: Vec<String>,
-    disabled: Option<bool>,
-    size: Option<ControlSize>,
-    vertical: bool,
-    show_error: bool,
+    // 保存统一表单模型；声明阶段允许尚未绑定。
+    pub(crate) model: Option<FormModel>,
+    // 保存稳定业务字段 key。
+    pub(crate) field: String,
+    // 保存字符串字段状态；声明阶段允许尚未绑定。
+    pub(crate) value: Option<State<String>>,
+    // 保存字段焦点句柄；声明阶段允许尚未绑定。
+    pub(crate) focus_handle: Option<FocusHandle>,
+    // 保存独立 FormItem 标签。
+    pub(crate) label: Option<String>,
+    // 保存单选组名称。
+    pub(crate) group_name: String,
+    // 保存按源码顺序排列的选项文本。
+    pub(crate) options: Vec<String>,
+    // 保存可选禁用状态。
+    pub(crate) disabled: Option<bool>,
+    // 保存可选控件尺寸。
+    pub(crate) size: Option<ControlSize>,
+    // 保存纵向布局开关。
+    pub(crate) vertical: bool,
+    // 保存必填校验开关。
+    pub(crate) required: bool,
+    // 保存错误文本显示策略。
+    pub(crate) show_error: bool,
 }
 
 impl FormRadioItem {
+    /// 声明式裸配置；经 `Form::model(...).field(...)` 投影绑定时使用。
+    pub fn new(field: impl Into<String>) -> Self {
+        // 只求值一次并复用为默认分组名。
+        let field = field.into();
+        // 创建尚未绑定运行时模型的字段声明。
+        Self {
+            // 绑定阶段由 ModelForm 注入统一模型。
+            model: None,
+            // 保存稳定业务字段 key。
+            field: field.clone(),
+            // 绑定阶段由 ModelForm 注入字段值状态。
+            value: None,
+            // 绑定阶段由 ModelForm 注入焦点句柄。
+            focus_handle: None,
+            // 默认沿用字段 key 作为展示标签。
+            label: None,
+            // 默认使用字段 key 隔离同组单选项。
+            group_name: field,
+            // 默认候选集合为空。
+            options: Vec::new(),
+            // 默认启用输入。
+            disabled: None,
+            // 默认沿用控件尺寸。
+            size: None,
+            // 默认使用横向布局。
+            vertical: false,
+            // 默认不启用必填规则。
+            required: false,
+            // 默认显示首条错误文本。
+            show_error: true,
+        }
+    }
+
+    /// 设置独立于稳定字段 key 的表单展示标签。
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        // 保存 FormItem 面向用户的展示文本。
+        self.label = Some(label.into());
+        // 返回配置后的字段声明。
+        self
+    }
+
+    /// 声明字段必须选择非空选项后才能提交。
+    pub fn required(mut self, required: bool) -> Self {
+        // 保存运行时必填校验开关。
+        self.required = required;
+        // 返回配置后的字段声明。
+        self
+    }
+
     /// 设置单选组名。
     pub fn group_name(mut self, group_name: impl Into<String>) -> Self {
         self.group_name = group_name.into();
@@ -380,7 +443,17 @@ impl FormRadioItem {
 
 impl View for FormRadioItem {
     fn build(self) -> ViewNode {
-        let mut radio = Radio::group(self.group_name, self.options, &self.value);
+        // 断言字段已由类型化表单或低层 FormModel 绑定。
+        let model = bound_required(
+            self.model.clone(),
+            "FormRadioItem 未绑定：请经 Form::model 字段投影或 FormModel::radio_item 创建",
+        );
+        // 断言字符串值状态已注入。
+        let value = bound_required(self.value.clone(), "FormRadioItem 未绑定值 State");
+        // 断言焦点句柄已注入。
+        let focus_handle =
+            bound_required(self.focus_handle.clone(), "FormRadioItem 未绑定焦点句柄");
+        let mut radio = Radio::group(self.group_name, self.options, &value);
         if let Some(disabled) = self.disabled {
             radio = radio.disabled(disabled);
         }
@@ -391,13 +464,13 @@ impl View for FormRadioItem {
             radio = radio.vertical();
         }
         let input = bind_typed_control(
-            &self.model,
+            &model,
             &self.field,
-            &self.value,
-            &self.focus_handle,
+            &value,
+            &focus_handle,
             ViewNode::leaf(radio),
         );
-        form_item_shell(&self.model, &self.field, self.show_error, input)
+        form_item_shell(&model, &self.field, self.show_error, input)
     }
 }
 
@@ -575,15 +648,17 @@ impl FormModel {
         let focus_handle = self.focus_handle_for(field)?;
         self.register_reset_state(field, value);
         Some(FormRadioItem {
-            model: self.clone(),
+            model: Some(self.clone()),
             field: field.to_string(),
-            value: value.clone(),
-            focus_handle,
+            value: Some(value.clone()),
+            focus_handle: Some(focus_handle),
+            label: None,
             group_name: field.to_string(),
             options: Vec::new(),
             disabled: None,
             size: None,
             vertical: false,
+            required: false,
             show_error: true,
         })
     }
