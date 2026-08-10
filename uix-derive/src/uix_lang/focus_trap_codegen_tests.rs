@@ -1,0 +1,57 @@
+// 引入解析与核心生成入口。
+use super::{Diagnostic, generate_view, parse_document};
+
+// 生成测试源码的稳定令牌快照。
+fn generate(source: &str) -> Result<String, Diagnostic> {
+    // 先解析完整 UIX 文档。
+    let document = parse_document(source)?;
+    // 再生成公开 Rust View 表达式。
+    generate_view(&document.root).map(|tokens| tokens.to_string())
+    // 结束测试生成入口。
+}
+
+// 验证 FocusTrap 有序子树与公共属性的完整生成契约。
+#[test]
+// 声明完整 FocusTrap 生成测试。
+fn generates_focus_trap_contract() {
+    // 生成覆盖输入、按钮、尺寸与自动化身份的焦点作用域。
+    let snapshot = generate(r#"<FocusTrap width="320px" automationId="dialog-actions"><Button>确定</Button><Button>取消</Button></FocusTrap>"#).expect("焦点作用域应映射到公开 FocusTrap API");
+    // 焦点作用域必须使用默认启用的公开构造器。
+    assert!(snapshot.contains("FocusTrap :: new ()"));
+    // 容器必须保留两个源码有序按钮子节点。
+    assert!(snapshot.matches("prelude :: button").count() == 2);
+    // 公共宽度与自动化标识仍由公共属性层消费。
+    assert!(snapshot.contains("width (320.0)") && snapshot.contains("automation_id"));
+}
+
+// 验证 FocusTrap 保留动态子树控制流且允许空作用域声明。
+#[test]
+// 声明 FocusTrap 子树形状测试。
+fn preserves_control_flow_and_empty_scope() {
+    // 生成包含条件项与循环项的动态焦点作用域。
+    let dynamic = generate(r#"<FocusTrap><If {show_primary}><Button>主要</Button></If><For {action} in {actions}><Button>{action}</Button></For></FocusTrap>"#).expect("焦点作用域应保留普通控制流");
+    // 条件分支必须保留为 Rust if。
+    assert!(dynamic.contains("if show_primary"));
+    // 循环分支必须保留为 Rust for。
+    assert!(dynamic.contains("for action in"));
+    // 空作用域不应由编译层猜测运行时可聚焦性。
+    let empty = generate(r#"<FocusTrap />"#).expect("空焦点作用域应保持可构造");
+    // 空作用域仍必须声明稳定 FocusTrap 身份。
+    assert!(empty.contains("FocusTrap :: new ()"));
+}
+
+// 验证未登记的运行时配置与专有事件不会静默暴露。
+#[test]
+// 声明 FocusTrap 属性与事件拒绝测试。
+fn rejects_unregistered_focus_trap_contracts() {
+    // active 尚未在 UIX 文档中登记，不能直接穿透运行时构建器。
+    let active = generate(r#"<FocusTrap active="false"><Button>确定</Button></FocusTrap>"#)
+        .expect_err("未登记 active 属性必须被拒绝");
+    // 未知属性诊断必须包含具体属性名。
+    assert!(active.message.contains("active"));
+    // FocusTrap 当前没有专有 open 事件。
+    let event = generate(r#"<FocusTrap @open="on_open"><Button>确定</Button></FocusTrap>"#)
+        .expect_err("未登记 @open 事件必须被拒绝");
+    // 未知事件诊断必须包含具体事件名。
+    assert!(event.message.contains("@open"));
+}

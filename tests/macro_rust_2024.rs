@@ -363,6 +363,17 @@ fn public_uix_macro_compiles_tooltip() {
     // 编译成功即证明 String 借用、默认触发语义与唯一子树契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 FocusTrap 有序焦点作用域子树。
+#[test]
+// 声明 FocusTrap 外部消费编译测试。
+fn public_uix_macro_compiles_focus_trap() {
+    // 让过程宏生成公开 FocusTrap、两个按钮后代与公共自动化属性。
+    let _view: ViewNode = uix::uix!(
+        r#"<FocusTrap automationId="dialog-actions"><Button>确定</Button><Button>取消</Button></FocusTrap>"#
+    );
+    // 编译成功即证明核心 FocusTrap 在调用 crate 无额外 capability 时可见。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译类型化开关与滑块表单。
 #[test]
 fn public_uix_macro_compiles_typed_form_switch_and_slider_items() {
