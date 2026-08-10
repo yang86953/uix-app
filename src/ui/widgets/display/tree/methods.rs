@@ -251,6 +251,58 @@ impl Tree {
         tree
     }
 
+    /// 为整棵树统一启用或禁用勾选入口。
+    pub fn checkable(mut self, value: bool) -> Self {
+        // 把树级文档配置递归投影到每个节点。
+        Self::set_nodes_checkable(&mut self.nodes, value);
+        // 节点勾选槽位变化后立即刷新扁平渲染快照。
+        self.flatten();
+        // 返回可继续组合的树组件。
+        self
+    }
+
+    /// 设置首次物化时是否展开全部可展开节点。
+    pub fn default_expand_all(mut self, value: bool) -> Self {
+        // 默认展开只构造初始键集合，不成为受控运行态。
+        let mut expanded_keys = Vec::new();
+        // 启用时递归收集拥有子节点或懒加载能力的稳定键。
+        if value {
+            // 从完整节点树生成初始展开集合。
+            Self::collect_expandable_keys(&self.nodes, &mut expanded_keys);
+        }
+        // 用新初始配置替换构造期间的空集合。
+        self.expanded_keys = expanded_keys;
+        // 初始展开集合变化后重新生成可见行。
+        self.flatten();
+        // 返回可继续组合的树组件。
+        self
+    }
+
+    // 递归应用树级勾选能力。
+    fn set_nodes_checkable(nodes: &mut [TreeNode], value: bool) {
+        // 遍历当前层的每个节点。
+        for node in nodes {
+            // 用树级配置覆盖节点自身的初始勾选入口。
+            node.checkable = value;
+            // 对完整子树应用相同配置。
+            Self::set_nodes_checkable(&mut node.children, value);
+        }
+    }
+
+    // 递归收集可展开节点的稳定键。
+    fn collect_expandable_keys(nodes: &[TreeNode], expanded_keys: &mut Vec<String>) {
+        // 按声明顺序遍历当前层节点。
+        for node in nodes {
+            // 有静态子节点或懒加载能力的节点都具有展开语义。
+            if !node.children.is_empty() || node.lazy {
+                // 保存稳定业务键而不是可见索引。
+                expanded_keys.push(node.key.clone());
+            }
+            // 继续收集嵌套分支。
+            Self::collect_expandable_keys(&node.children, expanded_keys);
+        }
+    }
+
     pub fn selected_key(&self) -> &str {
         &self.selected_key
     }
@@ -716,4 +768,3 @@ impl Tree {
         }
     }
 }
-

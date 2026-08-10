@@ -307,6 +307,24 @@ fn public_uix_macro_compiles_calendar() {
     // 编译成功即证明默认 Calendar 与叶节点契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 Tree 类型化数据与动态配置。
+#[test]
+// 声明 Tree 外部消费编译测试。
+fn public_uix_macro_compiles_tree() {
+    // 构造由过程宏取得所有权的类型化节点数组。
+    let tree_nodes = [
+        // 根节点包含一个稳定键子项。
+        TreeNode::new("根", "root").children(vec![TreeNode::new("子项", "child")]),
+    ];
+    // 使用 Rust 2024 const 块产生动态勾选配置。
+    let tree_checkable = const { true };
+    // 让过程宏生成公开 Tree、初始展开与公共自动化属性。
+    let _view: ViewNode = uix::uix!(
+        r#"<Tree data={tree_nodes} checkable={tree_checkable} defaultExpandAll="true" automationId="navigation-tree" />"#
+    );
+    // 编译成功即证明 TreeNode 集合、bool 与叶节点契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译类型化开关与滑块表单。
 #[test]
 fn public_uix_macro_compiles_typed_form_switch_and_slider_items() {
