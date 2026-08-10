@@ -192,6 +192,11 @@ mod descriptions_codegen;
 // 集中验证 Descriptions 生成、默认值与拒绝路径。
 #[cfg(test)]
 mod descriptions_codegen_tests;
+// 定义 Timeline 类型化数据、pending 与 reverse 的公开 API 代码生成边界。
+mod timeline_codegen;
+// 集中验证 Timeline 生成、默认值与拒绝路径。
+#[cfg(test)]
+mod timeline_codegen_tests;
 // 定义 Form 与类型化字段的公开 API 代码生成边界。
 mod form_codegen;
 // 定义 FormSliderItem 类型化 f64 字段的独立生成边界。
@@ -333,6 +338,8 @@ pub(crate) use tag_codegen::generate_tag;
 pub(crate) use card_codegen::generate_card;
 // 向核心元素生成器暴露 Descriptions 叶组件专用映射。
 pub(crate) use descriptions_codegen::generate_descriptions;
+// 向核心元素生成器暴露 Timeline 叶组件专用映射。
+pub(crate) use timeline_codegen::generate_timeline;
 // 向核心元素生成器暴露 Form 与越界字段项映射。
 pub(crate) use form_codegen::{
     generate_form, generate_orphan_form_checkbox_item, generate_orphan_form_input_item,
