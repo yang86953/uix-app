@@ -11,7 +11,7 @@ use super::{
 // 引入受限表达式与事件处理器生成入口。
 use super::{
     expression_uses_event, generate_affix, generate_app_layout, generate_autocomplete,
-    generate_back_top, generate_button_group, generate_cascader, generate_checkbox,
+    generate_back_top, generate_button_group, generate_card, generate_cascader, generate_checkbox,
     generate_color_picker, generate_column, generate_container, generate_date_picker,
     generate_date_range_picker, generate_divider, generate_empty, generate_expression,
     generate_float_button, generate_form, generate_grid, generate_handler_expression,
@@ -139,6 +139,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "ResultView" => generate_result_view(element),
         // 标签映射到公开文本、颜色与初始交互能力契约。
         "Tag" => generate_tag(element),
+        // 卡片映射到公开标题、操作项与完整 View 子树契约。
+        "Card" => generate_card(element),
         // 表单映射到类型化模型、字段投影与提交闭环。
         "Form" => generate_form(element),
         // FormInputItem 只能由 Form 解释类型化字段语义。
@@ -183,7 +185,7 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Skeleton、Empty、ResultView 或 Tag，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Skeleton、Empty、ResultView、Tag 或 Card，或先登记组件状态",
         )),
     }
 }
