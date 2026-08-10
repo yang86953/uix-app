@@ -101,6 +101,9 @@ pub enum DropPosition {
 
 mod component;
 mod methods;
+// 集中验证树级文档配置与运行时状态所有权。
+#[cfg(test)]
+mod tests;
 
 pub use component::*;
 
