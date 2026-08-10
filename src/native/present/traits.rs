@@ -3,6 +3,8 @@
 use super::*;
 
 // 把逻辑窗口尺寸按 DPR 转成薄 RHI 使用的物理 drawable extent。
+// 只在共享 resize 事务或其纯转换测试可达时编译。
+#[cfg(any(test, all(windows, feature = "d3d11"), feature = "opengles"))]
 fn rhi_resize_extent_for_logical(
     logical_width: i32,
     logical_height: i32,
@@ -102,6 +104,8 @@ pub trait IGraphicsContext {
 }
 
 // 为直接拥有薄 RHI 的原生 context 执行共享 resize 事务。
+// 与实际调用方保持同一 backend/test 构建边界，避免无 backend 编译该事务。
+#[cfg(any(test, all(windows, feature = "d3d11"), feature = "opengles"))]
 pub(crate) fn resize_native_rhi_surface(
     // 借用不可拆分的 GPU recipe owner。
     context: &mut dyn GpuRecipeContext,

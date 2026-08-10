@@ -24,6 +24,8 @@ pub enum PresentOcclusionSupport {
     #[default]
     Unsupported,
     /// 正常 present 报告进入遮挡，并支持无帧数据的 `test_present` 退出探测。
+    // 只有 Windows D3D11 adapter 当前实现了 status 与无数据退出探测。
+    #[cfg(all(windows, feature = "d3d11"))]
     PresentStatusAndTest,
 }
 
@@ -31,6 +33,8 @@ impl fmt::Display for PresentOcclusionSupport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Unsupported => "unsupported",
+            // 与变体使用同一构建边界，避免无 D3D11 时保留不可达分支。
+            #[cfg(all(windows, feature = "d3d11"))]
             Self::PresentStatusAndTest => "present_status_and_test",
         })
     }
@@ -159,6 +163,13 @@ pub struct GraphicsContextCaps {
 
 impl GraphicsContextCaps {
     /// Legal combo: [`RasterMode::GpuNative`] × [`PresentMode::Swapchain`].
+    // 仅在 GPU-native backend、测试或显式测试门面需要时编译该构造器。
+    #[cfg(any(
+        test,
+        feature = "test-harness",
+        all(windows, any(feature = "d3d11", feature = "d3d12")),
+        feature = "opengles"
+    ))]
     pub fn gpu_native_swapchain(backend: GraphicsApi, present_coherency: PresentCoherency) -> Self {
         Self {
             backend,
@@ -170,6 +181,8 @@ impl GraphicsContextCaps {
     }
 
     /// Legal combo: [`RasterMode::Cpu`] × [`PresentMode::PixelUpload`].
+    // 仅 Vulkan、Metal 与内部测试需要构造 CPU PixelUpload recipe 能力。
+    #[cfg(any(test, feature = "vulkan", feature = "metal"))]
     pub fn cpu_pixel_upload(backend: GraphicsApi) -> Self {
         Self {
             backend,
@@ -181,6 +194,8 @@ impl GraphicsContextCaps {
     }
 
     /// 为具备可靠 present-status 入口与无数据退出探测的 context 提升能力。
+    // 只有 Windows D3D11 可把默认遮挡能力提升为 status-and-test。
+    #[cfg(all(windows, feature = "d3d11"))]
     pub const fn with_present_occlusion(mut self, support: PresentOcclusionSupport) -> Self {
         self.present_occlusion = support;
         self
@@ -374,9 +389,10 @@ mod recipe_owner;
 mod traits;
 
 // 图形 context 与 recipe 专用呈现 SPI 只供 crate 内部 backend 与 bootstrap 使用。
-pub(crate) use self::traits::{
-    resize_native_rhi_surface, GpuRecipeContext, IGraphicsContext, PixelUploadSurface,
-};
+pub(crate) use self::traits::{GpuRecipeContext, IGraphicsContext, PixelUploadSurface};
+// 共享 RHI resize 只向实际 GPU-native backend 与内部测试重导出。
+#[cfg(any(test, all(windows, feature = "d3d11"), feature = "opengles"))]
+pub(crate) use self::traits::resize_native_rhi_surface;
 // 只向 crate 内图形装配与 backend 暴露已验证 GPU owner。
 pub(crate) use gpu_recipe_owner::GpuRecipeOwner;
 // 只向 crate 内 renderer 暴露已验证 PixelUpload owner。
