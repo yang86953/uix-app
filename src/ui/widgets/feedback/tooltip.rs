@@ -559,4 +559,22 @@ mod tests {
         // 浮层登记必须与共享解析器的受限气泡完全一致。
         assert_eq!(overlay.bounds_rect(), Some(expected.bubble));
     }
+
+    // 验证声明刷新只替换配置，不抹除运行时已经建立的可见状态。
+    #[test]
+    // 测试名称说明 Tooltip 生命周期状态的所有权边界。
+    fn refresh_preserves_runtime_visibility() {
+        // 创建旧声明对应的运行时组件。
+        let mut current = Tooltip::new("旧提示");
+        // 通过运行时入口建立可见状态与进入过渡。
+        current.open();
+        // 创建下一帧声明提供的新文字配置。
+        let next = Tooltip::new("新提示");
+        // 按组件树协调协议刷新声明字段。
+        current.sync_from(next);
+        // 声明刷新后运行时可见状态必须继续保留。
+        assert!(current.is_visible());
+        // 声明刷新应替换新的提示文字。
+        assert_eq!(current.text, "新提示");
+    }
 }
