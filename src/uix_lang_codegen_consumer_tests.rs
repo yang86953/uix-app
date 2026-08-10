@@ -352,6 +352,14 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     // 验证颜色绑定和公共属性只依赖公开 prelude。
     let _color_picker: ViewNode =
         crate::uix!(r#"<ColorPicker value={selected_color} width="200px" automationId="color" />"#);
+    // 提供 Skeleton 动态尺寸表达式。
+    let skeleton_width = 240.0_f32;
+    // 高度使用独立 f32 值验证公开构建器类型。
+    let skeleton_height = 48.0_f32;
+    // 验证形状、动态尺寸和自动化标识只依赖公开 prelude。
+    let _skeleton: ViewNode = crate::uix!(
+        r#"<Skeleton shape="text" width={skeleton_width} height={skeleton_height} automationId="loading" />"#
+    );
     // 提供 Form 绑定的类型化业务状态。
     let profile = State::new(ProfileForm {
         // 提供通过邮箱规则的初始值。

@@ -129,6 +129,20 @@ fn public_uix_macro_compiles_float_button() {
     // 编译成功即证明公开路径与类型契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 Skeleton 静态形状与动态尺寸。
+#[test]
+fn public_uix_macro_compiles_skeleton() {
+    // 使用 Rust 2024 const 块产生动态 f32 宽度。
+    let skeleton_width = const { 240.0_f32 };
+    // 使用 Rust 2024 const 块产生动态 f32 高度。
+    let skeleton_height = const { 48.0_f32 };
+    // 让过程宏生成公开 SkeletonShape 与尺寸构建器。
+    let _view: ViewNode = uix::uix!(
+        r#"<Skeleton shape="text" width={skeleton_width} height={skeleton_height} automationId="loading" />"#
+    );
+    // 编译成功即证明 Rust 2024 外部消费契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译类型化开关与滑块表单。
 #[test]
 fn public_uix_macro_compiles_typed_form_switch_and_slider_items() {

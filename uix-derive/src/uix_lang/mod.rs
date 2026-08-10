@@ -162,6 +162,11 @@ mod color_picker_codegen;
 // 集中验证 ColorPicker 生成与拒绝路径。
 #[cfg(test)]
 mod color_picker_codegen_tests;
+// 定义 Skeleton 静态外观与尺寸的公开 API 代码生成边界。
+mod skeleton_codegen;
+// 集中验证 Skeleton 生成与拒绝路径。
+#[cfg(test)]
+mod skeleton_codegen_tests;
 // 定义 Form 与类型化字段的公开 API 代码生成边界。
 mod form_codegen;
 // 定义 FormSliderItem 类型化 f64 字段的独立生成边界。
@@ -291,6 +296,8 @@ pub(crate) use date_range_picker_codegen::generate_date_range_picker;
 pub(crate) use time_picker_codegen::generate_time_picker;
 // 向核心元素生成器暴露 ColorPicker 专用映射。
 pub(crate) use color_picker_codegen::generate_color_picker;
+// 向核心元素生成器暴露 Skeleton 专用映射。
+pub(crate) use skeleton_codegen::generate_skeleton;
 // 向核心元素生成器暴露 Form 与越界字段项映射。
 pub(crate) use form_codegen::{
     generate_form, generate_orphan_form_checkbox_item, generate_orphan_form_input_item,
