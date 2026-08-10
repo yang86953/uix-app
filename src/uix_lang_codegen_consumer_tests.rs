@@ -317,6 +317,14 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _date_picker: ViewNode = crate::uix!(
         r#"<DatePicker value={selected_date} mode="month" width="240px" automationId="date" />"#
     );
+    // 提供 DateRangePicker 当前范围的起点日期状态。
+    let range_start = State::new(Date::new(2026, 8, 1));
+    // 终点状态与起点状态保持独立所有权。
+    let range_end = State::new(Date::new(2026, 8, 31));
+    // 验证结构化双端点绑定和公共属性只依赖公开 prelude。
+    let _date_range_picker: ViewNode = crate::uix!(
+        r#"<DateRangePicker value={{ start: range_start, end: range_end }} width="280px" automationId="date-range" />"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
