@@ -281,6 +281,20 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _cascader: ViewNode = crate::uix!(
         r#"<Cascader value={region} options={region_options} width="240px" automationId="region" />"#
     );
+    // 提供 TreeSelect 当前选中节点的稳定 key 状态。
+    let selected_tree_key = State::new(String::from("member"));
+    // 提供与 Tree 共享数据结构的层级节点集合。
+    let tree_nodes = vec![
+        // 根节点包含一个可选成员叶节点。
+        TreeNode::new("部门", "dept").children(vec![
+            // 叶节点的稳定 key 与初始受控状态一致。
+            TreeNode::new("成员", "member"),
+        ]),
+    ];
+    // 验证节点树、稳定 key 绑定和公共属性只依赖公开 prelude。
+    let _tree_select: ViewNode = crate::uix!(
+        r#"<TreeSelect value={selected_tree_key} options={tree_nodes} width="240px" automationId="tree" />"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。

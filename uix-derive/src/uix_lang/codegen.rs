@@ -17,7 +17,7 @@ use super::{
     generate_input_number, generate_orphan_col, generate_radio, generate_range_slider,
     generate_rate, generate_row, generate_scroll_view, generate_segmented, generate_select,
     generate_slider, generate_space, generate_splitter, generate_switch, generate_theme_toggle,
-    generate_typography, generate_virtual_scroll, generate_window_control,
+    generate_tree_select, generate_typography, generate_virtual_scroll, generate_window_control,
 };
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
@@ -112,6 +112,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "Select" => generate_select(element),
         // 级联选择器映射到选项树与 State<CascaderValue> 双向路径契约。
         "Cascader" => generate_cascader(element),
+        // 树形选择器映射到 TreeNode 树与 State<String> 稳定 key 双向契约。
+        "TreeSelect" => generate_tree_select(element),
         // Col 只能由 Row 或 Grid 解释其父级布局语义。
         "Col" => generate_orphan_col(element),
         // 图标映射到公开 Icon 组件。
@@ -142,7 +144,7 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select 或 Cascader，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader 或 TreeSelect，或先登记组件状态",
         )),
     }
 }
