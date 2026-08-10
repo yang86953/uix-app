@@ -234,6 +234,11 @@ mod breadcrumb_codegen;
 // 集中验证 Breadcrumb 生成与拒绝路径。
 #[cfg(test)]
 mod breadcrumb_codegen_tests;
+// 定义 Anchor 类型化滚动目标、偏移与 href 事件的公开 API 代码生成边界。
+mod anchor_codegen;
+// 集中验证 Anchor 生成与拒绝路径。
+#[cfg(test)]
+mod anchor_codegen_tests;
 // 定义 QRCode 内容、尺寸与纠错等级的公开 API 代码生成边界。
 mod qrcode_codegen;
 // 集中验证 QRCode 生成、默认值与拒绝路径。
@@ -436,6 +441,8 @@ pub(crate) use steps_codegen::generate_steps;
 pub(crate) use pagination_codegen::generate_pagination;
 // 向核心元素生成器暴露 Breadcrumb 叶组件专用映射。
 pub(crate) use breadcrumb_codegen::generate_breadcrumb;
+// 向核心元素生成器暴露 Anchor 叶组件专用映射。
+pub(crate) use anchor_codegen::generate_anchor;
 // 向核心元素生成器暴露 QRCode 叶组件专用映射。
 pub(crate) use qrcode_codegen::generate_qrcode;
 // 向核心元素生成器暴露 Watermark 叶组件专用映射。

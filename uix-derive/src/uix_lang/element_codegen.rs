@@ -5,7 +5,7 @@ use proc_macro2::TokenStream;
 use super::codegen::{generate_button, generate_icon, generate_text};
 // 引入所有独立组件生成器、语法树与诊断入口。
 use super::{
-    Diagnostic, Element, generate_affix, generate_alert, generate_app_layout,
+    Diagnostic, Element, generate_affix, generate_alert, generate_anchor, generate_app_layout,
     generate_autocomplete, generate_avatar, generate_back_top, generate_breadcrumb,
     generate_button_group, generate_calendar, generate_card, generate_carousel, generate_cascader,
     generate_checkbox, generate_color_picker, generate_column, generate_container,
@@ -132,6 +132,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "Pagination" => generate_pagination(element),
         // 面包屑映射到类型化 BreadcrumbItem 路径与末项当前页契约。
         "Breadcrumb" => generate_breadcrumb(element),
+        // 锚点导航映射到类型化 AnchorItem、偏移与 href Change 契约。
+        "Anchor" => generate_anchor(element),
         // 二维码映射到内容、文档尺寸与纠错等级契约。
         "QRCode" => generate_qrcode(element),
         // 水印映射到文字、透明度与运行时平铺绘制契约。
@@ -194,7 +196,7 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Steps、Pagination、Breadcrumb、QRCode、Watermark、Alert、Modal、Drawer、Tooltip、Popover、FocusTrap 或 Spin，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Steps、Pagination、Breadcrumb、Anchor、QRCode、Watermark、Alert、Modal、Drawer、Tooltip、Popover、FocusTrap 或 Spin，或先登记组件状态",
         )),
     }
     // 结束元素分派函数。
