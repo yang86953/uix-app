@@ -53,11 +53,6 @@ const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
     },
     // 展示组件规划项。
     PlannedBuiltin {
-        name: "Carousel",
-        category: "内置组件 / 展示组件",
-    },
-    // 展示组件规划项。
-    PlannedBuiltin {
         name: "Image",
         category: "内置组件 / 展示组件",
     },
@@ -159,7 +154,7 @@ pub(crate) fn planned_builtin_diagnostic(element: &Element) -> Option<Diagnostic
             element.name, entry.category
         ),
         // 给出当前真实支持集合。
-        "当前使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Tree、Steps、Pagination、QRCode、Watermark、Alert、Tooltip、Popover、FocusTrap 或 Spin；Col 仅作为 Row/Grid 的直接子项，或先完成该组件的属性映射 Gate",
+        "当前使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Steps、Pagination、QRCode、Watermark、Alert、Tooltip、Popover、FocusTrap 或 Spin；Col 仅作为 Row/Grid 的直接子项，或先完成该组件的属性映射 Gate",
     ))
 }
 

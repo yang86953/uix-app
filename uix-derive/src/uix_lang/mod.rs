@@ -209,6 +209,11 @@ mod calendar_codegen;
 // 集中验证 Calendar 生成与拒绝路径。
 #[cfg(test)]
 mod calendar_codegen_tests;
+// 定义 Carousel 有序幻灯片与自动播放的公开 API 代码生成边界。
+mod carousel_codegen;
+// 集中验证 Carousel 生成、默认值、控制流与拒绝路径。
+#[cfg(test)]
+mod carousel_codegen_tests;
 // 定义 Tree 类型化节点与初始交互配置的公开 API 代码生成边界。
 mod tree_codegen;
 // 集中验证 Tree 生成、默认值与拒绝路径。
@@ -406,6 +411,8 @@ pub(crate) use descriptions_codegen::generate_descriptions;
 pub(crate) use timeline_codegen::generate_timeline;
 // 向核心元素生成器暴露 Calendar 叶组件专用映射。
 pub(crate) use calendar_codegen::generate_calendar;
+// 向核心元素生成器暴露 Carousel 容器专用映射。
+pub(crate) use carousel_codegen::generate_carousel;
 // 向核心元素生成器暴露 Tree 叶组件专用映射。
 pub(crate) use tree_codegen::generate_tree;
 // 向核心元素生成器暴露 Steps 叶组件专用映射。
