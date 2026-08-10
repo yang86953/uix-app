@@ -222,6 +222,26 @@ fn public_uix_macro_compiles_descriptions() {
     // 编译成功即证明 Rust 2024 数组、usize 与叶节点契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 Timeline 类型化数组与动态方向。
+#[test]
+// 声明 Timeline 外部消费编译测试。
+fn public_uix_macro_compiles_timeline() {
+    // 使用固定数组验证生成器的 IntoIterator 数据边界。
+    let timeline_items = [
+        // 创建第一项公开类型化事件数据。
+        TimelineItem::new("创建").description("初始化项目"),
+        // 创建第二项公开类型化事件数据。
+        TimelineItem::new("发布").description("交付稳定版本"),
+    ];
+    // 使用 Rust 2024 const 块产生动态 reverse 配置。
+    let timeline_reversed = const { false };
+    // 让过程宏生成公开 Timeline、类型化集合与布尔构建器。
+    let _view: ViewNode = uix::uix!(
+        r#"<Timeline items={timeline_items} pending="true" reverse={timeline_reversed} automationId="release-timeline" />"#
+    );
+    // 编译成功即证明 Rust 2024 数组、bool 与叶节点契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译类型化开关与滑块表单。
 #[test]
 fn public_uix_macro_compiles_typed_form_switch_and_slider_items() {
