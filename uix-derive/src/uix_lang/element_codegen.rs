@@ -16,12 +16,13 @@ use super::{
     generate_orphan_form_input_item, generate_orphan_form_radio_item,
     generate_orphan_form_select_item, generate_orphan_form_slider_item,
     generate_orphan_form_switch_item, generate_pagination, generate_popover, generate_qrcode,
-    generate_radio, generate_range_slider, generate_rate, generate_result_view, generate_row,
-    generate_scroll_view, generate_segmented, generate_select, generate_skeleton, generate_slider,
-    generate_space, generate_spin, generate_splitter, generate_steps, generate_switch,
-    generate_tag, generate_theme_toggle, generate_time_picker, generate_timeline, generate_tooltip,
-    generate_tree, generate_tree_select, generate_typography, generate_virtual_scroll,
-    generate_watermark, generate_window_control, planned_builtin_diagnostic,
+    generate_radio, generate_range_slider, generate_rate, generate_result_view, generate_rich_text,
+    generate_row, generate_scroll_view, generate_segmented, generate_select, generate_skeleton,
+    generate_slider, generate_space, generate_spin, generate_splitter, generate_steps,
+    generate_switch, generate_tag, generate_theme_toggle, generate_time_picker, generate_timeline,
+    generate_tooltip, generate_tree, generate_tree_select, generate_typography,
+    generate_virtual_scroll, generate_watermark, generate_window_control,
+    planned_builtin_diagnostic,
 };
 
 // 按当前核心映射矩阵生成一个普通元素。
@@ -138,6 +139,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "QRCode" => generate_qrcode(element),
         // 水印映射到文字、透明度与运行时平铺绘制契约。
         "Watermark" => generate_watermark(element),
+        // 富文本映射到公开 Markdown 解析器与运行时选择生命周期契约。
+        "RichText" => generate_rich_text(element),
         // 警告提示映射到状态、关闭能力与关闭事件契约。
         "Alert" => generate_alert(element),
         // 模态框映射到 State<bool>、同步操作回调与完整有序内容子树契约。
