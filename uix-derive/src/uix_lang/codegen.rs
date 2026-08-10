@@ -12,14 +12,14 @@ use super::{
 use super::{
     expression_uses_event, generate_affix, generate_app_layout, generate_autocomplete,
     generate_back_top, generate_button_group, generate_cascader, generate_checkbox,
-    generate_column, generate_container, generate_date_picker, generate_date_range_picker,
-    generate_divider, generate_expression, generate_float_button, generate_grid,
-    generate_handler_expression, generate_input, generate_input_group, generate_input_number,
-    generate_mentions, generate_orphan_col, generate_radio, generate_range_slider, generate_rate,
-    generate_row, generate_scroll_view, generate_segmented, generate_select, generate_slider,
-    generate_space, generate_splitter, generate_switch, generate_theme_toggle,
-    generate_time_picker, generate_tree_select, generate_typography, generate_virtual_scroll,
-    generate_window_control,
+    generate_color_picker, generate_column, generate_container, generate_date_picker,
+    generate_date_range_picker, generate_divider, generate_expression, generate_float_button,
+    generate_grid, generate_handler_expression, generate_input, generate_input_group,
+    generate_input_number, generate_mentions, generate_orphan_col, generate_radio,
+    generate_range_slider, generate_rate, generate_row, generate_scroll_view, generate_segmented,
+    generate_select, generate_slider, generate_space, generate_splitter, generate_switch,
+    generate_theme_toggle, generate_time_picker, generate_tree_select, generate_typography,
+    generate_virtual_scroll, generate_window_control,
 };
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
@@ -126,6 +126,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "DateRangePicker" => generate_date_range_picker(element),
         // 时间选择映射到 State<Time> 双向值契约。
         "TimePicker" => generate_time_picker(element),
+        // 颜色选择映射到 State<Color> 双向值契约。
+        "ColorPicker" => generate_color_picker(element),
         // Col 只能由 Row 或 Grid 解释其父级布局语义。
         "Col" => generate_orphan_col(element),
         // 图标映射到公开 Icon 组件。

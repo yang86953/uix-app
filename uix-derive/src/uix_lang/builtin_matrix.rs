@@ -18,11 +18,6 @@ const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
     },
     // 输入组件规划项。
     PlannedBuiltin {
-        name: "ColorPicker",
-        category: "内置组件 / 输入组件",
-    },
-    // 输入组件规划项。
-    PlannedBuiltin {
         name: "Form",
         category: "内置组件 / 输入组件",
     },
