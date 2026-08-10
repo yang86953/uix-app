@@ -2,7 +2,7 @@
 
 [← 架构索引](../../架构.md)
 
-> **接口**：声明 app 系统的窗口创建、逐窗会话、单帧驱动、文本输入和关闭协议。依赖：[platform/windowing](../platform/windowing.md)、[platform/presentation](../platform/presentation.md)、[ui/component](../ui/component.md)、[ui/view](../ui/view.md)、[graphics/renderer](../graphics/renderer.md)。导出：`Window`、`WindowConfig`、逐窗 drive/result 契约和内部会话，供 event-loop 与 agent 使用。
+> **接口**：声明 app 系统的窗口创建、逐窗会话、单帧驱动、文本输入和关闭协议。依赖：[platform/windowing](../platform/windowing.md)、[platform/presentation](../platform/presentation.md)、[ui/component](../ui/component.md)、[ui/view](../ui/view.md)、[graphics/renderer](../graphics/renderer.md)，以及 app System 私有队列/语义契约。导出：`Window`、`WindowConfig`、逐窗 drive/result 契约和内部会话，供 application 组合根与 event-loop 调度使用。
 >
 > **当前实现线索**：相关实现暂分布于 `src/app/window/`、`window_session.rs`、`window_driver.rs`、`text_input.rs`、`bridge/` 等位置；重构后统一服从本模块的逐窗所有权。
 
@@ -24,7 +24,7 @@
 
 ## 组件：WindowSession
 
-每个窗口独占 `WidgetTree`、RenderTarget、timer、动画、frame request、surface 状态、IME、Agent 队列和语义 revision。一窗关闭、暂停或失败不销毁、唤醒或污染其他窗口资源。
+每个窗口独占 `WidgetTree`、RenderTarget、timer、动画、frame request、surface 状态、IME、System 私有 `WindowAgentState` 和语义 revision。一窗关闭、暂停或失败不销毁、唤醒或污染其他窗口资源。
 
 创建时先预留带 generation 的 `WindowId`，再依次建立 platform window、graphics target 和根组件树；任一步失败按逆序回收。迟到 callback 或旧 handle 只能被识别为 stale 并丢弃。
 
