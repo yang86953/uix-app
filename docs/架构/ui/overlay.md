@@ -56,6 +56,8 @@
 - 多层浮层只由最上层有效 trap 约束；Escape/外部点击遵守 entry 的 dismiss 配置。
 - 离场开始即停止新交互，但可保留视觉节点到动画完成。
 
+Modal 的 `State<bool>` 是受控显隐的唯一事实源；组件自身独占进入、离场、OverlayStack entry、焦点恢复、操作命中与绘制几何。确定与取消只作为实例持有的同步窄回调存在，不引入全局服务或 EventBus；确定按钮和 Enter / Space 形成确认入口，取消按钮、标题栏关闭、可关闭遮罩与 Escape 形成取消入口，任一有效操作都只回调一次、写回 `false` 并立即停止后续交互。
+
 ## enter / leave
 
 entry membership 改变时同步 OverlayStack。进出场只在 TransitionPlayer active 时登记动画帧；holding 阶段用 timer deadline 或纯静态状态，不维持固定 16ms tick。

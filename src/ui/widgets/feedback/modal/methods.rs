@@ -5,16 +5,15 @@ use std::cell::{Cell, RefCell};
 use crate::core::{Point, Rect, Size};
 use crate::draw::Color;
 use crate::native::windowing::input::ControlSize;
-use crate::ui::animation::{presets, AnimationConfig, TransitionPlayer};
-use crate::ui::component::paint_context::PaintContext;
 use crate::ui::SnapshotFields;
+use crate::ui::animation::{AnimationConfig, TransitionPlayer, presets};
+use crate::ui::component::paint_context::PaintContext;
 
 use std::rc::Rc;
 
 /// Modal 内容回调上下文；关闭请求只作用于持有该上下文的 Modal。
 
 impl Modal {
-
     pub fn new(title: &str) -> Self {
         let size = crate::ui::component::config::use_config().size;
         Self {
@@ -31,6 +30,10 @@ impl Modal {
             destroy_on_close: false,
             controlled: None,
             context_close_requested: None,
+            // 默认没有确认业务回调。
+            ok_callback: None,
+            // 默认没有取消业务回调。
+            cancel_callback: None,
             last_win_w: Cell::new(0.0),
             last_win_h: Cell::new(0.0),
             enter_animation: presets::modal_enter(),
@@ -43,6 +46,8 @@ impl Modal {
             last_trigger_rect: Cell::new(Rect::new(0.0, 0.0, 96.0, 32.0)),
             last_dialog_rect: Cell::new(Rect::zero()),
             close_hovered: Cell::new(false),
+            // 默认没有悬停的底部操作。
+            footer_hovered: Cell::new(None),
             pressed_target: Cell::new(None),
             activation_key: Cell::new(None),
         }
@@ -64,7 +69,13 @@ impl Modal {
         let mut modal = Self::new("").visible(true).overlay(true);
         modal.footer_visible = false;
         modal.context_close_requested = Some(context.close_requested);
-        ModalBuilder { modal, content }
+        // 快捷构建器仍只保存一个显式内容 View。
+        ModalBuilder {
+            // 交出配置完成的 Modal。
+            modal,
+            // 把单内容包装为有序集合。
+            content: vec![content],
+        }
     }
 
     /// 构建受控声明式 Modal（E-03）：配合 `.open(&State<bool>)` 由业务状态
@@ -75,7 +86,13 @@ impl Modal {
         modal.footer_visible = false;
         let content = crate::ui::render_empty_for::<Modal>()
             .unwrap_or_else(|| crate::ui::view::View::build(crate::ui::widgets::label("")));
-        ModalBuilder { modal, content }
+        // 受控构建器以单个空内容节点保持既有默认形状。
+        ModalBuilder {
+            // 交出配置完成的 Modal。
+            modal,
+            // 把默认内容包装为有序集合。
+            content: vec![content],
+        }
     }
 
     /// 快捷确认对话框；回调由应用在接入业务动作时持有。
@@ -273,18 +290,83 @@ impl Modal {
     }
 
     pub fn open(&mut self) {
+        // 记录调用前是否已经处于稳定打开态，保证回调幂等。
+        let was_open = self.visible && !self.closing;
+        // 复用唯一进场状态转换。
         self.do_open();
-        if let Some(controlled) = &self.controlled {
+        // 只有真实的关闭到打开转换才写回并通知受控状态。
+        if !was_open && let Some(controlled) = &self.controlled {
+            // 把组件确认的打开事实写回唯一业务状态源。
             controlled.state.set(true);
+            // 同步通知当前实例持有的窄回调。
             controlled.notify(true);
         }
     }
 
     pub fn close(&mut self) {
+        // 记录调用前是否处于可关闭的稳定打开态。
+        let was_open = self.visible && !self.closing;
+        // 复用唯一离场状态转换。
         self.do_close();
-        if let Some(controlled) = &self.controlled {
+        // 重复关闭或离场期间的关闭不得重复写回和通知。
+        if was_open && let Some(controlled) = &self.controlled {
+            // 把组件确认的关闭事实写回唯一业务状态源。
             controlled.state.set(false);
+            // 同步通知当前实例持有的窄回调。
             controlled.notify(false);
+        }
+    }
+
+    // 执行底部确认操作并进入正常离场。
+    pub(crate) fn confirm_action(&mut self) {
+        // 已关闭或离场中的实例不得重复执行业务回调。
+        if !self.visible || self.closing {
+            // 直接保持当前生命周期状态。
+            return;
+        }
+        // 克隆窄回调句柄，避免用户回调重入时保持对 self 的借用。
+        if let Some(callback) = self.ok_callback.clone() {
+            // 在调用线程同步执行确认业务动作。
+            callback();
+        }
+        // 回调返回后关闭并写回受控状态。
+        self.close();
+    }
+
+    // 执行取消语义并进入正常离场。
+    pub(crate) fn cancel(&mut self) {
+        // 已关闭或离场中的实例不得重复执行业务回调。
+        if !self.visible || self.closing {
+            // 直接保持当前生命周期状态。
+            return;
+        }
+        // 克隆窄回调句柄，避免用户回调重入时保持对 self 的借用。
+        if let Some(callback) = self.cancel_callback.clone() {
+            // 在调用线程同步执行取消业务动作。
+            callback();
+        }
+        // 回调返回后关闭并写回受控状态。
+        self.close();
+    }
+
+    // 把命中目标映射为 Modal 自身拥有的同步操作。
+    pub(crate) fn activate_target(&mut self, target: ModalPointerTarget) {
+        // 离场阶段不接受任何新激活。
+        if self.closing {
+            // 保持离场不可重入。
+            return;
+        }
+        // 按目标选择唯一操作语义。
+        match target {
+            // 关闭状态下的触发器执行打开。
+            ModalPointerTarget::Trigger => self.open(),
+            // 标题栏、遮罩与取消按钮统一为取消。
+            ModalPointerTarget::Close | ModalPointerTarget::Mask | ModalPointerTarget::Cancel => {
+                // 执行取消回调并关闭。
+                self.cancel();
+            }
+            // 确认按钮执行确认。
+            ModalPointerTarget::Ok => self.confirm_action(),
         }
     }
 
@@ -328,7 +410,8 @@ impl Modal {
     }
 
     pub fn confirm_close(&mut self) {
-        self.close();
+        // 公开确认关闭入口复用确认回调与受控写回语义。
+        self.confirm_action();
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
@@ -349,6 +432,8 @@ impl Modal {
             || self.height != next.height
             || self.closable != next.closable
             || self.mask_closable != next.mask_closable
+            // 底部显隐改变内容、命中与裁剪几何。
+            || self.footer_visible != next.footer_visible
             || self.centered != next.centered
             || self.overlay != next.overlay;
         self.title = next.title;
@@ -362,6 +447,10 @@ impl Modal {
         self.overlay = next.overlay;
         self.destroy_on_close = next.destroy_on_close;
         self.context_close_requested = next.context_close_requested;
+        // 声明式重建替换当前实例的确认回调。
+        self.ok_callback = next.ok_callback;
+        // 声明式重建替换当前实例的取消回调。
+        self.cancel_callback = next.cancel_callback;
         if next.controlled.is_some() {
             self.controlled = next.controlled;
         }
@@ -432,18 +521,86 @@ impl Modal {
         )
     }
 
+    // 从最终对话框几何派生取消与确认按钮，供绘制和命中共同使用。
+    pub(crate) fn footer_action_rects(dialog: Rect) -> (Rect, Rect) {
+        // 标题高度与内容布局保持同一约束。
+        let header_height = dialog.h.min(56.0);
+        // 底部区域最多占用五十六逻辑像素。
+        let footer_height = (dialog.h - header_height).clamp(0.0, 56.0);
+        // 水平内边距在窄对话框内自适应收敛。
+        let horizontal_padding = 16.0_f32.min(dialog.w.max(0.0) * 0.25);
+        // 两按钮间距同样收敛到可用宽度。
+        let gap = 8.0_f32.min(dialog.w.max(0.0) * 0.1);
+        // 计算扣除边距与间距后的按钮总可用宽度。
+        let available_width = (dialog.w - horizontal_padding * 2.0 - gap).max(0.0);
+        // 每个按钮不超过八十逻辑像素且平分可用空间。
+        let button_width = (available_width * 0.5).min(80.0);
+        // 底部上下各保留八像素，并限制标准按钮高度。
+        let button_height = (footer_height - 16.0).max(0.0).min(32.0);
+        // 在底部区域内垂直居中按钮。
+        let button_y = dialog.y + dialog.h - footer_height + (footer_height - button_height) * 0.5;
+        // 确认按钮靠右排列。
+        let ok_x = dialog.x + dialog.w - horizontal_padding - button_width;
+        // 取消按钮位于确认按钮左侧。
+        let cancel_x = ok_x - gap - button_width;
+        // 构造取消按钮最终矩形。
+        let cancel = Rect::new(cancel_x, button_y, button_width, button_height);
+        // 构造确认按钮最终矩形。
+        let ok = Rect::new(ok_x, button_y, button_width, button_height);
+        // 返回固定顺序的取消和确认几何。
+        (cancel, ok)
+    }
+
     pub(crate) fn pointer_target_at(&self, pos: Point) -> Option<ModalPointerTarget> {
+        // 标题栏关闭槽优先于其他目标。
         if self.closable && self.close_rect_local().contains(pos) {
+            // 返回关闭目标。
             Some(ModalPointerTarget::Close)
+        } else if self.footer_visible {
+            // 从最终本地对话框派生底部操作几何。
+            let (cancel, ok) = Self::footer_action_rects(self.dialog_rect_local());
+            // 取消按钮优先匹配自己的非重叠区域。
+            if cancel.contains(pos) {
+                // 返回取消目标。
+                Some(ModalPointerTarget::Cancel)
+            } else if ok.contains(pos) {
+                // 返回确认目标。
+                Some(ModalPointerTarget::Ok)
+            } else if self.mask_closable && !self.dialog_rect_local().contains(pos) {
+                // 对话框外仍由遮罩取消策略处理。
+                Some(ModalPointerTarget::Mask)
+            } else {
+                // 对话框内容区没有内置操作目标。
+                None
+            }
         } else if self.mask_closable && !self.dialog_rect_local().contains(pos) {
+            // 底部隐藏时仍保留遮罩关闭。
             Some(ModalPointerTarget::Mask)
         } else {
+            // 没有命中任何 Modal 自有目标。
             None
         }
     }
 
+    // 同步关闭槽与底部操作的悬停状态。
+    pub(crate) fn update_hover_target(&self, target: Option<ModalPointerTarget>) {
+        // 关闭槽只读取关闭目标。
+        self.close_hovered
+            // 保存是否悬停关闭槽。
+            .set(target == Some(ModalPointerTarget::Close));
+        // 底部只保存确认或取消目标。
+        self.footer_hovered.set(match target {
+            // 保留可绘制的底部操作目标。
+            Some(target @ (ModalPointerTarget::Cancel | ModalPointerTarget::Ok)) => Some(target),
+            // 其他目标清空底部悬停。
+            _ => None,
+        });
+    }
+
     pub(crate) fn cancel_interaction(&self) {
         self.close_hovered.set(false);
+        // 清空底部操作悬停。
+        self.footer_hovered.set(None);
         self.pressed_target.set(None);
         self.activation_key.set(None);
     }
@@ -623,6 +780,4 @@ impl Modal {
             overlay: self.overlay,
         }
     }
-
 }
-

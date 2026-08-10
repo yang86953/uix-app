@@ -109,6 +109,16 @@ fn record_alert_close(change: &str) {
     let _ = change;
 }
 
+// 定义 Modal 公开宏消费者使用的确认处理器。
+fn save_modal() {
+    // 编译 Gate 不需要运行时副作用。
+}
+
+// 定义 Modal 公开宏消费者使用的取消处理器。
+fn cancel_modal() {
+    // 编译 Gate 不需要运行时副作用。
+}
+
 // 定义 Pagination 公开宏消费者使用的变化事件处理器。
 fn record_pagination_change(change: &str) {
     // 编译 Gate 同时接受页码与 page_size=<值> 文本借用。
@@ -410,6 +420,33 @@ fn public_uix_macro_compiles_alert() {
     // Alert 构造完成后调用方仍持有原字符串所有权。
     assert_eq!(alert_message, "磁盘空间不足");
     // 编译成功即证明 String 借用、bool、StatusLevel 与关闭事件契约闭合。
+}
+
+// 验证真实 Rust 2024 消费 crate 可编译 Modal 受控状态、操作事件与有序内容子树。
+#[test]
+// 声明 Modal 外部消费编译测试。
+fn public_uix_macro_compiles_modal() {
+    // 创建声明端 Modal 唯一打开状态源。
+    let modal_open = State::new(const { true });
+    // 调用方持有 String，宏展开只能临时借用标题。
+    let modal_title = String::from("编辑资料");
+    // 使用 Rust 2024 const 块产生动态遮罩策略。
+    let modal_mask_closable = const { true };
+    // 使用 Rust 2024 const 块产生动态页脚显隐。
+    let modal_footer_visible = const { true };
+    // 使用 Rust 2024 const 块产生条件内容。
+    let show_modal_extra = const { true };
+    // 构造由 For 控制流按源码顺序消费的内容文本。
+    let modal_items = ["第一项", "第二项"];
+    // 让过程宏生成公开 ModalBuilder、双操作回调与完整内容子树。
+    let _view: ViewNode = uix::uix!(
+        r#"<Modal open={modal_open} title={modal_title} maskClosable={modal_mask_closable} footerVisible={modal_footer_visible} @ok="save_modal" @cancel="cancel_modal" automationId="profile-modal"><Text>正文</Text><If {show_modal_extra}><Text>补充</Text></If><For {item} in {modal_items}><Text>{item}</Text></For></Modal>"#
+    );
+    // 宏展开只克隆状态句柄，调用方仍可读取原 State。
+    assert!(modal_open.get());
+    // Modal 构造完成后调用方仍持有原标题所有权。
+    assert_eq!(modal_title, "编辑资料");
+    // 编译成功即证明 State<bool>、String 借用、事件与有序 View 子树契约闭合。
 }
 
 // 验证真实 Rust 2024 消费 crate 可编译 Tooltip 动态文字与唯一触发子树。

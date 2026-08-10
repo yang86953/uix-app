@@ -65,11 +65,17 @@ impl ControlledOpen {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ModalPointerTarget {
+    // 指向关闭状态下的内置打开入口。
     Trigger,
+    // 指向标题栏关闭槽。
     Close,
+    // 指向对话框外遮罩。
     Mask,
+    // 指向底部取消操作。
+    Cancel,
+    // 指向底部确认操作。
+    Ok,
 }
-
 
 component! {
     /// Modal dialog.
@@ -87,6 +93,10 @@ component! {
         pub(crate) destroy_on_close: bool,
         pub(crate) controlled: Option<ControlledOpen>,
         pub(crate) context_close_requested: Option<Rc<Cell<bool>>>,
+        // 保存确认操作的同步窄回调。
+        pub(crate) ok_callback: Option<Rc<dyn Fn()>>,
+        // 保存取消、遮罩、关闭槽与 Escape 共用的同步窄回调。
+        pub(crate) cancel_callback: Option<Rc<dyn Fn()>>,
         pub(crate) last_win_w: Cell<f32>,
         pub(crate) last_win_h: Cell<f32>,
         pub(crate) enter_animation: AnimationConfig,
@@ -99,6 +109,8 @@ component! {
         pub(crate) last_trigger_rect: Cell<Rect>,
         pub(crate) last_dialog_rect: Cell<Rect>,
         pub(crate) close_hovered: Cell<bool>,
+        // 保存当前悬停的底部操作以驱动一致的交互绘制。
+        pub(crate) footer_hovered: Cell<Option<ModalPointerTarget>>,
         pub(crate) pressed_target: Cell<Option<ModalPointerTarget>>,
         pub(crate) activation_key: Cell<Option<crate::ui::KeyCode>>,
     }
@@ -183,6 +195,14 @@ component! {
             };
         }
 
+        // 离场开始后停止接受新操作，避免重复回调或重新打开。
+        if self.closing {
+            // 清理上一输入序列的悬停和按压状态。
+            self.cancel_interaction();
+            // 遮罩仍吞掉输入，防止落到底层树。
+            return EventResult::Handled;
+        }
+
         match event {
             SystemEvent::PointerDown {
                 pos,
@@ -190,8 +210,8 @@ component! {
                 ..
             } => {
                 let target = self.pointer_target_at(*pos);
-                self.close_hovered
-                    .set(target == Some(ModalPointerTarget::Close));
+                // 让绘制与命中使用同一个目标解析结果。
+                self.update_hover_target(target);
                 self.pressed_target.set(target);
                 if target.is_some() {
                     return EventResult::Handled;
@@ -205,16 +225,20 @@ component! {
             } => {
                 let armed = self.pressed_target.replace(None);
                 let target = self.pointer_target_at(*pos);
-                self.close_hovered
-                    .set(target == Some(ModalPointerTarget::Close));
+                // 更新释放位置对应的交互反馈。
+                self.update_hover_target(target);
                 if armed.is_some() && armed == target {
-                    self.close();
+                    // 只有同一目标内的完整按下/释放序列才激活操作。
+                    if let Some(target) = target {
+                        // 委托 Modal 执行确认或取消的原子组件语义。
+                        self.activate_target(target);
+                    }
                 }
                 EventResult::Handled
             }
             SystemEvent::PointerMove { pos, .. } => {
-                let hovered = self.pointer_target_at(*pos) == Some(ModalPointerTarget::Close);
-                self.close_hovered.set(hovered);
+                // 指针移动继续复用统一几何解析悬停目标。
+                self.update_hover_target(self.pointer_target_at(*pos));
                 EventResult::Handled
             }
             SystemEvent::PointerLeave | SystemEvent::FocusOut => {
@@ -223,9 +247,28 @@ component! {
             }
             SystemEvent::KeyDown { key, .. } => {
                 if *key == crate::ui::KeyCode::Escape {
-                    self.close();
+                    // Escape 采用取消语义并写回受控 open 状态。
+                    self.cancel();
                     return EventResult::Handled;
                 }
+                // 底部可见时 Enter/Space 预备默认确认操作。
+                if self.footer_visible
+                    && matches!(key, crate::ui::KeyCode::Enter | crate::ui::KeyCode::Space)
+                {
+                    // 保存配对释放所需的按键身份。
+                    self.activation_key.set(Some(*key));
+                    // Modal 已消费该确认按键。
+                    return EventResult::Handled;
+                }
+                EventResult::Handled
+            }
+            // 配对的 Enter/Space 释放激活默认确认操作。
+            SystemEvent::KeyUp { key, .. }
+                if self.footer_visible && self.activation_key.replace(None) == Some(*key) =>
+            {
+                // 执行与确认按钮相同的窄回调和关闭语义。
+                self.confirm_action();
+                // Modal 已消费该确认按键。
                 EventResult::Handled
             }
             _ => EventResult::Handled,
@@ -352,6 +395,52 @@ component! {
                 Rect::new(dialog.x, dialog.y + dialog.h - footer_h, dialog.w, 1.0),
                 border_secondary,
                 None,
+            );
+            // 从与命中共用的几何函数取得取消和确认按钮区域。
+            let (cancel_rect, ok_rect) = Self::footer_action_rects(dialog);
+            // 使用统一的小圆角绘制底部操作。
+            let action_radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
+            // 按压与悬停状态只影响取消按钮的背景反馈。
+            let cancel_fill = if self.pressed_target.get() == Some(ModalPointerTarget::Cancel) {
+                // 按压取消使用更强的填充状态。
+                ctx.tokens().color_fill_secondary()
+            } else if self.footer_hovered.get() == Some(ModalPointerTarget::Cancel) {
+                // 悬停取消使用较轻的填充状态。
+                ctx.tokens().color_fill_tertiary()
+            } else {
+                // 默认取消按钮保持容器背景。
+                bg_container
+            };
+            // 绘制取消按钮背景。
+            ctx.fill_rect(cancel_rect, cancel_fill, action_radius);
+            // 绘制取消按钮边框。
+            ctx.stroke_rect(cancel_rect, border_secondary, 1.0, action_radius);
+            // 使用当前语言环境绘制取消文案。
+            ctx.text_center(
+                crate::ui::component::locale::use_locale().cancel_text,
+                cancel_rect,
+                text_color,
+                13.0,
+            );
+            // 确认按钮按交互状态选择主色。
+            let ok_fill = if self.pressed_target.get() == Some(ModalPointerTarget::Ok) {
+                // 按压确认使用主色激活态。
+                ctx.tokens().color_primary_active()
+            } else if self.footer_hovered.get() == Some(ModalPointerTarget::Ok) {
+                // 悬停确认使用主色悬停态。
+                ctx.tokens().color_primary_hover()
+            } else {
+                // 默认确认使用主色。
+                ctx.tokens().color_primary()
+            };
+            // 绘制确认按钮背景。
+            ctx.fill_rect(ok_rect, ok_fill, action_radius);
+            // 使用当前语言环境绘制确认文案。
+            ctx.text_center(
+                crate::ui::component::locale::use_locale().ok_text,
+                ok_rect,
+                Color::white(),
+                13.0,
             );
         }
         ctx.pop_clip();
