@@ -150,58 +150,65 @@ pub(crate) fn try_create_context(
         ctx.try_shutdown()?;
         return Err(Error::new(Errc::PlatformError, msg));
     }
-    // 首帧前强制检查原子 GPU recipe 视图，避免 registry 接受不完整 owner。
-    let missing_rhi_capability = {
-        // 只在这个局部借用内取得完整 recipe，再读取 RHI 能力快照。
-        match ctx.gpu_recipe_context() {
-            // 真实 GPU adapter 必须一次提供不可拆分的 recipe owner。
-            Some(recipe) => match recipe.rhi_context() {
-                // 真实 adapter 需要满足文档冻结的 GPU 原语基线。
-                Ok(rhi) => rhi
-                    .capabilities()
-                    .first_missing_gpu_baseline()
-                    .map(str::to_string),
-                // 构造期借用失败视为完整 recipe owner 不可用。
-                Err(_) => Some("gpu_recipe_context".to_string()),
-            },
-            // 没有原子 GPU recipe 视图的 context 不能进入生产 recipe。
-            None => Some("gpu_recipe_context".to_string()),
+    // 只有 GPU-native × Swapchain recipe 依赖 thin RHI，CPU PixelUpload 不得查询该私有契约。
+    if matches!(
+        (expected.raster, expected.present),
+        (RasterMode::GpuNative, PresentMode::Swapchain)
+    ) {
+        // 首帧前强制检查原子 GPU recipe 视图，避免 registry 接受不完整 owner。
+        let missing_rhi_capability = {
+            // 只在这个局部借用内取得完整 recipe，再读取 RHI 能力快照。
+            match ctx.gpu_recipe_context() {
+                // 真实 GPU adapter 必须一次提供不可拆分的 recipe owner。
+                Some(recipe) => match recipe.rhi_context() {
+                    // 真实 adapter 需要满足文档冻结的 GPU 原语基线。
+                    Ok(rhi) => rhi
+                        .capabilities()
+                        .first_missing_gpu_baseline()
+                        .map(str::to_string),
+                    // 构造期借用失败视为完整 recipe owner 不可用。
+                    Err(_) => Some("gpu_recipe_context".to_string()),
+                },
+                // 没有原子 GPU recipe 视图的 context 不能进入生产 recipe。
+                None => Some("gpu_recipe_context".to_string()),
+            }
+        };
+        // 能力缺口必须在返回前关闭已经创建的 native context。
+        if let Some(missing) = missing_rhi_capability {
+            ctx.try_shutdown()?;
+            return Err(Error::new(
+                Errc::NotImplemented,
+                format!("Graphics recipe {expected} lacks required RHI capability: {missing}"),
+            ));
         }
-    };
-    // 能力缺口必须在返回前关闭已经创建的 native context。
-    if let Some(missing) = missing_rhi_capability {
-        ctx.try_shutdown()?;
-        return Err(Error::new(
-            Errc::NotImplemented,
-            format!("Graphics recipe {expected} lacks required RHI capability: {missing}"),
-        ));
+        // 首帧前从同一原子视图执行真实资源与固定 pipeline probe。
+        let probe_result = match ctx.gpu_recipe_context() {
+            // 原子 recipe 存在时继续取得其必需 RHI owner。
+            Some(recipe) => match recipe.rhi_context() {
+                // 在同一借用内执行真实资源与 pipeline probe。
+                Ok(rhi) => rhi.probe(),
+                // 保留 owner-thread 或设备状态的 typed failure。
+                Err(error) => Err(error),
+            },
+            // capability gate 已处理 None；这里保留显式失败防止未来逻辑回归。
+            None => Err(Error::new(
+                // 缺失完整 recipe 属于不满足生产实现。
+                Errc::NotImplemented,
+                // 保留具体 registry recipe 便于定位错误行。
+                format!("Graphics recipe {expected} lacks atomic GPU recipe context"),
+            )),
+        };
+        // probe 失败时保持原始 typed error，并先释放已经创建的 owner 资源。
+        if let Err(error) = probe_result {
+            // 检查式关闭已创建的原生资源。
+            ctx.try_shutdown()?;
+            // 把原始 probe 或 owner 状态失败返回给候选选择层。
+            return Err(error);
+        }
+        // 记录首帧前已经通过真实资源与固定 pipeline 编译的 adapter。
+        tracing::info!("Graphics recipe {expected}: atomic GPU recipe probe passed");
     }
-    // 首帧前从同一原子视图执行真实资源与固定 pipeline probe。
-    let probe_result = match ctx.gpu_recipe_context() {
-        // 原子 recipe 存在时继续取得其必需 RHI owner。
-        Some(recipe) => match recipe.rhi_context() {
-            // 在同一借用内执行真实资源与 pipeline probe。
-            Ok(rhi) => rhi.probe(),
-            // 保留 owner-thread 或设备状态的 typed failure。
-            Err(error) => Err(error),
-        },
-        // capability gate 已处理 None；这里保留显式失败防止未来逻辑回归。
-        None => Err(Error::new(
-            // 缺失完整 recipe 属于不满足生产实现。
-            Errc::NotImplemented,
-            // 保留具体 registry recipe 便于定位错误行。
-            format!("Graphics recipe {expected} lacks atomic GPU recipe context"),
-        )),
-    };
-    // probe 失败时保持原始 typed error，并先释放已经创建的 owner 资源。
-    if let Err(error) = probe_result {
-        // 检查式关闭已创建的原生资源。
-        ctx.try_shutdown()?;
-        // 把原始 probe 或 owner 状态失败返回给候选选择层。
-        return Err(error);
-    }
-    // 记录首帧前已经通过真实资源与固定 pipeline 编译的 adapter。
-    tracing::info!("Graphics recipe {expected}: atomic GPU recipe probe passed");
+    // 所有 recipe 都在线程绑定后交给各自的专用 owner 完成最终门禁。
     Ok(bind_to_current_thread(ctx))
 }
 
@@ -316,6 +323,90 @@ pub(crate) fn try_create_gpu_recipe_with_queue(
 mod selection_tests {
     // 复用 registry 的私有候选筛选与排序实现。
     use super::*;
+    // 引入 PixelUpload 测试载荷与稳定 surface 快照。
+    use crate::core::{PresentDamage, PresentSurface};
+    // 引入 CPU recipe 能力与专用 PixelUpload surface 契约。
+    use crate::native::present::{GraphicsContextCaps, PixelUploadSurface};
+
+    // 构造不暴露 GPU recipe 视图的合法 CPU PixelUpload context。
+    struct CpuPixelUploadContext;
+
+    // 为 registry 行实现最小迁移期 context。
+    impl IGraphicsContext for CpuPixelUploadContext {
+        // 声明合法 CPU × PixelUpload recipe。
+        fn caps(&self) -> GraphicsContextCaps {
+            // 使用 Vulkan 身份代表跨平台 PixelUpload adapter。
+            GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan)
+        }
+
+        // 如果 registry 错误查询 GPU 私有契约，立即让行为测试失败。
+        fn gpu_recipe_context(
+            // 借用测试 context。
+            &mut self,
+        ) -> Option<&mut dyn crate::native::present::GpuRecipeContext> {
+            // CPU PixelUpload 不得进入 GPU RHI 门禁。
+            panic!("CPU PixelUpload registry row must not query gpu_recipe_context")
+        }
+
+        // 暴露 CPU recipe 唯一的专用 surface owner。
+        fn pixel_upload_surface(&mut self) -> Option<&mut dyn PixelUploadSurface> {
+            // 当前测试 context 自身拥有最小 PixelUpload surface。
+            Some(self)
+        }
+
+        // 返回稳定的最小 drawable 快照。
+        fn present_surface(&self) -> PresentSurface {
+            // 测试只需要证明 owner 构造，不执行真实提交。
+            PresentSurface::identity(1, 1, 1.0, 0)
+        }
+
+        // 测试 context 没有需要失败的原生资源。
+        fn try_shutdown(&mut self) -> Result<(), Error> {
+            // 保持 owner Drop 与拒绝路径可检查式关闭。
+            Ok(())
+        }
+    }
+
+    // 为测试 context 实现最小 CPU PixelUpload surface。
+    impl PixelUploadSurface for CpuPixelUploadContext {
+        // 测试不执行真实 resize，只证明专用契约可借用。
+        fn resize_pixel_upload_surface(&mut self, _width: i32, _height: i32) -> Result<(), Error> {
+            // 最小测试 surface 接受所有尺寸。
+            Ok(())
+        }
+
+        // 测试不执行真实上传，只保留完整 trait 形状。
+        fn present_pixels(
+            // 借用测试 surface owner。
+            &mut self,
+            // 测试不读取像素载荷。
+            _pixels: &[u32],
+            // 测试不读取物理宽度。
+            _width: i32,
+            // 测试不读取物理高度。
+            _height: i32,
+            // 测试不读取 damage。
+            _damage: PresentDamage,
+        ) -> Result<(), Error> {
+            // 最小测试 surface 接受提交。
+            Ok(())
+        }
+    }
+
+    // 构造合法 CPU PixelUpload registry context。
+    fn cpu_pixel_upload_factory(
+        // 测试不需要真实原生 surface。
+        _surface: *mut c_void,
+        // 测试不需要保存初始宽度。
+        _width: i32,
+        // 测试不需要保存初始高度。
+        _height: i32,
+        // 测试不产生异步故障。
+        _pending: PendingFailureQueue,
+    ) -> Result<Box<dyn IGraphicsContext>, Error> {
+        // 返回只实现 CPU 专用契约的 context。
+        Ok(Box::new(CpuPixelUploadContext))
+    }
 
     // 测试 factory 永远不应被候选排序测试实际调用。
     fn unused_factory(
@@ -433,5 +524,52 @@ mod selection_tests {
                 PresentMode::Swapchain,
             )]
         );
+    }
+
+    #[test]
+    // 验证 CPU PixelUpload registry 行跳过 GPU RHI probe 并进入专用 owner。
+    fn cpu_pixel_upload_registry_row_reaches_recipe_owner_without_gpu_probe() {
+        // 构造与测试 context 静态能力一致的合法 registry 行。
+        let entry = GraphicsBackendEntry {
+            // 使用 Vulkan 身份代表当前跨平台 CPU PixelUpload adapter。
+            id: GraphicsApi::Vulkan,
+            // 单行构造测试不依赖候选优先级。
+            priority: 1,
+            // 只有 Active 行可以进入构造路径。
+            status: BackendStatus::Active,
+            // 声明 CPU raster 轴。
+            raster: RasterMode::Cpu,
+            // 声明专用像素上传 present 轴。
+            present: PresentMode::PixelUpload,
+            // 绑定不暴露 GPU 私有契约的测试 factory。
+            create: cpu_pixel_upload_factory,
+        };
+        // 先通过 registry 的能力与配方门禁创建 thread-bound context。
+        let context = match try_create_context(
+            // 使用刚构造的精确 recipe 行。
+            &entry,
+            // 测试 factory 不解引用原生 surface。
+            std::ptr::null_mut(),
+            // 使用最小初始宽度。
+            1,
+            // 使用最小初始高度。
+            1,
+            // 传入独立的运行时故障队列。
+            PendingFailureQueue::new(),
+        ) {
+            // 合法 CPU recipe 必须通过 registry。
+            Ok(context) => context,
+            // 任何 GPU 契约依赖都会使该分支暴露具体错误。
+            Err(error) => panic!("CPU PixelUpload registry row must be accepted: {error:?}"),
+        };
+        // 在 native factory 边界完成正交 owner 构造。
+        let owner = match GraphicsRecipeOwner::try_new(context) {
+            // 专用 surface 完整时必须构造成功。
+            Ok(owner) => owner,
+            // owner 拒绝说明 registry 没有保留合法 PixelUpload 契约。
+            Err(error) => panic!("CPU PixelUpload owner must be constructed: {error:?}"),
+        };
+        // 最终值必须进入 PixelUpload 分支，不能伪装成 GPU owner。
+        assert!(matches!(owner, GraphicsRecipeOwner::PixelUpload(_)));
     }
 }
