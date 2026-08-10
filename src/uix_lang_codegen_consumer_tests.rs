@@ -311,6 +311,12 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _mentions: ViewNode = crate::uix!(
         r#"<Mentions value={mention_text} suggestions={mention_suggestions} placeholder="提及成员" width="240px" automationId="mentions" />"#
     );
+    // 提供 DatePicker 当前选中日期的受控状态。
+    let selected_date = State::new(Date::new(2026, 8, 10));
+    // 验证日期绑定、选择粒度和公共属性只依赖公开 prelude。
+    let _date_picker: ViewNode = crate::uix!(
+        r#"<DatePicker value={selected_date} mode="month" width="240px" automationId="date" />"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
