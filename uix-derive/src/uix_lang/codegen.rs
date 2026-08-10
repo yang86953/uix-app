@@ -19,10 +19,10 @@ use super::{
     generate_orphan_col, generate_orphan_form_checkbox_item, generate_orphan_form_input_item,
     generate_orphan_form_radio_item, generate_orphan_form_select_item,
     generate_orphan_form_slider_item, generate_orphan_form_switch_item, generate_radio,
-    generate_range_slider, generate_rate, generate_row, generate_scroll_view, generate_segmented,
-    generate_select, generate_skeleton, generate_slider, generate_space, generate_splitter,
-    generate_switch, generate_theme_toggle, generate_time_picker, generate_tree_select,
-    generate_typography, generate_virtual_scroll, generate_window_control,
+    generate_range_slider, generate_rate, generate_result_view, generate_row, generate_scroll_view,
+    generate_segmented, generate_select, generate_skeleton, generate_slider, generate_space,
+    generate_splitter, generate_switch, generate_theme_toggle, generate_time_picker,
+    generate_tree_select, generate_typography, generate_virtual_scroll, generate_window_control,
 };
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
@@ -135,6 +135,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "Skeleton" => generate_skeleton(element),
         // 空状态映射到公开描述与图标契约。
         "Empty" => generate_empty(element),
+        // 结果页映射到公开结果类型与文本契约。
+        "ResultView" => generate_result_view(element),
         // 表单映射到类型化模型、字段投影与提交闭环。
         "Form" => generate_form(element),
         // FormInputItem 只能由 Form 解释类型化字段语义。
@@ -179,7 +181,7 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Skeleton 或 Empty，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Skeleton、Empty 或 ResultView，或先登记组件状态",
         )),
     }
 }

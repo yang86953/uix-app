@@ -157,6 +157,20 @@ fn public_uix_macro_compiles_empty() {
     // 编译成功即证明 Rust 2024 外部消费契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 ResultView 类型与动态文本。
+#[test]
+fn public_uix_macro_compiles_result_view() {
+    // 使用 Rust 2024 const 块产生动态标题。
+    let result_title = const { "页面不存在" };
+    // 使用 Rust 2024 const 块产生动态辅助文字。
+    let result_action = const { "返回首页" };
+    // 让过程宏生成公开 ResultType 与 ResultView 文本构建器。
+    let _view: ViewNode = uix::uix!(
+        r#"<ResultView status="404" title={result_title} extraText={result_action} automationId="result" />"#
+    );
+    // 编译成功即证明 Rust 2024 外部消费契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译类型化开关与滑块表单。
 #[test]
 fn public_uix_macro_compiles_typed_form_switch_and_slider_items() {
