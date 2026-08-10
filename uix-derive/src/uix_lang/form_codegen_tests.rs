@@ -84,6 +84,21 @@ fn generates_typed_form_radio_item_contract() {
     assert!(snapshot.contains("if stacked") && snapshot.contains("vertical ()"));
 }
 
+// 验证 FormSwitchItem 的类型化开关生成契约。
+#[test]
+fn generates_typed_form_switch_item_contract() {
+    // 生成独立表单标签、必须开启规则与动态禁用状态。
+    let snapshot = generate(r#"<Form model={profile} @submit="on_submit"><FormSwitchItem field="notifications" label="启用通知" rules="required" disabled={locked} /><Button @click="submitForm">提交</Button></Form>"#).expect("FormSwitchItem 应生成");
+    // 核对 bool 成员类型化投影。
+    assert!(snapshot.contains("& mut __uix_form_model . notifications"));
+    // 核对公开开关字段构造器。
+    assert!(snapshot.contains("FormSwitchItem :: new (\"notifications\")"));
+    // 核对独立 FormItem 标签。
+    assert!(snapshot.contains("label (\"启用通知\")"));
+    // 核对必须开启规则和动态禁用状态。
+    assert!(snapshot.contains("required (true)") && snapshot.contains("disabled (locked)"));
+}
+
 // 验证缺失模型和错误提交入口。
 #[test]
 fn rejects_incomplete_form_contracts() {
@@ -145,4 +160,22 @@ fn rejects_invalid_form_field_shapes() {
         .expect_err("孤立单选组字段");
     // 诊断必须说明直接子项边界。
     assert!(radio_orphan.message.contains("直接子项"));
+    // 开关字段不得继承文本专用邮箱规则。
+    let switch_rule = generate(r#"<Form model={profile} @submit="save"><FormSwitchItem field="notifications" rules="email" /><Button @click="submitForm">提交</Button></Form>"#).expect_err("开关字段未知规则");
+    // 诊断必须包含具体非法规则。
+    assert!(switch_rule.message.contains("email"));
+    // 开关字段不得接受原始 Switch 之外的说明文字属性。
+    let switch_attribute = generate(r#"<Form model={profile} @submit="save"><FormSwitchItem field="notifications" text="通知" /><Button @click="submitForm">提交</Button></Form>"#).expect_err("开关字段未知属性");
+    // 诊断必须包含具体非法属性。
+    assert!(switch_attribute.message.contains("text"));
+    // 开关字段必须保持叶节点形状。
+    let switch_child = generate(r#"<Form model={profile} @submit="save"><FormSwitchItem field="notifications"><Text>非法</Text></FormSwitchItem><Button @click="submitForm">提交</Button></Form>"#).expect_err("开关字段子节点");
+    // 诊断必须指出开关字段不接受子节点。
+    assert!(switch_child.message.contains("不接受子节点"));
+    // 孤立开关字段项必须失败。
+    let switch_orphan = generate(r#"<FormSwitchItem field="notifications" />"#)
+        // 获取越界字段诊断。
+        .expect_err("孤立开关字段");
+    // 诊断必须说明直接子项边界。
+    assert!(switch_orphan.message.contains("直接子项"));
 }

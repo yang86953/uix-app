@@ -103,6 +103,20 @@ fn open_feedback() {
     // 编译 Gate 不需要运行时副作用。
 }
 
+// 定义 Rust 2024 公开过程宏消费的类型化表单模型。
+#[derive(Clone)]
+// 保存本回归唯一需要投影的开关字段。
+struct Rust2024Profile {
+    // 保存通知是否开启。
+    notifications: bool,
+}
+
+// 提供公开 Form 宏生成代码调用的类型化提交函数。
+fn submit_rust_2024_profile(_profile: Rust2024Profile) -> Result<(), String> {
+    // 编译 Gate 不需要业务副作用。
+    Ok(())
+}
+
 // 验证真实消费 crate 可编译完整 FloatButton 标签契约。
 #[test]
 fn public_uix_macro_compiles_float_button() {
@@ -111,4 +125,21 @@ fn public_uix_macro_compiles_float_button() {
         r#"<FloatButton icon="message" description="反馈" tooltip="打开反馈" position="leftTop" badge={{ count: 7, dot: true }} @click="open_feedback" />"#
     );
     // 编译成功即证明公开路径与类型契约闭合。
+}
+
+// 验证真实 Rust 2024 消费 crate 可编译类型化开关表单。
+#[test]
+fn public_uix_macro_compiles_typed_form_switch_item() {
+    // 创建由过程宏借用的类型化模型状态。
+    let profile = State::new(Rust2024Profile {
+        // 提供满足必选规则的初始状态。
+        notifications: true,
+    });
+    // 使用 Rust 2024 const 块产生动态布尔配置。
+    let notifications_locked = const { false };
+    // 让过程宏生成 bool accessor、公开字段 builder 和提交闭环。
+    let _view: ViewNode = uix::uix!(
+        r#"<Form model={profile} @submit="submit_rust_2024_profile"><FormSwitchItem field="notifications" label="启用通知" rules="required" disabled={notifications_locked} /><Button @click="submitForm">提交</Button></Form>"#
+    );
+    // 编译成功即证明 Rust 2024 外部消费契约闭合。
 }

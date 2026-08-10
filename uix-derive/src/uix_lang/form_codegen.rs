@@ -12,7 +12,7 @@ use super::{
     rust_identifier, string_value,
 };
 
-// 生成类型化 Form 与已登记的文本、选择字段。
+// 生成类型化 Form 与已登记的字段适配器。
 pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic> {
     // Form 必须绑定业务模型 State。
     let model_attribute = required_attribute(element, "model")?;
@@ -56,7 +56,11 @@ pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic
         // 已登记字段必须位于提交按钮之前。
         if matches!(
             child.name.as_str(),
-            "FormInputItem" | "FormSelectItem" | "FormCheckboxItem" | "FormRadioItem"
+            "FormInputItem"
+                | "FormSelectItem"
+                | "FormCheckboxItem"
+                | "FormRadioItem"
+                | "FormSwitchItem"
         ) {
             // 防止源码顺序被生成器重排。
             if submit_button.is_some() {
@@ -77,6 +81,8 @@ pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic
                 "FormCheckboxItem" => generate_checkbox_field(child)?,
                 // 单选组字段映射到 FormRadioItem。
                 "FormRadioItem" => generate_radio_field(child)?,
+                // 开关字段映射到 FormSwitchItem。
+                "FormSwitchItem" => generate_switch_field(child)?,
                 // 前置匹配已穷尽登记字段。
                 _ => unreachable!("已登记 Form 字段分派必须穷尽"),
             });
@@ -188,6 +194,22 @@ pub(crate) fn generate_orphan_form_radio_item(
         element.span,
         "<FormRadioItem> 只能作为 <Form> 的直接子项",
         "把 FormRadioItem 放入绑定 model 的 Form 内",
+    ))
+}
+
+// 拒绝失去 Form 类型化上下文的开关字段项。
+pub(crate) fn generate_orphan_form_switch_item(
+    // 接收越界开关字段项。
+    element: &Element,
+) -> Result<TokenStream, Diagnostic> {
+    // 返回父子归属诊断。
+    Err(Diagnostic::new(
+        // 指向完整越界元素。
+        element.span,
+        // 说明类型化字段必须由 Form 解释。
+        "<FormSwitchItem> 只能作为 <Form> 的直接子项",
+        // 给出恢复上下文的规范写法。
+        "把 FormSwitchItem 放入绑定 model 的 Form 内",
     ))
 }
 
@@ -424,6 +446,88 @@ fn generate_checkbox_field(element: &Element) -> Result<TokenStream, Diagnostic>
         // 保留运行时 label 的旧有控件文字语义。
         item = quote! { (#item).label(#text) };
     }
+    // 禁用状态接受布尔简写、字面量或表达式。
+    if let Some(attribute) = find_attribute(element, "disabled") {
+        // 生成统一布尔属性令牌。
+        let disabled = boolean_value(attribute)?;
+        // 应用运行时禁用构建器。
+        item = quote! { (#item).disabled(#disabled) };
+    }
+    // 创建卫生模型访问器参数。
+    let model = Ident::new("__uix_form_model", Span::mixed_site());
+    // 生成 bool 字段投影和运行时字段配置。
+    Ok(quote! {
+        .field(
+            #field,
+            |#model| &mut #model.#field_ident,
+            #item,
+        )
+    })
+}
+
+// 生成单个类型化布尔开关字段链。
+fn generate_switch_field(element: &Element) -> Result<TokenStream, Diagnostic> {
+    // 读取稳定字段 key。
+    let field_attribute = required_attribute(element, "field")?;
+    // 字段 key 必须是编译期字符串。
+    let field = literal_string(field_attribute, "FormSwitchItem field")?;
+    // 验证字段可投影 Rust 成员。
+    let field_ident = rust_identifier(&field, field_attribute.span)?;
+    // 表单标签省略时沿用字段 key。
+    let label = find_attribute(element, "label")
+        // 显式表单标签必须是编译期字符串。
+        .map(|attribute| literal_string(attribute, "FormSwitchItem label"))
+        // 转置可选诊断。
+        .transpose()?
+        // 保持字段 key 回退行为。
+        .unwrap_or_else(|| field.clone());
+    // 开关字段当前只登记 required 规则。
+    let required = parse_required_rule(element, "FormSwitchItem")?;
+    // 拒绝未知字段属性。
+    for attribute in &element.attributes {
+        // 只消费当前已登记开关字段属性。
+        if !matches!(
+            // 检查稳定属性名。
+            attribute.name.as_str(),
+            // 保持静态适配器的最小公开契约。
+            "field" | "label" | "rules" | "disabled"
+        ) {
+            // 返回属性映射诊断。
+            return Err(Diagnostic::new(
+                // 指向未知属性。
+                attribute.span,
+                // 说明未登记的具体属性。
+                format!("FormSwitchItem 属性 {} 尚无已登记映射", attribute.name),
+                // 列出当前允许的完整属性集合。
+                "当前使用 field、label、rules 与 disabled",
+            ));
+        }
+    }
+    // 开关字段项必须是叶节点。
+    if element
+        // 遍历全部直接子节点。
+        .children
+        // 获取只读迭代器。
+        .iter()
+        // 排版空白以外的节点均不合法。
+        .any(|child| !matches!(child, Node::Text(text) if text.value.trim().is_empty()))
+    {
+        // 返回叶节点诊断。
+        return Err(Diagnostic::new(
+            // 指向完整开关字段项。
+            element.span,
+            // 说明子节点不属于开关契约。
+            "<FormSwitchItem> 不接受子节点",
+            // 给出规范自闭合写法。
+            "使用自闭合 FormSwitchItem",
+        ));
+    }
+    // 创建基础开关字段构建链。
+    let mut item = quote! {
+        ::uix::prelude::FormSwitchItem::new(#field)
+            .label(#label)
+            .required(#required)
+    };
     // 禁用状态接受布尔简写、字面量或表达式。
     if let Some(attribute) = find_attribute(element, "disabled") {
         // 生成统一布尔属性令牌。
