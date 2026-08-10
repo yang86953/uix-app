@@ -298,20 +298,6 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _cascader: ViewNode = crate::uix!(
         r#"<Cascader value={region} options={region_options} width="240px" automationId="region" />"#
     );
-    // 提供 TreeSelect 当前选中节点的稳定 key 状态。
-    let selected_tree_key = State::new(String::from("member"));
-    // 提供与 Tree 共享数据结构的层级节点集合。
-    let tree_nodes = vec![
-        // 根节点包含一个可选成员叶节点。
-        TreeNode::new("部门", "dept").children(vec![
-            // 叶节点的稳定 key 与初始受控状态一致。
-            TreeNode::new("成员", "member"),
-        ]),
-    ];
-    // 验证节点树、稳定 key 绑定和公共属性只依赖公开 prelude。
-    let _tree_select: ViewNode = crate::uix!(
-        r#"<TreeSelect value={selected_tree_key} options={tree_nodes} width="240px" automationId="tree" />"#
-    );
     // 提供 AutoComplete 当前输入与选中结果的受控文本。
     let query = State::new(String::from("ap"));
     // 提供可迭代的字符串候选集合。
@@ -438,6 +424,29 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _form: ViewNode = crate::uix!(
         r#"<Form model={profile} @submit="on_profile_submit"><FormInputItem field="email" label="邮箱" rules="required,email" /><FormSelectItem field="level" label="等级" options={level_options} rules="required" searchable placeholder="请选择" /><FormCheckboxItem field="accepted" label="协议确认" text="我已阅读并同意" rules="required" /><FormRadioItem field="channel" label="通知渠道" options={channel_options} rules="required" vertical /><FormSwitchItem field="notifications" label="启用通知" rules="required" disabled={notifications_locked} /><FormSliderItem field="volume" label="音量" min="0" max="100" step={volume_step} /><Button type="primary" @click="submitForm">提交</Button></Form>"#
     );
+}
+
+// TreeSelect 公开类型只在 tree-widgets capability 启用时参与消费测试。
+#[cfg(feature = "tree-widgets")]
+// 验证 tree-widgets 生成物在真实公开 API 消费者中通过类型检查。
+#[test]
+// 声明 TreeSelect 独立 capability 消费测试。
+fn tree_select_compiles_against_public_uix_api() {
+    // 提供 TreeSelect 当前选中节点的稳定 key 状态。
+    let selected_tree_key = State::new(String::from("member"));
+    // 提供与 Tree 共享数据结构的层级节点集合。
+    let tree_nodes = vec![
+        // 根节点包含一个可选成员叶节点。
+        TreeNode::new("部门", "dept").children(vec![
+            // 叶节点的稳定 key 与初始受控状态一致。
+            TreeNode::new("成员", "member"),
+        ]),
+    ];
+    // 验证节点树、稳定 key 绑定和公共属性只依赖公开 prelude。
+    let _tree_select: ViewNode = crate::uix!(
+        r#"<TreeSelect value={selected_tree_key} options={tree_nodes} width="240px" automationId="tree" />"#
+    );
+    // 编译成功即证明启用 capability 时保留原有 TreeSelect 消费覆盖。
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
