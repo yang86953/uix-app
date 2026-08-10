@@ -6,7 +6,6 @@
 //! 子模块：
 //! - `fill` — 矢量填充（矩形/圆/椭圆/扇形/路径）
 //! - `stroke` — 矢量描边
-//! - `gradient` — 渐变填充
 //! - `shadow` — 阴影绘制
 //! - `glyph` — 字形混合
 //! - `image` — 图像混合
@@ -20,7 +19,6 @@ pub mod core;
 #[cfg(test)]
 pub mod fill;
 pub mod glyph;
-pub mod gradient;
 pub mod polygon;
 pub mod stroke;
 
