@@ -6,26 +6,79 @@ use crate::ui::view::{View, ViewNode};
 use crate::ui::widgets::input::{Checkbox, Radio, Rate, Segmented, Slider, Switch};
 use crate::ui::{FocusHandle, State};
 
-use super::{bind_typed_control, form_item_shell};
-
-
+use super::{bind_typed_control, bound_required, form_item_shell};
 
 /// 一个已登记字段的声明式复选输入项。
 pub struct FormCheckboxItem {
-    model: FormModel,
-    field: String,
-    value: State<bool>,
-    focus_handle: FocusHandle,
-    label: String,
-    disabled: Option<bool>,
-    size: Option<ControlSize>,
-    show_error: bool,
+    // 保存统一表单模型；声明阶段允许尚未绑定。
+    pub(crate) model: Option<FormModel>,
+    // 保存稳定业务字段 key。
+    pub(crate) field: String,
+    // 保存布尔字段状态；声明阶段允许尚未绑定。
+    pub(crate) value: Option<State<bool>>,
+    // 保存字段焦点句柄；声明阶段允许尚未绑定。
+    pub(crate) focus_handle: Option<FocusHandle>,
+    // 保存 FormItem 独立展示标签。
+    pub(crate) field_label: Option<String>,
+    // 保存复选框自身说明文本。
+    pub(crate) label: String,
+    // 保存可选禁用状态。
+    pub(crate) disabled: Option<bool>,
+    // 保存可选控件尺寸。
+    pub(crate) size: Option<ControlSize>,
+    // 保存必须勾选校验开关。
+    pub(crate) required: bool,
+    // 保存错误文本显示策略。
+    pub(crate) show_error: bool,
 }
 
 impl FormCheckboxItem {
+    /// 声明式裸配置；经 `Form::model(...).field(...)` 投影绑定时使用。
+    pub fn new(field: impl Into<String>) -> Self {
+        // 创建尚未绑定运行时模型的字段声明。
+        Self {
+            // 绑定阶段由 ModelForm 注入统一模型。
+            model: None,
+            // 保存稳定业务字段 key。
+            field: field.into(),
+            // 绑定阶段由 ModelForm 注入字段值状态。
+            value: None,
+            // 绑定阶段由 ModelForm 注入焦点句柄。
+            focus_handle: None,
+            // 默认沿用字段 key 作为表单标签。
+            field_label: None,
+            // 默认不显示复选框自身说明文本。
+            label: String::new(),
+            // 默认启用输入。
+            disabled: None,
+            // 默认沿用控件尺寸。
+            size: None,
+            // 默认不要求勾选。
+            required: false,
+            // 默认显示首条错误文本。
+            show_error: true,
+        }
+    }
+
+    /// 设置独立于字段 key 的表单展示标签。
+    pub fn field_label(mut self, label: impl Into<String>) -> Self {
+        // 保存 FormItem 面向用户的展示文本。
+        self.field_label = Some(label.into());
+        // 返回配置后的字段声明。
+        self
+    }
+
     /// 设置复选框自身的说明文本。
     pub fn label(mut self, label: impl Into<String>) -> Self {
         self.label = label.into();
+        self
+    }
+
+    /// 声明布尔字段必须勾选后才能提交。
+    pub fn required(mut self, required: bool) -> Self {
+        // 保存运行时校验开关。
+        self.required = required;
+        // 返回配置后的字段声明。
         self
     }
 
@@ -50,7 +103,17 @@ impl FormCheckboxItem {
 
 impl View for FormCheckboxItem {
     fn build(self) -> ViewNode {
-        let mut checkbox = Checkbox::new(self.label).checked(&self.value);
+        // 断言字段已由类型化表单或低层 FormModel 绑定。
+        let model = bound_required(
+            self.model.clone(),
+            "FormCheckboxItem 未绑定：请经 Form::model 字段投影或 FormModel::checkbox_item 创建",
+        );
+        // 断言布尔值状态已注入。
+        let value = bound_required(self.value.clone(), "FormCheckboxItem 未绑定值 State");
+        // 断言焦点句柄已注入。
+        let focus_handle =
+            bound_required(self.focus_handle.clone(), "FormCheckboxItem 未绑定焦点句柄");
+        let mut checkbox = Checkbox::new(self.label).checked(&value);
         if let Some(disabled) = self.disabled {
             checkbox = checkbox.disabled(disabled);
         }
@@ -58,13 +121,13 @@ impl View for FormCheckboxItem {
             checkbox = checkbox.size(size);
         }
         let input = bind_typed_control(
-            &self.model,
+            &model,
             &self.field,
-            &self.value,
-            &self.focus_handle,
+            &value,
+            &focus_handle,
             ViewNode::leaf(checkbox),
         );
-        form_item_shell(&self.model, &self.field, self.show_error, input)
+        form_item_shell(&model, &self.field, self.show_error, input)
     }
 }
 
@@ -418,7 +481,6 @@ impl View for FormSegmentedItem {
 /// 一个已登记字段的声明式日期输入项。
 
 impl FormModel {
-
     pub fn checkbox_item(
         &self,
         field: impl AsRef<str>,
@@ -428,13 +490,15 @@ impl FormModel {
         let focus_handle = self.focus_handle_for(field)?;
         self.register_reset_state(field, value);
         Some(FormCheckboxItem {
-            model: self.clone(),
+            model: Some(self.clone()),
             field: field.to_string(),
-            value: value.clone(),
-            focus_handle,
+            value: Some(value.clone()),
+            focus_handle: Some(focus_handle),
+            field_label: None,
             label: String::new(),
             disabled: None,
             size: None,
+            required: false,
             show_error: true,
         })
     }
@@ -545,6 +609,4 @@ impl FormModel {
             show_error: true,
         })
     }
-
-
 }
