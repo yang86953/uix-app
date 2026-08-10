@@ -247,20 +247,65 @@ impl View for FormSwitchItem {
 
 /// 一个已登记字段的声明式滑块输入项。
 pub struct FormSliderItem {
-    model: FormModel,
-    field: String,
-    value: State<f64>,
-    focus_handle: FocusHandle,
-    range: RangeInclusive<f64>,
-    step: f64,
-    size: Option<ControlSize>,
-    show_error: bool,
+    // 保存统一表单模型；声明阶段允许尚未绑定。
+    pub(crate) model: Option<FormModel>,
+    // 保存稳定业务字段 key。
+    pub(crate) field: String,
+    // 保存数值字段状态；声明阶段允许尚未绑定。
+    pub(crate) value: Option<State<f64>>,
+    // 保存字段焦点句柄；声明阶段允许尚未绑定。
+    pub(crate) focus_handle: Option<FocusHandle>,
+    // 保存 FormItem 独立展示标签。
+    pub(crate) label: Option<String>,
+    // 保存滑块的闭区间约束。
+    pub(crate) range: RangeInclusive<f64>,
+    // 保存滑块步进约束。
+    pub(crate) step: f64,
+    // 保存可选控件尺寸。
+    pub(crate) size: Option<ControlSize>,
+    // 保存错误文本显示策略。
+    pub(crate) show_error: bool,
 }
 
 impl FormSliderItem {
+    /// 声明式裸配置；经 `Form::model(...).field(...)` 投影绑定时使用。
+    pub fn new(field: impl Into<String>, range: RangeInclusive<f64>) -> Self {
+        // 创建尚未绑定运行时模型的字段声明。
+        Self {
+            // 绑定阶段由 ModelForm 注入统一模型。
+            model: None,
+            // 保存稳定业务字段 key。
+            field: field.into(),
+            // 绑定阶段由 ModelForm 注入字段值状态。
+            value: None,
+            // 绑定阶段由 ModelForm 注入焦点句柄。
+            focus_handle: None,
+            // 默认沿用字段 key 作为表单标签。
+            label: None,
+            // 保存调用方显式声明的范围。
+            range,
+            // 默认使用 Slider 的单位步长。
+            step: 1.0,
+            // 默认沿用控件尺寸。
+            size: None,
+            // 默认显示首条错误文本。
+            show_error: true,
+        }
+    }
+
+    /// 设置独立于字段 key 的表单展示标签。
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        // 保存 FormItem 面向用户的展示文本。
+        self.label = Some(label.into());
+        // 返回配置后的字段声明。
+        self
+    }
+
     /// 设置滑块步进值。
     pub fn step(mut self, step: f64) -> Self {
+        // 保存步长并由底层 Slider 执行最终有限正数归一化。
         self.step = step;
+        // 返回配置后的字段声明。
         self
     }
 
@@ -279,18 +324,29 @@ impl FormSliderItem {
 
 impl View for FormSliderItem {
     fn build(self) -> ViewNode {
-        let mut slider = Slider::new(self.range).step(self.step).value(&self.value);
+        // 断言字段已由类型化表单或低层 FormModel 绑定。
+        let model = bound_required(
+            self.model.clone(),
+            "FormSliderItem 未绑定：请经 Form::model 字段投影或 FormModel::slider_item 创建",
+        );
+        // 断言 f64 值状态已注入。
+        let value = bound_required(self.value.clone(), "FormSliderItem 未绑定值 State");
+        // 断言焦点句柄已注入。
+        let focus_handle =
+            bound_required(self.focus_handle.clone(), "FormSliderItem 未绑定焦点句柄");
+        // 构造受控滑块并绑定统一 f64 状态。
+        let mut slider = Slider::new(self.range).step(self.step).value(&value);
         if let Some(size) = self.size {
             slider = slider.size(size);
         }
         let input = bind_typed_control(
-            &self.model,
+            &model,
             &self.field,
-            &self.value,
-            &self.focus_handle,
+            &value,
+            &focus_handle,
             ViewNode::leaf(slider),
         );
-        form_item_shell(&self.model, &self.field, self.show_error, input)
+        form_item_shell(&model, &self.field, self.show_error, input)
     }
 }
 
@@ -681,13 +737,23 @@ impl FormModel {
         let focus_handle = self.focus_handle_for(field)?;
         self.register_reset_state(field, value);
         Some(FormSliderItem {
-            model: self.clone(),
+            // 注入统一表单模型。
+            model: Some(self.clone()),
+            // 保存稳定字段 key。
             field: field.to_string(),
-            value: value.clone(),
-            focus_handle,
+            // 注入 f64 字段状态。
+            value: Some(value.clone()),
+            // 注入已登记焦点句柄。
+            focus_handle: Some(focus_handle),
+            // 低层入口默认沿用字段元数据标签。
+            label: None,
+            // 保存调用方声明的闭区间。
             range,
+            // 默认使用单位步长。
             step: 1.0,
+            // 默认沿用控件尺寸。
             size: None,
+            // 默认显示首条错误文本。
             show_error: true,
         })
     }

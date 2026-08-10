@@ -42,7 +42,8 @@ use crate::ui::widgets::input::select::SelectValue;
 ///
 /// 已支持 `FormInputItem`（文本）、`FormInputNumberItem<T>`（数值）、
 /// `FormSelectItem<T>`（单选）、`FormCheckboxItem`（布尔）、
-/// `FormRadioItem`（单选组）、`FormSwitchItem`（布尔开关）；其余字段控件按需扩展。
+/// `FormRadioItem`（单选组）、`FormSwitchItem`（布尔开关）、
+/// `FormSliderItem`（f64 滑块）；其余字段控件按需扩展。
 pub trait FormItemSpec<F> {
     /// 绑定值 State 并构建字段 View（FormItem + 控件）。
     fn bind_view(&self, form: &FormModel, value: &State<F>) -> ViewNode;
