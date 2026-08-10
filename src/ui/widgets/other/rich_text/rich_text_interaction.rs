@@ -8,6 +8,32 @@ use crate::core::{Point, Rect};
 use crate::draw::resources::font::text_index::{BoundaryBias, CharIndex, TextIndexMap};
 
 impl RichText {
+    /// 设置普通文字是否允许选择；关闭时立即清除当前选择生命周期。
+    pub fn selectable(mut self, value: bool) -> Self {
+        // 保存调用方声明的选择能力。
+        self.selectable = value;
+        // 关闭能力时不得保留旧选区。
+        if !value {
+            self.selection.set(None);
+        }
+        // 关闭能力时必须重置旧选择锚点。
+        if !value {
+            self.sel_anchor.set(0);
+        }
+        // 关闭能力时不得保留拖拽会话。
+        if !value {
+            self.sel_dragging.set(false);
+        }
+        // 返回完成配置的组件。
+        self
+    }
+
+    /// 返回当前实例是否参加跨节点文字选择协调。
+    pub(crate) fn participates_in_cross_text_selection(&self) -> bool {
+        // 只暴露组件自身拥有的选择配置。
+        self.selectable
+    }
+
     pub(super) fn local_frame(&self) -> Rect {
         self.last_frame
             .get()
@@ -243,6 +269,13 @@ impl RichText {
     }
 
     pub(super) fn set_selection_range(&self, a: usize, b: usize) {
+        // 关闭能力时任何内部协调入口都不得建立选区。
+        if !self.selectable {
+            // 防御性清除可能残留的旧选区。
+            self.selection.set(None);
+            // 结束当前范围更新。
+            return;
+        }
         // 同一逻辑位置始终表示空选择，不因旧位置非法而扩展文本。
         if a == b {
             // 清除空选择。
