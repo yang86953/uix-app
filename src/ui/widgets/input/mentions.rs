@@ -4,6 +4,8 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::component::paint_context::PaintContext;
+// 引入提及输入完整文本的受控状态句柄。
+use crate::ui::reactive::state::State;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
@@ -37,6 +39,8 @@ component! {
     pub struct Mentions {
         /// 当前输入文本。
         value: String,
+        /// 外部完整输入文本的受控绑定。
+        value_binding: Option<State<String>>,
         /// 占位文本。
         placeholder: String,
         /// 候选列表。
@@ -106,6 +110,8 @@ component! {
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        // 交互前接收外部状态的最新完整文本。
+        self.sync_bound_value();
         match event {
             SystemEvent::PointerDown {
                 pos,
@@ -512,6 +518,8 @@ impl Mentions {
     pub fn new(placeholder: impl Into<String>) -> Self {
         Self {
             value: String::new(),
+            // 默认保持组件内部文本所有权。
+            value_binding: None,
             placeholder: placeholder.into(),
             options: Vec::new(),
             filtered: Vec::new(),
@@ -549,9 +557,51 @@ impl Mentions {
         self
     }
 
+    // 将完整提及文本绑定到外部字符串状态。
+    pub fn bind_value(mut self, state: &State<String>) -> Self {
+        // 克隆轻量状态句柄供后续编辑与候选提交使用。
+        self.value_binding = Some(state.clone());
+        // 构造时立即接收初始文本并登记响应式依赖。
+        self.sync_bound_value();
+        // 返回完成绑定的组件构造器。
+        self
+    }
+
     /// 返回当前完整输入文本。
     pub fn value(&self) -> &str {
         &self.value
+    }
+
+    // 用外部权威值替换本地完整文本并维护光标与活动查询。
+    fn set_value(&mut self, value: &str) {
+        // 替换完整文本而不改变候选集合所有权。
+        self.value = value.to_owned();
+        // 外部替换后把光标收敛到文本末尾。
+        self.cursor_char = self.value.chars().count();
+        // 新文本重新从首个可见字形开始计算水平滚动。
+        self.text_scroll_x.set(0.0);
+        // 仅在交互周期内刷新活动提及，避免构造时弹出候选。
+        if self.focused || self.suggesting {
+            // 按最新光标前文本重新提取活动查询。
+            self.refresh_suggestion_from_value();
+        } else {
+            // 非交互状态保持候选弹层关闭。
+            self.stop_suggesting();
+        }
+    }
+
+    // 从外部受控状态同步当前完整文本。
+    fn sync_bound_value(&mut self) {
+        // 非受控模式继续保留组件内部文本。
+        let Some(value) = self.value_binding.as_ref().map(State::get) else {
+            // 没有绑定时无需同步。
+            return;
+        };
+        // 仅在外部文本实际变化时重建派生状态。
+        if value != self.value {
+            // 统一更新文本、光标与活动查询。
+            self.set_value(&value);
+        }
     }
 
     // 测试目标保留 mention 建议状态观测入口，供输入交互测试按需调用。
@@ -796,6 +846,15 @@ impl Mentions {
     }
 
     fn publish_change(&self) {
+        // 受控模式先把本地编辑或候选提交写回外部状态。
+        if let Some(state) = self.value_binding.as_ref() {
+            // 避免对相同文本重复发布响应式更新。
+            if state.get() != self.value {
+                // 提交当前完整文本而不是仅提交活动查询。
+                state.set(self.value.clone());
+            }
+        }
+        // 保留既有语义 Change 事件的完整文本负载。
         self.pending_change.replace(Some(self.value.clone()));
     }
 
@@ -809,9 +868,21 @@ impl Mentions {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        // 受控实例以新声明中读取到的外部文本为权威。
+        let controlled_value = next.value_binding.as_ref().map(|_| next.value.clone());
         let options_changed = self.options != next.options;
         self.placeholder = next.placeholder;
         self.options = next.options;
+        // 同步声明式重建携带的状态句柄。
+        self.value_binding = next.value_binding;
+        // 外部文本变化时统一更新光标和活动查询。
+        if let Some(value) = controlled_value {
+            // 保留本地交互状态直到权威文本真正发生变化。
+            if value != self.value {
+                // 应用外部完整文本。
+                self.set_value(&value);
+            }
+        }
         self.cursor_char = self.cursor_char.min(self.value.chars().count());
         if self.suggesting && options_changed {
             self.update_filtered();

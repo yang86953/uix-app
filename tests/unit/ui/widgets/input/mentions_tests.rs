@@ -2,6 +2,47 @@
 use super::Mentions;
 // 引入断言所需的点与矩形基础类型。
 use crate::core::{Point, Rect};
+// 引入受控完整文本测试所需的响应式状态。
+use crate::ui::reactive::state::State;
+
+// 受控绑定必须同步完整正文并接收编辑、候选提交与声明式重建。
+#[test]
+// 测试名称说明 Mentions 完整文本的双向同步契约。
+fn controlled_value_reads_edits_selects_and_reconciles() {
+    // 初始状态包含活动提及查询及其前置正文。
+    let value = State::new("你好 @a".to_owned());
+    // 构造两个匹配候选并绑定外部完整文本。
+    let mut mentions = Mentions::new("提及成员")
+        // 提供稳定的字符串候选集合。
+        .options(vec!["alice", "adam"])
+        // 绑定外部完整文本状态。
+        .bind_value(&value);
+
+    // 初始完整文本必须来自外部状态。
+    assert_eq!(mentions.value(), "你好 @a");
+    // 模拟在活动查询末尾继续输入一个字符。
+    assert!(mentions.insert_text("l"));
+    // 本地编辑必须连同前置正文一起写回外部状态。
+    assert_eq!(value.get(), "你好 @al");
+    // 选择首个过滤候选必须成功。
+    assert!(mentions.select_index(0));
+    // 候选提交必须只替换活动查询并写回完整正文。
+    assert_eq!(value.get(), "你好 @alice ");
+
+    // 模拟业务逻辑从外部替换完整文本。
+    value.set("请联系 @adam".to_owned());
+    // 声明式重建必须携带相同绑定句柄和候选集合。
+    mentions.sync_from(
+        // 重建组件声明。
+        Mentions::new("提及成员")
+            // 重建候选集合。
+            .options(vec!["alice", "adam"])
+            // 重建受控状态绑定。
+            .bind_value(&value),
+    );
+    // 重建后的完整文本必须服从外部状态。
+    assert_eq!(mentions.value(), "请联系 @adam");
+}
 
 // 构造指定数量的稳定候选项。
 fn options(count: usize) -> Vec<String> {
