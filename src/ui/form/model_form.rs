@@ -24,7 +24,9 @@ fn field_bound_or_panic<T>(value: Option<T>, contract: &str) -> T {
 
 use crate::ui::State;
 use crate::ui::form::form::{Form, FormLayout};
-use crate::ui::form::form_binding::{FormInputItem, FormInputNumberItem, FormSelectItem};
+use crate::ui::form::form_binding::{
+    FormCheckboxItem, FormInputItem, FormInputNumberItem, FormSelectItem,
+};
 use crate::ui::form::form_validation::{FieldError, FormBuilder, FormModel, IntoFormValue};
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widgets::input::input_number::InputNumberValue;
@@ -33,7 +35,7 @@ use crate::ui::widgets::input::select::SelectValue;
 /// 类型化字段控件声明：`Form::model(...).field(name, accessor, item)` 的 item 契约。
 ///
 /// 已支持 `FormInputItem`（文本）、`FormInputNumberItem<T>`（数值）、
-/// `FormSelectItem<T>`（单选）；其余字段控件按需扩展。
+/// `FormSelectItem<T>`（单选）、`FormCheckboxItem`（布尔）；其余字段控件按需扩展。
 pub trait FormItemSpec<F> {
     /// 绑定值 State 并构建字段 View（FormItem + 控件）。
     fn bind_view(&self, form: &FormModel, value: &State<F>) -> ViewNode;
@@ -153,6 +155,59 @@ where
     fn label<'a>(&'a self, field: &'a str) -> &'a str {
         // 显式标签优先，否则继续沿用稳定字段 key。
         self.label.as_deref().unwrap_or(field)
+    }
+}
+
+impl FormItemSpec<bool> for FormCheckboxItem {
+    fn bind_view(&self, form: &FormModel, value: &State<bool>) -> ViewNode {
+        // 通过 FormModel 建立统一字段状态和焦点绑定。
+        let mut bound = field_bound_or_panic(
+            form.checkbox_item(&self.field, value),
+            "Form::model 字段未在内部模型登记",
+        );
+        // 投影独立表单标签。
+        bound.field_label = self.field_label.clone();
+        // 保留复选框自身说明文字。
+        bound.label = self.label.clone();
+        // 投影禁用状态。
+        bound.disabled = self.disabled;
+        // 投影控件尺寸。
+        bound.size = self.size;
+        // 投影必须勾选规则标记。
+        bound.required = self.required;
+        // 投影错误文本显示策略。
+        bound.show_error = self.show_error;
+        // 构建绑定后的字段 View。
+        bound.build()
+    }
+
+    fn required(&self) -> bool {
+        // 向 FormItem 公开必选语义。
+        self.required
+    }
+
+    fn label<'a>(&'a self, field: &'a str) -> &'a str {
+        // 独立表单标签优先，否则沿用稳定字段 key。
+        self.field_label.as_deref().unwrap_or(field)
+    }
+
+    fn configure_rules(&self, builder: FormBuilder) -> FormBuilder {
+        // 非必选字段不登记额外布尔规则。
+        if !self.required {
+            // 原样返回统一表单构建器。
+            return builder;
+        }
+        // 登记 required 元数据，使 FormItem 公开必选状态。
+        builder.required("必须勾选").custom(|value| {
+            // 使用 IntoFormValue 的稳定布尔文本投影。
+            if value == "true" {
+                // 已勾选时通过校验。
+                Ok(())
+            } else {
+                // 未勾选时返回面向用户的明确错误。
+                Err("必须勾选".to_string())
+            }
+        })
     }
 }
 
@@ -402,12 +457,14 @@ mod tests {
     use crate::ui::component_snapshot::SnapshotFields;
 
     // 定义测试用业务模型。
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     struct ContactForm {
         // 保存邮箱字段值。
         email: String,
         // 保存选择字段值。
         level: String,
+        // 保存协议确认状态。
+        accepted: bool,
     }
 
     // 验证字段 key 与用户可见标签保持独立。
@@ -419,6 +476,8 @@ mod tests {
             email: "owner@example.com".to_string(),
             // 提供稳定的选择字段初值。
             level: "中级".to_string(),
+            // 提供默认未勾选状态。
+            accepted: false,
         });
         // 构建带独立展示标签的类型化字段。
         let form = Form::model(&model)
@@ -457,6 +516,8 @@ mod tests {
             email: "owner@example.com".to_string(),
             // 提供当前选择值。
             level: "中级".to_string(),
+            // 提供默认未勾选状态。
+            accepted: false,
         });
         // 构建带选项与独立标签的类型化选择字段。
         let form = Form::model(&model)
@@ -491,5 +552,65 @@ mod tests {
             // 任何其他组件类型都表示字段壳投影失败。
             other => panic!("期望 FormItem 快照，实际为 {other:?}"),
         }
+    }
+
+    // 验证布尔字段的独立表单标签与必须勾选规则。
+    #[test]
+    fn typed_checkbox_item_projects_label_and_requires_checked_value() {
+        // 创建默认未接受协议的业务模型。
+        let model = State::new(ContactForm {
+            // 提供合法邮箱，保持模型完整。
+            email: "owner@example.com".to_string(),
+            // 提供稳定选择字段，保持模型完整。
+            level: "中级".to_string(),
+            // 初始状态故意保持未勾选。
+            accepted: false,
+        });
+        // 构建带独立字段标签和控件文字的类型化布尔字段。
+        let form = Form::model(&model)
+            // 投影稳定业务字段。
+            .field(
+                // 声明稳定字段 key。
+                "accepted",
+                // 投影 bool 模型成员。
+                |value| &mut value.accepted,
+                // 声明复选字段配置。
+                FormCheckboxItem::new("accepted")
+                    // 设置 FormItem 标签。
+                    .field_label("协议确认")
+                    // 保留复选框自身文字契约。
+                    .label("我已阅读并同意")
+                    // 要求提交前完成勾选。
+                    .required(true),
+            )
+            // 完成类型化表单构建。
+            .build();
+        // 生成真实字段 View 并建立值绑定。
+        let view = form.view();
+        // 读取外层 FormItem 快照。
+        let fields = view.children[0].widget.snapshot_fields();
+        // 核对稳定 key 与独立标签。
+        match fields {
+            // 解构 FormItem 公开语义字段。
+            SnapshotFields::FormItem {
+                label,
+                name,
+                required,
+                ..
+            } => {
+                // 外层标签使用独立字段文本。
+                assert_eq!(label, "协议确认");
+                // 字段 key 继续对应 bool 成员。
+                assert_eq!(name, "accepted");
+                // FormItem 必须公开必选状态。
+                assert!(required);
+            }
+            // 其他组件表示字段壳投影失败。
+            other => panic!("期望 FormItem 快照，实际为 {other:?}"),
+        }
+        // 未勾选状态必须被运行时统一校验拒绝。
+        let errors = form.submit().expect_err("未勾选协议必须失败");
+        // 返回稳定布尔必选错误文案。
+        assert_eq!(errors[0].message(), "必须勾选");
     }
 }
