@@ -100,6 +100,49 @@ fn platform_convenience_queries_are_public_surface() {
 }
 
 #[test]
+fn platform_query_and_service_documentation_examples_compile() {
+    // 与文档一致地声明只包含 owned 描述的平台快照。
+    type PlatformSnapshot = (
+        uix::platform::hardware::OsInfo,
+        uix::platform::hardware::CpuInfo,
+        uix::platform::hardware::MemoryInfo,
+        Box<[uix::platform::hardware::DisplayInfo]>,
+        Box<[uix::platform::graphics::GpuAdapterInfo]>,
+    );
+    // 编译完整查询函数，但不调用闭包或创建真实 Platform 单实例。
+    let query_platform = || -> uix::core::Result<PlatformSnapshot> {
+        // 创建操作只参与类型检查，闭包不会在测试中执行。
+        let platform = uix::platform::Platform::new()?;
+        // 三个系统信息查询都必须传播公开 typed failure。
+        let os = platform.os_info()?;
+        let cpu = platform.cpu_info()?;
+        let memory = platform.memory_info()?;
+        // 显示器查询必须返回 owned 描述切片。
+        let displays = platform.displays()?;
+        // 默认 D3D11 查询必须使用公开 backend 身份。
+        let adapters =
+            platform.gpu_adapters(uix::platform::graphics::GraphicsBackend::Direct3D11)?;
+        // 返回所有 owned 描述，确保闭包退出时 Platform 独立析构。
+        Ok((os, cpu, memory, displays, adapters))
+    };
+    // 编译完整服务函数，显式保留通知所需的可变借用。
+    let documents_dir_and_notify =
+        |platform: &mut uix::platform::Platform| -> uix::core::Result<std::path::PathBuf> {
+            // 查询 owned 文档目录，不创建目录。
+            let documents = platform.special_dir(uix::platform::services::SpecialDir::Documents)?;
+            // 通知调用通过同一可变 owner 借用传播 typed failure。
+            platform.show_notification(uix::platform::services::SystemNotification::new(
+                "UIX",
+                "任务完成",
+            ))?;
+            // 把目录交还调用方，保持示例结果可用。
+            Ok(documents)
+        };
+    // 保留两个闭包即可让外部 integration consumer 完成全部类型检查。
+    let _ = (query_platform, documents_dir_and_notify);
+}
+
+#[test]
 fn diagnostics_runtime_injection_accepts_shared_handle() {
     // 编译期契约：App::diagnostics_runtime 接受已构建 Diagnostics 实例。
     let diagnostics = Diagnostics::new(DiagnosticsConfig::default());
