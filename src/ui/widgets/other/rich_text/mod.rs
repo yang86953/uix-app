@@ -173,6 +173,8 @@ component! {
         layout_dirty: Cell<bool>,
 
         // ── 选择状态 ──
+        /// 控制普通文字是否允许建立选区；链接与代码复制不受影响。
+        selectable: bool,
         selection: Cell<Option<(usize, usize)>>,
         sel_anchor: Cell<usize>,
         sel_dragging: Cell<bool>,
@@ -206,6 +208,8 @@ component! {
             last_layout_width: Cell::new(0.0),
             last_layout_color: Cell::new(None),
             layout_dirty: Cell::new(true),
+            // UIX 文档契约要求文字选择默认关闭。
+            selectable: false,
             selection: Cell::new(None),
             sel_anchor: Cell::new(0),
             sel_dragging: Cell::new(false),
@@ -277,6 +281,8 @@ component! {
                 }
 
                 // 文字选择
+                // 未显式开启时把普通文字保持为非交互内容。
+                if !self.selectable { return EventResult::NotHandled; }
                 if !self.local_frame().contains(*pos) {
                     return EventResult::NotHandled;
                 }
@@ -368,7 +374,8 @@ component! {
             SystemEvent::KeyDown { key, mods } => {
                 let ctrl = mods.contains(KeyMod::CTRL);
                 match key {
-                    KeyCode::A if ctrl => {
+                    // 全选只属于显式开启的文字选择契约。
+                    KeyCode::A if ctrl && self.selectable => {
                         let total: usize = self.segments.iter()
                             .map(|s| match s {
                                 RichTextSegment::Text { content, .. } => content.chars().count(),
@@ -380,7 +387,8 @@ component! {
                         self.set_selection_range(0, total);
                         EventResult::Handled
                     }
-                    KeyCode::C if ctrl => {
+                    // 复制选区只在选择能力开启时消费快捷键。
+                    KeyCode::C if ctrl && self.selectable => {
                         if let Some((s, e)) = self.selection.get() {
                             let selected = self.extract_text_range(s, e);
                             clipboard::copy_to_clipboard(&selected);
@@ -706,6 +714,8 @@ impl RichText {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        // 记录 reconcile 是否关闭了已有选择能力。
+        let selection_disabled = self.selectable && !next.selectable;
         let segments_changed = self.segments != next.segments;
         let layout_config_changed = segments_changed
             || self.default_font_size != next.default_font_size
@@ -718,8 +728,26 @@ impl RichText {
         self.default_font_size_unit = next.default_font_size_unit;
         self.default_color = next.default_color;
         self.use_theme_color = next.use_theme_color;
+        // 同步公开的选择配置。
+        self.selectable = next.selectable;
         if next.on_link.is_some() {
             self.on_link = next.on_link;
+        }
+
+        // 能力关闭边界必须终止已有选区。
+        if selection_disabled {
+            // 清除旧选区。
+            self.selection.set(None);
+        }
+        // 能力关闭边界必须重置旧选择锚点。
+        if selection_disabled {
+            // 把锚点恢复到初始位置。
+            self.sel_anchor.set(0);
+        }
+        // 能力关闭边界必须终止已有拖拽会话。
+        if selection_disabled {
+            // 结束拖拽状态。
+            self.sel_dragging.set(false);
         }
 
         if layout_config_changed {

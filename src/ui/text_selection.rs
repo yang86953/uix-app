@@ -23,10 +23,11 @@ pub(crate) fn participates(node: &BoxedWidget) -> bool {
     if c.as_any().is::<Typography>() {
         return true;
     }
-    // 启用富文本后才把 RichText 纳入跨节点选择参与者。
+    // 启用富文本后只把显式可选择的 RichText 纳入跨节点参与者。
     #[cfg(feature = "rich-text")]
-    if c.as_any().is::<RichText>() {
-        return true;
+    if let Some(rich_text) = c.as_any().downcast_ref::<RichText>() {
+        // 参与资格由 RichText 自身的公开配置拥有。
+        return rich_text.participates_in_cross_text_selection();
     }
     if let Some(label) = c.as_any().downcast_ref::<Label>() {
         return label.participates_in_cross_text_selection();

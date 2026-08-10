@@ -7,7 +7,8 @@ use crate::draw::FontHandle;
 // 引入事件与测量契约。
 use crate::ui::component::traits::{EventHandler, WidgetLayout};
 use crate::ui::event::SystemEvent;
-use crate::ui::{KeyMod, MouseButton};
+// 引入键盘、修饰键与指针按钮。
+use crate::ui::{KeyCode, KeyMod, MouseButton};
 
 fn dummy_event() -> SystemEvent {
     SystemEvent::PointerUp {
@@ -67,34 +68,38 @@ fn on_link_and_submit_semantic_event_coexist() {
 #[test]
 fn selection_expands_across_style_segments_to_complete_grapheme() {
     // 基字符和组合音标故意拆到两个不同样式段。
-    let rich = RichText::new().content(vec![
-        // 第一段保存基础拉丁字母。
-        RichTextSegment::Text {
-            // 使用基础字符正文。
-            content: "a".to_owned(),
-            // 使用默认样式。
-            style: RichTextStyle::default(),
-        },
-        // 第二段保存组合音标并改变样式。
-        RichTextSegment::Text {
-            // 使用组合锐音正文。
-            content: "\u{0301}".to_owned(),
-            // 使用粗体样式验证跨段拼接。
-            style: RichTextStyle {
-                // 启用粗体以形成不同样式 run。
-                bold: true,
-                // 其余样式沿用默认值。
-                ..RichTextStyle::default()
+    let rich = RichText::new()
+        // 显式开启本测试覆盖的文字选择能力。
+        .selectable(true)
+        // 注入跨样式段的组合字符。
+        .content(vec![
+            // 第一段保存基础拉丁字母。
+            RichTextSegment::Text {
+                // 使用基础字符正文。
+                content: "a".to_owned(),
+                // 使用默认样式。
+                style: RichTextStyle::default(),
             },
-        },
-        // 第三段提供相邻普通字符。
-        RichTextSegment::Text {
-            // 使用尾随拉丁字符。
-            content: "z".to_owned(),
-            // 使用默认样式。
-            style: RichTextStyle::default(),
-        },
-    ]);
+            // 第二段保存组合音标并改变样式。
+            RichTextSegment::Text {
+                // 使用组合锐音正文。
+                content: "\u{0301}".to_owned(),
+                // 使用粗体样式验证跨段拼接。
+                style: RichTextStyle {
+                    // 启用粗体以形成不同样式 run。
+                    bold: true,
+                    // 其余样式沿用默认值。
+                    ..RichTextStyle::default()
+                },
+            },
+            // 第三段提供相邻普通字符。
+            RichTextSegment::Text {
+                // 使用尾随拉丁字符。
+                content: "z".to_owned(),
+                // 使用默认样式。
+                style: RichTextStyle::default(),
+            },
+        ]);
     // 模拟旧调用方从组合序列内部选择到其终点。
     rich.set_selection_range(1, 2);
     // 选择必须向前扩展并包含基础字符。
@@ -105,6 +110,61 @@ fn selection_expands_across_style_segments_to_complete_grapheme() {
     rich.set_selection_range(1, 1);
     // 空选择应被清除。
     assert_eq!(rich.selection.get(), None);
+}
+
+// 验证默认关闭与显式开启共同约束键盘全选入口。
+#[test]
+// 定义默认值与显式配置的选择入口测试。
+fn selectable_controls_keyboard_selection_and_defaults_to_false() {
+    // 构造沿用默认不可选择契约的富文本。
+    let mut disabled = RichText::new().content(parse_rich_text("abc"));
+    // 构造统一的 Ctrl+A 输入事件。
+    let select_all = SystemEvent::KeyDown {
+        // 使用全选键。
+        key: KeyCode::A,
+        // 同时按下控制修饰键。
+        mods: KeyMod::CTRL,
+    };
+    // 默认实例不得消费全选快捷键。
+    assert_eq!(disabled.on_event(&select_all), EventResult::NotHandled);
+    // 默认实例不得建立任何选区。
+    assert_eq!(disabled.selected_text(), None);
+    // 构造显式开启选择能力的同内容实例。
+    let mut enabled = RichText::new()
+        // 开启普通文字选择。
+        .selectable(true)
+        // 注入可预测的三字符正文。
+        .content(parse_rich_text("abc"));
+    // 开启后的实例应消费全选快捷键。
+    assert_eq!(enabled.on_event(&select_all), EventResult::Handled);
+    // 开启后的实例应返回完整选中文本。
+    assert_eq!(enabled.selected_text().as_deref(), Some("abc"));
+}
+
+// 验证 reconcile 关闭能力时立即终止既有选择生命周期。
+#[test]
+// 定义 reconcile 关闭选择能力的生命周期测试。
+fn reconcile_disabling_selectable_clears_selection_and_dragging() {
+    // 构造已开启选择能力的当前组件。
+    let mut rich = RichText::new()
+        // 开启选择以建立待清理状态。
+        .selectable(true)
+        // 注入稳定正文。
+        .content(parse_rich_text("abc"));
+    // 建立完整文本选区。
+    rich.set_selection_range(0, 3);
+    // 模拟仍在进行的拖拽会话。
+    rich.sel_dragging.set(true);
+    // 使用相同内容但默认关闭选择的声明进行 reconcile。
+    rich.sync_from(RichText::new().content(parse_rich_text("abc")));
+    // 关闭后的组件不得参加跨节点选择。
+    assert!(!rich.participates_in_cross_text_selection());
+    // 关闭边界必须清除已有选区。
+    assert_eq!(rich.selected_text(), None);
+    // 关闭边界必须重置旧选择锚点。
+    assert_eq!(rich.sel_anchor.get(), 0);
+    // 关闭边界必须终止拖拽会话。
+    assert!(!rich.sel_dragging.get());
 }
 
 // 以小误差比较测量路径与真实渲染布局的浮点几何。
