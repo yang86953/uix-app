@@ -85,6 +85,13 @@ class PackageMetadataContractTests(unittest.TestCase):
         self.assertIn("[DateTimeOffset]::new(1980, 1, 1, 0, 0, 0", builder)
         # 每个新条目必须在 archive 关闭前写入统一时间。
         self.assertIn("$archiveEntry.LastWriteTime = $archiveTimestamp", builder)
+        # Create 模式只允许在条目 stream 首次打开前修改时间。
+        self.assertLess(
+            # 定位统一时间写入语句。
+            builder.index("$archiveEntry.LastWriteTime = $archiveTimestamp"),
+            # 定位条目 stream 打开语句。
+            builder.index("$entryStream = $archiveEntry.Open()"),
+        )
 
 
 # 只在 Windows PowerShell 可用时执行发布包行为测试。
