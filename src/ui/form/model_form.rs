@@ -133,6 +133,8 @@ where
             form.select_item(&self.field, value),
             "Form::model 字段未在内部模型登记",
         );
+        // 把独立展示标签投影到绑定后的字段配置。
+        bound.label = self.label.clone();
         bound.options = self.options.clone();
         bound.optgroups = self.optgroups.clone();
         bound.placeholder = self.placeholder.clone();
@@ -146,6 +148,11 @@ where
 
     fn required(&self) -> bool {
         self.required
+    }
+
+    fn label<'a>(&'a self, field: &'a str) -> &'a str {
+        // 显式标签优先，否则继续沿用稳定字段 key。
+        self.label.as_deref().unwrap_or(field)
     }
 }
 
@@ -399,6 +406,8 @@ mod tests {
     struct ContactForm {
         // 保存邮箱字段值。
         email: String,
+        // 保存选择字段值。
+        level: String,
     }
 
     // 验证字段 key 与用户可见标签保持独立。
@@ -408,6 +417,8 @@ mod tests {
         let model = State::new(ContactForm {
             // 提供合法值，避免规则影响结构测试。
             email: "owner@example.com".to_string(),
+            // 提供稳定的选择字段初值。
+            level: "中级".to_string(),
         });
         // 构建带独立展示标签的类型化字段。
         let form = Form::model(&model)
@@ -431,6 +442,51 @@ mod tests {
                 assert_eq!(label, "电子邮箱");
                 // 字段 key 仍稳定指向业务模型成员。
                 assert_eq!(name, "email");
+            }
+            // 任何其他组件类型都表示字段壳投影失败。
+            other => panic!("期望 FormItem 快照，实际为 {other:?}"),
+        }
+    }
+
+    // 验证选择字段同样投影独立标签。
+    #[test]
+    fn typed_select_item_projects_explicit_label_to_form_item() {
+        // 创建带初始等级的受控模型。
+        let model = State::new(ContactForm {
+            // 提供合法邮箱，保持模型完整。
+            email: "owner@example.com".to_string(),
+            // 提供当前选择值。
+            level: "中级".to_string(),
+        });
+        // 构建带选项与独立标签的类型化选择字段。
+        let form = Form::model(&model)
+            // 字段 key 继续对应 Rust 模型成员。
+            .field(
+                // 声明稳定字段 key。
+                "level",
+                // 投影业务模型成员。
+                |value| &mut value.level,
+                // 配置用户可见标签与候选项。
+                FormSelectItem::new("level")
+                    // 设置独立标签。
+                    .label("等级")
+                    // 设置可选值。
+                    .options(["初级", "中级", "高级"]),
+            )
+            // 完成表单句柄构建。
+            .build();
+        // 生成真实字段 View 树。
+        let view = form.view();
+        // 读取首个 FormItem 的稳定快照字段。
+        let fields = view.children[0].widget.snapshot_fields();
+        // 快照必须同时保留字段 key 和独立标签。
+        match fields {
+            // 核对 FormItem 公开语义字段。
+            SnapshotFields::FormItem { label, name, .. } => {
+                // 标签使用声明的用户可见文本。
+                assert_eq!(label, "等级");
+                // 字段 key 仍稳定指向业务模型成员。
+                assert_eq!(name, "level");
             }
             // 任何其他组件类型都表示字段壳投影失败。
             other => panic!("期望 FormItem 快照，实际为 {other:?}"),

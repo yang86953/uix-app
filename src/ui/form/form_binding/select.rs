@@ -6,8 +6,6 @@ use crate::ui::{FocusHandle, State};
 
 use super::{bind_typed_control, bound_required, form_item_shell};
 
-
-/// 一个已登记字段的声明式单选输入项。
 /// 一个已登记字段的声明式单选输入项。
 pub struct FormSelectItem<T = String>
 where
@@ -15,6 +13,8 @@ where
 {
     pub(crate) model: Option<FormModel>,
     pub(crate) field: String,
+    // 保存面向用户的独立字段标签。
+    pub(crate) label: Option<String>,
     pub(crate) value: Option<State<T>>,
     pub(crate) focus_handle: Option<FocusHandle>,
     pub(crate) options: Vec<String>,
@@ -36,6 +36,8 @@ where
         Self {
             model: None,
             field: name.into(),
+            // 默认沿用字段名作为展示标签。
+            label: None,
             value: None,
             focus_handle: None,
             options: Vec::new(),
@@ -47,6 +49,14 @@ where
             required: false,
             show_error: true,
         }
+    }
+
+    /// 设置独立于稳定字段 key 的展示标签。
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        // 保存调用方提供的用户可见文本。
+        self.label = Some(label.into());
+        // 返回配置后的声明式字段项。
+        self
     }
 
     /// 声明字段为必填（`Form::model` 构建时登记校验规则）。
@@ -127,7 +137,8 @@ where
             "FormSelectItem 未绑定：请经 Form::model 字段投影或 FormModel::select_item 创建",
         );
         let value = bound_required(self.value.clone(), "FormSelectItem 未绑定值 State");
-        let focus_handle = bound_required(self.focus_handle.clone(), "FormSelectItem 未绑定焦点句柄");
+        let focus_handle =
+            bound_required(self.focus_handle.clone(), "FormSelectItem 未绑定焦点句柄");
         let mut select = if self.searchable {
             Select::searchable()
         } else {
@@ -157,7 +168,6 @@ where
 }
 
 impl FormModel {
-
     /// 把已声明的选项字段绑定为 `FormItem + Select` View。
     ///
     /// 字段不存在时返回 `None`；支持单选 `String` 与多选 `HashSet<String>` typed 真值。
@@ -175,6 +185,8 @@ impl FormModel {
         Some(FormSelectItem {
             model: Some(self.clone()),
             field: field.to_string(),
+            // 低层绑定入口未声明独立标签。
+            label: None,
             value: Some(value.clone()),
             focus_handle: Some(focus_handle),
             options: Vec::new(),
@@ -187,5 +199,4 @@ impl FormModel {
             show_error: true,
         })
     }
-
 }
