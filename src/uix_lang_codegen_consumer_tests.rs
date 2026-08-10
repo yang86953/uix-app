@@ -330,6 +330,11 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     // 验证时间绑定和公共属性只依赖公开 prelude。
     let _time_picker: ViewNode =
         crate::uix!(r#"<TimePicker value={selected_time} width="200px" automationId="time" />"#);
+    // 提供 ColorPicker 当前选中颜色的受控状态。
+    let selected_color = State::new(Color::hex("#1677ff"));
+    // 验证颜色绑定和公共属性只依赖公开 prelude。
+    let _color_picker: ViewNode =
+        crate::uix!(r#"<ColorPicker value={selected_color} width="200px" automationId="color" />"#);
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。

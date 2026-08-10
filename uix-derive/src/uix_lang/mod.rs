@@ -157,6 +157,11 @@ mod time_picker_codegen;
 // 集中验证 TimePicker 生成与拒绝路径。
 #[cfg(test)]
 mod time_picker_codegen_tests;
+// 定义 ColorPicker 颜色状态的公开 API 代码生成边界。
+mod color_picker_codegen;
+// 集中验证 ColorPicker 生成与拒绝路径。
+#[cfg(test)]
+mod color_picker_codegen_tests;
 // 定义 FloatButton 内置组件的公开 API 代码生成边界。
 mod float_button_codegen;
 // 定义布局容器、Row/Col 栅格与 Grid/Col 的公开 API 代码生成边界。
@@ -277,6 +282,8 @@ pub(crate) use date_picker_codegen::generate_date_picker;
 pub(crate) use date_range_picker_codegen::generate_date_range_picker;
 // 向核心元素生成器暴露 TimePicker 专用映射。
 pub(crate) use time_picker_codegen::generate_time_picker;
+// 向核心元素生成器暴露 ColorPicker 专用映射。
+pub(crate) use color_picker_codegen::generate_color_picker;
 // 向核心元素生成器暴露 FloatButton 专用映射。
 pub(crate) use float_button_codegen::generate_float_button;
 // 向核心元素生成器暴露布局组件专用映射。
