@@ -234,6 +234,11 @@ mod tooltip_codegen;
 // 集中验证 Tooltip 生成、触发子树与拒绝路径。
 #[cfg(test)]
 mod tooltip_codegen_tests;
+// 定义 Popover 内容、触发方式与唯一静态触发 View 的公开 API 代码生成边界。
+mod popover_codegen;
+// 集中验证 Popover 生成、触发子树与拒绝路径。
+#[cfg(test)]
+mod popover_codegen_tests;
 // 定义 FocusTrap 有序焦点作用域子树的公开 API 代码生成边界。
 mod focus_trap_codegen;
 // 集中验证 FocusTrap 生成、控制流与拒绝路径。
@@ -401,6 +406,8 @@ pub(crate) use watermark_codegen::generate_watermark;
 pub(crate) use alert_codegen::generate_alert;
 // 向核心元素生成器暴露 Tooltip 容器组件专用映射。
 pub(crate) use tooltip_codegen::generate_tooltip;
+// 向核心元素生成器暴露 Popover 容器组件专用映射。
+pub(crate) use popover_codegen::generate_popover;
 // 向核心元素生成器暴露 FocusTrap 容器组件专用映射。
 pub(crate) use focus_trap_codegen::generate_focus_trap;
 // 向核心元素生成器暴露 Spin 容器组件专用映射。
