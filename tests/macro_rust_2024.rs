@@ -109,6 +109,12 @@ fn record_alert_close(change: &str) {
     let _ = change;
 }
 
+// 定义 Pagination 公开宏消费者使用的变化事件处理器。
+fn record_pagination_change(change: &str) {
+    // 编译 Gate 同时接受页码与 page_size=<值> 文本借用。
+    let _ = change;
+}
+
 // 定义 Rust 2024 公开过程宏消费的类型化表单模型。
 #[derive(Clone)]
 // 保存本回归需要投影的开关与滑块字段。
@@ -351,6 +357,27 @@ fn public_uix_macro_compiles_steps() {
     // 宏展开只克隆状态句柄，调用方仍可读取原 State。
     assert_eq!(step.get(), 0);
     // 编译成功即证明 Step 集合、State<usize> 与叶节点契约闭合。
+}
+
+// 验证真实 Rust 2024 消费 crate 可编译 Pagination 双状态与 Change 事件。
+#[test]
+// 声明 Pagination 外部消费编译测试。
+fn public_uix_macro_compiles_pagination() {
+    // 创建声明端 current 唯一状态源。
+    let page = State::new(const { 2_usize });
+    // 创建声明端 pageSize 唯一状态源。
+    let page_size = State::new(const { 20_usize });
+    // 使用 Rust 2024 const 块产生动态总条数。
+    let total = const { 95_usize };
+    // 让过程宏生成公开 Pagination、双状态与既有 Change 文本载荷处理器。
+    let _view: ViewNode = uix::uix!(
+        r#"<Pagination current={page} pageSize={page_size} total={total} @change="record_pagination_change($event)" automationId="orders-pagination" />"#
+    );
+    // 宏展开只克隆 current 状态句柄，调用方仍可读取原 State。
+    assert_eq!(page.get(), 2);
+    // 宏展开只克隆 pageSize 状态句柄，调用方仍可读取原 State。
+    assert_eq!(page_size.get(), 20);
+    // 编译成功即证明双 State<usize>、动态 usize 与叶节点契约闭合。
 }
 
 // 验证真实 Rust 2024 消费 crate 可编译 Alert 状态、动态关闭能力与关闭事件。

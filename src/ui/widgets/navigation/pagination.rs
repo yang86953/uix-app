@@ -6,6 +6,8 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::ui::component::paint_context::PaintContext;
+// 引入 current 与 pageSize 的声明式状态句柄。
+use crate::ui::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
     WidgetTree,
@@ -24,7 +26,11 @@ component! {
     pub struct Pagination {
         total: usize,
         page_size: usize,
+        // 保存声明端 pageSize 的唯一受控状态来源。
+        page_size_binding: Option<State<usize>>,
         current: Cell<usize>,
+        // 保存声明端 current 的唯一受控状态来源。
+        current_binding: Option<State<usize>>,
         show_size_changer: bool,
         show_total: bool,
         simple: bool,
@@ -50,6 +56,8 @@ component! {
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        // 每次处理输入前吸收声明端可能发生的双状态更新。
+        self.sync_bound_values();
         match event {
             SystemEvent::PointerDown {
                 pos,
@@ -137,6 +145,8 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
+        // 捕获双状态依赖，使外部更新触发声明树重建。
+        self.capture_bound_value_dependencies();
         let total_pages = self.total.div_ceil(self.page_size);
         if total_pages == 0 && !self.show_total && !self.show_size_changer {
             return;
@@ -307,7 +317,11 @@ impl Pagination {
         Self {
             total,
             page_size: page_size.max(1),
+            // 默认构造保持 pageSize 非受控。
+            page_size_binding: None,
             current: Cell::new(1),
+            // 默认构造保持 current 非受控。
+            current_binding: None,
             show_size_changer: false,
             show_total: true,
             simple: false,
@@ -322,8 +336,22 @@ impl Pagination {
             pending_change: Cell::new(None),
         }
     }
-    pub fn current(self, v: usize) -> Self {
+    // 设置非受控 current 初始值。
+    pub fn current(mut self, v: usize) -> Self {
+        // 显式数值配置切回非受控模式。
+        self.current_binding = None;
+        // 按当前 total 与 pageSize 归一化页码。
         self.current.set(self.clamp_current(v));
+        // 返回完成配置的分页器。
+        self
+    }
+    // 将 current 双向绑定到声明端 State<usize>。
+    pub fn current_state(mut self, state: &State<usize>) -> Self {
+        // 克隆轻量句柄，不复制或夺取应用状态。
+        self.current_binding = Some(state.clone());
+        // 立即同步并归一化声明端双状态。
+        self.sync_bound_values();
+        // 返回受控分页器。
         self
     }
     pub fn get_current(&self) -> usize {
@@ -332,9 +360,26 @@ impl Pagination {
     pub fn get_page_size(&self) -> usize {
         self.page_size
     }
+    // 设置非受控 pageSize 声明值。
     pub fn page_size(mut self, v: usize) -> Self {
+        // 显式数值配置切回非受控模式。
+        self.page_size_binding = None;
+        // pageSize 的最小合法值为一。
         self.page_size = v.max(1);
+        // pageSize 改变后重新限制 current。
         self.current.set(self.clamp_current(self.current.get()));
+        // 若 current 仍受控，则同步写回可能发生的页码收敛。
+        self.write_current_bound(self.current.get());
+        // 返回完成配置的分页器。
+        self
+    }
+    // 将 pageSize 双向绑定到声明端 State<usize>。
+    pub fn page_size_state(mut self, state: &State<usize>) -> Self {
+        // 克隆轻量句柄，不复制或夺取应用状态。
+        self.page_size_binding = Some(state.clone());
+        // 立即同步 pageSize，并在必要时收敛 current。
+        self.sync_bound_values();
+        // 返回受控分页器。
         self
     }
     pub fn show_total(mut self, v: bool) -> Self {
@@ -346,7 +391,12 @@ impl Pagination {
         self
     }
     pub fn set_current(&self, v: usize) {
-        self.current.set(self.clamp_current(v));
+        // 归一化命令式页码。
+        let current = self.clamp_current(v);
+        // 更新组件本地镜像。
+        self.current.set(current);
+        // 受控模式同步写回应用状态，但不伪造用户事件。
+        self.write_current_bound(current);
     }
     pub fn total_pages(&self) -> usize {
         self.total.div_ceil(self.page_size)
@@ -384,9 +434,24 @@ impl Pagination {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        // 保存非受控模式下应继续沿用的交互页码。
+        let previous_current = self.current.get();
+        // 受控声明携带从最新 State 同步出的 current 镜像。
+        let controlled_current = next.current_binding.as_ref().map(|_| next.current.get());
+        // 采用新声明的总条数。
         self.total = next.total;
+        // pageSize 的声明配置或受控镜像都由 next 提供。
         self.page_size = next.page_size.max(1);
-        self.current.set(self.clamp_current(self.current.get()));
+        // 接管新声明的 pageSize 状态句柄。
+        self.page_size_binding = next.page_size_binding;
+        // 接管新声明的 current 状态句柄。
+        self.current_binding = next.current_binding;
+        // 受控模式服从 State；非受控模式保留旧交互页码。
+        let current = controlled_current.unwrap_or(previous_current);
+        // 在新 total 与 pageSize 下归一化页码。
+        self.current.set(self.clamp_current(current));
+        // 若受控 State 在声明生成后变化，确保最终镜像仍写回一致值。
+        self.write_current_bound(self.current.get());
         self.show_size_changer = next.show_size_changer;
         self.show_total = next.show_total;
         self.simple = next.simple;
@@ -607,9 +672,15 @@ impl Pagination {
     }
 
     fn select_page(&self, page: usize) {
+        // 把用户请求限制到当前有效页码范围。
         let page = self.clamp_current(page);
+        // 只有真实变化才写状态并发布 Change。
         if page != self.current.get() {
+            // 先更新组件镜像。
             self.current.set(page);
+            // 再写回声明端唯一状态源。
+            self.write_current_bound(page);
+            // 保存现有页码 Change 载荷。
             self.pending_change.set(Some(PaginationChange::Page(page)));
         }
     }
@@ -632,10 +703,94 @@ impl Pagination {
         };
         let page_size = self.page_size_options[next];
         if page_size != self.page_size {
+            // 更新组件 pageSize 镜像。
             self.page_size = page_size;
+            // 用户切换先写回声明端 pageSize 状态。
+            self.write_page_size_bound(page_size);
+            // 新 pageSize 可能缩短总页数，需要收敛 current。
             self.current.set(self.clamp_current(self.current.get()));
+            // 同步写回可能发生变化的 current。
+            self.write_current_bound(self.current.get());
+            // 保留既有 page_size=<值> Change 载荷。
             self.pending_change
                 .set(Some(PaginationChange::PageSize(page_size)));
+        }
+    }
+
+    // 从声明端 State 吸收 pageSize/current，并把非法值归一化回同一状态源。
+    fn sync_bound_values(&mut self) {
+        // 克隆 pageSize 句柄，避免读取期间扩大 self 的借用范围。
+        if let Some(state) = self.page_size_binding.clone() {
+            // 读取声明端最新 pageSize。
+            let requested = state.get();
+            // pageSize 至少为一。
+            let page_size = requested.max(1);
+            // 更新运行时镜像。
+            self.page_size = page_size;
+            // 零值归一化必须写回唯一状态源。
+            if requested != page_size {
+                // 提交合法 pageSize。
+                state.set(page_size);
+            }
+        }
+        // pageSize 先同步后才能正确限制 current。
+        if let Some(state) = self.current_binding.clone() {
+            // 读取声明端最新页码。
+            let requested = state.get();
+            // 按当前总页数归一化。
+            let current = self.clamp_current(requested);
+            // 更新运行时镜像。
+            self.current.set(current);
+            // 越界值必须同步写回唯一状态源。
+            if requested != current {
+                // 提交合法 current。
+                state.set(current);
+            }
+        } else {
+            // 即使 current 非受控，pageSize 外部变化也必须限制旧页码。
+            self.current.set(self.clamp_current(self.current.get()));
+        }
+    }
+
+    // 捕获声明端双状态的响应式依赖。
+    fn capture_bound_value_dependencies(&self) {
+        // pageSize 受控时登记其 State 依赖。
+        if let Some(state) = self.page_size_binding.as_ref() {
+            // 读取值以接入当前追踪上下文。
+            let _ = state.get();
+        }
+        // current 受控时登记其 State 依赖。
+        if let Some(state) = self.current_binding.as_ref() {
+            // 读取值以接入当前追踪上下文。
+            let _ = state.get();
+        }
+    }
+
+    // 把 current 写回受控 State。
+    fn write_current_bound(&self, current: usize) {
+        // 非受控模式没有外部写回目标。
+        let Some(state) = self.current_binding.as_ref() else {
+            // 直接返回，保留组件自身状态。
+            return;
+        };
+        // 相同值不产生多余 generation 与 reconcile。
+        if state.get() != current {
+            // 提交新页码。
+            state.set(current);
+        }
+    }
+
+    // 把 pageSize 写回受控 State。
+    fn write_page_size_bound(&self, page_size: usize) {
+        // 非受控模式没有外部写回目标。
+        let Some(state) = self.page_size_binding.as_ref() else {
+            // 直接返回，保留组件自身状态。
+            return;
+        };
+        // 相同值不产生多余 generation 与 reconcile。
+        if state.get() != page_size {
+            // 提交新的每页条数。
+            state.set(page_size);
         }
     }
 
@@ -649,5 +804,95 @@ impl Pagination {
             size: self.size,
             page_size_options: self.page_size_options.clone(),
         }
+    }
+}
+
+// 只在组件边界验证 Pagination 双状态与 reconcile 所有权。
+#[cfg(test)]
+// 声明分页器私有测试模块。
+mod tests {
+    // 引入待验证分页器。
+    use super::Pagination;
+    // 引入声明端状态句柄。
+    use crate::ui::State;
+
+    // 验证外部更新、用户选择与 pageSize 收敛共享同一双状态。
+    #[test]
+    // 声明双向绑定回归。
+    fn controlled_values_stay_bidirectional() {
+        // 创建声明端 current 状态。
+        let current = State::new(3_usize);
+        // 创建声明端 pageSize 状态。
+        let page_size = State::new(10_usize);
+        // 构造受控分页器并启用条数切换。
+        let mut pagination = Pagination::new(95, 10)
+            // 先绑定 pageSize。
+            .page_size_state(&page_size)
+            // 再绑定 current。
+            .current_state(&current)
+            // 启用用户 pageSize 交互入口。
+            .show_size_changer(true);
+        // 初次物化必须读取两个外部值。
+        assert_eq!(
+            (pagination.get_current(), pagination.get_page_size()),
+            (3, 10)
+        );
+        // 模拟用户选择第五页。
+        pagination.select_page(5);
+        // 用户页码变化必须写回 current State。
+        assert_eq!(current.get(), 5);
+        // 模拟用户切换到下一档 pageSize。
+        pagination.cycle_page_size(true);
+        // pageSize 必须写回二十。
+        assert_eq!(page_size.get(), 20);
+        // 外部业务把 pageSize 改成五十。
+        page_size.set(50);
+        // 下一次事件入口采用的同步 helper 吸收外部更新。
+        pagination.sync_bound_values();
+        // 九十五条在五十条每页时最多两页。
+        assert_eq!(pagination.get_current(), 2);
+        // current State 必须收到同一收敛值。
+        assert_eq!(current.get(), 2);
+        // 组件 pageSize 镜像必须与外部一致。
+        assert_eq!(pagination.get_page_size(), 50);
+    }
+
+    // 验证非法状态归一化与声明树重建均服从新 State。
+    #[test]
+    // 声明 reconcile 双状态回归。
+    fn reconcile_prefers_declared_and_normalized_values() {
+        // 创建越界 current。
+        let current = State::new(99_usize);
+        // 创建非法零 pageSize。
+        let page_size = State::new(0_usize);
+        // 初次受控构造执行双状态归一化。
+        let mut pagination = Pagination::new(30, 10)
+            // 先归一化 pageSize。
+            .page_size_state(&page_size)
+            // 再归一化 current。
+            .current_state(&current);
+        // 零 pageSize 必须归一化为一。
+        assert_eq!(page_size.get(), 1);
+        // 三十条、每页一条时最大页码为三十。
+        assert_eq!(current.get(), 30);
+        // 业务声明下一轮使用每页十五条和第二页。
+        page_size.set(15);
+        // 更新声明端 current。
+        current.set(2);
+        // 构造下一棵声明树中的受控分页器。
+        let next = Pagination::new(45, 10)
+            // 绑定更新后的 pageSize。
+            .page_size_state(&page_size)
+            // 绑定更新后的 current。
+            .current_state(&current);
+        // 让运行时复用旧实例并同步新声明。
+        pagination.sync_from(next);
+        // reconcile 必须采用最新双状态。
+        assert_eq!(
+            (pagination.get_current(), pagination.get_page_size()),
+            (2, 15)
+        );
+        // 新 total 也必须进入快照行为。
+        assert_eq!(pagination.total_pages(), 3);
     }
 }
