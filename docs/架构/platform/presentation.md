@@ -14,7 +14,7 @@
 
 > **PixelUpload recipe owner 边界**：统一 renderer 的 CPU PixelUpload presentation 不再直接持有 `Box<dyn IGraphicsContext>`；native recipe factory 在分派 recipe 时先构造 `PixelUploadRecipeOwner`。该 owner 验证 CPU × PixelUpload 与专用 surface，并统一承接 resize、最终 pixels 提交、`PresentSurface` 和 checked shutdown；presentation 不再直接查询可选 `pixel_upload_surface()`。
 
-> **静态 capability 快照**：两个 recipe owner 都只在构造门禁读取一次 `GraphicsContextCaps`，并在其生命周期内固定 backend/raster/present/coherency/occlusion 事实。运行期只让 `PresentSurface` 保持 live，recipe 身份与 owner-loss 诊断不再依赖兼容 context 的重复 `caps()` 查询。
+> **静态 capability 快照**：两个 recipe owner 都只在构造门禁读取一次 `GraphicsContextCaps`，并在其生命周期内固定 backend/raster/present/coherency/occlusion 事实。thread-bound wrapper 同样只在创建线程捕获一次该静态快照，GPU 与 PixelUpload resize 成功后只刷新完整 `PresentSurface`。运行期 recipe 身份与 owner-loss 诊断不再依赖兼容 context 的重复 `caps()` 查询。
 
 > **会话装配边界**：`RenderSession` 与通用 backend kind factory 不再持有或暂存 `IGraphicsContext`。生产 GPU bootstrap 与恢复只能从 native recipe factory 取得已验证 `GraphicsRecipeOwner`，再进入 `Renderer::from_recipe_owner`；没有完整 recipe 的通用 GPU 构造或运行时切换返回稳定 typed error，不建立第二条 native 资源生命周期。
 

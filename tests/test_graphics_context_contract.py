@@ -78,6 +78,8 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertNotIn("device_pixel_ratio: f32", bound_struct)
         # 生命周期变更后必须原子刷新 surface 快照。
         self.assertIn("self.present_surface = self.inner.present_surface();", thread_bound)
+        # wrapper 只能在构造期读取一次静态 capability，resize 不得刷新 recipe 身份。
+        self.assertEqual(thread_bound.count("inner.caps()"), 1)
         # 逐个核对所有 context 实现都显式提供 surface 元数据。
         for adapter in (
             # D3D11 生产 context。
@@ -214,10 +216,10 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertIn("inner.gpu_recipe_context()", thread_bound)
         # 定位真实 owner resize 调用。
         resize_call = thread_bound.index("recipe.resize_surface(width, height)")
-        # 定位随后发生的原子元数据刷新。
-        metadata_refresh = thread_bound.index("self.refresh_metadata();", resize_call)
-        # 元数据只能在成功 resize 返回后刷新。
-        self.assertLess(resize_call, metadata_refresh)
+        # 定位随后发生的完整 surface 快照刷新。
+        surface_refresh = thread_bound.index("self.refresh_present_surface();", resize_call)
+        # live surface 只能在成功 resize 返回后刷新。
+        self.assertLess(resize_call, surface_refresh)
         # 三个生产 GPU-native adapter 都必须显式暴露并实现原子视图。
         for adapter in (
             # D3D11 生产 context。

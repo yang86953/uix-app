@@ -59,8 +59,8 @@ impl ThreadBoundGraphicsContext {
         }
     }
 
-    fn refresh_metadata(&mut self) {
-        self.caps = self.inner.caps();
+    // 只刷新运行期可变的完整 surface 快照，静态 capability 保持构造期值。
+    fn refresh_present_surface(&mut self) {
         // 生命周期变更成功后原子替换完整 surface 快照。
         self.present_surface = self.inner.present_surface();
     }
@@ -219,7 +219,7 @@ impl GpuRecipeContext for ThreadBoundGraphicsContext {
             recipe.resize_surface(width, height)
         })?;
         // RHI 可能改变物理 drawable，成功后原子刷新完整 surface 快照。
-        self.refresh_metadata();
+        self.refresh_present_surface();
         // 返回已经通过 owner-thread 和 surface generation 边界的成功结果。
         Ok(())
     }
@@ -245,7 +245,7 @@ impl PixelUploadSurface for ThreadBoundGraphicsContext {
             surface.resize_pixel_upload_surface(width, height)
         })?;
         // resize 成功后同步完整 drawable surface 快照。
-        self.refresh_metadata();
+        self.refresh_present_surface();
         // 返回已经完成线程检查和元数据同步的成功结果。
         Ok(())
     }
