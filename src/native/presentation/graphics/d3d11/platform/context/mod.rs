@@ -14,13 +14,16 @@ use std::ffi::c_void;
 
 use super::pipeline::D3d11Pipeline;
 use super::swapchain::d3d_error;
+// 向 context 子模块公开唯一 D3D11 swapchain 能力事实。
+pub(crate) use super::swapchain::swap_chain_contract;
 pub(crate) use super::swapchain::{
     map_dxgi_device_removed_reason, map_dxgi_present_result, map_dxgi_present_test_result,
     map_dxgi_resize_result, swap_chain_desc,
 };
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
-    GraphicsApi, GraphicsContextCaps, IGraphicsContext, PresentCoherency, PresentOcclusionSupport,
+    // 导入 context 实现仍直接消费的 graphics 契约类型。
+    GraphicsApi, GraphicsContextCaps, IGraphicsContext, PresentOcclusionSupport,
 };
 use crate::native::presentation::graphics::platform::windows as win_surface;
 use ::windows::core::Interface;
