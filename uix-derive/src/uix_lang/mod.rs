@@ -167,6 +167,11 @@ mod skeleton_codegen;
 // 集中验证 Skeleton 生成与拒绝路径。
 #[cfg(test)]
 mod skeleton_codegen_tests;
+// 定义 Empty 描述与图标的公开 API 代码生成边界。
+mod empty_codegen;
+// 集中验证 Empty 生成与拒绝路径。
+#[cfg(test)]
+mod empty_codegen_tests;
 // 定义 Form 与类型化字段的公开 API 代码生成边界。
 mod form_codegen;
 // 定义 FormSliderItem 类型化 f64 字段的独立生成边界。
@@ -298,6 +303,8 @@ pub(crate) use time_picker_codegen::generate_time_picker;
 pub(crate) use color_picker_codegen::generate_color_picker;
 // 向核心元素生成器暴露 Skeleton 专用映射。
 pub(crate) use skeleton_codegen::generate_skeleton;
+// 向核心元素生成器暴露 Empty 专用映射。
+pub(crate) use empty_codegen::generate_empty;
 // 向核心元素生成器暴露 Form 与越界字段项映射。
 pub(crate) use form_codegen::{
     generate_form, generate_orphan_form_checkbox_item, generate_orphan_form_input_item,

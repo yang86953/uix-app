@@ -143,6 +143,20 @@ fn public_uix_macro_compiles_skeleton() {
     // 编译成功即证明 Rust 2024 外部消费契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 Empty 动态文本。
+#[test]
+fn public_uix_macro_compiles_empty() {
+    // 使用 Rust 2024 const 块产生动态描述。
+    let empty_description = const { "暂无数据" };
+    // 使用 Rust 2024 const 块产生动态图标名。
+    let empty_icon = const { "inbox" };
+    // 让过程宏生成公开 Empty 内容构建器。
+    let _view: ViewNode = uix::uix!(
+        r#"<Empty description={empty_description} icon={empty_icon} automationId="empty" />"#
+    );
+    // 编译成功即证明 Rust 2024 外部消费契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译类型化开关与滑块表单。
 #[test]
 fn public_uix_macro_compiles_typed_form_switch_and_slider_items() {
