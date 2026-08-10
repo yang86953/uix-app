@@ -405,6 +405,23 @@ fn public_uix_macro_compiles_pagination() {
     // 编译成功即证明双 State<usize>、动态 usize 与叶节点契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 Breadcrumb 类型化路径数据。
+#[test]
+// 声明 Breadcrumb 外部消费编译测试。
+fn public_uix_macro_compiles_breadcrumb() {
+    // 构造由过程宏取得所有权的类型化面包屑数组。
+    let breadcrumb_items = [
+        // 首页条目登记稳定根链接。
+        BreadcrumbItem::new("首页").link("/"),
+        // 末项登记稳定设置链接并由生成器标记为当前页。
+        BreadcrumbItem::new("设置").link("/settings"),
+    ];
+    // 让过程宏生成公开 Breadcrumb、末项当前页与公共自动化属性。
+    let _view: ViewNode =
+        uix::uix!(r#"<Breadcrumb items={breadcrumb_items} automationId="settings-breadcrumb" />"#);
+    // 编译成功即证明 BreadcrumbItem 集合与叶节点契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译 Alert 状态、动态关闭能力与关闭事件。
 #[test]
 // 声明 Alert 外部消费编译测试。

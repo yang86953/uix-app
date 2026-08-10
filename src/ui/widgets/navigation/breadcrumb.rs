@@ -40,6 +40,8 @@ enum BreadcrumbHit {
 #[derive(Debug, Clone, PartialEq)]
 pub struct BreadcrumbItem {
     pub title: String,
+    // 保存用于路由身份与 Change 载荷的稳定链接。
+    pub link: String,
     pub active: bool,
     pub icon: String,
 }
@@ -48,12 +50,22 @@ impl BreadcrumbItem {
     pub fn new(title: impl Into<String>) -> Self {
         Self {
             title: title.into(),
+            // 旧调用方缺省保持标题载荷兼容语义。
+            link: String::new(),
             active: false,
             icon: String::new(),
         }
     }
     pub fn active(mut self) -> Self {
         self.active = true;
+        self
+    }
+
+    // 设置当前条目的稳定导航链接。
+    pub fn link(mut self, link: impl Into<String>) -> Self {
+        // 保存拥有型链接，避免借用越过组件生命周期。
+        self.link = link.into();
+        // 返回配置完成的条目。
         self
     }
 
@@ -163,7 +175,8 @@ component! {
         let index = self.pending_change.take()?;
         self.items
             .get(index)
-            .map(|item| SemanticEvent::change(id, item.title.clone()))
+            // 选择事实优先发布稳定 link，旧条目继续回退标题。
+            .map(|item| SemanticEvent::change(id, Self::selection_value(item)))
     }
 
     take_layout_request => (&mut self) -> bool {
@@ -274,6 +287,18 @@ impl Breadcrumb {
         self.normalize_active();
         self
     }
+    // 把末项声明为当前页，空集合保持安全无选中项。
+    pub fn last_active(mut self) -> Self {
+        // 仅在至少存在一个条目时更新组件拥有的激活状态。
+        if !self.items.is_empty() {
+            // 先计算末项索引，避免可变借用与长度读取重叠。
+            let last = self.items.len() - 1;
+            // 复用唯一激活状态归一化入口。
+            self.set_active(last);
+        }
+        // 返回配置完成的 Breadcrumb。
+        self
+    }
     pub fn separator(mut self, s: impl Into<String>) -> Self {
         self.separator = s.into();
         self
@@ -285,14 +310,36 @@ impl Breadcrumb {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
-        let active_title = self.active_title().map(str::to_owned);
+        // 记录旧激活项的稳定身份；无 link 的旧条目兼容使用标题。
+        let active_identity = self.items.get(self.active_index()).map(|item| {
+            // 非空 link 是首选稳定身份。
+            if !item.link.is_empty() {
+                // 标记当前身份来自 link。
+                (true, item.link.clone())
+            } else {
+                // 旧条目退回显示标题身份。
+                (false, item.title.clone())
+            }
+        });
         self.items = next.items;
         self.normalize_active();
-        if let Some(active_title) = active_title {
+        // 只有旧运行节点确实存在激活项时才尝试保留选择。
+        if let Some((uses_link, active_identity)) = active_identity {
+            // 按旧身份种类在新声明中查找同一条目。
             if let Some(index) = self
                 .items
                 .iter()
-                .position(|item| item.title == active_title)
+                // link 身份不得因重复显示标题而串到其他条目。
+                .position(|item| {
+                    // link 条目按稳定 link 匹配，旧条目按标题兼容匹配。
+                    if uses_link {
+                        // 要求新条目具有同一非空 link。
+                        item.link == active_identity
+                    } else {
+                        // 兼容没有 link 的旧标题选择。
+                        item.link.is_empty() && item.title == active_identity
+                    }
+                })
             {
                 self.set_active(index);
             }
@@ -311,6 +358,18 @@ impl Breadcrumb {
         self.items
             .get(self.active_index())
             .map(|item| item.title.as_str())
+    }
+
+    // 读取当前项的稳定链接；旧无链接条目返回 None。
+    pub fn active_link(&self) -> Option<&str> {
+        // 取得当前激活项并过滤空链接兼容值。
+        self.items
+            // 根据组件拥有的唯一激活状态取条目。
+            .get(self.active_index())
+            // 借用条目链接。
+            .map(|item| item.link.as_str())
+            // 空链接只表示旧标题回退，不伪装成稳定身份。
+            .filter(|link| !link.is_empty())
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -343,6 +402,18 @@ impl Breadcrumb {
         self.set_active(index);
         if changed || activate_unchanged {
             self.pending_change.set(Some(index));
+        }
+    }
+
+    // 生成选择事实的稳定文本载荷。
+    fn selection_value(item: &BreadcrumbItem) -> String {
+        // 非空 link 优先承载路由身份。
+        if !item.link.is_empty() {
+            // 克隆拥有型 link 进入语义事件。
+            item.link.clone()
+        } else {
+            // 旧条目继续以标题作为兼容载荷。
+            item.title.clone()
         }
     }
 

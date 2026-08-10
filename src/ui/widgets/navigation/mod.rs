@@ -9,6 +9,10 @@ pub mod pagination;
 pub mod steps;
 pub mod tabs;
 
+// 集中验证 Breadcrumb 稳定 link、reconcile 与语义事件契约。
+#[cfg(test)]
+mod breadcrumb_tests;
+
 pub use anchor::*;
 pub use breadcrumb::*;
 pub use dropdown::*;
