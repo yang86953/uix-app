@@ -82,6 +82,8 @@ $expectedPayload = @(
 )
 # 清单自身是第八个且唯一不自哈希的条目。
 $expectedEntries = @($expectedPayload) + 'SHA256SUMS.txt'
+# 固化构建器写入的规范条目时间，读取时忽略 ZIP 不保存的时区信息。
+$expectedEntryTimestamp = [DateTime]::new(1980, 1, 1, 0, 0, 0, [DateTimeKind]::Unspecified)
 
 # 加载 ZIP reader 契约所在的基础程序集。
 Add-Type -AssemblyName System.IO.Compression
@@ -105,6 +107,11 @@ try {
         if (-not $seenNames.Add($entryName)) {
             # 拒绝重复所有权的 archive 路径。
             throw "Internal release contains a duplicate entry: $entryName"
+        }
+        # 条目时间必须与构建契约一致，避免 staging 文件时间污染容器摘要。
+        if ($entry.LastWriteTime.DateTime -ne $expectedEntryTimestamp) {
+            # 拒绝使相同载荷产生不同 ZIP 字节的时间戳漂移。
+            throw "Internal release entry timestamp is not canonical: $entryName"
         }
     }
     # 条目总数必须与冻结包结构完全相同。

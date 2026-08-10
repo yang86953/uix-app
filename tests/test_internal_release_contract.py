@@ -13,7 +13,7 @@ import unittest
 # 引入稳定路径拼接。
 from pathlib import Path
 # 引入 ZIP fixture 创建能力。
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +38,8 @@ PAYLOAD_NAMES = (
     # Demo 运行时图片。
     "assets/images/demo.png",
 )
+# 固化与生产构建器相同的 ZIP 规范时间。
+FIXED_ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 
 
 # 验证内部 crate 身份与发布组合根门禁。
@@ -74,6 +76,15 @@ class PackageMetadataContractTests(unittest.TestCase):
         self.assertIn("[string]::IsNullOrWhiteSpace($packageDescription)", builder)
         # 缺失描述必须产生稳定诊断。
         self.assertIn("declare a non-empty description", builder)
+
+    # 固化发布组合根的规范 ZIP 时间写入边界。
+    def test_release_builder_freezes_archive_entry_timestamp(self) -> None:
+        # 读取发布构建器源码。
+        builder = (ROOT / "scripts" / "build_internal_release.ps1").read_text(encoding="utf-8")
+        # 构建器必须声明 ZIP 规范允许的最早时间。
+        self.assertIn("[DateTimeOffset]::new(1980, 1, 1, 0, 0, 0", builder)
+        # 每个新条目必须在 archive 关闭前写入统一时间。
+        self.assertIn("$archiveEntry.LastWriteTime = $archiveTimestamp", builder)
 
 
 # 只在 Windows PowerShell 可用时执行发布包行为测试。
@@ -112,8 +123,12 @@ class InternalReleaseContractTests(unittest.TestCase):
         with ZipFile(path, "w", compression=ZIP_DEFLATED) as archive:
             # 保留调用方顺序并允许构造重复条目。
             for entry_name, content in entries:
-                # 写入单个原始 archive 条目。
-                archive.writestr(entry_name, content)
+                # 为当前条目建立带规范时间的显式元数据。
+                entry = ZipInfo(entry_name, date_time=FIXED_ZIP_TIMESTAMP)
+                # 使用与 fixture 既有契约相同的 deflate 压缩。
+                entry.compress_type = ZIP_DEFLATED
+                # 写入单个规范 archive 条目。
+                archive.writestr(entry, content)
         # 返回已关闭的 ZIP 路径。
         return path
 
@@ -167,6 +182,42 @@ class InternalReleaseContractTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         # 成功输出必须给出稳定确认。
         self.assertIn("Verified internal release", result.stdout)
+
+    # 验证相同载荷与规范时间生成字节一致的 ZIP。
+    def test_same_payload_produces_identical_zip_bytes(self) -> None:
+        # 只构造一次稳定条目集合。
+        entries = self.valid_entries()
+        # 分别写入两个独立候选包。
+        first = self.write_zip("first.zip", entries)
+        # 第二个路径不得复用第一个文件。
+        second = self.write_zip("second.zip", entries)
+        # ZIP 的完整容器字节必须一致。
+        self.assertEqual(first.read_bytes(), second.read_bytes())
+
+    # 验证任一条目的文件时间漂移都会失败。
+    def test_rejects_non_canonical_entry_timestamp(self) -> None:
+        # 构造完整合法条目集合。
+        entries = self.valid_entries()
+        # 计算当前非法 fixture 路径。
+        path = self.temp_dir / "timestamp-drift.zip"
+        # 创建仅一个条目时间漂移的 ZIP。
+        with ZipFile(path, "w", compression=ZIP_DEFLATED) as archive:
+            # 按规范顺序写入全部条目。
+            for entry_name, content in entries:
+                # README 使用次日时间，其余条目保持规范时间。
+                timestamp = (1980, 1, 2, 0, 0, 0) if entry_name == "README.md" else FIXED_ZIP_TIMESTAMP
+                # 为当前条目建立显式 ZIP 元数据。
+                entry = ZipInfo(entry_name, date_time=timestamp)
+                # 保持与合法 fixture 相同的 deflate 压缩。
+                entry.compress_type = ZIP_DEFLATED
+                # 写入当前测试条目。
+                archive.writestr(entry, content)
+        # 执行真实 PowerShell 校验器。
+        result = self.run_verifier(path)
+        # 时间戳漂移必须返回失败。
+        self.assertNotEqual(result.returncode, 0)
+        # 失败必须定位到规范时间契约。
+        self.assertIn("timestamp is not canonical", result.stdout + result.stderr)
 
     # 验证缺失与额外载荷都会失败。
     def test_rejects_missing_and_extra_entries(self) -> None:
