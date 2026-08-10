@@ -2,8 +2,43 @@
 use super::TreeSelect;
 // 引入断言所需的矩形基础类型。
 use crate::core::Rect;
+// 引入受控选择测试所需的响应式状态。
+use crate::ui::reactive::state::State;
 // 引入树节点公开构造类型。
 use crate::ui::widgets::display::tree::TreeNode;
+
+// 受控绑定必须以稳定节点 key 驱动标题并接收用户选择。
+#[test]
+// 测试名称说明状态到标题及选择到状态的双向契约。
+fn controlled_value_uses_stable_key_and_commits_selection() {
+    // 初始状态指向第二个节点的稳定 key。
+    let selected = State::new("node-1".to_owned());
+    // 先声明树结构，再绑定外部状态。
+    let mut tree_select = TreeSelect::new()
+        // 提供两个可选择叶节点。
+        .nodes(leaf_nodes(2))
+        // 绑定外部稳定 key 状态。
+        .bind_value(&selected);
+
+    // 组件展示值应由稳定 key 对应的标题派生。
+    assert_eq!(tree_select.value(), "节点1");
+    // 组件公开 key 应保持外部状态中的稳定值。
+    assert_eq!(tree_select.value_key(), "node-1");
+
+    // 模拟用户选择第一个扁平节点。
+    assert!(tree_select.select_flat_index(0));
+    // 用户选择必须把稳定 key 写回外部状态。
+    assert_eq!(selected.get(), "node-0");
+
+    // 模拟业务逻辑把受控状态切回第二个节点。
+    selected.set("node-1".to_owned());
+    // 声明式重建必须把最新状态同步进既有实例。
+    tree_select.sync_from(TreeSelect::new().nodes(leaf_nodes(2)).bind_value(&selected));
+    // 重建后展示标题必须跟随外部稳定 key。
+    assert_eq!(tree_select.value(), "节点1");
+    // 重建后公开 key 必须与外部状态一致。
+    assert_eq!(tree_select.value_key(), "node-1");
+}
 
 // 构造指定数量的稳定叶子节点。
 fn leaf_nodes(count: usize) -> Vec<TreeNode> {

@@ -1,8 +1,10 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
-use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::component::paint_context::PaintContext;
+// 引入稳定节点 key 的受控状态句柄。
+use crate::ui::reactive::state::State;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::widgets::display::tree::TreeNode;
 use crate::ui::{
@@ -34,6 +36,8 @@ component! {
         placeholder: String,
         value: String,
         value_key: String,
+        // 保存外部稳定节点 key 的受控绑定。
+        value_binding: Option<State<String>>,
         nodes: Vec<TreeNode>,
         open: bool,
         transition: TransitionPlayer,
@@ -536,11 +540,7 @@ impl TreeSelect {
         }
         let idx = (local_y / DROPDOWN_ROW_HEIGHT) as usize;
         let flat_len = self.flatten_nodes().len();
-        if idx < flat_len {
-            Some(idx)
-        } else {
-            None
-        }
+        if idx < flat_len { Some(idx) } else { None }
     }
 
     fn interaction_frame(&self) -> Rect {
@@ -586,11 +586,41 @@ impl TreeSelect {
         }
     }
 
+    // 从外部稳定 key 同步运行时展示标题。
+    fn sync_bound_value(&mut self) {
+        // 未绑定时保留组件内部选择状态。
+        let Some(key) = self.value_binding.as_ref().map(State::get) else {
+            return;
+        };
+        // 绑定值始终保存稳定节点 key。
+        self.value_key.clone_from(&key);
+        // 展示值由当前树结构中的节点标题派生。
+        self.value = self
+            .flatten_nodes()
+            .into_iter()
+            .find_map(|(candidate, title, _, _)| (candidate == key).then_some(title))
+            .unwrap_or_default();
+    }
+
+    // 将用户选择发布回外部稳定 key 状态。
+    fn write_bound_value(&self, key: &str) {
+        // 非受控模式不产生外部写入。
+        let Some(state) = self.value_binding.as_ref() else {
+            return;
+        };
+        // 避免向状态系统重复发布相同值。
+        if state.get() != key {
+            state.set(key.to_owned());
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             placeholder: "Please select".into(),
             value: String::new(),
             value_key: String::new(),
+            // 默认保持非受控选择模式。
+            value_binding: None,
             nodes: Vec::new(),
             open: false,
             transition: TransitionPlayer::new(presets::tooltip_enter()),
@@ -621,6 +651,16 @@ impl TreeSelect {
     }
     pub fn nodes(mut self, n: Vec<TreeNode>) -> Self {
         self.nodes = n;
+        // 支持先绑定 value 再设置树节点的构造顺序。
+        self.sync_bound_value();
+        self
+    }
+    // 将稳定节点 key 绑定到外部字符串状态。
+    pub fn bind_value(mut self, state: &State<String>) -> Self {
+        // 克隆轻量状态句柄供交互提交使用。
+        self.value_binding = Some(state.clone());
+        // 构造时立即读取状态并登记响应式依赖。
+        self.sync_bound_value();
         self
     }
     pub fn value(&self) -> &str {
@@ -697,9 +737,21 @@ impl TreeSelect {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        // 受控实例以新声明树中的状态值为权威。
+        let controlled_value = next
+            .value_binding
+            .as_ref()
+            .map(|_| (next.value.clone(), next.value_key.clone()));
         let nodes_changed = self.nodes != next.nodes;
         self.placeholder = next.placeholder;
         self.nodes = next.nodes;
+        // 同步声明式重建携带的状态句柄。
+        self.value_binding = next.value_binding;
+        // 非受控实例保留内部选择，受控实例接受最新状态。
+        if let Some((value, value_key)) = controlled_value {
+            self.value = value;
+            self.value_key = value_key;
+        }
         let row_count = self.flatten_nodes().len();
         // 在可变借用虚拟滚动器前计算当前实际视口。
         let viewport_height = self.effective_dropdown_viewport_height(row_count);
@@ -743,6 +795,8 @@ impl TreeSelect {
         }
         self.value.clone_from(title);
         self.value_key.clone_from(key);
+        // 先更新组件内部状态，再发布稳定节点 key。
+        self.write_bound_value(key);
         self.pending_change.replace(Some(key.clone()));
         self.close();
         true
