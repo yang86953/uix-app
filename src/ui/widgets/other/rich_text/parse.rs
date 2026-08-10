@@ -17,6 +17,9 @@ mod parse_code_span;
 // 尖括号自动链接校验独立归入链接解析辅助模块。
 #[path = "parse_autolink.rs"]
 mod parse_autolink;
+// 普通行内链接的分隔符、解码与目标字符校验保持在私有辅助边界。
+#[path = "parse_link.rs"]
+mod parse_link;
 // 跨行扫描与 Setext 消费独立归入行解析辅助模块。
 #[path = "parse_lines.rs"]
 mod parse_lines;
@@ -169,31 +172,30 @@ fn parse_inline_element(
     }
     // Markdown 链接优先于样式标记，避免链接标签被拆成普通文本。
     if remaining.starts_with('[') {
-        // 查找考虑嵌套和转义的链接标签结束位置。
-        if let Some(label_end) = find_balanced_link_delimiter(remaining, 1, '[', ']') {
-            // 只接受紧随其后的目标起始括号。
-            if remaining[label_end..].starts_with("](") {
-                // 查找考虑嵌套和转义的链接目标结束位置。
-                if let Some(url_end) =
-                    find_balanced_link_delimiter(remaining, label_end + 2, '(', ')')
-                {
-                    // 读取并解码链接显示文本。
-                    let label = unescape_markdown_punctuation(&remaining[1..label_end]);
-                    // 读取并清理链接 URL 的外围空白。
-                    let url =
-                        unescape_markdown_punctuation(remaining[label_end + 2..url_end].trim());
-                    // 空标签或空 URL 不应被误判为可交互链接。
-                    if !label.is_empty() && !url.is_empty() {
-                        // 生成保持现有交互契约的 Link 段。
-                        segments.push(RichTextSegment::Link {
-                            content: label,
-                            url,
-                        });
-                        // 返回整个 Markdown 链接的字节数。
-                        return Some(url_end + 1);
-                    }
+        // 私有链接辅助返回合法链接或需要原样保留的完整候选。
+        if let Some(parsed) = parse_link::parse_inline_link(remaining) {
+            // 读取完整候选已经消费的源字节数。
+            let consumed = parsed.consumed();
+            // 根据校验结果生成交互链接或继承当前样式的字面文本。
+            match parsed {
+                // 合法链接继续进入唯一 Link 段和提交生命周期。
+                parse_link::ParsedInlineLink::Link { label, url, .. } => {
+                    // 生成保持现有交互契约的 Link 段。
+                    segments.push(RichTextSegment::Link {
+                        // 使用已解码的显示标签。
+                        content: label,
+                        // 使用已解码并验证字符边界的目标。
+                        url,
+                    });
+                }
+                // 结构完整但内容非法的候选必须整体保持字面值。
+                parse_link::ParsedInlineLink::Literal { .. } => {
+                    // 保留源标记，同时继承外层已有样式。
+                    push_text_segment(&remaining[..consumed], style, segments);
                 }
             }
+            // 返回整个普通链接候选的字节数。
+            return Some(consumed);
         }
     }
     // 尖括号 HTTP(S)/邮件自动链接复用现有 Link 段和统一交互路径。
@@ -374,85 +376,6 @@ fn is_escaped_at(text: &str, index: usize) -> bool {
     }
     // 奇数个反斜杠转义标点，偶数个反斜杠则恢复标记语义。
     slash_count % 2 == 1
-}
-
-/// 查找链接标签或目标的平衡闭合分隔符。
-fn find_balanced_link_delimiter(
-    text: &str,
-    start: usize,
-    open: char,
-    close: char,
-) -> Option<usize> {
-    // 从开分隔符之后开始扫描链接内部字符。
-    let mut cursor = start;
-    // 记录未闭合的嵌套开分隔符数量。
-    let mut depth = 0usize;
-    // 逐个读取 Unicode 字符，确保游标始终位于 UTF-8 边界。
-    while let Some(ch) = text[cursor..].chars().next() {
-        // 反斜杠后的一个字符按字面处理，不参与平衡计数。
-        if ch == '\\' {
-            // 跳过当前反斜杠。
-            cursor += ch.len_utf8();
-            // 同时跳过被转义的下一个字符。
-            if let Some(next) = text[cursor..].chars().next() {
-                // 被转义字符不会改变链接分隔符嵌套深度。
-                cursor += next.len_utf8();
-            }
-            // 继续扫描剩余链接内容。
-            continue;
-        }
-        // 嵌套开分隔符增加待闭合深度。
-        if ch == open {
-            // 记录一层新的嵌套链接分隔符。
-            depth += 1;
-        } else if ch == close {
-            // 顶层闭分隔符结束当前链接部分。
-            if depth == 0 {
-                // 返回闭分隔符的字节位置。
-                return Some(cursor);
-            }
-            // 先关闭最近一层嵌套分隔符。
-            depth -= 1;
-        }
-        // 向下一个字符推进。
-        cursor += ch.len_utf8();
-    }
-    // 没有找到平衡的闭分隔符。
-    None
-}
-
-/// 解码链接标签和目标中的 Markdown 反斜杠转义标点。
-fn unescape_markdown_punctuation(text: &str) -> String {
-    // 预留不小于原始字节长度的容量，避免常见路径重复扩容。
-    let mut output = String::with_capacity(text.len());
-    // 从字符串开头逐字符扫描转义序列。
-    let mut cursor = 0usize;
-    // 持续处理直到输入字符串末尾。
-    while let Some(ch) = text[cursor..].chars().next() {
-        // 只解码反斜杠后列入 Markdown 标点集合的字符。
-        if ch == '\\' {
-            // 计算反斜杠之后的字符位置。
-            let next_cursor = cursor + ch.len_utf8();
-            // 读取可能被转义的下一个字符。
-            if let Some(next) = text[next_cursor..].chars().next() {
-                // 命中 Markdown 标点时去掉反斜杠并保留字符本身。
-                if is_escaped_markdown_char(next) {
-                    // 写入解码后的标点。
-                    output.push(next);
-                    // 一次跳过反斜杠和被转义字符。
-                    cursor = next_cursor + next.len_utf8();
-                    // 继续处理剩余输入。
-                    continue;
-                }
-            }
-        }
-        // 普通字符或未命中的反斜杠保持原样。
-        output.push(ch);
-        // 向下一个 Unicode 字符推进。
-        cursor += ch.len_utf8();
-    }
-    // 返回去除已识别转义符后的字符串。
-    output
 }
 
 /// 返回指定位置连续反引号的字节长度。
