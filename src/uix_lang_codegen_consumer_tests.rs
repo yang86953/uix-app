@@ -15,6 +15,8 @@ struct ConsumerItem {
 struct ProfileForm {
     // 保存邮箱字段。
     email: String,
+    // 保存等级选择字段。
+    level: String,
 }
 
 // 提供无事件参数的 Rust 侧回调。
@@ -346,12 +348,16 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let profile = State::new(ProfileForm {
         // 提供通过邮箱规则的初始值。
         email: "owner@example.com".to_string(),
+        // 提供已包含在候选集合中的初始等级。
+        level: "中级".to_string(),
     });
+    // 提供 FormSelectItem 消费的字符串候选集合。
+    let level_options = ["初级", "中级", "高级"];
     // 提供返回类型化业务结果的提交回调。
     let on_profile_submit = |_profile: ProfileForm| Ok::<(), String>(());
     // 验证模型投影、规则和 submitForm 只依赖公开 prelude。
     let _form: ViewNode = crate::uix!(
-        r#"<Form model={profile} @submit="on_profile_submit"><FormInputItem field="email" label="邮箱" rules="required,email" /><Button type="primary" @click="submitForm">提交</Button></Form>"#
+        r#"<Form model={profile} @submit="on_profile_submit"><FormInputItem field="email" label="邮箱" rules="required,email" /><FormSelectItem field="level" label="等级" options={level_options} rules="required" searchable placeholder="请选择" /><Button type="primary" @click="submitForm">提交</Button></Form>"#
     );
 }
 
