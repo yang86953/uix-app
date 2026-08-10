@@ -368,6 +368,14 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _empty: ViewNode = crate::uix!(
         r#"<Empty description={empty_description} icon={empty_icon} width="240px" automationId="empty" />"#
     );
+    // 提供 ResultView 动态标题文本。
+    let result_title = String::from("操作成功");
+    // 提供 ResultView 动态辅助文字。
+    let result_action = String::from("返回首页");
+    // 验证结果类型、动态文本和公共属性只依赖公开 prelude。
+    let _result_view: ViewNode = crate::uix!(
+        r#"<ResultView status="success" title={result_title} extraText={result_action} width="320px" automationId="result" />"#
+    );
     // 提供 Form 绑定的类型化业务状态。
     let profile = State::new(ProfileForm {
         // 提供通过邮箱规则的初始值。
