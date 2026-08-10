@@ -22,13 +22,13 @@ fn field_bound_or_panic<T>(value: Option<T>, contract: &str) -> T {
     }
 }
 
+use crate::ui::State;
 use crate::ui::form::form::{Form, FormLayout};
 use crate::ui::form::form_binding::{FormInputItem, FormInputNumberItem, FormSelectItem};
 use crate::ui::form::form_validation::{FieldError, FormBuilder, FormModel, IntoFormValue};
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widgets::input::input_number::InputNumberValue;
 use crate::ui::widgets::input::select::SelectValue;
-use crate::ui::State;
 
 /// 类型化字段控件声明：`Form::model(...).field(name, accessor, item)` 的 item 契约。
 ///
@@ -41,6 +41,24 @@ pub trait FormItemSpec<F> {
     /// 字段是否必填（`Form::model` 构建时登记校验规则）。
     fn required(&self) -> bool {
         false
+    }
+
+    /// 返回字段展示标签；默认沿用稳定字段 key。
+    fn label<'a>(&'a self, field: &'a str) -> &'a str {
+        // 未声明独立标签时不改变既有行为。
+        field
+    }
+
+    /// 把字段项拥有的校验规则登记到统一 FormBuilder。
+    fn configure_rules(&self, builder: FormBuilder) -> FormBuilder {
+        // 默认只投影所有现有字段项都支持的 required 规则。
+        if self.required() {
+            // 保留既有必填错误文案。
+            builder.required("必填")
+        } else {
+            // 无必填规则时原样返回构建器。
+            builder
+        }
     }
 }
 
@@ -59,6 +77,30 @@ impl FormItemSpec<String> for FormInputItem {
 
     fn required(&self) -> bool {
         self.required
+    }
+
+    fn label<'a>(&'a self, field: &'a str) -> &'a str {
+        // 显式标签优先，否则保持字段 key 兼容行为。
+        self.label.as_deref().unwrap_or(field)
+    }
+
+    fn configure_rules(&self, builder: FormBuilder) -> FormBuilder {
+        // 先登记可选必填规则。
+        let builder = if self.required {
+            // 使用类型化表单既有必填文案。
+            builder.required("必填")
+        } else {
+            // 未启用必填时保持构建器不变。
+            builder
+        };
+        // 再登记可选邮箱格式规则。
+        if self.email {
+            // 使用稳定的内置邮箱错误文案。
+            builder.validate_email("邮箱格式不正确")
+        } else {
+            // 未启用邮箱规则时返回当前构建器。
+            builder
+        }
     }
 }
 
@@ -120,7 +162,10 @@ struct TypedField<M, F, I> {
 
 trait ModelField<M> {
     fn name(&self) -> &str;
-    fn required(&self) -> bool;
+    // 返回当前字段面向用户的展示标签。
+    fn label(&self) -> &str;
+    // 把字段项规则配置到当前 FormBuilder 字段。
+    fn configure_rules(&self, builder: FormBuilder) -> FormBuilder;
     fn bind_view(&self, model: &State<M>, form: &FormModel) -> ViewNode;
     fn write_back(&self, model: &mut M);
     fn reset_from(&self, model: &M);
@@ -136,8 +181,14 @@ where
         &self.name
     }
 
-    fn required(&self) -> bool {
-        self.item.required()
+    fn label(&self) -> &str {
+        // 委托字段项解析显式标签或字段 key 回退。
+        self.item.label(&self.name)
+    }
+
+    fn configure_rules(&self, builder: FormBuilder) -> FormBuilder {
+        // 委托字段项登记其拥有的规则集合。
+        self.item.configure_rules(builder)
     }
 
     fn bind_view(&self, model: &State<M>, form: &FormModel) -> ViewNode {
@@ -222,13 +273,14 @@ impl<M: Clone + Send + Sync + 'static> ModelFormBuilder<M> {
     pub fn build(self) -> ModelForm<M> {
         let mut form_builder: Option<FormBuilder> = None;
         for field in &self.fields {
-            let mut fb = match form_builder.take() {
-                Some(fb) => fb.field(field.name(), field.name()),
-                None => self.layout.clone().field(field.name(), field.name()),
+            let fb = match form_builder.take() {
+                // 后续字段保留稳定 key，并使用字段项提供的展示标签。
+                Some(fb) => fb.field(field.name(), field.label()),
+                // 首个字段从表单布局创建同样的 key/label 契约。
+                None => self.layout.clone().field(field.name(), field.label()),
             };
-            if field.required() {
-                fb = fb.required("必填");
-            }
+            // 由字段项统一登记 required、email 等运行时规则。
+            let fb = field.configure_rules(fb);
             form_builder = Some(fb);
         }
         let form = match form_builder {
@@ -330,6 +382,58 @@ impl Form {
             layout: Form::new(),
             fields: Vec::new(),
             on_submit: None,
+        }
+    }
+}
+
+// 集中验证类型化表单字段元数据投影。
+#[cfg(test)]
+mod tests {
+    // 引入当前类型化表单实现。
+    use super::*;
+    // 引入稳定组件快照字段枚举。
+    use crate::ui::component_snapshot::SnapshotFields;
+
+    // 定义测试用业务模型。
+    #[derive(Clone)]
+    struct ContactForm {
+        // 保存邮箱字段值。
+        email: String,
+    }
+
+    // 验证字段 key 与用户可见标签保持独立。
+    #[test]
+    fn typed_input_item_projects_explicit_label_to_form_item() {
+        // 创建带初始邮箱的受控模型。
+        let model = State::new(ContactForm {
+            // 提供合法值，避免规则影响结构测试。
+            email: "owner@example.com".to_string(),
+        });
+        // 构建带独立展示标签的类型化字段。
+        let form = Form::model(&model)
+            // 字段 key 继续对应 Rust 模型成员。
+            .field(
+                "email",
+                |value| &mut value.email,
+                FormInputItem::new("email").label("电子邮箱"),
+            )
+            // 完成表单句柄构建。
+            .build();
+        // 生成真实字段 View 树。
+        let view = form.view();
+        // 读取首个 FormItem 的稳定快照字段。
+        let fields = view.children[0].widget.snapshot_fields();
+        // 快照必须同时保留字段 key 和独立标签。
+        match fields {
+            // 核对 FormItem 公开语义字段。
+            SnapshotFields::FormItem { label, name, .. } => {
+                // 标签使用文档声明的用户可见文本。
+                assert_eq!(label, "电子邮箱");
+                // 字段 key 仍稳定指向业务模型成员。
+                assert_eq!(name, "email");
+            }
+            // 任何其他组件类型都表示字段壳投影失败。
+            other => panic!("期望 FormItem 快照，实际为 {other:?}"),
         }
     }
 }
