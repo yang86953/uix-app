@@ -249,6 +249,11 @@ mod watermark_codegen;
 // 集中验证 Watermark 生成、默认值与拒绝路径。
 #[cfg(test)]
 mod watermark_codegen_tests;
+// 定义 RichText 内容解析与选择配置的公开 API 代码生成边界。
+mod rich_text_codegen;
+// 集中验证 RichText 生成、默认值与拒绝路径。
+#[cfg(test)]
+mod rich_text_codegen_tests;
 // 定义 Alert 状态、关闭能力与关闭事件的公开 API 代码生成边界。
 mod alert_codegen;
 // 集中验证 Alert 生成、默认值、事件与拒绝路径。
@@ -447,6 +452,8 @@ pub(crate) use anchor_codegen::generate_anchor;
 pub(crate) use qrcode_codegen::generate_qrcode;
 // 向核心元素生成器暴露 Watermark 叶组件专用映射。
 pub(crate) use watermark_codegen::generate_watermark;
+// 向核心元素生成器暴露 RichText 叶组件专用映射。
+pub(crate) use rich_text_codegen::generate_rich_text;
 // 向核心元素生成器暴露 Alert 叶组件专用映射。
 pub(crate) use alert_codegen::generate_alert;
 // 向核心元素生成器暴露 Modal 容器组件专用映射。

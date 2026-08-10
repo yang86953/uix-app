@@ -325,6 +325,23 @@ fn public_uix_macro_compiles_watermark() {
     // 编译成功即证明 Rust 2024 String 借用、f32 与叶节点契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 RichText 动态内容与选择配置。
+#[test]
+// 声明 RichText 外部消费编译测试。
+fn public_uix_macro_compiles_rich_text() {
+    // 调用方持有 String，宏展开只能在 Markdown 解析期间借用。
+    let rich_content = String::from("支持 **加粗** 与 [链接](https://example.test)");
+    // 使用 Rust 2024 const 块产生动态选择配置。
+    let allow_selection = const { true };
+    // 让过程宏生成 rich-text capability 下的公开 RichText。
+    let _view: ViewNode = uix::uix!(
+        r#"<RichText content={rich_content} selectable={allow_selection} automationId="article-body" />"#
+    );
+    // RichText 构造完成后调用方仍持有原字符串所有权。
+    assert!(rich_content.contains("**加粗**"));
+    // 编译成功即证明 Rust 2024 String 借用、bool 与叶节点契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译 Calendar 默认交互映射。
 #[test]
 // 声明 Calendar 外部消费编译测试。
