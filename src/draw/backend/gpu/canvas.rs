@@ -10,9 +10,10 @@ use crate::core::{Errc, Error, Rect};
 use crate::draw::geometry::types::{BlendMode, Transform};
 use crate::draw::raster::pixel_surface::PixelSurface;
 use crate::draw::raster::shared_rasterizer::SharedRasterizer;
-use crate::native::present::NativeRasterCaps;
 
 use super::pending::PendingNativeOp;
+// 引入同一 graphics backend Module 拥有的 renderer 能力投影。
+use super::NativeRasterCaps;
 // 复用与 legacy/RHI 提交相同的最小可见 tile 打包规则。
 use super::tile::{pack_visible_soft_fallback_tile, SoftFallbackTile};
 use super::StateSnapshot;

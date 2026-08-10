@@ -612,6 +612,8 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     def test_legacy_draw_methods_leave_the_graphics_context_facade(self) -> None:
         # 读取公共兼容接口与事实型 capability profile。
         present = read_rust_module(ROOT / "src/native/present")
+        # 读取 graphics backend 私有的 renderer 能力投影。
+        raster_caps = (ROOT / "src/draw/backend/gpu/capabilities.rs").read_text(encoding="utf-8")
         # 读取 owner-thread 转发门面。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取四个原生 context 的 trait 实现。
@@ -691,9 +693,11 @@ class GraphicsTeardownContractTests(unittest.TestCase):
             # capability profile 不得重新导出对应布尔字段。
             self.assertNotIn(f"pub {capability}: bool", present)
         # capability profile 必须保留 retained surface 事实。
-        self.assertIn("pub retained_framebuffer: bool", present)
+        self.assertIn("retained_framebuffer: bool", raster_caps)
         # capability profile 必须保留 Additive RHI 事实。
-        self.assertIn("pub rhi_additive_blend: bool", present)
+        self.assertIn("rhi_additive_blend: bool", raster_caps)
+        # platform presentation 不得重新取得 renderer 能力投影所有权。
+        self.assertNotIn("NativeRasterCaps", present)
 
     # 校验 renderer 能力只从 thin RHI 快照派生，不恢复 adapter 平行声明。
     def test_native_raster_caps_are_derived_from_thin_rhi(self) -> None:
@@ -701,8 +705,8 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         facade = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
         # 读取 owner-thread 包装层。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
-        # 读取 renderer 能力投影定义。
-        present = (ROOT / "src/native/present/mod.rs").read_text(encoding="utf-8")
+        # 读取 graphics backend 拥有的 renderer 能力投影定义。
+        raster_caps = (ROOT / "src/draw/backend/gpu/capabilities.rs").read_text(encoding="utf-8")
         # 读取生产 GPU backend 构造门禁。
         backend = (ROOT / "src/draw/backend/gpu/backend/impl_main.rs").read_text(encoding="utf-8")
         # 枚举曾经硬编码 renderer profile 的生产 adapter。
@@ -723,11 +727,11 @@ class GraphicsTeardownContractTests(unittest.TestCase):
             # adapter wrapper 不得重新声明 renderer 能力查询。
             self.assertNotIn("native_raster_caps", adapter.read_text(encoding="utf-8"))
         # renderer 投影必须显式接收薄 RHI capability 快照。
-        self.assertIn("from_rhi_capabilities(capabilities: rhi::GraphicsCapabilities)", present)
+        self.assertIn("from_rhi_capabilities(capabilities: GraphicsCapabilities)", raster_caps)
         # retained 事实必须直接复制自同一薄 RHI 快照。
-        self.assertIn("retained_framebuffer: capabilities.retained_framebuffer", present)
+        self.assertIn("retained_framebuffer: capabilities.retained_framebuffer", raster_caps)
         # Additive 事实必须直接复制自同一薄 RHI 快照。
-        self.assertIn("rhi_additive_blend: capabilities.additive_blend", present)
+        self.assertIn("rhi_additive_blend: capabilities.additive_blend", raster_caps)
         # 构造门禁必须从已验证组合 RHI 读取唯一能力来源。
         self.assertIn("Some(gpu_ctx.rhi_context()?.capabilities())", backend)
         # 构造门禁必须验证完整 GPU 原语基线。

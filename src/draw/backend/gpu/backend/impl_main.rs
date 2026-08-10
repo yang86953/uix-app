@@ -14,8 +14,10 @@ use crate::draw::backend::contract::RenderBackend;
 use crate::draw::geometry::types::ImageHandle;
 // 使用薄 RHI 的设备维护入口承接每帧 owner-context 准备。
 use crate::native::present::rhi::GraphicsDevice;
-// 引入 context recipe 与 renderer 能力投影契约。
-use crate::native::present::{GpuRecipeOwner, NativeRasterCaps};
+// 引入 platform 构造期验证的 context recipe owner。
+use crate::native::present::GpuRecipeOwner;
+// 引入所属 graphics backend Module 的 renderer 能力投影。
+use super::super::NativeRasterCaps;
 
 impl GpuBackend {
     // 在通用 renderer 不感知平台 current API 的前提下准备本帧 RHI device。

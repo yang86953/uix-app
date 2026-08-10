@@ -705,8 +705,8 @@ mod tests {
     use crate::draw::Canvas2D;
     // 引入测试颜色。
     use crate::draw::Color;
-    // 引入事实型 native capability。
-    use crate::native::present::NativeRasterCaps;
+    // 引入 graphics backend 私有的 renderer 能力投影。
+    use crate::draw::backend::gpu::NativeRasterCaps;
 
     // 能力存在时直达，能力或轴对齐证明缺失时保持 Additive soft segment。
     #[test]

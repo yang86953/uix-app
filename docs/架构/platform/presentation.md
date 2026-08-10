@@ -48,7 +48,7 @@
 >
 > **recipe 查询边界**：`IGraphicsContext` 不再声明由 `GraphicsContextCaps` 重复派生的 `graphics_backend`、`supports_gl_proc_address` 或 `supports_pixel_present`。需要 adapter 身份的 typed error 一次读取 `caps().backend`；是否可借用 thin RHI 或 `PixelUploadSurface` 仍由对应专用视图决定，不能通过无消费者布尔查询猜测 recipe。
 >
-> **renderer 能力投影边界**：`IGraphicsContext::native_raster_caps` 已移除，thread-bound wrapper 不再缓存该值，D3D11、WGL 与 EGL adapter 也不再硬编码平行 profile。生产 GPU backend 只从一次 `GraphicsDevice::capabilities` 快照验证完整 GPU 原语与 retained 事实，并把 retained framebuffer、Additive 两项 renderer 所需事实投影为 `NativeRasterCaps`；固定 probe 仍是能力声明可执行性的权威验证。
+> **renderer 能力投影边界**：`IGraphicsContext::native_raster_caps` 已移除，thread-bound wrapper 不再缓存该值，D3D11、WGL 与 EGL adapter 也不再硬编码平行 profile。生产 GPU backend 只从一次 `GraphicsDevice::capabilities` 快照验证完整 GPU 原语与 retained 事实，并把 retained framebuffer、Additive 两项 renderer 所需事实投影为 `NativeRasterCaps`；该投影定义由 graphics/backend 私有拥有，platform 只提供底层 `GraphicsCapabilities`，固定 probe 仍是能力声明可执行性的权威验证。
 >
 > **idle present probe 边界**：`IGraphicsContext` 与 thread-bound wrapper 不再声明或转发 `test_present`。无帧遮挡退出探测属于 `GraphicsSurface` 生命周期：D3D11 在该接口内执行 `Present(0, DXGI_PRESENT_TEST)` 并保留 `Presentable` / `Occluded` / typed error 映射；GPU backend 只借用组合 thin RHI surface，CPU PixelUpload 明确拒绝不适用的 probe。
 >

@@ -174,60 +174,6 @@ pub struct GpuImageBlit {
     pub pixel_h: u32,
 }
 
-/// 通用 renderer 从薄 RHI 能力快照派生的绘制事实。
-///
-/// 逐图元支持由固定 RHI probe 一次性验证，不再与 `IGraphicsContext`
-/// 或原生 adapter 维护平行的 capability 声明。
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct NativeRasterCaps {
-    /// 主色缓冲在提交间保留像素，允许绘制侧 partial redraw；
-    /// 与 present coherency（仍可为 FullOnly）正交。
-    pub retained_framebuffer: bool,
-    /// retained RHI 路径可执行 premultiplied Additive pipeline；
-    /// 不代表 legacy `draw_*` ABI 支持 Additive。
-    pub rhi_additive_blend: bool,
-}
-
-impl NativeRasterCaps {
-    /// 从同一次薄 RHI 事实快照投影 renderer 真正消费的能力。
-    pub(crate) const fn from_rhi_capabilities(capabilities: rhi::GraphicsCapabilities) -> Self {
-        // 只复制绘制侧需要的事实，不建立第二份 adapter capability 来源。
-        Self {
-            // 主颜色目标的跨帧保留语义直接来自薄 RHI 快照。
-            retained_framebuffer: capabilities.retained_framebuffer,
-            // Additive pipeline 事实直接来自同一个薄 RHI 快照。
-            rhi_additive_blend: capabilities.additive_blend,
-        }
-    }
-
-    pub const fn has_gpu_only_baseline(self) -> bool {
-        // 逐图元 pipeline 已由固定 probe 验证，GPU-only 只需 retained surface 事实。
-        self.retained_framebuffer
-    }
-}
-
-// 覆盖生产 native raster profile 的 capability 接线。
-#[cfg(test)]
-mod native_raster_profile_tests {
-    // 导入薄 RHI 事实快照与 renderer 投影类型。
-    use super::{rhi::GraphicsCapabilities, NativeRasterCaps};
-
-    // 验证 renderer profile 只从 retained 薄 RHI 快照派生。
-    #[test]
-    fn renderer_profile_projects_retained_and_additive_facts() {
-        // 构造 D3D11 与 OpenGL ES 生产实现共同满足的 retained RHI 快照。
-        let rhi_capabilities = GraphicsCapabilities::retained_gpu_baseline();
-        // 从唯一事实来源派生 renderer 使用的窄能力投影。
-        let renderer_capabilities = NativeRasterCaps::from_rhi_capabilities(rhi_capabilities);
-        // 投影必须保留跨帧主颜色目标事实。
-        assert!(renderer_capabilities.retained_framebuffer);
-        // 投影必须保留真实的 RHI Additive 能力。
-        assert!(renderer_capabilities.rhi_additive_blend);
-        // retained 事实必须继续满足生产 GPU-only 绘制基线。
-        assert!(renderer_capabilities.has_gpu_only_baseline());
-    }
-}
-
 /// Result of a non-presenting availability test while a swapchain is idle.
 ///
 /// This probe is not an entry detector: callers invoke it only after a normal

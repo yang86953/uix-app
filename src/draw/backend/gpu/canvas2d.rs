@@ -579,7 +579,8 @@ mod tests {
     use crate::draw::geometry::types::{BlendMode, Radius};
     use crate::draw::Canvas2D;
     use crate::draw::Color;
-    use crate::native::present::NativeRasterCaps;
+    // 引入 graphics backend 私有的 renderer 能力投影。
+    use crate::draw::backend::gpu::NativeRasterCaps;
 
     // 正常整数 scroll 不应在 Canvas2D 入口被降级为 deferred error。
     #[test]
