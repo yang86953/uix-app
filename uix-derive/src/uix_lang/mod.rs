@@ -239,6 +239,11 @@ mod focus_trap_codegen;
 // 集中验证 FocusTrap 生成、控制流与拒绝路径。
 #[cfg(test)]
 mod focus_trap_codegen_tests;
+// 定义 Spin 加载状态、提示文字与有序遮罩子树的公开 API 代码生成边界。
+mod spin_codegen;
+// 集中验证 Spin 生成、默认值、控制流与拒绝路径。
+#[cfg(test)]
+mod spin_codegen_tests;
 // 定义 Form 与类型化字段的公开 API 代码生成边界。
 mod form_codegen;
 // 定义 FormSliderItem 类型化 f64 字段的独立生成边界。
@@ -398,6 +403,8 @@ pub(crate) use alert_codegen::generate_alert;
 pub(crate) use tooltip_codegen::generate_tooltip;
 // 向核心元素生成器暴露 FocusTrap 容器组件专用映射。
 pub(crate) use focus_trap_codegen::generate_focus_trap;
+// 向核心元素生成器暴露 Spin 容器组件专用映射。
+pub(crate) use spin_codegen::generate_spin;
 // 向核心元素生成器暴露 Form 与越界字段项映射。
 pub(crate) use form_codegen::{
     generate_form, generate_orphan_form_checkbox_item, generate_orphan_form_input_item,

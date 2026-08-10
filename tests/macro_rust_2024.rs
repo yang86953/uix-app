@@ -374,6 +374,25 @@ fn public_uix_macro_compiles_focus_trap() {
     // 编译成功即证明核心 FocusTrap 在调用 crate 无额外 capability 时可见。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 Spin 动态配置与遮罩子树。
+#[test]
+// 声明 Spin 外部消费编译测试。
+fn public_uix_macro_compiles_spin() {
+    // 调用方持有 String，宏展开只能临时借用。
+    let spin_text = String::from("正在加载");
+    // 使用 Rust 2024 const 块产生动态加载状态。
+    let spin_loading = const { true };
+    // 使用 Rust 2024 const 块产生动态子树条件。
+    let show_content = const { true };
+    // 让过程宏生成公开 Spin、条件子树与公共自动化属性。
+    let _view: ViewNode = uix::uix!(
+        r#"<Spin spinning={spin_loading} text={spin_text} automationId="page-loading"><If {show_content}><Text>内容</Text></If></Spin>"#
+    );
+    // Spin 构造完成后调用方仍持有原字符串所有权。
+    assert_eq!(spin_text, "正在加载");
+    // 编译成功即证明 String 借用、bool 与 wrapper 子树契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译类型化开关与滑块表单。
 #[test]
 fn public_uix_macro_compiles_typed_form_switch_and_slider_items() {

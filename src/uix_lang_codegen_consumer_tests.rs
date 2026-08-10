@@ -449,6 +449,25 @@ fn tree_select_compiles_against_public_uix_api() {
     // 编译成功即证明启用 capability 时保留原有 TreeSelect 消费覆盖。
 }
 
+// Spin 公开类型只在 feedback capability 启用时参与消费测试。
+#[cfg(feature = "feedback")]
+// 验证 feedback 生成物在真实公开 API 消费者中通过类型检查。
+#[test]
+// 声明 Spin 独立 capability 消费测试。
+fn spin_compiles_against_public_uix_api() {
+    // 提供调用方继续持有的加载提示文字。
+    let loading_text = String::from("正在加载");
+    // 提供动态加载状态。
+    let loading = true;
+    // 验证配置、提示文字、遮罩子树和公共属性只依赖公开 prelude。
+    let _spin: ViewNode = crate::uix!(
+        r#"<Spin spinning={loading} text={loading_text} width="240px" automationId="loading"><Text>内容</Text></Spin>"#
+    );
+    // 生成代码只能临时借用调用方持有的提示文字。
+    assert_eq!(loading_text, "正在加载");
+    // 编译成功即证明启用 capability 时公开 Spin 消费契约闭合。
+}
+
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
 #[test]
 fn mapped_inline_styles_compile_against_public_uix_api() {
