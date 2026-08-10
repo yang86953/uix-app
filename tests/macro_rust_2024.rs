@@ -105,10 +105,12 @@ fn open_feedback() {
 
 // 定义 Rust 2024 公开过程宏消费的类型化表单模型。
 #[derive(Clone)]
-// 保存本回归唯一需要投影的开关字段。
+// 保存本回归需要投影的开关与滑块字段。
 struct Rust2024Profile {
     // 保存通知是否开启。
     notifications: bool,
+    // 保存音量滑块的 f64 值。
+    volume: f64,
 }
 
 // 提供公开 Form 宏生成代码调用的类型化提交函数。
@@ -127,19 +129,23 @@ fn public_uix_macro_compiles_float_button() {
     // 编译成功即证明公开路径与类型契约闭合。
 }
 
-// 验证真实 Rust 2024 消费 crate 可编译类型化开关表单。
+// 验证真实 Rust 2024 消费 crate 可编译类型化开关与滑块表单。
 #[test]
-fn public_uix_macro_compiles_typed_form_switch_item() {
+fn public_uix_macro_compiles_typed_form_switch_and_slider_items() {
     // 创建由过程宏借用的类型化模型状态。
     let profile = State::new(Rust2024Profile {
         // 提供满足必选规则的初始状态。
         notifications: true,
+        // 提供位于静态范围内的滑块初始值。
+        volume: 35.0,
     });
     // 使用 Rust 2024 const 块产生动态布尔配置。
     let notifications_locked = const { false };
-    // 让过程宏生成 bool accessor、公开字段 builder 和提交闭环。
+    // 使用 Rust 2024 const 块产生动态 f64 配置。
+    let volume_step = const { 5.0_f64 };
+    // 让过程宏生成 bool/f64 accessor、公开字段 builder 和提交闭环。
     let _view: ViewNode = uix::uix!(
-        r#"<Form model={profile} @submit="submit_rust_2024_profile"><FormSwitchItem field="notifications" label="启用通知" rules="required" disabled={notifications_locked} /><Button @click="submitForm">提交</Button></Form>"#
+        r#"<Form model={profile} @submit="submit_rust_2024_profile"><FormSwitchItem field="notifications" label="启用通知" rules="required" disabled={notifications_locked} /><FormSliderItem field="volume" label="音量" min="0" max="100" step={volume_step} /><Button @click="submitForm">提交</Button></Form>"#
     );
     // 编译成功即证明 Rust 2024 外部消费契约闭合。
 }

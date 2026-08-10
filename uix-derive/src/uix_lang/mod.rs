@@ -164,6 +164,8 @@ mod color_picker_codegen;
 mod color_picker_codegen_tests;
 // 定义 Form 与类型化字段的公开 API 代码生成边界。
 mod form_codegen;
+// 定义 FormSliderItem 类型化 f64 字段的独立生成边界。
+mod form_slider_codegen;
 // 集中验证 Form 生成与拒绝路径。
 #[cfg(test)]
 mod form_codegen_tests;
@@ -295,6 +297,8 @@ pub(crate) use form_codegen::{
     generate_orphan_form_radio_item, generate_orphan_form_select_item,
     generate_orphan_form_switch_item,
 };
+// 向核心元素生成器暴露孤立滑块字段诊断。
+pub(crate) use form_slider_codegen::generate_orphan_form_slider_item;
 // 向核心元素生成器暴露 FloatButton 专用映射。
 pub(crate) use float_button_codegen::generate_float_button;
 // 向核心元素生成器暴露布局组件专用映射。

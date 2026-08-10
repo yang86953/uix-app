@@ -23,6 +23,8 @@ struct ProfileForm {
     channel: String,
     // 保存通知开关布尔字段。
     notifications: bool,
+    // 保存音量滑块 f64 字段。
+    volume: f64,
 }
 
 // 提供无事件参数的 Rust 侧回调。
@@ -362,6 +364,8 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
         channel: "邮件".to_string(),
         // 提供已开启的通知初始值。
         notifications: true,
+        // 提供位于声明范围内的音量初始值。
+        volume: 35.0,
     });
     // 提供 FormSelectItem 消费的字符串候选集合。
     let level_options = ["初级", "中级", "高级"];
@@ -369,11 +373,13 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let channel_options = ["邮件", "短信"];
     // 提供 FormSwitchItem 消费的动态禁用状态。
     let notifications_locked = false;
+    // 提供 FormSliderItem 消费的动态 f64 步长。
+    let volume_step = 5.0_f64;
     // 提供返回类型化业务结果的提交回调。
     let on_profile_submit = |_profile: ProfileForm| Ok::<(), String>(());
     // 验证模型投影、规则和 submitForm 只依赖公开 prelude。
     let _form: ViewNode = crate::uix!(
-        r#"<Form model={profile} @submit="on_profile_submit"><FormInputItem field="email" label="邮箱" rules="required,email" /><FormSelectItem field="level" label="等级" options={level_options} rules="required" searchable placeholder="请选择" /><FormCheckboxItem field="accepted" label="协议确认" text="我已阅读并同意" rules="required" /><FormRadioItem field="channel" label="通知渠道" options={channel_options} rules="required" vertical /><FormSwitchItem field="notifications" label="启用通知" rules="required" disabled={notifications_locked} /><Button type="primary" @click="submitForm">提交</Button></Form>"#
+        r#"<Form model={profile} @submit="on_profile_submit"><FormInputItem field="email" label="邮箱" rules="required,email" /><FormSelectItem field="level" label="等级" options={level_options} rules="required" searchable placeholder="请选择" /><FormCheckboxItem field="accepted" label="协议确认" text="我已阅读并同意" rules="required" /><FormRadioItem field="channel" label="通知渠道" options={channel_options} rules="required" vertical /><FormSwitchItem field="notifications" label="启用通知" rules="required" disabled={notifications_locked} /><FormSliderItem field="volume" label="音量" min="0" max="100" step={volume_step} /><Button type="primary" @click="submitForm">提交</Button></Form>"#
     );
 }
 
