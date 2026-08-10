@@ -9,9 +9,9 @@ use super::{
     generate_autocomplete, generate_avatar, generate_back_top, generate_button_group,
     generate_calendar, generate_card, generate_carousel, generate_cascader, generate_checkbox,
     generate_color_picker, generate_column, generate_container, generate_date_picker,
-    generate_date_range_picker, generate_descriptions, generate_divider, generate_empty,
-    generate_float_button, generate_focus_trap, generate_form, generate_grid, generate_input,
-    generate_input_group, generate_input_number, generate_mentions, generate_modal,
+    generate_date_range_picker, generate_descriptions, generate_divider, generate_drawer,
+    generate_empty, generate_float_button, generate_focus_trap, generate_form, generate_grid,
+    generate_input, generate_input_group, generate_input_number, generate_mentions, generate_modal,
     generate_orphan_col, generate_orphan_form_checkbox_item, generate_orphan_form_input_item,
     generate_orphan_form_radio_item, generate_orphan_form_select_item,
     generate_orphan_form_slider_item, generate_orphan_form_switch_item, generate_pagination,
@@ -138,6 +138,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "Alert" => generate_alert(element),
         // 模态框映射到 State<bool>、同步操作回调与完整有序内容子树契约。
         "Modal" => generate_modal(element),
+        // 抽屉映射到 State<bool>、方向、面板宽度与完整有序内容子树契约。
+        "Drawer" => generate_drawer(element),
         // 文字提示映射到默认顶部悬停行为与唯一静态触发子树契约。
         "Tooltip" => generate_tooltip(element),
         // 气泡卡片映射到内容、点击或悬停触发与唯一静态触发子树契约。
@@ -190,7 +192,7 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Steps、Pagination、QRCode、Watermark、Alert、Modal、Tooltip、Popover、FocusTrap 或 Spin，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Steps、Pagination、QRCode、Watermark、Alert、Modal、Drawer、Tooltip、Popover、FocusTrap 或 Spin，或先登记组件状态",
         )),
     }
     // 结束元素分派函数。

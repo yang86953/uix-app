@@ -249,6 +249,11 @@ mod modal_codegen;
 // 集中验证 Modal 生成、默认值、事件与拒绝路径。
 #[cfg(test)]
 mod modal_codegen_tests;
+// 定义 Drawer 受控状态、方向、宽度与有序内容子树的公开 API 代码生成边界。
+mod drawer_codegen;
+// 集中验证 Drawer 生成、默认值与拒绝路径。
+#[cfg(test)]
+mod drawer_codegen_tests;
 // 定义 Tooltip 文字与唯一静态触发 View 的公开 API 代码生成边界。
 mod tooltip_codegen;
 // 集中验证 Tooltip 生成、触发子树与拒绝路径。
@@ -432,6 +437,8 @@ pub(crate) use watermark_codegen::generate_watermark;
 pub(crate) use alert_codegen::generate_alert;
 // 向核心元素生成器暴露 Modal 容器组件专用映射。
 pub(crate) use modal_codegen::generate_modal;
+// 向核心元素生成器暴露 Drawer 容器组件专用映射。
+pub(crate) use drawer_codegen::generate_drawer;
 // 向核心元素生成器暴露 Tooltip 容器组件专用映射。
 pub(crate) use tooltip_codegen::generate_tooltip;
 // 向核心元素生成器暴露 Popover 容器组件专用映射。
