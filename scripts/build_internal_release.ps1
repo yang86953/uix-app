@@ -115,6 +115,8 @@ Set-Content -LiteralPath (Join-Path $stageRoot 'SHA256SUMS.txt') -Encoding ascii
 Add-Type -AssemblyName System.IO.Compression
 # 加载只按显式条目创建 ZIP 所需的文件扩展程序集。
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+# 固化为 ZIP 规范允许的最早时间，避免当次 staging 时间进入容器摘要。
+$archiveTimestamp = [DateTimeOffset]::new(1980, 1, 1, 0, 0, 0, [TimeSpan]::Zero)
 # 以 Create 模式打开唯一内部候选包。
 $archive = [IO.Compression.ZipFile]::Open($zipPath, [IO.Compression.ZipArchiveMode]::Create)
 # 无论条目写入是否失败，都必须关闭 ZIP owner。
@@ -126,7 +128,7 @@ try {
         # ZIP 条目统一使用规范正斜杠，避免依赖 Windows 解压器解释反斜杠。
         $entryName = $name.Replace('\', '/')
         # 使用最佳压缩级别创建一个且仅一个规范条目。
-        [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+        $archiveEntry = [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
             # 传入当前唯一 ZIP owner。
             $archive,
             # 传入 staging 中的可信源文件。
@@ -135,7 +137,9 @@ try {
             $entryName,
             # 保持既有最佳压缩策略。
             [IO.Compression.CompressionLevel]::Optimal
-        ) | Out-Null
+        )
+        # 所有条目使用同一确定时间，保证相同载荷不因文件时间产生不同 ZIP 字节。
+        $archiveEntry.LastWriteTime = $archiveTimestamp
     }
 }
 # ZIP owner 必须在哈希与独立校验前关闭并写完中央目录。
