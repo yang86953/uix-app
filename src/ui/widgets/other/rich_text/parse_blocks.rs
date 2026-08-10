@@ -1,5 +1,5 @@
 // 富文本行首块级 Markdown 解析辅助。
-use super::{RichTextSegment, RichTextStyle, parse_inline_range, push_text_segment};
+use super::{parse_inline_range, push_text_segment, RichTextSegment, RichTextStyle};
 
 // 解析当前行的一级块级标记，并返回是否已经消费整行。
 pub(super) fn parse_block_line(text: &str, segments: &mut Vec<RichTextSegment>) -> bool {
@@ -206,8 +206,10 @@ fn parse_ordered_list(text: &str) -> Option<(&str, &str)> {
         // 向下一个连续数字推进。
         digit_len += 1;
     }
-    // 有序列表至少需要一个数字和点号或右括号标记。
+    // 有序列表至少需要一个数字，且块标记编号不得超过 Markdown 规定的九位。
     if digit_len == 0
+        // 十位及以上数字序列保留为普通文本，避免把非列表编号误识别为块标记。
+        || digit_len > 9
         // 标准 Markdown 的两种有序列表标记都在这里统一识别。
         || !text
             // 读取数字序列后的单字节标记。
