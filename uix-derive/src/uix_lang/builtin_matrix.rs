@@ -18,16 +18,6 @@ const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
     },
     // 输入组件规划项。
     PlannedBuiltin {
-        name: "Form",
-        category: "内置组件 / 输入组件",
-    },
-    // 输入组件规划项。
-    PlannedBuiltin {
-        name: "FormInputItem",
-        category: "内置组件 / 输入组件",
-    },
-    // 输入组件规划项。
-    PlannedBuiltin {
         name: "FormSelectItem",
         category: "内置组件 / 输入组件",
     },
