@@ -164,6 +164,11 @@ mod color_picker_codegen;
 // 集中验证 ColorPicker 生成与拒绝路径。
 #[cfg(test)]
 mod color_picker_codegen_tests;
+// 定义 Avatar 来源、回退文字、形状与尺寸的公开 API 代码生成边界。
+mod avatar_codegen;
+// 集中验证 Avatar 生成、默认值与拒绝路径。
+#[cfg(test)]
+mod avatar_codegen_tests;
 // 定义 Skeleton 静态外观与尺寸的公开 API 代码生成边界。
 mod skeleton_codegen;
 // 集中验证 Skeleton 生成与拒绝路径。
@@ -333,6 +338,8 @@ pub(crate) use date_range_picker_codegen::generate_date_range_picker;
 pub(crate) use time_picker_codegen::generate_time_picker;
 // 向核心元素生成器暴露 ColorPicker 专用映射。
 pub(crate) use color_picker_codegen::generate_color_picker;
+// 向核心元素生成器暴露 Avatar 叶组件专用映射。
+pub(crate) use avatar_codegen::generate_avatar;
 // 向核心元素生成器暴露 Skeleton 专用映射。
 pub(crate) use skeleton_codegen::generate_skeleton;
 // 向核心元素生成器暴露 Empty 专用映射。

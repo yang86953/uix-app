@@ -259,6 +259,27 @@ fn public_uix_macro_compiles_qrcode() {
     // 编译成功即证明 Rust 2024 String 借用、f32 与叶节点契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 Avatar 字符串借用与动态尺寸。
+#[test]
+// 声明 Avatar 外部消费编译测试。
+fn public_uix_macro_compiles_avatar() {
+    // 使用拥有所有权的字符串验证回退文字只在构造期间借用。
+    let avatar_text = String::from("AL");
+    // 使用拥有所有权的字符串验证图片来源只在构造期间借用。
+    let avatar_src = String::from("assets/avatar.png");
+    // 使用 Rust 2024 const 块产生动态 f32 边长。
+    let avatar_size = const { 40.0_f32 };
+    // 让过程宏生成 image-codecs capability 下的公开 Avatar。
+    let _view: ViewNode = uix::uix!(
+        r#"<Avatar text={avatar_text} src={avatar_src} shape="square" size={avatar_size} automationId="account-avatar" />"#
+    );
+    // Avatar 构造完成后调用方仍持有回退文字所有权。
+    assert_eq!(avatar_text, "AL");
+    // Avatar 构造完成后调用方仍持有图片来源所有权。
+    assert_eq!(avatar_src, "assets/avatar.png");
+    // 编译成功即证明 Rust 2024 String 借用、f32 与叶节点契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译类型化开关与滑块表单。
 #[test]
 fn public_uix_macro_compiles_typed_form_switch_and_slider_items() {
