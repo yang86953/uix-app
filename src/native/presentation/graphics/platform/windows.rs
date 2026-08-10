@@ -2,6 +2,8 @@
 
 #![cfg(windows)]
 #![allow(nonstandard_style)]
+// 在 Rust 2024 下禁止共享 Win32 辅助隐式调用 unsafe FFI。
+#![deny(unsafe_op_in_unsafe_fn)]
 
 use std::ffi::c_void;
 
@@ -121,12 +123,14 @@ pub(crate) fn drawable_size(hwnd: *mut c_void, fallback_w: i32, fallback_h: i32)
 
 #[cfg(feature = "opengles")]
 pub(crate) unsafe fn device_context(hwnd: *mut c_void) -> *mut c_void {
-    GetDC(hwnd)
+    // SAFETY：调用者保证 hwnd 是当前进程拥有且在调用期间有效的窗口句柄。
+    unsafe { GetDC(hwnd) }
 }
 
 #[cfg(feature = "opengles")]
 pub(crate) unsafe fn release_device_context(hwnd: *mut c_void, hdc: *mut c_void) {
-    let _ = ReleaseDC(hwnd, hdc);
+    // SAFETY：调用者保证 hdc 由同一 hwnd 的 GetDC 获取且尚未释放。
+    let _ = unsafe { ReleaseDC(hwnd, hdc) };
 }
 
 /// Checked release used by a `Result`-returning graphics lifecycle path.
@@ -134,5 +138,6 @@ pub(crate) unsafe fn release_device_context(hwnd: *mut c_void, hdc: *mut c_void)
 /// than silently discarding the last native error.
 #[cfg(feature = "opengles")]
 pub(crate) unsafe fn release_device_context_checked(hwnd: *mut c_void, hdc: *mut c_void) -> bool {
-    ReleaseDC(hwnd, hdc) != 0
+    // SAFETY：调用者保证 hdc 由同一 hwnd 的 GetDC 获取且尚未释放。
+    unsafe { ReleaseDC(hwnd, hdc) != 0 }
 }
