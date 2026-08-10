@@ -23,6 +23,13 @@ $package = @($metadata.packages | Where-Object { $_.name -eq 'uix' })
 if ($package.Count -ne 1 -or $package[0].version -ne $version) {
     throw "Expected exactly one uix package at version $version."
 }
+# 从 Cargo metadata 读取正式内部 crate 的描述事实。
+$packageDescription = [string]$package[0].description
+# 发布组合根拒绝缺失或仅含空白的描述，避免生成身份不完整的 .crate。
+if ([string]::IsNullOrWhiteSpace($packageDescription)) {
+    # 使用稳定错误说明具体缺失的 package 元数据。
+    throw 'Expected the uix package to declare a non-empty description.'
+}
 
 $targetRoot = [IO.Path]::GetFullPath([string]$metadata.target_directory)
 $repoPrefix = $repoRoot + [IO.Path]::DirectorySeparatorChar
