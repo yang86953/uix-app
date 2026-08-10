@@ -46,6 +46,23 @@ fn generates_typed_form_select_item_contract() {
     );
 }
 
+// 验证 FormCheckboxItem 的类型化布尔字段生成契约。
+#[test]
+fn generates_typed_form_checkbox_item_contract() {
+    // 生成独立表单标签、控件文字、必选规则与禁用状态。
+    let snapshot = generate(r#"<Form model={profile} @submit="on_submit"><FormCheckboxItem field="accepted" label="协议确认" text="我已阅读并同意" rules="required" disabled={locked} /><Button @click="submitForm">提交</Button></Form>"#).expect("FormCheckboxItem 应生成");
+    // 核对 bool 成员类型化投影。
+    assert!(snapshot.contains("& mut __uix_form_model . accepted"));
+    // 核对公开复选字段构造器。
+    assert!(snapshot.contains("FormCheckboxItem :: new (\"accepted\")"));
+    // 核对独立 FormItem 标签。
+    assert!(snapshot.contains("field_label (\"协议确认\")"));
+    // 核对复选框自身说明文本。
+    assert!(snapshot.contains("label (\"我已阅读并同意\")"));
+    // 核对必选布尔规则和动态禁用状态。
+    assert!(snapshot.contains("required (true)") && snapshot.contains("disabled (locked)"));
+}
+
 // 验证缺失模型和错误提交入口。
 #[test]
 fn rejects_incomplete_form_contracts() {
@@ -83,4 +100,14 @@ fn rejects_invalid_form_field_shapes() {
         generate(r#"<FormSelectItem field="level" options={levels} />"#).expect_err("孤立选择字段");
     // 诊断必须说明直接子项边界。
     assert!(select_orphan.message.contains("直接子项"));
+    // 复选字段不得继承文本专用邮箱规则。
+    let checkbox_rule = generate(r#"<Form model={profile} @submit="save"><FormCheckboxItem field="accepted" rules="email" /><Button @click="submitForm">提交</Button></Form>"#).expect_err("复选字段未知规则");
+    // 诊断必须包含具体非法规则。
+    assert!(checkbox_rule.message.contains("email"));
+    // 孤立复选字段项必须失败。
+    let checkbox_orphan = generate(r#"<FormCheckboxItem field="accepted" />"#)
+        // 获取越界字段诊断。
+        .expect_err("孤立复选字段");
+    // 诊断必须说明直接子项边界。
+    assert!(checkbox_orphan.message.contains("直接子项"));
 }
