@@ -10,14 +10,15 @@ use super::{
 };
 // 引入受限表达式与事件处理器生成入口。
 use super::{
-    expression_uses_event, generate_affix, generate_app_layout, generate_back_top,
-    generate_button_group, generate_cascader, generate_checkbox, generate_column,
-    generate_container, generate_divider, generate_expression, generate_float_button,
-    generate_grid, generate_handler_expression, generate_input, generate_input_group,
-    generate_input_number, generate_orphan_col, generate_radio, generate_range_slider,
-    generate_rate, generate_row, generate_scroll_view, generate_segmented, generate_select,
-    generate_slider, generate_space, generate_splitter, generate_switch, generate_theme_toggle,
-    generate_tree_select, generate_typography, generate_virtual_scroll, generate_window_control,
+    expression_uses_event, generate_affix, generate_app_layout, generate_autocomplete,
+    generate_back_top, generate_button_group, generate_cascader, generate_checkbox,
+    generate_column, generate_container, generate_divider, generate_expression,
+    generate_float_button, generate_grid, generate_handler_expression, generate_input,
+    generate_input_group, generate_input_number, generate_orphan_col, generate_radio,
+    generate_range_slider, generate_rate, generate_row, generate_scroll_view, generate_segmented,
+    generate_select, generate_slider, generate_space, generate_splitter, generate_switch,
+    generate_theme_toggle, generate_tree_select, generate_typography, generate_virtual_scroll,
+    generate_window_control,
 };
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
@@ -114,6 +115,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "Cascader" => generate_cascader(element),
         // 树形选择器映射到 TreeNode 树与 State<String> 稳定 key 双向契约。
         "TreeSelect" => generate_tree_select(element),
+        // 自动完成输入映射到字符串候选与 State<String> 双向文本契约。
+        "AutoComplete" => generate_autocomplete(element),
         // Col 只能由 Row 或 Grid 解释其父级布局语义。
         "Col" => generate_orphan_col(element),
         // 图标映射到公开 Icon 组件。
@@ -144,7 +147,7 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader 或 TreeSelect，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect 或 AutoComplete，或先登记组件状态",
         )),
     }
 }
