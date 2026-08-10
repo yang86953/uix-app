@@ -360,6 +360,14 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _skeleton: ViewNode = crate::uix!(
         r#"<Skeleton shape="text" width={skeleton_width} height={skeleton_height} automationId="loading" />"#
     );
+    // 提供 Empty 动态描述文本。
+    let empty_description = String::from("暂无数据");
+    // 提供 Empty 动态图标名。
+    let empty_icon = String::from("inbox");
+    // 验证动态内容和公共属性只依赖公开 prelude。
+    let _empty: ViewNode = crate::uix!(
+        r#"<Empty description={empty_description} icon={empty_icon} width="240px" automationId="empty" />"#
+    );
     // 提供 Form 绑定的类型化业务状态。
     let profile = State::new(ProfileForm {
         // 提供通过邮箱规则的初始值。

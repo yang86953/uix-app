@@ -13,10 +13,10 @@ use super::{
     expression_uses_event, generate_affix, generate_app_layout, generate_autocomplete,
     generate_back_top, generate_button_group, generate_cascader, generate_checkbox,
     generate_color_picker, generate_column, generate_container, generate_date_picker,
-    generate_date_range_picker, generate_divider, generate_expression, generate_float_button,
-    generate_form, generate_grid, generate_handler_expression, generate_input,
-    generate_input_group, generate_input_number, generate_mentions, generate_orphan_col,
-    generate_orphan_form_checkbox_item, generate_orphan_form_input_item,
+    generate_date_range_picker, generate_divider, generate_empty, generate_expression,
+    generate_float_button, generate_form, generate_grid, generate_handler_expression,
+    generate_input, generate_input_group, generate_input_number, generate_mentions,
+    generate_orphan_col, generate_orphan_form_checkbox_item, generate_orphan_form_input_item,
     generate_orphan_form_radio_item, generate_orphan_form_select_item,
     generate_orphan_form_slider_item, generate_orphan_form_switch_item, generate_radio,
     generate_range_slider, generate_rate, generate_row, generate_scroll_view, generate_segmented,
@@ -133,6 +133,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "ColorPicker" => generate_color_picker(element),
         // 骨架屏映射到公开形状与固有尺寸契约。
         "Skeleton" => generate_skeleton(element),
+        // 空状态映射到公开描述与图标契约。
+        "Empty" => generate_empty(element),
         // 表单映射到类型化模型、字段投影与提交闭环。
         "Form" => generate_form(element),
         // FormInputItem 只能由 Form 解释类型化字段语义。
@@ -177,7 +179,7 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem 或 Skeleton，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Skeleton 或 Empty，或先登记组件状态",
         )),
     }
 }
