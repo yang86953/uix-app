@@ -1,5 +1,10 @@
-// 在 feature 裁剪后拒绝不可达收尾和仅在其他 backend 使用的绑定。
-#![deny(unreachable_code, unused_imports, unused_variables)]
+// 在 feature 裁剪后拒绝不可达收尾、不可达模式和仅在其他 backend 使用的绑定。
+#![deny(
+    unreachable_code,
+    unreachable_patterns,
+    unused_imports,
+    unused_variables
+)]
 
 use std::marker::PhantomData;
 use std::path::PathBuf;
@@ -169,6 +174,13 @@ impl Platform {
 }
 
 // 按已编译 backend 直接返回枚举结果或类型化的不支持错误。
+#[cfg(any(
+    feature = "d3d11",
+    feature = "vulkan",
+    feature = "d3d12",
+    feature = "metal",
+    feature = "opengles"
+))]
 fn enumerate_gpu_adapters(backend: GraphicsBackend) -> Result<Box<[GpuAdapterInfo]>> {
     // 直接返回 feature 对应结果，避免无成功分支时保留幽灵值。
     match backend {
@@ -177,7 +189,7 @@ fn enumerate_gpu_adapters(backend: GraphicsBackend) -> Result<Box<[GpuAdapterInf
         GraphicsBackend::Direct3D11 => Ok(enumerate_dxgi_adapters()?.into_boxed_slice()),
         // 其他已启用 backend 保持类型化的未实现契约。
         #[cfg(any(
-            not(all(windows, feature = "d3d11")),
+            all(feature = "d3d11", not(windows)),
             feature = "vulkan",
             feature = "d3d12",
             feature = "metal",
@@ -185,6 +197,19 @@ fn enumerate_gpu_adapters(backend: GraphicsBackend) -> Result<Box<[GpuAdapterInf
         ))]
         _ => Err(not_implemented_backend(backend)),
     }
+}
+
+// 没有图形 feature 时 GraphicsBackend 不可构造，空 match 是唯一穷尽控制流。
+#[cfg(not(any(
+    feature = "d3d11",
+    feature = "vulkan",
+    feature = "d3d12",
+    feature = "metal",
+    feature = "opengles"
+)))]
+fn enumerate_gpu_adapters(backend: GraphicsBackend) -> Result<Box<[GpuAdapterInfo]>> {
+    // 不制造 backend 值、typed failure 或幽灵成功；调用在安全 Rust 中不可发生。
+    match backend {}
 }
 
 impl Drop for Platform {
@@ -285,7 +310,7 @@ fn enumerate_dxgi_adapters() -> Result<Vec<GpuAdapterInfo>, Error> {
 
 // 只有兼容失败分支存在时才需要构造该诊断错误。
 #[cfg(any(
-    not(all(windows, feature = "d3d11")),
+    all(feature = "d3d11", not(windows)),
     feature = "vulkan",
     feature = "d3d12",
     feature = "metal",
