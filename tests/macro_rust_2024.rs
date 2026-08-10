@@ -297,6 +297,16 @@ fn public_uix_macro_compiles_watermark() {
     // 编译成功即证明 Rust 2024 String 借用、f32 与叶节点契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 Calendar 默认交互映射。
+#[test]
+// 声明 Calendar 外部消费编译测试。
+fn public_uix_macro_compiles_calendar() {
+    // 让过程宏生成公开 Calendar 与公共 View 属性。
+    let _view: ViewNode =
+        uix::uix!(r#"<Calendar width="308px" height="286px" automationId="monthly-calendar" />"#);
+    // 编译成功即证明默认 Calendar 与叶节点契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译类型化开关与滑块表单。
 #[test]
 fn public_uix_macro_compiles_typed_form_switch_and_slider_items() {

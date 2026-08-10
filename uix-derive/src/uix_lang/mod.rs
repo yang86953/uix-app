@@ -204,6 +204,11 @@ mod timeline_codegen;
 // 集中验证 Timeline 生成、默认值与拒绝路径。
 #[cfg(test)]
 mod timeline_codegen_tests;
+// 定义 Calendar 默认交互组件的公开 API 代码生成边界。
+mod calendar_codegen;
+// 集中验证 Calendar 生成与拒绝路径。
+#[cfg(test)]
+mod calendar_codegen_tests;
 // 定义 QRCode 内容、尺寸与纠错等级的公开 API 代码生成边界。
 mod qrcode_codegen;
 // 集中验证 QRCode 生成、默认值与拒绝路径。
@@ -359,6 +364,8 @@ pub(crate) use card_codegen::generate_card;
 pub(crate) use descriptions_codegen::generate_descriptions;
 // 向核心元素生成器暴露 Timeline 叶组件专用映射。
 pub(crate) use timeline_codegen::generate_timeline;
+// 向核心元素生成器暴露 Calendar 叶组件专用映射。
+pub(crate) use calendar_codegen::generate_calendar;
 // 向核心元素生成器暴露 QRCode 叶组件专用映射。
 pub(crate) use qrcode_codegen::generate_qrcode;
 // 向核心元素生成器暴露 Watermark 叶组件专用映射。

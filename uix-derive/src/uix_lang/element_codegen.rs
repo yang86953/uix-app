@@ -6,12 +6,12 @@ use super::codegen::{generate_button, generate_icon, generate_text};
 // 引入所有独立组件生成器、语法树与诊断入口。
 use super::{
     Diagnostic, Element, generate_affix, generate_app_layout, generate_autocomplete,
-    generate_avatar, generate_back_top, generate_button_group, generate_card, generate_cascader,
-    generate_checkbox, generate_color_picker, generate_column, generate_container,
-    generate_date_picker, generate_date_range_picker, generate_descriptions, generate_divider,
-    generate_empty, generate_float_button, generate_form, generate_grid, generate_input,
-    generate_input_group, generate_input_number, generate_mentions, generate_orphan_col,
-    generate_orphan_form_checkbox_item, generate_orphan_form_input_item,
+    generate_avatar, generate_back_top, generate_button_group, generate_calendar, generate_card,
+    generate_cascader, generate_checkbox, generate_color_picker, generate_column,
+    generate_container, generate_date_picker, generate_date_range_picker, generate_descriptions,
+    generate_divider, generate_empty, generate_float_button, generate_form, generate_grid,
+    generate_input, generate_input_group, generate_input_number, generate_mentions,
+    generate_orphan_col, generate_orphan_form_checkbox_item, generate_orphan_form_input_item,
     generate_orphan_form_radio_item, generate_orphan_form_select_item,
     generate_orphan_form_slider_item, generate_orphan_form_switch_item, generate_qrcode,
     generate_radio, generate_range_slider, generate_rate, generate_result_view, generate_row,
@@ -118,6 +118,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "Descriptions" => generate_descriptions(element),
         // 时间轴映射到类型化事件集合、pending 与 reverse 契约。
         "Timeline" => generate_timeline(element),
+        // 日历映射到公开默认选择与月视图导航契约。
+        "Calendar" => generate_calendar(element),
         // 二维码映射到内容、文档尺寸与纠错等级契约。
         "QRCode" => generate_qrcode(element),
         // 水印映射到文字、透明度与运行时平铺绘制契约。
@@ -166,7 +168,7 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、QRCode 或 Watermark，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、QRCode 或 Watermark，或先登记组件状态",
         )),
     }
     // 结束元素分派函数。
