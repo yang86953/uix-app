@@ -56,7 +56,7 @@ pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic
         // 已登记字段必须位于提交按钮之前。
         if matches!(
             child.name.as_str(),
-            "FormInputItem" | "FormSelectItem" | "FormCheckboxItem"
+            "FormInputItem" | "FormSelectItem" | "FormCheckboxItem" | "FormRadioItem"
         ) {
             // 防止源码顺序被生成器重排。
             if submit_button.is_some() {
@@ -75,6 +75,8 @@ pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic
                 "FormSelectItem" => generate_select_field(child)?,
                 // 布尔字段映射到 FormCheckboxItem。
                 "FormCheckboxItem" => generate_checkbox_field(child)?,
+                // 单选组字段映射到 FormRadioItem。
+                "FormRadioItem" => generate_radio_field(child)?,
                 // 前置匹配已穷尽登记字段。
                 _ => unreachable!("已登记 Form 字段分派必须穷尽"),
             });
@@ -101,7 +103,7 @@ pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic
         return Err(Diagnostic::new(
             element.span,
             "<Form> 至少需要一个直接类型化字段项",
-            "添加 FormInputItem、FormSelectItem 或 FormCheckboxItem 字段",
+            "添加已映射的 Form 类型化字段项",
         ));
     }
     // 取出经过验证的提交按钮。
@@ -173,6 +175,19 @@ pub(crate) fn generate_orphan_form_checkbox_item(
         element.span,
         "<FormCheckboxItem> 只能作为 <Form> 的直接子项",
         "把 FormCheckboxItem 放入绑定 model 的 Form 内",
+    ))
+}
+
+// 拒绝失去 Form 类型化上下文的单选组字段项。
+pub(crate) fn generate_orphan_form_radio_item(
+    // 接收越界单选组字段项。
+    element: &Element,
+) -> Result<TokenStream, Diagnostic> {
+    // 返回父子归属诊断。
+    Err(Diagnostic::new(
+        element.span,
+        "<FormRadioItem> 只能作为 <Form> 的直接子项",
+        "把 FormRadioItem 放入绑定 model 的 Form 内",
     ))
 }
 
@@ -419,6 +434,119 @@ fn generate_checkbox_field(element: &Element) -> Result<TokenStream, Diagnostic>
     // 创建卫生模型访问器参数。
     let model = Ident::new("__uix_form_model", Span::mixed_site());
     // 生成 bool 字段投影和运行时字段配置。
+    Ok(quote! {
+        .field(
+            #field,
+            |#model| &mut #model.#field_ident,
+            #item,
+        )
+    })
+}
+
+// 生成单个类型化单选组字段链。
+fn generate_radio_field(element: &Element) -> Result<TokenStream, Diagnostic> {
+    // 读取稳定字段 key。
+    let field_attribute = required_attribute(element, "field")?;
+    // 字段 key 必须是编译期字符串。
+    let field = literal_string(field_attribute, "FormRadioItem field")?;
+    // 验证字段可投影 Rust 成员。
+    let field_ident = rust_identifier(&field, field_attribute.span)?;
+    // 表单标签省略时沿用字段 key。
+    let label = find_attribute(element, "label")
+        // 显式标签必须是编译期字符串。
+        .map(|attribute| literal_string(attribute, "FormRadioItem label"))
+        // 转置可选诊断。
+        .transpose()?
+        // 保持字段 key 回退行为。
+        .unwrap_or_else(|| field.clone());
+    // 单选组必须显式提供候选集合。
+    let options_attribute = required_attribute(element, "options")?;
+    // 候选集合必须保留 Rust 侧类型。
+    let AttributeValue::Expression(options_expression) = &options_attribute.value else {
+        // 返回候选集合形状诊断。
+        return Err(Diagnostic::new(
+            options_attribute.span,
+            "FormRadioItem options 必须绑定可迭代字符串表达式",
+            "使用 options={channel_options}",
+        ));
+    };
+    // 生成受限候选集合表达式。
+    let options = generate_expression(&options_expression.expression, None)?;
+    // 单选组当前只登记 required 规则。
+    let required = parse_required_rule(element, "FormRadioItem")?;
+    // 拒绝未知字段属性。
+    for attribute in &element.attributes {
+        // 只消费当前已登记单选组属性。
+        if !matches!(
+            attribute.name.as_str(),
+            "field" | "label" | "options" | "rules" | "groupName" | "disabled" | "vertical"
+        ) {
+            // 返回属性映射诊断。
+            return Err(Diagnostic::new(
+                attribute.span,
+                format!("FormRadioItem 属性 {} 尚无已登记映射", attribute.name),
+                "当前使用 field、label、options、rules、groupName、disabled 与 vertical",
+            ));
+        }
+    }
+    // 单选组字段项必须是叶节点。
+    if element
+        // 遍历全部直接子节点。
+        .children
+        // 获取只读迭代器。
+        .iter()
+        // 排版空白以外的节点均不合法。
+        .any(|child| !matches!(child, Node::Text(text) if text.value.trim().is_empty()))
+    {
+        // 返回叶节点诊断。
+        return Err(Diagnostic::new(
+            element.span,
+            "<FormRadioItem> 不接受子节点",
+            "使用自闭合 FormRadioItem",
+        ));
+    }
+    // 创建基础单选组字段构建链。
+    let mut item = quote! {
+        ::uix::prelude::FormRadioItem::new(#field)
+            .label(#label)
+            .options(#options)
+            .required(#required)
+    };
+    // 可选分组名接受字符串字面量或表达式。
+    if let Some(attribute) = find_attribute(element, "groupName") {
+        // 生成统一字符串属性令牌。
+        let group_name = string_value(attribute)?;
+        // 应用运行时分组名构建器。
+        item = quote! { (#item).group_name(#group_name) };
+    }
+    // 禁用状态接受布尔简写、字面量或表达式。
+    if let Some(attribute) = find_attribute(element, "disabled") {
+        // 生成统一布尔属性令牌。
+        let disabled = boolean_value(attribute)?;
+        // 应用运行时禁用构建器。
+        item = quote! { (#item).disabled(#disabled) };
+    }
+    // 纵向布局接受布尔简写、字面量或表达式。
+    if let Some(attribute) = find_attribute(element, "vertical") {
+        // 生成统一布尔属性令牌。
+        let vertical = boolean_value(attribute)?;
+        // 启用式构建器通过同类型分支保留 false 默认值。
+        item = quote! {{
+            // 确保基础字段项只求值一次。
+            let __uix_form_radio_item = #item;
+            // 仅在配置为真时启用纵向布局。
+            if #vertical {
+                // 调用运行时纵向布局入口。
+                __uix_form_radio_item.vertical()
+            } else {
+                // 保留默认横向布局。
+                __uix_form_radio_item
+            }
+        }};
+    }
+    // 创建卫生模型访问器参数。
+    let model = Ident::new("__uix_form_model", Span::mixed_site());
+    // 生成 String 字段投影和运行时字段配置。
     Ok(quote! {
         .field(
             #field,

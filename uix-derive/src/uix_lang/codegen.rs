@@ -17,11 +17,11 @@ use super::{
     generate_form, generate_grid, generate_handler_expression, generate_input,
     generate_input_group, generate_input_number, generate_mentions, generate_orphan_col,
     generate_orphan_form_checkbox_item, generate_orphan_form_input_item,
-    generate_orphan_form_select_item, generate_radio, generate_range_slider, generate_rate,
-    generate_row, generate_scroll_view, generate_segmented, generate_select, generate_slider,
-    generate_space, generate_splitter, generate_switch, generate_theme_toggle,
-    generate_time_picker, generate_tree_select, generate_typography, generate_virtual_scroll,
-    generate_window_control,
+    generate_orphan_form_radio_item, generate_orphan_form_select_item, generate_radio,
+    generate_range_slider, generate_rate, generate_row, generate_scroll_view, generate_segmented,
+    generate_select, generate_slider, generate_space, generate_splitter, generate_switch,
+    generate_theme_toggle, generate_time_picker, generate_tree_select, generate_typography,
+    generate_virtual_scroll, generate_window_control,
 };
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
@@ -138,6 +138,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "FormSelectItem" => generate_orphan_form_select_item(element),
         // FormCheckboxItem 只能由 Form 解释类型化布尔字段语义。
         "FormCheckboxItem" => generate_orphan_form_checkbox_item(element),
+        // FormRadioItem 只能由 Form 解释类型化单选组语义。
+        "FormRadioItem" => generate_orphan_form_radio_item(element),
         // Col 只能由 Row 或 Grid 解释其父级布局语义。
         "Col" => generate_orphan_col(element),
         // 图标映射到公开 Icon 组件。
