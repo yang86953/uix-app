@@ -104,7 +104,40 @@ $hashLines = foreach ($name in $payload.Keys) {
 }
 Set-Content -LiteralPath (Join-Path $stageRoot 'SHA256SUMS.txt') -Encoding ascii -Value $hashLines
 
-Compress-Archive -Path (Join-Path $stageRoot '*') -DestinationPath $zipPath -CompressionLevel Optimal
+# 加载 ZIP 模式与压缩级别枚举所在的基础程序集。
+Add-Type -AssemblyName System.IO.Compression
+# 加载只按显式条目创建 ZIP 所需的文件扩展程序集。
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+# 以 Create 模式打开唯一内部候选包。
+$archive = [IO.Compression.ZipFile]::Open($zipPath, [IO.Compression.ZipArchiveMode]::Create)
+# 无论条目写入是否失败，都必须关闭 ZIP owner。
+try {
+    # 按稳定 payload 顺序把每个文件写入候选包。
+    foreach ($name in @($payload.Keys) + 'SHA256SUMS.txt') {
+        # 取得已经在 staging 目录验证过的源文件。
+        $sourcePath = Join-Path $stageRoot $name
+        # ZIP 条目统一使用规范正斜杠，避免依赖 Windows 解压器解释反斜杠。
+        $entryName = $name.Replace('\', '/')
+        # 使用最佳压缩级别创建一个且仅一个规范条目。
+        [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+            # 传入当前唯一 ZIP owner。
+            $archive,
+            # 传入 staging 中的可信源文件。
+            $sourcePath,
+            # 传入经过规范化的 archive 路径。
+            $entryName,
+            # 保持既有最佳压缩策略。
+            [IO.Compression.CompressionLevel]::Optimal
+        ) | Out-Null
+    }
+}
+# ZIP owner 必须在哈希与独立校验前关闭并写完中央目录。
+finally {
+    # 释放 archive 句柄并完成中央目录。
+    $archive.Dispose()
+}
+# 用独立只读校验器验证精确载荷、路径与逐项哈希。
+& (Join-Path $PSScriptRoot 'verify_internal_release.ps1') -ZipPath $zipPath -Version $version
 $zipHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zipPath).Hash.ToLowerInvariant()
 
 Write-Output "Artifact: $zipPath"
