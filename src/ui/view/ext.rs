@@ -103,7 +103,7 @@ pub trait TransitionExt: Into<ViewNode> + Sized {
 
 impl<T: Into<ViewNode>> TransitionExt for T {}
 
-/// 为所有 `Into<ViewNode>` 类型提供样式链（知识库：`C:\data\note\我的项目\软件\UIX App\使用.md`）。
+/// 为所有 `Into<ViewNode>` 类型提供样式链（公开用法见仓库 `docs/使用/样式与主题.md`）。
 ///
 /// 实现委托 [`ViewNode`] 同名方法，避免双份逻辑漂移。
 /// **链式顺序**：先写 builder 专有方法（如 `button(…).primary().on_click(…)`），再写本 trait
