@@ -25,7 +25,7 @@ fn field_bound_or_panic<T>(value: Option<T>, contract: &str) -> T {
 use crate::ui::State;
 use crate::ui::form::form::{Form, FormLayout};
 use crate::ui::form::form_binding::{
-    FormCheckboxItem, FormInputItem, FormInputNumberItem, FormSelectItem,
+    FormCheckboxItem, FormInputItem, FormInputNumberItem, FormRadioItem, FormSelectItem,
 };
 use crate::ui::form::form_validation::{FieldError, FormBuilder, FormModel, IntoFormValue};
 use crate::ui::view::{View, ViewNode};
@@ -35,7 +35,8 @@ use crate::ui::widgets::input::select::SelectValue;
 /// 类型化字段控件声明：`Form::model(...).field(name, accessor, item)` 的 item 契约。
 ///
 /// 已支持 `FormInputItem`（文本）、`FormInputNumberItem<T>`（数值）、
-/// `FormSelectItem<T>`（单选）、`FormCheckboxItem`（布尔）；其余字段控件按需扩展。
+/// `FormSelectItem<T>`（单选）、`FormCheckboxItem`（布尔）、
+/// `FormRadioItem`（单选组）；其余字段控件按需扩展。
 pub trait FormItemSpec<F> {
     /// 绑定值 State 并构建字段 View（FormItem + 控件）。
     fn bind_view(&self, form: &FormModel, value: &State<F>) -> ViewNode;
@@ -208,6 +209,44 @@ impl FormItemSpec<bool> for FormCheckboxItem {
                 Err("必须勾选".to_string())
             }
         })
+    }
+}
+
+impl FormItemSpec<String> for FormRadioItem {
+    fn bind_view(&self, form: &FormModel, value: &State<String>) -> ViewNode {
+        // 通过 FormModel 建立统一字段状态和焦点绑定。
+        let mut bound = field_bound_or_panic(
+            form.radio_item(&self.field, value),
+            "Form::model 字段未在内部模型登记",
+        );
+        // 投影独立 FormItem 标签。
+        bound.label = self.label.clone();
+        // 投影单选组名称。
+        bound.group_name = self.group_name.clone();
+        // 投影候选集合。
+        bound.options = self.options.clone();
+        // 投影禁用状态。
+        bound.disabled = self.disabled;
+        // 投影控件尺寸。
+        bound.size = self.size;
+        // 投影纵向布局开关。
+        bound.vertical = self.vertical;
+        // 投影必填规则标记。
+        bound.required = self.required;
+        // 投影错误文本显示策略。
+        bound.show_error = self.show_error;
+        // 构建绑定后的字段 View。
+        bound.build()
+    }
+
+    fn required(&self) -> bool {
+        // 向统一 FormBuilder 公开必填语义。
+        self.required
+    }
+
+    fn label<'a>(&'a self, field: &'a str) -> &'a str {
+        // 独立标签优先，否则沿用稳定字段 key。
+        self.label.as_deref().unwrap_or(field)
     }
 }
 
@@ -465,6 +504,8 @@ mod tests {
         level: String,
         // 保存协议确认状态。
         accepted: bool,
+        // 保存单选组字段值。
+        channel: String,
     }
 
     // 验证字段 key 与用户可见标签保持独立。
@@ -478,6 +519,8 @@ mod tests {
             level: "中级".to_string(),
             // 提供默认未勾选状态。
             accepted: false,
+            // 提供稳定单选初值。
+            channel: "邮件".to_string(),
         });
         // 构建带独立展示标签的类型化字段。
         let form = Form::model(&model)
@@ -518,6 +561,8 @@ mod tests {
             level: "中级".to_string(),
             // 提供默认未勾选状态。
             accepted: false,
+            // 提供稳定单选初值。
+            channel: "邮件".to_string(),
         });
         // 构建带选项与独立标签的类型化选择字段。
         let form = Form::model(&model)
@@ -565,6 +610,8 @@ mod tests {
             level: "中级".to_string(),
             // 初始状态故意保持未勾选。
             accepted: false,
+            // 单选字段在本测试中保持完整即可。
+            channel: "邮件".to_string(),
         });
         // 构建带独立字段标签和控件文字的类型化布尔字段。
         let form = Form::model(&model)
@@ -612,5 +659,67 @@ mod tests {
         let errors = form.submit().expect_err("未勾选协议必须失败");
         // 返回稳定布尔必选错误文案。
         assert_eq!(errors[0].message(), "必须勾选");
+    }
+
+    // 验证单选组投影独立标签并复用统一必填校验。
+    #[test]
+    fn typed_radio_item_projects_label_and_requires_selection() {
+        // 创建尚未选择通知渠道的业务模型。
+        let model = State::new(ContactForm {
+            // 提供合法邮箱，保持模型完整。
+            email: "owner@example.com".to_string(),
+            // 提供稳定等级，保持模型完整。
+            level: "中级".to_string(),
+            // 协议状态不参与本测试。
+            accepted: true,
+            // 空字符串用于触发统一 required 规则。
+            channel: String::new(),
+        });
+        // 构建带独立标签与候选集合的类型化单选字段。
+        let form = Form::model(&model)
+            // 投影稳定业务字段。
+            .field(
+                // 声明稳定字段 key。
+                "channel",
+                // 投影 String 模型成员。
+                |value| &mut value.channel,
+                // 声明单选组字段配置。
+                FormRadioItem::new("channel")
+                    // 设置用户可见字段标签。
+                    .label("通知渠道")
+                    // 设置按源码顺序排列的候选项。
+                    .options(["邮件", "短信"])
+                    // 启用统一必填规则。
+                    .required(true),
+            )
+            // 完成类型化表单构建。
+            .build();
+        // 生成真实字段 View 并建立值绑定。
+        let view = form.view();
+        // 读取外层 FormItem 快照。
+        let fields = view.children[0].widget.snapshot_fields();
+        // 核对稳定 key、独立标签与必填状态。
+        match fields {
+            // 解构 FormItem 公开语义字段。
+            SnapshotFields::FormItem {
+                label,
+                name,
+                required,
+                ..
+            } => {
+                // 标签使用声明的用户可见文本。
+                assert_eq!(label, "通知渠道");
+                // 字段 key 继续对应 String 成员。
+                assert_eq!(name, "channel");
+                // FormItem 必须公开必填状态。
+                assert!(required);
+            }
+            // 其他组件表示字段壳投影失败。
+            other => panic!("期望 FormItem 快照，实际为 {other:?}"),
+        }
+        // 空字符串必须被统一 required 规则拒绝。
+        let errors = form.submit().expect_err("未选择渠道必须失败");
+        // 返回类型化表单既有必填错误文案。
+        assert_eq!(errors[0].message(), "必填");
     }
 }
