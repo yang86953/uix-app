@@ -193,3 +193,67 @@ fn ordered_lists_accept_dot_and_closing_parenthesis_markers() {
         ]
     );
 }
+
+// 验证有序列表编号只接受一到九位 ASCII 数字。
+#[test]
+fn ordered_lists_reject_markers_longer_than_nine_digits() {
+    // 解析九位点号编号、九位右括号编号以及对应的十位边界。
+    let segments = parse_rich_text(
+        // 使用换行覆盖两种合法标记与两种超长标记。
+        "123456789. **九位点号**\n987654321) 九位括号\n1234567890. 十位点号\n9876543210) 十位括号",
+    );
+    // 九位标记必须继续进入列表路径，十位标记必须完整保留为普通文本。
+    assert_eq!(
+        // 声明完整期望段序列以锁定前缀与内联解析边界。
+        segments,
+        // 构造四行解析结果。
+        vec![
+            // 九位点号前缀保持作者输入。
+            RichTextSegment::Text {
+                // 前缀包含分隔空格。
+                content: "123456789. ".into(),
+                // 前缀使用默认样式。
+                style: RichTextStyle::default(),
+            },
+            // 合法列表正文继续解析粗体。
+            RichTextSegment::Text {
+                // 去除粗体标记后的正文。
+                content: "九位点号".into(),
+                // 正文携带粗体样式。
+                style: RichTextStyle {
+                    // 标记粗体事实。
+                    bold: true,
+                    // 其余样式保持默认。
+                    ..Default::default()
+                },
+            },
+            // 保留源码第一处换行。
+            RichTextSegment::NewLine,
+            // 九位右括号列表可以与正文合并为默认文本段。
+            RichTextSegment::Text {
+                // 保留完整合法前缀与正文。
+                content: "987654321) 九位括号".into(),
+                // 合并段使用默认样式。
+                style: RichTextStyle::default(),
+            },
+            // 保留源码第二处换行。
+            RichTextSegment::NewLine,
+            // 十位点号编号不得进入列表解析。
+            RichTextSegment::Text {
+                // 普通文本完整保留输入。
+                content: "1234567890. 十位点号".into(),
+                // 普通文本使用默认样式。
+                style: RichTextStyle::default(),
+            },
+            // 保留源码第三处换行。
+            RichTextSegment::NewLine,
+            // 十位右括号编号同样不得进入列表解析。
+            RichTextSegment::Text {
+                // 普通文本完整保留输入。
+                content: "9876543210) 十位括号".into(),
+                // 普通文本使用默认样式。
+                style: RichTextStyle::default(),
+            },
+        ],
+    );
+}
