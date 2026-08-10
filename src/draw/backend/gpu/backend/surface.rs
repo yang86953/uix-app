@@ -4,13 +4,12 @@
 //! 通过 deferred error 消费。
 
 use crate::core::{Error, Point, Rect};
-use crate::draw::backend::contract::DrawSurface;
 use crate::draw::Canvas2D;
-// platform 仍只提供暂未迁移的绘制 DTO。
-use crate::native::present::GpuSolidRect;
-
+use crate::draw::backend::contract::DrawSurface;
 // 引入同一 graphics backend Module 的 canvas owner。
 use super::super::canvas::NativeGpuCanvas2D;
+// 引入同一 graphics backend Module 的纯色矩形原语。
+use super::super::GpuSolidRect;
 // 引入同一 Module 统一导出的能力投影类型。
 use super::super::NativeRasterCaps;
 

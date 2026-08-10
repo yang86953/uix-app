@@ -6,12 +6,11 @@
 use std::sync::Arc;
 
 use crate::core::{Point, Rect};
+use crate::draw::Canvas2D;
 use crate::draw::geometry::color::Color;
 use crate::draw::geometry::path::{FillRule, Path};
 use crate::draw::geometry::stroker::StrokeOptions;
 use crate::draw::geometry::types::{BlendMode, GradientDirection, Radius, Transform};
-use crate::draw::Canvas2D;
-use crate::native::present::{GpuGlyphBlit, GpuSolidMesh, GpuSolidRect};
 
 use super::canvas::NativeGpuCanvas2D;
 use super::geometry::{
@@ -22,6 +21,8 @@ use super::pending::{
     DirectImageBlit, PendingNativeGlyph, PendingNativeImage, PendingNativeMesh, PendingNativeOp,
     PendingNativeRect, PendingNativeScroll,
 };
+// 引入所属 graphics backend Module 的 renderer 原语。
+use super::{GpuGlyphBlit, GpuSolidMesh, GpuSolidRect};
 
 impl Canvas2D for NativeGpuCanvas2D {
     fn current_transform(&self) -> Transform {
@@ -576,9 +577,9 @@ mod tests {
     use crate::core::Rect;
     use crate::draw::geometry::path::PathBuilder;
     // 引入 Additive 分段与圆角矩形测试需要的公开几何类型。
-    use crate::draw::geometry::types::{BlendMode, Radius};
     use crate::draw::Canvas2D;
     use crate::draw::Color;
+    use crate::draw::geometry::types::{BlendMode, Radius};
     // 引入 graphics backend 私有的 renderer 能力投影。
     use crate::draw::backend::gpu::NativeRasterCaps;
 

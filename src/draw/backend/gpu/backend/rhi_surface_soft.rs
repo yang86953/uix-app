@@ -133,7 +133,7 @@ pub(super) fn try_upload_rhi_canvas_soft(
             // 目标高度使用同一物理缩放。
             h: destination_h,
             // soft tile 是轴对齐的采样四边形。
-            corners: crate::native::present::GpuGlyphBlit::axis_aligned_corners(
+            corners: super::super::GpuGlyphBlit::axis_aligned_corners(
                 destination_x,
                 destination_y,
                 destination_w,

@@ -6,12 +6,12 @@ use crate::core::{Errc, Error, PresentDamage};
 use crate::draw::backend::frame_plan::{
     FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef,
 };
-// 引入主 surface 的逻辑清理记录。
-use crate::native::present::GpuSolidRect;
 // 引入薄 RHI 的颜色、目标、viewport 和 surface 代际类型。
 use crate::native::present::rhi::{
     LoadAction, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor,
 };
+// 引入所属 graphics backend Module 的主 surface 清理原语。
+use super::super::GpuSolidRect;
 
 // 引入当前 GPU backend 类型。
 use super::GpuBackend;
@@ -151,10 +151,10 @@ impl GpuBackend {
 mod tests {
     // 引入被测纯转换函数。
     use super::physical_clear_scissor;
-    // 引入逻辑清理记录。
-    use crate::native::present::GpuSolidRect;
     // 引入物理目标范围。
     use crate::native::present::rhi::RhiExtent;
+    // 引入父模块已收敛的逻辑清理记录。
+    use super::GpuSolidRect;
 
     // 验证 mixed-DPI 清理范围按绝对边界取整。
     #[test]

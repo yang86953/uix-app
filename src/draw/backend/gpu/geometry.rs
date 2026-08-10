@@ -7,7 +7,8 @@ use crate::core::{Point, Rect};
 use crate::draw::geometry::path::{Path, PathBuilder};
 use crate::draw::geometry::stroker::StrokeOptions;
 use crate::draw::geometry::types::{Radius, Transform};
-use crate::native::present::GpuSolidMesh;
+// 引入所属 graphics backend Module 的纯色网格原语。
+use super::GpuSolidMesh;
 
 #[derive(Clone, Copy)]
 pub(super) struct IntegerFrame {

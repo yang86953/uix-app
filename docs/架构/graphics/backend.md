@@ -22,6 +22,8 @@
 
 > **renderer 能力投影归属**：`NativeRasterCaps` 位于 `src/draw/backend/gpu/capabilities.rs`，由 graphics/backend 私有拥有并单向读取 platform 的 `GraphicsCapabilities`；`native/present` 不再定义或导出 renderer capability profile。
 
+> **renderer 原语归属**：`GpuSolidRect`、`GpuStrokeRect`、`GpuGlyphBlit`、`GpuLinearGradientRect`、`GpuRadialGradient`、`GpuSector`、`GpuSolidMesh`、`GpuBoxShadow` 与 `GpuImageBlit` 位于 `src/draw/backend/gpu/primitives.rs`，只描述 Canvas2D lowering 与队列载荷；platform presentation 不定义或重导出这些 renderer DTO。
+
 > **离屏模糊收敛**：D3D11 adapter 的 `blur_offscreen_target`、专属 scratch texture、高斯核/region 换算和旧常量缓冲已经移除。Picture/offscreen blur 只接受通用 renderer 拥有的 RHI texture，由 `RhiRenderer` 展开双 pass；缺少该 owner 时在触碰 adapter 前返回 typed `NotImplemented`，不再回落到平行 UI 语义。
 
 ## 设计结论

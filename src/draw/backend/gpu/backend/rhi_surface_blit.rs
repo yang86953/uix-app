@@ -89,7 +89,7 @@ fn lower_picture_sampled_quad(
         dst_rect.h * scale_y,
     );
     // 以单个已注释表达式生成物理四角，避免 formatter 把参数注释改成行尾注释。
-    let corners = crate::native::present::GpuGlyphBlit::axis_aligned_corners(
+    let corners = super::super::GpuGlyphBlit::axis_aligned_corners(
         // 使用已完成单次目标缩放的物理矩形。
         physical.x, physical.y, physical.w, physical.h,
     );

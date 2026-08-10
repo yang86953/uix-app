@@ -5,13 +5,14 @@ use std::sync::Arc;
 use crate::core::Rect;
 use crate::draw::geometry::color::Color;
 use crate::draw::geometry::types::{BlendMode, Transform};
-use crate::native::present::GpuImageBlit;
 
 use super::canvas::NativeGpuCanvas2D;
 use super::geometry::{
-    frame_within, glyph_device_corners, quad_aabb, rect_to_integer_frame, IntegerFrame,
+    IntegerFrame, frame_within, glyph_device_corners, quad_aabb, rect_to_integer_frame,
 };
 use super::pending::DirectImageBlit;
+// 引入所属 graphics backend Module 的字形四角辅助与图片原语。
+use super::{GpuGlyphBlit, GpuImageBlit};
 
 impl NativeGpuCanvas2D {
     pub(super) fn try_axis_aligned_device_rect(&self, rect: Rect) -> Option<(Rect, (f32, f32))> {
@@ -132,9 +133,7 @@ impl NativeGpuCanvas2D {
         let (device_corners, device_dst) =
             if let Some((rect, _)) = self.try_axis_aligned_device_rect(destination_rect) {
                 (
-                    crate::native::present::GpuGlyphBlit::axis_aligned_corners(
-                        rect.x, rect.y, rect.w, rect.h,
-                    ),
+                    GpuGlyphBlit::axis_aligned_corners(rect.x, rect.y, rect.w, rect.h),
                     rect,
                 )
             } else {
@@ -234,7 +233,7 @@ impl NativeGpuCanvas2D {
                     clipped_dst.width as f32,
                     clipped_dst.height as f32,
                     clipped_src,
-                    crate::native::present::GpuGlyphBlit::axis_aligned_corners(
+                    GpuGlyphBlit::axis_aligned_corners(
                         clipped_dst.x as f32,
                         clipped_dst.y as f32,
                         clipped_dst.width as f32,
