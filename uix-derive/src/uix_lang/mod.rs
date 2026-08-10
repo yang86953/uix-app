@@ -244,6 +244,11 @@ mod alert_codegen;
 // 集中验证 Alert 生成、默认值、事件与拒绝路径。
 #[cfg(test)]
 mod alert_codegen_tests;
+// 定义 Modal 受控状态、操作回调与有序内容子树的公开 API 代码生成边界。
+mod modal_codegen;
+// 集中验证 Modal 生成、默认值、事件与拒绝路径。
+#[cfg(test)]
+mod modal_codegen_tests;
 // 定义 Tooltip 文字与唯一静态触发 View 的公开 API 代码生成边界。
 mod tooltip_codegen;
 // 集中验证 Tooltip 生成、触发子树与拒绝路径。
@@ -425,6 +430,8 @@ pub(crate) use qrcode_codegen::generate_qrcode;
 pub(crate) use watermark_codegen::generate_watermark;
 // 向核心元素生成器暴露 Alert 叶组件专用映射。
 pub(crate) use alert_codegen::generate_alert;
+// 向核心元素生成器暴露 Modal 容器组件专用映射。
+pub(crate) use modal_codegen::generate_modal;
 // 向核心元素生成器暴露 Tooltip 容器组件专用映射。
 pub(crate) use tooltip_codegen::generate_tooltip;
 // 向核心元素生成器暴露 Popover 容器组件专用映射。
