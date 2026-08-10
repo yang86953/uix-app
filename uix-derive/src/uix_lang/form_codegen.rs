@@ -8,10 +8,11 @@ use super::codegen::{apply_common_attributes, generate_button_with_group_positio
 // 引入 Form 语法树、表达式和值映射契约。
 use super::{
     Attribute, AttributeValue, Diagnostic, Element, Expression, ExpressionKind, Node,
-    generate_expression, generate_handler_expression, literal_string, rust_identifier,
+    boolean_value, generate_expression, generate_handler_expression, literal_string,
+    rust_identifier, string_value,
 };
 
-// 生成类型化 Form 与首批 FormInputItem 字段。
+// 生成类型化 Form 与已登记的文本、选择字段。
 pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic> {
     // Form 必须绑定业务模型 State。
     let model_attribute = required_attribute(element, "model")?;
@@ -52,19 +53,26 @@ pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic
             // 返回子树边界诊断。
             return Err(form_shape_diagnostic(element));
         };
-        // 字段必须位于提交按钮之前。
-        if child.name == "FormInputItem" {
+        // 已登记字段必须位于提交按钮之前。
+        if matches!(child.name.as_str(), "FormInputItem" | "FormSelectItem") {
             // 防止源码顺序被生成器重排。
             if submit_button.is_some() {
                 // 返回字段顺序诊断。
                 return Err(Diagnostic::new(
                     child.span,
-                    "FormInputItem 必须位于 submitForm Button 之前",
+                    format!("{} 必须位于 submitForm Button 之前", child.name),
                     "先声明全部字段，最后声明提交按钮",
                 ));
             }
-            // 生成字段链片段。
-            fields.push(generate_input_field(child)?);
+            // 按字段组件生成对应链片段。
+            fields.push(match child.name.as_str() {
+                // 文本字段映射到 FormInputItem。
+                "FormInputItem" => generate_input_field(child)?,
+                // 选择字段映射到 FormSelectItem。
+                "FormSelectItem" => generate_select_field(child)?,
+                // 前置匹配已穷尽登记字段。
+                _ => unreachable!("已登记 Form 字段分派必须穷尽"),
+            });
             // 继续处理下一节点。
             continue;
         }
@@ -79,7 +87,7 @@ pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic
         return Err(Diagnostic::new(
             child.span,
             format!("<Form> 直接子项 <{}> 尚未进入首批类型化映射", child.name),
-            "当前使用 FormInputItem 与一个 submitForm Button",
+            "当前使用 FormInputItem、FormSelectItem 与一个 submitForm Button",
         ));
     }
     // 至少一个字段才能形成类型化表单。
@@ -87,8 +95,8 @@ pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic
         // 返回空表单诊断。
         return Err(Diagnostic::new(
             element.span,
-            "<Form> 至少需要一个直接 FormInputItem",
-            "添加 <FormInputItem field=\"name\" label=\"姓名\" />",
+            "<Form> 至少需要一个直接类型化字段项",
+            "添加 FormInputItem 或 FormSelectItem 字段",
         ));
     }
     // 取出经过验证的提交按钮。
@@ -134,6 +142,19 @@ pub(crate) fn generate_orphan_form_input_item(
         element.span,
         "<FormInputItem> 只能作为 <Form> 的直接子项",
         "把 FormInputItem 放入绑定 model 的 Form 内",
+    ))
+}
+
+// 拒绝失去 Form 类型化上下文的选择字段项。
+pub(crate) fn generate_orphan_form_select_item(
+    // 接收越界选择字段项。
+    element: &Element,
+) -> Result<TokenStream, Diagnostic> {
+    // 返回父子归属诊断。
+    Err(Diagnostic::new(
+        element.span,
+        "<FormSelectItem> 只能作为 <Form> 的直接子项",
+        "把 FormSelectItem 放入绑定 model 的 Form 内",
     ))
 }
 
@@ -195,6 +216,119 @@ fn generate_input_field(element: &Element) -> Result<TokenStream, Diagnostic> {
     })
 }
 
+// 生成单个类型化选择字段链。
+fn generate_select_field(element: &Element) -> Result<TokenStream, Diagnostic> {
+    // 读取稳定字段 key。
+    let field_attribute = required_attribute(element, "field")?;
+    // 字段 key 必须是编译期字符串。
+    let field = literal_string(field_attribute, "FormSelectItem field")?;
+    // 验证字段可投影 Rust 成员。
+    let field_ident = rust_identifier(&field, field_attribute.span)?;
+    // 标签省略时沿用字段 key。
+    let label = find_attribute(element, "label")
+        // 显式标签必须是字符串。
+        .map(|attribute| literal_string(attribute, "FormSelectItem label"))
+        // 转置可选诊断。
+        .transpose()?
+        // 保持字段 key 回退行为。
+        .unwrap_or_else(|| field.clone());
+    // 选择字段必须显式提供候选集合。
+    let options_attribute = required_attribute(element, "options")?;
+    // 候选集合必须保留 Rust 侧类型。
+    let AttributeValue::Expression(options_expression) = &options_attribute.value else {
+        // 返回候选集合形状诊断。
+        return Err(Diagnostic::new(
+            options_attribute.span,
+            "FormSelectItem options 必须绑定可迭代字符串表达式",
+            "使用 options={level_options}",
+        ));
+    };
+    // 生成受限候选集合表达式。
+    let options = generate_expression(&options_expression.expression, None)?;
+    // 选择字段当前只登记 required 规则。
+    let required = parse_select_rules(element)?;
+    // 拒绝未知字段属性。
+    for attribute in &element.attributes {
+        // 只消费当前已登记选择字段属性。
+        if !matches!(
+            attribute.name.as_str(),
+            "field" | "label" | "options" | "rules" | "searchable" | "placeholder" | "disabled"
+        ) {
+            // 返回属性映射诊断。
+            return Err(Diagnostic::new(
+                attribute.span,
+                format!("FormSelectItem 属性 {} 尚无已登记映射", attribute.name),
+                "当前使用 field、label、options、rules、searchable、placeholder 与 disabled",
+            ));
+        }
+    }
+    // 选择字段项必须是叶节点。
+    if element
+        // 遍历全部直接子节点。
+        .children
+        // 获取只读迭代器。
+        .iter()
+        // 排版空白以外的节点均不合法。
+        .any(|child| !matches!(child, Node::Text(text) if text.value.trim().is_empty()))
+    {
+        // 返回叶节点诊断。
+        return Err(Diagnostic::new(
+            element.span,
+            "<FormSelectItem> 不接受子节点",
+            "使用自闭合 FormSelectItem",
+        ));
+    }
+    // 创建基础选择字段构建链。
+    let mut item = quote! {
+        ::uix::prelude::FormSelectItem::new(#field)
+            .label(#label)
+            .options(#options)
+            .required(#required)
+    };
+    // 可搜索状态接受布尔简写、字面量或表达式。
+    if let Some(attribute) = find_attribute(element, "searchable") {
+        // 生成统一布尔属性令牌。
+        let searchable = boolean_value(attribute)?;
+        // 运行时启用式构建器通过同类型分支保留 false 默认值。
+        item = quote! {{
+            // 确保基础字段项只求值一次。
+            let __uix_form_select_item = #item;
+            // 仅在配置为真时启用搜索能力。
+            if #searchable {
+                // 调用运行时搜索启用入口。
+                __uix_form_select_item.searchable()
+            } else {
+                // 保留默认非搜索字段项。
+                __uix_form_select_item
+            }
+        }};
+    }
+    // 占位文本接受字符串字面量或表达式。
+    if let Some(attribute) = find_attribute(element, "placeholder") {
+        // 生成统一字符串属性令牌。
+        let placeholder = string_value(attribute)?;
+        // 应用运行时占位文本构建器。
+        item = quote! { (#item).placeholder(#placeholder) };
+    }
+    // 禁用状态接受布尔简写、字面量或表达式。
+    if let Some(attribute) = find_attribute(element, "disabled") {
+        // 生成统一布尔属性令牌。
+        let disabled = boolean_value(attribute)?;
+        // 应用运行时禁用构建器。
+        item = quote! { (#item).disabled(#disabled) };
+    }
+    // 创建卫生模型访问器参数。
+    let model = Ident::new("__uix_form_model", Span::mixed_site());
+    // 生成字段投影和运行时字段配置。
+    Ok(quote! {
+        .field(
+            #field,
+            |#model| &mut #model.#field_ident,
+            #item,
+        )
+    })
+}
+
 // 解析逗号分隔的 required/email 规则。
 fn parse_rules(element: &Element) -> Result<(bool, bool), Diagnostic> {
     // 没有 rules 时返回空规则集合。
@@ -224,6 +358,28 @@ fn parse_rules(element: &Element) -> Result<(bool, bool), Diagnostic> {
     }
     // 返回确定规则集合。
     Ok((required, email))
+}
+
+// 解析 FormSelectItem 当前登记的 required 规则。
+fn parse_select_rules(element: &Element) -> Result<bool, Diagnostic> {
+    // 没有 rules 时保持非必填默认值。
+    let Some(attribute) = find_attribute(element, "rules") else {
+        // 返回关闭状态。
+        return Ok(false);
+    };
+    // 规则必须在编译期确定。
+    let rules = literal_string(attribute, "FormSelectItem rules")?;
+    // 选择字段当前只允许唯一 required 规则。
+    if rules.trim() == "required" {
+        // 返回已启用状态。
+        return Ok(true);
+    }
+    // 返回精确规则诊断。
+    Err(Diagnostic::new(
+        attribute.span,
+        format!("FormSelectItem rules 包含未登记或重复规则 {rules:?}"),
+        "当前只使用 required",
+    ))
 }
 
 // 生成提交按钮并消费 Form 上下文操作。
@@ -282,7 +438,7 @@ fn form_shape_diagnostic(element: &Element) -> Diagnostic {
     // 返回统一提交闭环建议。
     Diagnostic::new(
         element.span,
-        "<Form> 首批要求直接 FormInputItem 与唯一 submitForm Button",
+        "<Form> 要求直接类型化字段项与唯一 submitForm Button",
         "把字段放在前面，并以 <Button @click=\"submitForm\">提交</Button> 结束",
     )
 }

@@ -290,7 +290,9 @@ pub(crate) use time_picker_codegen::generate_time_picker;
 // 向核心元素生成器暴露 ColorPicker 专用映射。
 pub(crate) use color_picker_codegen::generate_color_picker;
 // 向核心元素生成器暴露 Form 与越界字段项映射。
-pub(crate) use form_codegen::{generate_form, generate_orphan_form_input_item};
+pub(crate) use form_codegen::{
+    generate_form, generate_orphan_form_input_item, generate_orphan_form_select_item,
+};
 // 向核心元素生成器暴露 FloatButton 专用映射。
 pub(crate) use float_button_codegen::generate_float_button;
 // 向核心元素生成器暴露布局组件专用映射。
