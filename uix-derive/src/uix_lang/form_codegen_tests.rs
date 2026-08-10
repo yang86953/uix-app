@@ -63,6 +63,27 @@ fn generates_typed_form_checkbox_item_contract() {
     assert!(snapshot.contains("required (true)") && snapshot.contains("disabled (locked)"));
 }
 
+// 验证 FormRadioItem 的类型化单选组生成契约。
+#[test]
+fn generates_typed_form_radio_item_contract() {
+    // 生成候选集合、分组名、必填规则和动态布局配置。
+    let snapshot = generate(r#"<Form model={profile} @submit="on_submit"><FormRadioItem field="channel" label="通知渠道" options={channel_options} rules="required" groupName="profile-channel" disabled={locked} vertical={stacked} /><Button @click="submitForm">提交</Button></Form>"#).expect("FormRadioItem 应生成");
+    // 核对 String 成员类型化投影。
+    assert!(snapshot.contains("& mut __uix_form_model . channel"));
+    // 核对公开单选组字段构造器。
+    assert!(snapshot.contains("FormRadioItem :: new (\"channel\")"));
+    // 核对独立标签和候选集合表达式。
+    assert!(snapshot.contains("label (\"通知渠道\")"));
+    // 核对候选集合配置。
+    assert!(snapshot.contains("options (channel_options)"));
+    // 核对分组名和必填规则。
+    assert!(snapshot.contains("group_name (\"profile-channel\")"));
+    // 核对必填和动态禁用配置。
+    assert!(snapshot.contains("required (true)") && snapshot.contains("disabled (locked)"));
+    // 核对纵向布局使用同类型条件分支。
+    assert!(snapshot.contains("if stacked") && snapshot.contains("vertical ()"));
+}
+
 // 验证缺失模型和错误提交入口。
 #[test]
 fn rejects_incomplete_form_contracts() {
@@ -110,4 +131,18 @@ fn rejects_invalid_form_field_shapes() {
         .expect_err("孤立复选字段");
     // 诊断必须说明直接子项边界。
     assert!(checkbox_orphan.message.contains("直接子项"));
+    // 单选组缺少候选集合必须失败。
+    let radio_options = generate(r#"<Form model={profile} @submit="save"><FormRadioItem field="channel" /><Button @click="submitForm">提交</Button></Form>"#).expect_err("单选组缺少 options");
+    // 诊断必须指出缺少 options。
+    assert!(radio_options.message.contains("options"));
+    // 单选组不得继承文本专用邮箱规则。
+    let radio_rule = generate(r#"<Form model={profile} @submit="save"><FormRadioItem field="channel" options={channels} rules="email" /><Button @click="submitForm">提交</Button></Form>"#).expect_err("单选组未知规则");
+    // 诊断必须包含具体非法规则。
+    assert!(radio_rule.message.contains("email"));
+    // 孤立单选组字段项必须失败。
+    let radio_orphan = generate(r#"<FormRadioItem field="channel" options={channels} />"#)
+        // 获取越界字段诊断。
+        .expect_err("孤立单选组字段");
+    // 诊断必须说明直接子项边界。
+    assert!(radio_orphan.message.contains("直接子项"));
 }

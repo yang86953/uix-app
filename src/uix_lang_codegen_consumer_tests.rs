@@ -19,6 +19,8 @@ struct ProfileForm {
     level: String,
     // 保存协议确认布尔字段。
     accepted: bool,
+    // 保存通知渠道单选组字段。
+    channel: String,
 }
 
 // 提供无事件参数的 Rust 侧回调。
@@ -354,14 +356,18 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
         level: "中级".to_string(),
         // 提供已勾选的协议确认状态。
         accepted: true,
+        // 提供已包含在单选组候选集合中的初始值。
+        channel: "邮件".to_string(),
     });
     // 提供 FormSelectItem 消费的字符串候选集合。
     let level_options = ["初级", "中级", "高级"];
+    // 提供 FormRadioItem 消费的字符串候选集合。
+    let channel_options = ["邮件", "短信"];
     // 提供返回类型化业务结果的提交回调。
     let on_profile_submit = |_profile: ProfileForm| Ok::<(), String>(());
     // 验证模型投影、规则和 submitForm 只依赖公开 prelude。
     let _form: ViewNode = crate::uix!(
-        r#"<Form model={profile} @submit="on_profile_submit"><FormInputItem field="email" label="邮箱" rules="required,email" /><FormSelectItem field="level" label="等级" options={level_options} rules="required" searchable placeholder="请选择" /><FormCheckboxItem field="accepted" label="协议确认" text="我已阅读并同意" rules="required" /><Button type="primary" @click="submitForm">提交</Button></Form>"#
+        r#"<Form model={profile} @submit="on_profile_submit"><FormInputItem field="email" label="邮箱" rules="required,email" /><FormSelectItem field="level" label="等级" options={level_options} rules="required" searchable placeholder="请选择" /><FormCheckboxItem field="accepted" label="协议确认" text="我已阅读并同意" rules="required" /><FormRadioItem field="channel" label="通知渠道" options={channel_options} rules="required" vertical /><Button type="primary" @click="submitForm">提交</Button></Form>"#
     );
 }
 

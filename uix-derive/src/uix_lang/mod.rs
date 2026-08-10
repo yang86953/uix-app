@@ -292,7 +292,7 @@ pub(crate) use color_picker_codegen::generate_color_picker;
 // 向核心元素生成器暴露 Form 与越界字段项映射。
 pub(crate) use form_codegen::{
     generate_form, generate_orphan_form_checkbox_item, generate_orphan_form_input_item,
-    generate_orphan_form_select_item,
+    generate_orphan_form_radio_item, generate_orphan_form_select_item,
 };
 // 向核心元素生成器暴露 FloatButton 专用映射。
 pub(crate) use float_button_codegen::generate_float_button;
