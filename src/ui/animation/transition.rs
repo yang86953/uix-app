@@ -122,6 +122,8 @@ impl AnimationConfig {
         self.duration
     }
 
+    // Drawer capability 启用时才保留其私有滑动距离配置入口。
+    #[cfg(feature = "feedback")]
     pub(crate) fn with_distance(mut self, distance: f32) -> Self {
         if matches!(
             self.kind,
@@ -201,20 +203,28 @@ fn placement_offset(placement: Placement, distance: f32) -> Point {
 pub mod presets {
     use super::*;
 
+    // Modal 组件属于 feedback capability。
+    #[cfg(feature = "feedback")]
     pub fn modal_enter() -> AnimationConfig {
         // Modal 默认瞬时出现；需要缩放进场时由调用方显式配置 duration。
         AnimationConfig::zoom_in(0.0)
     }
 
+    // Modal 退场预设只由 feedback capability 消费。
+    #[cfg(feature = "feedback")]
     pub fn modal_exit() -> AnimationConfig {
         AnimationConfig::zoom_out(0.2)
     }
 
+    // Drawer 组件属于 feedback capability。
+    #[cfg(feature = "feedback")]
     pub fn drawer_enter(placement: Placement) -> AnimationConfig {
         // Drawer 默认瞬时滑入到终态；需要过渡时由调用方显式配置 duration。
         AnimationConfig::slide_in(placement, 0.0).with_distance(180.0)
     }
 
+    // Drawer 退场预设只由 feedback capability 消费。
+    #[cfg(feature = "feedback")]
     pub fn drawer_exit(placement: Placement) -> AnimationConfig {
         AnimationConfig::slide_out(placement, 0.2).with_distance(180.0)
     }
@@ -326,6 +336,8 @@ impl TransitionPlayer {
         self.finished = false;
     }
 
+    // 只有 feedback 浮层布局需要观察动画端点几何。
+    #[cfg(feature = "feedback")]
     pub(crate) fn offset_endpoints(&self) -> (Point, Point) {
         self.offset_anim
             .as_ref()

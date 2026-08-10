@@ -5,6 +5,8 @@ use std::sync::Arc;
 
 use crate::core::ComponentId;
 use crate::ui::adapter::ViewAdapter;
+// 表格动态 renderer 返回持久组件节点时才需要该类型。
+#[cfg(feature = "table")]
 use crate::ui::component::widget::WidgetNode;
 use crate::ui::view::ViewNode;
 use crate::ui::virtualization::virtual_scroll::VirtualScrollRenderer;

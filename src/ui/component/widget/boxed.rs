@@ -481,6 +481,8 @@ impl BoxedWidget {
             .and_then(|r| r.children_clip(frame))
     }
     // 更新父布局为当前节点子树提供的可见片段。
+    // 该写入口只由 table 的跨单元格子布局消费。
+    #[cfg(feature = "table")]
     pub(crate) fn set_parent_clip_regions(&self, regions: Option<Vec<Rect>>) {
         // 用内部可变状态接收布局阶段生成的片段快照。
         *self.parent_clip_regions.borrow_mut() = regions;
