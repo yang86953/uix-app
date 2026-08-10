@@ -99,6 +99,21 @@ fn generates_typed_form_switch_item_contract() {
     assert!(snapshot.contains("required (true)") && snapshot.contains("disabled (locked)"));
 }
 
+// 验证 FormSliderItem 的类型化 f64 字段生成契约。
+#[test]
+fn generates_typed_form_slider_item_contract() {
+    // 生成独立标签、静态范围与动态步长。
+    let snapshot = generate(r#"<Form model={profile} @submit="on_submit"><FormSliderItem field="volume" label="音量" min="0" max="100" step={volume_step} /><Button @click="submitForm">提交</Button></Form>"#).expect("FormSliderItem 应生成");
+    // 核对 f64 成员类型化投影。
+    assert!(snapshot.contains("& mut __uix_form_model . volume"));
+    // 核对公开滑块字段构造器。
+    assert!(snapshot.contains("FormSliderItem :: new (\"volume\""));
+    // 核对闭区间两个静态端点。
+    assert!(snapshot.contains("0f64") && snapshot.contains("100f64"));
+    // 核对独立标签与动态步长。
+    assert!(snapshot.contains("label (\"音量\")") && snapshot.contains("step (volume_step)"));
+}
+
 // 验证缺失模型和错误提交入口。
 #[test]
 fn rejects_incomplete_form_contracts() {
@@ -178,4 +193,26 @@ fn rejects_invalid_form_field_shapes() {
         .expect_err("孤立开关字段");
     // 诊断必须说明直接子项边界。
     assert!(switch_orphan.message.contains("直接子项"));
+    // 反向滑块范围必须在编译期失败。
+    let slider_range = generate(r#"<Form model={profile} @submit="save"><FormSliderItem field="volume" min="10" max="1" /><Button @click="submitForm">提交</Button></Form>"#).expect_err("滑块字段反向范围");
+    // 诊断必须说明 min/max 顺序。
+    assert!(slider_range.message.contains("不能大于"));
+    // 非正滑块步长必须在编译期失败。
+    let slider_step = generate(r#"<Form model={profile} @submit="save"><FormSliderItem field="volume" step="0" /><Button @click="submitForm">提交</Button></Form>"#).expect_err("滑块字段零步长");
+    // 诊断必须说明正数约束。
+    assert!(slider_step.message.contains("大于 0"));
+    // 滑块字段不得继承无意义的必填规则。
+    let slider_rule = generate(r#"<Form model={profile} @submit="save"><FormSliderItem field="volume" rules="required" /><Button @click="submitForm">提交</Button></Form>"#).expect_err("滑块字段未知规则");
+    // 诊断必须点名未登记属性。
+    assert!(slider_rule.message.contains("rules"));
+    // 滑块字段必须保持叶节点形状。
+    let slider_child = generate(r#"<Form model={profile} @submit="save"><FormSliderItem field="volume"><Text>非法</Text></FormSliderItem><Button @click="submitForm">提交</Button></Form>"#).expect_err("滑块字段子节点");
+    // 诊断必须指出滑块字段不接受子节点。
+    assert!(slider_child.message.contains("不接受子节点"));
+    // 孤立滑块字段项必须失败。
+    let slider_orphan = generate(r#"<FormSliderItem field="volume" />"#)
+        // 获取越界字段诊断。
+        .expect_err("孤立滑块字段");
+    // 诊断必须说明直接子项边界。
+    assert!(slider_orphan.message.contains("直接子项"));
 }

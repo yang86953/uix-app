@@ -5,6 +5,8 @@ use quote::quote;
 
 // 引入公共属性与按钮生成边界。
 use super::codegen::{apply_common_attributes, generate_button_with_group_position};
+// 引入独立的类型化滑块字段生成边界。
+use super::form_slider_codegen::generate_form_slider_field;
 // 引入 Form 语法树、表达式和值映射契约。
 use super::{
     Attribute, AttributeValue, Diagnostic, Element, Expression, ExpressionKind, Node,
@@ -61,6 +63,7 @@ pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic
                 | "FormCheckboxItem"
                 | "FormRadioItem"
                 | "FormSwitchItem"
+                | "FormSliderItem"
         ) {
             // 防止源码顺序被生成器重排。
             if submit_button.is_some() {
@@ -83,6 +86,8 @@ pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic
                 "FormRadioItem" => generate_radio_field(child)?,
                 // 开关字段映射到 FormSwitchItem。
                 "FormSwitchItem" => generate_switch_field(child)?,
+                // f64 数值字段映射到 FormSliderItem。
+                "FormSliderItem" => generate_form_slider_field(child)?,
                 // 前置匹配已穷尽登记字段。
                 _ => unreachable!("已登记 Form 字段分派必须穷尽"),
             });

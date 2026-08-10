@@ -24,7 +24,7 @@
 
 ## 组件：field adapters
 
-适配器把组件 Change/FocusOut、外部 `State<T>`、字段值和 `FocusHandle` 组合起来。提交失败只登记首错的 focus-and-reveal 命令，由目标窗口下一 UI 轮次完成焦点和最近 viewport 的最小滚动。
+适配器把组件 Change/FocusOut、外部 `State<T>`、字段值和 `FocusHandle` 组合起来。类型化滑块适配器只投影 `State<f64>`、范围、步长与标签，校验、重置和提交写回仍由 `FormModel` 统一拥有。提交失败只登记首错的 focus-and-reveal 命令，由目标窗口下一 UI 轮次完成焦点和最近 viewport 的最小滚动。
 
 ## 组件：FormListModel
 
