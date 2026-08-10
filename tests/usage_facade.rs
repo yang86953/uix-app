@@ -67,24 +67,36 @@ fn platform_convenience_queries_are_public_surface() {
     // 文档示例还必须通过公开访问器读取物理内存总量。
     let _: fn(&uix::platform::hardware::MemoryInfo) -> u64 =
         uix::platform::hardware::MemoryInfo::total_bytes;
-    // 以与文档相同的公开类型组合系统信息文本，不创建任何平台资源。
-    let format_system_info =
-        |os: &uix::platform::hardware::OsInfo,
-         cpu: &uix::platform::hardware::CpuInfo,
-         memory: &uix::platform::hardware::MemoryInfo| {
-            // 把公开字节值换算为文档展示使用的整数 MiB。
-            let total_memory_mib = memory.total_bytes() / (1024 * 1024);
-            // 编译完整格式化表达式，锁定示例使用的访问器组合。
-            format!(
-                "{} · {} · {} 核 · {} MiB 内存",
-                os.name(),
-                cpu.architecture(),
-                cpu.logical_cores(),
-                total_memory_mib
-            )
-        };
-    // 保留闭包即可触发外部 integration consumer 的类型检查。
-    let _ = format_system_info;
+    // 编译完整文档函数，但不调用闭包或创建真实 Platform 资源。
+    let show_hardware = |platform: &uix::platform::Platform, status: &State<String>| {
+        // 同时查询三个独立平台结果，保持文档声明的失败边界。
+        match (
+            platform.os_info(),
+            platform.cpu_info(),
+            platform.memory_info(),
+        ) {
+            // 三项成功时只通过公开访问器生成展示文本。
+            (Ok(os), Ok(cpu), Ok(memory)) => {
+                // 把公开字节值换算为文档展示使用的整数 MiB。
+                let total_memory_mib = memory.total_bytes() / (1024 * 1024);
+                // 编译完整格式化与状态写入表达式。
+                status.set(format!(
+                    "{} · {} · {} 核 · {} MiB 内存",
+                    os.name(),
+                    cpu.architecture(),
+                    cpu.logical_cores(),
+                    total_memory_mib
+                ));
+            }
+            // 任一查询失败都必须穷尽匹配并展示对应 typed Error。
+            (Err(error), _, _) | (_, Err(error), _) | (_, _, Err(error)) => {
+                // 使用公开诊断摘要更新状态，不泄漏平台内部错误类型。
+                status.set(format!("无法读取系统信息：{}", error.short_what()));
+            }
+        }
+    };
+    // 保留完整闭包即可触发外部 integration consumer 的类型检查。
+    let _ = show_hardware;
 }
 
 #[test]
