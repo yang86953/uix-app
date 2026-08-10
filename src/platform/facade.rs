@@ -1,3 +1,6 @@
+// 在 feature 裁剪后拒绝不可达收尾和仅在其他 backend 使用的绑定。
+#![deny(unreachable_code, unused_imports, unused_variables)]
+
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -6,7 +9,11 @@ use std::thread::{self, ThreadId};
 
 use crate::core::{Errc, Error, Result};
 
-use super::graphics::{GpuAdapterInfo, GpuDeviceType, GraphicsBackend};
+// 引入跨 feature 保持公开的 adapter 描述与 backend 身份。
+use super::graphics::{GpuAdapterInfo, GraphicsBackend};
+// 仅 Windows D3D11 原生枚举需要设备类别。
+#[cfg(all(windows, feature = "d3d11"))]
+use super::graphics::GpuDeviceType;
 use super::hardware::{CpuInfo, DisplayInfo, MemoryInfo, OsInfo};
 use super::imp;
 use super::services::{SpecialDir, SystemNotification};
@@ -121,22 +128,8 @@ impl Platform {
     /// 按具体图形 API 同步枚举 GPU adapter。
     pub fn gpu_adapters(&self, backend: GraphicsBackend) -> Result<Box<[GpuAdapterInfo]>> {
         self.ensure_owner("Platform::gpu_adapters")?;
-        // 显式标注返回元素类型：d3d11 feature 未启用时 match 无产生值分支，
-        // 需要类型标注才能推断 `values`（否则 E0282）。
-        let values: Vec<GpuAdapterInfo> = match backend {
-            #[cfg(all(windows, feature = "d3d11"))]
-            GraphicsBackend::Direct3D11 => enumerate_dxgi_adapters()?,
-            // 仅在存在其他 feature 或非 Windows D3D11 环境时保留兼容失败分支。
-            #[cfg(any(
-                not(all(windows, feature = "d3d11")),
-                feature = "vulkan",
-                feature = "d3d12",
-                feature = "metal",
-                feature = "opengles"
-            ))]
-            _ => return Err(not_implemented_backend(backend)),
-        };
-        Ok(values.into_boxed_slice())
+        // 将 backend 分派交给无状态组件，便于按 feature 直接验证契约。
+        enumerate_gpu_adapters(backend)
     }
 
     /// 查询 OS-known user directory；不会创建目录。
@@ -172,6 +165,25 @@ impl Platform {
                 format!("{operation} must run on the Platform owner thread"),
             ))
         }
+    }
+}
+
+// 按已编译 backend 直接返回枚举结果或类型化的不支持错误。
+fn enumerate_gpu_adapters(backend: GraphicsBackend) -> Result<Box<[GpuAdapterInfo]>> {
+    // 直接返回 feature 对应结果，避免无成功分支时保留幽灵值。
+    match backend {
+        // Windows D3D11 继续使用 DXGI，并把临时 Vec 转为 owned slice。
+        #[cfg(all(windows, feature = "d3d11"))]
+        GraphicsBackend::Direct3D11 => Ok(enumerate_dxgi_adapters()?.into_boxed_slice()),
+        // 其他已启用 backend 保持类型化的未实现契约。
+        #[cfg(any(
+            not(all(windows, feature = "d3d11")),
+            feature = "vulkan",
+            feature = "d3d12",
+            feature = "metal",
+            feature = "opengles"
+        ))]
+        _ => Err(not_implemented_backend(backend)),
     }
 }
 
@@ -253,7 +265,8 @@ fn enumerate_dxgi_adapters() -> Result<Vec<GpuAdapterInfo>, Error> {
             )
         })?;
         // DXGI 无法直接区分集成/独显；仅识别软件适配器（WARP/基本显示）。
-        let software = desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0 || desc.VendorId == 0x1414;
+        let software =
+            desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0 || desc.VendorId == 0x1414;
         adapters.push(GpuAdapterInfo::new(
             GraphicsBackend::Direct3D11,
             if software {
@@ -294,4 +307,20 @@ fn normalize_text(value: Option<String>) -> Option<String> {
 
 fn non_empty(value: String) -> Option<String> {
     (!value.trim().is_empty()).then_some(value)
+}
+
+// 仅在纯 OpenGL ES 构建中验证兼容失败分支，避免触发真实平台资源。
+#[cfg(all(test, feature = "opengles", not(feature = "d3d11")))]
+mod tests {
+    // 引入本模块私有分派组件和公开错误码。
+    use super::{Errc, GraphicsBackend, enumerate_gpu_adapters};
+
+    // 纯 OpenGL ES 构建必须返回稳定的类型化未实现错误。
+    #[test]
+    fn opengles_only_adapter_enumeration_is_typed_not_implemented() {
+        // 调用无状态分派组件，不创建窗口、设备或 Platform 单例。
+        let result = enumerate_gpu_adapters(GraphicsBackend::OpenGlEs);
+        // 同时约束失败类型和禁止伪造空成功结果。
+        assert!(matches!(result, Err(error) if error.code() == Errc::NotImplemented));
+    }
 }
