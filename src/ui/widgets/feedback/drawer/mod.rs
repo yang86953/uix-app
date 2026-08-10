@@ -8,7 +8,8 @@ use crate::ui::animation::{presets, AnimationConfig, TransitionPlayer};
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::widget::WidgetCore;
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, MouseButton, SystemEvent, WidgetTree};
+// 引入受控状态句柄与 Drawer 既有事件、树契约。
+use crate::ui::{EventResult, MouseButton, State, SystemEvent, WidgetTree};
 
 mod methods;
 
@@ -27,6 +28,30 @@ enum DrawerPointerTarget {
     Mask,
 }
 
+// 保存 Drawer 受控打开状态的唯一外部事实源句柄。
+pub(crate) struct ControlledDrawerOpen {
+    // 克隆 State 句柄，不复制其中的布尔事实。
+    state: State<bool>,
+}
+
+// 为受控句柄提供窄构造与读取契约。
+impl ControlledDrawerOpen {
+    // 从声明端状态建立共享句柄。
+    fn new(state: &State<bool>) -> Self {
+        // 克隆共享句柄以跨声明重建保留同一事实源。
+        Self {
+            // 保存共享状态句柄。
+            state: state.clone(),
+        }
+    }
+
+    // 读取声明端当前期望的打开状态。
+    fn want_open(&self) -> bool {
+        // 返回 State 中的唯一业务事实。
+        self.state.get()
+    }
+}
+
 component! {
     /// Sliding drawer panel.
     pub struct Drawer {
@@ -43,6 +68,8 @@ component! {
         extra: String,
         enter_animation: Option<AnimationConfig>,
         leave_animation: Option<AnimationConfig>,
+        // 保存可选受控打开绑定，生命周期仍由 Drawer 自身拥有。
+        controlled: Option<ControlledDrawerOpen>,
         pub(crate) transition: TransitionPlayer,
         closing: bool,
         pub(crate) transition_dirty: bool,
@@ -85,6 +112,13 @@ component! {
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        // 离场期间吞掉输入，防止关闭动作重入并重新启动动画。
+        if self.closing {
+            // 清理残留按压状态并保持当前离场生命周期。
+            self.cancel_interaction();
+            // 覆盖层离场时继续阻断下层输入。
+            return EventResult::Handled;
+        }
         if !self.is_present() {
             let trigger = self.trigger_rect_local();
             return match event {
@@ -458,6 +492,8 @@ component! {
     }
 
     update_animation => (&mut self, dt: f64) -> bool {
+        // 每帧先把外部受控事实同步到 Drawer 的唯一运行生命周期。
+        self.controlled_sync();
         if !self.is_present() || self.transition.finished {
             self.transition_dirty = false;
             return false;

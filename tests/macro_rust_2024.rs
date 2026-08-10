@@ -449,6 +449,27 @@ fn public_uix_macro_compiles_modal() {
     // 编译成功即证明 State<bool>、String 借用、事件与有序 View 子树契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 Drawer 受控状态、几何与有序内容子树。
+#[test]
+// 声明 Drawer 外部消费编译测试。
+fn public_uix_macro_compiles_drawer() {
+    // 创建声明端 Drawer 唯一打开状态源。
+    let drawer_open = State::new(const { true });
+    // 使用 Rust 2024 const 块产生动态面板宽度。
+    let drawer_width = const { 420.0_f32 };
+    // 使用 Rust 2024 const 块产生条件内容。
+    let show_drawer_extra = const { true };
+    // 构造由 For 控制流按源码顺序消费的内容文本。
+    let drawer_items = ["第一项", "第二项"];
+    // 让过程宏生成公开 Drawer、底部方向、动态宽度与完整内容子树。
+    let _view: ViewNode = uix::uix!(
+        r#"<Drawer open={drawer_open} placement="bottom" width={drawer_width} automationId="settings-drawer"><Text>正文</Text><If {show_drawer_extra}><Text>补充</Text></If><For {item} in {drawer_items}><Text>{item}</Text></For></Drawer>"#
+    );
+    // 宏展开只克隆状态句柄，调用方仍可读取原 State。
+    assert!(drawer_open.get());
+    // 编译成功即证明 State<bool>、f32、方向与有序 View 子树契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译 Tooltip 动态文字与唯一触发子树。
 #[test]
 // 声明 Tooltip 外部消费编译测试。

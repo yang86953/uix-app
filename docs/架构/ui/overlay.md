@@ -58,6 +58,8 @@
 
 Modal 的 `State<bool>` 是受控显隐的唯一事实源；组件自身独占进入、离场、OverlayStack entry、焦点恢复、操作命中与绘制几何。确定与取消只作为实例持有的同步窄回调存在，不引入全局服务或 EventBus；确定按钮和 Enter / Space 形成确认入口，取消按钮、标题栏关闭、可关闭遮罩与 Escape 形成取消入口，任一有效操作都只回调一次、写回 `false` 并立即停止后续交互。
 
+Drawer 遵守同一受控事实源边界：可选 `State<bool>` 只保存业务显隐事实，组件独占 placement、面板尺寸、OverlayStack entry、进退场、布局、命中与输入。外部状态变化由动画帧同步到组件生命周期；用户关闭只写回一次 `false`，离场期间吞掉输入且重复关闭不重启动画。该闭环是组件内同步契约，不引入 EventBus、全局服务或后台线程。
+
 ## enter / leave
 
 entry membership 改变时同步 OverlayStack。进出场只在 TransitionPlayer active 时登记动画帧；holding 阶段用 timer deadline 或纯静态状态，不维持固定 16ms tick。

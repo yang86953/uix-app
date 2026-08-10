@@ -19,6 +19,8 @@ impl Drawer {
             extra: String::new(),
             enter_animation: None,
             leave_animation: None,
+            // 默认不绑定外部状态，保留现有非受控构造契约。
+            controlled: None,
             transition: TransitionPlayer::new(presets::drawer_enter(
                 Self::animation_placement_for(DrawerPlacement::Right),
             )),
@@ -44,6 +46,27 @@ impl Drawer {
 
     pub fn show(mut self) -> Self {
         self.open();
+        self
+    }
+
+    // 绑定声明端唯一的打开状态事实源。
+    pub fn controlled_open(mut self, state: &State<bool>) -> Self {
+        // 保存共享状态句柄供每帧同步和用户关闭写回。
+        self.controlled = Some(ControlledDrawerOpen::new(state));
+        // 初始真值直接参与首帧呈现。
+        if state.get() {
+            // 只设置初始呈现事实，沿用构造时的进场动画。
+            self.visible = true;
+        }
+        // 返回配置完成的 Drawer。
+        self
+    }
+
+    // 设置横向 Drawer 的面板宽度。
+    pub fn width(mut self, width: f32) -> Self {
+        // 统一归一化非有限值和负值。
+        self.width = Self::normalize_dimension(width);
+        // 返回配置完成的 Drawer。
         self
     }
 
@@ -129,25 +152,83 @@ impl Drawer {
     }
 
     pub fn open(&mut self) {
+        // 记录调用前是否已处于稳定打开态，保证状态写回幂等。
+        let was_open = self.visible && !self.closing;
+        // 稳定打开态不重复启动进场动画。
+        if was_open {
+            // 保持当前动画与交互状态。
+            return;
+        }
+        // 进入 Drawer 自身拥有的唯一打开转换。
+        self.do_open();
+        // 受控实例把用户或公开入口确认的打开事实写回 State。
+        if let Some(controlled) = &self.controlled {
+            // 写回唯一业务事实源。
+            controlled.state.set(true);
+        }
+    }
+
+    // 请求关闭 Drawer，并在受控模式下幂等写回业务状态。
+    pub fn close(&mut self) {
+        // 只有稳定打开态可以启动一次离场。
+        let was_open = self.visible && !self.closing;
+        // 已关闭或正在离场时不得重启关闭动画。
+        if !was_open {
+            // 完全关闭时清理可能残留的交互状态。
+            if !self.is_present() {
+                // 取消不可见触发器上的残留按压。
+                self.cancel_interaction();
+            }
+            // 保持既有关闭或离场状态。
+            return;
+        }
+        // 进入 Drawer 自身拥有的唯一关闭转换。
+        self.do_close();
+        // 受控实例把用户关闭事实写回 State。
+        if let Some(controlled) = &self.controlled {
+            // 写回唯一业务事实源，重复关闭不会再次执行。
+            controlled.state.set(false);
+        }
+    }
+
+    // 执行不写回外部状态的内部打开转换。
+    fn do_open(&mut self) {
+        // 清理上一生命周期遗留的输入状态。
         self.cancel_interaction();
+        // 标记稳定打开。
         self.visible = true;
+        // 取消可能进行中的离场。
         self.closing = false;
+        // 从当前 placement 重启进场动画。
         self.restart_enter_transition();
+        // 请求布局重新登记覆盖层与内容区域。
         self.layout_requested.set(true);
     }
 
-    pub fn close(&mut self) {
+    // 执行不写回外部状态的内部关闭转换。
+    fn do_close(&mut self) {
+        // 清理关闭前的输入状态。
         self.cancel_interaction();
+        // 防御内部重复调用，不重启离场动画。
         if !self.is_present() {
+            // 保持完全关闭。
             self.visible = false;
+            // 清除离场标记。
             self.closing = false;
+            // 清除动画脏标记。
             self.transition_dirty = false;
+            // 结束内部关闭路径。
             return;
         }
+        // 关闭稳定可见性，但在离场完成前保留呈现资格。
         self.visible = false;
+        // 标记进入离场。
         self.closing = true;
+        // 使用当前 placement 和声明动画建立唯一离场播放器。
         self.transition = TransitionPlayer::new(self.resolved_leave_animation());
+        // 标记动画区域需要重绘。
         self.transition_dirty = true;
+        // 请求布局继续保留覆盖层直到离场完成。
         self.layout_requested.set(true);
     }
 
@@ -163,6 +244,28 @@ impl Drawer {
         self.visible || self.closing
     }
 
+    // 每帧把受控 State 同步到 Drawer 自身拥有的进退场生命周期。
+    pub(crate) fn controlled_sync(&mut self) {
+        // 只处理显式受控实例。
+        if let Some(controlled) = &self.controlled {
+            // 读取声明端当前期望值。
+            let want_open = controlled.want_open();
+            // 稳定打开态才算已经满足真值。
+            let is_open = self.visible && !self.closing;
+            // 仅在事实不一致时执行生命周期转换。
+            if want_open != is_open {
+                // 外部真值允许取消离场并重新打开。
+                if want_open {
+                    // 内部同步不反向写回同一 State。
+                    self.do_open();
+                } else {
+                    // 外部假值走正常离场但不重复写回。
+                    self.do_close();
+                }
+            }
+        }
+    }
+
     pub(crate) fn sync_from(&mut self, next: Self) {
         // 记录声明式可见性变化，避免关闭动画期间每次重建都重启离场。
         let visibility_changed = self.visible != next.visible;
@@ -171,10 +274,10 @@ impl Drawer {
             // 声明式打开需要重置关闭状态并启动进入动画。
             if next.visible {
                 // 复用正式打开路径，确保 present、transition 和布局请求一致。
-                self.open();
+                self.do_open();
             } else {
                 // 复用正式关闭路径，确保离场动画只启动一次。
-                self.close();
+                self.do_close();
             }
         }
         let interaction_geometry_changed = self.width != next.width
@@ -192,6 +295,11 @@ impl Drawer {
         self.mask = next.mask;
         self.footer_visible = next.footer_visible;
         self.extra = next.extra;
+        // 声明重建提供新绑定时替换当前受控句柄。
+        if next.controlled.is_some() {
+            // 采用新声明指向的唯一 State 事实源。
+            self.controlled = next.controlled;
+        }
         self.enter_animation = next.enter_animation;
         self.leave_animation = next.leave_animation;
         if interaction_geometry_changed {
@@ -438,8 +546,131 @@ impl Drawer {
 
 #[cfg(test)]
 mod tests {
+    // 引入原子计数器验证受控写回次数。
+    use std::sync::Arc;
+    // 引入宽松内存序与原子无符号计数器。
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // 引入被测 Drawer 组件。
     use super::Drawer;
+    // 引入受控状态公开契约。
+    use crate::ui::State;
     use crate::ui::component::traits::WidgetAnimation;
+
+    // 验证外部状态能驱动 Drawer 的完整进退场。
+    #[test]
+    // 声明受控状态同步测试。
+    fn controlled_drawer_follows_external_state() {
+        // 创建默认关闭的唯一业务状态源。
+        let state = State::new(false);
+        // 构造绑定该状态的 Drawer。
+        let mut drawer = Drawer::new("").controlled_open(&state);
+        // 初始假值不得呈现。
+        assert!(!drawer.is_present());
+
+        // 外部把业务事实切换为打开。
+        state.set(true);
+        // 下一动画帧同步受控状态。
+        drawer.update_animation(0.016);
+        // Drawer 应进入稳定打开态。
+        assert!(drawer.is_visible());
+
+        // 外部把业务事实切换为关闭。
+        state.set(false);
+        // 下一动画帧启动正常离场。
+        drawer.update_animation(0.016);
+        // 稳定可见性应立即关闭。
+        assert!(!drawer.is_visible());
+        // 离场期间仍保留呈现资格。
+        assert!(drawer.is_present());
+        // 推进足够时间完成离场。
+        drawer.update_animation(10.0);
+        // 离场完成后释放呈现资格。
+        assert!(!drawer.is_present());
+    }
+
+    // 验证用户关闭只写回一次且离场不能重入。
+    #[test]
+    // 声明关闭写回幂等性测试。
+    fn controlled_user_close_writes_false_once() {
+        // 创建初始打开的唯一业务状态源。
+        let state = State::new(true);
+        // 创建线程安全写回计数器。
+        let writes = Arc::new(AtomicUsize::new(0));
+        // 克隆计数器供 State 观察器持有。
+        let observed_writes = writes.clone();
+        // 监听每次真实 State::set。
+        state.watch(move |_| {
+            // 记录受控状态写入次数。
+            observed_writes.fetch_add(1, Ordering::Relaxed);
+        });
+        // 构造初始呈现的受控 Drawer。
+        let mut drawer = Drawer::new("").controlled_open(&state);
+
+        // 用户路径请求关闭。
+        drawer.close();
+        // 离场期间重复关闭不得重启动画或再次写回。
+        drawer.close();
+        // 受控同步读取已写回的 false，不得形成反馈循环。
+        drawer.update_animation(0.016);
+        // 唯一业务状态应已经关闭。
+        assert!(!state.get());
+        // 整个关闭序列只允许一次写回。
+        assert_eq!(writes.load(Ordering::Relaxed), 1);
+        // 推进足够时间完成离场。
+        drawer.update_animation(10.0);
+        // Drawer 应完全退出呈现。
+        assert!(!drawer.is_present());
+    }
+
+    // 验证声明重建替换绑定时不会写入旧 State。
+    #[test]
+    // 声明受控绑定 reconcile 测试。
+    fn sync_from_adopts_new_controlled_state_without_old_write_back() {
+        // 创建旧声明持有的打开状态。
+        let old_state = State::new(true);
+        // 创建新声明持有的关闭状态。
+        let new_state = State::new(false);
+        // 创建旧状态写入计数器。
+        let old_writes = Arc::new(AtomicUsize::new(0));
+        // 克隆计数器供观察器持有。
+        let observed_old_writes = old_writes.clone();
+        // 监听旧状态是否被错误写回。
+        old_state.watch(move |_| {
+            // 记录旧状态的每次写入。
+            observed_old_writes.fetch_add(1, Ordering::Relaxed);
+        });
+        // 构造使用旧状态的运行节点。
+        let mut drawer = Drawer::new("").controlled_open(&old_state);
+        // 构造使用新状态的下一声明。
+        let next = Drawer::new("").controlled_open(&new_state);
+
+        // 同步声明应走内部离场并替换状态句柄。
+        drawer.sync_from(next);
+        // 旧状态不得因 reconcile 被组件反向修改。
+        assert!(old_state.get());
+        // 旧状态不得收到任何写入。
+        assert_eq!(old_writes.load(Ordering::Relaxed), 0);
+
+        // 新声明把期望值切换为打开。
+        new_state.set(true);
+        // 下一动画帧必须从新绑定读取事实。
+        drawer.update_animation(0.016);
+        // Drawer 应重新进入稳定打开态。
+        assert!(drawer.is_visible());
+    }
+
+    // 验证宽度构建器复用统一尺寸归一化。
+    #[test]
+    // 声明宽度边界测试。
+    fn width_builder_normalizes_invalid_dimensions() {
+        // 正数宽度应原样保存。
+        assert_eq!(Drawer::new("").width(420.0).width, 420.0);
+        // 负数宽度应归一化为零。
+        assert_eq!(Drawer::new("").width(-1.0).width, 0.0);
+        // 非有限宽度应归一化为零。
+        assert_eq!(Drawer::new("").width(f32::NAN).width, 0.0);
+    }
 
     #[test]
     fn declarative_visibility_sync_updates_runtime_lifecycle() {
