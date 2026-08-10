@@ -162,6 +162,8 @@ class InternalReleaseContractTests(unittest.TestCase):
         cases = {
             # 加入父目录穿越条目。
             "traversal": (entries + [("../escape.txt", b"escape")], False),
+            # 加入带盘符的绝对路径条目。
+            "absolute": (entries + [("C:/escape.txt", b"escape")], False),
             # 反斜杠用例先创建规范 ZIP，再等长改写原始名称。
             "backslash": (entries, True),
         }
@@ -180,7 +182,12 @@ class InternalReleaseContractTests(unittest.TestCase):
                 # 非规范路径必须失败。
                 self.assertNotEqual(result.returncode, 0)
                 # 失败必须来自路径门禁。
-                self.assertRegex(result.stdout + result.stderr, "unsafe path segment|not canonical")
+                self.assertRegex(
+                    # 合并 PowerShell 的标准输出与错误输出。
+                    result.stdout + result.stderr,
+                    # 接受三种明确路径拒绝分类。
+                    "unsafe path segment|not canonical|entry is rooted",
+                )
 
     # 验证仅大小写不同的重复条目也会失败。
     def test_rejects_case_insensitive_duplicate_entry(self) -> None:
@@ -211,6 +218,43 @@ class InternalReleaseContractTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         # 失败必须定位到内容摘要。
         self.assertIn("hash mismatch", result.stdout + result.stderr)
+
+    # 验证清单行数与语法必须同时完整。
+    def test_rejects_incomplete_and_malformed_hash_manifest(self) -> None:
+        # 构造合法基线条目。
+        entries = self.valid_entries()
+        # 保存合法清单字节。
+        valid_manifest = entries[-1][1]
+        # 按保留换行的方式拆分七行清单。
+        manifest_lines = valid_manifest.splitlines(keepends=True)
+        # 分别构造缺少末项与分隔符错误的清单。
+        cases = {
+            # 删除最后一个 payload 摘要。
+            "incomplete": b"".join(manifest_lines[:-1]),
+            # 把首行两个空格分隔改成一个空格。
+            "malformed": valid_manifest.replace(b"  ", b" ", 1),
+        }
+        # 逐项验证两类清单漂移。
+        for case, manifest in cases.items():
+            # 让失败名称进入子测试诊断。
+            with self.subTest(case=case):
+                # 复制基线条目避免跨子测试共享修改。
+                case_entries = list(entries)
+                # 只替换清单内容，保留八项包结构。
+                case_entries[-1] = ("SHA256SUMS.txt", manifest)
+                # 写入当前非法 fixture。
+                path = self.write_zip(f"{case}.zip", case_entries)
+                # 执行真实校验器。
+                result = self.run_verifier(path)
+                # 不完整或格式错误清单必须失败。
+                self.assertNotEqual(result.returncode, 0)
+                # 失败必须来自清单行数或语法门禁。
+                self.assertRegex(
+                    # 合并 PowerShell 的标准输出与错误输出。
+                    result.stdout + result.stderr,
+                    # 接受两种明确清单拒绝分类。
+                    "hash line count mismatch|hash line is invalid",
+                )
 
 
 # 允许直接运行当前测试文件。
