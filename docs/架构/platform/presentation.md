@@ -36,6 +36,8 @@
 >
 > **逐图元绘制边界**：`IGraphicsContext` 不再声明 solid/stroke rect、glyph、linear/radial gradient、sector、solid mesh、box shadow 或 image blit 等 `draw_*` 方法，owner-thread wrapper 与各原生 context 也不再转发这些高层 batch。D3D11/OpenGL ES 对应的无消费者 shader、buffer、atlas 与图片上传 owner 已物理删除，D3D12 的测试期逐 UI raster pipeline 也已删除；adapter 仅保留薄 RHI packet 所需的固定 shader 与编码。`NativeRasterCaps` 是 graphics backend 从 `GraphicsCapabilities` 派生的 renderer 投影，只保留 retained framebuffer 与 RHI Additive 两项事实；逐图元 pipeline 是否可用由 registry 的固定 RHI probe 在首帧前一次性验证。
 >
+> `GpuSolidRect`、`GpuGlyphBlit` 等九个 Canvas2D 原语 DTO 由 graphics backend 私有拥有；`native/present` 不再声明或重导出它们。platform 只接收通用 thin RHI 的资源、pipeline、pass 与 `DrawPacket`，不能重新取得 renderer 队列载荷所有权。
+>
 > **按 recipe 呈现边界**：`PresentFrame` 载荷并集与 `IGraphicsContext::present`、`present_pixels`、`present_image` 已物理移除。CPU × PixelUpload 只能经 `PixelUploadSurface::present_pixels` 上传并提交 retained pixels；D3D11 与 WGL/EGL 生产 GPU backend 的最终提交只由 thin RHI `GraphicsSurface::present` 持有。零构造调用的 Wayland `GpuPresenter`、`SwapchainPresentation` 及其 thread-bound/EGL 平行实现已经删除；D3D12 测试 context 与 fake 也不伪造无消费者的兼容 present。
 >
 > **构造生命周期边界**：`IGraphicsContext` 不再声明二阶段 `initialize`，thread-bound wrapper 与 D3D11/D3D12/Vulkan/Metal/WGL/EGL 实现也不再转发或提供空操作。registry 只接收已经完成 surface 绑定和初始尺寸归一化的 context；构造失败直接返回 typed error，成功值可立即接受 resize、RHI probe 与呈现。仓库内部零调用的单 `GraphicsApi` raw-surface 工厂链、backend-only 候选投影与自动创建空故障队列的 platform/recipe 构造入口已经删除，生产构造与恢复只通过完整 `GraphicsRecipe` 和运行时 `PendingFailureQueue` 进入精确 registry 行。

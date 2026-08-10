@@ -193,12 +193,12 @@ class GraphicsTeardownContractTests(unittest.TestCase):
 
     # 校验纹理 RHI ABI 已经使用设备空间四角而不是轴对齐矩形。
     def test_affine_textured_quad_contract(self) -> None:
-        # 读取通用图片 payload、lowering 和混合顶点编码。
-        present = (ROOT / "src/native/present/mod.rs").read_text(encoding="utf-8")
+        # 读取 graphics backend 私有图片 payload、lowering 和混合顶点编码。
+        primitives = (ROOT / "src/draw/backend/gpu/primitives.rs").read_text(encoding="utf-8")
         lowering = (ROOT / "src/draw/backend/gpu/rhi_lowering.rs").read_text(encoding="utf-8")
         mixed = (ROOT / "src/draw/backend/rhi_renderer_mixed.rs").read_text(encoding="utf-8")
         # 图片与 sampled Picture 必须承载任意仿射四角。
-        self.assertIn("pub corners: [[f32; 2]; 4]", present)
+        self.assertIn("pub(crate) corners: [[f32; 2]; 4]", primitives)
         self.assertIn("RhiTexturedQuad", lowering)
         self.assertIn("textured_vertices_values", mixed)
         self.assertIn("quad.corners", mixed)
@@ -222,8 +222,8 @@ class GraphicsTeardownContractTests(unittest.TestCase):
 
     # 校验线性/径向渐变已经从轴对齐 AABB ABI 扩展为共享 affine quad ABI。
     def test_affine_gradient_contract(self) -> None:
-        # 读取渐变 payload、queue、lowering、renderer 和两套 adapter。
-        present = (ROOT / "src/native/present/mod.rs").read_text(encoding="utf-8")
+        # 读取 graphics backend 私有渐变 payload、queue、lowering、renderer 和两套 adapter。
+        primitives = (ROOT / "src/draw/backend/gpu/primitives.rs").read_text(encoding="utf-8")
         queue = (ROOT / "src/draw/backend/gpu/queue.rs").read_text(encoding="utf-8")
         lowering = (ROOT / "src/draw/backend/gpu/rhi_lowering.rs").read_text(encoding="utf-8")
         renderer = (ROOT / "src/draw/backend/rhi_renderer.rs").read_text(encoding="utf-8")
@@ -231,7 +231,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs").read_text(encoding="utf-8")
         shaders = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_shaders.rs").read_text(encoding="utf-8")
         # 两类 native gradient DTO 和通用 payload 必须带真实四角。
-        self.assertIn("pub corners: [[f32; 2]; 4]", present)
+        self.assertIn("pub(crate) corners: [[f32; 2]; 4]", primitives)
         self.assertIn("pub(crate) corners: [[f32; 2]; 4]", renderer)
         self.assertIn("glyph_device_corners", queue)
         self.assertIn("scale_rhi_corners(value.corners", lowering)

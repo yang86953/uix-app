@@ -46,7 +46,7 @@ impl GpuBackend {
             // 覆盖当前 drawable 高度。
             h: viewport.height,
             // 采样四角保持左上原点约定。
-            corners: crate::native::present::GpuGlyphBlit::axis_aligned_corners(
+            corners: super::super::GpuGlyphBlit::axis_aligned_corners(
                 0.0,
                 0.0,
                 viewport.width,

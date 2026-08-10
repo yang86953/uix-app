@@ -5,7 +5,8 @@
 
 use crate::core::Rect;
 use crate::draw::geometry::types::{BlendMode, Transform};
-use crate::native::present::{
+// 引入所属 graphics backend Module 的全部排队原语。
+use super::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect,
 };

@@ -6,14 +6,15 @@
 use std::sync::Arc;
 
 use crate::core::{Point, Rect};
+use crate::draw::Canvas2D;
 use crate::draw::geometry::color::Color;
 use crate::draw::geometry::path::{FillRule, Path, PathBuilder};
 use crate::draw::geometry::stroker::StrokeOptions;
 use crate::draw::geometry::tessellator;
 use crate::draw::geometry::types::{BlendMode, GradientDirection, Radius, Transform};
 use crate::draw::raster::rasterizer::core::align_rounded_rect;
-use crate::draw::Canvas2D;
-use crate::native::present::{
+// 引入所属 graphics backend Module 的全部入队原语。
+use super::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector, GpuSolidMesh,
     GpuSolidRect, GpuStrokeRect,
 };

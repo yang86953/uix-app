@@ -22,6 +22,8 @@ pub(crate) mod canvas2d;
 pub(crate) mod geometry;
 pub(crate) mod helpers;
 pub(crate) mod pending;
+// 隐藏 graphics backend 私有的 Canvas2D GPU 原语传输对象。
+mod primitives;
 pub(crate) mod queue;
 pub(crate) mod submit;
 pub(crate) mod tile;
@@ -31,3 +33,8 @@ pub use backend::{GpuBackend, NativeGpuDrawSurface};
 pub(crate) use capabilities::NativeRasterCaps;
 pub(crate) use canvas::NativeGpuCanvas2D;
 pub(crate) use pending::StateSnapshot;
+// 向 graphics backend 内部消费者统一导出 renderer 原语。
+pub(crate) use primitives::{
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
+    GpuSolidMesh, GpuSolidRect, GpuStrokeRect,
+};
