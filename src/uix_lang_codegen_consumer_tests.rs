@@ -303,6 +303,14 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _autocomplete: ViewNode = crate::uix!(
         r#"<AutoComplete value={query} options={suggestions} placeholder="请输入" width="240px" automationId="search" />"#
     );
+    // 提供 Mentions 包含正文和活动提及的受控完整文本。
+    let mention_text = State::new(String::from("请联系 @a"));
+    // 提供提及输入使用的字符串候选集合。
+    let mention_suggestions = vec![String::from("alice"), String::from("adam")];
+    // 验证候选、完整文本绑定、占位文本和公共属性只依赖公开 prelude。
+    let _mentions: ViewNode = crate::uix!(
+        r#"<Mentions value={mention_text} suggestions={mention_suggestions} placeholder="提及成员" width="240px" automationId="mentions" />"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
