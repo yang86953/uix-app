@@ -125,6 +125,12 @@ fn record_pagination_change(change: &str) {
     let _ = change;
 }
 
+// 定义 Anchor 公开宏消费者使用的 href 变化处理器。
+fn record_anchor_change(href: &str) {
+    // 编译 Gate 只核对稳定文本借用契约。
+    let _ = href;
+}
+
 // 定义 Rust 2024 公开过程宏消费的类型化表单模型。
 #[derive(Clone)]
 // 保存本回归需要投影的开关与滑块字段。
@@ -420,6 +426,26 @@ fn public_uix_macro_compiles_breadcrumb() {
     let _view: ViewNode =
         uix::uix!(r#"<Breadcrumb items={breadcrumb_items} automationId="settings-breadcrumb" />"#);
     // 编译成功即证明 BreadcrumbItem 集合与叶节点契约闭合。
+}
+
+// 验证真实 Rust 2024 消费 crate 可编译 Anchor 类型化目标与 href 处理器。
+#[test]
+// 声明 Anchor 外部消费编译测试。
+fn public_uix_macro_compiles_anchor() {
+    // 构造由过程宏取得所有权的类型化锚点数组。
+    let anchor_items = [
+        // 基本信息条目登记稳定目标 href。
+        AnchorItem::new("基本信息", "section-basic"),
+        // 高级设置条目登记另一个稳定目标 href。
+        AnchorItem::new("高级设置", "section-advanced"),
+    ];
+    // 使用 Rust 2024 const 块提供动态顶部偏移。
+    let header_offset = const { 24.0_f32 };
+    // 让过程宏生成公开 Anchor、偏移、href 处理器与公共自动化属性。
+    let _view: ViewNode = uix::uix!(
+        r#"<Anchor items={anchor_items} offsetTop={header_offset} @change="record_anchor_change($event)" automationId="settings-anchor" />"#
+    );
+    // 编译成功即证明 AnchorItem、f32 偏移、Change 文本与叶节点契约闭合。
 }
 
 // 验证真实 Rust 2024 消费 crate 可编译 Alert 状态、动态关闭能力与关闭事件。
