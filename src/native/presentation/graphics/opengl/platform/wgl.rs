@@ -86,7 +86,8 @@ struct PIXELFORMATDESCRIPTOR {
 }
 
 #[link(name = "gdi32")]
-extern "system" {
+// 标记 GDI32 外部符号调用需要由调用方维护指针与句柄安全契约。
+unsafe extern "system" {
     fn ChoosePixelFormat(hdc: HDC, ppfd: *const PIXELFORMATDESCRIPTOR) -> i32;
     fn DescribePixelFormat(
         hdc: HDC,
@@ -99,7 +100,8 @@ extern "system" {
 }
 
 #[link(name = "opengl32")]
-extern "system" {
+// 标记 OpenGL32 外部符号调用需要由调用方维护当前上下文安全契约。
+unsafe extern "system" {
     fn wglCreateContext(hdc: HDC) -> HGLRC;
     fn wglMakeCurrent(hdc: HDC, hglrc: HGLRC) -> i32;
     fn wglDeleteContext(hglrc: HGLRC) -> i32;
@@ -107,14 +109,16 @@ extern "system" {
 }
 
 #[link(name = "kernel32")]
-extern "system" {
+// 标记 Kernel32 外部符号调用需要由调用方维护模块句柄与符号地址安全契约。
+unsafe extern "system" {
     fn GetModuleHandleA(module_name: *const i8) -> *mut c_void;
     fn GetModuleHandleW(module_name: *const u16) -> *mut c_void;
     fn GetProcAddress(module: *mut c_void, proc_name: *const i8) -> *const c_void;
 }
 
 #[link(name = "user32")]
-extern "system" {
+// 标记 User32 外部符号调用需要由调用方维护窗口与设备上下文安全契约。
+unsafe extern "system" {
     fn CreateWindowExW(
         ex_style: u32,
         class_name: *const u16,
