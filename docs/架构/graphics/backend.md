@@ -155,6 +155,7 @@ GPU 基线内的操作不能依赖常态 CPU fallback。可选效果可以显式
 - mock RHI 测试覆盖 pass 顺序、一次最终 present、受控 SurfaceLost，以及 resize 后旧代计划拒绝与新代计划恢复；失败帧不消费 damage。
 - Picture/offscreen blur 测试覆盖逻辑 region 不重复应用主 surface DPR、source→scratch→原 Picture 双 pass、同核水平/垂直 uniform、区域裁剪、单次 submit、无 acquire/present、失败清理与空区域无资源 no-op；sampled lowering 另覆盖目标 opacity、drawable 比例与 Additive 保真，CPU 参考覆盖真实 blur 后的目标相关 Additive 像素、clip 和状态恢复。
 - Picture owner 测试覆盖缺失 RHI renderer、无效 extent 与有效单一 owner 门禁；D3D11 默认构建和源码门禁同时证明旧高层 blur、`OffscreenTargetId`、原生 texture/FBO、专属 scratch 与 legacy sampled blit 已退出生产依赖图。
+- OpenGL ES draw、shader 编译与共享 Win32 HDC 边界使用模块级 `unsafe_op_in_unsafe_fn = deny` 门禁；每个 glow/Win32 底层调用都在保持 owner-thread、原生句柄和资源表前置责任的显式 `unsafe` 操作中执行，Rust 2024 不再把 unsafe 函数体本身视为隐式授权。
 - overlay backdrop recording 测试覆盖 retained→backdrop 快照与 backdrop→retained 恢复的方向、全幅物理 extent、唯一 device submit、无 acquire/present，以及创建失败无半成品和 submit 失败检查式销毁；blur 测试另覆盖逻辑区域只应用一次主 surface DPR、extent 裁剪、backdrop→scratch→backdrop 顺序、单次 submit、无 acquire/present 与 scratch 检查式销毁；场景管线测试覆盖 snapshot DeviceLost、restore SurfaceLost 与 release OOM 的 typed 分类传播，并证明失败后不继续 begin/end/present。
 - 通用 canvas 单元测试覆盖 soft fallback 在 SrcOver/Additive 交替时的分段顺序与成功提交后的 staging 消费。
 - 通用 canvas 与 capability 单元测试覆盖 `GraphicsCapabilities` 到 `NativeRasterCaps` 的唯一投影、生产 retained RHI profile 的 Additive shape 直达入队、事实能力门禁及无 retained/Additive 能力时的 soft 回退；源码契约锁定 `IGraphicsContext`、thread-bound wrapper 与生产 adapter 不再恢复平行 raster capability 查询。

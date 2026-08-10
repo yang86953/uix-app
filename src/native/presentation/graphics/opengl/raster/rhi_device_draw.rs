@@ -1,12 +1,15 @@
 //! OpenGL ES 3.0 薄 RHI 的固定 draw ABI 分派。
 
+// 在 Rust 2024 下禁止 unsafe 函数体隐式扩大底层操作范围。
+#![deny(unsafe_op_in_unsafe_fn)]
+
 // 引入 glow 的上下文扩展方法。
 use glow::HasContext as _;
 // 引入统一结果和 draw packet 语义。
 use crate::core::error::Result;
-use crate::native::present::rhi::{pipeline_keys, BufferUsage, DrawPacket, TextureFormat};
+use crate::native::present::rhi::{BufferUsage, DrawPacket, TextureFormat, pipeline_keys};
 // 复用父资源表、shader key 和错误辅助。
-use super::{rhi_invalid, OpenGlRhiDevice};
+use super::{OpenGlRhiDevice, rhi_invalid};
 
 // 为字节镜像读取一个 native-endian float。
 fn read_f32(data: &[u8], index: usize) -> Result<f32> {
@@ -34,23 +37,26 @@ fn read_vec4(data: &[u8], index: usize) -> Result<[f32; 4]> {
 
 // 给固定 program 设置 vec2 uniform。
 unsafe fn set_vec2(gl: &glow::Context, program: glow::Program, name: &str, value: [f32; 2]) {
-    // 未被 shader 使用的 uniform 位置为 None，GL 会安全忽略。
-    let location = gl.get_uniform_location(program, name);
-    gl.uniform_2_f32(location.as_ref(), value[0], value[1]);
+    // SAFETY：调用者保证当前线程绑定了创建该 program 的有效 GL 上下文。
+    let location = unsafe { gl.get_uniform_location(program, name) };
+    // SAFETY：位置来自同一 program；None 会由 GL 作为未使用 uniform 安全忽略。
+    unsafe { gl.uniform_2_f32(location.as_ref(), value[0], value[1]) };
 }
 
 // 给固定 program 设置 vec4 uniform。
 unsafe fn set_vec4(gl: &glow::Context, program: glow::Program, name: &str, value: [f32; 4]) {
-    // 未被 shader 使用的 uniform 位置为 None，GL 会安全忽略。
-    let location = gl.get_uniform_location(program, name);
-    gl.uniform_4_f32(location.as_ref(), value[0], value[1], value[2], value[3]);
+    // SAFETY：调用者保证当前线程绑定了创建该 program 的有效 GL 上下文。
+    let location = unsafe { gl.get_uniform_location(program, name) };
+    // SAFETY：位置来自同一 program；None 会由 GL 作为未使用 uniform 安全忽略。
+    unsafe { gl.uniform_4_f32(location.as_ref(), value[0], value[1], value[2], value[3]) };
 }
 
 // 给固定 program 设置单个 float uniform。
 unsafe fn set_f32(gl: &glow::Context, program: glow::Program, name: &str, value: f32) {
-    // 未被 shader 使用的 uniform 位置为 None，GL 会安全忽略。
-    let location = gl.get_uniform_location(program, name);
-    gl.uniform_1_f32(location.as_ref(), value);
+    // SAFETY：调用者保证当前线程绑定了创建该 program 的有效 GL 上下文。
+    let location = unsafe { gl.get_uniform_location(program, name) };
+    // SAFETY：位置来自同一 program；None 会由 GL 作为未使用 uniform 安全忽略。
+    unsafe { gl.uniform_1_f32(location.as_ref(), value) };
 }
 
 // 绑定当前 packet 的 sampled texture、sampler 与 texture unit。
@@ -70,12 +76,16 @@ unsafe fn bind_sampled(
     // 解析 texture 和 sampler 的原生对象。
     let texture = device.texture(texture_handle)?;
     let sampler = device.sampler(sampler_handle)?;
-    // 绑定 t0/s0，并告诉 shader 从 texture unit zero 读取。
-    gl.active_texture(glow::TEXTURE0);
-    gl.bind_texture(glow::TEXTURE_2D, Some(texture.native));
-    gl.bind_sampler(0, Some(sampler.native));
-    let location = gl.get_uniform_location(program, "u_tex");
-    gl.uniform_1_i32(location.as_ref(), 0);
+    // SAFETY：调用者保证当前 owner thread 已绑定有效 GL 上下文。
+    unsafe { gl.active_texture(glow::TEXTURE0) };
+    // SAFETY：纹理句柄来自当前设备资源表，且仍由该设备拥有。
+    unsafe { gl.bind_texture(glow::TEXTURE_2D, Some(texture.native)) };
+    // SAFETY：sampler 句柄来自当前设备资源表，且仍由该设备拥有。
+    unsafe { gl.bind_sampler(0, Some(sampler.native)) };
+    // SAFETY：program 由当前设备在同一 GL 上下文中创建并保持存活。
+    let location = unsafe { gl.get_uniform_location(program, "u_tex") };
+    // SAFETY：位置来自同一 program；None 会由 GL 安全忽略。
+    unsafe { gl.uniform_1_i32(location.as_ref(), 0) };
     // 返回格式给 pipeline ABI 门禁使用。
     Ok(texture.format)
 }
@@ -384,51 +394,66 @@ impl OpenGlRhiDevice {
 
 // 配置 position float2 顶点属性。
 unsafe fn configure_float2_attributes(gl: &glow::Context, stride: u32) {
-    // 只启用位置属性，避免旧 float8 attribute 泄漏到 unit quad。
-    gl.vertex_attrib_pointer_f32(0, 2, glow::FLOAT, false, stride as i32, 0);
-    gl.enable_vertex_attrib_array(0);
-    gl.disable_vertex_attrib_array(1);
-    gl.disable_vertex_attrib_array(2);
+    // SAFETY：调用者已绑定与 float2 ABI 匹配的 VAO 和顶点缓冲。
+    unsafe { gl.vertex_attrib_pointer_f32(0, 2, glow::FLOAT, false, stride as i32, 0) };
+    // SAFETY：属性零属于当前绑定 VAO 的 position 槽位。
+    unsafe { gl.enable_vertex_attrib_array(0) };
+    // SAFETY：关闭旧属性只修改当前绑定 VAO 的状态。
+    unsafe { gl.disable_vertex_attrib_array(1) };
+    // SAFETY：关闭旧属性只修改当前绑定 VAO 的状态。
+    unsafe { gl.disable_vertex_attrib_array(2) };
 }
 
 // 配置 position/uv/color float8 顶点属性。
 unsafe fn configure_float8_attributes(gl: &glow::Context, stride: u32) {
-    // 配置三个固定位置属性，布局与通用 renderer 完全一致。
-    gl.vertex_attrib_pointer_f32(0, 2, glow::FLOAT, false, stride as i32, 0);
-    gl.enable_vertex_attrib_array(0);
-    gl.vertex_attrib_pointer_f32(1, 2, glow::FLOAT, false, stride as i32, 8);
-    gl.enable_vertex_attrib_array(1);
-    gl.vertex_attrib_pointer_f32(2, 4, glow::FLOAT, false, stride as i32, 16);
-    gl.enable_vertex_attrib_array(2);
+    // SAFETY：调用者已绑定与 float8 ABI 匹配的 VAO 和顶点缓冲。
+    unsafe { gl.vertex_attrib_pointer_f32(0, 2, glow::FLOAT, false, stride as i32, 0) };
+    // SAFETY：属性零属于当前绑定 VAO 的 position 槽位。
+    unsafe { gl.enable_vertex_attrib_array(0) };
+    // SAFETY：八字节偏移与通用 float8 顶点 ABI 的 uv 槽位一致。
+    unsafe { gl.vertex_attrib_pointer_f32(1, 2, glow::FLOAT, false, stride as i32, 8) };
+    // SAFETY：属性一属于当前绑定 VAO 的 uv 槽位。
+    unsafe { gl.enable_vertex_attrib_array(1) };
+    // SAFETY：十六字节偏移与通用 float8 顶点 ABI 的 color 槽位一致。
+    unsafe { gl.vertex_attrib_pointer_f32(2, 4, glow::FLOAT, false, stride as i32, 16) };
+    // SAFETY：属性二属于当前绑定 VAO 的 color 槽位。
+    unsafe { gl.enable_vertex_attrib_array(2) };
 }
 
 // 设置 premultiplied SrcOver blend。
 unsafe fn set_premultiplied_blend(gl: &glow::Context) {
-    // 颜色和 alpha 都使用 ONE / ONE_MINUS_SRC_ALPHA。
-    gl.enable(glow::BLEND);
-    gl.blend_func_separate(
-        glow::ONE,
-        glow::ONE_MINUS_SRC_ALPHA,
-        glow::ONE,
-        glow::ONE_MINUS_SRC_ALPHA,
-    );
+    // SAFETY：调用者保证当前 owner thread 已绑定有效 GL 上下文。
+    unsafe { gl.enable(glow::BLEND) };
+    // SAFETY：固定枚举组合只更新当前上下文的 premultiplied SrcOver 状态。
+    unsafe {
+        gl.blend_func_separate(
+            glow::ONE,
+            glow::ONE_MINUS_SRC_ALPHA,
+            glow::ONE,
+            glow::ONE_MINUS_SRC_ALPHA,
+        )
+    };
 }
 
 // 设置 sampled additive blend。
 unsafe fn set_additive_blend(gl: &glow::Context) {
-    // Additive 只由显式 pipeline key 选择。
-    gl.enable(glow::BLEND);
-    gl.blend_func_separate(glow::ONE, glow::ONE, glow::ONE, glow::ONE);
+    // SAFETY：调用者保证当前 owner thread 已绑定有效 GL 上下文。
+    unsafe { gl.enable(glow::BLEND) };
+    // SAFETY：固定枚举组合只更新当前上下文的 Additive 混合状态。
+    unsafe { gl.blend_func_separate(glow::ONE, glow::ONE, glow::ONE, glow::ONE) };
 }
 
 // 设置 straight-alpha SrcOver blend。
 unsafe fn set_straight_alpha_blend(gl: &glow::Context) {
-    // 阴影 shader 输出 straight RGB 和 coverage alpha。
-    gl.enable(glow::BLEND);
-    gl.blend_func_separate(
-        glow::SRC_ALPHA,
-        glow::ONE_MINUS_SRC_ALPHA,
-        glow::ONE,
-        glow::ONE_MINUS_SRC_ALPHA,
-    );
+    // SAFETY：调用者保证当前 owner thread 已绑定有效 GL 上下文。
+    unsafe { gl.enable(glow::BLEND) };
+    // SAFETY：固定枚举组合只更新当前上下文的 straight-alpha SrcOver 状态。
+    unsafe {
+        gl.blend_func_separate(
+            glow::SRC_ALPHA,
+            glow::ONE_MINUS_SRC_ALPHA,
+            glow::ONE,
+            glow::ONE_MINUS_SRC_ALPHA,
+        )
+    };
 }
