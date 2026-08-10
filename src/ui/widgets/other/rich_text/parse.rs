@@ -23,6 +23,10 @@ mod parse_link;
 // 跨行扫描与 Setext 消费独立归入行解析辅助模块。
 #[path = "parse_lines.rs"]
 mod parse_lines;
+
+// 同字符粗斜体嵌套的 delimiter 扫描保持在 RichText 私有解析边界。
+#[path = "parse_style.rs"]
+mod parse_style;
 pub fn layout_rich_text_segments(
     segments: &[RichTextSegment],
     max_width: f32,
@@ -230,8 +234,16 @@ fn parse_inline_element(
             // 不满足边界条件时保留原文字面值。
             continue;
         }
-        // 查找同一标记的配对结束位置。
-        let Some(close) = find_closing_marker(remaining, marker.len(), marker) else {
+        // 单字符外层需要跳过成对的同字符双标记，其他样式沿用普通闭合搜索。
+        let close = if marker.len() == 1 {
+            // 让私有样式辅助识别外层斜体中的同字符粗体区间。
+            parse_style::find_single_closing_marker(remaining, marker.len(), marker)
+        } else {
+            // 双字符样式继续使用既有闭合和三字符调整契约。
+            find_closing_marker(remaining, marker.len(), marker)
+        };
+        // 未找到成对闭合时保留源文本。
+        let Some(close) = close else {
             // 未闭合的双字符标记由 literal_advance 一次性跳过。
             continue;
         };
@@ -532,6 +544,11 @@ mod fence_tests;
 #[cfg(test)]
 #[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_escape_tests.rs"]
 mod escape_tests;
+
+// 从仓库测试目录加载同字符样式嵌套专项测试，锁定粗斜体双向组合边界。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_style_tests.rs"]
+mod style_tests;
 
 #[cfg(test)]
 mod tests {
