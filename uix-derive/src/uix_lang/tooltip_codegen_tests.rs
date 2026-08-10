@@ -1,0 +1,88 @@
+// 引入解析与核心生成入口。
+use super::{Diagnostic, generate_view, parse_document};
+
+// 生成测试源码的稳定令牌快照。
+fn generate(source: &str) -> Result<String, Diagnostic> {
+    // 先解析完整 UIX 文档。
+    let document = parse_document(source)?;
+    // 再生成公开 Rust View 表达式。
+    generate_view(&document.root).map(|tokens| tokens.to_string())
+    // 结束测试生成入口。
+}
+
+// 验证 Tooltip 动态文字、唯一触发子树与公共属性的完整生成契约。
+#[test]
+// 声明完整 Tooltip 生成测试。
+fn generates_tooltip_contract() {
+    // 生成覆盖动态文字、按钮子树、宽度与自动化身份的文字提示。
+    let snapshot = generate(r#"<Tooltip text={tooltip_text} width="240px" automationId="help-tooltip"><Button>悬停</Button></Tooltip>"#).expect("文档属性应映射到公开 Tooltip API");
+    // 动态文字必须以临时借用进入会复制内容的构造器。
+    assert!(snapshot.contains("Tooltip :: new (& * (tooltip_text))"));
+    // Tooltip 必须使用容器 ViewNode 承载真实触发子树。
+    assert!(snapshot.contains("ViewNode :: new") && snapshot.contains("button"));
+    // 公共宽度与自动化标识仍由公共属性层消费。
+    assert!(snapshot.contains("width (240.0)") && snapshot.contains("automation_id"));
+}
+
+// 验证一个静态触发容器可以在内部保留普通控制流。
+#[test]
+// 声明嵌套控制流生成测试。
+fn allows_control_flow_inside_static_trigger_view() {
+    // 唯一直接 Container 内部使用条件渲染。
+    let snapshot = generate(r#"<Tooltip text="详情"><Container><If {show_more}><Text>更多</Text></If></Container></Tooltip>"#).expect("静态触发容器内部应保留普通控制流");
+    // 唯一直接触发器必须生成容器 View。
+    assert!(snapshot.contains("prelude :: column"));
+    // 内部条件必须保留为 Rust 控制流。
+    assert!(snapshot.contains("if show_more"));
+}
+
+// 验证 Tooltip 必需文字与直接触发 View 的静态基数诊断。
+#[test]
+// 声明 Tooltip 核心错误测试。
+fn rejects_invalid_tooltip_core_contracts() {
+    // 缺失 text 时没有运行时提示内容来源。
+    let missing =
+        generate(r#"<Tooltip><Button>悬停</Button></Tooltip>"#).expect_err("缺少 text 必须被拒绝");
+    // 诊断必须点名 text。
+    assert!(missing.message.contains("text"));
+    // 空 Tooltip 没有触发 View。
+    let empty = generate(r#"<Tooltip text="提示" />"#).expect_err("空 Tooltip 必须被拒绝");
+    // 诊断必须点明唯一直接触发 View。
+    assert!(empty.message.contains("仅包含一个直接触发 View"));
+    // 多个直接子节点会破坏唯一触发器身份。
+    let multiple =
+        generate(r#"<Tooltip text="提示"><Button>一</Button><Button>二</Button></Tooltip>"#)
+            .expect_err("多个直接触发 View 必须被拒绝");
+    // 多子节点沿用相同静态基数诊断。
+    assert!(multiple.message.contains("仅包含一个直接触发 View"));
+}
+
+// 验证直接动态基数与未登记专有属性不会静默降级。
+#[test]
+// 声明 Tooltip 边界错误测试。
+fn rejects_dynamic_trigger_and_unregistered_attributes() {
+    // 直接 If 会令触发 View 是否存在依赖运行时条件。
+    let dynamic =
+        generate(r#"<Tooltip text="提示"><If {show}><Button>悬停</Button></If></Tooltip>"#)
+            .expect_err("直接 If 触发器必须被拒绝");
+    // 诊断必须点明直接控制流边界。
+    assert!(dynamic.message.contains("不能是 If 或 For"));
+    // 直接 For 会令触发 View 数量依赖运行时集合长度。
+    let repeated = generate(
+        r#"<Tooltip text="提示"><For {item} in {items}><Button>{item}</Button></For></Tooltip>"#,
+    )
+    .expect_err("直接 For 触发器必须被拒绝");
+    // 循环触发器必须沿用相同动态基数诊断。
+    assert!(repeated.message.contains("不能是 If 或 For"));
+    // 文档未登记 placement，不能静默暴露运行时构建器。
+    let placement =
+        generate(r#"<Tooltip text="提示" placement="bottom"><Button>悬停</Button></Tooltip>"#)
+            .expect_err("未登记 placement 必须被拒绝");
+    // 未知属性诊断必须包含具体属性名。
+    assert!(placement.message.contains("placement"));
+    // Tooltip 当前没有专有事件映射。
+    let event = generate(r#"<Tooltip text="提示" @open="on_open"><Button>悬停</Button></Tooltip>"#)
+        .expect_err("未登记事件必须被拒绝");
+    // 未知事件诊断必须包含具体事件名。
+    assert!(event.message.contains("@open"));
+}

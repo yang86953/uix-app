@@ -229,6 +229,11 @@ mod alert_codegen;
 // 集中验证 Alert 生成、默认值、事件与拒绝路径。
 #[cfg(test)]
 mod alert_codegen_tests;
+// 定义 Tooltip 文字与唯一静态触发 View 的公开 API 代码生成边界。
+mod tooltip_codegen;
+// 集中验证 Tooltip 生成、触发子树与拒绝路径。
+#[cfg(test)]
+mod tooltip_codegen_tests;
 // 定义 Form 与类型化字段的公开 API 代码生成边界。
 mod form_codegen;
 // 定义 FormSliderItem 类型化 f64 字段的独立生成边界。
@@ -384,6 +389,8 @@ pub(crate) use qrcode_codegen::generate_qrcode;
 pub(crate) use watermark_codegen::generate_watermark;
 // 向核心元素生成器暴露 Alert 叶组件专用映射。
 pub(crate) use alert_codegen::generate_alert;
+// 向核心元素生成器暴露 Tooltip 容器组件专用映射。
+pub(crate) use tooltip_codegen::generate_tooltip;
 // 向核心元素生成器暴露 Form 与越界字段项映射。
 pub(crate) use form_codegen::{
     generate_form, generate_orphan_form_checkbox_item, generate_orphan_form_input_item,

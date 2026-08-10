@@ -348,6 +348,21 @@ fn public_uix_macro_compiles_alert() {
     // 编译成功即证明 String 借用、bool、StatusLevel 与关闭事件契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 Tooltip 动态文字与唯一触发子树。
+#[test]
+// 声明 Tooltip 外部消费编译测试。
+fn public_uix_macro_compiles_tooltip() {
+    // 调用方持有 String，宏展开只能临时借用。
+    let tooltip_text = String::from("更多操作");
+    // 让过程宏生成公开 Tooltip、按钮触发子树与公共自动化属性。
+    let _view: ViewNode = uix::uix!(
+        r#"<Tooltip text={tooltip_text} automationId="help-tooltip"><Button>悬停</Button></Tooltip>"#
+    );
+    // Tooltip 构造完成后调用方仍持有原字符串所有权。
+    assert_eq!(tooltip_text, "更多操作");
+    // 编译成功即证明 String 借用、默认触发语义与唯一子树契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译类型化开关与滑块表单。
 #[test]
 fn public_uix_macro_compiles_typed_form_switch_and_slider_items() {
