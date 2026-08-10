@@ -261,11 +261,8 @@ fn may_start_inline_element(text: &str, cursor: usize) -> bool {
 
 /// 判断反斜杠后的字符是否属于可转义 Markdown 标点。
 fn is_escaped_markdown_char(ch: char) -> bool {
-    // 覆盖常见行内标记、链接标点和块级标记的字面转义。
-    matches!(
-        ch,
-        '\\' | '`' | '*' | '_' | '[' | ']' | '(' | ')' | '<' | '>' | '~' | '+' | '#'
-    )
+    // Markdown 允许反斜杠转义任意 ASCII 标点，统一覆盖块级和行内边界。
+    ch.is_ascii_punctuation()
 }
 
 /// 返回 Markdown 标记对应的 RichTextStyle 增量。
@@ -530,6 +527,11 @@ mod autolink_tests;
 #[cfg(test)]
 #[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_fence_tests.rs"]
 mod fence_tests;
+
+// 从仓库测试目录加载反斜杠转义专项测试，锁定完整 ASCII 标点边界。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_escape_tests.rs"]
+mod escape_tests;
 
 #[cfg(test)]
 mod tests {
