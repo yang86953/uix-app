@@ -843,8 +843,8 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("impl PixelUploadSurface for ThreadBoundGraphicsContext", thread_bound)
         # 专用 wrapper 必须保持 owner-thread 检查。
         self.assertIn('self.with_owner("resize_pixel_upload_surface"', thread_bound)
-        # 专用 wrapper 成功后必须刷新 drawable 元数据。
-        self.assertIn("self.refresh_metadata();", thread_bound)
+        # 专用 wrapper 成功后只刷新完整 PresentSurface，不改写静态 capability。
+        self.assertIn("self.refresh_present_surface();", thread_bound)
         # 逐个核对 GPU context 与测试 fake 已退出兼容 resize wrapper。
         for adapter in (
             # D3D11 GPU context。
