@@ -331,6 +331,28 @@ fn public_uix_macro_compiles_tree() {
     // 编译成功即证明 TreeNode 集合、bool 与叶节点契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 Steps 类型化数据与受控 current。
+#[test]
+// 声明 Steps 外部消费编译测试。
+fn public_uix_macro_compiles_steps() {
+    // 构造由过程宏取得所有权的类型化步骤数组。
+    let step_items = [
+        // 首步骤携带描述文本。
+        Step::new("填写信息").description("录入收货地址"),
+        // 次步骤使用最小公开构造器。
+        Step::new("确认订单"),
+    ];
+    // 创建声明端 current 唯一状态源。
+    let step = State::new(const { 0_usize });
+    // 让过程宏生成公开 Steps、垂直方向与公共自动化属性。
+    let _view: ViewNode = uix::uix!(
+        r#"<Steps current={step} items={step_items} direction="vertical" automationId="checkout-steps" />"#
+    );
+    // 宏展开只克隆状态句柄，调用方仍可读取原 State。
+    assert_eq!(step.get(), 0);
+    // 编译成功即证明 Step 集合、State<usize> 与叶节点契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译 Alert 状态、动态关闭能力与关闭事件。
 #[test]
 // 声明 Alert 外部消费编译测试。
