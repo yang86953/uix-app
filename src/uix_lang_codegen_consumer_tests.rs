@@ -325,6 +325,11 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _date_range_picker: ViewNode = crate::uix!(
         r#"<DateRangePicker value={{ start: range_start, end: range_end }} width="280px" automationId="date-range" />"#
     );
+    // 提供 TimePicker 当前选中时间的受控状态。
+    let selected_time = State::new(Time::new(14, 30));
+    // 验证时间绑定和公共属性只依赖公开 prelude。
+    let _time_picker: ViewNode =
+        crate::uix!(r#"<TimePicker value={selected_time} width="200px" automationId="time" />"#);
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
