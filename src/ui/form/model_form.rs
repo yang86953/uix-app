@@ -25,7 +25,13 @@ fn field_bound_or_panic<T>(value: Option<T>, contract: &str) -> T {
 use crate::ui::State;
 use crate::ui::form::form::{Form, FormLayout};
 use crate::ui::form::form_binding::{
-    FormCheckboxItem, FormInputItem, FormInputNumberItem, FormRadioItem, FormSelectItem,
+    FormCheckboxItem,
+    FormInputItem,
+    FormInputNumberItem,
+    FormRadioItem,
+    FormSelectItem,
+    // 引入类型化开关字段声明。
+    FormSwitchItem,
 };
 use crate::ui::form::form_validation::{FieldError, FormBuilder, FormModel, IntoFormValue};
 use crate::ui::view::{View, ViewNode};
@@ -36,7 +42,7 @@ use crate::ui::widgets::input::select::SelectValue;
 ///
 /// 已支持 `FormInputItem`（文本）、`FormInputNumberItem<T>`（数值）、
 /// `FormSelectItem<T>`（单选）、`FormCheckboxItem`（布尔）、
-/// `FormRadioItem`（单选组）；其余字段控件按需扩展。
+/// `FormRadioItem`（单选组）、`FormSwitchItem`（布尔开关）；其余字段控件按需扩展。
 pub trait FormItemSpec<F> {
     /// 绑定值 State 并构建字段 View（FormItem + 控件）。
     fn bind_view(&self, form: &FormModel, value: &State<F>) -> ViewNode;
@@ -207,6 +213,64 @@ impl FormItemSpec<bool> for FormCheckboxItem {
             } else {
                 // 未勾选时返回面向用户的明确错误。
                 Err("必须勾选".to_string())
+            }
+        })
+    }
+}
+
+// 把声明式开关字段接入类型化 bool 投影契约。
+impl FormItemSpec<bool> for FormSwitchItem {
+    // 绑定统一表单状态并构建开关字段 View。
+    fn bind_view(&self, form: &FormModel, value: &State<bool>) -> ViewNode {
+        // 通过 FormModel 建立统一字段状态和焦点绑定。
+        let mut bound = field_bound_or_panic(
+            // 请求既有低层开关适配器。
+            form.switch_item(&self.field, value),
+            // 字段未登记时给出稳定开发者诊断。
+            "Form::model 字段未在内部模型登记",
+        );
+        // 投影独立 FormItem 标签。
+        bound.label = self.label.clone();
+        // 投影禁用状态。
+        bound.disabled = self.disabled;
+        // 投影控件尺寸。
+        bound.size = self.size;
+        // 投影必须开启规则标记。
+        bound.required = self.required;
+        // 投影错误文本显示策略。
+        bound.show_error = self.show_error;
+        // 构建绑定后的字段 View。
+        bound.build()
+    }
+
+    // 向统一表单元数据公开必须开启语义。
+    fn required(&self) -> bool {
+        // 返回字段声明中的规则开关。
+        self.required
+    }
+
+    // 返回面向用户的表单标签。
+    fn label<'a>(&'a self, field: &'a str) -> &'a str {
+        // 独立标签优先，否则沿用稳定字段 key。
+        self.label.as_deref().unwrap_or(field)
+    }
+
+    // 把开关必选语义登记到统一 FormBuilder。
+    fn configure_rules(&self, builder: FormBuilder) -> FormBuilder {
+        // 非必选字段不登记额外布尔规则。
+        if !self.required {
+            // 原样返回统一表单构建器。
+            return builder;
+        }
+        // 登记 required 元数据并要求布尔真值。
+        builder.required("必须开启").custom(|value| {
+            // 使用 IntoFormValue 的稳定布尔文本投影。
+            if value == "true" {
+                // 已开启时通过校验。
+                Ok(())
+            } else {
+                // 未开启时返回面向用户的明确错误。
+                Err("必须开启".to_string())
             }
         })
     }
@@ -506,6 +570,8 @@ mod tests {
         accepted: bool,
         // 保存单选组字段值。
         channel: String,
+        // 保存通知开关状态。
+        notifications: bool,
     }
 
     // 验证字段 key 与用户可见标签保持独立。
@@ -521,6 +587,8 @@ mod tests {
             accepted: false,
             // 提供稳定单选初值。
             channel: "邮件".to_string(),
+            // 提供默认关闭的通知状态。
+            notifications: false,
         });
         // 构建带独立展示标签的类型化字段。
         let form = Form::model(&model)
@@ -563,6 +631,8 @@ mod tests {
             accepted: false,
             // 提供稳定单选初值。
             channel: "邮件".to_string(),
+            // 提供默认关闭的通知状态。
+            notifications: false,
         });
         // 构建带选项与独立标签的类型化选择字段。
         let form = Form::model(&model)
@@ -612,6 +682,8 @@ mod tests {
             accepted: false,
             // 单选字段在本测试中保持完整即可。
             channel: "邮件".to_string(),
+            // 通知开关在本测试中保持默认关闭。
+            notifications: false,
         });
         // 构建带独立字段标签和控件文字的类型化布尔字段。
         let form = Form::model(&model)
@@ -661,6 +733,68 @@ mod tests {
         assert_eq!(errors[0].message(), "必须勾选");
     }
 
+    // 验证开关字段投影独立标签并要求开启态。
+    #[test]
+    fn typed_switch_item_projects_label_and_requires_enabled_value() {
+        // 创建通知功能尚未开启的业务模型。
+        let model = State::new(ContactForm {
+            // 提供合法邮箱，保持模型完整。
+            email: "owner@example.com".to_string(),
+            // 提供稳定等级，保持模型完整。
+            level: "中级".to_string(),
+            // 协议状态不参与本测试。
+            accepted: true,
+            // 单选字段在本测试中保持完整即可。
+            channel: "邮件".to_string(),
+            // 关闭状态用于触发必须开启规则。
+            notifications: false,
+        });
+        // 构建带独立标签的类型化开关字段。
+        let form = Form::model(&model)
+            // 投影稳定业务字段。
+            .field(
+                // 声明稳定字段 key。
+                "notifications",
+                // 投影 bool 模型成员。
+                |value| &mut value.notifications,
+                // 声明开关字段配置。
+                FormSwitchItem::new("notifications")
+                    // 设置用户可见字段标签。
+                    .label("启用通知")
+                    // 要求提交前开启该开关。
+                    .required(true),
+            )
+            // 完成类型化表单构建。
+            .build();
+        // 生成真实字段 View 并建立值绑定。
+        let view = form.view();
+        // 读取外层 FormItem 快照。
+        let fields = view.children[0].widget.snapshot_fields();
+        // 核对稳定 key、独立标签与必填状态。
+        match fields {
+            // 解构 FormItem 公开语义字段。
+            SnapshotFields::FormItem {
+                label,
+                name,
+                required,
+                ..
+            } => {
+                // 标签使用声明的用户可见文本。
+                assert_eq!(label, "启用通知");
+                // 字段 key 继续对应 bool 成员。
+                assert_eq!(name, "notifications");
+                // FormItem 必须公开必选状态。
+                assert!(required);
+            }
+            // 其他组件表示字段壳投影失败。
+            other => panic!("期望 FormItem 快照，实际为 {other:?}"),
+        }
+        // 关闭状态必须被运行时统一校验拒绝。
+        let errors = form.submit().expect_err("未开启通知必须失败");
+        // 返回稳定开关必选错误文案。
+        assert_eq!(errors[0].message(), "必须开启");
+    }
+
     // 验证单选组投影独立标签并复用统一必填校验。
     #[test]
     fn typed_radio_item_projects_label_and_requires_selection() {
@@ -674,6 +808,8 @@ mod tests {
             accepted: true,
             // 空字符串用于触发统一 required 规则。
             channel: String::new(),
+            // 通知开关不参与本测试。
+            notifications: false,
         });
         // 构建带独立标签与候选集合的类型化单选字段。
         let form = Form::model(&model)
