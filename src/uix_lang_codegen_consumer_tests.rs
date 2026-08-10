@@ -376,6 +376,18 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _result_view: ViewNode = crate::uix!(
         r#"<ResultView status="success" title={result_title} extraText={result_action} width="320px" automationId="result" />"#
     );
+    // 提供 Tag 动态颜色。
+    let tag_color = Color::hex("#336699");
+    // 提供 Tag 动态关闭能力。
+    let tag_closable = true;
+    // 提供 Tag 动态可勾选能力。
+    let tag_checkable = true;
+    // 提供 Tag 正文插值。
+    let tag_label = "已完成";
+    // 验证颜色、能力、正文插值和公共属性只依赖公开 prelude。
+    let _tag: ViewNode = crate::uix!(
+        r#"<Tag color={tag_color} closable={tag_closable} checkable={tag_checkable} width="160px" automationId="tag">状态：{tag_label}</Tag>"#
+    );
     // 提供 Form 绑定的类型化业务状态。
     let profile = State::new(ProfileForm {
         // 提供通过邮箱规则的初始值。
