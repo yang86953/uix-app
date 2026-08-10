@@ -202,6 +202,26 @@ fn public_uix_macro_compiles_card() {
     // 编译成功即证明 Rust 2024 外部消费与子树生命周期契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 Descriptions 类型化数组与动态列数。
+#[test]
+// 声明 Descriptions 外部消费编译测试。
+fn public_uix_macro_compiles_descriptions() {
+    // 使用固定数组验证生成器的 IntoIterator 数据边界。
+    let description_items = [
+        // 创建第一项公开类型化键值数据。
+        DescriptionsItem::new("姓名", "Ada"),
+        // 创建第二项公开类型化键值数据。
+        DescriptionsItem::new("角色", "管理员"),
+    ];
+    // 使用 Rust 2024 const 块产生动态 usize 列数。
+    let description_columns = const { 2usize };
+    // 让过程宏生成公开 Descriptions、类型化集合收集与公共属性。
+    let _view: ViewNode = uix::uix!(
+        r#"<Descriptions data={description_items} columns={description_columns} automationId="profile-details" />"#
+    );
+    // 编译成功即证明 Rust 2024 数组、usize 与叶节点契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译类型化开关与滑块表单。
 #[test]
 fn public_uix_macro_compiles_typed_form_switch_and_slider_items() {

@@ -396,6 +396,19 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _card: ViewNode = crate::uix!(
         r#"<Card title={card_title} actions={card_actions} width="320px" automationId="profile-card"><Text>姓名</Text><Button>编辑</Button></Card>"#
     );
+    // 提供 Descriptions 公开运行时消费的 Vec 类型化数据。
+    let description_items = vec![
+        // 创建第一项公开描述数据。
+        DescriptionsItem::new("姓名", "Ada"),
+        // 创建第二项公开描述数据。
+        DescriptionsItem::new("角色", "管理员"),
+    ];
+    // 提供由 Rust 类型系统核对的动态 usize 列数。
+    let description_columns = 2usize;
+    // 验证类型化数据、动态列数与公共属性只依赖公开 prelude。
+    let _descriptions: ViewNode = crate::uix!(
+        r#"<Descriptions data={description_items} columns={description_columns} width="480px" automationId="profile-details" />"#
+    );
     // 提供 Form 绑定的类型化业务状态。
     let profile = State::new(ProfileForm {
         // 提供通过邮箱规则的初始值。
