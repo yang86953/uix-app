@@ -18,6 +18,8 @@
 
 > **GPU recipe 原子门禁**：`GpuRecipeOwner` 在进入 draw backend 前一次验证 `GpuRecipeContext`，该视图不可拆分地持有组合 thin RHI 与 surface resize。缺少完整视图的 context 会先 checked shutdown，再返回 typed `InvalidState`；运行期视图丢失仍作为可恢复的状态破坏传播。
 
+> **按 recipe 构造探测**：registry 只对 GPU-native × Swapchain 条目检查 GPU baseline 并执行真实 thin RHI probe；CPU × PixelUpload 条目不查询 `GpuRecipeContext`，而是由 `PixelUploadRecipeOwner` 验证独立 `PixelUploadSurface`。composition root 不得把一个 recipe 的私有依赖施加给另一个正交 recipe。
+
 > **当前实现线索**：通用部分主要位于 `src/draw/backend/`，帧计划位于 `src/draw/backend/frame_plan.rs`，RHI lowering 位于 `src/draw/backend/rhi_renderer.rs`、`src/draw/backend/rhi_renderer_coverage.rs`、`src/draw/backend/rhi_renderer_msdf.rs`、`src/draw/backend/rhi_renderer_shape.rs`、`src/draw/backend/rhi_renderer_shadow.rs`、`src/draw/backend/rhi_renderer_blur.rs`、`src/draw/backend/rhi_renderer_mixed.rs` 与 `src/draw/backend/gpu/submit.rs`；薄 RHI 契约位于 `src/native/present/rhi.rs`，兼容接口位于 `src/native/present/`，D3D11 实现位于 `src/native/presentation/graphics/d3d11/`，OpenGL ES 实现位于 `src/native/presentation/graphics/opengl/raster/rhi*.rs`、`src/native/presentation/graphics/opengl/rhi_host.rs` 与 WGL/EGL platform context。
 
 > **renderer 能力投影归属**：`NativeRasterCaps` 位于 `src/draw/backend/gpu/capabilities.rs`，由 graphics/backend 私有拥有并单向读取 platform 的 `GraphicsCapabilities`；`native/present` 不再定义或导出 renderer capability profile。
