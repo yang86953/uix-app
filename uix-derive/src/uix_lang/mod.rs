@@ -132,6 +132,11 @@ mod tree_select_codegen;
 // 集中验证 TreeSelect 生成与拒绝路径。
 #[cfg(test)]
 mod tree_select_codegen_tests;
+// 定义 AutoComplete 候选与文本绑定的公开 API 代码生成边界。
+mod autocomplete_codegen;
+// 集中验证 AutoComplete 生成与拒绝路径。
+#[cfg(test)]
+mod autocomplete_codegen_tests;
 // 定义 FloatButton 内置组件的公开 API 代码生成边界。
 mod float_button_codegen;
 // 定义布局容器、Row/Col 栅格与 Grid/Col 的公开 API 代码生成边界。
@@ -242,6 +247,8 @@ pub(crate) use select_codegen::generate_select;
 pub(crate) use cascader_codegen::generate_cascader;
 // 向核心元素生成器暴露 TreeSelect 专用映射。
 pub(crate) use tree_select_codegen::generate_tree_select;
+// 向核心元素生成器暴露 AutoComplete 专用映射。
+pub(crate) use autocomplete_codegen::generate_autocomplete;
 // 向核心元素生成器暴露 FloatButton 专用映射。
 pub(crate) use float_button_codegen::generate_float_button;
 // 向核心元素生成器暴露布局组件专用映射。

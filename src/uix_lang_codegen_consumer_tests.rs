@@ -295,6 +295,14 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _tree_select: ViewNode = crate::uix!(
         r#"<TreeSelect value={selected_tree_key} options={tree_nodes} width="240px" automationId="tree" />"#
     );
+    // 提供 AutoComplete 当前输入与选中结果的受控文本。
+    let query = State::new(String::from("ap"));
+    // 提供可迭代的字符串候选集合。
+    let suggestions = vec![String::from("apple"), String::from("apricot")];
+    // 验证候选、文本绑定、占位文本和公共属性只依赖公开 prelude。
+    let _autocomplete: ViewNode = crate::uix!(
+        r#"<AutoComplete value={query} options={suggestions} placeholder="请输入" width="240px" automationId="search" />"#
+    );
 }
 
 // 验证已映射内联样式在真实公开 API 消费者中通过类型检查。
