@@ -15,6 +15,8 @@ use std::time::Duration;
 const SOFT_FALLBACK_IDLE_PRESENT_GRACE: u8 = 2;
 pub(crate) const SOFT_FALLBACK_IDLE_TIME_GRACE: Duration = Duration::from_millis(250);
 pub(crate) mod backend;
+// 隐藏 graphics backend 私有的 renderer 能力投影实现。
+mod capabilities;
 pub(crate) mod canvas;
 pub(crate) mod canvas2d;
 pub(crate) mod geometry;
@@ -25,5 +27,7 @@ pub(crate) mod submit;
 pub(crate) mod tile;
 
 pub use backend::{GpuBackend, NativeGpuDrawSurface};
+// 向 graphics backend 内部消费者统一导出私有能力投影。
+pub(crate) use capabilities::NativeRasterCaps;
 pub(crate) use canvas::NativeGpuCanvas2D;
 pub(crate) use pending::StateSnapshot;
