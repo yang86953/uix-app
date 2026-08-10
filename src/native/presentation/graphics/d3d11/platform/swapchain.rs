@@ -3,6 +3,8 @@
 use std::ffi::c_void;
 
 use crate::core::{Errc, Error, Result};
+// 引入跨后端共享的 present 保留性证明类型，避免 D3D11 自造第二套语义。
+use crate::native::present::PresentCoherency;
 use crate::native::present::PresentTestResult;
 use ::windows::Win32::Foundation::{DXGI_STATUS_OCCLUDED, E_OUTOFMEMORY, HWND, TRUE};
 use ::windows::Win32::Graphics::Dxgi::Common::{
@@ -15,7 +17,39 @@ use ::windows::Win32::Graphics::Dxgi::{
     DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 
+// 集中保存当前 D3D11 swapchain 与上层 present 能力之间的事实契约。
+pub(crate) struct D3d11SwapChainContract {
+    // 保存实际创建的交换链缓冲数量。
+    pub(crate) buffer_count: u32,
+    // 保存 DXGI 交换效果，供 descriptor 与一致性测试共同消费。
+    pub(crate) swap_effect: ::windows::Win32::Graphics::Dxgi::DXGI_SWAP_EFFECT,
+    // 保存 GraphicsContext 对外声明的跨帧保留性证明。
+    pub(crate) present_coherency: PresentCoherency,
+    // 保存薄 RHI 是否允许向 compositor 提交窄损伤区域。
+    pub(crate) partial_present: bool,
+    // 结束 D3D11 swapchain 事实契约定义。
+}
+
+// 返回当前生产 D3D11 bitblt swapchain 的唯一能力事实。
+pub(crate) const fn swap_chain_contract() -> D3d11SwapChainContract {
+    // DISCARD 不证明 backbuffer 内容保留，因此必须维持完整提交回退。
+    D3d11SwapChainContract {
+        // 保留现有双缓冲创建参数。
+        buffer_count: 2,
+        // 保留已验证的 legacy bitblt DISCARD 交换效果。
+        swap_effect: DXGI_SWAP_EFFECT_DISCARD,
+        // DISCARD 无法为上层提供可证明的窄 present coherency。
+        present_coherency: PresentCoherency::FullOnly,
+        // 在 #899 完成交换链决策前禁止宣称 compositor 窄提交能力。
+        partial_present: false,
+        // 结束当前生产契约值。
+    }
+    // 结束 D3D11 swapchain 契约查询。
+}
+
 pub(crate) fn swap_chain_desc(hwnd: *mut c_void, width: i32, height: i32) -> DXGI_SWAP_CHAIN_DESC {
+    // 从唯一事实契约读取交换链创建参数。
+    let contract = swap_chain_contract();
     DXGI_SWAP_CHAIN_DESC {
         BufferDesc: DXGI_MODE_DESC {
             Width: width.max(1) as u32,
@@ -33,10 +67,12 @@ pub(crate) fn swap_chain_desc(hwnd: *mut c_void, width: i32, height: i32) -> DXG
             Quality: 0,
         },
         BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-        BufferCount: 2,
+        // 缓冲数量必须与对外能力事实保持同步。
+        BufferCount: contract.buffer_count,
         OutputWindow: HWND(hwnd),
         Windowed: TRUE,
-        SwapEffect: DXGI_SWAP_EFFECT_DISCARD,
+        // 交换效果必须与 present coherency 和 partial-present 事实保持同步。
+        SwapEffect: contract.swap_effect,
         Flags: 0,
     }
 }
@@ -105,8 +141,14 @@ fn map_dxgi_operation_result(operation: &str, result: ::windows::core::HRESULT) 
 mod tests {
     // 引入设备移除映射函数。
     use super::map_dxgi_device_removed_reason;
+    // 引入 swapchain descriptor 与单一能力事实。
+    use super::{swap_chain_contract, swap_chain_desc};
+    // 引入当前生产交换效果常量。
+    use super::DXGI_SWAP_EFFECT_DISCARD;
     // 引入统一错误码。
     use crate::core::Errc;
+    // 引入跨后端共享的 present coherency 类型。
+    use crate::native::present::PresentCoherency;
     // 引入 Windows HRESULT 及设备移除常量。
     use ::windows::core::HRESULT;
     // 引入 DXGI 设备移除状态。
@@ -131,5 +173,23 @@ mod tests {
         };
         // 验证恢复层可以按 GraphicsDeviceLost 选择重建 device。
         assert_eq!(error.code(), Errc::GraphicsDeviceLost);
+    }
+
+    // 验证 DISCARD descriptor 不会对上层误报窄 present 能力。
+    #[test]
+    // 执行当前生产 swapchain 的一致性断言。
+    fn discard_swapchain_keeps_full_only_present_contract() {
+        // 读取单一能力事实。
+        let contract = swap_chain_contract();
+        // 使用空窗口句柄构造纯数据 descriptor；本测试不会调用 DXGI。
+        let descriptor = swap_chain_desc(std::ptr::null_mut(), 640, 480);
+        // descriptor 必须使用契约声明的双缓冲数量。
+        assert_eq!(descriptor.BufferCount, contract.buffer_count);
+        // descriptor 必须继续使用不保留内容的 DISCARD 模型。
+        assert_eq!(descriptor.SwapEffect, DXGI_SWAP_EFFECT_DISCARD);
+        // DISCARD 模型只能向 Graphics System 提供完整提交证明。
+        assert_eq!(contract.present_coherency, PresentCoherency::FullOnly);
+        // DISCARD 模型不得宣称支持 compositor 脏矩形。
+        assert!(!contract.partial_present);
     }
 }

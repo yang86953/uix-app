@@ -32,8 +32,8 @@ use ::windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8_UNORM,
 };
 
-// 引入 context 父模块的 D3D11 状态和 surface target 身份。
-use super::{D3d11Context, RHI_SURFACE_TARGET_RAW};
+// 引入 context 父模块的 D3D11 状态、swapchain 事实和 surface target 身份。
+use super::{swap_chain_contract, D3d11Context, RHI_SURFACE_TARGET_RAW};
 
 // 把资源生命周期拆到独立文件，保持每个代码文件处于可审阅的尺寸内。
 #[path = "rhi_device_resources.rs"]
@@ -237,9 +237,11 @@ impl GraphicsDevice for D3d11Context {
         capabilities.clear_rect = true;
         // D3D11 staging texture 已实现同步 surface 回读。
         capabilities.surface_readback = true;
+        // 从 swapchain 创建事实投影 compositor 窄提交能力。
+        capabilities.partial_present = swap_chain_contract().partial_present;
         // DXGI surface 能提供可靠的遮挡状态。
         capabilities.occlusion = true;
-        // 窄 present 尚未启用，继续沿用基线中的 false。
+        // 返回与实际 swapchain 契约一致的薄 RHI 能力快照。
         capabilities
     }
 
