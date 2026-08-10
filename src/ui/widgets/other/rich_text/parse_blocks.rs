@@ -148,8 +148,8 @@ fn parse_atx_heading(text: &str) -> Option<(u8, &str)> {
 
 // 去除 ATX 标题末尾可选的闭合井号。
 fn trim_atx_heading_closer(content: &str) -> &str {
-    // 先去除标题正文末尾的空白，便于判断闭合标记。
-    let trimmed = content.trim_end();
+    // 只去除 Markdown ATX 闭合标记允许的尾随 ASCII 空格与制表符。
+    let trimmed = content.trim_end_matches(|ch| ch == ' ' || ch == '\t');
     // 从正文末尾向前扫描连续 ASCII 闭合井号。
     let mut hash_start = trimmed.len();
     // 连续井号均是单字节，回退后仍位于 UTF-8 边界。
@@ -157,15 +157,15 @@ fn trim_atx_heading_closer(content: &str) -> &str {
         // 继续向前纳入同一闭合井号序列。
         hash_start -= 1;
     }
-    // 只有闭合井号序列前存在空白时才把它视为闭合标记。
+    // 只有闭合井号序列前存在 ASCII 空格或制表符时才把它视为闭合标记。
     if hash_start < trimmed.len()
         && trimmed[..hash_start]
             .chars()
             .next_back()
-            .is_some_and(char::is_whitespace)
+            .is_some_and(|ch| ch == ' ' || ch == '\t')
     {
-        // 去除连续闭合井号以及它前面的分隔空白。
-        return trimmed[..hash_start].trim_end();
+        // 去除连续闭合井号以及它前面的 ASCII 分隔空白。
+        return trimmed[..hash_start].trim_end_matches(|ch| ch == ' ' || ch == '\t');
     }
     // 普通正文中的末尾井号保持字面值。
     trimmed
