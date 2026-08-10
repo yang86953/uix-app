@@ -319,6 +319,21 @@ fn public_uix_macro_compiles_calendar() {
     // 编译成功即证明默认 Calendar 与叶节点契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 Carousel 动态自动播放与有序幻灯片。
+#[test]
+// 声明 Carousel 外部消费编译测试。
+fn public_uix_macro_compiles_carousel() {
+    // 使用 Rust 2024 const 块产生动态自动播放配置。
+    let carousel_autoplay = const { true };
+    // 构造由 For 控制流按源码顺序消费的幻灯片文本。
+    let carousel_slides = ["第二页", "第三页"];
+    // 让过程宏生成公开 Carousel、动态计时器配置与循环子树。
+    let _view: ViewNode = uix::uix!(
+        r#"<Carousel autoplay={carousel_autoplay} automationId="hero-carousel"><Text>第一页</Text><For {slide} in {carousel_slides}><Text>{slide}</Text></For></Carousel>"#
+    );
+    // 编译成功即证明 bool、For 与有序 ViewNode 子树契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译 Tree 类型化数据与动态配置。
 #[test]
 // 声明 Tree 外部消费编译测试。
