@@ -171,6 +171,22 @@ fn public_uix_macro_compiles_result_view() {
     // 编译成功即证明 Rust 2024 外部消费契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 Tag 颜色、能力与正文插值。
+#[test]
+fn public_uix_macro_compiles_tag() {
+    // 使用 Rust 2024 const 块产生动态关闭能力。
+    let tag_closable = const { true };
+    // 使用 Rust 2024 const 块产生动态可勾选能力。
+    let tag_checkable = const { true };
+    // 使用 Rust 2024 const 块产生正文插值。
+    let tag_label = const { "已完成" };
+    // 让过程宏生成公开 TagColor、交互能力与正文构建器。
+    let _view: ViewNode = uix::uix!(
+        r#"<Tag color="success" closable={tag_closable} checkable={tag_checkable} automationId="tag">状态：{tag_label}</Tag>"#
+    );
+    // 编译成功即证明 Rust 2024 外部消费契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译类型化开关与滑块表单。
 #[test]
 fn public_uix_macro_compiles_typed_form_switch_and_slider_items() {
