@@ -18,7 +18,8 @@ use super::{
     generate_scroll_view, generate_segmented, generate_select, generate_skeleton, generate_slider,
     generate_space, generate_splitter, generate_switch, generate_tag, generate_theme_toggle,
     generate_time_picker, generate_timeline, generate_tree_select, generate_typography,
-    generate_virtual_scroll, generate_window_control, planned_builtin_diagnostic,
+    generate_virtual_scroll, generate_watermark, generate_window_control,
+    planned_builtin_diagnostic,
 };
 
 // 按当前核心映射矩阵生成一个普通元素。
@@ -119,6 +120,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "Timeline" => generate_timeline(element),
         // 二维码映射到内容、文档尺寸与纠错等级契约。
         "QRCode" => generate_qrcode(element),
+        // 水印映射到文字、透明度与运行时平铺绘制契约。
+        "Watermark" => generate_watermark(element),
         // 表单映射到类型化模型、字段投影与提交闭环。
         "Form" => generate_form(element),
         // FormInputItem 只能由 Form 解释类型化字段语义。
@@ -163,7 +166,7 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline 或 QRCode，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、QRCode 或 Watermark，或先登记组件状态",
         )),
     }
     // 结束元素分派函数。

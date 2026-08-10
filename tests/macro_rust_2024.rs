@@ -280,6 +280,23 @@ fn public_uix_macro_compiles_avatar() {
     // 编译成功即证明 Rust 2024 String 借用、f32 与叶节点契约闭合。
 }
 
+// 验证真实 Rust 2024 消费 crate 可编译 Watermark 字符串借用与动态透明度。
+#[test]
+// 声明 Watermark 外部消费编译测试。
+fn public_uix_macro_compiles_watermark() {
+    // 调用方持有 String，宏展开只能临时借用。
+    let watermark_text = String::from("CONFIDENTIAL");
+    // 使用 Rust 2024 const 块产生动态 f32 透明度。
+    let watermark_opacity = const { 0.2_f32 };
+    // 让过程宏生成公开 Watermark 与公共自动化属性。
+    let _view: ViewNode = uix::uix!(
+        r#"<Watermark text={watermark_text} opacity={watermark_opacity} automationId="document-watermark" />"#
+    );
+    // Watermark 构造完成后调用方仍持有原字符串所有权。
+    assert_eq!(watermark_text, "CONFIDENTIAL");
+    // 编译成功即证明 Rust 2024 String 借用、f32 与叶节点契约闭合。
+}
+
 // 验证真实 Rust 2024 消费 crate 可编译类型化开关与滑块表单。
 #[test]
 fn public_uix_macro_compiles_typed_form_switch_and_slider_items() {
