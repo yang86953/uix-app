@@ -74,3 +74,95 @@ fn closing_fence_requires_only_trailing_whitespace() {
         ]
     );
 }
+
+// 验证波浪号围栏复用 Code 段并继续解析闭合后的普通内容。
+#[test]
+fn parses_tilde_fences_as_code_blocks() {
+    // 解析带语言标注的三波浪号围栏。
+    let segments = parse_rich_text("~~~rust\n**代码**\n~~~\n尾部");
+    // 代码正文不解释强调语法，闭合后的换行和普通文本仍保持顺序。
+    assert_eq!(
+        segments,
+        vec![
+            RichTextSegment::Code {
+                content: "**代码**\n".into(),
+            },
+            RichTextSegment::NewLine,
+            RichTextSegment::Text {
+                content: "尾部".into(),
+                style: RichTextStyle::default(),
+            },
+        ]
+    );
+}
+
+// 验证闭围栏必须与开围栏同类且长度不少于开围栏。
+#[test]
+fn requires_matching_marker_and_sufficient_closing_length() {
+    // 四反引号开围栏内放置异类波浪号和更短反引号候选。
+    let segments = parse_rich_text("````rust\n正文\n~~~\n```\n继续\n`````\n尾部");
+    // 异类和更短候选均留在代码正文，五反引号负责闭合。
+    assert_eq!(
+        segments,
+        vec![
+            RichTextSegment::Code {
+                content: "正文\n~~~\n```\n继续\n".into(),
+            },
+            RichTextSegment::NewLine,
+            RichTextSegment::Text {
+                content: "尾部".into(),
+                style: RichTextStyle::default(),
+            },
+        ]
+    );
+}
+
+// 验证 Unicode 空白不能充当闭围栏后缀，允许的 ASCII 空白不会进入可见段。
+#[test]
+fn consumes_only_allowed_closing_fence_whitespace() {
+    // NBSP 候选后继续放置带空格和制表符的合法闭围栏。
+    let segments = parse_rich_text("~~~\n正文\n~~~\u{00a0}\n继续\n~~~ \t\n尾部");
+    // NBSP 行保留在代码正文，合法闭围栏尾随空白被完整消费。
+    assert_eq!(
+        segments,
+        vec![
+            RichTextSegment::Code {
+                content: "正文\n~~~\u{00a0}\n继续\n".into(),
+            },
+            RichTextSegment::NewLine,
+            RichTextSegment::Text {
+                content: "尾部".into(),
+                style: RichTextStyle::default(),
+            },
+        ]
+    );
+}
+
+// 验证未闭合的波浪号围栏保持普通文本，不吞掉后续源码行。
+#[test]
+fn preserves_unclosed_tilde_fence_as_plain_text() {
+    // 构造只有开围栏而没有同类闭围栏的多行输入。
+    let segments = parse_rich_text("~~~rust\n后续 **正文**");
+    // 未闭合围栏回到普通内联路径，后续强调仍按原有语义解析。
+    assert_eq!(
+        segments,
+        vec![
+            RichTextSegment::Text {
+                content: "~~~rust".into(),
+                style: RichTextStyle::default(),
+            },
+            RichTextSegment::NewLine,
+            RichTextSegment::Text {
+                content: "后续 ".into(),
+                style: RichTextStyle::default(),
+            },
+            RichTextSegment::Text {
+                content: "正文".into(),
+                style: RichTextStyle {
+                    bold: true,
+                    ..Default::default()
+                },
+            },
+        ]
+    );
+}

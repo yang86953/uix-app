@@ -50,9 +50,9 @@ pub fn parse_rich_text(content: &str) -> Vec<RichTextSegment> {
     // 保留尚未处理的输入切片，行首围栏代码块会从这里切出。
     let mut rest = content;
     // 先处理成对的行首围栏代码块，避免代码内部的 Markdown 标记被再次解释。
-    while let Some((open, code_start, close)) = parse_fences::find_fenced_block(rest) {
+    while let Some(block) = parse_fences::find_fenced_block(rest) {
         // 解析围栏开始前的普通 Markdown 内联内容。
-        let before = &rest[..open];
+        let before = &rest[..block.open];
         // 只有存在前置内容时才进入内联解析器。
         if !before.is_empty() {
             // 普通内容继续复用统一的内联解析路径。
@@ -61,12 +61,12 @@ pub fn parse_rich_text(content: &str) -> Vec<RichTextSegment> {
         // 只把围栏正文作为代码段内容，语言标注已经在边界辅助中跳过。
         // 统一 CRLF 与孤立回车为 LF，避免回车作为代码字形进入布局和复制内容。
         segments.push(RichTextSegment::Code {
-            content: rest[code_start..close]
+            content: rest[block.code_start..block.close_start]
                 .replace("\r\n", "\n")
                 .replace('\r', "\n"),
         });
-        // 继续解析围栏结束标记之后的内容。
-        rest = &rest[close + 3..];
+        // 继续解析闭围栏行尾之后的内容，允许的尾随空白不会进入可见段。
+        rest = &rest[block.after_close..];
     }
     // 处理最后一个围栏之后或未闭合围栏中的剩余 Markdown 内容。
     if !rest.is_empty() {
