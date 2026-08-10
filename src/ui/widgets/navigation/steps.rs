@@ -7,6 +7,8 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
 use crate::ui::component::paint_context::PaintContext;
+// 引入受控 current 的响应式状态句柄。
+use crate::ui::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
     WidgetTree,
@@ -45,6 +47,8 @@ component! {
     pub struct Steps {
         steps: Vec<Step>,
         current: Cell<usize>,
+        // 保存声明端 current 的唯一受控状态来源。
+        current_binding: Option<State<usize>>,
         direction: StepsDirection,
         focused: bool,
         pending_change: Cell<Option<usize>>,
@@ -62,6 +66,8 @@ component! {
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        // 每次处理输入前吸收声明端可能发生的 current 更新。
+        self.sync_bound_value();
         match event {
             SystemEvent::PointerDown {
                 pos,
@@ -117,6 +123,8 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
+        // 捕获受控 State 依赖，使外部更新触发声明树重建。
+        self.capture_bound_value_dependency();
         let primary = ctx.tokens().color_primary();
         let _success = ctx.tokens().color_success();
         let error = ctx.tokens().color_error();
@@ -281,6 +289,8 @@ impl Steps {
         Self {
             steps,
             current,
+            // 默认构造保持非受控模式。
+            current_binding: None,
             direction: StepsDirection::Horizontal,
             focused: false,
             pending_change: Cell::new(None),
@@ -291,14 +301,37 @@ impl Steps {
         }
     }
     pub fn current(self, v: usize) -> Self {
-        self.current.set(self.clamp_index(v));
+        // 显式数值构造切回非受控初始值模式。
+        let mut this = self;
+        // 清除可能存在的声明端状态句柄。
+        this.current_binding = None;
+        // 按当前步骤集合归一化初始索引。
+        this.current.set(this.clamp_index(v));
+        // 返回完成配置的组件。
+        this
+    }
+    // 将当前步骤双向绑定到声明端 State<usize>。
+    pub fn current_state(mut self, state: &State<usize>) -> Self {
+        // 克隆轻量状态句柄，保持声明端为唯一事实源。
+        self.current_binding = Some(state.clone());
+        // 立即吸收并归一化当前外部索引。
+        self.sync_bound_value();
+        // 返回受控组件。
         self
     }
+    // 返回组件当前采用的已归一化步骤索引。
     pub fn get_current(&self) -> usize {
+        // 读取组件本地镜像；外部 State 更新会通过 reconcile 或事件入口同步。
         self.current.get()
     }
+    // 以命令式入口更新 current，但不伪造用户 Change 事件。
     pub fn set_current(&self, v: usize) {
-        self.current.set(self.clamp_index(v));
+        // 把请求索引限制在当前步骤集合中。
+        let current = self.clamp_index(v);
+        // 更新组件本地镜像。
+        self.current.set(current);
+        // 受控模式同时写回声明端状态。
+        self.write_bound_value(current);
     }
     pub fn horizontal(mut self) -> Self {
         self.direction = StepsDirection::Horizontal;
@@ -313,12 +346,20 @@ impl Steps {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        // 受控声明携带已经从 State 归一化出的 current 镜像。
+        let controlled_current = next.current_binding.as_ref().map(|_| next.current.get());
+        // 替换步骤数据后再计算有效索引范围。
         self.steps = next.steps;
+        // 采用新声明持有的 State 句柄。
+        self.current_binding = next.current_binding;
         self.direction = next.direction;
         self.clickable = next.clickable;
         self.dot = next.dot;
         self.step_callback = next.step_callback;
-        self.current.set(self.clamp_index(self.current.get()));
+        // 受控模式服从外部 State；非受控模式保留原交互状态。
+        let current = controlled_current.unwrap_or_else(|| self.current.get());
+        // 在新步骤集合下归一化 current 镜像。
+        self.current.set(self.clamp_index(current));
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -339,13 +380,59 @@ impl Steps {
         }
         let index = self.clamp_index(index);
         if index != self.current.get() {
+            // 先更新组件镜像，供同一输入周期的绘制和快照消费。
             self.current.set(index);
+            // 再写回唯一的受控状态所有者。
+            self.write_bound_value(index);
             self.pending_change.set(Some(index));
             if let Some(callback) = self.step_callback.as_ref() {
                 if let Some(step) = self.steps.get(index) {
                     callback(index, step);
                 }
             }
+        }
+    }
+
+    // 从声明端 State 吸收 current，并把越界值归一化回同一状态源。
+    fn sync_bound_value(&mut self) {
+        // 非受控模式不执行状态同步。
+        let Some(state) = self.current_binding.as_ref() else {
+            // 直接返回，保留组件自身交互状态。
+            return;
+        };
+        // 读取声明端最新索引。
+        let requested = state.get();
+        // 按当前步骤数量得到有效索引。
+        let current = self.clamp_index(requested);
+        // 更新运行时镜像。
+        self.current.set(current);
+        // 越界输入统一回写，避免状态源与组件长期分叉。
+        if requested != current {
+            // 写回归一化值。
+            state.set(current);
+        }
+    }
+
+    // 捕获声明端 current 的响应式依赖。
+    fn capture_bound_value_dependency(&self) {
+        // 仅受控组件需要登记 State 依赖。
+        if let Some(state) = self.current_binding.as_ref() {
+            // 读取值以接入当前追踪上下文。
+            let _ = state.get();
+        }
+    }
+
+    // 把组件 current 写回受控 State。
+    fn write_bound_value(&self, current: usize) {
+        // 非受控模式没有外部写回目标。
+        let Some(state) = self.current_binding.as_ref() else {
+            // 直接返回，保持原有非受控语义。
+            return;
+        };
+        // 避免相同值产生多余 generation 与 reconcile。
+        if state.get() != current {
+            // 提交新的受控 current。
+            state.set(current);
         }
     }
 
@@ -385,6 +472,74 @@ impl Steps {
                 (index < self.steps.len()).then_some(index)
             }
         }
+    }
+}
+
+// 受控 current 的运行时所有权与 reconcile 回归。
+#[cfg(test)]
+// 声明 Steps 私有测试模块。
+mod tests {
+    // 引入当前模块的组件与步骤类型。
+    use super::{Step, Steps};
+    // 引入公开响应式状态句柄。
+    use crate::ui::State;
+
+    // 验证外部更新、用户选择和越界归一化共享同一 State。
+    #[test]
+    // 声明双向受控 current 回归。
+    fn controlled_current_stays_bidirectional() {
+        // 创建声明端唯一状态源。
+        let current = State::new(1_usize);
+        // 构造三个可选步骤并绑定 current。
+        let mut steps = Steps::new(vec![Step::new("A"), Step::new("B"), Step::new("C")])
+            // 绑定声明端 current。
+            .current_state(&current);
+        // 初次物化必须读取外部值。
+        assert_eq!(steps.get_current(), 1);
+        // 模拟组件拥有的用户选择路径。
+        steps.select(2);
+        // 用户选择必须先写回外部 State。
+        assert_eq!(current.get(), 2);
+        // 外部业务随后切换到首步骤。
+        current.set(0);
+        // 输入入口采用的同步 helper 应吸收外部更新。
+        steps.sync_bound_value();
+        // 组件镜像必须与 State 一致。
+        assert_eq!(steps.get_current(), 0);
+        // 外部写入越界索引。
+        current.set(9);
+        // 同步时执行组件域归一化。
+        steps.sync_bound_value();
+        // 组件必须钳制到末步骤。
+        assert_eq!(steps.get_current(), 2);
+        // 唯一状态源也必须收到相同归一化值。
+        assert_eq!(current.get(), 2);
+    }
+
+    // 验证声明树重建采用新绑定值而不沿用旧交互镜像。
+    #[test]
+    // 声明 reconcile 受控状态回归。
+    fn reconcile_prefers_the_declared_current_state() {
+        // 创建初始声明状态。
+        let current = State::new(0_usize);
+        // 物化初始受控组件。
+        let mut steps = Steps::new(vec![Step::new("A"), Step::new("B")])
+            // 绑定初始 current。
+            .current_state(&current);
+        // 模拟旧实例中的用户交互镜像。
+        steps.select(1);
+        // 业务在下一次声明前改回首步骤。
+        current.set(0);
+        // 构造下一棵声明树中的组件配置。
+        let next = Steps::new(vec![Step::new("A"), Step::new("B"), Step::new("C")])
+            // 继续绑定同一业务状态。
+            .current_state(&current);
+        // 让运行时复用旧组件实例并同步新声明。
+        steps.sync_from(next);
+        // reconcile 必须服从声明端值。
+        assert_eq!(steps.get_current(), 0);
+        // 步骤数据也必须采用新声明。
+        assert_eq!(steps.step_count(), 3);
     }
 }
 
