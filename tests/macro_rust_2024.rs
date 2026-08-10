@@ -103,6 +103,12 @@ fn open_feedback() {
     // 编译 Gate 不需要运行时副作用。
 }
 
+// 定义 Alert 公开宏消费者使用的关闭事件处理器。
+fn record_alert_close(change: &str) {
+    // 编译 Gate 只核对统一关闭事实的文本借用。
+    let _ = change;
+}
+
 // 定义 Rust 2024 公开过程宏消费的类型化表单模型。
 #[derive(Clone)]
 // 保存本回归需要投影的开关与滑块字段。
@@ -323,6 +329,23 @@ fn public_uix_macro_compiles_tree() {
         r#"<Tree data={tree_nodes} checkable={tree_checkable} defaultExpandAll="true" automationId="navigation-tree" />"#
     );
     // 编译成功即证明 TreeNode 集合、bool 与叶节点契约闭合。
+}
+
+// 验证真实 Rust 2024 消费 crate 可编译 Alert 状态、动态关闭能力与关闭事件。
+#[test]
+// 声明 Alert 外部消费编译测试。
+fn public_uix_macro_compiles_alert() {
+    // 调用方持有 String，宏展开只能临时借用。
+    let alert_message = String::from("磁盘空间不足");
+    // 使用 Rust 2024 const 块产生动态关闭能力。
+    let alert_closable = const { true };
+    // 让过程宏生成公开 Alert、Change 处理器与公共自动化属性。
+    let _view: ViewNode = uix::uix!(
+        r#"<Alert message={alert_message} type="warning" closable={alert_closable} @close="record_alert_close($event)" automationId="disk-alert" />"#
+    );
+    // Alert 构造完成后调用方仍持有原字符串所有权。
+    assert_eq!(alert_message, "磁盘空间不足");
+    // 编译成功即证明 String 借用、bool、StatusLevel 与关闭事件契约闭合。
 }
 
 // 验证真实 Rust 2024 消费 crate 可编译类型化开关与滑块表单。
