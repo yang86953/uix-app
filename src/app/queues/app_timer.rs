@@ -224,7 +224,7 @@ impl TimerHandle {
     /// Keep the timer until explicit [`Self::cancel`] or window/session teardown.
     ///
     /// Drop no longer cancels — use for `on_start` interval timers so callers need not
-    /// stash handles in `Arc<Mutex<Vec<_>>>`（知识库：`C:\data\note\我的项目\软件\UIX App\使用.md`）。
+    /// stash handles in `Arc<Mutex<Vec<_>>>`（公开用法见仓库 `docs/使用/定时与异步.md`）。
     pub fn detach(mut self) {
         self.detach_on_drop = true;
     }

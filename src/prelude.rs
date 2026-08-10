@@ -5,7 +5,7 @@
 //! use uix::prelude::*;
 //! ```
 //!
-//! Macro tiers（知识库：`C:\data\note\我的项目\软件\UIX App\使用.md`）：
+//! Macro tiers（公开用法见仓库 `docs/使用.md`）：
 //! - daily: `keyframe!`, `views!`, `with_cloned!`
 //! - advanced: `component!`
 //! - framework: `tree!`, `impl_widget_component!`, `semantic_handler!`

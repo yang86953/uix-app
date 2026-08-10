@@ -14,7 +14,7 @@
 //! | [`backends`] | OS 适配层：唯一允许 `#[cfg(target_os = ...)]` 的目录，实现各 Module 的窄能力契约 |
 //! | [`test_harness`] | 测试替身（`test-harness` feature） |
 //!
-//! 五个私有 Module（目标边界见[系统列表]）：
+//! 五个私有 Module（目标边界见仓库 `docs/架构/系统列表.md`）：
 //!
 //! | Module | 职责 | 窄契约依赖 |
 //! |--------|------|------------|
@@ -26,9 +26,6 @@
 //!
 //! 业务流向由 System 编排（`create_platform_with_pending` 与公开门面），Module 之间除上表
 //! 窄契约外零依赖；禁止 Module 直接引用、持有、发现或回调兄弟 Module。
-//!
-//! [系统列表]: <file:///C:/data/note/我的项目/软件/UIX App/架构/系统列表.md>
-
 #[cfg(feature = "agent-control")]
 pub(crate) mod agent_transport;
 pub(crate) mod backends;
