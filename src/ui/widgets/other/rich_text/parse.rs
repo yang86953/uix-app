@@ -20,7 +20,6 @@ mod parse_autolink;
 // 跨行扫描与 Setext 消费独立归入行解析辅助模块。
 #[path = "parse_lines.rs"]
 mod parse_lines;
-
 pub fn layout_rich_text_segments(
     segments: &[RichTextSegment],
     max_width: f32,
@@ -47,8 +46,10 @@ pub fn layout_rich_text_segments(
 pub fn parse_rich_text(content: &str) -> Vec<RichTextSegment> {
     // 创建按文档顺序保存解析结果的段列表。
     let mut segments = Vec::new();
-    // 保留尚未处理的输入切片，行首围栏代码块会从这里切出。
-    let mut rest = content;
+    // 先把 CRLF 与孤立 CR 统一为 LF，让所有语法共享同一分行契约。
+    let normalized = parse_lines::normalize_markdown_line_endings(content);
+    // 保留尚未处理的规范化输入切片，行首围栏代码块会从这里切出。
+    let mut rest = normalized.as_ref();
     // 先处理成对的行首围栏代码块，避免代码内部的 Markdown 标记被再次解释。
     while let Some(block) = parse_fences::find_fenced_block(rest) {
         // 解析围栏开始前的普通 Markdown 内联内容。
@@ -59,11 +60,9 @@ pub fn parse_rich_text(content: &str) -> Vec<RichTextSegment> {
             parse_lines::parse_inline_text(before, &mut segments);
         }
         // 只把围栏正文作为代码段内容，语言标注已经在边界辅助中跳过。
-        // 统一 CRLF 与孤立回车为 LF，避免回车作为代码字形进入布局和复制内容。
+        // 入口已经统一行结束，围栏正文可直接进入共享代码段生命周期。
         segments.push(RichTextSegment::Code {
-            content: rest[block.code_start..block.close_start]
-                .replace("\r\n", "\n")
-                .replace('\r', "\n"),
+            content: rest[block.code_start..block.close_start].to_owned(),
         });
         // 继续解析闭围栏行尾之后的内容，允许的尾随空白不会进入可见段。
         rest = &rest[block.after_close..];

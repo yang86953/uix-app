@@ -1,5 +1,40 @@
 // 富文本源码行扫描与跨行 Setext 消费辅助。
+use std::borrow::Cow;
+
 use super::{RichTextSegment, parse_blocks, parse_inline_line, parse_inline_range};
+
+// 在块级和内联解析前把 CRLF 与孤立 CR 统一为 LF。
+pub(super) fn normalize_markdown_line_endings(content: &str) -> Cow<'_, str> {
+    // 没有回车的常见路径直接借用输入，避免不必要分配。
+    if !content.contains('\r') {
+        // LF 与无换行输入已经符合解析器内部契约。
+        return Cow::Borrowed(content);
+    }
+    // 最终字节数不会超过原输入，按原容量一次性分配。
+    let mut normalized = String::with_capacity(content.len());
+    // 记录尚未复制的原输入起点。
+    let mut cursor = 0usize;
+    // 逐个查找回车，同时保持 UTF-8 切片边界。
+    while let Some(relative) = content[cursor..].find('\r') {
+        // 将相对位置转换为完整输入中的绝对位置。
+        let carriage_return = cursor + relative;
+        // 复制当前回车前的全部原始文本。
+        normalized.push_str(&content[cursor..carriage_return]);
+        // 每个 CR 或 CRLF 行结束只生成一个内部 LF。
+        normalized.push('\n');
+        // 先跳过当前单字节回车。
+        cursor = carriage_return + 1;
+        // CR 后紧邻 LF 时把二者作为一个 Windows 行结束序列消费。
+        if content.as_bytes().get(cursor) == Some(&b'\n') {
+            // 跳过已经由内部 LF 代表的源 LF。
+            cursor += 1;
+        }
+    }
+    // 复制最后一个回车之后的剩余文本。
+    normalized.push_str(&content[cursor..]);
+    // 返回由解析边界拥有的规范化内容。
+    Cow::Owned(normalized)
+}
 
 // 解析 Markdown 源码行，并把显式换行转换为 NewLine 段。
 pub(super) fn parse_inline_text(text: &str, segments: &mut Vec<RichTextSegment>) {
@@ -179,3 +214,8 @@ fn is_markdown_blank_line(line: &str) -> bool {
 #[cfg(test)]
 #[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_indented_code_tests.rs"]
 mod indented_code_tests;
+
+// 将行结束专项回归放在独立文件，保持行扫描实现聚焦。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_line_ending_tests.rs"]
+mod line_ending_tests;
