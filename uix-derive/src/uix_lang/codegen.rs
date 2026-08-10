@@ -20,9 +20,9 @@ use super::{
     generate_orphan_form_radio_item, generate_orphan_form_select_item,
     generate_orphan_form_slider_item, generate_orphan_form_switch_item, generate_radio,
     generate_range_slider, generate_rate, generate_row, generate_scroll_view, generate_segmented,
-    generate_select, generate_slider, generate_space, generate_splitter, generate_switch,
-    generate_theme_toggle, generate_time_picker, generate_tree_select, generate_typography,
-    generate_virtual_scroll, generate_window_control,
+    generate_select, generate_skeleton, generate_slider, generate_space, generate_splitter,
+    generate_switch, generate_theme_toggle, generate_time_picker, generate_tree_select,
+    generate_typography, generate_virtual_scroll, generate_window_control,
 };
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
@@ -131,6 +131,8 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
         "TimePicker" => generate_time_picker(element),
         // 颜色选择映射到 State<Color> 双向值契约。
         "ColorPicker" => generate_color_picker(element),
+        // 骨架屏映射到公开形状与固有尺寸契约。
+        "Skeleton" => generate_skeleton(element),
         // 表单映射到类型化模型、字段投影与提交闭环。
         "Form" => generate_form(element),
         // FormInputItem 只能由 Form 解释类型化字段语义。
@@ -175,7 +177,7 @@ fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker 或 TimePicker，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem 或 Skeleton，或先登记组件状态",
         )),
     }
 }
