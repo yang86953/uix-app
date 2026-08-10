@@ -209,6 +209,11 @@ mod qrcode_codegen;
 // 集中验证 QRCode 生成、默认值与拒绝路径。
 #[cfg(test)]
 mod qrcode_codegen_tests;
+// 定义 Watermark 文字与透明度的公开 API 代码生成边界。
+mod watermark_codegen;
+// 集中验证 Watermark 生成、默认值与拒绝路径。
+#[cfg(test)]
+mod watermark_codegen_tests;
 // 定义 Form 与类型化字段的公开 API 代码生成边界。
 mod form_codegen;
 // 定义 FormSliderItem 类型化 f64 字段的独立生成边界。
@@ -356,6 +361,8 @@ pub(crate) use descriptions_codegen::generate_descriptions;
 pub(crate) use timeline_codegen::generate_timeline;
 // 向核心元素生成器暴露 QRCode 叶组件专用映射。
 pub(crate) use qrcode_codegen::generate_qrcode;
+// 向核心元素生成器暴露 Watermark 叶组件专用映射。
+pub(crate) use watermark_codegen::generate_watermark;
 // 向核心元素生成器暴露 Form 与越界字段项映射。
 pub(crate) use form_codegen::{
     generate_form, generate_orphan_form_checkbox_item, generate_orphan_form_input_item,
