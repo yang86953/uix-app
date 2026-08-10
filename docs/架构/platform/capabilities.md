@@ -27,3 +27,5 @@
 ## 模块不变量
 
 创建、调用和析构遵守 owner thread；查询不创建窗口或图形设备，目录查询不隐式创建目录。
+
+同步 adapter 枚举按公开 backend 精确分派：只有 Windows D3D11 返回 DXGI owned values，其他已启用 backend 返回 typed `NotImplemented`，不保留空成功或不可达的幽灵成功路径。
