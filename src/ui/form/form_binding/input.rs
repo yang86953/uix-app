@@ -7,7 +7,6 @@ use crate::ui::{EventResult, FocusHandle, State, SystemEvent};
 
 use super::{bind_typed_control, bound_required, form_item_shell};
 
-
 /// 一个已登记字段的声明式文本输入项。
 ///
 /// 经 `Form::model` 字段投影（裸配置）或 `FormModel::input_item`（已绑定）创建；
@@ -15,10 +14,14 @@ use super::{bind_typed_control, bound_required, form_item_shell};
 pub struct FormInputItem {
     pub(crate) model: Option<FormModel>,
     pub(crate) field: String,
+    // 保存独立于字段 key 的用户可见标签。
+    pub(crate) label: Option<String>,
     pub(crate) value: Option<State<String>>,
     pub(crate) focus_handle: Option<FocusHandle>,
     pub(crate) placeholder: String,
     pub(crate) required: bool,
+    // 记录是否启用内置邮箱格式规则。
+    pub(crate) email: bool,
     pub(crate) show_error: bool,
 }
 
@@ -28,10 +31,14 @@ impl FormInputItem {
         Self {
             model: None,
             field: name.into(),
+            // 默认沿用字段 key 作为标签，保持现有调用兼容。
+            label: None,
             value: None,
             focus_handle: None,
             placeholder: String::new(),
             required: false,
+            // 默认不启用邮箱格式校验。
+            email: false,
             show_error: true,
         }
     }
@@ -39,6 +46,22 @@ impl FormInputItem {
     /// 声明字段为必填（`Form::model` 构建时登记校验规则）。
     pub fn required(mut self, required: bool) -> Self {
         self.required = required;
+        self
+    }
+
+    /// 设置独立于字段 key 的用户可见标签。
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        // 保存显式展示文本供类型化表单登记字段壳。
+        self.label = Some(label.into());
+        // 返回更新后的声明式字段配置。
+        self
+    }
+
+    /// 声明字段使用内置邮箱格式校验。
+    pub fn email(mut self, email: bool) -> Self {
+        // 保存规则开关，统一由 Form::model 构建阶段登记。
+        self.email = email;
+        // 返回更新后的声明式字段配置。
         self
     }
 
@@ -79,7 +102,8 @@ impl View for FormInputItem {
             "FormInputItem 未绑定：请经 Form::model 字段投影或 FormModel::input_item 创建",
         );
         let value = bound_required(self.value.clone(), "FormInputItem 未绑定值 State");
-        let focus_handle = bound_required(self.focus_handle.clone(), "FormInputItem 未绑定焦点句柄");
+        let focus_handle =
+            bound_required(self.focus_handle.clone(), "FormInputItem 未绑定焦点句柄");
         let current = value.get();
         model.sync_text_value(&self.field, &current);
 
@@ -210,10 +234,7 @@ where
             self.model.clone(),
             "FormInputNumberItem 未绑定：请经 Form::model 字段投影或 FormModel::input_number_item 创建",
         );
-        let value = bound_required(
-            self.value.clone(),
-            "FormInputNumberItem 未绑定值 State",
-        );
+        let value = bound_required(self.value.clone(), "FormInputNumberItem 未绑定值 State");
         let focus_handle = bound_required(
             self.focus_handle.clone(),
             "FormInputNumberItem 未绑定焦点句柄",
@@ -225,9 +246,7 @@ where
     }
 }
 
-
 impl FormModel {
-
     pub fn input_item(
         &self,
         field: impl AsRef<str>,
@@ -239,10 +258,14 @@ impl FormModel {
         Some(FormInputItem {
             model: Some(self.clone()),
             field: field.to_string(),
+            // 已绑定入口默认沿用字段模型中登记的标签。
+            label: None,
             value: Some(value.clone()),
             focus_handle: Some(focus_handle),
             placeholder: String::new(),
             required: false,
+            // 旧 FormModel 入口的规则仍由字段声明阶段拥有。
+            email: false,
             show_error: true,
         })
     }
@@ -271,5 +294,4 @@ impl FormModel {
             show_error: true,
         })
     }
-
 }

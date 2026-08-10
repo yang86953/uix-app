@@ -124,6 +124,35 @@ fn typed_form_validation_failure_does_not_overwrite_model() {
     assert_eq!(model.get().age, 20);
 }
 
+// 验证类型化文本字段保留独立标签并登记邮箱规则。
+#[test]
+fn typed_form_input_item_applies_label_and_email_rule() {
+    // 创建包含非法邮箱文本的业务模型。
+    let model = State::new(ProfileForm {
+        // 复用字符串字段承载本测试的邮箱值。
+        name: "invalid-email".to_string(),
+        // 年龄字段不参与本测试。
+        age: 20,
+    });
+    // 通过独立字段 key、展示标签与邮箱规则构建类型化表单。
+    let form = Form::model(&model)
+        // 标签不得改变模型字段访问器和稳定字段 key。
+        .field(
+            "name",
+            |m| &mut m.name,
+            FormInputItem::new("name").label("邮箱").email(true),
+        )
+        // 完成运行时表单模型构建。
+        .build();
+
+    // 首次生成 View 绑定字段 State，并覆盖标签渲染路径。
+    let _view = form.view();
+    // 非法邮箱必须由运行时统一校验器拒绝。
+    let errors = form.submit().expect_err("非法邮箱必须校验失败");
+    // 错误文案必须来自字段项登记的邮箱规则。
+    assert_eq!(errors[0].message(), "邮箱格式不正确");
+}
+
 #[test]
 fn typed_form_reset_restores_model_values() {
     let model = State::new(ProfileForm {
