@@ -18,6 +18,8 @@
 
 > **能力与提交**：生产 GPU backend 从同一次 `GraphicsCapabilities` 快照验证 GPU baseline 并派生 `NativeRasterCaps`；逐 UI capability 不在 adapter 平行声明。GPU 最终提交只由 `GraphicsSurface::present` 持有，CPU PixelUpload 最终提交只由 `PixelUploadSurface::present_pixels` 持有。
 
+> **坐标与行序契约**：通用逻辑层只使用左上原点逻辑坐标，thin RHI 的 viewport、scissor、顶点与 UV 输入语义跨平台一致（`RhiScissor` 保持左上原点约定）。帧缓冲行序差异（Wayland EGL 为 top-left 行序、WGL/D3D11 为 bottom-up）由各 adapter 内部消化，不得泄漏到通用层：OpenGL adapter 以 `flip_y` 标志在 shader 编译期选择顶点 Y 方向、并按行序换算 scissor；D3D11 原生 top-left 无需换算。`read_surface_pixels` 的 readback 输出统一为 top-left 行序（row 0 = 窗口顶部），bottom-up 平台的 adapter 必须在返回前完成垂直翻转；blur 的 NDC quad、GPU 快照 copy 与滚动 memmove 等像素搬运路径保持坐标对坐标机械语义，其行序自洽性由 adapter 行序处理保证，不得在通用层叠加翻转。当前 `flip_y` 已覆盖 OpenGL 绘制路径；readback 行序在 WGL 实现上尚未收敛，属于待办契约缺口。
+
 > **当前实现线索**：通用代码位于 `src/draw/backend/`，thin RHI 契约位于 `src/native/present/rhi.rs`，类型化 recipe 生命周期位于 `src/native/present/traits.rs`，candidate/owner 位于 `src/native/present/`，registry 与线程绑定在 `src/native/factory/`，生产 adapter 位于 `src/native/presentation/graphics/`。
 
 ## fallback 边界
