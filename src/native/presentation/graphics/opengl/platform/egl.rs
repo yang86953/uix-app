@@ -7,6 +7,9 @@
 // 依赖 khronos-egl v6 (static 链接) + wayland-egl (系统库 FFI)。
 // ============================================================================
 
+// 在 Rust 2024 下禁止 unsafe 函数体隐式扩大底层操作范围。
+#![deny(unsafe_op_in_unsafe_fn)]
+
 use std::ffi::c_void;
 use std::ptr;
 
@@ -51,13 +54,19 @@ struct WlEglWindow {
 // 注意：wayland-egl 不是 khronos-egl 的一部分。
 // 它在编译期通过 #[link] 与系统 libwayland-egl.so 链接。
 #[link(name = "wayland-egl")]
-extern "C" {
+// SAFETY：外部 FFI 声明，调用方必须保证传入的 surface 指针与尺寸参数有效。
+unsafe extern "C" {
     fn wl_egl_window_create(surface: *mut c_void, width: i32, height: i32) -> *mut WlEglWindow;
 
     fn wl_egl_window_destroy(window: *mut WlEglWindow);
 
     fn wl_egl_window_resize(window: *mut WlEglWindow, width: i32, height: i32, dx: i32, dy: i32);
 }
+
+// khronos-egl v6 的 static 绑定不携带 #[link]；项目刻意使用 no-pkg-config，
+// 因此这里显式声明系统 libEGL 链接，保证 egl* 符号进入最终链接。
+#[link(name = "EGL")]
+unsafe extern "C" {}
 
 // ════════════════════════════════════════════════════════════════════════════
 // EglContext

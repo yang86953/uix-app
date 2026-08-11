@@ -11,6 +11,8 @@ description = "UIX GUI 多页演示（12 页应用 + Agent 与 test-harness 测�
 # 日志订阅、Agent Bridge 与自动测试支撑作为本项目的可开关 feature 透传。
 uix = { path = "../..", default-features = false, features = [
     "d3d11",
+    # Linux/Wayland 下 GUI 渲染需要 EGL OpenGL ES 后端（Windows 上自动忽略）。
+    "opengles",
     "image-codecs",
     "qrcode",
     "form-pattern",
