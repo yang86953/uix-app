@@ -322,14 +322,14 @@ pub fn run(
     let graphics_recovery_control = GraphicsRecoveryControl::new(graphics_recovery_test);
     let framework_control = FrameworkControl::default();
 
-    // 自定义标题栏目前仅 Windows 实现；其他平台保持系统标题栏以免启动失败。
-    #[cfg(windows)]
+    // Windows 与 Wayland 都通过平台窗口能力隐藏系统装饰并显示同一自定义标题栏。
     let app = App::new()
+        // 设置演示窗口标题。
         .title("UIX Demo")
+        // 设置演示窗口初始尺寸。
         .size(INIT_W, INIT_H)
+        // 启用由 UIX 组件绘制和交互的标题栏。
         .custom_title_bar(true);
-    #[cfg(not(windows))]
-    let app = App::new().title("UIX Demo").size(INIT_W, INIT_H);
     let app = app
         .theme(Theme::antd_light())
         .follow_system_theme(follow_system_theme);

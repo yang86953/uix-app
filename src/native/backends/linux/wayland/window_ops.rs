@@ -18,7 +18,13 @@ use wayland_client::backend::WaylandError;
 use wayland_client::protocol::{wl_callback, wl_compositor, wl_region, wl_shm, wl_surface};
 use wayland_client::{globals::GlobalList, Connection, EventQueue};
 use wayland_protocols::xdg::activation::v1::client::xdg_activation_v1::XdgActivationV1;
-use wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1;
+// 引入 Wayland 顶层窗口装饰对象及客户端/服务端装饰模式。
+use wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1::{
+    // 使用短别名表达系统标题栏可见性对应的协议模式。
+    Mode as XdgDecoMode,
+    // 持有装饰对象直到顶层窗口关闭。
+    ZxdgToplevelDecorationV1,
+};
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
 use crate::core::error::{Errc, Error, Result};
@@ -64,6 +70,18 @@ pub(crate) struct WaylandWindowOps {
 }
 
 impl WaylandWindowOps {
+    // 将统一的系统标题栏可见性映射为 Wayland 装饰模式。
+    fn title_bar_decoration_mode(visible: bool) -> XdgDecoMode {
+        // 可见系统标题栏请求 compositor 绘制服装饰。
+        if visible {
+            // 服务端装饰对应原生标题栏。
+            XdgDecoMode::ServerSide
+        } else {
+            // 客户端装饰把标题栏区域交给 UIX 自己绘制。
+            XdgDecoMode::ClientSide
+        }
+    }
+
     fn missing_proxy(operation: &str, proxy: &str) -> Error {
         Error::new(
             Errc::InvalidState,
@@ -145,10 +163,8 @@ impl WaylandWindowOps {
         window_state: Rc<RefCell<WindowState>>,
     ) -> Result<(), Error> {
         use crate::native::windowing::event::{UiEventPayload, UiEventType};
-        use wayland_protocols::xdg::decoration::zv1::client::{
-            zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
-            zxdg_toplevel_decoration_v1::Mode as XdgDecoMode,
-        };
+        // 初始化阶段只需临时绑定装饰管理器，装饰模式使用模块级统一映射。
+        use wayland_protocols::xdg::decoration::zv1::client::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1;
 
         let events = self.events.clone();
         let window_id = self.window_id;
@@ -345,6 +361,8 @@ impl WindowOps for WaylandWindowOps {
             .lock()
             .unwrap_or_else(|error| error.into_inner()) = None;
         self.unregister_surface();
+        // 装饰对象依赖 xdg_toplevel，必须先于顶层窗口释放。
+        self.xdg_decoration = None;
         self.toplevel = None;
         self.xdg_surface = None;
         self.surface = None;
@@ -361,6 +379,35 @@ impl WindowOps for WaylandWindowOps {
             .ok_or_else(|| Self::missing_proxy("os_set_title", "xdg_toplevel"))?;
         toplevel.set_title(title.to_string());
         Ok(())
+    }
+
+    // 在服务端标题栏与 UIX 客户端标题栏之间切换。
+    fn os_set_system_title_bar_visible(&mut self, visible: bool) -> Result<()> {
+        // 优先通过 xdg-decoration 协议提交明确的模式请求。
+        if let Some(decoration) = self.xdg_decoration.as_ref() {
+            // 将公共布尔契约映射为唯一协议模式。
+            let mode = Self::title_bar_decoration_mode(visible);
+            // 模式请求由后续 surface commit 与 compositor configure 完成协商。
+            decoration.set_mode(mode);
+            // 记录请求方向，便于 Linux 真窗验收定位 compositor 行为。
+            tracing::info!(visible, "[Wayland] xdg-decoration mode requested");
+            // 已成功把请求交付给 Wayland 协议对象。
+            return Ok(());
+        }
+        // 缺少协议时 Wayland 默认由客户端负责装饰，因此隐藏系统标题栏可直接满足。
+        if !visible {
+            // 记录无扩展协议时采用的客户端装饰语义。
+            tracing::info!("[Wayland] using client-side decorations without xdg-decoration");
+            // UIX 可以继续显示自己的标题栏。
+            return Ok(());
+        }
+        // 无装饰协议时无法保证 compositor 提供系统标题栏。
+        Err(Error::new(
+            // 使用未实现分类保留能力缺失语义。
+            Errc::NotImplemented,
+            // 给调用方稳定说明缺失的 Wayland 扩展。
+            "xdg-decoration is unavailable for server-side title bar",
+        ))
     }
 
     fn os_center_on_screen(&mut self) -> Result<()> {
