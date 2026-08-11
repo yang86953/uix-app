@@ -20,6 +20,8 @@
 | `GraphicsRecovery` / `RecoveryDriver` | struct | backend/surface 恢复协调 |
 | `RenderMetrics` | struct | 成功帧和失效来源指标 |
 
+运行时 backend 切换由 `RenderSession` 作为唯一 owner 执行检查式事务：候选构造失败不触碰当前 backend；当前 backend 的 `try_shutdown` 成功是 owner 切换提交点，失败时返回原 typed error 并保留原 backend、extent 与 capability。提交后先安装候选并保留 `FullRedraw` 要求，再恢复同一 extent；若候选 resize 失败，新 backend 仍作为唯一 owner 留在会话中供恢复、重试或 checked shutdown，不能伪装成已回滚到旧 backend。
+
 ## 组件：Renderer
 
 CPU/GPU 是 Renderer 内部 backend 选择，不是两套组件绘制 API。同窗一帧只有一条有序命令序列和至多一次最终 present。
