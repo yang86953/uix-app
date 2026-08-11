@@ -38,7 +38,8 @@ impl GpuBackend {
     pub(super) fn present_impl(&mut self, damage: &DamageRegion) -> Result<(), Error> {
         // 活跃 Picture 必须先结束，保证主 surface 不会与离屏 target 交错。
         if self.active_offscreen.is_some() {
-            self.end_offscreen_paint();
+            // checked end 失败时立即停止主 surface 提交并保留 typed error。
+            self.try_end_offscreen_paint()?;
         }
         // 在任何 RHI lowering 或最终提交前执行 owner-thread device preflight。
         // 已验证 owner 必须在最终 present 前完成 owner-thread device preflight。

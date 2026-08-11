@@ -20,7 +20,7 @@
 
 > **静态与动态事实**：`GraphicsContextCaps` 只固定 backend、raster/present、coherency 与 occlusion；drawable extent、DPR、transform 与 generation 只来自单次 `PresentSurface` 快照。thread-bound wrapper 不缓存静态 capability，recipe owner 不在运行期重新推断 recipe。
 
-> **RHI 与最终提交边界**：逐 UI draw/clear/offscreen/upload、二阶段 initialize、平台 current、通用 resize、统一 present 与 readback 均不属于共享 lifecycle。生产 GPU 只通过 `GraphicsDevice` / `GraphicsSurface` 执行资源、probe、resize、readback 与最终 present；CPU × PixelUpload 只通过 `PixelUploadSurface` 上传并提交。平台 adapter 不拥有 FramePlan、fallback、Picture 或 effect 策略。
+> **RHI 与最终提交边界**：逐 UI draw/clear/offscreen/upload、二阶段 initialize、平台 current、通用 resize、统一 present 与 readback 均不属于共享 lifecycle。生产 GPU 只通过 `GraphicsDevice` / `GraphicsSurface` 执行资源、probe、resize、readback 与最终 present；CPU × PixelUpload 只通过 `PixelUploadSurface` 上传并提交。平台 adapter 不拥有 FramePlan、fallback、Picture 或 effect 策略；draw 侧 Picture begin/flush/end/blit 只允许 checked `Result` 边界，不能用 bool/void 门面把失败推迟或吞掉。
 
 ## 组件清单
 

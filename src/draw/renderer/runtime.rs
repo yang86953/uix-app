@@ -485,16 +485,6 @@ impl RenderTarget for Renderer {
         self.session.backend_mut().offscreen_canvas(handle)
     }
 
-    fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) {
-        self.session.backend_mut().blit_offscreen(handle, dst_rect);
-    }
-
-    fn blit_offscreen_src(&mut self, handle: &ImageHandle, src_rect: Rect, dst_rect: Rect) {
-        self.session
-            .backend_mut()
-            .blit_offscreen_src(handle, src_rect, dst_rect);
-    }
-
     fn blit_offscreen_to_canvas(
         &mut self,
         handle: &ImageHandle,
@@ -563,24 +553,12 @@ impl RenderTarget for Renderer {
             .try_execute_encoded_frame(encoder)
     }
 
-    fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
-        self.session.backend_mut().begin_offscreen_paint(handle)
-    }
-
     fn try_begin_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
         self.session.backend_mut().try_begin_offscreen_paint(handle)
     }
 
-    fn flush_offscreen_paint(&mut self, handle: &ImageHandle) {
-        self.session.backend_mut().flush_offscreen_paint(handle);
-    }
-
     fn try_flush_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
         self.session.backend_mut().try_flush_offscreen_paint(handle)
-    }
-
-    fn end_offscreen_paint(&mut self) {
-        self.session.backend_mut().end_offscreen_paint();
     }
 
     fn try_end_offscreen_paint(&mut self) -> Result<(), Error> {

@@ -231,70 +231,84 @@ pub trait RenderBackend {
         Ok(EncodedFrameExecution::Unsupported)
     }
 
-    /// Bind + clear offscreen for Picture rasterize. CPU: no-op success if handle valid.
-    fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
-        let _ = handle;
-        false
-    }
-
-    /// Checked counterpart of [`Self::begin_offscreen_paint`].  New compositor
-    /// code must use this boundary so an invalid target or a native bind/clear
-    /// failure can abort the frame before it is reported as presented.  The
-    /// bool method remains only for compatibility with existing backend tests.
-    fn try_begin_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
-        if self.begin_offscreen_paint(handle) {
-            Ok(())
-        } else {
-            Err(Error::new(
-                crate::core::Errc::InvalidState,
-                "backend could not begin Picture offscreen paint",
-            ))
-        }
-    }
-
-    /// Flush pending Canvas2D ops into the bound GPU RT (CPU: no-op).
-    fn flush_offscreen_paint(&mut self, handle: &ImageHandle) {
-        let _ = handle;
-    }
-
-    /// Checked counterpart of [`Self::flush_offscreen_paint`].  Implementors
-    /// that call native APIs override this rather than logging and continuing.
-    fn try_flush_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
-        self.flush_offscreen_paint(handle);
-        Ok(())
-    }
-
-    /// Unbind offscreen; restore swapchain / main target.
-    fn end_offscreen_paint(&mut self) {}
-
-    /// Checked counterpart of [`Self::end_offscreen_paint`].
-    fn try_end_offscreen_paint(&mut self) -> Result<(), Error> {
-        self.end_offscreen_paint();
-        Ok(())
-    }
-
-    fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) {
-        self.blit_offscreen_src(
-            handle,
-            Rect::new(0.0, 0.0, dst_rect.w, dst_rect.h),
-            dst_rect,
-        );
-    }
-
-    fn blit_offscreen_src(&mut self, handle: &ImageHandle, src_rect: Rect, dst_rect: Rect) {
-        let _ = (handle, src_rect, dst_rect);
-    }
-
-    /// Checked ordered Picture boundary.  A failed blit must stop the frame;
-    /// it cannot be deferred to a later final present as a successful frame.
-    fn try_blit_offscreen_src(
+    /// Checked Picture begin boundary. Unsupported backends fail explicitly.
+    // 默认 checked begin 不允许把缺失的 Picture target 伪装成成功。
+    fn try_begin_offscreen_paint(
+        // 接收当前 backend 的唯一可变 owner。
         &mut self,
+        // 接收调用方已经创建的 Picture 目标身份。
         handle: &ImageHandle,
-        src_rect: Rect,
-        dst_rect: Rect,
+        // 返回 typed failure，供 renderer 恢复链处理。
     ) -> Result<(), Error> {
-        self.blit_offscreen_src(handle, src_rect, dst_rect);
-        Ok(())
+        // 默认实现只消费参数，具体 backend 必须显式覆盖生命周期。
+        let _ = handle;
+        // 缺失 Picture 生命周期属于明确的能力缺口。
+        Err(Error::new(
+            // 使用稳定错误分类区分能力缺口与资源故障。
+            crate::core::Errc::NotImplemented,
+            // 保留可定位的 Picture begin 诊断。
+            "render backend does not support Picture offscreen begin",
+        ))
+    }
+
+    /// Checked Picture flush boundary. Unsupported backends fail explicitly.
+    // 默认 checked flush 不允许静默丢弃待提交的 Picture 绘制。
+    fn try_flush_offscreen_paint(
+        // 接收当前 backend 的唯一可变 owner。
+        &mut self,
+        // 接收必须提交的 Picture 目标身份。
+        handle: &ImageHandle,
+        // 返回 typed failure，阻止错误帧进入最终 present。
+    ) -> Result<(), Error> {
+        // 默认实现只消费参数，具体 backend 必须显式覆盖提交语义。
+        let _ = handle;
+        // 缺失 Picture flush 属于明确的能力缺口。
+        Err(Error::new(
+            // 使用稳定错误分类驱动既有恢复策略。
+            crate::core::Errc::NotImplemented,
+            // 保留可定位的 Picture flush 诊断。
+            "render backend does not support Picture offscreen flush",
+        ))
+    }
+
+    /// Checked Picture end boundary. Unsupported backends fail explicitly.
+    // 默认 checked end 要求实现者显式闭合已经开始的 Picture 生命周期。
+    fn try_end_offscreen_paint(
+        // 接收当前 backend 的唯一可变 owner。
+        &mut self,
+        // 返回 typed failure，禁止绕过 target 恢复边界。
+    ) -> Result<(), Error> {
+        // 缺失 Picture end 属于明确的能力缺口。
+        Err(Error::new(
+            // 使用稳定错误分类驱动既有恢复策略。
+            crate::core::Errc::NotImplemented,
+            // 保留可定位的 Picture end 诊断。
+            "render backend does not support Picture offscreen end",
+        ))
+    }
+
+    /// Checked ordered Picture blit boundary. Unsupported backends fail explicitly.
+    // 默认 checked blit 不允许把漏绘误报为成功帧。
+    fn try_blit_offscreen_src(
+        // 接收当前 backend 的唯一可变 owner。
+        &mut self,
+        // 接收稳定的 Picture 来源身份。
+        handle: &ImageHandle,
+        // 接收来源纹理内的裁剪区域。
+        src_rect: Rect,
+        // 接收当前目标内的绘制区域。
+        dst_rect: Rect,
+        // 返回 typed failure，阻止失败 blit 继续 present。
+    ) -> Result<(), Error> {
+        // 默认实现只消费参数，具体 backend 必须显式覆盖合成语义。
+        let _ = (handle, src_rect, dst_rect);
+        // 缺失 Picture blit 属于明确的能力缺口。
+        Err(Error::new(
+            // 使用稳定错误分类驱动既有恢复策略。
+            crate::core::Errc::NotImplemented,
+            // 保留可定位的 Picture blit 诊断。
+            "render backend does not support Picture offscreen blit",
+        ))
     }
 
     /// 对 Picture 离屏目标做可分离高斯模糊。默认未实现。

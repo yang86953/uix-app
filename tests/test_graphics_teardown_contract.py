@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
 """Keep production graphics routing and legacy teardown scope explicit."""
 from __future__ import annotations
-
 import unittest
 from pathlib import Path
-
-
 ROOT = Path(__file__).resolve().parents[1]
 GRAPHICS = ROOT / "src/native/presentation/graphics/mod.rs"
 # 读取拆分后的 Vulkan context 组合模块和 shutdown 实现。
@@ -323,7 +320,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 定位主 FrameEncoder 执行函数的起点。
         start = backend.index("fn try_execute_encoded_frame")
         # 定位紧随其后的 Picture 生命周期入口。
-        end = backend.index("fn begin_offscreen_paint", start)
+        end = backend.index("fn try_begin_offscreen_paint", start)
         # 截取主帧状态机，避免其它兼容路径干扰断言。
         main_frame = backend[start:end]
         # pending damage 必须先通过 retained texture ClearRect lowering。
@@ -898,6 +895,5 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertGreaterEqual(gfx_r5_mod.count(".resize_pixel_upload_surface("), 2)
         # feature 隔离场景不得保留无法编译的旧 resize 调用。
         self.assertNotIn(".resize(LOGICAL_EXTENT", gfx_r5_mod)
-
 if __name__ == "__main__":
     unittest.main()
