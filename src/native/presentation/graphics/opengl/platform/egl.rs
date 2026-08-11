@@ -249,8 +249,8 @@ impl EglContext {
                         .unwrap_or(std::ptr::null())
                 },
             );
-        let pipeline =
-            OpenGlRasterPipeline::new(runtime, width, height, width, height).map_err(|error| {
+        let pipeline = OpenGlRasterPipeline::new(runtime, width, height, width, height, true)
+            .map_err(|error| {
                 unsafe {
                     let _ = egl.destroy_context(display, context);
                     let _ = egl.destroy_surface(display, surface);

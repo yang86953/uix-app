@@ -504,6 +504,8 @@ impl WglContext {
                 drawable.logical_height,
                 drawable.width,
                 drawable.height,
+                // WGL 使用 bottom-up DIB，与 GL 行序一致，不需要翻转。
+                false,
             ) {
                 Ok(pipeline) => pipeline,
                 Err(error) => {

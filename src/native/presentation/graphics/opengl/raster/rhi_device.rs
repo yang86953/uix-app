@@ -72,6 +72,8 @@ pub(super) struct OpenGlRhiDevice {
     samplers: Vec<Option<OpenGlRhiSampler>>,
     // 保存所有 RHI draw 共用的 VAO。
     vao: glow::VertexArray,
+    // 保存 surface 是否需要 Y 翻转（Wayland EGL 为 top-left 行序，WGL 为 bottom-up）。
+    flip_y: bool,
     // 保存是否已经打开一个 render pass。
     pass_open: bool,
     // 保存当前 pass 的 target 句柄。
@@ -121,7 +123,7 @@ use pipeline::{compile_program, shader_sources};
 // 为 OpenGL ES RHI 提供初始资源表和 VAO。
 impl OpenGlRhiDevice {
     // 在已经 current 的 GLES 3 context 中创建共享 VAO。
-    pub(super) fn new(gl: &glow::Context) -> Result<Self> {
+    pub(super) fn new(gl: &glow::Context, flip_y: bool) -> Result<Self> {
         // 创建 VAO 失败必须阻止 context 进入 RHI 路径。
         let vao = unsafe {
             gl.create_vertex_array()
@@ -134,6 +136,8 @@ impl OpenGlRhiDevice {
             pipelines: Vec::new(),
             samplers: Vec::new(),
             vao,
+            // 保存平台 surface 行序约定（Wayland EGL 需要翻转）。
+            flip_y,
             pass_open: false,
             active_target: None,
             active_extent: None,
@@ -441,11 +445,11 @@ impl OpenGlRhiDevice {
         gl: &glow::Context,
         desc: PipelineDesc,
     ) -> Result<PipelineHandle> {
-        // 为 key 选择已经固定的 GLES 3.0 shader ABI。
-        let (vertex, fragment) = shader_sources(desc.key)
+        // 为 key 选择已经固定的 GLES 3.0 shader ABI（Wayland EGL 需要去掉 Y 翻转）。
+        let (vertex, fragment) = shader_sources(desc.key, self.flip_y)
             .ok_or_else(|| rhi_not_implemented("OpenGL RHI pipeline key"))?;
         // 编译 program；shader 失败时不登记半成品资源。
-        let program = unsafe { compile_program(gl, vertex, fragment, "RHI pipeline")? };
+        let program = unsafe { compile_program(gl, &vertex, fragment, "RHI pipeline")? };
         // 保存 key 和 program 的 owner-thread 生命周期。
         self.pipelines.push(Some(OpenGlRhiPipeline {
             key: desc.key,
@@ -620,7 +624,7 @@ impl OpenGlRhiDevice {
                 "OpenGL RHI viewport is invalid or pass is closed",
             ));
         }
-        // OpenGL viewport 的高度使用自身坐标系，shader 已经完成 Y 翻转。
+        // OpenGL viewport 使用自身坐标系；行序差异已由 shader 编译期处理（flip_y）。
         unsafe {
             gl.viewport(
                 0,
@@ -653,12 +657,20 @@ impl OpenGlRhiDevice {
                     return Err(rhi_invalid("OpenGL RHI scissor is outside target"));
                 }
                 gl.enable(glow::SCISSOR_TEST);
-                gl.scissor(
-                    scissor.x,
-                    extent.height as i32 - scissor.y - scissor.height,
-                    scissor.width,
-                    scissor.height,
-                );
+                if self.flip_y {
+                    // Wayland EGL：shader 不翻转后，UI 顶部映射到 GL 帧缓冲第 0 行
+                    //（内存第 0 行 = 窗口顶部），RHI 左上原点坐标可直接使用。
+                    gl.scissor(scissor.x, scissor.y, scissor.width, scissor.height);
+                } else {
+                    // WGL bottom-up DIB：UI 顶部映射到 GL 帧缓冲顶部行，
+                    // 需把左上原点坐标换算为 GL 左下原点。
+                    gl.scissor(
+                        scissor.x,
+                        extent.height as i32 - scissor.y - scissor.height,
+                        scissor.width,
+                        scissor.height,
+                    );
+                }
             } else {
                 gl.disable(glow::SCISSOR_TEST);
             }
