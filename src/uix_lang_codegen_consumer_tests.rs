@@ -464,6 +464,28 @@ fn image_compiles_against_public_uix_api() {
     // 编译成功即证明启用 capability 时公开 Image 消费契约闭合。
 }
 
+// ImageGroup 路径集合构建器只在 image-codecs capability 启用时参与消费测试。
+#[cfg(feature = "image-codecs")]
+// 验证 ImageGroup 生成物在真实公开 API 消费者中通过类型检查。
+#[test]
+// 声明 ImageGroup 独立 capability 消费测试。
+fn image_group_compiles_against_public_uix_api() {
+    // 提供调用方拥有且元素可转换为 String 的图片路径数组。
+    let gallery_images = ["assets/first.png", "assets/second.png"];
+    // 提供动态 usize 初始索引。
+    let gallery_start_index = 1_usize;
+    // 提供只观察运行时索引文本的同步回调。
+    let on_gallery_change = |_index: &str| {};
+    // 验证集合、初始索引、变化事件和公共属性只依赖公开 prelude。
+    let _gallery: ViewNode = crate::uix!(
+        // 使用完整 ImageGroup 声明覆盖所有已登记专有属性。
+        r#"<ImageGroup images={gallery_images} startIndex={gallery_start_index} @change="on_gallery_change($event)" width="320px" automationId="gallery" />"#
+    );
+    // 可复制路径数组证明生成代码按值取得集合而不借用调用方生命周期。
+    assert_eq!(gallery_images[0], "assets/first.png");
+    // 编译成功即证明启用 capability 时公开 ImageGroup 消费契约闭合。
+}
+
 // TreeSelect 公开类型只在 tree-widgets capability 启用时参与消费测试。
 #[cfg(feature = "tree-widgets")]
 // 验证 tree-widgets 生成物在真实公开 API 消费者中通过类型检查。

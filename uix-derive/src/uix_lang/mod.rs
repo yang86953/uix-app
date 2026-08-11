@@ -174,6 +174,11 @@ mod image_codegen;
 // 集中验证 Image 生成、默认值与拒绝路径。
 #[cfg(test)]
 mod image_codegen_tests;
+// 定义 ImageGroup 图片集合、初始索引与变化观察器的公开 API 代码生成边界。
+mod image_group_codegen;
+// 集中验证 ImageGroup 生成、默认值与拒绝路径。
+#[cfg(test)]
+mod image_group_codegen_tests;
 // 定义 Skeleton 静态外观与尺寸的公开 API 代码生成边界。
 mod skeleton_codegen;
 // 集中验证 Skeleton 生成与拒绝路径。
@@ -427,6 +432,8 @@ pub(crate) use color_picker_codegen::generate_color_picker;
 pub(crate) use avatar_codegen::generate_avatar;
 // 向核心元素生成器暴露 Image 叶组件专用映射。
 pub(crate) use image_codegen::generate_image;
+// 向核心元素生成器暴露 ImageGroup 叶组件专用映射。
+pub(crate) use image_group_codegen::generate_image_group;
 // 向核心元素生成器暴露 Skeleton 专用映射。
 pub(crate) use skeleton_codegen::generate_skeleton;
 // 向核心元素生成器暴露 Empty 专用映射。
