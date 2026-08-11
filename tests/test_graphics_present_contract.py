@@ -8,6 +8,10 @@ from pathlib import Path
 
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
+# 定位 OpenGL surface readback 的平台行序适配。
+OPENGL_READBACK = ROOT / "src/native/presentation/graphics/opengl/raster/pipeline2.rs"
+# 定位构造期冻结 OpenGL surface 行序事实的 RHI owner。
+OPENGL_RHI_DEVICE = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs"
 
 
 # 聚合最终提交契约的源码守卫。
@@ -127,6 +131,27 @@ class GraphicsPresentContractTests(unittest.TestCase):
         self.assertIn("self.rhi_swap_buffers(damage)", rhi_host)
         # EGL 不得重新引入统一 payload。
         self.assertNotIn("PresentFrame", egl)
+
+    # 校验 OpenGL surface readback 在 platform 私有边界统一返回左上原点行序。
+    def test_opengl_surface_readback_normalizes_wgl_rows(self) -> None:
+        # 读取共享 OpenGL surface 回读实现。
+        readback = OPENGL_READBACK.read_text(encoding="utf-8")
+        # 读取构造期行序事实的唯一 owner。
+        rhi_device = OPENGL_RHI_DEVICE.read_text(encoding="utf-8")
+        # RHI owner 必须只读暴露同一构造期行序事实。
+        self.assertIn("fn surface_rows_start_at_top(&self) -> bool", rhi_device)
+        # 回读必须复用该事实，不能重新按平台或 feature 推断。
+        self.assertIn("self.rhi.surface_rows_start_at_top()", readback)
+        # 任意子区域都必须先经过左上原点范围校验。
+        self.assertIn("validate_readback_region(", readback)
+        # 非正尺寸继续沿用既有空载荷语义，不进入驱动或坐标换算。
+        self.assertIn("if width <= 0 || height <= 0", readback)
+        # WGL 必须把逻辑顶部坐标换算为 GL 左下原点坐标。
+        self.assertIn("let read_y = gl_readback_y_from_top(", readback)
+        # 只有 bottom-up surface 才需要反转返回行。
+        self.assertIn("if !surface_rows_start_at_top", readback)
+        # 行序转换必须原地执行，避免重新分配一份全帧缓冲。
+        self.assertIn("reverse_readback_rows(&mut pixels", readback)
 
 
 # 支持直接运行该契约测试文件。

@@ -156,6 +156,12 @@ impl OpenGlRhiDevice {
         })
     }
 
+    // 向同一 raster owner 暴露构造期冻结的 surface 行序事实。
+    pub(super) fn surface_rows_start_at_top(&self) -> bool {
+        // Wayland EGL 以 top-left 行序构造，WGL 则保持 bottom-up。
+        self.flip_y
+    }
+
     // 把从 1 开始的 opaque handle 转换为资源表索引。
     fn index(raw: u64, kind: &'static str) -> Result<usize> {
         // 零句柄不能代表已经创建的资源。
