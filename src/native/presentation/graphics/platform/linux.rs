@@ -1,6 +1,8 @@
 //! Linux native GPU surface descriptors.
 
 #![cfg(all(unix, not(target_os = "macos")))]
+// 在 Rust 2024 下禁止 unsafe 函数体隐式扩大底层操作范围。
+#![deny(unsafe_op_in_unsafe_fn)]
 
 use std::ffi::c_void;
 
@@ -28,7 +30,9 @@ impl WaylandSurfaceHandle {
                 "WaylandSurfaceHandle: native surface descriptor is null",
             ));
         }
-        let handle = *(native_surface as *const WaylandSurfaceHandle);
+        // SAFETY：native_surface 由调用方保证来自受信来源，且非空（上文已校验）；
+        // 解引用得到的是按值复制的句柄描述，不长期持有原生指针。
+        let handle = unsafe { *(native_surface as *const WaylandSurfaceHandle) };
         if !handle.is_valid() {
             return Err(Error::new(
                 Errc::PlatformError,
