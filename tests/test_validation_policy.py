@@ -70,6 +70,26 @@ FORBIDDEN_DELIVERY_PROGRESS_MARKERS = (
     "尚未正式发布",
     # 结束发布进展标记集合。
 )
+# 列出只应陈述公开行为并路由环境覆盖的使用文档。
+USAGE_COVERAGE_ROUTING_FILES = (
+    # 图形配置只陈述后端选择与失败契约。
+    ROOT / "docs" / "使用" / "配置.md",
+    # 运行保障只陈述诊断与恢复公开契约。
+    ROOT / "docs" / "使用" / "运行保障.md",
+    # 结束环境覆盖路由文件集合。
+)
+# 列出不得复制到使用文档的实现或环境覆盖进展标记。
+FORBIDDEN_USAGE_COVERAGE_MARKERS = (
+    # 禁止保留当前实现进展章节。
+    "## 当前实现状态",
+    # 禁止保留当前完成进展前缀。
+    "当前已完成 callback",
+    # 禁止复制图形真机覆盖结论。
+    "真机测试尚未覆盖",
+    # 禁止复制平台 teardown 覆盖结论。
+    "尚未由当前测试覆盖",
+    # 结束使用文档进展标记集合。
+)
 # 列出不得作为项目完成入口出现的非测试命令。
 FORBIDDEN_COMMANDS = ("cargo check", "cargo clippy", "cargo bench", "cargo fmt -- --check")
 # 列出已经取消的独立验证路径。
@@ -132,6 +152,31 @@ class ValidationPolicyTests(unittest.TestCase):
         self.assertIn(VIKUNJA_PROJECT_ROUTE, content)
         # 交付契约必须明确发布父任务编号。
         self.assertIn("#770", content)
+
+    # 确认使用文档只陈述公开行为并把环境覆盖路由到 Vikunja。
+    def test_usage_docs_route_environment_coverage_to_vikunja(self) -> None:
+        # 收集仍然复制到使用文档的环境覆盖进展。
+        violations: list[str] = []
+        # 收集没有指向项目跟踪入口的使用文档。
+        missing_routes: list[str] = []
+        # 遍历精确的使用文档集合。
+        for path in USAGE_COVERAGE_ROUTING_FILES:
+            # 读取当前使用文档文本。
+            content = path.read_text(encoding="utf-8")
+            # 检查每个禁止的进展标记。
+            for marker in FORBIDDEN_USAGE_COVERAGE_MARKERS:
+                # 只记录仍然持有禁止标记的文档。
+                if marker in content:
+                    # 保存便于定位的仓库相对路径与标记。
+                    violations.append(f"{path.relative_to(ROOT).as_posix()}: {marker}")
+            # 检查使用文档是否保留项目跟踪路由。
+            if VIKUNJA_PROJECT_ROUTE not in content:
+                # 保存缺失路由的仓库相对路径。
+                missing_routes.append(path.relative_to(ROOT).as_posix())
+        # 使用文档不得保存环境覆盖进展副本。
+        self.assertEqual(violations, [])
+        # 使用文档必须把环境覆盖路由到 Vikunja。
+        self.assertEqual(missing_routes, [])
 
     # 确认用户文档不再宣传非测试验证命令。
     def test_documentation_only_advertises_tests_for_completion(self) -> None:
