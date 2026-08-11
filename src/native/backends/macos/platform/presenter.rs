@@ -1,7 +1,5 @@
 use super::*;
 
-use super::*;
-
 struct MacosPresenter {
     layer: cocoa::Id,
     width: i32,
@@ -49,5 +47,3 @@ impl IPresenter for MacosPresenter {
         Ok(())
     }
 }
-
-#[derive(Debug, Clone)]
