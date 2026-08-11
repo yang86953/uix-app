@@ -238,20 +238,35 @@ pub trait RenderTarget: 'static {
         crate::draw::geometry::spatial::Orientation::YDown
     }
 
-    fn create_offscreen(&mut self, width: i32, height: i32) -> Option<ImageHandle> {
+    /// Checked Picture resource creation boundary.
+    // 默认 target 以 Ok(None) 明确表达不支持或不创建资源。
+    fn try_create_offscreen(
+        // 接收当前 render target 的唯一可变 owner。
+        &mut self,
+        // 接收调用方已验证或待验证的逻辑宽度。
+        width: i32,
+        // 接收调用方已验证或待验证的逻辑高度。
+        height: i32,
+        // 区分正常无资源、成功 handle 与 typed 资源失败。
+    ) -> Result<Option<ImageHandle>, Error> {
+        // 默认实现只消费尺寸，具体 target 决定是否支持 Picture。
         let _ = (width, height);
-        None
-    }
-    fn destroy_offscreen(&mut self, handle: ImageHandle) {
-        let _ = handle;
+        // 不支持不是资源失败，场景层可以保持无缓存路径。
+        Ok(None)
     }
 
-    /// Checked counterpart of [`Self::destroy_offscreen`]. Production
-    /// compositor paths use this boundary to preserve an offscreen handle
-    /// when native destruction fails.
+    /// Checked Picture resource destruction boundary.
+    // 默认 target 不允许把未知资源的释放伪装成成功。
     fn try_destroy_offscreen(&mut self, handle: ImageHandle) -> Result<(), Error> {
-        self.destroy_offscreen(handle);
-        Ok(())
+        // 默认实现只消费 handle，具体 owner 必须显式覆盖释放语义。
+        let _ = handle;
+        // 缺失释放能力属于明确的契约缺口。
+        Err(Error::new(
+            // 使用稳定错误分类区分能力缺口与资源故障。
+            crate::core::Errc::NotImplemented,
+            // 保留可定位的 Picture destroy 诊断。
+            "render target does not support Picture offscreen destroy",
+        ))
     }
 
     fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {

@@ -4,17 +4,17 @@ use crate::core::{Errc, Error, Point, Rect};
 
 use super::layer_tree::{LayerNode, LayerTree};
 use crate::core::DirtyRegion;
+use crate::draw::FontHandle;
 use crate::draw::geometry::spatial::Orientation;
 use crate::draw::geometry::types::ImageHandle;
-use crate::draw::painting::{recorder::CommandRecorder, DisplayList, FrameEncoder};
+use crate::draw::painting::{DisplayList, FrameEncoder, recorder::CommandRecorder};
 use crate::draw::painting::{PaintContext, PaintSurfaceConfig};
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
-use crate::draw::scene::viewport_transform::needs_paint;
 use crate::draw::scene::NodeId;
 use crate::draw::scene::ScenePaint;
+use crate::draw::scene::viewport_transform::needs_paint;
 use crate::draw::target::RenderTarget;
-use crate::draw::FontHandle;
 
 /// 离屏创建连续失败上限（超过后放弃离屏、改走直绘；仅 WARN 一次）。
 const MAX_OFFSCREEN_RETRY: u8 = 8;
@@ -216,17 +216,24 @@ pub(crate) fn ensure_offscreen(
                 return Ok(true);
             }
         }
-        let Some(replacement) = engine.create_offscreen(w, h) else {
+        // 新资源的正常不支持仍允许保持无缓存路径；typed failure 直接传播。
+        let Some(replacement) = engine.try_create_offscreen(w, h)? else {
             return Ok(false);
         };
         if let Err(error) = engine.try_destroy_offscreen(hdl) {
-            let _ = engine.try_destroy_offscreen(replacement);
+            // 旧资源释放失败时补偿释放尚未发布的 replacement。
+            if let Err(cleanup_error) = engine.try_destroy_offscreen(replacement) {
+                // 双重释放失败保留完整原因链，backend 仍持有两份资源供 shutdown 重试。
+                return Err(error.with_appended_source(cleanup_error));
+            }
+            // 补偿成功后仍返回原始旧资源释放失败。
             return Err(error);
         }
         *handle = Some(replacement);
         return Ok(true);
     }
-    *handle = engine.create_offscreen(w, h);
+    // 首次创建同样区分正常无资源与 typed allocation/device failure。
+    *handle = engine.try_create_offscreen(w, h)?;
     Ok(handle.is_some())
 }
 
@@ -393,5 +400,47 @@ fn render_non_picture_subtree<S: ScenePaint>(
                 }
             }
         }
+    }
+}
+
+// 仅在测试构建中验证 Picture 场景资源失败传播。
+#[cfg(test)]
+// 场景测试只依赖公开 RenderTarget 契约，不取得 backend 私有资源。
+mod tests {
+    // 引入待验证的 Picture 资源协调函数。
+    use super::ensure_offscreen;
+    // 引入稳定 OOM 错误分类。
+    use crate::core::Errc;
+    // 使用 API-neutral recorder 触发确定性的 extent failure。
+    use crate::draw::painting::recorder::CommandRecorder;
+
+    // 验证场景不会把 typed Picture 创建失败误作普通缓存不可用。
+    #[test]
+    // 锁定 ensure_offscreen 的 Result 传播边界。
+    fn ensure_offscreen_propagates_typed_allocation_failure() {
+        // 创建不依赖原生窗口的 recorder target。
+        let mut recorder = CommandRecorder::new();
+        // 初始状态没有已发布的 Picture handle。
+        let mut handle = None;
+        // 极大 extent 必须触发 recorder 的 typed OOM。
+        let result = ensure_offscreen(
+            // 通过 RenderTarget 契约调用 recorder。
+            &mut recorder,
+            // 允许函数在成功时发布新 handle。
+            &mut handle,
+            // 使用无法满足像素预算的逻辑宽度。
+            i32::MAX,
+            // 使用无法满足像素预算的逻辑高度。
+            i32::MAX,
+        );
+        // 场景层必须保留原始 OOM 分类供恢复驱动消费。
+        assert!(matches!(
+            // 匹配完整检查式结果。
+            result,
+            // 禁止将失败折叠为 Ok(false)。
+            Err(error) if error.code() == Errc::GraphicsOutOfMemory
+        ));
+        // 失败事务不得发布半成品 Picture handle。
+        assert!(handle.is_none());
     }
 }

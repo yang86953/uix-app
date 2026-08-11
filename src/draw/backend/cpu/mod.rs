@@ -199,16 +199,29 @@ impl RenderBackend for CpuBackend {
         &mut self.main
     }
 
-    fn create_offscreen(&mut self, width: i32, height: i32) -> Option<ImageHandle> {
-        self.offscreens.create(width, height)
+    // 让 CPU 像素分配错误保持 typed OOM，而不是退化为 None。
+    fn try_create_offscreen(
+        // 借用 CPU backend 的唯一可变 owner。
+        &mut self,
+        // 接收 Picture 的逻辑宽度。
+        width: i32,
+        // 接收 Picture 的逻辑高度。
+        height: i32,
+        // 返回正常无资源、成功 handle 或 typed 分配失败。
+    ) -> Result<Option<ImageHandle>, Error> {
+        // 复用 CPU 离屏池的检查式创建边界。
+        self.offscreens.try_create(width, height)
     }
 
-    fn destroy_offscreen(&mut self, handle: ImageHandle) {
+    // CPU 释放不会调用原生 API，但仍满足统一检查式契约。
+    fn try_destroy_offscreen(&mut self, handle: ImageHandle) -> Result<(), Error> {
         if self.active_offscreen == Some(handle.0) {
             self.active_offscreen = None;
         }
         self.offscreens.destroy(handle);
         self.offscreens.compact();
+        // 槽位回收完成后再报告释放成功。
+        Ok(())
     }
 
     fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {

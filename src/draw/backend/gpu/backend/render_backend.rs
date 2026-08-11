@@ -141,24 +141,24 @@ impl RenderBackend for GpuBackend {
         device_pixel_ratio_from_surface(self.gpu_ctx.present_surface())
     }
 
-    fn create_offscreen(&mut self, width: i32, height: i32) -> Option<ImageHandle> {
+    // 让 GPU Picture 创建区分正常无资源与 thin RHI typed failure。
+    fn try_create_offscreen(
+        // 借用 GPU backend 的唯一可变 owner。
+        &mut self,
+        // 接收 Picture 的逻辑宽度。
+        width: i32,
+        // 接收 Picture 的逻辑高度。
+        height: i32,
+        // 返回正常无资源、成功 handle 或 typed RHI 失败。
+    ) -> Result<Option<ImageHandle>, Error> {
         // 只接受能由通用 RHI renderer 独占的有效 Picture extent。
-        let extent = rhi_offscreen_extent(self.rhi_renderer.is_some(), width, height)?;
-        // 离屏资源必须由当前 owner-thread 的薄 RHI context 创建。
-        let context = match self.gpu_ctx.rhi_context() {
-            // 有效 owner 继续创建唯一 RHI 纹理。
-            Ok(context) => context,
-            // `RenderBackend` 的兼容返回值无法携带 typed error，只记录明确诊断。
-            Err(error) => {
-                // 保留 owner 状态破坏的短错误文本。
-                tracing::warn!(
-                    "GpuBackend: RHI offscreen owner unavailable: {}",
-                    error.short_what()
-                );
-                // 不降级到原生 adapter 的 legacy target。
-                return None;
-            }
+        let Some(extent) = rhi_offscreen_extent(self.rhi_renderer.is_some(), width, height) else {
+            // 缺少 Picture owner 或非正尺寸保持正常无资源语义。
+            return Ok(None);
         };
+        // 离屏资源必须由当前 owner-thread 的薄 RHI context 创建。
+        // owner-thread 或 context 状态失败原样进入 renderer recovery。
+        let context = self.gpu_ctx.rhi_context()?;
         // 创建唯一一份同时可渲染和可采样的通用纹理。
         let rhi_texture = context
             // 把已经验证的 extent 和统一像素格式交给薄 RHI。
@@ -167,19 +167,8 @@ impl RenderBackend for GpuBackend {
                 extent,
                 // 与 retained surface 和 Picture 合成保持同一颜色格式。
                 format: TextureFormat::Bgra8Unorm,
-            })
-            // 在资源创建失败时保留 adapter 返回的 typed error 诊断。
-            .inspect_err(|error| {
-                // 输出短错误文本，避免创建失败被静默解释为能力缺失。
-                tracing::warn!(
-                    // 标识失败发生在通用 RHI Picture 资源创建边界。
-                    "GpuBackend: create RHI offscreen texture failed: {}",
-                    // 复用项目统一的精简错误描述。
-                    error.short_what()
-                );
-            })
-            // `RenderBackend` 的兼容返回值用 `None` 表示本次无法创建。
-            .ok()?;
+                // RHI DeviceLost/OOM 等错误必须保持原分类。
+            })?;
         let id = if let Some(id) = self.free_offscreen_ids.pop() {
             id
         } else {
@@ -199,7 +188,8 @@ impl RenderBackend for GpuBackend {
             width,
             height,
         });
-        Some(ImageHandle(id))
+        // 只有 RHI texture 与 backend slot 都建立后才发布 handle。
+        Ok(Some(ImageHandle(id)))
     }
 
     fn try_destroy_offscreen(&mut self, handle: ImageHandle) -> Result<(), Error> {
@@ -223,12 +213,6 @@ impl RenderBackend for GpuBackend {
         self.free_offscreen_ids.push(handle.0);
         self.compact_offscreen_slots();
         Ok(())
-    }
-
-    fn destroy_offscreen(&mut self, handle: ImageHandle) {
-        if let Err(error) = self.try_destroy_offscreen(handle) {
-            self.remember_frame_failure(error);
-        }
     }
 
     fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {

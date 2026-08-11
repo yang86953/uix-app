@@ -3,6 +3,8 @@
 //! 保留 API-neutral 编码流（预算内）或惰性物化后的图片载荷；内存超预算时
 //! 物化并回收编码器。由 [`super::CommandRecorder`] 拥有。
 
+// 引入 typed error，避免 recorder extent 失败退化为普通缺失。
+use crate::core::Error;
 use crate::draw::geometry::types::ImageHandle;
 use crate::draw::painting::{FrameEncoder, FrameImage};
 
@@ -94,8 +96,23 @@ impl RecordedPicturePool {
         self.next_id = 0;
     }
 
-    pub(super) fn create(&mut self, width: i32, height: i32) -> Option<ImageHandle> {
-        let (width, height) = FrameRecordingCanvas::prepare_resize(width, height).ok()?;
+    // 以检查式结果创建 recorder Picture 槽位。
+    pub(super) fn try_create(
+        // 借用 recorder pool 的唯一可变 owner。
+        &mut self,
+        // 接收 Picture 的逻辑宽度。
+        width: i32,
+        // 接收 Picture 的逻辑高度。
+        height: i32,
+        // 区分正常无资源、成功 handle 与 typed extent failure。
+    ) -> Result<Option<ImageHandle>, Error> {
+        // 非正尺寸不创建隐式一像素 Picture。
+        if width <= 0 || height <= 0 {
+            // 保持场景层约定的正常无资源语义。
+            return Ok(None);
+        }
+        // 保留 extent 溢出或资源预算失败的 typed 分类。
+        let (width, height) = FrameRecordingCanvas::prepare_resize(width, height)?;
         let id = self.free_ids.pop().unwrap_or_else(|| {
             let id = self.next_id;
             self.next_id = self.next_id.saturating_add(1);
@@ -106,7 +123,8 @@ impl RecordedPicturePool {
             self.slots.push(None);
         }
         self.slots[index] = Some(RecordedPicture::new(width, height));
-        Some(ImageHandle(id))
+        // 只有槽位和 recorder 状态都建立后才发布 handle。
+        Ok(Some(ImageHandle(id)))
     }
 
     pub(super) fn destroy(&mut self, handle: ImageHandle) {
