@@ -22,6 +22,8 @@
 
 > **RHI 与最终提交边界**：逐 UI draw/clear/offscreen/upload、二阶段 initialize、平台 current、通用 resize、统一 present 与 readback 均不属于共享 lifecycle。生产 GPU 只通过 `GraphicsDevice` / `GraphicsSurface` 执行资源、probe、resize、readback 与最终 present；CPU × PixelUpload 只通过 `PixelUploadSurface` 上传并提交。平台 adapter 不拥有 FramePlan、fallback、Picture 或 effect 策略；draw 侧 Picture create/destroy/begin/flush/end/blit 只允许 checked `Result` 边界，资源失败不能用 `Option`、bool 或 void 门面推迟或吞掉。`try_create_offscreen` 的 `Ok(None)` 只陈述无效尺寸或不支持，thin RHI 返回的 device/surface/OOM 分类原样进入 graphics recovery。
 
+> **坐标与行序契约**：thin RHI 输入坐标统一左上原点，viewport、scissor、顶点、UV 与 `PresentDamage` 跨平台语义一致（`RhiScissor` 保持左上原点约定）；帧缓冲行序差异只发生在呈现层，由各 adapter 内部消化，不得泄漏到通用层。平台机理——WGL 的 DIB 为 bottom-up 行序，顶点阶段固定保留 `ndc.y = -ndc.y`，scissor 必须换算为 GL 左下原点（height − y − h）；Wayland EGL 的 wl_buffer 为 top-left 行序，经 `flip_y` 标志在 shader 编译期去掉顶点 Y 翻转，其呈现行序反向与 GL 坐标反向恰好双重抵消，scissor 可直接使用 RHI 坐标；D3D11 backbuffer 为 top-left 行序，顶点阶段同样固定保留 `ndc.y = -ndc.y`（top-down 逻辑到 NDC y-up 的标准转换），scissor 原生 top-left 直接使用。`read_surface_pixels` 的 readback 输出统一为 top-left 行序（row 0 = 窗口顶部）：D3D11 staging 拷贝与 EGL 的 glReadPixels（row 0 = GL y=0 行 = 窗口顶部）天然满足，bottom-up 平台（WGL）的 adapter 必须在返回前完成垂直翻转。像素搬运路径中，机械拷贝（快照 copy、滚动 memmove）逐 texel 对位、与行序无关；blur 的 NDC quad 采样在 WGL 上依赖两垂直 pass 翻转抵消，属脆弱结构，新增单 pass 效果前必须显式处理。CPU 软渲染/upload 的像素数据统一为 top-left 行序，纹理上传保持数据直通。当前 `flip_y` 已覆盖 OpenGL 绘制路径；WGL readback 行序尚未收敛，属于待办契约缺口。graphics/backend 消费本契约，不在通用层叠加翻转。
+
 ## 组件清单
 
 | 组件 | 目标角色 | 职责 |
