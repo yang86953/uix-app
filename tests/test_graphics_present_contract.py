@@ -10,8 +10,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 OpenGL surface readback 的平台行序适配。
 OPENGL_READBACK = ROOT / "src/native/presentation/graphics/opengl/raster/pipeline2.rs"
-# 定位构造期冻结 OpenGL surface 行序事实的 RHI owner。
+# 定位 OpenGL render target 方向事实的 RHI owner。
 OPENGL_RHI_DEVICE = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs"
+# 定位 OpenGL draw 阶段的目标方向 uniform 绑定。
+OPENGL_RHI_DRAW = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs"
+# 定位 OpenGL 固定 shader 源。
+OPENGL_RHI_SHADERS = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_shaders.rs"
+# 定位 OpenGL 固定 shader 选择边界。
+OPENGL_RHI_PIPELINES = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_pipeline.rs"
 
 
 # 聚合最终提交契约的源码守卫。
@@ -132,26 +138,47 @@ class GraphicsPresentContractTests(unittest.TestCase):
         # EGL 不得重新引入统一 payload。
         self.assertNotIn("PresentFrame", egl)
 
+    # 校验 OpenGL 按 render target 身份选择 Y 方向，不再按 EGL/WGL 改写 shader。
+    def test_opengl_target_origin_is_selected_per_render_target(self) -> None:
+        # 读取 target 身份、scissor 与资源状态 owner。
+        rhi_device = OPENGL_RHI_DEVICE.read_text(encoding="utf-8")
+        # 读取 draw 阶段的 program uniform 绑定。
+        rhi_draw = OPENGL_RHI_DRAW.read_text(encoding="utf-8")
+        # 读取所有受目标方向约束的固定 shader。
+        shaders = OPENGL_RHI_SHADERS.read_text(encoding="utf-8")
+        # 读取固定 shader 选择，防止恢复平台字符串改写。
+        pipelines = OPENGL_RHI_PIPELINES.read_text(encoding="utf-8")
+        # target 方向必须由 surface sentinel 与 texture 句柄直接推导。
+        self.assertIn("fn target_y_sign(target: RenderTargetHandle) -> f32", rhi_device)
+        # scissor 必须复用同一 surface target 判断。
+        self.assertIn("if is_surface_target(target)", rhi_device)
+        # draw 必须把目标方向绑定到当前 program，而不是固化在构造期。
+        self.assertIn('set_f32(gl, program, "u_target_y_sign", y_sign)', rhi_draw)
+        # 所有常规位置 shader 必须声明目标方向 uniform。
+        self.assertGreaterEqual(shaders.count("uniform float u_target_y_sign;"), 5)
+        # 常规位置 shader 必须以该 uniform 应用 Y 方向。
+        self.assertGreaterEqual(shaders.count("ndc.y *= u_target_y_sign;"), 5)
+        # blur 的输入已经是 top-left NDC，写 texture 时需单独映射到 v=0 行。
+        self.assertIn("gl_Position = vec4(a_pos.x, -a_pos.y, 0.0, 1.0);", shaders)
+        # shader 选择不得继续按平台替换源码。
+        self.assertNotIn("flip_y", pipelines)
+        # 动态源码替换会重新制造平台与 target 双重事实，必须保持移除。
+        self.assertNotIn('replace("ndc.y = -ndc.y;"', pipelines)
+
     # 校验 OpenGL surface readback 在 platform 私有边界统一返回左上原点行序。
-    def test_opengl_surface_readback_normalizes_wgl_rows(self) -> None:
+    def test_opengl_surface_readback_normalizes_gl_rows(self) -> None:
         # 读取共享 OpenGL surface 回读实现。
         readback = OPENGL_READBACK.read_text(encoding="utf-8")
-        # 读取构造期行序事实的唯一 owner。
-        rhi_device = OPENGL_RHI_DEVICE.read_text(encoding="utf-8")
-        # RHI owner 必须只读暴露同一构造期行序事实。
-        self.assertIn("fn surface_rows_start_at_top(&self) -> bool", rhi_device)
-        # 回读必须复用该事实，不能重新按平台或 feature 推断。
-        self.assertIn("self.rhi.surface_rows_start_at_top()", readback)
         # 任意子区域都必须先经过左上原点范围校验。
         self.assertIn("validate_readback_region(", readback)
         # 非正尺寸继续沿用既有空载荷语义，不进入驱动或坐标换算。
         self.assertIn("if width <= 0 || height <= 0", readback)
-        # WGL 必须把逻辑顶部坐标换算为 GL 左下原点坐标。
+        # 所有 OpenGL window surface 都必须把逻辑顶部换算为 GL 左下原点坐标。
         self.assertIn("let read_y = gl_readback_y_from_top(", readback)
-        # 只有 bottom-up surface 才需要反转返回行。
-        self.assertIn("if !surface_rows_start_at_top", readback)
         # 行序转换必须原地执行，避免重新分配一份全帧缓冲。
         self.assertIn("reverse_readback_rows(&mut pixels", readback)
+        # 平台分支会把同一 OpenGL readback 语义重新拆成两个事实，必须保持移除。
+        self.assertNotIn("surface_rows_start_at_top", readback)
 
 
 # 支持直接运行该契约测试文件。
