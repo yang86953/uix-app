@@ -4,7 +4,7 @@
 
 > **接口**：声明 core 系统的目标 `identity` 模块及其组件契约。依赖：无。导出：跨 ui、graphics、platform、app 传递的稳定身份值。
 
-> **当前实现线索**：`src/core/component_id.rs`、`src/core/window_id.rs`；路径可重构，identity 边界保持稳定。
+> **当前实现线索**：`src/core/identity/component_id.rs`、`src/core/identity/window_id.rs`；路径可重构，identity 边界保持稳定。
 
 ## 组件清单
 

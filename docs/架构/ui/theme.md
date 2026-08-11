@@ -4,7 +4,7 @@
 
 > **接口**：声明 ui 系统的主题令牌、组件配置、本地化与子树上下文。依赖：[view](view.md)、[graphics/geometry](../graphics/geometry.md)。导出：组件解析视觉值、行为默认值和内置文案的统一 Provider 契约。
 >
-> **当前实现线索**：相关实现暂分布于 `src/ui/theme/`、`src/ui/traits/theme.rs`、`src/ui/foundation/config.rs`、`provider_context.rs` 和 `locale.rs`；重构后应以本模块提供统一上下文。
+> **当前实现线索**：相关实现暂分布于 `src/ui/theme/`（traits.rs 同目录）、`src/ui/component/config.rs`、`src/ui/component/provider_context.rs` 和 `src/ui/component/locale.rs`；重构后应以本模块提供统一上下文。
 
 ## 组件清单
 

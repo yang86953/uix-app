@@ -4,7 +4,7 @@
 
 > **接口**：声明 platform 系统的目标 `windowing` 模块，权威持有原生窗口、事件源、输入、剪贴板和 IME 的平台边界。依赖：core。导出：供 app window/event-loop 使用的能力契约。
 
-> **当前实现线索**：分布在 `src/native/backends/`、`src/native/traits/{window,event,input}.rs` 与 `src/native/shared/`；trait 只是当前分派手段，不是架构模块。
+> **当前实现线索**：分布在 `src/native/windowing/`（window.rs、input.rs、event/、shared/）与 `src/native/backends/`；trait 只是当前分派手段，不是架构模块。
 
 > **图形所有权边界**：`PlatformWindow` 只提供 native surface、窗口动作与最终 presenter，不持有、借出或关闭任何 graphics recipe context。生产 context 在构造后立即交给 renderer 的类型化 recipe owner，恢复与 checked teardown 也由 renderer/recovery 生命周期唯一执行；关闭窗口不会重复关闭图形资源。
 

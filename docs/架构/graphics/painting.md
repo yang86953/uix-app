@@ -4,7 +4,7 @@
 
 > **接口**：声明 graphics 系统的目标 `painting` 模块，权威持有组件绘制入口、canonical 操作、DisplayList 与帧编码。依赖：[geometry](geometry.md)。导出：UI 使用的 `PaintContext` 和 renderer/scene 使用的命令序列。
 
-> **当前实现线索**：主要位于 `src/draw/api/` 与 `src/draw/command/`；未来路径重构不改变单一录制管线。
+> **当前实现线索**：主要位于 `src/draw/painting/`（paint_context/、recorder/、encoder/）；未来路径重构不改变单一录制管线。
 
 ## 组件清单
 

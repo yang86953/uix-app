@@ -4,7 +4,7 @@
 
 > **接口**：声明 ui 系统的表单模型、字段绑定协议、校验与提交契约。依赖：[component](component.md)、[reactive](reactive.md)、[event](event.md)。导出：`FormModel`、与具体控件无关的字段适配协议和校验结果，供 widgets 组合。
 >
-> **当前实现线索**：相关能力暂与 `src/ui/widgets/input/form*.rs` 混合；重构后业务模型归本模块，表单视觉组件仍归 widgets。
+> **当前实现线索**：业务模型相关能力位于 `src/ui/form/`（form.rs、model_form.rs 等），表单视觉组件位于 `src/ui/widgets/input/`；重构后业务模型归本模块，视觉组件仍归 widgets。
 
 ## 组件清单
 

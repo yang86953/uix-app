@@ -4,7 +4,7 @@
 
 > **接口**：声明 ui 系统的输入事件、传播、语义事件与 handler 生命周期。依赖：[component](component.md)、[layout](layout.md)。导出：系统事件与应用语义的统一路由；公开用法见[使用 · 事件](../../使用/事件.md)。
 >
-> **当前实现线索**：相关实现暂散布于 `src/ui/event.rs`、`system_event_handler.rs`、`semantic_action.rs` 和树事件文件；重构后共同归本模块。
+> **当前实现线索**：相关实现暂散布于 `src/ui/event/`（mod.rs、system_event_handler.rs）、`src/ui/semantic_action.rs` 和树事件文件；重构后共同归本模块。
 
 ## 组件清单
 

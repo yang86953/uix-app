@@ -12,7 +12,7 @@
 |---|---|---|
 | `EventLoop` / `run_widget_loop` | struct/function | 等待平台事件、drain 队列并调度目标窗口 |
 | `WindowLoopState` | enum | 表达 DeepIdle、RegisteredActive、Active |
-| `FrameScheduler` | struct | 合并逐窗 one-shot 帧请求并管理帧机会 |
+| `FrameScheduler`（归 window Module） | struct | 合并逐窗 one-shot 帧请求并管理帧机会；SMC-06 已把帧调度实现归入 [window](window.md)，event-loop 只消费逐窗帧机会 |
 | `FrameOpportunity` | value | 携带 generation、单调帧时间和目标提交时间 |
 | `SurfaceState` / `SurfaceSuspendReason` | enums | 表达可呈现、暂停、恢复和终止失败 |
 | `ActiveWorkRegistry` | struct | 汇总动画、timer、队列和维护工作的下一 deadline |
@@ -26,6 +26,8 @@
 `DeepIdle` 表示无事件、队列、due work、reconcile、帧请求或恢复 deadline；`RegisteredActive` 只等待已经登记的 callback/deadline；`Active` 表示存在立即工作。禁止通过固定 16ms tick 维持运行。
 
 ## 组件：FrameScheduler
+
+帧调度实现位于 `src/app/window/frame_scheduler.rs`，SMC-06 已将其归入 window Module（旧 event_loop 路径由 compile-fail 契约锁定不得复活）；本模块只消费其逐窗帧机会，不重新定义帧调度。
 
 帧请求是 one-shot、逐窗所有且可合并的，同一窗口同类请求至多一个 outstanding。token 与 surface generation 绑定；resize、suspend、backend fallback 或关闭后到达的旧 callback 必须丢弃。
 

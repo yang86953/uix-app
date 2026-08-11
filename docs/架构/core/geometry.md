@@ -4,7 +4,7 @@
 
 > **接口**：声明 core 系统的目标 `geometry` 模块及其组件契约。依赖：无。导出：所有上层共享的 logical geometry。
 
-> **当前实现线索**：主要位于 `src/core/geometry.rs`。
+> **当前实现线索**：主要位于 `src/core/geometry/`。
 
 ## 组件清单
 

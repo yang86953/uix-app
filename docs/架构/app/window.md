@@ -14,6 +14,7 @@
 | `WindowSession` | internal struct | 独占组件树、渲染目标、队列、调度状态、IME 和语义状态 |
 | `SessionRuntime` | internal struct | 管理窗口身份预留、创建、查找和销毁 |
 | `WindowDriver` | internal struct | 按确定顺序推进单个窗口的一轮 UI/图形管线 |
+| `FrameScheduler` | internal struct | 合并逐窗 one-shot 帧请求并管理帧机会（`src/app/window/frame_scheduler.rs`，SMC-06 归本模块） |
 | `WindowTextInputState` | internal struct | 协调窗口焦点、目标节点与 composition |
 | `WindowAction` | enum | 表达拖动、最小化、最大化、关闭等一次性请求 |
 | scene paint bridge | internal adapter | 把 UI 绘制遍历适配为 graphics scene 输入 |

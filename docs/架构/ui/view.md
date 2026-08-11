@@ -4,7 +4,7 @@
 
 > **接口**：声明 ui 系统的声明式 View、组合器和 reconcile 输入。依赖：[component](component.md)、[reactive](reactive.md)。导出：`View`、`ViewNode`、combinator 与组件 DSL；theme 等上下文通过通用构建上下文扩展。
 >
-> **当前实现线索**：相关实现暂位于 `src/ui/view/`、`src/ui/macros.rs` 和部分 foundation 文件；重构后以本模块边界为准。
+> **当前实现线索**：相关实现暂位于 `src/ui/view/`、`src/ui/macros/` 和 `src/ui/component/` 上下文文件；重构后以本模块边界为准。
 
 ## 组件清单
 

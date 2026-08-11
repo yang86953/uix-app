@@ -4,7 +4,7 @@
 
 > **接口**：声明 ui 系统的窗口内浮层栈、层叠、焦点陷阱和进退场。依赖：[component](component.md)、[event](event.md)、[animation](animation.md)。导出：所有内置与自定义浮层共享的栈契约；公开用法见[使用 · 反馈](../../使用/反馈.md)。
 >
-> **当前实现线索**：栈与 entry 位于 `src/ui/overlay/mod.rs`，组件树在 `src/ui/component/widget/tree_layout/layout.rs` 重建登记，焦点陷阱位于 `src/ui/foundation/focus_trap.rs`，具体 placement 由各浮层组件持有。
+> **当前实现线索**：栈与 entry 位于 `src/ui/overlay/mod.rs`，组件树在 `src/ui/component/widget/tree_layout/layout.rs` 重建登记，焦点陷阱位于 `src/ui/component/focus_trap.rs`，具体 placement 由各浮层组件持有。
 
 ## 组件清单
 
