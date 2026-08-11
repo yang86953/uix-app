@@ -17,10 +17,13 @@ pub(crate) struct PixelUploadRecipeOwner {
 
 // 为 PixelUpload presentation 提供不带可选能力分支的窄 owner 契约。
 impl PixelUploadRecipeOwner {
-    // 校验静态 recipe 与专用 PixelUpload surface，并在失败前检查式关闭。
-    pub(crate) fn try_new(mut context: Box<dyn IGraphicsContext>) -> Result<Self> {
-        // 一次读取静态 recipe 事实，避免校验期间拼装多个快照。
-        let caps = context.caps();
+    // 校验顶层 owner 已捕获的静态 recipe 与专用 PixelUpload surface，并在失败前检查式关闭。
+    pub(super) fn try_new(
+        // 接收仍由本门面唯一拥有的迁移期 context。
+        mut context: Box<dyn IGraphicsContext>,
+        // 接收正交 owner 分派时已经捕获的静态 capability 快照。
+        caps: GraphicsContextCaps,
+    ) -> Result<Self> {
         // PixelUpload owner 只接受 CPU × PixelUpload 组合。
         if caps.raster != RasterMode::Cpu || caps.present != PresentMode::PixelUpload {
             // 保存稳定诊断，避免关闭借用影响错误文本。
@@ -267,8 +270,10 @@ mod tests {
                 PresentCoherency::FullOnly,
             ),
         };
+        // 在转移 context 所有权前复制顶层分派已经读取的静态快照。
+        let caps = context.caps;
         // 尝试构造 PixelUpload owner 并取得稳定失败。
-        let result = PixelUploadRecipeOwner::try_new(Box::new(context));
+        let result = PixelUploadRecipeOwner::try_new(Box::new(context), caps);
         // recipe 不匹配必须保持参数错误分类。
         assert!(matches!(result, Err(error) if error.code() == Errc::InvalidArgument));
         // 构造拒绝前必须检查式关闭 native owner。
@@ -287,8 +292,10 @@ mod tests {
             // 声明正式 CPU × PixelUpload recipe。
             caps: GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan),
         };
+        // 在转移 context 所有权前复制顶层分派已经读取的静态快照。
+        let caps = context.caps;
         // 尝试构造 PixelUpload owner 并取得稳定失败。
-        let result = PixelUploadRecipeOwner::try_new(Box::new(context));
+        let result = PixelUploadRecipeOwner::try_new(Box::new(context), caps);
         // 必需 surface 缺失必须保持状态错误分类。
         assert!(matches!(result, Err(error) if error.code() == Errc::InvalidState));
         // 构造拒绝前必须检查式关闭 native owner。
@@ -317,8 +324,10 @@ mod tests {
             // 共享关闭观察状态。
             shutdown: Rc::clone(&shutdown),
         };
+        // 使用与测试 context 声明一致的单次构造快照。
+        let caps = GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan);
         // 构造已验证 owner；测试 context 初始提供专用 surface。
-        let mut owner = match PixelUploadRecipeOwner::try_new(Box::new(context)) {
+        let mut owner = match PixelUploadRecipeOwner::try_new(Box::new(context), caps) {
             // 有效 recipe 必须成功进入 owner。
             Ok(owner) => owner,
             // 构造失败说明门禁错误拒绝了合法 context。

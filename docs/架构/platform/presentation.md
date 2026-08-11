@@ -16,7 +16,7 @@
 
 > **registry 探测边界**：GPU baseline 与固定 RHI pipeline probe 只属于 GPU-native × Swapchain registry 行。CPU × PixelUpload 行在静态 recipe 校验后直接进入 thread-bound 与 `PixelUploadRecipeOwner` 门禁，不得查询或伪造 `GpuRecipeContext`；其可执行性由专用 `PixelUploadSurface` 证明。
 
-> **静态 capability 快照**：两个 recipe owner 都只在构造门禁读取一次 `GraphicsContextCaps`，并在其生命周期内固定 backend/raster/present/coherency/occlusion 事实。thread-bound wrapper 同样只在创建线程捕获一次该静态快照，GPU 与 PixelUpload resize 成功后只刷新完整 `PresentSurface`。运行期 recipe 身份与 owner-loss 诊断不再依赖兼容 context 的重复 `caps()` 查询。
+> **静态 capability 快照**：`GraphicsRecipeOwner` 在 native factory 出口只读取一次 `GraphicsContextCaps`，再把同一快照交给 GPU 或 PixelUpload 专用 owner 门禁；专用 owner 不重复调用兼容 context 的 `caps()`。该快照在 owner 生命周期内固定 backend/raster/present/coherency/occlusion 事实。thread-bound wrapper 同样只在创建线程捕获一次静态快照，GPU 与 PixelUpload resize 成功后只刷新完整 `PresentSurface`。运行期 recipe 身份与 owner-loss 诊断不再依赖兼容 context 的重复查询。
 
 > **会话装配边界**：`RenderSession` 与通用 backend kind factory 不再持有或暂存 `IGraphicsContext`。生产 GPU bootstrap 与恢复只能从 native recipe factory 取得已验证 `GraphicsRecipeOwner`，再进入 `Renderer::from_recipe_owner`；没有完整 recipe 的通用 GPU 构造或运行时切换返回稳定 typed error，不建立第二条 native 资源生命周期。
 

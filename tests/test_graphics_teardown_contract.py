@@ -876,7 +876,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("fn pixel_upload_surface(&mut self)", metal)
         # native recipe 出口必须先验证 PixelUpload owner。
         self.assertIn(
-            "PixelUploadRecipeOwner::try_new(context).map(Self::PixelUpload)",
+            "PixelUploadRecipeOwner::try_new(context, caps).map(Self::PixelUpload)",
             recipe_owner,
         )
         # presentation 只能接收已经通过门禁的 owner。

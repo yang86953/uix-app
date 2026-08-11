@@ -262,14 +262,18 @@ class GraphicsContextContractTests(unittest.TestCase):
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
         # 读取 native factory 使用的正交 recipe owner。
         recipe_owner = (ROOT / "src/native/present/recipe_owner.rs").read_text(encoding="utf-8")
+        # 截取正交 owner 的生产实现，排除计数测试 context。
+        recipe_owner_contract = recipe_owner[: recipe_owner.index("#[cfg(test)]")]
         # 截取生产 owner 实现，排除测试 context 的 caps 方法。
         owner_contract = owner[: owner.index("#[cfg(test)]")]
         # 兼容 trait object 只能封装在 native owner 内。
         self.assertIn("context: Box<dyn IGraphicsContext>", owner)
         # owner 必须固化构造期验证过的静态 capability 快照。
         self.assertIn("caps: GraphicsContextCaps", owner_contract)
-        # 生产 owner 只能在构造门禁读取一次兼容 context caps。
-        self.assertEqual(owner_contract.count("context.caps()"), 1)
+        # 专用 GPU owner 必须复用顶层已经捕获的静态快照。
+        self.assertNotIn("context.caps()", owner_contract)
+        # 顶层正交 owner 在整个构造链中只读取一次兼容 context caps。
+        self.assertEqual(recipe_owner_contract.count("context.caps()"), 1)
         # GPU owner 必须在 backend 构造前一次证明完整 recipe owner 存在。
         self.assertIn("if context.gpu_recipe_context().is_none()", owner_contract)
         # 构造门禁不得分别探测 thin RHI 与 lifecycle。
@@ -285,7 +289,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         # GPU backend 不得重新持有兼容 trait object。
         self.assertNotIn("Box<dyn IGraphicsContext>", backend)
         # native recipe owner 必须在进入 renderer 前完成 GPU owner 校验。
-        self.assertIn("GpuRecipeOwner::try_new(context).map(Self::Gpu)", recipe_owner)
+        self.assertIn("GpuRecipeOwner::try_new(context, caps).map(Self::Gpu)", recipe_owner)
         # owner 校验后必须直接构造唯一 GPU backend。
         self.assertIn("let backend = GpuBackend::new_gpu_only(owner)?;", runtime)
         # draw backend 模块不得恢复兼容 context factory。
@@ -372,14 +376,18 @@ class GraphicsContextContractTests(unittest.TestCase):
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
         # 读取离开 native factory 前的正交 owner 分派。
         recipe_owner = (ROOT / "src/native/present/recipe_owner.rs").read_text(encoding="utf-8")
+        # 截取正交 owner 的生产实现，排除计数测试 context。
+        recipe_owner_contract = recipe_owner[: recipe_owner.index("#[cfg(test)]")]
         # 截取生产 owner 实现，排除测试 context 的 caps 方法。
         owner_contract = owner[: owner.index("#[cfg(test)]")]
         # 兼容 trait object 只能封装在 native owner 内。
         self.assertIn("context: Box<dyn IGraphicsContext>", owner)
         # owner 必须固化构造期验证过的静态 capability 快照。
         self.assertIn("caps: GraphicsContextCaps", owner_contract)
-        # 生产 owner 只能在构造门禁读取一次兼容 context caps。
-        self.assertEqual(owner_contract.count("context.caps()"), 1)
+        # 专用 PixelUpload owner 必须复用顶层已经捕获的静态快照。
+        self.assertNotIn("context.caps()", owner_contract)
+        # 顶层正交 owner 在整个构造链中只读取一次兼容 context caps。
+        self.assertEqual(recipe_owner_contract.count("context.caps()"), 1)
         # owner 必须独立承接 PixelUpload resize。
         self.assertIn("fn resize_surface(&mut self, width: i32, height: i32) -> Result<()>", owner)
         # owner 必须独立承接最终像素提交。
@@ -398,7 +406,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertNotIn("pixel_upload_surface()", presentation)
         # native recipe owner 必须在进入 renderer 前完成 PixelUpload owner 校验。
         self.assertIn(
-            "PixelUploadRecipeOwner::try_new(context).map(Self::PixelUpload)",
+            "PixelUploadRecipeOwner::try_new(context, caps).map(Self::PixelUpload)",
             recipe_owner,
         )
     # 校验无帧遮挡探测只属于 thin RHI surface 生命周期。
