@@ -4,7 +4,7 @@
 
 > **接口**：声明 ui 系统的测量、布局、盒模型和容器算法。依赖：[component](component.md)、[core/geometry](../core/geometry.md)。导出：组件布局能力与有限几何结果；公开用法见[使用 · 布局](../../使用/布局.md)。
 >
-> **当前实现线索**：相关实现暂位于 `src/ui/layout/` 和 `src/ui/traits/layout.rs`；重构后 trait 与算法共同归本模块。
+> **当前实现线索**：相关实现位于 `src/ui/layout/`（engine.rs 持有 `LayoutEngine` trait）；trait 与算法共同归本模块。
 
 ## 组件清单
 

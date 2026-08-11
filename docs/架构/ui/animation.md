@@ -4,7 +4,7 @@
 
 > **接口**：声明 ui 系统的值插值、过渡、动画源与生命周期。依赖：[component](component.md)、[reactive](reactive.md)。导出：动画播放器、下一 deadline 和活动源契约，供 app 调度；公开用法见[使用 · 动画](../../使用/动画.md)。
 >
-> **当前实现线索**：相关实现暂位于 `src/ui/animation/` 和 `src/ui/traits/animation.rs`；帧调度位于 app，但依赖方向必须是 app 消费 ui 导出的活动源，ui 不反向依赖 app。
+> **当前实现线索**：相关实现暂位于 `src/ui/animation/`（traits.rs 同目录）；帧调度位于 app，但依赖方向必须是 app 消费 ui 导出的活动源，ui 不反向依赖 app。
 
 ## 组件清单
 

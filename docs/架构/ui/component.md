@@ -4,7 +4,7 @@
 
 > **接口**：声明 ui 系统的持久组件树、基础组件能力和树级运行态。依赖：[core/identity](../core/identity.md)、[core/geometry](../core/geometry.md)。导出：供 view、reactive、layout、event 等模块扩展的组件身份、树生命周期和阶段挂载点。
 >
-> **当前实现线索**：相关实现暂散布于 `src/ui/core/`、`src/ui/traits/`、`src/ui/managers/` 以及若干 handle 文件；重构后应收敛到本模块边界。
+> **当前实现线索**：相关实现已收敛于 `src/ui/component/`（traits.rs、managers/ 及各 handle 文件）；重构后保持本模块边界稳定。
 
 ## 组件清单
 

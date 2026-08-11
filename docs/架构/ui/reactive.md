@@ -4,7 +4,7 @@
 
 > **接口**：声明 ui 系统的响应式状态、依赖捕获和受控副作用。依赖：[core/identity](../core/identity.md)、[component](component.md)。导出：`State`、`Computed`、`Effect` 与根/节点依赖契约。
 >
-> **当前实现线索**：相关实现暂位于 `src/ui/foundation/state.rs`、`src/ui/app_state.rs` 及若干绑定点；重构后应由本模块统一拥有。
+> **当前实现线索**：相关实现暂位于 `src/ui/reactive/state.rs`、`src/ui/component/app_state.rs` 及若干绑定点；重构后应由本模块统一拥有。
 
 ## 组件清单
 

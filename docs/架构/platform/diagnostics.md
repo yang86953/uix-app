@@ -4,7 +4,7 @@
 
 > **接口**：声明 platform 系统的目标 `diagnostics` 模块，权威持有 runtime-scoped 错误观察与恢复协调。依赖：[core/error](../core/error.md)。导出：`uix::diagnostics`。
 
-> **当前实现线索**：公开实现位于 `src/diagnostics/`；`src/core/diagnostic/` 的历史内部机制不定义目标公开边界。
+> **当前实现线索**：公开实现位于 `src/diagnostics/`；core 的历史诊断机制不定义目标公开边界。
 
 ## 组件清单
 

@@ -4,7 +4,7 @@
 
 > **接口**：声明 app 系统的应用组装、运行模式、共享服务和生命周期根。依赖：全部下层系统，以及 [event-loop](event-loop.md)、[window](window.md) 和可选 [agent](agent.md)。导出：`App`、`AppMode`、`AppHandle` 与应用级服务容器。
 >
-> **当前实现线索**：相关实现暂分布于 `src/app/shell/`、`app_handle.rs`、`session_runtime.rs` 等位置；重构后应用组装和进程级生命周期统一归本模块。
+> **当前实现线索**：相关实现暂分布于 `src/app/application/`（app_handle.rs 等）、`src/app/session_runtime.rs`；重构后应用组装和进程级生命周期统一归本模块。
 
 ## 组件清单
 

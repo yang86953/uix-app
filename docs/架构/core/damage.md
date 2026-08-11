@@ -4,7 +4,7 @@
 
 > **接口**：声明 core 系统的目标 `damage` 模块及其组件契约。依赖：[geometry](geometry.md)。导出：ui 失效、graphics 策略和 app 提交共享的区域模型。
 
-> **当前实现线索**：主要位于 `src/core/damage.rs`。
+> **当前实现线索**：主要位于 `src/core/damage/`。
 
 ## 组件清单
 
