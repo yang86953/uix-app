@@ -21,10 +21,8 @@ pub(crate) use super::swapchain::{
     map_dxgi_resize_result, swap_chain_desc,
 };
 use crate::core::{Errc, Error, Result};
-use crate::native::present::{
-    // 导入 context 实现仍直接消费的 graphics 契约类型。
-    GraphicsApi, GraphicsContextCaps, IGraphicsContext, PresentOcclusionSupport,
-};
+// 导入 context 实现仍直接消费的最小兼容生命周期契约。
+use crate::native::present::IGraphicsContext;
 use crate::native::presentation::graphics::platform::windows as win_surface;
 use ::windows::core::Interface;
 use ::windows::Win32::Foundation::HMODULE;

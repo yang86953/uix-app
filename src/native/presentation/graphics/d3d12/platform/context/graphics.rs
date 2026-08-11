@@ -1,10 +1,6 @@
 use super::*;
 
 impl IGraphicsContext for D3d12Context {
-    fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::gpu_native_swapchain(GraphicsApi::D3d12, PresentCoherency::FullOnly)
-    }
-
     // 返回 D3D12 测试期 context 的完整 drawable 元数据快照。
     fn present_surface(&self) -> crate::native::present::PresentSurface {
         // D3D12 尚未承诺跨 resize generation，保留既有零代际语义。

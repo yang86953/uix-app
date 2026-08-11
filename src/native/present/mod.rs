@@ -146,7 +146,7 @@ impl fmt::Display for PresentMode {
     }
 }
 
-/// Native-side capability snapshot for a live [`IGraphicsContext`].
+/// Native-side capability snapshot assembled by an adapter creation boundary.
 ///
 /// Does not replace draw's `GraphicsCapabilities`. Engine dispatch uses
 /// `raster` × `present` (× `backend` for GPU raster pairing).

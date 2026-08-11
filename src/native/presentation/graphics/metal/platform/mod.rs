@@ -3,13 +3,20 @@
 use std::ffi::c_void;
 
 use crate::core::{Error, Result};
-use crate::native::present::{GraphicsContextCandidate, IGraphicsContext};
+use crate::native::present::{GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps};
 
 #[cfg(target_os = "macos")]
 pub(crate) mod context;
 
 #[cfg(target_os = "macos")]
 pub use context::MetalPixelUploadContext;
+
+// 组装 Metal identity PixelUpload adapter 的静态 recipe 能力。
+#[cfg(target_os = "macos")]
+fn context_caps() -> GraphicsContextCaps {
+    // Metal 当前作为 CPU retained pixels 的专用上传提交后端。
+    GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Metal)
+}
 
 #[cfg(target_os = "macos")]
 pub(crate) fn create(
@@ -20,8 +27,8 @@ pub(crate) fn create(
 ) -> Result<GraphicsContextCandidate, Error> {
     // 创建具体 Metal context 后在静态 adapter 边界组装 capability。
     MetalPixelUploadContext::new(surface, width, height).map(|ctx| {
-        // 从刚创建的具体 adapter 一次读取静态 capability。
-        let caps = ctx.caps();
+        // 从 adapter 创建模块的唯一事实函数组装静态 capability。
+        let caps = context_caps();
         // 把 context 与同源快照封装为 registry candidate。
         GraphicsContextCandidate::new(Box::new(ctx), caps)
     })

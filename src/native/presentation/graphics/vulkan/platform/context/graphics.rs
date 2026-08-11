@@ -3,10 +3,6 @@
 use super::*;
 
 impl IGraphicsContext for VulkanContext {
-    fn caps(&self) -> crate::native::present::GraphicsContextCaps {
-        GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan)
-    }
-
     // Vulkan PixelUpload recipe 显式暴露专用 surface resize。
     fn pixel_upload_surface(&mut self) -> Option<&mut dyn PixelUploadSurface> {
         // 返回同一 owner context 上的专用视图。

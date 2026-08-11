@@ -8,9 +8,8 @@
 use std::ffi::c_void;
 
 use crate::core::{Errc, Error, Result};
-use crate::native::present::{
-    GraphicsApi, GraphicsContextCaps, IGraphicsContext, PresentCoherency,
-};
+// 导入 context 实现仍直接消费的最小兼容生命周期契约。
+use crate::native::present::IGraphicsContext;
 use crate::native::presentation::graphics::platform::windows as win_surface;
 use ::windows::core::Interface;
 use ::windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, WAIT_OBJECT_0};

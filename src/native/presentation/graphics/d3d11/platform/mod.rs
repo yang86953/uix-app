@@ -3,7 +3,12 @@
 use std::ffi::c_void;
 
 use crate::core::{Error, Result};
-use crate::native::present::{GraphicsContextCandidate, IGraphicsContext};
+use crate::native::present::{
+    GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps, PresentOcclusionSupport,
+};
+// WARP 测试入口仍返回兼容 context trait object。
+#[cfg(all(test, feature = "d3d11"))]
+use crate::native::present::IGraphicsContext;
 
 #[cfg(windows)]
 pub(crate) mod context;
@@ -15,6 +20,17 @@ mod swapchain;
 #[cfg(windows)]
 pub use context::D3d11Context;
 
+// 从唯一 DXGI swapchain 契约组装 D3D11 静态 recipe 能力。
+#[cfg(windows)]
+fn context_caps() -> GraphicsContextCaps {
+    // 读取与实际 swapchain descriptor 同源的 coherency 事实。
+    let contract = swapchain::swap_chain_contract();
+    // 返回包含遮挡状态与无数据探测支持的完整 adapter 快照。
+    GraphicsContextCaps::gpu_native_swapchain(GraphicsApi::D3d11, contract.present_coherency)
+        // D3D11 surface 同时实现 present status 与 DXGI_PRESENT_TEST。
+        .with_present_occlusion(PresentOcclusionSupport::PresentStatusAndTest)
+}
+
 #[cfg(windows)]
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) fn create(
@@ -25,8 +41,8 @@ pub(crate) fn create(
 ) -> Result<GraphicsContextCandidate, Error> {
     // 创建具体 D3D11 context 后在仍可静态分派的边界组装 capability。
     D3d11Context::new(surface, width, height).map(|ctx| {
-        // 从刚创建的具体 adapter 一次读取静态 capability。
-        let caps = ctx.caps();
+        // 从 adapter 创建模块的唯一事实函数组装静态 capability。
+        let caps = context_caps();
         // 把 context 与同源快照封装为 registry candidate。
         GraphicsContextCandidate::new(Box::new(ctx), caps)
     })

@@ -142,18 +142,10 @@ mod tests {
     struct MissingPixelUploadContext {
         // 允许测试在 owner 消费 Box 后观察 checked shutdown。
         shutdown: Rc<Cell<bool>>,
-        // 控制测试 context 声明的静态 recipe。
-        caps: GraphicsContextCaps,
     }
 
     // 实现构造门禁消费的最小兼容 context 契约。
     impl IGraphicsContext for MissingPixelUploadContext {
-        // 返回测试指定的静态 recipe 事实。
-        fn caps(&self) -> GraphicsContextCaps {
-            // 复制无动态状态的能力快照。
-            self.caps
-        }
-
         // 返回稳定的最小 surface 元数据。
         fn present_surface(&self) -> PresentSurface {
             // 测试不涉及真实 drawable 或 surface generation。
@@ -183,12 +175,6 @@ mod tests {
 
     // 实现 PixelUpload owner 消费的兼容 context 门面。
     impl IGraphicsContext for SwitchablePixelUploadContext {
-        // 声明正式 CPU × PixelUpload recipe。
-        fn caps(&self) -> GraphicsContextCaps {
-            // 使用 Vulkan 身份代表当前跨平台 PixelUpload adapter。
-            GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan)
-        }
-
         // 按共享开关暴露或撤销专用 surface 视图。
         fn pixel_upload_surface(&mut self) -> Option<&mut dyn PixelUploadSurface> {
             // 构造期与正常运行期返回唯一 owner。
@@ -258,20 +244,18 @@ mod tests {
     fn rejects_gpu_recipe_before_presentation_construction() {
         // 保存 owner 消费后仍可观察的关闭标记。
         let shutdown = Rc::new(Cell::new(false));
+        // 在模拟 adapter 创建边界组装合法 GPU-native × swapchain 快照。
+        let caps = GraphicsContextCaps::gpu_native_swapchain(
+            // 使用 Windows 参考 backend 身份。
+            GraphicsApi::D3d11,
+            // 测试只需要稳定的完整重绘 coherency。
+            PresentCoherency::FullOnly,
+        );
         // 构造 GPU recipe，故意违反 PixelUpload owner 门禁。
         let context = MissingPixelUploadContext {
             // 共享关闭状态给测试断言。
             shutdown: Rc::clone(&shutdown),
-            // 使用合法但不属于 PixelUpload presentation 的 GPU recipe。
-            caps: GraphicsContextCaps::gpu_native_swapchain(
-                // 使用 Windows 参考 backend 身份。
-                GraphicsApi::D3d11,
-                // 测试只需要稳定的完整重绘 coherency。
-                PresentCoherency::FullOnly,
-            ),
         };
-        // 在转移 context 所有权前复制顶层分派已经读取的静态快照。
-        let caps = context.caps;
         // 尝试构造 PixelUpload owner 并取得稳定失败。
         let result = PixelUploadRecipeOwner::try_new(Box::new(context), caps);
         // recipe 不匹配必须保持参数错误分类。
@@ -285,15 +269,13 @@ mod tests {
     fn rejects_pixel_upload_recipe_without_surface_owner() {
         // 保存 owner 消费后仍可观察的关闭标记。
         let shutdown = Rc::new(Cell::new(false));
+        // 在模拟 adapter 创建边界组装正式 CPU × PixelUpload 快照。
+        let caps = GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan);
         // 构造声明 PixelUpload recipe 但不实现专用 surface 的错误 context。
         let context = MissingPixelUploadContext {
             // 共享关闭状态给测试断言。
             shutdown: Rc::clone(&shutdown),
-            // 声明正式 CPU × PixelUpload recipe。
-            caps: GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan),
         };
-        // 在转移 context 所有权前复制顶层分派已经读取的静态快照。
-        let caps = context.caps;
         // 尝试构造 PixelUpload owner 并取得稳定失败。
         let result = PixelUploadRecipeOwner::try_new(Box::new(context), caps);
         // 必需 surface 缺失必须保持状态错误分类。

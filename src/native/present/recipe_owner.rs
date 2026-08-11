@@ -108,24 +108,14 @@ mod tests {
         fail_shutdown: bool,
     }
 
-    // 提供可记录静态 capability 读取次数的合法正交 recipe context。
-    struct CountingRecipeContext {
+    // 提供由外部静态快照驱动的合法正交 recipe context。
+    struct RecipeContext {
         // 保存当前测试分支声明的静态 recipe 事实。
         caps: GraphicsContextCaps,
-        // 允许 owner 消费 Box 后继续观察 capability 读取次数。
-        caps_reads: Rc<Cell<u32>>,
     }
 
-    // 为单次快照测试实现迁移期 context 契约。
-    impl IGraphicsContext for CountingRecipeContext {
-        // 记录并返回当前 context 的静态 recipe 快照。
-        fn caps(&self) -> GraphicsContextCaps {
-            // 每次查询都增加共享计数，防止专用 owner 隐式重读。
-            self.caps_reads.set(self.caps_reads.get() + 1);
-            // 返回无动态状态的 capability 值。
-            self.caps
-        }
-
+    // 为外部快照测试实现迁移期 context 契约。
+    impl IGraphicsContext for RecipeContext {
         // 仅为 GPU-native × Swapchain 分支暴露原子 GPU recipe 视图。
         fn gpu_recipe_context(&mut self) -> Option<&mut dyn GpuRecipeContext> {
             // 先读取复制型 recipe 轴，避免返回 self 后继续借用字段。
@@ -166,10 +156,10 @@ mod tests {
     }
 
     // 为 GPU 分支提供只用于构造门禁的原子 recipe 视图。
-    impl GpuRecipeContext for CountingRecipeContext {
+    impl GpuRecipeContext for RecipeContext {
         // 返回稳定错误，证明构造门禁不会提前借用真实 thin RHI。
         fn rhi_context(
-            // 借用计数测试 context。
+            // 借用 recipe 测试 context。
             &mut self,
         ) -> crate::core::Result<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
             // 本测试只验证静态快照次数，不伪造 RHI 资源。
@@ -189,10 +179,10 @@ mod tests {
     }
 
     // 为 PixelUpload 分支提供只用于构造门禁的专用 surface 视图。
-    impl PixelUploadSurface for CountingRecipeContext {
+    impl PixelUploadSurface for RecipeContext {
         // 接受不参与本测试的最小 PixelUpload resize。
         fn resize_pixel_upload_surface(
-            // 借用计数测试 context。
+            // 借用 recipe 测试 context。
             &mut self,
             // 忽略构造门禁不会传入的逻辑宽度。
             _width: i32,
@@ -205,7 +195,7 @@ mod tests {
 
         // 接受不参与本测试的最小像素提交。
         fn present_pixels(
-            // 借用计数测试 context。
+            // 借用 recipe 测试 context。
             &mut self,
             // 忽略构造门禁不会传入的像素数据。
             _pixels: &[u32],
@@ -221,25 +211,25 @@ mod tests {
         }
     }
 
+    // 构造 registry 应拒绝的 GPU raster × PixelUpload 静态交叉组合。
+    fn invalid_recipe_caps() -> GraphicsContextCaps {
+        // 直接构造不属于两个合法构造器的静态事实。
+        GraphicsContextCaps {
+            // 使用稳定 D3D11 backend 身份。
+            backend: GraphicsApi::D3d11,
+            // GPU raster 故意与 PixelUpload present 交叉。
+            raster: RasterMode::GpuNative,
+            // PixelUpload 只允许与 CPU raster 组合。
+            present: PresentMode::PixelUpload,
+            // 非法组合不声明遮挡能力。
+            present_occlusion: PresentOcclusionSupport::Unsupported,
+            // 测试使用保守完整提交 coherency。
+            present_coherency: PresentCoherency::FullOnly,
+        }
+    }
+
     // 为非法 recipe 测试实现最小迁移期 context。
     impl IGraphicsContext for InvalidRecipeContext {
-        // 返回 GPU raster × PixelUpload 的非法交叉组合。
-        fn caps(&self) -> GraphicsContextCaps {
-            // 直接构造不属于两个合法构造器的静态事实。
-            GraphicsContextCaps {
-                // 使用稳定 D3D11 backend 身份。
-                backend: GraphicsApi::D3d11,
-                // GPU raster 故意与 PixelUpload present 交叉。
-                raster: RasterMode::GpuNative,
-                // PixelUpload 只允许与 CPU raster 组合。
-                present: PresentMode::PixelUpload,
-                // 非法组合不声明遮挡能力。
-                present_occlusion: PresentOcclusionSupport::Unsupported,
-                // 测试使用保守完整提交 coherency。
-                present_coherency: PresentCoherency::FullOnly,
-            }
-        }
-
         // 返回不参与本测试的稳定 surface 快照。
         fn present_surface(&self) -> PresentSurface {
             // 使用最小 identity drawable。
@@ -273,8 +263,8 @@ mod tests {
             // 本用例只验证原始 recipe 错误。
             fail_shutdown: false,
         };
-        // 在模拟 registry 边界取得故意非法的静态快照。
-        let caps = context.caps();
+        // 在模拟 registry 边界构造故意非法的静态快照。
+        let caps = invalid_recipe_caps();
         // 尝试构造正交 recipe owner。
         let result = GraphicsRecipeOwner::try_new(Box::new(context), caps);
         // 非法组合必须返回参数错误。
@@ -295,8 +285,8 @@ mod tests {
             // 强制返回 cleanup failure。
             fail_shutdown: true,
         };
-        // 在模拟 registry 边界取得故意非法的静态快照。
-        let caps = context.caps();
+        // 在模拟 registry 边界构造故意非法的静态快照。
+        let caps = invalid_recipe_caps();
         // 取得带原因链的构造失败。
         let error = match GraphicsRecipeOwner::try_new(Box::new(context), caps) {
             // 成功属于测试失败。
@@ -317,10 +307,8 @@ mod tests {
     // 验证 GPU 正交 owner 只消费外部提供的静态 capability。
     #[test]
     fn gpu_recipe_owner_reuses_provided_static_caps() {
-        // 创建在 Box 被消费后仍可观察的 capability 读取计数。
-        let caps_reads = Rc::new(Cell::new(0));
         // 构造合法 GPU-native × Swapchain 测试 context。
-        let context = CountingRecipeContext {
+        let context = RecipeContext {
             // 使用 Windows 参考 backend 与完整提交 coherency。
             caps: GraphicsContextCaps::gpu_native_swapchain(
                 // 使用稳定 D3D11 backend 身份。
@@ -328,38 +316,36 @@ mod tests {
                 // 本测试不验证局部 present。
                 PresentCoherency::FullOnly,
             ),
-            // 共享 capability 读取计数。
-            caps_reads: Rc::clone(&caps_reads),
         };
         // 模拟 registry 把已验证字段快照直接传入 owner，且不调用 trait 查询。
         let caps = context.caps;
         // 通过顶层正交 owner 构造 GPU 分支。
         let owner = GraphicsRecipeOwner::try_new(Box::new(context), caps);
         // 合法 GPU recipe 必须进入唯一 GPU owner 分支。
-        assert!(matches!(owner, Ok(GraphicsRecipeOwner::Gpu(_))));
-        // 顶层分派与专用门禁都不得重新查询 context 静态快照。
-        assert_eq!(caps_reads.get(), 0);
+        assert!(matches!(&owner, Ok(GraphicsRecipeOwner::Gpu(_))));
+        // 解包已经通过分支断言的 GPU owner。
+        let owner = owner.expect("GPU recipe owner must exist");
+        // 顶层分派必须保留外部提供的完整静态快照。
+        assert_eq!(owner.caps(), caps);
     }
 
     // 验证 PixelUpload 正交 owner 只消费外部提供的静态 capability。
     #[test]
     fn pixel_upload_recipe_owner_reuses_provided_static_caps() {
-        // 创建在 Box 被消费后仍可观察的 capability 读取计数。
-        let caps_reads = Rc::new(Cell::new(0));
         // 构造合法 CPU × PixelUpload 测试 context。
-        let context = CountingRecipeContext {
+        let context = RecipeContext {
             // 使用 Vulkan 身份代表当前跨平台 PixelUpload recipe。
             caps: GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan),
-            // 共享 capability 读取计数。
-            caps_reads: Rc::clone(&caps_reads),
         };
         // 模拟 registry 把已验证字段快照直接传入 owner，且不调用 trait 查询。
         let caps = context.caps;
         // 通过顶层正交 owner 构造 PixelUpload 分支。
         let owner = GraphicsRecipeOwner::try_new(Box::new(context), caps);
         // 合法 PixelUpload recipe 必须进入唯一上传 owner 分支。
-        assert!(matches!(owner, Ok(GraphicsRecipeOwner::PixelUpload(_))));
-        // 顶层分派与专用门禁都不得重新查询 context 静态快照。
-        assert_eq!(caps_reads.get(), 0);
+        assert!(matches!(&owner, Ok(GraphicsRecipeOwner::PixelUpload(_))));
+        // 解包已经通过分支断言的 PixelUpload owner。
+        let owner = owner.expect("PixelUpload recipe owner must exist");
+        // 顶层分派必须保留外部提供的完整静态快照。
+        assert_eq!(owner.caps(), caps);
     }
 }

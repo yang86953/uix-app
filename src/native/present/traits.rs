@@ -76,8 +76,6 @@ pub(crate) trait PixelUploadSurface {
 }
 
 pub trait IGraphicsContext {
-    fn caps(&self) -> GraphicsContextCaps;
-
     // 返回不可拆分的 GPU-native recipe 视图；其它 recipe 保持 None。
     // native::present 模块本身是 crate 私有边界，thin RHI 不作为外部句柄暴露。
     #[allow(private_interfaces)]

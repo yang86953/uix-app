@@ -143,8 +143,6 @@ mod tests {
     struct MissingRhiContext {
         // 允许测试在 owner 消费 Box 后观察 checked shutdown。
         shutdown: Rc<Cell<bool>>,
-        // 控制测试 context 声明的静态 recipe。
-        caps: GraphicsContextCaps,
         // 控制测试 context 是否暴露完整 GPU recipe 视图。
         expose_gpu_recipe: bool,
     }
@@ -248,12 +246,6 @@ mod tests {
 
     // 实现构造门禁消费的最小兼容 context 契约。
     impl IGraphicsContext for MissingRhiContext {
-        // 返回测试指定的静态 recipe 事实。
-        fn caps(&self) -> GraphicsContextCaps {
-            // 复制无动态状态的能力快照。
-            self.caps
-        }
-
         // 按测试场景选择是否暴露完整 GPU recipe 视图。
         fn gpu_recipe_context(
             // 借用测试 context。
@@ -312,17 +304,15 @@ mod tests {
     fn rejects_pixel_upload_recipe_before_backend_construction() {
         // 保存 owner 消费后仍可观察的关闭标记。
         let shutdown = Rc::new(Cell::new(false));
+        // 在模拟 adapter 创建边界组装合法 CPU PixelUpload 静态快照。
+        let caps = GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan);
         // 构造 CPU PixelUpload recipe，故意违反 GPU owner 门禁。
         let context = MissingRhiContext {
             // 共享关闭状态给测试断言。
             shutdown: Rc::clone(&shutdown),
-            // 使用合法但不属于 GPU backend 的 PixelUpload recipe。
-            caps: GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan),
             // recipe 门禁会先拒绝，无需暴露 GPU recipe 视图。
             expose_gpu_recipe: false,
         };
-        // 在转移 context 所有权前复制顶层分派已经读取的静态快照。
-        let caps = context.caps;
         // 尝试构造 GPU owner 并取得稳定失败。
         let result = GpuRecipeOwner::try_new(Box::new(context), caps);
         // recipe 不匹配必须保持参数错误分类。
@@ -336,22 +326,20 @@ mod tests {
     fn rejects_gpu_recipe_without_atomic_context() {
         // 保存 owner 消费后仍可观察的关闭标记。
         let shutdown = Rc::new(Cell::new(false));
+        // 在模拟 adapter 创建边界组装正式 GPU-native × swapchain 快照。
+        let caps = GraphicsContextCaps::gpu_native_swapchain(
+            // 使用默认 Windows 参考 backend 身份。
+            GraphicsApi::D3d11,
+            // 测试只需要稳定的完整重绘 coherency。
+            PresentCoherency::FullOnly,
+        );
         // 构造声明 GPU recipe 但不暴露完整 recipe 视图的错误 context。
         let context = MissingRhiContext {
             // 共享关闭状态给测试断言。
             shutdown: Rc::clone(&shutdown),
-            // 声明正式 GPU-native × swapchain recipe。
-            caps: GraphicsContextCaps::gpu_native_swapchain(
-                // 使用默认 Windows 参考 backend 身份。
-                GraphicsApi::D3d11,
-                // 测试只需要稳定的完整重绘 coherency。
-                PresentCoherency::FullOnly,
-            ),
             // 让该用例停在原子 GPU recipe 门禁。
             expose_gpu_recipe: false,
         };
-        // 在转移 context 所有权前复制顶层分派已经读取的静态快照。
-        let caps = context.caps;
         // 尝试构造 GPU owner 并取得稳定失败。
         let result = GpuRecipeOwner::try_new(Box::new(context), caps);
         // 必需原子 owner 缺失必须保持状态错误分类。
@@ -365,22 +353,20 @@ mod tests {
     fn accepts_gpu_recipe_with_atomic_context() {
         // 保存 owner 完成显式关闭后可观察的标记。
         let shutdown = Rc::new(Cell::new(false));
+        // 在模拟 adapter 创建边界组装正式 GPU-native × swapchain 快照。
+        let caps = GraphicsContextCaps::gpu_native_swapchain(
+            // 使用默认 Windows 参考 backend 身份。
+            GraphicsApi::D3d11,
+            // 测试只需要稳定的完整重绘 coherency。
+            PresentCoherency::FullOnly,
+        );
         // 构造同时实现 thin RHI 与 resize 的完整 GPU recipe context。
         let context = MissingRhiContext {
             // 共享关闭状态给测试断言。
             shutdown: Rc::clone(&shutdown),
-            // 声明正式 GPU-native × swapchain recipe。
-            caps: GraphicsContextCaps::gpu_native_swapchain(
-                // 使用默认 Windows 参考 backend 身份。
-                GraphicsApi::D3d11,
-                // 测试只需要稳定的完整重绘 coherency。
-                PresentCoherency::FullOnly,
-            ),
             // 一次暴露不可拆分的 GPU recipe 视图。
             expose_gpu_recipe: true,
         };
-        // 在转移 context 所有权前复制顶层分派已经读取的静态快照。
-        let caps = context.caps;
         // 完整原子视图必须通过 GPU owner 构造门禁。
         let mut owner = match GpuRecipeOwner::try_new(Box::new(context), caps) {
             // 保存成功构造的唯一 owner。

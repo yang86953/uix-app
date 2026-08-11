@@ -1,14 +1,6 @@
 use super::*;
 
 impl IGraphicsContext for D3d11Context {
-    fn caps(&self) -> crate::native::present::GraphicsContextCaps {
-        // 从 swapchain 创建事实投影唯一的 present coherency。
-        let contract = swap_chain_contract();
-        // 保持 GraphicsContext 能力与实际 DXGI swap effect 一致。
-        GraphicsContextCaps::gpu_native_swapchain(GraphicsApi::D3d11, contract.present_coherency)
-            .with_present_occlusion(PresentOcclusionSupport::PresentStatusAndTest)
-    }
-
     // 暴露同一 owner-thread context 上不可拆分的 GPU recipe 视图。
     fn gpu_recipe_context(&mut self) -> Option<&mut dyn crate::native::present::GpuRecipeContext> {
         // D3D11 同时拥有 thin RHI 与唯一 GraphicsSurface::resize 路径。

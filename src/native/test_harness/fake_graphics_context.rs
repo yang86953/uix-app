@@ -50,13 +50,6 @@ impl Default for FakeGraphicsContext {
 }
 
 impl IGraphicsContext for FakeGraphicsContext {
-    fn caps(&self) -> crate::native::present::GraphicsContextCaps {
-        crate::native::present::GraphicsContextCaps::gpu_native_swapchain(
-            crate::native::present::GraphicsApi::OpenGlEs,
-            crate::core::PresentCoherency::FullOnly,
-        )
-    }
-
     fn try_shutdown(&mut self) -> crate::core::Result<()> {
         self.state.shutdown_called = true;
         Ok(())

@@ -221,8 +221,8 @@ fn try_create_context(
         // 记录首帧前已经通过真实资源与固定 pipeline 编译的 adapter。
         tracing::info!("Graphics recipe {expected}: atomic GPU recipe probe passed");
     }
-    // 使用同一已验证快照绑定线程，禁止 wrapper 重读 adapter 静态事实。
-    let context = bind_to_current_thread(ctx, caps);
+    // 把 context 绑定到 owner thread；静态快照继续由验证记录独立持有。
+    let context = bind_to_current_thread(ctx);
     // 把 context 与快照作为不可拆分的 factory 内部验证记录返回。
     Ok(ValidatedGraphicsContext { context, caps })
 }
@@ -338,29 +338,16 @@ pub(crate) fn try_create_gpu_recipe_with_queue(
 mod selection_tests {
     // 复用 registry 的私有候选筛选与排序实现。
     use super::*;
-    // 引入跨完整构造链记录 capability 查询次数的原子计数器。
-    use std::sync::atomic::{AtomicUsize, Ordering};
     // 引入 PixelUpload 测试载荷与稳定 surface 快照。
     use crate::core::{PresentDamage, PresentSurface};
     // 引入 CPU recipe 能力与专用 PixelUpload surface 契约。
     use crate::native::present::{GraphicsContextCaps, PixelUploadSurface};
-
-    // 记录 CPU PixelUpload 测试 context 的静态 capability 查询次数。
-    static CPU_PIXEL_UPLOAD_CAPS_READS: AtomicUsize = AtomicUsize::new(0);
 
     // 构造不暴露 GPU recipe 视图的合法 CPU PixelUpload context。
     struct CpuPixelUploadContext;
 
     // 为 registry 行实现最小迁移期 context。
     impl IGraphicsContext for CpuPixelUploadContext {
-        // 声明合法 CPU × PixelUpload recipe。
-        fn caps(&self) -> GraphicsContextCaps {
-            // 记录 adapter factory、registry 与 owner 整条创建链的查询总数。
-            CPU_PIXEL_UPLOAD_CAPS_READS.fetch_add(1, Ordering::SeqCst);
-            // 使用 Vulkan 身份代表跨平台 PixelUpload adapter。
-            GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan)
-        }
-
         // 如果 registry 错误查询 GPU 私有契约，立即让行为测试失败。
         fn gpu_recipe_context(
             // 借用测试 context。
@@ -429,8 +416,8 @@ mod selection_tests {
     ) -> Result<GraphicsContextCandidate, Error> {
         // 创建只实现 CPU 专用契约的具体 context。
         let context = CpuPixelUploadContext;
-        // 在具体 adapter 仍可静态分派时一次读取 capability。
-        let caps = context.caps();
+        // 在测试 adapter 创建边界直接组装静态 capability。
+        let caps = GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan);
         // 把 context 与同源快照交给 registry 校验。
         Ok(GraphicsContextCandidate::new(Box::new(context), caps))
     }
@@ -557,8 +544,6 @@ mod selection_tests {
     #[test]
     // 验证 CPU PixelUpload registry 行跳过 GPU RHI probe 并进入专用 owner。
     fn cpu_pixel_upload_registry_row_reaches_recipe_owner_without_gpu_probe() {
-        // 清零当前用例的静态 capability 查询计数。
-        CPU_PIXEL_UPLOAD_CAPS_READS.store(0, Ordering::SeqCst);
         // 构造与测试 context 静态能力一致的合法 registry 行。
         let entry = GraphicsBackendEntry {
             // 使用 Vulkan 身份代表当前跨平台 CPU PixelUpload adapter。
@@ -601,7 +586,5 @@ mod selection_tests {
         };
         // 最终值必须进入 PixelUpload 分支，不能伪装成 GPU owner。
         assert!(matches!(owner, GraphicsRecipeOwner::PixelUpload(_)));
-        // adapter factory、registry、thread-bound wrapper 与 owner 合计只能查询一次 caps。
-        assert_eq!(CPU_PIXEL_UPLOAD_CAPS_READS.load(Ordering::SeqCst), 1);
     }
 }
