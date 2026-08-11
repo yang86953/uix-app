@@ -5,9 +5,12 @@ pub(super) const SOLID_VERTEX: &str = r#"#version 300 es
 precision highp float;
 layout(location = 0) in vec2 a_pos;
 uniform vec2 u_viewport;
+// 根据当前 render target 选择原生 surface 或 top-left texture 行序。
+uniform float u_target_y_sign;
 void main() {
     vec2 ndc = (a_pos / u_viewport) * 2.0 - 1.0;
-    ndc.y = -ndc.y;
+    // 让目标身份成为唯一的 Y 方向事实。
+    ndc.y *= u_target_y_sign;
     gl_Position = vec4(ndc, 0.0, 1.0);
 }
 "#;
@@ -29,11 +32,14 @@ layout(location = 0) in vec2 a_pos;
 layout(location = 1) in vec2 a_uv;
 layout(location = 2) in vec4 a_color;
 uniform vec2 u_viewport;
+// 根据当前 render target 选择原生 surface 或 top-left texture 行序。
+uniform float u_target_y_sign;
 out vec2 v_uv;
 out vec4 v_color;
 void main() {
     vec2 ndc = (a_pos / u_viewport) * 2.0 - 1.0;
-    ndc.y = -ndc.y;
+    // 让目标身份成为唯一的 Y 方向事实。
+    ndc.y *= u_target_y_sign;
     gl_Position = vec4(ndc, 0.0, 1.0);
     v_uv = a_uv;
     v_color = a_color;
@@ -103,13 +109,16 @@ pub(super) const RECT_VERTEX: &str = r#"#version 300 es
 precision highp float;
 layout(location = 0) in vec2 a_pos;
 uniform vec2 u_viewport;
+// 根据当前 render target 选择原生 surface 或 top-left texture 行序。
+uniform float u_target_y_sign;
 uniform vec4 u_rect;
 out vec2 v_local;
 out vec2 v_rect_size;
 void main() {
     vec2 pos = u_rect.xy + a_pos * u_rect.zw;
     vec2 ndc = (pos / u_viewport) * 2.0 - 1.0;
-    ndc.y = -ndc.y;
+    // 让目标身份成为唯一的 Y 方向事实。
+    ndc.y *= u_target_y_sign;
     gl_Position = vec4(ndc, 0.0, 1.0);
     v_local = a_pos * u_rect.zw;
     v_rect_size = u_rect.zw;
@@ -121,6 +130,8 @@ pub(super) const GRADIENT_VERTEX: &str = r#"#version 300 es
 precision highp float;
 layout(location = 0) in vec2 a_pos;
 uniform vec2 u_viewport;
+// 根据当前 render target 选择原生 surface 或 top-left texture 行序。
+uniform float u_target_y_sign;
 uniform vec4 u_quad_origin_edge_x;
 uniform vec4 u_quad_edge_y;
 out vec2 v_gradient_uv;
@@ -130,7 +141,8 @@ void main() {
     vec2 edge_y = u_quad_edge_y.xy;
     vec2 pos = origin + a_pos.x * edge_x + a_pos.y * edge_y;
     vec2 ndc = (pos / u_viewport) * 2.0 - 1.0;
-    ndc.y = -ndc.y;
+    // 让目标身份成为唯一的 Y 方向事实。
+    ndc.y *= u_target_y_sign;
     gl_Position = vec4(ndc, 0.0, 1.0);
     v_gradient_uv = a_pos;
 }
@@ -266,6 +278,8 @@ pub(super) const SHADOW_VERTEX: &str = r#"#version 300 es
 precision highp float;
 layout(location = 0) in vec2 a_pos;
 uniform vec2 u_viewport;
+// 根据当前 render target 选择原生 surface 或 top-left texture 行序。
+uniform float u_target_y_sign;
 uniform vec4 u_rect;
 uniform vec4 u_params;
 uniform vec4 u_size;
@@ -282,7 +296,8 @@ void main() {
     vec2 draw_edge_y = u_params.xy + axis_y * 2.0;
     vec2 pos = draw_xy + a_pos.x * draw_edge_x + a_pos.y * draw_edge_y;
     vec2 ndc = (pos / u_viewport) * 2.0 - 1.0;
-    ndc.y = -ndc.y;
+    // 让目标身份成为唯一的 Y 方向事实。
+    ndc.y *= u_target_y_sign;
     gl_Position = vec4(ndc, 0.0, 1.0);
     v_local = a_pos * (expanded_size + vec2(2.0));
     v_rect_size = body_size;
@@ -349,7 +364,8 @@ uniform vec4 u_sizes;
 uniform vec4 u_region;
 out vec2 v_uv;
 void main() {
-    gl_Position = vec4(a_pos, 0.0, 1.0);
+    // blur 顶点已是 top-left NDC；纹理目标需把顶部写到 GL 第零行。
+    gl_Position = vec4(a_pos.x, -a_pos.y, 0.0, 1.0);
     vec2 unit = vec2(a_pos.x * 0.5 + 0.5, 0.5 - a_pos.y * 0.5);
     v_uv = (u_region.xy + unit * u_region.zw) / u_sizes.zw;
 }

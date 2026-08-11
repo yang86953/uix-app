@@ -60,6 +60,18 @@ struct OpenGlRhiSampler {
 // OpenGL ES 的 swapchain target 身份不占用 texture 句柄空间。
 pub(super) const RHI_SURFACE_TARGET_RAW: u64 = u64::MAX;
 
+// 判断 opaque render target 是否代表原生窗口 surface。
+fn is_surface_target(target: RenderTargetHandle) -> bool {
+    // surface sentinel 由同一 adapter 独占，不与 texture 句柄重叠。
+    target.raw() == RHI_SURFACE_TARGET_RAW
+}
+
+// 返回左上逻辑坐标映射到当前 OpenGL 目标所需的 NDC Y 符号。
+fn target_y_sign(target: RenderTargetHandle) -> f32 {
+    // 原生 surface 的顶部位于 GL framebuffer 高 Y，texture 的 top-left 行位于低 Y。
+    if is_surface_target(target) { -1.0 } else { 1.0 }
+}
+
 // 持有 OpenGL ES RHI 的资源表、pass 状态和 VAO。
 pub(super) struct OpenGlRhiDevice {
     // 保存按一开始从 1 分配的 buffer 句柄索引的资源表。
@@ -72,8 +84,6 @@ pub(super) struct OpenGlRhiDevice {
     samplers: Vec<Option<OpenGlRhiSampler>>,
     // 保存所有 RHI draw 共用的 VAO。
     vao: glow::VertexArray,
-    // 保存 surface 是否需要 Y 翻转（Wayland EGL 为 top-left 行序，WGL 为 bottom-up）。
-    flip_y: bool,
     // 保存是否已经打开一个 render pass。
     pass_open: bool,
     // 保存当前 pass 的 target 句柄。
@@ -123,7 +133,7 @@ use pipeline::{compile_program, shader_sources};
 // 为 OpenGL ES RHI 提供初始资源表和 VAO。
 impl OpenGlRhiDevice {
     // 在已经 current 的 GLES 3 context 中创建共享 VAO。
-    pub(super) fn new(gl: &glow::Context, flip_y: bool) -> Result<Self> {
+    pub(super) fn new(gl: &glow::Context) -> Result<Self> {
         // 创建 VAO 失败必须阻止 context 进入 RHI 路径。
         let vao = unsafe {
             gl.create_vertex_array()
@@ -136,8 +146,6 @@ impl OpenGlRhiDevice {
             pipelines: Vec::new(),
             samplers: Vec::new(),
             vao,
-            // 保存平台 surface 行序约定（Wayland EGL 需要翻转）。
-            flip_y,
             pass_open: false,
             active_target: None,
             active_extent: None,
@@ -154,12 +162,6 @@ impl OpenGlRhiDevice {
             #[cfg(feature = "test-harness")]
             surface_lost_for_test: false,
         })
-    }
-
-    // 向同一 raster owner 暴露构造期冻结的 surface 行序事实。
-    pub(super) fn surface_rows_start_at_top(&self) -> bool {
-        // Wayland EGL 以 top-left 行序构造，WGL 则保持 bottom-up。
-        self.flip_y
     }
 
     // 把从 1 开始的 opaque handle 转换为资源表索引。
@@ -451,11 +453,11 @@ impl OpenGlRhiDevice {
         gl: &glow::Context,
         desc: PipelineDesc,
     ) -> Result<PipelineHandle> {
-        // 为 key 选择已经固定的 GLES 3.0 shader ABI（Wayland EGL 需要去掉 Y 翻转）。
-        let (vertex, fragment) = shader_sources(desc.key, self.flip_y)
+        // 为 key 选择不再按平台改写的固定 GLES 3.0 shader ABI。
+        let (vertex, fragment) = shader_sources(desc.key)
             .ok_or_else(|| rhi_not_implemented("OpenGL RHI pipeline key"))?;
         // 编译 program；shader 失败时不登记半成品资源。
-        let program = unsafe { compile_program(gl, &vertex, fragment, "RHI pipeline")? };
+        let program = unsafe { compile_program(gl, vertex, fragment, "RHI pipeline")? };
         // 保存 key 和 program 的 owner-thread 生命周期。
         self.pipelines.push(Some(OpenGlRhiPipeline {
             key: desc.key,
@@ -630,7 +632,7 @@ impl OpenGlRhiDevice {
                 "OpenGL RHI viewport is invalid or pass is closed",
             ));
         }
-        // OpenGL viewport 使用自身坐标系；行序差异已由 shader 编译期处理（flip_y）。
+        // OpenGL viewport 保持正尺寸，Y 方向由 draw 时的目标身份决定。
         unsafe {
             gl.viewport(
                 0,
@@ -649,7 +651,11 @@ impl OpenGlRhiDevice {
         gl: &glow::Context,
         scissor: Option<RhiScissor>,
     ) -> Result<()> {
-        // scissor 只能在 active pass 内设置。
+        // scissor 只能在具有明确 target 的 active pass 内设置。
+        let target = self
+            .active_target
+            .ok_or_else(|| rhi_invalid("OpenGL RHI scissor has no active target"))?;
+        // 使用同一 pass 的物理 extent 校验范围。
         let extent = self
             .active_extent
             .ok_or_else(|| rhi_invalid("OpenGL RHI scissor has no active target"))?;
@@ -663,19 +669,17 @@ impl OpenGlRhiDevice {
                     return Err(rhi_invalid("OpenGL RHI scissor is outside target"));
                 }
                 gl.enable(glow::SCISSOR_TEST);
-                if self.flip_y {
-                    // Wayland EGL：shader 不翻转后，UI 顶部映射到 GL 帧缓冲第 0 行
-                    //（内存第 0 行 = 窗口顶部），RHI 左上原点坐标可直接使用。
-                    gl.scissor(scissor.x, scissor.y, scissor.width, scissor.height);
-                } else {
-                    // WGL bottom-up DIB：UI 顶部映射到 GL 帧缓冲顶部行，
-                    // 需把左上原点坐标换算为 GL 左下原点。
+                if is_surface_target(target) {
+                    // 原生 surface 的顶部位于 GL 高 Y，需从左上原点换算。
                     gl.scissor(
                         scissor.x,
                         extent.height as i32 - scissor.y - scissor.height,
                         scissor.width,
                         scissor.height,
                     );
+                } else {
+                    // texture target 把逻辑顶部存到 v=0，scissor 可直接使用 RHI 坐标。
+                    gl.scissor(scissor.x, scissor.y, scissor.width, scissor.height);
                 }
             } else {
                 gl.disable(glow::SCISSOR_TEST);

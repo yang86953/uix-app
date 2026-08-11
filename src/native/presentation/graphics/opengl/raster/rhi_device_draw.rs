@@ -8,8 +8,8 @@ use glow::HasContext as _;
 // 引入统一结果和 draw packet 语义。
 use crate::core::error::Result;
 use crate::native::present::rhi::{BufferUsage, DrawPacket, TextureFormat, pipeline_keys};
-// 复用父资源表、shader key 和错误辅助。
-use super::{OpenGlRhiDevice, rhi_invalid};
+// 复用父资源表、目标方向、shader key 和错误辅助。
+use super::{OpenGlRhiDevice, rhi_invalid, target_y_sign};
 
 // 为字节镜像读取一个 native-endian float。
 fn read_f32(data: &[u8], index: usize) -> Result<f32> {
@@ -98,6 +98,12 @@ impl OpenGlRhiDevice {
         if !self.pass_open {
             return Err(rhi_invalid("OpenGL RHI draw without active render pass"));
         }
+        // draw 的 Y 方向只能来自当前 pass 已冻结的 render target 身份。
+        let active_target = self
+            .active_target
+            .ok_or_else(|| rhi_invalid("OpenGL RHI draw has no active render target"))?;
+        // texture target 保持 top-left 存储，原生 surface 映射到窗口顶部。
+        let y_sign = target_y_sign(active_target);
         // 复制 pipeline 的 key 和 program，结束资源表借用。
         let (key, program) = {
             let pipeline = self.pipeline(packet.pipeline)?;
@@ -131,6 +137,8 @@ impl OpenGlRhiDevice {
         // 绑定共享 VAO、顶点 buffer 和固定属性布局。
         unsafe {
             gl.use_program(Some(program));
+            // SAFETY：program 已绑定；缺少该 uniform 的 blur shader 会按 GL 规范安全忽略。
+            set_f32(gl, program, "u_target_y_sign", y_sign);
             gl.bind_vertex_array(Some(self.vao));
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(vertex));
         }
@@ -456,4 +464,31 @@ unsafe fn set_straight_alpha_blend(gl: &glow::Context) {
             glow::ONE_MINUS_SRC_ALPHA,
         )
     };
+}
+
+// 验证 render target 身份到 NDC Y 方向的纯映射。
+#[cfg(test)]
+mod target_direction_tests {
+    // 引入父模块私有目标方向 helper 与 surface sentinel。
+    use super::super::{RHI_SURFACE_TARGET_RAW, target_y_sign};
+    // 引入 opaque render target 句柄。
+    use crate::native::present::rhi::RenderTargetHandle;
+
+    // 锁定原生 surface 把左上逻辑坐标映射到 GL 高 Y。
+    #[test]
+    fn surface_target_uses_window_top_direction() {
+        // 构造 adapter 保留的原生 surface 句柄。
+        let surface = RenderTargetHandle::from_raw(RHI_SURFACE_TARGET_RAW);
+        // surface 顶部必须通过负符号从逻辑 Y-down 映射到 NDC Y-up。
+        assert_eq!(target_y_sign(surface), -1.0);
+    }
+
+    // 锁定 texture target 把逻辑顶部保存为可直接采样的 v=0 行。
+    #[test]
+    fn texture_target_uses_top_left_storage_direction() {
+        // 构造普通非零 texture render target 句柄。
+        let texture = RenderTargetHandle::from_raw(1);
+        // texture 目标必须保留正符号，让逻辑顶部写入 GL 第零行。
+        assert_eq!(target_y_sign(texture), 1.0);
+    }
 }

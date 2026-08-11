@@ -10,7 +10,6 @@ impl OpenGlRasterPipeline {
         logical_height: i32,
         drawable_width: i32,
         drawable_height: i32,
-        flip_y: bool,
     ) -> Result<Self> {
         // 借用 runtime 的 glow context 完成固定 probe 资源构造。
         let gl = runtime.context();
@@ -22,8 +21,8 @@ impl OpenGlRasterPipeline {
             drawable_height,
         );
         // 在同一 current GLES context 中初始化通用 RHI 的共享 VAO。
-        // Wayland EGL 行序为 top-left，需要 Y 翻转；WGL 使用 bottom-up DIB 不需要。
-        let rhi = OpenGlRhiDevice::new(gl, flip_y)?;
+        // surface 与 texture 的 Y 方向由每个 render pass 的目标身份决定。
+        let rhi = OpenGlRhiDevice::new(gl)?;
         // 返回不再持有逐 UI shader 或 atlas 的薄 owner。
         let pipeline = Self {
             // runtime 与 RHI 资源共享同一 owner thread。

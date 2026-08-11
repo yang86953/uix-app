@@ -56,17 +56,9 @@ fn gl_readback_y_from_top(
     top: i32,
     // 接收逻辑区域高度。
     height: i32,
-    // 标记 GL 第零行是否就是窗口顶部。
-    surface_rows_start_at_top: bool,
 ) -> i32 {
-    // Wayland EGL 已把 GL 第零行呈现为窗口顶部，可以直接使用逻辑坐标。
-    if surface_rows_start_at_top {
-        // 保持 top-left surface 的区域坐标不变。
-        top
-    } else {
-        // WGL bottom-up surface 需要与 scissor 相同的垂直坐标换算。
-        drawable_height - top - height
-    }
+    // EGL 与 WGL window surface 都遵循 OpenGL 左下原点回读坐标。
+    drawable_height - top - height
 }
 
 // 原地反转紧密排列的像素行，同时保持每行内部的左右顺序。
@@ -129,18 +121,14 @@ impl OpenGlRasterPipeline {
             // 使用当前 target 的真实 drawable 高度。
             self.current.drawable_height,
         )?;
-        // 复用构造期已经冻结的唯一平台 surface 行序事实。
-        let surface_rows_start_at_top = self.rhi.surface_rows_start_at_top();
         // 把公共左上原点纵坐标转换为当前 GL surface 的区域坐标。
         let read_y = gl_readback_y_from_top(
-            // 使用当前 target 高度完成 WGL 换算。
+            // 使用当前 surface 高度完成 OpenGL 换算。
             self.current.drawable_height,
             // 传入已经校验的逻辑顶部坐标。
             y,
             // 传入已经校验的区域高度。
             height,
-            // EGL 直用坐标，WGL 执行垂直换算。
-            surface_rows_start_at_top,
         );
         let length = (width as usize)
             .checked_mul(height as usize)
@@ -178,12 +166,9 @@ impl OpenGlRasterPipeline {
                 ));
             }
         }
-        // WGL 的 GL 第零行位于窗口底部，返回前必须恢复 top-left 行序。
-        if !surface_rows_start_at_top {
-            // 只反转行，不改变 BGRA/RGBA 像素内部或行内左右顺序。
-            reverse_readback_rows(&mut pixels, width as usize);
-        }
-        // EGL 已是 top-left；WGL 已在上方规范化为同一输出契约。
+        // OpenGL read_pixels 从低 Y 到高 Y 返回，统一反转为 top-left 行序。
+        reverse_readback_rows(&mut pixels, width as usize);
+        // EGL 与 WGL 都已在 adapter 内规范化为同一输出契约。
         Ok(pixels)
     }
 
@@ -226,13 +211,11 @@ mod readback_contract_tests {
     // 引入稳定错误分类。
     use crate::core::Errc;
 
-    // 锁定 EGL 与 WGL 对同一左上原点区域使用不同 GL y 坐标。
+    // 锁定所有 OpenGL window surface 使用同一左上到左下坐标换算。
     #[test]
-    fn maps_top_left_region_to_platform_surface_origin() {
-        // EGL 第零行就是窗口顶部，逻辑 y 应保持不变。
-        assert_eq!(gl_readback_y_from_top(8, 2, 3, true), 2);
-        // WGL 第零行位于窗口底部，逻辑区域应换算到第三行。
-        assert_eq!(gl_readback_y_from_top(8, 2, 3, false), 3);
+    fn maps_top_left_region_to_opengl_surface_origin() {
+        // 八行 surface 中从顶部第二行开始的三行区域应映射到 GL 第三行。
+        assert_eq!(gl_readback_y_from_top(8, 2, 3), 3);
     }
 
     // 锁定垂直翻转只改变行顺序，不改变单行像素顺序。

@@ -13,13 +13,7 @@ use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::pipeline_keys;
 
 // 按通用 pipeline key 选择 OpenGL ES shader 对。
-// flip_y = true 时（Wayland EGL top-left 行序）去掉顶点阶段的 Y 翻转，
-// 使 UI 顶部直接映射到 framebuffer 第 0 行（窗口顶部）；
-// WGL 使用 bottom-up DIB，保持原有翻转不变。
-pub(super) fn shader_sources(
-    key: u64,
-    flip_y: bool,
-) -> Option<(std::borrow::Cow<'static, str>, &'static str)> {
+pub(super) fn shader_sources(key: u64) -> Option<(&'static str, &'static str)> {
     // 把固定的通用 ABI 映射到具体 GLSL 源。
     let (vertex, fragment): (&'static str, &'static str) = match key {
         // 位置 mesh 使用独立的 solid shader。
@@ -47,16 +41,13 @@ pub(super) fn shader_sources(
         // blur 使用 NDC 区域顶点和 64 tap fragment。
         pipeline_keys::BLUR_PASS => (rhi_shaders::BLUR_VERTEX, rhi_shaders::BLUR_FRAGMENT),
         // MSDF 复用 float8 顶点阶段并使用 RGBA8 距离 fragment。
-        pipeline_keys::MSDF_GLYPH_QUAD => (rhi_shaders::TEXTURED_VERTEX, rhi_shaders::MSDF_FRAGMENT),
+        pipeline_keys::MSDF_GLYPH_QUAD => {
+            (rhi_shaders::TEXTURED_VERTEX, rhi_shaders::MSDF_FRAGMENT)
+        }
         // 未登记的 key 不进入 OpenGL shader 编译。
         _ => return None,
     };
-    // Wayland EGL 行序为 top-left：去除顶点阶段的 Y 翻转。
-    let vertex = if flip_y {
-        std::borrow::Cow::Owned(vertex.replace("ndc.y = -ndc.y;", "ndc.y = ndc.y;"))
-    } else {
-        std::borrow::Cow::Borrowed(vertex)
-    };
+    // 目标相关 Y 方向由 draw 阶段的私有 uniform 决定，shader 源不再按平台改写。
     Some((vertex, fragment))
 }
 
