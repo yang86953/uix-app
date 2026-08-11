@@ -26,6 +26,8 @@ use super::{
 };
 // 引入 Image 叶组件专用生成入口。
 use super::generate_image;
+// 引入 ImageGroup 叶组件专用生成入口。
+use super::generate_image_group;
 
 // 按当前核心映射矩阵生成一个普通元素。
 pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnostic> {
@@ -111,6 +113,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "Avatar" => generate_avatar(element),
         // 图片映射到公开来源、固有尺寸与运行时加载预览配置契约。
         "Image" => generate_image(element),
+        // 图片组映射到公开路径集合、初始索引与运行时变化事实契约。
+        "ImageGroup" => generate_image_group(element),
         // 骨架屏映射到公开形状与固有尺寸契约。
         "Skeleton" => generate_skeleton(element),
         // 空状态映射到公开描述与图标契约。
@@ -203,7 +207,7 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Image、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Steps、Pagination、Breadcrumb、Anchor、QRCode、Watermark、RichText、Alert、Modal、Drawer、Tooltip、Popover、FocusTrap 或 Spin，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Image、ImageGroup、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Steps、Pagination、Breadcrumb、Anchor、QRCode、Watermark、RichText、Alert、Modal、Drawer、Tooltip、Popover、FocusTrap 或 Spin，或先登记组件状态",
         )),
     }
     // 结束元素分派函数。
