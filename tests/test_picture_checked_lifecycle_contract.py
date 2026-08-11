@@ -10,9 +10,9 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 登记已经退出生产依赖图的未检查方法名。
-UNCHECKED_METHODS = ("begin_offscreen_paint", "flush_offscreen_paint", "end_offscreen_paint", "blit_offscreen", "blit_offscreen_src")
+UNCHECKED_METHODS = ("create_offscreen", "destroy_offscreen", "begin_offscreen_paint", "flush_offscreen_paint", "end_offscreen_paint", "blit_offscreen", "blit_offscreen_src")
 # 登记必须继续存在的 checked 方法名。
-CHECKED_METHODS = ("try_begin_offscreen_paint", "try_flush_offscreen_paint", "try_end_offscreen_paint", "try_blit_offscreen_src")
+CHECKED_METHODS = ("try_create_offscreen", "try_destroy_offscreen", "try_begin_offscreen_paint", "try_flush_offscreen_paint", "try_end_offscreen_paint", "try_blit_offscreen_src")
 # 定义 Picture 生命周期源码门禁。
 class PictureCheckedLifecycleContractTests(unittest.TestCase):
     # 验证生产 draw 源码只保留 typed Result 生命周期。
@@ -35,6 +35,24 @@ class PictureCheckedLifecycleContractTests(unittest.TestCase):
         source = (ROOT / "src/draw/backend/gpu/backend/render_present.rs").read_text(encoding="utf-8")
         # active Picture 必须通过 Result 边界结束并传播失败。
         self.assertIn("self.try_end_offscreen_paint()?;", source)
+    # 验证 GPU Picture 创建不再把 RHI 资源失败降成 None。
+    def test_gpu_picture_create_propagates_typed_rhi_failures(self) -> None:
+        # 读取 GPU RenderBackend 的唯一 Picture 资源 owner 实现。
+        source = (ROOT / "src/draw/backend/gpu/backend/render_backend.rs").read_text(encoding="utf-8")
+        # 定位检查式创建事务的开始边界。
+        start = source.index("fn try_create_offscreen")
+        # 定位紧随其后的检查式销毁事务。
+        end = source.index("fn try_destroy_offscreen", start)
+        # 只审计创建资源的生产代码片段。
+        create = source[start:end]
+        # owner-thread context 失败必须直接传播。
+        self.assertIn("let context = self.gpu_ctx.rhi_context()?;", create)
+        # texture 创建结果必须用问号传播 typed RHI 错误。
+        self.assertIn("})?;", create)
+        # 禁止把资源错误重新折叠为 Option。
+        self.assertNotIn(".ok()?", create)
+        # 禁止只记录日志后把错误伪装成普通缓存不可用。
+        self.assertNotIn("tracing::warn!", create)
 # 支持直接运行本门禁文件。
 if __name__ == "__main__":
     # 交给标准测试运行器执行。

@@ -36,7 +36,9 @@ fn blurred_picture_blit_preserves_main_additive_state() {
     // 建立五像素主表面供区域边界和扩散像素共同验证。
     RenderBackend::resize(&mut backend, 5, 1).expect("main surface should resize");
     // 创建同尺寸 Picture 离屏目标。
-    let handle = RenderBackend::create_offscreen(&mut backend, 5, 1)
+    let handle = RenderBackend::try_create_offscreen(&mut backend, 5, 1)
+        // 检查式 CPU 分配不应返回 typed failure。
+        .expect("checked offscreen allocation should succeed")
         // 测试尺寸必须可分配。
         .expect("offscreen should allocate");
     // 构造中心脉冲，使 blur 后相邻像素得到非零贡献。

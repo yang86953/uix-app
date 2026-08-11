@@ -469,12 +469,22 @@ impl RenderTarget for Renderer {
         }
     }
 
-    fn create_offscreen(&mut self, width: i32, height: i32) -> Option<ImageHandle> {
-        self.session.backend_mut().create_offscreen(width, height)
-    }
-
-    fn destroy_offscreen(&mut self, handle: ImageHandle) {
-        self.session.backend_mut().destroy_offscreen(handle);
+    // Renderer 只转发检查式 Picture 创建，不建立第二个资源 owner。
+    fn try_create_offscreen(
+        // 借用当前 renderer 会话的唯一可变 owner。
+        &mut self,
+        // 接收 Picture 的逻辑宽度。
+        width: i32,
+        // 接收 Picture 的逻辑高度。
+        height: i32,
+        // 保留 backend 的正常无资源或 typed failure。
+    ) -> Result<Option<ImageHandle>, Error> {
+        // 资源创建仍由已选择 backend 唯一执行。
+        self.session
+            // 借用当前会话拥有的 backend。
+            .backend_mut()
+            // 透传检查式 Picture 创建结果。
+            .try_create_offscreen(width, height)
     }
 
     fn try_destroy_offscreen(&mut self, handle: ImageHandle) -> Result<(), Error> {

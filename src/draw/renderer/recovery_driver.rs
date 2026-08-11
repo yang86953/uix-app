@@ -362,12 +362,18 @@ impl RenderTarget for RecoveryDriver {
         self.engine.orientation()
     }
 
-    fn create_offscreen(&mut self, width: i32, height: i32) -> Option<ImageHandle> {
-        self.engine.create_offscreen(width, height)
-    }
-
-    fn destroy_offscreen(&mut self, handle: ImageHandle) {
-        self.engine.destroy_offscreen(handle);
+    // RecoveryDriver 保留检查式 Picture 创建结果供场景失败链消费。
+    fn try_create_offscreen(
+        // 借用恢复驱动持有的唯一 engine owner。
+        &mut self,
+        // 接收 Picture 的逻辑宽度。
+        width: i32,
+        // 接收 Picture 的逻辑高度。
+        height: i32,
+        // 保留正常无资源或 typed allocation/device failure。
+    ) -> Result<Option<ImageHandle>, Error> {
+        // 不在恢复包装器内把资源失败降级为 None。
+        self.engine.try_create_offscreen(width, height)
     }
 
     fn try_destroy_offscreen(&mut self, handle: ImageHandle) -> Result<(), Error> {

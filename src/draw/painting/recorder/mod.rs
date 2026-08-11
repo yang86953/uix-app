@@ -19,16 +19,17 @@ pub(crate) mod canvas_image;
 pub(crate) mod geometry;
 pub(crate) mod offscreen;
 
-pub(crate) use offscreen::{ActiveOffscreen, RecordedPicture, RecordedPicturePool};
 use self::offscreen::RecordedPicturePayload;
+pub(crate) use offscreen::{ActiveOffscreen, RecordedPicture, RecordedPicturePool};
 
 use crate::core::{DamageRegion, Errc, Error, Rect};
+use crate::draw::geometry::types::ImageHandle;
 use crate::draw::outcome::RenderOutcome;
 use crate::draw::painting::{
-    EncodedFrameExecution, EncodedPictureExecution, FrameEncoder, FrameImage, FrameOpacity, FrameRect, FrameSampledRect,
+    EncodedFrameExecution, EncodedPictureExecution, FrameEncoder, FrameImage, FrameOpacity,
+    FrameRect, FrameSampledRect,
 };
 use crate::draw::{Canvas2D, GraphicsCapabilities, RenderTarget, UpdateStrategy};
-use crate::draw::geometry::types::ImageHandle;
 
 use self::canvas::FrameRecordingCanvas;
 
@@ -210,11 +211,22 @@ impl RenderTarget for CommandRecorder {
         GraphicsCapabilities::backend_managed_with_offscreen()
     }
 
-    fn create_offscreen(&mut self, width: i32, height: i32) -> Option<ImageHandle> {
-        self.offscreens.create(width, height)
+    // 让 recorder Picture 像素分配错误进入同一 typed 失败链。
+    fn try_create_offscreen(
+        // 借用 recorder 的唯一可变 owner。
+        &mut self,
+        // 接收 Picture 的逻辑宽度。
+        width: i32,
+        // 接收 Picture 的逻辑高度。
+        height: i32,
+        // 返回正常无资源、成功 handle 或 typed 分配失败。
+    ) -> Result<Option<ImageHandle>, Error> {
+        // 复用 CPU 离屏池的检查式创建边界。
+        self.offscreens.try_create(width, height)
     }
 
-    fn destroy_offscreen(&mut self, handle: ImageHandle) {
+    // recorder 释放不触碰原生 API，但仍显式闭合资源事务。
+    fn try_destroy_offscreen(&mut self, handle: ImageHandle) -> Result<(), Error> {
         if self
             .active_offscreen
             .is_some_and(|active| active.handle == handle)
@@ -223,6 +235,8 @@ impl RenderTarget for CommandRecorder {
         }
         self.offscreens.destroy(handle);
         self.offscreens.compact();
+        // 槽位回收完成后再报告释放成功。
+        Ok(())
     }
 
     fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {

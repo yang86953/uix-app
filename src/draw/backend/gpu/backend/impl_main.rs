@@ -4,11 +4,11 @@
 
 use std::time::Instant;
 
-use super::super::canvas::NativeGpuCanvas2D;
 use super::super::SOFT_FALLBACK_IDLE_TIME_GRACE;
+use super::super::canvas::NativeGpuCanvas2D;
+use super::GpuBackend;
 use super::logical_metadata_from_surface;
 use super::surface::NativeGpuDrawSurface;
-use super::GpuBackend;
 use crate::core::{Errc, Error, PresentDamageTracker};
 use crate::draw::backend::contract::RenderBackend;
 use crate::draw::geometry::types::ImageHandle;
@@ -206,16 +206,6 @@ impl GpuBackend {
         self.free_offscreen_ids
             .retain(|id| (*id as usize) < self.offscreens.len());
         self.next_offscreen_id = self.offscreens.len() as u32;
-    }
-
-    pub(super) fn remember_frame_failure(&mut self, error: Error) {
-        if self.frame_failure.is_none() {
-            self.frame_failure = Some(error);
-        }
-        // Commands before an immediate boundary may already have reached the
-        // target.  The next retained-dirty retry must start from a known full
-        // clear rather than alpha-blending on that partial target.
-        self.surface.needs_gpu_clear = true;
     }
 
     pub(super) fn adopt_factory_drawable_extent(&mut self) -> (i32, i32) {
