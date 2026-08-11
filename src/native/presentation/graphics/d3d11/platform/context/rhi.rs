@@ -1,14 +1,14 @@
 //! D3D11 surface 对薄 RHI 的迁移期实现。
 //!
 //! 本文件只接入 surface 生命周期；低层 device/pass/draw 由同级 RHI device
-//! 模块实现，尚未迁移的 UI 语义仍由兼容 `IGraphicsContext` 提供。
+//! 模块实现，UI 语义通过类型化 GPU recipe owner 消费。
 
 // 引入统一错误和结果类型。
 use crate::core::error::{Errc, Error, Result};
 // 引入最终提交 damage 类型。
 use crate::core::PresentDamage;
 // 引入 context 上已有的 DPR 快照与无帧探测结果。
-use crate::native::present::{IGraphicsContext, PresentTestResult};
+use crate::native::present::{GraphicsContextLifecycle, PresentTestResult};
 // 引入薄 RHI 的 surface 原语。
 use crate::native::present::rhi::{
     GraphicsSurface, RenderTargetHandle, RhiExtent, SurfaceFrame, SurfaceToken,

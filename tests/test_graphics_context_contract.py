@@ -65,7 +65,10 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 截取 wrapper 字段定义，避免把方法参数误判为缓存字段。
         bound_start = thread_bound.index("pub(crate) struct ThreadBoundGraphicsContext")
         # 以 wrapper 实现起点作为字段定义终点。
-        bound_end = thread_bound.index("impl ThreadBoundGraphicsContext", bound_start)
+        bound_end = thread_bound.index(
+            "impl<T: GraphicsContextLifecycle + ?Sized> ThreadBoundGraphicsContext",
+            bound_start,
+        )
         # 保存只包含 wrapper 缓存字段的片段。
         bound_struct = thread_bound[bound_start:bound_end]
         # wrapper 必须缓存一个完整 PresentSurface。
@@ -217,7 +220,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         # registry 必须消费 adapter 创建层交付的 candidate。
         self.assertIn("candidate.into_parts()", registry_contract)
         # registry 只把 context 交给 thread-bound wrapper，静态快照留在验证记录中。
-        self.assertIn("bind_to_current_thread(ctx)", registry_contract)
+        self.assertIn("bind_to_current_thread(context)", registry_contract)
         # thread-bound wrapper 不得重新读取 inner 的静态 capability。
         self.assertNotIn("inner.caps()", thread_bound_contract)
         # wrapper 构造不得继续接收或缓存 registry 已验证快照。
@@ -236,7 +239,7 @@ class GraphicsContextContractTests(unittest.TestCase):
             # 读取 adapter 平台创建实现。
             adapter_source = adapter_factory.read_text(encoding="utf-8")
             # context 与 capability 必须在仍可静态分派的边界成对交付。
-            self.assertIn("GraphicsContextCandidate::new", adapter_source)
+            self.assertIn("GraphicsContextCandidate::gpu", adapter_source)
             # adapter 创建模块必须显式拥有静态 capability 构造函数。
             self.assertIn("fn context_caps()", adapter_source)
             # candidate 组装不得反向调用 context trait method。
@@ -246,20 +249,22 @@ class GraphicsContextContractTests(unittest.TestCase):
     def test_gpu_recipe_context_keeps_rhi_and_lifecycle_atomic(self) -> None:
         # 读取统一 context trait 与原生 resize helper。
         facade = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
-        # 定位统一 context trait 的起点。
-        context_start = facade.index("pub trait IGraphicsContext")
-        # 以原生 helper 起点作为 trait 定义终点。
-        context_end = facade.index("pub(crate) fn resize_native_rhi_surface", context_start)
-        # 保存只包含 IGraphicsContext 定义的片段。
-        context_trait = facade[context_start:context_end]
-        # 通用 context 门面不得重新声明 resize 操作。
-        self.assertNotIn("fn resize_rhi_surface", context_trait)
-        # 通用 context 只允许返回一个不可拆分的 GPU recipe 视图。
-        self.assertIn("fn gpu_recipe_context", context_trait)
-        # 通用 context 不得分别暴露 thin RHI 与 lifecycle。
-        self.assertNotIn("fn rhi_context", context_trait)
+        # 定位共享 lifecycle trait 的起点。
+        lifecycle_start = facade.index("pub(crate) trait GraphicsContextLifecycle")
+        # 以 GPU recipe trait 起点作为共享 lifecycle 定义终点。
+        lifecycle_end = facade.index("pub(crate) trait GpuRecipeContext", lifecycle_start)
+        # 保存只包含所有 recipe 共用生命周期的片段。
+        lifecycle_trait = facade[lifecycle_start:lifecycle_end]
+        # 共享 lifecycle 不得重新声明 recipe 专用 resize 操作。
+        self.assertNotIn("fn resize_rhi_surface", lifecycle_trait)
+        # 共享 lifecycle 只承载 surface 快照与 checked shutdown。
+        self.assertIn("fn present_surface(&self) -> PresentSurface", lifecycle_trait)
+        # 共享 lifecycle 不得暴露 recipe 能力查询。
+        self.assertNotIn("gpu_recipe_context", lifecycle_trait)
+        # 共享 lifecycle 不得直接暴露 thin RHI。
+        self.assertNotIn("fn rhi_context", lifecycle_trait)
         # 原子 recipe 契约必须同时承载 RHI Result 与 typed resize。
-        self.assertIn("trait GpuRecipeContext", facade)
+        self.assertIn("trait GpuRecipeContext: GraphicsContextLifecycle", facade)
         # 已退出的分裂生命周期契约不得保留。
         self.assertNotIn("trait RhiSurfaceLifecycle", facade)
         # 原生 adapter 必须共享同一 DPR 与 extent 校验 helper。
@@ -270,11 +275,14 @@ class GraphicsContextContractTests(unittest.TestCase):
             encoding="utf-8"
         )
         # wrapper 必须独立实现完整 GPU recipe 契约。
-        self.assertIn("impl GpuRecipeContext for ThreadBoundGraphicsContext", thread_bound)
-        # wrapper 必须先从真实 owner 借用同一原子视图。
-        self.assertIn("inner.gpu_recipe_context()", thread_bound)
+        self.assertIn(
+            "impl GpuRecipeContext for ThreadBoundGraphicsContext<dyn GpuRecipeContext>",
+            thread_bound,
+        )
+        # wrapper 必须直接借用类型已经证明的 GPU owner。
+        self.assertNotIn("inner.gpu_recipe_context()", thread_bound)
         # 定位真实 owner resize 调用。
-        resize_call = thread_bound.index("recipe.resize_surface(width, height)")
+        resize_call = thread_bound.index("inner.resize_surface(width, height)")
         # 定位随后发生的完整 surface 快照刷新。
         surface_refresh = thread_bound.index("self.refresh_present_surface();", resize_call)
         # live surface 只能在成功 resize 返回后刷新。
@@ -290,8 +298,10 @@ class GraphicsContextContractTests(unittest.TestCase):
         ):
             # 读取当前 native adapter 的完整 recipe 实现。
             adapter_source = adapter.read_text(encoding="utf-8")
-            # adapter 必须通过 IGraphicsContext 暴露唯一原子视图。
-            self.assertIn("fn gpu_recipe_context", adapter_source)
+            # adapter 不得重新暴露可选 recipe 视图。
+            self.assertNotIn("fn gpu_recipe_context", adapter_source)
+            # adapter 必须实现所有 recipe 共享的 lifecycle。
+            self.assertIn("GraphicsContextLifecycle for", adapter_source)
             # adapter 必须实现同时拥有 RHI 与 resize 的契约。
             self.assertIn("GpuRecipeContext for", adapter_source)
             # adapter 必须复用统一的原生 resize helper。
@@ -308,7 +318,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertIn("self.gpu_ctx.resize_surface(logical_w, logical_h)?", gpu_backend)
         # GPU backend 不得重新直接查询兼容 trait 的可选 recipe 视图。
         self.assertNotIn("self.gpu_ctx.gpu_recipe_context()", gpu_backend)
-        # GPU backend 不得调用已退出 IGraphicsContext 的 resize 方法。
+        # GPU backend 不得调用已退出共享 lifecycle 的 recipe resize 方法。
         self.assertNotIn("self.gpu_ctx.resize_rhi_surface", gpu_backend)
 
     # 校验生产 GPU backend 只持有构造期已验证的 recipe owner。
@@ -325,18 +335,18 @@ class GraphicsContextContractTests(unittest.TestCase):
         recipe_owner_contract = recipe_owner[: recipe_owner.index("#[cfg(test)]")]
         # 截取生产 owner 实现，排除测试 context 的 caps 方法。
         owner_contract = owner[: owner.index("#[cfg(test)]")]
-        # 兼容 trait object 只能封装在 native owner 内。
-        self.assertIn("context: Box<dyn IGraphicsContext>", owner)
+        # native owner 必须直接持有类型化 GPU trait object。
+        self.assertIn("context: Box<dyn GpuRecipeContext>", owner)
         # owner 必须固化构造期验证过的静态 capability 快照。
         self.assertIn("caps: GraphicsContextCaps", owner_contract)
         # 专用 GPU owner 必须复用顶层已经捕获的静态快照。
         self.assertNotIn("context.caps()", owner_contract)
         # 顶层正交 owner 必须直接消费 registry 已验证的静态快照。
         self.assertNotIn("context.caps()", recipe_owner_contract)
-        # GPU owner 必须在 backend 构造前一次证明完整 recipe owner 存在。
-        self.assertIn("if context.gpu_recipe_context().is_none()", owner_contract)
-        # 构造门禁不得分别探测 thin RHI 与 lifecycle。
-        self.assertEqual(owner_contract.count("context.gpu_recipe_context().is_none()"), 1)
+        # GPU owner 不得在构造后重新执行可选 recipe 查询。
+        self.assertNotIn("gpu_recipe_context()", owner_contract)
+        # 类型化 context 必须直接进入 owner。
+        self.assertIn("context: Box<dyn GpuRecipeContext>", owner_contract)
         # 已退出的分裂 lifecycle 查询不得保留。
         self.assertNotIn("rhi_surface_lifecycle", owner_contract)
         # owner 必须将可选 thin RHI 查询收口为 Result。
@@ -345,8 +355,8 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertIn("fn resize_surface(&mut self, width: i32, height: i32) -> Result<()>", owner)
         # GPU backend 状态只持有已验证 owner。
         self.assertIn("pub(crate) gpu_ctx: GpuRecipeOwner", backend)
-        # GPU backend 不得重新持有兼容 trait object。
-        self.assertNotIn("Box<dyn IGraphicsContext>", backend)
+        # GPU backend 不得重新持有共享生命周期 trait object。
+        self.assertNotIn("Box<dyn GraphicsContextLifecycle>", backend)
         # native recipe owner 必须在进入 renderer 前完成 GPU owner 校验。
         self.assertIn("GpuRecipeOwner::try_new(context, caps).map(Self::Gpu)", recipe_owner)
         # owner 校验后必须直接构造唯一 GPU backend。
@@ -362,8 +372,8 @@ class GraphicsContextContractTests(unittest.TestCase):
             # 覆盖 backend 下的所有拆分模块。
             for path in (ROOT / "src/draw/backend").rglob("*.rs")
         )
-        # 整个 draw backend 不再依赖 IGraphicsContext。
-        self.assertNotIn("IGraphicsContext", backend_sources)
+        # 整个 draw backend 不再依赖共享 lifecycle trait object。
+        self.assertNotIn("Box<dyn GraphicsContextLifecycle>", backend_sources)
         # 模块根不再声明 factory 子模块。
         self.assertNotIn("mod factory", backend_module)
 
@@ -374,7 +384,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 读取会话生命周期实现。
         session = (ROOT / "src/draw/renderer/session.rs").read_text(encoding="utf-8")
         # 通用工厂不得接收兼容 context trait object。
-        self.assertNotIn("IGraphicsContext", backend_factory)
+        self.assertNotIn("Box<dyn GraphicsContextLifecycle>", backend_factory)
         # 通用 GPU 选择必须返回稳定 typed error。
         self.assertIn("GPU 后端必须由已验证的原生图形配方构造", backend_factory)
         # 会话不得持有 staged context 字段。
@@ -401,8 +411,8 @@ class GraphicsContextContractTests(unittest.TestCase):
             # 覆盖 renderer 下的全部生产 Rust 文件。
             for path in (ROOT / "src/draw/renderer").rglob("*.rs")
         )
-        # renderer 层不得重新依赖迁移期 IGraphicsContext。
-        self.assertNotIn("IGraphicsContext", renderer_sources)
+        # renderer 层不得重新依赖共享 lifecycle trait object。
+        self.assertNotIn("Box<dyn GraphicsContextLifecycle>", renderer_sources)
         # bootstrap 不得重新导入平行 create_renderer 门面。
         self.assertNotIn("create_renderer", bootstrap)
 
@@ -417,7 +427,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 窗口公共契约不得暴露 renderer context 借用入口。
         self.assertNotIn("graphics_context", window_contract)
         # 平台共享窗口不得持有或关闭图形 context。
-        self.assertNotIn("IGraphicsContext", shared_window)
+        self.assertNotIn("GraphicsContextLifecycle", shared_window)
         # 零调用的带 GPU 窗口构造入口必须物理删除。
         self.assertNotIn("with_gpu", shared_window)
         # 测试窗口也不得保留平行 GPU context 状态。
@@ -439,8 +449,8 @@ class GraphicsContextContractTests(unittest.TestCase):
         recipe_owner_contract = recipe_owner[: recipe_owner.index("#[cfg(test)]")]
         # 截取生产 owner 实现，排除测试 context 的 caps 方法。
         owner_contract = owner[: owner.index("#[cfg(test)]")]
-        # 兼容 trait object 只能封装在 native owner 内。
-        self.assertIn("context: Box<dyn IGraphicsContext>", owner)
+        # native owner 必须直接持有类型化 PixelUpload trait object。
+        self.assertIn("context: Box<dyn PixelUploadSurface>", owner)
         # owner 必须固化构造期验证过的静态 capability 快照。
         self.assertIn("caps: GraphicsContextCaps", owner_contract)
         # 专用 PixelUpload owner 必须复用顶层已经捕获的静态快照。
@@ -460,7 +470,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 保存只属于 PixelUpload presentation 的状态与方法。
         presentation = runtime[presentation_start:presentation_end]
         # 局部状态不得恢复兼容 context 字段。
-        self.assertNotIn("Box<dyn IGraphicsContext>", presentation)
+        self.assertNotIn("Box<dyn GraphicsContextLifecycle>", presentation)
         # 局部方法不得直接查询可选 surface 视图。
         self.assertNotIn("pixel_upload_surface()", presentation)
         # native recipe owner 必须在进入 renderer 前完成 PixelUpload owner 校验。
@@ -506,7 +516,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         # backend 必须借用组合 RHI 后调用 surface 探测。
         self.assertIn("context.test_present()", gpu_backend)
-        # backend 不得继续调用 IGraphicsContext 兼容探测。
+        # backend 不得继续调用统一 context 门面的兼容探测。
         self.assertNotIn("self.gpu_ctx.test_present()", gpu_backend)
         # 读取统一 renderer 的 presentation 分派。
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")

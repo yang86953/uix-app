@@ -2,7 +2,7 @@
 // native/graphics/opengl/egl.rs — EGL + GLES 3.0 图形上下文
 //
 // 通过 EGL 创建 OpenGL ES 3.0 上下文，对接 Wayland surface（wl_egl_window）。
-// 实现 IGraphicsContext trait，供唯一 Renderer 的 GPU 后端使用。
+// 实现类型化 GPU recipe trait，供唯一 Renderer 的 GPU 后端使用。
 //
 // 依赖 khronos-egl v6 (static 链接) + wayland-egl (系统库 FFI)。
 // ============================================================================
@@ -10,7 +10,7 @@
 use std::ffi::c_void;
 use std::ptr;
 
-use crate::native::present::{IGraphicsContext, PresentDamage};
+use crate::native::present::{GraphicsContextLifecycle, PresentDamage};
 // 引入共享的 OpenGL RHI host 生命周期实现。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
 use crate::native::presentation::graphics::opengl::rhi_host::OpenGlRhiHost;
@@ -389,16 +389,10 @@ impl EglContext {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// IGraphicsContext impl
+// 共享 graphics context 生命周期实现
 // ════════════════════════════════════════════════════════════════════════════
 
-impl IGraphicsContext for EglContext {
-    // 暴露同一 owner-thread context 上不可拆分的 OpenGL ES GPU recipe 视图。
-    fn gpu_recipe_context(&mut self) -> Option<&mut dyn crate::native::present::GpuRecipeContext> {
-        // EGL 同时拥有 thin RHI 与唯一 GraphicsSurface::resize 路径。
-        Some(self)
-    }
-
+impl GraphicsContextLifecycle for EglContext {
     // 返回 EGL drawable 的完整 live surface 快照。
     fn present_surface(&self) -> crate::native::present::PresentSurface {
         // EGL 当前逻辑与物理尺寸保持 identity 映射，并保留真实重建代际。
@@ -433,7 +427,7 @@ impl crate::native::present::GpuRecipeContext for EglContext {
     // 复用统一 DPR、范围检查与 GraphicsSurface::resize 调用。
     fn resize_surface(&mut self, width: i32, height: i32) -> Result<(), Error> {
         // 在可变借用前取得当前完整 surface 快照。
-        let present_surface = IGraphicsContext::present_surface(self);
+        let present_surface = GraphicsContextLifecycle::present_surface(self);
         // 直接借用当前原子 recipe owner，不经过分裂兼容视图。
         crate::native::present::resize_native_rhi_surface(self, present_surface, width, height)
     }

@@ -20,17 +20,30 @@ use crate::native::platform::Platform;
 
 pub(crate) use registry::try_create_gpu_recipe_with_queue;
 pub use registry::{
-    describe_backend_availability, gpu_recipe_candidates, graphics_runtime_platform, GraphicsRecipe,
+    GraphicsRecipe, describe_backend_availability, gpu_recipe_candidates, graphics_runtime_platform,
 };
 
 // 为测试专用 WARP context 建立线程亲和 wrapper。
 #[cfg(all(test, any(feature = "d3d11", feature = "d3d12")))]
 fn bind_test_context_to_current_thread(
-    // 接收测试 adapter 新创建的 context。
-    context: Box<dyn crate::native::present::IGraphicsContext>,
-) -> Box<dyn crate::native::present::IGraphicsContext> {
+    // 接收测试 adapter 新创建的类型化 GPU context。
+    context: Box<dyn crate::native::present::GpuRecipeContext>,
+) -> Box<dyn crate::native::present::GpuRecipeContext> {
     // WARP 测试只验证原生资源与生命周期，不再反向探测静态 capability。
-    thread_bound::bind_to_current_thread(context)
+    let bound = thread_bound::bind_to_current_thread(
+        // 固化 WARP 测试入口的 GPU recipe 类型。
+        crate::native::present::GraphicsRecipeContext::Gpu(context),
+    );
+    // 取回线程绑定后的同一 GPU recipe 分支。
+    match bound {
+        // 返回不可选的 GPU owner。
+        crate::native::present::GraphicsRecipeContext::Gpu(context) => context,
+        // 构造输入固定为 GPU，因此该分支不可达。
+        crate::native::present::GraphicsRecipeContext::PixelUpload(_) => {
+            // 防止未来 bind 实现破坏 recipe 保持契约。
+            unreachable!("GPU test context binding changed recipe variant")
+        }
+    }
 }
 
 // 测试目标保留 D3D11 WARP 工厂入口，供显式后端矩阵按需调用。
@@ -40,7 +53,7 @@ pub(crate) fn create_d3d11_warp_test_context(
     surface: *mut std::ffi::c_void,
     width: i32,
     height: i32,
-) -> crate::core::Result<Box<dyn crate::native::present::IGraphicsContext>> {
+) -> crate::core::Result<Box<dyn crate::native::present::GpuRecipeContext>> {
     crate::native::presentation::graphics::d3d11::create_warp_test_context(surface, width, height)
         // 在测试 factory 边界建立线程门禁。
         .map(bind_test_context_to_current_thread)
@@ -58,7 +71,7 @@ pub(crate) fn create_d3d12_warp_test_context(
     surface: *mut std::ffi::c_void,
     width: i32,
     height: i32,
-) -> crate::core::Result<Box<dyn crate::native::present::IGraphicsContext>> {
+) -> crate::core::Result<Box<dyn crate::native::present::GpuRecipeContext>> {
     crate::native::presentation::graphics::d3d12::create_warp_test_context(surface, width, height)
         // 在测试 factory 边界建立线程门禁。
         .map(bind_test_context_to_current_thread)

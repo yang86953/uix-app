@@ -12,26 +12,30 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # 聚合最终提交契约的源码守卫。
 class GraphicsPresentContractTests(unittest.TestCase):
-    # 校验 IGraphicsContext 不再统一承载 PixelUpload 与 swapchain payload。
+    # 校验共享 context lifecycle 不承载 PixelUpload 与 swapchain payload。
     def test_recipe_specific_present_contract_leaves_graphics_context(self) -> None:
         # 读取 present value 与 presenter 定义。
         present_module = (ROOT / "src/native/present/mod.rs").read_text(encoding="utf-8")
-        # 读取 recipe 专用视图和 IGraphicsContext 迁移门面。
+        # 读取 recipe 专用视图和共享生命周期契约。
         graphics_traits = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
-        # 截取 IGraphicsContext 本身，避免专用 trait 方法干扰负断言。
-        graphics_context = graphics_traits[graphics_traits.index("pub trait IGraphicsContext") : graphics_traits.index("#[cfg(test)]")]
+        # 截取共享 lifecycle 本身，避免专用 trait 方法干扰负断言。
+        lifecycle_start = graphics_traits.index("pub(crate) trait GraphicsContextLifecycle")
+        # 以 GPU recipe trait 作为 lifecycle 定义终点。
+        lifecycle_end = graphics_traits.index("pub(crate) trait GpuRecipeContext", lifecycle_start)
+        # 保存共同生命周期片段。
+        graphics_lifecycle = graphics_traits[lifecycle_start:lifecycle_end]
         # 读取 owner-thread wrapper 的两类专用转发。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取 PixelUpload runtime 的最终提交状态机。
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
         # PresentFrame 载荷并集必须从生产契约物理退出。
         self.assertNotIn("PresentFrame", present_module + graphics_traits + runtime)
-        # IGraphicsContext 不再承担任何最终提交方法。
-        self.assertNotIn("fn present(", graphics_context)
+        # 共享 lifecycle 不承担任何最终提交方法。
+        self.assertNotIn("fn present(", graphics_lifecycle)
         # CPU pixels 不能重新进入通用 context 门面。
-        self.assertNotIn("fn present_pixels(", graphics_context)
+        self.assertNotIn("fn present_pixels(", graphics_lifecycle)
         # acquired image 身份不能继续作为无实现的 context 查询。
-        self.assertNotIn("fn present_image(", graphics_context)
+        self.assertNotIn("fn present_image(", graphics_lifecycle)
         # PixelUploadSurface 必须同时持有 resize 与最终像素提交。
         self.assertIn("trait PixelUploadSurface", graphics_traits)
         # 专用 PixelUpload trait 必须声明像素提交方法。
@@ -39,7 +43,10 @@ class GraphicsPresentContractTests(unittest.TestCase):
         # 未接线的 external presenter 视图不得继续扩张通用 context。
         self.assertNotIn("trait SwapchainPresentation", graphics_traits)
         # owner-thread wrapper 必须转发仍有生产消费者的 PixelUpload 视图。
-        self.assertIn("impl PixelUploadSurface for ThreadBoundGraphicsContext", thread_bound)
+        self.assertIn(
+            "impl PixelUploadSurface for ThreadBoundGraphicsContext<dyn PixelUploadSurface>",
+            thread_bound,
+        )
         # owner-thread wrapper 不得保留无构造消费者的平行 swapchain 视图。
         self.assertNotIn("SwapchainPresentation", thread_bound)
         # 统一 PresentFrame forwarding 宏必须退出。
@@ -83,7 +90,7 @@ class GraphicsPresentContractTests(unittest.TestCase):
         for context in gpu_contexts:
             # 读取单个实现文件，避免低层 GraphicsSurface::present 造成误判。
             source = context.read_text(encoding="utf-8")
-            # IGraphicsContext 实现文件不得再声明统一 present。
+            # 类型化 context 实现文件不得再声明统一 present。
             self.assertNotIn("fn present(", source)
             # 实现文件不得再依赖 payload 并集。
             self.assertNotIn("PresentFrame", source)

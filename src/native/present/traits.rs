@@ -43,8 +43,17 @@ fn rhi_resize_extent_for_logical(
     ))
 }
 
+// 定义所有 recipe context 共同且不可选的呈现与释放生命周期。
+pub(crate) trait GraphicsContextLifecycle {
+    // 返回当前 drawable extent、DPR、transform 与 generation 的原子快照。
+    fn present_surface(&self) -> PresentSurface;
+
+    // 在 owner-thread 边界检查式关闭线程亲和原生资源。
+    fn try_shutdown(&mut self) -> Result<(), Error>;
+}
+
 // 定义 GPU-native recipe 不可拆分的 thin RHI 与 surface 生命周期视图。
-pub(crate) trait GpuRecipeContext {
+pub(crate) trait GpuRecipeContext: GraphicsContextLifecycle {
     // 借用当前 recipe 唯一的 thin RHI owner，并保留 typed failure。
     fn rhi_context(
         // 借用 GPU recipe owner。
@@ -56,7 +65,7 @@ pub(crate) trait GpuRecipeContext {
 }
 
 // 定义只属于 CPU PixelUpload recipe 的 surface 生命周期与提交契约。
-pub(crate) trait PixelUploadSurface {
+pub(crate) trait PixelUploadSurface: GraphicsContextLifecycle {
     // 按逻辑窗口尺寸重建像素上传 surface。
     fn resize_pixel_upload_surface(&mut self, width: i32, height: i32) -> Result<(), Error>;
 
@@ -73,32 +82,6 @@ pub(crate) trait PixelUploadSurface {
         // 接收最终提交 damage。
         damage: PresentDamage,
     ) -> Result<(), Error>;
-}
-
-pub trait IGraphicsContext {
-    // 返回不可拆分的 GPU-native recipe 视图；其它 recipe 保持 None。
-    // native::present 模块本身是 crate 私有边界，thin RHI 不作为外部句柄暴露。
-    #[allow(private_interfaces)]
-    fn gpu_recipe_context(&mut self) -> Option<&mut dyn GpuRecipeContext> {
-        // CPU PixelUpload 与不支持 GPU recipe 的 context 默认不暴露该契约。
-        None
-    }
-
-    // 返回 CPU PixelUpload recipe 的专用 surface 视图。
-    #[allow(private_interfaces)]
-    fn pixel_upload_surface(&mut self) -> Option<&mut dyn PixelUploadSurface> {
-        // GPU-native 与不支持像素上传的 context 默认不暴露该契约。
-        None
-    }
-
-    // 返回当前 drawable extent、DPR、transform 与 generation 的原子快照。
-    fn present_surface(&self) -> PresentSurface;
-
-    /// Checked shutdown boundary for thread-affine native resources.
-    ///
-    /// Callers and Drop paths must use this method. Teardown failures stay
-    /// typed so recovery can retain the previous owner instead of logging only.
-    fn try_shutdown(&mut self) -> Result<(), Error>;
 }
 
 // 为直接拥有薄 RHI 的原生 context 执行共享 resize 事务。

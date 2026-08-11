@@ -7,12 +7,12 @@ use std::rc::Rc;
 use ash::vk;
 
 use crate::core::{Errc, Error, Result};
-use crate::native::present::{IGraphicsContext, PixelUploadSurface, PresentDamage};
+use crate::native::present::{GraphicsContextLifecycle, PixelUploadSurface, PresentDamage};
 
 #[cfg(target_os = "macos")]
 use crate::native::backends::macos::platform as macos_surface;
 
-use super::adapter::{select_queue, VulkanAdapterInfo};
+use super::adapter::{VulkanAdapterInfo, select_queue};
 pub(crate) use super::device::staging_size;
 use super::device::{VulkanDevice, VulkanRuntime};
 use super::drawable::drawable_size;
@@ -26,15 +26,15 @@ mod methods;
 mod swapchain;
 mod transfer;
 
-pub(crate) use swapchain::allocate_image_layouts;
 #[cfg(test)]
 pub(crate) use swapchain::PresentCompletion;
+pub(crate) use swapchain::allocate_image_layouts;
 #[cfg(test)]
 pub(crate) use transfer::allocate_cpu_shadow;
 
 use swapchain::{
-    allocate_presented_images, create_render_finished_semaphores, destroy_semaphores,
-    PresentFenceSet, PresentLifetime,
+    PresentFenceSet, PresentLifetime, allocate_presented_images, create_render_finished_semaphores,
+    destroy_semaphores,
 };
 
 pub(crate) fn vk_err(operation: &str, err: vk::Result) -> Error {

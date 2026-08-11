@@ -13,8 +13,8 @@ class D3d11PresentContractTests(unittest.TestCase):
     def test_discard_swapchain_has_one_present_capability_source(self) -> None:
         # 读取交换链创建与事实契约模块。
         swapchain = (ROOT / "src/native/presentation/graphics/d3d11/platform/swapchain.rs").read_text(encoding="utf-8")
-        # 读取兼容 GraphicsContext 能力投影。
-        graphics = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs").read_text(encoding="utf-8")
+        # 读取静态 recipe 能力投影所在的平台适配模块。
+        platform = (ROOT / "src/native/presentation/graphics/d3d11/platform/mod.rs").read_text(encoding="utf-8")
         # 读取薄 RHI 能力投影。
         rhi_device = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs").read_text(encoding="utf-8")
         # 唯一事实必须由 swapchain 模块提供。
@@ -29,10 +29,10 @@ class D3d11PresentContractTests(unittest.TestCase):
         self.assertIn("BufferCount: contract.buffer_count", swapchain)
         # descriptor 交换效果必须消费同一事实。
         self.assertIn("SwapEffect: contract.swap_effect", swapchain)
-        # GraphicsContext 必须读取同一事实。
-        self.assertIn("let contract = swap_chain_contract();", graphics)
-        # GraphicsContext 不得保留第二份 FullOnly 硬编码。
-        self.assertNotIn("PresentCoherency::FullOnly", graphics)
+        # 静态 recipe 能力必须读取同一 swapchain 事实。
+        self.assertIn("let contract = swapchain::swap_chain_contract();", platform)
+        # 平台适配不得保留第二份 FullOnly 硬编码。
+        self.assertNotIn("PresentCoherency::FullOnly", platform)
         # 薄 RHI 必须从同一事实投影 partial-present 能力。
         self.assertIn("capabilities.partial_present = swap_chain_contract().partial_present;", rhi_device)
 

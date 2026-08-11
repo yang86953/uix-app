@@ -21,7 +21,7 @@ pub(crate) mod rhi_host;
 /// The loader and `glow` context are deliberately created below the native
 /// boundary. Draw code may borrow the context through crate-private methods
 /// while this owner remains alive, but it never receives a proc-loader
-/// function pointer from [`crate::native::present::IGraphicsContext`].
+/// function pointer from the typed graphics recipe context.
 pub(crate) struct NativeOpenGlRuntime {
     context: Box<glow::Context>,
     // GL contexts are bound to the native graphics thread. This marker makes

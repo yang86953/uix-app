@@ -6,7 +6,7 @@
 
 > **当前实现线索**：分布在 `src/native/backends/`、`src/native/traits/{window,event,input}.rs` 与 `src/native/shared/`；trait 只是当前分派手段，不是架构模块。
 
-> **图形所有权边界**：`PlatformWindow` 只提供 native surface、窗口动作与最终 presenter，不持有、借出或关闭 `IGraphicsContext`。生产图形 context 在构造后立即交给 renderer 的 recipe owner，恢复与 checked teardown 也由 renderer/recovery 生命周期唯一执行；关闭窗口不会重复关闭图形资源。
+> **图形所有权边界**：`PlatformWindow` 只提供 native surface、窗口动作与最终 presenter，不持有、借出或关闭任何 graphics recipe context。生产 context 在构造后立即交给 renderer 的类型化 recipe owner，恢复与 checked teardown 也由 renderer/recovery 生命周期唯一执行；关闭窗口不会重复关闭图形资源。
 
 ## 组件清单
 

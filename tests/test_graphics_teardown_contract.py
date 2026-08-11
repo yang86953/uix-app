@@ -42,7 +42,7 @@ LEGACY_CONTEXTS = {
         True,
     ),
     "wgl": (
-        # WGL 的 IGraphicsContext/shutdown 实现已拆到同目录的 forwarding module。
+        # WGL 的共享 lifecycle/shutdown 实现已拆到同目录的 forwarding module。
         ROOT / "src/native/presentation/graphics/opengl/platform",
         True,
     ),
@@ -262,7 +262,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertNotIn("fn downgrade_offscreen_rhi_texture", backend)
         # 公共 presenter 不得重新导出 legacy offscreen 句柄。
         self.assertNotIn("pub struct OffscreenTargetId", present)
-        # 公共 IGraphicsContext 不得重新声明高层离屏创建入口。
+        # 公共 lifecycle 不得重新声明高层离屏创建入口。
         self.assertNotIn("fn create_offscreen_target", present)
         # D3D11 adapter 不得重新保存或绑定平行 offscreen 槽位。
         self.assertNotIn("offscreens:", d3d11)
@@ -421,7 +421,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取 registry 的单候选构造路径。
         registry = (ROOT / "src/native/factory/registry.rs").read_text(encoding="utf-8")
-        # 收集所有直接实现 IGraphicsContext 的测试与原生 context。
+        # 收集所有直接实现类型化 lifecycle 的测试与原生 context。
         contexts = (
             # fake context 必须模拟构造即就绪事实。
             ROOT / "src/native/test_harness/fake_graphics_context.rs",
@@ -483,7 +483,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         overlay = (ROOT / "src/draw/backend/gpu/backend/render_backend_backdrop.rs").read_text(encoding="utf-8")
         # 读取 OpenGL 的 thin RHI host。
         opengl_host = (ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs").read_text(encoding="utf-8")
-        # 收集所有直接实现 IGraphicsContext 的测试与原生 context。
+        # 收集所有直接实现类型化 lifecycle 的测试与原生 context。
         contexts = (
             # fake context 不得保留调用计数旁路。
             ROOT / "src/native/test_harness/fake_graphics_context.rs",
@@ -500,7 +500,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
             # EGL trait wrapper 不再暴露 current。
             ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
         )
-        # IGraphicsContext 不得重新声明平台 current 方法。
+        # 共享 lifecycle 不得重新声明平台 current 方法。
         self.assertNotIn("fn make_current(", graphics_trait)
         # thread-bound wrapper 不得重新转发平台 current 方法。
         self.assertNotIn("forward_result!(make_current", thread_bound)
@@ -531,7 +531,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         health = opengl_host.index("self.rhi_pipeline_mut().rhi_maintain()", current)
         # 明确锁定 owner context 准备顺序。
         self.assertLess(current, health)
-        # 所有 IGraphicsContext wrapper 均不得复活 current 方法。
+        # 所有类型化 context wrapper 均不得复活 current 方法。
         for context in contexts:
             # 读取单个 wrapper 文件，避免 adapter 私有 helper 造成误判。
             source = context.read_text(encoding="utf-8")
@@ -584,12 +584,14 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("self.gpu_ctx.resize_surface(logical_w, logical_h)?", resize)
         # backend 不得重新从兼容 context 借用可选生命周期视图。
         self.assertNotIn("self.gpu_ctx.gpu_recipe_context()", resize)
-        # 兼容 IGraphicsContext::resize 不得作为 NotImplemented 回退。
+        # 已删除的统一 context resize 不得作为 NotImplemented 回退。
         self.assertNotIn("self.gpu_ctx.resize(", resize)
         # 构造后视图缺失必须进入状态恢复，而不是能力回退。
         self.assertNotIn("Errc::NotImplemented", resize)
-        # 缺失专用视图必须由 owner 使用稳定的状态错误分类。
-        self.assertIn("Errc::InvalidState", gpu_owner)
+        # owner 必须直接持有类型已证明的 GPU recipe context。
+        self.assertIn("context: Box<dyn GpuRecipeContext>", gpu_owner)
+        # owner 不得重新查询可选 GPU recipe 视图。
+        self.assertNotIn("gpu_recipe_context()", gpu_owner[: gpu_owner.index("#[cfg(test)]")])
         # 旧代 retained 资源必须先于 surface generation 推进释放。
         self.assertLess(
             # 定位旧代 retained 资源销毁。
@@ -618,13 +620,13 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取四个原生 context 的 trait 实现。
         adapters = (
-            # D3D11 context 的 IGraphicsContext 实现。
+            # D3D11 context 的类型化 lifecycle 实现。
             ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
-            # D3D12 context 的 IGraphicsContext 实现。
+            # D3D12 context 的类型化 lifecycle 实现。
             ROOT / "src/native/presentation/graphics/d3d12/platform/context/graphics.rs",
-            # WGL context 的 IGraphicsContext 实现。
+            # WGL context 的类型化 lifecycle 实现。
             ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
-            # EGL context 的 IGraphicsContext 实现。
+            # EGL context 的类型化 lifecycle 实现。
             ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
         )
         # 读取 adapter 私有 pipeline 目录，确认无消费者实现也已物理退出。
@@ -835,12 +837,15 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("pub(crate) trait PixelUploadSurface", facade)
         # 专用 trait 必须使用显式 recipe 名称。
         self.assertIn("fn resize_pixel_upload_surface(", facade)
-        # context 只借出可选 PixelUpload surface 视图。
-        self.assertIn("fn pixel_upload_surface(&mut self)", facade)
+        # 共享 lifecycle 不得借出可选 PixelUpload surface 视图。
+        self.assertNotIn("fn pixel_upload_surface(&mut self)", facade)
         # thread-bound 不得恢复通用 resize wrapper。
         self.assertNotIn("fn resize(&mut self", thread_bound)
         # thread-bound 必须实现专用契约。
-        self.assertIn("impl PixelUploadSurface for ThreadBoundGraphicsContext", thread_bound)
+        self.assertIn(
+            "impl PixelUploadSurface for ThreadBoundGraphicsContext<dyn PixelUploadSurface>",
+            thread_bound,
+        )
         # 专用 wrapper 必须保持 owner-thread 检查。
         self.assertIn('self.with_owner("resize_pixel_upload_surface"', thread_bound)
         # 专用 wrapper 成功后只刷新完整 PresentSurface，不改写静态 capability。
@@ -858,7 +863,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
             # GPU-native test fake。
             ROOT / "src/native/test_harness/fake_graphics_context.rs",
         ):
-            # adapter 的 IGraphicsContext 实现不得重新包装通用 resize。
+            # adapter 的类型化 lifecycle 实现不得重新包装通用 resize。
             self.assertNotIn("fn resize(&mut self", adapter.read_text(encoding="utf-8"))
         # D3D11 已无消费者的逻辑兼容 helper 必须物理删除。
         self.assertNotIn("fn resize_surface_logical(", d3d11_methods)
@@ -870,10 +875,10 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("impl PixelUploadSurface for VulkanContext", vulkan)
         # Metal 同样必须实现专用 surface trait。
         self.assertIn("impl PixelUploadSurface for MetalPixelUploadContext", metal)
-        # 两个 adapter 都必须显式暴露专用 surface 视图。
-        self.assertIn("fn pixel_upload_surface(&mut self)", vulkan)
-        # Metal 不能依赖 runtime 猜测 recipe。
-        self.assertIn("fn pixel_upload_surface(&mut self)", metal)
+        # Vulkan 不得恢复可选专用 surface 视图。
+        self.assertNotIn("fn pixel_upload_surface(&mut self)", vulkan)
+        # Metal 同样由 trait 类型直接证明 recipe。
+        self.assertNotIn("fn pixel_upload_surface(&mut self)", metal)
         # native recipe 出口必须先验证 PixelUpload owner。
         self.assertIn(
             "PixelUploadRecipeOwner::try_new(context, caps).map(Self::PixelUpload)",
@@ -887,7 +892,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertNotIn("upload.context", runtime)
         # Vulkan GFX-R5 必须显式使用 PixelUpload surface 契约。
         self.assertGreaterEqual(gfx_r5.count(".resize_pixel_upload_surface("), 3)
-        # GFX-R5 不得再通过 IGraphicsContext resize 驱动 Vulkan。
+        # GFX-R5 不得再通过统一 context resize 驱动 Vulkan。
         self.assertNotIn("context.resize(", gfx_r5)
         # mixed-DPI 两段转换也必须显式使用 PixelUpload surface 契约。
         self.assertGreaterEqual(gfx_r5_mod.count(".resize_pixel_upload_surface("), 2)

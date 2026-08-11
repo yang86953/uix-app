@@ -1,60 +1,78 @@
-//! Factory-owned thread affinity for native graphics contexts (#183).
+//! Factory 持有的原生图形 context 线程亲和边界。
 //!
-//! Native APIs such as WGL, EGL, D3D and Vulkan associate a context with the
-//! creating thread.  Every production context therefore leaves the registry
-//! wrapped in this type.  The `Rc` marker deliberately makes the wrapper
-//! neither `Send` nor `Sync`; safe Rust cannot transfer it to another thread.
-//! Result-returning graphics operations also validate the owner and report an
-//! `InvalidState` error instead of reaching an API object from the wrong
-//! thread.
-//!
-//! The former non-fallible lifecycle operations now have checked `try_*`
-//! counterparts.  The legacy hooks remain compatibility adapters while each
-//! platform implementation migrates; they log and return a safe empty value
-//! on an owner violation rather than panicking or reaching native state.
+//! 每个已验证 recipe 都在离开 registry 前绑定到创建线程。包装器通过
+//! `Rc` 标记保持 `!Send + !Sync`，所有可能触碰原生资源的操作继续返回
+//! typed failure；错误线程上的 Drop 会泄漏 owner，避免在错误线程析构。
 
+// 引入线程亲和标记使用的内部可变单元。
 use std::cell::Cell;
+// 引入阻止 wrapper 自动实现 Send 与 Sync 的类型标记。
 use std::marker::PhantomData;
+// 引入允许错误线程 Drop 安全泄漏原生 owner 的手动析构容器。
 use std::mem::ManuallyDrop;
+// 引入明确保持线程本地语义的引用计数类型。
 use std::rc::Rc;
+// 引入当前线程身份与稳定线程标识。
 use std::thread::{self, ThreadId};
 
+// 引入线程门禁使用的统一错误与结果。
 use crate::core::{Errc, Error, Result};
+// 引入类型化 recipe context、共享生命周期与呈现值。
 use crate::native::present::{
-    GpuRecipeContext, IGraphicsContext, PixelUploadSurface, PresentDamage, PresentSurface,
+    GpuRecipeContext, GraphicsContextLifecycle, GraphicsRecipeContext, PixelUploadSurface,
+    PresentDamage, PresentSurface,
 };
 
-// 把原生 context 绑定到当前线程，静态 capability 留在 registry 验证记录中。
+// 把类型化 recipe context 绑定到当前线程。
 pub(crate) fn bind_to_current_thread(
-    // 接收 registry 仍唯一拥有的原生 context。
-    inner: Box<dyn IGraphicsContext>,
-) -> Box<dyn IGraphicsContext> {
-    // 建立只负责 owner-thread 生命周期与 live surface 的 wrapper。
-    Box::new(ThreadBoundGraphicsContext::new(inner))
+    // 接收 registry 仍唯一拥有的类型化 context。
+    context: GraphicsRecipeContext,
+) -> GraphicsRecipeContext {
+    // 保留 recipe 类型并为具体 trait object 建立线程绑定 wrapper。
+    match context {
+        // GPU recipe 继续只暴露不可拆分的 GPU 契约。
+        GraphicsRecipeContext::Gpu(inner) => {
+            // 返回绑定当前线程的 GPU owner。
+            GraphicsRecipeContext::Gpu(Box::new(ThreadBoundGraphicsContext::new(inner)))
+        }
+        // PixelUpload recipe 继续只暴露专用上传契约。
+        GraphicsRecipeContext::PixelUpload(inner) => {
+            // 返回绑定当前线程的 PixelUpload owner。
+            GraphicsRecipeContext::PixelUpload(Box::new(ThreadBoundGraphicsContext::new(inner)))
+        }
+    }
 }
 
-pub(crate) struct ThreadBoundGraphicsContext {
+// 在线程边界内唯一持有某一类型化 recipe context。
+pub(crate) struct ThreadBoundGraphicsContext<T: GraphicsContextLifecycle + ?Sized> {
+    // 记录允许触碰原生资源的创建线程。
     owner_thread: ThreadId,
-    inner: ManuallyDrop<Box<dyn IGraphicsContext>>,
-    // 把 live drawable 元数据保存为不可撕裂的单一快照。
+    // 保存只能在 owner thread 检查式释放的具体 trait object。
+    inner: ManuallyDrop<Box<T>>,
+    // 缓存最近一次成功事务确认的完整 drawable 快照。
     present_surface: PresentSurface,
-    // `Rc` is intentionally !Send + !Sync. `Cell` makes the intent equally
-    // explicit to readers inspecting the wrapper's auto-trait boundary.
+    // 明确禁止 wrapper 跨线程移动或共享。
     _thread_bound: PhantomData<Rc<Cell<()>>>,
 }
 
-impl ThreadBoundGraphicsContext {
+// 提供所有类型化 recipe 共用的线程生命周期实现。
+impl<T: GraphicsContextLifecycle + ?Sized> ThreadBoundGraphicsContext<T> {
     // 使用唯一原生 context 构造线程亲和 wrapper。
     fn new(
-        // 接收仍由 wrapper 唯一拥有的原生 context。
-        inner: Box<dyn IGraphicsContext>,
+        // 接收仍由 wrapper 唯一拥有的类型化 context。
+        inner: Box<T>,
     ) -> Self {
         // 在 owner thread 一次读取完整 surface 元数据。
         let present_surface = inner.present_surface();
+        // 固化线程身份、owner 与不可撕裂快照。
         Self {
+            // 当前线程成为唯一 owner thread。
             owner_thread: thread::current().id(),
+            // 延迟到受控 Drop 路径再释放 inner。
             inner: ManuallyDrop::new(inner),
+            // 保存构造事务确认的 surface 快照。
             present_surface,
+            // 建立静态线程本地边界。
             _thread_bound: PhantomData,
         }
     }
@@ -65,13 +83,20 @@ impl ThreadBoundGraphicsContext {
         self.present_surface = self.inner.present_surface();
     }
 
+    // 验证当前操作仍在创建线程执行。
     fn require_owner(&self, operation: &str) -> Result<()> {
+        // 捕获当前线程以构造稳定诊断。
         let current = thread::current().id();
+        // owner thread 可以继续触碰原生资源。
         if current == self.owner_thread {
+            // 返回线程门禁成功。
             return Ok(());
         }
+        // 错误线程保持 typed state failure。
         Err(Error::new(
+            // 线程归属破坏属于运行期状态错误。
             Errc::InvalidState,
+            // 保留操作名与两侧线程身份。
             format!(
                 "graphics context operation {operation} must run on creation thread {:?}; current thread is {:?}",
                 self.owner_thread, current
@@ -79,181 +104,134 @@ impl ThreadBoundGraphicsContext {
         ))
     }
 
-    fn with_owner<T>(
+    // 在 owner thread 上借用具体类型化 context。
+    fn with_owner<U>(
+        // 借用 thread-bound wrapper。
         &mut self,
+        // 接收诊断使用的操作名。
         operation: &str,
-        run: impl FnOnce(&mut dyn IGraphicsContext) -> Result<T>,
-    ) -> Result<T> {
+        // 接收只在 owner thread 执行的闭包。
+        run: impl FnOnce(&mut T) -> Result<U>,
+    ) -> Result<U> {
+        // 在借用 inner 前验证线程归属。
         self.require_owner(operation)?;
+        // 把真实类型化 owner 交给受控操作。
         run(self.inner.as_mut())
     }
 
-    fn log_legacy_rejection(operation: &str, error: &Error) {
+    // 记录无错误返回通道的析构拒绝。
+    fn log_drop_rejection(operation: &str, error: &Error) {
+        // 让诊断可见但不在 Drop 路径 panic。
         tracing::error!(
-            "legacy graphics context {operation} rejected: {}",
+            "thread-bound graphics context {operation} rejected: {}",
             error.what()
         );
     }
 
-    // 测试目标保留可注入 owner thread 的构造器，供线程归属契约测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
+    // 为单元测试注入不同 owner thread 身份。
     #[cfg(test)]
-    pub(crate) fn with_test_owner(
-        // 接收测试仍唯一拥有的原生 context。
-        inner: Box<dyn IGraphicsContext>,
-        // 接收测试需要注入的 owner thread 身份。
+    fn with_test_owner(
+        // 接收测试仍唯一拥有的类型化 context。
+        inner: Box<T>,
+        // 接收测试要模拟的 owner thread。
         owner_thread: ThreadId,
     ) -> Self {
-        // 使用测试 context 构造 wrapper。
+        // 先按生产路径构造 wrapper。
         let mut bound = Self::new(inner);
-        // 覆盖 owner thread 以验证错误线程门禁。
+        // 仅在测试构建覆盖线程身份。
         bound.owner_thread = owner_thread;
-        // 返回带注入线程身份的测试 wrapper。
+        // 返回可验证错误线程门禁的 wrapper。
         bound
     }
 }
 
-impl Drop for ThreadBoundGraphicsContext {
+// 确保原生 owner 只在正确线程执行 checked shutdown。
+impl<T: GraphicsContextLifecycle + ?Sized> Drop for ThreadBoundGraphicsContext<T> {
+    // 执行 wrapper 的非失败析构边界。
     fn drop(&mut self) {
-        // SAFETY: Drop runs once; the inner Box is taken exactly once here.
+        // SAFETY: Drop 只执行一次，inner 也只在这里取出一次。
         let mut inner = unsafe { ManuallyDrop::take(&mut self.inner) };
-        if self.require_owner("drop").is_err() {
-            // Wrong-thread Drop must not tear down native API objects. Leak the
-            // context so its Drop cannot run on this foreign thread.
-            Self::log_legacy_rejection(
-                "drop",
-                &Error::new(
-                    Errc::InvalidState,
-                    format!(
-                        "graphics context operation drop must run on creation thread {:?}; current thread is {:?}",
-                        self.owner_thread,
-                        thread::current().id()
-                    ),
-                ),
-            );
+        // 错误线程绝不能触碰原生析构 API。
+        if let Err(error) = self.require_owner("drop") {
+            // 记录线程违规供诊断。
+            Self::log_drop_rejection("drop", &error);
+            // 泄漏 owner，避免 Box 在错误线程继续析构。
             std::mem::forget(inner);
+            // 结束错误线程析构路径。
             return;
         }
+        // 在 owner thread 执行 checked shutdown。
         if let Err(error) = inner.try_shutdown() {
-            Self::log_legacy_rejection("drop", &error);
+            // Drop 无返回通道，因此保留结构化日志。
+            Self::log_drop_rejection("drop", &error);
         }
+        // checked shutdown 后释放 Rust owner。
         drop(inner);
     }
 }
 
-impl IGraphicsContext for ThreadBoundGraphicsContext {
-    // 只有 owner thread 可以借用 inner 的完整 GPU recipe 视图。
-    fn gpu_recipe_context(&mut self) -> Option<&mut dyn GpuRecipeContext> {
-        // 该可选查询无错误返回通道，跨线程时保守地报告不支持。
-        if self.require_owner("gpu_recipe_context").is_err() {
-            // 禁止把 wrapper 自身暴露给错误线程。
-            return None;
-        }
-        // 先确认真实 context 明确提供不可拆分的 GPU recipe 视图。
-        self.inner.gpu_recipe_context()?;
-        // 返回继续执行 owner-thread 检查与元数据刷新的原子 wrapper 视图。
-        Some(self)
-    }
-
-    // 只有 owner thread 可以借用 inner 的 PixelUpload surface 视图。
-    fn pixel_upload_surface(&mut self) -> Option<&mut dyn PixelUploadSurface> {
-        // 无错误返回通道的 capability 查询在跨线程时保守返回不支持。
-        if self.require_owner("pixel_upload_surface").is_err() {
-            // 禁止把 wrapper 自身暴露给错误线程。
-            return None;
-        }
-        // 只有真实 context 明确实现专用契约时 wrapper 才提供同一能力。
-        self.inner.pixel_upload_surface()?;
-        // 返回继续执行 owner-thread 检查与元数据同步的 wrapper 视图。
-        Some(self)
-    }
-
-    // 返回 owner-thread 最近一次确认的完整 surface 元数据快照。
+// 为任意类型化 recipe 提供共同生命周期。
+impl<T: GraphicsContextLifecycle + ?Sized> GraphicsContextLifecycle
+    for ThreadBoundGraphicsContext<T>
+{
+    // 返回最近一次成功事务确认的完整 surface 快照。
     fn present_surface(&self) -> PresentSurface {
-        // 非失败查询只读取 wrapper 缓存，不跨线程触碰 native context。
+        // 非失败查询只读取 wrapper 缓存，不触碰 native context。
         self.present_surface
     }
 
+    // 在 owner thread 检查式关闭原生资源。
     fn try_shutdown(&mut self) -> Result<()> {
+        // 保留底层 typed teardown failure。
         self.with_owner("try_shutdown", |inner| inner.try_shutdown())
     }
 }
 
-// 在线程绑定边界实现不可拆分的 GPU-native recipe 视图。
-impl GpuRecipeContext for ThreadBoundGraphicsContext {
+// 在线程绑定边界实现不可拆分的 GPU-native recipe。
+impl GpuRecipeContext for ThreadBoundGraphicsContext<dyn GpuRecipeContext> {
     // 在 owner thread 借用真实 context 的唯一 thin RHI owner。
     fn rhi_context(
-        // 借用 thread-bound wrapper。
+        // 借用 thread-bound GPU wrapper。
         &mut self,
     ) -> Result<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
-        // 显式保留错误线程的 typed failure，不把它降级成能力缺失。
+        // 先拒绝错误线程，再直接借用类型已证明的 GPU owner。
         self.require_owner("gpu_recipe_rhi_context")?;
-        // 构造后丢失原子视图属于 native context 状态破坏。
-        let recipe = self.inner.gpu_recipe_context().ok_or_else(|| {
-            // 返回稳定错误供恢复层重建完整 recipe owner。
-            Error::new(
-                // 使用状态错误区分注册缺口与可选能力。
-                Errc::InvalidState,
-                // 明确指出丢失的是完整 GPU recipe 视图。
-                "graphics context lost its atomic GPU recipe context",
-            )
-        })?;
-        // 让真实 recipe owner 返回 thin RHI 或其 typed failure。
-        recipe.rhi_context()
+        // 保留 adapter 的 typed RHI failure。
+        self.inner.rhi_context()
     }
 
-    // 在 owner thread 执行 resize，并仅在成功后同步外层 drawable 元数据。
+    // 在 owner thread 执行 GPU surface resize。
     fn resize_surface(&mut self, width: i32, height: i32) -> Result<()> {
-        // 把实际 resize 委托给创建线程上的 native 专用视图。
+        // 把唯一 resize 事务委托给创建线程上的 GPU owner。
         self.with_owner("gpu_recipe_resize_surface", |inner| {
-            // recipe 宣称 GPU-native 却未提供原子视图属于状态破坏。
-            let recipe = inner.gpu_recipe_context().ok_or_else(|| {
-                // 返回稳定的 typed 状态错误，禁止恢复分裂兼容视图。
-                Error::new(
-                    // 使用状态错误交给恢复层。
-                    Errc::InvalidState,
-                    // 明确指出 native owner 丢失完整 GPU recipe。
-                    "graphics context lost its atomic GPU recipe context",
-                )
-            })?;
-            // 让真实 native owner 执行唯一 GraphicsSurface::resize 路径。
-            recipe.resize_surface(width, height)
+            // 直接调用不可选的 GPU 生命周期契约。
+            inner.resize_surface(width, height)
         })?;
-        // RHI 可能改变物理 drawable，成功后原子刷新完整 surface 快照。
+        // 只在成功后刷新完整 drawable 快照。
         self.refresh_present_surface();
-        // 返回已经通过 owner-thread 和 surface generation 边界的成功结果。
+        // 返回已越过线程和元数据事务边界的成功结果。
         Ok(())
     }
 }
 
-// 在线程绑定边界实现 CPU PixelUpload 的专用 surface resize。
-impl PixelUploadSurface for ThreadBoundGraphicsContext {
-    // 把 resize 委托给真实 PixelUpload adapter 并刷新只读元数据。
+// 在线程绑定边界实现 CPU PixelUpload 专用 surface。
+impl PixelUploadSurface for ThreadBoundGraphicsContext<dyn PixelUploadSurface> {
+    // 在 owner thread 执行 PixelUpload surface resize。
     fn resize_pixel_upload_surface(&mut self, width: i32, height: i32) -> Result<()> {
-        // 在创建线程上借用 inner 的专用 surface 契约。
+        // 把唯一 resize 事务委托给创建线程上的上传 owner。
         self.with_owner("resize_pixel_upload_surface", |inner| {
-            // recipe 宣称 PixelUpload 却未提供专用 surface 属于状态破坏。
-            let Some(surface) = inner.pixel_upload_surface() else {
-                // 返回 typed 状态错误，禁止回退已经删除的兼容入口。
-                return Err(Error::new(
-                    // 使用稳定状态分类交给恢复层。
-                    Errc::InvalidState,
-                    // 明确指出 factory/context 契约不一致。
-                    "PixelUpload graphics context does not expose its dedicated surface",
-                ));
-            };
-            // 在同一 owner-thread 借用范围内执行 adapter resize。
-            surface.resize_pixel_upload_surface(width, height)
+            // 直接调用不可选的 PixelUpload 生命周期契约。
+            inner.resize_pixel_upload_surface(width, height)
         })?;
-        // resize 成功后同步完整 drawable surface 快照。
+        // 只在成功后刷新完整 drawable 快照。
         self.refresh_present_surface();
-        // 返回已经完成线程检查和元数据同步的成功结果。
+        // 返回已越过线程和元数据事务边界的成功结果。
         Ok(())
     }
 
-    // 在线程绑定边界内提交 CPU PixelUpload 像素。
+    // 在线程绑定边界提交 CPU PixelUpload 像素。
     fn present_pixels(
-        // 借用 thread-bound wrapper。
+        // 借用 thread-bound PixelUpload wrapper。
         &mut self,
         // 转发 premultiplied BGRA 像素。
         pixels: &[u32],
@@ -264,40 +242,25 @@ impl PixelUploadSurface for ThreadBoundGraphicsContext {
         // 转发最终提交 damage。
         damage: PresentDamage,
     ) -> Result<()> {
-        // 在 owner thread 上借用 inner 的专用 PixelUpload surface。
+        // 在 owner thread 直接调用不可选的 PixelUpload 提交契约。
         self.with_owner("present_pixels", |inner| {
-            // recipe 能力在构造后消失属于 native context 状态破坏。
-            let Some(surface) = inner.pixel_upload_surface() else {
-                // 返回 typed 状态错误，禁止回退已移除的统一 present。
-                return Err(Error::new(
-                    // 使用稳定状态分类交给恢复层。
-                    Errc::InvalidState,
-                    // 明确指出专用提交契约缺失。
-                    "PixelUpload graphics context lost its dedicated presentation surface",
-                ));
-            };
-            // 在同一 owner-thread 借用范围内执行像素提交。
-            surface.present_pixels(pixels, width, height, damage)
+            // 保留 adapter 的 typed presentation failure。
+            inner.present_pixels(pixels, width, height, damage)
         })
     }
 }
 
-// 集中验证 thread-bound RHI surface 生命周期的元数据事务边界。
+// 集中验证 thread-bound GPU surface 生命周期事务。
 #[cfg(test)]
 mod tests {
-    // 引入当前模块的 thread-bound wrapper 与原子 GPU recipe 契约。
-    use super::{GpuRecipeContext, ThreadBoundGraphicsContext};
-    // 引入构造测试错误与结果所需的核心类型。
+    // 引入被测 GPU wrapper 与共享生命周期契约。
+    use super::{GpuRecipeContext, GraphicsContextLifecycle, ThreadBoundGraphicsContext};
+    // 引入测试错误与结果类型。
     use crate::core::{Errc, Error, Result};
-    // 引入测试 context 需要实现的最小图形上下文类型。
-    use crate::native::present::{
-        // 引入统一 context 门面。
-        IGraphicsContext,
-        // 引入 live surface 原子快照。
-        PresentSurface,
-    };
+    // 引入原子 surface 快照。
+    use crate::native::present::PresentSurface;
 
-    // 提供可独立控制 resize 成败的最小 RHI 生命周期 context。
+    // 提供可独立控制 resize 成败的最小 GPU context。
     struct TestRhiLifecycleContext {
         // 保存 native owner 当前公开的完整 surface 快照。
         surface: PresentSurface,
@@ -305,37 +268,31 @@ mod tests {
         fail_resize: bool,
     }
 
-    // 实现测试 context 的统一 recipe 与元数据门面。
-    impl IGraphicsContext for TestRhiLifecycleContext {
-        // 显式暴露测试 owner 的完整 GPU recipe 视图。
-        fn gpu_recipe_context(&mut self) -> Option<&mut dyn GpuRecipeContext> {
-            // 返回当前 owner 作为不可拆分的 recipe 视图。
-            Some(self)
-        }
-
+    // 实现测试 context 的共同生命周期。
+    impl GraphicsContextLifecycle for TestRhiLifecycleContext {
         // 返回当前完整 drawable 元数据快照。
         fn present_surface(&self) -> PresentSurface {
-            // PresentSurface 可复制，因此测试不会借用内部 native 状态。
+            // PresentSurface 可复制，不借用内部 native 状态。
             self.surface
         }
 
         // 测试 owner 没有需要失败的 native teardown。
         fn try_shutdown(&mut self) -> Result<()> {
-            // 保持 wrapper Drop 路径可验证且无额外副作用。
+            // 保持 wrapper Drop 路径可验证。
             Ok(())
         }
     }
 
-    // 实现可成功或失败的原子 GPU recipe 视图。
+    // 实现可成功或失败的原子 GPU recipe。
     impl GpuRecipeContext for TestRhiLifecycleContext {
-        // 测试不提供真实 thin RHI，直接返回稳定的状态错误。
+        // 测试不提供真实 thin RHI。
         fn rhi_context(
             // 借用测试 owner。
             &mut self,
         ) -> Result<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
-            // 本组测试只验证 resize 元数据事务，不伪造 RHI 实现。
+            // 本组测试只验证 resize 元数据事务。
             Err(Error::new(
-                // 使用稳定状态错误表达测试视图的受限范围。
+                // 使用稳定状态错误表达测试边界。
                 Errc::InvalidState,
                 // 保留可诊断的测试错误文本。
                 "test GPU recipe does not expose a thin RHI",
@@ -346,11 +303,11 @@ mod tests {
         fn resize_surface(&mut self, width: i32, height: i32) -> Result<()> {
             // 失败分支必须在修改 native 元数据前返回。
             if self.fail_resize {
-                // 使用稳定的图形状态错误供恢复层分类。
+                // 返回可由恢复层分类的 typed failure。
                 return Err(Error::new(
-                    // 标记测试中的 native surface 状态失败。
+                    // 标记 native surface 状态失败。
                     Errc::InvalidState,
-                    // 保留可诊断的测试错误文本。
+                    // 保留可诊断的注入错误文本。
                     "injected RHI surface resize failure",
                 ));
             }
@@ -362,7 +319,7 @@ mod tests {
                 height,
                 // 测试固定使用 identity DPR。
                 1.0,
-                // 每次成功重建都推进 surface generation。
+                // 每次成功重建都推进 generation。
                 self.surface.generation + 1,
             );
             // 报告 native surface 已完整重建。
@@ -381,23 +338,33 @@ mod tests {
         }
     }
 
+    // 把具体测试 context 擦除为生产使用的 GPU trait object 形状。
+    fn bound_test_context(
+        // 接收当前测试需要注入的 resize 结果。
+        fail_resize: bool,
+    ) -> ThreadBoundGraphicsContext<dyn GpuRecipeContext> {
+        // 在进入 wrapper 前完成类型化 trait object 擦除。
+        let context: Box<dyn GpuRecipeContext> = Box::new(test_context(fail_resize));
+        // 使用与生产 bind 函数相同的 trait object 形状构造 wrapper。
+        ThreadBoundGraphicsContext::new(context)
+    }
+
     // 验证成功 resize 后 wrapper 一次刷新完整 surface 快照。
     #[test]
     fn successful_rhi_resize_refreshes_present_surface_snapshot() {
         // 把可成功 resize 的 native owner 绑定到当前测试线程。
-        // wrapper 只接管 context 的线程亲和与 live surface 生命周期。
-        let mut bound = ThreadBoundGraphicsContext::new(Box::new(test_context(false)));
-        // 通过原子 GPU recipe 视图执行一次成功重建。
+        let mut bound = bound_test_context(false);
+        // 通过原子 GPU recipe 执行一次成功重建。
         let result = GpuRecipeContext::resize_surface(&mut bound, 320, 240);
         // 成功结果必须越过 thread-bound 边界返回调用方。
         assert!(result.is_ok());
-        // 读取 wrapper 在成功事务后缓存的完整 surface 快照。
+        // 读取成功事务后缓存的完整 surface 快照。
         let surface = bound.present_surface();
         // drawable 宽度必须与 native owner 的新快照一致。
         assert_eq!(surface.drawable_width, 320);
         // drawable 高度必须与 native owner 的新快照一致。
         assert_eq!(surface.drawable_height, 240);
-        // 同尺寸或异尺寸重建都必须推进 generation。
+        // 成功重建必须推进 generation。
         assert_eq!(surface.generation, 8);
     }
 
@@ -405,15 +372,39 @@ mod tests {
     #[test]
     fn failed_rhi_resize_preserves_present_surface_snapshot() {
         // 把会拒绝 resize 的 native owner 绑定到当前测试线程。
-        // wrapper 只接管 context 的线程亲和与 live surface 生命周期。
-        let mut bound = ThreadBoundGraphicsContext::new(Box::new(test_context(true)));
+        let mut bound = bound_test_context(true);
         // 保存失败事务前 wrapper 的原子快照。
         let before = bound.present_surface();
-        // 通过原子 GPU recipe 视图触发可观察的 typed failure。
+        // 通过原子 GPU recipe 触发 typed failure。
         let result = GpuRecipeContext::resize_surface(&mut bound, 640, 480);
-        // 失败必须保留稳定的错误分类。
+        // 失败必须保留稳定错误分类。
         assert!(matches!(result, Err(error) if error.code() == Errc::InvalidState));
-        // wrapper 只允许在成功后刷新，因此失败前后快照必须完全相等。
+        // wrapper 只允许在成功后刷新快照。
         assert_eq!(bound.present_surface(), before);
+    }
+
+    // 验证错误线程操作在触碰 native owner 前被拒绝。
+    #[test]
+    fn wrong_thread_resize_returns_typed_failure() {
+        // 从临时线程取得与当前测试线程不同的身份。
+        let foreign_owner = std::thread::spawn(|| std::thread::current().id())
+            // 临时线程不应 panic。
+            .join()
+            // 失败时给出明确测试诊断。
+            .expect("thread identity probe must complete");
+        // 注入不同 owner 身份而不跨线程移动 !Send wrapper。
+        let mut bound: ThreadBoundGraphicsContext<dyn GpuRecipeContext> =
+            ThreadBoundGraphicsContext::with_test_owner(
+                // 提供已经擦除为 GPU trait object 的真实 owner。
+                Box::new(test_context(false)) as Box<dyn GpuRecipeContext>,
+                // 使用临时线程身份触发门禁。
+                foreign_owner,
+            );
+        // 当前线程上的 resize 必须被 typed owner gate 拒绝。
+        let result = GpuRecipeContext::resize_surface(&mut bound, 320, 240);
+        // 禁止把线程违规降级为能力缺失或 panic。
+        assert!(matches!(result, Err(error) if error.code() == Errc::InvalidState));
+        // 避免测试 Drop 在故意注入的错误 owner 身份下泄漏 context。
+        bound.owner_thread = std::thread::current().id();
     }
 }
