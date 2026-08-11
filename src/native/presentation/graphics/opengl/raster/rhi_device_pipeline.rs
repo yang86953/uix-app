@@ -13,42 +13,51 @@ use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::pipeline_keys;
 
 // 按通用 pipeline key 选择 OpenGL ES shader 对。
-pub(super) fn shader_sources(key: u64) -> Option<(&'static str, &'static str)> {
+// flip_y = true 时（Wayland EGL top-left 行序）去掉顶点阶段的 Y 翻转，
+// 使 UI 顶部直接映射到 framebuffer 第 0 行（窗口顶部）；
+// WGL 使用 bottom-up DIB，保持原有翻转不变。
+pub(super) fn shader_sources(
+    key: u64,
+    flip_y: bool,
+) -> Option<(std::borrow::Cow<'static, str>, &'static str)> {
     // 把固定的通用 ABI 映射到具体 GLSL 源。
-    match key {
+    let (vertex, fragment): (&'static str, &'static str) = match key {
         // 位置 mesh 使用独立的 solid shader。
-        pipeline_keys::SOLID_MESH => Some((rhi_shaders::SOLID_VERTEX, rhi_shaders::SOLID_FRAGMENT)),
+        pipeline_keys::SOLID_MESH => (rhi_shaders::SOLID_VERTEX, rhi_shaders::SOLID_FRAGMENT),
         // 普通颜色纹理和 Additive 纹理共用 shader，blend 在 draw 状态选择。
         pipeline_keys::TEXTURED_QUAD | pipeline_keys::TEXTURED_QUAD_ADDITIVE => {
-            Some((rhi_shaders::TEXTURED_VERTEX, rhi_shaders::TEXTURED_FRAGMENT))
+            (rhi_shaders::TEXTURED_VERTEX, rhi_shaders::TEXTURED_FRAGMENT)
         }
         // 线性和径向渐变使用矩形顶点与独立 fragment。
         pipeline_keys::GRADIENT_RECT => {
-            Some((rhi_shaders::GRADIENT_VERTEX, rhi_shaders::GRADIENT_FRAGMENT))
+            (rhi_shaders::GRADIENT_VERTEX, rhi_shaders::GRADIENT_FRAGMENT)
         }
         // R8 coverage 复用 float8 顶点阶段。
         pipeline_keys::GLYPH_COVERAGE_QUAD => {
-            Some((rhi_shaders::TEXTURED_VERTEX, rhi_shaders::COVERAGE_FRAGMENT))
+            (rhi_shaders::TEXTURED_VERTEX, rhi_shaders::COVERAGE_FRAGMENT)
         }
         // 普通与 Additive 圆角/描边矩形共用矩形顶点和 shape fragment。
         pipeline_keys::SHAPE_RECT | pipeline_keys::SHAPE_RECT_ADDITIVE => {
-            Some((rhi_shaders::RECT_VERTEX, rhi_shaders::SHAPE_FRAGMENT))
+            (rhi_shaders::RECT_VERTEX, rhi_shaders::SHAPE_FRAGMENT)
         }
         // 扇形复用单位矩形顶点阶段，并由独立 fragment 执行角度/半径裁剪。
-        pipeline_keys::SECTOR => Some((rhi_shaders::RECT_VERTEX, rhi_shaders::SECTOR_FRAGMENT)),
+        pipeline_keys::SECTOR => (rhi_shaders::RECT_VERTEX, rhi_shaders::SECTOR_FRAGMENT),
         // 阴影使用扩张的单位 quad。
-        pipeline_keys::BOX_SHADOW => {
-            Some((rhi_shaders::SHADOW_VERTEX, rhi_shaders::SHADOW_FRAGMENT))
-        }
+        pipeline_keys::BOX_SHADOW => (rhi_shaders::SHADOW_VERTEX, rhi_shaders::SHADOW_FRAGMENT),
         // blur 使用 NDC 区域顶点和 64 tap fragment。
-        pipeline_keys::BLUR_PASS => Some((rhi_shaders::BLUR_VERTEX, rhi_shaders::BLUR_FRAGMENT)),
+        pipeline_keys::BLUR_PASS => (rhi_shaders::BLUR_VERTEX, rhi_shaders::BLUR_FRAGMENT),
         // MSDF 复用 float8 顶点阶段并使用 RGBA8 距离 fragment。
-        pipeline_keys::MSDF_GLYPH_QUAD => {
-            Some((rhi_shaders::TEXTURED_VERTEX, rhi_shaders::MSDF_FRAGMENT))
-        }
+        pipeline_keys::MSDF_GLYPH_QUAD => (rhi_shaders::TEXTURED_VERTEX, rhi_shaders::MSDF_FRAGMENT),
         // 未登记的 key 不进入 OpenGL shader 编译。
-        _ => None,
-    }
+        _ => return None,
+    };
+    // Wayland EGL 行序为 top-left：去除顶点阶段的 Y 翻转。
+    let vertex = if flip_y {
+        std::borrow::Cow::Owned(vertex.replace("ndc.y = -ndc.y;", "ndc.y = ndc.y;"))
+    } else {
+        std::borrow::Cow::Borrowed(vertex)
+    };
+    Some((vertex, fragment))
 }
 
 // 编译并链接一个 GLES 3.0 shader program。

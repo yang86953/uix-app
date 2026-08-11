@@ -64,6 +64,7 @@ impl OpenGlRasterPipeline {
     }
 
     pub(super) fn restore_full_viewport(&self) {
+        // viewport 始终使用 GL 自身坐标系；行序差异已由 shader 编译期处理。
         unsafe {
             self.gl().viewport(
                 0,
