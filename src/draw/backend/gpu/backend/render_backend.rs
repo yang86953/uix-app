@@ -400,16 +400,6 @@ impl RenderBackend for GpuBackend {
         Ok(EncodedFrameExecution::Executed)
     }
 
-    fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
-        match self.try_begin_offscreen_paint(handle) {
-            Ok(()) => true,
-            Err(error) => {
-                self.remember_frame_failure(error);
-                false
-            }
-        }
-    }
-
     fn try_begin_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
         self.offscreen_flush_committed = false;
         let idx = handle.0 as usize;
@@ -424,15 +414,6 @@ impl RenderBackend for GpuBackend {
         }
         self.active_offscreen = Some(handle.0);
         Ok(())
-    }
-
-    fn flush_offscreen_paint(&mut self, handle: &ImageHandle) {
-        if let Err(error) = self.try_flush_offscreen_paint(handle) {
-            // The legacy void entry remains for old callers.  The production
-            // compositor uses `try_*` and therefore returns this failure
-            // before a final present can be reported as success.
-            self.remember_frame_failure(error);
-        }
     }
 
     fn try_flush_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
@@ -572,12 +553,6 @@ impl RenderBackend for GpuBackend {
         Ok(())
     }
 
-    fn end_offscreen_paint(&mut self) {
-        if let Err(error) = self.try_end_offscreen_paint() {
-            self.remember_frame_failure(error);
-        }
-    }
-
     fn try_end_offscreen_paint(&mut self) -> Result<(), Error> {
         // 解除当前 Picture 绑定；薄 RHI 不需要恢复 adapter draw target。
         let active = self.active_offscreen.take();
@@ -600,20 +575,6 @@ impl RenderBackend for GpuBackend {
         self.offscreen_rhi_initialized = false;
         // 结束薄 RHI Picture 生命周期无需 adapter 侧恢复操作。
         Ok(())
-    }
-
-    fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) {
-        let Some(Some(off)) = self.offscreens.get(handle.0 as usize) else {
-            return;
-        };
-        let src = Rect::new(0.0, 0.0, off.width as f32, off.height as f32);
-        self.blit_offscreen_src(handle, src, dst_rect);
-    }
-
-    fn blit_offscreen_src(&mut self, handle: &ImageHandle, src_rect: Rect, dst_rect: Rect) {
-        if let Err(error) = self.try_blit_offscreen_src(handle, src_rect, dst_rect) {
-            self.remember_frame_failure(error);
-        }
     }
 
     fn try_blit_offscreen_src(

@@ -258,10 +258,6 @@ pub trait RenderTarget: 'static {
         let _ = handle;
         None
     }
-    fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) {
-        let _ = (handle, dst_rect);
-    }
-    fn blit_offscreen_src(&mut self, _handle: &ImageHandle, _src_rect: Rect, _dst_rect: Rect) {}
     fn blit_offscreen_to_canvas(
         &mut self,
         _handle: &ImageHandle,
@@ -332,55 +328,84 @@ pub trait RenderTarget: 'static {
         Ok(EncodedFrameExecution::Unsupported)
     }
 
-    /// Bind/clear offscreen before Picture paint (GPU RT or CPU buffer).
-    fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
-        let _ = handle;
-        true
-    }
-
-    /// Checked Picture offscreen boundary.  Implementations backed by native
-    /// APIs override this to propagate bind/clear failures to ScenePipeline;
-    /// the legacy bool method remains for compatibility with old callers.
-    fn try_begin_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
-        if self.begin_offscreen_paint(handle) {
-            Ok(())
-        } else {
-            Err(Error::new(
-                crate::core::Errc::InvalidState,
-                "render target could not begin Picture offscreen paint",
-            ))
-        }
-    }
-
-    fn flush_offscreen_paint(&mut self, handle: &ImageHandle) {
-        let _ = handle;
-    }
-
-    /// Checked counterpart of [`Self::flush_offscreen_paint`].
-    fn try_flush_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
-        self.flush_offscreen_paint(handle);
-        Ok(())
-    }
-
-    fn end_offscreen_paint(&mut self) {}
-
-    /// Checked counterpart of [`Self::end_offscreen_paint`].
-    fn try_end_offscreen_paint(&mut self) -> Result<(), Error> {
-        self.end_offscreen_paint();
-        Ok(())
-    }
-
-    /// Checked ordered Picture blit boundary.  The default preserves legacy
-    /// engines; native implementations must override it when their blit can
-    /// fail.
-    fn try_blit_offscreen_src(
+    /// Checked Picture begin boundary. Unsupported targets fail explicitly.
+    // 默认 target 不允许把缺失的 Picture 生命周期伪装成成功。
+    fn try_begin_offscreen_paint(
+        // 接收当前 render target 的唯一可变 owner。
         &mut self,
+        // 接收调用方已经创建的 Picture 目标身份。
         handle: &ImageHandle,
-        src_rect: Rect,
-        dst_rect: Rect,
+        // 返回 typed failure，供恢复包装器处理。
     ) -> Result<(), Error> {
-        self.blit_offscreen_src(handle, src_rect, dst_rect);
-        Ok(())
+        // 默认实现只消费参数，具体 target 必须显式覆盖生命周期。
+        let _ = handle;
+        // 缺失 Picture begin 属于明确的能力缺口。
+        Err(Error::new(
+            // 使用稳定错误分类区分能力缺口与资源故障。
+            crate::core::Errc::NotImplemented,
+            // 保留可定位的 Picture begin 诊断。
+            "render target does not support Picture offscreen begin",
+        ))
+    }
+
+    /// Checked Picture flush boundary. Unsupported targets fail explicitly.
+    // 默认 target 不允许静默丢弃待提交的 Picture 绘制。
+    fn try_flush_offscreen_paint(
+        // 接收当前 render target 的唯一可变 owner。
+        &mut self,
+        // 接收必须提交的 Picture 目标身份。
+        handle: &ImageHandle,
+        // 返回 typed failure，阻止错误帧继续提交。
+    ) -> Result<(), Error> {
+        // 默认实现只消费参数，具体 target 必须显式覆盖提交语义。
+        let _ = handle;
+        // 缺失 Picture flush 属于明确的能力缺口。
+        Err(Error::new(
+            // 使用稳定错误分类驱动既有恢复策略。
+            crate::core::Errc::NotImplemented,
+            // 保留可定位的 Picture flush 诊断。
+            "render target does not support Picture offscreen flush",
+        ))
+    }
+
+    /// Checked Picture end boundary. Unsupported targets fail explicitly.
+    // 默认 target 要求实现者显式闭合已经开始的 Picture 生命周期。
+    fn try_end_offscreen_paint(
+        // 接收当前 render target 的唯一可变 owner。
+        &mut self,
+        // 返回 typed failure，禁止绕过 target 恢复边界。
+    ) -> Result<(), Error> {
+        // 缺失 Picture end 属于明确的能力缺口。
+        Err(Error::new(
+            // 使用稳定错误分类驱动既有恢复策略。
+            crate::core::Errc::NotImplemented,
+            // 保留可定位的 Picture end 诊断。
+            "render target does not support Picture offscreen end",
+        ))
+    }
+
+    /// Checked ordered Picture blit boundary. Unsupported targets fail explicitly.
+    // 默认 target 不允许把漏绘误报为成功帧。
+    fn try_blit_offscreen_src(
+        // 接收当前 render target 的唯一可变 owner。
+        &mut self,
+        // 接收稳定的 Picture 来源身份。
+        handle: &ImageHandle,
+        // 接收来源纹理内的裁剪区域。
+        src_rect: Rect,
+        // 接收当前目标内的绘制区域。
+        dst_rect: Rect,
+        // 返回 typed failure，阻止失败 blit 继续提交。
+    ) -> Result<(), Error> {
+        // 默认实现只消费参数，具体 target 必须显式覆盖合成语义。
+        let _ = (handle, src_rect, dst_rect);
+        // 缺失 Picture blit 属于明确的能力缺口。
+        Err(Error::new(
+            // 使用稳定错误分类驱动既有恢复策略。
+            crate::core::Errc::NotImplemented,
+            // 保留可定位的 Picture blit 诊断。
+            "render target does not support Picture offscreen blit",
+        ))
     }
 
     /// 对 Picture 离屏目标做可分离高斯模糊。

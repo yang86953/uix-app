@@ -21,10 +21,10 @@ use crate::draw::backend::cpu::canvas_2d::CpuCanvas2D;
 use crate::draw::backend::cpu::offscreen::CpuOffscreenPool;
 use crate::draw::geometry::color::Color;
 // Picture 合成需要显式建立不重复应用场景 transform 的 canonical 状态。
+use crate::draw::Canvas2D;
 use crate::draw::geometry::types::{ImageHandle, Transform};
 use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::raster::pixel_surface::PixelSurface;
-use crate::draw::Canvas2D;
 
 /// CPU 主缓冲 DrawSurface 适配器。
 pub(crate) struct CpuDrawSurface {
@@ -267,10 +267,6 @@ impl RenderBackend for CpuBackend {
         Ok(EncodedFrameExecution::Executed)
     }
 
-    fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
-        self.try_begin_offscreen_paint(handle).is_ok()
-    }
-
     fn try_begin_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
         let Some(canvas) = self.offscreens.get_mut(handle) else {
             return Err(Error::new(
@@ -289,8 +285,6 @@ impl RenderBackend for CpuBackend {
         Ok(())
     }
 
-    fn flush_offscreen_paint(&mut self, _handle: &ImageHandle) {}
-
     fn try_flush_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
         let canvas = self.offscreens.get_mut(handle).ok_or_else(|| {
             Error::new(
@@ -304,10 +298,6 @@ impl RenderBackend for CpuBackend {
         Ok(())
     }
 
-    fn end_offscreen_paint(&mut self) {
-        self.active_offscreen = None;
-    }
-
     fn try_end_offscreen_paint(&mut self) -> Result<(), Error> {
         let active = self.active_offscreen.take();
         if let Some(id) = active {
@@ -319,32 +309,6 @@ impl RenderBackend for CpuBackend {
             }
         }
         Ok(())
-    }
-
-    fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) {
-        let Some(offscreen_canvas) = self.offscreens.get(handle) else {
-            return;
-        };
-        let surf = offscreen_canvas.surface();
-        let src_rect = Rect::new(0.0, 0.0, surf.width() as f32, surf.height() as f32);
-        self.blit_offscreen_src(handle, src_rect, dst_rect);
-    }
-
-    fn blit_offscreen_src(&mut self, handle: &ImageHandle, src_rect: Rect, dst_rect: Rect) {
-        if let Some(dst_id) = self.active_offscreen {
-            if dst_id == handle.0 {
-                return;
-            }
-            let Some((pixels, pw)) = self.offscreens.copy_pixels(handle) else {
-                return;
-            };
-            let dst_handle = ImageHandle(dst_id);
-            if let Some(dst_canvas) = self.offscreens.canvas_mut(&dst_handle) {
-                dst_canvas.blit_image(&pixels, pw, src_rect, dst_rect);
-            }
-            return;
-        }
-        self.blit_offscreen_impl(handle, src_rect, dst_rect);
     }
 
     fn try_blit_offscreen_src(
@@ -425,14 +389,6 @@ impl RenderBackend for CpuBackend {
 }
 
 impl CpuBackend {
-    pub fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) {
-        RenderBackend::blit_offscreen(self, handle, dst_rect);
-    }
-
-    pub fn blit_offscreen_src(&mut self, handle: &ImageHandle, src_rect: Rect, dst_rect: Rect) {
-        RenderBackend::blit_offscreen_src(self, handle, src_rect, dst_rect);
-    }
-
     /// 将离屏缓冲内容 blit 到任意 Canvas2D（支持嵌套 Picture 合成）。
     pub fn blit_offscreen_to_canvas(
         &self,
