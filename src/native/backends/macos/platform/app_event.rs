@@ -1,7 +1,7 @@
 use super::*;
 
-use super::*;
-
+// 保留拆分前 MacosAppEvent 的诊断与复制能力。
+#[derive(Debug, Clone)]
 struct MacosAppEvent {
     window_id: Option<WindowId>,
     kind: isize,
