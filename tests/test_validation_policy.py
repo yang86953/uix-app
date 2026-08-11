@@ -46,13 +46,29 @@ FORBIDDEN_TIMEPOINT_STATUS_MARKERS = (
 )
 # 定位只负责稳定入口与权威路由的使用文档。
 USAGE_ENTRY_FILE = ROOT / "docs" / "使用" / "入口与阅读路径.md"
+# 定义项目动态状态的唯一跟踪入口。
+VIKUNJA_PROJECT_ROUTE = "https://yang-server.tail9d5559.ts.net:3456/projects/4"
 # 列出使用入口必须保留的权威状态路由。
 USAGE_ENTRY_REQUIRED_ROUTES = (
     # 版本、发布与交付事实归属产品交付文档。
     "../产品/交付与许可.md",
     # 进行中任务、测试覆盖与环境差距归属 Vikunja。
-    "https://yang-server.tail9d5559.ts.net:3456/projects/4",
+    VIKUNJA_PROJECT_ROUTE,
     # 结束权威路由集合。
+)
+# 定位只保存稳定交付契约的产品文档。
+DELIVERY_CONTRACT_FILE = ROOT / "docs" / "产品" / "交付与许可.md"
+# 列出不得复制到稳定交付契约的发布进展标记。
+FORBIDDEN_DELIVERY_PROGRESS_MARKERS = (
+    # 禁止把整个交付章节声明为当前进展快照。
+    "## 当前交付状态",
+    # 禁止复制带时点的主要测试环境。
+    "当前主要测试环境",
+    # 禁止复制带时点的候选包验证结论。
+    "当前已验证的 Windows",
+    # 禁止复制正式发布进展结论。
+    "尚未正式发布",
+    # 结束发布进展标记集合。
 )
 # 列出不得作为项目完成入口出现的非测试命令。
 FORBIDDEN_COMMANDS = ("cargo check", "cargo clippy", "cargo bench", "cargo fmt -- --check")
@@ -103,6 +119,19 @@ class ValidationPolicyTests(unittest.TestCase):
         missing = [route for route in USAGE_ENTRY_REQUIRED_ROUTES if route not in content]
         # 使用入口必须同时指向产品交付文档和 Vikunja。
         self.assertEqual(missing, [])
+
+    # 确认交付文档只保存稳定契约并把发布进展路由到 Vikunja。
+    def test_delivery_contract_routes_progress_to_vikunja(self) -> None:
+        # 读取产品交付契约当前文本。
+        content = DELIVERY_CONTRACT_FILE.read_text(encoding="utf-8")
+        # 收集仍然复制到交付契约的发布进展标记。
+        violations = [marker for marker in FORBIDDEN_DELIVERY_PROGRESS_MARKERS if marker in content]
+        # 稳定交付契约不得保留发布进展副本。
+        self.assertEqual(violations, [])
+        # 交付契约必须路由到项目跟踪入口。
+        self.assertIn(VIKUNJA_PROJECT_ROUTE, content)
+        # 交付契约必须明确发布父任务编号。
+        self.assertIn("#770", content)
 
     # 确认用户文档不再宣传非测试验证命令。
     def test_documentation_only_advertises_tests_for_completion(self) -> None:
