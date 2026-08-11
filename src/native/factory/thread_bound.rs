@@ -25,10 +25,15 @@ use crate::native::present::{
     PresentSurface,
 };
 
+// 使用 registry 已验证快照把原生 context 绑定到当前线程。
 pub(crate) fn bind_to_current_thread(
+    // 接收 registry 仍唯一拥有的原生 context。
     inner: Box<dyn IGraphicsContext>,
+    // 接收 registry 已验证的静态 capability 快照。
+    caps: GraphicsContextCaps,
 ) -> Box<dyn IGraphicsContext> {
-    Box::new(ThreadBoundGraphicsContext::new(inner))
+    // 使用同一快照建立线程亲和 wrapper，禁止重新查询 inner。
+    Box::new(ThreadBoundGraphicsContext::new(inner, caps))
 }
 
 pub(crate) struct ThreadBoundGraphicsContext {
@@ -46,8 +51,13 @@ pub(crate) struct ThreadBoundGraphicsContext {
 }
 
 impl ThreadBoundGraphicsContext {
-    fn new(inner: Box<dyn IGraphicsContext>) -> Self {
-        let caps = inner.caps();
+    // 使用 registry 已验证快照构造线程亲和 wrapper。
+    fn new(
+        // 接收仍由 wrapper 唯一拥有的原生 context。
+        inner: Box<dyn IGraphicsContext>,
+        // 接收不得在 wrapper 内重新派生的静态 capability 快照。
+        caps: GraphicsContextCaps,
+    ) -> Self {
         // 在 owner thread 一次读取完整 surface 元数据。
         let present_surface = inner.present_surface();
         Self {
@@ -99,11 +109,18 @@ impl ThreadBoundGraphicsContext {
     #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn with_test_owner(
+        // 接收测试仍唯一拥有的原生 context。
         inner: Box<dyn IGraphicsContext>,
+        // 接收测试边界已经捕获的静态 capability 快照。
+        caps: GraphicsContextCaps,
+        // 接收测试需要注入的 owner thread 身份。
         owner_thread: ThreadId,
     ) -> Self {
-        let mut bound = Self::new(inner);
+        // 使用测试提供的同一快照构造 wrapper。
+        let mut bound = Self::new(inner, caps);
+        // 覆盖 owner thread 以验证错误线程门禁。
         bound.owner_thread = owner_thread;
+        // 返回带注入线程身份的测试 wrapper。
         bound
     }
 }
@@ -395,11 +412,24 @@ mod tests {
         }
     }
 
+    // 构造由 registry 传给 thread-bound wrapper 的测试静态快照。
+    fn test_caps() -> GraphicsContextCaps {
+        // 使用与测试 context 声明一致的 GPU-native recipe。
+        GraphicsContextCaps::gpu_native_swapchain(
+            // 使用 Windows 参考 backend 身份。
+            GraphicsApi::D3d11,
+            // 测试不声明跨帧内容保持能力。
+            PresentCoherency::FullOnly,
+        )
+    }
+
     // 验证成功 resize 后 wrapper 一次刷新完整 surface 快照。
     #[test]
     fn successful_rhi_resize_refreshes_present_surface_snapshot() {
         // 把可成功 resize 的 native owner 绑定到当前测试线程。
-        let mut bound = ThreadBoundGraphicsContext::new(Box::new(test_context(false)));
+        let mut bound =
+            // 复用 registry 已验证的静态快照构造 wrapper。
+            ThreadBoundGraphicsContext::new(Box::new(test_context(false)), test_caps());
         // 通过原子 GPU recipe 视图执行一次成功重建。
         let result = GpuRecipeContext::resize_surface(&mut bound, 320, 240);
         // 成功结果必须越过 thread-bound 边界返回调用方。
@@ -418,7 +448,9 @@ mod tests {
     #[test]
     fn failed_rhi_resize_preserves_present_surface_snapshot() {
         // 把会拒绝 resize 的 native owner 绑定到当前测试线程。
-        let mut bound = ThreadBoundGraphicsContext::new(Box::new(test_context(true)));
+        let mut bound =
+            // 复用 registry 已验证的静态快照构造 wrapper。
+            ThreadBoundGraphicsContext::new(Box::new(test_context(true)), test_caps());
         // 保存失败事务前 wrapper 的原子快照。
         let before = bound.present_surface();
         // 通过原子 GPU recipe 视图触发可观察的 typed failure。

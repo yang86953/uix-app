@@ -17,10 +17,13 @@ pub(crate) enum GraphicsRecipeOwner {
 
 // 把迁移期 context 收敛为 renderer 可消费的正交 owner。
 impl GraphicsRecipeOwner {
-    // 按构造期静态 recipe 选择唯一 owner，并检查式关闭不合法组合。
-    pub(crate) fn try_new(mut context: Box<dyn IGraphicsContext>) -> Result<Self> {
-        // 一次读取 context 的静态 recipe 事实用于分派。
-        let caps = context.caps();
+    // 按 registry 已验证的静态 recipe 选择唯一 owner，并检查式关闭不合法组合。
+    pub(crate) fn try_new(
+        // 接收仍未离开 native factory 的迁移期 context。
+        mut context: Box<dyn IGraphicsContext>,
+        // 接收 registry 唯一读取并完成一致性验证的 capability 快照。
+        caps: GraphicsContextCaps,
+    ) -> Result<Self> {
         // 只接受文档定义的两个正交 recipe 组合。
         match (caps.raster, caps.present) {
             // GPU recipe 交给专用 thin RHI owner 完成剩余门禁。
@@ -270,8 +273,10 @@ mod tests {
             // 本用例只验证原始 recipe 错误。
             fail_shutdown: false,
         };
+        // 在模拟 registry 边界取得故意非法的静态快照。
+        let caps = context.caps();
         // 尝试构造正交 recipe owner。
-        let result = GraphicsRecipeOwner::try_new(Box::new(context));
+        let result = GraphicsRecipeOwner::try_new(Box::new(context), caps);
         // 非法组合必须返回参数错误。
         assert!(matches!(result, Err(error) if error.code() == Errc::InvalidArgument));
         // 返回前必须执行 checked shutdown。
@@ -290,8 +295,10 @@ mod tests {
             // 强制返回 cleanup failure。
             fail_shutdown: true,
         };
+        // 在模拟 registry 边界取得故意非法的静态快照。
+        let caps = context.caps();
         // 取得带原因链的构造失败。
-        let error = match GraphicsRecipeOwner::try_new(Box::new(context)) {
+        let error = match GraphicsRecipeOwner::try_new(Box::new(context), caps) {
             // 成功属于测试失败。
             Ok(_) => panic!("invalid recipe must be rejected"),
             // 保存 typed 构造失败。
@@ -307,9 +314,9 @@ mod tests {
         assert!(shutdown.get());
     }
 
-    // 验证 GPU 正交 owner 构造只读取一次静态 capability。
+    // 验证 GPU 正交 owner 只消费外部提供的静态 capability。
     #[test]
-    fn gpu_recipe_owner_reads_static_caps_once() {
+    fn gpu_recipe_owner_reuses_provided_static_caps() {
         // 创建在 Box 被消费后仍可观察的 capability 读取计数。
         let caps_reads = Rc::new(Cell::new(0));
         // 构造合法 GPU-native × Swapchain 测试 context。
@@ -324,17 +331,19 @@ mod tests {
             // 共享 capability 读取计数。
             caps_reads: Rc::clone(&caps_reads),
         };
+        // 模拟 registry 把已验证字段快照直接传入 owner，且不调用 trait 查询。
+        let caps = context.caps;
         // 通过顶层正交 owner 构造 GPU 分支。
-        let owner = GraphicsRecipeOwner::try_new(Box::new(context));
+        let owner = GraphicsRecipeOwner::try_new(Box::new(context), caps);
         // 合法 GPU recipe 必须进入唯一 GPU owner 分支。
         assert!(matches!(owner, Ok(GraphicsRecipeOwner::Gpu(_))));
-        // 顶层分派与专用门禁合计只能读取一次静态快照。
-        assert_eq!(caps_reads.get(), 1);
+        // 顶层分派与专用门禁都不得重新查询 context 静态快照。
+        assert_eq!(caps_reads.get(), 0);
     }
 
-    // 验证 PixelUpload 正交 owner 构造只读取一次静态 capability。
+    // 验证 PixelUpload 正交 owner 只消费外部提供的静态 capability。
     #[test]
-    fn pixel_upload_recipe_owner_reads_static_caps_once() {
+    fn pixel_upload_recipe_owner_reuses_provided_static_caps() {
         // 创建在 Box 被消费后仍可观察的 capability 读取计数。
         let caps_reads = Rc::new(Cell::new(0));
         // 构造合法 CPU × PixelUpload 测试 context。
@@ -344,11 +353,13 @@ mod tests {
             // 共享 capability 读取计数。
             caps_reads: Rc::clone(&caps_reads),
         };
+        // 模拟 registry 把已验证字段快照直接传入 owner，且不调用 trait 查询。
+        let caps = context.caps;
         // 通过顶层正交 owner 构造 PixelUpload 分支。
-        let owner = GraphicsRecipeOwner::try_new(Box::new(context));
+        let owner = GraphicsRecipeOwner::try_new(Box::new(context), caps);
         // 合法 PixelUpload recipe 必须进入唯一上传 owner 分支。
         assert!(matches!(owner, Ok(GraphicsRecipeOwner::PixelUpload(_))));
-        // 顶层分派与专用门禁合计只能读取一次静态快照。
-        assert_eq!(caps_reads.get(), 1);
+        // 顶层分派与专用门禁都不得重新查询 context 静态快照。
+        assert_eq!(caps_reads.get(), 0);
     }
 }

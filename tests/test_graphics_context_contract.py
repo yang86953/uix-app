@@ -78,8 +78,8 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertNotIn("device_pixel_ratio: f32", bound_struct)
         # 生命周期变更后必须原子刷新 surface 快照。
         self.assertIn("self.present_surface = self.inner.present_surface();", thread_bound)
-        # wrapper 只能在构造期读取一次静态 capability，resize 不得刷新 recipe 身份。
-        self.assertEqual(thread_bound.count("inner.caps()"), 1)
+        # wrapper 只缓存 registry 传入的静态 capability，不得重新查询 inner。
+        self.assertNotIn("inner.caps()", thread_bound)
         # 逐个核对所有 context 实现都显式提供 surface 元数据。
         for adapter in (
             # D3D11 生产 context。
@@ -160,6 +160,22 @@ class GraphicsContextContractTests(unittest.TestCase):
         factory = (ROOT / "src/native/factory/mod.rs").read_text(encoding="utf-8")
         # 读取 registry 的 recipe 校验与构造实现。
         registry = (ROOT / "src/native/factory/registry.rs").read_text(encoding="utf-8")
+        # 截取 registry 生产实现，排除计数测试 context。
+        registry_contract = registry[: registry.index("#[cfg(test)]")]
+        # 读取线程亲和 wrapper 的静态快照构造边界。
+        thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(
+            # 保持源码契约读取编码稳定。
+            encoding="utf-8"
+        )
+        # 截取 thread-bound 生产实现，排除测试 context 的 caps 方法。
+        thread_bound_contract = thread_bound[: thread_bound.index("#[cfg(test)]")]
+        # 读取顶层正交 recipe owner 的生产分派。
+        recipe_owner = (ROOT / "src/native/present/recipe_owner.rs").read_text(
+            # 保持源码契约读取编码稳定。
+            encoding="utf-8"
+        )
+        # 截取 recipe owner 生产实现，排除计数测试 context。
+        recipe_owner_contract = recipe_owner[: recipe_owner.index("#[cfg(test)]")]
         # 内部 factory 不得恢复只接收 GraphicsApi 的兼容入口。
         self.assertNotIn("fn create_gpu_context_with_backend", factory)
         # 平台组合根不得静默创建脱离 runtime 的空故障队列。
@@ -180,8 +196,18 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertIn("let entry = entry_for_recipe(recipe)", registry)
         # recipe factory 返回值必须是已验证 owner，而不是兼容 context trait object。
         self.assertIn(") -> Result<GraphicsRecipeOwner, Error>", registry)
-        # context 必须在离开 native factory 前完成正交 owner 构造。
-        self.assertIn("GraphicsRecipeOwner::try_new(context)", registry)
+        # registry 是生产构造链唯一读取 adapter 静态 capability 的 owner。
+        self.assertEqual(registry_contract.count("ctx.caps()"), 1)
+        # registry 必须把同一快照传给 thread-bound wrapper。
+        self.assertIn("bind_to_current_thread(ctx, caps)", registry_contract)
+        # thread-bound wrapper 不得重新读取 inner 的静态 capability。
+        self.assertNotIn("inner.caps()", thread_bound_contract)
+        # wrapper 构造必须显式接收 registry 已验证快照。
+        self.assertIn("caps: GraphicsContextCaps", thread_bound_contract)
+        # context 必须在离开 native factory 前消费同一快照完成正交 owner 构造。
+        self.assertIn("GraphicsRecipeOwner::try_new(context, caps)", registry)
+        # 顶层 recipe owner 不得恢复兼容 context 的静态查询。
+        self.assertNotIn("context.caps()", recipe_owner_contract)
 
     # 校验 thin RHI 与 surface resize 只通过原子 GPU recipe 视图传播。
     def test_gpu_recipe_context_keeps_rhi_and_lifecycle_atomic(self) -> None:
@@ -272,8 +298,8 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertIn("caps: GraphicsContextCaps", owner_contract)
         # 专用 GPU owner 必须复用顶层已经捕获的静态快照。
         self.assertNotIn("context.caps()", owner_contract)
-        # 顶层正交 owner 在整个构造链中只读取一次兼容 context caps。
-        self.assertEqual(recipe_owner_contract.count("context.caps()"), 1)
+        # 顶层正交 owner 必须直接消费 registry 已验证的静态快照。
+        self.assertNotIn("context.caps()", recipe_owner_contract)
         # GPU owner 必须在 backend 构造前一次证明完整 recipe owner 存在。
         self.assertIn("if context.gpu_recipe_context().is_none()", owner_contract)
         # 构造门禁不得分别探测 thin RHI 与 lifecycle。
@@ -386,8 +412,8 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertIn("caps: GraphicsContextCaps", owner_contract)
         # 专用 PixelUpload owner 必须复用顶层已经捕获的静态快照。
         self.assertNotIn("context.caps()", owner_contract)
-        # 顶层正交 owner 在整个构造链中只读取一次兼容 context caps。
-        self.assertEqual(recipe_owner_contract.count("context.caps()"), 1)
+        # 顶层正交 owner 必须直接消费 registry 已验证的静态快照。
+        self.assertNotIn("context.caps()", recipe_owner_contract)
         # owner 必须独立承接 PixelUpload resize。
         self.assertIn("fn resize_surface(&mut self, width: i32, height: i32) -> Result<()>", owner)
         # owner 必须独立承接最终像素提交。

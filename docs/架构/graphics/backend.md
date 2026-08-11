@@ -14,7 +14,7 @@
 
 > **renderer recipe 输入**：native factory 在 context 离开平台层前把它收敛为 `GraphicsRecipeOwner::{Gpu, PixelUpload}`。`assemble_renderer` 与 `Renderer::from_recipe_owner` 只接收已验证 owner，`draw/renderer` 不再依赖 `IGraphicsContext`；非法 raster × present 组合在 native 边界 checked shutdown 并保留 typed 原因链。
 
-> **recipe 静态事实**：`GraphicsRecipeOwner` 在 native factory 出口只读取一次 `GraphicsContextCaps`，并把同一快照交给 `GpuRecipeOwner` 或 `PixelUploadRecipeOwner` 的专用门禁；两个分支不再重复查询兼容 context。运行期 capability 投影与 owner-loss 诊断都使用该不可漂移快照。drawable extent、DPR、transform 与 generation 仍只从 live `PresentSurface` 原子读取。
+> **recipe 静态事实**：registry 在创建 adapter 后只读取一次 `GraphicsContextCaps`，用它校验精确 registry row，并把同一已验证快照依次交给 thread-bound wrapper、`GraphicsRecipeOwner` 以及 `GpuRecipeOwner` 或 `PixelUploadRecipeOwner` 的专用门禁；后续构造层不再重复查询兼容 context。运行期 capability 投影与 owner-loss 诊断都使用该不可漂移快照。drawable extent、DPR、transform 与 generation 仍只从 live `PresentSurface` 原子读取。
 
 > **GPU recipe 原子门禁**：`GpuRecipeOwner` 在进入 draw backend 前一次验证 `GpuRecipeContext`，该视图不可拆分地持有组合 thin RHI 与 surface resize。缺少完整视图的 context 会先 checked shutdown，再返回 typed `InvalidState`；运行期视图丢失仍作为可恢复的状态破坏传播。
 
