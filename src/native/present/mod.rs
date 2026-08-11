@@ -390,6 +390,35 @@ mod traits;
 
 // 图形 context 与 recipe 专用呈现 SPI 只供 crate 内部 backend 与 bootstrap 使用。
 pub(crate) use self::traits::{GpuRecipeContext, IGraphicsContext, PixelUploadSurface};
+
+// 保存 adapter 创建层尚未通过 registry row 校验的 context 与静态 capability。
+pub(crate) struct GraphicsContextCandidate {
+    // 持有仍由 native factory 路由消费的原生 context。
+    context: Box<dyn IGraphicsContext>,
+    // 持有 adapter 创建层一次组装的静态 capability 快照。
+    caps: GraphicsContextCaps,
+}
+
+// 提供 candidate 的唯一构造与所有权转移边界。
+impl GraphicsContextCandidate {
+    // 从同一 adapter 创建事务组装 context 与 capability。
+    pub(crate) fn new(
+        // 接收新创建且尚未通过 registry row 校验的 context。
+        context: Box<dyn IGraphicsContext>,
+        // 接收与该 context 同源的静态 capability 快照。
+        caps: GraphicsContextCaps,
+    ) -> Self {
+        // 保存不可拆分的候选记录。
+        Self { context, caps }
+    }
+
+    // 把 candidate 所有权一次性交给 registry 校验层。
+    pub(crate) fn into_parts(self) -> (Box<dyn IGraphicsContext>, GraphicsContextCaps) {
+        // 返回同一创建事务产生的 context 与 capability。
+        (self.context, self.caps)
+    }
+}
+
 // 共享 RHI resize 只向实际 GPU-native backend 与内部测试重导出。
 #[cfg(any(test, all(windows, feature = "d3d11"), feature = "opengles"))]
 pub(crate) use self::traits::resize_native_rhi_surface;

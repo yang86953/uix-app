@@ -3,7 +3,7 @@
 use crate::core::{Errc, Error};
 use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
-use crate::native::present::{GraphicsApi, IGraphicsContext, PresentMode, RasterMode};
+use crate::native::present::{GraphicsApi, GraphicsContextCandidate, PresentMode, RasterMode};
 use std::ffi::c_void;
 
 // 方案 A：wgpu 已移除，原生 Metal/Vulkan 后端仍为 test-only，
@@ -14,7 +14,7 @@ fn create_metal(
     _: i32,
     _: i32,
     _: PendingFailureQueue,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
+) -> Result<GraphicsContextCandidate, Error> {
     Err(Error::new(
         Errc::NotImplemented,
         "graphics backend `metal` has no production implementation on macOS",
@@ -26,7 +26,7 @@ fn create_vulkan(
     _: i32,
     _: i32,
     _: PendingFailureQueue,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
+) -> Result<GraphicsContextCandidate, Error> {
     Err(Error::new(
         Errc::NotImplemented,
         "graphics backend `vulkan` has no production implementation on macOS",

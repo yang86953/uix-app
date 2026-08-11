@@ -9,8 +9,8 @@ use crate::native::factory::thread_bound::bind_to_current_thread;
 use crate::native::present::GraphicsRecipeOwner;
 // 引入 registry 的 recipe 事实、兼容 context 与原生 surface 句柄。
 use crate::native::present::{
-    GraphicsApi, GraphicsContextCaps, GraphicsSelection, IGraphicsContext, NativeSurfaceHandle,
-    PresentMode, RasterMode,
+    GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps, GraphicsSelection,
+    IGraphicsContext, NativeSurfaceHandle, PresentMode, RasterMode,
 };
 
 /// One probeable graphics configuration.
@@ -56,12 +56,12 @@ pub enum BackendStatus {
 }
 
 pub(crate) type GraphicsContextFactory =
-    fn(*mut c_void, i32, i32, PendingFailureQueue) -> Result<Box<dyn IGraphicsContext>, Error>;
+    fn(*mut c_void, i32, i32, PendingFailureQueue) -> Result<GraphicsContextCandidate, Error>;
 
 /// One graphics API factory row — API identity plus declared raster × present axes.
 ///
-/// Native factory validation reads live [`IGraphicsContext::caps`]; renderer assembly
-/// receives the immutable snapshot carried by the validated recipe owner. These fields
+/// Adapter creation returns a [`GraphicsContextCandidate`]; registry validation consumes
+/// its immutable snapshot before renderer assembly receives the validated recipe owner. These fields
 /// document the combination this entry is expected to provide
 /// ([架构 · 图形](docs/架构.md#图形-api与帧提交硬约束)).
 pub struct GraphicsBackendEntry {
@@ -149,8 +149,10 @@ fn try_create_context(
             format!("GraphicsBackend {} is disabled in this build", entry.id),
         ));
     }
-    let mut ctx = (entry.create)(native_surface, width, height, pending_failures)?;
-    let caps = ctx.caps();
+    // 让 adapter 创建层先交付同源 context 与静态 capability 候选记录。
+    let candidate = (entry.create)(native_surface, width, height, pending_failures)?;
+    // 一次解包 candidate，registry 不再通过兼容 trait object 重新查询 capability。
+    let (mut ctx, caps) = candidate.into_parts();
     let actual = GraphicsRecipe::new(caps.backend, caps.raster, caps.present);
     let expected = entry.recipe();
     if actual != expected {
@@ -353,7 +355,7 @@ mod selection_tests {
     impl IGraphicsContext for CpuPixelUploadContext {
         // 声明合法 CPU × PixelUpload recipe。
         fn caps(&self) -> GraphicsContextCaps {
-            // 记录 registry、wrapper 与 recipe owner 整条构造链的查询总数。
+            // 记录 adapter factory、registry 与 owner 整条创建链的查询总数。
             CPU_PIXEL_UPLOAD_CAPS_READS.fetch_add(1, Ordering::SeqCst);
             // 使用 Vulkan 身份代表跨平台 PixelUpload adapter。
             GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan)
@@ -423,9 +425,14 @@ mod selection_tests {
         _height: i32,
         // 测试不产生异步故障。
         _pending: PendingFailureQueue,
-    ) -> Result<Box<dyn IGraphicsContext>, Error> {
-        // 返回只实现 CPU 专用契约的 context。
-        Ok(Box::new(CpuPixelUploadContext))
+        // 返回测试 adapter 已组装的 candidate。
+    ) -> Result<GraphicsContextCandidate, Error> {
+        // 创建只实现 CPU 专用契约的具体 context。
+        let context = CpuPixelUploadContext;
+        // 在具体 adapter 仍可静态分派时一次读取 capability。
+        let caps = context.caps();
+        // 把 context 与同源快照交给 registry 校验。
+        Ok(GraphicsContextCandidate::new(Box::new(context), caps))
     }
 
     // 测试 factory 永远不应被候选排序测试实际调用。
@@ -434,7 +441,8 @@ mod selection_tests {
         _width: i32,
         _height: i32,
         _pending: PendingFailureQueue,
-    ) -> Result<Box<dyn IGraphicsContext>, Error> {
+        // 保持候选排序测试与生产 factory 的返回形状一致。
+    ) -> Result<GraphicsContextCandidate, Error> {
         // 若误入构造路径则返回稳定 typed 错误。
         Err(Error::new(Errc::InvalidState, "selection test factory"))
     }
@@ -593,7 +601,7 @@ mod selection_tests {
         };
         // 最终值必须进入 PixelUpload 分支，不能伪装成 GPU owner。
         assert!(matches!(owner, GraphicsRecipeOwner::PixelUpload(_)));
-        // registry、thread-bound wrapper 与两个 owner 门禁合计只能查询一次 caps。
+        // adapter factory、registry、thread-bound wrapper 与 owner 合计只能查询一次 caps。
         assert_eq!(CPU_PIXEL_UPLOAD_CAPS_READS.load(Ordering::SeqCst), 1);
     }
 }

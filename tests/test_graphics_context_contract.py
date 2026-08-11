@@ -160,6 +160,8 @@ class GraphicsContextContractTests(unittest.TestCase):
         factory = (ROOT / "src/native/factory/mod.rs").read_text(encoding="utf-8")
         # 读取 registry 的 recipe 校验与构造实现。
         registry = (ROOT / "src/native/factory/registry.rs").read_text(encoding="utf-8")
+        # 读取 presentation 侧的 adapter candidate 交接契约。
+        present = (ROOT / "src/native/present/mod.rs").read_text(encoding="utf-8")
         # 截取 registry 生产实现，排除计数测试 context。
         registry_contract = registry[: registry.index("#[cfg(test)]")]
         # 读取线程亲和 wrapper 的静态快照构造边界。
@@ -196,8 +198,16 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertIn("let entry = entry_for_recipe(recipe)", registry)
         # recipe factory 返回值必须是已验证 owner，而不是兼容 context trait object。
         self.assertIn(") -> Result<GraphicsRecipeOwner, Error>", registry)
-        # registry 是生产构造链唯一读取 adapter 静态 capability 的 owner。
-        self.assertEqual(registry_contract.count("ctx.caps()"), 1)
+        # adapter 创建层必须用显式 candidate 同时交付 context 与 capability。
+        self.assertIn("struct GraphicsContextCandidate", present)
+        # candidate 只允许在 registry 边界一次转移两个同源值。
+        self.assertIn("fn into_parts(self)", present)
+        # registry factory 指针必须直接返回 candidate，而不是裸 context。
+        self.assertIn("Result<GraphicsContextCandidate, Error>", registry_contract)
+        # registry 不得通过兼容 trait object 重新查询 adapter 静态 capability。
+        self.assertNotIn("ctx.caps()", registry_contract)
+        # registry 必须消费 adapter 创建层交付的 candidate。
+        self.assertIn("candidate.into_parts()", registry_contract)
         # registry 必须把同一快照传给 thread-bound wrapper。
         self.assertIn("bind_to_current_thread(ctx, caps)", registry_contract)
         # thread-bound wrapper 不得重新读取 inner 的静态 capability。
@@ -208,6 +218,17 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertIn("GraphicsRecipeOwner::try_new(context, caps)", registry)
         # 顶层 recipe owner 不得恢复兼容 context 的静态查询。
         self.assertNotIn("context.caps()", recipe_owner_contract)
+        # 两个当前生产 adapter 必须在具体创建层组装 candidate。
+        for adapter_factory in (
+            # Windows 参考 D3D11 adapter 创建层。
+            ROOT / "src/native/presentation/graphics/d3d11/platform/mod.rs",
+            # Windows/Linux 共用的 OpenGL ES 平台创建层。
+            ROOT / "src/native/presentation/graphics/opengl/platform/mod.rs",
+        ):
+            # 读取 adapter 平台创建实现。
+            adapter_source = adapter_factory.read_text(encoding="utf-8")
+            # context 与 capability 必须在仍可静态分派的边界成对交付。
+            self.assertIn("GraphicsContextCandidate::new", adapter_source)
 
     # 校验 thin RHI 与 surface resize 只通过原子 GPU recipe 视图传播。
     def test_gpu_recipe_context_keeps_rhi_and_lifecycle_atomic(self) -> None:

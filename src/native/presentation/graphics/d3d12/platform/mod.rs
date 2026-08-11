@@ -3,7 +3,7 @@
 use std::ffi::c_void;
 
 use crate::core::{Error, Result};
-use crate::native::present::IGraphicsContext;
+use crate::native::present::{GraphicsContextCandidate, IGraphicsContext};
 
 #[cfg(all(windows, feature = "d3d12"))]
 pub(crate) mod adapter;
@@ -24,8 +24,15 @@ pub(crate) fn create(
     surface: *mut c_void,
     width: i32,
     height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
-    D3d12Context::new(surface, width, height).map(|context| Box::new(context) as _)
+    // 返回尚待未来 registry row 校验的 adapter 候选记录。
+) -> Result<GraphicsContextCandidate, Error> {
+    // 创建具体 D3D12 context 后在静态 adapter 边界组装 capability。
+    D3d12Context::new(surface, width, height).map(|context| {
+        // 从刚创建的具体 adapter 一次读取静态 capability。
+        let caps = context.caps();
+        // 把 context 与同源快照封装为 candidate。
+        GraphicsContextCandidate::new(Box::new(context), caps)
+    })
 }
 
 #[cfg(all(test, windows, feature = "d3d12"))]
@@ -67,7 +74,8 @@ pub(crate) fn create(
     _surface: *mut c_void,
     _width: i32,
     _height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
+    // 不支持的平台或 feature 保持相同 candidate 返回形状。
+) -> Result<GraphicsContextCandidate, Error> {
     use crate::core::Errc;
 
     let reason = if cfg!(windows) {

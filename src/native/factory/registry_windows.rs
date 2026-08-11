@@ -3,7 +3,7 @@
 use crate::core::{Errc, Error};
 use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
-use crate::native::present::{GraphicsApi, IGraphicsContext, PresentMode, RasterMode};
+use crate::native::present::{GraphicsApi, GraphicsContextCandidate, PresentMode, RasterMode};
 use std::ffi::c_void;
 
 // 生产 GPU 后端：原生 D3D11（wgpu 已移除）。
@@ -13,7 +13,7 @@ fn create_d3d11(
     width: i32,
     height: i32,
     _pending: PendingFailureQueue,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
+) -> Result<GraphicsContextCandidate, Error> {
     crate::native::presentation::graphics::d3d11::create(surface, width, height)
 }
 
@@ -23,7 +23,7 @@ fn create_d3d11(
     _: i32,
     _: i32,
     _: PendingFailureQueue,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
+) -> Result<GraphicsContextCandidate, Error> {
     Err(feature_disabled("d3d11"))
 }
 
@@ -33,7 +33,7 @@ fn create_vulkan(
     _: i32,
     _: i32,
     _: PendingFailureQueue,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
+) -> Result<GraphicsContextCandidate, Error> {
     // 方案 A：原生 Vulkan 后端仍为 test-only，未注册生产入口。
     Err(Error::new(
         Errc::NotImplemented,
@@ -47,7 +47,7 @@ fn create_vulkan(
     _: i32,
     _: i32,
     _: PendingFailureQueue,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
+) -> Result<GraphicsContextCandidate, Error> {
     Err(feature_disabled("vulkan"))
 }
 
@@ -57,7 +57,7 @@ fn create_opengles(
     width: i32,
     height: i32,
     _pending: PendingFailureQueue,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
+) -> Result<GraphicsContextCandidate, Error> {
     // OpenGL ES 已接入同一 FramePlan/RHI，进入生产 registry 的次级候选。
     crate::native::presentation::graphics::opengl::create(surface, width, height)
 }
@@ -68,7 +68,7 @@ fn create_opengles(
     _: i32,
     _: i32,
     _: PendingFailureQueue,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
+) -> Result<GraphicsContextCandidate, Error> {
     Err(feature_disabled("opengles"))
 }
 
