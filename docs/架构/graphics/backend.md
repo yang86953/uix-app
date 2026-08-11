@@ -18,7 +18,7 @@
 
 > **能力与提交**：生产 GPU backend 从同一次 `GraphicsCapabilities` 快照验证 GPU baseline 并派生 `NativeRasterCaps`；逐 UI capability 不在 adapter 平行声明。GPU 最终提交只由 `GraphicsSurface::present` 持有，CPU PixelUpload 最终提交只由 `PixelUploadSurface::present_pixels` 持有。
 
-> **坐标与行序契约**：通用逻辑层只使用左上原点逻辑坐标，不得感知平台行序；thin RHI 的坐标与行序契约由 [platform/presentation](../platform/presentation.md) 权威持有（左上原点输入、readback top-left 输出、行序差异 adapter 内消化），本模块作为消费方引用。graphics 侧路径要求：blur 的 NDC quad 采样在 WGL 上依赖两垂直 pass 翻转抵消，属脆弱结构，新增单 pass 效果前必须显式处理；CPU 软渲染/upload 的像素数据统一为 top-left 行序，纹理上传保持数据直通、UV 跟随顶点；机械拷贝（GPU 快照 copy、滚动 memmove）逐 texel 对位、与行序无关。所有路径均不得在通用层叠加翻转。当前 `flip_y` 已覆盖 OpenGL 绘制路径；WGL readback 行序尚未收敛，属于待办契约缺口。
+> **坐标与行序契约**：通用逻辑层只使用左上原点逻辑坐标，不得感知平台行序；thin RHI 的坐标与行序契约由 [platform/presentation](../platform/presentation.md) 权威持有（左上原点输入、readback top-left 输出、行序差异 adapter 内消化），本模块作为消费方引用。graphics 侧路径要求：blur 的 NDC quad 采样在 GL 上每个 pass 各翻转一次，靠两垂直 pass 抵消保持行序自洽（与平台无关，EGL 同样依赖），属脆弱结构，新增单 pass 效果前必须显式处理；CPU 软渲染/upload 的像素数据统一为 top-left 行序，纹理上传保持数据直通、UV 跟随顶点；机械拷贝（GPU 快照 copy、滚动 memmove）逐 texel 对位、与行序无关。所有路径均不得在通用层叠加翻转。当前 `flip_y` 已覆盖 OpenGL 绘制路径；WGL readback 尚未收敛（未做垂直翻转、区域 y 未换算，现状与契约不符，详见 [platform/presentation](../platform/presentation.md)），属于待办契约缺口。
 
 > **当前实现线索**：通用代码位于 `src/draw/backend/`，thin RHI 契约位于 `src/native/present/rhi.rs`，类型化 recipe 生命周期位于 `src/native/present/traits.rs`，candidate/owner 位于 `src/native/present/`，registry 与线程绑定在 `src/native/factory/`，生产 adapter 位于 `src/native/presentation/graphics/`。
 
