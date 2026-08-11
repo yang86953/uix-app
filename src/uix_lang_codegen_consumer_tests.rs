@@ -486,6 +486,30 @@ fn image_group_compiles_against_public_uix_api() {
     // 编译成功即证明启用 capability 时公开 ImageGroup 消费契约闭合。
 }
 
+// 验证 List 生成物在真实公开 API 消费者中通过类型检查。
+#[test]
+// 声明 List 独立消费测试。
+fn list_compiles_against_public_uix_api() {
+    // 提供调用方拥有且元素可转换为 String 的文本数组。
+    let list_items = ["视觉基线", "语义断言", "交互回归"];
+    // 提供调用方继续持有的动态页首文本。
+    let list_header = String::from("质量清单");
+    // 提供调用方继续持有的动态加载更多文字。
+    let load_more_text = String::from("加载更多");
+    // 验证集合、字符串槽位和公共属性只依赖公开 prelude。
+    let _list: ViewNode = crate::uix!(
+        // 使用完整 List 声明覆盖所有已登记专有属性。
+        r#"<List data={list_items} header={list_header} footer="共 3 项" loadMore={load_more_text} width="320px" automationId="quality-list" />"#
+    );
+    // 可复制文本数组证明生成代码按值取得集合而不借用调用方生命周期。
+    assert_eq!(list_items[0], "视觉基线");
+    // 生成代码只能临时借用调用方持有的页首文本。
+    assert_eq!(list_header, "质量清单");
+    // 生成代码只能临时借用调用方持有的加载更多文字。
+    assert_eq!(load_more_text, "加载更多");
+    // 编译成功即证明公开 List 消费契约闭合。
+}
+
 // TreeSelect 公开类型只在 tree-widgets capability 启用时参与消费测试。
 #[cfg(feature = "tree-widgets")]
 // 验证 tree-widgets 生成物在真实公开 API 消费者中通过类型检查。
