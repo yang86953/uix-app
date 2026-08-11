@@ -19,10 +19,13 @@ pub(crate) struct GpuRecipeOwner {
 
 // 为生产 GPU backend 提供不带可选能力分支的窄 owner 契约。
 impl GpuRecipeOwner {
-    // 校验 context 的静态 recipe 与原子 GPU recipe 视图，并在失败前检查式关闭。
-    pub(crate) fn try_new(mut context: Box<dyn IGraphicsContext>) -> Result<Self> {
-        // 一次读取静态 recipe 事实，避免校验期间拼装多个快照。
-        let caps = context.caps();
+    // 校验顶层 owner 已捕获的静态 recipe 与原子 GPU recipe 视图，并在失败前检查式关闭。
+    pub(super) fn try_new(
+        // 接收仍由本门面唯一拥有的迁移期 context。
+        mut context: Box<dyn IGraphicsContext>,
+        // 接收正交 owner 分派时已经捕获的静态 capability 快照。
+        caps: GraphicsContextCaps,
+    ) -> Result<Self> {
         // GPU owner 只接受 GPU-native × swapchain 组合。
         if caps.raster != RasterMode::GpuNative || caps.present != PresentMode::Swapchain {
             // 保存稳定诊断，避免关闭借用影响错误文本。
@@ -318,8 +321,10 @@ mod tests {
             // recipe 门禁会先拒绝，无需暴露 GPU recipe 视图。
             expose_gpu_recipe: false,
         };
+        // 在转移 context 所有权前复制顶层分派已经读取的静态快照。
+        let caps = context.caps;
         // 尝试构造 GPU owner 并取得稳定失败。
-        let result = GpuRecipeOwner::try_new(Box::new(context));
+        let result = GpuRecipeOwner::try_new(Box::new(context), caps);
         // recipe 不匹配必须保持参数错误分类。
         assert!(matches!(result, Err(error) if error.code() == Errc::InvalidArgument));
         // 构造拒绝前必须检查式关闭 native owner。
@@ -345,8 +350,10 @@ mod tests {
             // 让该用例停在原子 GPU recipe 门禁。
             expose_gpu_recipe: false,
         };
+        // 在转移 context 所有权前复制顶层分派已经读取的静态快照。
+        let caps = context.caps;
         // 尝试构造 GPU owner 并取得稳定失败。
-        let result = GpuRecipeOwner::try_new(Box::new(context));
+        let result = GpuRecipeOwner::try_new(Box::new(context), caps);
         // 必需原子 owner 缺失必须保持状态错误分类。
         assert!(matches!(result, Err(error) if error.code() == Errc::InvalidState));
         // 构造拒绝前必须检查式关闭 native owner。
@@ -372,8 +379,10 @@ mod tests {
             // 一次暴露不可拆分的 GPU recipe 视图。
             expose_gpu_recipe: true,
         };
+        // 在转移 context 所有权前复制顶层分派已经读取的静态快照。
+        let caps = context.caps;
         // 完整原子视图必须通过 GPU owner 构造门禁。
-        let mut owner = match GpuRecipeOwner::try_new(Box::new(context)) {
+        let mut owner = match GpuRecipeOwner::try_new(Box::new(context), caps) {
             // 保存成功构造的唯一 owner。
             Ok(owner) => owner,
             // 任何失败都说明原子视图门禁错误拒绝合法实现。

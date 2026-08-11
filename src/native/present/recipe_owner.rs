@@ -25,13 +25,13 @@ impl GraphicsRecipeOwner {
         match (caps.raster, caps.present) {
             // GPU recipe 交给专用 thin RHI owner 完成剩余门禁。
             (RasterMode::GpuNative, PresentMode::Swapchain) => {
-                // 把已验证 GPU owner 包装为稳定枚举分支。
-                GpuRecipeOwner::try_new(context).map(Self::Gpu)
+                // 把同一次读取的静态快照交给 GPU 门禁并包装为稳定枚举分支。
+                GpuRecipeOwner::try_new(context, caps).map(Self::Gpu)
             }
             // CPU PixelUpload recipe 交给专用 surface owner 完成剩余门禁。
             (RasterMode::Cpu, PresentMode::PixelUpload) => {
-                // 把已验证 PixelUpload owner 包装为稳定枚举分支。
-                PixelUploadRecipeOwner::try_new(context).map(Self::PixelUpload)
+                // 把同一次读取的静态快照交给 PixelUpload 门禁并包装为稳定枚举分支。
+                PixelUploadRecipeOwner::try_new(context, caps).map(Self::PixelUpload)
             }
             // 任何交叉组合都不能进入 renderer。
             (raster, present) => {
@@ -84,6 +84,12 @@ mod tests {
     use crate::native::present::GraphicsContextCaps;
     // 引入测试 context 契约。
     use crate::native::present::IGraphicsContext;
+    // 引入 GPU recipe 的原子视图契约。
+    use crate::native::present::GpuRecipeContext;
+    // 引入 PixelUpload 的专用 surface 契约。
+    use crate::native::present::PixelUploadSurface;
+    // 引入 PixelUpload 最终提交使用的 damage 值。
+    use crate::native::present::PresentDamage;
     // 引入非法组合使用的 present 轴。
     use crate::native::present::PresentMode;
     // 引入保守遮挡能力事实。
@@ -97,6 +103,119 @@ mod tests {
         shutdown: Rc<Cell<bool>>,
         // 控制 shutdown 是否返回独立 cleanup failure。
         fail_shutdown: bool,
+    }
+
+    // 提供可记录静态 capability 读取次数的合法正交 recipe context。
+    struct CountingRecipeContext {
+        // 保存当前测试分支声明的静态 recipe 事实。
+        caps: GraphicsContextCaps,
+        // 允许 owner 消费 Box 后继续观察 capability 读取次数。
+        caps_reads: Rc<Cell<u32>>,
+    }
+
+    // 为单次快照测试实现迁移期 context 契约。
+    impl IGraphicsContext for CountingRecipeContext {
+        // 记录并返回当前 context 的静态 recipe 快照。
+        fn caps(&self) -> GraphicsContextCaps {
+            // 每次查询都增加共享计数，防止专用 owner 隐式重读。
+            self.caps_reads.set(self.caps_reads.get() + 1);
+            // 返回无动态状态的 capability 值。
+            self.caps
+        }
+
+        // 仅为 GPU-native × Swapchain 分支暴露原子 GPU recipe 视图。
+        fn gpu_recipe_context(&mut self) -> Option<&mut dyn GpuRecipeContext> {
+            // 先读取复制型 recipe 轴，避免返回 self 后继续借用字段。
+            let is_gpu = matches!(
+                // 使用同一静态快照判定合法 GPU 分支。
+                (self.caps.raster, self.caps.present),
+                // 只接受文档定义的 GPU-native × Swapchain 组合。
+                (RasterMode::GpuNative, PresentMode::Swapchain)
+            );
+            // 合法 GPU 分支把同一实例作为不可拆分 recipe owner。
+            is_gpu.then_some(self)
+        }
+
+        // 仅为 CPU × PixelUpload 分支暴露专用 surface 视图。
+        fn pixel_upload_surface(&mut self) -> Option<&mut dyn PixelUploadSurface> {
+            // 先读取复制型 recipe 轴，避免返回 self 后继续借用字段。
+            let is_pixel_upload = matches!(
+                // 使用同一静态快照判定合法 PixelUpload 分支。
+                (self.caps.raster, self.caps.present),
+                // 只接受文档定义的 CPU × PixelUpload 组合。
+                (RasterMode::Cpu, PresentMode::PixelUpload)
+            );
+            // 合法 PixelUpload 分支把同一实例作为唯一 surface owner。
+            is_pixel_upload.then_some(self)
+        }
+
+        // 返回不参与构造分派的稳定最小 surface 快照。
+        fn present_surface(&self) -> PresentSurface {
+            // 使用 identity drawable 避免引入真实平台资源。
+            PresentSurface::identity(1, 1, 1.0, 0)
+        }
+
+        // 测试 context 的 checked shutdown 固定成功。
+        fn try_shutdown(&mut self) -> crate::core::Result<()> {
+            // 本测试不持有需要释放的 native 资源。
+            Ok(())
+        }
+    }
+
+    // 为 GPU 分支提供只用于构造门禁的原子 recipe 视图。
+    impl GpuRecipeContext for CountingRecipeContext {
+        // 返回稳定错误，证明构造门禁不会提前借用真实 thin RHI。
+        fn rhi_context(
+            // 借用计数测试 context。
+            &mut self,
+        ) -> crate::core::Result<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
+            // 本测试只验证静态快照次数，不伪造 RHI 资源。
+            Err(Error::new(
+                // 使用稳定状态分类表达受限测试视图。
+                Errc::InvalidState,
+                // 保留可诊断的测试错误文本。
+                "counting recipe context has no thin RHI",
+            ))
+        }
+
+        // 接受不参与本测试的最小 surface resize。
+        fn resize_surface(&mut self, _width: i32, _height: i32) -> crate::core::Result<()> {
+            // 构造门禁不会调用 resize，固定成功即可满足窄契约。
+            Ok(())
+        }
+    }
+
+    // 为 PixelUpload 分支提供只用于构造门禁的专用 surface 视图。
+    impl PixelUploadSurface for CountingRecipeContext {
+        // 接受不参与本测试的最小 PixelUpload resize。
+        fn resize_pixel_upload_surface(
+            // 借用计数测试 context。
+            &mut self,
+            // 忽略构造门禁不会传入的逻辑宽度。
+            _width: i32,
+            // 忽略构造门禁不会传入的逻辑高度。
+            _height: i32,
+        ) -> crate::core::Result<()> {
+            // 构造门禁不会调用 resize，固定成功即可满足窄契约。
+            Ok(())
+        }
+
+        // 接受不参与本测试的最小像素提交。
+        fn present_pixels(
+            // 借用计数测试 context。
+            &mut self,
+            // 忽略构造门禁不会传入的像素数据。
+            _pixels: &[u32],
+            // 忽略构造门禁不会传入的物理宽度。
+            _width: i32,
+            // 忽略构造门禁不会传入的物理高度。
+            _height: i32,
+            // 忽略构造门禁不会传入的最终 damage。
+            _damage: PresentDamage,
+        ) -> crate::core::Result<()> {
+            // 构造门禁不会调用 present，固定成功即可满足窄契约。
+            Ok(())
+        }
     }
 
     // 为非法 recipe 测试实现最小迁移期 context。
@@ -186,5 +305,50 @@ mod tests {
         assert_eq!(error.depth(), 1);
         // cleanup 失败前仍已经执行 shutdown 入口。
         assert!(shutdown.get());
+    }
+
+    // 验证 GPU 正交 owner 构造只读取一次静态 capability。
+    #[test]
+    fn gpu_recipe_owner_reads_static_caps_once() {
+        // 创建在 Box 被消费后仍可观察的 capability 读取计数。
+        let caps_reads = Rc::new(Cell::new(0));
+        // 构造合法 GPU-native × Swapchain 测试 context。
+        let context = CountingRecipeContext {
+            // 使用 Windows 参考 backend 与完整提交 coherency。
+            caps: GraphicsContextCaps::gpu_native_swapchain(
+                // 使用稳定 D3D11 backend 身份。
+                GraphicsApi::D3d11,
+                // 本测试不验证局部 present。
+                PresentCoherency::FullOnly,
+            ),
+            // 共享 capability 读取计数。
+            caps_reads: Rc::clone(&caps_reads),
+        };
+        // 通过顶层正交 owner 构造 GPU 分支。
+        let owner = GraphicsRecipeOwner::try_new(Box::new(context));
+        // 合法 GPU recipe 必须进入唯一 GPU owner 分支。
+        assert!(matches!(owner, Ok(GraphicsRecipeOwner::Gpu(_))));
+        // 顶层分派与专用门禁合计只能读取一次静态快照。
+        assert_eq!(caps_reads.get(), 1);
+    }
+
+    // 验证 PixelUpload 正交 owner 构造只读取一次静态 capability。
+    #[test]
+    fn pixel_upload_recipe_owner_reads_static_caps_once() {
+        // 创建在 Box 被消费后仍可观察的 capability 读取计数。
+        let caps_reads = Rc::new(Cell::new(0));
+        // 构造合法 CPU × PixelUpload 测试 context。
+        let context = CountingRecipeContext {
+            // 使用 Vulkan 身份代表当前跨平台 PixelUpload recipe。
+            caps: GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan),
+            // 共享 capability 读取计数。
+            caps_reads: Rc::clone(&caps_reads),
+        };
+        // 通过顶层正交 owner 构造 PixelUpload 分支。
+        let owner = GraphicsRecipeOwner::try_new(Box::new(context));
+        // 合法 PixelUpload recipe 必须进入唯一上传 owner 分支。
+        assert!(matches!(owner, Ok(GraphicsRecipeOwner::PixelUpload(_))));
+        // 顶层分派与专用门禁合计只能读取一次静态快照。
+        assert_eq!(caps_reads.get(), 1);
     }
 }
