@@ -126,13 +126,16 @@ impl RenderSession {
         let resolved = resolve_kind(kind);
         // GPU 会在通用工厂中被拒绝，正式路径必须直接注入已验证 backend。
         let replacement = create_backend(resolved)?;
-        let _ = self.backend.try_shutdown();
+        // 旧 backend 的检查式关闭成功是唯一 owner 切换的提交点。
+        self.backend.try_shutdown()?;
+        // 提交后立刻安装候选，后续 resize 失败也保留新 owner 供恢复或重试。
         self.backend = replacement;
+        // capability/资源 owner 已改变，任何后续结果都必须保留全帧重绘要求。
+        self.force_full_frame = true;
         if self.width > 0 && self.height > 0 {
             self.backend.resize(self.width, self.height)?;
             self.sync_extent_from_surface();
         }
-        self.force_full_frame = true;
         Ok(())
     }
 
@@ -268,13 +271,144 @@ fn resolve_kind(kind: BackendKind) -> BackendKind {
     }
 }
 
-// 验证帧准备错误会在触碰 surface 前保持 typed failure 分类。
+// 验证会话生命周期和帧准备错误保持 typed failure 与唯一 owner 契约。
 #[cfg(test)]
-mod prepare_frame_tests {
+mod session_contract_tests {
     // 复用当前模块的会话与后端类型。
     use super::*;
     // 引入 downcast 契约需要的 Any。
     use std::any::Any;
+
+    // 构造只在第一次关闭时失败的 backend，验证切换不会覆盖旧 owner。
+    struct FailingShutdownBackend {
+        // 复用真实 CPU surface，避免伪造绘制和尺寸协议。
+        cpu: CpuBackend,
+        // 记录检查式关闭边界的调用次数。
+        shutdown_attempts: usize,
+    }
+
+    // 提供可确定重试的关闭失败 owner。
+    impl FailingShutdownBackend {
+        // 创建尚未初始化且第一次关闭将失败的 backend。
+        fn new() -> Self {
+            // 返回持有唯一 CPU 资源 owner 的测试实例。
+            Self {
+                // 真实 CPU backend 承载其余生命周期。
+                cpu: CpuBackend::new(),
+                // 第一次 set_backend 前尚未调用关闭。
+                shutdown_attempts: 0,
+            }
+        }
+    }
+
+    // 为关闭失败测试实现最小 RenderBackend 契约。
+    impl RenderBackend for FailingShutdownBackend {
+        // 保持 CPU backend 身份，测试只改变 teardown 结果。
+        fn kind(&self) -> BackendKind {
+            // 返回与承载 surface 一致的后端类型。
+            BackendKind::Cpu
+        }
+
+        // 复用真实 CPU capability 快照。
+        fn capabilities(&self) -> BackendCapabilities {
+            // 不为测试制造额外图形能力。
+            self.cpu.capabilities()
+        }
+
+        // 把尺寸更新委托给真实 CPU backend。
+        fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+            // 保持会话初始化和失败后继续使用的真实 surface。
+            self.cpu.resize(width, height)
+        }
+
+        // 第一次关闭返回 typed failure，随后允许 Drop 重试完成。
+        fn try_shutdown(&mut self) -> Result<(), Error> {
+            // 记录每次检查式 teardown 尝试。
+            self.shutdown_attempts = self.shutdown_attempts.saturating_add(1);
+            // 只让 set_backend 触发的第一次尝试失败。
+            if self.shutdown_attempts == 1 {
+                // 返回恢复层可分类的设备丢失。
+                return Err(Error::new(
+                    // 使用真实 graphics recovery 错误码。
+                    crate::core::Errc::GraphicsDeviceLost,
+                    // 保留稳定的切换失败诊断。
+                    "test backend shutdown failed before owner switch",
+                ));
+            }
+            // 后续重试检查式释放真实 CPU 资源。
+            self.cpu.try_shutdown()
+        }
+
+        // 返回真实 CPU 绘制表面。
+        fn surface(&mut self) -> &mut dyn crate::draw::backend::DrawSurface {
+            // 测试 backend 继续拥有同一 surface。
+            self.cpu.surface()
+        }
+
+        // 支持测试读取保留下来的具体 owner。
+        fn as_any(&self) -> &dyn Any {
+            // 返回测试 backend 自身。
+            self
+        }
+
+        // 支持会话内部可变 downcast 契约。
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            // 返回测试 backend 自身。
+            self
+        }
+    }
+
+    // 锁定 backend 切换在旧 owner 关闭失败前不会提交。
+    #[test]
+    // 验证 typed teardown failure、owner 和 extent 同时保留。
+    fn backend_switch_retains_current_owner_when_shutdown_fails() {
+        // 把可重试的关闭失败 owner 注入真实 RenderSession。
+        let mut session = RenderSession::with_backend(Box::new(FailingShutdownBackend::new()));
+        // 建立可观察的会话 extent 和真实 CPU surface。
+        session
+            // 初始化旧 backend 的资源。
+            .initialize(8, 6)
+            // 测试前置必须成功。
+            .expect("test backend should initialize");
+
+        // 请求切换到通用工厂可创建的新 CPU backend。
+        let error = session
+            // 进入唯一 owner 切换事务。
+            .set_backend(BackendKind::Cpu)
+            // 第一次旧 owner teardown 必须阻止提交。
+            .expect_err("shutdown failure must reject backend switch");
+        // 原始设备丢失分类必须直接返回给恢复层。
+        assert_eq!(error.code(), crate::core::Errc::GraphicsDeviceLost);
+
+        // 失败后仍应能取得原来的具体 backend owner。
+        let retained = session
+            // 通过只读 RenderBackend 契约观察当前实例。
+            .backend()
+            // 取得测试 owner 的类型化只读视图。
+            .as_any()
+            // 若候选覆盖了旧 owner，downcast 会失败。
+            .downcast_ref::<FailingShutdownBackend>()
+            // 明确报告 owner 被错误替换。
+            .expect("failed switch must retain the current backend owner");
+        // set_backend 只应执行一次旧 owner 关闭尝试。
+        assert_eq!(retained.shutdown_attempts, 1);
+        // 失败事务不得改写会话逻辑宽度。
+        assert_eq!(session.width(), 8);
+        // 失败事务不得改写会话逻辑高度。
+        assert_eq!(session.height(), 6);
+        // 读取保留 owner 的真实 surface 尺寸，排除只保留陈旧会话字段的假阳性。
+        let retained_size = session
+            // 重新借用当前 backend 的唯一可变 owner。
+            .backend_mut()
+            // 取得仍由旧 backend 持有的真实 CPU surface。
+            .surface()
+            // 复制稳定尺寸值，立即结束 surface 借用。
+            .size();
+        // 旧 surface 的实际宽度必须仍然可用。
+        assert_eq!(retained_size.w, 8.0);
+        // 旧 surface 的实际高度必须仍然可用。
+        assert_eq!(retained_size.h, 6.0);
+    }
 
     // 锁定 GPU 只能通过已验证原生 recipe factory 进入会话。
     #[test]
