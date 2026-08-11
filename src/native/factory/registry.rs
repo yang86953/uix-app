@@ -9,7 +9,8 @@ use crate::native::factory::thread_bound::bind_to_current_thread;
 use crate::native::present::GraphicsRecipeOwner;
 // 引入 registry 的 recipe 事实、兼容 context 与原生 surface 句柄。
 use crate::native::present::{
-    GraphicsApi, GraphicsSelection, IGraphicsContext, NativeSurfaceHandle, PresentMode, RasterMode,
+    GraphicsApi, GraphicsContextCaps, GraphicsSelection, IGraphicsContext, NativeSurfaceHandle,
+    PresentMode, RasterMode,
 };
 
 /// One probeable graphics configuration.
@@ -115,14 +116,24 @@ pub fn entry_for_recipe(recipe: GraphicsRecipe) -> Option<&'static GraphicsBacke
         .find(|entry| entry.recipe() == recipe)
 }
 
+// 保存 registry 已验证且已经绑定 owner thread 的 context 与唯一静态快照。
+struct ValidatedGraphicsContext {
+    // 持有仍未离开 native factory 的迁移期 context。
+    context: Box<dyn IGraphicsContext>,
+    // 持有 adapter 与 registry row 一致性校验使用的同一 capability 快照。
+    caps: GraphicsContextCaps,
+}
+
 /// Creates a context for one registry row (no probe loop).
-pub(crate) fn try_create_context(
+// 创建一个已经完成 recipe 校验与线程绑定的内部 context 记录。
+fn try_create_context(
     entry: &GraphicsBackendEntry,
     native_surface: *mut c_void,
     width: i32,
     height: i32,
     pending_failures: PendingFailureQueue,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
+    // 返回 context 与 registry 唯一读取的静态 capability 快照。
+) -> Result<ValidatedGraphicsContext, Error> {
     if entry.status == BackendStatus::Planned {
         return Err(Error::new(
             Errc::PlatformError,
@@ -208,8 +219,10 @@ pub(crate) fn try_create_context(
         // 记录首帧前已经通过真实资源与固定 pipeline 编译的 adapter。
         tracing::info!("Graphics recipe {expected}: atomic GPU recipe probe passed");
     }
-    // 所有 recipe 都在线程绑定后交给各自的专用 owner 完成最终门禁。
-    Ok(bind_to_current_thread(ctx))
+    // 使用同一已验证快照绑定线程，禁止 wrapper 重读 adapter 静态事实。
+    let context = bind_to_current_thread(ctx, caps);
+    // 把 context 与快照作为不可拆分的 factory 内部验证记录返回。
+    Ok(ValidatedGraphicsContext { context, caps })
 }
 
 /// Ordered probe candidates for a backend request, with one item per recipe
@@ -307,26 +320,31 @@ pub(crate) fn try_create_gpu_recipe_with_queue(
     })?;
     // Only the native factory bridge unwraps the opaque surface handle before
     // it reaches an API/platform constructor.
-    // 先通过精确 registry 行创建并 probe 迁移期 context。
-    let context = try_create_context(
+    // 先通过精确 registry 行创建并 probe 迁移期 context 与静态快照。
+    let ValidatedGraphicsContext { context, caps } = try_create_context(
         entry,
         native_surface.as_raw(),
         width,
         height,
         pending_failures,
     )?;
-    // context 不得跨越 native factory，离开前收敛为已验证 recipe owner。
-    GraphicsRecipeOwner::try_new(context)
+    // context 不得跨越 native factory，离开前消费同一快照并收敛为已验证 owner。
+    GraphicsRecipeOwner::try_new(context, caps)
 }
 
 #[cfg(test)]
 mod selection_tests {
     // 复用 registry 的私有候选筛选与排序实现。
     use super::*;
+    // 引入跨完整构造链记录 capability 查询次数的原子计数器。
+    use std::sync::atomic::{AtomicUsize, Ordering};
     // 引入 PixelUpload 测试载荷与稳定 surface 快照。
     use crate::core::{PresentDamage, PresentSurface};
     // 引入 CPU recipe 能力与专用 PixelUpload surface 契约。
     use crate::native::present::{GraphicsContextCaps, PixelUploadSurface};
+
+    // 记录 CPU PixelUpload 测试 context 的静态 capability 查询次数。
+    static CPU_PIXEL_UPLOAD_CAPS_READS: AtomicUsize = AtomicUsize::new(0);
 
     // 构造不暴露 GPU recipe 视图的合法 CPU PixelUpload context。
     struct CpuPixelUploadContext;
@@ -335,6 +353,8 @@ mod selection_tests {
     impl IGraphicsContext for CpuPixelUploadContext {
         // 声明合法 CPU × PixelUpload recipe。
         fn caps(&self) -> GraphicsContextCaps {
+            // 记录 registry、wrapper 与 recipe owner 整条构造链的查询总数。
+            CPU_PIXEL_UPLOAD_CAPS_READS.fetch_add(1, Ordering::SeqCst);
             // 使用 Vulkan 身份代表跨平台 PixelUpload adapter。
             GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan)
         }
@@ -529,6 +549,8 @@ mod selection_tests {
     #[test]
     // 验证 CPU PixelUpload registry 行跳过 GPU RHI probe 并进入专用 owner。
     fn cpu_pixel_upload_registry_row_reaches_recipe_owner_without_gpu_probe() {
+        // 清零当前用例的静态 capability 查询计数。
+        CPU_PIXEL_UPLOAD_CAPS_READS.store(0, Ordering::SeqCst);
         // 构造与测试 context 静态能力一致的合法 registry 行。
         let entry = GraphicsBackendEntry {
             // 使用 Vulkan 身份代表当前跨平台 CPU PixelUpload adapter。
@@ -544,8 +566,8 @@ mod selection_tests {
             // 绑定不暴露 GPU 私有契约的测试 factory。
             create: cpu_pixel_upload_factory,
         };
-        // 先通过 registry 的能力与配方门禁创建 thread-bound context。
-        let context = match try_create_context(
+        // 先通过 registry 的能力与配方门禁创建已验证 context 记录。
+        let ValidatedGraphicsContext { context, caps } = match try_create_context(
             // 使用刚构造的精确 recipe 行。
             &entry,
             // 测试 factory 不解引用原生 surface。
@@ -558,12 +580,12 @@ mod selection_tests {
             PendingFailureQueue::new(),
         ) {
             // 合法 CPU recipe 必须通过 registry。
-            Ok(context) => context,
+            Ok(validated) => validated,
             // 任何 GPU 契约依赖都会使该分支暴露具体错误。
             Err(error) => panic!("CPU PixelUpload registry row must be accepted: {error:?}"),
         };
         // 在 native factory 边界完成正交 owner 构造。
-        let owner = match GraphicsRecipeOwner::try_new(context) {
+        let owner = match GraphicsRecipeOwner::try_new(context, caps) {
             // 专用 surface 完整时必须构造成功。
             Ok(owner) => owner,
             // owner 拒绝说明 registry 没有保留合法 PixelUpload 契约。
@@ -571,5 +593,7 @@ mod selection_tests {
         };
         // 最终值必须进入 PixelUpload 分支，不能伪装成 GPU owner。
         assert!(matches!(owner, GraphicsRecipeOwner::PixelUpload(_)));
+        // registry、thread-bound wrapper 与两个 owner 门禁合计只能查询一次 caps。
+        assert_eq!(CPU_PIXEL_UPLOAD_CAPS_READS.load(Ordering::SeqCst), 1);
     }
 }
