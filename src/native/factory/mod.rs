@@ -23,16 +23,14 @@ pub use registry::{
     describe_backend_availability, gpu_recipe_candidates, graphics_runtime_platform, GraphicsRecipe,
 };
 
-// 为测试专用 WARP context 捕获一次静态快照并建立线程亲和 wrapper。
+// 为测试专用 WARP context 建立线程亲和 wrapper。
 #[cfg(all(test, any(feature = "d3d11", feature = "d3d12")))]
 fn bind_test_context_to_current_thread(
     // 接收测试 adapter 新创建的 context。
     context: Box<dyn crate::native::present::IGraphicsContext>,
 ) -> Box<dyn crate::native::present::IGraphicsContext> {
-    // 在测试 factory 边界一次读取静态 capability。
-    let caps = context.caps();
-    // 把同一快照传给 thread-bound wrapper。
-    thread_bound::bind_to_current_thread(context, caps)
+    // WARP 测试只验证原生资源与生命周期，不再反向探测静态 capability。
+    thread_bound::bind_to_current_thread(context)
 }
 
 // 测试目标保留 D3D11 WARP 工厂入口，供显式后端矩阵按需调用。
@@ -44,7 +42,7 @@ pub(crate) fn create_d3d11_warp_test_context(
     height: i32,
 ) -> crate::core::Result<Box<dyn crate::native::present::IGraphicsContext>> {
     crate::native::presentation::graphics::d3d11::create_warp_test_context(surface, width, height)
-        // 复用测试 factory 唯一捕获的静态快照建立线程门禁。
+        // 在测试 factory 边界建立线程门禁。
         .map(bind_test_context_to_current_thread)
 }
 
@@ -62,7 +60,7 @@ pub(crate) fn create_d3d12_warp_test_context(
     height: i32,
 ) -> crate::core::Result<Box<dyn crate::native::present::IGraphicsContext>> {
     crate::native::presentation::graphics::d3d12::create_warp_test_context(surface, width, height)
-        // 复用测试 factory 唯一捕获的静态快照建立线程门禁。
+        // 在测试 factory 边界建立线程门禁。
         .map(bind_test_context_to_current_thread)
 }
 

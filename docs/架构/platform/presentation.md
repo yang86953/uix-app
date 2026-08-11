@@ -4,7 +4,7 @@
 
 > **接口**：声明 platform 系统的目标 `presentation` 模块，权威持有原生 surface、图形 recipe、thin RHI provider、presenter 与提交能力。依赖：[windowing](windowing.md)、core。导出：供 graphics [backend](../graphics/backend.md) bootstrap/执行使用的平台图形边界。
 
-> **设计状态**：🔄 迁移中。`GraphicsDevice`、`GraphicsSurface`、事实型 `GraphicsCapabilities` 和 surface generation 已在 `src/native/present/rhi.rs` 建立；D3D11 与可选 `opengles` feature 下的 WGL/EGL OpenGL ES adapter 已接通资源/采样器/pipeline、pass、solid/textured（含 SrcOver/Additive）/gradient/coverage/MSDF/shape/仿射 shadow/单方向 blur draw 与 surface 生命周期，Picture texture 只由同一 RHI owner 管理，原生 adapter 的平行 offscreen texture/FBO 资源族已经移除，MSDF 已加入有界跨帧 RGBA8 texture cache；`FramePlan` 的局部 `ClearRect`、同纹理 `TextureMove`、主 surface native→soft sampled 合成、Picture native→soft 离屏合成和 surface generation 代际检查也已在两个 adapter 接通，并由生产 capability profile 显式启用 retained framebuffer。共享 CPU rasterizer 另已提供带 save/restore 的路径裁剪 mask，供 hybrid soft staging 保持 Canvas2D clip 语义。现有 `IGraphicsContext` 只保留静态 recipe 能力、原子 `GpuRecipeContext`、live surface 元数据与 checked shutdown；逐 UI `draw_*` ABI、二阶段 `initialize`、`make_current`、`swap_buffers`、统一 `present`、通用 `resize`、RHI surface resize、readback 与 `native_raster_caps` 已从公共 trait 移除。GPU backend 从同一次 thin RHI 能力快照校验基线并派生 renderer 投影，GPU resize 由同一 `GpuRecipeContext` 进入唯一 `GraphicsSurface::resize`，D3D11/WGL/EGL 不再分别暴露 RHI 与 lifecycle，thread-bound wrapper 仅在成功后刷新完整 `PresentSurface`；CPU PixelUpload resize/提交由专用 `PixelUploadSurface` 承接，未接线的 Wayland 平行 GPU presenter 与 `SwapchainPresentation` 视图已删除，生产 GPU 最终提交只由 thin RHI `GraphicsSurface::present` 持有，surface readback 改由事实 capability 约束的可选 thin RHI 操作承接；所有 context 构造成功即处于可用状态，每帧 owner-context 准备由 thin RHI 设备维护承担。完成状态只以对应自动测试为准。
+> **设计状态**：🔄 迁移中。`GraphicsDevice`、`GraphicsSurface`、事实型 `GraphicsCapabilities` 和 surface generation 已在 `src/native/present/rhi.rs` 建立；D3D11 与可选 `opengles` feature 下的 WGL/EGL OpenGL ES adapter 已接通资源/采样器/pipeline、pass、solid/textured（含 SrcOver/Additive）/gradient/coverage/MSDF/shape/仿射 shadow/单方向 blur draw 与 surface 生命周期，Picture texture 只由同一 RHI owner 管理，原生 adapter 的平行 offscreen texture/FBO 资源族已经移除，MSDF 已加入有界跨帧 RGBA8 texture cache；`FramePlan` 的局部 `ClearRect`、同纹理 `TextureMove`、主 surface native→soft sampled 合成、Picture native→soft 离屏合成和 surface generation 代际检查也已在两个 adapter 接通，并由生产 capability profile 显式启用 retained framebuffer。共享 CPU rasterizer 另已提供带 save/restore 的路径裁剪 mask，供 hybrid soft staging 保持 Canvas2D clip 语义。现有 `IGraphicsContext` 只保留原子 `GpuRecipeContext` / `PixelUploadSurface` 视图、live surface 元数据与 checked shutdown；静态 recipe 能力、逐 UI `draw_*` ABI、二阶段 `initialize`、`make_current`、`swap_buffers`、统一 `present`、通用 `resize`、RHI surface resize、readback 与 `native_raster_caps` 已从公共 trait 移除。GPU backend 从同一次 thin RHI 能力快照校验基线并派生 renderer 投影，GPU resize 由同一 `GpuRecipeContext` 进入唯一 `GraphicsSurface::resize`，D3D11/WGL/EGL 不再分别暴露 RHI 与 lifecycle，thread-bound wrapper 仅在成功后刷新完整 `PresentSurface`；CPU PixelUpload resize/提交由专用 `PixelUploadSurface` 承接，未接线的 Wayland 平行 GPU presenter 与 `SwapchainPresentation` 视图已删除，生产 GPU 最终提交只由 thin RHI `GraphicsSurface::present` 持有，surface readback 改由事实 capability 约束的可选 thin RHI 操作承接；所有 context 构造成功即处于可用状态，每帧 owner-context 准备由 thin RHI 设备维护承担。完成状态只以对应自动测试为准。
 
 > **当前实现线索**：目标接口位于 `src/native/present/rhi.rs`，兼容接口位于 `src/native/present/`，构造位于 `src/native/factory/`，presenter 位于 `src/native/presentation/`；D3D11 surface 迁移位于 `src/native/presentation/graphics/d3d11/platform/context/rhi.rs`，OpenGL ES surface host 位于 `src/native/presentation/graphics/opengl/rhi_host.rs`，两者的 device 资源与状态分别位于对应 raster/context 子目录，构造门禁位于 `src/native/factory/registry.rs`。
 
@@ -16,7 +16,7 @@
 
 > **registry 探测边界**：GPU baseline 与固定 RHI pipeline probe 只属于 GPU-native × Swapchain registry 行。CPU × PixelUpload 行在静态 recipe 校验后直接进入 thread-bound 与 `PixelUploadRecipeOwner` 门禁，不得查询或伪造 `GpuRecipeContext`；其可执行性由专用 `PixelUploadSurface` 证明。
 
-> **静态 capability 快照**：具体 adapter 创建层在 context 仍可静态分派时一次组装 `GraphicsContextCaps`，并与 context 一起封装为 crate-private `GraphicsContextCandidate`；registry 解包 candidate 后只校验精确 registry row，不再调用兼容 trait object 的 `caps()`。同一已验证快照随后传给 thread-bound wrapper、`GraphicsRecipeOwner` 与 GPU 或 PixelUpload 专用 owner 门禁。该快照在 owner 生命周期内固定 backend/raster/present/coherency/occlusion 事实；GPU 与 PixelUpload resize 成功后只刷新完整 `PresentSurface`。运行期 recipe 身份与 owner-loss 诊断也不依赖兼容 context 的重复查询。
+> **静态 capability 快照**：具体 adapter 创建模块通过唯一事实函数组装 `GraphicsContextCaps`，并与 context 一起封装为 crate-private `GraphicsContextCandidate`；registry 解包 candidate 后校验精确 registry row，再把同一快照交给 `GraphicsRecipeOwner` 与 GPU 或 PixelUpload 专用 owner 门禁。`IGraphicsContext::caps` 已移除，thread-bound wrapper 不再接收或缓存静态 capability。该快照在 owner 生命周期内固定 backend/raster/present/coherency/occlusion 事实；GPU 与 PixelUpload resize 成功后只刷新完整 `PresentSurface`。
 
 > **会话装配边界**：`RenderSession` 与通用 backend kind factory 不再持有或暂存 `IGraphicsContext`。生产 GPU bootstrap 与恢复只能从 native recipe factory 取得已验证 `GraphicsRecipeOwner`，再进入 `Renderer::from_recipe_owner`；没有完整 recipe 的通用 GPU 构造或运行时切换返回稳定 typed error，不建立第二条 native 资源生命周期。
 
@@ -50,7 +50,7 @@
 >
 > **live surface 元数据边界**：`GraphicsContextCaps` 只描述 backend、raster/present recipe、coherency 与遮挡能力，不携带动态 DPR。`IGraphicsContext` 不再分离暴露 `width`、`height` 或 DPR；所有 context 必须一次返回完整 `PresentSurface`，GPU backend、PixelUpload runtime 与诊断场景从同一快照派生 drawable extent 和 DPR，不能拼装可能跨 generation 的状态。thread-bound wrapper 也只缓存并在成功生命周期变更后整体刷新该快照。
 >
-> **recipe 查询边界**：`IGraphicsContext` 不再声明由 `GraphicsContextCaps` 重复派生的 `graphics_backend`、`supports_gl_proc_address` 或 `supports_pixel_present`。需要 adapter 身份的 typed error 一次读取 `caps().backend`；是否可借用 thin RHI 或 `PixelUploadSurface` 仍由对应专用视图决定，不能通过无消费者布尔查询猜测 recipe。
+> **recipe 查询边界**：`IGraphicsContext` 不再声明 `caps`，也不声明由 `GraphicsContextCaps` 重复派生的 `graphics_backend`、`supports_gl_proc_address` 或 `supports_pixel_present`。需要 adapter 身份的 typed error 读取 recipe owner 固化的 `caps().backend`；是否可借用 thin RHI 或 `PixelUploadSurface` 仍由对应专用视图决定，不能通过无消费者布尔查询猜测 recipe。
 >
 > **renderer 能力投影边界**：`IGraphicsContext::native_raster_caps` 已移除，thread-bound wrapper 不再缓存该值，D3D11、WGL 与 EGL adapter 也不再硬编码平行 profile。生产 GPU backend 只从一次 `GraphicsDevice::capabilities` 快照验证完整 GPU 原语与 retained 事实，并把 retained framebuffer、Additive 两项 renderer 所需事实投影为 `NativeRasterCaps`；该投影定义由 graphics/backend 私有拥有，platform 只提供底层 `GraphicsCapabilities`，固定 probe 仍是能力声明可执行性的权威验证。
 >
@@ -68,7 +68,7 @@
 | `GraphicsDevice` | thin RHI interface | GPU 资源、pipeline、pass、draw/copy、submit 与 device 维护 |
 | `GraphicsSurface` | surface interface | acquire、resize、present、idle present probe、surface generation 与呈现状态 |
 | `GraphicsCapabilities` | value | RHI 原语、retained、occlusion 与 present 的事实能力 |
-| `GraphicsContext` | 迁移期门面 | 当前组合静态 recipe 能力、live surface、生命周期、thin RHI 与 recipe 专用视图；不再持有 renderer capability 投影或统一最终提交 |
+| `GraphicsContext` | 迁移期门面 | 当前只组合 live surface、checked 生命周期与 recipe 专用视图；静态 recipe 能力由 adapter candidate 移交并固化在 owner，不再持有 renderer capability 投影或统一最终提交 |
 | `Presenter` | 提交接口 | CPU/GPU 结果到原生窗口的最终 present |
 | `SurfaceToken` | generation value | surface 重建与迟到 callback 隔离 |
 

@@ -3,7 +3,9 @@
 use std::ffi::c_void;
 
 use crate::core::{Error, Result};
-use crate::native::present::{GraphicsContextCandidate, IGraphicsContext};
+use crate::native::present::{
+    GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps, PresentCoherency,
+};
 
 /// The damage extension alone does not prove buffer preservation or buffer-age
 /// semantics, so EGL must not advertise partial present yet.
@@ -20,6 +22,12 @@ pub use egl::EglContext;
 #[cfg(windows)]
 pub use wgl::WglContext;
 
+// 组装 WGL/EGL 共用的 OpenGL ES 静态 recipe 能力。
+fn context_caps() -> GraphicsContextCaps {
+    // 两个平台当前都只承诺完整 swapchain 提交。
+    GraphicsContextCaps::gpu_native_swapchain(GraphicsApi::OpenGlEs, PresentCoherency::FullOnly)
+}
+
 #[cfg(windows)]
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) fn create(
@@ -30,8 +38,8 @@ pub(crate) fn create(
 ) -> Result<GraphicsContextCandidate, Error> {
     // 创建具体 WGL context 后在静态 adapter 边界组装 capability。
     WglContext::new(surface, width, height).map(|ctx| {
-        // 从刚创建的具体 adapter 一次读取静态 capability。
-        let caps = ctx.caps();
+        // 从 adapter 创建模块的唯一事实函数组装静态 capability。
+        let caps = context_caps();
         // 把 context 与同源快照封装为 registry candidate。
         GraphicsContextCandidate::new(Box::new(ctx), caps)
     })
@@ -46,8 +54,8 @@ pub(crate) fn create(
 ) -> Result<GraphicsContextCandidate, Error> {
     // 创建具体 EGL context 后在静态 adapter 边界组装 capability。
     EglContext::new(surface, width, height).map(|ctx| {
-        // 从刚创建的具体 adapter 一次读取静态 capability。
-        let caps = ctx.caps();
+        // 从 adapter 创建模块的唯一事实函数组装静态 capability。
+        let caps = context_caps();
         // 把 context 与同源快照封装为 registry candidate。
         GraphicsContextCandidate::new(Box::new(ctx), caps)
     })

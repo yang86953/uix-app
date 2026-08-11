@@ -10,7 +10,7 @@
 use std::ffi::c_void;
 use std::ptr;
 
-use crate::native::present::{IGraphicsContext, PresentCoherency, PresentDamage};
+use crate::native::present::{IGraphicsContext, PresentDamage};
 // 引入共享的 OpenGL RHI host 生命周期实现。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
 use crate::native::presentation::graphics::opengl::rhi_host::OpenGlRhiHost;
@@ -393,13 +393,6 @@ impl EglContext {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl IGraphicsContext for EglContext {
-    fn caps(&self) -> crate::native::present::GraphicsContextCaps {
-        crate::native::present::GraphicsContextCaps::gpu_native_swapchain(
-            crate::native::present::GraphicsApi::OpenGlEs,
-            PresentCoherency::FullOnly,
-        )
-    }
-
     // 暴露同一 owner-thread context 上不可拆分的 OpenGL ES GPU recipe 视图。
     fn gpu_recipe_context(&mut self) -> Option<&mut dyn crate::native::present::GpuRecipeContext> {
         // EGL 同时拥有 thin RHI 与唯一 GraphicsSurface::resize 路径。

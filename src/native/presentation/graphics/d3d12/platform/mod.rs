@@ -3,7 +3,12 @@
 use std::ffi::c_void;
 
 use crate::core::{Error, Result};
-use crate::native::present::{GraphicsContextCandidate, IGraphicsContext};
+use crate::native::present::{
+    GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps, PresentCoherency,
+};
+// WARP 测试入口仍返回兼容 context trait object。
+#[cfg(all(test, feature = "d3d12"))]
+use crate::native::present::IGraphicsContext;
 
 #[cfg(all(windows, feature = "d3d12"))]
 pub(crate) mod adapter;
@@ -19,6 +24,13 @@ pub(crate) mod transfer;
 #[cfg(all(windows, feature = "d3d12"))]
 pub use context::D3d12Context;
 
+// 组装 D3D12 测试期 adapter 的静态 recipe 能力。
+#[cfg(all(windows, feature = "d3d12"))]
+fn context_caps() -> GraphicsContextCaps {
+    // D3D12 当前只承诺完整 swapchain 提交。
+    GraphicsContextCaps::gpu_native_swapchain(GraphicsApi::D3d12, PresentCoherency::FullOnly)
+}
+
 #[cfg(all(windows, feature = "d3d12"))]
 pub(crate) fn create(
     surface: *mut c_void,
@@ -28,8 +40,8 @@ pub(crate) fn create(
 ) -> Result<GraphicsContextCandidate, Error> {
     // 创建具体 D3D12 context 后在静态 adapter 边界组装 capability。
     D3d12Context::new(surface, width, height).map(|context| {
-        // 从刚创建的具体 adapter 一次读取静态 capability。
-        let caps = context.caps();
+        // 从 adapter 创建模块的唯一事实函数组装静态 capability。
+        let caps = context_caps();
         // 把 context 与同源快照封装为 candidate。
         GraphicsContextCandidate::new(Box::new(context), caps)
     })

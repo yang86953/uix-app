@@ -2,20 +2,11 @@
 use super::WglContext;
 
 // 引入 OpenGL ES 图形上下文与呈现一致性契约。
-use crate::native::present::{IGraphicsContext, PresentCoherency};
+use crate::native::present::IGraphicsContext;
 // 引入项目统一错误和结果类型。
 use crate::native::{Error, Result};
 // 为 WGL context 实现共享的 IGraphicsContext forwarding 合约。
 impl IGraphicsContext for WglContext {
-    // 返回 OpenGL ES swapchain 能力和当前 device pixel ratio。
-    fn caps(&self) -> crate::native::present::GraphicsContextCaps {
-        // WGL 目前只承诺完整交换，不伪造 partial present preservation。
-        crate::native::present::GraphicsContextCaps::gpu_native_swapchain(
-            crate::native::present::GraphicsApi::OpenGlEs,
-            PresentCoherency::FullOnly,
-        )
-    }
-
     // 暴露同一 owner-thread context 上不可拆分的 OpenGL ES GPU recipe 视图。
     fn gpu_recipe_context(&mut self) -> Option<&mut dyn crate::native::present::GpuRecipeContext> {
         // WGL 同时拥有 thin RHI 与唯一 GraphicsSurface::resize 路径。
