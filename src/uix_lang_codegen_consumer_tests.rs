@@ -426,6 +426,44 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     );
 }
 
+// Image 路径构建器只在 image-codecs capability 启用时参与消费测试。
+#[cfg(feature = "image-codecs")]
+// 验证 Image 生成物在真实公开 API 消费者中通过类型检查。
+#[test]
+// 声明 Image 独立 capability 消费测试。
+fn image_compiles_against_public_uix_api() {
+    // 提供调用方继续持有的图片来源字符串。
+    let image_src = String::from("assets/hero.png");
+    // 提供调用方继续持有的替代文本。
+    let image_alt = String::from("首页横幅");
+    // 提供调用方继续持有的加载失败文字。
+    let image_fallback = String::from("图片加载失败");
+    // 提供动态固有宽度。
+    let image_width = 128.0_f32;
+    // 提供动态固有高度。
+    let image_height = 88.0_f32;
+    // 提供动态圆角。
+    let image_radius = 8.0_f32;
+    // 提供动态预览开关。
+    let image_preview = true;
+    // 提供动态缩放策略。
+    let image_fit = true;
+    // 提供动态延迟加载开关。
+    let image_lazy = false;
+    // 验证来源、文本、尺寸、运行时开关和公共属性只依赖公开 prelude。
+    let _image: ViewNode = crate::uix!(
+        // 使用完整 Image 声明覆盖所有已登记专有属性。
+        r#"<Image src={image_src} alt={image_alt} fallback={image_fallback} width={image_width} height={image_height} radius={image_radius} preview={image_preview} fit={image_fit} lazy={image_lazy} automationId="hero-image" />"#
+    );
+    // 生成代码只能临时借用调用方持有的来源。
+    assert_eq!(image_src, "assets/hero.png");
+    // 生成代码只能临时借用调用方持有的替代文本。
+    assert_eq!(image_alt, "首页横幅");
+    // 生成代码只能临时借用调用方持有的失败文字。
+    assert_eq!(image_fallback, "图片加载失败");
+    // 编译成功即证明启用 capability 时公开 Image 消费契约闭合。
+}
+
 // TreeSelect 公开类型只在 tree-widgets capability 启用时参与消费测试。
 #[cfg(feature = "tree-widgets")]
 // 验证 tree-widgets 生成物在真实公开 API 消费者中通过类型检查。
