@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use crate::core::{Error, Result};
-use crate::native::present::IGraphicsContext;
+use crate::native::present::GraphicsContextCandidate;
 
 pub(crate) mod platform;
 pub(crate) mod raster;
@@ -21,7 +21,7 @@ pub(crate) mod rhi_host;
 /// The loader and `glow` context are deliberately created below the native
 /// boundary. Draw code may borrow the context through crate-private methods
 /// while this owner remains alive, but it never receives a proc-loader
-/// function pointer from [`IGraphicsContext`].
+/// function pointer from [`crate::native::present::IGraphicsContext`].
 pub(crate) struct NativeOpenGlRuntime {
     context: Box<glow::Context>,
     // GL contexts are bound to the native graphics thread. This marker makes
@@ -52,6 +52,7 @@ pub(crate) fn create(
     surface: *mut c_void,
     width: i32,
     height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
+    // 向 registry 返回平台层已经组装的 context candidate。
+) -> Result<GraphicsContextCandidate, Error> {
     platform::create(surface, width, height)
 }

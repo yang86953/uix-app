@@ -3,7 +3,7 @@
 use std::ffi::c_void;
 
 use crate::core::{Error, Result};
-use crate::native::present::IGraphicsContext;
+use crate::native::present::{GraphicsContextCandidate, IGraphicsContext};
 
 #[cfg(windows)]
 pub(crate) mod context;
@@ -21,8 +21,15 @@ pub(crate) fn create(
     surface: *mut c_void,
     width: i32,
     height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
-    D3d11Context::new(surface, width, height).map(|ctx| Box::new(ctx) as _)
+    // 返回尚待 registry row 校验的 adapter 候选记录。
+) -> Result<GraphicsContextCandidate, Error> {
+    // 创建具体 D3D11 context 后在仍可静态分派的边界组装 capability。
+    D3d11Context::new(surface, width, height).map(|ctx| {
+        // 从刚创建的具体 adapter 一次读取静态 capability。
+        let caps = ctx.caps();
+        // 把 context 与同源快照封装为 registry candidate。
+        GraphicsContextCandidate::new(Box::new(ctx), caps)
+    })
 }
 
 // Windows 测试目标保留 D3D11 WARP 平台入口，供显式后端矩阵按需调用。
@@ -71,7 +78,8 @@ pub(crate) fn create(
     _surface: *mut c_void,
     _width: i32,
     _height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
+    // 不支持的平台保持相同 candidate 返回形状。
+) -> Result<GraphicsContextCandidate, Error> {
     use crate::core::Errc;
 
     Err(Error::new(

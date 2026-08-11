@@ -3,6 +3,9 @@
 use std::ffi::c_void;
 
 use crate::core::{Error, Result};
+use crate::native::present::GraphicsContextCandidate;
+// D3D11 WARP 测试入口仍返回兼容 context trait object。
+#[cfg(all(test, feature = "d3d11"))]
 use crate::native::present::IGraphicsContext;
 
 pub(crate) mod platform;
@@ -12,7 +15,8 @@ pub(crate) fn create(
     surface: *mut c_void,
     width: i32,
     height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
+    // 向 registry 返回平台层已经组装的 context candidate。
+) -> Result<GraphicsContextCandidate, Error> {
     platform::create(surface, width, height)
 }
 
