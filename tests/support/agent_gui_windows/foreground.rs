@@ -35,8 +35,17 @@ use super::{
     PRESENT_TIMEOUT_MS,
 };
 
+// 把较长的主题、尺寸与焦点可视场景拆到独立测试组件。
+#[path = "foreground_scenarios.rs"]
+mod scenarios;
+// 向父测试模块继续暴露原有场景入口，不改变调用契约。
+pub(super) use scenarios::{
+    verify_pointer_and_keyboard_focus_visuals, verify_theme_and_resize_capture,
+};
+
 #[link(name = "dwmapi")]
-extern "system" {
+// Rust 2024 要求显式标记包含不安全外部符号声明的 FFI 块。
+unsafe extern "system" {
     fn DwmFlush() -> i32;
 }
 
@@ -48,7 +57,8 @@ const PERSONALIZE_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\The
 const APPS_USE_LIGHT_THEME: &str = "AppsUseLightTheme";
 
 #[link(name = "advapi32")]
-extern "system" {
+// Rust 2024 要求显式标记注册表原生符号所在的 FFI 块。
+unsafe extern "system" {
     fn RegOpenKeyExW(
         key: *mut std::ffi::c_void,
         sub_key: *const u16,
@@ -812,271 +822,4 @@ fn resize_window(window: HWND) {
         )
     }
     .expect("resize foreground demo window");
-}
-
-pub(super) fn verify_theme_and_resize_capture(
-    demo: &DemoProcess,
-    connection: &mut BufReader<File>,
-    window_id: u64,
-    generation: u64,
-) {
-    let window = demo.window_handle();
-    demo.raise_for_interaction();
-    request_foreground_focus(window);
-    flush_desktop_composition();
-    let before = capture_client(window);
-    assert_meaningful_capture(&before, "before theme");
-
-    let toggled = perform_until_presentable(
-        demo,
-        connection,
-        window_id,
-        generation,
-        "capture-theme-toggle",
-        Some(json!({ "automation_id": "theme-toggle" })),
-        json!({ "kind": "invoke" }),
-    );
-    let theme_revision = toggled["revision"].as_u64().expect("theme revision");
-    wait_for_presented(
-        connection,
-        window_id,
-        generation,
-        theme_revision,
-        "capture-theme-presented",
-    );
-    demo.raise_for_interaction();
-    request_foreground_focus(window);
-    flush_desktop_composition();
-    let themed = capture_client(window);
-    assert_meaningful_capture(&themed, "after theme");
-    assert_eq!((themed.width, themed.height), (before.width, before.height));
-    let changed_pixels = before
-        .pixels
-        .iter()
-        .zip(&themed.pixels)
-        .filter(|(left, right)| (*left ^ *right) & 0x00FF_FFFF != 0)
-        .count();
-    let changed_ratio = changed_pixels as f64 / before.pixels.len().max(1) as f64;
-    assert!(
-        changed_ratio >= 0.10,
-        "theme toggle changed only {:.2}% of foreground pixels",
-        changed_ratio * 100.0
-    );
-
-    let snapshot = exchange(
-        connection,
-        json!({
-            "schema": "uix.agent.v1",
-            "request_id": "capture-before-resize",
-            "type": "snapshot",
-            "window_id": window_id,
-        }),
-    );
-    assert_success(&snapshot, "capture-before-resize");
-    let before_layout = assert_shell_fills_snapshot(&snapshot["snapshot"], "before resize");
-    let presented_revision = snapshot["snapshot"]["presented_revision"]
-        .as_u64()
-        .expect("presented revision");
-    resize_window(window);
-    wait_for_presented(
-        connection,
-        window_id,
-        generation,
-        presented_revision + 1,
-        "capture-resize-presented",
-    );
-    demo.raise_for_interaction();
-    request_foreground_focus(window);
-    flush_desktop_composition();
-    let resized = capture_client(window);
-    assert_meaningful_capture(&resized, "after resize");
-    assert_ne!(
-        (resized.width, resized.height),
-        (themed.width, themed.height)
-    );
-    let resized_snapshot = exchange(
-        connection,
-        json!({
-            "schema": "uix.agent.v1",
-            "request_id": "capture-after-resize",
-            "type": "snapshot",
-            "window_id": window_id,
-        }),
-    );
-    assert_success(&resized_snapshot, "capture-after-resize");
-    let resized_layout = assert_shell_fills_snapshot(&resized_snapshot["snapshot"], "after resize");
-    assert_ne!(
-        (before_layout.0, before_layout.1),
-        (resized_layout.0, resized_layout.1),
-        "root logical viewport must change after the native client resize"
-    );
-    assert_ne!(
-        (before_layout.2, before_layout.3),
-        (resized_layout.2, resized_layout.3),
-        "page scroll viewport must reflow after the native client resize"
-    );
-    println!(
-        "foreground capture: {}x{} -> theme delta {:.2}% -> {}x{}",
-        before.width,
-        before.height,
-        changed_ratio * 100.0,
-        resized.width,
-        resized.height
-    );
-}
-
-pub(super) fn verify_pointer_and_keyboard_focus_visuals(
-    demo: &DemoProcess,
-    connection: &mut BufReader<File>,
-    window_id: u64,
-    generation: u64,
-    snapshot: &Value,
-) {
-    let window = demo.window_handle();
-    let bounds = &node_by_automation_id(snapshot, "sidebar-page-0")["visible_bounds"];
-    let x = bounds["x"].as_f64().expect("home nav x");
-    let y = bounds["y"].as_f64().expect("home nav y");
-    let w = bounds["w"].as_f64().expect("home nav width");
-    let h = bounds["h"].as_f64().expect("home nav height");
-    let region = (x, y, w, h);
-
-    demo.raise_for_interaction();
-    request_foreground_focus(window);
-    flush_desktop_composition();
-    let idle = capture_client(window);
-
-    let pointer = perform_until_presentable(
-        demo,
-        connection,
-        window_id,
-        generation,
-        "focus-visual-pointer",
-        None,
-        json!({ "kind": "click_at", "x": x + w * 0.5, "y": y + h * 0.5 }),
-    );
-    wait_for_presented(
-        connection,
-        window_id,
-        generation,
-        pointer["revision"].as_u64().expect("pointer revision"),
-        "focus-visual-pointer-presented",
-    );
-    demo.raise_for_interaction();
-    request_foreground_focus(window);
-    flush_desktop_composition();
-    let pointer_focused = capture_client(window);
-    let pointer_delta = capture_region_change_ratio(&idle, &pointer_focused, region);
-    assert!(
-        pointer_delta <= 0.02,
-        "pointer focus changed {:.2}% of the active navigation item; no focus ring was expected",
-        pointer_delta * 100.0
-    );
-
-    let keyboard = perform_until_presentable(
-        demo,
-        connection,
-        window_id,
-        generation,
-        "focus-visual-keyboard",
-        Some(json!({ "automation_id": "sidebar-page-0" })),
-        json!({ "kind": "focus" }),
-    );
-    wait_for_presented(
-        connection,
-        window_id,
-        generation,
-        keyboard["revision"].as_u64().expect("keyboard revision"),
-        "focus-visual-keyboard-presented",
-    );
-    demo.raise_for_interaction();
-    request_foreground_focus(window);
-    flush_desktop_composition();
-    let keyboard_focused = capture_client(window);
-    let keyboard_delta = capture_region_change_ratio(&pointer_focused, &keyboard_focused, region);
-    assert!(
-        keyboard_delta >= 0.02,
-        "keyboard focus changed only {:.2}% of the navigation item; focus ring must remain visible",
-        keyboard_delta * 100.0
-    );
-    println!(
-        "focus visual capture: pointer delta {:.2}% -> keyboard delta {:.2}%",
-        pointer_delta * 100.0,
-        keyboard_delta * 100.0
-    );
-}
-
-fn capture_region_change_ratio(
-    left: &ClientCapture,
-    right: &ClientCapture,
-    region: (f64, f64, f64, f64),
-) -> f64 {
-    assert_eq!(
-        (left.width, left.height),
-        (right.width, right.height),
-        "regional captures must have the same client extent"
-    );
-    let x0 = region.0.floor().max(0.0) as usize;
-    let y0 = region.1.floor().max(0.0) as usize;
-    let x1 = (region.0 + region.2).ceil().max(0.0) as usize;
-    let y1 = (region.1 + region.3).ceil().max(0.0) as usize;
-    let width = left.width.max(1) as usize;
-    let height = left.height.max(1) as usize;
-    let x1 = x1.min(width);
-    let y1 = y1.min(height);
-    assert!(x0 < x1 && y0 < y1, "focus region must be visible");
-
-    let mut changed = 0usize;
-    let mut total = 0usize;
-    for y in y0.min(height)..y1 {
-        let row = y * width;
-        for x in x0.min(width)..x1 {
-            total += 1;
-            if (left.pixels[row + x] ^ right.pixels[row + x]) & 0x00FF_FFFF != 0 {
-                changed += 1;
-            }
-        }
-    }
-    changed as f64 / total.max(1) as f64
-}
-
-fn assert_shell_fills_snapshot(snapshot: &Value, label: &str) -> (f64, f64, f64, f64) {
-    let nodes = snapshot["nodes"]
-        .as_array()
-        .expect("semantic snapshot nodes");
-    let root = nodes
-        .iter()
-        .find(|node| node["parent"].is_null())
-        .expect("semantic root node");
-    let root_bounds = &root["visible_bounds"];
-    let root_w = root_bounds["w"].as_f64().expect("root visible width");
-    let root_h = root_bounds["h"].as_f64().expect("root visible height");
-    assert!(root_w > 0.0 && root_h > 0.0, "{label}: empty root bounds");
-    assert_eq!(root_bounds["x"].as_f64(), Some(0.0), "{label}: root x");
-    assert_eq!(root_bounds["y"].as_f64(), Some(0.0), "{label}: root y");
-
-    let title_bar = &node_by_automation_id(snapshot, "window-titlebar")["visible_bounds"];
-    assert_eq!(title_bar["x"].as_f64(), Some(0.0), "{label}: title x");
-    assert_eq!(title_bar["y"].as_f64(), Some(0.0), "{label}: title y");
-    assert!(
-        (title_bar["w"].as_f64().expect("title width") - root_w).abs() < 0.5,
-        "{label}: title bar must span root width"
-    );
-    assert!(
-        title_bar["h"].as_f64().expect("title height") > 0.0,
-        "{label}: empty title bar"
-    );
-
-    let status = &node_by_automation_id(snapshot, "app-status-bar")["visible_bounds"];
-    let status_bottom =
-        status["y"].as_f64().expect("status y") + status["h"].as_f64().expect("status height");
-    assert!(
-        (status_bottom - root_h).abs() < 0.5,
-        "{label}: status bar bottom {status_bottom} must meet root bottom {root_h}"
-    );
-
-    let page = &node_by_automation_id(snapshot, "page-scroll-0")["visible_bounds"];
-    let page_w = page["w"].as_f64().expect("page visible width");
-    let page_h = page["h"].as_f64().expect("page visible height");
-    assert!(page_w > 0.0 && page_h > 0.0, "{label}: empty page viewport");
-    (root_w, root_h, page_w, page_h)
 }

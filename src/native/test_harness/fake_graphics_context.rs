@@ -1,7 +1,7 @@
 //! Fake 图形上下文 — 空操作实现，记录调用。
 
-// 引入 fake context 需要实现的最小图形上下文契约。
-use crate::native::present::IGraphicsContext;
+// 引入 fake context 需要实现的最小共享生命周期契约。
+use crate::native::present::GraphicsContextLifecycle;
 use std::cell::Cell;
 
 #[derive(Debug, Clone)]
@@ -49,7 +49,7 @@ impl Default for FakeGraphicsContext {
     }
 }
 
-impl IGraphicsContext for FakeGraphicsContext {
+impl GraphicsContextLifecycle for FakeGraphicsContext {
     fn try_shutdown(&mut self) -> crate::core::Result<()> {
         self.state.shutdown_called = true;
         Ok(())

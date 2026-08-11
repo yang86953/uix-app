@@ -8,26 +8,26 @@
 use std::ffi::c_void;
 
 use crate::core::{Errc, Error, Result};
-// 导入 context 实现仍直接消费的最小兼容生命周期契约。
-use crate::native::present::IGraphicsContext;
+// 导入 context 实现直接消费的共享生命周期契约。
+use crate::native::present::GraphicsContextLifecycle;
 use crate::native::presentation::graphics::platform::windows as win_surface;
-use ::windows::core::Interface;
 use ::windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, WAIT_OBJECT_0};
 use ::windows::Win32::Graphics::Direct3D12::*;
 use ::windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use ::windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory2, IDXGIAdapter1, IDXGIFactory4, IDXGIOutput, IDXGISwapChain3,
-    DXGI_CREATE_FACTORY_FLAGS, DXGI_MWA_NO_ALT_ENTER, DXGI_PRESENT, DXGI_SWAP_CHAIN_FLAG,
+    CreateDXGIFactory2, DXGI_CREATE_FACTORY_FLAGS, DXGI_MWA_NO_ALT_ENTER, DXGI_PRESENT,
+    DXGI_SWAP_CHAIN_FLAG, IDXGIAdapter1, IDXGIFactory4, IDXGIOutput, IDXGISwapChain3,
 };
-use ::windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject, INFINITE};
+use ::windows::Win32::System::Threading::{CreateEventW, INFINITE, WaitForSingleObject};
+use ::windows::core::Interface;
 
 type HWND_PTR = *mut c_void;
 
 use super::adapter::{
-    select_hardware_adapter, select_warp_adapter, D3d12AdapterInfo, D3d12DriverKind,
+    D3d12AdapterInfo, D3d12DriverKind, select_hardware_adapter, select_warp_adapter,
 };
 use super::error::{d3d12_error, platform_error};
-use super::swap_chain::{swap_chain_desc, FRAME_COUNT};
+use super::swap_chain::{FRAME_COUNT, swap_chain_desc};
 use super::transfer::{
     copy_mapped_bgra_rows, create_readback_buffer, record_transition, release_copy_location,
     texture_copy_location_footprint, texture_copy_location_subresource,

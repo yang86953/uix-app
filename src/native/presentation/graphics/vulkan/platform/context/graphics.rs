@@ -1,14 +1,8 @@
-//! IGraphicsContext 实现。
+//! Vulkan PixelUpload context 生命周期实现。
 
 use super::*;
 
-impl IGraphicsContext for VulkanContext {
-    // Vulkan PixelUpload recipe 显式暴露专用 surface resize。
-    fn pixel_upload_surface(&mut self) -> Option<&mut dyn PixelUploadSurface> {
-        // 返回同一 owner context 上的专用视图。
-        Some(self)
-    }
-
+impl GraphicsContextLifecycle for VulkanContext {
     fn try_shutdown(&mut self) -> Result<()> {
         self.shutdown_result()
     }

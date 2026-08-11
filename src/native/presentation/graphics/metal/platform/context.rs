@@ -9,7 +9,7 @@ use std::ffi::c_void;
 use crate::core::{Errc, Error, Result};
 use crate::native::backends::macos::platform;
 use crate::native::present::{
-    validate_pixel_buffer, IGraphicsContext, PixelUploadSurface, PresentDamage,
+    GraphicsContextLifecycle, PixelUploadSurface, PresentDamage, validate_pixel_buffer,
 };
 
 type LayerId = *mut c_void;
@@ -46,13 +46,7 @@ impl MetalPixelUploadContext {
     }
 }
 
-impl IGraphicsContext for MetalPixelUploadContext {
-    // Metal PixelUpload recipe 显式暴露专用 surface resize。
-    fn pixel_upload_surface(&mut self) -> Option<&mut dyn PixelUploadSurface> {
-        // 返回当前 CAMetalLayer pixel-upload owner。
-        Some(self)
-    }
-
+impl GraphicsContextLifecycle for MetalPixelUploadContext {
     fn try_shutdown(&mut self) -> Result<()> {
         self.shutdown_result()
     }

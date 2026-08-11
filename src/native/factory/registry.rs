@@ -7,10 +7,10 @@ use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::thread_bound::bind_to_current_thread;
 // 引入离开 native factory 前必须构造的已验证 recipe owner。
 use crate::native::present::GraphicsRecipeOwner;
-// 引入 registry 的 recipe 事实、兼容 context 与原生 surface 句柄。
+// 引入 registry 的 recipe 事实、类型化 context 与原生 surface 句柄。
 use crate::native::present::{
-    GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps, GraphicsSelection,
-    IGraphicsContext, NativeSurfaceHandle, PresentMode, RasterMode,
+    GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps, GraphicsRecipeContext,
+    GraphicsSelection, NativeSurfaceHandle, PresentMode, RasterMode,
 };
 
 /// One probeable graphics configuration.
@@ -118,10 +118,27 @@ pub fn entry_for_recipe(recipe: GraphicsRecipe) -> Option<&'static GraphicsBacke
 
 // 保存 registry 已验证且已经绑定 owner thread 的 context 与唯一静态快照。
 struct ValidatedGraphicsContext {
-    // 持有仍未离开 native factory 的迁移期 context。
-    context: Box<dyn IGraphicsContext>,
+    // 持有仍未离开 native factory 的类型化 recipe context。
+    context: GraphicsRecipeContext,
     // 持有 adapter 与 registry row 一致性校验使用的同一 capability 快照。
     caps: GraphicsContextCaps,
+}
+
+// 在拒绝已经创建的 context 时统一保留主失败与清理失败的因果链。
+fn shutdown_context_with_error<T>(
+    // 接收仍由 registry 独占的类型化 context。
+    context: &mut GraphicsRecipeContext,
+    // 接收触发拒绝的原始 typed failure。
+    primary_error: Error,
+    // 返回原始失败，或把原始失败链接到更紧迫的清理失败之后。
+) -> Result<T, Error> {
+    // 检查式关闭已经创建的原生资源。
+    match context.try_shutdown() {
+        // 清理成功时保持原始拒绝原因。
+        Ok(()) => Err(primary_error),
+        // 清理失败时以资源生命周期失败为主错误，并保留原始原因。
+        Err(cleanup_error) => Err(cleanup_error.with_source(primary_error)),
+    }
 }
 
 /// Creates a context for one registry row (no probe loop).
@@ -151,78 +168,90 @@ fn try_create_context(
     }
     // 让 adapter 创建层先交付同源 context 与静态 capability 候选记录。
     let candidate = (entry.create)(native_surface, width, height, pending_failures)?;
-    // 一次解包 candidate，registry 不再通过兼容 trait object 重新查询 capability。
-    let (mut ctx, caps) = candidate.into_parts();
+    // 一次解包 candidate，registry 不再通过统一门面查询 recipe 能力。
+    let (mut context, caps) = candidate.into_parts();
+    // 从唯一静态快照构造 adapter 实际 recipe。
     let actual = GraphicsRecipe::new(caps.backend, caps.raster, caps.present);
+    // 读取 registry row 声明的预期 recipe。
     let expected = entry.recipe();
+    // adapter 静态快照必须与 registry row 完全一致。
     if actual != expected {
-        let msg = format!("Graphics recipe {expected}: context reported {actual}");
+        // 保留完整的预期与实际 recipe 诊断。
+        let error = Error::new(
+            // adapter 候选记录不一致属于平台实现错误。
+            Errc::PlatformError,
+            // 保留 registry 与 adapter 的实际差异。
+            format!("Graphics recipe {expected}: context reported {actual}"),
+        );
         // Creation succeeded, so a context whose live caps do not match the
         // registry row must be shut down before returning the mismatch.
-        let mut ctx = ctx;
-        ctx.try_shutdown()?;
-        return Err(Error::new(Errc::PlatformError, msg));
+        return shutdown_context_with_error(&mut context, error);
+    }
+    // 类型化 candidate 分支必须与静态 recipe 轴保持一致。
+    let context_matches_recipe = match (&context, expected.raster, expected.present) {
+        // GPU owner 只能配对 GPU-native × Swapchain。
+        (GraphicsRecipeContext::Gpu(_), RasterMode::GpuNative, PresentMode::Swapchain) => true,
+        // PixelUpload owner 只能配对 CPU × PixelUpload。
+        (GraphicsRecipeContext::PixelUpload(_), RasterMode::Cpu, PresentMode::PixelUpload) => true,
+        // 所有交叉组合都表示 adapter 构造契约破坏。
+        _ => false,
+    };
+    // 在进入 probe 或 renderer 前拒绝 context 类型与 recipe 轴不一致。
+    if !context_matches_recipe {
+        // 构造稳定错误，禁止把类型错配伪装成运行期能力缺失。
+        let error = Error::new(
+            // adapter 候选记录不一致属于平台实现错误。
+            Errc::PlatformError,
+            // 保留具体 recipe 供定位错误注册行。
+            format!("Graphics recipe {expected}: typed context variant does not match recipe"),
+        );
+        // 拒绝前检查式释放已经创建的原生 owner，并保留双重失败因果链。
+        return shutdown_context_with_error(&mut context, error);
     }
     // 只有 GPU-native × Swapchain recipe 依赖 thin RHI，CPU PixelUpload 不得查询该私有契约。
-    if matches!(
-        (expected.raster, expected.present),
-        (RasterMode::GpuNative, PresentMode::Swapchain)
-    ) {
-        // 首帧前强制检查原子 GPU recipe 视图，避免 registry 接受不完整 owner。
+    if let GraphicsRecipeContext::Gpu(gpu_context) = &mut context {
+        // 首帧前强制检查类型化 GPU recipe，避免 registry 接受不完整 RHI。
         let missing_rhi_capability = {
-            // 只在这个局部借用内取得完整 recipe，再读取 RHI 能力快照。
-            match ctx.gpu_recipe_context() {
-                // 真实 GPU adapter 必须一次提供不可拆分的 recipe owner。
-                Some(recipe) => match recipe.rhi_context() {
-                    // 真实 adapter 需要满足文档冻结的 GPU 原语基线。
-                    Ok(rhi) => rhi
-                        .capabilities()
-                        .first_missing_gpu_baseline()
-                        .map(str::to_string),
-                    // 构造期借用失败视为完整 recipe owner 不可用。
-                    Err(_) => Some("gpu_recipe_context".to_string()),
-                },
-                // 没有原子 GPU recipe 视图的 context 不能进入生产 recipe。
-                None => Some("gpu_recipe_context".to_string()),
+            // 只在这个局部借用内取得必需 RHI 能力快照。
+            match gpu_context.rhi_context() {
+                // 真实 adapter 需要满足文档冻结的 GPU 原语基线。
+                Ok(rhi) => rhi
+                    .capabilities()
+                    .first_missing_gpu_baseline()
+                    .map(str::to_string),
+                // 构造期借用失败视为必需 RHI owner 不可用。
+                Err(_) => Some("rhi_context".to_string()),
             }
         };
         // 能力缺口必须在返回前关闭已经创建的 native context。
         if let Some(missing) = missing_rhi_capability {
-            ctx.try_shutdown()?;
-            return Err(Error::new(
+            // 构造缺少 GPU 基线原语的 typed failure。
+            let error = Error::new(
+                // 未满足生产 GPU 基线属于尚未实现。
                 Errc::NotImplemented,
+                // 保留缺失原语名称与具体 recipe。
                 format!("Graphics recipe {expected} lacks required RHI capability: {missing}"),
-            ));
+            );
+            // 检查式关闭类型化 owner，并保留可能的双重失败。
+            return shutdown_context_with_error(&mut context, error);
         }
-        // 首帧前从同一原子视图执行真实资源与固定 pipeline probe。
-        let probe_result = match ctx.gpu_recipe_context() {
-            // 原子 recipe 存在时继续取得其必需 RHI owner。
-            Some(recipe) => match recipe.rhi_context() {
-                // 在同一借用内执行真实资源与 pipeline probe。
-                Ok(rhi) => rhi.probe(),
-                // 保留 owner-thread 或设备状态的 typed failure。
-                Err(error) => Err(error),
-            },
-            // capability gate 已处理 None；这里保留显式失败防止未来逻辑回归。
-            None => Err(Error::new(
-                // 缺失完整 recipe 属于不满足生产实现。
-                Errc::NotImplemented,
-                // 保留具体 registry recipe 便于定位错误行。
-                format!("Graphics recipe {expected} lacks atomic GPU recipe context"),
-            )),
+        // 首帧前从同一类型化 owner 执行真实资源与固定 pipeline probe。
+        let probe_result = match gpu_context.rhi_context() {
+            // 在同一借用内执行真实资源与 pipeline probe。
+            Ok(rhi) => rhi.probe(),
+            // 保留 owner-thread 或设备状态的 typed failure。
+            Err(error) => Err(error),
         };
         // probe 失败时保持原始 typed error，并先释放已经创建的 owner 资源。
         if let Err(error) = probe_result {
-            // 检查式关闭已创建的原生资源。
-            ctx.try_shutdown()?;
-            // 把原始 probe 或 owner 状态失败返回给候选选择层。
-            return Err(error);
+            // 检查式关闭已创建的原生资源，并保留原始 probe 失败。
+            return shutdown_context_with_error(&mut context, error);
         }
         // 记录首帧前已经通过真实资源与固定 pipeline 编译的 adapter。
         tracing::info!("Graphics recipe {expected}: atomic GPU recipe probe passed");
     }
     // 把 context 绑定到 owner thread；静态快照继续由验证记录独立持有。
-    let context = bind_to_current_thread(ctx);
+    let context = bind_to_current_thread(context);
     // 把 context 与快照作为不可拆分的 factory 内部验证记录返回。
     Ok(ValidatedGraphicsContext { context, caps })
 }
@@ -340,29 +369,16 @@ mod selection_tests {
     use super::*;
     // 引入 PixelUpload 测试载荷与稳定 surface 快照。
     use crate::core::{PresentDamage, PresentSurface};
-    // 引入 CPU recipe 能力与专用 PixelUpload surface 契约。
-    use crate::native::present::{GraphicsContextCaps, PixelUploadSurface};
+    // 引入 CPU recipe 能力、共享生命周期与专用 PixelUpload surface 契约。
+    use crate::native::present::{
+        GraphicsContextCaps, GraphicsContextLifecycle, PixelUploadSurface,
+    };
 
     // 构造不暴露 GPU recipe 视图的合法 CPU PixelUpload context。
     struct CpuPixelUploadContext;
 
-    // 为 registry 行实现最小迁移期 context。
-    impl IGraphicsContext for CpuPixelUploadContext {
-        // 如果 registry 错误查询 GPU 私有契约，立即让行为测试失败。
-        fn gpu_recipe_context(
-            // 借用测试 context。
-            &mut self,
-        ) -> Option<&mut dyn crate::native::present::GpuRecipeContext> {
-            // CPU PixelUpload 不得进入 GPU RHI 门禁。
-            panic!("CPU PixelUpload registry row must not query gpu_recipe_context")
-        }
-
-        // 暴露 CPU recipe 唯一的专用 surface owner。
-        fn pixel_upload_surface(&mut self) -> Option<&mut dyn PixelUploadSurface> {
-            // 当前测试 context 自身拥有最小 PixelUpload surface。
-            Some(self)
-        }
-
+    // 为 registry 行实现最小共享生命周期。
+    impl GraphicsContextLifecycle for CpuPixelUploadContext {
         // 返回稳定的最小 drawable 快照。
         fn present_surface(&self) -> PresentSurface {
             // 测试只需要证明 owner 构造，不执行真实提交。
@@ -419,7 +435,10 @@ mod selection_tests {
         // 在测试 adapter 创建边界直接组装静态 capability。
         let caps = GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan);
         // 把 context 与同源快照交给 registry 校验。
-        Ok(GraphicsContextCandidate::new(Box::new(context), caps))
+        Ok(GraphicsContextCandidate::pixel_upload(
+            Box::new(context),
+            caps,
+        ))
     }
 
     // 测试 factory 永远不应被候选排序测试实际调用。

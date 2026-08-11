@@ -41,7 +41,7 @@ pub(crate) fn create(
         // 从 adapter 创建模块的唯一事实函数组装静态 capability。
         let caps = context_caps();
         // 把 context 与同源快照封装为 registry candidate。
-        GraphicsContextCandidate::new(Box::new(ctx), caps)
+        GraphicsContextCandidate::gpu(Box::new(ctx), caps)
     })
 }
 
@@ -57,7 +57,7 @@ pub(crate) fn create(
         // 从 adapter 创建模块的唯一事实函数组装静态 capability。
         let caps = context_caps();
         // 把 context 与同源快照封装为 registry candidate。
-        GraphicsContextCandidate::new(Box::new(ctx), caps)
+        GraphicsContextCandidate::gpu(Box::new(ctx), caps)
     })
 }
 

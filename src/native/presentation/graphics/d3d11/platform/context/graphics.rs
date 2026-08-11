@@ -1,13 +1,7 @@
 use super::*;
 
-impl IGraphicsContext for D3d11Context {
-    // 暴露同一 owner-thread context 上不可拆分的 GPU recipe 视图。
-    fn gpu_recipe_context(&mut self) -> Option<&mut dyn crate::native::present::GpuRecipeContext> {
-        // D3D11 同时拥有 thin RHI 与唯一 GraphicsSurface::resize 路径。
-        Some(self)
-    }
-
-    // 把 D3D11 当前 drawable 元数据提供给兼容 present 边界。
+impl GraphicsContextLifecycle for D3d11Context {
+    // 把 D3D11 当前 drawable 元数据提供给共享生命周期边界。
     fn present_surface(&self) -> crate::native::present::PresentSurface {
         // 使用同一代际值保证旧 damage 不会跨 swapchain 重建复用。
         crate::native::present::PresentSurface::identity(
@@ -38,7 +32,7 @@ impl crate::native::present::GpuRecipeContext for D3d11Context {
     // 复用统一 DPR、范围检查与 GraphicsSurface::resize 调用。
     fn resize_surface(&mut self, width: i32, height: i32) -> Result<()> {
         // 在可变借用前取得当前完整 surface 快照。
-        let present_surface = IGraphicsContext::present_surface(self);
+        let present_surface = GraphicsContextLifecycle::present_surface(self);
         // 直接借用当前原子 recipe owner，不经过分裂兼容视图。
         crate::native::present::resize_native_rhi_surface(self, present_surface, width, height)
     }

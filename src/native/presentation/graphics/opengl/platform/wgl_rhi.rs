@@ -8,7 +8,7 @@ use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
 // 引入 surface resize 使用的物理 extent 类型。
 use crate::native::present::rhi::RhiExtent;
 // 引入共享 present damage 类型。
-use crate::native::present::{IGraphicsContext, PresentDamage};
+use crate::native::present::{GraphicsContextLifecycle, PresentDamage};
 // 引入窗口 drawable 尺寸换算辅助函数。
 use crate::native::presentation::graphics::platform::windows::drawable_size_from_hdc;
 // 引入项目统一错误类型。

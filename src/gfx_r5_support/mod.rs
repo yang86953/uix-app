@@ -17,8 +17,9 @@ use crate::native::backends::windows::display::WindowsDisplay;
 use crate::native::backends::windows::dpi::dpi_for_window;
 use crate::native::backends::windows::platform::WindowsPlatform;
 use crate::native::capabilities::display::IDisplay;
+// 引入 Vulkan 证据路径使用的 PixelUpload 操作、类型化生命周期与提交诊断契约。
 use crate::native::present::{
-    IGraphicsContext, PixelUploadSurface, PresentDamage, PresentTestResult,
+    GraphicsContextLifecycle, PixelUploadSurface, PresentDamage, PresentTestResult,
 };
 use crate::native::presentation::graphics::vulkan::platform::VulkanContext;
 use crate::native::windowing::{IWindowManager, PlatformWindow};
@@ -82,7 +83,7 @@ pub(crate) fn support_failure(message: impl Into<String>) -> GfxR5Error {
 }
 
 // 从单一 PresentSurface 快照读取 GFX-R5 诊断使用的 drawable extent。
-pub(crate) fn drawable_extent(context: &dyn IGraphicsContext) -> (i32, i32) {
+pub(crate) fn drawable_extent(context: &dyn PixelUploadSurface) -> (i32, i32) {
     // 一次读取 extent、DPR 与 generation，避免诊断证据由分离查询拼接。
     let surface = context.present_surface();
     // 返回诊断场景需要的物理 drawable 宽高。

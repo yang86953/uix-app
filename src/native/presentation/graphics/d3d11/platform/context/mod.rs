@@ -21,25 +21,25 @@ pub(crate) use super::swapchain::{
     map_dxgi_resize_result, swap_chain_desc,
 };
 use crate::core::{Errc, Error, Result};
-// 导入 context 实现仍直接消费的最小兼容生命周期契约。
-use crate::native::present::IGraphicsContext;
+// 导入 context 实现直接消费的共享生命周期契约。
+use crate::native::present::GraphicsContextLifecycle;
 use crate::native::presentation::graphics::platform::windows as win_surface;
-use ::windows::core::Interface;
 use ::windows::Win32::Foundation::HMODULE;
 use ::windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL,
     D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
 };
 use ::windows::Win32::Graphics::Direct3D11::{
-    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11RenderTargetView,
-    ID3D11Texture2D, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-    D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
-    D3D11_USAGE_STAGING, D3D11_VIEWPORT,
+    D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_MAP_READ,
+    D3D11_MAPPED_SUBRESOURCE, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
+    D3D11_VIEWPORT, D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext,
+    ID3D11RenderTargetView, ID3D11Texture2D,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
 use ::windows::Win32::Graphics::Dxgi::{
-    IDXGIDevice, IDXGISwapChain, DXGI_PRESENT, DXGI_PRESENT_TEST, DXGI_SWAP_CHAIN_FLAG,
+    DXGI_PRESENT, DXGI_PRESENT_TEST, DXGI_SWAP_CHAIN_FLAG, IDXGIDevice, IDXGISwapChain,
 };
+use ::windows::core::Interface;
 
 type HWND_PTR = *mut c_void;
 

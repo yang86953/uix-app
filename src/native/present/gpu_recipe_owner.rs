@@ -1,64 +1,52 @@
 //! 生产 GPU recipe 的已验证 owner 门面。
 
-// 引入统一错误、结果与原子 surface 快照。
-use crate::core::{Errc, Error, Result};
+// 引入统一结果与原子 surface 快照。
+use crate::core::Result;
 // 引入组合 thin RHI 契约。
 use crate::native::present::rhi::GraphicsContextRhi;
-// 引入迁移期 context、recipe 事实与呈现模式。
+// 引入类型化 GPU context、recipe 事实与呈现模式。
 use crate::native::present::{
-    GraphicsContextCaps, IGraphicsContext, PresentMode, PresentSurface, RasterMode,
+    GpuRecipeContext, GraphicsContextCaps, PresentMode, PresentSurface, RasterMode,
 };
 
 // 保存已经通过 GPU-native recipe 门禁的原生 context owner。
 pub(crate) struct GpuRecipeOwner {
     // 固化构造门禁验证过的静态 recipe 与 backend 事实。
     caps: GraphicsContextCaps,
-    // 兼容 context 只留在本门面内部，draw backend 不再直接依赖可选视图。
-    context: Box<dyn IGraphicsContext>,
+    // 类型化 context 只留在本门面内部，draw backend 不再承担能力查询。
+    context: Box<dyn GpuRecipeContext>,
 }
 
 // 为生产 GPU backend 提供不带可选能力分支的窄 owner 契约。
 impl GpuRecipeOwner {
-    // 校验顶层 owner 已捕获的静态 recipe 与原子 GPU recipe 视图，并在失败前检查式关闭。
+    // 校验顶层 owner 已捕获的静态 recipe，并在失败前检查式关闭。
     pub(super) fn try_new(
-        // 接收仍由本门面唯一拥有的迁移期 context。
-        mut context: Box<dyn IGraphicsContext>,
+        // 接收仍由本门面唯一拥有的类型化 GPU context。
+        mut context: Box<dyn GpuRecipeContext>,
         // 接收正交 owner 分派时已经捕获的静态 capability 快照。
         caps: GraphicsContextCaps,
     ) -> Result<Self> {
-        // GPU owner 只接受 GPU-native × swapchain 组合。
+        // GPU owner 只接受 GPU-native × Swapchain 组合。
         if caps.raster != RasterMode::GpuNative || caps.present != PresentMode::Swapchain {
-            // 保存稳定诊断，避免关闭借用影响错误文本。
-            let message = format!(
-                "GpuRecipeOwner requires gpu_native x swapchain, got {} raster={} present={}",
-                caps.backend, caps.raster, caps.present
-            );
-            // 构造失败前检查式释放原生资源。
-            context.try_shutdown()?;
-            // 返回 recipe 不匹配的 typed 参数错误。
-            return Err(Error::new(Errc::InvalidArgument, message));
-        }
-        // 构造期只需一次证明 thin RHI 与 lifecycle 的不可拆分 owner 存在。
-        if context.gpu_recipe_context().is_none() {
-            // 保存完整 GPU recipe 缺失错误，供 cleanup 失败时链接原始原因。
-            let error = Error::new(
-                // recipe 已声明 GPU 但缺失原子 owner，属于构造状态破坏。
-                Errc::InvalidState,
-                // 保留具体 backend 便于诊断不完整 adapter 注册。
+            // 保存稳定诊断，供 cleanup failure 追加为原因。
+            let error = crate::core::Error::new(
+                // recipe 组合不属于 GPU owner 值域。
+                crate::core::Errc::InvalidArgument,
+                // 保留完整静态 recipe 事实。
                 format!(
-                    "GraphicsBackend {} GPU recipe lacks an atomic recipe context",
-                    caps.backend
+                    "GpuRecipeOwner requires gpu_native x swapchain, got {} raster={} present={}",
+                    caps.backend, caps.raster, caps.present
                 ),
             );
-            // 构造失败前检查式释放原生资源并保留原始原因。
+            // 构造失败前检查式释放原生资源并保留原始 recipe 原因。
             return match context.try_shutdown() {
-                // shutdown 成功时返回完整 recipe owner 缺失错误。
+                // shutdown 成功时返回 recipe 不匹配错误。
                 Ok(()) => Err(error),
-                // shutdown 失败时链接原子 owner 缺失错误。
+                // shutdown 失败时链接 recipe 不匹配原因。
                 Err(cleanup_error) => Err(cleanup_error.with_source(error)),
             };
         }
-        // 只有通过完整门禁的 context 才能进入 draw backend。
+        // 类型系统已经证明 GPU recipe context 的完整形状。
         Ok(Self { caps, context })
     }
 
@@ -74,40 +62,16 @@ impl GpuRecipeOwner {
         self.context.present_surface()
     }
 
-    // 借用构造期已验证的组合 thin RHI；运行期破坏保持 typed error。
+    // 借用构造期类型已证明的组合 thin RHI。
     pub(crate) fn rhi_context(&mut self) -> Result<&mut dyn GraphicsContextRhi> {
-        // 保存 backend 身份，避免可变借用后再次访问 context。
-        let backend = self.caps.backend;
-        // 将唯一可选兼容查询收口为 GPU owner 的稳定 Result 契约。
-        let recipe = self.context.gpu_recipe_context().ok_or_else(|| {
-            // 构造后丢失原子视图属于可恢复层识别的状态破坏。
-            Error::new(
-                // 使用稳定状态分类交给恢复层。
-                Errc::InvalidState,
-                // 明确指出丢失的是不可拆分的 recipe owner。
-                format!("GraphicsBackend {backend} GPU recipe lost its atomic context"),
-            )
-        })?;
         // 保留 recipe 内部 owner-thread 或设备状态的 typed failure。
-        recipe.rhi_context()
+        self.context.rhi_context()
     }
 
-    // 通过不可拆分的 GPU recipe 视图重建 surface。
+    // 通过不可拆分的 GPU recipe context 重建 surface。
     pub(crate) fn resize_surface(&mut self, width: i32, height: i32) -> Result<()> {
-        // 保存 backend 身份，供原子视图丢失时构造稳定错误。
-        let backend = self.caps.backend;
-        // 将唯一可选兼容查询收口在 native owner 边界内。
-        let recipe = self.context.gpu_recipe_context().ok_or_else(|| {
-            // GPU recipe 构造后丢失原子视图属于状态破坏。
-            Error::new(
-                // 使用稳定状态分类交给恢复层。
-                Errc::InvalidState,
-                // 明确指出 thin RHI 与 lifecycle 必须整体存在。
-                format!("GraphicsBackend {backend} GPU recipe lost its atomic context"),
-            )
-        })?;
         // 让同一 thread-bound/native recipe owner 执行唯一 surface resize 事务。
-        recipe.resize_surface(width, height)
+        self.context.resize_surface(width, height)
     }
 
     // 在 owner-thread 边界检查式关闭原生资源。
@@ -117,270 +81,139 @@ impl GpuRecipeOwner {
     }
 }
 
-// 验证构造门禁会拒绝错误 recipe 与缺失原子 GPU 视图的 context。
+// 验证类型化 GPU owner 的静态门禁与直接委托。
 #[cfg(test)]
 mod tests {
-    // 引入共享关闭状态所需的 Cell 与 Rc。
+    // 引入共享计数与关闭状态。
     use std::{cell::Cell, rc::Rc};
 
     // 引入被测 owner。
     use super::GpuRecipeOwner;
-    // 引入错误分类与 coherency 事实。
-    use crate::core::{Errc, PresentCoherency};
-    // 引入最小 thin RHI 测试适配器所需契约和值。
-    use crate::native::present::rhi::{
-        DrawPacket, GraphicsCapabilities, GraphicsDevice, GraphicsSurface, LoadAction,
-        RenderTargetHandle, RhiExtent, RhiScissor, RhiViewport, SubmissionHandle, SurfaceFrame,
-        SurfaceToken, TextureCopy,
-    };
-    // 引入最小测试 context 所需契约。
+    // 引入错误分类、coherency 与 surface 值。
+    use crate::core::{Errc, Error, PresentCoherency, PresentSurface};
+    // 引入类型化 GPU context 与 capability。
     use crate::native::present::{
-        GpuRecipeContext, GraphicsApi, GraphicsContextCaps, IGraphicsContext, PresentDamage,
-        PresentSurface,
+        GpuRecipeContext, GraphicsApi, GraphicsContextCaps, GraphicsContextLifecycle,
     };
 
-    // 提供可选择是否暴露完整 GPU recipe 视图的最小 context。
-    struct MissingRhiContext {
-        // 允许测试在 owner 消费 Box 后观察 checked shutdown。
+    // 提供只记录生命周期调用的类型化 GPU context。
+    struct TypedGpuContext {
+        // 记录 resize 调用次数。
+        resize_count: Rc<Cell<u32>>,
+        // 记录 checked shutdown 是否执行。
         shutdown: Rc<Cell<bool>>,
-        // 控制测试 context 是否暴露完整 GPU recipe 视图。
-        expose_gpu_recipe: bool,
     }
 
-    // 为完整 GPU recipe 成功场景提供最小 device 事实。
-    impl GraphicsDevice for MissingRhiContext {
-        // 返回满足 GPU owner 类型要求的事实能力快照。
-        fn capabilities(&self) -> GraphicsCapabilities {
-            // 测试不执行 probe，只需提供稳定 GPU baseline。
-            GraphicsCapabilities::full_gpu_baseline()
-        }
-
-        // 接受最小测试 render pass；owner 构造不会执行该方法。
-        fn begin_render_pass(
-            // 借用测试 device owner。
-            &mut self,
-            // 忽略未执行的 render target。
-            _target: RenderTargetHandle,
-            // 忽略未执行的 load action。
-            _load: LoadAction,
-        ) -> crate::core::Result<()> {
-            // 最小适配器固定报告成功。
-            Ok(())
-        }
-
-        // 接受最小测试 viewport；owner 构造不会执行该方法。
-        fn set_viewport(&mut self, _viewport: RhiViewport) -> crate::core::Result<()> {
-            // 最小适配器固定报告成功。
-            Ok(())
-        }
-
-        // 接受最小测试 scissor；owner 构造不会执行该方法。
-        fn set_scissor(&mut self, _scissor: Option<RhiScissor>) -> crate::core::Result<()> {
-            // 最小适配器固定报告成功。
-            Ok(())
-        }
-
-        // 接受最小测试 draw packet；owner 构造不会执行该方法。
-        fn draw(&mut self, _packet: DrawPacket) -> crate::core::Result<()> {
-            // 最小适配器固定报告成功。
-            Ok(())
-        }
-
-        // 接受最小测试 texture copy；owner 构造不会执行该方法。
-        fn copy_texture(&mut self, _copy: TextureCopy) -> crate::core::Result<()> {
-            // 最小适配器固定报告成功。
-            Ok(())
-        }
-
-        // 结束最小测试 render pass；owner 构造不会执行该方法。
-        fn end_render_pass(&mut self) -> crate::core::Result<()> {
-            // 最小适配器固定报告成功。
-            Ok(())
-        }
-
-        // 返回固定测试 submission；owner 构造不会执行该方法。
-        fn submit(&mut self) -> crate::core::Result<SubmissionHandle> {
-            // 使用非零不透明 submission handle。
-            Ok(SubmissionHandle::from_raw(1))
-        }
-    }
-
-    // 为完整 GPU recipe 成功场景提供不触碰真实 OS surface 的最小契约。
-    impl GraphicsSurface for MissingRhiContext {
-        // 返回固定测试 surface token。
-        fn token(&self) -> SurfaceToken {
-            // 使用 1×1 正 extent 与初始代际。
-            SurfaceToken::new(0, RhiExtent::new(1, 1))
-        }
-
-        // 返回固定 acquired frame；owner 构造不会执行该方法。
-        fn acquire(&mut self) -> crate::core::Result<SurfaceFrame> {
-            // 使用非零不透明 target handle。
-            Ok(SurfaceFrame::new(
-                self.token(),
-                RenderTargetHandle::from_raw(1),
-            ))
-        }
-
-        // 返回请求 extent 的下一代 token；owner 构造不会执行该方法。
-        fn resize(&mut self, extent: RhiExtent) -> crate::core::Result<SurfaceToken> {
-            // 保留测试传入 extent 并推进代际。
-            Ok(SurfaceToken::new(1, extent))
-        }
-
-        // 接受最小测试提交；owner 构造不会执行该方法。
-        fn present(
-            // 借用测试 surface owner。
-            &mut self,
-            // 忽略未执行的 acquired frame。
-            _frame: SurfaceFrame,
-            // 忽略未执行的 submission handle。
-            _submission: SubmissionHandle,
-            // 忽略未执行的 damage。
-            _damage: PresentDamage,
-        ) -> crate::core::Result<()> {
-            // 最小适配器固定报告成功。
-            Ok(())
-        }
-    }
-
-    // 实现构造门禁消费的最小兼容 context 契约。
-    impl IGraphicsContext for MissingRhiContext {
-        // 按测试场景选择是否暴露完整 GPU recipe 视图。
-        fn gpu_recipe_context(
-            // 借用测试 context。
-            &mut self,
-        ) -> Option<&mut dyn GpuRecipeContext> {
-            // 单个开关只能暴露同时拥有 RHI 与 resize 的原子视图。
-            self.expose_gpu_recipe.then_some(self)
-        }
-
-        // 返回稳定的最小 surface 元数据。
+    // 实现 GPU context 的共同生命周期。
+    impl GraphicsContextLifecycle for TypedGpuContext {
+        // 返回稳定的最小 surface 快照。
         fn present_surface(&self) -> PresentSurface {
-            // 测试不涉及真实 drawable 或 surface generation。
+            // 测试不触碰真实 drawable。
             PresentSurface::identity(1, 1, 1.0, 0)
         }
 
-        // 记录构造拒绝路径执行了 checked shutdown。
+        // 记录 checked shutdown。
         fn try_shutdown(&mut self) -> crate::core::Result<()> {
-            // 将共享观察状态置为已关闭。
+            // 让 Box 被消费后仍可观察释放动作。
             self.shutdown.set(true);
-            // 测试 context 的关闭固定成功。
+            // 测试 context 固定关闭成功。
             Ok(())
         }
     }
 
-    // 为测试 context 实现不可拆分的 thin RHI 与 lifecycle 契约。
-    impl GpuRecipeContext for MissingRhiContext {
-        // 借用同一测试实例实现的组合 thin RHI。
+    // 实现不可选的 GPU recipe 契约。
+    impl GpuRecipeContext for TypedGpuContext {
+        // 本组单元测试不伪造 thin RHI。
         fn rhi_context(
-            // 借用测试 recipe owner。
+            // 借用测试 GPU owner。
             &mut self,
         ) -> crate::core::Result<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
-            // 暴露完整视图时同一实例必然同时拥有 device 与 surface。
-            Ok(self)
+            // 仅 owner 构造与 resize 委托属于本测试范围。
+            Err(Error::new(
+                // 使用状态错误表达受限测试实现。
+                Errc::InvalidState,
+                // 保留可诊断文本。
+                "typed GPU owner test has no thin RHI",
+            ))
         }
 
-        // 使用共享 extent 规则重建测试 surface。
-        fn resize_surface(&mut self, width: i32, height: i32) -> crate::core::Result<()> {
-            // 在可变借用前取得测试 owner 的完整 surface 快照。
-            let present_surface = IGraphicsContext::present_surface(self);
-            // 复用生产 adapter 使用的唯一逻辑尺寸转换边界。
-            crate::native::present::resize_native_rhi_surface(
-                // 借用同一原子 GPU recipe owner。
-                self,
-                // 传入本次 resize 之前的稳定元数据。
-                present_surface,
-                // 转发逻辑宽度。
-                width,
-                // 转发逻辑高度。
-                height,
-            )
+        // 记录一次类型化 resize 委托。
+        fn resize_surface(&mut self, _width: i32, _height: i32) -> crate::core::Result<()> {
+            // 增加可观察调用次数。
+            self.resize_count.set(self.resize_count.get() + 1);
+            // 测试 resize 固定成功。
+            Ok(())
         }
     }
 
-    // 验证错误 recipe 在进入 draw backend 前被拒绝并关闭。
-    #[test]
-    fn rejects_pixel_upload_recipe_before_backend_construction() {
-        // 保存 owner 消费后仍可观察的关闭标记。
+    // 构造共享观察状态与类型化 context。
+    fn test_context() -> (TypedGpuContext, Rc<Cell<u32>>, Rc<Cell<bool>>) {
+        // 创建 resize 计数器。
+        let resize_count = Rc::new(Cell::new(0));
+        // 创建 shutdown 标记。
         let shutdown = Rc::new(Cell::new(false));
-        // 在模拟 adapter 创建边界组装合法 CPU PixelUpload 静态快照。
+        // 返回 context 与外部观察句柄。
+        (
+            // 组装测试 context。
+            TypedGpuContext {
+                // 共享 resize 计数器。
+                resize_count: Rc::clone(&resize_count),
+                // 共享 shutdown 标记。
+                shutdown: Rc::clone(&shutdown),
+            },
+            // 返回 resize 观察句柄。
+            resize_count,
+            // 返回 shutdown 观察句柄。
+            shutdown,
+        )
+    }
+
+    // 验证错误静态 recipe 会在拒绝前关闭类型化 owner。
+    #[test]
+    fn rejects_non_gpu_recipe_and_shuts_down() {
+        // 构造可观察的类型化 GPU context。
+        let (context, _resize_count, shutdown) = test_context();
+        // 故意使用 CPU PixelUpload capability。
         let caps = GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan);
-        // 构造 CPU PixelUpload recipe，故意违反 GPU owner 门禁。
-        let context = MissingRhiContext {
-            // 共享关闭状态给测试断言。
-            shutdown: Rc::clone(&shutdown),
-            // recipe 门禁会先拒绝，无需暴露 GPU recipe 视图。
-            expose_gpu_recipe: false,
-        };
-        // 尝试构造 GPU owner 并取得稳定失败。
+        // GPU owner 必须拒绝静态 recipe 错配。
         let result = GpuRecipeOwner::try_new(Box::new(context), caps);
-        // recipe 不匹配必须保持参数错误分类。
+        // 错配保持参数错误分类。
         assert!(matches!(result, Err(error) if error.code() == Errc::InvalidArgument));
-        // 构造拒绝前必须检查式关闭 native owner。
+        // 拒绝前必须执行 checked shutdown。
         assert!(shutdown.get());
     }
 
-    // 验证 GPU recipe 缺少原子 recipe owner 时不会进入 backend。
+    // 验证合法类型化 owner 直接委托 lifecycle 操作。
     #[test]
-    fn rejects_gpu_recipe_without_atomic_context() {
-        // 保存 owner 消费后仍可观察的关闭标记。
-        let shutdown = Rc::new(Cell::new(false));
-        // 在模拟 adapter 创建边界组装正式 GPU-native × swapchain 快照。
+    fn delegates_typed_gpu_lifecycle_without_capability_queries() {
+        // 构造可观察的类型化 GPU context。
+        let (context, resize_count, shutdown) = test_context();
+        // 使用合法 GPU-native × Swapchain capability。
         let caps = GraphicsContextCaps::gpu_native_swapchain(
-            // 使用默认 Windows 参考 backend 身份。
+            // 使用 D3D11 身份代表生产 GPU recipe。
             GraphicsApi::D3d11,
-            // 测试只需要稳定的完整重绘 coherency。
+            // 测试只需要完整重绘 coherency。
             PresentCoherency::FullOnly,
         );
-        // 构造声明 GPU recipe 但不暴露完整 recipe 视图的错误 context。
-        let context = MissingRhiContext {
-            // 共享关闭状态给测试断言。
-            shutdown: Rc::clone(&shutdown),
-            // 让该用例停在原子 GPU recipe 门禁。
-            expose_gpu_recipe: false,
-        };
-        // 尝试构造 GPU owner 并取得稳定失败。
-        let result = GpuRecipeOwner::try_new(Box::new(context), caps);
-        // 必需原子 owner 缺失必须保持状态错误分类。
-        assert!(matches!(result, Err(error) if error.code() == Errc::InvalidState));
-        // 构造拒绝前必须检查式关闭 native owner。
-        assert!(shutdown.get());
-    }
-
-    // 验证原子 GPU recipe 视图能同时提供 thin RHI 与 resize。
-    #[test]
-    fn accepts_gpu_recipe_with_atomic_context() {
-        // 保存 owner 完成显式关闭后可观察的标记。
-        let shutdown = Rc::new(Cell::new(false));
-        // 在模拟 adapter 创建边界组装正式 GPU-native × swapchain 快照。
-        let caps = GraphicsContextCaps::gpu_native_swapchain(
-            // 使用默认 Windows 参考 backend 身份。
-            GraphicsApi::D3d11,
-            // 测试只需要稳定的完整重绘 coherency。
-            PresentCoherency::FullOnly,
-        );
-        // 构造同时实现 thin RHI 与 resize 的完整 GPU recipe context。
-        let context = MissingRhiContext {
-            // 共享关闭状态给测试断言。
-            shutdown: Rc::clone(&shutdown),
-            // 一次暴露不可拆分的 GPU recipe 视图。
-            expose_gpu_recipe: true,
-        };
-        // 完整原子视图必须通过 GPU owner 构造门禁。
-        let mut owner = match GpuRecipeOwner::try_new(Box::new(context), caps) {
-            // 保存成功构造的唯一 owner。
-            Ok(owner) => owner,
-            // 任何失败都说明原子视图门禁错误拒绝合法实现。
-            Err(error) => panic!("atomic GPU recipe context must be accepted: {error:?}"),
-        };
-        // 同一 owner 必须立即提供经过 Result 收口的 thin RHI。
-        assert!(owner.rhi_context().is_ok());
-        // 同一 owner 必须执行逻辑 surface resize。
-        assert!(owner.resize_surface(2, 3).is_ok());
-        // 显式执行 checked shutdown，保持测试资源生命周期完整。
-        assert!(owner.try_shutdown().is_ok());
-        // 唯一 native owner 必须由同一关闭边界处理。
+        // 类型已证明的 context 必须直接进入 owner。
+        let mut owner = GpuRecipeOwner::try_new(Box::new(context), caps)
+            // 合法 recipe 构造失败属于测试错误。
+            .expect("typed GPU recipe must construct");
+        // 执行一次 GPU surface resize。
+        owner
+            // 传入任意正尺寸验证直接委托。
+            .resize_surface(8, 6)
+            // 类型化委托应成功。
+            .expect("typed GPU resize must succeed");
+        // resize 只能到达底层一次。
+        assert_eq!(resize_count.get(), 1);
+        // 显式关闭 owner。
+        owner
+            // 保留 typed shutdown 返回通道。
+            .try_shutdown()
+            // 测试 context 固定关闭成功。
+            .expect("typed GPU shutdown must succeed");
+        // 验证 checked shutdown 已到达底层。
         assert!(shutdown.get());
     }
 }

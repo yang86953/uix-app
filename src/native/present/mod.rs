@@ -385,35 +385,80 @@ mod pixel_upload_recipe_owner;
 // 所有 native context 在离开 factory 前收敛为已验证 recipe owner。
 mod recipe_owner;
 
-// 兼容期高层 graphics context，逐步由 `rhi` 替代。
+// recipe 专用 context 与共享生命周期契约。
 mod traits;
 
-// 图形 context 与 recipe 专用呈现 SPI 只供 crate 内部 backend 与 bootstrap 使用。
-pub(crate) use self::traits::{GpuRecipeContext, IGraphicsContext, PixelUploadSurface};
+// 图形 context 生命周期与 recipe 专用呈现 SPI 只供 crate 内部 backend 与 bootstrap 使用。
+pub(crate) use self::traits::{GpuRecipeContext, GraphicsContextLifecycle, PixelUploadSurface};
+
+// 保存 adapter 创建层已经确定类型的唯一 recipe context。
+#[allow(dead_code)]
+pub(crate) enum GraphicsRecipeContext {
+    // GPU-native recipe 直接持有不可选的 thin RHI 生命周期契约。
+    Gpu(Box<dyn GpuRecipeContext>),
+    // CPU PixelUpload recipe 直接持有不可选的上传 surface 契约。
+    PixelUpload(Box<dyn PixelUploadSurface>),
+}
+
+// 提供跨 recipe 共用且不降级为可选视图的生命周期操作。
+impl GraphicsRecipeContext {
+    // 检查式关闭当前 recipe 唯一持有的原生资源。
+    pub(crate) fn try_shutdown(&mut self) -> crate::core::Result<()> {
+        // 按构造期确定的 recipe 委托给唯一具体 owner。
+        match self {
+            // GPU recipe 关闭其线程亲和资源。
+            Self::Gpu(context) => context.try_shutdown(),
+            // PixelUpload recipe 关闭其线程亲和资源。
+            Self::PixelUpload(context) => context.try_shutdown(),
+        }
+    }
+}
 
 // 保存 adapter 创建层尚未通过 registry row 校验的 context 与静态 capability。
 pub(crate) struct GraphicsContextCandidate {
-    // 持有仍由 native factory 路由消费的原生 context。
-    context: Box<dyn IGraphicsContext>,
+    // 持有仍由 native factory 路由消费的类型化 recipe context。
+    context: GraphicsRecipeContext,
     // 持有 adapter 创建层一次组装的静态 capability 快照。
     caps: GraphicsContextCaps,
 }
 
 // 提供 candidate 的唯一构造与所有权转移边界。
 impl GraphicsContextCandidate {
-    // 从同一 adapter 创建事务组装 context 与 capability。
-    pub(crate) fn new(
-        // 接收新创建且尚未通过 registry row 校验的 context。
-        context: Box<dyn IGraphicsContext>,
+    // 从同一 adapter 创建事务组装 GPU context 与 capability。
+    pub(crate) fn gpu(
+        // 接收新创建且尚未通过 registry row 校验的 GPU context。
+        context: Box<dyn GpuRecipeContext>,
         // 接收与该 context 同源的静态 capability 快照。
         caps: GraphicsContextCaps,
     ) -> Self {
-        // 保存不可拆分的候选记录。
-        Self { context, caps }
+        // 保存不可拆分且类型已确定的 GPU 候选记录。
+        Self {
+            // 把具体 owner 固化为 GPU recipe 分支。
+            context: GraphicsRecipeContext::Gpu(context),
+            // 保存同源 capability 快照。
+            caps,
+        }
+    }
+
+    // 从同一 adapter 创建事务组装 PixelUpload context 与 capability。
+    #[allow(dead_code)]
+    pub(crate) fn pixel_upload(
+        // 接收新创建且尚未通过 registry row 校验的 PixelUpload context。
+        context: Box<dyn PixelUploadSurface>,
+        // 接收与该 context 同源的静态 capability 快照。
+        caps: GraphicsContextCaps,
+    ) -> Self {
+        // 保存不可拆分且类型已确定的 PixelUpload 候选记录。
+        Self {
+            // 把具体 owner 固化为 PixelUpload recipe 分支。
+            context: GraphicsRecipeContext::PixelUpload(context),
+            // 保存同源 capability 快照。
+            caps,
+        }
     }
 
     // 把 candidate 所有权一次性交给 registry 校验层。
-    pub(crate) fn into_parts(self) -> (Box<dyn IGraphicsContext>, GraphicsContextCaps) {
+    pub(crate) fn into_parts(self) -> (GraphicsRecipeContext, GraphicsContextCaps) {
         // 返回同一创建事务产生的 context 与 capability。
         (self.context, self.caps)
     }

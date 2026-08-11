@@ -4,9 +4,9 @@ use std::ffi::c_void;
 
 use crate::core::{Error, Result};
 use crate::native::present::GraphicsContextCandidate;
-// D3D12 WARP 测试入口仍返回兼容 context trait object。
+// D3D12 WARP 测试入口返回类型化 GPU context trait object。
 #[cfg(all(test, feature = "d3d12"))]
-use crate::native::present::IGraphicsContext;
+use crate::native::present::GpuRecipeContext;
 
 pub(crate) mod platform;
 
@@ -25,7 +25,7 @@ pub(crate) fn create_warp_test_context(
     surface: *mut c_void,
     width: i32,
     height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
+) -> Result<Box<dyn GpuRecipeContext>, Error> {
     platform::create_warp_test_context(surface, width, height)
 }
 

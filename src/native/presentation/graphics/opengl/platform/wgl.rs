@@ -1,7 +1,7 @@
 //! WGL + OpenGL ES 3.0 graphics context for Windows.
 //!
 //! Creates an ES profile context on the window HWND and implements
-//! OpenGL ES [`IGraphicsContext`] for the unique draw `Renderer`.
+//! OpenGL ES GPU recipe context for the unique draw `Renderer`.
 
 #![allow(nonstandard_style)]
 #![allow(clippy::missing_safety_doc)]
@@ -10,22 +10,22 @@
     reason = "these private declarations intentionally mirror the Windows ABI spellings"
 )]
 
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_void};
 use std::ptr;
 
 use crate::native::backends::windows::util::windows_diag;
 // 引入共享的 OpenGL RHI host 生命周期实现。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
 use crate::native::presentation::graphics::platform::windows::{
-    device_context, drawable_size_from_hdc, release_device_context, release_device_context_checked,
-    DrawableSize,
+    DrawableSize, device_context, drawable_size_from_hdc, release_device_context,
+    release_device_context_checked,
 };
 use crate::native::{Errc, Error};
 
 // 将 WGL 的 RHI 生命周期实现拆到独立文件，避免平台适配文件继续膨胀。
 #[path = "wgl_rhi.rs"]
 mod wgl_rhi;
-// 将 WGL 的 IGraphicsContext forwarding 实现拆到独立文件。
+// 将 WGL 的共享生命周期与类型化 recipe 实现拆到独立文件。
 #[path = "wgl_graphics.rs"]
 mod wgl_graphics;
 
@@ -516,7 +516,10 @@ impl WglContext {
             };
             tracing::info!(
                 "WglContext: OpenGL ES context created ({}x{} drawable, logical {}x{}, pixel_format={pixel_format}, flags={pixel_format_flags:#010X})",
-                drawable.width, drawable.height, drawable.logical_width, drawable.logical_height,
+                drawable.width,
+                drawable.height,
+                drawable.logical_width,
+                drawable.logical_height,
             );
             Ok(Self {
                 hwnd,

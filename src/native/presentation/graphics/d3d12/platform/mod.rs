@@ -6,9 +6,9 @@ use crate::core::{Error, Result};
 use crate::native::present::{
     GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps, PresentCoherency,
 };
-// WARP 测试入口仍返回兼容 context trait object。
+// WARP 测试入口返回类型化 GPU context trait object。
 #[cfg(all(test, feature = "d3d12"))]
-use crate::native::present::IGraphicsContext;
+use crate::native::present::GpuRecipeContext;
 
 #[cfg(all(windows, feature = "d3d12"))]
 pub(crate) mod adapter;
@@ -43,7 +43,7 @@ pub(crate) fn create(
         // 从 adapter 创建模块的唯一事实函数组装静态 capability。
         let caps = context_caps();
         // 把 context 与同源快照封装为 candidate。
-        GraphicsContextCandidate::new(Box::new(context), caps)
+        GraphicsContextCandidate::gpu(Box::new(context), caps)
     })
 }
 
@@ -52,7 +52,7 @@ pub(crate) fn create_warp_test_context(
     surface: *mut c_void,
     width: i32,
     height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
+) -> Result<Box<dyn GpuRecipeContext>, Error> {
     D3d12Context::new_with_driver(surface, width, height, adapter::D3d12DriverKind::Warp)
         .map(|context| Box::new(context) as _)
 }
@@ -67,7 +67,7 @@ pub(crate) fn create_warp_test_context(
     _surface: *mut c_void,
     _width: i32,
     _height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
+) -> Result<Box<dyn GpuRecipeContext>, Error> {
     use crate::core::Errc;
 
     Err(Error::new(
