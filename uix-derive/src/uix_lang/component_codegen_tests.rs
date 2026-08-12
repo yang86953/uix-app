@@ -106,6 +106,80 @@ fn generates_all_nested_component_scope_markers_on_one_root() {
     assert_eq!(tokens.matches("uix_component_state").count(), 2);
 }
 
+// 验证 For 内可递归展开完全无 prop 和无私有 state 的静态组件组合。
+#[test]
+fn for_nested_allows_pure_static_components() {
+    // 解析两层纯静态组件与外层 For 调用。
+    let document = parse_document(
+        // 内外组件均不声明 prop 或私有 state，因此无需逐实例存储。
+        r#"
+        <Component name="Leaf"><Text>固定行</Text></Component>
+        <Component name="Row"><Leaf /></Component>
+        <Column><For {item} in {items}><Row /></For></Column>
+        "#,
+    )
+    // 该文档的动态数据绑定在生成阶段保持合法。
+    .expect("纯静态嵌套组件应能位于 For 内");
+    // 生成完整令牌以检查 For 与叶子节点均被保留。
+    let tokens = generate_document_view(&document)
+        // 无状态静态组件不应触发逐实例存储诊断。
+        .expect("纯静态嵌套组件应生成成功")
+        // 转为稳定文本以断言控制流和叶子内容。
+        .to_string();
+    // For 控制流必须保留在生成结果中。
+    assert!(tokens.contains("for item in"));
+    // 最内层静态组件必须已在 For 体内展开。
+    assert!(tokens.contains("固定行"));
+}
+
+// 验证 For 内的纯静态外层组件不能掩盖内层私有 state 的逐实例存储需求。
+#[test]
+fn for_nested_rejects_private_state_component() {
+    // 解析外层无状态组件包裹内层私有 state 组件的组合。
+    let document = parse_document(
+        // Leaf 的私有 state 必须在每个 For 项中独立拥有，但当前编译期契约尚未提供该存储。
+        r#"
+        <Component name="Leaf" state="selected: false"><Text>{selected}</Text></Component>
+        <Component name="Row"><Leaf /></Component>
+        <Column><For {item} in {items}><Row /></For></Column>
+        "#,
+    )
+    // 语法与组件声明本身均应合法。
+    .expect("内层 state 应在生成阶段诊断");
+    // 读取跨越嵌套组件边界的 For 诊断。
+    let error = generate_document_view(&document)
+        // 不能为动态实例错误复用同一个私有状态槽。
+        .expect_err("For 内嵌套私有 state 组件必须失败");
+    // 诊断必须指向实际需要逐实例存储的内层组件。
+    assert!(error.message.contains("<Leaf>"));
+    // 诊断必须说明该限制来自 For 动态实例边界。
+    assert!(error.message.contains("For 内"));
+}
+
+// 验证 For 内的纯静态外层组件不能掩盖内层 prop 的逐实例存储需求。
+#[test]
+fn for_nested_rejects_prop_component() {
+    // 解析外层无状态组件向内层 prop 组件传入固定属性的组合。
+    let document = parse_document(
+        // 即使传入字面量，Leaf 仍具有 prop 契约且需要逐实例绑定边界。
+        r#"
+        <Component name="Leaf" props="label: String"><Text>{label}</Text></Component>
+        <Component name="Row"><Leaf label="固定" /></Component>
+        <Column><For {item} in {items}><Row /></For></Column>
+        "#,
+    )
+    // 语法与 prop 对应关系本身均应合法。
+    .expect("内层 prop 应在生成阶段诊断");
+    // 读取跨越嵌套组件边界的 For 诊断。
+    let error = generate_document_view(&document)
+        // 不能让动态实例共享一个内层 prop 绑定上下文。
+        .expect_err("For 内嵌套 prop 组件必须失败");
+    // 诊断必须指向实际带 prop 的内层组件。
+    assert!(error.message.contains("<Leaf>"));
+    // 诊断必须说明该限制来自 For 动态实例边界。
+    assert!(error.message.contains("For 内"));
+}
+
 // 验证 State<T> prop 读取与写入同一共享句柄。
 #[test]
 fn generates_shared_state_prop_tokens() {
