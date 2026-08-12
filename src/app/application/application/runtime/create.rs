@@ -124,10 +124,8 @@ pub(super) fn create_secondary_window(
         with_config(&component_config, || {
             with_locale(&locale, || {
                 let root_node = root();
-                match notifications.clone() {
-                    Some(state) => wrap_root_with_notification_overlay(root_node, state, window_id),
-                    None => root_node,
-                }
+                // 副窗与主窗复用同一应用根默认值和通知浮层组装入口。
+                prepare_app_root(root_node, notifications.clone(), window_id)
             })
         })
     };

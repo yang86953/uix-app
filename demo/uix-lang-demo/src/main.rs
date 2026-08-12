@@ -1,13 +1,10 @@
-// 导入应用组合根、ViewNode、主题角色与 uix-lang 编译期入口。
+// 导入应用组合根、ViewNode 与 uix-lang 编译期入口。
 use uix::prelude::*;
 
 // 声明由应用组合根调用的界面构造函数。
 fn build_view() -> ViewNode {
     // 编译期读取相对当前 crate 清单目录的 uix-lang 文件。
     uix!("src/main.uix")
-        // 根视图提供主题布局背景：uix-lang 的根容器默认透明，
-        // 无背景时文字（深色）落在透明底上会不可见。
-        .bg(ColorValue::Neutral(NeutralRole::BgLayout))
     // 结束界面构造函数。
 }
 
