@@ -2,10 +2,9 @@ use std::any::TypeId;
 // 使用线程局部可变容器保存嵌套捕获上下文。
 use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 use crate::core::{ComponentId, Rect};
@@ -29,6 +28,15 @@ mod reconcile_lease;
 // 向树与节点生命周期边界暴露租约类型。
 pub(crate) use reconcile_lease::ReconcileBindLease;
 
+// 将副作用订阅与状态主体拆分，保持各文件规模受控。
+#[path = "state/effect.rs"]
+// 编译 State 私有的 Effect 自动订阅实现。
+mod effect;
+// 向响应式模块公开副作用句柄而不泄漏私有租约。
+pub use effect::Effect;
+// 向 State 内部订阅登记提供私有可幂等释放租约。
+pub(crate) use effect::{EffectDependency, EffectLease};
+
 #[derive(Clone)]
 pub(crate) struct PaintBindSite {
     component_id: ComponentId,
@@ -44,7 +52,6 @@ pub(crate) struct ReconcileBindSite {
     leases: usize,
 }
 
-
 // ── 响应式依赖追踪 ────────────────────────────────────────────
 //
 // 设计：使用 thread_local 追踪当前正在计算的 Computed 所读取的 State。
@@ -58,12 +65,6 @@ thread_local! {
     )]
     static TRACKING_DEPS: RefCell<Option<Vec<EffectDependency>>> =
         const { RefCell::new(None) };
-}
-
-struct EffectDependency {
-    slot_id: StateSlotId,
-    check_generation: GenerationCheck,
-    subscribe_pending: Box<dyn Fn(Arc<AtomicBool>) + Send + Sync>,
 }
 
 // layout 后探测 DynamicLabel 闭包时捕获 `State::get()` 读取的实例。
@@ -88,7 +89,6 @@ thread_local! {
     static STATE_CAPTURE_STACK: RefCell<Vec<StateCaptureOutput>> = const { RefCell::new(Vec::new()) };
 }
 static NEXT_STATE_SLOT: AtomicU64 = AtomicU64::new(1);
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StateSlotId(pub(crate) u64);
 
@@ -441,6 +441,8 @@ where
 /// 用户不需要手动请求 reconcile。
 pub struct State<T> {
     inner: Arc<RwLock<StateInner<T>>>,
+    // 独立保存 Effect 订阅表，避免值锁内析构租约发生重入死锁。
+    effect_subscribers: effect::EffectSubscriberRegistry,
     /// reconcile invalidation 回调——值变更时自动调用，通知 WidgetTree 重绘所属节点。
     pub(crate) reconcile_sites: Arc<std::sync::Mutex<Vec<ReconcileBindSite>>>,
     /// Phase 6：精确 Paint 失效绑定（ComponentId + 队列句柄）。
@@ -459,6 +461,8 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
     pub fn new(value: T) -> Self {
         let reconcile_sites = Arc::new(std::sync::Mutex::new(Vec::new()));
         let paint_sites = Arc::new(std::sync::Mutex::new(Vec::new()));
+        // 为当前 State 创建不与值锁共享的 Effect 订阅注册表。
+        let effect_subscribers = Arc::new(RwLock::new(effect::EffectSubscribers::new()));
 
         Self {
             inner: Arc::new(RwLock::new(StateInner {
@@ -467,6 +471,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
                 generation: 0,
                 watchers: Vec::new(),
             })),
+            effect_subscribers,
             reconcile_sites,
             paint_sites,
         }
@@ -507,36 +512,45 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
     }
 
     pub fn get(&self) -> T {
-        // 将自身注册到活跃的追踪上下文中（如 Computed 计算期间）
+        // 预先保存 generation 检查器需要共享的状态存储。
         let self_clone = self.inner.clone();
+        // 预先保存 Effect 订阅需要共享的状态存储。
         let subscribe_inner = self.inner.clone();
-        let slot_id = self.slot_id();
+        // 预先保存不与值锁嵌套的独立 Effect 订阅注册表。
+        let subscribe_registry = self.effect_subscribers.clone();
+        // 在同一读锁快照中取得值、generation 与稳定槽身份。
+        let (value, observed_generation, slot_id) = {
+            // 获取状态快照锁以避免值与 generation 分离观察。
+            let inner = self.inner.read().unwrap_or_else(|error| error.into_inner());
+            // 复制可安全离开锁区的值与元数据。
+            (inner.value.clone(), inner.generation, inner.slot_id)
+        };
+        // 将该快照注册到活跃的 Computed 或 Effect 依赖收集器。
         track_dep(move || EffectDependency {
             slot_id,
+            observed_generation,
             check_generation: Box::new(move || {
                 self_clone
                     .read()
                     .unwrap_or_else(|e| e.into_inner())
                     .generation
             }),
-            subscribe_pending: Box::new(move |pending| {
-                subscribe_inner
-                    .write()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .watchers
-                    .push(Arc::new(move |_| {
-                        pending.store(true, Ordering::Release);
-                    }));
+            subscribe_pending: Box::new(move |pending, observed_generation| {
+                // 注册 State 私有的 Effect 弱引用订阅。
+                effect::subscribe(
+                    subscribe_registry.clone(),
+                    subscribe_inner.clone(),
+                    pending,
+                    observed_generation,
+                )
             }),
         });
+        // 继续记录结构性 State 绑定捕获。
         try_capture_state_bind(self);
+        // 继续记录当前 View 构建帧的待交接绑定。
         capture_pending_state_bind(self);
-
-        self.inner
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .value
-            .clone()
+        // 返回与登记 generation 同一读锁快照取得的值。
+        value
     }
 
     pub(crate) fn get_untracked(&self) -> T {
@@ -549,6 +563,8 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
 
     pub fn set(&self, value: T) {
         let watchers: Vec<StateWatcher<T>>;
+        // 保存准备在 State 锁外通知的存活 Effect。
+        let effect_pendings;
         let snapshot: T;
         {
             let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
@@ -557,6 +573,10 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             snapshot = inner.value.clone();
             watchers = inner.watchers.clone();
         }
+        // 在值锁释放后从独立注册表收集需要通知的 Effect。
+        effect_pendings = effect::collect_pendings(&self.effect_subscribers);
+        // 先在 State 写锁外通知内部 Effect，公开 watcher panic 也不能吞掉该信号。
+        effect::notify_pendings(effect_pendings);
         for watcher in &watchers {
             watcher(&snapshot);
         }
@@ -568,6 +588,8 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         F: FnOnce(&mut T),
     {
         let watchers: Vec<StateWatcher<T>>;
+        // 保存准备在 State 锁外通知的存活 Effect。
+        let effect_pendings;
         let snapshot: T;
         {
             let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
@@ -576,6 +598,10 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             snapshot = inner.value.clone();
             watchers = inner.watchers.clone();
         }
+        // 在值锁释放后从独立注册表收集需要通知的 Effect。
+        effect_pendings = effect::collect_pendings(&self.effect_subscribers);
+        // 先在 State 写锁外通知内部 Effect，公开 watcher panic 也不能吞掉该信号。
+        effect::notify_pendings(effect_pendings);
         for watcher in &watchers {
             watcher(&snapshot);
         }
@@ -596,6 +622,14 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             .unwrap_or_else(|e| e.into_inner())
             .watchers
             .push(Arc::new(f));
+    }
+
+    // 暴露测试专用的活跃 Effect 订阅数量以验证租约生命周期。
+    #[cfg(test)]
+    // 此计数仅用于模块私有测试，不构成公开 State 契约。
+    pub(crate) fn effect_subscriber_count(&self) -> usize {
+        // 委托独立注册表清理死亡弱引用并读取精确数量。
+        effect::subscriber_count(&self.effect_subscribers)
     }
 
     pub fn generation(&self) -> u64 {
@@ -622,6 +656,7 @@ impl<T: Clone + Send + Sync + 'static> Clone for State<T> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
+            effect_subscribers: self.effect_subscribers.clone(),
             reconcile_sites: self.reconcile_sites.clone(),
             paint_sites: self.paint_sites.clone(),
         }
@@ -674,8 +709,8 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         let dep_pairs: Vec<_> = deps
             .into_iter()
             .map(|dep| {
-                let r#gen = (dep.check_generation)();
-                (dep.check_generation, r#gen)
+                // 保留读取时同锁取得的 generation 作为缓存快照。
+                (dep.check_generation, dep.observed_generation)
             })
             .collect();
 
@@ -717,11 +752,15 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         // 将自身注册到活跃的追踪上下文中（外层 Computed/Effect 可捕获本 Computed 作为依赖）
         let self_gen = self.generation.clone();
         let self_slot = self.slot_id;
+        // 在登记闭包前取得本 Computed 的一致 generation 快照。
+        let observed_generation = self.generation.load(Ordering::Acquire);
         track_dep(move || EffectDependency {
             slot_id: self_slot,
+            observed_generation,
             check_generation: Box::new(move || self_gen.load(Ordering::Acquire)),
-            subscribe_pending: Box::new(move |_pending| {
+            subscribe_pending: Box::new(move |_pending, _observed_generation| {
                 // Computed 暂不订阅 pending 通知；依赖变化在 get() 内同步检测。
+                EffectLease::noop()
             }),
         });
 
@@ -743,8 +782,8 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
             let new_pairs: Vec<_> = new_deps
                 .into_iter()
                 .map(|dep| {
-                    let r#gen = (dep.check_generation)();
-                    (dep.check_generation, r#gen)
+                    // 保留重新计算读取时记录的 generation 快照。
+                    (dep.check_generation, dep.observed_generation)
                 })
                 .collect();
 
@@ -767,8 +806,8 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         let new_pairs: Vec<_> = new_deps
             .into_iter()
             .map(|dep| {
-                let r#gen = (dep.check_generation)();
-                (dep.check_generation, r#gen)
+                // 保留强制重算读取时记录的 generation 快照。
+                (dep.check_generation, dep.observed_generation)
             })
             .collect();
         let mut cached = self.cached.write().unwrap_or_else(|e| e.into_inner());
@@ -798,94 +837,6 @@ impl<T: fmt::Debug + Clone + Send + Sync + 'static> fmt::Debug for Computed<T> {
             .field("slot_id", &self.slot_id())
             .field("value", &self.get())
             .finish()
-    }
-}
-
-/// ── Effect — 自动追踪依赖的副作用 ──────────────────────────────
-struct EffectInner {
-    effect_fn: Box<dyn Fn() + Send + Sync>,
-    deps: RwLock<Vec<GenerationSnapshot>>,
-    subscriptions: RwLock<HashSet<StateSlotId>>,
-    pending: Arc<AtomicBool>,
-}
-
-/// 创建时执行闭包，自动追踪其中读取的所有 State。
-/// 当任意依赖的 generation 变化时，`tick()` 重新执行。
-#[derive(Clone)]
-pub struct Effect {
-    inner: Arc<EffectInner>,
-}
-
-impl Effect {
-    pub fn new<F: Fn() + Send + Sync + 'static>(f: F) -> Self {
-        let (_, deps) = collect_deps(&f);
-        let effect = Self {
-            inner: Arc::new(EffectInner {
-                effect_fn: Box::new(f),
-                deps: RwLock::new(Vec::new()),
-                subscriptions: RwLock::new(HashSet::new()),
-                pending: Arc::new(AtomicBool::new(false)),
-            }),
-        };
-        effect.refresh_deps(deps);
-        // 仅把新 Effect 交给当前最内层 View 构建帧。
-        STATE_CAPTURE_STACK.with(|stack| {
-            // 取得栈顶输出以保证嵌套构建彼此隔离。
-            let mut stack = stack.borrow_mut();
-            // 非 View 构建期创建的 Effect 继续保持未注册的既有行为。
-            let Some(output) = stack.last_mut() else {
-                // 没有活动捕获时无需向任何树登记。
-                return;
-            };
-            // 保存本帧新建的 Effect，稍后随 ViewNode 显式交接。
-            output.effects.push(effect.clone());
-        });
-        effect
-    }
-
-    pub fn has_pending(&self) -> bool {
-        self.inner.pending.load(Ordering::Acquire)
-    }
-
-    fn refresh_deps(&self, deps: Vec<EffectDependency>) {
-        let mut dep_pairs = Vec::with_capacity(deps.len());
-        let mut subscriptions = self
-            .inner
-            .subscriptions
-            .write()
-            .unwrap_or_else(|e| e.into_inner());
-
-        for dep in deps {
-            if subscriptions.insert(dep.slot_id) {
-                (dep.subscribe_pending)(self.inner.pending.clone());
-            }
-            let r#gen = (dep.check_generation)();
-            dep_pairs.push((dep.check_generation, r#gen));
-        }
-
-        *self.inner.deps.write().unwrap_or_else(|e| e.into_inner()) = dep_pairs;
-    }
-
-    /// 检查依赖是否有变化，如有则重新执行。
-    /// 返回 `true` 表示重新执行了。
-    pub fn tick(&self) -> bool {
-        if !self.inner.pending.swap(false, Ordering::AcqRel) {
-            return false;
-        }
-
-        let need_run = {
-            let deps = self.inner.deps.read().unwrap_or_else(|e| e.into_inner());
-            deps.iter()
-                .any(|(check, cached_gen)| check() != *cached_gen)
-        };
-
-        if need_run {
-            let (_, new_deps) = collect_deps(&self.inner.effect_fn);
-            self.refresh_deps(new_deps);
-            true
-        } else {
-            false
-        }
     }
 }
 
