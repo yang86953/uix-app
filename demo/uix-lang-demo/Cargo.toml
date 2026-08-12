@@ -9,6 +9,13 @@ description = "UIX uix-lang 编译期界面演示"
 [dependencies]
 # Windows 使用 D3D11；Linux/Wayland 使用 EGL OpenGL ES。
 uix = { path = "../..", default-features = false, features = ["d3d11", "opengles"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+
+[features]
+# 默认启用演示日志订阅，与既有演示行为一致。
+default = ["demo-logging"]
+demo-logging = ["dep:tracing-subscriber", "uix/demo-logging"]
 
 [[bin]]
 name = "uix-lang-demo"
