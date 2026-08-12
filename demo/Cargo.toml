@@ -1,12 +1,13 @@
 # UIX 演示工作区 — 多项目容器
 #   每个子目录是一个独立 Cargo 项目，按运行模式拆分：
 #     gui-demo/  GUI 多页演示（bin: uix-demo）
+#     uix-lang-demo/  uix-lang GUI 演示（bin: uix-lang-demo）
 #     cli-demo/  CLI 功能域演示（bin: uix-cli-demo）
 #   根目录 `cargo` 命令不包含演示项目，演示构建需显式指向本清单：
 #     cargo run --manifest-path demo/Cargo.toml --bin uix-demo
 
 [workspace]
-members = ["gui-demo", "cli-demo"]
+members = ["gui-demo", "uix-lang-demo", "cli-demo"]
 resolver = "2"
 
 # ── 编译产物配置 ──────────────────────────────────────────────

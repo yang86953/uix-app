@@ -1,0 +1,18 @@
+// 声明拥有私有计数状态的演示组件。
+<Component name="Counter" state="count: 0">
+  // 使用当前已登记的纵向布局组织内容。
+  <Column gap="12px">
+    // 展示演示标题。
+    <Text fontSize="heading2">UIX Lang Demo</Text>
+    // 说明界面的编译期来源。
+    <Text>此界面来自 src/main.uix，并在编译期转换为 Rust。</Text>
+    // 展示组件私有状态。
+    <Text>当前计数：{count}</Text>
+    // 通过已登记的点击事件更新私有状态。
+    <Button @click="setState(count: count + 1)">计数 +1</Button>
+  // 结束纵向布局。
+  </Column>
+// 结束演示组件声明。
+</Component>
+// 实例化文档的唯一根组件。
+<Counter />
