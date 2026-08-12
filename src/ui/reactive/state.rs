@@ -34,8 +34,15 @@ pub(crate) use reconcile_lease::ReconcileBindLease;
 mod effect;
 // 向响应式模块公开副作用句柄而不泄漏私有租约。
 pub use effect::Effect;
-// 向 State 内部订阅登记提供私有可幂等释放租约。
-pub(crate) use effect::{EffectDependency, EffectLease};
+// 向 State 与 Computed 的依赖追踪提供私有读取快照契约。
+pub(crate) use effect::EffectDependency;
+
+// 将派生值生命周期拆分到私有模块，保持状态主体低于规模上限。
+#[path = "state/computed.rs"]
+// 编译 Computed 的上游租约与下游失效传播实现。
+mod computed;
+// 保持既有响应式公开派生值入口不变。
+pub use computed::Computed;
 
 #[derive(Clone)]
 pub(crate) struct PaintBindSite {
@@ -442,7 +449,7 @@ where
 pub struct State<T> {
     inner: Arc<RwLock<StateInner<T>>>,
     // 独立保存 Effect 订阅表，避免值锁内析构租约发生重入死锁。
-    effect_subscribers: effect::EffectSubscriberRegistry,
+    effect_subscribers: effect::DependencySubscriberRegistry,
     /// reconcile invalidation 回调——值变更时自动调用，通知 WidgetTree 重绘所属节点。
     pub(crate) reconcile_sites: Arc<std::sync::Mutex<Vec<ReconcileBindSite>>>,
     /// Phase 6：精确 Paint 失效绑定（ComponentId + 队列句柄）。
@@ -462,7 +469,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         let reconcile_sites = Arc::new(std::sync::Mutex::new(Vec::new()));
         let paint_sites = Arc::new(std::sync::Mutex::new(Vec::new()));
         // 为当前 State 创建不与值锁共享的 Effect 订阅注册表。
-        let effect_subscribers = Arc::new(RwLock::new(effect::EffectSubscribers::new()));
+        let effect_subscribers = Arc::new(RwLock::new(effect::DependencySubscribers::new()));
 
         Self {
             inner: Arc::new(RwLock::new(StateInner {
@@ -535,12 +542,12 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
                     .unwrap_or_else(|e| e.into_inner())
                     .generation
             }),
-            subscribe_pending: Box::new(move |pending, observed_generation| {
+            subscribe_pending: Box::new(move |subscriber, observed_generation| {
                 // 注册 State 私有的 Effect 弱引用订阅。
                 effect::subscribe(
                     subscribe_registry.clone(),
                     subscribe_inner.clone(),
-                    pending,
+                    subscriber,
                     observed_generation,
                 )
             }),
@@ -564,7 +571,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
     pub fn set(&self, value: T) {
         let watchers: Vec<StateWatcher<T>>;
         // 保存准备在 State 锁外通知的存活 Effect。
-        let effect_pendings;
+        let effect_subscribers;
         let snapshot: T;
         {
             let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
@@ -574,9 +581,9 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             watchers = inner.watchers.clone();
         }
         // 在值锁释放后从独立注册表收集需要通知的 Effect。
-        effect_pendings = effect::collect_pendings(&self.effect_subscribers);
+        effect_subscribers = effect::collect_subscribers(&self.effect_subscribers);
         // 先在 State 写锁外通知内部 Effect，公开 watcher panic 也不能吞掉该信号。
-        effect::notify_pendings(effect_pendings);
+        effect::notify_subscribers(effect_subscribers);
         for watcher in &watchers {
             watcher(&snapshot);
         }
@@ -589,7 +596,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
     {
         let watchers: Vec<StateWatcher<T>>;
         // 保存准备在 State 锁外通知的存活 Effect。
-        let effect_pendings;
+        let effect_subscribers;
         let snapshot: T;
         {
             let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
@@ -599,9 +606,9 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             watchers = inner.watchers.clone();
         }
         // 在值锁释放后从独立注册表收集需要通知的 Effect。
-        effect_pendings = effect::collect_pendings(&self.effect_subscribers);
+        effect_subscribers = effect::collect_subscribers(&self.effect_subscribers);
         // 先在 State 写锁外通知内部 Effect，公开 watcher panic 也不能吞掉该信号。
-        effect::notify_pendings(effect_pendings);
+        effect::notify_subscribers(effect_subscribers);
         for watcher in &watchers {
             watcher(&snapshot);
         }
@@ -673,174 +680,6 @@ impl<T: fmt::Debug + Clone + Send + Sync + 'static> fmt::Debug for State<T> {
     }
 }
 
-/// ── Computed — 自动追踪依赖的派生状态 ──────────────────────────
-///
-/// 在构造时执行一次闭包，自动记录所有读取过的 State 作为依赖。
-/// 后续 `get()` 时比对依赖的 generation，如有变化则重新计算。
-/// 无需手动调用 `invalidate()`。
-///
-/// # 示例
-/// ```ignore
-/// let a = State::new(1);
-/// let b = State::new(2);
-/// let sum = Computed::new(|| a.get() + b.get());
-/// assert_eq!(sum.get(), 3);
-/// a.set(10);
-/// assert_eq!(sum.get(), 12); // 自动重新计算
-/// ```
-pub struct Computed<T> {
-    slot_id: StateSlotId,
-    compute_fn: Arc<dyn Fn() -> T + Send + Sync>,
-    cached: Arc<RwLock<Option<T>>>,
-    /// 依赖的 generation 检查器列表：(检查器, 上次计算时的 generation)
-    deps: Arc<RwLock<Vec<GenerationSnapshot>>>,
-    /// 自身 generation：值变更时递增，供外层计算/Effect 追踪本 Computed 的变化。
-    generation: Arc<AtomicU64>,
-    /// Phase R2：精确 Paint 失效绑定。
-    paint_sites: Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
-}
-
-impl<T: Clone + Send + Sync + 'static> Computed<T> {
-    /// 创建一个自动追踪依赖的 Computed。
-    ///
-    /// 构造时会立即执行一次 `f` 以收集依赖，之后 `get()` 自动判断是否需要重算。
-    pub fn new<F: Fn() -> T + Send + Sync + 'static>(f: F) -> Self {
-        let (initial, deps) = collect_deps(&f);
-        let dep_pairs: Vec<_> = deps
-            .into_iter()
-            .map(|dep| {
-                // 保留读取时同锁取得的 generation 作为缓存快照。
-                (dep.check_generation, dep.observed_generation)
-            })
-            .collect();
-
-        Self {
-            slot_id: StateSlotId(NEXT_STATE_SLOT.fetch_add(1, Ordering::Relaxed)),
-            compute_fn: Arc::new(f),
-            cached: Arc::new(RwLock::new(Some(initial))),
-            deps: Arc::new(RwLock::new(dep_pairs)),
-            generation: Arc::new(AtomicU64::new(0)),
-            paint_sites: Arc::new(std::sync::Mutex::new(Vec::new())),
-        }
-    }
-
-    /// 绑定精确 Paint 失效：依赖变化导致重算时向队列推送 `Invalidation::Paint`。
-    pub fn bind_paint_invalidation(
-        &self,
-        component_id: ComponentId,
-        queue: InvalidationQueueHandle,
-        rect: Option<Rect>,
-    ) {
-        bind_paint_site(&self.paint_sites, component_id, queue, rect);
-    }
-
-    pub fn slot_id(&self) -> StateSlotId {
-        self.slot_id
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn capture_fingerprint(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        TypeId::of::<T>().hash(&mut hasher);
-        self.slot_id.hash(&mut hasher);
-        hasher.finish()
-    }
-
-    pub fn get(&self) -> T {
-        try_capture_computed_bind(self);
-
-        // 将自身注册到活跃的追踪上下文中（外层 Computed/Effect 可捕获本 Computed 作为依赖）
-        let self_gen = self.generation.clone();
-        let self_slot = self.slot_id;
-        // 在登记闭包前取得本 Computed 的一致 generation 快照。
-        let observed_generation = self.generation.load(Ordering::Acquire);
-        track_dep(move || EffectDependency {
-            slot_id: self_slot,
-            observed_generation,
-            check_generation: Box::new(move || self_gen.load(Ordering::Acquire)),
-            subscribe_pending: Box::new(move |_pending, _observed_generation| {
-                // Computed 暂不订阅 pending 通知；依赖变化在 get() 内同步检测。
-                EffectLease::noop()
-            }),
-        });
-
-        let force_probe =
-            state_capture_active() || STATE_BIND_CAPTURE.with(|capture| capture.borrow().is_some());
-
-        // 检查依赖是否变化；View 构建与 layout 探测阶段强制执行一次，
-        // 使缓存中的 Computed 也能重新暴露底层 State 绑定。
-        let need_recompute = if force_probe {
-            true
-        } else {
-            let deps = self.deps.read().unwrap_or_else(|e| e.into_inner());
-            deps.iter()
-                .any(|(check, cached_gen)| check() != *cached_gen)
-        };
-
-        if need_recompute {
-            let (value, new_deps) = collect_deps(|| (self.compute_fn)());
-            let new_pairs: Vec<_> = new_deps
-                .into_iter()
-                .map(|dep| {
-                    // 保留重新计算读取时记录的 generation 快照。
-                    (dep.check_generation, dep.observed_generation)
-                })
-                .collect();
-
-            let mut cached = self.cached.write().unwrap_or_else(|e| e.into_inner());
-            *cached = Some(value.clone());
-            let mut deps = self.deps.write().unwrap_or_else(|e| e.into_inner());
-            *deps = new_pairs;
-            self.generation.fetch_add(1, Ordering::Release);
-            fire_paint_bindings(&self.paint_sites);
-            value
-        } else {
-            let cached = self.cached.read().unwrap_or_else(|e| e.into_inner());
-            cached.clone().unwrap_or_else(|| (self.compute_fn)())
-        }
-    }
-
-    /// 强制使缓存失效并重新计算（当依赖无法被自动追踪时使用）。
-    pub fn invalidate(&self) {
-        let (value, new_deps) = collect_deps(|| (self.compute_fn)());
-        let new_pairs: Vec<_> = new_deps
-            .into_iter()
-            .map(|dep| {
-                // 保留强制重算读取时记录的 generation 快照。
-                (dep.check_generation, dep.observed_generation)
-            })
-            .collect();
-        let mut cached = self.cached.write().unwrap_or_else(|e| e.into_inner());
-        *cached = Some(value);
-        let mut deps = self.deps.write().unwrap_or_else(|e| e.into_inner());
-        *deps = new_pairs;
-        self.generation.fetch_add(1, Ordering::Release);
-    }
-}
-
-impl<T> Clone for Computed<T> {
-    fn clone(&self) -> Self {
-        Self {
-            slot_id: self.slot_id,
-            compute_fn: self.compute_fn.clone(),
-            cached: self.cached.clone(),
-            deps: self.deps.clone(),
-            generation: self.generation.clone(),
-            paint_sites: self.paint_sites.clone(),
-        }
-    }
-}
-
-impl<T: fmt::Debug + Clone + Send + Sync + 'static> fmt::Debug for Computed<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Computed")
-            .field("slot_id", &self.slot_id())
-            .field("value", &self.get())
-            .finish()
-    }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
 // 测试
 // ════════════════════════════════════════════════════════════════════════════
 // 将依赖追踪的 panic 生命周期测试置于独立文件，避免产品文件超过行数上限。
@@ -849,3 +688,10 @@ impl<T: fmt::Debug + Clone + Send + Sync + 'static> fmt::Debug for Computed<T> {
 #[path = "../../../tests/unit/ui/reactive_state_tests.rs"]
 // 将外置测试作为本响应式状态模块的私有子模块编译。
 mod tests;
+
+// 将 Computed 到 Effect 的并发行为测试拆分到专用私有模块。
+#[cfg(test)]
+// 从仓库测试目录引入 Computed 专属回归。
+#[path = "../../../tests/unit/ui/reactive_computed_effect_tests.rs"]
+// 编译外置 Computed 响应式测试模块。
+mod computed_effect_tests;
