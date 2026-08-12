@@ -5,6 +5,57 @@ use crate::ui::reactive::state::{begin_state_capture, end_state_capture, StateCa
 // 保存捕获到的动画源动态句柄。
 use std::sync::Arc;
 
+// 保存由宿主树验证后签发的动态 View 捕获能力，避免 renderer 接触状态存储细节。
+pub(crate) struct DynamicViewCaptureContext {
+    // 保存所属 WidgetTree 的唯一组件状态存储句柄。
+    store: crate::ui::component_state::ComponentStateStore,
+    // 保存实际拥有延迟 renderer 的运行时组件身份。
+    owner: crate::ui::ComponentId,
+}
+
+// 只通过已验证能力执行动态 View 捕获，调用方不能自行组合 store 与 owner。
+impl DynamicViewCaptureContext {
+    // 返回签发能力时已经校验的 renderer 宿主身份。
+    pub(crate) fn owner(&self) -> crate::ui::ComponentId {
+        // 调用方只能读取固定 owner，不能替换其状态存储归属。
+        self.owner
+    }
+
+    // 在当前宿主与稳定业务键限定的命名空间内同步执行一次延迟工厂。
+    pub(crate) fn capture<F>(
+        // 借用已经由 WidgetTree 验证的捕获能力。
+        &self,
+        // 接收区分同一宿主下不同 renderer 的静态槽位。
+        slot: &'static str,
+        // 接收执行用户工厂前即可确定的稳定业务键。
+        stable_key: impl Into<String>,
+        // 接收仅执行一次的延迟 View 工厂。
+        build_root: F,
+        // 返回携带完整运行时输出与状态回执的声明根。
+    ) -> crate::ui::view::ViewNode
+    where
+        // 保持动态工厂与静态根捕获相同的一次性返回契约。
+        F: FnOnce() -> crate::ui::view::ViewNode,
+    {
+        // 用签发时固定的 owner、槽位与业务键建立稳定动态实例身份。
+        let namespace = crate::ui::component_state::ComponentStateCaptureNamespace::new(
+            // 依次组合不可伪造的宿主身份与调用方提供的局部身份。
+            self.owner, // 保留静态 renderer 槽位。
+            slot,       // 消费本次捕获的稳定业务键。
+            stable_key,
+        );
+        // 复用完整根捕获流水线，并让每次捕获共享宿主树状态存储。
+        crate::ui::adapter::ViewAdapter::capture_root_with_optional_namespace(
+            // 克隆轻量存储句柄供一次性捕获拥有。
+            self.store.clone(),
+            // 安装本次动态实例命名空间。
+            Some(namespace),
+            // 执行用户延迟工厂。
+            build_root,
+        )
+    }
+}
+
 // 把 View 捕获入口放在独立模块，避免适配器主体超过规模上限。
 impl crate::ui::adapter::ViewAdapter {
     /// Builds a ViewNode while capturing State bindings.
@@ -38,6 +89,31 @@ impl crate::ui::adapter::ViewAdapter {
         Self::capture_root_with_optional_namespace(store, None, build_root)
     }
 
+    // 从当前宿主树签发一个只能用于该运行时 owner 的动态捕获能力。
+    pub(crate) fn dynamic_capture_context(
+        // 接收同时拥有运行时节点与组件状态存储的宿主树。
+        tree: &crate::ui::WidgetTree,
+        // 接收实际拥有延迟 renderer 的运行时组件身份。
+        owner: crate::ui::ComponentId,
+        // 返回不暴露内部 store 的窄捕获能力。
+    ) -> DynamicViewCaptureContext {
+        // 动态 owner 必须是当前宿主树中仍可寻址且尚未离场的实际节点。
+        assert!(
+            // 已销毁、正在离场或属于其他树的 owner 都不能继续签发能力。
+            tree.get(owner).is_some_and(|node| !node.destroyed())
+                && !tree.is_pending_removal_subtree(owner),
+            // 为错误接线提供稳定诊断。
+            "动态 View 捕获 owner 不属于可用的宿主 WidgetTree"
+        );
+        // 固定本次能力的树私有 store 与实际 owner，后续调用不能替换任一身份。
+        DynamicViewCaptureContext {
+            // 仅从已验证 owner 的宿主树取得唯一状态存储。
+            store: tree.component_state_store(),
+            // 保存已经通过当前树 generation 校验的 owner。
+            owner,
+        }
+    }
+
     // 在宿主树的稳定动态实例命名空间内捕获一次延迟 View 工厂。
     pub(crate) fn capture_dynamic_root<F>(
         // 接收同时拥有运行时节点与唯一组件状态存储的宿主树。
@@ -57,22 +133,10 @@ impl crate::ui::adapter::ViewAdapter {
         // 保持延迟工厂与静态根工厂相同的返回契约。
         F: FnOnce() -> crate::ui::view::ViewNode,
     {
-        // 动态 owner 必须是当前宿主树中仍可寻址的实际节点。
-        assert!(
-            // 只接受当前树仍可寻址的运行时宿主。
-            tree.get(owner).is_some(),
-            // 为错误接线提供稳定诊断。
-            "动态 View 捕获 owner 不属于宿主 WidgetTree"
-        );
-        // 仅从已验证 owner 的同一宿主树取得唯一状态存储。
-        let store = tree.component_state_store();
-        // 在执行工厂前建立 owner、槽位与业务键组成的稳定实例身份。
-        let namespace = crate::ui::component_state::ComponentStateCaptureNamespace::new(
-            // 依次组合已验证宿主、静态槽位与稳定业务键。
-            owner, slot, stable_key,
-        );
-        // 复用静态根的完整运行时输出捕获，只增加动态状态命名空间。
-        Self::capture_root_with_optional_namespace(store, Some(namespace), build_root)
+        // 先从宿主树取得不可伪造的捕获能力，缩短整树借用生命周期。
+        let context = Self::dynamic_capture_context(tree, owner);
+        // 用已验证能力执行本次动态命名空间捕获。
+        context.capture(slot, stable_key, build_root)
     }
 
     // 用可选动态命名空间统一静态根与延迟工厂的捕获生命周期。

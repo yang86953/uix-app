@@ -324,18 +324,11 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintPass;
 use crate::ui::component::paint_context::PaintContext;
+// 引入 builder 建树时登记 renderer sidecar 所需的内部注册类型。
 use crate::ui::render_handler::RenderHandlerRegistration;
-use crate::ui::view::{View, ViewNode};
 use crate::ui::{ComponentId, EventResult, SystemEvent, WidgetTree};
-
-/// Application-authored child factory stored in the tree's keyed side table.
-pub(crate) type VirtualScrollRenderer = Box<dyn FnMut(usize) -> ViewNode + 'static>;
-
-/// Declarative `VirtualScroll` plus its application-owned item renderer.
-pub struct VirtualScrollBuilder {
-    scroll: VirtualScroll,
-    renderer: VirtualScrollRenderer,
-}
+// 兼容既有公开模块路径，同时让应用闭包实现保留在拆分文件中。
+pub use super::renderer::VirtualScrollBuilder;
 
 component! {
     pub struct VirtualScroll {
@@ -445,7 +438,7 @@ component! {
         ctx.fill_rect(frame, bg, None);
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
         // 父级输入先收敛到有限实际矩形。
@@ -455,6 +448,8 @@ component! {
         // 按物化顺序为每个行子树计算绝对位置。
         children
             .iter()
+            // 离场行保留最后 frame 供动画绘制，但不再占用活动行绝对索引。
+            .filter(|child| !tree.is_pending_removal_subtree(child.id))
             .enumerate()
             .map(|(local_i, child)| {
                 // 防御不一致子项数量导致绝对索引整数溢出。
@@ -593,17 +588,6 @@ impl VirtualScroll {
         self.fixed_width = Some(w);
         self.fixed_height = Some(h);
         self
-    }
-
-    /// 为进入物化范围的索引声明普通 View 子树。
-    pub fn render<V>(self, mut renderer: impl FnMut(usize) -> V + 'static) -> VirtualScrollBuilder
-    where
-        V: View,
-    {
-        VirtualScrollBuilder {
-            scroll: self,
-            renderer: Box::new(move |index| renderer(index).build()),
-        }
     }
 
     /// Total scrollable content height (fixed row height contract).
@@ -897,3 +881,10 @@ impl From<VirtualScrollBuilder> for crate::ui::view::ViewNode {
 #[path = "tests.rs"]
 // 将回归测试隔离到独立文件，保持实现文件聚焦。
 mod tests;
+
+// 仅在库测试中编译 VirtualScroll 动态私有状态与完整捕获交接门禁。
+#[cfg(test)]
+// 显式指向 virtualization 目录中的同级动态测试文件。
+#[path = "dynamic_capture_tests.rs"]
+// 挂载生产 renderer 接线的行为测试模块。
+mod dynamic_capture_tests;

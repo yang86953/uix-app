@@ -493,6 +493,8 @@ impl WidgetTree {
             // 清空节点 Effect，关闭后不再参与调度。
             node.replace_captured_effects(Vec::new());
         }
+        // 释放所有延迟 View 工厂及其应用捕获资源，关闭后不得保留 sidecar。
+        self.render_handler_table.clear();
         // 窗口关闭后不再允许任何组件私有状态继续存活。
         self.component_state_store.clear();
     }

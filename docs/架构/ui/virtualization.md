@@ -25,7 +25,7 @@ viewport、scroll offset、项目度量和 overscan 共同得到物化范围。�
 
 ## 组件：ItemKey / item renderer
 
-renderer 是按 owner `ComponentId` 管理的 side-table 回调，不进入组件快照。renderer 返回的业务 key 会原样保留；未声明 key 时，框架补入 `virtual-scroll-item:{absolute_index}` 作为确定性后备身份。数据会排序、插入或删除时必须返回稳定业务 key；绝对索引后备 key 仅适用于顺序不可变的数据，不能冒充业务身份。
+renderer 是按 owner `ComponentId` 管理的 side-table 回调，不进入组件快照。普通 `.render(...)` 在用户行工厂执行前生成类型化绝对索引身份，框架据此统一设置节点 key 与动态组件私有状态命名空间，行工厂不得再设置根 key；它只适用于顺序不可变的数据。可排序、插入或删除的数据必须使用 `.render_keyed(key_fn, renderer)`，先计算全局唯一且稳定的业务 key，再以同一规范身份执行状态捕获和 keyed reconcile。索引身份与业务身份使用互斥内部 tag，模式切换不会误接管旧状态。
 
 ## 组件：measurement cache
 

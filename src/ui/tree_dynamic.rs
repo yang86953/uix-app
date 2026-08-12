@@ -135,8 +135,7 @@ impl WidgetTree {
             .as_ref()
             .and_then(|row| {
                 // 构建独立状态所有权的声明节点，避免缺少 row 命名空间时跨行复用。
-                self.render_handler_table
-                    .render_table_expand_view(id, row)
+                self.render_handler_table.render_table_expand_view(id, row)
             })
             .into_iter()
             .collect();
@@ -151,6 +150,11 @@ impl WidgetTree {
         id: ComponentId,
         viewport_height: Option<f32>,
     ) -> bool {
+        // 正在离场或已经销毁的宿主不能再执行应用 renderer。
+        if self.get(id).is_none_or(|node| node.destroyed()) || self.is_pending_removal_subtree(id) {
+            // 保留现有墓碑与输出直到真正 remove，不创建新物化行。
+            return false;
+        }
         if !self.render_handler_table.contains_virtual_scroll_item(id) {
             return false;
         }
@@ -161,9 +165,20 @@ impl WidgetTree {
                 .filter(|height| *height > 0.0)
                 .unwrap_or_else(|| scroll.configured_viewport_height());
             let range = scroll.scroll_range(height);
+            // 离场节点仍留在父子链供动画绘制，但不属于当前活动物化窗口。
+            let mounted_children = node
+                // 只检查 VirtualScroll 的直接物化行。
+                .children()
+                // 逐项借用轻量运行时身份。
+                .iter()
+                // 排除离场行及其任何已进入离场阶段的祖先子树。
+                .filter(|child_id| !self.is_pending_removal_subtree(**child_id))
+                // 得到真正参与本轮窗口协调的活动行数。
+                .count();
             Some((
                 range,
-                scroll.needs_child_refresh(height, node.children().len()),
+                // 物化判定不能让尚未完成动画的墓碑触发重复 renderer。
+                scroll.needs_child_refresh(height, mounted_children),
             ))
         }) else {
             return false;
@@ -172,10 +187,18 @@ impl WidgetTree {
             return false;
         }
 
-        let children = self
+        // 在借用 renderer sidecar 前签发固定 store 与 owner 的窄动态捕获能力。
+        let capture_context = ViewAdapter::dynamic_capture_context(self, id);
+        // 使用已验证能力逐项捕获当前物化窗口的完整运行时输出。
+        let Some(children) = self
+            // handler 缺失不是合法空窗口，不能据此删除现有物化行。
             .render_handler_table
-            .render_virtual_scroll_items(id, range.0, range.1)
-            .unwrap_or_default();
+            // 批量捕获当前范围内的完整声明输出。
+            .render_virtual_scroll_items(&capture_context, range.0, range.1)
+        else {
+            // 保留旧 children 与 materialized range，等待声明协调修复 sidecar。
+            return false;
+        };
         // 按业务 key 或绝对索引后备 key 协调窗口，保留重叠行身份与状态。
         let changed = ViewAdapter::reconcile_dynamic_children(self, id, children);
         // 成功协调后记录当前物化范围，避免同一窗口重复构建。

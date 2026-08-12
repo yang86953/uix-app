@@ -39,10 +39,13 @@ fn overlapping_materialized_rows_retain_component_ids() {
         .item_height(10.0)
         .overscan(1)
         .size(100.0, 30.0)
-        .render(|index| {
-            // 每一行用绝对索引声明稳定业务 key。
-            ViewNode::leaf(Label::new(index.to_string())).key(format!("row-{index}"))
-        });
+        // 用显式键工厂让业务身份在行构建前进入捕获命名空间。
+        .render_keyed(
+            // 当前用绝对索引模拟稳定业务 id。
+            |index| format!("row-{index}"),
+            // 行工厂不再自行设置根 key。
+            |index| ViewNode::leaf(Label::new(index.to_string())),
+        );
     // 构建后会按配置视口立即物化索引零到三。
     let mut tree = ViewAdapter::build(view);
     // 读取虚拟滚动根标识。
@@ -68,7 +71,14 @@ fn overlapping_materialized_rows_retain_component_ids() {
     let after = keyed_children(&tree, root);
 
     // 三个重叠行必须继续使用原组件，保留内部状态与焦点身份。
-    for key in ["row-1", "row-2", "row-3"] {
+    for key in [
+        // 业务键会被框架规范化以隔离索引身份模式。
+        "virtual-scroll-business:row-1",
+        // 中间重叠项继续使用同一规范化业务身份。
+        "virtual-scroll-business:row-2",
+        // 窗口尾部重叠项同样原位复用。
+        "virtual-scroll-business:row-3",
+    ] {
         // 核对同一业务 key 的组件标识没有变化。
         assert_eq!(after.get(key), before.get(key), "{key} must be reused");
     }

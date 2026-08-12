@@ -39,11 +39,12 @@ use crate::ui::widgets::window_chrome::WindowInteractionRegion;
 use crate::ui::widgets::{Button, Calendar, Container, Grid, Label};
 use crate::ui::{ComponentId, WidgetTree};
 use std::collections::{HashMap, HashSet};
-
 // 复用独立生命周期模块，保持适配器主体低于文件规模上限。
 #[path = "adapter/capture_guards.rs"]
 // 编译捕获守卫与回执转移的私有实现模块。
 mod capture_guards;
+// 仅向 UI 内部 renderer 边界重导出不可伪造的动态捕获能力。
+pub(crate) use capture_guards::DynamicViewCaptureContext;
 // 拆分交错入场计算，保持适配器主体在文件规模约束内。
 #[path = "adapter/stagger.rs"]
 // 编译交错入场配置的私有实现模块。

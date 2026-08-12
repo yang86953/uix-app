@@ -4,9 +4,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::core::ComponentId;
-use crate::ui::adapter::ViewAdapter;
+// 引入静态根捕获入口与由宿主树签发的窄动态捕获能力。
+use crate::ui::adapter::{DynamicViewCaptureContext, ViewAdapter};
 use crate::ui::view::ViewNode;
-use crate::ui::virtualization::virtual_scroll::VirtualScrollRenderer;
+use crate::ui::virtualization::VirtualScrollRenderer;
 // 表格 capability 启用时才引入扩展行、自定义单元格与行数据类型。
 #[cfg(feature = "table")]
 // 这些类型只服务表格动态渲染 sidecar。
@@ -79,27 +80,70 @@ impl RenderHandlerTable {
     }
 
     pub(crate) fn render_virtual_scroll_items(
+        // 可变借用 renderer sidecar 以调用应用持有的 FnMut。
         &mut self,
-        component: ComponentId,
+        // 接收由宿主 WidgetTree 校验并签发的动态捕获能力。
+        capture_context: &DynamicViewCaptureContext,
+        // 接收当前物化窗口的绝对起始索引。
         start: usize,
+        // 接收当前物化窗口的开区间结束索引。
         end: usize,
     ) -> Option<Vec<ViewNode>> {
         // 读取该虚拟滚动节点当前声明的行渲染器。
-        let renderer = self.virtual_scroll_item.get_mut(&component)?;
-        // 只构建当前有界物化窗口中的 View。
+        let renderer = self.virtual_scroll_item.get_mut(&capture_context.owner())?;
+        // 先计算整批稳定键，避免任何行捕获后才发现身份冲突。
+        let keyed_indices = (start..end)
+            // 每个绝对索引只调用一次应用键工厂。
+            .map(|index| {
+                // 类型化身份必须先规范化，再同时交给状态与节点所有权。
+                (index, (renderer.key)(index).into_runtime_key())
+            })
+            // 保存本轮确定的索引与业务身份供后续捕获消费。
+            .collect::<Vec<_>>();
+        // 在执行任意行工厂前拒绝同一物化窗口内的重复稳定键。
+        let mut unique_keys = std::collections::HashMap::with_capacity(keyed_indices.len());
+        // 逐项验证键工厂满足当前窗口的唯一性前置条件。
+        for (index, stable_key) in &keyed_indices {
+            // 保存首次出现的绝对索引，不把可能敏感的业务标识写入 panic。
+            if let Some(first_index) = unique_keys.insert(stable_key.clone(), *index) {
+                // 重复键会同时破坏 keyed reconcile 与组件私有状态所有权。
+                panic!(
+                    // 只报告冲突位置，避免泄露应用业务标识。
+                    "VirtualScroll renderer 的索引 {first_index} 与 {index} 返回了重复稳定键"
+                );
+            }
+        }
+        // 完成整批身份校验后才构建当前有界物化窗口中的 View。
         Some(
-            (start..end)
-                .map(|index| {
-                    // 在捕获上下文中构建绝对索引对应的声明行。
-                    let mut view = ViewAdapter::capture_root(|| renderer(index));
-                    // 用户业务 key 优先；缺省时用绝对索引提供确定性身份。
-                    if view.key.is_none() {
-                        // 后备 key 让重叠物化窗口可复用同一行组件。
-                        view = view.key(format!("virtual-scroll-item:{index}"));
-                    }
-                    // 保留 ViewNode 供动态协调器按 key 复用，而不提前展开。
-                    view
+            keyed_indices
+                // 消费已验证的索引与稳定键。
+                .into_iter()
+                // 每项进入相同 tree-owned capture 与 keyed reconcile 身份。
+                .map(|(index, stable_key)| {
+                    // 为声明节点保留与捕获命名空间相同的键副本。
+                    let view_key = stable_key.clone();
+                    // 在所属树的动态命名空间中构建当前业务项的声明行。
+                    let view = capture_context
+                        // 完整捕获 State、Effect、AnimatedSource 与状态回执。
+                        .capture(
+                            // 固定槽位把 VirtualScroll 行与同宿主其他延迟 renderer 隔离。
+                            "virtual-scroll-item",
+                            // 用键工厂输出统一拥有私有状态实例。
+                            stable_key,
+                            // 在完整捕获边界中调用应用行工厂。
+                            || (renderer.item)(index),
+                        );
+                    // 普通 render 中返回自定义根 key 会形成双身份，必须显式迁移 API。
+                    assert!(
+                        // renderer 只能返回无 key 行根，由框架设置权威稳定身份。
+                        view.key.is_none(),
+                        // 指向唯一支持业务稳定键的公开入口。
+                        "VirtualScroll 行 renderer 不得直接设置根 key；请改用 render_keyed"
+                    );
+                    // 强制节点协调 key 与动态状态命名空间完全一致。
+                    view.key(view_key)
                 })
+                // 返回尚未展开的声明节点给动态协调器。
                 .collect(),
         )
     }
