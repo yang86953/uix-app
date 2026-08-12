@@ -875,3 +875,8 @@ mod capture_merge;
 #[path = "adapter_tests/state_bind_lifecycle.rs"]
 // 编译 State 租约与 shutdown 生命周期回归模块。
 mod state_bind_lifecycle;
+
+// 拆分树级动态命名空间与动画源所有权回归，保持适配器测试主体低于规模上限。
+#[path = "adapter_tests/dynamic_capture.rs"]
+// 编译延迟 View 动态捕获基础契约的行为测试模块。
+mod dynamic_capture;

@@ -107,10 +107,10 @@ impl ViewAdapter {
             .unwrap_or_else(WidgetTree::new);
         // 在消费声明树前转移全部 journal，保证异常展开仍由回执回滚。
         let receipts = capture_guards::take_component_state_receipts(&mut root);
+        // 在建树成功前仅暂存根动画源，避免展开 panic 提前替换旧所有权。
+        let animated_sources = std::mem::take(&mut root.animated_sources);
         // 事务覆盖整个展开流程，异常时恢复深度且成功后按最终树清理。
         tree.with_component_state_transaction(receipts, |tree| {
-            // 同步根捕获到的动画源。
-            tree.sync_animated_sources(std::mem::take(&mut root.animated_sources));
             // 先取出当前根专属输出，避免声明根被展开后丢失交接所有权。
             let state_binds = std::mem::take(&mut root.captured_state_binds);
             // 先取出当前根专属 Effect，待成功建树后再替换旧根实例。
@@ -119,6 +119,8 @@ impl ViewAdapter {
             let wnode = Self::expand(root);
             // 挂载完整 WidgetNode 树。
             tree.build(wnode);
+            // 完整建树成功后才替换根动画源所有权。
+            tree.sync_animated_sources(animated_sources);
             // 提交当前根显式携带的结构性 State 绑定。
             tree.replace_root_captured_state_binds(state_binds);
             // 替换当前根显式携带的 Effect 集合。
@@ -142,10 +144,10 @@ impl ViewAdapter {
     pub fn reconcile_nodes(tree: &mut WidgetTree, mut root: ViewNode) {
         // 在消费声明树前转移全部 journal，保证异常协调仍由回执回滚。
         let receipts = capture_guards::take_component_state_receipts(&mut root);
+        // 在协调成功前仅暂存根动画源，保留 panic 前的旧根注册。
+        let animated_sources = std::mem::take(&mut root.animated_sources);
         // 事务覆盖整次协调，允许同轮类型替换继续复用捕获到的状态。
         tree.with_component_state_transaction(receipts, |tree| {
-            // 同步本轮声明根捕获到的动画源。
-            tree.sync_animated_sources(std::mem::take(&mut root.animated_sources));
             // 先取出本轮根专属输出，避免协调消费声明根后丢失交接所有权。
             let state_binds = std::mem::take(&mut root.captured_state_binds);
             // 先取出本轮根专属 Effect，待成功协调后再替换旧根实例。
@@ -163,6 +165,8 @@ impl ViewAdapter {
                     tree.build(Self::expand(root));
                 }
             }
+            // 根协调完整成功后才替换动画源，避免失败路径丢失旧注册。
+            tree.sync_animated_sources(animated_sources);
             // 提交本轮根显式携带的结构性 State 绑定。
             tree.replace_root_captured_state_binds(state_binds);
             // 替换本轮根显式携带的 Effect 集合。
@@ -181,6 +185,8 @@ impl ViewAdapter {
             captured_state_binds: Vec<std::sync::Arc<dyn crate::ui::reactive::state::StatePaintBind>>,
             // 保存非根声明节点交接给运行时节点的 Effect。
             captured_effects: Vec<crate::ui::reactive::state::Effect>,
+            // 保存非根或动态声明节点交接给所属节点的动画源。
+            animated_sources: Vec<std::sync::Arc<dyn crate::ui::animation::AnimatedSource>>,
             visual_transform: crate::ui::component::view_transform::ViewTransform,
             enter_animation: Option<crate::ui::animation::AnimationConfig>,
             enter_deadline: Option<std::time::Instant>,
@@ -211,7 +217,8 @@ impl ViewAdapter {
                 captured_state_binds,
                 // 把非根与动态子树的 Effect 输出继续传递到运行时节点。
                 captured_effects,
-                animated_sources: _,
+                // 把非根与动态子树的动画源继续传递到运行时节点。
+                animated_sources,
                 provider_context,
                 style,
                 visual_transform,
@@ -248,6 +255,8 @@ impl ViewAdapter {
                 captured_state_binds,
                 // 保留本声明节点的 Effect 输出。
                 captured_effects,
+                // 保留本声明节点拥有的动画源输出。
+                animated_sources,
                 visual_transform,
                 enter_animation,
                 enter_deadline,
@@ -332,6 +341,8 @@ impl ViewAdapter {
             wnode = wnode.with_captured_state_binds(frame.captured_state_binds);
             // 把动态子树捕获的 Effect 交接给将来拥有该节点的节点生命周期。
             wnode = wnode.with_captured_effects(frame.captured_effects);
+            // 把动态子树捕获的动画源交接给将来拥有该节点的树级注册表。
+            wnode = wnode.with_animated_sources(frame.animated_sources);
 
             // 将声明节点的嵌套组件作用域保留到运行时树。
             wnode = wnode.with_uix_component_scopes(frame.uix_component_scopes);
@@ -457,7 +468,8 @@ impl ViewAdapter {
             captured_state_binds,
             // 接收本节点本轮捕获的 Effect 输出。
             captured_effects,
-            animated_sources: _,
+            // 接收本节点本轮捕获的动画源输出。
+            animated_sources,
             provider_context,
             style,
             visual_transform,
@@ -622,6 +634,8 @@ impl ViewAdapter {
             tree.push_layout_invalidation(id);
             tree.propagate_layout_invalidation(id);
         }
+        // 本节点及其动态子树协调成功后才替换节点动画源所有权。
+        tree.replace_node_animated_sources(id, animated_sources);
     }
 
     fn reconcile_handlers(

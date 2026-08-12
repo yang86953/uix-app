@@ -2,15 +2,25 @@
 use super::{
     // 引入仅由事务协调器使用的批量回执接纳入口。
     accept_component_state_receipts,
+    // 引入按最终挂载作用域解析回执批次的入口。
+    resolve_component_state_receipts,
+    // 引入测试生成声明作用域的代码生成器入口。
+    uix_component_scope,
     // 引入代码生成器使用的状态取得入口。
     uix_component_state,
     // 引入带异常回滚的捕获事务入口。
     with_component_state_capture,
+    // 引入动态宿主命名空间感知的捕获事务入口。
+    with_component_state_capture_in_namespace,
+    // 引入测试构造动态宿主身份所需的命名空间类型。
+    ComponentStateCaptureNamespace,
     // 引入单树拥有的组件状态存储。
     ComponentStateStore,
     // 引入测试构造稳定身份所需的作用域。
     UixComponentScope,
 };
+// 引入动态命名空间宿主的稳定组件身份。
+use crate::core::ComponentId;
 // 引入单线程测试记录器。
 use std::cell::Cell;
 // 引入可验证原始 panic 语义的展开边界。
@@ -26,7 +36,15 @@ fn test_scope(declaration: u64) -> UixComponentScope {
         declaration,
         // 单一测试实例始终使用第一次出现。
         occurrence: 0,
+        // 手工构造的静态作用域不附加动态实例命名空间。
+        namespace: None,
     }
+}
+
+// 构造带固定静态槽位的动态实例命名空间。
+fn test_namespace(owner_slot: usize, stable_key: &str) -> ComponentStateCaptureNamespace {
+    // 使用不同组件槽位模拟不同动态宿主。
+    ComponentStateCaptureNamespace::new(ComponentId::new(owner_slot), "dynamic-row", stable_key)
 }
 
 // 验证成功捕获在挂载前丢弃回执会撤销新建状态。
@@ -430,3 +448,276 @@ fn nested_transaction_receipts_roll_back_with_outer_panic() {
     // 丢弃重试回执以保持本测试只断言回滚而不承诺树半成品状态。
     drop(retry_receipt);
 }
+
+// 验证同一静态声明在同一宿主的不同业务键下隔离状态。
+#[test]
+// 执行动态命名空间业务键隔离回归。
+fn dynamic_namespace_different_keys_isolate_same_static_scope() {
+    // 创建供两个动态实例共享的窗口私有状态存储。
+    let store = ComponentStateStore::new();
+    // 创建同一宿主的第一个稳定业务实例命名空间。
+    let first_namespace = test_namespace(31, "first-key");
+    // 创建同一宿主的第二个稳定业务实例命名空间。
+    let second_namespace = test_namespace(31, "second-key");
+    // 在第一个动态实例内建立相同静态声明的字段。
+    let ((first_scope, first), first_receipt) = with_component_state_capture_in_namespace(
+        // 复用同一窗口存储以排除存储边界影响。
+        store.clone(),
+        // 传入第一个业务键命名空间。
+        first_namespace,
+        // 构建第一个动态实例的声明作用域与字段。
+        || {
+            // 申请与第二个实例完全相同的静态声明身份。
+            let scope = uix_component_scope("dynamic-keyed-callsite", 71);
+            // 建立第一实例的同一字段号状态。
+            let state = uix_component_state(&scope, 1, || 101_i32);
+            // 返回作用域与状态以验证完整身份。
+            (scope, state)
+        },
+    );
+    // 让第一实例的新增字段成为已挂载状态。
+    accept_component_state_receipts(vec![first_receipt]);
+    // 在第二个动态实例内重复相同静态声明与字段号。
+    let ((second_scope, second), second_receipt) = with_component_state_capture_in_namespace(
+        // 复用相同窗口存储以只改变业务键维度。
+        store,
+        // 传入不同业务键的同宿主命名空间。
+        second_namespace,
+        // 构建第二个动态实例的声明作用域与字段。
+        || {
+            // 重复第一个实例的静态调用点与声明号。
+            let scope = uix_component_scope("dynamic-keyed-callsite", 71);
+            // 重复第一实例的字段号但使用不同初始值。
+            let state = uix_component_state(&scope, 1, || 202_i32);
+            // 返回作用域与状态以验证完整身份。
+            (scope, state)
+        },
+    );
+    // 让第二实例的新增字段成为已挂载状态。
+    accept_component_state_receipts(vec![second_receipt]);
+    // 不同业务键必须生成不同的完整组件作用域。
+    assert_ne!(first_scope, second_scope);
+    // 不同业务键不得复用同一个响应式状态槽。
+    assert_ne!(first.slot_id(), second.slot_id());
+    // 第一实例必须保留自己的初始值。
+    assert_eq!(first.get(), 101_i32);
+    // 第二实例必须保留自己的初始值。
+    assert_eq!(second.get(), 202_i32);
+}
+
+// 验证相同动态业务键跨捕获复用已挂载状态。
+#[test]
+// 执行动态命名空间稳定键复用回归。
+fn dynamic_namespace_same_key_reuses_state_across_captures() {
+    // 创建两次捕获共享的窗口私有状态存储。
+    let store = ComponentStateStore::new();
+    // 创建将在两次捕获中重建的稳定动态命名空间。
+    let namespace = test_namespace(41, "reused-key");
+    // 在首次动态捕获中建立状态字段。
+    let (first, first_receipt) = with_component_state_capture_in_namespace(
+        // 提供窗口唯一的状态存储。
+        store.clone(),
+        // 提供首次构造的稳定命名空间。
+        namespace.clone(),
+        // 构建首次动态实例状态。
+        || {
+            // 申请固定的静态声明身份。
+            let scope = uix_component_scope("dynamic-reuse-callsite", 72);
+            // 建立将由后续捕获复用的字段。
+            uix_component_state(&scope, 1, || 301_i32)
+        },
+    );
+    // 接纳首次捕获的状态写入。
+    accept_component_state_receipts(vec![first_receipt]);
+    // 记录后备初始器是否被错误调用。
+    let fallback_ran = Cell::new(false);
+    // 在第二次动态捕获中请求相同身份的字段。
+    let (second, second_receipt) = with_component_state_capture_in_namespace(
+        // 复用同一个窗口存储。
+        store,
+        // 复用完全相同的动态命名空间。
+        namespace,
+        // 构建第二次动态实例状态查询。
+        || {
+            // 重复首次捕获的静态声明身份。
+            let scope = uix_component_scope("dynamic-reuse-callsite", 72);
+            // 请求同一字段并提供可观测后备初始器。
+            uix_component_state(&scope, 1, || {
+                // 标记不应发生的重新初始化。
+                fallback_ran.set(true);
+                // 返回仅在错误重建时可见的后备值。
+                302_i32
+            })
+        },
+    );
+    // 接纳只读复用捕获以结束事务语义。
+    accept_component_state_receipts(vec![second_receipt]);
+    // 相同完整命名空间必须复用首次状态槽。
+    assert_eq!(first.slot_id(), second.slot_id());
+    // 已挂载状态必须保留首次初始值。
+    assert_eq!(second.get(), 301_i32);
+    // 复用路径不得执行后备初始器。
+    assert!(!fallback_ran.get());
+}
+
+// 验证不同宿主和不同窗口存储均不共享动态状态。
+#[test]
+// 执行动态命名空间宿主与存储隔离回归。
+fn dynamic_namespace_different_owners_and_stores_are_isolated() {
+    // 创建第一个窗口树拥有的状态存储。
+    let first_store = ComponentStateStore::new();
+    // 创建第二个窗口树拥有的独立状态存储。
+    let second_store = ComponentStateStore::new();
+    // 创建第一个宿主的稳定动态命名空间。
+    let first_namespace = test_namespace(51, "shared-key");
+    // 创建第二个宿主的同业务键动态命名空间。
+    let second_namespace = test_namespace(52, "shared-key");
+    // 在第一个宿主与第一个存储中建立字段。
+    let (first, first_receipt) = with_component_state_capture_in_namespace(
+        // 使用第一个窗口树存储。
+        first_store.clone(),
+        // 使用第一个动态宿主。
+        first_namespace.clone(),
+        // 构建第一个动态状态字段。
+        || {
+            // 申请将由其余隔离场景重复的静态声明。
+            let scope = uix_component_scope("dynamic-owner-callsite", 73);
+            // 建立第一个宿主的状态值。
+            uix_component_state(&scope, 1, || 401_i32)
+        },
+    );
+    // 接纳第一个宿主的字段。
+    accept_component_state_receipts(vec![first_receipt]);
+    // 记录不同宿主是否独立执行初始化。
+    let different_owner_initialized = Cell::new(false);
+    // 在同一存储但不同宿主中请求同一静态字段。
+    let (different_owner, different_owner_receipt) = with_component_state_capture_in_namespace(
+        // 复用第一个窗口树存储以只改变宿主维度。
+        first_store,
+        // 切换至不同组件宿主。
+        second_namespace,
+        // 构建第二宿主的同静态字段。
+        || {
+            // 重复第一个宿主的静态声明。
+            let scope = uix_component_scope("dynamic-owner-callsite", 73);
+            // 以可观测初始器建立隔离字段。
+            uix_component_state(&scope, 1, || {
+                // 标记宿主隔离导致的新建。
+                different_owner_initialized.set(true);
+                // 返回第二宿主独有的状态值。
+                402_i32
+            })
+        },
+    );
+    // 接纳第二宿主的字段。
+    accept_component_state_receipts(vec![different_owner_receipt]);
+    // 记录不同存储是否独立执行初始化。
+    let different_store_initialized = Cell::new(false);
+    // 在不同存储但相同宿主中请求同一静态字段。
+    let (different_store, different_store_receipt) = with_component_state_capture_in_namespace(
+        // 切换至另一个窗口树存储。
+        second_store,
+        // 保留第一个宿主命名空间以只改变存储维度。
+        first_namespace,
+        // 构建第二窗口树的同静态字段。
+        || {
+            // 重复第一个宿主的静态声明。
+            let scope = uix_component_scope("dynamic-owner-callsite", 73);
+            // 以可观测初始器建立另一存储的字段。
+            uix_component_state(&scope, 1, || {
+                // 标记存储隔离导致的新建。
+                different_store_initialized.set(true);
+                // 返回第二窗口树独有的状态值。
+                403_i32
+            })
+        },
+    );
+    // 接纳第二窗口树的字段。
+    accept_component_state_receipts(vec![different_store_receipt]);
+    // 不同宿主不得复用第一个宿主的状态槽。
+    assert_ne!(first.slot_id(), different_owner.slot_id());
+    // 不同状态存储不得复用第一个窗口树的状态槽。
+    assert_ne!(first.slot_id(), different_store.slot_id());
+    // 不同宿主必须实际建立独立状态。
+    assert!(different_owner_initialized.get());
+    // 不同状态存储必须实际建立独立状态。
+    assert!(different_store_initialized.get());
+    // 第一个宿主必须保留自己的值。
+    assert_eq!(first.get(), 401_i32);
+    // 第二宿主必须保留自己的值。
+    assert_eq!(different_owner.get(), 402_i32);
+    // 第二窗口树必须保留自己的值。
+    assert_eq!(different_store.get(), 403_i32);
+}
+
+// 验证动态捕获 panic 会恢复 TLS 并回滚命名空间字段。
+#[test]
+// 执行动态命名空间 panic 恢复回归。
+fn dynamic_namespace_panic_restores_tls_and_rolls_back_state() {
+    // 创建将经历异常与重试的窗口私有状态存储。
+    let store = ComponentStateStore::new();
+    // 创建将经历异常与重试的稳定动态命名空间。
+    let namespace = test_namespace(61, "panic-key");
+    // 在展开边界内执行会失败的动态捕获。
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        // 在动态命名空间中建立字段后故意 panic。
+        with_component_state_capture_in_namespace(
+            // 传入将用于重试的窗口存储。
+            store.clone(),
+            // 传入将用于重试的动态命名空间。
+            namespace.clone(),
+            // 构建会在建立字段后失败的动态内容。
+            || {
+                // 申请动态命名空间内的静态声明身份。
+                let scope = uix_component_scope("dynamic-panic-callsite", 74);
+                // 建立应由 panic 回滚的状态字段。
+                let _ = uix_component_state(&scope, 1, || 501_i32);
+                // 模拟动态 View 构建失败。
+                panic!("dynamic namespace failure");
+            },
+        );
+    }));
+    // 原始 panic 必须继续传播到调用方。
+    assert!(result.is_err());
+    // 在普通静态捕获中读取恢复后的作用域身份。
+    let (static_scope, static_receipt) = with_component_state_capture(store.clone(), || {
+        // 申请与失败捕获相同的静态声明以检查 TLS 是否泄漏命名空间。
+        uix_component_scope("dynamic-panic-callsite", 74)
+    });
+    // 恢复后的静态根作用域不得保留失败动态命名空间。
+    assert!(static_scope.namespace.is_none());
+    // 丢弃静态查询回执以保持测试不接纳无节点根。
+    drop(static_receipt);
+    // 记录失败动态字段是否会被正确重新初始化。
+    let reinitialized = Cell::new(false);
+    // 在相同动态命名空间内重试失败前建立的字段。
+    let (retry, retry_receipt) = with_component_state_capture_in_namespace(
+        // 复用已恢复的同一窗口存储。
+        store,
+        // 复用失败前的同一动态实例身份。
+        namespace,
+        // 构建重试动态实例字段。
+        || {
+            // 重复失败前的静态声明身份。
+            let scope = uix_component_scope("dynamic-panic-callsite", 74);
+            // 请求字段并验证失败路径确实已经回滚。
+            uix_component_state(&scope, 1, || {
+                // 标记异常路径未泄漏状态。
+                reinitialized.set(true);
+                // 返回重试后的新初始值。
+                502_i32
+            })
+        },
+    );
+    // 失败后的同身份重试必须重新执行初始器。
+    assert!(reinitialized.get());
+    // 重试状态必须采用新的初始值。
+    assert_eq!(retry.get(), 502_i32);
+    // 丢弃重试回执以验证未挂载构建不会残留状态。
+    drop(retry_receipt);
+}
+
+// 从独立子文件挂载 provisional claim 生命周期门禁。
+#[path = "component_state_tests/pending_claims.rs"]
+// 隔离并发未提交捕获的状态槽认领协议测试。
+mod pending_claims;
