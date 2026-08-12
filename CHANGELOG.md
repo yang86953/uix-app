@@ -6,6 +6,7 @@
 
 ### 首发能力
 
+- Windows 与 Linux 均纳入 `0.0.1` 首发平台范围；Windows 当前基线为 x64/D3D11，Linux 当前原生路径为 Wayland/EGL OpenGL ES。
 - 提供 Rust 声明式 View、State / Computed、应用壳、本地 Settings 与桌面组件体系。
 - `demo/` 调整为独立多项目工作区：`gui-demo`（`uix-demo` 多页应用与组件测试入口）与 `cli-demo`（CLI 功能域演示）各自独立构建，bin 名称与运行模式保持不变。
 - 编译产物配置入仓：根包与 demo 工作区显式声明 release/dev/test profile（体积优先 `opt-level="s"`、fat LTO、符号表全剥离、`codegen-units=1`），不再依赖机器级 cargo 配置；release 的过程宏与构建脚本单独提速编译。
@@ -24,5 +25,5 @@
 ### 发布状态
 
 - 版权归 `yangyanhui` 所有；版本按专有闭源、仅限内部授权使用的方式交付，不对外分发源码或二进制制品。
-- 内部交付载体为 Windows 11 24H2 x64 ZIP：release Demo、内部 `.crate`、UIX 专有许可、Lucide / Feather 第三方声明、说明文件、运行时 Demo 图片与 SHA-256 清单；release 使用默认 feature 集（原生 D3D11），并保留 Software 整体回退。
+- 已定义的 Windows 内部交付载体为 Windows 11 24H2 x64 ZIP：release Demo、内部 `.crate`、UIX 专有许可、Lucide / Feather 第三方声明、说明文件、运行时 Demo 图片与 SHA-256 清单；release 使用默认 feature 集（原生 D3D11），并保留 Software 整体回退。Linux 同属首发范围，其平台专用交付物细节由 Vikunja #770 管理。
 - 本版本仍未发布；完成状态只以仓库自动测试为准。
