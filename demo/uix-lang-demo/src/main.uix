@@ -1,5 +1,5 @@
-// 声明拥有页面选择与首页计数状态的声明式演示组件。
-<Component name="DemoApp" state="page: 0, count: 0">
+// 声明演示组件，并接收由窗口 root factory 持有的页面与计数状态。
+<Component name="DemoApp" props="page: State<number>, count: State<number>">
   // 使用纵向根布局承载自定义标题栏与应用主体。
   <Column flexGrow={1} backgroundColor="#F5F5F5">
     // 构造与 API GUI Demo 对齐的自定义标题栏。
@@ -407,5 +407,5 @@
   </Column>
 // 结束声明式演示组件。
 </Component>
-// 实例化文档的唯一根组件。
-<DemoApp />
+// 实例化文档的唯一根组件并传入窗口级持久状态句柄。
+<DemoApp page={page} count={count} />
