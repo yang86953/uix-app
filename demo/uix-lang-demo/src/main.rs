@@ -15,9 +15,11 @@ fn main() {
     // 组装并运行 uix-lang 演示窗口。
     App::new()
         // 设置演示窗口标题。
-        .title("UIX Lang Demo")
-        // 设置适合首个声明式示例的窗口尺寸。
-        .size(640, 360)
+        .title("UIX Demo")
+        // 使用与 API GUI Demo 一致的初始窗口尺寸。
+        .size(1200, 800)
+        // 由声明式根视图绘制与 API GUI Demo 一致的自定义标题栏。
+        .custom_title_bar(true)
         // 把编译期生成的 ViewNode 工厂交给应用组合根。
         .root(build_view)
         // 进入并由 App 持有原生窗口事件循环。
@@ -30,8 +32,7 @@ fn init_tracing() {
     use tracing_subscriber::EnvFilter;
 
     // 优先读取 RUST_LOG，缺省时只显示 uix 日志域的 info 级。
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("uix=info"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("uix=info"));
     // 订阅器初始化失败不影响演示运行。
     let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
 }

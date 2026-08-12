@@ -7,8 +7,32 @@ license-file = "../../LICENSE"
 description = "UIX uix-lang 编译期界面演示"
 
 [dependencies]
-# Windows 使用 D3D11；Linux/Wayland 使用 EGL OpenGL ES。
-uix = { path = "../..", default-features = false, features = ["d3d11", "opengles"] }
+# 与 API GUI Demo 对齐公开组件能力，同时保留声明式入口自己的运行边界。
+uix = { path = "../..", default-features = false, features = [
+    # Windows 使用 D3D11 图形后端。
+    "d3d11",
+    # Linux/Wayland 使用 EGL OpenGL ES 图形后端。
+    "opengles",
+    # 启用图片编解码能力。
+    "image-codecs",
+    # 启用二维码组件能力。
+    "qrcode",
+    # 启用表单模式能力。
+    "form-pattern",
+    # 启用富文本组件能力。
+    "rich-text",
+    # 启用图表运行时能力。
+    "charts",
+    # 启用表格运行时能力。
+    "table",
+    # 启用导航组件能力。
+    "navigation",
+    # 启用反馈组件能力。
+    "feedback",
+    # 启用树形组件能力。
+    "tree-widgets",
+    # 结束与 API GUI Demo 对齐的公开组件能力列表。
+] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 

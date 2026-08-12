@@ -1,7 +1,8 @@
 # UIX Lang Demo
 
-这个项目展示当前可运行的 uix-lang 文件入口：`src/main.uix` 声明界面、组件私有状态与
-点击事件，`src/main.rs` 在编译期调用公开 `uix!` 宏，并继续持有应用与窗口生命周期。
+这个项目展示与 API GUI Demo 对齐的 uix-lang 多页入口：`src/main.uix` 声明 1200×800
+应用外壳、12 个公开页面入口、组件私有状态与事件，`src/main.rs` 在编译期调用公开
+`uix!` 宏，并继续持有应用与窗口生命周期。
 
 ## 运行
 
@@ -12,6 +13,13 @@ cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo
 ```
 
 Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。
+
+## 对齐范围
+
+- 对齐自定义标题栏、分组侧边栏、页头、滚动内容区、状态栏与公开页面分类。
+- 对齐 API GUI Demo 的公开组件 feature；已注册标签直接在 `.uix` 中展示。
+- 图表、表格等尚未登记的 uix-lang 标签保留 Rust API 边界，并在界面中明确说明。
+- Agent 控制与 test-harness 是 API Demo 的测试入口，不复制到声明式产品界面。
 
 ## 当前边界
 
