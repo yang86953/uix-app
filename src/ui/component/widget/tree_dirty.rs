@@ -337,35 +337,101 @@ impl WidgetTree {
         }
     }
 
-    /// 将 View 构建期未关联 widget 的 pending State 绑定为 reconcile。
+    /// 将捕获根显式交接的结构性 State 绑定为 reconcile。
     ///
     /// 构建期 `State::get()` 表示 View 结构依赖该值（如 demo 的 `active` 选页）。
     /// 若只绑根节点 Paint，变更会全帧重绘却不重建树——页面不切换，且
     /// `layer_tree.render` 全帧 record 可达数百毫秒。
     /// DynamicLabel 等文本闭包依赖由 `bind_reactive_widget_states` 单独绑 Paint。
-    pub fn bind_orphan_pending_states(&mut self) {
-        use crate::ui::reactive::state::drain_pending_state_binds;
-        let orphans = drain_pending_state_binds();
-        if orphans.is_empty() {
-            return;
-        }
+    pub(crate) fn replace_root_captured_state_binds(
+        &mut self,
+        state_binds: Vec<std::sync::Arc<dyn crate::ui::reactive::state::StatePaintBind>>,
+    ) {
+        // 读取所属树的窄 reconcile 请求端口。
         let reconcile = self.reconcile_requester();
+        // 读取所属树的稳定订阅去重键。
         let reconcile_key = self.reconcile_requester_key();
-        for source in orphans {
-            source.bind_reconcile_site(reconcile_key, reconcile.clone());
+        // 为根本轮全部 State 源建立由根生命周期持有的租约。
+        let leases = state_binds
+            // 逐个转换声明源为可自动解绑的租约。
+            .into_iter()
+            // 将当前树请求端口安装到每个源。
+            .map(|source| {
+                // 返回由根集合拥有的精确订阅租约。
+                crate::ui::reactive::state::ReconcileBindLease::bind(
+                    // 转移当前声明 State 源。
+                    source,
+                    // 传入稳定树请求端口键。
+                    reconcile_key,
+                    // 共享当前树的请求端口。
+                    reconcile.clone(),
+                )
+            })
+            // 收集本轮完整根租约集合。
+            .collect();
+        // 替换根集合并让旧根租约在最后持有者离开时解绑。
+        self.root_reconcile_state_binds = leases;
+    }
+
+    // 整体替换一个实际节点持有的结构性 State 租约。
+    pub(crate) fn replace_node_captured_state_binds(
+        // 独占访问节点和所属树的请求端口。
+        &mut self,
+        // 接收实际已挂载节点标识。
+        id: ComponentId,
+        // 接收该节点本轮声明捕获的 State 源。
+        state_binds: Vec<std::sync::Arc<dyn crate::ui::reactive::state::StatePaintBind>>,
+    ) {
+        // 读取所属树的窄 reconcile 请求端口。
+        let reconcile = self.reconcile_requester();
+        // 读取所属树的稳定订阅去重键。
+        let reconcile_key = self.reconcile_requester_key();
+        // 为节点本轮 State 源建立可自动解绑租约。
+        let leases = state_binds
+            // 逐个转换声明源为节点生命周期租约。
+            .into_iter()
+            // 将当前树请求端口安装到每个源。
+            .map(|source| {
+                // 返回由节点集合拥有的精确订阅租约。
+                crate::ui::reactive::state::ReconcileBindLease::bind(
+                    // 转移当前声明 State 源。
+                    source,
+                    // 传入稳定树请求端口键。
+                    reconcile_key,
+                    // 共享当前树的请求端口。
+                    reconcile.clone(),
+                )
+            })
+            // 收集该节点完整租约集合。
+            .collect();
+        // 仅实际节点仍存在时替换其租约，缺席时 leases 立即回滚解绑。
+        if let Some(node) = self.get_mut(id) {
+            // 让节点拥有本轮租约。
+            node.replace_reconcile_state_binds(leases);
         }
     }
 
-    /// 注册 View 构建期捕获的 Effect。
+    /// 注册捕获根显式交接的 Effect。
     /// 每次 rebuild 创建新的 Effect 实例，先清除旧实例避免累积。
-    pub fn bind_pending_effects(&mut self) {
-        use crate::ui::reactive::state::drain_pending_effects;
+    pub(crate) fn register_root_effects(
+        &mut self,
+        effects: Vec<crate::ui::reactive::state::Effect>,
+    ) {
+        // 根替换前先释放旧根 Effect，保持 rebuild 的替换语义。
         self.effects.clear();
-        self.effects.extend(drain_pending_effects());
+        // 接管当前根显式交接的全部 Effect 实例。
+        self.effects.extend(effects);
     }
 
     pub fn has_pending_effects(&self) -> bool {
+        // 先检查根捕获交接给树拥有的 Effect。
         self.effects.iter().any(|eff| eff.has_pending())
+            // 再检查全部实际挂载节点生命周期拥有的 Effect。
+            || self.traverse().iter().any(|&id| {
+                // 节点可能在遍历期间因代际失效而不可用。
+                self.get(id)
+                    .is_some_and(|node| node.effects().iter().any(|eff| eff.has_pending()))
+            })
     }
 
     /// 每帧 tick 已注册的 Effect；任一 Effect 重新执行时返回 true。
@@ -375,6 +441,20 @@ impl WidgetTree {
         for eff in &self.effects {
             if eff.tick() {
                 any_changed = true;
+            }
+        }
+        // 逐个节点处理其私有 Effect，不能因前一个已变化而短路。
+        for &id in self.traverse().iter() {
+            // 真实移除前的 leave 节点仍保留其 Effect 并继续参与调度。
+            if let Some(node) = self.get(id) {
+                // 完整遍历当前节点拥有的所有 Effect。
+                for effect in node.effects() {
+                    // 合并本轮是否有任意 Effect 实际重新执行。
+                    if effect.tick() {
+                        // 记录至少一个节点 Effect 已更新。
+                        any_changed = true;
+                    }
+                }
             }
         }
         any_changed

@@ -151,6 +151,8 @@ impl WidgetTree {
     // WidgetNode tree building.
 
     pub fn build(&mut self, node: WidgetNode) -> ComponentId {
+        // 直接重建整树前释放旧根持有的结构性 State 租约。
+        self.root_reconcile_state_binds.clear();
         self.build_node(node, None)
     }
 
@@ -192,6 +194,8 @@ impl WidgetTree {
             handlers,
             system_event_handlers,
             render_handlers,
+            captured_state_binds,
+            captured_effects,
             uix_component_scopes,
         } = node;
         let id = match parent {
@@ -223,10 +227,17 @@ impl WidgetTree {
                 node.set_tab_index_override(None);
             }
             node.set_accessibility_override(accessibility_override);
+            // 把成功挂载节点拥有的 Effect 与其真实生命周期绑定。
+            node.replace_captured_effects(captured_effects);
             // 保存声明展开携带的全部组件私有状态作用域。
             node.set_uix_component_scopes(uix_component_scopes);
         }
         self.register_focusable(id);
+        // 非根节点已加入当前树后才由自身生命周期持有结构性 State 租约。
+        if parent.is_some() {
+            // 把结构性 State 订阅绑定到该实际节点的真实移除生命周期。
+            self.replace_node_captured_state_binds(id, captured_state_binds);
+        }
         self.set_focus_handle(id, focus_handle);
         let handler_signatures = handlers
             .iter()

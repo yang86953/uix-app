@@ -1,5 +1,5 @@
 // 声明组件私有状态所需的运行时类型依赖。
-use crate::ui::reactive::state::State;
+use crate::ui::reactive::state::{State, StateSlotId};
 // 保存一次捕获期间的线程局部上下文。
 use std::cell::RefCell;
 // 保存状态槽的动态类型值。
@@ -48,8 +48,20 @@ impl UixComponentScopeMarker {
 struct ComponentStateValue {
     // 保存字段首次初始化时的具体 State 类型。
     type_name: &'static str,
+    // 保存精确回滚所需的状态槽身份。
+    slot_id: StateSlotId,
     // 保存可跨重建复用的响应式状态句柄。
     value: Box<dyn Any + Send + Sync>,
+}
+
+// 记录一次捕获真正插入的状态槽。
+struct ComponentStateInsert {
+    // 保存插入字段所属的组件作用域。
+    scope: UixComponentScope,
+    // 保存作用域内的稳定字段标识。
+    field: u64,
+    // 保存实际插入句柄的唯一槽身份。
+    slot_id: StateSlotId,
 }
 
 // 保存一个窗口树拥有的全部组件私有状态。
@@ -72,6 +84,68 @@ struct ComponentStateCapture {
     store: ComponentStateStore,
     // 为相同静态调用点分配本次捕获内的出现序号。
     occurrences: HashMap<(&'static str, u64), u64>,
+    // 记录本层捕获新插入的字段以供异常回滚。
+    insertions: Vec<ComponentStateInsert>,
+}
+
+// 代表一次成功捕获尚未被挂载事务接受的状态写入。
+pub(crate) struct ComponentStateCaptureReceipt {
+    // 保存本次捕获写入的树私有存储。
+    store: ComponentStateStore,
+    // 保存未提交的精确插入 journal。
+    insertions: Vec<ComponentStateInsert>,
+    // 标记挂载事务已经接受这些状态槽。
+    committed: bool,
+}
+
+// 管理组件状态捕获与挂载事务之间的两阶段交接。
+impl ComponentStateCaptureReceipt {
+    // 从已结束的线程局部捕获创建未提交回执。
+    fn new(finished: ComponentStateCapture) -> Self {
+        // 返回由调用方明确决定提交的一次性所有权。
+        Self {
+            // 转移本次捕获使用的存储句柄。
+            store: finished.store,
+            // 转移本层独立记录的插入集。
+            insertions: finished.insertions,
+            // 初始状态必须在丢弃时回滚。
+            committed: false,
+        }
+    }
+
+    // 由成功挂载或协调事务接受本次状态写入。
+    fn commit(mut self) {
+        // 标记 Drop 不再撤销已挂载的状态槽。
+        self.committed = true;
+    }
+}
+
+// 仅允许树事务协调器在同一批次内原子接纳全部成功捕获的 journal。
+pub(crate) fn accept_component_state_receipts(
+    // 接收已经通过最外层 WidgetTree 事务确认的回执集合。
+    receipts: Vec<ComponentStateCaptureReceipt>,
+) {
+    // 逐个消费回执以关闭其 Drop 回滚路径。
+    for receipt in receipts {
+        // 标记该 journal 已作为同批树事务的一部分被接纳。
+        receipt.commit();
+    }
+}
+
+// 确保未成功交付给 WidgetTree 的捕获不泄漏私有状态。
+impl Drop for ComponentStateCaptureReceipt {
+    // 在回执离开作用域时执行提交或回滚的终态处理。
+    fn drop(&mut self) {
+        // 已提交回执不能再修改树状态。
+        if self.committed {
+            // 直接返回保留挂载成功的槽。
+            return;
+        }
+        // 取出 journal 使重入 Drop 也不会重复回滚。
+        let insertions = std::mem::take(&mut self.insertions);
+        // 精确撤销仍指向本次新建槽的字段。
+        self.store.rollback_insertions(insertions);
+    }
 }
 
 // 仅在构建 View 时暴露当前树的状态存储上下文。
@@ -117,14 +191,22 @@ impl ComponentStateStore {
         }
         // 记录类型名以便未来错误精确诊断。
         let type_name = std::any::type_name::<T>();
+        // 记录候选句柄的唯一槽身份。
+        let slot_id = state.slot_id();
         // 把新状态归属到本窗口的组件作用域。
         fields.insert(
             field,
             ComponentStateValue {
                 type_name,
+                // 把精确槽身份与动态值一同保存。
+                slot_id,
                 value: Box::new(state.clone()),
             },
         );
+        // 在登记捕获 journal 前释放存储锁以允许重入。
+        drop(inner);
+        // 仅记录当前捕获在同一存储中实际插入的槽。
+        record_component_state_insert(self, scope, field, slot_id);
         // 返回首次建立的状态句柄。
         state
     }
@@ -181,6 +263,76 @@ impl ComponentStateStore {
             .fields
             .clear();
     }
+
+    // 回滚异常捕获实际新增且未被替换的状态槽。
+    fn rollback_insertions(&self, insertions: Vec<ComponentStateInsert>) {
+        // 一次锁定完成本层 journal 的精确回滚。
+        let mut inner = self.inner.lock().unwrap_or_else(|error| error.into_inner());
+        // 按插入的逆序撤销以保持重入初始化的栈语义。
+        for insertion in insertions.into_iter().rev() {
+            // 仅在字段仍指向原插入槽时删除。
+            let remove_scope = if let Some(fields) = inner.fields.get_mut(&insertion.scope) {
+                // 核对当前值的槽身份以避免误删后续替换。
+                let matches_inserted_slot = fields
+                    // 读取同一字段的当前值。
+                    .get(&insertion.field)
+                    // 只有槽身份完全相同才属于本层 journal。
+                    .is_some_and(|value| value.slot_id == insertion.slot_id);
+                // 删除经过身份核对的字段。
+                if matches_inserted_slot {
+                    // 移除本层捕获的精确字段。
+                    fields.remove(&insertion.field);
+                }
+                // 仅在实际删除后检查作用域是否已空。
+                matches_inserted_slot && fields.is_empty()
+            } else {
+                // 作用域已被其他生命周期路径清理时无需处理。
+                false
+            };
+            // 清理失去最后一个字段的空作用域。
+            if remove_scope {
+                // 移除不再包含状态的作用域映射。
+                inner.fields.remove(&insertion.scope);
+            }
+        }
+    }
+}
+
+// 把真实新增字段登记到当前同存储捕获的 journal。
+fn record_component_state_insert(
+    // 接收执行实际插入的树私有存储。
+    store: &ComponentStateStore,
+    // 接收插入字段所属的组件作用域。
+    scope: &UixComponentScope,
+    // 接收字段的稳定标识。
+    field: u64,
+    // 接收新建句柄的唯一槽身份。
+    slot_id: StateSlotId,
+) {
+    // 仅线程当前捕获可以拥有本次插入。
+    COMPONENT_STATE_CAPTURE.with(|capture| {
+        // 取得可变捕获以追加 journal 条目。
+        let mut active = capture.borrow_mut();
+        // 无捕获上下文时保持一次性语义。
+        let Some(active) = active.as_mut() else {
+            // 直接返回避免建立全局 journal。
+            return;
+        };
+        // 嵌套捕获只能记录自己存储中的插入。
+        if !Arc::ptr_eq(&active.store.inner, &store.inner) {
+            // 存储不同时不污染当前捕获的回滚集。
+            return;
+        }
+        // 登记只属于本层捕获的精确插入。
+        active.insertions.push(ComponentStateInsert {
+            // 复制稳定作用域值以供异常后独立回滚。
+            scope: scope.clone(),
+            // 保存字段标识。
+            field,
+            // 保存新建槽身份。
+            slot_id,
+        });
+    });
 }
 
 // 在一次 View 捕获内安装指定窗口的临时状态上下文。
@@ -189,28 +341,42 @@ pub(crate) fn with_component_state_capture<R>(
     store: ComponentStateStore,
     // 接收本次声明 View 构建闭包。
     build: impl FnOnce() -> R,
-) -> R {
+) -> (R, ComponentStateCaptureReceipt) {
     // 安装新的空出现序号表并保存外层捕获。
     let outer = COMPONENT_STATE_CAPTURE.with(|capture| {
         // 原子替换使嵌套捕获可在返回后恢复。
         capture.replace(Some(ComponentStateCapture {
             store,
             occurrences: HashMap::new(),
+            // 本层捕获从空回滚 journal 开始。
+            insertions: Vec::new(),
         }))
     });
     // 捕获 panic 以确保线程局部上下文不会泄漏到后续构建。
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(build));
-    // 无论构建成功与否都恢复外层上下文。
-    COMPONENT_STATE_CAPTURE.with(|capture| {
+    // 无论构建成功与否都恢复外层并取回本层捕获。
+    let finished_capture = COMPONENT_STATE_CAPTURE.with(|capture| {
         // 恢复前一个捕获或清空当前线程的临时状态。
-        capture.replace(outer);
-    });
+        capture.replace(outer)
+    })
+    // 成对的安装与恢复必须始终取回本层捕获。
+    .expect("组件状态捕获上下文意外缺失");
     // 保持调用者可观察到的正常返回或原始 panic。
     match result {
-        // 正常路径返回构建结果。
-        Ok(value) => value,
+        // 正常路径把值与独立可撤销回执一同交给调用方。
+        Ok(value) => {
+            // 构造仅能显式提交或由 Drop 回滚的一次性回执。
+            let receipt = ComponentStateCaptureReceipt::new(finished_capture);
+            // 返回已成功构建的值与未提交回执。
+            (value, receipt)
+        }
         // 异常路径不吞掉用户 View 的 panic。
-        Err(payload) => std::panic::resume_unwind(payload),
+        Err(payload) => {
+            // 用未提交回执的 Drop 立即撤销本层精确新增槽。
+            drop(ComponentStateCaptureReceipt::new(finished_capture));
+            // 恢复存储后继续原始 panic 展开。
+            std::panic::resume_unwind(payload)
+        }
     }
 }
 
@@ -263,3 +429,10 @@ where
     // 无捕获的直接 View 构建只创建本次状态，绝不引入全局缓存。
     State::new(init())
 }
+
+// 仅在库单元测试中编译组件状态回滚门禁。
+#[cfg(test)]
+// 将可访问私有存储边界的测试放在仓库测试目录。
+#[path = "../../tests/unit/ui/component_state_tests.rs"]
+// 挂载组件状态专用行为测试。
+mod tests;

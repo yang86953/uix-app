@@ -5,9 +5,6 @@ use std::sync::Arc;
 
 use crate::core::ComponentId;
 use crate::ui::adapter::ViewAdapter;
-// 表格动态 renderer 返回持久组件节点时才需要该类型。
-#[cfg(feature = "table")]
-use crate::ui::component::widget::WidgetNode;
 use crate::ui::view::ViewNode;
 use crate::ui::virtualization::virtual_scroll::VirtualScrollRenderer;
 // 表格 capability 启用时才引入扩展行、自定义单元格与行数据类型。
@@ -68,26 +65,17 @@ impl RenderHandlerTable {
         }
     }
 
-    // 表格 capability 启用时才编译扩展行 View 构建入口。
+    // 表格 capability 启用时才编译扩展行声明构建入口。
     #[cfg(feature = "table")]
     pub(crate) fn render_table_expand_view(
         &self,
         component: ComponentId,
         row: &TableRow,
     ) -> Option<ViewNode> {
+        // 查找拥有当前表格扩展行的渲染器。
         let renderer = self.table_expand.get(&component)?;
+        // 用独立 capture 避免尚未拥有稳定 row 命名空间的动态行跨行复用私有状态。
         Some(ViewAdapter::capture_root(|| renderer(row)))
-    }
-
-    // 表格 capability 启用时才编译扩展行 Widget 构建入口。
-    #[cfg(feature = "table")]
-    pub(crate) fn render_table_expand_widget(
-        &self,
-        component: ComponentId,
-        row: &TableRow,
-    ) -> Option<WidgetNode> {
-        self.render_table_expand_view(component, row)
-            .map(ViewAdapter::expand)
     }
 
     pub(crate) fn render_virtual_scroll_items(
