@@ -23,6 +23,8 @@ impl WidgetTree {
             self.cancel_subtree_interaction(root);
         }
         self.teardown_all();
+        // 完整换根会销毁全部运行时节点，先逐个释放它们的动画源所有权。
+        self.clear_node_animated_source_owners();
 
         // Hard reset: clear the old tree and invalidate every previous ComponentId.
         self.nodes.clear();
@@ -197,6 +199,7 @@ impl WidgetTree {
             captured_state_binds,
             captured_effects,
             uix_component_scopes,
+            animated_sources,
         } = node;
         let id = match parent {
             Some(parent) => self.add_child_with_context(parent, widget, provider_context, false),
@@ -266,6 +269,8 @@ impl WidgetTree {
         #[cfg(feature = "table")]
         self.refresh_table_expand_component(id);
         self.refresh_select_option_component(id);
+        // 节点及其所有递归子树成功建立后，才提交该节点捕获的动画源所有权。
+        self.replace_node_animated_sources(id, animated_sources);
         id
     }
 }

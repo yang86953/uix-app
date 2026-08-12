@@ -4,12 +4,13 @@ use crate::ui::component::app_state::AppState;
 use crate::ui::component::managers::WidgetManagers;
 use crate::ui::event::WindowAction;
 use crate::ui::theme::traits::ThemeTokens;
-use std::collections::BTreeMap;
-use std::sync::Arc;
 
 impl WidgetTree {
     // 使用已捕获根绑定的存储创建窗口树，避免首次构建与后续协调分裂状态所有权。
-    pub(crate) fn with_component_state_store(store: crate::ui::component_state::ComponentStateStore) -> Self {
+    pub(crate) fn with_component_state_store(
+        // 接收首次根捕获已经使用的窗口私有存储。
+        store: crate::ui::component_state::ComponentStateStore,
+    ) -> Self {
         // 先建立其余默认运行时资源。
         let mut tree = Self::default();
         // 再用捕获根指定的窗口私有存储替换默认值。
@@ -25,13 +26,17 @@ impl WidgetTree {
     }
 
     // 开始适配器的构建或协调事务并推迟作用域状态清理。
-    pub(crate) fn begin_component_state_transaction(&mut self) {
+    fn begin_component_state_transaction(&mut self) {
         // 允许嵌套构建入口而不提前释放仍会在本轮重挂载的状态。
-        self.component_state_transaction_depth = self.component_state_transaction_depth.saturating_add(1);
+        self.component_state_transaction_depth = self
+            // 使用饱和递增防止异常嵌套下整数回绕。
+            .component_state_transaction_depth
+            // 增加当前树的协调事务深度。
+            .saturating_add(1);
     }
 
-    // 结束适配器事务，并在最外层以实际挂载节点为准统一清理状态。
-    pub(crate) fn end_component_state_transaction(&mut self) {
+    // 结束适配器事务；最终作用域解析由最外层成功入口统一执行。
+    fn end_component_state_transaction(&mut self) {
         // 防御性忽略不成对结束，避免测试辅助路径下溢。
         if self.component_state_transaction_depth == 0 {
             // 没有事务时无需再次清理。
@@ -39,15 +44,11 @@ impl WidgetTree {
         }
         // 释放一层事务深度。
         self.component_state_transaction_depth -= 1;
-        // 仅最外层结束后才按最终树形清理缺席作用域。
-        if self.component_state_transaction_depth == 0 {
-            // 收敛当前树的组件私有状态生命周期。
-            self.prune_component_state_scopes();
-        }
+        // 最外层成功入口会把最终挂载作用域与本批回执一起原子解析。
     }
 
     // 在异常展开路径恢复一层事务深度，保留既有挂载状态且不执行破坏性清理。
-    pub(crate) fn abort_component_state_transaction(&mut self) {
+    fn abort_component_state_transaction(&mut self) {
         // 没有活跃事务时保持调用幂等。
         if self.component_state_transaction_depth == 0 {
             // 提前返回避免深度下溢。
@@ -65,8 +66,18 @@ impl WidgetTree {
         // 接收事务期间唯一可变访问当前树的同步闭包。
         action: impl FnOnce(&mut Self) -> R,
     ) -> R {
+        // 只保留由当前 WidgetTree 唯一状态存储产生的回执。
+        let receipts = receipts
+            // 消费输入集合，让错误 store 回执在过滤时立即 Drop 回滚。
+            .into_iter()
+            // 禁止其他树或一次性捕获的状态 journal 被当前树接纳。
+            .filter(|receipt| receipt.belongs_to(&self.component_state_store))
+            // 收集可安全加入本树最外层事务的回执。
+            .collect::<Vec<_>>();
         // 记录进入本层前的回执边界，供 panic 精确回滚本层及成功嵌套层。
         let checkpoint = self.component_state_pending_receipts.len();
+        // 记录进入本层前的动画源替换边界，供 panic 保留既有树绑定。
+        let animation_checkpoint = self.pending_animated_source_owner_updates.len();
         // 开启一层延迟清理事务。
         self.begin_component_state_transaction();
         // 将本层声明捕获产生的 journal 交给当前树暂存。
@@ -81,10 +92,21 @@ impl WidgetTree {
                 self.end_component_state_transaction();
                 // 仅最外层成功并完成作用域清理后才统一接纳所有 journal。
                 if self.component_state_transaction_depth == 0 {
+                    // 在最外层成功后才让本轮动画源所有权替换进入真实树注册表。
+                    self.commit_pending_animated_source_owner_updates();
                     // 取走全部已成功挂载的回执，避免后续 Drop 回滚。
                     let receipts = std::mem::take(&mut self.component_state_pending_receipts);
-                    // 仅由组件状态模块批量接纳同一最外层事务的全部 journal。
-                    crate::ui::component_state::accept_component_state_receipts(receipts);
+                    // 收集事务成功后仍由实际节点承载的最终作用域真相。
+                    let live_scopes = self.component_state_live_scopes();
+                    // 原子提交 live claim、释放缺席 claim 并保留其他外部未决捕获。
+                    crate::ui::component_state::resolve_component_state_receipts(
+                        // 传入当前窗口树唯一的状态存储。
+                        &self.component_state_store,
+                        // 传入最外层事务积累的完整回执批次。
+                        receipts,
+                        // 传入最终运行时树承载的作用域集合。
+                        &live_scopes,
+                    );
                 }
                 // 返回调用方结果。
                 value
@@ -95,6 +117,12 @@ impl WidgetTree {
                 let receipts = self.component_state_pending_receipts.split_off(checkpoint);
                 // 立即丢弃本层回执以精确撤销对应的新建状态槽。
                 drop(receipts);
+                // 丢弃本层及其成功嵌套层的动画源请求，旧树注册保持不变。
+                let updates = self
+                    .pending_animated_source_owner_updates
+                    .split_off(animation_checkpoint);
+                // 释放未提交来源，确保异常路径不会产生树作用域绑定。
+                drop(updates);
                 // 避免基于半完成树执行破坏性 prune。
                 self.abort_component_state_transaction();
                 // 保持调用方观察到原始 panic。
@@ -114,6 +142,14 @@ impl WidgetTree {
 
     // 收集实际仍挂载的作用域并交给窗口私有存储执行清理。
     fn prune_component_state_scopes(&mut self) {
+        // 收集当前实际运行时树承载的全部作用域。
+        let live_scopes = self.component_state_live_scopes();
+        // 仅删除本树中已没有承载节点的私有状态。
+        self.component_state_store.retain_scopes(&live_scopes);
+    }
+
+    // 收集当前实际运行时树仍承载的全部组件私有状态作用域。
+    fn component_state_live_scopes(&self) -> std::collections::HashSet<UixComponentScope> {
         // 建立不受节点遍历借用影响的作用域集合。
         let mut live_scopes = std::collections::HashSet::<UixComponentScope>::new();
         // 遍历所有尚未从树中实际删除的节点。
@@ -127,8 +163,8 @@ impl WidgetTree {
                 }
             }
         }
-        // 仅删除本树中已没有承载节点的私有状态。
-        self.component_state_store.retain_scopes(&live_scopes);
+        // 返回供事务解析或事务外 prune 使用的最终集合。
+        live_scopes
     }
 
     pub(crate) const ROOT_BOOTSTRAP_SIZE: Size = Size { w: 800.0, h: 600.0 };
@@ -162,29 +198,6 @@ impl WidgetTree {
 
     pub fn tree_version(&self) -> u64 {
         self.tree_version
-    }
-
-    pub(crate) fn sync_animated_sources(&mut self, sources: Vec<Arc<dyn AnimatedSource>>) {
-        let mut previous = std::mem::take(&mut self.animated_sources);
-        let mut next = BTreeMap::new();
-        for source in sources {
-            let work_id = source.work_id();
-            if next.contains_key(&work_id) {
-                continue;
-            }
-            match previous.remove(&work_id) { Some(bound) => {
-                next.insert(work_id, bound);
-            } _ => if source.bind_owner(self.tree_scope) {
-                next.insert(
-                    work_id,
-                    BoundAnimatedSource {
-                        tree_scope: self.tree_scope,
-                        source,
-                    },
-                );
-            }}
-        }
-        self.animated_sources = next;
     }
 
     pub(crate) fn take_window_actions(&mut self) -> Vec<WindowAction> {
@@ -463,7 +476,11 @@ impl WidgetTree {
         self.root_reconcile_state_binds.clear();
         // 释放根捕获的 Effect，避免关闭后继续保留待处理工作。
         self.effects.clear();
-        // 释放根捕获的动画源，并由绑定包装器解除源端所有权。
+        // 清空全部所有者分区，确保关闭不再保留根或节点声明。
+        self.animated_source_owners.clear();
+        // 取消关闭前尚未提交的全部动画源替换，同时保持活跃事务检查点有效。
+        self.cancel_pending_animated_source_owner_updates(|_| true);
+        // 释放全部捕获的动画源，并由绑定包装器解除源端所有权。
         self.animated_sources.clear();
         // 关闭后不再保留任何组件动画活动标记。
         self.active_component_animations.clear();
@@ -569,6 +586,8 @@ impl WidgetTree {
         self.teardown_subtree(id);
         if let Some(node) = self.nodes.get_mut(slot) {
             if let Some(node) = node.take() {
+                // 节点已真实离开槽位后，取消其待提交项并立即释放实际动画源所有权。
+                self.release_node_animated_sources_immediately(id);
                 for child_id in node.children().to_vec() {
                     self.remove(child_id);
                 }

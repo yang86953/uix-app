@@ -8,13 +8,21 @@ impl crate::ui::adapter::ViewAdapter {
         parent_id: crate::ui::ComponentId,
         // 接收本轮声明的完整动态子树。
         mut children: Vec<crate::ui::view::ViewNode>,
-    // 返回结构是否发生变化。
+        // 返回结构是否发生变化。
     ) -> bool {
-        // 在消费声明节点前转移所有 journal 回执。
-        let receipts = crate::ui::adapter::capture_guards::take_component_state_receipts_from_children(
-            // 让动态子树及其全部后代共用同一提交批次。
-            &mut children,
+        // 动态交付前再次校验宿主仍属于当前树，拒绝捕获后已失效的旧 generation。
+        assert!(
+            // 只有仍可寻址的实际节点才能接纳新的运行时子树。
+            tree.get(parent_id).is_some(),
+            // 为延迟交付旧捕获提供稳定诊断。
+            "动态 View 协调 parent 不属于宿主 WidgetTree"
         );
+        // 在消费声明节点前转移所有 journal 回执。
+        let receipts =
+            crate::ui::adapter::capture_guards::take_component_state_receipts_from_children(
+                // 让动态子树及其全部后代共用同一提交批次。
+                &mut children,
+            );
         // 先让 WidgetTree 完整结束事务，异常时外层 receipts 的 Drop 会回滚。
         let changed = tree.with_component_state_transaction(receipts, |tree| {
             // 协调动态子树并保留既有的无动画替换语义。

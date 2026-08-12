@@ -25,6 +25,8 @@ pub struct WidgetNode {
     pub(crate) captured_effects: Vec<crate::ui::reactive::state::Effect>,
     // 保留内联组件的非视觉状态作用域标记。
     pub(crate) uix_component_scopes: Vec<crate::ui::component_state::UixComponentScopeMarker>,
+    // 保存声明节点捕获、待实际节点身份建立后转交树的动画源。
+    pub(crate) animated_sources: Vec<std::sync::Arc<dyn crate::ui::animation::AnimatedSource>>,
 }
 
 impl WidgetNode {
@@ -52,6 +54,8 @@ impl WidgetNode {
             captured_state_binds: Vec::new(),
             // 新建命令式节点默认没有捕获的 Effect。
             captured_effects: Vec::new(),
+            // 新建命令式节点默认没有捕获的动画源。
+            animated_sources: Vec::new(),
             uix_component_scopes: Vec::new(),
         }
     }
@@ -87,6 +91,8 @@ impl WidgetNode {
             captured_state_binds: Vec::new(),
             // 叶节点默认没有捕获的 Effect。
             captured_effects: Vec::new(),
+            // 叶节点默认没有捕获的动画源。
+            animated_sources: Vec::new(),
             uix_component_scopes: Vec::new(),
         }
     }
@@ -208,6 +214,17 @@ impl WidgetNode {
         // 保留节点生命周期拥有的全部 Effect。
         self.captured_effects = effects;
         // 返回仍可继续配置的节点。
+        self
+    }
+
+    // 把声明节点捕获的动画源交给将来拥有该节点的 WidgetTree。
+    pub(crate) fn with_animated_sources(
+        mut self,
+        sources: Vec<std::sync::Arc<dyn crate::ui::animation::AnimatedSource>>,
+    ) -> Self {
+        // 保留节点生命周期拥有的全部动画源。
+        self.animated_sources = sources;
+        // 返回带有动画生命周期元数据的节点。
         self
     }
 

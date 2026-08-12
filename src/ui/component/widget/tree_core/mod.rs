@@ -18,7 +18,8 @@ use crate::ui::component_state::{
     // 保存窗口私有状态存储和作用域身份。
     ComponentStateStore, UixComponentScope,
 };
-use std::collections::{BTreeMap, HashMap, HashSet};
+// 保存按工作身份去重的来源所有者集合。
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -28,6 +29,25 @@ static NEXT_WIDGET_TREE_SCOPE: AtomicU64 = AtomicU64::new(1);
 pub(crate) struct BoundAnimatedSource {
     tree_scope: u64,
     source: Arc<dyn AnimatedSource>,
+}
+
+// 区分声明根与运行时节点对动画源的独立生命周期声明。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum AnimatedSourceOwner {
+    // 根协调拥有的声明根动画源。
+    Root,
+    // 已分配真实 ComponentId 的节点动画源。
+    Node(WidgetId),
+}
+
+// 保存事务成功后才可提交的一次动画源所有权替换。
+struct PendingAnimatedSourceOwnerUpdate {
+    // 标识本次替换影响的根或实际节点所有者。
+    owner: AnimatedSourceOwner,
+    // 保存尚未绑定到树作用域的候选动画源集合。
+    sources: Vec<Arc<dyn AnimatedSource>>,
+    // 标记已因真实结构销毁而失效、提交时必须跳过的请求。
+    cancelled: bool,
 }
 
 impl Drop for BoundAnimatedSource {
@@ -78,6 +98,10 @@ pub struct WidgetTree {
     pub(crate) root_reconcile_state_binds: Vec<crate::ui::reactive::state::ReconcileBindLease>,
     pub(crate) effects: Vec<crate::ui::reactive::state::Effect>,
     pub(crate) animated_sources: BTreeMap<WidgetId, BoundAnimatedSource>,
+    // 记录每个所有者声明的工作身份，以在最后一个所有者离开时才解绑。
+    animated_source_owners: BTreeMap<AnimatedSourceOwner, BTreeSet<WidgetId>>,
+    // 保存当前嵌套构建事务尚未确认的动画源所有权替换。
+    pending_animated_source_owner_updates: Vec<PendingAnimatedSourceOwnerUpdate>,
     pub(crate) active_component_animations: HashSet<WidgetId>,
     pub(crate) animation_ids_scratch: Vec<WidgetId>,
     pub(crate) lifecycle_states_scratch: Vec<(WidgetId, bool)>,
@@ -150,6 +174,10 @@ impl Default for WidgetTree {
             root_reconcile_state_binds: Vec::new(),
             effects: Vec::new(),
             animated_sources: BTreeMap::new(),
+            // 初始树没有任何根或节点动画源所有者。
+            animated_source_owners: BTreeMap::new(),
+            // 初始树没有等待事务提交的动画源所有权替换。
+            pending_animated_source_owner_updates: Vec::new(),
             active_component_animations: HashSet::new(),
             animation_ids_scratch: Vec::new(),
             lifecycle_states_scratch: Vec::new(),

@@ -34,13 +34,77 @@ impl crate::ui::adapter::ViewAdapter {
         // 接收任意一次性根工厂闭包。
         F: FnOnce() -> crate::ui::view::ViewNode,
     {
+        // 静态根不携带动态宿主命名空间。
+        Self::capture_root_with_optional_namespace(store, None, build_root)
+    }
+
+    // 在宿主树的稳定动态实例命名空间内捕获一次延迟 View 工厂。
+    pub(crate) fn capture_dynamic_root<F>(
+        // 接收同时拥有运行时节点与唯一组件状态存储的宿主树。
+        tree: &crate::ui::WidgetTree,
+        // 接收实际拥有该延迟工厂实例的运行时节点。
+        owner: crate::ui::ComponentId,
+        // 接收区分同一宿主下不同工厂槽位的静态名称。
+        slot: &'static str,
+        // 接收工厂执行前即可确定的稳定业务键。
+        stable_key: impl Into<String>,
+        // 接收仅执行一次的延迟 View 构建闭包。
+        build_root: F,
+        // 返回携带完整捕获输出与待提交回执的声明根。
+    ) -> crate::ui::view::ViewNode
+    // 约束动态工厂只能在当前同步捕获边界内执行一次。
+    where
+        // 保持延迟工厂与静态根工厂相同的返回契约。
+        F: FnOnce() -> crate::ui::view::ViewNode,
+    {
+        // 动态 owner 必须是当前宿主树中仍可寻址的实际节点。
+        assert!(
+            // 只接受当前树仍可寻址的运行时宿主。
+            tree.get(owner).is_some(),
+            // 为错误接线提供稳定诊断。
+            "动态 View 捕获 owner 不属于宿主 WidgetTree"
+        );
+        // 仅从已验证 owner 的同一宿主树取得唯一状态存储。
+        let store = tree.component_state_store();
+        // 在执行工厂前建立 owner、槽位与业务键组成的稳定实例身份。
+        let namespace = crate::ui::component_state::ComponentStateCaptureNamespace::new(
+            // 依次组合已验证宿主、静态槽位与稳定业务键。
+            owner, slot, stable_key,
+        );
+        // 复用静态根的完整运行时输出捕获，只增加动态状态命名空间。
+        Self::capture_root_with_optional_namespace(store, Some(namespace), build_root)
+    }
+
+    // 用可选动态命名空间统一静态根与延迟工厂的捕获生命周期。
+    fn capture_root_with_optional_namespace<F>(
+        // 接收本次捕获所属树的唯一组件状态存储。
+        store: crate::ui::component_state::ComponentStateStore,
+        // 接收静态根的空命名空间或延迟实例的稳定命名空间。
+        namespace: Option<crate::ui::component_state::ComponentStateCaptureNamespace>,
+        // 接收本次需要同步执行的声明 View 工厂。
+        build_root: F,
+        // 返回显式携带全部捕获输出的声明根。
+    ) -> crate::ui::view::ViewNode
+    // 约束工厂在捕获上下文中只消费一次。
+    where
+        // 保持所有捕获入口的声明根返回类型一致。
+        F: FnOnce() -> crate::ui::view::ViewNode,
+    {
         // 使用作用域守卫保持正常与异常路径的捕获生命周期成对。
         let capture_guard = ViewCaptureGuard::begin();
-        // 仅在构建期间安装窗口私有组件状态上下文。
-        let (mut node, receipt) = crate::ui::component_state::with_component_state_capture(
-            store,
-            build_root,
-        );
+        // 根据是否存在动态身份选择静态或命名空间捕获入口。
+        let (mut node, receipt) = match namespace {
+            // 延迟工厂必须在宿主与业务键共同限定的命名空间中捕获。
+            Some(namespace) => {
+                // 把树 store、稳定动态身份与工厂作为一个捕获协议执行。
+                crate::ui::component_state::with_component_state_capture_in_namespace(
+                    // 依次传入宿主存储、动态身份与一次性延迟工厂。
+                    store, namespace, build_root,
+                )
+            }
+            // 静态根继续使用没有动态命名空间的既有捕获契约。
+            None => crate::ui::component_state::with_component_state_capture(store, build_root),
+        };
         // 把未提交 journal 附着到声明根，等待 WidgetTree 事务成功后接纳。
         node.push_component_state_receipt(receipt);
         // 正常结束并取得当前根专属的 State、Effect 与动画输出。
