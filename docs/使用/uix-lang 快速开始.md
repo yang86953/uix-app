@@ -19,6 +19,9 @@ uix = { path = "../uix-app" }
 
 把界面保存为调用 crate 下的 `src/main.uix`，并使用当前已登记的标签：
 
+仓库内的可运行对应项目见 [`demo/uix-lang-demo`](../../demo/uix-lang-demo/README.md)；该项目由
+`.uix` 文件生成界面，并由 Rust 薄入口持有 `App` 与窗口生命周期。
+
 ```uix
 // 使用当前已登记的纵向容器作为根 View。
 <Column gap="8px">
