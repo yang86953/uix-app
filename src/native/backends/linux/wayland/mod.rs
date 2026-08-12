@@ -11,9 +11,13 @@ pub(crate) mod compat;
 pub(crate) mod cursor;
 pub(crate) mod display;
 pub(crate) mod event_loop;
+// 输入代理生命周期模块把完整 capability 快照收敛为幂等边沿。
+pub(crate) mod input_proxy_lifecycle;
 pub(crate) mod keyboard;
 pub(crate) mod keycode;
 pub(crate) mod output;
+// 指针激活注册表独占 Wayland 拖动授权的签发与生命周期。
+pub(crate) mod pointer_activation;
 pub(crate) mod presenter;
 pub(crate) mod seat;
 pub(crate) mod shm_buffer;
@@ -23,6 +27,8 @@ pub(crate) mod window_ops;
 
 // ── 依赖 ────────────────────────────────────────────────────────
 use self::compat::{Main, ProxyContext, WaylandDispatchState};
+// 引入 Wayland 私有的一次性指针激活注册表。
+use self::pointer_activation::WaylandPointerActivationRegistry;
 use self::shm_buffer::ShmBuffer;
 use crate::core::{Error, Point, WindowId};
 use crate::diagnostics::PendingFailureSource;
@@ -114,6 +120,8 @@ pub struct WaylandBackend {
     pub(crate) keys_down: Arc<Mutex<HashSet<KeyCode>>>,
     pub(crate) input_region: Option<Main<wl_region::WlRegion>>,
     pub(crate) surface_windows: Arc<Mutex<SurfaceWindowTargets>>,
+    // 单一注册表关联原生 PointerDown、surface 代次与协议 serial。
+    pub(crate) pointer_activations: Arc<Mutex<WaylandPointerActivationRegistry>>,
 
     // ── 按键重复（客户端侧实现，Wayland 协议要求）──────────
     /// 重复速率（字符/秒），0 = 禁用重复。来自 wl_keyboard.repeat_info。
@@ -322,6 +330,12 @@ impl WaylandBackend {
             last_pointer,
             keys_down: Arc::new(Mutex::new(HashSet::new())),
             surface_windows: Arc::new(Mutex::new(SurfaceWindowTargets::default())),
+            // 初始化 Wayland 后端唯一的指针激活授权所有者。
+            pointer_activations: Arc::new(Mutex::new(
+                // 使用非零身份与代次空间建立空注册表。
+                WaylandPointerActivationRegistry::new(),
+            // 结束共享注册表构造。
+            )),
             repeat_rate: Arc::new(Mutex::new(0)),
             repeat_delay: Arc::new(Mutex::new(400)),
             held_key_info: Arc::new(Mutex::new(None)),
@@ -354,6 +368,8 @@ impl WaylandBackend {
 
 impl Drop for WaylandBackend {
     fn drop(&mut self) {
+        // 先拆除 seat 回调与输入代理，打断兼容回调表的强引用环。
+        self.shutdown_seat_and_input();
         self.pending_failures.close();
         let _ = unsafe { libc::close(self.wake_read_fd) };
         let _ = unsafe { libc::close(self.wake_write_fd) };

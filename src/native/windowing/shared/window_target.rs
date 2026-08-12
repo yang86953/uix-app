@@ -84,6 +84,17 @@ impl SurfaceWindowTargets {
         self.pointer_focus.map(|focus| focus.window_id)
     }
 
+    // 返回当前 pointer focus 的原生 surface 与稳定窗口身份快照。
+    pub(crate) fn pointer_target_identity(&self) -> Option<(u32, WindowId)> {
+        // 同一次不可变读取保证 surface 与窗口身份来自同一 focus。
+        self.pointer_focus.map(|focus| {
+            // 仅投影平台路由需要的两个稳定值。
+            (focus.surface_id, focus.window_id)
+        // 结束 focus 身份投影。
+        })
+    // 结束 pointer focus 身份读取。
+    }
+
     pub(crate) fn clear_pointer_focus(&mut self) {
         self.pointer_focus = None;
     }
