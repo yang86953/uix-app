@@ -42,8 +42,6 @@ impl WidgetTree {
         {
             calendar.mark_cells_materialized(entries);
         }
-        self.bind_orphan_pending_states();
-        self.bind_pending_effects();
         changed
     }
 
@@ -70,8 +68,6 @@ impl WidgetTree {
         {
             collapse.mark_content_materialized(entries);
         }
-        self.bind_orphan_pending_states();
-        self.bind_pending_effects();
         true
     }
 
@@ -93,17 +89,7 @@ impl WidgetTree {
         {
             image.mark_error_view_materialized();
         }
-        self.bind_orphan_pending_states();
-        self.bind_pending_effects();
         true
-    }
-
-    // 表格 capability 启用时才构建当前扩展行 View。
-    #[cfg(feature = "table")]
-    pub(crate) fn table_expand_view(&self, id: ComponentId) -> Option<crate::ui::view::ViewNode> {
-        let table = self.get(id)?.component().as_any().downcast_ref::<Table>()?;
-        let row = table.rows.get(table.expanded_row()?)?;
-        self.render_handler_table.render_table_expand_view(id, row)
     }
 
     // 表格 capability 启用时才记录扩展行子树物化状态。
@@ -144,18 +130,19 @@ impl WidgetTree {
             return false;
         }
 
+        // 捕获本轮扩展行声明子树并保留其 receipt 到动态协调事务。
         let children = row
             .as_ref()
             .and_then(|row| {
+                // 构建独立状态所有权的声明节点，避免缺少 row 命名空间时跨行复用。
                 self.render_handler_table
-                    .render_table_expand_widget(id, row)
+                    .render_table_expand_view(id, row)
             })
             .into_iter()
             .collect();
-        self.set_children(id, children);
+        // 使用动态协调事务挂载扩展行，成功后才接纳其组件状态 journal。
+        crate::ui::adapter::ViewAdapter::reconcile_dynamic_children(self, id, children);
         self.mark_table_expand_materialized(id);
-        self.bind_orphan_pending_states();
-        self.bind_pending_effects();
         true
     }
 
@@ -198,10 +185,6 @@ impl WidgetTree {
         {
             scroll.mark_children_materialized(range);
         }
-        // 绑定新进入窗口行捕获的响应式状态。
-        self.bind_orphan_pending_states();
-        // 绑定新进入窗口行捕获的副作用。
-        self.bind_pending_effects();
         // 只有子结构或顺序变化时向调用方报告结构更新。
         changed
     }
@@ -245,8 +228,6 @@ impl WidgetTree {
         {
             table.mark_cells_materialized(range);
         }
-        self.bind_orphan_pending_states();
-        self.bind_pending_effects();
         changed
     }
 
@@ -279,8 +260,6 @@ impl WidgetTree {
         {
             select.mark_custom_options_materialized(indices);
         }
-        self.bind_orphan_pending_states();
-        self.bind_pending_effects();
         changed
     }
 

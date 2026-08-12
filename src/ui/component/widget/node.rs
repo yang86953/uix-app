@@ -19,6 +19,10 @@ pub struct WidgetNode {
     pub handlers: Vec<HandlerRegistration>,
     pub(crate) system_event_handlers: Vec<SystemEventHandlerRegistration>,
     pub(crate) render_handlers: Vec<RenderHandlerRegistration>,
+    // 保存捕获阶段交接的结构性 State 绑定。
+    pub(crate) captured_state_binds: Vec<std::sync::Arc<dyn crate::ui::reactive::state::StatePaintBind>>,
+    // 保存捕获阶段交接的节点私有 Effect。
+    pub(crate) captured_effects: Vec<crate::ui::reactive::state::Effect>,
     // 保留内联组件的非视觉状态作用域标记。
     pub(crate) uix_component_scopes: Vec<crate::ui::component_state::UixComponentScopeMarker>,
 }
@@ -44,6 +48,10 @@ impl WidgetNode {
             handlers: Vec::new(),
             system_event_handlers: Vec::new(),
             render_handlers: Vec::new(),
+            // 新建命令式节点默认没有捕获的 State 绑定。
+            captured_state_binds: Vec::new(),
+            // 新建命令式节点默认没有捕获的 Effect。
+            captured_effects: Vec::new(),
             uix_component_scopes: Vec::new(),
         }
     }
@@ -75,6 +83,10 @@ impl WidgetNode {
             handlers: Vec::new(),
             system_event_handlers: Vec::new(),
             render_handlers: Vec::new(),
+            // 叶节点默认没有捕获的 State 绑定。
+            captured_state_binds: Vec::new(),
+            // 叶节点默认没有捕获的 Effect。
+            captured_effects: Vec::new(),
             uix_component_scopes: Vec::new(),
         }
     }
@@ -174,6 +186,28 @@ impl WidgetNode {
     }
     pub(crate) fn with_render_handlers(mut self, handlers: Vec<RenderHandlerRegistration>) -> Self {
         self.render_handlers = handlers;
+        self
+    }
+
+    // 把 View 捕获输出的 State 绑定交给将来拥有节点的 WidgetTree。
+    pub(crate) fn with_captured_state_binds(
+        mut self,
+        state_binds: Vec<std::sync::Arc<dyn crate::ui::reactive::state::StatePaintBind>>,
+    ) -> Self {
+        // 保留声明节点本次捕获的全部结构性依赖。
+        self.captured_state_binds = state_binds;
+        // 返回仍可继续配置的节点。
+        self
+    }
+
+    // 把 View 捕获输出的 Effect 交给将来拥有节点的 BoxedWidget。
+    pub(crate) fn with_captured_effects(
+        mut self,
+        effects: Vec<crate::ui::reactive::state::Effect>,
+    ) -> Self {
+        // 保留节点生命周期拥有的全部 Effect。
+        self.captured_effects = effects;
+        // 返回仍可继续配置的节点。
         self
     }
 

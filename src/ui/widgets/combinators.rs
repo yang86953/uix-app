@@ -15,7 +15,6 @@
 //! ```
 
 use crate::native::windowing::input::ScrollDirection;
-use crate::ui::component::widget::WidgetNode;
 use crate::ui::layout::{FlexDirection, GridTrack};
 use crate::ui::theme::style::{DisplayMode, Style};
 use crate::ui::view::{View, ViewNode};
@@ -28,6 +27,11 @@ use crate::ui::component::traits::{
 use crate::ui::reactive::state::{Computed, State};
 use crate::ui::WidgetTree;
 use std::any::Any;
+
+// 拆分命令式节点嵌入转换，保持组合器主体在文件规模约束内。
+#[path = "combinators/embed.rs"]
+// 编译命令式节点嵌入转换的私有实现模块。
+mod embed_node;
 
 /// 将异质 / 同质子节点收成 `Vec<ViewNode>`（公开用法见仓库 `docs/使用/布局.md`）。
 ///
@@ -117,51 +121,8 @@ impl_into_view_children_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
 
 /// 将 `tree!` / widget-tree 节点嵌入 View DSL（组件库演示等高级 interop）。
 pub fn embed(node: impl crate::ui::IntoWidgetNode) -> ViewNode {
-    adopt_widget_node(node.into_node())
-}
-
-fn adopt_widget_node(node: WidgetNode) -> ViewNode {
-    // Materialize imperative children into the declarative View tree. View
-    // children remain component-owned and are appended by tree build/reconcile.
-    let provider_context = node.provider_context.clone();
-    let mut children: Vec<WidgetNode> =
-        crate::ui::component::provider_context::with_provider_context(&provider_context, || {
-            node.widget
-                .build()
-                .into_iter()
-                .map(WidgetNode::leaf)
-                .collect::<Vec<_>>()
-        });
-    children.extend(node.children);
-    ViewNode {
-        widget: node.widget,
-        children: children.into_iter().map(adopt_widget_node).collect(),
-        animated_sources: Vec::new(),
-        provider_context,
-        style: Style::default(),
-        visual_transform: node.visual_transform,
-        enter_animation: node.enter_animation,
-        enter_deadline: node.enter_deadline,
-        leave_animation: node.leave_animation,
-        stagger_enter: None,
-        flex_grow_override: None,
-        flex_shrink_override: None,
-        z_index: node.z_index,
-        key: node.key.map(|k| k.to_string()),
-        automation_id: node.automation_id.map(|id| id.to_string()),
-        tab_index: node
-            .tab_index_override
-            .or_else(|| (node.tab_idx != 0).then_some(node.tab_idx)),
-        focus_handle: node.focus_handle,
-        accessibility_override: node.accessibility_override,
-        handlers: node.handlers,
-        system_event_handlers: node.system_event_handlers,
-        render_handlers: node.render_handlers,
-        // 保留嵌入命令式节点携带的内联组件状态作用域。
-        uix_component_scopes: node.uix_component_scopes,
-        // 命令式节点不拥有声明根状态存储。
-        component_state_store: None,
-    }
+    // 将命令式节点转换为可由声明适配器继续处理的节点。
+    embed_node::adopt_widget_node(node.into_node())
 }
 
 // ── 基础组合子 ──────────────────────────────────────────────

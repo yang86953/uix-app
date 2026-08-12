@@ -1,5 +1,6 @@
 use std::any::TypeId;
-use std::cell::{Cell, RefCell};
+// 使用线程局部可变容器保存嵌套捕获上下文。
+use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
 use std::fmt;
@@ -21,6 +22,13 @@ type StateBindCapture = (
     Vec<Arc<dyn StatePaintBind>>,
 );
 
+// 拆分结构性绑定租约，保持响应式状态主体低于规模上限。
+#[path = "state/reconcile_lease.rs"]
+// 编译结构性绑定租约的私有实现模块。
+mod reconcile_lease;
+// 向树与节点生命周期边界暴露租约类型。
+pub(crate) use reconcile_lease::ReconcileBindLease;
+
 #[derive(Clone)]
 pub(crate) struct PaintBindSite {
     component_id: ComponentId,
@@ -32,7 +40,10 @@ pub(crate) struct PaintBindSite {
 pub(crate) struct ReconcileBindSite {
     key: usize,
     callback: ReconcileCallback,
+    // 记录当前树根和节点持有的窄绑定租约数量。
+    leases: usize,
 }
+
 
 // ── 响应式依赖追踪 ────────────────────────────────────────────
 //
@@ -55,34 +66,26 @@ struct EffectDependency {
     subscribe_pending: Box<dyn Fn(Arc<AtomicBool>) + Send + Sync>,
 }
 
-// Phase 6：State 读取时暂存，供 DynamicLabel 等响应式 widget 绑定。
-thread_local! {
-    static PENDING_STATE_BINDS: RefCell<Vec<(StateSlotId, Arc<dyn StatePaintBind>)>> =
-        const { RefCell::new(Vec::new()) };
-}
-
 // layout 后探测 DynamicLabel 闭包时捕获 `State::get()` 读取的实例。
 thread_local! {
     static STATE_BIND_CAPTURE: RefCell<Option<StateBindCapture>> = const { RefCell::new(None) };
 }
 
-// View 构建期暂存的 Effect（build 后注册到 WidgetTree）。
-thread_local! {
-    #[allow(
-        clippy::missing_const_for_thread_local,
-        reason = "the initializer already uses an inline const block; Clippy reports the macro expansion"
-    )]
-    static PENDING_EFFECTS: RefCell<Vec<Effect>> = const { RefCell::new(Vec::new()) };
+// 保存一次 View 构建捕获的结构依赖与副作用，并由声明根显式交接给所属树。
+#[derive(Default)]
+pub(crate) struct StateCaptureOutput {
+    // 保存本帧已登记的槽身份以保持同帧订阅去重。
+    state_bind_slots: Vec<StateSlotId>,
+    // 保存去重后的结构性 State 绑定源。
+    pub(crate) state_binds: Vec<Arc<dyn StatePaintBind>>,
+    // 保存本次构建创建的 Effect 实例。
+    pub(crate) effects: Vec<Effect>,
 }
 
-// 须为 thread_local：并行测试/多窗口同时 capture View 时，全局标志会导致
-// 先结束的 capture 关闭捕获，使同线程其他 capture 中的 State::get 无法登记 pending。
+// 使用线程私有的捕获帧栈隔离嵌套 View 构建与不同窗口的同步构建。
 thread_local! {
-    #[allow(
-        clippy::missing_const_for_thread_local,
-        reason = "the initializer already uses an inline const block; Clippy reports the macro expansion"
-    )]
-    static STATE_CAPTURE_ACTIVE: Cell<bool> = const { Cell::new(false) };
+    // 每个 begin 都压入独立帧，finish 或 panic 只弹出栈顶。
+    static STATE_CAPTURE_STACK: RefCell<Vec<StateCaptureOutput>> = const { RefCell::new(Vec::new()) };
 }
 static NEXT_STATE_SLOT: AtomicU64 = AtomicU64::new(1);
 
@@ -96,34 +99,21 @@ impl StateSlotId {
 }
 
 /// 开始捕获 `State::get` 依赖 / `Effect::new` 实例（View 构建期间调用）。
-pub fn begin_state_capture() {
-    STATE_CAPTURE_ACTIVE.with(|active| active.set(true));
-    PENDING_STATE_BINDS.with(|p| p.borrow_mut().clear());
-    PENDING_EFFECTS.with(|p| p.borrow_mut().clear());
+pub(crate) fn begin_state_capture() {
+    // 为当前构建创建独立输出帧，避免嵌套构建清空外层结果。
+    STATE_CAPTURE_STACK.with(|stack| stack.borrow_mut().push(StateCaptureOutput::default()));
 }
 
-/// 结束 View 构建期的 State 捕获。
-pub fn end_state_capture() {
-    STATE_CAPTURE_ACTIVE.with(|active| active.set(false));
+/// 结束 View 构建期的 State 捕获，并返回当前帧专属输出。
+pub(crate) fn end_state_capture() -> StateCaptureOutput {
+    // 只取走栈顶帧，外层捕获在嵌套完成后继续保持活动。
+    STATE_CAPTURE_STACK.with(|stack| stack.borrow_mut().pop().unwrap_or_default())
 }
 
+// 判断当前线程是否仍有任意活动 View 捕获帧，供 Computed 强制重新暴露底层依赖。
 fn state_capture_active() -> bool {
-    STATE_CAPTURE_ACTIVE.with(Cell::get)
-}
-
-/// 取出并清空未关联 widget 的 pending State 绑定（build 末兜底）。
-pub fn drain_pending_state_binds() -> Vec<Arc<dyn StatePaintBind>> {
-    PENDING_STATE_BINDS.with(|p| {
-        std::mem::take(&mut *p.borrow_mut())
-            .into_iter()
-            .map(|(_, bind)| bind)
-            .collect()
-    })
-}
-
-/// 取出 View 构建期捕获的 Effect。
-pub fn drain_pending_effects() -> Vec<Effect> {
-    PENDING_EFFECTS.with(|p| std::mem::take(&mut *p.borrow_mut()))
+    // 仅检查栈是否非空，嵌套帧结束后外层帧仍应视为活动。
+    STATE_CAPTURE_STACK.with(|stack| !stack.borrow().is_empty())
 }
 
 /// 开始探测组件测量或绘制时读取的 State / Computed。
@@ -165,20 +155,28 @@ fn try_capture_state_bind<T: Clone + Send + Sync + 'static>(state: &State<T>) {
 }
 
 pub(crate) fn capture_pending_state_bind<T: Clone + Send + Sync + 'static>(state: &State<T>) {
-    if !STATE_CAPTURE_ACTIVE.with(|active| active.get()) {
-        return;
-    }
-    let slot_id = state.slot_id();
-    PENDING_STATE_BINDS.with(|p| {
-        let mut pending = p.borrow_mut();
-        if pending
-            .iter()
-            .any(|(captured_slot, _)| *captured_slot == slot_id)
-        {
+    // 只向当前最内层构建帧登记读取，避免子 View 输出泄漏到父 View。
+    STATE_CAPTURE_STACK.with(|stack| {
+        // 取得可变栈顶以维护本帧的去重集合。
+        let mut stack = stack.borrow_mut();
+        // 没有活跃 View 捕获时保持既有无副作用读取语义。
+        let Some(output) = stack.last_mut() else {
+            // 直接结束以避免为非 View 读取分配绑定。
+            return;
+        };
+        // 读取稳定槽身份用于同帧去重。
+        let slot_id = state.slot_id();
+        // 已登记的同槽 State 不应重复生成 reconcile 订阅。
+        if output.state_bind_slots.contains(&slot_id) {
+            // 同槽已经属于本帧输出，避免重复安装相同 reconcile 订阅。
             return;
         }
+        // 为当前 State 生成交给根树绑定的窄接口句柄。
         let bind: Arc<dyn StatePaintBind> = Arc::new(state.clone());
-        pending.push((slot_id, bind));
+        // 先登记槽身份，使后续同帧读取保持去重。
+        output.state_bind_slots.push(slot_id);
+        // 记录本帧读取的 State 绑定源。
+        output.state_binds.push(bind);
     });
 }
 
@@ -229,10 +227,40 @@ fn bind_reconcile_site(
 ) {
     if let Ok(mut guard) = sites.lock() {
         if let Some(site) = guard.iter_mut().find(|site| site.key == key) {
+            // 刷新同一树请求端口的可调用句柄。
             site.callback = callback;
+            // 增加同源同树的生命周期持有计数。
+            site.leases = site.leases.saturating_add(1);
         } else {
-            guard.push(ReconcileBindSite { key, callback });
+            // 建立由第一份租约持有的树请求端口。
+            guard.push(ReconcileBindSite {
+                // 保存树请求端口键。
+                key,
+                // 保存树请求端口回调。
+                callback,
+                // 记录第一份生命周期租约。
+                leases: 1,
+            });
         }
+    }
+}
+
+// 撤销一份同源同树的结构性 State 绑定租约。
+fn unbind_reconcile_site(
+    // 接收 State 内部的树请求端口集合。
+    sites: &Arc<std::sync::Mutex<Vec<ReconcileBindSite>>>,
+    // 接收需要释放的 WidgetTree 请求端口键。
+    key: usize,
+) {
+    // 仅在站点集合仍可访问时执行精确计数递减。
+    if let Ok(mut guard) = sites.lock() {
+        // 找到同一树的站点并减少一份租约。
+        if let Some(site) = guard.iter_mut().find(|site| site.key == key) {
+            // 防御性饱和减法避免异常重复析构下溢。
+            site.leases = site.leases.saturating_sub(1);
+        }
+        // 移除已经不再由任何树或节点持有的站点。
+        guard.retain(|site| site.leases != 0);
     }
 }
 
@@ -253,6 +281,8 @@ pub trait StatePaintBind: Send + Sync {
     fn bind_reconcile_site(&self, _key: usize, reconcile: ReconcileCallback) {
         self.bind_reconcile(reconcile);
     }
+    // 撤销一份结构性树订阅；不支持订阅的源保持无操作。
+    fn unbind_reconcile_site(&self, _key: usize) {}
     fn bind_paint(
         &self,
         component_id: ComponentId,
@@ -268,6 +298,11 @@ impl<T: Clone + Send + Sync + 'static> StatePaintBind for State<T> {
 
     fn bind_reconcile_site(&self, key: usize, reconcile: ReconcileCallback) {
         self.bind_reconcile_invalidation(key, reconcile);
+    }
+
+    // 释放一份同树结构性订阅租约。
+    fn unbind_reconcile_site(&self, key: usize) {
+        self.unbind_reconcile_invalidation(key);
     }
 
     fn bind_paint(
@@ -293,6 +328,81 @@ impl<T: Clone + Send + Sync + 'static> StatePaintBind for Computed<T> {
     }
 }
 
+// 保存一次依赖追踪调用替换掉的外层上下文，并在离开作用域时归还它。
+struct DependencyTrackingGuard {
+    // 保存进入本层前的外层依赖收集器。
+    outer: Option<Vec<EffectDependency>>,
+    // 标记外层上下文是否已经归还，避免析构时重复覆盖。
+    restored: bool,
+}
+
+impl DependencyTrackingGuard {
+    // 安装一个只属于当前闭包的空依赖收集器。
+    fn enter() -> Self {
+        // 从线程局部存储中原子地替换当前追踪上下文。
+        let outer = TRACKING_DEPS.with(|deps| {
+            // 独占访问当前线程的追踪上下文。
+            let mut deps = deps.borrow_mut();
+            // 暂存可能存在的外层收集器。
+            let outer = deps.take();
+            // 安装本层独立的空收集器。
+            *deps = Some(Vec::new());
+            // 将外层收集器交给守卫保存。
+            outer
+        });
+        // 返回负责恢复外层上下文的守卫。
+        Self {
+            // 记录进入时摘下的上下文。
+            outer,
+            // 守卫初始尚未执行恢复。
+            restored: false,
+        }
+    }
+
+    // 取出本层收集结果，并立即归还进入前的上下文。
+    fn finish(mut self) -> Vec<EffectDependency> {
+        // 从当前线程取出本层独立收集器。
+        let collected = TRACKING_DEPS.with(|deps| {
+            // 独占访问当前线程的追踪上下文。
+            let mut deps = deps.borrow_mut();
+            // 取走本层的收集结果；异常重入时退化为空集合。
+            deps.take().unwrap_or_default()
+        });
+        // 在返回结果前归还外层上下文。
+        self.restore();
+        // 将本层依赖交给调用方建立 generation 快照。
+        collected
+    }
+
+    // 将进入本层前的上下文原样写回线程局部存储。
+    fn restore(&mut self) {
+        // 已恢复时不再覆盖可能已安装的新上下文。
+        if self.restored {
+            // 直接结束幂等恢复。
+            return;
+        }
+        // 取出外层上下文，包含“外层不存在”的 None 情形。
+        let outer = self.outer.take();
+        // 用进入前的上下文替换当前本层上下文。
+        TRACKING_DEPS.with(|deps| {
+            // 独占访问当前线程的追踪上下文。
+            let mut deps = deps.borrow_mut();
+            // 恢复外层追踪器或明确清空追踪状态。
+            *deps = outer;
+        });
+        // 标记析构不应再次恢复。
+        self.restored = true;
+    }
+}
+
+impl Drop for DependencyTrackingGuard {
+    // 覆盖闭包 unwind 路径，确保 panic 不会泄漏或丢失外层收集器。
+    fn drop(&mut self) {
+        // 无论正常路径还是 panic 路径，都幂等地恢复外层上下文。
+        self.restore();
+    }
+}
+
 /// 在当前线程启用依赖追踪，执行闭包后返回收集到的依赖 generation 检查器列表。
 /// 支持嵌套：内层 collect_deps 保存并恢复外层追踪上下文，使 `Computed` 在其 get()
 /// 内部也能被外层正确追踪。
@@ -300,14 +410,14 @@ fn collect_deps<F, R>(f: F) -> (R, Vec<EffectDependency>)
 where
     F: FnOnce() -> R,
 {
-    TRACKING_DEPS.with(|deps| {
-        let outer = deps.borrow_mut().take();
-        *deps.borrow_mut() = Some(Vec::new());
-        let result = f();
-        let collected = deps.borrow_mut().take().unwrap_or_default();
-        *deps.borrow_mut() = outer;
-        (result, collected)
-    })
+    // 在执行用户闭包前安装可在 unwind 时自动恢复的上下文守卫。
+    let guard = DependencyTrackingGuard::enter();
+    // 执行实际的 Computed 或 Effect 依赖读取。
+    let result = f();
+    // 仅在正常返回时交出本层完整的依赖集合。
+    let collected = guard.finish();
+    // 返回闭包结果及其对应的独立依赖集合。
+    (result, collected)
 }
 
 /// 将当前 State 注册到追踪上下文中（如果追踪已启用）。
@@ -376,6 +486,12 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         bind_reconcile_site(&self.reconcile_sites, key, reconcile);
     }
 
+    // 释放一份由树或节点生命周期持有的结构性订阅。
+    pub fn unbind_reconcile_invalidation(&self, key: usize) {
+        // 从同树站点扣除当前租约。
+        unbind_reconcile_site(&self.reconcile_sites, key);
+    }
+
     /// 设置 reconcile invalidation 回调。此回调在值变更时（`set` / `update`）自动调用。
     /// 由 ViewAdapter 内部使用，用户不需要调用此方法。
     pub fn set_reconcile_invalidation_fn<F: Fn() + Send + Sync + 'static>(&self, f: F) {
@@ -384,6 +500,8 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             guard.push(ReconcileBindSite {
                 key: 0,
                 callback: Arc::new(f),
+                // 兼容入口直接建立一份永久到下次覆盖的持有。
+                leases: 1,
             });
         }
     }
@@ -710,9 +828,18 @@ impl Effect {
             }),
         };
         effect.refresh_deps(deps);
-        if STATE_CAPTURE_ACTIVE.with(|active| active.get()) {
-            PENDING_EFFECTS.with(|p| p.borrow_mut().push(effect.clone()));
-        }
+        // 仅把新 Effect 交给当前最内层 View 构建帧。
+        STATE_CAPTURE_STACK.with(|stack| {
+            // 取得栈顶输出以保证嵌套构建彼此隔离。
+            let mut stack = stack.borrow_mut();
+            // 非 View 构建期创建的 Effect 继续保持未注册的既有行为。
+            let Some(output) = stack.last_mut() else {
+                // 没有活动捕获时无需向任何树登记。
+                return;
+            };
+            // 保存本帧新建的 Effect，稍后随 ViewNode 显式交接。
+            output.effects.push(effect.clone());
+        });
         effect
     }
 
@@ -765,3 +892,9 @@ impl Effect {
 // ════════════════════════════════════════════════════════════════════════════
 // 测试
 // ════════════════════════════════════════════════════════════════════════════
+// 将依赖追踪的 panic 生命周期测试置于独立文件，避免产品文件超过行数上限。
+#[cfg(test)]
+// 从仓库测试目录引入私有模块测试，使测试仍可访问本模块私有契约。
+#[path = "../../../tests/unit/ui/reactive_state_tests.rs"]
+// 将外置测试作为本响应式状态模块的私有子模块编译。
+mod tests;

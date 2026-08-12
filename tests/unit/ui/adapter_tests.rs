@@ -16,6 +16,10 @@ use crate::ui::GridTrack;
 use crate::ui::view::ViewNode;
 // 导入读取节点 frame 与直接子节点顺序所需的核心组件接口。
 use crate::ui::component::widget::WidgetCore;
+// 导入并发计数器以观察 Effect 的运行次数。
+use std::sync::atomic::{AtomicUsize, Ordering};
+// 导入跨 Effect 闭包共享观察值的所有权句柄。
+use std::sync::Arc;
 // 导入直接调用定制子布局与测量入口所需的布局接口。
 use crate::ui::WidgetLayout;
 // 导入读取共享失效队列所需的组件树类型。
@@ -662,3 +666,212 @@ fn affix_layout_consumes_child_margins() {
         29.0
     );
 }
+
+// 验证嵌套根捕获只交接各自输出，且内层结束后外层继续捕获。
+#[test]
+// 执行嵌套捕获输出隔离回归。
+fn capture_runtime_stack_isolates_nested_root_outputs() {
+    // 创建外层构建开始前读取的独立状态。
+    let outer_before = State::new(1_i32);
+    // 创建内层构建读取的独立状态。
+    let inner_state = State::new(2_i32);
+    // 创建内层结束后外层继续读取的独立状态。
+    let outer_after = State::new(3_i32);
+    // 构建外层根并在其中嵌套构建另一个根。
+    let outer = ViewAdapter::capture_root(|| {
+        // 登记外层进入内层前的结构依赖。
+        let _ = outer_before.get();
+        // 登记外层进入内层前创建的副作用。
+        let _ = crate::ui::Effect::new(|| {});
+        // 构建并保留内层根以检查其独立输出。
+        let inner = ViewAdapter::capture_root(|| {
+            // 登记仅属于内层的结构依赖。
+            let _ = inner_state.get();
+            // 登记仅属于内层的副作用。
+            let _ = crate::ui::Effect::new(|| {});
+            // 返回最小内层声明根。
+            ViewNode::leaf(Label::new("inner"))
+        });
+        // 内层必须只携带自己的一个 State 绑定。
+        assert_eq!(inner.captured_state_binds.len(), 1);
+        // 内层必须只携带自己的一个 Effect。
+        assert_eq!(inner.captured_effects.len(), 1);
+        // 内层完成后外层捕获帧必须仍处于活动状态。
+        let _ = outer_after.get();
+        // 登记外层恢复后创建的副作用。
+        let _ = crate::ui::Effect::new(|| {});
+        // 返回最小外层声明根。
+        ViewNode::leaf(Label::new("outer"))
+    });
+    // 外层必须保留内层开始前后的两个 State 绑定。
+    assert_eq!(outer.captured_state_binds.len(), 2);
+    // 外层必须保留内层开始前后的两个 Effect。
+    assert_eq!(outer.captured_effects.len(), 2);
+}
+
+// 验证构建 panic 时守卫只丢弃当前捕获帧，后续捕获仍保持干净可用。
+#[test]
+// 执行捕获栈异常恢复回归。
+fn capture_runtime_stack_recovers_after_panicking_root_build() {
+    // 创建将由失败根读取的状态以填充即将丢弃的帧。
+    let failed_state = State::new(1_i32);
+    // 捕获失败根的 panic，允许其 Drop 守卫完成帧清理。
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // 构建会在登记 State 和 Effect 后失败的根。
+        ViewAdapter::capture_root(|| {
+            // 登记仅属于失败根的结构依赖。
+            let _ = failed_state.get();
+            // 登记仅属于失败根的副作用。
+            let _ = crate::ui::Effect::new(|| {});
+            // 模拟用户根工厂异常退出。
+            panic!("capture stack test panic");
+        });
+    }));
+    // 失败路径必须确实触发 panic。
+    assert!(panic.is_err());
+    // 创建后续根读取的独立状态。
+    let recovered_state = State::new(2_i32);
+    // 构建后续根以验证不存在失败帧残留。
+    let recovered = ViewAdapter::capture_root(|| {
+        // 登记后续根唯一的结构依赖。
+        let _ = recovered_state.get();
+        // 登记后续根唯一的副作用。
+        let _ = crate::ui::Effect::new(|| {});
+        // 返回最小恢复后声明根。
+        ViewNode::leaf(Label::new("recovered"))
+    });
+    // 后续根不得继承失败根的 State 绑定。
+    assert_eq!(recovered.captured_state_binds.len(), 1);
+    // 后续根不得继承失败根的 Effect。
+    assert_eq!(recovered.captured_effects.len(), 1);
+}
+
+// 验证动态捕获的子 View 在建树和原位协调后仍把 State 绑定到所属树。
+#[test]
+// 执行动态 State 结构绑定交接回归。
+fn capture_runtime_dynamic_child_state_requests_reconcile_after_build_and_reconcile() {
+    // 创建将由动态子节点结构读取的共享状态。
+    let state = State::new(0_i32);
+    // 建立不含声明子节点的稳定父根。
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Container::new()));
+    // 读取父根标识以通过动态协调入口插入子节点。
+    let root_id = tree.root_id().expect("测试树必须拥有根节点");
+    // 克隆状态供第一次动态子节点捕获读取。
+    let first_state = state.clone();
+    // 捕获第一次动态子节点，使其输出必须交接给 WidgetNode。
+    let first = ViewAdapter::capture_root(|| {
+        // 读取状态以登记结构性 reconcile 绑定。
+        let _ = first_state.get();
+        // 返回可原位复用的稳定类型子节点。
+        ViewNode::leaf(Label::new("dynamic"))
+    });
+    // 把首次捕获子节点挂载到现有根下。
+    ViewAdapter::reconcile_dynamic_children(&mut tree, root_id, vec![first]);
+    // 清除建树阶段可能遗留的请求以观察后续 set。
+    let _ = tree.take_reconcile_requested();
+    // 修改被动态子节点读取的状态。
+    state.set(1);
+    // 成功挂载后的捕获绑定必须请求所属树协调。
+    assert!(tree.take_reconcile_requested());
+    // 克隆状态供同节点的第二次动态捕获读取。
+    let second_state = state.clone();
+    // 捕获与已有节点同类型的替换声明以进入 reconcile_existing。
+    let second = ViewAdapter::capture_root(|| {
+        // 再次读取状态以交接协调阶段的新绑定输出。
+        let _ = second_state.get();
+        // 保持同类型以验证原位协调不会丢失输出。
+        ViewNode::leaf(Label::new("dynamic"))
+    });
+    // 协调现有动态子节点而不新建父树。
+    ViewAdapter::reconcile_dynamic_children(&mut tree, root_id, vec![second]);
+    // 清除协调过程可能产生的旧请求。
+    let _ = tree.take_reconcile_requested();
+    // 再次改变状态以验证协调后的节点仍绑定到树。
+    state.set(2);
+    // 新旧绑定都必须指向当前树的唯一 reconcile 请求端口。
+    assert!(tree.take_reconcile_requested());
+}
+
+// 验证节点私有 Effect 不会清空根 Effect，且节点真实移除后不再被调度。
+#[test]
+// 执行根与节点 Effect 独立生命周期回归。
+fn capture_runtime_dynamic_effects_preserve_root_and_release_on_remove() {
+    // 创建根 Effect 将读取的状态。
+    let root_state = State::new(0_i32);
+    // 创建动态节点 Effect 将读取的状态。
+    let child_state = State::new(0_i32);
+    // 创建根 Effect 的运行次数观察器。
+    let root_runs = Arc::new(AtomicUsize::new(0));
+    // 创建节点 Effect 的运行次数观察器。
+    let child_runs = Arc::new(AtomicUsize::new(0));
+    // 克隆根状态供根捕获内 Effect 使用。
+    let captured_root_state = root_state.clone();
+    // 克隆根观察器供根 Effect 闭包使用。
+    let captured_root_runs = Arc::clone(&root_runs);
+    // 捕获声明根及其树级 Effect。
+    let root = ViewAdapter::capture_root(|| {
+        // 创建依赖根状态的 Effect。
+        let _ = crate::ui::Effect::new(move || {
+            // 读取状态以建立 Effect 依赖。
+            let _ = captured_root_state.get();
+            // 记录 Effect 的首次与后续执行。
+            captured_root_runs.fetch_add(1, Ordering::Relaxed);
+        });
+        // 返回没有动态子节点的父根。
+        ViewNode::leaf(Container::new())
+    });
+    // 建立拥有根 Effect 的树。
+    let mut tree = ViewAdapter::build_nodes(root);
+    // 读取父根标识以插入动态节点。
+    let root_id = tree.root_id().expect("测试树必须拥有根节点");
+    // 克隆节点状态供动态捕获内 Effect 使用。
+    let captured_child_state = child_state.clone();
+    // 克隆节点观察器供动态 Effect 闭包使用。
+    let captured_child_runs = Arc::clone(&child_runs);
+    // 捕获应由实际子节点拥有的 Effect。
+    let child = ViewAdapter::capture_root(|| {
+        // 创建依赖节点状态的 Effect。
+        let _ = crate::ui::Effect::new(move || {
+            // 读取状态以建立节点 Effect 依赖。
+            let _ = captured_child_state.get();
+            // 记录节点 Effect 的首次与后续执行。
+            captured_child_runs.fetch_add(1, Ordering::Relaxed);
+        });
+        // 返回可作为动态子节点挂载的最小声明。
+        ViewNode::leaf(Label::new("effect child"))
+    });
+    // 插入携带节点 Effect 的动态 View。
+    ViewAdapter::reconcile_dynamic_children(&mut tree, root_id, vec![child]);
+    // 同时修改根与节点 Effect 的依赖状态。
+    root_state.set(1);
+    // 触发节点拥有的 Effect。
+    child_state.set(1);
+    // 根与节点任一 pending Effect 都应让树报告待处理工作。
+    assert!(tree.has_pending_effects());
+    // 单次 tick 必须完整遍历根和节点 Effect。
+    assert!(tree.tick_effects());
+    // 根 Effect 初次构造和本次 tick 都应执行。
+    assert_eq!(root_runs.load(Ordering::Relaxed), 2);
+    // 节点 Effect 初次构造和本次 tick 都应执行。
+    assert_eq!(child_runs.load(Ordering::Relaxed), 2);
+    // 真实移除动态子节点，使其 BoxedWidget 与 Effect 一同释放。
+    ViewAdapter::reconcile_dynamic_children(&mut tree, root_id, Vec::new());
+    // 仅修改已移除节点先前读取的状态。
+    child_state.set(2);
+    // 已移除节点 Effect 不得再使树报告 pending。
+    assert!(!tree.has_pending_effects());
+    // 已移除节点 Effect 不得在树 tick 中执行。
+    assert!(!tree.tick_effects());
+    // 节点运行次数必须保持在移除前的值。
+    assert_eq!(child_runs.load(Ordering::Relaxed), 2);
+}
+
+// 拆分捕获输出合并回归，保持适配器测试主体低于规模上限。
+#[path = "adapter_tests/capture_merge.rs"]
+// 编译预捕获节点输出合并回归模块。
+mod capture_merge;
+
+// 拆分结构性 State 租约生命周期回归，保持适配器测试主体低于规模上限。
+#[path = "adapter_tests/state_bind_lifecycle.rs"]
+// 编译 State 租约与 shutdown 生命周期回归模块。
+mod state_bind_lifecycle;

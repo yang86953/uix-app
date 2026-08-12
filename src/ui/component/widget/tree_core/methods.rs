@@ -60,11 +60,17 @@ impl WidgetTree {
     // 在异常安全边界内执行一次组件状态建树或协调事务。
     pub(crate) fn with_component_state_transaction<R>(
         &mut self,
+        // 接收由本事务及其声明子树创建的待确认状态 journal。
+        receipts: Vec<crate::ui::component_state::ComponentStateCaptureReceipt>,
         // 接收事务期间唯一可变访问当前树的同步闭包。
         action: impl FnOnce(&mut Self) -> R,
     ) -> R {
+        // 记录进入本层前的回执边界，供 panic 精确回滚本层及成功嵌套层。
+        let checkpoint = self.component_state_pending_receipts.len();
         // 开启一层延迟清理事务。
         self.begin_component_state_transaction();
+        // 将本层声明捕获产生的 journal 交给当前树暂存。
+        self.component_state_pending_receipts.extend(receipts);
         // 捕获 panic 以确保事务深度在所有退出路径恢复。
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| action(self)));
         // 区分正常提交与异常回滚。
@@ -73,11 +79,22 @@ impl WidgetTree {
             Ok(value) => {
                 // 提交当前事务层。
                 self.end_component_state_transaction();
+                // 仅最外层成功并完成作用域清理后才统一接纳所有 journal。
+                if self.component_state_transaction_depth == 0 {
+                    // 取走全部已成功挂载的回执，避免后续 Drop 回滚。
+                    let receipts = std::mem::take(&mut self.component_state_pending_receipts);
+                    // 仅由组件状态模块批量接纳同一最外层事务的全部 journal。
+                    crate::ui::component_state::accept_component_state_receipts(receipts);
+                }
                 // 返回调用方结果。
                 value
             }
             // 异常路径仅恢复深度并继续原始展开。
             Err(payload) => {
+                // 取走本层开始后加入的回执，包含所有成功的嵌套事务回执。
+                let receipts = self.component_state_pending_receipts.split_off(checkpoint);
+                // 立即丢弃本层回执以精确撤销对应的新建状态槽。
+                drop(receipts);
                 // 避免基于半完成树执行破坏性 prune。
                 self.abort_component_state_transaction();
                 // 保持调用方观察到原始 panic。
@@ -442,6 +459,23 @@ impl WidgetTree {
     /// lifecycle flags suppress duplicate callbacks.
     pub(crate) fn shutdown(&mut self) {
         self.teardown_all();
+        // 释放根生命周期持有的结构性 State 订阅租约。
+        self.root_reconcile_state_binds.clear();
+        // 释放根捕获的 Effect，避免关闭后继续保留待处理工作。
+        self.effects.clear();
+        // 释放根捕获的动画源，并由绑定包装器解除源端所有权。
+        self.animated_sources.clear();
+        // 关闭后不再保留任何组件动画活动标记。
+        self.active_component_animations.clear();
+        // 清空动画遍历暂存，避免关闭后的旧节点身份继续存活。
+        self.animation_ids_scratch.clear();
+        // 释放仍由未移除节点持有的 State 租约与 Effect。
+        for node in self.nodes.iter_mut().flatten() {
+            // 关闭节点结构性 State 订阅。
+            node.clear_reconcile_state_binds();
+            // 清空节点 Effect，关闭后不再参与调度。
+            node.replace_captured_effects(Vec::new());
+        }
         // 窗口关闭后不再允许任何组件私有状态继续存活。
         self.component_state_store.clear();
     }

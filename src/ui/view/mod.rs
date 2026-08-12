@@ -8,17 +8,26 @@ use crate::draw::Color;
 use crate::ui::accessibility::accessibility_override::AccessibilityOverride;
 use crate::ui::component::provider_context::{current_provider_context, ProviderContext};
 // 让声明节点携带内联组件的非视觉状态作用域标记。
-use crate::ui::component_state::{ComponentStateStore, UixComponentScope, UixComponentScopeMarker};
+use crate::ui::component_state::{
+    // 引入随声明根延迟提交的私有状态写入回执。
+    ComponentStateCaptureReceipt,
+    // 引入窗口私有状态存储和组件作用域标记。
+    ComponentStateStore, UixComponentScope, UixComponentScopeMarker,
+};
 use crate::ui::component::traits::WidgetComponent;
 use crate::ui::component::view_transform::ViewTransform;
 use crate::ui::event::system_event_handler::{SystemEventFilter, SystemEventHandlerRegistration};
 use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};
 use crate::ui::render_handler::RenderHandlerRegistration;
+// 引入声明根显式交接的 State 绑定与 Effect 类型。
+use crate::ui::reactive::state::{Effect, StatePaintBind};
 use crate::ui::theme::style::{BoxShadowDef, ColorValue, Style, TypographyToken};
 use crate::ui::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute, EventResult,
     FocusHandle, SystemEvent,
 };
+// 引入声明根保存动态绑定句柄所需的共享指针。
+use std::sync::Arc;
 
 pub(crate) mod providers;
 
@@ -31,6 +40,10 @@ pub trait View: 'static {
 pub struct ViewNode {
     pub(crate) widget: Box<dyn WidgetComponent>,
     pub(crate) children: Vec<ViewNode>,
+    // 保存当前捕获根读取的结构性 State 绑定，建树时由所属 WidgetTree 提交。
+    pub(crate) captured_state_binds: Vec<Arc<dyn StatePaintBind>>,
+    // 保存当前捕获根创建的 Effect，协调时由所属 WidgetTree 整体替换。
+    pub(crate) captured_effects: Vec<Effect>,
     pub(crate) animated_sources: Vec<std::sync::Arc<dyn crate::ui::animation::AnimatedSource>>,
     pub(crate) provider_context: ProviderContext,
     pub(crate) style: Style,
@@ -56,6 +69,8 @@ pub struct ViewNode {
     pub(crate) uix_component_scopes: Vec<UixComponentScopeMarker>,
     // 仅由捕获根携带，用于把首次构建绑定到同一窗口状态存储。
     pub(crate) component_state_store: Option<ComponentStateStore>,
+    // 保存尚未由成功树事务接纳的组件状态写入回执。
+    pub(crate) component_state_receipts: Vec<ComponentStateCaptureReceipt>,
 }
 
 impl View for ViewNode {
@@ -73,6 +88,10 @@ impl ViewNode {
         Self {
             widget: Box::new(widget),
             children: vec![],
+            // 非捕获构造路径不携带结构性 State 绑定。
+            captured_state_binds: Vec::new(),
+            // 非捕获构造路径不携带根 Effect。
+            captured_effects: Vec::new(),
             animated_sources: Vec::new(),
             provider_context: current_provider_context(),
             style: Style::default(),
@@ -94,6 +113,8 @@ impl ViewNode {
             render_handlers: Vec::new(),
             uix_component_scopes: Vec::new(),
             component_state_store: None,
+            // 非捕获构造路径没有需要延迟提交的私有状态写入。
+            component_state_receipts: Vec::new(),
         }
     }
 
@@ -101,6 +122,10 @@ impl ViewNode {
         Self {
             widget: Box::new(widget),
             children,
+            // 非捕获构造路径不携带结构性 State 绑定。
+            captured_state_binds: Vec::new(),
+            // 非捕获构造路径不携带根 Effect。
+            captured_effects: Vec::new(),
             animated_sources: Vec::new(),
             provider_context: current_provider_context(),
             style: Style::default(),
@@ -122,6 +147,8 @@ impl ViewNode {
             render_handlers: Vec::new(),
             uix_component_scopes: Vec::new(),
             component_state_store: None,
+            // 非捕获构造路径没有需要延迟提交的私有状态写入。
+            component_state_receipts: Vec::new(),
         }
     }
 
@@ -143,6 +170,12 @@ impl ViewNode {
     pub(crate) fn set_component_state_store(&mut self, store: ComponentStateStore) {
         // 仅根节点需要保存存储所有权线索。
         self.component_state_store = Some(store);
+    }
+
+    // 让捕获适配器把一次组件状态 journal 的所有权附到声明根。
+    pub(crate) fn push_component_state_receipt(&mut self, receipt: ComponentStateCaptureReceipt) {
+        // 保持捕获顺序，以便统一在树事务成功后接纳全部写入。
+        self.component_state_receipts.push(receipt);
     }
 
     pub fn color(mut self, color: impl Into<ColorValue>) -> Self {

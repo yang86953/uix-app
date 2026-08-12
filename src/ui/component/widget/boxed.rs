@@ -1,5 +1,14 @@
 use super::*;
 
+// 拆分节点 Effect 生命周期辅助方法，保持 BoxedWidget 主文件低于规模上限。
+#[path = "boxed/effects.rs"]
+// 编译节点 Effect 生命周期的私有实现模块。
+mod captured_effects;
+// 拆分节点 State 租约辅助方法，保持主体低于规模上限。
+#[path = "boxed/state_binds.rs"]
+// 编译节点 State 租约生命周期的私有实现模块。
+mod captured_state_binds;
+
 pub struct BoxedWidget {
     component: Box<dyn WidgetComponent>,
     caps: WidgetCapabilities,
@@ -29,6 +38,10 @@ pub struct BoxedWidget {
     handler_signatures: Vec<HandlerSignature>,
     system_event_handlers: Vec<SystemEventHandlerRegistration>,
     accessibility_override: Option<AccessibilityOverride>,
+    // 保存该实际节点持有的结构性 State 订阅租约。
+    reconcile_state_binds: Vec<crate::ui::reactive::state::ReconcileBindLease>,
+    // 由此实际节点拥有并随真实移除释放的捕获 Effect。
+    effects: Vec<crate::ui::reactive::state::Effect>,
     // 保存实际挂载节点承载的全部内联组件状态作用域。
     uix_component_scopes: Vec<crate::ui::component_state::UixComponentScopeMarker>,
 }
@@ -100,6 +113,10 @@ impl BoxedWidget {
             handler_signatures: Vec::new(),
             system_event_handlers: Vec::new(),
             accessibility_override: None,
+            // 新节点在接收声明输出前没有结构性 State 租约。
+            reconcile_state_binds: Vec::new(),
+            // 新节点在接收 View 捕获输出前不拥有 Effect。
+            effects: Vec::new(),
             uix_component_scopes: Vec::new(),
         }
     }

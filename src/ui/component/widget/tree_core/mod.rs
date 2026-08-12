@@ -12,7 +12,12 @@ use crate::ui::render_handler::RenderHandlerTable;
 use crate::ui::theme::traits::ThemeTokens;
 use crate::ui::theme::Theme;
 // 保存每个窗口树独占的内联组件私有状态。
-use crate::ui::component_state::{ComponentStateStore, UixComponentScope};
+use crate::ui::component_state::{
+    // 保存待最外层事务接纳的私有状态写入回执。
+    ComponentStateCaptureReceipt,
+    // 保存窗口私有状态存储和作用域身份。
+    ComponentStateStore, UixComponentScope,
+};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -69,6 +74,8 @@ pub struct WidgetTree {
     pub(crate) layout_ancestor_scratch: Vec<WidgetId>,
     pub(crate) reconcile_requested: Arc<AtomicBool>,
     pub(crate) reconcile_callback: Arc<dyn Fn() + Send + Sync>,
+    // 保存声明根持有的结构性 State 订阅租约。
+    pub(crate) root_reconcile_state_binds: Vec<crate::ui::reactive::state::ReconcileBindLease>,
     pub(crate) effects: Vec<crate::ui::reactive::state::Effect>,
     pub(crate) animated_sources: BTreeMap<WidgetId, BoundAnimatedSource>,
     pub(crate) active_component_animations: HashSet<WidgetId>,
@@ -89,6 +96,8 @@ pub struct WidgetTree {
     pub(crate) component_state_store: ComponentStateStore,
     // 在适配器构建事务内延迟清理，避免同轮替换误删复用状态。
     pub(crate) component_state_transaction_depth: usize,
+    // 保存当前嵌套事务尚未在最外层成功后接纳的状态 journal。
+    pub(crate) component_state_pending_receipts: Vec<ComponentStateCaptureReceipt>,
     #[cfg(feature = "test-harness")]
     pub(crate) automation_recorder: Option<crate::ui::automation::AutomationRecorder>,
     /// layout() 内实际改写 frame 次数（回归：收敛后二次 layout 应为 0）。
@@ -137,6 +146,8 @@ impl Default for WidgetTree {
             layout_ancestor_scratch: Vec::new(),
             reconcile_requested,
             reconcile_callback,
+            // 初始树尚未接纳任何声明根结构性 State 绑定。
+            root_reconcile_state_binds: Vec::new(),
             effects: Vec::new(),
             animated_sources: BTreeMap::new(),
             active_component_animations: HashSet::new(),
@@ -155,6 +166,8 @@ impl Default for WidgetTree {
             keyboard_activation: None,
             component_state_store: ComponentStateStore::new(),
             component_state_transaction_depth: 0,
+            // 初始树没有等待事务确认的组件状态 journal。
+            component_state_pending_receipts: Vec::new(),
             #[cfg(feature = "test-harness")]
             automation_recorder: None,
             #[cfg(test)]
