@@ -1,5 +1,5 @@
 // 引入文档解析、公开 View 生成与诊断类型。
-use super::{Diagnostic, generate_view, parse_document};
+use super::{generate_view, parse_document, Diagnostic};
 
 // 解析单根文档并返回稳定生成令牌。
 fn generate(source: &str) -> Result<String, Diagnostic> {
@@ -24,14 +24,14 @@ fn generates_virtual_scroll_snapshot_and_identity_contract() {
     assert!(tokens.contains("item_count") && tokens.contains("len"));
     // 固定行高必须进入公开运行时构建器。
     assert!(tokens.contains("item_height (32"));
-    // renderer 必须按运行时绝对索引惰性创建行。
-    assert!(tokens.contains("render (move | __uix_virtual_index |"));
+    // 带业务 key 的模板必须在行构建前走 keyed renderer。
+    assert!(tokens.contains("render_keyed"));
     // 用户行变量必须从数据快照的当前索引克隆。
     assert!(tokens.contains("let log") && tokens.contains("clone"));
     // 用户索引绑定必须接收运行时绝对索引。
     assert!(tokens.contains("let index = __uix_virtual_index"));
-    // 稳定业务 key 必须进入公开 ViewNode 身份契约。
-    assert!(tokens.contains(". key ("));
+    // 行 renderer 不得再次设置第二份 ViewNode key。
+    assert!(!tokens.contains(". key ("));
     // key 表达式必须保留业务 id 字段访问。
     assert!(tokens.contains("id"));
     // 公共高度必须继续走统一 View 样式契约。
@@ -47,6 +47,10 @@ fn generates_documented_virtual_scroll_shape_without_item_attribute() {
     let source = r#"<VirtualScroll data={logs} rowHeight="32px"><For {log} in {logs}><Text>{log.line}</Text></For></VirtualScroll>"#;
     // 生成最小虚拟列表。
     let tokens = generate(source).expect("文档 VirtualScroll 示例应可生成");
+    // 无业务 key 的模板继续使用绝对索引 renderer。
+    assert!(tokens.contains("render (move | __uix_virtual_index |"));
+    // 无业务 key 时不得生成 keyed renderer。
+    assert!(!tokens.contains("render_keyed"));
     // 未声明 key 时不应伪造业务 key 调用。
     assert!(!tokens.contains("format !") && !tokens.contains(". key"));
     // renderer 仍必须从数据快照按绝对索引克隆行值。
@@ -159,4 +163,27 @@ fn validates_virtual_scroll_binding_consistency() {
             // 检查最小修复动作。
             && item_mismatch.suggestion.contains("删除 item")
     );
+}
+
+// 验证 VirtualScroll 业务 key 不会捕获 renderer 外部状态或执行调用。
+#[test]
+fn rejects_virtual_scroll_key_external_capture_and_calls() {
+    // 外部前缀会被 key 与行两个 move 闭包竞争，并且无法形成树级响应式绑定。
+    let external = generate(
+        // 构造同时读取外部标识符与当前项成员的 key。
+        r#"<VirtualScroll data={items} rowHeight="32px"><For {item} in {items} key={prefix + item.id}><Text>{item.name}</Text></For></VirtualScroll>"#,
+    )
+    // 提取预期的局部依赖诊断。
+    .expect_err("VirtualScroll key 不得捕获外部标识符");
+    // 诊断必须指明只允许当前 item 或 index。
+    assert!(external.message.contains("item") && external.message.contains("index"));
+    // 调用表达式可能产生副作用，不能作为捕获前稳定身份工厂。
+    let call = generate(
+        // 构造调用当前项成员方法的 key。
+        r#"<VirtualScroll data={items} rowHeight="32px"><For {item} in {items} key={item.id.to_string()}><Text>{item.name}</Text></For></VirtualScroll>"#,
+    )
+    // 提取预期的纯身份诊断。
+    .expect_err("VirtualScroll key 不得包含调用");
+    // 诊断必须明确拒绝调用结构。
+    assert!(call.message.contains("调用"));
 }

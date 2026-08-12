@@ -7,8 +7,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, generate_node_view, is_renderable_node};
 // 引入 VirtualScroll 映射所需的语言 AST、值生成与诊断类型。
 use super::{
-    Attribute, AttributeValue, ControlBinding, Diagnostic, Element, ExpressionKind, ExpressionNode,
-    Node, generate_expression, numeric_value, rust_identifier,
+    generate_expression, numeric_value, rust_identifier, Attribute, AttributeValue, ControlBinding,
+    Diagnostic, Element, Expression, ExpressionKind, ExpressionNode, Node,
 };
 
 // 生成文档定义的定高 VirtualScroll 数据窗口。
@@ -71,6 +71,26 @@ pub(crate) fn generate_virtual_scroll(element: &Element) -> Result<TokenStream, 
     let row = single_row_view(template)?;
     // 递归生成当前行的公开 ViewNode。
     let row = generate_node_view(row)?;
+    // 在把绑定名转换成 Rust Ident 前验证并生成可选业务 key。
+    let key = key
+        // 借用 key 表达式。
+        .as_ref()
+        // VirtualScroll 键工厂只能依赖当前行与索引，不能读取捕获外的响应式状态。
+        .map(|value| {
+            // 用源 AST 中的字符串绑定名验证自由变量与调用边界。
+            validate_virtual_key_expression(
+                // 传入受限业务 key 表达式。
+                &value.expression,
+                // 传入当前 For 行变量名。
+                binding,
+                // 传入可选的当前 For 索引变量名。
+                index_binding.as_deref(),
+            )?;
+            // 返回已经通过纯身份约束的表达式令牌。
+            generate_expression(&value.expression, None)
+        })
+        // 把 Option<Result> 转换为 Result<Option>。
+        .transpose()?;
     // 生成调用方可见的行绑定标识符。
     let binding = rust_identifier(binding, *binding_span)?;
     // 生成可选的调用方索引绑定标识符。
@@ -79,14 +99,6 @@ pub(crate) fn generate_virtual_scroll(element: &Element) -> Result<TokenStream, 
         .as_deref()
         // 转换为带诊断的 Rust 标识符。
         .map(|name| rust_identifier(name, index_span.unwrap_or(*binding_span)))
-        // 把 Option<Result> 转换为 Result<Option>。
-        .transpose()?;
-    // 可选 key 在行绑定与索引绑定建立后生成。
-    let key = key
-        // 借用 key 表达式。
-        .as_ref()
-        // 生成 Rust key 令牌。
-        .map(|value| generate_expression(&value.expression, None))
         // 把 Option<Result> 转换为 Result<Option>。
         .transpose()?;
     // 使用混合卫生名称保存拥有所有权的数据快照。
@@ -100,43 +112,157 @@ pub(crate) fn generate_virtual_scroll(element: &Element) -> Result<TokenStream, 
         // 返回用户索引局部变量声明。
         quote! { let #index_binding = #item_index; }
     });
-    // 带 key 的行根复用公开 ViewNode 身份契约。
-    let row = if let Some(key) = key {
-        // 生成带稳定字符串 key 的行 View。
-        quote! {
-            // 先构建当前行根节点。
-            let __uix_virtual_view = #row;
-            // 把业务 key 转换为公开字符串身份。
-            __uix_virtual_view.key(::std::format!("{}", #key))
-        }
+    // 为业务键闭包保存独立数据快照，避免两个 static 闭包争用所有权。
+    let key_data_snapshot = Ident::new("__uix_virtual_key_data", Span::mixed_site());
+    // 根据 For 是否声明 key 生成独立快照准备语句与一致身份 renderer。
+    let (key_snapshot_setup, renderer) = if let Some(key) = key {
+        // 带 key 时必须在行 View 构建前计算业务身份并交给运行时捕获。
+        (
+            // 复制已经求值的数据快照供业务键闭包独立拥有。
+            quote! { let #key_data_snapshot = ::std::sync::Arc::clone(&#data_snapshot); },
+            // 用同一业务键同时拥有 keyed reconcile 与组件私有状态命名空间。
+            quote! {
+                .render_keyed(
+                    // 先按绝对索引计算当前业务项的稳定键。
+                    move |#item_index| {
+                        // 克隆当前项以复用 For 的行绑定与 key 表达式语义。
+                        let #binding = (#key_data_snapshot)[#item_index].clone();
+                        // 建立可选绝对索引绑定供 key 表达式消费。
+                        #index_statement
+                    // 返回受限业务表达式，由运行时统一执行一次字符串规范化。
+                    #key
+                    },
+                    // 只在运行时请求的索引进入窗口时构建实际行 View。
+                    move |#item_index| {
+                        // 克隆当前行值，避免事件闭包借用数据快照。
+                        let #binding = (#data_snapshot)[#item_index].clone();
+                        // 建立可选绝对索引绑定。
+                        #index_statement
+                        // 返回唯一行根 View。
+                        #row
+                    },
+                )
+            },
+        )
     } else {
-        // 未声明 key 时保留运行时按绝对索引生成的后备身份。
-        row
+        // 未声明业务 key 时由普通 render 使用绝对索引统一拥有行身份。
+        (
+            // 普通索引身份只需要 renderer 已拥有的数据快照。
+            quote! {},
+            // 生成普通绝对索引 renderer 调用。
+            quote! {
+                .render(move |#item_index| {
+                    // 克隆当前行值，避免事件闭包借用数据快照。
+                    let #binding = (#data_snapshot)[#item_index].clone();
+                    // 建立可选绝对索引绑定。
+                    #index_statement
+                    // 返回唯一行根 View。
+                    #row
+                })
+            },
+        )
     };
     // 生成只声明数据、行高和 renderer 的公开运行时组合。
     let base = quote! {{
-        // 克隆数据快照以满足 renderer 的静态生命周期。
-        let #data_snapshot = (#data).clone();
+        // 把一次求值的数据快照放入共享所有权，避免 keyed 双闭包深拷贝大列表。
+        let #data_snapshot = ::std::sync::Arc::new((#data).clone());
         // 在快照移动进 renderer 前计算稳定项目总数。
         let #item_count = (#data_snapshot).len();
+        // 带业务键时为键闭包准备同一已求值数据的独立所有权快照。
+        #key_snapshot_setup
         // 运行时 VirtualScroll 继续唯一拥有滚动与物化状态。
         ::uix::prelude::VirtualScroll::new()
             // 声明本次数据快照的项目总数。
             .item_count(#item_count)
             // 声明固定行高。
             .item_height(#row_height)
-            // 只在运行时请求的索引进入物化窗口时构建行 View。
-            .render(move |#item_index| {
-                // 克隆当前行值，避免事件闭包借用数据快照。
-                let #binding = (#data_snapshot)[#item_index].clone();
-                // 建立可选绝对索引绑定。
-                #index_statement
-                // 返回唯一行根 View。
-                #row
-            })
+            // 按是否存在业务 key 选择一致身份的延迟 renderer。
+            #renderer
     }};
     // 专有结构属性消费后，公共样式继续走统一 View 契约。
     apply_common_attributes(base, &element.attributes, &["data", "rowHeight", "item"])
+}
+
+// 验证 VirtualScroll 业务 key 只依赖当前项、可选索引与纯组合表达式。
+fn validate_virtual_key_expression(
+    // 接收解析后的受限 key 表达式。
+    expression: &Expression,
+    // 接收当前 For 行绑定名称。
+    binding: &str,
+    // 接收可选绝对索引绑定名称。
+    index_binding: Option<&str>,
+    // 返回纯身份表达式通过或定位诊断。
+) -> Result<(), Diagnostic> {
+    // 递归检查表达式树中的所有自由变量和调用节点。
+    match &expression.kind {
+        // 当前行绑定与显式索引绑定是唯一允许的标识符根。
+        ExpressionKind::Identifier(name)
+            if name == binding || index_binding.is_some_and(|index| index == name) =>
+        {
+            // 合法局部标识符不需要进一步检查。
+            Ok(())
+        }
+        // 其他标识符会在两个 move 闭包间产生所有权或响应式语义分裂。
+        ExpressionKind::Identifier(_) => Err(Diagnostic::new(
+            // 指向实际外部引用位置。
+            expression.span,
+            // 说明稳定键不能从 renderer 外部捕获值。
+            "VirtualScroll 的 For key 只能依赖当前 item 或 index",
+            // 引导把稳定 id 放入当前业务项。
+            "使用 key={item.id}，不要在 key 中引用外部状态",
+        )),
+        // 数字、字符串和布尔字面量本身没有捕获或副作用。
+        ExpressionKind::Number(_) | ExpressionKind::String(_) | ExpressionKind::Boolean(_) => {
+            // 保留字面量供更高层纯组合表达式消费。
+            Ok(())
+        }
+        // 一元表达式只需验证其操作数。
+        ExpressionKind::Unary { operand, .. } => {
+            // 递归沿用同一局部绑定白名单。
+            validate_virtual_key_expression(operand, binding, index_binding)
+        }
+        // 二元表达式要求左右两侧都保持纯局部依赖。
+        ExpressionKind::Binary { left, right, .. } => {
+            // 先验证左侧，再验证右侧并返回首个诊断。
+            validate_virtual_key_expression(left, binding, index_binding)?;
+            // 验证右侧局部依赖。
+            validate_virtual_key_expression(right, binding, index_binding)
+        }
+        // 三元表达式的条件与两条分支都必须是纯局部表达式。
+        ExpressionKind::Ternary {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            // 验证条件不会读取外部状态。
+            validate_virtual_key_expression(condition, binding, index_binding)?;
+            // 验证真分支不会读取外部状态。
+            validate_virtual_key_expression(then_branch, binding, index_binding)?;
+            // 验证假分支并返回最终结果。
+            validate_virtual_key_expression(else_branch, binding, index_binding)
+        }
+        // 成员访问只沿对象根判断是否来自当前项。
+        ExpressionKind::Member { object, .. } => {
+            // 成员名不是自由变量，只验证对象表达式。
+            validate_virtual_key_expression(object, binding, index_binding)
+        }
+        // 下标访问要求对象与索引两侧都保持局部纯依赖。
+        ExpressionKind::Index { object, index } => {
+            // 验证被索引对象归属当前项。
+            validate_virtual_key_expression(object, binding, index_binding)?;
+            // 验证索引表达式归属当前项或显式 index。
+            validate_virtual_key_expression(index, binding, index_binding)
+        }
+        // 调用与对象字面量可能产生副作用或隐藏外部依赖，不属于稳定身份子语言。
+        ExpressionKind::Call { .. } | ExpressionKind::Object(_) => Err(Diagnostic::new(
+            // 指向不允许的复杂结构。
+            expression.span,
+            // 说明 key 工厂必须保持无副作用。
+            "VirtualScroll 的 For key 不能包含调用或对象字面量",
+            // 引导使用当前项的稳定字段或纯组合。
+            "使用 key={item.id} 或 item/index 的纯成员与算术表达式",
+        )),
+    }
 }
 
 // 查找必需结构属性并生成定位诊断。

@@ -101,15 +101,25 @@ fn tutorial_virtualized_todo_anchor_compiles() {
     let view = VirtualScroll::new()
         .item_count(render_todos.get().len())
         .item_height(40.0)
-        .render(move |index| {
-            let todo = &render_todos.get()[index];
-            // 可变列表使用业务标识作为行 key，而不是依赖位置后备 key。
-            let key = todo.id.to_string();
-            let done = done_flags.get()[index].clone();
-            row((embed(Checkbox::new("").checked(&done)), label(&todo.text)))
-                // 将稳定业务标识绑定到行根节点。
-                .key(key)
-        })
+        // 在行工厂执行前按业务标识建立稳定协调与私有状态身份。
+        .render_keyed(
+            // 键工厂只读取同一数据快照中的业务 id。
+            {
+                // 为键工厂克隆结构性 State 句柄。
+                let keyed_todos = render_todos.clone();
+                // 按当前绝对索引读取逻辑项的业务 id。
+                move |index| keyed_todos.get()[index].id
+            },
+            // 行工厂继续只为进入物化窗口的项目构建 View。
+            move |index| {
+                // 读取当前物化索引对应的逻辑项。
+                let todo = &render_todos.get()[index];
+                // 复用当前项独立的完成状态。
+                let done = done_flags.get()[index].clone();
+                // 返回不自行声明根 key 的唯一行 View。
+                row((embed(Checkbox::new("").checked(&done)), label(&todo.text)))
+            },
+        )
         .build();
     let _ = view;
 }

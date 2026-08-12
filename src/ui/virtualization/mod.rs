@@ -6,9 +6,13 @@
 //! （PaintContext / WidgetNode），是 ui System 的叶子 Module。
 
 pub mod virtual_scroll;
+// 隔离 VirtualScroll 键工厂、行工厂与 builder 生命周期契约。
+mod renderer;
 // 导出可变行高测量缓存及其范围计算协议。
 pub mod measurement_cache;
 
 // 保留既有虚拟滚动入口。
 pub use virtual_scroll::*;
+// 仅向 UI 内部 sidecar 重导出 renderer 所有权容器。
+pub(crate) use renderer::VirtualScrollRenderer;
 // 让调用方可以直接构造独立测量缓存。
