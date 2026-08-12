@@ -435,8 +435,8 @@ impl ComponentExpander {
                     &mut bindings,
                 )?;
             }
-            // 展开组件体与嵌套组件。
-            let mut nodes = self.expand_nodes(&component.children, &bindings, false)?;
+            // 沿用调用点的动态实例上下文展开组件体与所有嵌套组件。
+            let mut nodes = self.expand_nodes(&component.children, &bindings, inside_for)?;
             // 拥有私有状态的组件必须把作用域标记附到每个展开后的顶层根。
             if let Some(scope) = scope.as_ref() {
                 // 使运行时能在卸载时回收并在 reconcile 时复用正确实例的状态槽。
