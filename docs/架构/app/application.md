@@ -21,6 +21,8 @@
 
 启动顺序为：验证配置与运行模式 → 建立应用服务 → 按需加载设置 → 解析 platform/graphics 能力 → 创建初始窗口 → 可选发布 Agent discovery → 进入事件循环。任一步失败都按所有权逆序清理，不能留下半初始化 runtime。
 
+主窗、副窗与 `AppHandle::update_view` 的根 View 统一经过 application 根组装入口：仅当根节点没有显式背景时应用 ui/theme 拥有的 `NeutralRole::BgLayout` 语义令牌。调用方显式背景（包括透明色）保持最高优先级；该默认值不改变普通 `ViewNode` 的透明语义，也不进入 graphics 或 platform 生命周期。
+
 ## 组件：Container
 
 容器只管理与应用同寿的线程安全 singleton，不自动构造服务、不驱动 timer，也不执行设置保存。`WidgetTree`、Renderer、窗口对象、字体/图像会话等线程亲和资源属于窗口或 graphics 生命周期，不得注册为进程共享 singleton。

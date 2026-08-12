@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use crate::app::app_events::ThemeApplied;
 use crate::app::application::app_handle::{
-    wrap_root_with_notification_overlay, AppHandle, AppNotificationState,
+    prepare_app_root, AppHandle, AppNotificationState,
 };
 use crate::app::application::cli::Cli;
 use crate::app::application::di::Container;
@@ -556,9 +556,10 @@ impl App {
             move || {
                 with_config(&component_config, || {
                     with_locale(&locale, || {
-                        wrap_root_with_notification_overlay(
+                        // 初始主窗通过统一入口应用根背景默认值并组装通知浮层。
+                        prepare_app_root(
                             root_factory(),
-                            root_notifications.clone(),
+                            Some(root_notifications.clone()),
                             root_window_id,
                         )
                     })

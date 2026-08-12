@@ -30,13 +30,16 @@ use crate::ui::adapter::ViewAdapter;
 // 反馈 capability 启用时才实现通知浮层根布局。
 #[cfg(feature = "feedback")]
 use crate::ui::component::traits::WidgetLayout;
+// 引入应用根默认背景所需的主题样式值。
+use crate::ui::theme::style::ColorValue;
 use crate::ui::view::{View, ViewNode};
 // 反馈 capability 启用时才连接应用通知状态与组件实现。
 #[cfg(feature = "feedback")]
 use crate::ui::widgets::feedback::notification::{
     Notification, NotificationHandle, NotificationItem,
 };
-use crate::ui::{AppState, Theme};
+// 引入应用状态、主题与布局背景语义角色。
+use crate::ui::{AppState, NeutralRole, Theme};
 
 // 反馈 capability 启用时才需要额外的应用浮层根节点。
 #[cfg(feature = "feedback")]
@@ -128,11 +131,19 @@ impl AppNotificationState {
     }
 }
 
-pub(crate) fn wrap_root_with_notification_overlay(
+// 统一准备主窗、副窗与运行期替换使用的应用根节点。
+pub(crate) fn prepare_app_root(
     root: ViewNode,
-    notifications: AppNotificationState,
+    notifications: Option<AppNotificationState>,
     window_id: WindowId,
 ) -> ViewNode {
+    // 先应用不覆盖用户声明的应用级主题背景默认值。
+    let root = apply_default_app_root_background(root);
+    // 只有已安装通知状态时才继续组装通知浮层。
+    let Some(notifications) = notifications else {
+        // 没有通知状态时返回已经应用默认值的根节点。
+        return root;
+    };
     // 反馈能力启用时把通知容器挂载到应用根节点上层。
     #[cfg(feature = "feedback")]
     {
@@ -148,6 +159,17 @@ pub(crate) fn wrap_root_with_notification_overlay(
         let _ = (notifications, window_id);
         root
     }
+}
+
+// 为没有显式背景的应用根节点补充主题布局背景。
+fn apply_default_app_root_background(mut root: ViewNode) -> ViewNode {
+    // 用户未声明背景时才写入 App 级默认值。
+    if root.style.background.is_none() {
+        // 使用语义令牌，使背景继续跟随当前应用主题解析。
+        root.style.background = Some(ColorValue::Neutral(NeutralRole::BgLayout));
+    }
+    // 保留根组件身份、子树以及全部其他声明属性。
+    root
 }
 
 #[derive(Clone)]
@@ -311,10 +333,8 @@ impl AppHandle {
             self.runtime
                 .enqueue_with_context(self.window_id, move |ctx| {
                     let root = ViewAdapter::capture_root(build_root);
-                    let root = match notifications {
-                        Some(state) => wrap_root_with_notification_overlay(root, state, window_id),
-                        None => root,
-                    };
+                    // 运行期替换与初始窗口复用同一应用根默认处理。
+                    let root = prepare_app_root(root, notifications, window_id);
                     ctx.update_root(root);
                 });
         }
@@ -354,5 +374,60 @@ impl AppHandle {
             }
         }
         self.runtime.close_session(self.window_id);
+    }
+}
+
+// 验证应用根主题背景默认值及用户覆写优先级。
+#[cfg(test)]
+mod tests {
+    // 引入当前模块私有的应用根准备函数。
+    use super::*;
+    // 引入最小文本组件构造测试根节点。
+    use crate::ui::widgets::Label;
+
+    // 验证透明根节点获得主题布局背景。
+    #[test]
+    fn app_root_uses_layout_background_when_unspecified() {
+        // 构造没有显式背景的最小应用根节点。
+        let root = ViewNode::leaf(Label::new("root"));
+        // 在不安装通知浮层的路径准备应用根节点。
+        let prepared = prepare_app_root(root, None, WindowId::ROOT);
+        // 默认值必须保持为可随主题解析的布局背景语义令牌。
+        assert_eq!(
+            prepared.style.background,
+            Some(ColorValue::Neutral(NeutralRole::BgLayout))
+        );
+    }
+
+    // 验证用户显式背景高于应用根默认值。
+    #[test]
+    fn app_root_preserves_explicit_background() {
+        // 选择与默认布局背景不同的显式容器背景。
+        let explicit = ColorValue::Neutral(NeutralRole::BgContainer);
+        // 构造已经声明显式背景的最小应用根节点。
+        let root = ViewNode::leaf(Label::new("root")).bg(explicit);
+        // 在不安装通知浮层的路径准备应用根节点。
+        let prepared = prepare_app_root(root, None, WindowId::ROOT);
+        // 应用默认处理不得覆盖调用方声明的背景。
+        assert_eq!(prepared.style.background, Some(explicit));
+    }
+
+    // 验证通知浮层不会遮断内部应用根背景默认处理。
+    #[cfg(feature = "feedback")]
+    #[test]
+    fn app_root_background_is_applied_before_notification_overlay() {
+        // 构造没有显式背景的最小应用根节点。
+        let root = ViewNode::leaf(Label::new("root"));
+        // 安装通知状态并准备带浮层的应用根节点。
+        let prepared = prepare_app_root(
+            root,
+            Some(AppNotificationState::new()),
+            WindowId::ROOT,
+        );
+        // 浮层下的业务根必须获得主题布局背景。
+        assert_eq!(
+            prepared.children[0].style.background,
+            Some(ColorValue::Neutral(NeutralRole::BgLayout))
+        );
     }
 }
