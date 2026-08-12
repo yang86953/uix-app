@@ -5,7 +5,8 @@ use crate::core::geometry::Point;
 use crate::core::WindowId;
 use crate::native::present::IPresenter;
 use crate::native::test_harness::fake_presenter::FakePresenter;
-use crate::native::windowing::event::FrameRequestToken;
+// 测试窗口适配统一的指针激活上下文签名。
+use crate::native::windowing::event::{FrameRequestToken, PointerActivationId};
 use crate::native::windowing::shared::window::validate_window_extent_constraints;
 use crate::native::windowing::window::{
     INativeHandle, IWindowManager, IWindowProperties, NativeFrameRequest, PlatformWindow,
@@ -250,6 +251,8 @@ pub struct FakeWindowState {
     pub close_called: bool,
     pub close_requested: bool,
     pub show_system_menu_calls: usize,
+    // 记录每次原生拖动调用收到的精确指针激活上下文。
+    pub begin_move_drag_activations: Vec<Option<PointerActivationId>>,
     pub center_called: bool,
     pub raise_calls: usize,
     pub lower_calls: usize,
@@ -294,6 +297,8 @@ impl FakeWindow {
                 close_called: false,
                 close_requested: false,
                 show_system_menu_calls: 0,
+                // 初始没有任何原生拖动激活调用。
+                begin_move_drag_activations: Vec::new(),
                 center_called: false,
                 raise_calls: 0,
                 lower_calls: 0,
@@ -336,6 +341,8 @@ impl FakeWindow {
         self.state.close_called = false;
         self.state.close_requested = false;
         self.state.show_system_menu_calls = 0;
+        // 清除原生拖动激活调用历史。
+        self.state.begin_move_drag_activations.clear();
         self.state.center_called = false;
         self.state.raise_calls = 0;
         self.state.lower_calls = 0;
@@ -384,8 +391,21 @@ impl PlatformWindow for FakeWindow {
         self.state.close_requested = true;
         Ok(())
     }
-    fn begin_move_drag(&mut self) -> Result<()> {
+    // 测试替身观测统一窗口动作是否被调用。
+    fn begin_move_drag(
+        // 测试替身记录动作次数与不可解释身份，不解释其平台内容。
+        &mut self,
+        // 允许测试路径传入或省略同一不可解释上下文。
+        pointer_activation: Option<PointerActivationId>,
+    // 保持内存替身的无失败结果。
+    ) -> Result<()> {
         self.props.state.begin_move_drag_calls += 1;
+        // 保存精确调用顺序供 app/window 契约行为测试断言。
+        self.state
+            // 访问原生拖动调用历史。
+            .begin_move_drag_activations
+            // 记录 Some(id) 或 None，二者语义不可互换。
+            .push(pointer_activation);
         Ok(())
     }
     fn show_system_menu(&mut self) -> Result<()> {

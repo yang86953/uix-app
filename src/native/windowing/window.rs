@@ -1,6 +1,7 @@
 //! 窗口协议 — 窗口创建、属性与生命周期。
 
-use super::event::FrameRequestToken;
+// 引入帧令牌与平台中立的单次指针激活身份。
+use super::event::{FrameRequestToken, PointerActivationId};
 use crate::core::error::{Error, Result};
 use crate::core::geometry::Point;
 use crate::core::WindowId;
@@ -92,8 +93,14 @@ pub trait PlatformWindow {
     fn close(&mut self) -> Result<()>;
     /// 请求走平台正常关闭事件，使应用先释放图形与会话资源。
     fn request_close(&mut self) -> Result<()>;
-    /// 将当前鼠标手势移交给窗口管理器执行原生窗口拖动。
-    fn begin_move_drag(&mut self) -> Result<()>;
+    /// 将当前鼠标手势及其不可解释激活身份移交给窗口管理器。
+    fn begin_move_drag(
+        // 激活身份只用于关联当前原生 PointerDown，平台可选择忽略。
+        &mut self,
+        // 未携带身份表示动作并非由可验证的原生指针激活产生。
+        pointer_activation: Option<PointerActivationId>,
+    // 返回平台请求提交结果，正常的过期授权应安全忽略。
+    ) -> Result<()>;
     /// 在当前指针位置显示窗口管理器提供的原生系统菜单。
     fn show_system_menu(&mut self) -> Result<()>;
     fn is_visible(&self) -> bool;

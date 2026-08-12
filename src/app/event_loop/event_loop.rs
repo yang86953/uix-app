@@ -552,7 +552,16 @@ where
                 clipboard::with_clipboard(platform.clipboard(), || {
                     tree.dispatch_event(&we);
                 });
-                if let Err(error) = apply_pending_window_actions(tree, platform_window) {
+                // 当前原生事件的激活身份只在本轮同步动作消费期间有效。
+                if let Err(error) = apply_pending_window_actions(
+                    // 转交刚完成分发的窗口树。
+                    tree,
+                    // 命令只发往事件所属的原生窗口。
+                    platform_window,
+                    // 保留 PointerDown 与平台授权的精确因果关系。
+                    ev.pointer_activation(),
+                // 结束当前事件动作执行参数。
+                ) {
                     tracing::error!("window action failed: {}", error.short_what());
                     running.set(false);
                     break;
@@ -609,7 +618,16 @@ where
             on_runtime_tasks: &mut on_runtime_tasks,
             on_frame: &on_frame,
         });
-        if let Err(error) = apply_pending_window_actions(tree, platform_window) {
+        // 非原生事件触发的运行时动作不得借用历史指针授权。
+        if let Err(error) = apply_pending_window_actions(
+            // 转交当前窗口树。
+            tree,
+            // 转交当前原生窗口。
+            platform_window,
+            // 明确声明本轮没有原生输入激活上下文。
+            None,
+        // 结束运行时动作执行参数。
+        ) {
             tracing::error!(
                 "window action failed after runtime work: {}",
                 error.short_what()

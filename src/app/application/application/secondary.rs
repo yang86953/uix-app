@@ -45,7 +45,16 @@ impl SecondaryWindowSession {
 
         if let Some(system_event) = map_ui_event(event) {
             parts.tree.dispatch_event(&system_event);
-            if let Err(error) = apply_pending_window_actions(parts.tree, self._window.as_mut()) {
+            // 副窗口同样只消费当前原生事件携带的指针激活身份。
+            if let Err(error) = apply_pending_window_actions(
+                // 转交副窗口独占的 UI 树。
+                parts.tree,
+                // 转交事件所属的副原生窗口。
+                self._window.as_mut(),
+                // 保留该次 PointerDown 的平台激活因果关系。
+                event.pointer_activation(),
+            // 结束副窗口当前事件动作参数。
+            ) {
                 tracing::error!("secondary window action failed: {}", error.short_what());
                 return false;
             }
@@ -145,7 +154,16 @@ impl SecondaryWindowSession {
             on_runtime_tasks: &mut no_runtime_tasks,
             on_frame: &no_frame,
         });
-        if let Err(error) = apply_pending_window_actions(parts.tree, _window.as_mut()) {
+        // 帧与运行时工作不能复用先前原生事件的激活身份。
+        if let Err(error) = apply_pending_window_actions(
+            // 转交副窗口独占的 UI 树。
+            parts.tree,
+            // 转交副窗口原生命令接收者。
+            _window.as_mut(),
+            // 明确声明该路径没有原生 PointerDown 上下文。
+            None,
+        // 结束副窗口运行时动作参数。
+        ) {
             tracing::error!(
                 "secondary window action failed after runtime work: {}",
                 error.short_what()

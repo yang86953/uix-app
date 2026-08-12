@@ -15,7 +15,8 @@ use std::rc::Rc;
 
 use crate::core::error::{Errc, Error, Result};
 use crate::native::present::IPresenter;
-use crate::native::windowing::event::FrameRequestToken;
+// 引入帧令牌与原生指针动作的不可解释激活身份。
+use crate::native::windowing::event::{FrameRequestToken, PointerActivationId};
 use crate::native::windowing::shared::state::WindowState;
 use crate::native::windowing::window::{
     INativeHandle, IWindowProperties, NativeFrameRequest, PlatformWindow, WindowOcclusionState,
@@ -129,7 +130,14 @@ pub trait WindowOps {
         unimpl("os_request_close")
     }
 
-    fn os_begin_move_drag(&mut self) -> Result<()> {
+    // 默认窗口操作拒绝未由具体平台实现的交互移动。
+    fn os_begin_move_drag(
+        // 默认实现不解释也不伪造平台输入激活身份。
+        &mut self,
+        // 参数只供需要协议授权的平台后端使用。
+        _pointer_activation: Option<PointerActivationId>,
+    // 保持既有未实现失败契约。
+    ) -> Result<()> {
         unimpl("os_begin_move_drag")
     }
 
@@ -270,8 +278,16 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
     fn request_close(&mut self) -> Result<()> {
         self.ops.os_request_close()
     }
-    fn begin_move_drag(&mut self) -> Result<()> {
-        self.ops.os_begin_move_drag()
+    // 共享窗口只负责把当前事件上下文转交平台实现。
+    fn begin_move_drag(
+        // 接收 app 从当前原生事件转交的激活身份。
+        &mut self,
+        // 该身份不进入共享窗口状态，也不会跨动作保存。
+        pointer_activation: Option<PointerActivationId>,
+    // 直接返回平台后端的提交或忽略结果。
+    ) -> Result<()> {
+        // 将一次性上下文原样交给唯一的 OS 操作所有者。
+        self.ops.os_begin_move_drag(pointer_activation)
     }
     fn show_system_menu(&mut self) -> Result<()> {
         self.ops.os_show_system_menu()

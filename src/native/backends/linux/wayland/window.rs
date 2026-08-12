@@ -39,6 +39,10 @@ impl IWindowManager for WaylandBackend {
             self._shm.clone(),
             self.events.clone(),
             self.surface_windows.clone(),
+            // 传入已绑定 seat 的协议引用，不复制任何输入 serial。
+            self.seat.clone(),
+            // 所有窗口共享后端唯一的一次性激活注册表。
+            self.pointer_activations.clone(),
             self.outputs.clone(),
             self._xdg_activation.clone(),
         );

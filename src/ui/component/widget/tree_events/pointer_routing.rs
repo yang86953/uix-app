@@ -102,6 +102,13 @@ impl WidgetTree {
         self.rebuild_widget_overlays();
     }
 
+    // 原生窗口管理器接管指针后，清除 UI pressed/drag 而不改变键盘焦点。
+    pub(crate) fn cancel_pointer_gesture_for_native_handoff(&mut self) {
+        // 复用唯一手势取消实现，统一交付 DragEnd 与 PointerLeave 清理语义。
+        self.cancel_active_pointer_gesture();
+    // 结束原生指针接管清理。
+    }
+
     pub(super) fn dispatch_pointer_release(
         &mut self,
         event: &SystemEvent,
@@ -250,4 +257,64 @@ impl WidgetTree {
         }
         None
     }
+}
+
+// 单元测试验证原生窗口接管只清理指针手势而保留键盘焦点。
+#[cfg(test)]
+// 测试模块直接观察 WidgetTree manager 状态，不依赖真实窗口。
+mod tests {
+    // 引入当前模块的 WidgetTree 与输入类型。
+    use super::*;
+    // 使用简单节点建立可寻址的 pressed 与 focused 目标。
+    use crate::ui::widgets::Label;
+
+    // 验证 native handoff 后不会残留 pressed/potential drag。
+    #[test]
+    // 测试覆盖窗口移动接管与键盘焦点隔离契约。
+    fn native_move_handoff_cancels_pointer_gesture_without_blurring_keyboard_focus() {
+        // 创建空组件树。
+        let mut tree = WidgetTree::new();
+        // 添加稳定根节点作为手势与焦点目标。
+        let target = tree.set_root(Box::new(Label::new("native handoff")));
+        // 模拟 PointerDown 建立 pressed 捕获。
+        let began = tree
+            // 访问交互 manager。
+            .managers_mut()
+            // 选择 pressed 状态所有者。
+            .interaction
+            // 绑定左键与目标节点。
+            .begin_pressed_pointer(Some(target), MouseButton::Left);
+        // 当前没有冲突按键，手势建立必须成功。
+        assert!(began);
+        // 模拟同一次 PointerDown 建立潜在拖动手势。
+        tree.managers_mut().drag.begin_gesture(
+            // 绑定相同目标节点。
+            Some(target),
+            // 保存稳定起点。
+            Point::new(4.0, 5.0),
+            // 使用标题栏拖动的左键。
+            MouseButton::Left,
+            // 本场景没有修饰键。
+            KeyMod::NONE,
+        // 结束潜在手势建立。
+        );
+        // 独立建立键盘焦点，确保指针取消不会伪造 WindowBlur。
+        tree.managers_mut()
+            // 访问焦点 manager。
+            .focus
+            // 绑定同一稳定节点作为测试焦点。
+            .set_focused_component(Some(target));
+        // 原生窗口管理器接管 pointer。
+        tree.cancel_pointer_gesture_for_native_handoff();
+        // pressed 捕获必须被清除。
+        assert_eq!(tree.managers().interaction.pressed_component(), None);
+        // 潜在拖动必须被清除。
+        assert!(!tree.managers().drag.is_potential());
+        // 活跃拖动同样不得残留。
+        assert!(!tree.managers().drag.is_dragging());
+        // 键盘焦点必须保持，不能用 WindowBlur 代替 pointer cancel。
+        assert_eq!(tree.managers().focus.focused_component(), Some(target));
+    // 结束原生接管手势测试。
+    }
+// 结束 WidgetTree 原生接管测试模块。
 }

@@ -65,11 +65,31 @@ impl Default for KeyEventData {
     }
 }
 
+// 指针激活身份只建立原生输入与同轮窗口动作的因果关联。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+// 名义可见性与 PlatformWindow trait 一致，私有字段仍阻止外部构造或解释。
+pub struct PointerActivationId(u64);
+
+// 为平台后端提供唯一的受控身份构造入口。
+impl PointerActivationId {
+    // 非 Linux 构建不编译 Wayland 签发者，只保留跨平台契约。
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    // 仅允许 platform windowing 在签发原生输入授权时创建身份。
+    pub(crate) const fn new(raw: u64) -> Self {
+        // 保存不可解释的单调编号。
+        Self(raw)
+    // 结束身份构造实现。
+    }
+// 结束不透明身份的方法集合。
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PointerButtonEventData {
     pub pos: Point,
     pub btn: MouseButton,
     pub mods: KeyMod,
+    // 激活身份只供 app 在处理当前原生事件时转交平台窗口。
+    pub(crate) activation: Option<PointerActivationId>,
 }
 
 impl Default for PointerButtonEventData {
@@ -78,6 +98,8 @@ impl Default for PointerButtonEventData {
             pos: Point::default(),
             btn: MouseButton::None,
             mods: KeyMod::NONE,
+            // 默认事件不携带任何原生输入授权。
+            activation: None,
         }
     }
 }
@@ -233,6 +255,34 @@ impl UiEvent {
         self
     }
 
+    // 非 Linux 构建不产生 Wayland 激活身份，只保留事件接线契约。
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    // 将平台签发的激活身份附着到对应的指针按键事件。
+    pub(crate) fn with_pointer_activation(mut self, activation: PointerActivationId) -> Self {
+        // 仅指针按键负载可以承载该次激活身份。
+        if let UiEventPayload::PointerButton(data) = &mut self.payload {
+            // 保存身份而不向 UI 映射层解释其内容。
+            data.activation = Some(activation);
+        // 结束负载类型检查。
+        }
+        // 返回带单次执行上下文的原生事件。
+        self
+    // 结束激活身份附着方法。
+    }
+
+    // 读取当前原生指针事件携带的激活身份。
+    pub(crate) const fn pointer_activation(&self) -> Option<PointerActivationId> {
+        // 非指针按键事件永远没有可转交的拖动授权。
+        match &self.payload {
+            // 返回后端签发的不可解释身份。
+            UiEventPayload::PointerButton(data) => data.activation,
+            // 其他负载保持无授权语义。
+            _ => None,
+        // 结束负载投影。
+        }
+    // 结束激活身份读取方法。
+    }
+
     // -- 工厂方法 ------------------------------------------------
 
     pub fn close() -> Self {
@@ -279,6 +329,8 @@ impl UiEvent {
                 pos,
                 btn,
                 mods: KeyMod::NONE,
+                // 普通构造器不伪造原生输入激活身份。
+                activation: None,
             }),
         }
     }
@@ -291,6 +343,8 @@ impl UiEvent {
                 pos,
                 btn,
                 mods: KeyMod::NONE,
+                // 双击事件不复用任一原生按下授权。
+                activation: None,
             }),
         }
     }
@@ -303,6 +357,8 @@ impl UiEvent {
                 pos,
                 btn,
                 mods: KeyMod::NONE,
+                // 抬起事件只负责撤销后端授权，不携带拖动身份。
+                activation: None,
             }),
         }
     }

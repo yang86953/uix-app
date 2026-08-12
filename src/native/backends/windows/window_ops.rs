@@ -9,7 +9,8 @@
 
 use crate::core::error::{Errc, Error, Result};
 use crate::diagnostics::PendingFailureSource;
-use crate::native::windowing::event::FrameRequestToken;
+// Windows 不解释激活身份，但仍实现统一的平台窗口契约。
+use crate::native::windowing::event::{FrameRequestToken, PointerActivationId};
 use crate::native::windowing::shared::WindowOps;
 use crate::native::windowing::window::NativeFrameRequest;
 
@@ -215,7 +216,14 @@ impl WindowOps for WindowsWindowOps {
         Ok(())
     }
 
-    fn os_begin_move_drag(&mut self) -> Result<()> {
+    // Windows 保持现有非客户区拖动消息路径。
+    fn os_begin_move_drag(
+        // Windows 使用当前 Win32 捕获状态，不消费 Wayland 式授权。
+        &mut self,
+        // 保留统一签名并明确忽略不可解释身份。
+        _pointer_activation: Option<PointerActivationId>,
+    // 返回原有 Win32 消息提交结果。
+    ) -> Result<()> {
         self.ensure_valid_window("os_begin_move_drag")?;
         unsafe {
             ReleaseCapture();

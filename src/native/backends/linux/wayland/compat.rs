@@ -92,6 +92,25 @@ impl ProxyContext {
                 Box::new(Box::new(callback) as Callback<I>),
             );
     }
+
+    // 注销指定协议对象的旧式回调适配器。
+    fn unregister<I>(&self, proxy: &I)
+    // 仅协议代理能够形成稳定回调键。
+    where
+        // 类型身份参与回调表索引，因此要求静态生命周期。
+        I: Proxy + 'static,
+    // 开始回调注销实现。
+    {
+        // 按协议类型与对象编号删除唯一回调项。
+        self.callbacks
+            // 短时锁定兼容层回调表。
+            .lock()
+            // 中毒时仍由 owner thread 完成确定性清理。
+            .unwrap_or_else(|error| error.into_inner())
+            // 删除对象对应的回调，重复注销保持幂等。
+            .remove(&Self::callback_key(proxy));
+    // 结束回调注销实现。
+    }
 }
 
 /// A 0.31 event queue state used by the legacy callback adapters.
@@ -248,6 +267,19 @@ impl<I: Proxy> Main<I> {
 
     pub(crate) fn c_ptr(&self) -> *mut c_void {
         self.proxy.id().as_ptr().cast()
+    }
+
+    // 在协议代理失效前删除兼容层保存的回调闭包。
+    pub(crate) fn clear_callback(&self)
+    // 回调键需要代理类型的静态身份。
+    where
+        // 限制仅作用于本次注销方法。
+        I: 'static,
+    // 开始回调清理实现。
+    {
+        // 委托共享上下文删除精确对象回调。
+        self.context.unregister(&self.proxy);
+    // 结束回调清理实现。
     }
 }
 
