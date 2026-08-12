@@ -18,6 +18,11 @@ mod typography_codegen;
 mod theme_toggle_codegen;
 // 定义 WindowControl 内置组件的公开 API 代码生成边界。
 mod window_control_codegen;
+// 定义 WindowDragRegion 内置组件的公开 API 代码生成边界。
+mod window_drag_region_codegen;
+// 集中验证 WindowDragRegion 生成、形状与交互所有权诊断。
+#[cfg(test)]
+mod window_drag_region_codegen_tests;
 // 集中验证代码生成快照、消费者编译与拒绝路径。
 #[cfg(test)]
 mod codegen_tests;
@@ -364,6 +369,8 @@ pub(crate) use typography_codegen::generate_typography;
 pub(crate) use theme_toggle_codegen::generate_theme_toggle;
 // 向核心元素生成器暴露 WindowControl 专用映射。
 pub(crate) use window_control_codegen::generate_window_control;
+// 向核心元素生成器暴露 WindowDragRegion 专用映射。
+pub(crate) use window_drag_region_codegen::generate_window_drag_region;
 // 向组件解析与代码生成暴露结构化组件声明。
 pub(crate) use component_ast::*;
 // 向过程宏入口暴露组件感知文档生成函数。
