@@ -3,13 +3,19 @@
   // 使用纵向根布局承载自定义标题栏与应用主体。
   <Column flexGrow={1} backgroundColor="#F5F5F5">
     // 构造与 API GUI Demo 对齐的自定义标题栏。
-    <Container direction="row" height="48px" padding="8px" gap="10px" align="center" backgroundColor="#FFFFFF">
-      // 显示应用标识图标。
-      <Icon name="layout-dashboard" />
-      // 显示统一演示标题。
-      <Text fontSize="heading4">UIX Demo</Text>
-      // 使用弹性占位把窗口控制区推到右侧。
-      <Container flexGrow={1} />
+    <Container direction="row" height="48px" gap="10px" align="center" backgroundColor="#FFFFFF">
+      // 只让非交互标题内容占据可拖拽区域。
+      <WindowDragRegion flexGrow={1} height="48px" automationId="window-titlebar-drag">
+        // 使用横向容器绘制应用标识与标题。
+        <Container direction="row" height="48px" padding="8px" gap="10px" align="center">
+          // 显示应用标识图标。
+          <Icon name="layout-dashboard" />
+          // 显示统一演示标题。
+          <Text fontSize="heading4">UIX Demo</Text>
+        // 结束非交互标题内容。
+        </Container>
+      // 结束窗口拖拽区域，后续交互控件保持为同级节点。
+      </WindowDragRegion>
       // 提供主题明暗切换入口。
       <ThemeToggle />
       // 复用公开窗口最小化、最大化与关闭控件。
