@@ -266,7 +266,8 @@ impl WindowDriver {
         if *reconcile_pending {
             let root = pending_root
                 .take()
-                .or_else(|| view_factory.and_then(ViewFactorySlot::build));
+                // 让根工厂在协调时复用该窗口树拥有的组件私有状态。
+                .or_else(|| view_factory.and_then(|factory| factory.build(tree.component_state_store())));
             if let Some(root) = root {
                 ViewAdapter::reconcile_nodes(tree, root);
                 reconcile_ran = true;

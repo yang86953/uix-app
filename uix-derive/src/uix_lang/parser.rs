@@ -203,6 +203,8 @@ fn parse_element(
                 control,
                 // 保存完整跨度。
                 span: cursor.span_from(start),
+                // 源码元素尚未经过组件展开，因此没有私有状态作用域标记。
+                component_scopes: Vec::new(),
             });
         }
         // 普通开始标签进入子节点阶段。
@@ -409,6 +411,8 @@ fn parse_element(
                 control,
                 // 保存完整跨度。
                 span: cursor.span_from(start),
+                // 源码元素尚未经过组件展开，因此没有私有状态作用域标记。
+                component_scopes: Vec::new(),
             });
         }
         // 小于号开始嵌套元素。

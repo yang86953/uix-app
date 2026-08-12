@@ -1,5 +1,5 @@
-// 引入数值字面量与令牌流。
-use proc_macro2::{Literal, TokenStream};
+// 引入卫生标识符、数值字面量与令牌流。
+use proc_macro2::{Ident, Literal, TokenStream};
 // 引入确定性令牌拼接宏。
 use quote::quote;
 
@@ -161,6 +161,8 @@ impl ComponentExpander {
     pub(super) fn emit_private_state(
         // 可变借用展开状态。
         &mut self,
+        // 接收当前静态组件实例的运行时作用域。
+        scope: &Ident,
         // 接收 state 声明。
         state: &ComponentState,
         // 接收当前组件绑定表。
@@ -172,22 +174,34 @@ impl ComponentExpander {
         let read_ident = self.fresh_ident("state_value", &state.name);
         // 生成规范化初始值与可选显式类型。
         let (initial, rust_type) = self.private_state_initial(&state.initial, bindings)?;
+        // 用字段名称与声明跨度区分同一组件实例内的多个私有 state。
+        // 先拼接 state 名称与声明跨度，区分同一组件实例内的多个私有字段。
+        let field_source = format!("{}:{}:{}", state.name, state.span.start, state.span.end);
+        // 使用与调用声明一致的固定哈希算法生成运行时字段编号。
+        let field_id = Self::stable_component_id(&field_source);
         // 基础类型使用显式 State 类型。
         if let Some(rust_type) = rust_type {
             // 写入显式类型准备语句。
             self.setup.push(quote! {
                 // 创建组件私有响应式状态槽。
                 let #state_ident: ::uix::prelude::State<#rust_type> =
-                    // 使用规范化初始值。
-                    ::uix::prelude::State::new(#initial);
+                    // 从当前组件实例作用域复用或创建规范化初始值对应的状态槽。
+                    ::uix::ui::__private::uix_component_state(&#scope, #field_id, || #initial);
                 // 读取当前值并登记 View 依赖。
                 let #read_ident: #rust_type = #state_ident.get();
             });
         } else {
             // 复合表达式或空数组由 Rust 推断类型。
             self.setup.push(quote! {
-                // 创建由 Rust 推断内部类型的状态槽。
-                let #state_ident = ::uix::prelude::State::new(#initial);
+                // 从当前组件实例作用域复用或创建由 Rust 推断内部类型的状态槽。
+                let #state_ident = ::uix::ui::__private::uix_component_state(
+                    // 传递当前静态组件实例的运行时作用域。
+                    &#scope,
+                    // 传递当前私有字段的稳定身份。
+                    #field_id,
+                    // 延迟构造初始值，避免重建时重复求值。
+                    || #initial,
+                );
                 // 读取当前值供组件体使用。
                 let #read_ident = #state_ident.get();
             });

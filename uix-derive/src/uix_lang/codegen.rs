@@ -5,8 +5,8 @@ use quote::quote;
 
 // 引入解析后的核心语法树与诊断类型。
 use super::{
-    Attribute, AttributeValue, ControlBinding, Diagnostic, Element, ExpressionNode, Node,
-    SourceSpan,
+    Attribute, AttributeValue, ComponentScopeMarker, ControlBinding, Diagnostic, Element,
+    ExpressionNode, Node, SourceSpan,
 };
 // 引入独立元素分派入口。
 use super::element_codegen::generate_element;
@@ -35,7 +35,32 @@ pub(crate) fn generate_view(element: &Element) -> Result<TokenStream, Diagnostic
     // 普通元素委托映射矩阵生成。
     let view = generate_element(element)?;
     // 通过公开 View trait 统一物化为 ViewNode。
-    Ok(quote! { ::uix::prelude::View::build(#view) })
+    let view = quote! { ::uix::prelude::View::build(#view) };
+    // 把所有嵌套组件的私有状态作用域依次附加到同一个实际根节点。
+    apply_component_scopes(view, &element.component_scopes)
+}
+
+// 把展开阶段保存的组件私有状态作用域转换为 ViewNode 生命周期标记。
+fn apply_component_scopes(
+    // 接收已经构造完成的实际 ViewNode。
+    mut view: TokenStream,
+    // 接收由外层到内层累积的组件作用域标记。
+    markers: &[ComponentScopeMarker],
+) -> Result<TokenStream, Diagnostic> {
+    // 按标记保存顺序追加，确保同一根可同时保留多层组件身份。
+    for marker in markers {
+        // 从生成阶段保存的卫生名称重新构造当前调用点可见的标识符。
+        let scope = Ident::new(&marker.scope_name, Span::call_site());
+        // 读取多根组件中的稳定根序号。
+        let root_ordinal = marker.root_ordinal;
+        // 交给运行时登记该根对组件私有状态作用域的活跃引用。
+        view = quote! {
+            // 让运行时把当前 View 根与组件私有状态实例建立生命周期关联。
+            (#view).uix_component_scope((#scope).clone(), #root_ordinal)
+        };
+    }
+    // 返回包含全部作用域标记的 ViewNode。
+    Ok(view)
 }
 
 // 生成文本元素。
@@ -494,7 +519,14 @@ fn generate_control(
             // 生成条件表达式。
             let condition = generate_expression(&condition.expression, None)?;
             // 生成分支内有序子节点。
-            let children = generate_child_statements(&element.children, output)?;
+            let children = generate_scoped_child_statements(
+                // 传递分支内的有序子节点。
+                &element.children,
+                // 传递外层目标子节点向量。
+                output,
+                // 传递控制元素继承的组件作用域标记。
+                &element.component_scopes,
+            )?;
             // 返回不生成占位节点的条件分支。
             Ok(quote! {
                 // 条件为真时才追加分支子节点。
@@ -534,6 +566,8 @@ fn generate_control(
             output,
             // 传递完整控制跨度。
             element.span,
+            // 传递控制元素继承的组件作用域标记。
+            &element.component_scopes,
         ),
         // 名称与控制绑定不一致表示内部结构损坏。
         _ => Err(Diagnostic::new(
@@ -545,6 +579,40 @@ fn generate_control(
             "使用规范 If 或 For 语法重新声明控制元素",
         )),
     }
+}
+
+// 生成控制流内部子节点，并把控制元素继承的作用域传播到每个实际根。
+fn generate_scoped_child_statements(
+    // 接收需要按源码顺序生成的子节点。
+    children: &[Node],
+    // 接收外层目标子节点向量。
+    output: &Ident,
+    // 接收控制元素继承的组件私有状态作用域标记。
+    component_scopes: &[ComponentScopeMarker],
+) -> Result<TokenStream, Diagnostic> {
+    // 没有组件私有状态作用域时保留既有直接追加路径。
+    if component_scopes.is_empty() {
+        // 生成原有的有序子节点追加语句。
+        return generate_child_statements(children, output);
+    }
+    // 创建控制流局部缓冲，避免修改兄弟节点的追加顺序。
+    let scoped_output = Ident::new("__uix_scoped_children", Span::mixed_site());
+    // 先生成控制分支内的全部子节点。
+    let generated_children = generate_child_statements(children, &scoped_output)?;
+    // 把控制元素自己的作用域标记应用到每个实际根节点。
+    let scoped_view = apply_component_scopes(quote! { __uix_scoped_view }, component_scopes)?;
+    // 返回缓冲、标记和追加的完整控制流语句。
+    Ok(quote! {
+        // 为当前控制分支收集实际生成的 View 根节点。
+        let mut #scoped_output = ::std::vec::Vec::<::uix::prelude::ViewNode>::new();
+        // 保持分支内部源码顺序生成全部子节点。
+        #generated_children
+        // 为每个实际根追加控制元素继承的组件作用域标记。
+        for __uix_scoped_view in #scoped_output {
+            // 把同一根追加回外层目标向量。
+            #output.push(#scoped_view);
+        }
+    })
 }
 
 // 生成 For 循环与可选稳定 key。
@@ -568,6 +636,8 @@ fn generate_for(
     output: &Ident,
     // 接收完整 For 跨度。
     span: SourceSpan,
+    // 接收控制元素继承的组件私有状态作用域标记。
+    component_scopes: &[ComponentScopeMarker],
 ) -> Result<TokenStream, Diagnostic> {
     // 生成 Rust 循环项标识符。
     let binding = rust_identifier(binding, binding_span)?;
@@ -605,6 +675,8 @@ fn generate_for(
         }
         // 生成唯一行根 View。
         let view = generate_node_view(renderable[0])?;
+        // 把 For 控制元素继承的组件作用域同步附到当前行根。
+        let view = apply_component_scopes(view, component_scopes)?;
         // 生成 key 表达式。
         let key = generate_expression(&key.expression, None)?;
         // 返回带稳定身份的追加语句。
@@ -616,7 +688,21 @@ fn generate_for(
         }
     } else {
         // 无 key 时按位置追加全部循环子节点。
-        generate_child_statements(children, output)?
+        // 对无 key 的所有实际行根传播控制元素继承的组件作用域。
+        if component_scopes.is_empty() {
+            // 保留既有直接追加路径。
+            generate_child_statements(children, output)?
+        } else {
+            // 复用控制流根标记传播逻辑。
+            generate_scoped_child_statements(
+                // 传递当前循环迭代中需要生成的行节点。
+                children,
+                // 传递循环外层的目标子节点向量。
+                output,
+                // 传递当前 For 控制元素继承的组件作用域标记。
+                component_scopes,
+            )?
+        }
     };
     // 有索引绑定时使用 enumerate 保持 usize 下标语义。
     if let Some(index_binding) = index_binding {

@@ -31,6 +31,12 @@ fn generates_state_callback_and_composition_tokens() {
         .to_string();
     // 私有 number 状态应固定为 f64 State。
     assert!(tokens.contains("State < f64 >"));
+    // 私有 state 必须经由窗口作用域复用接口取得，而不是在每次 View 构建时直接新建。
+    assert!(tokens.contains("uix_component_state"));
+    // 私有 state 令牌不得再直接调用 State::new，避免 reconcile 时重置组件状态。
+    assert!(!tokens.contains("State :: new"));
+    // 拥有私有 state 的组件调用必须声明运行时作用域以便关联 View 生命周期。
+    assert!(tokens.contains("uix_component_scope"));
     // setState 应降低为公开 State::set。
     assert!(tokens.contains(". set"));
     // 回调应生成显式 Fn 类型适配器。
@@ -41,6 +47,63 @@ fn generates_state_callback_and_composition_tokens() {
     assert!(!tokens.contains("Panel"));
     // 嵌套自定义标签也应完成展开。
     assert!(!tokens.contains("Counter"));
+}
+
+// 验证同一静态组件的多个调用各自生成不同的作用域局部变量与生命周期标记。
+#[test]
+fn generates_distinct_scopes_for_multiple_static_component_calls() {
+    // 解析两个相同组件的静态调用。
+    let document = parse_document(
+        // 使用同一私有 state 组件的相邻调用覆盖声明身份分配。
+        r#"
+        <Component name="Counter" state="count: 0"><Button @click="setState(count: count + 1)">{count}</Button></Component>
+        <Column><Counter /><Counter /></Column>
+        "#,
+    )
+    // 两个静态调用的组件文档必须解析成功。
+    .expect("多实例组件文档应解析成功");
+    // 生成完整展开令牌。
+    let tokens = generate_document_view(&document)
+        // 多实例组件调用必须生成成功。
+        .expect("多实例组件应生成成功")
+        // 转换成稳定文本以检查内部运行时接口。
+        .to_string();
+    // 两次静态调用必须各自产生一次运行时作用域获取。
+    assert_eq!(tokens.matches("uix_component_scope").count(), 4);
+    // 两次静态调用必须使用不同的卫生作用域局部变量，避免状态句柄串用。
+    assert!(tokens.contains("__uix_component_scope_0_Counter"));
+    // 第二次调用必须继续分配新的卫生作用域局部变量。
+    assert!(tokens.contains("__uix_component_scope_3_Counter"));
+    // 每个实际根都必须携带对应的 ViewNode 生命周期作用域标记。
+    assert_eq!(tokens.matches(". uix_component_scope").count(), 2);
+}
+
+// 验证嵌套私有 state 组件在同一实际根上保留外层与内层两个生命周期标记。
+#[test]
+fn generates_all_nested_component_scope_markers_on_one_root() {
+    // 解析外层组件直接展开为内层私有 state 组件的单根组合。
+    let document = parse_document(
+        // 外层和内层均拥有私有 state，以覆盖同根多标记契约。
+        r#"
+        <Component name="Counter" state="count: 0"><Button @click="setState(count: count + 1)">{count}</Button></Component>
+        <Component name="Panel" state="visible: true"><Counter /></Component>
+        <Panel />
+        "#,
+    )
+    // 嵌套组件文档必须解析成功。
+    .expect("嵌套组件文档应解析成功");
+    // 生成完整展开令牌。
+    let tokens = generate_document_view(&document)
+        // 嵌套组件必须生成成功。
+        .expect("嵌套组件应生成成功")
+        // 转换成稳定文本以检查链式元数据。
+        .to_string();
+    // 外层与内层私有 state 调用都必须取得各自作用域。
+    assert_eq!(tokens.matches("uix_component_scope").count(), 4);
+    // 同一 Button 根必须被连续标记两次，而非由后层覆盖前层标记。
+    assert!(tokens.contains(". uix_component_scope"));
+    // 两层私有 state 都必须经由运行时状态复用接口取得句柄。
+    assert_eq!(tokens.matches("uix_component_state").count(), 2);
 }
 
 // 验证 State<T> prop 读取与写入同一共享句柄。

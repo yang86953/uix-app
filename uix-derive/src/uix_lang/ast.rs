@@ -36,6 +36,17 @@ pub(crate) struct Element {
     pub(crate) control: Option<ControlBinding>,
     // 保存从开始标签到结束标签的完整跨度。
     pub(crate) span: SourceSpan,
+    // 保存由组件展开附加到实际 View 根节点的私有状态作用域标记。
+    pub(crate) component_scopes: Vec<ComponentScopeMarker>,
+}
+
+// 表示一个应随 ViewNode 保留的组件私有状态作用域标记。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ComponentScopeMarker {
+    // 保存生成阶段创建的卫生作用域局部变量名称。
+    pub(crate) scope_name: String,
+    // 保存组件多根输出中的稳定根序号。
+    pub(crate) root_ordinal: u64,
 }
 
 // 表示标签上的一个具名属性。
