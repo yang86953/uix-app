@@ -7,7 +7,7 @@ UIX（/ˈjuːɪks/）是一个 Rust 原生 UI 框架。
 ## 当前状态
 
 - 当前版本为 `0.0.1`，处于开发中，尚未发布。
-- Windows x64 是当前优先交付平台；其他平台与硬件的完成度以 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 为准。
+- Windows 与 Linux 均纳入 `0.0.1` 首发交付范围；Windows 当前基线为 x64/D3D11，Linux 当前原生路径为 Wayland/EGL OpenGL ES；平台与硬件完成度以 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 为准。
 - 版本与交付物口径见[交付与许可](docs/产品/交付与许可.md)，近期变化见[变更记录](CHANGELOG.md)。
 - 交付任务、负责人、阻塞与测试结果以 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 为准。
 
