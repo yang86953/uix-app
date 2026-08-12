@@ -157,6 +157,10 @@ fn adopt_widget_node(node: WidgetNode) -> ViewNode {
         handlers: node.handlers,
         system_event_handlers: node.system_event_handlers,
         render_handlers: node.render_handlers,
+        // 保留嵌入命令式节点携带的内联组件状态作用域。
+        uix_component_scopes: node.uix_component_scopes,
+        // 命令式节点不拥有声明根状态存储。
+        component_state_store: None,
     }
 }
 

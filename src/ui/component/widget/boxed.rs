@@ -29,6 +29,8 @@ pub struct BoxedWidget {
     handler_signatures: Vec<HandlerSignature>,
     system_event_handlers: Vec<SystemEventHandlerRegistration>,
     accessibility_override: Option<AccessibilityOverride>,
+    // 保存实际挂载节点承载的全部内联组件状态作用域。
+    uix_component_scopes: Vec<crate::ui::component_state::UixComponentScopeMarker>,
 }
 
 // 在可能展开 panic 的操作之后恢复调用方提供的可变状态。
@@ -98,6 +100,7 @@ impl BoxedWidget {
             handler_signatures: Vec::new(),
             system_event_handlers: Vec::new(),
             accessibility_override: None,
+            uix_component_scopes: Vec::new(),
         }
     }
     pub fn component(&self) -> &dyn WidgetComponent {
@@ -207,6 +210,23 @@ impl BoxedWidget {
         accessibility_override: Option<AccessibilityOverride>,
     ) {
         self.accessibility_override = accessibility_override;
+    }
+
+    // 返回节点身份与状态清理所需的完整内联组件作用域列表。
+    pub(crate) fn uix_component_scopes(
+        &self,
+    ) -> &[crate::ui::component_state::UixComponentScopeMarker] {
+        // 借用不参与渲染的元数据。
+        &self.uix_component_scopes
+    }
+
+    // 在构建或协调时替换节点的内联组件作用域元数据。
+    pub(crate) fn set_uix_component_scopes(
+        &mut self,
+        scopes: Vec<crate::ui::component_state::UixComponentScopeMarker>,
+    ) {
+        // 整体替换以保持声明树和挂载树一致。
+        self.uix_component_scopes = scopes;
     }
 
     pub(crate) fn visual_transform(&self) -> ViewTransform {

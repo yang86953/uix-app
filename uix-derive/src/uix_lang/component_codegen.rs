@@ -8,8 +8,8 @@ use quote::quote;
 
 // 引入组件、文档、表达式与视图 AST。
 use super::{
-    Attribute, AttributeValue, ComponentDeclaration, ControlBinding, Declaration, Diagnostic,
-    Document, Element, Node, StyleClassResolver,
+    Attribute, AttributeValue, ComponentDeclaration, ComponentScopeMarker, ControlBinding,
+    Declaration, Diagnostic, Document, Element, Node, StyleClassResolver,
 };
 // 引入既有核心 View 生成入口。
 use super::generate_view;
@@ -161,6 +161,8 @@ impl ComponentExpander {
             control: None,
             // 沿用调用跨度。
             span: root.span,
+            // 合成容器不属于用户组件实例，因此不携带私有状态作用域。
+            component_scopes: Vec::new(),
         })
     }
 
@@ -374,6 +376,40 @@ impl ComponentExpander {
         let result = (|| {
             // 组件体只看见自身字段。
             let mut bindings = Bindings::new();
+            // 仅为拥有私有状态的静态调用创建窗口私有的运行时作用域。
+            let scope = if component.states.is_empty() {
+                // 无私有状态的组件不进入运行时作用域，保留既有 For 语义。
+                None
+            } else {
+                // 为当前静态调用生成卫生的作用域局部变量名称。
+                let scope_ident = self.fresh_ident("component_scope", &component.name);
+                // 使用组件调用标签与源码跨度形成稳定声明身份。
+                // 先拼接仅由静态 UIX 源码决定的声明身份材料。
+                let declaration_source = format!(
+                    // 保留组件标签与完整调用跨度，区分同类型的相邻静态调用。
+                    "{}:{}:{}",
+                    // 写入组件调用标签。
+                    element.name,
+                    // 写入调用开始偏移。
+                    element.span.start,
+                    // 写入调用结束偏移。
+                    element.span.end,
+                );
+                // 把声明身份材料压缩为运行时 API 约定的稳定无符号编号。
+                let declaration_id = Self::stable_component_id(&declaration_source);
+                // 在组件体展开前取得当前窗口和本轮构建专属的作用域句柄。
+                self.setup.push(quote! {
+                    // 为当前静态组件调用取得可跨 reconcile 复用的私有状态作用域。
+                    let #scope_ident = ::uix::ui::__private::uix_component_scope(
+                        // 由 Rust 宏调用点区分同一 UIX 文档的不同根工厂。
+                        concat!(module_path!(), ":", file!(), ":", line!(), ":", column!()),
+                        // 由 UIX 静态调用位置区分同一组件的多个实例。
+                        #declaration_id,
+                    );
+                });
+                // 返回后续 state 初始化和 View 标记共用的作用域局部变量。
+                Some(scope_ident)
+            };
             // 按声明顺序生成 props。
             for prop in &component.props {
                 // 读取已经验证存在的属性。
@@ -390,15 +426,61 @@ impl ComponentExpander {
             // 按声明顺序生成私有状态。
             for state in &component.states {
                 // 生成 State 句柄与读值。
-                self.emit_private_state(state, &mut bindings)?;
+                self.emit_private_state(
+                    // 私有 state 的作用域必定已在存在 state 时创建。
+                    scope.as_ref().expect("私有 state 组件必须拥有运行时作用域"),
+                    // 传递当前 state 声明。
+                    state,
+                    // 写入当前组件字段绑定。
+                    &mut bindings,
+                )?;
             }
             // 展开组件体与嵌套组件。
-            self.expand_nodes(&component.children, &bindings, false)
+            let mut nodes = self.expand_nodes(&component.children, &bindings, false)?;
+            // 拥有私有状态的组件必须把作用域标记附到每个展开后的顶层根。
+            if let Some(scope) = scope.as_ref() {
+                // 使运行时能在卸载时回收并在 reconcile 时复用正确实例的状态槽。
+                self.mark_component_roots(&mut nodes, scope);
+            }
+            // 返回附带作用域标记的组件展开结果。
+            Ok(nodes)
         })();
         // 离开当前组件展开栈。
         self.stack.pop();
         // 返回展开结果或诊断。
         result
+    }
+
+    // 为组件展开后的每个顶层实际根附加私有状态作用域标记。
+    fn mark_component_roots(&mut self, nodes: &mut [Node], scope: &Ident) {
+        // 按展开后的源码顺序分配多根组件的稳定根序号。
+        for (root_ordinal, node) in nodes.iter_mut().enumerate() {
+            // 只有元素可以承载或向控制流传播 ViewNode 元数据。
+            if let Node::Element(element) = node {
+                // 把当前组件作用域追加到已有嵌套组件标记之后。
+                element.component_scopes.push(ComponentScopeMarker {
+                    // 保存卫生局部变量名称，以便最终令牌重建标识符。
+                    scope_name: scope.to_string(),
+                    // 保存当前顶层根的稳定序号。
+                    root_ordinal: root_ordinal as u64,
+                });
+            }
+        }
+    }
+
+    // 使用固定 FNV-1a 算法把静态源码身份映射为跨构建可复现的 u64 编号。
+    pub(super) fn stable_component_id(value: &str) -> u64 {
+        // 从 FNV-1a 的标准 64 位偏移基开始。
+        let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+        // 按 UTF-8 字节顺序吸收全部静态身份材料。
+        for byte in value.as_bytes() {
+            // 混入当前字节。
+            hash ^= u64::from(*byte);
+            // 使用 FNV-1a 的标准 64 位乘数推进状态。
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3_u64);
+        }
+        // 返回确定性声明编号。
+        hash
     }
 
     // 生成卫生标识符并推进单调编号。

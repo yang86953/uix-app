@@ -192,6 +192,7 @@ impl WidgetTree {
             handlers,
             system_event_handlers,
             render_handlers,
+            uix_component_scopes,
         } = node;
         let id = match parent {
             Some(parent) => self.add_child_with_context(parent, widget, provider_context, false),
@@ -222,6 +223,8 @@ impl WidgetTree {
                 node.set_tab_index_override(None);
             }
             node.set_accessibility_override(accessibility_override);
+            // 保存声明展开携带的全部组件私有状态作用域。
+            node.set_uix_component_scopes(uix_component_scopes);
         }
         self.register_focusable(id);
         self.set_focus_handle(id, focus_handle);

@@ -87,10 +87,14 @@ impl ViewFactorySlot {
         self.factory.is_some()
     }
 
-    pub(crate) fn build(&self) -> Option<ViewNode> {
+    pub(crate) fn build(
+        &self,
+        store: crate::ui::component_state::ComponentStateStore,
+    ) -> Option<ViewNode> {
         self.factory
             .as_ref()
-            .map(|factory| ViewAdapter::capture_root(|| factory()))
+            // 每次协调都使用所属窗口树的同一状态存储。
+            .map(|factory| ViewAdapter::capture_root_with_store(store, || factory()))
     }
 }
 

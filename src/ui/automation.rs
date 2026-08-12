@@ -454,7 +454,11 @@ impl TestApp {
                 return Ok(passes);
             }
             if reconcile_requested {
-                let root = capture_root(self.build_root.as_ref());
+                // 复用测试窗口树拥有的状态存储以模拟真实窗口协调。
+                let root = ViewAdapter::capture_root_with_store(
+                    self.tree.component_state_store(),
+                    || (self.build_root)(),
+                );
                 ViewAdapter::reconcile_nodes(&mut self.tree, root);
             }
             set_root_frame(&mut self.tree, self.viewport);

@@ -19,6 +19,8 @@ pub struct WidgetNode {
     pub handlers: Vec<HandlerRegistration>,
     pub(crate) system_event_handlers: Vec<SystemEventHandlerRegistration>,
     pub(crate) render_handlers: Vec<RenderHandlerRegistration>,
+    // 保留内联组件的非视觉状态作用域标记。
+    pub(crate) uix_component_scopes: Vec<crate::ui::component_state::UixComponentScopeMarker>,
 }
 
 impl WidgetNode {
@@ -42,6 +44,7 @@ impl WidgetNode {
             handlers: Vec::new(),
             system_event_handlers: Vec::new(),
             render_handlers: Vec::new(),
+            uix_component_scopes: Vec::new(),
         }
     }
     pub fn key(mut self, k: &str) -> Self {
@@ -72,6 +75,7 @@ impl WidgetNode {
             handlers: Vec::new(),
             system_event_handlers: Vec::new(),
             render_handlers: Vec::new(),
+            uix_component_scopes: Vec::new(),
         }
     }
     pub fn z_index(mut self, z: i32) -> Self {
@@ -170,6 +174,17 @@ impl WidgetNode {
     }
     pub(crate) fn with_render_handlers(mut self, handlers: Vec<RenderHandlerRegistration>) -> Self {
         self.render_handlers = handlers;
+        self
+    }
+
+    // 把声明节点承载的全部内联组件作用域传递到树节点。
+    pub(crate) fn with_uix_component_scopes(
+        mut self,
+        scopes: Vec<crate::ui::component_state::UixComponentScopeMarker>,
+    ) -> Self {
+        // 保留原始顺序，使嵌套展开身份可精确比较。
+        self.uix_component_scopes = scopes;
+        // 返回带有生命周期元数据的节点。
         self
     }
 

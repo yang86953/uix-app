@@ -11,6 +11,8 @@ use crate::ui::overlay::OverlayStack;
 use crate::ui::render_handler::RenderHandlerTable;
 use crate::ui::theme::traits::ThemeTokens;
 use crate::ui::theme::Theme;
+// 保存每个窗口树独占的内联组件私有状态。
+use crate::ui::component_state::{ComponentStateStore, UixComponentScope};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -83,6 +85,10 @@ pub struct WidgetTree {
     pub(crate) window_focused: bool,
     keyboard_focus_visible: bool,
     pub(crate) keyboard_activation: Option<(WidgetId, KeyCode, KeyMod)>,
+    // 由当前树拥有，禁止跨窗口共享内联组件私有状态。
+    pub(crate) component_state_store: ComponentStateStore,
+    // 在适配器构建事务内延迟清理，避免同轮替换误删复用状态。
+    pub(crate) component_state_transaction_depth: usize,
     #[cfg(feature = "test-harness")]
     pub(crate) automation_recorder: Option<crate::ui::automation::AutomationRecorder>,
     /// layout() 内实际改写 frame 次数（回归：收敛后二次 layout 应为 0）。
@@ -147,6 +153,8 @@ impl Default for WidgetTree {
             window_focused: true,
             keyboard_focus_visible: true,
             keyboard_activation: None,
+            component_state_store: ComponentStateStore::new(),
+            component_state_transaction_depth: 0,
             #[cfg(feature = "test-harness")]
             automation_recorder: None,
             #[cfg(test)]

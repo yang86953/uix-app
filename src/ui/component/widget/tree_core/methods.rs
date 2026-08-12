@@ -8,6 +8,112 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 impl WidgetTree {
+    // 使用已捕获根绑定的存储创建窗口树，避免首次构建与后续协调分裂状态所有权。
+    pub(crate) fn with_component_state_store(store: crate::ui::component_state::ComponentStateStore) -> Self {
+        // 先建立其余默认运行时资源。
+        let mut tree = Self::default();
+        // 再用捕获根指定的窗口私有存储替换默认值。
+        tree.component_state_store = store;
+        // 返回拥有单一状态存储的树。
+        tree
+    }
+
+    // 返回当前树唯一拥有的组件私有状态存储句柄。
+    pub(crate) fn component_state_store(&self) -> crate::ui::component_state::ComponentStateStore {
+        // 克隆轻量共享句柄而不复制任何状态。
+        self.component_state_store.clone()
+    }
+
+    // 开始适配器的构建或协调事务并推迟作用域状态清理。
+    pub(crate) fn begin_component_state_transaction(&mut self) {
+        // 允许嵌套构建入口而不提前释放仍会在本轮重挂载的状态。
+        self.component_state_transaction_depth = self.component_state_transaction_depth.saturating_add(1);
+    }
+
+    // 结束适配器事务，并在最外层以实际挂载节点为准统一清理状态。
+    pub(crate) fn end_component_state_transaction(&mut self) {
+        // 防御性忽略不成对结束，避免测试辅助路径下溢。
+        if self.component_state_transaction_depth == 0 {
+            // 没有事务时无需再次清理。
+            return;
+        }
+        // 释放一层事务深度。
+        self.component_state_transaction_depth -= 1;
+        // 仅最外层结束后才按最终树形清理缺席作用域。
+        if self.component_state_transaction_depth == 0 {
+            // 收敛当前树的组件私有状态生命周期。
+            self.prune_component_state_scopes();
+        }
+    }
+
+    // 在异常展开路径恢复一层事务深度，保留既有挂载状态且不执行破坏性清理。
+    pub(crate) fn abort_component_state_transaction(&mut self) {
+        // 没有活跃事务时保持调用幂等。
+        if self.component_state_transaction_depth == 0 {
+            // 提前返回避免深度下溢。
+            return;
+        }
+        // 仅撤销当前入口增加的一层深度。
+        self.component_state_transaction_depth -= 1;
+    }
+
+    // 在异常安全边界内执行一次组件状态建树或协调事务。
+    pub(crate) fn with_component_state_transaction<R>(
+        &mut self,
+        // 接收事务期间唯一可变访问当前树的同步闭包。
+        action: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        // 开启一层延迟清理事务。
+        self.begin_component_state_transaction();
+        // 捕获 panic 以确保事务深度在所有退出路径恢复。
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| action(self)));
+        // 区分正常提交与异常回滚。
+        match result {
+            // 正常路径按最终挂载树清理缺席作用域。
+            Ok(value) => {
+                // 提交当前事务层。
+                self.end_component_state_transaction();
+                // 返回调用方结果。
+                value
+            }
+            // 异常路径仅恢复深度并继续原始展开。
+            Err(payload) => {
+                // 避免基于半完成树执行破坏性 prune。
+                self.abort_component_state_transaction();
+                // 保持调用方观察到原始 panic。
+                std::panic::resume_unwind(payload)
+            }
+        }
+    }
+
+    // 在事务外实际移除节点后立即释放不再被任何节点承载的作用域状态。
+    pub(crate) fn prune_component_state_scopes_if_idle(&mut self) {
+        // leave 过渡或协调事务期间必须保留状态直到最终树稳定。
+        if self.component_state_transaction_depth == 0 {
+            // 删除真正缺席的条件分支状态。
+            self.prune_component_state_scopes();
+        }
+    }
+
+    // 收集实际仍挂载的作用域并交给窗口私有存储执行清理。
+    fn prune_component_state_scopes(&mut self) {
+        // 建立不受节点遍历借用影响的作用域集合。
+        let mut live_scopes = std::collections::HashSet::<UixComponentScope>::new();
+        // 遍历所有尚未从树中实际删除的节点。
+        for &id in self.traverse().iter() {
+            // 读取当前节点保留的全部嵌套组件标记。
+            if let Some(node) = self.get(id) {
+                // 一个实际节点可能同时承载多层内联组件作用域。
+                for marker in node.uix_component_scopes() {
+                    // 记录作用域身份而忽略仅用于节点身份的根序号。
+                    live_scopes.insert(marker.scope().clone());
+                }
+            }
+        }
+        // 仅删除本树中已没有承载节点的私有状态。
+        self.component_state_store.retain_scopes(&live_scopes);
+    }
+
     pub(crate) const ROOT_BOOTSTRAP_SIZE: Size = Size { w: 800.0, h: 600.0 };
 
     pub(crate) fn keyboard_focus_visible(&self) -> bool {
@@ -336,6 +442,8 @@ impl WidgetTree {
     /// lifecycle flags suppress duplicate callbacks.
     pub(crate) fn shutdown(&mut self) {
         self.teardown_all();
+        // 窗口关闭后不再允许任何组件私有状态继续存活。
+        self.component_state_store.clear();
     }
 
     pub fn notify_theme_changed(&mut self) {
@@ -475,6 +583,8 @@ impl WidgetTree {
             self.push_layout_invalidation(pid);
             self.propagate_layout_invalidation(pid);
         }
+        // 事务外的实际移除（含 leave 结束）现在可释放无承载节点的私有状态。
+        self.prune_component_state_scopes_if_idle();
     }
 
     pub fn set_visible(&mut self, id: ComponentId, visible: bool) {

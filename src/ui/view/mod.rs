@@ -7,6 +7,8 @@ use crate::core::{EdgeInsets, Point};
 use crate::draw::Color;
 use crate::ui::accessibility::accessibility_override::AccessibilityOverride;
 use crate::ui::component::provider_context::{current_provider_context, ProviderContext};
+// 让声明节点携带内联组件的非视觉状态作用域标记。
+use crate::ui::component_state::{ComponentStateStore, UixComponentScope, UixComponentScopeMarker};
 use crate::ui::component::traits::WidgetComponent;
 use crate::ui::component::view_transform::ViewTransform;
 use crate::ui::event::system_event_handler::{SystemEventFilter, SystemEventHandlerRegistration};
@@ -50,6 +52,10 @@ pub struct ViewNode {
     pub(crate) handlers: Vec<HandlerRegistration>,
     pub(crate) system_event_handlers: Vec<SystemEventHandlerRegistration>,
     pub(crate) render_handlers: Vec<RenderHandlerRegistration>,
+    // 保存承载此根的全部内联组件作用域，不参与视觉或语义快照。
+    pub(crate) uix_component_scopes: Vec<UixComponentScopeMarker>,
+    // 仅由捕获根携带，用于把首次构建绑定到同一窗口状态存储。
+    pub(crate) component_state_store: Option<ComponentStateStore>,
 }
 
 impl View for ViewNode {
@@ -86,6 +92,8 @@ impl ViewNode {
             handlers: Vec::new(),
             system_event_handlers: Vec::new(),
             render_handlers: Vec::new(),
+            uix_component_scopes: Vec::new(),
+            component_state_store: None,
         }
     }
 
@@ -112,7 +120,29 @@ impl ViewNode {
             handlers: Vec::new(),
             system_event_handlers: Vec::new(),
             render_handlers: Vec::new(),
+            uix_component_scopes: Vec::new(),
+            component_state_store: None,
         }
+    }
+
+    /// 为内联组件展开根追加非视觉的私有状态作用域标记。
+    #[doc(hidden)]
+    pub fn uix_component_scope(
+        mut self,
+        scope: UixComponentScope,
+        root_ordinal: u64,
+    ) -> Self {
+        // 追加而非覆盖，以保留多个内联组件共享同一实际根的身份。
+        self.uix_component_scopes
+            .push(UixComponentScopeMarker::new(scope, root_ordinal));
+        // 返回携带完整作用域栈的原节点。
+        self
+    }
+
+    // 由捕获适配器绑定首次构建的窗口私有状态存储。
+    pub(crate) fn set_component_state_store(&mut self, store: ComponentStateStore) {
+        // 仅根节点需要保存存储所有权线索。
+        self.component_state_store = Some(store);
     }
 
     pub fn color(mut self, color: impl Into<ColorValue>) -> Self {

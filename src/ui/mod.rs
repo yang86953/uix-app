@@ -164,6 +164,9 @@ pub use component::managers::{
 pub use reactive::state;
 pub use theme::style;
 pub use virtualization::virtual_scroll;
+// 为内联组件宏提供窗口私有状态的隐藏运行时实现。
+#[doc(hidden)]
+pub mod component_state;
 
 // Public component traits and exported macros mention these opaque bridge
 // types. Keep them nameable without making the runtime module hierarchy an
@@ -176,6 +179,8 @@ pub mod __private {
         pub use super::super::component::traits::*;
     }
     pub use super::component::widget::{WidgetNode, WidgetTree};
+    // 重导出代码生成器使用的私有组件状态桥接。
+    pub use super::component_state::{uix_component_scope, uix_component_state, UixComponentScope};
     pub use super::component_snapshot::snapshot_fields_from_any;
 }
 
