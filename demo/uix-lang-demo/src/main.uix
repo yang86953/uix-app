@@ -1,18 +1,405 @@
-// 声明拥有私有计数状态的演示组件。
-<Component name="Counter" state="count: 0">
-  // 使用当前已登记的纵向布局组织内容。
-  <Column gap="12px">
-    // 展示演示标题。
-    <Text fontSize="heading2">UIX Lang Demo</Text>
-    // 说明界面的编译期来源。
-    <Text>此界面来自 src/main.uix，并在编译期转换为 Rust。</Text>
-    // 展示组件私有状态。
-    <Text>当前计数：{count}</Text>
-    // 通过已登记的点击事件更新私有状态。
-    <Button @click="setState(count: count + 1)">计数 +1</Button>
-  // 结束纵向布局。
+// 声明拥有页面选择与首页计数状态的声明式演示组件。
+<Component name="DemoApp" state="page: 0, count: 0">
+  // 使用纵向根布局承载自定义标题栏与应用主体。
+  <Column flexGrow={1} backgroundColor="#F5F5F5">
+    // 构造与 API GUI Demo 对齐的自定义标题栏。
+    <Container direction="row" height="48px" padding="8px" gap="10px" align="center" backgroundColor="#FFFFFF">
+      // 显示应用标识图标。
+      <Icon name="layout-dashboard" />
+      // 显示统一演示标题。
+      <Text fontSize="heading4">UIX Demo</Text>
+      // 使用弹性占位把窗口控制区推到右侧。
+      <Container flexGrow={1} />
+      // 提供主题明暗切换入口。
+      <ThemeToggle />
+      // 复用公开窗口最小化、最大化与关闭控件。
+      <WindowControl />
+    // 结束自定义标题栏。
+    </Container>
+    // 分隔标题栏与应用主体。
+    <Divider />
+
+    // 使用横向应用布局组织侧边栏与主内容区。
+    <Layout direction="row" flexGrow={1}>
+      // 构造与 API GUI Demo 同宽的侧边导航。
+      <Sider width="220px" backgroundColor="#FFFFFF">
+        // 使用纵向容器组织导航分组。
+        <Column gap="6px" padding="12px">
+          // 标记总览导航分组。
+          <Text>总览</Text>
+          // 导航到首页。
+          <Button @click="setState(page: 0)">首页</Button>
+          // 导航到应用能力页。
+          <Button @click="setState(page: 1)">应用能力</Button>
+          // 分隔基础与组件导航。
+          <Divider />
+          // 标记组件导航分组。
+          <Text>组件</Text>
+          // 导航到通用组件页。
+          <Button @click="setState(page: 2)">通用</Button>
+          // 导航到布局组件页。
+          <Button @click="setState(page: 3)">布局</Button>
+          // 导航到导航组件页。
+          <Button @click="setState(page: 4)">导航</Button>
+          // 导航到输入组件页。
+          <Button @click="setState(page: 5)">输入</Button>
+          // 导航到数据展示页。
+          <Button @click="setState(page: 6)">数据展示</Button>
+          // 导航到反馈组件页。
+          <Button @click="setState(page: 7)">反馈</Button>
+          // 导航到图表能力页。
+          <Button @click="setState(page: 8)">图表</Button>
+          // 导航到其他组件页。
+          <Button @click="setState(page: 9)">其他</Button>
+          // 分隔组件与框架导航。
+          <Divider />
+          // 标记框架导航分组。
+          <Text>框架</Text>
+          // 导航到框架能力页。
+          <Button @click="setState(page: 10)">框架能力</Button>
+          // 导航到覆盖清单页。
+          <Button @click="setState(page: 11)">覆盖清单</Button>
+        // 结束侧边导航容器。
+        </Column>
+      // 结束侧边导航。
+      </Sider>
+
+      // 使用纵向布局承载页头、内容与状态栏。
+      <Layout flexGrow={1}>
+        // 构造当前页面标题栏。
+        <Header height="56px" padding="12px" backgroundColor="#FFFFFF">
+          // 使用横向容器排列标题与运行状态。
+          <Container direction="row" gap="10px" align="center">
+            // 显示首页标题。
+            <If {page == 0}><Text fontSize="heading3">首页</Text></If>
+            // 显示应用能力页标题。
+            <If {page == 1}><Text fontSize="heading3">应用能力</Text></If>
+            // 显示通用组件页标题。
+            <If {page == 2}><Text fontSize="heading3">通用</Text></If>
+            // 显示布局组件页标题。
+            <If {page == 3}><Text fontSize="heading3">布局</Text></If>
+            // 显示导航组件页标题。
+            <If {page == 4}><Text fontSize="heading3">导航</Text></If>
+            // 显示输入组件页标题。
+            <If {page == 5}><Text fontSize="heading3">输入</Text></If>
+            // 显示数据展示页标题。
+            <If {page == 6}><Text fontSize="heading3">数据展示</Text></If>
+            // 显示反馈组件页标题。
+            <If {page == 7}><Text fontSize="heading3">反馈</Text></If>
+            // 显示图表能力页标题。
+            <If {page == 8}><Text fontSize="heading3">图表</Text></If>
+            // 显示其他组件页标题。
+            <If {page == 9}><Text fontSize="heading3">其他</Text></If>
+            // 显示框架能力页标题。
+            <If {page == 10}><Text fontSize="heading3">框架能力</Text></If>
+            // 显示覆盖清单页标题。
+            <If {page == 11}><Text fontSize="heading3">覆盖清单</Text></If>
+            // 使用弹性占位把状态标签推到右侧。
+            <Container flexGrow={1} />
+            // 标记当前界面来自编译期 uix-lang。
+            <Tag color="success">uix-lang</Tag>
+          // 结束页头内容容器。
+          </Container>
+        // 结束当前页面标题栏。
+        </Header>
+        // 分隔页头与页面内容。
+        <Divider />
+
+        // 让主内容区填满剩余空间。
+        <Content flexGrow={1}>
+          // 允许较长页面垂直滚动。
+          <ScrollView direction="vertical">
+            // 使用统一间距承载全部条件页面。
+            <Column gap="16px" padding="24px">
+              // 按当前页面状态显示首页。
+              <If {page == 0}>
+                // 组织首页内容。
+                <Column gap="16px">
+                  // 展示首页主标题。
+                  <Text fontSize="heading2">UIX 多页组件演示</Text>
+                  // 说明声明式版本的对齐目标。
+                  <Text>此界面由 src/main.uix 在编译期生成，页面结构与原 API GUI Demo 对齐。</Text>
+                  // 展示首页交互卡片。
+                  <Card title="声明式状态与事件">
+                    // 组织计数器内容。
+                    <Column gap="10px">
+                      // 显示组件私有状态。
+                      <Text>当前计数：{count}</Text>
+                      // 通过声明式事件更新私有状态。
+                      <Button @click="setState(count: count + 1)">计数 +1</Button>
+                    // 结束计数器内容。
+                    </Column>
+                  // 结束首页交互卡片。
+                  </Card>
+                  // 展示可用性提示。
+                  <Alert message="左侧导航可切换 12 个公开演示页面。" type="success" />
+                // 结束首页内容。
+                </Column>
+              // 结束首页条件分支。
+              </If>
+
+              // 按当前页面状态显示应用能力页。
+              <If {page == 1}>
+                // 组织应用能力内容。
+                <Column gap="16px">
+                  // 展示应用能力标题。
+                  <Text fontSize="heading2">应用能力</Text>
+                  // 展示窗口组合边界。
+                  <Alert message="Rust App 继续持有窗口、主题、诊断与运行生命周期。" type="info" />
+                  // 展示已启用图形后端。
+                  <Container direction="row" gap="8px">
+                    // 标记 Windows 后端。
+                    <Tag color="success">D3D11</Tag>
+                    // 标记 Linux 后端。
+                    <Tag color="success">OpenGL ES</Tag>
+                    // 标记编译期生成方式。
+                    <Tag color="info">编译期 ViewNode</Tag>
+                  // 结束后端标签行。
+                  </Container>
+                  // 说明不在声明文件复制运行时所有权。
+                  <Text>.uix 只描述视图与页面局部状态，不创建第二套 App、EventBus 或消息运行时。</Text>
+                // 结束应用能力内容。
+                </Column>
+              // 结束应用能力条件分支。
+              </If>
+
+              // 按当前页面状态显示通用组件页。
+              <If {page == 2}>
+                // 组织通用组件内容。
+                <Column gap="16px">
+                  // 展示通用组件标题。
+                  <Text fontSize="heading2">通用组件</Text>
+                  // 展示常用按钮。
+                  <Container direction="row" gap="8px">
+                    // 展示主要操作按钮。
+                    <Button>主要操作</Button>
+                    // 展示次要操作按钮。
+                    <Button>次要操作</Button>
+                    // 展示图标。
+                    <Icon name="star" />
+                    // 展示状态标签。
+                    <Tag color="warning">Tag</Tag>
+                  // 结束通用组件行。
+                  </Container>
+                  // 展示文本层级。
+                  <Typography level="3">Typography 标题层级</Typography>
+                  // 分隔通用组件区域。
+                  <Divider />
+                  // 展示主题切换组件。
+                  <ThemeToggle />
+                // 结束通用组件内容。
+                </Column>
+              // 结束通用组件条件分支。
+              </If>
+
+              // 按当前页面状态显示布局组件页。
+              <If {page == 3}>
+                // 组织布局组件内容。
+                <Column gap="16px">
+                  // 展示布局组件标题。
+                  <Text fontSize="heading2">布局组件</Text>
+                  // 展示 Flex 横向容器。
+                  <Container direction="row" gap="12px">
+                    // 展示第一张布局卡片。
+                    <Card title="Flex"><Text>Container direction=row</Text></Card>
+                    // 展示第二张布局卡片。
+                    <Card title="应用壳"><Text>Layout / Sider / Header / Content / Footer</Text></Card>
+                  // 结束 Flex 示例。
+                  </Container>
+                  // 展示 24 栅格布局。
+                  <Row gap="12px">
+                    // 展示左侧栅格。
+                    <Col span={8}><Card title="8 / 24"><Text>响应式 Col</Text></Card></Col>
+                    // 展示右侧栅格。
+                    <Col span={16}><Card title="16 / 24"><Text>与 API Demo 共用布局组件</Text></Card></Col>
+                  // 结束栅格布局。
+                  </Row>
+                  // 说明滚动容器约束。
+                  <Alert message="ScrollView 保持单个直接内容节点，内部由 Column 组织。" type="info" />
+                // 结束布局组件内容。
+                </Column>
+              // 结束布局组件条件分支。
+              </If>
+
+              // 按当前页面状态显示导航组件页。
+              <If {page == 4}>
+                // 组织导航组件内容。
+                <Column gap="16px">
+                  // 展示导航组件标题。
+                  <Text fontSize="heading2">导航组件</Text>
+                  // 展示当前侧边导航说明。
+                  <Card title="页面导航"><Text>侧边栏通过组件私有 page 状态切换条件页面。</Text></Card>
+                  // 展示分页组件。
+                  <Pagination total="120" />
+                  // 说明类型化导航数据边界。
+                  <Alert message="Breadcrumb、Steps 等类型化数据组件使用表达式绑定，避免在文档中伪造运行时数据。" type="info" />
+                // 结束导航组件内容。
+                </Column>
+              // 结束导航组件条件分支。
+              </If>
+
+              // 按当前页面状态显示输入组件页。
+              <If {page == 5}>
+                // 组织输入组件内容。
+                <Column gap="16px">
+                  // 展示输入组件标题。
+                  <Text fontSize="heading2">输入组件</Text>
+                  // 展示文本输入。
+                  <Input placeholder="请输入文本" width="320px" />
+                  // 展示数字输入。
+                  <InputNumber min="0" max="100" step="1" width="180px" />
+                  // 展示滑块。
+                  <Slider min="0" max="100" step="5" width="320px" />
+                  // 展示复选框。
+                  <Checkbox text="同意演示协议" />
+                  // 展示开关。
+                  <Switch />
+                  // 展示评分控件。
+                  <Rate count="5" allowHalf />
+                // 结束输入组件内容。
+                </Column>
+              // 结束输入组件条件分支。
+              </If>
+
+              // 按当前页面状态显示数据展示页。
+              <If {page == 6}>
+                // 组织数据展示内容。
+                <Column gap="16px">
+                  // 展示数据组件标题。
+                  <Text fontSize="heading2">数据展示</Text>
+                  // 展示信息卡片。
+                  <Card title="卡片"><Text>Card 可承载异质有序子树。</Text></Card>
+                  // 展示加载骨架。
+                  <Skeleton shape="text" width="320px" height="48" />
+                  // 展示空状态。
+                  <Empty description="暂无数据" icon="inbox" />
+                  // 展示结果状态。
+                  <ResultView status="success" title="数据加载完成" extraText="重新加载" />
+                // 结束数据展示内容。
+                </Column>
+              // 结束数据展示条件分支。
+              </If>
+
+              // 按当前页面状态显示反馈组件页。
+              <If {page == 7}>
+                // 组织反馈组件内容。
+                <Column gap="16px">
+                  // 展示反馈组件标题。
+                  <Text fontSize="heading2">反馈组件</Text>
+                  // 展示成功提示。
+                  <Alert message="操作已完成" type="success" closable />
+                  // 展示警告提示。
+                  <Alert message="这是一个可关闭的警告" type="warning" closable />
+                  // 展示悬浮提示。
+                  <Tooltip text="来自 uix-lang 的提示"><Button>悬停查看 Tooltip</Button></Tooltip>
+                  // 展示加载反馈。
+                  <Spin spinning text="正在加载" />
+                // 结束反馈组件内容。
+                </Column>
+              // 结束反馈组件条件分支。
+              </If>
+
+              // 按当前页面状态显示图表能力页。
+              <If {page == 8}>
+                // 组织图表能力内容。
+                <Column gap="16px">
+                  // 展示图表能力标题。
+                  <Text fontSize="heading2">图表</Text>
+                  // 明确当前声明式标签边界。
+                  <Alert message="charts 能力已与 API Demo 一致启用，但图表标签尚未注册到 uix-lang。" type="warning" />
+                  // 说明当前可用调用路径。
+                  <Card title="当前边界"><Text>图表继续通过 Rust API 构造；待标签契约登记后再迁入声明文件。</Text></Card>
+                // 结束图表能力内容。
+                </Column>
+              // 结束图表能力条件分支。
+              </If>
+
+              // 按当前页面状态显示其他组件页。
+              <If {page == 9}>
+                // 组织其他组件内容。
+                <Column gap="16px">
+                  // 展示其他组件标题。
+                  <Text fontSize="heading2">其他组件</Text>
+                  // 展示二维码。
+                  <QRCode value="https://github.com/yanghaku/uix" size="128px" />
+                  // 展示富文本。
+                  <RichText content="**RichText** 与 `QRCode` 均由已注册标签生成。" selectable />
+                  // 展示水印。
+                  <Watermark text="UIX LANG" opacity="0.18" width="320px" />
+                // 结束其他组件内容。
+                </Column>
+              // 结束其他组件条件分支。
+              </If>
+
+              // 按当前页面状态显示框架能力页。
+              <If {page == 10}>
+                // 组织框架能力内容。
+                <Column gap="16px">
+                  // 展示框架能力标题。
+                  <Text fontSize="heading2">框架能力</Text>
+                  // 展示编译期生成说明。
+                  <Alert message="uix! 在编译期生成公开 ViewNode，不引入运行时解释器。" type="success" />
+                  // 展示框架控件。
+                  <Container direction="row" gap="12px" align="center">
+                    // 提供主题切换。
+                    <ThemeToggle />
+                    // 提供原生窗口控制。
+                    <WindowControl />
+                  // 结束框架控件行。
+                  </Container>
+                  // 说明生命周期所有权。
+                  <Text>窗口创建、主题跟随、诊断与事件循环仍由 src/main.rs 的 App 组合根持有。</Text>
+                // 结束框架能力内容。
+                </Column>
+              // 结束框架能力条件分支。
+              </If>
+
+              // 按当前页面状态显示覆盖清单页。
+              <If {page == 11}>
+                // 组织覆盖清单内容。
+                <Column gap="16px">
+                  // 展示覆盖清单标题。
+                  <Text fontSize="heading2">覆盖清单</Text>
+                  // 展示已对齐的结构能力。
+                  <Alert message="已对齐：窗口尺寸、自定义标题栏、分组侧栏、页头、内容区、状态栏与 12 个公开入口。" type="success" />
+                  // 展示已对齐的组件能力。
+                  <Text>已覆盖：通用、布局、导航、输入、数据展示、反馈与其他已注册 uix-lang 标签。</Text>
+                  // 展示保持在 Rust API 的边界。
+                  <Text>保留边界：图表、表格等未登记标签，以及 Agent 控制与 test-harness 专用入口。</Text>
+                  // 展示验收状态标签。
+                  <Container direction="row" gap="8px">
+                    // 标记结构对齐状态。
+                    <Tag color="success">结构已对齐</Tag>
+                    // 标记编译边界状态。
+                    <Tag color="success">编译期生成</Tag>
+                    // 标记待验收状态。
+                    <Tag color="warning">待视觉验收</Tag>
+                  // 结束验收状态行。
+                  </Container>
+                // 结束覆盖清单内容。
+                </Column>
+              // 结束覆盖清单条件分支。
+              </If>
+            // 结束页面内容容器。
+            </Column>
+          // 结束滚动内容区。
+          </ScrollView>
+        // 结束主内容区。
+        </Content>
+
+        // 构造与 API GUI Demo 对齐的状态栏。
+        <Footer height="36px" padding="8px" backgroundColor="#FFFFFF">
+          // 展示运行与能力边界摘要。
+          <Text>UIX GUI 演示 · uix-lang 编译期界面 · Rust App 生命周期</Text>
+        // 结束状态栏。
+        </Footer>
+      // 结束主内容纵向布局。
+      </Layout>
+    // 结束应用主体布局。
+    </Layout>
+  // 结束根布局。
   </Column>
-// 结束演示组件声明。
+// 结束声明式演示组件。
 </Component>
 // 实例化文档的唯一根组件。
-<Counter />
+<DemoApp />
