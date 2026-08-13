@@ -27,13 +27,30 @@ impl WidgetTree {
             // 直接拒绝本轮刷新，保留等待 owner teardown 的既有资源。
             return false;
         }
+        // 确认 owner 仍是当前树中未销毁的实际节点。
+        let owner_is_live = self.get(id).is_some_and(|node| !node.destroyed());
+        // 确认 owner 仍是 Calendar，保留 custom 切回 plain 时的旧子树清理机会。
+        let owner_is_calendar = self.get(id).is_some_and(|node| {
+            // 这里只验证组件类型；是否仍需日期格由刷新差异计算决定。
+            node.component().as_any().is::<Calendar>()
+        });
+        // 确认 owner 及其祖先尚未进入延迟离场阶段。
+        let owner_is_leaving = self.is_pending_removal_subtree(id);
+        // 迟到事件、陈旧 generation 与离场节点都必须静默拒绝刷新。
+        if !owner_is_live || !owner_is_calendar || owner_is_leaving {
+            // 不签发动态捕获能力，也不调用任何应用日期格工厂。
+            return false;
+        }
+        // 先为已验证的 Calendar owner 签发树私有动态捕获能力。
+        let capture_context = ViewAdapter::dynamic_capture_context(self, id);
         let refresh = self.get(id).and_then(|node| {
             let provider_context = node.provider_context().clone();
             with_provider_context(&provider_context, || {
                 node.component()
                     .as_any()
                     .downcast_ref::<Calendar>()?
-                    .cell_views_for_refresh(node.children().len())
+                    // 让日期格工厂在 owner、槽位和日期身份限定的捕获边界中执行。
+                    .cell_views_for_refresh(&capture_context, node.children().len())
             })
         });
         let Some((views, entries)) = refresh else {

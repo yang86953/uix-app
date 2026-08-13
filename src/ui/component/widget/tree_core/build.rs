@@ -1,7 +1,7 @@
 use super::*;
 use crate::ui::adapter::ViewAdapter;
 use crate::ui::component::provider_context::{
-    ProviderContext, current_provider_context, with_provider_context,
+    current_provider_context, with_provider_context, ProviderContext,
 };
 
 impl WidgetTree {
@@ -76,6 +76,11 @@ impl WidgetTree {
         for child in view_children.into_iter().flatten() {
             self.build_node(ViewAdapter::expand(child), Some(id));
         }
+        // 公开直接换根不会经过 build_node，仅在该路径补做 Calendar 首次动态物化。
+        if include_view_children {
+            // 此时 root 已注册为真实 owner，动态捕获可以安全绑定树私有 store。
+            self.refresh_calendar_cell_component(id);
+        }
         self.push_layout_invalidation(id);
         id
     }
@@ -134,6 +139,11 @@ impl WidgetTree {
         }
         for child in view_children.into_iter().flatten() {
             self.build_node(ViewAdapter::expand(child), Some(child_id));
+        }
+        // 公开直接加子节点不会经过 build_node，仅在该路径补做 Calendar 首次动态物化。
+        if include_view_children {
+            // 此时 child 已连接父树，动态捕获与离场判断均使用真实 owner。
+            self.refresh_calendar_cell_component(child_id);
         }
 
         // 结构变化：Layout 失效向上传播。
@@ -315,6 +325,8 @@ impl WidgetTree {
         #[cfg(feature = "table")]
         self.refresh_table_expand_component(id);
         self.refresh_select_option_component(id);
+        // Calendar 注册为真实 owner 后立即物化日期格，避免初建路径绕过动态状态捕获。
+        self.refresh_calendar_cell_component(id);
         // 节点及其所有递归子树成功建立后，才提交该节点捕获的动画源所有权。
         self.replace_node_animated_sources(id, animated_sources);
         id

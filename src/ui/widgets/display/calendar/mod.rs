@@ -112,13 +112,6 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    build_view_children => (&self) -> Vec<crate::ui::view::ViewNode> {
-        let entries = self.desired_cell_entries();
-        let views = self.cell_views(&entries);
-        self.materialized_cells.replace(entries);
-        views
-    }
-
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(crate::ui::ComponentId, Rect)>
     {
@@ -602,31 +595,57 @@ impl Calendar {
             .collect()
     }
 
-    fn cell_views(&self, entries: &[CalendarCellEntry]) -> Vec<crate::ui::view::ViewNode> {
+    // 按当前 Calendar owner 的动态捕获能力构建待协调的日期格宿主节点。
+    fn cell_views(
+        // 借用仅由宿主树签发且固定 owner 的动态捕获上下文。
+        &self,
+        // 接收区分日期格状态所有权的窄捕获能力。
+        capture_context: &crate::ui::adapter::DynamicViewCaptureContext,
+        // 接收本轮已经确定的日期业务条目。
+        entries: &[CalendarCellEntry],
+    ) -> Vec<crate::ui::view::ViewNode> {
         let Some(factory) = self.custom_cell_factory.as_ref() else {
             return Vec::new();
         };
         entries
             .iter()
             .map(|entry| {
+                // 日期文本同时作为 keyed reconcile 与组件私有状态捕获的稳定业务身份。
+                let stable_key = entry.date.format();
+                // 在已注册的 Calendar owner 下捕获日期格工厂，隔离不同日期的私有状态。
+                let cell_view = capture_context.capture(
+                    // 固定槽位避免日期格与同一 Calendar 的其他延迟工厂共享命名空间。
+                    "calendar-cell",
+                    // 复用日期稳定键让同日刷新恢复既有组件状态。
+                    stable_key.clone(),
+                    // 只在完整动态捕获边界内调用应用提供的日期格工厂。
+                    || factory(entry.date, entry.info),
+                );
+                // 每个日期宿主继续使用同一稳定键参与父级 keyed reconcile。
                 crate::ui::view::ViewNode::new(
+                    // 宿主仅负责把已捕获的日期格限制在当前网格单元。
                     CalendarCellHost { _date: entry.date },
-                    vec![factory(entry.date, entry.info)],
+                    // 把捕获结果作为宿主唯一子节点，交由现有生命周期协调路径接管。
+                    vec![cell_view],
                 )
-                .key(format!("calendar-cell:{}", entry.date.format()))
+                // 让节点结构身份与捕获命名空间的日期身份一致。
+                .key(format!("calendar-cell:{stable_key}"))
             })
             .collect()
     }
 
     pub(crate) fn cell_views_for_refresh(
         &self,
+        // 接收本次 Calendar owner 对应的动态状态捕获能力。
+        capture_context: &crate::ui::adapter::DynamicViewCaptureContext,
         current_child_count: usize,
     ) -> Option<(Vec<crate::ui::view::ViewNode>, Vec<CalendarCellEntry>)> {
         let entries = self.desired_cell_entries();
         if current_child_count == entries.len() && *self.materialized_cells.borrow() == entries {
             return None;
         }
-        Some((self.cell_views(&entries), entries))
+        // 仅在确认需要发布新日期格后调用延迟工厂，避免无变更刷新重建状态。
+        Some((self.cell_views(capture_context, &entries), entries))
     }
 
     pub(crate) fn mark_cells_materialized(&self, entries: Vec<CalendarCellEntry>) {
