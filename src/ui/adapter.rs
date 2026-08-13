@@ -36,6 +36,9 @@ use crate::ui::view::ViewNode;
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
 // 引入 Image 以识别其专属的占位与错误动态子树协调边界。
 use crate::ui::widgets::{Button, Calendar, Container, Grid, Image, Label};
+// 导航 capability 启用时才识别 Anchor 的专属动态容器协调边界。
+#[cfg(feature = "navigation")]
+use crate::ui::widgets::navigation::Anchor;
 use crate::ui::{ComponentId, WidgetTree};
 use std::collections::{HashMap, HashSet};
 // 复用独立生命周期模块，保持适配器主体低于文件规模上限。
@@ -435,9 +438,24 @@ impl ViewAdapter {
             .downcast_ref::<Calendar>()
             .is_some_and(Calendar::owns_custom_cell_children)
             || tree.is_calendar_cell_component(id);
+        // Anchor 容器必须在 live owner 完成原位同步后动态捕获，不能调用新声明组件的工厂。
+        let anchor_container = {
+            // 导航 capability 启用时识别新声明或 live 节点中的 Anchor owner。
+            #[cfg(feature = "navigation")]
+            {
+                // 新声明与原位复用均需进入 Anchor 专属协调边界。
+                widget.as_any().is::<Anchor>() || tree.is_anchor_container_component(id)
+            }
+            // 导航 capability 关闭时没有 Anchor owner，保留普通子树协调语义。
+            #[cfg(not(feature = "navigation"))]
+            {
+                // 固定为假以避免 feature 关闭时引用导航组件类型。
+                false
+            }
+        };
         // Image 的占位与错误 View 共同属于同一专属动态子树协调边界。
         let image_children = widget.as_any().is::<Image>();
-        let component_view_children = if calendar_cells {
+        let component_view_children = if calendar_cells || anchor_container {
             Vec::new()
         } else {
             view_children(widget.as_ref())
@@ -536,6 +554,19 @@ impl ViewAdapter {
             tree.refresh_collapse_content_component(id)
         } else if calendar_cells {
             tree.refresh_calendar_cell_component(id)
+        } else if anchor_container {
+            // 导航 capability 启用时由 live Anchor 统一协调 authored 与动态容器。
+            #[cfg(feature = "navigation")]
+            {
+                // live Anchor 已完成 patch，此处才捕获最新工厂并合并 authored children。
+                tree.reconcile_anchor_container_component(id, children)
+            }
+            // 导航 capability 关闭时该分支不可达，保留穷尽表达式类型。
+            #[cfg(not(feature = "navigation"))]
+            {
+                // 不消费 children，避免 feature 边界外产生动态协调。
+                false
+            }
         } else if image_children {
             // 先保留本轮 authored 与 fresh placeholder，再追加同一失败实例的完整动态错误 View。
             let mut children = children;

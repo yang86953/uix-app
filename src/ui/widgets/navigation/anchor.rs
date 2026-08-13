@@ -59,10 +59,8 @@ component! {
     }
 
     build_view_children => (&self) -> Vec<crate::ui::view::ViewNode> {
-        self.container_view
-            .as_ref()
-            .map(|factory| vec![factory()])
-            .unwrap_or_default()
+        // 容器工厂只能在真实 Anchor owner 已注册后由树级动态捕获入口调用。
+        Vec::new()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -202,6 +200,9 @@ impl AnchorItem {
 }
 
 impl Anchor {
+    // 固定动态容器运行时 key，使子树身份与捕获命名空间严格一致。
+    pub(crate) const CONTAINER_CHILD_KEY: &'static str = "uix:anchor:container";
+
     fn intrinsic_size(&self) -> Size {
         let navigation = self.intrinsic_navigation_size();
         if self.container_enabled {
@@ -289,6 +290,48 @@ impl Anchor {
         self.container_view = Some(Rc::new(move || crate::ui::view::View::build(factory())));
         self
     }
+
+    // 在已验证 Anchor owner 的树私有捕获边界内构建当前容器声明根。
+    pub(crate) fn container_view_for_reconcile(
+        // 借用树签发且 owner 不可替换的动态捕获能力。
+        &self,
+        // 接收仅属于当前活跃 Anchor 的动态捕获能力。
+        capture_context: &crate::ui::adapter::DynamicViewCaptureContext,
+        // 返回启用且具备工厂时的完整捕获输出。
+    ) -> Option<crate::ui::view::ViewNode> {
+        // 关闭容器时由父级协调器移除既有固定动态子树。
+        if !self.container_enabled {
+            // 不执行应用工厂，避免禁用状态产生新的私有资源。
+            return None;
+        }
+        // 缺少工厂时保持无动态容器语义。
+        let factory = self.container_view.as_ref()?;
+        // 在固定 owner、槽位和业务 key 中捕获完整状态与生命周期输出。
+        let root = capture_context.capture(
+            // 隔离 Anchor 容器工厂与同一 owner 的其他动态入口。
+            "anchor-container",
+            // 命名空间与运行时根 key 使用同一稳定身份。
+            Self::CONTAINER_CHILD_KEY,
+            // 工厂只在捕获上下文安装后执行一次。
+            || factory(),
+        );
+        // 用户不得占用动态容器根 key，否则 keyed 协调会把 authored 身份误作框架子树。
+        assert!(
+            // 仅接受未设置 key 的工厂根，框架随后注入唯一固定 key。
+            root.key.is_none(),
+            // 给出稳定的调用方诊断，避免静默覆盖用户 key。
+            "Anchor container 工厂返回根不得设置 key"
+        );
+        // 由框架唯一写入稳定根 key，确保物化、reconcile 与状态命名空间相同。
+        Some(root.key(Self::CONTAINER_CHILD_KEY))
+    }
+
+    // 报告当前声明是否确实需要一个动态容器，供树在执行用户工厂前决定生命周期分支。
+    pub(crate) fn needs_container_view(&self) -> bool {
+        // 开关与工厂必须同时存在，缺少任一项都表示应移除旧框架容器。
+        self.container_enabled && self.container_view.is_some()
+    }
+
     pub fn bg(mut self, c: Color) -> Self {
         self.bg_color = Some(c);
         self
@@ -437,6 +480,13 @@ impl Anchor {
         )
     }
 }
+
+// 挂载 Anchor 动态容器的树级状态与生命周期行为门禁。
+#[cfg(test)]
+// 将大体量行为测试拆到独立文件，保持产品代码文件低于规模上限。
+#[path = "anchor_dynamic_capture_tests.rs"]
+// 仅在测试构建中编译动态捕获回归用例。
+mod anchor_dynamic_capture_tests;
 
 // 集中验证 Anchor reconcile 的稳定 href 与位置缓存生命周期。
 #[cfg(test)]
