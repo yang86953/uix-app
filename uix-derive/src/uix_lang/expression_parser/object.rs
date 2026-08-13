@@ -153,6 +153,8 @@ fn contains_object_literal(expression: &Expression) -> bool {
     match &expression.kind {
         // 任一对象节点都表示嵌套对象。
         ExpressionKind::Object(_) => true,
+        // 数组字面量递归检查全部元素。
+        ExpressionKind::Array(items) => items.iter().any(contains_object_literal),
         // 一元表达式递归检查操作数。
         ExpressionKind::Unary { operand, .. } => contains_object_literal(operand),
         // 二元表达式递归检查两侧。

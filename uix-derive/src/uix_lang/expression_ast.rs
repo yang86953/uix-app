@@ -23,6 +23,8 @@ pub(crate) enum ExpressionKind {
     Boolean(bool),
     // 保存仅供已登记结构属性消费的对象字面量。
     Object(Vec<ObjectField>),
+    // 保存数据绑定与不可变更新使用的数组字面量。
+    Array(Vec<Expression>),
     // 保存一元运算。
     Unary {
         // 保存一元运算符。

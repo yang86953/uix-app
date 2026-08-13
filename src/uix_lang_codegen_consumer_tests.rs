@@ -663,3 +663,78 @@ fn generated_handle_bindings_and_typed_states_compile_against_public_uix_api() {
         "#
     );
 }
+
+// 验证语言面数据字面量与数据类型构造链在消费者中通过公开 API 类型检查。
+#[cfg(all(feature = "navigation", feature = "tree-widgets"))]
+#[test]
+fn data_literals_and_constructor_chains_compile_against_public_uix_api() {
+    // 创建级联路径与树 key 的受控状态。
+    let region = State::new(CascaderValue {
+        // 初始显示路径为空。
+        labels: Vec::new(),
+        // 初始稳定值路径为空。
+        values: Vec::new(),
+    });
+    // 创建树选择稳定 key 状态。
+    let tree_key = State::new(String::from("member"));
+    // 展开覆盖八类数据类型构造、数组字面量与枚举语义值的组件。
+    let _view: ViewNode = uix!(
+        r#"
+        <Component name="Data" state="city: 'cn', gender: 'female', steps: usize = 1">
+          <Column>
+            <Select value={city} options={[SelectOption('中国', 'cn'), SelectOption('美国', 'us')]} width="200px" />
+            <Cascader value={region} options={[CascaderOption('浙江', 'zj').children([CascaderOption('杭州', 'hz')])]} width="240px" />
+            <TreeSelect value={tree_key} options={[TreeNode('部门', 'dept').children([TreeNode('成员', 'member')])]} width="240px" />
+            <Radio value={gender} options={['female', 'male']} width="320px" />
+            <Descriptions data={[DescriptionsItem('姓名', 'Ada')]} columns="2" width="480px" />
+            <Timeline items={[TimelineItem('创建').description('2026-08-01')]} pending reverse />
+            <Steps current={steps} items={[Step('注册').status('finish'), Step('验证').status('process')]} />
+            <Breadcrumb items={[BreadcrumbItem('首页'), BreadcrumbItem('导航').active()]} />
+            <Anchor items={[AnchorItem('基础', '#basic')]} />
+          </Column>
+        </Component>
+        <Data />
+        "#
+    );
+}
+
+// 验证 uix_items! 生成的 record 与语言面语义类型状态在消费者中通过公开 API 类型检查。
+#[cfg(all(feature = "feedback", feature = "navigation", feature = "tree-widgets"))]
+#[test]
+fn record_items_and_semantic_states_compile_against_public_uix_api() {
+    // 生成语言面 <Record> 声明的模块级业务模型。
+    crate::uix_items!(
+        r#"
+        <Record name="ProfileForm" fields="email: String, accepted: bool, volume: number" />
+        <Component name="Semantic" state="selected_date: Date = Date(2026, 8, 10), selected_time: Time = Time(14, 30), selected_color: Color = Color('#1677ff'), scroll: Point = Point(0, 0), region: CascaderValue = { labels: [], values: [] }, cities: HashSet<String> = [], profile: ProfileForm = { email: 'a@b.com', accepted: true, volume: 30.0 }">
+          <Column>
+            <DatePicker value={selected_date} width="200px" />
+            <TimePicker value={selected_time} width="160px" />
+            <ColorPicker value={selected_color} width="160px" />
+            <Cascader value={region} options={[CascaderOption('浙江', 'zj')]} width="240px" />
+            <Select value={cities} options={[SelectOption('中国', 'cn')]} multiple width="200px" />
+            <Form model={profile} @submit="submit_semantic">
+              <FormInputItem field="email" label="邮箱" rules="required" />
+            </Form>
+          </Column>
+        </Component>
+        <Semantic />
+        "#
+    );
+    // Rust 侧回调引用语言面声明的 record 类型。
+    fn submit_semantic(model: ProfileForm) -> Result<(), String> {
+        // 输出关键字段供演示日志核对。
+        let _ = (model.email, model.accepted, model.volume);
+        // 演示提交始终成功。
+        Ok(())
+    }
+}
+
+// 验证 setTheme 作为框架内置操作生成主题请求通道调用，不依赖调用方同名函数。
+#[test]
+fn set_theme_builtin_compiles_without_caller_function() {
+    // 展开使用 setTheme 内置操作的按钮，作用域内不定义任何 setTheme 函数。
+    let _view: ViewNode = uix!(
+        r#"<Button @click="setTheme('dark')">暗色主题</Button>"#
+    );
+}

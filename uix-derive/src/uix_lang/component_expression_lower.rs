@@ -8,6 +8,8 @@ use quote::quote;
 
 // 引入组件展开器与字段绑定。
 use super::component_codegen::{Bindings, ComponentExpander};
+// 引入数据类型构造链识别。
+use super::is_data_constructor_chain;
 // 引入调用参数、表达式与诊断 AST。
 use super::{CallArgument, Diagnostic, Expression, ExpressionKind};
 
@@ -25,6 +27,25 @@ impl ComponentExpander {
         allow_set_state: bool,
         // 标记句柄位属性：State 字段改写为句柄而非读值。
         handle_mode: bool,
+    ) -> Result<(), Diagnostic> {
+        // 委托内部实现，组件语义默认规范化字符串与数字。
+        self.transform_expression_inner(expression, bindings, allow_set_state, handle_mode, true)
+    }
+
+    // 按形状递归改写表达式，normalize_literals 关闭时保持作者字面量形状。
+    fn transform_expression_inner(
+        // 可变借用展开状态。
+        &mut self,
+        // 接收待改写表达式。
+        expression: &mut Expression,
+        // 接收当前字段绑定。
+        bindings: &Bindings,
+        // 标记当前位置是否允许状态更新。
+        allow_set_state: bool,
+        // 标记句柄位属性：State 字段改写为句柄而非读值。
+        handle_mode: bool,
+        // 标记是否把字符串规范化为 String、把整数补为 f64 形状。
+        normalize_literals: bool,
     ) -> Result<(), Diagnostic> {
         // 先识别需要替换整个节点的 setState 调用。
         let is_set_state = matches!(
@@ -59,41 +80,48 @@ impl ComponentExpander {
             return self.lower_set_state(expression, arguments, bindings);
         }
         // 语言 String 使用拥有所有权的 Rust String，而表达式生成器的原始字面量是 &str。
-        if let ExpressionKind::String(value) = &expression.kind {
-            // 复制字符串值以替换整个表达式节点。
-            let value = value.clone();
-            // 为拥有所有权转换器生成卫生名称。
-            let converter_ident = self.fresh_ident("owned_string", "literal");
-            // 生成只接收静态字面量的 String 转换闭包。
-            self.setup.push(quote! {
-                // 把语言字符串字面量规范化为拥有所有权的 String。
-                let #converter_ident = |value: &'static str| ::std::string::String::from(value);
-            });
-            // 用普通闭包调用替换字符串字面量。
-            expression.kind = ExpressionKind::Call {
-                // 调用卫生转换器。
-                callee: Box::new(Expression {
-                    // 使用普通标识符交给既有生成器。
-                    kind: ExpressionKind::Identifier(converter_ident.to_string()),
-                    // 沿用字符串跨度。
-                    span: expression.span,
-                }),
-                // 传入原始静态字符串字面量。
-                arguments: vec![CallArgument {
-                    // 普通闭包调用使用位置参数。
-                    name: None,
-                    // 保存原始字符串值。
-                    value: Expression {
-                        // 参数仍由既有生成器产生 &str 字面量。
-                        kind: ExpressionKind::String(value),
+        // 数据构造链保持字面量形状，生成 &str 参数交给公开 new/成员 API。
+        if normalize_literals {
+            // 识别需要规范化的字符串节点。
+            if let ExpressionKind::String(value) = &expression.kind {
+                // 复制字符串值以替换整个表达式节点。
+                let value = value.clone();
+                // 为拥有所有权转换器生成卫生名称。
+                let converter_ident = self.fresh_ident("owned_string", "literal");
+                // 生成只接收静态字面量的 String 转换闭包。
+                self.setup.push(quote! {
+                    // 把语言字符串字面量规范化为拥有所有权的 String。
+                    let #converter_ident = |value: &'static str| ::std::string::String::from(value);
+                });
+                // 用普通闭包调用替换字符串字面量。
+                expression.kind = ExpressionKind::Call {
+                    // 调用卫生转换器。
+                    callee: Box::new(Expression {
+                        // 使用普通标识符交给既有生成器。
+                        kind: ExpressionKind::Identifier(converter_ident.to_string()),
                         // 沿用字符串跨度。
                         span: expression.span,
-                    },
-                    // 沿用字符串跨度。
-                    span: expression.span,
-                }],
-            };
-            // 当前字符串节点已经完成规范化。
+                    }),
+                    // 传入原始静态字符串字面量。
+                    arguments: vec![CallArgument {
+                        // 普通闭包调用使用位置参数。
+                        name: None,
+                        // 保存原始字符串值。
+                        value: Expression {
+                            // 参数仍由既有生成器产生 &str 字面量。
+                            kind: ExpressionKind::String(value),
+                            // 沿用字符串跨度。
+                            span: expression.span,
+                        },
+                        // 沿用字符串跨度。
+                        span: expression.span,
+                    }],
+                };
+                // 当前字符串节点已经完成规范化。
+                return Ok(());
+            }
+        } else if matches!(&expression.kind, ExpressionKind::String(_)) {
+            // 保持字面量形状的字符串节点无需改写。
             return Ok(());
         }
         // 按表达式形状递归改写。
@@ -127,14 +155,32 @@ impl ComponentExpander {
             // 一元表达式递归改写操作数。
             ExpressionKind::Unary { operand, .. } => {
                 // 改写内部操作数。
-                self.transform_expression(operand, bindings, allow_set_state, handle_mode)?;
+                self.transform_expression_inner(
+                    operand,
+                    bindings,
+                    allow_set_state,
+                    handle_mode,
+                    normalize_literals,
+                )?;
             }
             // 二元表达式递归改写两侧。
             ExpressionKind::Binary { left, right, .. } => {
                 // 改写左侧。
-                self.transform_expression(left, bindings, allow_set_state, handle_mode)?;
+                self.transform_expression_inner(
+                    left,
+                    bindings,
+                    allow_set_state,
+                    handle_mode,
+                    normalize_literals,
+                )?;
                 // 改写右侧。
-                self.transform_expression(right, bindings, allow_set_state, handle_mode)?;
+                self.transform_expression_inner(
+                    right,
+                    bindings,
+                    allow_set_state,
+                    handle_mode,
+                    normalize_literals,
+                )?;
             }
             // 三元表达式递归改写条件与分支。
             ExpressionKind::Ternary {
@@ -146,32 +192,76 @@ impl ComponentExpander {
                 else_branch,
             } => {
                 // 改写条件。
-                self.transform_expression(condition, bindings, allow_set_state, handle_mode)?;
+                self.transform_expression_inner(
+                    condition,
+                    bindings,
+                    allow_set_state,
+                    handle_mode,
+                    normalize_literals,
+                )?;
                 // 改写真分支。
-                self.transform_expression(then_branch, bindings, allow_set_state, handle_mode)?;
+                self.transform_expression_inner(
+                    then_branch,
+                    bindings,
+                    allow_set_state,
+                    handle_mode,
+                    normalize_literals,
+                )?;
                 // 改写假分支。
-                self.transform_expression(else_branch, bindings, allow_set_state, handle_mode)?;
+                self.transform_expression_inner(
+                    else_branch,
+                    bindings,
+                    allow_set_state,
+                    handle_mode,
+                    normalize_literals,
+                )?;
             }
             // 成员访问递归改写对象。
             ExpressionKind::Member { object, .. } => {
                 // 改写成员所属对象。
-                self.transform_expression(object, bindings, allow_set_state, handle_mode)?;
+                self.transform_expression_inner(
+                    object,
+                    bindings,
+                    allow_set_state,
+                    handle_mode,
+                    normalize_literals,
+                )?;
             }
             // 下标访问递归改写对象与索引。
             ExpressionKind::Index { object, index } => {
                 // 改写被索引对象。
-                self.transform_expression(object, bindings, allow_set_state, handle_mode)?;
+                self.transform_expression_inner(
+                    object,
+                    bindings,
+                    allow_set_state,
+                    handle_mode,
+                    normalize_literals,
+                )?;
                 // 改写索引表达式。
-                self.transform_expression(index, bindings, allow_set_state, handle_mode)?;
+                self.transform_expression_inner(
+                    index,
+                    bindings,
+                    allow_set_state,
+                    handle_mode,
+                    normalize_literals,
+                )?;
             }
-            // 普通调用递归改写目标与参数。
+            // 调用递归改写目标与参数，数据构造链保持字面量形状。
             ExpressionKind::Call { callee, arguments } => {
+                // 已登记数据类型构造链的参数交给公开 &str/枚举 API。
+                let chain_normalizes = !is_data_constructor_chain(callee);
                 // 改写调用目标。
-                self.transform_expression(callee, bindings, allow_set_state, handle_mode)?;
+                self.transform_expression_inner(
+                    callee,
+                    bindings,
+                    allow_set_state,
+                    handle_mode,
+                    chain_normalizes && normalize_literals,
+                )?;
                 // 按源码顺序改写参数值。
                 for argument in arguments {
                     // 改写当前参数表达式。
-                    self.transform_expression(
+                    self.transform_expression_inner(
                         // 可变借用参数值。
                         &mut argument.value,
                         // 使用同一字段绑定。
@@ -180,6 +270,22 @@ impl ComponentExpander {
                         allow_set_state,
                         // 传递句柄位模式。
                         handle_mode,
+                        // 数据构造链参数保持作者字面量形状。
+                        chain_normalizes && normalize_literals,
+                    )?;
+                }
+            }
+            // 数组字面量递归改写全部元素。
+            ExpressionKind::Array(items) => {
+                // 按源码顺序改写元素。
+                for item in items {
+                    // 改写当前元素表达式。
+                    self.transform_expression_inner(
+                        item,
+                        bindings,
+                        allow_set_state,
+                        handle_mode,
+                        normalize_literals,
                     )?;
                 }
             }
@@ -190,11 +296,12 @@ impl ComponentExpander {
                     // 结构属性保留作者数字形状，由专用 codegen 决定目标类型。
                     let authored_numbers = collect_number_sources(&field.value);
                     // 递归改写字段值中的绑定与调用。
-                    self.transform_expression(
+                    self.transform_expression_inner(
                         &mut field.value,
                         bindings,
                         allow_set_state,
                         handle_mode,
+                        normalize_literals,
                     )?;
                     // 恢复对象字段中被通用组件语义改写的数字源码。
                     restore_number_sources(&mut field.value, &authored_numbers);
@@ -202,14 +309,17 @@ impl ComponentExpander {
             }
             // 组件 number 语义统一为 f64，整数形态补充小数点。
             ExpressionKind::Number(source) => {
-                // 只改写没有小数点或指数的整数形态。
-                if !source.contains('.') && !source.contains('e') && !source.contains('E') {
-                    // 追加零小数以参与 f64 运算。
-                    source.push_str(".0");
+                // 数据构造链保持作者数字形状。
+                if normalize_literals {
+                    // 只改写没有小数点或指数的整数形态。
+                    if !source.contains('.') && !source.contains('e') && !source.contains('E') {
+                        // 追加零小数以参与 f64 运算。
+                        source.push_str(".0");
+                    }
                 }
             }
-            // 字符串字面量已在递归分派前转换为拥有所有权的 String。
-            ExpressionKind::String(_) => unreachable!("字符串已在分派前规范化"),
+            // 字符串字面量已在递归分派前处理。
+            ExpressionKind::String(_) => unreachable!("字符串已在分派前处理"),
             // 布尔字面量不含组件字段。
             ExpressionKind::Boolean(_) => {}
         }
@@ -448,6 +558,14 @@ fn visit_numbers(expression: &Expression, visitor: &mut impl FnMut(&Expression))
                 visit_numbers(&field.value, visitor);
             }
         }
+        // 数组访问全部元素。
+        ExpressionKind::Array(items) => {
+            // 按元素顺序访问。
+            for item in items {
+                // 递归元素值。
+                visit_numbers(item, visitor);
+            }
+        }
         // 叶节点没有子表达式。
         ExpressionKind::Identifier(_)
         | ExpressionKind::Number(_)
@@ -509,6 +627,14 @@ fn visit_numbers_mut(expression: &mut Expression, visitor: &mut impl FnMut(&mut 
             for field in fields {
                 // 递归字段值。
                 visit_numbers_mut(&mut field.value, visitor);
+            }
+        }
+        // 数组访问全部元素。
+        ExpressionKind::Array(items) => {
+            // 按元素顺序访问。
+            for item in items {
+                // 递归元素值。
+                visit_numbers_mut(item, visitor);
             }
         }
         // 叶节点没有子表达式。

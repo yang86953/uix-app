@@ -9,7 +9,7 @@ use quote::quote;
 // 引入组件、文档、表达式与视图 AST。
 use super::{
     Attribute, AttributeValue, ComponentDeclaration, ComponentScopeMarker, ControlBinding,
-    Declaration, Diagnostic, Document, Element, Node, StyleClassResolver,
+    Declaration, Diagnostic, Document, Element, Node, RecordDeclaration, StyleClassResolver,
 };
 // 引入既有核心 View 生成入口。
 use super::generate_view;
@@ -64,6 +64,8 @@ pub(crate) fn generate_document_view(document: &Document) -> Result<TokenStream,
 pub(super) struct ComponentExpander {
     // 保存名称到组件声明的完整副本。
     pub(super) components: BTreeMap<String, ComponentDeclaration>,
+    // 保存名称到 record 声明的完整副本。
+    pub(super) records: BTreeMap<String, RecordDeclaration>,
     // 保存最终 View 之前执行的有序准备语句。
     pub(super) setup: Vec<TokenStream>,
     // 保存卫生名称的单调递增编号。
@@ -96,12 +98,32 @@ impl ComponentExpander {
             })
             // 收集到有序映射。
             .collect();
+        // 收集全部 record 声明供 state 类型与结构体字面量使用。
+        let records = document
+            // 遍历顶层声明。
+            .declarations
+            // 借用声明迭代器。
+            .iter()
+            // 只保留 record 声明。
+            .filter_map(|declaration| match declaration {
+                // 复制 record 名称与声明。
+                Declaration::Record(record) => {
+                    // 返回映射条目。
+                    Some((record.name.clone(), record.clone()))
+                }
+                // 其他声明不占用 record 命名空间。
+                _ => None,
+            })
+            // 收集到有序映射。
+            .collect();
         // 构造并验证样式类继承注册表。
         let styles = StyleClassResolver::new(document)?;
         // 返回初始展开状态。
         Ok(Self {
             // 写入组件注册表。
             components,
+            // 写入 record 注册表。
+            records,
             // 初始没有准备语句。
             setup: Vec::new(),
             // 卫生编号从零开始。

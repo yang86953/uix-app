@@ -1,7 +1,8 @@
 // 引入组件 AST、通用元素、表达式解析与诊断。
 use super::{
     parse_expression, AttributeValue, ComponentDeclaration, ComponentProp, ComponentPropType,
-    ComponentState, ComponentStateInitial, ComponentValueType, Diagnostic, Element, SourceSpan,
+    ComponentState, ComponentStateInitial, ComponentValueType, Diagnostic, Element, RecordField,
+    RecordDeclaration, SourceSpan,
 };
 // 引入名称去重集合。
 use std::collections::HashSet;
@@ -356,8 +357,8 @@ fn split_typed_state_initial(
     };
     // 等号左侧必须是普通类型名。
     let type_source = source[..separator].trim();
-    // 类型名必须是 ASCII 标识符形状。
-    let is_identifier = !type_source.is_empty()
+    // 类型名允许 Ident 或 Ident<Ident> 泛型形状。
+    let is_type_source = !type_source.is_empty()
         && type_source
             .chars()
             .enumerate()
@@ -366,42 +367,264 @@ fn split_typed_state_initial(
                 if position == 0 {
                     character.is_ascii_alphabetic() || character == '_'
                 } else {
-                    // 其余字符允许字母数字或下划线。
-                    character.is_ascii_alphanumeric() || character == '_'
+                    // 其余字符允许字母数字、下划线或泛型尖括号。
+                    character.is_ascii_alphanumeric()
+                        || character == '_'
+                        || matches!(character, '<' | '>')
                 }
             });
-    // 左侧不是标识符时保持普通表达式语义，交给表达式解析器诊断。
-    if !is_identifier {
+    // 左侧不是类型形状时保持普通表达式语义，交给表达式解析器诊断。
+    if !is_type_source {
         // 返回未识别注解。
         return Ok(None);
     }
-    // 按 state 专用白名单映射类型关键字。
-    let value_type = match type_source {
-        // 映射拥有所有权的字符串状态。
-        "String" => ComponentValueType::String,
-        // 映射 f64 数值状态。
-        "number" => ComponentValueType::Number,
-        // 映射布尔状态。
-        "bool" => ComponentValueType::Bool,
-        // 映射 u32 无符号计数状态。
-        "u32" => ComponentValueType::U32,
-        // 映射 usize 索引状态。
-        "usize" => ComponentValueType::USize,
-        // 映射 f32 单精度状态。
-        "f32" => ComponentValueType::F32,
-        // 映射 i32 有符号整数状态。
-        "i32" => ComponentValueType::I32,
-        // 未知类型名给出专用诊断。
-        _ => {
-            return Err(Diagnostic::new(
-                span,
-                format!("不支持 state 类型 {type_source:?}"),
-                "使用 String、number、bool、u32、usize、f32 或 i32",
-            ))
-        }
-    };
+    // 按 state 专用白名单映射类型关键字，未知 PascalCase 名称暂存为 record 引用。
+    let value_type = parse_typed_value(type_source).ok_or_else(|| {
+        // 构造未知 state 类型诊断。
+        Diagnostic::new(
+            // 指向 state 声明。
+            span,
+            // 说明类型不在白名单。
+            format!("不支持 state 类型 {type_source:?}"),
+            // 给出完整允许集合。
+            "使用 String、number、bool、u32、usize、f32、i32、Date、Time、Color、Point、CascaderValue、HashSet<String>、Vec<String> 或文档内声明的 record 名",
+        )
+    })?;
     // 返回类型与等号右侧的初始值源码。
     Ok(Some((value_type, source[separator + 1..].trim())))
+}
+
+// 解析 state 注解与 record 字段的类型白名单；未知 PascalCase 名暂存为 record 引用。
+pub(crate) fn parse_typed_value(source: &str) -> Option<ComponentValueType> {
+    // 按精确关键字映射基础与语义类型。
+    let value = match source {
+        // 映射拥有所有权的字符串。
+        "String" => ComponentValueType::String,
+        // 映射 f64 数值。
+        "number" => ComponentValueType::Number,
+        // 映射布尔值。
+        "bool" => ComponentValueType::Bool,
+        // 映射无符号计数。
+        "u32" => ComponentValueType::U32,
+        // 映射索引。
+        "usize" => ComponentValueType::USize,
+        // 映射单精度浮点。
+        "f32" => ComponentValueType::F32,
+        // 映射有符号整数。
+        "i32" => ComponentValueType::I32,
+        // 映射公开日期类型。
+        "Date" => ComponentValueType::Date,
+        // 映射公开时间类型。
+        "Time" => ComponentValueType::Time,
+        // 映射公开颜色类型。
+        "Color" => ComponentValueType::Color,
+        // 映射公开坐标类型。
+        "Point" => ComponentValueType::Point,
+        // 映射级联路径类型。
+        "CascaderValue" => ComponentValueType::CascaderValue,
+        // 映射多选集合。
+        "HashSet<String>" => ComponentValueType::HashSetOfString,
+        // 映射字符串向量。
+        "Vec<String>" => ComponentValueType::VecOfString,
+        // 未知 PascalCase 标识符暂存为 record 引用，由文档级校验兑底。
+        _ if is_pascal_identifier(source) => ComponentValueType::Record(source.to_string()),
+        // 其余名称不在白名单。
+        _ => return None,
+    };
+    // 返回映射结果。
+    Some(value)
+}
+
+// 判断名称是否符合 PascalCase 类型名形状。
+fn is_pascal_identifier(source: &str) -> bool {
+    // 非空且首字符大写字母。
+    let mut characters = source.chars();
+    // 首字符必须是大写字母。
+    let Some(first) = characters.next() else {
+        // 空名称不合法。
+        return false;
+    };
+    // 首字符检查。
+    if !first.is_ascii_uppercase() {
+        // 非大写开头。
+        return false;
+    }
+    // 其余字符允许字母、数字或下划线。
+    characters.all(|character| {
+        // 逐一验证形状。
+        character.is_ascii_alphanumeric() || character == '_'
+    })
+}
+
+// 把通用顶层 Record 元素验证为结构化 record 声明。
+pub(crate) fn parse_record_declaration(element: Element) -> Result<RecordDeclaration, Diagnostic> {
+    // 防御性检查调用方只传入保留标签。
+    if element.name != "Record" {
+        // 返回内部路由诊断。
+        return Err(Diagnostic::new(
+            // 指向完整元素。
+            element.span,
+            // 说明元素类型不匹配。
+            "record 声明解析器只接受 <Record>",
+            // 给出正确路由。
+            "把普通元素交给 View 解析器",
+        ));
+    }
+    // Record 不接受子节点。
+    if !element.children.is_empty() {
+        // 返回 record 形状诊断。
+        return Err(Diagnostic::new(
+            // 指向完整元素。
+            element.span,
+            // 说明 record 使用属性声明字段。
+            "<Record> 不接受子节点",
+            // 给出规范写法。
+            "使用 <Record name=\"Profile\" fields=\"email: String, ...\" />",
+        ));
+    }
+    // 保存已出现的属性名。
+    let mut attribute_names = HashSet::new();
+    // 保存必需 record 名。
+    let mut name = None;
+    // 保存必需字段声明。
+    let mut fields_source = None;
+    // 验证 Record 只包含两个声明属性。
+    for attribute in &element.attributes {
+        // 拒绝重复属性。
+        if !attribute_names.insert(attribute.name.as_str()) {
+            // 返回重复属性诊断。
+            return Err(Diagnostic::new(
+                // 指向重复属性。
+                attribute.span,
+                // 说明重复名称。
+                format!("Record 属性 {} 重复声明", attribute.name),
+                // 给出修复动作。
+                "合并重复属性并只保留一次",
+            ));
+        }
+        // Record 元数据必须使用字符串字面量。
+        let AttributeValue::Literal(value) = &attribute.value else {
+            // 返回元数据值形状诊断。
+            return Err(Diagnostic::new(
+                // 指向完整属性。
+                attribute.span,
+                // 说明不接受运行期表达式。
+                format!("Record {} 必须使用字符串字面量", attribute.name),
+                // 给出规范形式。
+                "使用 name=\"Name\" 或 fields=\"name: Type, ...\"",
+            ));
+        };
+        // 按保留属性名保存源码。
+        match attribute.name.as_str() {
+            // 保存 record 名。
+            "name" => name = Some((value.clone(), attribute.span)),
+            // 保存字段声明。
+            "fields" => fields_source = Some((value.as_str(), attribute.span)),
+            // 其他属性不属于 Record 元数据。
+            _ => {
+                // 返回未知属性诊断。
+                return Err(Diagnostic::new(
+                    // 指向完整属性。
+                    attribute.span,
+                    // 说明未知元数据。
+                    format!("Record 不支持属性 {}", attribute.name),
+                    // 给出允许集合。
+                    "只使用 name 与 fields",
+                ));
+            }
+        }
+    }
+    // name 是 record 声明的必需属性。
+    let Some((name, name_span)) = name else {
+        // 返回缺失名称诊断。
+        return Err(Diagnostic::new(
+            // 指向完整 record。
+            element.span,
+            // 说明缺少必需名称。
+            "<Record> 缺少必需的 name 属性",
+            // 给出规范示例。
+            "使用 <Record name=\"Profile\" fields=\"...\" />",
+        ));
+    };
+    // record 名必须可映射为 PascalCase Rust 标识符。
+    validate_component_name(&name, name_span)?;
+    // fields 是 record 声明的必需属性。
+    let (fields_source, fields_span) = fields_source.ok_or_else(|| {
+        // 返回缺失字段诊断。
+        Diagnostic::new(
+            // 指向完整 record。
+            element.span,
+            // 说明缺少字段列表。
+            "<Record> 缺少必需的 fields 属性",
+            // 给出规范示例。
+            "使用 <Record name=\"Profile\" fields=\"email: String\" />",
+        )
+    })?;
+    // 保存有序字段。
+    let mut fields = Vec::new();
+    // 保存字段名去重集合。
+    let mut field_names = HashSet::new();
+    // 按顶层逗号切分字段声明。
+    for entry in split_top_level(fields_source, fields_span, true)? {
+        // 切分字段名与类型。
+        let (field_name, type_source) = split_field(entry, "fields", fields_span)?;
+        // 验证字段名。
+        validate_field_name(field_name, fields_span)?;
+        // 拒绝重复字段。
+        if !field_names.insert(field_name) {
+            // 返回重复字段诊断。
+            return Err(Diagnostic::new(
+                // 指向 fields 属性。
+                fields_span,
+                // 说明重复名称。
+                format!("record 字段 {field_name} 重复声明"),
+                // 给出修复动作。
+                "合并同名字段或使用不同名称",
+            ));
+        }
+        // 解析字段类型白名单。
+        let kind = parse_typed_value(type_source).ok_or_else(|| {
+            // 构造未知字段类型诊断。
+            Diagnostic::new(
+                // 指向 fields 属性。
+                fields_span,
+                // 说明类型不在白名单。
+                format!("不支持 record 字段类型 {type_source:?}"),
+                // 给出允许集合。
+                "使用 String、number、bool、u32、usize、f32、i32、Date、Time、Color、Point、CascaderValue、HashSet<String>、Vec<String> 或文档内声明的 record 名",
+            )
+        })?;
+        // 保存有序字段。
+        fields.push(RecordField {
+            // 保存字段名。
+            name: field_name.to_string(),
+            // 保存字段类型。
+            kind,
+            // 保存所属声明跨度。
+            span: fields_span,
+        });
+    }
+    // 空字段列表不能形成有效 record。
+    if fields.is_empty() {
+        // 返回空 record 诊断。
+        return Err(Diagnostic::new(
+            // 指向 fields 属性。
+            fields_span,
+            // 说明需要至少一个字段。
+            "<Record> 的 fields 不能为空",
+            // 给出最小修复动作。
+            "声明至少一个字段，例如 fields=\"email: String\"",
+        ));
+    }
+    // 返回结构化 record 声明。
+    Ok(RecordDeclaration {
+        // 保存 record 名。
+        name,
+        // 保存有序字段。
+        fields,
+        // 保存完整声明跨度。
+        span: element.span,
+    })
 }
 
 // 构造统一非法 prop 类型诊断。
@@ -427,8 +650,8 @@ fn split_top_level(
     let mut entries = Vec::new();
     // 保存当前片段起点。
     let mut start = 0;
-    // 保存三类嵌套深度。
-    let (mut paren, mut angle, mut bracket) = (0_i32, 0_i32, 0_i32);
+    // 保存四类嵌套深度。
+    let (mut paren, mut angle, mut bracket, mut brace) = (0_i32, 0_i32, 0_i32, 0_i32);
     // 保存单引号字符串状态。
     let mut quoted = false;
     // 保存反斜杠转义状态。
@@ -467,8 +690,12 @@ fn split_top_level(
             '[' => bracket += 1,
             // 减少方括号深度。
             ']' => bracket -= 1,
+            // 增加花括号深度。
+            '{' => brace += 1,
+            // 减少花括号深度。
+            '}' => brace -= 1,
             // 顶层逗号结束当前字段。
-            ',' if paren == 0 && angle == 0 && bracket == 0 => {
+            ',' if paren == 0 && angle == 0 && bracket == 0 && brace == 0 => {
                 // 提取并规范化字段。
                 let entry = source[start..index].trim();
                 // 空字段违反声明语法。

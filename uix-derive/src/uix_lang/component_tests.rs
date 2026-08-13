@@ -186,9 +186,9 @@ fn parses_typed_private_state_annotations() {
 // 验证未知 state 类型注解得到专用诊断。
 #[test]
 fn rejects_unknown_typed_state_annotation() {
-    // 解析超出白名单的类型注解。
+    // 解析超出白名单的非 PascalCase 类型注解。
     let error = parse_document(
-        r#"<Component name="Bad" state="when: Date = 1"><Text>A</Text></Component><Bad />"#,
+        r#"<Component name="Bad" state="when: dateTime = 1"><Text>A</Text></Component><Bad />"#,
     )
     // 未知类型必须失败。
     .expect_err("未知 state 类型不得通过");
@@ -196,6 +196,14 @@ fn rejects_unknown_typed_state_annotation() {
     assert!(error.message.contains("不支持 state 类型"));
     // 诊断必须给出白名单。
     assert!(error.suggestion.contains("u32"));
+    // PascalCase 未知类型按 record 引用处理，后验校验必须拒绝未声明 record。
+    let error = parse_document(
+        r#"<Component name="Bad" state="when: DateTime = 1"><Text>A</Text></Component><Bad />"#,
+    )
+    // 未声明 record 必须失败。
+    .expect_err("未声明 record 引用不得通过");
+    // 诊断必须指出 record 未声明。
+    assert!(error.message.contains("未在当前文档声明"));
 }
 
 // 验证比较运算符不会误识别为类型注解分隔符。

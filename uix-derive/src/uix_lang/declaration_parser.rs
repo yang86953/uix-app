@@ -8,10 +8,22 @@ use std::collections::HashSet;
 
 // 判断当前位置是否为保留的顶层 Component 声明。
 pub(crate) fn starts_component_declaration(cursor: &Cursor<'_>) -> bool {
+    // 委托共享标签前缀判断。
+    starts_tag_declaration(cursor, "<Component")
+}
+
+// 判断当前位置是否为保留的顶层 Record 声明。
+pub(crate) fn starts_record_declaration(cursor: &Cursor<'_>) -> bool {
+    // 委托共享标签前缀判断。
+    starts_tag_declaration(cursor, "<Record")
+}
+
+// 验证标签声明前缀后必须出现标签边界。
+fn starts_tag_declaration(cursor: &Cursor<'_>, prefix: &str) -> bool {
     // 借用当前位置之后的源码。
     let remaining = &cursor.source()[cursor.offset()..];
-    // 要求精确 Component 标签前缀。
-    let Some(after) = remaining.strip_prefix("<Component") else {
+    // 要求精确标签前缀。
+    let Some(after) = remaining.strip_prefix(prefix) else {
         // 前缀不匹配。
         return false;
     };
@@ -81,6 +93,23 @@ pub(crate) fn register_declaration_name(
             format!("组件 {} 重复声明", component.name),
             // 给出修复建议。
             "合并同名组件或使用不同名称",
+        ));
+    }
+    // record 名与组件共享 PascalCase 命名空间。
+    if let Declaration::Record(record) = declaration {
+        // 首次插入成功时通过。
+        if component_names.insert(record.name.clone()) {
+            // 返回成功。
+            return Ok(());
+        }
+        // 返回重复声明诊断。
+        return Err(Diagnostic::new(
+            // 指向重复声明。
+            record.span,
+            // 陈述失败原因。
+            format!("record 或组件 {} 重复声明", record.name),
+            // 给出修复建议。
+            "record 与组件共享 PascalCase 命名空间，请使用不同名称",
         ));
     }
     // 其他声明不占用样式或主题命名空间。

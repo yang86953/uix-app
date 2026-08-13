@@ -1,5 +1,5 @@
 // 引入共享元素与源码跨度。
-use super::{ComponentDeclaration, SourceSpan};
+use super::{ComponentDeclaration, RecordDeclaration, SourceSpan};
 
 // 表示根元素之前按源码顺序出现的顶层声明。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,6 +14,8 @@ pub(crate) enum Declaration {
     Theme(ThemeDeclaration),
     // 保存已经验证 props、state 与视图体的顶层组件定义。
     Component(ComponentDeclaration),
+    // 保存语言面声明的类型化业务模型。
+    Record(RecordDeclaration),
 }
 
 // 表示一个文件导入及可选具名组件。

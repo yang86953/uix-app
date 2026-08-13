@@ -234,7 +234,7 @@ fn parses_if_for_bindings_and_event_calls() {
 // 验证规范列出的非法结构返回稳定原因与修复建议。
 #[test]
 fn rejects_forbidden_expression_structures() {
-    // 覆盖闭包、match、数组、类型标注、语句与赋值。
+    // 覆盖闭包、match、类型标注、语句与赋值。
     for (source, expected) in [
         // 闭包必须失败。
         ("|value| value", "闭包"),
@@ -242,8 +242,6 @@ fn rejects_forbidden_expression_structures() {
         ("|| value", "闭包"),
         // match 必须失败。
         ("match value", "match"),
-        // 数组字面量必须失败。
-        ("[1, 2]", "数组字面量"),
         // 类型标注必须失败。
         ("value: i32", "类型标注"),
         // 语句必须失败。
@@ -258,6 +256,36 @@ fn rejects_forbidden_expression_structures() {
         // 每个错误必须携带修复建议。
         assert!(!error.suggestion.is_empty());
     }
+}
+
+// 验证数组字面量保存元素顺序与拒绝尾随逗号。
+#[test]
+fn parses_array_literals_with_ordered_elements() {
+    // 解析包含嵌套调用与字符串的数组。
+    let expression = parse_expression("[SelectOption('中国', 'cn'), 'b', 3]", origin())
+        // 合法数组必须成功。
+        .expect("数组字面量应成功解析");
+    // 提取数组元素序列。
+    let ExpressionKind::Array(items) = &expression.kind else {
+        // 非数组结构立即失败。
+        panic!("应生成数组节点");
+    };
+    // 元素必须保持源码顺序与形状。
+    assert_eq!(items.len(), 3);
+    // 首元素必须是数据构造调用。
+    assert!(matches!(items[0].kind, ExpressionKind::Call { .. }));
+    // 第二元素必须是字符串字面量。
+    assert!(matches!(items[1].kind, ExpressionKind::String(_)));
+    // 第三元素必须是数字字面量。
+    assert!(matches!(items[2].kind, ExpressionKind::Number(_)));
+    // 尾随逗号必须给出专用诊断。
+    let trailing = parse_expression("[1, 2,]", origin()).expect_err("尾随逗号必须失败");
+    // 原因必须指向尾随逗号。
+    assert!(trailing.message.contains("尾随逗号"), "{}", trailing.message);
+    // 空数组保持合法。
+    let empty = parse_expression("[]", origin()).expect("空数组应成功解析");
+    // 空数组没有元素。
+    assert!(matches!(empty.kind, ExpressionKind::Array(items) if items.is_empty()));
 }
 
 // 验证受限对象字面量保存字段顺序、值结构与 UTF-8 位置。
@@ -359,6 +387,26 @@ fn rejects_object_in_generic_expression_codegen() {
     let error = generate_expression(&expression, None).expect_err("普通生成路径必须拒绝对象");
     // 诊断必须指向已登记结构属性。
     assert!(error.message.contains("已登记的结构属性"));
+}
+
+// 验证 setTheme 生成框架主题请求通道调用而非调用方同名函数。
+#[test]
+fn generates_set_theme_builtin_call() {
+    // 解析 setTheme 内置操作。
+    let expression = parse_expression("setTheme('dark')", origin())
+        // 合法调用必须成功。
+        .expect("setTheme 应成功解析");
+    // 生成确定令牌流。
+    let tokens = generate_expression(&expression, None)
+        // 生成必须成功。
+        .expect("setTheme 生成应成功")
+        // 转为快照文本。
+        .to_string();
+    // 快照必须指向框架主题请求通道。
+    assert!(
+        tokens.contains("uix_set_theme") && tokens.contains("theme"),
+        "{tokens}"
+    );
 }
 
 // 验证内置调用和 For 绑定执行专用形状约束。

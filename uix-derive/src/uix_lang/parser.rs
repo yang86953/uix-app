@@ -1,9 +1,10 @@
 // 引入核心 AST、词法游标和诊断。
 use super::{
-    parse_at_declaration, parse_component_declaration, parse_expression, parse_style_class,
-    parse_style_properties, register_declaration_name, starts_component_declaration, Attribute,
-    AttributeValue, ControlBinding, Cursor, Declaration, Diagnostic, Document, Element,
-    ExpressionKind, ExpressionNode, Node, SourceSpan, TextNode,
+    parse_at_declaration, parse_component_declaration, parse_expression, parse_record_declaration,
+    parse_style_class, parse_style_properties, register_declaration_name,
+    starts_component_declaration, starts_record_declaration, Attribute, AttributeValue,
+    ComponentStateInitial, ComponentValueType, ControlBinding, Cursor, Declaration, Diagnostic,
+    Document, Element, ExpressionKind, ExpressionNode, Node, SourceSpan, TextNode,
 };
 // 引入顶层名称去重集合。
 use std::collections::HashSet;
@@ -45,6 +46,12 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
             Some(Declaration::Component(parse_component_declaration(
                 element,
             )?))
+        // 解析并验证顶层 Record 声明。
+        } else if starts_record_declaration(&cursor) {
+            // 先复用通用元素解析器读取自闭合 record 标签。
+            let element = parse_element(&mut cursor, true)?;
+            // 再验证 Record 元数据与字段类型。
+            Some(Declaration::Record(parse_record_declaration(element)?))
         } else {
             // 当前输入应为文档根元素。
             None
@@ -120,8 +127,95 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
             "把其余元素移动到当前根元素内部",
         ));
     }
+    // 构建已验证文档。
+    let document = Document {
+        // 保存声明顺序。
+        declarations,
+        // 保存唯一根元素。
+        root,
+    };
+    // 校验全部 record 类型引用都指向已声明 record。
+    validate_record_references(&document)?;
     // 返回已验证文档。
-    Ok(Document { declarations, root })
+    Ok(document)
+}
+
+// 校验组件 state 与 record 字段中的 record 引用都存在对应声明。
+fn validate_record_references(document: &Document) -> Result<(), Diagnostic> {
+    // 收集全部已声明 record 名。
+    let record_names = document
+        // 遍历声明。
+        .declarations
+        // 借用声明序列。
+        .iter()
+        // 只保留 record 声明名。
+        .filter_map(|declaration| match declaration {
+            // 提取 record 名。
+            Declaration::Record(record) => Some(record.name.as_str()),
+            // 其余声明不占用 record 命名空间。
+            _ => None,
+        })
+        // 收集为去重集合。
+        .collect::<HashSet<_>>();
+    // 逐一声明校验类型引用。
+    for declaration in &document.declarations {
+        // 按声明类别校验。
+        match declaration {
+            // 组件私有 state 的类型注解可能引用 record。
+            Declaration::Component(component) => {
+                // 遍历组件 state。
+                for state in &component.states {
+                    // 只有类型化初始值带类型引用。
+                    if let ComponentStateInitial::TypedExpression(value_type, _) = &state.initial {
+                        // 校验类型中的 record 引用。
+                        validate_value_type_record(value_type, &record_names, state.span)?;
+                    }
+                }
+            }
+            // record 字段可能引用其他 record。
+            Declaration::Record(record) => {
+                // 遍历 record 字段。
+                for field in &record.fields {
+                    // 校验字段类型中的 record 引用。
+                    validate_value_type_record(&field.kind, &record_names, field.span)?;
+                }
+            }
+            // 其余声明不含类型引用。
+            _ => {}
+        }
+    }
+    // 全部引用已兑底。
+    Ok(())
+}
+
+// 递归校验单个类型中的 record 引用。
+fn validate_value_type_record(
+    // 接收待校验类型。
+    value_type: &ComponentValueType,
+    // 接收已声明 record 名集合。
+    record_names: &HashSet<&str>,
+    // 接收诊断定位跨度。
+    span: SourceSpan,
+) -> Result<(), Diagnostic> {
+    // 只处理 record 引用变体。
+    let ComponentValueType::Record(name) = value_type else {
+        // 基础类型没有嵌套引用。
+        return Ok(());
+    };
+    // 名称必须存在对应声明。
+    if record_names.contains(name.as_str()) {
+        // 引用已兑底。
+        return Ok(());
+    }
+    // 返回未声明 record 诊断。
+    Err(Diagnostic::new(
+        // 指向类型引用。
+        span,
+        // 陈述失败原因。
+        format!("record 类型 {name} 未在当前文档声明"),
+        // 给出修复建议。
+        "在顶层声明区添加 <Record name=\"...\" fields=\"...\" />，或改用基础类型",
+    ))
 }
 
 // 递归解析一个普通或自闭合元素。
@@ -177,6 +271,18 @@ fn parse_element(
             "<Component> 只能出现在顶层声明区",
             // 给出修复建议。
             "把 Component 定义移动到文档根元素之前",
+        ));
+    }
+    // Record 只能作为顶层声明出现。
+    if name == "Record" && !allow_component_declaration {
+        // 返回非法嵌套或根位置诊断。
+        return Err(Diagnostic::new(
+            // 指向保留标签名。
+            name_span,
+            // 陈述失败原因。
+            "<Record> 只能出现在顶层声明区",
+            // 给出修复建议。
+            "把 Record 定义移动到文档根元素之前",
         ));
     }
     // 保存声明顺序中的属性。

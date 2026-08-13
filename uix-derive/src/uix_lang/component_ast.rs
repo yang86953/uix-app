@@ -43,8 +43,8 @@ pub(crate) enum ComponentPropType {
     },
 }
 
-// 表示 props 与回调白名单中的基础类型。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// 表示 props、回调与 record 字段白名单中的类型。
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ComponentValueType {
     // 映射到 Rust String。
     String,
@@ -60,6 +60,44 @@ pub(crate) enum ComponentValueType {
     F32,
     // 映射到 Rust i32（数字输入等有符号整数状态）。
     I32,
+    // 映射到公开 Date 语义类型。
+    Date,
+    // 映射到公开 Time 语义类型。
+    Time,
+    // 映射到公开 Color 语义类型。
+    Color,
+    // 映射到公开 Point 语义类型。
+    Point,
+    // 映射到公开 CascaderValue 路径类型。
+    CascaderValue,
+    // 映射到 HashSet<String> 集合状态。
+    HashSetOfString,
+    // 映射到 Vec<String> 集合状态。
+    VecOfString,
+    // 映射到文档内声明的 record 类型。
+    Record(String),
+}
+
+// 表示文档内声明的类型化业务模型。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RecordDeclaration {
+    // 保存 PascalCase record 名称。
+    pub(crate) name: String,
+    // 保存源码顺序中的字段声明。
+    pub(crate) fields: Vec<RecordField>,
+    // 保存完整 Record 声明跨度。
+    pub(crate) span: SourceSpan,
+}
+
+// 表示 record 的一个字段声明。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RecordField {
+    // 保存字段名称。
+    pub(crate) name: String,
+    // 保存白名单字段类型。
+    pub(crate) kind: ComponentValueType,
+    // 保存所属字段声明跨度。
+    pub(crate) span: SourceSpan,
 }
 
 // 表示一个组件私有状态槽。
