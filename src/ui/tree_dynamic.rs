@@ -10,8 +10,156 @@ use crate::ui::virtualization::virtual_scroll::VirtualScroll;
 use crate::ui::widgets::display::table::Table;
 use crate::ui::widgets::display::{Calendar, Collapse, Image};
 use crate::ui::widgets::input::Select;
+// 导航 capability 启用时才引入 Anchor 动态容器 owner 类型。
+#[cfg(feature = "navigation")]
+use crate::ui::widgets::navigation::Anchor;
 
 impl WidgetTree {
+    // 判断当前节点是否仍是拥有专属动态容器的 Anchor。
+    #[cfg(feature = "navigation")]
+    pub(crate) fn is_anchor_container_component(&self, id: ComponentId) -> bool {
+        // 仅接受当前树中可寻址的实际 Anchor 节点。
+        self.get(id)
+            // 不把任意同槽位组件误判为动态容器 owner。
+            .is_some_and(|node| node.component().as_any().is::<Anchor>())
+    }
+
+    // 为当前树中活跃的 Anchor owner 捕获并物化首次动态内容容器。
+    #[cfg(feature = "navigation")]
+    pub(crate) fn refresh_anchor_container_component(&mut self, id: ComponentId) -> bool {
+        // 停止或失败树不得再调用应用容器工厂。
+        if !self.accepts_coordination_work() {
+            // 保留既有运行时子树，等待受控 teardown。
+            return false;
+        }
+        // 已销毁或离场的 owner 不得重新签发动态捕获能力。
+        if self.get(id).is_none_or(|node| node.destroyed()) || self.is_pending_removal_subtree(id) {
+            // 陈旧 generation 与离场阶段均静默拒绝。
+            return false;
+        }
+        // 固定入口只接受当前树中实际存在的 Anchor owner。
+        if !self.is_anchor_container_component(id) {
+            // 非 Anchor 或陈旧 id 不能触发任何结构更新。
+            return false;
+        }
+        // 先寻找包括 pending leave 在内的既有固定动态容器。
+        let existing = self.get(id).and_then(|node| {
+            // 只从 Anchor 的直接 children 判断当前容器物化状态。
+            node.children().iter().copied().find(|child_id| {
+                // 以框架唯一 key 匹配，不根据顺序或类型猜测。
+                self.get(*child_id).and_then(|child| child.key())
+                    == Some(Anchor::CONTAINER_CHILD_KEY)
+            })
+        });
+        // 在任何用户工厂调用前读取 live Anchor 的容器需求。
+        let needs_container = self
+            // 读取已经通过 owner 类型检查的实际节点。
+            .get(id)
+            // 恢复具体 Anchor 以查询声明开关与工厂是否同时存在。
+            .and_then(|node| node.component().as_any().downcast_ref::<Anchor>())
+            // 只有完整声明才需要保留或首次创建动态容器。
+            .is_some_and(Anchor::needs_container_view);
+        // 禁用或缺少工厂时只移除旧框架容器，不执行应用代码。
+        if !needs_container {
+            // 有旧容器才建立窄动态删除事务。
+            return existing
+                .is_some_and(|child_id| ViewAdapter::remove_dynamic_child(self, id, child_id));
+        }
+        // 已物化同 key 容器只需恢复可能中的离场，不重复执行工厂。
+        if let Some(child_id) = existing {
+            // 恢复既有状态、Effect 与动画所有权，避免空刷新替换已提交实例。
+            return ViewAdapter::cancel_dynamic_child_removal(self, id, child_id);
+        }
+        // 为已经确认活跃的实际 Anchor owner 签发树私有捕获能力。
+        let capture_context = ViewAdapter::dynamic_capture_context(self, id);
+        // 在 owner 自身 ProviderContext 中读取并捕获当前容器工厂。
+        let container = self.get(id).and_then(|node| {
+            // 克隆声明期上下文，避免工厂读取错误的 provider 作用域。
+            let provider_context = node.provider_context().clone();
+            // 在原 Anchor 的 provider 可见范围内执行用户工厂。
+            with_provider_context(&provider_context, || {
+                // 已验证类型仍使用可选 downcast 抵御同步重入。
+                node.component()
+                    // 不向树外泄漏 Anchor 的具体实现。
+                    .as_any()
+                    // 只让当前 live Anchor 调用其私有工厂。
+                    .downcast_ref::<Anchor>()?
+                    // 捕获完整 View 输出及其延迟提交 receipt。
+                    .container_view_for_reconcile(&capture_context)
+            })
+        });
+        // 签发后若 owner 因重入失效则安全拒绝，不发布半捕获输出。
+        let Some(container) = container else {
+            // 捕获节点离开作用域时自动回滚未提交 receipt。
+            return false;
+        };
+        // 通过 receipt 感知的追加事务物化首次完整动态子树。
+        ViewAdapter::append_dynamic_child(self, id, container)
+    }
+
+    // 在父声明协调完成 live Anchor patch 后，将 authored children 与当前动态容器原子协调。
+    #[cfg(feature = "navigation")]
+    pub(crate) fn reconcile_anchor_container_component(
+        // 借用目标运行时树以执行同一嵌套事务。
+        &mut self,
+        // 接收已经完成 live Anchor 原位同步的真实组件身份。
+        id: ComponentId,
+        // 接收当前父声明提供的全部 authored 直接子节点。
+        mut authored_children: Vec<crate::ui::view::ViewNode>,
+        // 返回运行时直接子节点结构是否发生改变。
+    ) -> bool {
+        // 停止或失败树不能消费 authored 或动态声明输出。
+        if !self.accepts_coordination_work() {
+            // 声明节点离开作用域时自动回滚未提交 receipt。
+            return false;
+        }
+        // 销毁、离场或陈旧 owner 不能重建动态容器。
+        if self.get(id).is_none_or(|node| node.destroyed()) || self.is_pending_removal_subtree(id) {
+            // 保留旧树，避免迟到协调破坏离场生命周期。
+            return false;
+        }
+        // 重新确认当前槽位仍属于 live Anchor，防止错误状态命名空间接管。
+        if !self.is_anchor_container_component(id) {
+            // 安全拒绝本轮过期父协调。
+            return false;
+        }
+        // authored children 不得抢占框架固定 key，避免与动态容器身份混淆。
+        assert!(
+            // 仅检查直接子节点，因为 keyed 协调身份只在同一父级下生效。
+            authored_children
+                .iter()
+                // 读取声明根的显式 key。
+                .all(|child| child.key.as_deref() != Some(Anchor::CONTAINER_CHILD_KEY)),
+            // 明确拒绝会让用户节点被误复用为框架容器的声明。
+            "Anchor authored child 不得使用保留 key uix:anchor:container"
+        );
+        // 在 live Anchor 已同步的最新 provider 作用域内签发固定 owner 的捕获能力。
+        let capture_context = ViewAdapter::dynamic_capture_context(self, id);
+        // 只从 live Anchor 读取刚完成 patch 的最新工厂，不借用旧声明 widget。
+        let container = self.get(id).and_then(|node| {
+            // 克隆 live 节点的 provider 上下文供工厂同步执行。
+            let provider_context = node.provider_context().clone();
+            // 让捕获沿用 Anchor 声明期可见的 provider 值。
+            with_provider_context(&provider_context, || {
+                // 使用可选 downcast 抵御用户工厂触发的同步重入。
+                node.component()
+                    // 保持具体组件访问仅在树私有协调器内。
+                    .as_any()
+                    // 只调用 live Anchor 保存的最新容器工厂。
+                    .downcast_ref::<Anchor>()?
+                    // 捕获当前动态容器完整 State、Effect、动画和 receipt。
+                    .container_view_for_reconcile(&capture_context)
+            })
+        });
+        // 启用时将固定框架容器追加到 authored 声明，随后一次性 keyed 协调。
+        if let Some(container) = container {
+            // 容器固定排在 authored children 后，保持用户声明的相对顺序。
+            authored_children.push(container);
+        }
+        // 禁用时不追加容器，协调器会只删除旧固定动态 child 并保留 authored children。
+        ViewAdapter::reconcile_dynamic_children(self, id, authored_children)
+    }
+
     pub(crate) fn is_calendar_cell_component(&self, id: ComponentId) -> bool {
         self.get(id).is_some_and(|node| {
             node.component()

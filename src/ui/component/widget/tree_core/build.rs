@@ -80,6 +80,10 @@ impl WidgetTree {
         if include_view_children {
             // 此时 root 已注册为真实 owner，动态捕获可以安全绑定树私有 store。
             self.refresh_calendar_cell_component(id);
+            // 导航 capability 启用时也物化 root Anchor 的首次动态容器。
+            #[cfg(feature = "navigation")]
+            // 此时 root 已是 live owner，捕获能力绑定本树私有状态存储。
+            self.refresh_anchor_container_component(id);
         }
         self.push_layout_invalidation(id);
         id
@@ -144,6 +148,10 @@ impl WidgetTree {
         if include_view_children {
             // 此时 child 已连接父树，动态捕获与离场判断均使用真实 owner。
             self.refresh_calendar_cell_component(child_id);
+            // 导航 capability 启用时也物化直接追加 Anchor 的首次动态容器。
+            #[cfg(feature = "navigation")]
+            // 此时 child 已连接父树，捕获与离场检查使用真实 owner。
+            self.refresh_anchor_container_component(child_id);
         }
 
         // 结构变化：Layout 失效向上传播。
@@ -311,6 +319,20 @@ impl WidgetTree {
         }
         self.render_handler_table
             .replace_component(id, render_handlers);
+        // 导航 capability 启用时拒绝初建 authored child 占用 Anchor 容器保留 key。
+        #[cfg(feature = "navigation")]
+        assert!(
+            // 非 Anchor 节点不受该专属动态容器身份约束。
+            !self.is_anchor_container_component(id)
+                // Anchor 的声明直接子节点不得伪装为框架动态容器。
+                || children.iter().all(|child| {
+                    // 只比较同一父级 keyed 协调使用的直接根 key。
+                    child.key.as_deref()
+                        != Some(crate::ui::widgets::navigation::Anchor::CONTAINER_CHILD_KEY)
+                }),
+            // 让初建与父级 reconcile 使用同一明确的失败语义。
+            "Anchor authored child 不得使用保留 key uix:anchor:container"
+        );
         for child in children {
             self.build_node(child, Some(id));
         }
@@ -327,6 +349,10 @@ impl WidgetTree {
         self.refresh_select_option_component(id);
         // Calendar 注册为真实 owner 后立即物化日期格，避免初建路径绕过动态状态捕获。
         self.refresh_calendar_cell_component(id);
+        // 导航 capability 启用时在 authored children 挂载后物化 Anchor 动态容器。
+        #[cfg(feature = "navigation")]
+        // 初建路径使用窄追加，绝不以仅含容器的 reconcile 吞掉 authored children。
+        self.refresh_anchor_container_component(id);
         // 节点及其所有递归子树成功建立后，才提交该节点捕获的动画源所有权。
         self.replace_node_animated_sources(id, animated_sources);
         id
