@@ -23,12 +23,15 @@ Demo 一致地在 8MB 大栈 UI 线程上运行，承载声明文件展开出的
   六类内置组件（见覆盖清单页）。
 - 声明式状态：12 个页面各自声明为 `<Component>`；双向绑定（输入、勾选、选择、日期、
   分页、步骤、受控 Modal / Drawer）直接使用组件私有 state 与 `setState`，类型化
-  state 注解（`u32` / `usize` / `f32` / `i32`）覆盖评分、步骤与滚动位置等场景。
+  state 注解覆盖基础类型（`u32` / `usize` / `f32` / `i32`）、语义类型（Date / Time /
+  Color / Point / CascaderValue / HashSet&lt;String&gt;）与 record 模型。
 - 类型化数据（SelectOption、CascaderOption、TreeNode、TimelineItem、DescriptionsItem、
-  BreadcrumbItem、AnchorItem、Step）由 Rust 侧构造并通过表达式引用；数据属性按值
-  clone 消费，同一绑定可被多个标签复用。
+  BreadcrumbItem、AnchorItem、Step）由语言面数据构造链直接声明：`SelectOption('中国', 'cn')`、
+  `CascaderOption('浙江', 'zj').children([...])`、`Step('注册').status('finish')`；数组字面量
+  `['female', 'male']` 编译为 vec，同一数据绑定可被多个标签按值 clone 复用。
 - 语言能力：props（String / number / bool / State<T> / 回调签名）、样式类继承与内联
-  style、If / For 控制流、setTheme 内置操作（真实调用 `AppHandle::set_theme`）。
+  style、If / For 控制流、setTheme 框架内置操作（主题请求通道，无调用方桥接）、
+  `<Record>` 类型化业务模型（`uix_items!` 生成模块级结构体供 Rust 侧回调引用）。
 - 图表、表格、菜单、标签页、Transfer、Upload、Badge、Collapse、SelectableList、
   Message / Notification / ProgressBar / Popconfirm 等尚未登记的标签保留 Rust API
   边界，并在界面中明确说明。
@@ -39,8 +42,11 @@ Demo 一致地在 8MB 大栈 UI 线程上运行，承载声明文件展开出的
 `uix!` 当前生成 `ViewNode`，不启动应用。目标设计中的 `<App>` 根标签尚未作为可运行入口，
 因此本项目由 Rust 薄入口组装 `App`，没有引入运行时解释器或第二套窗口所有者。
 
-Rust 侧只保留三类内容：窗口生命周期状态（页面、计数与秒级 tick）、语言面无法初始化的
-类型化状态（集合、日期、时间、颜色与表单模型），以及由 Rust 构造的类型化演示数据。
+Rust 侧只保留三类内容：窗口生命周期状态（页面、计数与秒级 tick）与 App 组合根，以及
+由 Rust 构造的私有类型演示数据（VirtualScroll 的 DemoRow 行）。类型化状态（集合、级联
+路径、日期、时间、颜色、滚动位置与表单模型）全部由语言面组件私有 state 声明；表单
+业务模型由 `<Record>` 声明并经 `uix_items!` 生成模块级结构体，Rust 侧 `submit_profile`
+直接引用该类型。
 
 根视图背景：`uix!` 生成的普通 `ViewNode` 仍保持透明语义；当它作为窗口根 View 且没有显式
 背景时，`App` 组合根会应用当前主题的 `BgLayout` 默认值。调用方显式设置的背景（包括透明色）

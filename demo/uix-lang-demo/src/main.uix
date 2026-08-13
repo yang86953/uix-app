@@ -14,6 +14,9 @@ accentPanel {
   borderColor: #1677FF;
 }
 
+// 声明语言面类型化业务模型：Form 演示的提交载荷与 Rust 侧回调共享同一类型。
+<Record name="Profile" fields="email: String, level: String, accepted: bool, channel: String, notifications: bool, volume: number" />
+
 // 声明页头标题组件，由共享 page 状态驱动条件标题。
 <Component name="PageTitle" props="page: State<number>">
   // 显示首页标题。
@@ -189,7 +192,7 @@ accentPanel {
         // 结束主题操作。
         </Container>
         // 说明内置操作的真实调用路径。
-        <Text fontSize="small">setTheme 内置操作调用 Rust 侧 AppHandle::set_theme，palette-only 广播重绘。</Text>
+        <Text fontSize="small">setTheme 是框架内置操作，生成主题请求通道调用；App 组合根在窗口循环内注册请求器并复用 runtime.set_theme 通道。</Text>
       // 结束主题内容。
       </Column>
     // 结束主题卡片。
@@ -371,7 +374,7 @@ accentPanel {
 </Component>
 
 // 声明布局组件页组件：持有吸顶演示的滚动位置状态。
-<Component name="LayoutPage" state="scroll_y: f32 = 180">
+<Component name="LayoutPage" state="scroll_y: f32 = 180, scroll_point: Point = Point(0.0, 0.0)">
   // 组织布局组件内容。
   <Column gap="16px">
     // 展示布局组件标题。
@@ -574,9 +577,9 @@ accentPanel {
         // 展示面板小节标题。
         <Text fontSize="heading5">Steps / Pagination</Text>
         // 展示水平步骤条。
-        <Steps current={steps_current} items={steps_items} />
+        <Steps current={steps_current} items={[Step('注册').status('finish'), Step('验证').status('process'), Step('完成').status('wait')]} />
         // 展示垂直步骤条，同一数据绑定被两个标签按值 clone 消费。
-        <Steps current={steps_current} items={steps_items} direction="vertical" />
+        <Steps current={steps_current} items={[Step('注册').status('finish'), Step('验证').status('process'), Step('完成').status('wait')]} direction="vertical" />
         // 通过 setState 更新类型化 usize 步骤状态。
         <Container direction="row" gap="8px">
           // 跳回第一步。
@@ -598,9 +601,9 @@ accentPanel {
         // 展示面板小节标题。
         <Text fontSize="heading5">Breadcrumb / Anchor</Text>
         // 展示末项激活面包屑。
-        <Breadcrumb items={breadcrumb_items} />
+        <Breadcrumb items={[BreadcrumbItem('首页'), BreadcrumbItem('组件'), BreadcrumbItem('导航').active()]} />
         // 展示带偏移与 href 事件的锚点导航。
-        <Anchor items={anchor_items} offsetTop="24" @change="on_anchor_change($event)" />
+        <Anchor items={[AnchorItem('基础', '#basic'), AnchorItem('高级', '#advanced'), AnchorItem('API', '#api')]} offsetTop="24" @change="on_anchor_change($event)" />
       // 结束面包屑内容。
       </Column>
     // 结束面包屑与锚点面板。
@@ -613,7 +616,7 @@ accentPanel {
 </Component>
 
 // 声明输入组件页组件：全部双向绑定控件都由组件私有 state 驱动。
-<Component name="InputPage" state="input_name: 'UIX Lang', input_number: i32 = 50, grouped_amount: '12.50', slider_volume: 35, range_start: 20, range_end: 80, rating: u32 = 7, gender: 'female', view_mode: 'grid', city: 'cn', tree_key: 'member', query: 'ap', mention_text: '请联系 @a', switch_enabled: false, checkbox_accepted: true">
+<Component name="InputPage" state="input_name: 'UIX Lang', input_number: i32 = 50, grouped_amount: '12.50', slider_volume: 35, range_start: 20, range_end: 80, rating: u32 = 7, gender: 'female', view_mode: 'grid', city: 'cn', tree_key: 'member', query: 'ap', mention_text: '请联系 @a', switch_enabled: false, checkbox_accepted: true, cities: HashSet<String> = [], region: CascaderValue = { labels: [], values: [] }, selected_date: Date = Date(2026, 8, 10), range_start_date: Date = Date(2026, 8, 1), range_end_date: Date = Date(2026, 8, 31), selected_time: Time = Time(14, 30), selected_color: Color = Color('#1677ff'), profile: Profile = { email: 'owner@example.com', level: '中级', accepted: true, channel: '邮件', notifications: true, volume: 35.0 }">
   // 组织输入组件内容。
   <Column gap="16px">
     // 展示输入组件标题。
@@ -675,9 +678,9 @@ accentPanel {
         // 结束勾选控件行。
         </Container>
         // 展示双向单选组。
-        <Radio value={gender} options={gender_options} width="320px" />
+        <Radio value={gender} options={['female', 'male']} width="320px" />
         // 展示双向分段控制器。
-        <Segmented value={view_mode} options={view_options} width="240px" />
+        <Segmented value={view_mode} options={['grid', 'list']} width="240px" />
       // 结束勾选内容。
       </Column>
     // 结束勾选输入面板。
@@ -691,19 +694,19 @@ accentPanel {
         // 排列单选与多选下拉，共享同一结构化选项绑定。
         <Container direction="row" gap="12px" align="center">
           // 展示可搜索单选下拉。
-          <Select value={city} options={city_options} searchable placeholder="请选择城市" width="200px" />
+          <Select value={city} options={[SelectOption('中国', 'cn'), SelectOption('美国', 'us'), SelectOption('日本', 'jp')]} searchable placeholder="请选择城市" width="200px" />
           // 展示集合状态多选下拉。
-          <Select value={cities} options={city_options} multiple width="200px" />
+          <Select value={cities} options={[SelectOption('中国', 'cn'), SelectOption('美国', 'us'), SelectOption('日本', 'jp')]} multiple width="200px" />
         // 结束下拉行。
         </Container>
         // 展示级联选择器。
-        <Cascader value={region} options={region_options} width="240px" />
+        <Cascader value={region} options={[CascaderOption('浙江', 'zj').children([CascaderOption('杭州', 'hz'), CascaderOption('宁波', 'nb')]), CascaderOption('江苏', 'js').children([CascaderOption('南京', 'nj')])]} width="240px" />
         // 展示树形选择器，与展示树共享同一节点绑定。
-        <TreeSelect value={tree_key} options={tree_nodes} width="240px" />
+        <TreeSelect value={tree_key} options={[TreeNode('部门', 'dept').children([TreeNode('成员', 'member'), TreeNode('访客', 'guest')]), TreeNode('项目', 'project')]} width="240px" />
         // 展示自动完成输入。
-        <AutoComplete value={query} options={suggestions} placeholder="输入城市..." width="240px" />
+        <AutoComplete value={query} options={['apple', 'apricot', 'application']} placeholder="输入城市..." width="240px" />
         // 展示提及输入。
-        <Mentions value={mention_text} suggestions={mention_suggestions} placeholder="输入 @ 提及" width="240px" />
+        <Mentions value={mention_text} suggestions={['alice', 'adam']} placeholder="输入 @ 提及" width="240px" />
       // 结束选择器内容。
       </Column>
     // 结束选择器面板。
@@ -741,11 +744,11 @@ accentPanel {
           // 展示必填邮箱字段。
           <FormInputItem field="email" label="邮箱" rules="required,email" />
           // 展示可搜索等级选择字段。
-          <FormSelectItem field="level" label="等级" options={level_options} rules="required" searchable placeholder="请选择" />
+          <FormSelectItem field="level" label="等级" options={['初级', '中级', '高级']} rules="required" searchable placeholder="请选择" />
           // 展示协议确认字段。
           <FormCheckboxItem field="accepted" label="协议确认" text="我已阅读并同意" rules="required" />
           // 展示通知渠道单选字段。
-          <FormRadioItem field="channel" label="通知渠道" options={channel_options} rules="required" vertical />
+          <FormRadioItem field="channel" label="通知渠道" options={['邮件', '短信']} rules="required" vertical />
           // 展示通知开关字段。
           <FormSwitchItem field="notifications" label="启用通知" rules="required" />
           // 展示音量滑块字段。
@@ -776,15 +779,15 @@ accentPanel {
         // 展示面板小节标题。
         <Text fontSize="heading5">Card / List / Descriptions</Text>
         // 展示带操作项的卡片。
-        <Card title="卡片" actions={card_actions} width="320px">
+        <Card title="卡片" actions={['编辑', '删除']} width="320px">
           // 说明卡片承载能力。
           <Text>Card 可承载异质有序子树。</Text>
         // 结束操作卡片。
         </Card>
         // 展示带头尾文本的数据列表。
-        <List data={list_items} header="用户列表" footer="共 3 人" loadMore="加载更多" width="320px" />
+        <List data={['视觉基线', '语义断言', '交互回归']} header="用户列表" footer="共 3 人" loadMore="加载更多" width="320px" />
         // 展示三列描述列表。
-        <Descriptions data={description_items} columns="2" width="480px" />
+        <Descriptions data={[DescriptionsItem('姓名', 'Ada'), DescriptionsItem('角色', '管理员'), DescriptionsItem('邮箱', 'ada@ex.com')]} columns="2" width="480px" />
       // 结束卡片列表内容。
       </Column>
     // 结束卡片列表面板。
@@ -796,9 +799,9 @@ accentPanel {
         // 展示面板小节标题。
         <Text fontSize="heading5">Timeline / Tree / Carousel</Text>
         // 展示带 pending 与 reverse 的时间轴。
-        <Timeline items={timeline_items} pending reverse />
+        <Timeline items={[TimelineItem('创建').description('2026-08-01'), TimelineItem('设计').description('2026-08-05'), TimelineItem('上线').description('2026-08-10')]} pending reverse />
         // 展示可勾选默认展开的树。
-        <Tree data={tree_nodes} checkable defaultExpandAll width="320px" />
+        <Tree data={[TreeNode('部门', 'dept').children([TreeNode('成员', 'member'), TreeNode('访客', 'guest')]), TreeNode('项目', 'project')]} checkable defaultExpandAll width="320px" />
         // 展示自动播放轮播器。
         <Carousel autoplay height="120px" width="320px">
           // 展示第一张幻灯片。
@@ -828,7 +831,7 @@ accentPanel {
           // 展示带预览与回退文字的图片。
           <Image src="assets/images/demo.png" alt="demo" fallback="图片加载失败" width="120px" height="84px" radius="8px" preview />
           // 展示带变化事件的图片组。
-          <ImageGroup images={gallery_images} startIndex="0" @change="on_gallery_change($event)" width="280px" />
+          <ImageGroup images={['assets/images/demo.png', 'assets/images/demo.png']} startIndex="0" @change="on_gallery_change($event)" width="280px" />
         // 结束媒体组件行。
         </Container>
       // 结束媒体内容。
@@ -1183,7 +1186,9 @@ accentPanel {
         // 展示语言能力小节。
         <Text fontSize="heading5">语言能力</Text>
         // 说明组件与状态能力。
-        <Text>组件：props / 私有 state / 类型化 state（u32、usize、f32、i32）/ setState / 句柄位绑定 / If / For / 样式类继承 / setTheme。</Text>
+        <Text>组件：props / 私有 state / 类型化 state（u32、usize、f32、i32、Date、Time、Color、Point、CascaderValue、HashSet）/ setState / 句柄位绑定 / If / For / 样式类继承 / setTheme。</Text>
+        // 说明数据声明能力。
+        <Text>数据：数组字面量 / 十二类数据类型构造链（SelectOption、CascaderOption、TreeNode、TimelineItem、Step、DescriptionsItem、BreadcrumbItem、AnchorItem、Date、Time、Color、Point）/ Record 类型化业务模型。</Text>
         // 展示保留边界小节。
         <Text fontSize="heading5">保留边界</Text>
         // 说明保留在 Rust API 的边界。
