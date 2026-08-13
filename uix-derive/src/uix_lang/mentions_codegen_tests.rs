@@ -23,7 +23,7 @@ fn generates_bound_mentions_contract() {
     // 提及候选必须映射到运行时 options 构建器。
     let suggestions = snapshot
         // 查找公开候选构建入口。
-        .find("options (members)")
+        .find("options ((members) . clone ())")
         // 失败时输出完整令牌便于定位格式漂移。
         .unwrap_or_else(|| panic!("应生成 Mentions 候选映射：{snapshot}"));
     // 完整文本状态必须借用给运行时绑定入口。

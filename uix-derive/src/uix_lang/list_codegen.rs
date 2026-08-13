@@ -41,7 +41,7 @@ pub(crate) fn generate_list(element: &Element) -> Result<TokenStream, Diagnostic
     let data = generate_expression(&data_expression.expression, None)?;
     // 把数组或 Vec 的文本项统一收集为运行时拥有的 Vec<String>。
     let items = quote! {
-        ::std::iter::IntoIterator::into_iter(#data)
+        ::std::iter::IntoIterator::into_iter((#data).clone())
             .map(::std::convert::Into::into)
             .collect::<::std::vec::Vec<::std::string::String>>()
     };

@@ -1,8 +1,8 @@
 # UIX Lang Demo
 
 这个项目展示与 API GUI Demo 对齐的 uix-lang 多页入口：`src/main.uix` 声明 1200×800
-应用外壳、12 个公开页面入口、组件私有状态与事件，`src/main.rs` 在编译期调用公开
-`uix!` 宏，并继续持有应用与窗口生命周期。
+应用外壳、12 个页面组件、组件私有状态与全部已注册内置标签；`src/main.rs` 在编译期
+调用公开 `uix!` 宏，并继续持有应用与窗口生命周期。
 
 ## 运行
 
@@ -12,19 +12,35 @@
 cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo
 ```
 
-Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。
+Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。Windows 入口与 API GUI
+Demo 一致地在 8MB 大栈 UI 线程上运行，承载声明文件展开出的深层 ViewNode 树。
 
 ## 对齐范围
 
-- 对齐自定义标题栏、分组侧边栏、页头、滚动内容区、状态栏与公开页面分类。
-- 对齐 API GUI Demo 的公开组件 feature；已注册标签直接在 `.uix` 中展示。
-- 图表、表格等尚未登记的 uix-lang 标签保留 Rust API 边界，并在界面中明确说明。
+- 对齐自定义标题栏、分组侧边栏（入门 / 组件 / 参考）、页头、滚动内容区、状态栏与
+  12 个公开页面入口；页头显示 `run_interval` 驱动的 live tick。
+- 已注册标签全部在 `.uix` 中展示：通用、布局、输入、数据展示、反馈、导航与框架
+  六类内置组件（见覆盖清单页）。
+- 声明式状态：12 个页面各自声明为 `<Component>`；双向绑定（输入、勾选、选择、日期、
+  分页、步骤、受控 Modal / Drawer）直接使用组件私有 state 与 `setState`，类型化
+  state 注解（`u32` / `usize` / `f32` / `i32`）覆盖评分、步骤与滚动位置等场景。
+- 类型化数据（SelectOption、CascaderOption、TreeNode、TimelineItem、DescriptionsItem、
+  BreadcrumbItem、AnchorItem、Step）由 Rust 侧构造并通过表达式引用；数据属性按值
+  clone 消费，同一绑定可被多个标签复用。
+- 语言能力：props（String / number / bool / State<T> / 回调签名）、样式类继承与内联
+  style、If / For 控制流、setTheme 内置操作（真实调用 `AppHandle::set_theme`）。
+- 图表、表格、菜单、标签页、Transfer、Upload、Badge、Collapse、SelectableList、
+  Message / Notification / ProgressBar / Popconfirm 等尚未登记的标签保留 Rust API
+  边界，并在界面中明确说明。
 - Agent 控制与 test-harness 是 API Demo 的测试入口，不复制到声明式产品界面。
 
 ## 当前边界
 
 `uix!` 当前生成 `ViewNode`，不启动应用。目标设计中的 `<App>` 根标签尚未作为可运行入口，
 因此本项目由 Rust 薄入口组装 `App`，没有引入运行时解释器或第二套窗口所有者。
+
+Rust 侧只保留三类内容：窗口生命周期状态（页面、计数与秒级 tick）、语言面无法初始化的
+类型化状态（集合、日期、时间、颜色与表单模型），以及由 Rust 构造的类型化演示数据。
 
 根视图背景：`uix!` 生成的普通 `ViewNode` 仍保持透明语义；当它作为窗口根 View 且没有显式
 背景时，`App` 组合根会应用当前主题的 `BgLayout` 默认值。调用方显式设置的背景（包括透明色）

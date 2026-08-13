@@ -44,7 +44,7 @@ pub(crate) fn generate_anchor(element: &Element) -> Result<TokenStream, Diagnost
     let items = generate_expression(&items_expression.expression, None)?;
     // 把数组或 Vec 统一收集为运行时构造器要求的拥有型集合。
     let anchor_items = quote! {
-        ::std::iter::IntoIterator::into_iter(#items)
+        ::std::iter::IntoIterator::into_iter((#items).clone())
             .collect::<::std::vec::Vec<::uix::prelude::AnchorItem>>()
     };
 

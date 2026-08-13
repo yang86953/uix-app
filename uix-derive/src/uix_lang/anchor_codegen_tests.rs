@@ -20,7 +20,7 @@ fn generates_anchor_contract() {
     // 合法 Anchor 必须成功生成。
     .expect("文档属性应映射到公开 Anchor API");
     // 数据表达式必须通过拥有权 IntoIterator 统一收集。
-    assert!(snapshot.contains("IntoIterator :: into_iter (anchor_items)"));
+    assert!(snapshot.contains("IntoIterator :: into_iter ((anchor_items) . clone ())"));
     // 收集目标必须锁定公开 AnchorItem 类型。
     assert!(snapshot.contains("Vec < :: uix :: prelude :: AnchorItem >"));
     // 组件必须通过公开构造器取得条目所有权。

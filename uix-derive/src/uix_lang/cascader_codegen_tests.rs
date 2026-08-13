@@ -21,7 +21,7 @@ fn generates_bound_cascader_contract() {
     // 构造器必须直接接收选项树表达式和空占位默认值。
     let constructor = snapshot
         // 查找公开构造器与数据引用。
-        .find("Cascader :: new (region_options , \"\")")
+        .find("Cascader :: new ((region_options) . clone () , \"\")")
         // 失败时输出完整令牌便于定位格式漂移。
         .unwrap_or_else(|| panic!("应生成 Cascader 选项树构造器：{snapshot}"));
     // 状态绑定必须借用 State<CascaderValue> 句柄。

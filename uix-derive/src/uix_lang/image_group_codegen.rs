@@ -44,7 +44,7 @@ pub(crate) fn generate_image_group(element: &Element) -> Result<TokenStream, Dia
     let images_expression = generate_expression(&images_expression.expression, None)?;
     // 把数组或 Vec 的字符串项统一收集为运行时拥有的 Vec<String>。
     let images = quote! {
-        ::std::iter::IntoIterator::into_iter(#images_expression)
+        ::std::iter::IntoIterator::into_iter((#images_expression).clone())
             .map(::std::convert::Into::into)
             .collect::<::std::vec::Vec<::std::string::String>>()
     };

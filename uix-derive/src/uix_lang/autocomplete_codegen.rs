@@ -59,7 +59,7 @@ pub(crate) fn generate_autocomplete(element: &Element) -> Result<TokenStream, Di
     // 运行时先接收候选，再绑定输入文本状态。
     let mut widget = quote! {
         ::uix::prelude::AutoComplete::new()
-            .options(#options)
+            .options((#options).clone())
             .bind_value(&(#state))
     };
     // 可选占位文本支持字符串字面量与受限表达式。

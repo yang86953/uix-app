@@ -16,8 +16,8 @@ demo/
 │   ├── Cargo.toml      # package/bin: uix-lang-demo
 │   ├── README.md       # 运行方式与 Rust/uix-lang 边界
 │   └── src/
-│       ├── main.rs     # Rust 应用组合根与窗口生命周期
-│       └── main.uix    # uix-lang 界面、私有状态与事件
+│       ├── main.rs     # Rust 应用组合根：窗口生命周期、类型化数据与语言面之外的状态
+│       └── main.uix    # uix-lang 界面：12 个页面组件、全部已注册标签、私有状态与事件
 └── cli-demo/           # CLI 功能域演示
     ├── Cargo.toml      # package/bin: uix-cli-demo
     └── src/
@@ -30,7 +30,7 @@ demo/
 | 模式 | 命令 | 说明 |
 |------|------|------|
 | **GUI（默认）** | `cargo run --manifest-path demo/Cargo.toml --bin uix-demo` | 12 页多页应用：80+ Widget + App / Provider 能力全景 |
-| **uix-lang GUI** | `cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo` | `.uix` 文件入口、组件私有状态与点击事件 |
+| **uix-lang GUI** | `cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo` | `.uix` 文件入口、12 个页面组件、私有/类型化状态与全部已注册标签 |
 | **GUI + 系统主题** | `... --bin uix-demo -- --follow-system-theme` | 显式 opt-in 系统主题初始值与 live 变化 |
 | **图形恢复测试支撑** | `... --features test-harness --bin uix-demo -- --test-graphics-recovery` | 供自动测试注入下一次真实绘制帧 typed 失败并检查恢复后交互 |
 | **组件真窗测试支撑** | `... --features "test-harness agent-control" --bin uix-demo -- --test-components` | 供自动测试隔离展示当前公开组件及适用状态 |

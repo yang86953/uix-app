@@ -27,7 +27,7 @@ fn generates_bound_radio_contract() {
     // 选项表达式必须进入公开 options 构建器。
     let options = snapshot
         // 查找数据引用。
-        .find("options (gender_options)")
+        .find("options ((gender_options) . clone ())")
         // 失败表示选项数据未保留。
         .expect("应生成 Radio 选项表达式");
     // 状态绑定必须借用 State<String> 句柄。

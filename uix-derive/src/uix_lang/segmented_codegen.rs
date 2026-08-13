@@ -58,7 +58,7 @@ pub(crate) fn generate_segmented(element: &Element) -> Result<TokenStream, Diagn
 
     // 构造器直接接收选项，再绑定状态以同步当前选中值。
     let widget = quote! {
-        ::uix::prelude::Segmented::new(#options)
+        ::uix::prelude::Segmented::new((#options).clone())
             .value(&(#state))
     };
     // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。

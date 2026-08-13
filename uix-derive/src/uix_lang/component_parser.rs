@@ -215,6 +215,16 @@ fn parse_states(source: &str, span: SourceSpan) -> Result<Vec<ComponentState>, D
         let initial = if initial_source == "[]" {
             // 保存空数组事实。
             ComponentStateInitial::EmptyArray
+        } else if let Some((value_type, typed_source)) =
+            split_typed_state_initial(initial_source, span)?
+        {
+            // 保存带显式类型注解的初始值表达式。
+            ComponentStateInitial::TypedExpression(
+                // 保存白名单状态类型。
+                value_type,
+                // 使用受限表达式语法验证类型化初始值。
+                parse_expression(typed_source, span)?,
+            )
         } else {
             // 使用受限表达式语法验证普通初始值。
             ComponentStateInitial::Expression(parse_expression(initial_source, span)?)
@@ -320,6 +330,78 @@ fn parse_value_type(source: &str) -> Option<ComponentValueType> {
         // 其他名称不在白名单。
         _ => None,
     }
+}
+
+// 识别 state 声明中可选的 `Type = initial` 类型注解前缀。
+// 返回类型与剩余初始值源码；没有独立等号时保持普通表达式语义。
+fn split_typed_state_initial(
+    source: &str,
+    span: SourceSpan,
+) -> Result<Option<(ComponentValueType, &str)>, Diagnostic> {
+    // 读取 UTF-8 字节以扫描等号位置。
+    let bytes = source.as_bytes();
+    // 寻找不与相邻等号组成比较运算符的独立分隔等号。
+    let separator = (0..bytes.len()).find(|&index| {
+        // 当前字符必须是等号。
+        bytes[index] == b'='
+            // 前一字符不能是等号，排除 ==。
+            && index.checked_sub(1).is_none_or(|previous| bytes[previous] != b'=')
+            // 后一字符不能是等号，排除 ==。
+            && bytes.get(index + 1).is_none_or(|next| *next != b'=')
+    });
+    // 没有独立等号时保持普通表达式语义。
+    let Some(separator) = separator else {
+        // 返回未识别注解。
+        return Ok(None);
+    };
+    // 等号左侧必须是普通类型名。
+    let type_source = source[..separator].trim();
+    // 类型名必须是 ASCII 标识符形状。
+    let is_identifier = !type_source.is_empty()
+        && type_source
+            .chars()
+            .enumerate()
+            .all(|(position, character)| {
+                // 首字符允许字母或下划线。
+                if position == 0 {
+                    character.is_ascii_alphabetic() || character == '_'
+                } else {
+                    // 其余字符允许字母数字或下划线。
+                    character.is_ascii_alphanumeric() || character == '_'
+                }
+            });
+    // 左侧不是标识符时保持普通表达式语义，交给表达式解析器诊断。
+    if !is_identifier {
+        // 返回未识别注解。
+        return Ok(None);
+    }
+    // 按 state 专用白名单映射类型关键字。
+    let value_type = match type_source {
+        // 映射拥有所有权的字符串状态。
+        "String" => ComponentValueType::String,
+        // 映射 f64 数值状态。
+        "number" => ComponentValueType::Number,
+        // 映射布尔状态。
+        "bool" => ComponentValueType::Bool,
+        // 映射 u32 无符号计数状态。
+        "u32" => ComponentValueType::U32,
+        // 映射 usize 索引状态。
+        "usize" => ComponentValueType::USize,
+        // 映射 f32 单精度状态。
+        "f32" => ComponentValueType::F32,
+        // 映射 i32 有符号整数状态。
+        "i32" => ComponentValueType::I32,
+        // 未知类型名给出专用诊断。
+        _ => {
+            return Err(Diagnostic::new(
+                span,
+                format!("不支持 state 类型 {type_source:?}"),
+                "使用 String、number、bool、u32、usize、f32 或 i32",
+            ))
+        }
+    };
+    // 返回类型与等号右侧的初始值源码。
+    Ok(Some((value_type, source[separator + 1..].trim())))
 }
 
 // 构造统一非法 prop 类型诊断。

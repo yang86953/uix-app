@@ -23,6 +23,8 @@ impl ComponentExpander {
         bindings: &Bindings,
         // 标记当前位置是否允许状态更新。
         allow_set_state: bool,
+        // 标记句柄位属性：State 字段改写为句柄而非读值。
+        handle_mode: bool,
     ) -> Result<(), Diagnostic> {
         // 先识别需要替换整个节点的 setState 调用。
         let is_set_state = matches!(
@@ -100,21 +102,39 @@ impl ComponentExpander {
             ExpressionKind::Identifier(name) => {
                 // 查找同名组件字段。
                 if let Some(binding) = bindings.get(name) {
-                    // 替换为局部值名称。
-                    *name = binding.value_name.clone();
+                    // 句柄位属性读取可写 State 句柄本身。
+                    if handle_mode {
+                        // 句柄位只能接受 state 或 State<T> prop。
+                        let Some(state_name) = binding.state_name.as_deref() else {
+                            // 返回句柄位类型诊断。
+                            return Err(Diagnostic::new(
+                                // 指向非法引用。
+                                expression.span,
+                                // 说明只读字段不能提供句柄。
+                                format!("该句柄位属性不能引用只读 prop 或回调字段 {name}"),
+                                // 给出合法状态来源。
+                                "绑定组件私有 state、State<T> prop 或 Rust 侧 State<T>",
+                            ));
+                        };
+                        // 替换为 State 句柄名称。
+                        *name = state_name.to_string();
+                    } else {
+                        // 普通位置替换为读值名称。
+                        *name = binding.value_name.clone();
+                    }
                 }
             }
             // 一元表达式递归改写操作数。
             ExpressionKind::Unary { operand, .. } => {
                 // 改写内部操作数。
-                self.transform_expression(operand, bindings, allow_set_state)?;
+                self.transform_expression(operand, bindings, allow_set_state, handle_mode)?;
             }
             // 二元表达式递归改写两侧。
             ExpressionKind::Binary { left, right, .. } => {
                 // 改写左侧。
-                self.transform_expression(left, bindings, allow_set_state)?;
+                self.transform_expression(left, bindings, allow_set_state, handle_mode)?;
                 // 改写右侧。
-                self.transform_expression(right, bindings, allow_set_state)?;
+                self.transform_expression(right, bindings, allow_set_state, handle_mode)?;
             }
             // 三元表达式递归改写条件与分支。
             ExpressionKind::Ternary {
@@ -126,28 +146,28 @@ impl ComponentExpander {
                 else_branch,
             } => {
                 // 改写条件。
-                self.transform_expression(condition, bindings, allow_set_state)?;
+                self.transform_expression(condition, bindings, allow_set_state, handle_mode)?;
                 // 改写真分支。
-                self.transform_expression(then_branch, bindings, allow_set_state)?;
+                self.transform_expression(then_branch, bindings, allow_set_state, handle_mode)?;
                 // 改写假分支。
-                self.transform_expression(else_branch, bindings, allow_set_state)?;
+                self.transform_expression(else_branch, bindings, allow_set_state, handle_mode)?;
             }
             // 成员访问递归改写对象。
             ExpressionKind::Member { object, .. } => {
                 // 改写成员所属对象。
-                self.transform_expression(object, bindings, allow_set_state)?;
+                self.transform_expression(object, bindings, allow_set_state, handle_mode)?;
             }
             // 下标访问递归改写对象与索引。
             ExpressionKind::Index { object, index } => {
                 // 改写被索引对象。
-                self.transform_expression(object, bindings, allow_set_state)?;
+                self.transform_expression(object, bindings, allow_set_state, handle_mode)?;
                 // 改写索引表达式。
-                self.transform_expression(index, bindings, allow_set_state)?;
+                self.transform_expression(index, bindings, allow_set_state, handle_mode)?;
             }
             // 普通调用递归改写目标与参数。
             ExpressionKind::Call { callee, arguments } => {
                 // 改写调用目标。
-                self.transform_expression(callee, bindings, allow_set_state)?;
+                self.transform_expression(callee, bindings, allow_set_state, handle_mode)?;
                 // 按源码顺序改写参数值。
                 for argument in arguments {
                     // 改写当前参数表达式。
@@ -158,6 +178,8 @@ impl ComponentExpander {
                         bindings,
                         // 传递状态更新作用域。
                         allow_set_state,
+                        // 传递句柄位模式。
+                        handle_mode,
                     )?;
                 }
             }
@@ -168,7 +190,12 @@ impl ComponentExpander {
                     // 结构属性保留作者数字形状，由专用 codegen 决定目标类型。
                     let authored_numbers = collect_number_sources(&field.value);
                     // 递归改写字段值中的绑定与调用。
-                    self.transform_expression(&mut field.value, bindings, allow_set_state)?;
+                    self.transform_expression(
+                        &mut field.value,
+                        bindings,
+                        allow_set_state,
+                        handle_mode,
+                    )?;
                     // 恢复对象字段中被通用组件语义改写的数字源码。
                     restore_number_sources(&mut field.value, &authored_numbers);
                 }
@@ -271,8 +298,21 @@ impl ComponentExpander {
             })?;
             // 复制名称以在可变改写后继续使用。
             let owned_name = name.to_string();
+            // 类型化整数目标需要在改写后恢复作者数字形状。
+            let authored_numbers = if binding.authored_numbers {
+                // 收集更新值中的原始数字源码。
+                collect_number_sources(&argument.value)
+            } else {
+                // f64/String/bool 目标沿用组件 number 语义。
+                Vec::new()
+            };
             // 改写更新值中的字段读取。
-            self.transform_expression(&mut argument.value, bindings, false)?;
+            self.transform_expression(&mut argument.value, bindings, false, false)?;
+            // 类型化整数目标恢复作者数字形状，避免整数字面量被附加小数点。
+            if binding.authored_numbers {
+                // 按源码跨度恢复更新值中的数字。
+                restore_number_sources(&mut argument.value, &authored_numbers);
+            }
             // 保存目标 State 句柄。
             state_idents.push(ident_from_name(state_name));
             // 为更新器参数生成卫生名称。
@@ -323,7 +363,7 @@ impl ComponentExpander {
 }
 
 // 收集表达式树中全部数字节点的作者源码。
-fn collect_number_sources(expression: &Expression) -> Vec<(super::SourceSpan, String)> {
+pub(super) fn collect_number_sources(expression: &Expression) -> Vec<(super::SourceSpan, String)> {
     // 保存按遍历顺序发现的数字。
     let mut sources = Vec::new();
     // 递归收集当前表达式。
@@ -339,7 +379,7 @@ fn collect_number_sources(expression: &Expression) -> Vec<(super::SourceSpan, St
 }
 
 // 按跨度恢复结构属性中的作者数字源码。
-fn restore_number_sources(expression: &mut Expression, sources: &[(super::SourceSpan, String)]) {
+pub(super) fn restore_number_sources(expression: &mut Expression, sources: &[(super::SourceSpan, String)]) {
     // 递归访问当前表达式中的数字节点。
     visit_numbers_mut(expression, &mut |number| {
         // 只处理数字节点。

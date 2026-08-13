@@ -23,6 +23,8 @@ pub(super) struct Binding {
     pub(super) state_name: Option<String>,
     // 保存值、回调或响应式状态类别。
     pub(super) kind: BindingKind,
+    // 类型化整数/单精度状态在 setState 值中保留作者数字形状。
+    pub(super) authored_numbers: bool,
 }
 
 // 区分不同克隆与传参语义的组件字段。
@@ -200,6 +202,8 @@ impl ComponentExpander {
                 };
                 // 只有事件属性允许 setState。
                 let allow_set_state = attribute.name.starts_with('@');
+                // 句柄位属性（value/checked/current/open 等）读取 State 句柄而非读值。
+                let handle_mode = is_state_handle_attribute(&element.name, &attribute.name);
                 // 改写 props、state 与 setState。
                 self.transform_expression(
                     // 可变借用表达式树。
@@ -208,6 +212,8 @@ impl ComponentExpander {
                     &active_bindings,
                     // 传递状态更新作用域。
                     allow_set_state,
+                    // 传递句柄位改写模式。
+                    handle_mode,
                 )?;
             }
         }
@@ -223,6 +229,8 @@ impl ComponentExpander {
                     bindings,
                     // 条件不能更新状态。
                     false,
+                    // 条件不是句柄位。
+                    false,
                 )?,
                 // 改写 For 数据源与可选 key。
                 ControlBinding::For { iterable, key, .. } => {
@@ -234,6 +242,8 @@ impl ComponentExpander {
                         bindings,
                         // 数据源不能更新状态。
                         false,
+                        // 数据源不是句柄位。
+                        false,
                     )?;
                     // 存在 key 时同步改写。
                     if let Some(key) = key {
@@ -244,6 +254,8 @@ impl ComponentExpander {
                             // 使用当前字段绑定。
                             bindings,
                             // key 不能更新状态。
+                            false,
+                            // key 不是句柄位。
                             false,
                         )?;
                     }
@@ -296,6 +308,8 @@ impl ComponentExpander {
                         // 使用当前字段绑定。
                         bindings,
                         // 插值不能更新状态。
+                        false,
+                        // 插值读取值而非句柄。
                         false,
                     )?;
                     // 保存改写后的插值。
@@ -598,4 +612,42 @@ fn validate_component_attributes<'a>(
 fn is_renderable_node(node: &Node) -> bool {
     // 空白文本只承担源码排版作用。
     !matches!(node, Node::Text(text) if text.value.trim().is_empty())
+}
+
+// 判断某个元素的属性是否要求 State<T> 句柄表达式。
+// 句柄位属性在组件体内引用同名 state 或 State<T> prop 时改写为句柄本身，
+// 使受控组件（Modal/Drawer）与双向绑定（value/checked/current）可以直接
+// 使用组件私有状态，而不再被迫由 Rust 侧创建状态槽。
+pub(super) fn is_state_handle_attribute(element_name: &str, attribute_name: &str) -> bool {
+    // 按元素登记需要 State 句柄的属性集合。
+    let handle_attributes: &[&str] = match element_name {
+        // 受控浮层读取 State<bool> 打开状态。
+        "Modal" | "Drawer" => &["open"],
+        // 双向绑定输入控件读取 State<String>。
+        "Input" | "InputGroup" | "AutoComplete" | "Mentions" => &["value"],
+        // 双向绑定数值控件读取 State<T>。
+        "InputNumber" | "Slider" | "Rate" => &["value"],
+        // 双向绑定勾选控件读取 State<bool>。
+        "Checkbox" | "Switch" => &["checked"],
+        // 双向绑定选择控件读取 State<String> 或集合状态。
+        "Radio" | "Segmented" | "Select" | "TreeSelect" => &["value"],
+        // 双向绑定结构化路径与颜色状态。
+        "Cascader" | "ColorPicker" => &["value"],
+        // 双向绑定日期与时间状态。
+        "DatePicker" | "TimePicker" => &["value"],
+        // 区间滑块读取对象形式的双 State<f64> 句柄。
+        "RangeSlider" | "DateRangePicker" => &["value"],
+        // 步骤条与分页器读取 State<usize> 受控状态。
+        "Steps" => &["current"],
+        "Pagination" => &["current", "pageSize"],
+        // 滚动容器与固钉组件读取滚动状态。
+        "ScrollView" => &["offset"],
+        "Affix" | "BackTop" => &["scrollY"],
+        // 类型化表单读取 State<M> 模型句柄。
+        "Form" => &["model"],
+        // 其余元素没有句柄位属性。
+        _ => &[],
+    };
+    // 判断当前属性名是否在句柄位集合。
+    handle_attributes.contains(&attribute_name)
 }

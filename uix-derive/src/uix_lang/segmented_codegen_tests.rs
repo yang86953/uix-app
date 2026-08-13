@@ -21,7 +21,7 @@ fn generates_bound_segmented_contract() {
     // 构造器必须直接接收选项表达式。
     let constructor = snapshot
         // 查找公开构造器与数据引用。
-        .find("Segmented :: new (view_options)")
+        .find("Segmented :: new ((view_options) . clone ())")
         // 失败时输出完整令牌便于定位格式漂移。
         .unwrap_or_else(|| panic!("应生成 Segmented 选项构造器：{snapshot}"));
     // 状态绑定必须借用 State<String> 句柄。

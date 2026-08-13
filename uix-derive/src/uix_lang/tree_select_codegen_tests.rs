@@ -21,7 +21,7 @@ fn generates_bound_tree_select_contract() {
     // 构造器必须先接收 TreeNode 树表达式。
     let nodes = snapshot
         // 查找公开节点构建入口。
-        .find("nodes (tree_nodes)")
+        .find("nodes ((tree_nodes) . clone ())")
         // 失败时输出完整令牌便于定位格式漂移。
         .unwrap_or_else(|| panic!("应生成 TreeSelect 节点映射：{snapshot}"));
     // 稳定 key 状态必须借用给运行时绑定入口。

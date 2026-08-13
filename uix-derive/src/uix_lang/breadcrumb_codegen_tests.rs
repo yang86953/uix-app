@@ -20,7 +20,7 @@ fn generates_breadcrumb_contract() {
     // 合法 Breadcrumb 必须成功生成。
     .expect("文档属性应映射到公开 Breadcrumb API");
     // 数据表达式必须通过拥有权 IntoIterator 统一收集。
-    assert!(snapshot.contains("IntoIterator :: into_iter (breadcrumb_items)"));
+    assert!(snapshot.contains("IntoIterator :: into_iter ((breadcrumb_items) . clone ())"));
     // 收集目标必须锁定公开 BreadcrumbItem 类型。
     assert!(snapshot.contains("Vec < :: uix :: prelude :: BreadcrumbItem >"));
     // 末项当前页语义必须交给运行时窄构建契约。

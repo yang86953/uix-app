@@ -5,6 +5,8 @@ use quote::quote;
 
 // 引入组件展开器与字段绑定类型。
 use super::component_codegen::{Binding, BindingKind, Bindings, ComponentExpander};
+// 引入数字源码恢复辅助。
+use super::component_expression_lower::{collect_number_sources, restore_number_sources};
 // 引入组件字段、属性、表达式与诊断 AST。
 use super::{
     Attribute, AttributeValue, ComponentProp, ComponentPropType, ComponentState,
@@ -55,6 +57,8 @@ impl ComponentExpander {
                         state_name: None,
                         // 标记基础值类别。
                         kind: BindingKind::Value,
+                        // 基础值 prop 不参与数字形状保留。
+                        authored_numbers: false,
                     },
                 );
             }
@@ -85,6 +89,8 @@ impl ComponentExpander {
                         state_name: Some(value_ident.to_string()),
                         // 标记响应式状态类别。
                         kind: BindingKind::State,
+                        // State prop 白名单只有 number 语义，不保留作者数字形状。
+                        authored_numbers: false,
                     },
                 );
             }
@@ -149,6 +155,8 @@ impl ComponentExpander {
                         state_name: None,
                         // 标记回调类别。
                         kind: BindingKind::Callback,
+                        // 回调不参与数字形状保留。
+                        authored_numbers: false,
                     },
                 );
             }
@@ -173,7 +181,8 @@ impl ComponentExpander {
         // 为当前读值生成卫生名称。
         let read_ident = self.fresh_ident("state_value", &state.name);
         // 生成规范化初始值与可选显式类型。
-        let (initial, rust_type) = self.private_state_initial(&state.initial, bindings)?;
+        let (initial, rust_type, authored_numbers) =
+            self.private_state_initial(&state.initial, bindings)?;
         // 用字段名称与声明跨度区分同一组件实例内的多个私有 state。
         // 先拼接 state 名称与声明跨度，区分同一组件实例内的多个私有字段。
         let field_source = format!("{}:{}:{}", state.name, state.span.start, state.span.end);
@@ -218,6 +227,8 @@ impl ComponentExpander {
                 state_name: Some(state_ident.to_string()),
                 // 标记响应式状态类别。
                 kind: BindingKind::State,
+                // 类型化整数状态在 setState 值中保留作者数字形状。
+                authored_numbers,
             },
         );
         // 报告私有状态绑定成功。
@@ -232,7 +243,7 @@ impl ComponentExpander {
         initial: &ComponentStateInitial,
         // 接收此前声明的字段绑定。
         bindings: &Bindings,
-    ) -> Result<(TokenStream, Option<TokenStream>), Diagnostic> {
+    ) -> Result<(TokenStream, Option<TokenStream>, bool), Diagnostic> {
         // 按初始值形状生成 Rust 表达式。
         match initial {
             // 空数组映射为可推断元素类型的 Vec。
@@ -241,13 +252,15 @@ impl ComponentExpander {
                 quote! { ::std::vec::Vec::new() },
                 // 元素类型留给后续使用推断。
                 None,
+                // 空数组不保留作者数字形状。
+                false,
             )),
             // 普通表达式按顶层字面量固定基础类型。
             ComponentStateInitial::Expression(expression) => {
                 // 克隆表达式以改写此前字段读取。
                 let mut expanded = expression.clone();
                 // 初始值不能执行 setState。
-                self.transform_expression(&mut expanded, bindings, false)?;
+                self.transform_expression(&mut expanded, bindings, false, false)?;
                 // 按表达式形状生成拥有所有权的值。
                 match &expanded.kind {
                     // 字符串状态映射为 String。
@@ -256,6 +269,8 @@ impl ComponentExpander {
                         quote! { ::std::string::String::from(#value) },
                         // 固定 String 类型。
                         Some(quote! { ::std::string::String }),
+                        // 字符串不保留作者数字形状。
+                        false,
                     )),
                     // 数字状态固定为 f64。
                     ExpressionKind::Number(_) => {
@@ -267,6 +282,8 @@ impl ComponentExpander {
                             quote! { (#value) as f64 },
                             // 固定 f64 类型。
                             Some(quote! { f64 }),
+                            // f64 状态沿用组件 number 语义。
+                            false,
                         ))
                     }
                     // 布尔状态固定为 bool。
@@ -274,16 +291,56 @@ impl ComponentExpander {
                         // 生成布尔值令牌。
                         let value = generate_expression(&expanded, None)?;
                         // 返回值与显式类型。
-                        Ok((value, Some(quote! { bool })))
+                        Ok((value, Some(quote! { bool }), false))
                     }
                     // 复合表达式交给 Rust 完整推断。
                     _ => {
                         // 生成复合表达式。
                         let value = generate_expression(&expanded, None)?;
                         // 不增加额外类型约束。
-                        Ok((value, None))
+                        Ok((value, None, false))
                     }
                 }
+            }
+            // 带显式类型注解的表达式按注解固定 State 内部类型。
+            ComponentStateInitial::TypedExpression(value_type, expression) => {
+                // 克隆表达式以改写此前字段读取。
+                let mut expanded = expression.clone();
+                // 记录作者数字源码，避免组件 number 语义污染整数字面量。
+                let authored_numbers = collect_number_sources(&expanded);
+                // 初始值不能执行 setState。
+                self.transform_expression(&mut expanded, bindings, false, false)?;
+                // 恢复类型化初始值中的作者数字形状。
+                restore_number_sources(&mut expanded, &authored_numbers);
+                // 生成改写后的初始值表达式。
+                let value = generate_expression(&expanded, None)?;
+                // 使用显式注解类型固定 State 内部类型。
+                let rust_type = value_type_tokens(*value_type);
+                // 数值类型必须显式 as 转换：impl FnOnce() -> T 不会把
+                // 期望类型传回闭包体，整数字面量会停留在 {integer}。
+                let initial = match value_type {
+                    // 数字与整数注解统一走 as 转换。
+                    ComponentValueType::Number
+                    | ComponentValueType::U32
+                    | ComponentValueType::USize
+                    | ComponentValueType::F32
+                    | ComponentValueType::I32 => {
+                        // 生成显式转换表达式。
+                        quote! { (#value) as #rust_type }
+                    }
+                    // 字符串与布尔字面量自带确定类型。
+                    ComponentValueType::String | ComponentValueType::Bool => value,
+                };
+                // 整数与单精度注解需要在 setState 值中保留作者数字形状。
+                let authored_numbers = matches!(
+                    value_type,
+                    ComponentValueType::U32
+                        | ComponentValueType::USize
+                        | ComponentValueType::F32
+                        | ComponentValueType::I32
+                );
+                // 返回显式类型化初始值。
+                Ok((initial, Some(rust_type), authored_numbers))
             }
         }
     }
@@ -335,6 +392,8 @@ impl ComponentExpander {
                     state_name: binding.state_name.clone(),
                     // 保留字段类别。
                     kind: binding.kind,
+                    // 保留数字形状策略。
+                    authored_numbers: binding.authored_numbers,
                 },
             );
         }
@@ -409,6 +468,16 @@ impl ComponentExpander {
                         "使用 \"true\"、\"false\" 或 {boolean_expression}",
                     )),
                 },
+                // 扩展数值类型只供类型化私有 state 使用，props 解析器不会产生。
+                ComponentValueType::U32 | ComponentValueType::USize | ComponentValueType::F32
+                | ComponentValueType::I32 => Err(Diagnostic::new(
+                    // 指向完整属性。
+                    attribute.span,
+                    // 说明类型仅限 state 注解。
+                    format!("prop {} 不能使用仅限私有 state 的类型", attribute.name),
+                    // 给出 props 白名单。
+                    "props 使用 String、number、bool、State<T> 或回调签名",
+                )),
             },
             // 表达式由显式局部类型完成检查。
             AttributeValue::Expression(expression) => {
@@ -529,7 +598,7 @@ impl ComponentExpander {
         // 克隆表达式以改写组件字段。
         let mut expanded = expression.expression.clone();
         // props 传值不能执行 setState。
-        self.transform_expression(&mut expanded, outer_bindings, false)?;
+        self.transform_expression(&mut expanded, outer_bindings, false, false)?;
         // 委托既有表达式生成器。
         generate_expression(&expanded, None)
     }
@@ -545,5 +614,13 @@ fn value_type_tokens(value_type: ComponentValueType) -> TokenStream {
         ComponentValueType::Number => quote! { f64 },
         // bool 对应 Rust 布尔类型。
         ComponentValueType::Bool => quote! { bool },
+        // u32 对应无符号计数类型。
+        ComponentValueType::U32 => quote! { u32 },
+        // usize 对应索引类型。
+        ComponentValueType::USize => quote! { usize },
+        // f32 对应单精度浮点类型。
+        ComponentValueType::F32 => quote! { f32 },
+        // i32 对应有符号整数类型。
+        ComponentValueType::I32 => quote! { i32 },
     }
 }

@@ -131,3 +131,92 @@ fn rejects_duplicate_component_name() {
     // 诊断必须包含组件名。
     assert!(error.message.contains("组件 Card 重复声明"));
 }
+
+// 验证类型化私有 state 注解解析为 TypedExpression。
+#[test]
+fn parses_typed_private_state_annotations() {
+    // 构造带 u32 与 usize 类型注解的状态声明。
+    let source = r#"<Component name="Typed" state="rating: u32 = 7, current: usize = 1, offset: f32 = 20, signed: i32 = -3, labeled: String = 'hi'"><Text>A</Text></Component><Typed />"#;
+    // 解析完整文档。
+    let document = parse_document(source).expect("类型化 state 声明应成功解析");
+    // 提取组件声明。
+    let Declaration::Component(component) = &document.declarations[0] else {
+        // 结构不匹配时失败。
+        panic!("首个声明应为 Component");
+    };
+    // 五个类型化状态必须全部保留。
+    assert_eq!(component.states.len(), 5);
+    // u32 注解必须保存。
+    assert!(matches!(
+        // 检查首个状态初始值。
+        &component.states[0].initial,
+        // 要求 u32 类型化表达式。
+        ComponentStateInitial::TypedExpression(ComponentValueType::U32, _)
+    ));
+    // usize 注解必须保存。
+    assert!(matches!(
+        // 检查第二个状态初始值。
+        &component.states[1].initial,
+        // 要求 usize 类型化表达式。
+        ComponentStateInitial::TypedExpression(ComponentValueType::USize, _)
+    ));
+    // f32 注解必须保存。
+    assert!(matches!(
+        // 检查第三个状态初始值。
+        &component.states[2].initial,
+        // 要求 f32 类型化表达式。
+        ComponentStateInitial::TypedExpression(ComponentValueType::F32, _)
+    ));
+    // i32 注解与负数初始值必须保存。
+    assert!(matches!(
+        // 检查第四个状态初始值。
+        &component.states[3].initial,
+        // 要求 i32 类型化表达式。
+        ComponentStateInitial::TypedExpression(ComponentValueType::I32, _)
+    ));
+    // String 注解必须保存。
+    assert!(matches!(
+        // 检查第五个状态初始值。
+        &component.states[4].initial,
+        // 要求 String 类型化表达式。
+        ComponentStateInitial::TypedExpression(ComponentValueType::String, _)
+    ));
+}
+
+// 验证未知 state 类型注解得到专用诊断。
+#[test]
+fn rejects_unknown_typed_state_annotation() {
+    // 解析超出白名单的类型注解。
+    let error = parse_document(
+        r#"<Component name="Bad" state="when: Date = 1"><Text>A</Text></Component><Bad />"#,
+    )
+    // 未知类型必须失败。
+    .expect_err("未知 state 类型不得通过");
+    // 诊断必须指出类型不支持。
+    assert!(error.message.contains("不支持 state 类型"));
+    // 诊断必须给出白名单。
+    assert!(error.suggestion.contains("u32"));
+}
+
+// 验证比较运算符不会误识别为类型注解分隔符。
+#[test]
+fn keeps_comparison_expressions_as_plain_state_initials() {
+    // 构造包含相等比较的普通状态初始值。
+    let document = parse_document(
+        r#"<Component name="Eq" state="done: count == 0"><Text>A</Text></Component><Eq />"#,
+    )
+    // 比较表达式必须是普通表达式状态。
+    .expect("比较表达式状态应成功解析");
+    // 提取组件声明。
+    let Declaration::Component(component) = &document.declarations[0] else {
+        // 结构不匹配时失败。
+        panic!("首个声明应为 Component");
+    };
+    // 状态必须保持普通表达式而非类型化注解。
+    assert!(matches!(
+        // 检查状态初始值。
+        component.states[0].initial,
+        // 要求普通表达式。
+        ComponentStateInitial::Expression(_)
+    ));
+}

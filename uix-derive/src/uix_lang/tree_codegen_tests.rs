@@ -18,7 +18,7 @@ fn generates_tree_contract() {
         // 合法树必须成功生成。
         .expect("文档属性应映射到公开 Tree API");
     // 数据表达式必须通过拥有所有权的 IntoIterator 统一收集。
-    assert!(snapshot.contains("IntoIterator :: into_iter (tree_nodes)"));
+    assert!(snapshot.contains("IntoIterator :: into_iter ((tree_nodes) . clone ())"));
     // 收集目标必须锁定公开 TreeNode 类型。
     assert!(snapshot.contains("TreeNode"));
     // 运行时构造器必须接收类型化节点集合。

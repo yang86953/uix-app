@@ -58,7 +58,7 @@ pub(crate) fn generate_cascader(element: &Element) -> Result<TokenStream, Diagno
 
     // 运行时构造器接收选项树和空占位默认值，再绑定选中路径状态。
     let widget = quote! {
-        ::uix::prelude::Cascader::new(#options, "")
+        ::uix::prelude::Cascader::new((#options).clone(), "")
             .value(&(#state))
     };
     // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。

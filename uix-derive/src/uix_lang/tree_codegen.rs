@@ -41,7 +41,7 @@ pub(crate) fn generate_tree(element: &Element) -> Result<TokenStream, Diagnostic
     let data = generate_expression(&data_expression.expression, None)?;
     // 把数组或 Vec 统一收集为运行时要求的 Vec<TreeNode>。
     let nodes = quote! {
-        ::std::iter::IntoIterator::into_iter(#data)
+        ::std::iter::IntoIterator::into_iter((#data).clone())
             .collect::<::std::vec::Vec<::uix::prelude::TreeNode>>()
     };
     // 未声明 checkable 时显式采用文档默认值。
