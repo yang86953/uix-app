@@ -12,6 +12,77 @@ use crate::ui::component::widget::WidgetCore;
 use crate::ui::view::ViewNode;
 // 引入标准点击事件契约与键盘修饰状态。
 use crate::ui::{ClickEvent, KeyMod, SemanticEvent};
+// 引入根替换时使用的无业务处理器叶组件。
+use crate::ui::widgets::Label;
+
+// 构造带稳定 key、独立点击计数与释放探针的组内按钮 View。
+fn tracked_group_button(
+    // 接收按钮图标名称。
+    icon: &str,
+    // 接收同父级协调身份。
+    key: &str,
+    // 接收该按钮独占的点击计数。
+    clicks: Rc<Cell<usize>>,
+    // 接收只由处理器闭包继续持有的释放探针。
+    lifetime: Rc<()>,
+    // 返回保留全部声明事件与身份的 ViewNode。
+) -> ViewNode {
+    // 构造组内按钮声明并登记稳定协调 key。
+    ViewNode::leaf(FloatButton::new(icon))
+        // 同 key reconcile 必须保留对应 ComponentId。
+        .key(key)
+        // 无 State 闭包按公开契约在每次 reconcile 时保守替换。
+        .on_click_fn(move || {
+            // 读取探针以确保闭包真实拥有其强引用。
+            let _lifetime = &lifetime;
+            // 只更新当前按钮自己的计数器。
+            clicks.set(clicks.get() + 1);
+        })
+}
+
+// 通过真实指针命中与默认语义生成路径点击指定窗口坐标。
+fn pointer_click(tree: &mut WidgetTree, pos: Point) {
+    // 左键按下必须被命中的交互组件处理。
+    let down = tree.dispatch_event(&SystemEvent::PointerDown {
+        // 使用目标组件当前窗口坐标。
+        pos,
+        // 标准业务点击使用鼠标左键。
+        button: MouseButton::Left,
+        // 本次输入不携带修饰键。
+        mods: KeyMod::NONE,
+    });
+    // 按下路径必须报告已处理。
+    assert_eq!(down, EventResult::Handled);
+    // 在同一目标坐标释放以生成标准 Click 语义事件。
+    let up = tree.dispatch_event(&SystemEvent::PointerUp {
+        // 释放位置与按下位置保持一致。
+        pos,
+        // 使用配对的鼠标左键。
+        button: MouseButton::Left,
+        // 本次输入不携带修饰键。
+        mods: KeyMod::NONE,
+    });
+    // 释放路径必须报告已处理。
+    assert_eq!(up, EventResult::Handled);
+}
+
+// 直接向稳定子身份发送主点击，用于隔离 reconcile 后的 HandlerTable 绑定。
+fn semantic_click(tree: &mut WidgetTree, target: crate::core::ComponentId) -> EventResult {
+    // 通过树拥有的语义路由表分发主点击。
+    tree.dispatch_semantic(SemanticEvent::click(
+        // 目标必须是当前或已经失效的具体子 ComponentId。
+        target,
+        // 构造不依赖布局坐标的标准主点击载荷。
+        ClickEvent {
+            // 左键满足 on_click_fn 主点击过滤器。
+            button: MouseButton::Left,
+            // 语义测试使用稳定零点。
+            pos: Point::new(0.0, 0.0),
+            // 本次输入不携带修饰键。
+            modifiers: KeyMod::NONE,
+        },
+    ))
+}
 
 // 验证四角 placement、窗口缩放和兼容 frame-relative 路径。
 #[test]
@@ -308,4 +379,314 @@ fn group_button_views_preserve_child_click_handler_and_parent_layout() {
     assert_eq!(result, EventResult::Handled);
     // 业务处理器必须且只执行一次。
     assert_eq!(clicks.get(), 1);
+}
+
+// 验证组内子事件在命中、协调、移除、换根与关闭期间的完整所有权生命周期。
+#[test]
+fn group_child_handlers_reconcile_remove_replace_and_shutdown_cleanly() {
+    // 建立两个初始子按钮各自独占的点击计数。
+    let first_initial_clicks = Rc::new(Cell::new(0));
+    // 建立第二个初始子按钮的独立点击计数。
+    let second_initial_clicks = Rc::new(Cell::new(0));
+    // 建立仅由首个旧处理器持有的释放探针。
+    let first_initial_lifetime = Rc::new(());
+    // 保存首个旧处理器释放状态的弱观察句柄。
+    let first_initial_weak = Rc::downgrade(&first_initial_lifetime);
+    // 建立仅由第二个旧处理器持有的释放探针。
+    let second_initial_lifetime = Rc::new(());
+    // 保存第二个旧处理器释放状态的弱观察句柄。
+    let second_initial_weak = Rc::downgrade(&second_initial_lifetime);
+    // 构造父组与两个源码顺序稳定的直接子按钮。
+    let initial_group = FloatButtonGroup::new()
+        // 使用点击触发以覆盖父组件真实展开命中路径。
+        .trigger(TriggerMode::Click)
+        // 每个子 View 独占业务处理器、key 与生命周期探针。
+        .button_views(vec![
+            // 首项使用稳定 first 身份。
+            tracked_group_button(
+                // 首项图标不参与身份判定。
+                "edit",
+                // 首项同父级 key。
+                "first",
+                // 克隆首项计数供闭包独占。
+                Rc::clone(&first_initial_clicks),
+                // 把首项探针强引用移交给闭包。
+                first_initial_lifetime,
+            ),
+            // 第二项使用稳定 second 身份。
+            tracked_group_button(
+                // 第二项图标不参与身份判定。
+                "share",
+                // 第二项同父级 key。
+                "second",
+                // 克隆第二项计数供闭包独占。
+                Rc::clone(&second_initial_clicks),
+                // 把第二项探针强引用移交给闭包。
+                second_initial_lifetime,
+            ),
+        ]);
+    // 发布真实父子树与 HandlerTable 绑定。
+    let mut tree = ViewAdapter::build(initial_group);
+    // 完成首轮布局以建立父触发器与收起子项 frame。
+    tree.layout();
+    // 取得稳定父组身份。
+    let root = tree.root_id().expect("FloatButtonGroup 根必须存在");
+    // 保存初始两个子按钮身份以验证同 key 协调与移除失效。
+    let initial_children = tree
+        // 读取父组运行时节点。
+        .get(root)
+        // 初始建树后父组必须存在。
+        .expect("FloatButtonGroup 根必须可读取")
+        // 复制直接子身份，释放树借用后再分发事件。
+        .children()
+        // 转成独立向量。
+        .to_vec();
+    // 初始组必须包含两个直接子按钮。
+    assert_eq!(initial_children.len(), 2);
+    // 在父触发器中心执行真实指针点击以启动展开。
+    pointer_click(&mut tree, Point::new(20.0, 20.0));
+    // 父组件必须已经取得展开运行态所有权。
+    assert!(
+        tree
+            // 读取当前根节点。
+            .get(root)
+            // 根节点必须仍然存在。
+            .expect("展开后父组必须存在")
+            // 借用父组件。
+            .component()
+            // 取得类型视图。
+            .as_any()
+            // 窄化为 FloatButtonGroup。
+            .downcast_ref::<FloatButtonGroup>()
+            // 根类型必须保持不变。
+            .expect("展开根必须是 FloatButtonGroup")
+            // 读取父组件独占的展开状态。
+            .expanded
+    );
+    // 把父组过渡推进到完全展开以开放子项命中。
+    let _ = tree.update_animations(1.0);
+    // 重新布局展开后的直接子按钮。
+    tree.layout();
+    // 读取首项展开后的窗口 frame。
+    let first_frame = tree
+        // 读取首项运行时节点。
+        .get(initial_children[0])
+        // 首项必须仍然存在。
+        .expect("首个组内按钮必须存在")
+        // 读取布局完成的 frame。
+        .frame();
+    // 读取第二项展开后的窗口 frame。
+    let second_frame = tree
+        // 读取第二项运行时节点。
+        .get(initial_children[1])
+        // 第二项必须仍然存在。
+        .expect("第二个组内按钮必须存在")
+        // 读取布局完成的 frame。
+        .frame();
+    // 通过真实父级扩展命中区域点击首个子按钮。
+    pointer_click(
+        // 复用同一运行时树。
+        &mut tree,
+        // Rect 没有中心 helper，显式计算首项中心窗口坐标。
+        Point::new(
+            // 横坐标取 frame 中点。
+            first_frame.x + first_frame.w * 0.5,
+            // 纵坐标取 frame 中点。
+            first_frame.y + first_frame.h * 0.5,
+        ),
+    );
+    // 通过真实父级扩展命中区域点击第二个子按钮。
+    pointer_click(
+        // 复用同一运行时树。
+        &mut tree,
+        // 显式计算第二项中心窗口坐标。
+        Point::new(
+            // 横坐标取 frame 中点。
+            second_frame.x + second_frame.w * 0.5,
+            // 纵坐标取 frame 中点。
+            second_frame.y + second_frame.h * 0.5,
+        ),
+    );
+    // 首项只能触发自己的业务处理器。
+    assert_eq!(first_initial_clicks.get(), 1);
+    // 第二项只能触发自己的业务处理器。
+    assert_eq!(second_initial_clicks.get(), 1);
+
+    // 建立协调后首项的新处理器计数。
+    let first_next_clicks = Rc::new(Cell::new(0));
+    // 建立协调后第二项的新处理器计数。
+    let second_next_clicks = Rc::new(Cell::new(0));
+    // 建立只由协调后首项处理器持有的探针。
+    let first_next_lifetime = Rc::new(());
+    // 保存首项新处理器释放状态的弱观察句柄。
+    let first_next_weak = Rc::downgrade(&first_next_lifetime);
+    // 建立只由协调后第二项处理器持有的探针。
+    let second_next_lifetime = Rc::new(());
+    // 保存第二项新处理器释放状态的弱观察句柄。
+    let second_next_weak = Rc::downgrade(&second_next_lifetime);
+    // 以相同父类型、触发方式、子类型与 key 提交等价结构的新闭包。
+    ViewAdapter::reconcile(
+        // 协调到现有树以保留 ComponentId。
+        &mut tree,
+        // 构造等价父组声明。
+        FloatButtonGroup::new()
+            // 触发方式不变，父展开运行态不应被声明覆盖。
+            .trigger(TriggerMode::Click)
+            // 用新闭包替换两个子节点的无 State handler。
+            .button_views(vec![
+                // 首项继续使用 first key。
+                tracked_group_button(
+                    // 首项 authored 图标保持稳定。
+                    "edit",
+                    // 首项协调 key 保持稳定。
+                    "first",
+                    // 克隆新首项计数。
+                    Rc::clone(&first_next_clicks),
+                    // 移交新首项探针。
+                    first_next_lifetime,
+                ),
+                // 第二项继续使用 second key。
+                tracked_group_button(
+                    // 第二项 authored 图标保持稳定。
+                    "share",
+                    // 第二项协调 key 保持稳定。
+                    "second",
+                    // 克隆新第二项计数。
+                    Rc::clone(&second_next_clicks),
+                    // 移交新第二项探针。
+                    second_next_lifetime,
+                ),
+            ]),
+    );
+    // 重新读取协调后的直接子身份。
+    let reconciled_children = tree
+        // 父组必须原位保留。
+        .get(root)
+        // 协调成功后根仍可读取。
+        .expect("协调后父组必须存在")
+        // 复制当前直接子身份。
+        .children()
+        // 转成独立向量。
+        .to_vec();
+    // 同 key 同类型的两个子 ComponentId 必须原位保留。
+    assert_eq!(reconciled_children, initial_children);
+    // 无 State 旧首项闭包必须在协调线性化点释放。
+    assert!(first_initial_weak.upgrade().is_none());
+    // 无 State 旧第二项闭包必须在协调线性化点释放。
+    assert!(second_initial_weak.upgrade().is_none());
+    // 新首项闭包必须由当前 HandlerTable 持有。
+    assert!(first_next_weak.upgrade().is_some());
+    // 新第二项闭包必须由当前 HandlerTable 持有。
+    assert!(second_next_weak.upgrade().is_some());
+    // 向保留的首项身份分发点击必须调用新闭包。
+    assert_eq!(
+        semantic_click(&mut tree, reconciled_children[0]),
+        EventResult::Handled
+    );
+    // 向保留的第二项身份分发点击必须调用新闭包。
+    assert_eq!(
+        semantic_click(&mut tree, reconciled_children[1]),
+        EventResult::Handled
+    );
+    // 新首项闭包必须执行一次。
+    assert_eq!(first_next_clicks.get(), 1);
+    // 新第二项闭包必须执行一次。
+    assert_eq!(second_next_clicks.get(), 1);
+    // 旧首项计数不能再变化。
+    assert_eq!(first_initial_clicks.get(), 1);
+    // 旧第二项计数不能再变化。
+    assert_eq!(second_initial_clicks.get(), 1);
+
+    // 只为保留的首项建立第三版处理器探针。
+    let first_retained_lifetime = Rc::new(());
+    // 保存第三版首项处理器释放状态的弱观察句柄。
+    let first_retained_weak = Rc::downgrade(&first_retained_lifetime);
+    // 协调删除 second 子项并替换保留首项的处理器。
+    ViewAdapter::reconcile(
+        // 发布到同一父组运行时。
+        &mut tree,
+        // 父组类型与触发方式保持稳定。
+        FloatButtonGroup::new()
+            // 继续使用点击触发。
+            .trigger(TriggerMode::Click)
+            // 只声明 first 子项。
+            .button_views(vec![tracked_group_button(
+                // 保留首项 authored 图标。
+                "edit",
+                // 保留首项 key。
+                "first",
+                // 后续计数继续写入同一首项新计数器。
+                Rc::clone(&first_next_clicks),
+                // 移交第三版首项处理器探针。
+                first_retained_lifetime,
+            )]),
+    );
+    // 第二版首项闭包已被第三版替换，必须释放。
+    assert!(first_next_weak.upgrade().is_none());
+    // 被移除的第二项闭包必须同步释放。
+    assert!(second_next_weak.upgrade().is_none());
+    // 保留首项第三版闭包必须仍由树拥有。
+    assert!(first_retained_weak.upgrade().is_some());
+    // 已移除 second 的旧身份不能再进入 HandlerTable。
+    assert_eq!(
+        semantic_click(&mut tree, reconciled_children[1]),
+        EventResult::NotHandled
+    );
+    // 用无处理器 Label 替换整组根节点以覆盖组卸载。
+    ViewAdapter::reconcile(&mut tree, ViewNode::leaf(Label::new("replacement")));
+    // 整组卸载必须释放最后一个子处理器。
+    assert!(first_retained_weak.upgrade().is_none());
+    // 整组卸载后首项旧身份也不能再分发。
+    assert_eq!(
+        semantic_click(&mut tree, reconciled_children[0]),
+        EventResult::NotHandled
+    );
+
+    // 建立只用于 shutdown 释放证明的处理器探针。
+    let shutdown_lifetime = Rc::new(());
+    // 保存 shutdown 前后处理器存活状态的弱观察句柄。
+    let shutdown_weak = Rc::downgrade(&shutdown_lifetime);
+    // 构建独立关闭树，避免换根路径替代 shutdown 证据。
+    let mut shutdown_tree = ViewAdapter::build(
+        // 构造最小点击触发组。
+        FloatButtonGroup::new()
+            // 父组件使用点击触发。
+            .trigger(TriggerMode::Click)
+            // 单个子项持有 shutdown 探针。
+            .button_views(vec![tracked_group_button(
+                // 使用稳定关闭测试图标。
+                "close",
+                // 使用独立关闭测试 key。
+                "shutdown",
+                // 点击计数不参与释放断言。
+                Rc::new(Cell::new(0)),
+                // 把唯一强引用移交给 HandlerTable 闭包。
+                shutdown_lifetime,
+            )]),
+    );
+    // 保存关闭前的子身份以验证停止树拒绝旧事件。
+    let shutdown_child = shutdown_tree
+        // 读取关闭树根身份。
+        .root_id()
+        // 关闭前根必须存在。
+        .and_then(|id| shutdown_tree.get(id))
+        // 读取唯一直接子项。
+        .and_then(|root| root.children().first().copied())
+        // 关闭前必须拥有一个子按钮。
+        .expect("shutdown 测试子按钮必须存在");
+    // 关闭前 HandlerTable 必须持有探针强引用。
+    assert!(shutdown_weak.upgrade().is_some());
+    // 第一次 shutdown 线性化并释放全部树拥有 handler。
+    shutdown_tree.shutdown();
+    // shutdown 后处理器探针必须已经释放。
+    assert!(shutdown_weak.upgrade().is_none());
+    // shutdown 后旧 ComponentId 不能再触发语义处理器。
+    assert_eq!(
+        semantic_click(&mut shutdown_tree, shutdown_child),
+        EventResult::NotHandled
+    );
+    // 重复 shutdown 必须幂等且不能恢复任何绑定。
+    shutdown_tree.shutdown();
+    // 重复关闭后探针仍保持释放。
+    assert!(shutdown_weak.upgrade().is_none());
 }
