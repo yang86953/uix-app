@@ -88,7 +88,7 @@ libc = "0.2.186"
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 # Linux backend uses the current 0.31 callback-dispatch API.
-wayland-client = { version = "=0.31.14", features = ["dlopen", "system"] }
+wayland-client = { version = "0.31.15", features = ["dlopen", "system"] }
 wayland-protocols = { version = "=0.32.13", features = ["client", "unstable", "staging"] }
 khronos-egl = { version = "6", features = ["static", "no-pkg-config"], optional = true }
 
