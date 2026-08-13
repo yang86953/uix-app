@@ -67,7 +67,8 @@ pub(super) fn create_secondary_window(
         }
     }
 
-    report_window_operation_error(
+    // 次窗与主窗使用同一自动居中错误分类。
+    report_center_on_screen_result(
         "secondary center_on_screen failed",
         platform_window.center_on_screen(),
     );

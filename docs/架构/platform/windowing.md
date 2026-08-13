@@ -10,6 +10,8 @@
 
 > **标题栏装饰边界**：`set_system_title_bar_visible` 保持统一能力语义。Windows 在非客户区切换系统 caption；Wayland 通过 `xdg-decoration` 在 `ServerSide` 与 `ClientSide` 之间协商，缺少该扩展时仅客户端装饰可保证成功。自定义标题栏仍由 app/ui 绘制，platform 只拥有原生装饰模式与其生命周期。
 
+> **自动居中边界**：`PlatformWindow::center_on_screen` 保持统一的 typed capability 契约；Wayland 不提供普通客户端绝对定位能力，因此返回 `Errc::NotImplemented`，不得伪造居中成功。App 的主窗、次窗与 `Window::create` 把该错误视为预期能力缺失，不记录 WARN，并由 compositor 使用默认放置；其他执行错误继续记录 WARN。此策略不引入首次 configure 后偏移、异步定位状态或新的窗口生命周期所有者。
+
 ## 组件清单
 
 | 组件 | 目标角色 | 职责 |

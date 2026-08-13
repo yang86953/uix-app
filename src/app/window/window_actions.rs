@@ -1,6 +1,7 @@
 //! UI 窗口动作到当前原生窗口的窄边界适配。
 
-use crate::core::Result;
+// 引入窗口动作结果与可区分的平台错误码。
+use crate::core::{Errc, Result};
 use crate::native::windowing::window::PlatformWindow;
 // 引入当前原生指针事件携带的不可解释激活身份。
 use crate::native::windowing::event::PointerActivationId;
@@ -67,6 +68,61 @@ pub(crate) fn apply_window_action(
         WindowAction::ShowSystemMenuFromTitleBar => window.show_system_menu(),
         WindowAction::RequestClose => window.request_close(),
     }
+}
+
+// 统一报告自动居中结果，并把平台预期不支持与真实执行失败分开。
+pub(crate) fn report_center_on_screen_result(
+    // 日志上下文由具体窗口创建入口提供。
+    context: &str,
+    // 平台结果保持 typed error，不在适配层改写能力事实。
+    result: Result<()>,
+// 返回本次是否实际记录了警告，供局部契约测试观测。
+) -> bool {
+    // 成功不需要任何诊断。
+    let Err(error) = result else {
+        // 明确表示没有记录警告。
+        return false;
+    // 结束成功分支。
+    };
+    // Wayland 等平台的预期能力缺失交给 compositor 默认放置。
+    if error.code() == Errc::NotImplemented {
+        // 预期能力缺失不应污染用户日志。
+        return false;
+    // 结束预期能力缺失分支。
+    }
+    // 其余平台错误仍需保留可观测诊断。
+    tracing::warn!("{context}: {}", error.short_what());
+    // 告知测试本次确实走过警告路径。
+    true
+// 结束自动居中结果报告。
+}
+
+// 单元测试直接验证自动居中结果分类，不依赖真实窗口后端。
+#[cfg(test)]
+// 测试模块只访问当前窄边界。
+mod center_on_screen_result_tests {
+    // 引入当前模块的统一报告入口。
+    use super::report_center_on_screen_result;
+    // 引入构造 typed failure 所需的错误类型与错误码。
+    use crate::core::{Errc, Error};
+
+    // 验证只有真实执行失败会进入警告路径。
+    #[test]
+    // 单一测试覆盖成功、预期缺失与真实失败三种完整分类。
+    fn suppresses_only_expected_not_implemented_failure() {
+        // 成功结果不得记录警告。
+        assert!(!report_center_on_screen_result("success", Ok(())));
+        // 构造 Wayland 当前使用的预期能力缺失。
+        let unsupported = Error::new(Errc::NotImplemented, "center is compositor-owned");
+        // 预期能力缺失不得记录警告。
+        assert!(!report_center_on_screen_result("unsupported", Err(unsupported)));
+        // 构造必须继续暴露的真实平台执行失败。
+        let failed = Error::new(Errc::PlatformError, "native center failed");
+        // 真实失败必须经过警告路径。
+        assert!(report_center_on_screen_result("failed", Err(failed)));
+    // 结束自动居中分类测试。
+    }
+// 结束自动居中结果测试模块。
 }
 
 // 单元测试验证 app 到原生窗口的不可解释激活身份不会丢失或替换。
