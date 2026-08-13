@@ -78,6 +78,8 @@ impl WidgetTree {
         }
         // 公开直接换根不会经过 build_node，仅在该路径补做 Calendar 首次动态物化。
         if include_view_children {
+            // 此时 root 已注册为真实 Transfer owner，可安全捕获自定义条目。
+            self.refresh_transfer_item_component(id);
             // 此时 root 已注册为真实 owner，动态捕获可以安全绑定树私有 store。
             self.refresh_calendar_cell_component(id);
             // 导航 capability 启用时也物化 root Anchor 的首次动态容器。
@@ -146,6 +148,8 @@ impl WidgetTree {
         }
         // 公开直接加子节点不会经过 build_node，仅在该路径补做 Calendar 首次动态物化。
         if include_view_children {
+            // 此时 child 已连接父树，可安全捕获 Transfer 自定义条目。
+            self.refresh_transfer_item_component(child_id);
             // 此时 child 已连接父树，动态捕获与离场判断均使用真实 owner。
             self.refresh_calendar_cell_component(child_id);
             // 导航 capability 启用时也物化直接追加 Anchor 的首次动态容器。
@@ -347,6 +351,8 @@ impl WidgetTree {
         #[cfg(feature = "table")]
         self.refresh_table_expand_component(id);
         self.refresh_select_option_component(id);
+        // Transfer 注册为真实 owner 后立即物化自定义条目并交接私有运行时输出。
+        self.refresh_transfer_item_component(id);
         // Calendar 注册为真实 owner 后立即物化日期格，避免初建路径绕过动态状态捕获。
         self.refresh_calendar_cell_component(id);
         // 导航 capability 启用时在 authored children 挂载后物化 Anchor 动态容器。

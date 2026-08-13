@@ -6,7 +6,11 @@ use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields,
     SnapshotTransferItem, SystemEvent, WidgetTree,
 };
+// 引入组件局部状态与待发变化记录所需的单线程容器。
 use std::cell::{Cell, RefCell};
+// 引入稳定身份集合，确保同一 pane 的条目不会共享动态状态命名空间。
+use std::collections::HashSet;
+// 引入应用 renderer 与回调的单线程共享所有权句柄。
 use std::rc::Rc;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -70,20 +74,6 @@ component! {
     text_input_cursor_rect => (&self) -> Rect {
         let width = (self.search_query.chars().count() as f32 * 8.0 + 8.0).clamp(8.0, 280.0);
         Rect::new(8.0 + width, 4.0, 1.0, 20.0)
-    }
-
-    build_view_children => (&self) -> Vec<crate::ui::view::ViewNode> {
-        let Some(factory) = self.item_renderer.as_ref() else {
-            return Vec::new();
-        };
-        let mut children = Vec::with_capacity(self.source.len() + self.target.len());
-        for item in &self.source {
-            children.push(factory(item).key(format!("transfer:source:{}", item.key)));
-        }
-        for item in &self.target {
-            children.push(factory(item).key(format!("transfer:target:{}", item.key)));
-        }
-        children
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
@@ -358,6 +348,79 @@ impl Transfer {
 
     pub fn search_query(&self) -> &str {
         &self.search_query
+    }
+
+    // 在所属 WidgetTree 签发的动态命名空间中构建全部条目声明子树。
+    pub(crate) fn item_views_for_reconcile(
+        // 借用固定树状态存储与当前 Transfer owner 的窄捕获能力。
+        &self,
+        // 接收只能由活跃宿主树创建的动态捕获上下文。
+        capture_context: &crate::ui::adapter::DynamicViewCaptureContext,
+        // 返回完整捕获但尚未发布的条目声明集合。
+    ) -> Vec<crate::ui::view::ViewNode> {
+        // 没有自定义 renderer 时用空集合协调并释放旧动态条目。
+        let Some(factory) = self.item_renderer.as_ref() else {
+            // 默认文本绘制路径不需要额外 View 子树。
+            return Vec::new();
+        };
+        // 在调用任何应用 renderer 前固定 pane、条目快照与结构身份。
+        let entries = self
+            // 先枚举源列表，保持既有 source-first 声明顺序。
+            .source
+            // 只借用当前 Transfer 运行时拥有的条目快照。
+            .iter()
+            // 为源条目生成与既有 keyed reconcile 兼容的稳定身份。
+            .map(|item| (item, format!("transfer:source:{}", item.key)))
+            // 再追加目标列表，保持布局索引与 pane 边界一致。
+            .chain(
+                // 枚举当前目标列表中的全部条目。
+                self.target
+                    // 只借用当前 Transfer 运行时拥有的目标条目快照。
+                    .iter()
+                    // 让跨 pane 移动形成新的动态实例身份。
+                    .map(|item| (item, format!("transfer:target:{}", item.key))),
+            )
+            // 保存完整预检批次，避免部分工厂执行后才发现身份冲突。
+            .collect::<Vec<_>>();
+        // 建立本批次动态身份集合以拒绝同 pane 重复业务键。
+        let mut unique_keys = HashSet::with_capacity(entries.len());
+        // 在任何用户代码执行前验证全部结构与状态身份唯一。
+        for (_, stable_key) in &entries {
+            // 同一稳定身份只能对应一个动态条目实例。
+            assert!(
+                // 首次插入成功才允许后续捕获该条目。
+                unique_keys.insert(stable_key.clone()),
+                // 不回显业务 key，避免诊断泄露应用数据。
+                "Transfer item renderer 收到重复的 pane 内稳定业务 key"
+            );
+        }
+        // 预分配完整条目数量，保持一次动态事务的集合边界稳定。
+        let mut children = Vec::with_capacity(entries.len());
+        // 仅在全部身份预检成功后依次调用应用 renderer。
+        for (item, stable_key) in entries {
+            // 为 keyed reconcile 保留与状态命名空间相同的身份副本。
+            let view_key = stable_key.clone();
+            // 在所属窗口树的 Transfer 条目槽位捕获完整声明输出。
+            let view = capture_context.capture(
+                // 固定槽位隔离同一宿主下的其他延迟 View 工厂。
+                "transfer-item",
+                // pane 与业务 key 共同拥有私有状态和结构身份。
+                stable_key,
+                // 只在完整捕获边界中执行应用提供的条目 renderer。
+                || factory(item),
+            );
+            // 应用 renderer 自设根 key 会形成状态与结构双身份。
+            assert!(
+                // 框架是 Transfer 动态条目根身份的唯一权威。
+                view.key.is_none(),
+                // 明确要求调用方使用 TransferItem.key 表达稳定身份。
+                "Transfer item renderer 不得直接设置根 key；请使用 TransferItem.key"
+            );
+            // 强制结构协调与树私有捕获使用同一稳定身份。
+            children.push(view.key(view_key));
+        }
+        // 将完整捕获但未发布的批次交回 WidgetTree 动态协调器。
+        children
     }
 
     /// 自定义条目视图工厂；默认绘制仍使用稳定文本快照。

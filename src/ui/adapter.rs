@@ -1,17 +1,12 @@
 //! ViewAdapter - expands a View tree into a WidgetTree.
-//!
 //! `App::run()` uses this module to recursively expand user-authored `View`
 //! trees into framework `WidgetTree` nodes, keeping `WidgetNode` and
 //! `BoxedWidget` internal.
-//!
 //! # Responsibilities
-//!
 //! 1. `ViewAdapter::build(root)` captures view context and builds a `WidgetTree`.
 //! 2. `expand(node)` iteratively converts `ViewNode` into `WidgetNode`.
 //! 3. `apply_style(widget, style)` applies declarative style to concrete widgets.
-//!
 //! # State Binding
-//!
 //! - During view build, `begin_state_capture` records `State::new` instances.
 //! - After layout, `bind_reactive_widget_states` detects dynamic label closure
 //!   dependencies and binds them to narrow Paint invalidation.
@@ -34,8 +29,8 @@ use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::theme::style::Style;
 use crate::ui::view::ViewNode;
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
-// 引入 Image 以识别其专属的占位与错误动态子树协调边界。
-use crate::ui::widgets::{Button, Calendar, Container, Grid, Image, Label};
+// 引入 Image 与 Transfer 以识别各自的专属动态子树协调边界。
+use crate::ui::widgets::{Button, Calendar, Container, Grid, Image, Label, Transfer};
 // 导航 capability 启用时才识别 Anchor 的专属动态容器协调边界。
 #[cfg(feature = "navigation")]
 use crate::ui::widgets::navigation::Anchor;
@@ -453,6 +448,9 @@ impl ViewAdapter {
                 false
             }
         };
+        // Transfer 条目必须在 live owner 完成原位同步后由所属树动态捕获。
+        let transfer_items =
+            widget.as_any().is::<Transfer>() || tree.is_transfer_item_component(id);
         // Image 的占位与错误 View 共同属于同一专属动态子树协调边界。
         let image_children = widget.as_any().is::<Image>();
         let component_view_children = if calendar_cells || anchor_container {
@@ -567,6 +565,9 @@ impl ViewAdapter {
                 // 不消费 children，避免 feature 边界外产生动态协调。
                 false
             }
+        } else if transfer_items {
+            // live Transfer 已完成 patch，此处以 pane 与业务 key 协调全部自定义条目。
+            tree.refresh_transfer_item_component(id)
         } else if image_children {
             // 先保留本轮 authored 与 fresh placeholder，再追加同一失败实例的完整动态错误 View。
             let mut children = children;
