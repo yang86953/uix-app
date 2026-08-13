@@ -161,6 +161,11 @@ impl WaylandDispatchState {
                     format!("Wayland {} callback panicked", I::interface().name),
                 ));
             }
+            // 按注册时的存储类型（Callback<I>）放回回调表：downcast 返回的是
+            // Box<Callback<I>>，直接再装箱会让每次事件给回调类型多包一层，
+            // 导致同一代理的第二个事件起 downcast 全部失败、回调永久丢失
+            // （表现为输入无响应、装饰协商不生效）。
+            let callback: Callback<I> = callback;
             self.callbacks
                 .lock()
                 .unwrap_or_else(|error| error.into_inner())

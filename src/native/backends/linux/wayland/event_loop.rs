@@ -196,6 +196,16 @@ impl WaylandBackend {
                         format!("Wayland {context} read error: {e}"),
                     );
                 }
+            } else {
+                // system backend：libwayland 内部队列已有未转发事件（其他路径已读入），
+                // 必须先转发到客户端 EventQueue，否则事件永远卡在 C 库内部队列
+                // （表现为输入无响应、装饰协商不生效）。
+                if let Err(e) = self.display.backend().dispatch_inner_queue() {
+                    return self.close_after_failure(
+                        Errc::PlatformError,
+                        format!("Wayland {context} inner queue dispatch error: {e}"),
+                    );
+                }
             }
             if !self.dispatch_pending_checked(context) {
                 return false;
