@@ -20,6 +20,8 @@ use crate::app::session_runtime::{AppRuntime, OpenWindowRequest};
 use crate::app::window::text_input::sync_window_text_input;
 use crate::app::window::window_actions::{
     apply_pending_window_actions, configure_custom_title_bar,
+    // 统一主窗与次窗的自动居中能力缺失策略。
+    report_center_on_screen_result,
 };
 use crate::app::window::window_config::WindowConfig;
 use crate::app::window::window_driver::{WindowDriver, WindowFrameContext};
@@ -464,7 +466,8 @@ impl App {
                 return 1;
             }
         }
-        report_window_operation_error(
+        // Wayland 的预期不支持由 compositor 默认放置，不记录误导警告。
+        report_center_on_screen_result(
             "initial center_on_screen failed",
             platform_window.center_on_screen(),
         );

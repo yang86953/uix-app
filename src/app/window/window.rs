@@ -15,6 +15,8 @@
 
 use std::cell::Cell;
 
+// 复用 app window Module 统一拥有的自动居中报告策略。
+use crate::app::window::window_actions::report_center_on_screen_result;
 use crate::core::{Point, Result};
 use crate::native::platform::Platform;
 use crate::native::windowing::window::PlatformWindow;
@@ -79,12 +81,14 @@ impl Window {
             .create_window(title, width, height)
         {
             Ok(mut w) => {
-                if let Err(error) = w.center_on_screen() {
-                    tracing::warn!(
-                        "Window::create: center_on_screen failed: {}",
-                        error.short_what()
-                    );
-                }
+                // 独立 Window 入口与 App 主窗、次窗保持相同能力缺失语义。
+                report_center_on_screen_result(
+                    // 保留可定位的调用入口上下文。
+                    "Window::create: center_on_screen failed",
+                    // 平台 typed result 直接交给统一分类器。
+                    w.center_on_screen(),
+                // 结束独立窗口自动居中报告。
+                );
                 if let Err(error) = w.show() {
                     tracing::error!("Window::create: show failed: {}", error.short_what());
                     if let Err(close_error) = w.close() {
