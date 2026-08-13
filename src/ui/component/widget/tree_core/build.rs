@@ -80,6 +80,8 @@ impl WidgetTree {
         if include_view_children {
             // 此时 root 已注册为真实 Transfer owner，可安全捕获自定义条目。
             self.refresh_transfer_item_component(id);
+            // 此时 root 已注册为真实 Carousel owner，可安全捕获自定义箭头。
+            self.refresh_carousel_custom_arrows_component(id);
             // 此时 root 已注册为真实 owner，动态捕获可以安全绑定树私有 store。
             self.refresh_calendar_cell_component(id);
             // 导航 capability 启用时也物化 root Anchor 的首次动态容器。
@@ -150,6 +152,8 @@ impl WidgetTree {
         if include_view_children {
             // 此时 child 已连接父树，可安全捕获 Transfer 自定义条目。
             self.refresh_transfer_item_component(child_id);
+            // 此时 child 已连接父树，可安全捕获 Carousel 自定义箭头。
+            self.refresh_carousel_custom_arrows_component(child_id);
             // 此时 child 已连接父树，动态捕获与离场判断均使用真实 owner。
             self.refresh_calendar_cell_component(child_id);
             // 导航 capability 启用时也物化直接追加 Anchor 的首次动态容器。
@@ -323,6 +327,23 @@ impl WidgetTree {
         }
         self.render_handler_table
             .replace_component(id, render_handlers);
+        // 初建 authored slide 不得占用 Carousel 固定动态箭头的保留 key。
+        assert!(
+            // 非 Carousel 节点不受该专属身份约束。
+            !self.is_carousel_custom_arrows_component(id)
+                // Carousel 的全部 authored 直接子节点必须避开框架固定 key。
+                || children.iter().all(|child| {
+                    // 只比较同一父级 keyed 协调使用的直接根 key。
+                    child.key.as_deref()
+                        // 拒绝与动态箭头命名空间相同的 authored 身份。
+                        != Some(
+                            // 引用产品唯一公开给 crate 的固定身份常量。
+                            crate::ui::widgets::display::Carousel::CUSTOM_ARROWS_CHILD_KEY,
+                        )
+                }),
+            // 在执行任何箭头工厂前给出稳定冲突诊断。
+            "Carousel authored child 不得使用保留 key uix:carousel:custom-arrows"
+        );
         // 导航 capability 启用时拒绝初建 authored child 占用 Anchor 容器保留 key。
         #[cfg(feature = "navigation")]
         assert!(
@@ -353,6 +374,8 @@ impl WidgetTree {
         self.refresh_select_option_component(id);
         // Transfer 注册为真实 owner 后立即物化自定义条目并交接私有运行时输出。
         self.refresh_transfer_item_component(id);
+        // Carousel 注册为真实 owner 后立即物化固定自定义箭头。
+        self.refresh_carousel_custom_arrows_component(id);
         // Calendar 注册为真实 owner 后立即物化日期格，避免初建路径绕过动态状态捕获。
         self.refresh_calendar_cell_component(id);
         // 导航 capability 启用时在 authored children 挂载后物化 Anchor 动态容器。
