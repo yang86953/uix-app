@@ -1,7 +1,8 @@
 use super::*;
 use std::path::Path;
 
-const PAGE_SLUGS: [&str; 13] = [
+// 视觉导航矩阵只列出普通侧边栏公开页面，隐藏的组件测试页由独立组件视觉套件覆盖。
+const SIDEBAR_PAGE_SLUGS: [&str; 12] = [
     "home",
     "runtime",
     "general",
@@ -14,7 +15,6 @@ const PAGE_SLUGS: [&str; 13] = [
     "other",
     "framework",
     "gallery",
-    "component-qa",
 ];
 const COMPACT_PAGE_INDEXES: [usize; 7] = [0, 3, 5, 6, 7, 10, 11];
 const DEFAULT_WINDOW_SIZE: (i32, i32) = (1200, 800);
@@ -83,7 +83,8 @@ fn run_visual_capture(graphics: GraphicsExpectation) {
         settled["revision"].as_u64().expect("settled revision"),
     );
 
-    for (page_index, slug) in PAGE_SLUGS.iter().enumerate() {
+    // 普通 Demo 只通过公开侧边栏遍历可达页面。
+    for (page_index, slug) in SIDEBAR_PAGE_SLUGS.iter().enumerate() {
         navigate_to_page(&demo, &mut connection, window_id, generation, page_index);
         capture(
             &demo,
@@ -99,7 +100,8 @@ fn run_visual_capture(graphics: GraphicsExpectation) {
     }
 
     for page_index in COMPACT_PAGE_INDEXES {
-        let slug = PAGE_SLUGS[page_index];
+        // 紧凑矩阵索引同样只引用公开侧边栏页面。
+        let slug = SIDEBAR_PAGE_SLUGS[page_index];
         navigate_to_page(&demo, &mut connection, window_id, generation, page_index);
         resize_and_wait(
             &demo,
@@ -223,7 +225,8 @@ fn navigate_to_page(
             window_id,
             generation,
             "sidebar-scroll",
-            if page_index < PAGE_SLUGS.len() / 2 {
+            // 根据公开侧边栏页面数选择最短的滚动揭示方向。
+            if page_index < SIDEBAR_PAGE_SLUGS.len() / 2 {
                 -10_000.0
             } else {
                 10_000.0
