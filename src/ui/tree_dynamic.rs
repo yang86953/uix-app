@@ -431,39 +431,73 @@ impl WidgetTree {
             // 直接拒绝本轮刷新，保留等待 owner teardown 的既有资源。
             return false;
         }
+        // 已销毁或正在离场的宿主不再签发动态捕获能力或执行应用 renderer。
+        if self.get(id).is_none_or(|node| node.destroyed()) || self.is_pending_removal_subtree(id) {
+            // 保留既有墓碑直到真实移除，不在离场阶段重建展开行子树。
+            return false;
+        }
+        // 陈旧 id 或非 Table owner 不能借用同一 component 槽位的 renderer。
+        if !self
+            // 只读取当前运行时节点的实际组件类型。
+            .get(id)
+            // 让 Table 是本刷新入口唯一允许的 owner 类型。
+            .is_some_and(|node| node.component().as_any().is::<Table>())
+        {
+            // 拒绝非 Table owner，避免状态写入错误的动态命名空间。
+            return false;
+        }
         if !self.render_handler_table.contains_table_expand(id) {
             return false;
         }
 
-        let Some((expanded_row, materialized_row, child_count, row)) =
+        let Some((expanded_row, materialized_row, child_count, expanded)) =
             self.get(id).and_then(|node| {
                 let table = node.component().as_any().downcast_ref::<Table>()?;
                 let expanded_row = table.expanded_row();
-                let row = expanded_row.and_then(|index| table.rows.get(index).cloned());
+                // 同时读取行快照与对应稳定键，缺少任一项时都不得执行用户 renderer。
+                let expanded = expanded_row.and_then(|index| {
+                    // 行数据与 row_key 必须来自同一 Table 数据快照。
+                    table
+                        // 读取当前展开行的数据快照。
+                        .rows
+                        // 越界展开索引视为没有可物化行。
+                        .get(index)
+                        // 克隆行数据以缩短 WidgetTree 的不可变借用。
+                        .cloned()
+                        // 只有同索引稳定 row_key 存在时才形成合法动态实例。
+                        .zip(table.row_keys().get(index).cloned())
+                });
                 Some((
                     expanded_row,
                     table.expanded_child_row(),
                     node.children().len(),
-                    row,
+                    expanded,
                 ))
             })
         else {
             return false;
         };
-        let expected_children = usize::from(row.is_some());
+        let expected_children = usize::from(expanded.is_some());
         if expanded_row == materialized_row && child_count == expected_children {
             return false;
         }
 
-        // 捕获本轮扩展行声明子树并保留其 receipt 到动态协调事务。
-        let children = row
-            .as_ref()
-            .and_then(|row| {
-                // 构建独立状态所有权的声明节点，避免缺少 row 命名空间时跨行复用。
-                self.render_handler_table.render_table_expand_view(id, row)
-            })
-            .into_iter()
-            .collect();
+        // 仅在存在合法展开行时签发固定树 store 与已验证 Table owner 的窄能力。
+        let children = if let Some((row, row_key)) = expanded.as_ref() {
+            // 捕获能力固定当前树与 Table owner，renderer 无法伪造状态归属。
+            let capture_context = ViewAdapter::dynamic_capture_context(self, id);
+            // 在稳定 row_key 命名空间内捕获本轮完整展开行声明输出。
+            self.render_handler_table
+                // 让 State、Effect、AnimatedSource 与 receipt 都进入宿主树事务。
+                .render_table_expand_view(&capture_context, row_key, row)
+                // 将可选单根转换为动态协调器消费的子节点集合。
+                .into_iter()
+                // 当前 Table 同时最多拥有一个活动展开行根。
+                .collect()
+        } else {
+            // 折叠或无效索引必须协调为空集合并释放旧展开行资源。
+            Vec::new()
+        };
         // 使用动态协调事务挂载扩展行，成功后才接纳其组件状态 journal。
         crate::ui::adapter::ViewAdapter::reconcile_dynamic_children(self, id, children);
         self.mark_table_expand_materialized(id);

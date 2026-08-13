@@ -882,12 +882,12 @@ mod dynamic_capture;
 #[path = "adapter_tests/calendar_dynamic_capture.rs"]
 // 编译 Calendar 日期格动态私有 State 的行为门禁。
 mod calendar_dynamic_capture;
-// 仅在表格 capability 启用时编译 DataTable 动态单元格回归。
+// 仅在表格 capability 启用时编译表格延迟 renderer 的动态捕获回归。
 #[cfg(feature = "table")]
-// 拆分 DataTable 单元格动态私有 State 与生命周期回归，保持主测试文件低于规模上限。
-#[path = "adapter_tests/table_cell_dynamic_capture.rs"]
-// 编译 DataTable 单元格 renderer 的树级动态捕获行为门禁。
-mod table_cell_dynamic_capture;
+// 通过独立聚合模块挂载单元格与展开行门禁，保持主测试文件低于规模上限。
+#[path = "adapter_tests/table_dynamic_capture.rs"]
+// 编译 Table 相关 renderer 的树级动态捕获行为门禁。
+mod table_dynamic_capture;
 // 拆分 Select 自定义选项的动态私有 State 与生命周期回归，保持主测试文件低于规模上限。
 #[path = "adapter_tests/select_dynamic_capture.rs"]
 // 编译 Select option renderer 的树级动态捕获行为门禁。
