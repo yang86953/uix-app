@@ -67,7 +67,7 @@ pub(crate) fn generate_mentions(element: &Element) -> Result<TokenStream, Diagno
     // 运行时先接收占位文本和候选，再绑定完整输入文本状态。
     let widget = quote! {
         ::uix::prelude::Mentions::new((#placeholder).to_string())
-            .options(#suggestions)
+            .options((#suggestions).clone())
             .bind_value(&(#state))
     };
     // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。

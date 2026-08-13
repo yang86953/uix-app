@@ -43,10 +43,10 @@ fn generates_state_callback_and_composition_tokens() {
     assert!(tokens.contains("Arc < dyn Fn () -> bool >"));
     // Rust 外层回调名称应保留到最终令牌。
     assert!(tokens.contains("do_close"));
-    // 自定义标签名不应泄漏给核心元素生成器。
+    // 无私有 state 的自定义标签不应泄漏到核心元素生成器。
     assert!(!tokens.contains("Panel"));
-    // 嵌套自定义标签也应完成展开。
-    assert!(!tokens.contains("Counter"));
+    // 私有 state 组件的自定义标签只允许出现在卫生作用域标识符中。
+    assert!(tokens.contains("__uix_component_scope_"));
 }
 
 // 验证同一静态组件的多个调用各自生成不同的作用域局部变量与生命周期标记。
@@ -69,11 +69,31 @@ fn generates_distinct_scopes_for_multiple_static_component_calls() {
         // 转换成稳定文本以检查内部运行时接口。
         .to_string();
     // 两次静态调用必须各自产生一次运行时作用域获取。
-    assert_eq!(tokens.matches("uix_component_scope").count(), 4);
+    assert_eq!(
+        tokens
+            .matches(":: uix :: ui :: __private :: uix_component_scope")
+            .count(),
+        2
+    );
     // 两次静态调用必须使用不同的卫生作用域局部变量，避免状态句柄串用。
-    assert!(tokens.contains("__uix_component_scope_0_Counter"));
-    // 第二次调用必须继续分配新的卫生作用域局部变量。
-    assert!(tokens.contains("__uix_component_scope_3_Counter"));
+    let scope_numbers = tokens
+        // 定位全部卫生作用域标识符。
+        .match_indices("__uix_component_scope_")
+        // 提取标识符编号片段。
+        .map(|(index, _)| {
+            // 读取编号起始后的数字前缀。
+            tokens[index + "__uix_component_scope_".len()..]
+                // 逐字符读取。
+                .chars()
+                // 只保留数字。
+                .take_while(|character| character.is_ascii_digit())
+                // 收集编号文本。
+                .collect::<String>()
+        })
+        // 去重收集编号集合。
+        .collect::<std::collections::BTreeSet<_>>();
+    // 两次调用必须分配两个不同的作用域编号。
+    assert_eq!(scope_numbers.len(), 2);
     // 每个实际根都必须携带对应的 ViewNode 生命周期作用域标记。
     assert_eq!(tokens.matches(". uix_component_scope").count(), 2);
 }
@@ -99,9 +119,14 @@ fn generates_all_nested_component_scope_markers_on_one_root() {
         // 转换成稳定文本以检查链式元数据。
         .to_string();
     // 外层与内层私有 state 调用都必须取得各自作用域。
-    assert_eq!(tokens.matches("uix_component_scope").count(), 4);
+    assert_eq!(
+        tokens
+            .matches(":: uix :: ui :: __private :: uix_component_scope")
+            .count(),
+        2
+    );
     // 同一 Button 根必须被连续标记两次，而非由后层覆盖前层标记。
-    assert!(tokens.contains(". uix_component_scope"));
+    assert_eq!(tokens.matches(". uix_component_scope").count(), 2);
     // 两层私有 state 都必须经由运行时状态复用接口取得句柄。
     assert_eq!(tokens.matches("uix_component_state").count(), 2);
 }
@@ -370,4 +395,90 @@ fn rejects_style_class_inheritance_cycle() {
         error.message.contains("first -> second -> first")
             || error.message.contains("second -> first -> second")
     );
+}
+
+// 验证句柄位属性在组件体内把 state 字段改写为 State 句柄。
+#[test]
+fn rewrites_state_fields_to_handles_in_handle_position_attributes() {
+    // 解析由私有 state 控制的受控组件与双向绑定组件。
+    let document = parse_document(
+        // Modal open、Switch checked 与 RangeSlider value 都读取句柄本身。
+        r#"
+        <Component name="Controlled" state="open: false, checked: true, start: 20, end: 80">
+          <Column>
+            <Modal open={open} title="受控">
+              <Text>{open}</Text>
+              <Button @click="setState(open: true)">打开</Button>
+            </Modal>
+            <Switch checked={checked} />
+            <RangeSlider value={{ start: start, end: end }} min="0" max="100" />
+          </Column>
+        </Component>
+        <Controlled />
+        "#,
+    )
+    // 受控组件文档必须解析成功。
+    .expect("受控组件文档应解析成功");
+    // 生成完整组件感知 View 令牌。
+    let tokens = generate_document_view(&document)
+        // 受控组件必须生成成功。
+        .expect("受控组件应生成成功")
+        // 转成稳定文本便于检查句柄与读值分流。
+        .to_string();
+    // Modal open 必须直接绑定私有 state 句柄而非读值。
+    assert!(tokens.contains(". open (& (__uix_state_"));
+    // 插值必须继续读取当前值，走 value 读值标识符。
+    assert!(tokens.contains("__uix_state_value_"));
+    // Switch checked 必须绑定私有 state 句柄。
+    assert!(tokens.contains(". checked (& (__uix_state_"));
+    // RangeSlider 对象字段必须改写为两个独立 state 句柄。
+    assert!(tokens.contains(". start (& (__uix_state_"));
+    // 区间终点同样读取句柄。
+    assert!(tokens.contains(". end (& (__uix_state_"));
+}
+
+// 验证句柄位属性引用只读 prop 时返回明确诊断。
+#[test]
+fn rejects_read_only_props_in_handle_position_attributes() {
+    // 解析把只读 prop 用作受控打开状态的组件。
+    let document = parse_document(
+        // 普通 String prop 不能提供 Modal 需要的 State<bool> 句柄。
+        r#"<Component name="Bad" props="label: String"><Modal open={label} /></Component><Bad label="x" />"#,
+    )
+    // 名称与结构解析合法。
+    .expect("只读 prop 形状应在组件展开阶段诊断");
+    // 读取句柄位类型诊断。
+    let error = generate_document_view(&document)
+        // 句柄位引用只读 prop 必须失败。
+        .expect_err("句柄位属性不能引用只读 prop");
+    // 诊断必须点出句柄位契约。
+    assert!(error.message.contains("句柄位属性"));
+    // 诊断必须包含违规字段名。
+    assert!(error.message.contains("label"));
+}
+
+// 验证类型化私有 state 注解生成显式 State 内部类型。
+#[test]
+fn generates_typed_private_state_tokens() {
+    // 解析带 u32 与 usize 类型注解的组件。
+    let document = parse_document(
+        // 评分与步骤状态分别注解为 u32 与 usize。
+        r#"<Component name="Typed" state="rating: u32 = 7, current: usize = 1"><Text>{rating}</Text><Button @click="setState(rating: rating + 1)">+</Button></Component><Typed />"#,
+    )
+    // 类型化状态文档必须解析成功。
+    .expect("类型化状态文档应解析成功");
+    // 生成完整组件感知 View 令牌。
+    let tokens = generate_document_view(&document)
+        // 类型化状态必须生成成功。
+        .expect("类型化状态应生成成功")
+        // 转成稳定文本便于检查显式类型。
+        .to_string();
+    // u32 状态必须固定显式 State<u32>。
+    assert!(tokens.contains("State < u32 >"));
+    // usize 状态必须固定显式 State<usize>。
+    assert!(tokens.contains("State < usize >"));
+    // 整数字面量必须保留作者形状，不追加 f64 小数点。
+    assert!(tokens.contains("rating"));
+    // setState 更新值中的整数字面量同样恢复作者形状。
+    assert!(!tokens.contains("rating + 1.0"));
 }

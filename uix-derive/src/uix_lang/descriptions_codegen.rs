@@ -43,7 +43,7 @@ pub(crate) fn generate_descriptions(element: &Element) -> Result<TokenStream, Di
     let data = generate_expression(&data_expression.expression, None)?;
     // 把数组或 Vec 统一收集为公开运行时要求的 Vec 类型。
     let items = quote! {
-        ::std::iter::IntoIterator::into_iter(#data)
+        ::std::iter::IntoIterator::into_iter((#data).clone())
             .collect::<::std::vec::Vec<::uix::prelude::DescriptionsItem>>()
     };
     // 未声明 columns 时显式采用文档默认的一列。

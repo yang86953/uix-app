@@ -21,7 +21,7 @@ fn generates_bound_autocomplete_contract() {
     // 构造器必须先接收候选表达式。
     let options = snapshot
         // 查找公开候选构建入口。
-        .find("options (suggestions)")
+        .find("options ((suggestions) . clone ())")
         // 失败时输出完整令牌便于定位格式漂移。
         .unwrap_or_else(|| panic!("应生成 AutoComplete 候选映射：{snapshot}"));
     // 输入状态必须借用给运行时绑定入口。

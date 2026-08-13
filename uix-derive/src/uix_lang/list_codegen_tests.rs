@@ -21,7 +21,7 @@ fn generates_list_contract() {
     // 合法列表必须成功生成。
     .expect("文档属性应映射到公开 List API");
     // 文本集合必须从调用方可迭代表达式取得所有权。
-    assert!(snapshot.contains("IntoIterator :: into_iter (list_items)"));
+    assert!(snapshot.contains("IntoIterator :: into_iter ((list_items) . clone ())"));
     // 集合元素必须统一收集为运行时拥有的 Vec<String>。
     assert!(snapshot.contains("Vec < :: std :: string :: String >"));
     // 列表必须从公开构造器和 items 构建器开始。

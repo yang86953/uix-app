@@ -342,7 +342,7 @@ fn generate_select_field(element: &Element) -> Result<TokenStream, Diagnostic> {
     let mut item = quote! {
         ::uix::prelude::FormSelectItem::new(#field)
             .label(#label)
-            .options(#options)
+            .options((#options).clone())
             .required(#required)
     };
     // 可搜索状态接受布尔简写、字面量或表达式。
@@ -618,7 +618,7 @@ fn generate_radio_field(element: &Element) -> Result<TokenStream, Diagnostic> {
     let mut item = quote! {
         ::uix::prelude::FormRadioItem::new(#field)
             .label(#label)
-            .options(#options)
+            .options((#options).clone())
             .required(#required)
     };
     // 可选分组名接受字符串字面量或表达式。

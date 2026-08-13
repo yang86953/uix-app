@@ -21,7 +21,7 @@ fn generates_descriptions_contract() {
     // 描述列表必须从公开构造器开始。
     assert!(snapshot.contains("Descriptions :: new ()"));
     // 数据表达式必须通过拥有所有权的 IntoIterator 统一收集。
-    assert!(snapshot.contains("IntoIterator :: into_iter (description_items)"));
+    assert!(snapshot.contains("IntoIterator :: into_iter ((description_items) . clone ())"));
     // 收集目标必须锁定公开 DescriptionsItem 类型。
     assert!(snapshot.contains("DescriptionsItem"));
     // 静态列数必须进入公开 column 构建器。

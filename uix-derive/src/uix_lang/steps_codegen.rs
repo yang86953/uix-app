@@ -41,7 +41,7 @@ pub(crate) fn generate_steps(element: &Element) -> Result<TokenStream, Diagnosti
     let items = generate_expression(&items_expression.expression, None)?;
     // 把数组或 Vec 统一收集为运行时构造器要求的 Vec<Step>。
     let steps = quote! {
-        ::std::iter::IntoIterator::into_iter(#items)
+        ::std::iter::IntoIterator::into_iter((#items).clone())
             .collect::<::std::vec::Vec<::uix::prelude::Step>>()
     };
 

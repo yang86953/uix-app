@@ -21,7 +21,7 @@ fn generates_bound_select_contract() {
     // 结构化选项必须进入独立公开入口。
     let options = snapshot
         // 查找选项数据引用。
-        .find("select_options (city_options)")
+        .find("select_options ((city_options) . clone ())")
         // 失败时输出完整令牌便于定位格式漂移。
         .unwrap_or_else(|| panic!("应生成 Select 结构化选项：{snapshot}"));
     // 搜索表达式必须保留动态布尔类型检查。

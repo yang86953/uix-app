@@ -20,7 +20,7 @@ fn generates_bound_steps_contract() {
     // 合法 Steps 必须成功生成。
     .expect("文档属性应映射到公开 Steps API");
     // 数据表达式必须通过拥有所有权的 IntoIterator 统一收集。
-    assert!(snapshot.contains("IntoIterator :: into_iter (step_items)"));
+    assert!(snapshot.contains("IntoIterator :: into_iter ((step_items) . clone ())"));
     // 收集目标必须锁定公开 Step 类型。
     assert!(snapshot.contains("Vec < :: uix :: prelude :: Step >"));
     // current 必须借用 State<usize> 句柄。

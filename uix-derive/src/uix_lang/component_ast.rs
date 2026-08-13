@@ -52,6 +52,14 @@ pub(crate) enum ComponentValueType {
     Number,
     // 映射到 Rust bool。
     Bool,
+    // 映射到 Rust u32（评分组件等无符号计数状态）。
+    U32,
+    // 映射到 Rust usize（步骤、分页等索引状态）。
+    USize,
+    // 映射到 Rust f32（滚动位置等单精度状态）。
+    F32,
+    // 映射到 Rust i32（数字输入等有符号整数状态）。
+    I32,
 }
 
 // 表示一个组件私有状态槽。
@@ -65,11 +73,13 @@ pub(crate) struct ComponentState {
     pub(crate) span: SourceSpan,
 }
 
-// 表示普通受限表达式或 state 专用空数组初始值。
+// 表示普通受限表达式、类型化表达式或 state 专用空数组初始值。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ComponentStateInitial {
     // 保存基础或 Rust 可推断表达式。
     Expression(Expression),
+    // 保存带显式类型注解的表达式（如 rating: u32 = 7）。
+    TypedExpression(ComponentValueType, Expression),
     // 保存文档允许但普通表达式禁止的空数组。
     EmptyArray,
 }

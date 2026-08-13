@@ -21,7 +21,7 @@ fn generates_image_group_contract() {
     // 合法画廊必须成功生成。
     .expect("文档属性应映射到公开 ImageGroup API");
     // 图片路径集合必须从调用方可迭代表达式取得所有权。
-    assert!(snapshot.contains("IntoIterator :: into_iter (gallery_images)"));
+    assert!(snapshot.contains("IntoIterator :: into_iter ((gallery_images) . clone ())"));
     // 集合元素必须统一收集为运行时拥有的 Vec<String>。
     assert!(snapshot.contains("Vec < :: std :: string :: String >"));
     // 画廊必须从公开构造器和 images 构建器开始。

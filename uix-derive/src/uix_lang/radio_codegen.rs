@@ -59,7 +59,7 @@ pub(crate) fn generate_radio(element: &Element) -> Result<TokenStream, Diagnosti
     // 先设置选项再绑定状态，确保运行时立即同步选中值。
     let widget = quote! {
         ::uix::prelude::Radio::new()
-            .options(#options)
+            .options((#options).clone())
             .value(&(#state))
     };
     // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。

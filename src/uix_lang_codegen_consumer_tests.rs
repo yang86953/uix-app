@@ -611,3 +611,55 @@ fn generated_components_compile_against_public_uix_api() {
         "#
     );
 }
+
+// 验证同一数据绑定可被多个组件重复消费（codegen 采用 clone 语义）。
+#[test]
+fn shared_data_bindings_compile_against_public_uix_api() {
+    // 创建两个下拉共享的结构化选项绑定。
+    let shared_options = vec![
+        // 中文文案绑定稳定地区代码。
+        SelectOption::new("中国", "cn"),
+        // 另一项用于覆盖多个结构化选项。
+        SelectOption::new("美国", "us"),
+    ];
+    // 创建第一个下拉的受控状态。
+    let city_a = State::new(String::from("cn"));
+    // 创建第二个下拉的受控状态。
+    let city_b = State::new(String::from("us"));
+    // 展开两个 Select 并要求最终结果为公开 ViewNode。
+    let _view: ViewNode = uix!(
+        r#"<Column><Select value={city_a} options={shared_options} width="200px" /><Select value={city_b} options={shared_options} width="200px" /></Column>"#
+    );
+    // 绑定必须按值 clone 消费，调用方集合保持不变。
+    assert_eq!(shared_options.len(), 2);
+}
+
+// 反馈与导航 capability 启用时验证句柄位绑定与类型化私有 state。
+#[cfg(all(feature = "feedback", feature = "navigation"))]
+// 验证受控组件、双向绑定与显式类型注解在公开 API 消费者中通过类型检查。
+#[test]
+fn generated_handle_bindings_and_typed_states_compile_against_public_uix_api() {
+    // 创建 Steps 类型化数据绑定。
+    let steps_data = vec![Step::new("注册"), Step::new("验证")];
+    // 展开由类型化私有 state 完全控制的组件并要求公开 ViewNode。
+    let _view: ViewNode = uix!(
+        r#"
+        <Component name="Controlled" state="feedback_open: bool = false, checked: bool = true, low: number = 20, high: number = 80, rating: u32 = 7, current: usize = 1, page: usize = 1">
+          <Column>
+            <Modal open={feedback_open} title="受控">
+              <Button @click="setState(feedback_open: false)">关闭</Button>
+            </Modal>
+            <Switch checked={checked} />
+            <RangeSlider value={{ start: low, end: high }} min="0" max="100" />
+            <Rate value={rating} count="5" />
+            <Steps current={current} items={steps_data} />
+            <Pagination total="100" current={page} />
+            <Button @click="setState(feedback_open: true)">打开</Button>
+            <Button @click="setState(rating: rating + 1)">评分 +1</Button>
+            <Button @click="setState(current: 2)">跳到第 3 步</Button>
+          </Column>
+        </Component>
+        <Controlled />
+        "#
+    );
+}

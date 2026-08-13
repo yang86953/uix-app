@@ -43,7 +43,7 @@ pub(crate) fn generate_timeline(element: &Element) -> Result<TokenStream, Diagno
     let items_expression = generate_expression(&items_expression.expression, None)?;
     // 把数组或 Vec 统一收集为公开运行时要求的 Vec 类型。
     let items = quote! {
-        ::std::iter::IntoIterator::into_iter(#items_expression)
+        ::std::iter::IntoIterator::into_iter((#items_expression).clone())
             .collect::<::std::vec::Vec<::uix::prelude::TimelineItem>>()
     };
     // 未声明 pending 时显式采用文档默认值。

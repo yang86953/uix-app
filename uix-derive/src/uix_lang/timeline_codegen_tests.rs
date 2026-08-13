@@ -21,7 +21,7 @@ fn generates_timeline_contract() {
     // 时间轴必须从公开构造器开始。
     assert!(snapshot.contains("Timeline :: new ()"));
     // 数据表达式必须通过拥有所有权的 IntoIterator 统一收集。
-    assert!(snapshot.contains("IntoIterator :: into_iter (timeline_items)"));
+    assert!(snapshot.contains("IntoIterator :: into_iter ((timeline_items) . clone ())"));
     // 收集目标必须锁定公开 TimelineItem 类型。
     assert!(snapshot.contains("TimelineItem"));
     // 静态 pending 必须进入公开构建器。

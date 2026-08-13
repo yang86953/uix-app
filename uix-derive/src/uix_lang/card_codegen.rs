@@ -38,7 +38,7 @@ pub(crate) fn generate_card(element: &Element) -> Result<TokenStream, Diagnostic
         // 生成受限 Rust 表达式并保留调用侧集合类型检查。
         let actions = generate_expression(&expression.expression, None)?;
         // 把操作项集合所有权交给公开 Card 构建器。
-        widget = quote! { (#widget).actions(#actions) };
+        widget = quote! { (#widget).actions((#actions).clone()) };
         // 结束操作项属性分支。
     }
 

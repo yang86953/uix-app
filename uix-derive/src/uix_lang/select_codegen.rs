@@ -63,7 +63,7 @@ pub(crate) fn generate_select(element: &Element) -> Result<TokenStream, Diagnost
 
     // 从公开 Select 构造器和结构化选项入口开始配置。
     let mut widget = quote! {
-        ::uix::prelude::Select::new().select_options(#options)
+        ::uix::prelude::Select::new().select_options((#options).clone())
     };
     // 可搜索状态接受静态或动态布尔值。
     if let Some(attribute) = find_attribute(element, "searchable") {

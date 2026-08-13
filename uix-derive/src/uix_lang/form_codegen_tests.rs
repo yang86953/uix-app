@@ -35,7 +35,7 @@ fn generates_typed_form_select_item_contract() {
     // 核对候选集合和独立标签。
     assert!(snapshot.contains("FormSelectItem :: new (\"level\")"));
     // 核对候选集合表达式。
-    assert!(snapshot.contains("options (level_options)"));
+    assert!(snapshot.contains("options ((level_options) . clone ())"));
     // 核对独立标签和必填规则。
     assert!(snapshot.contains("label (\"等级\")") && snapshot.contains("required (true)"));
     // 核对搜索分支、占位文本与动态禁用状态。
@@ -75,7 +75,7 @@ fn generates_typed_form_radio_item_contract() {
     // 核对独立标签和候选集合表达式。
     assert!(snapshot.contains("label (\"通知渠道\")"));
     // 核对候选集合配置。
-    assert!(snapshot.contains("options (channel_options)"));
+    assert!(snapshot.contains("options ((channel_options) . clone ())"));
     // 核对分组名和必填规则。
     assert!(snapshot.contains("group_name (\"profile-channel\")"));
     // 核对必填和动态禁用配置。
