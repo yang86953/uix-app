@@ -10,11 +10,65 @@ use crate::ui::virtualization::virtual_scroll::VirtualScroll;
 use crate::ui::widgets::display::table::Table;
 use crate::ui::widgets::display::{Calendar, Collapse, Image};
 use crate::ui::widgets::input::Select;
+// 引入 Transfer 以约束条目动态子树的唯一合法 owner 类型。
+use crate::ui::widgets::Transfer;
 // 导航 capability 启用时才引入 Anchor 动态容器 owner 类型。
 #[cfg(feature = "navigation")]
 use crate::ui::widgets::navigation::Anchor;
 
 impl WidgetTree {
+    // 判断当前节点是否仍是拥有动态条目 renderer 的 Transfer。
+    pub(crate) fn is_transfer_item_component(&self, id: ComponentId) -> bool {
+        // 仅接受当前树中可寻址的实际 Transfer 节点。
+        self.get(id)
+            // 不把陈旧槽位或其他组件误判为条目动态 owner。
+            .is_some_and(|node| node.component().as_any().is::<Transfer>())
+    }
+
+    // 为当前树中活跃的 Transfer owner 捕获并协调全部自定义条目。
+    pub(crate) fn refresh_transfer_item_component(&mut self, id: ComponentId) -> bool {
+        // 失败或关闭树不得再调用应用提供的条目 renderer。
+        if !self.accepts_coordination_work() {
+            // 保留既有运行时子树等待受控 teardown。
+            return false;
+        }
+        // 已销毁、离场或陈旧 owner 不得签发动态捕获能力。
+        if self.get(id).is_none_or(|node| node.destroyed()) || self.is_pending_removal_subtree(id) {
+            // 离场墓碑继续由真实移除边界持有全部资源。
+            return false;
+        }
+        // 固定入口只接受当前树中实际存在的 Transfer owner。
+        if !self.is_transfer_item_component(id) {
+            // 非 Transfer 或陈旧 generation 不执行任何应用代码。
+            return false;
+        }
+        // 为已经验证的活跃 Transfer owner 签发树私有捕获能力。
+        let capture_context = ViewAdapter::dynamic_capture_context(self, id);
+        // 在 owner 自身 ProviderContext 中捕获本轮全部条目声明。
+        let children = self.get(id).and_then(|node| {
+            // 克隆 provider 上下文以缩短运行时节点借用。
+            let provider_context = node.provider_context().clone();
+            // 让条目 renderer 观察与宿主声明相同的 Provider 值。
+            with_provider_context(&provider_context, || {
+                // 仅允许已验证的实际 Transfer 执行条目工厂。
+                node.component()
+                    // 不向 renderer 暴露 WidgetTree 或其他组件实现。
+                    .as_any()
+                    // 再次按具体类型收窄，抵御陈旧身份误投递。
+                    .downcast_ref::<Transfer>()
+                    // 捕获 State、Effect、AnimatedSource 与状态 receipt 的完整批次。
+                    .map(|transfer| transfer.item_views_for_reconcile(&capture_context))
+            })
+        });
+        // owner 在捕获前失效时静默拒绝，不删除任何既有子树。
+        let Some(children) = children else {
+            // 不把缺少合法 owner 解释为空条目集合。
+            return false;
+        };
+        // 用单一树事务按稳定 key 原子协调全部动态条目。
+        ViewAdapter::reconcile_dynamic_children(self, id, children)
+    }
+
     // 判断当前节点是否仍是拥有专属动态容器的 Anchor。
     #[cfg(feature = "navigation")]
     pub(crate) fn is_anchor_container_component(&self, id: ComponentId) -> bool {

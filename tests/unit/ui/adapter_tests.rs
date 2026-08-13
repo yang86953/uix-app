@@ -888,10 +888,10 @@ mod calendar_dynamic_capture;
 #[path = "adapter_tests/table_dynamic_capture.rs"]
 // 编译 Table 相关 renderer 的树级动态捕获行为门禁。
 mod table_dynamic_capture;
-// 拆分 Select 自定义选项的动态私有 State 与生命周期回归，保持主测试文件低于规模上限。
-#[path = "adapter_tests/select_dynamic_capture.rs"]
-// 编译 Select option renderer 的树级动态捕获行为门禁。
-mod select_dynamic_capture;
+// 通过独立聚合模块挂载 Select 与 Transfer 延迟 renderer 门禁，保持主文件规模不变。
+#[path = "adapter_tests/dynamic_widget_capture.rs"]
+// 编译复合组件延迟 renderer 的树级动态捕获行为门禁。
+mod dynamic_widget_capture;
 // 将 fail-stop 状态机与受控关闭行为放入独立文件，避免主测试文件超过规模上限。
 #[path = "adapter_tests/fail_stop.rs"]
 // 挂载协调 panic 前后不同恢复语义的行为门禁。
