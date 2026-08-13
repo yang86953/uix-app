@@ -720,6 +720,12 @@ impl NativeGpuCanvas2D {
                 segments.push((Some(*scroll), Vec::new()));
                 continue;
             }
+            // 空 scissor 表示裁剪区域完全不可见（clip 为空），该操作是安全 no-op：
+            // 兼容路径同样不绘制，RHI 路径必须跳过而不是原子拒绝整帧。
+            let (_, _, scissor_w, scissor_h) = operation.scissor();
+            if scissor_w <= 0 || scissor_h <= 0 {
+                continue;
+            }
             // 保留原始 pending queue 的 painter order。
             let Some(operation) = lower_operation(operation, context, scale_x, scale_y) else {
                 // 不在未验证的混合 pass 中伪造成功。
