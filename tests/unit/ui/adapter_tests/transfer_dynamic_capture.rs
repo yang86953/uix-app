@@ -180,7 +180,7 @@ fn transfer_view(
         transfer
     };
     // 捕获 Transfer 声明本身，动态条目由 live WidgetTree 另行捕获。
-    ViewAdapter::capture_view(transfer)
+    ViewAdapter::capture_root(|| ViewNode::leaf(transfer))
 }
 
 // 验证每个条目完整接管运行时输出，普通父协调保留独立状态身份。
@@ -350,12 +350,11 @@ fn transfer_item_dynamic_capture_releases_moved_and_removed_state() {
         ),
     );
     // renderer 移除后 Transfer 不再拥有任何 View 子节点。
-    assert!(
-        tree.get(transfer)
-            .expect("Transfer 必须仍存在")
-            .children()
-            .is_empty()
-    );
+    assert!(tree
+        .get(transfer)
+        .expect("Transfer 必须仍存在")
+        .children()
+        .is_empty());
     // 全部动态条目移除后不得遗留动画来源。
     assert!(tree.animated_source_registrations().is_empty());
     // 保存最近一次 target:a 状态句柄用于关闭前释放验证。
