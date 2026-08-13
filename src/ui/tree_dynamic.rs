@@ -12,6 +12,10 @@ use crate::ui::widgets::display::{Calendar, Collapse, Image};
 use crate::ui::widgets::input::Select;
 // 引入 Transfer 以约束条目动态子树的唯一合法 owner 类型。
 use crate::ui::widgets::Transfer;
+// 把 Carousel 固定动态箭头协调拆到独立实现，保持树级生命周期入口内聚。
+#[path = "tree_dynamic/carousel.rs"]
+// 编译 Carousel owner、固定身份与捕获事务的专属扩展。
+mod carousel;
 // 导航 capability 启用时才引入 Anchor 动态容器 owner 类型。
 #[cfg(feature = "navigation")]
 use crate::ui::widgets::navigation::Anchor;

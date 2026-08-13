@@ -29,8 +29,8 @@ use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::theme::style::Style;
 use crate::ui::view::ViewNode;
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
-// 引入 Image 与 Transfer 以识别各自的专属动态子树协调边界。
-use crate::ui::widgets::{Button, Calendar, Container, Grid, Image, Label, Transfer};
+// 引入 Carousel、Image 与 Transfer 以识别各自的专属动态子树协调边界。
+use crate::ui::widgets::{Button, Calendar, Carousel, Container, Grid, Image, Label, Transfer};
 // 导航 capability 启用时才识别 Anchor 的专属动态容器协调边界。
 #[cfg(feature = "navigation")]
 use crate::ui::widgets::navigation::Anchor;
@@ -54,7 +54,6 @@ mod dynamic_reconcile;
 #[path = "adapter/coordination.rs"]
 // 编译根构建与协调的私有事务入口。
 mod coordination;
-
 /// 声明期 View 子节点能力端口（System 私有边界）。
 ///
 /// `component → view` 依赖环消除（SMC-04）：`build_view_children` 从
@@ -63,7 +62,6 @@ mod coordination;
 pub trait ViewChildrenProvider: WidgetComponent {
     fn build_view_children(&self) -> Vec<ViewNode>;
 }
-
 /// 读取组件的声明期 View 子节点（无端口时为空）。
 pub(crate) fn view_children(widget: &dyn WidgetComponent) -> Vec<ViewNode> {
     widget
@@ -71,10 +69,8 @@ pub(crate) fn view_children(widget: &dyn WidgetComponent) -> Vec<ViewNode> {
         .map(|provider| provider.build_view_children())
         .unwrap_or_default()
 }
-
 /// View tree adapter.
 pub struct ViewAdapter;
-
 /// 组件原位 patch 对后续流水线的精细失效影响。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct WidgetPatchImpact {
@@ -83,7 +79,6 @@ struct WidgetPatchImpact {
     /// 组件测量或布局输出是否变化。
     layout_changed: bool,
 }
-
 impl ViewAdapter {
     /// Expands a ViewNode tree into a WidgetNode tree using explicit stack
     /// traversal to avoid stack overflow on deep trees in debug builds.
@@ -120,7 +115,6 @@ impl ViewAdapter {
             remaining_children: std::vec::IntoIter<ViewNode>,
             processed_children: Vec<WidgetNode>,
         }
-
         fn decompose(node: ViewNode) -> Frame {
             let ViewNode {
                 widget,
@@ -192,7 +186,6 @@ impl ViewAdapter {
                 processed_children: Vec::new(),
             }
         }
-
         fn build_widget(frame: Frame) -> WidgetNode {
             let widget = ViewAdapter::apply_style(
                 frame.widget,
@@ -200,13 +193,11 @@ impl ViewAdapter {
                 frame.flex_grow_override,
                 frame.flex_shrink_override,
             );
-
             let mut wnode = if frame.processed_children.is_empty() {
                 WidgetNode::leaf(widget)
             } else {
                 WidgetNode::new(widget, frame.processed_children)
             };
-
             if let Some(key) = frame.key {
                 wnode = wnode.key(&key);
             }
@@ -451,13 +442,19 @@ impl ViewAdapter {
         // Transfer 条目必须在 live owner 完成原位同步后由所属树动态捕获。
         let transfer_items =
             widget.as_any().is::<Transfer>() || tree.is_transfer_item_component(id);
+        // Carousel 自定义箭头必须在 live owner patch 后与 authored slides 一次性协调。
+        let carousel_custom_arrows = widget.as_any().is::<Carousel>()
+            // 原位复用时也识别当前 live Carousel owner。
+            || tree.is_carousel_custom_arrows_component(id);
         // Image 的占位与错误 View 共同属于同一专属动态子树协调边界。
         let image_children = widget.as_any().is::<Image>();
-        let component_view_children = if calendar_cells || anchor_container {
-            Vec::new()
-        } else {
-            view_children(widget.as_ref())
-        };
+        // 专属 owner 的延迟子树不能再由无树 store 的通用 ViewChildren 入口执行。
+        let component_view_children =
+            if calendar_cells || anchor_container || carousel_custom_arrows {
+                Vec::new()
+            } else {
+                view_children(widget.as_ref())
+            };
         let next_accessibility = widget.snapshot_fields().accessibility();
         let next_disabled = accessibility_override
             .as_ref()
@@ -568,6 +565,9 @@ impl ViewAdapter {
         } else if transfer_items {
             // live Transfer 已完成 patch，此处以 pane 与业务 key 协调全部自定义条目。
             tree.refresh_transfer_item_component(id)
+        } else if carousel_custom_arrows {
+            // live Carousel 已完成 patch，此处合并 authored slides 与固定自定义箭头。
+            tree.reconcile_carousel_custom_arrows_component(id, children)
         } else if image_children {
             // 先保留本轮 authored 与 fresh placeholder，再追加同一失败实例的完整动态错误 View。
             let mut children = children;

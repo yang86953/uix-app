@@ -248,32 +248,8 @@ component! {
     }
 
     build_view_children => (&self) -> Vec<crate::ui::view::ViewNode> {
-        if !self.has_custom_arrows() {
-            return Vec::new();
-        }
-        let Some(factory) = self.custom_arrows_view.as_ref() else {
-            return Vec::new();
-        };
-        let runtime = self.runtime.clone();
-        let previous: CarouselArrowAction = Rc::new(move || {
-            let index = runtime.previous_index();
-            runtime.select(index, SelectionSource::User);
-        });
-        let runtime = self.runtime.clone();
-        let next: CarouselArrowAction = Rc::new(move || {
-            let index = runtime.next_index();
-            runtime.select(index, SelectionSource::User);
-        });
-        let runtime = self.runtime.clone();
-        vec![factory(previous, next)
-            .key("carousel-custom-arrows")
-            .on_semantic(SemanticKind::Click, move |event| {
-                if let Some(index) = runtime.pending_change.take() {
-                    event.kind = SemanticKind::Change;
-                    event.target = event.current_target;
-                    event.payload = SemanticPayload::Text(index.to_string());
-                }
-            })]
+        // 自定义箭头只能在真实 Carousel owner 注册后由树级动态捕获入口执行。
+        Vec::new()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -558,6 +534,9 @@ impl Default for Carousel {
 }
 
 impl Carousel {
+    // 固定自定义箭头的树内根 key，并与动态状态命名空间保持完全一致。
+    pub(crate) const CUSTOM_ARROWS_CHILD_KEY: &'static str = "uix:carousel:custom-arrows";
+
     fn intrinsic_size(&self) -> Size {
         Size::new(300.0, 200.0)
     }
@@ -657,6 +636,82 @@ impl Carousel {
         self
     }
 
+    // 在已验证 Carousel owner 的树私有捕获边界内构建当前自定义箭头。
+    pub(crate) fn custom_arrows_view_for_reconcile(
+        // 借用由所属 WidgetTree 为当前 owner 签发的不可替换捕获能力。
+        &self,
+        // 接收固定树 store、owner 身份与 receipt 事务。
+        capture_context: &crate::ui::adapter::DynamicViewCaptureContext,
+        // 返回启用且拥有工厂时的完整动态箭头声明。
+    ) -> Option<crate::ui::view::ViewNode> {
+        // 默认箭头或关闭状态不执行应用自定义工厂。
+        if !self.has_custom_arrows() {
+            // 缺少动态声明让父协调器移除旧固定箭头。
+            return None;
+        }
+        // 自定义标志有效时必须同时存在可调用工厂。
+        let factory = self.custom_arrows_view.as_ref()?;
+        // 克隆当前 live 运行态供 previous 窄动作长期持有。
+        let runtime = self.runtime.clone();
+        // 建立不暴露 Carousel 实现的上一页动作。
+        let previous: CarouselArrowAction = Rc::new(move || {
+            // 每次调用都从 live 运行态计算循环索引。
+            let index = runtime.previous_index();
+            // 通过 Carousel 自身选择策略建立用户操作事实。
+            runtime.select(index, SelectionSource::User);
+        });
+        // 克隆同一 live 运行态供 next 窄动作持有。
+        let runtime = self.runtime.clone();
+        // 建立不泄漏 owner 生命周期的下一页动作。
+        let next: CarouselArrowAction = Rc::new(move || {
+            // 每次调用都使用当前真实幻灯片数量计算索引。
+            let index = runtime.next_index();
+            // 仍由 Carousel 拥有选择、暂停与动画策略。
+            runtime.select(index, SelectionSource::User);
+        });
+        // 在固定 owner、槽位与产品身份内原子捕获全部运行时输出。
+        let root = capture_context.capture(
+            // 隔离 Carousel 箭头与同一 owner 未来可能拥有的其他动态槽位。
+            "carousel-custom-arrows",
+            // 同一稳定值同时限定状态命名空间与 keyed reconcile。
+            Self::CUSTOM_ARROWS_CHILD_KEY,
+            // 工厂只在捕获上下文安装后执行一次。
+            || factory(previous, next),
+        );
+        // 应用工厂不得另行声明根身份，否则会形成双重 owner 语义。
+        assert!(
+            // 仅接受尚未设置 key 的箭头根。
+            root.key.is_none(),
+            // 提供稳定错误以便调用方移除冲突身份。
+            "Carousel arrows 工厂返回根不得设置 key"
+        );
+        // 克隆当前运行态供语义事件投影闭包持有。
+        let runtime = self.runtime.clone();
+        // 由框架注入唯一固定 key，并保留既有 Change 事件投影语义。
+        Some(
+            // 根 key 与私有状态命名空间严格一致。
+            root.key(Self::CUSTOM_ARROWS_CHILD_KEY)
+                // 自定义箭头的 Click 可投影刚完成的轮播选择变化。
+                .on_semantic(SemanticKind::Click, move |event| {
+                    // 只有 previous/next 真正改变索引时才投影 Change。
+                    if let Some(index) = runtime.pending_change.take() {
+                        // 把箭头 Click 转换为 Carousel 的稳定 Change 语义。
+                        event.kind = SemanticKind::Change;
+                        // 让事件目标保持当前动态箭头根。
+                        event.target = event.current_target;
+                        // 沿用原公开契约输出目标索引文本。
+                        event.payload = SemanticPayload::Text(index.to_string());
+                    }
+                }),
+        )
+    }
+
+    // 报告当前声明是否确实需要树级自定义箭头实例。
+    pub(crate) fn needs_custom_arrows_view(&self) -> bool {
+        // 复用产品开关、custom 标志与工厂存在性的单一真相。
+        self.has_custom_arrows()
+    }
+
     /// Sets the preferred Carousel viewport size.
     pub fn size(mut self, width: f32, height: f32) -> Self {
         self.fixed_width = Some(width.max(0.0));
@@ -731,3 +786,10 @@ impl Carousel {
         (index < count).then_some(index)
     }
 }
+
+// 挂载 Carousel 自定义箭头的树级状态与生命周期行为门禁。
+#[cfg(test)]
+// 将大体量动态捕获测试拆到独立文件，保持产品组件低于规模上限。
+#[path = "carousel_dynamic_capture_tests.rs"]
+// 仅在测试构建中编译自定义箭头 owner 回归用例。
+mod carousel_dynamic_capture_tests;
