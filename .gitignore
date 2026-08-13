@@ -1,8 +1,7 @@
 # Rust build artifacts
 target/
 
-# IDE
-.vscode/
+# IDE（调试配置随 .zed/ 一并入库，仅忽略本地杂项）
 .idea/
 *.swp
 *.swo

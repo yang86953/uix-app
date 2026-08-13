@@ -1,0 +1,38 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // 构建 GUI 演示（完整调试信息，输出到 demo/target/debug-full/）
+      "label": "build: uix-demo (debug-full)",
+      "type": "shell",
+      "command": "cargo build --manifest-path demo/Cargo.toml --profile debug-full --bin uix-demo",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      // 构建 uix-lang 演示
+      "label": "build: uix-lang-demo (debug-full)",
+      "type": "shell",
+      "command": "cargo build --manifest-path demo/Cargo.toml --profile debug-full --bin uix-lang-demo",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      // 构建 CLI 演示
+      "label": "build: uix-cli-demo (debug-full)",
+      "type": "shell",
+      "command": "cargo build --manifest-path demo/Cargo.toml --profile debug-full --bin uix-cli-demo",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": ["$rustc"]
+    }
+  ]
+}
