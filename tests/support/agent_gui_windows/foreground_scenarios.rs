@@ -9,7 +9,6 @@ pub(in super::super) fn verify_theme_and_resize_capture(
     connection: &mut BufReader<File>,
     window_id: u64,
     generation: u64,
-    _snapshot: &Value,
 ) {
     let window = demo.window_handle();
     demo.raise_for_interaction();
@@ -122,6 +121,7 @@ pub(in super::super) fn verify_pointer_and_keyboard_focus_visuals(
     connection: &mut BufReader<File>,
     window_id: u64,
     generation: u64,
+    _snapshot: &Value,
 ) {
     // 最大化与还原可能改变窗口代际内的逻辑范围，焦点场景必须读取当前快照。
     let current = exchange(
