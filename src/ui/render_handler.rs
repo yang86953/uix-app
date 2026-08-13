@@ -7,8 +7,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::core::ComponentId;
-// 引入静态根捕获入口与由宿主树签发的窄动态捕获能力。
-use crate::ui::adapter::{DynamicViewCaptureContext, ViewAdapter};
+// 引入由宿主树签发的窄动态捕获能力。
+use crate::ui::adapter::DynamicViewCaptureContext;
 use crate::ui::view::ViewNode;
 use crate::ui::virtualization::VirtualScrollRenderer;
 // 表格 capability 启用时才引入扩展行、自定义单元格与行数据类型。
@@ -73,13 +73,37 @@ impl RenderHandlerTable {
     #[cfg(feature = "table")]
     pub(crate) fn render_table_expand_view(
         &self,
-        component: ComponentId,
+        // 接收由活跃 Table owner 签发的窄动态捕获能力。
+        capture_context: &DynamicViewCaptureContext,
+        // 接收 Table 数据快照中已经确定的稳定行业务键。
+        row_key: &str,
+        // 接收与稳定行业务键对应的当前行快照。
         row: &TableRow,
     ) -> Option<ViewNode> {
         // 查找拥有当前表格扩展行的渲染器。
-        let renderer = self.table_expand.get(&component)?;
-        // 用独立 capture 避免尚未拥有稳定 row 命名空间的动态行跨行复用私有状态。
-        Some(ViewAdapter::capture_root(|| renderer(row)))
+        let renderer = self.table_expand.get(&capture_context.owner())?;
+        // 用 UTF-8 字节长度和完整 row_key 构成无拼接歧义的稳定身份。
+        let stable_key = format!("table-expand:{}:{row_key}", row_key.len());
+        // 为 keyed reconcile 保留与私有状态命名空间相同的身份副本。
+        let view_key = stable_key.clone();
+        // 在所属 WidgetTree 的展开行槽位中捕获完整声明输出。
+        let view = capture_context.capture(
+            // 固定槽位隔离同一 Table 下的其他延迟 View 工厂。
+            "table-expand",
+            // 让稳定行业务身份同时拥有私有状态与结构节点身份。
+            stable_key,
+            // 在完整捕获边界中调用应用提供的展开行工厂。
+            || renderer(row),
+        );
+        // renderer 自设根 key 会造成状态与结构双身份，必须显式拒绝。
+        assert!(
+            // 框架是展开行动态根身份的唯一权威。
+            view.key.is_none(),
+            // 提供不包含业务行键的稳定迁移诊断。
+            "Table 展开行 renderer 不得直接设置根 key"
+        );
+        // 强制节点结构协调与树私有捕获使用同一稳定身份。
+        Some(view.key(view_key))
     }
 
     pub(crate) fn render_virtual_scroll_items(
