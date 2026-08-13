@@ -287,24 +287,47 @@ fn select_option_dynamic_capture_releases_removed_and_cross_tree_state() {
     // 清除本轮状态写入产生的 Effect 调度。
     assert!(tree_a.tick_effects());
 
-    // 协调为关闭状态，触发全部自定义选项真实移除。
-    ViewAdapter::reconcile_nodes(
-        // 在第一棵树内执行关闭声明。
-        &mut tree_a,
-        // 交付使用同一 renderer 观察器的关闭 Select。
-        select_view(
-            // 关闭下拉层使物化索引集合为空。
-            false,
-            // 复用第一棵树调用记录。
-            Arc::clone(&calls_a),
-            // 复用第一棵树状态表。
-            Arc::clone(&states_a),
-            // 复用第一棵树 Effect 观察器。
-            Arc::clone(&effects_a),
-            // 保持安全 renderer。
-            Arc::clone(&panic_a),
-        ),
-    );
+    // 取得真实运行时 Select 并进入关闭过渡。
+    tree_a
+        // 按稳定 owner 读取可变运行时节点。
+        .get_mut(select_a)
+        // 当前 Select owner 必须仍可寻址。
+        .expect("关闭前 Select owner 必须存在")
+        // 取得运行时组件的类型擦除可变入口。
+        .component_mut()
+        // 恢复真实 Select 类型以调用运行时关闭动作。
+        .as_any_mut()
+        // 关闭动作只能应用到 Select owner。
+        .downcast_mut::<Select>()
+        // 测试建树根必须保持 Select 类型。
+        .expect("关闭目标必须是 Select")
+        // 启动真实退出动画，期间动态资源仍归当前树所有。
+        .close();
+    // 关闭过渡尚未结束时旧选项必须继续存在。
+    assert!(tree_a.get(removed).is_some());
+    // 在无布局测试树中直接推进 Select 自身退出动画到完成。
+    let close_still_active = {
+        // 重新取得仍处于关闭过渡的运行时 Select。
+        let select = tree_a
+            // 按稳定 owner 读取可变运行时节点。
+            .get_mut(select_a)
+            // 关闭过渡期间 Select owner 必须仍可寻址。
+            .expect("动画推进前 Select owner 必须存在")
+            // 取得运行时组件的类型擦除可变入口。
+            .component_mut()
+            // 恢复真实 Select 类型以推进组件动画。
+            .as_any_mut()
+            // 动画推进只能应用到 Select owner。
+            .downcast_mut::<Select>()
+            // 测试建树根必须保持 Select 类型。
+            .expect("动画推进目标必须是 Select");
+        // 用足够时长结束退出动画并清除 closing 状态。
+        crate::ui::component::traits::WidgetAnimation::update_animation(select, 10.0)
+    };
+    // 完成退出后组件不得继续请求下一动画帧。
+    assert!(!close_still_active);
+    // 动画完成后的刷新必须消费空选项窗口并真实删除旧子树。
+    assert!(tree_a.refresh_select_option_component(select_a));
     // 已关闭的旧选项不得继续存在。
     assert!(tree_a.get(removed).is_none());
     // 全部选项移除后不得遗留动画来源。
@@ -316,24 +339,24 @@ fn select_option_dynamic_capture_releases_removed_and_cross_tree_state() {
     // 旧 Effect 所有权必须已经同步释放。
     assert!(!tree_a.has_pending_effects());
 
-    // 重新打开同一 Select owner，验证真实移除后按初值重建。
-    ViewAdapter::reconcile_nodes(
-        // 在第一棵树内重新协调。
-        &mut tree_a,
-        // 交付重新打开的 Select 声明。
-        select_view(
-            // 再次打开下拉层。
-            true,
-            // 复用第一棵树调用记录。
-            Arc::clone(&calls_a),
-            // 复用第一棵树状态表。
-            Arc::clone(&states_a),
-            // 复用第一棵树 Effect 观察器。
-            Arc::clone(&effects_a),
-            // 保持安全 renderer。
-            Arc::clone(&panic_a),
-        ),
-    );
+    // 取得同一运行时 Select 并执行真实重新打开动作。
+    tree_a
+        // 按稳定 owner 读取可变运行时节点。
+        .get_mut(select_a)
+        // 真实移除选项后 Select owner 必须仍存在。
+        .expect("重新打开前 Select owner 必须存在")
+        // 取得运行时组件的类型擦除可变入口。
+        .component_mut()
+        // 恢复真实 Select 类型以调用运行时打开动作。
+        .as_any_mut()
+        // 打开动作只能应用到 Select owner。
+        .downcast_mut::<Select>()
+        // 测试建树根必须保持 Select 类型。
+        .expect("重新打开目标必须是 Select")
+        // 重新打开弹层并重置可见选项窗口。
+        .open();
+    // 直接刷新同一 renderer sidecar 以重新物化全部可见选项。
+    assert!(tree_a.refresh_select_option_component(select_a));
     // 已真实释放后重建必须回到初始化值。
     assert_eq!(captured_state(&states_a, "甲").get(), 0);
     // 重建选项不得复用已经真实删除的 ComponentId。
