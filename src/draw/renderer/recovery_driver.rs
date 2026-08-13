@@ -18,6 +18,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
+// 连续三次 probe/Present 矛盾才判定 surface 不再兼容，避免瞬时遮挡竞态触发重建。
+const MAX_PRESENT_PROBE_CONFLICTS: u8 = 3;
+
 /// One app-owned rebuild request shared by a Diagnostics recovery registration
 /// and the owning [`RecoveryDriver`].
 ///
@@ -64,6 +67,10 @@ pub struct RecoveryDriver {
     rebuilder: RenderTargetRebuilder,
     pending_failure: Option<GraphicsFailure>,
     terminal_failure: Option<GraphicsFailure>,
+    // 记录最近一次无数据 probe 是否已经确认 surface 可呈现。
+    present_probe_reopened: bool,
+    // 记录连续的“probe 可用但真实 Present 遮挡”矛盾次数。
+    present_probe_conflicts: u8,
     rebuild_request: RebuildRequest,
     width: i32,
     height: i32,
@@ -80,6 +87,10 @@ impl RecoveryDriver {
             rebuilder,
             pending_failure: None,
             terminal_failure: None,
+            // 新建 surface 尚未经历遮挡退出 probe。
+            present_probe_reopened: false,
+            // 新建 surface 没有协议矛盾历史。
+            present_probe_conflicts: 0,
             rebuild_request: RebuildRequest::default(),
             width: 0,
             height: 0,
@@ -109,11 +120,63 @@ impl RecoveryDriver {
         self
     }
 
-    fn record_failure(&mut self, failure: GraphicsFailure) {
+    // 清除只属于当前 surface 代际的遮挡协议观测。
+    fn reset_present_probe_conflicts(&mut self) {
+        // 新代际或成功 Present 不得继承旧 probe 事实。
+        self.present_probe_reopened = false;
+        // 连续矛盾计数同样按 surface 代际清零。
+        self.present_probe_conflicts = 0;
+    }
+
+    // 记录无数据 present probe 对当前 surface 可用性的最新判断。
+    fn observe_present_test(&mut self, result: &Result<PresentTestResult, Error>) {
+        // 只按结构化结果更新状态，不解析平台错误文本。
+        match result {
+            // 可呈现 probe 允许下一次真实 Present 验证协议是否一致。
+            Ok(PresentTestResult::Presentable) => self.present_probe_reopened = true,
+            // probe 仍遮挡属于健康状态，并中断连续矛盾序列。
+            Ok(PresentTestResult::Occluded) => self.reset_present_probe_conflicts(),
+            // probe 自身失败由统一失败路径处理，不保留旧可呈现事实。
+            Err(_) => self.reset_present_probe_conflicts(),
+        }
+    }
+
+    fn record_failure(&mut self, mut failure: GraphicsFailure) {
         // Occlusion is a healthy swapchain availability state. Rebuilding a
         // surface cannot make another window stop covering this one.
         if matches!(failure, GraphicsFailure::Occluded(_)) {
-            return;
+            // 没有成功 probe 时仍按普通遮挡处理，不触发恢复。
+            if !self.present_probe_reopened {
+                // 普通遮挡只交给窗口调度器的退避 probe。
+                return;
+            }
+            // 一个成功 probe 只允许验证紧随其后的一次真实 Present。
+            self.present_probe_reopened = false;
+            // 记录连续矛盾，饱和计数避免长时间运行回绕。
+            self.present_probe_conflicts = self.present_probe_conflicts.saturating_add(1);
+            // 短暂竞态尚不足以证明 surface 失效。
+            if self.present_probe_conflicts < MAX_PRESENT_PROBE_CONFLICTS {
+                // 保持现有遮挡退避，不提前重建图形资源。
+                return;
+            }
+            // 达到门槛后清零当前代际计数，后续恢复拥有新的观测周期。
+            self.present_probe_conflicts = 0;
+            // 记录稳定的生产诊断，明确区分 probe 与真实 Present 两个阶段。
+            tracing::warn!(
+                "graphics recovery: present probe succeeded but real Present remained occluded; selecting Software fallback"
+            );
+            // 该矛盾已证明当前显示输出不兼容硬件 swapchain，跳过其它 GPU recipe。
+            self.recovery.prefer_software();
+            // probe 与真实 Present 持续矛盾说明当前输出 surface 已不可用。
+            failure = GraphicsFailure::SurfaceLost(Error::new(
+                // 使用既有 surface-lost 分类进入有界整后端恢复序列。
+                crate::core::Errc::GraphicsSurfaceLost,
+                // 保留稳定诊断文本，避免依赖具体 DXGI HRESULT 字符串。
+                "present probe reported available but repeated presentation remained occluded",
+            ));
+        } else {
+            // 其它失败会终止遮挡协议观测，避免跨故障类型累计。
+            self.reset_present_probe_conflicts();
         }
         // The first failure identifies the frame that was not committed.  Do
         // not overwrite it with secondary cleanup noise before recovery gets
@@ -151,6 +214,8 @@ impl RecoveryDriver {
         match (self.rebuilder)(action, self.width.max(1), self.height.max(1)) {
             Ok(replacement) => {
                 self.engine = replacement;
+                // replacement 建立新 surface 代际，旧 probe 事实必须失效。
+                self.reset_present_probe_conflicts();
                 None
             }
             Err(error) => {
@@ -284,7 +349,12 @@ impl RenderTarget for RecoveryDriver {
     fn end_frame(&mut self, present_damage: &DamageRegion) -> RenderOutcome {
         let outcome = self.engine.end_frame(present_damage);
         match &outcome {
-            RenderOutcome::Present(_) => self.recovery.on_presented(),
+            RenderOutcome::Present(_) => {
+                // 成功提交关闭本次有界恢复 episode。
+                self.recovery.on_presented();
+                // 成功提交同时证明当前 surface 协议恢复一致。
+                self.reset_present_probe_conflicts();
+            }
             RenderOutcome::PresentPending(_) => {}
             RenderOutcome::FrameReady(_) => {
                 let failure = GraphicsFailure::from_error(Error::new(
@@ -302,6 +372,8 @@ impl RenderTarget for RecoveryDriver {
 
     fn test_present(&mut self) -> Result<PresentTestResult, Error> {
         let result = self.engine.test_present();
+        // 在错误登记前保存 probe 结果，确保失败会清除旧可呈现事实。
+        self.observe_present_test(&result);
         if let Err(error) = &result {
             self.record_failure(GraphicsFailure::from_error(error.clone()));
         }
@@ -311,6 +383,8 @@ impl RenderTarget for RecoveryDriver {
     fn external_present_succeeded(&mut self) {
         self.engine.external_present_succeeded();
         self.recovery.on_presented();
+        // 外部 presenter 的成功提交同样结束遮挡矛盾观测。
+        self.reset_present_probe_conflicts();
     }
 
     fn external_present_failed(&mut self, error: Error) {
@@ -640,6 +714,55 @@ mod tests {
             rebuilds.fetch_add(1, AtomicOrdering::SeqCst);
             Ok(Box::new(StubTarget::new()) as Box<dyn RenderTarget>)
         })
+    }
+
+    // 验证持续的 probe/Present 矛盾会升级为 surface-lost，而不是永久遮挡循环。
+    #[test]
+    fn repeated_present_probe_conflicts_escalate_surface_loss() {
+        // 创建仅用于满足恢复包装器构造的计数器。
+        let rebuilds = Arc::new(AtomicUsize::new(0));
+        // 构造不主动失败的底层 target，直接测试恢复器的协议观测状态。
+        let mut driver = RecoveryDriver::new(
+            // 底层 target 不主动返回图形失败。
+            Box::new(StubTarget::new()),
+            // rebuilder 仅满足恢复包装器的构造契约。
+            counting_rebuilder(&rebuilds),
+        );
+        // 连续模拟 probe 可用后真实 Present 仍返回遮挡。
+        for conflict in 1..=MAX_PRESENT_PROBE_CONFLICTS {
+            // 构造无数据 probe 的结构化可呈现结果。
+            let probe_result = Ok(PresentTestResult::Presentable);
+            // 先登记 probe 事实，保持与生产调用顺序一致。
+            driver.observe_present_test(&probe_result);
+            // 再登记紧随其后的真实 Present 遮挡失败。
+            driver.record_failure(GraphicsFailure::Occluded(Error::new(
+                // 使用正式遮挡错误码，不依赖 D3D11 私有类型。
+                Errc::GraphicsOccluded,
+                // 提供稳定的测试诊断文本。
+                "stub present remained occluded",
+            )));
+            // 未达到门槛时仍按健康遮挡处理。
+            if conflict < MAX_PRESENT_PROBE_CONFLICTS {
+                // 瞬时竞态不得提前进入恢复 FSM。
+                assert!(driver.pending_failure.is_none());
+            }
+        }
+        // 达到门槛后必须登记 surface-lost，供下一帧执行有界恢复。
+        assert!(matches!(
+            // 读取恢复器保存的首个未处理失败。
+            driver.pending_failure,
+            // 矛盾门槛必须转换为正式 surface-lost 分类。
+            Some(GraphicsFailure::SurfaceLost(_))
+        ));
+        // 协议矛盾应把下一次恢复动作直接推进到 Software。
+        assert_eq!(
+            // 使用刚登记的 typed failure 驱动同一恢复状态机。
+            driver
+                .recovery
+                .on_failure(driver.pending_failure.as_ref().unwrap()),
+            // 不应再尝试另一条可能同样不可见的 GPU swapchain。
+            RecoveryAction::UseSoftware
+        );
     }
 
     #[test]

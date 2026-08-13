@@ -50,6 +50,15 @@ impl GraphicsRecovery {
         action
     }
 
+    // 将已证实不兼容的硬件呈现链直接推进到 Software，避免换用另一条仍不可见的 GPU swapchain。
+    pub(crate) fn prefer_software(&mut self) {
+        // 只有存在 Software 候选时才改变有界恢复游标。
+        if self.software_available {
+            // 第三号步骤对应唯一一次 UseSoftware 动作。
+            self.step = 3;
+        }
+    }
+
     /// A successful present closes the failure episode and resets the bounded
     /// sequence for a future, independent surface/device loss.
     pub fn on_presented(&mut self) {

@@ -22,6 +22,8 @@
 
 运行时 backend 切换由 `RenderSession` 作为唯一 owner 执行检查式事务：候选构造失败不触碰当前 backend；当前 backend 的 `try_shutdown` 成功是 owner 切换提交点，失败时返回原 typed error 并保留原 backend、extent 与 capability。提交后先安装候选并保留 `FullRedraw` 要求，再恢复同一 extent；若候选 resize 失败，新 backend 仍作为唯一 owner 留在会话中供恢复、重试或 checked shutdown，不能伪装成已回滚到旧 backend。
 
+遮挡本身是健康的 surface 可用性状态，不触发 backend 重建。若同一 surface 连续三次出现无数据 `test_present` 返回 `Presentable`、紧随其后的真实 Present 却仍返回 `GraphicsOccluded`，`RecoveryDriver` 才把该协议矛盾升级为 `GraphicsSurfaceLost`；这类矛盾已证明当前显示输出不兼容硬件 swapchain，因此下一帧直接执行一次 `Software` 恢复，不再换用另一条 GPU recipe。probe 仍返回 `Occluded` 或后续 Present 成功都会清零矛盾计数。
+
 ## 组件：Renderer
 
 CPU/GPU 是 Renderer 内部 backend 选择，不是两套组件绘制 API。同窗一帧只有一条有序命令序列和至多一次最终 present。
