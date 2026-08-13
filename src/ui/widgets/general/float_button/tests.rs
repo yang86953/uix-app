@@ -2,8 +2,16 @@
 use super::*;
 // 引入表面安全边距常量以验证 overlay 所有权。
 use super::geometry::FLOAT_BUTTON_SURFACE_INSET;
+// 引入真实声明树构建与语义点击载荷以验证事件所有权。
+use crate::ui::adapter::ViewAdapter;
 // 引入组件事件与渲染窄契约。
 use crate::ui::component::traits::{EventHandler, WidgetRender};
+// 引入运行时节点直接子项读取契约。
+use crate::ui::component::widget::WidgetCore;
+// 引入完整子声明节点以调用保留事件的组构建入口。
+use crate::ui::view::ViewNode;
+// 引入标准点击事件契约与键盘修饰状态。
+use crate::ui::{ClickEvent, KeyMod, SemanticEvent};
 
 // 验证四角 placement、窗口缩放和兼容 frame-relative 路径。
 #[test]
@@ -219,4 +227,85 @@ fn non_finite_values_are_stable_and_group_includes_description_hit_bounds() {
     let bounds = group.interaction_bounds(Rect::zero());
     // description 必须让父级命中宽度大于基础直径。
     assert!(bounds.w > 40.0);
+}
+
+// 验证 FloatButtonGroup 组合完整子 View 时保留标准点击处理器与父级几何。
+#[test]
+fn group_button_views_preserve_child_click_handler_and_parent_layout() {
+    // 建立跨事件回调共享的点击计数。
+    let clicks = Rc::new(Cell::new(0));
+    // 为子 View 闭包克隆独立共享句柄。
+    let child_clicks = Rc::clone(&clicks);
+    // 构造点击触发组，并让直接 FloatButton View 独占标准点击处理器。
+    let group = FloatButtonGroup::new()
+        // 保持父组件只处理组开关触发语义。
+        .trigger(TriggerMode::Click)
+        // 传入完整 ViewNode，覆盖 handler 不被重建的公开入口。
+        .button_views(vec![
+            ViewNode::leaf(
+                // 使用带说明的按钮验证父级几何仍由子配置派生。
+                FloatButton::new("edit").description("编辑"),
+            )
+            // 把业务点击处理器登记在子节点而不是组父节点。
+            .on_click_fn(move || {
+                // 累加计数以证明真实 HandlerTable 已执行子处理器。
+                child_clicks.set(child_clicks.get() + 1);
+            }),
+        ]);
+    // 通过真实 ViewAdapter 发布父子组件和 HandlerTable。
+    let mut tree = ViewAdapter::build(group);
+    // 取得稳定根组件标识。
+    let root = tree.root_id().expect("FloatButtonGroup 根必须存在");
+    // 读取组的唯一直接子按钮标识。
+    let child = tree.get(root).expect("组根必须可读取").children()[0];
+    // 父组件必须从子 authored config 派生一条布局记录。
+    let runtime_group = tree
+        // 读取运行时父节点。
+        .get(root)
+        // 父节点在建树完成后必须仍然存在。
+        .expect("组根必须可读取")
+        // 借用父组件对象。
+        .component()
+        // 取得运行时类型视图。
+        .as_any()
+        // 窄化为 FloatButtonGroup。
+        .downcast_ref::<FloatButtonGroup>()
+        // 类型变化表示包装器发布了错误根组件。
+        .expect("根组件必须是 FloatButtonGroup");
+    // 父布局记录必须与直接子节点数量一致。
+    assert_eq!(runtime_group.item_layouts.len(), 1);
+    // 子组件必须被标记为组内布局参与者。
+    let runtime_button = tree
+        // 读取运行时子节点。
+        .get(child)
+        // 子节点在建树完成后必须存在。
+        .expect("组内按钮必须可读取")
+        // 借用子组件对象。
+        .component()
+        // 取得运行时类型视图。
+        .as_any()
+        // 窄化为 FloatButton。
+        .downcast_ref::<FloatButton>()
+        // 类型变化表示直接子根验证失效。
+        .expect("直接子组件必须是 FloatButton");
+    // placement 覆盖标记必须在发布前完成。
+    assert!(runtime_button.in_group);
+    // 向真实子 ComponentId 分发标准主键点击。
+    let result = tree.dispatch_semantic(SemanticEvent::click(
+        // 点击目标是子按钮，不是组父节点。
+        child,
+        // 构造标准主键点击载荷。
+        ClickEvent {
+            // 使用左键满足 on_click_fn 的主点击过滤。
+            button: MouseButton::Left,
+            // 语义分发不依赖布局位置，使用稳定零点。
+            pos: Point::new(0.0, 0.0),
+            // 本次点击不携带修饰键。
+            modifiers: KeyMod::NONE,
+        },
+    ));
+    // 子 HandlerTable 必须报告已处理。
+    assert_eq!(result, EventResult::Handled);
+    // 业务处理器必须且只执行一次。
+    assert_eq!(clicks.get(), 1);
 }
