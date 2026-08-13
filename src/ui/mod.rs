@@ -167,6 +167,9 @@ pub use virtualization::virtual_scroll;
 // 为内联组件宏提供窗口私有状态的隐藏运行时实现。
 #[doc(hidden)]
 pub mod component_state;
+// 提供 UI 线程窗口循环期间的主题切换请求通道。
+#[doc(hidden)]
+pub mod theme_request;
 
 // Public component traits and exported macros mention these opaque bridge
 // types. Keep them nameable without making the runtime module hierarchy an
@@ -182,6 +185,10 @@ pub mod __private {
     // 重导出代码生成器使用的私有组件状态桥接。
     pub use super::component_state::{uix_component_scope, uix_component_state, UixComponentScope};
     pub use super::component_snapshot::snapshot_fields_from_any;
+    // 重导出 uix-lang setTheme 内置操作使用的主题请求通道。
+    pub use super::theme_request::{
+        uix_clear_theme_requester, uix_install_theme_requester, uix_set_theme,
+    };
 }
 
 #[cfg(feature = "test-harness")]

@@ -10,7 +10,8 @@ use super::component_expression_lower::{collect_number_sources, restore_number_s
 // 引入组件字段、属性、表达式与诊断 AST。
 use super::{
     Attribute, AttributeValue, ComponentProp, ComponentPropType, ComponentState,
-    ComponentStateInitial, ComponentValueType, Diagnostic, ExpressionKind, ExpressionNode,
+    ComponentStateInitial, ComponentValueType, Diagnostic, Expression, ExpressionKind,
+    ExpressionNode, ObjectField, rust_identifier, value_type_tokens,
 };
 // 引入既有受限表达式生成入口。
 use super::generate_expression;
@@ -37,9 +38,10 @@ impl ComponentExpander {
             // 基础值 prop 使用显式 Rust 类型检查。
             ComponentPropType::Value(value_type) => {
                 // 生成调用属性值。
-                let value = self.component_value_tokens(attribute, outer_bindings, *value_type)?;
+                let value =
+                    self.component_value_tokens(attribute, outer_bindings, value_type.clone())?;
                 // 生成目标 Rust 类型。
-                let rust_type = value_type_tokens(*value_type);
+                let rust_type = value_type_tokens(value_type.clone());
                 // 声明类型化局部值。
                 self.setup.push(quote! {
                     // 让 Rust 编译器验证基础 prop 类型。
@@ -67,7 +69,7 @@ impl ComponentExpander {
                 // 生成调用方 State 表达式。
                 let value = self.state_argument_tokens(attribute, outer_bindings)?;
                 // 生成 State 内部值类型。
-                let rust_type = value_type_tokens(*value_type);
+                let rust_type = value_type_tokens(value_type.clone());
                 // 为当前读值分配卫生名称。
                 let read_ident = self.fresh_ident("state_value", &prop.name);
                 // 克隆共享句柄并读取当前值。
@@ -118,7 +120,7 @@ impl ComponentExpander {
                     // 遍历参数类型。
                     .iter()
                     // 复制基础类型枚举。
-                    .copied()
+                    .cloned()
                     // 映射为 Rust 类型。
                     .map(value_type_tokens)
                     // 收集类型列表。
@@ -128,7 +130,7 @@ impl ComponentExpander {
                     // 复制存在的返回类型。
                     .as_ref()
                     // 复制基础类型枚举。
-                    .copied()
+                    .cloned()
                     // 映射为 Rust 类型。
                     .map(value_type_tokens)
                     // 回退为单元类型。
@@ -312,37 +314,241 @@ impl ComponentExpander {
                 self.transform_expression(&mut expanded, bindings, false, false)?;
                 // 恢复类型化初始值中的作者数字形状。
                 restore_number_sources(&mut expanded, &authored_numbers);
-                // 生成改写后的初始值表达式。
-                let value = generate_expression(&expanded, None)?;
-                // 使用显式注解类型固定 State 内部类型。
-                let rust_type = value_type_tokens(*value_type);
-                // 数值类型必须显式 as 转换：impl FnOnce() -> T 不会把
-                // 期望类型传回闭包体，整数字面量会停留在 {integer}。
-                let initial = match value_type {
-                    // 数字与整数注解统一走 as 转换。
+                // 按类型类别生成确定类型与初始值。
+                match value_type {
+                    // 数字与整数注解统一走 as 转换：impl FnOnce() -> T 不会把
+                    // 期望类型传回闭包体，整数字面量会停留在 {integer}。
                     ComponentValueType::Number
                     | ComponentValueType::U32
                     | ComponentValueType::USize
                     | ComponentValueType::F32
                     | ComponentValueType::I32 => {
+                        // 生成原始数值令牌。
+                        let value = generate_expression(&expanded, None)?;
+                        // 生成显式 Rust 类型。
+                        let rust_type = value_type_tokens(value_type.clone());
                         // 生成显式转换表达式。
-                        quote! { (#value) as #rust_type }
+                        let initial = quote! { (#value) as #rust_type };
+                        // 整数与单精度注解需要在 setState 值中保留作者数字形状。
+                        let authored = matches!(
+                            value_type,
+                            ComponentValueType::U32
+                                | ComponentValueType::USize
+                                | ComponentValueType::F32
+                                | ComponentValueType::I32
+                        );
+                        // 返回显式类型化初始值。
+                        Ok((initial, Some(rust_type), authored))
                     }
                     // 字符串与布尔字面量自带确定类型。
-                    ComponentValueType::String | ComponentValueType::Bool => value,
-                };
-                // 整数与单精度注解需要在 setState 值中保留作者数字形状。
-                let authored_numbers = matches!(
-                    value_type,
-                    ComponentValueType::U32
-                        | ComponentValueType::USize
-                        | ComponentValueType::F32
-                        | ComponentValueType::I32
-                );
-                // 返回显式类型化初始值。
-                Ok((initial, Some(rust_type), authored_numbers))
+                    ComponentValueType::String | ComponentValueType::Bool => {
+                        // 生成字面量令牌。
+                        let value = generate_expression(&expanded, None)?;
+                        // 生成显式 Rust 类型。
+                        let rust_type = value_type_tokens(value_type.clone());
+                        // 返回字面量与显式类型。
+                        Ok((value, Some(rust_type), false))
+                    }
+                    // 集合类型只接受空数组初始值。
+                    ComponentValueType::HashSetOfString | ComponentValueType::VecOfString => {
+                        // 要求空数组形状。
+                        let ExpressionKind::Array(items) = &expanded.kind else {
+                            // 返回集合初始值形状诊断。
+                            return Err(Diagnostic::new(
+                                // 指向初始值表达式。
+                                expanded.span,
+                                // 说明集合状态只支持空初始。
+                                "集合类型 state 只接受空数组初始值",
+                                // 给出规范写法。
+                                "使用 [] 作为 HashSet<String> 或 Vec<String> 的初始值",
+                            ));
+                        };
+                        // 空数组之外的元素暂不支持。
+                        if !items.is_empty() {
+                            // 返回非空集合诊断。
+                            return Err(Diagnostic::new(
+                                // 指向初始值表达式。
+                                expanded.span,
+                                // 说明集合初始值边界。
+                                "集合类型 state 暂不支持非空数组初始值",
+                                // 给出替代方案。
+                                "使用 [] 并在事件中通过不可变数组操作更新",
+                            ));
+                        }
+                        // 生成显式 Rust 类型。
+                        let rust_type = value_type_tokens(value_type.clone());
+                        // 按集合类别选择空构造。
+                        let initial = match value_type {
+                            // HashSet 使用集合构造。
+                            ComponentValueType::HashSetOfString => {
+                                quote! { ::std::collections::HashSet::new() }
+                            }
+                            // 其余集合走向量构造。
+                            _ => quote! { ::std::vec::Vec::new() },
+                        };
+                        // 返回空集合初始值。
+                        Ok((initial, Some(rust_type), false))
+                    }
+                    // 语义类型走已登记的数据构造调用。
+                    ComponentValueType::Date
+                    | ComponentValueType::Time
+                    | ComponentValueType::Color
+                    | ComponentValueType::Point => {
+                        // 要求数据构造调用形状。
+                        if !matches!(&expanded.kind, ExpressionKind::Call { .. }) {
+                            // 返回构造调用形状诊断。
+                            return Err(Diagnostic::new(
+                                // 指向初始值表达式。
+                                expanded.span,
+                                // 说明语义类型需要构造调用。
+                                "语义类型 state 必须使用数据类型构造调用初始化",
+                                // 给出规范示例。
+                                "使用 Date(2026, 8, 10)、Time(14, 30)、Color('#1677ff') 或 Point(0.0, 0.0)",
+                            ));
+                        }
+                        // 生成构造调用令牌。
+                        let value = generate_expression(&expanded, None)?;
+                        // 生成显式 Rust 类型。
+                        let rust_type = value_type_tokens(value_type.clone());
+                        // 返回构造初始值。
+                        Ok((value, Some(rust_type), false))
+                    }
+                    // 结构类型走对象字面量构造。
+                    ComponentValueType::CascaderValue | ComponentValueType::Record(_) => {
+                        // 生成结构体字面量并校验字段集合。
+                        let initial = self.struct_literal_tokens(&expanded, value_type)?;
+                        // 生成显式 Rust 类型。
+                        let rust_type = value_type_tokens(value_type.clone());
+                        // 返回结构体初始值。
+                        Ok((initial, Some(rust_type), false))
+                    }
+                }
             }
         }
+    }
+
+    // 生成结构类型 state 的对象字面量并校验字段集合。
+    fn struct_literal_tokens(
+        // 只读借用展开状态。
+        &self,
+        // 接收改写后的对象字面量。
+        expression: &Expression,
+        // 接收目标结构类型。
+        value_type: &ComponentValueType,
+    ) -> Result<TokenStream, Diagnostic> {
+        // 要求对象字面量形状。
+        let ExpressionKind::Object(fields) = &expression.kind else {
+            // 返回结构初始值形状诊断。
+            return Err(Diagnostic::new(
+                // 指向初始值表达式。
+                expression.span,
+                // 说明结构类型需要对象字面量。
+                "结构类型 state 必须使用对象字面量初始化",
+                // 给出规范示例。
+                "使用 { labels: [], values: [] } 或 record 字段对象",
+            ));
+        };
+        // 取得目标字段表与类型令牌。
+        let (type_tokens, target_fields) = match value_type {
+            // CascaderValue 使用公开固定字段集合。
+            ComponentValueType::CascaderValue => (
+                // 生成公开路径令牌。
+                quote! { ::uix::prelude::CascaderValue },
+                // 固定两个字符串向量字段。
+                vec![
+                    (
+                        "labels".to_string(),
+                        ComponentValueType::VecOfString,
+                    ),
+                    (
+                        "values".to_string(),
+                        ComponentValueType::VecOfString,
+                    ),
+                ],
+            ),
+            // record 使用文档声明的字段集合。
+            ComponentValueType::Record(name) => {
+                // 查找已声明 record。
+                let record = self.records.get(name).ok_or_else(|| {
+                    // 构造未声明 record 诊断。
+                    Diagnostic::new(
+                        // 指向初始值表达式。
+                        expression.span,
+                        // 说明记录缺失。
+                        format!("record 类型 {name} 未在当前文档声明"),
+                        // 给出修复动作。
+                        "在顶层声明区添加 <Record name=\"...\" fields=\"...\" />",
+                    )
+                })?;
+                // 验证名称可映射为 Rust 标识符。
+                let ident =
+                    syn::parse_str::<Ident>(name).expect("record 名已在解析期验证");
+                // 收集字段名与类型。
+                let fields = record
+                    // 遍历声明字段。
+                    .fields
+                    // 借用字段序列。
+                    .iter()
+                    // 复制字段名与类型。
+                    .map(|field| (field.name.clone(), field.kind.clone()))
+                    // 收集字段表。
+                    .collect();
+                // 返回标识符与字段表。
+                (quote! { #ident }, fields)
+            }
+            // 其他类型不进入本路径。
+            _ => unreachable!("仅结构类型进入对象字面量路径"),
+        };
+        // 校验对象字段与目标字段一一对应。
+        for field in fields {
+            // 未知字段必须拒绝。
+            if !target_fields
+                .iter()
+                .any(|(name, _)| name == &field.name)
+            {
+                // 返回未知字段诊断。
+                return Err(Diagnostic::new(
+                    // 指向字段。
+                    field.span,
+                    // 说明字段不属于目标结构。
+                    format!("字段 {} 不属于该结构类型", field.name),
+                    // 给出合法字段集合。
+                    "只使用结构类型声明的字段名",
+                ));
+            }
+        }
+        // 校验全部目标字段都已提供。
+        for (name, _) in &target_fields {
+            // 缺字段必须拒绝。
+            if !fields.iter().any(|field| field.name == *name) {
+                // 返回缺字段诊断。
+                return Err(Diagnostic::new(
+                    // 指向初始值表达式。
+                    expression.span,
+                    // 说明缺失字段。
+                    format!("对象字面量缺少字段 {name}"),
+                    // 给出补全动作。
+                    "为结构类型补齐全部声明字段",
+                ));
+            }
+        }
+        // 生成字段令牌。
+        let field_tokens = fields
+            // 按源码顺序生成。
+            .iter()
+            // 转换每个字段。
+            .map(|field: &ObjectField| {
+                // 验证字段名。
+                let name = rust_identifier(&field.name, field.span)?;
+                // 生成字段值表达式。
+                let value = generate_expression(&field.value, None)?;
+                // 返回字段令牌。
+                Ok(quote! { #name: #value })
+            })
+            // 收集或返回首个诊断。
+            .collect::<Result<Vec<_>, Diagnostic>>()?;
+        // 返回结构体字面量。
+        Ok(quote! { #type_tokens { #(#field_tokens),* } })
     }
 
     // 为一个事件克隆全部组件字段。
@@ -468,13 +674,23 @@ impl ComponentExpander {
                         "使用 \"true\"、\"false\" 或 {boolean_expression}",
                     )),
                 },
-                // 扩展数值类型只供类型化私有 state 使用，props 解析器不会产生。
-                ComponentValueType::U32 | ComponentValueType::USize | ComponentValueType::F32
-                | ComponentValueType::I32 => Err(Diagnostic::new(
+                // 扩展类型只供类型化私有 state 或 record 字段使用，props 解析器不会产生。
+                ComponentValueType::U32
+                | ComponentValueType::USize
+                | ComponentValueType::F32
+                | ComponentValueType::I32
+                | ComponentValueType::Date
+                | ComponentValueType::Time
+                | ComponentValueType::Color
+                | ComponentValueType::Point
+                | ComponentValueType::CascaderValue
+                | ComponentValueType::HashSetOfString
+                | ComponentValueType::VecOfString
+                | ComponentValueType::Record(_) => Err(Diagnostic::new(
                     // 指向完整属性。
                     attribute.span,
                     // 说明类型仅限 state 注解。
-                    format!("prop {} 不能使用仅限私有 state 的类型", attribute.name),
+                    format!("prop {} 不能使用仅限私有 state 或 record 字段的类型", attribute.name),
                     // 给出 props 白名单。
                     "props 使用 String、number、bool、State<T> 或回调签名",
                 )),
@@ -605,22 +821,4 @@ impl ComponentExpander {
 }
 
 // 把语言基础类型映射为 Rust 类型。
-fn value_type_tokens(value_type: ComponentValueType) -> TokenStream {
-    // 按白名单类型生成令牌。
-    match value_type {
-        // String 对应拥有所有权的字符串。
-        ComponentValueType::String => quote! { ::std::string::String },
-        // number 对应规范约定的 f64。
-        ComponentValueType::Number => quote! { f64 },
-        // bool 对应 Rust 布尔类型。
-        ComponentValueType::Bool => quote! { bool },
-        // u32 对应无符号计数类型。
-        ComponentValueType::U32 => quote! { u32 },
-        // usize 对应索引类型。
-        ComponentValueType::USize => quote! { usize },
-        // f32 对应单精度浮点类型。
-        ComponentValueType::F32 => quote! { f32 },
-        // i32 对应有符号整数类型。
-        ComponentValueType::I32 => quote! { i32 },
-    }
-}
+// 类型映射入口已在 record_codegen 统一维护，这里删除重复实现。

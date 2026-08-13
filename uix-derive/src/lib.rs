@@ -80,6 +80,23 @@ pub fn uix(input: TokenStream) -> TokenStream {
     uix_entry::expand_public(&input).into()
 }
 
+/// 把 `.uix` 文档中的 `<Record>` 声明生成为模块级结构体，供 uix! 与 Rust 侧共同引用。
+///
+/// 在模块级调用一次即可让 Rust 侧函数引用语言面声明的业务模型：
+///
+/// ```ignore
+/// uix_items!("src/main.uix");
+///
+/// fn submit(model: Profile) { ... }
+/// ```
+#[proc_macro]
+pub fn uix_items(input: TokenStream) -> TokenStream {
+    // 要求入口接收单个字符串字面量。
+    let input = syn::parse_macro_input!(input as syn::LitStr);
+    // 自动选择内嵌源码或 .uix 文件并返回 record 结构体令牌。
+    uix_entry::expand_items_public(&input).into()
+}
+
 // 为根 crate 的真实消费者编译 Gate 保留内部内嵌入口。
 #[doc(hidden)]
 // 声明内部过程宏以保持既有消费者测试兼容。

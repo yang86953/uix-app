@@ -445,6 +445,59 @@ impl ExpressionParser {
         Ok((arguments, close))
     }
 
+    // 解析位于原子位置的方括号数组字面量。
+    fn parse_array(&mut self, open: ExpressionToken) -> Result<Expression, Diagnostic> {
+        // 保存按源码顺序解析的元素。
+        let mut items = Vec::new();
+        // 空数组直接闭合。
+        if self.take(&ExpressionTokenKind::RightBracket) {
+            // 返回空数组节点。
+            return Ok(Expression {
+                // 保存空元素集合。
+                kind: ExpressionKind::Array(Vec::new()),
+                // 覆盖完整方括号跨度。
+                span: merge_span(open.span, self.previous().span),
+            });
+        }
+        // 解析逗号分隔的元素。
+        loop {
+            // 每个元素都是完整受限表达式。
+            let item = self.parse_ternary()?;
+            // 保存当前元素。
+            items.push(item);
+            // 没有逗号时结束元素读取。
+            if !self.take(&ExpressionTokenKind::Comma) {
+                // 退出元素循环。
+                break;
+            }
+            // 尾随逗号不属于规范数组语法。
+            if self.check(&ExpressionTokenKind::RightBracket) {
+                // 返回尾随逗号诊断。
+                return Err(Diagnostic::new(
+                    // 指向右方括号。
+                    self.current().span,
+                    // 陈述失败原因。
+                    "数组字面量不允许尾随逗号",
+                    // 给出修复建议。
+                    "删除最后一个逗号",
+                ));
+            }
+        }
+        // 要求闭合右方括号。
+        let close = self.expect(
+            &ExpressionTokenKind::RightBracket,
+            "数组字面量缺少 ]",
+            "在数组元素末尾添加 ]",
+        )?;
+        // 返回完整数组节点。
+        Ok(Expression {
+            // 保存有序元素。
+            kind: ExpressionKind::Array(items),
+            // 覆盖完整方括号跨度。
+            span: merge_span(open.span, close.span),
+        })
+    }
+
     // 解析原子表达式。
     fn parse_primary(&mut self) -> Result<Expression, Diagnostic> {
         // 消费当前原子标记。
@@ -528,14 +581,7 @@ impl ExpressionParser {
                 Ok(expression)
             }
             // 左方括号位于原子位置表示数组字面量。
-            ExpressionTokenKind::LeftBracket => Err(Diagnostic::new(
-                // 指向左方括号。
-                token.span,
-                // 陈述失败原因。
-                "表达式不支持数组字面量",
-                // 给出修复建议。
-                "在 Rust 侧创建数组并通过绑定引用传入",
-            )),
+            ExpressionTokenKind::LeftBracket => self.parse_array(token),
             // 左花括号位于原子位置表示受限对象字面量。
             ExpressionTokenKind::LeftBrace => self.parse_object(token),
             // 单竖线表示闭包起点。

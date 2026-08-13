@@ -253,15 +253,18 @@ fn validate_virtual_key_expression(
             // 验证索引表达式归属当前项或显式 index。
             validate_virtual_key_expression(index, binding, index_binding)
         }
-        // 调用与对象字面量可能产生副作用或隐藏外部依赖，不属于稳定身份子语言。
-        ExpressionKind::Call { .. } | ExpressionKind::Object(_) => Err(Diagnostic::new(
-            // 指向不允许的复杂结构。
-            expression.span,
-            // 说明 key 工厂必须保持无副作用。
-            "VirtualScroll 的 For key 不能包含调用或对象字面量",
-            // 引导使用当前项的稳定字段或纯组合。
-            "使用 key={item.id} 或 item/index 的纯成员与算术表达式",
-        )),
+        // 调用、数组与对象字面量可能产生副作用或隐藏外部依赖，不属于稳定身份子语言。
+        ExpressionKind::Call { .. } | ExpressionKind::Object(_) | ExpressionKind::Array(_) => {
+            // 返回不允许的复杂结构诊断。
+            Err(Diagnostic::new(
+                // 指向不允许的复杂结构。
+                expression.span,
+                // 说明 key 工厂必须保持无副作用。
+                "VirtualScroll 的 For key 不能包含调用、数组或对象字面量",
+                // 引导使用当前项的稳定字段或纯组合。
+                "使用 key={item.id} 或 item/index 的纯成员与算术表达式",
+            ))
+        },
     }
 }
 

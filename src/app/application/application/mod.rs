@@ -684,6 +684,23 @@ impl App {
         let container = self.container.clone();
         let on_window_start = self.on_window_start.clone();
 
+        // 安装 uix-lang setTheme 内置操作使用的主题请求通道：
+        // 事件处理器按名称提交主题，由既有 runtime.set_theme 通道在下一轮
+        // runtime tasks 中应用并发布 ThemeApplied。
+        let theme_requester_runtime = self.runtime.clone();
+        // 注册到当前 UI 线程的窗口循环作用域。
+        crate::ui::__private::uix_install_theme_requester(Box::new(move |name: &str| {
+            // 按语言面登记名称选择公开主题预设。
+            let theme = match name {
+                // 暗色主题。
+                "dark" => Theme::antd_dark(),
+                // 其余名称回到亮色主题。
+                _ => Theme::antd_light(),
+            };
+            // 通过公开 App 级主题通道提交切换。
+            let _ = theme_requester_runtime.set_theme(theme);
+        }));
+
         run_window_session_loop_with_system_theme_and_tasks(
             &mut *platform,
             &mut *platform_window,
@@ -772,7 +789,9 @@ impl App {
             |_, _, _| {},
         );
 
-        // 会话循环结束：释放主题事实订阅句柄（幂等注销）。
+        // 会话循环结束：卸载主题请求通道并释放主题事实订阅句柄。
+        crate::ui::__private::uix_clear_theme_requester();
+        // 幂等注销主题事实订阅。
         drop(theme_events_subscription);
 
         report_window_operation_error("main graphics shutdown failed", session.try_shutdown());

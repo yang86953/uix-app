@@ -5,7 +5,9 @@ use quote::quote;
 
 // 引入表达式语法树、运算符与结构化诊断。
 use super::{
-    BinaryOperator, CallArgument, Diagnostic, Expression, ExpressionKind, SourceSpan, UnaryOperator,
+    data_chain_root, data_constructor_spec, normalize_number_literals, step_status_path,
+    BinaryOperator, CallArgument, DataConstructorSpec, Diagnostic, Expression, ExpressionKind,
+    SourceSpan, UnaryOperator,
 };
 
 // 把已验证表达式转换为 Rust 表达式令牌。
@@ -34,6 +36,19 @@ pub(crate) fn generate_expression(
             // 给出可审计的使用边界。
             "把对象用于文档明确声明的结构属性，或改用普通绑定表达式",
         )),
+        // 数组字面量生成 Rust vec 字面量，由属性消费方按值 clone。
+        ExpressionKind::Array(items) => {
+            // 生成全部元素表达式。
+            let items = items
+                // 按源码顺序生成。
+                .iter()
+                // 递归转换每个元素。
+                .map(|item| generate_expression(item, event))
+                // 收集或返回首个诊断。
+                .collect::<Result<Vec<_>, _>>()?;
+            // 返回可推断元素类型的 vec 字面量。
+            Ok(quote! { ::std::vec![#(#items),*] })
+        }
         // 一元表达式递归生成操作数。
         ExpressionKind::Unary { operator, operand } => {
             // 生成一元操作数。
@@ -164,6 +179,12 @@ pub(crate) fn expression_uses_event(expression: &Expression) -> bool {
             .iter()
             // 任一字段值读取事件即命中。
             .any(|field| expression_uses_event(&field.value)),
+        // 数组递归检查全部元素。
+        ExpressionKind::Array(items) => items
+            // 遍历有序元素。
+            .iter()
+            // 任一元素读取事件即命中。
+            .any(expression_uses_event),
         // 其余字面量不读取事件。
         ExpressionKind::Number(_) | ExpressionKind::String(_) | ExpressionKind::Boolean(_) => {
             // 返回未命中。
@@ -349,6 +370,15 @@ fn generate_call(
             "在 Component 内使用 setState，并由组件代码生成阶段处理",
         ));
     }
+    // setTheme 是框架内置操作：生成主题请求通道调用，不依赖调用方同名函数。
+    if matches!(&callee.kind, ExpressionKind::Identifier(name) if name == "setTheme") {
+        // 参数形状已在解析期验证为单个字符串位置参数。
+        let argument = single_positional_argument(arguments, "setTheme", span)?;
+        // 生成主题名称参数。
+        let name = generate_expression(&argument.value, event)?;
+        // 生成框架主题切换入口调用。
+        return Ok(quote! { ::uix::ui::__private::uix_set_theme(&(#name)) });
+    }
     // 识别不可变数组操作。
     if let ExpressionKind::Member { object, member } = &callee.kind {
         // push 与 removeAt 都要求一个位置参数。
@@ -383,6 +413,83 @@ fn generate_call(
                 #array
             }});
         }
+        // Step.status 的字符串语义值映射为公开枚举路径。
+        if member == "status" && data_chain_root(object) == Some("Step") {
+            // 生成对象表达式。
+            let object_tokens = generate_expression(object, event)?;
+            // 状态语义值必须是单个字符串字面量。
+            let argument = single_positional_argument(arguments, "status", span)?;
+            // 提取语言面字符串值。
+            let value = match &argument.value.kind {
+                // 只有字面量可以映射枚举。
+                ExpressionKind::String(value) => value.clone(),
+                // 其他形状返回专用诊断。
+                _ => {
+                    // 返回状态值形状诊断。
+                    return Err(Diagnostic::new(
+                        // 指向状态参数。
+                        argument.span,
+                        // 说明映射需求。
+                        "Step.status 只接受字符串语义值",
+                        // 给出合法值集合。
+                        "使用 'finish'、'process' 或 'wait'",
+                    ));
+                }
+            };
+            // 查找语义值对应的枚举路径。
+            let status = step_status_path(&value).ok_or_else(|| {
+                // 构造未知状态诊断。
+                Diagnostic::new(
+                    // 指向状态参数。
+                    argument.span,
+                    // 说明未知语义值。
+                    format!("Step.status={value:?} 不在登记表"),
+                    // 给出合法值集合。
+                    "使用 'finish'、'process' 或 'wait'",
+                )
+            })?;
+            // 生成枚举路径调用。
+            return Ok(quote! { (#object_tokens).status(#status) });
+        }
+    }
+    // 语言面数据类型构造生成公开 API 的构造调用。
+    if let ExpressionKind::Identifier(name) = &callee.kind {
+        // 查找类型名对应的公开构造规格。
+        if let Some(spec) = data_constructor_spec(name) {
+            // 解构构造规格。
+            let DataConstructorSpec {
+                // 取出公开路径。
+                path,
+                // 取出可选构造函数名。
+                method,
+                // 取出数字规范化策略。
+                normalize_numbers,
+            } = spec;
+            // 生成全部位置参数。
+            let arguments = arguments
+                // 遍历有序参数。
+                .iter()
+                // 转换每个参数表达式。
+                .map(|argument| {
+                    // 复制参数值以支持数字形状规范化。
+                    let mut value = argument.value.clone();
+                    // 坐标等 f32 参数把整数规范化为小数形状。
+                    if normalize_numbers {
+                        // 规范化参数中的整数数字。
+                        normalize_number_literals(&mut value);
+                    }
+                    // 生成规范化后的参数。
+                    generate_expression(&value, event)
+                })
+                // 收集或返回首个诊断。
+                .collect::<Result<Vec<_>, _>>()?;
+            // 选择公开构造函数（默认 new）。
+            let method = method
+                // 缺省映射为 new。
+                .unwrap_or_else(|| Ident::new("new", proc_macro2::Span::mixed_site()));
+            // 生成公开构造调用。
+            return Ok(quote! { #path::#method(#(#arguments),*) });
+        }
     }
     // 普通调用不允许命名参数。
     if arguments.iter().any(|argument| argument.name.is_some()) {
@@ -395,6 +502,23 @@ fn generate_call(
             // 给出位置参数修复建议。
             "删除参数名并按 Rust 函数签名顺序传参",
         ));
+    }
+    // 成员调用直接生成方法调用形式，避免与方法同名字段产生解析歧义。
+    if let ExpressionKind::Member { object, member } = &callee.kind {
+        // 生成成员所属对象。
+        let object = generate_expression(object, event)?;
+        // 验证成员名可映射为 Rust 方法名。
+        let member = rust_member(member, span)?;
+        // 生成全部位置参数。
+        let arguments = arguments
+            // 遍历有序参数。
+            .iter()
+            // 转换每个参数表达式。
+            .map(|argument| generate_expression(&argument.value, event))
+            // 收集或返回首个诊断。
+            .collect::<Result<Vec<_>, _>>()?;
+        // 返回方法调用表达式。
+        return Ok(quote! { (#object).#member(#(#arguments),*) });
     }
     // 生成普通调用目标。
     let callee = generate_expression(callee, event)?;

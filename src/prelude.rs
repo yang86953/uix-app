@@ -11,7 +11,7 @@
 //! - framework: `tree!`, `impl_widget_component!`, `semantic_handler!`
 
 // 直接导出推荐的 uix-lang 编译期入口宏，避开同名 crate 自引用。
-pub use uix_derive::uix;
+pub use uix_derive::{uix, uix_items};
 
 // core
 

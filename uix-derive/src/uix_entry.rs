@@ -9,7 +9,7 @@ use quote::quote;
 use syn::LitStr;
 
 // 引入完整 UIX 文档解析与生成入口。
-use crate::uix_lang::{generate_document_view, parse_document, Diagnostic};
+use crate::uix_lang::{generate_document_view, generate_record_items, parse_document, Diagnostic};
 
 // 公开 uix! 自动区分 .uix 路径与内嵌源码。
 pub(crate) fn expand_public(input: &LitStr) -> TokenStream {
@@ -116,6 +116,147 @@ fn expand_file_at(input: &LitStr, manifest_dir: &Path) -> TokenStream {
         // 锚定到宏路径字面量。
         input,
     )
+}
+
+// 公开 uix_items! 自动区分 .uix 路径与内嵌源码。
+pub(crate) fn expand_items_public(input: &LitStr) -> TokenStream {
+    // 读取宏字符串字面量值。
+    let value = input.value();
+    // .uix 后缀明确表示编译期文件入口。
+    if Path::new(&value)
+        .extension()
+        .is_some_and(|extension| extension == "uix")
+    {
+        // 从调用 crate 清单目录解析文件。
+        return expand_items_file(input);
+    }
+    // 其他字符串按内嵌 UIX 源码处理。
+    expand_items_inline(input)
+}
+
+// 内部测试宏始终把字符串视为内嵌源码。
+pub(crate) fn expand_items_inline(input: &LitStr) -> TokenStream {
+    // 使用稳定内嵌来源标签生成 record 结构体。
+    expand_items_source(&input.value(), "<inline>", None, input)
+}
+
+// 从调用 crate 的 CARGO_MANIFEST_DIR 读取 .uix 文件。
+fn expand_items_file(input: &LitStr) -> TokenStream {
+    // 读取调用 crate 的清单目录。
+    let manifest_dir = match env::var("CARGO_MANIFEST_DIR") {
+        // 保存可用目录。
+        Ok(directory) => directory,
+        // 环境缺失时生成结构化编译错误。
+        Err(error) => {
+            // 返回入口环境诊断。
+            return entry_error(
+                // 使用用户输入路径作为来源。
+                &input.value(),
+                // 入口错误固定在一行一列。
+                1,
+                // 入口错误固定在一行一列。
+                1,
+                // 说明缺失环境变量。
+                format!("无法确定 uix_items! 调用 crate 的清单目录：{error}"),
+                // 给出 Cargo 构建要求。
+                "通过 Cargo 编译调用 crate，并确认 CARGO_MANIFEST_DIR 可用",
+                // 把错误锚定到宏字面量。
+                input,
+            );
+        }
+    };
+    // 委托可测试的显式清单目录入口。
+    expand_items_file_at(input, Path::new(&manifest_dir))
+}
+
+// 相对指定清单目录读取文件并生成 record 结构体令牌。
+fn expand_items_file_at(input: &LitStr, manifest_dir: &Path) -> TokenStream {
+    // 读取用户传入的相对或绝对路径。
+    let requested = input.value();
+    // 绝对路径保持原样，相对路径基于调用 crate。
+    let resolved = if Path::new(&requested).is_absolute() {
+        // 复制绝对路径。
+        Path::new(&requested).to_path_buf()
+    } else {
+        // 拼接调用 crate 清单目录。
+        manifest_dir.join(&requested)
+    };
+    // 在过程宏执行期读取 UTF-8 源码。
+    let source = match fs::read_to_string(&resolved) {
+        // 保存有效 UTF-8 文档。
+        Ok(source) => source,
+        // 路径、权限或编码错误转为 compile_error。
+        Err(error) => {
+            // 返回文件读取诊断。
+            return entry_error(
+                // 展示用户可识别的请求路径。
+                &requested,
+                // 文件读取前没有更精确行号。
+                1,
+                // 文件读取前没有更精确列号。
+                1,
+                // 说明解析后的实际路径与系统原因。
+                format!("无法读取 UIX 文件 {}：{error}", resolved.display()),
+                // 给出路径、权限与 UTF-8 修复建议。
+                "确认路径相对调用 crate 的 CARGO_MANIFEST_DIR、文件存在且为 UTF-8",
+                // 把错误锚定到路径字面量。
+                input,
+            );
+        }
+    };
+    // 成功读取后规范化路径供依赖追踪与诊断。
+    let tracked_path = resolved
+        // 尝试消除相对片段。
+        .canonicalize()
+        // 文件已读取成功，失败时保留原解析路径。
+        .unwrap_or(resolved);
+    // 把绝对路径转换为 include_str! 字面量。
+    let tracked_literal = LitStr::new(&tracked_path.to_string_lossy(), input.span());
+    // 使用请求路径作为稳定用户诊断标签。
+    expand_items_source(
+        // 传入文件源码。
+        &source,
+        // 传入用户请求路径。
+        &requested,
+        // 生成 rustc 文件依赖追踪。
+        Some(tracked_literal),
+        // 锚定到宏路径字面量。
+        input,
+    )
+}
+
+// 解析 UIX 源码并生成全部 record 结构体令牌。
+fn expand_items_source(
+    // 接收完整 UIX 源码。
+    source: &str,
+    // 接收诊断来源名称。
+    source_name: &str,
+    // 接收可选文件依赖字面量。
+    tracked_file: Option<LitStr>,
+    // 接收宏输入跨度。
+    input: &LitStr,
+) -> TokenStream {
+    // 执行纯编译期解析与 record 结构体生成。
+    let generated = parse_document(source).and_then(|document| generate_record_items(&document));
+    // 失败时生成包含来源、位置、原因与建议的编译错误。
+    let items = match generated {
+        // 保存成功生成的结构体。
+        Ok(items) => items,
+        // 转换结构化 UIX 诊断。
+        Err(error) => return diagnostic_error(source_name, &error, input),
+    };
+    // 文件入口用 include_str! 让 rustc 跟踪变更。
+    if let Some(tracked_file) = tracked_file {
+        // 返回编译期依赖常量与生成结构体的 item 序列。
+        return quote! {
+            // 让文件修改触发宏调用 crate 重新编译。
+            const _: &str = ::std::include_str!(#tracked_file);
+            // 生成模块级 record 结构体。
+            #items
+        };
+    }
+    // 内嵌入口直接返回生成结构体。
+    items
 }
 
 // 解析 UIX 源码并生成公开 Rust View 令牌。
