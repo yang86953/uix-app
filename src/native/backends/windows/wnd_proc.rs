@@ -146,6 +146,21 @@ unsafe fn wnd_proc_inner(
         }
         return 0;
     }
+    // 还原事务结束后再重算非客户区，避免同步 FRAMECHANGED 重入旧最大化尺寸。
+    if msg == WM_UIX_REFRESH_EXTENDED_FRAME {
+        // 读取刷新时刻的样式，而不是还原 WM_SIZE 回调中的过渡样式。
+        match super::custom_chrome::window_style(hwnd).and_then(|style| {
+            // 当前消息已脱离还原回调，可以安全触发权威客户区的后续 WM_SIZE。
+            super::custom_chrome::refresh_extended_client_frame(hwnd, style)
+        }) {
+            // 刷新成功后由同步产生的 WM_SIZE 继续走唯一尺寸事务。
+            Ok(()) => {}
+            // Win32 回调边界只记录错误，交由平台所有者统一处理。
+            Err(error) => platform.enqueue_callback_failure(error),
+        }
+        // 自定义消息已完整处理，不交给默认窗口过程。
+        return 0;
+    }
     if msg == WM_DESTROY {
         clear_pending_frame(&binding.frame_pacer);
     }
@@ -291,7 +306,7 @@ impl WindowsPlatform {
                     state.width = w;
                     state.height = h;
                     let mut acts = Vec::new();
-                    let mut refresh_extended_frame = false;
+                    let mut schedule_extended_frame_refresh = false;
                     match wparam {
                         SIZE_MINIMIZED => {
                             state.minimized = true;
@@ -313,7 +328,7 @@ impl WindowsPlatform {
                             }
                             // 最大化期 NCCALCSIZE 内缩边框；还原后需 FRAMECHANGED
                             // 才能把客户区重新扩到外窗，否则四周透出桌面。
-                            refresh_extended_frame = was_max;
+                            schedule_extended_frame_refresh = was_max;
                             acts.push(SizeAction::Resized);
                         }
                         _ => {
@@ -323,10 +338,16 @@ impl WindowsPlatform {
                     drop(state);
                     if let Some(style) = chrome_style {
                         let mut chrome_failure = None;
-                        if refresh_extended_frame {
-                            if let Err(error) =
-                                super::custom_chrome::refresh_extended_client_frame(hwnd, style)
+                        if schedule_extended_frame_refresh {
+                            // 延迟到当前还原 WM_SIZE 返回后再重算非客户区，避免旧尺寸重入。
+                            if unsafe { PostMessageW(hwnd, WM_UIX_REFRESH_EXTENDED_FRAME, 0, 0) }
+                                == 0
                             {
+                                // 统一使用平台错误通道报告消息调度失败。
+                                let error = super::util::windows_diag(
+                                    Errc::PlatformError,
+                                    "custom chrome: PostMessageW(refresh extended frame) failed",
+                                );
                                 chrome_failure = Some(error);
                             }
                         }
