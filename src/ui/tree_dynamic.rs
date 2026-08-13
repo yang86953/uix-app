@@ -402,6 +402,21 @@ impl WidgetTree {
             // 直接拒绝本轮刷新，保留等待 owner teardown 的既有资源。
             return false;
         }
+        // 已销毁或正在离场的宿主不再签发动态捕获能力或执行应用 renderer。
+        if self.get(id).is_none_or(|node| node.destroyed()) || self.is_pending_removal_subtree(id) {
+            // 保留既有墓碑直到真实移除，不在离场阶段重建单元格树。
+            return false;
+        }
+        // 陈旧 id 或非 Table owner 不能借用同一 component 槽位的 renderer。
+        if !self
+            // 只读取当前运行时节点的实际组件类型。
+            .get(id)
+            // 让 Table 是本刷新入口唯一允许的 owner 类型。
+            .is_some_and(|node| node.component().as_any().is::<Table>())
+        {
+            // 拒绝非 Table owner，避免状态写入错误的动态命名空间。
+            return false;
+        }
         if !self.render_handler_table.contains_table_cells(id) {
             return false;
         }
@@ -409,9 +424,20 @@ impl WidgetTree {
         let Some((range, needs_refresh)) = self.get(id).and_then(|node| {
             let table = node.component().as_any().downcast_ref::<Table>()?;
             let range = table.cell_view_range_for_frame(node.frame());
+            // 离场墓碑仍保留在直接 children 链中，但不属于当前活动物化窗口。
+            let mounted_children = node
+                // 只检查 DataTable 直接拥有的动态单元格。
+                .children()
+                // 排除正在 leave 或其祖先已经 leave 的单元格子树。
+                .iter()
+                // 保留会参与本轮 keyed reconcile 的活动子项。
+                .filter(|child_id| !self.is_pending_removal_subtree(**child_id))
+                // 得到活动物化单元格总数，避免墓碑触发重复 renderer。
+                .count();
             Some((
                 range,
-                table.needs_cell_refresh(range, node.children().len()),
+                // 只让活动子项参与是否需要重建当前单元格窗口的判定。
+                table.needs_cell_refresh(range, mounted_children),
             ))
         }) else {
             return false;
@@ -427,10 +453,17 @@ impl WidgetTree {
             return false;
         };
 
-        let children = self
+        // 在借用 renderer sidecar 前签发固定树 store 与已验证 Table owner 的窄能力。
+        let capture_context = ViewAdapter::dynamic_capture_context(self, id);
+        // 缺少 sidecar 不是合法空窗口，不能据此删除已有动态单元格。
+        let Some(children) = self
             .render_handler_table
-            .render_table_cells(id, range, &row_keys, &view_columns)
-            .unwrap_or_default();
+            // 让每个单元格 renderer 在宿主树私有命名空间中完成捕获。
+            .render_table_cells(&capture_context, range, &row_keys, &view_columns)
+        else {
+            // 保留旧 children 与物化范围，等待声明 sidecar 被恢复。
+            return false;
+        };
         let changed = ViewAdapter::reconcile_dynamic_children(self, id, children);
         if let Some(table) = self
             .get(id)

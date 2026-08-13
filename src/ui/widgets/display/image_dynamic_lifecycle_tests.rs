@@ -180,7 +180,7 @@ fn image_placeholder_identity_survives_error_append_and_clear() {
     // 构造同时拥有 placeholder 与错误工厂的 Image。
     let image = Image::new(100.0, 100.0)
         // 初建时物化稳定 placeholder 子节点。
-        .placeholder(Label::new("placeholder"))
+        .placeholder(ViewNode::leaf(Label::new("placeholder")))
         // 错误状态出现后追加独立 error 子节点。
         .on_error(|_| ViewNode::leaf(Label::new("error")));
     // 通过真实建树路径挂载 Image 与 placeholder。

@@ -1,6 +1,9 @@
 //! Node-authored render and child-factory handlers kept outside widget storage.
 
 use std::collections::HashMap;
+// 表格 capability 启用时才引入批量身份预检集合。
+#[cfg(feature = "table")]
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::core::ComponentId;
@@ -151,28 +154,84 @@ impl RenderHandlerTable {
     // 表格 capability 启用时才编译泛型单元格批量构建入口。
     #[cfg(feature = "table")]
     pub(crate) fn render_table_cells(
+        // 借用已注册单元格 renderer 的 sidecar，不取得宿主树所有权。
         &self,
-        component: ComponentId,
+        // 接收由活跃 DataTable owner 签发的窄动态捕获能力。
+        capture_context: &DynamicViewCaptureContext,
+        // 接收当前物化窗口的半开行范围。
         range: (usize, usize),
+        // 接收由 DataTable 唯一性校验过的稳定行业务键。
         row_keys: &[String],
+        // 接收逻辑列号，使同一行中的不同声明列拥有独立身份。
         view_columns: &[usize],
     ) -> Option<Vec<ViewNode>> {
-        let renderer = self.table_cells.get(&component)?;
-        let mut cells = Vec::with_capacity(
-            range
-                .1
-                .saturating_sub(range.0)
-                .saturating_mul(view_columns.len()),
-        );
-        for row in range.0..range.1 {
-            let Some(row_key) = row_keys.get(row) else {
-                continue;
-            };
-            for (renderer_index, &column) in view_columns.iter().enumerate() {
-                let cell = ViewAdapter::capture_root(|| renderer(row, renderer_index));
-                cells.push(cell.key(format!("table-cell:{row_key}:{column}")));
-            }
+        // 只读取已由当前树 owner 绑定的单元格 renderer。
+        let renderer = self.table_cells.get(&capture_context.owner())?;
+        // 先为所有待物化单元格计算与捕获命名空间完全相同的结构身份。
+        let entries = (range.0..range.1)
+            // 跳过在当前数据快照中已不存在的行，保持既有空缺行行为。
+            .filter_map(|row| {
+                // 读取对应的稳定行键，缺失时不调用任何用户 renderer。
+                let row_key = row_keys.get(row)?;
+                // 为行中的每个视图列预先生成身份与 renderer 参数。
+                Some(
+                    view_columns
+                        .iter()
+                        .enumerate()
+                        .map(move |(renderer_index, &column)| {
+                            // 用逻辑列号、UTF-8 字节长度和完整行键构成可逆且无拼接歧义的身份。
+                            let stable_key =
+                                format!("table-cell:{column}:{}:{row_key}", row_key.len());
+                            // 保留 renderer 的当前行与视图列位置，同时固定业务身份。
+                            (row, renderer_index, stable_key)
+                        }),
+                )
+            })
+            // 展开为本轮全部单元格的扁平批次。
+            .flatten()
+            // 在任何用户 renderer 执行前保存完整预检结果。
+            .collect::<Vec<_>>();
+        // 建立本批次单元格身份集合以拒绝破坏 state 与 keyed reconcile 的冲突。
+        let mut unique_keys = HashSet::with_capacity(entries.len());
+        // 逐项验证预先生成的稳定身份没有重复。
+        for (_, _, stable_key) in &entries {
+            // 重复身份会令两个单元格错误共享私有状态与结构节点。
+            assert!(
+                // 只有首次出现的稳定键可进入后续用户 renderer 捕获阶段。
+                unique_keys.insert(stable_key.clone()),
+                // 不回显业务行键，避免诊断泄露应用数据。
+                "DataTable 单元格 renderer 返回了重复稳定身份"
+            );
         }
+        // 预分配完整批次容量，避免捕获事务途中改变集合大小语义。
+        let mut cells = Vec::with_capacity(
+            // 每个预检条目恰好生成一个受协调的单元格根。
+            entries.len(),
+        );
+        // 仅在全量身份和冲突预检通过后依次调用应用 renderer。
+        for (row, renderer_index, stable_key) in entries {
+            // 为 keyed reconcile 保留与动态 state namespace 相同的键副本。
+            let view_key = stable_key.clone();
+            // 在已验证的树私有命名空间中捕获完整 State、Effect、动画与 receipt。
+            let cell = capture_context.capture(
+                // 固定槽位隔离同一 DataTable 的单元格与其他延迟工厂。
+                "table-cell",
+                // 让业务稳定身份同时拥有状态命名空间与节点协调身份。
+                stable_key,
+                // 只在所有身份预检完成后调用应用提供的单元格 renderer。
+                || renderer(row, renderer_index),
+            );
+            // 用户 renderer 自设根 key 会造成状态与结构双身份，必须显式拒绝。
+            assert!(
+                // 框架是单元格动态根身份的唯一权威。
+                cell.key.is_none(),
+                // 指向由 DataTable 提供的 row_key 与逻辑列稳定身份契约。
+                "DataTable 单元格 renderer 不得直接设置根 key"
+            );
+            // 强制节点结构协调与树私有捕获使用同一稳定身份。
+            cells.push(cell.key(view_key));
+        }
+        // 将已完整捕获但尚未协调的单元格批次交回宿主树事务。
         Some(cells)
     }
 
