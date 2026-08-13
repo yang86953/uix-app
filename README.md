@@ -33,15 +33,14 @@ cargo run --release --manifest-path demo/Cargo.toml --bin uix-demo
 
 | 入口 | 用途 |
 |---|---|
-| [文档中心](docs/README.md) | 按问题选择对应的事实角色和权威文档 |
-| [产品](docs/产品.md) | 查看项目定位、目标用户与交付策略 |
-| [功能](docs/功能.md) | 查看功能能力清单与边界 |
+| [文档中心](docs/README.md) | 按问题选择对应的权威文档 |
+| [产品](docs/产品.md) | 查看项目定位、目标用户、能力边界与交付策略 |
 | [使用](docs/使用.md) | 查找公开 API、任务用法和示例 |
 | [架构](docs/架构.md) | 查看系统边界、依赖、不变量与设计映射 |
 | [交付与许可](docs/产品/交付与许可.md) | 查看版本、平台、许可与交付物范围 |
 | [变更记录](CHANGELOG.md) | 查看用户可观察的版本变化 |
 
-产品、功能、架构与使用文档均随本项目维护；事实归属和交叉引用规则见[文档中心](docs/README.md#文档边界)。
+产品、架构与使用文档均随本项目维护；事实归属和交叉引用规则见[文档中心](docs/README.md#文档边界)。
 
 ## 功能域
 
@@ -65,7 +64,7 @@ cargo run --release --manifest-path demo/Cargo.toml --bin uix-demo
 | `uix-derive/` | UIX 派生宏 |
 | `tests/` | 契约、集成与真窗测试入口 |
 | `scripts/` | 内部打包工具 |
-| `docs/` | 产品、功能、架构、使用文档 |
+| `docs/` | 产品、架构、使用文档 |
 | `assets/` | 编译期与 Demo 运行时资源 |
 
 文档改动运行 `python tests/test_check_docs_links.py -q`。

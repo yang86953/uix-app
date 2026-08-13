@@ -14,7 +14,6 @@ ROOT = Path(__file__).resolve().parents[2]
 PRODUCT = "\u4ea7\u54c1.md"
 USAGE = "\u4f7f\u7528.md"
 ARCHITECTURE = "\u67b6\u6784.md"
-FEATURE = "\u529f\u80fd.md"
 DOMAIN = "\u9886\u57df"
 DEMAND = "\u6309\u9700\u9a71\u52a8.md"
 PUBLIC_API = "\u516c\u5f00API.md"
@@ -42,13 +41,11 @@ REQUIRED_FILES = (
     ROOT / "README.md",
     ROOT / "docs" / "README.md",
     ROOT / "docs" / PRODUCT,
-    ROOT / "docs" / FEATURE,
     ROOT / "docs" / USAGE,
     ROOT / "docs" / ARCHITECTURE,
 )
-ROLE_DIRECTORIES = (
+PART_DIRECTORIES = (
     ROOT / "docs" / PRODUCT.removesuffix(".md"),
-    ROOT / "docs" / FEATURE.removesuffix(".md"),
     ROOT / "docs" / USAGE.removesuffix(".md"),
     ROOT / "docs" / ARCHITECTURE.removesuffix(".md"),
 )
@@ -157,9 +154,9 @@ def main() -> int:
         if not p.is_file():
             errors.append(f"missing required file: {p.relative_to(ROOT).as_posix()}")
 
-    for p in ROLE_DIRECTORIES:
+    for p in PART_DIRECTORIES:
         if not p.is_dir():
-            errors.append(f"missing role directory: {p.relative_to(ROOT).as_posix()}")
+            errors.append(f"missing part directory: {p.relative_to(ROOT).as_posix()}")
 
     for p in (ROOT / "docs").rglob("*.md"):
         if p.name in FORBIDDEN_GENERATED_INDEXES:

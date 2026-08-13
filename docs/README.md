@@ -2,14 +2,13 @@
 
 [← 项目首页](../README.md)
 
-本目录是 UIX 项目文档的唯一当前位置。文档按事实责任分为产品、功能、架构与使用四类；先选择要回答的问题，再进入对应索引。带时点的进度状态、任务、负责人、阻塞与测试结果以 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 为唯一事实源，仓库内不保留进度文档。
+本目录是 UIX 项目文档的唯一当前位置。文档按内容分为产品、架构与使用三部分；先选择要回答的问题，再进入对应索引。带时点的进度状态、任务、负责人、阻塞与测试结果以 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 为唯一事实源，仓库内不保留进度文档。
 
-## 四类文档
+## 三部分文档
 
-| 角色 | 回答的问题 | 权威范围 | 入口 |
+| 部分 | 回答的问题 | 权威范围 | 入口 |
 |---|---|---|---|
-| 产品 | 项目是什么，为谁解决什么问题，价值与边界是什么 | 定位、目标用户、产品约束、许可与交付语义 | [产品](产品.md) |
-| 功能 | 项目有什么功能，能不能做 X | 功能能力清单、明确边界、暂缓项 | [功能](功能.md) |
+| 产品 | 项目是什么，为谁解决什么问题，能做什么、不能做什么，价值与边界是什么 | 定位、目标用户、能力清单与边界、许可与交付语义 | [产品](产品.md) |
 | 架构 | 系统内部怎样组织，哪些性质必须保持 | 边界、依赖、数据与控制流、生命周期、不变量及技术决策 | [架构](架构.md) |
 | 使用 | 调用方怎样完成任务，会观察到什么 | 当前公开入口、用法、示例、限制、兼容性与可见错误语义 | [使用](使用.md) |
 
@@ -17,8 +16,8 @@
 
 | 想了解的问题 | 首选文档 | 补充文档 |
 |---|---|---|
-| UIX 的定位、能力和明确边界 | [产品](产品.md) | [定位与原则](产品/定位与原则.md)、[功能](功能.md) |
-| UIX 有什么功能、能不能做 X | [功能](功能.md) | [能力与边界](功能/能力.md)、[组件速查](使用/组件速查.md) |
+| UIX 的定位、能力和明确边界 | [产品](产品.md) | [定位与原则](产品/定位与原则.md)、[能力与边界](产品/能力.md) |
+| UIX 有什么功能、能不能做 X | [能力与边界](产品/能力.md) | [组件速查](使用/组件速查.md) |
 | 如何接入并完成第一个应用 | [快速开始](使用/快速开始.md) | [教程](使用/教程.md)、[入口与阅读路径](使用/入口与阅读路径.md) |
 | 某项公开 API 或组件怎样使用 | [使用](使用.md) | [组件速查](使用/组件速查.md) |
 | 某个 System、Module 或 Component 如何组织 | [架构](架构.md) | [系统列表](架构/系统列表.md)、[路由清单](架构/路由清单.md) |
@@ -29,14 +28,14 @@
 
 ## 文档边界
 
-- 同一事实只由一个角色持有；其他角色保留必要摘要和相对链接。
+- 同一事实只在一处持有；其他部分保留必要摘要和相对链接。
 - 带时点的进度状态、任务、负责人、阻塞和测试结果只由 Vikunja 项目 4 持有；仓库内不复制带时点的状态。
-- 产品写目标契约，功能写能力清单，使用只写当前可测试的公开行为，架构写内部机制。
+- 产品写目标契约与能力清单，使用只写当前可测试的公开行为，架构写内部机制。
 - 目标设计领先实现时，架构声明目标与当前映射，差距由 Vikunja 跟踪。
 
 ## 语言规范（推荐方式，已实现入口与目标设计）
 
-[UIX Lang](uix-lang/README.md) 是 UIX 的 UI 描述语言：写应用用 uix-lang 描述界面，编译时由 uix-app 框架自动转换为 Rust 声明式代码。按产品方向声明（[定位与原则](产品/定位与原则.md#定位)），界面描述**支持两种方式**：uix-lang 为推荐方式，Rust 声明式 API 为支持方式（二者语义一一对应）。公开 `uix!` 已支持内嵌源码与相对调用 crate 的 `.uix` 文件，编译期生成 `ViewNode`；当前已登记 `Text`、`Label`、`Button`、`ButtonGroup`、`FloatButton`、`Icon`、`Divider`、`Space`、`Typography`、`ThemeToggle`、`WindowControl`、`Container`、`Row`、`Column`、`Grid`、`ScrollView`、`VirtualScroll`、`Splitter`、`Affix`、`BackTop`、`Layout`、`Sider`、`Header`、`Content`、`Footer`、`Input`、`InputNumber`、`InputGroup`、`Slider`、`RangeSlider`、`Rate`、`Checkbox`、`Switch`、`Radio`、`Segmented`、`Select`、`Cascader`、`TreeSelect`、`AutoComplete`、`Mentions`、`DatePicker`、`DateRangePicker`、`TimePicker`、`ColorPicker`、`Avatar`、`Image`、`ImageGroup`、`List`、`Skeleton`、`Empty`、`ResultView`、`Tag`、`Card`、`Descriptions`、`Timeline`、`Calendar`、`Carousel`、`Tree`、`Steps`、`Pagination`、`Breadcrumb`、`Anchor`、`QRCode`、`Watermark`、`RichText`、`Alert`、`Modal`、`Drawer`、`Popover`、`Tooltip`、`FocusTrap`、`Spin`、`Form`、`FormInputItem`、`FormSelectItem`、`FormCheckboxItem`、`FormRadioItem`、`FormSwitchItem`、`FormSliderItem`，`Col` 只作为 `Row` / `Grid` 的直接子项使用。完整 `App` 应用入口及展示、反馈、导航类未登记组件仍是**目标设计、领先实现**，实现差距由 Vikunja 项目 4 跟踪。本语言规范不参与四类文档的事实分工。
+[UIX Lang](uix-lang/README.md) 是 UIX 的 UI 描述语言：写应用用 uix-lang 描述界面，编译时由 uix-app 框架自动转换为 Rust 声明式代码。按产品方向声明（[定位与原则](产品/定位与原则.md#定位)），界面描述**支持两种方式**：uix-lang 为推荐方式，Rust 声明式 API 为支持方式（二者语义一一对应）。公开 `uix!` 已支持内嵌源码与相对调用 crate 的 `.uix` 文件，编译期生成 `ViewNode`；当前已登记 `Text`、`Label`、`Button`、`ButtonGroup`、`FloatButton`、`Icon`、`Divider`、`Space`、`Typography`、`ThemeToggle`、`WindowControl`、`Container`、`Row`、`Column`、`Grid`、`ScrollView`、`VirtualScroll`、`Splitter`、`Affix`、`BackTop`、`Layout`、`Sider`、`Header`、`Content`、`Footer`、`Input`、`InputNumber`、`InputGroup`、`Slider`、`RangeSlider`、`Rate`、`Checkbox`、`Switch`、`Radio`、`Segmented`、`Select`、`Cascader`、`TreeSelect`、`AutoComplete`、`Mentions`、`DatePicker`、`DateRangePicker`、`TimePicker`、`ColorPicker`、`Avatar`、`Image`、`ImageGroup`、`List`、`Skeleton`、`Empty`、`ResultView`、`Tag`、`Card`、`Descriptions`、`Timeline`、`Calendar`、`Carousel`、`Tree`、`Steps`、`Pagination`、`Breadcrumb`、`Anchor`、`QRCode`、`Watermark`、`RichText`、`Alert`、`Modal`、`Drawer`、`Popover`、`Tooltip`、`FocusTrap`、`Spin`、`Form`、`FormInputItem`、`FormSelectItem`、`FormCheckboxItem`、`FormRadioItem`、`FormSwitchItem`、`FormSliderItem`，`Col` 只作为 `Row` / `Grid` 的直接子项使用。完整 `App` 应用入口及展示、反馈、导航类未登记组件仍是**目标设计、领先实现**，实现差距由 Vikunja 项目 4 跟踪。本语言规范不参与三部分文档的事实分工。
 通用 System / Module / Component 定义以仓库内[通用 SMC 文档](架构/System%20Module%20Component%20设计模式.md)为唯一权威；本项目只维护[系统列表](架构/系统列表.md)和[路由清单](架构/路由清单.md)。
 
 ## 维护约定
