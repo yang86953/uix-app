@@ -98,31 +98,163 @@ impl WidgetTree {
         true
     }
 
-    pub(crate) fn refresh_image_error_component(&mut self, id: ComponentId) -> bool {
+    // 只为当前树中活跃的 Image owner 签发错误 View 动态捕获能力。
+    fn image_error_capture_context(
+        &self,
+        // 接收将执行错误工厂的运行时 Image 节点身份。
+        id: ComponentId,
+    ) -> Option<crate::ui::adapter::DynamicViewCaptureContext> {
         // 失败或关闭树不得再调用应用提供的错误视图 renderer。
         if !self.accepts_coordination_work() {
             // 直接拒绝本轮刷新，保留等待 owner teardown 的既有资源。
-            return false;
+            return None;
         }
+        // 确认 owner 仍是当前树中未销毁的实际节点。
+        let owner_is_live = self.get(id).is_some_and(|node| !node.destroyed());
+        // 确认 owner 仍是 Image，拒绝陈旧 id 对复用槽位的误投递。
+        let owner_is_image = self
+            // 只读取当前树的实际运行时组件类型。
+            .get(id)
+            // 确认组件仍保持 Image 身份。
+            .is_some_and(|node| node.component().as_any().is::<Image>());
+        // 确认 owner 及其祖先尚未进入延迟离场阶段。
+        let owner_is_leaving = self.is_pending_removal_subtree(id);
+        // 迟到事件、陈旧 generation、非 Image 与离场节点都必须静默拒绝刷新。
+        if !owner_is_live || !owner_is_image || owner_is_leaving {
+            // 不签发动态捕获能力，也不调用任何应用错误 View 工厂。
+            return None;
+        }
+        // 为已验证的活跃 Image owner 签发树私有动态捕获能力。
+        Some(ViewAdapter::dynamic_capture_context(self, id))
+    }
+
+    // 为父级声明协调捕获当前 Image 错误子树，保留同一失败实例的状态所有权。
+    pub(crate) fn image_error_view_for_reconcile(
+        &self,
+        // 接收当前正在被父级协调的运行时节点身份。
+        id: ComponentId,
+    ) -> Option<crate::ui::view::ViewNode> {
+        // 先取得只对当前活跃 Image owner 有效的树私有捕获能力。
+        let capture_context = self.image_error_capture_context(id)?;
+        // 在节点自己的 ProviderContext 中调用错误 View 工厂。
+        self.get(id).and_then(|node| {
+            // 克隆上下文以在节点借用以外安装正确的依赖作用域。
+            let provider_context = node.provider_context().clone();
+            // 在声明组件相同的 provider 可见范围内构建动态错误 View。
+            with_provider_context(&provider_context, || {
+                // 只允许已验证的 Image 使用本 owner 专属捕获能力。
+                node.component()
+                    // 不泄漏具体组件实现给树外部调用方。
+                    .as_any()
+                    // 已由签发前检查确认的转换仍使用可选路径抵御并发式重入。
+                    .downcast_ref::<Image>()?
+                    // 捕获完整运行时输出，供父级嵌套事务原子接纳。
+                    .error_view_for_reconcile(&capture_context)
+            })
+        })
+    }
+
+    pub(crate) fn refresh_image_error_component(&mut self, id: ComponentId) -> bool {
+        // 先取得只对当前活跃 Image owner 有效的树私有捕获能力。
+        let capture_context = match self.image_error_capture_context(id) {
+            // 活跃 owner 可以继续完成本轮错误 View 捕获。
+            Some(capture_context) => capture_context,
+            // 陈旧、非 Image、离场或停止树都必须安全拒绝。
+            None => return false,
+        };
+        // 读取当前错误需求与同 key 直接子节点，运行时树是实际物化状态的权威来源。
+        let Some((needs_error_view, error_child)) = self.get(id).and_then(|node| {
+            // 再次确认组件仍为 Image，抵御工厂重入造成的陈旧身份。
+            let image = node.component().as_any().downcast_ref::<Image>()?;
+            // 只在 Image handler 与当前 Error 状态同时成立时保留错误子树。
+            let needs_error_view = image.needs_error_view();
+            // 在直接子节点中查找固定错误 key，包括尚未结束 leave 的节点。
+            let error_child = node.children().iter().copied().find(|child_id| {
+                // 只匹配仍可寻址且 key 精确相等的直接子节点。
+                self.get(*child_id)
+                    // 借用子节点的稳定运行时 key。
+                    .and_then(|child| child.key())
+                    // 与 Image 错误实例的唯一身份比较。
+                    == Some(Image::ERROR_CHILD_KEY)
+            });
+            // 返回本轮窄生命周期决策所需的最小快照。
+            Some((needs_error_view, error_child))
+        }) else {
+            // owner 在签发后失效时静默拒绝，不调用工厂也不改变其他节点。
+            return false;
+        };
+        // Error 已消失或 handler 已关闭时只移除错误子树，不能重建已消费的 placeholder。
+        if !needs_error_view {
+            // 有实际错误子节点时让其进入事务化 leave 或立即 teardown。
+            let changed = error_child.is_some_and(|child_id| {
+                // 窄移除保持 placeholder 与其他 authored 子节点完全不变。
+                ViewAdapter::remove_dynamic_child(self, id, child_id)
+            });
+            // 重新读取固定 key 子节点，只有立即 remove 后实际缺席才能清理物化标记。
+            let error_child_still_exists = self.get(id).is_some_and(|node| {
+                // pending leave 仍保留在直接子节点集合中，必须继续视为已物化。
+                node.children().iter().copied().any(|child_id| {
+                    // 只匹配仍可寻址且 key 精确相等的错误子树。
+                    self.get(child_id).and_then(|child| child.key()) == Some(Image::ERROR_CHILD_KEY)
+                })
+            });
+            // 无 leave 的立即 remove 已完成 teardown，此时才允许清理派生标记。
+            if !error_child_still_exists {
+                // 只更新仍属于当前 owner 的实际 Image 私有状态。
+                if let Some(image) = self
+                    // 读取 remove 后仍存活的父组件。
+                    .get(id)
+                    // 确认类型未因重入发生变化。
+                    .and_then(|node| node.component().as_any().downcast_ref::<Image>())
+                {
+                    // 实际子节点缺席与 on_children_changed 的清理语义保持一致。
+                    image.clear_error_view_materialized();
+                }
+            }
+            // 返回本轮是否首次建立了移除工作。
+            return changed;
+        }
+        // 同 key 错误子节点仍存在时复用它；若正在 leave，则事务化取消离场。
+        if let Some(error_child) = error_child {
+            // 只取消目标错误节点的 pending removal，不触碰 placeholder。
+            let changed = ViewAdapter::cancel_dynamic_child_removal(self, id, error_child);
+            // 恢复成功或原本活跃时都承认同 key 错误子树已经物化。
+            if let Some(image) = self
+                // 只读取仍属于当前 owner 的实际运行时组件。
+                .get(id)
+                // 确认类型仍是 Image 后更新其私有派生状态。
+                .and_then(|node| node.component().as_any().downcast_ref::<Image>())
+            {
+                // 保持后续布局不会重复执行用户工厂或追加重复节点。
+                image.mark_error_view_materialized();
+            }
+            // 只有取消离场时才报告结构生命周期发生变化。
+            return changed;
+        }
+        // 在 Image 自己的 ProviderContext 中捕获首次错误子树。
         let error_view = self.get(id).and_then(|node| {
-            node.component()
-                .as_any()
-                .downcast_ref::<Image>()?
-                .error_view_for_refresh(node.children().len())
+            // 克隆上下文以在节点借用以外安装正确的依赖作用域。
+            let provider_context = node.provider_context().clone();
+            // 在声明组件相同的 provider 可见范围内构建动态错误 View。
+            with_provider_context(&provider_context, || {
+                // 只允许当前 Image 在未物化时请求首次错误子树。
+                node.component()
+                    // 不泄漏具体组件实现给树外部调用方。
+                    .as_any()
+                    // 已由签发前检查确认的转换仍使用可选路径抵御并发式重入。
+                    .downcast_ref::<Image>()?
+                    // 捕获完整运行时输出与回执，供追加事务原子接纳。
+                    .error_view_for_refresh(&capture_context, node.children().len())
+            })
         });
         let Some(error_view) = error_view else {
             return false;
         };
-
-        // 在事务发布线前完成纯声明展开，panic 时既有运行时树仍可使用。
-        let error_node = ViewAdapter::expand(error_view);
-        // 直接挂载路径也建立协调事务，确保已发布 panic 会切换 fail-stop。
-        self.with_component_state_transaction(Vec::new(), |tree| {
-            // 错误子树即将改写运行时结构，进入不可逆发布区。
-            tree.mark_coordination_publish_started();
-            // 挂载已经完成纯展开的错误子树。
-            tree.build_child_node(id, error_node);
-        });
+        // 用回执感知追加事务发布首次错误子树，panic 后沿用 fail-stop 语义。
+        if !ViewAdapter::append_dynamic_child(self, id, error_view) {
+            // 追加入口在停止树时拒绝，不得伪称子树已物化。
+            return false;
+        }
         if let Some(image) = self
             .get(id)
             .and_then(|node| node.component().as_any().downcast_ref::<Image>())

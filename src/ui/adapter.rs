@@ -34,7 +34,8 @@ use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::theme::style::Style;
 use crate::ui::view::ViewNode;
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
-use crate::ui::widgets::{Button, Calendar, Container, Grid, Label};
+// 引入 Image 以识别其专属的占位与错误动态子树协调边界。
+use crate::ui::widgets::{Button, Calendar, Container, Grid, Image, Label};
 use crate::ui::{ComponentId, WidgetTree};
 use std::collections::{HashMap, HashSet};
 // 复用独立生命周期模块，保持适配器主体低于文件规模上限。
@@ -434,6 +435,8 @@ impl ViewAdapter {
             .downcast_ref::<Calendar>()
             .is_some_and(Calendar::owns_custom_cell_children)
             || tree.is_calendar_cell_component(id);
+        // Image 的占位与错误 View 共同属于同一专属动态子树协调边界。
+        let image_children = widget.as_any().is::<Image>();
         let component_view_children = if calendar_cells {
             Vec::new()
         } else {
@@ -514,6 +517,14 @@ impl ViewAdapter {
         // VirtualScroll 的物化行由专用 keyed 动态协调器拥有。
         let virtual_scroll_items = tree.has_virtual_scroll_renderer(id);
         let collapse_content = tree.is_collapse_content_component(id);
+        // 在 live Image 完成 patch 后捕获错误 View，避免用新声明的默认加载状态覆盖运行时失败。
+        let image_error_view = if image_children {
+            // 只为当前活跃 Image owner 请求完整的动态捕获输出。
+            tree.image_error_view_for_reconcile(id)
+        } else {
+            // 非 Image 保持既有普通子节点协调语义。
+            None
+        };
         if select_options {
             tree.invalidate_select_option_component(id);
         }
@@ -525,6 +536,53 @@ impl ViewAdapter {
             tree.refresh_collapse_content_component(id)
         } else if calendar_cells {
             tree.refresh_calendar_cell_component(id)
+        } else if image_children {
+            // 先保留本轮 authored 与 fresh placeholder，再追加同一失败实例的完整动态错误 View。
+            let mut children = children;
+            // placeholder 仍由声明 Image 的一次性 build_view_children 语义提供。
+            children.extend(component_view_children);
+            // 运行时错误 View 只在 Image 失败且 handler 启用时参与完整子树协调。
+            let has_error_view = image_error_view.is_some();
+            // 保持当前错误实例的 State、Effect、动画与 receipt 作为同一嵌套事务交接。
+            children.extend(image_error_view);
+            // 让 keyed reconcile 复用错误子树而不是父级声明更新时将其删除。
+            let changed = Self::reconcile_dynamic_children(tree, id, children);
+            // 成功协调后才让 live Image 接纳本轮错误子树物化真相。
+            if let Some(image) = tree
+                // 节点仍可能因错误工厂 panic 前的外部重入而不可寻址。
+                .get(id)
+                // 只允许当前运行时 Image 接收物化事实。
+                .and_then(|node| node.component().as_any().downcast_ref::<Image>())
+            {
+                // 有错误声明时标记已物化，避免 layout 重复执行用户工厂。
+                if has_error_view {
+                    // keyed 协调已经复用或建立当前错误子树。
+                    image.mark_error_view_materialized();
+                }
+            }
+            // 只有固定 key 错误子树已实际缺席时才清理物化标记，pending leave 必须保留。
+            let error_child_still_exists = tree.get(id).is_some_and(|node| {
+                // 遍历 Image 的实际直接子节点，包括仍在 leave 的墓碑节点。
+                node.children().iter().copied().any(|child_id| {
+                    // 以运行时 key 判断错误子树实际存在性。
+                    tree.get(child_id).and_then(|child| child.key()) == Some(Image::ERROR_CHILD_KEY)
+                })
+            });
+            // 无错误声明且固定 key 子树已完成真实移除时才允许下一次重新捕获。
+            if !has_error_view && !error_child_still_exists {
+                // 只更新仍属于当前 owner 的 live Image 私有派生状态。
+                if let Some(image) = tree
+                    // 读取协调后仍存活的父组件。
+                    .get(id)
+                    // 确认类型未因生命周期回调重入发生变化。
+                    .and_then(|node| node.component().as_any().downcast_ref::<Image>())
+                {
+                    // 与 on_children_changed 的真实缺席清理语义保持一致。
+                    image.clear_error_view_materialized();
+                }
+            }
+            // 向父级报告本轮专属动态协调是否改写结构。
+            changed
         } else if virtual_scroll_items {
             // 保留旧物化窗口，随后用新版 renderer 按稳定 key 原位协调。
             false

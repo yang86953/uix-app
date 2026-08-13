@@ -100,13 +100,28 @@ component! {
             .collect()
     }
 
+    // 在错误子树真实离开直接子节点集合后同步清理物化派生状态。
+    on_children_changed => (&mut self, child_count: usize) {
+        // Image 的直接子节点只由可选 placeholder 与可选 error 子树组成。
+        let placeholder_count = usize::from(self.placeholder_enabled);
+        // 只有实际子节点数量回到 placeholder 基线时错误子树才已完成移除。
+        if child_count == placeholder_count {
+            // 此时 State、Effect 与动画源已由树 teardown 释放，可安全允许下次重新捕获。
+            self.error_child_materialized.set(false);
+        }
+    }
+
     child_visible => (&self, index: usize) -> bool {
         let state = self.load_state.borrow();
         if self.placeholder_enabled && index == 0 {
             return state.shows_placeholder();
         }
-        if self.error_handler_enabled && index == usize::from(self.placeholder_enabled) {
-            return state.error().is_some();
+        // handler 关闭或 Error 恢复后，正在 leave 的已物化错误子树仍必须保持可见。
+        if (self.error_handler_enabled || self.error_child_materialized.get())
+            && index == usize::from(self.placeholder_enabled)
+        {
+            // 当前 Error 或尚未真实移除的物化子树任一成立都继续参与离场绘制。
+            return state.error().is_some() || self.error_child_materialized.get();
         }
         true
     }
@@ -217,7 +232,8 @@ component! {
 impl Image {
     const PLACEHOLDER_PADDING: f32 = 8.0;
     const PLACEHOLDER_CHILD_KEY: &'static str = "uix:image:placeholder";
-    const ERROR_CHILD_KEY: &'static str = "uix:image:error";
+    // 错误动态子树的运行时 key 同时作为组件状态捕获的稳定实例身份。
+    pub(crate) const ERROR_CHILD_KEY: &'static str = "uix:image:error";
 
     fn normalized_frame(frame: Rect) -> Rect {
         Rect::new(
@@ -417,12 +433,15 @@ impl Image {
         if previous == next {
             return;
         }
+        // 记录旧状态是否拥有错误子树，供后继布局执行窄增加或移除。
+        let previous_has_error = previous.error().is_some();
+        // 记录新状态是否需要错误子树，避免只处理首次失败而遗漏恢复路径。
+        let next_has_error = next.error().is_some();
+        // 加载阶段、占位可见性或错误存在性变化都需要一次后继布局。
         let needs_follow_up = matches!(&next, ImageLoadState::Loading)
             || (self.placeholder_enabled
                 && previous.shows_placeholder() != next.shows_placeholder())
-            || (self.error_handler_enabled
-                && !self.error_child_materialized.get()
-                && matches!(&next, ImageLoadState::Error(_)));
+            || previous_has_error != next_has_error;
         self.load_state.replace(next);
         if !needs_follow_up {
             return;
@@ -656,7 +675,6 @@ impl Image {
         if image_source_changed {
             self.cached.set(None);
             self.load_state.replace(next_load_state);
-            self.error_child_materialized.set(false);
         } else {
             if lazy_changed
                 && matches!(
@@ -665,11 +683,6 @@ impl Image {
                 )
             {
                 self.load_state.replace(next_load_state);
-            }
-            if self.load_state.borrow().error().is_some() || !self.error_handler_enabled {
-                // Reconcile removes component-generated error children because the
-                // next declarative Image has not observed this runtime failure yet.
-                self.error_child_materialized.set(false);
             }
         }
     }
@@ -737,9 +750,12 @@ impl Image {
 
     pub(crate) fn error_view_for_refresh(
         &self,
+        // 接收由活跃 Image owner 所属树签发的窄捕获能力。
+        capture_context: &crate::ui::adapter::DynamicViewCaptureContext,
         current_child_count: usize,
     ) -> Option<crate::ui::view::ViewNode> {
-        if self.error_child_materialized.get() || !self.error_handler_enabled {
+        // 运行时树负责判断同 key 子节点是否已存在，组件只判断当前业务需求。
+        if !self.error_handler_enabled {
             return None;
         }
         let error = self.load_state.borrow().error()?.to_owned();
@@ -747,13 +763,62 @@ impl Image {
         if current_child_count != placeholder_count {
             return None;
         }
-        self.error_view_factory
-            .as_ref()
-            .map(|factory| factory(&error).key(Self::ERROR_CHILD_KEY))
+        // 用固定错误子树 key 保持状态身份，直到真实移除错误子树才释放其状态。
+        self.capture_error_view(capture_context, error)
+    }
+
+    // 为父级声明协调重新捕获当前错误子树，保留已物化实例的私有状态。
+    pub(crate) fn error_view_for_reconcile(
+        &self,
+        // 接收由活跃 Image owner 所属树签发的窄捕获能力。
+        capture_context: &crate::ui::adapter::DynamicViewCaptureContext,
+    ) -> Option<crate::ui::view::ViewNode> {
+        // 仅在当前加载状态确实失败且错误 View 仍启用时重建声明输出。
+        if !self.error_handler_enabled {
+            // 关闭错误处理器必须让父级协调移除既有错误子树。
+            return None;
+        }
+        // 复制错误文本，避免用户工厂在捕获期间借用 Image 内部状态。
+        let error = self.load_state.borrow().error()?.to_owned();
+        // 用固定错误子树 key 保持状态身份，直到真实移除错误子树才释放其状态。
+        self.capture_error_view(capture_context, error)
+    }
+
+    // 在树签发的捕获边界内执行错误 View 工厂并附加稳定的运行时 key。
+    fn capture_error_view(
+        &self,
+        // 接收由活跃 Image owner 所属树签发的窄捕获能力。
+        capture_context: &crate::ui::adapter::DynamicViewCaptureContext,
+        // 接收当前失败实例的拥有型错误文本。
+        error: String,
+    ) -> Option<crate::ui::view::ViewNode> {
+        // 读取当前声明提供的错误工厂，缺失时保持无子树语义。
+        let factory = self.error_view_factory.as_ref()?;
+        // 在 Image 专属槽位与稳定错误身份内完整捕获 State、Effect、动画与回执。
+        Some(capture_context.capture(
+            // 隔离同一 Image 的错误工厂与其他延迟 View 工厂。
+            "image-error",
+            // 运行时 key 与组件状态命名空间必须共享同一固定子树身份。
+            Self::ERROR_CHILD_KEY,
+            // 用户工厂只在树已验证且捕获已安装的边界内执行一次。
+            || factory(&error).key(Self::ERROR_CHILD_KEY),
+        ))
     }
 
     pub(crate) fn mark_error_view_materialized(&self) {
         self.error_child_materialized.set(true);
+    }
+
+    // 清除错误子树物化标记，让真实移除后的下一次失败可以重新捕获。
+    pub(crate) fn clear_error_view_materialized(&self) {
+        // 只更新 Image 私有派生状态，不直接触碰运行时树结构。
+        self.error_child_materialized.set(false);
+    }
+
+    // 返回当前运行时加载状态是否要求保留错误动态子树。
+    pub(crate) fn needs_error_view(&self) -> bool {
+        // handler 启用与实际 Error 状态必须同时成立。
+        self.error_handler_enabled && self.load_state.borrow().error().is_some()
     }
 
     fn surface_rect(&self, fallback: Rect) -> Rect {
@@ -815,3 +880,14 @@ impl Image {
         ctx.pop_clip();
     }
 }
+
+// 仅在单元测试中挂载图片延迟错误视图的状态所有权回归。
+#[cfg(test)]
+// 测试独立文件保持产品组件实现不超过规模上限。
+#[path = "image_dynamic_capture_tests.rs"]
+mod image_dynamic_capture_tests;
+// 仅在单元测试中挂载图片动态子树的离场与所有者释放回归。
+#[cfg(test)]
+// 独立生命周期测试文件避免产品实现超过规模上限。
+#[path = "image_dynamic_lifecycle_tests.rs"]
+mod image_dynamic_lifecycle_tests;
