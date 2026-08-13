@@ -328,6 +328,11 @@ mod form_slider_codegen;
 mod form_codegen_tests;
 // 定义 FloatButton 内置组件的公开 API 代码生成边界。
 mod float_button_codegen;
+// 定义 FloatButtonGroup 静态子按钮与触发方式的代码生成边界。
+mod float_button_group_codegen;
+// 集中验证 FloatButtonGroup 生成、事件保留与直接子项诊断。
+#[cfg(test)]
+mod float_button_group_codegen_tests;
 // 定义布局容器、Row/Col 栅格与 Grid/Col 的公开 API 代码生成边界。
 mod layout_codegen;
 // 集中验证布局标签生成、父子形状与拒绝路径。
@@ -523,6 +528,8 @@ pub(crate) use form_codegen::{
 pub(crate) use form_slider_codegen::generate_orphan_form_slider_item;
 // 向核心元素生成器暴露 FloatButton 专用映射。
 pub(crate) use float_button_codegen::generate_float_button;
+// 向核心元素生成器暴露 FloatButtonGroup 专用映射。
+pub(crate) use float_button_group_codegen::generate_float_button_group;
 // 向核心元素生成器暴露布局组件专用映射。
 pub(crate) use layout_codegen::{
     generate_column, generate_container, generate_grid, generate_orphan_col, generate_row,
@@ -547,5 +554,4 @@ pub(crate) use value_codegen::{
     align_value, boolean_value, deferred_style_diagnostic, justify_value, literal_string,
     numeric_value, rust_identifier, string_value, typography_value,
 };
-
 

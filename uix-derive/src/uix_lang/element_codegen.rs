@@ -10,19 +10,19 @@ use super::{
     generate_button_group, generate_calendar, generate_card, generate_carousel, generate_cascader,
     generate_checkbox, generate_color_picker, generate_column, generate_container,
     generate_date_picker, generate_date_range_picker, generate_descriptions, generate_divider,
-    generate_drawer, generate_empty, generate_float_button, generate_focus_trap, generate_form,
-    generate_grid, generate_input, generate_input_group, generate_input_number, generate_list,
-    generate_mentions, generate_modal, generate_orphan_col, generate_orphan_form_checkbox_item,
-    generate_orphan_form_input_item, generate_orphan_form_radio_item,
-    generate_orphan_form_select_item, generate_orphan_form_slider_item,
-    generate_orphan_form_switch_item, generate_pagination, generate_popover, generate_qrcode,
-    generate_radio, generate_range_slider, generate_rate, generate_result_view, generate_rich_text,
-    generate_row, generate_scroll_view, generate_segmented, generate_select, generate_skeleton,
-    generate_slider, generate_space, generate_spin, generate_splitter, generate_steps,
-    generate_switch, generate_tag, generate_theme_toggle, generate_time_picker, generate_timeline,
-    generate_tooltip, generate_tree, generate_tree_select, generate_typography,
-    generate_virtual_scroll, generate_watermark, generate_window_control,
-    generate_window_drag_region,
+    generate_drawer, generate_empty, generate_float_button, generate_float_button_group,
+    generate_focus_trap, generate_form, generate_grid, generate_input, generate_input_group,
+    generate_input_number, generate_list, generate_mentions, generate_modal, generate_orphan_col,
+    generate_orphan_form_checkbox_item, generate_orphan_form_input_item,
+    generate_orphan_form_radio_item, generate_orphan_form_select_item,
+    generate_orphan_form_slider_item, generate_orphan_form_switch_item, generate_pagination,
+    generate_popover, generate_qrcode, generate_radio, generate_range_slider, generate_rate,
+    generate_result_view, generate_rich_text, generate_row, generate_scroll_view,
+    generate_segmented, generate_select, generate_skeleton, generate_slider, generate_space,
+    generate_spin, generate_splitter, generate_steps, generate_switch, generate_tag,
+    generate_theme_toggle, generate_time_picker, generate_timeline, generate_tooltip,
+    generate_tree, generate_tree_select, generate_typography, generate_virtual_scroll,
+    generate_watermark, generate_window_control, generate_window_drag_region,
     planned_builtin_diagnostic,
 };
 // 引入 Image 叶组件专用生成入口。
@@ -200,6 +200,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "WindowDragRegion" => generate_window_drag_region(element),
         // 浮动按钮映射到现有 FloatButton Component。
         "FloatButton" => generate_float_button(element),
+        // 浮动按钮组映射到保留直接子按钮事件的 View 组合入口。
+        "FloatButtonGroup" => generate_float_button_group(element),
         // 文档内置组件按登记类别返回规划中诊断。
         _ if planned_builtin_diagnostic(element).is_some() => {
             // 前置条件保证诊断存在。
@@ -212,7 +214,7 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、WindowDragRegion、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Image、ImageGroup、List、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Steps、Pagination、Breadcrumb、Anchor、QRCode、Watermark、RichText、Alert、Modal、Drawer、Tooltip、Popover、FocusTrap 或 Spin，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、FloatButtonGroup、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、WindowDragRegion、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Image、ImageGroup、List、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Steps、Pagination、Breadcrumb、Anchor、QRCode、Watermark、RichText、Alert、Modal、Drawer、Tooltip、Popover、FocusTrap 或 Spin，或先登记组件状态",
         )),
     }
     // 结束元素分派函数。
