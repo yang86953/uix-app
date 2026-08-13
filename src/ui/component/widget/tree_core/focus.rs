@@ -3,9 +3,7 @@ use crate::ui::component::focus_handle::FocusHandle;
 use crate::ui::component::focus_trap::next_focus_in_order;
 use crate::ui::event::HandlerTable;
 
-
 impl WidgetTree {
-
     pub fn focus_by_type<T: WidgetComponent + 'static>(&mut self) -> Option<ComponentId> {
         let id = self.find_by_type::<T>()?;
         self.set_focus(Some(id));
@@ -22,6 +20,8 @@ impl WidgetTree {
     }
 
     pub fn handler_table(&mut self) -> &mut HandlerTable {
+        // 停止树不得向外暴露可重新安装用户闭包的 sidecar。
+        assert!(self.accepts_coordination_work());
         &mut self.handler_table
     }
 
@@ -30,6 +30,8 @@ impl WidgetTree {
         id: ComponentId,
         handlers: Vec<RenderHandlerRegistration>,
     ) {
+        // 停止树不得重新持有延迟渲染闭包。
+        assert!(self.accepts_coordination_work());
         self.render_handler_table.replace_component(id, handlers);
     }
 
@@ -38,6 +40,8 @@ impl WidgetTree {
         id: ComponentId,
         handlers: Vec<crate::ui::event::system_event_handler::SystemEventHandlerRegistration>,
     ) {
+        // 停止树不得重新持有系统事件闭包。
+        assert!(self.accepts_coordination_work());
         if let Some(node) = self.get_mut(id) {
             node.replace_system_event_handlers(handlers);
         }
@@ -51,6 +55,8 @@ impl WidgetTree {
     }
 
     pub(crate) fn set_focus_handle(&mut self, id: ComponentId, handle: Option<FocusHandle>) {
+        // 停止树不得把旧身份重新绑定到外部 AppState。
+        assert!(self.accepts_coordination_work());
         let unchanged = self
             .focus_handles
             .get(&id)
@@ -76,6 +82,8 @@ impl WidgetTree {
     }
 
     pub fn overlay_stack_mut(&mut self) -> &mut OverlayStack {
+        // 停止树不得重新持有悬浮层内容或用户资源。
+        assert!(self.accepts_coordination_work());
         &mut self.overlay_stack
     }
 
@@ -197,7 +205,4 @@ impl WidgetTree {
             self.managers.focus.register_focusable(id, node.tab_index());
         }
     }
-
 }
-
-

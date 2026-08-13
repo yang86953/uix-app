@@ -23,6 +23,11 @@ impl WidgetTree {
     ///
     /// 全帧或含 Layout 根时遍历对应子树；无 Layout 失效时返回空（跳过 layout）。
     pub fn layout_traverse(&self) -> Vec<ComponentId> {
+        // 已停止的树不得向外暴露可能处于半提交状态的布局遍历。
+        if !self.accepts_external_work() {
+            // 没有可安全执行的布局节点。
+            return Vec::new();
+        }
         let mut result = Vec::new();
         self.fill_layout_traversal(&mut result, &mut LayoutTraversalScratch::default());
         result
@@ -73,6 +78,11 @@ impl WidgetTree {
     }
 
     pub fn layout(&mut self) {
+        // 已停止的树不得继续执行会调用组件代码的布局和生命周期协调。
+        if !self.accepts_external_work() {
+            // 保留故障现场直到所属窗口执行 teardown。
+            return;
+        }
         let has_valid_root = self
             .root_id
             .and_then(|id| self.get(id))

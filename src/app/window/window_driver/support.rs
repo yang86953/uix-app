@@ -23,6 +23,11 @@ pub(super) fn dispatch_due_active_work(
 ) -> bool {
     let mut handled_widget_timer = false;
     for work in due_work {
+        // 每个到期工作项开始前都复核树是否仍接受外部回调。
+        if !tree.accepts_external_work() {
+            // 首个回调使树停止后不得继续派发后续计时器。
+            break;
+        }
         match *work {
             ActiveWorkKind::Timer(id) => {
                 handled_widget_timer |= tree.dispatch_timer_work(id) == EventResult::Handled;
@@ -31,6 +36,11 @@ pub(super) fn dispatch_due_active_work(
                 app_timers.fire(id, now);
             }
             _ => {}
+        }
+        // 每个可能执行用户回调的工作项结束后再次复核树状态。
+        if !tree.accepts_external_work() {
+            // 当前项使树进入停止态时立即结束本轮派发。
+            break;
         }
     }
     handled_widget_timer
@@ -48,6 +58,11 @@ pub(super) fn update_scheduled_and_discovered_animations(
     } else {
         tree.update_animation_nodes_at(scheduled_animation_ids.iter().copied(), now, dt)
     };
+    // 已调度动画可能使树停止，发现阶段前必须阻止第二轮动画调用。
+    if !tree.accepts_external_work() {
+        // 保留已完成身份的结果供调用方撤销后续帧工作。
+        return updates;
+    }
     if discover_animation_work {
         updates.extend(tree.update_animations_except_at(scheduled_animation_ids, now, dt));
     }
@@ -302,4 +317,3 @@ pub(super) fn record_idle(metrics: Option<&Cell<RenderMetrics>>, source: Invalid
         metrics.set(value);
     }
 }
-

@@ -880,3 +880,8 @@ mod state_bind_lifecycle;
 #[path = "adapter_tests/dynamic_capture.rs"]
 // 编译延迟 View 动态捕获基础契约的行为测试模块。
 mod dynamic_capture;
+
+// 将 fail-stop 状态机与受控关闭行为放入独立文件，避免主测试文件超过规模上限。
+#[path = "adapter_tests/fail_stop.rs"]
+// 挂载协调 panic 前后不同恢复语义的行为门禁。
+mod fail_stop;

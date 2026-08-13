@@ -43,6 +43,8 @@ due work / queue / Agent / Effect
 
 只有成功提交后才能消费对应 present dirty；提交失败保留真实 damage 并交由 graphics/app 的 typed 恢复协议分类。event-loop 不复制这条逐窗 pipeline。
 
+若 UI 协调已在发布段发生 panic，`WindowDriver` 把该树视为终止实例：停止消费 timer、Agent、Effect、动画和待协调根，取消帧机会并进入 DeepIdle，不再调用 runtime task、layout、scene paint 或 present。逻辑 panic 仍按原 payload 展开；平台 ABI 的 panic 防越界只负责保护调用约定，不得把同一半提交窗口恢复为可运行状态。
+
 原生最大化与还原分别形成 `WindowMaximize` / `WindowRestore` 状态事实，并由同一次平台生命周期同时提供当前 logical 客户区的 `WindowResize`。只有 `WindowResize` 拥有 `RenderTarget`、platform presenter、surface generation 与根 frame 的几何事务；状态事实只恢复或保持调度并请求完整重绘，不得从显示器边界或初始窗口配置合成尺寸。该约束使 Windows 的“状态后 resize”和 Wayland 的“resize 后状态”得到相同结果，也避免重复 surface 重建。
 
 ## 组件：WindowTextInputState
@@ -52,5 +54,6 @@ due work / queue / Agent / Effect
 ## 关闭不变量
 
 - 关闭顺序是停止新工作与 Agent 命令 → 结束 pointer/focus/IME → 清空窗口队列与 side table → shutdown graphics → 销毁原生窗口。
+- fail-stop 树关闭时不再执行不可信的半初始化组件生命周期；所有框架持有资源仍须幂等释放，随后只能创建新的 `WidgetTree` owner。
 - `WindowAction` 只由所属树产生并由本窗消费，不进入全局广播。
 - app 中的 scene bridge 只转换调用形状，不拥有第二份组件树、场景或 Renderer。

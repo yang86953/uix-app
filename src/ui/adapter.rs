@@ -32,8 +32,6 @@ use crate::ui::event::system_event_handler::SystemEventHandlerRegistration;
 use crate::ui::event::{HandlerRegistration, HandlerSignature, SemanticKind};
 use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::theme::style::Style;
-#[cfg(any(test, feature = "test-harness"))]
-use crate::ui::view::View;
 use crate::ui::view::ViewNode;
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
 use crate::ui::widgets::{Button, Calendar, Container, Grid, Label};
@@ -53,6 +51,10 @@ mod stagger;
 #[path = "adapter/dynamic_reconcile.rs"]
 // 编译动态子树协调事务的私有实现模块。
 mod dynamic_reconcile;
+// 拆分根协调的发布边界，避免适配器主体超过文件规模上限。
+#[path = "adapter/coordination.rs"]
+// 编译根构建与协调的私有事务入口。
+mod coordination;
 
 /// 声明期 View 子节点能力端口（System 私有边界）。
 ///
@@ -84,97 +86,6 @@ struct WidgetPatchImpact {
 }
 
 impl ViewAdapter {
-    /// Builds a View while capturing State bindings.
-    #[cfg(any(test, feature = "test-harness"))]
-    pub fn capture_view(view: impl View) -> ViewNode {
-        // 复用根捕获入口以让测试 View 同样获得独立状态所有权。
-        Self::capture_root(|| view.build())
-    }
-
-    /// Builds a View tree into a WidgetTree.
-    #[cfg(any(test, feature = "test-harness"))]
-    pub fn build(view: impl View) -> WidgetTree {
-        // 让测试构建也拥有可跨后续协调复用的窗口私有状态存储。
-        Self::build_nodes(Self::capture_root(|| view.build()))
-    }
-
-    /// Builds an already expanded ViewNode tree into a WidgetTree.
-    pub fn build_nodes(mut root: ViewNode) -> WidgetTree {
-        // 复用捕获根携带的存储，保证首次构建与后续协调归属同一窗口。
-        let mut tree = root
-            .component_state_store
-            .take()
-            .map(WidgetTree::with_component_state_store)
-            .unwrap_or_else(WidgetTree::new);
-        // 在消费声明树前转移全部 journal，保证异常展开仍由回执回滚。
-        let receipts = capture_guards::take_component_state_receipts(&mut root);
-        // 在建树成功前仅暂存根动画源，避免展开 panic 提前替换旧所有权。
-        let animated_sources = std::mem::take(&mut root.animated_sources);
-        // 事务覆盖整个展开流程，异常时恢复深度且成功后按最终树清理。
-        tree.with_component_state_transaction(receipts, |tree| {
-            // 先取出当前根专属输出，避免声明根被展开后丢失交接所有权。
-            let state_binds = std::mem::take(&mut root.captured_state_binds);
-            // 先取出当前根专属 Effect，待成功建树后再替换旧根实例。
-            let effects = std::mem::take(&mut root.captured_effects);
-            // 展开声明根并建立运行时树。
-            let wnode = Self::expand(root);
-            // 挂载完整 WidgetNode 树。
-            tree.build(wnode);
-            // 完整建树成功后才替换根动画源所有权。
-            tree.sync_animated_sources(animated_sources);
-            // 提交当前根显式携带的结构性 State 绑定。
-            tree.replace_root_captured_state_binds(state_binds);
-            // 替换当前根显式携带的 Effect 集合。
-            tree.register_root_effects(effects);
-        });
-        tree
-    }
-
-    /// Reconciles a new View tree into an existing WidgetTree.
-    #[cfg(any(test, feature = "test-harness"))]
-    pub fn reconcile(tree: &mut WidgetTree, view: impl View) {
-        // 复用目标树的存储，防止测试协调分配新的私有状态。
-        let store = tree.component_state_store();
-        // 在取得存储后完成一次声明根捕获。
-        let root = Self::capture_root_with_store(store, || view.build());
-        // 用带有复用状态的根协调目标树。
-        Self::reconcile_nodes(tree, root);
-    }
-
-    /// Reconciles an already captured ViewNode tree into an existing WidgetTree.
-    pub fn reconcile_nodes(tree: &mut WidgetTree, mut root: ViewNode) {
-        // 在消费声明树前转移全部 journal，保证异常协调仍由回执回滚。
-        let receipts = capture_guards::take_component_state_receipts(&mut root);
-        // 在协调成功前仅暂存根动画源，保留 panic 前的旧根注册。
-        let animated_sources = std::mem::take(&mut root.animated_sources);
-        // 事务覆盖整次协调，允许同轮类型替换继续复用捕获到的状态。
-        tree.with_component_state_transaction(receipts, |tree| {
-            // 先取出本轮根专属输出，避免协调消费声明根后丢失交接所有权。
-            let state_binds = std::mem::take(&mut root.captured_state_binds);
-            // 先取出本轮根专属 Effect，待成功协调后再替换旧根实例。
-            let effects = std::mem::take(&mut root.captured_effects);
-            // 优先原位复用身份一致的运行时根。
-            match tree.root_id() {
-                // 同类型与同作用域根执行精细协调。
-                Some(root_id) if Self::can_reuse(tree, root_id, &root) => {
-                    // 协调现有根及其子树。
-                    Self::reconcile_existing(tree, root_id, root);
-                }
-                // 身份变化时替换完整运行时根。
-                _ => {
-                    // 展开并挂载新的声明根。
-                    tree.build(Self::expand(root));
-                }
-            }
-            // 根协调完整成功后才替换动画源，避免失败路径丢失旧注册。
-            tree.sync_animated_sources(animated_sources);
-            // 提交本轮根显式携带的结构性 State 绑定。
-            tree.replace_root_captured_state_binds(state_binds);
-            // 替换本轮根显式携带的 Effect 集合。
-            tree.register_root_effects(effects);
-        });
-    }
-
     /// Expands a ViewNode tree into a WidgetNode tree using explicit stack
     /// traversal to avoid stack overflow on deep trees in debug builds.
     pub(crate) fn expand(root: ViewNode) -> WidgetNode {
@@ -183,7 +94,8 @@ impl ViewAdapter {
             widget: Box<dyn WidgetComponent>,
             style: Style,
             // 保存非根声明节点交接给运行时树的 State 绑定。
-            captured_state_binds: Vec<std::sync::Arc<dyn crate::ui::reactive::state::StatePaintBind>>,
+            captured_state_binds:
+                Vec<std::sync::Arc<dyn crate::ui::reactive::state::StatePaintBind>>,
             // 保存非根声明节点交接给运行时节点的 Effect。
             captured_effects: Vec<crate::ui::reactive::state::Effect>,
             // 保存非根或动态声明节点交接给所属节点的动画源。
@@ -452,13 +364,12 @@ impl ViewAdapter {
     }
 
     fn can_reuse(tree: &WidgetTree, id: ComponentId, node: &ViewNode) -> bool {
-        tree.get(id)
-            .is_some_and(|current| {
-                // 类型相同仍需要求内联组件作用域列表完全一致。
-                current.component().as_any().type_id() == node.widget_type_id()
+        tree.get(id).is_some_and(|current| {
+            // 类型相同仍需要求内联组件作用域列表完全一致。
+            current.component().as_any().type_id() == node.widget_type_id()
                     // 根序号与嵌套顺序共同决定实际组件实例身份。
                     && current.uix_component_scopes() == node.uix_component_scopes.as_slice()
-            })
+        })
     }
 
     fn reconcile_existing(tree: &mut WidgetTree, id: ComponentId, node: ViewNode) {
@@ -889,7 +800,6 @@ impl ViewAdapter {
         }
         structure_changed
     }
-
 }
 
 // 仅在库测试中编译协调失效分类门禁。

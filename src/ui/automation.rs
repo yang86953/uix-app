@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::core::{ComponentId, Point, Rect, WindowId};
 use crate::native::windowing::input::{KeyCode, KeyMod, MouseButton};
+pub use crate::ui::SelectionSnapshot as AutomationSelection;
 pub use crate::ui::accessibility::semantic_snapshot::{
     SemanticNode as AutomationNode, SemanticTarget as AutomationTarget,
 };
@@ -18,7 +19,6 @@ pub use crate::ui::semantic_action::{
     SemanticAction as AutomationAction, SemanticActionKind as AutomationActionKind,
 };
 use crate::ui::view::ViewNode;
-pub use crate::ui::SelectionSnapshot as AutomationSelection;
 
 pub const AUTOMATION_DIR_ENV: &str = "UIX_AUTOMATION_DIR";
 pub const AUTOMATION_SCHEMA: &str = "uix.automation.v1";
@@ -446,6 +446,11 @@ impl TestApp {
     pub fn settle(&mut self) -> Result<usize, AutomationError> {
         let mut passes = 0;
         loop {
+            // 停止树不得继续执行自动化协调或消费其待处理工作。
+            if !self.tree.accepts_external_work() {
+                // 复用既有内部未处理错误表达 fail-stop 拒绝。
+                return Err(AutomationError::NotHandled("widget_tree".to_owned()));
+            }
             let focus_changed = self.tree.drain_app_state_focus_requests();
             let semantic_changed = self.tree.drain_app_state_semantic_events();
             let effects_changed = self.tree.has_pending_effects() && self.tree.tick_effects();
@@ -454,11 +459,16 @@ impl TestApp {
                 return Ok(passes);
             }
             if reconcile_requested {
+                // Effect 或队列处理后仍须在捕获声明树前复核 fail-stop 状态。
+                if !self.tree.accepts_external_work() {
+                    // 构建根节点会调用用户闭包，停止树只能返回既有未处理错误。
+                    return Err(AutomationError::NotHandled("widget_tree".to_owned()));
+                }
                 // 复用测试窗口树拥有的状态存储以模拟真实窗口协调。
-                let root = ViewAdapter::capture_root_with_store(
-                    self.tree.component_state_store(),
-                    || (self.build_root)(),
-                );
+                let root =
+                    ViewAdapter::capture_root_with_store(self.tree.component_state_store(), || {
+                        (self.build_root)()
+                    });
                 ViewAdapter::reconcile_nodes(&mut self.tree, root);
             }
             set_root_frame(&mut self.tree, self.viewport);

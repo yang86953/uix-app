@@ -231,6 +231,16 @@ impl WidgetTree {
         id: ComponentId,
         action: &SemanticAction,
     ) -> Result<(), SemanticActionError> {
+        // 停止树必须在读取节点快照或用户 handler 前拒绝语义动作。
+        if !self.accepts_external_work() {
+            // 复用既有未处理错误以维持调用方的动作失败契约。
+            return Err(SemanticActionError::NotHandled {
+                // 保留调用方原始目标身份供上层映射错误。
+                target: id,
+                // 仅读取调用方动作种类，不访问停止树中的节点元数据。
+                action: action.kind(),
+            });
+        }
         let action_kind = action.kind();
         let Some(node) = self.get(id) else {
             return Err(SemanticActionError::NodeNotFound(id));

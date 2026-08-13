@@ -22,6 +22,11 @@ impl WidgetTree {
     }
 
     pub(crate) fn refresh_calendar_cell_component(&mut self, id: ComponentId) -> bool {
+        // 失败或关闭树不得再调用应用提供的动态单元格 renderer。
+        if !self.accepts_coordination_work() {
+            // 直接拒绝本轮刷新，保留等待 owner teardown 的既有资源。
+            return false;
+        }
         let refresh = self.get(id).and_then(|node| {
             let provider_context = node.provider_context().clone();
             with_provider_context(&provider_context, || {
@@ -51,6 +56,11 @@ impl WidgetTree {
     }
 
     pub(crate) fn refresh_collapse_content_component(&mut self, id: ComponentId) -> bool {
+        // 失败或关闭树不得再调用应用提供的折叠内容 renderer。
+        if !self.accepts_coordination_work() {
+            // 直接拒绝本轮刷新，保留等待 owner teardown 的既有资源。
+            return false;
+        }
         let refresh = self.get(id).and_then(|node| {
             node.component()
                 .as_any()
@@ -72,6 +82,11 @@ impl WidgetTree {
     }
 
     pub(crate) fn refresh_image_error_component(&mut self, id: ComponentId) -> bool {
+        // 失败或关闭树不得再调用应用提供的错误视图 renderer。
+        if !self.accepts_coordination_work() {
+            // 直接拒绝本轮刷新，保留等待 owner teardown 的既有资源。
+            return false;
+        }
         let error_view = self.get(id).and_then(|node| {
             node.component()
                 .as_any()
@@ -82,7 +97,15 @@ impl WidgetTree {
             return false;
         };
 
-        self.build_child_node(id, ViewAdapter::expand(error_view));
+        // 在事务发布线前完成纯声明展开，panic 时既有运行时树仍可使用。
+        let error_node = ViewAdapter::expand(error_view);
+        // 直接挂载路径也建立协调事务，确保已发布 panic 会切换 fail-stop。
+        self.with_component_state_transaction(Vec::new(), |tree| {
+            // 错误子树即将改写运行时结构，进入不可逆发布区。
+            tree.mark_coordination_publish_started();
+            // 挂载已经完成纯展开的错误子树。
+            tree.build_child_node(id, error_node);
+        });
         if let Some(image) = self
             .get(id)
             .and_then(|node| node.component().as_any().downcast_ref::<Image>())
@@ -106,6 +129,11 @@ impl WidgetTree {
     // 表格 capability 启用时才刷新扩展行动态子树。
     #[cfg(feature = "table")]
     pub(crate) fn refresh_table_expand_component(&mut self, id: ComponentId) -> bool {
+        // 失败或关闭树不得再调用应用提供的表格扩展行 renderer。
+        if !self.accepts_coordination_work() {
+            // 直接拒绝本轮刷新，保留等待 owner teardown 的既有资源。
+            return false;
+        }
         if !self.render_handler_table.contains_table_expand(id) {
             return false;
         }
@@ -150,6 +178,11 @@ impl WidgetTree {
         id: ComponentId,
         viewport_height: Option<f32>,
     ) -> bool {
+        // 失败或关闭树不得再调用应用提供的虚拟列表 renderer。
+        if !self.accepts_coordination_work() {
+            // 直接拒绝本轮刷新，保留等待 owner teardown 的既有资源。
+            return false;
+        }
         // 正在离场或已经销毁的宿主不能再执行应用 renderer。
         if self.get(id).is_none_or(|node| node.destroyed()) || self.is_pending_removal_subtree(id) {
             // 保留现有墓碑与输出直到真正 remove，不创建新物化行。
@@ -215,6 +248,11 @@ impl WidgetTree {
     // 表格 capability 启用时才刷新泛型单元格动态子树。
     #[cfg(feature = "table")]
     pub(crate) fn refresh_table_cell_component(&mut self, id: ComponentId) -> bool {
+        // 失败或关闭树不得再调用应用提供的表格单元格 renderer。
+        if !self.accepts_coordination_work() {
+            // 直接拒绝本轮刷新，保留等待 owner teardown 的既有资源。
+            return false;
+        }
         if !self.render_handler_table.contains_table_cells(id) {
             return false;
         }
@@ -255,6 +293,11 @@ impl WidgetTree {
     }
 
     pub(crate) fn refresh_select_option_component(&mut self, id: ComponentId) -> bool {
+        // 失败或关闭树不得再调用应用提供的选择项 renderer。
+        if !self.accepts_coordination_work() {
+            // 直接拒绝本轮刷新，保留等待 owner teardown 的既有资源。
+            return false;
+        }
         if !self.render_handler_table.contains_select_options(id) {
             return false;
         }

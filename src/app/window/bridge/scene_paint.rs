@@ -13,6 +13,11 @@ use crate::ui::reactive::state::{begin_state_bind_capture, end_state_bind_captur
 
 impl ScenePaint for WidgetTree {
     fn root_id(&self) -> Option<NodeId> {
+        // 非运行态树不得把协调中或已停止的半提交根交给合成器。
+        if !self.accepts_external_work() {
+            // 以无根场景阻止后续节点遍历。
+            return None;
+        }
         self.root_id()
     }
 
@@ -25,6 +30,11 @@ impl ScenePaint for WidgetTree {
     }
 
     fn node_visible(&self, id: NodeId) -> bool {
+        // 非运行态树不得暴露节点可见性。
+        if !self.accepts_external_work() {
+            // 所有节点在故障停止态对合成器均不可见。
+            return false;
+        }
         self.get(id).is_some_and(|n| n.visible())
     }
 
@@ -57,6 +67,11 @@ impl ScenePaint for WidgetTree {
 
     fn node_children(&self, id: NodeId) -> &[NodeId] {
         static EMPTY: &[NodeId] = &[];
+        // 非运行态树不得暴露半提交的子节点关系。
+        if !self.accepts_external_work() {
+            // 对合成器返回稳定的空子集。
+            return EMPTY;
+        }
         self.get(id).map(|n| n.children()).unwrap_or(EMPTY)
     }
 
@@ -69,6 +84,11 @@ impl ScenePaint for WidgetTree {
     }
 
     fn node_picture_policy(&self, id: NodeId) -> PicturePolicy {
+        // 停止树不得查询组件的 Picture 缓存策略。
+        if !self.accepts_external_work() {
+            // 禁止半提交节点进入离屏 Picture 路径。
+            return PicturePolicy::Never;
+        }
         self.get(id)
             .map(|n| {
                 if n.view_transition_active() {
@@ -86,6 +106,11 @@ impl ScenePaint for WidgetTree {
     }
 
     fn node_has_dynamic_content(&self, id: NodeId) -> bool {
+        // 停止树不得读取组件声明的动态内容能力。
+        if !self.accepts_external_work() {
+            // 对合成器保守报告不存在动态内容。
+            return false;
+        }
         self.get(id).is_some_and(|n| n.has_dynamic_content())
     }
 
@@ -94,24 +119,49 @@ impl ScenePaint for WidgetTree {
     }
 
     fn node_wants_continuous_pointer_move(&self, id: NodeId) -> bool {
+        // 停止树不得查询组件的连续指针事件能力。
+        if !self.accepts_external_work() {
+            // 对合成器保守报告不需要连续指针更新。
+            return false;
+        }
         self.get(id)
             .is_some_and(|n| n.wants_continuous_pointer_move())
     }
 
     fn node_is_overlay(&self, id: NodeId) -> bool {
+        // 停止树不得通过组件浮层回调读取覆盖层元数据。
+        if !self.accepts_external_work() {
+            // 对合成器保守报告该节点不是浮层。
+            return false;
+        }
         self.get(id)
             .is_some_and(|n| n.overlay_entry(id, n.frame()).is_some())
     }
 
     fn children_clip(&self, id: NodeId, frame: Rect) -> Option<Rect> {
+        // 停止树不得通过组件渲染契约计算子树裁剪。
+        if !self.accepts_external_work() {
+            // 返回无裁剪以阻止读取半提交组件元数据。
+            return None;
+        }
         self.get(id).and_then(|n| n.children_clip(frame))
     }
 
     fn dirty_rect(&self, id: NodeId, frame: Rect) -> Rect {
+        // 停止树不得通过组件渲染契约扩展脏矩形。
+        if !self.accepts_external_work() {
+            // 保留调用方给定 frame 作为安全的局部默认值。
+            return frame;
+        }
         self.get(id).map(|n| n.dirty_rect(frame)).unwrap_or(frame)
     }
 
     fn scroll_offset(&self, id: NodeId) -> Option<(f32, f32)> {
+        // 停止树不得通过组件事件契约读取滚动偏移。
+        if !self.accepts_external_work() {
+            // 对合成器报告不存在可用滚动状态。
+            return None;
+        }
         self.get(id).and_then(|n| n.viewport_scroll_offset())
     }
 
@@ -120,6 +170,11 @@ impl ScenePaint for WidgetTree {
     }
 
     fn node_focusable(&self, id: NodeId) -> bool {
+        // 停止树不得经可聚焦性计算读取组件可见性契约。
+        if !self.accepts_external_work() {
+            // 对合成器保守报告节点不可聚焦。
+            return false;
+        }
         self.get(id).is_some_and(|n| n.is_focusable())
     }
 
@@ -132,6 +187,11 @@ impl ScenePaint for WidgetTree {
     }
 
     fn paint(&self, id: NodeId, frame: Rect, ctx: &mut PaintContext) {
+        // 非运行态树不得执行节点 render 回调。
+        if !self.accepts_external_work() {
+            // 保留故障现场并跳过绘制。
+            return;
+        }
         if let Some(node) = self.get(id) {
             if node.visible() {
                 let dirty = node.dirty_rect(frame);

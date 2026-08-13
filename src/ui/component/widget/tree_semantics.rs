@@ -14,6 +14,11 @@ impl WidgetTree {
     }
 
     pub fn dispatch_semantic_event(&mut self, event: &mut SemanticEvent) -> EventResult {
+        // 停止树不得通过语义分发触发 handler 或后续布局请求。
+        if !self.accepts_external_work() {
+            // 对调用方明确报告语义事件未处理。
+            return EventResult::NotHandled;
+        }
         if self.is_pending_removal_subtree(event.target) {
             return EventResult::NotHandled;
         }

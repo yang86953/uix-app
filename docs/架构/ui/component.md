@@ -21,6 +21,10 @@
 
 `WidgetTree` 是单个窗口 UI 线程独占的持久运行态。它拥有节点和 side table，并提供 reconcile、layout、event、paint、semantics 等阶段的受控挂载点；具体算法由对应模块扩展，component 不反向依赖这些上层模块。后台线程不得直接持有或访问树内可变对象。
 
+协调分为“预检”和“发布”两段。View 捕获、身份检查和不触碰现有树的展开属于预检；预检失败只丢弃候选资源。首次改写节点结构或树级附件后即进入发布段，最外层事务成功结束是唯一对外线性化点。发布段发生 panic 时不得继续使用半提交树，`WidgetTree` 永久进入 fail-stop，只允许所属窗口执行受控关闭并创建全新的树。
+
+fail-stop 树拒绝 reconcile、动态 renderer、event、timer、Effect、animation、layout、semantics 和 paint，不向调用方暴露部分结构。它不尝试撤销用户生命周期或 Effect 已经产生的外部副作用；框架只保证未提交回执回滚，并在关闭时释放 State 租约、Effect、handler、renderer side table、动画 owner 和节点资源。
+
 ## 组件：WidgetComponent
 
 `WidgetComponent` 只定义阶段无关的基础契约；layout、event、painting、animation 等模块各自定义小型扩展能力，并通过受控 slot 挂接，避免 component 反向引用所有阶段类型或形成巨型接口。业务闭包、虚拟列表 renderer 等不可快照对象按 `ComponentId` 存入由树托管的 side table，不进入组件值本身。
@@ -38,3 +42,4 @@ handle 只保存带 generation 的目标身份和所属窗口投递能力，不�
 - 声明式 View 不是第二棵持久树；运行态只有 `WidgetTree` 一份。
 - 同父级“同类型 + 同 key”保留组件身份，类型或 key 改变才执行销毁与重建。
 - present 成功前不消费相应 dirty；节点销毁前完成所有树级引用清理。
+- fail-stop 状态不可重置；恢复只能由窗口 owner 丢弃旧树并建立新的独占运行态。

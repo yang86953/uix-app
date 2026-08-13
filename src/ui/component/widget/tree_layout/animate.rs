@@ -47,6 +47,8 @@ impl WidgetTree {
         owner: AnimatedSourceOwner,
         sources: Vec<Arc<dyn AnimatedSource>>,
     ) {
+        // 停止树不得重新绑定动画源或建立新的 owner 分区。
+        assert!(self.accepts_coordination_work());
         // 构建或协调事务期间不得改变既有树绑定。
         if self.component_state_transaction_depth > 0 {
             // 记录待最外层成功后提交的所有权快照。
@@ -233,16 +235,31 @@ impl WidgetTree {
 
     // 推进整棵树的动画，并报告是否仍存在活动工作项。
     pub fn update(&mut self, dt: f64) -> bool {
+        // 已停止的树不得再推进会执行组件或动画源代码的动画时钟。
+        if !self.accepts_external_work() {
+            // 对调度器报告没有活动动画。
+            return false;
+        }
         self.update_animations(dt)
             .into_iter()
             .any(|(_, still_active)| still_active)
     }
 
     pub(crate) fn update_animations(&mut self, dt: f64) -> Vec<(WidgetId, bool)> {
+        // 已停止的树不得产生后续动画调度结果。
+        if !self.accepts_external_work() {
+            // 返回空更新以撤销外部帧工作。
+            return Vec::new();
+        }
         self.update_animations_at(Instant::now(), dt)
     }
 
     pub(crate) fn update_animations_at(&mut self, now: Instant, dt: f64) -> Vec<(WidgetId, bool)> {
+        // 已停止的树不得直接从测试或平台循环推进动画。
+        if !self.accepts_external_work() {
+            // 返回空更新以保持 fail-stop 语义。
+            return Vec::new();
+        }
         let ids = self.take_animation_node_ids();
         let updates = self.update_animation_nodes_at(ids.iter().copied(), now, dt);
         self.animation_ids_scratch = ids;
@@ -255,6 +272,11 @@ impl WidgetTree {
         now: Instant,
         dt: f64,
     ) -> Vec<(WidgetId, bool)> {
+        // 已停止的树不得通过排除路径绕过动画门禁。
+        if !self.accepts_external_work() {
+            // 返回空更新以保持 fail-stop 语义。
+            return Vec::new();
+        }
         let mut ids = self.take_animation_node_ids();
         ids.retain(|id| !excluded_ids.contains(id));
         let updates = self.update_animation_nodes_at(ids.iter().copied(), now, dt);
@@ -283,6 +305,11 @@ impl WidgetTree {
     }
 
     pub(crate) fn animated_source_registrations(&self) -> Vec<(WidgetId, Option<Instant>)> {
+        // 已停止的树不得登记动画源 deadline。
+        if !self.accepts_external_work() {
+            // 返回空集合以清除窗口侧动画工作。
+            return Vec::new();
+        }
         self.animated_sources
             .iter()
             .filter_map(|(&id, source)| match source.source.registration() {
@@ -335,6 +362,11 @@ impl WidgetTree {
         &self,
         registrations: &mut Vec<(WidgetId, Option<Instant>)>,
     ) {
+        // 已停止的树不得向窗口调度器提供过渡 deadline。
+        if !self.accepts_external_work() {
+            // 保持调用方现有集合不变。
+            return;
+        }
         registrations.extend(self.traverse().iter().copied().filter_map(|id| {
             let node = self.get(id)?;
             (node.view_transition_active()
@@ -362,12 +394,30 @@ impl WidgetTree {
     where
         I: IntoIterator<Item = WidgetId>,
     {
+        // 已停止的树不得通过细粒度入口执行动画组件代码。
+        if !self.accepts_external_work() {
+            // 返回空更新以保持 fail-stop 语义。
+            return Vec::new();
+        }
         let mut updates = Vec::new();
         let mut widget_overlays_changed = false;
         let mut completed_removals = Vec::new();
         for id in ids {
+            // 处理下一动画身份前复核树仍处于可接受外部工作的阶段。
+            if !self.accepts_external_work() {
+                // 前序动画回调停止树时不再推进后续身份。
+                break;
+            }
             if let Some(source) = self.animated_sources.get(&id) {
-                updates.push((id, source.source.advance(now, dt)));
+                // 保存本次动画源推进结果，以便返回后先复核树状态。
+                let still_active = source.source.advance(now, dt);
+                // 动画源回调返回后必须阻止停止树继续登记任何后续工作。
+                if !self.accepts_external_work() {
+                    // 首个停止态直接结束本轮动画源与组件动画遍历。
+                    break;
+                }
+                // 正常运行态才向调度器报告该动画源的续期状态。
+                updates.push((id, still_active));
                 continue;
             }
             let Some(frame) = self.active_animation_frame(id) else {
@@ -394,6 +444,11 @@ impl WidgetTree {
             } else {
                 (false, false)
             };
+            // 视图过渡推进返回后复核它没有触发停止树的协调失败。
+            if !self.accepts_external_work() {
+                // 停止态不得继续计算组件动画或动态子树刷新。
+                break;
+            }
             let new_visual_bounds = (view_was_active && !view_is_waiting)
                 .then(|| self.visual_subtree_bounds(id))
                 .flatten();
@@ -403,6 +458,11 @@ impl WidgetTree {
                 }
             }
 
+            // 组件动画回调前再次复核树的外部工作准入。
+            if !self.accepts_external_work() {
+                // 停止态不得进入组件提供的动画实现。
+                break;
+            }
             let (component_still_active, dirty) = self
                 .get_mut(id)
                 .and_then(|node| {
@@ -412,7 +472,22 @@ impl WidgetTree {
                     Some((still_active, dirty))
                 })
                 .unwrap_or((false, Rect::zero()));
+            // 组件动画回调返回后立即阻断已停止树的剩余处理。
+            if !self.accepts_external_work() {
+                // 停止态不得触发动态子树协调或继续同级动画。
+                break;
+            }
+            // 动态选择项刷新前复核树仍允许进入协调路径。
+            if !self.accepts_external_work() {
+                // 停止态不得调用应用提供的动态 renderer。
+                break;
+            }
             let dynamic_children_changed = self.refresh_select_option_component(id);
+            // 动态刷新可能捕获协调 panic，因此返回后必须复核树状态。
+            if !self.accepts_external_work() {
+                // 首个停止态不得继续处理当前或后续动画身份。
+                break;
+            }
             if dynamic_children_changed {
                 self.push_layout_invalidation(id);
                 self.propagate_layout_invalidation(id);
@@ -446,11 +521,31 @@ impl WidgetTree {
                 completed_removals.push(id);
             }
         }
+        // 停止树不再执行真实移除或覆盖层重建等后续协调工作。
+        if !self.accepts_external_work() {
+            // 保留已完成身份的结果供上层撤销后续调度。
+            return updates;
+        }
         for id in completed_removals {
+            // 销毁下一个完成过渡节点前复核树仍允许外部工作。
+            if !self.accepts_external_work() {
+                // 前序销毁停止树时不再销毁同级节点。
+                break;
+            }
             if self.get(id).is_some() {
                 self.remove(id);
                 widget_overlays_changed = true;
             }
+            // 节点销毁生命周期回调返回后复核树状态。
+            if !self.accepts_external_work() {
+                // 停止态不得继续进入后续节点销毁。
+                break;
+            }
+        }
+        // 销毁阶段可能使树停止，因此后续交互清理也必须被阻断。
+        if !self.accepts_external_work() {
+            // 保留已完成身份的结果供上层撤销后续调度。
+            return updates;
         }
         self.cancel_hidden_interaction();
         if widget_overlays_changed || updates.iter().any(|(_, still_active)| !still_active) {
@@ -460,10 +555,12 @@ impl WidgetTree {
     }
 
     pub(crate) fn component_animation_ids(&self) -> impl Iterator<Item = WidgetId> + '_ {
+        // 已停止的树不得向调度器暴露活动组件动画。
         self.active_component_animations
             .iter()
             .copied()
-            .filter(|id| self.get(*id).is_some())
+            // 非运行态在迭代层返回空集合，避免扩大内部 API 契约。
+            .filter(|id| self.accepts_external_work() && self.get(*id).is_some())
     }
 
     pub(crate) fn widget_overlay_is_current(&self, id: WidgetId) -> bool {

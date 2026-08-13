@@ -112,6 +112,11 @@ impl WidgetTree {
     }
 
     pub(crate) fn semantic_snapshot_body(&self) -> SemanticSnapshotBody {
+        // 停止树不得枚举半提交节点或读取组件语义快照。
+        if !self.accepts_external_work() {
+            // 保持公开快照签名，并以合法空体表达无可访问节点。
+            return SemanticSnapshotBody::default();
+        }
         let focused = self.managers().focus.focused_component();
         let nodes = self
             .traverse()

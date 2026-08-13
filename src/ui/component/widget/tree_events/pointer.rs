@@ -349,6 +349,11 @@ impl WidgetTree {
     }
 
     pub(crate) fn dispatch_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
+        // 停止树不得通过定向分发直接调用节点事件回调。
+        if !self.accepts_external_work() {
+            // 对外保持事件未处理，避免泄露半提交节点状态。
+            return EventResult::NotHandled;
+        }
         if self.is_pending_removal_subtree(target) {
             return EventResult::NotHandled;
         }
@@ -486,6 +491,11 @@ impl WidgetTree {
     }
 
     pub(crate) fn set_focus(&mut self, new_focus: Option<WidgetId>) {
+        // 停止树不得改变焦点管理器或触发焦点生命周期回调。
+        if !self.accepts_external_work() {
+            // 保持故障现场，等待所属窗口执行受控 teardown。
+            return;
+        }
         let old_focus = self.managers().focus.focused_component();
         if new_focus == old_focus {
             return;
