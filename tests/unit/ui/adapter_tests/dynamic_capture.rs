@@ -489,13 +489,13 @@ fn dynamic_capture_animation_build_panic_discards_preceding_source_update() {
     assert!(tree.animated_source_registrations().is_empty());
 }
 
-// 验证既有节点的新动画源遇到后续兄弟协调异常时保留旧动画登记。
+// 验证既有节点的动画替换在后续兄弟发布异常时进入 fail-stop。
 #[test]
-// 执行原位动画替换的事务回滚回归。
-fn dynamic_capture_animation_patch_panic_preserves_previous_source() {
-    // 建立首次成功挂载并应在失败后继续保留的旧动画源。
+// 执行原位动画替换的发布失败与受控关闭回归。
+fn dynamic_capture_animation_patch_panic_enters_fail_stop() {
+    // 建立首次成功挂载并在发布失败前可观察的旧动画源。
     let old_animation = Animated::new(0.0_f32).to(1.0, 10.0, Easing::linear);
-    // 记录旧动画源的稳定工作身份供失败后精确断言。
+    // 记录旧动画源的稳定工作身份供首次提交精确断言。
     let old_source_id = old_animation.group_source_id();
     // 建立初始没有动画登记的稳定宿主树。
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Container::new()));
@@ -548,8 +548,6 @@ fn dynamic_capture_animation_patch_panic_preserves_previous_source() {
 
     // 建立只应在下一轮事务成功时替换旧来源的新动画源。
     let new_animation = Animated::new(0.0_f32).to(1.0, 10.0, Easing::linear);
-    // 记录新动画源身份以证明失败后没有被树接纳。
-    let new_source_id = new_animation.group_source_id();
     // 克隆新动画句柄供第二轮动态捕获读取。
     let captured_new_animation = new_animation.clone();
     // 捕获与旧节点同键同类型的新动画声明。
@@ -593,14 +591,14 @@ fn dynamic_capture_animation_patch_panic_preserves_previous_source() {
     }));
     // 测试组件的快照异常必须继续向上传播。
     assert!(result.is_err());
-    // 读取失败事务后的实际动画登记快照。
-    let registrations_after_panic = tree.animated_source_registrations();
-    // 失败事务不得增加或删除动画登记。
-    assert_eq!(registrations_after_panic.len(), 1);
-    // 失败事务后必须继续保留旧动画源。
-    assert_eq!(registrations_after_panic[0].0, old_source_id);
-    // 失败事务后不得接纳新动画源。
-    assert_ne!(registrations_after_panic[0].0, new_source_id);
+    // 发布区异常后旧树必须永久拒绝外部工作。
+    assert!(!tree.accepts_external_work());
+    // fail-stop 门禁不得向调度器暴露任何半提交动画来源。
+    assert!(tree.animated_source_registrations().is_empty());
+    // 仅允许 owner 通过受控关闭释放半发布树资源。
+    tree.shutdown();
+    // 关闭后旧树仍不得恢复为可协调状态。
+    assert!(!tree.accepts_external_work());
 }
 
 // 验证捕获后已经失效的宿主身份不能产生孤立节点或遗留运行时输出。

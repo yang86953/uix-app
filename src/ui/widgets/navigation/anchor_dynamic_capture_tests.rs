@@ -118,6 +118,8 @@ fn captured_anchor(
         let scope = uix_component_scope("anchor-container-dynamic-capture-test", 1);
         // 在 owner、容器槽与固定 key 限定的命名空间中获取状态。
         let state = uix_component_state(&scope, 1, || 0_i32);
+        // 读取私有状态以登记当前动态容器的结构性协调依赖。
+        let _ = state.get();
         // 记录本轮捕获到的状态句柄。
         *renderer_states
             .lock()
