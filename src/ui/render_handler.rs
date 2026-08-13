@@ -236,18 +236,59 @@ impl RenderHandlerTable {
     }
 
     pub(crate) fn render_select_options(
+        // 接收由活跃 Select owner 签发的窄动态捕获能力。
         &self,
-        component: ComponentId,
+        // 固定状态存储与宿主身份，renderer 不接触 WidgetTree 所有权细节。
+        capture_context: &DynamicViewCaptureContext,
+        // 接收当前实际物化的绝对选项索引。
         indices: &[usize],
+        // 接收与绝对索引一一对应的显示文案。
         labels: &[String],
+        // 返回完整捕获但尚未协调的自定义选项声明节点。
     ) -> Option<Vec<ViewNode>> {
-        let renderer = self.select_options.get(&component)?;
+        // 只读取签发能力所属 Select 的 renderer sidecar。
+        let renderer = self.select_options.get(&capture_context.owner())?;
+        // 索引和文案必须来自同一 Select 快照，长度不一致会破坏身份配对。
+        assert_eq!(
+            // 验证每个 renderer 输入都有唯一绝对索引。
+            indices.len(),
+            // 验证每个绝对索引都有对应显示文案。
+            labels.len(),
+            // 提供不包含应用数据的稳定诊断。
+            "Select 自定义选项索引与文案数量不一致"
+        );
+        // 逐项捕获当前可见选项的完整运行时输出。
         Some(
-            labels
+            indices
                 .iter()
-                .map(|label| ViewAdapter::capture_root(|| renderer(label)))
-                .zip(indices)
-                .map(|(view, index)| view.key(format!("select-option:{index}")))
+                // 保持绝对索引与显示文案的声明顺序一致。
+                .zip(labels)
+                // 为每个选项建立独立且可协调的树级动态实例。
+                .map(|(index, label)| {
+                    // 保持既有按绝对选项索引拥有身份的公开行为。
+                    let stable_key = format!("select-option:{index}");
+                    // 为 keyed reconcile 保留与状态命名空间相同的身份副本。
+                    let view_key = stable_key.clone();
+                    // 在所属 WidgetTree 的 Select 槽位中捕获完整声明输出。
+                    let view = capture_context.capture(
+                        // 固定槽位隔离同一宿主下的其他延迟 View 工厂。
+                        "select-option",
+                        // 绝对选项索引同时拥有私有状态与结构节点身份。
+                        stable_key,
+                        // 只在完整捕获边界内执行应用 renderer。
+                        || renderer(label),
+                    );
+                    // 应用 renderer 自设根 key 会制造状态与结构双身份。
+                    assert!(
+                        // 框架是 Select 动态选项根身份的唯一权威。
+                        view.key.is_none(),
+                        // 明确要求调用方不要绕过绝对索引身份契约。
+                        "Select option renderer 不得直接设置根 key"
+                    );
+                    // 强制结构协调与私有状态使用同一稳定身份。
+                    view.key(view_key)
+                })
+                // 汇总当前可见选项供一次动态事务协调。
                 .collect(),
         )
     }

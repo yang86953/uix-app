@@ -870,29 +870,28 @@ fn capture_runtime_dynamic_effects_preserve_root_and_release_on_remove() {
 #[path = "adapter_tests/capture_merge.rs"]
 // 编译预捕获节点输出合并回归模块。
 mod capture_merge;
-
 // 拆分结构性 State 租约生命周期回归，保持适配器测试主体低于规模上限。
 #[path = "adapter_tests/state_bind_lifecycle.rs"]
 // 编译 State 租约与 shutdown 生命周期回归模块。
 mod state_bind_lifecycle;
-
 // 拆分树级动态命名空间与动画源所有权回归，保持适配器测试主体低于规模上限。
 #[path = "adapter_tests/dynamic_capture.rs"]
 // 编译延迟 View 动态捕获基础契约的行为测试模块。
 mod dynamic_capture;
-
 // 拆分 Calendar 延迟日期格状态所有权与生命周期回归，保持主测试文件低于规模上限。
 #[path = "adapter_tests/calendar_dynamic_capture.rs"]
 // 编译 Calendar 日期格动态私有 State 的行为门禁。
 mod calendar_dynamic_capture;
-
 // 仅在表格 capability 启用时编译 DataTable 动态单元格回归。
 #[cfg(feature = "table")]
 // 拆分 DataTable 单元格动态私有 State 与生命周期回归，保持主测试文件低于规模上限。
 #[path = "adapter_tests/table_cell_dynamic_capture.rs"]
 // 编译 DataTable 单元格 renderer 的树级动态捕获行为门禁。
 mod table_cell_dynamic_capture;
-
+// 拆分 Select 自定义选项的动态私有 State 与生命周期回归，保持主测试文件低于规模上限。
+#[path = "adapter_tests/select_dynamic_capture.rs"]
+// 编译 Select option renderer 的树级动态捕获行为门禁。
+mod select_dynamic_capture;
 // 将 fail-stop 状态机与受控关闭行为放入独立文件，避免主测试文件超过规模上限。
 #[path = "adapter_tests/fail_stop.rs"]
 // 挂载协调 panic 前后不同恢复语义的行为门禁。

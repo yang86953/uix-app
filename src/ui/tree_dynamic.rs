@@ -628,6 +628,21 @@ impl WidgetTree {
             // 直接拒绝本轮刷新，保留等待 owner teardown 的既有资源。
             return false;
         }
+        // 已销毁或正在离场的宿主不再签发动态捕获能力或执行应用 renderer。
+        if self.get(id).is_none_or(|node| node.destroyed()) || self.is_pending_removal_subtree(id) {
+            // 保留既有墓碑直到真实移除，不在离场阶段重建选项树。
+            return false;
+        }
+        // 陈旧 id 或非 Select owner 不能借用同一组件槽位的 renderer。
+        if !self
+            // 只读取当前运行时节点的实际组件类型。
+            .get(id)
+            // 让 Select 成为本刷新入口唯一允许的 owner 类型。
+            .is_some_and(|node| node.component().as_any().is::<Select>())
+        {
+            // 拒绝非 Select owner，避免状态写入错误的动态命名空间。
+            return false;
+        }
         if !self.render_handler_table.contains_select_options(id) {
             return false;
         }
@@ -636,7 +651,18 @@ impl WidgetTree {
             let select = node.component().as_any().downcast_ref::<Select>()?;
             let indices = select.custom_option_indices();
             let labels = select.custom_option_labels(&indices);
-            let needs_refresh = select.needs_custom_option_refresh(&indices, node.children().len());
+            // 离场墓碑仍保留在直接 children 链中，但不属于当前活动选项窗口。
+            let mounted_children = node
+                // 只检查 Select 直接拥有的动态选项。
+                .children()
+                // 排除正在 leave 或其祖先已经 leave 的选项子树。
+                .iter()
+                // 保留会参与本轮 keyed reconcile 的活动子项。
+                .filter(|child_id| !self.is_pending_removal_subtree(**child_id))
+                // 得到活动选项总数，避免墓碑触发重复 renderer。
+                .count();
+            // 只让活动选项参与是否需要重建当前窗口的判定。
+            let needs_refresh = select.needs_custom_option_refresh(&indices, mounted_children);
             Some((indices, labels, needs_refresh))
         }) else {
             return false;
@@ -645,10 +671,17 @@ impl WidgetTree {
             return false;
         }
 
-        let children = self
+        // 在借用 renderer sidecar 前签发固定树 store 与已验证 Select owner 的窄能力。
+        let capture_context = ViewAdapter::dynamic_capture_context(self, id);
+        // 缺少 sidecar 不是合法空窗口，不能据此删除已有动态选项。
+        let Some(children) = self
             .render_handler_table
-            .render_select_options(id, &indices, &labels)
-            .unwrap_or_default();
+            // 让每个选项 renderer 在宿主树私有命名空间中完成捕获。
+            .render_select_options(&capture_context, &indices, &labels)
+        else {
+            // 保留旧 children 与物化索引，等待声明 sidecar 被恢复。
+            return false;
+        };
         let changed = ViewAdapter::reconcile_dynamic_children(self, id, children);
         if let Some(select) = self
             .get(id)
