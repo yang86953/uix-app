@@ -166,7 +166,9 @@ fn captured_carousel(
             // 取得短期写锁。
             .lock()
             // 测试继续恢复 poisoned 锁中的记录。
-            .unwrap_or_else(|error| error.into_inner()) = Some(state);
+            .unwrap_or_else(|error| error.into_inner()) = Some(state.clone());
+        // 读取私有状态，使箭头声明显式交接所属树的结构协调订阅。
+        let _ = state.get();
         // 克隆依赖供 Effect 闭包独立持有。
         let dependency = effect_dependency.clone();
         // 克隆计数器供 Effect 生命周期持有。

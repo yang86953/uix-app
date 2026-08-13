@@ -5,7 +5,7 @@ use crate::ui::component_state::{uix_component_scope, uix_component_state};
 // 导入读取运行时节点子关系与稳定 key 的核心接口。
 use crate::ui::component::widget::WidgetCore;
 // 导入表格指针动作以直接驱动真实展开状态机。
-use crate::ui::widgets::display::table::TablePointerAction;
+use crate::ui::widgets::display::table::types::TablePointerAction;
 // 导入声明节点与表格行快照类型。
 use crate::ui::view::ViewNode;
 // 导入真实容器、表格和最小展示组件。
