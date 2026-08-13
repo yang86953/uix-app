@@ -10,6 +10,11 @@ impl crate::ui::adapter::ViewAdapter {
         mut children: Vec<crate::ui::view::ViewNode>,
         // 返回结构是否发生变化。
     ) -> bool {
+        // 嵌套协调只可在正常或协调中状态执行，失败与关闭状态不得触碰 renderer 输出。
+        if !tree.accepts_coordination_work() {
+            // 拒绝的声明子树在离开作用域时释放其未提交回执。
+            return false;
+        }
         // 动态交付前再次校验宿主仍属于当前树，拒绝捕获后已失效的旧 generation。
         assert!(
             // 只有仍可寻址的实际节点才能接纳新的运行时子树。
@@ -25,6 +30,8 @@ impl crate::ui::adapter::ViewAdapter {
             );
         // 先让 WidgetTree 完整结束事务，异常时外层 receipts 的 Drop 会回滚。
         let changed = tree.with_component_state_transaction(receipts, |tree| {
+            // 动态子树的首个结构改写进入不可逆发布区，panic 后必须 fail-stop。
+            tree.mark_coordination_publish_started();
             // 协调动态子树并保留既有的无动画替换语义。
             Self::reconcile_children(tree, parent_id, children, None)
         });

@@ -1,136 +1,12 @@
 use super::*;
-use crate::core::{Rect, Size};
+// 提供帧与脏区操作使用的矩形类型。
+use crate::core::Rect;
 use crate::ui::component::app_state::AppState;
 use crate::ui::component::managers::WidgetManagers;
 use crate::ui::event::WindowAction;
 use crate::ui::theme::traits::ThemeTokens;
 
 impl WidgetTree {
-    // 使用已捕获根绑定的存储创建窗口树，避免首次构建与后续协调分裂状态所有权。
-    pub(crate) fn with_component_state_store(
-        // 接收首次根捕获已经使用的窗口私有存储。
-        store: crate::ui::component_state::ComponentStateStore,
-    ) -> Self {
-        // 先建立其余默认运行时资源。
-        let mut tree = Self::default();
-        // 再用捕获根指定的窗口私有存储替换默认值。
-        tree.component_state_store = store;
-        // 返回拥有单一状态存储的树。
-        tree
-    }
-
-    // 返回当前树唯一拥有的组件私有状态存储句柄。
-    pub(crate) fn component_state_store(&self) -> crate::ui::component_state::ComponentStateStore {
-        // 克隆轻量共享句柄而不复制任何状态。
-        self.component_state_store.clone()
-    }
-
-    // 开始适配器的构建或协调事务并推迟作用域状态清理。
-    fn begin_component_state_transaction(&mut self) {
-        // 允许嵌套构建入口而不提前释放仍会在本轮重挂载的状态。
-        self.component_state_transaction_depth = self
-            // 使用饱和递增防止异常嵌套下整数回绕。
-            .component_state_transaction_depth
-            // 增加当前树的协调事务深度。
-            .saturating_add(1);
-    }
-
-    // 结束适配器事务；最终作用域解析由最外层成功入口统一执行。
-    fn end_component_state_transaction(&mut self) {
-        // 防御性忽略不成对结束，避免测试辅助路径下溢。
-        if self.component_state_transaction_depth == 0 {
-            // 没有事务时无需再次清理。
-            return;
-        }
-        // 释放一层事务深度。
-        self.component_state_transaction_depth -= 1;
-        // 最外层成功入口会把最终挂载作用域与本批回执一起原子解析。
-    }
-
-    // 在异常展开路径恢复一层事务深度，保留既有挂载状态且不执行破坏性清理。
-    fn abort_component_state_transaction(&mut self) {
-        // 没有活跃事务时保持调用幂等。
-        if self.component_state_transaction_depth == 0 {
-            // 提前返回避免深度下溢。
-            return;
-        }
-        // 仅撤销当前入口增加的一层深度。
-        self.component_state_transaction_depth -= 1;
-    }
-
-    // 在异常安全边界内执行一次组件状态建树或协调事务。
-    pub(crate) fn with_component_state_transaction<R>(
-        &mut self,
-        // 接收由本事务及其声明子树创建的待确认状态 journal。
-        receipts: Vec<crate::ui::component_state::ComponentStateCaptureReceipt>,
-        // 接收事务期间唯一可变访问当前树的同步闭包。
-        action: impl FnOnce(&mut Self) -> R,
-    ) -> R {
-        // 只保留由当前 WidgetTree 唯一状态存储产生的回执。
-        let receipts = receipts
-            // 消费输入集合，让错误 store 回执在过滤时立即 Drop 回滚。
-            .into_iter()
-            // 禁止其他树或一次性捕获的状态 journal 被当前树接纳。
-            .filter(|receipt| receipt.belongs_to(&self.component_state_store))
-            // 收集可安全加入本树最外层事务的回执。
-            .collect::<Vec<_>>();
-        // 记录进入本层前的回执边界，供 panic 精确回滚本层及成功嵌套层。
-        let checkpoint = self.component_state_pending_receipts.len();
-        // 记录进入本层前的动画源替换边界，供 panic 保留既有树绑定。
-        let animation_checkpoint = self.pending_animated_source_owner_updates.len();
-        // 开启一层延迟清理事务。
-        self.begin_component_state_transaction();
-        // 将本层声明捕获产生的 journal 交给当前树暂存。
-        self.component_state_pending_receipts.extend(receipts);
-        // 捕获 panic 以确保事务深度在所有退出路径恢复。
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| action(self)));
-        // 区分正常提交与异常回滚。
-        match result {
-            // 正常路径按最终挂载树清理缺席作用域。
-            Ok(value) => {
-                // 提交当前事务层。
-                self.end_component_state_transaction();
-                // 仅最外层成功并完成作用域清理后才统一接纳所有 journal。
-                if self.component_state_transaction_depth == 0 {
-                    // 在最外层成功后才让本轮动画源所有权替换进入真实树注册表。
-                    self.commit_pending_animated_source_owner_updates();
-                    // 取走全部已成功挂载的回执，避免后续 Drop 回滚。
-                    let receipts = std::mem::take(&mut self.component_state_pending_receipts);
-                    // 收集事务成功后仍由实际节点承载的最终作用域真相。
-                    let live_scopes = self.component_state_live_scopes();
-                    // 原子提交 live claim、释放缺席 claim 并保留其他外部未决捕获。
-                    crate::ui::component_state::resolve_component_state_receipts(
-                        // 传入当前窗口树唯一的状态存储。
-                        &self.component_state_store,
-                        // 传入最外层事务积累的完整回执批次。
-                        receipts,
-                        // 传入最终运行时树承载的作用域集合。
-                        &live_scopes,
-                    );
-                }
-                // 返回调用方结果。
-                value
-            }
-            // 异常路径仅恢复深度并继续原始展开。
-            Err(payload) => {
-                // 取走本层开始后加入的回执，包含所有成功的嵌套事务回执。
-                let receipts = self.component_state_pending_receipts.split_off(checkpoint);
-                // 立即丢弃本层回执以精确撤销对应的新建状态槽。
-                drop(receipts);
-                // 丢弃本层及其成功嵌套层的动画源请求，旧树注册保持不变。
-                let updates = self
-                    .pending_animated_source_owner_updates
-                    .split_off(animation_checkpoint);
-                // 释放未提交来源，确保异常路径不会产生树作用域绑定。
-                drop(updates);
-                // 避免基于半完成树执行破坏性 prune。
-                self.abort_component_state_transaction();
-                // 保持调用方观察到原始 panic。
-                std::panic::resume_unwind(payload)
-            }
-        }
-    }
-
     // 在事务外实际移除节点后立即释放不再被任何节点承载的作用域状态。
     pub(crate) fn prune_component_state_scopes_if_idle(&mut self) {
         // leave 过渡或协调事务期间必须保留状态直到最终树稳定。
@@ -149,7 +25,9 @@ impl WidgetTree {
     }
 
     // 收集当前实际运行时树仍承载的全部组件私有状态作用域。
-    fn component_state_live_scopes(&self) -> std::collections::HashSet<UixComponentScope> {
+    pub(super) fn component_state_live_scopes(
+        &self,
+    ) -> std::collections::HashSet<UixComponentScope> {
         // 建立不受节点遍历借用影响的作用域集合。
         let mut live_scopes = std::collections::HashSet::<UixComponentScope>::new();
         // 遍历所有尚未从树中实际删除的节点。
@@ -166,8 +44,6 @@ impl WidgetTree {
         // 返回供事务解析或事务外 prune 使用的最终集合。
         live_scopes
     }
-
-    pub(crate) const ROOT_BOOTSTRAP_SIZE: Size = Size { w: 800.0, h: 600.0 };
 
     pub(crate) fn keyboard_focus_visible(&self) -> bool {
         self.window_focused && self.keyboard_focus_visible
@@ -201,6 +77,16 @@ impl WidgetTree {
     }
 
     pub(crate) fn take_window_actions(&mut self) -> Vec<WindowAction> {
+        // 非运行态树不得向平台提交协调中或失败前遗留的窗口动作。
+        if !self.accepts_external_work() {
+            // 永久停止后直接丢弃动作，协调中则保留到成功线性化之后。
+            if self.is_fail_stopped() {
+                // 清除无法再安全归因到完整树的旧动作。
+                self.pending_window_actions.clear();
+            }
+            // 当前入口不向平台暴露任何半提交事实。
+            return Vec::new();
+        }
         std::mem::take(&mut self.pending_window_actions)
     }
 
@@ -209,12 +95,21 @@ impl WidgetTree {
     }
 
     pub fn managers_mut(&mut self) -> &mut WidgetManagers {
+        // 停止树不得重新建立任何交互、焦点或拖拽运行态。
+        assert!(self.accepts_coordination_work());
         &mut self.managers
     }
 
     pub fn set_app_state(&mut self, app_state: AppState) {
-        self.app_state = Some(app_state);
-        self.sync_app_state_registry();
+        // AppState 快照会调用组件快照能力，公开入口必须建立异常事务边界。
+        self.with_component_state_transaction(Vec::new(), |tree| {
+            // 外部注册一旦开始便不可回滚，先记录真实资源发布。
+            tree.mark_coordination_publish_started();
+            // 接管新的应用状态共享句柄。
+            tree.app_state = Some(app_state);
+            // 把当前挂载节点同步到新注册表，panic 后由事务 fail-stop。
+            tree.sync_app_state_registry();
+        });
     }
 
     pub fn app_state(&self) -> Option<AppState> {
@@ -222,6 +117,11 @@ impl WidgetTree {
     }
 
     pub(crate) fn drain_app_state_semantic_events(&mut self) -> bool {
+        // 非运行态树不得消费队列或触发语义 handler。
+        if !self.accepts_external_work() {
+            // 保留 AppState 事实供所属窗口 teardown 丢弃，当前帧没有安全工作。
+            return false;
+        }
         let Some(app_state) = self.app_state.clone() else {
             return false;
         };
@@ -243,6 +143,11 @@ impl WidgetTree {
     }
 
     pub(crate) fn has_app_state_semantic_events(&self) -> bool {
+        // 非运行态树不向窗口循环暴露无法安全执行的语义工作。
+        if !self.accepts_external_work() {
+            // 防止 fail-stop owner 因旧 AppState 队列持续保持 Active。
+            return false;
+        }
         let Some(app_state) = self.app_state.as_ref() else {
             return false;
         };
@@ -250,6 +155,11 @@ impl WidgetTree {
     }
 
     pub(crate) fn drain_app_state_focus_requests(&mut self) -> bool {
+        // 非运行态树不得消费焦点请求或执行节点焦点生命周期。
+        if !self.accepts_external_work() {
+            // 保留队列事实并向驱动报告没有安全工作。
+            return false;
+        }
         let Some(app_state) = self.app_state.clone() else {
             return false;
         };
@@ -286,6 +196,11 @@ impl WidgetTree {
     }
 
     pub(crate) fn has_app_state_focus_requests(&self) -> bool {
+        // 非运行态树不向窗口循环暴露无法安全执行的焦点工作。
+        if !self.accepts_external_work() {
+            // 防止旧焦点请求在 teardown 前形成忙循环。
+            return false;
+        }
         let Some(app_state) = self.app_state.as_ref() else {
             return false;
         };
@@ -341,6 +256,8 @@ impl WidgetTree {
     }
 
     pub fn alloc_id(&mut self) -> ComponentId {
+        // 停止树不得再分配能够逃逸到调用方的新组件身份。
+        assert!(self.accepts_coordination_work());
         if let Some(slot) = self.free_slots.pop() {
             return WidgetId::from_scoped_parts(self.tree_scope, slot, self.generations[slot]);
         }
@@ -467,39 +384,12 @@ impl WidgetTree {
         }
     }
 
-    /// Ends the tree's mounted lifecycle before its owning window releases
-    /// rendering resources. Repeated shutdown is harmless because each node's
-    /// lifecycle flags suppress duplicate callbacks.
-    pub(crate) fn shutdown(&mut self) {
-        self.teardown_all();
-        // 释放根生命周期持有的结构性 State 订阅租约。
-        self.root_reconcile_state_binds.clear();
-        // 释放根捕获的 Effect，避免关闭后继续保留待处理工作。
-        self.effects.clear();
-        // 清空全部所有者分区，确保关闭不再保留根或节点声明。
-        self.animated_source_owners.clear();
-        // 取消关闭前尚未提交的全部动画源替换，同时保持活跃事务检查点有效。
-        self.cancel_pending_animated_source_owner_updates(|_| true);
-        // 释放全部捕获的动画源，并由绑定包装器解除源端所有权。
-        self.animated_sources.clear();
-        // 关闭后不再保留任何组件动画活动标记。
-        self.active_component_animations.clear();
-        // 清空动画遍历暂存，避免关闭后的旧节点身份继续存活。
-        self.animation_ids_scratch.clear();
-        // 释放仍由未移除节点持有的 State 租约与 Effect。
-        for node in self.nodes.iter_mut().flatten() {
-            // 关闭节点结构性 State 订阅。
-            node.clear_reconcile_state_binds();
-            // 清空节点 Effect，关闭后不再参与调度。
-            node.replace_captured_effects(Vec::new());
-        }
-        // 释放所有延迟 View 工厂及其应用捕获资源，关闭后不得保留 sidecar。
-        self.render_handler_table.clear();
-        // 窗口关闭后不再允许任何组件私有状态继续存活。
-        self.component_state_store.clear();
-    }
-
     pub fn notify_theme_changed(&mut self) {
+        // fail-stop 后不得再次调用节点的主题生命周期。
+        if !self.accepts_external_work() {
+            // 外部主题通知在停止树上保持无副作用。
+            return;
+        }
         let ids: Vec<_> = self.traverse().iter().copied().collect();
         for id in ids {
             if let Some(node) = self.get_mut(id) {
@@ -515,6 +405,11 @@ impl WidgetTree {
         self.root_id.and_then(|id| self.get(id))
     }
     pub fn root_id(&self) -> Option<ComponentId> {
+        // fail-stop 后不向公开调用方暴露半提交根身份。
+        if !self.accepts_coordination_work() {
+            // owner teardown 通过树核心私有字段完成，不依赖公开根访问。
+            return None;
+        }
         self.root_id
     }
     pub fn root_mut(&mut self) -> Option<&mut BoxedWidget> {
@@ -549,20 +444,55 @@ impl WidgetTree {
         f: impl FnOnce(&mut T),
     ) -> Option<ComponentId> {
         let id = self.find_by_type::<T>()?;
-        if let Some(node) = self.get_mut(id) {
-            if let Some(w) = node.component_mut().as_any_mut().downcast_mut::<T>() {
-                f(w);
+        // 公开用户修改闭包必须在异常边界内发布，panic 后不能重新开放半修改组件。
+        self.with_component_state_transaction(Vec::new(), |tree| {
+            // 调用用户闭包前线性化真实组件值即将被改写。
+            tree.mark_coordination_publish_started();
+            // 只在目标身份与类型仍有效时执行一次用户修改。
+            if let Some(node) = tree.get_mut(id) {
+                // 类型查询复用调用前已经确认的稳定组件身份。
+                if let Some(w) = node.component_mut().as_any_mut().downcast_mut::<T>() {
+                    // 用户闭包异常会由外层事务把树置为 fail-stop。
+                    f(w);
+                }
             }
-        }
-        Some(id)
+            // 保持原公开 API 返回已匹配的组件身份。
+            Some(id)
+        })
     }
 
     pub fn get(&self, id: ComponentId) -> Option<&BoxedWidget> {
+        // 停止树不得泄漏可继续调用用户组件的半提交节点引用。
+        if !self.accepts_coordination_work() {
+            // shutdown 使用树核心私有 raw accessor，不经过公开边界。
+            return None;
+        }
+        // 运行态与协调态共享同一 generation 安全寻址实现。
+        self.get_raw(id)
+    }
+
+    // 让树核心关闭路径访问已经停止但仍待释放的真实节点。
+    pub(super) fn get_raw(&self, id: ComponentId) -> Option<&BoxedWidget> {
+        // 先验证树作用域、槽位与 generation，再读取物理节点。
         let slot = self.node_slot_for(id)?;
+        // 返回仅限 tree_core 资源释放使用的节点引用。
         self.nodes.get(slot).and_then(|n| n.as_ref())
     }
     pub fn get_mut(&mut self, id: ComponentId) -> Option<&mut BoxedWidget> {
+        // 停止树不得泄漏可直接执行用户组件方法的可变节点引用。
+        if !self.accepts_coordination_work() {
+            // 调用方必须丢弃旧树并创建新的 owner。
+            return None;
+        }
+        // 运行态与协调态共享同一 generation 安全寻址实现。
+        self.get_mut_raw(id)
+    }
+
+    // 让树核心关闭路径可变访问已经停止但仍待执行受控生命周期的节点。
+    pub(super) fn get_mut_raw(&mut self, id: ComponentId) -> Option<&mut BoxedWidget> {
+        // 先验证树作用域、槽位与 generation，再读取物理节点。
         let slot = self.node_slot_for(id)?;
+        // 返回仅限 tree_core 关闭实现使用的可变节点引用。
         self.nodes.get_mut(slot).and_then(|n| n.as_mut())
     }
 
@@ -574,6 +504,17 @@ impl WidgetTree {
     }
 
     pub fn remove(&mut self, id: ComponentId) {
+        // 公开移除会执行组件生命周期，必须统一进入 panic 事务边界。
+        self.with_component_state_transaction(Vec::new(), |tree| {
+            // 在当前事务内递归完成真实移除。
+            tree.remove_in_transaction(id);
+        });
+    }
+
+    // 在已建立事务的边界内递归移除节点子树。
+    pub(super) fn remove_in_transaction(&mut self, id: ComponentId) {
+        // 节点移除会立即改写真实结构，停止树拒绝且协调事务记录发布事实。
+        self.mark_coordination_publish_started();
         self.tree_version += 1;
         self.active_component_animations.remove(&id);
 
@@ -591,7 +532,7 @@ impl WidgetTree {
                 // 节点已真实离开槽位后，取消其待提交项并立即释放实际动画源所有权。
                 self.release_node_animated_sources_immediately(id);
                 for child_id in node.children().to_vec() {
-                    self.remove(child_id);
+                    self.remove_in_transaction(child_id);
                 }
                 self.handler_table.clear_component(id);
                 self.render_handler_table.clear_component(id);
@@ -643,6 +584,17 @@ impl WidgetTree {
     }
 
     pub fn set_visible(&mut self, id: ComponentId, visible: bool) {
+        // 公开可见性传播会执行组件生命周期，统一进入 panic 事务边界。
+        self.with_component_state_transaction(Vec::new(), |tree| {
+            // 在同一事务内发布整棵子树的可见性变化。
+            tree.set_visible_in_transaction(id, visible);
+        });
+    }
+
+    // 在已建立事务的边界内发布递归可见性变化。
+    fn set_visible_in_transaction(&mut self, id: ComponentId, visible: bool) {
+        // 可见性传播会改写节点与生命周期，先进入统一发布门禁。
+        self.mark_coordination_publish_started();
         if !visible {
             self.cancel_subtree_interaction(id);
         }
@@ -679,6 +631,16 @@ impl WidgetTree {
 
     /// 返回树的先序遍历缓存；借用守卫存活期间不得修改树结构。
     pub fn traverse(&self) -> std::cell::Ref<'_, [ComponentId]> {
+        // 停止树不得通过公开遍历泄漏半提交节点身份集合。
+        if !self.accepts_coordination_work() {
+            // 清空旧缓存，防止调用方观察 fail-stop 前留下的路径。
+            self.cached_traversal.borrow_mut().0.clear();
+            // 返回与正常签名一致的稳定空借用。
+            return std::cell::Ref::map(self.cached_traversal.borrow(), |(ids, _)| {
+                // 只暴露已经清空的身份切片。
+                ids.as_slice()
+            });
+        }
         {
             let mut cache = self.cached_traversal.borrow_mut();
             let (ref mut ids, ref mut ver) = *cache;
@@ -703,6 +665,11 @@ impl WidgetTree {
     }
 
     pub fn active_timers(&mut self) -> Vec<(u64, std::time::Duration)> {
+        // 停止树不得再向窗口调度任何用户定时器。
+        if !self.accepts_external_work() {
+            // 返回空集合以撤销驱动层的后续 timer 安排。
+            return Vec::new();
+        }
         let mut timer_routes = std::mem::take(&mut self.timer_routes);
         timer_routes.clear();
         let mut timers = Vec::new();
@@ -724,6 +691,11 @@ impl WidgetTree {
     }
 
     pub(crate) fn dispatch_timer_work(&mut self, timer_id: u64) -> EventResult {
+        // direct 调用也必须在 fail-stop 后拒绝触达用户节点。
+        if !self.accepts_external_work() {
+            // 停止树将定时器工作视为未处理。
+            return EventResult::NotHandled;
+        }
         self.begin_invalidation_batch();
         let result = self.dispatch_timer_work_inner(timer_id);
         self.finish_invalidation_batch();

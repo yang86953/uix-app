@@ -714,10 +714,10 @@ fn dynamic_capture_rejects_stale_owner_before_mounting_outputs() {
     assert_eq!(initializer_runs.get(), 1);
 }
 
-// 验证内层销毁外层待提交 owner 后再 panic 不会破坏事务检查点。
+// 验证内层已经发布结构后发生 panic 会让共享外层事务永久 fail-stop。
 #[test]
-// 执行嵌套动画取消、回滚与后续恢复回归。
-fn dynamic_capture_nested_animation_cancel_panic_keeps_checkpoint_stable() {
+// 执行嵌套动画取消、回滚与 fail-stop 准入回归。
+fn dynamic_capture_nested_animation_publish_panic_fail_stops_outer_transaction() {
     // 建立将由外层事务先暂存的动画源 A。
     let animation_a = Animated::new(0.0_f32).to(1.0, 10.0, Easing::linear);
     // 建立将在内层失败事务中暂存的动画源 C。
@@ -806,44 +806,25 @@ fn dynamic_capture_nested_animation_cancel_panic_keeps_checkpoint_stable() {
     });
     // A 已真实销毁且 C 所属内层事务失败，外层成功后不得登记任一来源。
     assert!(tree.animated_source_registrations().is_empty());
-
-    // 建立用于证明事务深度与后续提交均已恢复的动画源 D。
-    let animation_d = Animated::new(0.0_f32).to(1.0, 10.0, Easing::linear);
-    // 记录动画 D 的稳定工作身份供最终断言。
-    let source_d = animation_d.group_source_id();
-    // 克隆动画 D 供恢复后的正常动态捕获读取。
-    let captured_animation_d = animation_d.clone();
-    // 捕获与失败后现存 Container 同键同类型的正常声明。
-    let child_d = ViewAdapter::capture_dynamic_root(
-        // 继续使用已恢复的宿主树。
-        &tree,
-        // 保持动态实例宿主不变。
-        owner,
-        // 保持嵌套测试槽位不变。
-        "nested-animation",
-        // 复用失败结构中已经建立的稳定业务键。
-        "same",
-        // 同步执行动画 D 的读取工厂。
-        || {
-            // 读取动画 D 以形成新的有效节点来源。
-            let _ = captured_animation_d.value();
-            // 返回可原位复用的 Container 节点。
-            ViewNode::leaf(Container::new()).key("same")
-        },
-    );
-    // 在恢复后的独立事务中成功协调动画 D。
-    ViewAdapter::reconcile_dynamic_children(
-        // 协调当前宿主树。
+    // 任一内层真实发布都把最外层共享事务标记为不可恢复。
+    assert!(!tree.accepts_external_work());
+    // fail-stop 后的动态协调必须拒绝继续改写半完成树。
+    assert!(!ViewAdapter::reconcile_dynamic_children(
+        // 尝试复用已经进入故障停止状态的旧树。
         &mut tree,
-        // 使用稳定宿主根节点。
+        // 传入旧 owner 证明准入门先于结构协调执行。
         owner,
-        // 仅保留恢复后的有效节点声明。
-        vec![child_d],
-    );
-    // 读取恢复后成功提交的中央动画登记。
-    let registrations = tree.animated_source_registrations();
-    // 恢复后的正常事务必须只登记动画 D。
-    assert_eq!(registrations.len(), 1);
-    // 登记工作身份必须精确属于动画 D。
-    assert_eq!(registrations[0].0, source_d);
+        // 空声明仍不得绕过 fail-stop 门禁。
+        Vec::new(),
+    ));
+    // 所有者 teardown 必须可以幂等释放半完成树资源。
+    tree.shutdown();
+    // 重复关闭不得重新执行用户工作或恢复旧树。
+    tree.shutdown();
+    // 关闭后的旧树仍永久拒绝外部工作。
+    assert!(!tree.accepts_external_work());
+    // 只有全新 WidgetTree owner 才能恢复正常成功路径。
+    let replacement = ViewAdapter::build_nodes(ViewNode::leaf(Container::new()));
+    // 新 owner 必须以独立 Operational 状态开始。
+    assert!(replacement.accepts_external_work());
 }

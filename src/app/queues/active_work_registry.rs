@@ -34,6 +34,11 @@ impl ActiveWorkRegistry {
         Self::default()
     }
 
+    pub(crate) fn clear(&mut self) {
+        // 故障停止时丢弃窗口拥有的全部后续调度登记。
+        *self = Self::default();
+    }
+
     pub(crate) fn register(&mut self, kind: ActiveWorkKind, next_deadline: Instant) {
         self.entries.insert(kind, Some(next_deadline));
     }

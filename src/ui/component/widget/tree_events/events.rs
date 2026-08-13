@@ -3,6 +3,11 @@ use super::*;
 impl WidgetTree {
     /// 2D 命中测试：根据屏幕坐标找到最深的 widget。
     pub fn hit_test(&self, pos: Point) -> Option<ComponentId> {
+        // 已停止的树不得用半提交的节点关系计算命中目标。
+        if !self.accepts_external_work() {
+            // 对事件入口报告没有可交互目标。
+            return None;
+        }
         self.root_id
             .and_then(|root| self.hit_test_internal(root, pos))
     }
@@ -16,6 +21,11 @@ impl WidgetTree {
         ray: &crate::draw::geometry::spatial::Ray3D,
         spatial: &crate::draw::geometry::spatial::SpatialContext,
     ) -> Option<ComponentId> {
+        // 已停止的树不得用半提交的节点关系计算三维命中目标。
+        if !self.accepts_external_work() {
+            // 对事件入口报告没有可交互目标。
+            return None;
+        }
         self.root_id
             .and_then(|root| self.hit_test_3d_internal(root, ray, spatial))
     }
@@ -182,6 +192,11 @@ impl WidgetTree {
     }
 
     pub fn dispatch_event(&mut self, event: &SystemEvent) -> EventResult {
+        // 已停止的树不得继续分发可能触发组件回调的系统事件。
+        if !self.accepts_external_work() {
+            // 明确拒绝事件，避免外层循环把半树视为可交互。
+            return EventResult::NotHandled;
+        }
         self.begin_invalidation_batch();
         let result = self.dispatch_event_inner(event);
         self.cancel_hidden_interaction();

@@ -1,7 +1,7 @@
 use super::*;
 use crate::ui::adapter::ViewAdapter;
 use crate::ui::component::provider_context::{
-    current_provider_context, with_provider_context, ProviderContext,
+    ProviderContext, current_provider_context, with_provider_context,
 };
 
 impl WidgetTree {
@@ -10,7 +10,11 @@ impl WidgetTree {
     }
 
     pub fn set_root(&mut self, widget: Box<dyn WidgetComponent>) -> ComponentId {
-        self.set_root_with_context(widget, current_provider_context(), true)
+        // 公开换根会调用用户 build 与生命周期，必须统一进入 panic 事务边界。
+        self.with_component_state_transaction(Vec::new(), |tree| {
+            // 事务内部使用不会再次建立独立提交点的核心实现。
+            tree.set_root_with_context(widget, current_provider_context(), true)
+        })
     }
 
     pub(super) fn set_root_with_context(
@@ -19,6 +23,8 @@ impl WidgetTree {
         provider_context: ProviderContext,
         include_view_children: bool,
     ) -> ComponentId {
+        // 换根会立即拆除既有运行时树，先线性化不可回滚发布。
+        self.mark_coordination_publish_started();
         if let Some(root) = self.root_id {
             self.cancel_subtree_interaction(root);
         }
@@ -83,7 +89,11 @@ impl WidgetTree {
             .get(parent_id)
             .map(|parent| parent.provider_context().clone())
             .unwrap_or_else(current_provider_context);
-        self.add_child_with_context(parent_id, child, provider_context, true)
+        // 公开加子节点会调用用户 build、attach 与父节点通知，统一捕获发布异常。
+        self.with_component_state_transaction(Vec::new(), |tree| {
+            // 事务内部直接调用核心插入实现，避免产生第二个线性化点。
+            tree.add_child_with_context(parent_id, child, provider_context, true)
+        })
     }
 
     pub(super) fn add_child_with_context(
@@ -93,6 +103,8 @@ impl WidgetTree {
         provider_context: ProviderContext,
         include_view_children: bool,
     ) -> ComponentId {
+        // 插入子节点会改写真实槽位与父子结构，先记录发布事实。
+        self.mark_coordination_publish_started();
         self.tree_version += 1;
         let children = with_provider_context(&provider_context, || child.build());
         let view_children = include_view_children.then(|| {
@@ -138,6 +150,17 @@ impl WidgetTree {
         if !changed {
             return;
         }
+        // 生命周期可见性切换可能执行用户回调，统一进入树事务异常边界。
+        self.with_component_state_transaction(Vec::new(), |tree| {
+            // 事务内部执行唯一一次真实可见性发布。
+            tree.set_node_visibility_in_transaction(id, visible);
+        });
+    }
+
+    // 在已建立事务的边界内发布节点可见性变化。
+    fn set_node_visibility_in_transaction(&mut self, id: WidgetId, visible: bool) {
+        // 可见性会立即改写节点、交互与失效队列，先记录发布事实。
+        self.mark_coordination_publish_started();
         if !visible {
             self.cancel_subtree_interaction(id);
         }
@@ -153,22 +176,43 @@ impl WidgetTree {
     // WidgetNode tree building.
 
     pub fn build(&mut self, node: WidgetNode) -> ComponentId {
-        // 直接重建整树前释放旧根持有的结构性 State 租约。
-        self.root_reconcile_state_binds.clear();
-        self.build_node(node, None)
+        // 公开 WidgetNode 建树仍可能调用组件生命周期与动态 renderer。
+        self.with_component_state_transaction(Vec::new(), |tree| {
+            // 整树构建会替换根与节点结构，先记录不可回滚发布事实。
+            tree.mark_coordination_publish_started();
+            // 直接重建整树前释放旧根持有的结构性 State 租约。
+            tree.root_reconcile_state_binds.clear();
+            // 在同一事务内递归构建完整节点树。
+            tree.build_node(node, None)
+        })
     }
 
     pub(crate) fn build_child_node(&mut self, parent_id: WidgetId, node: WidgetNode) -> WidgetId {
-        self.build_node(node, Some(parent_id))
+        // crate 内动态入口也必须共享相同 panic 边界，防止未来调用者漏包事务。
+        self.with_component_state_transaction(Vec::new(), |tree| {
+            // 在当前或嵌套事务内递归建立子树。
+            tree.build_node(node, Some(parent_id))
+        })
     }
 
     pub fn set_children(&mut self, parent_id: ComponentId, children: Vec<WidgetNode>) {
+        // 公开子列表替换可能触发生命周期与 renderer，统一建立事务边界。
+        self.with_component_state_transaction(Vec::new(), |tree| {
+            // 在同一事务中完成全部旧子节点移除与新子树构建。
+            tree.set_children_in_transaction(parent_id, children);
+        });
+    }
+
+    // 在既有事务内完成子列表的不可回滚发布。
+    fn set_children_in_transaction(&mut self, parent_id: ComponentId, children: Vec<WidgetNode>) {
+        // 子列表替换会移除并重建真实节点，先记录不可回滚发布事实。
+        self.mark_coordination_publish_started();
         let old_children: Vec<WidgetId> = self
             .get(parent_id)
             .map(|n| n.children().to_vec())
             .unwrap_or_default();
         for &cid in &old_children {
-            self.remove(cid);
+            self.remove_in_transaction(cid);
         }
         self.tree_version += 1;
         for child in children {
@@ -177,6 +221,8 @@ impl WidgetTree {
     }
 
     fn build_node(&mut self, node: WidgetNode, parent: Option<WidgetId>) -> WidgetId {
+        // 节点建造最终会注册真实节点与 sidecar，先记录发布事实。
+        self.mark_coordination_publish_started();
         let WidgetNode {
             widget,
             children,

@@ -16,7 +16,8 @@ use crate::ui::component_state::{
     // 保存待最外层事务接纳的私有状态写入回执。
     ComponentStateCaptureReceipt,
     // 保存窗口私有状态存储和作用域身份。
-    ComponentStateStore, UixComponentScope,
+    ComponentStateStore,
+    UixComponentScope,
 };
 // 保存按工作身份去重的来源所有者集合。
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -24,7 +25,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 static NEXT_WIDGET_TREE_SCOPE: AtomicU64 = AtomicU64::new(1);
-
 
 pub(crate) struct BoundAnimatedSource {
     tree_scope: u64,
@@ -67,10 +67,16 @@ thread_local! {
 }
 
 mod build;
+// 保存 WidgetTree 私有的运行与 fail-stop 执行状态。
+mod execution_state;
+// 保存事务异常边界、fail-stop 准入与关闭资源释放实现。
+mod execution;
 #[path = "../tree_layout/mod.rs"]
 mod tree_layout;
 
 pub struct WidgetTree {
+    // 由 WidgetTree 唯一拥有的事务发布与 fail-stop 状态机。
+    execution_state: execution_state::WidgetTreeExecutionState,
     tree_scope: u64,
     pub(crate) nodes: Vec<Option<BoxedWidget>>,
     pub(crate) free_slots: Vec<usize>,
@@ -150,6 +156,8 @@ impl Default for WidgetTree {
                 as Arc<dyn Fn() + Send + Sync>
         };
         Self {
+            // 新树从可接收协调与外部工作的私有状态开始。
+            execution_state: execution_state::WidgetTreeExecutionState::operational(),
             tree_scope: NEXT_WIDGET_TREE_SCOPE.fetch_add(1, Ordering::Relaxed),
             nodes: Vec::new(),
             free_slots: Vec::new(),
@@ -214,6 +222,3 @@ impl Default for WidgetTree {
 
 mod focus;
 mod methods;
-
-
-

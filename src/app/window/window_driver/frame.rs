@@ -1,6 +1,89 @@
 use super::*;
 
 impl WindowDriver {
+    // 检查 WidgetTree 是否已在某个可恢复边界后进入永久停止状态。
+    fn finish_if_tree_fail_stopped(
+        &mut self,
+        // 借用当前窗口唯一拥有的 WidgetTree 读取 fail-stop 状态。
+        tree: &WidgetTree,
+        // 接收需要清空的逐窗活动工作注册表。
+        active_work: &mut ActiveWorkRegistry,
+        // 接收需要取消的应用级定时器队列。
+        app_timers: &AppTimerQueue,
+        // 接收尚未执行的主线程任务队列。
+        main_thread_queue: &MainThreadQueue,
+        // 接收需要关闭的自动化命令状态。
+        agent_commands: &mut WindowAgentState,
+        // 接收尚未进入协调事务的声明根候选。
+        pending_root: &mut Option<crate::ui::view::ViewNode>,
+        // 接收窗口会话保存的协调请求位。
+        reconcile_pending: &mut bool,
+        // 接收需要收敛为深度空闲的窗口循环状态。
+        loop_state: &mut WindowLoopState,
+    ) -> Option<WindowFrameResult> {
+        // 正常树继续执行当前帧，保持既有帧管线语义。
+        if !tree.is_fail_stopped() {
+            // 未进入 fail-stop 时不构造提前返回结果。
+            return None;
+        }
+        // 进入 fail-stop 后由统一的所有者路径释放调度资源。
+        Some(self.finish_fail_stopped_frame(
+            // 清空当前窗口的活动工作。
+            active_work,
+            // 取消当前窗口的应用定时器。
+            app_timers,
+            // 丢弃当前窗口的主线程队列。
+            main_thread_queue,
+            // 关闭当前窗口的 Agent 状态。
+            agent_commands,
+            // 释放当前窗口的待协调根。
+            pending_root,
+            // 清除当前窗口的协调请求位。
+            reconcile_pending,
+            // 收敛当前窗口循环状态。
+            loop_state,
+        ))
+    }
+    // 收敛 fail-stop 窗口的全部调度资源并返回稳定帧结果。
+    fn finish_fail_stopped_frame(
+        &mut self,
+        // 接收需要清空的逐窗活动工作注册表。
+        active_work: &mut ActiveWorkRegistry,
+        // 接收需要取消的应用级定时器队列。
+        app_timers: &AppTimerQueue,
+        // 接收尚未执行的主线程任务队列。
+        main_thread_queue: &MainThreadQueue,
+        // 接收需要关闭的自动化命令状态。
+        agent_commands: &mut WindowAgentState,
+        // 接收尚未进入协调事务的声明根候选。
+        pending_root: &mut Option<crate::ui::view::ViewNode>,
+        // 接收窗口会话保存的协调请求位。
+        reconcile_pending: &mut bool,
+        // 接收需要收敛为深度空闲的窗口循环状态。
+        loop_state: &mut WindowLoopState,
+    ) -> WindowFrameResult {
+        // 清空动画、定时器和图形维护等已登记的后续工作。
+        active_work.clear();
+        // 取消应用级定时器，避免 teardown 前再次唤醒窗口循环。
+        app_timers.cancel_all();
+        // 丢弃尚未进入树协调的主线程任务。
+        main_thread_queue.clear();
+        // 关闭自动化命令端口并向在途请求返回窗口已关闭。
+        agent_commands.close();
+        // 释放尚未协调的根快照，令其捕获资源按原子边界回滚。
+        drop(pending_root.take());
+        // 清除协调请求，禁止下一帧重入半提交树。
+        *reconcile_pending = false;
+        // 丢弃已取出的到期工作 scratch，避免其在后续路径被复用。
+        self.due_work_scratch.clear();
+        // 终止帧调度器，阻止再申请原生或回退帧。
+        self.frame_scheduler.mark_terminal_failure();
+        // 将窗口循环置为深度空闲，等待唯一所有者 teardown。
+        *loop_state = WindowLoopState::DeepIdle;
+        // 故障停止不执行 runtime、回调、协调、布局或渲染。
+        WindowFrameResult { did_work: false }
+    }
+
     pub(crate) fn drive_frame(&mut self, context: WindowFrameContext<'_, '_>) -> WindowFrameResult {
         let WindowFrameContext {
             tree,
@@ -31,6 +114,31 @@ impl WindowDriver {
             on_frame,
         } = context;
 
+        // 协调中的树暂时拒绝重入帧，但不得把可成功提交的事务误判为永久失败。
+        if !tree.accepts_external_work() && !tree.is_fail_stopped() {
+            // 保留既有调度事实，由最外层协调结束后的正常帧继续消费。
+            return WindowFrameResult { did_work: false };
+        }
+        // 永久停止的树只允许窗口所有者收敛调度资源，不得继续执行帧管线。
+        if tree.is_fail_stopped() {
+            // 统一释放逐窗调度资源并停止当前帧。
+            return self.finish_fail_stopped_frame(
+                // 清空当前窗口的活动工作。
+                active_work,
+                // 取消当前窗口的应用定时器。
+                app_timers,
+                // 丢弃当前窗口的主线程队列。
+                main_thread_queue,
+                // 关闭当前窗口的 Agent 状态。
+                agent_commands,
+                // 释放当前窗口的待协调根。
+                pending_root,
+                // 清除当前窗口的协调请求位。
+                reconcile_pending,
+                // 收敛当前窗口循环状态。
+                loop_state,
+            );
+        }
         self.started_at.get_or_insert(now);
         self.publish_agent_window_availability(semantic_state, platform_window);
 
@@ -49,23 +157,133 @@ impl WindowDriver {
         let had_due_widget_timer_work = with_platform_clipboard(&mut platform, || {
             dispatch_due_active_work(tree, app_timers, due_work, now)
         });
+        // 到期计时器可能在内部捕获发布 panic，必须在消费下一类队列前停止本帧。
+        if let Some(result) = self.finish_if_tree_fail_stopped(
+            // 检查本窗口唯一拥有的树状态。
+            tree,
+            // 释放当前窗口的活动工作。
+            active_work,
+            // 取消当前窗口的应用计时器。
+            app_timers,
+            // 清空当前窗口的主线程队列。
+            main_thread_queue,
+            // 关闭当前窗口的 Agent 命令端口。
+            agent_commands,
+            // 释放尚未协调的声明根。
+            pending_root,
+            // 清除协调请求位。
+            reconcile_pending,
+            // 令窗口循环进入深度空闲。
+            loop_state,
+        ) {
+            // fail-stop 不得继续处理本帧工作。
+            return result;
+        }
 
         let mut main_thread_context = MainThreadContext::new(pending_root, reconcile_pending);
         let had_main_thread_work = main_thread_queue.drain(&mut main_thread_context);
+        // 主线程任务可能在内部捕获发布 panic，必须在处理 Agent 工作前停止本帧。
+        if let Some(result) = self.finish_if_tree_fail_stopped(
+            // 检查本窗口唯一拥有的树状态。
+            tree,
+            // 释放当前窗口的活动工作。
+            active_work,
+            // 取消当前窗口的应用计时器。
+            app_timers,
+            // 清空当前窗口的主线程队列。
+            main_thread_queue,
+            // 关闭当前窗口的 Agent 命令端口。
+            agent_commands,
+            // 释放尚未协调的声明根。
+            pending_root,
+            // 清除协调请求位。
+            reconcile_pending,
+            // 令窗口循环进入深度空闲。
+            loop_state,
+        ) {
+            // fail-stop 不得继续处理本帧工作。
+            return result;
+        }
         let had_agent_pending = agent_commands.has_work();
         let had_agent_command_work = agent_commands.drain_ready(
             tree,
             semantic_state,
             self.agent_surface_presentable(platform_window),
         );
+        // Agent 命令可能在内部捕获发布 panic，必须在处理 AppState 前停止本帧。
+        if let Some(result) = self.finish_if_tree_fail_stopped(
+            // 检查本窗口唯一拥有的树状态。
+            tree,
+            // 释放当前窗口的活动工作。
+            active_work,
+            // 取消当前窗口的应用计时器。
+            app_timers,
+            // 清空当前窗口的主线程队列。
+            main_thread_queue,
+            // 关闭当前窗口的 Agent 命令端口。
+            agent_commands,
+            // 释放尚未协调的声明根。
+            pending_root,
+            // 清除协调请求位。
+            reconcile_pending,
+            // 令窗口循环进入深度空闲。
+            loop_state,
+        ) {
+            // fail-stop 不得继续处理本帧工作。
+            return result;
+        }
         let had_app_state_focus_work =
             with_platform_clipboard(&mut platform, || tree.drain_app_state_focus_requests());
         let had_app_state_semantic_work =
             with_platform_clipboard(&mut platform, || tree.drain_app_state_semantic_events());
+        // AppState 事件可能在内部捕获发布 panic，必须在同步调度前停止本帧。
+        if let Some(result) = self.finish_if_tree_fail_stopped(
+            // 检查本窗口唯一拥有的树状态。
+            tree,
+            // 释放当前窗口的活动工作。
+            active_work,
+            // 取消当前窗口的应用计时器。
+            app_timers,
+            // 清空当前窗口的主线程队列。
+            main_thread_queue,
+            // 关闭当前窗口的 Agent 命令端口。
+            agent_commands,
+            // 释放尚未协调的声明根。
+            pending_root,
+            // 清除协调请求位。
+            reconcile_pending,
+            // 令窗口循环进入深度空闲。
+            loop_state,
+        ) {
+            // fail-stop 不得继续处理本帧工作。
+            return result;
+        }
         active_work.sync_timers(tree.active_timers(), now);
         self.sync_app_timers(active_work, app_timers);
         if let Some(platform) = platform.as_deref_mut() {
             on_runtime_tasks(platform, tree);
+        }
+        // Runtime 任务可能在内部捕获发布 panic，必须在消费协调请求前停止本帧。
+        if let Some(result) = self.finish_if_tree_fail_stopped(
+            // 检查本窗口唯一拥有的树状态。
+            tree,
+            // 释放当前窗口的活动工作。
+            active_work,
+            // 取消当前窗口的应用计时器。
+            app_timers,
+            // 清空当前窗口的主线程队列。
+            main_thread_queue,
+            // 关闭当前窗口的 Agent 命令端口。
+            agent_commands,
+            // 释放尚未协调的声明根。
+            pending_root,
+            // 清除协调请求位。
+            reconcile_pending,
+            // 令窗口循环进入深度空闲。
+            loop_state,
+        ) {
+            // fail-stop 不得继续处理本帧工作。
+            return result;
         }
         if tree.take_reconcile_requested() {
             *reconcile_pending = true;
@@ -76,6 +294,28 @@ impl WindowDriver {
             let _effects_ran = with_platform_clipboard(&mut platform, || tree.tick_effects());
             active_work.sync_timers(tree.active_timers(), now);
             self.sync_app_timers(active_work, app_timers);
+        }
+        // Effect 若在 tick 内部捕获发布 panic，必须在读取协调请求前停止本帧。
+        if let Some(result) = self.finish_if_tree_fail_stopped(
+            // 检查本窗口唯一拥有的树状态。
+            tree,
+            // 释放当前窗口的活动工作。
+            active_work,
+            // 取消当前窗口的应用计时器。
+            app_timers,
+            // 清空当前窗口的主线程队列。
+            main_thread_queue,
+            // 关闭当前窗口的 Agent 命令端口。
+            agent_commands,
+            // 释放尚未协调的声明根。
+            pending_root,
+            // 清除协调请求位。
+            reconcile_pending,
+            // 令窗口循环进入深度空闲。
+            loop_state,
+        ) {
+            // fail-stop 不得继续处理本帧工作。
+            return result;
         }
         if tree.take_reconcile_requested() {
             *reconcile_pending = true;
@@ -204,29 +444,51 @@ impl WindowDriver {
                 );
             }
         }
-
         let frame_time = opportunity.frame_time();
         let target_present_time = opportunity.target_present_time();
         self.last_frame = Some(frame_time);
-
         self.scheduled_animation_ids_scratch.clear();
         self.scheduled_animation_ids_scratch
             .extend(active_work.animation_ids());
-        let scheduled_animation_ids = self.scheduled_animation_ids_scratch.as_slice();
+        // 先保存是否存在已调度动画，避免让切片借用跨越 fail-stop helper。
+        let had_scheduled_animation_work = !self.scheduled_animation_ids_scratch.is_empty();
         let discover_animation_work =
             event_work || !self.rendered_first || *reconcile_pending || has_invalidation_work(tree);
         let dt = self
             .frame_scheduler
-            .animation_delta(frame_time, !scheduled_animation_ids.is_empty())
+            .animation_delta(frame_time, had_scheduled_animation_work)
             .as_secs_f64();
         let animation_updates = update_scheduled_and_discovered_animations(
             tree,
-            scheduled_animation_ids,
+            self.scheduled_animation_ids_scratch.as_slice(),
             frame_time,
             dt,
             discover_animation_work,
         );
-        if animation_clock_should_advance(!scheduled_animation_ids.is_empty(), &animation_updates) {
+        // 动画更新可能在内部捕获发布 panic，必须在推进时钟前停止本帧。
+        if let Some(result) = self.finish_if_tree_fail_stopped(
+            // 检查本窗口唯一拥有的树状态。
+            tree,
+            // 释放当前窗口的活动工作。
+            active_work,
+            // 取消当前窗口的应用计时器。
+            app_timers,
+            // 清空当前窗口的主线程队列。
+            main_thread_queue,
+            // 关闭当前窗口的 Agent 命令端口。
+            agent_commands,
+            // 释放尚未协调的声明根。
+            pending_root,
+            // 清除协调请求位。
+            reconcile_pending,
+            // 令窗口循环进入深度空闲。
+            loop_state,
+        ) {
+            // fail-stop 不得继续处理本帧工作。
+            return result;
+        }
+        // Helper 返回后使用预存事实判断，保持动画时钟推进语义不变。
+        if animation_clock_should_advance(had_scheduled_animation_work, &animation_updates) {
             self.frame_scheduler.animation_advanced(frame_time);
         }
         sync_animation_registrations(active_work, tree, &animation_updates);
@@ -267,7 +529,9 @@ impl WindowDriver {
             let root = pending_root
                 .take()
                 // 让根工厂在协调时复用该窗口树拥有的组件私有状态。
-                .or_else(|| view_factory.and_then(|factory| factory.build(tree.component_state_store())));
+                .or_else(|| {
+                    view_factory.and_then(|factory| factory.build(tree.component_state_store()))
+                });
             if let Some(root) = root {
                 ViewAdapter::reconcile_nodes(tree, root);
                 reconcile_ran = true;
@@ -276,6 +540,28 @@ impl WindowDriver {
         }
         if reconcile_ran {
             sync_animation_registrations(active_work, tree, &[]);
+        }
+        // 协调内部捕获发布 panic 后不得让同一帧观察半提交结构。
+        if let Some(result) = self.finish_if_tree_fail_stopped(
+            // 检查本窗口唯一拥有的树状态。
+            tree,
+            // 释放当前窗口的活动工作。
+            active_work,
+            // 取消当前窗口的应用计时器。
+            app_timers,
+            // 清空当前窗口的主线程队列。
+            main_thread_queue,
+            // 关闭当前窗口的 Agent 命令端口。
+            agent_commands,
+            // 释放尚未协调的声明根。
+            pending_root,
+            // 清除协调请求位。
+            reconcile_pending,
+            // 令窗口循环进入深度空闲。
+            loop_state,
+        ) {
+            // fail-stop 不得继续处理本帧工作。
+            return result;
         }
 
         let (native_width, native_height) = native_client_logical_extent(platform_window);
@@ -313,6 +599,28 @@ impl WindowDriver {
             sync_root_frame_to_engine(tree, engine);
             if let Some(platform) = platform.as_deref_mut() {
                 on_frame(tree, engine, platform);
+            }
+            // on_frame 若捕获协调发布 panic，禁止继续同步或渲染半树。
+            if let Some(result) = self.finish_if_tree_fail_stopped(
+                // 检查本窗口唯一拥有的树状态。
+                tree,
+                // 释放当前窗口的活动工作。
+                active_work,
+                // 取消当前窗口的应用计时器。
+                app_timers,
+                // 清空当前窗口的主线程队列。
+                main_thread_queue,
+                // 关闭当前窗口的 Agent 命令端口。
+                agent_commands,
+                // 释放尚未协调的声明根。
+                pending_root,
+                // 清除协调请求位。
+                reconcile_pending,
+                // 令窗口循环进入深度空闲。
+                loop_state,
+            ) {
+                // fail-stop 不得继续处理本帧工作。
+                return result;
             }
             sync_root_frame_to_engine(tree, engine);
 
@@ -590,4 +898,3 @@ impl WindowDriver {
         WindowFrameResult { did_work: true }
     }
 }
-

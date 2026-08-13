@@ -30,10 +30,25 @@ impl WidgetTree {
     }
 
     pub fn take_reconcile_requested(&self) -> bool {
+        // 非运行态树不得让窗口驱动在协调中或失败后重入声明更新。
+        if !self.accepts_external_work() {
+            // 永久停止状态直接消费旧请求，避免 teardown 前形成空转信号。
+            if self.is_fail_stopped() {
+                // 清除失败前已发布的请求位。
+                self.reconcile_requested.store(false, Ordering::Release);
+            }
+            // 协调中的请求保留到事务成功后，当前调用只报告无工作。
+            return false;
+        }
         self.reconcile_requested.swap(false, Ordering::AcqRel)
     }
 
     pub(crate) fn has_reconcile_requested(&self) -> bool {
+        // 非运行态不得让调度器因半树请求保持活跃。
+        if !self.accepts_external_work() {
+            // 协调成功后原子位仍可在 Operational 阶段重新观察。
+            return false;
+        }
         self.reconcile_requested.load(Ordering::Acquire)
     }
 
@@ -42,6 +57,11 @@ impl WidgetTree {
     /// Layout 失效由 `layout()` 消费；若仅用 `is_empty()` 判定，
     /// 会在 dirty_region 为空时仍进入 render，导致 begin_frame 返回 Idle、画面不更新。
     pub fn has_render_work(&self) -> bool {
+        // 已停止的树不得继续请求渲染半提交的节点结构。
+        if !self.accepts_external_work() {
+            // 对调度器报告没有可安全渲染的工作。
+            return false;
+        }
         self.invalidation
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -347,6 +367,8 @@ impl WidgetTree {
         &mut self,
         state_binds: Vec<std::sync::Arc<dyn crate::ui::reactive::state::StatePaintBind>>,
     ) {
+        // 停止树不得重新订阅任何声明 State 或持有新的租约。
+        assert!(self.accepts_coordination_work());
         // 读取所属树的窄 reconcile 请求端口。
         let reconcile = self.reconcile_requester();
         // 读取所属树的稳定订阅去重键。
@@ -417,6 +439,8 @@ impl WidgetTree {
         &mut self,
         effects: Vec<crate::ui::reactive::state::Effect>,
     ) {
+        // 停止树不得重新接管会保留应用资源的 Effect。
+        assert!(self.accepts_coordination_work());
         // 根替换前先释放旧根 Effect，保持 rebuild 的替换语义。
         self.effects.clear();
         // 接管当前根显式交接的全部 Effect 实例。
@@ -424,6 +448,11 @@ impl WidgetTree {
     }
 
     pub fn has_pending_effects(&self) -> bool {
+        // 已停止的树不得再把 Effect 作为待执行工作暴露给窗口循环。
+        if !self.accepts_external_work() {
+            // 对调度器报告没有可安全 tick 的 Effect。
+            return false;
+        }
         // 先检查根捕获交接给树拥有的 Effect。
         self.effects.iter().any(|eff| eff.has_pending())
             // 再检查全部实际挂载节点生命周期拥有的 Effect。
@@ -437,22 +466,52 @@ impl WidgetTree {
     /// 每帧 tick 已注册的 Effect；任一 Effect 重新执行时返回 true。
     /// 完整遍历所有 Effect，不短路，确保同一事件轮次全部执行。
     pub fn tick_effects(&self) -> bool {
+        // 已停止的树不得执行 Effect 的用户闭包。
+        if !self.accepts_external_work() {
+            // 对调度器报告本帧没有 Effect 变化。
+            return false;
+        }
         let mut any_changed = false;
         for eff in &self.effects {
+            // 执行下一根 Effect 前复核树是否仍接受外部工作。
+            if !self.accepts_external_work() {
+                // 前序 Effect 已使树停止时不再运行同级闭包。
+                break;
+            }
             if eff.tick() {
                 any_changed = true;
             }
+            // 根 Effect 返回后立即确认其没有使树进入停止态。
+            if !self.accepts_external_work() {
+                // 停止态不得继续进入剩余根或节点 Effect。
+                break;
+            }
         }
-        // 逐个节点处理其私有 Effect，不能因前一个已变化而短路。
-        for &id in self.traverse().iter() {
+        // 逐个节点处理其私有 Effect，并在停止态中止整个节点遍历。
+        'node_effects: for &id in self.traverse().iter() {
+            // 读取下一节点前复核前序 Effect 没有停止整棵树。
+            if !self.accepts_external_work() {
+                // 首个停止态会阻止所有后续节点 Effect。
+                break;
+            }
             // 真实移除前的 leave 节点仍保留其 Effect 并继续参与调度。
             if let Some(node) = self.get(id) {
                 // 完整遍历当前节点拥有的所有 Effect。
                 for effect in node.effects() {
+                    // 执行本节点下一 Effect 前复核树的外部工作准入。
+                    if !self.accepts_external_work() {
+                        // 停止态必须跳出节点与同级节点的全部 Effect。
+                        break 'node_effects;
+                    }
                     // 合并本轮是否有任意 Effect 实际重新执行。
                     if effect.tick() {
                         // 记录至少一个节点 Effect 已更新。
                         any_changed = true;
+                    }
+                    // Effect 返回后立即阻止停止树继续执行同级闭包。
+                    if !self.accepts_external_work() {
+                        // 首个停止态必须跳出节点与同级节点的全部 Effect。
+                        break 'node_effects;
                     }
                 }
             }
