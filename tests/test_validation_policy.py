@@ -28,17 +28,15 @@ DOCUMENTATION_FILES = tuple(sorted((ROOT / "docs").rglob("*.md"))) + (
 TIMEPOINT_STATUS_FILES = (
     # 产品索引只声明稳定产品边界。
     ROOT / "docs" / "产品.md",
-    # 功能索引只声明稳定能力边界。
-    ROOT / "docs" / "功能.md",
     # 能力正文只声明能做、不做与暂缓项。
-    ROOT / "docs" / "功能" / "能力.md",
+    ROOT / "docs" / "产品" / "能力.md",
     # 使用入口只声明稳定入口与权威路由。
     ROOT / "docs" / "使用" / "入口与阅读路径.md",
     # 结束时点状态文件集合。
 )
 # 列出不得重新复制到稳定事实入口的时点状态标记。
 FORBIDDEN_TIMEPOINT_STATUS_MARKERS = (
-    # 禁止产品与功能入口保存当前阻塞标题。
+    # 禁止产品入口保存当前阻塞标题。
     "当前阻塞",
     # 禁止使用入口保存当前发布状态块。
     "> **当前状态**",
