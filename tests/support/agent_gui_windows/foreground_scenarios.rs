@@ -3,6 +3,9 @@
 // 复用 foreground owner 提供的窗口控制、捕获与 agent 交换辅助。
 use super::*;
 
+// #808 要求连续最大化与还原不少于二十轮。
+const MAXIMIZE_RESTORE_STRESS_ROUNDS: usize = 20;
+
 // 让 agent_gui_windows 父模块继续调用主题与尺寸场景入口。
 pub(in super::super) fn verify_theme_and_resize_capture(
     demo: &DemoProcess,
@@ -123,6 +126,8 @@ pub(in super::super) fn verify_pointer_and_keyboard_focus_visuals(
     generation: u64,
     _snapshot: &Value,
 ) {
+    // 焦点门禁前先完成 #808 的窗口几何压力与视觉验收。
+    verify_maximize_restore_visuals(demo, connection, window_id, generation);
     // 最大化与还原可能改变窗口代际内的逻辑范围，焦点场景必须读取当前快照。
     let current = exchange(
         connection,
@@ -244,6 +249,222 @@ pub(in super::super) fn verify_pointer_and_keyboard_focus_visuals(
         pointer_delta * 100.0,
         keyboard_delta * 100.0
     );
+}
+
+// 连续验证最大化与还原后的当前客户区、布局根和关键壳层几何保持一致。
+fn verify_maximize_restore_visuals(
+    demo: &DemoProcess,
+    connection: &mut BufReader<File>,
+    window_id: u64,
+    generation: u64,
+) {
+    // 读取并等待初始还原态的语义几何与 Win32 客户区一致。
+    let initial =
+        wait_for_current_client_layout(demo, connection, window_id, generation, "initial");
+    // 保存初始还原态供视觉验收对照。
+    capture_maximize_restore_evidence(demo, "restore-initial.png");
+    // 连续切换二十轮，覆盖重复状态事务和长期 surface 代际稳定性。
+    for round in 1..=MAXIMIZE_RESTORE_STRESS_ROUNDS {
+        // 通过产品自身自定义标题栏动作请求最大化。
+        let _ = super::super::invoke_until_presentable(
+            demo,
+            connection,
+            window_id,
+            generation,
+            "window-control-maximize-restore",
+        );
+        // 等待原生窗口进入最大化事实。
+        let window = demo.window_handle();
+        // Win32 最大化状态必须与产品动作一致。
+        demo.wait_for_window_state(window, "maximized", |window| unsafe {
+            // SAFETY: 测试子进程窗口在本轮仍存活。
+            windows::Win32::UI::WindowsAndMessaging::IsZoomed(window).as_bool()
+        });
+        // 等待最大化后的语义根采用当前客户区，而不是旧还原尺寸。
+        let maximized = wait_for_current_client_layout(
+            demo,
+            connection,
+            window_id,
+            generation,
+            &format!("maximized-{round}"),
+        );
+        // 首轮最大化保存一份代表性视觉证据。
+        if round == 1 {
+            // 保存最大化态用于确认内容完整填充客户区。
+            capture_maximize_restore_evidence(demo, "maximized.png");
+        }
+        // 最大化客户区应大于初始还原客户区，证明状态切换真实发生。
+        assert!(
+            root_extent(&maximized).0 > root_extent(&initial).0,
+            "maximize round {round} did not enlarge the logical client"
+        );
+        // 通过同一产品动作请求还原。
+        let _ = super::super::invoke_until_presentable(
+            demo,
+            connection,
+            window_id,
+            generation,
+            "window-control-maximize-restore",
+        );
+        // 等待原生窗口退出最大化状态。
+        demo.wait_for_window_state(window, "restored", |window| unsafe {
+            // SAFETY: 测试子进程窗口在本轮仍存活。
+            !windows::Win32::UI::WindowsAndMessaging::IsZoomed(window).as_bool()
+        });
+        // 等待还原后的语义根重新采用当前客户区。
+        let restored = wait_for_current_client_layout(
+            demo,
+            connection,
+            window_id,
+            generation,
+            &format!("restored-{round}"),
+        );
+        // 每轮还原都必须恢复初始壳层几何和比例。
+        assert_shell_geometry_matches(&initial, &restored, round);
+    }
+    // 保存最终还原态供主人授权后的 AI 视觉验收。
+    capture_maximize_restore_evidence(demo, "restore-final.png");
+    // 输出稳定验收摘要，便于 Vikunja 记录自动证据。
+    println!(
+        "maximize/restore visual acceptance: rounds={MAXIMIZE_RESTORE_STRESS_ROUNDS}; initial={:?}; final geometry matched",
+        root_extent(&initial)
+    );
+}
+
+// 等待最新语义根与当前 Win32 客户区在同一 logical 坐标契约下收敛。
+fn wait_for_current_client_layout(
+    demo: &DemoProcess,
+    connection: &mut BufReader<File>,
+    window_id: u64,
+    generation: u64,
+    label: &str,
+) -> Value {
+    // 状态消息与 resize 消息可分两次进入队列，允许一个有界收敛窗口。
+    let deadline = Instant::now() + Duration::from_secs(5);
+    // 使用稳定递增序号生成唯一 Agent 请求标识。
+    let mut attempt = 0u32;
+    // 持续读取当前快照，直到它与原生客户区真相一致。
+    loop {
+        // 查询同一 HWND 的当前 logical 客户区尺寸。
+        let expected = current_logical_client_extent(demo.window_handle());
+        // 请求当前窗口的最新语义快照。
+        let request_id = format!("maximize-restore-{label}-{attempt}");
+        // 使用公开 Agent 协议而不穿透读取组件树。
+        let response = exchange(
+            connection,
+            json!({
+                "schema": "uix.agent.v1",
+                "request_id": request_id,
+                "type": "snapshot",
+                "window_id": window_id,
+            }),
+        );
+        // 协议失败不得被视为布局尚未收敛。
+        assert_success(&response, &request_id);
+        // 提取具有当前 revision 的语义快照。
+        let snapshot = response["snapshot"].clone();
+        // 读取布局根 logical extent。
+        let actual = root_extent(&snapshot);
+        // 两轴允许最多两个 logical pixel 的平台取整差。
+        if (actual.0 - expected.0).abs() <= 2.0 && (actual.1 - expected.1).abs() <= 2.0 {
+            // 等待匹配 revision 完成最终呈现后再返回视觉证据。
+            wait_for_presented(
+                connection,
+                window_id,
+                generation,
+                snapshot["revision"].as_u64().expect("snapshot revision"),
+                &format!("maximize-restore-{label}-presented"),
+            );
+            // 返回已呈现且与客户区一致的快照。
+            return snapshot;
+        }
+        // 超时说明生产几何事务没有采用当前客户区，必须失败而非映射掩盖。
+        assert!(
+            Instant::now() < deadline,
+            "{label}: semantic root {actual:?} did not converge to current logical client {expected:?}"
+        );
+        // 下一轮使用新请求标识。
+        attempt = attempt.wrapping_add(1);
+        // 短暂让出时间给 owner thread 消费原生 resize 事件。
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+// 查询当前 HWND 的物理客户区并按窗口 DPI 转换为 logical extent。
+fn current_logical_client_extent(window: HWND) -> (f64, f64) {
+    // Win32 使用调用方提供的矩形接收客户区大小。
+    let mut client = RECT::default();
+    // SAFETY: HWND 属于仍存活的测试子进程，RECT 为有效输出参数。
+    unsafe { windows::Win32::UI::WindowsAndMessaging::GetClientRect(window, &mut client) }
+        .expect("GetClientRect for maximize/restore");
+    // SAFETY: GetDpiForWindow 只查询当前有效 HWND。
+    let dpi = unsafe { windows::Win32::UI::HiDpi::GetDpiForWindow(window) }.max(96);
+    // 物理宽度按窗口 DPI 转换到 UI logical 坐标。
+    let width = f64::from((client.right - client.left).max(0)) * 96.0 / f64::from(dpi);
+    // 物理高度按窗口 DPI 转换到 UI logical 坐标。
+    let height = f64::from((client.bottom - client.top).max(0)) * 96.0 / f64::from(dpi);
+    // 返回同语义快照一致的 logical extent。
+    (width, height)
+}
+
+// 读取语义根的当前 logical extent。
+fn root_extent(snapshot: &Value) -> (f64, f64) {
+    // 根节点是唯一没有 parent 的语义节点。
+    let root = snapshot["nodes"]
+        .as_array()
+        .and_then(|nodes| nodes.iter().find(|node| node["parent"].is_null()))
+        .expect("maximize/restore semantic root");
+    // 根宽度必须存在。
+    let width = root["visible_bounds"]["w"]
+        .as_f64()
+        .expect("maximize/restore root width");
+    // 根高度必须存在。
+    let height = root["visible_bounds"]["h"]
+        .as_f64()
+        .expect("maximize/restore root height");
+    // 返回布局根 logical extent。
+    (width, height)
+}
+
+// 比较初始与每轮最终还原态的关键壳层矩形。
+fn assert_shell_geometry_matches(initial: &Value, restored: &Value, round: usize) {
+    // 覆盖根、侧栏项、页头内容滚动区和底部状态栏。
+    for automation_id in [
+        "sidebar-page-0",
+        "page-scroll-0",
+        "app-status-bar",
+        "window-titlebar",
+    ] {
+        // 读取初始还原态的当前可见矩形。
+        let before = &node_by_automation_id(initial, automation_id)["visible_bounds"];
+        // 读取本轮还原态的当前可见矩形。
+        let after = &node_by_automation_id(restored, automation_id)["visible_bounds"];
+        // 四个几何字段逐一要求稳定，避免整体缩放或点击命中偏移。
+        for field in ["x", "y", "w", "h"] {
+            // 初始字段必须是数值。
+            let expected = before[field].as_f64().expect("initial shell geometry");
+            // 还原字段必须是数值。
+            let actual = after[field].as_f64().expect("restored shell geometry");
+            // 平台浮点布局允许半像素以内差异。
+            assert!(
+                (actual - expected).abs() <= 0.5,
+                "restore round {round}: {automation_id}.{field} expected {expected}, got {actual}"
+            );
+        }
+    }
+}
+
+// 按需保存 #808 初始、最大化和最终还原的真实客户区证据。
+fn capture_maximize_restore_evidence(demo: &DemoProcess, file_name: &str) {
+    // 没有显式证据目录时保持普通回归无额外文件副作用。
+    let Some(root) = std::env::var_os("UIX_MAXIMIZE_VISUAL_EVIDENCE_DIR") else {
+        // 无证据请求直接返回。
+        return;
+    };
+    // 将稳定文件名放入本轮精确目录。
+    let path = std::path::PathBuf::from(root).join(file_name);
+    // 使用与其他视觉门禁相同的客户区捕获实现。
+    capture_demo_client_png(demo, &path);
 }
 
 // 将语义快照中的逻辑矩形转换为 Win32 客户区捕获使用的物理像素矩形。

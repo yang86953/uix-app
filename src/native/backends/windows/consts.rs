@@ -12,6 +12,8 @@ pub(crate) const WM_NULL: u32 = 0x0000;
 pub(crate) const WM_QUIT: u32 = 0x0012;
 pub(crate) const WM_APP: u32 = 0x8000;
 pub(crate) const WM_UIX_FRAME_OPPORTUNITY: u32 = WM_APP + 0x0051;
+// 将自绘标题栏的非客户区刷新延迟到当前窗口状态事务结束后。
+pub(crate) const WM_UIX_REFRESH_EXTENDED_FRAME: u32 = WM_APP + 0x0052;
 
 pub(crate) const WM_NCCREATE: u32 = 0x0081;
 pub(crate) const WM_SETICON: u32 = 0x0080;
