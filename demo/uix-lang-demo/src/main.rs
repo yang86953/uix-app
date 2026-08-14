@@ -4,11 +4,17 @@ use std::time::Duration;
 
 use uix::prelude::*;
 
+// 仅在显式测试能力存在时编译专用图形恢复验收组合模块。
+#[cfg(feature = "test-harness")]
+mod graphics_recovery;
+
 // 保存主演示组合根支持的显式启动选项。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct LaunchOptions {
     // 记录调用方是否请求启用本机 Agent Bridge。
     agent_control: bool,
+    // 记录调用方是否请求进入专用图形恢复验收页面。
+    graphics_recovery_test: bool,
 }
 
 // 解析主演示启动参数，不把控制面选择泄漏到声明式界面。
@@ -21,6 +27,11 @@ fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions
         if argument == "--agent-control" {
             // 记录运行时第二道启用门禁。
             options.agent_control = true;
+        }
+        // 识别专用图形恢复验收页面开关。
+        if argument == "--test-graphics-recovery" {
+            // 记录 test-harness 的运行时第二道启用门禁。
+            options.graphics_recovery_test = true;
         }
     }
     // 返回不包含任何运行时资源的纯配置值。
@@ -115,17 +126,35 @@ impl DemoStates {
             // 虚拟滚动惰性行数据。
             virtual_items: vec![
                 // 首行。
-                DemoRow { id: 1, name: "惰性行 1".to_string() },
+                DemoRow {
+                    id: 1,
+                    name: "惰性行 1".to_string(),
+                },
                 // 第二行。
-                DemoRow { id: 2, name: "惰性行 2".to_string() },
+                DemoRow {
+                    id: 2,
+                    name: "惰性行 2".to_string(),
+                },
                 // 第三行。
-                DemoRow { id: 3, name: "惰性行 3".to_string() },
+                DemoRow {
+                    id: 3,
+                    name: "惰性行 3".to_string(),
+                },
                 // 第四行。
-                DemoRow { id: 4, name: "惰性行 4".to_string() },
+                DemoRow {
+                    id: 4,
+                    name: "惰性行 4".to_string(),
+                },
                 // 第五行。
-                DemoRow { id: 5, name: "惰性行 5".to_string() },
+                DemoRow {
+                    id: 5,
+                    name: "惰性行 5".to_string(),
+                },
                 // 第六行。
-                DemoRow { id: 6, name: "惰性行 6".to_string() },
+                DemoRow {
+                    id: 6,
+                    name: "惰性行 6".to_string(),
+                },
             ],
         }
     }
@@ -163,6 +192,16 @@ fn main() {
         // 在任何窗口或 Agent 资源创建前返回参数错误。
         std::process::exit(2);
     }
+    // 未编译测试能力时，图形恢复请求必须在创建窗口前定向失败。
+    #[cfg(not(feature = "test-harness"))]
+    if options.graphics_recovery_test {
+        // 输出可直接执行的 feature 与参数双门禁命令。
+        eprintln!(
+            "--test-graphics-recovery 需要同时启用 Cargo feature：\n  cargo run --manifest-path demo/Cargo.toml --features test-harness --bin uix-lang-demo -- --test-graphics-recovery"
+        );
+        // 返回参数错误，禁止无测试能力的普通主演示静默降级。
+        std::process::exit(2);
+    }
     // 创建窗口级持久状态槽与演示数据。
     let states = DemoStates::new();
     // 克隆 tick 句柄供 on_start 秒级计时器更新。
@@ -177,8 +216,15 @@ fn main() {
         let ui_thread = match std::thread::Builder::new()
             .name("uix-lang-demo-gui".to_string())
             .stack_size(WINDOWS_GUI_STACK_BYTES)
-            .spawn(move || run_gui(states.clone(), tick.clone(), options.agent_control))
-        {
+            .spawn(move || {
+                // 把已经通过前置门禁的全部启动选择交给 UI 线程组合根。
+                run_gui(
+                    states.clone(),
+                    tick.clone(),
+                    options.agent_control,
+                    options.graphics_recovery_test,
+                )
+            }) {
             // 返回已创建的 UI 线程。
             Ok(ui_thread) => ui_thread,
             // 线程创建失败直接失败退出。
@@ -192,7 +238,12 @@ fn main() {
 
     // 其他平台沿用主线程入口。
     #[cfg(not(windows))]
-    run_gui(states, tick, options.agent_control);
+    run_gui(
+        states,
+        tick,
+        options.agent_control,
+        options.graphics_recovery_test,
+    );
     // 结束进程入口。
 }
 
@@ -204,23 +255,26 @@ fn run_gui(
     tick: State<f64>,
     // 接收已经通过启动参数选择的 Agent 控制开关。
     agent_control: bool,
+    // 接收已经通过启动参数选择的图形恢复验收开关。
+    graphics_recovery_test: bool,
 ) {
-    // 由语言面组装演示 App 与根 View。
-    let app = build_app(states)
-        // 由声明式根视图绘制与 API GUI Demo 一致的自定义标题栏。
-        .custom_title_bar(true)
-        // 启动后注册秒级计时器。
-        .on_start(move |handle| {
-            // 秒级计数器驱动声明文件中的 tick 展示。
-            let ticks = tick.clone();
-            // 注册一秒间隔的演示计时器。
-            handle
-                .run_interval(Duration::from_secs(1), move || {
-                    // 每次间隔推进全局 tick。
-                    ticks.update(|value| *value += 1.0);
-                })
-                .detach();
-        });
+    // 测试能力存在时按运行时开关选择独立验收组合或普通主演示。
+    #[cfg(feature = "test-harness")]
+    let app = if graphics_recovery_test {
+        // 使用狭窄的图形恢复验收页面，不把测试控件混入产品演示文档。
+        graphics_recovery::build_app()
+    } else {
+        // 普通启动继续使用原有主演示组合。
+        build_demo_app(states, tick)
+    };
+    // 测试能力缺失时锁定前置门禁已经拒绝图形恢复请求。
+    #[cfg(not(feature = "test-harness"))]
+    let app = {
+        // 调试构建核对参数 Gate 没有被后续改动绕过。
+        debug_assert!(!graphics_recovery_test);
+        // 保留唯一普通主演示组合路径。
+        build_demo_app(states, tick)
+    };
     // feature 存在且启动参数显式请求时才开放 Agent Bridge。
     #[cfg(feature = "agent-control")]
     let app = if agent_control {
@@ -242,6 +296,31 @@ fn run_gui(
     app.run();
 }
 
+// 组装普通主演示的窗口配置与秒级生命周期回调。
+fn build_demo_app(
+    // 接收窗口级持久状态与演示数据。
+    states: DemoStates,
+    // 接收秒级计时状态句柄。
+    tick: State<f64>,
+) -> App {
+    // 由语言面组装演示 App 与根 View。
+    build_app(states)
+        // 由声明式根视图绘制与 API GUI Demo 一致的自定义标题栏。
+        .custom_title_bar(true)
+        // 启动后注册秒级计时器。
+        .on_start(move |handle| {
+            // 秒级计数器驱动声明文件中的 tick 展示。
+            let ticks = tick.clone();
+            // 注册一秒间隔的演示计时器。
+            handle
+                .run_interval(Duration::from_secs(1), move || {
+                    // 每次间隔推进全局 tick。
+                    ticks.update(|value| *value += 1.0);
+                })
+                .detach();
+        })
+}
+
 // 初始化演示程序使用的环境过滤日志订阅器。
 fn init_tracing() {
     use tracing_subscriber::EnvFilter;
@@ -250,4 +329,29 @@ fn init_tracing() {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("uix=info"));
     // 订阅器初始化失败不影响演示运行。
     let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+}
+
+// 保存二进制组合根的近邻启动参数回归测试。
+#[cfg(test)]
+mod tests {
+    // 导入当前模块的私有启动解析入口。
+    use super::*;
+
+    // 验证两项运行时门禁可以同时被显式选择。
+    #[test]
+    fn parses_agent_and_graphics_recovery_gates_together() {
+        // 按真实命令行顺序解析两项已登记参数与一个无关参数。
+        let options = parse_launch_options([
+            // 选择 Agent Bridge。
+            "--agent-control".to_string(),
+            // 保留未知参数不影响已登记开关。
+            "--unknown".to_string(),
+            // 选择专用图形恢复页面。
+            "--test-graphics-recovery".to_string(),
+        ]);
+        // Agent 运行时门禁必须开启。
+        assert!(options.agent_control);
+        // 图形恢复运行时门禁必须同时开启。
+        assert!(options.graphics_recovery_test);
+    }
 }

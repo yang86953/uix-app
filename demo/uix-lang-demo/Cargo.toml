@@ -42,8 +42,11 @@ default = ["demo-logging"]
 demo-logging = ["dep:tracing-subscriber", "uix/demo-logging"]
 # 显式透传本机 Agent Bridge 能力，运行时仍需 --agent-control 二次启用。
 agent-control = ["uix/agent-control"]
+# 显式透传图形故障注入能力，运行时仍需 --test-graphics-recovery 二次启用。
+test-harness = ["uix/test-harness"]
 
 [[bin]]
 name = "uix-lang-demo"
 path = "src/main.rs"
-test = false
+# 保留二进制近邻单元测试，验证启动门禁与图形恢复页面状态机。
+test = true

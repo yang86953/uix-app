@@ -10,7 +10,9 @@ demo/
 │   ├── README.md       # 运行方式与 Rust/uix-lang 边界
 │   └── src/
 │       ├── main.rs     # Rust 应用组合根：窗口生命周期、类型化数据与语言面之外的状态
-│       └── main.uix    # uix-lang 界面：12 个页面组件、全部已注册标签、私有状态与事件
+│       ├── main.uix    # uix-lang 界面：12 个页面组件、全部已注册标签、私有状态与事件
+│       ├── graphics_recovery.rs  # test-harness 图形恢复验收组合模块
+│       └── graphics_recovery.uix # 独立图形恢复声明页与稳定自动化标识
 ├── badge-visual/       # Badge 零/单子装饰器真窗验收
 ├── selectable-list-visual/ # SelectableList 稳定 id 受控选择真窗验收
 ├── collapse-visual/    # Collapse 稳定 key 与手风琴真窗验收
@@ -27,6 +29,7 @@ demo/
 | 模式 | 命令 | 说明 |
 |------|------|------|
 | **uix-lang GUI（主演示）** | `cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo` | `.uix` 文件入口、12 个页面组件、私有/类型化状态与全部已注册标签 |
+| **uix-lang 图形恢复验收** | `cargo run --release --manifest-path demo/Cargo.toml --features test-harness --bin uix-lang-demo -- --test-graphics-recovery` | 独立声明页、设备/表面故障注入与恢复后交互 |
 | **Badge 真窗验收** | `cargo run --release --manifest-path demo/Cargo.toml --bin badge-visual` | 零子兼容、Icon / Avatar / Button 单子装饰与动态 count / dot |
 | **SelectableList 真窗验收** | `cargo run --release --manifest-path demo/Cargo.toml --bin selectable-list-visual` | 空选中、稳定 id 写回、指针与键盘活动高亮 |
 | **Collapse 真窗验收** | `cargo run --release --manifest-path demo/Cargo.toml --bin collapse-visual` | 稳定 key、多开/手风琴写回与键盘切换 |
