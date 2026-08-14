@@ -488,6 +488,13 @@ pub enum SnapshotFields {
         compact: bool,
         active: bool,
     },
+    // Navigation 外壳只快照调用方元数据与整栏折叠事实。
+    #[cfg(feature = "navigation")]
+    Navigation {
+        title: String,
+        version: Option<String>,
+        collapsed: bool,
+    },
     // 树组件 capability 关闭时不保留展示树快照变体。
     #[cfg(feature = "tree-widgets")]
     Tree {

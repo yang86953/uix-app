@@ -13,7 +13,7 @@ use super::{
     generate_drawer, generate_dropdown, generate_empty, generate_float_button,
     generate_float_button_group, generate_focus_trap, generate_form, generate_grid, generate_input,
     generate_input_group, generate_input_number, generate_list, generate_mentions, generate_menu,
-    generate_modal, generate_orphan_col, generate_orphan_form_checkbox_item,
+    generate_modal, generate_navigation, generate_orphan_col, generate_orphan_form_checkbox_item,
     generate_orphan_form_input_item, generate_orphan_form_radio_item,
     generate_orphan_form_select_item, generate_orphan_form_slider_item,
     generate_orphan_form_switch_item, generate_pagination, generate_popover, generate_qrcode,
@@ -146,6 +146,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "Menu" => generate_menu(element),
         // 下拉菜单映射到 keyed 数据、唯一 trigger 子树与 Change 稳定 key。
         "Dropdown" => generate_dropdown(element),
+        // 侧栏导航映射到只拥有外壳状态并复用唯一受控 Menu 的组合 View。
+        "Navigation" => generate_navigation(element),
         // 步骤条映射到类型化 Step 集合与 State<usize> 双向 current 契约。
         "Steps" => generate_steps(element),
         // 分页器映射到总条数、双 State<usize> 与既有 Change 载荷契约。

@@ -510,6 +510,25 @@ impl SnapshotFields {
                         ..AccessibilityState::default()
                     })
             }
+            // Navigation 外壳公开标题、折叠与可选版本事实。
+            #[cfg(feature = "navigation")]
+            Self::Navigation {
+                title,
+                version,
+                collapsed,
+            } => {
+                // 侧栏整体使用 Navigation 角色并公开展开状态。
+                AccessibilitySnapshot::named(AccessibilityRole::Navigation, title.clone())
+                    // 版本作为可选人类可读值文本。
+                    .with_state(AccessibilityState {
+                        // collapsed=false 表示侧栏处于展开状态。
+                        expanded: Some(!*collapsed),
+                        // 精确保留调用方版本元数据。
+                        value_text: version.clone(),
+                        // 其余状态使用默认值。
+                        ..AccessibilityState::default()
+                    })
+            }
             // 树组件 capability 启用时才转换展示树无障碍快照。
             #[cfg(feature = "tree-widgets")]
             Self::Tree {

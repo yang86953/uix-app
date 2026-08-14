@@ -509,8 +509,8 @@ where
             self.width
         };
         let loc = crate::ui::component::locale::use_locale();
-        use crate::ui::widgets::{Container, Divider, Label};
         use crate::ui::IntoWidgetNode;
+        use crate::ui::widgets::{Container, Divider, Label};
 
         let item_h = if compact_items { width } else { 36.0 };
         let mut children: Vec<crate::ui::component::widget::WidgetNode> = Vec::new();
@@ -603,5 +603,42 @@ where
                 }
             }));
         }
+    }
+}
+
+// 新 UIX 组合契约固定从默认 Navigation 类型入口构造 typed Menu 子树。
+impl Navigation<String> {
+    /// 构造只拥有侧栏外壳并复用受控 Menu 唯一事实的 Navigation View。
+    pub fn controlled<K, I>(
+        title: impl Into<String>,
+        items: I,
+        active: &State<Option<K>>,
+        open: &State<Vec<K>>,
+        collapsed: &State<bool>,
+        version: Option<String>,
+    ) -> crate::ui::view::ViewNode
+    where
+        // typed key 必须满足 Menu 的值映射与跨线程 State 契约。
+        K: Clone + PartialEq + Display + Send + Sync + 'static,
+        // 调用方提供拥有型共享 MenuItem 树。
+        I: IntoIterator<Item = crate::ui::widgets::MenuItem<K>>,
+    {
+        // Menu 是选择、展开、重复 key 诊断和交互的唯一 owner。
+        let menu = crate::ui::widgets::Menu::controlled(items, active, open)
+            // Navigation 固定使用垂直菜单布局。
+            .mode(crate::ui::widgets::MenuMode::Vertical)
+            // Navigation 内递归菜单组允许展开与收起。
+            .collapsible(true)
+            // 整栏折叠只改变 Menu 呈现，不改写 active/open 状态。
+            .compact_when(collapsed);
+        // 外壳只拥有标题、版本与整栏折叠状态。
+        let shell = crate::ui::widgets::NavigationShell::new(title, version, collapsed);
+        // 公开 ViewNode 明确外壳对唯一 Menu 子组件的实例所有权。
+        crate::ui::view::ViewNode::new(
+            // 侧栏外壳成为组合根。
+            shell,
+            // Menu 是唯一直接子树。
+            vec![crate::ui::view::ViewNode::leaf(menu)],
+        )
     }
 }

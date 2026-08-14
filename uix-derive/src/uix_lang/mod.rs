@@ -282,6 +282,11 @@ mod dropdown_codegen;
 // 集中验证 Dropdown 生成与拒绝路径。
 #[cfg(test)]
 mod dropdown_codegen_tests;
+// 定义 Navigation 受控侧栏组合与选择事件的公开 API 代码生成边界。
+mod navigation_codegen;
+// 集中验证 Navigation 生成与拒绝路径。
+#[cfg(test)]
+mod navigation_codegen_tests;
 // 定义 Steps 类型化步骤、受控 current 与方向的公开 API 代码生成边界。
 mod steps_codegen;
 // 集中验证 Steps 生成、状态绑定与拒绝路径。
@@ -533,6 +538,8 @@ pub(crate) use tabs_codegen::generate_tabs;
 pub(crate) use menu_codegen::generate_menu;
 // 向核心元素生成器暴露 Dropdown 组合组件专用映射。
 pub(crate) use dropdown_codegen::generate_dropdown;
+// 向核心元素生成器暴露 Navigation 组合组件专用映射。
+pub(crate) use navigation_codegen::generate_navigation;
 // 向核心元素生成器暴露 Steps 叶组件专用映射。
 pub(crate) use steps_codegen::generate_steps;
 // 向核心元素生成器暴露 Pagination 叶组件专用映射。

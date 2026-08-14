@@ -41,11 +41,6 @@ const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
         name: "Collapse",
         category: "内置组件 / 展示组件",
     },
-    // 导航组件规划项。
-    PlannedBuiltin {
-        name: "Navigation",
-        category: "内置组件 / 导航组件",
-    },
     // 反馈组件规划项。
     PlannedBuiltin {
         name: "Message",

@@ -202,6 +202,12 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     if let Some(nav_item) = component.downcast_ref::<NavItem>() {
         return nav_item.snapshot_fields();
     }
+    // 导航 capability 启用时才引用 Navigation 侧栏外壳。
+    #[cfg(feature = "navigation")]
+    if let Some(navigation) = component.downcast_ref::<NavigationShell>() {
+        // 返回调用方元数据与整栏折叠快照。
+        return navigation.snapshot_fields();
+    }
     // 树组件 capability 启用时才引用展示树组件类型。
     #[cfg(feature = "tree-widgets")]
     if let Some(tree) = component.downcast_ref::<Tree>() {
