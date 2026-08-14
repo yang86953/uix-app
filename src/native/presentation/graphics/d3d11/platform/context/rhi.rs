@@ -90,7 +90,7 @@ impl GraphicsSurface for super::D3d11Context {
         &mut self,
         frame: SurfaceFrame,
         _submission: crate::native::present::rhi::SubmissionHandle,
-        _damage: PresentDamage,
+        damage: PresentDamage,
     ) -> Result<()> {
         // 拒绝旧代际 frame，避免旧 swapchain 的提交伪装成成功。
         if frame.token != self.token() {
@@ -111,16 +111,14 @@ impl GraphicsSurface for super::D3d11Context {
         // 重新绑定 swapchain target，恢复兼容 context 的 owner 状态和 RTV 绑定。
         self.bind_swapchain_target()?;
         // 复用现有的 Present 前后 RTV 生命周期和 DXGI 错误映射。
-        self.present_result()
+        self.present_result(&damage)
     }
 
     // 探测已经因遮挡进入 idle 的 D3D11 swapchain 是否恢复可呈现。
     fn test_present(&mut self) -> Result<PresentTestResult> {
         // DXGI_PRESENT_TEST 不提交帧数据，并固定使用同步间隔零。
-        super::map_dxgi_present_test_result(unsafe {
-            // 把 Windows 专属探测严格留在 D3D11 surface adapter 内。
-            self.swap_chain.Present(0, super::DXGI_PRESENT_TEST)
-        })
+        // 把 Windows 专属探测严格留在冻结 swapchain adapter 内。
+        self.swap_chain.test_present()
     }
 
     // 安排下一次 surface acquire 的 typed surface-lost 结果。

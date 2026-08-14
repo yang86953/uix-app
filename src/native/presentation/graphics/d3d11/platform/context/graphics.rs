@@ -20,6 +20,12 @@ impl GraphicsContextLifecycle for D3d11Context {
 
 // 把 D3D11 thin RHI 与逻辑 surface resize 收敛到同一 recipe owner。
 impl crate::native::present::GpuRecipeContext for D3d11Context {
+    // 返回当前可写 swapchain image 身份，供 graphics damage history 规划。
+    fn present_image(&self) -> Option<crate::native::present::PresentImage> {
+        // 只有构造期冻结的 SwapChain3 主路径返回真实 image index。
+        self.swap_chain.present_image()
+    }
+
     // 借用 D3D11 owner 已实现的组合 thin RHI。
     fn rhi_context(
         // 借用当前 D3D11 owner。
@@ -66,7 +72,7 @@ impl D3d11Context {
         (|| -> Result<Vec<u32>> {
             let back_buffer: ID3D11Texture2D = unsafe {
                 self.swap_chain
-                    .GetBuffer(0)
+                    .get_buffer(0)
                     .map_err(|err| d3d_error("IDXGISwapChain::GetBuffer(read_pixels)", err))?
             };
             let desc = D3D11_TEXTURE2D_DESC {

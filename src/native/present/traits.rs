@@ -54,6 +54,12 @@ pub(crate) trait GraphicsContextLifecycle {
 
 // 定义 GPU-native recipe 不可拆分的 thin RHI 与 surface 生命周期视图。
 pub(crate) trait GpuRecipeContext: GraphicsContextLifecycle {
+    // 返回当前可写 swapchain image 身份；FullOnly adapter 默认没有该证明。
+    fn present_image(&self) -> Option<PresentImage> {
+        // 默认保持无 image 身份，防止未迁移 adapter 误用 tracked history。
+        None
+    }
+
     // 借用当前 recipe 唯一的 thin RHI owner，并保留 typed failure。
     fn rhi_context(
         // 借用 GPU recipe owner。

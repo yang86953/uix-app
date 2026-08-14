@@ -72,7 +72,7 @@ impl D3d11Context {
     pub(super) fn create_rtv(&mut self) -> Result<()> {
         let back_buffer: ID3D11Texture2D = unsafe {
             self.swap_chain
-                .GetBuffer(0)
+                .get_buffer(0)
                 .map_err(|err| d3d_error("IDXGISwapChain::GetBuffer", err))?
         };
         let mut rtv = None;
@@ -124,13 +124,8 @@ impl D3d11Context {
         self.release_rtv();
         // 让 DXGI 执行 backbuffer 的原生尺寸重建。
         if let Err(error) = unsafe {
-            self.swap_chain.ResizeBuffers(
-                0,
-                physical_width as u32,
-                physical_height as u32,
-                DXGI_FORMAT_B8G8R8A8_UNORM,
-                DXGI_SWAP_CHAIN_FLAG(0),
-            )
+            self.swap_chain
+                .resize_buffers(physical_width as u32, physical_height as u32)
         } {
             // 将设备移除、无效参数等 DXGI 结果映射为统一错误。
             map_dxgi_resize_result(error.code())?;
@@ -202,7 +197,7 @@ impl D3d11Context {
         self.bind_current_draw_target()
     }
 
-    pub(super) fn present_result(&mut self) -> Result<()> {
+    pub(super) fn present_result(&mut self, damage: &crate::core::PresentDamage) -> Result<()> {
         // 兼容 presenter 也必须消费同一 lower surface-lost 注入，避免故障
         // 因本帧没有进入 RHI acquire 而被静默跳过。
         #[cfg(feature = "test-harness")]
@@ -218,14 +213,19 @@ impl D3d11Context {
         // its owning UI thread while the context remains alive.
         //
         // Release all back-buffer refs *before* Present. Holding an RTV (or any
-        // GetBuffer view) across Present with DXGI_SWAP_EFFECT_DISCARD lets DXGI
-        // allocate extra swapchain buffers — unbounded GPU/system memory growth.
-        // Recreate RTV *after* Present so the next frame targets the current
-        // back buffer (stale RTV → alternating good/black frames, BUG-001).
+        // GetBuffer view) across Present 会阻碍 flip-model 正确轮换；legacy
+        // DISCARD 还可能分配额外 buffer。Present 后必须为当前 buffer 重建 RTV。
         self.release_rtv();
-        map_dxgi_present_result(unsafe { self.swap_chain.Present(1, DXGI_PRESENT(0)) })?;
+        // swapchain adapter 按冻结形态选择 Present1 dirty rect 或 legacy 全帧 Present。
+        self.swap_chain.present(damage, self.width, self.height)?;
         self.create_rtv()?;
         Ok(())
+    }
+
+    // 返回本实例在创建期冻结的 present coherency。
+    pub(crate) fn present_coherency(&self) -> crate::native::present::PresentCoherency {
+        // capability 与实际 swapchain 形态同源，运行期不再探测或漂移。
+        self.swap_chain.contract().present_coherency
     }
 }
 
@@ -236,47 +236,39 @@ pub(crate) fn create_with_driver(
     feature_levels: &[D3D_FEATURE_LEVEL],
     driver: D3d11DriverKind,
 ) -> Result<D3d11Context> {
-    let mut swap_chain = None;
     let mut device = None;
     let mut context = None;
     let mut selected_level = D3D_FEATURE_LEVEL_10_0;
-    let desc = swap_chain_desc(hwnd, width, height);
 
     unsafe {
-        D3D11CreateDeviceAndSwapChain(
+        D3D11CreateDevice(
             None,
             driver.native(),
             HMODULE::default(),
             D3D11_CREATE_DEVICE_BGRA_SUPPORT,
             Some(feature_levels),
             D3D11_SDK_VERSION,
-            Some(&desc),
-            Some(&mut swap_chain),
             Some(&mut device),
             Some(&mut selected_level),
             Some(&mut context),
         )
     }
-    .map_err(|err| d3d_error("D3D11CreateDeviceAndSwapChain", err))?;
+    .map_err(|err| d3d_error("D3D11CreateDevice", err))?;
 
     let device = device.ok_or_else(|| {
         Error::new(
             Errc::PlatformError,
-            "D3d11Context: D3D11CreateDeviceAndSwapChain returned no device",
+            "D3d11Context: D3D11CreateDevice returned no device",
         )
     })?;
     let context = context.ok_or_else(|| {
         Error::new(
             Errc::PlatformError,
-            "D3d11Context: D3D11CreateDeviceAndSwapChain returned no device context",
+            "D3d11Context: D3D11CreateDevice returned no device context",
         )
     })?;
-    let swap_chain = swap_chain.ok_or_else(|| {
-        Error::new(
-            Errc::PlatformError,
-            "D3d11Context: D3D11CreateDeviceAndSwapChain returned no swapchain",
-        )
-    })?;
+    // 使用实际 device 和 adapter 选择 tracked flip 主路径或 legacy 回退。
+    let swap_chain = create_swap_chain(&device, hwnd, width, height)?;
 
     let adapter_info = query_adapter_info(&device, driver).unwrap_or_else(|error| {
         tracing::warn!(

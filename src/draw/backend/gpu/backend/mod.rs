@@ -24,6 +24,8 @@ pub(crate) mod rhi_surface_clear;
 pub(crate) mod rhi_surface_scroll;
 // 主 surface 的 solid/mixed RHI 最终提交独立管理，控制提交文件行数。
 pub(crate) mod rhi_surface_present;
+// 最终 retained-to-swapchain 合成集中校验 damage 并生成逐矩形 scissor。
+pub(crate) mod rhi_surface_composite;
 // 主 surface 的 CPU soft segment RHI 合成独立管理，保持 retained 组合边界清晰。
 pub(crate) mod rhi_surface_soft;
 // Picture texture 的 RHI sampled blit 独立管理，保持目标切换边界清晰。

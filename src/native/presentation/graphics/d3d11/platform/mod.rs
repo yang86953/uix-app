@@ -20,13 +20,13 @@ mod swapchain;
 #[cfg(windows)]
 pub use context::D3d11Context;
 
-// 从唯一 DXGI swapchain 契约组装 D3D11 静态 recipe 能力。
+// 从实际创建的 DXGI swapchain 事实组装 D3D11 静态 recipe 能力。
 #[cfg(windows)]
-fn context_caps() -> GraphicsContextCaps {
-    // 读取与实际 swapchain descriptor 同源的 coherency 事实。
-    let contract = swapchain::swap_chain_contract();
+fn context_caps(
+    present_coherency: crate::native::present::PresentCoherency,
+) -> GraphicsContextCaps {
     // 返回包含遮挡状态与无数据探测支持的完整 adapter 快照。
-    GraphicsContextCaps::gpu_native_swapchain(GraphicsApi::D3d11, contract.present_coherency)
+    GraphicsContextCaps::gpu_native_swapchain(GraphicsApi::D3d11, present_coherency)
         // D3D11 surface 同时实现 present status 与 DXGI_PRESENT_TEST。
         .with_present_occlusion(PresentOcclusionSupport::PresentStatusAndTest)
 }
@@ -41,8 +41,8 @@ pub(crate) fn create(
 ) -> Result<GraphicsContextCandidate, Error> {
     // 创建具体 D3D11 context 后在仍可静态分派的边界组装 capability。
     D3d11Context::new(surface, width, height).map(|ctx| {
-        // 从 adapter 创建模块的唯一事实函数组装静态 capability。
-        let caps = context_caps();
+        // 从实际创建的 tracked 或 legacy swapchain 冻结构造期 capability。
+        let caps = context_caps(ctx.present_coherency());
         // 把 context 与同源快照封装为 registry candidate。
         GraphicsContextCandidate::gpu(Box::new(ctx), caps)
     })
