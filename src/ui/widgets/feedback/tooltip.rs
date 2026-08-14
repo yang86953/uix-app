@@ -14,6 +14,7 @@ use crate::ui::{EventResult, KeyCode, MouseButton, SystemEvent, WidgetTree};
 pub use crate::ui::widgets::overlay_types::{TooltipPlacement, TriggerMode};
 
 component! {
+    /// 按指定触发方式显示说明文本的浮层提示。
     pub struct Tooltip {
         text: String,
         placement: TooltipPlacement,
@@ -334,6 +335,7 @@ impl Default for Tooltip {
 }
 
 impl Tooltip {
+    /// 创建默认置于上方、悬停触发且初始隐藏的浮层提示。
     pub fn new(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
@@ -357,57 +359,69 @@ impl Tooltip {
         }
     }
 
+    /// 设置浮层相对触发区域的放置方向。
     pub fn placement(mut self, p: TooltipPlacement) -> Self {
         self.placement = p;
         self
     }
 
+    /// 设置打开和关闭浮层的触发方式。
     pub fn trigger(mut self, t: TriggerMode) -> Self {
         self.trigger = t;
         self
     }
 
+    /// 设置浮层背景颜色。
     pub fn bg_color(mut self, c: Color) -> Self {
         self.bg_color = Some(c);
         self
     }
 
+    /// 设置浮层背景颜色，是 [`Self::bg_color`] 的简写。
     pub fn bg(self, c: Color) -> Self {
         self.bg_color(c)
     }
 
+    /// 设置浮层文本颜色。
     pub fn text_color(mut self, c: Color) -> Self {
         self.text_color = Some(c);
         self
     }
 
+    /// 设置浮层文本颜色，是 [`Self::text_color`] 的简写。
     pub fn color(self, c: Color) -> Self {
         self.text_color(c)
     }
 
+    /// 设置是否绘制指向触发区域的箭头。
     pub fn arrow(mut self, v: bool) -> Self {
         self.arrow = v;
         self
     }
 
+    /// 设置悬停触发后的打开延迟，单位为毫秒。
     pub fn delay_ms(mut self, ms: u32) -> Self {
         self.delay_ms = ms;
         self
     }
 
+    /// 设置用于识别延迟打开事件的计时器标识。
     pub fn timer_id(mut self, id: u32) -> Self {
         self.timer_id = id;
         self
     }
 
+    /// 返回浮层是否处于可见阶段。
     pub fn is_visible(&self) -> bool {
         self.visible
     }
 
+    /// 返回浮层是否可见或仍在执行关闭过渡。
     pub fn is_present(&self) -> bool {
         self.visible || self.closing
     }
 
+    /// 取消待处理的激活并启动打开过渡。
     pub fn open(&mut self) {
         self.cancel_pending_activation();
         self.visible = true;
@@ -416,6 +430,7 @@ impl Tooltip {
         self.transition_dirty = true;
     }
 
+    /// 取消待处理的激活，并在浮层存在时启动关闭过渡。
     pub fn close(&mut self) {
         self.cancel_pending_activation();
         if !self.is_present() {
