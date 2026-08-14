@@ -23,13 +23,21 @@ use crate::ui::{
 use super::icon::Icon;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// 排版组件使用的语义文本层级。
 pub enum TypographyType {
+    /// 一级标题，使用最大的标题字号与字重。
     Heading1,
+    /// 二级标题。
     Heading2,
+    /// 三级标题。
     Heading3,
+    /// 四级标题。
     Heading4,
+    /// 五级标题，使用最小的标题字号。
     Heading5,
+    /// 支持折行、行距与首行缩进的段落文本。
     Paragraph,
+    /// 不附加段落排版语义的普通文本。
     Text,
 }
 
@@ -351,6 +359,7 @@ component! {
 }
 
 impl Typography {
+    /// 使用文本内容和指定语义层级创建排版组件。
     pub fn new(content: &str, type_: TypographyType) -> Self {
         Self {
             content: content.to_string(),
@@ -375,52 +384,65 @@ impl Typography {
             pending_submit: Cell::new(false),
         }
     }
+    /// 创建标题，并将级别夹取到一至五级。
     pub fn heading(content: &str, level: u8) -> Self {
         Self::new(content, Self::type_for_level(level))
     }
 
+    /// 创建一级标题。
     pub fn title(content: &str) -> Self {
         Self::heading(content, 1)
     }
 
+    /// 将当前组件切换到夹取后一至五级的标题层级。
     pub fn level(mut self, level: u8) -> Self {
         self.type_ = Self::type_for_level(level);
         self
     }
+    /// 创建支持折行、行距与缩进的段落文本。
     pub fn paragraph(content: &str) -> Self {
         Self::new(content, TypographyType::Paragraph)
     }
+    /// 创建普通行内文本。
     pub fn text(content: &str) -> Self {
         Self::new(content, TypographyType::Text)
     }
+    /// 设置组件是否使用禁用态文字样式并拒绝复制交互。
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self
     }
+    /// 为文本启用标记高亮样式。
     pub fn mark(mut self) -> Self {
         self.mark = true;
         self
     }
+    /// 为文本启用行内代码样式。
     pub fn code(mut self) -> Self {
         self.code = true;
         self
     }
+    /// 为文本启用下划线装饰。
     pub fn underline(mut self) -> Self {
         self.underline = true;
         self
     }
+    /// 为文本启用删除线装饰。
     pub fn delete(mut self) -> Self {
         self.delete = true;
         self
     }
+    /// 为文本启用加粗样式。
     pub fn strong(mut self) -> Self {
         self.strong = true;
         self
     }
+    /// 为文本启用斜体样式。
     pub fn italic(mut self) -> Self {
         self.italic = true;
         self
     }
+    /// 设置固定文字颜色，并清除较早配置的语义颜色。
     pub fn color(mut self, c: Color) -> Self {
         // 固定颜色成为最新局部颜色配置。
         self.color_override = Some(c);
@@ -428,7 +450,7 @@ impl Typography {
         self.semantic_color = None;
         self
     }
-    // 通过主题颜色值配置可随 Provider 变化的语义文字颜色。
+    /// 设置随主题 Provider 解析的语义文字颜色，并清除固定颜色。
     pub fn semantic_color(
         // 接收主题模块拥有的稳定颜色值契约。
         mut self,
@@ -442,11 +464,13 @@ impl Typography {
         // 返回构建后的排版组件。
         self
     }
+    /// 设置是否显示复制入口并允许键盘复制选中文本。
     pub fn copyable(mut self, v: bool) -> Self {
         self.copyable = v;
         self
     }
 
+    /// 设置段落行高相对字号的倍率；非有限值归零。
     pub fn spacing(mut self, value: f32) -> Self {
         self.spacing = if value.is_finite() {
             value.max(0.0)
@@ -456,6 +480,7 @@ impl Typography {
         self
     }
 
+    /// 设置段落首行缩进相对字号的倍率；非有限值归零。
     pub fn indent(mut self, value: f32) -> Self {
         self.indent = if value.is_finite() {
             value.max(0.0)
@@ -465,15 +490,18 @@ impl Typography {
         self
     }
 
+    /// 启用单行省略显示。
     pub fn ellipsis(mut self) -> Self {
         self.ellipsis = true;
         self
     }
 
+    /// 返回当前选区中的文本；没有有效选区时返回空值。
     pub fn selected_text(&self) -> Option<String> {
         self.sel.selected_text(&self.content)
     }
 
+    /// 返回组件当前是否持有用于复制交互的焦点。
     pub fn is_copy_focused(&self) -> bool {
         self.focused
     }
