@@ -48,10 +48,15 @@ impl GraphicsBackend {
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GpuDeviceType {
+    /// 与系统内存共享资源的集成式 GPU。
     Integrated,
+    /// 拥有独立显存的离散式 GPU。
     Discrete,
+    /// 由虚拟化环境提供的 GPU。
     Virtual,
+    /// 通过 CPU 执行图形工作的软件设备。
     Software,
+    /// 平台无法可靠归类的设备。
     Unknown,
 }
 
@@ -89,26 +94,32 @@ impl GpuAdapterInfo {
         }
     }
 
+    /// 返回枚举该 adapter 时使用的图形 API。
     pub fn backend(&self) -> GraphicsBackend {
         self.backend
     }
 
+    /// 返回平台报告的物理设备类别。
     pub fn device_type(&self) -> GpuDeviceType {
         self.device_type
     }
 
+    /// 返回平台提供的 adapter 显示名称。
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref()
     }
 
+    /// 返回平台提供的 PCI 厂商标识。
     pub fn vendor_id(&self) -> Option<u32> {
         self.vendor_id
     }
 
+    /// 返回平台提供的 PCI 设备标识。
     pub fn device_id(&self) -> Option<u32> {
         self.device_id
     }
 
+    /// 返回平台提供的驱动描述。
     pub fn driver(&self) -> Option<&str> {
         self.driver.as_deref()
     }
