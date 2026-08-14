@@ -17,10 +17,8 @@ use windows::Win32::Foundation::PROPERTYKEY;
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, CoCreateInstance, CoTaskMemFree, IPersistFile, STGM_READ,
 };
-// 引入 PROPVARIANT 字符串转换和生命周期清理。
-use windows::Win32::System::Com::StructuredStorage::{
-    PROPVARIANT, PropVariantClear, PropVariantToString,
-};
+// 引入 PROPVARIANT 字符串转换；值自身负责生命周期清理。
+use windows::Win32::System::Com::StructuredStorage::PropVariantToString;
 // 引入开始菜单 known folder 与 ShellLink 接口。
 use windows::Win32::UI::Shell::{
     FOLDERID_CommonPrograms, FOLDERID_Programs, IShellLinkW, KNOWN_FOLDER_FLAG,
@@ -324,15 +322,15 @@ fn shortcut_has_aumid(path: &Path, app_user_model_id: &str) -> Result<bool> {
     };
     // SAFETY: 属性键是静态有效值，store 生命周期覆盖返回值。
     let value = match unsafe { store.GetValue(&PKEY_APP_USER_MODEL_ID) } {
-        // 使用 guard 保证复杂 PROPVARIANT 内容被释放。
-        Ok(value) => PropVariantGuard(value),
+        // windows crate 的 PROPVARIANT 自带 Drop，可直接拥有返回值。
+        Ok(value) => value,
         // 缺失属性或不可读属性均不算匹配。
         Err(_) => return Ok(false),
     };
     // 为 128 单元 AUMID 加 NUL 预留一个单元。
     let mut text = [0u16; 129];
     // SAFETY: value 与输出缓冲有效，缓冲覆盖 AUMID 上限。
-    if unsafe { PropVariantToString(&value.0, &mut text) }.is_err() {
+    if unsafe { PropVariantToString(&value, &mut text) }.is_err() {
         // 非字符串属性不构成有效登记。
         return Ok(false);
     }
@@ -428,20 +426,6 @@ impl Drop for CoTaskMemWide {
         unsafe {
             // CoTaskMemFree 接受空指针，但系统成功路径应为非空。
             CoTaskMemFree(Some(self.0.as_ptr().cast()));
-        }
-    }
-}
-
-// 管理 IPropertyStore 返回的 PROPVARIANT 生命周期。
-struct PropVariantGuard(PROPVARIANT);
-
-impl Drop for PropVariantGuard {
-    // 释放属性中可能包含的系统分配内存。
-    fn drop(&mut self) {
-        // SAFETY: guard 唯一拥有 GetValue 初始化的 PROPVARIANT。
-        unsafe {
-            // 忽略清理 HRESULT；析构期间不能覆盖主操作结果。
-            let _ = PropVariantClear(&mut self.0);
         }
     }
 }

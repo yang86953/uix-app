@@ -155,6 +155,12 @@ test-harness = []
 path = "src/lib.rs"
 test = false
 
+# 以真实进程主线程运行 Platform 通知契约，避开标准测试 harness 的工作线程。
+[[test]]
+name = "platform_notification_runtime"
+path = "tests/platform_notification_runtime.rs"
+harness = false
+
 [lints.clippy]
 unwrap_used = "warn"
 expect_used = "warn"
