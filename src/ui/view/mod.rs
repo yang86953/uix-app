@@ -35,6 +35,7 @@ pub(crate) mod providers;
 
 /// 用户层 UI 声明 trait。
 pub trait View: 'static {
+    /// 构建并交出声明式视图根节点。
     fn build(self) -> ViewNode;
 }
 
@@ -86,6 +87,7 @@ impl ViewNode {
         self.widget.as_any().type_id()
     }
 
+    /// 从不带声明子节点的组件创建叶节点。
     pub fn leaf(widget: impl WidgetComponent + 'static) -> Self {
         Self {
             widget: Box::new(widget),
@@ -120,6 +122,7 @@ impl ViewNode {
         }
     }
 
+    /// 从组件及其声明式直接子节点创建节点。
     pub fn new(widget: impl WidgetComponent + 'static, children: Vec<ViewNode>) -> Self {
         Self {
             widget: Box::new(widget),
@@ -176,11 +179,13 @@ impl ViewNode {
         self.component_state_receipts.push(receipt);
     }
 
+    /// 设置文本颜色。
     pub fn color(mut self, color: impl Into<ColorValue>) -> Self {
         self.style.color = color.into();
         self
     }
 
+    /// 设置字体大小令牌。
     pub fn font_size(mut self, size: impl Into<TypographyToken>) -> Self {
         self.style.font_size = size.into();
         self
@@ -194,6 +199,7 @@ impl ViewNode {
         self
     }
 
+    /// 设置常态背景色。
     pub fn bg(mut self, color: impl Into<ColorValue>) -> Self {
         self.style.background = Some(color.into());
         self
@@ -222,6 +228,7 @@ impl ViewNode {
         self
     }
 
+    /// 设置四边内边距。
     pub fn padding(mut self, p: impl Into<EdgeInsets>) -> Self {
         self.style.padding = p.into();
         self
@@ -241,11 +248,13 @@ impl ViewNode {
         self
     }
 
+    /// 设置四边外边距。
     pub fn margin(mut self, m: impl Into<EdgeInsets>) -> Self {
         self.style.margin = m.into();
         self
     }
 
+    /// 设置显式宽度。
     pub fn width(mut self, w: f32) -> Self {
         self.style.width = Some(w);
         self
@@ -256,6 +265,7 @@ impl ViewNode {
         self.width(width.value())
     }
 
+    /// 设置显式高度。
     pub fn height(mut self, h: f32) -> Self {
         self.style.height = Some(h);
         self
@@ -338,12 +348,14 @@ impl ViewNode {
         self
     }
 
+    /// 设置 Flex 扩展系数并保留显式覆盖语义。
     pub fn flex_grow(mut self, g: f32) -> Self {
         self.style.flex_grow = g;
         self.flex_grow_override = Some(g);
         self
     }
 
+    /// 设置 Flex 收缩系数并保留显式覆盖语义。
     pub fn flex_shrink(mut self, s: f32) -> Self {
         self.style.flex_shrink = s;
         self.flex_shrink_override = Some(s);
@@ -362,22 +374,26 @@ impl ViewNode {
         self
     }
 
+    /// 设置当前子项的交叉轴覆盖对齐方式。
     pub fn align_self(mut self, a: crate::ui::layout::AlignItems) -> Self {
         self.style.align_self = Some(a);
         self
     }
 
+    /// 设置兼容的一维 Grid 单元索引。
     pub fn grid_cell(mut self, cell: usize) -> Self {
         self.style.grid_cell = Some(cell);
         self
     }
 
+    /// 设置至少为一的 Grid 跨列数和跨行数。
     pub fn grid_span(mut self, columns: u32, rows: u32) -> Self {
         self.style.grid_column_span = columns.max(1);
         self.style.grid_row_span = rows.max(1);
         self
     }
 
+    /// 设置直接子项的统一间距。
     pub fn gap(mut self, g: f32) -> Self {
         self.style.gap = g;
         self
@@ -389,12 +405,14 @@ impl ViewNode {
         self
     }
 
+    /// 设置统一宽度和颜色的边框。
     pub fn border(mut self, width: f32, color: impl Into<ColorValue>) -> Self {
         self.style.border_width = EdgeInsets::uniform(width);
         self.style.border_color = Some(color.into());
         self
     }
 
+    /// 设置圆角半径。
     pub fn radius(mut self, r: f32) -> Self {
         self.style.border_radius = r;
         self
@@ -405,6 +423,7 @@ impl ViewNode {
         self.radius(radius.value())
     }
 
+    /// 设置节点透明度。
     pub fn opacity(mut self, o: f32) -> Self {
         self.style.opacity = o;
         self
@@ -432,11 +451,13 @@ impl ViewNode {
         self
     }
 
+    /// 设置同层节点的绘制与命中顺序。
     pub fn z_index(mut self, z: i32) -> Self {
         self.z_index = z;
         self
     }
 
+    /// 设置声明式协调使用的稳定节点身份。
     pub fn key(mut self, k: impl Into<String>) -> Self {
         self.key = Some(k.into());
         self
@@ -521,6 +542,7 @@ impl ViewNode {
         self
     }
 
+    /// 注册指定类型的语义事件处理器。
     pub fn on_semantic(
         mut self,
         kind: SemanticKind,
@@ -608,6 +630,7 @@ impl ViewNode {
         ))
     }
 
+    /// 注册携带 State 稳定捕获指纹的语义事件处理器。
     pub fn on_semantic_capture<T>(
         mut self,
         kind: SemanticKind,
@@ -622,6 +645,7 @@ impl ViewNode {
         self
     }
 
+    /// 注册携带 Computed 稳定捕获指纹的语义事件处理器。
     pub fn on_semantic_computed_capture<T>(
         mut self,
         kind: SemanticKind,
@@ -637,6 +661,7 @@ impl ViewNode {
         self
     }
 
+    /// 注册携带窗口身份捕获指纹的语义事件处理器。
     pub fn on_semantic_window_capture(
         mut self,
         kind: SemanticKind,
@@ -720,6 +745,7 @@ impl ViewNode {
         self.on_click(state, move |_| f())
     }
 
+    /// 注册携带窗口身份捕获指纹的点击闭包。
     pub fn on_click_window_capture<F>(mut self, window_id: crate::core::WindowId, mut f: F) -> Self
     where
         F: FnMut() + 'static,
@@ -738,12 +764,14 @@ impl ViewNode {
         self
     }
 
+    /// 注册可以读取和修改完整点击语义事件的处理器。
     pub fn on_click_event<F: FnMut(&mut SemanticEvent) + 'static>(mut self, f: F) -> Self {
         self.handlers
             .push(HandlerRegistration::new(SemanticKind::Click, Box::new(f)));
         self
     }
 
+    /// 注册携带 State 稳定捕获指纹的完整点击事件处理器。
     pub fn on_click_event_capture<T, F>(
         mut self,
         state: &crate::ui::reactive::state::State<T>,
@@ -759,6 +787,7 @@ impl ViewNode {
         self
     }
 
+    /// 注册携带窗口身份捕获指纹的完整点击事件处理器。
     pub fn on_click_event_window_capture<F>(
         mut self,
         window_id: crate::core::WindowId,
