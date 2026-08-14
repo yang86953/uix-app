@@ -2,7 +2,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
 use crate::ui::component::paint_context::PaintContext;
-use crate::ui::{SnapshotFields, WidgetTree};
+use crate::ui::{SnapshotFields, ThemeTokens, WidgetTree};
 
 // ════════════════════════════════════════════════════════════════════════════
 // Watermark
@@ -31,14 +31,18 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if self.text.is_empty() { return; }
-        let color = self.effective_color();
+        // 默认颜色在拥有主题上下文的绘制阶段解析。
+        let color = self.effective_color(ctx.tokens().color_text());
+        // 默认字号在拥有主题上下文的绘制阶段解析。
+        let font_size = self.resolved_font_size(ctx.tokens());
         let columns = (frame.w.max(0.0) / self.gap_x).ceil() as usize + 2;
         let rows = (frame.h.max(0.0) / self.gap_y).ceil() as usize + 2;
 
         ctx.push_clip(frame);
         for gy in 0..rows {
             for gx in 0..columns {
-                self.paint_rotated_text(ctx, self.tile_position(frame, gx, gy), color);
+                // 平铺文字复用本次绘制解析出的主题字号与颜色。
+                self.paint_rotated_text(ctx, self.tile_position(frame, gx, gy), color, font_size);
             }
         }
         ctx.pop_clip();
@@ -52,7 +56,6 @@ component! {
     }
 }
 impl Watermark {
-    const DEFAULT_FONT_SIZE: f32 = 14.0;
     const DEFAULT_OPACITY: f32 = 0.15;
     const DEFAULT_ROTATE: f32 = -22.0;
     const DEFAULT_GAP_X: f32 = 200.0;
@@ -61,9 +64,10 @@ impl Watermark {
     pub fn new(text: &str) -> Self {
         Self {
             text: text.to_string(),
-            // 水印默认色：纯黑（构造器无主题上下文，可经 with_color 自定义，保留字面量）。
-            color: Color::from_rgba(0, 0, 0, 255),
-            font_size: Self::DEFAULT_FONT_SIZE,
+            // 透明哨兵表示绘制时使用当前主题正文色。
+            color: Color::TRANSPARENT,
+            // 零值哨兵表示绘制时使用当前主题正文字号。
+            font_size: 0.0,
             opacity: Self::DEFAULT_OPACITY,
             rotate: Self::DEFAULT_ROTATE,
             gap_x: Self::DEFAULT_GAP_X,
@@ -77,7 +81,8 @@ impl Watermark {
         self
     }
     pub fn font_size(mut self, s: f32) -> Self {
-        self.font_size = Self::positive_or(s, Self::DEFAULT_FONT_SIZE);
+        // 非法显式字号回退到主题默认哨兵。
+        self.font_size = Self::positive_or(s, 0.0);
         self
     }
     pub fn opacity(mut self, o: f32) -> Self {
@@ -114,10 +119,17 @@ impl Watermark {
         )
     }
 
-    fn paint_rotated_text(&self, ctx: &mut PaintContext, origin: Point, color: Color) {
+    fn paint_rotated_text(
+        &self,
+        ctx: &mut PaintContext,
+        origin: Point,
+        color: Color,
+        font_size: f32,
+    ) {
         let angle = self.rotate.to_radians();
         let (sin_a, cos_a) = angle.sin_cos();
-        let line_height = self.font_size * 1.4;
+        // 行高从本次绘制解析出的实际字号派生。
+        let line_height = font_size * 1.4;
         for (line_index, line) in self.text.split('\n').enumerate() {
             let normal_offset = line_index as f32 * line_height;
             let line_origin = Point::new(
@@ -128,8 +140,10 @@ impl Watermark {
             for character in line.chars() {
                 let glyph = character.to_string();
                 let position = Self::rotated_advance(line_origin, advance, sin_a, cos_a);
-                ctx.draw_text(&glyph, position, color, self.font_size);
-                advance += ctx.measure_text(&glyph, self.font_size).w;
+                // 使用主题解析后的实际字号绘制当前字符。
+                ctx.draw_text(&glyph, position, color, font_size);
+                // 度量与绘制必须共享相同字号。
+                advance += ctx.measure_text(&glyph, font_size).w;
             }
         }
     }
@@ -138,11 +152,32 @@ impl Watermark {
         Point::new(origin.x + cos_a * advance, origin.y + sin_a * advance)
     }
 
-    fn effective_color(&self) -> Color {
-        let alpha = (self.color.a as f32 * self.opacity)
-            .round()
-            .clamp(0.0, 255.0) as u8;
-        self.color.with_alpha(alpha)
+    // 解析默认主题色并应用作者透明度。
+    fn effective_color(&self, theme_text: Color) -> Color {
+        // 透明哨兵表示调用方没有显式覆写水印颜色。
+        let base = if self.color == Color::TRANSPARENT {
+            // 默认路径使用当前主题正文色。
+            theme_text
+        } else {
+            // 显式颜色保持最高优先级。
+            self.color
+        };
+        // 在基础颜色 alpha 上叠加作者 opacity。
+        let alpha = (base.a as f32 * self.opacity).round().clamp(0.0, 255.0) as u8;
+        // 返回保留基础 RGB 的最终绘制颜色。
+        base.with_alpha(alpha)
+    }
+
+    // 解析默认主题字号。
+    fn resolved_font_size(&self, tokens: &dyn ThemeTokens) -> f32 {
+        // 正值表示调用方已经显式覆写字号。
+        if self.font_size >= 1.0 {
+            // 返回显式作者字号。
+            self.font_size
+        } else {
+            // 默认路径使用当前主题正文字号。
+            tokens.font_size()
+        }
     }
 
     fn positive_or(value: f32, fallback: f32) -> f32 {
@@ -156,8 +191,9 @@ impl Watermark {
     // 测试目标保留水印有效颜色观测入口，供主题样式测试按需调用。
     #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
-    pub(crate) fn effective_color_for_test(&self) -> Color {
-        self.effective_color()
+    pub(crate) fn effective_color_for_test(&self, theme_text: Color) -> Color {
+        // 测试入口复用生产颜色解析。
+        self.effective_color(theme_text)
     }
 
     // 测试目标保留水印旋转 advance 观测入口，供排版几何测试按需调用。
@@ -192,5 +228,49 @@ impl Watermark {
             x_offset: self.x_offset,
             y_offset: self.y_offset,
         }
+    }
+}
+
+// 验证 Watermark 默认样式随主题解析。
+#[cfg(test)]
+mod theme_tests {
+    // 引入被测组件。
+    use super::Watermark;
+    // 引入测试颜色值。
+    use crate::draw::Color;
+    // 引入可定制主题 token。
+    use crate::ui::theme::DesignTokens;
+
+    // 默认主题值与显式作者值必须保持正确优先级。
+    #[test]
+    fn watermark_defaults_follow_theme_tokens() {
+        // 构造可定制的完整主题 token。
+        let mut tokens = DesignTokens::antd_light();
+        // 覆写正文字号以证明默认值不是固定 14px。
+        tokens.font_size = 18.0;
+        // 构造默认水印。
+        let themed = Watermark::new("主题水印");
+        // 默认字号必须来自当前主题。
+        assert_eq!(themed.resolved_font_size(&tokens), 18.0);
+        // 构造不透明测试正文色。
+        let theme_text = Color::from_rgb(1, 2, 3);
+        // 默认颜色必须从当前主题正文色派生并应用默认 opacity。
+        assert_eq!(
+            themed.effective_color_for_test(theme_text),
+            theme_text.with_alpha(38)
+        );
+        // 显式作者值必须覆盖主题默认值。
+        let customized = Watermark::new("自定义水印")
+            // 设置显式颜色。
+            .color(Color::from_rgb(4, 5, 6))
+            // 设置显式字号。
+            .font_size(20.0);
+        // 显式字号不得被主题重写。
+        assert_eq!(customized.resolved_font_size(&tokens), 20.0);
+        // 显式颜色不得被主题重写。
+        assert_eq!(
+            customized.effective_color_for_test(theme_text),
+            Color::from_rgb(4, 5, 6).with_alpha(38)
+        );
     }
 }
