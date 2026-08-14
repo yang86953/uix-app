@@ -16,7 +16,9 @@ use std::cell::Cell;
 /// 方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RadioDirection {
+    /// 从左到右排列各个选项。
     Horizontal,
+    /// 从上到下排列各个选项。
     Vertical,
 }
 
@@ -330,6 +332,7 @@ impl Default for Radio {
 }
 
 impl Radio {
+    /// 创建空选项、水平排列且可用的单选组。
     pub fn new() -> Self {
         let config = crate::ui::component::config::use_config();
         Self {
@@ -355,11 +358,13 @@ impl Radio {
         Self::new().group_name(name).options(options).value(state)
     }
 
+    /// 设置用于标识单选组的名称。
     pub fn group_name(mut self, name: impl Into<String>) -> Self {
         self.group_name = name.into();
         self
     }
 
+    /// 替换单选组的候选文本，并同步受控选中值。
     pub fn options<I, S>(mut self, options: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -387,22 +392,29 @@ impl Radio {
         self
     }
 
+    /// 返回当前选中选项的文本。
     pub fn current_value(&self) -> Option<String> {
         self.options.get(self.selected).cloned()
     }
 
+    /// 返回当前有效的选中索引。
     pub fn current_index(&self) -> Option<usize> {
         (self.selected < self.options.len()).then_some(self.selected)
     }
 
+    /// 设置是否禁止单选组响应选择交互。
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self
     }
+
+    /// 设置单选项使用的标准控件尺寸。
     pub fn size(mut self, size: ControlSize) -> Self {
         self.item_h = crate::ui::component::config::control_height(size);
         self
     }
+
+    /// 将选项排列方向设置为垂直。
     pub fn vertical(mut self) -> Self {
         self.direction = RadioDirection::Vertical;
         self
