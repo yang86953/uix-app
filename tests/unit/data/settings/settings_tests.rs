@@ -235,9 +235,14 @@ fn empty_settings_path_is_rejected() {
 // 绝对路径必须原样返回。
 #[test]
 fn absolute_settings_path_is_returned_unchanged() {
+    // 使用平台原生临时目录构造绝对路径，避免 Unix 根路径在 Windows 上被补入盘符。
+    let configured_path = std::env::temp_dir().join("uix-settings.json");
+    // 配置接口只接受 UTF-8 字符串，测试路径必须满足同一契约。
+    let configured = configured_path.to_str().expect("测试路径必须是 UTF-8");
     // 绝对路径不经过可执行文件目录解析。
-    let resolved = resolve_configured_settings_path("/tmp/uix-settings.json").expect("必须成功");
-    assert_eq!(resolved, "/tmp/uix-settings.json");
+    let resolved = resolve_configured_settings_path(configured).expect("必须成功");
+    // 返回值必须与传入的原生绝对路径完全一致。
+    assert_eq!(resolved, configured);
 }
 
 // 相对路径必须基于可执行文件目录解析为绝对路径。
