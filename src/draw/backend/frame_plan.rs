@@ -831,5 +831,4 @@ mod tests {
 
     // 将资源移动与 submit 失败边界拆到独立测试载荷，保持计划核心文件短小。
     include!("frame_plan_test_tail.rs");
-
 }

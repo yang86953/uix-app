@@ -31,8 +31,8 @@ pub use builder::TableBuilder;
 use geometry::COLUMN_PAINT_ORDER;
 pub(crate) use types::TableCellRenderer;
 use types::{
-    finite_nonnegative, ColumnGroupRange, TablePaginationCallback, TablePointerAction,
-    TableResizeDrag, TableRowClickCallback,
+    ColumnGroupRange, TablePaginationCallback, TablePointerAction, TableResizeDrag,
+    TableRowClickCallback, finite_nonnegative,
 };
 pub use types::{
     DataTable, ExpandRenderer, Fixed, SortDirection, TableChange, TableColumn, TableColumnGroup,

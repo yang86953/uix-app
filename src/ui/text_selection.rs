@@ -295,11 +295,7 @@ impl WidgetTree {
             } else {
                 // 完全夹在中间的行：整行选中
                 let len = self.get(id).map(text_len).unwrap_or(0);
-                if len == 0 {
-                    None
-                } else {
-                    Some((0, len))
-                }
+                if len == 0 { None } else { Some((0, len)) }
             };
 
             if let Some(node) = self.get(id) {
@@ -357,11 +353,7 @@ impl WidgetTree {
                 .map(|n| self.viewport_frame_for_hit(anchor, n.frame()));
             let focus_frame = self.viewport_frame_for_hit(id, self.get(id)?.frame());
             let going_up = anchor_frame.is_some_and(|af| focus_frame.y + focus_frame.h <= af.y);
-            if going_up {
-                0
-            } else {
-                len
-            }
+            if going_up { 0 } else { len }
         };
         Some((id, ci))
     }

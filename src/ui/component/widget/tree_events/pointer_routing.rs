@@ -201,8 +201,7 @@ impl WidgetTree {
                 self.invalidate_paint(pressed);
                 // 捕获目标外松开时，先通知指针已离开，再交付最终 PointerUp。
                 // 两者未被消费均只记录日志，保持原有分发顺序与返回值。
-                if self.dispatch_to(pressed, &SystemEvent::PointerLeave)
-                    == EventResult::NotHandled
+                if self.dispatch_to(pressed, &SystemEvent::PointerLeave) == EventResult::NotHandled
                 {
                     tracing::warn!(
                         event = "PointerLeave",

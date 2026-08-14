@@ -262,10 +262,12 @@ pub(crate) fn graphics_recovery_rebuilder_with_pending(
             Err(last_error)
         }
         GraphicsRecoveryAction::UseSoftware => create_software_recovery_engine(width, height),
-        GraphicsRecoveryAction::Abort | GraphicsRecoveryAction::AbortOutOfMemory => Err(Error::new(
-            Errc::InvalidState,
-            format!("graphics recovery: forbidden action {action:?}"),
-        )),
+        GraphicsRecoveryAction::Abort | GraphicsRecoveryAction::AbortOutOfMemory => {
+            Err(Error::new(
+                Errc::InvalidState,
+                format!("graphics recovery: forbidden action {action:?}"),
+            ))
+        }
     })
 }
 

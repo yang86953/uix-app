@@ -2,7 +2,6 @@ use super::*;
 
 use super::*;
 
-
 impl INotification for MacosNotification {
     fn show(&mut self, _title: &str, _message: &str) -> Result<()> {
         Err(Error::new(
@@ -172,4 +171,3 @@ impl ISystemInfo for MacosSystemInfo {
         ])
     }
 }
-

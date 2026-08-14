@@ -10,14 +10,11 @@ use super::super::line_chart::LineData;
 use super::{
     BrushConfig, BubbleData, ChartKind, ChartPayload, ChartPlaceholder, ChartSeries, ChartType,
     ComboSeries, FunnelAlign, FunnelData, FunnelShape, GaugeRange, GaugeType, HeatmapCell,
-    InteractionConfig, LabelPosition, LegendPosition, LineStyle, PointStyle, RadarAxis,
-    RadarData, RadarShape, RoseStyle, ScatterData, TooltipConfig, TreemapNode, WaterfallData,
-    palette_color,
+    InteractionConfig, LabelPosition, LegendPosition, LineStyle, PointStyle, RadarAxis, RadarData,
+    RadarShape, RoseStyle, ScatterData, TooltipConfig, TreemapNode, WaterfallData, palette_color,
 };
 
-
 impl ChartPlaceholder {
-
     /// 创建默认图表占位组件（通用类型、默认尺寸与配色）。
     pub fn new() -> Self {
         Self {
@@ -667,7 +664,4 @@ impl ChartPlaceholder {
         self.tooltip_config = Some(value);
         self
     }
-
-
 }
-

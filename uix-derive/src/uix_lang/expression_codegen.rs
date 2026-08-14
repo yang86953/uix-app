@@ -5,9 +5,9 @@ use quote::quote;
 
 // 引入表达式语法树、运算符与结构化诊断。
 use super::{
-    data_chain_root, data_constructor_spec, normalize_number_literals, step_status_path,
     BinaryOperator, CallArgument, DataConstructorSpec, Diagnostic, Expression, ExpressionKind,
-    SourceSpan, UnaryOperator,
+    SourceSpan, UnaryOperator, data_chain_root, data_constructor_spec, normalize_number_literals,
+    step_status_path,
 };
 
 // 把已验证表达式转换为 Rust 表达式令牌。

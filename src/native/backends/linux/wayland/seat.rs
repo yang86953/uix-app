@@ -15,7 +15,7 @@ use wayland_client::{Proxy, WEnum};
 
 use super::compat::Main;
 // 引入完整 capability 快照到幂等代理边沿的纯决策。
-use super::input_proxy_lifecycle::{input_proxy_transition, InputProxyTransition};
+use super::input_proxy_lifecycle::{InputProxyTransition, input_proxy_transition};
 use super::{HeldKeyInfo, WaylandBackend};
 use crate::core::{Errc, Error, Point, WindowId};
 use crate::native::backends::linux::wayland::keycode::{keycode_to_char, linux_keycode_to_keycode};
@@ -40,7 +40,7 @@ fn enqueue_for_window(
 fn release_pointer_proxy(
     // 代理槽是 WaylandBackend 对 pointer 生命周期的唯一强 owner。
     pointer_slot: &Arc<Mutex<Option<Main<wl_pointer::WlPointer>>>>,
-// 清理过程无返回值且重复调用保持幂等。
+    // 清理过程无返回值且重复调用保持幂等。
 ) {
     // 在短锁内只取走代理，禁止持锁执行协议请求或回调表操作。
     let pointer = pointer_slot
@@ -58,18 +58,18 @@ fn release_pointer_proxy(
         if pointer.version() >= 3 {
             // 在无代理槽锁的情况下提交释放请求。
             pointer.release();
-        // 结束 pointer 协议版本保护。
+            // 结束 pointer 协议版本保护。
         }
-    // 结束 pointer 存在分支。
+        // 结束 pointer 存在分支。
     }
-// 结束 pointer 代理清理。
+    // 结束 pointer 代理清理。
 }
 
 // 从 owner 槽取出 keyboard 代理后，在锁外注销回调并按协议版本释放。
 fn release_keyboard_proxy(
     // 代理槽是 WaylandBackend 对 keyboard 生命周期的唯一强 owner。
     keyboard_slot: &Arc<Mutex<Option<Main<wl_keyboard::WlKeyboard>>>>,
-// 清理过程无返回值且重复调用保持幂等。
+    // 清理过程无返回值且重复调用保持幂等。
 ) {
     // 在短锁内只取走代理，避免锁跨越协议或回调表边界。
     let keyboard = keyboard_slot
@@ -87,11 +87,11 @@ fn release_keyboard_proxy(
         if keyboard.version() >= 3 {
             // 在无代理槽锁的情况下提交释放请求。
             keyboard.release();
-        // 结束 keyboard 协议版本保护。
+            // 结束 keyboard 协议版本保护。
         }
-    // 结束 keyboard 存在分支。
+        // 结束 keyboard 存在分支。
     }
-// 结束 keyboard 代理清理。
+    // 结束 keyboard 代理清理。
 }
 
 impl WaylandBackend {
@@ -119,7 +119,7 @@ impl WaylandBackend {
             targets.clear_pointer_focus();
             // 清除 keyboard focus，但不伪造任何窗口模糊事件。
             targets.clear_keyboard_focus();
-        // 结束 surface 路由锁作用域。
+            // 结束 surface 路由锁作用域。
         }
         // 清除仍标记按下的键，避免 owner 关闭后保留输入状态。
         self.keys_down
@@ -157,9 +157,9 @@ impl WaylandBackend {
             if data_device.version() >= 2 {
                 // 在 owner 字段已取空后提交释放请求。
                 data_device.release();
-            // 结束 data device 协议版本保护。
+                // 结束 data device 协议版本保护。
             }
-        // 结束 data device 存在分支。
+            // 结束 data device 存在分支。
         }
         // seat 最后注销，确保所有派生输入代理已先释放。
         if let Some(seat) = self.seat.take() {
@@ -169,11 +169,11 @@ impl WaylandBackend {
             if seat.version() >= 5 {
                 // 在 owner 字段已取空后提交 seat 释放请求。
                 seat.release();
-            // 结束 seat 协议版本保护。
+                // 结束 seat 协议版本保护。
             }
-        // 结束 seat 存在分支。
+            // 结束 seat 存在分支。
         }
-    // 结束 backend 输入生命周期关闭。
+        // 结束 backend 输入生命周期关闭。
     }
 
     /// 确保 seat 已绑定（指针 + 键盘 + 剪贴板数据设备）。
@@ -276,13 +276,13 @@ impl WaylandBackend {
                 let Some(wl_pointer_handle) = wl_pointer_handle.upgrade() else {
                     // owner 消失后不得重新创建输入代理。
                     return;
-                // 结束 pointer owner 缺失分支。
+                    // 结束 pointer owner 缺失分支。
                 };
                 // backend 已关闭时弱 keyboard 槽同样无法升级。
                 let Some(wl_keyboard_handle) = wl_keyboard_handle.upgrade() else {
                     // owner 消失后不得重新创建键盘代理。
                     return;
-                // 结束 keyboard owner 缺失分支。
+                    // 结束 keyboard owner 缺失分支。
                 };
                 // Capabilities 是完整快照，先读取当前 pointer 代理是否已经绑定。
                 let pointer_is_bound = wl_pointer_handle
@@ -298,7 +298,7 @@ impl WaylandBackend {
                     capabilities.contains(Capability::Pointer),
                     // 结合 owner 当前是否持有代理。
                     pointer_is_bound,
-                // 结束 pointer 边沿输入。
+                    // 结束 pointer 边沿输入。
                 );
                 // 读取当前 keyboard 代理槽以计算同一快照的键盘边沿。
                 let keyboard_is_bound = wl_keyboard_handle
@@ -314,7 +314,7 @@ impl WaylandBackend {
                     capabilities.contains(Capability::Keyboard),
                     // 结合 owner 当前是否持有代理。
                     keyboard_is_bound,
-                // 结束 keyboard 边沿输入。
+                    // 结束 keyboard 边沿输入。
                 );
                 // 仅在 Pointer 能力从无到有时创建一个代理与回调。
                 if pointer_transition == InputProxyTransition::Bind {
@@ -394,7 +394,7 @@ impl WaylandBackend {
                                 targets.pointer_leave(surface_id);
                                 // 返回 leave 前的精确窗口身份。
                                 window_id
-                            // 结束 surface 路由锁作用域。
+                                // 结束 surface 路由锁作用域。
                             };
                             // 只有已知焦点 surface 才能撤销对应待消费授权。
                             if let Some(window_id) = window_id {
@@ -412,9 +412,9 @@ impl WaylandBackend {
                                         surface_id,
                                         // 使用离开前解析出的稳定窗口身份。
                                         window_id,
-                                    // 结束精确撤销参数。
+                                        // 结束精确撤销参数。
                                     );
-                            // 结束已知焦点撤销分支。
+                                // 结束已知焦点撤销分支。
                             }
                         }
                         wl_pointer::Event::Button {
@@ -435,7 +435,7 @@ impl WaylandBackend {
                             else {
                                 // 丢弃无法定向的按键事件。
                                 return;
-                            // 结束未知焦点分支。
+                                // 结束未知焦点分支。
                             };
                             // 将 Linux 输入按钮编号映射为平台中立按钮。
                             let btn = match button {
@@ -447,7 +447,7 @@ impl WaylandBackend {
                                 0x112 => MouseButton::Middle,
                                 // 未知按钮不具备拖动授权语义。
                                 _ => MouseButton::None,
-                            // 结束原生按钮映射。
+                                // 结束原生按钮映射。
                             };
                             // 捕获按键事件发生时的最近 surface 坐标。
                             let click_pos = pos
@@ -489,7 +489,7 @@ impl WaylandBackend {
                                                 window_id,
                                                 // raw serial 只进入 Wayland 私有注册表。
                                                 serial,
-                                            // 结束授权签发参数。
+                                                // 结束授权签发参数。
                                             );
                                         // 将不可解释身份附着到同一个 native 事件。
                                         match activation {
@@ -499,13 +499,13 @@ impl WaylandBackend {
                                                 .with_pointer_activation(activation),
                                             // 路由或代次不匹配时仍交付普通按下事件。
                                             None => pointer_event,
-                                        // 结束激活身份附着分支。
+                                            // 结束激活身份附着分支。
                                         }
                                     // 非主键永远没有窗口拖动授权。
                                     } else {
                                         // 原样保留普通指针事件。
                                         pointer_event
-                                    // 结束非主键分支。
+                                        // 结束非主键分支。
                                     };
                                     // 把事件定向到授权绑定的同一窗口。
                                     enqueue_for_window(
@@ -515,9 +515,9 @@ impl WaylandBackend {
                                         Some(window_id),
                                         // 交付普通事件及可选不透明身份。
                                         pointer_event,
-                                    // 结束定向入队参数。
+                                        // 结束定向入队参数。
                                     );
-                                // 结束 press 分支。
+                                    // 结束 press 分支。
                                 }
                                 // release 必须撤销尚未消费的主键协议授权。
                                 WEnum::Value(wl_pointer::ButtonState::Released) => {
@@ -531,7 +531,7 @@ impl WaylandBackend {
                                             .unwrap_or_else(|error| error.into_inner())
                                             // 旧代理 release 不得影响新代次授权。
                                             .revoke_primary_press(pointer_generation);
-                                    // 结束主键 release 撤销。
+                                        // 结束主键 release 撤销。
                                     }
                                     // release 仍按既有 UI 输入语义定向交付。
                                     enqueue_for_window(
@@ -541,16 +541,15 @@ impl WaylandBackend {
                                         Some(window_id),
                                         // 抬起事件不携带可复用激活身份。
                                         UiEvent::pointer_up(click_pos, btn),
-                                    // 结束 release 入队参数。
+                                        // 结束 release 入队参数。
                                     );
-                                // 结束 release 分支。
+                                    // 结束 release 分支。
                                 }
                                 // 未知协议状态不能被当作 release 或 press。
                                 _ => {
                                     // 丢弃无法安全解释的按钮状态（该分支位于状态分派尾部，直接结束即可）。
-                                // 结束未知状态分支。
-                                }
-                            // 结束按钮状态分派。
+                                    // 结束未知状态分支。
+                                } // 结束按钮状态分派。
                             }
                         }
                         wl_pointer::Event::Axis { axis, value, .. } => {
@@ -604,7 +603,7 @@ impl WaylandBackend {
                         .clear_pointer_focus();
                     // 统一 helper 在锁外注销回调并释放唯一 pointer 代理。
                     release_pointer_proxy(&wl_pointer_handle);
-                // 结束 pointer capability 边沿处理。
+                    // 结束 pointer capability 边沿处理。
                 }
                 // 仅在 Keyboard 能力从无到有时创建一个代理与回调。
                 if keyboard_transition == InputProxyTransition::Bind {

@@ -1,10 +1,10 @@
 //! TextRenderService — 文本渲染服务。
 
 use crate::core::{Point, Rect, Size};
-use crate::draw::geometry::spatial::{PhysicalUnit, SpatialContext, Vec3, AABB3D};
+use crate::draw::Canvas2D;
+use crate::draw::geometry::spatial::{AABB3D, PhysicalUnit, SpatialContext, Vec3};
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::font::text_backend::TextLayoutOptions;
-use crate::draw::Canvas2D;
 use crate::draw::{Color, FontHandle, HAlign, VAlign};
 
 /// 文本渲染服务 — 字体管理、文本布局、glyph 光栅化。

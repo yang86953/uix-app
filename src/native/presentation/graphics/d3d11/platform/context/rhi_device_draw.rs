@@ -6,7 +6,7 @@ use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{BufferUsage, DrawPacket, TextureFormat};
 
 // 引入父模块的 D3D11 context、资源状态和错误辅助。
-use super::{rhi_invalid, rhi_not_implemented, D3d11Context};
+use super::{D3d11Context, rhi_invalid, rhi_not_implemented};
 
 // 为 D3D11 context 编码通用 draw packet。
 impl D3d11Context {

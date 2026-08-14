@@ -7,7 +7,6 @@ use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
 
-
 use super::Table;
 
 pub(crate) const COLUMN_RESIZE_HANDLE_HALF_WIDTH: f32 = 4.0;

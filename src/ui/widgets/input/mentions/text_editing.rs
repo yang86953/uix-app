@@ -1,6 +1,6 @@
 // 拆分自 mentions.rs：文本编辑、光标定位与候选替换。
 // 引入被扩展的提及组件与光标换算高度规格。
-use super::{Mentions, CONTROL_HEIGHT};
+use super::{CONTROL_HEIGHT, Mentions};
 
 // 为 Mentions 提供文本编辑与候选替换方法。
 impl Mentions {
@@ -107,4 +107,3 @@ pub(super) fn byte_index_for_char(value: &str, char_index: usize) -> usize {
         .map(|(index, _)| index)
         .unwrap_or(value.len())
 }
-

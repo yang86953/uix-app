@@ -10,18 +10,18 @@
 // ============================================================================
 
 use std::os::fd::{AsFd, AsRawFd, RawFd};
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::{Duration, Instant};
 
-use libc::{poll, pollfd, POLLERR, POLLHUP, POLLIN, POLLNVAL, POLLOUT};
+use libc::{POLLERR, POLLHUP, POLLIN, POLLNVAL, POLLOUT, poll, pollfd};
 use wayland_client::backend::WaylandError;
 
 use crate::core::{Errc, Error};
 use crate::native::windowing::event::{EventLoopWaker, UiEvent};
 use crate::native::windowing::input::KeyMod;
 
-use super::keycode::keycode_to_char;
 use super::WaylandBackend;
+use super::keycode::keycode_to_char;
 use crate::native::windowing::shared::nonblocking_read::NonBlockingReadStatus;
 use crate::native::windowing::shared::nonblocking_write::NonBlockingWriteStatus;
 

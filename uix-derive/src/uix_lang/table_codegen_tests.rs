@@ -61,19 +61,15 @@ fn rejects_invalid_table_data_and_columns() {
 #[test]
 fn rejects_table_children_and_unregistered_selection() {
     // Table 自身绘制所有单元格，不能接受 UIX 子树。
-    let child = generate(
-        r#"<Table data={rows} columns={columns}><Text>非法</Text></Table>"#,
-    )
-    // 可见子节点必须失败。
-    .expect_err("Table 子节点必须被拒绝");
+    let child = generate(r#"<Table data={rows} columns={columns}><Text>非法</Text></Table>"#)
+        // 可见子节点必须失败。
+        .expect_err("Table 子节点必须被拒绝");
     // 诊断必须点明叶组件边界。
     assert!(child.message.contains("不接受子节点"));
     // rowSelection 尚无受控状态与事件闭环。
-    let selection = generate(
-        r#"<Table data={rows} columns={columns} rowSelection={selection} />"#,
-    )
-    // 未登记对象契约必须失败。
-    .expect_err("rowSelection 不得被 bool 近似");
+    let selection = generate(r#"<Table data={rows} columns={columns} rowSelection={selection} />"#)
+        // 未登记对象契约必须失败。
+        .expect_err("rowSelection 不得被 bool 近似");
     // 诊断必须保留具体属性名。
     assert!(selection.message.contains("rowSelection"));
 }

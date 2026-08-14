@@ -5,8 +5,8 @@ use std::cell::{Cell, RefCell};
 mod geometry;
 mod item;
 
-pub use self::item::{MessageHandle, MessageItem};
 use self::geometry::*;
+pub use self::item::{MessageHandle, MessageItem};
 
 use std::rc::Rc;
 

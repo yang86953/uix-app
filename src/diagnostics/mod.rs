@@ -46,8 +46,8 @@ mod report;
 mod reporting;
 
 use std::panic::Location;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::core::Error;
 

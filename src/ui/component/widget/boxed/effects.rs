@@ -15,7 +15,7 @@ impl super::BoxedWidget {
     pub(crate) fn effects(
         // 借用当前节点。
         &self,
-    // 返回仅与当前节点生命周期绑定的 Effect 集合。
+        // 返回仅与当前节点生命周期绑定的 Effect 集合。
     ) -> &[crate::ui::reactive::state::Effect] {
         // 借用节点自身拥有的 Effect。
         &self.effects

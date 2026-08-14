@@ -4,13 +4,13 @@
 //! 测试名称、断言与观测仍属于集成测试代码。
 
 use crate::core::{Errc, Error};
-use crate::draw::backend::cpu::noop_canvas_2d::NoopCanvas2D;
+use crate::draw::Canvas2D;
 use crate::draw::backend::DamageRegion;
+use crate::draw::backend::cpu::noop_canvas_2d::NoopCanvas2D;
 use crate::draw::renderer::{
     GraphicsRecoveryAction, RecoveryDriver, RenderOutcome, RenderTarget, RenderTargetRebuilder,
     UpdateStrategy,
 };
-use crate::draw::Canvas2D;
 use crate::native::backends::windows::display::WindowsDisplay;
 use crate::native::backends::windows::dpi::dpi_for_window;
 use crate::native::backends::windows::platform::WindowsPlatform;
@@ -27,10 +27,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
 };
 use windows::Win32::System::Threading::{
-    GetCurrentProcess, GetGuiResources, GR_GDIOBJECTS, GR_USEROBJECTS,
+    GR_GDIOBJECTS, GR_USEROBJECTS, GetCurrentProcess, GetGuiResources,
 };
 
 /// 仅向 Windows Vulkan 集成测试夹具暴露的类型化失败边界。

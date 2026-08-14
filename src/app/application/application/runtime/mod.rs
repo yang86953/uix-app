@@ -534,8 +534,8 @@ mod tests {
     use crate::native::windowing::event::EventBus;
     use crate::native::windowing::*;
     use std::collections::VecDeque;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn new_diagnostics() -> Diagnostics {
         Diagnostics::new(DiagnosticsConfig::default())
@@ -674,10 +674,7 @@ mod tests {
         // 用 auto 环境值对照 builder 的显式 D3D11 请求。
         let resolved = resolve_graphics_backend(Some(GraphicsApi::D3d11), Some("auto"), None);
         // builder 必须保持显式 API，不能被后续自动策略覆盖。
-        assert_eq!(
-            resolved,
-            GraphicsSelection::Explicit(GraphicsApi::D3d11)
-        );
+        assert_eq!(resolved, GraphicsSelection::Explicit(GraphicsApi::D3d11));
         // 完全省略配置时才启用自动策略。
         let automatic = resolve_graphics_backend(None, None, None);
         // 默认结果必须是 crate-private Automatic 策略。
@@ -696,8 +693,8 @@ mod tests {
             }
         });
 
-        let outcome =
-            diagnostics.attempt_recovery(Error::new(Errc::GraphicsDeviceLost, "graphics device lost"));
+        let outcome = diagnostics
+            .attempt_recovery(Error::new(Errc::GraphicsDeviceLost, "graphics device lost"));
         assert!(outcome.is_recovered());
         assert!(request.is_requested());
 

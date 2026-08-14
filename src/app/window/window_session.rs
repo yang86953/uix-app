@@ -1,12 +1,9 @@
-
 use crate::app::queues::active_work_registry::ActiveWorkRegistry;
 use crate::app::queues::agent_command_queue::AgentCommandQueue;
 use crate::app::queues::app_timer::AppTimerQueue;
 use crate::app::queues::main_thread_queue::MainThreadQueue;
 use crate::app::queues::window_agent_state::{AgentCommandExecutor, WindowAgentState};
-use crate::app::window_semantics::{
-    AgentSemanticsPort, WindowSemanticState,
-};
+use crate::app::window_semantics::{AgentSemanticsPort, WindowSemanticState};
 use crate::core::{Error, Rect, WindowId};
 use crate::draw::scene::NodeId;
 use crate::draw::target::RenderTarget;
@@ -126,7 +123,6 @@ pub(crate) struct WindowSessionParts<'a> {
 }
 
 impl WindowSession {
-
     pub(crate) fn from_root_factory_for_window<F>(
         window_id: WindowId,
         build_root: F,
@@ -255,7 +251,10 @@ impl WindowSession {
         &mut self,
         registration: impl AgentSemanticsPort + 'static,
     ) -> bool {
-        if !self.semantic_state.bind_agent_window(Box::new(registration)) {
+        if !self
+            .semantic_state
+            .bind_agent_window(Box::new(registration))
+        {
             return false;
         }
         let _ = self.semantic_state.enable(&self.tree);
@@ -265,7 +264,6 @@ impl WindowSession {
     pub(crate) fn set_app_state(&mut self, app_state: AppState) {
         self.tree.set_app_state(app_state);
     }
-
 }
 
 impl Drop for WindowSession {

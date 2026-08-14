@@ -403,11 +403,7 @@ fn rgb_to_hsv(color: Color) -> Hsv {
 
 fn derived_color(hsv: Hsv, step: usize, light: bool) -> Color {
     let hue_direction = if hsv.hue.round() >= 60.0 && hsv.hue.round() <= 240.0 {
-        if light {
-            -1.0
-        } else {
-            1.0
-        }
+        if light { -1.0 } else { 1.0 }
     } else if light {
         1.0
     } else {

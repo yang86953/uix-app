@@ -4,14 +4,14 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
-use ash::{vk, Entry};
+use ash::{Entry, vk};
 
 use crate::core::{Error, Result};
 
 use super::adapter::{QueueSelection, VulkanAdapterInfo};
 use super::context::{loader_err, vk_err};
 use super::fault::{
-    configure_instance, DeviceFaultFeatureQuery, DeviceFaultReporter, DeviceLossState,
+    DeviceFaultFeatureQuery, DeviceFaultReporter, DeviceLossState, configure_instance,
 };
 use super::surface::surface_instance_extensions;
 

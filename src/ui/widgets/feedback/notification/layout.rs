@@ -2,11 +2,11 @@
 
 use crate::core::{Point, Rect, Size};
 use crate::draw::Color;
-use crate::ui::component::paint_context::PaintContext;
 use crate::ui::SnapshotFields;
+use crate::ui::component::paint_context::PaintContext;
 
-use crate::ui::widgets::feedback::toast_motion::{ToastKey, ToastMotionEntry};
 use super::{Notification, NotificationItem};
+use crate::ui::widgets::feedback::toast_motion::{ToastKey, ToastMotionEntry};
 
 impl Notification {
     pub(super) fn intrinsic_size(&self) -> Size {
@@ -274,7 +274,11 @@ impl Notification {
         target
     }
 
-    pub(super) fn item_geometry(&self, rect: Rect, item: &NotificationItem) -> NotificationGeometry {
+    pub(super) fn item_geometry(
+        &self,
+        rect: Rect,
+        item: &NotificationItem,
+    ) -> NotificationGeometry {
         let close = self.close_rect(rect, item.closable);
         let action = self.action_rect(rect, item.closable);
         let trailing_start = action.map_or(close.x, |action| action.x);
@@ -475,11 +479,7 @@ pub(super) fn fade_color(color: Color, opacity: f32) -> Color {
 }
 
 pub(super) fn finite_or_zero(value: f32) -> f32 {
-    if value.is_finite() {
-        value
-    } else {
-        0.0
-    }
+    if value.is_finite() { value } else { 0.0 }
 }
 
 // 仅在单元测试构建中编译通知几何契约。

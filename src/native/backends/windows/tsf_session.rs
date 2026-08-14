@@ -7,14 +7,14 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use windows::core::{Interface, Type};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
+    CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
 };
 use windows::Win32::UI::TextServices::{
     CLSID_TF_ThreadMgr, ITfContext, ITfDocumentMgr, ITfThreadMgr, TF_POPF_ALL,
 };
+use windows::core::{Interface, Type};
 
 use crate::core::{Errc, Error, Result, WindowId};
 use crate::diagnostics::PendingFailureSource;
@@ -24,7 +24,7 @@ use crate::native::backends::windows::tsf_text_store::{
 use crate::native::backends::windows::util::windows_diag;
 use crate::native::windowing::event::UiEvent;
 use crate::native::windowing::shared::ime_events::{
-    on_committed_text, on_marked_text, on_unmark_text, ImeCompositionState,
+    ImeCompositionState, on_committed_text, on_marked_text, on_unmark_text,
 };
 
 /// 激活参数：共享事件队列由 `WindowsPlatform` 持有并在 `next_event` 排空。

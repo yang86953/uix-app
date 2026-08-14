@@ -249,14 +249,7 @@ impl NativeGpuCanvas2D {
             meshes.push(mesh);
         }
         // 由通用 renderer 生成 FramePlan 并完成唯一最终 present。
-        renderer.execute_solid_meshes(
-            context,
-            damage,
-            viewport,
-            load,
-            target,
-            &meshes,
-        )?;
+        renderer.execute_solid_meshes(context, damage, viewport, load, target, &meshes)?;
         // 告知调用方本次队列已经通过 RHI present 成功。
         Ok(true)
     }
@@ -353,14 +346,7 @@ impl NativeGpuCanvas2D {
             rects.push(rect);
         }
         // 由通用 renderer 生成 FramePlan 并完成唯一最终 present。
-        renderer.execute_shape_rects(
-            context,
-            damage,
-            viewport,
-            load,
-            target,
-            &rects,
-        )?;
+        renderer.execute_shape_rects(context, damage, viewport, load, target, &rects)?;
         // 告知调用方本次队列已经通过 RHI present 成功。
         Ok(true)
     }
@@ -445,14 +431,7 @@ impl NativeGpuCanvas2D {
             });
         }
         // 由通用 renderer 生成 FramePlan 并完成唯一最终 present。
-        renderer.execute_shadows(
-            context,
-            damage,
-            viewport,
-            load,
-            target,
-            &shadows,
-        )?;
+        renderer.execute_shadows(context, damage, viewport, load, target, &shadows)?;
         // 告知调用方本次队列已经通过 RHI present 成功。
         Ok(true)
     }
@@ -537,14 +516,7 @@ impl NativeGpuCanvas2D {
             });
         }
         // 由通用 renderer 生成 FramePlan 并完成唯一最终 present。
-        renderer.execute_coverage_quads(
-            context,
-            damage,
-            viewport,
-            load,
-            target,
-            &quads,
-        )?;
+        renderer.execute_coverage_quads(context, damage, viewport, load, target, &quads)?;
         // 告知调用方本次队列已经通过 RHI present 成功。
         Ok(true)
     }
@@ -621,14 +593,7 @@ impl NativeGpuCanvas2D {
             });
         }
         // 由通用 renderer 生成 FramePlan 并完成唯一最终 present。
-        renderer.execute_textured_quads(
-            context,
-            damage,
-            viewport,
-            load,
-            target,
-            &quads,
-        )?;
+        renderer.execute_textured_quads(context, damage, viewport, load, target, &quads)?;
         // 告知调用方本次队列已经通过 RHI present 成功。
         Ok(true)
     }

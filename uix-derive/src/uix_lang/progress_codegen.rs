@@ -7,8 +7,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 ProgressBar 属性、表达式、布尔值、关键字与诊断契约。
 use super::{
-    boolean_value, generate_expression, literal_string, Attribute, AttributeValue, Diagnostic,
-    Element,
+    Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_expression,
+    literal_string,
 };
 
 // 生成保持运行时归一化、模式与动画唯一所有权的 ProgressBar。

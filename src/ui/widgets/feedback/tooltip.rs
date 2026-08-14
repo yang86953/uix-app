@@ -1,13 +1,13 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
-use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::component::paint_context::PaintContext;
 // 反馈组件复用基础层提示气泡原语。
+use crate::ui::SnapshotFields;
 use crate::ui::widgets::tooltip_primitives::{
     paint_tooltip_bubble, tooltip_bubble_rect, tooltip_dirty_rect, tooltip_fallback_surface,
 };
-use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, KeyCode, MouseButton, SystemEvent, WidgetTree};
 
 // 复用基础层交互模型，并保持 feedback::tooltip 的既有公开路径。

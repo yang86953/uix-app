@@ -4,9 +4,9 @@
 //! CPU 参考执行与紧边界 source 构造共用的像素填充、blit 与 blend 原语。
 
 use crate::core::Rect;
+use crate::draw::Color;
 use crate::draw::geometry::types::BlendMode;
 use crate::draw::raster::software_rasterizer::SoftwareRasterizer;
-use crate::draw::Color;
 
 use super::commands::FrameRasterOp;
 use super::error::FrameEncoderError;

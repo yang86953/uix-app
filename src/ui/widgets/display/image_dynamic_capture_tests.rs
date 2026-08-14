@@ -413,11 +413,12 @@ fn image_error_dynamic_capture_clear_and_rebuild_resets_private_state() {
     // 空载刷新必须报告实际移除了已物化错误子树。
     assert!(tree.refresh_image_error_component(root));
     // 已解除的错误子树必须从实际运行时 children 中移除。
-    assert!(tree
-        .get(root)
-        .expect("Image 根必须存在")
-        .children()
-        .is_empty());
+    assert!(
+        tree.get(root)
+            .expect("Image 根必须存在")
+            .children()
+            .is_empty()
+    );
     // 真实移除必须同步清空错误子树的动画源注册。
     assert!(tree.animated_source_registrations().is_empty());
     // 清除先前状态写入造成的协调请求，隔离移除后 Effect 租约断言。
@@ -503,11 +504,12 @@ fn image_error_factory_pre_publish_panic_rolls_back_and_recovers_same_owner() {
     // 同一 Image owner 必须继续作为公开根存在。
     assert_eq!(tree.root_id(), Some(root));
     // 发布前异常不得留下任何错误子节点。
-    assert!(tree
-        .get(root)
-        .expect("Image 根必须存在")
-        .children()
-        .is_empty());
+    assert!(
+        tree.get(root)
+            .expect("Image 根必须存在")
+            .children()
+            .is_empty()
+    );
     // 异常捕获的动画源不得进入树级注册表。
     assert!(tree.animated_source_registrations().is_empty());
     // 失败工厂必须只执行一次。

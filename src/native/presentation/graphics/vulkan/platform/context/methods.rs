@@ -540,7 +540,11 @@ impl VulkanContext {
     /// A swapchain status requires recreation, but the frame that observed it
     /// was not presented. Return a typed failure after a successful rebuild so
     /// the engine preserves dirty state and retries on the next frame.
-    pub(super) fn recreate_after_surface_change(&mut self, operation: &str, status: vk::Result) -> Result<()> {
+    pub(super) fn recreate_after_surface_change(
+        &mut self,
+        operation: &str,
+        status: vk::Result,
+    ) -> Result<()> {
         let surface_failure = vk_err(operation, status);
         match self.recreate_swapchain(self.extent) {
             Ok(()) => Err(surface_failure),
@@ -609,4 +613,3 @@ impl VulkanContext {
         Ok(())
     }
 }
-

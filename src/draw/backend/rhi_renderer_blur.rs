@@ -1,6 +1,5 @@
 //! 通用 GPU Renderer 的可分离 blur lowering。
 
-
 // 引入共享字节载荷，保证两个 blur pass 复用同一份不可变计划数据。
 use std::sync::Arc;
 

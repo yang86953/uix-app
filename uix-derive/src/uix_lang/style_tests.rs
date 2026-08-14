@@ -1,5 +1,5 @@
 // 引入文档解析入口及声明、样式 AST。
-use super::{parser::parse_document, AttributeValue, Declaration, Node, StyleHashKind};
+use super::{AttributeValue, Declaration, Node, StyleHashKind, parser::parse_document};
 
 // 验证顶层声明保持源码顺序并解析全部本 Gate 结构。
 #[test]

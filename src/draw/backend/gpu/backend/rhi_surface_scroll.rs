@@ -12,8 +12,8 @@ use crate::native::present::rhi::{
 };
 
 // 引入当前 GPU backend 和待处理的逻辑搬移记录。
-use super::surface::PendingScrollCopy;
 use super::GpuBackend;
+use super::surface::PendingScrollCopy;
 
 // 把一个非负逻辑数按当前 DPR 转成精确的物理整数。
 fn scale_integral(value: i64, scale: f32) -> Option<u32> {

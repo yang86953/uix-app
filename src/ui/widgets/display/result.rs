@@ -351,8 +351,9 @@ impl ResultView {
         let subtitle = Rect::new(inner.x, y, inner.w, subtitle_height);
         y += subtitle_height + action_gap;
         let action = if has_action {
-            let action_width =
-                (Self::estimated_text_width(&self.extra_text, action_font_size) + 32.0).clamp(0.0, inner.w);
+            let action_width = (Self::estimated_text_width(&self.extra_text, action_font_size)
+                + 32.0)
+                .clamp(0.0, inner.w);
             Rect::new(
                 inner.x + (inner.w - action_width) * 0.5,
                 y,
@@ -457,10 +458,17 @@ impl ResultView {
             (frame.w - horizontal_padding * 2.0).max(0.0),
             frame.h,
         );
-        if let Some(value) = Self::elide_single_line(ctx, value, ctx.tokens().font_size(), content.w) {
+        if let Some(value) =
+            Self::elide_single_line(ctx, value, ctx.tokens().font_size(), content.w)
+        {
             ctx.push_clip(content);
             // 结果描述文本：白色 token。
-            ctx.text_center(&value, content, ctx.tokens().color_white(), ctx.tokens().font_size());
+            ctx.text_center(
+                &value,
+                content,
+                ctx.tokens().color_white(),
+                ctx.tokens().font_size(),
+            );
             ctx.pop_clip();
         }
     }
@@ -513,7 +521,8 @@ impl ResultView {
             return rendered;
         }
         let size = self.intrinsic_size();
-        self.layout(Rect::new(0.0, 0.0, size.w, size.h), RESULT_ACTION_FONT_SIZE).action
+        self.layout(Rect::new(0.0, 0.0, size.w, size.h), RESULT_ACTION_FONT_SIZE)
+            .action
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

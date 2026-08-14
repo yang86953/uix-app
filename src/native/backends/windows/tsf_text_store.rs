@@ -5,21 +5,21 @@
 #![cfg(windows)]
 
 use std::cell::{Ref as CellRef, RefCell, RefMut as CellRefMut};
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 #[cfg(test)]
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use windows::core::{
-    implement, ComObject, Error as WinError, Interface, Ref, Result as WinResult, BOOL, GUID,
-    HRESULT, PCWSTR, PWSTR,
-};
 use windows::Win32::Foundation::{E_FAIL, E_INVALIDARG, E_UNEXPECTED, HWND, POINT, RECT};
 use windows::Win32::UI::TextServices::{
-    ITextStoreACP, ITextStoreACPSink, ITextStoreACP_Impl, ITfCompositionView,
+    ITextStoreACP, ITextStoreACP_Impl, ITextStoreACPSink, ITfCompositionView,
     ITfContextOwnerCompositionSink, ITfContextOwnerCompositionSink_Impl, TS_E_NOLOCK,
-    TS_E_SYNCHRONOUS, TS_IAS_NOQUERY, TS_IAS_QUERYONLY, TS_RT_PLAIN, TS_RUNINFO, TS_SELECTION_ACP,
-    TS_SS_NOHIDDENTEXT, TS_SS_TRANSITORY, TS_STATUS, TS_S_ASYNC, TS_TEXTCHANGE,
+    TS_E_SYNCHRONOUS, TS_IAS_NOQUERY, TS_IAS_QUERYONLY, TS_RT_PLAIN, TS_RUNINFO, TS_S_ASYNC,
+    TS_SELECTION_ACP, TS_SS_NOHIDDENTEXT, TS_SS_TRANSITORY, TS_STATUS, TS_TEXTCHANGE,
+};
+use windows::core::{
+    BOOL, ComObject, Error as WinError, GUID, HRESULT, Interface, PCWSTR, PWSTR, Ref,
+    Result as WinResult, implement,
 };
 
 pub(crate) use super::tsf_document::{TsfEventSink, TsfLockKind, TsfLockRequest, TsfStoreState};
@@ -82,7 +82,7 @@ impl TsfTextStore {
 
 #[cfg(test)]
 mod tests {
-    use super::{TsfEventSink, TsfTextStore, TEST_PANIC_NEXT_CALLBACK};
+    use super::{TEST_PANIC_NEXT_CALLBACK, TsfEventSink, TsfTextStore};
     use crate::core::{Errc, WindowId};
     use crate::diagnostics::PendingFailureQueue;
     use std::collections::VecDeque;
@@ -175,9 +175,11 @@ mod tests {
         // 入队失败必须保持平台错误类别。
         assert_eq!(failure.code(), Errc::PlatformError);
         // 消息必须标识第二个接口的具体生成方法。
-        assert!(failure
-            .message()
-            .contains("ITfContextOwnerCompositionSink::OnStartComposition"));
+        assert!(
+            failure
+                .message()
+                .contains("ITfContextOwnerCompositionSink::OnStartComposition")
+        );
         // 单次 panic 只能生成一个 owner failure。
         assert!(source.take().is_none());
     }

@@ -1,9 +1,9 @@
 //! Fake 显示 — 完全可配置的显示信息。所有字段通过 Cell 支持 &self 访问。
 
 use crate::core::geometry::Rect;
+use crate::native::Result;
 use crate::native::capabilities::display::DisplayInfo;
 use crate::native::capabilities::display::IDisplay;
-use crate::native::Result;
 use std::cell::Cell;
 
 #[derive(Debug)]

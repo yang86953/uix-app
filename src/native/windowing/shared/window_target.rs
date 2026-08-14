@@ -90,9 +90,9 @@ impl SurfaceWindowTargets {
         self.pointer_focus.map(|focus| {
             // 仅投影平台路由需要的两个稳定值。
             (focus.surface_id, focus.window_id)
-        // 结束 focus 身份投影。
+            // 结束 focus 身份投影。
         })
-    // 结束 pointer focus 身份读取。
+        // 结束 pointer focus 身份读取。
     }
 
     pub(crate) fn clear_pointer_focus(&mut self) {

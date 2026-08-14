@@ -1,6 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{HashSet, VecDeque};
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_void};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, Once};
@@ -15,14 +15,12 @@ use crate::native::capabilities::system::{
     MemoryInfo, OsInfo, SpecialDir, TerminalCapabilities,
 };
 use crate::native::platform::Platform;
-use crate::native::present::{validate_pixel_buffer, IPresenter, PresentDamage};
+use crate::native::present::{IPresenter, PresentDamage, validate_pixel_buffer};
 use crate::native::windowing::event::{EventBus, EventLoopWaker, FrameRequestToken, UiEvent};
 use crate::native::windowing::input::{
     CursorType, IClipboard, ICursor, IKeyboard, ITextInput, KeyCode, KeyMod, MouseButton,
 };
-use crate::native::windowing::shared::{
-    OsEventSource, PlatformWindowCore, WindowOps, WindowState,
-};
+use crate::native::windowing::shared::{OsEventSource, PlatformWindowCore, WindowOps, WindowState};
 use crate::native::windowing::window::{
     IWindowManager, NativeFrameRequest, PlatformWindow, WindowOcclusionState,
 };

@@ -8,7 +8,7 @@
 #![cfg(windows)]
 #![allow(non_snake_case)]
 
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Instant;
 
 use crate::core::Point;
@@ -21,10 +21,10 @@ use super::display::WindowsDisplay;
 use super::ffi::*;
 use super::frame_pacer::{clear_pending_frame, complete_posted_frame};
 use super::ime_dispatch::{
-    ime_composition_events, ime_end_composition_event, ime_start_composition_event, ImmStringRead,
+    ImmStringRead, ime_composition_events, ime_end_composition_event, ime_start_composition_event,
 };
 use super::platform::{WindowBinding, WindowsPlatform};
-use super::text_input::{composition_string, result_string, WindowsImeState};
+use super::text_input::{WindowsImeState, composition_string, result_string};
 
 fn apply_window_track_constraints(
     hwnd: *mut std::ffi::c_void,
@@ -117,17 +117,19 @@ where
 ///
 /// # Safety
 /// 调用者必须保证 hwnd 存活且其 GWLP_USERDATA 保存的是本模块写入的 WindowBinding 指针（本窗口过程在 WM_NCCREATE 写入）。
-unsafe fn enqueue_wnd_proc_panic(hwnd: *mut std::ffi::c_void, msg: u32) { unsafe {
-    let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
-    if ptr == 0 {
-        return;
+unsafe fn enqueue_wnd_proc_panic(hwnd: *mut std::ffi::c_void, msg: u32) {
+    unsafe {
+        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+        if ptr == 0 {
+            return;
+        }
+        let binding = &*(ptr as *const WindowBinding);
+        (&*binding.platform).enqueue_callback_failure(Error::new(
+            Errc::PlatformError,
+            format!("Windows wnd_proc ABI callback panicked while handling message 0x{msg:04x}"),
+        ));
     }
-    let binding = &*(ptr as *const WindowBinding);
-    (&*binding.platform).enqueue_callback_failure(Error::new(
-        Errc::PlatformError,
-        format!("Windows wnd_proc ABI callback panicked while handling message 0x{msg:04x}"),
-    ));
-}}
+}
 
 /// 窗口过程正文：消息分发与状态更新。
 ///
@@ -138,49 +140,51 @@ unsafe fn wnd_proc_inner(
     msg: u32,
     wparam: usize,
     lparam: isize,
-) -> isize { unsafe {
-    if msg == WM_NCCREATE {
-        let cs = lparam as *const CREATESTRUCTW;
-        let this_ptr = (*cs).lpCreateParams;
-        SetWindowLongPtrW(hwnd, GWLP_USERDATA, this_ptr as isize);
-        return DefWindowProcW(hwnd, msg, wparam, lparam);
-    }
-    let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
-    if ptr == 0 {
-        return DefWindowProcW(hwnd, msg, wparam, lparam);
-    }
-    let binding = &*(ptr as *const WindowBinding);
-    let platform = &mut *binding.platform;
-    if msg == WM_UIX_FRAME_OPPORTUNITY {
-        if let Some(request) = complete_posted_frame(&binding.frame_pacer, wparam, lparam) {
-            let window_id = binding.state.borrow().window_id;
-            platform.push_event(
-                window_id,
-                UiEvent::frame_opportunity(request.token, Instant::now(), None),
-            );
+) -> isize {
+    unsafe {
+        if msg == WM_NCCREATE {
+            let cs = lparam as *const CREATESTRUCTW;
+            let this_ptr = (*cs).lpCreateParams;
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, this_ptr as isize);
+            return DefWindowProcW(hwnd, msg, wparam, lparam);
         }
-        return 0;
-    }
-    // 还原事务结束后再重算非客户区，避免同步 FRAMECHANGED 重入旧最大化尺寸。
-    if msg == WM_UIX_REFRESH_EXTENDED_FRAME {
-        // 读取刷新时刻的样式，而不是还原 WM_SIZE 回调中的过渡样式。
-        match super::custom_chrome::window_style(hwnd).and_then(|style| {
-            // 当前消息已脱离还原回调，可以安全触发权威客户区的后续 WM_SIZE。
-            super::custom_chrome::refresh_extended_client_frame(hwnd, style)
-        }) {
-            // 刷新成功后由同步产生的 WM_SIZE 继续走唯一尺寸事务。
-            Ok(()) => {}
-            // Win32 回调边界只记录错误，交由平台所有者统一处理。
-            Err(error) => platform.enqueue_callback_failure(error),
+        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+        if ptr == 0 {
+            return DefWindowProcW(hwnd, msg, wparam, lparam);
         }
-        // 自定义消息已完整处理，不交给默认窗口过程。
-        return 0;
+        let binding = &*(ptr as *const WindowBinding);
+        let platform = &mut *binding.platform;
+        if msg == WM_UIX_FRAME_OPPORTUNITY {
+            if let Some(request) = complete_posted_frame(&binding.frame_pacer, wparam, lparam) {
+                let window_id = binding.state.borrow().window_id;
+                platform.push_event(
+                    window_id,
+                    UiEvent::frame_opportunity(request.token, Instant::now(), None),
+                );
+            }
+            return 0;
+        }
+        // 还原事务结束后再重算非客户区，避免同步 FRAMECHANGED 重入旧最大化尺寸。
+        if msg == WM_UIX_REFRESH_EXTENDED_FRAME {
+            // 读取刷新时刻的样式，而不是还原 WM_SIZE 回调中的过渡样式。
+            match super::custom_chrome::window_style(hwnd).and_then(|style| {
+                // 当前消息已脱离还原回调，可以安全触发权威客户区的后续 WM_SIZE。
+                super::custom_chrome::refresh_extended_client_frame(hwnd, style)
+            }) {
+                // 刷新成功后由同步产生的 WM_SIZE 继续走唯一尺寸事务。
+                Ok(()) => {}
+                // Win32 回调边界只记录错误，交由平台所有者统一处理。
+                Err(error) => platform.enqueue_callback_failure(error),
+            }
+            // 自定义消息已完整处理，不交给默认窗口过程。
+            return 0;
+        }
+        if msg == WM_DESTROY {
+            clear_pending_frame(&binding.frame_pacer);
+        }
+        platform.handle_message(hwnd, &binding.state, &binding.ime, msg, wparam, lparam)
     }
-    if msg == WM_DESTROY {
-        clear_pending_frame(&binding.frame_pacer);
-    }
-    platform.handle_message(hwnd, &binding.state, &binding.ime, msg, wparam, lparam)
-}}
+}
 
 #[cfg(test)]
 mod tests {

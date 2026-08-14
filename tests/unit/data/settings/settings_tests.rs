@@ -8,11 +8,7 @@ use super::{parse_json_flat, resolve_configured_settings_path, serialize_json_fl
 /// 断言解析成功且与期望映射一致。
 fn assert_parses(input: &str, expected: &[(&str, &str)]) {
     let map = parse_json_flat(input).expect("解析必须成功");
-    assert_eq!(
-        map.len(),
-        expected.len(),
-        "键数量不符: {input}"
-    );
+    assert_eq!(map.len(), expected.len(), "键数量不符: {input}");
     for (key, value) in expected {
         assert_eq!(
             map.get(*key).map(String::as_str),
@@ -24,10 +20,7 @@ fn assert_parses(input: &str, expected: &[(&str, &str)]) {
 
 /// 断言解析失败。
 fn assert_rejects(input: &str) {
-    assert!(
-        parse_json_flat(input).is_err(),
-        "输入必须被拒绝: {input}"
-    );
+    assert!(parse_json_flat(input).is_err(), "输入必须被拒绝: {input}");
 }
 
 // ── parse_json_flat 基本语法 ───────────────────────────────────────────────
@@ -105,10 +98,7 @@ fn trailing_comma_is_rejected() {
 #[test]
 fn escape_sequences_are_decoded() {
     // 引号、反斜杠与常用控制转义。
-    assert_parses(
-        r#"{"a": "say \"hi\"\\"}"#,
-        &[("a", "say \"hi\"\\")],
-    );
+    assert_parses(r#"{"a": "say \"hi\"\\"}"#, &[("a", "say \"hi\"\\")]);
     // 换行与制表符转义。
     assert_parses(
         r#"{"a": "line1\nline2\tend"}"#,
@@ -185,7 +175,10 @@ fn serialization_sorts_keys_and_escapes() {
     assert!(json.contains("say \\\"hi\\\"\\nline2"));
     // 整体是合法 JSON。
     let round_trip = parse_json_flat(&json).expect("序列化结果必须可解析");
-    assert_eq!(round_trip.get("a").map(String::as_str), Some("say \"hi\"\nline2"));
+    assert_eq!(
+        round_trip.get("a").map(String::as_str),
+        Some("say \"hi\"\nline2")
+    );
 }
 
 // 序列化 → 解析 必须无损往返。

@@ -1,8 +1,8 @@
 // 拆分自 parser.rs：元素、属性与文本解析（含表达式节点构造）。
 // 引入元素解析所需的 AST、词法游标和诊断。
 use super::super::{
-    parse_expression, parse_style_properties, Attribute, AttributeValue, ControlBinding, Cursor,
-    Diagnostic, Element, ExpressionNode, Node, SourceSpan, TextNode,
+    Attribute, AttributeValue, ControlBinding, Cursor, Diagnostic, Element, ExpressionNode, Node,
+    SourceSpan, TextNode, parse_expression, parse_style_properties,
 };
 // 引入拆分后的控制绑定解析入口。
 use super::control_binding::{parse_control_binding, require_control_binding};
@@ -430,7 +430,9 @@ pub(super) fn parse_attribute(cursor: &mut Cursor<'_>) -> Result<Attribute, Diag
 }
 
 // 解析 If 或 For 开始标签中的专用控制绑定。
-pub(super) fn parse_braced_expression_node(cursor: &mut Cursor<'_>) -> Result<ExpressionNode, Diagnostic> {
+pub(super) fn parse_braced_expression_node(
+    cursor: &mut Cursor<'_>,
+) -> Result<ExpressionNode, Diagnostic> {
     // 读取规范化源码、外围跨度与内容位置。
     let (source, span, content_span) = cursor.braced_expression()?;
     // 解析并返回表达式节点。

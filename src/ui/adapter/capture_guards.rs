@@ -1,7 +1,7 @@
 // 引入 View 动画捕获的成对入口。
-use crate::ui::animation::{begin_animated_capture, end_animated_capture, AnimatedSource};
+use crate::ui::animation::{AnimatedSource, begin_animated_capture, end_animated_capture};
 // 引入 View 响应式 State 捕获的成对入口。
-use crate::ui::reactive::state::{begin_state_capture, end_state_capture, StateCaptureOutput};
+use crate::ui::reactive::state::{StateCaptureOutput, begin_state_capture, end_state_capture};
 // 保存捕获到的动画源动态句柄。
 use std::sync::Arc;
 

@@ -569,10 +569,11 @@ fn table_cell_dynamic_capture_leave_tombstone_does_not_repeat_factory_and_reente
     // 离场单元格必须仍可寻址，直至 leave 真正完成。
     assert!(tree.get(returning_id).is_some());
     // 离场节点必须标记为 pending removal。
-    assert!(tree
-        .get(returning_id)
-        .expect("离场单元格必须存在")
-        .pending_removal());
+    assert!(
+        tree.get(returning_id)
+            .expect("离场单元格必须存在")
+            .pending_removal()
+    );
     // 记录缩行协调后的 renderer 调用数。
     let calls_after_shrink = factory_calls.load(Ordering::Relaxed);
     // 同一已物化 range 的刷新不得把 leave 墓碑误算为缺少活动子节点。
@@ -601,10 +602,12 @@ fn table_cell_dynamic_capture_leave_tombstone_does_not_repeat_factory_and_reente
     // 同一业务 row_key 重入必须复用原 pending 节点身份。
     assert_eq!(cell_id(&tree, table, &cell_key("return")), returning_id);
     // 重入必须取消 pending removal 而不是留下不可交互墓碑。
-    assert!(!tree
-        .get(returning_id)
-        .expect("重入单元格必须存在")
-        .pending_removal());
+    assert!(
+        !tree
+            .get(returning_id)
+            .expect("重入单元格必须存在")
+            .pending_removal()
+    );
     // 重入必须保留已经写入的私有 State。
     assert_eq!(captured_state(&states, "return").get(), 23);
 }
@@ -676,10 +679,12 @@ fn table_cell_dynamic_capture_rejects_non_table_stale_and_leaving_owner() {
         ViewNode::leaf(crate::ui::widgets::Container::new()),
     );
     // Table owner 必须仍存在且处于 pending leave。
-    assert!(leaving_tree
-        .get(leaving_table)
-        .expect("离场 Table 必须存在")
-        .pending_removal());
+    assert!(
+        leaving_tree
+            .get(leaving_table)
+            .expect("离场 Table 必须存在")
+            .pending_removal()
+    );
     // 记录移除后的 renderer 调用次数。
     let calls_before_reject = factory_calls.load(Ordering::Relaxed);
     // leaving owner 绝不能重新调用用户 renderer。

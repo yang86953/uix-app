@@ -1,9 +1,9 @@
 //! ab_glyph 后端：纯 advance 定位。字形缓存已统一移到 FontService。
 
 use crate::core::{Errc, Error};
-use crate::draw::resources::font::text_backend::{self, *};
 use crate::draw::FontHandle;
 use crate::draw::TextBackend;
+use crate::draw::resources::font::text_backend::{self, *};
 use ab_glyph::*;
 use std::sync::Arc;
 pub(crate) use text_backend::TextLayoutOptions;
@@ -680,18 +680,21 @@ mod tests {
         // shaping 必须产生可供光栅化的字形。
         assert!(!layout.glyphs.is_empty());
         // 至少一个真实字形必须由既有轮廓光栅路径成功解析。
-        assert!(layout
-            // 遍历 shaping 输出字形。
-            .glyphs
-            // 尝试通过同一字体句柄光栅化。
-            .iter()
-            // 要求至少一个字形产生非空像素或轮廓网格。
-            .any(|glyph| {
-                // 执行既有统一字形光栅入口。
-                let raster = backend.rasterize_glyph(&handle, glyph.glyph_id, options.font_size);
-                // 面积覆盖或轮廓网格任一存在即证明编号兼容。
-                !raster.coverage.is_empty() || raster.outline_mesh.is_some()
-            }));
+        assert!(
+            layout
+                // 遍历 shaping 输出字形。
+                .glyphs
+                // 尝试通过同一字体句柄光栅化。
+                .iter()
+                // 要求至少一个字形产生非空像素或轮廓网格。
+                .any(|glyph| {
+                    // 执行既有统一字形光栅入口。
+                    let raster =
+                        backend.rasterize_glyph(&handle, glyph.glyph_id, options.font_size);
+                    // 面积覆盖或轮廓网格任一存在即证明编号兼容。
+                    !raster.coverage.is_empty() || raster.outline_mesh.is_some()
+                })
+        );
         // 结束 shaping 到光栅兼容测试。
     }
 }

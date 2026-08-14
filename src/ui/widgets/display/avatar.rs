@@ -5,18 +5,18 @@ use std::cell::Cell;
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 // 图片编解码 capability 启用时才需要在路径加载后触发重绘。
+use crate::draw::Color;
 #[cfg(feature = "image-codecs")]
 // 该导入仅服务于头像路径解码入口。
 use crate::draw::renderer::invalidate_paint_handle;
 use crate::draw::resources::image::BitmapHandle;
-use crate::draw::Color;
 use crate::ui::component::paint_context::PaintContext;
 // 图片编解码 capability 启用时才追踪当前头像组件。
+use crate::ui::SnapshotFields;
 #[cfg(feature = "image-codecs")]
 // 该导入仅服务于头像路径解码后的局部失效。
 use crate::ui::component::paint_scope::current_paint_widget;
 use crate::ui::component::widget::WidgetTree;
-use crate::ui::SnapshotFields;
 
 component! {
     pub struct Avatar {

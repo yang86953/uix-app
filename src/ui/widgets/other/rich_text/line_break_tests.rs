@@ -1,7 +1,7 @@
 //! 覆盖 RichText 估算布局的 UAX #14 断行契约。
 
 // 引入被测布局入口与富文本段类型。
-use super::{layout_rich_text, RichTextSegment, RichTextStyle};
+use super::{RichTextSegment, RichTextStyle, layout_rich_text};
 // 引入稳定测试颜色。
 use crate::draw::Color;
 

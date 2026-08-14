@@ -16,8 +16,7 @@ use crate::draw::backend::rhi_renderer::{
 };
 // 引入 GPU native 队列的几何载荷和 TextureMove 资源类型。
 use crate::native::present::rhi::{
-    GraphicsContextRhi, LoadAction, RenderTargetHandle, RhiViewport, TextureHandle,
-    TextureMove,
+    GraphicsContextRhi, LoadAction, RenderTargetHandle, RhiViewport, TextureHandle, TextureMove,
 };
 
 // 引入待决操作的完整枚举和 scroll boundary 载荷。
@@ -454,7 +453,7 @@ fn lower_operation(
 #[cfg(test)]
 mod shape_blend_tests {
     // 引入本文件的纯 lowering helper 与通用 RHI shape 类型。
-    use super::{shape_rhi_op, RhiOp, RhiShapeRect};
+    use super::{RhiOp, RhiShapeRect, shape_rhi_op};
 
     // 创建不依赖 native context 的有限 shape fixture。
     fn shape_fixture() -> RhiShapeRect {
@@ -711,8 +710,7 @@ impl NativeGpuCanvas2D {
             return Ok(false);
         }
         // 按 scroll boundary 把 pending queue 切成多个连续 draw segment。
-        let mut segments: Vec<(Option<PendingNativeScroll>, Vec<RhiOp>)> =
-            vec![(None, Vec::new())];
+        let mut segments: Vec<(Option<PendingNativeScroll>, Vec<RhiOp>)> = vec![(None, Vec::new())];
         // 逐项 lowering，任何未覆盖语义都回到兼容 presenter。
         for operation in &self.pending_native {
             // 目标相关 scroll 不能进入普通 draw operation，必须切开 painter order。
@@ -742,13 +740,14 @@ impl NativeGpuCanvas2D {
             ops.push(operation);
         }
         // TextureMove 只能写入显式 retained texture，不能作用于易失 surface sentinel。
-        let target_handle = segments
-            .iter()
-            .any(|(scroll, _)| scroll.is_some())
-            .then(|| match target {
-                RenderTargetRef::Texture(handle) => handle,
-                RenderTargetRef::Surface => RenderTargetHandle::from_raw(0),
-            });
+        let target_handle =
+            segments
+                .iter()
+                .any(|(scroll, _)| scroll.is_some())
+                .then(|| match target {
+                    RenderTargetRef::Texture(handle) => handle,
+                    RenderTargetRef::Surface => RenderTargetHandle::from_raw(0),
+                });
         if segments.iter().any(|(scroll, _)| scroll.is_some())
             && matches!(target, RenderTargetRef::Surface)
         {
@@ -780,7 +779,7 @@ impl NativeGpuCanvas2D {
                 Ok(movement) => movements.push(movement),
                 // 不能无损表达时整条 native queue 原子回退。
                 Err(error) if error.code() == crate::core::Errc::NotImplemented => {
-                    return Ok(false)
+                    return Ok(false);
                 }
                 // 其它几何或资源错误保持 typed error。
                 Err(error) => return Err(error),
@@ -788,7 +787,9 @@ impl NativeGpuCanvas2D {
         }
         // 新 target 首条是 Clear 且 scroll 之前没有 draw 时，补透明 dummy 初始化。
         if matches!(load, LoadAction::Clear(_))
-            && segments.first().is_some_and(|(_, operations)| operations.is_empty())
+            && segments
+                .first()
+                .is_some_and(|(_, operations)| operations.is_empty())
         {
             segments[0].1.push(empty_mixed_draw(viewport));
         }

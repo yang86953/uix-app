@@ -5,7 +5,7 @@ use crate::core::{Point, Rect};
 // 引入事件行为 trait 以驱动键盘事件。
 use crate::ui::component::traits::EventHandler;
 // 引入日期与首日星期辅助。
-use crate::ui::widgets::input::date_picker::{first_weekday, Date};
+use crate::ui::widgets::input::date_picker::{Date, first_weekday};
 // 引入指针事件所需的输入类型。
 use crate::ui::{KeyCode, KeyMod, MouseButton, SystemEvent};
 
@@ -377,7 +377,10 @@ fn open_range_picker_enter_drives_two_step_selection() {
     picker.hover_date.set(Some(Date::new(2026, 8, 15)));
     let _ = EventHandler::on_event(&mut picker, &enter);
     // 范围已提交且起点终点有序化。
-    assert_eq!(picker.current_range(), Some((Date::new(2026, 8, 10), Date::new(2026, 8, 15))));
+    assert_eq!(
+        picker.current_range(),
+        Some((Date::new(2026, 8, 10), Date::new(2026, 8, 15)))
+    );
     // 提交后关闭面板。
     assert!(!picker.open.get());
 }

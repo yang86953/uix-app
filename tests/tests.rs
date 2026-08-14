@@ -22,9 +22,9 @@ mod tests {
                     pub mod context {
                         use super::super::super::super::super::expected_vendor;
                         use uix::gfx_r5_support::{
-                            run_destroyed_hwnd_surface_lost, run_native_out_of_date_recovery,
-                            run_shared_device_soak, run_single_window_soak,
-                            run_vendor_resize_present_readback, NativeWindow,
+                            NativeWindow, run_destroyed_hwnd_surface_lost,
+                            run_native_out_of_date_recovery, run_shared_device_soak,
+                            run_single_window_soak, run_vendor_resize_present_readback,
                         };
 
                         #[test]
@@ -184,7 +184,7 @@ mod tests {
                     pub mod fault {
                         use super::super::super::super::super::expected_vendor;
                         use uix::gfx_r5_support::{
-                            run_external_device_loss_recovery, NativeWindow,
+                            NativeWindow, run_external_device_loss_recovery,
                         };
 
                         fn compact_error(message: &str) -> String {
@@ -193,8 +193,8 @@ mod tests {
 
                         #[test]
                         #[ignore = "requires an interactive Windows desktop and Vulkan driver"]
-                        fn windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics(
-                        ) {
+                        fn windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics()
+                         {
                             let (vendor, _) = expected_vendor();
                             let mut window = NativeWindow::new(137, 103).unwrap_or_else(|error| {
                                 panic!("GFX-R5 test window failed: {error}")
@@ -234,7 +234,7 @@ mod tests {
             pub mod windows {
                 pub mod hardware_matrix {
                     use super::super::super::super::expected_vendor;
-                    use uix::gfx_r5_support::{run_mixed_dpi_transition, NativeWindow};
+                    use uix::gfx_r5_support::{NativeWindow, run_mixed_dpi_transition};
 
                     #[test]
                     #[ignore = "requires an interactive Windows desktop with two real monitors at distinct DPIs"]
@@ -278,7 +278,7 @@ mod tests {
 
                 pub mod vulkan_fault_recovery {
                     use super::super::super::super::expected_vendor;
-                    use uix::gfx_r5_support::{run_engine_recovery_boundary, NativeWindow};
+                    use uix::gfx_r5_support::{NativeWindow, run_engine_recovery_boundary};
 
                     #[test]
                     #[ignore = "requires an interactive Windows desktop and Vulkan driver"]
@@ -307,7 +307,7 @@ mod tests {
                             evidence.logical_extent.1,
                             evidence.drawable_extent.0,
                             evidence.drawable_extent.1,
-                            );
+                        );
                     }
                 }
             }

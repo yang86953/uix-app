@@ -6,7 +6,7 @@ use crate::core::Rect;
 use crate::draw::painting::{FrameRadius, FrameRect, FrameSampledRect, FrameStrokeWidth};
 
 // 引入父模块已经统一定义的颜色、裁剪与 RHI 载荷。
-use super::{color_rgba, scaled_radius, scaled_scissor, Color, RhiOp, RhiShapeRect, RhiViewport};
+use super::{Color, RhiOp, RhiShapeRect, RhiViewport, color_rgba, scaled_radius, scaled_scissor};
 
 // 把整数 FrameRect 降低为共享 shape 队列。
 pub(super) fn append_shape(

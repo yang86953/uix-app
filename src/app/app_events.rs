@@ -70,7 +70,13 @@ mod tests {
             is_dark: true,
             revision: 1,
         }));
-        assert_eq!(seen.get(), Some(ThemeApplied { is_dark: true, revision: 1 }));
+        assert_eq!(
+            seen.get(),
+            Some(ThemeApplied {
+                is_dark: true,
+                revision: 1
+            })
+        );
     }
 
     #[test]
@@ -83,7 +89,10 @@ mod tests {
         let _sub = ok(bus.subscribe(move |fact: &ThemeApplied| {
             s.set(fact.revision);
         }));
-        ok(port.publish(ThemeApplied { is_dark: false, revision: 7 }));
+        ok(port.publish(ThemeApplied {
+            is_dark: false,
+            revision: 7,
+        }));
         assert_eq!(seen.get(), 7);
     }
 
@@ -96,10 +105,16 @@ mod tests {
         let sub: Subscription = ok(bus.subscribe(move |_: &ThemeApplied| {
             h.set(h.get() + 1);
         }));
-        ok(bus.publish(ThemeApplied { is_dark: true, revision: 1 }));
+        ok(bus.publish(ThemeApplied {
+            is_dark: true,
+            revision: 1,
+        }));
         assert_eq!(hits.get(), 1);
         drop(sub);
-        ok(bus.publish(ThemeApplied { is_dark: true, revision: 2 }));
+        ok(bus.publish(ThemeApplied {
+            is_dark: true,
+            revision: 2,
+        }));
         assert_eq!(hits.get(), 1);
     }
 }

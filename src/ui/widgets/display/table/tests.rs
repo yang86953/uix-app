@@ -14,7 +14,7 @@ fn data_table(rows: Vec<UserRow>) -> DataTable<UserRow> {
     };
     table
         .columns(vec![
-            TableColumn::new("ID", 80.0).bind(|r: &UserRow| r.id.to_string())
+            TableColumn::new("ID", 80.0).bind(|r: &UserRow| r.id.to_string()),
         ])
         .row_height(32.0)
 }

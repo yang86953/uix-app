@@ -15,8 +15,8 @@ use super::pending::PendingNativeOp;
 // 引入同一 graphics backend Module 拥有的 renderer 能力投影。
 use super::NativeRasterCaps;
 // 复用与 legacy/RHI 提交相同的最小可见 tile 打包规则。
-use super::tile::{pack_visible_soft_fallback_tile, SoftFallbackTile};
 use super::StateSnapshot;
+use super::tile::{SoftFallbackTile, pack_visible_soft_fallback_tile};
 
 // 保存一个已经封口、可按固定 blend 语义提交的 CPU soft 段。
 #[derive(Debug, Clone)]

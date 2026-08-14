@@ -11,7 +11,9 @@ use crate::draw::geometry::types::ImageHandle;
 use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 #[cfg(feature = "test-harness")]
 use crate::draw::renderer::test_harness::GraphicsFaultSignal;
-use crate::draw::renderer::{GraphicsFailure, GraphicsRecovery, GraphicsRecoveryAction, RenderOutcome};
+use crate::draw::renderer::{
+    GraphicsFailure, GraphicsRecovery, GraphicsRecoveryAction, RenderOutcome,
+};
 use crate::draw::{Canvas2D, GraphicsCapabilities, RenderTarget, UpdateStrategy};
 use crate::native::present::PresentTestResult;
 use std::sync::Arc;
@@ -716,10 +718,12 @@ mod tests {
 
     fn counting_rebuilder(rebuilds: &Arc<AtomicUsize>) -> RenderTargetRebuilder {
         let rebuilds = Arc::clone(rebuilds);
-        Box::new(move |_action: GraphicsRecoveryAction, _width: i32, _height: i32| {
-            rebuilds.fetch_add(1, AtomicOrdering::SeqCst);
-            Ok(Box::new(StubTarget::new()) as Box<dyn RenderTarget>)
-        })
+        Box::new(
+            move |_action: GraphicsRecoveryAction, _width: i32, _height: i32| {
+                rebuilds.fetch_add(1, AtomicOrdering::SeqCst);
+                Ok(Box::new(StubTarget::new()) as Box<dyn RenderTarget>)
+            },
+        )
     }
 
     // 验证持续的 probe/Present 矛盾会升级为 surface-lost，而不是永久遮挡循环。

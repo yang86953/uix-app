@@ -7,8 +7,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, generate_node_view, is_renderable_node};
 // 引入 VirtualScroll 映射所需的语言 AST、值生成与诊断类型。
 use super::{
-    generate_expression, numeric_value, rust_identifier, Attribute, AttributeValue, ControlBinding,
-    Diagnostic, Element, Expression, ExpressionKind, ExpressionNode, Node,
+    Attribute, AttributeValue, ControlBinding, Diagnostic, Element, Expression, ExpressionKind,
+    ExpressionNode, Node, generate_expression, numeric_value, rust_identifier,
 };
 
 // 生成文档定义的定高 VirtualScroll 数据窗口。
@@ -264,7 +264,7 @@ fn validate_virtual_key_expression(
                 // 引导使用当前项的稳定字段或纯组合。
                 "使用 key={item.id} 或 item/index 的纯成员与算术表达式",
             ))
-        },
+        }
     }
 }
 

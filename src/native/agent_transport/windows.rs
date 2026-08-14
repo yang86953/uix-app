@@ -5,50 +5,50 @@ use std::os::windows::ffi::OsStrExt;
 use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use windows::core::{BOOL, HRESULT, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
-    CloseHandle, LocalFree, ERROR_ALREADY_EXISTS, ERROR_INSUFFICIENT_BUFFER, ERROR_PIPE_CONNECTED,
-    GENERIC_READ, GENERIC_WRITE, HANDLE, HLOCAL,
+    CloseHandle, ERROR_ALREADY_EXISTS, ERROR_INSUFFICIENT_BUFFER, ERROR_PIPE_CONNECTED,
+    GENERIC_READ, GENERIC_WRITE, HANDLE, HLOCAL, LocalFree,
 };
 #[cfg(test)]
 use windows::Win32::Foundation::{ERROR_SUCCESS, LUID, WIN32_ERROR};
 #[cfg(test)]
 use windows::Win32::Security::Authorization::{
-    AuthzAccessCheck, AuthzFreeContext, AuthzFreeResourceManager, AuthzInitializeContextFromSid,
-    AuthzInitializeResourceManager, ConvertStringSidToSidW, GetNamedSecurityInfoW, GetSecurityInfo,
     AUTHZ_ACCESS_CHECK_FLAGS, AUTHZ_ACCESS_REPLY, AUTHZ_ACCESS_REQUEST,
     AUTHZ_CLIENT_CONTEXT_HANDLE, AUTHZ_GENERATE_RESULTS, AUTHZ_RESOURCE_MANAGER_HANDLE,
-    AUTHZ_RM_FLAG_NO_AUDIT, AUTHZ_SKIP_TOKEN_GROUPS, SE_FILE_OBJECT,
+    AUTHZ_RM_FLAG_NO_AUDIT, AUTHZ_SKIP_TOKEN_GROUPS, AuthzAccessCheck, AuthzFreeContext,
+    AuthzFreeResourceManager, AuthzInitializeContextFromSid, AuthzInitializeResourceManager,
+    ConvertStringSidToSidW, GetNamedSecurityInfoW, GetSecurityInfo, SE_FILE_OBJECT,
 };
 use windows::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
 };
-use windows::Win32::Security::Cryptography::{BCryptGenRandom, BCRYPT_USE_SYSTEM_PREFERRED_RNG};
+use windows::Win32::Security::Cryptography::{BCRYPT_USE_SYSTEM_PREFERRED_RNG, BCryptGenRandom};
 use windows::Win32::Security::{
-    GetTokenInformation, SetFileSecurityW, TokenUser, DACL_SECURITY_INFORMATION,
-    PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, TOKEN_QUERY,
-    TOKEN_USER,
+    DACL_SECURITY_INFORMATION, GetTokenInformation, PROTECTED_DACL_SECURITY_INFORMATION,
+    PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, SetFileSecurityW, TOKEN_QUERY, TOKEN_USER,
+    TokenUser,
 };
 #[cfg(test)]
 use windows::Win32::Security::{OWNER_SECURITY_INFORMATION, PSID};
-use windows::Win32::Storage::FileSystem::MoveFileExW;
 #[cfg(test)]
 use windows::Win32::Storage::FileSystem::FILE_ALL_ACCESS;
+use windows::Win32::Storage::FileSystem::MoveFileExW;
 use windows::Win32::Storage::FileSystem::{
-    CreateDirectoryW, CreateFileW, CREATE_NEW, FILE_ATTRIBUTE_NORMAL,
+    CREATE_NEW, CreateDirectoryW, CreateFileW, FILE_ATTRIBUTE_NORMAL,
     FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_SHARE_MODE, MOVEFILE_REPLACE_EXISTING,
     MOVEFILE_WRITE_THROUGH, PIPE_ACCESS_DUPLEX,
 };
+use windows::Win32::System::IO::CancelSynchronousIo;
 use windows::Win32::System::Pipes::{
-    ConnectNamedPipe, CreateNamedPipeW, WaitNamedPipeW, NAMED_PIPE_MODE, PIPE_READMODE_BYTE,
-    PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT,
+    ConnectNamedPipe, CreateNamedPipeW, NAMED_PIPE_MODE, PIPE_READMODE_BYTE,
+    PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT, WaitNamedPipeW,
 };
 use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
-use windows::Win32::System::IO::CancelSynchronousIo;
+use windows::core::{BOOL, HRESULT, PCWSTR, PWSTR};
 
 use super::{AcceptedAgentStream, AgentStreamCancelIo};
 
@@ -313,7 +313,7 @@ fn private_discovery_directory() -> io::Result<PathBuf> {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "agent discovery path is not a private directory",
-            ))
+            ));
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             let security = CurrentUserOnlySecurity::new()?;

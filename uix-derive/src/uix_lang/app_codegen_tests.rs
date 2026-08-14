@@ -71,47 +71,59 @@ fn rejects_invalid_app_contracts() {
     // 非 App 根必须失败。
     let wrong_root = parse_document("<Text>内容</Text>").expect("文档应解析");
     // 入口诊断必须说明 App 根。
-    assert!(generate_document_app(&wrong_root)
-        .expect_err("非 App 根必须失败")
-        .message
-        .contains("<App>"));
+    assert!(
+        generate_document_app(&wrong_root)
+            .expect_err("非 App 根必须失败")
+            .message
+            .contains("<App>")
+    );
     // 多直接子根必须失败。
     let multiple = parse_document("<App><Text>一</Text><Text>二</Text></App>").expect("文档应解析");
     // 诊断必须说明唯一子根。
-    assert!(generate_document_app(&multiple)
-        .expect_err("多子根必须失败")
-        .message
-        .contains("恰有一个"));
+    assert!(
+        generate_document_app(&multiple)
+            .expect_err("多子根必须失败")
+            .message
+            .contains("恰有一个")
+    );
     // 非正尺寸必须失败。
     let size = parse_document("<App size=\"0x800\"><Text>内容</Text></App>").expect("文档应解析");
     // 诊断必须说明正 i32。
-    assert!(generate_document_app(&size)
-        .expect_err("零尺寸必须失败")
-        .message
-        .contains("正 i32"));
+    assert!(
+        generate_document_app(&size)
+            .expect_err("零尺寸必须失败")
+            .message
+            .contains("正 i32")
+    );
     // 未登记属性必须失败。
     let attribute = parse_document("<App custom_title_bar=\"true\"><Text>内容</Text></App>")
         .expect("文档应解析");
     // 诊断必须保留属性名。
-    assert!(generate_document_app(&attribute)
-        .expect_err("未登记属性必须失败")
-        .message
-        .contains("custom_title_bar"));
+    assert!(
+        generate_document_app(&attribute)
+            .expect_err("未登记属性必须失败")
+            .message
+            .contains("custom_title_bar")
+    );
     // 未知初始主题必须失败。
     let theme = parse_document("<App theme=\"ocean\"><Text>内容</Text></App>").expect("文档应解析");
     // 诊断必须保留主题名。
-    assert!(generate_document_app(&theme)
-        .expect_err("未知主题必须失败")
-        .message
-        .contains("ocean"));
+    assert!(
+        generate_document_app(&theme)
+            .expect_err("未知主题必须失败")
+            .message
+            .contains("ocean")
+    );
     // 未知 setTheme 目标必须失败。
     let request = parse_document("<App><Button @click=\"setTheme('ocean')\">切换</Button></App>")
         .expect("文档应解析");
     // 运行期请求必须复用同一名称表。
-    assert!(generate_document_app(&request)
-        .expect_err("未知主题请求必须失败")
-        .message
-        .contains("ocean"));
+    assert!(
+        generate_document_app(&request)
+            .expect_err("未知主题请求必须失败")
+            .message
+            .contains("ocean")
+    );
 }
 
 // 验证主题属性白名单拒绝静默丢弃。

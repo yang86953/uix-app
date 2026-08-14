@@ -1,4 +1,4 @@
-use std::sync::{atomic::AtomicBool, atomic::Ordering, Arc};
+use std::sync::{Arc, atomic::AtomicBool, atomic::Ordering};
 use std::time::Duration;
 
 use crate::app::application::di::Container;
@@ -71,7 +71,11 @@ fn bind_feedback_declarations(
     window_id: WindowId,
 ) {
     // Message 声明只能获取 Message 类型端口。
-    if let Some(declaration) = node.widget.as_any_mut().downcast_mut::<MessageDeclaration>() {
+    if let Some(declaration) = node
+        .widget
+        .as_any_mut()
+        .downcast_mut::<MessageDeclaration>()
+    {
         // 注入绑定目标窗口的 acquire 能力。
         declaration.bind(feedback.declaration_binding(window_id, FeedbackKind::Message));
     }

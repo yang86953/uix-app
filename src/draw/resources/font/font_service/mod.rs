@@ -21,9 +21,9 @@ use std::sync::Arc;
 
 use crate::core::Error;
 use crate::core::{Point, Size};
-use crate::draw::resources::font::text_backend::{self as tb, GlyphRaster, TextLayoutOptions};
 use crate::draw::FontHandle;
 use crate::draw::TextBackend;
+use crate::draw::resources::font::text_backend::{self as tb, GlyphRaster, TextLayoutOptions};
 
 pub(crate) use font_cache::{CachedRaster, FontSlot, GlyphCacheKey};
 

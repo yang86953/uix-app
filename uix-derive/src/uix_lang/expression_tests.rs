@@ -281,7 +281,11 @@ fn parses_array_literals_with_ordered_elements() {
     // 尾随逗号必须给出专用诊断。
     let trailing = parse_expression("[1, 2,]", origin()).expect_err("尾随逗号必须失败");
     // 原因必须指向尾随逗号。
-    assert!(trailing.message.contains("尾随逗号"), "{}", trailing.message);
+    assert!(
+        trailing.message.contains("尾随逗号"),
+        "{}",
+        trailing.message
+    );
     // 空数组保持合法。
     let empty = parse_expression("[]", origin()).expect("空数组应成功解析");
     // 空数组没有元素。

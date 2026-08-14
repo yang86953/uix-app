@@ -7,9 +7,9 @@
 use crate::core::Rect;
 
 use crate::core::DirtyRegion;
+use crate::draw::Transform;
 use crate::draw::scene::NodeId;
 use crate::draw::scene::ScenePaint;
-use crate::draw::Transform;
 
 fn visual_path(scene: &impl ScenePaint, node_id: NodeId) -> Vec<NodeId> {
     let mut path = Vec::new();

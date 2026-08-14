@@ -6,16 +6,16 @@ use std::ptr::NonNull;
 use std::sync::Arc;
 
 use crate::core::{Point, Rect, Size};
+use crate::draw::Canvas2D;
+use crate::draw::GradientDirection;
 use crate::draw::debug::DebugRenderService;
 use crate::draw::geometry::path::{FillRule, Path, PathBuilder};
-use crate::draw::geometry::spatial::{Orientation, PhysicalUnit, SpatialContext, Vec3, AABB3D};
+use crate::draw::geometry::spatial::{AABB3D, Orientation, PhysicalUnit, SpatialContext, Vec3};
 use crate::draw::geometry::stroker::StrokeOptions;
 use crate::draw::painting::display_list::{DisplayList, PaintOp, PaintPass};
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::font::text::TextRenderService;
-use crate::draw::resources::image::{blit_handle, BitmapHandle, ImageService};
-use crate::draw::Canvas2D;
-use crate::draw::GradientDirection;
+use crate::draw::resources::image::{BitmapHandle, ImageService, blit_handle};
 use crate::draw::{BlendMode, Color, FontHandle, Radius, Transform};
 
 /// 绘制表面配置（组合 dpi/pr/orientation/size 减少参数传递）。

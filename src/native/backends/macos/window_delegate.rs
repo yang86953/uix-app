@@ -1,14 +1,14 @@
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
-use std::ffi::{c_char, c_void, CString};
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::ffi::{CString, c_char, c_void};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, Once};
 
 use crate::core::{Errc, Error, WindowId};
 use crate::diagnostics::PendingFailureSource;
 use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
-use crate::native::windowing::shared::{push_window_close, push_window_resize, WindowState};
+use crate::native::windowing::shared::{WindowState, push_window_close, push_window_resize};
 
 use super::objc_runtime;
 

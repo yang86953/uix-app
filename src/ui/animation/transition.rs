@@ -4,8 +4,8 @@
 //! 展开为单次 opacity / offset / scale 插值。
 
 use crate::core::Point;
-use crate::ui::animation::core::Animation;
 use crate::ui::Placement;
+use crate::ui::animation::core::Animation;
 
 /// 浮层进入或离场时使用的动画配置。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -394,47 +394,65 @@ pub struct Transition {
 impl Transition {
     /// 渐入。
     pub fn fade_in(duration: f64) -> Self {
-        Self { config: AnimationConfig::fade_in(duration) }
+        Self {
+            config: AnimationConfig::fade_in(duration),
+        }
     }
 
     /// 渐出。
     pub fn fade_out(duration: f64) -> Self {
-        Self { config: AnimationConfig::fade_out(duration) }
+        Self {
+            config: AnimationConfig::fade_out(duration),
+        }
     }
 
     /// 从下方滑入（`slide_up` 语义：内容向上进入视口）。
     pub fn slide_up(duration: f64) -> Self {
-        Self { config: AnimationConfig::slide_in(Placement::Bottom, duration) }
+        Self {
+            config: AnimationConfig::slide_in(Placement::Bottom, duration),
+        }
     }
 
     /// 从上方滑入（`slide_down` 语义：内容向下进入视口）。
     pub fn slide_down(duration: f64) -> Self {
-        Self { config: AnimationConfig::slide_in(Placement::Top, duration) }
+        Self {
+            config: AnimationConfig::slide_in(Placement::Top, duration),
+        }
     }
 
     /// 从 `placement` 所在方向滑入。
     pub fn slide_in(placement: Placement, duration: f64) -> Self {
-        Self { config: AnimationConfig::slide_in(placement, duration) }
+        Self {
+            config: AnimationConfig::slide_in(placement, duration),
+        }
     }
 
     /// 向 `placement` 所在方向滑出。
     pub fn slide_out(placement: Placement, duration: f64) -> Self {
-        Self { config: AnimationConfig::slide_out(placement, duration) }
+        Self {
+            config: AnimationConfig::slide_out(placement, duration),
+        }
     }
 
     /// 缩放渐入。
     pub fn zoom_in(duration: f64) -> Self {
-        Self { config: AnimationConfig::zoom_in(duration) }
+        Self {
+            config: AnimationConfig::zoom_in(duration),
+        }
     }
 
     /// 缩放渐出。
     pub fn zoom_out(duration: f64) -> Self {
-        Self { config: AnimationConfig::zoom_out(duration) }
+        Self {
+            config: AnimationConfig::zoom_out(duration),
+        }
     }
 
     /// 交错入场：`delay` 秒后开始播放 `inner`（stagger 语义）。
     pub fn stagger(delay: f64, inner: Transition) -> Self {
-        Self { config: inner.config.with_delay(delay) }
+        Self {
+            config: inner.config.with_delay(delay),
+        }
     }
 }
 
@@ -458,8 +476,7 @@ mod tests {
 
     #[test]
     fn transition_stagger_sets_delay() {
-        let config: AnimationConfig =
-            Transition::stagger(0.25, Transition::slide_up(0.2)).into();
+        let config: AnimationConfig = Transition::stagger(0.25, Transition::slide_up(0.2)).into();
         assert_eq!(config.delay(), 0.25);
         assert!(config.is_enter());
         assert_eq!(config.duration(), 0.2);

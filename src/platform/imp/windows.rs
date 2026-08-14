@@ -78,7 +78,8 @@ where
     let ui_thread = match std::thread::Builder::new()
         .name(thread_name.to_owned())
         .stack_size(UI_THREAD_STACK_BYTES)
-        .spawn(run) {
+        .spawn(run)
+    {
         // 返回已创建的 UI 线程。
         Ok(ui_thread) => ui_thread,
         // 线程创建失败属于不可恢复的平台错误，文案带线程名便于诊断。

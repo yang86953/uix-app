@@ -20,8 +20,8 @@ use crate::draw::renderer::InvalidationQueueHandle;
 use super::effect::{self, DependencySubscriber, EffectDependency, EffectLease};
 // 引入父模块拥有的依赖追踪和绘制辅助函数。
 use super::{
-    bind_paint_site, collect_deps, fire_paint_bindings, state_capture_active, track_dep,
-    PaintBindSite, StateSlotId, NEXT_STATE_SLOT, STATE_BIND_CAPTURE,
+    NEXT_STATE_SLOT, PaintBindSite, STATE_BIND_CAPTURE, StateSlotId, bind_paint_site, collect_deps,
+    fire_paint_bindings, state_capture_active, track_dep,
 };
 
 // 保存当前线程正在执行用户计算函数的 Computed 槽路径。

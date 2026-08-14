@@ -1,13 +1,13 @@
 //! Declarative, runtime-driven animation values.
 
 use super::{
-    group::GroupItemTiming, Animation, AnimationGroupItem, Easing, Keyframe, KeyframeAnimation,
-    KeyframeError, Spring, SpringAnimation,
+    Animation, AnimationGroupItem, Easing, Keyframe, KeyframeAnimation, KeyframeError, Spring,
+    SpringAnimation, group::GroupItemTiming,
 };
 
 mod playback;
 
-use self::playback::{normalized_delay, AnimatedMotion, AnimatedPlayback, LoopMode};
+use self::playback::{AnimatedMotion, AnimatedPlayback, LoopMode, normalized_delay};
 use crate::core::ComponentId;
 use crate::ui::animation::traits::Animatable;
 use crate::ui::reactive::state::State;

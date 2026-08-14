@@ -772,9 +772,7 @@ fn record_items_and_semantic_states_compile_against_public_uix_api() {
 #[test]
 fn set_theme_builtin_compiles_without_caller_function() {
     // 展开使用 setTheme 内置操作的按钮，作用域内不定义任何 setTheme 函数。
-    let _view: ViewNode = uix!(
-        r#"<Button @click="setTheme('dark')">暗色主题</Button>"#
-    );
+    let _view: ViewNode = uix!(r#"<Button @click="setTheme('dark')">暗色主题</Button>"#);
 }
 
 // 验证 uix_app! 生成物通过公开 App、主题与 View API 类型检查。

@@ -43,19 +43,21 @@ pub(crate) struct DrawableSize {
     pub(crate) height: i32,
 }
 
-pub(crate) unsafe fn query_client_rect(hwnd: *mut c_void) -> Option<Rect> { unsafe {
-    let mut rect = Rect {
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-    };
-    if GetClientRect(hwnd, &mut rect) == 0 {
-        None
-    } else {
-        Some(rect)
+pub(crate) unsafe fn query_client_rect(hwnd: *mut c_void) -> Option<Rect> {
+    unsafe {
+        let mut rect = Rect {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        if GetClientRect(hwnd, &mut rect) == 0 {
+            None
+        } else {
+            Some(rect)
+        }
     }
-}}
+}
 
 fn physical_client_size(hwnd: *mut c_void) -> Option<(i32, i32)> {
     unsafe {

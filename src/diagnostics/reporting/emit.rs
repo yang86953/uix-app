@@ -14,7 +14,7 @@
 //! 重新评估缓存。UIX 自身不调用上述 API,以免干扰应用的 subscriber 配置。
 
 use std::cell::Cell;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::core::ErrorSeverity;

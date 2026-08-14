@@ -2,7 +2,7 @@
 // 只测 read_bounded_line 的边界语义（EOF/未终止/超限/分片），不启动线程与 IO。
 
 // 引入被测的帧划分函数与结果枚举。
-use super::{read_bounded_line, BoundedLine, MAX_AGENT_MESSAGE_BYTES};
+use super::{BoundedLine, MAX_AGENT_MESSAGE_BYTES, read_bounded_line};
 // 构造内存缓冲读取器。
 use std::io::{BufReader, Cursor};
 
@@ -84,16 +84,28 @@ fn consecutive_calls_consume_lines_in_order() {
     let mut stream = reader(b"first\nsecond\nthird\n");
     let mut line = Vec::new();
     // 第一行。
-    assert_eq!(read_bounded_line(&mut stream, &mut line).unwrap(), BoundedLine::Line);
+    assert_eq!(
+        read_bounded_line(&mut stream, &mut line).unwrap(),
+        BoundedLine::Line
+    );
     assert_eq!(line, b"first");
     // 第二行。
-    assert_eq!(read_bounded_line(&mut stream, &mut line).unwrap(), BoundedLine::Line);
+    assert_eq!(
+        read_bounded_line(&mut stream, &mut line).unwrap(),
+        BoundedLine::Line
+    );
     assert_eq!(line, b"second");
     // 第三行。
-    assert_eq!(read_bounded_line(&mut stream, &mut line).unwrap(), BoundedLine::Line);
+    assert_eq!(
+        read_bounded_line(&mut stream, &mut line).unwrap(),
+        BoundedLine::Line
+    );
     assert_eq!(line, b"third");
     // 行读尽后必须判定为 EOF。
-    assert_eq!(read_bounded_line(&mut stream, &mut line).unwrap(), BoundedLine::Eof);
+    assert_eq!(
+        read_bounded_line(&mut stream, &mut line).unwrap(),
+        BoundedLine::Eof
+    );
 }
 
 // 累计长度超过协议上限必须立即返回 TooLarge。
@@ -150,9 +162,18 @@ fn consecutive_empty_lines_are_consumed_separately() {
     let mut stream = reader(b"\n\n");
     let mut line = Vec::new();
     // 第一个空行。
-    assert_eq!(read_bounded_line(&mut stream, &mut line).unwrap(), BoundedLine::Line);
+    assert_eq!(
+        read_bounded_line(&mut stream, &mut line).unwrap(),
+        BoundedLine::Line
+    );
     // 第二个空行。
-    assert_eq!(read_bounded_line(&mut stream, &mut line).unwrap(), BoundedLine::Line);
+    assert_eq!(
+        read_bounded_line(&mut stream, &mut line).unwrap(),
+        BoundedLine::Line
+    );
     // 之后 EOF。
-    assert_eq!(read_bounded_line(&mut stream, &mut line).unwrap(), BoundedLine::Eof);
+    assert_eq!(
+        read_bounded_line(&mut stream, &mut line).unwrap(),
+        BoundedLine::Eof
+    );
 }

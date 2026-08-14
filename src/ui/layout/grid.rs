@@ -7,7 +7,7 @@ mod track_sizing;
 // 将整组列轨的水平内容对齐集中在独立模块。
 mod justify;
 // 引入有界列数、放置计划与后续尺寸求解所需的定位类型。
-use placement::{bounded_column_count, place_grid_children, CellAssignment};
+use placement::{CellAssignment, bounded_column_count, place_grid_children};
 // 引入拆分后的轨道尺寸求解与有限化辅助。
 use track_sizing::{
     finite_insets, finite_non_negative, fit_fraction_spanning_auto_tracks,

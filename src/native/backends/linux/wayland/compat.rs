@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::os::fd::BorrowedFd;
 use std::os::raw::c_void;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Mutex};
 
 use wayland_client::backend::ObjectId;
@@ -99,7 +99,7 @@ impl ProxyContext {
     where
         // 类型身份参与回调表索引，因此要求静态生命周期。
         I: Proxy + 'static,
-    // 开始回调注销实现。
+        // 开始回调注销实现。
     {
         // 按协议类型与对象编号删除唯一回调项。
         self.callbacks
@@ -109,7 +109,7 @@ impl ProxyContext {
             .unwrap_or_else(|error| error.into_inner())
             // 删除对象对应的回调，重复注销保持幂等。
             .remove(&Self::callback_key(proxy));
-    // 结束回调注销实现。
+        // 结束回调注销实现。
     }
 }
 
@@ -280,11 +280,11 @@ impl<I: Proxy> Main<I> {
     where
         // 限制仅作用于本次注销方法。
         I: 'static,
-    // 开始回调清理实现。
+        // 开始回调清理实现。
     {
         // 委托共享上下文删除精确对象回调。
         self.context.unregister(&self.proxy);
-    // 结束回调清理实现。
+        // 结束回调清理实现。
     }
 }
 

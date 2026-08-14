@@ -27,9 +27,9 @@ use wayland_client::protocol::{
     wl_seat,
     // surface 继续标识当前原生窗口表面。
     wl_surface,
-// 结束 Wayland 核心协议类型导入。
+    // 结束 Wayland 核心协议类型导入。
 };
-use wayland_client::{globals::GlobalList, Connection, EventQueue};
+use wayland_client::{Connection, EventQueue, globals::GlobalList};
 use wayland_protocols::xdg::activation::v1::client::xdg_activation_v1::XdgActivationV1;
 // 引入 Wayland 顶层窗口装饰对象及客户端/服务端装饰模式。
 use wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1::{
@@ -40,8 +40,8 @@ use wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1
 };
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
-use crate::core::error::{Errc, Error, Result};
 use crate::core::WindowId;
+use crate::core::error::{Errc, Error, Result};
 use crate::native::presentation::graphics::platform::linux::WaylandSurfaceHandle;
 // 引入帧事件、UI 事件与不可解释的指针激活身份。
 use crate::native::windowing::event::{FrameRequestToken, PointerActivationId, UiEvent};
@@ -50,7 +50,7 @@ use crate::native::windowing::shared::window_mode::{
 };
 use crate::native::windowing::shared::window_target::SurfaceWindowTargets;
 // 直接从共享窗口模块引入 Wayland 需要的未实现操作，避免其他目标产生未使用重导出。
-use crate::native::windowing::shared::window::{unimpl, WindowOps};
+use crate::native::windowing::shared::window::{WindowOps, unimpl};
 // 引入跨平台共享的窗口状态。
 use crate::native::windowing::shared::WindowState;
 use crate::native::windowing::window::{NativeFrameRequest, NativeFrameRequestPhase};
@@ -62,7 +62,7 @@ use super::pointer_activation::{
     PointerActivationOutcome,
     // 注册表独占 raw serial、surface 代次与 pointer 代次。
     WaylandPointerActivationRegistry,
-// 结束指针激活私有类型导入。
+    // 结束指针激活私有类型导入。
 };
 
 /// Wayland 平台窗口操作句柄。
@@ -419,7 +419,7 @@ impl WindowOps for WaylandWindowOps {
         &mut self,
         // app 仅转交不可解释身份，raw serial 始终留在 Wayland 注册表。
         pointer_activation: Option<PointerActivationId>,
-    // 正常竞态统一安全忽略，协议连接失败仍由既有 pending failure 报告。
+        // 正常竞态统一安全忽略，协议连接失败仍由既有 pending failure 报告。
     ) -> Result<()> {
         // 没有原生 PointerDown 身份的动作不得猜测或复用任何 serial。
         let Some(pointer_activation) = pointer_activation else {
@@ -430,12 +430,11 @@ impl WindowOps for WaylandWindowOps {
                 // 使用固定原因文本支持定向日志检索。
                 reason = "missing_pointer_activation",
                 // 说明本次 Wayland 移动请求被安全忽略。
-                "Wayland interactive move ignored"
-            // 结束无身份诊断参数。
+                "Wayland interactive move ignored" // 结束无身份诊断参数。
             );
             // 正常竞态或非原生动作不构成平台错误。
             return Ok(());
-        // 结束无激活身份分支。
+            // 结束无激活身份分支。
         };
         // 已关闭或尚未登记 surface 的窗口不能消费拖动授权。
         let Some(surface_id) = self.surface_id else {
@@ -446,12 +445,11 @@ impl WindowOps for WaylandWindowOps {
                 // 标明原生 surface 当前不可用。
                 reason = "surface_unavailable",
                 // 说明本次请求被安全忽略。
-                "Wayland interactive move ignored"
-            // 结束 surface 缺失诊断参数。
+                "Wayland interactive move ignored" // 结束 surface 缺失诊断参数。
             );
             // surface 缺失是关闭竞态而非致命失败。
             return Ok(());
-        // 结束 surface 缺失分支。
+            // 结束 surface 缺失分支。
         };
         // 在短锁内完成身份、窗口、surface 与代次的原子校验和消费。
         let outcome = self
@@ -476,12 +474,11 @@ impl WindowOps for WaylandWindowOps {
                         // 标明 seat 协议对象不可用。
                         reason = "seat_unavailable",
                         // 说明请求被安全忽略。
-                        "Wayland interactive move ignored"
-                    // 结束 seat 缺失诊断参数。
+                        "Wayland interactive move ignored" // 结束 seat 缺失诊断参数。
                     );
                     // seat 缺失在交互竞态中保持非致命。
                     return Ok(());
-                // 结束 seat 缺失分支。
+                    // 结束 seat 缺失分支。
                 };
                 // 窗口关闭竞态可能已经释放 xdg_toplevel。
                 let Some(toplevel) = self.toplevel.as_ref() else {
@@ -492,12 +489,11 @@ impl WindowOps for WaylandWindowOps {
                         // 标明顶层协议对象不可用。
                         reason = "toplevel_unavailable",
                         // 说明请求被安全忽略。
-                        "Wayland interactive move ignored"
-                    // 结束顶层对象缺失诊断参数。
+                        "Wayland interactive move ignored" // 结束顶层对象缺失诊断参数。
                     );
                     // 关闭竞态不应结束应用事件循环。
                     return Ok(());
-                // 结束顶层对象缺失分支。
+                    // 结束顶层对象缺失分支。
                 };
                 // 锁已释放，此处只提交同一 press 的 seat 与 serial。
                 toplevel._move(seat.as_ref(), serial);
@@ -508,10 +504,9 @@ impl WindowOps for WaylandWindowOps {
                     // 记录授权绑定的 surface 协议身份。
                     surface_id,
                     // 说明请求已交付给 Wayland 代理队列。
-                    "Wayland interactive move request submitted"
-                // 结束提交诊断参数。
+                    "Wayland interactive move request submitted" // 结束提交诊断参数。
                 );
-            // 结束授权成功分支。
+                // 结束授权成功分支。
             }
             // 缺失、过期或身份不匹配都是正常的输入生命周期结果。
             PointerActivationOutcome::Ignored(reason) => {
@@ -524,16 +519,14 @@ impl WindowOps for WaylandWindowOps {
                     // 记录稳定的私有拒绝原因枚举。
                     ?reason,
                     // 说明本次请求被安全忽略。
-                    "Wayland interactive move ignored"
-                // 结束拒绝诊断参数。
+                    "Wayland interactive move ignored" // 结束拒绝诊断参数。
                 );
-            // 结束安全忽略分支。
-            }
-        // 结束授权消费结果分派。
+                // 结束安全忽略分支。
+            } // 结束授权消费结果分派。
         }
         // 协议请求已排队或正常竞态已安全降级。
         Ok(())
-    // 结束 Wayland 交互移动实现。
+        // 结束 Wayland 交互移动实现。
     }
 
     // ── 窗口外观 ──────────────────────────────────────────

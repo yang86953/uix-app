@@ -126,4 +126,3 @@ impl CalendarGeometry {
         (day <= days_in_month(year, month)).then_some(day)
     }
 }
-

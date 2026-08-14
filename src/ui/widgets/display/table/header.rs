@@ -4,9 +4,9 @@ use crate::draw::{Color, Radius};
 use crate::ui::component::paint_context::PaintContext;
 
 // 引入共享列区绘制层级与列几何快照。
-use super::geometry::{TableColumnGeometry, COLUMN_PAINT_ORDER};
-use super::types::SortDirection;
 use super::Table;
+use super::geometry::{COLUMN_PAINT_ORDER, TableColumnGeometry};
+use super::types::SortDirection;
 
 pub(super) fn paint(
     table: &Table,

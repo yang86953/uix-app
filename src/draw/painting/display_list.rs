@@ -4,12 +4,12 @@
 
 use crate::core::{Point, Rect};
 
+use crate::draw::Canvas2D;
 use crate::draw::geometry::path::{FillRule, Path};
 use crate::draw::geometry::stroker::StrokeOptions;
 use crate::draw::painting::PaintContext;
 use crate::draw::resources::font::text::TextRenderService;
-use crate::draw::resources::image::{blit_handle, BitmapHandle, ImageService};
-use crate::draw::Canvas2D;
+use crate::draw::resources::image::{BitmapHandle, ImageService, blit_handle};
 use crate::draw::{BlendMode, Color, FontHandle, GradientDirection, Radius, Transform};
 use std::sync::Arc;
 

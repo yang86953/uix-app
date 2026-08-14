@@ -197,7 +197,10 @@ pub(super) fn pad_damage_rect(r: &Rect) -> Rect {
     )
 }
 
-pub(super) fn classify_invalidation(rendered_first: bool, dirty_region: &DirtyRegion) -> InvalidationSource {
+pub(super) fn classify_invalidation(
+    rendered_first: bool,
+    dirty_region: &DirtyRegion,
+) -> InvalidationSource {
     if !rendered_first {
         return InvalidationSource::FirstFrame;
     }

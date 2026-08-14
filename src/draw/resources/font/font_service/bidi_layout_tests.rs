@@ -33,33 +33,39 @@ fn mixed_runs_preserve_logical_indices_and_number_order() {
     // 数字保持 LTR，Hebrew 字母按视觉顺序反向。
     assert_eq!(visual_indices, vec![0, 1, 2, 3, 8, 9, 10, 7, 6, 5, 4]);
     // 全部视觉字形 x 坐标必须保持单调，供绘制与命中共享。
-    assert!(layout
-        // 遍历相邻视觉字形窗口。
-        .glyphs
-        // 取得连续二元窗口。
-        .windows(2)
-        // 每个后继字形都不得位于前驱左侧。
-        .all(|pair| pair[0].x <= pair[1].x));
+    assert!(
+        layout
+            // 遍历相邻视觉字形窗口。
+            .glyphs
+            // 取得连续二元窗口。
+            .windows(2)
+            // 每个后继字形都不得位于前驱左侧。
+            .all(|pair| pair[0].x <= pair[1].x)
+    );
     // Hebrew 字形必须保存奇数嵌入级别。
-    assert!(layout
-        // 遍历 Hebrew 逻辑源索引对应字形。
-        .glyphs
-        // 只保留三个 Hebrew 字符。
-        .iter()
-        // 判断逻辑源范围。
-        .filter(|glyph| (4..7).contains(&glyph.char_index))
-        // 全部 Hebrew 字形必须为 RTL 奇数级。
-        .all(|glyph| glyph.bidi_level % 2 == 1));
+    assert!(
+        layout
+            // 遍历 Hebrew 逻辑源索引对应字形。
+            .glyphs
+            // 只保留三个 Hebrew 字符。
+            .iter()
+            // 判断逻辑源范围。
+            .filter(|glyph| (4..7).contains(&glyph.char_index))
+            // 全部 Hebrew 字形必须为 RTL 奇数级。
+            .all(|glyph| glyph.bidi_level % 2 == 1)
+    );
     // 欧洲数字必须保留偶数嵌入级别和内部 LTR 顺序。
-    assert!(layout
-        // 遍历数字逻辑源索引对应字形。
-        .glyphs
-        // 只保留三个数字。
-        .iter()
-        // 判断逻辑源范围。
-        .filter(|glyph| (8..11).contains(&glyph.char_index))
-        // 全部数字字形必须为偶数级。
-        .all(|glyph| glyph.bidi_level % 2 == 0));
+    assert!(
+        layout
+            // 遍历数字逻辑源索引对应字形。
+            .glyphs
+            // 只保留三个数字。
+            .iter()
+            // 判断逻辑源范围。
+            .filter(|glyph| (8..11).contains(&glyph.char_index))
+            // 全部数字字形必须为偶数级。
+            .all(|glyph| glyph.bidi_level % 2 == 0)
+    );
 }
 
 // 验证 RTL cluster 的左右半区命中返回相反逻辑边界。

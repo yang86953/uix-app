@@ -7,9 +7,9 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::capabilities::StatusLevel;
+use crate::ui::SnapshotFields;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::widget::WidgetTree;
-use crate::ui::SnapshotFields;
 use crate::ui::{ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

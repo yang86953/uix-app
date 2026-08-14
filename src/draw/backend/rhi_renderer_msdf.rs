@@ -5,9 +5,9 @@ use std::sync::Arc;
 
 // 引入最终执行计划所需的 viewport、资源和 context 类型。
 use crate::native::present::rhi::{
-    pipeline_keys, BufferDesc, BufferHandle, BufferUsage, GraphicsContextRhi, PipelineDesc,
-    PipelineHandle, RhiScissor, RhiViewport, SamplerDesc, SamplerHandle, TextureDesc,
-    TextureFormat, TextureHandle,
+    BufferDesc, BufferHandle, BufferUsage, GraphicsContextRhi, PipelineDesc, PipelineHandle,
+    RhiScissor, RhiViewport, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
+    pipeline_keys,
 };
 
 // 固定单页尺寸，让 atlas 的资源预算和 adapter 上传粒度保持稳定。
@@ -449,7 +449,6 @@ impl RhiRenderer {
         first_error.map_or(Ok(()), Err)
     }
 
-
     // 生成携带 atlas placement UV 的 position/uv/color float8 顶点。
     pub(super) fn msdf_quad_vertices_with_uv(quad: &RhiMsdfQuad, uv: [f32; 4]) -> [f32; 48] {
         // 保存顶点颜色，交给 MSDF shader 做 coverage 与 premultiply。
@@ -538,8 +537,8 @@ mod tests {
 
     // 引入父模块的 atlas page 和 renderer 私有 helper。
     use super::{
-        MsdfAtlasPage, RhiRenderer, MSDF_ATLAS_LIMIT_BYTES, MSDF_ATLAS_MAX_PAGES,
-        MSDF_ATLAS_PAGE_SIZE,
+        MSDF_ATLAS_LIMIT_BYTES, MSDF_ATLAS_MAX_PAGES, MSDF_ATLAS_PAGE_SIZE, MsdfAtlasPage,
+        RhiRenderer,
     };
 
     // 验证固定 page 数量不会突破跨帧 atlas 的硬预算。

@@ -549,7 +549,12 @@ impl ImageGroup {
 
         if let Some(previous) = geometry.previous {
             // 导航箭头（暗底上反白）：白色 token。
-            Self::paint_navigation_control(ctx, previous, "chevron-left", ctx.tokens().color_white());
+            Self::paint_navigation_control(
+                ctx,
+                previous,
+                "chevron-left",
+                ctx.tokens().color_white(),
+            );
         }
         if let Some(next) = geometry.next {
             // 导航箭头（暗底上反白）：白色 token。

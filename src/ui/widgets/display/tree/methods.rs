@@ -7,8 +7,8 @@ use std::rc::Rc;
 
 use super::component::FlatNode;
 use super::{
-    DropPosition, TREE_INDENT_WIDTH, TREE_MIN_TITLE_WIDTH, TREE_ROW_HEIGHT, TREE_SLOT_WIDTH,
-    Tree, TreeNode, TreePointerAction, TreeRowGeometry,
+    DropPosition, TREE_INDENT_WIDTH, TREE_MIN_TITLE_WIDTH, TREE_ROW_HEIGHT, TREE_SLOT_WIDTH, Tree,
+    TreeNode, TreePointerAction, TreeRowGeometry,
 };
 
 impl Tree {
@@ -25,11 +25,7 @@ impl Tree {
     }
 
     pub(crate) fn search_height_for_intrinsic(&self) -> f32 {
-        if self.searchable {
-            32.0
-        } else {
-            0.0
-        }
+        if self.searchable { 32.0 } else { 0.0 }
     }
 
     pub(crate) fn local_frame(&self) -> Rect {

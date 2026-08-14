@@ -8,7 +8,7 @@ use crate::draw::painting::{FrameGlyphOutline, FrameRect};
 use std::sync::Arc;
 
 // 引入父模块统一的缩放、裁剪与 RHI 队列类型。
-use super::{axis_aligned_corners, color_rgba, scaled_scissor, RhiOp, RhiViewport};
+use super::{RhiOp, RhiViewport, axis_aligned_corners, color_rgba, scaled_scissor};
 
 // 把一个有序字形轮廓批次降低为 GPU MSDF quad。
 pub(super) fn append_glyph_outlines(

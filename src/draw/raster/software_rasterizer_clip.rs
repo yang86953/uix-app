@@ -5,8 +5,8 @@
 
 use crate::core::{Errc, Error, Point, Rect};
 use crate::draw::geometry::path::{FillRule, Path};
-use crate::draw::geometry::types::Transform;
 use crate::draw::geometry::tessellator;
+use crate::draw::geometry::types::Transform;
 
 use super::software_rasterizer::SoftwareRasterizer;
 
@@ -20,14 +20,24 @@ impl SoftwareRasterizer {
         // 先完成变换，再交给共享 tessellator 做有限性和拓扑预算检查。
         let device_path = path.transformed(composed);
         // 非法或超预算路径保持为可观察的 typed failure，不改变当前裁剪状态。
-        let triangles = tessellator::tessellate_fill(&device_path, FillRule::NonZero).ok_or_else(
-            || Error::new(Errc::NotImplemented, "path clip tessellation is unsupported"),
-        )?;
+        let triangles =
+            tessellator::tessellate_fill(&device_path, FillRule::NonZero).ok_or_else(|| {
+                Error::new(
+                    Errc::NotImplemented,
+                    "path clip tessellation is unsupported",
+                )
+            })?;
         // 目标尺寸已在构造时钳制为正数，checked_mul 仍保留地址空间安全边界。
         let pixel_count = usize::try_from(self.surface_w)
             .ok()
-            .and_then(|width| usize::try_from(self.surface_h).ok().and_then(|height| width.checked_mul(height)))
-            .ok_or_else(|| Error::new(Errc::GraphicsOutOfMemory, "path clip mask extent overflow"))?;
+            .and_then(|width| {
+                usize::try_from(self.surface_h)
+                    .ok()
+                    .and_then(|height| width.checked_mul(height))
+            })
+            .ok_or_else(|| {
+                Error::new(Errc::GraphicsOutOfMemory, "path clip mask extent overflow")
+            })?;
         // mask 先存四个采样点的 bit，最后统一换算成 0/85/170/255 coverage。
         let mut mask = Vec::new();
         // 预留失败必须转成 graphics OOM，而不是让 Vec 在 OOM 时直接 abort。
@@ -55,11 +65,7 @@ impl SoftwareRasterizer {
             let max_x = a.x.max(b.x).max(c.x);
             let max_y = a.y.max(b.y).max(c.y);
             // 非有限边界不应绕过上面的 tessellator 约束。
-            if !(min_x.is_finite()
-                && min_y.is_finite()
-                && max_x.is_finite()
-                && max_y.is_finite())
-            {
+            if !(min_x.is_finite() && min_y.is_finite() && max_x.is_finite() && max_y.is_finite()) {
                 return Err(Error::new(
                     Errc::NotImplemented,
                     "path clip triangle has non-finite bounds",
@@ -106,8 +112,8 @@ impl SoftwareRasterizer {
         }
         // 将 sample bits 转换为 8-bit coverage，四个样本各占四分之一。
         for value in &mut mask {
-        // 4 个样本的满 coverage 需要在 u8 范围内饱和到 255。
-        *value = (value.count_ones() as u16 * 85).min(255) as u8;
+            // 4 个样本的满 coverage 需要在 u8 范围内饱和到 255。
+            *value = (value.count_ones() as u16 * 85).min(255) as u8;
         }
         // 路径裁剪与已有路径裁剪相交，保持嵌套 clip 的乘法 coverage 语义。
         if let Some(previous) = self.clip_mask.as_ref() {

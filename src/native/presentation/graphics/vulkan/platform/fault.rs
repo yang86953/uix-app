@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::ffi::CStr;
 use std::ptr;
 
-use ash::{vk, Entry};
+use ash::{Entry, vk};
 
 use crate::core::{Errc, Error};
 
@@ -357,9 +357,7 @@ impl DeviceLossState {
         };
         let error = Error::new(
             Errc::GraphicsDeviceLost,
-            format!(
-                "VulkanContext: shared logical device marked lost by test ({diagnostic})"
-            ),
+            format!("VulkanContext: shared logical device marked lost by test ({diagnostic})"),
         );
         let _ = self.record_with(error, |error| error);
     }

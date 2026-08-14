@@ -3,7 +3,7 @@
 use crate::core::Result;
 use ::windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use ::windows::Win32::Graphics::Direct3D12::{D3D12CreateDevice, ID3D12Device};
-use ::windows::Win32::Graphics::Dxgi::{IDXGIAdapter1, IDXGIFactory4, DXGI_ADAPTER_FLAG_SOFTWARE};
+use ::windows::Win32::Graphics::Dxgi::{DXGI_ADAPTER_FLAG_SOFTWARE, IDXGIAdapter1, IDXGIFactory4};
 
 use super::error::{d3d12_error, platform_error};
 

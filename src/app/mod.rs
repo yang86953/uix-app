@@ -40,7 +40,7 @@ pub(crate) mod window_semantics;
 
 pub use crate::ui::AppState;
 pub use application::app_handle::AppHandle;
-pub use application::application::{map_ui_event, App, AppMode};
+pub use application::application::{App, AppMode, map_ui_event};
 pub use application::cli::{Cli, CliArgs};
 pub use application::di::Container;
 pub use queues::app_timer::TimerHandle;

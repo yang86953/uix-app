@@ -47,12 +47,8 @@ impl MessageHandle {
         // 保存时长供队列调度。
         let duration_ms = item.duration_ms;
         // 外部高位 ID 与命令式本地 ID 分离。
-        self.queue.push_external_with_close(
-            id,
-            item,
-            duration_ms,
-            std::sync::Arc::new(on_close),
-        );
+        self.queue
+            .push_external_with_close(id, item, duration_ms, std::sync::Arc::new(on_close));
     }
 
     // 幂等更新 keyed 声明条目。

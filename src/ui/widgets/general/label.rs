@@ -5,8 +5,8 @@
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::geometry::spatial::PhysicalUnit;
 use crate::draw::TextLayoutOptions;
+use crate::draw::geometry::spatial::PhysicalUnit;
 use crate::ui::component::clipboard;
 use crate::ui::component::paint_context::PaintContext;
 // 引入共享的单节点文字选区实现。

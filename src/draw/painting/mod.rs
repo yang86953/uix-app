@@ -26,4 +26,4 @@ pub use encoder::{
     FrameRasterOp, FrameRect, FrameSampledRect, FrameStrokeRect, FrameStrokeWidth, GpuFrameAudit,
     GpuFrameViolationKind, PresentOutcome, ReferenceFrame,
 };
-pub use paint_context::{resolve_font_size, PaintContext, PaintSurfaceConfig};
+pub use paint_context::{PaintContext, PaintSurfaceConfig, resolve_font_size};

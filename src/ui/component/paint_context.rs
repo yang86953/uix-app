@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use crate::core::{Point, Rect, Size};
 use crate::draw::geometry::path::{FillRule, Path};
-use crate::draw::geometry::spatial::{PhysicalUnit, Vec3, AABB3D};
+use crate::draw::geometry::spatial::{AABB3D, PhysicalUnit, Vec3};
 use crate::draw::geometry::stroker::StrokeOptions;
 use crate::draw::painting::PaintContext as DrawPaintContext;
 use crate::draw::painting::PaintPass;

@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::ThreadId;
 
 use crate::core::{ComponentId, Rect};
-use crate::draw::renderer::{invalidate_paint_handle, InvalidationQueueHandle};
+use crate::draw::renderer::{InvalidationQueueHandle, invalidate_paint_handle};
 use crate::platform::windowing::EventLoopWaker;
 use crate::ui::component::component_handle::ComponentHandle;
 use crate::ui::component_snapshot::ComponentConfigSnapshot;

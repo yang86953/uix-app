@@ -37,7 +37,7 @@ impl SpecialDirProvider for WindowsSpecialDirs {
                         return Err(Error::new(
                             Errc::InvalidArgument,
                             format!("WindowsSpecialDirs::special_dir: unsupported dir {dir:?}"),
-                        ))
+                        ));
                     }
                 };
                 get_known_folder_path(&guid)

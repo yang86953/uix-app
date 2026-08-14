@@ -4,8 +4,8 @@
 //! `GraphicsDeviceLost`，真正的失败与恢复仍由窗口现有图形 FSM 执行。
 
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
 use crate::core::{Errc, Error, Result};

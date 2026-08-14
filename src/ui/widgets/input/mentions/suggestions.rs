@@ -93,5 +93,4 @@ impl Mentions {
         self.dropdown_scroll.set_scroll_offset(0.0);
         self.scroll_delta_strip.set((0.0, 0.0));
     }
-
 }

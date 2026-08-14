@@ -51,7 +51,10 @@ pub(super) fn required_u64(object: &Map<String, Value>, field: &str) -> Result<u
         .ok_or_else(|| WireError::invalid("required unsigned integer field is missing or invalid"))
 }
 
-pub(super) fn optional_u64(object: &Map<String, Value>, field: &str) -> Result<Option<u64>, WireError> {
+pub(super) fn optional_u64(
+    object: &Map<String, Value>,
+    field: &str,
+) -> Result<Option<u64>, WireError> {
     match object.get(field) {
         None | Some(Value::Null) => Ok(None),
         Some(value) => value
@@ -144,27 +147,27 @@ pub(super) fn parse_action(value: &Value) -> Result<ParsedAgentAction, WireError
             return Ok(ParsedAgentAction::Window(AgentWindowAction::PressKey {
                 key: parse_key_code(object)?,
                 modifiers: parse_key_modifiers(object)?,
-            }))
+            }));
         }
         "click_at" => {
             return Ok(ParsedAgentAction::Window(AgentWindowAction::ClickAt {
                 position: Point::new(required_f32(object, "x")?, required_f32(object, "y")?),
-            }))
+            }));
         }
         "pointer_move" => {
             return Ok(ParsedAgentAction::Window(AgentWindowAction::PointerMove {
                 position: Point::new(required_f32(object, "x")?, required_f32(object, "y")?),
-            }))
+            }));
         }
         "pointer_down" => {
             return Ok(ParsedAgentAction::Window(AgentWindowAction::PointerDown {
                 position: Point::new(required_f32(object, "x")?, required_f32(object, "y")?),
-            }))
+            }));
         }
         "pointer_up" => {
             return Ok(ParsedAgentAction::Window(AgentWindowAction::PointerUp {
                 position: Point::new(required_f32(object, "x")?, required_f32(object, "y")?),
-            }))
+            }));
         }
         _ => return Err(WireError::invalid("unknown action kind")),
     };
@@ -288,7 +291,10 @@ pub(super) fn error_reply(
     )
 }
 
-pub(super) fn submit_error_reply(request_id: String, error: AgentSubmitError) -> AgentProtocolReply {
+pub(super) fn submit_error_reply(
+    request_id: String,
+    error: AgentSubmitError,
+) -> AgentProtocolReply {
     let message = match error {
         AgentSubmitError::WindowNotFound => "window was not found",
         AgentSubmitError::QueueFull => "window command queue is full",
@@ -297,7 +303,10 @@ pub(super) fn submit_error_reply(request_id: String, error: AgentSubmitError) ->
     error_reply(Some(request_id), error.code(), message, false)
 }
 
-pub(super) fn command_error_reply(request_id: String, error: AgentCommandError) -> AgentProtocolReply {
+pub(super) fn command_error_reply(
+    request_id: String,
+    error: AgentCommandError,
+) -> AgentProtocolReply {
     let message = match &error {
         AgentCommandError::StaleWindow { .. } => "window generation is stale",
         AgentCommandError::StaleRevision { .. } => "window revision is stale",

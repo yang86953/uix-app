@@ -168,11 +168,7 @@ pub(crate) fn dismiss_overlay_owner_from_outside(tree: &mut WidgetTree, owner: W
             // 获取浮层 owner 节点的可变引用。
             .get_mut(owner)
             // 下转到具体反馈组件。
-            .and_then(|node| {
-                node.component_mut()
-                    .as_any_mut()
-                    .downcast_mut::<Popover>()
-            })
+            .and_then(|node| node.component_mut().as_any_mut().downcast_mut::<Popover>())
         {
             // 用户外部点击关闭已打开的 Popover 弹层。
             popover.close();
@@ -186,11 +182,7 @@ pub(crate) fn dismiss_overlay_owner_from_outside(tree: &mut WidgetTree, owner: W
             // 获取浮层 owner 节点的可变引用。
             .get_mut(owner)
             // 下转到具体导航组件。
-            .and_then(|node| {
-                node.component_mut()
-                    .as_any_mut()
-                    .downcast_mut::<Dropdown>()
-            })
+            .and_then(|node| node.component_mut().as_any_mut().downcast_mut::<Dropdown>())
         {
             // 用户外部点击关闭已打开的 Dropdown 菜单。
             dropdown.close();

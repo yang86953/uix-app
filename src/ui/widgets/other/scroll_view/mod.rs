@@ -15,8 +15,8 @@ use crate::ui::children::WidgetChildren;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::tree_measure::child_from_tree_with_constraints;
 // 复用共享布局边界的有限化与 margin 归一规则。
-use crate::ui::layout::engine::{finite_non_negative, finite_or_zero, normalize_margin};
 use crate::ui::layout::LayoutChild;
+use crate::ui::layout::engine::{finite_non_negative, finite_or_zero, normalize_margin};
 use crate::ui::reactive::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, WidgetComponent,

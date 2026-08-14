@@ -2,8 +2,8 @@
 
 use std::fmt;
 
-use crate::ui::view::{View, ViewNode};
 use crate::ui::State;
+use crate::ui::view::{View, ViewNode};
 
 use crate::ui::form::{Form, FormBuilder, FormField, FormModel, IntoFormValue, Values};
 

@@ -2,11 +2,11 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::sync::{atomic::AtomicBool, Arc};
+use std::sync::{Arc, atomic::AtomicBool};
 use std::time::{Duration, Instant};
 
 use crate::app::app_events::ThemeApplied;
-use crate::app::application::app_handle::{prepare_app_root, AppHandle};
+use crate::app::application::app_handle::{AppHandle, prepare_app_root};
 use crate::app::application::cli::Cli;
 use crate::app::application::di::Container;
 // 引入 Application System 私有逐窗反馈 owner。
@@ -15,12 +15,13 @@ use crate::app::application::feedback_state::AppFeedbackState;
 use crate::app::application::named_themes::NamedThemes;
 use crate::app::event_loop::run_window_session_loop_with_system_theme_and_tasks;
 use crate::app::queues::app_timer::{AppTimerQueue, TimerHandle};
-use crate::app::queues::clock::{system_clock, AppClock};
+use crate::app::queues::clock::{AppClock, system_clock};
 use crate::app::queues::main_thread_queue::{MainThreadContext, MainThreadQueue};
 use crate::app::session_runtime::{AppRuntime, OpenWindowRequest};
 use crate::app::window::text_input::sync_window_text_input;
 use crate::app::window::window_actions::{
-    apply_pending_window_actions, configure_custom_title_bar,
+    apply_pending_window_actions,
+    configure_custom_title_bar,
     // 统一主窗与次窗的自动居中能力缺失策略。
     report_center_on_screen_result,
 };
@@ -30,8 +31,9 @@ use crate::app::window::window_session::WindowSession;
 use crate::bus::EventBus;
 use crate::core::{Errc, Error, Point, WindowId};
 use crate::data::SettingsService;
+use crate::draw::Renderer;
 use crate::draw::renderer::bootstrap::{
-    assemble_renderer, bootstrap_renderer_with_pending, ProbeReport,
+    ProbeReport, assemble_renderer, bootstrap_renderer_with_pending,
 };
 #[cfg(feature = "test-harness")]
 use crate::draw::renderer::test_harness::GraphicsFaultSignal;
@@ -39,22 +41,21 @@ use crate::draw::renderer::{RebuildRequest, RecoveryDriver, RenderTargetRebuilde
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
 use crate::draw::target::RenderTarget;
-use crate::draw::Renderer;
 // recipe 装配输入经 platform 公开面消费；create_platform_with_pending 保留组合根直调。
 use crate::native::factory::create_platform_with_pending;
 use crate::native::platform::Platform;
-use crate::platform::presentation::{
-    gpu_recipe_candidates, graphics_runtime_platform, try_create_gpu_recipe_with_queue,
-    GraphicsApi, GraphicsRecipe, GraphicsSelection, NativeSurfaceHandle,
-};
 use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::windowing::window::{PlatformWindow, WindowOcclusionState};
 use crate::platform::graphics::GraphicsBackend;
+use crate::platform::presentation::{
+    GraphicsApi, GraphicsRecipe, GraphicsSelection, NativeSurfaceHandle, gpu_recipe_candidates,
+    graphics_runtime_platform, try_create_gpu_recipe_with_queue,
+};
 use crate::ui::theme::traits::TokenProvider;
 use crate::ui::theme::{DesignTokens, DynTokens, Theme};
 use crate::ui::view::ViewNode;
 use crate::ui::{
-    with_config, with_locale, AppState, ComponentConfig, Locale, SystemEvent, WidgetTree,
+    AppState, ComponentConfig, Locale, SystemEvent, WidgetTree, with_config, with_locale,
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -685,9 +686,8 @@ impl App {
         // 主题应用序次（单调递增，供 ThemeApplied 负载区分重复应用）。
         let theme_revision = Cell::new(0u64);
         // 感知方：主题变更诊断遥测（tracing 发射，可观测性订阅）。
-        let theme_events_subscription = match theme_bus
-            .borrow_mut()
-            .subscribe(|fact: &ThemeApplied| {
+        let theme_events_subscription =
+            match theme_bus.borrow_mut().subscribe(|fact: &ThemeApplied| {
                 tracing::debug!(
                     target: "app.theme",
                     is_dark = fact.is_dark,
@@ -695,14 +695,14 @@ impl App {
                     "theme applied"
                 );
             }) {
-            Ok(subscription) => subscription,
-            Err(error) => {
-                // 新总线必为 Active，此处不可达；若发生（实现缺陷）
-                // 中止启动并报告，不静默吞掉订阅失败。
-                tracing::error!("theme event subscription failed: {}", error.short_what());
-                return 1;
-            }
-        };
+                Ok(subscription) => subscription,
+                Err(error) => {
+                    // 新总线必为 Active，此处不可达；若发生（实现缺陷）
+                    // 中止启动并报告，不静默吞掉订阅失败。
+                    tracing::error!("theme event subscription failed: {}", error.short_what());
+                    return 1;
+                }
+            };
         drain_pending_open_windows_with_backend(
             &mut *platform,
             &self.runtime,
@@ -828,10 +828,7 @@ impl App {
                             is_dark: data.is_dark,
                             revision: theme_revision.get(),
                         }) {
-                            tracing::error!(
-                                "theme applied publish failed: {}",
-                                error.short_what()
-                            );
+                            tracing::error!("theme applied publish failed: {}", error.short_what());
                         }
                     }
                 } else {

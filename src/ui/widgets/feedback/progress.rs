@@ -4,9 +4,9 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintPass;
 use crate::draw::{Color, GradientDirection, Radius};
+use crate::ui::SnapshotFields;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::widget::WidgetTree;
-use crate::ui::SnapshotFields;
 use std::rc::Rc;
 
 /// Progress display type.

@@ -22,10 +22,10 @@ pub use crate::core::{
 // UI-facing input values and platform graphics selection
 
 pub use crate::platform::capabilities::StatusLevel;
+pub use crate::platform::graphics::GraphicsBackend;
 pub use crate::platform::windowing::{
     ControlSize, CursorType, KeyCode, KeyMod, MouseButton, ScrollDirection,
 };
-pub use crate::platform::graphics::GraphicsBackend;
 // draw
 
 pub use crate::draw::{

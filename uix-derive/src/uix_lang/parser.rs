@@ -4,10 +4,10 @@ mod control_binding;
 mod element_parser;
 // 引入核心 AST、词法游标和诊断。
 use super::{
-    parse_at_declaration, parse_component_declaration, parse_record_declaration,
+    ComponentStateInitial, ComponentValueType, Cursor, Declaration, Diagnostic, Document,
+    SourceSpan, parse_at_declaration, parse_component_declaration, parse_record_declaration,
     parse_style_class, register_declaration_name, starts_component_declaration,
-    starts_record_declaration, ComponentStateInitial, ComponentValueType, Cursor, Declaration,
-    Diagnostic, Document, SourceSpan,
+    starts_record_declaration,
 };
 // 引入拆分后的元素解析入口。
 use element_parser::parse_element;
@@ -230,7 +230,7 @@ fn validate_value_type_record(
 #[cfg(test)]
 mod tests {
     // 引入待测解析入口和 AST 联合。
-    use super::{parse_document, AttributeValue, Node};
+    use super::{AttributeValue, Node, parse_document};
 
     // 验证注释、属性、嵌套、自闭合、文本与插值保持顺序。
     #[test]

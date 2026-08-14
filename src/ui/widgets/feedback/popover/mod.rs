@@ -5,9 +5,9 @@ use crate::component;
 
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
-use crate::ui::animation::{presets, AnimationConfig, TransitionPlayer};
-use crate::ui::component::paint_context::PaintContext;
 use crate::ui::SnapshotFields;
+use crate::ui::animation::{AnimationConfig, TransitionPlayer, presets};
+use crate::ui::component::paint_context::PaintContext;
 use crate::ui::{EventResult, KeyCode, MouseButton, State, SystemEvent, WidgetTree};
 
 mod geometry;

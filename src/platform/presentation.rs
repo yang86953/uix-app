@@ -29,12 +29,11 @@ pub(crate) fn native_client_logical_extent(
     {
         // 句柄为空时退回缓存值，避免对无效窗口发起 Win32 查询。
         if !native_window.is_null() {
-            let drawable =
-                crate::native::presentation::graphics::platform::windows::drawable_size(
-                    native_window,
-                    cached_width,
-                    cached_height,
-                );
+            let drawable = crate::native::presentation::graphics::platform::windows::drawable_size(
+                native_window,
+                cached_width,
+                cached_height,
+            );
             return (drawable.logical_width, drawable.logical_height);
         }
     }

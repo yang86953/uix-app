@@ -6,13 +6,13 @@
 use std::sync::Arc;
 
 // 引入统一错误和最终 damage。
-use crate::core::error::{Errc, Error, Result};
 use crate::core::PresentDamage;
+use crate::core::error::{Errc, Error, Result};
 // 引入薄 RHI 的资源、能力和执行类型。
 use crate::native::present::rhi::{
-    pipeline_keys, BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsContextRhi,
-    LoadAction, PipelineDesc, RhiExtent, RhiScissor, RhiViewport, SamplerDesc, SamplerHandle,
-    TextureDesc, TextureFormat, TextureHandle,
+    BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsContextRhi, LoadAction,
+    PipelineDesc, RhiExtent, RhiScissor, RhiViewport, SamplerDesc, SamplerHandle, TextureDesc,
+    TextureFormat, TextureHandle, pipeline_keys,
 };
 
 // 引入当前目录中的有序帧计划类型。

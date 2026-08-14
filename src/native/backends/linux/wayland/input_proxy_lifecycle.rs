@@ -10,7 +10,7 @@ pub(crate) enum InputProxyTransition {
     Release,
     // 重复快照不产生任何协议对象生命周期操作。
     Unchanged,
-// 结束输入代理边沿枚举。
+    // 结束输入代理边沿枚举。
 }
 
 // 根据 capability 完整快照与当前代理槽位计算唯一边沿动作。
@@ -19,7 +19,7 @@ pub(crate) const fn input_proxy_transition(
     capability_available: bool,
     // 表示 owner 当前是否持有对应协议代理。
     proxy_bound: bool,
-// 返回创建、释放或保持不变的确定性决策。
+    // 返回创建、释放或保持不变的确定性决策。
 ) -> InputProxyTransition {
     // 完整匹配 capability 与代理现状，避免重复创建或重复释放。
     match (capability_available, proxy_bound) {
@@ -29,7 +29,7 @@ pub(crate) const fn input_proxy_transition(
         (false, true) => InputProxyTransition::Release,
         // 其余相同状态快照保持幂等。
         _ => InputProxyTransition::Unchanged,
-    // 结束 capability 边沿匹配。
+        // 结束 capability 边沿匹配。
     }
-// 结束输入代理生命周期决策。
+    // 结束输入代理生命周期决策。
 }

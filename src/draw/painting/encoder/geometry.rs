@@ -4,8 +4,8 @@
 //! 由命令契约（[`super::commands`]）与执行路径（[`super::pixels`]）共享。
 
 use crate::core::Rect;
-use crate::draw::geometry::types::Radius;
 use crate::draw::Color;
+use crate::draw::geometry::types::Radius;
 use std::sync::Arc;
 
 use super::error::FrameEncoderError;

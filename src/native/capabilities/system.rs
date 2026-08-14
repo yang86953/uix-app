@@ -1,4 +1,4 @@
-﻿//! 系统服务协议 — 文件、对话框、通知、定时器、控制台与系统信息。
+//! 系统服务协议 — 文件、对话框、通知、定时器、控制台与系统信息。
 
 use crate::core::error::{Errc, Error, Result};
 
@@ -159,7 +159,10 @@ mod special_dir_consistency {
     #[test]
     fn platform_variants_are_a_subset_of_native() {
         let pairs = [
-            (crate::platform::services::SpecialDir::Home, SpecialDir::Home),
+            (
+                crate::platform::services::SpecialDir::Home,
+                SpecialDir::Home,
+            ),
             (
                 crate::platform::services::SpecialDir::AppData,
                 SpecialDir::AppData,

@@ -10,8 +10,6 @@ use crate::ui::widgets::input::{
 };
 use crate::ui::{EventResult, FocusHandle, SemanticKind, State, SystemEvent};
 
-
-
 /// 一个已登记字段的声明式日期输入项。
 pub struct FormDatePickerItem {
     model: FormModel,
@@ -324,7 +322,12 @@ where
         .focus_handle(focus_handle)
 }
 
-pub(crate) fn form_item_shell(model: &FormModel, field: &str, show_error: bool, input: ViewNode) -> ViewNode {
+pub(crate) fn form_item_shell(
+    model: &FormModel,
+    field: &str,
+    show_error: bool,
+    input: ViewNode,
+) -> ViewNode {
     let error = model.field_error(field);
     let status = if error.is_some() {
         ValidateStatus::Error
@@ -394,9 +397,7 @@ fn form_range_item_shell(
     )
 }
 
-
 impl FormModel {
-
     /// 把已声明的 `Date` 字段绑定为 `FormItem + DatePicker` View。
     pub fn date_picker_item(
         &self,
@@ -491,5 +492,4 @@ impl FormModel {
             show_error: true,
         })
     }
-
 }

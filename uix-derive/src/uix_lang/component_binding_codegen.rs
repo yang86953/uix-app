@@ -9,9 +9,9 @@ use super::component_codegen::{Binding, BindingKind, Bindings, ComponentExpander
 use super::component_expression_lower::{collect_number_sources, restore_number_sources};
 // 引入组件字段、属性、表达式与诊断 AST。
 use super::{
-    rust_identifier, value_type_tokens, Attribute, AttributeValue, ComponentProp,
-    ComponentPropType, ComponentState, ComponentStateInitial, ComponentValueType, Diagnostic,
-    Expression, ExpressionKind, ExpressionNode, ObjectField,
+    Attribute, AttributeValue, ComponentProp, ComponentPropType, ComponentState,
+    ComponentStateInitial, ComponentValueType, Diagnostic, Expression, ExpressionKind,
+    ExpressionNode, ObjectField, rust_identifier, value_type_tokens,
 };
 // 引入既有受限表达式生成入口。
 use super::generate_expression;

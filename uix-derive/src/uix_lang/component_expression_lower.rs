@@ -489,7 +489,10 @@ pub(super) fn collect_number_sources(expression: &Expression) -> Vec<(super::Sou
 }
 
 // 按跨度恢复结构属性中的作者数字源码。
-pub(super) fn restore_number_sources(expression: &mut Expression, sources: &[(super::SourceSpan, String)]) {
+pub(super) fn restore_number_sources(
+    expression: &mut Expression,
+    sources: &[(super::SourceSpan, String)],
+) {
     // 递归访问当前表达式中的数字节点。
     visit_numbers_mut(expression, &mut |number| {
         // 只处理数字节点。

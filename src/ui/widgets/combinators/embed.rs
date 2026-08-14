@@ -2,7 +2,7 @@
 pub(super) fn adopt_widget_node(
     // 接收已物化的命令式节点。
     node: crate::ui::component::widget::WidgetNode,
-// 返回保存运行时元数据的声明节点。
+    // 返回保存运行时元数据的声明节点。
 ) -> crate::ui::view::ViewNode {
     // 保留子组件构建所需的提供者上下文。
     let provider_context = node.provider_context.clone();

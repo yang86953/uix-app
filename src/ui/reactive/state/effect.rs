@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, Weak};
 
 // 引入依赖收集、generation 快照与 State 私有内部状态。
-use super::{collect_deps, GenerationCheck, GenerationSnapshot, StateInner, StateSlotId};
+use super::{GenerationCheck, GenerationSnapshot, StateInner, StateSlotId, collect_deps};
 // 引入 View 构建期间交接 Effect 的捕获栈。
 use super::STATE_CAPTURE_STACK;
 

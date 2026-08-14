@@ -88,9 +88,8 @@ fn report_is_retained_without_a_subscriber_and_snapshot_is_immutable() {
 #[test]
 fn reports_are_sanitized_and_cause_depth_is_bounded() {
     install_global_default_subscriber();
-    let diagnostics = Diagnostics::new(
-        DiagnosticsConfig::default().backtrace(BacktracePolicy::Disabled),
-    );
+    let diagnostics =
+        Diagnostics::new(DiagnosticsConfig::default().backtrace(BacktracePolicy::Disabled));
     let long = format!("{}\nsecret\t{}", "界".repeat(1_000), "\0");
     diagnostics.report(Error::new(Errc::InvalidArgument, long));
 
@@ -137,10 +136,12 @@ fn concurrent_reports_keep_unique_monotonic_retained_ids() {
     assert_eq!(snapshot.total_reports(), 160);
     assert_eq!(snapshot.reports().len(), 16);
     assert_eq!(snapshot.evicted_reports(), 144);
-    assert!(snapshot
-        .reports()
-        .windows(2)
-        .all(|pair| pair[0].id() < pair[1].id()));
+    assert!(
+        snapshot
+            .reports()
+            .windows(2)
+            .all(|pair| pair[0].id() < pair[1].id())
+    );
 }
 
 #[test]
@@ -161,20 +162,14 @@ fn exact_error_recovery_is_ordered_raii_scoped_and_panic_safe() {
     });
 
     assert!(matches!(
-        diagnostics.attempt_recovery(Error::new(
-            Errc::GraphicsDeviceLost,
-            "device lost",
-        )),
+        diagnostics.attempt_recovery(Error::new(Errc::GraphicsDeviceLost, "device lost",)),
         RecoveryOutcome::Recovered
     ));
     assert_eq!(calls.load(Ordering::Relaxed), 11);
 
     drop(second);
     assert!(matches!(
-        diagnostics.attempt_recovery(Error::new(
-            Errc::GraphicsDeviceLost,
-            "device lost again",
-        )),
+        diagnostics.attempt_recovery(Error::new(Errc::GraphicsDeviceLost, "device lost again",)),
         RecoveryOutcome::Unhandled(_)
     ));
     drop(first);
@@ -182,8 +177,7 @@ fn exact_error_recovery_is_ordered_raii_scoped_and_panic_safe() {
     let panicking = diagnostics.on_error(Errc::TaskAbandoned, |_| {
         panic!("recovery panic must be isolated")
     });
-    let outcome =
-        diagnostics.attempt_recovery(Error::new(Errc::TaskAbandoned, "worker failed"));
+    let outcome = diagnostics.attempt_recovery(Error::new(Errc::TaskAbandoned, "worker failed"));
     let failure = match outcome {
         RecoveryOutcome::Failed(error) => error,
         _ => panic!("panicking recovery must become a typed failure"),

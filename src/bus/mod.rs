@@ -28,8 +28,8 @@
 mod event_bus;
 mod subscription;
 
-pub use event_bus::{BusState, DispatchReport, EventBus, MAX_DISPATCH_DEPTH};
 pub use event_bus::Publisher;
+pub use event_bus::{BusState, DispatchReport, EventBus, MAX_DISPATCH_DEPTH};
 pub use subscription::Subscription;
 
 /// 事件契约标记：表达一个已经发生、可被零个或多个订阅者独立观察的

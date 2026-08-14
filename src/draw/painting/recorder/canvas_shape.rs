@@ -241,7 +241,6 @@ impl FrameRecordingCanvas {
         // 返回亚像素 shape 和统一 surface 裁剪。
         Some((sampled, self.native_src_over_fill_clip()?))
     }
-
 }
 
 // 仅在测试构建中验证亚像素 shape 的录制与参考执行契约。

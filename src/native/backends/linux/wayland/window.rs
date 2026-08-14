@@ -11,8 +11,8 @@ use crate::core::{Error, WindowId};
 use crate::native::windowing::shared::{PlatformWindowCore, WindowState};
 use crate::native::windowing::*;
 
-use super::window_ops::WaylandWindowOps;
 use super::WaylandBackend;
+use super::window_ops::WaylandWindowOps;
 
 impl IWindowManager for WaylandBackend {
     fn create_window(

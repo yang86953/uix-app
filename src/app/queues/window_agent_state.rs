@@ -8,16 +8,16 @@
 
 use std::sync::Arc;
 
-use crate::app::queues::agent_command_queue::{
-    send_result, AgentCommandError, AgentCommandQueue, AgentCommandRequest,
-    AgentCommandResponse, AgentCommandResult, MAX_AGENT_SETTLE_PASSES,
-};
 #[cfg(any(test, feature = "agent-control"))]
 use crate::app::queues::agent_command_queue::AgentWindowAction;
+use crate::app::queues::agent_command_queue::{
+    AgentCommandError, AgentCommandQueue, AgentCommandRequest, AgentCommandResponse,
+    AgentCommandResult, MAX_AGENT_SETTLE_PASSES, send_result,
+};
 use crate::app::window_semantics::WindowSemanticState;
+use crate::ui::WidgetTree;
 use crate::ui::accessibility::semantic_snapshot::SemanticTarget;
 use crate::ui::semantic_action::SemanticAction;
-use crate::ui::WidgetTree;
 
 /// Agent 命令执行契约：由 `agent` Module 实现，组合根组装期注入。
 ///
@@ -284,5 +284,3 @@ impl WindowAgentState {
         self.settle_passes = 0;
     }
 }
-
-

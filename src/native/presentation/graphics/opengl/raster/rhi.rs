@@ -9,8 +9,8 @@ use crate::native::present::rhi::{
 };
 // 复用父模块中的 OpenGL pipeline 和资源设备类型。
 use super::{
-    rhi_device::{OpenGlRhiDevice, RHI_SURFACE_TARGET_RAW},
     OpenGlRasterPipeline,
+    rhi_device::{OpenGlRhiDevice, RHI_SURFACE_TARGET_RAW},
 };
 
 // 将 surface target 身份重新导出给 WGL/EGL surface bridge。

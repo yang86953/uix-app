@@ -3,11 +3,11 @@
 //! 原生传输层提供私有字节流。本模块拥有帧划分语义与线上校验，但绝不直接
 //! 触碰平台句柄或 `WidgetTree`。
 
-use std::sync::mpsc::RecvTimeoutError;
 use std::sync::Arc;
+use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, Instant};
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::app::agent::agent_bridge::{
     AgentProcessBridge, AgentWaitCondition, AgentWaitError, AgentWaitOutcome, AgentWindowInfo,
@@ -206,7 +206,7 @@ impl AgentProtocolSession {
                     AgentErrorCode::InvalidRequest,
                     "message is not valid JSON",
                     !self.authenticated,
-                )
+                );
             }
         };
         let Some(object) = value.as_object() else {
@@ -509,7 +509,7 @@ impl AgentProtocolSession {
                     AgentErrorCode::InvalidRequest,
                     "wait requires exactly one revision condition",
                     false,
-                )
+                );
             }
         };
 
@@ -532,8 +532,8 @@ impl AgentProtocolSession {
 
 mod wire;
 
-use self::wire::*;
 pub(crate) use self::wire::encode_session_token;
+use self::wire::*;
 
 // 协议线解析与帧往返专项测试（仅 agent-control 能力下编译）。
 #[cfg(all(test, feature = "agent-control"))]

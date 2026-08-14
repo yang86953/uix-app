@@ -1,7 +1,7 @@
 //! Fake 剪贴板 — 内存实现 + 操作记录。
 
-use crate::native::windowing::input::IClipboard;
 use crate::native::Result;
+use crate::native::windowing::input::IClipboard;
 use std::cell::Cell;
 
 /// 剪贴板状态（公开字段，测试可直接读取断言）

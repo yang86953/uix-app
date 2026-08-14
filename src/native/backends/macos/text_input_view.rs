@@ -1,14 +1,14 @@
 use std::collections::VecDeque;
-use std::ffi::{c_char, c_void, CString};
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::ffi::{CString, c_char, c_void};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Mutex, MutexGuard, Once};
 
 use crate::core::{Errc, Error, WindowId};
 use crate::diagnostics::PendingFailureSource;
 use crate::native::windowing::event::UiEvent;
 use crate::native::windowing::shared::ime_events::{
-    on_committed_text_for_window, on_marked_text_for_window, on_unmark_text_for_window,
-    ImeCompositionState,
+    ImeCompositionState, on_committed_text_for_window, on_marked_text_for_window,
+    on_unmark_text_for_window,
 };
 use crate::native::windowing::shared::ime_owner::{
     NativeImeOwner, NativeImeSession, NativeImeTarget,

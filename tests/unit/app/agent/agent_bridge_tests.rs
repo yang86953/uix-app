@@ -4,12 +4,12 @@
 
 // 引入被测的目录、等待条件/结果与端口发布 trait。
 use super::{
-    wait_outcome, AgentBridgeDirectory, AgentSemanticsPort, AgentWaitCondition,
-    AgentWaitError, AgentWaitOutcome, AgentWindowInfo,
+    AgentBridgeDirectory, AgentSemanticsPort, AgentWaitCondition, AgentWaitError, AgentWaitOutcome,
+    AgentWindowInfo, wait_outcome,
 };
 // 引入核心标识与语义快照类型。
-use crate::core::WindowId;
 use crate::app::window_semantics::WindowSemanticSnapshot;
+use crate::core::WindowId;
 
 /// 构造一个已启用且注册了单窗口的目录。
 fn enabled_directory_with_window(window_id: WindowId) -> (AgentBridgeDirectory, u64) {
@@ -320,17 +320,28 @@ fn window_with_revisions(revision: u64, presented: u64, closed: bool) -> AgentWi
 fn wait_outcome_revision_after_threshold() {
     // 修订号必须严格大于阈值。
     assert_eq!(
-        wait_outcome(&window_with_revisions(5, 0, false), AgentWaitCondition::RevisionAfter(4)),
-        Some(AgentWaitOutcome::Changed(window_with_revisions(5, 0, false)))
+        wait_outcome(
+            &window_with_revisions(5, 0, false),
+            AgentWaitCondition::RevisionAfter(4)
+        ),
+        Some(AgentWaitOutcome::Changed(window_with_revisions(
+            5, 0, false
+        )))
     );
     // 修订号等于阈值不满足条件。
     assert_eq!(
-        wait_outcome(&window_with_revisions(5, 0, false), AgentWaitCondition::RevisionAfter(5)),
+        wait_outcome(
+            &window_with_revisions(5, 0, false),
+            AgentWaitCondition::RevisionAfter(5)
+        ),
         None
     );
     // 修订号低于阈值不满足条件。
     assert_eq!(
-        wait_outcome(&window_with_revisions(3, 0, false), AgentWaitCondition::RevisionAfter(4)),
+        wait_outcome(
+            &window_with_revisions(3, 0, false),
+            AgentWaitCondition::RevisionAfter(4)
+        ),
         None
     );
 }
@@ -340,17 +351,30 @@ fn wait_outcome_revision_after_threshold() {
 fn wait_outcome_presented_at_least_threshold() {
     // 呈现修订号等于阈值必须满足。
     assert_eq!(
-        wait_outcome(&window_with_revisions(0, 4, false), AgentWaitCondition::PresentedAtLeast(4)),
-        Some(AgentWaitOutcome::Presented(window_with_revisions(0, 4, false)))
+        wait_outcome(
+            &window_with_revisions(0, 4, false),
+            AgentWaitCondition::PresentedAtLeast(4)
+        ),
+        Some(AgentWaitOutcome::Presented(window_with_revisions(
+            0, 4, false
+        )))
     );
     // 呈现修订号高于阈值必须满足。
     assert_eq!(
-        wait_outcome(&window_with_revisions(0, 6, false), AgentWaitCondition::PresentedAtLeast(4)),
-        Some(AgentWaitOutcome::Presented(window_with_revisions(0, 6, false)))
+        wait_outcome(
+            &window_with_revisions(0, 6, false),
+            AgentWaitCondition::PresentedAtLeast(4)
+        ),
+        Some(AgentWaitOutcome::Presented(window_with_revisions(
+            0, 6, false
+        )))
     );
     // 呈现修订号低于阈值不满足。
     assert_eq!(
-        wait_outcome(&window_with_revisions(0, 2, false), AgentWaitCondition::PresentedAtLeast(4)),
+        wait_outcome(
+            &window_with_revisions(0, 2, false),
+            AgentWaitCondition::PresentedAtLeast(4)
+        ),
         None
     );
 }

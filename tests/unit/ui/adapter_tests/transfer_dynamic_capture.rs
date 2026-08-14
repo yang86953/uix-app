@@ -350,11 +350,12 @@ fn transfer_item_dynamic_capture_releases_moved_and_removed_state() {
         ),
     );
     // renderer 移除后 Transfer 不再拥有任何 View 子节点。
-    assert!(tree
-        .get(transfer)
-        .expect("Transfer 必须仍存在")
-        .children()
-        .is_empty());
+    assert!(
+        tree.get(transfer)
+            .expect("Transfer 必须仍存在")
+            .children()
+            .is_empty()
+    );
     // 全部动态条目移除后不得遗留动画来源。
     assert!(tree.animated_source_registrations().is_empty());
     // 保存最近一次 target:a 状态句柄用于关闭前释放验证。
