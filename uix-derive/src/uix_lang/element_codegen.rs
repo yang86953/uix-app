@@ -6,7 +6,7 @@ use super::codegen::{generate_button, generate_icon, generate_text};
 // 引入所有独立组件生成器、语法树与诊断入口。
 use super::{
     generate_affix, generate_alert, generate_anchor, generate_app_layout, generate_autocomplete,
-    generate_avatar, generate_back_top, generate_breadcrumb, generate_button_group,
+    generate_avatar, generate_back_top, generate_badge, generate_breadcrumb, generate_button_group,
     generate_calendar, generate_card, generate_carousel, generate_cascader, generate_checkbox,
     generate_color_picker, generate_column, generate_container, generate_date_picker,
     generate_date_range_picker, generate_descriptions, generate_divider, generate_drawer,
@@ -114,6 +114,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "ColorPicker" => generate_color_picker(element),
         // 头像映射到公开来源、回退文字、形状与固有尺寸契约。
         "Avatar" => generate_avatar(element),
+        // 徽章映射到零或一个真实子 View 的透明装饰器契约。
+        "Badge" => generate_badge(element),
         // 图片映射到公开来源、固有尺寸与运行时加载预览配置契约。
         "Image" => generate_image(element),
         // 图片组映射到公开路径集合、初始索引与运行时变化事实契约。

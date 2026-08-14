@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::draw::geometry::spatial::PhysicalUnit;
 use crate::draw::Color;
+use crate::draw::geometry::spatial::PhysicalUnit;
 // 反馈 capability 启用时才需要警告提示状态级别。
 #[cfg(feature = "feedback")]
 use crate::native::capabilities::system::StatusLevel;
@@ -194,6 +194,12 @@ pub enum SnapshotFields {
         offset_x: f32,
         offset_y: f32,
         offset_unit: Option<(PhysicalUnit, PhysicalUnit)>,
+        /// 标记 Badge 是否作为透明组合装饰器。
+        composite: bool,
+        /// 标记运行时是否已经登记唯一真实子节点。
+        child_present: bool,
+        /// 保存最终装饰绘制边界，不复制真实子节点快照。
+        decoration_bounds: crate::core::Rect,
     },
     Card {
         title: Option<String>,

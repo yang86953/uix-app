@@ -1,0 +1,77 @@
+// 声明验收页面使用的面板样式。
+acceptancePanel {
+  // 为溢出角标保留稳定视觉观察空间。
+  padding: 40px;
+  // 使用白色背景便于核对红色角标边缘。
+  backgroundColor: #FFFFFF;
+  // 使用浅色边框标记页面边界。
+  borderWidth: 1px;
+  // 使用中性边框颜色。
+  borderColor: #D9D9D9;
+  // 使用统一圆角。
+  borderRadius: 10px;
+}
+
+// 声明可动态切换计数与圆点的 Badge 验收面板。
+<Component name="BadgeAcceptance" state="count: 5, show_dot: true">
+  // 纵向排列说明、动态样例与静态形态矩阵。
+  <Column gap="28px">
+    // 展示验收标题。
+    <Text fontSize="heading2">Badge 真窗视觉验收</Text>
+    // 说明透明装饰器的交互归属。
+    <Text>角标覆盖真实子 View 的右上角且不扩大布局；点击与焦点只属于子按钮。</Text>
+    // 第一行覆盖动态数字、圆点与真实交互子节点。
+    <Container direction="row" gap="64px" align="center">
+      // 按钮自身点击更新 count，验证 Badge 不吞掉业务事件。
+      <Badge count={count}>
+        // 真实按钮保持自己的样式、焦点环与点击处理器。
+        <Button type="primary" @click="setState(count: count + 1)">点击增加计数：{count}</Button>
+      // 结束动态数字样例。
+      </Badge>
+      // 圆点表达式动态控制装饰显隐。
+      <Badge dot={show_dot}>
+        // 头像保持自己的独立语义与布局尺寸。
+        <Avatar text="AL" shape="square" size="48px" />
+      // 结束动态圆点样例。
+      </Badge>
+      // 独立按钮只负责切换圆点状态。
+      <Button @click="setState(show_dot: !show_dot)">切换圆点</Button>
+    // 结束动态样例行。
+    </Container>
+    // 第二行覆盖 Icon、文本胶囊与零子节点兼容行为。
+    <Container direction="row" gap="64px" align="center">
+      // Icon 子节点验证小尺寸锚点。
+      <Badge count="99">
+        // 铃铛图标保持自己的固有尺寸。
+        <Icon name="bell" size="32px" />
+      // 结束 Icon 数字样例。
+      </Badge>
+      // 文字胶囊覆盖普通按钮右上角。
+      <Badge text="NEW">
+        // 普通按钮用于核对不同子尺寸的锚定一致性。
+        <Button>查看更新</Button>
+      // 结束文字胶囊样例。
+      </Badge>
+      // 零子节点独立数字徽章保持旧叶组件行为。
+      <Badge count="8" />
+      // 零计数且未 showZero 时只隐藏装饰。
+      <Badge count="0" />
+    // 结束静态形态行。
+    </Container>
+    // 展示人工或自动截图核对清单。
+    <Text>核对：数字/圆点/NEW 均锚定右上角；99 不撑开 Icon；Tab 只停在按钮；动态显隐后旧位置无残影。</Text>
+  // 结束验收内容。
+  </Column>
+// 结束验收面板组件。
+</Component>
+
+// 声明独立真窗应用入口。
+<App title="UIX Badge 视觉验收" size="980x480" theme="light">
+  // 使用固定验收面板承载全部样例。
+  <Container class="acceptancePanel">
+    // 挂载带动态状态的验收组件。
+    <BadgeAcceptance />
+  // 结束页面面板。
+  </Container>
+// 结束应用入口。
+</App>

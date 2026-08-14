@@ -11,6 +11,8 @@ demo/
 │   └── src/
 │       ├── main.rs     # Rust 应用组合根：窗口生命周期、类型化数据与语言面之外的状态
 │       └── main.uix    # uix-lang 界面：12 个页面组件、全部已注册标签、私有状态与事件
+├── badge-visual/       # Badge 零/单子装饰器真窗验收
+├── popconfirm-visual/  # Popconfirm 单 trigger 真窗验收
 └── cli-demo/           # CLI 功能域演示
     ├── Cargo.toml      # package/bin: uix-cli-demo
     └── src/
@@ -23,9 +25,10 @@ demo/
 | 模式 | 命令 | 说明 |
 |------|------|------|
 | **uix-lang GUI（主演示）** | `cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo` | `.uix` 文件入口、12 个页面组件、私有/类型化状态与全部已注册标签 |
+| **Badge 真窗验收** | `cargo run --release --manifest-path demo/Cargo.toml --bin badge-visual` | 零子兼容、Icon / Avatar / Button 单子装饰与动态 count / dot |
 | **CLI** | `cargo run --manifest-path demo/Cargo.toml --bin uix-cli-demo` | `core` / `draw` / `ui` / `app` / `data` 无 GUI API |
 
-两个项目共享 `demo/target/` 构建目录；根目录 `cargo` 命令不包含本工作区，需要显式
+各项目共享 `demo/target/` 构建目录；根目录 `cargo` 命令不包含本工作区，需要显式
 `--manifest-path demo/Cargo.toml`（或进入 `demo/` 目录执行）。
 
 uix-lang 只负责在编译期生成 `ViewNode`。`uix-lang-demo/src/main.rs` 继续作为 Rust
