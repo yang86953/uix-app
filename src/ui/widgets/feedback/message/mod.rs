@@ -322,6 +322,7 @@ impl Message {
     // toast 家族内容尾部间隙；Notification 侧为 8.0，存在 1px 历史差异，保留原值。
     const CONTENT_TRAILING_GAP: f32 = 7.0;
 
+    /// 创建拥有独立队列且默认显示在顶部的全局提示容器。
     pub fn new() -> Self {
         // Rust 直接构造获得独立队列，不再修改任何进程级注册表。
         Self::from_handle(MessageHandle::new())
@@ -347,11 +348,13 @@ impl Message {
         }
     }
 
+    /// 设置提示队列在宿主区域中的放置位置。
     pub fn placement(mut self, placement: Placement) -> Self {
         self.placement = placement;
         self
     }
 
+    /// 设置每条提示的操作标签及回调；空白标签会被忽略。
     pub fn action<F>(mut self, label: impl Into<String>, action: F) -> Self
     where
         F: Fn() + 'static,
@@ -364,6 +367,7 @@ impl Message {
         self
     }
 
+    /// 设置每条提示使用的自定义图标名称。
     pub fn icon(mut self, icon: impl Into<String>) -> Self {
         self.icon_name = Some(icon.into());
         self
@@ -381,40 +385,49 @@ impl Message {
         self
     }
 
+    /// 返回共享当前提示队列的窄操作句柄。
     pub fn handle(&self) -> MessageHandle {
         MessageHandle {
             queue: self.queue.clone(),
         }
     }
 
+    /// 添加提示项并返回其稳定标识。
     pub fn add(&self, item: MessageItem) -> u64 {
         self.handle().add(item)
     }
 
+    /// 添加使用标准时长的成功提示并返回其稳定标识。
     pub fn success(&self, content: impl Into<String>) -> u64 {
         self.handle().success(content)
     }
 
+    /// 添加使用标准时长的信息提示并返回其稳定标识。
     pub fn info(&self, content: impl Into<String>) -> u64 {
         self.handle().info(content)
     }
 
+    /// 添加使用标准时长的警告提示并返回其稳定标识。
     pub fn warning(&self, content: impl Into<String>) -> u64 {
         self.handle().warning(content)
     }
 
+    /// 添加使用标准时长的错误提示并返回其稳定标识。
     pub fn error(&self, content: impl Into<String>) -> u64 {
         self.handle().error(content)
     }
 
+    /// 请求移除指定提示；返回该标识是否对应现有本地提示。
     pub fn dismiss(&self, id: u64) -> bool {
         self.handle().dismiss(id)
     }
 
+    /// 请求移除当前队列中的全部提示。
     pub fn clear(&self) {
         self.handle().clear();
     }
 
+    /// 返回当前提示项的值快照。
     pub fn items(&self) -> Vec<MessageItem> {
         self.queue.values()
     }
