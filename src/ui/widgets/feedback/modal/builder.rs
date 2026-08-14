@@ -187,6 +187,54 @@ mod tests {
         modal
     }
 
+    // 验证声明式 Modal 的 blur 请求经过真实布局进入唯一 OverlayStack。
+    #[cfg(feature = "test-harness")]
+    #[test]
+    fn backdrop_blur_reaches_surface_overlay_stack() {
+        // 使用与真窗演示一致的固定表面构造测试应用。
+        let app = crate::ui::automation::TestApp::new((900.0, 560.0), || {
+            // 首帧即打开，覆盖真实验收的生命周期。
+            let open = State::new(true);
+            // 构造显式强模糊的 Modal 根视图。
+            crate::ui::view::View::build(
+                Modal::builder()
+                    // 绑定首帧打开状态。
+                    .open(&open)
+                    // 设置稳定标题便于语义布局。
+                    .title("Backdrop contract")
+                    // 下发可精确断言的显式半径。
+                    .backdrop_blur(crate::ui::OverlayBackdropBlur::radius(24.0)),
+            )
+        });
+        // 真实布局必须登记 Modal overlay。
+        let entry = app
+            // 读取同一 WidgetTree 的唯一 overlay 事实。
+            .tree()
+            // 读取布局后重建的 OverlayStack。
+            .overlay_stack()
+            // Modal 是当前最上层 overlay。
+            .top()
+            // 缺失登记即为 UI 到 ScenePaint 桥接失败。
+            .expect("modal should register a surface overlay");
+        // 请求必须保留到 ScenePaint 聚合前的 typed 值。
+        assert_eq!(
+            // 读取登记值。
+            entry.backdrop_blur_value(),
+            // 显式半径不得丢失或退回默认关闭。
+            Some(crate::ui::OverlayBackdropBlur::radius(24.0))
+        );
+        // 当前表面与半径必须能解析为 draw System 效果计划。
+        assert!(
+            app.tree()
+                // 使用生产 OverlayStack。
+                .overlay_stack()
+                // 主题值不应覆盖显式半径。
+                .backdrop_effect(8.0)
+                // 合法请求必须形成计划。
+                .is_some()
+        );
+    }
+
     #[test]
     fn controlled_follows_external_state() {
         let state = State::new(false);

@@ -15,10 +15,14 @@ use crate::draw::Canvas2D;
 
 // 固定唯一测试节点，避免每个用例重复构造场景树。
 const ROOT_NODE: NodeId = ComponentId::new(1);
+// 固定 overlay 子节点，供 clean refresh 两阶段事务测试。
+const OVERLAY_NODE: NodeId = ComponentId::new(2);
 
 // 描述本次调用应注入失败的 backdrop 生命周期边界。
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BackdropFailurePoint {
+    // 不注入失败，用于成功事务测试。
+    None,
     // 快照资源事务返回设备丢失。
     Snapshot,
     // 模糊派生事务返回设备丢失。
@@ -43,6 +47,12 @@ struct FailingBackdropTarget {
     has_backdrop: bool,
     // 记录 blur 调用的逻辑区域与半径。
     blur_calls: Vec<(Rect, f32)>,
+    // 记录正常树中间 FrameEncoder 提交次数。
+    encoded_frame_calls: usize,
+    // 记录 clean snapshot 次数。
+    snapshot_calls: usize,
+    // 记录 effect/clean restore 次数。
+    restore_calls: usize,
 }
 
 // 提供紧凑、确定的测试 target 构造入口。
@@ -63,6 +73,12 @@ impl FailingBackdropTarget {
             has_backdrop: failure_point == BackdropFailurePoint::Restore,
             // 尚未执行任何 blur。
             blur_calls: Vec::new(),
+            // 尚未提交正常树 FrameEncoder。
+            encoded_frame_calls: 0,
+            // 尚未捕获 clean snapshot。
+            snapshot_calls: 0,
+            // 尚未恢复 effect/clean。
+            restore_calls: 0,
         }
     }
 }
@@ -117,6 +133,8 @@ impl RenderTarget for FailingBackdropTarget {
 
     // 在快照用例注入可恢复的设备丢失。
     fn snapshot_overlay_backdrop(&mut self) -> Result<bool, Error> {
+        // 每次进入 snapshot 都留下事务证据。
+        self.snapshot_calls += 1;
         // 只在选定边界返回 typed failure。
         if self.failure_point == BackdropFailurePoint::Snapshot {
             // 使用生产恢复器识别的稳定错误码。
@@ -159,6 +177,8 @@ impl RenderTarget for FailingBackdropTarget {
 
     // 在恢复用例注入可恢复的表面丢失。
     fn restore_overlay_backdrop(&mut self) -> Result<bool, Error> {
+        // 每次进入 restore 都留下事务证据。
+        self.restore_calls += 1;
         // 只在选定边界返回 typed failure。
         if self.failure_point == BackdropFailurePoint::Restore {
             // 使用生产恢复器识别的稳定错误码。
@@ -198,6 +218,143 @@ impl RenderTarget for FailingBackdropTarget {
     fn has_overlay_backdrop(&self) -> bool {
         // 返回 snapshot/release 更新后的 owner 事实。
         self.has_backdrop
+    }
+
+    // 模拟正常树 FrameEncoder 已完整写入 retained texture，但尚未 present。
+    fn try_execute_encoded_frame(
+        // 借用测试 target owner。
+        &mut self,
+        // 命令内容由场景管线生成，本测试只观察边界次数。
+        _encoder: &crate::draw::painting::FrameEncoder,
+    ) -> Result<EncodedFrameExecution, Error> {
+        // 记录唯一中间提交。
+        self.encoded_frame_calls += 1;
+        // 明确报告完整执行。
+        Ok(EncodedFrameExecution::Executed)
+    }
+}
+
+// 提供一个正常根树与一个 root-level overlay 子节点。
+struct RefreshScene {
+    // 保存当前帧 typed effect。
+    effect: crate::draw::OverlayBackdropEffect,
+}
+
+// 两节点场景精确触发 normal_tree_dirty 与 overlay membership。
+impl ScenePaint for RefreshScene {
+    // 返回正常根节点。
+    fn root_id(&self) -> Option<NodeId> {
+        // 场景始终有效。
+        Some(ROOT_NODE)
+    }
+
+    // 使用固定场景代际。
+    fn tree_version(&self) -> u64 {
+        // 与共享帧输入保持一致。
+        7
+    }
+
+    // 正常树刷新使用全帧 dirty。
+    fn dirty_region(&self) -> DirtyRegion {
+        // 避免局部剪枝影响事务断言。
+        DirtyRegion::full()
+    }
+
+    // 两个节点均可见。
+    fn node_visible(&self, _id: NodeId) -> bool {
+        // 不测试可见性门禁。
+        true
+    }
+
+    // 正常根覆盖测试 surface，overlay 使用相同逻辑范围。
+    fn node_frame(&self, _id: NodeId) -> Rect {
+        // 使用确定的 64x48 逻辑区域。
+        Rect::new(0.0, 0.0, 64.0, 48.0)
+    }
+
+    // 只有正常根声明 dirty。
+    fn node_dirty(&self, id: NodeId) -> bool {
+        // overlay 自身无需触发 refresh。
+        id == ROOT_NODE
+    }
+
+    // overlay 在正常根之上。
+    fn node_z_index(&self, id: NodeId) -> i32 {
+        // 使用稳定的两层排序。
+        i32::from(id == OVERLAY_NODE)
+    }
+
+    // 正常根包含唯一 overlay 子节点。
+    fn node_children(&self, id: NodeId) -> &[NodeId] {
+        // 保存稳定静态子节点切片。
+        static OVERLAY_CHILD: [NodeId; 1] = [OVERLAY_NODE];
+        // 只有根节点公开子关系。
+        if id == ROOT_NODE {
+            // 返回 overlay 子节点。
+            &OVERLAY_CHILD
+        } else {
+            // overlay 没有后代。
+            &[]
+        }
+    }
+
+    // 只有第二节点属于 overlay。
+    fn node_is_overlay(&self, id: NodeId) -> bool {
+        // 正常根保持 normal tree 身份。
+        id == OVERLAY_NODE
+    }
+
+    // 返回本帧唯一 typed effect。
+    fn overlay_backdrop_effect(&self) -> Option<crate::draw::OverlayBackdropEffect> {
+        // Copy 值直接交给场景管线。
+        Some(self.effect)
+    }
+
+    // 本测试不使用子树裁剪。
+    fn children_clip(&self, _id: NodeId, _frame: Rect) -> Option<Rect> {
+        // 保持无裁剪语义。
+        None
+    }
+
+    // dirty rect 等于节点 frame。
+    fn dirty_rect(&self, _id: NodeId, frame: Rect) -> Rect {
+        // 原样返回输入几何。
+        frame
+    }
+
+    // 本测试没有滚动容器。
+    fn scroll_offset(&self, _id: NodeId) -> Option<(f32, f32)> {
+        // 不产生 scroll copy。
+        None
+    }
+
+    // 本测试没有焦点节点。
+    fn focused_node(&self) -> Option<NodeId> {
+        // 返回空焦点。
+        None
+    }
+
+    // 两个节点都不参与焦点导航。
+    fn node_focusable(&self, _id: NodeId) -> bool {
+        // 关闭焦点能力。
+        false
+    }
+
+    // 本测试不执行命中。
+    fn hit_test(&self, _pos: Point) -> Option<NodeId> {
+        // 返回无命中。
+        None
+    }
+
+    // 只声明 overlay 的父节点。
+    fn parent(&self, id: NodeId) -> Option<NodeId> {
+        // overlay 归属正常根。
+        (id == OVERLAY_NODE).then_some(ROOT_NODE)
+    }
+
+    // 使用空绘制即可观察事务顺序。
+    fn paint(&self, _id: NodeId, _frame: Rect, _ctx: &mut PaintContext<'_>) {
+        // 不记录额外图元。
     }
 }
 
@@ -522,4 +679,60 @@ fn overlay_backdrop_blur_failure_stops_before_begin_frame() {
     assert_eq!(target.begin_calls, 0);
     // 更不得结束或呈现失败帧。
     assert_eq!(target.end_calls, 0);
+}
+
+// 验证正常树变化通过一次中间提交重建 clean/effect，最终只 begin/end/present 一次。
+#[test]
+fn overlay_backdrop_refresh_rebuilds_clean_source_before_single_present() {
+    // 创建不注入失败的 retained GPU mock。
+    let mut target = FailingBackdropTarget::new(BackdropFailurePoint::None);
+    // 创建有效独立区域与显式半径。
+    let effect = crate::draw::OverlayBackdropEffect::new(
+        // 使用部分区域证明 typed 值原样进入 blur。
+        Rect::new(4.0, 5.0, 32.0, 20.0),
+        // 使用非默认半径。
+        7.0,
+    )
+    // 测试 effect 必须有效。
+    .expect("refresh effect should be valid");
+    // 正常根 dirty，overlay 子节点保持可见。
+    let scene = RefreshScene { effect };
+    // refresh 从完整 dirty 区域开始。
+    let dirty = DirtyRegion::full();
+    // 创建空字体服务。
+    let fonts = FontService::new();
+    // 创建空图片服务。
+    let images = ImageService::new();
+    // 构造首帧输入以覆盖 overlay 初始即打开的真实窗口路径。
+    let mut input = frame_input(&dirty, &fonts, &images);
+    // 首帧尚无可复用历史 surface，必须由中间正常树提交建立 clean source。
+    input.rendered_first = false;
+    // 执行两阶段 retained 事务。
+    let output = ScenePipeline::new().render_frame(
+        // 传入成功 target。
+        &mut target,
+        // 传入 normal+overlay 场景。
+        &scene,
+        // 传入首帧共享输入。
+        input,
+    );
+    // 最终帧必须进入 backend-managed 或外部 presenter 的成功提交边界。
+    assert!(matches!(
+        // 测试 target 默认使用外部 presenter 能力，因此会返回 PresentPending。
+        output.outcome,
+        // 两种生产提交模式都代表唯一最终 present 已准备完成。
+        RenderOutcome::Present(_) | RenderOutcome::PresentPending(_)
+    ));
+    // 正常树只进行一次无 present 的 FrameEncoder 中间提交。
+    assert_eq!(target.encoded_frame_calls, 1);
+    // 新 clean snapshot 只捕获一次。
+    assert_eq!(target.snapshot_calls, 1);
+    // 新 effect 只从 clean 派生一次。
+    assert_eq!(target.blur_calls, vec![(effect.region(), effect.radius())]);
+    // effect/clean 只恢复一次。
+    assert_eq!(target.restore_calls, 1);
+    // 整个事务只 begin 一次。
+    assert_eq!(target.begin_calls, 1);
+    // 整个事务只 end/present 一次。
+    assert_eq!(target.end_calls, 1);
 }

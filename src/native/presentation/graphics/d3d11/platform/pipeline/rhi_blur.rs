@@ -58,8 +58,8 @@ impl D3d11Pipeline {
             context.IASetIndexBuffer(index, DXGI_FORMAT_R32_UINT, 0);
             // 绑定当前 pass 的目标 RTV。
             context.OMSetRenderTargets(Some(&[Some(target.clone())]), None);
-            // 绑定 blur 专用 vertex shader。
-            context.VSSetShader(&self.vs_blit, None);
+            // 绑定读取 BlurCB 的专用 vertex shader，避免把尺寸误解成 UV 矩形。
+            context.VSSetShader(&self.vs_blur, None);
             // 绑定 blur 专用 pixel shader。
             context.PSSetShader(&self.ps_blur, None);
             // BlurCB 同时由 VS 和 PS 读取。

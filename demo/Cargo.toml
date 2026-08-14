@@ -1,13 +1,13 @@
 # UIX 演示工作区 — 多项目容器
 #   每个子目录是一个独立 Cargo 项目，按运行模式拆分：
 #     uix-lang-demo/ 与 cli-demo/  仓库主 GUI / CLI 演示
-#     badge-visual/、selectable-list-visual/、collapse-visual/、upload-visual/ 与 popconfirm-visual/  独立真窗验收程序
+#     badge-visual/、selectable-list-visual/、collapse-visual/、upload-visual/、backdrop-visual/ 与 popconfirm-visual/  独立真窗验收程序
 #   根目录 `cargo` 命令不包含演示项目，演示构建需显式指向本清单：
 #     cargo run --manifest-path demo/Cargo.toml --bin uix-lang-demo
 
 [workspace]
 # 独立真窗验收程序避免继续扩张主演示源码。
-members = ["uix-lang-demo", "cli-demo", "popconfirm-visual", "badge-visual", "selectable-list-visual", "collapse-visual", "upload-visual"]
+members = ["uix-lang-demo", "cli-demo", "popconfirm-visual", "badge-visual", "selectable-list-visual", "collapse-visual", "upload-visual", "backdrop-visual"]
 resolver = "2"
 
 # ── 编译产物配置 ──────────────────────────────────────────────

@@ -63,7 +63,11 @@ pub struct ScenePipeline {
 }
 
 mod damage;
+// GPU overlay backdrop 的中间提交与统一失败边界。
+mod backdrop_refresh;
 mod pipeline;
+// 统一拥有 recorder 参考尺寸与初始化生命周期。
+mod surface;
 // 单元测试锁定 backdrop typed failure 的场景边界传播。
 #[cfg(test)]
 mod tests;

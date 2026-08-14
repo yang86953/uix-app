@@ -12,21 +12,21 @@
 use std::{ffi::CStr, mem::size_of};
 
 use crate::core::{Errc, Error, Result};
-use ::windows::core::PCSTR;
 use ::windows::Win32::Foundation::{FALSE, TRUE};
 use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
-use ::windows::Win32::Graphics::Direct3D::{ID3DBlob, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST};
+use ::windows::Win32::Graphics::Direct3D::{D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST, ID3DBlob};
 use ::windows::Win32::Graphics::Direct3D11::{
-    ID3D11BlendState, ID3D11Buffer, ID3D11Device, ID3D11DeviceContext, ID3D11InputLayout,
-    ID3D11PixelShader, ID3D11RasterizerState, ID3D11RenderTargetView, ID3D11SamplerState,
-    ID3D11ShaderResourceView, ID3D11VertexShader, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA,
-    D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO,
-    D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_CULL_NONE, D3D11_FILL_SOLID, D3D11_INPUT_ELEMENT_DESC,
-    D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC,
+    D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD,
+    D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO, D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_CULL_NONE,
+    D3D11_FILL_SOLID, D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC,
+    D3D11_RENDER_TARGET_BLEND_DESC, ID3D11BlendState, ID3D11Buffer, ID3D11Device,
+    ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
+    ID3D11RenderTargetView, ID3D11SamplerState, ID3D11ShaderResourceView, ID3D11VertexShader,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32_UINT,
+    DXGI_FORMAT_R32_UINT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32G32B32A32_FLOAT,
 };
+use ::windows::core::PCSTR;
 
 const RECT_HLSL: &str = r#"
 cbuffer RectCB : register(b0)
@@ -127,44 +127,6 @@ float4 PSMain(VSOut input) : SV_Target
     float4 color = floor(saturate(u_color) * 255.0 + 0.5);
     float3 premul = floor(color.rgb * color.a / 255.0);
     return float4(premul * mask, color.a * mask) / 255.0;
-}
-"#;
-
-const BLIT_HLSL: &str = r#"
-Texture2D u_tex : register(t0);
-SamplerState u_samp : register(s0);
-
-cbuffer BlitCB : register(b0)
-{
-    // xy = source top-left; zw = source size, both normalized to the SRV.
-    float4 u_uv_rect;
-    // 组 opacity 需要同步缩放 premultiplied RGB 和 alpha。
-    float4 u_tint;
-};
-
-struct VSIn {
-    float2 pos : POSITION;
-};
-
-struct VSOut {
-    float4 pos : SV_POSITION;
-    float2 uv : TEXCOORD0;
-};
-
-VSOut VSMain(VSIn input)
-{
-    VSOut o;
-    o.pos = float4(input.pos, 0.0, 1.0);
-    // D3D texture (0,0) is top-left; CPU soft buffer is top-left row-major.
-    float2 unit_uv = float2(input.pos.x * 0.5 + 0.5, 0.5 - input.pos.y * 0.5);
-    o.uv = u_uv_rect.xy + unit_uv * u_uv_rect.zw;
-    return o;
-}
-
-float4 PSMain(VSOut input) : SV_Target
-{
-    // 离屏目标已经是 premultiplied 颜色，tint 不得只缩放 alpha。
-    return u_tex.Sample(u_samp, input.uv) * u_tint;
 }
 "#;
 
@@ -543,7 +505,8 @@ pub struct D3d11Pipeline {
     vs_rect: ID3D11VertexShader,
     ps_rect: ID3D11PixelShader,
     layout: ID3D11InputLayout,
-    vs_blit: ID3D11VertexShader,
+    // Blur pass 必须使用读取 BlurCB 的专用 VS，不能复用 BlitCB ABI。
+    vs_blur: ID3D11VertexShader,
     /// 可分离高斯模糊像素着色器。
     ps_blur: ID3D11PixelShader,
     vs_glyph: ID3D11VertexShader,

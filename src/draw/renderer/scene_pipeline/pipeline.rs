@@ -28,22 +28,6 @@ impl ScenePipeline {
         &mut self.layer_tree
     }
 
-    // 将 backdrop 资源事务失败统一转换为不可提交的帧结果。
-    fn failed_backdrop_frame(error: Error, tree_version: u64) -> FrameRenderOutput {
-        // 保留底层错误分类，供 RecoveryDriver 选择 surface 或 device 恢复动作。
-        FrameRenderOutput {
-            // 禁止把资源事务失败伪装成普通整树重绘。
-            outcome: RenderOutcome::Failed(
-                // 使用统一图形错误映射保留 DeviceLost、SurfaceLost 与 OOM。
-                crate::draw::renderer::GraphicsFailure::from_error(error),
-            ),
-            // 失败帧不得消费任何 invalidation 来源。
-            inv_source: InvalidationSource::None,
-            // 回传当前场景代际，调用方仍可保留对应 dirty 状态。
-            tree_version,
-        }
-    }
-
     /// 执行单 Pass 渲染（Content + AfterChildren）；返回 Present damage 与 invalidation 来源。
     pub fn render_frame<S: ScenePaint>(
         &mut self,
@@ -151,15 +135,32 @@ impl ScenePipeline {
             region
         };
 
-        let draw_full = !input.rendered_first
-            || input.dirty_region.full_frame
-            || dirty_for_paint.is_empty()
-            || !frame_start_caps.supports_partial_redraw();
+        // 判断正常树变化是否会污染现有 overlay backdrop。
         let normal_tree_dirty = has_overlay
             && scene
                 .root_id()
                 .is_some_and(|root| Self::scene_normal_tree_dirty(scene, root));
-        if has_overlay && normal_tree_dirty {
+        // GPU-native 可以在同一最终 present 前提交正常树并重建 clean snapshot。
+        let refresh_overlay_backdrop = (normal_tree_dirty
+            // 首帧没有历史 snapshot；只要请求了 effect 就必须主动建立 clean source。
+            || (!input.rendered_first && requested_backdrop_effect.is_some()))
+            // 首帧与后续正常树变化都必须先建立无 overlay 的 clean source。
+            // debug overlay 不参与可复用 backdrop。
+            && !input.debug_mode
+            // 中间 FrameEncoder 提交只对 retained GPU 路径开放。
+            && engine.raster_pipeline() == RasterPipeline::GpuNative;
+        // refresh 必须从完整正常树建立确定的 clean source。
+        let draw_full = refresh_overlay_backdrop
+            || !input.rendered_first
+            || input.dirty_region.full_frame
+            || dirty_for_paint.is_empty()
+            || !frame_start_caps.supports_partial_redraw();
+        if refresh_overlay_backdrop {
+            // CPU backdrop 不跨 GPU 中间提交复用。
+            self.overlay_backdrop = None;
+            // 新事务将在 begin_frame 后从完整正常树重建，不进入安全阻塞。
+            self.overlay_backdrop_blocked = false;
+        } else if has_overlay && normal_tree_dirty {
             self.overlay_backdrop = None;
             // 正常树变化会使快照失效；销毁失败不能被整树重绘掩盖。
             if let Err(error) = engine.release_overlay_backdrop() {
@@ -201,6 +202,7 @@ impl ScenePipeline {
             && self.overlay_backdrop.is_none()
             && !engine.has_overlay_backdrop()
             && !self.overlay_backdrop_blocked
+            && !refresh_overlay_backdrop
         {
             // This boundary still exposes the previous committed main surface;
             // after begin_frame/overlay paint it would already contain the mask.
@@ -254,6 +256,27 @@ impl ScenePipeline {
         } else {
             dirty_with_scroll
         };
+
+        // backdrop refresh 必须在任何最终 begin_frame 之前完成正常树中间提交。
+        if refresh_overlay_backdrop {
+            // 两阶段事务强制全幅重建，并只在函数内部开始一次最终帧。
+            return self.prepare_gpu_backdrop_refresh(
+                // 传入唯一 retained target。
+                engine,
+                // 读取同一场景事实。
+                scene,
+                // 移交本帧输入。
+                input,
+                // 保留场景代际。
+                cur_version,
+                // refresh 重放完整正常树与 overlay。
+                DirtyRegion::full(),
+                // 完整恢复会改变全部 retained 像素，最终提交全幅 damage。
+                DamageRegion::full(),
+                // 传递当前 typed effect。
+                requested_backdrop_effect,
+            );
+        }
 
         let strategy = if draw_full {
             UpdateStrategy::FullRedraw
@@ -412,6 +435,7 @@ impl ScenePipeline {
         self.render_object_tree.sync(scene);
 
         if raster_pipeline == RasterPipeline::GpuNative {
+            // refresh 已在 begin_frame 前分流，此处只执行普通 GPU 路径。
             return self.render_gpu_native(
                 engine,
                 scene,
@@ -655,7 +679,7 @@ impl ScenePipeline {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn render_gpu_native<S: ScenePaint>(
+    pub(super) fn render_gpu_native<S: ScenePaint>(
         &mut self,
         engine: &mut dyn RenderTarget,
         scene: &S,
@@ -849,45 +873,5 @@ impl ScenePipeline {
         }
         let height = i32::try_from(pixels.len() / width_usize).ok()?;
         FrameImage::new(width, height, pixels).ok()
-    }
-
-    fn reference_extent<S: ScenePaint>(engine: &mut dyn RenderTarget, scene: &S) -> (i32, i32) {
-        let (canvas_w, canvas_h) = {
-            let canvas = engine.canvas_2d();
-            (canvas.width(), canvas.height())
-        };
-        if canvas_w > 0 && canvas_h > 0 {
-            return (canvas_w, canvas_h);
-        }
-
-        // The test backend may intentionally expose no real canvas. Its
-        // root frame still provides a deterministic private recording extent.
-        scene
-            .root_id()
-            .map(|id| {
-                let frame = scene.node_frame(id);
-                (
-                    frame.w.ceil().max(1.0) as i32,
-                    frame.h.ceil().max(1.0) as i32,
-                )
-            })
-            .unwrap_or((1, 1))
-    }
-
-    fn ensure_recording_surface(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        let extent = (width.max(1), height.max(1));
-        match self.recording_extent {
-            Some(current) if current == extent => Ok(()),
-            Some(_) => {
-                self.recorder.resize(extent.0, extent.1)?;
-                self.recording_extent = Some(extent);
-                Ok(())
-            }
-            None => {
-                self.recorder.initialize(extent.0, extent.1)?;
-                self.recording_extent = Some(extent);
-                Ok(())
-            }
-        }
     }
 }

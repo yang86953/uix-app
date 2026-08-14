@@ -8,20 +8,20 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 // 引入图像拼板与保存能力。
-use image::{imageops, DynamicImage, GenericImage, RgbaImage};
+use image::{DynamicImage, GenericImage, RgbaImage, imageops};
 // 引入窗口、坐标与矩形类型。
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
 // 引入桌面像素复制所需 GDI 资源。
 use windows::Win32::Graphics::Gdi::{
-    BitBlt, ClientToScreen, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC,
-    ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CAPTUREBLT, DIB_RGB_COLORS,
-    HBITMAP, HDC, HGDIOBJ, SRCCOPY,
+    BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CAPTUREBLT, ClientToScreen, CreateCompatibleDC,
+    CreateDIBSection, DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, HBITMAP, HDC, HGDIOBJ,
+    ReleaseDC, SRCCOPY, SelectObject,
 };
 // 引入顶层窗口枚举、可见性与置顶能力。
 use windows::Win32::UI::WindowsAndMessaging::{
     BringWindowToTop, EnumWindows, GetClientRect, GetWindowRect, GetWindowTextW,
-    GetWindowThreadProcessId, IsWindowVisible, IsZoomed, SetWindowPos, HWND_TOPMOST, SWP_NOMOVE,
-    SWP_NOSIZE, SWP_SHOWWINDOW,
+    GetWindowThreadProcessId, HWND_TOPMOST, IsWindowVisible, IsZoomed, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_SHOWWINDOW, SetWindowPos,
 };
 // 引入 Win32 回调布尔返回值。
 use windows::core::BOOL;
@@ -441,6 +441,46 @@ pub(crate) fn changed_pixel_ratio(left: &Path, right: &Path) -> f64 {
     let total = u64::from(left.width()) * u64::from(left.height());
     // 返回零到一范围的变化比例。
     changed as f64 / total as f64
+}
+
+// 断言 backdrop 专用条纹证据同时保留两侧颜色并形成宽过渡带。
+pub(crate) fn assert_backdrop_blur_transition(path: &Path) {
+    // 解码本测试刚写出的无损 D3D11 客户区证据。
+    let image = image::open(path)
+        // 文件缺失或损坏必须阻止视觉验收。
+        .unwrap_or_else(|error| panic!("open backdrop evidence {}: {error}", path.display()))
+        // 统一为八位 RGB 像素。
+        .to_rgb8();
+    // 固定夹具必须保持足够尺寸以覆盖第一条边界与 Modal 外区域。
+    assert!(image.width() > 150 && image.height() > 50);
+    // 读取第一条暖色条纹中心。
+    let left = image.get_pixel(50, 50);
+    // 读取第一条冷色条纹中心。
+    let right = image.get_pixel(150, 50);
+    // 读取边界左侧五像素，强模糊时应已混入冷色。
+    let blend_left = image.get_pixel(95, 50);
+    // 读取边界右侧五像素，强模糊时应仍混有暖色。
+    let blend_right = image.get_pixel(105, 50);
+    // 左侧必须保持红通道主导，防止 blur/restore 塌成错误单色。
+    assert!(
+        left[0] > left[2] + 40,
+        "left stripe lost warm color: {left:?}"
+    );
+    // 右侧必须保持蓝通道主导，防止整幅采样同一纹理边缘。
+    assert!(
+        right[2] > right[0] + 40,
+        "right stripe lost cool color: {right:?}"
+    );
+    // 边界左侧必须明显偏离暖色中心，证明过渡不再是硬切。
+    assert!(
+        blend_left[2] >= left[2] + 15,
+        "left blur transition is too sharp: center={left:?}, edge={blend_left:?}"
+    );
+    // 边界右侧必须明显偏离冷色中心，证明高斯核跨越边界。
+    assert!(
+        blend_right[0] >= right[0] + 15,
+        "right blur transition is too sharp: center={right:?}, edge={blend_right:?}"
+    );
 }
 
 // 计算同尺寸截图中一个逻辑矩形映射后的 RGB 变化比例。

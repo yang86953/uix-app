@@ -546,6 +546,13 @@ class GraphicsContextContractTests(unittest.TestCase):
             # 固定 ScenePipeline 实现路径。
             ROOT / "src/draw/renderer/scene_pipeline/pipeline.rs"
         ).read_text(encoding="utf-8")
+        # 读取拆分后的 clean refresh 与统一失败边界。
+        backdrop_refresh = (
+            # 固定 ScenePipeline backdrop 子模块路径。
+            ROOT / "src/draw/renderer/scene_pipeline/backdrop_refresh.rs"
+        ).read_text(encoding="utf-8")
+        # 合并同一 ScenePipeline component 的两个实现文件供契约审计。
+        pipeline_contract = pipeline + backdrop_refresh
         # 读取有界恢复包装器，确认场景外错误会登记到下一帧。
         recovery = (ROOT / "src/draw/renderer/recovery_driver.rs").read_text(
             # 保持源码契约读取编码稳定。
@@ -588,7 +595,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 显式 release 必须直接返回检查式销毁结果。
         self.assertIn("self.destroy_rhi_overlay_backdrop_texture()", backdrop)
         # 场景管线必须统一生成不可提交的失败帧。
-        self.assertIn("fn failed_backdrop_frame", pipeline)
+        self.assertIn("fn failed_backdrop_frame", pipeline_contract)
         # 禁止恢复曾经吞掉快照错误的无结果调用。
         self.assertNotIn("let _ = engine.snapshot_overlay_backdrop()", pipeline)
         # 恢复失败必须在 end_frame 前直接返回失败帧。
