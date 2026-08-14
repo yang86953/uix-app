@@ -38,6 +38,7 @@ mod embed_node;
 /// - 同质：`column([label("a"), label("b")])`、`Vec<_>`
 /// - 异质：`column((label("a"), button("b")))` 或 `column(views![...])`
 pub trait IntoViewChildren {
+    /// 消费输入并按声明顺序构建统一的视图节点列表。
     fn into_view_children(self) -> Vec<ViewNode>;
 }
 
@@ -64,6 +65,7 @@ impl View for () {
     }
 }
 
+/// 在条件成立时构建单个子节点，否则返回空子节点列表。
 pub fn show(when: bool, child: impl View) -> Vec<ViewNode> {
     if when {
         vec![child.build()]
@@ -172,6 +174,7 @@ pub fn grid(children: impl IntoViewChildren) -> GridBuilder {
     }
 }
 
+/// 用于配置静态轨道或响应式列规则的 Grid 视图构建器。
 pub struct GridBuilder {
     children: Vec<ViewNode>,
     widget: crate::ui::widgets::Grid,
@@ -179,12 +182,14 @@ pub struct GridBuilder {
 }
 
 impl GridBuilder {
+    /// 设置显式列轨定义并同步到 Grid 组件与节点样式。
     pub fn columns(mut self, columns: Vec<GridTrack>) -> Self {
         self.style = self.style.with_grid_columns(columns.clone());
         self.widget = self.widget.columns(columns);
         self
     }
 
+    /// 设置显式行轨定义并同步到 Grid 组件与节点样式。
     pub fn rows(mut self, rows: Vec<GridTrack>) -> Self {
         self.style = self.style.with_grid_rows(rows.clone());
         self.widget = self.widget.rows(rows);
@@ -198,36 +203,42 @@ impl GridBuilder {
         self
     }
 
+    /// 设置响应式 Grid 使用的断点集合。
     pub fn breakpoints(mut self, breakpoints: crate::ui::widgets::Breakpoints) -> Self {
         self.style.grid_template_columns.clear();
         self.widget = self.widget.breakpoints(breakpoints);
         self
     }
 
+    /// 设置响应式 Grid 的子列占位配置。
     pub fn cols(mut self, cols: Vec<crate::ui::widgets::Col>) -> Self {
         self.style.grid_template_columns.clear();
         self.widget = self.widget.cols(cols);
         self
     }
 
+    /// 同时设置 Grid 的列间距与行间距。
     pub fn gap(mut self, gap: f32) -> Self {
         self.style = self.style.with_gap(gap).with_grid_gap(gap, gap);
         self.widget = self.widget.gap(gap);
         self
     }
 
+    /// 设置相邻列轨之间的间距。
     pub fn col_gap(mut self, gap: f32) -> Self {
         self.style.grid_column_gap = gap;
         self.widget = self.widget.col_gap(gap);
         self
     }
 
+    /// 设置相邻行轨之间的间距。
     pub fn row_gap(mut self, gap: f32) -> Self {
         self.style.grid_row_gap = gap;
         self.widget = self.widget.row_gap(gap);
         self
     }
 
+    /// 使用两个等宽弹性列配置 Grid。
     pub fn two_columns(mut self) -> Self {
         let columns = vec![GridTrack::Fr(1.0), GridTrack::Fr(1.0)];
         self.style = self.style.with_grid_columns(columns.clone());
@@ -235,6 +246,7 @@ impl GridBuilder {
         self
     }
 
+    /// 使用三个等宽弹性列配置 Grid。
     pub fn three_columns(mut self) -> Self {
         let columns = vec![GridTrack::Fr(1.0), GridTrack::Fr(1.0), GridTrack::Fr(1.0)];
         self.style = self.style.with_grid_columns(columns.clone());
@@ -271,6 +283,7 @@ pub fn scroll(child: impl View) -> ScrollBuilder {
     }
 }
 
+/// 用于配置滚动方向、视口尺寸与滚动条的视图构建器。
 pub struct ScrollBuilder {
     child: ViewNode,
     direction: ScrollDirection,
@@ -281,31 +294,37 @@ pub struct ScrollBuilder {
 }
 
 impl ScrollBuilder {
+    /// 将视口限制为仅垂直滚动。
     pub fn vertical(mut self) -> Self {
         self.direction = ScrollDirection::Vertical;
         self
     }
 
+    /// 将视口限制为仅水平滚动。
     pub fn horizontal(mut self) -> Self {
         self.direction = ScrollDirection::Horizontal;
         self
     }
 
+    /// 允许视口在水平与垂直两个方向滚动。
     pub fn both(mut self) -> Self {
         self.direction = ScrollDirection::Both;
         self
     }
 
+    /// 设置滚动视口的固定宽度与高度。
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.fixed_size = Some((w, h));
         self
     }
 
+    /// 设置滚动容器在父级 Flex 布局中的伸展权重。
     pub fn flex_grow(mut self, value: f32) -> Self {
         self.flex_grow = value;
         self
     }
 
+    /// 设置是否绘制滚动条。
     pub fn show_scrollbar(mut self, value: bool) -> Self {
         self.show_scrollbar = value;
         self
@@ -341,6 +360,7 @@ impl From<ScrollBuilder> for ViewNode {
 
 /// 文本内容：静态字符串或动态闭包（公开用法见仓库 `docs/使用/组件.md`）。
 pub trait IntoLabelContent {
+    /// 消费静态或动态文本内容并构建标签视图节点。
     fn into_label_node(self) -> ViewNode;
 }
 
@@ -564,31 +584,38 @@ impl ButtonBuilder {
     pub fn widget(self) -> Button {
         self.into_parts().0
     }
+    /// 使用指定样式集合替换按钮当前的主题样式。
     pub fn style_set(mut self, style_set: StyleSet) -> Self {
         self.style_set = style_set;
         self
     }
 
+    /// 应用主题定义的主要操作按钮样式。
     pub fn primary(mut self) -> Self {
         self.style_set = StyleSet::button_primary();
         self
     }
+    /// 应用主题定义的幽灵按钮样式。
     pub fn ghost(mut self) -> Self {
         self.style_set = StyleSet::button_ghost();
         self
     }
+    /// 应用主题定义的危险操作按钮样式。
     pub fn danger(mut self) -> Self {
         self.style_set = StyleSet::button_danger();
         self
     }
+    /// 设置按钮是否拒绝交互并呈现禁用状态。
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self
     }
+    /// 设置按钮是否占满父级提供的水平空间。
     pub fn block(mut self, v: bool) -> Self {
         self.block = v;
         self
     }
+    /// 设置按钮使用的标准控件尺寸档位。
     pub fn size(mut self, size: crate::platform::windowing::ControlSize) -> Self {
         self.size = size;
         self
@@ -656,6 +683,7 @@ impl ButtonBuilder {
         self.on_click(state, move |_| f())
     }
 
+    /// 绑定携带窗口捕获指纹的无状态主键点击回调。
     pub fn on_click_window_capture<F>(mut self, window_id: crate::core::WindowId, mut f: F) -> Self
     where
         F: FnMut() + 'static,
@@ -674,12 +702,14 @@ impl ButtonBuilder {
         self
     }
 
+    /// 绑定可读写完整语义点击事件的回调。
     pub fn on_click_event<F: FnMut(&mut SemanticEvent) + 'static>(mut self, f: F) -> Self {
         self.handlers
             .push(HandlerRegistration::new(SemanticKind::Click, Box::new(f)));
         self
     }
 
+    /// 绑定完整语义点击事件回调，并用指定状态建立稳定捕获指纹。
     pub fn on_click_event_capture<T, F>(mut self, state: &State<T>, f: F) -> Self
     where
         T: Clone + Send + Sync + 'static,
@@ -691,6 +721,7 @@ impl ButtonBuilder {
         self
     }
 
+    /// 绑定完整语义点击事件回调，并用窗口标识建立捕获指纹。
     pub fn on_click_event_window_capture<F>(
         mut self,
         window_id: crate::core::WindowId,
@@ -785,6 +816,7 @@ impl InputBuilder {
         self
     }
 
+    /// 绑定值变更回调，并用指定状态建立稳定捕获指纹。
     pub fn on_change_capture<T, F>(
         mut self,
         state: &crate::ui::reactive::state::State<T>,
@@ -808,6 +840,7 @@ impl InputBuilder {
         self
     }
 
+    /// 绑定值变更回调，并用窗口标识建立捕获指纹。
     pub fn on_change_window_capture<F>(mut self, window_id: crate::core::WindowId, mut f: F) -> Self
     where
         F: FnMut(&str) + 'static,
