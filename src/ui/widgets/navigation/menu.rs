@@ -24,7 +24,9 @@ use std::rc::Rc;
 /// Menu direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuMode {
+    /// 在一行中从左到右排列顶层菜单项。
     Horizontal,
+    /// 从上到下排列菜单项。
     Vertical,
     /// Inline 菜单使用垂直布局并保持子项展开。
     Inline,
@@ -163,14 +165,20 @@ where
 /// Single menu item.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MenuItem<K = String> {
+    /// 与展示标签分离的稳定业务身份。
     pub key: K,
+    /// 向用户展示的菜单项文本。
     pub label: String,
+    /// 菜单项前显示的图标名称；空字符串表示不显示图标。
     pub icon: String,
+    /// 此菜单项包含的递归子菜单项。
     pub children: Vec<MenuItem<K>>,
+    /// 指示此菜单项是否禁止选择和键盘交互。
     pub disabled: bool,
 }
 
 impl MenuItem<String> {
+    /// 创建以展示文本兼作稳定 key 的字符串菜单项。
     pub fn new(label: impl Into<String>) -> Self {
         let label = label.into();
         Self {
@@ -215,11 +223,13 @@ impl<K> MenuItem<K> {
         }
     }
 
+    /// 设置此菜单项包含的递归子菜单项。
     pub fn children(mut self, children: Vec<Self>) -> Self {
         self.children = children;
         self
     }
 
+    /// 设置菜单项前显示的图标名称。
     pub fn icon(mut self, icon: impl Into<String>) -> Self {
         self.icon = icon.into();
         self
@@ -649,6 +659,7 @@ impl Default for Menu {
 }
 
 impl Menu {
+    /// 创建空的水平菜单。
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
@@ -670,6 +681,7 @@ impl Menu {
             pending_change: RefCell::new(None),
         }
     }
+    /// 替换顶层菜单项，并重新应用已配置的选择状态。
     pub fn items(mut self, items: Vec<MenuItem>) -> Self {
         self.items = items;
         if self.selected_keys_configured {
@@ -677,6 +689,7 @@ impl Menu {
         }
         self
     }
+    /// 追加一个顶层菜单项，并重新应用已配置的选择状态。
     pub fn add_item(mut self, item: MenuItem) -> Self {
         self.items.push(item);
         if self.selected_keys_configured {
@@ -698,19 +711,23 @@ impl Menu {
         self
     }
 
+    /// 设置菜单项的排列和子菜单呈现模式。
     pub fn mode(mut self, m: MenuMode) -> Self {
         self.mode = m;
         self
     }
+    /// 设置非受控活动 key，并解除字符串选择状态绑定。
     pub fn active_key(mut self, key: &str) -> Self {
         self.active_key = key.to_string();
         self.selected_keys_binding = None;
         self.selected_keys_configured = false;
         self
     }
+    /// 返回当前活动菜单项的稳定 key。
     pub fn get_active_key(&self) -> &str {
         &self.active_key
     }
+    /// 更新活动 key、单选集合及已绑定的外部选择状态。
     pub fn set_active_key(&mut self, key: &str) {
         self.active_key = key.to_string();
         self.selected_keys = if key.is_empty() {
@@ -720,6 +737,7 @@ impl Menu {
         };
         self.write_selected_keys();
     }
+    /// 设置每个可见菜单行的高度。
     pub fn item_height(mut self, h: f32) -> Self {
         self.item_h = h;
         self
@@ -747,10 +765,12 @@ impl Menu {
         self
     }
 
+    /// 返回当前选中菜单项的稳定 key 集合。
     pub fn get_selected_keys(&self) -> &[String] {
         &self.selected_keys
     }
 
+    /// 返回当前展开菜单组的稳定 key 集合。
     pub fn get_open_keys(&self) -> &[String] {
         &self.open_keys
     }
