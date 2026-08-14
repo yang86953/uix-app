@@ -63,13 +63,18 @@ impl TransferTypography {
 // ════════════════════════════════════════════════════════════════════════════
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Transfer 源列表或目标列表中的单个数据项。
 pub struct TransferItem {
+    /// 标识跨列表移动和动态视图身份的稳定业务键。
     pub key: String,
+    /// 默认条目绘制和快照使用的标题。
     pub title: String,
+    /// 条目当前是否被选中以参与下一次移动。
     pub selected: bool,
 }
 
 impl TransferItem {
+    /// 使用稳定业务键和标题创建未选中的条目。
     pub fn new(key: impl Into<String>, title: impl Into<String>) -> Self {
         Self {
             key: key.into(),
@@ -80,8 +85,11 @@ impl TransferItem {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 一次 Transfer 条目移动的方向。
 pub enum MoveDirection {
+    /// 将选中条目从源列表移动到目标列表。
     LeftToRight,
+    /// 将选中条目从目标列表移回源列表。
     RightToLeft,
 }
 
@@ -366,6 +374,7 @@ component! {
     }
 }
 impl Transfer {
+    /// 创建空的、不可搜索且活动 pane 为源列表的 Transfer。
     pub fn new() -> Self {
         Self {
             source: Vec::new(),
@@ -383,29 +392,35 @@ impl Transfer {
             pending_change: RefCell::new(None),
         }
     }
+    /// 替换源列表中的全部条目。
     pub fn source(mut self, items: Vec<TransferItem>) -> Self {
         self.source = items;
         self
     }
+    /// 替换目标列表中的全部条目。
     pub fn target(mut self, items: Vec<TransferItem>) -> Self {
         self.target = items;
         self
     }
 
+    /// [`Self::source`] 的左右列表兼容别名。
     pub fn left_data(self, items: Vec<TransferItem>) -> Self {
         self.source(items)
     }
 
+    /// [`Self::target`] 的左右列表兼容别名。
     pub fn right_data(self, items: Vec<TransferItem>) -> Self {
         self.target(items)
     }
 
+    /// 设置源列表和目标列表的标题。
     pub fn titles(mut self, source: impl Into<String>, target: impl Into<String>) -> Self {
         self.source_title = source.into();
         self.target_title = target.into();
         self
     }
 
+    /// 设置是否允许按条目标题筛选；关闭时清空查询文本。
     pub fn searchable(mut self, value: bool) -> Self {
         self.searchable = value;
         if !value {
@@ -414,6 +429,7 @@ impl Transfer {
         self
     }
 
+    /// 返回当前搜索查询文本。
     pub fn search_query(&self) -> &str {
         &self.search_query
     }
@@ -503,6 +519,7 @@ impl Transfer {
         self
     }
 
+    /// 注册移动完成后接收源列表、目标列表与移动方向的回调。
     pub fn on_change<F>(mut self, callback: F) -> Self
     where
         F: Fn(&[TransferItem], &[TransferItem], MoveDirection) + 'static,
@@ -511,18 +528,22 @@ impl Transfer {
         self
     }
 
+    /// 返回当前源列表条目的只读切片。
     pub fn source_items(&self) -> &[TransferItem] {
         &self.source
     }
 
+    /// 返回当前目标列表条目的只读切片。
     pub fn target_items(&self) -> &[TransferItem] {
         &self.target
     }
 
+    /// 返回当前活动 pane 内的零基条目索引。
     pub fn active_index(&self) -> usize {
         self.active_index
     }
 
+    /// 返回当前活动 pane 是否为目标列表。
     pub fn target_is_active(&self) -> bool {
         self.active_pane == TransferPane::Target
     }
