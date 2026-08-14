@@ -8,7 +8,10 @@ use crate::draw::{Color, Radius};
 use crate::ui::SnapshotFields;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::widget::WidgetTree;
-use crate::ui::{ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent};
+use crate::ui::{
+    ComponentId, EventResult, KeyCode, MouseButton, PrimaryHue, SemanticEvent, SystemEvent,
+    ThemeTokens,
+};
 
 const DEFAULT_TAG_FONT_SIZE: f32 = 12.0;
 
@@ -38,6 +41,43 @@ pub enum TagColor {
     Gold,
     Lime,
     Green,
+}
+
+// 将标签预设映射为当前主题下的背景与前景。
+fn resolve_tag_colors(color: TagColor, tokens: &dyn ThemeTokens) -> (Color, Color) {
+    // 功能色与品牌色优先服从当前主题的可定制 token。
+    match color {
+        // 默认标签使用中性填充与正文色。
+        TagColor::Default => (tokens.color_fill_tertiary(), tokens.color_text()),
+        // 成功标签使用主题成功色对。
+        TagColor::Success => (tokens.color_success_bg(), tokens.color_success()),
+        // 信息标签使用主题信息色对。
+        TagColor::Info => (tokens.color_info_bg(), tokens.color_info()),
+        // 警告标签使用主题警告色对。
+        TagColor::Warning => (tokens.color_warning_bg(), tokens.color_warning()),
+        // 错误标签使用主题错误色对。
+        TagColor::Error => (tokens.color_error_bg(), tokens.color_error()),
+        // 蓝色预设与当前主题品牌主色保持一致。
+        TagColor::Blue => (tokens.color_primary_bg(), tokens.color_primary()),
+        // 青色预设从 theme 层色阶解析明暗模式。
+        TagColor::Cyan => PrimaryHue::Cyan.palette().subtle_pair(tokens.is_dark()),
+        // 极客蓝预设从 theme 层色阶解析明暗模式。
+        TagColor::Geekblue => PrimaryHue::Geekblue.palette().subtle_pair(tokens.is_dark()),
+        // 紫色预设从 theme 层色阶解析明暗模式。
+        TagColor::Purple => PrimaryHue::Purple.palette().subtle_pair(tokens.is_dark()),
+        // 洋红预设从 theme 层色阶解析明暗模式。
+        TagColor::Magenta => PrimaryHue::Magenta.palette().subtle_pair(tokens.is_dark()),
+        // 红色预设从 theme 层色阶解析明暗模式。
+        TagColor::Red => PrimaryHue::Red.palette().subtle_pair(tokens.is_dark()),
+        // 橙色预设从 theme 层色阶解析明暗模式。
+        TagColor::Orange => PrimaryHue::Orange.palette().subtle_pair(tokens.is_dark()),
+        // 金色预设与当前主题警告色保持一致。
+        TagColor::Gold => (tokens.color_warning_bg(), tokens.color_warning()),
+        // 青柠预设从 theme 层色阶解析明暗模式。
+        TagColor::Lime => PrimaryHue::Lime.palette().subtle_pair(tokens.is_dark()),
+        // 绿色预设与当前主题成功色保持一致。
+        TagColor::Green => (tokens.color_success_bg(), tokens.color_success()),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,25 +270,8 @@ component! {
             // 自定义色对比文字：按亮度取黑白 token。
             (cc, if cc.is_light() { ctx.tokens().color_black() } else { ctx.tokens().color_white() })
         } else {
-            match self.color {
-                TagColor::Default => (ctx.tokens().color_fill_tertiary(), ctx.tokens().color_text()),
-                TagColor::Success => (ctx.tokens().color_success_bg(), ctx.tokens().color_success()),
-                TagColor::Info    => (ctx.tokens().color_info_bg(), ctx.tokens().color_info()),
-                TagColor::Warning => (ctx.tokens().color_warning_bg(), ctx.tokens().color_warning()),
-                TagColor::Error   => (ctx.tokens().color_error_bg(), ctx.tokens().color_error()),
-                // 预设品牌色表（AntD 色板扩展色）：与主题 token 精确对应的行使用 token
-                // （Blue=primary、Gold=warning、Green=success），其余无对应 token 保留字面量。
-                TagColor::Blue    => (Color::hex("#e6f4ff"), ctx.tokens().color_primary()),
-                TagColor::Cyan   => (Color::hex("#e6fffb"), Color::hex("#13c2c2")),
-                TagColor::Geekblue => (Color::hex("#f0f5ff"), Color::hex("#2f54eb")),
-                TagColor::Purple => (Color::hex("#f9f0ff"), Color::hex("#722ed1")),
-                TagColor::Magenta => (Color::hex("#fff0f6"), Color::hex("#eb2f96")),
-                TagColor::Red    => (Color::hex("#fff1f0"), Color::hex("#f5222d")),
-                TagColor::Orange => (Color::hex("#fff7e6"), Color::hex("#fa8c16")),
-                TagColor::Gold   => (Color::hex("#fffbe6"), ctx.tokens().color_warning()),
-                TagColor::Lime   => (Color::hex("#fcffe6"), Color::hex("#a0d911")),
-                TagColor::Green  => (Color::hex("#f6ffed"), ctx.tokens().color_success()),
-            }
+            // 非自定义标签在绘制时解析当前主题与明暗模式。
+            resolve_tag_colors(self.color, ctx.tokens())
         };
         let radius = ctx
             .tokens()
@@ -365,6 +388,40 @@ component! {
 impl Default for Tag {
     fn default() -> Self {
         Self::new("")
+    }
+}
+
+// 验证标签预设色服从主题 token 与明暗模式。
+#[cfg(test)]
+mod palette_tests {
+    // 引入被测颜色解析入口与预设枚举。
+    use super::{TagColor, resolve_tag_colors};
+    // 引入标准明暗主题。
+    use crate::ui::Theme;
+
+    // 品牌 token 与扩展色阶必须分别响应主题变化。
+    #[test]
+    fn tag_palette_follows_theme_mode() {
+        // 构造标准亮色主题。
+        let light = Theme::antd_light();
+        // 构造标准暗色主题。
+        let dark = Theme::antd_dark();
+        // 蓝色预设必须直接使用亮色主题品牌色对。
+        let light_blue = resolve_tag_colors(TagColor::Blue, light.tokens());
+        // 核对品牌背景 token。
+        assert_eq!(light_blue.0, light.tokens().color_primary_bg());
+        // 核对品牌前景 token。
+        assert_eq!(light_blue.1, light.tokens().color_primary());
+        // 分别解析扩展青色的明暗色对。
+        let light_cyan = resolve_tag_colors(TagColor::Cyan, light.tokens());
+        // 解析暗色主题下的同一扩展色。
+        let dark_cyan = resolve_tag_colors(TagColor::Cyan, dark.tokens());
+        // 扩展色背景必须随明暗模式变化。
+        assert_ne!(light_cyan.0, dark_cyan.0);
+        // 亮色背景必须保持低强调的浅色表面。
+        assert!(light_cyan.0.is_light());
+        // 暗色背景必须切换为深色表面。
+        assert!(!dark_cyan.0.is_light());
     }
 }
 
