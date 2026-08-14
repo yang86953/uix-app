@@ -17,39 +17,57 @@ struct DebugHover {
     leaf: NodeId,
 }
 
+/// 场景节点在合成阶段使用的缓存、裁剪或直接绘制表示。
 pub enum LayerNode {
     /// 图片图层：缓存被 ScenePaint 边界选中的子树栅格结果。
     /// 包含 children 以支持嵌套 Picture 缓存层（#82、#86、#87）。
     Picture {
+        /// 此图层对应的场景节点身份。
         node_id: NodeId,
+        /// 离屏缓存覆盖的场景边界。
         bounds: Rect,
+        /// 指示缓存内容是否需要重新绘制。
         is_dirty: bool,
+        /// 已分配的离屏图片资源句柄。
         offscreen_handle: Option<ImageHandle>,
         /// widget 自身 Content 阶段的 DisplayList（Phase 7 离屏回放缓存）。
         display_list: Option<DisplayList>,
         // 保存父布局限制当前节点子树的可见片段。
+        /// 父布局限制此子树可见区域的裁剪片段。
         clip_regions: Option<Vec<Rect>>,
+        /// 参与此图片缓存层的嵌套合成子节点。
         children: Vec<LayerNode>,
         /// 离屏创建连续失败计数，rebuild 时重置为 0。
         retry_count: u8,
     },
     /// 裁剪图层：将子图层内容限制在矩形区域内。
     ClipRect {
+        /// 此图层对应的场景节点身份。
         node_id: NodeId,
+        /// 此图层施加的矩形裁剪区域。
         rect: Rect,
+        /// 绘制此节点及其子树时应用的变换。
         transform: Transform,
+        /// 绘制此节点及其子树时应用的不透明度。
         opacity: f32,
         // 保存父布局限制当前节点子树的可见片段。
+        /// 父布局限制此子树可见区域的裁剪片段。
         clip_regions: Option<Vec<Rect>>,
+        /// 受此矩形裁剪约束的合成子节点。
         children: Vec<LayerNode>,
     },
     /// 普通节点：直接渲染 widget 及其子树（无特殊图层语义，无离屏缓存）。
     Direct {
+        /// 此图层对应的场景节点身份。
         node_id: NodeId,
+        /// 绘制此节点及其子树时应用的变换。
         transform: Transform,
+        /// 绘制此节点及其子树时应用的不透明度。
         opacity: f32,
         // 保存父布局限制当前节点子树的可见片段。
+        /// 父布局限制此子树可见区域的裁剪片段。
         clip_regions: Option<Vec<Rect>>,
+        /// 无需独立缓存或裁剪层的合成子节点。
         children: Vec<LayerNode>,
     },
 }
@@ -205,6 +223,7 @@ impl LayerNode {
     }
 }
 
+/// 管理场景根节点、覆盖层与离屏图片资源生命周期的合成树。
 pub struct LayerTree {
     root: Option<LayerNode>,
     overlays: Vec<LayerNode>,
