@@ -1,5 +1,10 @@
 // 把对象字面量解析隔离到解析器子模块。
 mod object;
+// 把调用形状与闭包位置验证隔离到解析器子模块。
+mod call_validation;
+
+// 引入调用与闭包位置验证入口。
+use call_validation::{validate_call, validate_closure_positions};
 
 // 引入表达式 AST、词法标记、诊断和跨度。
 use super::{
@@ -59,6 +64,8 @@ impl ExpressionParser {
             // 返回针对尾随标记的专用诊断。
             return Err(self.trailing_error());
         }
+        // 验证受限闭包只出现在开放的数组操作参数位置。
+        validate_closure_positions(&expression)?;
         // 返回已验证表达式。
         Ok(expression)
     }
@@ -584,15 +591,8 @@ impl ExpressionParser {
             ExpressionTokenKind::LeftBracket => self.parse_array(token),
             // 左花括号位于原子位置表示受限对象字面量。
             ExpressionTokenKind::LeftBrace => self.parse_object(token),
-            // 单竖线表示闭包起点。
-            ExpressionTokenKind::Pipe => Err(Diagnostic::new(
-                // 指向闭包标记。
-                token.span,
-                // 陈述失败原因。
-                "表达式不支持闭包",
-                // 给出修复建议。
-                "在 Rust 侧定义回调并通过 props 引用",
-            )),
+            // 单竖线开始受限单参数闭包。
+            ExpressionTokenKind::Pipe => self.parse_closure(token),
             // 双竖线位于原子位置表示零参数闭包。
             ExpressionTokenKind::OrOr => Err(Diagnostic::new(
                 // 指向闭包标记。
@@ -621,6 +621,59 @@ impl ExpressionParser {
                 "填写标识符、字面量、分组或允许的调用",
             )),
         }
+    }
+
+    // 解析单参数单表达式受限闭包。
+    fn parse_closure(&mut self, open: ExpressionToken) -> Result<Expression, Diagnostic> {
+        // 闭包参数必须是普通标识符。
+        let parameter = self.take_identifier(
+            // 说明缺失参数名。
+            "受限闭包缺少参数名",
+            // 给出规范闭包形状。
+            "使用 |item| expression",
+        )?;
+        // 提取参数文本。
+        let parameter = match parameter.kind {
+            // 保存普通标识符。
+            ExpressionTokenKind::Identifier(value) if !value.starts_with('$') => value,
+            // 美元保留名称不能成为闭包参数。
+            _ => {
+                // 返回闭包参数诊断。
+                return Err(Diagnostic::new(
+                    // 指向参数标记。
+                    parameter.span,
+                    // 说明参数名限制。
+                    "受限闭包参数必须是普通标识符",
+                    // 给出规范参数示例。
+                    "使用 |item| expression",
+                ));
+            }
+        };
+        // 闭包参数后必须有闭合竖线。
+        self.expect(
+            // 要求第二个单竖线。
+            &ExpressionTokenKind::Pipe,
+            // 说明缺少闭合定界符。
+            "受限闭包参数后缺少 |",
+            // 给出完整形状。
+            "使用 |item| expression",
+        )?;
+        // 闭包体是单个完整受限表达式。
+        let body = self.parse_ternary()?;
+        // 合并起始竖线与闭包体跨度。
+        let span = merge_span(open.span, body.span);
+        // 返回闭包 AST。
+        Ok(Expression {
+            // 保存参数与唯一表达式体。
+            kind: ExpressionKind::Closure {
+                // 保存参数名称。
+                parameter,
+                // 保存闭包体。
+                body: Box::new(body),
+            },
+            // 保存完整闭包跨度。
+            span,
+        })
     }
 
     // 返回尾随非法结构的专用诊断。
@@ -753,100 +806,6 @@ impl ExpressionParser {
         // 返回消费前标记，包括结束哨兵本身。
         &self.tokens[current]
     }
-}
-
-// 验证调用目标和内置操作参数规则。
-fn validate_call(
-    callee: &Expression,
-    arguments: &[CallArgument],
-    close_span: SourceSpan,
-) -> Result<(), Diagnostic> {
-    // 调用目标只能是标识符或成员路径。
-    if !matches!(
-        callee.kind,
-        ExpressionKind::Identifier(_) | ExpressionKind::Member { .. }
-    ) {
-        // 返回非法调用目标诊断。
-        return Err(Diagnostic::new(
-            // 指向调用目标。
-            callee.span,
-            // 陈述失败原因。
-            "调用目标必须是回调或内置操作路径",
-            // 给出修复建议。
-            "使用 onConfirm()、props.onConfirm() 或文档列出的内置操作",
-        ));
-    }
-    // 只有直接标识符可能是内置操作。
-    let direct_name = match &callee.kind {
-        // 借用直接标识符名称。
-        ExpressionKind::Identifier(value) => Some(value.as_str()),
-        // 成员路径按普通回调处理。
-        _ => None,
-    };
-    // setState 要求至少一个命名参数。
-    if direct_name == Some("setState") {
-        // 检查非空且全部命名。
-        if arguments.is_empty() || arguments.iter().any(|argument| argument.name.is_none()) {
-            // 返回 setState 参数诊断。
-            return Err(Diagnostic::new(
-                // 指向调用结束位置。
-                close_span,
-                // 陈述失败原因。
-                "setState 只接受一个或多个命名参数",
-                // 给出合法示例。
-                "使用 setState(count: count + 1)",
-            ));
-        }
-        // 命名参数符合约束。
-        return Ok(());
-    }
-    // setTheme 与 setStyle 要求一个字符串位置参数。
-    if matches!(direct_name, Some("setTheme" | "setStyle")) {
-        // 检查唯一位置字符串参数。
-        let valid = arguments.len() == 1
-            // 取得唯一参数。
-            && arguments[0].name.is_none()
-            // 验证字符串 AST。
-            && matches!(arguments[0].value.kind, ExpressionKind::String(_));
-        // 参数非法时返回专用诊断。
-        if !valid {
-            // 取得内置操作名称。
-            let name = direct_name.expect("已匹配内置操作名称");
-            // 返回参数形状诊断。
-            return Err(Diagnostic::new(
-                // 指向调用结束位置。
-                close_span,
-                // 陈述失败原因。
-                format!("{name} 只接受一个字符串位置参数"),
-                // 给出合法示例。
-                format!("使用 {name}('name')"),
-            ));
-        }
-        // 内置调用符合约束。
-        return Ok(());
-    }
-    // 普通回调不接受命名参数。
-    if arguments.iter().any(|argument| argument.name.is_some()) {
-        // 返回命名参数范围诊断。
-        return Err(Diagnostic::new(
-            // 指向首个命名参数。
-            arguments
-                // 查找命名参数。
-                .iter()
-                // 选择首个命名项。
-                .find(|argument| argument.name.is_some())
-                // 调用条件保证存在。
-                .expect("已确认存在命名参数")
-                // 使用参数跨度。
-                .span,
-            // 陈述失败原因。
-            "命名参数只允许用于 setState",
-            // 给出修复建议。
-            "普通回调使用位置参数，或改用 setState(name: value)",
-        ));
-    }
-    // 普通回调通过验证。
-    Ok(())
 }
 
 // 比较忽略载荷的标记变体。

@@ -161,6 +161,82 @@ fn parses_paths_indexes_and_allowed_calls() {
     assert!(error.message.contains("$event"));
 }
 
+// 验证全部扩展数组操作与单参数闭包形成确定 AST。
+#[test]
+fn parses_extended_array_operations_and_restricted_closures() {
+    // 两参数不可变更新操作必须成功解析。
+    parse_expression("items.insertAt(index, value)", origin()).expect("insertAt 应成功解析");
+    // 替换操作同样接受索引和值。
+    parse_expression("items.updateAt(index, value)", origin()).expect("updateAt 应成功解析");
+    // 逐一验证开放闭包的数组操作集合。
+    for source in [
+        // 删除首个谓词匹配项。
+        "items.removeBy(|it| it.id == target)",
+        // 过滤并允许捕获外层阈值。
+        "items.filter(|it| it.score >= threshold)",
+        // 映射为字段值。
+        "items.map(|it| it.name)",
+        // 按字段稳定排序。
+        "items.sortBy(|it| it.order)",
+        // 查找首个谓词匹配项。
+        "items.find(|it| it.id == target)",
+    ] {
+        // 每个规范操作都必须通过解析与位置验证。
+        parse_expression(source, origin()).unwrap_or_else(|error| panic!("{source}: {error:?}"));
+    }
+    // 提取 filter 的闭包 AST 验证参数与表达式体。
+    let filter = parse_expression("items.filter(|entry| entry.done)", origin())
+        // 规范过滤表达式必须成功。
+        .expect("filter 闭包应成功解析");
+    // 顶层必须是成员调用。
+    let ExpressionKind::Call { arguments, .. } = &filter.kind else {
+        // 结构不符时立即失败。
+        panic!("filter 应生成调用节点");
+    };
+    // 唯一参数必须保留闭包参数名称。
+    assert!(matches!(
+        // 检查闭包结构。
+        &arguments[0].value.kind,
+        // 参数名必须与源码一致。
+        ExpressionKind::Closure { parameter, .. } if parameter == "entry"
+    ));
+}
+
+// 验证闭包位置、参数形状与数组操作参数数量在解析期关闭。
+#[test]
+fn rejects_invalid_array_closure_positions_and_shapes() {
+    // 独立闭包不属于通用表达式位置。
+    let standalone = parse_expression("|it| it.done", origin())
+        // 必须返回闭包位置诊断。
+        .expect_err("独立闭包必须失败");
+    // 诊断必须指向数组操作参数边界。
+    assert!(standalone.message.contains("只能用于数组操作"));
+    // 普通回调不能接收语言闭包。
+    let callback = parse_expression("consume(|it| it.done)", origin())
+        // 普通调用闭包必须失败。
+        .expect_err("普通回调闭包必须失败");
+    // 诊断应复用同一闭包位置契约。
+    assert!(callback.message.contains("只能用于数组操作"));
+    // filter 必须直接接收闭包而不能接收回调标识符。
+    let filter = parse_expression("items.filter(predicate)", origin())
+        // 非闭包谓词必须失败。
+        .expect_err("filter 回调标识符必须失败");
+    // 诊断必须说明受限闭包形状。
+    assert!(filter.message.contains("受限闭包"));
+    // insertAt 缺少值参数必须失败。
+    let insert = parse_expression("items.insertAt(index)", origin())
+        // 参数数量不符必须失败。
+        .expect_err("insertAt 单参数必须失败");
+    // 诊断必须说明索引和值两个参数。
+    assert!(insert.message.contains("索引和值"));
+    // 多参数闭包语法在第二个参数位置得到闭合竖线诊断。
+    let multiple = parse_expression("items.map(|left, right| left + right)", origin())
+        // 多参数闭包必须失败。
+        .expect_err("多参数闭包必须失败");
+    // 诊断必须明确单参数定界形状。
+    assert!(multiple.message.contains("缺少 |"));
+}
+
 // 验证 If、For 与事件属性直接携带已验证表达式 AST。
 #[test]
 fn parses_if_for_bindings_and_event_calls() {

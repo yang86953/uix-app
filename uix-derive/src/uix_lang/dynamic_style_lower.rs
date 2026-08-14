@@ -82,6 +82,8 @@ fn expression_uses_set_style(expression: &Expression) -> bool {
             .any(|field| expression_uses_set_style(&field.value)),
         // 数组检查全部成员。
         ExpressionKind::Array(items) => items.iter().any(expression_uses_set_style),
+        // 受限闭包检查唯一表达式体。
+        ExpressionKind::Closure { body, .. } => expression_uses_set_style(body),
         // 叶表达式没有内部调用。
         ExpressionKind::Identifier(_)
         | ExpressionKind::Number(_)
@@ -487,6 +489,8 @@ fn visit_expression_children(
                 visitor(item)?;
             }
         }
+        // 受限闭包只包含一个直接表达式子节点。
+        ExpressionKind::Closure { body, .. } => visitor(body)?,
         ExpressionKind::Identifier(_)
         | ExpressionKind::Number(_)
         | ExpressionKind::String(_)
@@ -540,6 +544,8 @@ fn visit_expression_children_mut(
                 visitor(item)?;
             }
         }
+        // 受限闭包只包含一个直接可变表达式子节点。
+        ExpressionKind::Closure { body, .. } => visitor(body)?,
         ExpressionKind::Identifier(_)
         | ExpressionKind::Number(_)
         | ExpressionKind::String(_)

@@ -1,5 +1,5 @@
-// 引入状态目标去重集合。
-use std::collections::HashSet;
+// 引入词法局部集合与状态目标去重集合。
+use std::collections::{BTreeSet, HashSet};
 
 // 引入过程宏标识符与卫生跨度。
 use proc_macro2::{Ident, Span};
@@ -128,8 +128,10 @@ impl ComponentExpander {
         match &mut expression.kind {
             // 组件字段标识符替换为卫生名称。
             ExpressionKind::Identifier(name) => {
-                // 查找同名组件字段。
-                if let Some(binding) = bindings.get(name) {
+                // 当前 For 或闭包局部变量优先遮蔽同名组件字段。
+                if self.is_local_identifier(name) {
+                    // 局部标识符保持原名交给对应 Rust 绑定解析。
+                } else if let Some(binding) = bindings.get(name) {
                     // 句柄位属性读取可写 State 句柄本身。
                     if handle_mode {
                         // 句柄位只能接受 state 或 State<T> prop。
@@ -161,6 +163,30 @@ impl ComponentExpander {
                         format!("在 Component 上添加 external=\"{name}\"，或把它声明为 prop/state"),
                     ));
                 }
+            }
+            // 受限闭包为唯一表达式体引入词法局部参数。
+            ExpressionKind::Closure { parameter, body } => {
+                // 创建只包含闭包参数的局部作用域。
+                let locals = BTreeSet::from([parameter.clone()]);
+                // 在闭包体降低期间压入参数作用域。
+                self.local_scope_stack.push(locals);
+                // 递归降低闭包体中的捕获与局部引用。
+                let result = self.transform_expression_inner(
+                    // 可变借用唯一闭包体。
+                    body,
+                    // 使用当前组件字段绑定。
+                    bindings,
+                    // 闭包体继承事件位置的 setState 权限。
+                    allow_set_state,
+                    // 闭包体不是外层属性句柄位。
+                    false,
+                    // 继承数字规范化策略。
+                    normalize_literals,
+                );
+                // 无论成功或失败都恢复外层局部作用域。
+                self.local_scope_stack.pop();
+                // 传播闭包体降低诊断。
+                result?;
             }
             // 一元表达式递归改写操作数。
             ExpressionKind::Unary { operand, .. } => {
@@ -260,6 +286,14 @@ impl ComponentExpander {
             ExpressionKind::Call { callee, arguments } => {
                 // 已登记数据类型构造链的参数交给公开 &str/枚举 API。
                 let chain_normalizes = !is_data_constructor_chain(callee);
+                // 数组下标操作的首参数保持 usize 可推断整数形状。
+                let preserves_first_index = matches!(
+                    // 只检查直接成员操作名称。
+                    &callee.kind,
+                    // 三个操作的首参数都是 Vec 下标。
+                    ExpressionKind::Member { member, .. }
+                        if matches!(member.as_str(), "removeAt" | "insertAt" | "updateAt")
+                );
                 // 改写调用目标。
                 self.transform_expression_inner(
                     callee,
@@ -269,7 +303,7 @@ impl ComponentExpander {
                     chain_normalizes && normalize_literals,
                 )?;
                 // 按源码顺序改写参数值。
-                for argument in arguments {
+                for (index, argument) in arguments.iter_mut().enumerate() {
                     // 改写当前参数表达式。
                     self.transform_expression_inner(
                         // 可变借用参数值。
@@ -281,7 +315,11 @@ impl ComponentExpander {
                         // 传递句柄位模式。
                         handle_mode,
                         // 数据构造链参数保持作者字面量形状。
-                        chain_normalizes && normalize_literals,
+                        chain_normalizes
+                            // 调用方要求组件 number 语义时才规范化。
+                            && normalize_literals
+                            // Vec 下标必须保持整数形状。
+                            && !(preserves_first_index && index == 0),
                     )?;
                 }
             }
@@ -378,6 +416,18 @@ impl ComponentExpander {
         }
         // 生成器内部卫生标识符不属于作者依赖。
         name.starts_with("__uix_")
+    }
+
+    // 判断名称是否由当前 For 或受限闭包词法作用域声明。
+    fn is_local_identifier(&self, name: &str) -> bool {
+        // 从最内层向外查找局部绑定。
+        self.local_scope_stack
+            // 遍历全部嵌套局部作用域。
+            .iter()
+            // 任一作用域包含该名称即视为局部变量。
+            .rev()
+            // 查找最近声明。
+            .any(|locals| locals.contains(name))
     }
 
     // 把 setState 命名参数调用降低为卫生闭包调用。
@@ -622,6 +672,8 @@ fn visit_numbers(expression: &Expression, visitor: &mut impl FnMut(&Expression))
                 visit_numbers(item, visitor);
             }
         }
+        // 受限闭包访问唯一表达式体。
+        ExpressionKind::Closure { body, .. } => visit_numbers(body, visitor),
         // 叶节点没有子表达式。
         ExpressionKind::Identifier(_)
         | ExpressionKind::Number(_)
@@ -693,6 +745,8 @@ fn visit_numbers_mut(expression: &mut Expression, visitor: &mut impl FnMut(&mut 
                 visit_numbers_mut(item, visitor);
             }
         }
+        // 受限闭包访问唯一可变表达式体。
+        ExpressionKind::Closure { body, .. } => visit_numbers_mut(body, visitor),
         // 叶节点没有子表达式。
         ExpressionKind::Identifier(_)
         | ExpressionKind::Number(_)
