@@ -22,9 +22,13 @@ pub use engine::{BoxModel, FlexLayout, GridLayout, LayoutChild, LayoutEngine, La
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FlexDirection {
     #[default]
+    /// 沿水平主轴从起点向终点排列。
     Row,
+    /// 沿垂直主轴从起点向终点排列。
     Column,
+    /// 沿水平主轴从终点向起点反向排列。
     RowReverse,
+    /// 沿垂直主轴从终点向起点反向排列。
     ColumnReverse,
 }
 
@@ -32,22 +36,33 @@ pub enum FlexDirection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum JustifyContent {
     #[default]
+    /// 将内容贴靠主轴起点。
     Start,
+    /// 将内容置于主轴中央。
     Center,
+    /// 将内容贴靠主轴终点。
     End,
+    /// 均分项目之间的剩余空间，首尾不留额外间距。
     SpaceBetween,
+    /// 均分项目两侧空间，使首尾间距为项目间距的一半。
     SpaceAround,
+    /// 让首尾和项目之间具有相等间距。
     SpaceEvenly,
+    /// 将主轴剩余空间分配给可拉伸内容。
     Stretch,
 }
 
 /// Cross-axis alignment。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AlignItems {
+    /// 将项目贴靠交叉轴起点。
     Start,
+    /// 将项目置于交叉轴中央。
     Center,
+    /// 将项目贴靠交叉轴终点。
     End,
     #[default]
+    /// 将项目拉伸到交叉轴可用尺寸。
     Stretch,
 }
 
@@ -124,8 +139,11 @@ pub(crate) struct FlexOutput {
 /// Grid track（列/行尺寸定义），公开供 widget 使用。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum GridTrack {
+    /// 使用固定逻辑像素尺寸的轨道。
     Px(f32),
+    /// 按权重分配剩余空间的弹性轨道。
     Fr(f32),
+    /// 根据轨道内容的固有尺寸自动确定大小。
     Auto,
 }
 
