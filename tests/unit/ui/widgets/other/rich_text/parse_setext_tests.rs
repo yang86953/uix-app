@@ -92,9 +92,9 @@ fn setext_heading_preserves_only_marker_line_ending() {
 // 验证其他块级正文和非法下划线不会被重新解释为 Setext 标题。
 #[test]
 fn keeps_ineligible_or_invalid_setext_lines_literal() {
-    // ATX 标题保持原优先级，后续连字符行继续作为普通文本。
+    // ATX 标题保持原优先级，后续孤立连字符行成为主题分隔线。
     let atx = parse_rich_text("# ATX\n---");
-    // ATX 与孤立连字符行都应保留各自既有语义。
+    // ATX 与主题分隔线各自保留独立块级语义。
     assert_eq!(
         atx,
         vec![
@@ -109,11 +109,8 @@ fn keeps_ineligible_or_invalid_setext_lines_literal() {
             },
             // ATX 源行的换行保持可见段边界。
             RichTextSegment::NewLine,
-            // 孤立连字符行保持普通文本。
-            RichTextSegment::Text {
-                content: "---".into(),
-                style: RichTextStyle::default(),
-            },
+            // 孤立连字符行按最新契约成为主题分隔线。
+            RichTextSegment::ThematicBreak,
         ]
     );
     // 混合标记下划线不满足 Setext 契约。
@@ -138,15 +135,12 @@ fn keeps_ineligible_or_invalid_setext_lines_literal() {
     );
     // 连续两个纯标记行都不具备 Setext 正文资格。
     let stacked = parse_rich_text("---\n===");
-    // 两个孤立标记行保持普通文本及其源换行。
+    // 连字符行成为主题分隔线，等号行仍保持字面文本。
     assert_eq!(
         stacked,
         vec![
-            // 第一个孤立标记行保持字面文本。
-            RichTextSegment::Text {
-                content: "---".into(),
-                style: RichTextStyle::default(),
-            },
+            // 第一个孤立标记行成为主题分隔线。
+            RichTextSegment::ThematicBreak,
             // 两个源码行之间的换行继续保留。
             RichTextSegment::NewLine,
             // 第二个孤立标记行也保持字面文本。

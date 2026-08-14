@@ -32,6 +32,15 @@ pub(crate) struct LayoutGlyph {
     pub link_url: Option<std::sync::Arc<str>>,
 }
 
+// 描述绘制层需要区分的视觉行类型。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LayoutLineKind {
+    // 普通文本或空白行。
+    Text,
+    // 独立主题分隔线行。
+    ThematicBreak,
+}
+
 // 描述一个完整视觉行。
 #[derive(Debug, Clone)]
 pub(crate) struct LayoutLine {
@@ -39,6 +48,8 @@ pub(crate) struct LayoutLine {
     pub y: f32,
     // 保存视觉行高度。
     pub height: f32,
+    // 保存绘制层需要区分的行类型。
+    pub kind: LayoutLineKind,
     // 保存行内全部布局字形。
     pub glyphs: Vec<LayoutGlyph>,
 }

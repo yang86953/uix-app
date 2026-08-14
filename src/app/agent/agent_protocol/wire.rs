@@ -415,6 +415,8 @@ pub(super) fn role_name(role: AccessibilityRole) -> &'static str {
         AccessibilityRole::Navigation => "navigation",
         AccessibilityRole::ProgressBar => "progress_bar",
         AccessibilityRole::RadioGroup => "radio_group",
+        // 主题分隔线通过 Agent 协议暴露标准 separator 名称。
+        AccessibilityRole::Separator => "separator",
         AccessibilityRole::Slider => "slider",
         AccessibilityRole::SpinButton => "spin_button",
         AccessibilityRole::Status => "status",

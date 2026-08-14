@@ -313,6 +313,7 @@ impl RichText {
         let mut offset = 0;
         for segment in &self.segments {
             let segment_length = match segment {
+                RichTextSegment::ThematicBreak => 0,
                 RichTextSegment::NewLine => 1,
                 RichTextSegment::Text { content, .. }
                 | RichTextSegment::Code { content }
@@ -324,6 +325,7 @@ impl RichText {
                 let local_start = start.saturating_sub(segment_start);
                 let local_end = end.min(segment_end) - segment_start;
                 match segment {
+                    RichTextSegment::ThematicBreak => {}
                     RichTextSegment::NewLine => result.push('\n'),
                     RichTextSegment::Text { content, .. }
                     | RichTextSegment::Code { content }

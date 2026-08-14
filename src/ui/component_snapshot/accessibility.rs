@@ -255,12 +255,32 @@ pub(super) fn rich_text_accessibility(
     segments: &[RichTextSegment],
     focused_link: Option<usize>,
 ) -> AccessibilitySnapshot {
+    // 单一组件只含主题分隔线和其源码换行时，直接暴露 separator 语义。
+    let is_separator = segments
+        // 遍历完整公开段列表。
+        .iter()
+        // 至少一个主题分隔线才能形成 separator 节点。
+        .any(|segment| matches!(segment, RichTextSegment::ThematicBreak))
+        // 同时要求不存在会被一个节点吞并的可见文本或链接。
+        && segments.iter().all(|segment| {
+            // 分隔线自身与紧随源码换行都属于同一块语义。
+            matches!(
+                segment,
+                RichTextSegment::ThematicBreak | RichTextSegment::NewLine
+            )
+        });
+    // 分隔线节点无名称、无动作，也不会进入 Tab 顺序。
+    if is_separator {
+        // 使用新增公开角色形成稳定语义快照。
+        return AccessibilitySnapshot::new(AccessibilityRole::Separator);
+    }
     let plain_text = segments
         .iter()
         .map(|segment| match segment {
             RichTextSegment::Text { content, .. }
             | RichTextSegment::Code { content }
             | RichTextSegment::Link { content, .. } => content.as_str(),
+            RichTextSegment::ThematicBreak => "",
             RichTextSegment::NewLine => "\n",
         })
         .collect::<String>();
@@ -288,6 +308,59 @@ pub(super) fn rich_text_accessibility(
         value_text: Some(url.to_string()),
         ..AccessibilityState::default()
     })
+}
+
+// RichText 主题分隔线语义快照专项测试。
+#[cfg(all(test, feature = "rich-text"))]
+mod rich_text_thematic_break_tests {
+    // 引入被测无障碍转换与公开角色。
+    use super::{AccessibilityRole, RichTextSegment, rich_text_accessibility};
+
+    // 单一主题分隔线内容必须直接暴露 separator 角色。
+    #[test]
+    fn standalone_thematic_break_exposes_separator_role() {
+        // 模拟带源码尾随换行的独立分隔线。
+        let snapshot = rich_text_accessibility(
+            // 分隔线与其行结束属于同一语义块。
+            &[RichTextSegment::ThematicBreak, RichTextSegment::NewLine],
+            // 分隔线没有聚焦链接。
+            None,
+        );
+        // 快照必须输出标准 separator 角色。
+        assert_eq!(snapshot.role, AccessibilityRole::Separator);
+        // separator 不应伪造可读名称。
+        assert_eq!(snapshot.name, None);
+    }
+
+    // 混合文档保持单一文本节点，同时不朗读 Markdown 标记。
+    #[test]
+    fn mixed_rich_text_keeps_text_role_without_break_markers() {
+        // 构造文本与主题分隔线混合的单组件内容。
+        let snapshot = rich_text_accessibility(
+            // 直接提供最小混合段列表。
+            &[
+                // 分隔线前正文。
+                RichTextSegment::Text {
+                    // 保存可朗读正文。
+                    content: "上".to_owned(),
+                    // 使用默认文本样式。
+                    style: Default::default(),
+                },
+                // 前一源码行结束。
+                RichTextSegment::NewLine,
+                // 零宽主题分隔线。
+                RichTextSegment::ThematicBreak,
+                // 分隔线源码行结束。
+                RichTextSegment::NewLine,
+            ],
+            // 混合内容没有聚焦链接。
+            None,
+        );
+        // 当前单节点模型对混合文档保持 Text 角色。
+        assert_eq!(snapshot.role, AccessibilityRole::Text);
+        // 名称保留两个换行，但不包含源 Markdown 标记。
+        assert_eq!(snapshot.name.as_deref(), Some("上\n\n"));
+    }
 }
 
 pub(super) fn typography_accessibility(
