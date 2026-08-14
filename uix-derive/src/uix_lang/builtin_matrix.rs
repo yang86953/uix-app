@@ -33,11 +33,6 @@ const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
     },
     // 展示组件规划项。
     PlannedBuiltin {
-        name: "Table",
-        category: "内置组件 / 展示组件",
-    },
-    // 展示组件规划项。
-    PlannedBuiltin {
         name: "DataTable",
         category: "内置组件 / 展示组件",
     },

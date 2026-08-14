@@ -20,8 +20,9 @@ use super::{
     generate_result_view, generate_rich_text, generate_row, generate_scroll_view,
     generate_segmented, generate_select, generate_skeleton, generate_slider, generate_space,
     generate_spin, generate_splitter, generate_steps, generate_switch, generate_tag,
-    generate_theme_toggle, generate_time_picker, generate_timeline, generate_tooltip,
-    generate_tree, generate_tree_select, generate_typography, generate_virtual_scroll,
+    generate_table, generate_theme_toggle, generate_time_picker, generate_timeline,
+    generate_tooltip, generate_tree, generate_tree_select, generate_typography,
+    generate_virtual_scroll,
     generate_watermark, generate_window_control, generate_window_drag_region,
     planned_builtin_diagnostic,
 };
@@ -138,6 +139,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "Carousel" => generate_carousel(element),
         // 树形控件映射到类型化节点与初始勾选、展开契约。
         "Tree" => generate_tree(element),
+        // 数据表格映射到类型化 TableRow / TableColumn 与首版运行配置。
+        "Table" => generate_table(element),
         // 步骤条映射到类型化 Step 集合与 State<usize> 双向 current 契约。
         "Steps" => generate_steps(element),
         // 分页器映射到总条数、双 State<usize> 与既有 Change 载荷契约。
