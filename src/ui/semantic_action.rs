@@ -18,21 +18,33 @@ use crate::ui::event::{ClickEvent, SemanticEvent, SemanticKind, SystemEvent};
 use crate::ui::widgets::Input;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// 不携带动作载荷的稳定语义动作种类。
 pub enum SemanticActionKind {
+    /// 激活按钮或其他可调用目标。
     Invoke,
+    /// 将键盘焦点移动到目标。
     Focus,
+    /// 用完整文本替换目标当前值。
     SetValue,
+    /// 在目标当前编辑位置插入文本。
     InsertText,
+    /// 按稳定选项值选择单选目标。
     Select,
+    /// 切换复选框或开关状态。
     Toggle,
+    /// 按目标自身步长增加连续值。
     Increment,
+    /// 按目标自身步长减少连续值。
     Decrement,
+    /// 声明目标支持在给定范围内调整连续值。
     Adjust,
+    /// 按二维增量滚动目标视口。
     Scroll,
 }
 
 #[allow(dead_code)]
 impl SemanticActionKind {
+    /// 返回供协议与诊断使用的规范蛇形命名标识。
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Invoke => "invoke",
@@ -51,27 +63,41 @@ impl SemanticActionKind {
 
 #[allow(dead_code)]
 #[derive(Clone, PartialEq)]
+/// 要通过目标窗口正常 UI 路径执行的语义动作及其载荷。
 pub enum SemanticAction {
+    /// 激活按钮或其他可调用目标。
     Invoke,
+    /// 将键盘焦点移动到目标。
     Focus,
+    /// 用所给文本完整替换目标当前值。
     SetValue(String),
+    /// 在目标当前编辑位置插入所给文本。
     InsertText(String),
+    /// 按所给稳定选项值选择单选目标。
     Select(String),
+    /// 切换复选框或开关状态。
     Toggle,
+    /// 按目标自身步长增加连续值。
     Increment,
+    /// 按目标自身步长减少连续值。
     Decrement,
     /// 连续值调整能力声明（E-05）：目标支持在 `min..=max` 范围内调整；
     /// 方向性步进经 `Increment` / `Decrement` 动作执行。
     Adjust {
+        /// 目标允许调整到的最小值。
         min: f64,
+        /// 目标允许调整到的最大值。
         max: f64,
     },
+    /// 按二维坐标增量滚动目标视口。
     Scroll {
+        /// 要应用到目标视口的水平与垂直滚动增量。
         delta: Point,
     },
 }
 
 impl SemanticAction {
+    /// 返回当前动作不含载荷的稳定种类。
     pub const fn kind(&self) -> SemanticActionKind {
         match self {
             Self::Invoke => SemanticActionKind::Invoke,
