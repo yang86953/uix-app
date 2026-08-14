@@ -217,6 +217,11 @@ mod list_codegen;
 // 集中验证 List 生成、默认值与拒绝路径。
 #[cfg(test)]
 mod list_codegen_tests;
+// 定义 SelectableList 类型化条目、受控稳定 id 与 Change 事件生成边界。
+mod selectable_list_codegen;
+// 集中验证 SelectableList 生成、默认值与拒绝路径。
+#[cfg(test)]
+mod selectable_list_codegen_tests;
 // 定义 Skeleton 静态外观与尺寸的公开 API 代码生成边界。
 mod skeleton_codegen;
 // 集中验证 Skeleton 生成与拒绝路径。
@@ -527,6 +532,8 @@ pub(crate) use image_codegen::generate_image;
 pub(crate) use image_group_codegen::generate_image_group;
 // 向核心元素生成器暴露 List 叶组件专用映射。
 pub(crate) use list_codegen::generate_list;
+// 向核心元素生成器暴露 SelectableList 叶组件专用映射。
+pub(crate) use selectable_list_codegen::generate_selectable_list;
 // 向核心元素生成器暴露 Skeleton 专用映射。
 pub(crate) use skeleton_codegen::generate_skeleton;
 // 向核心元素生成器暴露 Empty 专用映射。

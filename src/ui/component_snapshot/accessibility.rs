@@ -459,9 +459,13 @@ pub(super) fn selectable_list_accessibility(
     items: &[SelectableItem],
     active_index: usize,
 ) -> AccessibilitySnapshot {
+    // 仅有效活动索引才能提供选择文本与一基序号。
+    let active = items.get(active_index);
     AccessibilitySnapshot::new(AccessibilityRole::List).with_state(AccessibilityState {
-        value_text: items.get(active_index).map(|item| item.text.clone()),
-        value_now: (!items.is_empty()).then_some((active_index + 1) as f64),
+        // 空值或失效受控 id 不伪装成任何活动条目。
+        value_text: active.map(|item| item.text.clone()),
+        // 内部无选择哨兵不得溢出或泄漏为可访问性序号。
+        value_now: active.map(|_| (active_index + 1) as f64),
         value_min: (!items.is_empty()).then_some(1.0),
         value_max: (!items.is_empty()).then_some(items.len() as f64),
         ..AccessibilityState::default()

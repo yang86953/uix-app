@@ -4,7 +4,7 @@
 
 ```text
 demo/
-├── Cargo.toml          # 工作区清单（members: uix-lang-demo, cli-demo）
+├── Cargo.toml          # 工作区清单（主演示、CLI 与独立真窗验收程序）
 ├── uix-lang-demo/      # uix-lang GUI 演示（仓库主演示）
 │   ├── Cargo.toml      # package/bin: uix-lang-demo
 │   ├── README.md       # 运行方式与 Rust/uix-lang 边界
@@ -12,6 +12,7 @@ demo/
 │       ├── main.rs     # Rust 应用组合根：窗口生命周期、类型化数据与语言面之外的状态
 │       └── main.uix    # uix-lang 界面：12 个页面组件、全部已注册标签、私有状态与事件
 ├── badge-visual/       # Badge 零/单子装饰器真窗验收
+├── selectable-list-visual/ # SelectableList 稳定 id 受控选择真窗验收
 ├── popconfirm-visual/  # Popconfirm 单 trigger 真窗验收
 └── cli-demo/           # CLI 功能域演示
     ├── Cargo.toml      # package/bin: uix-cli-demo
@@ -26,6 +27,7 @@ demo/
 |------|------|------|
 | **uix-lang GUI（主演示）** | `cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo` | `.uix` 文件入口、12 个页面组件、私有/类型化状态与全部已注册标签 |
 | **Badge 真窗验收** | `cargo run --release --manifest-path demo/Cargo.toml --bin badge-visual` | 零子兼容、Icon / Avatar / Button 单子装饰与动态 count / dot |
+| **SelectableList 真窗验收** | `cargo run --release --manifest-path demo/Cargo.toml --bin selectable-list-visual` | 空选中、稳定 id 写回、指针与键盘活动高亮 |
 | **CLI** | `cargo run --manifest-path demo/Cargo.toml --bin uix-cli-demo` | `core` / `draw` / `ui` / `app` / `data` 无 GUI API |
 
 各项目共享 `demo/target/` 构建目录；根目录 `cargo` 命令不包含本工作区，需要显式

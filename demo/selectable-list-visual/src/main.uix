@@ -1,0 +1,41 @@
+// 声明验收页面使用的面板样式。
+acceptancePanel {
+  // 为列表边界与焦点环保留观察空间。
+  padding: 32px;
+  // 使用白色背景核对活动行高亮对比度。
+  backgroundColor: #FFFFFF;
+  // 使用浅色边框标记页面边界。
+  borderWidth: 1px;
+  // 使用中性边框颜色。
+  borderColor: #D9D9D9;
+  // 使用统一圆角。
+  borderRadius: 10px;
+}
+
+// 声明可空稳定 id 受控的 SelectableList 验收面板。
+<Component name="SelectableListAcceptance" state="active_id: Option<String> = None">
+  // 纵向排列说明、受控列表与核对清单。
+  <Column gap="20px">
+    // 展示验收标题。
+    <Text fontSize="heading2">SelectableList 真窗视觉验收</Text>
+    // 说明空选中与稳定 id 受控行为。
+    <Text>初始无活动项；点击或方向键选择后高亮唯一条目，并把稳定 id 写回同一状态。</Text>
+    // 使用完整 UIX 映射构造受控列表。
+    <SelectableList items={selectable_items()} active={active_id} @change="record_active($event)" width="360px" height="220px" automationId="selectable-list" />
+    // 展示人工或自动截图核对清单。
+    <Text>核对：初始无蓝色活动行；点击第二行只高亮该行；Up/Down/Home/End 跟随高亮；焦点环完整且文字、图标不裁切。</Text>
+  // 结束验收内容。
+  </Column>
+// 结束验收面板组件。
+</Component>
+
+// 声明独立真窗应用入口。
+<App title="UIX SelectableList 视觉验收" size="760x480" theme="light">
+  // 使用固定验收面板承载全部样例。
+  <Container class="acceptancePanel">
+    // 挂载带可空稳定 id 状态的验收组件。
+    <SelectableListAcceptance />
+  // 结束页面面板。
+  </Container>
+// 结束应用入口。
+</App>

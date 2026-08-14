@@ -27,6 +27,8 @@ use super::{
     generate_watermark, generate_window_control, generate_window_drag_region,
     planned_builtin_diagnostic, Diagnostic, Element,
 };
+// 引入 SelectableList 独立生成入口。
+use super::generate_selectable_list;
 // 引入 Image 叶组件专用生成入口。
 use super::generate_image;
 // 引入 ImageGroup 叶组件专用生成入口。
@@ -122,6 +124,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "ImageGroup" => generate_image_group(element),
         // 文本列表映射到公开数据集合、字符串槽位与空态替代契约。
         "List" => generate_list(element),
+        // 可选中列表映射到类型化条目、可空稳定 id 状态与 Change 契约。
+        "SelectableList" => generate_selectable_list(element),
         // 骨架屏映射到公开形状与固有尺寸契约。
         "Skeleton" => generate_skeleton(element),
         // 空状态映射到公开描述与图标契约。
