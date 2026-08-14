@@ -9,16 +9,22 @@ use crate::ui::widgets::feedback::toast_motion::ToastQueue;
 use crate::ui::widgets::feedback::declaration::FeedbackCloseReason;
 
 #[derive(Debug, Clone)]
+/// 通知队列中可呈现的状态、文本和关闭策略。
 pub struct NotificationItem {
+    /// 决定图标和强调色的通知状态等级。
     pub type_: StatusLevel,
+    /// 通知的主标题。
     pub title: String,
+    /// 通知标题下显示的说明正文。
     pub description: String,
     /// 展示时长；`0` 表示仅由调用方或关闭按钮移除。
     pub duration_ms: u64,
+    /// 指示是否向用户提供手动关闭入口。
     pub closable: bool,
 }
 
 impl NotificationItem {
+    /// 从服务 Toast 复制内容、状态、时长，并创建可手动关闭的通知条目。
     pub fn from_toast_entry(toast: &ToastEntry) -> Self {
         Self {
             type_: toast.level,
@@ -76,6 +82,7 @@ impl NotificationHandle {
         self.queue.release_external(id)
     }
 
+    /// 使用给定标题、描述和状态创建一条可关闭的默认时长通知。
     pub fn open(
         &self,
         title: impl Into<String>,
@@ -91,18 +98,22 @@ impl NotificationHandle {
         })
     }
 
+    /// 创建成功状态通知并返回本地稳定 ID。
     pub fn success(&self, title: impl Into<String>, description: impl Into<String>) -> u64 {
         self.open(title, description, StatusLevel::Success)
     }
 
+    /// 创建信息状态通知并返回本地稳定 ID。
     pub fn info(&self, title: impl Into<String>, description: impl Into<String>) -> u64 {
         self.open(title, description, StatusLevel::Info)
     }
 
+    /// 创建警告状态通知并返回本地稳定 ID。
     pub fn warning(&self, title: impl Into<String>, description: impl Into<String>) -> u64 {
         self.open(title, description, StatusLevel::Warning)
     }
 
+    /// 创建错误状态通知并返回本地稳定 ID。
     pub fn error(&self, title: impl Into<String>, description: impl Into<String>) -> u64 {
         self.open(title, description, StatusLevel::Error)
     }
@@ -117,22 +128,27 @@ impl NotificationHandle {
         self.queue.remove_external(id)
     }
 
+    /// 清空共享队列中的全部通知。
     pub fn clear(&self) {
         self.queue.clear();
     }
 
+    /// 返回共享队列中通知条目的快照。
     pub fn items(&self) -> Vec<NotificationItem> {
         self.queue.values()
     }
 
+    /// 返回共享队列中的通知数量。
     pub fn len(&self) -> usize {
         self.queue.len()
     }
 
+    /// 返回共享队列当前是否没有通知。
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
     }
 
+    /// 用可见的服务 Toast 替换外部通知集合，并保留本地通知。
     pub fn replace_from_toasts<'a, I>(&self, toasts: I)
     where
         I: IntoIterator<Item = &'a ToastEntry>,
