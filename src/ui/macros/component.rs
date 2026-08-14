@@ -86,7 +86,7 @@ macro_rules! component {
                     match stringify!($method) {
                         "measure" | "flex_grow" | "flex_shrink" | "align_self" | "grid_cell" | "grid_column_span" | "grid_row_span" | "layout_margin" | "child_overflow_expands_parent" | "child_visible" | "measure_children" | "layout_children" | "build" | "build_view_children" =>
                             c.insert($crate::ui::__private::traits::WidgetCapabilities::LAYOUT),
-                        "render" | "uses_palette" | "dirty_rect" | "children_clip" | "overlay_entry" | "draw_margin" =>
+                        "render" | "uses_palette" | "dirty_rect" | "children_clip" | "paint_after_children" | "overlay_entry" | "draw_margin" =>
                             c.insert($crate::ui::__private::traits::WidgetCapabilities::RENDER),
                         "on_event" | "on_focus_within" | "take_layout_request" | "scroll_delta" | "scroll_delta_for_dirty" | "scroll_composite_viewport" | "viewport_scroll_offset" | "scroll_descendant_by" | "active_timer" | "wants_capture_phase" | "wants_continuous_pointer_move" | "hit_test_frame" | "hit_test_children" =>
                             c.insert($crate::ui::__private::traits::WidgetCapabilities::EVENT),
@@ -126,7 +126,7 @@ macro_rules! component {
         $crate::__component_grouped_impl! {
             WidgetRender,
             $name,
-            [render uses_palette dirty_rect children_clip overlay_entry draw_margin],
+            [render uses_palette dirty_rect children_clip paint_after_children overlay_entry draw_margin],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -377,6 +377,9 @@ macro_rules! __component_method_builder {
     (children_clip; WidgetRender; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn children_clip($($p)*) -> $ret $body
     };
+    (paint_after_children; WidgetRender; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn paint_after_children($($p)*) -> $ret $body
+    };
     (overlay_entry; WidgetRender; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn overlay_entry($($p)*) -> $ret $body
     };
@@ -531,6 +534,9 @@ macro_rules! __match_trait_method {
     };
     (WidgetRender, children_clip, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn children_clip($($p)*) -> $ret $body
+    };
+    (WidgetRender, paint_after_children, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn paint_after_children($($p)*) -> $ret $body
     };
     (WidgetRender, overlay_entry, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn overlay_entry($($p)*) -> $ret $body

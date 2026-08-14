@@ -138,6 +138,21 @@ impl ScenePaint for WidgetTree {
             .is_some_and(|n| n.overlay_entry(id, n.frame()).is_some())
     }
 
+    // 把组件显式二阶段绘制契约投影给 draw System。
+    fn node_paints_after_children(&self, id: NodeId) -> bool {
+        // 停止树不得读取组件渲染能力。
+        if !self.accepts_external_work() {
+            // 故障或停止态不允许二阶段回调。
+            return false;
+        }
+        // 只在节点仍存在时读取显式能力位。
+        self.get(id)
+            // 从 UI 组件的渲染 capability 读取二阶段声明。
+            .and_then(|node| node.component().as_render())
+            // 没有节点或渲染能力时保持安全默认值。
+            .is_some_and(|render| render.paint_after_children())
+    }
+
     fn children_clip(&self, id: NodeId, frame: Rect) -> Option<Rect> {
         // 停止树不得通过组件渲染契约计算子树裁剪。
         if !self.accepts_external_work() {

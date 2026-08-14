@@ -14,7 +14,7 @@ license-file = "../../LICENSE"
 # 声明真窗运行所需的最小依赖。
 [dependencies]
 # 只启用 Windows D3D11 图形后端，Collapse 属于核心展示能力。
-uix = { path = "../..", default-features = false, features = ["d3d11"] }
+uix = { path = "../..", default-features = false, features = ["d3d11", "agent-control"] }
 
 # 登记唯一验收二进制入口。
 [[bin]]

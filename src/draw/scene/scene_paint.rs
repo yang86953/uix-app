@@ -3,9 +3,9 @@
 use crate::core::{Point, Rect};
 
 use crate::core::DirtyRegion;
+use crate::draw::Transform;
 use crate::draw::painting::PaintContext;
 use crate::draw::scene::NodeId;
-use crate::draw::Transform;
 
 /// Picture cache eligibility declared by widget metadata and refined by runtime signals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,6 +63,13 @@ pub trait ScenePaint {
     }
     fn node_is_overlay(&self, id: NodeId) -> bool {
         let _ = id;
+        false
+    }
+    /// 返回节点是否显式请求在子树完成后绘制覆盖视觉。
+    fn node_paints_after_children(&self, id: NodeId) -> bool {
+        // 非 UI 场景默认没有二阶段覆盖绘制。
+        let _ = id;
+        // 保持现有 ScenePaint 实现兼容。
         false
     }
     fn children_clip(&self, id: NodeId, frame: Rect) -> Option<Rect>;

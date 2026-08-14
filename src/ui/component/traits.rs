@@ -253,6 +253,11 @@ pub trait WidgetRender: WidgetComponent {
     fn children_clip(&self, _frame: Rect) -> Option<Rect> {
         None
     }
+    /// 声明该组件是否需要在真实子树完成后获得覆盖绘制阶段。
+    fn paint_after_children(&self) -> bool {
+        // 普通组件只绘制 Content，避免父背景在子树之后重复覆盖。
+        false
+    }
     fn overlay_entry(&self, _id: ComponentId, _frame: Rect) -> Option<OverlayEntry> {
         None
     }

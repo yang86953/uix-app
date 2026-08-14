@@ -145,6 +145,14 @@ impl Collapse {
             .collect()
     }
 
+    // 判断下一份受控声明是否改变了当前实际展开集合。
+    pub(crate) fn controlled_expansion_changed(&self, next: &Self) -> bool {
+        // 只有下一声明显式绑定外部状态时才把 expanded 视为受控运行态。
+        next.active_keys_binding.is_some()
+            // 比较稳定 key 而不是面板索引或重复标题。
+            && self.expanded_keys() != next.expanded_keys()
+    }
+
     // 从外部 key 集合同步实际展开面板。
     pub(super) fn sync_bound_active_keys(&mut self) {
         // 未绑定时完整保留组件内部展开状态。
@@ -525,11 +533,7 @@ impl Collapse {
             self.transitions = Self::settled_transitions(&self.panels);
         }
         self.content_opacities = content_opacities;
-        // 受控终态重建对应的透明度句柄也必须重新对齐。
-        if controlled {
-            // 每个句柄与当前稳定面板顺序一一对应。
-            self.content_opacities = Self::opacity_handles(&self.transitions);
-        }
+        // 原位更新已有句柄，保持已物化内容 Canvas 的共享身份。
         for (index, transition) in self.transitions.iter().enumerate() {
             if let Some(opacity) = self.content_opacities.get(index) {
                 opacity.set(transition.opacity_progress.clamp(0.0, 1.0));

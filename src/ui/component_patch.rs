@@ -292,12 +292,25 @@ pub(crate) fn builtin_widget_runtime_changed(
     current: &dyn WidgetComponent,
     next: &dyn WidgetComponent,
 ) -> bool {
+    // Input 的受控文本值属于运行态而不是作者静态配置。
     if let (Some(current), Some(next)) = (
         current.as_any().downcast_ref::<Input>(),
         next.as_any().downcast_ref::<Input>(),
     ) {
+        // 把外部值变化交给统一 patch 失效传播。
         return current.controlled_value_changed(next);
     }
+    // Collapse 的受控展开集合也会改变父子布局位置与可见性。
+    if let (Some(current), Some(next)) = (
+        // 读取当前 live Collapse。
+        current.as_any().downcast_ref::<Collapse>(),
+        // 读取已采用最新外部 key 的下一声明。
+        next.as_any().downcast_ref::<Collapse>(),
+    ) {
+        // 由稳定 key 差异触发统一 Layout 失效。
+        return current.controlled_expansion_changed(next);
+    }
+    // 其余内建组件当前没有独立于声明配置的受控运行态差异。
     false
 }
 
@@ -490,6 +503,8 @@ mod tests {
     use super::*;
     // 引入组合 Badge 测试使用的真实子 ViewNode。
     use crate::ui::view::ViewNode;
+    // 引入 Collapse 受控稳定 key 测试使用的响应式状态。
+    use crate::ui::State;
 
     // 验证 Badge 配置比较忽略布局后运行态但仍识别作者字段变化。
     #[test]
@@ -523,6 +538,50 @@ mod tests {
         // 作者字段变化必须产生配置失效。
         assert_eq!(
             builtin_widget_config_changed(&current.snapshot_fields(), &changed.snapshot_fields()),
+            Some(true)
+        );
+    }
+
+    // 验证 Collapse 的外部稳定 key 变化进入统一布局失效入口。
+    #[test]
+    // 测试名称陈述受控运行态与声明配置的边界。
+    fn collapse_controlled_expansion_is_runtime_layout_change() {
+        // 初始外部事实只展开首项。
+        let active = State::new(vec!["alpha".to_string()]);
+        // 构造保存当前运行态的 live 声明等价物。
+        let current = Collapse::new()
+            // 两个面板使用不同稳定 key。
+            .panels(vec![
+                // 首项初始由外部状态展开。
+                crate::ui::widgets::CollapsePanel::new("同名", "甲内容").key("alpha"),
+                // 次项保持折叠。
+                crate::ui::widgets::CollapsePanel::new("同名", "乙内容").key("beta"),
+            ])
+            // 绑定唯一外部展开事实。
+            .active_keys(&active);
+        // 外部状态切换到同标题的次项。
+        active.set(vec!["beta".to_string()]);
+        // 构造已经采用最新外部事实的下一声明。
+        let next = Collapse::new()
+            // 保持作者面板配置完全相同。
+            .panels(vec![
+                // 首项稳定身份不变。
+                crate::ui::widgets::CollapsePanel::new("同名", "甲内容").key("alpha"),
+                // 次项稳定身份不变。
+                crate::ui::widgets::CollapsePanel::new("同名", "乙内容").key("beta"),
+            ])
+            // 复用已更新的外部状态句柄。
+            .active_keys(&active);
+        // 静态作者配置没有变化。
+        assert_eq!(
+            builtin_widget_config_changed(&current.snapshot_fields(), &next.snapshot_fields()),
+            Some(false)
+        );
+        // 受控展开集合变化必须被协调器识别为运行态变化。
+        assert!(builtin_widget_runtime_changed(&current, &next));
+        // Collapse 使用保守布局分类，运行态变化会因此传播 Layout 失效。
+        assert_eq!(
+            builtin_widget_layout_changed(&current.snapshot_fields(), &next.snapshot_fields()),
             Some(true)
         );
     }

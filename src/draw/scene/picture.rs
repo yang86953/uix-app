@@ -170,6 +170,11 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
             // 屏幕 dirty 仅用于主表面剪枝；离屏已全清，子树必须完整重绘
             render_non_picture_subtree(children, &mut off_ctx, scene, &full_offscreen);
         }
+        // 防御性保留显式二阶段契约；正常选择器会拒绝这类 Picture 根。
+        if scene.node_paints_after_children(node_id) {
+            // 在离屏子树完成后绘制覆盖装饰。
+            LayerTree::render_widget_after_children(node_id, &mut off_ctx, scene);
+        }
         Ok(())
     })();
     let raster_result = raster_result.and_then(|()| {
@@ -368,7 +373,9 @@ fn render_non_picture_subtree<S: ScenePaint>(
                 children: sub,
                 ..
             } => {
+                // ClipRect 自身的普通内容不依赖二阶段覆盖 capability。
                 if needs_paint(scene, *node_id, dirty_region) {
+                    // 先绘制父节点 Content，再进入裁剪后的子树。
                     LayerTree::render_widget_self(*node_id, ctx, scene);
                 }
                 ctx.push_clip(*rect);
@@ -380,6 +387,13 @@ fn render_non_picture_subtree<S: ScenePaint>(
                     ctx.translate(sx, sy);
                 }
                 ctx.pop_clip();
+                // 裁剪只约束子树，父节点覆盖视觉在恢复后绘制。
+                if scene.node_paints_after_children(*node_id)
+                    && needs_paint(scene, *node_id, dirty_region)
+                {
+                    // 复用统一 AfterChildren 入口保持主表面与 Picture 顺序一致。
+                    LayerTree::render_widget_after_children(*node_id, ctx, scene);
+                }
             }
             LayerNode::Direct {
                 node_id,
@@ -389,7 +403,9 @@ fn render_non_picture_subtree<S: ScenePaint>(
                 if !scene.node_visible(*node_id) {
                     continue;
                 }
-                if needs_paint(scene, *node_id, dirty_region) {
+                if scene.node_paints_after_children(*node_id)
+                    && needs_paint(scene, *node_id, dirty_region)
+                {
                     let frame = scene.node_frame(*node_id);
                     ctx.save();
                     scene.paint(*node_id, frame, ctx);
@@ -397,6 +413,11 @@ fn render_non_picture_subtree<S: ScenePaint>(
                 }
                 if scene.node_visible(*node_id) {
                     render_non_picture_subtree(sub, ctx, scene, dirty_region);
+                }
+                // 普通 Picture 子节点也必须在后代完成后绘制覆盖视觉。
+                if needs_paint(scene, *node_id, dirty_region) {
+                    // 复用统一 AfterChildren 入口，避免只在主表面有效。
+                    LayerTree::render_widget_after_children(*node_id, ctx, scene);
                 }
             }
         }
