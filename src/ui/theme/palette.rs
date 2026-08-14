@@ -10,6 +10,14 @@ pub(crate) const COLOR_SCALE_LEN: usize = 10;
 pub(crate) const PRIMARY_HUE_COUNT: usize = 12;
 /// 主色在从浅到深色阶中的零基索引。
 pub(crate) const PRIMARY_SHADE_INDEX: usize = 5;
+/// 亮色 subtle 表面的背景色阶索引。
+const LIGHT_SUBTLE_BACKGROUND_INDEX: usize = 0;
+/// 亮色 subtle 表面的前景色阶索引。
+const LIGHT_SUBTLE_FOREGROUND_INDEX: usize = PRIMARY_SHADE_INDEX;
+/// 暗色 subtle 表面的背景色阶索引。
+const DARK_SUBTLE_BACKGROUND_INDEX: usize = 8;
+/// 暗色 subtle 表面的前景色阶索引。
+const DARK_SUBTLE_FOREGROUND_INDEX: usize = 3;
 /// 中性灰阶数量。
 pub(crate) const NEUTRAL_SCALE_LEN: usize = 13;
 /// 默认数据可视化分类色数量。
@@ -42,6 +50,29 @@ impl ColorScale {
     /// 返回第 6 格主色。
     pub const fn primary(&self) -> Color {
         self.0[PRIMARY_SHADE_INDEX]
+    }
+
+    /// 返回适合当前明暗模式的低强调背景与可读前景色对。
+    pub const fn subtle_pair(&self, is_dark: bool) -> (Color, Color) {
+        // 暗色模式使用深色背景与较亮前景。
+        if is_dark {
+            // 返回同一色阶内的暗色组合。
+            (
+                // 背景取深色阶以融入暗色容器。
+                self.0[DARK_SUBTLE_BACKGROUND_INDEX],
+                // 前景取较亮色阶以保持对比度。
+                self.0[DARK_SUBTLE_FOREGROUND_INDEX],
+            )
+        // 亮色模式使用最浅背景与主色前景。
+        } else {
+            // 返回同一色阶内的亮色组合。
+            (
+                // 背景取最浅色阶以形成低强调表面。
+                self.0[LIGHT_SUBTLE_BACKGROUND_INDEX],
+                // 前景取主色阶以保持既有品牌色。
+                self.0[LIGHT_SUBTLE_FOREGROUND_INDEX],
+            )
+        }
     }
 }
 
