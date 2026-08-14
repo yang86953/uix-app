@@ -102,6 +102,10 @@ pub(crate) enum ComponentValueType {
     HashSetOfString,
     // 映射到 Vec<String> 集合状态。
     VecOfString,
+    // 映射到 Vec<f64> 数值集合状态。
+    VecOfNumber,
+    // 映射到文档内 record 元素向量。
+    VecOfRecord(String),
     // 映射到 Vec<UploadFile> 受控上传队列状态。
     VecOfUploadFile,
     // 映射到 Option<String> 可空单选状态。

@@ -91,6 +91,15 @@ pub(crate) fn value_type_tokens(value_type: ComponentValueType) -> TokenStream {
         }
         // 字符串向量对应 Vec<String>。
         ComponentValueType::VecOfString => quote! { ::std::vec::Vec<::std::string::String> },
+        // 数值向量对应 Vec<f64>。
+        ComponentValueType::VecOfNumber => quote! { ::std::vec::Vec<f64> },
+        // record 向量引用文档生成的模块级结构体。
+        ComponentValueType::VecOfRecord(name) => {
+            // 验证名称可映射为 Rust 标识符。
+            let ident = syn::parse_str::<Ident>(&name).expect("record 名已在解析期验证");
+            // 返回 record 元素向量类型。
+            quote! { ::std::vec::Vec<#ident> }
+        }
         // 上传队列对应 Vec<UploadFile>。
         ComponentValueType::VecOfUploadFile => {
             quote! { ::std::vec::Vec<::uix::prelude::UploadFile> }

@@ -67,18 +67,6 @@ impl ExpressionParser {
             )?;
             // 字段值复用现有受限表达式语法。
             let value = self.parse_ternary()?;
-            // 当前 Gate 明确拒绝任意深度的嵌套对象。
-            if contains_object_literal(&value) {
-                // 返回嵌套对象诊断。
-                return Err(Diagnostic::new(
-                    // 精确指向包含嵌套对象的字段值。
-                    value.span,
-                    // 陈述当前结构边界。
-                    "对象字段值不支持嵌套对象",
-                    // 给出扁平字段修复建议。
-                    "把结构属性保持为单层对象",
-                ));
-            }
             // 保存字段完整跨度。
             let field_span = merge_span(key.span, value.span);
             // 追加当前字段。
@@ -133,7 +121,6 @@ impl ExpressionParser {
         }
     }
 }
-
 // 构造缺少对象右花括号的统一诊断。
 fn missing_close(span: SourceSpan) -> Diagnostic {
     // 返回未闭合对象诊断。
@@ -145,57 +132,4 @@ fn missing_close(span: SourceSpan) -> Diagnostic {
         // 给出补全动作。
         "在对象字段末尾添加 }",
     )
-}
-
-// 判断字段值任意深度是否再次包含对象字面量。
-fn contains_object_literal(expression: &Expression) -> bool {
-    // 按受限表达式结构递归检查。
-    match &expression.kind {
-        // 任一对象节点都表示嵌套对象。
-        ExpressionKind::Object(_) => true,
-        // 数组字面量递归检查全部元素。
-        ExpressionKind::Array(items) => items.iter().any(contains_object_literal),
-        // 受限闭包递归检查唯一表达式体。
-        ExpressionKind::Closure { body, .. } => contains_object_literal(body),
-        // 一元表达式递归检查操作数。
-        ExpressionKind::Unary { operand, .. } => contains_object_literal(operand),
-        // 二元表达式递归检查两侧。
-        ExpressionKind::Binary { left, right, .. } => {
-            // 任一侧命中即返回真。
-            contains_object_literal(left) || contains_object_literal(right)
-        }
-        // 三元表达式递归检查条件与两个分支。
-        ExpressionKind::Ternary {
-            condition,
-            then_branch,
-            else_branch,
-        } => {
-            // 任一子表达式命中即返回真。
-            contains_object_literal(condition)
-                || contains_object_literal(then_branch)
-                || contains_object_literal(else_branch)
-        }
-        // 成员访问递归检查对象。
-        ExpressionKind::Member { object, .. } => contains_object_literal(object),
-        // 索引访问递归检查对象与下标。
-        ExpressionKind::Index { object, index } => {
-            // 任一子表达式命中即返回真。
-            contains_object_literal(object) || contains_object_literal(index)
-        }
-        // 调用递归检查目标与全部参数。
-        ExpressionKind::Call { callee, arguments } => {
-            // 先检查调用目标，再检查参数值。
-            contains_object_literal(callee)
-                || arguments
-                    // 遍历参数序列。
-                    .iter()
-                    // 检查每个参数值。
-                    .any(|argument| contains_object_literal(&argument.value))
-        }
-        // 标识符和标量字面量不包含对象。
-        ExpressionKind::Identifier(_)
-        | ExpressionKind::Number(_)
-        | ExpressionKind::String(_)
-        | ExpressionKind::Boolean(_) => false,
-    }
 }

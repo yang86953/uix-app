@@ -205,10 +205,14 @@ fn validate_value_type_record(
     // 接收诊断定位跨度。
     span: SourceSpan,
 ) -> Result<(), Diagnostic> {
-    // 只处理 record 引用变体。
-    let ComponentValueType::Record(name) = value_type else {
+    // 提取直接 record 或 Vec<Record> 的引用名称。
+    let name = match value_type {
+        // 直接 record 引用。
+        ComponentValueType::Record(name) => name,
+        // record 集合元素引用。
+        ComponentValueType::VecOfRecord(name) => name,
         // 基础类型没有嵌套引用。
-        return Ok(());
+        _ => return Ok(()),
     };
     // 名称必须存在对应声明。
     if record_names.contains(name.as_str()) {
