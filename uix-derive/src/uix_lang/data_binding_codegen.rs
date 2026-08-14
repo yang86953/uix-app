@@ -38,6 +38,8 @@ const DATA_TYPE_NAMES: &[&str] = &[
     "Tab",
     // 菜单树条目。
     "MenuItem",
+    // keyed 下拉菜单选项。
+    "DropdownItem",
     // 日期语义类型。
     "Date",
     // 时间语义类型。
@@ -73,6 +75,12 @@ pub(crate) fn data_constructor_spec(name: &str) -> Option<DataConstructorSpec> {
         // 菜单项使用显式 label/key 构造入口。
         "MenuItem" => (
             quote! { ::uix::prelude::MenuItem },
+            Some(Ident::new("from_text", proc_macro2::Span::mixed_site())),
+            false,
+        ),
+        // 下拉选项使用显式 label/key 构造入口。
+        "DropdownItem" => (
+            quote! { ::uix::prelude::DropdownItem },
             Some(Ident::new("from_text", proc_macro2::Span::mixed_site())),
             false,
         ),

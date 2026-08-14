@@ -9,7 +9,7 @@ use crate::ui::widgets::ProgressMode;
 // 导航 capability 启用时才引入专属条目模型。
 #[cfg(feature = "navigation")]
 // 这些类型仅供同步门控的导航无障碍转换使用。
-use crate::ui::widgets::{AnchorItem, BreadcrumbItem, MenuItem, Step, Tab};
+use crate::ui::widgets::{AnchorItem, BreadcrumbItem, DropdownItem, MenuItem, Step, Tab};
 // 富文本 capability 启用时才引入其内容模型。
 #[cfg(feature = "rich-text")]
 // 该类型仅供富文本无障碍快照转换使用。
@@ -172,7 +172,7 @@ pub(super) fn menu_accessibility(items: &[MenuItem], active_key: &str) -> Access
 #[cfg(feature = "navigation")]
 pub(super) fn dropdown_accessibility(
     label: &str,
-    items: &[String],
+    items: &[DropdownItem],
     open: bool,
     selected_index: Option<usize>,
 ) -> AccessibilitySnapshot {
@@ -181,7 +181,12 @@ pub(super) fn dropdown_accessibility(
     // with its Enter/Space activation path while expanded reports popup state.
     AccessibilitySnapshot::named(AccessibilityRole::Button, label).with_state(AccessibilityState {
         expanded: Some(open),
-        value_text: selected_index.and_then(|index| items.get(index)).cloned(),
+        // 无障碍值继续公开展示 label，稳定 key 只承担内部身份。
+        value_text: selected_index
+            // 查找当前可见选择项。
+            .and_then(|index| items.get(index))
+            // 克隆人类可读的展示文本。
+            .map(|item| item.label.clone()),
         ..AccessibilityState::default()
     })
 }
