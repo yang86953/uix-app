@@ -2,6 +2,7 @@
 
 use super::*;
 
+/// 按声明顺序构造带类型值和验证规则的表单模型。
 pub struct FormBuilder {
     layout: Form,
     fields: Vec<FormField>,
@@ -33,6 +34,7 @@ impl FormBuilder {
         }
     }
 
+    /// 完成当前字段并开始声明下一个字段。
     pub fn field(mut self, name: impl Into<String>, label: impl Into<String>) -> Self {
         let name = name.into();
         let mut next = FormField::new(name.clone(), label);
@@ -54,16 +56,19 @@ impl FormBuilder {
         self.initial(value)
     }
 
+    /// 为当前字段添加必填规则及失败消息。
     pub fn required(mut self, message: impl Into<String>) -> Self {
         self.current.rules.push(FieldRule::Required(message.into()));
         self
     }
 
+    /// 为当前字段添加电子邮箱格式规则及失败消息。
     pub fn validate_email(mut self, message: impl Into<String>) -> Self {
         self.current.rules.push(FieldRule::Email(message.into()));
         self
     }
 
+    /// 为当前字段添加包含端点的数值范围规则及失败消息。
     pub fn validate_range<N>(mut self, range: RangeInclusive<N>, message: impl Into<String>) -> Self
     where
         N: Copy + Into<f64>,
@@ -76,6 +81,7 @@ impl FormBuilder {
         self
     }
 
+    /// 为当前字段添加包含端点的字符长度范围规则及失败消息。
     pub fn validate_length(
         mut self,
         range: RangeInclusive<usize>,
@@ -92,6 +98,7 @@ impl FormBuilder {
     // 关闭表单 pattern capability 时同步收缩公开 builder 方法。
     #[cfg(feature = "form-pattern")]
     // 启用后把正则表达式预编译为字段规则。
+    /// 为当前字段添加正则表达式规则及失败消息。
     pub fn validate_pattern(
         mut self,
         pattern: impl AsRef<str>,
@@ -104,6 +111,7 @@ impl FormBuilder {
         self
     }
 
+    /// 为当前字段添加接收字符串投影的自定义验证器。
     pub fn custom(mut self, validator: impl Fn(&str) -> Result<(), String> + 'static) -> Self {
         self.current
             .rules
@@ -303,6 +311,7 @@ impl FormModel {
             .collect()
     }
 
+    /// 返回指定字段的显示标签；字段不存在时返回 `None`。
     pub fn field_label(&self, field: &str) -> Option<&str> {
         self.inner
             .fields
@@ -311,10 +320,12 @@ impl FormModel {
             .map(|item| item.label.as_str())
     }
 
+    /// 返回表单模型使用的布局配置。
     pub fn layout(&self) -> &Form {
         &self.inner.layout
     }
 
+    /// 消耗模型并返回其布局配置。
     pub fn into_layout(self) -> Form {
         self.inner.layout.clone()
     }
@@ -503,6 +514,7 @@ pub struct FormInitialValues {
 }
 
 impl FormInitialValues {
+    /// 使用预置初始值开始声明首个字段。
     pub fn field(self, name: impl Into<String>, label: impl Into<String>) -> FormBuilder {
         FormBuilder::with_initial_values(self.layout, self.values, name, label)
     }
