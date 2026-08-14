@@ -200,19 +200,24 @@ pub(crate) fn normalized_raster_pixel_size(pixel_size: f32) -> Option<u32> {
 /// 描述一次 OpenType shaping 使用的已解析行内方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextDirection {
-    // 指定从左向右 shaping。
+    /// 指定从左向右进行字形塑形。
     LeftToRight,
-    // 指定从右向左 shaping。
+    /// 指定从右向左进行字形塑形。
     RightToLeft,
 }
 
 /// A single glyph positioned by text layout.
 #[derive(Debug, Clone, Copy)]
 pub struct PositionedGlyph {
+    /// 字形边界框左缘在布局坐标系中的横坐标。
     pub x: f32,
+    /// 字形边界框上缘在布局坐标系中的纵坐标。
     pub y: f32,
+    /// 字形边界框的布局宽度。
     pub width: f32,
+    /// 字形边界框的布局高度。
     pub height: f32,
+    /// 字体内部用于光栅化的字形标识。
     pub glyph_id: u32,
     /// 对应源文本中的 Unicode 标量下标（`chars()` 序），与 glyph 下标解耦。
     pub char_index: usize,
@@ -220,6 +225,7 @@ pub struct PositionedGlyph {
     pub char_end: usize,
     /// 当前视觉行应用 UAX #9 L1 后的嵌入级别；奇数表示 RTL。
     pub bidi_level: u8,
+    /// 生成该字形时选中的字体资源句柄。
     pub font: crate::draw::FontHandle,
 }
 
@@ -404,21 +410,32 @@ pub(crate) fn glyph_cursor_x(
 /// 一行文本的布局信息。
 #[derive(Debug, Clone, Copy)]
 pub struct LineInfo {
+    /// 行顶缘在文本布局坐标系中的纵坐标。
     pub y: f32,
+    /// 行框高度。
     pub height: f32,
+    /// 行内已排版内容的水平宽度。
     pub width: f32,
+    /// 该行覆盖的首个 Unicode 标量下标。
     pub start_char: usize,
+    /// 该行覆盖范围的排他 Unicode 标量终点。
     pub end_char: usize,
+    /// 该行首个字形在布局字形数组中的下标。
     pub glyph_start: usize,
+    /// 该行包含的连续字形数量。
     pub glyph_count: usize,
 }
 
 /// 文本布局结果。
 #[derive(Debug, Clone)]
 pub struct TextLayout {
+    /// 按视觉绘制顺序定位后的全部字形。
     pub glyphs: Vec<PositionedGlyph>,
+    /// 按垂直布局顺序记录的文本行。
     pub lines: Vec<LineInfo>,
+    /// 最终文本布局边界的宽度。
     pub width: f32,
+    /// 最终文本布局边界的高度。
     pub height: f32,
 }
 
@@ -429,10 +446,15 @@ pub struct TextLayout {
 /// 缩放、仿射或高 DPR 走 RGBA8 MSDF。
 #[derive(Debug, Clone)]
 pub struct GlyphRaster {
+    /// 光栅覆盖图的像素宽度。
     pub width: usize,
+    /// 光栅覆盖图的像素高度。
     pub height: usize,
+    /// 按行优先排列的单通道像素覆盖率。
     pub coverage: std::sync::Arc<[u8]>,
+    /// 字形光栅左缘相对排版原点的水平偏移。
     pub bearing_x: f32,
+    /// 字形光栅上缘相对排版基线的垂直偏移。
     pub bearing_y: f32,
     /// GPU atlas 覆盖边列表；物理 1:1 时使用 `coverage`，缩放、仿射或高 DPR 走 MSDF。
     pub outline_mesh: Option<std::sync::Arc<[f32]>>,
@@ -454,20 +476,30 @@ impl GlyphRaster {
 /// 字体水平度量。
 #[derive(Debug, Clone, Copy)]
 pub struct LineMetrics {
+    /// 基线到字体上缘的正向距离。
     pub ascent: f32,
+    /// 基线到字体下缘的正向距离。
     pub descent: f32,
+    /// 相邻文本基线之间的默认垂直距离。
     pub new_line_size: f32,
 }
 
 /// Text layout options.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextLayoutOptions {
+    /// 文本布局允许占用的最大宽度。
     pub max_width: f32,
+    /// 文本布局允许占用的最大高度。
     pub max_height: f32,
+    /// 相邻文本行使用的行框高度。
     pub line_height: f32,
+    /// 是否按可用宽度自动折行。
     pub word_wrap: bool,
+    /// 各行内容在水平可用空间中的对齐方式。
     pub h_align: crate::draw::HAlign,
+    /// 整体文本在垂直可用空间中的对齐方式。
     pub v_align: crate::draw::VAlign,
+    /// 塑形与光栅化使用的字体像素大小。
     pub font_size: f32,
 }
 
