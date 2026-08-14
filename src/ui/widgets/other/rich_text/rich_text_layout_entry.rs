@@ -3,7 +3,7 @@
 // 引入共享布局返回类型。
 use super::LayoutLine;
 // 引入图片状态表与公开段模型。
-use super::{RichTextSegment, inline_image::InlineImageStates};
+use super::{RichTextPalette, RichTextSegment, inline_image::InlineImageStates};
 // 引入字体服务与句柄。
 #[cfg(test)]
 use crate::draw::resources::font::font_service::FontService;
@@ -32,8 +32,8 @@ pub(crate) fn layout_rich_text(
         max_width,
         // 传递默认字号。
         default_font_size,
-        // 传递默认颜色。
-        default_color,
+        // 从测试或兼容调用方默认色派生无主题调色板。
+        RichTextPalette::estimated(default_color),
         // 使用空图片状态表。
         &InlineImageStates::new(),
     )
@@ -63,8 +63,8 @@ pub(crate) fn layout_rich_text_real(
         max_width,
         // 传递默认字号。
         default_font_size,
-        // 传递默认颜色。
-        default_color,
+        // 从测试或兼容调用方默认色派生无主题调色板。
+        RichTextPalette::estimated(default_color),
         // 传递字体服务。
         font_service,
         // 传递字体句柄。

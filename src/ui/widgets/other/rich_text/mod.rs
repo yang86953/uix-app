@@ -124,6 +124,10 @@ impl RichTextStyle {
 // ════════════════════════════════════════════════════════════════════════════
 mod rich_text_layout;
 pub(crate) use rich_text_layout::*;
+// 集中定义布局消费的主题颜色投影。
+mod rich_text_palette;
+// 向 RichText 组件根和布局实现暴露私有调色板值。
+pub(crate) use rich_text_palette::RichTextPalette;
 // 对无资源状态调用提供稳定占位布局兼容入口。
 mod rich_text_layout_entry;
 // 继续向现有内部测试和公开解析辅助暴露兼容入口。
@@ -194,8 +198,8 @@ component! {
         /// 上次布局使用的宽度（用于 measure 复用估计值）
         last_layout_width: Cell<f32>,
 
-        /// 上次真实布局解析出的默认色（主题切换时使缓存失效）
-        last_layout_color: Cell<Option<Color>>,
+        /// 上次真实布局解析出的完整调色板（主题切换时使缓存失效）
+        last_layout_palette: Cell<Option<RichTextPalette>>,
 
         /// 是否需要重新布局
         layout_dirty: Cell<bool>,
@@ -231,14 +235,14 @@ component! {
             segments: Vec::new(),
             default_font_size: 14.0,
             default_font_size_unit: None,
-            // 默认文字色：未启用 use_theme_color 时的固定回退色（内容呈现色，保留字面量）。
-            default_color: Color::from_rgb(200, 200, 200),
+            // 默认启用主题正文色，因此字段只保存显式 color() 覆写的占位值。
+            default_color: Color::default(),
             use_theme_color: true,
             layout_lines: RefCell::new(Vec::new()),
             layout_height: Cell::new(0.0),
             content_width: Cell::new(0.0),
             last_layout_width: Cell::new(0.0),
-            last_layout_color: Cell::new(None),
+            last_layout_palette: Cell::new(None),
             layout_dirty: Cell::new(true),
             // 图片状态初始为空，首次可见绘制才启动后台请求。
             image_states: RefCell::new(inline_image::InlineImageStates::new()),
@@ -276,11 +280,13 @@ component! {
         if self.layout_dirty.get() || self.layout_height.get() <= 0.0 || width_changed {
             let dpi = 96.0;
             let fs = self.resolved_font_size_px(dpi);
+            // 测量阶段没有 PaintContext，只传递不影响几何的派生占位调色板。
+            let estimated_palette = RichTextPalette::estimated(self.default_color);
             let (_, total_h, max_w) = layout_rich_text_with_images(
                 &self.segments,
                 est_width,
                 fs,
-                self.default_color,
+                estimated_palette,
                 &self.image_states.borrow(),
             );
             self.layout_height.set(total_h);
@@ -292,7 +298,7 @@ component! {
             // 记录本轮估算宽度，避免同一布局收敛周期重复测量。
             self.last_layout_width.set(est_width);
             // 清除真实布局颜色键，强制下一次绘制刷新真实字体几何。
-            self.last_layout_color.set(None);
+            self.last_layout_palette.set(None);
             self.layout_dirty.set(false);
         }
         constraints.clamp(Size::new(self.content_width.get(), self.layout_height.get()))
@@ -497,6 +503,8 @@ component! {
         } else {
             self.default_color
         };
+        // 从当前主题作用域投影代码与链接使用的完整语义调色板。
+        let resolved_palette = RichTextPalette::from_tokens(resolved_default_color, ctx.tokens());
 
         // 图片能力开启时先非阻塞轮询资源事实，尺寸就绪后使布局缓存失效。
         #[cfg(feature = "image-codecs")]
@@ -519,7 +527,7 @@ component! {
         // 布局缓存：仅在内容或宽度变化时重新布局，否则复用上次结果
         let need_relayout = self.layout_dirty.get()
             || (self.last_layout_width.get() - max_w).abs() > 0.5
-            || self.last_layout_color.get() != Some(resolved_default_color);
+            || self.last_layout_palette.get() != Some(resolved_palette);
 
         let (layout_lines, _total_h, _max_line_w) = if need_relayout {
             let font = *ctx.font();
@@ -528,7 +536,7 @@ component! {
                 &self.segments,
                 max_w,
                 fs,
-                resolved_default_color,
+                resolved_palette,
                 ctx.font_service(),
                 &font,
                 &self.image_states.borrow(),
@@ -538,7 +546,7 @@ component! {
             self.layout_height.set(h);
             self.content_width.set(w);
             self.last_layout_width.set(max_w);
-            self.last_layout_color.set(Some(resolved_default_color));
+            self.last_layout_palette.set(Some(resolved_palette));
             self.layout_dirty.set(false);
             (lines, h, w)
         } else {

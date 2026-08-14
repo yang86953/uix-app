@@ -1,5 +1,7 @@
 // 复用富文本的段类型定义。
 use super::RichTextSegment;
+// 复用组件根注入的语义调色板值。
+use super::RichTextPalette;
 // 复用独立的布局字形、行与代码复制区域类型。
 use super::layout_types::{LayoutGlyph, LayoutLine};
 // 复用独立的估算字符宽度、行刷新与完整逻辑源拼接。
@@ -108,8 +110,8 @@ pub(crate) fn layout_rich_text_with_images(
     max_width: f32,
     // 接收默认字号。
     default_font_size: f32,
-    // 接收默认颜色。
-    default_color: Color,
+    // 接收调用方解析完成的语义调色板。
+    palette: RichTextPalette,
     // 接收当前图片固有尺寸状态。
     image_states: &InlineImageStates,
 ) -> (Vec<LayoutLine>, f32, f32) {
@@ -158,7 +160,7 @@ pub(crate) fn layout_rich_text_with_images(
             }
             RichTextSegment::Text { content, style } => {
                 let fs = style.resolved_font_size(default_font_size);
-                let color = style.resolved_color(default_color);
+                let color = style.resolved_color(palette.default_text);
                 let bg = style.bg_color;
                 let seg_line_h = fs * line_height_factor;
                 layout_text_content(
@@ -186,9 +188,10 @@ pub(crate) fn layout_rich_text_with_images(
             }
             RichTextSegment::Code { content } => {
                 let fs = default_font_size * 0.9;
-                // 代码块为固定暗色风格（金文字/深底），布局阶段无主题上下文，保留字面量。
-                let color = Color::from_rgb(230, 180, 100);
-                let bg = Color::from_rgb(40, 40, 45);
+                // 代码文本颜色由组件根从当前主题作用域注入。
+                let color = palette.code_text;
+                // 代码背景颜色同样只消费解析后的语义值。
+                let bg = palette.code_background;
                 let seg_line_h = fs * line_height_factor;
                 layout_text_content(
                     content,
@@ -215,8 +218,8 @@ pub(crate) fn layout_rich_text_with_images(
             }
             RichTextSegment::Link { content, url } => {
                 let fs = default_font_size;
-                // 链接色：布局阶段无主题上下文，保留字面量（与代码块配套的固定内容色）。
-                let color = Color::from_rgb(55, 110, 255);
+                // 链接颜色由组件根从当前主题作用域注入。
+                let color = palette.link;
                 let seg_line_h = fs * line_height_factor;
                 layout_text_content(
                     content,
@@ -265,7 +268,7 @@ pub(crate) fn layout_rich_text_with_images(
                     // 传递加载前占位行高。
                     default_line_h,
                     // 传递默认颜色供共享字形字段初始化。
-                    default_color,
+                    palette.default_text,
                     // 更新视觉行列表。
                     &mut lines,
                     // 更新当前行原子列表。
@@ -496,8 +499,8 @@ pub(crate) fn layout_rich_text_real_with_images(
     max_width: f32,
     // 接收默认字号。
     default_font_size: f32,
-    // 接收默认颜色。
-    default_color: Color,
+    // 接收调用方解析完成的语义调色板。
+    palette: RichTextPalette,
     // 接收字体服务。
     font_service: &FontService,
     // 接收字体句柄。
@@ -550,7 +553,7 @@ pub(crate) fn layout_rich_text_real_with_images(
             }
             RichTextSegment::Text { content, style } => {
                 let fs = style.resolved_font_size(default_font_size);
-                let color = style.resolved_color(default_color);
+                let color = style.resolved_color(palette.default_text);
                 let bg = style.bg_color;
                 let seg_line_h = fs * line_height_factor;
                 layout_text_content_real(
@@ -580,9 +583,10 @@ pub(crate) fn layout_rich_text_real_with_images(
             }
             RichTextSegment::Code { content } => {
                 let fs = default_font_size * 0.9;
-                // 代码块为固定暗色风格（金文字/深底），布局阶段无主题上下文，保留字面量。
-                let color = Color::from_rgb(230, 180, 100);
-                let bg = Color::from_rgb(40, 40, 45);
+                // 代码文本颜色由组件根从当前主题作用域注入。
+                let color = palette.code_text;
+                // 代码背景颜色同样只消费解析后的语义值。
+                let bg = palette.code_background;
                 let seg_line_h = fs * line_height_factor;
                 layout_text_content_real(
                     content,
@@ -611,8 +615,8 @@ pub(crate) fn layout_rich_text_real_with_images(
             }
             RichTextSegment::Link { content, url } => {
                 let fs = default_font_size;
-                // 链接色：布局阶段无主题上下文，保留字面量（与代码块配套的固定内容色）。
-                let color = Color::from_rgb(55, 110, 255);
+                // 链接颜色由组件根从当前主题作用域注入。
+                let color = palette.link;
                 let seg_line_h = fs * line_height_factor;
                 layout_text_content_real(
                     content,
@@ -663,7 +667,7 @@ pub(crate) fn layout_rich_text_real_with_images(
                     // 传递加载前占位行高。
                     default_line_h,
                     // 传递默认颜色供共享字段初始化。
-                    default_color,
+                    palette.default_text,
                     // 更新视觉行列表。
                     &mut lines,
                     // 更新当前行原子列表。
