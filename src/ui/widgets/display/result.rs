@@ -17,13 +17,20 @@ const RESULT_ACTION_FONT_SIZE: f32 = 14.0;
 /// 结果类型。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ResultType {
+    /// 操作成功。
     Success,
+    /// 操作失败。
     Error,
+    /// 一般信息。
     Info,
+    /// 警告信息。
     Warning,
-    NotFound,    // 404
-    Forbidden,   // 403
-    ServerError, // 500
+    /// 资源未找到，对应 HTTP 404 语义。
+    NotFound,
+    /// 禁止访问，对应 HTTP 403 语义。
+    Forbidden,
+    /// 服务器错误，对应 HTTP 500 语义。
+    ServerError,
 }
 
 impl ResultType {
@@ -62,6 +69,7 @@ struct ResultGeometry {
 
 // ResultView — 结果页组件。
 component! {
+    /// 展示状态图标、标题、副标题和可选操作文本的结果页。
     pub struct ResultView {
         type_: ResultType,
         title: String,
@@ -225,6 +233,7 @@ component! {
 }
 
 impl ResultView {
+    /// 创建使用指定结果类型及其本地化默认文案的结果页。
     pub fn new(type_: ResultType) -> Self {
         Self {
             type_,
@@ -236,14 +245,17 @@ impl ResultView {
             last_action_rect: Cell::new(Rect::zero()),
         }
     }
+    /// 覆盖结果页标题；空文本继续使用本地化默认标题。
     pub fn title(mut self, t: &str) -> Self {
         self.title = t.to_string();
         self
     }
+    /// 覆盖结果页副标题；空文本继续使用本地化默认副标题。
     pub fn subtitle(mut self, s: &str) -> Self {
         self.subtitle = s.to_string();
         self
     }
+    /// 设置结果页底部的额外操作文本。
     pub fn extra_text(mut self, t: impl Into<String>) -> Self {
         self.extra_text = t.into();
         self
