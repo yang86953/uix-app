@@ -3,6 +3,7 @@
 use super::*;
 
 impl Drawer {
+    /// 创建默认关闭、从右侧进入且带遮罩和关闭按钮的抽屉。
     pub fn new(title: &str) -> Self {
         let size = crate::ui::component::config::use_config().size;
         Self {
@@ -41,17 +42,20 @@ impl Drawer {
         .drawer_size(size)
     }
 
+    /// 设置初始可见性，并通过正式打开或关闭生命周期应用状态。
     pub fn visible(mut self, v: bool) -> Self {
         self.set_visible(v);
         self
     }
 
+    /// 立即打开抽屉并返回可继续配置的实例。
     pub fn show(mut self) -> Self {
         self.open();
         self
     }
 
     // 绑定声明端唯一的打开状态事实源。
+    /// 将打开状态双向绑定到外部响应式状态。
     pub fn controlled_open(mut self, state: &State<bool>) -> Self {
         // 保存共享状态句柄供每帧同步和用户关闭写回。
         self.controlled = Some(ControlledDrawerOpen::new(state));
@@ -65,6 +69,7 @@ impl Drawer {
     }
 
     // 设置横向 Drawer 的面板宽度。
+    /// 设置左右侧抽屉使用的非负面板宽度。
     pub fn width(mut self, width: f32) -> Self {
         // 统一归一化非有限值和负值。
         self.width = Self::normalize_dimension(width);
@@ -72,12 +77,14 @@ impl Drawer {
         self
     }
 
+    /// 同时设置抽屉的非负面板宽度和高度。
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.width = Self::normalize_dimension(w);
         self.height = Self::normalize_dimension(h);
         self
     }
 
+    /// 设置控件尺寸档位及其对应的预设宽高。
     pub fn drawer_size(mut self, s: ControlSize) -> Self {
         self.drawer_size = s;
         match s {
@@ -97,6 +104,7 @@ impl Drawer {
         self
     }
 
+    /// 设置抽屉进入的边缘；已打开时会重启进入动画。
     pub fn placement(mut self, p: DrawerPlacement) -> Self {
         self.placement = p;
         if self.visible && !self.closing {
@@ -105,16 +113,19 @@ impl Drawer {
         self
     }
 
+    /// 设置是否显示并响应标题区关闭按钮。
     pub fn closable(mut self, v: bool) -> Self {
         self.closable = v;
         self
     }
 
+    /// 设置点击遮罩区域是否关闭抽屉。
     pub fn mask_closable(mut self, v: bool) -> Self {
         self.mask_closable = v;
         self
     }
 
+    /// 设置抽屉打开时是否绘制背景遮罩。
     pub fn mask(mut self, v: bool) -> Self {
         self.mask = v;
         self
@@ -128,11 +139,13 @@ impl Drawer {
         self
     }
 
+    /// 设置底部操作区域是否可见。
     pub fn footer_visible(mut self, v: bool) -> Self {
         self.footer_visible = v;
         self
     }
 
+    /// 设置标题区末尾显示的附加文本。
     pub fn extra(mut self, t: impl Into<String>) -> Self {
         self.extra = t.into();
         self
@@ -157,10 +170,12 @@ impl Drawer {
         self
     }
 
+    /// 返回抽屉是否处于稳定打开状态。
     pub fn is_visible(&self) -> bool {
         self.visible
     }
 
+    /// 打开抽屉、启动进入动画并同步受控状态。
     pub fn open(&mut self) {
         // 记录调用前是否已处于稳定打开态，保证状态写回幂等。
         let was_open = self.visible && !self.closing;
@@ -179,6 +194,7 @@ impl Drawer {
     }
 
     // 请求关闭 Drawer，并在受控模式下幂等写回业务状态。
+    /// 关闭抽屉、启动退出动画并同步受控状态。
     pub fn close(&mut self) {
         // 只有稳定打开态可以启动一次离场。
         let was_open = self.visible && !self.closing;
@@ -242,6 +258,7 @@ impl Drawer {
         self.layout_requested.set(true);
     }
 
+    /// 通过正式生命周期打开或关闭抽屉。
     pub fn set_visible(&mut self, v: bool) {
         if v {
             self.open();
