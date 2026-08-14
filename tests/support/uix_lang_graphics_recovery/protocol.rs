@@ -230,6 +230,42 @@ impl AgentClient {
         assert_eq!(response["outcome"], "presented");
     }
 
+    // 等待外部系统事件产生新 revision 并完成真实 present。
+    pub(crate) fn wait_for_changed_and_presented(
+        &mut self,
+        // 接收跨请求稳定窗口身份。
+        window: AgentWindow,
+        // 接收外部事件前的语义 revision。
+        after_revision: u64,
+    ) -> u64 {
+        // 先等待语义 revision 严格前进。
+        let changed = self.request(
+            // 使用公开 wait operation。
+            "wait",
+            // 指定窗口、代际、旧 revision 与有界超时。
+            json!({
+                "window_id": window.id,
+                "generation": window.generation,
+                "after_revision": after_revision,
+                "timeout_ms": PRESENT_TIMEOUT_MS,
+            }),
+            // 等待 Query 必须成功。
+            true,
+        );
+        // 只有明确 changed outcome 才证明外部事件进入正常协调管线。
+        assert_eq!(changed["outcome"], "changed");
+        // 提取新窗口 revision。
+        let revision = changed["window"]["revision"]
+            // revision 必须是数值。
+            .as_u64()
+            // 缺失值属于公开 wait 响应错误。
+            .expect("changed window revision");
+        // 再等待同一 revision 完成真实 present。
+        self.wait_for_presented(window, revision);
+        // 返回完成呈现的新 revision 供恢复阶段串联。
+        revision
+    }
+
     // 发送一条带唯一 request ID 的公开协议请求。
     fn request(&mut self, operation: &str, fields: Value, require_success: bool) -> Value {
         // 为当前连接生成单调且可诊断的 request ID。

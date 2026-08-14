@@ -17,6 +17,8 @@ struct LaunchOptions {
     agent_control: bool,
     // 记录调用方是否请求进入专用图形恢复验收页面。
     graphics_recovery_test: bool,
+    // 记录普通主演示是否跟随 Windows 系统明暗主题。
+    follow_system_theme: bool,
 }
 
 // 解析主演示启动参数，不把控制面选择泄漏到声明式界面。
@@ -34,6 +36,11 @@ fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions
         if argument == "--test-graphics-recovery" {
             // 记录 test-harness 的运行时第二道启用门禁。
             options.graphics_recovery_test = true;
+        }
+        // 识别 App System 已登记的系统主题跟随开关。
+        if argument == "--follow-system-theme" {
+            // 记录组合根主题策略而不让 UIX 接管系统消息。
+            options.follow_system_theme = true;
         }
     }
     // 返回不包含任何运行时资源的纯配置值。
@@ -255,6 +262,7 @@ fn main() {
                     tick.clone(),
                     options.agent_control,
                     options.graphics_recovery_test,
+                    options.follow_system_theme,
                 )
             }) {
             // 返回已创建的 UI 线程。
@@ -275,6 +283,7 @@ fn main() {
         tick,
         options.agent_control,
         options.graphics_recovery_test,
+        options.follow_system_theme,
     );
     // 结束进程入口。
 }
@@ -289,6 +298,8 @@ fn run_gui(
     agent_control: bool,
     // 接收已经通过启动参数选择的图形恢复验收开关。
     graphics_recovery_test: bool,
+    // 接收普通主演示的系统主题跟随策略。
+    follow_system_theme: bool,
 ) {
     // 测试能力存在时按运行时开关选择独立验收组合或普通主演示。
     #[cfg(feature = "test-harness")]
@@ -297,7 +308,7 @@ fn run_gui(
         graphics_recovery::build_app()
     } else {
         // 普通启动继续使用原有主演示组合。
-        build_demo_app(states, tick)
+        build_demo_app(states, tick, follow_system_theme)
     };
     // 测试能力缺失时锁定前置门禁已经拒绝图形恢复请求。
     #[cfg(not(feature = "test-harness"))]
@@ -305,7 +316,7 @@ fn run_gui(
         // 调试构建核对参数 Gate 没有被后续改动绕过。
         debug_assert!(!graphics_recovery_test);
         // 保留唯一普通主演示组合路径。
-        build_demo_app(states, tick)
+        build_demo_app(states, tick, follow_system_theme)
     };
     // feature 存在且启动参数显式请求时才开放 Agent Bridge。
     #[cfg(feature = "agent-control")]
@@ -334,15 +345,22 @@ fn build_demo_app(
     states: DemoStates,
     // 接收秒级计时状态句柄。
     tick: State<f64>,
+    // 接收是否把 Windows 系统主题变化交给 App System。
+    follow_system_theme: bool,
 ) -> App {
     // 创建普通主演示唯一多窗口控制器。
-    let multi_window = std::sync::Arc::new(multi_window::MultiWindowController::new());
+    let multi_window = std::sync::Arc::new(multi_window::MultiWindowController::new(
+        // 初始状态文本只报告真实主题策略。
+        follow_system_theme,
+    ));
     // 克隆控制器供 on_start 安装 Application System 句柄。
     let start_multi_window = multi_window.clone();
     // 由语言面组装演示 App 与根 View。
     build_app(states, multi_window)
         // 由声明式根视图绘制与 API GUI Demo 一致的自定义标题栏。
         .custom_title_bar(true)
+        // 由 Application System 唯一处理 Windows 主题消息与 token 切换。
+        .follow_system_theme(follow_system_theme)
         // 启动后注册秒级计时器。
         .on_start(move |handle| {
             // 先把 Application System 句柄安装到多窗口控制器。
@@ -377,8 +395,8 @@ mod tests {
 
     // 验证两项运行时门禁可以同时被显式选择。
     #[test]
-    fn parses_agent_and_graphics_recovery_gates_together() {
-        // 按真实命令行顺序解析两项已登记参数与一个无关参数。
+    fn parses_agent_graphics_recovery_and_system_theme_gates_together() {
+        // 按真实命令行顺序解析三项已登记参数与一个无关参数。
         let options = parse_launch_options([
             // 选择 Agent Bridge。
             "--agent-control".to_string(),
@@ -386,10 +404,14 @@ mod tests {
             "--unknown".to_string(),
             // 选择专用图形恢复页面。
             "--test-graphics-recovery".to_string(),
+            // 选择普通主演示系统主题跟随策略。
+            "--follow-system-theme".to_string(),
         ]);
         // Agent 运行时门禁必须开启。
         assert!(options.agent_control);
         // 图形恢复运行时门禁必须同时开启。
         assert!(options.graphics_recovery_test);
+        // 系统主题跟随策略必须同时开启。
+        assert!(options.follow_system_theme);
     }
 }

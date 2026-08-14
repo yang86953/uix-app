@@ -83,6 +83,12 @@ impl DemoProcess {
         Self::spawn_with_args(&[])
     }
 
+    // 启动带指定公开参数的普通主演示验收进程。
+    pub(crate) fn spawn_main_with_args(extra_args: &[&str]) -> Self {
+        // 复用同一隔离、Agent 与 D3D11 启动路径。
+        Self::spawn_with_args(extra_args)
+    }
+
     // 使用同一进程所有权与 discovery 隔离启动指定主演示模式。
     fn spawn_with_args(extra_args: &[&str]) -> Self {
         // 为并发或重复测试构造不冲突的目录后缀。

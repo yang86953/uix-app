@@ -382,6 +382,42 @@ pub(crate) fn assert_theme_luminance_delta(light: &Path, dark: &Path, minimum_de
     );
 }
 
+// 计算两张同尺寸真实窗口证据中 RGB 发生变化的像素比例。
+pub(crate) fn changed_pixel_ratio(left: &Path, right: &Path) -> f64 {
+    // 解码左侧无损证据并统一为 RGB。
+    let left = image::open(left)
+        // 缺失或损坏必须阻止系统主题验收。
+        .expect("open left visual evidence")
+        // 丢弃恒定 alpha 通道。
+        .to_rgb8();
+    // 解码右侧无损证据并统一为 RGB。
+    let right = image::open(right)
+        // 缺失或损坏必须阻止系统主题验收。
+        .expect("open right visual evidence")
+        // 丢弃恒定 alpha 通道。
+        .to_rgb8();
+    // 系统主题切换不能同时改变窗口客户区尺寸。
+    assert_eq!(
+        left.dimensions(),
+        right.dimensions(),
+        "theme captures must keep the same client extent"
+    );
+    // 统计任一颜色通道发生变化的像素。
+    let changed = left
+        // 按相同坐标遍历左图像素。
+        .pixels()
+        // 与右图同位置像素配对。
+        .zip(right.pixels())
+        // 只保留 RGB 不完全相同的像素。
+        .filter(|(left, right)| left != right)
+        // 计算变化像素数。
+        .count();
+    // 非空客户区已由捕获入口保证。
+    let total = u64::from(left.width()) * u64::from(left.height());
+    // 返回零到一范围的变化比例。
+    changed as f64 / total as f64
+}
+
 // 读取 PNG 并计算不含透明度的平均感知亮度。
 fn average_luminance(path: &Path) -> f64 {
     // 解码本测试刚写出的无损证据。

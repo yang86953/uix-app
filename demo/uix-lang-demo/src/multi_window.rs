@@ -8,6 +8,8 @@ use uix::prelude::*;
 const LIGHT_THEME_STATUS: &str = "当前主题：亮色";
 // 保存暗色主题状态文本。
 const DARK_THEME_STATUS: &str = "当前主题：暗色";
+// 保存由 App System 跟随系统主题的策略文本。
+const SYSTEM_THEME_STATUS: &str = "主题策略：跟随系统";
 // 保存尚未打开子窗口的状态文本。
 const WINDOW_READY_STATUS: &str = "主题联动窗口：等待打开";
 // 保存子窗口已成功创建的状态文本。
@@ -26,11 +28,23 @@ pub(super) struct MultiWindowController {
 // 实现多窗口与跨窗主题的狭窄应用边界。
 impl MultiWindowController {
     // 创建尚未取得 AppHandle 的控制器。
-    pub(super) fn new() -> Self {
+    pub(super) fn new(
+        // 接收组合根是否启用系统主题跟随。
+        follow_system_theme: bool,
+    ) -> Self {
         // 返回全部状态都处于可观察初值的控制器。
         Self {
             // 主演示初始主题来自语言面 light 配置。
-            theme_status: State::new(LIGHT_THEME_STATUS.to_string()),
+            theme_status: State::new(
+                // 跟随模式不伪报某个可能立即变化的静态主题。
+                if follow_system_theme {
+                    SYSTEM_THEME_STATUS
+                } else {
+                    LIGHT_THEME_STATUS
+                }
+                // State 持有拥有所有权的策略文本。
+                .to_string(),
+            ),
             // 子窗口按需创建而不预建。
             window_status: State::new(WINDOW_READY_STATUS.to_string()),
             // AppHandle 只能稍后由 on_start 安装。

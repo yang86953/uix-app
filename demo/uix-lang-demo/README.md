@@ -63,6 +63,12 @@ cargo test --features "agent-control,image-codecs" --test uix_lang_visual_window
 cargo test --features "agent-control,image-codecs" --test uix_lang_multi_window_windows -- --ignored --nocapture
 ```
 
+跟随 Windows 系统主题的可恢复真窗验收会临时切换并立即恢复 `AppsUseLightTheme`：
+
+```powershell
+cargo test --features "agent-control,image-codecs" --test uix_lang_system_theme_windows -- --ignored --nocapture
+```
+
 测试会验证页面标题、组件角色 / 状态 / 动作、主题平均亮度差、D3D11 recipe 与无软件
 回退，并把 PNG 与联系表写入 `target/debug-captures/uix-lang-visual` 供视觉审阅。
 
