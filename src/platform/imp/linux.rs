@@ -19,6 +19,16 @@ impl State {
     }
 }
 
+// Linux 主线程栈足够深，直接在当前线程执行闭包并返回其结果。
+pub(crate) fn run_on_ui_thread<F, R>(_thread_name: &str, run: F) -> R
+where
+    // 与 Windows 契约保持同一签名，闭包与返回值都可跨线程发送。
+    F: FnOnce() -> R + Send + 'static,
+    R: Send,
+{
+    run()
+}
+
 pub(crate) fn is_main_thread() -> Result<bool> {
     // Linux defines the thread-group leader's TID to be the process ID.
     // SAFETY: getpid/syscall have no pointer arguments and no resource ownership.
