@@ -5,25 +5,26 @@ use proc_macro2::TokenStream;
 use super::codegen::{generate_button, generate_icon, generate_text};
 // 引入所有独立组件生成器、语法树与诊断入口。
 use super::{
-    Diagnostic, Element, generate_affix, generate_alert, generate_anchor, generate_app_layout,
-    generate_autocomplete, generate_avatar, generate_back_top, generate_breadcrumb,
-    generate_button_group, generate_calendar, generate_card, generate_carousel, generate_cascader,
-    generate_checkbox, generate_color_picker, generate_column, generate_container,
-    generate_date_picker, generate_date_range_picker, generate_descriptions, generate_divider,
-    generate_drawer, generate_dropdown, generate_empty, generate_float_button,
-    generate_float_button_group, generate_focus_trap, generate_form, generate_grid, generate_input,
-    generate_input_group, generate_input_number, generate_list, generate_mentions, generate_menu,
-    generate_modal, generate_navigation, generate_orphan_col, generate_orphan_form_checkbox_item,
+    generate_affix, generate_alert, generate_anchor, generate_app_layout, generate_autocomplete,
+    generate_avatar, generate_back_top, generate_breadcrumb, generate_button_group,
+    generate_calendar, generate_card, generate_carousel, generate_cascader, generate_checkbox,
+    generate_color_picker, generate_column, generate_container, generate_date_picker,
+    generate_date_range_picker, generate_descriptions, generate_divider, generate_drawer,
+    generate_dropdown, generate_empty, generate_float_button, generate_float_button_group,
+    generate_focus_trap, generate_form, generate_grid, generate_input, generate_input_group,
+    generate_input_number, generate_list, generate_mentions, generate_menu, generate_modal,
+    generate_navigation, generate_orphan_col, generate_orphan_form_checkbox_item,
     generate_orphan_form_input_item, generate_orphan_form_radio_item,
     generate_orphan_form_select_item, generate_orphan_form_slider_item,
-    generate_orphan_form_switch_item, generate_pagination, generate_popover, generate_qrcode,
-    generate_radio, generate_range_slider, generate_rate, generate_result_view, generate_rich_text,
-    generate_row, generate_scroll_view, generate_segmented, generate_select, generate_skeleton,
-    generate_slider, generate_space, generate_spin, generate_splitter, generate_steps,
-    generate_switch, generate_table, generate_tabs, generate_tag, generate_theme_toggle,
-    generate_time_picker, generate_timeline, generate_tooltip, generate_tree, generate_tree_select,
-    generate_typography, generate_virtual_scroll, generate_watermark, generate_window_control,
-    generate_window_drag_region, planned_builtin_diagnostic,
+    generate_orphan_form_switch_item, generate_pagination, generate_popover, generate_progress_bar,
+    generate_qrcode, generate_radio, generate_range_slider, generate_rate, generate_result_view,
+    generate_rich_text, generate_row, generate_scroll_view, generate_segmented, generate_select,
+    generate_skeleton, generate_slider, generate_space, generate_spin, generate_splitter,
+    generate_steps, generate_switch, generate_table, generate_tabs, generate_tag,
+    generate_theme_toggle, generate_time_picker, generate_timeline, generate_tooltip,
+    generate_tree, generate_tree_select, generate_typography, generate_virtual_scroll,
+    generate_watermark, generate_window_control, generate_window_drag_region,
+    planned_builtin_diagnostic, Diagnostic, Element,
 };
 // 引入 Image 叶组件专用生成入口。
 use super::generate_image;
@@ -164,6 +165,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "RichText" => generate_rich_text(element),
         // 警告提示映射到状态、关闭能力与关闭事件契约。
         "Alert" => generate_alert(element),
+        // 进度条映射到有限 fraction、显式模式与 line/circle 形态契约。
+        "ProgressBar" => generate_progress_bar(element),
         // 模态框映射到 State<bool>、同步操作回调与完整有序内容子树契约。
         "Modal" => generate_modal(element),
         // 抽屉映射到 State<bool>、方向、面板宽度与完整有序内容子树契约。

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::draw::Color;
 use crate::draw::geometry::spatial::PhysicalUnit;
+use crate::draw::Color;
 // 反馈 capability 启用时才需要警告提示状态级别。
 #[cfg(feature = "feedback")]
 use crate::native::capabilities::system::StatusLevel;
@@ -305,6 +305,10 @@ pub enum SnapshotFields {
     ProgressBar {
         progress: f32,
         mode: ProgressMode,
+        // 暴露动态输入是否经过安全归一化。
+        input_normalized: bool,
+        // 暴露动态输入的稳定归一化原因。
+        normalization_reason: Option<ProgressNormalizationReason>,
         stroke_color: Option<Color>,
         track_color: Option<Color>,
         height: f32,
