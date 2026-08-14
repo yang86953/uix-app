@@ -29,6 +29,8 @@ use super::{
 };
 // 引入 SelectableList 独立生成入口。
 use super::generate_selectable_list;
+// 引入 Collapse 独立生成入口。
+use super::generate_collapse;
 // 引入 Image 叶组件专用生成入口。
 use super::generate_image;
 // 引入 ImageGroup 叶组件专用生成入口。
@@ -126,6 +128,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "List" => generate_list(element),
         // 可选中列表映射到类型化条目、可空稳定 id 状态与 Change 契约。
         "SelectableList" => generate_selectable_list(element),
+        // 折叠组映射到类型化面板、稳定展开 key 状态与 Change 契约。
+        "Collapse" => generate_collapse(element),
         // 骨架屏映射到公开形状与固有尺寸契约。
         "Skeleton" => generate_skeleton(element),
         // 空状态映射到公开描述与图标契约。

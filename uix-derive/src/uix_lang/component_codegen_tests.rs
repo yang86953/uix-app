@@ -497,7 +497,7 @@ fn rewrites_state_fields_to_handles_in_handle_position_attributes() {
     let document = parse_document(
         // Modal、Switch、RangeSlider 与 SelectableList 受控属性都读取句柄本身。
         r#"
-        <Component name="Controlled" state="open: false, checked: true, start: 20, end: 80, active: Option<String> = None">
+        <Component name="Controlled" state="open: false, checked: true, start: 20, end: 80, active: Option<String> = None, collapse_keys: Vec<String> = []">
           <Column>
             <Modal open={open} title="受控">
               <Text>{open}</Text>
@@ -506,6 +506,7 @@ fn rewrites_state_fields_to_handles_in_handle_position_attributes() {
             <Switch checked={checked} />
             <RangeSlider value={{ start: start, end: end }} min="0" max="100" />
             <SelectableList items={[SelectableItem('alpha', 'Alpha')]} active={active} />
+            <Collapse panels={[CollapsePanel('面板', '内容').key('panel')]} activeKeys={collapse_keys} />
           </Column>
         </Component>
         <Controlled />
@@ -531,6 +532,8 @@ fn rewrites_state_fields_to_handles_in_handle_position_attributes() {
     assert!(tokens.contains(". end (& (__uix_state_"));
     // SelectableList active 必须绑定可空稳定 id 状态句柄。
     assert!(tokens.contains(". active_state (& (__uix_state_"));
+    // Collapse activeKeys 必须绑定稳定 key 集合状态句柄。
+    assert!(tokens.contains(". active_keys (& (__uix_state_"));
 }
 
 // 验证句柄位属性引用只读 prop 时返回明确诊断。

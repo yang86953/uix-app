@@ -1,7 +1,7 @@
 //! 折叠面板行为实现。
 
-use super::*;
 use super::free::*;
+use super::*;
 
 impl Collapse {
     pub(super) fn preferred_width(&self) -> f32 {
@@ -43,6 +43,8 @@ impl Collapse {
         Self {
             panels: Vec::new(),
             accordion: false,
+            // 缺省保持既有非受控展开模式。
+            active_keys_binding: None,
             borderless: false,
             destroy_on_hide: false,
             focused: false,
@@ -60,15 +62,49 @@ impl Collapse {
     }
     pub fn panels(mut self, ps: Vec<CollapsePanel>) -> Self {
         self.panels = ps;
-        self.normalize_accordion();
+        // 受控模式按稳定 key 同步，非受控模式只归一化面板初值。
+        if self.active_keys_binding.is_some() {
+            // 支持状态先于数据设置的构建顺序。
+            self.sync_bound_active_keys();
+        } else {
+            // 旧调用方继续由 expanded 初值建立状态。
+            self.normalize_accordion();
+        }
         self.transitions = Self::settled_transitions(&self.panels);
         self.content_opacities = Self::opacity_handles(&self.transitions);
         self
     }
-    pub fn accordion(mut self) -> Self {
-        self.accordion = true;
-        self.normalize_accordion();
+    pub fn accordion(self) -> Self {
+        // 兼容既有无参数手风琴构建器。
+        self.accordion_enabled(true)
+    }
+
+    // 按布尔值启用或关闭手风琴模式。
+    pub fn accordion_enabled(mut self, value: bool) -> Self {
+        // 保存声明配置。
+        self.accordion = value;
+        // 受控模式不写回外部集合，只在界面选择首个有效 key。
+        if self.active_keys_binding.is_some() {
+            // 外部状态继续保持调用方所有。
+            self.sync_bound_active_keys();
+        } else {
+            // 非受控模式归一化现有展开状态。
+            self.normalize_accordion();
+        }
         self.transitions = Self::settled_transitions(&self.panels);
+        self.content_opacities = Self::opacity_handles(&self.transitions);
+        self
+    }
+
+    // 将展开面板稳定 key 集合绑定到外部状态。
+    pub fn active_keys(mut self, state: &State<Vec<String>>) -> Self {
+        // 克隆轻量状态句柄供交互写回与依赖捕获使用。
+        self.active_keys_binding = Some(state.clone());
+        // 构造时立即按外部唯一事实同步。
+        self.sync_bound_active_keys();
+        // 首帧动画状态必须与同步后的面板一致。
+        self.transitions = Self::settled_transitions(&self.panels);
+        // 为每个面板重建匹配的内容透明度句柄。
         self.content_opacities = Self::opacity_handles(&self.transitions);
         self
     }
@@ -95,6 +131,73 @@ impl Collapse {
             .collect()
     }
 
+    // 返回当前界面实际展开的稳定 key 集合。
+    pub fn expanded_keys(&self) -> Vec<String> {
+        // 只投影当前有效且实际展开的面板。
+        self.panels
+            // 按声明顺序遍历面板。
+            .iter()
+            // 忽略未展开项。
+            .filter(|panel| panel.expanded)
+            // 克隆稳定 key 供调用方观察。
+            .map(|panel| panel.stable_key().to_owned())
+            // 保持确定的声明顺序。
+            .collect()
+    }
+
+    // 从外部 key 集合同步实际展开面板。
+    pub(super) fn sync_bound_active_keys(&mut self) {
+        // 未绑定时完整保留组件内部展开状态。
+        let Some(active_keys) = self.active_keys_binding.as_ref().map(State::get) else {
+            return;
+        };
+        // 使用集合加速匹配但不改变外部顺序与内容。
+        let active_keys = active_keys
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>();
+        // 手风琴只允许界面采用首个声明顺序中的有效 key。
+        let mut accordion_claimed = false;
+        // 重复稳定 key 由首个面板取得显示所有权。
+        let mut seen = std::collections::HashSet::new();
+        // 逐项精确覆盖运行时展开状态。
+        for panel in &mut self.panels {
+            // 读取显式或兼容稳定身份。
+            let key = panel.stable_key().to_owned();
+            // 只有首个同 key 面板可以匹配外部状态。
+            let unique_owner = seen.insert(key.clone());
+            // 外部失效 key 自然不会展开任何面板。
+            let requested = unique_owner && active_keys.contains(&key);
+            // 手风琴模式采用首个有效请求，其余保持关闭。
+            panel.expanded = requested && (!self.accordion || !accordion_claimed);
+            // 记录手风琴是否已经取得一个展开项。
+            accordion_claimed |= panel.expanded;
+        }
+    }
+
+    // 把用户产生的展开集合原子写回外部状态。
+    fn write_bound_active_keys(&self) {
+        // 非受控模式不产生外部写入。
+        let Some(state) = self.active_keys_binding.as_ref() else {
+            return;
+        };
+        // 运行时已按手风琴与稳定 key 规则归一化实际状态。
+        let active_keys = self.expanded_keys();
+        // 避免重复发布相同集合。
+        if state.get() != active_keys {
+            // 状态写回发生在 Change 事件登记之前。
+            state.set(active_keys);
+        }
+    }
+
+    // 在绘制期登记受控展开集合的响应式依赖。
+    pub(super) fn capture_bound_active_keys_dependency(&self) {
+        // 只有受控模式需要触发声明视图重建。
+        if let Some(state) = self.active_keys_binding.as_ref() {
+            // 读取值即可由状态系统捕获当前组件依赖。
+            let _ = state.get();
+        }
+    }
+
     pub(super) fn normalized_frame(frame: Rect) -> Rect {
         Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0))
     }
@@ -112,19 +215,16 @@ impl Collapse {
     }
 
     fn panel_content_key(&self, panel_index: usize) -> String {
-        let header = self
+        let key = self
             .panels
             .get(panel_index)
-            .map(|panel| panel.header.as_str())
+            .map(CollapsePanel::stable_key)
             .unwrap_or_default();
         let occurrence = self.panels[..panel_index.min(self.panels.len())]
             .iter()
-            .filter(|panel| panel.header == header)
+            .filter(|panel| panel.stable_key() == key)
             .count();
-        format!(
-            "uix:collapse-content:{}:{occurrence}:{header}",
-            header.len()
-        )
+        format!("uix:collapse-content:{}:{occurrence}:{key}", key.len())
     }
 
     pub(super) fn desired_content_entries(&self) -> Vec<CollapseContentEntry> {
@@ -140,7 +240,10 @@ impl Collapse {
             .collect()
     }
 
-    pub(super) fn content_views(&self, entries: &[CollapseContentEntry]) -> Vec<crate::ui::view::ViewNode> {
+    pub(super) fn content_views(
+        &self,
+        entries: &[CollapseContentEntry],
+    ) -> Vec<crate::ui::view::ViewNode> {
         entries
             .iter()
             .map(|entry| {
@@ -300,17 +403,21 @@ impl Collapse {
         let current_panels = std::mem::take(&mut self.panels);
         let current_transitions = std::mem::take(&mut self.transitions);
         let current_opacities = std::mem::take(&mut self.content_opacities);
-        let focused_header = current_panels
+        let focused_key = current_panels
             .get(self.focused_header)
-            .map(|panel| panel.header.clone());
+            .map(|panel| panel.stable_key().to_owned());
+        // 下一帧声明决定是否进入受控模式。
+        let active_keys_binding = next.active_keys_binding;
+        // 受控重建不采用旧内部 expanded 状态。
+        let controlled = active_keys_binding.is_some();
         let mut panels = next.panels;
         let same_len = current_panels.len() == panels.len();
-        let next_header_is_unique = panels
+        let next_key_is_unique = panels
             .iter()
             .map(|panel| {
                 panels
                     .iter()
-                    .filter(|candidate| candidate.header == panel.header)
+                    .filter(|candidate| candidate.stable_key() == panel.stable_key())
                     .count()
                     == 1
             })
@@ -319,19 +426,19 @@ impl Collapse {
         let mut transitions = Vec::with_capacity(panels.len());
         let mut content_opacities = Vec::with_capacity(panels.len());
         for (idx, panel) in panels.iter_mut().enumerate() {
-            let header_is_unique = current_panels
+            let key_is_unique = current_panels
                 .iter()
-                .filter(|current| current.header == panel.header)
+                .filter(|current| current.stable_key() == panel.stable_key())
                 .count()
                 == 1
-                && next_header_is_unique[idx];
-            let matched = header_is_unique
+                && next_key_is_unique[idx];
+            let matched = key_is_unique
                 .then(|| {
                     current_panels
                         .iter()
                         .enumerate()
                         .find(|(current_idx, current)| {
-                            !used[*current_idx] && current.header == panel.header
+                            !used[*current_idx] && current.stable_key() == panel.stable_key()
                         })
                         .map(|(current_idx, _)| current_idx)
                 })
@@ -339,7 +446,11 @@ impl Collapse {
                 .or_else(|| same_len.then_some(idx).filter(|index| !used[*index]));
             if let Some(current_idx) = matched {
                 used[current_idx] = true;
-                panel.expanded = current_panels[current_idx].expanded;
+                // 非受控重建保留旧内部状态，受控重建采用下一声明的外部事实。
+                if !controlled {
+                    // 稳定 key 而不是易变索引拥有重建身份。
+                    panel.expanded = current_panels[current_idx].expanded;
+                }
                 let transition = current_transitions
                     .get(current_idx)
                     .cloned()
@@ -358,6 +469,8 @@ impl Collapse {
         }
         self.panels = panels;
         self.accordion = next.accordion;
+        // 下一帧状态句柄替换旧绑定。
+        self.active_keys_binding = active_keys_binding;
         self.borderless = next.borderless;
         self.destroy_on_hide = next.destroy_on_hide;
         let expanded_before_normalize = self
@@ -365,17 +478,28 @@ impl Collapse {
             .iter()
             .map(|panel| panel.expanded)
             .collect::<Vec<_>>();
-        self.normalize_accordion();
-        self.focused_header = focused_header
+        // 受控模式只同步界面，非受控模式归一化内部初值。
+        if controlled {
+            // 外部无匹配或多 key 状态不被反向修改。
+            self.sync_bound_active_keys();
+        } else {
+            // 保留旧手风琴兼容行为。
+            self.normalize_accordion();
+        }
+        self.focused_header = focused_key
             .as_ref()
-            .and_then(|header| {
+            .and_then(|key| {
                 (self
                     .panels
                     .iter()
-                    .filter(|panel| &panel.header == header)
+                    .filter(|panel| panel.stable_key() == key)
                     .count()
                     == 1)
-                    .then(|| self.panels.iter().position(|panel| &panel.header == header))
+                    .then(|| {
+                        self.panels
+                            .iter()
+                            .position(|panel| panel.stable_key() == key)
+                    })
                     .flatten()
             })
             .unwrap_or_else(|| self.focused_header.min(self.panels.len().saturating_sub(1)));
@@ -395,7 +519,17 @@ impl Collapse {
                 }
             })
             .collect();
+        // 受控重建可能由外部 key 集合改变 expanded，需要立即对齐动画终态。
+        if controlled {
+            // 重建不反向播放旧内部动画。
+            self.transitions = Self::settled_transitions(&self.panels);
+        }
         self.content_opacities = content_opacities;
+        // 受控终态重建对应的透明度句柄也必须重新对齐。
+        if controlled {
+            // 每个句柄与当前稳定面板顺序一一对应。
+            self.content_opacities = Self::opacity_handles(&self.transitions);
+        }
         for (index, transition) in self.transitions.iter().enumerate() {
             if let Some(opacity) = self.content_opacities.get(index) {
                 opacity.set(transition.opacity_progress.clamp(0.0, 1.0));
@@ -492,6 +626,8 @@ impl Collapse {
             }
         }
         self.panels[index].expanded = expanded;
+        // 用户产生的新集合先原子写回外部状态。
+        self.write_bound_active_keys();
         let changed = self
             .panels
             .iter()
@@ -511,4 +647,3 @@ impl Collapse {
         );
     }
 }
-

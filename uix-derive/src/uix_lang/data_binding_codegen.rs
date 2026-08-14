@@ -28,6 +28,8 @@ const DATA_TYPE_NAMES: &[&str] = &[
     "TimelineItem",
     // 可选中列表条目。
     "SelectableItem",
+    // 折叠面板条目。
+    "CollapsePanel",
     // 步骤条步骤。
     "Step",
     // 描述列表条目。
@@ -66,6 +68,8 @@ pub(crate) fn data_constructor_spec(name: &str) -> Option<DataConstructorSpec> {
         "TimelineItem" => (quote! { ::uix::prelude::TimelineItem }, None, false),
         // 映射可选中列表条目。
         "SelectableItem" => (quote! { ::uix::prelude::SelectableItem }, None, false),
+        // 映射折叠面板条目。
+        "CollapsePanel" => (quote! { ::uix::prelude::CollapsePanel }, None, false),
         // 映射步骤。
         "Step" => (quote! { ::uix::prelude::Step }, None, false),
         // 映射描述条目。
