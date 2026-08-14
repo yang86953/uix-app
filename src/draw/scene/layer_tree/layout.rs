@@ -124,7 +124,6 @@ impl LayerTree {
     ///
     /// `paint_region` 为实际绘制剪枝区域（可与 `scene.dirty_region()` 不同，
     /// 例如首帧强制全帧重绘时由 ScenePipeline 传入 `DirtyRegion::full()`）。
-
     pub fn invalidate(&mut self) {
         if let Some(ref mut root) = self.root {
             root.mark_cache_dirty();

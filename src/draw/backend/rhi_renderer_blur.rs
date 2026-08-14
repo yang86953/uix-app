@@ -216,13 +216,14 @@ impl RhiRenderer {
         let mut weights = [0.0f32; 64];
         let tap_count = (2 * tap_radius + 1) as usize;
         let mut sum = 0.0f32;
-        for index in 0..tap_count {
+        // 只遍历有效核槽位，并同时保留中心距离所需的索引。
+        for (index, weight) in weights.iter_mut().enumerate().take(tap_count) {
             // 计算当前 tap 相对中心的距离。
             let distance = index as f32 - tap_radius as f32;
             // 保存未归一化的高斯权重。
-            weights[index] = (-distance * distance / (2.0 * sigma * sigma)).exp();
+            *weight = (-distance * distance / (2.0 * sigma * sigma)).exp();
             // 累加归一化因子。
-            sum += weights[index];
+            sum += *weight;
         }
         // 极端浮点参数不能继续生成 shader uniform。
         if !sum.is_finite() || sum <= 0.0 {

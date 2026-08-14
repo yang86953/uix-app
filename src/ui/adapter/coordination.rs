@@ -29,7 +29,7 @@ impl crate::ui::adapter::ViewAdapter {
             .component_state_store
             .take()
             .map(WidgetTree::with_component_state_store)
-            .unwrap_or_else(WidgetTree::new);
+            .unwrap_or_default();
         // 在纯展开前转移全部 journal，保证展开 panic 时回执自动回滚。
         let receipts = crate::ui::adapter::capture_guards::take_component_state_receipts(&mut root);
         // 在建树成功前仅暂存根动画源，避免展开 panic 提前替换所有权。

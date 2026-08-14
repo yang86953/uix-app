@@ -221,16 +221,15 @@ impl Notification {
             return None;
         }
         let motion = self.motion.borrow();
-        let target = self
-            .notification_rects(frame, motion.entries())
+
+        self.notification_rects(frame, motion.entries())
             .find_map(|(rect, entry)| {
                 let rect = transitioned_rect(rect, entry.offset(), entry.scale());
                 (entry.item().closable
                     && !entry.is_leaving()
                     && self.close_rect(rect, true).contains(pos))
                 .then_some(entry.key())
-            });
-        target
+            })
     }
 
     #[cfg(test)]
@@ -261,8 +260,8 @@ impl Notification {
             return None;
         }
         let motion = self.motion.borrow();
-        let target = self
-            .notification_rects(frame, motion.entries())
+
+        self.notification_rects(frame, motion.entries())
             .find_map(|(rect, entry)| {
                 let rect = transitioned_rect(rect, entry.offset(), entry.scale());
                 (!entry.is_leaving()
@@ -270,8 +269,7 @@ impl Notification {
                         .action_rect(rect, entry.item().closable)
                         .is_some_and(|action| action.contains(pos)))
                 .then_some(entry.key())
-            });
-        target
+            })
     }
 
     pub(super) fn item_geometry(

@@ -38,8 +38,8 @@ pub(crate) fn blit_picture_cache(
     h: i32,
 ) -> Result<(), Error> {
     let src = Rect::new(0.0, 0.0, w as f32, h as f32);
-    let result = engine.try_blit_offscreen_src(handle, src, *bounds);
-    result
+
+    engine.try_blit_offscreen_src(handle, src, *bounds)
 }
 
 /// 对已栅格化的 Picture 离屏做可分离高斯模糊（GPU RT 或 CPU 像素）。

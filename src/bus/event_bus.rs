@@ -18,18 +18,13 @@ pub const MAX_DISPATCH_DEPTH: usize = 64;
 ///
 /// 同步单线程模型合并了「关闭过程」：无在途分发时 `close` 立即完成；
 /// 有在途分发时 `close` 返回 [`Errc::WouldBlock`]，由所有者排空后重试。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BusState {
     /// 正常服务：允许注册与发布。
+    #[default]
     Active,
     /// 已关闭：注册与发布返回 `Errc::InvalidState`；订阅句柄变为失效空壳。
     Closed,
-}
-
-impl Default for BusState {
-    fn default() -> Self {
-        Self::Active
-    }
 }
 
 /// 发布技术报告：仅用于诊断分发健康度，不充当业务应答。

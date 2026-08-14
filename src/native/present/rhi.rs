@@ -95,6 +95,8 @@ opaque_handle!(SubmissionHandle);
 pub(crate) const SECTOR_UNIFORM_BYTES: usize = 64;
 
 // 定义 RHI 资源格式，只保留 UIX 当前需要的有限集合。
+// 三个变体必须显式保留 Unorm 采样语义，避免后续加入 Srgb 或浮点格式时产生歧义。
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum TextureFormat {
     // 定义 premultiplied BGRA 八位格式。

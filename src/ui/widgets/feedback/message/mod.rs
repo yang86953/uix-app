@@ -657,16 +657,15 @@ impl Message {
             return None;
         }
         let motion = self.motion.borrow();
-        let target = self
-            .message_rects(frame, motion.entries())
+
+        self.message_rects(frame, motion.entries())
             .find_map(|(rect, entry)| {
                 let rect = transitioned_rect(rect, entry.offset(), entry.scale());
                 (entry.item().closable
                     && !entry.is_leaving()
                     && Self::close_rect(rect).contains(pos))
                 .then_some(entry.key())
-            });
-        target
+            })
     }
 
     // 测试目标保留消息交互区域观测入口，供反馈组件命中测试按需调用。
@@ -699,8 +698,8 @@ impl Message {
             return None;
         }
         let motion = self.motion.borrow();
-        let target = self
-            .message_rects(frame, motion.entries())
+
+        self.message_rects(frame, motion.entries())
             .find_map(|(rect, entry)| {
                 let rect = transitioned_rect(rect, entry.offset(), entry.scale());
                 (!entry.is_leaving()
@@ -708,8 +707,7 @@ impl Message {
                         .action_rect(rect, entry.item().closable)
                         .is_some_and(|action| action.contains(pos)))
                 .then_some(entry.key())
-            });
-        target
+            })
     }
 
     fn item_geometry(&self, rect: Rect, closable: bool) -> MessageGeometry {
