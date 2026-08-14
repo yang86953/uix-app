@@ -369,15 +369,17 @@ fn table_expand_dynamic_capture_isolates_row_identity_and_releases_removed_row()
     // 再次点击当前行会折叠并真实移除动态根。
     assert!(toggle_expanded_row(&mut tree, table, 0));
     // 折叠后 Table 不得保留直接动态 child。
-    assert!(tree
-        // 读取仍在运行的 Table owner。
-        .get(table)
-        // Table owner 必须继续存在。
-        .expect("折叠后 Table 必须存在")
-        // 检查展开行直接子关系已清空。
-        .children()
-        // 没有活动或墓碑展开行才算完成释放。
-        .is_empty());
+    assert!(
+        tree
+            // 读取仍在运行的 Table owner。
+            .get(table)
+            // Table owner 必须继续存在。
+            .expect("折叠后 Table 必须存在")
+            // 检查展开行直接子关系已清空。
+            .children()
+            // 没有活动或墓碑展开行才算完成释放。
+            .is_empty()
+    );
     // 折叠后不得遗留展开行动画来源。
     assert!(tree.animated_source_registrations().is_empty());
 }
@@ -435,15 +437,17 @@ fn table_expand_dynamic_capture_rolls_back_panics_and_rejects_inactive_owner() {
     // 预发布异常后 Table owner 必须继续可用。
     assert!(tree.get(table).is_some());
     // 回滚后不得挂载半成品动态根。
-    assert!(tree
-        // 读取仍可用的 Table owner。
-        .get(table)
-        // Table owner 必须存在。
-        .expect("panic 后 Table 必须存在")
-        // 检查直接展开行子关系。
-        .children()
-        // 没有发布任何动态根才算回滚成功。
-        .is_empty());
+    assert!(
+        tree
+            // 读取仍可用的 Table owner。
+            .get(table)
+            // Table owner 必须存在。
+            .expect("panic 后 Table 必须存在")
+            // 检查直接展开行子关系。
+            .children()
+            // 没有发布任何动态根才算回滚成功。
+            .is_empty()
+    );
     // 回滚后不得泄漏动画来源。
     assert!(tree.animated_source_registrations().is_empty());
     // 关闭 panic 开关以验证同一 owner 可恢复。
@@ -497,13 +501,15 @@ fn table_expand_dynamic_capture_rolls_back_panics_and_rejects_inactive_owner() {
         ViewNode::leaf(Container::new()),
     );
     // Table owner 必须仍存在且处于 pending leave。
-    assert!(leaving_tree
-        // 读取离场 Table 墓碑。
-        .get(leaving_table)
-        // 长 leave 期间节点必须可寻址。
-        .expect("离场 Table 必须存在")
-        // 验证 owner 已进入不可重新捕获阶段。
-        .pending_removal());
+    assert!(
+        leaving_tree
+            // 读取离场 Table 墓碑。
+            .get(leaving_table)
+            // 长 leave 期间节点必须可寻址。
+            .expect("离场 Table 必须存在")
+            // 验证 owner 已进入不可重新捕获阶段。
+            .pending_removal()
+    );
     // 记录离场刷新前的用户工厂调用次数。
     let calls_before_leave_refresh = factory_calls.load(Ordering::Relaxed);
     // leaving owner 绝不能签发动态捕获能力。

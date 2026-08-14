@@ -666,15 +666,17 @@ fn dynamic_capture_rejects_stale_owner_before_mounting_outputs() {
     // 失效宿主交付必须在结构变化前明确拒绝。
     assert!(result.is_err());
     // 新根不得获得无法遍历的孤立动态子节点。
-    assert!(tree
-        // 读取当前有效根节点。
-        .get(new_owner)
-        // 有效根节点必须仍可寻址。
-        .expect("旧宿主交付失败后新根必须保留")
-        // 检查其直接子节点集合。
-        .children()
-        // 新根不应被失败交付污染。
-        .is_empty());
+    assert!(
+        tree
+            // 读取当前有效根节点。
+            .get(new_owner)
+            // 有效根节点必须仍可寻址。
+            .expect("旧宿主交付失败后新根必须保留")
+            // 检查其直接子节点集合。
+            .children()
+            // 新根不应被失败交付污染。
+            .is_empty()
+    );
     // 失败交付不得把旧捕获动画源登记到当前树。
     assert!(tree.animated_source_registrations().is_empty());
 

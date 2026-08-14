@@ -1,9 +1,9 @@
 //! Fake 光标 — 追踪光标位置、可见性、捕获状态。
 
 use crate::core::Point;
+use crate::native::Result;
 use crate::native::windowing::input::CursorType;
 use crate::native::windowing::input::ICursor;
-use crate::native::Result;
 
 #[derive(Debug, Clone)]
 pub struct FakeCursorState {

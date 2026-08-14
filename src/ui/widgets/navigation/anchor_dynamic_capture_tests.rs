@@ -725,11 +725,12 @@ fn anchor_container_dynamic_capture_rejects_factory_owned_root_key() {
     // 非法 factory 只能执行一次。
     assert_eq!(factory_calls.load(Ordering::Relaxed), 1);
     // 非法 key 不得留下半发布动态容器。
-    assert!(tree
-        .get(root)
-        .expect("Anchor owner 必须存在")
-        .children()
-        .is_empty());
+    assert!(
+        tree.get(root)
+            .expect("Anchor owner 必须存在")
+            .children()
+            .is_empty()
+    );
     // 安装安全 factory 证明同一 owner 仍可重试。
     sync_runtime_anchor(
         &mut tree,
@@ -796,11 +797,12 @@ fn anchor_container_dynamic_capture_pre_publish_panic_rolls_back_and_retries() {
     // 原 Anchor owner 必须仍保持可用。
     assert_eq!(anchor_root(&tree), root);
     // 失败不得留下半发布动态容器。
-    assert!(tree
-        .get(root)
-        .expect("Anchor owner 必须存在")
-        .children()
-        .is_empty());
+    assert!(
+        tree.get(root)
+            .expect("Anchor owner 必须存在")
+            .children()
+            .is_empty()
+    );
     // 失败 factory 必须只执行一次。
     assert_eq!(failed_calls.load(Ordering::Relaxed), 1);
     // provisional 句柄仅保留局部写入，不能代表已提交 owner 状态。

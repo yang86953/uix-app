@@ -2,8 +2,8 @@
 // platform/event.rs — 平台无关事件类型
 // ============================================================================
 
-use crate::core::geometry::Point;
 use crate::core::WindowId;
+use crate::core::geometry::Point;
 use crate::native::windowing::input::{KeyCode, KeyMod, MouseButton};
 use std::time::Instant;
 
@@ -78,9 +78,9 @@ impl PointerActivationId {
     pub(crate) const fn new(raw: u64) -> Self {
         // 保存不可解释的单调编号。
         Self(raw)
-    // 结束身份构造实现。
+        // 结束身份构造实现。
     }
-// 结束不透明身份的方法集合。
+    // 结束不透明身份的方法集合。
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -263,11 +263,11 @@ impl UiEvent {
         if let UiEventPayload::PointerButton(data) = &mut self.payload {
             // 保存身份而不向 UI 映射层解释其内容。
             data.activation = Some(activation);
-        // 结束负载类型检查。
+            // 结束负载类型检查。
         }
         // 返回带单次执行上下文的原生事件。
         self
-    // 结束激活身份附着方法。
+        // 结束激活身份附着方法。
     }
 
     // 读取当前原生指针事件携带的激活身份。
@@ -278,9 +278,9 @@ impl UiEvent {
             UiEventPayload::PointerButton(data) => data.activation,
             // 其他负载保持无授权语义。
             _ => None,
-        // 结束负载投影。
+            // 结束负载投影。
         }
-    // 结束激活身份读取方法。
+        // 结束激活身份读取方法。
     }
 
     // -- 工厂方法 ------------------------------------------------

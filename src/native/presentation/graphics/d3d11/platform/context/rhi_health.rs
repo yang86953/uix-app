@@ -3,7 +3,7 @@
 // 引入统一结果类型，保留 GraphicsDevice::maintain 的错误语义。
 use crate::core::Result;
 // 引入父模块的 DXGI 分类函数和 D3D11 context 状态。
-use super::{map_dxgi_device_removed_reason, D3d11Context};
+use super::{D3d11Context, map_dxgi_device_removed_reason};
 // 引入可控注入使用的标准设备移除 HRESULT。
 #[cfg(feature = "test-harness")]
 use ::windows::Win32::Graphics::Dxgi::DXGI_ERROR_DEVICE_REMOVED;

@@ -29,7 +29,6 @@
 //! ```
 //!
 
-
 pub mod damage;
 pub mod error;
 pub mod geometry;

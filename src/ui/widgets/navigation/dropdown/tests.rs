@@ -212,8 +212,7 @@ fn composite_trigger_modes_and_child_lifecycle_are_owned() {
 #[test]
 fn open_dropdown_registers_popover_overlay_with_outside_dismiss() {
     // 构造带两个可见选项的打开下拉菜单。
-    let mut dropdown = Dropdown::new("Menu")
-        .keyed_items(vec!["复制".into(), "粘贴".into()]);
+    let mut dropdown = Dropdown::new("Menu").keyed_items(vec!["复制".into(), "粘贴".into()]);
     // 进入打开状态（行高 30 像素 × 2 + 触发区 32 像素）。
     dropdown.open();
 
@@ -237,12 +236,13 @@ fn open_dropdown_registers_popover_overlay_with_outside_dismiss() {
     // 关闭后不再登记浮层：等离场动画结束后验证。
     dropdown.close();
     // 驱动关闭动画直到完全离场。
-    while crate::ui::component::traits::WidgetAnimation::update_animation(&mut dropdown, 0.05) {
-    }
-    assert!(WidgetRender::overlay_entry(
-        &dropdown,
-        ComponentId::default(),
-        Rect::new(40.0, 50.0, 160.0, 32.0),
-    )
-    .is_none());
+    while crate::ui::component::traits::WidgetAnimation::update_animation(&mut dropdown, 0.05) {}
+    assert!(
+        WidgetRender::overlay_entry(
+            &dropdown,
+            ComponentId::default(),
+            Rect::new(40.0, 50.0, 160.0, 32.0),
+        )
+        .is_none()
+    );
 }

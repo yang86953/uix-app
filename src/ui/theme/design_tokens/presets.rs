@@ -3,10 +3,10 @@
 //! Provides `antd_light()` and `antd_dark()` factory functions that return
 //! fully-populated `DesignTokens` instances by deriving from ThemePrimitives.
 
-use super::primitives::ThemePrimitives;
 use super::DesignTokens;
+use super::primitives::ThemePrimitives;
 use crate::draw::Color;
-use crate::ui::theme::{PrimaryHue, PRIMARY_HUE_COUNT};
+use crate::ui::theme::{PRIMARY_HUE_COUNT, PrimaryHue};
 
 pub(crate) const PRIMARY_COUNT: usize = PRIMARY_HUE_COUNT;
 pub(crate) const PRIMARY_BLUE_INDEX: usize = PrimaryHue::Blue.index();

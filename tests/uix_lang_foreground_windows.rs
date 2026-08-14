@@ -24,7 +24,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 // 导入 JSON 动作与快照值。
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 // 引入主演示进程 fixture。
 use process::DemoProcess;
@@ -200,11 +200,13 @@ fn maximize_restore_target(snapshot: &Value) -> Value {
         // 缺失窗口控制时不能退化到私有 HWND 命令。
         .expect("maximize or restore semantic control");
     // 控制必须公开 invoke 动作。
-    assert!(control["actions"]
-        // 动作必须是数组。
-        .as_array()
-        // 精确包含 invoke。
-        .is_some_and(|actions| actions.contains(&json!("invoke"))));
+    assert!(
+        control["actions"]
+            // 动作必须是数组。
+            .as_array()
+            // 精确包含 invoke。
+            .is_some_and(|actions| actions.contains(&json!("invoke")))
+    );
     // 返回公开 node_id 目标形状。
     json!({ "node_id": control["node_id"].clone() })
 }

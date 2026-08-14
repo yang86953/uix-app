@@ -3,7 +3,7 @@
 use crate::core::{Point, Rect, Size};
 use crate::ui::component::paint_context::PaintContext;
 
-use super::super::advanced::{normalized_ratio, LegendPosition, TooltipDatum};
+use super::super::advanced::{LegendPosition, TooltipDatum, normalized_ratio};
 use super::{BarChart, BarData};
 
 pub(super) fn map_x(value: f32, x: f32, width: f32, min: f32, max: f32) -> f32 {
@@ -27,7 +27,6 @@ pub(crate) struct BarPlot {
     /// `(series_index, item_index, rect)` for grouped/stacked rendering.
     pub(crate) items: Vec<(usize, usize, Rect)>,
 }
-
 
 impl BarChart {
     pub(super) fn intrinsic_size(&self) -> Size {
@@ -53,11 +52,7 @@ impl BarChart {
     }
 
     pub(super) fn finite_value(value: f32) -> f32 {
-        if value.is_finite() {
-            value
-        } else {
-            0.0
-        }
+        if value.is_finite() { value } else { 0.0 }
     }
 
     pub(super) fn reserve_legend(&self, content: &mut Rect) -> Option<Rect> {
@@ -359,6 +354,4 @@ impl BarChart {
             items,
         })
     }
-
-
 }

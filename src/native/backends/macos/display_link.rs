@@ -8,8 +8,8 @@
 #![cfg(target_os = "macos")]
 
 use std::collections::VecDeque;
-use std::ffi::{c_char, c_void, CString};
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::ffi::{CString, c_char, c_void};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Mutex, Once};
 use std::time::{Duration, Instant};
 

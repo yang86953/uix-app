@@ -232,7 +232,7 @@ impl WindowOps for WindowsWindowOps {
         &mut self,
         // 保留统一签名并明确忽略不可解释身份。
         _pointer_activation: Option<PointerActivationId>,
-    // 返回原有 Win32 消息提交结果。
+        // 返回原有 Win32 消息提交结果。
     ) -> Result<()> {
         self.ensure_valid_window("os_begin_move_drag")?;
         // SAFETY: self.hwnd 已经 ensure_valid_window 验证存活；ReleaseCapture 与 PostMessageW 均为同步无指针调用。

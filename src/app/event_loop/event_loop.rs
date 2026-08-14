@@ -1,7 +1,7 @@
 //! Render Loop — OS 事件 + Widget 调度；渲染段委托 draw ScenePipeline。
 
 use crate::app::queues::active_work_registry::ActiveWorkRegistry;
-use crate::app::queues::clock::{system_clock, AppClock};
+use crate::app::queues::clock::{AppClock, system_clock};
 use crate::app::queues::window_agent_state::WindowAgentState;
 use crate::app::window::text_input::sync_window_text_input;
 use crate::app::window::window_actions::apply_pending_window_actions;
@@ -560,7 +560,7 @@ where
                     platform_window,
                     // 保留 PointerDown 与平台授权的精确因果关系。
                     ev.pointer_activation(),
-                // 结束当前事件动作执行参数。
+                    // 结束当前事件动作执行参数。
                 ) {
                     tracing::error!("window action failed: {}", error.short_what());
                     running.set(false);
@@ -626,7 +626,7 @@ where
             platform_window,
             // 明确声明本轮没有原生输入激活上下文。
             None,
-        // 结束运行时动作执行参数。
+            // 结束运行时动作执行参数。
         ) {
             tracing::error!(
                 "window action failed after runtime work: {}",

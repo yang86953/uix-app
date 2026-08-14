@@ -1,13 +1,13 @@
 // 引入被测私有依赖收集器与状态类型。
-use super::{collect_deps, Effect, State, StateSlotId, TRACKING_DEPS};
+use super::{Effect, State, StateSlotId, TRACKING_DEPS, collect_deps};
 // 引入集合类型以便无序比较依赖槽身份。
 use std::collections::HashSet;
 // 引入受控 unwind 捕获工具以验证 panic 生命周期。
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 // 引入并发测试所需的共享原子计数器。
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 // 引入带超时收据的线程通道、共享所有权与互斥接收端。
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 // 引入并发回归测试的有限等待时长。
 use std::time::Duration;
 

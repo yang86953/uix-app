@@ -5,8 +5,8 @@ use crate::core::{Errc, Result};
 use crate::native::windowing::window::PlatformWindow;
 // 引入当前原生指针事件携带的不可解释激活身份。
 use crate::native::windowing::event::PointerActivationId;
-use crate::ui::event::WindowAction;
 use crate::ui::WidgetTree;
+use crate::ui::event::WindowAction;
 
 /// 在窗口显示前关闭系统标题栏，并重新声明期望的客户区尺寸。
 pub(crate) fn configure_custom_title_bar(
@@ -27,7 +27,7 @@ pub(crate) fn apply_pending_window_actions(
     window: &mut dyn PlatformWindow,
     // 仅当前原生事件可提供一次性指针激活上下文。
     pointer_activation: Option<PointerActivationId>,
-// 返回真正的平台操作失败，正常过期授权由后端忽略。
+    // 返回真正的平台操作失败，正常过期授权由后端忽略。
 ) -> Result<()> {
     for action in tree.take_window_actions() {
         // 原生交互移动会接管 pointer，UI 不应等待可能永不返回的 PointerUp。
@@ -38,7 +38,7 @@ pub(crate) fn apply_pending_window_actions(
         if cancels_pointer_gesture {
             // 使用平台中立的 WidgetTree 生命周期入口完成手势取消。
             tree.cancel_pointer_gesture_for_native_handoff();
-        // 结束原生指针接管清理。
+            // 结束原生指针接管清理。
         }
     }
     Ok(())
@@ -52,7 +52,7 @@ pub(crate) fn apply_window_action(
     action: WindowAction,
     // 激活身份只在 BeginMoveDrag 分支中具有意义。
     pointer_activation: Option<PointerActivationId>,
-// 保持既有窗口操作结果契约。
+    // 保持既有窗口操作结果契约。
 ) -> Result<()> {
     match action {
         // 原生拖动必须关联产生该动作的同一次 PointerDown。
@@ -76,25 +76,25 @@ pub(crate) fn report_center_on_screen_result(
     context: &str,
     // 平台结果保持 typed error，不在适配层改写能力事实。
     result: Result<()>,
-// 返回本次是否实际记录了警告，供局部契约测试观测。
+    // 返回本次是否实际记录了警告，供局部契约测试观测。
 ) -> bool {
     // 成功不需要任何诊断。
     let Err(error) = result else {
         // 明确表示没有记录警告。
         return false;
-    // 结束成功分支。
+        // 结束成功分支。
     };
     // Wayland 等平台的预期能力缺失交给 compositor 默认放置。
     if error.code() == Errc::NotImplemented {
         // 预期能力缺失不应污染用户日志。
         return false;
-    // 结束预期能力缺失分支。
+        // 结束预期能力缺失分支。
     }
     // 其余平台错误仍需保留可观测诊断。
     tracing::warn!("{context}: {}", error.short_what());
     // 告知测试本次确实走过警告路径。
     true
-// 结束自动居中结果报告。
+    // 结束自动居中结果报告。
 }
 
 // 单元测试直接验证自动居中结果分类，不依赖真实窗口后端。
@@ -115,14 +115,17 @@ mod center_on_screen_result_tests {
         // 构造 Wayland 当前使用的预期能力缺失。
         let unsupported = Error::new(Errc::NotImplemented, "center is compositor-owned");
         // 预期能力缺失不得记录警告。
-        assert!(!report_center_on_screen_result("unsupported", Err(unsupported)));
+        assert!(!report_center_on_screen_result(
+            "unsupported",
+            Err(unsupported)
+        ));
         // 构造必须继续暴露的真实平台执行失败。
         let failed = Error::new(Errc::PlatformError, "native center failed");
         // 真实失败必须经过警告路径。
         assert!(report_center_on_screen_result("failed", Err(failed)));
-    // 结束自动居中分类测试。
+        // 结束自动居中分类测试。
     }
-// 结束自动居中结果测试模块。
+    // 结束自动居中结果测试模块。
 }
 
 // 单元测试验证 app 到原生窗口的不可解释激活身份不会丢失或替换。
@@ -141,7 +144,7 @@ mod tests {
         event::UiEvent,
         // 输入值用于建立与标题栏相同的左键手势。
         input::{KeyMod, MouseButton},
-    // 结束原生事件与输入类型导入。
+        // 结束原生事件与输入类型导入。
     };
     // 使用简单节点建立可观察的 pressed、drag 与 keyboard focus 状态。
     use crate::ui::widgets::Label;
@@ -182,7 +185,7 @@ mod tests {
             MouseButton::Left,
             // 本场景没有修饰键。
             KeyMod::NONE,
-        // 结束潜在拖动建立。
+            // 结束潜在拖动建立。
         );
         // 独立建立键盘焦点以验证 pointer handoff 不伪造 WindowBlur。
         tree.managers_mut()
@@ -202,7 +205,7 @@ mod tests {
             &mut window,
             // 只转交当前原生事件的私有上下文。
             pointer_down.pointer_activation(),
-        // 结束带身份 pending 动作调用。
+            // 结束带身份 pending 动作调用。
         )?;
         // 原生接管后 pressed 捕获必须被清除。
         assert_eq!(tree.managers().interaction.pressed_component(), None);
@@ -222,7 +225,7 @@ mod tests {
             &mut window,
             // 本轮没有可验证原生 PointerDown。
             None,
-        // 结束无身份 pending 动作调用。
+            // 结束无身份 pending 动作调用。
         )?;
         // FakeWindow 必须按顺序收到精确 Some(id) 与 None。
         assert_eq!(
@@ -230,11 +233,11 @@ mod tests {
             window.state.begin_move_drag_activations,
             // 期望值不得解释或替换激活身份。
             vec![Some(activation), None],
-        // 结束精确转发断言。
+            // 结束精确转发断言。
         );
         // 测试成功完成。
         Ok(())
-    // 结束激活身份转发测试。
+        // 结束激活身份转发测试。
     }
-// 结束窗口动作契约测试模块。
+    // 结束窗口动作契约测试模块。
 }

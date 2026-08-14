@@ -1,7 +1,7 @@
 // 引入顶层声明、共享游标、样式解析与诊断。
 use super::{
-    parse_style_properties, Cursor, Declaration, Diagnostic, ExportDeclaration, ImportDeclaration,
-    StyleClassDeclaration, ThemeDeclaration,
+    Cursor, Declaration, Diagnostic, ExportDeclaration, ImportDeclaration, StyleClassDeclaration,
+    ThemeDeclaration, parse_style_properties,
 };
 // 引入顶层名称去重集合。
 use std::collections::HashSet;

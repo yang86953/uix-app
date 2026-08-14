@@ -57,7 +57,7 @@ pub(super) fn boolean_field(
                 property,
                 format!("{value:?} 不是布尔值"),
                 "使用 true 或 false",
-            ))
+            ));
         }
     };
     // 把字段名转换为卫生标识符。
@@ -232,7 +232,7 @@ pub(super) fn overflow_field(
                 property,
                 "overflow 的 scroll/auto 由滚动容器组件提供",
                 "改用 ScrollView 或 VirtualScroll",
-            ))
+            ));
         }
         // 拒绝其他值。
         value => {
@@ -240,7 +240,7 @@ pub(super) fn overflow_field(
                 property,
                 format!("未知 overflow 值 {value:?}"),
                 "使用 visible、hidden，或改用滚动容器",
-            ))
+            ));
         }
     };
     // 更新溢出字段。
@@ -444,7 +444,7 @@ fn edge_insets_value(property: &StyleProperty) -> Result<TokenStream, Diagnostic
                 property,
                 "边距简写需要一到四个长度值",
                 "使用如 8px、8px 12px 或 8px 12px 16px 20px",
-            ))
+            ));
         }
     };
     // 按 EdgeInsets 构造器的左上右下顺序生成。
@@ -735,7 +735,7 @@ fn parse_hex_color(hex: &str, property: &StyleProperty) -> Result<(u8, u8, u8, u
                 property,
                 "十六进制颜色需要 3、4、6 或 8 位",
                 "使用 #fff、#ffff、#ffffff 或 #ffffffff",
-            ))
+            ));
         }
     };
     // 解析一个两位通道。

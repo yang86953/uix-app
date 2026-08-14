@@ -1,5 +1,5 @@
 // 引入 record 生成、文档解析与表达式解析入口。
-use super::{generate_record_items, parse_document, parse_expression, ExpressionKind, SourceSpan};
+use super::{ExpressionKind, SourceSpan, generate_record_items, parse_document, parse_expression};
 
 // 构造独立表达式测试使用的绝对起点。
 fn origin() -> SourceSpan {
@@ -41,7 +41,14 @@ fn generates_record_structs_for_uix_items() {
     assert!(tokens.contains("struct Profile"), "{tokens}");
     assert!(tokens.contains("Clone"), "{tokens}");
     // 快照必须包含全部公开字段。
-    for field in ["email", "level", "accepted", "channel", "notifications", "volume"] {
+    for field in [
+        "email",
+        "level",
+        "accepted",
+        "channel",
+        "notifications",
+        "volume",
+    ] {
         // 逐字段验证。
         assert!(tokens.contains(field), "{field} 缺失: {tokens}");
     }

@@ -6,9 +6,7 @@ use quote::quote;
 // 引入公共属性与叶节点形状判定。
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入属性、布尔值、表达式与诊断契约。
-use super::{
-    Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_expression,
-};
+use super::{Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_expression};
 
 // 生成类型化 TableRow / TableColumn 集合的静态数据表格。
 pub(crate) fn generate_table(element: &Element) -> Result<TokenStream, Diagnostic> {

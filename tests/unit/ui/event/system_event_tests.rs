@@ -111,8 +111,14 @@ fn focus_and_window_events_map_to_kinds() {
     assert_eq!(SystemEvent::FocusIn.kind(), SystemEventKind::FocusIn);
     assert_eq!(SystemEvent::FocusOut.kind(), SystemEventKind::FocusOut);
     // 指针进出。
-    assert_eq!(SystemEvent::PointerEnter.kind(), SystemEventKind::PointerEnter);
-    assert_eq!(SystemEvent::PointerLeave.kind(), SystemEventKind::PointerLeave);
+    assert_eq!(
+        SystemEvent::PointerEnter.kind(),
+        SystemEventKind::PointerEnter
+    );
+    assert_eq!(
+        SystemEvent::PointerLeave.kind(),
+        SystemEventKind::PointerLeave
+    );
     // 主题与区域变更。
     assert_eq!(
         SystemEvent::ThemeChanged { is_dark: true }.kind(),
@@ -134,10 +140,22 @@ fn focus_and_window_events_map_to_kinds() {
         .kind(),
         SystemEventKind::Resize
     );
-    assert_eq!(SystemEvent::WindowMaximize.kind(), SystemEventKind::WindowMaximize);
-    assert_eq!(SystemEvent::WindowMinimize.kind(), SystemEventKind::WindowMinimize);
-    assert_eq!(SystemEvent::WindowRestore.kind(), SystemEventKind::WindowRestore);
-    assert_eq!(SystemEvent::WindowFocus.kind(), SystemEventKind::WindowFocus);
+    assert_eq!(
+        SystemEvent::WindowMaximize.kind(),
+        SystemEventKind::WindowMaximize
+    );
+    assert_eq!(
+        SystemEvent::WindowMinimize.kind(),
+        SystemEventKind::WindowMinimize
+    );
+    assert_eq!(
+        SystemEvent::WindowRestore.kind(),
+        SystemEventKind::WindowRestore
+    );
+    assert_eq!(
+        SystemEvent::WindowFocus.kind(),
+        SystemEventKind::WindowFocus
+    );
     assert_eq!(SystemEvent::WindowBlur.kind(), SystemEventKind::WindowBlur);
 }
 
@@ -145,10 +163,7 @@ fn focus_and_window_events_map_to_kinds() {
 #[test]
 fn timer_and_drag_events_map_to_kinds() {
     // 定时器。
-    assert_eq!(
-        SystemEvent::Timer { id: 7 }.kind(),
-        SystemEventKind::Timer
-    );
+    assert_eq!(SystemEvent::Timer { id: 7 }.kind(), SystemEventKind::Timer);
     // 文件拖入。
     assert_eq!(
         SystemEvent::FileDrop {
@@ -229,7 +244,10 @@ fn semantic_event_constructors_fill_target_and_payload() {
     assert_eq!(click.kind, SemanticKind::Click);
     assert_eq!(click.target, ComponentId::new(1));
     assert_eq!(click.current_target, ComponentId::new(1));
-    assert_eq!(click.click_payload().map(|payload| payload.button), Some(MouseButton::Left));
+    assert_eq!(
+        click.click_payload().map(|payload| payload.button),
+        Some(MouseButton::Left)
+    );
     // 文本载荷事件。
     let text = SemanticEvent::text_input(ComponentId::new(2), "abc");
     assert_eq!(text.kind, SemanticKind::TextInput);
@@ -252,12 +270,20 @@ fn custom_payload_round_trips_typed_value() {
     // 构造携带自定义结构的语义事件。
     let event = SemanticEvent::custom(
         ComponentId::new(4),
-        CustomPayload { value: 42, tag: "x".to_owned() },
+        CustomPayload {
+            value: 42,
+            tag: "x".to_owned(),
+        },
     );
     // kind 必须携带自定义载荷的类型标识。
-    assert_eq!(event.kind, SemanticKind::Custom(std::any::TypeId::of::<CustomPayload>()));
+    assert_eq!(
+        event.kind,
+        SemanticKind::Custom(std::any::TypeId::of::<CustomPayload>())
+    );
     // 载荷必须按原类型取回。
-    let payload = event.custom_payload::<CustomPayload>().expect("必须可取回载荷");
+    let payload = event
+        .custom_payload::<CustomPayload>()
+        .expect("必须可取回载荷");
     assert_eq!(payload.value, 42);
     assert_eq!(payload.tag, "x");
     // 类型不符时必须返回 None。
@@ -438,7 +464,9 @@ fn when_predicate_gates_dispatch() {
             Box::new({
                 let calls = calls.clone();
                 move |event| {
-                    calls.borrow_mut().push(event.text_payload().unwrap_or("").to_owned());
+                    calls
+                        .borrow_mut()
+                        .push(event.text_payload().unwrap_or("").to_owned());
                 }
             }),
         ),
@@ -575,7 +603,13 @@ fn convenience_handlers_extract_payloads() {
     table.dispatch_path(&[component], &mut event);
     assert_eq!(*changed.borrow(), vec!["新值"]);
     // 分派自定义载荷。
-    let mut event = SemanticEvent::custom(component, CustomPayload { value: 7, tag: "t".to_owned() });
+    let mut event = SemanticEvent::custom(
+        component,
+        CustomPayload {
+            value: 7,
+            tag: "t".to_owned(),
+        },
+    );
     table.dispatch_path(&[component], &mut event);
     assert_eq!(*customs.borrow(), vec![7]);
 }
@@ -586,10 +620,7 @@ fn convenience_handlers_extract_payloads() {
 #[test]
 fn handler_signature_encodes_options_and_captures() {
     // 默认注册无代次无指纹。
-    let registration = HandlerRegistration::new(
-        SemanticKind::Click,
-        Box::new(|_event| {}),
-    );
+    let registration = HandlerRegistration::new(SemanticKind::Click, Box::new(|_event| {}));
     let signature = registration.signature();
     assert_eq!(signature.kind, SemanticKind::Click);
     assert!(!signature.options.once);
@@ -600,11 +631,8 @@ fn handler_signature_encodes_options_and_captures() {
     let registration = registration.with_generation(3);
     assert_eq!(registration.signature().generation, Some(3));
     // 捕获指纹存在而代次缺失时，author 签名必须补零代次。
-    let registration = HandlerRegistration::new(
-        SemanticKind::Click,
-        Box::new(|_event| {}),
-    )
-    .with_capture_fingerprint(0xDEAD_BEEF);
+    let registration = HandlerRegistration::new(SemanticKind::Click, Box::new(|_event| {}))
+        .with_capture_fingerprint(0xDEAD_BEEF);
     let authored = registration.authored_signature();
     assert_eq!(authored.capture_fingerprint, Some(0xDEAD_BEEF));
     assert_eq!(authored.generation, Some(0));

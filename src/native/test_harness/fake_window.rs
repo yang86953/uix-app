@@ -1,8 +1,8 @@
 //! Fake 窗口系统 — 窗口管理器、窗口实例、窗口属性、原生句柄。
 
+use crate::core::WindowId;
 use crate::core::error::Result;
 use crate::core::geometry::Point;
-use crate::core::WindowId;
 use crate::native::present::IPresenter;
 use crate::native::test_harness::fake_presenter::FakePresenter;
 // 测试窗口适配统一的指针激活上下文签名。
@@ -13,8 +13,8 @@ use crate::native::windowing::window::{
     WindowOcclusionState,
 };
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -397,7 +397,7 @@ impl PlatformWindow for FakeWindow {
         &mut self,
         // 允许测试路径传入或省略同一不可解释上下文。
         pointer_activation: Option<PointerActivationId>,
-    // 保持内存替身的无失败结果。
+        // 保持内存替身的无失败结果。
     ) -> Result<()> {
         self.props.state.begin_move_drag_calls += 1;
         // 保存精确调用顺序供 app/window 契约行为测试断言。

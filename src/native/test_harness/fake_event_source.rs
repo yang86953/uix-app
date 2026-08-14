@@ -7,8 +7,8 @@ use crate::native::windowing::event::{EventLoopWaker, UiEvent};
 use crate::native::windowing::shared::OsEventSource;
 use std::collections::VecDeque;
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc,
+    atomic::{AtomicUsize, Ordering},
 };
 use std::time::Duration;
 

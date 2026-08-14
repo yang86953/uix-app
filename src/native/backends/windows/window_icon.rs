@@ -87,11 +87,7 @@ impl Drop for WindowIconState {
 fn metric_or_default(metric: i32, fallback: i32) -> i32 {
     // SAFETY: GetSystemMetrics accepts the documented icon metric constants.
     let value = unsafe { GetSystemMetrics(metric) };
-    if value > 0 {
-        value
-    } else {
-        fallback
-    }
+    if value > 0 { value } else { fallback }
 }
 
 fn load_icon(

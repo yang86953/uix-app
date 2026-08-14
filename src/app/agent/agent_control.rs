@@ -12,9 +12,9 @@ use crate::app::queues::agent_command_queue::AgentWindowAction;
 use crate::app::queues::window_agent_state::AgentCommandExecutor;
 use crate::app::window_semantics::{WindowSemanticSnapshot, WindowSemanticState};
 use crate::core::ComponentId;
+use crate::ui::WidgetTree;
 use crate::ui::accessibility::semantic_snapshot::SemanticTarget;
 use crate::ui::semantic_action::{SemanticAction, SemanticActionError};
-use crate::ui::WidgetTree;
 #[cfg(any(test, feature = "agent-control"))]
 use crate::ui::{KeyMod, MouseButton, SystemEvent};
 
@@ -226,4 +226,3 @@ fn map_action_error(target: String, error: SemanticActionError) -> AgentCommandE
         SemanticActionError::NotHandled { .. } => AgentCommandError::Internal,
     }
 }
-

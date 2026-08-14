@@ -9,11 +9,11 @@ use crate::platform::windowing::ControlSize;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 use crate::ui::widgets::input::date_calendar::{
-    draw_calendar_panel_in_rect, hit_calendar_date_in_rect, hit_month_navigation_in_rect,
-    CalendarPanelState, MonthNavigation,
+    CalendarPanelState, MonthNavigation, draw_calendar_panel_in_rect, hit_calendar_date_in_rect,
+    hit_month_navigation_in_rect,
 };
 use crate::ui::widgets::input::date_picker::{
-    add_days, days_in_month, next_month, prev_month, Date, DisabledDate,
+    Date, DisabledDate, add_days, days_in_month, next_month, prev_month,
 };
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
@@ -27,8 +27,8 @@ mod methods;
 
 // 引入组合面板绝对坐标转换、分区与表面裁剪函数。
 use geometry::{
-    absolute_date_range_popup_rect, date_range_popup_parts, date_range_surface_rect,
-    DateRangePopupParts,
+    DateRangePopupParts, absolute_date_range_popup_rect, date_range_popup_parts,
+    date_range_surface_rect,
 };
 
 const PRESET_GAP: f32 = 2.0;

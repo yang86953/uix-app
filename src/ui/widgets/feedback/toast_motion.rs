@@ -8,9 +8,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::core::Point;
+use crate::ui::AnimationConfig;
 use crate::ui::animation::TransitionPlayer;
 use crate::ui::reactive::state::{State, StateSlotId};
-use crate::ui::AnimationConfig;
 
 // 引入反馈声明关闭原因。
 use super::declaration::FeedbackCloseReason;
@@ -148,10 +148,7 @@ where
 
     pub(crate) fn remove_external(&self, id: u64) -> bool {
         // Rust API 主动关闭必须产生 Programmatic 原因。
-        self.close_keys(
-            &[ToastKey::External(id)],
-            FeedbackCloseReason::Programmatic,
-        ) > 0
+        self.close_keys(&[ToastKey::External(id)], FeedbackCloseReason::Programmatic) > 0
     }
 
     // 声明卸载时释放条目但不产生关闭事实。

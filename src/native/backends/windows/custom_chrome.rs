@@ -11,8 +11,8 @@ use std::ffi::c_void;
 
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Dwm::{
-    DwmExtendFrameIntoClientArea, DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE,
-    DWMWCP_DONOTROUND, DWMWCP_ROUND, DWM_WINDOW_CORNER_PREFERENCE,
+    DWM_WINDOW_CORNER_PREFERENCE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND,
+    DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
 };
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::HiDpi::GetSystemMetricsForDpi;
@@ -23,7 +23,7 @@ use super::consts::{
     GWL_STYLE, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT,
     HTTOPRIGHT, MONITOR_DEFAULTTONEAREST, WS_CAPTION, WS_MAXIMIZE, WS_THICKFRAME,
 };
-use super::dpi::{dpi_for_window, logical_extent_to_physical, BASE_DPI};
+use super::dpi::{BASE_DPI, dpi_for_window, logical_extent_to_physical};
 use super::ffi::{GetMonitorInfoW, GetWindowRect, IsZoomed, MonitorFromWindow};
 use crate::native::{Errc, Error, Result};
 
@@ -234,36 +234,38 @@ pub(crate) unsafe fn handle_nc_calc_size(
     wparam: usize,
     lparam: isize,
     maximized: bool,
-) -> Option<isize> { unsafe {
-    if lparam == 0 || !uses_extended_client(style) {
-        return None;
-    }
-    if wparam == 0 {
-        // lParam 为建议窗口矩形；返回 0 表示客户区 = 该矩形。
-        return Some(0);
-    }
-    let params = lparam as *mut NcCalcSizeParams;
-    if params.is_null() {
-        return None;
-    }
-    if maximized {
-        // 最大化时系统给出的外窗矩形比可见工作区大（含屏幕外的缩放边框）：
-        // 直接铺满会遮住任务栏，内缩四边又会让窗口顶部/底部露出 DWM 非客户区
-        // （浅色主题下即 1px 白线）。正确做法是把客户区对齐到所在显示器的工作区。
-        if let Some(work) = monitor_work_area(hwnd) {
-            (*params).rgrc[0] = work;
-        } else {
-            // 工作区查询失败时回退到内缩边框，保证不遮任务栏。
-            let border = resize_border_thickness(hwnd);
-            let rect = &mut (*params).rgrc[0];
-            rect.left = rect.left.saturating_add(border);
-            rect.top = rect.top.saturating_add(border);
-            rect.right = rect.right.saturating_sub(border);
-            rect.bottom = rect.bottom.saturating_sub(border);
+) -> Option<isize> {
+    unsafe {
+        if lparam == 0 || !uses_extended_client(style) {
+            return None;
         }
+        if wparam == 0 {
+            // lParam 为建议窗口矩形；返回 0 表示客户区 = 该矩形。
+            return Some(0);
+        }
+        let params = lparam as *mut NcCalcSizeParams;
+        if params.is_null() {
+            return None;
+        }
+        if maximized {
+            // 最大化时系统给出的外窗矩形比可见工作区大（含屏幕外的缩放边框）：
+            // 直接铺满会遮住任务栏，内缩四边又会让窗口顶部/底部露出 DWM 非客户区
+            // （浅色主题下即 1px 白线）。正确做法是把客户区对齐到所在显示器的工作区。
+            if let Some(work) = monitor_work_area(hwnd) {
+                (*params).rgrc[0] = work;
+            } else {
+                // 工作区查询失败时回退到内缩边框，保证不遮任务栏。
+                let border = resize_border_thickness(hwnd);
+                let rect = &mut (*params).rgrc[0];
+                rect.left = rect.left.saturating_add(border);
+                rect.top = rect.top.saturating_add(border);
+                rect.right = rect.right.saturating_sub(border);
+                rect.bottom = rect.bottom.saturating_sub(border);
+            }
+        }
+        Some(0)
     }
-    Some(0)
-}}
+}
 
 pub(crate) fn screen_point_from_lparam(lparam: isize) -> (i32, i32) {
     let x = (lparam & 0xFFFF) as i16 as i32;
@@ -280,41 +282,43 @@ pub(crate) unsafe fn handle_nc_hit_test(
     style: u32,
     lparam: isize,
     resizable: bool,
-) -> Result<Option<isize>> { unsafe {
-    if !uses_extended_client(style) {
-        return Ok(None);
+) -> Result<Option<isize>> {
+    unsafe {
+        if !uses_extended_client(style) {
+            return Ok(None);
+        }
+        if !resizable {
+            return Ok(Some(HTCLIENT as isize));
+        }
+        let mut window_rect = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        if GetWindowRect(hwnd, &mut window_rect) == 0 {
+            return Err(super::util::windows_diag(
+                Errc::PlatformError,
+                "WM_NCHITTEST GetWindowRect failed",
+            ));
+        }
+        let (x, y) = screen_point_from_lparam(lparam);
+        let border = resize_border_thickness(hwnd).max(1);
+        let left = x - window_rect.left < border;
+        let right = window_rect.right - x <= border;
+        let top = y - window_rect.top < border;
+        let bottom = window_rect.bottom - y <= border;
+        let hit = match (left, right, top, bottom) {
+            (true, false, true, false) => HTTOPLEFT,
+            (false, true, true, false) => HTTOPRIGHT,
+            (true, false, false, true) => HTBOTTOMLEFT,
+            (false, true, false, true) => HTBOTTOMRIGHT,
+            (true, false, false, false) => HTLEFT,
+            (false, true, false, false) => HTRIGHT,
+            (false, false, true, false) => HTTOP,
+            (false, false, false, true) => HTBOTTOM,
+            _ => HTCLIENT,
+        };
+        Ok(Some(hit as isize))
     }
-    if !resizable {
-        return Ok(Some(HTCLIENT as isize));
-    }
-    let mut window_rect = RECT {
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-    };
-    if GetWindowRect(hwnd, &mut window_rect) == 0 {
-        return Err(super::util::windows_diag(
-            Errc::PlatformError,
-            "WM_NCHITTEST GetWindowRect failed",
-        ));
-    }
-    let (x, y) = screen_point_from_lparam(lparam);
-    let border = resize_border_thickness(hwnd).max(1);
-    let left = x - window_rect.left < border;
-    let right = window_rect.right - x <= border;
-    let top = y - window_rect.top < border;
-    let bottom = window_rect.bottom - y <= border;
-    let hit = match (left, right, top, bottom) {
-        (true, false, true, false) => HTTOPLEFT,
-        (false, true, true, false) => HTTOPRIGHT,
-        (true, false, false, true) => HTBOTTOMLEFT,
-        (false, true, false, true) => HTBOTTOMRIGHT,
-        (true, false, false, false) => HTLEFT,
-        (false, true, false, false) => HTRIGHT,
-        (false, false, true, false) => HTTOP,
-        (false, false, false, true) => HTBOTTOM,
-        _ => HTCLIENT,
-    };
-    Ok(Some(hit as isize))
-}}
+}

@@ -437,11 +437,11 @@ impl Content {
     }
 
     /// 便捷：包裹单个子节点（等价 `tree! { Content::new() => [node] }`）。
-    pub fn child(self, node: impl crate::ui::IntoWidgetNode) -> crate::ui::component::widget::WidgetNode {
-        crate::ui::component::widget::WidgetNode::new(
-            Box::new(self),
-            vec![node.into_node()],
-        )
+    pub fn child(
+        self,
+        node: impl crate::ui::IntoWidgetNode,
+    ) -> crate::ui::component::widget::WidgetNode {
+        crate::ui::component::widget::WidgetNode::new(Box::new(self), vec![node.into_node()])
     }
 
     fn intrinsic_size(&self) -> Size {

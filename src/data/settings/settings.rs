@@ -6,8 +6,8 @@
 // ============================================================================
 
 use crate::core::{Errc, Error, Result};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::fmt::Display;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -16,7 +16,7 @@ use std::str::FromStr;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[cfg(feature = "settings-serde")]
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 /// 把配置的 settings 路径解析为绝对路径：绝对路径原样返回，
 /// 相对路径基于当前可执行文件所在目录解析（归 settings 域，供组合根调用）。

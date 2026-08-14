@@ -10,12 +10,12 @@ use crate::ui::children::WidgetChildren;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::tree_measure::child_from_tree_with_constraints;
 // 导入共享的物理内容外尺寸计算。
-use crate::ui::layout::engine::content_size_from_children;
-use crate::ui::layout::LayoutChild;
-use crate::ui::layout::{
-    flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
-};
 use crate::ui::SnapshotFields;
+use crate::ui::layout::LayoutChild;
+use crate::ui::layout::engine::content_size_from_children;
+use crate::ui::layout::{
+    AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent, flex::compute_flex_layout,
+};
 use crate::ui::{ComponentId, WidgetComponent, WidgetTree};
 
 /// Predefined space sizes matching Ant Design.

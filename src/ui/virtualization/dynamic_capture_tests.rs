@@ -546,17 +546,19 @@ fn virtual_scroll_wheel_dispatch_materializes_new_window_immediately() {
     // 读取 VirtualScroll 根身份。
     let root = tree.root_id().expect("VirtualScroll 必须拥有根");
     // 初始窗口必须包含前两个框架索引 key。
-    assert!(tree
-        // 读取根的直接物化子项。
-        .get(root)
-        // 根节点必须仍然存在。
-        .expect("VirtualScroll 根必须存在")
-        // 遍历初始两行。
-        .children()
-        // 检查索引零身份存在。
-        .iter()
-        // 任一行命中即可证明初始窗口已物化。
-        .any(|id| tree.get(*id).and_then(|node| node.key()) == Some("virtual-scroll-item:0")));
+    assert!(
+        tree
+            // 读取根的直接物化子项。
+            .get(root)
+            // 根节点必须仍然存在。
+            .expect("VirtualScroll 根必须存在")
+            // 遍历初始两行。
+            .children()
+            // 检查索引零身份存在。
+            .iter()
+            // 任一行命中即可证明初始窗口已物化。
+            .any(|id| tree.get(*id).and_then(|node| node.key()) == Some("virtual-scroll-item:0"))
+    );
     // 在视口中心派发正向 Wheel，VirtualScroll 会消费并推进偏移。
     let result = tree.dispatch_event(&crate::ui::SystemEvent::Wheel {
         // 使用根 frame 内部坐标命中 VirtualScroll。
@@ -654,9 +656,10 @@ fn virtual_scroll_leave_rows_do_not_shift_or_rebuild_active_window() {
     // 新窗口会重新声明索引一与二两行。
     assert_eq!(render_calls.load(std::sync::atomic::Ordering::Relaxed), 4);
     // 离场墓碑必须仍在树中供动画绘制。
-    assert!(tree
-        .get(row_zero)
-        .is_some_and(|node| node.pending_removal()));
+    assert!(
+        tree.get(row_zero)
+            .is_some_and(|node| node.pending_removal())
+    );
     // 父子链包含一个墓碑和两个活动行。
     assert_eq!(tree.get(root).expect("根必须存在").children().len(), 3);
     // 相同窗口再次刷新不得把墓碑误计为活动行并重调 renderer。
@@ -707,10 +710,12 @@ fn virtual_scroll_leave_rows_do_not_shift_or_rebuild_active_window() {
     // 索引零必须复用原组件身份而非分配新节点。
     assert_eq!(row_id(&tree, root, 0), row_zero);
     // 重入会取消尚未完成的离场状态。
-    assert!(!tree
-        .get(row_zero)
-        .expect("重入行必须存在")
-        .pending_removal());
+    assert!(
+        !tree
+            .get(row_zero)
+            .expect("重入行必须存在")
+            .pending_removal()
+    );
 }
 
 // 验证树关闭会释放 VirtualScroll sidecar 闭包捕获的应用资源。

@@ -9,12 +9,12 @@ use crate::draw::scene::PicturePolicy;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::tree_measure::child_from_tree_with_constraints;
 // 导入共享布局入口与内容外尺寸计算。
-use crate::ui::layout::engine::{content_size_from_children, BoxModel, FlexLayout, LayoutChild};
+use crate::ui::layout::engine::{BoxModel, FlexLayout, LayoutChild, content_size_from_children};
 
 use crate::ui::layout::LayoutEngine;
 use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use crate::ui::theme::style::{
-    apply_style, BoxShadowDef, ColorValue, DisplayMode, Style, TypographyToken,
+    BoxShadowDef, ColorValue, DisplayMode, Style, TypographyToken, apply_style,
 };
 use crate::ui::{ComponentId, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};

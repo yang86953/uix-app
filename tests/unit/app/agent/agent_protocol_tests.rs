@@ -33,7 +33,11 @@ fn round_trip(
 ) -> (serde_json::Value, &'static str, bool) {
     let line = serde_json::to_vec(&request).expect("请求必须可序列化");
     let reply = session.handle_line(&line);
-    (reply_json(&reply), reply.result_code(), reply.close_connection())
+    (
+        reply_json(&reply),
+        reply.result_code(),
+        reply.close_connection(),
+    )
 }
 
 /// 认证辅助：用给定 token 完成 hello，返回回复 JSON。
@@ -305,10 +309,7 @@ fn parse_target_accepts_exactly_one_selector() {
 #[test]
 fn parse_component_id_supports_two_and_three_part_formats() {
     // 两段格式映射到非作用域组件标识。
-    assert_eq!(
-        parse_component_id("7:3"),
-        Ok(ComponentId::from_parts(7, 3))
-    );
+    assert_eq!(parse_component_id("7:3"), Ok(ComponentId::from_parts(7, 3)));
     // 三段格式映射到作用域组件标识。
     assert_eq!(
         parse_component_id("1:7:3"),
@@ -317,7 +318,10 @@ fn parse_component_id_supports_two_and_three_part_formats() {
     // 非法 slot 必须被拒绝。
     assert!(parse_component_id("x:3").is_err(), "非数字 slot 必须被拒绝");
     // 非法 generation 必须被拒绝。
-    assert!(parse_component_id("7:x").is_err(), "非数字 generation 必须被拒绝");
+    assert!(
+        parse_component_id("7:x").is_err(),
+        "非数字 generation 必须被拒绝"
+    );
     // 段数不对必须被拒绝。
     assert!(parse_component_id("7").is_err(), "单段 node_id 必须被拒绝");
     assert!(
@@ -341,11 +345,20 @@ fn parse_target_rejects_oversized_automation_id() {
 #[test]
 fn parse_key_code_recognizes_function_and_navigation_keys() {
     // 导航键必须可用。
-    assert_eq!(parse_key_code(as_map(&json!({ "key": "up" })),), Ok(KeyCode::Up));
+    assert_eq!(
+        parse_key_code(as_map(&json!({ "key": "up" })),),
+        Ok(KeyCode::Up)
+    );
     // 功能键必须可用。
-    assert_eq!(parse_key_code(as_map(&json!({ "key": "f12" })),), Ok(KeyCode::F12));
+    assert_eq!(
+        parse_key_code(as_map(&json!({ "key": "f12" })),),
+        Ok(KeyCode::F12)
+    );
     // 数字键必须可用。
-    assert_eq!(parse_key_code(as_map(&json!({ "key": "0" })),), Ok(KeyCode::Num0));
+    assert_eq!(
+        parse_key_code(as_map(&json!({ "key": "0" })),),
+        Ok(KeyCode::Num0)
+    );
     // 未知键名必须被拒绝。
     assert!(parse_key_code(as_map(&json!({ "key": "home_run" })),).is_err());
     // 缺 key 字段属于缺失必填字符串。
@@ -375,8 +388,10 @@ fn parse_key_modifiers_enforces_modifier_contract() {
     assert!(parse_key_modifiers(as_map(&json!({ "modifiers": "ctrl" })),).is_err());
     // 超出修饰键总数的数组必须被拒绝。
     assert!(
-        parse_key_modifiers(as_map(&json!({ "modifiers": ["shift", "ctrl", "alt", "super", "shift"] })),)
-            .is_err()
+        parse_key_modifiers(as_map(
+            &json!({ "modifiers": ["shift", "ctrl", "alt", "super", "shift"] })
+        ),)
+        .is_err()
     );
 }
 
@@ -427,7 +442,10 @@ fn f32_fields_enforce_finite_and_range() {
     // 低于 f32 下限的有限值必须被拒绝。
     assert!(required_f32(as_map(&json!({ "k": -1e300 })), "k").is_err());
     // f32 边界内的值必须可用。
-    assert_eq!(required_f32(as_map(&json!({ "k": 3.4028234e38 })), "k"), Ok(f32::MAX));
+    assert_eq!(
+        required_f32(as_map(&json!({ "k": 3.4028234e38 })), "k"),
+        Ok(f32::MAX)
+    );
     // 非数字值必须被拒绝。
     assert!(required_f32(as_map(&json!({ "k": "1.5" })), "k").is_err());
     // 可选字段缺省返回 None。
@@ -435,7 +453,10 @@ fn f32_fields_enforce_finite_and_range() {
     // 可选字段 null 返回 None。
     assert_eq!(optional_f32(as_map(&json!({ "k": null })), "k"), Ok(None));
     // 可选字段提供值时返回 Some。
-    assert_eq!(optional_f32(as_map(&json!({ "k": -3.5 })), "k"), Ok(Some(-3.5)));
+    assert_eq!(
+        optional_f32(as_map(&json!({ "k": -3.5 })), "k"),
+        Ok(Some(-3.5))
+    );
     // 可选字段提供超范围值必须被拒绝。
     assert!(optional_f32(as_map(&json!({ "k": 1e300 })), "k").is_err());
 }
@@ -444,7 +465,10 @@ fn f32_fields_enforce_finite_and_range() {
 #[test]
 fn request_id_rejects_empty_and_missing_ids() {
     // 合法 request_id 必须返回内容。
-    assert_eq!(request_id(as_map(&json!({ "request_id": "abc" }))), Ok("abc".to_owned()));
+    assert_eq!(
+        request_id(as_map(&json!({ "request_id": "abc" }))),
+        Ok("abc".to_owned())
+    );
     // 空 request_id 必须被拒绝。
     assert!(request_id(as_map(&json!({ "request_id": "" }))).is_err());
     // 缺失 request_id 属于缺失必填字符串。
@@ -492,7 +516,11 @@ fn decode_token_validates_hex_format() {
 #[test]
 fn token_matches_compares_decoded_bytes() {
     // 编码往返后必须匹配。
-    let token = [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+    let token = [
+        0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+        0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+        0x07, 0x08,
+    ];
     let encoded = encode_session_token(&token);
     // 相同 token 必须匹配。
     assert!(token_matches(&token, &encoded));
@@ -659,7 +687,10 @@ fn session_hello_reports_capabilities_and_limits() {
         .expect("capabilities 必须携带 semantic_actions");
     assert!(semantic_actions.iter().any(|value| value == "adjust"));
     // 限制必须暴露消息上限。
-    assert_eq!(json["limits"]["max_message_bytes"], MAX_AGENT_MESSAGE_BYTES as u64);
+    assert_eq!(
+        json["limits"]["max_message_bytes"],
+        MAX_AGENT_MESSAGE_BYTES as u64
+    );
 }
 
 // 认证后重复 hello 属于协议错误但不关闭连接。
@@ -721,7 +752,10 @@ fn session_rejects_oversized_frame() {
     // 必须报超限错误。
     let json = reply_json(&reply);
     assert_eq!(json["error"]["code"], "invalid_request");
-    assert_eq!(json["error"]["message"], "message exceeds the protocol limit");
+    assert_eq!(
+        json["error"]["message"],
+        "message exceeds the protocol limit"
+    );
     // 超限帧必须关闭连接。
     assert!(reply.close_connection());
 }
@@ -958,7 +992,13 @@ fn session_list_windows_returns_empty_on_idle_runtime() {
     );
     // 必须成功且窗口列表为空。
     assert_eq!(code, "ok");
-    assert_eq!(json["windows"].as_array().expect("windows 必须是数组").len(), 0);
+    assert_eq!(
+        json["windows"]
+            .as_array()
+            .expect("windows 必须是数组")
+            .len(),
+        0
+    );
     assert!(!close);
 }
 

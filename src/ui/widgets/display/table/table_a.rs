@@ -7,13 +7,13 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::rc::Rc;
 
+use super::Table;
 use super::builder::TableBuilder;
 use super::config::flatten_column_groups;
 use super::types::{
-    finite_nonnegative, implicit_row_keys, DataTable, SortDirection, TableChange, TableColumn,
-    TableColumnGroup, TableDataError, TablePagination, TablePointerAction, TableRow,
+    DataTable, SortDirection, TableChange, TableColumn, TableColumnGroup, TableDataError,
+    TablePagination, TablePointerAction, TableRow, finite_nonnegative, implicit_row_keys,
 };
-use super::Table;
 
 impl Table {
     pub fn new() -> Self {

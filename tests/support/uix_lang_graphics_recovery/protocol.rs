@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 
 // 导入公开协议 JSON 构造与值类型。
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 // 保存 wait 请求允许真实恢复呈现的最长时间。
 const PRESENT_TIMEOUT_MS: u64 = 30_000;

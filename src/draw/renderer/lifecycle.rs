@@ -2,8 +2,8 @@
 
 use crate::core::{Point, Rect};
 
-use crate::draw::backend::contract::{BackendCapabilities, DrawSurface};
 use crate::draw::backend::DamageRegion;
+use crate::draw::backend::contract::{BackendCapabilities, DrawSurface};
 use crate::draw::outcome::RenderOutcome;
 use crate::draw::{ScrollCopy, UpdateStrategy};
 

@@ -414,12 +414,13 @@ fn carousel_custom_arrows_dynamic_capture_leave_reentry_and_shutdown() {
     // 非零 leave 期间固定箭头仍必须是直接子节点。
     assert_eq!(custom_arrows_child(&tree, root), arrows);
     // 动态箭头必须进入 pending-removal。
-    assert!(tree
-        .get(arrows)
-        // leave 墓碑必须仍可寻址。
-        .expect("离场箭头必须存在")
-        // 读取离场标志。
-        .pending_removal());
+    assert!(
+        tree.get(arrows)
+            // leave 墓碑必须仍可寻址。
+            .expect("离场箭头必须存在")
+            // 读取离场标志。
+            .pending_removal()
+    );
     // 重建同固定身份的自定义箭头声明。
     ViewAdapter::reconcile(
         // 在同一树内协调。
@@ -447,13 +448,15 @@ fn carousel_custom_arrows_dynamic_capture_leave_reentry_and_shutdown() {
     // 同 key 重入不得分配新 ComponentId。
     assert_eq!(custom_arrows_child(&tree, root), arrows);
     // 重入必须取消 pending-removal。
-    assert!(!tree
-        // 读取重入后的原节点。
-        .get(arrows)
-        // 原节点必须仍然存在。
-        .expect("重入箭头必须存在")
-        // 读取离场状态。
-        .pending_removal());
+    assert!(
+        !tree
+            // 读取重入后的原节点。
+            .get(arrows)
+            // 原节点必须仍然存在。
+            .expect("重入箭头必须存在")
+            // 读取离场状态。
+            .pending_removal()
+    );
     // 已提交私有 State 必须跨 leave/reentry 保持。
     assert_eq!(captured_state(&states).get(), 41);
     // 初建与重入父协调各调用一次工厂。

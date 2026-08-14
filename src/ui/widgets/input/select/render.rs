@@ -207,7 +207,8 @@ impl Select {
             }
             let close_width = if self.disabled { 0.0 } else { 18.0 };
             // 标签字号统一使用主题 font_size_sm token（后一个 12.0 是间距，保留）。
-            let desired_width = ctx.measure_text(label, ctx.tokens().font_size_sm()).w + 12.0 + close_width;
+            let desired_width =
+                ctx.measure_text(label, ctx.tokens().font_size_sm()).w + 12.0 + close_width;
             let tag_width = desired_width.min(remaining);
             let tag_rect = Rect::new(x, tag_y, tag_width, tag_height);
             ctx.fill_rect(
@@ -231,7 +232,12 @@ impl Select {
             if label_rect.w > 0.0 {
                 let y = ctx.visual_center_y(label_rect, ctx.tokens().font_size_sm());
                 ctx.push_clip(label_rect);
-                ctx.draw_text(label, Point::new(label_rect.x, y), text, ctx.tokens().font_size_sm());
+                ctx.draw_text(
+                    label,
+                    Point::new(label_rect.x, y),
+                    text,
+                    ctx.tokens().font_size_sm(),
+                );
                 ctx.pop_clip();
             }
             if close_width > 0.0 && close_rect.w > 0.0 {
@@ -419,7 +425,12 @@ impl Select {
                     );
                     let y = ctx.visual_center_y(content, ctx.tokens().font_size_sm());
                     ctx.push_clip(content);
-                    ctx.draw_text(label, Point::new(content.x, y), text_secondary, ctx.tokens().font_size_sm());
+                    ctx.draw_text(
+                        label,
+                        Point::new(content.x, y),
+                        text_secondary,
+                        ctx.tokens().font_size_sm(),
+                    );
                     ctx.pop_clip();
                 }
             }

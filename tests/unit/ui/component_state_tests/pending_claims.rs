@@ -1,5 +1,7 @@
 // 引入 provisional claim 门禁所需的父模块私有入口。
 use super::{
+    // 引入单树拥有的组件状态存储。
+    ComponentStateStore,
     // 引入挂载事务批量接纳回执的入口。
     accept_component_state_receipts,
     // 引入按最终挂载作用域解析本批回执的入口。
@@ -12,8 +14,6 @@ use super::{
     uix_component_state,
     // 引入动态命名空间捕获入口。
     with_component_state_capture_in_namespace,
-    // 引入单树拥有的组件状态存储。
-    ComponentStateStore,
 };
 // 引入可观测初始化路径的单线程记录器。
 use std::cell::Cell;

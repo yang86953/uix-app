@@ -55,9 +55,10 @@ fn generates_and_validates_window_drag_region_contract() {
     assert!(event.message.contains("不接受事件") && event.suggestion.contains("同级节点"));
 
     // 未登记普通属性必须继续走统一拒绝路径。
-    let unknown = generate(r#"<WindowDragRegion mystery="value"><Text>A</Text></WindowDragRegion>"#)
-        // 提取预期未知属性诊断。
-        .expect_err("WindowDragRegion 未登记属性必须失败");
+    let unknown =
+        generate(r#"<WindowDragRegion mystery="value"><Text>A</Text></WindowDragRegion>"#)
+            // 提取预期未知属性诊断。
+            .expect_err("WindowDragRegion 未登记属性必须失败");
     // 诊断必须保留具体属性名。
     assert!(unknown.message.contains("mystery"));
 }

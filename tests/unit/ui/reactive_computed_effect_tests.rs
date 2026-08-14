@@ -1,11 +1,11 @@
 // 引入受测响应式公开句柄。
 use super::{Computed, Effect, State};
 // 引入受控 panic 捕获工具。
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 // 引入并发计数和标记原子。
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 // 引入通道、共享所有权和互斥容器。
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 // 引入所有有限等待的时长类型。
 use std::time::Duration;
 
@@ -365,9 +365,11 @@ fn computed_effect_concurrent_dirty_gets_wait_for_fresh_cache() {
             .expect("第二条完成接收端不应提前关闭");
     });
     // 在计算尚未放行时第二条读取不得错误完成。
-    assert!(second_done_rx
-        .recv_timeout(Duration::from_millis(100))
-        .is_err());
+    assert!(
+        second_done_rx
+            .recv_timeout(Duration::from_millis(100))
+            .is_err()
+    );
     // 放行第一轮用户计算。
     release_tx.send(()).expect("放行接收端不应提前关闭");
     // 在 join 前有限等待确认第一条读取发布新值。
@@ -440,9 +442,11 @@ fn computed_effect_recursive_evaluation_panics_without_deadlock() {
         result_tx.send(panicked).expect("结果接收端不应提前关闭");
     });
     // 有限等待确保不会永久等待同一槽。
-    assert!(result_rx
-        .recv_timeout(Duration::from_secs(3))
-        .expect("递归计算应在时限内返回"));
+    assert!(
+        result_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("递归计算应在时限内返回")
+    );
     // 确认后台线程没有逃逸 panic。
     worker.join().expect("递归保护线程不应逃逸 panic");
     // 清空自身句柄，打破计算闭包经槽位持有 Computed 的强环。

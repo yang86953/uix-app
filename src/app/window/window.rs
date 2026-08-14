@@ -87,7 +87,7 @@ impl Window {
                     "Window::create: center_on_screen failed",
                     // 平台 typed result 直接交给统一分类器。
                     w.center_on_screen(),
-                // 结束独立窗口自动居中报告。
+                    // 结束独立窗口自动居中报告。
                 );
                 if let Err(error) = w.show() {
                     tracing::error!("Window::create: show failed: {}", error.short_what());

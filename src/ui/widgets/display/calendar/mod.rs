@@ -6,10 +6,10 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintPass;
 use crate::draw::{Color, Radius};
+use crate::ui::SnapshotFields;
 use crate::ui::component::locale::Locale;
 use crate::ui::component::paint_context::PaintContext;
-use crate::ui::widgets::input::date_picker::{days_in_month, first_weekday, Date};
-use crate::ui::SnapshotFields;
+use crate::ui::widgets::input::date_picker::{Date, days_in_month, first_weekday};
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
 };
@@ -722,11 +722,7 @@ impl Calendar {
     }
 
     fn navigation_month_delta(&self) -> i32 {
-        if self.year_jump {
-            12
-        } else {
-            1
-        }
+        if self.year_jump { 12 } else { 1 }
     }
 
     fn interaction_geometry(&self) -> Option<CalendarGeometry> {

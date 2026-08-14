@@ -1,10 +1,10 @@
 //! 通知条目与挂载句柄。
 
-use crate::platform::capabilities::StatusLevel;
 use crate::native::notification::ToastEntry;
+use crate::platform::capabilities::StatusLevel;
 
-use crate::ui::widgets::feedback::toast_motion::ToastQueue;
 use super::Notification;
+use crate::ui::widgets::feedback::toast_motion::ToastQueue;
 // 引入声明条目关闭原因。
 use crate::ui::widgets::feedback::declaration::FeedbackCloseReason;
 
@@ -58,12 +58,8 @@ impl NotificationHandle {
         // 保存时长供队列调度。
         let duration_ms = item.duration_ms;
         // 外部高位 ID 与命令式本地 ID 分离。
-        self.queue.push_external_with_close(
-            id,
-            item,
-            duration_ms,
-            std::sync::Arc::new(on_close),
-        );
+        self.queue
+            .push_external_with_close(id, item, duration_ms, std::sync::Arc::new(on_close));
     }
 
     // 幂等更新 keyed 声明条目。

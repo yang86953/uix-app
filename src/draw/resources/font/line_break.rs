@@ -1,7 +1,7 @@
 //! 提供基于 Unicode UAX #14 的共享断行边界。
 
 // 引入标准断行机会与字符行断属性查询。
-use unicode_linebreak::{break_property, linebreaks, BreakClass, BreakOpportunity};
+use unicode_linebreak::{BreakClass, BreakOpportunity, break_property, linebreaks};
 
 // 从文本中切出下一个 CRLF、CR 或 LF 强制换行前的逻辑行。
 #[cfg_attr(not(test), allow(dead_code))]
@@ -153,7 +153,7 @@ impl LineBreakMap {
 #[cfg(test)]
 mod tests {
     // 引入被测断行表。
-    use super::{split_once_mandatory, LineBreakMap};
+    use super::{LineBreakMap, split_once_mandatory};
 
     // 将 UTF-8 文本中的字节边界换算为字符边界。
     fn char_boundary(text: &str, byte_boundary: usize) -> usize {

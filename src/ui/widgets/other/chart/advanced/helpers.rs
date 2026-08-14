@@ -3,13 +3,12 @@ use crate::ui::component::paint_context::PaintContext;
 
 use super::super::line_chart::LineData;
 use super::{
-    ChartKind, ChartPayload, ChartPlaceholder, ChartSeries, LegendPosition,
-    MAX_HEATMAP_DIMENSION, TooltipDatum, calendar_day_count, finite_or_zero,
-    january_first_weekday, normalized_grid_index, palette_color, scatter_tooltip_datum,
+    ChartKind, ChartPayload, ChartPlaceholder, ChartSeries, LegendPosition, MAX_HEATMAP_DIMENSION,
+    TooltipDatum, calendar_day_count, finite_or_zero, january_first_weekday, normalized_grid_index,
+    palette_color, scatter_tooltip_datum,
 };
 
 impl ChartPlaceholder {
-
     /// 判断图表是否携带可绘制的数据（按图表类型分别检查）。
     pub(crate) fn has_data(&self) -> bool {
         match self.kind {
@@ -441,7 +440,4 @@ impl ChartPlaceholder {
             ctx.draw_text(label, Point::new(rect.x + 16.0, y + 3.0), color, 10.0);
         }
     }
-
-
 }
-

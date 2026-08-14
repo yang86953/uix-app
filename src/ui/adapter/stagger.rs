@@ -8,7 +8,7 @@ impl crate::ui::adapter::ViewAdapter {
         interval_secs: f64,
         // 接收当前子节点在同级中的序号。
         rank: usize,
-    // 返回可用于延迟入场的截止时间。
+        // 返回可用于延迟入场的截止时间。
     ) -> Option<std::time::Instant> {
         // 首个节点或非正间隔不需要延迟。
         if rank == 0 || interval_secs <= 0.0 {

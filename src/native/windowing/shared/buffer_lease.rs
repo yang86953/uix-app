@@ -1,7 +1,7 @@
 //! Atomic ownership for compositor-controlled reusable buffers.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct BufferLease {

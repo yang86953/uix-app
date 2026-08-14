@@ -27,7 +27,9 @@ fn table() -> &'static RwLock<HashMap<&'static str, &'static str>> {
 /// 注册翻译条目（增量合并；同 key 覆盖）。
 pub fn register_translations(entries: &[(&'static str, &'static str)]) {
     // 毒锁恢复：RwLock 中毒时取回内部值，不把锁竞争转化为 panic。
-    let mut table = table().write().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut table = table()
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     for (key, value) in entries {
         table.insert(*key, *value);
     }
@@ -36,7 +38,9 @@ pub fn register_translations(entries: &[(&'static str, &'static str)]) {
 /// 整体替换资源表（语言切换）；覆盖全部既有条目。
 pub fn set_translations(entries: &[(&'static str, &'static str)]) {
     // 毒锁恢复：RwLock 中毒时取回内部值，不把锁竞争转化为 panic。
-    let mut table = table().write().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut table = table()
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     table.clear();
     for (key, value) in entries {
         table.insert(*key, *value);

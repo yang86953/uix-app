@@ -10,9 +10,9 @@
 
 use crate::platform::windowing::ControlSize;
 use crate::ui::component::config::{
-    use_config, with_config, ComponentConfig, ComponentOverrides, ComponentTokenOverrides,
+    ComponentConfig, ComponentOverrides, ComponentTokenOverrides, use_config, with_config,
 };
-use crate::ui::component::locale::{en_us, with_locale, zh_cn, Locale};
+use crate::ui::component::locale::{Locale, en_us, with_locale, zh_cn};
 use crate::ui::component::traits::WidgetComponent;
 use crate::ui::render_handler::{EmptyContext, EmptyRenderer};
 use crate::ui::theme::{Theme, TokenPatch};

@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 // 导入确定性节点身份集合。
 use std::collections::BTreeSet;
 // 导入公开协议 JSON 构造与值类型。
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 // 引入主演示进程 fixture。
 use process::DemoProcess;

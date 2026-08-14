@@ -53,10 +53,9 @@ impl std::fmt::Display for FrameEncoderError {
                 f,
                 "{operation} depends on destination pixels and cannot be recorded as a transparent CPU segment"
             ),
-            Self::InvalidRadius { corner } => write!(
-                f,
-                "frame radius {corner} must be finite and non-negative"
-            ),
+            Self::InvalidRadius { corner } => {
+                write!(f, "frame radius {corner} must be finite and non-negative")
+            }
             Self::InvalidStrokeWidth => {
                 write!(f, "frame stroke width must be finite and positive")
             }

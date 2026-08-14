@@ -8,7 +8,7 @@
 use std::collections::VecDeque;
 #[cfg(any(test, feature = "agent-control"))]
 use std::sync::mpsc::RecvTimeoutError;
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Arc, Mutex};
 #[cfg(any(test, feature = "agent-control"))]
 use std::time::Duration;

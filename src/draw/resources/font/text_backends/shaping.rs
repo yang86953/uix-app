@@ -510,13 +510,15 @@ mod tests {
         // 阿拉伯文本必须产生可绘制字形。
         assert!(!layout.glyphs.is_empty());
         // 每个字形都必须保留合法非空源 cluster。
-        assert!(layout
-            // 遍历全部定位字形。
-            .glyphs
-            // 检查每个源区间。
-            .iter()
-            // 要求排他终点严格大于起点。
-            .all(|glyph| glyph.char_end > glyph.char_index));
+        assert!(
+            layout
+                // 遍历全部定位字形。
+                .glyphs
+                // 检查每个源区间。
+                .iter()
+                // 要求排他终点严格大于起点。
+                .all(|glyph| glyph.char_end > glyph.char_index)
+        );
         // RTL 视觉输出应包含递减 cluster 或覆盖多个字符的连写。
         assert!(
             layout
@@ -581,13 +583,15 @@ mod tests {
         // Indic 文本必须产生字形。
         assert!(!indic.glyphs.is_empty());
         // 至少一个输出 cluster 应覆盖整个组合序列的一部分以上。
-        assert!(indic
-            // 遍历 Indic 字形。
-            .glyphs
-            // 检查源 cluster 跨度。
-            .iter()
-            // 复杂辅音簇必须出现多字符 cluster。
-            .any(|glyph| glyph.char_end - glyph.char_index > 1));
+        assert!(
+            indic
+                // 遍历 Indic 字形。
+                .glyphs
+                // 检查源 cluster 跨度。
+                .iter()
+                // 复杂辅音簇必须出现多字符 cluster。
+                .any(|glyph| glyph.char_end - glyph.char_index > 1)
+        );
         // Segoe UI 提供 Latin 基字与组合音标定位。
         let latin_font = windows_font("segoeui.ttf");
         // 使用分解形式而不是预组合字符。
@@ -617,13 +621,15 @@ mod tests {
         // 失败时明确指出组合文本契约。
         .expect("Segoe UI 组合音标 shaping 应成功");
         // 至少一个字形必须覆盖基字与组合符的同一 cluster。
-        assert!(combining
-            // 遍历组合文本字形。
-            .glyphs
-            // 检查源 cluster 跨度。
-            .iter()
-            // 两个标量必须属于同一 shaping cluster。
-            .any(|glyph| glyph.char_index == 0 && glyph.char_end == 2));
+        assert!(
+            combining
+                // 遍历组合文本字形。
+                .glyphs
+                // 检查源 cluster 跨度。
+                .iter()
+                // 两个标量必须属于同一 shaping cluster。
+                .any(|glyph| glyph.char_index == 0 && glyph.char_end == 2)
+        );
         // 结束 Indic 与组合符测试。
     }
 
@@ -660,13 +666,15 @@ mod tests {
         // 失败时明确指出 ligature 契约。
         .expect("Calibri ligature shaping 应成功");
         // 至少一个输出字形必须覆盖多个源字符。
-        assert!(layout
-            // 遍历 Latin 定位字形。
-            .glyphs
-            // 检查 GSUB 合并后的源区间。
-            .iter()
-            // fi 或 ffi ligature 必须跨越至少两个标量。
-            .any(|glyph| glyph.char_end - glyph.char_index > 1));
+        assert!(
+            layout
+                // 遍历 Latin 定位字形。
+                .glyphs
+                // 检查 GSUB 合并后的源区间。
+                .iter()
+                // fi 或 ffi ligature 必须跨越至少两个标量。
+                .any(|glyph| glyph.char_end - glyph.char_index > 1)
+        );
         // 结束 Latin ligature 测试。
     }
     // 结束 shaping 测试模块。

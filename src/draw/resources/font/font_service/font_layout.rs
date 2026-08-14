@@ -12,10 +12,10 @@ use unicode_segmentation::UnicodeSegmentation;
 // 引入字体模块共享的 UAX #14 断行边界。
 use super::super::line_break::LineBreakMap;
 // 引入字体段方向切分与视觉 cluster 重排辅助。
-use super::bidi_layout::{
-    logical_cluster_order, reorder_line, split_font_segments, BidiFontSegment, LineGlyph,
-};
 use super::FontService;
+use super::bidi_layout::{
+    BidiFontSegment, LineGlyph, logical_cluster_order, reorder_line, split_font_segments,
+};
 
 /// 布局辅助：按字体分割的文本段（追踪字节偏移）。
 pub(super) struct FontSegment {
@@ -860,13 +860,15 @@ mod tests {
         // 超宽 cluster 可以整簇溢出，但宽度必须保持完整十二像素。
         assert_eq!(layout.lines[0].width, 12.0);
         // 两个字形必须保留相同的全局 cluster 源区间。
-        assert!(layout
-            // 遍历最终定位字形。
-            .glyphs
-            // 检查完整源区间。
-            .iter()
-            // 两个字形都覆盖两个源字符。
-            .all(|glyph| glyph.char_index == 0 && glyph.char_end == 2));
+        assert!(
+            layout
+                // 遍历最终定位字形。
+                .glyphs
+                // 检查完整源区间。
+                .iter()
+                // 两个字形都覆盖两个源字符。
+                .all(|glyph| glyph.char_index == 0 && glyph.char_end == 2)
+        );
         // 结束 cluster 原子换行测试。
     }
     // 结束字体布局测试模块。

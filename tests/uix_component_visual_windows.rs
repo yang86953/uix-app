@@ -24,7 +24,7 @@ use std::thread;
 use std::time::Duration;
 
 // 引入 JSON 动作与快照值。
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 // 引入独立验收进程 fixture。
 use process::DemoProcess;

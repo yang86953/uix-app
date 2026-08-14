@@ -7,8 +7,8 @@ use std::ffi::c_void;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::HiDpi::{
-    GetDpiForSystem, SetThreadDpiAwarenessContext, DPI_AWARENESS_CONTEXT,
-    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+    DPI_AWARENESS_CONTEXT, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForSystem,
+    SetThreadDpiAwarenessContext,
 };
 
 use super::bindings::RECT;
@@ -20,11 +20,7 @@ use crate::native::{Errc, Error};
 pub(crate) const BASE_DPI: u32 = 96;
 
 pub(crate) fn valid_dpi(dpi: u32) -> u32 {
-    if dpi == 0 {
-        BASE_DPI
-    } else {
-        dpi
-    }
+    if dpi == 0 { BASE_DPI } else { dpi }
 }
 
 /// 把非负 logical extent 按 DPI 就近取整为 physical pixels。

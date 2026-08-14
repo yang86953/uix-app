@@ -176,7 +176,8 @@ fn snapshot_constructors_build_role_name_and_state() {
     assert_eq!(empty.name, None);
     // 状态构造必须整体替换。
     let state = AccessibilityState::disabled(true);
-    let with_state = AccessibilitySnapshot::new(AccessibilityRole::Button).with_state(state.clone());
+    let with_state =
+        AccessibilitySnapshot::new(AccessibilityRole::Button).with_state(state.clone());
     assert_eq!(with_state.state, state);
 }
 
@@ -215,9 +216,11 @@ fn aria_attributes_serialize_name_and_state() {
     assert!(attributes.contains(&AriaAttribute::new("aria-multiline", "true")));
     assert!(attributes.contains(&AriaAttribute::new("aria-required", "true")));
     // password 状态不是 ARIA 属性（由 value_text 隐藏承载）。
-    assert!(!attributes
-        .iter()
-        .any(|attribute| attribute.name == "aria-password"));
+    assert!(
+        !attributes
+            .iter()
+            .any(|attribute| attribute.name == "aria-password")
+    );
     // 默认状态不得输出多余属性。
     let plain = AccessibilitySnapshot::new(AccessibilityRole::Button).aria_attributes();
     assert!(plain.is_empty());
@@ -241,9 +244,11 @@ fn aria_attributes_merge_custom_attributes_with_override() {
     // 追加无关自定义属性。
     let snapshot = snapshot.with_attribute(AriaAttribute::new("data-testid", "btn-1"));
     let attributes = snapshot.aria_attributes();
-    assert!(attributes
-        .iter()
-        .any(|attribute| attribute.name == "data-testid" && attribute.value == "btn-1"));
+    assert!(
+        attributes
+            .iter()
+            .any(|attribute| attribute.name == "data-testid" && attribute.value == "btn-1")
+    );
 }
 
 // with_attributes 必须批量合并并去重。
@@ -509,9 +514,11 @@ fn accessibility_override_wins_over_derived_fields() {
     assert_eq!(overridden.aria_role(), Some("dialog"));
     // 覆盖快照的名称与属性必须一致。
     let attributes = overridden.aria_attributes();
-    assert!(attributes
-        .iter()
-        .any(|attribute| attribute.name == "aria-label" && attribute.value == "覆盖名"));
+    assert!(
+        attributes
+            .iter()
+            .any(|attribute| attribute.name == "aria-label" && attribute.value == "覆盖名")
+    );
 }
 
 // 选择类字段必须能从配置快照提取选择状态。
@@ -526,11 +533,8 @@ fn config_snapshot_extracts_selection_state() {
         direction: crate::ui::widgets::RadioDirection::Horizontal,
         item_h: 24.0,
     };
-    let config = ComponentConfigSnapshot::from_component_fields(
-        ComponentId::new(2),
-        &ComponentMock,
-        fields,
-    );
+    let config =
+        ComponentConfigSnapshot::from_component_fields(ComponentId::new(2), &ComponentMock, fields);
     // 选择状态必须包含选项与选中索引。
     let selection = config.selection().expect("单选框必须有选择状态");
     assert_eq!(selection.options, vec!["低", "中", "高"]);

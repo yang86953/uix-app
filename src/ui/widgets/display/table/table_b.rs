@@ -3,30 +3,23 @@
 use crate::core::Rect;
 use crate::draw::Radius;
 use crate::ui::component::paint_context::PaintContext;
-use crate::ui::{
-    SnapshotFields,
-    SnapshotTableColumn, SnapshotTableColumnGroup,
-};
+use crate::ui::{SnapshotFields, SnapshotTableColumn, SnapshotTableColumnGroup};
 use std::collections::HashSet;
 
 use super::config::merge_table_columns;
 // 引入共享列区绘制层级与列几何快照。
-use super::geometry::{TableColumnGeometry, COLUMN_PAINT_ORDER};
-use super::types::{
-    finite_nonnegative, SortDirection, TableChange, TableResizeDrag,
-    COLUMN_RESIZE_HANDLE_HALF_WIDTH, MIN_RESIZABLE_COLUMN_WIDTH, TABLE_PAGINATION_GAP,
-    TABLE_PAGINATION_HEIGHT, TABLE_PAGINATION_INSET, TABLE_PAGINATION_ITEM_SIZE,
-    TABLE_PAGINATION_LABEL_WIDTH,
-};
 use super::Table;
+use super::geometry::{COLUMN_PAINT_ORDER, TableColumnGeometry};
+use super::types::{
+    COLUMN_RESIZE_HANDLE_HALF_WIDTH, MIN_RESIZABLE_COLUMN_WIDTH, SortDirection,
+    TABLE_PAGINATION_GAP, TABLE_PAGINATION_HEIGHT, TABLE_PAGINATION_INSET,
+    TABLE_PAGINATION_ITEM_SIZE, TABLE_PAGINATION_LABEL_WIDTH, TableChange, TableResizeDrag,
+    finite_nonnegative,
+};
 
 impl Table {
     pub(crate) fn selection_width(&self) -> f32 {
-        if self.selection {
-            32.0
-        } else {
-            0.0
-        }
+        if self.selection { 32.0 } else { 0.0 }
     }
 
     pub(crate) fn loading_body_rect(&self, frame: Rect) -> Rect {
@@ -223,7 +216,11 @@ impl Table {
         !grouped || y >= self.header_h
     }
 
-    pub(crate) fn column_geometry(&self, origin_x: f32, viewport_width: f32) -> TableColumnGeometry {
+    pub(crate) fn column_geometry(
+        &self,
+        origin_x: f32,
+        viewport_width: f32,
+    ) -> TableColumnGeometry {
         TableColumnGeometry::new(
             &self.columns,
             origin_x,

@@ -15,7 +15,6 @@ use crate::diagnostics::{Diagnostics, DiagnosticsConfig};
 use crate::native::capabilities::system::StatusLevel;
 use std::collections::VecDeque;
 
-
 /// 单条通知条目，作为 Toast 组件的数据源。
 #[derive(Debug, Clone)]
 pub struct ToastEntry {

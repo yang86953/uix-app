@@ -2,7 +2,7 @@
 use crate::core::Rect;
 
 // 引入被扩展的树选择组件与最大视口规格。
-use super::{TreeSelect, MAX_DROPDOWN_VIEWPORT_HEIGHT};
+use super::{MAX_DROPDOWN_VIEWPORT_HEIGHT, TreeSelect};
 // 引入同一组件私有几何模块的解析与转换函数。
 use super::geometry::{
     // 将相对弹层转换为窗口绝对坐标。

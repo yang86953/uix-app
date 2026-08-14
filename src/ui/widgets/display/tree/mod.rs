@@ -6,7 +6,6 @@ const TREE_SLOT_WIDTH: f32 = 20.0;
 const TREE_INDENT_WIDTH: f32 = 20.0;
 const TREE_MIN_TITLE_WIDTH: f32 = 24.0;
 
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TreePointerAction {
     Check(String),
@@ -107,7 +106,6 @@ mod tests;
 
 pub use component::*;
 
-
 impl TreeNode {
     pub fn new(title: &str, key: &str) -> Self {
         Self {
@@ -175,4 +173,3 @@ impl TreeNode {
         self
     }
 }
-

@@ -1,7 +1,7 @@
 use super::*;
 use crate::ui::adapter::ViewAdapter;
 use crate::ui::component::provider_context::{
-    current_provider_context, with_provider_context, ProviderContext,
+    ProviderContext, current_provider_context, with_provider_context,
 };
 
 impl WidgetTree {

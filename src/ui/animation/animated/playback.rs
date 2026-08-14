@@ -128,7 +128,12 @@ pub(super) struct AnimatedPlayback<T: Animatable> {
 }
 
 impl<T: Animatable> AnimatedPlayback<T> {
-    pub(super) fn new(animation: Animation<T>, loop_mode: LoopMode, delay: Duration, now: Instant) -> Self {
+    pub(super) fn new(
+        animation: Animation<T>,
+        loop_mode: LoopMode,
+        delay: Duration,
+        now: Instant,
+    ) -> Self {
         let mut playback = Self {
             original_from: animation.from,
             original_to: animation.to,
@@ -479,4 +484,3 @@ fn deadline_after(now: Instant, delay: Duration) -> Instant {
         }
     })
 }
-

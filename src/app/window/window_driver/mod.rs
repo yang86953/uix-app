@@ -16,13 +16,13 @@ use crate::app::window::text_input::sync_window_text_input;
 use crate::app::window::window_session::{ViewFactorySlot, WindowLoopState, WindowTextInputState};
 use crate::app::window_semantics::WindowSemanticState;
 use crate::core::{Errc, Error, Point, PresentDamageTracker, Rect};
+use crate::draw::RenderOutcome;
 use crate::draw::renderer::GraphicsFailure;
 use crate::draw::renderer::{FrameRenderInput, InvalidationSource, RenderMetrics, ScenePipeline};
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
 use crate::draw::scene::NodeId;
 use crate::draw::target::RenderTarget;
-use crate::draw::RenderOutcome;
 use crate::native::platform::Platform;
 use crate::native::present::PresentTestResult;
 use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
@@ -35,9 +35,9 @@ use crate::ui::{EventResult, WidgetTree};
 use std::cell::{Cell, RefCell};
 use std::time::Instant;
 pub(crate) use support::{
-    animation_clock_should_advance, ensure_surface_matches_window, has_invalidation_work,
-    native_client_logical_extent, sync_root_frame_exactly_to_engine, sync_root_frame_to_engine,
-    WindowFrameResult,
+    WindowFrameResult, animation_clock_should_advance, ensure_surface_matches_window,
+    has_invalidation_work, native_client_logical_extent, sync_root_frame_exactly_to_engine,
+    sync_root_frame_to_engine,
 };
 use support::{
     dispatch_due_active_work, earliest_deadline, has_layout_work, next_loop_state,

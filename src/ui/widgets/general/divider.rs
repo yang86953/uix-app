@@ -3,9 +3,9 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
+use crate::ui::SnapshotFields;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::widget::WidgetTree;
-use crate::ui::SnapshotFields;
 
 /// Divider orientation for text placement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

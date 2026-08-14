@@ -6,7 +6,7 @@ use ash::vk;
 
 use crate::core::{Errc, Error, Result};
 
-use super::{invalid, staging_size, vk_err, UploadBuffer, VulkanContext};
+use super::{UploadBuffer, VulkanContext, invalid, staging_size, vk_err};
 
 pub(crate) fn allocate_cpu_shadow(pixel_count: usize) -> Result<Vec<u32>> {
     let mut shadow = Vec::new();

@@ -7,20 +7,19 @@ use std::rc::Rc;
 
 use crate::ui::render_handler::RenderHandlerRegistration;
 
+use super::Table;
 use super::config::flatten_column_groups;
 use super::types::{
-    finite_nonnegative, resolve_table_empty_view, DataTable, ExpandRenderer, TableCellRenderer,
-    TableColumn, TableColumnGroup, TableDataColumn, TableEmptyRenderer, TablePagination, TableRow,
-    implicit_row_keys,
+    DataTable, ExpandRenderer, TableCellRenderer, TableColumn, TableColumnGroup, TableDataColumn,
+    TableEmptyRenderer, TablePagination, TableRow, finite_nonnegative, implicit_row_keys,
+    resolve_table_empty_view,
 };
-use super::Table;
 
 pub struct TableBuilder {
     pub(crate) table: Table,
     pub(crate) expand_renderer: Option<ExpandRenderer>,
     pub(crate) empty_renderer: Option<TableEmptyRenderer>,
 }
-
 
 impl<R> DataTable<R> {
     pub fn columns(mut self, columns: Vec<TableDataColumn<R>>) -> Self {

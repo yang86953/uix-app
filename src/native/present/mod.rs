@@ -170,7 +170,10 @@ impl GraphicsContextCaps {
         all(windows, any(feature = "d3d11", feature = "d3d12")),
         feature = "opengles"
     ))]
-    pub(crate) fn gpu_native_swapchain(backend: GraphicsApi, present_coherency: PresentCoherency) -> Self {
+    pub(crate) fn gpu_native_swapchain(
+        backend: GraphicsApi,
+        present_coherency: PresentCoherency,
+    ) -> Self {
         Self {
             backend,
             raster: RasterMode::GpuNative,

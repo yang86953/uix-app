@@ -265,7 +265,7 @@ fn unix_components(time: SystemTime) -> (u64, u64) {
 mod tests {
     use super::*;
     use crate::diagnostics::{Diagnostics, DiagnosticsConfig};
-    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
 
     fn panic_hook_test_lock() -> std::sync::MutexGuard<'static, ()> {
         crate::diagnostics::PANIC_HOOK_TEST_LOCK

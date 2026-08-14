@@ -2,7 +2,7 @@
 #![cfg(feature = "test-harness")]
 
 // 引入 UIX 编译期入口、自动化标识扩展与公开 View 节点类型。
-use uix::prelude::{uix, StyleExt, ViewNode};
+use uix::prelude::{StyleExt, ViewNode, uix};
 // 引入与真实组件事件路径一致的无窗口应用驱动。
 use uix::ui::test_harness::TestApp;
 

@@ -42,12 +42,11 @@ use std::os::unix::io::RawFd;
 use std::sync::{Arc, Mutex};
 
 use wayland_client::{
-    globals::{registry_queue_init, GlobalList},
-    protocol::{
-        wl_compositor, wl_data_device_manager, wl_keyboard, wl_output, wl_pointer, wl_seat,
-        wl_shm,
-    },
     Connection, EventQueue,
+    globals::{GlobalList, registry_queue_init},
+    protocol::{
+        wl_compositor, wl_data_device_manager, wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm,
+    },
 };
 use wayland_protocols::wp::text_input::zv3::client::{
     zwp_text_input_manager_v3::ZwpTextInputManagerV3, zwp_text_input_v3::ZwpTextInputV3,
@@ -310,7 +309,7 @@ impl WaylandBackend {
             pointer_activations: Arc::new(Mutex::new(
                 // 使用非零身份与代次空间建立空注册表。
                 WaylandPointerActivationRegistry::new(),
-            // 结束共享注册表构造。
+                // 结束共享注册表构造。
             )),
             repeat_rate: Arc::new(Mutex::new(0)),
             repeat_delay: Arc::new(Mutex::new(400)),

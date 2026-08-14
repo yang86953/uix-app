@@ -2,7 +2,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::{SnapshotFields, WidgetTree};
-use qrcode::{types::Color as QrModuleColor, EcLevel, QrCode};
+use qrcode::{EcLevel, QrCode, types::Color as QrModuleColor};
 
 // ════════════════════════════════════════════════════════════════════════════
 // QRCode
@@ -160,4 +160,3 @@ impl QRCode {
         }
     }
 }
-

@@ -12,8 +12,8 @@ use crate::platform::windowing::ControlSize;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 use crate::ui::widgets::input::date_calendar::{
-    draw_calendar_panel_in_rect, hit_calendar_date_in_rect, hit_month_navigation_in_rect,
-    CalendarPanelState, MonthNavigation,
+    CalendarPanelState, MonthNavigation, draw_calendar_panel_in_rect, hit_calendar_date_in_rect,
+    hit_month_navigation_in_rect,
 };
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
@@ -684,18 +684,10 @@ impl Default for DatePicker {
 }
 
 pub(crate) fn next_month(y: i32, m: usize) -> (i32, usize) {
-    if m >= 12 {
-        (y + 1, 1)
-    } else {
-        (y, m + 1)
-    }
+    if m >= 12 { (y + 1, 1) } else { (y, m + 1) }
 }
 pub(crate) fn prev_month(y: i32, m: usize) -> (i32, usize) {
-    if m <= 1 {
-        (y - 1, 12)
-    } else {
-        (y, m - 1)
-    }
+    if m <= 1 { (y - 1, 12) } else { (y, m - 1) }
 }
 
 pub(crate) fn add_days(date: Date, days: i64) -> Date {

@@ -1,5 +1,5 @@
 // 引入文档解析、公开 View 生成与诊断类型。
-use super::{generate_view, parse_document, Diagnostic};
+use super::{Diagnostic, generate_view, parse_document};
 
 // 解析单根文档并返回稳定生成令牌。
 fn generate(source: &str) -> Result<String, Diagnostic> {

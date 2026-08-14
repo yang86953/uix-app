@@ -1,32 +1,32 @@
 // 引入组件状态捕获与存储的私有测试边界。
 use super::{
-    // 引入仅由事务协调器使用的批量回执接纳入口。
-    accept_component_state_receipts,
-    // 引入按最终挂载作用域解析回执批次的入口。
-    resolve_component_state_receipts,
-    // 引入测试生成声明作用域的代码生成器入口。
-    uix_component_scope,
-    // 引入代码生成器使用的状态取得入口。
-    uix_component_state,
-    // 引入动态节点稳定子作用域派生入口。
-    uix_component_child_scope,
-    // 引入带异常回滚的捕获事务入口。
-    with_component_state_capture,
-    // 引入动态宿主命名空间感知的捕获事务入口。
-    with_component_state_capture_in_namespace,
     // 引入测试构造动态宿主身份所需的命名空间类型。
     ComponentStateCaptureNamespace,
     // 引入单树拥有的组件状态存储。
     ComponentStateStore,
     // 引入测试构造稳定身份所需的作用域。
     UixComponentScope,
+    // 引入仅由事务协调器使用的批量回执接纳入口。
+    accept_component_state_receipts,
+    // 引入按最终挂载作用域解析回执批次的入口。
+    resolve_component_state_receipts,
+    // 引入动态节点稳定子作用域派生入口。
+    uix_component_child_scope,
+    // 引入测试生成声明作用域的代码生成器入口。
+    uix_component_scope,
+    // 引入代码生成器使用的状态取得入口。
+    uix_component_state,
+    // 引入带异常回滚的捕获事务入口。
+    with_component_state_capture,
+    // 引入动态宿主命名空间感知的捕获事务入口。
+    with_component_state_capture_in_namespace,
 };
 // 引入动态命名空间宿主的稳定组件身份。
 use crate::core::ComponentId;
 // 引入单线程测试记录器。
 use std::cell::Cell;
 // 引入可验证原始 panic 语义的展开边界。
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 // 构造可跨多次捕获复用的确定组件作用域。
 fn test_scope(declaration: u64) -> UixComponentScope {
@@ -261,15 +261,16 @@ fn panic_rolls_back_only_new_field_and_allows_reinitialization() {
     // 记录回滚后查询已有字段时的后备初始化。
     let existing_after_initializer_ran = Cell::new(false);
     // 再次捕获并查询捕获前已经存在的字段。
-    let (existing_after, existing_after_receipt) = with_component_state_capture(store.clone(), || {
-        // 请求同一字段并提供可观测后备初始器。
-        uix_component_state(&scope, 1, || {
-            // 标记不应发生的旧字段重建。
-            existing_after_initializer_ran.set(true);
-            // 返回不应被采用的后备值。
-            101_i32
-        })
-    });
+    let (existing_after, existing_after_receipt) =
+        with_component_state_capture(store.clone(), || {
+            // 请求同一字段并提供可观测后备初始器。
+            uix_component_state(&scope, 1, || {
+                // 标记不应发生的旧字段重建。
+                existing_after_initializer_ran.set(true);
+                // 返回不应被采用的后备值。
+                101_i32
+            })
+        });
     // 提交只复用旧槽的查询捕获。
     // 以与树事务相同的批量入口接纳本次成功捕获。
     accept_component_state_receipts(vec![existing_after_receipt]);
@@ -280,22 +281,26 @@ fn panic_rolls_back_only_new_field_and_allows_reinitialization() {
     // 记录失败字段后续重新初始化的次数。
     let reinitialize_count = Cell::new(0_u32);
     // 对已回滚的同一作用域字段再次执行正常捕获。
-    let (reinitialized, reinitialized_receipt) = with_component_state_capture(store.clone(), || {
-        // 请求之前失败的第二个字段。
-        uix_component_state(&scope, 2, || {
-            // 记录该字段确实重新初始化一次。
-            reinitialize_count.set(reinitialize_count.get().saturating_add(1));
-            // 返回重新建立的状态值。
-            33_i32
-        })
-    });
+    let (reinitialized, reinitialized_receipt) =
+        with_component_state_capture(store.clone(), || {
+            // 请求之前失败的第二个字段。
+            uix_component_state(&scope, 2, || {
+                // 记录该字段确实重新初始化一次。
+                reinitialize_count.set(reinitialize_count.get().saturating_add(1));
+                // 返回重新建立的状态值。
+                33_i32
+            })
+        });
     // 模拟后续挂载成功并保留重建字段。
     // 以与树事务相同的批量入口接纳本次成功捕获。
     accept_component_state_receipts(vec![reinitialized_receipt]);
     // 失败字段的初始器必须在后续捕获中执行一次。
     assert_eq!(reinitialize_count.get(), 1);
     // 重新建立的字段必须使用新槽身份。
-    assert_ne!(reinitialized.slot_id(), failed_slot.get().expect("失败槽应已记录"));
+    assert_ne!(
+        reinitialized.slot_id(),
+        failed_slot.get().expect("失败槽应已记录")
+    );
     // 重新建立的字段必须保留新初始值。
     assert_eq!(reinitialized.get(), 33_i32);
 }
@@ -311,38 +316,39 @@ fn inner_panic_preserves_outer_insertions_and_capture() {
     // 记录内层捕获会被回滚的新槽。
     let failed_inner_slot = Cell::new(None);
     // 在外层捕获内建立状态并运行失败的内层捕获。
-    let ((outer, outer_followup), outer_receipt) = with_component_state_capture(store.clone(), || {
-        // 先将第一个字段登记到外层 journal。
-        let outer = uix_component_state(&scope, 1, || 41_i32);
-        // 保存外层新槽的身份以供内层核对。
-        let outer_slot = outer.slot_id();
-        // 捕获预期的内层构建 panic。
-        let inner_result = catch_unwind(AssertUnwindSafe(|| {
-            // 临时用新捕获替换线程当前的外层上下文。
-            with_component_state_capture(store.clone(), || {
-                // 内层查询外层已插入字段时必须只复用。
-                let reused_outer = uix_component_state(&scope, 1, || 99_i32);
-                // 复用的外层字段必须保持原槽身份。
-                assert_eq!(reused_outer.slot_id(), outer_slot);
-                // 在内层 journal 中建立独有的第二个字段。
-                let inner_only = uix_component_state(&scope, 2, || 42_i32);
-                // 保存内层独有字段的失败槽身份。
-                failed_inner_slot.set(Some(inner_only.slot_id()));
-                // 触发只针对内层 journal 的回滚。
-                panic!("nested component state capture rollback");
-            });
-        }));
-        // 内层捕获必须传播 panic 供外层决定处理。
-        assert!(inner_result.is_err());
-        // 内层返回后再次请求外层已插入字段。
-        let outer_after_inner = uix_component_state(&scope, 1, || 100_i32);
-        // 内层回滚不得删除外层 journal 中的槽。
-        assert_eq!(outer_after_inner.slot_id(), outer_slot);
-        // 在已恢复的外层捕获中重新建立第二字段。
-        let outer_followup = uix_component_state(&scope, 2, || 43_i32);
-        // 返回外层的两个已提交句柄。
-        (outer, outer_followup)
-    });
+    let ((outer, outer_followup), outer_receipt) =
+        with_component_state_capture(store.clone(), || {
+            // 先将第一个字段登记到外层 journal。
+            let outer = uix_component_state(&scope, 1, || 41_i32);
+            // 保存外层新槽的身份以供内层核对。
+            let outer_slot = outer.slot_id();
+            // 捕获预期的内层构建 panic。
+            let inner_result = catch_unwind(AssertUnwindSafe(|| {
+                // 临时用新捕获替换线程当前的外层上下文。
+                with_component_state_capture(store.clone(), || {
+                    // 内层查询外层已插入字段时必须只复用。
+                    let reused_outer = uix_component_state(&scope, 1, || 99_i32);
+                    // 复用的外层字段必须保持原槽身份。
+                    assert_eq!(reused_outer.slot_id(), outer_slot);
+                    // 在内层 journal 中建立独有的第二个字段。
+                    let inner_only = uix_component_state(&scope, 2, || 42_i32);
+                    // 保存内层独有字段的失败槽身份。
+                    failed_inner_slot.set(Some(inner_only.slot_id()));
+                    // 触发只针对内层 journal 的回滚。
+                    panic!("nested component state capture rollback");
+                });
+            }));
+            // 内层捕获必须传播 panic 供外层决定处理。
+            assert!(inner_result.is_err());
+            // 内层返回后再次请求外层已插入字段。
+            let outer_after_inner = uix_component_state(&scope, 1, || 100_i32);
+            // 内层回滚不得删除外层 journal 中的槽。
+            assert_eq!(outer_after_inner.slot_id(), outer_slot);
+            // 在已恢复的外层捕获中重新建立第二字段。
+            let outer_followup = uix_component_state(&scope, 2, || 43_i32);
+            // 返回外层的两个已提交句柄。
+            (outer, outer_followup)
+        });
     // 外层构建成功后提交它自己的独立 journal。
     // 以与树事务相同的批量入口接纳本次成功捕获。
     accept_component_state_receipts(vec![outer_receipt]);
@@ -402,7 +408,10 @@ fn initializer_can_reenter_same_store_without_losing_slots() {
     // 以与树事务相同的批量入口接纳本次成功捕获。
     accept_component_state_receipts(vec![nested_after_receipt]);
     // 嵌套字段必须保留原始槽身份。
-    assert_eq!(nested_after.slot_id(), nested_slot.get().expect("嵌套槽应已记录"));
+    assert_eq!(
+        nested_after.slot_id(),
+        nested_slot.get().expect("嵌套槽应已记录")
+    );
     // 已提交嵌套字段不得重新初始化。
     assert!(!nested_initializer_ran.get());
 }

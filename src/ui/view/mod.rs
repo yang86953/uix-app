@@ -6,16 +6,18 @@
 use crate::core::{EdgeInsets, Point};
 use crate::draw::Color;
 use crate::ui::accessibility::accessibility_override::AccessibilityOverride;
-use crate::ui::component::provider_context::{current_provider_context, ProviderContext};
+use crate::ui::component::provider_context::{ProviderContext, current_provider_context};
 // 让声明节点携带内联组件的非视觉状态作用域标记。
+use crate::ui::component::traits::WidgetComponent;
+use crate::ui::component::view_transform::ViewTransform;
 use crate::ui::component_state::{
     // 引入随声明根延迟提交的私有状态写入回执。
     ComponentStateCaptureReceipt,
     // 引入窗口私有状态存储和组件作用域标记。
-    ComponentStateStore, UixComponentScope, UixComponentScopeMarker,
+    ComponentStateStore,
+    UixComponentScope,
+    UixComponentScopeMarker,
 };
-use crate::ui::component::traits::WidgetComponent;
-use crate::ui::component::view_transform::ViewTransform;
 use crate::ui::event::system_event_handler::{SystemEventFilter, SystemEventHandlerRegistration};
 use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};
 use crate::ui::render_handler::RenderHandlerRegistration;
@@ -154,11 +156,7 @@ impl ViewNode {
 
     /// 为内联组件展开根追加非视觉的私有状态作用域标记。
     #[doc(hidden)]
-    pub fn uix_component_scope(
-        mut self,
-        scope: UixComponentScope,
-        root_ordinal: u64,
-    ) -> Self {
+    pub fn uix_component_scope(mut self, scope: UixComponentScope, root_ordinal: u64) -> Self {
         // 追加而非覆盖，以保留多个内联组件共享同一实际根的身份。
         self.uix_component_scopes
             .push(UixComponentScopeMarker::new(scope, root_ordinal));

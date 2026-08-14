@@ -5,12 +5,11 @@ use crate::ui::component::paint_context::PaintContext;
 use super::super::bar_chart::BarData;
 use super::super::line_chart::LineData;
 use super::{
-    ChartKind, ChartPayload, ChartPlaceholder, LineStyle, PointStyle, RadarShape,
-    TooltipTrigger, catmull_rom_points, finite_or_zero, normalized_ratio, palette_color,
+    ChartKind, ChartPayload, ChartPlaceholder, LineStyle, PointStyle, RadarShape, TooltipTrigger,
+    catmull_rom_points, finite_or_zero, normalized_ratio, palette_color,
 };
 
 impl ChartPlaceholder {
-
     /// 高级图表总入口：背景、标题、图例布局、缩放平移、分类型绘制与交互层。
     pub(crate) fn paint(&self, ctx: &mut PaintContext, frame: Rect) {
         // 空尺寸直接跳过。
@@ -99,7 +98,12 @@ impl ChartPlaceholder {
             // 无数据：空态提示。
             ctx.stroke_rect(plot, ctx.tokens().color_border(), 1.0, None);
             // 空态提示字号：统一使用主题 font_size_sm token。
-            ctx.text_center("暂无数据", plot, ctx.tokens().color_text_secondary(), ctx.tokens().font_size_sm());
+            ctx.text_center(
+                "暂无数据",
+                plot,
+                ctx.tokens().color_text_secondary(),
+                ctx.tokens().font_size_sm(),
+            );
         }
         if animated {
             ctx.pop_clip();
@@ -466,14 +470,16 @@ impl ChartPlaceholder {
         self.paint_axes(ctx, plot);
         // 汇集 (x, y, 半径, 是否气泡) 元组序列。
         let series: Vec<Vec<(f32, f32, f32, bool)>> = match &self.payload {
-            ChartPayload::Scatter(data) => vec![data
-                .iter()
-                .map(|item| (item.x, item.y, self.point_size, false))
-                .collect()],
-            ChartPayload::Bubble(data) => vec![data
-                .iter()
-                .map(|item| (item.x, item.y, item.size * self.bubble_scale, true))
-                .collect()],
+            ChartPayload::Scatter(data) => vec![
+                data.iter()
+                    .map(|item| (item.x, item.y, self.point_size, false))
+                    .collect(),
+            ],
+            ChartPayload::Bubble(data) => vec![
+                data.iter()
+                    .map(|item| (item.x, item.y, item.size * self.bubble_scale, true))
+                    .collect(),
+            ],
             ChartPayload::ScatterSeries(series) => series
                 .iter()
                 .map(|series| {
@@ -682,7 +688,4 @@ impl ChartPlaceholder {
             }
         }
     }
-
-
 }
-

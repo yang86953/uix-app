@@ -1,5 +1,5 @@
 // 复用父模块中的时间选择器私有状态与常量。
-use super::{Time, TimePicker, ITEM_HEIGHT};
+use super::{ITEM_HEIGHT, Time, TimePicker};
 // 引入断言和事件构造所需的点、矩形基础类型。
 use crate::core::{Point, Rect};
 // 引入指针事件所需的输入类型。

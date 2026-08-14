@@ -2,7 +2,7 @@
 mod core {
     // 重新导出真实稳定窗口身份供私有注册表源码使用。
     pub use uix::core::WindowId;
-// 结束 core 测试适配模块。
+    // 结束 core 测试适配模块。
 }
 
 // 测试目标只为源码级私有模块提供等价的不透明身份路径。
@@ -22,15 +22,15 @@ mod native {
                 pub(crate) const fn new(raw: u64) -> Self {
                     // 保存不可解释编号。
                     Self(raw)
-                // 结束测试身份构造。
+                    // 结束测试身份构造。
                 }
-            // 结束测试身份实现。
+                // 结束测试身份实现。
             }
-        // 结束 event 测试适配模块。
+            // 结束 event 测试适配模块。
         }
-    // 结束 windowing 测试适配模块。
+        // 结束 windowing 测试适配模块。
     }
-// 结束 native 测试适配模块。
+    // 结束 native 测试适配模块。
 }
 
 // 直接编译生产私有注册表，使 Windows 聚焦测试覆盖真实状态机。
@@ -53,10 +53,10 @@ use pointer_activation::{
     PointerActivationRejection,
     // 注册表是本测试的唯一状态机受测对象。
     WaylandPointerActivationRegistry,
-// 结束生产注册表类型导入。
+    // 结束生产注册表类型导入。
 };
 // 引入生产输入代理边沿决策与结果枚举。
-use input_proxy_lifecycle::{input_proxy_transition, InputProxyTransition};
+use input_proxy_lifecycle::{InputProxyTransition, input_proxy_transition};
 
 // 验证重复 capability 快照只创建和释放一次输入代理。
 #[test]
@@ -78,7 +78,7 @@ fn repeated_capability_snapshots_have_idempotent_proxy_edges() {
                 proxy_bound = true;
                 // 精确记录一次创建。
                 bind_count += 1;
-            // 结束 bind 分支。
+                // 结束 bind 分支。
             }
             // capability 真正丢失时释放。
             InputProxyTransition::Release => {
@@ -86,13 +86,12 @@ fn repeated_capability_snapshots_have_idempotent_proxy_edges() {
                 proxy_bound = false;
                 // 精确记录一次释放。
                 release_count += 1;
-            // 结束 release 分支。
+                // 结束 release 分支。
             }
             // 重复快照不得改变 owner 状态或计数。
-            InputProxyTransition::Unchanged => {}
-        // 结束生命周期动作分派。
+            InputProxyTransition::Unchanged => {} // 结束生命周期动作分派。
         }
-    // 结束 capability 快照序列。
+        // 结束 capability 快照序列。
     }
     // 首次出现与 regain 各创建一次。
     assert_eq!(bind_count, 2);
@@ -100,7 +99,7 @@ fn repeated_capability_snapshots_have_idempotent_proxy_edges() {
     assert_eq!(release_count, 1);
     // 最终 regain 后 owner 槽应重新持有代理。
     assert!(proxy_bound);
-// 结束 capability 幂等回归测试。
+    // 结束 capability 幂等回归测试。
 }
 
 // 验证同一 native 批次中的后续 press 不会被较早事件错误消费。
@@ -135,7 +134,7 @@ fn batched_press_release_press_never_cross_consumes_serials() {
         registry.consume(first, window, 31),
         // 注册表必须保留第二下授权并报告身份不匹配。
         PointerActivationOutcome::Ignored(PointerActivationRejection::ActivationMismatch),
-    // 结束第一下错序消费断言。
+        // 结束第一下错序消费断言。
     );
     // app 处理 down2 时只能得到第二下精确 serial。
     assert_eq!(
@@ -143,7 +142,7 @@ fn batched_press_release_press_never_cross_consumes_serials() {
         registry.consume(second, window, 31),
         // 返回 compositor 为第二下 press 签发的值。
         PointerActivationOutcome::Authorized { serial: 202 },
-    // 结束第二下精确消费断言。
+        // 结束第二下精确消费断言。
     );
     // 同一身份再次请求必须被一次性语义拒绝。
     assert_eq!(
@@ -151,9 +150,9 @@ fn batched_press_release_press_never_cross_consumes_serials() {
         registry.consume(second, window, 31),
         // 已消费与已撤销统一表现为稳定非致命缺失。
         PointerActivationOutcome::Ignored(PointerActivationRejection::MissingOrRevoked),
-    // 结束一次性消费断言。
+        // 结束一次性消费断言。
     );
-// 结束批量分发回归测试。
+    // 结束批量分发回归测试。
 }
 
 // 验证窗口、surface 与 pointer 生命周期均不能串用授权。
@@ -182,7 +181,7 @@ fn authorization_isolated_and_revoked_across_lifecycles() {
         registry.consume(activation, second_window, 41),
         // 报告窗口不匹配且保留有效授权。
         PointerActivationOutcome::Ignored(PointerActivationRejection::WindowMismatch),
-    // 结束跨窗口拒绝断言。
+        // 结束跨窗口拒绝断言。
     );
     // 同窗错误 surface 也不能消费该授权。
     assert_eq!(
@@ -190,7 +189,7 @@ fn authorization_isolated_and_revoked_across_lifecycles() {
         registry.consume(activation, first_window, 42),
         // 报告 surface 不匹配且保留有效授权。
         PointerActivationOutcome::Ignored(PointerActivationRejection::SurfaceMismatch),
-    // 结束跨 surface 拒绝断言。
+        // 结束跨 surface 拒绝断言。
     );
     // 正确窗口与 surface 仍能消费原授权。
     assert_eq!(
@@ -198,7 +197,7 @@ fn authorization_isolated_and_revoked_across_lifecycles() {
         registry.consume(activation, first_window, 41),
         // 得到原 press 的精确 serial。
         PointerActivationOutcome::Authorized { serial: 303 },
-    // 结束精确目标消费断言。
+        // 结束精确目标消费断言。
     );
     // 签发用于 leave 撤销场景的新授权。
     let leave_activation = registry
@@ -214,7 +213,7 @@ fn authorization_isolated_and_revoked_across_lifecycles() {
         registry.consume(leave_activation, first_window, 41),
         // 返回稳定非致命缺失。
         PointerActivationOutcome::Ignored(PointerActivationRejection::MissingOrRevoked),
-    // 结束 leave 失效断言。
+        // 结束 leave 失效断言。
     );
     // 签发用于 capability loss 场景的新授权。
     let lost_activation = registry
@@ -230,7 +229,7 @@ fn authorization_isolated_and_revoked_across_lifecycles() {
         registry.consume(lost_activation, first_window, 41),
         // 已撤销授权安全表现为缺失。
         PointerActivationOutcome::Ignored(PointerActivationRejection::MissingOrRevoked),
-    // 结束 capability loss 失效断言。
+        // 结束 capability loss 失效断言。
     );
     // 旧 pointer 回调不得在新代次签发授权。
     assert_eq!(
@@ -238,7 +237,7 @@ fn authorization_isolated_and_revoked_across_lifecycles() {
         registry.issue_primary_press(first_generation, 41, first_window, 606),
         // 迟到回调必须被拒绝。
         None,
-    // 结束旧代理迟到事件断言。
+        // 结束旧代理迟到事件断言。
     );
     // 获取 capability regain 后的新 pointer 代次。
     let second_generation = registry.pointer_generation();
@@ -256,7 +255,7 @@ fn authorization_isolated_and_revoked_across_lifecycles() {
         registry.consume(close_activation, first_window, 41),
         // 返回稳定非致命缺失。
         PointerActivationOutcome::Ignored(PointerActivationRejection::MissingOrRevoked),
-    // 结束 surface 注销断言。
+        // 结束 surface 注销断言。
     );
     // 复用同一协议编号时建立新的窗口注册代次。
     registry.register_surface(41, second_window);
@@ -272,9 +271,9 @@ fn authorization_isolated_and_revoked_across_lifecycles() {
         registry.consume(reused_activation, second_window, 41),
         // 得到新 press 的精确 serial。
         PointerActivationOutcome::Authorized { serial: 808 },
-    // 结束 surface 复用隔离断言。
+        // 结束 surface 复用隔离断言。
     );
-// 结束生命周期隔离回归测试。
+    // 结束生命周期隔离回归测试。
 }
 
 // 验证生产接线保持 raw Wayland 授权私有且主副窗口都转交事件身份。
@@ -287,7 +286,7 @@ fn production_wiring_keeps_wayland_authorization_private_and_causal() {
     let seat = std::fs::read_to_string(
         // 定位 Wayland seat owner 源码。
         root.join("src/native/backends/linux/wayland/seat.rs"),
-    // 源码必须以 UTF-8 可读。
+        // 源码必须以 UTF-8 可读。
     )
     // 读取失败表示测试环境或接线文件损坏。
     .expect("读取 Wayland seat 接线");
@@ -295,7 +294,7 @@ fn production_wiring_keeps_wayland_authorization_private_and_causal() {
     let window_ops = std::fs::read_to_string(
         // 定位 WaylandWindowOps 源码。
         root.join("src/native/backends/linux/wayland/window_ops.rs"),
-    // 源码必须以 UTF-8 可读。
+        // 源码必须以 UTF-8 可读。
     )
     // 读取失败表示测试环境或接线文件损坏。
     .expect("读取 Wayland window ops 接线");
@@ -303,7 +302,7 @@ fn production_wiring_keeps_wayland_authorization_private_and_causal() {
     let main_loop = std::fs::read_to_string(
         // 定位主窗口事件循环源码。
         root.join("src/app/event_loop/event_loop.rs"),
-    // 源码必须以 UTF-8 可读。
+        // 源码必须以 UTF-8 可读。
     )
     // 读取失败表示主窗口接线不可验证。
     .expect("读取主窗口事件循环接线");
@@ -311,7 +310,7 @@ fn production_wiring_keeps_wayland_authorization_private_and_causal() {
     let secondary = std::fs::read_to_string(
         // 定位副窗口会话源码。
         root.join("src/app/application/application/secondary.rs"),
-    // 源码必须以 UTF-8 可读。
+        // 源码必须以 UTF-8 可读。
     )
     // 读取失败表示副窗口接线不可验证。
     .expect("读取副窗口事件接线");
@@ -319,7 +318,7 @@ fn production_wiring_keeps_wayland_authorization_private_and_causal() {
     let actions = std::fs::read_to_string(
         // 定位 app 窗口命令适配源码。
         root.join("src/app/window/window_actions.rs"),
-    // 源码必须以 UTF-8 可读。
+        // 源码必须以 UTF-8 可读。
     )
     // 读取失败表示动作接线不可验证。
     .expect("读取窗口动作接线");
@@ -363,8 +362,11 @@ fn production_wiring_keeps_wayland_authorization_private_and_causal() {
     // 副窗口必须采用与主窗口相同的激活身份转交策略。
     assert!(secondary.contains("event.pointer_activation()"));
     // UI 动作枚举保持零平台负载，app 仅在执行时传上下文。
-    assert!(actions.contains("WindowAction::BeginMoveDrag => window.begin_move_drag(pointer_activation)"));
+    assert!(
+        actions
+            .contains("WindowAction::BeginMoveDrag => window.begin_move_drag(pointer_activation)")
+    );
     // 原生接管后 app 必须显式清除 UI pointer 手势。
     assert!(actions.contains("tree.cancel_pointer_gesture_for_native_handoff();"));
-// 结束生产接线静态契约测试。
+    // 结束生产接线静态契约测试。
 }

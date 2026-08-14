@@ -1,8 +1,8 @@
 use crate::core::ComponentId;
 use crate::ui::adapter::ViewAdapter;
 use crate::ui::component::provider_context::with_provider_context;
-use crate::ui::component::widget::tree_core::WidgetTree;
 use crate::ui::component::widget::WidgetCore;
+use crate::ui::component::widget::tree_core::WidgetTree;
 use crate::ui::virtualization::virtual_scroll::VirtualScroll;
 // 表格 capability 启用时才引入动态扩展行与单元格目标类型。
 #[cfg(feature = "table")]

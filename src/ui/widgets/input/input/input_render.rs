@@ -433,7 +433,13 @@ impl Input {
 
         if let Some(rect) = suffix_rect {
             // 输入框内图标字号：统一使用主题 font_size_sm token。
-            crate::ui::widgets::icon::Icon::paint_in_frame(ctx, &self.suffix, rect, text_sec, ctx.tokens().font_size_sm());
+            crate::ui::widgets::icon::Icon::paint_in_frame(
+                ctx,
+                &self.suffix,
+                rect,
+                text_sec,
+                ctx.tokens().font_size_sm(),
+            );
         }
 
         let has_composition = !self.composition.is_empty();
@@ -616,7 +622,13 @@ impl Input {
                 rect.w,
                 rect.h,
             ));
-            crate::ui::widgets::icon::Icon::paint_in_frame(ctx, "x", rect, text_sec, ctx.tokens().font_size_sm());
+            crate::ui::widgets::icon::Icon::paint_in_frame(
+                ctx,
+                "x",
+                rect,
+                text_sec,
+                ctx.tokens().font_size_sm(),
+            );
         } else {
             self.clear_icon_rect.set(Rect::zero());
         }
@@ -645,7 +657,13 @@ impl Input {
 
         if let Some(rect) = search_rect {
             // 输入框内图标字号：统一使用主题 font_size_sm token。
-            crate::ui::widgets::icon::Icon::paint_in_frame(ctx, "search", rect, text_sec, ctx.tokens().font_size_sm());
+            crate::ui::widgets::icon::Icon::paint_in_frame(
+                ctx,
+                "search",
+                rect,
+                text_sec,
+                ctx.tokens().font_size_sm(),
+            );
         }
     }
 }

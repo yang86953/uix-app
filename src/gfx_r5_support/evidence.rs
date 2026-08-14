@@ -109,7 +109,7 @@ pub fn run_native_out_of_date_recovery(
             Ok(()) => {
                 return Err(support_failure(
                     "GFX-R5 native resize did not produce ERROR_OUT_OF_DATE_KHR",
-                ))
+                ));
             }
             Err(error) => map_error(error),
         };
@@ -269,7 +269,7 @@ pub fn run_engine_recovery_boundary(
         Ok(()) => {
             return Err(support_failure(
                 "GFX-R5 engine recovery did not observe ERROR_OUT_OF_DATE_KHR",
-            ))
+            ));
         }
         Err(error) => error,
     };
@@ -484,7 +484,7 @@ pub fn run_single_window_soak(window: &mut NativeWindow) -> GfxR5Result<SoakEvid
         (Err(error), Err(shutdown)) => {
             return Err(support_failure(format!(
                 "{error}; GFX-R5 soak cleanup failed: {shutdown}"
-            )))
+            )));
         }
     };
     Ok(SoakEvidence {
@@ -556,12 +556,12 @@ pub fn run_shared_device_soak(window: &mut NativeWindow) -> GfxR5Result<SoakEvid
         (Ok(_), Err(first), Err(second)) => {
             return Err(support_failure(format!(
                 "GFX-R5 shared soak cleanup failed: first={first}; second={second}"
-            )))
+            )));
         }
         (Err(error), first, second) => {
             return Err(support_failure(format!(
                 "{error}; GFX-R5 shared soak cleanup failed: first={first:?}; second={second:?}"
-            )))
+            )));
         }
     };
     Ok(SoakEvidence {
@@ -616,14 +616,14 @@ pub fn run_external_device_loss_recovery(
         Ok(()) => {
             return Err(support_failure(
                 "GFX-R5 external reset hook did not return GraphicsDeviceLost",
-            ))
+            ));
         }
         Err(error) if error.code == "graphics_device_lost" => error,
         Err(error) => {
             return Err(support_failure(format!(
                 "GFX-R5 external reset hook returned {} instead of graphics_device_lost",
                 error.code
-            )))
+            )));
         }
     };
     let detection_seconds = detection_started.elapsed().as_secs_f64();
@@ -631,14 +631,14 @@ pub fn run_external_device_loss_recovery(
         Ok(()) => {
             return Err(support_failure(
                 "GFX-R5 shared peer did not observe GraphicsDeviceLost",
-            ))
+            ));
         }
         Err(error) if error.code == "graphics_device_lost" => error,
         Err(error) => {
             return Err(support_failure(format!(
                 "GFX-R5 shared peer returned {} instead of graphics_device_lost",
                 error.code
-            )))
+            )));
         }
     };
 

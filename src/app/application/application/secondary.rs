@@ -53,7 +53,7 @@ impl SecondaryWindowSession {
                 self._window.as_mut(),
                 // 保留该次 PointerDown 的平台激活因果关系。
                 event.pointer_activation(),
-            // 结束副窗口当前事件动作参数。
+                // 结束副窗口当前事件动作参数。
             ) {
                 tracing::error!("secondary window action failed: {}", error.short_what());
                 return false;
@@ -162,7 +162,7 @@ impl SecondaryWindowSession {
             _window.as_mut(),
             // 明确声明该路径没有原生 PointerDown 上下文。
             None,
-        // 结束副窗口运行时动作参数。
+            // 结束副窗口运行时动作参数。
         ) {
             tracing::error!(
                 "secondary window action failed after runtime work: {}",

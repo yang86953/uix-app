@@ -10,8 +10,8 @@ use crate::ui::component::paint_context::PaintContext;
 use crate::ui::{EventResult, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
 
 use super::advanced::{
-    catmull_rom_points, normalized_ratio, BrushConfig, ChartSeries, InteractionConfig,
-    LegendPosition, TooltipConfig, TooltipDatum, TooltipTrigger,
+    BrushConfig, ChartSeries, InteractionConfig, LegendPosition, TooltipConfig, TooltipDatum,
+    TooltipTrigger, catmull_rom_points, normalized_ratio,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -589,11 +589,7 @@ impl LineChart {
     }
 
     fn finite_value(value: f32) -> f32 {
-        if value.is_finite() {
-            value
-        } else {
-            0.0
-        }
+        if value.is_finite() { value } else { 0.0 }
     }
 
     fn reserve_legend(&self, content: &mut Rect) -> Option<Rect> {

@@ -235,10 +235,7 @@ impl PerNodeTextSelection {
                     return cis.get(i).copied().unwrap_or(i);
                 }
             }
-            return cis
-                .last()
-                .map(|c| c + 1)
-                .unwrap_or(text.chars().count());
+            return cis.last().map(|c| c + 1).unwrap_or(text.chars().count());
         }
         // 多行：先按 y 落在哪一行，再在该行内按 x 命中。
         let target_y = text_y.max(li[0].y);

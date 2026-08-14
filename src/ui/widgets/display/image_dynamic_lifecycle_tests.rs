@@ -291,10 +291,11 @@ fn image_error_leave_reentry_reuses_visible_child_and_private_state() {
     // 刷新应启动非零 leave。
     assert!(tree.refresh_image_error_component(root));
     // 错误子树必须进入 pending removal。
-    assert!(tree
-        .get(child)
-        .expect("离场错误子节点必须存在")
-        .pending_removal());
+    assert!(
+        tree.get(child)
+            .expect("离场错误子节点必须存在")
+            .pending_removal()
+    );
     // 执行真实布局，让 Image::child_visible 同步到子节点的父级可见门。
     tree.layout();
     // pending 错误子节点仍保留自身 visible 标志供离场绘制。
@@ -319,10 +320,12 @@ fn image_error_leave_reentry_reuses_visible_child_and_private_state() {
     // 同 key 重入继续复用原错误子节点身份。
     assert_eq!(child_with_key(&tree, root, Image::ERROR_CHILD_KEY), child);
     // 重入后节点不再 pending removal。
-    assert!(!tree
-        .get(child)
-        .expect("恢复错误子节点必须存在")
-        .pending_removal());
+    assert!(
+        !tree
+            .get(child)
+            .expect("恢复错误子节点必须存在")
+            .pending_removal()
+    );
     // 重入后节点继续可见。
     assert!(tree.get(child).expect("恢复错误子节点必须存在").visible());
     // 重入不得重建或重置组件私有状态。
@@ -537,10 +540,11 @@ fn image_owner_removal_shutdown_and_pending_refresh_release_and_reject() {
     // 让根 owner 进入 pending removal。
     assert!(tree.start_leave_transition(root));
     // owner 必须进入离场状态。
-    assert!(tree
-        .get(root)
-        .expect("离场 Image owner 必须存在")
-        .pending_removal());
+    assert!(
+        tree.get(root)
+            .expect("离场 Image owner 必须存在")
+            .pending_removal()
+    );
     // owner 自身 pending-removal 时动态刷新必须拒绝。
     assert!(!tree.refresh_image_error_component(root));
     // 被拒绝刷新不得调用应用工厂。

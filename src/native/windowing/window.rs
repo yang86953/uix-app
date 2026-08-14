@@ -2,9 +2,9 @@
 
 // 引入帧令牌与平台中立的单次指针激活身份。
 use super::event::{FrameRequestToken, PointerActivationId};
+use crate::core::WindowId;
 use crate::core::error::{Error, Result};
 use crate::core::geometry::Point;
-use crate::core::WindowId;
 use crate::native::present::IPresenter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,7 +99,7 @@ pub trait PlatformWindow {
         &mut self,
         // 未携带身份表示动作并非由可验证的原生指针激活产生。
         pointer_activation: Option<PointerActivationId>,
-    // 返回平台请求提交结果，正常的过期授权应安全忽略。
+        // 返回平台请求提交结果，正常的过期授权应安全忽略。
     ) -> Result<()>;
     /// 在当前指针位置显示窗口管理器提供的原生系统菜单。
     fn show_system_menu(&mut self) -> Result<()>;

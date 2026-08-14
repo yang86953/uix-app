@@ -20,7 +20,8 @@ pub struct WidgetNode {
     pub(crate) system_event_handlers: Vec<SystemEventHandlerRegistration>,
     pub(crate) render_handlers: Vec<RenderHandlerRegistration>,
     // 保存捕获阶段交接的结构性 State 绑定。
-    pub(crate) captured_state_binds: Vec<std::sync::Arc<dyn crate::ui::reactive::state::StatePaintBind>>,
+    pub(crate) captured_state_binds:
+        Vec<std::sync::Arc<dyn crate::ui::reactive::state::StatePaintBind>>,
     // 保存捕获阶段交接的节点私有 Effect。
     pub(crate) captured_effects: Vec<crate::ui::reactive::state::Effect>,
     // 保留内联组件的非视觉状态作用域标记。
@@ -244,4 +245,3 @@ impl WidgetNode {
         self
     }
 }
-

@@ -16,9 +16,9 @@
 //! 统一使用 `style: Style`。布局引擎从 `style.margin` 读取外边距参与盒模型计算。
 
 pub mod edge_insets;
-mod variant;
 mod methods;
 mod types;
+mod variant;
 
 pub use self::types::{BoxShadowDef, ColorValue, DisplayMode, PaletteColor, TypographyToken};
 
@@ -27,8 +27,8 @@ pub use variant::{StyleSet, StyleState};
 
 use crate::core::EdgeInsets;
 use crate::draw::Color;
-use crate::ui::theme::traits::ThemeTokens;
 use crate::ui::theme::NeutralRole;
+use crate::ui::theme::traits::ThemeTokens;
 // Re-export layout enums so crate::ui::theme::style::FlexDirection etc. work
 pub use crate::ui::layout::{AlignItems, FlexDirection, GridTrack, JustifyContent};
 

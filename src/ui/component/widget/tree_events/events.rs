@@ -429,7 +429,8 @@ impl WidgetTree {
                     self.invalidate_paint(t);
                     if matches!(event, SystemEvent::Copy) && self.try_copy_cross_text_selection(t) {
                         // 跨文本选区复制语义未被消费：记录日志，行为不变。
-                        if self.dispatch_semantic(SemanticEvent::copy(t)) == EventResult::NotHandled {
+                        if self.dispatch_semantic(SemanticEvent::copy(t)) == EventResult::NotHandled
+                        {
                             tracing::warn!(event = "Copy", target = ?t, "copy semantic was not handled");
                         }
                         return EventResult::Handled;
@@ -507,13 +508,11 @@ impl WidgetTree {
                 {
                     let result = self.dispatch_to(target, event);
                     // FileDrop 语义未被消费：记录日志，行为不变。
-                    if self
-                        .dispatch_semantic(SemanticEvent::file_drop(
-                            target,
-                            files.clone(),
-                            *position,
-                        ))
-                        == EventResult::NotHandled
+                    if self.dispatch_semantic(SemanticEvent::file_drop(
+                        target,
+                        files.clone(),
+                        *position,
+                    )) == EventResult::NotHandled
                     {
                         tracing::warn!(event = "FileDrop", target = ?target, "file drop semantic was not handled");
                     }

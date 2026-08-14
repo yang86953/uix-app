@@ -10,9 +10,9 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::{Color, FontHandle};
+use crate::ui::SnapshotFields;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::widget::WidgetTree;
-use crate::ui::SnapshotFields;
 
 /// 全局 Lucide 字体句柄（由 app 启动时加载）。
 /// FontHandle 为 Copy 类型，无需 Mutex 保护——OnceLock 本身保证线程安全初始化。
@@ -179,7 +179,10 @@ pub(crate) fn icon_char(name: &str) -> &'static str {
         "share-2" => "\u{E156}",
         _ => {
             // 未知图标名落入 search 兜底字形，记录一次以便诊断拼写错误。
-            tracing::warn!("icon_char: unknown icon name {:?}, falling back to search", name);
+            tracing::warn!(
+                "icon_char: unknown icon name {:?}, falling back to search",
+                name
+            );
             "\u{E151}" // fallback: search
         }
     }

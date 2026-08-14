@@ -695,14 +695,15 @@ mod tests {
         // 关闭后不再登记浮层：等离场动画结束后验证。
         popover.close();
         // 驱动关闭动画直到完全离场。
-        while crate::ui::component::traits::WidgetAnimation::update_animation(&mut popover, 0.05) {
-        }
-        assert!(WidgetRender::overlay_entry(
-            &popover,
-            ComponentId::new(7),
-            Rect::new(10.0, 10.0, 40.0, 20.0),
-        )
-        .is_none());
+        while crate::ui::component::traits::WidgetAnimation::update_animation(&mut popover, 0.05) {}
+        assert!(
+            WidgetRender::overlay_entry(
+                &popover,
+                ComponentId::new(7),
+                Rect::new(10.0, 10.0, 40.0, 20.0),
+            )
+            .is_none()
+        );
     }
 
     // FocusOut 关闭弹层（与 Dropdown 对齐），hover 触发路径不受影响。

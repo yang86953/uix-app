@@ -12,7 +12,6 @@ use super::{
 };
 
 impl ChartPlaceholder {
-
     /// 热力图配色：色阶存在时按位置插值，否则在两端色之间线性插值。
     pub(crate) fn heatmap_color(&self, value: f32) -> Color {
         // 色阶不足两档时直接在两色之间插值。
@@ -138,7 +137,12 @@ impl ChartPlaceholder {
             ctx.fill_rect(rect, color, None);
             // 数值标签（深色块上反白）：白色 token。
             if self.show_values {
-                ctx.text_center(&format!("{}", finite_value), rect, ctx.tokens().color_white(), 9.0);
+                ctx.text_center(
+                    &format!("{}", finite_value),
+                    rect,
+                    ctx.tokens().color_white(),
+                    9.0,
+                );
             }
         }
         // x 轴标签（底部）。
@@ -912,4 +916,3 @@ impl ChartPlaceholder {
             .map(|player| player.opacity_progress)
     }
 }
-

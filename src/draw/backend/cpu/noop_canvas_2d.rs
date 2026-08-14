@@ -2,11 +2,11 @@
 //! 所有绘制操作都是空操作，仅用于绘图单元测试夹具。
 
 use crate::core::{Rect, Size};
+use crate::draw::Canvas2D;
 use crate::draw::geometry::color::Color;
 use crate::draw::geometry::path::{FillRule, Path};
 use crate::draw::geometry::stroker::StrokeOptions;
 use crate::draw::geometry::types::{BlendMode, GradientDirection, Radius, Transform};
-use crate::draw::Canvas2D;
 
 /// Canvas2D 空实现。
 pub(crate) struct NoopCanvas2D;

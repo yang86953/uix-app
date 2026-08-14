@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc, Mutex, Weak,
+    atomic::{AtomicBool, Ordering},
 };
 use std::time::{Duration, Instant};
 
 use crate::app::queues::active_work_registry::TimerId;
-use crate::app::queues::clock::{system_clock, AppClock};
+use crate::app::queues::clock::{AppClock, system_clock};
 
 #[derive(Clone)]
 pub(crate) struct AppTimerQueue {

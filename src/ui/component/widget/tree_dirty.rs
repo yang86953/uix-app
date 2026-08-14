@@ -2,8 +2,8 @@ use super::tree_core::WidgetTree;
 use super::*;
 use crate::core::DirtyRegion;
 use crate::draw::renderer::{Invalidation, InvalidationQueueHandle, ScrollDelta};
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 impl WidgetTree {
     pub fn invalidation(&self) -> &InvalidationQueueHandle {

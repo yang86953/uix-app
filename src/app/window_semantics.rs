@@ -4,8 +4,8 @@
 //! it. A disabled session therefore performs no semantic-tree traversal.
 
 use crate::core::WindowId;
-use crate::ui::accessibility::semantic_snapshot::{SemanticNode, SemanticSnapshotBody};
 use crate::ui::WidgetTree;
+use crate::ui::accessibility::semantic_snapshot::{SemanticNode, SemanticSnapshotBody};
 
 const INITIAL_WINDOW_GENERATION: u64 = 1;
 
@@ -51,10 +51,7 @@ impl WindowSemanticState {
         }
     }
 
-    pub(crate) fn bind_agent_window(
-        &mut self,
-        registration: Box<dyn AgentSemanticsPort>,
-    ) -> bool {
+    pub(crate) fn bind_agent_window(&mut self, registration: Box<dyn AgentSemanticsPort>) -> bool {
         if self.snapshot.closed || registration.window_id() != self.snapshot.window_id {
             return false;
         }

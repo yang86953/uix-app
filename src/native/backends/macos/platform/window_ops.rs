@@ -194,4 +194,3 @@ impl WindowOps for MacosWindowOps {
         self.layer
     }
 }
-

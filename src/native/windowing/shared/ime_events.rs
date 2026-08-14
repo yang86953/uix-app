@@ -133,7 +133,10 @@ fn on_committed_text_targeted(
 }
 
 // 仅 Windows TSF 路径（tsf_session.rs）使用；macOS/Wayland 使用 *_for_window 变体。
-pub(crate) fn on_unmark_text(events: &Arc<Mutex<VecDeque<UiEvent>>>, state: &mut ImeCompositionState) {
+pub(crate) fn on_unmark_text(
+    events: &Arc<Mutex<VecDeque<UiEvent>>>,
+    state: &mut ImeCompositionState,
+) {
     on_unmark_text_targeted(events, state, None);
 }
 

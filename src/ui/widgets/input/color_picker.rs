@@ -6,7 +6,7 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::platform::windowing::ControlSize;
-use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 use crate::ui::{
@@ -21,7 +21,7 @@ mod geometry;
 mod methods;
 
 // 引入颜色面板的绝对坐标转换、表面裁剪与共享网格指标。
-use geometry::{absolute_color_popup_rect, color_surface_rect, ColorPanelGeometry};
+use geometry::{ColorPanelGeometry, absolute_color_popup_rect, color_surface_rect};
 
 const PRESET_COLORS: &[u32] = &[
     0xF52222, 0xFA541C, 0xFA8C16, 0xFADB14, 0x52C41A, 0x13C2C2, 0x1677FF, 0x2F54EB, 0x722ED1,

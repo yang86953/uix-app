@@ -74,7 +74,10 @@ impl UixComponentScopeMarker {
     // 构造一个不改变作用域身份的根节点标记。
     pub(crate) fn new(scope: UixComponentScope, root_ordinal: u64) -> Self {
         // 返回完整标记以同时参与节点身份和生命周期清理。
-        Self { scope, root_ordinal }
+        Self {
+            scope,
+            root_ordinal,
+        }
     }
 
     // 返回状态存储清理所需的作用域身份。
@@ -400,16 +403,16 @@ impl ComponentStateStore {
     }
 
     // 统一生成字段类型不兼容的可诊断 panic。
-    fn type_mismatch(scope: &UixComponentScope, field: u64, existing: &'static str, requested: &'static str) -> ! {
+    fn type_mismatch(
+        scope: &UixComponentScope,
+        field: u64,
+        existing: &'static str,
+        requested: &'static str,
+    ) -> ! {
         // 明确列出所有稳定身份部分以便定位代码生成错误。
         panic!(
             "uix 组件私有 state 类型不匹配：callsite={} declaration={} occurrence={} field={}，已有 {}，请求 {}",
-            scope.callsite,
-            scope.declaration,
-            scope.occurrence,
-            field,
-            existing,
-            requested,
+            scope.callsite, scope.declaration, scope.occurrence, field, existing, requested,
         );
     }
 
@@ -745,12 +748,13 @@ fn with_component_state_capture_with_namespace<R>(
     // 捕获 panic 以确保线程局部上下文不会泄漏到后续构建。
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(build));
     // 无论构建成功与否都恢复外层并取回本层捕获。
-    let finished_capture = COMPONENT_STATE_CAPTURE.with(|capture| {
-        // 恢复前一个捕获或清空当前线程的临时状态。
-        capture.replace(outer)
-    })
-    // 成对的安装与恢复必须始终取回本层捕获。
-    .expect("组件状态捕获上下文意外缺失");
+    let finished_capture = COMPONENT_STATE_CAPTURE
+        .with(|capture| {
+            // 恢复前一个捕获或清空当前线程的临时状态。
+            capture.replace(outer)
+        })
+        // 成对的安装与恢复必须始终取回本层捕获。
+        .expect("组件状态捕获上下文意外缺失");
     // 保持调用者可观察到的正常返回或原始 panic。
     match result {
         // 正常路径把值与独立可撤销回执一同交给调用方。
@@ -790,7 +794,10 @@ pub fn uix_component_scope(callsite: &'static str, declaration: u64) -> UixCompo
             };
         };
         // 使用调用点和声明标识区分不同的静态组件调用。
-        let occurrence = capture.occurrences.entry((callsite, declaration)).or_insert(0);
+        let occurrence = capture
+            .occurrences
+            .entry((callsite, declaration))
+            .or_insert(0);
         // 保存本次调用的当前出现序号。
         let current = *occurrence;
         // 为下一次同静态调用递增序号。
@@ -826,7 +833,11 @@ pub fn uix_component_child_scope(
 }
 
 // 由代码生成的字段初始化复用当前窗口内的组件私有 State。
-pub fn uix_component_state<T>(scope: &UixComponentScope, field: u64, init: impl FnOnce() -> T) -> State<T>
+pub fn uix_component_state<T>(
+    scope: &UixComponentScope,
+    field: u64,
+    init: impl FnOnce() -> T,
+) -> State<T>
 where
     // 保持 State 对值类型的公开约束。
     T: Clone + Send + Sync + 'static,

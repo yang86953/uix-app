@@ -2,7 +2,7 @@
 
 use std::ffi::c_void;
 
-use ash::{vk, Entry};
+use ash::{Entry, vk};
 
 use crate::core::Result;
 #[cfg(windows)]

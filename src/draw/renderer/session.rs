@@ -3,7 +3,7 @@
 use crate::core::Error;
 use crate::draw::backend::GpuBackend;
 use crate::draw::backend::{
-    create_backend, BackendCapabilities, BackendKind, CpuBackend, RenderBackend,
+    BackendCapabilities, BackendKind, CpuBackend, RenderBackend, create_backend,
 };
 use crate::draw::outcome::RenderOutcome;
 use crate::draw::{Canvas2D, GraphicsCapabilities, UpdateStrategy};

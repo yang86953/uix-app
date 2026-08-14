@@ -11,7 +11,7 @@ use wayland_protocols::wp::text_input::zv3::client::zwp_text_input_v3;
 
 use crate::core::{Errc, Error, Rect, Result, WindowId};
 use crate::native::windowing::input::ITextInput;
-use crate::native::windowing::shared::ime_events::{on_unmark_text_for_window, PendingImeBatch};
+use crate::native::windowing::shared::ime_events::{PendingImeBatch, on_unmark_text_for_window};
 
 use super::WaylandBackend;
 

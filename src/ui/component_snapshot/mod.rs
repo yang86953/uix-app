@@ -22,7 +22,7 @@ mod selection;
 mod source;
 
 pub use fields::SnapshotFields;
-pub use source::{snapshot_fields_from_any, SnapshotSource};
+pub use source::{SnapshotSource, snapshot_fields_from_any};
 
 // 反馈 capability 关闭时同步收缩气泡确认框快照模型。
 #[cfg(feature = "feedback")]
@@ -40,11 +40,7 @@ pub struct SnapshotPopconfirm {
 }
 
 fn non_empty(value: String) -> Option<String> {
-    if value.is_empty() {
-        None
-    } else {
-        Some(value)
-    }
+    if value.is_empty() { None } else { Some(value) }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -180,7 +176,10 @@ impl AccessibilityRole {
     /// （`agent_protocol::wire`，agent-control feature）共用，是角色名的单一
     /// 事实来源；与 [`Self::aria_role`] 的 ARIA 规范拼写（`progressbar` 等）
     /// 不同，两套命名各自稳定，勿互相替换。
-    #[cfg_attr(not(any(test, feature = "test-harness", feature = "agent-control")), allow(dead_code))]
+    #[cfg_attr(
+        not(any(test, feature = "test-harness", feature = "agent-control")),
+        allow(dead_code)
+    )]
     pub(crate) fn automation_name(self) -> &'static str {
         match self {
             Self::None => "none",

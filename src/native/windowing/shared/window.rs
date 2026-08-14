@@ -136,7 +136,7 @@ pub(crate) trait WindowOps {
         &mut self,
         // 参数只供需要协议授权的平台后端使用。
         _pointer_activation: Option<PointerActivationId>,
-    // 保持既有未实现失败契约。
+        // 保持既有未实现失败契约。
     ) -> Result<()> {
         unimpl("os_begin_move_drag")
     }
@@ -231,7 +231,11 @@ pub(crate) struct PlatformWindowCore<O: WindowOps> {
 }
 
 impl<O: WindowOps> PlatformWindowCore<O> {
-    pub(crate) fn new(state: Rc<RefCell<WindowState>>, ops: O, presenter: Box<dyn IPresenter>) -> Self {
+    pub(crate) fn new(
+        state: Rc<RefCell<WindowState>>,
+        ops: O,
+        presenter: Box<dyn IPresenter>,
+    ) -> Self {
         Self {
             state,
             ops,
@@ -284,7 +288,7 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
         &mut self,
         // 该身份不进入共享窗口状态，也不会跨动作保存。
         pointer_activation: Option<PointerActivationId>,
-    // 直接返回平台后端的提交或忽略结果。
+        // 直接返回平台后端的提交或忽略结果。
     ) -> Result<()> {
         // 将一次性上下文原样交给唯一的 OS 操作所有者。
         self.ops.os_begin_move_drag(pointer_activation)

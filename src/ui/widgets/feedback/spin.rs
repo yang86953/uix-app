@@ -2,11 +2,11 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintPass;
 use crate::draw::Color;
+use crate::draw::painting::PaintPass;
+use crate::ui::SnapshotFields;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::widget::WidgetTree;
-use crate::ui::SnapshotFields;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -152,11 +152,7 @@ pub(crate) fn point_in_triangle(p: Point, a: Point, b: Point, c: Point) -> bool 
 /// 顶点在给定环绕方向下是否凸出。
 pub(super) fn is_convex(prev: Point, curr: Point, next: Point, ccw: bool) -> bool {
     let c = cross(prev, curr, next);
-    if ccw {
-        c > 1e-6
-    } else {
-        c < -1e-6
-    }
+    if ccw { c > 1e-6 } else { c < -1e-6 }
 }
 
 /// 判断顶点是否为「耳朵」：凸出且三角形内不包含其他顶点。

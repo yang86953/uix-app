@@ -107,13 +107,17 @@ impl SnapshotFields {
                     ..AccessibilityState::default()
                 }),
             Self::Switch {
-                checked, disabled, label, ..
-            } => AccessibilitySnapshot::named(AccessibilityRole::Switch, label.clone())
-                .with_state(AccessibilityState {
+                checked,
+                disabled,
+                label,
+                ..
+            } => AccessibilitySnapshot::named(AccessibilityRole::Switch, label.clone()).with_state(
+                AccessibilityState {
                     disabled: *disabled,
                     checked: Some(*checked),
                     ..AccessibilityState::default()
-                }),
+                },
+            ),
             Self::Slider {
                 min, max, value, ..
             } => AccessibilitySnapshot::new(AccessibilityRole::Slider).with_state(

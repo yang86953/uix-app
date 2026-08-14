@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 use crate::core::{ComponentId, Rect};
-use crate::draw::renderer::{invalidate_paint_handle, InvalidationQueueHandle};
+use crate::draw::renderer::{InvalidationQueueHandle, invalidate_paint_handle};
 
 type ReconcileCallback = Arc<dyn Fn() + Send + Sync>;
 type GenerationCheck = Box<dyn Fn() -> u64 + Send + Sync>;

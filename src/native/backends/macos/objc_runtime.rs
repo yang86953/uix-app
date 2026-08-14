@@ -1,4 +1,4 @@
-use std::ffi::{c_char, c_void, CString};
+use std::ffi::{CString, c_char, c_void};
 
 pub(crate) type Id = *mut c_void;
 type Sel = *mut c_void;

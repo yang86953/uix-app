@@ -342,11 +342,7 @@ pub(crate) fn tooltip_fallback_surface(text: &str, frame: Rect) -> Rect {
 
 // 根据箭头可见性计算气泡与目标之间的间距。
 fn tooltip_gap(arrow: bool) -> f32 {
-    if arrow {
-        TOOLTIP_ARROW_SIZE + 2.0
-    } else {
-        4.0
-    }
+    if arrow { TOOLTIP_ARROW_SIZE + 2.0 } else { 4.0 }
 }
 
 // 将箭头锚点限制在气泡边缘的安全范围内。

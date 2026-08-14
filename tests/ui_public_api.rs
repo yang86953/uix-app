@@ -1,11 +1,11 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-use uix::ui::{button, column, label, StyleExt};
 use uix::ui::{
     DesignTokens, IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, State,
     ThemeTokens, TokenPatch, TokenProvider,
 };
+use uix::ui::{StyleExt, button, column, label};
 
 #[test]
 fn theme_and_token_contracts_are_owned_by_ui() {

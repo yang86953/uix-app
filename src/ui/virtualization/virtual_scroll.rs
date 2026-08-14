@@ -7,7 +7,7 @@ use std::cell::{Cell, RefCell};
 
 // 导入可变行高的稀疏缓存和范围计算入口。
 pub use super::measurement_cache::{
-    virtual_list_index_range_with_measurements, VirtualListMeasurementCache,
+    VirtualListMeasurementCache, virtual_list_index_range_with_measurements,
 };
 
 // 复用布局层对非有限值与测量哨兵的统一归一规则。

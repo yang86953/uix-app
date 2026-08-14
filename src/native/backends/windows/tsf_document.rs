@@ -6,13 +6,13 @@ use std::collections::VecDeque;
 use std::ops::Range;
 use std::sync::{Arc, Mutex};
 
-use windows::core::{Error as WinError, Result as WinResult};
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
 use windows::Win32::UI::TextServices::{
     ITextStoreACPSink, TEXT_STORE_LOCK_FLAGS, TS_AE_END, TS_E_INVALIDPOS, TS_LF_READ,
-    TS_LF_READWRITE, TS_LF_SYNC, TS_SELECTIONSTYLE, TS_SELECTION_ACP, TS_TEXTCHANGE,
+    TS_LF_READWRITE, TS_LF_SYNC, TS_SELECTION_ACP, TS_SELECTIONSTYLE, TS_TEXTCHANGE,
 };
+use windows::core::{Error as WinError, Result as WinResult};
 
 use crate::core::{Errc, Error, WindowId};
 use crate::diagnostics::PendingFailureSource;

@@ -10,8 +10,8 @@ mod types;
 
 pub use codes::Errc;
 pub use result::{
-    collect_errors, collect_values, make_error, to_std_error_code, try_invoke, Result,
-    ResultErrorExt, ResultExt, ResultVoidExt,
+    Result, ResultErrorExt, ResultExt, ResultVoidExt, collect_errors, collect_values, make_error,
+    to_std_error_code, try_invoke,
 };
 pub use severity::ErrorSeverity;
 pub use types::Error;

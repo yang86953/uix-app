@@ -11,10 +11,10 @@ use crate::draw::painting::PaintPass;
 use crate::draw::renderer::Invalidation;
 use crate::draw::resources::image::BitmapHandle;
 use crate::draw::{Color, Radius};
+use crate::ui::SnapshotFields;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::paint_scope::current_paint_widget;
 use crate::ui::component::widget::WidgetTree;
-use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, KeyCode, MouseButton, OverlayEntry, OverlayKind, SystemEvent};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -859,7 +859,11 @@ impl Image {
             (surface_h - margin * 2.0).max(1.0),
         );
         // 预览占位底：原为 18,18,18 深灰，收敛为黑色 token（视觉近似，色相随主题可换）。
-        ctx.fill_rect(preview_rect, ctx.tokens().color_black().with_alpha(255), None);
+        ctx.fill_rect(
+            preview_rect,
+            ctx.tokens().color_black().with_alpha(255),
+            None,
+        );
         if let Some(handle) = handle {
             ctx.draw_image(handle, preview_rect);
         } else {
@@ -870,7 +874,13 @@ impl Image {
             } else {
                 "图片不可用"
             };
-            Self::paint_centered_label(ctx, label, preview_rect, ctx.tokens().color_white(), ctx.tokens().font_size_lg());
+            Self::paint_centered_label(
+                ctx,
+                label,
+                preview_rect,
+                ctx.tokens().color_white(),
+                ctx.tokens().font_size_lg(),
+            );
         }
 
         let close = Rect::new((surface_w - 52.0).max(4.0), 12.0, 40.0, 40.0);
@@ -881,7 +891,13 @@ impl Image {
             // 关闭按钮底：黑色 token + 原 alpha（保持视觉等价，色相随主题可换）。
             ctx.tokens().color_black().with_alpha(180),
         );
-        crate::ui::widgets::icon::Icon::paint_in_frame(ctx, "x", close, ctx.tokens().color_white(), 20.0);
+        crate::ui::widgets::icon::Icon::paint_in_frame(
+            ctx,
+            "x",
+            close,
+            ctx.tokens().color_white(),
+            20.0,
+        );
         ctx.pop_clip();
     }
 }

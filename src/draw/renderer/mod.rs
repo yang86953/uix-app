@@ -20,7 +20,7 @@ pub use crate::draw::target::{
 };
 pub use animation::AnimationRegistry;
 pub use invalidation::{
-    invalidate_paint_handle, Invalidation, InvalidationQueue, InvalidationQueueHandle, ScrollDelta,
+    Invalidation, InvalidationQueue, InvalidationQueueHandle, ScrollDelta, invalidate_paint_handle,
 };
 pub use lifecycle::{begin_frame, end_frame, normalize_strategy};
 pub use metrics::{InvalidationSource, RenderMetrics};

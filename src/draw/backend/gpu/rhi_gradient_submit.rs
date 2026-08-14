@@ -121,14 +121,7 @@ impl NativeGpuCanvas2D {
             gradients.push(gradient);
         }
         // 由通用 renderer 生成 FramePlan 并完成唯一最终 present。
-        renderer.execute_gradients(
-            context,
-            damage,
-            viewport,
-            load,
-            target,
-            &gradients,
-        )?;
+        renderer.execute_gradients(context, damage, viewport, load, target, &gradients)?;
         // 告知调用方本次队列已经通过 RHI present 成功。
         Ok(true)
     }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::platform::windowing::ControlSize;
 use crate::ui::component::traits::WidgetComponent;
-pub use crate::ui::render_handler::{render_empty_for, EmptyContext, EmptyRenderer};
+pub use crate::ui::render_handler::{EmptyContext, EmptyRenderer, render_empty_for};
 use crate::ui::theme::style::StyleSet;
 use crate::ui::theme::{Theme, TokenPatch};
 

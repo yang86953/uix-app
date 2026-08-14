@@ -4,7 +4,7 @@
 //! action/outcome/subscription 类型是 System 契约。
 
 use std::cell::Cell;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Mutex, Weak};
 
 use crate::core::{Errc, Error};

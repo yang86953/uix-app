@@ -6,8 +6,8 @@
 
 use std::collections::VecDeque;
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc, Mutex,
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use crate::core::{Errc, Error};
@@ -174,7 +174,7 @@ impl Drop for PendingFailureSourceInner {
 
 #[cfg(test)]
 mod tests {
-    use super::{PendingFailureEnqueue, PendingFailureQueue, PENDING_FAILURE_CAPACITY};
+    use super::{PENDING_FAILURE_CAPACITY, PendingFailureEnqueue, PendingFailureQueue};
     use crate::core::{Errc, Error};
     use std::sync::{Arc, Barrier};
     use std::thread;

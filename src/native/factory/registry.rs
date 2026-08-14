@@ -26,7 +26,11 @@ pub(crate) struct GraphicsRecipe {
 }
 
 impl GraphicsRecipe {
-    pub(crate) const fn new(backend: GraphicsApi, raster: RasterMode, present: PresentMode) -> Self {
+    pub(crate) const fn new(
+        backend: GraphicsApi,
+        raster: RasterMode,
+        present: PresentMode,
+    ) -> Self {
         Self {
             backend,
             raster,
