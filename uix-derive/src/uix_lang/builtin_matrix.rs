@@ -16,11 +16,6 @@ const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
         name: "App",
         category: "标签语法 / App 应用入口",
     },
-    // 展示组件规划项。
-    PlannedBuiltin {
-        name: "DataTable",
-        category: "内置组件 / 展示组件",
-    },
     // 反馈组件规划项。
     PlannedBuiltin {
         name: "Message",
@@ -76,8 +71,8 @@ mod tests {
             .iter()
             .map(|entry| entry.category)
             .collect::<BTreeSet<_>>();
-        // 仍有规划中标签的展示与反馈两类内置组件必须全部出现。
-        for category in ["内置组件 / 展示组件", "内置组件 / 反馈组件"] {
+        // 仍有规划中标签的反馈组件类别必须出现。
+        for category in ["内置组件 / 反馈组件"] {
             // 当前类别必须存在至少一个登记项。
             assert!(categories.contains(category));
         }
