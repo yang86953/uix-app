@@ -20,6 +20,11 @@ mod parse_autolink;
 // 普通行内链接的分隔符、解码与目标字符校验保持在私有辅助边界。
 #[path = "parse_link.rs"]
 mod parse_link;
+// 图片编解码能力启用时才编译 Markdown 图片候选解析器。
+#[cfg(feature = "image-codecs")]
+// 把图片语法边界隔离为独立解析组件。
+#[path = "parse_image.rs"]
+mod parse_image;
 // 跨行扫描与 Setext 消费独立归入行解析辅助模块。
 #[path = "parse_lines.rs"]
 mod parse_lines;
