@@ -40,8 +40,8 @@ class GraphicsContextContractTests(unittest.TestCase):
     def test_context_drawable_metadata_is_atomic_present_surface(self) -> None:
         # 读取 context 能力模型与构造器。
         contracts = (ROOT / "src/native/present/mod.rs").read_text(encoding="utf-8")
-        # 截取 GraphicsContextCaps 的字段定义。
-        caps_start = contracts.index("pub struct GraphicsContextCaps")
+        # 截取 crate-private GraphicsContextCaps 的字段定义并锁定其边界。
+        caps_start = contracts.index("pub(crate) struct GraphicsContextCaps")
         # 以构造器实现起点作为结构体字段终点。
         caps_end = contracts.index("impl GraphicsContextCaps", caps_start)
         # 保存只包含静态 recipe 事实的 capability 结构体片段。
