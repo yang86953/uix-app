@@ -8,19 +8,20 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 // 引入图像拼板与保存能力。
-use image::{DynamicImage, GenericImage, RgbaImage, imageops};
+use image::{imageops, DynamicImage, GenericImage, RgbaImage};
 // 引入窗口、坐标与矩形类型。
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
 // 引入桌面像素复制所需 GDI 资源。
 use windows::Win32::Graphics::Gdi::{
-    BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CAPTUREBLT, ClientToScreen, CreateCompatibleDC,
-    CreateDIBSection, DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, HBITMAP, HDC, HGDIOBJ,
-    ReleaseDC, SRCCOPY, SelectObject,
+    BitBlt, ClientToScreen, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC,
+    ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CAPTUREBLT, DIB_RGB_COLORS,
+    HBITMAP, HDC, HGDIOBJ, SRCCOPY,
 };
 // 引入顶层窗口枚举、可见性与置顶能力。
 use windows::Win32::UI::WindowsAndMessaging::{
-    BringWindowToTop, EnumWindows, GetClientRect, GetWindowRect, GetWindowThreadProcessId,
-    HWND_TOPMOST, IsWindowVisible, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SetWindowPos,
+    BringWindowToTop, EnumWindows, GetClientRect, GetWindowRect, GetWindowTextW,
+    GetWindowThreadProcessId, IsWindowVisible, SetWindowPos, HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_SHOWWINDOW,
 };
 // 引入 Win32 回调布尔返回值。
 use windows::core::BOOL;
@@ -40,6 +41,8 @@ unsafe extern "system" {
 struct WindowSearch {
     // 保存目标主演示进程 ID。
     process_id: u32,
+    // 保存可选精确 UTF-16 标题筛选。
+    title: Option<Vec<u16>>,
     // 保存当前最佳顶层窗口。
     window: Option<HWND>,
     // 保存可见性优先后的面积评分。
@@ -62,8 +65,22 @@ unsafe extern "system" fn find_window(window: HWND, context: LPARAM) -> BOOL {
     let width = bounds.right.saturating_sub(bounds.left);
     // 计算非负高度。
     let height = bounds.bottom.saturating_sub(bounds.top);
+    // 读取候选窗口标题供次级窗口精确筛选。
+    let title_matches = search.title.as_ref().is_none_or(|expected| {
+        // 固定缓冲足以容纳本测试两个稳定短标题。
+        let mut title = [0_u16; 256];
+        // Win32 返回不含末尾空字符的 UTF-16 单元数。
+        let length = unsafe { GetWindowTextW(window, &mut title) }.max(0) as usize;
+        // 精确比较有效标题单元。
+        title.get(..length).is_some_and(|actual| actual == expected)
+    });
     // 只接受目标进程中足够大的顶层窗口。
-    if process_id == search.process_id && has_bounds && width >= 320 && height >= 240 {
+    if process_id == search.process_id
+        && title_matches
+        && has_bounds
+        && width >= 320
+        && height >= 240
+    {
         // 用高位保证可见窗口优先。
         let visible = i64::from(unsafe { IsWindowVisible(window) }.as_bool()) << 48;
         // 用面积在相同可见性中选择主演示。
@@ -81,7 +98,7 @@ unsafe extern "system" fn find_window(window: HWND, context: LPARAM) -> BOOL {
 }
 
 // 在有界时间内定位主演示真实 HWND。
-fn wait_for_window(process_id: u32) -> HWND {
+fn wait_for_window(process_id: u32, title: Option<&str>) -> HWND {
     // 设置窗口创建最长等待时间。
     let deadline = Instant::now() + Duration::from_secs(10);
     // 持续查询直到窗口出现或超时。
@@ -90,6 +107,8 @@ fn wait_for_window(process_id: u32) -> HWND {
         let mut search = WindowSearch {
             // 锁定 fixture 子进程。
             process_id,
+            // 每轮拥有一份可供同步回调借用的 UTF-16 标题。
+            title: title.map(|value| value.encode_utf16().collect()),
             // 本轮尚无候选。
             window: None,
             // 允许首个有效窗口胜出。
@@ -186,8 +205,20 @@ impl Drop for CaptureResources {
 
 // 捕获主演示客户区并保存无覆盖 PNG。
 pub(crate) fn capture_png(demo: &DemoProcess, path: &Path) {
+    // 未指定标题时保持选择最大主演示窗口的既有行为。
+    capture_png_for_title(demo, path, None);
+}
+
+// 捕获指定稳定标题的顶层窗口客户区。
+pub(crate) fn capture_png_by_title(demo: &DemoProcess, path: &Path, title: &str) {
+    // 精确标题用于区分同进程内的次级窗口。
+    capture_png_for_title(demo, path, Some(title));
+}
+
+// 捕获主演示指定窗口客户区并保存无覆盖 PNG。
+fn capture_png_for_title(demo: &DemoProcess, path: &Path, title: Option<&str>) {
     // 定位本 fixture 的真实顶层窗口。
-    let window = wait_for_window(demo.process_id());
+    let window = wait_for_window(demo.process_id(), title);
     // 把主演示放到桌面最上层以避免其他窗口覆盖像素证据。
     unsafe {
         // 不移动也不缩放，只显示并置顶目标窗口。

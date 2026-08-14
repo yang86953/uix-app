@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 
 // 导入公开协议 JSON 构造与值类型。
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 // 保存 wait 请求允许真实恢复呈现的最长时间。
 const PRESENT_TIMEOUT_MS: u64 = 30_000;
@@ -55,14 +55,8 @@ impl AgentClient {
 
     // 列出并取得专用验收模式的唯一窗口。
     pub(crate) fn list_single_window(&mut self) -> AgentWindow {
-        // 执行无额外字段的窗口 Query。
-        let response = self.request("list_windows", json!({}), true);
-        // 读取窗口数组。
-        let windows = response["windows"]
-            // 协议必须返回数组。
-            .as_array()
-            // 缺失数组时给出明确形状错误。
-            .expect("list_windows response windows");
+        // 复用可接受多窗口的公开查询 Adapter。
+        let windows = self.list_windows();
         // 专用图形恢复模式只允许一个根窗口。
         assert_eq!(
             windows.len(),
@@ -70,14 +64,45 @@ impl AgentClient {
             "graphics recovery mode must expose one window"
         );
         // 借用唯一窗口记录。
-        let window = &windows[0];
+        let (window, _) = &windows[0];
         // 返回跨后续请求使用的 ID 与 generation。
-        AgentWindow {
-            // 读取数值窗口 ID。
-            id: window["window_id"].as_u64().expect("window id"),
-            // 读取数值 generation。
-            generation: window["generation"].as_u64().expect("window generation"),
-        }
+        *window
+    }
+
+    // 列出应用当前全部窗口及其公开标题。
+    pub(crate) fn list_windows(&mut self) -> Vec<(AgentWindow, String)> {
+        // 执行无额外字段的窗口 Query。
+        let response = self.request("list_windows", json!({}), true);
+        // 读取窗口数组并投影为测试需要的最小元数据。
+        response["windows"]
+            // 协议必须返回数组。
+            .as_array()
+            // 缺失数组时给出明确形状错误。
+            .expect("list_windows response windows")
+            // 借用每个公开窗口记录。
+            .iter()
+            // 保存稳定身份与可访问标题。
+            .map(|window| {
+                // 构造跨请求稳定窗口身份。
+                let identity = AgentWindow {
+                    // 读取数值窗口 ID。
+                    id: window["window_id"].as_u64().expect("window id"),
+                    // 读取数值 generation。
+                    generation: window["generation"].as_u64().expect("window generation"),
+                };
+                // 标题用于多窗口验收区分主窗与次窗。
+                let title = window["title"]
+                    // 标题必须是协议字符串。
+                    .as_str()
+                    // 缺失标题属于公开窗口元数据错误。
+                    .expect("window title")
+                    // 测试拥有标题以越过响应生命周期。
+                    .to_string();
+                // 返回一个完整窗口条目。
+                (identity, title)
+            })
+            // 保持协议返回顺序。
+            .collect()
     }
 
     // 读取当前窗口的完整语义快照。

@@ -7,6 +7,8 @@ use uix::prelude::*;
 // 仅在显式测试能力存在时编译专用图形恢复验收组合模块。
 #[cfg(feature = "test-harness")]
 mod graphics_recovery;
+// 编译普通主演示的 Rust 多窗口组合边界。
+mod multi_window;
 
 // 保存主演示组合根支持的显式启动选项。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -161,7 +163,12 @@ impl DemoStates {
 }
 
 // 声明接收窗口级持久状态并返回现有 App builder 的语言入口。
-fn build_app(states: DemoStates) -> App {
+fn build_app(
+    // 接收主演示窗口级状态。
+    states: DemoStates,
+    // 接收唯一多窗口与跨窗主题控制器。
+    multi_window: std::sync::Arc<multi_window::MultiWindowController>,
+) -> App {
     // 一次按值解构把声明文件引用的全部 Rust 绑定放入函数作用域。
     let DemoStates {
         // 取出窗口级生命周期状态句柄。
@@ -171,6 +178,31 @@ fn build_app(states: DemoStates) -> App {
         // 取出仍由 Rust 构造的私有类型演示数据。
         virtual_items,
     } = states;
+    // 克隆主窗与子窗共享的主题状态供 UIX props 订阅。
+    let theme_status = multi_window.theme_status();
+    // 克隆子窗口创建状态供主窗展示。
+    let multi_window_status = multi_window.window_status();
+    // 创建主窗暗色主题回调并只进入公开 AppHandle 边界。
+    let set_dark_theme = {
+        // 克隆控制器进入声明事件闭包。
+        let controller = multi_window.clone();
+        // 返回不暴露 AppHandle 的零参数回调。
+        move || controller.set_dark(true)
+    };
+    // 创建主窗亮色主题回调并只进入公开 AppHandle 边界。
+    let set_light_theme = {
+        // 克隆控制器进入声明事件闭包。
+        let controller = multi_window.clone();
+        // 返回不暴露 AppHandle 的零参数回调。
+        move || controller.set_dark(false)
+    };
+    // 创建按需打开主题联动窗口的声明事件回调。
+    let open_theme_window = {
+        // 移动最后一份局部控制器进入回调。
+        let controller = multi_window;
+        // 只请求 Application System 创建新窗口。
+        move || controller.open_theme_window()
+    };
     // 编译期读取 <App> 根文档并返回尚未运行的现有 App builder。
     uix_app!("src/main.uix")
     // 结束应用构造函数。
@@ -303,12 +335,18 @@ fn build_demo_app(
     // 接收秒级计时状态句柄。
     tick: State<f64>,
 ) -> App {
+    // 创建普通主演示唯一多窗口控制器。
+    let multi_window = std::sync::Arc::new(multi_window::MultiWindowController::new());
+    // 克隆控制器供 on_start 安装 Application System 句柄。
+    let start_multi_window = multi_window.clone();
     // 由语言面组装演示 App 与根 View。
-    build_app(states)
+    build_app(states, multi_window)
         // 由声明式根视图绘制与 API GUI Demo 一致的自定义标题栏。
         .custom_title_bar(true)
         // 启动后注册秒级计时器。
         .on_start(move |handle| {
+            // 先把 Application System 句柄安装到多窗口控制器。
+            start_multi_window.attach_handle(handle.clone());
             // 秒级计数器驱动声明文件中的 tick 展示。
             let ticks = tick.clone();
             // 注册一秒间隔的演示计时器。

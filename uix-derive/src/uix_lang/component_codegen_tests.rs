@@ -41,6 +41,8 @@ fn generates_state_callback_and_composition_tokens() {
     assert!(tokens.contains(". set"));
     // 回调应生成显式 Fn 类型适配器。
     assert!(tokens.contains("Arc < dyn Fn () -> bool >"));
+    // 回调来源必须在 move 适配器外先克隆，允许组件位于可重复 App 根工厂。
+    assert!(tokens.contains("Clone :: clone") && tokens.contains("callback_source"));
     // Rust 外层回调名称应保留到最终令牌。
     assert!(tokens.contains("do_close"));
     // 无私有 state 的自定义标签不应泄漏到核心元素生成器。
