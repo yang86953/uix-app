@@ -466,7 +466,7 @@
         // 绑定组件私有文件状态并启用扩展名、数量与大小门禁。
         <Upload files={upload_files} accept=".png,*.jpg" multiple maxCount="8" maxSize="10485760" drag width="480px" height="240px" automationId="demo-upload" />
         // 说明上传运行时所有权边界。
-        <Text fontSize="small">Upload 只拥有拖放与列表瞬态状态；文件队列由 Vec&lt;UploadFile&gt; state 唯一持有。</Text>
+        <Text fontSize="small">Upload 只拥有拖放与列表瞬态状态；文件队列由 UploadFile 的 Vec 状态唯一持有。</Text>
       // 结束上传内容。
       </Column>
     // 结束上传面板。

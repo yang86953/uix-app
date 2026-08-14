@@ -103,7 +103,12 @@ impl AppTimerQueue {
     pub(crate) fn deadlines(&self) -> Vec<(TimerId, Instant)> {
         let mut deadlines = Vec::new();
         let Some(_) = self.deadlines_into_if_changed(None, &mut deadlines) else {
-            panic!("initial timer deadline snapshot must report a revision");
+            // 已知修订为空时必返回新修订；返回 None 说明内部修订状态异常，
+            // 附带当前已收集条目数便于定位。
+            panic!(
+                "initial timer deadline snapshot must report a revision (collected={})",
+                deadlines.len()
+            );
         };
         deadlines
     }

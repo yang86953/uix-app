@@ -10,10 +10,10 @@ use crate::native::{Errc, Error, Result};
 // LinuxFileSystem
 // ════════════════════════════════════════════════════════════════════════════
 
-pub type LinuxFileSystem = FileSystemCore<LinuxSpecialDirs>;
+pub(crate) type LinuxFileSystem = FileSystemCore<LinuxSpecialDirs>;
 
 #[derive(Debug, Clone, Default)]
-pub struct LinuxSpecialDirs;
+pub(crate) struct LinuxSpecialDirs;
 
 impl SpecialDirProvider for LinuxSpecialDirs {
     fn special_dir(&self, dir: SpecialDir) -> Result<String> {

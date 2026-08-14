@@ -14,7 +14,7 @@ impl SoftwareRasterizer {
         clippy::too_many_arguments,
         reason = "shape coordinates and surface bounds mirror the canvas contract"
     )]
-    pub fn stroke_rect(
+    pub(crate) fn stroke_rect(
         &self,
         pixels: &mut [u32],
         surface_w: i32,
@@ -160,7 +160,7 @@ impl SoftwareRasterizer {
         clippy::too_many_arguments,
         reason = "shape coordinates and surface bounds mirror the canvas contract"
     )]
-    pub fn stroke_circle(
+    pub(crate) fn stroke_circle(
         &self,
         pixels: &mut [u32],
         surface_w: i32,
@@ -244,7 +244,7 @@ impl SoftwareRasterizer {
         }
     }
 
-    pub fn stroke_path(
+    pub(crate) fn stroke_path(
         &self,
         pixels: &mut [u32],
         surface_w: i32,
@@ -306,7 +306,7 @@ impl SoftwareRasterizer {
         clippy::too_many_arguments,
         reason = "line endpoints and surface bounds mirror the canvas contract"
     )]
-    pub fn draw_line(
+    pub(crate) fn draw_line(
         &self,
         pixels: &mut [u32],
         surface_w: i32,

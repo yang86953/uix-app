@@ -34,6 +34,7 @@ fn monitor_info_for_window(
     hwnd: *mut std::ffi::c_void,
     operation: &str,
 ) -> Result<super::bindings::MONITORINFO> {
+    // SAFETY: hwnd 为调用方传入的窗口句柄，MonitorFromWindow 只读取它；MONITOR_DEFAULTTONEAREST 保证返回值为句柄或 null。
     let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
     if monitor.is_null() {
         let context = format!("{operation}: MonitorFromWindow failed");
@@ -55,6 +56,7 @@ fn monitor_info_for_window(
         },
         dwFlags: 0,
     };
+    // SAFETY: monitor 为非空句柄（上方已校验）；info 为完整初始化的 MONITORINFO，调用期间有效可写。
     if unsafe { GetMonitorInfoW(monitor, &mut info) } == 0 {
         let context = format!("{operation}: GetMonitorInfoW failed");
         return Err(super::util::windows_diag(Errc::PlatformError, &context));
@@ -74,6 +76,7 @@ pub(crate) fn get_window_long_checked(
     operation: &str,
 ) -> Result<i32> {
     // Win32 以零同时表示合法值与失败，必须先清空 last-error 再判定。
+    // SAFETY: hwnd 由调用方保证存活；SetLastError/GetLastError 无句柄参数；GetWindowLongW 返回值只用于错误判定。
     unsafe {
         SetLastError(0);
         let value = GetWindowLongW(hwnd, index);
@@ -96,6 +99,7 @@ pub(crate) fn set_window_long_checked(
     operation: &str,
 ) -> Result<()> {
     // SetWindowLongW 返回旧值；旧值为零时只能通过 last-error 区分成败。
+    // SAFETY: hwnd 由调用方保证存活；SetWindowLongW 同步执行且不保留指针。
     unsafe {
         SetLastError(0);
         let previous = SetWindowLongW(hwnd, index, value);
@@ -142,6 +146,7 @@ impl WindowsWindowOps {
     }
 
     fn ensure_valid_window(&self, operation: &str) -> Result<()> {
+        // SAFETY: self.hwnd 非空（短路条件）且由本对象持有；IsWindow 只读查询。
         if self.hwnd.is_null() || unsafe { IsWindow(self.hwnd) } == 0 {
             return Err(Error::new(
                 Errc::InvalidState,
@@ -180,6 +185,7 @@ impl WindowOps for WindowsWindowOps {
 
     fn os_show(&mut self) -> Result<()> {
         self.ensure_valid_window("os_show")?;
+        // SAFETY: self.hwnd 已经 ensure_valid_window 验证存活；ShowWindow 同步执行。
         unsafe {
             ShowWindow(self.hwnd, SW_SHOWNORMAL);
         }
@@ -188,6 +194,7 @@ impl WindowOps for WindowsWindowOps {
 
     fn os_hide(&mut self) -> Result<()> {
         self.ensure_valid_window("os_hide")?;
+        // SAFETY: self.hwnd 已经 ensure_valid_window 验证存活；ShowWindow 同步执行。
         unsafe {
             ShowWindow(self.hwnd, SW_HIDE);
         }
@@ -196,6 +203,7 @@ impl WindowOps for WindowsWindowOps {
 
     fn os_close(&mut self) -> Result<()> {
         self.ensure_valid_window("os_close")?;
+        // SAFETY: self.hwnd 已经 ensure_valid_window 验证存活；DestroyWindow 同步销毁且不返回指针。
         if unsafe { DestroyWindow(self.hwnd) } == 0 {
             return Err(super::util::windows_diag(
                 Errc::PlatformError,
@@ -207,6 +215,7 @@ impl WindowOps for WindowsWindowOps {
 
     fn os_request_close(&mut self) -> Result<()> {
         self.ensure_valid_window("os_request_close")?;
+        // SAFETY: self.hwnd 已经 ensure_valid_window 验证存活；PostMessageW 同步投递消息。
         if unsafe { PostMessageW(self.hwnd, WM_CLOSE, 0, 0) } == 0 {
             return Err(super::util::windows_diag(
                 Errc::PlatformError,
@@ -225,6 +234,7 @@ impl WindowOps for WindowsWindowOps {
     // 返回原有 Win32 消息提交结果。
     ) -> Result<()> {
         self.ensure_valid_window("os_begin_move_drag")?;
+        // SAFETY: self.hwnd 已经 ensure_valid_window 验证存活；ReleaseCapture 与 PostMessageW 均为同步无指针调用。
         unsafe {
             ReleaseCapture();
             if PostMessageW(self.hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0) == 0 {
@@ -269,6 +279,7 @@ impl WindowOps for WindowsWindowOps {
     fn os_set_title(&mut self, title: &str) -> Result<()> {
         self.ensure_valid_window("os_set_title")?;
         let wide = super::util::to_wide(title);
+        // SAFETY: self.hwnd 已经 ensure_valid_window 验证存活；wide 为存活且 NUL 结尾的 UTF-16 缓冲。
         if unsafe { SetWindowTextW(self.hwnd, wide.as_ptr()) } == 0 {
             return Err(super::util::windows_diag(
                 Errc::PlatformError,
@@ -302,6 +313,7 @@ impl WindowOps for WindowsWindowOps {
 
     fn os_center_on_screen(&mut self) -> Result<()> {
         self.ensure_valid_window("os_center_on_screen")?;
+        // SAFETY: self.hwnd 已验证存活；rect 为栈上可写结构；monitor 与 rect 均在同步调用期间有效。
         unsafe {
             let monitor = monitor_info_for_window(self.hwnd, "os_center_on_screen")?;
             let mut rect = super::bindings::RECT {
@@ -341,6 +353,7 @@ impl WindowOps for WindowsWindowOps {
 
     fn os_raise(&mut self) -> Result<()> {
         self.ensure_valid_window("os_raise")?;
+        // SAFETY: self.hwnd 已验证存活；HWND_TOP 为伪句柄常量，其余参数为同步窗口操作。
         if unsafe {
             SetWindowPos(
                 self.hwnd,
@@ -363,6 +376,7 @@ impl WindowOps for WindowsWindowOps {
 
     fn os_lower(&mut self) -> Result<()> {
         self.ensure_valid_window("os_lower")?;
+        // SAFETY: self.hwnd 已验证存活；HWND_BOTTOM 为伪句柄常量。
         if unsafe {
             SetWindowPos(
                 self.hwnd,
@@ -402,6 +416,7 @@ impl WindowOps for WindowsWindowOps {
             let dpi = super::dpi::dpi_for_window(hwnd);
             let (outer_width, outer_height) =
                 super::dpi::outer_size_for_logical_client(w, h, style, ex_style, dpi)?;
+            // SAFETY: hwnd 为本对象持有且已验证存活；尺寸经 DPI 换算非负；SetWindowPos 同步执行。
             if unsafe {
                 SetWindowPos(
                     hwnd,
@@ -433,6 +448,7 @@ impl WindowOps for WindowsWindowOps {
 
     fn os_set_position(&mut self, x: i32, y: i32) -> Result<()> {
         self.ensure_valid_window("os_set_position")?;
+        // SAFETY: self.hwnd 已验证存活；坐标参数为有效窗口位置。
         if unsafe {
             SetWindowPos(
                 self.hwnd,
@@ -474,6 +490,7 @@ impl WindowOps for WindowsWindowOps {
             new_style as i32,
             "os_set_resizable: SetWindowLongW failed",
         )?;
+        // SAFETY: self.hwnd 已验证存活；样式标志为常量组合；SetWindowPos 同步执行。
         unsafe {
             if SetWindowPos(
                 self.hwnd,
@@ -496,6 +513,7 @@ impl WindowOps for WindowsWindowOps {
 
     fn os_maximize(&mut self) -> Result<()> {
         self.ensure_valid_window("os_maximize")?;
+        // SAFETY: self.hwnd 已经 ensure_valid_window 验证存活；ShowWindow 同步执行。
         unsafe {
             ShowWindow(self.hwnd, SW_MAXIMIZE);
         }
@@ -504,6 +522,7 @@ impl WindowOps for WindowsWindowOps {
 
     fn os_minimize(&mut self) -> Result<()> {
         self.ensure_valid_window("os_minimize")?;
+        // SAFETY: self.hwnd 已经 ensure_valid_window 验证存活；ShowWindow 同步执行。
         unsafe {
             ShowWindow(self.hwnd, SW_MINIMIZE);
         }
@@ -512,6 +531,7 @@ impl WindowOps for WindowsWindowOps {
 
     fn os_restore(&mut self) -> Result<()> {
         self.ensure_valid_window("os_restore")?;
+        // SAFETY: self.hwnd 已经 ensure_valid_window 验证存活；ShowWindow 同步执行。
         unsafe {
             ShowWindow(self.hwnd, SW_RESTORE);
         }
@@ -536,6 +556,7 @@ impl WindowOps for WindowsWindowOps {
             new_style as i32,
             "os_set_system_title_bar_visible: SetWindowLongW failed",
         )?;
+        // SAFETY: self.hwnd 已验证存活；样式标志为常量组合；SetWindowPos 同步执行。
         unsafe {
             if SetWindowPos(
                 self.hwnd,
@@ -580,6 +601,7 @@ impl WindowOps for WindowsWindowOps {
             new_style as i32,
             "os_set_borderless: SetWindowLongW failed",
         )?;
+        // SAFETY: self.hwnd 已验证存活；样式标志为常量组合；SetWindowPos 同步执行。
         unsafe {
             if SetWindowPos(
                 self.hwnd,
@@ -624,6 +646,7 @@ impl WindowOps for WindowsWindowOps {
                     bottom: 0,
                 },
             };
+            // SAFETY: self.hwnd 已验证存活；placement 为完整初始化的可写结构。
             if unsafe { GetWindowPlacement(self.hwnd, &mut placement) } == 0 {
                 return Err(super::util::windows_diag(
                     Errc::PlatformError,
@@ -638,6 +661,7 @@ impl WindowOps for WindowsWindowOps {
                 fullscreen_style as i32,
                 "os_set_fullscreen: SetWindowLongW failed",
             )?;
+            // SAFETY: self.hwnd 已验证存活；monitor.rcMonitor 为存活监视器的工作区数据；SetWindowPos 同步执行。
             let fullscreen_positioned = unsafe {
                 SetWindowPos(
                     self.hwnd,
@@ -660,8 +684,10 @@ impl WindowOps for WindowsWindowOps {
                     style,
                     "os_set_fullscreen: rollback SetWindowLongW failed",
                 );
+                // SAFETY: self.hwnd 已验证存活；placement 为之前保存的完整窗口布局。
                 let _ = unsafe { SetWindowPlacement(self.hwnd, &placement) };
                 if style as u32 & WS_VISIBLE == 0 {
+                    // SAFETY: self.hwnd 已验证存活；ShowWindow 同步执行。
                     unsafe {
                         ShowWindow(self.hwnd, SW_HIDE);
                     }
@@ -687,6 +713,7 @@ impl WindowOps for WindowsWindowOps {
                 restored_style as i32,
                 "os_set_fullscreen: SetWindowLongW failed",
             )?;
+            // SAFETY: self.hwnd 已验证存活；restore.placement 为之前保存的完整窗口布局。
             if unsafe { SetWindowPlacement(self.hwnd, &restore.placement) } == 0 {
                 return Err(super::util::windows_diag(
                     Errc::PlatformError,
@@ -694,10 +721,12 @@ impl WindowOps for WindowsWindowOps {
                 ));
             }
             if !was_visible {
+                // SAFETY: self.hwnd 已验证存活；ShowWindow 同步执行。
                 unsafe {
                     ShowWindow(self.hwnd, SW_HIDE);
                 }
             }
+            // SAFETY: self.hwnd 已验证存活；restore 使用固定窗口标志同步执行。
             if unsafe {
                 SetWindowPos(
                     self.hwnd,
@@ -722,6 +751,7 @@ impl WindowOps for WindowsWindowOps {
 
     fn os_set_always_on_top(&mut self, on: bool) -> Result<()> {
         self.ensure_valid_window("os_set_always_on_top")?;
+        // SAFETY: self.hwnd 已验证存活；HWND_TOPMOST/HWND_NOTOPMOST 为伪句柄常量。
         if unsafe {
             let pos = if on { HWND_TOPMOST } else { HWND_NOTOPMOST };
             SetWindowPos(
@@ -760,6 +790,7 @@ impl WindowOps for WindowsWindowOps {
                     "os_set_opacity: SetWindowLongW failed",
                 )?;
             }
+            // SAFETY: self.hwnd 已验证存活；alpha 为 0..=255 的 u8；标志为常量组合。
             unsafe {
                 if SetLayeredWindowAttributes(
                     self.hwnd,
@@ -784,6 +815,7 @@ impl WindowOps for WindowsWindowOps {
             }
             self.opacity_layered_style_owned |= adds_layered_style;
         } else if self.opacity_layered_style_owned {
+            // SAFETY: self.hwnd 已验证存活；恢复全不透明 alpha 为固定常量。
             if unsafe { SetLayeredWindowAttributes(self.hwnd, 0, u8::MAX, LWA_ALPHA) } == 0 {
                 return Err(super::util::windows_diag(
                     Errc::PlatformError,
@@ -822,6 +854,7 @@ impl WindowOps for WindowsWindowOps {
 
     fn os_enable_file_drop(&mut self, enable: bool) -> Result<()> {
         self.ensure_valid_window("os_enable_file_drop")?;
+        // SAFETY: self.hwnd 已验证存活；enable 为 BOOL 常量；DragAcceptFiles 同步注册拖放。
         unsafe {
             DragAcceptFiles(self.hwnd, if enable { TRUE } else { FALSE });
         }

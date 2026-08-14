@@ -6,8 +6,8 @@
 
 #[allow(dead_code)]
 pub(crate) mod buffer_lease;
-pub mod event_loop;
-pub mod ime_events;
+pub(crate) mod event_loop;
+pub(crate) mod ime_events;
 #[allow(dead_code)]
 pub(crate) mod ime_owner;
 #[allow(dead_code)]
@@ -18,14 +18,14 @@ pub(crate) mod native_frame_mailbox;
 pub(crate) mod nonblocking_read;
 #[allow(dead_code)]
 pub(crate) mod nonblocking_write;
-pub mod state;
-pub mod window;
-pub mod window_lifecycle;
+pub(crate) mod state;
+pub(crate) mod window;
+pub(crate) mod window_lifecycle;
 #[allow(dead_code)]
 pub(crate) mod window_mode;
 #[allow(dead_code)]
 pub(crate) mod window_target;
 
-pub use event_loop::OsEventSource;
-pub use state::WindowState;
-pub use window::{PlatformWindowCore, WindowOps};
+pub(crate) use event_loop::OsEventSource;
+pub(crate) use state::WindowState;
+pub(crate) use window::PlatformWindowCore;

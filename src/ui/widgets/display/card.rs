@@ -149,11 +149,8 @@ component! {
 
         // Background
         let bg = if self.hovered {
-            Color::from_rgb(
-                (bg_container.r as f32 * 0.95 + 255.0 * 0.05) as u8,
-                (bg_container.g as f32 * 0.95 + 255.0 * 0.05) as u8,
-                (bg_container.b as f32 * 0.95 + 255.0 * 0.05) as u8,
-            )
+            // 悬浮时向白色混合 5%（等价 Color::lighten(0.05)，基于主题底色 token）。
+            bg_container.lighten(0.05)
         } else {
             bg_elevated
         };
@@ -386,7 +383,7 @@ fn draw_elevation_shadow(ctx: &mut PaintContext, frame: Rect, elevation: u8) {
         _ => return,
     };
 
-    let boost = |c: Color| Color::from_rgba(c.r, c.g, c.b, (c.a as f32 * alpha_b).min(255.0) as u8);
+    let boost = |c: Color| c.with_alpha((c.a as f32 * alpha_b).min(255.0) as u8);
 
     // ── Layer 1: Contact shadow ──
     // Directional (y-down), tight blur, sharp smoothstep falloff.
@@ -441,10 +438,12 @@ impl Default for Card {
 
 impl Card {
     const ACTION_HEIGHT: f32 = 40.0;
+    // Card 动作区字号（13.0）；Message/Notification toast 家族同名常量为 12.0，属各自设计。
     const ACTION_FONT_SIZE: f32 = 13.0;
     const ACTION_HORIZONTAL_INSET: f32 = 6.0;
     const ACTION_MIN_FONT_SIZE: f32 = 10.0;
     const ACTION_VERTICAL_INSET: f32 = 2.0;
+    // Card 默认尺寸；各组件同名常量（descriptions 600 / selectable_list 220 / 图表 300 等）为各自设计。
     const DEFAULT_WIDTH: f32 = 200.0;
     const DEFAULT_HEIGHT: f32 = 120.0;
     const TITLE_BLOCK_HEIGHT: f32 = 56.0;

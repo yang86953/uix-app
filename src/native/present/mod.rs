@@ -1,7 +1,7 @@
 //! Presentation contracts for CPU presenters and GPU graphics contexts.
 
 use crate::core::error::{Error, Result};
-pub use crate::core::{PresentCoherency, PresentDamage, PresentImage, PresentSurface};
+pub(crate) use crate::core::{PresentCoherency, PresentDamage, PresentImage, PresentSurface};
 use std::fmt;
 use std::str::FromStr;
 
@@ -10,7 +10,7 @@ use std::str::FromStr;
 /// This probe is not an entry detector: callers invoke it only after a normal
 /// present reported that the window was occluded. No frame data is submitted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PresentTestResult {
+pub(crate) enum PresentTestResult {
     Presentable,
     Occluded,
 }
@@ -19,7 +19,7 @@ pub enum PresentTestResult {
 ///
 /// 该能力不包含隐藏、最小化或 zero extent；这些状态始终由窗口生命周期管理。
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PresentOcclusionSupport {
+pub(crate) enum PresentOcclusionSupport {
     /// 当前 recipe 无可靠逐窗遮挡 API，只能依赖窗口生命周期休眠。
     #[default]
     Unsupported,
@@ -45,7 +45,7 @@ impl fmt::Display for PresentOcclusionSupport {
 /// cannot infer the intended row layout safely from missing pixels.
 // 该校验只被 Unix 像素上传 presenter 使用，Windows GPU 路径不编译此入口。
 #[cfg(unix)]
-pub fn validate_pixel_buffer(pixels: &[u32], width: i32, height: i32) -> Result<(), Error> {
+pub(crate) fn validate_pixel_buffer(pixels: &[u32], width: i32, height: i32) -> Result<(), Error> {
     if width <= 0 || height <= 0 {
         return Err(Error::new(
             crate::core::error::Errc::InvalidArgument,
@@ -73,7 +73,7 @@ pub fn validate_pixel_buffer(pixels: &[u32], width: i32, height: i32) -> Result<
 }
 
 /// CPU pixel presenter.
-pub trait IPresenter {
+pub(crate) trait IPresenter {
     /// Preservation proof used to gate narrow compositor damage.
     fn present_coherency(&self) -> PresentCoherency {
         PresentCoherency::FullOnly
@@ -110,7 +110,7 @@ pub trait IPresenter {
 ///
 /// Orthogonal to [`PresentMode`] and [`GraphicsApi`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum RasterMode {
+pub(crate) enum RasterMode {
     /// CPU Canvas2D (`CpuBackend`).
     Cpu,
     /// GPU-native raster (`RenderBackend` via `RenderBackendRegistry`).
@@ -130,7 +130,7 @@ impl fmt::Display for RasterMode {
 ///
 /// Orthogonal to [`RasterMode`] and [`GraphicsApi`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PresentMode {
+pub(crate) enum PresentMode {
     /// GPU swapchain / equivalent via thin RHI or a dedicated external presenter view.
     Swapchain,
     /// CPU pixels uploaded via the dedicated [`PixelUploadSurface`] contract.
@@ -151,14 +151,14 @@ impl fmt::Display for PresentMode {
 /// Does not replace draw's `GraphicsCapabilities`. Engine dispatch uses
 /// `raster` × `present` (× `backend` for GPU raster pairing).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct GraphicsContextCaps {
-    pub backend: GraphicsApi,
-    pub raster: RasterMode,
-    pub present: PresentMode,
+pub(crate) struct GraphicsContextCaps {
+    pub(crate) backend: GraphicsApi,
+    pub(crate) raster: RasterMode,
+    pub(crate) present: PresentMode,
     /// 当前 live recipe 的逐窗呈现遮挡能力。
-    pub present_occlusion: PresentOcclusionSupport,
+    pub(crate) present_occlusion: PresentOcclusionSupport,
     /// Typed proof controlling partial redraw and present damage.
-    pub present_coherency: PresentCoherency,
+    pub(crate) present_coherency: PresentCoherency,
 }
 
 impl GraphicsContextCaps {
@@ -170,7 +170,7 @@ impl GraphicsContextCaps {
         all(windows, any(feature = "d3d11", feature = "d3d12")),
         feature = "opengles"
     ))]
-    pub fn gpu_native_swapchain(backend: GraphicsApi, present_coherency: PresentCoherency) -> Self {
+    pub(crate) fn gpu_native_swapchain(backend: GraphicsApi, present_coherency: PresentCoherency) -> Self {
         Self {
             backend,
             raster: RasterMode::GpuNative,
@@ -183,7 +183,7 @@ impl GraphicsContextCaps {
     /// Legal combo: [`RasterMode::Cpu`] × [`PresentMode::PixelUpload`].
     // 仅 Vulkan、Metal 与内部测试需要构造 CPU PixelUpload recipe 能力。
     #[cfg(any(test, feature = "vulkan", feature = "metal"))]
-    pub fn cpu_pixel_upload(backend: GraphicsApi) -> Self {
+    pub(crate) fn cpu_pixel_upload(backend: GraphicsApi) -> Self {
         Self {
             backend,
             raster: RasterMode::Cpu,
@@ -196,7 +196,7 @@ impl GraphicsContextCaps {
     /// 为具备可靠 present-status 入口与无数据退出探测的 context 提升能力。
     // 只有 Windows D3D11 可把默认遮挡能力提升为 status-and-test。
     #[cfg(all(windows, feature = "d3d11"))]
-    pub const fn with_present_occlusion(mut self, support: PresentOcclusionSupport) -> Self {
+    pub(crate) const fn with_present_occlusion(mut self, support: PresentOcclusionSupport) -> Self {
         self.present_occlusion = support;
         self
     }
@@ -206,7 +206,7 @@ impl GraphicsContextCaps {
 ///
 /// 该类型只承载 registry 与运行时诊断事实，不属于公开选择面，也不包含自动或回退策略。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum GraphicsApi {
+pub(crate) enum GraphicsApi {
     /// Direct3D 12 的内部 registry 身份。
     D3d12,
     /// Direct3D 11 的内部 registry 身份。
@@ -341,7 +341,7 @@ mod graphics_selection_tests {
 /// needs_send(handle);
 /// ```
 #[derive(Clone, Copy)]
-pub struct NativeSurfaceHandle {
+pub(crate) struct NativeSurfaceHandle {
     raw: *mut std::ffi::c_void,
     _thread_bound: std::marker::PhantomData<std::rc::Rc<()>>,
 }
@@ -351,7 +351,7 @@ impl NativeSurfaceHandle {
     ///
     /// `raw` must remain a valid native surface for the whole graphics
     /// assembly/recovery use, and the handle must stay on its creating thread.
-    pub unsafe fn from_raw(raw: *mut std::ffi::c_void) -> Self {
+    pub(crate) unsafe fn from_raw(raw: *mut std::ffi::c_void) -> Self {
         Self {
             raw,
             _thread_bound: std::marker::PhantomData,

@@ -12,8 +12,8 @@ fn event_queue(
 
 /// Tracks whether an IME composition session is in progress.
 #[derive(Debug, Clone, Default)]
-pub struct ImeCompositionState {
-    pub active: bool,
+pub(crate) struct ImeCompositionState {
+    pub(crate) active: bool,
 }
 
 /// Accumulates a double-buffered native IME update until its apply boundary.
@@ -62,7 +62,8 @@ impl PendingImeBatch {
     }
 }
 
-pub fn on_marked_text(
+// 仅 Windows TSF 路径（tsf_session.rs）使用；macOS/Wayland 使用 *_for_window 变体。
+pub(crate) fn on_marked_text(
     events: &Arc<Mutex<VecDeque<UiEvent>>>,
     state: &mut ImeCompositionState,
     text: &str,
@@ -70,7 +71,7 @@ pub fn on_marked_text(
     on_marked_text_targeted(events, state, text, None);
 }
 
-pub fn on_marked_text_for_window(
+pub(crate) fn on_marked_text_for_window(
     events: &Arc<Mutex<VecDeque<UiEvent>>>,
     state: &mut ImeCompositionState,
     text: &str,
@@ -96,7 +97,8 @@ fn on_marked_text_targeted(
     queue.push_back(target(UiEvent::ime_composition_update(text), window_id));
 }
 
-pub fn on_committed_text(
+// 仅 Windows TSF 路径（tsf_session.rs）使用；macOS/Wayland 使用 *_for_window 变体。
+pub(crate) fn on_committed_text(
     events: &Arc<Mutex<VecDeque<UiEvent>>>,
     state: &mut ImeCompositionState,
     text: &str,
@@ -104,7 +106,7 @@ pub fn on_committed_text(
     on_committed_text_targeted(events, state, text, None);
 }
 
-pub fn on_committed_text_for_window(
+pub(crate) fn on_committed_text_for_window(
     events: &Arc<Mutex<VecDeque<UiEvent>>>,
     state: &mut ImeCompositionState,
     text: &str,
@@ -130,11 +132,12 @@ fn on_committed_text_targeted(
     queue.push_back(target(UiEvent::text_input(text), window_id));
 }
 
-pub fn on_unmark_text(events: &Arc<Mutex<VecDeque<UiEvent>>>, state: &mut ImeCompositionState) {
+// 仅 Windows TSF 路径（tsf_session.rs）使用；macOS/Wayland 使用 *_for_window 变体。
+pub(crate) fn on_unmark_text(events: &Arc<Mutex<VecDeque<UiEvent>>>, state: &mut ImeCompositionState) {
     on_unmark_text_targeted(events, state, None);
 }
 
-pub fn on_unmark_text_for_window(
+pub(crate) fn on_unmark_text_for_window(
     events: &Arc<Mutex<VecDeque<UiEvent>>>,
     state: &mut ImeCompositionState,
     window_id: WindowId,

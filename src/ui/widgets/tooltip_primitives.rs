@@ -8,9 +8,9 @@ use crate::ui::widgets::TooltipPlacement;
 
 // 提示文字使用组件族既有的固定字号。
 const TOOLTIP_FONT_SIZE: f32 = 12.0;
-// 提示气泡为文字预留固定水平内边距。
+// 提示气泡为文字预留固定水平内边距（16.0）；FloatButton 提示框独立用 20.0。
 const TOOLTIP_HORIZONTAL_PADDING: f32 = 16.0;
-// 提示气泡保持既有固定高度。
+// 提示气泡保持既有固定高度（26.0）；FloatButton 提示框独立用 28.0。
 const TOOLTIP_HEIGHT: f32 = 26.0;
 // 提示箭头保持既有固定尺寸。
 const TOOLTIP_ARROW_SIZE: f32 = 6.0;

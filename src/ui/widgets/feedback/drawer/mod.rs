@@ -215,7 +215,9 @@ component! {
                 EventResult::Handled
             }
             SystemEvent::KeyDown { key, .. } => {
-                if *key == crate::ui::KeyCode::Escape && self.closable {
+                // Escape 与 Modal 对齐：始终采用关闭语义，closable 只控制
+                // 关闭按钮可见性，不约束键盘关闭路径。
+                if *key == crate::ui::KeyCode::Escape {
                     self.close();
                     return EventResult::Handled;
                 }
@@ -253,7 +255,7 @@ component! {
             }
             ctx.push_clip(trigger);
             ctx.fill_rect(trigger, primary, Some(Radius::uniform(ctx.tokens().border_radius())));
-            ctx.text_center("打开 Drawer", trigger, Color::white(), 13.0);
+            ctx.text_center("打开 Drawer", trigger, ctx.tokens().color_white(), 13.0);
             ctx.pop_clip();
             return;
         }
@@ -268,7 +270,8 @@ component! {
             self.last_surface_h.set(surface_h);
             ctx.fill_rect(
                 Rect::new(0.0, 0.0, surface_w, surface_h),
-                Color::from_rgba(0, 0, 0, mask_alpha),
+                // 遮罩：黑色 token + 动态 alpha（保持视觉等价，色相随主题可换）。
+                ctx.tokens().color_black().with_alpha(mask_alpha),
                 None,
             );
         }
@@ -321,7 +324,7 @@ component! {
             (drawer_x + drawer_w - close_w - extra_w - title_x).max(0.0),
             header_rect.h,
         );
-        Self::paint_elided_text(ctx, &self.title, title_rect, text, 16.0);
+        Self::paint_elided_text(ctx, &self.title, title_rect, text, ctx.tokens().font_size_lg());
 
         if !self.extra.is_empty() {
             let extra_rect = Rect::new(
@@ -330,7 +333,7 @@ component! {
                 extra_w,
                 header_rect.h,
             );
-            Self::paint_elided_text(ctx, &self.extra, extra_rect, text_sec, 14.0);
+            Self::paint_elided_text(ctx, &self.extra, extra_rect, text_sec, ctx.tokens().font_size());
         }
         if self.closable {
             let close_rect = Rect::new(
@@ -390,7 +393,7 @@ component! {
                     ok_h,
                 );
                 ctx.fill_rect(ok_rect, primary, btn_r);
-                ctx.text_center(loc.drawer_ok, ok_rect, Color::white(), 13.0);
+                ctx.text_center(loc.drawer_ok, ok_rect, ctx.tokens().color_white(), 13.0);
             }
         }
         ctx.pop_clip();

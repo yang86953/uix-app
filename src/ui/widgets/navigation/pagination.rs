@@ -4,7 +4,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::{Color, Radius};
+use crate::draw::Radius;
 use crate::ui::component::paint_context::PaintContext;
 // 引入 current 与 pageSize 的声明式状态句柄。
 use crate::ui::State;
@@ -159,7 +159,8 @@ component! {
         let border = ctx.tokens().color_border();
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();
-        let white = Color::white();
+        // 当前页文字反白色：白色 token。
+        let white = ctx.tokens().color_white();
         let bg = ctx.tokens().color_bg_container();
 
         let mut x = frame.x;
@@ -220,7 +221,8 @@ component! {
                 PAGINATION_TOTAL_WIDTH,
                 item_h,
             );
-            let total_y = ctx.visual_center_y(total_rect, 12.0);
+            // 分页辅助文本字号：统一使用主题 font_size_sm token。
+            let total_y = ctx.visual_center_y(total_rect, ctx.tokens().font_size_sm());
             let total_label = self
                 .total_template
                 .as_ref()
@@ -230,7 +232,7 @@ component! {
                 &total_label,
                 Point::new(total_rect.x, total_y),
                 text_sec,
-                12.0,
+                ctx.tokens().font_size_sm(),
             );
             x = total_rect.x + total_rect.w;
         }
@@ -251,12 +253,12 @@ component! {
                 jumper_rect.h,
             );
             let border_color = if self.jumper_active { primary } else { border };
-            let label_y = ctx.visual_center_y(label_rect, 12.0);
+            let label_y = ctx.visual_center_y(label_rect, ctx.tokens().font_size_sm());
             ctx.draw_text(
                 "跳至",
                 Point::new(label_rect.x, label_y),
                 text_sec,
-                12.0,
+                ctx.tokens().font_size_sm(),
             );
             ctx.fill_rect(input_rect, bg, Some(radius));
             ctx.stroke_rect(input_rect, border_color, 1.0, Some(radius));
@@ -264,15 +266,15 @@ component! {
             let jumper_text = inactive_text
                 .as_deref()
                 .unwrap_or(self.jumper_buffer.as_str());
-            ctx.text_center(jumper_text, input_rect, text, 12.0);
-            let suffix_y = ctx.visual_center_y(suffix_rect, 12.0);
+            ctx.text_center(jumper_text, input_rect, text, ctx.tokens().font_size_sm());
+            let suffix_y = ctx.visual_center_y(suffix_rect, ctx.tokens().font_size_sm());
             ctx.draw_text(
                 "页",
                 Point::new(suffix_rect.x, suffix_y),
                 text_sec,
-                12.0,
+                ctx.tokens().font_size_sm(),
             );
-            let text_width = ctx.measure_text(jumper_text, 12.0).w.min(input_rect.w - 8.0);
+            let text_width = ctx.measure_text(jumper_text, ctx.tokens().font_size_sm()).w.min(input_rect.w - 8.0);
             self.jumper_cursor_rect.set(Rect::new(
                 input_rect.x + (input_rect.w + text_width) * 0.5,
                 input_rect.y + 5.0,
@@ -291,12 +293,12 @@ component! {
                 item_h,
             );
             ctx.stroke_rect(changer_rect, border, 1.0, Some(radius));
-            let cy = ctx.visual_center_y(changer_rect, 12.0);
+            let cy = ctx.visual_center_y(changer_rect, ctx.tokens().font_size_sm());
             ctx.draw_text(
                 &changer_text,
                 Point::new(changer_rect.x + 6.0, cy),
                 text,
-                12.0,
+                ctx.tokens().font_size_sm(),
             );
         }
 

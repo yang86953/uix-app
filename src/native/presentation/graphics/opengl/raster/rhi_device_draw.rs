@@ -35,7 +35,10 @@ fn read_vec4(data: &[u8], index: usize) -> Result<[f32; 4]> {
     ])
 }
 
-// 给固定 program 设置 vec2 uniform。
+/// 给固定 program 设置 vec2 uniform。
+///
+/// # Safety
+/// 调用者必须保证当前线程绑定的是创建该 program 的同一有效 GL 上下文，且 program 在该调用期间存活。
 unsafe fn set_vec2(gl: &glow::Context, program: glow::Program, name: &str, value: [f32; 2]) {
     // SAFETY：调用者保证当前线程绑定了创建该 program 的有效 GL 上下文。
     let location = unsafe { gl.get_uniform_location(program, name) };
@@ -43,7 +46,10 @@ unsafe fn set_vec2(gl: &glow::Context, program: glow::Program, name: &str, value
     unsafe { gl.uniform_2_f32(location.as_ref(), value[0], value[1]) };
 }
 
-// 给固定 program 设置 vec4 uniform。
+/// 给固定 program 设置 vec4 uniform。
+///
+/// # Safety
+/// 调用者必须保证当前线程绑定的是创建该 program 的同一有效 GL 上下文，且 program 在该调用期间存活。
 unsafe fn set_vec4(gl: &glow::Context, program: glow::Program, name: &str, value: [f32; 4]) {
     // SAFETY：调用者保证当前线程绑定了创建该 program 的有效 GL 上下文。
     let location = unsafe { gl.get_uniform_location(program, name) };
@@ -51,7 +57,10 @@ unsafe fn set_vec4(gl: &glow::Context, program: glow::Program, name: &str, value
     unsafe { gl.uniform_4_f32(location.as_ref(), value[0], value[1], value[2], value[3]) };
 }
 
-// 给固定 program 设置单个 float uniform。
+/// 给固定 program 设置单个 float uniform。
+///
+/// # Safety
+/// 调用者必须保证当前线程绑定的是创建该 program 的同一有效 GL 上下文，且 program 在该调用期间存活。
 unsafe fn set_f32(gl: &glow::Context, program: glow::Program, name: &str, value: f32) {
     // SAFETY：调用者保证当前线程绑定了创建该 program 的有效 GL 上下文。
     let location = unsafe { gl.get_uniform_location(program, name) };
@@ -59,7 +68,10 @@ unsafe fn set_f32(gl: &glow::Context, program: glow::Program, name: &str, value:
     unsafe { gl.uniform_1_f32(location.as_ref(), value) };
 }
 
-// 绑定当前 packet 的 sampled texture、sampler 与 texture unit。
+/// 绑定当前 packet 的 sampled texture、sampler 与 texture unit。
+///
+/// # Safety
+/// 调用者必须保证当前 owner thread 的 GL context current，且 program、texture、sampler 均由该设备在同一上下文创建并保持存活。
 unsafe fn bind_sampled(
     gl: &glow::Context,
     device: &OpenGlRhiDevice,
@@ -135,6 +147,7 @@ impl OpenGlRhiDevice {
             return Err(rhi_invalid("OpenGL RHI nonzero base vertex is unsupported"));
         }
         // 绑定共享 VAO、顶点 buffer 和固定属性布局。
+        // SAFETY: program、self.vao 与 vertex 均由本设备在当前上下文创建且存活；context 保持 current。
         unsafe {
             gl.use_program(Some(program));
             // SAFETY：program 已绑定；缺少该 uniform 的 blur shader 会按 GL 规范安全忽略。
@@ -149,6 +162,7 @@ impl OpenGlRhiDevice {
                 if vertex_stride != 8 || uniform.len() != 32 || packet.vertex_count == 0 {
                     return Err(rhi_invalid("OpenGL RHI solid ABI is invalid"));
                 }
+                // SAFETY: 该分支已校验 stride=8、uniform=32 字节且 vertex_count>0；program/vao/vertex 存活；uniform 解码由 read_f32 的边界检查兜底；context 保持 current。
                 unsafe {
                     configure_float2_attributes(gl, vertex_stride);
                     set_vec2(
@@ -167,6 +181,7 @@ impl OpenGlRhiDevice {
                 if vertex_stride != 32 || uniform.len() != 16 || packet.vertex_count == 0 {
                     return Err(rhi_invalid("OpenGL RHI textured ABI is invalid"));
                 }
+                // SAFETY: 该分支已校验 stride=32、uniform=16 字节且 vertex_count>0；program/vao/vertex/texture/sampler 均存活；源格式由随后的门禁检查兜底；context 保持 current。
                 let format = unsafe {
                     configure_float8_attributes(gl, vertex_stride);
                     set_vec2(
@@ -193,6 +208,7 @@ impl OpenGlRhiDevice {
                 if vertex_stride != 8 || uniform.len() != 96 || packet.vertex_count == 0 {
                     return Err(rhi_invalid("OpenGL RHI gradient ABI is invalid"));
                 }
+                // SAFETY: 该分支已校验 stride=8、uniform=96 字节且 vertex_count>0；program/vao/vertex 存活；uniform 解码有边界检查；context 保持 current。
                 unsafe {
                     configure_float2_attributes(gl, vertex_stride);
                     set_vec2(
@@ -215,6 +231,7 @@ impl OpenGlRhiDevice {
                 if vertex_stride != 32 || uniform.len() != 16 || packet.vertex_count == 0 {
                     return Err(rhi_invalid("OpenGL RHI coverage ABI is invalid"));
                 }
+                // SAFETY: 该分支已校验 stride=32、uniform=16 字节且 vertex_count>0；program/vao/vertex/texture/sampler 均存活；R8 源格式由随后的门禁检查兜底；context 保持 current。
                 let format = unsafe {
                     configure_float8_attributes(gl, vertex_stride);
                     set_vec2(
@@ -237,6 +254,7 @@ impl OpenGlRhiDevice {
                 if vertex_stride != 32 || uniform.len() != 32 || packet.vertex_count == 0 {
                     return Err(rhi_invalid("OpenGL RHI MSDF ABI is invalid"));
                 }
+                // SAFETY: 该分支已校验 stride=32、uniform=32 字节且 vertex_count>0；program/vao/vertex/texture/sampler 均存活；RGBA8 源格式由随后的门禁检查兜底；context 保持 current。
                 let format = unsafe {
                     configure_float8_attributes(gl, vertex_stride);
                     set_vec2(
@@ -269,6 +287,7 @@ impl OpenGlRhiDevice {
                 {
                     return Err(rhi_invalid("OpenGL RHI shape ABI is invalid"));
                 }
+                // SAFETY: 该分支已校验 stride=8、uniform 为 80/96 字节且 vertex_count>0；program/vao/vertex 存活；uniform 解码有边界检查；context 保持 current。
                 unsafe {
                     configure_float2_attributes(gl, vertex_stride);
                     set_vec2(
@@ -298,6 +317,7 @@ impl OpenGlRhiDevice {
                 {
                     return Err(rhi_invalid("OpenGL RHI sector ABI is invalid"));
                 }
+                // SAFETY: 该分支已校验 stride=8、uniform 为固定字节数且 vertex_count>0；program/vao/vertex 存活；uniform 解码有边界检查；context 保持 current。
                 unsafe {
                     configure_float2_attributes(gl, vertex_stride);
                     set_vec2(
@@ -318,6 +338,7 @@ impl OpenGlRhiDevice {
                 if vertex_stride != 8 || uniform.len() != 96 || packet.vertex_count == 0 {
                     return Err(rhi_invalid("OpenGL RHI shadow ABI is invalid"));
                 }
+                // SAFETY: 该分支已校验 stride=8、uniform=96 字节且 vertex_count>0；program/vao/vertex 存活；uniform 解码有边界检查；context 保持 current。
                 unsafe {
                     configure_float2_attributes(gl, vertex_stride);
                     set_vec2(
@@ -340,6 +361,7 @@ impl OpenGlRhiDevice {
                 if vertex_stride != 8 || uniform.len() != 304 || packet.vertex_count == 0 {
                     return Err(rhi_invalid("OpenGL RHI blur ABI is invalid"));
                 }
+                // SAFETY: 该分支已校验 stride=8、uniform=304 字节且 vertex_count>0；program/vao/vertex/texture/sampler 均存活；weights 为 64 元素栈上数组，指向有效内存；颜色源格式由随后的门禁检查兜底；context 保持 current。
                 let format = unsafe {
                     configure_float2_attributes(gl, vertex_stride);
                     set_vec4(gl, program, "u_sizes", read_vec4(&uniform, 0)?);
@@ -366,6 +388,7 @@ impl OpenGlRhiDevice {
         // 记录 sampled_format 只用于保持每类 ABI 的显式门禁。
         let _ = sampled_format;
         // Indexed draw 需要固定 uint32 index ABI，非 indexed draw 使用顶点范围。
+        // SAFETY: index buffer 已校验为 Index usage 且 stride=4；first_index.saturating_mul(4) 防止偏移溢出；index_count/vertex_count 已校验非零；program/vao/vertex 存活；context 保持 current。
         unsafe {
             if let Some(index_handle) = packet.index_buffer {
                 let index = self.buffer(index_handle)?;
@@ -400,7 +423,10 @@ impl OpenGlRhiDevice {
     }
 }
 
-// 配置 position float2 顶点属性。
+/// 配置 position float2 顶点属性。
+///
+/// # Safety
+/// 调用者必须保证当前绑定的是与 float2 ABI 匹配的 VAO 和顶点 buffer，且 context current。
 unsafe fn configure_float2_attributes(gl: &glow::Context, stride: u32) {
     // SAFETY：调用者已绑定与 float2 ABI 匹配的 VAO 和顶点缓冲。
     unsafe { gl.vertex_attrib_pointer_f32(0, 2, glow::FLOAT, false, stride as i32, 0) };
@@ -412,7 +438,10 @@ unsafe fn configure_float2_attributes(gl: &glow::Context, stride: u32) {
     unsafe { gl.disable_vertex_attrib_array(2) };
 }
 
-// 配置 position/uv/color float8 顶点属性。
+/// 配置 position/uv/color float8 顶点属性。
+///
+/// # Safety
+/// 调用者必须保证当前绑定的是与 float8 ABI 匹配的 VAO 和顶点 buffer，且 context current。
 unsafe fn configure_float8_attributes(gl: &glow::Context, stride: u32) {
     // SAFETY：调用者已绑定与 float8 ABI 匹配的 VAO 和顶点缓冲。
     unsafe { gl.vertex_attrib_pointer_f32(0, 2, glow::FLOAT, false, stride as i32, 0) };
@@ -428,7 +457,10 @@ unsafe fn configure_float8_attributes(gl: &glow::Context, stride: u32) {
     unsafe { gl.enable_vertex_attrib_array(2) };
 }
 
-// 设置 premultiplied SrcOver blend。
+/// 设置 premultiplied SrcOver blend。
+///
+/// # Safety
+/// 调用者必须保证当前 owner thread 的 GL context current。
 unsafe fn set_premultiplied_blend(gl: &glow::Context) {
     // SAFETY：调用者保证当前 owner thread 已绑定有效 GL 上下文。
     unsafe { gl.enable(glow::BLEND) };
@@ -443,7 +475,10 @@ unsafe fn set_premultiplied_blend(gl: &glow::Context) {
     };
 }
 
-// 设置 sampled additive blend。
+/// 设置 sampled additive blend。
+///
+/// # Safety
+/// 调用者必须保证当前 owner thread 的 GL context current。
 unsafe fn set_additive_blend(gl: &glow::Context) {
     // SAFETY：调用者保证当前 owner thread 已绑定有效 GL 上下文。
     unsafe { gl.enable(glow::BLEND) };
@@ -451,7 +486,10 @@ unsafe fn set_additive_blend(gl: &glow::Context) {
     unsafe { gl.blend_func_separate(glow::ONE, glow::ONE, glow::ONE, glow::ONE) };
 }
 
-// 设置 straight-alpha SrcOver blend。
+/// 设置 straight-alpha SrcOver blend。
+///
+/// # Safety
+/// 调用者必须保证当前 owner thread 的 GL context current。
 unsafe fn set_straight_alpha_blend(gl: &glow::Context) {
     // SAFETY：调用者保证当前 owner thread 已绑定有效 GL 上下文。
     unsafe { gl.enable(glow::BLEND) };

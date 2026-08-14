@@ -1,3 +1,3 @@
 //! UI ↔ Draw 桥接。
 
-pub mod scene_paint;
+pub(crate) mod scene_paint;

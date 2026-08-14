@@ -75,7 +75,7 @@ component! {
 
         for (i, item) in self.items.iter().enumerate() {
             let item_rect = Self::row_content_rect(frame, y, item_h, horizontal_padding);
-            Self::paint_single_line(ctx, item, item_rect, text, 14.0);
+            Self::paint_single_line(ctx, item, item_rect, text, ctx.tokens().font_size());
             if i < self.items.len() - 1 {
                 ctx.fill_rect(
                     Rect::new(

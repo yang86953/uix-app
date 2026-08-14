@@ -7,8 +7,11 @@
 use super::GraphicsFailure;
 
 /// The next permitted recovery action after a failed graphics frame.
+///
+/// 与 `RecoveryAction`（错误恢复处理器决定，旧 `crate::diagnostics::recovery` 路径已迁移）
+/// 同名异构，故图形侧显式命名为 GraphicsRecoveryAction 以示区分。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RecoveryAction {
+pub enum GraphicsRecoveryAction {
     RebuildSurface,
     RebuildRecipe,
     TryNextRecipe,
@@ -35,16 +38,16 @@ impl GraphicsRecovery {
     /// 将 typed failure 映射到唯一的有界恢复序列：
     /// surface rebuild -> same recipe rebuild -> next recipe -> Software。
     /// Software 只尝试一次；OOM 与序列耗尽均进入终态。
-    pub fn on_failure(&mut self, failure: &GraphicsFailure) -> RecoveryAction {
+    pub fn on_failure(&mut self, failure: &GraphicsFailure) -> GraphicsRecoveryAction {
         if matches!(failure, GraphicsFailure::OutOfMemory(_)) {
-            return RecoveryAction::AbortOutOfMemory;
+            return GraphicsRecoveryAction::AbortOutOfMemory;
         }
         let action = match self.step {
-            0 => RecoveryAction::RebuildSurface,
-            1 => RecoveryAction::RebuildRecipe,
-            2 => RecoveryAction::TryNextRecipe,
-            3 if self.software_available => RecoveryAction::UseSoftware,
-            _ => RecoveryAction::Abort,
+            0 => GraphicsRecoveryAction::RebuildSurface,
+            1 => GraphicsRecoveryAction::RebuildRecipe,
+            2 => GraphicsRecoveryAction::TryNextRecipe,
+            3 if self.software_available => GraphicsRecoveryAction::UseSoftware,
+            _ => GraphicsRecoveryAction::Abort,
         };
         self.step = self.step.saturating_add(1);
         action

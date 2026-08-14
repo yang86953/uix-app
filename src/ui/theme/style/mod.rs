@@ -164,14 +164,3 @@ impl Default for Style {
         }
     }
 }
-
-/// 辅助函数：将各种形式的输入统一转为 EdgeInsets（供 `style!` 宏内部使用）。
-#[doc(hidden)]
-pub fn edge_insets_from_expr(v: impl Into<EdgeInsets>) -> EdgeInsets {
-    v.into()
-}
-
-/// 辅助函数：将 f32 转为 EdgeInsets（uniform），供 Builder 方法使用。
-pub fn uniform_insets(v: f32) -> EdgeInsets {
-    EdgeInsets::uniform(v)
-}

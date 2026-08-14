@@ -86,6 +86,7 @@ impl ISystemInfo for WindowsSystemInfo {
 
 fn get_os_info() -> Result<OsInfo> {
     // Use RtlGetVersion to get accurate OS version (not affected by manifest compat)
+    // SAFETY: ver 为完整初始化的版本结构（dwOSVersionInfoSize 已设置），RtlGetVersion 只写入它；system_info 为栈上默认初始化结构。
     unsafe {
         let mut ver = RTL_OSVERSIONINFOW {
             dwOSVersionInfoSize: std::mem::size_of::<RTL_OSVERSIONINFOW>() as u32,
@@ -150,6 +151,7 @@ fn get_os_info() -> Result<OsInfo> {
 }
 
 fn get_cpu_count() -> Result<u32> {
+    // SAFETY: system_info 为栈上默认初始化的可写结构，GetNativeSystemInfo 同步填充。
     unsafe {
         let mut system_info = SYSTEM_INFO::default();
         GetNativeSystemInfo(&mut system_info);
@@ -163,6 +165,7 @@ fn get_cpu_count() -> Result<u32> {
 }
 
 fn get_memory_info() -> Result<MemoryInfo> {
+    // SAFETY: mem 为完整初始化的结构（dwLength 已设置），GlobalMemoryStatusEx 只写入该结构。
     unsafe {
         let mut mem = MEMORYSTATUSEX {
             dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
@@ -189,6 +192,7 @@ fn get_memory_info() -> Result<MemoryInfo> {
 }
 
 fn get_hostname() -> Result<String> {
+    // SAFETY: buf 为栈上可写缓冲，len 初始化为缓冲容量，GetComputerNameW 按返回的 len 写入 NUL 结尾文本。
     unsafe {
         let mut buf = [0u16; MAX_COMPUTERNAME_LENGTH + 1];
         let mut len = buf.len() as u32;
@@ -202,6 +206,7 @@ fn get_hostname() -> Result<String> {
 }
 
 fn get_username() -> Result<String> {
+    // SAFETY: buf 为栈上可写缓冲，len 初始化为缓冲容量，GetUserNameW 按返回的 len 写入 NUL 结尾文本。
     unsafe {
         let mut buf = [0u16; UNLEN + 1];
         let mut len = buf.len() as u32;
@@ -324,6 +329,7 @@ unsafe extern "system" {
 }
 
 /// 获取当前进程的内存使用统计（工作集字节, 私有字节）。
+// SAFETY: pmc 为 MaybeUninit 零初始化且容量正确；h_process 为 GetCurrentProcess 返回的伪句柄；assume_init 仅在 GetProcessMemoryInfo 成功返回后执行。
 pub fn get_process_memory() -> Result<(usize, usize)> {
     unsafe {
         let mut pmc = std::mem::MaybeUninit::<PROCESS_MEMORY_COUNTERS>::zeroed();

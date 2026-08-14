@@ -117,6 +117,9 @@ impl UploadFile {
 }
 
 /// 应用服务拥有的上传处理状态。
+///
+/// 与 ValidateStatus/InputStatus/StepStatus/BadgeStatus 共享「组件状态」命名模式，
+/// 但各自语义与变体独立（本枚举是应用上传传输状态），勿强行合并。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum UploadStatus {
     /// 等待应用决定是否启动。

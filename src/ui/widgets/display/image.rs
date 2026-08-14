@@ -624,13 +624,15 @@ impl Image {
             badge.x + badge.w * 0.5,
             badge.y + badge.h * 0.5,
             badge_size * 0.5,
-            Color::from_rgba(0, 0, 0, 140),
+            // 缩放徽标底：黑色 token + 原 alpha（保持视觉等价，色相随主题可换）。
+            ctx.tokens().color_black().with_alpha(140),
         );
         crate::ui::widgets::icon::Icon::paint_in_frame(
             ctx,
             "zoom-in",
             badge,
-            Color::white(),
+            // 缩放图标（暗底上反白）：白色 token。
+            ctx.tokens().color_white(),
             badge_size * 0.58,
         );
     }
@@ -844,7 +846,8 @@ impl Image {
         }
         let surface = Rect::new(0.0, 0.0, surface_w, surface_h);
         ctx.push_clip(surface);
-        ctx.fill_rect(surface, Color::from_rgba(0, 0, 0, 204), None);
+        // 全屏预览暗底：黑色 token + 原 alpha（保持视觉等价，色相随主题可换）。
+        ctx.fill_rect(surface, ctx.tokens().color_black().with_alpha(204), None);
 
         let margin = 48.0_f32
             .min((surface_w * 0.1).max(16.0))
@@ -855,7 +858,8 @@ impl Image {
             (surface_w - margin * 2.0).max(1.0),
             (surface_h - margin * 2.0).max(1.0),
         );
-        ctx.fill_rect(preview_rect, Color::from_rgba(18, 18, 18, 255), None);
+        // 预览占位底：原为 18,18,18 深灰，收敛为黑色 token（视觉近似，色相随主题可换）。
+        ctx.fill_rect(preview_rect, ctx.tokens().color_black().with_alpha(255), None);
         if let Some(handle) = handle {
             ctx.draw_image(handle, preview_rect);
         } else {
@@ -866,7 +870,7 @@ impl Image {
             } else {
                 "图片不可用"
             };
-            Self::paint_centered_label(ctx, label, preview_rect, Color::white(), 16.0);
+            Self::paint_centered_label(ctx, label, preview_rect, ctx.tokens().color_white(), ctx.tokens().font_size_lg());
         }
 
         let close = Rect::new((surface_w - 52.0).max(4.0), 12.0, 40.0, 40.0);
@@ -874,9 +878,10 @@ impl Image {
             close.x + close.w * 0.5,
             close.y + close.h * 0.5,
             close.w * 0.5,
-            Color::from_rgba(0, 0, 0, 180),
+            // 关闭按钮底：黑色 token + 原 alpha（保持视觉等价，色相随主题可换）。
+            ctx.tokens().color_black().with_alpha(180),
         );
-        crate::ui::widgets::icon::Icon::paint_in_frame(ctx, "x", close, Color::white(), 20.0);
+        crate::ui::widgets::icon::Icon::paint_in_frame(ctx, "x", close, ctx.tokens().color_white(), 20.0);
         ctx.pop_clip();
     }
 }

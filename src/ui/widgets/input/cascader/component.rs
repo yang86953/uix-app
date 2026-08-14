@@ -466,7 +466,8 @@ component! {
             let column = Rect::new(popup.x, popup.y, column_width, popup.h);
             ctx.push_clip(column);
             if self.search_results.is_empty() {
-                ctx.text_center(loc.no_data, column, text_tertiary, 14.0);
+                // 级联下拉字号：统一使用主题 font_size token。
+                ctx.text_center(loc.no_data, column, text_tertiary, ctx.tokens().font_size());
             }
             for (index, result) in self.search_results.iter().enumerate() {
                 let y = column.y + index as f32 * ITEM_HEIGHT - self.search_scroll_offset;
@@ -487,7 +488,7 @@ component! {
                 if text_area.w > 0.0 {
                     let label = result.value.labels.join(loc.cascader_separator);
                     ctx.push_clip(text_area);
-                    let text_y = ctx.visual_center_y(row, 14.0);
+                    let text_y = ctx.visual_center_y(row, ctx.tokens().font_size());
                     ctx.draw_text(
                         &label,
                         Point::new(text_area.x, text_y),
@@ -511,7 +512,8 @@ component! {
             );
             ctx.push_clip(column);
             if options.is_empty() {
-                ctx.text_center(loc.no_data, column, text_tertiary, 14.0);
+                // 级联下拉字号：统一使用主题 font_size token。
+                ctx.text_center(loc.no_data, column, text_tertiary, ctx.tokens().font_size());
             }
             let scroll = self.scroll_offsets.get(level).copied().unwrap_or(0.0);
             for (index, option) in options.iter().enumerate() {
@@ -540,7 +542,7 @@ component! {
                 );
                 if text_area.w > 0.0 {
                     ctx.push_clip(text_area);
-                    let text_y = ctx.visual_center_y(row, 14.0);
+                    let text_y = ctx.visual_center_y(row, ctx.tokens().font_size());
                     ctx.draw_text(
                         &option.label,
                         Point::new(text_area.x, text_y),

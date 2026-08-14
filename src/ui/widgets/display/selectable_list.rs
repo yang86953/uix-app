@@ -20,13 +20,39 @@ enum SelectableListAction {
     Row(usize),
 }
 
+// 组件默认尺寸（本组件设计值）；其他组件同名常量值不同，属各自设计。
 const DEFAULT_WIDTH: f32 = 220.0;
 const DEFAULT_HEIGHT: f32 = 500.0;
+// 列表头部高度（48.0），组件独立设计；同名常量在 collapse/calendar/date_calendar 各为 36/40/32。
 const HEADER_HEIGHT: f32 = 48.0;
 const HEADER_INSET: f32 = 8.0;
 const HEADER_BUTTON_HEIGHT: f32 = 32.0;
 const FOOTER_HEIGHT: f32 = 28.0;
 const ROW_HORIZONTAL_INSET: f32 = 8.0;
+// 品牌色按压/活动态的 alpha 值（色相取自 token color_primary，随主题换肤）。
+const PRIMARY_HEADER_PRESSED_ALPHA: u8 = 38;
+const PRIMARY_PRESSED_ALPHA: u8 = 45;
+const PRIMARY_ACTIVE_ALPHA: u8 = 25;
+// 行内图标槽宽（像素），无图标时文本缩进到该宽度。
+const ROW_ICON_SLOT_W: f32 = 26.0;
+// 行内图标边长（像素）。
+const ROW_ICON_SIZE: f32 = 18.0;
+// 无图标行文本左缩进（像素）。
+const ROW_TEXT_INDENT: f32 = 14.0;
+// 图标与文本之间的间距（像素）。
+const ROW_ICON_TEXT_GAP: f32 = 6.0;
+// 行文本右侧留白（像素）。
+const ROW_TEXT_RIGHT_PAD: f32 = 10.0;
+// 行/头部按钮圆角（像素）。
+const ROW_RADIUS: f32 = 6.0;
+// 活动行左侧指示条宽度（像素）。
+const ACTIVE_BAR_W: f32 = 3.0;
+// 活动行左侧指示条圆角（像素）。
+const ACTIVE_BAR_RADIUS: f32 = 1.5;
+// 活动行指示条上下内缩（像素）。
+const ACTIVE_BAR_V_INSET: f32 = 6.0;
+// 行文本字号（无对应 token，token 为 12/14/16，保持原值）。
+const ROW_TEXT_FONT_SIZE: f32 = 13.0;
 
 #[derive(Debug, Clone, Copy)]
 struct SelectableListGeometry {
@@ -704,14 +730,15 @@ component! {
             let pressed = self.pressed_action.get() == Some(SelectableListAction::Header)
                 && self.hovered_header.get();
             let btn_bg = if pressed {
-                Color::from_rgba(55, 110, 255, 38)
+                // 按压态：token 主色 + 固定 alpha（替换原硬编码 55,110,255 以支持换肤）。
+                t_pri.with_alpha(PRIMARY_HEADER_PRESSED_ALPHA)
             } else if self.hovered_header.get() {
                 fill_hover
             } else {
                 fill
             };
-            ctx.fill_rect(btn_frame, btn_bg, Some(Radius::uniform(6.0)));
-            let icon_size = 18.0_f32.min(btn_frame.h);
+            ctx.fill_rect(btn_frame, btn_bg, Some(Radius::uniform(ROW_RADIUS)));
+            let icon_size = ROW_ICON_SIZE.min(btn_frame.h);
             let icon_frame = Rect::new(
                 btn_frame.x + 8.0_f32.min(btn_frame.w * 0.25),
                 btn_frame.y + (btn_frame.h - icon_size) * 0.5,
@@ -719,7 +746,12 @@ component! {
                 icon_size,
             );
             crate::ui::widgets::general::icon::Icon::paint_in_frame(
-                ctx, "plus", icon_frame, t_sec, 14.0,
+                ctx,
+                "plus",
+                icon_frame,
+                t_sec,
+                // 图标字号对齐默认字号 token。
+                ctx.tokens().font_size(),
             );
             let text_frame = Rect::new(
                 icon_frame.x + icon_frame.w + 4.0,
@@ -727,7 +759,7 @@ component! {
                 (btn_frame.x + btn_frame.w - icon_frame.x - icon_frame.w - 10.0).max(0.0),
                 btn_frame.h,
             );
-            Self::paint_single_line(ctx, &self.header_button_text, text_frame, t_sec, 13.0);
+            Self::paint_single_line(ctx, &self.header_button_text, text_frame, t_sec, ROW_TEXT_FONT_SIZE);
             let separator_width = (frame.w - HEADER_INSET * 2.0).max(0.0);
             if separator_width > 0.0 && geometry.body.y > frame.y {
                 ctx.fill_rect(
@@ -773,34 +805,36 @@ component! {
             if is_pressed {
                 ctx.fill_rect(
                     item_frame,
-                    Color::from_rgba(55, 110, 255, 45),
-                    Some(Radius::uniform(6.0)),
+                    // 按压态：token 主色 + 固定 alpha（替换原硬编码 55,110,255 以支持换肤）。
+                    t_pri.with_alpha(PRIMARY_PRESSED_ALPHA),
+                    Some(Radius::uniform(ROW_RADIUS)),
                 );
             } else if is_active {
-                ctx.fill_rect(item_frame, Color::from_rgba(55, 110, 255, 25), Some(Radius::uniform(6.0)));
+                // 活动态：token 主色 + 固定 alpha（替换原硬编码 55,110,255 以支持换肤）。
+                ctx.fill_rect(item_frame, t_pri.with_alpha(PRIMARY_ACTIVE_ALPHA), Some(Radius::uniform(ROW_RADIUS)));
                 ctx.fill_rect(
                     Rect::new(
                         item_frame.x,
-                        item_frame.y + 6.0_f32.min(item_frame.h * 0.5),
-                        3.0_f32.min(item_frame.w),
-                        (item_frame.h - 12.0).max(0.0),
+                        item_frame.y + ACTIVE_BAR_V_INSET.min(item_frame.h * 0.5),
+                        ACTIVE_BAR_W.min(item_frame.w),
+                        (item_frame.h - ACTIVE_BAR_V_INSET * 2.0).max(0.0),
                     ),
                     t_pri,
-                    Some(Radius::uniform(1.5)),
+                    Some(Radius::uniform(ACTIVE_BAR_RADIUS)),
                 );
             } else if is_hover {
-                ctx.fill_rect(item_frame, fill_hover, Some(Radius::uniform(6.0)));
+                ctx.fill_rect(item_frame, fill_hover, Some(Radius::uniform(ROW_RADIUS)));
             }
 
             let icon = self.items[i].icon.as_deref().unwrap_or("");
-            let icon_slot = if icon.is_empty() { 0.0 } else { 26.0_f32.min(item_frame.w) };
+            let icon_slot = if icon.is_empty() { 0.0 } else { ROW_ICON_SLOT_W.min(item_frame.w) };
             let text_x = if icon.is_empty() {
-                item_frame.x + 14.0_f32.min(item_frame.w * 0.25)
+                item_frame.x + ROW_TEXT_INDENT.min(item_frame.w * 0.25)
             } else {
-                item_frame.x + icon_slot + 6.0_f32.min(item_frame.w * 0.1)
+                item_frame.x + icon_slot + ROW_ICON_TEXT_GAP.min(item_frame.w * 0.1)
             };
             if !icon.is_empty() {
-                let icon_size = 18.0_f32.min(item_frame.h);
+                let icon_size = ROW_ICON_SIZE.min(item_frame.h);
                 crate::ui::widgets::general::icon::Icon::paint_in_frame(
                     ctx,
                     icon,
@@ -811,7 +845,8 @@ component! {
                         icon_size,
                     ),
                     t_sec,
-                    14.0,
+                    // 图标字号对齐默认字号 token。
+                    ctx.tokens().font_size(),
                 );
             }
 
@@ -819,10 +854,10 @@ component! {
             let text_frame = Rect::new(
                 text_x,
                 item_frame.y,
-                (item_frame.x + item_frame.w - text_x - 10.0).max(0.0),
+                (item_frame.x + item_frame.w - text_x - ROW_TEXT_RIGHT_PAD).max(0.0),
                 item_frame.h,
             );
-            Self::paint_single_line(ctx, &self.items[i].text, text_frame, color, 13.0);
+            Self::paint_single_line(ctx, &self.items[i].text, text_frame, color, ROW_TEXT_FONT_SIZE);
         }
 
         ctx.pop_clip();

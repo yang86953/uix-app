@@ -306,10 +306,11 @@ component! {
                 let cell_radius = Some(Radius::uniform(2.0 * visual_scale));
                 ctx.fill_rect(cell_rect, fade_color(*c, opacity), cell_radius);
                 if self.highlighted_idx == Some(i) {
+                    // 高亮描边：按色块亮度取黑白 token 对比色。
                     let highlight_color = if c.is_light() {
-                        Color::black()
+                        ctx.tokens().color_black()
                     } else {
-                        Color::white()
+                        ctx.tokens().color_white()
                     };
                     ctx.stroke_rect(
                         cell_rect,
@@ -321,10 +322,11 @@ component! {
                     );
                 }
                 if self.value.get() == *c {
+                    // 选中图标色：按色块亮度取黑白 token 对比色。
                     let icon_color = if c.is_light() {
-                        Color::black()
+                        ctx.tokens().color_black()
                     } else {
-                        Color::white()
+                        ctx.tokens().color_white()
                     };
                     crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
@@ -412,6 +414,7 @@ impl ColorPicker {
             transition: TransitionPlayer::new(presets::tooltip_enter()),
             closing: false,
             transition_dirty: false,
+            // 预设色板：从 u32 常量解包构造（色板常量见 PRESET_COLORS，保留原构造）。
             preset_colors: PRESET_COLORS
                 .iter()
                 .map(|&c| {
@@ -593,7 +596,8 @@ fn paint_transparency_checkerboard(ctx: &mut PaintContext, frame: Rect, scale: f
     let columns = (frame.w / tile).ceil() as usize;
     let rows = (frame.h / tile).ceil() as usize;
     ctx.push_clip(frame);
-    ctx.fill_rect(frame, Color::white(), None);
+    // 棋盘格白色格：白色 token。
+    ctx.fill_rect(frame, ctx.tokens().color_white(), None);
     for row in 0..rows {
         for column in 0..columns {
             if (row + column) % 2 == 0 {
@@ -604,6 +608,7 @@ fn paint_transparency_checkerboard(ctx: &mut PaintContext, frame: Rect, scale: f
                         tile,
                         tile,
                     ),
+                    // 棋盘格灰格：固定中性灰（透明度指示功能，不随主题换肤）。
                     Color::from_rgb(0xD9, 0xD9, 0xD9),
                     None,
                 );

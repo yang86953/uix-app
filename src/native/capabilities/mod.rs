@@ -9,9 +9,9 @@
 //! 在 `backends` 中实现），`services` 提供通知与文件服务。本 Module 不
 //! 依赖兄弟 Module（windowing / presentation / agent-transport）。
 
-pub mod display;
-pub mod services;
-pub mod system;
+pub(crate) mod display;
+pub(crate) mod services;
+pub(crate) mod system;
 
-pub use display::*;
-pub use system::*;
+pub(crate) use display::*;
+pub(crate) use system::*;

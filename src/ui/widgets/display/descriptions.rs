@@ -9,13 +9,18 @@ use crate::platform::windowing::ControlSize;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::{SnapshotFields, WidgetTree};
 
+// 组件默认尺寸（本组件设计值）；其他组件同名常量值不同，属各自设计。
 const DEFAULT_WIDTH: f32 = 600.0;
 const MIN_COLUMN_WIDTH: f32 = 140.0;
+// 描述项标题行高（32.0）；calendar 标题行为 24.0，组件独立设计。
 const TITLE_HEIGHT: f32 = 32.0;
+// 描述项标题字号（15.0）；breadcrumb 为 13.0，组件独立设计。
 const TITLE_FONT_SIZE: f32 = 15.0;
 const ITEM_FONT_SIZE: f32 = 13.0;
 const TEXT_LINE_HEIGHT: f32 = 1.5;
+// 描述项水平内边距（8.0）；empty 为 16.0，组件独立设计。
 const HORIZONTAL_PADDING: f32 = 8.0;
+// 描述项垂直内边距（6.0）；empty 为 12.0，组件独立设计。
 const VERTICAL_PADDING: f32 = 6.0;
 const MAX_LABEL_FRACTION: f32 = 0.45;
 

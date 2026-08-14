@@ -5,15 +5,15 @@ use crate::draw::Color;
 use super::DesignTokens;
 
 /// 每条主色色板的色阶数量。
-pub const COLOR_SCALE_LEN: usize = 10;
+pub(crate) const COLOR_SCALE_LEN: usize = 10;
 /// Ant Design 预设主色数量。
-pub const PRIMARY_HUE_COUNT: usize = 12;
+pub(crate) const PRIMARY_HUE_COUNT: usize = 12;
 /// 主色在从浅到深色阶中的零基索引。
-pub const PRIMARY_SHADE_INDEX: usize = 5;
+pub(crate) const PRIMARY_SHADE_INDEX: usize = 5;
 /// 中性灰阶数量。
-pub const NEUTRAL_SCALE_LEN: usize = 13;
+pub(crate) const NEUTRAL_SCALE_LEN: usize = 13;
 /// 默认数据可视化分类色数量。
-pub const DATA_VISUALIZATION_COLOR_COUNT: usize = 10;
+pub(crate) const DATA_VISUALIZATION_COLOR_COUNT: usize = 10;
 
 /// 一条从浅到深排列的 10 阶色板。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -226,73 +226,73 @@ macro_rules! color_scale {
 }
 
 /// Red 预设色板。
-pub const RED_PALETTE: ColorScale = color_scale![
+pub(crate) const RED_PALETTE: ColorScale = color_scale![
     0xfff1f0, 0xffccc7, 0xffa39e, 0xff7875, 0xff4d4f, 0xf5222d, 0xcf1322, 0xa8071a, 0x820014,
     0x5c0011,
 ];
 
 /// Volcano 预设色板。
-pub const VOLCANO_PALETTE: ColorScale = color_scale![
+pub(crate) const VOLCANO_PALETTE: ColorScale = color_scale![
     0xfff2e8, 0xffd8bf, 0xffbb96, 0xff9c6e, 0xff7a45, 0xfa541c, 0xd4380d, 0xad2102, 0x871400,
     0x610b00,
 ];
 
 /// Orange 预设色板。
-pub const ORANGE_PALETTE: ColorScale = color_scale![
+pub(crate) const ORANGE_PALETTE: ColorScale = color_scale![
     0xfff7e6, 0xffe7ba, 0xffd591, 0xffc069, 0xffa940, 0xfa8c16, 0xd46b08, 0xad4e00, 0x873800,
     0x612500,
 ];
 
 /// Gold 预设色板。
-pub const GOLD_PALETTE: ColorScale = color_scale![
+pub(crate) const GOLD_PALETTE: ColorScale = color_scale![
     0xfffbe6, 0xfff1b8, 0xffe58f, 0xffd666, 0xffc53d, 0xfaad14, 0xd48806, 0xad6800, 0x874d00,
     0x613400,
 ];
 
 /// Yellow 预设色板。
-pub const YELLOW_PALETTE: ColorScale = color_scale![
+pub(crate) const YELLOW_PALETTE: ColorScale = color_scale![
     0xfeffe6, 0xffffb8, 0xfffb8f, 0xfff566, 0xffec3d, 0xfadb14, 0xd4b106, 0xad8b00, 0x876800,
     0x614700,
 ];
 
 /// Lime 预设色板。
-pub const LIME_PALETTE: ColorScale = color_scale![
+pub(crate) const LIME_PALETTE: ColorScale = color_scale![
     0xfcffe6, 0xf4ffb8, 0xeaff8f, 0xd3f261, 0xbae637, 0xa0d911, 0x7cb305, 0x5b8c00, 0x3f6600,
     0x254000,
 ];
 
 /// Green 预设色板。
-pub const GREEN_PALETTE: ColorScale = color_scale![
+pub(crate) const GREEN_PALETTE: ColorScale = color_scale![
     0xf6ffed, 0xd9f7be, 0xb7eb8f, 0x95de64, 0x73d13d, 0x52c41a, 0x389e0d, 0x237804, 0x135200,
     0x092b00,
 ];
 
 /// Cyan 预设色板。
-pub const CYAN_PALETTE: ColorScale = color_scale![
+pub(crate) const CYAN_PALETTE: ColorScale = color_scale![
     0xe6fffb, 0xb5f5ec, 0x87e8de, 0x5cdbd3, 0x36cfc9, 0x13c2c2, 0x08979c, 0x006d75, 0x00474f,
     0x002329,
 ];
 
 /// Blue 预设色板。
-pub const BLUE_PALETTE: ColorScale = color_scale![
+pub(crate) const BLUE_PALETTE: ColorScale = color_scale![
     0xe6f4ff, 0xbae0ff, 0x91caff, 0x69b1ff, 0x4096ff, 0x1677ff, 0x0958d9, 0x003eb3, 0x002c8c,
     0x001d66,
 ];
 
 /// Geekblue 预设色板。
-pub const GEEKBLUE_PALETTE: ColorScale = color_scale![
+pub(crate) const GEEKBLUE_PALETTE: ColorScale = color_scale![
     0xf0f5ff, 0xd6e4ff, 0xadc6ff, 0x85a5ff, 0x597ef7, 0x2f54eb, 0x1d39c4, 0x10239e, 0x061178,
     0x030852,
 ];
 
 /// Purple 预设色板。
-pub const PURPLE_PALETTE: ColorScale = color_scale![
+pub(crate) const PURPLE_PALETTE: ColorScale = color_scale![
     0xf9f0ff, 0xefdbff, 0xd3adf7, 0xb37feb, 0x9254de, 0x722ed1, 0x531dab, 0x391085, 0x22075e,
     0x120338,
 ];
 
 /// Magenta 预设色板。
-pub const MAGENTA_PALETTE: ColorScale = color_scale![
+pub(crate) const MAGENTA_PALETTE: ColorScale = color_scale![
     0xfff0f6, 0xffd6e7, 0xffadd2, 0xff85c0, 0xf759ab, 0xeb2f96, 0xc41d7f, 0x9e1068, 0x780650,
     0x520339,
 ];

@@ -15,6 +15,16 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 // ════════════════════════════════════════════════════════════════════════════
+// Upload 文件列表布局常量（绘制与命中测试共用，保持两处数值一致）。
+// ════════════════════════════════════════════════════════════════════════════
+// 列表区顶部相对控件的偏移（像素）。
+const LIST_TOP: f32 = 104.0;
+// 文件行高（像素）。
+const FILE_ROW_H: f32 = 32.0;
+// 列表右侧留白（像素），为状态图标区保留空间。
+const LIST_RIGHT_PAD: f32 = 56.0;
+
+// ════════════════════════════════════════════════════════════════════════════
 // Upload
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -35,6 +45,8 @@ component! {
         layout_requested: Cell<bool>,
         change_callback: Option<Rc<dyn Fn(&UploadChange)>>,
         focused: bool,
+        // 记录键盘激活手势的武装键（参照 Button 激活模式）。
+        activation_key: Cell<Option<crate::ui::KeyCode>>,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -43,7 +55,7 @@ component! {
         // 读取受控队列以登记声明视图的响应式依赖。
         self.capture_bound_files_dependency();
         let list_h = if self.show_upload_list {
-            self.file_list.len() as f32 * 32.0
+            self.file_list.len() as f32 * FILE_ROW_H
         } else {
             0.0
         };
@@ -66,6 +78,25 @@ component! {
                 ..
             } => self.remove_file_at(*pos),
             SystemEvent::FileDrop { files, .. } if self.drag => self.queue_dropped_files(files),
+            // 武装激活键（参照 Button 激活模式）：Enter/Space 按下只记录手势，
+            // 由 KeyUp 完成同一键盘激活，避免按住时重复触发。
+            SystemEvent::KeyDown {
+                key: key @ (crate::ui::KeyCode::Enter | crate::ui::KeyCode::Space),
+                ..
+            } => {
+                self.activation_key.set(Some(*key));
+                EventResult::Handled
+            }
+            // 完成键盘激活。设计意图：Upload 的激活语义是「请求浏览文件」；
+            // 当前 UI 层没有文件对话框能力（IFileDialog 属 native 私有边界，
+            // platform 门面未公开），文件来源依赖系统 FileDrop 事件，指针路径
+            // 也只有列表行删除而无浏览入口，因此本分支保持与指针一致的
+            // 「激活入口存在但文件选择待平台能力接入」约定，仅消费手势。
+            SystemEvent::KeyUp { key, .. }
+                if self.activation_key.replace(None) == Some(*key) =>
+            {
+                EventResult::Handled
+            }
             _ => EventResult::NotHandled,
         }
     }
@@ -114,7 +145,7 @@ component! {
         }
 
         for (i, f) in self.file_list.iter().enumerate() {
-            let y = frame.y + 104.0 + i as f32 * 32.0;
+            let y = frame.y + LIST_TOP + i as f32 * FILE_ROW_H;
             let status_color = match f.status {
                 UploadStatus::Error => error,
                 UploadStatus::Done => success,
@@ -163,9 +194,10 @@ component! {
                 );
             }
             let text_x = frame.x + if drew_preview { 34.0 } else { 28.0 };
-            let file_text_clip = Rect::new(text_x, y, (frame.x + frame.w - 56.0 - text_x).max(0.0), 32.0);
+            let file_text_clip = Rect::new(text_x, y, (frame.x + frame.w - LIST_RIGHT_PAD - text_x).max(0.0), FILE_ROW_H);
             ctx.push_clip(file_text_clip);
-            ctx.draw_text(&f.name, Point::new(text_x, y + 2.0), text, 12.0);
+            // 文件名/大小字号：统一使用主题 font_size_sm token。
+            ctx.draw_text(&f.name, Point::new(text_x, y + 2.0), text, ctx.tokens().font_size_sm());
             ctx.draw_text(
                 &Self::format_file_size(f.size),
                 Point::new(text_x, y + 17.0),
@@ -173,7 +205,7 @@ component! {
                 10.0,
             );
             if f.status == UploadStatus::Uploading {
-                let bar_w = (frame.x + frame.w - 56.0 - text_x).max(0.0);
+                let bar_w = (frame.x + frame.w - LIST_RIGHT_PAD - text_x).max(0.0);
                 let bar_rect = Rect::new(text_x, y + 28.0, bar_w * f.progress, 3.0);
                 ctx.fill_rect(bar_rect, primary, None);
             }
@@ -219,6 +251,8 @@ impl Upload {
             layout_requested: Cell::new(false),
             change_callback: None,
             focused: false,
+            // 键盘激活手势尚未武装。
+            activation_key: Cell::new(None),
         }
     }
     pub fn dragger() -> Self {
@@ -653,10 +687,11 @@ impl Upload {
             return EventResult::NotHandled;
         }
         let width = self.last_width.get();
-        if width <= 0.0 || pos.x < (width - 28.0).max(0.0) || pos.x > width || pos.y < 104.0 {
+        if width <= 0.0 || pos.x < (width - 28.0).max(0.0) || pos.x > width || pos.y < LIST_TOP {
             return EventResult::NotHandled;
         }
-        let index = ((pos.y - 104.0) / 32.0).floor() as usize;
+        // 命中行索引与绘制阶段的行号计算保持一致。
+        let index = ((pos.y - LIST_TOP) / FILE_ROW_H).floor() as usize;
         let Some(removed) = self.remove_file(index) else {
             return EventResult::NotHandled;
         };

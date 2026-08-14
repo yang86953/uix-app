@@ -61,6 +61,7 @@ impl Watermark {
     pub fn new(text: &str) -> Self {
         Self {
             text: text.to_string(),
+            // 水印默认色：纯黑（构造器无主题上下文，可经 with_color 自定义，保留字面量）。
             color: Color::from_rgba(0, 0, 0, 255),
             font_size: Self::DEFAULT_FONT_SIZE,
             opacity: Self::DEFAULT_OPACITY,

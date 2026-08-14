@@ -45,7 +45,7 @@ pub(crate) fn blit_picture_cache(
 /// 对已栅格化的 Picture 离屏做可分离高斯模糊（GPU RT 或 CPU 像素）。
 ///
 /// 供 Modal / Drawer 等毛玻璃消费方在 blit 前调用；半径语义同
-/// [`crate::draw::raster::rasterizer::blur::gaussian_blur`]。
+/// `crate::draw::raster::rasterizer::blur::gaussian_blur`（私有实现，纯文本引用）。
 pub fn blur_picture_region(
     engine: &mut dyn RenderTarget,
     handle: &ImageHandle,

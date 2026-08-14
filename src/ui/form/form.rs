@@ -7,6 +7,9 @@ use crate::ui::layout::LayoutChild;
 use crate::ui::{ComponentId, SnapshotFields, WidgetTree};
 
 /// 表单校验状态：未校验/成功/警告/错误/校验中。
+///
+/// 与 InputStatus/StepStatus/BadgeStatus/UploadStatus 共享「组件状态」命名模式，
+/// 但各自语义与变体独立（本枚举含 None/Validating 校验专用态），勿强行合并。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ValidateStatus {
     None,

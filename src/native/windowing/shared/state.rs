@@ -8,24 +8,24 @@ use crate::core::{Point, WindowId};
 
 /// 窗口状态（纯数据，无逻辑）
 #[derive(Debug, Clone)]
-pub struct WindowState {
-    pub window_id: WindowId,
-    pub width: i32,
-    pub height: i32,
-    pub minimum_size: Option<(i32, i32)>,
-    pub maximum_size: Option<(i32, i32)>,
-    pub pos_x: i32,
-    pub pos_y: i32,
-    pub visible: bool,
-    pub resizable: bool,
-    pub borderless: bool,
-    pub fullscreen: bool,
-    pub maximized: bool,
-    pub minimized: bool,
-    pub always_on_top: bool,
-    pub opacity: f32,
-    pub file_drop_enabled: bool,
-    pub text_input_active: bool,
+pub(crate) struct WindowState {
+    pub(crate) window_id: WindowId,
+    pub(crate) width: i32,
+    pub(crate) height: i32,
+    pub(crate) minimum_size: Option<(i32, i32)>,
+    pub(crate) maximum_size: Option<(i32, i32)>,
+    pub(crate) pos_x: i32,
+    pub(crate) pos_y: i32,
+    pub(crate) visible: bool,
+    pub(crate) resizable: bool,
+    pub(crate) borderless: bool,
+    pub(crate) fullscreen: bool,
+    pub(crate) maximized: bool,
+    pub(crate) minimized: bool,
+    pub(crate) always_on_top: bool,
+    pub(crate) opacity: f32,
+    pub(crate) file_drop_enabled: bool,
+    pub(crate) text_input_active: bool,
 }
 
 impl Default for WindowState {
@@ -56,7 +56,7 @@ impl WindowState {
     /// 创建指定尺寸的初始窗口状态。
     // 保留无 ID 的共享状态构造器，供平台测试和外部组装使用。
     #[allow(dead_code)]
-    pub fn with_size(width: i32, height: i32) -> Self {
+    pub(crate) fn with_size(width: i32, height: i32) -> Self {
         Self {
             width,
             height,
@@ -67,7 +67,7 @@ impl WindowState {
     /// 创建指定 ID 与尺寸的初始窗口状态。
     // 保留带窗口身份的共享状态构造器，供平台测试和外部组装使用。
     #[allow(dead_code)]
-    pub fn with_id_and_size(window_id: WindowId, width: i32, height: i32) -> Self {
+    pub(crate) fn with_id_and_size(window_id: WindowId, width: i32, height: i32) -> Self {
         Self {
             window_id,
             width,
@@ -79,7 +79,7 @@ impl WindowState {
     /// 返回窗口位置。
     // 保留位置快照访问器，供平台状态同步方按需读取。
     #[allow(dead_code)]
-    pub fn position(&self) -> Point {
+    pub(crate) fn position(&self) -> Point {
         Point::new(self.pos_x as f32, self.pos_y as f32)
     }
 }

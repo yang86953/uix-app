@@ -27,13 +27,13 @@ pub(crate) mod window_chrome;
 
 // ── 扁平重导出──
 // 基础组件始终通过 widgets 私有路径消费画布与行组合子。
-pub use combinators::{canvas, row};
+pub(crate) use combinators::{canvas, row};
 // 导航与反馈组件都通过 widgets 私有路径消费按钮组合子。
 #[cfg(any(feature = "feedback", feature = "navigation"))]
-pub use combinators::button;
+pub(crate) use combinators::button;
 // 只有反馈组件通过 widgets 私有路径消费这些内容组合子。
 #[cfg(feature = "feedback")]
-pub use combinators::{column, embed, label};
+pub(crate) use combinators::{column, embed, label};
 pub use containers::*;
 pub use display::*;
 // 反馈 capability 启用时才保留扁平公开导入面。

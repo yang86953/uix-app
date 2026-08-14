@@ -618,15 +618,18 @@ mod tests {
         ];
         // 生成与 GPU shader 同布局的 RGBA8 MSDF。
         let Some(msdf) = msdf_from_edges(&edges, 8, 8) else {
-            // 最小矩形轮廓必须可生成 MSDF。
-            panic!("rectangle MSDF must generate");
+            // 最小矩形轮廓必须可生成 MSDF；附带输入边数与目标尺寸便于定位。
+            panic!(
+                "rectangle MSDF must generate (edges={}, extent=8x8)",
+                edges.len()
+            );
         };
         // 每个源像素必须携带 RGB 距离和 A 通道。
         assert_eq!(msdf.len(), 8 * 8 * 4);
         // 把 MSDF 解码为 soft 验证用 R8 coverage。
         let Some(coverage) = coverage_from_msdf(&msdf, 8, 8) else {
-            // 有效 MSDF 必须可解码。
-            panic!("MSDF must decode");
+            // 有效 MSDF 必须可解码；附带载荷长度便于定位。
+            panic!("MSDF must decode (payload={} bytes)", msdf.len());
         };
         // 解码结果必须覆盖整个源 extent。
         assert_eq!(coverage.len(), 8 * 8);

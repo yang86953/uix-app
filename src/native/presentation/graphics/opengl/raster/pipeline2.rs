@@ -143,6 +143,7 @@ impl OpenGlRasterPipeline {
                 Error::new(Errc::InvalidArgument, "OpenGL readback payload overflows")
             })?;
         let mut pixels = vec![0u32; length];
+        // SAFETY: read_pixels 写入的像素缓冲由本函数刚创建且容量已按长×宽×4 验证，from_raw_parts_mut 的指针为同一切片对齐后的有效内存；矩形已在上方按 drawable 范围校验；context 保持 current。
         unsafe {
             self.gl().read_pixels(
                 x,
@@ -183,6 +184,7 @@ impl OpenGlRasterPipeline {
     }
 
     pub(super) fn bind_current_framebuffer(&self) {
+        // SAFETY: current.framebuffer 为 swapchain 目标或存活 texture 的 framebuffer，句柄有效；调用时 context current。
         unsafe {
             self.gl()
                 .bind_framebuffer(glow::FRAMEBUFFER, self.current.framebuffer);
@@ -191,6 +193,7 @@ impl OpenGlRasterPipeline {
 
     pub(super) fn restore_full_viewport(&self) {
         // viewport 始终使用 GL 自身坐标系；行序差异已由 shader 编译期处理。
+        // SAFETY: drawable 尺寸为驱动提供的非负像素值；disable 不依赖句柄；context 保持 current。
         unsafe {
             self.gl().viewport(
                 0,

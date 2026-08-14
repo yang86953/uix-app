@@ -10,7 +10,7 @@ use crate::draw::geometry::color::Color;
 ///
 /// 不持有任何渲染状态（clip/opacity/transform 等），
 /// 状态管理全部在 CpuCanvas2D 中。
-pub struct PixelSurface {
+pub(crate) struct PixelSurface {
     pixels: Vec<u32>,
     width: i32,
     height: i32,
@@ -140,7 +140,7 @@ impl PixelSurface {
     /// # Panics
     ///
     /// 尺寸无法分配时 panic；运行时尺寸应使用 [`Self::try_new`] 接收 typed OOM。
-    pub fn new(width: i32, height: i32) -> Self {
+    pub(crate) fn new(width: i32, height: i32) -> Self {
         match Self::try_new(width, height) {
             Ok(surface) => surface,
             Err(error) => panic!("PixelSurface::new failed: {error}"),
@@ -148,7 +148,7 @@ impl PixelSurface {
     }
 
     /// 创建指定尺寸的像素表面，并把容量溢出或分配失败转换为 typed OOM。
-    pub fn try_new(width: i32, height: i32) -> Result<Self, Error> {
+    pub(crate) fn try_new(width: i32, height: i32) -> Result<Self, Error> {
         let (w, h, pixel_count) = Self::checked_extent(width, height)?;
         let mut pixels = Vec::new();
         pixels.try_reserve_exact(pixel_count).map_err(|error| {
@@ -178,7 +178,7 @@ impl PixelSurface {
     }
 
     /// 设置清除时使用的颜色。
-    pub fn set_clear_color(&mut self, color: Color) {
+    pub(crate) fn set_clear_color(&mut self, color: Color) {
         self.clear_color = color;
     }
 
@@ -191,17 +191,17 @@ impl PixelSurface {
     }
 
     /// 获取表面宽度。
-    pub fn width(&self) -> i32 {
+    pub(crate) fn width(&self) -> i32 {
         self.width
     }
 
     /// 获取表面高度。
-    pub fn height(&self) -> i32 {
+    pub(crate) fn height(&self) -> i32 {
         self.height
     }
 
     /// 表面尺寸。
-    pub fn surface_size(&self) -> Size {
+    pub(crate) fn surface_size(&self) -> Size {
         Size::new(self.width as f32, self.height as f32)
     }
 
@@ -211,7 +211,7 @@ impl PixelSurface {
     }
 
     /// 只读像素切片。
-    pub fn pixels(&self) -> &[u32] {
+    pub(crate) fn pixels(&self) -> &[u32] {
         &self.pixels
     }
 
@@ -220,7 +220,7 @@ impl PixelSurface {
     }
 
     /// 清空整个表面。
-    pub fn clear_all(&mut self) {
+    pub(crate) fn clear_all(&mut self) {
         // All CPU raster pixels are premultiplied AARRGGBB. A straight-alpha
         // clear color would poison subsequent source-over blends, especially
         // when a Picture cache is cleared to a translucent color.
@@ -229,7 +229,7 @@ impl PixelSurface {
     }
 
     /// 清除指定矩形区域。
-    pub fn clear_rect_raw(&mut self, x: i32, y: i32, w: i32, h: i32) {
+    pub(crate) fn clear_rect_raw(&mut self, x: i32, y: i32, w: i32, h: i32) {
         let c = self.clear_color.premultiplied();
         let surf_w = self.width;
         let surf_h = self.height;

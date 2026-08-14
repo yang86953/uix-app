@@ -111,7 +111,7 @@ pub(crate) struct TokenScope {
 }
 
 impl ScopedThemeTokens {
-    pub fn new(root: Arc<dyn ThemeTokens>) -> Self {
+    pub(crate) fn new(root: Arc<dyn ThemeTokens>) -> Self {
         Self {
             root,
             theme: None,
@@ -119,7 +119,7 @@ impl ScopedThemeTokens {
         }
     }
 
-    pub fn replace_scope(
+    pub(crate) fn replace_scope(
         &mut self,
         theme: Option<Arc<dyn ThemeTokens>>,
         patch: Option<Arc<TokenPatch>>,
@@ -130,7 +130,7 @@ impl ScopedThemeTokens {
         }
     }
 
-    pub fn restore_scope(&mut self, scope: TokenScope) {
+    pub(crate) fn restore_scope(&mut self, scope: TokenScope) {
         self.theme = scope.theme;
         self.patch = scope.patch;
     }

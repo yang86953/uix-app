@@ -44,6 +44,11 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         self.sync_bound_value();
+        // 与 Segmented 一致：disabled 拦截前先清理 FocusOut，避免禁用后残留焦点态。
+        if matches!(event, SystemEvent::FocusOut) {
+            self.focused = false;
+            return EventResult::Handled;
+        }
         if self.disabled { return EventResult::NotHandled; }
         match event {
             SystemEvent::PointerDown {
@@ -64,7 +69,6 @@ component! {
             SystemEvent::PointerEnter => { EventResult::Handled }
             SystemEvent::PointerLeave => { self.hovered_idx = None; EventResult::Handled }
             SystemEvent::FocusIn => { self.focused = true; EventResult::Handled }
-            SystemEvent::FocusOut => { self.focused = false; EventResult::Handled }
             SystemEvent::KeyDown { key, .. } => {
             match key {
                 KeyCode::Right | KeyCode::Down => {
@@ -79,6 +83,18 @@ component! {
                         }
                         EventResult::Handled
                     }
+                    // 跳到组内首项。
+                    KeyCode::Home => {
+                        self.select_index(0);
+                        EventResult::Handled
+                    }
+                    // 跳到组内末项。
+                    KeyCode::End => {
+                        self.select_index(self.options.len().saturating_sub(1));
+                        EventResult::Handled
+                    }
+                    // Space 无独立激活分支：Radio 的激活语义是「方向键选中即激活」，
+                    // 无需按键确认；保持现状避免与方向键选择产生两套状态来源。
                     _ => EventResult::NotHandled,
                 }
             }
@@ -132,15 +148,13 @@ impl Radio {
         if len == 0 {
             return None;
         }
-        if self.selected >= len {
-            return Some(if forward { 0 } else { len - 1 });
-        }
+        // 有界导航：到边界即停止，不循环回绕（与 Tabs 的有界模式一致）。
+        // 无效选择（绑定值不在选项内）先收敛到合法边界再移动。
+        let clamped = self.selected.min(len - 1);
         Some(if forward {
-            (self.selected + 1) % len
-        } else if self.selected == 0 {
-            len - 1
+            clamped.saturating_add(1).min(len - 1)
         } else {
-            self.selected - 1
+            clamped.saturating_sub(1)
         })
     }
 
@@ -433,5 +447,77 @@ impl Radio {
         self.disabled = next.disabled;
         self.direction = next.direction;
         self.item_h = next.item_h;
+    }
+}
+
+// 仅在测试构建中编译单选组键盘导航契约。
+#[cfg(test)]
+mod tests {
+    // 复用被测模块中的单选组组件与事件类型。
+    use super::*;
+    // 引入事件行为 trait 与修饰键类型。
+    use crate::ui::{KeyMod, component::traits::EventHandler};
+
+    // 方向键导航有界：边界处不再循环回绕。
+    #[test]
+    fn arrow_navigation_is_bounded_at_edges() {
+        // 构造三个选项、选中首项的单选组。
+        let mut radio = Radio::new().options(["A", "B", "C"]).default_selected(0);
+        // 在首项向左移动。
+        let _ = EventHandler::on_event(
+            &mut radio,
+            &SystemEvent::KeyDown {
+                key: KeyCode::Left,
+                mods: KeyMod::NONE,
+            },
+        );
+        // 有界语义下停在首项，不回绕到末项。
+        assert_eq!(radio.current_index(), Some(0));
+        // 在末项向右移动。
+        let mut radio = Radio::new().options(["A", "B", "C"]).default_selected(2);
+        let _ = EventHandler::on_event(
+            &mut radio,
+            &SystemEvent::KeyDown {
+                key: KeyCode::Right,
+                mods: KeyMod::NONE,
+            },
+        );
+        // 有界语义下停在末项，不回绕到首项。
+        assert_eq!(radio.current_index(), Some(2));
+        // 组内中间项仍可正常双向移动。
+        let mut radio = Radio::new().options(["A", "B", "C"]).default_selected(1);
+        let _ = EventHandler::on_event(
+            &mut radio,
+            &SystemEvent::KeyDown {
+                key: KeyCode::Down,
+                mods: KeyMod::NONE,
+            },
+        );
+        assert_eq!(radio.current_index(), Some(2));
+    }
+
+    // Home/End 分别跳到组内首项与末项。
+    #[test]
+    fn home_and_end_jump_to_group_edges() {
+        // 构造三个选项、选中中项的单选组。
+        let mut radio = Radio::new().options(["A", "B", "C"]).default_selected(1);
+        // Home 跳到首项。
+        let _ = EventHandler::on_event(
+            &mut radio,
+            &SystemEvent::KeyDown {
+                key: KeyCode::Home,
+                mods: KeyMod::NONE,
+            },
+        );
+        assert_eq!(radio.current_index(), Some(0));
+        // End 跳到末项。
+        let _ = EventHandler::on_event(
+            &mut radio,
+            &SystemEvent::KeyDown {
+                key: KeyCode::End,
+                mods: KeyMod::NONE,
+            },
+        );
+        assert_eq!(radio.current_index(), Some(2));
     }
 }

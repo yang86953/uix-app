@@ -116,7 +116,7 @@ impl NotificationHandle {
         self.queue.remove_local(id)
     }
 
-    /// 请求移除由 [`NotificationService`] 提供稳定 ID 的通知。
+    /// 请求移除由 `NotificationService`（`crate::native::notification`，私有边界）提供稳定 ID 的通知。
     pub fn dismiss_external(&self, id: u64) -> bool {
         self.queue.remove_external(id)
     }

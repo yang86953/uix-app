@@ -11,5 +11,5 @@
 //! 兄弟 Module 的实现。`factory`（组合根）与 `platform`（System 共享契约）
 //! 位于 System 私有边界，不属于本 Module。
 
-pub mod graphics;
-pub mod presenter;
+pub(crate) mod graphics;
+pub(crate) mod presenter;

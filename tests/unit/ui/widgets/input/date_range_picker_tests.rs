@@ -2,10 +2,12 @@
 use super::{DateRangePicker, PresetDate};
 // 引入断言所需的点与矩形基础类型。
 use crate::core::{Point, Rect};
+// 引入事件行为 trait 以驱动键盘事件。
+use crate::ui::component::traits::EventHandler;
 // 引入日期与首日星期辅助。
 use crate::ui::widgets::input::date_picker::{first_weekday, Date};
 // 引入指针事件所需的输入类型。
-use crate::ui::{KeyMod, MouseButton, SystemEvent};
+use crate::ui::{KeyCode, KeyMod, MouseButton, SystemEvent};
 
 // 构造三个稳定且可预测的具名预设。
 fn test_presets() -> [(String, PresetDate); 3] {
@@ -301,4 +303,81 @@ fn surface_change_dirty_covers_previous_popup_tail() {
     assert_eq!(dirty.y, small_surface.y);
     // 旧向下面板在新表面内残留的尾部也必须被清理。
     assert_eq!(dirty.y + dirty.h, small_surface.y + small_surface.h);
+}
+
+// 打开态 Up/Down 以周为单位移动键盘聚焦日期并同步视图月。
+#[test]
+fn open_range_picker_arrow_keys_move_focused_date() {
+    // 创建并打开范围选择器。
+    let mut picker = DateRangePicker::new();
+    // 固定可预测的视图月份。
+    open_august_2026(&picker);
+    // 以既有范围起点为键盘移动锚点。
+    picker.commit_range(Date::new(2026, 8, 5), Date::new(2026, 8, 20));
+
+    // Down 在网格中向下移动一周。
+    let _ = EventHandler::on_event(
+        &mut picker,
+        &SystemEvent::KeyDown {
+            key: KeyCode::Down,
+            mods: KeyMod::NONE,
+        },
+    );
+    // 焦点日期以范围起点为锚顺延七天。
+    assert_eq!(picker.hover_date.get(), Some(Date::new(2026, 8, 12)));
+
+    // Up 从当前聚焦日期向上移动一周，回到锚点且不跨月。
+    let _ = EventHandler::on_event(
+        &mut picker,
+        &SystemEvent::KeyDown {
+            key: KeyCode::Up,
+            mods: KeyMod::NONE,
+        },
+    );
+    // 焦点日期回到范围起点。
+    assert_eq!(picker.hover_date.get(), Some(Date::new(2026, 8, 5)));
+    // 同月移动不改变视图月份。
+    assert_eq!((picker.view_year.get(), picker.view_month.get()), (2026, 8));
+
+    // 从月初附近向上移动一周必然跨月。
+    let _ = EventHandler::on_event(
+        &mut picker,
+        &SystemEvent::KeyDown {
+            key: KeyCode::Up,
+            mods: KeyMod::NONE,
+        },
+    );
+    // 焦点日期跨月到七月末。
+    assert_eq!(picker.hover_date.get(), Some(Date::new(2026, 7, 29)));
+    // 视图月份跟随焦点日期同步。
+    assert_eq!((picker.view_year.get(), picker.view_month.get()), (2026, 7));
+}
+
+// 打开态 Enter 复用指针的两段式选择语义：先定起点、再定终点。
+#[test]
+fn open_range_picker_enter_drives_two_step_selection() {
+    // 创建并打开范围选择器。
+    let mut picker = DateRangePicker::new();
+    // 固定可预测的视图月份。
+    open_august_2026(&picker);
+    // 键盘聚焦到起点日期。
+    picker.hover_date.set(Some(Date::new(2026, 8, 10)));
+
+    // 第一次 Enter 只确定起点。
+    let enter = SystemEvent::KeyDown {
+        key: KeyCode::Enter,
+        mods: KeyMod::NONE,
+    };
+    let _ = EventHandler::on_event(&mut picker, &enter);
+    // 起点已记录，面板保持打开。
+    assert_eq!(picker.pending_start.get(), Some(Date::new(2026, 8, 10)));
+    assert!(picker.open.get());
+
+    // 第二次 Enter 以聚焦终点完成范围。
+    picker.hover_date.set(Some(Date::new(2026, 8, 15)));
+    let _ = EventHandler::on_event(&mut picker, &enter);
+    // 范围已提交且起点终点有序化。
+    assert_eq!(picker.current_range(), Some((Date::new(2026, 8, 10), Date::new(2026, 8, 15))));
+    // 提交后关闭面板。
+    assert!(!picker.open.get());
 }

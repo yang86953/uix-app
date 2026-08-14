@@ -24,7 +24,7 @@ pub use invalidation::{
 };
 pub use lifecycle::{begin_frame, end_frame, normalize_strategy};
 pub use metrics::{InvalidationSource, RenderMetrics};
-pub use recovery::{GraphicsRecovery, RecoveryAction};
+pub use recovery::{GraphicsRecovery, GraphicsRecoveryAction};
 pub(crate) use recovery_driver::RebuildRequest;
 pub use recovery_driver::{RecoveryDriver, RenderTargetRebuilder};
 pub use runtime::Renderer;

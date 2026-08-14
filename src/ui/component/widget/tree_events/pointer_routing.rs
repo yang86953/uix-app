@@ -93,11 +93,19 @@ impl WidgetTree {
         self.managers_mut().drag.end_drag();
 
         if let Some((Some(target), pos, button, mods)) = drag {
-            let _ = self.dispatch_to(target, &SystemEvent::DragEnd { pos, button, mods });
+            // DragEnd 未被拖拽目标消费：记录日志定位路由失败，行为不变。
+            if self.dispatch_to(target, &SystemEvent::DragEnd { pos, button, mods })
+                == EventResult::NotHandled
+            {
+                tracing::warn!(event = "DragEnd", target = ?target, "drag end was not handled");
+            }
         }
         if let Some(pressed) = pressed {
             self.invalidate_paint(pressed);
-            let _ = self.dispatch_to(pressed, &SystemEvent::PointerLeave);
+            // PointerLeave 未被消费：仅记录日志，保持取消语义不变。
+            if self.dispatch_to(pressed, &SystemEvent::PointerLeave) == EventResult::NotHandled {
+                tracing::warn!(event = "PointerLeave", target = ?pressed, "pointer leave was not handled");
+            }
         }
         self.rebuild_widget_overlays();
     }
@@ -125,7 +133,10 @@ impl WidgetTree {
         if releases_drag && self.managers().drag.is_dragging() {
             if let Some(target) = self.managers().drag.target() {
                 let drag_end = SystemEvent::DragEnd { pos, button, mods };
-                let _ = self.dispatch_to(target, &drag_end);
+                // DragEnd 未被拖拽目标消费：记录日志，行为不变。
+                if self.dispatch_to(target, &drag_end) == EventResult::NotHandled {
+                    tracing::warn!(event = "DragEnd", target = ?target, "drag end was not handled");
+                }
             }
         }
         if releases_drag {
@@ -139,7 +150,16 @@ impl WidgetTree {
             if self.capture_to(target, event).is_some() {
                 if let Some(pressed) = hold {
                     self.invalidate_paint(pressed);
-                    let _ = self.dispatch_to(pressed, &SystemEvent::PointerLeave);
+                    // PointerLeave 未被消费：仅记录日志，行为不变。
+                    if self.dispatch_to(pressed, &SystemEvent::PointerLeave)
+                        == EventResult::NotHandled
+                    {
+                        tracing::warn!(
+                            event = "PointerLeave",
+                            target = ?pressed,
+                            "pointer leave was not handled"
+                        );
+                    }
                 }
                 self.rebuild_widget_overlays();
                 return EventResult::Handled;
@@ -154,10 +174,22 @@ impl WidgetTree {
                     pos,
                     modifiers: mods,
                 };
-                let _ = self.dispatch_semantic(SemanticEvent::click(target, click));
+                // Click 语义未被消费：记录日志，保持合成行为不变。
+                if self.dispatch_semantic(SemanticEvent::click(target, click))
+                    == EventResult::NotHandled
+                {
+                    tracing::warn!(event = "Click", target = ?target, "click semantic was not handled");
+                }
                 if button == MouseButton::Right {
                     let mut context_menu = SemanticEvent::context_menu(target, click);
-                    let _ = self.dispatch_semantic_event(&mut context_menu);
+                    // ContextMenu 语义未被消费：记录日志，行为不变。
+                    if self.dispatch_semantic_event(&mut context_menu) == EventResult::NotHandled {
+                        tracing::warn!(
+                            event = "ContextMenu",
+                            target = ?target,
+                            "context menu semantic was not handled"
+                        );
+                    }
                     if !context_menu.default_prevented() {
                         self.open_context_menu_overlay(target, click.pos);
                     }
@@ -168,8 +200,19 @@ impl WidgetTree {
             if Some(pressed) != hit {
                 self.invalidate_paint(pressed);
                 // 捕获目标外松开时，先通知指针已离开，再交付最终 PointerUp。
-                let _ = self.dispatch_to(pressed, &SystemEvent::PointerLeave);
-                let _ = self.dispatch_to(pressed, event);
+                // 两者未被消费均只记录日志，保持原有分发顺序与返回值。
+                if self.dispatch_to(pressed, &SystemEvent::PointerLeave)
+                    == EventResult::NotHandled
+                {
+                    tracing::warn!(
+                        event = "PointerLeave",
+                        target = ?pressed,
+                        "pointer leave was not handled"
+                    );
+                }
+                if self.dispatch_to(pressed, event) == EventResult::NotHandled {
+                    tracing::warn!(event = "PointerUp", target = ?pressed, "pointer up was not handled");
+                }
             }
         }
         self.rebuild_widget_overlays();

@@ -12,11 +12,16 @@ use crate::ui::{
     WidgetTree,
 };
 use std::cell::{Cell, RefCell};
+use std::sync::Arc;
 
 // 将表面约束与坐标转换隔离到私有几何模块。
 mod geometry;
 // 将弹层缓存与实际视口方法隔离到私有实现模块。
 mod methods;
+// 将文本编辑与候选替换方法隔离到私有实现模块。
+mod text_editing;
+// 将候选建议刷新与过滤方法隔离到私有实现模块。
+mod suggestions;
 
 // 复用所有 Mentions 消费端共享的最终几何函数。
 use geometry::{
@@ -25,6 +30,8 @@ use geometry::{
     // 合并触发器、弹层与当前表面。
     mentions_surface_rect,
 };
+// 文本编辑模块提供字符索引换算，供建议过滤与候选替换共用。
+use text_editing::byte_index_for_char;
 
 const CONTROL_HEIGHT: f32 = 32.0;
 const SUGGESTION_ROW_HEIGHT: f32 = 28.0;
@@ -44,9 +51,12 @@ component! {
         /// 占位文本。
         placeholder: String,
         /// 候选列表。
-        options: Vec<String>,
-        /// 过滤后的候选列表。
-        filtered: Vec<String>,
+        options: Arc<Vec<String>>,
+        /// 过滤后的候选列表（空查询时与候选列表共享底层数据，零拷贝）。
+        filtered: Arc<Vec<String>>,
+        // 候选列表小写副本缓存，供过滤时零分配匹配（派生数据，不进快照）。
+        #[snapshot(skip)]
+        lowercase_options: Arc<Vec<String>>,
         /// 是否正在显示建议。
         suggesting: bool,
         /// 触发文本，当前固定为 `@`。
@@ -521,8 +531,9 @@ impl Mentions {
             // 默认保持组件内部文本所有权。
             value_binding: None,
             placeholder: placeholder.into(),
-            options: Vec::new(),
-            filtered: Vec::new(),
+            options: Arc::new(Vec::new()),
+            filtered: Arc::new(Vec::new()),
+            lowercase_options: Arc::new(Vec::new()),
             suggesting: false,
             trigger: "@".to_owned(),
             search_text: String::new(),
@@ -553,7 +564,16 @@ impl Mentions {
 
     /// 设置建议候选列表。
     pub fn options(mut self, opts: Vec<impl Into<String>>) -> Self {
-        self.options = opts.into_iter().map(Into::into).collect();
+        // 候选列表整体存入 Arc，空查询过滤时可直接共享底层数据。
+        let options: Vec<String> = opts.into_iter().map(Into::into).collect();
+        self.options = Arc::new(options);
+        // 同步构建小写副本缓存，避免逐键击过滤时对每个选项重复做小写分配。
+        self.lowercase_options = Arc::new(
+            self.options
+                .iter()
+                .map(|option| option.to_lowercase())
+                .collect(),
+        );
         self
     }
 
@@ -587,20 +607,6 @@ impl Mentions {
         } else {
             // 非交互状态保持候选弹层关闭。
             self.stop_suggesting();
-        }
-    }
-
-    // 从外部受控状态同步当前完整文本。
-    fn sync_bound_value(&mut self) {
-        // 非受控模式继续保留组件内部文本。
-        let Some(value) = self.value_binding.as_ref().map(State::get) else {
-            // 没有绑定时无需同步。
-            return;
-        };
-        // 仅在外部文本实际变化时重建派生状态。
-        if value != self.value {
-            // 统一更新文本、光标与活动查询。
-            self.set_value(&value);
         }
     }
 
@@ -684,167 +690,6 @@ impl Mentions {
         }
     }
 
-    fn set_cursor_from_x(&mut self, x: f32) {
-        let glyph_xs = self.glyph_xs.borrow();
-        if glyph_xs.len() != self.value.chars().count() + 1 {
-            self.cursor_char = self.value.chars().count();
-            return;
-        }
-        let scale = (self.interaction_frame().h / CONTROL_HEIGHT).clamp(0.0, 1.0);
-        let target = (x - 10.0 * scale + self.text_scroll_x.get()).max(0.0);
-        let mut index = glyph_xs.len().saturating_sub(1);
-        for candidate in 0..glyph_xs.len().saturating_sub(1) {
-            let midpoint = (glyph_xs[candidate] + glyph_xs[candidate + 1]) * 0.5;
-            if target < midpoint {
-                index = candidate;
-                break;
-            }
-        }
-        self.cursor_char = index;
-    }
-
-    fn insert_text(&mut self, text: &str) -> bool {
-        if text.is_empty() || text.chars().any(char::is_control) {
-            return false;
-        }
-        let byte_index = byte_index_for_char(&self.value, self.cursor_char);
-        self.value.insert_str(byte_index, text);
-        self.cursor_char += text.chars().count();
-        self.refresh_suggestion_from_value();
-        self.publish_change();
-        true
-    }
-
-    fn delete_previous_char(&mut self) -> bool {
-        if self.cursor_char == 0 || self.value.is_empty() {
-            return false;
-        }
-        let end = byte_index_for_char(&self.value, self.cursor_char);
-        let start = byte_index_for_char(&self.value, self.cursor_char - 1);
-        self.value.replace_range(start..end, "");
-        self.cursor_char -= 1;
-        self.refresh_suggestion_from_value();
-        self.publish_change();
-        true
-    }
-
-    fn delete_next_char(&mut self) -> bool {
-        let char_count = self.value.chars().count();
-        if self.cursor_char >= char_count {
-            return false;
-        }
-        let start = byte_index_for_char(&self.value, self.cursor_char);
-        let end = byte_index_for_char(&self.value, self.cursor_char + 1);
-        self.value.replace_range(start..end, "");
-        self.refresh_suggestion_from_value();
-        self.publish_change();
-        true
-    }
-
-    fn refresh_suggestion_from_value(&mut self) {
-        let cursor_byte = byte_index_for_char(&self.value, self.cursor_char);
-        let prefix = &self.value[..cursor_byte];
-        let Some(trigger_start) = prefix.rfind(&self.trigger) else {
-            self.stop_suggesting();
-            return;
-        };
-        let query_start = trigger_start + self.trigger.len();
-        let query = &prefix[query_start..];
-        if query.chars().any(char::is_whitespace) {
-            self.stop_suggesting();
-            return;
-        }
-
-        let query = query.to_owned();
-        // 记录有效活动查询是否开始新的呈现周期。
-        let starts_presentation = !self.suggesting;
-        // 只有新呈现周期才丢弃上一周期的弹层历史。
-        if starts_presentation {
-            // 新呈现周期重新收集弹层脏区。
-            self.popup_damage_rect.set(Rect::zero());
-            // 新呈现周期等待当前帧重新解析弹层。
-            self.popup_row_count.set(0);
-            // 丢弃上一呈现周期的相对弹层缓存。
-            self.popup_rect.set(Rect::zero());
-            // 等待当前帧取得最新逻辑表面。
-            self.surface_rect.set(None);
-            // 等待当前帧取得最新绝对锚点。
-            self.popup_anchor_frame.set(None);
-        }
-        // 新呈现或光标查询变化都需要刷新候选集合。
-        let query_changed = starts_presentation || self.search_text != query;
-        self.search_text = query;
-        self.suggesting = true;
-        if query_changed {
-            self.update_filtered();
-        }
-    }
-
-    fn stop_suggesting(&mut self) {
-        self.suggesting = false;
-        self.search_text.clear();
-        self.filtered.clear();
-        self.selected_index = 0;
-        self.hovered_option = None;
-        self.dropdown_scroll.set_scroll_offset(0.0);
-        self.scroll_delta_strip.set((0.0, 0.0));
-    }
-
-    fn update_filtered(&mut self) {
-        if self.search_text.is_empty() {
-            self.filtered = self.options.clone();
-        } else {
-            let query = self.search_text.to_lowercase();
-            self.filtered = self
-                .options
-                .iter()
-                .filter(|option| option.to_lowercase().contains(&query))
-                .cloned()
-                .collect();
-        }
-        self.selected_index = 0;
-        self.hovered_option = None;
-        self.dropdown_scroll.set_scroll_offset(0.0);
-        self.scroll_delta_strip.set((0.0, 0.0));
-    }
-
-    fn active_replacement_range(&self) -> Option<(usize, usize)> {
-        let cursor_byte = byte_index_for_char(&self.value, self.cursor_char);
-        let prefix = &self.value[..cursor_byte];
-        let start = prefix.rfind(&self.trigger)?;
-        let query_start = start + self.trigger.len();
-        if prefix[query_start..].chars().any(char::is_whitespace) {
-            return None;
-        }
-
-        let mut end = cursor_byte;
-        for (offset, ch) in self.value[cursor_byte..].char_indices() {
-            end = cursor_byte + offset + ch.len_utf8();
-            if ch.is_whitespace() {
-                break;
-            }
-        }
-        Some((start, end))
-    }
-
-    fn select_index(&mut self, index: usize) -> bool {
-        let Some(selected) = self.filtered.get(index).cloned() else {
-            return false;
-        };
-        let Some((start, end)) = self.active_replacement_range() else {
-            self.stop_suggesting();
-            return false;
-        };
-        let prefix_chars = self.value[..start].chars().count();
-        let replacement = format!("{}{} ", self.trigger, selected);
-        let replacement_chars = replacement.chars().count();
-        self.value.replace_range(start..end, &replacement);
-        self.cursor_char = prefix_chars + replacement_chars;
-        self.publish_change();
-        self.stop_suggesting();
-        true
-    }
-
     fn publish_change(&self) {
         // 受控模式先把本地编辑或候选提交写回外部状态。
         if let Some(state) = self.value_binding.as_ref() {
@@ -861,7 +706,8 @@ impl Mentions {
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Mentions {
             placeholder: self.placeholder.clone(),
-            options: self.options.clone(),
+            // 快照契约按值携带完整候选列表，需解包共享引用。
+            options: self.options.as_ref().clone(),
             value: self.value.clone(),
             suggesting: self.suggesting,
         }
@@ -873,6 +719,8 @@ impl Mentions {
         let options_changed = self.options != next.options;
         self.placeholder = next.placeholder;
         self.options = next.options;
+        // 小写缓存随候选列表整体替换，保持过滤语义一致。
+        self.lowercase_options = next.lowercase_options;
         // 同步声明式重建携带的状态句柄。
         self.value_binding = next.value_binding;
         // 外部文本变化时统一更新光标和活动查询。
@@ -888,14 +736,6 @@ impl Mentions {
             self.update_filtered();
         }
     }
-}
-
-fn byte_index_for_char(value: &str, char_index: usize) -> usize {
-    value
-        .char_indices()
-        .nth(char_index)
-        .map(|(index, _)| index)
-        .unwrap_or(value.len())
 }
 
 fn point_in_half_open_rect(rect: Rect, point: Point) -> bool {

@@ -12,8 +12,11 @@ pub(crate) mod system_event_handler;
 /// 事件处理结果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventResult {
+/// 事件已被某个处理器消费，终止后续传播。
     Handled,
+/// 事件未被任何处理器消费，交由上层继续处理。
     NotHandled,
+/// 事件已冒泡至当前传播链终点。
     Bubbled,
 }
 
@@ -48,131 +51,232 @@ impl WindowAction {
 /// 应用边界后的系统事件。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SystemEventKind {
+/// 指针按下。
     PointerDown,
+/// 指针双击。
     PointerDoubleClick,
+/// 指针抬起。
     PointerUp,
+/// 指针移动。
     PointerMove,
+/// 滚轮滚动。
     Wheel,
+/// 按键按下。
     KeyDown,
+/// 按键抬起。
     KeyUp,
+/// 复制请求。
     Copy,
+/// 剪切请求。
     Cut,
+/// 粘贴请求。
     Paste,
+/// 文本输入。
     TextInput,
+/// 输入法组合开始。
     ImeCompositionStart,
+/// 输入法组合内容更新。
     ImeCompositionUpdate,
+/// 输入法组合结束。
     ImeCompositionEnd,
+/// 获得焦点。
     FocusIn,
+/// 失去焦点。
     FocusOut,
+/// 指针进入组件区域。
     PointerEnter,
+/// 指针离开组件区域。
     PointerLeave,
+/// 窗口尺寸变化。
     Resize,
+/// 主题切换。
     ThemeChanged,
+/// 语言区域切换。
     LocaleChanged,
+/// 窗口最大化。
     WindowMaximize,
+/// 窗口最小化。
     WindowMinimize,
+/// 窗口还原。
     WindowRestore,
+/// 窗口获得焦点。
     WindowFocus,
+/// 窗口失去焦点。
     WindowBlur,
+/// 定时器到期触发。
     Timer,
+/// 文件拖放。
     FileDrop,
+/// 拖拽开始。
     DragStart,
+/// 拖拽移动。
     DragMove,
+/// 拖拽结束。
     DragEnd,
 }
 
 #[derive(Debug, Clone)]
+/// 应用边界后的系统事件。
 pub enum SystemEvent {
+/// 指针按下事件。
     PointerDown {
+/// 事件发生位置。
         pos: Point,
+/// 触发的鼠标按钮。
         button: MouseButton,
+/// 按下时持有的修饰键。
         mods: KeyMod,
     },
+/// 指针双击事件。
     PointerDoubleClick {
+/// 事件发生位置。
         pos: Point,
+/// 触发的鼠标按钮。
         button: MouseButton,
+/// 双击时持有的修饰键。
         mods: KeyMod,
     },
+/// 指针抬起事件。
     PointerUp {
+/// 事件发生位置。
         pos: Point,
+/// 抬起的鼠标按钮。
         button: MouseButton,
+/// 抬起时持有的修饰键。
         mods: KeyMod,
     },
+/// 指针移动事件。
     PointerMove {
+/// 事件发生位置。
         pos: Point,
+/// 移动时持有的修饰键。
         mods: KeyMod,
     },
+/// 滚轮滚动事件。
     Wheel {
+/// 事件发生位置。
         pos: Point,
+/// 相对上一事件的滚动位移。
         delta: Point,
     },
+/// 按键按下事件。
     KeyDown {
+/// 触发的按键。
         key: KeyCode,
+/// 按下时持有的修饰键。
         mods: KeyMod,
     },
+/// 按键抬起事件。
     KeyUp {
+/// 抬起的按键。
         key: KeyCode,
+/// 抬起时持有的修饰键。
         mods: KeyMod,
     },
+/// 复制请求事件。
     Copy,
+/// 剪切请求事件。
     Cut,
+/// 粘贴请求事件。
     Paste {
+/// 待粘贴的文本。
         text: String,
     },
+/// 文本输入事件。
     TextInput {
+/// 输入文本。
         text: String,
     },
+/// 输入法组合开始事件。
     ImeCompositionStart,
+/// 输入法组合更新事件。
     ImeCompositionUpdate {
+/// 当前组合文本。
         text: String,
     },
+/// 输入法组合结束事件。
     ImeCompositionEnd {
+        /// 组合确认后的最终文本。
         text: String,
     },
+/// 获得焦点事件。
     FocusIn,
+/// 失去焦点事件。
     FocusOut,
+/// 指针进入事件。
     PointerEnter,
+/// 指针离开事件。
     PointerLeave,
+/// 主题切换事件。
     ThemeChanged {
+/// 是否为深色主题。
         is_dark: bool,
     },
+/// 语言区域切换事件。
     LocaleChanged {
+/// 新的语言区域标识。
         locale: String,
     },
+/// 窗口尺寸变化事件。
     Resize {
+/// 新的窗口宽度。
         width: f32,
+/// 新的窗口高度。
         height: f32,
     },
+/// 窗口最大化事件。
     WindowMaximize,
+/// 窗口最小化事件。
     WindowMinimize,
+/// 窗口还原事件。
     WindowRestore,
+/// 窗口获得焦点事件。
     WindowFocus,
+/// 窗口失去焦点事件。
     WindowBlur,
+/// 定时器到期事件。
     Timer {
+/// 定时器标识。
         id: u32,
     },
+/// 文件拖放事件。
     FileDrop {
+/// 拖入的文件路径列表。
         files: Vec<String>,
+/// 拖放落点位置。
         position: Point,
     },
+/// 拖拽开始事件。
     DragStart {
+/// 事件发生位置。
         pos: Point,
+/// 拖拽按钮。
         button: MouseButton,
+/// 拖拽时持有的修饰键。
         mods: KeyMod,
     },
+/// 拖拽移动事件。
     DragMove {
+/// 当前拖拽位置。
         pos: Point,
+/// 相对上一事件的位移。
         delta: Point,
+/// 拖拽时持有的修饰键。
         mods: KeyMod,
     },
+/// 拖拽结束事件。
     DragEnd {
+/// 结束位置。
         pos: Point,
+/// 拖拽按钮。
         button: MouseButton,
+/// 结束时持有的修饰键。
         mods: KeyMod,
     },
 }
 
 impl SystemEvent {
+/// 返回事件对应的种类标签，用于分类匹配。
     pub fn kind(&self) -> SystemEventKind {
         match self {
             SystemEvent::PointerDown { .. } => SystemEventKind::PointerDown,
@@ -213,49 +317,80 @@ impl SystemEvent {
 /// 内置语义事件种类。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SemanticKind {
+/// 单击。
     Click,
+/// 值变更。
     Change,
+/// 提交。
     Submit,
+/// 文件拖放。
     FileDrop,
+/// 上下文菜单。
     ContextMenu,
+/// 复制。
     Copy,
+/// 剪切。
     Cut,
+/// 粘贴。
     Paste,
+/// 文本输入。
     TextInput,
+/// 输入法组合开始。
     ImeCompositionStart,
+/// 输入法组合更新。
     ImeCompositionUpdate,
+/// 输入法组合结束。
     ImeCompositionEnd,
+/// 自定义类型载荷（按类型标识）。
     Custom(TypeId),
 }
 
 /// Click 语义载荷。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ClickEvent {
+/// 触发的鼠标按钮。
     pub button: MouseButton,
+/// 点击位置。
     pub pos: Point,
+/// 点击时持有的修饰键。
     pub modifiers: KeyMod,
 }
 
 /// 语义事件载荷。
 pub enum SemanticPayload {
+/// 无载荷。
     None,
+/// 单击载荷，携带按钮/位置/修饰键。
     Click(ClickEvent),
+/// 文本载荷（输入、粘贴、组合等场景）。
     Text(String),
-    FileDrop { files: Vec<String>, position: Point },
+/// 文件拖放载荷，携带文件列表与落点。
+    FileDrop {
+        /// 拖入的文件路径列表。
+        files: Vec<String>,
+        /// 拖放落点位置。
+        position: Point,
+    },
+/// 自定义类型载荷，按类型擦除存储。
     Custom(Box<dyn Any + Send>),
 }
 
 /// 语义事件。默认冒泡；handler 可 stop / preventDefault。
 pub struct SemanticEvent {
+/// 事件种类。
     pub kind: SemanticKind,
+/// 原始目标组件。
     pub target: ComponentId,
+/// 当前正在处理的组件（冒泡过程中变化）。
     pub current_target: ComponentId,
+/// 事件载荷。
     pub payload: SemanticPayload,
     propagation_stopped: bool,
     default_prevented: bool,
 }
 
 impl SemanticEvent {
+/// 构造语义事件。
     pub fn new(kind: SemanticKind, target: ComponentId, payload: SemanticPayload) -> Self {
         Self {
             kind,
@@ -267,6 +402,7 @@ impl SemanticEvent {
         }
     }
 
+/// 构造单击事件。
     pub fn click(target: ComponentId, payload: ClickEvent) -> Self {
         Self::new(SemanticKind::Click, target, SemanticPayload::Click(payload))
     }
@@ -281,6 +417,7 @@ impl SemanticEvent {
         )
     }
 
+/// 构造上下文菜单事件。
     pub fn context_menu(target: ComponentId, payload: ClickEvent) -> Self {
         Self::new(
             SemanticKind::ContextMenu,
@@ -289,6 +426,7 @@ impl SemanticEvent {
         )
     }
 
+/// 构造文本输入事件。
     pub fn text_input(target: ComponentId, text: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::TextInput,
@@ -297,6 +435,7 @@ impl SemanticEvent {
         )
     }
 
+/// 构造输入法组合开始事件。
     pub fn ime_composition_start(target: ComponentId) -> Self {
         Self::new(
             SemanticKind::ImeCompositionStart,
@@ -305,6 +444,7 @@ impl SemanticEvent {
         )
     }
 
+/// 构造输入法组合更新事件。
     pub fn ime_composition_update(target: ComponentId, text: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::ImeCompositionUpdate,
@@ -313,6 +453,7 @@ impl SemanticEvent {
         )
     }
 
+/// 构造输入法组合结束事件。
     pub fn ime_composition_end(target: ComponentId, text: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::ImeCompositionEnd,
@@ -321,14 +462,17 @@ impl SemanticEvent {
         )
     }
 
+/// 构造复制事件。
     pub fn copy(target: ComponentId) -> Self {
         Self::new(SemanticKind::Copy, target, SemanticPayload::None)
     }
 
+/// 构造剪切事件。
     pub fn cut(target: ComponentId) -> Self {
         Self::new(SemanticKind::Cut, target, SemanticPayload::None)
     }
 
+/// 构造粘贴事件。
     pub fn paste(target: ComponentId, text: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::Paste,
@@ -337,6 +481,7 @@ impl SemanticEvent {
         )
     }
 
+/// 构造值变更事件。
     pub fn change(target: ComponentId, value: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::Change,
@@ -345,6 +490,7 @@ impl SemanticEvent {
         )
     }
 
+/// 构造提交事件。
     pub fn submit(target: ComponentId, value: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::Submit,
@@ -353,6 +499,7 @@ impl SemanticEvent {
         )
     }
 
+/// 构造文件拖放事件。
     pub fn file_drop(target: ComponentId, files: Vec<String>, position: Point) -> Self {
         Self::new(
             SemanticKind::FileDrop,
@@ -361,6 +508,7 @@ impl SemanticEvent {
         )
     }
 
+/// 构造自定义载荷事件。
     pub fn custom<T: Any + Send>(target: ComponentId, payload: T) -> Self {
         Self::new(
             SemanticKind::Custom(TypeId::of::<T>()),
@@ -369,22 +517,27 @@ impl SemanticEvent {
         )
     }
 
+/// 停止事件继续冒泡。
     pub fn stop_propagation(&mut self) {
         self.propagation_stopped = true;
     }
 
+/// 阻止默认行为。
     pub fn prevent_default(&mut self) {
         self.default_prevented = true;
     }
 
+/// 是否已停止传播。
     pub fn propagation_stopped(&self) -> bool {
         self.propagation_stopped
     }
 
+/// 是否已阻止默认行为。
     pub fn default_prevented(&self) -> bool {
         self.default_prevented
     }
 
+/// 提取单击载荷；非单击事件返回 `None`。
     pub fn click_payload(&self) -> Option<&ClickEvent> {
         match &self.payload {
             SemanticPayload::Click(payload) => Some(payload),
@@ -392,6 +545,7 @@ impl SemanticEvent {
         }
     }
 
+/// 提取文本载荷；非文本事件返回 `None`。
     pub fn text_payload(&self) -> Option<&str> {
         match &self.payload {
             SemanticPayload::Text(text) => Some(text),
@@ -399,6 +553,7 @@ impl SemanticEvent {
         }
     }
 
+/// 提取文件拖放载荷；非拖放事件返回 `None`。
     pub fn file_drop_payload(&self) -> Option<(&[String], Point)> {
         match &self.payload {
             SemanticPayload::FileDrop { files, position } => Some((files, *position)),
@@ -406,6 +561,7 @@ impl SemanticEvent {
         }
     }
 
+/// 按类型提取自定义载荷；类型不符返回 `None`。
     pub fn custom_payload<T: Any>(&self) -> Option<&T> {
         match &self.payload {
             SemanticPayload::Custom(payload) => payload.downcast_ref::<T>(),
@@ -417,12 +573,16 @@ impl SemanticEvent {
 type HandlerPredicate = dyn Fn(&SemanticEvent) -> bool + 'static;
 
 #[derive(Default)]
+/// 处理器选项：一次性与谓词过滤。
 pub struct HandlerOptions {
+/// 是否为一次性处理器（触发后自动移除）。
     pub once: bool,
+/// 可选谓词：仅在谓词返回 `true` 时触发。
     pub when: Option<Box<HandlerPredicate>>,
 }
 
 impl HandlerOptions {
+/// 构造一次性处理器选项。
     pub fn once() -> Self {
         Self {
             once: true,
@@ -430,6 +590,7 @@ impl HandlerOptions {
         }
     }
 
+/// 构造带谓词过滤的处理器选项。
     pub fn when(f: impl Fn(&SemanticEvent) -> bool + 'static) -> Self {
         Self {
             once: false,
@@ -438,31 +599,36 @@ impl HandlerOptions {
     }
 }
 
-pub type SemanticHandler = Box<dyn FnMut(&mut SemanticEvent) + 'static>;
+pub(crate) type SemanticHandler = Box<dyn FnMut(&mut SemanticEvent) + 'static>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct HandlerOptionsSignature {
+pub(crate) struct HandlerOptionsSignature {
     pub once: bool,
     pub when: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct HandlerSignature {
+pub(crate) struct HandlerSignature {
     pub kind: SemanticKind,
     pub options: HandlerOptionsSignature,
     pub generation: Option<u32>,
     pub capture_fingerprint: Option<u64>,
 }
 
+/// 语义事件处理器注册信息。
 pub struct HandlerRegistration {
+/// 处理器关注的事件种类。
     pub kind: SemanticKind,
+/// 处理器选项。
     pub options: HandlerOptions,
+/// 处理器本体。
     pub handler: SemanticHandler,
     generation: Option<u32>,
     capture_fingerprints: Vec<u64>,
 }
 
 impl HandlerRegistration {
+/// 以默认选项构造注册信息。
     pub fn new(kind: SemanticKind, handler: SemanticHandler) -> Self {
         Self {
             kind,
@@ -473,6 +639,7 @@ impl HandlerRegistration {
         }
     }
 
+/// 以指定选项构造注册信息。
     pub fn with_options(
         kind: SemanticKind,
         options: HandlerOptions,
@@ -570,6 +737,7 @@ fn window_capture_fingerprint(window_id: WindowId) -> u64 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// 处理器唯一句柄。
 pub struct HandlerId(usize);
 
 struct HandlerEntry {
@@ -580,16 +748,19 @@ struct HandlerEntry {
 }
 
 #[derive(Default)]
+/// 按组件维度组织的事件分发表。
 pub struct HandlerTable {
     handlers: HashMap<ComponentId, Vec<HandlerEntry>>,
     next_id: usize,
 }
 
 impl HandlerTable {
+/// 构造空的分发表。
     pub fn new() -> Self {
         Self::default()
     }
 
+/// 注册处理器并返回句柄。
     pub fn register(
         &mut self,
         component: ComponentId,
@@ -609,6 +780,7 @@ impl HandlerTable {
         id
     }
 
+/// 注册原始语义事件处理器。
     pub fn on(
         &mut self,
         component: ComponentId,
@@ -618,6 +790,7 @@ impl HandlerTable {
         self.register(component, HandlerRegistration::new(kind, Box::new(handler)))
     }
 
+/// 注册单击处理器，自动解包 `ClickEvent` 载荷。
     pub fn on_click(
         &mut self,
         component: ComponentId,
@@ -630,6 +803,7 @@ impl HandlerTable {
         })
     }
 
+/// 注册文本输入处理器，自动解包文本载荷。
     pub fn on_text_input(
         &mut self,
         component: ComponentId,
@@ -642,6 +816,7 @@ impl HandlerTable {
         })
     }
 
+/// 注册输入法组合开始处理器。
     pub fn on_ime_composition_start(
         &mut self,
         component: ComponentId,
@@ -656,6 +831,7 @@ impl HandlerTable {
         )
     }
 
+/// 注册输入法组合更新处理器。
     pub fn on_ime_composition_update(
         &mut self,
         component: ComponentId,
@@ -672,6 +848,7 @@ impl HandlerTable {
         )
     }
 
+/// 注册输入法组合结束处理器。
     pub fn on_ime_composition_end(
         &mut self,
         component: ComponentId,
@@ -684,6 +861,7 @@ impl HandlerTable {
         })
     }
 
+/// 注册复制处理器。
     pub fn on_copy(
         &mut self,
         component: ComponentId,
@@ -694,6 +872,7 @@ impl HandlerTable {
         })
     }
 
+/// 注册剪切处理器。
     pub fn on_cut(
         &mut self,
         component: ComponentId,
@@ -704,6 +883,7 @@ impl HandlerTable {
         })
     }
 
+/// 注册粘贴处理器。
     pub fn on_paste(
         &mut self,
         component: ComponentId,
@@ -716,6 +896,7 @@ impl HandlerTable {
         })
     }
 
+/// 注册值变更处理器。
     pub fn on_change(
         &mut self,
         component: ComponentId,
@@ -728,6 +909,7 @@ impl HandlerTable {
         })
     }
 
+/// 注册提交处理器。
     pub fn on_submit(
         &mut self,
         component: ComponentId,
@@ -740,6 +922,7 @@ impl HandlerTable {
         })
     }
 
+/// 注册文件拖放处理器。
     pub fn on_file_drop(
         &mut self,
         component: ComponentId,
@@ -752,6 +935,7 @@ impl HandlerTable {
         })
     }
 
+/// 注册自定义类型处理器。
     pub fn on_custom<T: Any>(
         &mut self,
         component: ComponentId,
@@ -768,20 +952,24 @@ impl HandlerTable {
         )
     }
 
+/// 移除指定组件上由 `handler_id` 标识的处理器。
     pub fn remove(&mut self, component: ComponentId, handler_id: HandlerId) {
         if let Some(entries) = self.handlers.get_mut(&component) {
             entries.retain(|entry| entry.id != handler_id);
         }
     }
 
+/// 清空指定组件上的全部处理器。
     pub fn clear_component(&mut self, component: ComponentId) {
         self.handlers.remove(&component);
     }
 
+/// 清空全部分发表。
     pub fn clear(&mut self) {
         self.handlers.clear();
     }
 
+/// 沿组件路径自目标向根分发事件；遇停止传播立即中断。
     pub fn dispatch_path(
         &mut self,
         path: &[ComponentId],
@@ -840,8 +1028,16 @@ impl HandlerTable {
 }
 
 #[macro_export]
+/// 将自定义载荷类型登记为语义事件种类（供 `on_custom` 使用）。
 macro_rules! register_semantic {
     ($payload:ty) => {
         $crate::ui::event::SemanticKind::Custom(std::any::TypeId::of::<$payload>())
     };
 }
+
+// 事件模型专项测试：SystemEvent 映射、SemanticEvent 载荷与 HandlerTable 分派。
+#[cfg(test)]
+// 从仓库测试目录引入，保持事件实现文件低于行数上限。
+#[path = "../../../tests/unit/ui/event/system_event_tests.rs"]
+// 将外置测试作为事件模块的私有子模块编译。
+mod system_event_tests;

@@ -310,6 +310,40 @@ component! {
                             self.hover_date.set(None);
                             EventResult::Handled
                         }
+                        // 上下方向键以周为单位移动键盘聚焦日期；Left/Right 保持切月，
+                        // 不再承担选日职责（与 TimePicker 的 Up/Down 移动高亮语义对齐）。
+                        KeyCode::Up | KeyCode::Down => {
+                            // 无焦点日期时以当前选中值（或今天）为锚点。
+                            let anchor = self
+                                .hover_date
+                                .get()
+                                .unwrap_or_else(|| self.selected_or_today());
+                            // 在日历网格中按周移动：上移 7 天、下移 7 天。
+                            let moved = add_days(anchor, if *key == KeyCode::Up { -7 } else { 7 });
+                            // 禁用日期不承接键盘焦点（与指针悬停过滤一致）。
+                            if !self.is_date_disabled(moved) {
+                                self.hover_date.set(Some(moved));
+                                // 跨月移动时同步视图月份，保持网格内可见焦点。
+                                self.view_year.set(moved.year);
+                                self.view_month.set(moved.month);
+                            }
+                            EventResult::Handled
+                        }
+                        // 回车确认：优先提交键盘聚焦日期，无聚焦时确认当前选中值
+                        // （与 TimePicker 初始高亮即当前值的 Enter 语义一致）。
+                        KeyCode::Enter => {
+                            let target = self
+                                .hover_date
+                                .get()
+                                .unwrap_or_else(|| self.selected_or_today());
+                            // 按模式归一（周/月/季度对齐）。
+                            let target = self.mode.normalize(target);
+                            if !self.is_date_disabled(target) {
+                                self.commit_value(target);
+                                self.close_popup();
+                            }
+                            EventResult::Handled
+                        }
                         _ => EventResult::NotHandled,
                     }
                 } else if *key == KeyCode::Space || *key == KeyCode::Enter {

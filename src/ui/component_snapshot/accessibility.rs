@@ -224,6 +224,10 @@ pub(super) fn popconfirm_accessibility(
 pub(super) fn tabs_accessibility(tabs: &[Tab], active_index: usize) -> AccessibilitySnapshot {
     AccessibilitySnapshot::new(AccessibilityRole::TabList).with_state(AccessibilityState {
         value_text: tabs.get(active_index).map(|tab| tab.label.clone()),
+        // 活动标签位置以 1 起计数（与 Breadcrumb 的 value_now 语义一致）。
+        value_now: (!tabs.is_empty()).then_some((active_index + 1).min(tabs.len()) as f64),
+        value_min: (!tabs.is_empty()).then_some(1.0),
+        value_max: (!tabs.is_empty()).then_some(tabs.len() as f64),
         ..AccessibilityState::default()
     })
 }
@@ -726,6 +730,8 @@ pub(super) fn select_accessibility(
         AccessibilityState {
             disabled,
             value_text,
+            // 选项层打开时对外广播展开状态。
+            expanded: Some(open),
             ..AccessibilityState::default()
         },
     )

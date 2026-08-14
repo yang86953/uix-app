@@ -25,8 +25,6 @@ use wayland_client::protocol::{
     wl_region,
     // seat 只作为 xdg_toplevel.move 的协议参数使用。
     wl_seat,
-    // shm 继续服务窗口像素呈现。
-    wl_shm,
     // surface 继续标识当前原生窗口表面。
     wl_surface,
 // 结束 Wayland 核心协议类型导入。
@@ -79,7 +77,6 @@ pub(crate) struct WaylandWindowOps {
     pub(crate) xdg_surface: Option<Main<xdg_surface::XdgSurface>>,
     pub(crate) toplevel: Option<Main<xdg_toplevel::XdgToplevel>>,
     pub(crate) compositor: Main<wl_compositor::WlCompositor>,
-    pub(crate) shm: Main<wl_shm::WlShm>,
     pub(crate) input_region: Option<Main<wl_region::WlRegion>>,
     pub(crate) events: Arc<Mutex<VecDeque<UiEvent>>>,
     surface_windows: Arc<Mutex<SurfaceWindowTargets>>,
@@ -91,8 +88,6 @@ pub(crate) struct WaylandWindowOps {
     configured_modes: Arc<Mutex<NativeWindowModeState>>,
     /// xdg-decoration 装饰对象（需维持生命周期以避免装饰被撤销）
     pub(crate) xdg_decoration: Option<Main<ZxdgToplevelDecorationV1>>,
-    /// 显示器信息，用于计算居中位置
-    pub(crate) outputs: Arc<Mutex<Vec<super::output::RawOutput>>>,
     /// xdg_activation 协议，用于请求窗口激活（raise）
     pub(crate) xdg_activation: Option<Main<XdgActivationV1>>,
 }
@@ -140,14 +135,12 @@ impl WaylandWindowOps {
     pub(crate) fn new(
         window_id: WindowId,
         compositor: Main<wl_compositor::WlCompositor>,
-        shm: Main<wl_shm::WlShm>,
         events: Arc<Mutex<VecDeque<UiEvent>>>,
         surface_windows: Arc<Mutex<SurfaceWindowTargets>>,
         // 注入后端已绑定的 seat 代理引用。
         seat: Option<Main<wl_seat::WlSeat>>,
         // 注入后端唯一的指针激活注册表。
         pointer_activations: Arc<Mutex<WaylandPointerActivationRegistry>>,
-        outputs: Arc<Mutex<Vec<super::output::RawOutput>>>,
         xdg_activation: Option<Main<XdgActivationV1>>,
     ) -> Self {
         Self {
@@ -158,7 +151,6 @@ impl WaylandWindowOps {
             xdg_surface: None,
             toplevel: None,
             compositor,
-            shm,
             input_region: None,
             events,
             surface_windows,
@@ -169,7 +161,6 @@ impl WaylandWindowOps {
             frame_request: Arc::new(Mutex::new(None)),
             configured_modes: Arc::new(Mutex::new(NativeWindowModeState::default())),
             xdg_decoration: None,
-            outputs,
             xdg_activation,
         }
     }
@@ -230,7 +221,7 @@ impl WaylandWindowOps {
         let configured_modes = Arc::clone(&self.configured_modes);
         tl.quick_assign(move |_, event, _| match event {
             xdg_toplevel::Event::Close => {
-                let _ = tl_events
+                tl_events
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .push_back(UiEvent::close().for_window(window_id));

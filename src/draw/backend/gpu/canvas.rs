@@ -29,7 +29,7 @@ pub(crate) struct PackedSoftSegment {
     pub(crate) additive: bool,
 }
 
-pub struct NativeGpuCanvas2D {
+pub(crate) struct NativeGpuCanvas2D {
     pub(super) native_caps: NativeRasterCaps,
     pub(super) gpu_only: bool,
     /// Logical-to-physical scale of the current target. Offscreens stay at 1.

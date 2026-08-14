@@ -3,4 +3,4 @@
 pub(crate) use crate::draw::raster::shared_rasterizer::SharedRasterizer;
 
 /// CPU 后端 Canvas2D 实现。
-pub type CpuCanvas2D = SharedRasterizer;
+pub(crate) type CpuCanvas2D = SharedRasterizer;

@@ -5,13 +5,13 @@
 //! D3D12、Vulkan 与 Metal 仍受各自 feature/target 门控，尚未完成同等测试。
 
 #[cfg(feature = "d3d11")]
-pub mod d3d11;
+pub(crate) mod d3d11;
 #[cfg(all(test, feature = "d3d12"))]
-pub mod d3d12;
+pub(crate) mod d3d12;
 #[cfg(all(test, feature = "metal"))]
-pub mod metal;
+pub(crate) mod metal;
 #[cfg(feature = "opengles")]
-pub mod opengl;
-pub mod platform;
+pub(crate) mod opengl;
+pub(crate) mod platform;
 #[cfg(all(feature = "vulkan", any(test, windows)))]
-pub mod vulkan;
+pub(crate) mod vulkan;

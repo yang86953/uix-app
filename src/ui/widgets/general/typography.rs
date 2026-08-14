@@ -321,7 +321,7 @@ component! {
         // copyable 图标
         if self.copyable {
             let copy_x = frame.x + (frame.w - 24.0).max(0.0);
-            let copy_y = if wraps { frame.y } else { ctx.visual_center_y(frame, 14.0) };
+            let copy_y = if wraps { frame.y } else { ctx.visual_center_y(frame, ctx.tokens().font_size()) };
             self.copy_rect.set(Some(Rect::new(
                 copy_x - frame.x,
                 copy_y - frame.y,

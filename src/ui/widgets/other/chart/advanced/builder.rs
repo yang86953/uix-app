@@ -53,6 +53,7 @@ impl ChartPlaceholder {
             point_style: PointStyle::Circle,
             grid_levels: 5,
             fill_opacity: 0.25,
+            // 热力图色阶端点（浅蓝→深蓝）：数据可视化色阶，与主题解耦、不随换肤变化，保留字面量。
             color_min: Color::from_rgba(247, 251, 255, 255),
             color_max: Color::from_rgba(8, 48, 107, 255),
             calendar_mode: false,
@@ -401,7 +402,7 @@ impl ChartPlaceholder {
         }
         self
     }
-    /// 设置 x 轴标签（支持 Vec<String> 与 Vec<&str>；自动切到热力图）。
+    /// 设置 x 轴标签（支持 `Vec<String>` 与 `Vec<&str>`；自动切到热力图）。
     pub fn x_labels<T: 'static>(mut self, _value: T) -> Self {
         let value: Box<dyn Any> = Box::new(_value);
         let value = match value.downcast::<Vec<String>>() {
@@ -420,7 +421,7 @@ impl ChartPlaceholder {
         self.kind = ChartKind::Heatmap;
         self
     }
-    /// 设置 y 轴标签（支持 Vec<String> 与 Vec<&str>；自动切到热力图）。
+    /// 设置 y 轴标签（支持 `Vec<String>` 与 `Vec<&str>`；自动切到热力图）。
     pub fn y_labels<T: 'static>(mut self, _value: T) -> Self {
         let value: Box<dyn Any> = Box::new(_value);
         let value = match value.downcast::<Vec<String>>() {
@@ -445,7 +446,7 @@ impl ChartPlaceholder {
         self.color_max = max;
         self
     }
-    /// 设置色阶（支持 Vec<(f32, Color)> 或 Vec<Color>，自动排序）。
+    /// 设置色阶（支持 `Vec<(f32, Color)>` 或 `Vec<Color>`，自动排序）。
     pub fn color_stops<T: 'static>(mut self, value: T) -> Self {
         let value: Box<dyn Any> = Box::new(value);
         let value = match value.downcast::<Vec<(f32, Color)>>() {

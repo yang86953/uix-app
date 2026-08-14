@@ -12,7 +12,7 @@ use super::{clip_to_int, put_pixel};
 /// `coverage` — 每个像素的覆盖率（0-255）。
 /// `width`, `height` — coverage 缓冲的尺寸。
 /// `color` — 字形颜色。
-pub fn blit_glyph(
+pub(crate) fn blit_glyph(
     pixels: &mut [u32],
     surface_w: i32,
     surface_h: i32,

@@ -38,6 +38,10 @@ const ADDON_FONT_SIZE: f32 = 13.0;
 const ADDON_HORIZONTAL_PADDING: f32 = 16.0;
 const STATUS_MESSAGE_HEIGHT: f32 = 18.0;
 
+/// 输入框即时状态。
+///
+/// 与 ValidateStatus/StepStatus/BadgeStatus/UploadStatus 共享「组件状态」命名模式，
+/// 但各自语义与变体独立（本枚举仅输入反馈三态，无校验专用态），勿强行合并。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputStatus {
     Success,

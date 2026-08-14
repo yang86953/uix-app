@@ -26,7 +26,7 @@ use std::time::Duration;
 /// ## 可选覆盖（2 个）
 /// - `dispatch_timeout` — 默认用 poll + sleep 实现，平台可覆盖为更好的实现
 /// - `waker` — 默认 no-op；平台可返回可跨线程唤醒 OS 事件循环的句柄
-pub trait OsEventSource {
+pub(crate) trait OsEventSource {
     /// 非阻塞分发挂起的 OS 事件。返回 `false` 表示退出。
     fn dispatch_pending(&mut self) -> bool;
 

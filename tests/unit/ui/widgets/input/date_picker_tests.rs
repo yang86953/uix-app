@@ -1,9 +1,11 @@
-// 复用父模块中的日期辅助与 DatePicker 私有状态。
+// 复用父模块中的日期选择器私有状态。
 use super::{first_weekday, Date, DatePicker};
 // 引入断言所需的点与矩形基础类型。
 use crate::core::{Point, Rect};
+// 引入事件行为 trait 以驱动键盘事件。
+use crate::ui::component::traits::EventHandler;
 // 引入指针事件所需的输入类型。
-use crate::ui::{KeyMod, MouseButton, SystemEvent};
+use crate::ui::{KeyCode, KeyMod, MouseButton, SystemEvent};
 
 // 打开日期面板并固定可预测的视图月份。
 fn open_august_2026(picker: &DatePicker) {
@@ -221,4 +223,113 @@ fn surface_change_dirty_covers_previous_popup_tail() {
     assert_eq!(dirty.y, small_surface.y);
     // 旧向下面板在新表面内残留的尾部也必须被清理。
     assert_eq!(dirty.y + dirty.h, small_surface.y + small_surface.h);
+}
+
+// 打开态 Up/Down 以周为单位移动键盘聚焦日期，同月移动保持视图不变。
+#[test]
+fn open_picker_arrow_keys_move_focused_date_within_month() {
+    // 创建并打开日期选择器。
+    let mut picker = DatePicker::new();
+    // 固定可预测的视图月份。
+    open_august_2026(&picker);
+    // 以选中值为键盘移动锚点。
+    picker.commit_value(Date::new(2026, 8, 15));
+
+    // Down 在网格中向下移动一周。
+    let _ = EventHandler::on_event(
+        &mut picker,
+        &SystemEvent::KeyDown {
+            key: KeyCode::Down,
+            mods: KeyMod::NONE,
+        },
+    );
+    // 焦点日期顺延七天。
+    assert_eq!(picker.hover_date.get(), Some(Date::new(2026, 8, 22)));
+
+    // Up 在网格中向上移动一周。
+    let _ = EventHandler::on_event(
+        &mut picker,
+        &SystemEvent::KeyDown {
+            key: KeyCode::Up,
+            mods: KeyMod::NONE,
+        },
+    );
+    // 焦点日期回到锚点。
+    assert_eq!(picker.hover_date.get(), Some(Date::new(2026, 8, 15)));
+    // 同月移动不改变视图月份。
+    assert_eq!((picker.view_year.get(), picker.view_month.get()), (2026, 8));
+}
+
+// 跨月移动时视图月份必须同步，保证网格内焦点可见。
+#[test]
+fn open_picker_arrow_keys_sync_view_when_crossing_month() {
+    // 创建并打开日期选择器。
+    let mut picker = DatePicker::new();
+    // 固定可预测的视图月份。
+    open_august_2026(&picker);
+    // 锚点靠近月初，向上移动一周必然跨月。
+    picker.commit_value(Date::new(2026, 8, 5));
+
+    // Up 移动跨月到七月。
+    let _ = EventHandler::on_event(
+        &mut picker,
+        &SystemEvent::KeyDown {
+            key: KeyCode::Up,
+            mods: KeyMod::NONE,
+        },
+    );
+    // 焦点日期落到七月末。
+    assert_eq!(picker.hover_date.get(), Some(Date::new(2026, 7, 29)));
+    // 视图月份跟随焦点日期同步。
+    assert_eq!((picker.view_year.get(), picker.view_month.get()), (2026, 7));
+}
+
+// 打开态 Enter 确认键盘聚焦日期并关闭面板。
+#[test]
+fn open_picker_enter_confirms_focused_date_and_closes() {
+    // 创建并打开日期选择器。
+    let mut picker = DatePicker::new();
+    // 固定可预测的视图月份。
+    open_august_2026(&picker);
+    // 键盘聚焦到目标日期。
+    picker.hover_date.set(Some(Date::new(2026, 8, 15)));
+
+    // Enter 提交聚焦日期。
+    let _ = EventHandler::on_event(
+        &mut picker,
+        &SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        },
+    );
+    // 值已提交为聚焦日期。
+    assert_eq!(picker.current_value(), Date::new(2026, 8, 15));
+    // 提交后关闭面板。
+    assert!(!picker.open.get());
+}
+
+// 打开态 Enter 无聚焦日期时确认当前选中值（与 TimePicker 语义一致）。
+#[test]
+fn open_picker_enter_without_focus_confirms_current_value() {
+    // 创建并打开日期选择器。
+    let mut picker = DatePicker::new();
+    // 固定可预测的视图月份。
+    open_august_2026(&picker);
+    // 既有选中值作为 Enter 回退锚点。
+    picker.commit_value(Date::new(2026, 8, 20));
+    // 打开期间没有键盘聚焦日期。
+    picker.hover_date.set(None);
+
+    // Enter 直接确认当前选中值。
+    let _ = EventHandler::on_event(
+        &mut picker,
+        &SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        },
+    );
+    // 值保持不变并已提交。
+    assert_eq!(picker.current_value(), Date::new(2026, 8, 20));
+    // 提交后关闭面板。
+    assert!(!picker.open.get());
 }

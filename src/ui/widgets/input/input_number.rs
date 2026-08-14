@@ -339,14 +339,14 @@ component! {
         let display_width = if display.is_empty() {
             0.0
         } else {
-            ctx.measure_text(display, 14.0).w
+            ctx.measure_text(display, ctx.tokens().font_size()).w
         };
         let draw_x = if !showing_placeholder && display_width > text_area.w {
             text_area.x + text_area.w - display_width
         } else {
             text_area.x
         };
-        let draw_y = ctx.visual_center_y(text_area, 14.0);
+        let draw_y = ctx.visual_center_y(text_area, ctx.tokens().font_size());
         if text_area.w > 0.0 {
             ctx.push_clip(text_area);
             ctx.draw_text(

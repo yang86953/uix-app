@@ -4,8 +4,10 @@ use super::{Dropdown, DropdownItem};
 use crate::ui::component::traits::EventHandler;
 // 引入组件基础 trait 以验证 trigger 子树挂载生命周期。
 use crate::ui::component::traits::WidgetComponent;
+// 引入组件渲染 trait 以验证浮层登记契约。
+use crate::ui::component::traits::WidgetRender;
 // 引入稳定测试组件身份与指针坐标。
-use crate::core::{ComponentId, Point};
+use crate::core::{ComponentId, Point, Rect};
 // 引入触发枚举、输入事件和语义载荷。
 use crate::ui::{EventResult, KeyMod, MouseButton, SemanticPayload, SystemEvent, TriggerMode};
 // 使用真实按钮 View builder 验证组合 trigger 所有权入口。
@@ -204,4 +206,43 @@ fn composite_trigger_modes_and_child_lifecycle_are_owned() {
     );
     // 右键触发后进入打开状态。
     assert!(context_dropdown.is_open());
+}
+
+// 打开时必须登记 Popover 浮层：外部点击关闭与 Esc 路由依赖 OverlayStack。
+#[test]
+fn open_dropdown_registers_popover_overlay_with_outside_dismiss() {
+    // 构造带两个可见选项的打开下拉菜单。
+    let mut dropdown = Dropdown::new("Menu")
+        .keyed_items(vec!["复制".into(), "粘贴".into()]);
+    // 进入打开状态（行高 30 像素 × 2 + 触发区 32 像素）。
+    dropdown.open();
+
+    // 打开状态必须生成浮层登记。
+    let overlay = WidgetRender::overlay_entry(
+        &dropdown,
+        ComponentId::default(),
+        Rect::new(40.0, 50.0, 160.0, 32.0),
+    )
+    // 在场状态必须返回登记。
+    .expect("打开的 Dropdown 应生成浮层登记");
+    // 菜单与触发区共同构成命中范围。
+    assert_eq!(
+        overlay.bounds_rect(),
+        Some(Rect::new(40.0, 50.0, 160.0, 32.0 + 60.0))
+    );
+    // 与 Select 弹层一致的 z 顺序。
+    assert_eq!(overlay.z_index_value(), 900);
+    // 外部点击必须注册为可取消端口。
+    assert!(overlay.dismisses_on_outside());
+    // 关闭后不再登记浮层：等离场动画结束后验证。
+    dropdown.close();
+    // 驱动关闭动画直到完全离场。
+    while crate::ui::component::traits::WidgetAnimation::update_animation(&mut dropdown, 0.05) {
+    }
+    assert!(WidgetRender::overlay_entry(
+        &dropdown,
+        ComponentId::default(),
+        Rect::new(40.0, 50.0, 160.0, 32.0),
+    )
+    .is_none());
 }

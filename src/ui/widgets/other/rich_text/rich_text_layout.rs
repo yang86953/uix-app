@@ -186,6 +186,7 @@ pub(crate) fn layout_rich_text_with_images(
             }
             RichTextSegment::Code { content } => {
                 let fs = default_font_size * 0.9;
+                // 代码块为固定暗色风格（金文字/深底），布局阶段无主题上下文，保留字面量。
                 let color = Color::from_rgb(230, 180, 100);
                 let bg = Color::from_rgb(40, 40, 45);
                 let seg_line_h = fs * line_height_factor;
@@ -214,6 +215,7 @@ pub(crate) fn layout_rich_text_with_images(
             }
             RichTextSegment::Link { content, url } => {
                 let fs = default_font_size;
+                // 链接色：布局阶段无主题上下文，保留字面量（与代码块配套的固定内容色）。
                 let color = Color::from_rgb(55, 110, 255);
                 let seg_line_h = fs * line_height_factor;
                 layout_text_content(
@@ -578,6 +580,7 @@ pub(crate) fn layout_rich_text_real_with_images(
             }
             RichTextSegment::Code { content } => {
                 let fs = default_font_size * 0.9;
+                // 代码块为固定暗色风格（金文字/深底），布局阶段无主题上下文，保留字面量。
                 let color = Color::from_rgb(230, 180, 100);
                 let bg = Color::from_rgb(40, 40, 45);
                 let seg_line_h = fs * line_height_factor;
@@ -608,6 +611,7 @@ pub(crate) fn layout_rich_text_real_with_images(
             }
             RichTextSegment::Link { content, url } => {
                 let fs = default_font_size;
+                // 链接色：布局阶段无主题上下文，保留字面量（与代码块配套的固定内容色）。
                 let color = Color::from_rgb(55, 110, 255);
                 let seg_line_h = fs * line_height_factor;
                 layout_text_content_real(

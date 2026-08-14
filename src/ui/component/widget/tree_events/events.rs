@@ -241,7 +241,14 @@ impl WidgetTree {
                                 button: self.managers().drag.button(),
                                 mods: *mods,
                             };
-                            let _ = self.dispatch_to(target, &drag_start);
+                            // DragStart 未被拖拽目标消费：记录日志定位路由失败，行为不变。
+                            if self.dispatch_to(target, &drag_start) == EventResult::NotHandled {
+                                tracing::warn!(
+                                    event = "DragStart",
+                                    target = ?target,
+                                    "drag start was not handled"
+                                );
+                            }
                         }
                     }
                 }
@@ -255,7 +262,10 @@ impl WidgetTree {
                             delta,
                             mods: *mods,
                         };
-                        let _ = self.dispatch_to(target, &drag_move);
+                        // DragMove 未被拖拽目标消费：记录日志，行为不变。
+                        if self.dispatch_to(target, &drag_move) == EventResult::NotHandled {
+                            tracing::warn!(event = "DragMove", target = ?target, "drag move was not handled");
+                        }
                     }
                 }
                 if self.managers().drag.is_dragging() || self.managers().drag.is_potential() {
@@ -365,7 +375,16 @@ impl WidgetTree {
                     self.invalidate_paint(t);
                     let result = self.dispatch_to(t, event);
                     if result == EventResult::Handled {
-                        let _ = self.dispatch_semantic(SemanticEvent::text_input(t, text.clone()));
+                        // TextInput 语义未被消费：记录日志，保持返回值语义不变。
+                        if self.dispatch_semantic(SemanticEvent::text_input(t, text.clone()))
+                            == EventResult::NotHandled
+                        {
+                            tracing::warn!(
+                                event = "TextInput",
+                                target = ?t,
+                                "text input semantic was not handled"
+                            );
+                        }
                     }
                     result
                 } else {
@@ -391,7 +410,14 @@ impl WidgetTree {
                             }
                             _ => unreachable!(),
                         };
-                        let _ = self.dispatch_semantic(semantic);
+                        // IME 组合语义未被消费：记录日志，行为不变。
+                        if self.dispatch_semantic(semantic) == EventResult::NotHandled {
+                            tracing::warn!(
+                                event = "ImeComposition",
+                                target = ?t,
+                                "ime composition semantic was not handled"
+                            );
+                        }
                     }
                     result
                 } else {
@@ -402,7 +428,10 @@ impl WidgetTree {
                 if let Some(t) = self.managers().focus.focused_component() {
                     self.invalidate_paint(t);
                     if matches!(event, SystemEvent::Copy) && self.try_copy_cross_text_selection(t) {
-                        let _ = self.dispatch_semantic(SemanticEvent::copy(t));
+                        // 跨文本选区复制语义未被消费：记录日志，行为不变。
+                        if self.dispatch_semantic(SemanticEvent::copy(t)) == EventResult::NotHandled {
+                            tracing::warn!(event = "Copy", target = ?t, "copy semantic was not handled");
+                        }
                         return EventResult::Handled;
                     }
                     let result = self.dispatch_to(t, event);
@@ -413,7 +442,10 @@ impl WidgetTree {
                             SystemEvent::Paste { text } => SemanticEvent::paste(t, text.clone()),
                             _ => unreachable!(),
                         };
-                        let _ = self.dispatch_semantic(semantic);
+                        // 剪贴板语义未被消费：记录日志，行为不变。
+                        if self.dispatch_semantic(semantic) == EventResult::NotHandled {
+                            tracing::warn!(event = "Clipboard", target = ?t, "clipboard semantic was not handled");
+                        }
                     }
                     result
                 } else {
@@ -474,11 +506,17 @@ impl WidgetTree {
                     .or(self.root_id)
                 {
                     let result = self.dispatch_to(target, event);
-                    let _ = self.dispatch_semantic(SemanticEvent::file_drop(
-                        target,
-                        files.clone(),
-                        *position,
-                    ));
+                    // FileDrop 语义未被消费：记录日志，行为不变。
+                    if self
+                        .dispatch_semantic(SemanticEvent::file_drop(
+                            target,
+                            files.clone(),
+                            *position,
+                        ))
+                        == EventResult::NotHandled
+                    {
+                        tracing::warn!(event = "FileDrop", target = ?target, "file drop semantic was not handled");
+                    }
                     result
                 } else {
                     EventResult::NotHandled

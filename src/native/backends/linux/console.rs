@@ -31,10 +31,10 @@ const COLORS: [&str; 7] = [
 // ════════════════════════════════════════════════════════════════════════════
 
 #[derive(Debug)]
-pub struct LinuxConsole;
+pub(crate) struct LinuxConsole;
 
 impl LinuxConsole {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self
     }
 }

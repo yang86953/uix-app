@@ -206,6 +206,7 @@ fn default_pfd() -> PIXELFORMATDESCRIPTOR {
 
 fn describe_pixel_format(hdc: HDC, format: i32) -> Result<PIXELFORMATDESCRIPTOR, Error> {
     let mut actual = default_pfd();
+    // SAFETY: hdc 由调用方持有且存活；actual 指向的 PIXELFORMATDESCRIPTOR 与传入的字节数匹配，DescribePixelFormat 只会写入该结构体。
     unsafe {
         if DescribePixelFormat(
             hdc,
@@ -235,6 +236,7 @@ fn set_selected_pixel_format(hdc: HDC, format: i32) -> Result<(i32, u32), Error>
             ),
         ));
     }
+    // SAFETY: hdc 存活；actual 为上方 describe_pixel_format 返回的有效像素格式描述，SetPixelFormat 同步读取它且调用期间未修改。
     if unsafe { SetPixelFormat(hdc, format, &actual) } == 0 {
         return Err(windows_diag(
             Errc::PlatformError,
@@ -246,6 +248,7 @@ fn set_selected_pixel_format(hdc: HDC, format: i32) -> Result<(i32, u32), Error>
 
 fn setup_legacy_pixel_format(hdc: HDC) -> Result<(i32, u32), Error> {
     let pfd = default_pfd();
+    // SAFETY: hdc 存活；pfd 为栈上完整初始化的像素格式描述，ChoosePixelFormat 只读它。
     let format = unsafe { ChoosePixelFormat(hdc, &pfd) };
     if format == 0 {
         return Err(windows_diag(
@@ -275,6 +278,7 @@ fn setup_arb_pixel_format(
     ];
     let mut format = 0;
     let mut count = 0;
+    // SAFETY: hdc 存活；attributes 为栈上存活且 NUL 结尾的属性数组（以 0 结束）；format/count 指向有效输出；float 列表传 null。
     let ok = unsafe {
         choose_pixel_format(
             hdc,
@@ -304,6 +308,7 @@ impl BootstrapContext {
     fn new() -> Result<Self, Error> {
         const STATIC_CLASS: [u16; 7] = [83, 84, 65, 84, 73, 67, 0];
         const EMPTY_TITLE: [u16; 1] = [0];
+        // SAFETY: GetModuleHandleW 传 null 表示查询当前进程模块句柄，无指针输入。
         let instance = unsafe { GetModuleHandleW(ptr::null()) };
         if instance.is_null() {
             return Err(windows_diag(
@@ -311,6 +316,7 @@ impl BootstrapContext {
                 "WglContext: bootstrap GetModuleHandleW failed",
             ));
         }
+        // SAFETY: STATIC_CLASS/EMPTY_TITLE 均为存活且 NUL 结尾的 UTF-16 数组；instance 为刚取得的进程模块句柄；其余参数为常量或 null。
         let hwnd = unsafe {
             CreateWindowExW(
                 0,
@@ -333,6 +339,7 @@ impl BootstrapContext {
                 "WglContext: bootstrap CreateWindowExW failed",
             ));
         }
+        // SAFETY: hwnd 为刚创建的非空窗口句柄，device_context 只读取它并返回有效 HDC。
         let hdc = unsafe { device_context(hwnd) };
         let mut context = Self {
             hwnd,
@@ -346,6 +353,7 @@ impl BootstrapContext {
             ));
         }
         setup_legacy_pixel_format(hdc)?;
+        // SAFETY: hdc 存活且已设置像素格式；创建失败以空指针返回而非 UB。
         context.hglrc = unsafe { wglCreateContext(hdc) };
         if context.hglrc.is_null() {
             return Err(windows_diag(
@@ -353,6 +361,7 @@ impl BootstrapContext {
                 "WglContext: bootstrap wglCreateContext failed",
             ));
         }
+        // SAFETY: hdc 存活、hglrc 为刚创建的非空上下文；失败以返回码 0 表示。
         if unsafe { wglMakeCurrent(hdc, context.hglrc) } == 0 {
             return Err(windows_diag(
                 Errc::PlatformError,
@@ -365,6 +374,7 @@ impl BootstrapContext {
 
 impl Drop for BootstrapContext {
     fn drop(&mut self) {
+        // SAFETY: 句柄均经 null 检查且本对象独占所有权；先解除 current 再删 context，随后按 hwnd/hdc 顺序释放，避免双重释放。
         unsafe {
             if !self.hglrc.is_null() {
                 wglMakeCurrent(ptr::null_mut(), ptr::null_mut());
@@ -398,6 +408,7 @@ fn create_es_context(
         WGL_CONTEXT_OPENGL_ES_PROFILE_BIT_EXT,
         0,
     ];
+    // SAFETY: hdc 存活；attribs 为栈上存活且 NUL 结尾的属性数组；共享列表参数传 null。
     let ctx = unsafe { create_ctx(hdc, ptr::null_mut(), attribs.as_ptr()) };
     if ctx.is_null() {
         Err(Error::new(
@@ -442,6 +453,7 @@ impl WglContext {
         }
 
         let hwnd = native_window;
+        // SAFETY: native_window 非空（上方已校验），device_context 返回的 HDC 与窗口匹配且由本对象持有。
         let hdc = unsafe { device_context(hwnd) };
         if hdc.is_null() {
             return Err(windows_diag(
@@ -473,6 +485,7 @@ impl WglContext {
                 ));
             };
             drop(bootstrap);
+            // SAFETY: hdc 存活、hglrc 为刚创建的非空上下文；失败时 hglrc 仍有效可删除。
             unsafe {
                 if wglMakeCurrent(hdc, hglrc) == 0 {
                     wglDeleteContext(hglrc);
@@ -507,6 +520,7 @@ impl WglContext {
             ) {
                 Ok(pipeline) => pipeline,
                 Err(error) => {
+                    // SAFETY: hglrc 仍存活且此时 context 已 current（bootstrap 阶段设置），先解除再删除以避免在 current 状态下销毁。
                     unsafe {
                         wglMakeCurrent(ptr::null_mut(), ptr::null_mut());
                         wglDeleteContext(hglrc);
@@ -536,6 +550,7 @@ impl WglContext {
         })();
 
         if result.is_err() {
+            // SAFETY: hwnd 与 hdc 均为本函数取得且未转移，只在此失败路径释放一次。
             unsafe {
                 release_device_context(hwnd, hdc);
             }
@@ -544,6 +559,7 @@ impl WglContext {
     }
 
     fn make_current_result(&self) -> Result<(), Error> {
+        // SAFETY: self.hdc/self.hglrc 由本对象持有且未销毁，本对象从未在线程间迁移；失败以返回码 0 表示。
         if unsafe { wglMakeCurrent(self.hdc, self.hglrc) } == 0 {
             Err(windows_diag(
                 Errc::PlatformError,
@@ -555,6 +571,7 @@ impl WglContext {
     }
 
     fn swap_buffers_result(&self) -> Result<(), Error> {
+        // SAFETY: self.hdc 为当前已绑定 context 的设备上下文且存活，SwapBuffers 只在该 HDC 上执行交换。
         if unsafe { SwapBuffers(self.hdc) } == 0 {
             Err(windows_diag(
                 // SwapBuffers 失败时当前 HWND/HDC surface 已不可交换。
@@ -568,6 +585,7 @@ impl WglContext {
 
     fn shutdown_result(&mut self) -> Result<(), Error> {
         if !self.hglrc.is_null() {
+            // SAFETY: hglrc 非空且存活；先 current 该上下文以便 release GL 资源，再解除 current，最后删除 context；全程同一 owner 线程。
             if unsafe { wglMakeCurrent(self.hdc, self.hglrc) } == 0 {
                 return Err(windows_diag(
                     Errc::PlatformError,
@@ -575,12 +593,14 @@ impl WglContext {
                 ));
             }
             self.pipeline.release();
+            // SAFETY: 解除 current 传 null/null，不引用任何句柄。
             if unsafe { wglMakeCurrent(ptr::null_mut(), ptr::null_mut()) } == 0 {
                 return Err(windows_diag(
                     Errc::PlatformError,
                     "WglContext: wglMakeCurrent(NULL) during shutdown failed",
                 ));
             }
+            // SAFETY: hglrc 非空且已解除 current，删除不会与活动上下文冲突；删除后置空防止双重释放。
             if unsafe { wglDeleteContext(self.hglrc) } == 0 {
                 return Err(windows_diag(
                     Errc::PlatformError,
@@ -590,6 +610,7 @@ impl WglContext {
             self.hglrc = ptr::null_mut();
         }
         if !self.hdc.is_null() {
+            // SAFETY: hwnd/hdc 由本对象持有且未转移，release_device_context_checked 只在此释放一次。
             if !unsafe { release_device_context_checked(self.hwnd, self.hdc) } {
                 return Err(windows_diag(
                     Errc::PlatformError,

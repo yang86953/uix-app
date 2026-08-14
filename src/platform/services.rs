@@ -4,6 +4,11 @@
 use crate::core::{Errc, Error, Result};
 
 /// OS-known user directory。
+///
+/// 本类型是 SpecialDir 的公开权威定义。native 内部文件系统契约
+/// `crate::native::capabilities::system::SpecialDir`（私有实现）以本类型为共享语义来源，
+/// 并通过 `From` 转换覆盖全部变体，另扩展 Temp/Current/Executable 内部变体；
+/// 增删本枚举变体时必须同步 native 侧定义与一致性测试。
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SpecialDir {

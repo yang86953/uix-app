@@ -10,7 +10,7 @@ use std::io::{Seek, SeekFrom, Write};
 use std::os::unix::io::AsRawFd;
 
 use super::compat::Main;
-use wayland_client::protocol::{wl_buffer, wl_compositor, wl_shm, wl_surface};
+use wayland_client::protocol::{wl_buffer, wl_shm, wl_surface};
 
 use crate::core::{Errc, Error, Result};
 use crate::native::present::PresentDamage;
@@ -22,8 +22,7 @@ use super::shm_buffer::ShmBuffer;
 /// Wayland SHM 像素呈现器。
 ///
 /// 持有与窗口 surface 关联的 SHM 双缓冲，实现 IPresenter。
-pub struct WaylandPresenter {
-    compositor: Main<wl_compositor::WlCompositor>,
+pub(crate) struct WaylandPresenter {
     shm: Main<wl_shm::WlShm>,
     surface: Option<Main<wl_surface::WlSurface>>,
     shm_buffers: [Option<ShmBuffer>; 2],
@@ -34,15 +33,13 @@ pub struct WaylandPresenter {
 }
 
 impl WaylandPresenter {
-    pub fn new(
-        compositor: Main<wl_compositor::WlCompositor>,
+    pub(crate) fn new(
         shm: Main<wl_shm::WlShm>,
         surface: Option<Main<wl_surface::WlSurface>>,
         width: i32,
         height: i32,
     ) -> Self {
         Self {
-            compositor,
             shm,
             surface,
             shm_buffers: [None, None],

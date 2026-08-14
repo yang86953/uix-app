@@ -26,7 +26,7 @@ impl CliArgs {
 }
 
 /// CLI 命令处理器。
-pub type CommandHandler = fn(&CliArgs) -> i32;
+pub(crate) type CommandHandler = fn(&CliArgs) -> i32;
 
 /// 非 GUI 操作的命令行接口。
 #[derive(Default)]

@@ -23,12 +23,16 @@ mod paint_series;
 pub use component::*;
 
 #[derive(Debug, Clone, PartialEq)]
+/// 图表系列：系列名称 + 数据。
 pub struct ChartSeries<T> {
+/// 系列名称，显示在图例与 tooltip 中。
     pub name: String,
+/// 系列数据（柱状/折线/散点等，取决于图表类型）。
     pub data: T,
 }
 
 impl<T> ChartSeries<T> {
+/// 构造系列。
     pub fn new(name: impl Into<String>, data: T) -> Self {
         Self {
             name: name.into(),
@@ -38,90 +42,139 @@ impl<T> ChartSeries<T> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 图例显示位置。
 pub enum LegendPosition {
+/// 顶部。
     Top,
+/// 底部。
     Bottom,
+/// 左侧。
     Left,
+/// 右侧。
     Right,
+/// 不显示。
     None,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 玫瑰图样式。
 pub enum RoseStyle {
+/// 半径模式：扇区半径按数值占比。
     Radius,
+/// 面积模式：扇区面积按数值占比。
     Area,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 数据标签位置。
 pub enum LabelPosition {
+/// 标签位于图形内部。
     Inside,
+/// 标签位于图形外部。
     Outside,
+/// 标签位于图形右侧。
     Right,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 数据点样式。
 pub enum PointStyle {
+/// 圆形点。
     Circle,
+/// 菱形点。
     Diamond,
+/// 十字点。
     Cross,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 雷达图外框形状。
 pub enum RadarShape {
+/// 多边形网格。
     Polygon,
+/// 圆形网格。
     Circle,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 漏斗图形状。
 pub enum FunnelShape {
+/// 常规梯形漏斗。
     Normal,
+/// 对称漏斗（两侧对称收窄）。
     Symmetric,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 漏斗图对齐方式。
 pub enum FunnelAlign {
+/// 居中对齐。
     Center,
+/// 左对齐。
     Left,
+/// 右对齐。
     Right,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 组合图系列类型。
 pub enum ChartType {
+/// 柱状系列。
     Bar,
+/// 折线系列。
     Line,
+/// 面积系列。
     Area,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 组合图系列绑定的坐标轴。
 pub enum AxisSide {
+/// 左轴。
     Left,
+/// 右轴。
     Right,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 组合图折线样式。
 pub enum LineStyle {
+/// 实线。
     Solid,
+/// 虚线。
     Dashed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 仪表盘类型。
 pub enum GaugeType {
+/// 半圆仪表盘。
     Dashboard,
+/// 整圆仪表盘。
     Full,
+/// 环形仪表盘。
     Ring,
 }
 
 #[derive(Debug, Clone, Copy)]
+/// 图表交互配置。
 pub struct InteractionConfig {
+/// 是否允许滚轮缩放。
     pub zoom: bool,
+/// 是否允许拖拽平移。
     pub pan: bool,
+/// 是否显示十字参考线。
     pub crosshair: bool,
+/// 点击图表数据项时的回调（参数为数据项标签）。
     pub on_click: Option<fn(&str)>,
 }
 
 #[derive(Debug, Clone, Copy)]
+/// 图表刷选（范围选择）配置。
 pub struct BrushConfig {
+/// 是否启用刷选。
     pub enabled: bool,
+/// 刷选完成回调，参数为选区坐标范围。
     pub on_select: Option<fn((f32, f32))>,
 }
 
@@ -138,11 +191,17 @@ pub enum TooltipTrigger {
 /// 传给 tooltip 自定义渲染器的标准化数据。
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TooltipDatum {
+/// 数据项标签。
     pub label: String,
+/// 所属系列名称。
     pub series: Option<String>,
+/// 数值。
     pub value: Option<f32>,
+/// 横坐标。
     pub x: Option<f32>,
+/// 纵坐标。
     pub y: Option<f32>,
+/// 占比（0~1）。
     pub percentage: Option<f32>,
 }
 
@@ -171,20 +230,24 @@ impl fmt::Debug for TooltipConfig {
 }
 
 impl TooltipConfig {
+/// 构造默认 tooltip 配置。
     pub fn new() -> Self {
         Self::default()
     }
 
+/// 设置触发方式。
     pub fn trigger(mut self, trigger: TooltipTrigger) -> Self {
         self.trigger = trigger;
         self
     }
 
+/// 设置文本模板（支持 `{label}`、`{series}`、`{value}`、`{x}`、`{y}`、`{percentage}`）。
     pub fn template(mut self, template: impl Into<String>) -> Self {
         self.template = Some(template.into());
         self
     }
 
+/// 设置自定义渲染器（优先级高于模板）。
     pub fn render<F>(mut self, renderer: F) -> Self
     where
         F: Fn(&TooltipDatum) -> String + 'static,
@@ -252,13 +315,18 @@ impl TooltipDatum {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// 散点图数据项。
 pub struct ScatterData {
+/// 数据项标签。
     pub label: String,
+/// 横坐标。
     pub x: f32,
+/// 纵坐标。
     pub y: f32,
 }
 
 impl ScatterData {
+/// 构造散点数据项。
     pub fn new(label: impl Into<String>, x: f32, y: f32) -> Self {
         Self {
             label: label.into(),
@@ -269,14 +337,20 @@ impl ScatterData {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// 气泡图数据项。
 pub struct BubbleData {
+/// 数据项标签。
     pub label: String,
+/// 横坐标。
     pub x: f32,
+/// 纵坐标。
     pub y: f32,
+/// 气泡大小。
     pub size: f32,
 }
 
 impl BubbleData {
+/// 构造气泡数据项。
     pub fn new(label: impl Into<String>, x: f32, y: f32, size: f32) -> Self {
         Self {
             label: label.into(),
@@ -288,12 +362,16 @@ impl BubbleData {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// 雷达图轴定义。
 pub struct RadarAxis {
+/// 轴标签。
     pub label: String,
+/// 轴取值范围。
     pub range: std::ops::RangeInclusive<f32>,
 }
 
 impl RadarAxis {
+/// 构造雷达图轴。
     pub fn new(label: impl Into<String>, range: std::ops::RangeInclusive<f32>) -> Self {
         Self {
             label: label.into(),
@@ -303,36 +381,48 @@ impl RadarAxis {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// 雷达图数据点。
 pub struct RadarData {
+/// 数值。
     pub value: f32,
 }
 
 impl RadarData {
+/// 构造雷达图数据点。
     pub fn new(value: f32) -> Self {
         Self { value }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// 热力图单元格。
 pub struct HeatmapCell {
+/// 列索引。
     pub x: usize,
+/// 行索引。
     pub y: usize,
+/// 单元格数值。
     pub value: f32,
 }
 
 impl HeatmapCell {
+/// 构造热力图单元格。
     pub fn new(x: usize, y: usize, value: f32) -> Self {
         Self { x, y, value }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// 漏斗图数据项。
 pub struct FunnelData {
+/// 数据项标签。
     pub label: String,
+/// 数据项数值。
     pub value: f32,
 }
 
 impl FunnelData {
+/// 构造漏斗图数据项。
     pub fn new(label: impl Into<String>, value: f32) -> Self {
         Self {
             label: label.into(),
@@ -342,20 +432,29 @@ impl FunnelData {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 瀑布图柱类型。
 pub enum WaterfallKind {
+/// 合计柱。
     Total,
+/// 增长柱。
     Increase,
+/// 减少柱。
     Decrease,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// 瀑布图数据项。
 pub struct WaterfallData {
+/// 数据项标签。
     pub label: String,
+/// 数据项数值。
     pub value: f32,
+/// 柱类型。
     pub kind: WaterfallKind,
 }
 
 impl WaterfallData {
+/// 构造瀑布图数据项。
     pub fn new(label: impl Into<String>, value: f32, kind: WaterfallKind) -> Self {
         Self {
             label: label.into(),
@@ -366,15 +465,22 @@ impl WaterfallData {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// 组合图系列。
 pub struct ComboSeries<T> {
+/// 系列名称。
     pub name: String,
+/// 系列数据。
     pub data: T,
+/// 系列图表类型。
     pub chart_type: ChartType,
+/// 系列绑定的坐标轴。
     pub axis: AxisSide,
+/// 系列线型。
     pub line_style: LineStyle,
 }
 
 impl<T> ComboSeries<T> {
+/// 构造组合图系列（默认折线、左轴、实线）。
     pub fn new(name: impl Into<String>, data: T) -> Self {
         Self {
             name: name.into(),
@@ -385,16 +491,19 @@ impl<T> ComboSeries<T> {
         }
     }
 
+/// 设置系列图表类型。
     pub fn chart_type(mut self, chart_type: ChartType) -> Self {
         self.chart_type = chart_type;
         self
     }
 
+/// 设置系列绑定的坐标轴。
     pub fn y_axis(mut self, axis: AxisSide) -> Self {
         self.axis = axis;
         self
     }
 
+/// 设置系列线型。
     pub fn line_style(mut self, line_style: LineStyle) -> Self {
         self.line_style = line_style;
         self
@@ -402,13 +511,18 @@ impl<T> ComboSeries<T> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// 树图节点。
 pub struct TreemapNode {
+/// 节点标签。
     pub label: String,
+/// 节点数值。
     pub value: f32,
+/// 子节点。
     pub children: Vec<Self>,
 }
 
 impl TreemapNode {
+/// 构造树图叶子节点。
     pub fn new(label: impl Into<String>, value: f32) -> Self {
         Self {
             label: label.into(),
@@ -417,6 +531,7 @@ impl TreemapNode {
         }
     }
 
+/// 设置子节点。
     pub fn children(mut self, children: Vec<Self>) -> Self {
         self.children = children;
         self
@@ -424,13 +539,18 @@ impl TreemapNode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// 仪表盘色带范围。
 pub struct GaugeRange {
+/// 起始值。
     pub start: f32,
+/// 结束值。
     pub end: f32,
+/// 色带颜色。
     pub color: Color,
 }
 
 impl GaugeRange {
+/// 构造色带范围。
     pub fn new(start: f32, end: f32, color: Color) -> Self {
         Self { start, end, color }
     }
@@ -522,6 +642,7 @@ impl crate::ui::view::View for ChartPlaceholder {
 
 macro_rules! chart_entry {
     ($name:ident, $kind:ident) => {
+        #[doc = concat!("按类型选择共享图表组件的入口：", stringify!($kind), " 图表。")]
         #[derive(Debug, Clone, Copy)]
         pub struct $name;
 
@@ -530,6 +651,7 @@ macro_rules! chart_entry {
                 clippy::new_ret_no_self,
                 reason = "the public chart entry selects a kind on the shared chart component"
             )]
+            #[doc = concat!("构造 ", stringify!($kind), " 图表组件。")]
             pub fn new() -> ChartPlaceholder {
                 ChartPlaceholder::new_with_kind(ChartKind::$kind)
             }
@@ -662,6 +784,8 @@ fn scatter_tooltip_datum(item: &ScatterData) -> TooltipDatum {
 }
 
 fn palette_color(index: usize) -> Color {
+    // 图表系列调色板：固定品牌色序列（首色与 token color_primary 默认值 22,119,255 一致），
+    // 属数据可视化色板，与主题解耦、不随换肤变化，故保留字面量。
     const COLORS: [[u8; 3]; 6] = [
         [22, 119, 255],
         [82, 196, 26],

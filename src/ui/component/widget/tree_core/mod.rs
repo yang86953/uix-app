@@ -66,7 +66,8 @@ thread_local! {
     pub(crate) static LAYOUT_TRACE_PHASE: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
 }
 
-mod build;
+// 节点构建：换根、加子节点与构建入口（文件名避开 Cargo 构建脚本约定名 build.rs）。
+mod tree_ops;
 // 保存 WidgetTree 私有的运行与 fail-stop 执行状态。
 mod execution_state;
 // 保存事务异常边界、fail-stop 准入与关闭资源释放实现。

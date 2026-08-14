@@ -14,7 +14,7 @@ use crate::ui::layout::LayoutChild;
 // ── 辅助：从 WidgetTree 构建 LayoutChild ──────────────────────────
 
 /// 从 WidgetTree 节点构建统一的 LayoutChild，并使用父级内容框约束测量。
-pub fn child_from_tree_with_constraints(
+pub(crate) fn child_from_tree_with_constraints(
     component_id: ComponentId,
     tree: &WidgetTree,
     constraints: Constraints,

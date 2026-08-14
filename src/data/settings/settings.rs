@@ -18,6 +18,34 @@ use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 #[cfg(feature = "settings-serde")]
 use serde::{de::DeserializeOwned, Serialize};
 
+/// 把配置的 settings 路径解析为绝对路径：绝对路径原样返回，
+/// 相对路径基于当前可执行文件所在目录解析（归 settings 域，供组合根调用）。
+pub(crate) fn resolve_configured_settings_path(path: &str) -> Result<String> {
+    if path.trim().is_empty() {
+        return Err(Error::invalid_arg("settings: path must not be empty"));
+    }
+    let configured = Path::new(path);
+    let resolved = if configured.is_absolute() {
+        configured.to_path_buf()
+    } else {
+        let executable = std::env::current_exe()?;
+        let executable_dir = executable.parent().ok_or_else(|| {
+            Error::new(
+                Errc::InvalidState,
+                "settings: current executable has no parent directory",
+            )
+        })?;
+        executable_dir.join(configured)
+    };
+
+    resolved.into_os_string().into_string().map_err(|_| {
+        Error::new(
+            Errc::FormatError,
+            "settings: configured path is not valid UTF-8",
+        )
+    })
+}
+
 // ── 极简 JSON 读写（仅支持扁平 HashMap<String, String>） ────────────────
 
 /// 解析 JSON 对象为 HashMap<String, String>。
@@ -670,3 +698,10 @@ fn settings_typed_parse_error(key: &str, target_type: &str, error: impl Display)
 // ════════════════════════════════════════════════════════════════════════════
 // JSON 解析器单元测试
 // ════════════════════════════════════════════════════════════════════════════
+
+// 键值设置解析/序列化与路径解析专项测试。
+#[cfg(test)]
+// 从仓库测试目录引入，保持设置实现文件低于行数上限。
+#[path = "../../../tests/unit/data/settings/settings_tests.rs"]
+// 将外置测试作为设置模块的私有子模块编译。
+mod settings_tests;

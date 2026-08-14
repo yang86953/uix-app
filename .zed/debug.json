@@ -3,10 +3,10 @@
     "label": "调试 uix-lang-demo (GUI)",
     "adapter": "CodeLLDB",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/demo/target/debug/uix-lang-demo",
+    "program": "$ZED_WORKTREE_ROOT/demo/target/debug-full/uix-lang-demo",
     "build": {
       "command": "cargo",
-      "args": ["build", "--manifest-path", "demo/Cargo.toml", "--bin", "uix-lang-demo"],
+      "args": ["build", "--manifest-path", "demo/Cargo.toml", "--profile", "debug-full", "--bin", "uix-lang-demo"],
       "cwd": "$ZED_WORKTREE_ROOT"
     },
     "cwd": "$ZED_WORKTREE_ROOT",
@@ -20,10 +20,10 @@
     "label": "调试 uix-cli-demo (CLI)",
     "adapter": "CodeLLDB",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/demo/target/debug/uix-cli-demo",
+    "program": "$ZED_WORKTREE_ROOT/demo/target/debug-full/uix-cli-demo",
     "build": {
       "command": "cargo",
-      "args": ["build", "--manifest-path", "demo/Cargo.toml", "--bin", "uix-cli-demo"],
+      "args": ["build", "--manifest-path", "demo/Cargo.toml", "--profile", "debug-full", "--bin", "uix-cli-demo"],
       "cwd": "$ZED_WORKTREE_ROOT"
     },
     "cwd": "$ZED_WORKTREE_ROOT",

@@ -3,7 +3,7 @@
 use crate::ui::component::widget::WidgetCore;
 pub mod scrollbar;
 #[allow(unused_imports)]
-pub use scrollbar::*;
+pub(crate) use scrollbar::*;
 
 use std::cell::Cell;
 

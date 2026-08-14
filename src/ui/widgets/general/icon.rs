@@ -177,7 +177,11 @@ pub(crate) fn icon_char(name: &str) -> &'static str {
         "maximize-2" => "\u{E113}",
         "minimize-2" => "\u{E11B}",
         "share-2" => "\u{E156}",
-        _ => "\u{E151}", // fallback: search
+        _ => {
+            // 未知图标名落入 search 兜底字形，记录一次以便诊断拼写错误。
+            tracing::warn!("icon_char: unknown icon name {:?}, falling back to search", name);
+            "\u{E151}" // fallback: search
+        }
     }
 }
 

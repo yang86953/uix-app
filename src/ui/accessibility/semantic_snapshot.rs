@@ -10,7 +10,7 @@ use crate::ui::component_snapshot::{AccessibilitySnapshot, SelectionSnapshot};
 use crate::ui::semantic_action::SemanticActionKind;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SemanticTarget {
+pub(crate) enum SemanticTarget {
     NodeId(ComponentId),
     AutomationId(String),
 }
@@ -43,7 +43,7 @@ impl From<&str> for SemanticTarget {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct SemanticNode {
+pub(crate) struct SemanticNode {
     pub id: ComponentId,
     pub automation_id: Option<String>,
     pub parent: Option<ComponentId>,
@@ -59,15 +59,15 @@ pub struct SemanticNode {
 // transport-neutral node itself is also compiled for opt-in session tracking.
 #[cfg_attr(not(feature = "test-harness"), allow(dead_code))]
 impl SemanticNode {
-    pub fn is_visible(&self) -> bool {
+    pub(crate) fn is_visible(&self) -> bool {
         self.visible_bounds.is_some()
     }
 
-    pub fn is_enabled(&self) -> bool {
+    pub(crate) fn is_enabled(&self) -> bool {
         !self.accessibility.state.disabled
     }
 
-    pub fn center(&self) -> Option<Point> {
+    pub(crate) fn center(&self) -> Option<Point> {
         let bounds = self.visible_bounds?;
         Some(Point::new(
             bounds.x + bounds.w * 0.5,
@@ -75,7 +75,7 @@ impl SemanticNode {
         ))
     }
 
-    pub fn supports(&self, action: SemanticActionKind) -> bool {
+    pub(crate) fn supports(&self, action: SemanticActionKind) -> bool {
         self.actions.contains(&action)
     }
 }

@@ -5,6 +5,7 @@ impl D3d12Context {
         if native_window.is_null() {
             return Err(platform_error("D3d12Context: native window handle is null"));
         }
+        // SAFETY: 无指针输入参数，返回的工厂对象由 windows crate 类型接管，失败走 HRESULT 返回。
         let factory: IDXGIFactory4 = unsafe { CreateDXGIFactory2(DXGI_CREATE_FACTORY_FLAGS(0)) }
             .map_err(|error| d3d12_error("CreateDXGIFactory2", error))?;
         match Self::create_with_factory(
@@ -48,6 +49,7 @@ impl D3d12Context {
         if native_window.is_null() {
             return Err(platform_error("D3d12Context: native window handle is null"));
         }
+        // SAFETY: 无指针输入参数，返回的工厂对象由 windows crate 类型接管，失败走 HRESULT 返回。
         let factory: IDXGIFactory4 = unsafe { CreateDXGIFactory2(DXGI_CREATE_FACTORY_FLAGS(0)) }
             .map_err(|error| d3d12_error("CreateDXGIFactory2", error))?;
         Self::create_with_factory(native_window, width, height, factory, driver)
@@ -71,9 +73,11 @@ impl D3d12Context {
             Flags: D3D12_COMMAND_QUEUE_FLAG_NONE,
             NodeMask: 0,
         };
+        // SAFETY: device 为 select_*_adapter 返回的存活接口；queue_desc 为栈上完整初始化的描述结构。
         let queue: ID3D12CommandQueue = unsafe { device.CreateCommandQueue(&queue_desc) }
             .map_err(|error| d3d12_error("ID3D12Device::CreateCommandQueue", error))?;
         let desc = swap_chain_desc(drawable.width, drawable.height);
+        // SAFETY: queue 存活；native_window 为非空 HWND（上方已校验）；desc 为栈上完整初始化的交换链描述；输出参数传 None。
         let swap_chain1 = unsafe {
             factory.CreateSwapChainForHwnd(
                 &queue,
@@ -84,6 +88,7 @@ impl D3d12Context {
             )
         }
         .map_err(|error| d3d12_error("IDXGIFactory4::CreateSwapChainForHwnd", error))?;
+        // SAFETY: factory 存活；native_window 为有效 HWND；无指针输出参数。
         unsafe { factory.MakeWindowAssociation(HWND(native_window), DXGI_MWA_NO_ALT_ENTER) }
             .map_err(|error| d3d12_error("IDXGIFactory4::MakeWindowAssociation", error))?;
         let swap_chain: IDXGISwapChain3 = swap_chain1
@@ -96,18 +101,22 @@ impl D3d12Context {
             Flags: D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
             NodeMask: 0,
         };
+        // SAFETY: device 存活；rtv_heap_desc 为栈上完整初始化的堆描述，创建成功后由接口类型接管。
         let rtv_heap: ID3D12DescriptorHeap = unsafe { device.CreateDescriptorHeap(&rtv_heap_desc) }
             .map_err(|error| d3d12_error("ID3D12Device::CreateDescriptorHeap(RTV)", error))?;
+        // SAFETY: device 存活；枚举参数为有效 D3D12 常量，无指针输入。
         let rtv_stride =
             unsafe { device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) };
 
         let mut allocators = Vec::with_capacity(FRAME_COUNT);
         for _ in 0..FRAME_COUNT {
+            // SAFETY: device 存活；命令列表类型为有效常量，失败走 HRESULT 返回。
             let allocator: ID3D12CommandAllocator =
                 unsafe { device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT) }
                     .map_err(|error| d3d12_error("ID3D12Device::CreateCommandAllocator", error))?;
             allocators.push(allocator);
         }
+        // SAFETY: device 存活；allocators[0] 为刚创建且未重置过的 allocator；pipeline state 传 None。
         let command_list: ID3D12GraphicsCommandList = unsafe {
             device.CreateCommandList(
                 0,
@@ -117,13 +126,16 @@ impl D3d12Context {
             )
         }
         .map_err(|error| d3d12_error("ID3D12Device::CreateCommandList", error))?;
+        // SAFETY: command_list 刚创建且由接口类型接管，Close 只是提交状态。
         unsafe { command_list.Close() }
             .map_err(|error| d3d12_error("ID3D12GraphicsCommandList::Close(initial)", error))?;
         let command_list_base: ID3D12CommandList = command_list
             .cast()
             .map_err(|error| d3d12_error("command list cast", error))?;
+        // SAFETY: device 存活；初始 fence 值 0 与标志均为有效常量。
         let fence: ID3D12Fence = unsafe { device.CreateFence(0, D3D12_FENCE_FLAG_NONE) }
             .map_err(|error| d3d12_error("ID3D12Device::CreateFence", error))?;
+        // SAFETY: 安全属性与名字均传 None，事件为无名字的自动重置事件，返回句柄由本对象接管。
         let fence_event = unsafe { CreateEventW(None, false, false, None) }
             .map_err(|error| d3d12_error("CreateEventW(fence)", error))?;
 
@@ -167,6 +179,7 @@ impl D3d12Context {
     }
 
     pub(super) fn rtv_handle(&self, index: usize) -> D3D12_CPU_DESCRIPTOR_HANDLE {
+        // SAFETY: rtv_heap 由本对象持有且存活，查询堆起始句柄为只读操作。
         let mut handle = unsafe { self.rtv_heap.GetCPUDescriptorHandleForHeapStart() };
         handle.ptr += index * self.rtv_stride as usize;
         handle
@@ -175,8 +188,10 @@ impl D3d12Context {
     pub(super) fn rebuild_back_buffers(&mut self) -> Result<()> {
         let mut back_buffers = Vec::with_capacity(FRAME_COUNT);
         for index in 0..FRAME_COUNT {
+            // SAFETY: swap_chain 存活且后台缓冲数由 FRAME_COUNT 锁定，index 不超过交换链缓冲数。
             let buffer: ID3D12Resource = unsafe { self.swap_chain.GetBuffer(index as u32) }
                 .map_err(|error| d3d12_error("IDXGISwapChain::GetBuffer", error))?;
+            // SAFETY: buffer 为刚取得的存活资源；rtv_handle(index) 指向 RTV 堆内已预留的描述符槽位。
             unsafe {
                 self.device
                     .CreateRenderTargetView(&buffer, None, self.rtv_handle(index));
@@ -185,6 +200,7 @@ impl D3d12Context {
         }
         self.back_buffers = back_buffers;
         self.back_buffer_states = [D3D12_RESOURCE_STATE_PRESENT; FRAME_COUNT];
+        // SAFETY: swap_chain 存活，查询当前后台缓冲索引为只读操作。
         self.frame_index = unsafe { self.swap_chain.GetCurrentBackBufferIndex() } as usize;
         Ok(())
     }
@@ -209,14 +225,17 @@ impl D3d12Context {
     }
 
     pub(super) fn wait_for_fence(&self, value: u64) -> Result<()> {
+        // SAFETY: fence 由本对象持有且存活，查询已完成值为只读操作。
         if value == 0 || unsafe { self.fence.GetCompletedValue() } >= value {
             return Ok(());
         }
         let event = self
             .fence_event
             .ok_or_else(|| platform_error("D3d12Context: fence event is closed"))?;
+        // SAFETY: fence 存活；event 为已创建且未关闭的事件句柄，等待期间保持有效。
         unsafe { self.fence.SetEventOnCompletion(value, event) }
             .map_err(|error| d3d12_error("ID3D12Fence::SetEventOnCompletion", error))?;
+        // SAFETY: event 句柄存活；INFINITE 为有效等待超时常量。
         let wait = unsafe { WaitForSingleObject(event, INFINITE) };
         if wait != WAIT_OBJECT_0 {
             return Err(platform_error(format!(
@@ -229,6 +248,7 @@ impl D3d12Context {
     pub(super) fn signal(&mut self) -> Result<u64> {
         let value = self.next_fence_value;
         self.next_fence_value = self.next_fence_value.saturating_add(1);
+        // SAFETY: queue 与 fence 由本对象持有且存活，Signal 只登记 GPU 端值。
         unsafe { self.queue.Signal(&self.fence, value) }
             .map_err(|error| d3d12_error("ID3D12CommandQueue::Signal", error))?;
         Ok(value)
@@ -260,11 +280,13 @@ impl D3d12Context {
             return Err(error);
         }
         let allocator = &self.allocators[self.frame_index];
+        // SAFETY: allocator 已等待对应 fence 完成（上方 wait_for_fence），Reset 不破坏 GPU 仍在用的内存。
         if let Err(error) = unsafe { allocator.Reset() } {
             let error = d3d12_error("ID3D12CommandAllocator::Reset", error);
             self.latch_fault("reset allocator", &error);
             return Err(error);
         }
+        // SAFETY: command_list 处于 closed 状态可重置；allocator 已确认空闲；pipeline state 传 None 表示沿用既有状态。
         let reset_result = unsafe {
             self.command_list
                 .Reset(allocator, None::<&ID3D12PipelineState>)
@@ -285,6 +307,7 @@ impl D3d12Context {
             self.back_buffer_states[self.frame_index] = D3D12_RESOURCE_STATE_RENDER_TARGET;
         }
         let rtv = self.rtv_handle(self.frame_index);
+        // SAFETY: command_list 存活；rtv 指向 RTV 堆内有效描述符；depth 传 None 表示无深度目标。
         unsafe {
             self.command_list
                 .OMSetRenderTargets(1, Some(&rtv), true, None);
@@ -297,11 +320,13 @@ impl D3d12Context {
         if !self.recording {
             return Ok(());
         }
+        // SAFETY: command_list 处于 recording 状态，Close 为正常结束录制。
         if let Err(error) = unsafe { self.command_list.Close() } {
             let error = d3d12_error("ID3D12GraphicsCommandList::Close", error);
             self.latch_fault("close command list", &error);
             return Err(error);
         }
+        // SAFETY: command_list_base 为存活且已 close 的命令列表；ExecuteCommandLists 只提交执行，命令列表所有权不变。
         unsafe {
             self.queue
                 .ExecuteCommandLists(&[Some(self.command_list_base.clone())]);
@@ -346,6 +371,7 @@ impl D3d12Context {
         self.back_buffer_states[buffer_index] = D3D12_RESOURCE_STATE_PRESENT;
         self.execute_recording()?;
 
+        // SAFETY: swap_chain 存活且缓冲已 transition 到 PRESENT，Present 同步提交当前帧。
         let present = unsafe { self.swap_chain.Present(1, DXGI_PRESENT(0)) };
         let fence_value = match self.signal() {
             Ok(value) => value,
@@ -355,6 +381,7 @@ impl D3d12Context {
             }
         };
         self.fence_values[buffer_index] = fence_value;
+        // SAFETY: swap_chain 存活，Present 后查询新后台缓冲索引为只读操作。
         self.frame_index = unsafe { self.swap_chain.GetCurrentBackBufferIndex() } as usize;
         self.latch_present_result(
             present
@@ -386,6 +413,7 @@ impl D3d12Context {
         let old_width = self.width;
         let old_height = self.height;
         self.back_buffers.clear();
+        // SAFETY: swap_chain 存活；back_buffers 已清空释放引用，满足 ResizeBuffers 的引用释放前置条件；尺寸与格式为有效参数。
         let resize_result = unsafe {
             self.swap_chain.ResizeBuffers(
                 FRAME_COUNT as u32,
@@ -448,9 +476,11 @@ impl D3d12Context {
             )));
         }
         let buffer = self.back_buffers[self.frame_index].clone();
+        // SAFETY: buffer 为存活的后台缓冲资源，GetDesc 为只读查询。
         let desc = unsafe { buffer.GetDesc() };
         let mut footprint = D3D12_PLACED_SUBRESOURCE_FOOTPRINT::default();
         let mut total_bytes = 0u64;
+        // SAFETY: device 存活；footprint/total_bytes 为已初始化的有效输出；None 表示不查询无关字段。
         unsafe {
             self.device.GetCopyableFootprints(
                 &desc,
@@ -475,6 +505,7 @@ impl D3d12Context {
         self.back_buffer_states[self.frame_index] = D3D12_RESOURCE_STATE_COPY_SOURCE;
         let mut source = texture_copy_location_subresource(&buffer);
         let mut destination = texture_copy_location_footprint(&readback, footprint);
+        // SAFETY: command_list 存活；source/destination 为上方构造的拷贝位置，destination 指向 readback 的 footprint 区域。
         unsafe {
             self.command_list
                 .CopyTextureRegion(&destination, 0, 0, 0, &source, None);
@@ -497,8 +528,10 @@ impl D3d12Context {
             End: total_bytes as usize,
         };
         let mut mapped = std::ptr::null_mut();
+        // SAFETY: readback 为存活且已执行完拷贝的资源；read_range 覆盖全部字节；mapped 为有效输出指针。
         unsafe { readback.Map(0, Some(&read_range), Some(&mut mapped)) }
             .map_err(|error| d3d12_error("ID3D12Resource::Map(readback)", error))?;
+        // SAFETY: mapped 为 null 说明映射失败，Unmap 无需参数且不依赖映射状态，调用安全。
         if mapped.is_null() {
             unsafe { readback.Unmap(0, None) };
             return Err(platform_error("D3d12Context: readback Map returned null"));
@@ -512,6 +545,7 @@ impl D3d12Context {
             read_w as usize,
             read_h as usize,
         );
+        // SAFETY: 映射在下方像素拷贝完成后仍有效；written 空范围表示无需回写。
         let written = D3D12_RANGE { Begin: 0, End: 0 };
         unsafe { readback.Unmap(0, Some(&written)) };
         Ok(pixels)
@@ -523,6 +557,7 @@ impl D3d12Context {
         } else if self.fault.is_none() {
             self.execute_recording().err()
         } else {
+            // SAFETY: command_list 处于 recording 状态（fault 前已开始），Close 用于丢弃故障录制。
             match unsafe { self.command_list.Close() } {
                 Ok(()) => {
                     self.recording = false;
@@ -539,6 +574,7 @@ impl D3d12Context {
             Err(signal_error) => {
                 let known = self.fence_values.iter().copied().max().unwrap_or(0);
                 let known_wait = self.wait_for_fence(known).err();
+                // SAFETY: device 由本对象持有且存活，GetDeviceRemovedReason 为只读查询。
                 let device_removed = unsafe { self.device.GetDeviceRemovedReason() }.err();
                 return Err(platform_error(format!(
                     "D3d12Context: shutdown could not signal a terminal fence: {}; recording_close={}; known_fence_wait={}; device_removed_reason={}",
@@ -560,6 +596,7 @@ impl D3d12Context {
             }
         };
         if let Err(wait_error) = self.wait_for_fence(value) {
+            // SAFETY: device 由本对象持有且存活，GetDeviceRemovedReason 为只读查询。
             let device_removed = unsafe { self.device.GetDeviceRemovedReason() }.err();
             return Err(platform_error(format!(
                 "D3d12Context: shutdown terminal fence wait failed: {}; recording_close={}; device_removed_reason={}",
@@ -616,6 +653,7 @@ impl D3d12Context {
         self.pending_gpu_resources.clear();
         self.back_buffers.clear();
         if let Some(event) = self.fence_event.take() {
+            // SAFETY: event 经 take() 取出后所有权唯一，只在此关闭一次，此后不再被引用。
             unsafe {
                 let _ = CloseHandle(event);
             }

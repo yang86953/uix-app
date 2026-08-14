@@ -2,7 +2,7 @@
 
 use super::*;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct WireError {
     code: AgentErrorCode,
     message: &'static str,
@@ -126,6 +126,13 @@ pub(super) fn parse_action(value: &Value) -> Result<ParsedAgentAction, WireError
         "toggle" => SemanticAction::Toggle,
         "increment" => SemanticAction::Increment,
         "decrement" => SemanticAction::Decrement,
+        // 连续值调整声明（E-05）：值域 min/max 由语义快照 value_min/value_max
+        // 提供，协议字段为可选副本供对端回显，缺省 0.0 不影响执行。
+        "adjust" => {
+            let min = optional_f32(object, "min")?.unwrap_or(0.0) as f64;
+            let max = optional_f32(object, "max")?.unwrap_or(0.0) as f64;
+            SemanticAction::Adjust { min, max }
+        }
         "scroll" => {
             let x = required_f32(object, "delta_x")?;
             let y = required_f32(object, "delta_y")?;
@@ -219,6 +226,26 @@ pub(super) fn required_f32(object: &Map<String, Value>, field: &str) -> Result<f
         ));
     }
     Ok(value as f32)
+}
+
+pub(super) fn optional_f32(
+    object: &Map<String, Value>,
+    field: &str,
+) -> Result<Option<f32>, WireError> {
+    match object.get(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => {
+            let number = value.as_f64().ok_or_else(|| {
+                WireError::invalid("optional numeric field is missing or invalid")
+            })?;
+            if !number.is_finite() || number < f32::MIN as f64 || number > f32::MAX as f64 {
+                return Err(WireError::invalid(
+                    "numeric field is outside the supported range",
+                ));
+            }
+            Ok(Some(number as f32))
+        }
+    }
 }
 
 pub(super) fn success_reply(
@@ -347,7 +374,7 @@ pub(super) fn semantic_node_value(node: &SemanticNode) -> Value {
         "frame": rect_value(node.frame),
         "visible_bounds": node.visible_bounds.map(rect_value),
         "focused": node.focused,
-        "role": role_name(node.accessibility.role),
+        "role": node.accessibility.role.automation_name(),
         "name": node.accessibility.name,
         "state": accessibility_state_value(state),
         "selection": node.selection.as_ref().map(selection_value),
@@ -396,37 +423,6 @@ pub(super) fn finite_number(value: f64) -> Value {
 
 pub(super) fn finite_number_option(value: f64) -> Option<serde_json::Number> {
     serde_json::Number::from_f64(value)
-}
-
-pub(super) fn role_name(role: AccessibilityRole) -> &'static str {
-    match role {
-        AccessibilityRole::None => "none",
-        AccessibilityRole::Generic => "generic",
-        AccessibilityRole::Alert => "alert",
-        AccessibilityRole::Button => "button",
-        AccessibilityRole::Checkbox => "checkbox",
-        AccessibilityRole::Combobox => "combobox",
-        AccessibilityRole::Dialog => "dialog",
-        AccessibilityRole::Group => "group",
-        AccessibilityRole::Heading => "heading",
-        AccessibilityRole::Image => "image",
-        AccessibilityRole::List => "list",
-        AccessibilityRole::Menu => "menu",
-        AccessibilityRole::Navigation => "navigation",
-        AccessibilityRole::ProgressBar => "progress_bar",
-        AccessibilityRole::RadioGroup => "radio_group",
-        // 主题分隔线通过 Agent 协议暴露标准 separator 名称。
-        AccessibilityRole::Separator => "separator",
-        AccessibilityRole::Slider => "slider",
-        AccessibilityRole::SpinButton => "spin_button",
-        AccessibilityRole::Status => "status",
-        AccessibilityRole::Switch => "switch",
-        AccessibilityRole::Table => "table",
-        AccessibilityRole::TabList => "tab_list",
-        AccessibilityRole::Text => "text",
-        AccessibilityRole::TextBox => "text_box",
-        AccessibilityRole::Tree => "tree",
-    }
 }
 
 pub(crate) fn encode_session_token(token: &[u8; 32]) -> String {

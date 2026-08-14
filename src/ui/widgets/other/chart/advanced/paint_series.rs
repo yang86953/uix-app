@@ -1,5 +1,5 @@
 use crate::core::{Point, Rect};
-use crate::draw::{Color, FillRule, PathBuilder};
+use crate::draw::{FillRule, PathBuilder};
 use crate::ui::component::paint_context::PaintContext;
 
 use super::super::bar_chart::BarData;
@@ -98,7 +98,8 @@ impl ChartPlaceholder {
         } else {
             // 无数据：空态提示。
             ctx.stroke_rect(plot, ctx.tokens().color_border(), 1.0, None);
-            ctx.text_center("暂无数据", plot, ctx.tokens().color_text_secondary(), 12.0);
+            // 空态提示字号：统一使用主题 font_size_sm token。
+            ctx.text_center("暂无数据", plot, ctx.tokens().color_text_secondary(), ctx.tokens().font_size_sm());
         }
         if animated {
             ctx.pop_clip();
@@ -122,7 +123,8 @@ impl ChartPlaceholder {
                 let bottom = start.y.max(end.y).clamp(frame.y, frame.y + frame.h);
                 ctx.fill_rect(
                     Rect::new(x, y, (right - x).max(0.0), (bottom - y).max(0.0)),
-                    Color::from_rgba(22, 119, 255, 48),
+                    // 框选填充：token 主色 + 固定 alpha（替换原硬编码 22,119,255，随主题换肤）。
+                    ctx.tokens().color_primary().with_alpha(48),
                     None,
                 );
             }
@@ -431,8 +433,8 @@ impl ChartPlaceholder {
                     path.line_to(lower.x, lower.y);
                 }
                 path.close();
-                let fill =
-                    Color::from_rgba(color.r, color.g, color.b, (255.0 * self.fill_opacity) as u8);
+                // 面积填充：在系列色上应用 fill_opacity 透明度（用 with_alpha 收敛 alpha 混合）。
+                let fill = color.with_alpha((255.0 * self.fill_opacity) as u8);
                 ctx.fill_path(&path.build(), fill, FillRule::NonZero);
             }
             if self.step {
@@ -663,8 +665,8 @@ impl ChartPlaceholder {
                     path.line_to(point.x, point.y);
                 }
                 path.close();
-                let fill =
-                    Color::from_rgba(color.r, color.g, color.b, (255.0 * self.fill_opacity) as u8);
+                // 面积填充：在系列色上应用 fill_opacity 透明度（用 with_alpha 收敛 alpha 混合）。
+                let fill = color.with_alpha((255.0 * self.fill_opacity) as u8);
                 ctx.fill_path(&path.build(), fill, FillRule::NonZero);
             } else {
                 ctx.fill_circle(points[0].x, points[0].y, 3.0, color);

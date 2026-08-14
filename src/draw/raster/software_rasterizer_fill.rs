@@ -9,7 +9,7 @@ use crate::draw::geometry::types::Radius;
 use super::software_rasterizer::SoftwareRasterizer;
 
 impl SoftwareRasterizer {
-    pub fn fill_rect(
+    pub(crate) fn fill_rect(
         &self,
         pixels: &mut [u32],
         surface_w: i32,
@@ -193,7 +193,7 @@ impl SoftwareRasterizer {
         clippy::too_many_arguments,
         reason = "shape coordinates and surface bounds mirror the canvas contract"
     )]
-    pub fn fill_circle(
+    pub(crate) fn fill_circle(
         &self,
         pixels: &mut [u32],
         surface_w: i32,
@@ -258,7 +258,7 @@ impl SoftwareRasterizer {
         }
     }
 
-    pub fn fill_ellipse(
+    pub(crate) fn fill_ellipse(
         &self,
         pixels: &mut [u32],
         surface_w: i32,
@@ -335,7 +335,7 @@ impl SoftwareRasterizer {
         clippy::too_many_arguments,
         reason = "shape coordinates and surface bounds mirror the canvas contract"
     )]
-    pub fn fill_sector(
+    pub(crate) fn fill_sector(
         &self,
         pixels: &mut [u32],
         surface_w: i32,
@@ -417,7 +417,7 @@ impl SoftwareRasterizer {
         }
     }
 
-    pub fn fill_path(
+    pub(crate) fn fill_path(
         &self,
         pixels: &mut [u32],
         surface_w: i32,

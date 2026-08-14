@@ -5,7 +5,7 @@ use std::ops::RangeInclusive;
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::{Color, Radius};
+use crate::draw::Radius;
 use crate::platform::windowing::ControlSize;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
@@ -195,13 +195,13 @@ component! {
                 RangeSliderThumb::Start => start_x,
                 RangeSliderThumb::End => end_x,
             };
-            // 颜色：拖动中主题高亮，悬浮主题色，否则白色。
+            // 颜色：拖动中主题高亮，悬浮主题色，否则白色 token。
             let color = if self.dragging && self.active_thumb == thumb {
                 primary_hover
             } else if self.hovered_thumb == Some(thumb) {
                 primary
             } else {
-                Color::white()
+                ctx.tokens().color_white()
             };
             ctx.fill_circle(x, cy, thumb_r, color);
             ctx.stroke_rect(

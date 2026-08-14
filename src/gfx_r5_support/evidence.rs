@@ -278,7 +278,7 @@ pub fn run_engine_recovery_boundary(
     let recovery_evidence = Arc::new(Mutex::new(None));
     let rebuilder_evidence = Arc::clone(&recovery_evidence);
     let rebuilder: RenderTargetRebuilder = Box::new(move |action, width, height| {
-        if action != RecoveryAction::RebuildSurface {
+        if action != GraphicsRecoveryAction::RebuildSurface {
             return Err(Error::new(
                 Errc::InvalidState,
                 format!("GFX-R5 expected RebuildSurface, got {action:?}"),

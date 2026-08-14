@@ -70,7 +70,7 @@ pub(crate) fn view_children(widget: &dyn WidgetComponent) -> Vec<ViewNode> {
         .unwrap_or_default()
 }
 /// View tree adapter.
-pub struct ViewAdapter;
+pub(crate) struct ViewAdapter;
 /// 组件原位 patch 对后续流水线的精细失效影响。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct WidgetPatchImpact {

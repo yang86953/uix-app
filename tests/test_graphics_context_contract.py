@@ -240,8 +240,8 @@ class GraphicsContextContractTests(unittest.TestCase):
             adapter_source = adapter_factory.read_text(encoding="utf-8")
             # context 与 capability 必须在仍可静态分派的边界成对交付。
             self.assertIn("GraphicsContextCandidate::gpu", adapter_source)
-            # adapter 创建模块必须显式拥有静态 capability 构造函数。
-            self.assertIn("fn context_caps()", adapter_source)
+            # adapter 创建模块必须显式拥有静态 capability 构造函数（兼容多行签名）。
+            self.assertIn("fn context_caps(", adapter_source)
             # candidate 组装不得反向调用 context trait method。
             self.assertNotIn(".caps()", adapter_source)
 
@@ -500,12 +500,18 @@ class GraphicsContextContractTests(unittest.TestCase):
         d3d11_surface = (
             ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi.rs"
         ).read_text(encoding="utf-8")
+        # 读取 D3D11 冻结 swapchain adapter 实现。
+        d3d11_swapchain = (
+            ROOT / "src/native/presentation/graphics/d3d11/platform/swapchain.rs"
+        ).read_text(encoding="utf-8")
         # Windows 专属探测必须落在 GraphicsSurface 实现中。
         self.assertIn("fn test_present(&mut self) -> Result<PresentTestResult>", d3d11_surface)
-        # 探测继续使用无帧数据的 DXGI 标志。
-        self.assertIn("DXGI_PRESENT_TEST", d3d11_surface)
-        # 既有 Presentable/Occluded/error 映射必须继续复用。
-        self.assertIn("map_dxgi_present_test_result", d3d11_surface)
+        # 探测必须继续使用无帧数据的 DXGI 标志。
+        self.assertIn("DXGI_PRESENT_TEST", d3d11_swapchain)
+        # 既有 Presentable/Occluded/error 映射必须留在冻结 swapchain adapter 内。
+        self.assertIn("fn map_dxgi_present_test_result", d3d11_swapchain)
+        # surface 只允许委托 swapchain adapter，不得保留第二份映射。
+        self.assertNotIn("map_dxgi_present_test_result", d3d11_surface)
         # 读取 owner-thread context wrapper。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # wrapper 不得继续转发已经下沉的兼容方法。

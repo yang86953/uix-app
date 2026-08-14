@@ -20,8 +20,11 @@ mod geometry;
 
 use self::geometry::CalendarGeometry;
 
+// 日历头部总高（40.0，标题行 24 + 星期栏 16）；同名常量在 selectable_list/collapse/
+// date_calendar 各为 48/36/32，组件独立设计。
 const HEADER_HEIGHT: f32 = 40.0;
 const TITLE_HEIGHT: f32 = 24.0;
+// 星期栏高度：头部 40 − 标题行 24 推导得 16；date_calendar 面板独立用字面量 24.0。
 const WEEKDAY_HEIGHT: f32 = HEADER_HEIGHT - TITLE_HEIGHT;
 const DEFAULT_CELL_SIZE: f32 = 40.0;
 const MIN_CELL_SIZE: f32 = 20.0;
@@ -385,7 +388,8 @@ component! {
             let text_color = if is_disabled {
                 ctx.tokens().color_text_quaternary()
             } else if is_selected {
-                Color::white()
+                // 选中日文字：白色 token。
+                ctx.tokens().color_white()
             } else if is_weekend {
                 ctx.tokens().color_error()
             } else {
@@ -400,7 +404,12 @@ component! {
             }
             if is_focused {
                 let inset = geometry.scale.max(0.5);
-                let focus_color = if is_selected { Color::white() } else { primary };
+                let focus_color = if is_selected {
+                    // 选中日焦点描边：白色 token。
+                    ctx.tokens().color_white()
+                } else {
+                    primary
+                };
                 ctx.stroke_rect(
                     Rect::new(
                         cell_rect.x + inset,

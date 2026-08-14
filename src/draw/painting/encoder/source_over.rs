@@ -746,8 +746,8 @@ mod tests {
             operation: FrameRasterOp::FillRectAdditive { rect, color, clip },
         } = translated_hard
         else {
-            // 变体改变会丢失原始目标相关 blend 事实。
-            panic!("expected translated hard additive command");
+            // 变体改变会丢失原始目标相关 blend 事实；附带回退值便于定位。
+            panic!("expected translated hard additive command, got {translated_hard:?}");
         };
         // 硬矩形可以精确收窄为 clip 与 crop 的平移交集。
         assert_eq!(rect, FrameRect::new(15, 5, 3, 4));
@@ -788,8 +788,8 @@ mod tests {
                 },
         } = translated_rounded
         else {
-            // 变体改变会绕开共享 SDF 几何。
-            panic!("expected translated rounded additive command");
+            // 变体改变会绕开共享 SDF 几何；附带回退值便于定位。
+            panic!("expected translated rounded additive command, got {translated_rounded:?}");
         };
         // 圆角矩形必须整体平移，不能像硬矩形一样收窄几何。
         assert_eq!(rect, FrameRect::new(12, 4, 8, 6));

@@ -733,8 +733,11 @@ impl NativeGpuCanvas2D {
             };
             // 追加当前连续 segment 的已验证 RHI 操作。
             let Some((_, ops)) = segments.last_mut() else {
-                // 首个操作前必有开段逻辑，缺少段说明内部状态被破坏。
-                panic!("mixed RHI lowering always has one segment");
+                // 缺少段说明内部状态被破坏，附带当前段数便于定位。
+                panic!(
+                    "mixed RHI lowering always has one segment (segments={})",
+                    segments.len()
+                );
             };
             ops.push(operation);
         }

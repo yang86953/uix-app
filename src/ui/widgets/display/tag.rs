@@ -227,7 +227,8 @@ component! {
         }
         let font_size = normalized_tag_font_size(self.font_size);
         let (bg, fg) = if let Some(cc) = self.custom_color {
-            (cc, if cc.is_light() { Color::black() } else { Color::white() })
+            // 自定义色对比文字：按亮度取黑白 token。
+            (cc, if cc.is_light() { ctx.tokens().color_black() } else { ctx.tokens().color_white() })
         } else {
             match self.color {
                 TagColor::Default => (ctx.tokens().color_fill_tertiary(), ctx.tokens().color_text()),
@@ -235,16 +236,18 @@ component! {
                 TagColor::Info    => (ctx.tokens().color_info_bg(), ctx.tokens().color_info()),
                 TagColor::Warning => (ctx.tokens().color_warning_bg(), ctx.tokens().color_warning()),
                 TagColor::Error   => (ctx.tokens().color_error_bg(), ctx.tokens().color_error()),
-                TagColor::Blue    => (Color::hex("#e6f4ff"), Color::hex("#1677ff")),
+                // 预设品牌色表（AntD 色板扩展色）：与主题 token 精确对应的行使用 token
+                // （Blue=primary、Gold=warning、Green=success），其余无对应 token 保留字面量。
+                TagColor::Blue    => (Color::hex("#e6f4ff"), ctx.tokens().color_primary()),
                 TagColor::Cyan   => (Color::hex("#e6fffb"), Color::hex("#13c2c2")),
                 TagColor::Geekblue => (Color::hex("#f0f5ff"), Color::hex("#2f54eb")),
                 TagColor::Purple => (Color::hex("#f9f0ff"), Color::hex("#722ed1")),
                 TagColor::Magenta => (Color::hex("#fff0f6"), Color::hex("#eb2f96")),
                 TagColor::Red    => (Color::hex("#fff1f0"), Color::hex("#f5222d")),
                 TagColor::Orange => (Color::hex("#fff7e6"), Color::hex("#fa8c16")),
-                TagColor::Gold   => (Color::hex("#fffbe6"), Color::hex("#faad14")),
+                TagColor::Gold   => (Color::hex("#fffbe6"), ctx.tokens().color_warning()),
                 TagColor::Lime   => (Color::hex("#fcffe6"), Color::hex("#a0d911")),
-                TagColor::Green  => (Color::hex("#f6ffed"), Color::hex("#52c41a")),
+                TagColor::Green  => (Color::hex("#f6ffed"), ctx.tokens().color_success()),
             }
         };
         let radius = ctx
@@ -273,10 +276,11 @@ component! {
                 TagTarget::Body => geometry.body,
                 TagTarget::Close => geometry.close.unwrap_or(geometry.frame),
             };
+            // 悬停/按压叠加：按底色亮度取黑白 token + 原 alpha（保持视觉等价，色相随主题可换）。
             let overlay = if bg.is_light() {
-                Color::from_rgba(0, 0, 0, if pressed { 28 } else { 14 })
+                ctx.tokens().color_black().with_alpha(if pressed { 28 } else { 14 })
             } else {
-                Color::from_rgba(255, 255, 255, if pressed { 32 } else { 16 })
+                ctx.tokens().color_white().with_alpha(if pressed { 32 } else { 16 })
             };
             ctx.fill_rect(target_frame, overlay, None);
         }

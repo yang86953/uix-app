@@ -15,7 +15,7 @@ pub use group::FloatButtonGroupView;
 // 引入单一几何解析入口与输入输出类型。
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::{Color, Radius};
+use crate::draw::Radius;
 use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::component::paint_context::PaintContext;
 use geometry::{FloatButtonGeometry, FloatButtonGeometryInput, resolve_float_button_geometry};
@@ -139,7 +139,8 @@ component! {
         let loc = crate::ui::component::locale::use_locale();
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();
-        let white = Color::white();
+        // 图标反白色：白色 token。
+        let white = ctx.tokens().color_white();
         let text_sec = ctx.tokens().color_text_quaternary();
         let bg = if self.pressed {
             ctx.tokens().color_primary_active()
@@ -153,7 +154,8 @@ component! {
         // 借用共享几何中的完整控件区域。
         let btn_rect = geometry.control;
         // 阴影
-        ctx.draw_box_shadow(btn_rect, 8.0, 0.0, 4.0, Color::from_rgba(0, 0, 0, 40), Some(r));
+        // 阴影：黑色 token + 原 alpha（保持视觉等价，色相随主题可换）。
+        ctx.draw_box_shadow(btn_rect, 8.0, 0.0, 4.0, ctx.tokens().color_black().with_alpha(40), Some(r));
         ctx.fill_rect(btn_rect, bg, Some(r));
         if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(btn_rect, ctx.tokens().color_primary_border(), 2.0, Some(r));
@@ -174,7 +176,7 @@ component! {
         // 展开说明存在时绘制到共享说明区域。
         if let Some(description) = geometry.description {
             // 说明文字与图标共享主按钮前景色。
-            ctx.text_center(&self.description, description, white, 12.0);
+            ctx.text_center(&self.description, description, white, ctx.tokens().font_size_sm());
         }
         // Badge
         if let Some(badge_rect) = geometry.badge {
@@ -216,7 +218,7 @@ component! {
             let tip_radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
             ctx.fill_rect(tip, ctx.tokens().color_bg_elevated(), tip_radius);
             ctx.stroke_rect(tip, ctx.tokens().color_border_secondary(), 1.0, tip_radius);
-            ctx.text_center(&self.tooltip, tip, text_sec, 12.0);
+            ctx.text_center(&self.tooltip, tip, text_sec, ctx.tokens().font_size_sm());
         }
     }
 }
@@ -625,7 +627,8 @@ component! {
             8.0,
             0.0,
             4.0,
-            Color::from_rgba(0, 0, 0, 40),
+            // 阴影：黑色 token + 原 alpha（保持视觉等价，色相随主题可换）。
+            ctx.tokens().color_black().with_alpha(40),
             radius,
         );
         ctx.fill_rect(trigger, background, radius);
@@ -641,7 +644,8 @@ component! {
             ctx,
             if self.expanded { "x" } else { "plus" },
             trigger,
-            Color::white(),
+            // 触发图标：白色 token。
+            ctx.tokens().color_white(),
             18.0,
         );
     }

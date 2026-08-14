@@ -111,7 +111,7 @@ fn probe_fc_match_with_data(pattern: &str) -> Option<(String, Vec<u8>)> {
     Some((path, data))
 }
 
-pub fn probe_font_path_via_fc_match(pattern: &str) -> Option<String> {
+pub(crate) fn probe_font_path_via_fc_match(pattern: &str) -> Option<String> {
     probe_fc_match_with_data(pattern).map(|(p, _)| p)
 }
 
@@ -163,7 +163,7 @@ fn is_cff2_variable_font(path: &str) -> bool {
 }
 
 /// 在 Linux 上用 fontconfig 查询系统默认字体路径（独立函数，引擎可直接调用）。
-pub fn probe_system_default_font() -> Option<String> {
+pub(crate) fn probe_system_default_font() -> Option<String> {
     // 第 1 优先：桌面环境的系统字体设置（GNOME/KDE）
     // fc-match 'sans-serif' 不准确——fontconfig 的通用家族别名独立于桌面配置。
     if let Some(desktop_font) = probe_desktop_font() {
@@ -255,7 +255,7 @@ fn probe_desktop_font() -> Option<String> {
 ///
 /// 优先用 `:lang=zh` 找含中日韩统一表意文字的字形回退字体。
 /// 适用于主字体不含中文时需要找回退字体的场景。
-pub fn probe_cjk_font() -> Option<String> {
+pub(crate) fn probe_cjk_font() -> Option<String> {
     // 第 1 优先：明确带 scalable 限制的匹配
     let path = probe_font_path_via_fc_match(":lang=zh:scalable=true");
     if path.is_some() {

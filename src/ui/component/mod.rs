@@ -11,10 +11,10 @@
 //! 窄契约依赖：reactive、event、layout、animation、theme、overlay、
 //! accessibility（全部单向；widgets / view 侧不得被本模块引用）。
 
-pub mod children;
-pub mod paint_context;
-pub mod paint_scope;
-pub mod widget;
+pub(crate) mod children;
+pub(crate) mod paint_context;
+pub(crate) mod paint_scope;
+pub(crate) mod widget;
 
 pub(crate) mod app_state;
 pub mod clipboard;

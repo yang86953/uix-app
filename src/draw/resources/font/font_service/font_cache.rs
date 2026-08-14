@@ -55,7 +55,8 @@ struct GlyphCacheState {
 
 #[derive(Debug)]
 struct GlyphCacheEntry {
-    raster: CachedRaster,
+    // 缓存值以 Arc 持有，命中时仅做指针克隆，避免文本绘制热路径深拷贝。
+    raster: Arc<CachedRaster>,
     retained_bytes: usize,
     last_access: u64,
 }
@@ -91,13 +92,14 @@ impl GlyphCache {
         }
     }
 
-    pub(crate) fn get(&self, key: &GlyphCacheKey) -> Option<CachedRaster> {
+    pub(crate) fn get(&self, key: &GlyphCacheKey) -> Option<Arc<CachedRaster>> {
         let mut state = self.inner.lock().ok()?;
         state.access_clock = state.access_clock.saturating_add(1);
         let access = state.access_clock;
         let entry = state.entries.get_mut(key)?;
         entry.last_access = access;
-        Some(entry.raster.clone())
+        // 命中时仅增加引用计数，不拷贝覆盖像素数据。
+        Some(Arc::clone(&entry.raster))
     }
 
     pub(crate) fn insert(&self, key: GlyphCacheKey, raster: CachedRaster) {
@@ -134,7 +136,8 @@ impl GlyphCache {
             state.entries.insert(
                 key,
                 GlyphCacheEntry {
-                    raster,
+                    // 进入缓存时统一包装为共享指针。
+                    raster: Arc::new(raster),
                     retained_bytes,
                     last_access: access,
                 },

@@ -64,7 +64,7 @@ pub(crate) struct SoftwareRasterizer {
 
 impl SoftwareRasterizer {
     /// 创建新渲染器，默认全屏裁剪、identity 变换。
-    pub fn new(surface_w: i32, surface_h: i32) -> Self {
+    pub(crate) fn new(surface_w: i32, surface_h: i32) -> Self {
         // 裁剪计算统一使用至少 1x1 的安全目标尺寸。
         let surface_w = surface_w.max(1);
         let surface_h = surface_h.max(1);
@@ -88,7 +88,7 @@ impl SoftwareRasterizer {
 
     // ═══ 状态访问器 ═══
 
-    pub fn clip_rect(&self) -> Rect {
+    pub(crate) fn clip_rect(&self) -> Rect {
         self.clip_rect
     }
     // 告知 recorder 当前裁剪是否包含不能降为矩形 scissor 的 coverage mask。
@@ -96,27 +96,27 @@ impl SoftwareRasterizer {
         // mask 存在即要求后续绘制经过共享软件像素入口。
         self.clip_mask.is_some()
     }
-    pub fn opacity(&self) -> f32 {
+    pub(crate) fn opacity(&self) -> f32 {
         self.opacity
     }
-    pub fn offset(&self) -> (f32, f32) {
+    pub(crate) fn offset(&self) -> (f32, f32) {
         (self.offset_x, self.offset_y)
     }
-    pub fn set_offset(&mut self, dx: f32, dy: f32) {
+    pub(crate) fn set_offset(&mut self, dx: f32, dy: f32) {
         self.offset_x = dx;
         self.offset_y = dy;
     }
-    pub fn set_transform(&mut self, t: Transform) {
+    pub(crate) fn set_transform(&mut self, t: Transform) {
         self.transform = t;
         self.invert = Self::compute_inverse(&t);
     }
-    pub fn transform(&self) -> Transform {
+    pub(crate) fn transform(&self) -> Transform {
         self.transform
     }
 
     // ═══ 状态管理 ═══
 
-    pub fn save(&mut self) {
+    pub(crate) fn save(&mut self) {
         self.state_stack.push(StateSnapshot {
             clip_rect: self.clip_rect,
             clip_int: self.clip_int,
@@ -132,7 +132,7 @@ impl SoftwareRasterizer {
         });
     }
 
-    pub fn restore(&mut self) {
+    pub(crate) fn restore(&mut self) {
         if let Some(snap) = self.state_stack.pop() {
             self.clip_rect = snap.clip_rect;
             self.clip_int = snap.clip_int;
@@ -148,11 +148,11 @@ impl SoftwareRasterizer {
         }
     }
 
-    pub fn push_clip(&mut self, rect: Rect) {
+    pub(crate) fn push_clip(&mut self, rect: Rect) {
         self.push_clip_surface(self.map_rect(rect));
     }
 
-    pub fn push_clip_surface(&mut self, rect: Rect) {
+    pub(crate) fn push_clip_surface(&mut self, rect: Rect) {
         // 统一记录当前路径 mask，让矩形与路径裁剪可以混合嵌套。
         self.clip_stack.push(self.clip_rect);
         self.clip_mask_stack.push(self.clip_mask.clone());
@@ -165,7 +165,7 @@ impl SoftwareRasterizer {
         }
     }
 
-    pub fn pop_clip(&mut self) {
+    pub(crate) fn pop_clip(&mut self) {
         if let Some(prev) = self.clip_stack.pop() {
             self.clip_rect = prev;
             self.sync_clip_int();
@@ -176,11 +176,11 @@ impl SoftwareRasterizer {
         }
     }
 
-    pub fn set_opacity(&mut self, opacity: f32) {
+    pub(crate) fn set_opacity(&mut self, opacity: f32) {
         self.opacity = opacity.clamp(0.0, 1.0);
     }
 
-    pub fn set_blend_mode(&mut self, mode: BlendMode) {
+    pub(crate) fn set_blend_mode(&mut self, mode: BlendMode) {
         self.blend_mode = mode;
     }
 

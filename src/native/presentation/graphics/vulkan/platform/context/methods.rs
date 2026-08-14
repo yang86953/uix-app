@@ -39,6 +39,7 @@ impl VulkanContext {
         let command_pool_info = vk::CommandPoolCreateInfo::default()
             .queue_family_index(queue_family_index)
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
+        // SAFETY: device 存活；command_pool_info 为栈上完整初始化的创建描述；分配器传 None。
         let command_pool = match unsafe { device.create_command_pool(&command_pool_info, None) } {
             Ok(pool) => pool,
             Err(err) => {
@@ -50,9 +51,11 @@ impl VulkanContext {
             .command_pool(command_pool)
             .level(vk::CommandBufferLevel::PRIMARY)
             .command_buffer_count(1);
+        // SAFETY: device 存活；command_alloc 引用刚创建的 command_pool 且描述完整。
         let command_buffer = match unsafe { device.allocate_command_buffers(&command_alloc) } {
             Ok(mut buffers) => buffers.pop(),
             Err(err) => {
+                // SAFETY: command_pool 为本函数刚创建、仍存活且此后不再使用；分配器传 None。
                 unsafe {
                     device.destroy_command_pool(command_pool, None);
                 }
@@ -61,6 +64,7 @@ impl VulkanContext {
             }
         }
         .ok_or_else(|| {
+            // SAFETY: 失败路径同样只销毁本函数刚创建且不再使用的 command_pool。
             unsafe {
                 device.destroy_command_pool(command_pool, None);
             }
@@ -69,9 +73,11 @@ impl VulkanContext {
         })?;
 
         let semaphore_info = vk::SemaphoreCreateInfo::default();
+        // SAFETY: device 存活；semaphore_info 为默认初始化的创建描述；分配器传 None。
         let image_available = match unsafe { device.create_semaphore(&semaphore_info, None) } {
             Ok(sem) => sem,
             Err(err) => {
+                // SAFETY: command_pool 为本函数刚创建、仍存活且此后不再使用。
                 unsafe {
                     device.destroy_command_pool(command_pool, None);
                 }
@@ -80,9 +86,11 @@ impl VulkanContext {
             }
         };
         let fence_info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
+        // SAFETY: device 存活；fence_info 为栈上完整初始化的创建描述；分配器传 None。
         let frame_fence = match unsafe { device.create_fence(&fence_info, None) } {
             Ok(fence) => fence,
             Err(err) => {
+                // SAFETY: image_available 与 command_pool 均为本函数刚创建、仍存活且失败后不再使用。
                 unsafe {
                     device.destroy_semaphore(image_available, None);
                     device.destroy_command_pool(command_pool, None);
@@ -240,16 +248,19 @@ impl VulkanContext {
             }
         }
 
+        // SAFETY: physical_device 与 surface 存活，查询为只读操作。
         let caps = unsafe {
             self.surface_loader
                 .get_physical_device_surface_capabilities(self.physical_device, self.surface)
         }
         .map_err(|err| vk_err("vkGetPhysicalDeviceSurfaceCapabilitiesKHR", err))?;
+        // SAFETY: physical_device 与 surface 存活，查询为只读操作。
         let formats = unsafe {
             self.surface_loader
                 .get_physical_device_surface_formats(self.physical_device, self.surface)
         }
         .map_err(|err| vk_err("vkGetPhysicalDeviceSurfaceFormatsKHR", err))?;
+        // SAFETY: physical_device 与 surface 存活，查询为只读操作。
         let present_modes = unsafe {
             self.surface_loader
                 .get_physical_device_surface_present_modes(self.physical_device, self.surface)
@@ -305,12 +316,15 @@ impl VulkanContext {
             .present_mode(present_mode)
             .old_swapchain(old_swapchain)
             .clipped(true);
+        // SAFETY: create_info 为栈上完整初始化的创建描述，引用的 surface/old_swapchain 均存活；分配器传 None。
         let new_swapchain = unsafe { self.swapchain_loader.create_swapchain(&create_info, None) }
             .map_err(|err| vk_err("vkCreateSwapchainKHR", err))?;
+        // SAFETY: new_swapchain 为刚创建存活的交换链，查询其 image 为只读操作。
         let new_images = match unsafe { self.swapchain_loader.get_swapchain_images(new_swapchain) }
         {
             Ok(images) => images,
             Err(err) => {
+                // SAFETY: new_swapchain 为本函数刚创建、仍存活且失败后不再使用。
                 unsafe {
                     self.swapchain_loader.destroy_swapchain(new_swapchain, None);
                 }
@@ -318,6 +332,7 @@ impl VulkanContext {
             }
         };
         if let Err(error) = validate_swapchain_images(&new_images) {
+            // SAFETY: new_swapchain 仍存活且校验失败后不再使用。
             unsafe {
                 self.swapchain_loader.destroy_swapchain(new_swapchain, None);
             }
@@ -326,6 +341,7 @@ impl VulkanContext {
         let new_image_layouts = match allocate_image_layouts(new_images.len()) {
             Ok(layouts) => layouts,
             Err(error) => {
+                // SAFETY: new_swapchain 仍存活且分配失败后不再使用。
                 unsafe {
                     self.swapchain_loader.destroy_swapchain(new_swapchain, None);
                 }
@@ -338,6 +354,7 @@ impl VulkanContext {
             match allocate_presented_images(new_images.len()) {
                 Ok(presented) => presented,
                 Err(error) => {
+                    // SAFETY: new_swapchain 仍存活且分配失败后不再使用。
                     unsafe {
                         self.swapchain_loader.destroy_swapchain(new_swapchain, None);
                     }
@@ -355,6 +372,7 @@ impl VulkanContext {
             match create_render_finished_semaphores(&self.device, new_images.len()) {
                 Ok(semaphores) => semaphores,
                 Err(error) => {
+                    // SAFETY: new_swapchain 仍存活且创建失败后不再使用。
                     unsafe {
                         self.swapchain_loader.destroy_swapchain(new_swapchain, None);
                     }
@@ -370,6 +388,7 @@ impl VulkanContext {
                 Err(error) => {
                     let mut semaphores = new_render_finished;
                     destroy_semaphores(&self.device, &mut semaphores);
+                    // SAFETY: new_swapchain 仍存活且 fence 创建失败后不再使用。
                     unsafe {
                         self.swapchain_loader.destroy_swapchain(new_swapchain, None);
                     }
@@ -411,6 +430,7 @@ impl VulkanContext {
     }
 
     pub(super) fn present_uploaded_pixels(&mut self) -> Result<()> {
+        // SAFETY: swapchain 存活；超时与信号量参数有效，fence 传 null 表示不等待。
         let (image_index, acquire_suboptimal) = match unsafe {
             self.swapchain_loader.acquire_next_image(
                 self.swapchain,
@@ -448,6 +468,7 @@ impl VulkanContext {
             .present_fences
             .prepare_for_present(&self.device, image_slot)?;
         self.record_upload_commands(image_slot)?;
+        // SAFETY: frame_fence 为存活且非 SIGNALED 状态的 fence（acquire 后未提交）；reset 数组引用有效。
         unsafe {
             self.device
                 .reset_fences(&[self.frame_fence])
@@ -459,6 +480,7 @@ impl VulkanContext {
             .wait_dst_stage_mask(&wait_stages)
             .command_buffers(std::slice::from_ref(&self.command_buffer))
             .signal_semaphores(std::slice::from_ref(&render_finished));
+        // SAFETY: submit 引用的 semaphore/command buffer/fence 均存活且状态合法；切片引用在调用期间有效。
         if let Err(err) = unsafe {
             self.device
                 .queue_submit(self.queue, std::slice::from_ref(&submit), self.frame_fence)
@@ -478,12 +500,14 @@ impl VulkanContext {
                 .swapchains(std::slice::from_ref(&self.swapchain))
                 .image_indices(std::slice::from_ref(&image_index))
                 .push_next(&mut fence_info);
+            // SAFETY: present 引用的 swapchain/semaphore/fence_info 均存活，切片在调用期间有效。
             unsafe { self.swapchain_loader.queue_present(self.queue, &present) }
         } else {
             let present = vk::PresentInfoKHR::default()
                 .wait_semaphores(std::slice::from_ref(&render_finished))
                 .swapchains(std::slice::from_ref(&self.swapchain))
                 .image_indices(std::slice::from_ref(&image_index));
+            // SAFETY: present 引用的 swapchain/semaphore 均存活，切片在调用期间有效。
             unsafe { self.swapchain_loader.queue_present(self.queue, &present) }
         };
         match present_match {
@@ -534,6 +558,7 @@ impl VulkanContext {
         // 当前 context 的提交在返回前已由 frame fence 排空；device lost 时
         // Vulkan 仍要求显式销毁本窗口拥有的 child object。
         let device = self.active_device()?;
+        // SAFETY: device 存活；device_wait_idle 无指针参数，等待本 device 全部队列完成。
         let wait_result = unsafe { self.device.device_wait_idle() };
         device.observe_wait(wait_result);
         match wait_result {
@@ -548,6 +573,7 @@ impl VulkanContext {
             Err(_) => {}
         }
         accept_device_wait_for_shutdown(wait_result)?;
+        // SAFETY: device 已 idle（或 device lost），销毁的 child 对象均存活且不再被提交引用；分配器传 None。
         unsafe {
             if self.upload.buffer != vk::Buffer::null() {
                 self.device.destroy_buffer(self.upload.buffer, None);

@@ -60,50 +60,94 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
 
         match action {
             AgentWindowAction::PressKey { key, modifiers } => {
-                let _ = tree.dispatch_event(&SystemEvent::KeyDown {
-                    key,
-                    mods: modifiers,
-                });
-                let _ = tree.dispatch_event(&SystemEvent::KeyUp {
-                    key,
-                    mods: modifiers,
-                });
+                // KeyDown 未被任何组件消费（如无焦点组件）时命令必须失败，
+                // 静默忽略会让 agent 误以为按键已生效（假成功）。
+                dispatch_window_event(
+                    tree,
+                    &SystemEvent::KeyDown {
+                        key,
+                        mods: modifiers,
+                    },
+                )?;
+                // KeyUp 与 KeyDown 同样要求被消费，保证按键序列完整生效。
+                dispatch_window_event(
+                    tree,
+                    &SystemEvent::KeyUp {
+                        key,
+                        mods: modifiers,
+                    },
+                )?;
             }
             AgentWindowAction::ClickAt { position } => {
-                let _ = tree.dispatch_event(&SystemEvent::PointerDown {
-                    pos: position,
-                    button: MouseButton::Left,
-                    mods: KeyMod::NONE,
-                });
-                let _ = tree.dispatch_event(&SystemEvent::PointerUp {
-                    pos: position,
-                    button: MouseButton::Left,
-                    mods: KeyMod::NONE,
-                });
+                // 点击落在空白处（无组件消费）对 agent 而言动作未生效，报告失败。
+                dispatch_window_event(
+                    tree,
+                    &SystemEvent::PointerDown {
+                        pos: position,
+                        button: MouseButton::Left,
+                        mods: KeyMod::NONE,
+                    },
+                )?;
+                dispatch_window_event(
+                    tree,
+                    &SystemEvent::PointerUp {
+                        pos: position,
+                        button: MouseButton::Left,
+                        mods: KeyMod::NONE,
+                    },
+                )?;
             }
             AgentWindowAction::PointerMove { position } => {
-                let _ = tree.dispatch_event(&SystemEvent::PointerMove {
-                    pos: position,
-                    mods: KeyMod::NONE,
-                });
+                // 指针移动无组件接收同样视为动作未生效，避免假成功。
+                dispatch_window_event(
+                    tree,
+                    &SystemEvent::PointerMove {
+                        pos: position,
+                        mods: KeyMod::NONE,
+                    },
+                )?;
             }
             AgentWindowAction::PointerDown { position } => {
-                let _ = tree.dispatch_event(&SystemEvent::PointerDown {
-                    pos: position,
-                    button: MouseButton::Left,
-                    mods: KeyMod::NONE,
-                });
+                dispatch_window_event(
+                    tree,
+                    &SystemEvent::PointerDown {
+                        pos: position,
+                        button: MouseButton::Left,
+                        mods: KeyMod::NONE,
+                    },
+                )?;
             }
             AgentWindowAction::PointerUp { position } => {
-                let _ = tree.dispatch_event(&SystemEvent::PointerUp {
-                    pos: position,
-                    button: MouseButton::Left,
-                    mods: KeyMod::NONE,
-                });
+                dispatch_window_event(
+                    tree,
+                    &SystemEvent::PointerUp {
+                        pos: position,
+                        button: MouseButton::Left,
+                        mods: KeyMod::NONE,
+                    },
+                )?;
             }
         }
         Ok(())
     }
+}
+
+/// 派发窗口级输入事件；事件未被任何组件消费时映射为命令失败。
+///
+/// 窗口动作没有语义目标，`dispatch_event` 返回 `NotHandled` 表示动作未生效；
+/// 此前静默忽略会让 agent 得到假成功。事件未处理（无接收方）映射为
+/// `NotInteractable`（携带事件描述）；树已停止等系统级不可用同样表现为
+/// `NotHandled`，一并按失败处理，避免与可交互目标区分过细。
+#[cfg(any(test, feature = "agent-control"))]
+fn dispatch_window_event(
+    tree: &mut WidgetTree,
+    event: &SystemEvent,
+) -> Result<(), AgentCommandError> {
+    if tree.dispatch_event(event) == crate::ui::event::EventResult::NotHandled {
+        // 事件没有可交互的接收方：向调用方报告动作未生效。
+        return Err(AgentCommandError::NotInteractable(format!("{event:?}")));
+    }
+    Ok(())
 }
 
 fn validate_command(

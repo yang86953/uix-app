@@ -10,7 +10,7 @@ pub(crate) mod bridge;
 pub(crate) mod frame_scheduler;
 pub(crate) mod text_input;
 #[allow(clippy::module_inception)]
-pub mod window;
+pub(crate) mod window;
 pub(crate) mod window_actions;
 pub(crate) mod window_config;
 pub(crate) mod window_driver;

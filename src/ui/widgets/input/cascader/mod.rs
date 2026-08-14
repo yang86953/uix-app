@@ -5,10 +5,12 @@ use crate::draw::Color;
 use crate::ui::component::paint_context::PaintContext;
 use std::collections::HashSet;
 
+// 级联触发器高度（32.0）；popover 触发器为 28.0，组件独立设计。
 const TRIGGER_HEIGHT: f32 = 32.0;
 const POPUP_GAP: f32 = 2.0;
 const POPUP_COLUMN_MIN_WIDTH: f32 = 200.0;
 const POPUP_HEIGHT: f32 = 200.0;
+// 级联列项高度（32.0）；timeline 时间线条目为 60.0，语境不同。
 const ITEM_HEIGHT: f32 = 32.0;
 
 #[derive(Debug, Clone, PartialEq)]

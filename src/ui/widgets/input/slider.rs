@@ -5,7 +5,7 @@ use std::ops::RangeInclusive;
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::{Color, Radius};
+use crate::draw::Radius;
 use crate::platform::windowing::ControlSize;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
@@ -215,7 +215,8 @@ component! {
         } else if self.hovered {
             primary
         } else {
-            Color::white()
+            // 默认滑块头：白色 token。
+            ctx.tokens().color_white()
         };
         ctx.fill_circle(thumb_x, cy, thumb_r, thumb_color);
         ctx.stroke_rect(
@@ -272,8 +273,9 @@ component! {
                 &text,
                 target,
                 placement,
-                Color::from_rgba(50, 50, 50, 230),
-                Color::white(),
+                // 气泡底：原为 50,50,50 深灰，收敛为黑色 token（AntD 标准 tooltip 色，alpha 保持原值）。
+                ctx.tokens().color_black().with_alpha(230),
+                ctx.tokens().color_white(),
                 true,
             )
         });
@@ -511,7 +513,8 @@ impl Default for Slider {
 }
 
 impl Slider {
-    /// Create a two-thumb slider bound with [`RangeSlider::start`] and [`RangeSlider::end`].
+    /// Create a two-thumb slider bound with [`crate::ui::widgets::input::range_slider::RangeSlider`]
+    /// `start` and `end` bounds.
     pub fn range(range: RangeInclusive<f64>) -> super::RangeSlider {
         super::RangeSlider::new(range)
     }

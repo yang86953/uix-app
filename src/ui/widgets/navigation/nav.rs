@@ -212,7 +212,7 @@ component! {
 
         let label_w = (frame.x + frame.w - cursor_x).max(0.0);
         let label_area = Rect::new(cursor_x, frame.y, label_w, row_h);
-        ctx.draw_text_in_frame(&self.label, label_area, label_color, 14.0);
+        ctx.draw_text_in_frame(&self.label, label_area, label_color, ctx.tokens().font_size());
         if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(
                 item_frame,

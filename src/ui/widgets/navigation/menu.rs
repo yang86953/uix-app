@@ -315,6 +315,9 @@ component! {
             SystemEvent::FocusIn => { self.focused = true; EventResult::Handled }
             SystemEvent::FocusOut => { self.focused = false; EventResult::Handled }
             SystemEvent::KeyDown { key, .. } => {
+                // 方向键只移动高亮选择；Enter 不在此处激活选中：菜单项的选中由
+                // PointerDown 与 Click 语义统一驱动（选择即激活并展开子项），
+                // 键盘保持与指针一致的单语义来源，避免两套激活路径。
                 match (self.mode, key) {
                     (MenuMode::Horizontal, KeyCode::Right)
                     | (MenuMode::Vertical | MenuMode::Inline, KeyCode::Down) => {
@@ -367,7 +370,7 @@ component! {
                         ctx.fill_rect(Rect::new(cx + 8.0, frame.y + self.item_h - 2.0, iw - 16.0, 2.0), primary, None);
                     }
                     if item.icon.is_empty() {
-                        ctx.text_center(&item.label, item_rect, item_c, 14.0);
+                        ctx.text_center(&item.label, item_rect, item_c, ctx.tokens().font_size());
                     } else {
                         let text_width = item.label.len() as f32 * 8.0;
                         let content_width = 16.0 + 4.0 + text_width;
@@ -418,7 +421,7 @@ component! {
                         (frame.w - label_pad - 8.0).max(0.0),
                         self.item_h,
                     );
-                    ctx.draw_text_in_frame(&item.label, label_rect, item_c, 14.0);
+                    ctx.draw_text_in_frame(&item.label, label_rect, item_c, ctx.tokens().font_size());
                 }
             }
         }

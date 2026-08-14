@@ -14,10 +14,10 @@ use crate::ui::widgets::window_chrome::WindowInteractionRegion;
 use crate::ui::widgets::{Container, Grid, ScrollView, Space};
 // 反馈 capability 启用时才引入 Modal 与 Popconfirm 生命周期类型。
 #[cfg(feature = "feedback")]
-use crate::ui::widgets::{Modal, Popconfirm};
+use crate::ui::widgets::{Modal, Popconfirm, Popover};
 // 导航 capability 启用时才引入兄弟项联动与 Tabs 焦点迁移所需类型。
 #[cfg(feature = "navigation")]
-use crate::ui::widgets::{NavItem, Tabs};
+use crate::ui::widgets::{Dropdown, NavItem, Tabs};
 
 /// 最近 viewport 祖先允许内容溢出的轴。
 ///
@@ -146,7 +146,7 @@ pub(crate) fn apply_modal_context_requests(tree: &mut WidgetTree, path: &[Widget
 
 /// 把浮层外部点击转换为具体反馈组件拥有的用户取消动作。
 pub(crate) fn dismiss_overlay_owner_from_outside(tree: &mut WidgetTree, owner: WidgetId) {
-    // 反馈能力启用时通知 Popconfirm 的唯一取消端口。
+    // 反馈 capability 启用时通知 Popconfirm/Popover 的唯一取消端口。
     #[cfg(feature = "feedback")]
     {
         // 只在 owner 仍可寻址且确实为 Popconfirm 时执行。
@@ -163,9 +163,41 @@ pub(crate) fn dismiss_overlay_owner_from_outside(tree: &mut WidgetTree, owner: W
             // 用户外部点击必须执行一次 @cancel 后再离场。
             popconfirm.cancel_action();
         }
+        // 同一取消端口同时服务 Popover：外部点击直接关闭弹层。
+        if let Some(popover) = tree
+            // 获取浮层 owner 节点的可变引用。
+            .get_mut(owner)
+            // 下转到具体反馈组件。
+            .and_then(|node| {
+                node.component_mut()
+                    .as_any_mut()
+                    .downcast_mut::<Popover>()
+            })
+        {
+            // 用户外部点击关闭已打开的 Popover 弹层。
+            popover.close();
+        }
     }
-    // 关闭反馈能力时保留通用调用点并退化为空操作。
-    #[cfg(not(feature = "feedback"))]
+    // 导航 capability 启用时通知 Dropdown 的外部点击关闭端口。
+    #[cfg(feature = "navigation")]
+    {
+        // 只在 owner 仍可寻址且确实为 Dropdown 时执行。
+        if let Some(dropdown) = tree
+            // 获取浮层 owner 节点的可变引用。
+            .get_mut(owner)
+            // 下转到具体导航组件。
+            .and_then(|node| {
+                node.component_mut()
+                    .as_any_mut()
+                    .downcast_mut::<Dropdown>()
+            })
+        {
+            // 用户外部点击关闭已打开的 Dropdown 菜单。
+            dropdown.close();
+        }
+    }
+    // 反馈与导航能力均关闭时保留通用调用点并退化为空操作。
+    #[cfg(not(any(feature = "feedback", feature = "navigation")))]
     {
         // 消费参数以避免能力裁剪构建产生告警。
         let _ = (tree, owner);

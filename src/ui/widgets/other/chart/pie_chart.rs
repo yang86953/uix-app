@@ -288,7 +288,7 @@ component! {
                     let lsz = ctx.measure_text(&label, font_size);
                     let text_rect = Rect::new(lx - lsz.w * 0.5, ly - font_size * 0.8, lsz.w, font_size * 1.6);
                     let text_y = ctx.visual_center_y(text_rect, font_size);
-                    ctx.draw_text(&label, Point::new(lx - lsz.w * 0.5, text_y), Color::white(), font_size);
+                    ctx.draw_text(&label, Point::new(lx - lsz.w * 0.5, text_y), ctx.tokens().color_white(), font_size);
                 }
             }
             sa = ea;
@@ -325,7 +325,8 @@ component! {
             let bottom = start.y.max(end.y).clamp(frame.y, frame.y + frame.h);
             ctx.fill_rect(
                 Rect::new(x, y, (right - x).max(0.0), (bottom - y).max(0.0)),
-                Color::from_rgba(22, 119, 255, 48),
+                // 框选填充：token 主色 + 固定 alpha（替换原硬编码 22,119,255，随主题换肤）。
+                ctx.tokens().color_primary().with_alpha(48),
                 None,
             );
         }

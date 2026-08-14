@@ -16,7 +16,7 @@ pub use drag_manager::*;
 pub use focus_manager::*;
 pub use interaction_manager::*;
 pub use state_manager::*;
-pub use style_manager::*;
+pub(crate) use style_manager::*;
 pub use text_manager::*;
 
 /// 聚合所有 manager 系统。

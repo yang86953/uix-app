@@ -50,7 +50,7 @@ fn modulate_coverage(color: u32, coverage: u8) -> u32 {
 // 为共享软件执行器补充状态完整的字形 coverage 采样入口。
 impl SoftwareRasterizer {
     // 把设备像素中心逆映射到 offset 后局部字形并执行 point sampling。
-    pub fn blit_glyph(
+    pub(crate) fn blit_glyph(
         // 只读取当前绘制状态。
         &self,
         // 写入调用方持有的像素目标。

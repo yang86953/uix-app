@@ -15,11 +15,12 @@
 #![allow(clippy::too_many_arguments)]
 
 pub(crate) mod blur;
-pub mod core;
+pub(crate) mod core;
 #[cfg(test)]
+#[doc(hidden)]
 pub mod fill;
-pub mod glyph;
-pub mod polygon;
-pub mod stroke;
+pub(crate) mod glyph;
+pub(crate) mod polygon;
+pub(crate) mod stroke;
 
-pub use core::*;
+pub(crate) use core::*;

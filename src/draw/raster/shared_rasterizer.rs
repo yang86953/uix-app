@@ -13,14 +13,14 @@ use crate::draw::raster::software_rasterizer::SoftwareRasterizer;
 use crate::draw::Canvas2D;
 
 /// 共享 CPU 光栅化 surface。
-pub struct SharedRasterizer {
+pub(crate) struct SharedRasterizer {
     renderer: SoftwareRasterizer,
     surface: PixelSurface,
     deferred_error: Option<Error>,
 }
 
 impl SharedRasterizer {
-    pub fn new(surface: PixelSurface) -> Self {
+    pub(crate) fn new(surface: PixelSurface) -> Self {
         let w = surface.width();
         let h = surface.height();
         Self {
@@ -34,7 +34,7 @@ impl SharedRasterizer {
         self.deferred_error.take()
     }
 
-    pub fn surface(&self) -> &PixelSurface {
+    pub(crate) fn surface(&self) -> &PixelSurface {
         &self.surface
     }
     pub(crate) fn surface_mut(&mut self) -> &mut PixelSurface {
@@ -58,26 +58,26 @@ impl SharedRasterizer {
         self.surface.memory_usage()
     }
 
-    pub fn set_transform(&mut self, t: Transform) {
+    pub(crate) fn set_transform(&mut self, t: Transform) {
         self.renderer.set_transform(t);
     }
-    pub fn current_transform(&self) -> Transform {
+    pub(crate) fn current_transform(&self) -> Transform {
         self.renderer.transform()
     }
 
-    pub fn set_opacity(&mut self, opacity: f32) {
+    pub(crate) fn set_opacity(&mut self, opacity: f32) {
         self.renderer.set_opacity(opacity);
     }
 
-    pub fn set_blend_mode(&mut self, mode: BlendMode) {
+    pub(crate) fn set_blend_mode(&mut self, mode: BlendMode) {
         self.renderer.set_blend_mode(mode);
     }
 
-    pub fn set_offset(&mut self, dx: f32, dy: f32) {
+    pub(crate) fn set_offset(&mut self, dx: f32, dy: f32) {
         self.renderer.set_offset(dx, dy);
     }
 
-    pub fn push_clip(&mut self, rect: Rect) {
+    pub(crate) fn push_clip(&mut self, rect: Rect) {
         self.renderer.push_clip(rect);
     }
 
@@ -95,7 +95,7 @@ impl SharedRasterizer {
         self.renderer.has_clip_mask()
     }
 
-    pub fn pop_clip(&mut self) {
+    pub(crate) fn pop_clip(&mut self) {
         self.renderer.pop_clip();
     }
 

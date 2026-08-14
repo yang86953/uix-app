@@ -29,7 +29,7 @@ enum Cmd {
     Shutdown,
 }
 
-pub struct LinuxTimer {
+pub(crate) struct LinuxTimer {
     next_id: u32,
     cmd_tx: Sender<Cmd>,
     active: Arc<Mutex<HashMap<u32, u32>>>,
@@ -37,7 +37,7 @@ pub struct LinuxTimer {
 }
 
 impl LinuxTimer {
-    pub fn new(
+    pub(crate) fn new(
         event_queue: Arc<Mutex<std::collections::VecDeque<UiEvent>>>,
         pending_failures: PendingFailureSource,
     ) -> Self {

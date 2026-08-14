@@ -25,6 +25,7 @@ pub struct ComponentHandle {
 
 impl ComponentHandle {
     #[cfg(test)]
+    #[doc(hidden)]
     pub fn new(id: ComponentId, tree: &Rc<RefCell<WidgetTree>>) -> Self {
         Self {
             id,

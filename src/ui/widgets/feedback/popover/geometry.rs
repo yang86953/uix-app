@@ -580,12 +580,18 @@ pub(super) fn arrow_anchor(desired: f32, start: f32, length: f32, inset: f32) ->
     }
 }
 
-// 仅在测试构建中编译气泡几何契约。
+// 仅在测试构建中编译气泡卡片契约。
 #[cfg(test)]
 // 将测试放在同模块内以核验私有缓存状态。
 mod tests {
     // 复用被测模块中的组件与几何辅助函数。
     use super::*;
+    // 引入事件行为 trait 以驱动焦点与键盘事件。
+    use crate::ui::component::traits::EventHandler;
+    // 引入组件渲染 trait 以验证浮层登记契约。
+    use crate::ui::component::traits::WidgetRender;
+    // 引入稳定测试组件身份。
+    use crate::core::ComponentId;
 
     // 标记表面缩放时缓存几何必须失效的回归契约。
     #[test]
@@ -666,5 +672,54 @@ mod tests {
 
         // 缓存读取必须与新表面下的绘制几何一致。
         assert_eq!(popover.absolute_popup_rect(frame), expected);
+    }
+
+    // 打开状态登记浮层：外部点击关闭与 Esc 路由依赖 OverlayStack。
+    #[test]
+    fn open_popover_registers_overlay_with_outside_dismiss() {
+        // 构造并打开气泡。
+        let mut popover = Popover::new("content");
+        popover.open();
+        // 打开状态必须生成浮层登记。
+        let overlay = WidgetRender::overlay_entry(
+            &popover,
+            ComponentId::new(7),
+            Rect::new(10.0, 10.0, 40.0, 20.0),
+        )
+        // 在场状态必须返回登记。
+        .expect("打开的 Popover 应生成浮层登记");
+        // 与既有 Select/Dropdown 弹层一致的 z 顺序。
+        assert_eq!(overlay.z_index_value(), 900);
+        // 外部点击必须注册为可取消端口。
+        assert!(overlay.dismisses_on_outside());
+        // 关闭后不再登记浮层：等离场动画结束后验证。
+        popover.close();
+        // 驱动关闭动画直到完全离场。
+        while crate::ui::component::traits::WidgetAnimation::update_animation(&mut popover, 0.05) {
+        }
+        assert!(WidgetRender::overlay_entry(
+            &popover,
+            ComponentId::new(7),
+            Rect::new(10.0, 10.0, 40.0, 20.0),
+        )
+        .is_none());
+    }
+
+    // FocusOut 关闭弹层（与 Dropdown 对齐），hover 触发路径不受影响。
+    #[test]
+    fn focus_out_closes_open_popover() {
+        // 构造点击触发的气泡。
+        let mut popover = Popover::new("content");
+        // 模拟 Click 触发打开。
+        popover.open();
+        // 打开状态可见。
+        assert!(popover.is_present());
+        // 焦点离开必须关闭弹层。
+        assert_eq!(
+            EventHandler::on_event(&mut popover, &SystemEvent::FocusOut),
+            EventResult::Handled
+        );
+        // 关闭事实立即生效，离场动画可继续呈现。
+        assert!(!popover.visible);
     }
 }

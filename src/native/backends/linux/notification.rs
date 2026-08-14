@@ -16,10 +16,10 @@ use std::process::Command;
 // ════════════════════════════════════════════════════════════════════════════
 
 #[derive(Debug)]
-pub struct LinuxNotification;
+pub(crate) struct LinuxNotification;
 
 impl LinuxNotification {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self
     }
 }

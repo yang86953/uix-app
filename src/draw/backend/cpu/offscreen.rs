@@ -10,25 +10,25 @@ use crate::draw::geometry::types::ImageHandle;
 use crate::draw::raster::pixel_surface::PixelSurface;
 
 #[derive(Default)]
-pub struct CpuOffscreenPool {
+pub(crate) struct CpuOffscreenPool {
     offscreens: Vec<Option<CpuCanvas2D>>,
     free_ids: Vec<u32>,
     next_id: u32,
 }
 
 impl CpuOffscreenPool {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.offscreens.clear();
         self.free_ids.clear();
         self.next_id = 0;
     }
 
     // 以检查式结果创建 CPU Picture；非正尺寸仍是无资源的正常结果。
-    pub fn try_create(
+    pub(crate) fn try_create(
         // 借用离屏池的唯一可变 owner。
         &mut self,
         // 接收 Picture 的逻辑宽度。
@@ -59,14 +59,14 @@ impl CpuOffscreenPool {
         Ok(Some(ImageHandle(id)))
     }
 
-    pub fn destroy(&mut self, handle: ImageHandle) {
+    pub(crate) fn destroy(&mut self, handle: ImageHandle) {
         let idx = handle.0 as usize;
         if idx < self.offscreens.len() && self.offscreens[idx].take().is_some() {
             self.free_ids.push(handle.0);
         }
     }
 
-    pub fn canvas_mut(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
+    pub(crate) fn canvas_mut(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
         let idx = handle.0 as usize;
         self.offscreens
             .get_mut(idx)?
@@ -74,24 +74,24 @@ impl CpuOffscreenPool {
             .map(|c| c as &mut dyn Canvas2D)
     }
 
-    pub fn copy_pixels(&self, handle: &ImageHandle) -> Option<(Vec<u32>, i32)> {
+    pub(crate) fn copy_pixels(&self, handle: &ImageHandle) -> Option<(Vec<u32>, i32)> {
         let idx = handle.0 as usize;
         let canvas = self.offscreens.get(idx)?.as_ref()?;
         let surf = canvas.surface();
         Some((surf.pixels().to_vec(), surf.width()))
     }
 
-    pub fn get(&self, handle: &ImageHandle) -> Option<&CpuCanvas2D> {
+    pub(crate) fn get(&self, handle: &ImageHandle) -> Option<&CpuCanvas2D> {
         let idx = handle.0 as usize;
         self.offscreens.get(idx)?.as_ref()
     }
 
-    pub fn get_mut(&mut self, handle: &ImageHandle) -> Option<&mut CpuCanvas2D> {
+    pub(crate) fn get_mut(&mut self, handle: &ImageHandle) -> Option<&mut CpuCanvas2D> {
         let idx = handle.0 as usize;
         self.offscreens.get_mut(idx)?.as_mut()
     }
 
-    pub fn memory_usage(&self) -> usize {
+    pub(crate) fn memory_usage(&self) -> usize {
         self.offscreens
             .iter()
             .filter_map(|o| {
@@ -105,7 +105,7 @@ impl CpuOffscreenPool {
 
     /// Compact the slot array by truncating trailing `None` entries.
     /// Also removes free IDs that now point beyond the compacted length.
-    pub fn compact(&mut self) {
+    pub(crate) fn compact(&mut self) {
         while self.offscreens.last().is_some_and(|s| s.is_none()) {
             self.offscreens.pop();
         }

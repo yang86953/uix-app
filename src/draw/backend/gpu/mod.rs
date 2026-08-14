@@ -4,7 +4,7 @@
 //! `stroke_rect` / `stroke_circle`, axis-aligned `draw_line`, solid `blit_glyph`,
 //! linear/radial gradients, fill-rule-aware `fill_path`,
 //! cap/join-aware `stroke_path`, box/ambient shadow, and scaled image blit)
-//! 通过固定 probe 验证的 retained RHI 执行绘制，并由 [`NativeRasterCaps`] 陈述事实能力。
+//! 通过固定 probe 验证的 retained RHI 执行绘制，并由 `NativeRasterCaps` 陈述事实能力。
 //! Axis-aligned transforms are folded into device geometry; general affine
 //! sharp fills and strict-GPU ellipses use solid meshes. Every unsupported
 //! operation deterministically soft-rasterizes into a CPU buffer and alpha-blits
