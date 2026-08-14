@@ -10,7 +10,7 @@ use super::form_slider_codegen::generate_form_slider_field;
 // 引入 Form 语法树、表达式和值映射契约。
 use super::{
     Attribute, AttributeValue, Diagnostic, Element, Expression, ExpressionKind, Node,
-    boolean_value, generate_expression, generate_handler_expression, literal_string,
+    boolean_value, generate_event_handler_expression, generate_expression, literal_string,
     rust_identifier, string_value,
 };
 
@@ -766,7 +766,7 @@ fn generate_submit_handler(
         return Ok(quote! { (#handler)(#submitted) });
     }
     // 显式调用通过 $event 引用模型。
-    generate_handler_expression(expression, Some(submitted))
+    generate_event_handler_expression(expression, submitted, "@submit")
 }
 
 // 构造 Form 首批形状诊断。

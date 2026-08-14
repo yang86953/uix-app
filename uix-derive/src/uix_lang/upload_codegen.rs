@@ -8,7 +8,7 @@ use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Upload 属性、表达式、事件、布尔映射与诊断契约。
 use super::{
     Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_expression,
-    generate_handler_expression,
+    generate_event_handler_expression,
 };
 
 // 生成绑定调用方上传队列并发布类型化事实的 Upload 叶组件。
@@ -128,7 +128,7 @@ pub(crate) fn generate_upload(element: &Element) -> Result<TokenStream, Diagnost
         // 创建卫生的类型化变化事实变量。
         let change = Ident::new("__uix_upload_change", Span::mixed_site());
         // 生成裸处理器或显式载荷调用。
-        let handler = generate_handler_expression(&expression.expression, Some(&change))?;
+        let handler = generate_event_handler_expression(&expression.expression, &change, "@change")?;
         // 在物化 View 前登记组件自己的类型化观察器。
         widget = quote! {
             (#widget).on_change(move |#change| {

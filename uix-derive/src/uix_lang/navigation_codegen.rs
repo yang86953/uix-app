@@ -8,7 +8,7 @@ use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Navigation 属性、表达式、事件、字符串与诊断契约。
 use super::{
     Attribute, AttributeValue, Diagnostic, Element, generate_expression,
-    generate_handler_expression, string_value,
+    generate_event_handler_expression, string_value,
 };
 
 // 生成只拥有侧栏外壳并复用受控 Menu 的 Navigation。
@@ -67,7 +67,7 @@ pub(crate) fn generate_navigation(element: &Element) -> Result<TokenStream, Diag
         // 创建卫生的稳定 key 文本变量。
         let value = Ident::new("__uix_navigation_select", Span::mixed_site());
         // 生成裸处理器或显式载荷调用。
-        let handler = generate_handler_expression(&expression.expression, Some(&value))?;
+        let handler = generate_event_handler_expression(&expression.expression, &value, "@select")?;
         // 根 View 的 Change 观察器承接唯一 Menu 子树冒泡的选择事实。
         view = quote! {
             (#view).on_change_fn(move |#value| {

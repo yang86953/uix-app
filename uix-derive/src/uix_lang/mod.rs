@@ -90,6 +90,13 @@ mod declaration_parser;
 mod expression_ast;
 // 定义受限表达式到 Rust 令牌的确定性转换。
 mod expression_codegen;
+// 定义按事件类型登记的 $event 字段校验与处理器生成边界。
+mod event_payload_codegen;
+// 定义通用点击、指针与键盘事件到公开 View API 的生成边界。
+mod event_codegen;
+// 集中验证事件载荷登记、字段投影与未知字段诊断。
+#[cfg(test)]
+mod event_codegen_tests;
 // 定义受限表达式的词法事实层。
 mod expression_lexer;
 // 定义受限表达式优先级解析与语义验证。
@@ -512,6 +519,8 @@ pub(crate) use expression_codegen::{
     expression_uses_event, generate_expression, generate_expression_without_source_marker,
     generate_handler_expression, with_source_markers,
 };
+// 向各事件适配器暴露带字段登记校验的处理器生成入口。
+pub(crate) use event_payload_codegen::generate_event_handler_expression;
 // 向表达式解析器暴露词法标记。
 pub(crate) use expression_lexer::*;
 // 向核心解析器暴露受限表达式入口。

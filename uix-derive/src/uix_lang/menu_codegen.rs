@@ -8,7 +8,7 @@ use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Menu 属性、表达式、事件、布尔值与诊断契约。
 use super::{
     Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_expression,
-    generate_handler_expression,
+    generate_event_handler_expression,
 };
 
 // 生成拥有 typed MenuItem 树与双受控状态的 Menu。
@@ -72,7 +72,7 @@ pub(crate) fn generate_menu(element: &Element) -> Result<TokenStream, Diagnostic
         // 创建卫生的稳定 key 文本变量。
         let value = Ident::new("__uix_menu_select", Span::mixed_site());
         // 生成裸处理器或显式载荷调用。
-        let handler = generate_handler_expression(&expression.expression, Some(&value))?;
+        let handler = generate_event_handler_expression(&expression.expression, &value, "@select")?;
         // 复用公开 Change 语义注册入口承接 Menu 选择事实。
         view = quote! {
             (#view).on_change_fn(move |#value| {

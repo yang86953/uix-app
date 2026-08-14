@@ -8,7 +8,7 @@ use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Pagination 属性、表达式、事件与诊断契约。
 use super::{
     Attribute, AttributeValue, Diagnostic, Element, generate_expression,
-    generate_handler_expression,
+    generate_event_handler_expression,
 };
 
 // 生成 total、双 State<usize> 与 Change 事件绑定的分页器叶节点。
@@ -67,7 +67,7 @@ pub(crate) fn generate_pagination(element: &Element) -> Result<TokenStream, Diag
         // 创建卫生的文本载荷变量。
         let value = Ident::new("__uix_pagination_change", Span::mixed_site());
         // 生成裸处理器或显式载荷调用。
-        let handler = generate_handler_expression(&expression.expression, Some(&value))?;
+        let handler = generate_event_handler_expression(&expression.expression, &value, "@change")?;
         // 使用公开 View Change 注册入口保存处理器。
         view = quote! {
             // 注册只接收现有 Change 文本借用的闭包。

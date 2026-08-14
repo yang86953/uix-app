@@ -8,7 +8,7 @@ use super::codegen::{apply_common_attributes, generate_children};
 // 引入 Tabs 属性、节点、表达式、事件与诊断契约。
 use super::{
     Attribute, AttributeValue, Diagnostic, Element, Node, generate_expression,
-    generate_handler_expression,
+    generate_event_handler_expression,
 };
 
 // 生成由稳定 key 控制且保留全部面板状态的 Tabs 容器。
@@ -98,7 +98,7 @@ pub(crate) fn generate_tabs(element: &Element) -> Result<TokenStream, Diagnostic
         // 创建卫生的稳定 key 文本变量。
         let value = Ident::new("__uix_tabs_change", Span::mixed_site());
         // 生成裸处理器或显式载荷调用。
-        let handler = generate_handler_expression(&expression.expression, Some(&value))?;
+        let handler = generate_event_handler_expression(&expression.expression, &value, "@change")?;
         // 使用公开 View Change 注册入口保存处理器。
         view = quote! {
             (#view).on_change_fn(move |#value| {

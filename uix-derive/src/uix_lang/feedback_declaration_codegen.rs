@@ -7,7 +7,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入属性值、表达式与诊断辅助。
 use super::{
-    Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_handler_expression,
+    Attribute, AttributeValue, Diagnostic, Element, boolean_value,
+    generate_event_handler_expression,
     literal_string, numeric_value, string_value,
 };
 
@@ -67,7 +68,7 @@ pub(crate) fn generate_message_declaration(element: &Element) -> Result<TokenStr
         // 创建卫生的关闭事实变量。
         let closed = Ident::new("__uix_message_closed", Span::mixed_site());
         // 生成裸处理器或显式载荷调用。
-        let handler = generate_handler_expression(&expression.expression, Some(&closed))?;
+        let handler = generate_event_handler_expression(&expression.expression, &closed, "@close")?;
         // 注册需要 Send + Sync 的 owner 回调。
         widget = quote! {
             (#widget).on_close(move |#closed| {
@@ -149,7 +150,7 @@ pub(crate) fn generate_notification_declaration(
         // 创建卫生的关闭事实变量。
         let closed = Ident::new("__uix_notification_closed", Span::mixed_site());
         // 生成裸处理器或显式载荷调用。
-        let handler = generate_handler_expression(&expression.expression, Some(&closed))?;
+        let handler = generate_event_handler_expression(&expression.expression, &closed, "@close")?;
         // 注册需要 Send + Sync 的 owner 回调。
         widget = quote! {
             (#widget).on_close(move |#closed| {

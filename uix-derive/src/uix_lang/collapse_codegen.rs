@@ -8,7 +8,7 @@ use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Collapse 属性、表达式、事件、布尔映射与诊断契约。
 use super::{
     Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_expression,
-    generate_handler_expression,
+    generate_event_handler_expression,
 };
 
 // 生成拥有稳定面板 key 并可受控绑定展开集合的折叠组。
@@ -92,7 +92,7 @@ pub(crate) fn generate_collapse(element: &Element) -> Result<TokenStream, Diagno
         // 创建卫生的稳定 key 文本变量。
         let value = Ident::new("__uix_collapse_change", Span::mixed_site());
         // 生成裸处理器或显式载荷调用。
-        let handler = generate_handler_expression(&expression.expression, Some(&value))?;
+        let handler = generate_event_handler_expression(&expression.expression, &value, "@change")?;
         // 复用公开 View Change 注册入口。
         view = quote! {
             (#view).on_change_fn(move |#value| {
