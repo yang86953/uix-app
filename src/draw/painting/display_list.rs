@@ -26,164 +26,295 @@ pub enum PaintPass {
 /// 单条绘制指令（与 `PaintContext` 常用 API 对齐）。
 #[derive(Debug, Clone)]
 pub enum PaintOp {
+    /// 填充矩形或圆角矩形。
     FillRect {
+        /// 目标逻辑矩形。
         rect: Rect,
+        /// 填充颜色。
         color: Color,
+        /// 可选的四角半径。
         radius: Option<Radius>,
     },
+    /// 描边矩形或圆角矩形。
     StrokeRect {
+        /// 目标逻辑矩形。
         rect: Rect,
+        /// 描边颜色。
         color: Color,
+        /// 描边线宽。
         line_width: f32,
+        /// 可选的四角半径。
         radius: Option<Radius>,
     },
+    /// 填充圆形。
     FillCircle {
+        /// 圆心水平坐标。
         cx: f32,
+        /// 圆心垂直坐标。
         cy: f32,
+        /// 圆形半径。
         r: f32,
+        /// 填充颜色。
         color: Color,
     },
+    /// 填充椭圆。
     FillEllipse {
+        /// 椭圆的外接矩形。
         rect: Rect,
+        /// 填充颜色。
         color: Color,
     },
+    /// 填充圆扇形。
     FillSector {
+        /// 圆心水平坐标。
         cx: f32,
+        /// 圆心垂直坐标。
         cy: f32,
+        /// 圆形半径。
         r: f32,
+        /// 起始角度。
         start_angle: f32,
+        /// 结束角度。
         end_angle: f32,
+        /// 填充颜色。
         color: Color,
     },
+    /// 按规则填充路径。
     FillPath {
+        /// 要填充的路径。
         path: Path,
+        /// 填充颜色。
         color: Color,
+        /// 路径填充规则。
         fill_rule: FillRule,
     },
+    /// 描边圆形。
     StrokeCircle {
+        /// 圆心水平坐标。
         cx: f32,
+        /// 圆心垂直坐标。
         cy: f32,
+        /// 圆形半径。
         r: f32,
+        /// 描边颜色。
         color: Color,
+        /// 描边线宽。
         line_width: f32,
     },
+    /// 按描边选项绘制路径。
     StrokePath {
+        /// 要描边的路径。
         path: Path,
+        /// 描边颜色。
         color: Color,
+        /// 描边样式选项。
         options: StrokeOptions,
     },
+    /// 绘制一条线段。
     DrawLine {
+        /// 起点水平坐标。
         x1: f32,
+        /// 起点垂直坐标。
         y1: f32,
+        /// 终点水平坐标。
         x2: f32,
+        /// 终点垂直坐标。
         y2: f32,
+        /// 线段颜色。
         color: Color,
+        /// 线段宽度。
         width: f32,
     },
+    /// 绘制方向性矩形阴影。
     DrawBoxShadow {
+        /// 产生阴影的逻辑矩形。
         rect: Rect,
+        /// 阴影模糊半径。
         blur_radius: f32,
+        /// 阴影水平偏移。
         offset_x: f32,
+        /// 阴影垂直偏移。
         offset_y: f32,
+        /// 阴影颜色。
         color: Color,
+        /// 可选的四角半径。
         corner_radius: Option<Radius>,
     },
+    /// 绘制环境光矩形阴影。
     DrawBoxShadowAmbient {
+        /// 产生阴影的逻辑矩形。
         rect: Rect,
+        /// 阴影模糊半径。
         blur_radius: f32,
+        /// 阴影水平偏移。
         offset_x: f32,
+        /// 阴影垂直偏移。
         offset_y: f32,
+        /// 阴影颜色。
         color: Color,
+        /// 可选的四角半径。
         corner_radius: Option<Radius>,
     },
+    /// 从指定位置绘制单行文本。
     DrawText {
+        /// 共享文本内容。
         text: Arc<str>,
+        /// 文本起始位置。
         pos: Point,
+        /// 文本颜色。
         color: Color,
+        /// 字体大小。
         font_size: f32,
     },
+    /// 在矩形内居中绘制文本。
     TextCenter {
+        /// 共享文本内容。
         text: Arc<str>,
+        /// 文本布局矩形。
         rect: Rect,
+        /// 文本颜色。
         color: Color,
+        /// 字体大小。
         font_size: f32,
     },
+    /// 在指定框内绘制文本。
     DrawTextInFrame {
+        /// 共享文本内容。
         text: Arc<str>,
+        /// 文本布局矩形。
         rect: Rect,
+        /// 文本颜色。
         color: Color,
+        /// 字体大小。
         font_size: f32,
     },
+    /// 按基线位置绘制单行文本。
     DrawTextBaseline {
+        /// 共享文本内容。
         text: Arc<str>,
+        /// 文本起点水平坐标。
         x: f32,
+        /// 文本基线垂直坐标。
         baseline_y: f32,
+        /// 文本颜色。
         color: Color,
+        /// 字体大小。
         font_size: f32,
     },
+    /// 在矩形内自动换行绘制文本。
     DrawTextWrapped {
+        /// 共享文本内容。
         text: Arc<str>,
+        /// 文本布局矩形。
         rect: Rect,
+        /// 文本颜色。
         color: Color,
+        /// 字体大小。
         font_size: f32,
     },
+    /// 绘制文本及可选的选择范围背景。
     DrawTextWithSelection {
+        /// 共享文本内容。
         text: Arc<str>,
+        /// 文本起始位置。
         pos: Point,
+        /// 文本颜色。
         color: Color,
+        /// 字体大小。
         font_size: f32,
+        /// 选择范围的字节索引区间。
         selection: Option<(usize, usize)>,
+        /// 选择范围背景色。
         selection_bg: Color,
     },
+    /// 重放预布局的字形序列。
     BlitGlyphLayout {
+        /// 已完成塑形与布局的文本结果。
         layout: crate::draw::resources::font::text_backend::TextLayout,
+        /// 字形布局起始位置。
         pos: Point,
+        /// 字形颜色。
         color: Color,
+        /// 请求的字体大小。
         font_size: f32,
     },
+    /// 设置后续文本指令使用的字体。
     SetFont {
+        /// 后端字体句柄。
         font: FontHandle,
     },
+    /// 填充线性渐变矩形。
     FillLinearGradient {
+        /// 目标逻辑矩形。
         rect: Rect,
+        /// 渐变起始颜色。
         color_a: Color,
+        /// 渐变结束颜色。
         color_b: Color,
+        /// 渐变方向。
         dir: GradientDirection,
     },
+    /// 填充径向渐变。
     FillRadialGradient {
+        /// 渐变圆心水平坐标。
         cx: f32,
+        /// 渐变圆心垂直坐标。
         cy: f32,
+        /// 渐变起始半径。
         inner_r: f32,
+        /// 渐变结束半径。
         outer_r: f32,
+        /// 内侧颜色。
         inner_color: Color,
+        /// 外侧颜色。
         outer_color: Color,
     },
+    /// 绘制已加载的位图资源。
     DrawImage {
+        /// 图像服务中的位图句柄。
         handle: BitmapHandle,
+        /// 图像目标边界。
         bounds: Rect,
+        /// 是否保持比例适配目标边界。
         fit: bool,
     },
+    /// 压入矩形裁剪。
     PushClip {
+        /// 新增的逻辑裁剪矩形。
         rect: Rect,
     },
+    /// 压入路径裁剪。
     PushClipPath {
+        /// 新增的裁剪路径。
         path: Path,
     },
+    /// 弹出最近压入的裁剪。
     PopClip,
+    /// 平移后续绘制坐标。
     Translate {
+        /// 水平平移量。
         dx: f32,
+        /// 垂直平移量。
         dy: f32,
     },
+    /// 替换后续绘制使用的仿射变换。
     SetTransform {
+        /// 新的仿射变换。
         transform: Transform,
     },
+    /// 设置后续绘制使用的全局透明度。
     SetOpacity {
+        /// 新的透明度值。
         opacity: f32,
     },
+    /// 设置后续绘制使用的混合模式。
     SetBlendMode {
+        /// 新的混合模式。
         mode: BlendMode,
     },
+    /// 保存当前画布状态。
     Save,
+    /// 恢复最近保存的画布状态。
     Restore,
 }
 
