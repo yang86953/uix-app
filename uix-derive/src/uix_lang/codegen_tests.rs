@@ -617,14 +617,29 @@ fn rejects_event_parameter_outside_handler() {
 // 验证文档规划中内置组件返回所属类别诊断。
 #[test]
 fn rejects_planned_builtin_with_document_category() {
-    // 解析仍登记为规划中的 DataTable。
-    let document = parse_document(r#"<DataTable />"#)
+    // 解析仍登记为规划中的 Message。
+    let document = parse_document(r#"<Message />"#)
         // 规划状态不影响标签语法合法性。
         .expect("语法本身应合法");
     // 代码生成必须返回规划中诊断。
     let error = generate_view(&document.root).expect_err("规划中组件必须失败");
-    // 诊断必须明确组件状态和所属展示组件文档。
-    assert!(error.message.contains("规划中") && error.message.contains("展示组件"));
+    // 诊断必须明确组件状态和所属反馈组件文档。
+    assert!(error.message.contains("规划中") && error.message.contains("反馈组件"));
+}
+
+// 验证 Rust-only DataTable 不被伪装成未来 UIX 标签。
+#[test]
+fn rejects_rust_only_data_table_as_unknown_element() {
+    // 解析 PascalCase DataTable 标签语法。
+    let document = parse_document(r#"<DataTable />"#)
+        // 标签词法合法，但没有 UIX 契约登记。
+        .expect("DataTable 标签词法本身应合法");
+    // 代码生成必须走普通未知标签诊断。
+    let error = generate_view(&document.root).expect_err("Rust-only DataTable 必须拒绝 UIX 生成");
+    // 诊断不得暗示 DataTable 是规划中的 UIX 标签。
+    assert!(!error.message.contains("规划中"));
+    // 诊断必须明确缺少 Rust API 映射登记。
+    assert!(error.message.contains("尚无已登记的 Rust API 映射"));
 }
 
 // 验证文档外未知元素仍返回普通映射诊断。
