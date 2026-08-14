@@ -87,6 +87,8 @@ pub struct DesignTokens {
     pub control_height_sm: f32,
     pub control_height: f32,
     pub control_height_lg: f32,
+    /// overlay backdrop blur 的默认逻辑像素半径。
+    pub backdrop_blur_radius: f32,
     pub box_shadow: ShadowToken,
     pub box_shadow_secondary: ShadowToken,
     pub motion_duration_fast: f32,
@@ -326,6 +328,11 @@ impl ISpacingTokens for DesignTokens {
     }
     fn control_height_lg(&self) -> f32 {
         self.control_height_lg
+    }
+    // 将可定制的 DesignTokens 字段投影到主题契约。
+    fn backdrop_blur_radius(&self) -> f32 {
+        // 返回当前主题的 overlay blur 默认值。
+        self.backdrop_blur_radius
     }
     fn motion_duration_fast(&self) -> f32 {
         self.motion_duration_fast

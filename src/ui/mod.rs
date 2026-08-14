@@ -88,10 +88,10 @@ pub use animation::{
 pub(crate) use component::children;
 pub use component::clipboard::{copy_to_clipboard, read_text_from_clipboard};
 pub use component::config::{
-    use_config, with_config, ComponentConfig, ComponentOverrides, ComponentTokenOverrides, Config,
+    ComponentConfig, ComponentOverrides, ComponentTokenOverrides, Config, use_config, with_config,
 };
 pub use component::focus_trap::FocusTrap;
-pub use component::locale::{en_us, use_locale, with_locale, zh_cn, Locale};
+pub use component::locale::{Locale, en_us, use_locale, with_locale, zh_cn};
 pub use component::traits::{
     EventHandler, IntoWidgetNode, WidgetAnimation, WidgetCapabilities, WidgetComponent,
     WidgetLayout, WidgetLifecycle, WidgetRender, WidgetTextInput,
@@ -123,30 +123,34 @@ pub use layout::{
     AlignItems, BoxModel, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent,
     LayoutChild, LayoutEngine, LayoutOutput,
 };
-pub use overlay::{OverlayEntry, OverlayId, OverlayKind, OverlayStack, Placement};
+// 导出统一 overlay backdrop 请求及区域策略。
+pub use overlay::{
+    OverlayBackdropBlur, OverlayBackdropRegion, OverlayEntry, OverlayId, OverlayKind, OverlayStack,
+    Placement,
+};
 pub use reactive::state::{Computed, Effect, State, StateSlotId};
-pub use render_handler::{render_empty_for, EmptyContext, EmptyRenderer};
+pub use render_handler::{EmptyContext, EmptyRenderer, render_empty_for};
 pub use semantic_action::{SemanticAction, SemanticActionKind};
 pub use theme::style::{ColorValue, PaletteColor, Style, StyleSet, StyleState, TypographyToken};
 pub use theme::traits::{
     IBoxShadowTokens, ISpacingTokens, ITypographyTokens, ThemeTokens, TokenProvider,
 };
 pub use theme::{
-    generate_color_scale, ColorScale, DataVisualizationPalette, DesignTokens, DynTokens,
-    FunctionalColorRole, IColorTokens, NeutralColorScale, NeutralRole, PrimaryHue, ShadowToken,
-    Theme, ThemePrimitives, TokenPatch, DATA_VISUALIZATION_PALETTE, NEUTRAL_PALETTE,
+    ColorScale, DATA_VISUALIZATION_PALETTE, DataVisualizationPalette, DesignTokens, DynTokens,
+    FunctionalColorRole, IColorTokens, NEUTRAL_PALETTE, NeutralColorScale, NeutralRole, PrimaryHue,
+    ShadowToken, Theme, ThemePrimitives, TokenPatch, generate_color_scale,
 };
 pub use view::providers::ConfigProvider;
 pub use view::providers::LocaleProvider;
 pub use view::{AccessibilityExt, EventExt, StyleExt, TransitionExt, View, ViewNode};
 pub use virtualization::{VirtualScroll, VirtualScrollBuilder};
 pub use widgets::combinators::{
+    ButtonBuilder, GridBuilder, InputBuilder, IntoLabelContent, IntoViewChildren, ScrollBuilder,
     button, canvas, column, column_fit, dynamic_label, embed, grid, input, label, row, scroll,
-    show, space, ButtonBuilder, GridBuilder, InputBuilder, IntoLabelContent, IntoViewChildren,
-    ScrollBuilder,
+    show, space,
 };
 pub use widgets::window_chrome::{
-    window_control, window_control_named, window_drag_region, WindowControl,
+    WindowControl, window_control, window_control_named, window_drag_region,
 };
 // 公开标准窗口控制组合构造器。
 pub use widgets::window_chrome::window_controls;
@@ -183,10 +187,10 @@ pub mod __private {
     }
     pub use super::component::widget::{WidgetNode, WidgetTree};
     // 重导出代码生成器使用的私有组件状态桥接。
-    pub use super::component_state::{
-        uix_component_child_scope, uix_component_scope, uix_component_state, UixComponentScope,
-    };
     pub use super::component_snapshot::snapshot_fields_from_any;
+    pub use super::component_state::{
+        UixComponentScope, uix_component_child_scope, uix_component_scope, uix_component_state,
+    };
     // 重导出 uix-lang setTheme 内置操作使用的主题请求通道。
     pub use super::theme_request::{
         uix_clear_theme_requester, uix_install_theme_requester, uix_set_theme,
@@ -197,9 +201,9 @@ pub mod __private {
 pub mod test_harness {
     pub use super::adapter::ViewAdapter;
     pub use super::automation::{
-        AutomationAction, AutomationActionKind, AutomationError, AutomationErrorCode,
-        AutomationNode, AutomationSelection, AutomationSnapshot, AutomationTarget, TestApp,
-        AUTOMATION_DIR_ENV, AUTOMATION_SCHEMA,
+        AUTOMATION_DIR_ENV, AUTOMATION_SCHEMA, AutomationAction, AutomationActionKind,
+        AutomationError, AutomationErrorCode, AutomationNode, AutomationSelection,
+        AutomationSnapshot, AutomationTarget, TestApp,
     };
     pub use super::component::widget::{WidgetCore, WidgetTree};
 }

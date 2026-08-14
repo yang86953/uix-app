@@ -293,6 +293,12 @@ pub trait RenderTarget: 'static {
         None
     }
 
+    /// 查询当前 renderer 是否能执行真实 overlay backdrop blur。
+    fn supports_backdrop_blur(&self) -> bool {
+        // 普通 CPU、upload 或未装配 RHI 的 target 明确报告不支持。
+        false
+    }
+
     /// GPU 保留色缓冲快照为 overlay 干净背景（无 CPU readback）。
     /// 资源与设备失败保持 typed error，交由 renderer recovery 处理。
     /// 成功后 [`Self::has_overlay_backdrop`] 为 true；不支持时返回 `Ok(false)`。

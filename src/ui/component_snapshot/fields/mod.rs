@@ -14,6 +14,9 @@ use crate::ui::widgets::window_chrome::WindowControl;
 use crate::ui::widgets::*;
 // FloatButton 与可选反馈组件共同使用公开浮层方位。
 use crate::ui::Placement;
+// Modal 与 Drawer 快照保存统一 overlay backdrop 请求。
+#[cfg(feature = "feedback")]
+use crate::ui::OverlayBackdropBlur;
 
 use super::{SnapshotCollapsePanel, SnapshotField, SnapshotTransferItem};
 // 反馈 capability 启用时才引入专属气泡确认框快照模型。
@@ -369,6 +372,8 @@ pub enum SnapshotFields {
         footer_visible: bool,
         centered: bool,
         overlay: bool,
+        // 保存声明式 Modal 的可选效果请求。
+        backdrop_blur: Option<OverlayBackdropBlur>,
     },
     // 反馈 capability 关闭时同步收缩抽屉快照变体。
     #[cfg(feature = "feedback")]
@@ -382,6 +387,8 @@ pub enum SnapshotFields {
         closable: bool,
         mask_closable: bool,
         mask: bool,
+        // 保存声明式 Drawer 的可选效果请求。
+        backdrop_blur: Option<OverlayBackdropBlur>,
         footer_visible: bool,
         extra: String,
     },

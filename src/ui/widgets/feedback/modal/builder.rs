@@ -129,6 +129,14 @@ impl ModalBuilder {
         self
     }
 
+    /// 为受控 Modal 显式启用统一 backdrop blur 请求。
+    pub fn backdrop_blur(mut self, blur: crate::ui::OverlayBackdropBlur) -> Self {
+        // 复用 Modal 自身的便捷属性，不建立第二套效果状态。
+        self.modal = self.modal.backdrop_blur(blur);
+        // 返回更新后的声明式构建器。
+        self
+    }
+
     pub fn destroy_on_close(mut self, destroy_on_close: bool) -> Self {
         self.modal.destroy_on_close = destroy_on_close;
         self

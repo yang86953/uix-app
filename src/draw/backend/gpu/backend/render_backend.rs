@@ -101,6 +101,12 @@ impl RenderBackend for GpuBackend {
         retained_gpu_capabilities(self.rhi_renderer.is_some(), supports_partial_redraw)
     }
 
+    // 从 retained RHI owner 事实投影真实 backdrop blur 能力。
+    fn supports_backdrop_blur(&self) -> bool {
+        // 通用 renderer、保留 framebuffer 与纹理复制缺一不可。
+        self.rhi_renderer.is_some() && self.surface.native_caps.retained_framebuffer
+    }
+
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         let logical_w = width.max(1);
         let logical_h = height.max(1);

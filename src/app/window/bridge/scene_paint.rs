@@ -138,6 +138,19 @@ impl ScenePaint for WidgetTree {
             .is_some_and(|n| n.overlay_entry(id, n.frame()).is_some())
     }
 
+    // 把 UI overlay 栈与当前 Theme token 解析为 draw System 的唯一效果计划。
+    fn overlay_backdrop_effect(&self) -> Option<crate::draw::OverlayBackdropEffect> {
+        // 停止树不得暴露半提交 overlay 或主题状态。
+        if !self.accepts_external_work() {
+            // 故障/停止态不请求任何效果事务。
+            return None;
+        }
+        // 读取本帧已安装的主题 token。
+        let theme_radius = self.theme_tokens().backdrop_blur_radius();
+        // 由 OverlayStack 聚合所有显式请求。
+        self.overlay_stack().backdrop_effect(theme_radius)
+    }
+
     // 把组件显式二阶段绘制契约投影给 draw System。
     fn node_paints_after_children(&self, id: NodeId) -> bool {
         // 停止树不得读取组件渲染能力。

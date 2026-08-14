@@ -477,6 +477,12 @@ impl RenderTarget for RecoveryDriver {
         self.engine.copy_frame_pixels()
     }
 
+    // RecoveryDriver 保留 live engine 的真实 backdrop blur 能力。
+    fn supports_backdrop_blur(&self) -> bool {
+        // 能力查询不触发恢复动作或资源事务。
+        self.engine.supports_backdrop_blur()
+    }
+
     fn snapshot_overlay_backdrop(&mut self) -> Result<bool, Error> {
         // 先保留底层原始结果，避免把错误文本或错误码重建一遍。
         let result = self.engine.snapshot_overlay_backdrop();

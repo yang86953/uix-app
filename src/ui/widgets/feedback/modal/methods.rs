@@ -27,6 +27,8 @@ impl Modal {
             footer_visible: true,
             centered: true,
             overlay: false,
+            // backdrop blur 默认关闭，遵守显式 opt-in 决策。
+            backdrop_blur: None,
             destroy_on_close: false,
             controlled: None,
             context_close_requested: None,
@@ -250,6 +252,14 @@ impl Modal {
 
     pub fn overlay(mut self, v: bool) -> Self {
         self.overlay = v;
+        self
+    }
+
+    /// 为 Modal 显式启用统一 backdrop blur 请求。
+    pub fn backdrop_blur(mut self, blur: crate::ui::OverlayBackdropBlur) -> Self {
+        // 保存 typed 请求，实际 Theme 与区域在 ScenePaint 桥接时解析。
+        self.backdrop_blur = Some(blur);
+        // 返回配置完成的 Modal。
         self
     }
 
@@ -778,6 +788,8 @@ impl Modal {
             footer_visible: self.footer_visible,
             centered: self.centered,
             overlay: self.overlay,
+            // 快照纳入效果请求，确保声明式变更可触发 reconcile。
+            backdrop_blur: self.backdrop_blur,
         }
     }
 }

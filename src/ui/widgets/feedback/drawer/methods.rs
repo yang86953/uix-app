@@ -15,6 +15,8 @@ impl Drawer {
             closable: true,
             mask_closable: true,
             mask: true,
+            // backdrop blur 默认关闭，遵守显式 opt-in 决策。
+            backdrop_blur: None,
             footer_visible: false,
             extra: String::new(),
             enter_animation: None,
@@ -115,6 +117,14 @@ impl Drawer {
 
     pub fn mask(mut self, v: bool) -> Self {
         self.mask = v;
+        self
+    }
+
+    /// 为 Drawer 显式启用统一 backdrop blur 请求。
+    pub fn backdrop_blur(mut self, blur: crate::ui::OverlayBackdropBlur) -> Self {
+        // 保存 typed 请求，Theme 与区域由当前表面统一解析。
+        self.backdrop_blur = Some(blur);
+        // 返回配置完成的 Drawer。
         self
     }
 
@@ -538,6 +548,8 @@ impl Drawer {
             closable: self.closable,
             mask_closable: self.mask_closable,
             mask: self.mask,
+            // 快照纳入效果请求，确保声明式变更触发 reconcile。
+            backdrop_blur: self.backdrop_blur,
             footer_visible: self.footer_visible,
             extra: self.extra.clone(),
         }

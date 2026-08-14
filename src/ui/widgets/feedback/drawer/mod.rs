@@ -4,10 +4,10 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::native::windowing::input::ControlSize;
-use crate::ui::animation::{presets, AnimationConfig, TransitionPlayer};
+use crate::ui::SnapshotFields;
+use crate::ui::animation::{AnimationConfig, TransitionPlayer, presets};
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::widget::WidgetCore;
-use crate::ui::SnapshotFields;
 // 引入受控状态句柄与 Drawer 既有事件、树契约。
 use crate::ui::{EventResult, MouseButton, State, SystemEvent, WidgetTree};
 
@@ -64,6 +64,8 @@ component! {
         closable: bool,
         mask_closable: bool,
         mask: bool,
+        // 保存可选的统一 overlay backdrop blur 请求。
+        backdrop_blur: Option<crate::ui::OverlayBackdropBlur>,
         footer_visible: bool,
         extra: String,
         enter_animation: Option<AnimationConfig>,
@@ -417,6 +419,50 @@ component! {
                 .bounds(bounds)
                 .z_index(1000),
         )
+    }
+
+    // 使用真实表面解析 masked Drawer，非 mask Drawer 则保持面板命中区域。
+    overlay_entry_for_surface => (&self, id: crate::ui::ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+        // 不在呈现生命周期时不登记 overlay。
+        if !self.is_present() {
+            // 关闭态只保留普通触发器。
+            return None;
+        }
+        // mask Drawer 使用完整逻辑表面；无 mask 时使用当前动画后的面板区域。
+        let bounds = if self.mask {
+            // mask、命中与默认 blur 区域保持同一几何事实。
+            surface
+        } else {
+            // 非 mask Drawer 仅覆盖其真实面板。
+            match self.placement {
+                // 横向面板按当前动画位置解析。
+                DrawerPlacement::Right | DrawerPlacement::Left => {
+                    // 使用布局高度与声明宽度。
+                    self.apply_transition_to_rect(Rect::new(frame.x, frame.y, self.width, frame.h))
+                }
+                // 纵向面板按当前动画位置解析。
+                DrawerPlacement::Top | DrawerPlacement::Bottom => {
+                    // 使用布局宽度与声明高度。
+                    self.apply_transition_to_rect(Rect::new(frame.x, frame.y, frame.w, self.height))
+                }
+            }
+        };
+        // 创建统一 overlay 登记。
+        let mut entry = crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Drawer)
+            // 同一 bounds 同时服务命中、mask 与默认 blur。
+            .bounds(bounds)
+            // 保留既有 Drawer 层级。
+            .z_index(1000);
+        // 离场开始立即停止 backdrop blur。
+        if !self.closing {
+            // 默认关闭，仅投影显式请求。
+            if let Some(blur) = self.backdrop_blur {
+                // 复用统一 OverlayEntry 契约。
+                entry = entry.backdrop_blur(blur);
+            }
+        }
+        // 返回当前表面下的完整登记。
+        Some(entry)
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], tree: &WidgetTree)

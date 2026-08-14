@@ -90,6 +90,8 @@ component! {
         pub(crate) footer_visible: bool,
         pub(crate) centered: bool,
         pub(crate) overlay: bool,
+        // 保存可选的统一 overlay backdrop blur 请求。
+        pub(crate) backdrop_blur: Option<crate::ui::OverlayBackdropBlur>,
         pub(crate) destroy_on_close: bool,
         pub(crate) controlled: Option<ControlledOpen>,
         pub(crate) context_close_requested: Option<Rc<Cell<bool>>>,
@@ -456,6 +458,31 @@ component! {
         } else {
             None
         }
+    }
+
+    // 以真实逻辑表面解析 Modal 的 mask bounds，避免无限哨兵区域进入 blur lowering。
+    overlay_entry_for_surface => (&self, id: crate::ui::ComponentId, _frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+        // 关闭或非 overlay 模式不登记表面浮层。
+        if !self.is_present() || !self.overlay {
+            // 保持与旧 overlay_entry 相同的可见性语义。
+            return None;
+        }
+        // 创建与命中、mask、z-index 同级的统一 overlay 事实。
+        let mut entry = crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Modal)
+            // mask bounds 精确等于当前逻辑表面。
+            .bounds(surface)
+            // 保留既有 Modal 层级。
+            .z_index(1000);
+        // 离场开始即停止 blur，但 Modal mask 与内容继续完成离场动画。
+        if !self.closing {
+            // 只有显式 opt-in 才附加效果请求。
+            if let Some(blur) = self.backdrop_blur {
+                // 把组件便捷属性投影到统一 OverlayEntry 契约。
+                entry = entry.backdrop_blur(blur);
+            }
+        }
+        // 返回完整的表面 overlay 登记。
+        Some(entry)
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], tree: &WidgetTree)

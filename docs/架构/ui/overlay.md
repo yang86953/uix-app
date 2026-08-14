@@ -14,6 +14,8 @@
 | `OverlayEntry` | struct | owner、kind、bounds、z-index、modal/dismiss/focus 行为 |
 | `OverlayId` | value | 栈内稳定身份 |
 | `OverlayKind` | enum | Modal、Drawer、Popover、Tooltip、ContextMenu、Message、Notification、Custom |
+| `OverlayBackdropBlur` | value | Theme/显式半径与 mask/独立逻辑区域请求 |
+| `OverlayBackdropEffect` | value | UI 聚合后交给 ScenePipeline 的唯一逻辑区域与半径 |
 | `FocusTrap` | foundation 机制 | 最上层模态子树内的焦点循环与恢复 |
 | `TransitionPlayer` | animation struct | enter/leave 视觉生命周期 |
 
@@ -24,6 +26,15 @@
 - bounds 使用窗口 logical 坐标并收敛到当前 surface；placement、绘制、damage 与 hit-test 共用同一几何。
 - 组件树重建登记时通过 `WidgetRender::overlay_entry_for_surface` 显式传入当前根表面；默认实现向后兼容旧入口，依赖窗口边界的组件不得只凭触发器 frame 复用上一帧 surface 下的绝对矩形。
 - owner 移除、隐藏、换根或 generation 失效时，managed entry 自动清理。
+
+## backdrop blur
+
+- 全部 `OverlayKind` 共用 `OverlayEntry::backdrop_blur`，默认关闭；内置 Modal、Drawer 另提供同名便捷属性，`Custom` 与内置类型不形成私有分支。
+- `OverlayBackdropBlur::theme()` 延迟读取当前 Theme 的 `backdrop_blur_radius`（默认 8.0 逻辑像素），`radius` 显式值覆盖 token；小于 0.5px、非有限半径或无效区域不形成效果计划。
+- 默认区域使用 entry 的 mask/hit bounds；`region` 可以提供独立窗口逻辑区域。OverlayStack 把同帧多个请求收敛为区域并集与最大半径，ScenePipeline 只执行一次 snapshot/blur 计划。
+- `RenderTarget::supports_backdrop_blur()` 是真实能力查询；不支持时保留纯色 mask，不伪报 blur。资源、copy、draw、submit 或 destroy 失败保持 typed failure 并中止当前帧。
+- GPU owner 同时保留未模糊 clean snapshot 与由它派生的 effect texture。策略、半径或区域变化时销毁旧派生纹理并从 clean snapshot 重新复制、模糊，不重复 acquire/present，也不对旧 blur 结果累计取样；离场开始以 no-op 半径释放派生效果。
+- 当前普通树内容变化仍会使 overlay 快照进入安全阻塞并退化为整树 mask-only 重绘；主题/窗口变化后在 overlay 保持期间完成“正常树提交→新 clean snapshot→blur→overlay”的单 present 事务，仍属于 #806 后续实现，不能把本批的 effect 配置失效等同于该事务已闭合。
 
 `FloatButton` 的显式 `Placement` 由本模块解释为窗口 logical 客户区锚点；组件只保存 placement、有限作者偏移与内容配置，并用同一个私有几何结果驱动 control、description、badge、tooltip、damage、命中和 entry bounds。未显式 placement、普通布局占位及 `FloatButtonGroup` 子按钮继续服从所属布局 frame，避免 overlay 模块夺取容器布局所有权。
 
@@ -68,7 +79,7 @@ Message/Notification 的每项可以有独立稳定 ID 和 `Entering → Holding
 
 ## 绘制与缓存
 
-全屏 overlay 可能把 damage 提升为 FullComposite。backend 能安全复用干净背景时，可缓存 overlay 打开前的 retained 内容并只重绘浮层；普通树、尺寸、主题、debug 状态或 overlay membership 变化后必须失效，不能从已含遮罩的帧重新捕获“背景”。
+全屏 overlay 可能把 damage 提升为 FullComposite。backend 能安全复用干净背景时，可缓存 overlay 打开前的 retained 内容并只重绘浮层；策略/半径/逻辑区域变化把旧、新 effect 区域都送入 damage，并从未模糊 clean snapshot 重新派生。普通树、尺寸、主题、debug 状态或 overlay membership 变化后必须失效，不能从已含遮罩的帧重新捕获“背景”。
 
 ## 不变量
 
