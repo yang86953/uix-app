@@ -28,25 +28,40 @@ enum PopoverPressTarget {
 /// Popover placement.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PopoverPlacement {
+    /// 在触发器上方居中显示。
     Top,
+    /// 在触发器上方显示并对齐左边缘。
     TopLeft,
+    /// 在触发器上方显示并对齐右边缘。
     TopRight,
+    /// 在触发器下方居中显示。
     Bottom,
+    /// 在触发器下方显示并对齐左边缘。
     BottomLeft,
+    /// 在触发器下方显示并对齐右边缘。
     BottomRight,
+    /// 在触发器左侧居中显示。
     Left,
+    /// 在触发器左侧显示并对齐顶部。
     LeftTop,
+    /// 在触发器左侧显示并对齐底部。
     LeftBottom,
+    /// 在触发器右侧居中显示。
     Right,
+    /// 在触发器右侧显示并对齐顶部。
     RightTop,
+    /// 在触发器右侧显示并对齐底部。
     RightBottom,
 }
 
 /// Popover trigger mode.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PopoverTrigger {
+    /// 点击触发器时切换显示状态。
     Click,
+    /// 指针悬停于触发器时显示。
     Hover,
+    /// 触发器获得键盘焦点时显示。
     Focus,
 }
 
