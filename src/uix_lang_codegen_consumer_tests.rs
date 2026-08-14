@@ -700,7 +700,8 @@ fn generated_handle_bindings_and_typed_states_compile_against_public_uix_api() {
     // 展开由类型化私有 state 完全控制的组件并要求公开 ViewNode。
     let _view: ViewNode = uix!(
         r#"
-        <Component name="Controlled" state="feedback_open: bool = false, checked: bool = true, low: number = 20, high: number = 80, rating: u32 = 7, current: usize = 1, page: usize = 1">
+        // 声明组件读取调用点步骤数据的外部依赖。
+        <Component name="Controlled" state="feedback_open: bool = false, checked: bool = true, low: number = 20, high: number = 80, rating: u32 = 7, current: usize = 1, page: usize = 1" external="steps_data">
           <Column>
             <Modal open={feedback_open} title="受控">
               <Button @click="setState(feedback_open: false)">关闭</Button>
@@ -736,7 +737,8 @@ fn data_literals_and_constructor_chains_compile_against_public_uix_api() {
     // 展开覆盖八类数据类型构造、数组字面量与枚举语义值的组件。
     let _view: ViewNode = uix!(
         r#"
-        <Component name="Data" state="city: 'cn', gender: 'female', steps: usize = 1">
+        // 声明组件读取调用点级联与树选择状态的外部依赖。
+        <Component name="Data" state="city: 'cn', gender: 'female', steps: usize = 1" external="region, tree_key">
           <Column>
             <Select value={city} options={[SelectOption('中国', 'cn'), SelectOption('美国', 'us')]} width="200px" />
             <Cascader value={region} options={[CascaderOption('浙江', 'zj').children([CascaderOption('杭州', 'hz')])]} width="240px" />
