@@ -35,13 +35,17 @@ struct ItemPlacement {
 /// 单个描述项。
 #[derive(Debug, Clone, PartialEq)]
 pub struct DescriptionsItem {
+    /// 字段标签文本。
     pub label: String,
+    /// 字段值文本。
     pub value: String,
+    /// 该项占用的布局列数。
     pub span: usize,
 }
 
 // Descriptions — 描述列表。
 component! {
+    /// 以标签和值组成的网格展示只读字段信息。
     pub struct Descriptions {
         title: String,
         items: Vec<DescriptionsItem>,
@@ -149,6 +153,7 @@ component! {
 }
 
 impl Descriptions {
+    /// 创建三列、无边框且使用全局控件尺寸的空描述列表。
     pub fn new() -> Self {
         Self {
             title: String::new(),
@@ -159,10 +164,12 @@ impl Descriptions {
             size: crate::ui::component::config::use_config().size,
         }
     }
+    /// 设置描述列表标题。
     pub fn title(mut self, t: &str) -> Self {
         self.title = t.to_string();
         self
     }
+    /// 替换描述列表中的全部项目。
     pub fn items(mut self, items: Vec<DescriptionsItem>) -> Self {
         self.items = items;
         self
@@ -171,22 +178,27 @@ impl Descriptions {
         clippy::should_implement_trait,
         reason = "add is the established fluent builder API, not arithmetic addition"
     )]
+    /// 在描述列表末尾追加一个项目。
     pub fn add(mut self, item: DescriptionsItem) -> Self {
         self.items.push(item);
         self
     }
+    /// 设置是否绘制单元格边框。
     pub fn bordered(mut self, v: bool) -> Self {
         self.bordered = v;
         self
     }
+    /// 设置每行列数；零会被规范化为一列。
     pub fn column(mut self, v: usize) -> Self {
         self.column = v.max(1);
         self
     }
+    /// 设置标签区域宽度；非有限值归零，负值截断为零。
     pub fn label_width(mut self, w: f32) -> Self {
         self.label_width = Self::normalize_dimension(w);
         self
     }
+    /// 设置描述列表的控件尺寸。
     pub fn size(mut self, s: ControlSize) -> Self {
         self.size = s;
         self
@@ -314,6 +326,7 @@ impl Default for Descriptions {
 }
 
 impl DescriptionsItem {
+    /// 创建占一列的标签和值描述项。
     pub fn new(label: &str, value: &str) -> Self {
         Self {
             label: label.to_string(),
@@ -321,6 +334,7 @@ impl DescriptionsItem {
             span: 1,
         }
     }
+    /// 设置项目占用的列数；零会被规范化为一列。
     pub fn span(mut self, s: usize) -> Self {
         self.span = s.max(1);
         self
