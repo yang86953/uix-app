@@ -1,8 +1,8 @@
 // 引入组件字段 AST、通用元素、表达式解析与诊断。
 use super::{
-    AttributeValue, ComponentProp, ComponentPropType, ComponentState, ComponentStateInitial,
-    ComponentValueType, Diagnostic, Element, RecordDeclaration, RecordField, SourceSpan,
-    parse_expression,
+    AttributeValue, ComponentComputed, ComponentProp, ComponentPropType, ComponentState,
+    ComponentStateInitial, ComponentValueType, Diagnostic, Element, RecordDeclaration, RecordField,
+    SourceSpan, parse_expression,
 };
 // 引入名称去重集合。
 use std::collections::HashSet;
@@ -119,6 +119,56 @@ pub(super) fn parse_states(
     }
     // 返回完整状态列表。
     Ok(states)
+}
+
+// 解析按声明顺序求值的 computed 派生表达式。
+pub(super) fn parse_computed(
+    // 接收 computed 声明源码。
+    source: &str,
+    // 接收所属属性跨度。
+    span: SourceSpan,
+) -> Result<Vec<ComponentComputed>, Diagnostic> {
+    // 空字符串表示组件没有派生值。
+    if source.trim().is_empty() {
+        // 返回空派生列表。
+        return Ok(Vec::new());
+    }
+    // 保存源码顺序中的派生声明。
+    let mut computed = Vec::new();
+    // 保存已出现名称以拒绝重复派生。
+    let mut names = HashSet::new();
+    // 按顶层逗号切分派生表达式，调用参数内部逗号保持完整。
+    for entry in split_top_level(source, span, false)? {
+        // 切分派生名称与表达式源码。
+        let (name, expression_source) = split_field(entry, "computed", span)?;
+        // 派生名称必须可映射为 Rust 局部标识符。
+        validate_field_name(name, span)?;
+        // 相同派生名称只能声明一次。
+        if !names.insert(name) {
+            // 返回重复派生诊断。
+            return Err(Diagnostic::new(
+                // 指向 computed 属性。
+                span,
+                // 说明重复名称。
+                format!("computed {name} 重复声明"),
+                // 给出修复动作。
+                "合并同名派生值或使用不同名称",
+            ));
+        }
+        // 使用共享受限表达式语法解析派生值。
+        let expression = parse_expression(expression_source, span)?;
+        // 保存有序派生声明。
+        computed.push(ComponentComputed {
+            // 保存派生名称。
+            name: name.to_string(),
+            // 保存派生表达式 AST。
+            expression,
+            // 保存属性跨度供声明级诊断使用。
+            span,
+        });
+    }
+    // 返回完整有序派生列表。
+    Ok(computed)
 }
 
 // 解析基础值、State<T> 或回调类型。

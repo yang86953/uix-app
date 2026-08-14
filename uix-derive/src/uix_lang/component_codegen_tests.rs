@@ -1,6 +1,67 @@
 // 引入组件感知生成入口与文档解析器。
 use super::{generate_document_view, parse_document};
 
+// 验证 computed 依次读取 state、external、闭包捕获与先前派生值。
+#[test]
+fn generates_ordered_computed_bindings_without_cache() {
+    // 解析包含数组筛选与后续长度派生的组件。
+    let document = parse_document(
+        // kept 捕获 threshold，remaining 再读取先声明的 kept。
+        r#"
+        <Component name="Summary" state="threshold: usize = 1" computed="kept: items.filter(|item| item.id >= threshold), remaining: kept.length" external="items">
+          <Text>{remaining}</Text>
+        </Component>
+        <Summary />
+        "#,
+    )
+    // 合法 computed 文档必须解析成功。
+    .expect("有序 computed 文档应解析成功");
+    // 生成完整组件感知 View 令牌。
+    let tokens = generate_document_view(&document)
+        // 派生值必须完成静态展开。
+        .expect("有序 computed 应生成成功")
+        // 转成稳定文本检查生成顺序与数组语义。
+        .to_string();
+    // 首个派生值必须生成卫生局部变量。
+    let kept = tokens
+        // 定位 kept 派生绑定。
+        .find("_kept")
+        // 缺少派生绑定时失败。
+        .expect("应生成 kept 派生绑定");
+    // 后续派生值必须生成独立卫生局部变量。
+    let remaining = tokens
+        // 定位 remaining 派生绑定。
+        .find("_remaining")
+        // 缺少派生绑定时失败。
+        .expect("应生成 remaining 派生绑定");
+    // Rust let 顺序必须与 computed 声明顺序一致。
+    assert!(kept < remaining);
+    // filter 必须保持不可变 clone 加 into_iter 的生成形状。
+    assert!(tokens.contains("clone () . into_iter () . filter"));
+    // 组件体必须读取后项派生的卫生名称。
+    assert!(tokens.contains("__uix_computed_") && tokens.contains("_remaining"));
+}
+
+// 验证 computed 自引用与前向引用在展开阶段返回定向诊断。
+#[test]
+fn rejects_computed_forward_reference() {
+    // 解析语法合法但依赖顺序非法的派生声明。
+    let document = parse_document(
+        // first 在 second 建立绑定前引用它。
+        r#"<Component name="Bad" computed="first: second + 1, second: 2"><Text>{first}</Text></Component><Bad />"#,
+    )
+    // 声明语法本身必须解析成功。
+    .expect("前向引用应在组件展开阶段诊断");
+    // 读取有序依赖诊断。
+    let error = generate_document_view(&document)
+        // computed 前向引用不得生成。
+        .expect_err("computed 前向引用必须失败");
+    // 诊断必须包含尚未声明的具体名称。
+    assert!(error.message.contains("尚未声明的派生值 second"));
+    // 修复建议必须说明声明顺序约束。
+    assert!(error.suggestion.contains("移到当前 computed 之前"));
+}
+
 // 验证 external 显式开放 Rust 符号且保留 For 局部变量与语言内建。
 #[test]
 fn accepts_declared_external_and_closed_component_names() {
