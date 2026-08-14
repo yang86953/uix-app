@@ -58,30 +58,36 @@ impl Default for ComponentConfig {
 }
 
 impl ComponentConfig {
+    /// 创建中等尺寸、启用交互且不含主题或组件覆盖的默认配置。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 设置作用域内组件默认使用的标准控件尺寸。
     pub fn component_size(mut self, size: ControlSize) -> Self {
         self.size = size;
         self
     }
 
+    /// 设置作用域内组件默认是否禁用交互。
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
     }
 
+    /// 设置作用域内组件解析令牌时使用的主题 Provider。
     pub fn theme(mut self, theme: Theme) -> Self {
         self.theme = Some(theme);
         self
     }
 
+    /// 替换作用域内全部窄组件属性覆盖。
     pub fn overrides(mut self, overrides: ComponentOverrides) -> Self {
         self.overrides = overrides;
         self
     }
 
+    /// 为指定组件类型插入或替换设计令牌补丁。
     pub fn component_tokens<T: WidgetComponent>(mut self, patch: TokenPatch) -> Self {
         self.component_tokens.insert::<T>(patch);
         self
@@ -106,14 +112,17 @@ pub struct ComponentTokenOverrides {
 }
 
 impl ComponentTokenOverrides {
+    /// 创建不含任何组件类型补丁的集合。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 为指定组件类型插入或替换设计令牌补丁。
     pub fn insert<T: WidgetComponent>(&mut self, patch: TokenPatch) {
         self.patches.insert(TypeId::of::<T>(), Arc::new(patch));
     }
 
+    /// 消费集合并为指定组件类型插入或替换设计令牌补丁。
     pub fn with<T: WidgetComponent>(mut self, patch: TokenPatch) -> Self {
         self.insert::<T>(patch);
         self
@@ -131,38 +140,54 @@ impl ComponentTokenOverrides {
 /// 组件级属性覆盖。
 #[derive(Clone, Default, PartialEq)]
 pub struct ComponentOverrides {
+    /// 按钮组件使用的默认属性覆盖。
     pub button: ButtonOverrides,
+    /// 输入框组件使用的默认属性覆盖。
     pub input: InputOverrides,
+    /// 选择器组件使用的默认属性覆盖。
     pub select: SelectOverrides,
+    /// 表单组件使用的默认属性覆盖。
     pub form: FormOverrides,
 }
 
+/// 按钮组件可从 Provider 继承的默认属性覆盖。
 #[derive(Clone, Default, PartialEq)]
 pub struct ButtonOverrides {
+    /// 替换按钮变体解析结果的可选样式集合。
     pub style_set: Option<StyleSet>,
 }
 
+/// 输入框组件可从 Provider 继承的默认属性覆盖。
 #[derive(Clone, Default, PartialEq)]
 pub struct InputOverrides {
+    /// 显示在输入内容前方的可选文本。
     pub prefix: Option<String>,
+    /// 显示在输入内容后方的可选文本。
     pub suffix: Option<String>,
 }
 
+/// 选择器组件可从 Provider 继承的默认属性覆盖。
 #[derive(Clone, Default, PartialEq)]
 pub struct SelectOverrides {
+    /// 是否允许在选项中搜索；空值保留组件自身默认行为。
     pub allow_search: Option<bool>,
 }
 
+/// 表单组件可从 Provider 继承的默认属性覆盖。
 #[derive(Clone, Default, PartialEq)]
 pub struct FormOverrides {
+    /// 表单及表单项使用的可选默认布局模式。
     pub layout: Option<FormLayout>,
 }
 
 /// 表单布局模式（Form / FormItem 与组件配置共用同一类型）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormLayout {
+    /// 标签和控件沿水平方向并排布局。
     Horizontal,
+    /// 标签和控件沿垂直方向堆叠布局。
     Vertical,
+    /// 表单项按内容宽度在同一行内排列。
     Inline,
 }
 
