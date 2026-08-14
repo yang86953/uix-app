@@ -6,11 +6,14 @@ use crate::draw::geometry::path::{FillRule, Path, PathBuilder};
 use crate::draw::geometry::stroker::StrokeOptions;
 use crate::draw::geometry::types::{BlendMode, GradientDirection, Radius, Transform};
 
+/// 后端实现二维绘制、状态栈与只读呈现数据的统一契约。
 pub trait Canvas2D {
     // ── 仿射变换 ──
 
+    /// 返回当前仿射变换。
     fn current_transform(&self) -> Transform;
 
+    /// 替换当前仿射变换。
     fn set_transform(&mut self, transform: Transform);
 
     /// Concatenates `transform` after the current local coordinates.
@@ -35,9 +38,13 @@ pub trait Canvas2D {
     }
 
     // ── 矢量填充（后端必须显式实现，禁止从公开 trait 直写像素）──
+    /// 使用纯色填充矩形或圆角矩形。
     fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>);
+    /// 使用纯色填充圆形。
     fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color);
+    /// 使用纯色填充椭圆。
     fn fill_ellipse(&mut self, rect: Rect, color: Color);
+    /// 使用纯色填充圆扇形。
     fn fill_sector(
         &mut self,
         cx: f32,
@@ -47,12 +54,17 @@ pub trait Canvas2D {
         end_angle: f32,
         color: Color,
     );
+    /// 按填充规则使用纯色填充路径。
     fn fill_path(&mut self, path: &Path, color: Color, fill_rule: FillRule);
 
     // ── 矢量描边 ──
+    /// 使用指定线宽描边矩形或圆角矩形。
     fn stroke_rect(&mut self, rect: Rect, color: Color, line_width: f32, radius: Option<Radius>);
+    /// 使用指定线宽描边圆形。
     fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, line_width: f32);
+    /// 按描边选项绘制路径。
     fn stroke_path(&mut self, path: &Path, color: Color, opts: &StrokeOptions);
+    /// 绘制两个坐标之间的线段。
     fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, color: Color, width: f32);
 
     // ── 完整几何 API（统一下沉到现有填充/描边执行器）──
@@ -107,6 +119,7 @@ pub trait Canvas2D {
     }
 
     // ── 渐变 ──
+    /// 使用两种颜色填充线性渐变矩形。
     fn fill_linear_gradient(
         &mut self,
         rect: Rect,
@@ -114,6 +127,7 @@ pub trait Canvas2D {
         color_b: Color,
         dir: GradientDirection,
     );
+    /// 使用内外颜色填充径向渐变。
     fn fill_radial_gradient(
         &mut self,
         cx: f32,
@@ -125,6 +139,7 @@ pub trait Canvas2D {
     );
 
     // ── 阴影 ──
+    /// 绘制单个矩形投影。
     fn draw_box_shadow(
         &mut self,
         rect: Rect,
@@ -134,6 +149,7 @@ pub trait Canvas2D {
         color: Color,
         corner_radius: Option<Radius>,
     );
+    /// 绘制环境光风格的矩形投影。
     fn draw_box_shadow_ambient(
         &mut self,
         rect: Rect,
@@ -145,7 +161,9 @@ pub trait Canvas2D {
     );
 
     // ── 图像/字形混合 ──
+    /// 将源像素区域复制并缩放到目标矩形。
     fn blit_image(&mut self, src: &[u32], src_w: i32, src_rect: Rect, dst_rect: Rect);
+    /// 使用覆盖率蒙版绘制一个字形。
     fn blit_glyph(
         &mut self,
         x: i32,
@@ -224,26 +242,40 @@ pub trait Canvas2D {
     }
 
     // ── 渲染状态栈（必须自行实现）──
+    /// 保存当前画布状态。
     fn save(&mut self);
+    /// 恢复最近保存的画布状态。
     fn restore(&mut self);
+    /// 将矩形裁剪压入裁剪栈。
     fn push_clip(&mut self, rect: Rect);
+    /// 弹出最近压入的裁剪。
     fn pop_clip(&mut self);
+    /// 设置后续绘制使用的全局透明度。
     fn set_opacity(&mut self, opacity: f32);
+    /// 返回当前全局透明度。
     fn opacity(&self) -> f32;
+    /// 设置后续绘制使用的混合模式。
     fn set_blend_mode(&mut self, mode: BlendMode);
+    /// 将路径裁剪压入裁剪栈。
     fn push_clip_path(&mut self, path: &Path);
 
     // ── 只读呈现数据；可变像素仅存在于引擎内部表面 ──
+    /// 借用当前表面的只读像素。
     fn pixels(&self) -> &[u32];
     #[cfg(test)]
+    /// 在测试构建中借用当前表面的可变像素。
     fn pixels_mut(&mut self) -> &mut [u32];
+    /// 返回当前表面的物理尺寸。
     fn surface_size(&self) -> Size;
+    /// 返回当前表面的物理宽度。
     fn width(&self) -> i32 {
         self.surface_size().w as i32
     }
+    /// 返回当前表面的物理高度。
     fn height(&self) -> i32 {
         self.surface_size().h as i32
     }
+    /// 返回当前生效的矩形裁剪边界。
     fn current_clip(&self) -> Rect;
 
     // ── 像素移动（滚动优化）──

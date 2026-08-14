@@ -12,11 +12,14 @@ use std::time::Instant;
 /// 一次保留缓冲内的滚动像素移动。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScrollCopy {
+    /// 参与像素移动的视口区域。
     pub viewport: Rect,
+    /// 源像素到目标像素的逻辑偏移。
     pub delta: Point,
 }
 
 impl ScrollCopy {
+    /// 创建一次视口滚动像素移动。
     pub const fn new(viewport: Rect, dx: f32, dy: f32) -> Self {
         Self {
             viewport,
@@ -28,19 +31,24 @@ impl ScrollCopy {
 /// 帧更新策略。
 #[derive(Debug, Clone)]
 pub enum UpdateStrategy {
+    /// 清除并重绘完整帧。
     FullRedraw,
+    /// 仅清除并重绘指定脏矩形。
     DirtyRects(Vec<Rect>),
     /// 先移动滚动像素，再清除并重绘暴露区。
     ///
     /// 仅允许具备 `scroll_memmove` 的局部重绘后端执行；其余后端必须
     /// 在帧边界提升为 `FullRedraw`，不能静默跳过像素移动。
     ScrollCopies {
+        /// 像素移动后需要清除并重绘的区域。
         dirty_rects: Vec<Rect>,
+        /// 必须在重绘前执行的像素移动序列。
         copies: Vec<ScrollCopy>,
     },
 }
 
 impl UpdateStrategy {
+    /// 返回局部更新策略携带的脏矩形。
     pub fn rects(&self) -> Option<&[Rect]> {
         match self {
             UpdateStrategy::FullRedraw => None,
@@ -49,6 +57,7 @@ impl UpdateStrategy {
         }
     }
 
+    /// 判断帧开始时是否需要执行清理。
     pub fn should_clear(&self) -> bool {
         true
     }
@@ -66,7 +75,9 @@ pub enum PresentationMode {
 /// 图形引擎能力声明。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GraphicsCapabilities {
+    /// 后端采用的最终呈现所有权模式。
     pub presentation_mode: PresentationMode,
+    /// 后端是否能安全执行局部重绘。
     pub partial_redraw: bool,
     /// 是否支持 Picture 离屏缓存（`create_offscreen` / blit）。
     pub offscreen: bool,
@@ -75,6 +86,7 @@ pub struct GraphicsCapabilities {
 }
 
 impl GraphicsCapabilities {
+    /// 返回支持外部呈现与保留像素的 CPU 能力集。
     pub fn cpu_pixels() -> Self {
         Self {
             presentation_mode: PresentationMode::ExternalPresenter,
@@ -84,6 +96,7 @@ impl GraphicsCapabilities {
         }
     }
 
+    /// 返回只支持完整重绘的后端管理能力集。
     pub fn backend_managed_full_redraw() -> Self {
         Self {
             presentation_mode: PresentationMode::BackendManaged,
@@ -113,18 +126,22 @@ impl GraphicsCapabilities {
         }
     }
 
+    /// 判断最终呈现是否由平台适配器负责。
     pub fn uses_external_presenter(self) -> bool {
         matches!(self.presentation_mode, PresentationMode::ExternalPresenter)
     }
 
+    /// 判断后端是否支持局部重绘。
     pub fn supports_partial_redraw(self) -> bool {
         self.partial_redraw
     }
 
+    /// 判断后端是否支持离屏 Picture 资源。
     pub fn supports_offscreen(self) -> bool {
         self.offscreen
     }
 
+    /// 判断后端是否能在保留缓冲上移动滚动像素。
     pub fn supports_scroll_memmove(self) -> bool {
         self.partial_redraw && self.scroll_memmove
     }
@@ -133,6 +150,7 @@ impl GraphicsCapabilities {
 /// Raster provenance selected for the live renderer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RasterPipeline {
+    /// 最终界面像素由 CPU 光栅管线生成。
     Cpu,
     /// Every final UI pixel is produced by native GPU draw commands. CPU work
     /// is limited to scene construction, layout, decoding and tessellation.
@@ -141,6 +159,7 @@ pub enum RasterPipeline {
 
 /// 图形引擎 — 帧生命周期与离屏缓冲管理。
 pub trait RenderTarget: 'static {
+    /// 初始化指定物理尺寸的渲染目标。
     fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error>;
     /// Checked teardown boundary. Callers and Drop paths must use this method
     /// so native failures stay typed for recovery instead of becoming log-only.
@@ -180,6 +199,7 @@ pub trait RenderTarget: 'static {
         ))
     }
 
+    /// 借用当前帧使用的二维画布。
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D;
 
     /// 引擎当前采用的 logical viewport；默认等于 Canvas2D extent。
@@ -220,20 +240,25 @@ pub trait RenderTarget: 'static {
         false
     }
 
+    /// 返回渲染目标向上层声明的能力集。
     fn capabilities(&self) -> GraphicsCapabilities {
         GraphicsCapabilities::cpu_pixels()
     }
 
+    /// 返回最终像素采用的光栅管线来源。
     fn raster_pipeline(&self) -> RasterPipeline {
         RasterPipeline::Cpu
     }
 
+    /// 返回当前目标的每英寸逻辑点数。
     fn dpi(&self) -> f32 {
         96.0
     }
+    /// 返回逻辑坐标到物理像素的缩放比例。
     fn device_pixel_ratio(&self) -> f32 {
         1.0
     }
+    /// 返回目标采用的二维坐标轴方向。
     fn orientation(&self) -> crate::draw::geometry::spatial::Orientation {
         crate::draw::geometry::spatial::Orientation::YDown
     }
@@ -269,10 +294,12 @@ pub trait RenderTarget: 'static {
         ))
     }
 
+    /// 借用指定离屏资源的二维画布。
     fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
         let _ = handle;
         None
     }
+    /// 将离屏资源的指定区域复制到目标画布。
     fn blit_offscreen_to_canvas(
         &mut self,
         _handle: &ImageHandle,
@@ -281,6 +308,7 @@ pub trait RenderTarget: 'static {
         _canvas: &mut dyn Canvas2D,
     ) {
     }
+    /// 复制离屏资源像素及其行跨度。
     fn copy_offscreen_pixels(&self, _handle: &ImageHandle) -> Option<(Vec<u32>, i32)> {
         None
     }
@@ -445,8 +473,10 @@ pub trait RenderTarget: 'static {
         ))
     }
 
+    /// 返回渲染目标当前占用的可统计内存字节数。
     fn memory_usage(&self) -> usize {
         0
     }
+    /// 请求后端输出一次内存诊断信息。
     fn diagnose_memory(&self) {}
 }
