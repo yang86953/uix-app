@@ -26,20 +26,35 @@ fn normalized_tag_font_size(size: f32) -> f32 {
 /// 预设标签类型。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TagColor {
+    /// 使用主题中性填充与正文颜色。
     Default,
+    /// 使用主题成功状态色对。
     Success,
+    /// 使用主题信息状态色对。
     Info,
+    /// 使用主题警告状态色对。
     Warning,
+    /// 使用主题错误状态色对。
     Error,
+    /// 使用当前主题品牌主色对。
     Blue,
+    /// 使用青色调色板的低强调色对。
     Cyan,
+    /// 使用极客蓝调色板的低强调色对。
     Geekblue,
+    /// 使用紫色调色板的低强调色对。
     Purple,
+    /// 使用品红调色板的低强调色对。
     Magenta,
+    /// 使用红色调色板的低强调色对。
     Red,
+    /// 使用橙色调色板的低强调色对。
     Orange,
+    /// 使用主题警告色对呈现金色标签。
     Gold,
+    /// 使用青柠调色板的低强调色对。
     Lime,
+    /// 使用主题成功色对呈现绿色标签。
     Green,
 }
 
@@ -426,6 +441,7 @@ mod palette_tests {
 }
 
 impl Tag {
+    /// 使用文本创建默认中性色、不可关闭且不可勾选的标签。
     pub fn new(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
@@ -445,18 +461,22 @@ impl Tag {
             pressed: Cell::new(None),
         }
     }
+    /// 设置由当前主题解析的预设标签颜色。
     pub fn color(mut self, c: TagColor) -> Self {
         self.color = c;
         self
     }
+    /// 设置固定背景色，并根据背景亮度选择黑色或白色前景。
     pub fn custom_color(mut self, c: Color) -> Self {
         self.custom_color = Some(c);
         self
     }
+    /// 启用标签关闭入口与对应交互。
     pub fn closable(mut self) -> Self {
         self.closable = true;
         self
     }
+    /// 设置标签是否允许勾选；关闭时同时清除勾选状态。
     pub fn checkable(mut self, v: bool) -> Self {
         self.checkable = v;
         if !v {
@@ -470,6 +490,7 @@ impl Tag {
         self.checked = checked;
         self
     }
+    /// 设置标签字号；非法或非正值回退为默认字号。
     pub fn font_size(mut self, s: f32) -> Self {
         self.font_size = normalized_tag_font_size(s);
         self
@@ -645,20 +666,24 @@ impl Tag {
         }
     }
 
+    /// 返回标签当前是否参与布局与绘制。
     pub fn is_visible(&self) -> bool {
         self.visible
     }
 
+    /// 返回标签当前的勾选状态。
     pub fn is_checked(&self) -> bool {
         self.checked
     }
 
+    /// 在标签可勾选时更新勾选状态，否则忽略请求。
     pub fn set_checked(&mut self, checked: bool) {
         if self.checkable {
             self.checked = checked;
         }
     }
 
+    /// 隐藏可见标签并清理焦点与指针交互状态。
     pub fn close(&mut self) {
         if self.visible {
             self.visible = false;
@@ -669,6 +694,7 @@ impl Tag {
         }
     }
 
+    /// 重新显示已隐藏的标签并请求布局。
     pub fn open(&mut self) {
         if !self.visible {
             self.visible = true;
