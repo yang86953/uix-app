@@ -5,7 +5,7 @@ use crate::draw::resources::font::font_service::FontService;
 // 引入稳定的测试字体句柄。
 use crate::draw::FontHandle;
 // 引入事件与测量契约。
-use crate::ui::component::traits::{EventHandler, WidgetLayout};
+use crate::ui::component::traits::{EventHandler, WidgetComponent, WidgetLayout};
 use crate::ui::event::SystemEvent;
 // 引入键盘、修饰键与指针按钮。
 use crate::ui::{KeyCode, KeyMod, MouseButton};
@@ -182,6 +182,92 @@ fn thematic_break_selection_copies_one_line_break_without_markers() {
     assert_eq!(rich.on_event(&select_all), EventResult::Handled);
     // 分隔线标记零宽；其所在源码行只通过一个 NewLine 进入复制文本。
     assert_eq!(rich.selected_text().as_deref(), Some("上\n\n下"));
+}
+
+// 验证图片全选和复制只输出 alt，不泄漏本地路径。
+#[cfg(feature = "image-codecs")]
+#[test]
+fn inline_image_selection_copies_alt_text() {
+    // 构造只包含一个图片原子的可选择 RichText。
+    let mut rich = RichText::new()
+        // 显式开启选择能力。
+        .selectable(true)
+        // 使用公开图片段。
+        .content(vec![RichTextSegment::Image {
+            // 本地路径不得进入复制结果。
+            src: "C:\\private\\cover.png".into(),
+            // alt 是图片唯一逻辑文本。
+            alt: "封面".into(),
+            // 使用固有宽度。
+            width: None,
+            // 使用固有高度。
+            height: None,
+            // 默认保持比例。
+            fit: true,
+            // 不使用圆角。
+            radius: None,
+        }]);
+    // 构造统一 Ctrl+A 全选事件。
+    let select_all = SystemEvent::KeyDown {
+        // 使用全选按键。
+        key: KeyCode::A,
+        // 使用控制修饰键。
+        mods: KeyMod::CTRL,
+    };
+    // 图片 alt 应参与全选。
+    assert_eq!(rich.on_event(&select_all), EventResult::Handled);
+    // 复制文本必须只有 alt。
+    assert_eq!(rich.selected_text().as_deref(), Some("封面"));
+    // 纯图片 RichText 不应进入 Tab 顺序。
+    assert_eq!(rich.tab_index(), 0);
+}
+
+// 验证落入 alt 中间的选择扩展到完整图片原子。
+#[cfg(feature = "image-codecs")]
+#[test]
+fn inline_image_partial_selection_expands_to_full_alt() {
+    // 构造正文、图片和尾随正文组成的逻辑文本。
+    let rich = RichText::new()
+        // 开启选择能力。
+        .selectable(true)
+        // 声明三个连续段。
+        .content(vec![
+            // 图片前单字符正文占索引零。
+            RichTextSegment::Text {
+                // 保存前缀。
+                content: "前".into(),
+                // 使用默认样式。
+                style: Default::default(),
+            },
+            // 图片 alt 占索引一到三。
+            RichTextSegment::Image {
+                // 测试不加载资源。
+                src: "assets/cover.png".into(),
+                // 使用两个字符验证内部边界。
+                alt: "封面".into(),
+                // 使用固有宽度。
+                width: None,
+                // 使用固有高度。
+                height: None,
+                // 默认保持比例。
+                fit: true,
+                // 不使用圆角。
+                radius: None,
+            },
+            // 图片后正文。
+            RichTextSegment::Text {
+                // 保存后缀。
+                content: "后".into(),
+                // 使用默认样式。
+                style: Default::default(),
+            },
+        ]);
+    // 只请求 alt 第二个字符范围。
+    rich.set_selection_range(2, 3);
+    // 选择必须扩展到完整图片 alt。
+    assert_eq!(rich.selection.get(), Some((1, 3)));
+    // 复制结果必须包含完整 alt。
+    assert_eq!(rich.selected_text().as_deref(), Some("封面"));
 }
 
 // 验证 reconcile 关闭能力时立即终止既有选择生命周期。

@@ -1,7 +1,7 @@
 //! 保存 RichText 的估算字符宽度与全局字符索引映射。
 
 // 引入布局字形、布局行与富文本段类型。
-use super::{LayoutGlyph, LayoutLine, LayoutLineKind, RichTextSegment};
+use super::{LayoutGlyph, LayoutGlyphKind, LayoutLine, LayoutLineKind, RichTextSegment};
 
 // 将富文本段拼接为保留显式换行的完整逻辑源文本。
 pub(super) fn source_text(segments: &[RichTextSegment]) -> String {
@@ -15,6 +15,10 @@ pub(super) fn source_text(segments: &[RichTextSegment]) -> String {
             RichTextSegment::Text { content, .. }
             | RichTextSegment::Code { content }
             | RichTextSegment::Link { content, .. } => source.push_str(content),
+            // 图片编解码能力开启时，图片以 alt 参与逻辑选择和复制。
+            #[cfg(feature = "image-codecs")]
+            // 不把 Markdown 标记或资源路径泄漏到逻辑文本。
+            RichTextSegment::Image { alt, .. } => source.push_str(alt),
             // 主题分隔线零宽，逻辑换行由紧随其后的 NewLine 唯一拥有。
             RichTextSegment::ThematicBreak => {}
             // 显式换行段追加一个 LF 作为统一逻辑边界。
@@ -40,7 +44,12 @@ pub(super) fn flush_line(
         // 遍历当前行全部待结算字形。
         .iter()
         // 将每个字形字号转换为统一的一点五倍行高。
-        .map(|glyph| glyph.font_size * 1.5)
+        .map(|glyph| match glyph.kind {
+            // 普通文本继续使用固定一点五倍行高。
+            LayoutGlyphKind::Text => glyph.font_size * 1.5,
+            // 图片的 font_size 字段保存替换对象实际高度。
+            LayoutGlyphKind::InlineImage => glyph.font_size,
+        })
         // 选择当前视觉行需要的最大行高。
         .reduce(f32::max)
         // 实际字形行高不得低于调用方提供的稳定默认行高。

@@ -10,6 +10,11 @@ use super::bidi_layout::reorder_lines;
 use super::shaped_advance::real_char_advances;
 // 复用主题分隔线的独立布局行组件。
 use super::thematic_break;
+// 复用图片原子几何和运行时尺寸状态。
+use super::inline_image::InlineImageStates;
+// 图片能力开启时调用原子布局实现。
+#[cfg(feature = "image-codecs")]
+use super::inline_image;
 // 测试直接验证 shaping cluster advance 映射。
 #[cfg(test)]
 use super::shaped_advance::measured_advance_for_char;
@@ -23,6 +28,10 @@ use crate::draw::resources::font::line_break::{LineBreakMap, split_once_mandator
 use crate::draw::resources::font::text_backend::PositionedGlyph;
 use crate::draw::{Color, FontHandle, Transform};
 use crate::ui::component::paint_context::PaintContext;
+
+// 旧测试路径继续从布局实现模块读取无状态估算入口。
+#[cfg(test)]
+pub(crate) use super::rich_text_layout_entry::layout_rich_text;
 // 统一定义富文本 faux italic 的倾斜比例。
 const RICH_TEXT_ITALIC_SHEAR: f32 = 0.18;
 
@@ -91,13 +100,22 @@ pub(crate) fn italic_transform(pivot_y: f32) -> Transform {
 mod tests;
 
 // 估算布局（不依赖 FontService）。
-/// 执行富文本估算布局，返回 (行列表, 总高度, 最大行宽)。
-pub(crate) fn layout_rich_text(
+// 使用调用方图片资源状态执行估算布局。
+pub(crate) fn layout_rich_text_with_images(
+    // 接收公开段列表。
     segments: &[RichTextSegment],
+    // 接收最大行宽。
     max_width: f32,
+    // 接收默认字号。
     default_font_size: f32,
+    // 接收默认颜色。
     default_color: Color,
+    // 接收当前图片固有尺寸状态。
+    image_states: &InlineImageStates,
 ) -> (Vec<LayoutLine>, f32, f32) {
+    // 图片能力关闭时显式消费空状态表参数。
+    #[cfg(not(feature = "image-codecs"))]
+    let _ = image_states;
     // 以完整富文本源生成跨样式段共享的 UAX #14 边界。
     let full_source = source_text(segments);
     // 同一边界表贯穿 Text、Code 与 Link 段。
@@ -220,6 +238,43 @@ pub(crate) fn layout_rich_text(
                 );
                 // 推进到下一 segment 的全局字符起点。
                 source_offset += content.chars().count();
+            }
+            // 图片能力开启时把公开图片段作为单一原子替换对象布局。
+            #[cfg(feature = "image-codecs")]
+            RichTextSegment::Image {
+                alt, width, height, ..
+            } => {
+                // 使用共享图片几何入口保证估算和真实布局一致。
+                inline_image::push_layout_glyph(
+                    // 保存公开段索引。
+                    seg_idx,
+                    // 保存 alt 的逻辑起点。
+                    source_offset,
+                    // 图片逻辑跨度等于 alt 字符数。
+                    alt.chars().count(),
+                    // 传递可选宽度覆盖。
+                    *width,
+                    // 传递可选高度覆盖。
+                    *height,
+                    // 读取组件当前资源状态。
+                    image_states.get(&seg_idx),
+                    // 传递行宽约束。
+                    max_width,
+                    // 传递加载前占位行高。
+                    default_line_h,
+                    // 传递默认颜色供共享字形字段初始化。
+                    default_color,
+                    // 更新视觉行列表。
+                    &mut lines,
+                    // 更新当前行原子列表。
+                    &mut current_line_glyphs,
+                    // 更新水平游标。
+                    &mut current_x,
+                    // 更新最大行宽。
+                    &mut max_line_w,
+                );
+                // 推进完整 alt 逻辑跨度。
+                source_offset += alt.chars().count();
             }
         }
     }
@@ -377,9 +432,13 @@ fn layout_text_content_line(
                     word_chars_x = 0.0;
                 }
                 glyphs.push(LayoutGlyph {
+                    // 普通估算字符进入文本绘制路径。
+                    kind: super::LayoutGlyphKind::Text,
                     segment_idx: seg_idx,
                     // 直接保存完整源字符索引，保留 CRLF 与跨样式段偏移。
                     global_char_idx: source_offset + start + relative_index,
+                    // 单个 Unicode 标量覆盖一个逻辑字符位置。
+                    source_char_len: 1,
                     // 视觉行完成后由共享 UAX #9 分析回填。
                     bidi_level: 0,
                     ch: *ch,
@@ -398,9 +457,13 @@ fn layout_text_content_line(
             for (relative_index, ch) in chars[start..end].iter().enumerate() {
                 let cw = char_width(fs, *ch);
                 glyphs.push(LayoutGlyph {
+                    // 普通估算字符进入文本绘制路径。
+                    kind: super::LayoutGlyphKind::Text,
                     segment_idx: seg_idx,
                     // 直接保存完整源字符索引，保留 CRLF 与跨样式段偏移。
                     global_char_idx: source_offset + start + relative_index,
+                    // 单个 Unicode 标量覆盖一个逻辑字符位置。
+                    source_char_len: 1,
                     // 视觉行完成后由共享 UAX #9 分析回填。
                     bidi_level: 0,
                     ch: *ch,
@@ -422,15 +485,27 @@ fn layout_text_content_line(
 
 // 真实字体度量布局（用于 render 阶段）。
 
-/// 基于真实字体度量执行富文本布局
-pub(crate) fn layout_rich_text_real(
+// 使用真实字体与调用方图片状态执行布局。
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn layout_rich_text_real_with_images(
+    // 接收公开段列表。
     segments: &[RichTextSegment],
+    // 接收最大行宽。
     max_width: f32,
+    // 接收默认字号。
     default_font_size: f32,
+    // 接收默认颜色。
     default_color: Color,
+    // 接收字体服务。
     font_service: &FontService,
+    // 接收字体句柄。
     font: &FontHandle,
+    // 接收当前图片固有尺寸状态。
+    image_states: &InlineImageStates,
 ) -> (Vec<LayoutLine>, f32, f32) {
+    // 图片能力关闭时显式消费空状态表参数。
+    #[cfg(not(feature = "image-codecs"))]
+    let _ = image_states;
     // 以完整富文本源生成跨样式段共享的 UAX #14 边界。
     let full_source = source_text(segments);
     // 同一边界表贯穿 Text、Code 与 Link 的真实字体路径。
@@ -559,6 +634,43 @@ pub(crate) fn layout_rich_text_real(
                 );
                 // 推进到下一 segment 的全局字符起点。
                 source_offset += content.chars().count();
+            }
+            // 真实字体路径仍复用相同的图片原子几何。
+            #[cfg(feature = "image-codecs")]
+            RichTextSegment::Image {
+                alt, width, height, ..
+            } => {
+                // 图片不经过字体 shaping，只登记替换对象几何。
+                inline_image::push_layout_glyph(
+                    // 保存公开段索引。
+                    seg_idx,
+                    // 保存 alt 的逻辑起点。
+                    source_offset,
+                    // 图片逻辑跨度等于 alt 字符数。
+                    alt.chars().count(),
+                    // 传递可选宽度覆盖。
+                    *width,
+                    // 传递可选高度覆盖。
+                    *height,
+                    // 读取组件当前资源状态。
+                    image_states.get(&seg_idx),
+                    // 传递行宽约束。
+                    max_width,
+                    // 传递加载前占位行高。
+                    default_line_h,
+                    // 传递默认颜色供共享字段初始化。
+                    default_color,
+                    // 更新视觉行列表。
+                    &mut lines,
+                    // 更新当前行原子列表。
+                    &mut current_line_glyphs,
+                    // 更新水平游标。
+                    &mut current_x,
+                    // 更新最大行宽。
+                    &mut max_line_w,
+                );
+                // 推进完整 alt 逻辑跨度。
+                source_offset += alt.chars().count();
             }
         }
     }
@@ -722,9 +834,13 @@ fn layout_text_content_real_line(
                     word_x = 0.0;
                 }
                 glyphs.push(LayoutGlyph {
+                    // 真实字体字符仍属于文本绘制路径。
+                    kind: super::LayoutGlyphKind::Text,
                     segment_idx: seg_idx,
                     // 直接保存完整源字符索引，保留 CRLF 与跨样式段偏移。
                     global_char_idx: source_offset + start + relative_index,
+                    // 单个 Unicode 标量覆盖一个逻辑字符位置。
+                    source_char_len: 1,
                     // 视觉行完成后由共享 UAX #9 分析回填。
                     bidi_level: 0,
                     ch,
@@ -749,9 +865,13 @@ fn layout_text_content_real_line(
                 .enumerate()
             {
                 glyphs.push(LayoutGlyph {
+                    // 真实字体字符仍属于文本绘制路径。
+                    kind: super::LayoutGlyphKind::Text,
                     segment_idx: seg_idx,
                     // 直接保存完整源字符索引，保留 CRLF 与跨样式段偏移。
                     global_char_idx: source_offset + start + relative_index,
+                    // 单个 Unicode 标量覆盖一个逻辑字符位置。
+                    source_char_len: 1,
                     // 视觉行完成后由共享 UAX #9 分析回填。
                     bidi_level: 0,
                     ch,

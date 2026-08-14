@@ -51,6 +51,22 @@ pub enum RichTextSegment {
     Code { content: String },
     /// 可点击链接（自动带下划线和交互色）
     Link { content: String, url: String },
+    /// 本地图片原子替换对象；仅在 image-codecs capability 开启时可用
+    #[cfg(feature = "image-codecs")]
+    Image {
+        /// 本地文件路径
+        src: String,
+        /// 选择复制与无障碍使用的替代文本
+        alt: String,
+        /// 可选逻辑像素宽度覆盖
+        width: Option<f32>,
+        /// 可选逻辑像素高度覆盖
+        height: Option<f32>,
+        /// true 保持比例居中，false 拉伸填满
+        fit: bool,
+        /// 可选逻辑像素圆角半径
+        radius: Option<f32>,
+    },
     /// 独立、零字符宽度的 Markdown 主题分隔线
     ThematicBreak,
     /// 强制换行
@@ -108,6 +124,10 @@ impl RichTextStyle {
 // ════════════════════════════════════════════════════════════════════════════
 mod rich_text_layout;
 pub(crate) use rich_text_layout::*;
+// 对无资源状态调用提供稳定占位布局兼容入口。
+mod rich_text_layout_entry;
+// 继续向现有内部测试和公开解析辅助暴露兼容入口。
+pub(crate) use rich_text_layout_entry::*;
 // 集中保存富文本布局字形、行与代码复制区域类型。
 mod layout_types;
 // 向富文本组件根暴露内部布局类型。
@@ -118,6 +138,10 @@ mod layout_metrics;
 mod bidi_layout;
 mod parse;
 mod rich_text_interaction;
+// 把公开构建器、reconcile 与测试观测方法放入独立实现文件。
+mod rich_text_methods;
+// 集中拥有 RichText 内联图片的资源、几何与绘制生命周期。
+mod inline_image;
 // 集中拥有主题分隔线的解析、布局与绘制策略。
 mod thematic_break;
 // 将 shaping cluster 到富文本 advance 的映射隔离为小型内部模块。
@@ -176,6 +200,9 @@ component! {
         /// 是否需要重新布局
         layout_dirty: Cell<bool>,
 
+        /// 图片段的异步资源和固有尺寸状态
+        image_states: RefCell<inline_image::InlineImageStates>,
+
         // ── 选择状态 ──
         /// 控制普通文字是否允许建立选区；链接与代码复制不受影响。
         selectable: bool,
@@ -212,6 +239,8 @@ component! {
             last_layout_width: Cell::new(0.0),
             last_layout_color: Cell::new(None),
             layout_dirty: Cell::new(true),
+            // 图片状态初始为空，首次可见绘制才启动后台请求。
+            image_states: RefCell::new(inline_image::InlineImageStates::new()),
             // UIX 文档契约要求文字选择默认关闭。
             selectable: false,
             selection: Cell::new(None),
@@ -246,8 +275,12 @@ component! {
         if self.layout_dirty.get() || self.layout_height.get() <= 0.0 || width_changed {
             let dpi = 96.0;
             let fs = self.resolved_font_size_px(dpi);
-            let (_, total_h, max_w) = layout_rich_text(
-                &self.segments, est_width, fs, self.default_color,
+            let (_, total_h, max_w) = layout_rich_text_with_images(
+                &self.segments,
+                est_width,
+                fs,
+                self.default_color,
+                &self.image_states.borrow(),
             );
             self.layout_height.set(total_h);
             self.content_width.set(max_w);
@@ -385,6 +418,9 @@ component! {
                                 RichTextSegment::Text { content, .. } => content.chars().count(),
                                 RichTextSegment::Code { content } => content.chars().count(),
                                 RichTextSegment::Link { content, .. } => content.chars().count(),
+                                // 图片以 alt 文本参与全选逻辑范围。
+                                #[cfg(feature = "image-codecs")]
+                                RichTextSegment::Image { alt, .. } => alt.chars().count(),
                                 RichTextSegment::ThematicBreak => 0,
                                 RichTextSegment::NewLine => 1,
                             }).sum();
@@ -444,7 +480,10 @@ component! {
 
     flex_grow => (&self) -> f32 { 1.0 }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
+        // 图片能力关闭时组件树不参与 RichText 绘制。
+        #[cfg(not(feature = "image-codecs"))]
+        let _ = tree;
         let frame = Self::normalized_frame(frame);
         self.last_frame.set(Some(frame));
         self.code_regions.borrow_mut().clear();
@@ -458,6 +497,24 @@ component! {
             self.default_color
         };
 
+        // 图片能力开启时先非阻塞轮询资源事实，尺寸就绪后使布局缓存失效。
+        #[cfg(feature = "image-codecs")]
+        if inline_image::prepare(
+            // 传递公开段列表。
+            &self.segments,
+            // 传递组件独占图片状态。
+            &mut self.image_states.borrow_mut(),
+            // 传递当前绘制和资源上下文。
+            ctx,
+            // 传递组件树失效队列。
+            tree,
+            // 传递当前组件绘制范围。
+            frame,
+        ) {
+            // 固有尺寸或失败状态变化要求重建真实布局。
+            self.layout_dirty.set(true);
+        }
+
         // 布局缓存：仅在内容或宽度变化时重新布局，否则复用上次结果
         let need_relayout = self.layout_dirty.get()
             || (self.last_layout_width.get() - max_w).abs() > 0.5
@@ -466,9 +523,14 @@ component! {
         let (layout_lines, _total_h, _max_line_w) = if need_relayout {
             let font = *ctx.font();
             let fs = self.resolved_font_size_px(ctx.dpi());
-            let (lines, h, w) = layout_rich_text_real(
-                &self.segments, max_w, fs, resolved_default_color,
-                ctx.font_service(), &font,
+            let (lines, h, w) = layout_rich_text_real_with_images(
+                &self.segments,
+                max_w,
+                fs,
+                resolved_default_color,
+                ctx.font_service(),
+                &font,
+                &self.image_states.borrow(),
             );
             // 缓存相对坐标（y 从 0 开始），渲染时再加 frame.y
             self.layout_lines.replace(lines.clone());
@@ -498,6 +560,21 @@ component! {
         // 先绘制零字形的主题分隔线行，再绘制普通字形内容。
         thematic_break::draw(ctx, &layout_lines, frame);
 
+        // 图片能力开启时按共享布局几何绘制全部原子替换对象。
+        #[cfg(feature = "image-codecs")]
+        inline_image::draw(
+            // 传递绘制上下文。
+            ctx,
+            // 传递公开图片样式与 alt。
+            &self.segments,
+            // 传递已轮询资源状态。
+            &self.image_states.borrow(),
+            // 传递真实布局行。
+            &layout_lines,
+            // 传递组件 frame。
+            frame,
+        );
+
         // ── 逐行绘制 ──
         for line in &layout_lines {
             for glyph in &line.glyphs {
@@ -516,13 +593,21 @@ component! {
 
                 // 选中背景
                 if let Some((sel_s, sel_e)) = self.selection.get() {
-                    if glyph.global_char_idx >= sel_s && glyph.global_char_idx < sel_e {
+                    if glyph.global_char_idx < sel_e
+                        && glyph.global_char_idx + glyph.source_char_len > sel_s
+                    {
                         ctx.fill_rect(
                             Rect::new(gx, gy, glyph.width, glyph.font_size),
                             ctx.tokens().color_primary().with_alpha(64),
                             None,
                         );
                     }
+                }
+
+                // 图片已经由原子绘制路径处理，不进入文本样式与装饰分支。
+                if glyph.kind == LayoutGlyphKind::InlineImage {
+                    // 选择高亮已在上方覆盖，继续下一个原子。
+                    continue;
                 }
 
                 let style = match self.segments.get(glyph.segment_idx) {
@@ -568,6 +653,13 @@ component! {
         for line in &layout_lines {
             let mut start = 0;
             while start < line.glyphs.len() {
+                // 图片原子不进入 draw_text 字符 run。
+                if line.glyphs[start].kind == LayoutGlyphKind::InlineImage {
+                    // 跳过已经由图片绘制路径处理的单一原子。
+                    start += 1;
+                    // 继续寻找下一个文本 run。
+                    continue;
+                }
                 let segment_idx = line.glyphs[start].segment_idx;
                 // 同一绘制 run 还必须共享 UAX #9 行级方向。
                 let bidi_level = line.glyphs[start].bidi_level;
@@ -665,231 +757,6 @@ component! {
             }
         }
         ctx.pop_clip();
-    }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// 公有方法
-// ════════════════════════════════════════════════════════════════════════════
-
-impl Default for RichText {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl RichText {
-    /// 获取解析后的默认字体大小（像素）。
-    /// 如果设置了物理单位，通过 DPI 转换。
-    pub fn resolved_font_size_px(&self, dpi: f32) -> f32 {
-        self.default_font_size_unit
-            .map(|u| u.to_dip(dpi))
-            .unwrap_or(self.default_font_size)
-    }
-
-    /// 设置富文本内容
-    pub fn content(mut self, segments: Vec<RichTextSegment>) -> Self {
-        self.segments = segments;
-        self.layout_dirty.set(true);
-        self
-    }
-
-    /// 设置默认字体大小
-    pub fn font_size(mut self, size: f32) -> Self {
-        self.default_font_size = if size.is_finite() && size > 0.0 {
-            size
-        } else {
-            14.0
-        };
-        self.default_font_size_unit = None;
-        self.layout_dirty.set(true);
-        self
-    }
-
-    /// 设置物理单位默认字体大小（优先级高于 `font_size()`）
-    pub fn font_size_unit(mut self, unit: PhysicalUnit) -> Self {
-        self.default_font_size_unit = Some(unit);
-        self.layout_dirty.set(true);
-        self
-    }
-
-    /// 设置默认文字颜色
-    pub fn color(mut self, c: Color) -> Self {
-        self.default_color = c;
-        self.use_theme_color = false;
-        self.layout_dirty.set(true);
-        self
-    }
-
-    pub(crate) fn sync_from(&mut self, next: Self) {
-        // 记录 reconcile 是否关闭了已有选择能力。
-        let selection_disabled = self.selectable && !next.selectable;
-        let segments_changed = self.segments != next.segments;
-        let layout_config_changed = segments_changed
-            || self.default_font_size != next.default_font_size
-            || self.default_font_size_unit != next.default_font_size_unit
-            || self.default_color != next.default_color
-            || self.use_theme_color != next.use_theme_color;
-
-        self.segments = next.segments;
-        self.default_font_size = next.default_font_size;
-        self.default_font_size_unit = next.default_font_size_unit;
-        self.default_color = next.default_color;
-        self.use_theme_color = next.use_theme_color;
-        // 同步公开的选择配置。
-        self.selectable = next.selectable;
-        if next.on_link.is_some() {
-            self.on_link = next.on_link;
-        }
-
-        // 能力关闭边界必须终止已有选区。
-        if selection_disabled {
-            // 清除旧选区。
-            self.selection.set(None);
-        }
-        // 能力关闭边界必须重置旧选择锚点。
-        if selection_disabled {
-            // 把锚点恢复到初始位置。
-            self.sel_anchor.set(0);
-        }
-        // 能力关闭边界必须终止已有拖拽会话。
-        if selection_disabled {
-            // 结束拖拽状态。
-            self.sel_dragging.set(false);
-        }
-
-        if layout_config_changed {
-            self.layout_lines.borrow_mut().clear();
-            self.layout_height.set(0.0);
-            self.content_width.set(0.0);
-            self.last_layout_width.set(0.0);
-            self.last_layout_color.set(None);
-            self.code_regions.borrow_mut().clear();
-            self.hovered_code.set(None);
-            self.layout_dirty.set(true);
-        }
-        if segments_changed {
-            self.selection.set(None);
-            self.sel_anchor.set(0);
-            self.sel_dragging.set(false);
-            self.hovered_link.set(None);
-            self.pressed_action = None;
-            self.pending_submit.borrow_mut().take();
-            if let Ok(mut pending_copy) = self.pending_copy.lock() {
-                pending_copy.take();
-            }
-            self.focused_link = if self.link_count() == 0 {
-                0
-            } else {
-                self.focused_link.min(self.link_count() - 1)
-            };
-        }
-    }
-
-    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
-        SnapshotFields::RichText {
-            segments: self.segments.clone(),
-            default_font_size: self.default_font_size,
-            default_font_size_unit: self.default_font_size_unit,
-            default_color: self.default_color,
-            focused_link: (self.link_count() > 0).then_some(self.focused_link),
-        }
-    }
-
-    /// 返回当前键盘焦点链接的显示文本与 URL。
-    pub fn focused_link(&self) -> Option<(&str, &str)> {
-        self.link_at_ordinal(self.focused_link)
-    }
-
-    /// 注册链接激活回调（E-07）：链接经键盘 Enter/Space 或指针点击激活时
-    /// 调用，导航策略由应用决定（内部路由或系统浏览器）；与
-    /// `SemanticKind::Submit` 语义事件共存，不替代既有事件流。
-    pub fn on_link<F>(mut self, callback: F) -> Self
-    where
-        F: Fn(&str) + 'static,
-    {
-        self.on_link = Some(Rc::new(callback));
-        self
-    }
-
-    /// 获取选中的文本
-    pub fn selected_text(&self) -> Option<String> {
-        self.selection
-            .get()
-            .map(|(s, e)| self.extract_text_range(s, e))
-    }
-
-    pub(crate) fn is_cross_text_dragging(&self) -> bool {
-        self.sel_dragging.get()
-    }
-
-    pub(crate) fn cross_text_len(&self) -> usize {
-        self.segments
-            .iter()
-            .map(|s| match s {
-                RichTextSegment::Text { content, .. } => content.chars().count(),
-                RichTextSegment::Code { content } => content.chars().count(),
-                RichTextSegment::Link { content, .. } => content.chars().count(),
-                RichTextSegment::ThematicBreak => 0,
-                RichTextSegment::NewLine => 1,
-            })
-            .sum()
-    }
-
-    pub(crate) fn cross_text_anchor(&self) -> usize {
-        self.sel_anchor.get()
-    }
-
-    pub(crate) fn set_cross_text_range(&self, range: Option<(usize, usize)>) {
-        match range {
-            // 跨节点选择仍复用完整富文本字素簇归一规则。
-            Some((a, b)) if a != b => self.set_selection_range(a, b),
-            _ => self.selection.set(None),
-        }
-    }
-
-    pub(crate) fn cross_text_char_at(&self, frame_local: Point) -> usize {
-        let lines = self.layout_lines.borrow();
-        self.char_at_pos(frame_local, &lines)
-    }
-
-    /// 获取待复制的代码内容（由主循环调用）
-    pub fn take_pending_copy(&self) -> Option<String> {
-        self.pending_copy.lock().ok().and_then(|mut pc| pc.take())
-    }
-
-    // 测试目标保留代码复制区域观测入口，供富文本交互测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn code_copy_rect_for_test(&self, index: usize) -> Option<Rect> {
-        self.code_regions
-            .borrow()
-            .get(index)
-            .map(|region| region.rect)
-    }
-
-    // 测试目标保留布局行文本观测入口，供富文本换行测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn layout_line_texts_for_test(&self) -> Vec<String> {
-        self.layout_lines
-            .borrow()
-            .iter()
-            .map(|line| line.glyphs.iter().map(|glyph| glyph.ch).collect())
-            .collect()
-    }
-
-    // 测试目标保留链接命中点观测入口，供富文本链接测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn link_point_for_test(&self, ordinal: usize) -> Option<Point> {
-        let segment_idx = self.link_segment_at_ordinal(ordinal)?;
-        self.layout_lines.borrow().iter().find_map(|line| {
-            line.glyphs
-                .iter()
-                .find(|glyph| glyph.segment_idx == segment_idx)
-                .map(|glyph| Point::new(glyph.x + glyph.width * 0.5, line.y + line.height * 0.5))
-        })
     }
 }
 

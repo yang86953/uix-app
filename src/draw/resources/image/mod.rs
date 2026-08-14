@@ -191,6 +191,8 @@ impl ImageService {
         if let Some(handle) = self.path_cache.borrow().get(&path_string).copied() {
             // 代际仍有效时直接交付现有句柄。
             if self.is_valid(handle) {
+                // 同步加载可能抢先完成，清理同路径残留后台接收端。
+                self.pending_path_decodes.borrow_mut().remove(&path_string);
                 // 已缓存图片不需要后台任务。
                 return Ok(Some(handle));
             }

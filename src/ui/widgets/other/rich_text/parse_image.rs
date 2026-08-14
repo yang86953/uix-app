@@ -4,7 +4,6 @@
 use super::is_escaped_markdown_char;
 
 // 保存完整图片候选的解析结果。
-#[allow(dead_code)]
 pub(super) enum ParsedInlineImage {
     // 合法候选携带已解码的替代文本与本地路径。
     Image {
@@ -23,7 +22,6 @@ pub(super) enum ParsedInlineImage {
 }
 
 // 暴露两种结果共享的源字节消费量。
-#[allow(dead_code)]
 impl ParsedInlineImage {
     // 返回整个 Markdown 图片候选的字节长度。
     pub(super) fn consumed(&self) -> usize {
@@ -38,7 +36,6 @@ impl ParsedInlineImage {
 }
 
 // 解析一个从感叹号开始的完整 Markdown 行内图片候选。
-#[allow(dead_code)]
 pub(super) fn parse_inline_image(text: &str) -> Option<ParsedInlineImage> {
     // 图片候选必须以标准感叹号和左方括号开头。
     if !text.starts_with("![") {

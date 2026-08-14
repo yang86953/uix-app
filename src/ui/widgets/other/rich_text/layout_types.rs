@@ -5,13 +5,26 @@ use crate::core::Rect;
 // 引入布局字形颜色。
 use crate::draw::Color;
 
+// 描述单个布局原子的绘制语义。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LayoutGlyphKind {
+    // 普通可绘制文本字形。
+    Text,
+    // 由一个几何盒代表的内联图片替换对象。
+    InlineImage,
+}
+
 // 描述带样式与源字符索引的布局字形。
 #[derive(Debug, Clone)]
 pub(crate) struct LayoutGlyph {
+    // 区分文本字形与原子内联图片。
+    pub kind: LayoutGlyphKind,
     // 保存所属富文本 segment 索引。
     pub segment_idx: usize,
     // 保存完整逻辑源中的 Unicode 标量索引。
     pub global_char_idx: usize,
+    // 保存当前视觉原子覆盖的逻辑源字符数量。
+    pub source_char_len: usize,
     // 保存当前视觉行应用 UAX #9 L1 后的嵌入级别。
     pub bidi_level: u8,
     // 保存源字符。
