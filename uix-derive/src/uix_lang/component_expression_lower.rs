@@ -190,8 +190,8 @@ impl ComponentExpander {
                     allow_set_state,
                     // 闭包体不是外层属性句柄位。
                     false,
-                    // 继承数字规范化策略。
-                    normalize_literals,
+                    // 泛型数组元素运算保留作者数字形状并交给 Rust 上下文推断。
+                    false,
                 );
                 // 无论成功或失败都恢复外层局部作用域。
                 self.local_scope_stack.pop();

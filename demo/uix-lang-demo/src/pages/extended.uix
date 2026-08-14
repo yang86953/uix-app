@@ -154,8 +154,8 @@
 // 结束输入组件页组件。
 </Component>
 
-// 声明数据展示页组件并持有稳定选中与展开状态。
-<Component name="DataPage" external="on_gallery_change" state="selected_item: Option<String> = None, active_panels: Vec<String> = []">
+// 声明数据展示页组件并持有稳定选中、展开状态与有序派生值。
+<Component name="DataPage" external="on_gallery_change" state="selected_item: Option<String> = None, active_panels: Vec<String> = []" computed="visible_panels: active_panels.filter(|key| key.length > 0), remaining: visible_panels.length">
   // 组织数据展示内容。
   <Column gap="16px">
     // 展示数据组件标题。
@@ -170,6 +170,8 @@
         <SelectableList items={[SelectableItem('overview', '总览'), SelectableItem('details', '详情'), SelectableItem('history', '历史记录')]} active={selected_item} width="320px" height="150px" automationId="demo-selectable-list" />
         // 使用稳定 key 集合驱动手风琴折叠面板。
         <Collapse panels={[CollapsePanel('基础信息', '展示公开字段与状态。').key('basic'), CollapsePanel('高级信息', '展示稳定 key 与受控展开。').key('advanced')]} accordion activeKeys={active_panels} width="420px" automationId="demo-collapse" />
+        // 展示 filter 与后续 computed 依次求值得到的有效展开数量。
+        <Text fontSize="small">筛选后仍有 {remaining} 个展开面板。</Text>
         // 排列数字、圆点与文字徽标。
         <Container direction="row" gap="18px" align="center">
           // 用数字徽标装饰真实业务按钮。
