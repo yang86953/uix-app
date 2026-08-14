@@ -4,7 +4,7 @@
 // 声明输入页独占的类型化业务模型并供主入口生成 Rust items。
 <Record name="Profile" fields="email: String, level: String, accepted: bool, channel: String, notifications: bool, volume: number" />
 
-<Component name="InputPage" state="input_name: 'UIX Lang', input_number: i32 = 50, grouped_amount: '12.50', slider_volume: 35, range_start: 20, range_end: 80, rating: u32 = 7, gender: 'female', view_mode: 'grid', city: 'cn', tree_key: 'member', query: 'ap', mention_text: '请联系 @a', switch_enabled: false, checkbox_accepted: true, cities: HashSet<String> = [], region: CascaderValue = { labels: [], values: [] }, selected_date: Date = Date(2026, 8, 10), range_start_date: Date = Date(2026, 8, 1), range_end_date: Date = Date(2026, 8, 31), selected_time: Time = Time(14, 30), selected_color: Color = Color('#1677ff'), profile: Profile = { email: 'owner@example.com', level: '中级', accepted: true, channel: '邮件', notifications: true, volume: 35.0 }">
+<Component name="InputPage" external="on_name_change, submit_profile" state="input_name: 'UIX Lang', input_number: i32 = 50, grouped_amount: '12.50', slider_volume: 35, range_start: 20, range_end: 80, rating: u32 = 7, gender: 'female', view_mode: 'grid', city: 'cn', tree_key: 'member', query: 'ap', mention_text: '请联系 @a', switch_enabled: false, checkbox_accepted: true, cities: HashSet<String> = [], region: CascaderValue = { labels: [], values: [] }, selected_date: Date = Date(2026, 8, 10), range_start_date: Date = Date(2026, 8, 1), range_end_date: Date = Date(2026, 8, 31), selected_time: Time = Time(14, 30), selected_color: Color = Color('#1677ff'), profile: Profile = { email: 'owner@example.com', level: '中级', accepted: true, channel: '邮件', notifications: true, volume: 35.0 }">
   // 组织输入组件内容。
   <Column gap="16px">
     // 展示输入组件标题。
@@ -155,7 +155,7 @@
 </Component>
 
 // 声明数据展示页组件并持有稳定选中与展开状态。
-<Component name="DataPage" state="selected_item: Option<String> = None, active_panels: Vec<String> = []">
+<Component name="DataPage" external="on_gallery_change" state="selected_item: Option<String> = None, active_panels: Vec<String> = []">
   // 组织数据展示内容。
   <Column gap="16px">
     // 展示数据组件标题。
@@ -292,7 +292,7 @@
 </Component>
 
 // 声明反馈组件页组件：受控浮层与确认计数由组件私有 state 驱动。
-<Component name="FeedbackPage" state="feedback_open: false, drawer_open: false, confirm_count: 0, cancel_count: 0">
+<Component name="FeedbackPage" external="on_alert_closed" state="feedback_open: false, drawer_open: false, confirm_count: 0, cancel_count: 0">
   // 组织反馈组件内容。
   <Column gap="16px">
     // 展示反馈组件标题。

@@ -27,6 +27,8 @@ mod uix_import;
 mod uix_import_tests;
 // 定义公开 uix! 的内嵌与文件编译期入口。
 mod uix_entry;
+// 定义 UIX 生成文件、来源注释与 include! 边界。
+mod uix_generated;
 
 /// 为路由枚举派生 `Display`（E-06）。
 #[proc_macro_derive(Display)]

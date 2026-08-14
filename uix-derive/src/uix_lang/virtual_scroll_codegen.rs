@@ -8,7 +8,8 @@ use super::codegen::{apply_common_attributes, generate_node_view, is_renderable_
 // 引入 VirtualScroll 映射所需的语言 AST、值生成与诊断类型。
 use super::{
     Attribute, AttributeValue, ControlBinding, Diagnostic, Element, Expression, ExpressionKind,
-    ExpressionNode, Node, generate_expression, numeric_value, rust_identifier,
+    ExpressionNode, Node, generate_expression, generate_expression_without_source_marker,
+    numeric_value, rust_identifier,
 };
 
 // 生成文档定义的定高 VirtualScroll 数据窗口。
@@ -49,12 +50,14 @@ pub(crate) fn generate_virtual_scroll(element: &Element) -> Result<TokenStream, 
             "使用 <For {item} in {data}>...</For>",
         ));
     };
-    // 先把 data 转换为稳定 Rust 令牌，后续直接复用以保证只求值一次。
-    let data = generate_expression(&data.expression, None)?;
+    // 先把 data 转换为最终 Rust 令牌，后续直接复用以保证只求值一次。
+    let data_tokens = generate_expression(&data.expression, None)?;
+    // 生成不含来源标记的 data 规范令牌用于结构比较。
+    let data_comparison = generate_expression_without_source_marker(&data.expression, None)?;
     // 把 For in 转换为同一规范令牌形式以忽略源码位置与无意义空白。
-    let iterable_tokens = generate_expression(&iterable.expression, None)?;
+    let iterable_tokens = generate_expression_without_source_marker(&iterable.expression, None)?;
     // data 与 For in 必须描述同一规范表达式，避免双数据源漂移。
-    if data.to_string() != iterable_tokens.to_string() {
+    if data_comparison.to_string() != iterable_tokens.to_string() {
         // 返回指向 For 数据源的冲突诊断。
         return Err(Diagnostic::new(
             // 指向冲突的 in 表达式。
@@ -65,6 +68,8 @@ pub(crate) fn generate_virtual_scroll(element: &Element) -> Result<TokenStream, 
             "让 data={items} 与 <For ... in {items}> 使用同一表达式",
         ));
     }
+    // 一致性验证后使用包含可选来源标记的最终 data 令牌。
+    let data = data_tokens;
     // 可选 item 只作为对 For 行变量的显式一致性断言。
     validate_item_attribute(element, binding)?;
     // renderer 每次只能返回一个 View 行根。
