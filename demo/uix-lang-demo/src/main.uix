@@ -594,7 +594,7 @@ hoverStyleAction {
 </Component>
 
 // 声明导航组件页组件：持有类型化步骤、分页与标签页状态。
-<Component name="NavPage" state="steps_current: usize = 1, page_current: usize = 1, page_size: usize = 10, active_tab: 'account'">
+<Component name="NavPage" state="steps_current: usize = 1, page_current: usize = 1, page_size: usize = 10, active_tab: 'account', menu_selected: Option<String> = None, menu_open: Vec<String> = []">
   // 组织导航组件内容。
   <Column gap="16px">
     // 展示导航组件标题。
@@ -637,6 +637,18 @@ hoverStyleAction {
       </Column>
     // 结束面包屑与锚点面板。
     </Container>
+    // 展示 typed 菜单树与双受控 key 状态。
+    <Container class="pagePanel">
+      // 组织菜单内容。
+      <Column gap="12px">
+        // 展示面板小节标题。
+        <Text fontSize="heading5">Menu</Text>
+        // 菜单组点击后写回 selectedKey，并通过 openKeys 控制递归子项。
+        <Menu items={[MenuItem('设置', 'settings').icon('settings').children([MenuItem('账户', 'account'), MenuItem('安全', 'security')]), MenuItem('帮助', 'help')]} selectedKey={menu_selected} openKeys={menu_open} collapsible width="320px" />
+      // 结束菜单内容。
+      </Column>
+    // 结束菜单面板。
+    </Container>
     // 展示受控标签页与两个保持状态的静态面板。
     <Container class="pagePanel">
       // 组织标签页内容。
@@ -656,7 +668,7 @@ hoverStyleAction {
     // 结束标签页面板。
     </Container>
     // 说明剩余规划中导航标签边界。
-    <Alert message="Menu、Navigation、Dropdown 标签仍在规划矩阵登记，保持 Rust API 边界。" type="info" />
+    <Alert message="Navigation、Dropdown 标签仍在规划矩阵登记，保持 Rust API 边界。" type="info" />
   // 结束导航组件内容。
   </Column>
 // 结束导航组件页组件。
@@ -1229,17 +1241,17 @@ hoverStyleAction {
         // 说明反馈标签覆盖。
         <Text>反馈：Alert / Modal / Drawer / Tooltip / Popover / FocusTrap / Spin</Text>
         // 说明导航与框架标签覆盖。
-        <Text>导航与框架：Steps / Pagination / Breadcrumb / Anchor / Tabs / ThemeToggle / WindowControl / WindowDragRegion / QRCode / Watermark</Text>
+        <Text>导航与框架：Menu / Steps / Pagination / Breadcrumb / Anchor / Tabs / ThemeToggle / WindowControl / WindowDragRegion / QRCode / Watermark</Text>
         // 展示语言能力小节。
         <Text fontSize="heading5">语言能力</Text>
         // 说明组件与状态能力。
         <Text>组件：props / 私有 state / 类型化 state（u32、usize、f32、i32、Date、Time、Color、Point、CascaderValue、HashSet）/ setState / 句柄位绑定 / If / For / 样式类继承 / setTheme。</Text>
         // 说明数据声明能力。
-        <Text>数据：数组字面量 / 十三类数据类型构造链（SelectOption、CascaderOption、TreeNode、TimelineItem、Step、DescriptionsItem、BreadcrumbItem、AnchorItem、Tab、Date、Time、Color、Point）/ Record 类型化业务模型。</Text>
+        <Text>数据：数组字面量 / 十四类数据类型构造链（SelectOption、CascaderOption、TreeNode、TimelineItem、Step、DescriptionsItem、BreadcrumbItem、AnchorItem、Tab、MenuItem、Date、Time、Color、Point）/ Record 类型化业务模型。</Text>
         // 展示保留边界小节。
         <Text fontSize="heading5">保留边界</Text>
         // 说明保留在 Rust API 的边界。
-        <Text>图表、菜单等未登记标签，以及 Agent 控制与 test-harness 专用入口。</Text>
+        <Text>图表等未登记标签，以及 Agent 控制与 test-harness 专用入口。</Text>
         // 展示验收状态标签。
         <Container direction="row" gap="8px">
           // 标记结构对齐状态。

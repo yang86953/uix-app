@@ -349,6 +349,28 @@ impl ComponentExpander {
                         // 返回字面量与显式类型。
                         Ok((value, Some(rust_type), false))
                     }
+                    // 可空字符串单选首版只接受确定的 None 初始值。
+                    ComponentValueType::OptionalString => {
+                        // 确认作者使用不会捕获外部变量的 None 标识符。
+                        if !matches!(&expanded.kind, ExpressionKind::Identifier(name) if name == "None")
+                        {
+                            // 返回可空状态初始化诊断。
+                            return Err(Diagnostic::new(
+                                // 指向非法初始值。
+                                expanded.span,
+                                // 说明首版确定初始化边界。
+                                "Option<String> state 必须使用 None 初始化",
+                                // 给出规范写法。
+                                "使用 selected: Option<String> = None",
+                            ));
+                        }
+                        // 生成显式 Option<String> 类型。
+                        let rust_type = value_type_tokens(value_type.clone());
+                        // 用完整路径避免调用方同名标识符遮蔽。
+                        let initial = quote! { ::std::option::Option::None };
+                        // 返回确定可空初始值。
+                        Ok((initial, Some(rust_type), false))
+                    }
                     // 集合类型只接受空数组初始值。
                     ComponentValueType::HashSetOfString | ComponentValueType::VecOfString => {
                         // 要求空数组形状。
@@ -456,14 +478,8 @@ impl ComponentExpander {
                 quote! { ::uix::prelude::CascaderValue },
                 // 固定两个字符串向量字段。
                 vec![
-                    (
-                        "labels".to_string(),
-                        ComponentValueType::VecOfString,
-                    ),
-                    (
-                        "values".to_string(),
-                        ComponentValueType::VecOfString,
-                    ),
+                    ("labels".to_string(), ComponentValueType::VecOfString),
+                    ("values".to_string(), ComponentValueType::VecOfString),
                 ],
             ),
             // record 使用文档声明的字段集合。
@@ -481,8 +497,7 @@ impl ComponentExpander {
                     )
                 })?;
                 // 验证名称可映射为 Rust 标识符。
-                let ident =
-                    syn::parse_str::<Ident>(name).expect("record 名已在解析期验证");
+                let ident = syn::parse_str::<Ident>(name).expect("record 名已在解析期验证");
                 // 收集字段名与类型。
                 let fields = record
                     // 遍历声明字段。
@@ -502,10 +517,7 @@ impl ComponentExpander {
         // 校验对象字段与目标字段一一对应。
         for field in fields {
             // 未知字段必须拒绝。
-            if !target_fields
-                .iter()
-                .any(|(name, _)| name == &field.name)
-            {
+            if !target_fields.iter().any(|(name, _)| name == &field.name) {
                 // 返回未知字段诊断。
                 return Err(Diagnostic::new(
                     // 指向字段。
@@ -686,11 +698,15 @@ impl ComponentExpander {
                 | ComponentValueType::CascaderValue
                 | ComponentValueType::HashSetOfString
                 | ComponentValueType::VecOfString
+                | ComponentValueType::OptionalString
                 | ComponentValueType::Record(_) => Err(Diagnostic::new(
                     // 指向完整属性。
                     attribute.span,
                     // 说明类型仅限 state 注解。
-                    format!("prop {} 不能使用仅限私有 state 或 record 字段的类型", attribute.name),
+                    format!(
+                        "prop {} 不能使用仅限私有 state 或 record 字段的类型",
+                        attribute.name
+                    ),
                     // 给出 props 白名单。
                     "props 使用 String、number、bool、State<T> 或回调签名",
                 )),

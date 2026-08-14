@@ -74,6 +74,8 @@ pub(crate) enum ComponentValueType {
     HashSetOfString,
     // 映射到 Vec<String> 集合状态。
     VecOfString,
+    // 映射到 Option<String> 可空单选状态。
+    OptionalString,
     // 映射到文档内声明的 record 类型。
     Record(String),
 }
