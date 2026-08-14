@@ -129,9 +129,13 @@ impl DataVisualizationPalette {
 /// 主题功能色角色。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FunctionalColorRole {
+    /// 表示成功完成或状态正常的功能色。
     Success,
+    /// 表示需要用户注意的警告功能色。
     Warning,
+    /// 表示失败、危险或校验错误的功能色。
     Error,
+    /// 表示中性说明或进行中信息的功能色。
     Info,
 }
 
@@ -156,17 +160,29 @@ impl FunctionalColorRole {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum PrimaryHue {
+    /// 红色预设色相。
     Red,
+    /// 火山红预设色相。
     Volcano,
+    /// 橙色预设色相。
     Orange,
+    /// 金色预设色相。
     Gold,
+    /// 黄色预设色相。
     Yellow,
+    /// 青柠色预设色相。
     Lime,
+    /// 绿色预设色相。
     Green,
+    /// 青色预设色相。
     Cyan,
+    /// 蓝色预设色相。
     Blue,
+    /// 极客蓝预设色相。
     Geekblue,
+    /// 紫色预设色相。
     Purple,
+    /// 品红预设色相。
     Magenta,
 }
 
