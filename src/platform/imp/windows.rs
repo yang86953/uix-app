@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use crate::core::{Errc, Error, Rect, Result};
 use crate::platform::hardware::{DisplayInfo, MemoryInfo, OsInfo};
-use crate::platform::services::{SpecialDir, SystemNotification};
+use crate::platform::services::SpecialDir;
 use windows::Win32::Foundation::{LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{
     DEVMODEW, ENUM_CURRENT_SETTINGS, EnumDisplayMonitors, EnumDisplaySettingsW, GetMonitorInfoW,
@@ -14,6 +14,11 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::MONITORINFOF_PRIMARY;
 use windows::core::{BOOL, PCWSTR};
+
+// Windows 通知 Adapter 独立成组件，避免平台硬件查询文件超过行数门禁。
+mod notification;
+// 向上层门面重导出通知能力查询与发送入口。
+pub(crate) use notification::{show_notification, system_notification_capability};
 
 const COINIT_APARTMENTTHREADED: u32 = 0x2;
 const RPC_E_CHANGED_MODE: i32 = 0x8001_0106_u32 as i32;
@@ -278,13 +283,6 @@ pub(crate) fn special_dir(directory: SpecialDir) -> Result<PathBuf> {
             Ok(path)
         }
     }
-}
-
-pub(crate) fn show_notification(_notification: &SystemNotification) -> Result<()> {
-    Err(Error::new(
-        Errc::NotImplemented,
-        "Platform::show_notification: standalone Windows notifications require an application identity",
-    ))
 }
 
 unsafe extern "system" fn collect_monitor(

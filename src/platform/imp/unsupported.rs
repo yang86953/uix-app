@@ -2,7 +2,10 @@ use std::path::PathBuf;
 
 use crate::core::{Errc, Error, Result};
 use crate::platform::hardware::{DisplayInfo, MemoryInfo, OsInfo};
-use crate::platform::services::{SpecialDir, SystemNotification};
+// 引入跨平台通知身份与能力状态契约。
+use crate::platform::services::{
+    AppUserModelId, SpecialDir, SystemNotification, SystemNotificationCapability,
+};
 
 pub(crate) struct State;
 
@@ -36,7 +39,21 @@ pub(crate) fn special_dir(_directory: SpecialDir) -> Result<PathBuf> {
     Err(unsupported("Platform::special_dir"))
 }
 
-pub(crate) fn show_notification(_notification: &SystemNotification) -> Result<()> {
+// 没有平台 Provider 的目标返回显式 Unsupported 状态。
+pub(crate) fn system_notification_capability(
+    // Unsupported provider 不消费 Windows AUMID。
+    _app_user_model_id: Option<&AppUserModelId>,
+) -> Result<SystemNotificationCapability> {
+    // 能力查询本身成功，状态表达不可用原因。
+    Ok(SystemNotificationCapability::Unsupported)
+}
+
+pub(crate) fn show_notification(
+    // Unsupported provider 不消费 Windows AUMID。
+    _app_user_model_id: Option<&AppUserModelId>,
+    // 保留统一通知值签名。
+    _notification: &SystemNotification,
+) -> Result<()> {
     Err(unsupported("Platform::show_notification"))
 }
 
