@@ -1,145 +1,17 @@
-// 引入组件 AST、通用元素、表达式解析与诊断。
+// 引入组件字段 AST、通用元素、表达式解析与诊断。
 use super::{
-    AttributeValue, ComponentDeclaration, ComponentProp, ComponentPropType, ComponentState,
-    ComponentStateInitial, ComponentValueType, Diagnostic, Element, RecordDeclaration, RecordField,
-    SourceSpan, parse_expression,
+    AttributeValue, ComponentProp, ComponentPropType, ComponentState, ComponentStateInitial,
+    ComponentValueType, Diagnostic, Element, RecordDeclaration, RecordField, SourceSpan,
+    parse_expression,
 };
 // 引入名称去重集合。
 use std::collections::HashSet;
 
-// 把通用顶层 Component 元素验证为结构化组件声明。
-pub(crate) fn parse_component_declaration(
-    // 接收已经完成标签级解析的 Component。
-    element: Element,
-) -> Result<ComponentDeclaration, Diagnostic> {
-    // 防御性检查调用方只传入保留标签。
-    if element.name != "Component" {
-        // 返回内部路由诊断。
-        return Err(Diagnostic::new(
-            // 指向完整元素。
-            element.span,
-            // 说明元素类型不匹配。
-            "组件声明解析器只接受 <Component>",
-            // 给出正确路由。
-            "把普通元素交给 View 解析器",
-        ));
-    }
-    // 保存已出现的 Component 属性名。
-    let mut attribute_names = HashSet::new();
-    // 保存必需组件名。
-    let mut name = None;
-    // 保存可选 props 声明及跨度。
-    let mut props_source = None;
-    // 保存可选 state 声明及跨度。
-    let mut state_source = None;
-    // 验证 Component 只包含三个声明属性。
-    for attribute in &element.attributes {
-        // 拒绝重复属性。
-        if !attribute_names.insert(attribute.name.as_str()) {
-            // 返回重复属性诊断。
-            return Err(Diagnostic::new(
-                // 指向重复属性。
-                attribute.span,
-                // 说明重复名称。
-                format!("Component 属性 {} 重复声明", attribute.name),
-                // 给出修复动作。
-                "合并重复属性并只保留一次",
-            ));
-        }
-        // Component 元数据必须使用字符串字面量。
-        let AttributeValue::Literal(value) = &attribute.value else {
-            // 返回元数据值形状诊断。
-            return Err(Diagnostic::new(
-                // 指向完整属性。
-                attribute.span,
-                // 说明不接受运行期表达式。
-                format!("Component {} 必须使用字符串字面量", attribute.name),
-                // 给出规范形式。
-                "使用 name=\"Name\"、props=\"name: Type\" 或 state=\"name: value\"",
-            ));
-        };
-        // 按保留属性名保存源码。
-        match attribute.name.as_str() {
-            // 保存组件名。
-            "name" => name = Some((value.clone(), attribute.span)),
-            // 保存 props 声明。
-            "props" => props_source = Some((value.as_str(), attribute.span)),
-            // 保存 state 声明。
-            "state" => state_source = Some((value.as_str(), attribute.span)),
-            // 其他属性不属于 Component 元数据。
-            _ => {
-                // 返回未知属性诊断。
-                return Err(Diagnostic::new(
-                    // 指向完整属性。
-                    attribute.span,
-                    // 说明未知元数据。
-                    format!("Component 不支持属性 {}", attribute.name),
-                    // 给出允许集合。
-                    "只使用 name、props 与 state",
-                ));
-            }
-        }
-    }
-    // name 是组件声明的必需属性。
-    let Some((name, name_span)) = name else {
-        // 返回缺失名称诊断。
-        return Err(Diagnostic::new(
-            // 指向完整组件。
-            element.span,
-            // 说明缺少必需名称。
-            "<Component> 缺少必需的 name 属性",
-            // 给出规范示例。
-            "使用 <Component name=\"Counter\">...</Component>",
-        ));
-    };
-    // 组件名必须可映射为 PascalCase Rust 标识符。
-    validate_component_name(&name, name_span)?;
-    // 解析可选 props 字符串。
-    let props = match props_source {
-        // 解析存在的 props。
-        Some((source, span)) => parse_props(source, span)?,
-        // 未声明 props 时使用空列表。
-        None => Vec::new(),
-    };
-    // 解析可选私有 state 字符串。
-    let states = match state_source {
-        // 解析存在的 state。
-        Some((source, span)) => parse_states(source, span)?,
-        // 未声明 state 时使用空列表。
-        None => Vec::new(),
-    };
-    // props 与 state 共享组件体标识符命名空间。
-    for state in &states {
-        // 查找同名 prop。
-        if props.iter().any(|prop| prop.name == state.name) {
-            // 返回跨类别重复诊断。
-            return Err(Diagnostic::new(
-                // 指向 state 声明。
-                state.span,
-                // 说明名称冲突。
-                format!("组件字段 {} 同时声明为 prop 与 state", state.name),
-                // 给出改名建议。
-                "为 prop 与私有 state 使用不同名称",
-            ));
-        }
-    }
-    // 返回结构化组件声明。
-    Ok(ComponentDeclaration {
-        // 保存组件名。
-        name,
-        // 保存 props。
-        props,
-        // 保存 states。
-        states,
-        // 转移有序组件体。
-        children: element.children,
-        // 保存完整声明跨度。
-        span: element.span,
-    })
-}
-
 // 解析逗号分隔的 props 声明。
-fn parse_props(source: &str, span: SourceSpan) -> Result<Vec<ComponentProp>, Diagnostic> {
+pub(super) fn parse_props(
+    source: &str,
+    span: SourceSpan,
+) -> Result<Vec<ComponentProp>, Diagnostic> {
     // 空字符串表示没有 props。
     if source.trim().is_empty() {
         // 返回空列表。
@@ -184,7 +56,12 @@ fn parse_props(source: &str, span: SourceSpan) -> Result<Vec<ComponentProp>, Dia
 }
 
 // 解析逗号分隔的私有 state 声明。
-fn parse_states(source: &str, span: SourceSpan) -> Result<Vec<ComponentState>, Diagnostic> {
+pub(super) fn parse_states(
+    // 接收 state 声明源码。
+    source: &str,
+    // 接收所属属性跨度。
+    span: SourceSpan,
+) -> Result<Vec<ComponentState>, Diagnostic> {
     // 空字符串表示没有私有状态。
     if source.trim().is_empty() {
         // 返回空列表。
@@ -802,7 +679,12 @@ fn split_field<'a>(
 }
 
 // 验证组件名为 PascalCase Rust 标识符。
-fn validate_component_name(name: &str, span: SourceSpan) -> Result<(), Diagnostic> {
+pub(super) fn validate_component_name(
+    // 接收待验证名称。
+    name: &str,
+    // 接收名称属性跨度。
+    span: SourceSpan,
+) -> Result<(), Diagnostic> {
     // 首字符必须是 ASCII 大写且整体是合法字段字符。
     if name.starts_with(|value: char| value.is_ascii_uppercase()) && is_identifier(name) {
         // Component、If 与 For 是保留标签。
