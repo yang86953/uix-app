@@ -12,7 +12,9 @@ use std::rc::Rc;
 /// Progress display type.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ProgressType {
+    /// 使用水平条形轨道呈现进度。
     Line,
+    /// 使用圆形轨道呈现进度。
     Circle,
 }
 
@@ -231,6 +233,7 @@ impl Default for ProgressBar {
 impl ProgressBar {
     const INDETERMINATE_PHASE_SPEED: f32 = 0.75;
 
+    /// 创建零进度、确定模式、圆角线形且尺寸为 200×8 的进度条。
     pub fn new() -> Self {
         Self {
             progress: 0.0,
@@ -257,6 +260,7 @@ impl ProgressBar {
         }
     }
 
+    /// 设置确定模式的进度比例，并安全归一化到 `0.0..=1.0`。
     pub fn progress(mut self, p: f32) -> Self {
         // 一次计算归一值与原因，供绘制、快照和无障碍共享。
         let (progress, reason) = Self::normalize_progress_with_reason(p);
@@ -278,23 +282,27 @@ impl ProgressBar {
         self.progress(p)
     }
 
+    /// 设置进度部分从起始色到结束色的渐变。
     pub fn gradient(mut self, start: Color, end: Color) -> Self {
         self.gradient_start = Some(start);
         self.gradient_end = Some(end);
         self
     }
 
+    /// 启用分段进度并设置至少为一的分段数量。
     pub fn steps(mut self, count: usize) -> Self {
         self.steps = count.max(1);
         self
     }
 
+    /// 切换为带缺口的圆形仪表盘样式。
     pub fn dashboard(mut self) -> Self {
         self.dashboard = true;
         self.progress_type = ProgressType::Circle;
         self
     }
 
+    /// 设置根据当前进度比例生成显示文本的格式化器。
     pub fn format<F>(mut self, formatter: F) -> Self
     where
         F: Fn(f32) -> String + 'static,
@@ -303,6 +311,7 @@ impl ProgressBar {
         self
     }
 
+    /// 切换为由组件动画相位驱动的不确定进度模式。
     pub fn indeterminate(mut self) -> Self {
         self.mode = ProgressMode::Indeterminate;
         self
@@ -322,42 +331,50 @@ impl ProgressBar {
         self
     }
 
+    /// 设置已完成进度部分的颜色。
     pub fn stroke_color(mut self, c: Color) -> Self {
         self.stroke_color = Some(c);
         self
     }
 
+    /// 设置未完成轨道的颜色。
     pub fn track_color(mut self, c: Color) -> Self {
         self.track_color = Some(c);
         self
     }
 
+    /// 设置非负高度；非有限数值会归零。
     pub fn height(mut self, h: f32) -> Self {
         self.height = Self::normalize_dimension(h);
         self
     }
 
+    /// 设置非负宽度；非有限数值会归零。
     pub fn width(mut self, w: f32) -> Self {
         self.width = Self::normalize_dimension(w);
         self
     }
 
+    /// 同时设置非负宽高；非有限数值会归零。
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.width = Self::normalize_dimension(w);
         self.height = Self::normalize_dimension(h);
         self
     }
 
+    /// 设置线形进度条两端是否使用圆角。
     pub fn round(mut self, round: bool) -> Self {
         self.round = round;
         self
     }
 
+    /// 切换为完整圆形轨道样式。
     pub fn circle(mut self) -> Self {
         self.progress_type = ProgressType::Circle;
         self
     }
 
+    /// 返回不确定模式当前的归一化动画相位。
     pub fn animation_phase(&self) -> f32 {
         self.indeterminate_phase
     }
