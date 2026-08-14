@@ -267,6 +267,11 @@ mod table_codegen;
 // 集中验证 Table 生成与拒绝路径。
 #[cfg(test)]
 mod table_codegen_tests;
+// 定义 Tabs 静态面板与受控 key 的公开 API 代码生成边界。
+mod tabs_codegen;
+// 集中验证 Tabs 生成与拒绝路径。
+#[cfg(test)]
+mod tabs_codegen_tests;
 // 定义 Steps 类型化步骤、受控 current 与方向的公开 API 代码生成边界。
 mod steps_codegen;
 // 集中验证 Steps 生成、状态绑定与拒绝路径。
@@ -408,8 +413,8 @@ pub(crate) use window_drag_region_codegen::generate_window_drag_region;
 pub(crate) use component_ast::*;
 // 导出语言面数据类型到公开构造 API 的映射查询。
 pub(crate) use data_binding_codegen::{
-    data_chain_root, data_constructor_spec, is_data_constructor_chain, normalize_number_literals,
-    step_status_path, DataConstructorSpec,
+    DataConstructorSpec, data_chain_root, data_constructor_spec, is_data_constructor_chain,
+    normalize_number_literals, step_status_path,
 };
 // 向过程宏入口暴露组件感知文档生成函数。
 pub(crate) use component_codegen::generate_document_view;
@@ -512,6 +517,8 @@ pub(crate) use carousel_codegen::generate_carousel;
 pub(crate) use tree_codegen::generate_tree;
 // 向核心元素生成器暴露 Table 叶组件专用映射。
 pub(crate) use table_codegen::generate_table;
+// 向核心元素生成器暴露 Tabs 容器专用映射。
+pub(crate) use tabs_codegen::generate_tabs;
 // 向核心元素生成器暴露 Steps 叶组件专用映射。
 pub(crate) use steps_codegen::generate_steps;
 // 向核心元素生成器暴露 Pagination 叶组件专用映射。
@@ -578,4 +585,3 @@ pub(crate) use value_codegen::{
     align_value, boolean_value, deferred_style_diagnostic, justify_value, literal_string,
     numeric_value, rust_identifier, string_value, typography_value,
 };
-

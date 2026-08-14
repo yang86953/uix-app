@@ -51,8 +51,7 @@ fn generates_registered_data_constructor_calls() {
     let breadcrumb = generate("BreadcrumbItem('导航').active()");
     // 快照必须包含构造与成员链。
     assert!(
-        breadcrumb.contains("BreadcrumbItem")
-            && breadcrumb.contains("active"),
+        breadcrumb.contains("BreadcrumbItem") && breadcrumb.contains("active"),
         "{breadcrumb}"
     );
     // 锚点目标生成双参数构造。
@@ -62,6 +61,10 @@ fn generates_registered_data_constructor_calls() {
         anchor.contains("prelude") && anchor.contains("AnchorItem"),
         "{anchor}"
     );
+    // 标签页元数据支持稳定 key 成员链。
+    let tab = generate("Tab('账户').key('account')");
+    // 快照必须包含公开构造路径与 key 配置。
+    assert!(tab.contains("Tab") && tab.contains("key"), "{tab}");
     // 时间轴事件支持 description 成员链。
     let timeline = generate("TimelineItem('创建').description('2026-08-01')");
     // 快照必须包含构造与成员链。
@@ -70,7 +73,8 @@ fn generates_registered_data_constructor_calls() {
         "{timeline}"
     );
     // 级联选项支持嵌套数组 children 链。
-    let cascader = generate("CascaderOption('浙江', 'zj').children([CascaderOption('杭州', 'hz')])");
+    let cascader =
+        generate("CascaderOption('浙江', 'zj').children([CascaderOption('杭州', 'hz')])");
     // 快照必须包含嵌套构造、数组与成员链。
     assert!(
         cascader.contains("CascaderOption")
@@ -133,11 +137,7 @@ fn rejects_invalid_data_constructor_usage() {
     // 生成必须失败。
     .expect_err("动态状态参数必须失败");
     // 原因必须指向字符串语义值要求。
-    assert!(
-        error.message.contains("字符串语义值"),
-        "{}",
-        error.message
-    );
+    assert!(error.message.contains("字符串语义值"), "{}", error.message);
     // 未登记类型名保持普通 Rust 调用语义，由 Rust 类型检查兜底。
     let custom = generate("DemoRow('1')");
     // 快照不能展开为 uix 公开构造路径。

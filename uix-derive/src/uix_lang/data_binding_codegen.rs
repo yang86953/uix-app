@@ -34,6 +34,8 @@ const DATA_TYPE_NAMES: &[&str] = &[
     "BreadcrumbItem",
     // 锚点导航目标。
     "AnchorItem",
+    // 标签页元数据。
+    "Tab",
     // 日期语义类型。
     "Date",
     // 时间语义类型。
@@ -64,6 +66,8 @@ pub(crate) fn data_constructor_spec(name: &str) -> Option<DataConstructorSpec> {
         "BreadcrumbItem" => (quote! { ::uix::prelude::BreadcrumbItem }, None, false),
         // 映射锚点目标。
         "AnchorItem" => (quote! { ::uix::prelude::AnchorItem }, None, false),
+        // 映射标签页元数据。
+        "Tab" => (quote! { ::uix::prelude::Tab }, None, false),
         // 日期构造 year/month/day。
         "Date" => (quote! { ::uix::prelude::Date }, None, false),
         // 时间构造 hour/minute。

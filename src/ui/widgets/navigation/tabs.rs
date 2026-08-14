@@ -40,6 +40,14 @@ impl Tab {
         self.icon = icon.into();
         self
     }
+
+    /// 覆盖稳定 key；展示 label 不参与面板身份。
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        // 保存调用方提供的稳定业务 key。
+        self.key = key.into();
+        // 返回完成配置的标签元数据。
+        self
+    }
 }
 
 /// Tab bar position.
@@ -97,6 +105,8 @@ component! {
         fixed_width: Option<f32>,
         fixed_height: Option<f32>,
         focused: bool,
+        /// 活动面板切换后请求组件树重新同步子可见性与布局。
+        layout_requested: std::cell::Cell<bool>,
         pending_change: RefCell<Option<String>>,
         editable: bool,
         scrollable: bool,
@@ -211,6 +221,10 @@ component! {
             .borrow_mut()
             .take()
             .map(|key| SemanticEvent::change(id, key))
+    }
+
+    take_layout_request => (&mut self) -> bool {
+        self.layout_requested.replace(false)
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
@@ -373,19 +387,19 @@ component! {
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(crate::ui::ComponentId, Rect)>
     {
-        if children.is_empty() { return Vec::new(); }
+        if self.active_index >= self.tabs.len() { return Vec::new(); }
+        let Some(child) = children.first() else { return Vec::new(); };
         let content = self.content_rect(Self::normalized_frame(frame));
-        if self.active_index < children.len() {
-            let cid = children[self.active_index].id;
-            vec![(cid, Rect::new(
-                content.x + 16.0_f32.min(content.w * 0.5),
-                content.y + 8.0_f32.min(content.h * 0.5),
-                (content.w - 32.0).max(0.0),
-                (content.h - 16.0).max(0.0),
-            ))]
-        } else {
-            Vec::new()
-        }
+        vec![(child.id, Rect::new(
+            content.x + 16.0_f32.min(content.w * 0.5),
+            content.y + 8.0_f32.min(content.h * 0.5),
+            (content.w - 32.0).max(0.0),
+            (content.h - 16.0).max(0.0),
+        ))]
+    }
+
+    child_visible => (&self, index: usize) -> bool {
+        index == self.active_index && index < self.tabs.len()
     }
 }
 
@@ -413,6 +427,8 @@ impl Tabs {
             fixed_width: None,
             fixed_height: None,
             focused: false,
+            // 新组件尚无待处理的布局请求。
+            layout_requested: std::cell::Cell::new(false),
             pending_change: RefCell::new(None),
             last_frame: std::cell::Cell::new(None),
             tab_main_ranges: RefCell::new(Vec::new()),
@@ -523,6 +539,8 @@ impl Tabs {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        // 记录同步前的活动索引，用于判断是否需要重新布局。
+        let previous_active_index = self.active_index;
         let previous_key = self.current_key().map(str::to_owned);
         let previous_position = self.position;
         let controlled_index = next
@@ -550,6 +568,11 @@ impl Tabs {
         }
         self.tab_main_ranges.borrow_mut().clear();
         self.tab_content_extent.set(0.0);
+        // 活动面板变化时请求组件树更新可见性门控与布局。
+        if self.active_index != previous_active_index {
+            // 合并尚未消费的布局请求，避免覆盖事件阶段的请求。
+            self.layout_requested.set(true);
+        }
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -570,6 +593,8 @@ impl Tabs {
         };
         if index != self.active_index {
             self.active_index = index;
+            // 活动面板切换后请求重新同步子可见性与布局。
+            self.layout_requested.set(true);
             if let Some(binding) = self.value_binding.as_ref() {
                 binding.select_index(index);
             }
@@ -591,6 +616,8 @@ impl Tabs {
     }
 
     fn sync_bound_value(&mut self) {
+        // 记录受控值同步前的活动索引。
+        let previous_active_index = self.active_index;
         let Some(index) = self
             .value_binding
             .as_ref()
@@ -598,10 +625,20 @@ impl Tabs {
         else {
             if self.value_binding.is_some() {
                 self.active_index = usize::MAX;
+                // 外部 key 不匹配时清空面板并请求重新布局。
+                if self.active_index != previous_active_index {
+                    // 标记组件树需要重新同步可见性门控。
+                    self.layout_requested.set(true);
+                }
             }
             return;
         };
         self.active_index = index;
+        // 受控 key 切换面板时请求重新布局。
+        if self.active_index != previous_active_index {
+            // 标记组件树需要重新同步可见性门控。
+            self.layout_requested.set(true);
+        }
         self.ensure_tab_visible(index);
     }
 
