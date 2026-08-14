@@ -3,23 +3,35 @@ use std::fmt;
 /// RGBA color (8-bit channels).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Color {
+    /// 红色通道。
     pub r: u8,
+    /// 绿色通道。
     pub g: u8,
+    /// 蓝色通道。
     pub b: u8,
+    /// 透明度通道。
     pub a: u8,
 }
 
 impl Color {
+    /// 不透明黑色。
     pub const BLACK: Self = Self::from_rgb(0, 0, 0);
+    /// 不透明白色。
     pub const WHITE: Self = Self::from_rgb(255, 255, 255);
+    /// 完全透明的黑色。
     pub const TRANSPARENT: Self = Self::from_rgba(0, 0, 0, 0);
+    /// 不透明红色。
     pub const RED: Self = Self::from_rgb(255, 0, 0);
+    /// 不透明绿色。
     pub const GREEN: Self = Self::from_rgb(0, 255, 0);
+    /// 不透明蓝色。
     pub const BLUE: Self = Self::from_rgb(0, 0, 255);
 
+    /// 使用红、绿、蓝和透明度通道创建颜色。
     pub const fn from_rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }
     }
+    /// 使用红、绿、蓝通道创建不透明颜色。
     pub const fn from_rgb(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b, a: 255 }
     }
@@ -34,24 +46,31 @@ impl Color {
         parse_hex(value).unwrap_or(Self::BLACK)
     }
 
+    /// 返回不透明黑色。
     pub const fn black() -> Self {
         Self::BLACK
     }
+    /// 返回不透明白色。
     pub const fn white() -> Self {
         Self::WHITE
     }
+    /// 返回完全透明的颜色。
     pub const fn transparent() -> Self {
         Self::TRANSPARENT
     }
+    /// 返回不透明红色。
     pub const fn red() -> Self {
         Self::RED
     }
+    /// 返回不透明绿色。
     pub const fn green() -> Self {
         Self::GREEN
     }
+    /// 返回不透明蓝色。
     pub const fn blue() -> Self {
         Self::BLUE
     }
+    /// 返回中性灰色。
     pub const fn gray() -> Self {
         Self::from_rgb(128, 128, 128)
     }
@@ -173,17 +192,30 @@ impl fmt::Display for Color {
 /// Predefined theme colors.
 pub mod colors {
     use super::Color;
+    /// 默认品牌主色。
     pub const PRIMARY: Color = Color::from_rgb(24, 144, 255);
+    /// 成功状态色。
     pub const SUCCESS: Color = Color::from_rgb(82, 196, 26);
+    /// 警告状态色。
     pub const WARNING: Color = Color::from_rgb(250, 173, 20);
+    /// 危险或错误状态色。
     pub const DANGER: Color = Color::from_rgb(255, 77, 79);
+    /// 信息状态色。
     pub const INFO: Color = Color::from_rgb(22, 119, 255);
+    /// 深色主题背景色。
     pub const BG_DARK: Color = Color::from_rgb(30, 30, 30);
+    /// 浅色主题背景色。
     pub const BG_LIGHT: Color = Color::from_rgb(245, 245, 245);
+    /// 深色主题表面色。
     pub const SURFACE_DARK: Color = Color::from_rgb(45, 45, 45);
+    /// 浅色主题表面色。
     pub const SURFACE_LIGHT: Color = Color::from_rgb(255, 255, 255);
+    /// 深色背景上的文本色。
     pub const TEXT_DARK: Color = Color::from_rgb(200, 200, 200);
+    /// 浅色背景上的文本色。
     pub const TEXT_LIGHT: Color = Color::from_rgb(51, 51, 51);
+    /// 禁用状态色。
     pub const DISABLED: Color = Color::from_rgb(191, 191, 191);
+    /// 默认边框色。
     pub const BORDER: Color = Color::from_rgb(217, 217, 217);
 }
