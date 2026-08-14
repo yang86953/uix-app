@@ -3,13 +3,18 @@ use crate::core::{Point, Rect};
 /// Corner radii.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Radius {
+    /// 左上角半径。
     pub tl: f32,
+    /// 右上角半径。
     pub tr: f32,
+    /// 右下角半径。
     pub br: f32,
+    /// 左下角半径。
     pub bl: f32,
 }
 
 impl Radius {
+    /// 创建四角半径相同的圆角。
     pub const fn uniform(r: f32) -> Self {
         Self {
             tl: r,
@@ -18,6 +23,7 @@ impl Radius {
             bl: r,
         }
     }
+    /// 创建不带圆角的半径值。
     pub const fn zero() -> Self {
         Self::uniform(0.0)
     }
@@ -33,17 +39,24 @@ impl Default for Radius {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum BlendMode {
     #[default]
+    /// 使用标准源透明度混合。
     Alpha,
+    /// 将源颜色覆盖到目标颜色之上。
     SrcOver,
+    /// 将源颜色与目标颜色相加。
     Additive,
 }
 
 /// Gradient direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GradientDirection {
+    /// 从左向右渐变。
     Horizontal,
+    /// 从上向下渐变。
     Vertical,
+    /// 从左上向右下渐变。
     DiagonalTLBR,
+    /// 从左下向右上渐变。
     DiagonalBLTR,
 }
 
@@ -51,8 +64,11 @@ pub enum GradientDirection {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum HAlign {
     #[default]
+    /// 左对齐文本。
     Left,
+    /// 水平居中文本。
     Center,
+    /// 右对齐文本。
     Right,
 }
 
@@ -60,31 +76,39 @@ pub enum HAlign {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum VAlign {
     #[default]
+    /// 顶部对齐文本。
     Top,
+    /// 垂直居中文本。
     Middle,
+    /// 底部对齐文本。
     Bottom,
+    /// 按文本基线对齐。
     Baseline,
 }
 
 /// 2D affine transform (3x2 matrix).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transform {
+    /// 按 `[a, b, tx, c, d, ty]` 存储的仿射矩阵。
     pub m: [f32; 6],
 }
 
 impl Transform {
+    /// 返回单位变换。
     pub const fn identity() -> Self {
         Self {
             m: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
         }
     }
 
+    /// 创建二维平移变换。
     pub fn translate(tx: f32, ty: f32) -> Self {
         Self {
             m: [1.0, 0.0, tx, 0.0, 1.0, ty],
         }
     }
 
+    /// 创建二维缩放变换。
     pub fn scale(sx: f32, sy: f32) -> Self {
         Self {
             m: [sx, 0.0, 0.0, 0.0, sy, 0.0],
@@ -107,10 +131,12 @@ impl Transform {
         }
     }
 
+    /// 判断变换是否为单位变换。
     pub fn is_identity(self) -> bool {
         self == Self::identity()
     }
 
+    /// 将变换应用到一个点。
     pub fn transform_point(self, point: Point) -> Point {
         let [a, b, tx, c, d, ty] = self.m;
         Point::new(
@@ -119,6 +145,7 @@ impl Transform {
         )
     }
 
+    /// 返回变换后四个角的轴对齐包围矩形。
     pub fn transform_rect(self, rect: Rect) -> Rect {
         let [a, b, tx, c, d, ty] = self.m;
         if b == 0.0 && c == 0.0 {
@@ -161,6 +188,7 @@ impl Transform {
         Rect::new(min_x, min_y, max_x - min_x, max_y - min_y)
     }
 
+    /// 计算逆变换，不可逆或非有限矩阵返回空值。
     pub fn inverse(self) -> Option<Self> {
         let [a, b, tx, c, d, ty] = self.m;
         let determinant = a * d - b * c;
@@ -190,12 +218,19 @@ impl Default for Transform {
 /// Text layout options.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TextLayoutOptions {
+    /// 文本布局允许的最大宽度。
     pub max_width: f32,
+    /// 文本布局允许的最大高度。
     pub max_height: f32,
+    /// 文本行高，零值表示使用字体默认行高。
     pub line_height: f32,
+    /// 是否允许自动换行。
     pub word_wrap: bool,
+    /// 水平对齐方式。
     pub h_align: HAlign,
+    /// 垂直对齐方式。
     pub v_align: VAlign,
+    /// 字体大小。
     pub font_size: f32,
 }
 
