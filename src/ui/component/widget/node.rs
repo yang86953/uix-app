@@ -1,7 +1,10 @@
 use super::*;
 
+/// 尚未挂载到 [`WidgetTree`] 的组件、子树与声明期元数据。
 pub struct WidgetNode {
+    /// 此节点拥有的组件实例。
     pub widget: Box<dyn WidgetComponent>,
+    /// 按声明顺序排列的直接子节点。
     pub children: Vec<WidgetNode>,
     pub(crate) provider_context: ProviderContext,
     pub(crate) visible: bool,
@@ -9,13 +12,18 @@ pub struct WidgetNode {
     pub(crate) enter_animation: Option<crate::ui::animation::AnimationConfig>,
     pub(crate) enter_deadline: Option<std::time::Instant>,
     pub(crate) leave_animation: Option<crate::ui::animation::AnimationConfig>,
+    /// 此节点在同级绘制和命中顺序中的层级值。
     pub z_index: i32,
+    /// 用于协调同级声明节点身份的稳定 key。
     pub key: Option<Box<str>>,
+    /// 暴露给自动化和检查工具的稳定身份。
     pub automation_id: Option<Box<str>>,
+    /// 此节点参与 Tab 导航时使用的非负顺序索引。
     pub tab_idx: i32,
     pub(crate) tab_index_override: Option<i32>,
     pub(crate) focus_handle: Option<FocusHandle>,
     pub(crate) accessibility_override: Option<AccessibilityOverride>,
+    /// 此节点登记的语义事件处理器。
     pub handlers: Vec<HandlerRegistration>,
     pub(crate) system_event_handlers: Vec<SystemEventHandlerRegistration>,
     pub(crate) render_handlers: Vec<RenderHandlerRegistration>,
@@ -31,6 +39,7 @@ pub struct WidgetNode {
 }
 
 impl WidgetNode {
+    /// 使用给定组件和直接子节点创建声明节点。
     pub fn new(widget: Box<dyn WidgetComponent>, children: Vec<WidgetNode>) -> Self {
         Self {
             widget,
@@ -60,14 +69,17 @@ impl WidgetNode {
             uix_component_scopes: Vec::new(),
         }
     }
+    /// 设置用于同级协调的稳定 key。
     pub fn key(mut self, k: &str) -> Self {
         self.key = Some(k.into());
         self
     }
+    /// 设置暴露给自动化和检查工具的稳定身份。
     pub fn automation_id(mut self, id: &str) -> Self {
         self.automation_id = Some(id.into());
         self
     }
+    /// 创建没有直接子节点的声明节点。
     pub fn leaf(widget: Box<dyn WidgetComponent>) -> Self {
         Self {
             widget,
@@ -97,6 +109,7 @@ impl WidgetNode {
             uix_component_scopes: Vec::new(),
         }
     }
+    /// 设置此节点在同级中的绘制和命中层级。
     pub fn z_index(mut self, z: i32) -> Self {
         self.z_index = z;
         self
@@ -136,10 +149,12 @@ impl WidgetNode {
         self.focus_handle = Some(handle);
         self
     }
+    /// 追加一个语义事件处理器注册。
     pub fn on_semantic(mut self, registration: HandlerRegistration) -> Self {
         self.handlers.push(registration);
         self
     }
+    /// 追加在调用时可读取给定响应式状态快照的语义处理器。
     pub fn on_semantic_capture<T>(
         mut self,
         mut registration: HandlerRegistration,
@@ -152,6 +167,7 @@ impl WidgetNode {
         self.handlers.push(registration);
         self
     }
+    /// 追加在调用时可读取给定派生状态快照的语义处理器。
     pub fn on_semantic_computed_capture<T>(
         mut self,
         mut registration: HandlerRegistration,
@@ -164,6 +180,7 @@ impl WidgetNode {
         self.handlers.push(registration);
         self
     }
+    /// 追加捕获目标窗口身份的语义事件处理器。
     pub fn on_semantic_window_capture(
         mut self,
         mut registration: HandlerRegistration,
@@ -173,6 +190,7 @@ impl WidgetNode {
         self.handlers.push(registration);
         self
     }
+    /// 替换此节点的全部语义事件处理器。
     pub fn with_handlers(mut self, handlers: Vec<HandlerRegistration>) -> Self {
         self.handlers = handlers;
         self
