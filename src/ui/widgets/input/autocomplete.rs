@@ -533,6 +533,7 @@ impl AutoComplete {
         Size::new(200.0, 32.0)
     }
 
+    /// 创建空文本、空候选且弹层关闭的自动完成输入框。
     pub fn new() -> Self {
         Self {
             placeholder: String::new(),
@@ -569,15 +570,19 @@ impl AutoComplete {
             popup_damage_rect: Cell::new(Rect::zero()),
         }
     }
+    /// 设置输入框为空时显示的占位文本。
     pub fn placeholder(mut self, p: &str) -> Self {
         self.placeholder = p.to_string();
         self
     }
+
+    /// 设置参与本地包含匹配的候选文本。
     pub fn options(mut self, opts: Vec<impl Into<String>>) -> Self {
         self.options = opts.into_iter().map(|s| s.into()).collect();
         self
     }
-    // 将输入文本与选中结果绑定到外部字符串状态。
+
+    /// 将输入文本与选中结果绑定到外部字符串状态。
     pub fn bind_value(mut self, state: &State<String>) -> Self {
         // 克隆轻量状态句柄供后续交互提交使用。
         self.value_binding = Some(state.clone());
@@ -585,9 +590,12 @@ impl AutoComplete {
         self.sync_bound_value();
         self
     }
+    /// 返回当前输入文本。
     pub fn value(&self) -> &str {
         &self.value
     }
+
+    /// 替换当前输入文本，并在交互期间重新过滤候选。
     pub fn set_value(&mut self, v: &str) {
         self.value = v.to_string();
         self.cursor_char = self.value.chars().count();
@@ -632,14 +640,17 @@ impl AutoComplete {
         &self.filtered
     }
 
+    /// 判断弹层是否处于接受交互的打开状态。
     pub fn is_open(&self) -> bool {
         self.open
     }
 
+    /// 判断弹层是否打开或仍在播放关闭动画。
     pub fn is_present(&self) -> bool {
         self.open || self.closing
     }
 
+    /// 打开弹层、过滤候选并启动进入动画。
     pub fn open(&mut self) {
         // 记录本次调用是否开始新的呈现周期。
         let starts_presentation = !self.is_present();
@@ -663,6 +674,7 @@ impl AutoComplete {
         self.transition_dirty = true;
     }
 
+    /// 关闭弹层并在需要时启动退出动画。
     pub fn close(&mut self) {
         if !self.is_present() {
             self.open = false;
