@@ -63,9 +63,12 @@ use crate::ui::{
 // ════════════════════════════════════════════════════════════════════════════
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// 应用的运行入口模式。
 pub enum AppMode {
     #[default]
+    /// 创建窗口并运行图形界面事件循环。
     GUI,
+    /// 运行命令行入口而不创建图形界面窗口。
     CLI,
 }
 
@@ -164,6 +167,7 @@ impl Default for App {
 }
 
 impl App {
+    /// 创建使用默认图形界面模式和运行时配置的应用。
     pub fn new() -> Self {
         Self::default()
     }
@@ -284,6 +288,7 @@ impl App {
         self.runtime.post_to_ui(WindowId::ROOT, f);
     }
 
+    /// 设置主窗口启动后执行一次的应用级回调。
     pub fn on_start<F>(mut self, f: F) -> Self
     where
         F: FnOnce(AppHandle) + Send + 'static,
@@ -292,6 +297,7 @@ impl App {
         self
     }
 
+    /// 设置每个窗口启动时执行的回调。
     pub fn on_window_start<F>(mut self, f: F) -> Self
     where
         F: Fn(AppHandle) + Send + Sync + 'static,
@@ -375,32 +381,39 @@ impl App {
 
     // ── 查询 ──────────────────────────────────────────────────────
 
+    /// 返回当前应用运行模式。
     pub fn current_mode(&self) -> AppMode {
         self.mode
     }
 
+    /// 返回配置的窗口标题。
     pub fn window_title(&self) -> &str {
         &self.title
     }
 
+    /// 返回配置的窗口初始宽高。
     pub fn window_size(&self) -> (i32, i32) {
         self.size
     }
 
+    /// 返回当前应用退出码。
     pub fn exit_code(&self) -> i32 {
         self.exit_code
     }
 
+    /// 返回应用拥有的依赖注入容器。
     pub fn container(&self) -> &Container {
         &self.container
     }
 
+    /// 返回共享应用状态的句柄副本。
     pub fn app_state(&self) -> AppState {
         self.app_state.clone()
     }
 
     // ── 运行 ──────────────────────────────────────────────────────
 
+    /// 加载已配置设置并按当前模式运行应用，返回最终退出码。
     pub fn run(mut self) -> i32 {
         // panic hook 在配置加载前安装：settings / CLI / GUI 任一段 panic 都被
         // 捕获并原子写入 crash report（配置目录时），且从不吞 panic。
