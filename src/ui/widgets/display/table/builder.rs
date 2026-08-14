@@ -15,6 +15,7 @@ use super::types::{
     resolve_table_empty_view,
 };
 
+/// 保存表格组件及可选展开行、空态 View 工厂的声明构建器。
 pub struct TableBuilder {
     pub(crate) table: Table,
     pub(crate) expand_renderer: Option<ExpandRenderer>,
@@ -22,16 +23,19 @@ pub struct TableBuilder {
 }
 
 impl<R> DataTable<R> {
+    /// 设置把数据记录映射为表格单元格的列声明。
     pub fn columns(mut self, columns: Vec<TableDataColumn<R>>) -> Self {
         self.columns = columns;
         self
     }
 
+    /// 设置是否允许列头触发排序。
     pub fn sortable(mut self, enabled: bool) -> Self {
         self.table.sortable = enabled;
         self
     }
 
+    /// 设置是否显示行复选框并启用多选。
     pub fn selection(mut self, enabled: bool) -> Self {
         self.table.selection = enabled;
         if !enabled {
@@ -40,11 +44,13 @@ impl<R> DataTable<R> {
         self
     }
 
+    /// 设置是否绘制表格外框和单元格纵向边界。
     pub fn bordered(mut self, enabled: bool) -> Self {
         self.table.bordered = enabled;
         self
     }
 
+    /// 设置是否呈现加载状态。
     pub fn loading(mut self, enabled: bool) -> Self {
         self.table = self.table.loading(enabled);
         self
@@ -57,11 +63,13 @@ impl<R> DataTable<R> {
         self
     }
 
+    /// 设置表体行高，并将非法或过小数值归一化。
     pub fn row_height(mut self, height: f32) -> Self {
         self.table.row_h = Table::normalized_row_height(height);
         self
     }
 
+    /// 设置是否只物化表体视口及 overscan 范围内的行。
     pub fn virtual_scroll(mut self, enabled: bool) -> Self {
         self.table.virtual_scroll = enabled;
         self
@@ -74,11 +82,13 @@ impl<R> DataTable<R> {
         self
     }
 
+    /// 设置虚拟滚动使用的固定行高；不会隐式开启虚拟滚动。
     pub fn virtual_row_height(mut self, height: f32) -> Self {
         self.table.row_h = Table::normalized_row_height(height);
         self
     }
 
+    /// 设置没有数据且未加载时显示的默认空态文本。
     pub fn empty_text(mut self, text: impl Into<String>) -> Self {
         self.table.empty_text = text.into();
         self
@@ -95,11 +105,13 @@ impl<R> DataTable<R> {
         self
     }
 
+    /// 设置本地分页时每页展示的行数。
     pub fn page_size(mut self, size: usize) -> Self {
         self.table.page_size = size;
         self
     }
 
+    /// 配置由应用层维护数据并响应页码变化的远程分页。
     pub fn pagination<F>(mut self, pagination: TablePagination<F>) -> Self
     where
         F: Fn(usize) + 'static,
@@ -232,6 +244,7 @@ impl TableBuilder {
         self
     }
 
+    /// 替换普通表格列，并清除已有分组表头配置。
     pub fn columns(mut self, columns: Vec<TableColumn>) -> Self {
         self.table.columns = Table::normalized_columns(columns);
         self.table.column_groups.clear();
@@ -245,6 +258,7 @@ impl TableBuilder {
         self
     }
 
+    /// 替换表格行，并按当前顺序生成隐式行 key。
     pub fn rows(mut self, rows: Vec<TableRow>) -> Self {
         self.table.row_keys = implicit_row_keys(rows.len());
         self.table.rows = rows;
@@ -272,6 +286,7 @@ impl TableBuilder {
         self
     }
 
+    /// 设置是否呈现加载状态。
     pub fn loading(mut self, enabled: bool) -> Self {
         self.table = self.table.loading(enabled);
         self
@@ -284,6 +299,7 @@ impl TableBuilder {
         self
     }
 
+    /// 设置表体行高，并将非法或过小数值归一化。
     pub fn row_height(mut self, height: f32) -> Self {
         self.table.row_h = Table::normalized_row_height(height);
         self
@@ -307,16 +323,19 @@ impl TableBuilder {
         self
     }
 
+    /// 设置没有数据且未加载时显示的默认空态文本。
     pub fn empty_text(mut self, text: impl Into<String>) -> Self {
         self.table.empty_text = text.into();
         self
     }
 
+    /// 设置本地分页时每页展示的行数。
     pub fn page_size(mut self, size: usize) -> Self {
         self.table.page_size = size;
         self
     }
 
+    /// 配置由应用层维护数据并响应页码变化的远程分页。
     pub fn pagination<F>(mut self, pagination: TablePagination<F>) -> Self
     where
         F: Fn(usize) + 'static,
