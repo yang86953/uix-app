@@ -1,10 +1,13 @@
 use super::*;
 
+/// 为所有可转换为 [`ViewNode`] 的 builder 提供事件与焦点声明。
 pub trait EventExt: Into<ViewNode> + Sized {
+    /// 注册目标阶段的通用系统事件处理器。
     fn on_event(self, handler: impl FnMut(&SystemEvent) -> EventResult + 'static) -> ViewNode {
         self.into().on_event(handler)
     }
 
+    /// 注册捕获阶段的通用系统事件处理器。
     fn on_event_capture(
         self,
         handler: impl FnMut(&SystemEvent) -> EventResult + 'static,
@@ -12,10 +15,12 @@ pub trait EventExt: Into<ViewNode> + Sized {
         self.into().on_event_capture(handler)
     }
 
+    /// 注册目标阶段的指针事件处理器。
     fn on_pointer(self, handler: impl FnMut(&SystemEvent) -> EventResult + 'static) -> ViewNode {
         self.into().on_pointer(handler)
     }
 
+    /// 注册捕获阶段的指针事件处理器。
     fn on_pointer_capture(
         self,
         handler: impl FnMut(&SystemEvent) -> EventResult + 'static,
@@ -23,10 +28,12 @@ pub trait EventExt: Into<ViewNode> + Sized {
         self.into().on_pointer_capture(handler)
     }
 
+    /// 注册目标阶段的键盘事件处理器。
     fn on_key(self, handler: impl FnMut(&SystemEvent) -> EventResult + 'static) -> ViewNode {
         self.into().on_key(handler)
     }
 
+    /// 注册捕获阶段的键盘事件处理器。
     fn on_key_capture(
         self,
         handler: impl FnMut(&SystemEvent) -> EventResult + 'static,
@@ -34,22 +41,27 @@ pub trait EventExt: Into<ViewNode> + Sized {
         self.into().on_key_capture(handler)
     }
 
+    /// 注册焦点事件处理器。
     fn on_focus(self, handler: impl FnMut(&SystemEvent) -> EventResult + 'static) -> ViewNode {
         self.into().on_focus(handler)
     }
 
+    /// 注册滚动事件处理器。
     fn on_scroll(self, handler: impl FnMut(&SystemEvent) -> EventResult + 'static) -> ViewNode {
         self.into().on_scroll(handler)
     }
 
+    /// 设置节点的 Tab 导航索引。
     fn tab_index(self, index: i32) -> ViewNode {
         self.into().tab_index(index)
     }
 
+    /// 显式设置节点是否可聚焦。
     fn focusable(self, focusable: bool) -> ViewNode {
         self.into().focusable(focusable)
     }
 
+    /// 将外部焦点句柄绑定到节点。
     fn focus_handle(self, handle: &FocusHandle) -> ViewNode {
         self.into().focus_handle(handle)
     }
@@ -59,22 +71,27 @@ impl<T: Into<ViewNode>> EventExt for T {}
 
 /// 为所有可转换为 [`ViewNode`] 的 builder 提供无障碍声明。
 pub trait AccessibilityExt: Into<ViewNode> + Sized {
+    /// 设置完整无障碍快照覆盖。
     fn accessibility(self, accessibility: AccessibilitySnapshot) -> ViewNode {
         self.into().accessibility(accessibility)
     }
 
+    /// 设置无障碍角色。
     fn role(self, role: AccessibilityRole) -> ViewNode {
         self.into().role(role)
     }
 
+    /// 设置无障碍名称。
     fn accessible_name(self, name: impl Into<String>) -> ViewNode {
         self.into().accessible_name(name)
     }
 
+    /// 设置结构化无障碍状态。
     fn accessibility_state(self, state: AccessibilityState) -> ViewNode {
         self.into().accessibility_state(state)
     }
 
+    /// 添加一个稳定的 ARIA 属性覆盖。
     fn aria(self, name: &'static str, value: impl Into<String>) -> ViewNode {
         self.into().aria(name, value)
     }
@@ -84,14 +101,17 @@ impl<T: Into<ViewNode>> AccessibilityExt for T {}
 
 /// 为所有可转换为 [`ViewNode`] 的 builder 提供挂载过渡。
 pub trait TransitionExt: Into<ViewNode> + Sized {
+    /// 设置节点挂载时的进入动画。
     fn enter_animation(self, animation: crate::ui::animation::AnimationConfig) -> ViewNode {
         self.into().enter_animation(animation)
     }
 
+    /// 设置节点卸载前的离开动画。
     fn leave_animation(self, animation: crate::ui::animation::AnimationConfig) -> ViewNode {
         self.into().leave_animation(animation)
     }
 
+    /// 设置直接子节点依次进入的间隔与动画。
     fn stagger_enter(
         self,
         interval_secs: f64,
@@ -115,10 +135,12 @@ pub trait StyleExt: Into<ViewNode> + Sized {
         self.into().automation_id(id)
     }
 
+    /// 设置文本颜色。
     fn color(self, color: impl Into<ColorValue>) -> ViewNode {
         self.into().color(color)
     }
 
+    /// 设置字体大小令牌。
     fn font_size(self, size: impl Into<TypographyToken>) -> ViewNode {
         self.into().font_size(size)
     }
@@ -129,10 +151,12 @@ pub trait StyleExt: Into<ViewNode> + Sized {
         self.into().map_style(update)
     }
 
+    /// 设置常态背景色。
     fn bg(self, color: impl Into<ColorValue>) -> ViewNode {
         self.into().bg(color)
     }
 
+    /// 绑定动画背景色。
     fn bg_animated(self, color: &crate::ui::animation::Animated<Color>) -> ViewNode {
         self.into().bg_animated(color)
     }
@@ -152,74 +176,92 @@ pub trait StyleExt: Into<ViewNode> + Sized {
         self.into().bg_active(color)
     }
 
+    /// 设置四边内边距。
     fn padding(self, p: impl Into<EdgeInsets>) -> ViewNode {
         self.into().padding(p)
     }
 
+    /// 设置四边外边距。
     fn margin(self, m: impl Into<EdgeInsets>) -> ViewNode {
         self.into().margin(m)
     }
 
+    /// 设置显式宽度。
     fn width(self, w: f32) -> ViewNode {
         self.into().width(w)
     }
 
+    /// 绑定动画宽度。
     fn width_animated(self, width: &crate::ui::animation::Animated<f32>) -> ViewNode {
         self.into().width_animated(width)
     }
 
+    /// 设置显式高度。
     fn height(self, h: f32) -> ViewNode {
         self.into().height(h)
     }
 
+    /// 绑定动画高度。
     fn height_animated(self, height: &crate::ui::animation::Animated<f32>) -> ViewNode {
         self.into().height_animated(height)
     }
 
+    /// 设置绘制与命中偏移。
     fn offset(self, offset: Point) -> ViewNode {
         self.into().offset(offset)
     }
 
+    /// 绑定动画绘制与命中偏移。
     fn offset_animated(self, offset: &crate::ui::animation::Animated<Point>) -> ViewNode {
         self.into().offset_animated(offset)
     }
 
+    /// 设置以节点中心为基准的缩放。
     fn scale(self, scale: f32) -> ViewNode {
         self.into().scale(scale)
     }
 
+    /// 绑定动画缩放。
     fn scale_animated(self, scale: &crate::ui::animation::Animated<f32>) -> ViewNode {
         self.into().scale_animated(scale)
     }
 
+    /// 设置 Flex 扩展系数。
     fn flex_grow(self, g: f32) -> ViewNode {
         self.into().flex_grow(g)
     }
 
+    /// 设置 Flex 收缩系数。
     fn flex_shrink(self, s: f32) -> ViewNode {
         self.into().flex_shrink(s)
     }
 
+    /// 设置容器交叉轴对齐方式。
     fn align(self, a: crate::ui::layout::AlignItems) -> ViewNode {
         self.into().align(a)
     }
 
+    /// 设置容器主轴对齐方式。
     fn justify(self, j: crate::ui::layout::JustifyContent) -> ViewNode {
         self.into().justify(j)
     }
 
+    /// 设置当前子项的交叉轴覆盖对齐方式。
     fn align_self(self, a: crate::ui::layout::AlignItems) -> ViewNode {
         self.into().align_self(a)
     }
 
+    /// 设置兼容的一维 Grid 单元索引。
     fn grid_cell(self, cell: usize) -> ViewNode {
         self.into().grid_cell(cell)
     }
 
+    /// 设置 Grid 跨列数和跨行数。
     fn grid_span(self, columns: u32, rows: u32) -> ViewNode {
         self.into().grid_span(columns, rows)
     }
 
+    /// 设置直接子项的统一间距。
     fn gap(self, g: f32) -> ViewNode {
         self.into().gap(g)
     }
@@ -229,26 +271,32 @@ pub trait StyleExt: Into<ViewNode> + Sized {
         self.into().overflow_content()
     }
 
+    /// 设置统一宽度和颜色的边框。
     fn border(self, width: f32, color: impl Into<ColorValue>) -> ViewNode {
         self.into().border(width, color)
     }
 
+    /// 设置圆角半径。
     fn radius(self, r: f32) -> ViewNode {
         self.into().radius(r)
     }
 
+    /// 绑定动画圆角半径。
     fn radius_animated(self, radius: &crate::ui::animation::Animated<f32>) -> ViewNode {
         self.into().radius_animated(radius)
     }
 
+    /// 设置节点透明度。
     fn opacity(self, o: f32) -> ViewNode {
         self.into().opacity(o)
     }
 
+    /// 绑定动画透明度。
     fn opacity_animated(self, opacity: &crate::ui::animation::Animated<f32>) -> ViewNode {
         self.into().opacity_animated(opacity)
     }
 
+    /// 绑定动画文本颜色。
     fn color_animated(self, color: &crate::ui::animation::Animated<Color>) -> ViewNode {
         self.into().color_animated(color)
     }
