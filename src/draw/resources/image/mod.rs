@@ -18,12 +18,16 @@ use std::fs;
 #[cfg(feature = "image-codecs")]
 // 路径类型仅服务于图片文件解码。
 use std::path::Path;
+// 异步图片解码通过标准通道把后台结果交回资源所有者线程。
+#[cfg(feature = "image-codecs")]
+// 只引入非阻塞轮询需要的通道类型。
+use std::sync::mpsc::{Receiver, TryRecvError};
 
 // 图片编解码 capability 启用时才构造解码与文件错误。
+use crate::core::Rect;
 #[cfg(feature = "image-codecs")]
 // 解码入口继续返回框架统一错误类型。
 use crate::core::error::Error;
-use crate::core::Rect;
 use crate::draw::Canvas2D;
 
 // 图片编解码 capability 启用时才暴露压缩数据解码函数。
@@ -94,6 +98,10 @@ impl ImageSlot {
 
 type RoundedRectCache = HashMap<(BitmapHandle, u32, u32, u32, bool), BitmapHandle>;
 
+// 保存后台图片解码任务的 typed 结果。
+#[cfg(feature = "image-codecs")]
+type AsyncDecodeResult = Result<(i32, i32, Vec<u32>), Error>;
+
 /// 图片服务 — 解码缓存与路径索引。
 pub struct ImageService {
     slots: RefCell<Vec<ImageSlot>>,
@@ -103,6 +111,9 @@ pub struct ImageService {
     circular_cache: RefCell<HashMap<(BitmapHandle, u32), BitmapHandle>>,
     rounded_square_cache: RefCell<HashMap<(BitmapHandle, u32, u32), BitmapHandle>>,
     rounded_rect_cache: RefCell<RoundedRectCache>,
+    // 按规范化路径保存仍在后台读取或解码的单次任务。
+    #[cfg(feature = "image-codecs")]
+    pending_path_decodes: RefCell<HashMap<String, Receiver<AsyncDecodeResult>>>,
 }
 
 impl Default for ImageService {
@@ -121,6 +132,9 @@ impl ImageService {
             circular_cache: RefCell::new(HashMap::new()),
             rounded_square_cache: RefCell::new(HashMap::new()),
             rounded_rect_cache: RefCell::new(HashMap::new()),
+            // 新服务初始没有后台图片任务。
+            #[cfg(feature = "image-codecs")]
+            pending_path_decodes: RefCell::new(HashMap::new()),
         }
     }
 
@@ -155,6 +169,114 @@ impl ImageService {
         ));
         self.path_cache.borrow_mut().insert(path_str, handle);
         Ok(handle)
+    }
+
+    /// 非阻塞请求文件图片：首次启动后台解码并返回 `Ok(None)`，完成后返回句柄。
+    // 图片编解码 capability 启用时才公开异步路径入口。
+    #[cfg(feature = "image-codecs")]
+    // 调用方必须在后继帧继续轮询，typed error 由最终轮询返回。
+    pub fn poll_load_from_path(
+        &self,
+        // 接收需要缓存的本地文件路径。
+        path: impl AsRef<Path>,
+    ) -> Result<Option<BitmapHandle>, Error> {
+        // 使用与同步缓存一致的有损字符串身份。
+        let path_string = path.as_ref().to_string_lossy().into_owned();
+        // 空路径不能形成稳定的资源请求。
+        if path_string.is_empty() {
+            // 返回统一无效参数错误。
+            return Err(Error::invalid_arg("图片文件路径不能为空"));
+        }
+        // 优先复用已经完成并仍然有效的路径缓存。
+        if let Some(handle) = self.path_cache.borrow().get(&path_string).copied() {
+            // 代际仍有效时直接交付现有句柄。
+            if self.is_valid(handle) {
+                // 已缓存图片不需要后台任务。
+                return Ok(Some(handle));
+            }
+        }
+        // 非阻塞读取现有后台任务的当前结果。
+        let polled = {
+            // 暂时借用任务表，只在通道轮询期间持有。
+            let pending = self.pending_path_decodes.borrow();
+            // 查找当前路径对应的唯一任务。
+            pending.get(&path_string).map(Receiver::try_recv)
+        };
+        // 已有任务时根据通道状态完成本轮查询。
+        if let Some(polled) = polled {
+            // 区分完成、仍在执行与异常断开。
+            match polled {
+                // 后台任务已经返回解码结果。
+                Ok(result) => {
+                    // 完成任务只消费一次，立即移出任务表。
+                    self.pending_path_decodes.borrow_mut().remove(&path_string);
+                    // 传播后台文件或解码 typed error。
+                    let (width, height, pixels) = result?;
+                    // 只在所有解码步骤成功后登记有效资源槽位。
+                    let handle = self.insert_slot(ImageSlot::from_decoded(
+                        // 保存固有像素宽度。
+                        width,
+                        // 保存固有像素高度。
+                        height,
+                        // 移交后台产生的 RGBA 像素。
+                        pixels,
+                        // 保存路径以支持卸载时清理缓存。
+                        Some(path_string.clone()),
+                    ));
+                    // 与同步加载共享同一条路径缓存。
+                    self.path_cache.borrow_mut().insert(path_string, handle);
+                    // 向调用方交付可绘制句柄。
+                    return Ok(Some(handle));
+                }
+                // 空通道表示后台线程仍在读取或解码。
+                Err(TryRecvError::Empty) => {
+                    // 本轮不阻塞 UI 所有者线程。
+                    return Ok(None);
+                }
+                // 发送端异常结束时移除失效任务并返回 typed error。
+                Err(TryRecvError::Disconnected) => {
+                    // 清理已无法完成的任务身份。
+                    self.pending_path_decodes.borrow_mut().remove(&path_string);
+                    // 通道断开属于资源服务状态错误。
+                    return Err(Error::invalid_state(format!(
+                        // 保留确切路径方便诊断。
+                        "图片后台解码任务异常结束: {path_string}"
+                    )));
+                }
+            }
+        }
+        // 为首次请求建立容量一的单结果通道。
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        // 后台线程拥有独立路径副本。
+        let worker_path = path_string.clone();
+        // 启动只处理当前文件的一次性后台任务。
+        std::thread::Builder::new()
+            // 使用稳定名称辅助崩溃和性能诊断。
+            .name("uix-image-decode".to_owned())
+            // 后台只执行文件读取与纯像素解码，不接触 ImageService 状态。
+            .spawn(move || {
+                // 把文件系统失败映射为框架 typed error。
+                let result = fs::read(&worker_path)
+                    // 保留失败路径与系统错误详情。
+                    .map_err(|error| {
+                        // 使用统一 I/O 错误码。
+                        Error::io_error(format!("读取图片文件 '{worker_path}' 失败: {error}"))
+                    })
+                    // 文件读取成功后执行纯解码。
+                    .and_then(|data| decode_to_pixels(&data));
+                // 服务或请求方已销毁时允许发送失败并自然结束线程。
+                let _ = sender.send(result);
+            })
+            // 线程创建失败必须同步返回 typed error，不能伪装成加载中。
+            .map_err(|error| Error::invalid_state(format!("启动图片后台解码任务失败: {error}")))?;
+        // 只有线程创建成功后才登记接收端。
+        self.pending_path_decodes
+            // 获取任务表可变借用。
+            .borrow_mut()
+            // 为当前路径登记唯一后台任务。
+            .insert(path_string, receiver);
+        // 首次请求不等待文件 I/O 或解码完成。
+        Ok(None)
     }
 
     /// 懒加载：路径为空或加载失败返回 `None`。
@@ -606,3 +728,9 @@ pub fn fit_dst_rect(src_w: i32, src_h: i32, bounds: Rect) -> Rect {
         Rect::new(bounds.x + (bounds.w - w) * 0.5, bounds.y, w, bounds.h)
     }
 }
+
+// 图片异步加载契约测试独立存放，避免资源模块继续增长。
+#[cfg(all(test, feature = "image-codecs"))]
+// 测试仍可访问 ImageService 的私有槽位不变量。
+#[path = "../../../../tests/unit/draw/resources/image_async_tests.rs"]
+mod async_tests;
