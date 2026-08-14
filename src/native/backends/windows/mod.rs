@@ -14,30 +14,51 @@
 #![allow(non_snake_case)]
 
 pub(crate) mod bindings;
-pub mod clipboard;
-pub mod console;
-pub mod consts;
-pub mod cursor;
+// 剪贴板后端只供 crate 内部平台组合使用。
+pub(crate) mod clipboard;
+// 控制台后端只供 crate 内部平台组合使用。
+pub(crate) mod console;
+// Windows 常量只在 crate 内部实现间共享。
+pub(crate) mod consts;
+// 光标后端只供 crate 内部平台组合使用。
+pub(crate) mod cursor;
 pub(crate) mod custom_chrome;
-pub mod display;
+// 显示信息后端只供 crate 内部平台组合使用。
+pub(crate) mod display;
 pub(crate) mod dpi;
 pub(crate) mod ffi;
-pub mod file_dialog;
-pub mod filesystem;
+// 文件对话框后端只供 crate 内部平台组合使用。
+pub(crate) mod file_dialog;
+// 文件系统后端只供 crate 内部平台组合使用。
+pub(crate) mod filesystem;
 pub(crate) mod frame_pacer;
-pub mod gdi_presenter;
-pub mod helpers;
-pub mod ime_dispatch;
-pub mod keyboard;
-pub mod notification;
-pub mod platform;
-pub mod system_info;
-pub mod text_input;
-pub mod timer;
+// GDI 呈现器只供 crate 内部图形组合使用。
+pub(crate) mod gdi_presenter;
+// Windows 辅助函数只在 crate 内部实现间共享。
+pub(crate) mod helpers;
+// 输入法派发只供 crate 内部窗口系统使用。
+pub(crate) mod ime_dispatch;
+// 键盘后端只供 crate 内部平台组合使用。
+pub(crate) mod keyboard;
+// 通知后端只供 crate 内部平台组合使用。
+pub(crate) mod notification;
+// Windows 平台实现只由 crate 内部工厂构造。
+pub(crate) mod platform;
+// 系统信息后端只供 crate 内部服务使用。
+pub(crate) mod system_info;
+// 文本输入后端只供 crate 内部窗口系统使用。
+pub(crate) mod text_input;
+// 定时器后端只供 crate 内部平台组合使用。
+pub(crate) mod timer;
 mod tsf_document;
-pub mod tsf_session;
-pub mod tsf_text_store;
-pub mod util;
+// TSF 会话只供 crate 内部文本输入组合使用。
+pub(crate) mod tsf_session;
+// TSF 文本存储只供 crate 内部文本输入组合使用。
+pub(crate) mod tsf_text_store;
+// Windows 通用工具只在 crate 内部实现间共享。
+pub(crate) mod util;
 mod window_icon;
-pub mod window_ops;
-pub mod wnd_proc;
+// 窗口操作后端只供 crate 内部窗口系统使用。
+pub(crate) mod window_ops;
+// 窗口过程只供 crate 内部平台实现注册。
+pub(crate) mod wnd_proc;

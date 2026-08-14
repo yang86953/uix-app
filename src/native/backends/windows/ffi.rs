@@ -234,9 +234,12 @@ pub(crate) fn hkey_current_user() -> *mut std::ffi::c_void {
     0x8000_0001usize as *mut std::ffi::c_void
 }
 
-pub const KEY_READ: u32 = 0x20019;
-pub const REG_DWORD: u32 = 4;
-pub const ERROR_SUCCESS: i32 = 0;
+// 注册表读取权限只供 crate 内部 Windows 实现使用。
+pub(crate) const KEY_READ: u32 = 0x20019;
+// 注册表 DWORD 类型只供 crate 内部 Windows 实现使用。
+pub(crate) const REG_DWORD: u32 = 4;
+// Win32 成功码只供 crate 内部 Windows 实现使用。
+pub(crate) const ERROR_SUCCESS: i32 = 0;
 
 #[link(name = "advapi32")]
 unsafe extern "system" {

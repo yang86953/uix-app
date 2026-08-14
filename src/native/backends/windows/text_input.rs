@@ -141,7 +141,8 @@ pub(crate) fn result_string(hwnd: *mut std::ffi::c_void) -> Result<Option<String
     read_ime_string(hwnd, GCS_RESULTSTR)
 }
 
-pub struct WindowsTextInput {
+// Windows 文本输入后端只在 crate 内部平台注册表中构造。
+pub(crate) struct WindowsTextInput {
     hwnd: *mut std::ffi::c_void,
     window_id: Option<WindowId>,
     events: Arc<Mutex<VecDeque<UiEvent>>>,
@@ -150,7 +151,8 @@ pub struct WindowsTextInput {
 }
 
 impl WindowsTextInput {
-    pub fn new(
+    // 创建连接事件队列与失败源的文本输入后端。
+    pub(crate) fn new(
         events: Arc<Mutex<VecDeque<UiEvent>>>,
         pending_failures: PendingFailureSource,
     ) -> Self {

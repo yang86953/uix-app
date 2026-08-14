@@ -10,24 +10,28 @@ use crate::native::{Errc, Error, Result};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-pub struct WindowsTimer {
+// Windows 定时器后端只在 crate 内部平台注册表中构造。
+pub(crate) struct WindowsTimer {
     hwnd: *mut std::ffi::c_void,
     next_id: u32,
     non_repeating: Arc<Mutex<HashSet<u32>>>,
 }
 
 impl WindowsTimer {
-    pub fn new() -> Self {
+    // 创建未绑定窗口的定时器后端。
+    pub(crate) fn new() -> Self {
         Self {
             hwnd: std::ptr::null_mut(),
             next_id: 1,
             non_repeating: Arc::new(Mutex::new(HashSet::new())),
         }
     }
-    pub fn set_hwnd(&mut self, hwnd: *mut std::ffi::c_void) {
+    // 绑定当前平台窗口句柄。
+    pub(crate) fn set_hwnd(&mut self, hwnd: *mut std::ffi::c_void) {
         self.hwnd = hwnd;
     }
-    pub fn non_repeating_set(&self) -> Arc<Mutex<HashSet<u32>>> {
+    // 共享一次性定时器集合给窗口过程完成清理。
+    pub(crate) fn non_repeating_set(&self) -> Arc<Mutex<HashSet<u32>>> {
         self.non_repeating.clone()
     }
 }
