@@ -43,22 +43,26 @@ pub struct PresetDate {
 }
 
 impl PresetDate {
+    /// 创建按时间先后排序起止日期的范围预设。
     pub fn new(start: Date, end: Date) -> Self {
         let (start, end) = ordered_range(start, end);
         Self { start, end }
     }
 
+    /// 创建起止日期都为今天的范围预设。
     pub fn today() -> Self {
         let today = Date::today();
         Self::new(today, today)
     }
 
+    /// 创建包含今天的本周周一至周日范围预设。
     pub fn this_week() -> Self {
         let today = Date::today();
         let start = add_days(today, -(today.weekday().monday_index() as i64));
         Self::new(start, add_days(start, 6))
     }
 
+    /// 创建包含今天的自然月完整范围预设。
     pub fn this_month() -> Self {
         let today = Date::today();
         Self::new(
@@ -78,10 +82,12 @@ impl PresetDate {
         Self::new(add_days(today, 1 - days), today)
     }
 
+    /// 返回范围中较早的起始日期。
     pub const fn start(self) -> Date {
         self.start
     }
 
+    /// 返回范围中较晚的结束日期。
     pub const fn end(self) -> Date {
         self.end
     }
@@ -497,6 +503,7 @@ component! {
 }
 
 impl DateRangePicker {
+    /// 创建未选择范围、默认关闭并使用当前区域设置占位文本的选择器。
     pub fn new() -> Self {
         let today = Date::today();
         let config = crate::ui::component::config::use_config();
@@ -530,18 +537,21 @@ impl DateRangePicker {
         }
     }
 
+    /// 将起始日期双向绑定到外部响应式状态。
     pub fn start(mut self, state: &State<Date>) -> Self {
         self.start_binding = Some(state.clone());
         self.start_value.set(state.get());
         self
     }
 
+    /// 将结束日期双向绑定到外部响应式状态。
     pub fn end(mut self, state: &State<Date>) -> Self {
         self.end_binding = Some(state.clone());
         self.end_value.set(state.get());
         self
     }
 
+    /// 设置按时间排序的非受控默认范围，并移除起止状态绑定。
     pub fn default_range(mut self, start: Date, end: Date) -> Self {
         let (start, end) = ordered_range(start, end);
         self.start_binding = None;
@@ -551,16 +561,19 @@ impl DateRangePicker {
         self
     }
 
+    /// 设置尚未选择完整范围时显示的占位文本。
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.placeholder = placeholder.into();
         self
     }
 
+    /// 设置日期范围输入框的控件尺寸档位。
     pub fn size(mut self, size: ControlSize) -> Self {
         self.picker_size = size;
         self
     }
 
+    /// 替换面板中可直接提交的具名日期范围预设。
     pub fn presets<I, L>(mut self, presets: I) -> Self
     where
         I: IntoIterator<Item = (L, PresetDate)>,
@@ -573,6 +586,7 @@ impl DateRangePicker {
         self
     }
 
+    /// 设置返回 `true` 时禁止选择对应日期的线程安全谓词。
     pub fn disabled_date(
         mut self,
         predicate: impl Fn(Date) -> bool + Send + Sync + 'static,
@@ -581,16 +595,19 @@ impl DateRangePicker {
         self
     }
 
+    /// 返回按时间排序的完整当前范围；任一端未设置时返回 `None`。
     pub fn current_range(&self) -> Option<(Date, Date)> {
         let start = self.start_value.get();
         let end = self.end_value.get();
         (start != Date::default() && end != Date::default()).then(|| ordered_range(start, end))
     }
 
+    /// 返回日期范围面板当前是否打开。
     pub fn is_open(&self) -> bool {
         self.open.get()
     }
 
+    /// 返回是否已选择临时起点并正在等待结束日期。
     pub fn is_selecting_end(&self) -> bool {
         self.pending_start.get().is_some()
     }
