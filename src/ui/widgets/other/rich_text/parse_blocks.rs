@@ -1,8 +1,15 @@
 // 富文本行首块级 Markdown 解析辅助。
-use super::{parse_inline_range, push_text_segment, RichTextSegment, RichTextStyle};
+use super::{RichTextSegment, RichTextStyle, parse_inline_range, push_text_segment};
 
 // 解析当前行的一级块级标记，并返回是否已经消费整行。
 pub(super) fn parse_block_line(text: &str, segments: &mut Vec<RichTextSegment>) -> bool {
+    // 主题分隔线优先于无序列表和内联强调消费完整源码行。
+    if super::super::thematic_break::is_thematic_break_line(text) {
+        // 输出独立非文本段类型，不把标记字符泄漏到选择与绘制。
+        segments.push(RichTextSegment::ThematicBreak);
+        // 当前行已经完整消费。
+        return true;
+    }
     // ATX 标题优先于其他行首标记。
     if let Some((level, content)) = parse_atx_heading(text) {
         // 以项目 Typography 的标题字号建立基础样式。

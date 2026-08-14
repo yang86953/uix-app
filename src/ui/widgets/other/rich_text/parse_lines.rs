@@ -42,6 +42,20 @@ pub(super) fn parse_inline_text(text: &str, segments: &mut Vec<RichTextSegment>)
     let mut line_start = 0;
     // 逐行处理普通内联语法与需要下一行判定的 Setext 标题。
     while let Some((line, has_newline, next_start)) = markdown_line_at(text, line_start) {
+        // 允许带 ASCII 前导空白的主题分隔线先于缩进代码块完成行级识别。
+        if super::super::thematic_break::is_thematic_break_line(line) {
+            // 分隔线标记不进入可选择文本。
+            segments.push(RichTextSegment::ThematicBreak);
+            // 源码行结束仍由唯一 NewLine 段表示。
+            if has_newline {
+                // 保留分隔线所在源码行的逻辑换行。
+                segments.push(RichTextSegment::NewLine);
+            }
+            // 当前行已完整消费，从下一源码行继续扫描。
+            line_start = next_start;
+            // 不再把相同输入交给缩进代码或内联解析器。
+            continue;
+        }
         // 缩进代码块优先消费完整跨行范围，避免代码正文再次进入块级或内联解析。
         if let Some((code, after_block)) = parse_indented_code_block_at(text, line_start) {
             // 复用现有代码段，让布局、绘制和复制继续共享同一契约。

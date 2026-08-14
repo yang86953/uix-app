@@ -39,7 +39,7 @@ use crate::ui::{
 /// 富文本段类型
 ///
 /// 一个 RichText 由多个段组成，按顺序排列。
-/// 支持普通文本（独立样式控制）、内联代码、链接、换行。
+/// 支持普通文本（独立样式控制）、内联代码、链接、主题分隔线与换行。
 #[derive(Debug, Clone, PartialEq)]
 pub enum RichTextSegment {
     /// 普通文本段（带独立样式）
@@ -51,6 +51,8 @@ pub enum RichTextSegment {
     Code { content: String },
     /// 可点击链接（自动带下划线和交互色）
     Link { content: String, url: String },
+    /// 独立、零字符宽度的 Markdown 主题分隔线
+    ThematicBreak,
     /// 强制换行
     NewLine,
 }
@@ -116,6 +118,8 @@ mod layout_metrics;
 mod bidi_layout;
 mod parse;
 mod rich_text_interaction;
+// 集中拥有主题分隔线的解析、布局与绘制策略。
+mod thematic_break;
 // 将 shaping cluster 到富文本 advance 的映射隔离为小型内部模块。
 mod shaped_advance;
 // 将 UAX #14 富文本验收矩阵放入独立测试模块，保持生产文件规模受控。
@@ -381,6 +385,7 @@ component! {
                                 RichTextSegment::Text { content, .. } => content.chars().count(),
                                 RichTextSegment::Code { content } => content.chars().count(),
                                 RichTextSegment::Link { content, .. } => content.chars().count(),
+                                RichTextSegment::ThematicBreak => 0,
                                 RichTextSegment::NewLine => 1,
                             }).sum();
                         self.sel_anchor.set(0);
@@ -489,6 +494,9 @@ component! {
 
         let mut code_regions = self.code_regions.borrow_mut();
         ctx.push_clip(frame);
+
+        // 先绘制零字形的主题分隔线行，再绘制普通字形内容。
+        thematic_break::draw(ctx, &layout_lines, frame);
 
         // ── 逐行绘制 ──
         for line in &layout_lines {
@@ -822,6 +830,7 @@ impl RichText {
                 RichTextSegment::Text { content, .. } => content.chars().count(),
                 RichTextSegment::Code { content } => content.chars().count(),
                 RichTextSegment::Link { content, .. } => content.chars().count(),
+                RichTextSegment::ThematicBreak => 0,
                 RichTextSegment::NewLine => 1,
             })
             .sum()

@@ -1,7 +1,7 @@
 //! 保存 RichText 的估算字符宽度与全局字符索引映射。
 
 // 引入布局字形、布局行与富文本段类型。
-use super::{LayoutGlyph, LayoutLine, RichTextSegment};
+use super::{LayoutGlyph, LayoutLine, LayoutLineKind, RichTextSegment};
 
 // 将富文本段拼接为保留显式换行的完整逻辑源文本。
 pub(super) fn source_text(segments: &[RichTextSegment]) -> String {
@@ -15,6 +15,8 @@ pub(super) fn source_text(segments: &[RichTextSegment]) -> String {
             RichTextSegment::Text { content, .. }
             | RichTextSegment::Code { content }
             | RichTextSegment::Link { content, .. } => source.push_str(content),
+            // 主题分隔线零宽，逻辑换行由紧随其后的 NewLine 唯一拥有。
+            RichTextSegment::ThematicBreak => {}
             // 显式换行段追加一个 LF 作为统一逻辑边界。
             RichTextSegment::NewLine => source.push('\n'),
             // 结束段类型匹配。
@@ -55,6 +57,8 @@ pub(super) fn flush_line(
         y,
         // 行高至少保持一个有限正像素。
         height: line_height.max(1.0),
+        // 普通结算入口只创建文本行。
+        kind: LayoutLineKind::Text,
         // 保存当前行全部字形。
         glyphs,
         // 结束视觉行构造。

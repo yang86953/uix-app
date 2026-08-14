@@ -767,6 +767,8 @@ fn accessibility_role_name(role: AccessibilityRole) -> &'static str {
         AccessibilityRole::Navigation => "navigation",
         AccessibilityRole::ProgressBar => "progress_bar",
         AccessibilityRole::RadioGroup => "radio_group",
+        // 主题分隔线使用稳定的自动化角色名称。
+        AccessibilityRole::Separator => "separator",
         AccessibilityRole::Slider => "slider",
         AccessibilityRole::SpinButton => "spin_button",
         AccessibilityRole::Status => "status",

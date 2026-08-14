@@ -141,6 +141,49 @@ fn selectable_controls_keyboard_selection_and_defaults_to_false() {
     assert_eq!(enabled.selected_text().as_deref(), Some("abc"));
 }
 
+// 验证主题分隔线零宽且跨越复制只保留其源码换行。
+#[test]
+fn thematic_break_selection_copies_one_line_break_without_markers() {
+    // 构造正文、分隔线和后续正文组成的公开段序列，避开 Setext 解析歧义。
+    let mut rich = RichText::new()
+        // 显式开启选择生命周期。
+        .selectable(true)
+        // 直接组合公开段，精确验证分隔线的选择契约。
+        .content(vec![
+            // 分隔线前正文。
+            RichTextSegment::Text {
+                // 保存第一行正文。
+                content: "上".into(),
+                // 使用默认样式。
+                style: Default::default(),
+            },
+            // 第一行结束。
+            RichTextSegment::NewLine,
+            // 零宽主题分隔线。
+            RichTextSegment::ThematicBreak,
+            // 分隔线源码行结束。
+            RichTextSegment::NewLine,
+            // 分隔线后正文。
+            RichTextSegment::Text {
+                // 保存最后一行正文。
+                content: "下".into(),
+                // 使用默认样式。
+                style: Default::default(),
+            },
+        ]);
+    // 构造统一的 Ctrl+A 全选事件。
+    let select_all = SystemEvent::KeyDown {
+        // 使用全选按键。
+        key: KeyCode::A,
+        // 使用控制修饰键。
+        mods: KeyMod::CTRL,
+    };
+    // 富文本应消费已启用的全选操作。
+    assert_eq!(rich.on_event(&select_all), EventResult::Handled);
+    // 分隔线标记零宽；其所在源码行只通过一个 NewLine 进入复制文本。
+    assert_eq!(rich.selected_text().as_deref(), Some("上\n\n下"));
+}
+
 // 验证 reconcile 关闭能力时立即终止既有选择生命周期。
 #[test]
 // 定义 reconcile 关闭选择能力的生命周期测试。
