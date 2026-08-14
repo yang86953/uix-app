@@ -75,6 +75,7 @@ impl Spring {
         }
     }
 
+    /// 设置正且有限的弹簧刚度；非法输入保留原值。
     pub fn stiffness(mut self, stiffness: f64) -> Self {
         if stiffness.is_finite() && stiffness > 0.0 {
             self.stiffness = stiffness;
@@ -82,6 +83,7 @@ impl Spring {
         self
     }
 
+    /// 设置正且有限的阻尼系数；非法输入保留原值。
     pub fn damping(mut self, damping: f64) -> Self {
         if damping.is_finite() && damping > 0.0 {
             self.damping = damping;
@@ -89,6 +91,7 @@ impl Spring {
         self
     }
 
+    /// 设置正且有限的质量；非法输入保留原值。
     pub fn mass(mut self, mass: f64) -> Self {
         if mass.is_finite() && mass > 0.0 {
             self.mass = mass;
@@ -96,6 +99,7 @@ impl Spring {
         self
     }
 
+    /// 设置归一化起止距离每秒表示的有限初始速度。
     pub fn velocity(mut self, velocity: f64) -> Self {
         if velocity.is_finite() {
             self.velocity = velocity;
@@ -119,26 +123,32 @@ impl Spring {
         self
     }
 
+    /// 返回当前弹簧刚度。
     pub const fn stiffness_value(self) -> f64 {
         self.stiffness
     }
 
+    /// 返回当前阻尼系数。
     pub const fn damping_value(self) -> f64 {
         self.damping
     }
 
+    /// 返回当前质量。
     pub const fn mass_value(self) -> f64 {
         self.mass
     }
 
+    /// 返回以归一化起止距离每秒表示的初始速度。
     pub const fn initial_velocity(self) -> f64 {
         self.velocity
     }
 
+    /// 返回实际值空间中的静止速度阈值。
     pub const fn rest_speed_value(self) -> f64 {
         self.rest_speed
     }
 
+    /// 返回实际值空间中距目标的静止距离阈值。
     pub const fn rest_displacement_value(self) -> f64 {
         self.rest_displacement
     }
@@ -197,7 +207,9 @@ impl Default for Spring {
 /// 从 `from` 自然衰减到 `to` 的单次弹簧动画。
 #[derive(Clone)]
 pub struct SpringAnimation<T: Animatable> {
+    /// 动画插值的起始值。
     pub from: T,
+    /// 动画收敛的目标值。
     pub to: T,
     spring: Spring,
     elapsed: f64,
@@ -209,6 +221,7 @@ pub struct SpringAnimation<T: Animatable> {
 }
 
 impl<T: Animatable> SpringAnimation<T> {
+    /// 使用起止值和物理参数创建立即运行的单次弹簧动画。
     pub fn new(from: T, to: T, spring: Spring) -> Self {
         let finished = T::delta(from, to).abs() <= spring.rest_displacement;
         Self {
@@ -256,6 +269,7 @@ impl<T: Animatable> SpringAnimation<T> {
         self.value()
     }
 
+    /// 返回按当前物理位置在起止值之间插值得到的值。
     pub fn value(&self) -> T {
         T::lerp(self.from, self.to, self.position)
     }
@@ -265,26 +279,32 @@ impl<T: Animatable> SpringAnimation<T> {
         self.position.clamp(0.0, 1.0)
     }
 
+    /// 返回以归一化起止距离每秒表示的当前速度。
     pub const fn velocity(&self) -> f64 {
         self.velocity
     }
 
+    /// 返回动画当前是否会在更新时继续推进。
     pub const fn is_running(&self) -> bool {
         self.running
     }
 
+    /// 返回动画是否已经满足静止阈值或被停止到目标。
     pub const fn is_finished(&self) -> bool {
         self.finished
     }
 
+    /// 返回动画使用的弹簧物理参数。
     pub const fn spring(&self) -> Spring {
         self.spring
     }
 
+    /// 暂停时间推进并保留当前位置与速度。
     pub fn pause(&mut self) {
         self.running = false;
     }
 
+    /// 在动画尚未完成时恢复时间推进。
     pub fn resume(&mut self) {
         if !self.finished {
             self.running = true;
@@ -299,6 +319,7 @@ impl<T: Animatable> SpringAnimation<T> {
         self.finished = true;
     }
 
+    /// 从起始值重新开始，并按当前阈值重算运行状态。
     pub fn restart(&mut self) {
         self.elapsed = 0.0;
         let finished = T::delta(self.from, self.to).abs() <= self.spring.rest_displacement;
@@ -308,6 +329,7 @@ impl<T: Animatable> SpringAnimation<T> {
         self.finished = finished;
     }
 
+    /// 交换起止值并从新的起点重新开始。
     pub fn reverse(&mut self) {
         std::mem::swap(&mut self.from, &mut self.to);
         self.restart();
