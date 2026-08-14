@@ -27,6 +27,7 @@ struct TimelineGeometry {
 /// 时间线节点。
 #[derive(Debug, Clone, PartialEq)]
 pub struct TimelineItem {
+    /// 显式节点色；透明色作为未指定哨兵，由绘制阶段解析为当前主题主色。
     pub color: Color,
     pub label: String,
     pub description: String,
@@ -59,6 +60,8 @@ component! {
         let text_sec = ctx.tokens().color_text_secondary();
         let border = ctx.tokens().color_border_secondary();
         let dot_border = ctx.tokens().color_bg_container();
+        // 未显式覆写的时间线节点使用当前主题主色。
+        let primary = ctx.tokens().color_primary();
         let visible_rows = ((geometry.frame.h / geometry.row_height).ceil() as usize)
             .max(1)
             .min(row_count);
@@ -72,7 +75,8 @@ component! {
                 (
                     item.label.as_str(),
                     item.description.as_str(),
-                    item.color,
+                    // 在拥有主题上下文的绘制阶段解析最终节点色。
+                    item.resolved_dot_color(primary),
                     false,
                 )
             } else {
@@ -268,8 +272,10 @@ struct RowTextGeometry {
 
 fn row_text_geometry(ctx: &mut PaintContext, row: Rect, has_description: bool) -> RowTextGeometry {
     let scale = (row.h / ITEM_HEIGHT).clamp(0.75, 1.0);
-    let label_font = 14.0 * scale;
-    let description_font = 12.0 * scale;
+    // 标签字号从当前主题正文 token 派生。
+    let label_font = ctx.tokens().font_size() * scale;
+    // 描述字号从当前主题小号正文 token 派生。
+    let description_font = ctx.tokens().font_size_sm() * scale;
     let label_height = ctx.line_box_height(label_font).min(row.h);
     let gap = if has_description { scale } else { 0.0 };
     let description_height = if has_description {
@@ -381,8 +387,8 @@ impl Default for Timeline {
 impl TimelineItem {
     pub fn new(label: &str) -> Self {
         Self {
-            // 默认点色：与主题 token color_primary 默认值一致（构造器无主题上下文，保留字面量）。
-            color: Color::from_rgba(22, 119, 255, 255),
+            // 构造阶段不拥有主题上下文，透明哨兵由绘制阶段解析为 color_primary。
+            color: Color::TRANSPARENT,
             label: label.to_string(),
             description: String::new(),
         }
@@ -392,13 +398,54 @@ impl TimelineItem {
         self
     }
     pub fn color(mut self, c: Color) -> Self {
+        // 显式颜色保持高于主题默认值的优先级。
         self.color = c;
         self
+    }
+
+    // 解析当前节点最终绘制颜色。
+    fn resolved_dot_color(&self, theme_primary: Color) -> Color {
+        // 透明哨兵表示调用方没有覆写节点颜色。
+        if self.color == Color::TRANSPARENT {
+            // 未覆写时返回绘制上下文解析的当前主题主色。
+            theme_primary
+        // 非透明颜色均视为调用方显式覆写。
+        } else {
+            // 显式覆写保持最高优先级。
+            self.color
+            // 结束颜色解析分支。
+        }
     }
 }
 
 impl Default for TimelineItem {
     fn default() -> Self {
         Self::new("")
+    }
+}
+
+// 验证时间线节点颜色优先级。
+#[cfg(test)]
+mod tests {
+    // 引入被测节点构建器。
+    use super::TimelineItem;
+    // 引入最终绘制颜色值。
+    use crate::draw::Color;
+
+    // 默认节点跟随主题，显式颜色保持最高优先级。
+    #[test]
+    fn timeline_item_resolves_theme_and_explicit_colors() {
+        // 使用与默认主题无关的测试主色。
+        let theme_primary = Color::from_rgb(1, 2, 3);
+        // 未覆写节点必须使用调用方提供的当前主题主色。
+        let themed = TimelineItem::new("主题节点");
+        // 核对主题默认路径。
+        assert_eq!(themed.resolved_dot_color(theme_primary), theme_primary);
+        // 构造明确不同的显式节点色。
+        let explicit = Color::from_rgb(4, 5, 6);
+        // 使用公开构建器登记显式颜色。
+        let customized = TimelineItem::new("自定义节点").color(explicit);
+        // 核对显式覆写优先于主题主色。
+        assert_eq!(customized.resolved_dot_color(theme_primary), explicit);
     }
 }
