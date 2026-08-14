@@ -8,11 +8,15 @@ use super::Message;
 use crate::ui::widgets::feedback::declaration::FeedbackCloseReason;
 
 #[derive(Debug, Clone)]
+/// 可加入全局提示队列的消息配置。
 pub struct MessageItem {
+    /// 决定图标和颜色的提示状态级别。
     pub type_: StatusLevel,
+    /// 提示正文。
     pub content: String,
     /// 展示时长；`0` 表示仅由调用方或关闭按钮移除。
     pub duration_ms: u64,
+    /// 是否显示并响应关闭按钮。
     pub closable: bool,
 }
 
@@ -72,6 +76,7 @@ impl MessageHandle {
         self.queue.remove_external(id)
     }
 
+    /// 添加使用标准时长的成功提示并返回稳定标识。
     pub fn success(&self, content: impl Into<String>) -> u64 {
         self.add(MessageItem {
             type_: StatusLevel::Success,
@@ -81,6 +86,7 @@ impl MessageHandle {
         })
     }
 
+    /// 添加使用标准时长的信息提示并返回稳定标识。
     pub fn info(&self, content: impl Into<String>) -> u64 {
         self.add(MessageItem {
             type_: StatusLevel::Info,
@@ -90,6 +96,7 @@ impl MessageHandle {
         })
     }
 
+    /// 添加使用标准时长的警告提示并返回稳定标识。
     pub fn warning(&self, content: impl Into<String>) -> u64 {
         self.add(MessageItem {
             type_: StatusLevel::Warning,
@@ -99,6 +106,7 @@ impl MessageHandle {
         })
     }
 
+    /// 添加使用标准时长的错误提示并返回稳定标识。
     pub fn error(&self, content: impl Into<String>) -> u64 {
         self.add(MessageItem {
             type_: StatusLevel::Error,
@@ -118,14 +126,17 @@ impl MessageHandle {
         self.queue.clear();
     }
 
+    /// 返回当前队列中提示项的值快照。
     pub fn items(&self) -> Vec<MessageItem> {
         self.queue.values()
     }
 
+    /// 返回当前队列中的提示项数量。
     pub fn len(&self) -> usize {
         self.queue.len()
     }
 
+    /// 返回当前队列是否没有提示项。
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
     }
