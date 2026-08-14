@@ -13,13 +13,18 @@ use super::pixels::pixel_len;
 /// Integer pixel rectangle used by the API-neutral frame command model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameRect {
+    /// 矩形左上角的水平像素坐标。
     pub x: i32,
+    /// 矩形左上角的垂直像素坐标。
     pub y: i32,
+    /// 矩形的像素宽度。
     pub width: i32,
+    /// 矩形的像素高度。
     pub height: i32,
 }
 
 impl FrameRect {
+    /// 创建整数像素矩形。
     pub const fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
         Self {
             x,
@@ -81,6 +86,7 @@ pub struct FrameSampledRect {
 }
 
 impl FrameSampledRect {
+    /// 从整数像素矩形创建采样目标。
     pub fn from_integer(rect: FrameRect) -> Self {
         Self::from_parts(
             rect.x as f32,
@@ -96,6 +102,7 @@ impl FrameSampledRect {
         })
     }
 
+    /// 从有限坐标和正尺寸创建采样目标。
     pub fn from_parts(x: f32, y: f32, width: f32, height: f32) -> Result<Self, FrameEncoderError> {
         if !x.is_finite()
             || !y.is_finite()
@@ -114,23 +121,27 @@ impl FrameSampledRect {
         })
     }
 
+    /// 返回水平坐标。
     pub const fn x(self) -> f32 {
         f32::from_bits(self.x_bits)
     }
 
+    /// 返回垂直坐标。
     pub const fn y(self) -> f32 {
         f32::from_bits(self.y_bits)
     }
 
+    /// 返回采样宽度。
     pub const fn width(self) -> f32 {
         f32::from_bits(self.width_bits)
     }
 
+    /// 返回采样高度。
     pub const fn height(self) -> f32 {
         f32::from_bits(self.height_bits)
     }
 
-    // 判断采样目标是否没有任何像素贡献。
+    /// 判断采样目标是否没有任何像素贡献。
     pub const fn is_empty(self) -> bool {
         // 构造器只可能通过整数兼容入口产生规范化零尺寸。
         self.width() <= 0.0 || self.height() <= 0.0
@@ -159,6 +170,7 @@ impl FrameSampledRect {
         ))
     }
 
+    /// 转换为逻辑浮点矩形。
     pub fn to_rect(self) -> Rect {
         Rect::new(self.x(), self.y(), self.width(), self.height())
     }
@@ -185,6 +197,7 @@ impl FrameRadius {
         }
     }
 
+    /// 验证并保存四个角的非负有限半径。
     pub fn new(value: Radius) -> Result<Self, FrameEncoderError> {
         for (corner, radius) in [
             ("top-left", value.tl),
@@ -207,6 +220,7 @@ impl FrameRadius {
         })
     }
 
+    /// 返回已验证的通用圆角半径。
     pub const fn to_radius(self) -> Radius {
         self.value
     }
@@ -219,6 +233,7 @@ impl Eq for FrameRadius {}
 pub struct FrameStrokeWidth(u32);
 
 impl FrameStrokeWidth {
+    /// 验证并保存有限正描边宽度。
     pub fn new(value: f32) -> Result<Self, FrameEncoderError> {
         if !value.is_finite() || value <= 0.0 {
             return Err(FrameEncoderError::InvalidStrokeWidth);
@@ -226,6 +241,7 @@ impl FrameStrokeWidth {
         Ok(Self(value.to_bits()))
     }
 
+    /// 返回已验证的描边宽度。
     pub const fn value(self) -> f32 {
         f32::from_bits(self.0)
     }
@@ -241,6 +257,7 @@ pub struct FrameStrokeRect {
 }
 
 impl FrameStrokeRect {
+    /// 创建一条已验证的矩形描边载荷。
     pub const fn new(
         rect: FrameRect,
         color: Color,
@@ -255,18 +272,22 @@ impl FrameStrokeRect {
         }
     }
 
+    /// 返回描边矩形。
     pub const fn rect(&self) -> FrameRect {
         self.rect
     }
 
+    /// 返回描边颜色。
     pub const fn color(&self) -> Color {
         self.color
     }
 
+    /// 返回描边圆角半径。
     pub const fn radius(&self) -> FrameRadius {
         self.radius
     }
 
+    /// 返回描边线宽。
     pub const fn line_width(&self) -> FrameStrokeWidth {
         self.line_width
     }
@@ -280,10 +301,12 @@ impl FrameStrokeRect {
 pub struct FrameOpacity(u32);
 
 impl FrameOpacity {
+    /// 返回完全不透明的规范值。
     pub const fn opaque() -> Self {
         Self(1.0f32.to_bits())
     }
 
+    /// 从画布透明度创建零到一之间的规范值。
     pub fn from_canvas(opacity: f32) -> Self {
         let opacity = if opacity.is_nan() {
             0.0
@@ -297,14 +320,17 @@ impl FrameOpacity {
         })
     }
 
+    /// 返回规范化透明度。
     pub const fn value(self) -> f32 {
         f32::from_bits(self.0)
     }
 
+    /// 判断透明度是否可视为完全不透明。
     pub fn is_opaque(self) -> bool {
         self.value() >= 1.0 - 1e-6
     }
 
+    /// 判断透明度是否完全透明。
     pub const fn is_transparent(self) -> bool {
         self.0 == 0.0f32.to_bits()
     }
@@ -325,6 +351,7 @@ pub struct FrameGlyphBlit {
 }
 
 impl FrameGlyphBlit {
+    /// 验证覆盖率缓冲与尺寸后创建字形复制载荷。
     pub fn new(
         x: i32,
         y: i32,
@@ -363,26 +390,32 @@ impl FrameGlyphBlit {
         })
     }
 
+    /// 返回字形左上角的水平像素坐标。
     pub const fn x(&self) -> i32 {
         self.x
     }
 
+    /// 返回字形左上角的垂直像素坐标。
     pub const fn y(&self) -> i32 {
         self.y
     }
 
+    /// 返回字形覆盖率宽度。
     pub const fn width(&self) -> u32 {
         self.width
     }
 
+    /// 返回字形覆盖率高度。
     pub const fn height(&self) -> u32 {
         self.height
     }
 
+    /// 返回字形颜色。
     pub const fn color(&self) -> Color {
         self.color
     }
 
+    /// 借用共享覆盖率缓冲。
     pub fn coverage(&self) -> &Arc<[u8]> {
         &self.coverage
     }
@@ -473,27 +506,27 @@ impl FrameGlyphOutline {
         })
     }
 
-    // 返回 surface 水平位置。
+    /// 返回 surface 水平位置。
     pub const fn x(&self) -> i32 {
         self.x
     }
-    // 返回 surface 垂直位置。
+    /// 返回 surface 垂直位置。
     pub const fn y(&self) -> i32 {
         self.y
     }
-    // 返回目标字形宽度。
+    /// 返回目标字形宽度。
     pub const fn width(&self) -> u32 {
         self.width
     }
-    // 返回目标字形高度。
+    /// 返回目标字形高度。
     pub const fn height(&self) -> u32 {
         self.height
     }
-    // 返回直通颜色。
+    /// 返回直通颜色。
     pub const fn color(&self) -> Color {
         self.color
     }
-    // 返回共享轮廓边列表。
+    /// 返回共享轮廓边列表。
     pub fn edges(&self) -> &Arc<[f32]> {
         &self.edges
     }
@@ -511,6 +544,7 @@ pub struct FrameImage {
 }
 
 impl FrameImage {
+    /// 验证像素数量后创建自包含帧图像。
     pub fn new(width: i32, height: i32, pixels: Vec<u32>) -> Result<Self, FrameEncoderError> {
         let expected = pixel_len(width, height)?;
         if pixels.len() != expected {
@@ -527,6 +561,7 @@ impl FrameImage {
         })
     }
 
+    /// 创建由单一颜色填充的帧图像。
     pub fn solid(width: i32, height: i32, color: Color) -> Result<Self, FrameEncoderError> {
         Ok(Self {
             width,
@@ -535,14 +570,17 @@ impl FrameImage {
         })
     }
 
+    /// 返回图像宽度。
     pub const fn width(&self) -> i32 {
         self.width
     }
 
+    /// 返回图像高度。
     pub const fn height(&self) -> i32 {
         self.height
     }
 
+    /// 借用预乘 AARRGGBB 像素。
     pub fn pixels(&self) -> &[u32] {
         &self.pixels
     }
