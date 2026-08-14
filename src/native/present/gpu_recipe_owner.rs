@@ -6,7 +6,7 @@ use crate::core::Result;
 use crate::native::present::rhi::GraphicsContextRhi;
 // 引入类型化 GPU context、recipe 事实与呈现模式。
 use crate::native::present::{
-    GpuRecipeContext, GraphicsContextCaps, PresentMode, PresentSurface, RasterMode,
+    GpuRecipeContext, GraphicsContextCaps, PresentImage, PresentMode, PresentSurface, RasterMode,
 };
 
 // 保存已经通过 GPU-native recipe 门禁的原生 context owner。
@@ -60,6 +60,12 @@ impl GpuRecipeOwner {
     pub(crate) fn present_surface(&self) -> PresentSurface {
         // live 元数据不在门面内拆分或重复缓存。
         self.context.present_surface()
+    }
+
+    // 返回当前可写 swapchain image 身份，供 graphics backend 规划 per-image 修复。
+    pub(crate) fn present_image(&self) -> Option<PresentImage> {
+        // 直接读取类型化 context 的 live image 身份，不在 owner 内重复缓存。
+        self.context.present_image()
     }
 
     // 借用构造期类型已证明的组合 thin RHI。

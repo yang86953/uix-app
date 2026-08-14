@@ -11,6 +11,8 @@ use crate::draw::backend::rhi_renderer::RhiSampledQuad;
 
 // 引入当前 GpuBackend 类型。
 use super::GpuBackend;
+// 引入最终 retained-to-swapchain 的统一 damage/scissor 规划。
+use super::rhi_surface_composite::plan_surface_composite;
 // 引入 native queue 的 scroll 变体，保证 soft 后的目标搬移不被重排。
 use super::super::pending::PendingNativeOp;
 
@@ -69,6 +71,8 @@ impl GpuBackend {
             // 最终合成不额外裁剪。
             scissor: None,
         };
+        // 用同一份验证结果生成逐矩形绘制与最终 present damage。
+        let composite = plan_surface_composite(damage, extent, quad);
         // 只在 owner-thread 借用范围内执行最终 swapchain pass。
         let result = {
             // 同时借用 context 与 renderer，保持资源和执行在同一 owner thread。
@@ -84,14 +88,17 @@ impl GpuBackend {
             // 只有组合 RHI context 能执行 surface acquire/submit/present。
             // 已验证 owner 丢失时保留 typed state error，禁止绕过 RHI 合成。
             let context = gpu_ctx.rhi_context()?;
-            // swapchain 每次 acquire 都以透明清理开始，再采样 retained image。
-            renderer.execute_sampled_quad(
+            // 用一次 acquire/submit/present 执行全部 damage rect 的 sampled draw。
+            renderer.execute_sampled_quads(
                 context,
-                damage,
+                // native present 消费与 quad scissor 同源的 damage。
+                composite.damage.clone(),
                 viewport,
-                LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0])),
+                // partial 使用 Load，Full 使用透明 Clear。
+                composite.load,
                 RenderTargetRef::Surface,
-                quad,
+                // 每个 partial rect 对应一个裁剪 quad。
+                &composite.quads,
             )
         };
         // 最终合成失败时保留下一帧的全量重试边界。
@@ -310,8 +317,9 @@ impl GpuBackend {
         })?;
         // 沿用统一 damage tracker，确保 surface generation 和 present image 一致。
         let caps = self.gpu_ctx.caps();
-        // 读取当前 swapchain surface，并保持 thin RHI 尚未暴露 image 的既有语义。
-        let (present_surface, present_image) = (self.gpu_ctx.present_surface(), None);
+        // 从同一 owner 读取当前 surface 元数据与可写 swapchain image 身份。
+        let (present_surface, present_image) =
+            (self.gpu_ctx.present_surface(), self.gpu_ctx.present_image());
         // 计算最终 sampled composite 的 damage 语义。
         let damage_plan = self.present_damage_tracker.plan(
             caps.present_coherency,
@@ -391,8 +399,9 @@ impl GpuBackend {
         };
         // 先生成与兼容 present 一致的 damage 计划。
         let caps = self.gpu_ctx.caps();
-        // 读取当前 surface，并保持 thin RHI 尚未暴露 image 的既有语义。
-        let (present_surface, present_image) = (self.gpu_ctx.present_surface(), None);
+        // 从同一 owner 读取当前 surface 元数据与可写 swapchain image 身份。
+        let (present_surface, present_image) =
+            (self.gpu_ctx.present_surface(), self.gpu_ctx.present_image());
         // 计算本次提交要携带的 damage 语义。
         let damage_plan = self.present_damage_tracker.plan(
             caps.present_coherency,
@@ -496,8 +505,9 @@ impl GpuBackend {
         };
         // 先生成与兼容 present 一致的 damage 计划。
         let caps = self.gpu_ctx.caps();
-        // 读取当前 surface，并保持 thin RHI 尚未暴露 image 的既有语义。
-        let (present_surface, present_image) = (self.gpu_ctx.present_surface(), None);
+        // 从同一 owner 读取当前 surface 元数据与可写 swapchain image 身份。
+        let (present_surface, present_image) =
+            (self.gpu_ctx.present_surface(), self.gpu_ctx.present_image());
         // 计算本次提交要携带的 damage 语义。
         let damage_plan = self.present_damage_tracker.plan(
             caps.present_coherency,
@@ -597,8 +607,9 @@ impl GpuBackend {
         };
         // 先生成与兼容 present 一致的 damage 计划。
         let caps = self.gpu_ctx.caps();
-        // 读取当前 surface，并保持 thin RHI 尚未暴露 image 的既有语义。
-        let (present_surface, present_image) = (self.gpu_ctx.present_surface(), None);
+        // 从同一 owner 读取当前 surface 元数据与可写 swapchain image 身份。
+        let (present_surface, present_image) =
+            (self.gpu_ctx.present_surface(), self.gpu_ctx.present_image());
         // 计算本次提交要携带的 damage 语义。
         let damage_plan = self.present_damage_tracker.plan(
             caps.present_coherency,
@@ -701,8 +712,9 @@ impl GpuBackend {
         };
         // 先生成与兼容 present 一致的 damage 计划。
         let caps = self.gpu_ctx.caps();
-        // 读取当前 surface，并保持 thin RHI 尚未暴露 image 的既有语义。
-        let (present_surface, present_image) = (self.gpu_ctx.present_surface(), None);
+        // 从同一 owner 读取当前 surface 元数据与可写 swapchain image 身份。
+        let (present_surface, present_image) =
+            (self.gpu_ctx.present_surface(), self.gpu_ctx.present_image());
         let damage_plan = self.present_damage_tracker.plan(
             caps.present_coherency,
             present_surface,
@@ -800,8 +812,9 @@ impl GpuBackend {
         };
         // 先生成与兼容 present 一致的 damage 计划。
         let caps = self.gpu_ctx.caps();
-        // 读取当前 surface，并保持 thin RHI 尚未暴露 image 的既有语义。
-        let (present_surface, present_image) = (self.gpu_ctx.present_surface(), None);
+        // 从同一 owner 读取当前 surface 元数据与可写 swapchain image 身份。
+        let (present_surface, present_image) =
+            (self.gpu_ctx.present_surface(), self.gpu_ctx.present_image());
         let damage_plan = self.present_damage_tracker.plan(
             caps.present_coherency,
             present_surface,

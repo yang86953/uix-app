@@ -21,19 +21,19 @@ use ::windows::Win32::Graphics::Direct3D11::{
     D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_INDEX_BUFFER, D3D11_BIND_RENDER_TARGET,
     D3D11_BIND_SHADER_RESOURCE, D3D11_BIND_VERTEX_BUFFER, D3D11_BOX, D3D11_BUFFER_DESC,
     D3D11_COMPARISON_NEVER, D3D11_CPU_ACCESS_WRITE, D3D11_FILTER_MIN_MAG_MIP_LINEAR,
-    D3D11_FILTER_MIN_MAG_MIP_POINT, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_WRITE_DISCARD,
-    D3D11_SAMPLER_DESC, D3D11_TEXTURE2D_DESC, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_USAGE_DEFAULT,
+    D3D11_FILTER_MIN_MAG_MIP_POINT, D3D11_MAP_WRITE_DISCARD, D3D11_MAPPED_SUBRESOURCE,
+    D3D11_SAMPLER_DESC, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT,
     D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
 };
 // 引入 D3D11 格式和统一的窗口矩形类型。
 use ::windows::Win32::Foundation::RECT;
 // 引入 D3D11 纹理格式。
 use ::windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8_UNORM,
+    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
 };
 
 // 引入 context 父模块的 D3D11 状态、swapchain 事实和 surface target 身份。
-use super::{swap_chain_contract, D3d11Context, RHI_SURFACE_TARGET_RAW};
+use super::{D3d11Context, RHI_SURFACE_TARGET_RAW};
 
 // 把资源生命周期拆到独立文件，保持每个代码文件处于可审阅的尺寸内。
 #[path = "rhi_device_resources.rs"]
@@ -238,7 +238,7 @@ impl GraphicsDevice for D3d11Context {
         // D3D11 staging texture 已实现同步 surface 回读。
         capabilities.surface_readback = true;
         // 从 swapchain 创建事实投影 compositor 窄提交能力。
-        capabilities.partial_present = swap_chain_contract().partial_present;
+        capabilities.partial_present = self.swap_chain.contract().partial_present;
         // DXGI surface 能提供可靠的遮挡状态。
         capabilities.occlusion = true;
         // 返回与实际 swapchain 契约一致的薄 RHI 能力快照。

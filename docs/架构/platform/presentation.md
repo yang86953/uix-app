@@ -8,7 +8,7 @@
 
 > **当前实现线索**：共享生命周期与 recipe 专用契约位于 `src/native/present/traits.rs`，薄 RHI 位于 `src/native/present/rhi.rs`，类型化 candidate/owner 位于 `src/native/present/`，构造与线程绑定位于 `src/native/factory/`。D3D11、D3D12、WGL/EGL、Vulkan 与 Metal adapter 分别在各自 platform context 内实现所需 trait。
 
-> **类型化 recipe 生命周期**：`GraphicsContextLifecycle` 只定义原子 `PresentSurface` 快照与 checked shutdown；`GpuRecipeContext: GraphicsContextLifecycle` 额外拥有不可拆分的 thin RHI 与 GPU surface resize，`PixelUploadSurface: GraphicsContextLifecycle` 额外拥有上传 surface resize 与最终 pixels 提交。三个 trait 都没有运行期 `Option` 能力查询。
+> **类型化 recipe 生命周期**：`GraphicsContextLifecycle` 只定义原子 `PresentSurface` 快照与 checked shutdown；`GpuRecipeContext: GraphicsContextLifecycle` 额外拥有不可拆分的 thin RHI、GPU surface resize，以及 `TrackedSwapchain` 所需的当前 `PresentImage` 身份（`FullOnly` adapter 返回 `None`）；`PixelUploadSurface: GraphicsContextLifecycle` 额外拥有上传 surface resize 与最终 pixels 提交。recipe 身份和 capability 在构造期冻结，不在帧内重新探测。
 
 > **candidate 与 registry 边界**：adapter 创建事务必须直接选择 `GraphicsContextCandidate::gpu` 或 `GraphicsContextCandidate::pixel_upload`，并同时交付同源 `GraphicsContextCaps`。registry 校验精确 row、静态 recipe 轴与 `GraphicsRecipeContext::{Gpu, PixelUpload}` 分支一致；错配在返回前 checked shutdown。GPU baseline 与固定 pipeline probe 只对 GPU 分支执行，PixelUpload 分支不得查询或伪造 RHI。
 
@@ -18,7 +18,7 @@
 
 > **会话与窗口所有权**：native factory 在 context 离开 platform System 前返回已验证 `GraphicsRecipeOwner`；bootstrap、recovery 和 renderer 只传递该枚举。窗口只持有 native surface 与 presenter，不持有或关闭图形 context，因此 renderer/recovery 生命周期是唯一 teardown owner。
 
-> **静态与动态事实**：`GraphicsContextCaps` 只固定 backend、raster/present、coherency 与 occlusion；drawable extent、DPR、transform 与 generation 只来自单次 `PresentSurface` 快照。thread-bound wrapper 不缓存静态 capability，recipe owner 不在运行期重新推断 recipe。
+> **静态与动态事实**：`GraphicsContextCaps` 只固定 backend、raster/present、构造期实际交换链的 coherency 与 occlusion；drawable extent、DPR、transform 与 generation 只来自单次 `PresentSurface` 快照，当前可写 image index 只来自同一 GPU recipe owner。thread-bound wrapper 不缓存静态 capability，recipe owner 不在运行期重新推断 recipe。
 
 > **RHI 与最终提交边界**：逐 UI draw/clear/offscreen/upload、二阶段 initialize、平台 current、通用 resize、统一 present 与 readback 均不属于共享 lifecycle。生产 GPU 只通过 `GraphicsDevice` / `GraphicsSurface` 执行资源、probe、resize、readback 与最终 present；CPU × PixelUpload 只通过 `PixelUploadSurface` 上传并提交。平台 adapter 不拥有 FramePlan、fallback、Picture 或 effect 策略；draw 侧 Picture create/destroy/begin/flush/end/blit 只允许 checked `Result` 边界，资源失败不能用 `Option`、bool 或 void 门面推迟或吞掉。`try_create_offscreen` 的 `Ok(None)` 只陈述无效尺寸或不支持，thin RHI 返回的 device/surface/OOM 分类原样进入 graphics recovery。
 
@@ -56,7 +56,7 @@ registry 只陈述可构造候选；graphics 决定选择和恢复策略。显�
 
 capability 只陈述可验证的底层事实，例如 sampled texture、render-to-texture、scissor、texture copy、retained framebuffer、partial present 与 occlusion。逐 UI 操作支持由这些事实和通用 GPU Renderer 推导，不由 adapter 维护平行的 `draw_*` 布尔表。
 
-`retained_framebuffer` 与 renderer 的 `partial_redraw` 必须保持分层：前者只描述 platform adapter 能否保存跨帧颜色纹理，后者还要求所有绘制与兼容回退都不会绕过该纹理。迁移期 platform 继续如实报告 retained 能力，由 graphics backend 在存在直接 swapchain 回退时保守关闭局部重绘。
+`retained_framebuffer` 与 renderer 的 `partial_redraw` 必须保持分层：前者只描述 platform adapter 能否保存跨帧颜色纹理，后者还要求所有绘制都不绕过该纹理，并要求交换链提供可验证的 per-image coherency。D3D11 只有实际创建 `FLIP_SEQUENTIAL` 双缓冲且取得 `IDXGISwapChain3` 时报告 `TrackedSwapchain` / partial present；graphics backend 再与 retained 事实合取后开放局部重绘。创建期任一条件失败即冻结为 legacy `DISCARD` / `FullOnly`，运行期不在两种契约间漂移。
 
 ## 组件：Presenter
 

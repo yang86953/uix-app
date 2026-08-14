@@ -20,7 +20,7 @@
 
 ## 组件：PresentDamageTracker
 
-它把多来源失效合并为当前 surface 可执行的计划；surface generation、尺寸或 coherency 变化可把局部 damage 提升为全帧。只有最终 present 成功后才能提交 tracker 状态。
+它把多来源失效合并为当前 surface 可执行的计划；surface generation、尺寸或 coherency 变化可把局部 damage 提升为全帧。`TrackedSwapchain` 按当前 `PresentImage` 合并该 image 自上次成功提交后错过的历史区域，`draw_damage` 与 `present_damage` 必须来自同一修复集合。只有最终 native present 成功后才能提交 tracker 状态；遮挡、device lost、OOM、非法调用或其它失败均不得推进 image history。
 
 ## 模块不变量
 

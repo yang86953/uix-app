@@ -4,7 +4,8 @@
 //! Native solid/rounded fill + stroke + glyph atlas text + linear/radial
 //! gradients + simple path meshes + box/ambient shadow; unsupported Canvas2D
 //! ops soft-raster and alpha-blit (same hybrid pattern as the native GL path).
-//! bitblt swapchain 固定使用 `DXGI_SWAP_EFFECT_DISCARD`；状态边界把
+//! 主路径使用 `DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL` 与 `Present1`，构造期
+//! 能力不足时回退 `DXGI_SWAP_EFFECT_DISCARD`；状态边界把
 //! `DXGI_STATUS_OCCLUDED` 映射为 `Errc::GraphicsOccluded`，并以
 //! `Present(0, DXGI_PRESENT_TEST)` 做无帧数据的退出探测。
 
@@ -14,12 +15,9 @@ use std::ffi::c_void;
 
 use super::pipeline::D3d11Pipeline;
 use super::swapchain::d3d_error;
-// 向 context 子模块公开唯一 D3D11 swapchain 能力事实。
-pub(crate) use super::swapchain::swap_chain_contract;
-pub(crate) use super::swapchain::{
-    map_dxgi_device_removed_reason, map_dxgi_present_result, map_dxgi_present_test_result,
-    map_dxgi_resize_result, swap_chain_desc,
-};
+// 向 context 子模块公开 D3D11 swapchain 的冻结实例与创建入口。
+pub(crate) use super::swapchain::{D3d11SwapChain, create_swap_chain};
+pub(crate) use super::swapchain::{map_dxgi_device_removed_reason, map_dxgi_resize_result};
 use crate::core::{Errc, Error, Result};
 // 导入 context 实现直接消费的共享生命周期契约。
 use crate::native::present::GraphicsContextLifecycle;
@@ -32,13 +30,11 @@ use ::windows::Win32::Graphics::Direct3D::{
 use ::windows::Win32::Graphics::Direct3D11::{
     D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_MAP_READ,
     D3D11_MAPPED_SUBRESOURCE, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
-    D3D11_VIEWPORT, D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext,
-    ID3D11RenderTargetView, ID3D11Texture2D,
+    D3D11_VIEWPORT, D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11RenderTargetView,
+    ID3D11Texture2D,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
-use ::windows::Win32::Graphics::Dxgi::{
-    DXGI_PRESENT, DXGI_PRESENT_TEST, DXGI_SWAP_CHAIN_FLAG, IDXGIDevice, IDXGISwapChain,
-};
+use ::windows::Win32::Graphics::Dxgi::IDXGIDevice;
 use ::windows::core::Interface;
 
 type HWND_PTR = *mut c_void;
@@ -130,7 +126,8 @@ fn query_adapter_info(device: &ID3D11Device, driver: D3d11DriverKind) -> Result<
 pub struct D3d11Context {
     device: ID3D11Device,
     pub(crate) context: ID3D11DeviceContext,
-    swap_chain: IDXGISwapChain,
+    // 保存构造期冻结为 tracked 或 legacy 的唯一 swapchain owner。
+    swap_chain: D3d11SwapChain,
     pub(crate) rtv: Option<ID3D11RenderTargetView>,
     pipeline: D3d11Pipeline,
     pub(crate) adapter_info: D3d11AdapterInfo,

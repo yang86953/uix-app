@@ -24,10 +24,19 @@ use super::super::canvas::NativeGpuCanvas2D;
 use super::rhi_surface_soft::try_upload_rhi_canvas_soft;
 use super::{GpuBackend, NativeGpuOffscreen, device_pixel_ratio_from_surface};
 
-// 迁移期的主 surface 仍采用完整重绘，但 Picture 能力只由通用 RHI 所有者决定。
-fn migration_safe_gpu_capabilities(has_rhi_offscreen_owner: bool) -> BackendCapabilities {
-    // 先采用不会依赖 swapchain 内容保留的完整重绘能力。
-    let mut capabilities = BackendCapabilities::gpu_full_redraw();
+// 从 retained 主颜色目标与冻结 present coherency 组装场景层能力。
+fn retained_gpu_capabilities(
+    has_rhi_offscreen_owner: bool,
+    supports_partial_redraw: bool,
+) -> BackendCapabilities {
+    // 只有绘制保留与 swapchain 历史都可证明时才开放局部重绘。
+    let mut capabilities = if supports_partial_redraw {
+        // tracked present 可以安全消费局部场景 damage。
+        BackendCapabilities::gpu()
+    } else {
+        // 任一证明缺失时保持完整重绘回退。
+        BackendCapabilities::gpu_full_redraw()
+    };
     // 只有通用 renderer 拥有离屏纹理时才向场景层开放 Picture 能力。
     capabilities.offscreen = has_rhi_offscreen_owner;
     // 返回供场景管线消费的迁移期能力快照。
@@ -81,8 +90,15 @@ impl RenderBackend for GpuBackend {
     }
 
     fn capabilities(&self) -> BackendCapabilities {
-        // 只有所有主 surface 路径都保持 retained 内容后，才可重新暴露 partial redraw。
-        migration_safe_gpu_capabilities(self.rhi_renderer.is_some())
+        // retained texture owner 与 tracked swapchain 必须同时存在才允许局部重绘。
+        let supports_partial_redraw = self.rhi_renderer.is_some()
+            // 主颜色目标必须在帧间保留未受 damage 影响的像素。
+            && self.surface.native_caps.retained_framebuffer
+            // swapchain 必须提供真实 per-image history 证明。
+            && self.gpu_ctx.caps().present_coherency
+                == crate::native::present::PresentCoherency::TrackedSwapchain;
+        // Picture 与主 surface 能力分别从各自事实投影。
+        retained_gpu_capabilities(self.rhi_renderer.is_some(), supports_partial_redraw)
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {

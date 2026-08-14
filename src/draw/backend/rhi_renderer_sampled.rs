@@ -9,11 +9,42 @@ use crate::native::present::rhi::{DrawPacket, GraphicsContextRhi, LoadAction, Rh
 
 // 引入父 renderer 的计划、target、资源载荷和执行器。
 use super::{
-    FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef, RhiRenderer, RhiSampledQuad,
+    FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef, RhiOp, RhiRenderer,
+    RhiSampledQuad,
 };
 
 // 为 RhiRenderer 提供不触发 present 的已有纹理合成入口。
 impl RhiRenderer {
+    // 执行一组引用同一 retained texture 的 sampled quad 并触发唯一最终 present。
+    pub(crate) fn execute_sampled_quads(
+        &mut self,
+        context: &mut dyn GraphicsContextRhi,
+        damage: PresentDamage,
+        viewport: RhiViewport,
+        load: LoadAction,
+        target: RenderTargetRef,
+        quads: &[RhiSampledQuad],
+    ) -> Result<()> {
+        // 空操作不能伪装成已经更新并提交 surface。
+        if quads.is_empty() {
+            // 使用稳定参数错误阻止空 present。
+            return Err(super::rhi_invalid(
+                "RhiRenderer sampled surface composite requires at least one quad",
+            ));
+        }
+        // 将逐 damage rect quad 降为同一 painter-order sampled 操作队列。
+        let operations = quads
+            .iter()
+            // sampled quad 是纯值 ABI，可以安全复制到本次计划。
+            .copied()
+            // 每个 quad 保留自己的 scissor。
+            .map(RhiOp::Sampled)
+            // 物化为 execute_ops 同步消费的稳定切片。
+            .collect::<Vec<_>>();
+        // 复用统一混合执行器，保持一次 acquire、submit 与最终 present。
+        self.execute_ops(context, damage, viewport, load, target, &operations, true)
+    }
+
     // 执行一个已经存在的 sampled texture quad，但不触发 surface present。
     pub(crate) fn execute_sampled_quad_without_present(
         &mut self,

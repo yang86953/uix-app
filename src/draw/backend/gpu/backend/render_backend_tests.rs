@@ -2,31 +2,38 @@
 use crate::core::Errc;
 // 引入待验证的 RHI-only 能力与 extent 推导函数。
 use super::{
-    // 验证高层能力只由 RHI owner 推导。
-    migration_safe_gpu_capabilities,
     // 验证未覆盖 lowering 返回稳定 typed failure。
     require_lossless_rhi_submission,
+    // 验证高层能力只由 RHI owner 推导。
+    retained_gpu_capabilities,
     // 验证 Picture extent 的单一 owner 门禁。
     rhi_offscreen_extent,
 };
 
-// 验证离屏支持不会重新开启不安全的主 surface 局部重绘。
+// 验证局部重绘只由 retained 主目标与 tracked swapchain 的合取事实开启。
 #[test]
-// 锁定迁移期的完整重绘能力边界。
-fn migration_capabilities_keep_partial_redraw_disabled() {
-    // 构造持有通用 RHI Picture owner 的生产能力组合。
-    let with_offscreen = migration_safe_gpu_capabilities(true);
-    // 主 surface 必须保持完整重绘，避免兼容回退只留下 damage 区域。
-    assert!(!with_offscreen.partial_redraw);
+// 锁定 tracked 与 legacy 两种能力投影。
+fn retained_capabilities_gate_partial_redraw_from_present_proof() {
+    // 构造同时具备 Picture owner 和完整窄提交证明的生产能力。
+    let tracked = retained_gpu_capabilities(true, true);
+    // tracked swapchain 可以向场景层开放局部重绘。
+    assert!(tracked.partial_redraw);
     // 独立离屏能力仍应透传给 Picture 与效果管线。
-    assert!(with_offscreen.offscreen);
+    assert!(tracked.offscreen);
 
-    // 构造没有通用 RHI Picture owner 的生产能力组合。
-    let without_offscreen = migration_safe_gpu_capabilities(false);
-    // 无离屏能力时同样不得依赖 swapchain 内容保留。
-    assert!(!without_offscreen.partial_redraw);
-    // 没有通用 RHI owner 时不得从 adapter 能力虚构 Picture 支持。
-    assert!(!without_offscreen.offscreen);
+    // 构造 retained renderer 存在但 swapchain 只能 FullOnly 的回退能力。
+    let legacy = retained_gpu_capabilities(true, false);
+    // legacy DISCARD 不得开放局部重绘。
+    assert!(!legacy.partial_redraw);
+    // present 回退不应关闭独立的 Picture 能力。
+    assert!(legacy.offscreen);
+
+    // 构造没有通用 RHI owner 的防御性组合。
+    let without_rhi = retained_gpu_capabilities(false, false);
+    // 缺少 retained renderer 时不得开放 partial。
+    assert!(!without_rhi.partial_redraw);
+    // 没有通用 RHI owner 时不得虚构 Picture 支持。
+    assert!(!without_rhi.offscreen);
 }
 
 // 验证 Picture 资源只能由通用 RHI owner 创建。
