@@ -74,27 +74,39 @@ impl OverlayBackdropBlur {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 浮层的稳定语义类别。
 pub enum OverlayKind {
+    /// 模态对话框。
     Modal,
+    /// 从窗口边缘滑入的抽屉。
     Drawer,
+    /// 锚定到组件的气泡卡片。
     Popover,
+    /// 短暂提示浮层。
     Tooltip,
+    /// 上下文菜单。
     ContextMenu,
+    /// 全局消息提示。
     Message,
+    /// 持续通知浮层。
     Notification,
+    /// 应用定义的自定义浮层。
     Custom,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// 在单个浮层栈内唯一的登记标识。
 pub struct OverlayId(u64);
 
 impl OverlayId {
+    /// 返回底层稳定数值标识。
     pub fn get(self) -> u64 {
         self.0
     }
 }
 
 #[derive(Debug, Clone)]
+/// 一项待排序、命中和管理的浮层登记。
 pub struct OverlayEntry {
     id: OverlayId,
     owner: ComponentId,
@@ -110,6 +122,7 @@ pub struct OverlayEntry {
 }
 
 impl OverlayEntry {
+    /// 为组件所有者和语义类别创建默认浮层登记。
     pub fn new(owner: ComponentId, kind: OverlayKind) -> Self {
         Self {
             id: OverlayId(0),
@@ -126,31 +139,37 @@ impl OverlayEntry {
         }
     }
 
+    /// 设置浮层的逻辑边界。
     pub fn bounds(mut self, bounds: Rect) -> Self {
         self.bounds = Some(bounds);
         self
     }
 
+    /// 设置浮层排序层级。
     pub fn z_index(mut self, z_index: i32) -> Self {
         self.z_index = z_index;
         self
     }
 
+    /// 设置浮层是否阻断底层交互。
     pub fn modal(mut self, modal: bool) -> Self {
         self.modal = modal;
         self
     }
 
+    /// 设置点击浮层外部是否触发关闭。
     pub fn dismiss_on_outside(mut self, dismiss: bool) -> Self {
         self.dismiss_on_outside = dismiss;
         self
     }
 
+    /// 设置焦点是否限制在浮层子树内。
     pub fn focus_trap(mut self, focus_trap: bool) -> Self {
         self.focus_trap = focus_trap;
         self
     }
 
+    /// 设置登记是否由浮层管理器持续维护。
     pub fn managed(mut self, managed: bool) -> Self {
         self.managed = managed;
         self
@@ -164,38 +183,47 @@ impl OverlayEntry {
         self
     }
 
+    /// 返回压栈时分配的浮层标识。
     pub fn id(&self) -> OverlayId {
         self.id
     }
 
+    /// 返回拥有该浮层的组件标识。
     pub fn owner(&self) -> ComponentId {
         self.owner
     }
 
+    /// 返回浮层语义类别。
     pub fn kind(&self) -> OverlayKind {
         self.kind
     }
 
+    /// 返回可选的逻辑边界。
     pub fn bounds_rect(&self) -> Option<Rect> {
         self.bounds
     }
 
+    /// 返回浮层排序层级。
     pub fn z_index_value(&self) -> i32 {
         self.z_index
     }
 
+    /// 判断浮层是否阻断底层交互。
     pub fn is_modal(&self) -> bool {
         self.modal
     }
 
+    /// 判断点击外部是否应关闭浮层。
     pub fn dismisses_on_outside(&self) -> bool {
         self.dismiss_on_outside
     }
 
+    /// 判断焦点是否限制在浮层子树内。
     pub fn traps_focus(&self) -> bool {
         self.focus_trap
     }
 
+    /// 判断登记是否由浮层管理器持续维护。
     pub fn is_managed(&self) -> bool {
         self.managed
     }
@@ -208,20 +236,24 @@ impl OverlayEntry {
 }
 
 #[derive(Debug, Default)]
+/// 按层级保存当前窗口浮层登记的所有者容器。
 pub struct OverlayStack {
     next_id: u64,
     entries: Vec<OverlayEntry>,
 }
 
 impl OverlayStack {
+    /// 创建空浮层栈。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 使用默认设置登记指定组件的浮层。
     pub fn push(&mut self, owner: ComponentId, kind: OverlayKind) -> OverlayId {
         self.push_entry(OverlayEntry::new(owner, kind))
     }
 
+    /// 分配标识并按层级登记完整浮层条目。
     pub fn push_entry(&mut self, mut entry: OverlayEntry) -> OverlayId {
         self.next_id += 1;
         let id = OverlayId(self.next_id);
@@ -231,11 +263,13 @@ impl OverlayStack {
         id
     }
 
+    /// 按标识移除并返回浮层条目。
     pub fn remove(&mut self, id: OverlayId) -> Option<OverlayEntry> {
         let index = self.entries.iter().position(|entry| entry.id == id)?;
         Some(self.entries.remove(index))
     }
 
+    /// 移除并返回指定组件拥有的全部浮层。
     pub fn remove_for_owner(&mut self, owner: ComponentId) -> Vec<OverlayEntry> {
         let mut removed = Vec::new();
         self.entries.retain(|entry| {
@@ -249,30 +283,37 @@ impl OverlayStack {
         removed
     }
 
+    /// 仅保留谓词接受的浮层条目。
     pub fn retain_entries(&mut self, mut keep: impl FnMut(&OverlayEntry) -> bool) {
         self.entries.retain(|entry| keep(entry));
     }
 
+    /// 移除全部浮层条目。
     pub fn clear(&mut self) {
         self.entries.clear();
     }
 
+    /// 返回当前浮层数量。
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    /// 判断当前是否没有浮层。
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
+    /// 按从低到高的层级顺序遍历浮层。
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = &OverlayEntry> {
         self.entries.iter()
     }
 
+    /// 返回层级最高的浮层。
     pub fn top(&self) -> Option<&OverlayEntry> {
         self.entries.last()
     }
 
+    /// 从最高层开始查找包含指定逻辑坐标的浮层。
     pub fn hit_test(&self, x: f32, y: f32) -> Option<&OverlayEntry> {
         self.entries.iter().rev().find(|entry| {
             entry
