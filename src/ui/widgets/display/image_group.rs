@@ -8,8 +8,50 @@ use crate::draw::{Color, Radius};
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, OverlayEntry, OverlayKind, SnapshotFields,
-    SystemEvent, WidgetTree,
+    SystemEvent, ThemeTokens, WidgetTree,
 };
+
+// 紧凑说明字号位于小号正文与正文 token 的中点。
+const COMPACT_FONT_MIDPOINT_WEIGHT: f32 = 0.5;
+
+// 保存图片预览一次绘制内解析出的主题值。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImageOverlayPalette {
+    // 全窗口预览使用语义遮罩色。
+    mask: Color,
+    // 预览面板与控制按钮使用浮层背景色。
+    surface: Color,
+    // 浮层文字与图标使用主题正文色。
+    foreground: Color,
+    // 浮层弱边界使用次级边框色。
+    border: Color,
+    // 计数与不可用说明使用紧凑主题字号。
+    compact_font: f32,
+}
+
+// 将主题 token 转换为图片预览私有绘制值。
+impl ImageOverlayPalette {
+    // 从当前组件主题作用域解析调色板。
+    fn resolve(tokens: &dyn ThemeTokens) -> Self {
+        // 读取相邻排版 token 以派生原 13px 紧凑字号。
+        let small = tokens.font_size_sm();
+        // 读取主题正文字号。
+        let body = tokens.font_size();
+        // 返回供当前绘制批次复用的稳定值。
+        Self {
+            // 使用主题语义遮罩。
+            mask: tokens.color_bg_mask(),
+            // 使用主题浮层表面。
+            surface: tokens.color_bg_overlay(),
+            // 使用主题正文前景。
+            foreground: tokens.color_text(),
+            // 使用主题次级边框。
+            border: tokens.color_border_secondary(),
+            // 默认主题下保持 13px，同时随主题排版缩放。
+            compact_font: small + (body - small) * COMPACT_FONT_MIDPOINT_WEIGHT,
+        }
+    }
+}
 
 #[derive(Debug)]
 struct GalleryGeometry {
@@ -471,11 +513,13 @@ impl ImageGroup {
         if let Some(path) = self.images.get(self.current_index()) {
             self.paint_image(ctx, path, geometry.main, true, "图片加载中…");
         } else {
+            // 空状态说明使用主题派生的紧凑字号。
+            let compact_font = ImageOverlayPalette::resolve(ctx.tokens()).compact_font;
             ctx.text_center(
                 "暂无图片",
                 geometry.main,
                 ctx.tokens().color_text_secondary(),
-                13.0,
+                compact_font,
             );
         }
         self.paint_controls(ctx, &geometry);
@@ -532,14 +576,16 @@ impl ImageGroup {
             return;
         }
         let geometry = Self::preview_geometry(surface, self.images.len(), self.current_index());
+        // 在组件主题作用域内解析一次预览调色板。
+        let palette = ImageOverlayPalette::resolve(ctx.tokens());
         ctx.push_clip(surface);
-        // 预览暗底：黑色 token + 原 alpha（保持视觉等价，色相随主题可换）。
-        ctx.fill_rect(surface, ctx.tokens().color_black().with_alpha(214), None);
+        // 全窗口背景使用主题语义遮罩。
+        ctx.fill_rect(surface, palette.mask, None);
         if geometry.preview.w > 0.0 && geometry.preview.h > 0.0 {
-            // 预览占位底：原为 18,18,18 深灰，收敛为黑色 token（视觉近似，色相随主题可换）。
+            // 预览占位区域使用主题浮层表面。
             ctx.fill_rect(
                 geometry.preview,
-                ctx.tokens().color_black().with_alpha(255),
+                palette.surface,
                 Some(Radius::uniform(4.0)),
             );
             if let Some(path) = self.images.get(self.current_index()) {
@@ -548,17 +594,12 @@ impl ImageGroup {
         }
 
         if let Some(previous) = geometry.previous {
-            // 导航箭头（暗底上反白）：白色 token。
-            Self::paint_navigation_control(
-                ctx,
-                previous,
-                "chevron-left",
-                ctx.tokens().color_white(),
-            );
+            // 导航箭头使用浮层正文前景。
+            Self::paint_navigation_control(ctx, previous, "chevron-left", palette.foreground);
         }
         if let Some(next) = geometry.next {
-            // 导航箭头（暗底上反白）：白色 token。
-            Self::paint_navigation_control(ctx, next, "chevron-right", ctx.tokens().color_white());
+            // 导航箭头使用浮层正文前景。
+            Self::paint_navigation_control(ctx, next, "chevron-right", palette.foreground);
         }
         for &(index, rect) in &geometry.thumbnails {
             if let Some(path) = self.images.get(index) {
@@ -569,8 +610,8 @@ impl ImageGroup {
                 if index == self.current_index() {
                     ctx.tokens().color_primary()
                 } else {
-                    // 缩略图边框：白色 token + 原 alpha（保持视觉等价，色相随主题可换）。
-                    ctx.tokens().color_white().with_alpha(120)
+                    // 未选缩略图使用主题浮层弱边界。
+                    palette.border
                 },
                 if index == self.current_index() {
                     2.0
@@ -586,15 +627,15 @@ impl ImageGroup {
                 geometry.close.x + geometry.close.w * 0.5,
                 geometry.close.y + geometry.close.h * 0.5,
                 geometry.close.w.min(geometry.close.h) * 0.5,
-                // 关闭按钮底：黑色 token + 原 alpha（保持视觉等价，色相随主题可换）。
-                ctx.tokens().color_black().with_alpha(180),
+                // 关闭按钮使用主题浮层表面。
+                palette.surface,
             );
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 "x",
                 geometry.close,
-                // 关闭图标（暗底上反白）：白色 token。
-                ctx.tokens().color_white(),
+                // 关闭图标使用主题正文前景。
+                palette.foreground,
                 20.0_f32.min(geometry.close.w.min(geometry.close.h) * 0.6),
             );
         }
@@ -607,9 +648,10 @@ impl ImageGroup {
         ctx.text_center(
             &format!("{} / {}", self.current_index() + 1, self.images.len()),
             counter,
-            // 计数文本（暗底上反白）：白色 token。
-            ctx.tokens().color_white(),
-            13.0,
+            // 计数文本使用主题正文前景。
+            palette.foreground,
+            // 使用主题派生的紧凑字号。
+            palette.compact_font,
         );
         ctx.pop_clip();
     }
@@ -646,11 +688,13 @@ impl ImageGroup {
                 ctx.draw_image_fill(handle, frame);
             }
         } else if !unavailable_label.is_empty() {
+            // 不可用说明复用主题派生的紧凑字号。
+            let compact_font = ImageOverlayPalette::resolve(ctx.tokens()).compact_font;
             ctx.text_center(
                 unavailable_label,
                 frame,
                 ctx.tokens().color_text_secondary(),
-                13.0_f32.min(frame.h.max(1.0)),
+                compact_font.min(frame.h.max(1.0)),
             );
         } else {
             crate::ui::widgets::icon::Icon::paint_in_frame(
@@ -678,8 +722,8 @@ impl ImageGroup {
             circle.x + circle.w * 0.5,
             circle.y + circle.h * 0.5,
             diameter * 0.5,
-            // 状态角标底：黑色 token + 原 alpha（保持视觉等价，色相随主题可换）。
-            ctx.tokens().color_black().with_alpha(128),
+            // 导航按钮使用主题浮层表面。
+            ctx.tokens().color_bg_overlay(),
         );
         crate::ui::widgets::icon::Icon::paint_in_frame(
             ctx,
@@ -728,5 +772,35 @@ impl ImageGroup {
             self.focused = false;
         }
         self.pending_index.set(None);
+    }
+}
+
+// 验证图片浮层调色板随主题解析。
+#[cfg(test)]
+mod palette_tests {
+    // 引入被测私有调色板。
+    use super::ImageOverlayPalette;
+    // 引入标准明暗主题。
+    use crate::ui::Theme;
+
+    // 预览遮罩、表面与前景必须直接来自当前主题。
+    #[test]
+    fn image_overlay_palette_follows_theme_tokens() {
+        // 构造标准亮色主题。
+        let light = Theme::antd_light();
+        // 解析亮色预览调色板。
+        let light_palette = ImageOverlayPalette::resolve(light.tokens());
+        // 核对亮色遮罩 token。
+        assert_eq!(light_palette.mask, light.tokens().color_bg_mask());
+        // 核对亮色浮层表面 token。
+        assert_eq!(light_palette.surface, light.tokens().color_bg_overlay());
+        // 构造标准暗色主题。
+        let dark = Theme::antd_dark();
+        // 解析暗色预览调色板。
+        let dark_palette = ImageOverlayPalette::resolve(dark.tokens());
+        // 明暗主题的浮层表面必须不同。
+        assert_ne!(light_palette.surface, dark_palette.surface);
+        // 默认相邻字号中点保持原 13px。
+        assert_eq!(light_palette.compact_font, 13.0);
     }
 }
