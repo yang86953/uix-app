@@ -8,8 +8,10 @@ use self::free::*;
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
-use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::component::paint_context::PaintContext;
+// 引入展开面板稳定 key 集合的受控状态句柄。
+use crate::ui::reactive::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotCollapsePanel,
     SnapshotFields, SystemEvent, WidgetTree,
@@ -31,6 +33,8 @@ const MAX_INTRINSIC_WIDTH: f32 = 320.0;
 /// 单个折叠面板。
 #[derive(Debug, Clone)]
 pub struct CollapsePanel {
+    // 保存可选显式稳定 key，缺省时兼容使用 header。
+    key: Option<String>,
     pub header: String,
     pub content: String,
     pub expanded: bool,
@@ -39,6 +43,8 @@ pub struct CollapsePanel {
 impl CollapsePanel {
     pub fn new(header: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
+            // 缺省稳定身份继续兼容现有 header。
+            key: None,
             header: header.into(),
             content: content.into(),
             expanded: false,
@@ -47,6 +53,22 @@ impl CollapsePanel {
     pub fn expanded(mut self) -> Self {
         self.expanded = true;
         self
+    }
+    // 设置非空稳定面板 key。
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        // 空 key 不覆盖兼容 header 身份。
+        let key = key.into();
+        // 只接受至少包含一个非空白字符的显式身份。
+        if !key.trim().is_empty() {
+            // 保留调用方提供的精确稳定 key。
+            self.key = Some(key);
+        }
+        self
+    }
+    // 返回显式 key 或兼容 header 身份。
+    pub fn stable_key(&self) -> &str {
+        // 旧调用方无需修改即可取得确定身份。
+        self.key.as_deref().unwrap_or(&self.header)
     }
 }
 
@@ -62,6 +84,9 @@ component! {
     pub struct Collapse {
         pub(crate) panels: Vec<CollapsePanel>,
         accordion: bool,
+        // 外部状态只拥有稳定展开 key 集合。
+        #[snapshot(skip)]
+        active_keys_binding: Option<State<Vec<String>>>,
         borderless: bool,
         destroy_on_hide: bool,
         focused: bool,
@@ -120,6 +145,8 @@ component! {
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        // 每次交互前重新采用外部唯一展开事实。
+        self.sync_bound_active_keys();
         match event {
             SystemEvent::PointerDown {
                 pos,
@@ -209,7 +236,10 @@ component! {
     semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .take()
-            .map(|idx| SemanticEvent::change(id, idx.to_string()))
+            // 只为仍存在的面板发布稳定 key。
+            .and_then(|idx| self.panels.get(idx))
+            // Change 载荷不再泄漏易变索引。
+            .map(|panel| SemanticEvent::change(id, panel.stable_key().to_owned()))
     }
 
     take_layout_request => (&mut self) -> bool {
@@ -219,6 +249,8 @@ component! {
     wants_continuous_pointer_move => (&self) -> bool { true }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
+        // 登记受控 key 集合依赖，外部更新会触发声明视图重建。
+        self.capture_bound_active_keys_dependency();
         let frame = Self::normalized_frame(frame);
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
@@ -367,3 +399,6 @@ impl Default for Collapse {
     }
 }
 
+// 集中验证稳定 key、受控展开集合与手风琴写回边界。
+#[cfg(test)]
+mod tests;

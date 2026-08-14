@@ -748,6 +748,8 @@ pub(super) fn is_state_handle_attribute(element_name: &str, attribute_name: &str
         "Tabs" => &["activeKey"],
         // 可选中列表读取 State<Option<String>> 稳定活动 id 句柄。
         "SelectableList" => &["active"],
+        // 折叠组读取 State<Vec<String>> 展开 key 集合句柄。
+        "Collapse" => &["activeKeys"],
         // 菜单读取 typed 单选与展开状态句柄。
         "Menu" => &["selectedKey", "openKeys"],
         // Navigation 复用 Menu 的选择/展开句柄并额外读取整栏折叠句柄。

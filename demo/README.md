@@ -13,6 +13,7 @@ demo/
 │       └── main.uix    # uix-lang 界面：12 个页面组件、全部已注册标签、私有状态与事件
 ├── badge-visual/       # Badge 零/单子装饰器真窗验收
 ├── selectable-list-visual/ # SelectableList 稳定 id 受控选择真窗验收
+├── collapse-visual/    # Collapse 稳定 key 与手风琴真窗验收
 ├── popconfirm-visual/  # Popconfirm 单 trigger 真窗验收
 └── cli-demo/           # CLI 功能域演示
     ├── Cargo.toml      # package/bin: uix-cli-demo
@@ -28,6 +29,7 @@ demo/
 | **uix-lang GUI（主演示）** | `cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo` | `.uix` 文件入口、12 个页面组件、私有/类型化状态与全部已注册标签 |
 | **Badge 真窗验收** | `cargo run --release --manifest-path demo/Cargo.toml --bin badge-visual` | 零子兼容、Icon / Avatar / Button 单子装饰与动态 count / dot |
 | **SelectableList 真窗验收** | `cargo run --release --manifest-path demo/Cargo.toml --bin selectable-list-visual` | 空选中、稳定 id 写回、指针与键盘活动高亮 |
+| **Collapse 真窗验收** | `cargo run --release --manifest-path demo/Cargo.toml --bin collapse-visual` | 稳定 key、多开/手风琴写回与键盘切换 |
 | **CLI** | `cargo run --manifest-path demo/Cargo.toml --bin uix-cli-demo` | `core` / `draw` / `ui` / `app` / `data` 无 GUI API |
 
 各项目共享 `demo/target/` 构建目录；根目录 `cargo` 命令不包含本工作区，需要显式
