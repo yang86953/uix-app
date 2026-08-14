@@ -21,7 +21,10 @@ use super::graphics::{GpuAdapterInfo, GraphicsBackend};
 use super::graphics::GpuDeviceType;
 use super::hardware::{CpuInfo, DisplayInfo, MemoryInfo, OsInfo};
 use super::imp;
-use super::services::{SpecialDir, SystemNotification};
+// 引入平台服务值与系统通知身份、能力状态契约。
+use super::services::{
+    AppUserModelId, SpecialDir, SystemNotification, SystemNotificationCapability,
+};
 
 static INSTANCE_LIVE: AtomicBool = AtomicBool::new(false);
 
@@ -32,6 +35,8 @@ static INSTANCE_LIVE: AtomicBool = AtomicBool::new(false);
 pub struct Platform {
     owner_thread: ThreadId,
     state: Option<imp::State>,
+    // 由应用显式提供的通知身份；Platform 仅拥有配置，不执行系统登记。
+    notification_app_user_model_id: Option<AppUserModelId>,
     _thread_affinity: PhantomData<Rc<()>>,
 }
 
@@ -51,6 +56,8 @@ impl Platform {
         Ok(Self {
             owner_thread: thread::current().id(),
             state: Some(state),
+            // 新实例默认没有通知身份，开发环境不会伪造成功。
+            notification_app_user_model_id: None,
             _thread_affinity: PhantomData,
         })
     }
@@ -143,6 +150,28 @@ impl Platform {
         imp::special_dir(directory)
     }
 
+    /// 配置部署层已经登记的 Windows AUMID。
+    pub fn set_notification_app_user_model_id(
+        &mut self,
+        // 使用已验证的值对象，避免重复解析字符串。
+        app_user_model_id: AppUserModelId,
+    ) -> Result<()> {
+        // 配置写入必须服从 Platform 的 owner-thread 契约。
+        self.ensure_owner("Platform::set_notification_app_user_model_id")?;
+        // 仅保存配置；不创建快捷方式，也不写系统注册信息。
+        self.notification_app_user_model_id = Some(app_user_model_id);
+        // 配置成功不代表部署登记成功，调用方应继续查询 capability。
+        Ok(())
+    }
+
+    /// 查询当前环境的系统通知能力与身份就绪状态。
+    pub fn system_notification_capability(&self) -> Result<SystemNotificationCapability> {
+        // 能力探测必须与其他平台查询一样运行在 owner thread。
+        self.ensure_owner("Platform::system_notification_capability")?;
+        // 把只读身份借用交给目标平台 Provider 探测。
+        imp::system_notification_capability(self.notification_app_user_model_id.as_ref())
+    }
+
     /// 同步发送一条系统通知。
     pub fn show_notification(&mut self, notification: SystemNotification) -> Result<()> {
         self.ensure_owner("Platform::show_notification")?;
@@ -158,7 +187,37 @@ impl Platform {
                 "Platform::show_notification: text must not contain NUL",
             ));
         }
-        imp::show_notification(&notification)
+        // 在发送前读取可解释的能力状态，禁止未配置或未登记时伪成功。
+        match self.system_notification_capability()? {
+            // 就绪时才进入目标平台 Adapter。
+            SystemNotificationCapability::Available => imp::show_notification(
+                // Windows 使用身份，其他平台明确忽略该参数。
+                self.notification_app_user_model_id.as_ref(),
+                // 通知值只借用到同步调用结束。
+                &notification,
+            ),
+            // Windows 未配置身份时保留产品决策要求的 NotImplemented。
+            SystemNotificationCapability::IdentityRequired => Err(Error::new(
+                // 未提供部署身份意味着当前调用尚不可实现。
+                Errc::NotImplemented,
+                // 诊断给出明确配置与安装器登记指引。
+                "Platform::show_notification: configure an AppUserModelId and register the same identity in an MSIX package or Start Menu shortcut",
+            )),
+            // 配置存在但部署登记缺失时返回可区分的状态错误。
+            SystemNotificationCapability::IdentityUnregistered => Err(Error::new(
+                // 缺失系统登记是环境状态错误，而不是发送成功。
+                Errc::InvalidState,
+                // 诊断明确要求安装器补齐同一 AUMID。
+                "Platform::show_notification: configured AppUserModelId is not registered by the installed application",
+            )),
+            // 没有 Provider 的目标继续返回稳定的未实现错误。
+            SystemNotificationCapability::Unsupported => Err(Error::new(
+                // 目标平台缺少通知 Adapter。
+                Errc::NotImplemented,
+                // 诊断保持对调用方可操作。
+                "Platform::show_notification: this target has no system-notification provider",
+            )),
+        }
     }
 
     fn ensure_owner(&self, operation: &str) -> Result<()> {

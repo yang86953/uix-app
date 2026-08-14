@@ -6,7 +6,10 @@ use crate::core::{Errc, Error, Result};
 use crate::native::backends::linux::platform::LinuxPlatform;
 use crate::native::platform::Platform as NativePlatform;
 use crate::platform::hardware::{DisplayInfo, MemoryInfo, OsInfo};
-use crate::platform::services::{SpecialDir, SystemNotification};
+// 引入跨平台通知身份与能力状态契约。
+use crate::platform::services::{
+    AppUserModelId, SpecialDir, SystemNotification, SystemNotificationCapability,
+};
 
 pub(crate) struct State;
 
@@ -160,7 +163,21 @@ pub(crate) fn special_dir(directory: SpecialDir) -> Result<PathBuf> {
     }
 }
 
-pub(crate) fn show_notification(notification: &SystemNotification) -> Result<()> {
+// Linux provider 不需要 Windows 应用身份，命令存在性由发送结果类型化报告。
+pub(crate) fn system_notification_capability(
+    // 跨平台门面统一传入身份，Linux 明确忽略。
+    _app_user_model_id: Option<&AppUserModelId>,
+) -> Result<SystemNotificationCapability> {
+    // notify-send provider 已编译进入当前目标。
+    Ok(SystemNotificationCapability::Available)
+}
+
+pub(crate) fn show_notification(
+    // Linux 通知不消费 Windows AUMID。
+    _app_user_model_id: Option<&AppUserModelId>,
+    // 通知内容继续交给 notify-send。
+    notification: &SystemNotification,
+) -> Result<()> {
     let status = Command::new("notify-send")
         .arg("--app-name")
         .arg("UIX")

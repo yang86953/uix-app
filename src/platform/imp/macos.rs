@@ -1,4 +1,4 @@
-use std::ffi::{c_char, c_void, CStr};
+use std::ffi::{CStr, c_char, c_void};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
@@ -6,7 +6,10 @@ use crate::core::{Errc, Error, Result};
 use crate::native::backends::macos::platform::MacosPlatform;
 use crate::native::platform::Platform as NativePlatform;
 use crate::platform::hardware::{DisplayInfo, MemoryInfo, OsInfo};
-use crate::platform::services::{SpecialDir, SystemNotification};
+// 引入跨平台通知身份与能力状态契约。
+use crate::platform::services::{
+    AppUserModelId, SpecialDir, SystemNotification, SystemNotificationCapability,
+};
 
 pub(crate) struct State;
 
@@ -123,7 +126,21 @@ pub(crate) fn special_dir(directory: SpecialDir) -> Result<PathBuf> {
     Ok(path)
 }
 
-pub(crate) fn show_notification(notification: &SystemNotification) -> Result<()> {
+// macOS provider 不需要 Windows 应用身份，命令故障由发送结果报告。
+pub(crate) fn system_notification_capability(
+    // 跨平台门面统一传入身份，macOS 明确忽略。
+    _app_user_model_id: Option<&AppUserModelId>,
+) -> Result<SystemNotificationCapability> {
+    // osascript provider 已编译进入当前目标。
+    Ok(SystemNotificationCapability::Available)
+}
+
+pub(crate) fn show_notification(
+    // macOS 通知不消费 Windows AUMID。
+    _app_user_model_id: Option<&AppUserModelId>,
+    // 通知内容继续交给 osascript。
+    notification: &SystemNotification,
+) -> Result<()> {
     let status = Command::new("osascript")
         .args([
             "-e",

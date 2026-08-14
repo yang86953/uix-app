@@ -130,6 +130,12 @@ fn platform_query_and_service_documentation_examples_compile() {
         |platform: &mut uix::platform::Platform| -> uix::core::Result<std::path::PathBuf> {
             // 查询 owned 文档目录，不创建目录。
             let documents = platform.special_dir(uix::platform::services::SpecialDir::Documents)?;
+            // 应用以验证后的 AUMID 显式配置 Windows 通知身份。
+            let identity = uix::platform::services::AppUserModelId::new("UIX.NotificationDemo")?;
+            // Platform 只保存身份，部署层仍负责 MSIX 或开始菜单登记。
+            platform.set_notification_app_user_model_id(identity)?;
+            // 调用方可在发送前读取可解释的就绪状态。
+            let _capability = platform.system_notification_capability()?;
             // 通知调用通过同一可变 owner 借用传播 typed failure。
             platform.show_notification(uix::platform::services::SystemNotification::new(
                 "UIX",
