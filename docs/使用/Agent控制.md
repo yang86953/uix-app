@@ -45,6 +45,11 @@ cargo run --release --manifest-path demo/Cargo.toml --features "agent-control,te
 test-harness 注入入口。图形会话、恢复状态机和最终呈现仍由 Application System 与 RHI
 唯一拥有。
 
+仓库内对应的 Windows 真实窗口测试入口是
+[`uix_lang_graphics_recovery_windows.rs`](../../tests/uix_lang_graphics_recovery_windows.rs)；
+它依次验证 DeviceLost、SurfaceLost、每轮 `presented_revision` 与恢复后交互。构建和
+运行命令见 [`uix-lang-demo/README.md`](../../demo/uix-lang-demo/README.md)。
+
 ## 端点协议
 
 - JSON Lines 协议，同用户本机端点。
