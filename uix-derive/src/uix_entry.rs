@@ -1,5 +1,8 @@
-// 引入环境、文件系统与路径能力。
-use std::{env, fs, path::Path};
+// 引入环境与路径能力。
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
 
 // 引入过程宏跨度与令牌流。
 use proc_macro2::TokenStream;
@@ -10,9 +13,11 @@ use syn::LitStr;
 
 // 引入完整 UIX 文档解析与生成入口。
 use crate::uix_lang::{
-    generate_document_app, generate_document_view, generate_record_items, parse_document,
-    Diagnostic,
+    Diagnostic, Document, generate_document_app, generate_document_view, generate_record_items,
+    parse_document,
 };
+// 引入过程宏边界拥有的文件依赖解析 Gate。
+use crate::uix_import::{ImportDiagnostic, ResolvedDocument, reject_inline_imports, resolve_file};
 
 // 公开 uix! 自动区分 .uix 路径与内嵌源码。
 pub(crate) fn expand_public(input: &LitStr) -> TokenStream {
@@ -33,7 +38,7 @@ pub(crate) fn expand_public(input: &LitStr) -> TokenStream {
 // 内部测试宏始终把字符串视为内嵌源码。
 pub(crate) fn expand_inline(input: &LitStr) -> TokenStream {
     // 使用稳定内嵌来源标签生成代码。
-    expand_source(&input.value(), "<inline>", None, input)
+    expand_source(&input.value(), "<inline>", input)
 }
 
 // 公开 uix_app! 自动区分 .uix 路径与内嵌源码。
@@ -57,7 +62,7 @@ pub(crate) fn expand_app_public(input: &LitStr) -> TokenStream {
 // 内部测试宏始终把字符串视为内嵌 App 源码。
 pub(crate) fn expand_app_inline(input: &LitStr) -> TokenStream {
     // 使用稳定内嵌来源标签生成 App builder。
-    expand_app_source(&input.value(), "<inline>", None, input)
+    expand_app_source(&input.value(), "<inline>", input)
 }
 
 // 从调用 crate 的 CARGO_MANIFEST_DIR 读取 App .uix 文件。
@@ -85,58 +90,30 @@ fn expand_app_file(input: &LitStr) -> TokenStream {
             );
         }
     };
-    // 读取用户传入的相对或绝对路径。
-    let requested = input.value();
-    // 绝对路径保持原样，相对路径基于调用 crate。
-    let resolved = if Path::new(&requested).is_absolute() {
-        // 复制绝对路径。
-        Path::new(&requested).to_path_buf()
-    } else {
-        // 拼接调用 crate 清单目录。
-        Path::new(&manifest_dir).join(&requested)
+    // 委托可测试的显式清单目录入口。
+    expand_app_file_at(input, Path::new(&manifest_dir))
+}
+
+// 相对指定清单目录解析文件图并生成 App builder。
+fn expand_app_file_at(input: &LitStr, manifest_dir: &Path) -> TokenStream {
+    // 解析根文件、递归导入与依赖追踪路径。
+    let resolved = match resolve_requested(input, manifest_dir) {
+        // 保存完整合并文档。
+        Ok(resolved) => resolved,
+        // 文件图诊断已经转换为编译错误。
+        Err(error) => return error,
     };
-    // 在过程宏执行期读取 UTF-8 源码。
-    let source = match fs::read_to_string(&resolved) {
-        // 保存有效 UTF-8 文档。
-        Ok(source) => source,
-        // 路径、权限或编码错误转为 compile_error。
-        Err(error) => {
-            // 返回文件读取诊断。
-            return entry_error(
-                // 展示用户可识别的请求路径。
-                &requested,
-                // 文件读取前没有更精确行号。
-                1,
-                // 文件读取前没有更精确列号。
-                1,
-                // 说明解析后的实际路径与系统原因。
-                format!("无法读取 UIX 文件 {}：{error}", resolved.display()),
-                // 给出路径、权限与 UTF-8 修复建议。
-                "确认路径相对调用 crate 的 CARGO_MANIFEST_DIR、文件存在且为 UTF-8",
-                // 把错误锚定到路径字面量。
-                input,
-            );
-        }
+    // 使用用户请求路径生成 App 诊断。
+    let source_name = input.value();
+    // 生成合并文档对应的 App builder。
+    let generated = match generate_document_app(&resolved.document) {
+        // 保存成功生成的 App builder。
+        Ok(generated) => generated,
+        // 转换结构化 codegen 诊断。
+        Err(error) => return diagnostic_error(&source_name, &error, input),
     };
-    // 规范化路径供依赖追踪。
-    let tracked_path = resolved
-        // 尝试消除相对片段。
-        .canonicalize()
-        // 失败时保留已解析路径。
-        .unwrap_or(resolved);
-    // 把绝对路径转换为 include_str! 字面量。
-    let tracked_literal = LitStr::new(&tracked_path.to_string_lossy(), input.span());
-    // 解析文件并生成 App builder。
-    expand_app_source(
-        // 传入文件源码。
-        &source,
-        // 传入用户请求路径。
-        &requested,
-        // 生成 rustc 文件依赖追踪。
-        Some(tracked_literal),
-        // 锚定到宏路径字面量。
-        input,
-    )
+    // 注入全部文件的 rustc 编译依赖。
+    tracked_expression(generated, &resolved.tracked_files, input)
 }
 
 // 解析 UIX 源码并生成公开 App builder 令牌。
@@ -145,13 +122,11 @@ fn expand_app_source(
     source: &str,
     // 接收诊断来源名称。
     source_name: &str,
-    // 接收可选文件依赖字面量。
-    tracked_file: Option<LitStr>,
     // 接收宏输入跨度。
     input: &LitStr,
 ) -> TokenStream {
-    // 执行纯编译期解析与 App 代码生成。
-    let generated = parse_document(source)
+    // 执行纯编译期解析、内嵌导入 Gate 与 App 代码生成。
+    let generated = parse_inline_document(source)
         // 解析成功后生成现有 App builder。
         .and_then(|document| generate_document_app(&document));
     // 失败时生成包含来源、位置、原因与建议的编译错误。
@@ -161,16 +136,6 @@ fn expand_app_source(
         // 转换结构化 UIX 诊断。
         Err(error) => return diagnostic_error(source_name, &error, input),
     };
-    // 文件入口用 include_str! 让 rustc 跟踪变更。
-    if let Some(tracked_file) = tracked_file {
-        // 返回仅含编译期依赖与生成 App 的表达式。
-        return quote! {{
-            // 让文件修改触发宏调用 crate 重新编译。
-            const _: &str = ::std::include_str!(#tracked_file);
-            // 运行期只组装现有 App builder，不解析源码。
-            #app
-        }};
-    }
     // 内嵌入口直接返回预生成 App builder。
     app
 }
@@ -206,58 +171,24 @@ fn expand_file(input: &LitStr) -> TokenStream {
 
 // 相对指定清单目录读取文件并生成依赖追踪令牌。
 fn expand_file_at(input: &LitStr, manifest_dir: &Path) -> TokenStream {
-    // 读取用户传入的相对或绝对路径。
-    let requested = input.value();
-    // 绝对路径保持原样，相对路径基于调用 crate。
-    let resolved = if Path::new(&requested).is_absolute() {
-        // 复制绝对路径。
-        Path::new(&requested).to_path_buf()
-    } else {
-        // 拼接调用 crate 清单目录。
-        manifest_dir.join(&requested)
+    // 解析根文件、递归导入与依赖追踪路径。
+    let resolved = match resolve_requested(input, manifest_dir) {
+        // 保存完整合并文档。
+        Ok(resolved) => resolved,
+        // 文件图诊断已经转换为编译错误。
+        Err(error) => return error,
     };
-    // 在过程宏执行期读取 UTF-8 源码。
-    let source = match fs::read_to_string(&resolved) {
-        // 保存有效 UTF-8 文档。
-        Ok(source) => source,
-        // 路径、权限或编码错误转为 compile_error。
-        Err(error) => {
-            // 返回文件读取诊断。
-            return entry_error(
-                // 展示用户可识别的请求路径。
-                &requested,
-                // 文件读取前没有更精确行号。
-                1,
-                // 文件读取前没有更精确列号。
-                1,
-                // 说明解析后的实际路径与系统原因。
-                format!("无法读取 UIX 文件 {}：{error}", resolved.display()),
-                // 给出路径、权限与 UTF-8 修复建议。
-                "确认路径相对调用 crate 的 CARGO_MANIFEST_DIR、文件存在且为 UTF-8",
-                // 把错误锚定到路径字面量。
-                input,
-            );
-        }
+    // 使用用户请求路径生成 View 诊断。
+    let source_name = input.value();
+    // 生成合并文档对应的 View。
+    let generated = match generate_document_view(&resolved.document) {
+        // 保存成功生成的 View。
+        Ok(generated) => generated,
+        // 转换结构化 codegen 诊断。
+        Err(error) => return diagnostic_error(&source_name, &error, input),
     };
-    // 成功读取后规范化路径供依赖追踪与诊断。
-    let tracked_path = resolved
-        // 尝试消除相对片段。
-        .canonicalize()
-        // 文件已读取成功，失败时保留原解析路径。
-        .unwrap_or(resolved);
-    // 把绝对路径转换为 include_str! 字面量。
-    let tracked_literal = LitStr::new(&tracked_path.to_string_lossy(), input.span());
-    // 使用请求路径作为稳定用户诊断标签。
-    expand_source(
-        // 传入文件源码。
-        &source,
-        // 传入用户请求路径。
-        &requested,
-        // 生成 rustc 文件依赖追踪。
-        Some(tracked_literal),
-        // 锚定到宏路径字面量。
-        input,
-    )
+    // 注入全部文件的 rustc 编译依赖。
+    tracked_expression(generated, &resolved.tracked_files, input)
 }
 
 // 公开 uix_items! 自动区分 .uix 路径与内嵌源码。
@@ -279,7 +210,7 @@ pub(crate) fn expand_items_public(input: &LitStr) -> TokenStream {
 // 内部测试宏始终把字符串视为内嵌源码。
 pub(crate) fn expand_items_inline(input: &LitStr) -> TokenStream {
     // 使用稳定内嵌来源标签生成 record 结构体。
-    expand_items_source(&input.value(), "<inline>", None, input)
+    expand_items_source(&input.value(), "<inline>", input)
 }
 
 // 从调用 crate 的 CARGO_MANIFEST_DIR 读取 .uix 文件。
@@ -313,58 +244,24 @@ fn expand_items_file(input: &LitStr) -> TokenStream {
 
 // 相对指定清单目录读取文件并生成 record 结构体令牌。
 fn expand_items_file_at(input: &LitStr, manifest_dir: &Path) -> TokenStream {
-    // 读取用户传入的相对或绝对路径。
-    let requested = input.value();
-    // 绝对路径保持原样，相对路径基于调用 crate。
-    let resolved = if Path::new(&requested).is_absolute() {
-        // 复制绝对路径。
-        Path::new(&requested).to_path_buf()
-    } else {
-        // 拼接调用 crate 清单目录。
-        manifest_dir.join(&requested)
+    // 解析根文件、递归导入与依赖追踪路径。
+    let resolved = match resolve_requested(input, manifest_dir) {
+        // 保存完整合并文档。
+        Ok(resolved) => resolved,
+        // 文件图诊断已经转换为编译错误。
+        Err(error) => return error,
     };
-    // 在过程宏执行期读取 UTF-8 源码。
-    let source = match fs::read_to_string(&resolved) {
-        // 保存有效 UTF-8 文档。
-        Ok(source) => source,
-        // 路径、权限或编码错误转为 compile_error。
-        Err(error) => {
-            // 返回文件读取诊断。
-            return entry_error(
-                // 展示用户可识别的请求路径。
-                &requested,
-                // 文件读取前没有更精确行号。
-                1,
-                // 文件读取前没有更精确列号。
-                1,
-                // 说明解析后的实际路径与系统原因。
-                format!("无法读取 UIX 文件 {}：{error}", resolved.display()),
-                // 给出路径、权限与 UTF-8 修复建议。
-                "确认路径相对调用 crate 的 CARGO_MANIFEST_DIR、文件存在且为 UTF-8",
-                // 把错误锚定到路径字面量。
-                input,
-            );
-        }
+    // 使用用户请求路径生成 record 诊断。
+    let source_name = input.value();
+    // 生成合并文档中的全部 record。
+    let items = match generate_record_items(&resolved.document) {
+        // 保存成功生成的结构体序列。
+        Ok(items) => items,
+        // 转换结构化 codegen 诊断。
+        Err(error) => return diagnostic_error(&source_name, &error, input),
     };
-    // 成功读取后规范化路径供依赖追踪与诊断。
-    let tracked_path = resolved
-        // 尝试消除相对片段。
-        .canonicalize()
-        // 文件已读取成功，失败时保留原解析路径。
-        .unwrap_or(resolved);
-    // 把绝对路径转换为 include_str! 字面量。
-    let tracked_literal = LitStr::new(&tracked_path.to_string_lossy(), input.span());
-    // 使用请求路径作为稳定用户诊断标签。
-    expand_items_source(
-        // 传入文件源码。
-        &source,
-        // 传入用户请求路径。
-        &requested,
-        // 生成 rustc 文件依赖追踪。
-        Some(tracked_literal),
-        // 锚定到宏路径字面量。
-        input,
-    )
+    // 把全部文件追踪常量与 items 拼接为模块级令牌。
+    tracked_items(items, &resolved.tracked_files, input)
 }
 
 // 解析 UIX 源码并生成全部 record 结构体令牌。
@@ -373,13 +270,12 @@ fn expand_items_source(
     source: &str,
     // 接收诊断来源名称。
     source_name: &str,
-    // 接收可选文件依赖字面量。
-    tracked_file: Option<LitStr>,
     // 接收宏输入跨度。
     input: &LitStr,
 ) -> TokenStream {
-    // 执行纯编译期解析与 record 结构体生成。
-    let generated = parse_document(source).and_then(|document| generate_record_items(&document));
+    // 执行纯编译期解析、内嵌导入 Gate 与 record 结构体生成。
+    let generated =
+        parse_inline_document(source).and_then(|document| generate_record_items(&document));
     // 失败时生成包含来源、位置、原因与建议的编译错误。
     let items = match generated {
         // 保存成功生成的结构体。
@@ -387,16 +283,6 @@ fn expand_items_source(
         // 转换结构化 UIX 诊断。
         Err(error) => return diagnostic_error(source_name, &error, input),
     };
-    // 文件入口用 include_str! 让 rustc 跟踪变更。
-    if let Some(tracked_file) = tracked_file {
-        // 返回编译期依赖常量与生成结构体的 item 序列。
-        return quote! {
-            // 让文件修改触发宏调用 crate 重新编译。
-            const _: &str = ::std::include_str!(#tracked_file);
-            // 生成模块级 record 结构体。
-            #items
-        };
-    }
     // 内嵌入口直接返回生成结构体。
     items
 }
@@ -407,13 +293,11 @@ fn expand_source(
     source: &str,
     // 接收诊断来源名称。
     source_name: &str,
-    // 接收可选文件依赖字面量。
-    tracked_file: Option<LitStr>,
     // 接收宏输入跨度。
     input: &LitStr,
 ) -> TokenStream {
-    // 执行纯编译期解析与代码生成。
-    let generated = parse_document(source)
+    // 执行纯编译期解析、内嵌导入 Gate 与代码生成。
+    let generated = parse_inline_document(source)
         // 解析成功后生成组件感知 View。
         .and_then(|document| generate_document_view(&document));
     // 失败时生成包含来源、位置、原因与建议的编译错误。
@@ -423,18 +307,97 @@ fn expand_source(
         // 转换结构化 UIX 诊断。
         Err(error) => return diagnostic_error(source_name, &error, input),
     };
-    // 文件入口用 include_str! 让 rustc 跟踪变更。
-    if let Some(tracked_file) = tracked_file {
-        // 返回仅含编译期依赖与生成 View 的表达式。
-        return quote! {{
-            // 让文件修改触发宏调用 crate 重新编译。
-            const _: &str = ::std::include_str!(#tracked_file);
-            // 运行期只构建预生成 View，不解析源码。
-            #view
-        }};
-    }
     // 内嵌入口直接返回预生成 View。
     view
+}
+
+// 解析内嵌文档并拒绝无法确定基准目录的导入。
+fn parse_inline_document(source: &str) -> Result<Document, Diagnostic> {
+    // 先执行纯语法解析。
+    let document = parse_document(source)?;
+    // 对内嵌入口执行专用导入 Gate。
+    reject_inline_imports(&document)?;
+    // 返回不含导入的有效文档。
+    Ok(document)
+}
+
+// 相对调用 crate 目录解析根文件与递归依赖。
+fn resolve_requested(
+    // 接收宏路径字面量。
+    input: &LitStr,
+    // 接收调用 crate 清单目录。
+    manifest_dir: &Path,
+) -> Result<ResolvedDocument, TokenStream> {
+    // 读取用户传入的相对或绝对路径。
+    let requested = input.value();
+    // 绝对路径保持原样，相对路径基于调用 crate。
+    let resolved = if Path::new(&requested).is_absolute() {
+        // 复制绝对路径。
+        PathBuf::from(&requested)
+    } else {
+        // 拼接调用 crate 清单目录。
+        manifest_dir.join(&requested)
+    };
+    // 委托唯一文件图 resolver。
+    resolve_file(&resolved).map_err(|error| import_diagnostic_error(error, input))
+}
+
+// 把真实来源文件的导入诊断转换为编译错误。
+fn import_diagnostic_error(error: ImportDiagnostic, input: &LitStr) -> TokenStream {
+    // 使用 resolver 保存的真实来源与结构化诊断。
+    diagnostic_error(&error.source_name, &error.diagnostic, input)
+}
+
+// 生成每个依赖文件对应的 include_str! 字面量。
+fn tracked_literals(paths: &[PathBuf], input: &LitStr) -> Vec<LitStr> {
+    // 保持 resolver 的首次读取顺序。
+    paths
+        // 遍历全部规范依赖路径。
+        .iter()
+        // 把路径锚定到当前宏调用跨度。
+        .map(|path| LitStr::new(&path.to_string_lossy(), input.span()))
+        // 收集供 quote 重复展开。
+        .collect()
+}
+
+// 把依赖追踪包裹到表达式生成物之外。
+fn tracked_expression(
+    // 接收已经生成的表达式令牌。
+    generated: TokenStream,
+    // 接收根文件与递归导入路径。
+    paths: &[PathBuf],
+    // 接收宏调用跨度。
+    input: &LitStr,
+) -> TokenStream {
+    // 创建稳定绝对路径字面量。
+    let tracked = tracked_literals(paths, input);
+    // 返回只含编译期依赖与生成表达式的块。
+    quote! {{
+        // 让任一文件修改触发宏调用 crate 重新编译。
+        #(const _: &str = ::std::include_str!(#tracked);)*
+        // 运行期只执行预生成结果。
+        #generated
+    }}
+}
+
+// 把依赖追踪与模块级 items 顺序拼接。
+fn tracked_items(
+    // 接收已经生成的模块级 items。
+    generated: TokenStream,
+    // 接收根文件与递归导入路径。
+    paths: &[PathBuf],
+    // 接收宏调用跨度。
+    input: &LitStr,
+) -> TokenStream {
+    // 创建稳定绝对路径字面量。
+    let tracked = tracked_literals(paths, input);
+    // 返回模块级依赖常量与结构体序列。
+    quote! {
+        // 让任一文件修改触发宏调用 crate 重新编译。
+        #(const _: &str = ::std::include_str!(#tracked);)*
+        // 插入预生成模块级 items。
+        #generated
+    }
 }
 
 // 把 UIX 结构化诊断转换为 compile_error!。
@@ -573,5 +536,44 @@ mod tests {
         assert!(tokens.contains("column"));
         // 生成物不能包含编译期 parser 调用。
         assert!(!tokens.contains("parse_document"));
+    }
+
+    // 验证三个文件宏入口都递归解析并追踪完整导入图。
+    #[test]
+    fn file_entries_track_every_nested_import() {
+        // 创建包含两层相对导入的共享 fixture 路径。
+        let input = LitStr::new(
+            // 使用公开消费者共享的嵌套导入根文件。
+            "tests/fixtures/uix_lang/imports/root.uix",
+            // 使用调用点跨度。
+            Span::call_site(),
+        );
+        // 创建使用相同依赖图的 App 根路径。
+        let app_input = LitStr::new(
+            // 使用包含 App 根的嵌套导入 fixture。
+            "tests/fixtures/uix_lang/imports/app-root.uix",
+            // 使用调用点跨度。
+            Span::call_site(),
+        );
+        // 从 uix-derive 清单目录上移到仓库根。
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        // 分别展开 View、App 与 record 三个文件入口。
+        let outputs = [
+            // 展开公开 uix! 文件路径。
+            expand_file_at(&input, &repository_root),
+            // 展开公开 uix_app! 文件路径。
+            expand_app_file_at(&app_input, &repository_root),
+            // 展开公开 uix_items! 文件路径。
+            expand_items_file_at(&input, &repository_root),
+        ];
+        // 每个入口都必须追踪根、页面与共享组件三个文件。
+        for output in outputs {
+            // 规范化令牌便于计数。
+            let tokens = output.to_string();
+            // 三个规范文件各生成一个依赖常量。
+            assert_eq!(tokens.matches("include_str").count(), 3, "{tokens}");
+            // 展开结果不能包含运行时 parser 调用。
+            assert!(!tokens.contains("parse_document"));
+        }
     }
 }
