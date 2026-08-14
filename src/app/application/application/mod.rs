@@ -7,11 +7,11 @@ use std::sync::{atomic::AtomicBool, Arc};
 use std::time::{Duration, Instant};
 
 use crate::app::app_events::ThemeApplied;
-use crate::app::application::app_handle::{
-    prepare_app_root, AppFeedbackState, AppHandle,
-};
+use crate::app::application::app_handle::{prepare_app_root, AppHandle};
 use crate::app::application::cli::Cli;
 use crate::app::application::di::Container;
+// 引入 Application System 私有逐窗反馈 owner。
+use crate::app::application::feedback_state::AppFeedbackState;
 // 引入 App 作用域的 UIX 具名主题表。
 use crate::app::application::named_themes::NamedThemes;
 use crate::app::event_loop::run_window_session_loop_with_system_theme_and_tasks;

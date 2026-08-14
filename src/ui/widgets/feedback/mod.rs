@@ -1,6 +1,8 @@
 //! 反馈组件：弹层、提示与加载状态。
 
 pub mod alert;
+// 声明租约组件与关闭事实共享反馈 capability。
+pub mod declaration;
 pub mod drawer;
 pub mod message;
 pub mod modal;
@@ -16,6 +18,7 @@ pub(crate) mod toast_motion;
 pub mod tooltip;
 
 pub use alert::*;
+pub use declaration::*;
 pub use drawer::*;
 pub use message::*;
 pub use modal::*;

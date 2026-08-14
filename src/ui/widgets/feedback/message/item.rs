@@ -4,6 +4,8 @@ use crate::native::capabilities::system::StatusLevel;
 use crate::ui::widgets::feedback::toast_motion::ToastQueue;
 
 use super::Message;
+// 引入声明条目关闭原因。
+use crate::ui::widgets::feedback::declaration::FeedbackCloseReason;
 
 #[derive(Debug, Clone)]
 pub struct MessageItem {
@@ -34,6 +36,44 @@ impl MessageHandle {
     pub fn add(&self, item: MessageItem) -> u64 {
         let duration_ms = item.duration_ms;
         self.queue.push(item, duration_ms)
+    }
+
+    // 首次写入带关闭观察器的 keyed 声明条目。
+    pub(crate) fn push_declaration<F>(&self, id: u64, item: MessageItem, on_close: F)
+    where
+        // Host 可能在任意 UI 生命周期边界调用观察器。
+        F: Fn(FeedbackCloseReason) + Send + Sync + 'static,
+    {
+        // 保存时长供队列调度。
+        let duration_ms = item.duration_ms;
+        // 外部高位 ID 与命令式本地 ID 分离。
+        self.queue.push_external_with_close(
+            id,
+            item,
+            duration_ms,
+            std::sync::Arc::new(on_close),
+        );
+    }
+
+    // 幂等更新 keyed 声明条目。
+    pub(crate) fn update_declaration(&self, id: u64, item: MessageItem) {
+        // 保存时长供队列判断是否重启计时。
+        let duration_ms = item.duration_ms;
+        // 保留现有关闭观察器并替换配置。
+        self.queue.update_external(id, item, duration_ms);
+    }
+
+    // 声明卸载时无关闭事实地释放条目。
+    pub(crate) fn release_declaration(&self, id: u64) -> bool {
+        // 释放外部稳定 key 与观察器。
+        self.queue.release_external(id)
+    }
+
+    // 由 owner 或聚焦测试按程序化原因关闭声明条目。
+    #[cfg(test)]
+    pub(crate) fn close_declaration(&self, id: u64) -> bool {
+        // 外部声明 ID 的关闭观察器会建立 tombstone。
+        self.queue.remove_external(id)
     }
 
     pub fn success(&self, content: impl Into<String>) -> u64 {

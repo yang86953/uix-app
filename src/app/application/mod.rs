@@ -10,5 +10,7 @@ pub(crate) mod app_handle;
 pub mod application;
 pub mod cli;
 pub mod di;
+// 保存 Application System 私有的逐窗反馈 owner 与声明租约表。
+mod feedback_state;
 // 保存 UIX 文档生成的 App 作用域具名主题表。
 mod named_themes;

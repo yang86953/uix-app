@@ -114,8 +114,9 @@ pub use crate::ui::{
 #[cfg(feature = "feedback")]
 // 共享的 TriggerMode 与 TooltipPlacement 已留在基础导入面。
 pub use crate::ui::{
-    Alert, Drawer, DrawerPlacement, Message, MessageItem, Modal, ModalBuilder,
-    ModalContext, Notification, NotificationItem, Popconfirm, PopconfirmPlacement, Popover,
+    Alert, Drawer, DrawerPlacement, FeedbackCloseReason, FeedbackClosed, Message,
+    MessageDeclaration, MessageItem, Modal, ModalBuilder, ModalContext, Notification,
+    NotificationDeclaration, NotificationItem, Popconfirm, PopconfirmPlacement, Popover,
     PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode, ProgressType, Spin, SpinSize,
     Tooltip,
 };
