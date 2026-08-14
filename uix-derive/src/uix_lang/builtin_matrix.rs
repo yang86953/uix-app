@@ -9,7 +9,7 @@ struct PlannedBuiltin {
     category: &'static str,
 }
 
-// 登记六类内置组件文档与 App 入口中的规划中标签。
+// 登记仍未映射的内置组件文档与 App 入口标签。
 const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
     // 标签语法中的应用入口仍需要应用构建上下文。
     PlannedBuiltin {
@@ -56,11 +56,6 @@ const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
         name: "Popconfirm",
         category: "内置组件 / 反馈组件",
     },
-    // 反馈组件规划项。
-    PlannedBuiltin {
-        name: "ProgressBar",
-        category: "内置组件 / 反馈组件",
-    },
 ];
 
 // 为已登记但规划中的内置组件生成类别化诊断。
@@ -79,7 +74,7 @@ pub(crate) fn planned_builtin_diagnostic(element: &Element) -> Option<Diagnostic
             element.name, entry.category
         ),
         // 给出当前真实支持集合。
-        "当前使用 Text、Label、Button、ButtonGroup、FloatButton、FloatButtonGroup、FloatButtonBackTop、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、WindowDragRegion、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Image、ImageGroup、List、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Table、Menu、Dropdown、Steps、Pagination、Breadcrumb、Anchor、Tabs、QRCode、Watermark、RichText、Alert、Modal、Drawer、Tooltip、Popover、FocusTrap 或 Spin；Col 仅作为 Row/Grid 的直接子项，或先完成该组件的属性映射 Gate",
+        "当前使用 Text、Label、Button、ButtonGroup、FloatButton、FloatButtonGroup、FloatButtonBackTop、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、WindowDragRegion、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Image、ImageGroup、List、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Table、Menu、Dropdown、Steps、Pagination、Breadcrumb、Anchor、Tabs、QRCode、Watermark、RichText、Alert、ProgressBar、Modal、Drawer、Tooltip、Popover、FocusTrap 或 Spin；Col 仅作为 Row/Grid 的直接子项，或先完成该组件的属性映射 Gate",
     ))
 }
 
@@ -106,11 +101,10 @@ mod tests {
             .iter()
             .map(|entry| entry.category)
             .collect::<BTreeSet<_>>();
-        // 仍有规划中标签的四类内置组件必须全部出现。
+        // 仍有规划中标签的三类内置组件必须全部出现。
         for category in [
             "内置组件 / 输入组件",
             "内置组件 / 展示组件",
-            "内置组件 / 导航组件",
             "内置组件 / 反馈组件",
         ] {
             // 当前类别必须存在至少一个登记项。

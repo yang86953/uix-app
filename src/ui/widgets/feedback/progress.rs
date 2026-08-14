@@ -25,11 +25,45 @@ pub enum ProgressMode {
     Indeterminate,
 }
 
+/// 记录动态进度输入被安全归一化的原因。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgressNormalizationReason {
+    /// 输入不是有限浮点数。
+    NonFinite,
+    /// 输入低于公开 fraction 下界。
+    BelowRange,
+    /// 输入高于公开 fraction 上界。
+    AboveRange,
+}
+
+// 为诊断日志提供稳定、无本地化依赖的原因标识。
+impl ProgressNormalizationReason {
+    /// 返回适合日志与自动化断言的稳定名称。
+    pub const fn as_str(self) -> &'static str {
+        // 按公开原因枚举返回稳定文本。
+        match self {
+            // 非有限输入使用明确分类。
+            Self::NonFinite => "non_finite",
+            // 下界越界使用明确分类。
+            Self::BelowRange => "below_range",
+            // 上界越界使用明确分类。
+            Self::AboveRange => "above_range",
+        }
+    }
+}
+
 component! {
     /// ProgressBar widget.
     pub struct ProgressBar {
         progress: f32,
         mode: ProgressMode,
+        // 记录最近输入是否经过安全归一化。
+        input_normalized: bool,
+        // 记录最近输入的稳定归一化原因。
+        normalization_reason: Option<ProgressNormalizationReason>,
+        // 把日志去重门闩排除在公开快照之外。
+        #[snapshot(skip)]
+        normalization_reported: bool,
         stroke_color: Option<Color>,
         track_color: Option<Color>,
         height: f32,
@@ -180,6 +214,12 @@ component! {
             ProgressMode::Determinate(_) => Rect::zero(),
         }
     }
+
+    // 初次挂载时只为非法动态输入记录一次可观察诊断。
+    on_mount => (&mut self) {
+        // 把首次归一化事实报告给现有 tracing 诊断边界。
+        self.report_normalization_if_needed();
+    }
 }
 
 impl Default for ProgressBar {
@@ -195,6 +235,12 @@ impl ProgressBar {
         Self {
             progress: 0.0,
             mode: ProgressMode::Determinate(0.0),
+            // 默认 fraction 合法，无需标记归一化。
+            input_normalized: false,
+            // 默认状态没有归一化原因。
+            normalization_reason: None,
+            // 初始状态尚未报告任何归一化原因。
+            normalization_reported: false,
             stroke_color: None,
             track_color: None,
             height: 8.0,
@@ -212,7 +258,17 @@ impl ProgressBar {
     }
 
     pub fn progress(mut self, p: f32) -> Self {
-        self.progress = Self::normalize_progress(p);
+        // 一次计算归一值与原因，供绘制、快照和无障碍共享。
+        let (progress, reason) = Self::normalize_progress_with_reason(p);
+        // 保存安全 fraction 作为唯一呈现值。
+        self.progress = progress;
+        // 暴露本次输入是否发生归一化。
+        self.input_normalized = reason.is_some();
+        // 保存稳定原因供快照与去重日志使用。
+        self.normalization_reason = reason;
+        // 新声明尚未通过挂载或 reconcile 报告该原因。
+        self.normalization_reported = false;
+        // 兼容既有 Rust builder：显式 progress 选择确定模式。
         self.mode = ProgressMode::Determinate(self.progress);
         self
     }
@@ -249,6 +305,20 @@ impl ProgressBar {
 
     pub fn indeterminate(mut self) -> Self {
         self.mode = ProgressMode::Indeterminate;
+        self
+    }
+
+    /// 按动态布尔值显式选择模式，并保留确定模式的 fraction。
+    pub fn indeterminate_when(mut self, indeterminate: bool) -> Self {
+        // 生成器不依赖 builder 调用顺序决定最终模式。
+        self.mode = if indeterminate {
+            // 不确定模式只使用组件拥有的动画相位。
+            ProgressMode::Indeterminate
+        } else {
+            // 恢复确定模式时复用已归一化的保留 fraction。
+            ProgressMode::Determinate(self.progress)
+        };
+        // 返回完成模式选择的组件。
         self
     }
 
@@ -290,6 +360,18 @@ impl ProgressBar {
 
     pub fn animation_phase(&self) -> f32 {
         self.indeterminate_phase
+    }
+
+    /// 返回输入是否经过安全归一化。
+    pub fn input_normalized(&self) -> bool {
+        // 只读暴露快照同源事实。
+        self.input_normalized
+    }
+
+    /// 返回最近动态输入的归一化原因。
+    pub fn normalization_reason(&self) -> Option<ProgressNormalizationReason> {
+        // 只读暴露稳定原因枚举。
+        self.normalization_reason
     }
 
     fn render_dashboard(
@@ -442,6 +524,10 @@ impl ProgressBar {
         SnapshotFields::ProgressBar {
             progress: self.progress,
             mode: self.mode,
+            // 快照暴露最近输入是否经过归一化。
+            input_normalized: self.input_normalized,
+            // 快照暴露稳定归一化原因。
+            normalization_reason: self.normalization_reason,
             stroke_color: self.stroke_color,
             track_color: self.track_color,
             height: self.height,
@@ -452,13 +538,31 @@ impl ProgressBar {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
-        self.progress = Self::normalize_progress(next.progress);
+        // 对任何内部构造路径再次执行安全归一化。
+        let (progress, fallback_reason) = Self::normalize_progress_with_reason(next.progress);
+        // 优先保留声明构建期记录的原始归一化原因。
+        let next_reason = next.normalization_reason.or(fallback_reason);
+        // 记录原因类别是否发生状态转换。
+        let normalization_changed = self.normalization_reason != next_reason;
+        // 同步唯一安全 fraction。
+        self.progress = progress;
         self.mode = match next.mode {
-            ProgressMode::Determinate(progress) => {
-                ProgressMode::Determinate(Self::normalize_progress(progress))
-            }
+            // 确定模式始终消费与快照同源的唯一 fraction。
+            ProgressMode::Determinate(_) => ProgressMode::Determinate(self.progress),
+            // 不确定模式继续由组件动画相位驱动。
             ProgressMode::Indeterminate => ProgressMode::Indeterminate,
         };
+        // 同步可观察归一化标记。
+        self.input_normalized = next_reason.is_some();
+        // 同步稳定原因分类。
+        self.normalization_reason = next_reason;
+        // 原因变化后允许报告一次新状态。
+        if normalization_changed {
+            // 新的合法状态清除报告，新的非法类别等待本次报告。
+            self.normalization_reported = false;
+        }
+        // reconcile 只在合法转非法或非法类别变化时记录一次。
+        self.report_normalization_if_needed();
         self.stroke_color = next.stroke_color;
         self.track_color = next.track_color;
         self.height = Self::normalize_dimension(next.height);
@@ -472,12 +576,50 @@ impl ProgressBar {
         self.format_text = next.format_text;
     }
 
-    fn normalize_progress(value: f32) -> f32 {
-        if value.is_finite() {
-            value.clamp(0.0, 1.0)
-        } else {
-            0.0
+    /// 同时返回安全 fraction 与可观察归一化原因。
+    fn normalize_progress_with_reason(value: f32) -> (f32, Option<ProgressNormalizationReason>) {
+        // 非有限值统一回退公开默认值。
+        if !value.is_finite() {
+            // 返回零值与非有限原因。
+            return (0.0, Some(ProgressNormalizationReason::NonFinite));
         }
+        // 低于 fraction 下界时安全截断。
+        if value < 0.0 {
+            // 返回下界与越界原因。
+            return (0.0, Some(ProgressNormalizationReason::BelowRange));
+        }
+        // 高于 fraction 上界时安全截断。
+        if value > 1.0 {
+            // 返回上界与越界原因。
+            return (1.0, Some(ProgressNormalizationReason::AboveRange));
+        }
+        // 合法 fraction 原样进入唯一呈现状态。
+        (value, None)
+    }
+
+    /// 按原因状态转换至多记录一次归一化警告。
+    fn report_normalization_if_needed(&mut self) {
+        // 合法输入清除旧报告门闩。
+        let Some(reason) = self.normalization_reason else {
+            // 允许未来再次进入非法状态时报告。
+            self.normalization_reported = false;
+            // 合法状态不产生警告。
+            return;
+        };
+        // 同一非法原因在当前连续状态中不重复记录。
+        if self.normalization_reported {
+            // 保持每个原因状态只报告一次。
+            return;
+        }
+        // 使用稳定原因字段发布现有 tracing 警告。
+        tracing::warn!(
+            // 原因字段供日志消费者稳定筛选。
+            normalization_reason = reason.as_str(),
+            // 文本说明运行时已安全归一化。
+            "ProgressBar 动态 progress 输入已归一化到 0.0..=1.0"
+        );
+        // 标记当前原因已经报告。
+        self.normalization_reported = true;
     }
 
     fn normalize_dimension(value: f32) -> f32 {

@@ -327,6 +327,11 @@ mod alert_codegen;
 // 集中验证 Alert 生成、默认值、事件与拒绝路径。
 #[cfg(test)]
 mod alert_codegen_tests;
+// 定义 ProgressBar fraction、模式与形态的公开 API 代码生成边界。
+mod progress_codegen;
+// 集中验证 ProgressBar 生成、默认值与拒绝路径。
+#[cfg(test)]
+mod progress_codegen_tests;
 // 定义 Modal 受控状态、操作回调与有序内容子树的公开 API 代码生成边界。
 mod modal_codegen;
 // 集中验证 Modal 生成、默认值、事件与拒绝路径。
@@ -428,8 +433,8 @@ pub(crate) use window_drag_region_codegen::generate_window_drag_region;
 pub(crate) use component_ast::*;
 // 导出语言面数据类型到公开构造 API 的映射查询。
 pub(crate) use data_binding_codegen::{
-    DataConstructorSpec, data_chain_root, data_constructor_spec, is_data_constructor_chain,
-    normalize_number_literals, step_status_path,
+    data_chain_root, data_constructor_spec, is_data_constructor_chain, normalize_number_literals,
+    step_status_path, DataConstructorSpec,
 };
 // 向过程宏入口暴露组件感知文档生成函数。
 pub(crate) use component_codegen::generate_document_view;
@@ -556,6 +561,8 @@ pub(crate) use watermark_codegen::generate_watermark;
 pub(crate) use rich_text_codegen::generate_rich_text;
 // 向核心元素生成器暴露 Alert 叶组件专用映射。
 pub(crate) use alert_codegen::generate_alert;
+// 向核心元素生成器暴露 ProgressBar 叶组件专用映射。
+pub(crate) use progress_codegen::generate_progress_bar;
 // 向核心元素生成器暴露 Modal 容器组件专用映射。
 pub(crate) use modal_codegen::generate_modal;
 // 向核心元素生成器暴露 Drawer 容器组件专用映射。

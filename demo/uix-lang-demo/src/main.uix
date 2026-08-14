@@ -1065,7 +1065,11 @@ hoverStyleAction {
       // 组织加载内容。
       <Column gap="12px">
         // 展示面板小节标题。
-        <Text fontSize="heading5">Spin — 遮罩子树</Text>
+        <Text fontSize="heading5">ProgressBar / Spin — 进度与加载</Text>
+        // 展示确定模式的线形 fraction。
+        <ProgressBar progress="0.65" type="line" width="320px" />
+        // 展示保留确定 fraction 的圆形不确定模式。
+        <ProgressBar progress="0.65" indeterminate type="circle" width="72px" height="72px" />
         // 展示带遮罩子树的加载指示器。
         <Spin spinning text="正在加载" width="320px">
           // 展示被遮罩的卡片。
@@ -1077,7 +1081,7 @@ hoverStyleAction {
     // 结束加载反馈面板。
     </Container>
     // 说明未登记标签边界。
-    <Alert message="Message、Notification、ProgressBar、Popconfirm 标签尚未注册，保留 Rust API 边界。" type="info" />
+    <Alert message="Message、Notification、Popconfirm 标签尚未注册，保留 Rust API 边界。" type="info" />
   // 结束反馈组件内容。
   </Column>
 // 结束反馈组件页组件。
@@ -1265,7 +1269,7 @@ hoverStyleAction {
         // 说明数据展示标签覆盖。
         <Text>数据展示：Card / List / Skeleton / Empty / ResultView / Descriptions / Timeline / Calendar / Carousel / Tree / Table / Avatar / Image / ImageGroup / RichText</Text>
         // 说明反馈标签覆盖。
-        <Text>反馈：Alert / Modal / Drawer / Tooltip / Popover / FocusTrap / Spin</Text>
+        <Text>反馈：Alert / Modal / Drawer / Tooltip / Popover / FocusTrap / ProgressBar / Spin</Text>
         // 说明导航与框架标签覆盖。
         <Text>导航与框架：Menu / Dropdown / Navigation / Steps / Pagination / Breadcrumb / Anchor / Tabs / ThemeToggle / WindowControl / WindowDragRegion / QRCode / Watermark</Text>
         // 展示语言能力小节。
