@@ -106,7 +106,7 @@ impl WidgetTree {
     pub(crate) fn cancel_pointer_gesture_for_native_handoff(&mut self) {
         // 复用唯一手势取消实现，统一交付 DragEnd 与 PointerLeave 清理语义。
         self.cancel_active_pointer_gesture();
-    // 结束原生指针接管清理。
+        // 结束原生指针接管清理。
     }
 
     pub(super) fn dispatch_pointer_release(
@@ -206,6 +206,8 @@ impl WidgetTree {
     ) -> Option<EventResult> {
         let top = self.blocking_top_overlay_at(pos).cloned()?;
         if top.dismisses_on_outside() {
+            // 先通知具体 owner 执行用户取消语义，再移除当前浮层登记。
+            crate::ui::tree_widget_hooks::dismiss_overlay_owner_from_outside(self, top.owner());
             self.overlay_stack.remove(top.id());
             self.invalidate_paint(top.owner());
         }
@@ -296,7 +298,7 @@ mod tests {
             MouseButton::Left,
             // 本场景没有修饰键。
             KeyMod::NONE,
-        // 结束潜在手势建立。
+            // 结束潜在手势建立。
         );
         // 独立建立键盘焦点，确保指针取消不会伪造 WindowBlur。
         tree.managers_mut()
@@ -314,7 +316,7 @@ mod tests {
         assert!(!tree.managers().drag.is_dragging());
         // 键盘焦点必须保持，不能用 WindowBlur 代替 pointer cancel。
         assert_eq!(tree.managers().focus.focused_component(), Some(target));
-    // 结束原生接管手势测试。
+        // 结束原生接管手势测试。
     }
-// 结束 WidgetTree 原生接管测试模块。
+    // 结束 WidgetTree 原生接管测试模块。
 }

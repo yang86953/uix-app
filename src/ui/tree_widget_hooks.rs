@@ -12,9 +12,9 @@
 use crate::ui::component::widget::{WidgetCore, WidgetId, WidgetTree};
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
 use crate::ui::widgets::{Container, Grid, ScrollView, Space};
-// 反馈 capability 启用时才引入 Modal 生命周期类型。
+// 反馈 capability 启用时才引入 Modal 与 Popconfirm 生命周期类型。
 #[cfg(feature = "feedback")]
-use crate::ui::widgets::Modal;
+use crate::ui::widgets::{Modal, Popconfirm};
 // 导航 capability 启用时才引入兄弟项联动与 Tabs 焦点迁移所需类型。
 #[cfg(feature = "navigation")]
 use crate::ui::widgets::{NavItem, Tabs};
@@ -142,6 +142,63 @@ pub(crate) fn apply_modal_context_requests(tree: &mut WidgetTree, path: &[Widget
     {
         let _ = (tree, path);
     }
+}
+
+/// 把浮层外部点击转换为具体反馈组件拥有的用户取消动作。
+pub(crate) fn dismiss_overlay_owner_from_outside(tree: &mut WidgetTree, owner: WidgetId) {
+    // 反馈能力启用时通知 Popconfirm 的唯一取消端口。
+    #[cfg(feature = "feedback")]
+    {
+        // 只在 owner 仍可寻址且确实为 Popconfirm 时执行。
+        if let Some(popconfirm) = tree
+            // 获取浮层 owner 节点的可变引用。
+            .get_mut(owner)
+            // 下转到具体反馈组件。
+            .and_then(|node| {
+                node.component_mut()
+                    .as_any_mut()
+                    .downcast_mut::<Popconfirm>()
+            })
+        {
+            // 用户外部点击必须执行一次 @cancel 后再离场。
+            popconfirm.cancel_action();
+        }
+    }
+    // 关闭反馈能力时保留通用调用点并退化为空操作。
+    #[cfg(not(feature = "feedback"))]
+    {
+        // 消费参数以避免能力裁剪构建产生告警。
+        let _ = (tree, owner);
+    }
+}
+
+/// 返回具体组合组件在指针动作后应保持的焦点目标。
+pub(crate) fn pointer_focus_target(tree: &WidgetTree, target: WidgetId) -> WidgetId {
+    // 反馈能力启用时为组合 Popconfirm 恢复真实 trigger 焦点。
+    #[cfg(feature = "feedback")]
+    {
+        // 判断当前指针目标是否为在场的组合 Popconfirm owner。
+        let restores_trigger = tree.get(target).is_some_and(|node| {
+            // 下转到具体反馈组件并读取窄语义。
+            node.component()
+                .as_any()
+                .downcast_ref::<Popconfirm>()
+                // 离场期间仍需把气泡按钮点击后的焦点交还 trigger。
+                .is_some_and(|popconfirm| {
+                    popconfirm.uses_custom_trigger() && popconfirm.is_present()
+                })
+        });
+        // 只有组合 owner 需要代理到第一个真实可聚焦子节点。
+        if restores_trigger {
+            // 返回 trigger 子树内第一个有效 Tab 目标。
+            if let Some(trigger) = tree.collect_focusable_within(target).into_iter().next() {
+                // 直接使用完整 trigger 子树拥有的焦点身份。
+                return trigger;
+            }
+        }
+    }
+    // 关闭反馈能力或非组合 owner 保持通用目标。
+    target
 }
 
 /// 文本输入组件的当前值（语义快照 value_text 用）。

@@ -12,6 +12,20 @@ impl Popconfirm {
             placement: PopconfirmPlacement::Top,
             arrow: true,
             icon: true,
+            // 兼容构造默认使用旧合成触发器。
+            custom_trigger: false,
+            // 兼容构造不持有自定义 trigger 子树。
+            custom_trigger_view: None,
+            // 叶构造尚未登记直接 trigger 子树。
+            trigger_child_count: 0,
+            // 首次布局前没有可用的实际 trigger 尺寸。
+            trigger_size: Cell::new(Size::zero()),
+            // 默认不执行确认业务回调。
+            confirm_callback: None,
+            // 默认不执行取消业务回调。
+            cancel_callback: None,
+            // 新实例尚未提交用户动作。
+            action_committed: false,
             transition: TransitionPlayer::new(presets::tooltip_enter()),
             closing: false,
             transition_dirty: false,
@@ -56,6 +70,43 @@ impl Popconfirm {
         self
     }
 
+    /// 让 Popconfirm 成为一个完整 trigger View 子树的生命周期 owner。
+    pub fn trigger_view<V: crate::ui::view::View>(mut self, trigger: V) -> Self {
+        // 关闭旧合成触发器绘制并启用组合生命周期。
+        self.custom_trigger = true;
+        // 构建并保存包含 handlers、样式与身份的完整 ViewNode。
+        self.custom_trigger_view = Some(Rc::new(RefCell::new(Some(
+            // 通过公开 View 契约构建调用方 trigger。
+            crate::ui::view::View::build(trigger),
+        ))));
+        // 返回拥有待物化 trigger 子树的组件。
+        self
+    }
+
+    /// 注册确认按钮使用的同步无载荷回调。
+    pub fn on_confirm<F>(mut self, callback: F) -> Self
+    where
+        // 回调随组件跨帧保存且不允许借用临时值。
+        F: Fn() + 'static,
+    {
+        // 共享回调所有权以支持声明 reconcile。
+        self.confirm_callback = Some(Rc::new(callback));
+        // 返回配置后的组件。
+        self
+    }
+
+    /// 注册所有用户取消入口共用的同步无载荷回调。
+    pub fn on_cancel<F>(mut self, callback: F) -> Self
+    where
+        // 回调随组件跨帧保存且不允许借用临时值。
+        F: Fn() + 'static,
+    {
+        // 共享回调所有权以支持声明 reconcile。
+        self.cancel_callback = Some(Rc::new(callback));
+        // 返回配置后的组件。
+        self
+    }
+
     pub fn is_visible(&self) -> bool {
         self.visible
     }
@@ -67,6 +118,8 @@ impl Popconfirm {
     pub fn open(&mut self) {
         self.cancel_pending_activation();
         self.pending_submit.set(false);
+        // 新稳定打开周期允许提交一次用户动作。
+        self.action_committed = false;
         self.focused_action = 0;
         self.visible = true;
         self.closing = false;
@@ -100,6 +153,14 @@ impl Popconfirm {
         self.placement = next.placement;
         self.arrow = next.arrow;
         self.icon = next.icon;
+        // 同步声明期组合触发器模式。
+        self.custom_trigger = next.custom_trigger;
+        // 下一声明提供新的完整 trigger ViewNode 供组件树 reconcile。
+        self.custom_trigger_view = next.custom_trigger_view;
+        // 同步最新确认业务回调。
+        self.confirm_callback = next.confirm_callback;
+        // 同步最新取消业务回调。
+        self.cancel_callback = next.cancel_callback;
         if geometry_changed {
             self.cancel_pending_activation();
         }
@@ -107,17 +168,43 @@ impl Popconfirm {
 
     fn trigger_rect(&self) -> Rect {
         let frame = self.last_frame.get();
-        let width = if frame.w > 0.0 {
+        // 组合模式优先消费本轮布局测得的真实子树尺寸。
+        let trigger_size = self.trigger_size.get();
+        let width = if self.custom_trigger && trigger_size.w > 0.0 {
+            trigger_size.w
+        } else if frame.w > 0.0 {
             frame.w
         } else {
-            TRIGGER_WIDTH
+            FALLBACK_TRIGGER_WIDTH
         };
-        let height = if frame.h > 0.0 {
+        let height = if self.custom_trigger && trigger_size.h > 0.0 {
+            trigger_size.h
+        } else if frame.h > 0.0 {
             frame.h
         } else {
-            TRIGGER_HEIGHT
+            FALLBACK_TRIGGER_HEIGHT
         };
         Rect::new(0.0, 0.0, width, height)
+    }
+
+    // 返回当前组合模式是否由真实子 trigger 拥有交互。
+    pub(crate) fn uses_custom_trigger(&self) -> bool {
+        // 只有已经挂载唯一子树时才启用代理语义。
+        self.custom_trigger && self.trigger_child_count == 1
+    }
+
+    // 把组件 frame 收敛为实际 trigger 的绝对 border-box。
+    pub(super) fn absolute_trigger_frame(&self, frame: Rect) -> Rect {
+        // 组合模式使用本轮布局事实，兼容模式沿用组件 frame。
+        let size = self.trigger_size.get();
+        // 只有正尺寸组合 trigger 才覆盖包装节点尺寸。
+        if self.uses_custom_trigger() && size.w > 0.0 && size.h > 0.0 {
+            // trigger 与包装节点共享布局原点。
+            Rect::new(frame.x, frame.y, size.w, size.h)
+        } else {
+            // 兼容或布局尚未完成时使用归一化包装 frame。
+            Self::normalize_frame(frame)
+        }
     }
 
     fn button_rects(&self) -> (Rect, Rect) {
@@ -146,13 +233,46 @@ impl Popconfirm {
         self.pressed_key = None;
     }
 
-    pub(super) fn confirm(&mut self) {
+    // 执行唯一确认动作并保留兼容 Submit 语义。
+    pub(crate) fn confirm_action(&mut self) {
+        // 只允许稳定打开且未提交动作的实例进入回调。
+        if !self.visible || self.closing || self.action_committed {
+            // 离场或重复输入不得再次执行业务动作。
+            return;
+        }
+        // 先锁定本轮动作，防止回调或后续事件重入。
+        self.action_committed = true;
+        // 克隆窄回调句柄以避免同步调用期间借用 self。
+        if let Some(callback) = self.confirm_callback.clone() {
+            // 在当前调用线程同步执行确认副作用。
+            callback();
+        }
+        // 继续发布既有 Submit(id, "confirm") 兼容事实。
         self.pending_submit.set(true);
+        // 回调返回后进入正常离场。
+        self.close();
+    }
+
+    // 执行所有用户取消入口共用的唯一动作。
+    pub(crate) fn cancel_action(&mut self) {
+        // 只允许稳定打开且未提交动作的实例进入回调。
+        if !self.visible || self.closing || self.action_committed {
+            // 离场或重复输入不得再次执行业务动作。
+            return;
+        }
+        // 先锁定本轮动作，防止 PointerUp、FocusOut 或动画重入。
+        self.action_committed = true;
+        // 克隆窄回调句柄以避免同步调用期间借用 self。
+        if let Some(callback) = self.cancel_callback.clone() {
+            // 在当前调用线程同步执行取消副作用。
+            callback();
+        }
+        // 用户取消不发布 Submit 或 Change，只进入正常离场。
         self.close();
     }
 
     pub(super) fn intrinsic_size(&self) -> Size {
-        Size::new(TRIGGER_WIDTH, TRIGGER_HEIGHT)
+        Size::new(FALLBACK_TRIGGER_WIDTH, FALLBACK_TRIGGER_HEIGHT)
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -172,7 +292,7 @@ impl Popconfirm {
         // 始终以当前表面重新解析，避免触发器不动时沿用旧窗口边界下的缓存。
         resolve_popconfirm_geometry(
             // 传入当前触发器矩形。
-            frame,
+            self.absolute_trigger_frame(frame),
             // 传入布局阶段或绘制阶段记录的最新表面。
             self.surface_or_fallback(frame),
             // 保留作者指定位置。
@@ -204,7 +324,7 @@ impl Popconfirm {
 
     pub(super) fn dirty_rect_for_frame(&self, frame: Rect) -> Rect {
         let frame = Self::normalize_frame(frame);
-        frame
+        self.absolute_trigger_frame(frame)
             .union(&expand_popconfirm_rect(
                 self.absolute_popup_rect(frame),
                 12.0,
@@ -482,6 +602,16 @@ pub(super) fn popconfirm_arrow_anchor(desired: f32, start: f32, length: f32, ins
 mod tests {
     // 复用被测模块中的组件与几何辅助函数。
     use super::*;
+    // 使用真实 ViewAdapter 发布组合 trigger 与处理器表。
+    use crate::ui::adapter::ViewAdapter;
+    // 引入组件与布局 trait 以核验组合生命周期和 frame。
+    use crate::ui::component::traits::WidgetComponent;
+    // 引入组件包装的 frame 读写入口。
+    use crate::ui::component::widget::WidgetCore;
+    // 引入标准指针修饰状态与事件路由类型。
+    use crate::ui::{EventResult, KeyMod, MouseButton, SystemEvent};
+    // 使用真实按钮 View 验证业务 Click 不被包装器吞掉。
+    use crate::ui::widgets::button;
 
     // 标记表面缩放时缓存几何必须失效的回归契约。
     #[test]
@@ -562,5 +692,153 @@ mod tests {
 
         // 缓存读取必须与新表面下的绘制几何一致。
         assert_eq!(popconfirm.absolute_popup_rect(frame), expected);
+    }
+
+    // 验证确认、取消和编程关闭使用互不混淆的单次动作契约。
+    #[test]
+    fn callbacks_fire_once_only_for_user_actions() {
+        // 建立跨回调共享的确认计数。
+        let confirms = Rc::new(Cell::new(0));
+        // 为确认回调克隆独立共享句柄。
+        let confirm_count = Rc::clone(&confirms);
+        // 建立跨回调共享的取消计数。
+        let cancels = Rc::new(Cell::new(0));
+        // 为取消回调克隆独立共享句柄。
+        let cancel_count = Rc::clone(&cancels);
+        // 构造同时登记两类窄回调的确认气泡。
+        let mut popconfirm = Popconfirm::new()
+            // 确认回调只累加确认计数。
+            .on_confirm(move || confirm_count.set(confirm_count.get() + 1))
+            // 取消回调只累加取消计数。
+            .on_cancel(move || cancel_count.set(cancel_count.get() + 1));
+
+        // 首次打开建立稳定用户动作周期。
+        popconfirm.open();
+        // 执行一次确认动作。
+        popconfirm.confirm_action();
+        // 离场期间重复确认不得再次调用回调。
+        popconfirm.confirm_action();
+        // 确认回调必须恰好执行一次。
+        assert_eq!(confirms.get(), 1);
+        // 确认路径不得伪造取消。
+        assert_eq!(cancels.get(), 0);
+        // 兼容 Submit 事实必须只等待消费一次。
+        assert!(popconfirm.pending_submit.replace(false));
+
+        // 重新打开开始新的稳定动作周期。
+        popconfirm.open();
+        // 执行一次用户取消动作。
+        popconfirm.cancel_action();
+        // PointerUp、FocusOut 等重复取消不得再次调用回调。
+        popconfirm.cancel_action();
+        // 取消回调必须恰好执行一次。
+        assert_eq!(cancels.get(), 1);
+
+        // 再次打开以隔离编程关闭语义。
+        popconfirm.open();
+        // 公共 close 是无业务含义的编程关闭。
+        popconfirm.close();
+        // 编程关闭不得触发取消回调。
+        assert_eq!(cancels.get(), 1);
+    }
+
+    // 验证真实 trigger 子树的尺寸、点击与焦点身份由子 View 保持。
+    #[test]
+    fn composite_trigger_keeps_natural_size_click_and_focus_identity() {
+        // 建立真实 trigger 独占的业务点击计数。
+        let clicks = Rc::new(Cell::new(0));
+        // 为子 View 处理器克隆独立共享句柄。
+        let child_clicks = Rc::clone(&clicks);
+        // 构造长文本按钮以暴露旧固定八十像素裁剪问题。
+        let trigger = button("删除这个很长的自定义项目").on_click_fn(move || {
+            // 标准 Click 只由真实子 View 累加一次。
+            child_clicks.set(child_clicks.get() + 1);
+        });
+        // 构造底部气泡，避免测试表面顶部翻转干扰触发器断言。
+        let view = Popconfirm::new()
+            // 配置可观察标题。
+            .title("确定删除？")
+            // 使用真实长文本按钮作为唯一 trigger。
+            .trigger_view(trigger);
+        // 通过真实适配器物化父子组件和处理器表。
+        // Popconfirm 通过叶声明把私有 build_view_children 交给适配器展开。
+        let mut tree = ViewAdapter::build(crate::ui::view::ViewNode::leaf(view));
+        // 取得稳定 Popconfirm 根身份。
+        let root = tree.root_id().expect("Popconfirm 根必须存在");
+        // 取得唯一直接 trigger 子树身份。
+        let child = tree.get(root).expect("Popconfirm 根必须可读").children()[0];
+        // 模拟真实窗口把根组件安排到足够大的逻辑表面。
+        tree.get_mut(root)
+            // 根节点在布局前必须仍可寻址。
+            .expect("Popconfirm 根必须可写")
+            // 使用固定表面尺寸隔离自然 trigger 测量。
+            .set_frame(Rect::new(0.0, 0.0, 500.0, 300.0));
+        // 执行一次真实父子布局收敛。
+        tree.layout();
+        // 读取本轮安排出的实际子 trigger frame。
+        let child_frame = tree.get(child).expect("trigger 子树必须可读").frame();
+        // 长文本 trigger 宽度不得退回旧固定八十像素。
+        assert!(child_frame.w > FALLBACK_TRIGGER_WIDTH);
+        // trigger 高度必须来自按钮自己的自然尺寸。
+        assert!(child_frame.h > 0.0);
+        // 组合 owner 不得与真实 trigger 重复进入 Tab 顺序。
+        assert_eq!(
+            // 读取运行时 Popconfirm 组件的 Tab 契约。
+            WidgetComponent::tab_index(
+                tree.get(root)
+                    // 根节点必须存在。
+                    .expect("Popconfirm 根必须存在")
+                    // 借用组件 trait 对象。
+                    .component()
+            ),
+            // 组合 owner 必须退出 Tab 顺序。
+            0
+        );
+
+        // 在真实 trigger 内部按下主指针。
+        let down = tree.dispatch_event(&SystemEvent::PointerDown {
+            // 坐标落在长按钮 border-box 内。
+            pos: Point::new(8.0, 8.0),
+            // 使用标准业务左键。
+            button: MouseButton::Left,
+            // 不携带组合修饰键。
+            mods: KeyMod::NONE,
+        });
+        // 子按钮必须处理按下事件。
+        assert_eq!(down, EventResult::Handled);
+        // 在同一真实 trigger 内部释放主指针。
+        let up = tree.dispatch_event(&SystemEvent::PointerUp {
+            // 释放位置与按下位置一致。
+            pos: Point::new(8.0, 8.0),
+            // 使用配对左键。
+            button: MouseButton::Left,
+            // 不携带组合修饰键。
+            mods: KeyMod::NONE,
+        });
+        // 子按钮必须处理释放事件并合成标准 Click。
+        assert_eq!(up, EventResult::Handled);
+        // 业务 Click 必须且只执行一次。
+        assert_eq!(clicks.get(), 1);
+        // 捕获阶段必须同时打开确认气泡。
+        let runtime = tree
+            // 读取根节点。
+            .get(root)
+            // 根节点必须保持可寻址。
+            .expect("Popconfirm 根必须存在")
+            // 下转到具体组件。
+            .component()
+            // 取得运行时类型视图。
+            .as_any()
+            // 窄化为 Popconfirm。
+            .downcast_ref::<Popconfirm>()
+            // 类型变化表示适配器发布了错误根组件。
+            .expect("根组件必须是 Popconfirm");
+        // 打开状态必须已经提交。
+        assert!(runtime.is_visible());
+        // 气泡动作后的焦点代理目标必须是真实 trigger 子树。
+        assert_eq!(
+            crate::ui::tree_widget_hooks::pointer_focus_target(&tree, root),
+            child
+        );
     }
 }
