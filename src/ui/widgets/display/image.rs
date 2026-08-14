@@ -16,32 +16,10 @@ use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::paint_scope::current_paint_widget;
 use crate::ui::component::widget::WidgetTree;
 use crate::ui::{EventResult, KeyCode, MouseButton, OverlayEntry, OverlayKind, SystemEvent};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum ImageLoadState {
-    Empty,
-    Deferred,
-    Pending,
-    Loading,
-    Ready,
-    Error(String),
-}
-
-impl ImageLoadState {
-    fn shows_placeholder(&self) -> bool {
-        matches!(
-            self,
-            Self::Empty | Self::Deferred | Self::Pending | Self::Loading
-        )
-    }
-
-    fn error(&self) -> Option<&str> {
-        match self {
-            Self::Error(error) => Some(error),
-            _ => None,
-        }
-    }
-}
+// 引入同一 display Module 拥有的图片浮层调色板。
+use super::image_presentation::ImageOverlayPalette;
+// 引入 Image 私有加载生命周期状态。
+use super::image_state::ImageLoadState;
 
 // Image — 图片显示组件。
 component! {
@@ -620,19 +598,21 @@ impl Image {
             badge_size,
             badge_size,
         );
+        // 在当前主题作用域解析浮层调色板。
+        let palette = ImageOverlayPalette::resolve(ctx.tokens());
         ctx.fill_circle(
             badge.x + badge.w * 0.5,
             badge.y + badge.h * 0.5,
             badge_size * 0.5,
-            // 缩放徽标底：黑色 token + 原 alpha（保持视觉等价，色相随主题可换）。
-            ctx.tokens().color_black().with_alpha(140),
+            // 缩放徽标使用主题浮层表面。
+            palette.surface,
         );
         crate::ui::widgets::icon::Icon::paint_in_frame(
             ctx,
             "zoom-in",
             badge,
-            // 缩放图标（暗底上反白）：白色 token。
-            ctx.tokens().color_white(),
+            // 缩放图标使用主题浮层前景。
+            palette.foreground,
             badge_size * 0.58,
         );
     }
@@ -845,9 +825,11 @@ impl Image {
             return;
         }
         let surface = Rect::new(0.0, 0.0, surface_w, surface_h);
+        // 在当前主题作用域解析一次浮层调色板。
+        let palette = ImageOverlayPalette::resolve(ctx.tokens());
         ctx.push_clip(surface);
-        // 全屏预览暗底：黑色 token + 原 alpha（保持视觉等价，色相随主题可换）。
-        ctx.fill_rect(surface, ctx.tokens().color_black().with_alpha(204), None);
+        // 全屏预览背景使用主题语义遮罩。
+        ctx.fill_rect(surface, palette.mask, None);
 
         let margin = 48.0_f32
             .min((surface_w * 0.1).max(16.0))
@@ -858,12 +840,8 @@ impl Image {
             (surface_w - margin * 2.0).max(1.0),
             (surface_h - margin * 2.0).max(1.0),
         );
-        // 预览占位底：原为 18,18,18 深灰，收敛为黑色 token（视觉近似，色相随主题可换）。
-        ctx.fill_rect(
-            preview_rect,
-            ctx.tokens().color_black().with_alpha(255),
-            None,
-        );
+        // 预览占位区域使用主题浮层表面。
+        ctx.fill_rect(preview_rect, palette.surface, None);
         if let Some(handle) = handle {
             ctx.draw_image(handle, preview_rect);
         } else {
@@ -878,7 +856,7 @@ impl Image {
                 ctx,
                 label,
                 preview_rect,
-                ctx.tokens().color_white(),
+                palette.foreground,
                 ctx.tokens().font_size_lg(),
             );
         }
@@ -888,16 +866,10 @@ impl Image {
             close.x + close.w * 0.5,
             close.y + close.h * 0.5,
             close.w * 0.5,
-            // 关闭按钮底：黑色 token + 原 alpha（保持视觉等价，色相随主题可换）。
-            ctx.tokens().color_black().with_alpha(180),
+            // 关闭按钮使用主题浮层表面。
+            palette.surface,
         );
-        crate::ui::widgets::icon::Icon::paint_in_frame(
-            ctx,
-            "x",
-            close,
-            ctx.tokens().color_white(),
-            20.0,
-        );
+        crate::ui::widgets::icon::Icon::paint_in_frame(ctx, "x", close, palette.foreground, 20.0);
         ctx.pop_clip();
     }
 }
