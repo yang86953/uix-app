@@ -126,6 +126,28 @@ pub(super) fn apply_raster_op_pixels(
                 )
             }
         }
+        // 亚像素填充复用共享软件 SDF，保持参考执行与 GPU shape 契约一致。
+        FrameRasterOp::FillRoundedRectSubpixel {
+            rect,
+            color,
+            radius,
+            clip,
+        } => apply_subpixel_rect_pixels(
+            // 传递真实 surface 尺寸。
+            (width, height),
+            // 直接修改当前累计目标。
+            pixels,
+            // 保留未取整的矩形边界。
+            rect.to_rect(),
+            // 保留调用方颜色。
+            *color,
+            // 保留共享圆角值。
+            *radius,
+            // 填充没有描边线宽。
+            None,
+            // 应用命令携带的整数裁剪。
+            *clip,
+        ),
         FrameRasterOp::BlitGlyphs { glyphs, clip } => {
             let clip = Rect::new(
                 clip.x as f32,
@@ -149,6 +171,62 @@ pub(super) fn apply_raster_op_pixels(
                 );
             }
         }
+        // 字形轮廓在参考执行时由同一字体算法生成面积 coverage。
+        FrameRasterOp::BlitGlyphOutlines { glyphs, clip } => {
+            // 把整数命令裁剪转换为共享软件裁剪。
+            let clip = Rect::new(
+                // 保存左边界。
+                clip.x as f32,
+                // 保存上边界。
+                clip.y as f32,
+                // 保存裁剪宽度。
+                clip.width as f32,
+                // 保存裁剪高度。
+                clip.height as f32,
+            );
+            // 保持字形原始 painter order。
+            for glyph in glyphs {
+                // 从轮廓边列表生成参考面积 coverage。
+                let Some(coverage) =
+                    crate::draw::resources::font::glyph_outline::coverage_from_edges(
+                        // 借用共享轮廓边列表。
+                        glyph.edges().as_ref(),
+                        // 使用命令登记的目标宽度。
+                        glyph.width() as usize,
+                        // 使用命令登记的目标高度。
+                        glyph.height() as usize,
+                    )
+                else {
+                    // 异常轮廓不产生参考像素。
+                    continue;
+                };
+                // 复用稳定的 coverage 光栅语义。
+                crate::draw::raster::rasterizer::glyph::blit_glyph(
+                    // 直接修改当前累计目标。
+                    pixels,
+                    // 传递真实目标宽度。
+                    width,
+                    // 传递真实目标高度。
+                    height,
+                    // 应用命令裁剪。
+                    clip,
+                    // 命令颜色已经包含画布 opacity。
+                    1.0,
+                    // 保存字形水平位置。
+                    glyph.x(),
+                    // 保存字形垂直位置。
+                    glyph.y(),
+                    // 借用新生成的面积 coverage。
+                    coverage.as_ref(),
+                    // 保存目标字形宽度。
+                    glyph.width() as usize,
+                    // 保存目标字形高度。
+                    glyph.height() as usize,
+                    // 保存字形颜色。
+                    glyph.color(),
+                );
+            }
+        }
         FrameRasterOp::StrokeRoundedRects {
             strokes,
             clip,
@@ -159,6 +237,29 @@ pub(super) fn apply_raster_op_pixels(
                 apply_stroke_rect_pixels(width, height, pixels, *stroke, *clip, *additive);
             }
         }
+        // 亚像素描边同样复用共享软件 SDF 作为参考事实。
+        FrameRasterOp::StrokeRoundedRectSubpixel {
+            rect,
+            color,
+            radius,
+            line_width,
+            clip,
+        } => apply_subpixel_rect_pixels(
+            // 传递真实 surface 尺寸。
+            (width, height),
+            // 直接修改当前累计目标。
+            pixels,
+            // 保留未取整的矩形边界。
+            rect.to_rect(),
+            // 保留调用方颜色。
+            *color,
+            // 保留共享圆角值。
+            *radius,
+            // 描边使用已经验证的正有限线宽。
+            Some(line_width.value()),
+            // 应用命令携带的整数裁剪。
+            *clip,
+        ),
         FrameRasterOp::FillRectAdditive { rect, color, clip } => {
             // 对累计目标执行硬矩形裁剪后的饱和加法。
             fill_rect_additive_pixels(width, height, pixels, *rect, *color, *clip)
@@ -180,6 +281,56 @@ pub(super) fn apply_raster_op_pixels(
         FrameRasterOp::ScrollCopy { viewport, dx, dy } => {
             scroll_copy_pixels(width, height, pixels, *viewport, *dx, *dy)
         }
+    }
+}
+
+// 在 CPU 参考目标上执行一条亚像素填充或描边命令。
+fn apply_subpixel_rect_pixels(
+    // 合并宽高参数，避免参考辅助函数参数继续膨胀。
+    extent: (i32, i32),
+    // 接收当前累计目标像素。
+    pixels: &mut [u32],
+    // 接收未经取整的真实矩形。
+    rect: Rect,
+    // 接收直通颜色。
+    color: Color,
+    // 接收四角半径。
+    radius: FrameRadius,
+    // None 表示填充，Some 表示描边线宽。
+    line_width: Option<f32>,
+    // 接收整数 surface 裁剪。
+    clip: FrameRect,
+) {
+    // 解构真实目标宽高。
+    let (width, height) = extent;
+    // 创建与目标尺寸一致的共享软件光栅器。
+    let mut renderer = SoftwareRasterizer::new(width, height);
+    // 把命令裁剪注入 surface 空间。
+    renderer.push_clip_surface(Rect::new(
+        // 保留裁剪左边界。
+        clip.x as f32,
+        // 保留裁剪上边界。
+        clip.y as f32,
+        // 保留裁剪宽度。
+        clip.width as f32,
+        // 保留裁剪高度。
+        clip.height as f32,
+    ));
+    // 根据线宽选择描边或填充，同时保持同一 SDF 实现。
+    if let Some(line_width) = line_width {
+        // 在累计目标上执行普通 SrcOver 亚像素描边。
+        renderer.stroke_rect(
+            pixels,
+            width,
+            height,
+            rect,
+            color,
+            line_width,
+            Some(radius.to_radius()),
+        );
+    } else {
+        // 在累计目标上执行普通 SrcOver 亚像素填充。
+        renderer.fill_rect(pixels, width, height, rect, color, Some(radius.to_radius()));
     }
 }
 

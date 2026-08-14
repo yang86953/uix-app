@@ -4,8 +4,8 @@
 //! 由命令契约（[`super::commands`]）与执行路径（[`super::pixels`]）共享。
 
 use crate::core::Rect;
-use crate::draw::Color;
 use crate::draw::geometry::types::Radius;
+use crate::draw::Color;
 use std::sync::Arc;
 
 use super::error::FrameEncoderError;
@@ -385,6 +385,117 @@ impl FrameGlyphBlit {
 
     pub fn coverage(&self) -> &Arc<[u8]> {
         &self.coverage
+    }
+}
+
+/// 一条保留字体轮廓边列表的整数定位字形命令。
+#[derive(Debug, Clone)]
+pub struct FrameGlyphOutline {
+    // 保存 surface 空间水平位置。
+    pub(crate) x: i32,
+    // 保存 surface 空间垂直位置。
+    pub(crate) y: i32,
+    // 保存目标字形宽度。
+    pub(crate) width: u32,
+    // 保存目标字形高度。
+    pub(crate) height: u32,
+    // 保存直通颜色。
+    pub(crate) color: Color,
+    // 保留字体轮廓边列表供 GPU MSDF 生成。
+    pub(crate) edges: Arc<[f32]>,
+}
+
+// 按浮点位模式比较轮廓，保持 FrameEncoder 命令模型的确定性 Eq 契约。
+impl PartialEq for FrameGlyphOutline {
+    // 比较几何、颜色和每个轮廓浮点的原始位模式。
+    fn eq(&self, other: &Self) -> bool {
+        // 先比较固定大小字段，再比较轮廓长度和位模式。
+        self.x == other.x
+            && self.y == other.y
+            && self.width == other.width
+            && self.height == other.height
+            && self.color == other.color
+            && self.edges.len() == other.edges.len()
+            && self
+                .edges
+                .iter()
+                .zip(other.edges.iter())
+                .all(|(left, right)| left.to_bits() == right.to_bits())
+    }
+}
+
+// 位模式相等满足自反、对称和传递关系。
+impl Eq for FrameGlyphOutline {}
+
+// 提供经过验证的字形轮廓值构造与只读访问。
+impl FrameGlyphOutline {
+    // 验证尺寸与边列表后构造保留命令。
+    pub(crate) fn new(
+        // 接收 surface 水平位置。
+        x: i32,
+        // 接收 surface 垂直位置。
+        y: i32,
+        // 接收共享轮廓边列表。
+        edges: Arc<[f32]>,
+        // 接收目标宽度。
+        width: usize,
+        // 接收目标高度。
+        height: usize,
+        // 接收直通颜色。
+        color: Color,
+    ) -> Option<Self> {
+        // 轮廓必须满足字体模块登记的固定边 ABI。
+        if !crate::draw::resources::font::glyph_outline::is_outline_edges(edges.as_ref()) {
+            // 拒绝异常轮廓载荷。
+            return None;
+        }
+        // 把尺寸收窄到 RHI 字形 ABI。
+        let (width, height) = (u32::try_from(width).ok()?, u32::try_from(height).ok()?);
+        // 零尺寸字形不生成命令。
+        if width == 0 || height == 0 {
+            // 拒绝空目标。
+            return None;
+        }
+        // 返回完整保留轮廓命令。
+        Some(Self {
+            // 保存水平位置。
+            x,
+            // 保存垂直位置。
+            y,
+            // 保存目标宽度。
+            width,
+            // 保存目标高度。
+            height,
+            // 保存直通颜色。
+            color,
+            // 保留共享轮廓分配。
+            edges,
+        })
+    }
+
+    // 返回 surface 水平位置。
+    pub const fn x(&self) -> i32 {
+        self.x
+    }
+    // 返回 surface 垂直位置。
+    pub const fn y(&self) -> i32 {
+        self.y
+    }
+    // 返回目标字形宽度。
+    pub const fn width(&self) -> u32 {
+        self.width
+    }
+    // 返回目标字形高度。
+    pub const fn height(&self) -> u32 {
+        self.height
+    }
+    // 返回直通颜色。
+    pub const fn color(&self) -> Color {
+        self.color
+    }
+    // 返回共享轮廓边列表。
+    pub fn edges(&self) -> &Arc<[f32]> {
+        &self.edges
     }
 }
 

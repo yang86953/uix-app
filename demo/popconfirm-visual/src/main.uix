@@ -23,29 +23,29 @@ acceptancePanel {
     // 同屏展示当前回调次数。
     <Container direction="row" gap="20px">
       // 展示确认回调次数。
-      <Text>确认次数：{confirm_count}</Text>
+      <Text automationId="popconfirm-confirm-count">确认次数：{confirm_count}</Text>
       // 展示取消回调次数。
-      <Text>取消次数：{cancel_count}</Text>
+      <Text automationId="popconfirm-cancel-count">取消次数：{cancel_count}</Text>
     // 结束计数行。
     </Container>
     // 第一行覆盖顶部三个位置。
     <Container direction="row" gap="28px" align="center">
       // 验证顶部左对齐和长 trigger 不裁剪。
-      <Popconfirm title="确认顶部左侧操作？" placement="topLeft" @confirm="setState(confirm_count: confirm_count + 1)" @cancel="setState(cancel_count: cancel_count + 1)">
+      <Popconfirm title="确认顶部左侧操作？" placement="topLeft" automationId="popconfirm-top-left" @confirm="setState(confirm_count: confirm_count + 1)" @cancel="setState(cancel_count: cancel_count + 1)">
         // 真实按钮独占绘制、焦点和业务 Click。
-        <Button type="danger">很长的自定义删除按钮 · TopLeft</Button>
+        <Button type="danger" automationId="popconfirm-trigger-top-left">很长的自定义删除按钮 · TopLeft</Button>
       // 结束顶部左侧样例。
       </Popconfirm>
       // 验证顶部居中位置。
-      <Popconfirm title="确认顶部操作？" placement="top" @confirm="setState(confirm_count: confirm_count + 1)" @cancel="setState(cancel_count: cancel_count + 1)">
+      <Popconfirm title="确认顶部操作？" placement="top" automationId="popconfirm-top" @confirm="setState(confirm_count: confirm_count + 1)" @cancel="setState(cancel_count: cancel_count + 1)">
         // 使用普通按钮验证完整样式保留。
-        <Button>自定义按钮 · Top</Button>
+        <Button automationId="popconfirm-trigger-top">自定义按钮 · Top</Button>
       // 结束顶部样例。
       </Popconfirm>
       // 验证顶部右对齐位置。
-      <Popconfirm title="确认顶部右侧操作？" placement="topRight" @confirm="setState(confirm_count: confirm_count + 1)" @cancel="setState(cancel_count: cancel_count + 1)">
+      <Popconfirm title="确认顶部右侧操作？" placement="topRight" automationId="popconfirm-top-right" @confirm="setState(confirm_count: confirm_count + 1)" @cancel="setState(cancel_count: cancel_count + 1)">
         // 使用主按钮验证样式与焦点环。
-        <Button type="primary">自定义按钮 · TopRight</Button>
+        <Button type="primary" automationId="popconfirm-trigger-top-right">自定义按钮 · TopRight</Button>
       // 结束顶部右侧样例。
       </Popconfirm>
     // 结束顶部位置行。
@@ -53,21 +53,21 @@ acceptancePanel {
     // 第二行覆盖底部三个位置与箭头配置。
     <Container direction="row" gap="28px" align="center">
       // 验证底部左对齐位置。
-      <Popconfirm title="确认底部左侧操作？" placement="bottomLeft" @confirm="setState(confirm_count: confirm_count + 1)" @cancel="setState(cancel_count: cancel_count + 1)">
+      <Popconfirm title="确认底部左侧操作？" placement="bottomLeft" automationId="popconfirm-bottom-left" @confirm="setState(confirm_count: confirm_count + 1)" @cancel="setState(cancel_count: cancel_count + 1)">
         // 使用长文本再次核对自然宽度。
-        <Button type="danger">很长的自定义删除按钮 · BottomLeft</Button>
+        <Button type="danger" automationId="popconfirm-trigger-bottom-left">很长的自定义删除按钮 · BottomLeft</Button>
       // 结束底部左侧样例。
       </Popconfirm>
       // 验证底部居中与无图标配置。
-      <Popconfirm title="确认底部操作？" placement="bottom" icon="false" @confirm="setState(confirm_count: confirm_count + 1)" @cancel="setState(cancel_count: cancel_count + 1)">
+      <Popconfirm title="确认底部操作？" placement="bottom" icon="false" automationId="popconfirm-bottom" @confirm="setState(confirm_count: confirm_count + 1)" @cancel="setState(cancel_count: cancel_count + 1)">
         // 使用普通按钮作为真实 trigger。
-        <Button>自定义按钮 · Bottom</Button>
+        <Button automationId="popconfirm-trigger-bottom">自定义按钮 · Bottom</Button>
       // 结束底部样例。
       </Popconfirm>
       // 验证底部右对齐与无箭头配置。
-      <Popconfirm title="确认底部右侧操作？" placement="bottomRight" arrow="false" @confirm="setState(confirm_count: confirm_count + 1)" @cancel="setState(cancel_count: cancel_count + 1)">
+      <Popconfirm title="确认底部右侧操作？" placement="bottomRight" arrow="false" automationId="popconfirm-bottom-right" @confirm="setState(confirm_count: confirm_count + 1)" @cancel="setState(cancel_count: cancel_count + 1)">
         // 使用主按钮作为真实 trigger。
-        <Button type="primary">自定义按钮 · BottomRight</Button>
+        <Button type="primary" automationId="popconfirm-trigger-bottom-right">自定义按钮 · BottomRight</Button>
       // 结束底部右侧样例。
       </Popconfirm>
     // 结束底部位置行。

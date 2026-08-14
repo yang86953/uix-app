@@ -22,8 +22,8 @@ pub use commands::{
 };
 pub use error::FrameEncoderError;
 pub use geometry::{
-    FrameGlyphBlit, FrameImage, FrameOpacity, FrameRadius, FrameRect, FrameSampledRect,
-    FrameStrokeRect, FrameStrokeWidth,
+    FrameGlyphBlit, FrameGlyphOutline, FrameImage, FrameOpacity, FrameRadius, FrameRect,
+    FrameSampledRect, FrameStrokeRect, FrameStrokeWidth,
 };
 
 use self::pixels::{
@@ -32,8 +32,8 @@ use self::pixels::{
     full_frame_image_blit, pixel_len,
 };
 use self::source_over::{
-    PictureCropTranslation, crop_and_translate_source_over_command,
-    source_over_commands_have_safe_grouping, stroke_batches_can_merge, stroke_visible_bounds,
+    crop_and_translate_source_over_command, source_over_commands_have_safe_grouping,
+    stroke_batches_can_merge, stroke_visible_bounds, PictureCropTranslation,
 };
 
 /// 恰好一帧的有序命令录制器。
@@ -153,6 +153,24 @@ impl FrameEncoder {
                         glyphs
                             .iter()
                             .map(|glyph| glyph.coverage.len())
+                            .fold(0usize, usize::saturating_add),
+                    ),
+                FrameCommand::Native {
+                    operation: FrameRasterOp::BlitGlyphOutlines { glyphs, .. },
+                } => glyphs
+                    // 保守计入轮廓命令数组容量。
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<FrameGlyphOutline>())
+                    // 保守计入每个共享边列表载荷。
+                    .saturating_add(
+                        glyphs
+                            .iter()
+                            .map(|glyph| {
+                                glyph
+                                    .edges()
+                                    .len()
+                                    .saturating_mul(std::mem::size_of::<f32>())
+                            })
                             .fold(0usize, usize::saturating_add),
                     ),
                 FrameCommand::Native {
@@ -344,10 +362,13 @@ impl FrameEncoder {
             FrameRasterOp::FillRect { .. }
             | FrameRasterOp::FillRoundedRect { .. }
             | FrameRasterOp::FillRoundedRectClipped { .. }
+            | FrameRasterOp::FillRoundedRectSubpixel { .. }
             | FrameRasterOp::BlitGlyphs { .. }
+            | FrameRasterOp::BlitGlyphOutlines { .. }
             | FrameRasterOp::StrokeRoundedRects {
                 additive: false, ..
-            } => None,
+            }
+            | FrameRasterOp::StrokeRoundedRectSubpixel { .. } => None,
             // Additive 描边必须读取累计目标，不能先画进透明分段再 SrcOver 合成。
             FrameRasterOp::StrokeRoundedRects { additive: true, .. } => {
                 Some("StrokeRoundedRectsAdditive")

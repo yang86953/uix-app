@@ -6,8 +6,8 @@
 use crate::draw::Color;
 
 use super::geometry::{
-    FrameGlyphBlit, FrameImage, FrameOpacity, FrameRadius, FrameRect, FrameSampledRect,
-    FrameStrokeRect,
+    FrameGlyphBlit, FrameGlyphOutline, FrameImage, FrameOpacity, FrameRadius, FrameRect,
+    FrameSampledRect, FrameStrokeRect, FrameStrokeWidth,
 };
 
 /// API-neutral raster work.  More operations can be added without changing
@@ -38,9 +38,27 @@ pub enum FrameRasterOp {
         radius: FrameRadius,
         clip: FrameRect,
     },
+    /// 使用亚像素矩形几何和整数 surface clip 执行普通 SrcOver 圆角填充。
+    FillRoundedRectSubpixel {
+        // 保存经验证的亚像素矩形。
+        rect: FrameSampledRect,
+        // 保存直通颜色。
+        color: Color,
+        // 保存四角半径。
+        radius: FrameRadius,
+        // 保存最终整数裁剪。
+        clip: FrameRect,
+    },
     /// Ordered SrcOver glyph coverage blits sharing one integer surface clip.
     BlitGlyphs {
         glyphs: Vec<FrameGlyphBlit>,
+        clip: FrameRect,
+    },
+    /// Ordered SrcOver 字形轮廓批次，由 GPU 端生成 MSDF coverage。
+    BlitGlyphOutlines {
+        // 保存共享字体轮廓载荷。
+        glyphs: Vec<FrameGlyphOutline>,
+        // 保存统一整数 surface 裁剪。
         clip: FrameRect,
     },
     /// Ordered centered rectangle strokes sharing one surface clip and blend fact.
@@ -49,6 +67,19 @@ pub enum FrameRasterOp {
         clip: FrameRect,
         /// 为 true 时逐通道饱和加到累计目标；为 false 时使用普通 SrcOver。
         additive: bool,
+    },
+    /// 使用亚像素矩形几何执行单条普通 SrcOver 圆角描边。
+    StrokeRoundedRectSubpixel {
+        // 保存经验证的亚像素矩形。
+        rect: FrameSampledRect,
+        // 保存直通颜色。
+        color: Color,
+        // 保存四角半径。
+        radius: FrameRadius,
+        // 保存正有限线宽。
+        line_width: FrameStrokeWidth,
+        // 保存最终整数裁剪。
+        clip: FrameRect,
     },
     /// Channel-wise saturating add into the destination (CPU Additive blend).
     FillRectAdditive {

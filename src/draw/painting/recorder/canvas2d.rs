@@ -153,6 +153,11 @@ impl Canvas2D for FrameRecordingCanvas {
             }
             return;
         }
+        // 其余 identity 亚像素矩形优先记录为普通 SrcOver GPU shape。
+        if self.record_src_over_subpixel_fill(rect, color, radius) {
+            // 原生命令已经完整保存当前几何与透明度语义。
+            return;
+        }
         // Native shape 不适用时，Additive 填充改走目标相关 sampled soft segment。
         self.draw_cpu_source(rect, 1.0, |scratch| {
             // 由共享软件光栅保留完整 transform、clip 与圆角语义。
@@ -317,6 +322,11 @@ impl Canvas2D for FrameRecordingCanvas {
             }
             return;
         }
+        // 其余 identity 亚像素矩形优先记录为普通 SrcOver GPU 描边。
+        if self.record_src_over_subpixel_stroke(rect, color, width, radius) {
+            // 原生命令已经完整保存当前描边语义。
+            return;
+        }
         // 固定 Native shape 不适用时，描边作为纯源贡献进入 blend-aware scratch。
         self.draw_cpu_source(rect, width.max(1.0), |scratch| {
             // 软件描边负责完整 transform、clip、opacity 与圆角语义。
@@ -477,6 +487,40 @@ impl Canvas2D for FrameRecordingCanvas {
         color: Color,
     ) {
         self.record_glyph_shared(x, y, coverage, width, height, color);
+    }
+
+    /// 优先录制可由 GPU MSDF 执行的共享字形轮廓。
+    fn blit_glyph_outline_shared(
+        &mut self,
+        x: i32,
+        y: i32,
+        mesh: Arc<[f32]>,
+        area_coverage: Option<Arc<[u8]>>,
+        width: usize,
+        height: usize,
+        color: Color,
+    ) {
+        // identity SrcOver 字形优先保留轮廓，由 GPU 端生成 MSDF coverage。
+        if self.record_glyph_outline_shared(x, y, Arc::clone(&mesh), width, height, color) {
+            // 原生命令已经完整记录。
+            return;
+        }
+        // 非原生状态优先复用字体服务提供的面积 coverage。
+        let coverage = area_coverage.or_else(|| {
+            // 缺少 coverage 时从同一轮廓生成软件兼容载荷。
+            crate::draw::resources::font::glyph_outline::coverage_from_edges(
+                mesh.as_ref(),
+                width,
+                height,
+            )
+            // 转为共享切片以复用普通字形记录路径。
+            .map(Arc::<[u8]>::from)
+        });
+        // 只有成功取得合法 coverage 时才追加兼容命令。
+        if let Some(coverage) = coverage {
+            // 复用现有 coverage 准入、裁剪与软件 fallback 契约。
+            self.record_glyph_shared(x, y, coverage, width, height, color);
+        }
     }
 
     /// 保存画布状态（含 blend 镜像）。

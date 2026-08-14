@@ -28,6 +28,17 @@ use crate::native::present::rhi::{
 // 引入当前 GPU backend。
 use super::GpuBackend;
 
+// 将 shape 几何 lowering 拆到独立组件，保持本文件职责与行数边界。
+#[path = "rhi_frame_shape.rs"]
+mod shape;
+// 引入整数与亚像素 shape 的统一 lowering 入口。
+use shape::{append_shape, append_subpixel_shape};
+// 将字形轮廓 lowering 拆到独立 MSDF 组件。
+#[path = "rhi_frame_glyph.rs"]
+mod glyph;
+// 引入字形轮廓批次 lowering 入口。
+use glyph::append_glyph_outlines;
+
 // 将 FrameEncoder RHI lowering 单元测试拆到尾部文件，保持实现文件不超过行数边界。
 #[cfg(test)]
 #[path = "rhi_frame_test_tail.rs"]
@@ -184,63 +195,6 @@ fn axis_aligned_corners(x: f32, y: f32, width: f32, height: f32) -> [[f32; 2]; 4
     ]
 }
 
-// 追加一个 FrameEncoder 圆角/描边矩形到混合 RHI 队列。
-fn append_shape(
-    operations: &mut Vec<RhiOp>,
-    rect: crate::draw::painting::FrameRect,
-    color: Color,
-    radius: crate::draw::painting::FrameRadius,
-    half_stroke: f32,
-    additive: bool,
-    clip: Option<crate::draw::painting::FrameRect>,
-    bounds: crate::draw::painting::FrameRect,
-    viewport: RhiViewport,
-    scale_x: f32,
-    scale_y: f32,
-) -> bool {
-    // 空几何保持旧 FrameEncoder 的 no-op 语义。
-    if rect.is_empty() {
-        return true;
-    }
-    // 计算物理矩形和圆角。
-    let Some((x, y, width, height)) = scaled_rect(rect, scale_x, scale_y) else {
-        return false;
-    };
-    let Some(radius) = scaled_radius(radius, scale_x, scale_y) else {
-        return false;
-    };
-    // 指定裁剪完全在 target 外时，当前操作不产生像素。
-    let scissor = match clip {
-        Some(clip) => match scaled_scissor(clip, bounds, viewport, scale_x, scale_y) {
-            Some(scissor) => Some(scissor),
-            None => return true,
-        },
-        None => None,
-    };
-    // 描边宽度必须能稳定进入 shape 常量。
-    if !half_stroke.is_finite() || half_stroke < 0.0 {
-        return false;
-    }
-    // 保留通用 shape shader 的单一几何实现，只由 pipeline 选择 blend 语义。
-    let shape = RhiShapeRect {
-        x,
-        y,
-        w: width,
-        h: height,
-        rgba: color_rgba(color),
-        radius,
-        half_stroke: half_stroke * (scale_x.abs() * scale_y.abs()).sqrt(),
-        scissor,
-    };
-    // Additive 和 SrcOver 共享同一组圆角常量与裁剪规则。
-    operations.push(if additive {
-        RhiOp::AdditiveShape(shape)
-    } else {
-        RhiOp::Shape(shape)
-    });
-    true
-}
-
 // 从 FrameGlyphBlit 复制精确尺寸的 coverage payload。
 fn copy_glyph_coverage(glyph: &FrameGlyphBlit) -> Result<Option<Arc<[u8]>>, Error> {
     // 保护宽高乘法并要求 payload 至少覆盖描述的区域。
@@ -355,6 +309,15 @@ fn append_native_operation(
             scale_x,
             scale_y,
         )),
+        // 亚像素填充直接进入共享 shape shader，避免 CPU 光栅回退。
+        FrameRasterOp::FillRoundedRectSubpixel {
+            rect,
+            color,
+            radius,
+            clip,
+        } => Ok(append_subpixel_shape(
+            operations, *rect, *color, *radius, None, *clip, bounds, viewport, scale_x, scale_y,
+        )),
         // 每个 glyph 保留原始顺序，覆盖率纹理由通用 RHI 管理。
         FrameRasterOp::BlitGlyphs { glyphs, clip } => {
             let Some(scissor) = scaled_scissor(*clip, bounds, viewport, scale_x, scale_y) else {
@@ -392,6 +355,10 @@ fn append_native_operation(
             }
             Ok(true)
         }
+        // 字形轮廓必须在 GPU 端生成 MSDF coverage。
+        FrameRasterOp::BlitGlyphOutlines { glyphs, clip } => Ok(append_glyph_outlines(
+            operations, glyphs, *clip, bounds, viewport, scale_x, scale_y,
+        )),
         // 描边矩形与普通圆角填充共享 shape ABI。
         FrameRasterOp::StrokeRoundedRects {
             strokes,
@@ -423,6 +390,25 @@ fn append_native_operation(
             }
             Ok(true)
         }
+        // 亚像素描边使用同一 shape shader 与普通 SrcOver pipeline。
+        FrameRasterOp::StrokeRoundedRectSubpixel {
+            rect,
+            color,
+            radius,
+            line_width,
+            clip,
+        } => Ok(append_subpixel_shape(
+            operations,
+            *rect,
+            *color,
+            *radius,
+            Some(*line_width),
+            *clip,
+            bounds,
+            viewport,
+            scale_x,
+            scale_y,
+        )),
         // Additive 矩形复用 shape SDF 与独立的加法 blend pipeline。
         FrameRasterOp::FillRectAdditive { rect, color, clip } => Ok(append_shape(
             operations,

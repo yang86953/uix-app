@@ -15,6 +15,8 @@ pub(crate) mod canvas2d;
 pub(crate) mod canvas_clip;
 // raw image 的 retained crop 与 Additive sampled 直达逻辑独立于画布主体。
 pub(crate) mod canvas_image;
+// SrcOver 矩形与字形的原生准入集中在独立 shape 契约组件。
+pub(crate) mod canvas_shape;
 pub(crate) mod geometry;
 pub(crate) mod offscreen;
 

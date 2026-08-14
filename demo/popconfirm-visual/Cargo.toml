@@ -13,8 +13,8 @@ license-file = "../../LICENSE"
 
 # 声明真窗运行所需的最小依赖。
 [dependencies]
-# 只启用 Windows 图形与反馈组件能力。
-uix = { path = "../..", default-features = false, features = ["d3d11", "feedback"] }
+# 只启用 Windows 图形、反馈组件与受控真窗验收能力。
+uix = { path = "../..", default-features = false, features = ["d3d11", "feedback", "agent-control"] }
 
 # 登记唯一验收二进制入口。
 [[bin]]

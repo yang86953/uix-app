@@ -24,7 +24,7 @@ use std::thread;
 use std::time::Duration;
 
 // 引入 JSON 动作与快照值。
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 // 引入独立验收进程 fixture。
 use process::DemoProcess;
@@ -62,6 +62,222 @@ fn real_registered_components_cover_pointer_keyboard_and_dynamic_visual_states()
     );
     // 输出不含 token 的稳定证据位置。
     println!("component visual evidence: {}", evidence_root.display());
+}
+
+// 在真实 D3D11 窗口中验收 Popconfirm 六种位置与双输入动作。
+#[test]
+#[ignore = "requires an interactive Windows desktop and writes PNG visual evidence"]
+fn real_popconfirm_covers_placements_pointer_keyboard_and_counts() {
+    // 创建 Popconfirm 专属稳定证据目录。
+    let evidence_root = popconfirm_evidence_root();
+    // 清理本测试上次生成的精确证据目录。
+    reset_evidence_root(&evidence_root);
+    // 保存全部位置与动作截图供最终审阅板拼接。
+    let mut images = Vec::new();
+    // 启动只拥有 Popconfirm 验收页面的独立进程。
+    let (mut demo, mut client, window) = start_visual("popconfirm-visual");
+    // 读取首帧语义快照。
+    let initial = client.snapshot(window);
+    // 初始确认计数必须为零。
+    assert_eq!(
+        node_by_automation_id(&initial, "popconfirm-confirm-count")["name"],
+        "确认次数：0"
+    );
+    // 初始取消计数必须为零。
+    assert_eq!(
+        node_by_automation_id(&initial, "popconfirm-cancel-count")["name"],
+        "取消次数：0"
+    );
+    // 保存六个长短自定义 trigger 的初始视觉证据。
+    capture(
+        &demo,
+        &evidence_root,
+        "popconfirm-01-initial.png",
+        &mut images,
+    );
+
+    // 定义六种作者 placement 与稳定 trigger 的验收顺序。
+    let placements = [
+        // 覆盖顶部左对齐。
+        (
+            "popconfirm-top-left",
+            "popconfirm-trigger-top-left",
+            "popconfirm-02-top-left.png",
+        ),
+        // 覆盖顶部居中。
+        (
+            "popconfirm-top",
+            "popconfirm-trigger-top",
+            "popconfirm-03-top.png",
+        ),
+        // 覆盖顶部右对齐。
+        (
+            "popconfirm-top-right",
+            "popconfirm-trigger-top-right",
+            "popconfirm-04-top-right.png",
+        ),
+        // 覆盖底部左对齐。
+        (
+            "popconfirm-bottom-left",
+            "popconfirm-trigger-bottom-left",
+            "popconfirm-05-bottom-left.png",
+        ),
+        // 覆盖底部居中与无图标。
+        (
+            "popconfirm-bottom",
+            "popconfirm-trigger-bottom",
+            "popconfirm-06-bottom.png",
+        ),
+        // 覆盖底部右对齐与无箭头。
+        (
+            "popconfirm-bottom-right",
+            "popconfirm-trigger-bottom-right",
+            "popconfirm-07-bottom-right.png",
+        ),
+    ];
+    // 逐个通过真实指针打开，再用 Escape 进入统一取消路径。
+    for (index, (owner_id, trigger_id, image_name)) in placements.iter().enumerate() {
+        // 读取当前 trigger 的真实可见边界。
+        let snapshot = client.snapshot(window);
+        // 取得当前 placement 的真实 trigger 矩形。
+        let (x, y, width, height) = visible_bounds(node_by_automation_id(&snapshot, trigger_id));
+        // 在 trigger 中心执行真实指针点击。
+        click_at(&mut client, window, x + width * 0.5, y + height * 0.5);
+        // 打开态必须公开展开状态与默认确认动作。
+        let opened = client.snapshot(window);
+        // 当前 owner 必须处于稳定打开态。
+        assert_eq!(
+            node_by_automation_id(&opened, owner_id)["state"]["expanded"],
+            true
+        );
+        // 默认虚拟动作必须指向确认按钮。
+        assert_eq!(
+            node_by_automation_id(&opened, owner_id)["state"]["value_text"],
+            "OK"
+        );
+        // 保存当前 placement 的真实浮层像素。
+        capture(&demo, &evidence_root, image_name, &mut images);
+        // Escape 必须进入统一用户取消动作。
+        press_key(&mut client, window, "escape");
+        // 读取取消后的语义与计数终态。
+        let closed = client.snapshot(window);
+        // 当前 owner 必须离开稳定打开态。
+        assert_eq!(
+            node_by_automation_id(&closed, owner_id)["state"]["expanded"],
+            false
+        );
+        // 焦点必须归还真实 trigger 子树。
+        assert_eq!(node_by_automation_id(&closed, trigger_id)["focused"], true);
+        // 每轮 Escape 只能增加一次取消计数。
+        assert_eq!(
+            node_by_automation_id(&closed, "popconfirm-cancel-count")["name"],
+            format!("取消次数：{}", index + 1)
+        );
+        // 等待离场动画释放全局指针捕获，再切换到下一独立 placement。
+        thread::sleep(Duration::from_millis(250));
+    }
+
+    // 通过公开焦点动作选择顶部左侧真实 trigger。
+    focus_automation(&mut client, window, "popconfirm-trigger-top-left");
+    // Enter 必须从真实 trigger 键盘路径打开确认框。
+    press_key(&mut client, window, "enter");
+    // Right 必须选择取消虚拟动作。
+    press_key(&mut client, window, "right");
+    // 读取方向键选择后的语义状态。
+    let cancel_selected = client.snapshot(window);
+    // 取消动作必须同时公开名称与一基序号二。
+    assert_eq!(
+        node_by_automation_id(&cancel_selected, "popconfirm-top-left")["state"]["value_text"],
+        "Cancel"
+    );
+    // Left 必须恢复确认虚拟动作。
+    press_key(&mut client, window, "left");
+    // Enter 必须提交唯一确认回调并完成呈现。
+    press_key(&mut client, window, "enter");
+    // 读取键盘确认后的计数与关闭状态。
+    let keyboard_confirmed = client.snapshot(window);
+    // 键盘确认只能增加一次确认计数。
+    assert_eq!(
+        node_by_automation_id(&keyboard_confirmed, "popconfirm-confirm-count")["name"],
+        "确认次数：1"
+    );
+    // 确认后 owner 必须关闭。
+    assert_eq!(
+        node_by_automation_id(&keyboard_confirmed, "popconfirm-top-left")["state"]["expanded"],
+        false
+    );
+    // 等待确认离场动画结束，使截图明确显示 trigger 焦点环与稳定计数。
+    thread::sleep(Duration::from_millis(250));
+    // 保存键盘确认后的焦点与计数证据。
+    capture(
+        &demo,
+        &evidence_root,
+        "popconfirm-08-keyboard-confirm.png",
+        &mut images,
+    );
+
+    // 读取底部左侧 trigger 作为鼠标动作几何锚点。
+    let pointer_snapshot = client.snapshot(window);
+    // 取得底部浮层不会翻转时的稳定 trigger 边界。
+    let (x, y, width, height) = visible_bounds(node_by_automation_id(
+        &pointer_snapshot,
+        "popconfirm-trigger-bottom-left",
+    ));
+    // 鼠标点击 trigger 打开底部左侧确认框。
+    click_at(&mut client, window, x + width * 0.5, y + height * 0.5);
+    // 点击标准 200x110 浮层内确认按钮中心。
+    click_at(&mut client, window, x + 54.0, y + height + 97.0);
+    // 读取鼠标确认后的终态。
+    let pointer_confirmed = client.snapshot(window);
+    // 鼠标确认必须只增加一次确认计数。
+    assert_eq!(
+        node_by_automation_id(&pointer_confirmed, "popconfirm-confirm-count")["name"],
+        "确认次数：2"
+    );
+    // 再次打开同一底部左侧确认框。
+    click_at(&mut client, window, x + width * 0.5, y + height * 0.5);
+    // 点击标准浮层内取消按钮中心。
+    click_at(&mut client, window, x + 146.0, y + height + 97.0);
+    // 读取鼠标取消后的终态。
+    let pointer_cancelled = client.snapshot(window);
+    // 鼠标取消必须在六次 Escape 后只再增加一次。
+    assert_eq!(
+        node_by_automation_id(&pointer_cancelled, "popconfirm-cancel-count")["name"],
+        "取消次数：7"
+    );
+    // 第三次打开用于外部点击取消验收。
+    click_at(&mut client, window, x + width * 0.5, y + height * 0.5);
+    // 点击页面右下空白区域触发外部取消。
+    click_at(&mut client, window, 1000.0, 480.0);
+    // 读取外部点击后的终态。
+    let outside_cancelled = client.snapshot(window);
+    // 外部点击必须再且仅再增加一次取消计数。
+    assert_eq!(
+        node_by_automation_id(&outside_cancelled, "popconfirm-cancel-count")["name"],
+        "取消次数：8"
+    );
+    // 等待外部取消离场动画结束，使最终证据不混入残留浮层。
+    thread::sleep(Duration::from_millis(250));
+    // 保存鼠标确认、取消与外部点击后的最终证据。
+    capture(
+        &demo,
+        &evidence_root,
+        "popconfirm-09-pointer-final.png",
+        &mut images,
+    );
+
+    // 拼接单一视觉审阅板覆盖初始、六位置和双输入终态。
+    visual_capture::write_contact_sheet(
+        &images,
+        &evidence_root.join("popconfirm-interaction-contact.png"),
+        3,
+    );
+    // 关闭协议连接让进程回收不等待客户端。
+    drop(client);
+    // 回收 Popconfirm 验收窗口并收集进程输出。
+    let _ = demo.stop_and_collect();
+    // 输出不含 token 的稳定证据位置。
+    println!("popconfirm visual evidence: {}", evidence_root.display());
 }
 
 // 在真实 D3D11 窗口中验收 overlay backdrop blur 的背景/前景分离视觉。
@@ -622,6 +838,18 @@ fn evidence_root() -> PathBuf {
         .join("debug-captures")
         // 隔离本组组件交互证据。
         .join("uix-component-visual")
+}
+
+// 返回仓库 target 下不进入提交的 Popconfirm 视觉证据目录。
+fn popconfirm_evidence_root() -> PathBuf {
+    // 从根 crate 清单目录构造确定路径。
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        // 进入构建输出目录。
+        .join("target")
+        // 进入 AI 可读捕获目录。
+        .join("debug-captures")
+        // 隔离 Popconfirm 真窗交互证据。
+        .join("uix-popconfirm-visual")
 }
 
 // 返回仓库 target 下不进入提交的 backdrop blur 视觉证据目录。
