@@ -2,82 +2,141 @@
 #[derive(Clone, PartialEq, Eq)]
 pub struct Locale {
     // ── General ──
+    /// 空数据状态的主文案。
     pub empty_data: &'static str,
+    /// 无数据状态的简短文案。
     pub no_data: &'static str,
+    /// 通用输入占位文案。
     pub placeholder: &'static str,
+    /// 通用确认按钮文案。
     pub ok_text: &'static str,
+    /// 通用取消按钮文案。
     pub cancel_text: &'static str,
+    /// 通用删除操作文案。
     pub delete_text: &'static str,
+    /// 通用菜单无障碍文案。
     pub menu_text: &'static str,
     // ── Calendar/DatePicker ──
+    /// 从周一开始的星期短名称。
     pub weekdays_short: [&'static str; 7],
+    /// 从周一开始的星期完整名称。
     pub weekdays_long: [&'static str; 7],
+    /// 从一月开始的月份短名称。
     pub months_short: [&'static str; 12],
+    /// 从一月开始的月份完整名称。
     pub months_long: [&'static str; 12],
+    /// 年份显示格式。
     pub year_format: &'static str,
+    /// 月份显示格式。
     pub month_format: &'static str,
+    /// 年月组合显示格式。
     pub month_year_format: &'static str,
+    /// 日期显示格式。
     pub date_format: &'static str,
+    /// 今天快捷操作文案。
     pub today: &'static str,
+    /// 此刻快捷操作文案。
     pub now: &'static str,
+    /// 选择日期提示文案。
     pub date_select: &'static str,
+    /// 选择时间提示文案。
     pub time_select: &'static str,
     // ── TimePicker ──
+    /// 时间显示格式。
     pub time_format: &'static str,
     // ── Breadcrumb ──
+    /// 面包屑默认分隔符。
     pub breadcrumb_separator: &'static str,
     // ── Cascader ──
+    /// 级联选择路径分隔符。
     pub cascader_separator: &'static str,
+    /// 级联选择占位文案。
     pub cascader_placeholder: &'static str,
     // ── Drawer ──
+    /// 抽屉确认按钮文案。
     pub drawer_ok: &'static str,
     // ── Empty ──
+    /// 空状态说明文案。
     pub empty_description: &'static str,
     // ── FloatButton ──
+    /// 浮动按钮徽标溢出文案。
     pub float_badge_overflow: &'static str,
+    /// 返回顶部按钮文案。
     pub float_backtop: &'static str,
     // ── Nav ──
+    /// 导航区域版本文案。
     pub nav_version: &'static str,
     // ── Pagination ──
+    /// 每页条数单位文案。
     pub items_per_page: &'static str,
+    /// 页码跳转提示文案。
     pub jump_to: &'static str,
+    /// 页码单位文案。
     pub page: &'static str,
+    /// 上一页按钮文案。
     pub prev_page: &'static str,
+    /// 下一页按钮文案。
     pub next_page: &'static str,
+    /// 总条数格式文案。
     pub pagination_total: &'static str,
+    /// 分页每页条数格式文案。
     pub pagination_items_per_page: &'static str,
     // ── Popconfirm ──
+    /// 气泡确认框确认按钮文案。
     pub popconfirm_ok: &'static str,
+    /// 气泡确认框取消按钮文案。
     pub popconfirm_cancel: &'static str,
+    /// 气泡确认框默认标题。
     pub popconfirm_title: &'static str,
     // ── Result ──
+    /// 成功结果标题。
     pub result_success: &'static str,
+    /// 错误结果标题。
     pub result_error: &'static str,
+    /// 信息结果标题。
     pub result_info: &'static str,
+    /// 警告结果标题。
     pub result_warning: &'static str,
+    /// 未找到结果标题。
     pub result_404: &'static str,
+    /// 禁止访问结果标题。
     pub result_403: &'static str,
+    /// 服务器错误结果标题。
     pub result_500: &'static str,
+    /// 未找到结果说明。
     pub result_404_desc: &'static str,
+    /// 禁止访问结果说明。
     pub result_403_desc: &'static str,
+    /// 服务器错误结果说明。
     pub result_500_desc: &'static str,
     // ── Select ──
+    /// 选择器选项组格式文案。
     pub select_optgroup_format: &'static str,
     // ── Table ──
+    /// 表格筛选标题。
     pub filter_title: &'static str,
+    /// 表格筛选确认按钮文案。
     pub filter_confirm: &'static str,
+    /// 表格筛选重置按钮文案。
     pub filter_reset: &'static str,
     // ── Timeline ──
+    /// 时间线待处理状态文案。
     pub timeline_pending: &'static str,
     // ── Transfer ──
+    /// 穿梭框来源列表标题。
     pub transfer_source: &'static str,
+    /// 穿梭框目标列表标题。
     pub transfer_target: &'static str,
     // ── TreeSelect ──
+    /// 树选择器占位文案。
     pub tree_select_placeholder: &'static str,
     // ── Upload ──
+    /// 上传组件点击提示文案。
     pub upload_click: &'static str,
+    /// 上传组件拖放提示文案。
     pub upload_drag: &'static str,
     // ── QRCode ──
+    /// 二维码默认标志替代文案。
     pub qrcode_logo: &'static str,
 }
 
