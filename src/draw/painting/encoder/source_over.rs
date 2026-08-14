@@ -163,6 +163,10 @@ pub(super) fn source_over_commands_have_safe_grouping(
                         }
                     }
                 }
+                // 亚像素 shape 暂不参与整数 Picture splice 的重叠证明。
+                FrameRasterOp::FillRoundedRectSubpixel { .. }
+                | FrameRasterOp::StrokeRoundedRectSubpixel { .. }
+                | FrameRasterOp::BlitGlyphOutlines { .. } => return false,
                 FrameRasterOp::BlitGlyphs { glyphs, clip } => {
                     if !clip.is_within(width, height) {
                         return false;
@@ -473,6 +477,10 @@ pub(super) fn crop_and_translate_source_over_command(
                         clip: translated_clip,
                     }
                 }
+                // 亚像素 shape 不能伪装为整数 crop 平移。
+                FrameRasterOp::FillRoundedRectSubpixel { .. }
+                | FrameRasterOp::StrokeRoundedRectSubpixel { .. }
+                | FrameRasterOp::BlitGlyphOutlines { .. } => return Err(()),
                 FrameRasterOp::BlitGlyphs { glyphs, clip } => {
                     let Some((visible_clip, translated_clip)) = translate_visible(*clip)? else {
                         return Ok(None);

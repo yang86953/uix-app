@@ -8,20 +8,20 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 // 引入图像拼板与保存能力。
-use image::{DynamicImage, GenericImage, RgbaImage, imageops};
+use image::{imageops, DynamicImage, GenericImage, RgbaImage};
 // 引入窗口、坐标与矩形类型。
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
 // 引入桌面像素复制所需 GDI 资源。
 use windows::Win32::Graphics::Gdi::{
-    BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CAPTUREBLT, ClientToScreen, CreateCompatibleDC,
-    CreateDIBSection, DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, HBITMAP, HDC, HGDIOBJ,
-    ReleaseDC, SRCCOPY, SelectObject,
+    BitBlt, ClientToScreen, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC,
+    ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CAPTUREBLT, DIB_RGB_COLORS,
+    HBITMAP, HDC, HGDIOBJ, SRCCOPY,
 };
 // 引入顶层窗口枚举、可见性与置顶能力。
 use windows::Win32::UI::WindowsAndMessaging::{
     BringWindowToTop, EnumWindows, GetClientRect, GetWindowRect, GetWindowTextW,
-    GetWindowThreadProcessId, HWND_TOPMOST, IsWindowVisible, IsZoomed, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_SHOWWINDOW, SetWindowPos,
+    GetWindowThreadProcessId, IsWindowVisible, IsZoomed, SetWindowPos, HWND_TOPMOST, SWP_NOMOVE,
+    SWP_NOSIZE, SWP_SHOWWINDOW,
 };
 // 引入 Win32 回调布尔返回值。
 use windows::core::BOOL;

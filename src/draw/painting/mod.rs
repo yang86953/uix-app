@@ -22,8 +22,8 @@ pub use canvas::Canvas2D;
 pub use display_list::{DisplayList, PaintOp, PaintPass};
 pub use encoder::{
     EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder, FrameEncoderError,
-    FrameGlyphBlit, FrameImage, FrameOpacity, FramePresenter, FrameRadius, FrameRasterOp,
-    FrameRect, FrameSampledRect, FrameStrokeRect, FrameStrokeWidth, GpuFrameAudit,
+    FrameGlyphBlit, FrameGlyphOutline, FrameImage, FrameOpacity, FramePresenter, FrameRadius,
+    FrameRasterOp, FrameRect, FrameSampledRect, FrameStrokeRect, FrameStrokeWidth, GpuFrameAudit,
     GpuFrameViolationKind, PresentOutcome, ReferenceFrame,
 };
 pub use paint_context::{resolve_font_size, PaintContext, PaintSurfaceConfig};
