@@ -1,5 +1,4 @@
 use super::*;
-
 // 拆分节点 Effect 生命周期辅助方法，保持 BoxedWidget 主文件低于规模上限。
 #[path = "boxed/effects.rs"]
 // 编译节点 Effect 生命周期的私有实现模块。
@@ -8,7 +7,8 @@ mod captured_effects;
 #[path = "boxed/state_binds.rs"]
 // 编译节点 State 租约生命周期的私有实现模块。
 mod captured_state_binds;
-
+// 拆分透明包装节点的同轮子测量分发，保持主文件低于规模上限。
+#[path = "boxed/layout_measure.rs"] mod layout_measure;
 pub struct BoxedWidget {
     component: Box<dyn WidgetComponent>,
     caps: WidgetCapabilities,

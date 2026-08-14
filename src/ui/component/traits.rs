@@ -168,6 +168,15 @@ pub trait WidgetLayout: WidgetComponent {
     fn measure(&self, constraints: Constraints) -> Size {
         constraints.clamp(Size::zero())
     }
+    /// 允许透明包装组件在同一测量轮次内由直接子节点决定自身尺寸。
+    fn measure_from_children(
+        &self,
+        _constraints: Constraints,
+        _children: &[ComponentId],
+        _tree: &WidgetTree,
+    ) -> Option<Size> {
+        None
+    }
     fn flex_grow(&self) -> f32 {
         0.0
     }

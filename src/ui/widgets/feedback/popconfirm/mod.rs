@@ -19,6 +19,11 @@ use crate::ui::{
 
 mod geometry;
 
+// 仅在测试构建中编译组合 trigger 的父级测量回归。
+#[cfg(test)]
+// 将布局回归从已接近规模门禁的几何测试文件中独立出来。
+mod layout_tests;
+
 use self::geometry::*;
 
 const POPCONFIRM_WIDTH: f32 = 200.0;
@@ -91,6 +96,30 @@ component! {
         let desired = if self.custom_trigger { Size::zero() } else { self.intrinsic_size() };
         // 尊重父级给出的最小与最大约束。
         constraints.clamp(desired)
+    }
+
+    // 组合模式在父级测量本轮直接读取唯一 trigger 的自然尺寸。
+    measure_from_children => (&self, constraints: Constraints, children: &[ComponentId], tree: &WidgetTree)
+        -> Option<Size>
+    {
+        // 兼容自绘模式继续使用普通 intrinsic measure。
+        if !self.custom_trigger {
+            // 空值让统一入口回退到 measure。
+            return None;
+        }
+        // UIX 契约只允许一个直接 trigger，运行时异常结构不伪造尺寸。
+        let [child_id] = children else {
+            // 让异常结构继续走零尺寸并由既有门禁诊断。
+            return Some(Size::zero());
+        };
+        // 使用与 arrange 相同的无约束自然测量，避免零高 bootstrap 截断按钮。
+        let child = child_from_tree_with_constraints(*child_id, tree, Constraints::unconstrained());
+        // 将自然 border-box 收敛到父级给出的有限边界。
+        let measured = constraints.clamp(child.measured_size);
+        // 记录本轮真实锚点尺寸，供同帧命中、绘制与浮层定位共享。
+        self.trigger_size.set(measured);
+        // 把唯一 trigger 的同轮尺寸返回给父容器。
+        Some(measured)
     }
 
     // 组合模式必须让完整 trigger 子树成为真实指针目标。

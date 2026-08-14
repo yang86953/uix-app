@@ -20,7 +20,14 @@ pub fn child_from_tree_with_constraints(
     constraints: Constraints,
 ) -> LayoutChild {
     let node = tree.get(component_id);
-    let pref = node.map(|c| c.measure(constraints)).unwrap_or_default();
+    // 透明包装节点可在同一轮读取直接子测量，避免用上一帧缓存猜测固有尺寸。
+    let pref = node
+        // 优先请求组件明确声明的直接子节点代理测量。
+        .and_then(|component| component.measure_from_children(constraints, tree))
+        // 普通组件继续使用原有阶段无关测量入口。
+        .or_else(|| node.map(|component| component.measure(constraints)))
+        // 节点已经失效时保持有限零尺寸。
+        .unwrap_or_default();
     let layout = node.and_then(|component| component.as_layout());
     let grow = layout.map(|layout| layout.flex_grow()).unwrap_or(0.0);
     let shrink = layout.map(|layout| layout.flex_shrink()).unwrap_or(1.0);
