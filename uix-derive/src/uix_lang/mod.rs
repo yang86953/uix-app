@@ -24,6 +24,11 @@ mod data_binding_codegen_tests;
 mod button_group_codegen;
 // 定义核心元素、属性、事件与控制流的 Rust View 代码生成。
 mod codegen;
+// 定义相邻 If、ElseIf 与 Else 的配对和短路条件链生成。
+mod conditional_chain_codegen;
+// 集中验证条件链相邻配对、短路生成与拒绝路径。
+#[cfg(test)]
+mod conditional_chain_codegen_tests;
 // 定义元素名称到既有专用生成器的确定性分派。
 mod element_codegen;
 // 定义 Divider 内置组件的公开 API 代码生成边界。

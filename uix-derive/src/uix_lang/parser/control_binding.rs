@@ -8,8 +8,8 @@ pub(super) fn parse_control_binding(
     cursor: &mut Cursor<'_>,
     element_name: &str,
 ) -> Result<ControlBinding, Diagnostic> {
-    // If 直接保存一个条件表达式。
-    if element_name == "If" {
+    // If 与 ElseIf 都直接保存一个条件表达式。
+    if matches!(element_name, "If" | "ElseIf") {
         // 解析并返回条件绑定。
         return Ok(ControlBinding::If(parse_braced_expression_node(cursor)?));
     }
@@ -22,7 +22,7 @@ pub(super) fn parse_control_binding(
             // 陈述失败原因。
             format!("元素 <{element_name}> 不支持控制绑定"),
             // 给出支持结构。
-            "只在 <If {condition}> 或 <For {item} in {items}> 中使用",
+            "只在 <If {condition}>、<ElseIf {condition}> 或 <For {item} in {items}> 中使用",
         ));
     }
     // 解析 For 的单标识符绑定声明。
@@ -149,14 +149,14 @@ pub(super) fn parse_control_binding(
     })
 }
 
-// 验证 If 与 For 元素没有遗漏规范要求的绑定。
+// 验证 If、ElseIf 与 For 元素没有遗漏规范要求的绑定。
 pub(super) fn require_control_binding(
     element_name: &str,
     control: Option<&ControlBinding>,
     span: SourceSpan,
 ) -> Result<(), Diagnostic> {
     // 普通元素或已有绑定的控制元素直接通过。
-    if !matches!(element_name, "If" | "For") || control.is_some() {
+    if !matches!(element_name, "If" | "ElseIf" | "For") || control.is_some() {
         // 报告结构有效。
         return Ok(());
     }
@@ -167,9 +167,9 @@ pub(super) fn require_control_binding(
         // 陈述失败原因。
         format!("<{element_name}> 缺少控制绑定"),
         // 给出对应合法结构。
-        if element_name == "If" {
-            // 返回 If 修复示例。
-            "使用 <If {condition}>"
+        if matches!(element_name, "If" | "ElseIf") {
+            // 返回条件分支修复示例。
+            "使用 <If {condition}> 或 <ElseIf {condition}>"
         } else {
             // 返回 For 修复示例。
             "使用 <For {item} in {items}>"

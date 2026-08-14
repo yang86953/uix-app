@@ -75,7 +75,7 @@ pub(super) fn parse_element(
     }
     // 保存声明顺序中的属性。
     let mut attributes = Vec::new();
-    // 保存 If 或 For 专用控制绑定。
+    // 保存 If、ElseIf 或 For 专用控制绑定。
     let mut control = None;
     // 解析到标签结束标记。
     loop {
@@ -120,7 +120,7 @@ pub(super) fn parse_element(
                 "在开始标签末尾添加 > 或 />",
             ));
         }
-        // 花括号在开始标签内只允许作为 If 或 For 控制绑定。
+        // 花括号在开始标签内只允许作为 If、ElseIf 或 For 控制绑定。
         if cursor.starts_with("{") {
             // 控制元素不能把普通属性放在绑定之前。
             if !attributes.is_empty() {
@@ -129,9 +129,9 @@ pub(super) fn parse_element(
                     // 指向控制绑定起点。
                     cursor.point_span(),
                     // 陈述失败原因。
-                    "If/For 控制绑定必须紧跟标签名",
+                    "If/ElseIf/For 控制绑定必须紧跟标签名",
                     // 给出规范顺序。
-                    "使用 <If {condition}> 或 <For {item} in {items}>",
+                    "使用 <If {condition}>、<ElseIf {condition}> 或 <For {item} in {items}>",
                 ));
             }
             // 同一元素只能有一个控制绑定。
@@ -196,16 +196,28 @@ pub(super) fn parse_element(
             // 继续读取标签结束标记。
             continue;
         }
-        // If 控制绑定后不允许普通属性。
+        // If 与 ElseIf 控制绑定后不允许普通属性。
         if control.is_some() {
             // 返回控制结构形状诊断。
             return Err(Diagnostic::new(
                 // 指向多余内容。
                 cursor.point_span(),
                 // 陈述失败原因。
-                "If/For 控制绑定后不允许普通属性",
+                "If/ElseIf/For 控制绑定后不允许普通属性",
                 // 给出规范结构。
                 "把条件或循环逻辑完整写在控制绑定中",
+            ));
+        }
+        // Else 分支不接受条件或普通属性。
+        if name == "Else" {
+            // 返回 Else 属性形状诊断。
+            return Err(Diagnostic::new(
+                // 指向非法属性起点。
+                cursor.point_span(),
+                // 陈述 Else 只承担兜底分支。
+                "Else 不接受控制绑定或普通属性",
+                // 给出规范空属性结构。
+                "使用 <Else>...</Else>",
             ));
         }
         // 解析一个属性。
