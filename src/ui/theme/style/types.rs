@@ -1,51 +1,82 @@
 use super::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 可由主题令牌解析的语义调色板角色。
 pub enum PaletteColor {
+    /// 品牌主色。
     Primary,
+    /// 主色悬停态。
     PrimaryHover,
+    /// 主色激活态。
     PrimaryActive,
+    /// 主色弱背景。
     PrimaryBg,
+    /// 主色边框。
     PrimaryBorder,
+    /// 成功状态主色。
     Success,
+    /// 成功状态背景。
     SuccessBg,
+    /// 成功状态边框。
     SuccessBorder,
+    /// 警告状态主色。
     Warning,
+    /// 警告状态背景。
     WarningBg,
+    /// 警告状态边框。
     WarningBorder,
+    /// 错误状态主色。
     Error,
+    /// 错误状态背景。
     ErrorBg,
+    /// 错误状态边框。
     ErrorBorder,
+    /// 信息状态主色。
     Info,
+    /// 信息状态背景。
     InfoBg,
+    /// 信息状态边框。
     InfoBorder,
+    /// 链接默认色。
     Link,
+    /// 链接悬停色。
     LinkHover,
+    /// 链接激活色。
     LinkActive,
+    /// 主题白色。
     White,
+    /// 主题黑色。
     Black,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 可解析为最终颜色的样式值。
 pub enum ColorValue {
+    /// 主题语义调色板颜色。
     Palette(PaletteColor),
+    /// 主题中性色角色。
     Neutral(NeutralRole),
+    /// 不经主题转换的自定义颜色。
     Custom(Color),
 }
 
 impl ColorValue {
+    /// 创建自定义颜色值。
     pub const fn custom(color: Color) -> Self {
         Self::Custom(color)
     }
 
+    /// 创建中性色角色值。
     pub const fn neutral(role: NeutralRole) -> Self {
         Self::Neutral(role)
     }
 
+    /// 创建语义调色板颜色值。
     pub const fn palette(color: PaletteColor) -> Self {
         Self::Palette(color)
     }
 
+    /// 使用主题令牌解析最终颜色。
     pub fn resolve(self, tokens: &dyn ThemeTokens) -> Color {
         match self {
             Self::Palette(color) => match color {
@@ -119,20 +150,32 @@ impl From<String> for ColorValue {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// 可由主题令牌解析的排版字号角色。
 pub enum TypographyToken {
+    /// 小号正文。
     Small,
+    /// 默认正文。
     Body,
+    /// 大号正文。
     Large,
+    /// 超大正文。
     XLarge,
+    /// 一级标题。
     Heading1,
+    /// 二级标题。
     Heading2,
+    /// 三级标题。
     Heading3,
+    /// 四级标题。
     Heading4,
+    /// 五级标题。
     Heading5,
+    /// 不经主题转换的自定义字号。
     Custom(f32),
 }
 
 impl TypographyToken {
+    /// 使用主题令牌解析最终字号。
     pub fn resolve(self, tokens: &dyn ThemeTokens) -> f32 {
         match self {
             Self::Small => tokens.font_size_sm(),
@@ -148,6 +191,7 @@ impl TypographyToken {
         }
     }
 
+    /// 返回该角色不依赖主题的默认字号。
     pub const fn default_size(self) -> f32 {
         match self {
             Self::Small => 12.0,
@@ -177,13 +221,18 @@ impl From<f32> for TypographyToken {
 /// 盒阴影定义。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoxShadowDef {
+    /// 阴影颜色。
     pub color: Color,
+    /// 阴影模糊半径。
     pub blur: f32,
+    /// 阴影水平偏移。
     pub offset_x: f32,
+    /// 阴影垂直偏移。
     pub offset_y: f32,
 }
 
 impl BoxShadowDef {
+    /// 创建盒阴影定义。
     pub const fn new(color: Color, blur: f32, offset_x: f32, offset_y: f32) -> Self {
         Self {
             color,
