@@ -32,6 +32,8 @@ mod space_codegen;
 mod typography_codegen;
 // 定义 ThemeToggle 内置组件的公开 API 代码生成边界。
 mod theme_toggle_codegen;
+// 定义完整设计 token 白名单、类型解析与样式引用生成边界。
+mod theme_token_codegen;
 // 定义 WindowControl 内置组件的公开 API 代码生成边界。
 mod window_control_codegen;
 // 定义 WindowDragRegion 内置组件的公开 API 代码生成边界。

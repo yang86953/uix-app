@@ -11,8 +11,10 @@ use super::{
     Attribute, AttributeValue, ComponentStateInitial, ControlBinding, Declaration, Diagnostic,
     Document, Element, Expression, ExpressionKind, Node, SourceSpan,
 };
-// 引入共享 View 与颜色生成事实。
+// 引入共享 View、颜色与完整主题 token 生成事实。
 use super::{generate_document_view, parse_color};
+// 引入实际 DesignTokens 字段更新入口。
+use super::theme_token_codegen::theme_token_update;
 
 // 保存完成验证的 App 字符串属性。
 #[derive(Default)]
@@ -292,50 +294,43 @@ fn generate_named_theme(
 ) -> Result<TokenStream, Diagnostic> {
     // dark 名称默认继承暗色基元，其余名称继承亮色基元。
     let dark_base = theme.name == "dark";
-    // 保存可选显式背景色以覆盖布局背景令牌。
-    let mut background = None;
-    // 保存主题属性更新语句。
-    let mut updates = Vec::new();
-    // 按声明顺序验证第一版主题属性白名单。
+    // 保存主题基元更新语句。
+    let mut primitive_updates = Vec::new();
+    // 保存派生后精确 token 更新语句。
+    let mut token_updates = Vec::new();
+    // 按声明顺序验证完整运行时 token 白名单。
     for property in &theme.properties {
-        // 主题属性值必须是可确定颜色。
-        let (red, green, blue, alpha) = parse_color(&property.value.source, property)?;
-        // 生成公开颜色值。
-        let color = quote! { ::uix::prelude::Color::from_rgba(#red, #green, #blue, #alpha) };
-        // 按主题基元字段应用更新。
+        // 两个历史别名继续驱动基元色板推导。
         match property.name.as_str() {
             // 主色同步更新 primary 与 info 基元。
-            "primaryColor" => updates.push(quote! {
-                __uix_primitives.primary = #color;
-                __uix_primitives.info = #color;
-            }),
-            // 背景色更新基元并记录精确布局背景覆盖。
+            "primaryColor" => {
+                // 解析兼容别名颜色。
+                let (red, green, blue, alpha) = parse_color(&property.value.source, property)?;
+                // 生成公开颜色值。
+                let color =
+                    quote! { ::uix::prelude::Color::from_rgba(#red, #green, #blue, #alpha) };
+                // 同步更新品牌与信息基元。
+                primitive_updates.push(quote! {
+                    __uix_primitives.primary = #color;
+                    __uix_primitives.info = #color;
+                });
+            }
+            // 背景别名同时驱动推导并保留作者精确布局背景。
             "backgroundColor" => {
-                // 保存精确背景颜色。
-                background = Some(color.clone());
+                // 解析兼容别名颜色。
+                let (red, green, blue, alpha) = parse_color(&property.value.source, property)?;
+                // 生成公开颜色值。
+                let color =
+                    quote! { ::uix::prelude::Color::from_rgba(#red, #green, #blue, #alpha) };
                 // 更新主题明暗推导使用的背景基元。
-                updates.push(quote! { __uix_primitives.bg = #color; });
+                primitive_updates.push(quote! { __uix_primitives.bg = #color; });
+                // 派生后保持兼容别名的精确值。
+                token_updates.push(quote! { __uix_tokens.color_bg_layout = #color; });
             }
-            // 未登记主题属性不能静默丢弃。
-            name => {
-                // 返回主题属性白名单诊断。
-                return Err(Diagnostic::new(
-                    // 指向完整主题属性。
-                    property.span,
-                    // 说明未知属性。
-                    format!("主题属性 {name} 尚未登记"),
-                    // 给出第一版白名单。
-                    "当前只使用 primaryColor 与 backgroundColor",
-                ));
-            }
+            // 其余名称逐项对齐运行时 DesignTokens 字段。
+            _ => token_updates.push(theme_token_update(property)?),
         }
     }
-    // 显式背景色需要保持 #backgroundColor 的作者原值。
-    let background_override = background.map(|color| {
-        quote! {
-            __uix_tokens.color_bg_layout = #color;
-        }
-    });
     // 保存主题名称。
     let name = &theme.name;
     // 返回拥有所有权的名称与主题值。
@@ -350,13 +345,13 @@ fn generate_named_theme(
                 ::uix::prelude::ThemePrimitives::antd_light()
             };
             // 应用主题声明的基元覆盖。
-            #(#updates)*
+            #(#primitive_updates)*
             // 背景亮度决定完整 token 的明暗推导。
             let __uix_is_dark = !__uix_primitives.bg.is_light();
             // 从基元生成完整公开设计令牌。
             let mut __uix_tokens = __uix_primitives.into_design_tokens(__uix_is_dark);
             // 保持作者声明背景色的精确语义。
-            #background_override
+            #(#token_updates)*
             // 包装为 App 接受的 Theme 值。
             ::uix::prelude::Theme::new(__uix_tokens)
         })

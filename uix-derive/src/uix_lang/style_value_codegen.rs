@@ -5,6 +5,8 @@ use quote::quote;
 
 // 引入结构化诊断与样式属性。
 use super::{Diagnostic, StyleProperty};
+// 引入闭合设计 token 的类型化引用生成入口。
+use super::theme_token_codegen::{color_token_reference, number_token_reference};
 
 // 定义数值范围规则。
 #[derive(Clone, Copy)]
@@ -453,6 +455,11 @@ fn edge_insets_value(property: &StyleProperty) -> Result<TokenStream, Diagnostic
 
 // 解析一个非负长度分量。
 fn parse_length(source: &str, property: &StyleProperty) -> Result<TokenStream, Diagnostic> {
+    // 主题数值引用直接读取当前 Provider token。
+    if let Some(value) = number_token_reference(source, property)? {
+        // 返回已验证的主题数值表达式。
+        return Ok(value);
+    }
     // 去除可选 px 后缀。
     let number = source.strip_suffix("px").unwrap_or(source);
     // 解析非负有限数值。
@@ -461,6 +468,11 @@ fn parse_length(source: &str, property: &StyleProperty) -> Result<TokenStream, D
 
 // 解析属性的像素或无单位数值。
 fn number_value(property: &StyleProperty, rule: NumberRule) -> Result<TokenStream, Diagnostic> {
+    // 主题数值引用直接读取当前 Provider token。
+    if let Some(value) = number_token_reference(&property.value.source, property)? {
+        // token 定义自身保证有限非负，返回运行期读取表达式。
+        return Ok(value);
+    }
     // 去除可选 px 后缀。
     let number = property
         .value
@@ -520,19 +532,10 @@ fn parse_number(
 
 // 生成 ColorValue 令牌。
 fn color_value(property: &StyleProperty) -> Result<TokenStream, Diagnostic> {
-    // 主题主色引用映射到运行期主题令牌。
-    if property.value.source == "#primaryColor" {
-        // 返回公开主色色板引用。
-        return Ok(quote! {
-            ::uix::prelude::ColorValue::palette(::uix::prelude::PaletteColor::Primary)
-        });
-    }
-    // 主题背景引用映射到运行期布局背景令牌。
-    if property.value.source == "#backgroundColor" {
-        // 返回公开布局背景中性色引用。
-        return Ok(quote! {
-            ::uix::prelude::ColorValue::neutral(::uix::prelude::NeutralRole::BgLayout)
-        });
+    // 闭合主题颜色引用从当前 Provider 上下文读取。
+    if let Some(value) = color_token_reference(&property.value.source, property)? {
+        // 返回已验证的主题颜色表达式。
+        return Ok(value);
     }
     // 解析颜色的 RGBA 通道。
     let (red, green, blue, alpha) = parse_color(&property.value.source, property)?;
