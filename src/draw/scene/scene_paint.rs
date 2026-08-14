@@ -10,7 +10,9 @@ use crate::draw::scene::NodeId;
 /// Picture cache eligibility declared by widget metadata and refined by runtime signals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PicturePolicy {
+    /// 节点及其子树不得进入离屏 Picture 缓存路径。
     Never,
+    /// 节点满足元数据层面的 Picture 缓存候选条件。
     Eligible,
 }
 
@@ -68,12 +70,19 @@ impl OverlayBackdropEffect {
 
 /// 场景绘制契约：LayerTree 通过此 trait 读取节点元数据并下发绘制。
 pub trait ScenePaint {
+    /// 返回可供场景管线遍历的根节点；无可用场景时返回空值。
     fn root_id(&self) -> Option<NodeId>;
+    /// 返回节点结构发生变化时递增的场景树版本。
     fn tree_version(&self) -> u64;
+    /// 返回当前帧需要重绘的全局脏区域。
     fn dirty_region(&self) -> DirtyRegion;
+    /// 返回节点当前是否参与布局后的场景绘制。
     fn node_visible(&self, id: NodeId) -> bool;
+    /// 返回节点在布局坐标系中的边界矩形。
     fn node_frame(&self, id: NodeId) -> Rect;
+    /// 返回节点是否因失效而需要重新绘制。
     fn node_dirty(&self, id: NodeId) -> bool;
+    /// 返回节点在兄弟节点之间使用的绘制层级。
     fn node_z_index(&self, id: NodeId) -> i32;
     /// Visual transform for this node and its descendants, in layout coordinates.
     fn node_transform(&self, id: NodeId) -> Transform {
@@ -85,34 +94,41 @@ pub trait ScenePaint {
         let _ = id;
         1.0
     }
+    /// 返回节点按场景顺序排列的直接子节点切片。
     fn node_children(&self, id: NodeId) -> &[NodeId];
-    // 返回父布局为节点子树声明的不连续裁剪片段。
+    /// 返回父布局为节点子树声明的不连续裁剪片段。
     fn node_clip_regions(&self, id: NodeId) -> Option<Vec<Rect>> {
         // 默认场景节点不需要额外的父级片段裁剪。
         let _ = id;
         // 用空能力保持现有场景实现兼容。
         None
     }
+    /// 返回节点声明并经运行时信号收紧后的 Picture 缓存资格。
     fn node_picture_policy(&self, id: NodeId) -> PicturePolicy {
         let _ = id;
         PicturePolicy::Never
     }
+    /// 返回节点是否登记了需要保持交互语义的事件处理器。
     fn node_has_semantic_handlers(&self, id: NodeId) -> bool {
         let _ = id;
         false
     }
+    /// 返回节点内容是否会在树结构不变时动态更新。
     fn node_has_dynamic_content(&self, id: NodeId) -> bool {
         let _ = id;
         false
     }
+    /// 返回节点是否持有会改变绘制结果的交互状态。
     fn node_has_interactive_state(&self, id: NodeId) -> bool {
         let _ = id;
         false
     }
+    /// 返回节点是否要求连续接收指针移动更新。
     fn node_wants_continuous_pointer_move(&self, id: NodeId) -> bool {
         let _ = id;
         false
     }
+    /// 返回节点是否属于需要独立合成顺序的浮层。
     fn node_is_overlay(&self, id: NodeId) -> bool {
         let _ = id;
         false
@@ -129,13 +145,20 @@ pub trait ScenePaint {
         // 保持现有 ScenePaint 实现兼容。
         false
     }
+    /// 返回节点子树在给定布局 frame 内使用的连续裁剪矩形。
     fn children_clip(&self, id: NodeId, frame: Rect) -> Option<Rect>;
+    /// 返回节点绘制可能影响的矩形，可在 frame 外扩展。
     fn dirty_rect(&self, id: NodeId, frame: Rect) -> Rect;
     /// 滚动容器内容偏移（viewport → content），无滚动时返回 `None`。
     fn scroll_offset(&self, id: NodeId) -> Option<(f32, f32)>;
+    /// 返回当前持有键盘焦点的节点。
     fn focused_node(&self) -> Option<NodeId>;
+    /// 返回节点当前是否可以接收键盘焦点。
     fn node_focusable(&self, id: NodeId) -> bool;
+    /// 返回布局坐标命中位置最上层的可交互节点。
     fn hit_test(&self, pos: Point) -> Option<NodeId>;
+    /// 返回节点的直接父节点；根节点和未知节点返回空值。
     fn parent(&self, id: NodeId) -> Option<NodeId>;
+    /// 在给定 frame 与绘制上下文中下发节点绘制回调。
     fn paint(&self, id: NodeId, frame: Rect, ctx: &mut PaintContext<'_>);
 }
