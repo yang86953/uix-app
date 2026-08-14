@@ -501,7 +501,8 @@ fn compile_shader(source: &str, entry: &CStr, target: &CStr) -> Result<ID3DBlob>
     })
 }
 
-pub struct D3d11Pipeline {
+// D3D11 着色管线只由 crate 内部上下文创建和持有。
+pub(crate) struct D3d11Pipeline {
     vs_rect: ID3D11VertexShader,
     ps_rect: ID3D11PixelShader,
     layout: ID3D11InputLayout,
