@@ -452,7 +452,8 @@ pub enum SnapshotFields {
     #[cfg(feature = "navigation")]
     Dropdown {
         label: String,
-        items: Vec<String>,
+        // 保留完整 keyed 选项以观察稳定身份与展示文字。
+        items: Vec<DropdownItem>,
         open: bool,
         selected_index: Option<usize>,
         highlighted_index: Option<usize>,

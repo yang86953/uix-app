@@ -72,6 +72,15 @@ fn generates_registered_data_constructor_calls() {
         menu.contains("MenuItem") && menu.contains("from_text") && menu.contains("children"),
         "{menu}"
     );
+    // DropdownItem 显式 label/key 构造必须与展示文字解耦。
+    let dropdown = generate("DropdownItem('编辑', 'edit').icon('edit')");
+    // 快照必须包含 keyed 构造入口与公开成员链。
+    assert!(
+        dropdown.contains("DropdownItem")
+            && dropdown.contains("from_text")
+            && dropdown.contains("icon"),
+        "{dropdown}"
+    );
     // 时间轴事件支持 description 成员链。
     let timeline = generate("TimelineItem('创建').description('2026-08-01')");
     // 快照必须包含构造与成员链。

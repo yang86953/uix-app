@@ -637,6 +637,22 @@ hoverStyleAction {
       </Column>
     // 结束面包屑与锚点面板。
     </Container>
+    // 展示由唯一按钮 trigger 子树驱动的 keyed Dropdown。
+    <Container class="pagePanel">
+      // 组织下拉菜单内容。
+      <Column gap="12px">
+        // 展示面板小节标题。
+        <Text fontSize="heading5">Dropdown</Text>
+        // 同名选项通过独立稳定 key 发布 Change 事实。
+        <Dropdown items={[DropdownItem('编辑', 'edit').icon('edit'), DropdownItem('复制', 'copy').icon('copy'), DropdownItem('更多', 'more').children([DropdownItem('导出', 'export'), DropdownItem('归档', 'archive')])]} trigger="click" width="180px">
+          // Dropdown 拥有完整按钮 trigger 子树与焦点生命周期。
+          <Button>更多操作</Button>
+        // 结束组合 Dropdown。
+        </Dropdown>
+      // 结束下拉菜单内容。
+      </Column>
+    // 结束下拉菜单面板。
+    </Container>
     // 展示 typed 菜单树与双受控 key 状态。
     <Container class="pagePanel">
       // 组织菜单内容。
@@ -668,7 +684,7 @@ hoverStyleAction {
     // 结束标签页面板。
     </Container>
     // 说明剩余规划中导航标签边界。
-    <Alert message="Navigation、Dropdown 标签仍在规划矩阵登记，保持 Rust API 边界。" type="info" />
+    <Alert message="Navigation 标签仍在规划矩阵登记，保持 Rust API 边界。" type="info" />
   // 结束导航组件内容。
   </Column>
 // 结束导航组件页组件。
@@ -1241,13 +1257,13 @@ hoverStyleAction {
         // 说明反馈标签覆盖。
         <Text>反馈：Alert / Modal / Drawer / Tooltip / Popover / FocusTrap / Spin</Text>
         // 说明导航与框架标签覆盖。
-        <Text>导航与框架：Menu / Steps / Pagination / Breadcrumb / Anchor / Tabs / ThemeToggle / WindowControl / WindowDragRegion / QRCode / Watermark</Text>
+        <Text>导航与框架：Menu / Dropdown / Steps / Pagination / Breadcrumb / Anchor / Tabs / ThemeToggle / WindowControl / WindowDragRegion / QRCode / Watermark</Text>
         // 展示语言能力小节。
         <Text fontSize="heading5">语言能力</Text>
         // 说明组件与状态能力。
         <Text>组件：props / 私有 state / 类型化 state（u32、usize、f32、i32、Date、Time、Color、Point、CascaderValue、HashSet）/ setState / 句柄位绑定 / If / For / 样式类继承 / setTheme。</Text>
         // 说明数据声明能力。
-        <Text>数据：数组字面量 / 十四类数据类型构造链（SelectOption、CascaderOption、TreeNode、TimelineItem、Step、DescriptionsItem、BreadcrumbItem、AnchorItem、Tab、MenuItem、Date、Time、Color、Point）/ Record 类型化业务模型。</Text>
+        <Text>数据：数组字面量 / 十五类数据类型构造链（SelectOption、CascaderOption、TreeNode、TimelineItem、Step、DescriptionsItem、BreadcrumbItem、AnchorItem、Tab、MenuItem、DropdownItem、Date、Time、Color、Point）/ Record 类型化业务模型。</Text>
         // 展示保留边界小节。
         <Text fontSize="heading5">保留边界</Text>
         // 说明保留在 Rust API 的边界。

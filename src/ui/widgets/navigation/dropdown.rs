@@ -3,19 +3,27 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::{Color, Radius};
-use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::component::paint_context::PaintContext;
+// 组合 Dropdown 使用组件树的公开子节点测量边界。
+use crate::ui::component::tree_measure::child_from_tree_with_constraints;
+// 引入直接 trigger 子节点的布局快照类型。
+use crate::ui::layout::LayoutChild;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
     WidgetTree,
 };
 use std::cell::RefCell;
+// 组合 owner 共享一次性 trigger View 建造句柄。
+use std::rc::Rc;
 
 // 下拉菜单使用基础层共享的触发方式，不依赖反馈组件族。
 use crate::ui::widgets::TriggerMode;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DropdownItem {
+    /// 与展示 label 分离的稳定业务身份。
+    pub key: String,
     pub label: String,
     pub divider: bool,
     pub disabled: bool,
@@ -25,8 +33,13 @@ pub struct DropdownItem {
 
 impl DropdownItem {
     pub fn new(label: impl Into<String>) -> Self {
+        // 兼容旧字符串构造时以 label 作为稳定 key。
+        let label = label.into();
         Self {
-            label: label.into(),
+            // 旧调用方保持 key=label 的既有事件载荷。
+            key: label.clone(),
+            // 保存展示文字。
+            label,
             divider: false,
             disabled: false,
             icon: String::new(),
@@ -36,12 +49,30 @@ impl DropdownItem {
 
     pub fn divider() -> Self {
         Self {
+            // 分隔线不承担可选择身份。
+            key: String::new(),
             label: String::new(),
             divider: true,
             disabled: false,
             icon: String::new(),
             children: Vec::new(),
         }
+    }
+
+    /// 使用显式 label/key 构造 UIX keyed 选项。
+    pub fn from_text(label: impl Into<String>, key: impl Into<String>) -> Self {
+        // 复用兼容构造初始化展示字段。
+        Self::new(label)
+            // 用调用方稳定业务 key 覆盖兼容值。
+            .key(key)
+    }
+
+    /// 覆盖选项稳定业务 key。
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        // 保存与展示 label 无关的身份。
+        self.key = key.into();
+        // 返回完成配置的拥有型选项。
+        self
     }
 
     pub fn children(mut self, children: Vec<Self>) -> Self {
@@ -89,6 +120,15 @@ component! {
     pub struct Dropdown {
         label: String,
         items: Vec<DropdownItem>,
+        /// UIX 组合模式由唯一直接子 View 绘制触发器。
+        custom_trigger: bool,
+        // Dropdown 在声明期拥有完整 trigger ViewNode 子树。
+        #[snapshot(skip)]
+        custom_trigger_view: Option<Rc<RefCell<Option<crate::ui::view::ViewNode>>>>,
+        /// 保存组件树实际登记的直接 trigger 数量。
+        trigger_child_count: usize,
+        /// 保存空 key 与重复 key 等可观察数据诊断。
+        diagnostics: Vec<String>,
         expanded_keys: Vec<String>,
         open: bool,
         transition: TransitionPlayer,
@@ -102,10 +142,69 @@ component! {
         pending_change: RefCell<Option<String>>,
     }
 
-    tab_index => (&self) -> i32 { 1 }
+    // 组合模式把 Tab 焦点交给 trigger 子树；缺失子树时保留可恢复焦点入口。
+    tab_index => (&self) -> i32 { i32::from(!self.custom_trigger || self.trigger_child_count == 0) }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
+    }
+
+    // 指针命中由 Dropdown owner 统一解释，trigger 子树只负责视觉呈现。
+    hit_test_children => (&self) -> bool { false }
+
+    // 记录唯一 trigger 子树的挂载与卸载变化。
+    on_children_changed => (&mut self, child_count: usize) {
+        // 组件树通知成为 trigger 生命周期的当前事实。
+        self.trigger_child_count = child_count;
+    }
+
+    // 将声明期拥有的 trigger ViewNode 一次性交给组件树物化。
+    build_view_children => (&self) -> Vec<crate::ui::view::ViewNode> {
+        // 取走待物化子树，避免同一声明重复挂载。
+        self.custom_trigger_view
+            // 组合模式才持有一次性建造句柄。
+            .as_ref()
+            // 从共享单元取走完整 ViewNode。
+            .and_then(|view| view.borrow_mut().take())
+            // 零或一个 trigger 统一转成迭代器。
+            .into_iter()
+            // 返回组件树可消费的直接子节点集合。
+            .collect()
+    }
+
+    // 使用 trigger 子节点自然尺寸完成一次受限测量。
+    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+        -> Vec<LayoutChild>
+    {
+        // trigger 只占据组件顶部交互区域。
+        let trigger_constraints = Constraints::new(
+            // 允许子 View 使用自己的最小宽度。
+            Size::zero(),
+            // 上界采用 Dropdown 实际宽度与固定触发高度。
+            Size::new(frame.w.max(0.0), 32.0_f32.min(frame.h.max(0.0))),
+            // trigger 区域没有额外的确定尺寸覆盖。
+            None,
+        );
+        // 组合契约只布局首个直接 trigger，额外子树不得被静默绘制。
+        children
+            // 借用直接子节点身份。
+            .first()
+            // 测量唯一 trigger 子树。
+            .map(|id| child_from_tree_with_constraints(*id, tree, trigger_constraints))
+            // 将可选测量结果物化为布局集合。
+            .into_iter()
+            // 返回零或一个 trigger 布局快照。
+            .collect()
+    }
+
+    // 让唯一 trigger View 填充 Dropdown 的触发区域。
+    layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
+        -> Vec<(ComponentId, Rect)>
+    {
+        // 没有 trigger 时不产生伪布局。
+        let Some(child) = children.first() else { return Vec::new(); };
+        // trigger 与旧按钮共享 32px 的稳定交互高度。
+        vec![(child.id, Rect::new(frame.x, frame.y, frame.w.max(0.0), 32.0_f32.min(frame.h.max(0.0))))]
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -209,6 +308,25 @@ component! {
         }
     }
 
+    // focus 模式观察完整 trigger 子树而不是某个内部控件。
+    on_focus_within => (&mut self, focused: bool) -> EventResult {
+        // 其他触发模式不消费焦点范围通知。
+        if self.trigger_mode != TriggerMode::Focus {
+            // 保持默认未处理语义。
+            return EventResult::NotHandled;
+        }
+        // 进入 trigger 子树时打开下拉层。
+        if focused {
+            // 复用统一进入动画与高亮初始化。
+            self.open();
+        } else {
+            // 离开整个 Dropdown 子树后关闭下拉层。
+            self.close();
+        }
+        // focus trigger 已消费本次范围变化。
+        EventResult::Handled
+    }
+
     semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .borrow_mut()
@@ -221,11 +339,19 @@ component! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
 
-        let btn_rect = Rect::new(frame.x, frame.y, frame.w, 32.0);
-        ctx.fill_rect(btn_rect, ctx.tokens().color_primary(), r);
-        ctx.text_center(&self.label, btn_rect, crate::draw::Color::white(), 13.0);
-        if self.focused && tree.keyboard_focus_visible() {
-            ctx.stroke_rect(btn_rect, ctx.tokens().color_primary_active(), 1.5, r);
+        // 兼容构造继续由 Dropdown 绘制旧字符串按钮。
+        if !self.custom_trigger {
+            // 旧按钮占据顶部固定触发区域。
+            let btn_rect = Rect::new(frame.x, frame.y, frame.w, 32.0);
+            // 使用主题主色绘制兼容按钮背景。
+            ctx.fill_rect(btn_rect, ctx.tokens().color_primary(), r);
+            // 旧 label 只服务兼容触发器展示。
+            ctx.text_center(&self.label, btn_rect, crate::draw::Color::white(), 13.0);
+            // 键盘焦点可见时绘制兼容触发器焦点环。
+            if self.focused && tree.keyboard_focus_visible() {
+                // 焦点环使用主题活动主色。
+                ctx.stroke_rect(btn_rect, ctx.tokens().color_primary_active(), 1.5, r);
+            }
         }
 
         if !self.is_present() {
@@ -293,7 +419,7 @@ component! {
                 if !row.item.children.is_empty() {
                     crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
-                        if self.expanded_keys.iter().any(|key| key == &row.item.label) {
+                        if self.expanded_keys.iter().any(|key| key == &row.item.key) {
                             "chevron-down"
                         } else {
                             "chevron-right"
@@ -368,6 +494,14 @@ impl Dropdown {
         Self {
             label: label.into(),
             items: Vec::new(),
+            // 兼容构造默认继续绘制字符串触发按钮。
+            custom_trigger: false,
+            // 兼容构造不持有自定义 trigger 子树。
+            custom_trigger_view: None,
+            // 叶构造尚未登记直接 trigger 子树。
+            trigger_child_count: 0,
+            // 兼容空数据构造没有 keyed 诊断。
+            diagnostics: Vec::new(),
             expanded_keys: Vec::new(),
             open: false,
             transition: TransitionPlayer::new(presets::tooltip_enter()),
@@ -390,6 +524,41 @@ impl Dropdown {
         self
     }
 
+    /// 配置要求非空且全树唯一 key 的 UIX 拥有型选项。
+    pub fn keyed_items<I>(mut self, items: I) -> Self
+    where
+        // UIX 表达式可提供数组、Vec 或其他拥有型迭代器。
+        I: IntoIterator<Item = DropdownItem>,
+    {
+        // 对动态数据执行确定的首项优先身份门禁。
+        let (items, diagnostics) = Self::normalize_keyed_items(items);
+        // 保存通过门禁的完整选项树。
+        self.items = items;
+        // 暴露所有被拒绝身份的稳定诊断。
+        self.diagnostics = diagnostics;
+        // 返回完整 keyed Dropdown。
+        self
+    }
+
+    /// 返回 keyed 数据物化期间产生的只读诊断。
+    pub fn diagnostics(&self) -> &[String] {
+        // 调用方可把诊断接入日志、测试或开发工具。
+        &self.diagnostics
+    }
+
+    /// 让 Dropdown 成为一个完整 trigger View 子树的生命周期 owner。
+    pub fn trigger_view<V: crate::ui::view::View>(mut self, trigger: V) -> Self {
+        // 关闭旧字符串按钮绘制并启用组合生命周期。
+        self.custom_trigger = true;
+        // 构建并保存包含 handlers、样式与身份的完整 ViewNode。
+        self.custom_trigger_view = Some(Rc::new(RefCell::new(Some(
+            // 通过公开 View 契约构建调用方 trigger。
+            crate::ui::view::View::build(trigger),
+        ))));
+        // 返回拥有待物化 trigger 子树的组件。
+        self
+    }
+
     pub fn trigger(mut self, trigger: TriggerMode) -> Self {
         self.trigger_mode = trigger;
         self
@@ -408,6 +577,7 @@ impl Dropdown {
     }
 
     pub fn current_value(&self) -> Option<&str> {
+        // 兼容方法现在返回稳定 key；旧构造仍保持 key=label。
         self.selected_value.as_deref()
     }
 
@@ -436,17 +606,35 @@ impl Dropdown {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        // reconcile 按稳定 key 保持选择，不再依赖可能重复的 label。
         let selected_value = self.current_value().map(str::to_owned);
+        // 保存运行时已经展开的 keyed 子菜单组。
+        let expanded_keys = std::mem::take(&mut self.expanded_keys);
         self.label = next.label;
         self.items = next.items;
-        self.expanded_keys = next.expanded_keys;
+        // 同步声明期组合触发器模式。
+        self.custom_trigger = next.custom_trigger;
+        // 下一声明提供新的完整 trigger ViewNode 供组件树 reconcile。
+        self.custom_trigger_view = next.custom_trigger_view;
+        // keyed 数据诊断随最新声明替换。
+        self.diagnostics = next.diagnostics;
+        // 只保留刷新后仍存在且仍拥有 children 的展开组。
+        self.expanded_keys = expanded_keys
+            // 按既有用户展开顺序检查每个稳定 key。
+            .into_iter()
+            // 删除已卸载或不再是分组的 key。
+            .filter(|key| Self::contains_group_key(&self.items, key))
+            // 物化刷新后的展开集合。
+            .collect();
         self.trigger_mode = next.trigger_mode;
         self.selected_index = selected_value.as_ref().and_then(|value| {
             self.visible_items()
                 .iter()
-                .position(|row| row.item.label == *value)
+                // 使用稳定 key 查找刷新后的同一业务选项。
+                .position(|row| row.item.key == *value)
         });
-        self.selected_value = selected_value;
+        // 已移除的业务 key 不再保留为幽灵选择。
+        self.selected_value = self.selected_index.and(selected_value);
         self.highlighted_index = if self.open {
             self.selected_index
                 .filter(|index| self.is_selectable(*index))
@@ -459,7 +647,16 @@ impl Dropdown {
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Dropdown {
             label: self.label.clone(),
-            items: self.items.iter().map(|item| item.label.clone()).collect(),
+            // 快照保留完整 keyed 选项，便于 reconcile 与诊断观察身份。
+            items: self
+                // 展开树顺序必须与 selected_index 和 highlighted_index 对齐。
+                .visible_items()
+                // 快照不需要保留布局深度，只复制 keyed 选项。
+                .into_iter()
+                // 提取每一行的拥有型选项。
+                .map(|row| row.item)
+                // 物化可观察的当前列表顺序。
+                .collect(),
             open: self.open,
             selected_index: self.selected_index,
             highlighted_index: self.highlighted_index,
@@ -497,7 +694,8 @@ impl Dropdown {
         if row.item.divider || row.item.disabled || !row.item.children.is_empty() {
             return false;
         }
-        let value = row.item.label.clone();
+        // 用户选择发布稳定 key，不再把展示 label 当身份。
+        let value = row.item.key.clone();
         self.selected_index = Some(index);
         self.selected_value = Some(value.clone());
         self.highlighted_index = Some(index);
@@ -514,10 +712,13 @@ impl Dropdown {
             return false;
         }
         if !row.item.children.is_empty() {
-            if self.expanded_keys.iter().any(|key| key == &row.item.label) {
-                self.expanded_keys.retain(|key| key != &row.item.label);
+            // 递归组展开状态同样以稳定 key 为身份。
+            if self.expanded_keys.iter().any(|key| key == &row.item.key) {
+                // 收起当前 keyed 子菜单组。
+                self.expanded_keys.retain(|key| key != &row.item.key);
             } else {
-                self.expanded_keys.push(row.item.label);
+                // 展开当前 keyed 子菜单组。
+                self.expanded_keys.push(row.item.key);
             }
             self.highlighted_index = Some(index);
             return true;
@@ -563,7 +764,8 @@ impl Dropdown {
             rows: &mut Vec<VisibleDropdownItem>,
         ) {
             for item in items {
-                let expanded = expanded_keys.iter().any(|key| key == &item.label);
+                // 递归可见性由稳定 key 驱动，同名 label 不再冲突。
+                let expanded = expanded_keys.iter().any(|key| key == &item.key);
                 let children = item.children.clone();
                 rows.push(VisibleDropdownItem {
                     item: item.clone(),
@@ -581,11 +783,7 @@ impl Dropdown {
     }
 
     fn row_height(row: &VisibleDropdownItem) -> f32 {
-        if row.item.divider {
-            8.0
-        } else {
-            30.0
-        }
+        if row.item.divider { 8.0 } else { 30.0 }
     }
 }
 
@@ -607,3 +805,9 @@ fn fade_color(color: Color, opacity: f32) -> Color {
         .clamp(0.0, 255.0) as u8;
     color.with_alpha(alpha)
 }
+
+// 将 keyed 选择、触发方式与组合子树生命周期测试拆到独立文件。
+#[cfg(test)]
+mod tests;
+// 把 keyed 数据身份门禁从组件事件和绘制主体中拆分。
+mod keyed;
