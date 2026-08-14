@@ -1,14 +1,18 @@
 /// A 2D point.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Point {
+    /// 点的水平坐标。
     pub x: f32,
+    /// 点的垂直坐标。
     pub y: f32,
 }
 
 impl Point {
+    /// 使用水平和垂直坐标创建点。
     pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
     }
+    /// 返回坐标原点。
     pub const fn zero() -> Self {
         Self { x: 0.0, y: 0.0 }
     }
@@ -30,7 +34,9 @@ impl Default for Point {
 /// A 2D size.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Size {
+    /// 尺寸的宽度。
     pub w: f32,
+    /// 尺寸的高度。
     pub h: f32,
 }
 
@@ -38,10 +44,13 @@ impl Size {
     /// Common UI-sized sentinels used by placeholder components.
     #[allow(non_upper_case_globals)]
     pub const Small: Self = Self { w: 32.0, h: 32.0 };
+    /// 默认控件占位尺寸。
     #[allow(non_upper_case_globals)]
     pub const Default: Self = Self { w: 40.0, h: 40.0 };
+    /// 中等控件占位尺寸。
     #[allow(non_upper_case_globals)]
     pub const Medium: Self = Self::Default;
+    /// 大型控件占位尺寸。
     #[allow(non_upper_case_globals)]
     pub const Large: Self = Self { w: 56.0, h: 56.0 };
     /// Create a new Size with NaN-safe clamping: NaN values become 0.0.
@@ -52,9 +61,11 @@ impl Size {
             h: if h.is_nan() { 0.0 } else { h },
         }
     }
+    /// 返回宽高均为零的尺寸。
     pub const fn zero() -> Self {
         Self { w: 0.0, h: 0.0 }
     }
+    /// 返回框架用于表示无限约束的最大尺寸。
     pub const fn infinite() -> Self {
         Self {
             w: f32::MAX,
@@ -72,16 +83,21 @@ impl Default for Size {
 /// Measurement constraints for widget intrinsic sizing.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Constraints {
+    /// 允许的最小尺寸。
     pub min: Size,
+    /// 允许的最大尺寸。
     pub max: Size,
+    /// 可选的确定尺寸。
     pub definite: Option<Size>,
 }
 
 impl Constraints {
+    /// 创建一组完整的尺寸约束。
     pub const fn new(min: Size, max: Size, definite: Option<Size>) -> Self {
         Self { min, max, definite }
     }
 
+    /// 创建最小尺寸为零的宽松约束。
     pub const fn loose(max: Size) -> Self {
         Self {
             min: Size::zero(),
@@ -90,6 +106,7 @@ impl Constraints {
         }
     }
 
+    /// 创建不限制最大尺寸的约束。
     pub const fn unconstrained() -> Self {
         Self {
             min: Size::zero(),
@@ -98,6 +115,7 @@ impl Constraints {
         }
     }
 
+    /// 将尺寸限制在最小值和最大值之间。
     pub fn clamp(&self, size: Size) -> Size {
         Size::new(
             size.w.max(self.min.w).min(self.max.w),
@@ -115,9 +133,13 @@ impl Default for Constraints {
 /// A rectangle with position and size.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rect {
+    /// 矩形左上角的水平坐标。
     pub x: f32,
+    /// 矩形左上角的垂直坐标。
     pub y: f32,
+    /// 矩形宽度。
     pub w: f32,
+    /// 矩形高度。
     pub h: f32,
 }
 
@@ -131,6 +153,7 @@ impl Rect {
             h: if h.is_nan() { 0.0 } else { h },
         }
     }
+    /// 返回位置和尺寸均为零的矩形。
     pub const fn zero() -> Self {
         Self {
             x: 0.0,
@@ -140,6 +163,7 @@ impl Rect {
         }
     }
 
+    /// 按边距向内收缩矩形，结果尺寸不会为负。
     pub fn inset(&self, p: EdgeInsets) -> Self {
         Self {
             x: self.x + p.left,
@@ -149,10 +173,12 @@ impl Rect {
         }
     }
 
+    /// 判断点是否位于矩形的闭合边界内。
     pub fn contains(&self, p: Point) -> bool {
         p.x >= self.x && p.x <= self.x + self.w && p.y >= self.y && p.y <= self.y + self.h
     }
 
+    /// 计算两个矩形的正面积交集。
     pub fn intersect(&self, other: &Self) -> Option<Self> {
         let x = self.x.max(other.x);
         let y = self.y.max(other.y);
@@ -165,6 +191,7 @@ impl Rect {
         }
     }
 
+    /// 返回能够包围两个矩形的最小矩形。
     pub fn union(&self, other: &Self) -> Self {
         let x = self.x.min(other.x);
         let y = self.y.min(other.y);
@@ -186,13 +213,18 @@ impl Default for Rect {
 /// Edge insets (padding/margin).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EdgeInsets {
+    /// 左边距。
     pub left: f32,
+    /// 上边距。
     pub top: f32,
+    /// 右边距。
     pub right: f32,
+    /// 下边距。
     pub bottom: f32,
 }
 
 impl EdgeInsets {
+    /// 分别指定四个方向的边距。
     pub const fn new(left: f32, top: f32, right: f32, bottom: f32) -> Self {
         Self {
             left,
@@ -201,6 +233,7 @@ impl EdgeInsets {
             bottom,
         }
     }
+    /// 创建四个方向数值相同的边距。
     pub const fn uniform(v: f32) -> Self {
         Self {
             left: v,
@@ -209,12 +242,15 @@ impl EdgeInsets {
             bottom: v,
         }
     }
+    /// 返回四个方向均为零的边距。
     pub const fn zero() -> Self {
         Self::uniform(0.0)
     }
+    /// 返回左右边距之和。
     pub fn horizontal(&self) -> f32 {
         self.left + self.right
     }
+    /// 返回上下边距之和。
     pub fn vertical(&self) -> f32 {
         self.top + self.bottom
     }
