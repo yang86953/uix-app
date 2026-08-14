@@ -336,6 +336,7 @@ impl Notification {
     // toast 家族内容尾部间隙；Message 侧为 7.0，存在 1px 历史差异，保留原值。
     const CONTENT_TRAILING_GAP: f32 = 8.0;
 
+    /// 创建拥有独立通知队列、默认位于右上角的通知容器。
     pub fn new() -> Self {
         // Rust 直接构造获得独立队列，不再修改任何进程级注册表。
         Self::from_handle(NotificationHandle::new())
@@ -363,11 +364,15 @@ impl Notification {
         }
     }
 
+    /// 设置通知队列相对于宿主区域的停靠位置。
     pub fn placement(mut self, placement: Placement) -> Self {
         self.placement = placement;
         self
     }
 
+    /// 设置每条通知共用的动作标签与点击回调。
+    ///
+    /// 空白标签会被忽略，并保留无动作按钮的状态。
     pub fn action<F>(mut self, label: impl Into<String>, action: F) -> Self
     where
         F: Fn() + 'static,
@@ -380,17 +385,24 @@ impl Notification {
         self
     }
 
+    /// 设置每条通知使用的图标名称，覆盖按状态选择的默认图标。
     pub fn icon(mut self, icon: impl Into<String>) -> Self {
         self.icon_name = Some(icon.into());
         self
     }
 
+    /// 设置可关闭通知的关闭按钮文本。
+    ///
+    /// 空白文本会隐藏关闭按钮标签。
     pub fn close_text(mut self, text: impl Into<String>) -> Self {
         let text = text.into();
         self.close_label = (!text.trim().is_empty()).then_some(text);
         self
     }
 
+    /// 设置通知容器相对停靠位置的水平与垂直偏移。
+    ///
+    /// 非有限数值会归零。
     pub fn offset(mut self, horizontal: f32, vertical: f32) -> Self {
         self.offset = Point::new(finite_or_zero(horizontal), finite_or_zero(vertical));
         self
@@ -408,16 +420,21 @@ impl Notification {
         self
     }
 
+    /// 获取共享当前通知队列的命令句柄。
     pub fn handle(&self) -> NotificationHandle {
         NotificationHandle {
             queue: self.queue.clone(),
         }
     }
 
+    /// 将通知条目加入本地队列并返回其稳定 ID。
     pub fn add(&self, item: NotificationItem) -> u64 {
         self.handle().add(item)
     }
 
+    /// 使用给定标题、描述和状态创建一条可关闭的定时通知。
+    ///
+    /// 返回值是此容器本地队列中的稳定 ID。
     pub fn open(
         &self,
         title: impl Into<String>,
@@ -427,38 +444,53 @@ impl Notification {
         self.handle().open(title, description, type_)
     }
 
+    /// 创建一条成功状态通知并返回其稳定 ID。
     pub fn success(&self, title: impl Into<String>, description: impl Into<String>) -> u64 {
         self.handle().success(title, description)
     }
 
+    /// 创建一条信息状态通知并返回其稳定 ID。
     pub fn info(&self, title: impl Into<String>, description: impl Into<String>) -> u64 {
         self.handle().info(title, description)
     }
 
+    /// 创建一条警告状态通知并返回其稳定 ID。
     pub fn warning(&self, title: impl Into<String>, description: impl Into<String>) -> u64 {
         self.handle().warning(title, description)
     }
 
+    /// 创建一条错误状态通知并返回其稳定 ID。
     pub fn error(&self, title: impl Into<String>, description: impl Into<String>) -> u64 {
         self.handle().error(title, description)
     }
 
+    /// 请求移除由此容器或其句柄添加的本地通知。
+    ///
+    /// 找到对应 ID 时返回 `true`。
     pub fn dismiss(&self, id: u64) -> bool {
         self.handle().dismiss(id)
     }
 
+    /// 请求移除由 `NotificationService` 提供稳定 ID 的外部通知。
+    ///
+    /// 找到对应 ID 时返回 `true`。
     pub fn dismiss_external(&self, id: u64) -> bool {
         self.handle().dismiss_external(id)
     }
 
+    /// 清空当前通知队列。
     pub fn clear(&self) {
         self.handle().clear();
     }
 
+    /// 返回当前队列中通知条目的快照。
     pub fn items(&self) -> Vec<NotificationItem> {
         self.queue.values()
     }
 
+    /// 用可见的服务 Toast 替换当前外部通知集合。
+    ///
+    /// 本地添加的通知不会被移除。
     pub fn replace_from_toasts<'a, I>(&self, toasts: I)
     where
         I: IntoIterator<Item = &'a ToastEntry>,
@@ -466,11 +498,15 @@ impl Notification {
         self.handle().replace_from_toasts(toasts);
     }
 
+    /// 更新服务的过期状态，并将其当前可见 Toast 同步到容器。
     pub fn replace_from_service(&self, service: &mut NotificationService) {
         let toasts = service.update();
         self.replace_from_toasts(&toasts);
     }
 
+    /// 将非致命框架错误交给服务转换为通知并同步容器。
+    ///
+    /// 致命错误或无需展示的错误返回 `None`。
     pub fn notify_error_from_service(
         &self,
         service: &mut NotificationService,
@@ -481,6 +517,9 @@ impl Notification {
         id
     }
 
+    /// 当结果为错误时将其交给服务转换为通知并同步容器。
+    ///
+    /// 成功结果保持静默并返回 `None`。
     pub fn notify_result_error_from_service<T>(
         &self,
         service: &mut NotificationService,
