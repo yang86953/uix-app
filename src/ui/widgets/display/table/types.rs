@@ -28,28 +28,41 @@ pub(crate) fn finite_nonnegative(value: f32) -> f32 {
 /// 排序方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortDirection {
+    /// 当前列不参与排序。
     None,
+    /// 按列值升序排列。
     Asc,
+    /// 按列值降序排列。
     Desc,
 }
 
 /// 表格列的固定位置。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fixed {
+    /// 将列固定在表格视口左侧。
     Left,
+    /// 将列固定在表格视口右侧。
     Right,
 }
 
 /// 表格列定义。
 #[derive(Debug, Clone)]
 pub struct TableColumn {
+    /// 显示在表头中的列标题。
     pub title: String,
+    /// 列的初始布局宽度。
     pub width: f32,
+    /// 是否允许用户通过表头切换排序。
     pub sortable: bool,
+    /// 当前应用于该列的排序方向。
     pub sort_direction: SortDirection,
+    /// 是否为该列启用筛选入口。
     pub filterable: bool,
-    pub filters: Vec<(String, bool)>, // (label, active)
+    /// 由筛选标签与激活状态组成的候选项。
+    pub filters: Vec<(String, bool)>,
+    /// 列在水平滚动视口中的可选固定位置。
     pub fixed: Option<Fixed>,
+    /// 是否允许从表头边缘拖拽调整列宽。
     pub resizable: bool,
     /// 合并单元格时返回当前单元格占用的行数；返回 0 表示由上方单元格覆盖。
     pub row_span: Option<fn(&TableRow, usize) -> usize>,
@@ -75,6 +88,7 @@ impl PartialEq for TableColumn {
 }
 
 impl TableColumn {
+    /// 使用标题与有限非负宽度创建默认列定义。
     pub fn new(title: impl Into<String>, width: f32) -> Self {
         Self {
             title: title.into(),
@@ -89,10 +103,12 @@ impl TableColumn {
             col_span: None,
         }
     }
+    /// 设置是否允许用户通过表头切换排序。
     pub fn sortable(mut self, v: bool) -> Self {
         self.sortable = v;
         self
     }
+    /// 设置是否为该列启用筛选入口。
     pub fn filterable(mut self, v: bool) -> Self {
         self.filterable = v;
         self
@@ -133,11 +149,14 @@ impl TableColumn {
 /// 一组共享上层表头的列；`column` 用于声明不参与分组的单列。
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableColumnGroup {
+    /// 跨列显示的可选分组表头；单列声明时为空。
     pub title: Option<String>,
+    /// 按显示顺序归入该表头分组的列。
     pub columns: Vec<TableColumn>,
 }
 
 impl TableColumnGroup {
+    /// 使用分组标题和一组列创建跨列表头。
     pub fn new(title: impl Into<String>, columns: Vec<TableColumn>) -> Self {
         Self {
             title: Some(title.into()),
@@ -145,6 +164,7 @@ impl TableColumnGroup {
         }
     }
 
+    /// 将单列包装为不参与分组的列声明。
     pub fn column(column: TableColumn) -> Self {
         Self {
             title: None,
@@ -166,6 +186,7 @@ pub type TableRow = Vec<String>;
 /// typed 行数据的一列文本投影。
 pub(crate) type TypedCellViewRenderer<R> = Box<dyn Fn(&R) -> crate::ui::view::ViewNode>;
 
+/// 将泛型行数据投影为表格列文本与可选自定义视图的绑定。
 pub struct TableDataColumn<R> {
     pub(crate) column: TableColumn,
     pub(crate) accessor: Box<dyn Fn(&R) -> String>,
@@ -189,6 +210,7 @@ impl<R> TableDataColumn<R> {
 /// typed 表格行键校验错误。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TableDataError {
+    /// 两行数据生成了相同的稳定行键。
     DuplicateRowKey(String),
 }
 
@@ -237,17 +259,25 @@ pub(crate) fn resolve_table_empty_view(
 /// 变更事件。
 #[derive(Debug, Clone)]
 pub struct TableChange {
+    /// 本次变更涉及的列索引；非排序变更时为空。
     pub sort_column: Option<usize>,
+    /// 本次变更后的排序方向。
     pub sort_direction: SortDirection,
+    /// 本次变更后的零基页索引。
     pub page: usize,
+    /// 每页允许展示的行数。
     pub page_size: usize,
 }
 
 /// 远程分页配置。回调由表格在页码变化时调用，数据本身仍由应用层维护。
 pub struct TablePagination<F = fn(usize)> {
+    /// 当前远程页码，从一开始计数。
     pub current: usize,
+    /// 远程数据源中的总行数。
     pub total: usize,
+    /// 每个远程页面包含的行数。
     pub page_size: usize,
+    /// 用户切换页码时接收一基目标页码的回调。
     pub on_change: F,
 }
 
