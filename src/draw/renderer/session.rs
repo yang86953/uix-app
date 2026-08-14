@@ -48,26 +48,32 @@ impl RenderSession {
         }
     }
 
+    /// 返回当前后端种类。
     pub fn backend_kind(&self) -> BackendKind {
         self.backend.kind()
     }
 
+    /// 返回当前后端的内部能力集合。
     pub fn capabilities(&self) -> BackendCapabilities {
         self.backend.capabilities()
     }
 
+    /// 返回当前后端面向应用的图形能力投影。
     pub fn graphics_capabilities(&self) -> GraphicsCapabilities {
         self.capabilities().into()
     }
 
+    /// 返回后端实际采用的可绘制宽度。
     pub fn width(&self) -> i32 {
         self.width
     }
 
+    /// 返回后端实际采用的可绘制高度。
     pub fn height(&self) -> i32 {
         self.height
     }
 
+    /// 在所有者线程上初始化后端尺寸并同步实际可绘制范围。
     pub fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.require_owner("initialize")?;
         self.backend.resize(width, height)?;
@@ -75,10 +81,8 @@ impl RenderSession {
         Ok(())
     }
 
-    /// Starts a session on a native target the factory has already prepared.
-    /// The backend reports the drawable extent it actually adopted so the
-    /// session never assumes the requested logical size matches a corrected
-    /// swapchain/client extent.
+    /// 在工厂已经准备好的原生目标上启动会话。
+    /// 后端回报实际采用的可绘制范围，避免把请求的逻辑尺寸误当成修正后的交换链客户区。
     pub(crate) fn initialize_prepared(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.require_owner("initialize_prepared")?;
         let _ = self.backend.initialize_prepared(width, height)?;
@@ -86,6 +90,7 @@ impl RenderSession {
         Ok(())
     }
 
+    /// 在所有者线程上关闭后端；失败会记录错误并保留可重试所有权。
     pub fn shutdown(&mut self) {
         if let Err(error) = self.try_shutdown() {
             tracing::error!("RenderSession: {}", error.short_what());
@@ -102,6 +107,7 @@ impl RenderSession {
         Ok(())
     }
 
+    /// 在所有者线程上调整后端尺寸，并要求下一帧完整重绘。
     pub fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.require_owner("resize")?;
         self.backend.resize(width, height)?;
@@ -139,6 +145,7 @@ impl RenderSession {
         Ok(())
     }
 
+    /// 准备并开始一帧；后端切换或尺寸变化后会覆盖为完整重绘。
     pub fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
         if let Err(error) = self.require_owner("begin_frame") {
             return RenderOutcome::Failed(crate::draw::renderer::GraphicsFailure::from_error(
@@ -174,6 +181,7 @@ impl RenderSession {
         )
     }
 
+    /// 在所有者线程上结束并提交当前帧。
     pub fn end_frame(&mut self) -> RenderOutcome {
         if let Err(error) = self.require_owner("end_frame") {
             return RenderOutcome::Failed(crate::draw::renderer::GraphicsFailure::from_error(
@@ -188,6 +196,7 @@ impl RenderSession {
         self.backend.surface().canvas()
     }
 
+    /// 当当前后端为 CPU 后端时返回其只读引用。
     pub fn cpu_backend(&self) -> Option<&CpuBackend> {
         self.backend.as_any().downcast_ref()
     }
