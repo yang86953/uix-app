@@ -1,5 +1,4 @@
 //! Selectable list widget.
-
 use std::cell::Cell;
 
 use crate::component;
