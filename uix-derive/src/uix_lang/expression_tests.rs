@@ -426,7 +426,7 @@ fn parses_object_attribute_with_nested_brace_scanning() {
 // 验证对象字面量拒绝歧义结构并报告精确原因。
 #[test]
 fn rejects_invalid_object_literal_shapes() {
-    // 覆盖重复、分隔符、非法键、嵌套、方法和赋值结构。
+    // 覆盖重复、分隔符、非法键、方法和赋值结构。
     for (source, expected) in [
         // 重复字段必须失败。
         ("{ count: 1, count: 2 }", "重复声明"),
@@ -444,10 +444,6 @@ fn rejects_invalid_object_literal_shapes() {
         ("{ count() }", "缺少 :"),
         // 赋值结构必须失败。
         ("{ count = 1 }", "赋值"),
-        // 嵌套对象必须失败。
-        ("{ badge: { dot: true } }", "嵌套对象"),
-        // 分支内的间接嵌套对象同样必须失败。
-        ("{ badge: ready ? { dot: true } : false }", "嵌套对象"),
     ] {
         // 解析并取得预期诊断。
         let error = parse_expression(source, origin()).expect_err("非法对象必须失败");

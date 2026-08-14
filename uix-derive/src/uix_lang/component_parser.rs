@@ -351,6 +351,32 @@ fn split_typed_state_initial(
 
 // 解析 state 注解与 record 字段的类型白名单；未知 PascalCase 名暂存为 record 引用。
 pub(crate) fn parse_typed_value(source: &str) -> Option<ComponentValueType> {
+    // Vec<T> 允许字符串、数值、上传文件或文档内 record 元素。
+    if let Some(inner) = source
+        // 去除 Vec< 前缀。
+        .strip_prefix("Vec<")
+        // 去除末尾右尖括号。
+        .and_then(|value| value.strip_suffix('>'))
+    {
+        // 清理泛型元素类型空白。
+        let inner = inner.trim();
+        // 按元素类型映射向量变体。
+        return match inner {
+            // 字符串向量。
+            "String" => Some(ComponentValueType::VecOfString),
+            // 数值向量。
+            "number" => Some(ComponentValueType::VecOfNumber),
+            // 上传队列向量。
+            "UploadFile" => Some(ComponentValueType::VecOfUploadFile),
+            // PascalCase 元素暂存为 record 引用。
+            _ if is_pascal_identifier(inner) => {
+                // 保存 record 元素类型名。
+                Some(ComponentValueType::VecOfRecord(inner.to_string()))
+            }
+            // 其他元素类型不在白名单。
+            _ => None,
+        };
+    }
     // 按精确关键字映射基础与语义类型。
     let value = match source {
         // 映射拥有所有权的字符串。
@@ -379,10 +405,6 @@ pub(crate) fn parse_typed_value(source: &str) -> Option<ComponentValueType> {
         "CascaderValue" => ComponentValueType::CascaderValue,
         // 映射多选集合。
         "HashSet<String>" => ComponentValueType::HashSetOfString,
-        // 映射字符串向量。
-        "Vec<String>" => ComponentValueType::VecOfString,
-        // 映射受控上传文件队列。
-        "Vec<UploadFile>" => ComponentValueType::VecOfUploadFile,
         // 映射可空字符串单选。
         "Option<String>" => ComponentValueType::OptionalString,
         // 未知 PascalCase 标识符暂存为 record 引用，由文档级校验兑底。

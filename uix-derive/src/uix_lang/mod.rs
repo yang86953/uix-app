@@ -57,6 +57,11 @@ mod component_ast;
 mod component_declaration_parser;
 // 定义 Component props 与私有状态的类型化 Rust 绑定。
 mod component_binding_codegen;
+// 定义 Option、集合与嵌套 record 的递归类型化初始值生成。
+mod component_typed_value_codegen;
+// 集中验证扩展集合、Some 与嵌套 record 初始值。
+#[cfg(test)]
+mod component_typed_value_tests;
 // 定义 Component 有序 computed 派生值的静态绑定。
 mod component_computed_codegen;
 // 定义完整文档中的组件调用展开。
