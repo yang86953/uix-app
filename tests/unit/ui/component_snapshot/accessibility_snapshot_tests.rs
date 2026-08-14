@@ -330,7 +330,79 @@ fn checkbox_and_switch_fields_expose_checked_state() {
     }
     .accessibility();
     assert_eq!(switch.role, AccessibilityRole::Switch);
+    // 显式开关标签必须成为可读的无障碍名称。
+    assert_eq!(switch.name.as_deref(), Some("深色模式"));
     assert_eq!(switch.state.checked, Some(false));
+}
+
+// 选择器与标签页必须公开当前展开状态和活动位置。
+#[cfg(feature = "navigation")]
+#[test]
+fn select_and_tabs_fields_expose_interaction_state() {
+    // 构造打开的单选选择器快照。
+    let select = SnapshotFields::Select {
+        // 提供两项纯文本选项。
+        options: vec!["中文".to_owned(), "English".to_owned()],
+        // 本用例不使用分组选项。
+        optgroups: Vec::new(),
+        // 当前选中第二项。
+        selected: 1,
+        // 单选模式不保存多选索引。
+        selected_multi: Vec::new(),
+        // 选择器处于打开状态。
+        open: true,
+        // 选择器保持可用。
+        disabled: false,
+        // 选择器没有异步加载状态。
+        loading: false,
+        // 提供可读占位名称。
+        placeholder: "语言".to_owned(),
+        // 使用单选模式。
+        multiple: false,
+        // 本用例不启用搜索输入。
+        search: false,
+        // 搜索文本保持为空。
+        search_query: String::new(),
+        // 本用例使用内置选项绘制。
+        custom_options: false,
+    }
+    // 转换为统一无障碍快照。
+    .accessibility();
+    // Select 必须公开打开的选项层。
+    assert_eq!(select.state.expanded, Some(true));
+    // 当前展示值必须指向第二项。
+    assert_eq!(select.state.value_text.as_deref(), Some("English"));
+
+    // 构造第二项活动的标签页快照。
+    let tabs = SnapshotFields::Tabs {
+        // 提供两个带稳定 key 的标签页。
+        tabs: vec![
+            // 首项作为非活动页签。
+            crate::ui::widgets::Tab::new("概览").key("overview"),
+            // 第二项作为当前活动页签。
+            crate::ui::widgets::Tab::new("设置").key("settings"),
+        ],
+        // 当前活动索引指向第二项。
+        active_index: 1,
+        // 保存当前活动页签的稳定 key。
+        active_key: Some("settings".to_owned()),
+        // 使用默认顶部标签布局。
+        position: crate::ui::widgets::TabPosition::Top,
+        // 提供稳定的页签栏高度。
+        tab_height: 40.0,
+        // 本用例不固定整体宽度。
+        fixed_width: None,
+        // 本用例不固定整体高度。
+        fixed_height: None,
+    }
+    // 转换为统一无障碍快照。
+    .accessibility();
+    // 活动位置必须采用从一开始的第二项。
+    assert_eq!(tabs.state.value_now, Some(2.0));
+    // 活动位置值域必须覆盖两个标签。
+    assert_eq!(tabs.state.value_min, Some(1.0));
+    // 活动位置上限必须等于标签总数。
+    assert_eq!(tabs.state.value_max, Some(2.0));
 }
 
 // 滑块快照必须暴露值域与当前值。
