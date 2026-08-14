@@ -56,6 +56,8 @@ pub struct UixComponentScope {
     occurrence: u64,
     // 保存动态宿主实例身份；静态根捕获必须保持为空。
     namespace: Option<ComponentStateCaptureNamespace>,
+    // 保存组件内部动态节点按静态声明与实际 key 派生的身份路径。
+    dynamic_path: Vec<(u64, String)>,
 }
 
 // 标识实际 View 根节点承载的一个组件作用域。
@@ -783,6 +785,8 @@ pub fn uix_component_scope(callsite: &'static str, declaration: u64) -> UixCompo
                 occurrence: 0,
                 // 无捕获上下文的静态根不具备动态实例所有者。
                 namespace: None,
+                // 组件根尚未进入任何动态节点子作用域。
+                dynamic_path: Vec::new(),
             };
         };
         // 使用调用点和声明标识区分不同的静态组件调用。
@@ -798,8 +802,27 @@ pub fn uix_component_scope(callsite: &'static str, declaration: u64) -> UixCompo
             occurrence: current,
             // 复制本层动态命名空间以使其参与状态键的相等性比较。
             namespace: capture.namespace.clone(),
+            // 组件根尚未进入任何动态节点子作用域。
+            dynamic_path: Vec::new(),
         }
     })
+}
+
+// 为组件内部实际节点派生不依赖全局注册表的稳定子作用域。
+pub fn uix_component_child_scope(
+    // 接收最近组件或父动态节点作用域。
+    parent: &UixComponentScope,
+    // 接收节点类型与静态位置形成的声明标识。
+    declaration: u64,
+    // 接收当前实际节点的 key 或稳定位置路径。
+    stable_key: impl Into<String>,
+) -> UixComponentScope {
+    // 克隆父作用域以保留组件实例与动态宿主命名空间。
+    let mut child = parent.clone();
+    // 追加当前节点身份，使 key 或类型变化自然释放旧状态槽。
+    child.dynamic_path.push((declaration, stable_key.into()));
+    // 返回只属于当前实际节点的作用域。
+    child
 }
 
 // 由代码生成的字段初始化复用当前窗口内的组件私有 State。

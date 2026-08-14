@@ -10,6 +10,11 @@ use super::{
 };
 // 引入独立元素分派入口。
 use super::element_codegen::generate_element;
+// 引入组件内动态样式包裹入口。
+// 引入 For 实际实例路径内部标识符读取。
+use super::for_identity_codegen::{internal_control_ident, optional_internal_control_ident};
+// 引入最终 ViewNode 的组件状态装饰应用。
+use super::view_decoration_codegen::apply_component_scopes;
 // 引入受限表达式与事件处理器生成入口。
 use super::{expression_uses_event, generate_expression, generate_handler_expression};
 // 引入属性值与绑定名称的共享生成入口。
@@ -38,29 +43,6 @@ pub(crate) fn generate_view(element: &Element) -> Result<TokenStream, Diagnostic
     let view = quote! { ::uix::prelude::View::build(#view) };
     // 把所有嵌套组件的私有状态作用域依次附加到同一个实际根节点。
     apply_component_scopes(view, &element.component_scopes)
-}
-
-// 把展开阶段保存的组件私有状态作用域转换为 ViewNode 生命周期标记。
-fn apply_component_scopes(
-    // 接收已经构造完成的实际 ViewNode。
-    mut view: TokenStream,
-    // 接收由外层到内层累积的组件作用域标记。
-    markers: &[ComponentScopeMarker],
-) -> Result<TokenStream, Diagnostic> {
-    // 按标记保存顺序追加，确保同一根可同时保留多层组件身份。
-    for marker in markers {
-        // 从生成阶段保存的卫生名称重新构造当前调用点可见的标识符。
-        let scope = Ident::new(&marker.scope_name, Span::call_site());
-        // 读取多根组件中的稳定根序号。
-        let root_ordinal = marker.root_ordinal;
-        // 交给运行时登记该根对组件私有状态作用域的活跃引用。
-        view = quote! {
-            // 让运行时把当前 View 根与组件私有状态实例建立生命周期关联。
-            (#view).uix_component_scope((#scope).clone(), #root_ordinal)
-        };
-    }
-    // 返回包含全部作用域标记的 ViewNode。
-    Ok(view)
 }
 
 // 生成文本元素。
@@ -371,7 +353,51 @@ fn apply_event(
     // 接收事件属性。
     attribute: &Attribute,
 ) -> Result<TokenStream, Diagnostic> {
-    // 当前公开映射只登记 click。
+    // 鼠标进入与离开使用原始指针事件且不吞掉组件处理器。
+    if matches!(attribute.name.as_str(), "@mouseEnter" | "@mouseLeave") {
+        // 事件解析器保证事件值是表达式。
+        let AttributeValue::Expression(expression) = &attribute.value else {
+            // 返回内部形状保护诊断。
+            return Err(Diagnostic::new(
+                attribute.span,
+                "鼠标事件处理器必须是受限表达式",
+                "使用 @mouseEnter=\"handler()\" 或 @mouseLeave=\"handler()\"",
+            ));
+        };
+        // 当前两个无载荷事件不伪装为 ClickEvent。
+        if expression_uses_event(&expression.expression) {
+            // 返回精确载荷边界诊断。
+            return Err(Diagnostic::new(
+                expression.span,
+                "$event 目前只在 @click 中提供 ClickEvent 载荷",
+                "在 @mouseEnter/@mouseLeave 中调用无参数处理器",
+            ));
+        }
+        // 生成无事件参数的处理器主体。
+        let handler = generate_handler_expression(&expression.expression, None)?;
+        // 选择对应系统指针事件分支。
+        let event_variant = if attribute.name == "@mouseEnter" {
+            // 鼠标进入映射到 PointerEnter。
+            quote! { ::uix::prelude::SystemEvent::PointerEnter }
+        } else {
+            // 鼠标离开映射到 PointerLeave。
+            quote! { ::uix::prelude::SystemEvent::PointerLeave }
+        };
+        // 返回不会截断组件自身 Enter/Leave 的指针监听器。
+        return Ok(quote! {
+            // 复用公开指针事件注册入口。
+            (#view).on_pointer(move |__uix_pointer_event| {
+                // 只在声明的进入或离开事件执行语言处理器。
+                if matches!(__uix_pointer_event, &#event_variant) {
+                    // 丢弃处理器返回值并保留副作用。
+                    let _ = { #handler };
+                }
+                // 继续交付组件自身处理器并向父节点冒泡。
+                ::uix::prelude::EventResult::NotHandled
+            })
+        });
+    }
+    // 其余核心事件当前只登记 click。
     if attribute.name != "@click" {
         // 返回未登记事件诊断。
         return Err(Diagnostic::new(
@@ -380,7 +406,7 @@ fn apply_event(
             // 说明缺少事件映射。
             format!("事件 {} 尚无已登记的 Rust API 映射", attribute.name),
             // 给出当前支持集合。
-            "当前核心 Gate 使用 @click；其他事件由内置组件映射矩阵登记",
+            "当前核心 Gate 使用 @click、@mouseEnter 或 @mouseLeave；其他事件由内置组件映射矩阵登记",
         ));
     }
     // 事件解析器保证事件值是表达式。
@@ -547,28 +573,39 @@ fn generate_control(
                 iterable,
                 key,
             }),
-        ) => generate_for(
-            // 传递循环项绑定。
-            binding,
-            // 传递循环项跨度。
-            *binding_span,
-            // 传递可选索引绑定。
-            index_binding.as_deref(),
-            // 传递可选索引跨度。
-            *index_span,
-            // 传递数据源表达式。
-            iterable,
-            // 传递可选稳定 key。
-            key.as_ref(),
-            // 传递循环子节点。
-            &element.children,
-            // 传递目标向量。
-            output,
-            // 传递完整控制跨度。
-            element.span,
-            // 传递控制元素继承的组件作用域标记。
-            &element.component_scopes,
-        ),
+        ) => {
+            // 读取组件展开阶段为当前 For 分配的实例路径名称。
+            let path = internal_control_ident(element, "__uix_for_path")?;
+            // 读取可选父 For 实例路径名称。
+            let parent_path = optional_internal_control_ident(element, "__uix_for_parent_path")?;
+            // 生成带实际实例身份的循环。
+            generate_for(
+                // 传递循环项绑定。
+                binding,
+                // 传递循环项跨度。
+                *binding_span,
+                // 传递可选索引绑定。
+                index_binding.as_deref(),
+                // 传递可选索引跨度。
+                *index_span,
+                // 传递数据源表达式。
+                iterable,
+                // 传递可选稳定 key。
+                key.as_ref(),
+                // 传递循环子节点。
+                &element.children,
+                // 传递目标向量。
+                output,
+                // 传递完整控制跨度。
+                element.span,
+                // 传递控制元素继承的组件作用域标记。
+                &element.component_scopes,
+                // 传递当前循环路径局部变量。
+                &path,
+                // 传递可选父循环路径局部变量。
+                parent_path.as_ref(),
+            )
+        }
         // 名称与控制绑定不一致表示内部结构损坏。
         _ => Err(Diagnostic::new(
             // 指向完整控制元素。
@@ -638,6 +675,10 @@ fn generate_for(
     span: SourceSpan,
     // 接收控制元素继承的组件私有状态作用域标记。
     component_scopes: &[ComponentScopeMarker],
+    // 接收当前循环实际实例路径名称。
+    path: &Ident,
+    // 接收可选父循环实际实例路径名称。
+    parent_path: Option<&Ident>,
 ) -> Result<TokenStream, Diagnostic> {
     // 生成 Rust 循环项标识符。
     let binding = rust_identifier(binding, binding_span)?;
@@ -651,6 +692,14 @@ fn generate_for(
     let iterable = generate_expression(&iterable.expression, None)?;
     // 每次生成拥有所有权的克隆项，避免借用逃逸到事件闭包。
     let iterator = quote! { ::std::iter::IntoIterator::into_iter((#iterable).clone()) };
+    // 创建内部枚举下标以同时支持身份与可选作者索引绑定。
+    let ordinal = Ident::new("__uix_for_ordinal", Span::mixed_site());
+    // 存在作者索引绑定时把内部下标复制到公开绑定名称。
+    let index_setup = index_binding
+        // 借用可选绑定。
+        .as_ref()
+        // 生成当前循环体内的别名。
+        .map(|index| quote! { let #index = #ordinal; });
     // 带 key 的 For 必须有一个稳定行根节点。
     let body = if let Some(key) = key {
         // 收集排除排版空白后的直接子节点。
@@ -679,17 +728,39 @@ fn generate_for(
         let view = apply_component_scopes(view, component_scopes)?;
         // 生成 key 表达式。
         let key = generate_expression(&key.expression, None)?;
+        // 创建只求值一次的行 key 局部变量。
+        let row_key = Ident::new("__uix_for_row_key", Span::mixed_site());
+        // 按嵌套层级组合当前实际实例路径。
+        let path_value = if let Some(parent_path) = parent_path {
+            // 父路径与当前 key 共同组成嵌套身份。
+            quote! { ::std::format!("{}|{}", #parent_path, #row_key) }
+        } else {
+            // 顶层 key 本身就是当前实例路径。
+            quote! { #row_key.clone() }
+        };
         // 返回带稳定身份的追加语句。
         quote! {
+            // key 表达式只求值一次并统一格式化。
+            let #row_key = ::std::format!("{}", #key);
+            // 声明当前循环项供动态样式子树引用。
+            let #path = #path_value;
             // 生成当前循环行 View。
             let __uix_for_view = #view;
             // 把 key 转成公开 ViewNode 接受的字符串。
-            #output.push(__uix_for_view.key(::std::format!("{}", #key)));
+            #output.push(__uix_for_view.key(#row_key));
         }
     } else {
+        // 按嵌套层级组合当前实际位置路径。
+        let path_value = if let Some(parent_path) = parent_path {
+            // 父路径与当前 ordinal 共同组成嵌套身份。
+            quote! { ::std::format!("{}|{}", #parent_path, #ordinal) }
+        } else {
+            // 顶层 ordinal 转换为拥有所有权的字符串。
+            quote! { ::std::format!("{}", #ordinal) }
+        };
         // 无 key 时按位置追加全部循环子节点。
         // 对无 key 的所有实际行根传播控制元素继承的组件作用域。
-        if component_scopes.is_empty() {
+        let children = if component_scopes.is_empty() {
             // 保留既有直接追加路径。
             generate_child_statements(children, output)?
         } else {
@@ -702,23 +773,21 @@ fn generate_for(
                 // 传递当前 For 控制元素继承的组件作用域标记。
                 component_scopes,
             )?
+        };
+        // 先声明位置路径，再生成当前项全部子节点。
+        quote! {
+            // 声明当前循环项供动态样式子树引用。
+            let #path = #path_value;
+            // 保持当前项子节点源码顺序。
+            #children
         }
     };
-    // 有索引绑定时使用 enumerate 保持 usize 下标语义。
-    if let Some(index_binding) = index_binding {
-        // 返回带索引的循环。
-        return Ok(quote! {
-            // 克隆数据源并按位置枚举。
-            for (#index_binding, #binding) in (#iterator).enumerate() {
-                // 按源码顺序生成当前项节点。
-                #body
-            }
-        });
-    }
-    // 无索引绑定时生成普通循环。
+    // 全部 For 都枚举内部位置，以支持无 key 动态样式身份。
     Ok(quote! {
-        // 克隆数据源并逐项迭代。
-        for #binding in #iterator {
+        // 克隆数据源并按位置枚举。
+        for (#ordinal, #binding) in (#iterator).enumerate() {
+            // 在作者声明时暴露同一 usize 索引绑定。
+            #index_setup
             // 按源码顺序生成当前项节点。
             #body
         }

@@ -4,6 +4,12 @@ mod ast;
 mod builtin_matrix;
 // 定义语言面结构化数据类型到公开构造 API 的编译期映射。
 mod data_binding_codegen;
+// 定义组件内 setStyle 的闭合分支代码生成。
+mod dynamic_style_codegen;
+// 定义 For 实际实例路径的内部标识符读取。
+mod for_identity_codegen;
+// 定义最终 ViewNode 的组件状态装饰应用。
+mod view_decoration_codegen;
 // 定义 record 声明到模块级结构体的生成与语言类型映射。
 mod record_codegen;
 // 集中验证 record 生成、对象初始值与拒绝路径。
@@ -47,6 +53,8 @@ mod component_codegen;
 mod component_codegen_tests;
 // 定义组件字段表达式改写与 setState 降低。
 mod component_expression_lower;
+// 定义组件内 setStyle 的作用域校验与表达式降低。
+mod dynamic_style_lower;
 // 定义 Component 声明级语法与类型白名单解析。
 mod component_parser;
 // 集中验证 Component props、state 与名称诊断。

@@ -633,14 +633,28 @@ fadeIn {
 **示例**：
 
 ```uix
-hoverEffect {
-  transition: backgroundColor 0.3s ease;
+normalAction {
+  padding: 6px 12px;
+  backgroundColor: #ffffff;
 }
 
-<Button class="hoverEffect" @mouseEnter="setStyle('hoverStyle')" @mouseLeave="setStyle('normalStyle')">
-  悬停效果
-</Button>
+hoverAction {
+  padding: 8px 16px;
+  backgroundColor: #e6f4ff;
+}
+
+<Component name="HoverAction">
+  <Button class="normalAction"
+          @mouseEnter="setStyle('hoverAction')"
+          @mouseLeave="setStyle('')">
+    悬停并恢复原始 class
+  </Button>
+</Component>
+
+<HoverAction />
 ```
+
+> `transition` 仍为规划中字段；上述示例使用已映射字段展示 `setStyle` 的组件内动态 class。内联 `style` 会继续覆盖每个动态 class 分支中的同名字段。
 
 ## 7. 变换属性
 

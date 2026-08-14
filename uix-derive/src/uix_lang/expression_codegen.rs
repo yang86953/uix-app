@@ -370,6 +370,15 @@ fn generate_call(
             "在 Component 内使用 setState，并由组件代码生成阶段处理",
         ));
     }
+    // setStyle 必须先由组件动态样式阶段降低为闭合 setter。
+    if matches!(&callee.kind, ExpressionKind::Identifier(name) if name == "setStyle") {
+        // 返回明确组件边界诊断，禁止回退到调用方同名函数。
+        return Err(Diagnostic::new(
+            span,
+            "setStyle 需要 Component 动态样式代码生成上下文",
+            "在 Component 当前 View 的事件中使用 setStyle('className')",
+        ));
+    }
     // setTheme 是框架内置操作：生成主题请求通道调用，不依赖调用方同名函数。
     if matches!(&callee.kind, ExpressionKind::Identifier(name) if name == "setTheme") {
         // 参数形状已在解析期验证为单个字符串位置参数。

@@ -49,6 +49,97 @@ fn generates_state_callback_and_composition_tokens() {
     assert!(tokens.contains("__uix_component_scope_"));
 }
 
+// 验证 setStyle 生成组件私有闭合枚举、完整样式分支与非吞噬指针事件。
+#[test]
+fn generates_typed_dynamic_style_and_pointer_event_tokens() {
+    // 解析原始类、目标类、内联覆盖及进入离开恢复组合。
+    let document = parse_document(
+        r##"
+        baseCard { padding: 4px; color: red; }
+        hoverCard { padding: 12px; color: blue; }
+        <Component name="HoverCard">
+          <Text class="baseCard" style="color: #00ff00;" @click="setStyle('hoverCard')" @mouseEnter="setStyle('hoverCard')" @mouseLeave="setStyle('')">Hover</Text>
+        </Component>
+        <HoverCard />
+        "##,
+    )
+    // 合法动态样式文档必须解析成功。
+    .expect("组件动态样式文档应解析成功");
+    // 生成完整类型化令牌。
+    let tokens = generate_document_view(&document)
+        // 已声明目标类必须生成成功。
+        .expect("组件动态样式应生成成功")
+        // 转成稳定文本检查契约边界。
+        .to_string();
+    // 无显式 state 的动态样式组件仍必须取得组件作用域。
+    assert!(tokens.contains("uix_component_scope"));
+    // 实际节点必须派生带 key/位置身份的子作用域。
+    assert!(tokens.contains("uix_component_child_scope"));
+    // 运行时状态必须是闭合枚举而不是字符串注册表。
+    assert!(tokens.contains("enum __uix_dynamic_style_") && tokens.contains("Class0"));
+    // 进入离开必须复用指针事件入口。
+    assert_eq!(tokens.matches(". on_pointer").count(), 2);
+    // 相同目标出现在不同事件时必须生成独占 setter，避免闭包重复移动。
+    assert_eq!(tokens.matches("set_style_").count() >= 3, true);
+    // 两个处理器都必须继续交付组件自身指针事件。
+    assert_eq!(tokens.matches("EventResult :: NotHandled").count(), 2);
+    // 原始与目标类的 padding 都必须形成完整分支。
+    assert!(tokens.contains("padding") && tokens.contains("4.0") && tokens.contains("12.0"));
+}
+
+// 验证 setStyle 目标与组件所有权在生成期关闭。
+#[test]
+fn rejects_unknown_or_component_external_dynamic_style() {
+    // 未声明目标类必须在样式类解析阶段失败。
+    let unknown = parse_document(
+        r#"<Component name="Card"><Text @click="setStyle('missing')">Card</Text></Component><Card />"#,
+    )
+    // 语法本身保持合法。
+    .expect("未知类应在生成阶段诊断");
+    // 读取目标类诊断。
+    let unknown_error = generate_document_view(&unknown).expect_err("未知动态类必须失败");
+    // 诊断必须包含缺失类名。
+    assert!(unknown_error.message.contains("missing") && unknown_error.message.contains("未声明"));
+    // 组件外 setStyle 不得回退到调用方同名函数。
+    let external =
+        parse_document(r#"active { color: red; } <Text @click="setStyle('active')">Card</Text>"#)
+            // 语法本身保持合法。
+            .expect("组件外调用应在生成阶段诊断");
+    // 读取组件所有权诊断。
+    let external_error = generate_document_view(&external).expect_err("组件外 setStyle 必须失败");
+    // 诊断必须明确要求 UIX Component。
+    assert!(external_error.message.contains("Component 内"));
+}
+
+// 验证 For 内动态样式使用显式 key 或稳定位置形成逐节点身份路径。
+#[test]
+fn generates_per_node_dynamic_style_identity_inside_for() {
+    // 解析组件内部带 key 的动态行样式。
+    let document = parse_document(
+        r#"
+        selectedRow { padding: 8px; }
+        <Component name="Rows">
+          <Column><For {item} in {items} key={item.id}><Text @click="setStyle('selectedRow')">{item.name}</Text></For></Column>
+        </Component>
+        <Rows />
+        "#,
+    )
+    // 合法逐行动态样式文档必须解析成功。
+    .expect("For 动态样式文档应解析成功");
+    // 生成逐实例身份令牌。
+    let tokens = generate_document_view(&document)
+        // 当前组件自身位于静态位置，内部 For 应可独立持有节点状态。
+        .expect("For 内动态样式应生成成功")
+        // 转换为稳定文本。
+        .to_string();
+    // For 必须枚举内部位置并声明实际实例路径。
+    assert!(tokens.contains("__uix_for_path_") && tokens.contains("enumerate"));
+    // 行 key 必须只求值一次后同时用于 View key 与动态身份。
+    assert_eq!(tokens.matches(". id").count(), 1);
+    // 动态节点子作用域必须消费循环实例路径。
+    assert!(tokens.contains("uix_component_child_scope"));
+}
+
 // 验证同一静态组件的多个调用各自生成不同的作用域局部变量与生命周期标记。
 #[test]
 fn generates_distinct_scopes_for_multiple_static_component_calls() {
@@ -152,7 +243,7 @@ fn for_nested_allows_pure_static_components() {
         // 转为稳定文本以断言控制流和叶子内容。
         .to_string();
     // For 控制流必须保留在生成结果中。
-    assert!(tokens.contains("for item in"));
+    assert!(tokens.contains("for (__uix_for_ordinal , item) in") && tokens.contains("enumerate"));
     // 最内层静态组件必须已在 For 体内展开。
     assert!(tokens.contains("固定行"));
 }
@@ -318,9 +409,11 @@ fn rejects_set_state_outside_component_event() {
         // 普通插值中的状态更新必须失败。
         .expect_err("setState 不能用于普通插值");
     // 诊断应明确事件处理器边界。
-    assert!(error
-        .message
-        .contains("只能在 Component 的事件处理器中使用"));
+    assert!(
+        error
+            .message
+            .contains("只能在 Component 的事件处理器中使用")
+    );
 }
 
 // 验证组件递归调用在代码生成前被拒绝。

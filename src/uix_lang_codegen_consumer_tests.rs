@@ -572,6 +572,22 @@ fn style_classes_compile_against_public_uix_api() {
     );
 }
 
+// 验证组件内 setStyle、恢复语义与鼠标进入离开在公开 API 消费者中通过类型检查。
+#[test]
+fn dynamic_style_compiles_against_public_uix_api() {
+    // 展开闭合目标类、内联作者覆盖与进入离开恢复组合。
+    let _dynamic: ViewNode = uix!(
+        r##"
+        normalCard { padding: 4px; backgroundColor: #ffffff; }
+        hoverCard { padding: 12px; backgroundColor: #eeeeee; }
+        <Component name="HoverCard">
+          <Text class="normalCard" style="color: #1677ff;" @click="setStyle('hoverCard')" @mouseEnter="setStyle('hoverCard')" @mouseLeave="setStyle('')">Hover</Text>
+        </Component>
+        <HoverCard />
+        "##
+    );
+}
+
 // 验证组件私有状态、共享状态、回调与组合在真实公开 API 中通过类型检查。
 #[test]
 fn generated_components_compile_against_public_uix_api() {

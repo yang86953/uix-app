@@ -183,7 +183,9 @@ pub mod __private {
     }
     pub use super::component::widget::{WidgetNode, WidgetTree};
     // 重导出代码生成器使用的私有组件状态桥接。
-    pub use super::component_state::{uix_component_scope, uix_component_state, UixComponentScope};
+    pub use super::component_state::{
+        uix_component_child_scope, uix_component_scope, uix_component_state, UixComponentScope,
+    };
     pub use super::component_snapshot::snapshot_fields_from_any;
     // 重导出 uix-lang setTheme 内置操作使用的主题请求通道。
     pub use super::theme_request::{
