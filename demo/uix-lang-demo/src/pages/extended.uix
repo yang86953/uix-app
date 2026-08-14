@@ -160,26 +160,6 @@
   <Column gap="16px">
     // 展示数据组件标题。
     <Text fontSize="heading2">数据展示</Text>
-    // 展示卡片列表面板。
-    <Container class="pagePanel">
-      // 组织卡片列表内容。
-      <Column gap="12px">
-        // 展示面板小节标题。
-        <Text fontSize="heading5">Card / List / Descriptions</Text>
-        // 展示带操作项的卡片。
-        <Card title="卡片" actions={['编辑', '删除']} width="320px">
-          // 说明卡片承载能力。
-          <Text>Card 可承载异质有序子树。</Text>
-        // 结束操作卡片。
-        </Card>
-        // 展示带头尾文本的数据列表。
-        <List data={['视觉基线', '语义断言', '交互回归']} header="用户列表" footer="共 3 人" loadMore="加载更多" width="320px" />
-        // 展示三列描述列表。
-        <Descriptions data={[DescriptionsItem('姓名', 'Ada'), DescriptionsItem('角色', '管理员'), DescriptionsItem('邮箱', 'ada@ex.com')]} columns="2" width="480px" />
-      // 结束卡片列表内容。
-      </Column>
-    // 结束卡片列表面板。
-    </Container>
     // 展示选择、折叠与徽标组件面板。
     <Container class="pagePanel">
       // 组织三个新登记数据展示组件。
@@ -203,6 +183,26 @@
       // 结束选择、折叠与徽标内容。
       </Column>
     // 结束选择、折叠与徽标面板。
+    </Container>
+    // 展示卡片列表面板。
+    <Container class="pagePanel">
+      // 组织卡片列表内容。
+      <Column gap="12px">
+        // 展示面板小节标题。
+        <Text fontSize="heading5">Card / List / Descriptions</Text>
+        // 展示带操作项的卡片。
+        <Card title="卡片" actions={['编辑', '删除']} width="320px">
+          // 说明卡片承载能力。
+          <Text>Card 可承载异质有序子树。</Text>
+        // 结束操作卡片。
+        </Card>
+        // 展示带头尾文本的数据列表。
+        <List data={['视觉基线', '语义断言', '交互回归']} header="用户列表" footer="共 3 人" loadMore="加载更多" width="320px" />
+        // 展示三列描述列表。
+        <Descriptions data={[DescriptionsItem('姓名', 'Ada'), DescriptionsItem('角色', '管理员'), DescriptionsItem('邮箱', 'ada@ex.com')]} columns="2" width="480px" />
+      // 结束卡片列表内容。
+      </Column>
+    // 结束卡片列表面板。
     </Container>
     // 展示时间轴面板。
     <Container class="pagePanel">
@@ -322,13 +322,13 @@
         // 展示面板小节标题。
         <Text fontSize="heading5">Message / Notification / Popconfirm</Text>
         // 声明不会自动超时的可关闭成功消息。
-        <Message key="demo-message" type="success" content="主演示 Message 已由 uix-lang 声明" duration="0" closable />
+        <Message key="demo-message" type="success" content="主演示 Message 已由 uix-lang 声明" duration="0" closable automationId="demo-message" />
         // 声明不会自动超时的可关闭通知。
-        <Notification key="demo-notification" type="info" title="声明式通知" content="逐窗 overlay host 持有稳定 keyed 租约" duration="0" closable />
+        <Notification key="demo-notification" type="info" title="声明式通知" content="逐窗 overlay host 持有稳定 keyed 租约" duration="0" closable automationId="demo-notification" />
         // 展示确认与取消结果计数。
         <Text>确认 {confirm_count} 次 · 取消 {cancel_count} 次</Text>
         // 使用真实按钮作为确认气泡唯一 trigger。
-        <Popconfirm title="确认执行主演示操作？" confirmText="确认" cancelText="取消" placement="bottom" @confirm="setState(confirm_count: confirm_count + 1)" @cancel="setState(cancel_count: cancel_count + 1)">
+        <Popconfirm title="确认执行主演示操作？" confirmText="确认" cancelText="取消" placement="bottom" automationId="demo-popconfirm" @confirm="setState(confirm_count: confirm_count + 1)" @cancel="setState(cancel_count: cancel_count + 1)">
           // 保留业务按钮自己的布局与交互身份。
           <Button type="primary" automationId="demo-popconfirm-trigger">打开 Popconfirm</Button>
         // 结束确认气泡。
@@ -457,6 +457,20 @@
   <Column gap="16px">
     // 展示其他组件标题。
     <Text fontSize="heading2">其他组件</Text>
+    // 展示受控上传组件面板。
+    <Container class="pagePanel">
+      // 组织上传拖放区与边界说明。
+      <Column gap="12px">
+        // 展示面板小节标题。
+        <Text fontSize="heading5">Upload — 受控文件队列</Text>
+        // 绑定组件私有文件状态并启用扩展名、数量与大小门禁。
+        <Upload files={upload_files} accept=".png,*.jpg" multiple maxCount="8" maxSize="10485760" drag width="480px" height="240px" automationId="demo-upload" />
+        // 说明上传运行时所有权边界。
+        <Text fontSize="small">Upload 只拥有拖放与列表瞬态状态；文件队列由 Vec&lt;UploadFile&gt; state 唯一持有。</Text>
+      // 结束上传内容。
+      </Column>
+    // 结束上传面板。
+    </Container>
     // 展示媒体组件面板。
     <Container class="pagePanel">
       // 组织媒体内容。
@@ -476,20 +490,6 @@
       // 结束媒体内容。
       </Column>
     // 结束媒体组件面板。
-    </Container>
-    // 展示受控上传组件面板。
-    <Container class="pagePanel">
-      // 组织上传拖放区与边界说明。
-      <Column gap="12px">
-        // 展示面板小节标题。
-        <Text fontSize="heading5">Upload — 受控文件队列</Text>
-        // 绑定组件私有文件状态并启用扩展名、数量与大小门禁。
-        <Upload files={upload_files} accept=".png,*.jpg" multiple maxCount="8" maxSize="10485760" drag width="480px" height="240px" automationId="demo-upload" />
-        // 说明上传运行时所有权边界。
-        <Text fontSize="small">Upload 只拥有拖放与列表瞬态状态；文件队列由 Vec&lt;UploadFile&gt; state 唯一持有。</Text>
-      // 结束上传内容。
-      </Column>
-    // 结束上传面板。
     </Container>
     // 展示语义色面板。
     <Container class="pagePanel">

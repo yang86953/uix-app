@@ -73,6 +73,18 @@ impl DemoProcess {
 
     // 启动强制 D3D11 的专用图形恢复验收进程。
     pub(crate) fn spawn() -> Self {
+        // 复用通用主演示启动器并选择图形恢复页面。
+        Self::spawn_with_args(&["--test-graphics-recovery"])
+    }
+
+    // 启动强制 D3D11 的普通主演示视觉验收进程。
+    pub(crate) fn spawn_main() -> Self {
+        // 普通模式不附加测试页面参数。
+        Self::spawn_with_args(&[])
+    }
+
+    // 使用同一进程所有权与 discovery 隔离启动指定主演示模式。
+    fn spawn_with_args(extra_args: &[&str]) -> Self {
         // 为并发或重复测试构造不冲突的目录后缀。
         let unique = SystemTime::now()
             // 计算自 Unix epoch 起的稳定递增时长。
@@ -101,8 +113,8 @@ impl DemoProcess {
         command
             // 显式启用本机 Agent Bridge。
             .arg("--agent-control")
-            // 显式选择专用图形恢复页面。
-            .arg("--test-graphics-recovery")
+            // 附加已经由测试选择的主演示模式参数。
+            .args(extra_args)
             // 将 descriptor 限定到本测试唯一目录。
             .env("LOCALAPPDATA", &discovery_root)
             // 强制使用本任务验证的 Windows D3D11 recipe。
@@ -140,6 +152,12 @@ impl DemoProcess {
             // 保存输出读取线程。
             output_readers,
         }
+    }
+
+    // 返回本 fixture 唯一主演示子进程 ID 供窗口捕获 Adapter 定位 HWND。
+    pub(crate) fn process_id(&self) -> u32 {
+        // 子进程对象在 fixture 有效期内保持同一进程身份。
+        self.child.id()
     }
 
     // 等待 Agent Bridge 发布 ready descriptor。
