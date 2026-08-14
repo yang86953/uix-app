@@ -38,11 +38,14 @@ impl SelectOption {
 /// 选项组。
 #[derive(Debug, Clone, PartialEq)]
 pub struct OptGroup {
+    /// 分组标题。
     pub label: String,
+    /// 组内显示文案与稳定值相同的选项。
     pub options: Vec<String>,
 }
 
 impl OptGroup {
+    /// 创建没有选项的分组。
     pub fn new(label: &str) -> Self {
         Self {
             label: label.to_string(),
@@ -54,6 +57,7 @@ impl OptGroup {
         clippy::should_implement_trait,
         reason = "add is the established fluent builder API, not arithmetic addition"
     )]
+    /// 在分组末尾追加一个选项。
     pub fn add(mut self, opt: &str) -> Self {
         self.options.push(opt.to_string());
         self
@@ -65,11 +69,14 @@ impl OptGroup {
 /// 这是推荐的公开入口；`OptGroup` 保留给已有的逐项 `.add(...)` 写法。
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectOptionGroup {
+    /// 分组标题。
     pub label: String,
+    /// 组内显示文案与稳定值相同的选项。
     pub options: Vec<String>,
 }
 
 impl SelectOptionGroup {
+    /// 使用一次性选项集合创建分组。
     pub fn new<I, S>(label: impl Into<String>, options: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -96,9 +103,12 @@ impl From<SelectOptionGroup> for OptGroup {
 
 /// 可绑定到 `Select` 的外部值类型。
 pub trait SelectValue: Clone + PartialEq + Send + Sync + 'static {
+    /// 该值类型是否表示多选集合。
     const MULTIPLE: bool;
 
+    /// 将当前稳定值映射为给定选项集合中的索引。
     fn selected_indices(&self, options: &[&str]) -> Vec<usize>;
+    /// 从给定选项集合及已选索引重建外部值。
     fn from_selected_indices(options: &[&str], indices: &[usize]) -> Self;
 }
 
@@ -189,6 +199,7 @@ mod methods;
 
 pub use component::*;
 
+/// 为自定义选项 View 附加选择器交互处理器的构建结果。
 pub struct SelectOptionView {
     select: Select,
     renderer: SelectOptionRenderer,
