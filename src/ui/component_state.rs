@@ -253,14 +253,13 @@ impl ComponentStateStore {
         let mut inner = self.inner.lock().unwrap_or_else(|error| error.into_inner());
         // 读取本次捕获独占的 token 数值。
         let token = ComponentStateClaimToken(inner.next_claim_token);
-        // 推进分配器并在不现实的耗尽场景下明确失败。
-        inner.next_claim_token = inner
-            // 对最大值执行受检递增以禁止 token 重复。
-            .next_claim_token
-            // 计算下一次捕获使用的数值。
-            .checked_add(1)
+        // 对最大值执行受检递增以禁止 token 重复。
+        let Some(next_claim_token) = inner.next_claim_token.checked_add(1) else {
             // token 重复会破坏 claim 所有权，因此不可静默回绕。
-            .expect("组件状态捕获 claim token 已耗尽");
+            panic!("组件状态捕获 claim token 已耗尽");
+        };
+        // 推进分配器供下一次捕获使用。
+        inner.next_claim_token = next_claim_token;
         // 返回只属于本次捕获的 token。
         token
     }
@@ -663,11 +662,12 @@ fn record_component_state_claim(
         // 取得可变捕获以追加 journal 条目。
         let mut active = capture.borrow_mut();
         // 状态访问的 store 与 token 都来自当前捕获，因此上下文必须存在。
-        let active = active
-            // 取得当前捕获的可变 journal。
-            .as_mut()
-            // 缺失上下文说明内部状态访问契约已被破坏。
-            .expect("组件状态 claim 缺少活动捕获上下文");
+        let active = active.as_mut();
+        // 缺失上下文说明内部状态访问契约已被破坏。
+        let Some(active) = active else {
+            // 不允许把 claim 静默登记到错误生命周期。
+            panic!("组件状态 claim 缺少活动捕获上下文");
+        };
         // 嵌套捕获只能记录自己存储中的 claim。
         assert!(
             // 精确比较 Arc 内核以核对窗口树所有权。
@@ -748,13 +748,13 @@ fn with_component_state_capture_with_namespace<R>(
     // 捕获 panic 以确保线程局部上下文不会泄漏到后续构建。
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(build));
     // 无论构建成功与否都恢复外层并取回本层捕获。
-    let finished_capture = COMPONENT_STATE_CAPTURE
-        .with(|capture| {
-            // 恢复前一个捕获或清空当前线程的临时状态。
-            capture.replace(outer)
-        })
-        // 成对的安装与恢复必须始终取回本层捕获。
-        .expect("组件状态捕获上下文意外缺失");
+    // 恢复前一个捕获或清空当前线程的临时状态。
+    let finished_capture = COMPONENT_STATE_CAPTURE.with(|capture| capture.replace(outer));
+    // 成对的安装与恢复必须始终取回本层捕获。
+    let Some(finished_capture) = finished_capture else {
+        // 缺失本层捕获表示线程局部生命周期已被破坏。
+        panic!("组件状态捕获上下文意外缺失");
+    };
     // 保持调用者可观察到的正常返回或原始 panic。
     match result {
         // 正常路径把值与独立可撤销回执一同交给调用方。

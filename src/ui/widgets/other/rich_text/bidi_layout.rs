@@ -78,13 +78,12 @@ pub(super) fn reorder_lines(lines: &mut [LayoutLine], bidi: &BidiAnalysis) -> f3
             // 相同 run 追加逻辑字符。
             if continues_run {
                 // 最后一个 run 已由条件保证存在。
-                runs.last_mut()
-                    // 防止异常内部状态静默丢字符。
-                    .expect("continuing bidi run requires a previous run")
-                    // 保留 run 内逻辑文本顺序。
-                    .glyphs
-                    // 追加当前字符。
-                    .push(glyph);
+                let Some(run) = runs.last_mut() else {
+                    // 条件与集合状态不一致时立即暴露内部不变量破坏。
+                    unreachable!("continuing bidi run requires a previous run");
+                };
+                // 保留 run 内逻辑文本顺序并追加当前字符。
+                run.glyphs.push(glyph);
             // 样式或方向变化时开始新 run。
             } else {
                 // 登记新的逻辑 run。
