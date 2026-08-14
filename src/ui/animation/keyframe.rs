@@ -15,12 +15,16 @@ type FinishCallback = Arc<Mutex<Option<Box<dyn FnOnce() + Send + 'static>>>>;
 /// 缓动曲线属于从该关键帧开始的片段；因此最后一帧的缓动会被忽略。
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Keyframe<T> {
+    /// 此帧在归一化时间线上的位置。
     pub offset: f64,
+    /// 动画到达此帧时对应的值。
     pub value: T,
+    /// 从此帧到下一帧的插值缓动曲线。
     pub easing: Easing,
 }
 
 impl<T> Keyframe<T> {
+    /// 创建使用线性缓动的关键帧。
     pub const fn new(offset: f64, value: T) -> Self {
         Self {
             offset,
@@ -29,6 +33,7 @@ impl<T> Keyframe<T> {
         }
     }
 
+    /// 设置从此帧开始的片段缓动曲线。
     pub const fn easing(mut self, easing: Easing) -> Self {
         self.easing = easing;
         self
@@ -38,7 +43,9 @@ impl<T> Keyframe<T> {
 /// 关键帧序列构造失败。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KeyframeError {
+    /// 构造序列时没有提供任何关键帧。
     Empty,
+    /// 至少一个关键帧偏移不是有限数值。
     NonFiniteOffset,
 }
 
@@ -159,6 +166,7 @@ impl<T: Animatable> KeyframeAnimation<T> {
         self
     }
 
+    /// 将动画推进给定秒数并返回推进后的采样值。
     pub fn update(&mut self, dt: f64) -> T {
         // 仅运行中推进时间；到达时长后停止并触发一次完成回调。
         if self.running {
@@ -172,6 +180,7 @@ impl<T: Animatable> KeyframeAnimation<T> {
         self.value()
     }
 
+    /// 返回当前播放方向和进度对应的采样值。
     pub fn value(&self) -> T {
         // 倒放时从时间线末尾镜像进度。
         let progress = if self.reversed {
@@ -182,6 +191,7 @@ impl<T: Animatable> KeyframeAnimation<T> {
         self.sample(progress)
     }
 
+    /// 返回不受播放方向影响的归一化已用时进度。
     pub fn progress(&self) -> f64 {
         if self.duration > 0.0 {
             (self.elapsed / self.duration).clamp(0.0, 1.0)
@@ -190,42 +200,51 @@ impl<T: Animatable> KeyframeAnimation<T> {
         }
     }
 
+    /// 返回已用时是否到达动画时长。
     pub fn is_finished(&self) -> bool {
         self.elapsed >= self.duration
     }
 
+    /// 返回动画当前是否会由 [`Self::update`] 推进。
     pub const fn is_running(&self) -> bool {
         self.running
     }
 
+    /// 返回规范化后的动画时长（秒）。
     pub const fn duration(&self) -> f64 {
         self.duration
     }
 
+    /// 返回已排序、去重并补齐边界的关键帧序列。
     pub fn frames(&self) -> &[Keyframe<T>] {
         &self.frames
     }
 
+    /// 暂停时间推进并保留当前进度。
     pub fn pause(&mut self) {
         self.running = false;
     }
 
+    /// 在动画尚未完成时恢复时间推进。
     pub fn resume(&mut self) {
         if !self.is_finished() {
             self.running = true;
         }
     }
 
+    /// 将进度移到终点并停止，且不触发完成回调。
     pub fn stop(&mut self) {
         self.elapsed = self.duration;
         self.running = false;
     }
 
+    /// 将进度重置到起点，并在时长大于零时开始推进。
     pub fn restart(&mut self) {
         self.elapsed = 0.0;
         self.running = self.duration > 0.0;
     }
 
+    /// 切换正放与倒放方向，并从时间线起点重新开始。
     pub fn reverse(&mut self) {
         self.reversed = !self.reversed;
         self.restart();
