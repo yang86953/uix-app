@@ -66,8 +66,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "VirtualScroll" => generate_virtual_scroll(element),
         // 固钉容器映射到公开 Affix，并从 State<f32> 读取当前滚动位置。
         "Affix" => generate_affix(element),
-        // 回到顶部按钮映射到持有 State<f32> 句柄的公开 BackTop。
-        "BackTop" => generate_back_top(element),
+        // 两个回到顶部标签统一映射到持有滚动状态的公开 BackTop。
+        "BackTop" | "FloatButtonBackTop" => generate_back_top(element),
         // 双面板分隔器映射到公开 Splitter，并保留运行时交互所有权。
         "Splitter" => generate_splitter(element),
         // 应用布局壳五类标签共享公开运行时组合生成入口。
@@ -214,7 +214,7 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、FloatButtonGroup、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、WindowDragRegion、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Image、ImageGroup、List、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Steps、Pagination、Breadcrumb、Anchor、QRCode、Watermark、RichText、Alert、Modal、Drawer、Tooltip、Popover、FocusTrap 或 Spin，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、FloatButtonGroup、FloatButtonBackTop、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、WindowDragRegion、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Image、ImageGroup、List、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Steps、Pagination、Breadcrumb、Anchor、QRCode、Watermark、RichText、Alert、Modal、Drawer、Tooltip、Popover、FocusTrap 或 Spin，或先登记组件状态",
         )),
     }
     // 结束元素分派函数。

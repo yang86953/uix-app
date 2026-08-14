@@ -24,6 +24,23 @@ fn generates_back_top_contract() {
     assert!(tokens.contains("margin"));
 }
 
+// 验证 FloatButtonBackTop 别名复用 BackTop 状态与快照契约。
+#[test]
+fn generates_float_button_back_top_alias() {
+    // 状态绑定别名必须使用同一个公开运行时组件。
+    let bound = generate(r#"<FloatButtonBackTop threshold="400" scrollY={scroll_y} />"#)
+        // 合法别名必须成功生成。
+        .expect("FloatButtonBackTop 状态绑定应生成");
+    // 别名不得构造另一套浮动按钮状态 owner。
+    assert!(bound.contains("BackTop :: new") && bound.contains("scroll_state (& (scroll_y))"));
+    // 数值字面量表示只读滚动快照。
+    let snapshot = generate(r#"<FloatButtonBackTop scrollY="450" />"#)
+        // 合法只读快照必须成功生成。
+        .expect("FloatButtonBackTop 数值快照应生成");
+    // 快照必须调用公开 scroll_y 构建器。
+    assert!(snapshot.contains("scroll_y (450.0)"));
+}
+
 // 验证 BackTop 叶形状与状态绑定诊断。
 #[test]
 fn validates_back_top_contract_errors() {
@@ -31,10 +48,12 @@ fn validates_back_top_contract_errors() {
     let missing = generate(r#"<BackTop />"#).expect_err("缺少 scrollY 必须失败");
     // 修复建议必须给出绑定写法。
     assert!(missing.message.contains("scrollY") && missing.suggestion.contains("scrollY={"));
-    // 字面量不能表达 State 所有权。
-    let literal = generate(r#"<BackTop scrollY="450" />"#).expect_err("字面 scrollY 必须失败");
-    // 诊断必须明确状态类型。
-    assert!(literal.message.contains("State<f32>"));
+    // 非数值字面量不能充当只读滚动快照。
+    let literal = generate(r#"<BackTop scrollY="far" />"#)
+        // 非法字面量必须失败。
+        .expect_err("非数值 scrollY 必须失败");
+    // 诊断必须明确数值输入边界。
+    assert!(literal.message.contains("数值") || literal.message.contains("数字"));
     // 可见子节点不得被静默丢弃。
     let child = generate(r#"<BackTop scrollY={scroll_y}><Text>A</Text></BackTop>"#)
         // 提取叶组件诊断。
