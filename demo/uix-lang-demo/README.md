@@ -75,6 +75,12 @@ cargo test --features "agent-control,image-codecs" --test uix_lang_system_theme_
 cargo test --features agent-control --test uix_lang_accessibility_windows -- --ignored --nocapture
 ```
 
+窗口最大化/还原二十轮与键盘/指针焦点环像素门禁使用：
+
+```powershell
+cargo test --features "agent-control,image-codecs" --test uix_lang_foreground_windows -- --ignored --nocapture
+```
+
 测试会验证页面标题、组件角色 / 状态 / 动作、主题平均亮度差、D3D11 recipe 与无软件
 回退，并把 PNG 与联系表写入 `target/debug-captures/uix-lang-visual` 供视觉审阅。
 

@@ -20,8 +20,8 @@ use windows::Win32::Graphics::Gdi::{
 // 引入顶层窗口枚举、可见性与置顶能力。
 use windows::Win32::UI::WindowsAndMessaging::{
     BringWindowToTop, EnumWindows, GetClientRect, GetWindowRect, GetWindowTextW,
-    GetWindowThreadProcessId, IsWindowVisible, SetWindowPos, HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_SHOWWINDOW,
+    GetWindowThreadProcessId, IsWindowVisible, IsZoomed, SetWindowPos, HWND_TOPMOST, SWP_NOMOVE,
+    SWP_NOSIZE, SWP_SHOWWINDOW,
 };
 // 引入 Win32 回调布尔返回值。
 use windows::core::BOOL;
@@ -131,6 +131,31 @@ fn wait_for_window(process_id: u32, title: Option<&str>) -> HWND {
         }
         // 超时表示真实窗口没有建立。
         assert!(Instant::now() < deadline, "timed out locating demo HWND");
+        // 短暂等待避免忙轮询。
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+// 有界等待主演示进入或退出原生最大化状态。
+pub(crate) fn wait_for_maximized(demo: &DemoProcess, expected: bool) {
+    // 定位本 fixture 面积最大的真实顶层窗口。
+    let window = wait_for_window(demo.process_id(), None);
+    // 设置原生窗口状态变化最长等待时间。
+    let deadline = Instant::now() + Duration::from_secs(10);
+    // 持续查询直到状态匹配或超时。
+    loop {
+        // IsZoomed 只读取当前 HWND 最大化事实。
+        let maximized = unsafe { IsZoomed(window) }.as_bool();
+        // 精确匹配期望状态时完成等待。
+        if maximized == expected {
+            // 原生窗口状态已经收敛。
+            return;
+        }
+        // 超时表示产品窗口动作没有到达 Win32 owner。
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for maximized={expected}"
+        );
         // 短暂等待避免忙轮询。
         thread::sleep(Duration::from_millis(25));
     }
@@ -415,6 +440,84 @@ pub(crate) fn changed_pixel_ratio(left: &Path, right: &Path) -> f64 {
     // 非空客户区已由捕获入口保证。
     let total = u64::from(left.width()) * u64::from(left.height());
     // 返回零到一范围的变化比例。
+    changed as f64 / total as f64
+}
+
+// 计算同尺寸截图中一个逻辑矩形映射后的 RGB 变化比例。
+pub(crate) fn changed_pixel_ratio_in_logical_region(
+    // 接收左侧证据路径。
+    left: &Path,
+    // 接收右侧证据路径。
+    right: &Path,
+    // 接收语义根逻辑宽度。
+    root_width: f64,
+    // 接收语义根逻辑高度。
+    root_height: f64,
+    // 接收目标逻辑矩形 x、y、w、h。
+    region: (f64, f64, f64, f64),
+) -> f64 {
+    // 解码左侧无损证据并统一为 RGB。
+    let left = image::open(left)
+        // 缺失或损坏必须阻止焦点视觉验收。
+        .expect("open left focus evidence")
+        // 丢弃恒定 alpha 通道。
+        .to_rgb8();
+    // 解码右侧无损证据并统一为 RGB。
+    let right = image::open(right)
+        // 缺失或损坏必须阻止焦点视觉验收。
+        .expect("open right focus evidence")
+        // 丢弃恒定 alpha 通道。
+        .to_rgb8();
+    // 两张焦点证据必须保持同一客户区尺寸。
+    assert_eq!(
+        left.dimensions(),
+        right.dimensions(),
+        "focus captures must keep the same client extent"
+    );
+    // 逻辑根必须非空才能建立 DPI 映射。
+    assert!(root_width > 0.0 && root_height > 0.0);
+    // 计算逻辑坐标到截图物理像素的水平比例。
+    let scale_x = f64::from(left.width()) / root_width;
+    // 计算逻辑坐标到截图物理像素的垂直比例。
+    let scale_y = f64::from(left.height()) / root_height;
+    // 把目标左边界映射并裁剪到图像范围。
+    let x0 = (region.0 * scale_x).floor().max(0.0) as u32;
+    // 把目标上边界映射并裁剪到图像范围。
+    let y0 = (region.1 * scale_y).floor().max(0.0) as u32;
+    // 把目标右边界映射并裁剪到图像范围。
+    let x1 = ((region.0 + region.2) * scale_x)
+        // 覆盖边界像素。
+        .ceil()
+        // 拒绝负坐标。
+        .max(0.0)
+        // 裁剪到图像宽度。
+        .min(f64::from(left.width())) as u32;
+    // 把目标下边界映射并裁剪到图像范围。
+    let y1 = ((region.1 + region.3) * scale_y)
+        // 覆盖边界像素。
+        .ceil()
+        // 拒绝负坐标。
+        .max(0.0)
+        // 裁剪到图像高度。
+        .min(f64::from(left.height())) as u32;
+    // 目标必须在当前客户区具有非空物理范围。
+    assert!(x0 < x1 && y0 < y1, "focus region must be visible");
+    // 保存变化像素数。
+    let mut changed = 0_u64;
+    // 按物理行遍历目标区域。
+    for y in y0..y1 {
+        // 按物理列遍历目标区域。
+        for x in x0..x1 {
+            // RGB 任一通道变化即计入本像素。
+            if left.get_pixel(x, y) != right.get_pixel(x, y) {
+                // 饱和推进变化计数。
+                changed = changed.saturating_add(1);
+            }
+        }
+    }
+    // 计算目标物理像素总数。
+    let total = u64::from(x1 - x0) * u64::from(y1 - y0);
+    // 返回零到一范围的区域变化比例。
     changed as f64 / total as f64
 }
 
