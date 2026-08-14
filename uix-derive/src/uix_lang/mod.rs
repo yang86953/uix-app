@@ -227,6 +227,11 @@ mod collapse_codegen;
 // 集中验证 Collapse 生成、默认值与拒绝路径。
 #[cfg(test)]
 mod collapse_codegen_tests;
+// 定义 Upload 受控队列、扩展名门禁与类型化 Change 事件生成边界。
+mod upload_codegen;
+// 集中验证 Upload 生成、默认值与拒绝路径。
+#[cfg(test)]
+mod upload_codegen_tests;
 // 定义 Skeleton 静态外观与尺寸的公开 API 代码生成边界。
 mod skeleton_codegen;
 // 集中验证 Skeleton 生成与拒绝路径。
@@ -453,8 +458,8 @@ pub(crate) use window_drag_region_codegen::generate_window_drag_region;
 pub(crate) use component_ast::*;
 // 导出语言面数据类型到公开构造 API 的映射查询。
 pub(crate) use data_binding_codegen::{
-    data_chain_root, data_constructor_spec, is_data_constructor_chain, normalize_number_literals,
-    step_status_path, DataConstructorSpec,
+    DataConstructorSpec, data_chain_root, data_constructor_spec, is_data_constructor_chain,
+    normalize_number_literals, step_status_path,
 };
 // 向过程宏入口暴露组件感知文档生成函数。
 pub(crate) use component_codegen::generate_document_view;
@@ -541,6 +546,8 @@ pub(crate) use list_codegen::generate_list;
 pub(crate) use selectable_list_codegen::generate_selectable_list;
 // 向核心元素生成器暴露 Collapse 叶组件专用映射。
 pub(crate) use collapse_codegen::generate_collapse;
+// 向核心元素生成器暴露 Upload 叶组件专用映射。
+pub(crate) use upload_codegen::generate_upload;
 // 向核心元素生成器暴露 Skeleton 专用映射。
 pub(crate) use skeleton_codegen::generate_skeleton;
 // 向核心元素生成器暴露 Empty 专用映射。

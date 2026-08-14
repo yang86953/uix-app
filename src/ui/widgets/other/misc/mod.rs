@@ -6,6 +6,11 @@
 mod qrcode;
 mod transfer;
 mod upload;
+// 拆分 Upload 的公开数据契约，保持组件实现文件低于行数门禁。
+mod upload_types;
+// 聚焦验证 Upload 受控队列、稳定身份与类型化事实。
+#[cfg(test)]
+mod upload_tests;
 mod watermark;
 
 // 关闭二维码 capability 时不保留模块级公开入口。
@@ -14,4 +19,6 @@ mod watermark;
 pub use qrcode::*;
 pub use transfer::*;
 pub use upload::*;
+// 统一从 misc 模块导出 Upload 的稳定身份、状态、事实与错误类型。
+pub use upload_types::*;
 pub use watermark::*;

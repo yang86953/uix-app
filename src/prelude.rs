@@ -29,8 +29,8 @@ pub use crate::platform::graphics::GraphicsBackend;
 // draw
 
 pub use crate::draw::{
-    colors, BlendMode, Color, FillRule, FontService, ImageService, Path, PathBuilder, Radius,
-    Renderer, StrokeOptions,
+    BlendMode, Color, FillRule, FontService, ImageService, Path, PathBuilder, Radius, Renderer,
+    StrokeOptions, colors,
 };
 
 // data
@@ -58,13 +58,11 @@ pub use crate::ui::theme::style::{
     TypographyToken,
 };
 pub use crate::ui::theme::{
-    generate_color_scale, ColorScale, DataVisualizationPalette, DesignTokens, DynTokens,
-    FunctionalColorRole, NeutralColorScale, NeutralRole, PrimaryHue, ShadowToken, Theme,
-    ThemePrimitives, TokenPatch, DATA_VISUALIZATION_PALETTE, NEUTRAL_PALETTE,
+    ColorScale, DATA_VISUALIZATION_PALETTE, DataVisualizationPalette, DesignTokens, DynTokens,
+    FunctionalColorRole, NEUTRAL_PALETTE, NeutralColorScale, NeutralRole, PrimaryHue, ShadowToken,
+    Theme, ThemePrimitives, TokenPatch, generate_color_scale,
 };
 pub use crate::ui::{
-    copy_to_clipboard, en_us, read_text_from_clipboard, render_empty_for, use_config, use_locale,
-    window_control, window_control_named, window_drag_region, with_config, with_locale, zh_cn,
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AppState, AriaAttribute,
     ClickEvent, ComponentConfig, ComponentConfigSnapshot, ComponentHandle, ComponentOverrides,
     ComponentTokenOverrides, Config, ConfigProvider, EmptyContext, EmptyRenderer, EventResult,
@@ -73,7 +71,9 @@ pub use crate::ui::{
     LocaleProvider, PaintContext, Placement, SemanticAction, SemanticActionKind, SemanticEvent,
     SemanticKind, SemanticPayload, SnapshotCollapsePanel, SnapshotField, SnapshotFields,
     SnapshotSource, SnapshotTransferItem, SnapshotValue, SystemEvent, SystemEventKind, ThemeTokens,
-    TokenProvider, WidgetChildren, WidgetComponent, WindowControl,
+    TokenProvider, WidgetChildren, WidgetComponent, WindowControl, copy_to_clipboard, en_us,
+    read_text_from_clipboard, render_empty_for, use_config, use_locale, window_control,
+    window_control_named, window_drag_region, with_config, with_locale, zh_cn,
 };
 // 在便捷导入面公开标准窗口控制组合构造器。
 pub use crate::ui::window_controls;
@@ -82,10 +82,10 @@ pub use crate::ui::{
     Easing, Keyframe, KeyframeAnimation, KeyframeError, Spring, SpringAnimation, Transition,
 };
 // 表格 capability 启用时才在 prelude 暴露专属快照列模型。
+pub use crate::Display;
 #[cfg(feature = "table")]
 // 保持启用场景下既有的快照导入写法。
 pub use crate::ui::{SnapshotTableColumn, SnapshotTableColumnGroup};
-pub use crate::Display;
 // ui / components
 pub use crate::ui::{
     Affix, AutoComplete, Avatar, BackTop, Badge, BadgeColor, BadgeStatus, BreakpointError,
@@ -106,8 +106,9 @@ pub use crate::ui::{
     SelectableItem, SelectableList, Sider, Skeleton, SkeletonShape, Slider, Space, SpaceSize,
     Splitter, Switch, Tag, TagColor, ThemeToggle, Time, TimePicker, Timeline, TimelineItem,
     TooltipPlacement, Transfer, TransferItem, Trigger, TriggerMode, Typography, TypographyType,
-    Upload, UploadFile, UploadStatus, ValidateStatus, Values, VirtualScroll, VirtualScrollBuilder,
-    Watermark, Weekday,
+    Upload, UploadAcceptError, UploadChange, UploadFile, UploadFileId, UploadFileIdError,
+    UploadQueueResult, UploadRejectReason, UploadRejection, UploadStatus, UploadUpdateError,
+    ValidateStatus, Values, VirtualScroll, VirtualScrollBuilder, Watermark, Weekday,
 };
 // 反馈 capability 启用时才在 prelude 暴露组件、门面与专属模型。
 #[cfg(feature = "feedback")]
@@ -160,7 +161,7 @@ pub use crate::ui::{DropPosition, SnapshotTreeNode, Tree, TreeNode, TreeSelect};
 // app
 
 pub use crate::app::Container as DiContainer;
-pub use crate::app::{map_ui_event, App, AppHandle, AppMode, TimerHandle, WindowConfig};
+pub use crate::app::{App, AppHandle, AppMode, TimerHandle, WindowConfig, map_ui_event};
 
 // 富文本 capability 启用时才暴露解析与布局辅助函数。
 #[cfg(feature = "rich-text")]
@@ -170,9 +171,9 @@ pub use crate::ui::{layout_rich_text_segments, parse_rich_text};
 // view
 
 pub use crate::ui::{
-    button, canvas, column, column_fit, dynamic_label, embed, grid, input, label, row, scroll,
-    show, space, AccessibilityExt, ButtonBuilder, EventExt, GridBuilder, InputBuilder,
-    IntoLabelContent, IntoViewChildren, ScrollBuilder, StyleExt, TransitionExt, View, ViewNode,
+    AccessibilityExt, ButtonBuilder, EventExt, GridBuilder, InputBuilder, IntoLabelContent,
+    IntoViewChildren, ScrollBuilder, StyleExt, TransitionExt, View, ViewNode, button, canvas,
+    column, column_fit, dynamic_label, embed, grid, input, label, row, scroll, show, space,
 };
 // 反馈 capability 启用时才在 prelude 暴露全局消息与通知门面函数。
 #[cfg(feature = "feedback")]

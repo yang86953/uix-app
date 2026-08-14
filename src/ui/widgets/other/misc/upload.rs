@@ -2,38 +2,28 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::component::paint_context::PaintContext;
-use crate::ui::{
-    ComponentId, EventResult, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
+// 引入调用方拥有的上传队列状态句柄。
+use crate::ui::reactive::state::State;
+use crate::ui::{EventResult, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
+// 引入同一 UI Module 拥有的 Upload 数据契约。
+use super::{
+    UploadAcceptError, UploadChange, UploadFile, UploadFileId, UploadQueueResult,
+    UploadRejectReason, UploadRejection, UploadStatus, UploadUpdateError,
 };
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
+// 引入类型化变化观察器的共享所有权句柄。
+use std::rc::Rc;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Upload
 // ════════════════════════════════════════════════════════════════════════════
 
-/// 上传文件项。
-#[derive(Debug, Clone, PartialEq)]
-pub struct UploadFile {
-    pub name: String,
-    /// Original path for a real local file; synthetic queue entries keep `None`.
-    pub source_path: Option<String>,
-    pub size: u64,
-    pub progress: f32,
-    pub status: UploadStatus,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum UploadStatus {
-    Pending,
-    Uploading,
-    Done,
-    Error,
-}
 component! {
     pub struct Upload {
         accept: String,
         multiple: bool,
         file_list: Vec<UploadFile>,
+        files_binding: Option<State<Vec<UploadFile>>>,
         drag: bool,
         drag_hover: bool,
         max_count: usize,
@@ -43,13 +33,15 @@ component! {
         manual: bool,
         last_width: Cell<f32>,
         layout_requested: Cell<bool>,
-        pending_change: RefCell<Option<String>>,
+        change_callback: Option<Rc<dyn Fn(&UploadChange)>>,
         focused: bool,
     }
 
     tab_index => (&self) -> i32 { 1 }
 
     measure => (&self, constraints: Constraints) -> Size {
+        // 读取受控队列以登记声明视图的响应式依赖。
+        self.capture_bound_files_dependency();
         let list_h = if self.show_upload_list {
             self.file_list.len() as f32 * 32.0
         } else {
@@ -76,13 +68,6 @@ component! {
             SystemEvent::FileDrop { files, .. } if self.drag => self.queue_dropped_files(files),
             _ => EventResult::NotHandled,
         }
-    }
-
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
-        self.pending_change
-            .borrow_mut()
-            .take()
-            .map(|value| SemanticEvent::change(id, value))
     }
 
     take_layout_request => (&mut self) -> bool {
@@ -222,6 +207,7 @@ impl Upload {
             accept: "*".into(),
             multiple: false,
             file_list: Vec::new(),
+            files_binding: None,
             drag: true,
             drag_hover: false,
             max_count: 10,
@@ -231,16 +217,64 @@ impl Upload {
             manual: false,
             last_width: Cell::new(0.0),
             layout_requested: Cell::new(false),
-            pending_change: RefCell::new(None),
+            change_callback: None,
             focused: false,
         }
     }
     pub fn dragger() -> Self {
         Self::new().drag(true)
     }
-    pub fn accept(mut self, a: &str) -> Self {
-        self.accept = a.to_string();
-        self
+    /// 设置首版确定性扩展名过滤，并对动态错误返回类型化结果。
+    pub fn accept(mut self, pattern: &str) -> Result<Self, UploadAcceptError> {
+        // 在写入组件配置前完整验证模式。
+        Self::validate_accept(pattern)?;
+        // 保存已验证的原始模式供绘制与匹配使用。
+        self.accept = pattern.to_string();
+        // 返回成功配置的组件。
+        Ok(self)
+    }
+    /// 验证首版 accept 扩展名语法。
+    pub fn validate_accept(pattern: &str) -> Result<(), UploadAcceptError> {
+        // 空模式与两种全量通配符均是合法值。
+        if pattern.trim().is_empty() || matches!(pattern.trim(), "*" | "*/*") {
+            // 通配配置无需继续拆分。
+            return Ok(());
+        }
+        // 所有列表项都必须是 ASCII 扩展名模式。
+        let valid = pattern.split(',').map(str::trim).all(|item| {
+            // 空列表项、非 ASCII 与 MIME 分隔符均非法。
+            if item.is_empty() || !item.is_ascii() || item.contains('/') {
+                // 当前列表项不符合首版语法。
+                return false;
+            }
+            // 只接受点扩展名或星号点扩展名。
+            let extension = item
+                // 优先移除带星号的规范前缀。
+                .strip_prefix("*.")
+                // 再接受不带星号的点前缀。
+                .or_else(|| item.strip_prefix('.'));
+            // 扩展名必须非空且不能再包含通配、空白或点。
+            extension.is_some_and(|value| {
+                // 首版扩展名保持单段 ASCII 文本。
+                !value.is_empty()
+                    // 内部星号会制造未定义模式语义。
+                    && !value.contains('*')
+                    // 内部点不属于单扩展名模式。
+                    && !value.contains('.')
+                    // 内部空白不应被静默保留。
+                    && !value.chars().any(char::is_whitespace)
+            })
+        });
+        // 合法列表直接完成验证。
+        if valid {
+            // 不产生额外规范化以保留调用方展示文本。
+            return Ok(());
+        }
+        // 返回携带原始模式的类型化格式错误。
+        Err(UploadAcceptError {
+            // 保留完整输入供诊断。
+            pattern: pattern.to_string(),
+        })
     }
     pub fn multiple(mut self, v: bool) -> Self {
         self.multiple = v;
@@ -248,6 +282,26 @@ impl Upload {
     }
     pub fn drag(mut self, v: bool) -> Self {
         self.drag = v;
+        self
+    }
+    /// 绑定调用方拥有的唯一上传队列状态。
+    pub fn files(mut self, state: &State<Vec<UploadFile>>) -> Self {
+        // 克隆轻量状态句柄供用户交互原子写回。
+        self.files_binding = Some(state.clone());
+        // 构造时完整采用外部顺序、进度与结果，不按 max_count 截断。
+        self.file_list = state.get();
+        // 返回完成受控绑定的组件。
+        self
+    }
+    /// 注册只读取不可变类型化事实的队列变化观察器。
+    pub fn on_change<F>(mut self, callback: F) -> Self
+    where
+        // 处理器与组件拥有相同的静态生命周期。
+        F: Fn(&UploadChange) + 'static,
+    {
+        // 使用共享所有权保存可跨 reconcile 复用的处理器。
+        self.change_callback = Some(Rc::new(callback));
+        // 返回完成观察器配置的组件。
         self
     }
     pub fn max_count(mut self, n: usize) -> Self {
@@ -276,92 +330,321 @@ impl Upload {
         self.manual = manual;
         self
     }
+    /// 加入一个没有本地路径的兼容合成队列项。
     pub fn add_file(&mut self, name: &str) {
-        let _ = self.try_add_file(name);
-    }
-    pub fn try_add_file(&mut self, path: &str) -> bool {
-        if !self.accepts_file(path) {
-            return false;
-        }
-        let size = match std::fs::metadata(path) {
-            Ok(metadata) if metadata.is_file() => Some(metadata.len()),
-            Ok(_) => return false,
-            Err(_) => None,
-        };
-        if self
-            .max_size
-            .is_some_and(|max_size| size.is_some_and(|size| size > max_size))
-        {
-            return false;
-        }
-        self.push_file(
-            Self::display_name(path),
-            size.unwrap_or(0),
-            size.map(|_| path.to_string()),
-        )
-    }
-    pub fn remove_file(&mut self, index: usize) -> Option<UploadFile> {
-        if index >= self.file_list.len() {
-            return None;
-        }
-        let removed = self.file_list.remove(index);
-        if self.show_upload_list {
-            self.layout_requested.set(true);
-        }
-        Some(removed)
-    }
-    pub fn clear_files(&mut self) {
-        if self.file_list.is_empty() {
+        // 从受控状态或非受控内部队列取得最新真值。
+        let mut files = self.current_files();
+        // 用户新增上限只阻止本次新项，不修改现有外部状态。
+        if files.len() >= self.max_count {
+            // 达到上限时保持队列与事件流不变。
             return;
         }
-        self.file_list.clear();
-        if self.show_upload_list {
-            self.layout_requested.set(true);
-        }
+        // 生成与当前队列不重复的稳定身份。
+        let id = Self::next_unique_id(&files);
+        // 构造等待应用服务处理的合成文件。
+        files.push(UploadFile::with_id(id.clone(), name, 0));
+        // 原子提交一次新增事实。
+        self.commit_change(
+            // 传入更新后的完整队列。
+            files,
+            // 变化种类携带本次新增身份。
+            move |files| UploadChange::Added {
+                // 单项新增仍使用批量身份集合。
+                ids: vec![id],
+                // 保存更新后的队列快照。
+                files,
+            },
+        );
     }
-    pub fn update_progress(&mut self, idx: usize, progress: f32) {
-        if idx < self.file_list.len() {
-            self.file_list[idx].progress = if progress.is_finite() {
-                progress.clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-            self.file_list[idx].status = UploadStatus::Uploading;
+    /// 尝试加入一个真实本地文件，并返回稳定身份或类型化拒绝。
+    pub fn try_add_file(&mut self, path: &str) -> Result<UploadFileId, UploadRejection> {
+        // 复用批量原子入队路径保持一致语义。
+        let result = self.queue_files(&[path.to_string()]);
+        // 单候选成功时必有且只有一个新增身份。
+        if let Some(id) = result.added_ids.into_iter().next() {
+            // 返回调用方可用于进度更新的稳定身份。
+            return Ok(id);
         }
+        // 单候选失败时返回其确定拒绝原因。
+        Err(result
+            .rejected
+            .into_iter()
+            .next()
+            .unwrap_or(UploadRejection {
+                // 保留原始路径。
+                path: path.to_string(),
+                // 防御性回退为队列上限，正常路径不会触发。
+                reason: UploadRejectReason::MaxCount,
+            }))
     }
-    pub fn complete_file(&mut self, idx: usize, success: bool) {
-        if idx < self.file_list.len() {
-            if success {
-                self.file_list[idx].progress = 1.0;
+    /// 按当前 multiple 配置原子处理一批真实本地文件候选。
+    pub fn queue_files(&mut self, paths: &[String]) -> UploadQueueResult {
+        // 从唯一真值取得本次事务基线。
+        let mut files = self.current_files();
+        // 单批上限不影响未来独立操作。
+        let batch_limit = if self.multiple { usize::MAX } else { 1 };
+        // 收集成功项的稳定身份。
+        let mut added_ids = Vec::new();
+        // 收集未修改队列的拒绝结果。
+        let mut rejected = Vec::new();
+        // 只处理当前批次允许的候选数量。
+        for path in paths.iter().take(batch_limit) {
+            // 队列上限仅在用户新增时检查。
+            if files.len() >= self.max_count {
+                // 记录确定的上限拒绝。
+                rejected.push(UploadRejection {
+                    // 保存原始候选路径。
+                    path: path.clone(),
+                    // 标记队列已满。
+                    reason: UploadRejectReason::MaxCount,
+                });
+                // 继续给同批剩余候选生成各自拒绝结果。
+                continue;
             }
-            self.file_list[idx].status = if success {
-                UploadStatus::Done
-            } else {
-                UploadStatus::Error
+            // 扩展名不匹配不得修改暂存队列。
+            if !self.accepts_file(path) {
+                // 记录确定的扩展名拒绝。
+                rejected.push(UploadRejection {
+                    // 保存原始候选路径。
+                    path: path.clone(),
+                    // 标记扩展名不匹配。
+                    reason: UploadRejectReason::ExtensionMismatch,
+                });
+                // 继续检查下一候选。
+                continue;
+            }
+            // 文件拖放只接受可读取的普通文件。
+            let Ok(metadata) = std::fs::metadata(path) else {
+                // 记录不可读取拒绝。
+                rejected.push(UploadRejection {
+                    // 保存原始候选路径。
+                    path: path.clone(),
+                    // 标记元数据不可读取。
+                    reason: UploadRejectReason::UnreadableFile,
+                });
+                // 继续检查下一候选。
+                continue;
             };
+            // 目录和其他特殊节点不属于上传文件。
+            if !metadata.is_file() {
+                // 记录非普通文件拒绝。
+                rejected.push(UploadRejection {
+                    // 保存原始候选路径。
+                    path: path.clone(),
+                    // 复用不可读取文件语义。
+                    reason: UploadRejectReason::UnreadableFile,
+                });
+                // 继续检查下一候选。
+                continue;
+            }
+            // 单文件大小上限在暂存前执行。
+            if self
+                // 读取可选上限。
+                .max_size
+                // 仅在配置存在且文件超限时拒绝。
+                .is_some_and(|max_size| metadata.len() > max_size)
+            {
+                // 记录确定的大小拒绝。
+                rejected.push(UploadRejection {
+                    // 保存原始候选路径。
+                    path: path.clone(),
+                    // 标记大小超限。
+                    reason: UploadRejectReason::TooLarge,
+                });
+                // 继续检查下一候选。
+                continue;
+            }
+            // 为本候选生成队列内唯一身份。
+            let id = Self::next_unique_id(&files);
+            // 构造包含真实路径的待处理文件项。
+            let file = UploadFile::with_id(
+                // 保存稳定身份。
+                id.clone(),
+                // 文件名只用于展示。
+                Self::display_name(path),
+                // 保存真实字节大小。
+                metadata.len(),
+            )
+            // 附加应用服务可读取的原始路径。
+            .source_path(path.clone());
+            // 暂存文件项但尚未写回 State。
+            files.push(file);
+            // 保存本批成功身份。
+            added_ids.push(id);
         }
+        // 只有至少一个成功项时才原子写回并发布事实。
+        if !added_ids.is_empty() {
+            // 为变化事实克隆本批身份集合。
+            let change_ids = added_ids.clone();
+            // 一次提交完整批次，避免观察者看到中间队列。
+            self.commit_change(files, move |files| UploadChange::Added {
+                // 保存本批所有稳定身份。
+                ids: change_ids,
+                // 保存更新后的完整快照。
+                files,
+            });
+        }
+        // 返回成功身份与逐候选拒绝原因。
+        UploadQueueResult {
+            // 交还本批成功身份。
+            added_ids,
+            // 交还不产生事件的拒绝记录。
+            rejected,
+        }
+    }
+    /// 按当前队列索引移除文件并发布稳定身份事实。
+    pub fn remove_file(&mut self, index: usize) -> Option<UploadFile> {
+        // 从唯一真值读取最新队列。
+        let mut files = self.current_files();
+        // 无效索引不得修改状态或发布事件。
+        if index >= files.len() {
+            // 返回没有移除项。
+            return None;
+        }
+        // 从暂存队列移除目标项。
+        let removed = files.remove(index);
+        // 保存移除项的稳定身份用于事实发布。
+        let id = removed.id.clone();
+        // 原子提交移除后的完整队列。
+        self.commit_change(files, move |files| UploadChange::Removed {
+            // 单项移除仍使用批量身份集合。
+            ids: vec![id],
+            // 保存更新后的完整快照。
+            files,
+        });
+        // 返回完整移除项供命令调用方使用。
+        Some(removed)
+    }
+    /// 按稳定身份移除文件。
+    pub fn remove_file_by_id(&mut self, id: &UploadFileId) -> Option<UploadFile> {
+        // 在最新真值中定位身份，避免索引漂移。
+        let index = self
+            // 取得最新队列快照。
+            .current_files()
+            // 遍历队列项。
+            .iter()
+            // 找到首个完全相同的稳定身份。
+            .position(|file| &file.id == id)?;
+        // 复用单次原子移除入口。
+        self.remove_file(index)
+    }
+    /// 原子清空队列并发布一次清空事实。
+    pub fn clear_files(&mut self) {
+        // 空队列不产生重复事实。
+        if self.current_files().is_empty() {
+            // 保持状态和观察器不变。
+            return;
+        }
+        // 原子提交空队列。
+        self.commit_change(Vec::new(), |files| UploadChange::Cleared {
+            // 清空事实仍携带更新后快照。
+            files,
+        });
+    }
+    /// 应用服务按稳定身份写回有限上传进度。
+    pub fn update_progress(
+        // 借用可变组件以同步非受控快照。
+        &mut self,
+        // 使用稳定身份而非易漂移索引。
+        id: &UploadFileId,
+        // 接收应用服务报告的归一化进度。
+        progress: f32,
+    ) -> Result<(), UploadUpdateError> {
+        // 非有限进度必须显式失败，不能静默归零。
+        if !progress.is_finite() {
+            // 返回类型化数值错误。
+            return Err(UploadUpdateError::NonFiniteProgress);
+        }
+        // 取得最新队列快照。
+        let mut files = self.current_files();
+        // 按稳定身份定位目标项。
+        let Some(file) = files.iter_mut().find(|file| &file.id == id) else {
+            // 返回携带缺失身份的类型化错误。
+            return Err(UploadUpdateError::MissingFile(id.clone()));
+        };
+        // 有限进度收敛到公开零到一范围。
+        file.progress = progress.clamp(0.0, 1.0);
+        // 进度写回表示应用已经开始传输。
+        file.status = UploadStatus::Uploading;
+        // 同步完整状态但不伪造队列结构变化事实。
+        self.commit_status(files);
+        // 报告更新成功。
+        Ok(())
+    }
+    /// 应用服务按稳定身份写回最终结果。
+    pub fn complete_file(
+        // 借用可变组件以同步非受控快照。
+        &mut self,
+        // 使用稳定身份定位目标项。
+        id: &UploadFileId,
+        // true 表示完成，false 表示失败。
+        success: bool,
+    ) -> Result<(), UploadUpdateError> {
+        // 取得最新队列快照。
+        let mut files = self.current_files();
+        // 按稳定身份定位目标项。
+        let Some(file) = files.iter_mut().find(|file| &file.id == id) else {
+            // 返回携带缺失身份的类型化错误。
+            return Err(UploadUpdateError::MissingFile(id.clone()));
+        };
+        // 成功结果把进度固定为完整值。
+        if success {
+            // 完成状态必须显示完整进度。
+            file.progress = 1.0;
+        }
+        // 根据应用结果写回最终状态。
+        file.status = if success {
+            // 成功进入完成状态。
+            UploadStatus::Done
+        } else {
+            // 失败进入错误状态，重试由应用显式改回 Pending。
+            UploadStatus::Error
+        };
+        // 同步完整状态但不伪造结构变化事实。
+        self.commit_status(files);
+        // 报告更新成功。
+        Ok(())
     }
     pub fn file_count(&self) -> usize {
         self.file_list.len()
     }
-    pub fn files(&self) -> &[UploadFile] {
+    /// 借用组件当前采用的上传队列快照。
+    pub fn file_list(&self) -> &[UploadFile] {
+        // 受控外部更新将在 reconcile 时完整覆盖该快照。
         &self.file_list
     }
 
     /// Mark pending manual entries as uploading and return this call's application-side batch.
     pub fn upload(&mut self) -> Vec<UploadFile> {
+        // 非手动模式不替应用启动传输。
         if !self.manual {
+            // 返回空批次。
             return Vec::new();
         }
+        // 从唯一真值取得最新队列。
+        let mut files = self.current_files();
+        // 收集本次交给应用服务的批次。
         let mut batch = Vec::new();
-        for file in &mut self.file_list {
+        // 逐项查找等待启动的文件。
+        for file in &mut files {
+            // 已处理项不重复启动。
             if file.status != UploadStatus::Pending {
+                // 跳过非 Pending 文件。
                 continue;
             }
+            // 标记应用批次已进入上传中。
             file.status = UploadStatus::Uploading;
+            // 每次显式启动都从零进度开始。
             file.progress = 0.0;
+            // 复制不可变应用批次项。
             batch.push(file.clone());
         }
+        // 只有实际批次才触发状态写回。
+        if !batch.is_empty() {
+            // 同步状态但不发布队列结构变化事实。
+            self.commit_status(files);
+        }
+        // 返回本次应用侧批次。
         batch
     }
 
@@ -377,8 +660,8 @@ impl Upload {
         let Some(removed) = self.remove_file(index) else {
             return EventResult::NotHandled;
         };
-        self.pending_change
-            .replace(Some(format!("{}:removed", removed.name)));
+        // remove_file 已先写回唯一状态并同步发布类型化事实。
+        let _ = removed;
         EventResult::Handled
     }
 
@@ -395,45 +678,15 @@ impl Upload {
     }
 
     fn queue_dropped_files(&mut self, files: &[String]) -> EventResult {
-        let limit = if self.multiple { usize::MAX } else { 1 };
-        let mut accepted = Vec::new();
-        for path in files {
-            if accepted.len() >= limit {
-                continue;
-            }
-            if self.try_add_file(path) {
-                accepted.push(Self::display_name(path).to_string());
-            }
-        }
-
-        if accepted.is_empty() {
+        // 批量入口保证至多一次 State 写回与一次类型化事件。
+        let result = self.queue_files(files);
+        // 全部拒绝时不发布 Change。
+        if result.added_ids.is_empty() {
+            // 让上层继续处理没有产生队列变化的拖放。
             return EventResult::NotHandled;
         }
-        self.pending_change.replace(Some(
-            accepted
-                .iter()
-                .map(|name| format!("{name}:pending"))
-                .collect::<Vec<_>>()
-                .join(","),
-        ));
+        // 成功批次已经完成状态与事实提交。
         EventResult::Handled
-    }
-
-    fn push_file(&mut self, name: &str, size: u64, source_path: Option<String>) -> bool {
-        if self.file_list.len() >= self.max_count {
-            return false;
-        }
-        self.file_list.push(UploadFile {
-            name: name.to_string(),
-            source_path,
-            size,
-            progress: 0.0,
-            status: UploadStatus::Pending,
-        });
-        if self.show_upload_list {
-            self.layout_requested.set(true);
-        }
-        true
     }
 
     fn accepts_file(&self, path: &str) -> bool {
@@ -444,19 +697,110 @@ impl Upload {
         let name = Self::display_name(path);
         let extension = name.rsplit_once('.').map(|(_, extension)| extension);
         accept.split(',').map(str::trim).any(|pattern| {
+            // 任一通配项都接受当前文件。
             if matches!(pattern, "*" | "*/*") {
+                // 立即报告匹配。
                 return true;
             }
-            if pattern.contains('/') {
-                return false;
-            }
+            // validate_accept 已保证这里只存在规范扩展名模式。
             let expected = pattern
+                // 优先移除星号点前缀。
                 .strip_prefix("*.")
+                // 再移除单点前缀。
                 .or_else(|| pattern.strip_prefix('.'))
-                .unwrap_or(pattern);
-            !expected.is_empty()
-                && extension.is_some_and(|actual| actual.eq_ignore_ascii_case(expected))
+                // 已验证配置必然命中一种前缀。
+                .unwrap_or_default();
+            // 扩展名比较忽略 ASCII 大小写。
+            extension.is_some_and(|actual| actual.eq_ignore_ascii_case(expected))
         })
+    }
+
+    // 从受控状态或非受控内部队列取得最新真值快照。
+    fn current_files(&self) -> Vec<UploadFile> {
+        // 受控绑定存在时必须优先读取调用方状态。
+        self.files_binding
+            // 借用可选状态句柄。
+            .as_ref()
+            // 复制当前原子快照。
+            .map(State::get)
+            // 非受控模式保留内部队列兼容行为。
+            .unwrap_or_else(|| self.file_list.clone())
+    }
+
+    // 生成当前队列内不会重复的稳定身份。
+    fn next_unique_id(files: &[UploadFile]) -> UploadFileId {
+        // 重复生成直到避开调用方可能提供的同文本身份。
+        loop {
+            // 取得新的进程内单调身份。
+            let id = UploadFileId::generated();
+            // 当前队列不存在该身份时即可使用。
+            if files.iter().all(|file| file.id != id) {
+                // 返回队列内唯一身份。
+                return id;
+            }
+        }
+    }
+
+    // 原子提交结构变化并在写回后同步发布不可变事实。
+    fn commit_change(
+        // 借用组件以更新内部快照与绑定状态。
+        &mut self,
+        // 接收更新后的完整队列。
+        files: Vec<UploadFile>,
+        // 延迟构造事实以复用最终快照。
+        change: impl FnOnce(Vec<UploadFile>) -> UploadChange,
+    ) {
+        // 保存旧长度用于布局失效判断。
+        let old_len = self.file_list.len();
+        // 受控模式先执行唯一一次原子状态写回。
+        if let Some(state) = self.files_binding.as_ref() {
+            // 为状态事务复制最终队列。
+            let committed = files.clone();
+            // 使用一次 update 暴露单一完整快照。
+            state.update(move |current| {
+                // 原子替换调用方队列真值。
+                *current = committed;
+            });
+        }
+        // 运行时快照紧跟已提交的唯一真值。
+        self.file_list = files.clone();
+        // 列表长度改变时请求重新布局。
+        if self.show_upload_list && old_len != self.file_list.len() {
+            // 标记一次布局失效。
+            self.layout_requested.set(true);
+        }
+        // 在状态写回完成后构造不可变变化事实。
+        let change = change(files);
+        // 只有登记观察器时才同步发布事实。
+        if let Some(callback) = self.change_callback.as_ref() {
+            // 处理器只借用本次不可变事实。
+            callback(&change);
+        }
+    }
+
+    // 同步进度与结果状态，但不伪造队列结构变化事实。
+    fn commit_status(&mut self, files: Vec<UploadFile>) {
+        // 受控模式原子覆盖同一调用方状态。
+        if let Some(state) = self.files_binding.as_ref() {
+            // 为状态事务复制最终队列。
+            let committed = files.clone();
+            // 使用一次 update 保持观察者快照原子。
+            state.update(move |current| {
+                // 替换完整队列状态。
+                *current = committed;
+            });
+        }
+        // 更新运行时绘制快照。
+        self.file_list = files;
+    }
+
+    // 在声明视图构建期间登记受控队列依赖。
+    fn capture_bound_files_dependency(&self) {
+        // 只有受控组件需要捕获外部状态。
+        if let Some(state) = self.files_binding.as_ref() {
+            // 读取当前快照即可登记依赖。
+            let _ = state.get();
+        }
     }
 
     fn display_name(path: &str) -> &str {
@@ -466,20 +810,38 @@ impl Upload {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        // 保存列表可见性变化。
         let list_visibility_changed = self.show_upload_list != next.show_upload_list;
-        self.accept = next.accept;
-        self.multiple = next.multiple;
-        self.drag = next.drag;
-        self.max_count = next.max_count;
-        self.max_size = next.max_size;
-        self.show_upload_list = next.show_upload_list;
-        self.preview_image = next.preview_image;
-        self.manual = next.manual;
+        // 保存旧队列长度。
         let old_len = self.file_list.len();
-        if self.file_list.len() > self.max_count {
-            self.file_list.truncate(self.max_count);
+        // 声明配置始终采用下一视图值。
+        self.accept = next.accept;
+        // 同步单批多选配置。
+        self.multiple = next.multiple;
+        // 同步拖放入口配置。
+        self.drag = next.drag;
+        // max_count 只限制后续用户新增，不截断队列。
+        self.max_count = next.max_count;
+        // 同步单文件大小上限。
+        self.max_size = next.max_size;
+        // 同步列表可见性。
+        self.show_upload_list = next.show_upload_list;
+        // 同步可选预览配置。
+        self.preview_image = next.preview_image;
+        // 同步兼容手动批次配置。
+        self.manual = next.manual;
+        // 同步类型化观察器生命周期。
+        self.change_callback = next.change_callback;
+        // 下一视图携带绑定时完整采用外部队列快照。
+        if next.files_binding.is_some() {
+            // 外部顺序、进度与结果均精确覆盖运行时快照。
+            self.file_list = next.file_list;
         }
+        // 保存下一视图的状态句柄；解绑时保留当前队列作为非受控值。
+        self.files_binding = next.files_binding;
+        // 可见性或长度变化需要重新布局。
         if list_visibility_changed || old_len != self.file_list.len() {
+            // 请求一次布局失效。
             self.layout_requested.set(true);
         }
     }

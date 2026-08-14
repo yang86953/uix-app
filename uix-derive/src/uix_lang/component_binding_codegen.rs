@@ -372,7 +372,9 @@ impl ComponentExpander {
                         Ok((initial, Some(rust_type), false))
                     }
                     // 集合类型只接受空数组初始值。
-                    ComponentValueType::HashSetOfString | ComponentValueType::VecOfString => {
+                    ComponentValueType::HashSetOfString
+                    | ComponentValueType::VecOfString
+                    | ComponentValueType::VecOfUploadFile => {
                         // 要求空数组形状。
                         let ExpressionKind::Array(items) = &expanded.kind else {
                             // 返回集合初始值形状诊断。
@@ -382,7 +384,7 @@ impl ComponentExpander {
                                 // 说明集合状态只支持空初始。
                                 "集合类型 state 只接受空数组初始值",
                                 // 给出规范写法。
-                                "使用 [] 作为 HashSet<String> 或 Vec<String> 的初始值",
+                                "使用 [] 作为 HashSet<String>、Vec<String> 或 Vec<UploadFile> 的初始值",
                             ));
                         };
                         // 空数组之外的元素暂不支持。
@@ -698,6 +700,7 @@ impl ComponentExpander {
                 | ComponentValueType::CascaderValue
                 | ComponentValueType::HashSetOfString
                 | ComponentValueType::VecOfString
+                | ComponentValueType::VecOfUploadFile
                 | ComponentValueType::OptionalString
                 | ComponentValueType::Record(_) => Err(Diagnostic::new(
                     // 指向完整属性。
