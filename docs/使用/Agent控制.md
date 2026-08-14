@@ -30,6 +30,21 @@ cargo run --release --manifest-path demo/Cargo.toml --features agent-control --b
 
 只启用 feature 或只传参数都不会发布端点：前者保持普通主演示，后者在创建窗口前以退出码 2 定向失败。
 
+## 图形恢复验收载体
+
+主演示另有独立的 `test-harness` 图形恢复页面。需要通过 Agent 自动执行设备丢失、表面
+丢失与恢复后交互时，feature 与运行时参数必须分别同时启用：
+
+```powershell
+cargo run --release --manifest-path demo/Cargo.toml --features "agent-control,test-harness" --bin uix-lang-demo -- --agent-control --test-graphics-recovery
+```
+
+页面保留 `runtime-graphics-recovery-status`、`runtime-inject-device-lost`、
+`runtime-inject-surface-lost` 与 `runtime-assert-recovered-interaction` 稳定标识。声明页只
+展示状态和接收事件；Rust 组合模块只持有 `on_start` 交付的逐窗 `AppHandle`，并调用公开
+test-harness 注入入口。图形会话、恢复状态机和最终呈现仍由 Application System 与 RHI
+唯一拥有。
+
 ## 端点协议
 
 - JSON Lines 协议，同用户本机端点。

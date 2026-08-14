@@ -21,6 +21,22 @@ cargo run --release --manifest-path demo/Cargo.toml --features agent-control --b
 普通启动不会发布 Agent 端点；只传 `--agent-control` 但未启用 feature 会在创建窗口前
 以退出码 2 返回定向错误。
 
+需要验证设备丢失、表面丢失与恢复后交互时，必须同时打开测试 feature 与运行时参数：
+
+```powershell
+cargo run --release --manifest-path demo/Cargo.toml --features test-harness --bin uix-lang-demo -- --test-graphics-recovery
+```
+
+需要通过 Agent 语义树自动执行这组操作时，同时启用两项 feature 和两项参数：
+
+```powershell
+cargo run --release --manifest-path demo/Cargo.toml --features "agent-control,test-harness" --bin uix-lang-demo -- --agent-control --test-graphics-recovery
+```
+
+`src/graphics_recovery.uix` 是独立验收页面；`src/graphics_recovery.rs` 只持有
+`on_start` 交付的逐窗 `AppHandle` 并调用公开 test-harness 故障入口。普通主演示不编译该
+模块，也不会展示或开放故障按钮。
+
 Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。Windows 入口在 8MB
 大栈 UI 线程上运行，承载声明文件展开出的深层 ViewNode 树。
 
@@ -44,6 +60,8 @@ Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。Windows 入口
 - Transfer 与图表等尚未登记的 UIX 标签保留 Rust API 边界，并在界面中明确说明。
 - 真窗验收控制面是测试侧能力，不复制到声明式产品界面；主演示通过
   `agent-control` feature 与 `--agent-control` 参数双门禁复用现有 App System 控制面。
+- 图形恢复页面通过 `test-harness` feature 与 `--test-graphics-recovery` 参数双门禁独立
+  组装；Application System 继续唯一拥有逐窗 `AppHandle`、图形会话与故障注入入口。
 
 ## 当前边界
 
