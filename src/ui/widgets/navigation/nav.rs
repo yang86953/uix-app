@@ -229,6 +229,7 @@ impl NavItem {
         Size::new(self.fixed_width, self.fixed_height)
     }
 
+    /// 使用标签、索引和组拥有的共享选中状态创建导航项。
     pub fn new(label: &str, index: usize, active_shared: SharedActive) -> Self {
         Self {
             label: label.to_string(),
@@ -246,37 +247,45 @@ impl NavItem {
         }
     }
 
+    /// 设置用于语义事件和快照的稳定导航键。
     pub fn key(mut self, key: impl Into<String>) -> Self {
         self.key = key.into();
         self
     }
 
+    /// 设置显示在标签前方的 Lucide 图标名称。
     pub fn icon(mut self, icon: &str) -> Self {
         self.icon = icon.to_string();
         self
     }
 
+    /// 返回导航项显示的文字标签。
     pub fn label_text(&self) -> &str {
         &self.label
     }
 
+    /// 返回导航项用于语义事件和快照的稳定键。
     pub fn nav_key(&self) -> &str {
         &self.key
     }
 
+    /// 返回导航项在所属组中的零基索引。
     pub fn nav_index(&self) -> usize {
         self.index
     }
 
+    /// 返回共享选中索引当前是否指向该导航项。
     pub fn is_active(&self) -> bool {
         self.active_shared.get() == self.index
     }
 
+    /// 设置导航项请求的固定宽度。
     pub fn width(mut self, w: f32) -> Self {
         self.fixed_width = w;
         self
     }
 
+    /// 设置导航项请求的固定高度。
     pub fn height(mut self, h: f32) -> Self {
         self.fixed_height = h;
         self
@@ -341,10 +350,12 @@ impl Default for NavGroup {
 }
 
 impl NavGroup {
+    /// 创建选中首项且不含导航项的共享选中组。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 按声明顺序添加带可选图标的导航项。
     pub fn item(mut self, label: &str, icon: &str) -> Self {
         let index = self.items.len();
         let mut item = NavItem::new(label, index, self.active.clone());
@@ -355,15 +366,18 @@ impl NavGroup {
         self
     }
 
+    /// 设置组内共享的初始选中索引。
     pub fn active_index(self, index: usize) -> Self {
         self.active.set(index);
         self
     }
 
+    /// 消费组并返回共享同一选中状态的导航项列表。
     pub fn build(self) -> Vec<NavItem> {
         self.items
     }
 
+    /// 返回组拥有的共享选中索引句柄。
     pub fn active(&self) -> &SharedActive {
         &self.active
     }
@@ -389,6 +403,7 @@ impl<K> Navigation<K>
 where
     K: Clone + PartialEq + Display + Send + Sync + 'static,
 {
+    /// 使用标题创建空的 typed-key 侧边栏导航容器。
     pub fn new(title: &str) -> Self {
         Self {
             title: title.to_string(),
@@ -416,6 +431,7 @@ where
         self
     }
 
+    /// 添加带 typed key 与 Lucide 图标的导航项。
     pub fn item_with_icon(mut self, label: &str, key: K, icon: &str) -> Self {
         let index = self.items.len();
         let mut item = NavItem::new(label, index, self.active.clone()).key(key.to_string());
@@ -428,6 +444,7 @@ where
         self
     }
 
+    /// 设置非受控模式的选中索引，并清除页面状态绑定。
     pub fn active_index(mut self, index: usize) -> Self {
         self.page_binding = None;
         self.active.set(index);
@@ -441,24 +458,29 @@ where
         self
     }
 
+    /// 返回当前选中索引对应的 typed key；索引无效时返回空值。
     pub fn active_key(&self) -> Option<&K> {
         self.keys.get(self.active.get())
     }
 
+    /// 返回容器拥有的共享选中索引句柄。
     pub fn active(&self) -> &SharedActive {
         &self.active
     }
 
+    /// 设置展开状态下导航容器请求的宽度。
     pub fn width(mut self, w: f32) -> Self {
         self.width = w;
         self
     }
 
+    /// 设置导航容器请求的高度。
     pub fn height(mut self, h: f32) -> Self {
         self.height = h;
         self
     }
 
+    /// 设置是否在导航底部显示应用版本信息。
     pub fn show_version(mut self, show: bool) -> Self {
         self.show_version = show;
         self
@@ -476,11 +498,13 @@ where
         self
     }
 
+    /// 将折叠状态双向绑定到调用方拥有的响应式状态。
     pub fn collapsed(mut self, state: &State<bool>) -> Self {
         self.collapsed_state = Some(state.clone());
         self
     }
 
+    /// 注册折叠状态变化回调；未绑定状态时创建内部折叠状态。
     pub fn on_collapse<F>(mut self, callback: F) -> Self
     where
         F: Fn(bool) + 'static,
@@ -496,6 +520,7 @@ where
         self
     }
 
+    /// 使用令牌 Provider 构建包含标题、导航项和可选版本信息的节点树。
     pub fn build(
         mut self,
         tokens: &dyn crate::ui::theme::traits::TokenProvider,
