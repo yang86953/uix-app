@@ -22,7 +22,7 @@
 | 某项公开 API 或组件怎样使用 | [使用](使用.md) | [组件速查](使用/组件速查.md) |
 | 某个 System、Module 或 Component 如何组织 | [架构](架构.md) | [系统列表](架构/系统列表.md)、[路由清单](架构/路由清单.md) |
 | 使用方如何只编译实际使用的 UIX 能力 | [使用方按需编译架构](架构/使用方按需编译.md) | [按需编译原则](产品/定位与原则.md#原则) |
-| 用 uix-lang 描述界面（语言规范，推荐方式） | [UIX Lang 语言规范](uix-lang/README.md) | [标签语法](uix-lang/标签语法.md)、[样式属性参考](uix-lang/UIX%20样式属性参考.md) |
+| 用 uix-lang 描述界面（语言规范，推荐方式） | [UIX Lang 语言规范](uix-lang/README.md) | [语法](uix-lang/规范/语法.md)、[样式属性参考](uix-lang/参考/样式属性.md) |
 | 当前做到哪一步、还有什么阻塞 | [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) | [变更记录](../CHANGELOG.md) |
 | 当前版本是否发布、包含什么 | [交付与许可](产品/交付与许可.md) | [变更记录](../CHANGELOG.md) |
 
