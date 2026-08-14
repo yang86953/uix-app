@@ -6,6 +6,7 @@ use crate::ui::component::tree_measure::child_from_tree_with_constraints;
 use crate::ui::layout::LayoutChild;
 use crate::ui::{ComponentId, SnapshotFields, WidgetTree};
 
+/// 表单校验状态：未校验/成功/警告/错误/校验中。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ValidateStatus {
     None,
@@ -15,14 +16,12 @@ pub enum ValidateStatus {
     Validating,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum FormLayout {
-    Horizontal,
-    Vertical,
-    Inline,
-}
+// 表单布局枚举与组件配置共享同一类型（config::FormLayout），
+// 保持 `crate::ui::form::FormLayout` 公开路径兼容并消除手工映射。
+pub use crate::ui::component::config::FormLayout;
 
 component! {
+    /// 表单项组件：标签、校验状态条、帮助文本与内容区布局。
     pub struct FormItem {
         label: String,
         name: String,
@@ -34,12 +33,15 @@ component! {
         layout: FormLayout,
     }
 
+    // 测量：直接返回固有尺寸。
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
     }
 
 
+    // 渲染：按布局绘制标签与状态条/帮助文本。
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        // 帧尺寸归一化，空帧直接返回。
         let frame = Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0));
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
@@ -56,6 +58,7 @@ component! {
         ctx.pop_clip();
     }
 
+    // 测量子项：以内容区为约束逐一测量。
     measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
@@ -65,12 +68,14 @@ component! {
             .iter()
             .map(|&id| {
                 let mut child = child_from_tree_with_constraints(id, tree, constraints);
+                // 子项尺寸夹紧到内容区。
                 child.measured_size = constraints.clamp(child.measured_size);
                 child
             })
             .collect()
     }
 
+    // 布局子项：全部铺满内容区。
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
@@ -86,6 +91,7 @@ impl FormItem {
     const LABEL_GAP: f32 = 8.0;
     const INLINE_LABEL_WIDTH: f32 = 60.0;
 
+    /// 帮助文本占用的高度（无帮助文本为 0）。
     fn help_height(&self, frame_h: f32) -> f32 {
         if self.help.is_empty() {
             0.0
@@ -94,10 +100,12 @@ impl FormItem {
         }
     }
 
+    /// 主区域高度 = 总高减去帮助文本高度。
     fn main_height(&self, frame_h: f32) -> f32 {
         (frame_h.max(0.0) - self.help_height(frame_h)).max(0.0)
     }
 
+    /// 按布局计算标签宽度：纵向占满、行内固定 60、水平用配置宽度。
     fn label_width_for_frame(&self, frame_w: f32) -> f32 {
         if self.label.is_empty() {
             0.0
@@ -110,6 +118,7 @@ impl FormItem {
         }
     }
 
+    /// 标签矩形：纵向在上方一行，行内/水平在左侧。
     fn label_rect(&self, frame: Rect) -> Rect {
         let frame_w = frame.w.max(0.0);
         let frame_h = frame.h.max(0.0);
@@ -127,6 +136,7 @@ impl FormItem {
         }
     }
 
+    /// 标签文字矩形：水平布局额外留出与内容区的间隙。
     fn label_text_rect(&self, frame: Rect) -> Rect {
         let label = self.label_rect(frame);
         if self.layout == FormLayout::Horizontal {
@@ -142,6 +152,7 @@ impl FormItem {
         }
     }
 
+    /// 帮助文本矩形：位于底部。
     fn help_rect(&self, frame: Rect) -> Rect {
         let help_h = self.help_height(frame.h);
         Rect::new(
@@ -152,6 +163,7 @@ impl FormItem {
         )
     }
 
+    /// 内容区矩形：纵向在标签下方，行内/水平在标签右侧。
     fn content_rect(&self, frame: Rect) -> Rect {
         let frame_w = frame.w.max(0.0);
         let frame_h = frame.h.max(0.0);
@@ -191,6 +203,7 @@ impl FormItem {
         }
     }
 
+    /// 固有尺寸：按布局给默认宽高，有帮助文本时增加高度。
     fn intrinsic_size(&self) -> Size {
         let mut size = match self.layout {
             FormLayout::Vertical => Size::new(400.0, 56.0),
@@ -203,6 +216,7 @@ impl FormItem {
         size
     }
 
+    /// 创建表单项（水平布局、默认标签文本）。
     pub fn new(label: &str) -> Self {
         Self {
             label: label.to_string(),
@@ -216,50 +230,60 @@ impl FormItem {
         }
     }
 
+    /// 设置字段名（用于校验与表单取值）。
     pub fn name(mut self, n: impl Into<String>) -> Self {
         self.name = n.into();
         self
     }
 
+    /// 标记必填（标签前显示星号）。
     pub fn required(mut self, v: bool) -> Self {
         self.required = v;
         self
     }
 
+    /// 设置校验状态。
     pub fn status(mut self, s: ValidateStatus) -> Self {
         self.status = s;
         self
     }
 
+    /// 设置受控校验状态：后续 sync 时不会被普通状态覆盖。
     pub(crate) fn controlled_status(mut self, status: ValidateStatus) -> Self {
         self.status = status;
         self.status_controlled = true;
         self
     }
 
+    /// 设置帮助文本。
     pub fn help(mut self, h: &str) -> Self {
         self.help = h.to_string();
         self
     }
 
+    /// 设置标签宽度（水平布局）。
     pub fn label_width(mut self, w: f32) -> Self {
         self.label_width = w;
         self
     }
 
+    /// 设置布局（纵向/行内/水平）。
     pub fn layout(mut self, l: FormLayout) -> Self {
         self.layout = l;
         self
     }
 
+    /// 获取当前校验状态。
     pub fn get_status(&self) -> ValidateStatus {
         self.status
     }
 
+    /// 设置校验状态。
     pub fn set_status(&mut self, s: ValidateStatus) {
         self.status = s;
     }
 
+    /// 导出快照字段。
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::FormItem {
             label: self.label.clone(),
@@ -271,10 +295,12 @@ impl FormItem {
         }
     }
 
+    /// 同步快照：受控状态优先，非受控时采用新状态。
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.label = next.label;
         self.name = next.name;
         self.required = next.required;
+        // 仅当新状态为受控时覆盖状态，避免非受控更新冲掉校验结果。
         if next.status_controlled {
             self.status = next.status;
         }
@@ -284,6 +310,7 @@ impl FormItem {
         self.layout = next.layout;
     }
 
+    /// 渲染状态条与帮助文本。
     fn render_status(
         &self,
         ctx: &mut PaintContext,
@@ -293,12 +320,14 @@ impl FormItem {
         warning: Color,
         success: Color,
     ) {
+        // 状态色：错误/警告/成功对应主题色，否则透明（不画状态条）。
         let status_color = match self.status {
             ValidateStatus::Error => error,
             ValidateStatus::Warning => warning,
             ValidateStatus::Success => success,
             _ => Color::transparent(),
         };
+        // 左侧 2px 状态条。
         if status_color.a > 0 {
             ctx.fill_rect(
                 Rect::new(frame.x, frame.y, 2.0f32.min(frame.w.max(0.0)), frame.h),
@@ -306,6 +335,7 @@ impl FormItem {
                 None,
             );
         }
+        // 帮助文本：按状态着色，底部一行小字。
         if !self.help.is_empty() {
             let hc = match self.status {
                 ValidateStatus::Error => error,
@@ -316,6 +346,7 @@ impl FormItem {
             let help = self.help_rect(frame);
             let inset = Self::LABEL_GAP.min(help.w.max(0.0));
             let text_rect = Rect::new(help.x + inset, help.y, (help.w - inset).max(0.0), help.h);
+            // 字号随可用高度收缩。
             let font_size = 11.0 * (text_rect.h / Self::HELP_HEIGHT).clamp(0.0, 1.0);
             if text_rect.w > 0.0 && font_size > 0.0 {
                 let y = ctx.visual_center_y(text_rect, font_size);
@@ -326,11 +357,13 @@ impl FormItem {
         }
     }
 
+    /// 渲染标签文本（必填项前加星号）。
     fn render_label(&self, ctx: &mut PaintContext, frame: Rect, text: Color, error: Color) {
         if self.label.is_empty() {
             return;
         }
         let label = self.label_text_rect(frame);
+        // 字号随标签区高度收缩。
         let font_size = 14.0 * (label.h / Self::LABEL_HEIGHT).clamp(0.0, 1.0);
         if label.w <= 0.0 || font_size <= 0.0 {
             return;
@@ -338,6 +371,7 @@ impl FormItem {
         let y = ctx.visual_center_y(label, font_size);
         ctx.push_clip(label);
         if self.required {
+            // 必填星号 + 间隙 + 标签文本。
             ctx.draw_text("*", Point::new(label.x, y), error, font_size);
             let gap = (10.0 * (font_size / 14.0)).min(label.w);
             ctx.draw_text(&self.label, Point::new(label.x + gap, y), text, font_size);
@@ -349,27 +383,33 @@ impl FormItem {
 }
 
 component! {
+    /// 表单容器组件：按布局排列表单项，支持行内/水平/垂直排布。
     pub struct Form {
         label_width: f32,
         gap: f32,
         layout: FormLayout,
     }
 
+    // 测量：返回固有尺寸。
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
     }
 
+    // 允许整体合成离屏缓冲。
     picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
         crate::draw::scene::PicturePolicy::Eligible
     }
 
+    // 容器自身不渲染内容。
     render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
 
+    // 测量子项：按布局方向逐个测量并累积位置。
     measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         let mut measured = Vec::with_capacity(children.len());
         match self.layout {
+            // 行内：从左向右排，剩余宽度递减，超界夹紧。
             FormLayout::Inline => {
                 let mut x = frame.x;
                 let right = frame.x + frame.w.max(0.0);
@@ -383,6 +423,7 @@ component! {
                         None,
                     );
                     let mut child = child_from_tree_with_constraints(cid, tree, child_constraints);
+                    // 无测量结果时用默认尺寸兜底。
                     child.measured_size = if tree.get(cid).is_some() {
                         child_constraints.clamp(child.measured_size)
                     } else {
@@ -392,6 +433,7 @@ component! {
                     measured.push(child);
                 }
             }
+            // 水平/垂直：从上向下排，剩余高度递减。
             FormLayout::Horizontal | FormLayout::Vertical => {
                 let mut y = frame.y;
                 let bottom = frame.y + frame.h.max(0.0);
@@ -405,6 +447,7 @@ component! {
                         None,
                     );
                     let mut child = child_from_tree_with_constraints(cid, tree, child_constraints);
+                    // 无测量结果时用默认尺寸兜底。
                     child.measured_size = if tree.get(cid).is_some() {
                         child_constraints.clamp(child.measured_size)
                     } else {
@@ -418,11 +461,13 @@ component! {
         measured
     }
 
+    // 布局子项：按测量尺寸顺序摆放。
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
         let mut result = Vec::with_capacity(children.len());
         match self.layout {
+            // 行内：水平逐个摆放。
             FormLayout::Inline => {
                 let mut x = frame.x;
                 let right = frame.x + frame.w.max(0.0);
@@ -437,6 +482,7 @@ component! {
                     x = (item_x + item_w + self.gap).min(right);
                 }
             }
+            // 水平/垂直：垂直逐个摆放。
             FormLayout::Horizontal | FormLayout::Vertical => {
                 let mut y = frame.y;
                 let bottom = frame.y + frame.h.max(0.0);
@@ -473,22 +519,19 @@ impl Clone for Form {
 }
 
 impl Form {
+    /// 固有尺寸：400×200。
     fn intrinsic_size(&self) -> Size {
         Size::new(400.0, 200.0)
     }
 
+    /// 创建表单容器（默认水平布局、标签宽 80、间隙 8）。
     pub fn new() -> Self {
-        let layout = match crate::ui::component::config::use_config()
+        // 缺省水平布局；与组件配置共享同一枚举，无需手工映射。
+        let layout = crate::ui::component::config::use_config()
             .overrides
             .form
             .layout
-        {
-            Some(crate::ui::component::config::FormLayout::Horizontal) | None => {
-                FormLayout::Horizontal
-            }
-            Some(crate::ui::component::config::FormLayout::Vertical) => FormLayout::Vertical,
-            Some(crate::ui::component::config::FormLayout::Inline) => FormLayout::Inline,
-        };
+            .unwrap_or(FormLayout::Horizontal);
         Self {
             label_width: 80.0,
             gap: 8.0,
@@ -496,29 +539,35 @@ impl Form {
         }
     }
 
+    /// 设置全局标签宽度。
     pub fn label_width(mut self, w: f32) -> Self {
         self.label_width = w;
         self
     }
 
+    /// 设置表单项间距（非负）。
     pub fn gap(mut self, g: f32) -> Self {
         self.gap = if g.is_finite() { g.max(0.0) } else { 0.0 };
         self
     }
 
+    /// 设置表单布局（行内/水平/垂直）。
     pub fn layout(mut self, l: FormLayout) -> Self {
         self.layout = l;
         self
     }
 
+    /// 表单项布局（供子项快照/同步使用）。
     pub(crate) fn item_layout(&self) -> FormLayout {
         self.layout
     }
 
+    /// 表单项标签宽度（供子项同步使用）。
     pub(crate) fn item_label_width(&self) -> f32 {
         self.label_width
     }
 
+    /// 导出快照字段。
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Form {
             label_width: self.label_width,
@@ -527,6 +576,7 @@ impl Form {
         }
     }
 
+    /// 同步快照配置。
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.label_width = next.label_width;
         self.gap = next.gap;

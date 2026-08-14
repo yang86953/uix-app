@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use crate::native::windowing::input::ControlSize;
+use crate::platform::windowing::ControlSize;
 use crate::ui::form::form_validation::FormModel;
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widgets::input::{Checkbox, Radio, Rate, Segmented, Slider, Switch};

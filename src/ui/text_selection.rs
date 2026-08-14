@@ -6,6 +6,12 @@
 //!
 //! 复制时焦点仍在起点节点，单节点 `selected_text` 只含本行；须按同父级
 //! 文档序聚合各参与者选区（行间 `\n`）再写入剪贴板。
+//!
+//! 单节点（Label / Typography 共享）的布局缓存、命中与选区读写
+//! 实现在 [`per_node`] 子模块，本层只负责跨节点的分组与协调。
+
+// 引入单节点共享的文字选区状态实现。
+pub(crate) mod per_node;
 
 use crate::core::Point;
 use crate::core::Rect;

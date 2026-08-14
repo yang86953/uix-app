@@ -1,9 +1,11 @@
 use super::*;
 
 impl WidgetTree {
+    /// 分发窗口生命周期事件（焦点得失、最小化、最大化等）。
     pub(super) fn dispatch_window_lifecycle(&mut self, event: &SystemEvent) -> EventResult {
         match event {
             SystemEvent::WindowFocus => self.activate_window_focus(),
+            // 窗口失焦或最小化：取消悬浮与手势，并注销窗口焦点。
             SystemEvent::WindowBlur | SystemEvent::WindowMinimize => {
                 if let Some(root) = self.root_id {
                     self.cancel_pointer_hover_in_subtree(root);
@@ -11,10 +13,12 @@ impl WidgetTree {
                 self.cancel_active_pointer_gesture();
                 self.deactivate_window_focus();
             }
+            // 最大化/还原不改变焦点语义，仅继续向下分发。
             SystemEvent::WindowMaximize | SystemEvent::WindowRestore => {}
             _ => return EventResult::NotHandled,
         }
 
+        // 生命周期事件仍需沿树向下分发，便于各组件自行响应。
         if let Some(root) = self.root_id {
             self.dispatch_to(root, event)
         } else {
@@ -22,7 +26,9 @@ impl WidgetTree {
         }
     }
 
+    /// 窗口未聚焦时，这些交互类事件是否应被忽略。
     pub(super) fn ignores_input_while_window_unfocused(&self, event: &SystemEvent) -> bool {
+        // 未聚焦时屏蔽一切指针、键盘、IME、剪贴板与文件拖放事件。
         !self.window_focused
             && matches!(
                 event,
@@ -44,16 +50,20 @@ impl WidgetTree {
             )
     }
 
+    /// 注销窗口焦点：清除键盘激活目标，并向聚焦组件下发 FocusOut。
     pub(super) fn deactivate_window_focus(&mut self) {
         self.keyboard_activation = None;
+        // 窗口焦点本已注销则直接返回。
         if !self.window_focused {
             return;
         }
         self.window_focused = false;
+        // 无聚焦组件时无需下发失焦事件。
         let Some(focused) = self.managers().focus.focused_component() else {
             return;
         };
 
+        // 使聚焦组件重绘、下发 FocusOut，并沿包含路径逐层取消 focus-within。
         self.invalidate_paint(focused);
         let _ = self.dispatch_to(focused, &SystemEvent::FocusOut);
         for id in self.focus_containment_path(Some(focused)) {
@@ -62,11 +72,14 @@ impl WidgetTree {
         self.rebuild_widget_overlays();
     }
 
+    /// 注册窗口焦点：向仍可聚焦的组件下发 FocusIn 并重绘。
     pub(super) fn activate_window_focus(&mut self) {
+        // 窗口焦点已注册则直接返回。
         if self.window_focused {
             return;
         }
         self.window_focused = true;
+        // 聚焦组件需仍然可聚焦（如未被禁用），否则跳过激活。
         let Some(focused) = self
             .managers()
             .focus
@@ -76,6 +89,7 @@ impl WidgetTree {
             return;
         };
 
+        // 使聚焦组件重绘、下发 FocusIn，并沿包含路径自外向内逐层设置 focus-within。
         self.invalidate_paint(focused);
         let _ = self.dispatch_to(focused, &SystemEvent::FocusIn);
         for id in self.focus_containment_path(Some(focused)).into_iter().rev() {

@@ -14,7 +14,7 @@
 //! )).padding(16.0);
 //! ```
 
-use crate::native::windowing::input::ScrollDirection;
+use crate::platform::windowing::ScrollDirection;
 use crate::ui::layout::{FlexDirection, GridTrack};
 use crate::ui::theme::style::{DisplayMode, Style};
 use crate::ui::view::{View, ViewNode};
@@ -542,7 +542,7 @@ pub struct ButtonBuilder {
     style_set: StyleSet,
     disabled: bool,
     block: bool,
-    size: crate::native::windowing::input::ControlSize,
+    size: crate::platform::windowing::ControlSize,
     handlers: Vec<HandlerRegistration>,
 }
 
@@ -589,7 +589,7 @@ impl ButtonBuilder {
         self.block = v;
         self
     }
-    pub fn size(mut self, size: crate::native::windowing::input::ControlSize) -> Self {
+    pub fn size(mut self, size: crate::platform::windowing::ControlSize) -> Self {
         self.size = size;
         self
     }

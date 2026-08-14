@@ -1,8 +1,7 @@
-//! Authenticated, bounded JSON Lines protocol for the process Agent Bridge.
+//! 进程 Agent Bridge 的已认证、有界 JSON Lines 协议。
 //!
-//! Native transports provide a private byte stream. This module owns framing
-//! semantics and wire validation, but never touches a platform handle or a
-//! `WidgetTree` directly.
+//! 原生传输层提供私有字节流。本模块拥有帧划分语义与线上校验，但绝不直接
+//! 触碰平台句柄或 `WidgetTree`。
 
 use std::sync::mpsc::RecvTimeoutError;
 use std::sync::Arc;
@@ -187,6 +186,7 @@ impl AgentProtocolSession {
     }
 
     fn handle_line_inner(&mut self, line: &[u8]) -> AgentProtocolReply {
+        // 帧长度上限：超出即拒绝，防止内存被无界输入撑爆。
         if line.len() > MAX_AGENT_MESSAGE_BYTES {
             return error_reply(
                 None,
@@ -196,6 +196,7 @@ impl AgentProtocolSession {
             );
         }
 
+        // 逐层解析：JSON 合法 → 顶层对象 → request_id → schema → 请求类型。
         let value: Value = match serde_json::from_slice(line) {
             Ok(value) => value,
             Err(_) => {
@@ -223,6 +224,7 @@ impl AgentProtocolSession {
             Ok(schema) => schema,
             Err(error) => return error.into_reply(Some(request_id), !self.authenticated),
         };
+        // schema 不匹配说明对端协议版本不一致，直接拒绝。
         if schema != AGENT_PROTOCOL_SCHEMA {
             return error_reply(
                 Some(request_id),
@@ -236,11 +238,14 @@ impl AgentProtocolSession {
             Err(error) => return error.into_reply(Some(request_id), !self.authenticated),
         };
 
+        // 未认证连接只允许 hello，其余请求一律先走认证。
         if !self.authenticated {
             return self.handle_hello(object, request_id, request_type);
         }
 
+        // 已认证后按请求类型分派处理。
         match request_type {
+            // 重复 hello 视为协议错误。
             "hello" => error_reply(
                 Some(request_id),
                 AgentErrorCode::InvalidRequest,
@@ -266,6 +271,7 @@ impl AgentProtocolSession {
         request_id: String,
         request_type: &str,
     ) -> AgentProtocolReply {
+        // 首个请求必须是 hello，否则直接拒绝并断开。
         if request_type != "hello" {
             return error_reply(
                 Some(request_id),
@@ -274,6 +280,7 @@ impl AgentProtocolSession {
                 true,
             );
         }
+        // 校验会话 token；失败则拒绝并关闭连接。
         let token = object.get("token").and_then(Value::as_str).unwrap_or("");
         if !token_matches(self.session_token.as_ref(), token) {
             return error_reply(
@@ -284,6 +291,7 @@ impl AgentProtocolSession {
             );
         }
         self.authenticated = true;
+        // 认证成功后回传进程信息、能力清单与协议限制，供对端自适应。
         success_reply(
             request_id,
             "hello",
@@ -370,6 +378,7 @@ impl AgentProtocolSession {
         object: &Map<String, Value>,
         request_id: String,
     ) -> AgentProtocolReply {
+        // 解析公共字段：窗口 id、代次、期望修订号与动作对象。
         let window_id = match parse_window_id(object) {
             Ok(window_id) => window_id,
             Err(error) => return error.into_reply(Some(request_id), false),
@@ -391,6 +400,7 @@ impl AgentProtocolSession {
             Err(error) => return error.into_reply(Some(request_id), false),
         };
 
+        // 按动作类别组装命令：语义动作需要 target，窗口动作禁止携带 target。
         let ticket = match action {
             ParsedAgentAction::Semantic(action) => {
                 let target = match object
@@ -423,6 +433,7 @@ impl AgentProtocolSession {
                 }
             }
         };
+        // 阻塞等待 UI 侧完成命令：成功回传执行结果，超时/断开回传对应错误。
         match ticket.recv_timeout(AGENT_COMMAND_RESPONSE_TIMEOUT) {
             Ok(Ok(AgentCommandResponse::Performed {
                 window_id,
@@ -441,6 +452,7 @@ impl AgentProtocolSession {
                     "settled": settled,
                 }),
             ),
+            // 响应类型与请求不匹配属于内部错误。
             Ok(Ok(AgentCommandResponse::Snapshot(_))) => error_reply(
                 Some(request_id),
                 AgentErrorCode::Internal,
@@ -464,6 +476,7 @@ impl AgentProtocolSession {
     }
 
     fn handle_wait(&self, object: &Map<String, Value>, request_id: String) -> AgentProtocolReply {
+        // 解析窗口身份与超时参数。
         let window_id = match parse_window_id(object) {
             Ok(window_id) => window_id,
             Err(error) => return error.into_reply(Some(request_id), false),
@@ -476,6 +489,7 @@ impl AgentProtocolSession {
             Ok(timeout_ms) => timeout_ms,
             Err(error) => return error.into_reply(Some(request_id), false),
         };
+        // 等待条件二选一：修订号越过阈值或呈现修订号达到阈值。
         let after_revision = match optional_u64(object, "after_revision") {
             Ok(revision) => revision,
             Err(error) => return error.into_reply(Some(request_id), false),
@@ -487,6 +501,7 @@ impl AgentProtocolSession {
         let condition = match (after_revision, presented_revision) {
             (Some(revision), None) => AgentWaitCondition::RevisionAfter(revision),
             (None, Some(revision)) => AgentWaitCondition::PresentedAtLeast(revision),
+            // 两个条件同时出现或都缺失都是非法请求。
             _ => {
                 return error_reply(
                     Some(request_id),
@@ -503,6 +518,7 @@ impl AgentProtocolSession {
             condition,
             Duration::from_millis(timeout_ms),
         ) {
+            // 按实际满足的等待结果类型回传对应状态。
             Ok(AgentWaitOutcome::Changed(window)) => wait_success(request_id, "changed", &window),
             Ok(AgentWaitOutcome::Presented(window)) => {
                 wait_success(request_id, "presented", &window)

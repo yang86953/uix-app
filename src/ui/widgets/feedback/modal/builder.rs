@@ -1,6 +1,6 @@
 use super::{ControlledOpen, Modal};
 
-use crate::native::windowing::input::ControlSize;
+use crate::platform::windowing::ControlSize;
 use crate::ui::State;
 use crate::ui::animation::AnimationConfig;
 use std::rc::Rc;

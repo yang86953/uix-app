@@ -1,9 +1,8 @@
-//! API-neutral ordered frame command model.
+//! API 中立的有序帧命令模型。
 //!
-//! This is deliberately independent from any graphics context.  It provides
-//! the R1 contract foundation: one ordered stream for clear, native work, CPU
-//! fallback segments, and Picture/offscreen blits; the only presentation entry
-//! consumes the encoder, so a recorded frame cannot be presented twice.
+//! 本模块刻意与任何图形上下文解耦，提供 R1 契约基础：一条有序流涵盖
+//! clear、原生工作、CPU 回退分段与 Picture/offscreen blit；唯一的表现入口
+//! 消费编码器本身，因此一帧录制结果不可能被提交两次。
 //!
 //! 子模块划分（P2 行数治理）：[`geometry`] 值类型、[`commands`] 命令与
 //! 执行契约、[`error`] 错误契约、[`source_over`] SrcOver 分组证明与裁剪、
@@ -37,10 +36,10 @@ use self::source_over::{
     source_over_commands_have_safe_grouping, stroke_batches_can_merge, stroke_visible_bounds,
 };
 
-/// Ordered command recorder for exactly one frame.
+/// 恰好一帧的有序命令录制器。
 ///
-/// `present` consumes `self`.  This is intentional: an encoder owns one frame
-/// and cannot be submitted a second time through this API.
+/// `present` 消费 `self`，这是刻意设计：一个编码器拥有且只能提交一帧，
+/// 不能通过本 API 二次提交。
 #[derive(Debug)]
 pub struct FrameEncoder {
     width: i32,
@@ -50,6 +49,7 @@ pub struct FrameEncoder {
 }
 
 impl FrameEncoder {
+    /// 创建指定尺寸的空帧编码器；尺寸非法或不可寻址时返回错误。
     pub fn new(width: i32, height: i32) -> Result<Self, FrameEncoderError> {
         let pixel_count = pixel_len(width, height)?;
         Ok(Self {
@@ -60,20 +60,23 @@ impl FrameEncoder {
         })
     }
 
+    /// 帧宽度（像素）。
     pub const fn width(&self) -> i32 {
         self.width
     }
 
+    /// 帧高度（像素）。
     pub const fn height(&self) -> i32 {
         self.height
     }
 
+    /// 已录制的命令流（只读）。
     pub fn commands(&self) -> &[FrameCommand] {
         &self.commands
     }
 
-    /// Reports whether the frame contains any CPU-generated raster payload.
-    /// This deliberately does not allocate or execute the frame.
+    /// 统计帧内 CPU 生成的光栅载荷（字形 coverage、CPU 分段、物化 Picture），
+    /// 不分配也不执行帧。
     pub fn gpu_native_audit(&self) -> GpuFrameAudit {
         let mut audit = GpuFrameAudit::default();
         for command in &self.commands {
@@ -114,7 +117,7 @@ impl FrameEncoder {
         audit
     }
 
-    /// Enforces the GPU-only submission contract at the engine boundary.
+    /// 在引擎边界强制 GPU-only 提交契约：存在 CPU 载荷违规时返回带明细的错误。
     pub fn validate_gpu_native(&self) -> Result<(), FrameEncoderError> {
         let audit = self.gpu_native_audit();
         let Some(kind) = audit.first_violation() else {
@@ -131,10 +134,9 @@ impl FrameEncoder {
         })
     }
 
-    /// Conservative retained payload size used to keep a recorded Picture no
-    /// larger than its former full BGRA surface. Shared allocations may be
-    /// counted more than once; over-counting deliberately selects the bounded
-    /// materialized fallback instead of retaining unbounded command payloads.
+    /// 保守的保留载荷大小估算，用于让录制的 Picture 不超过其此前完整 BGRA
+    /// surface 的体积。共享分配可能被重复计数；宁可高估，从而选择有界的
+    /// 物化回退而不是保留无界的命令载荷。
     pub(crate) fn retained_memory_usage(&self) -> usize {
         let mut bytes = self
             .commands
@@ -169,15 +171,12 @@ impl FrameEncoder {
         bytes
     }
 
-    /// Produces a translated copy of the transparent SrcOver-only command
-    /// subset. This is the algebraically safe Picture splice: writes are either
-    /// disjoint or every quantizing overlap is fully backed by a gap-free union
-    /// of proven-opaque regions, so transparent-intermediate composition remains
-    /// equivalent to issuing the commands directly in the parent stream.
+    /// 生成透明 SrcOver-only 命令子集的平移副本。这是代数上安全的 Picture
+    /// splice：写入要么互不相交，要么每个量化重叠都完全由已证明不透明的
+    /// 无间隙区域并集支撑，因此透明中间合成与直接在父流中执行这些命令等价。
     ///
-    /// Validation is atomic. Unsupported clears, destination-dependent ops,
-    /// out-of-bounds payloads, or coordinate overflow return `None` before the
-    /// parent encoder is mutated.
+    /// 验证是原子的：不支持的 clear、目标相关操作、越界载荷或坐标溢出都会
+    /// 在父编码器被改动前返回 `None`。
     pub(crate) fn translated_source_over_commands(
         &self,
         dx: i32,
@@ -194,14 +193,12 @@ impl FrameEncoder {
         )
     }
 
-    /// Produces an integer-translated, 1:1 crop of the transparent
-    /// SrcOver-only command subset. Geometry that crosses `source` keeps its
-    /// original shape and gains an exact integer clip; fully invisible
-    /// commands are omitted. Image commands retain only the corresponding
-    /// source sub-rectangle.
+    /// 生成透明 SrcOver-only 命令子集的整数平移、1:1 裁剪副本。跨越
+    /// `source` 的几何保持原形状并附加精确整数 clip；完全不可见的命令被
+    /// 省略。图片命令只保留对应的源子矩形。
     ///
-    /// Like the full-Picture form above, this method builds a complete
-    /// temporary command list before the caller can append anything.
+    /// 与整幅 Picture 形态一样，本方法在调用方可追加任何内容前先构建完整
+    /// 的临时命令列表。
     pub(crate) fn translated_source_over_commands_in(
         &self,
         source: FrameRect,
@@ -241,6 +238,7 @@ impl FrameEncoder {
         Some(translated)
     }
 
+    /// 追加一组已验证命令；预留失败返回命令分配错误。
     pub(crate) fn append_validated_commands(
         &mut self,
         commands: Vec<FrameCommand>,
@@ -252,10 +250,12 @@ impl FrameEncoder {
         Ok(())
     }
 
+    /// 记录整帧清除命令。
     pub fn clear(&mut self, color: Color) {
         self.commands.push(FrameCommand::Clear { color });
     }
 
+    /// 记录一条原生光栅命令；同 clip 的连续字形 / 可安全合并的描边会被批合并。
     pub fn native(&mut self, operation: FrameRasterOp) {
         if let FrameRasterOp::BlitGlyphs { glyphs, clip } = operation {
             if glyphs.is_empty() || clip.is_empty() {
@@ -330,9 +330,8 @@ impl FrameEncoder {
         self.commands.push(FrameCommand::Native { operation });
     }
 
-    /// Records the source-independent CPU-raster subset as one bounded fallback
-    /// segment. Destination-dependent operations must execute against the
-    /// accumulating target and are rejected before this encoder is mutated.
+    /// 记录与源无关的 CPU 光栅子集，作为一个有界回退分段。目标相关操作
+    /// 必须对累计目标执行，会在本编码器被改动前被拒绝。
     pub fn cpu_segment(
         &mut self,
         operations: impl IntoIterator<Item = FrameRasterOp>,
@@ -376,9 +375,8 @@ impl FrameEncoder {
         Ok(())
     }
 
-    /// Records an exact CPU-rasterized source segment. The payload is
-    /// immutable, API-neutral pixels; the destination is part of the command
-    /// rather than an implicit full-frame carrier.
+    /// 记录一段精确 CPU 光栅化的源分段。载荷是不可变的 API 中立像素；
+    /// 目标是命令的一部分，而不是隐式的全帧载体。
     pub fn cpu_image_segment(&mut self, image: FrameImage, src: FrameRect, dst: FrameRect) {
         if src.is_empty() || dst.is_empty() {
             return;
@@ -387,6 +385,7 @@ impl FrameEncoder {
             .push(FrameCommand::CpuSegment { image, src, dst });
     }
 
+    /// 记录整像素、不透明 SrcOver 的 Picture blit。
     pub fn blit_picture(&mut self, image: FrameImage, src: FrameRect, dst: FrameRect) {
         self.blit_picture_with_opacity(
             image,
@@ -396,6 +395,7 @@ impl FrameEncoder {
         );
     }
 
+    /// 记录带 opacity 的 Picture blit（整数目标）。
     pub(crate) fn blit_picture_with_opacity(
         &mut self,
         image: FrameImage,
@@ -406,6 +406,8 @@ impl FrameEncoder {
         self.blit_picture_with_opacity_blend(image, src, dst, opacity, false);
     }
 
+    /// 记录带 opacity 与 Additive 事实的 Picture blit；空源 / 空目标 /
+    /// 全透明 opacity 是安全 no-op。
     pub(crate) fn blit_picture_with_opacity_blend(
         &mut self,
         image: FrameImage,
@@ -439,16 +441,17 @@ impl FrameEncoder {
         self.blit_picture_with_opacity(image, src, FrameSampledRect::from_integer(dst), opacity);
     }
 
-    /// Executes this deliberately small reference subset in memory.
+    /// 在内存中执行这一刻意精简的参考子集。
     ///
-    /// Production API renderers must preserve this command order; they do not
-    /// use this executor as their rendering implementation.
+    /// 生产 API 渲染器必须保持该命令顺序；它们不把本执行器当作自己的
+    /// 渲染实现。
     pub fn render_reference(&self) -> ReferenceFrame {
         let mut frame = self.transparent_reference();
         self.execute_into_pixels(&mut frame.pixels);
         frame
     }
 
+    /// 把整帧渲染为可复用的 `FrameImage`（参考路径）。
     pub(crate) fn render_image(&self) -> FrameImage {
         let frame = self.render_reference();
         FrameImage {
@@ -458,13 +461,12 @@ impl FrameEncoder {
         }
     }
 
-    /// Executes the ordered command stream into a CPU target of this
-    /// encoder's extent. This is used by the CPU backend; API-native backends
-    /// consume the same [`FrameCommand`] variants at their own boundaries.
+    /// 把有序命令流执行到本编码器尺寸的 CPU 目标中。CPU 后端使用它；
+    /// API 原生后端在自己的边界消费同样的 [`FrameCommand`] 变体。
     ///
-    /// Does **not** wipe the target before commands: full frames start with
-    /// [`FrameCommand::Clear`]; dirty frames rely on `begin_frame(DirtyRects)`
-    /// having cleared only the damage AABB so undamaged pixels stay retained.
+    /// **不**会在命令前擦除目标：全帧以 [`FrameCommand::Clear`] 开头；
+    /// 脏帧依赖 `begin_frame(DirtyRects)` 只清除过 damage AABB，
+    /// 未损坏像素得以保留。
     pub(crate) fn execute_into_pixels(&self, pixels: &mut [u32]) {
         assert_eq!(
             pixels.len(),
@@ -474,7 +476,7 @@ impl FrameEncoder {
         let mut target_is_transparent = false;
         for command in &self.commands {
             match command {
-                // Clear is a replace operation, never transparent source-over.
+                // Clear 是替换操作，永不是透明 source-over。
                 FrameCommand::Clear { color } => {
                     let clear = color.premultiplied();
                     pixels.fill(clear);
@@ -499,6 +501,9 @@ impl FrameEncoder {
                         continue;
                     }
                     if let Some(integer_dst) = dst.as_integer() {
+                        // 透明目标上的 source-over 恰好等于预乘源本身。保留
+                        // 背景恢复正利用这一有序形态，避免每个全表面像素都
+                        // 多一次 alpha 分支与混合决策。
                         if !*additive
                             && target_is_transparent
                             && opacity.is_opaque()
@@ -510,10 +515,6 @@ impl FrameEncoder {
                                 integer_dst,
                             )
                         {
-                            // Source-over onto a transparent target is exactly the
-                            // premultiplied source. Retained backdrop restores use
-                            // this ordered shape, avoiding one alpha branch and
-                            // blend decision per full-surface pixel.
                             pixels.copy_from_slice(image.pixels());
                         } else {
                             blit_image_pixels_with_opacity_blend(
@@ -546,9 +547,8 @@ impl FrameEncoder {
         }
     }
 
-    /// Rasterizes one image segment directly into its visible destination
-    /// tile. Native executors alpha-blit this exact segment at its recorded
-    /// point without allocating or scanning a transparent frame-sized source.
+    /// 把一段图片分段直接光栅化到其可见目标 tile。原生执行器在录制点按
+    /// alpha 混合这段精确分段，无需分配或扫描透明全帧大小的源。
     // CPU 分段参考 tile 是跨后端兼容诊断入口，当前测试矩阵按需调用。
     #[allow(dead_code)]
     pub(crate) fn cpu_segment_reference_tile(
@@ -560,6 +560,7 @@ impl FrameEncoder {
         self.image_blit_reference_tile(image, src, dst, 1.0)
     }
 
+    /// 把一次图片 blit 直接光栅化到可见目标 tile（参考 / 诊断共用实现）。
     fn image_blit_reference_tile(
         &self,
         image: &FrameImage,
@@ -594,6 +595,7 @@ impl FrameEncoder {
         Some((frame, visible))
     }
 
+    /// 创建全透明参考帧（预乘透明像素）。
     fn transparent_reference(&self) -> ReferenceFrame {
         ReferenceFrame {
             width: self.width,
@@ -602,8 +604,7 @@ impl FrameEncoder {
         }
     }
 
-    /// Final submission consumes the encoder so the public command model has
-    /// one final present operation per frame.
+    /// 最终提交会消费编码器，因此公开命令模型每帧只有一个最终 present 操作。
     pub fn present<P: FramePresenter>(self, presenter: &mut P) -> Result<PresentOutcome, P::Error> {
         presenter.present(&self.render_reference())
     }

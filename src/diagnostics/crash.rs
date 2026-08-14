@@ -1,13 +1,10 @@
-//! Private crash Module owned by the Diagnostics System.
+//! Diagnostics System 拥有的私有 crash Module。
 //!
-//! The Module owns three narrow responsibilities:
-//! - a bounded [`CrashReport`] model with sanitized, size-limited fields;
-//! - atomic file writing (temp file + fsync + rename) that never leaves a
-//!   partial report behind;
-//! - the framework panic hook, which records a crash report when a directory
-//!   is configured and always forwards to the previous hook so default
-//!   output and termination semantics are preserved (panics are never
-//!   swallowed).
+//! 该 Module 拥有三项窄职责：
+//! - 有界 [`CrashReport`] 模型，字段经过净化和大小限制；
+//! - 原子文件写入（临时文件 + fsync + rename），绝不留下部分报告；
+//! - 框架 panic hook：配置了目录时记录崩溃报告，并且总是转发给先前的
+//!   hook，保证默认输出与终止语义被保留（panic 永不吞没）。
 
 use std::any::Any;
 use std::cell::Cell;
@@ -21,7 +18,7 @@ use crate::core::{Errc, Error};
 
 use super::Diagnostics;
 
-/// Bumped when the on-disk crash report layout changes.
+/// 磁盘崩溃报告布局变更时递增。
 pub(crate) const CRASH_SCHEMA_VERSION: u32 = 1;
 
 const MAX_PANIC_MESSAGE_BYTES: usize = 2048;
@@ -30,11 +27,10 @@ const MAX_LOCATION_BYTES: usize = 512;
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
-/// Bounded, sanitized snapshot of one process panic.
+/// 一次进程 panic 的有界、净化快照。
 ///
-/// Every field is capped before rendering; the renderer never receives an
-/// unbounded value. No secret-bearing data (environment, arguments, report
-/// payloads) is written.
+/// 每个字段在渲染前都设上限；渲染器永远不会收到无界值。不写入任何
+/// 含秘密的数据（环境、参数、报告载荷）。
 pub(crate) struct CrashReport {
     pub(crate) schema_version: u32,
     pub(crate) runtime_id: u64,
@@ -45,8 +41,8 @@ pub(crate) struct CrashReport {
     pub(crate) retained_reports: usize,
 }
 
-/// Captures a panic into the bounded model using the Diagnostics runtime
-/// context (runtime id and retained report count).
+/// 使用 Diagnostics 运行时上下文（runtime id 与留存报告数）把一次
+/// panic 捕获进有界模型。
 pub(crate) fn capture(diagnostics: &Diagnostics, info: &PanicHookInfo<'_>) -> CrashReport {
     CrashReport {
         schema_version: CRASH_SCHEMA_VERSION,
@@ -69,11 +65,10 @@ pub(crate) fn capture(diagnostics: &Diagnostics, info: &PanicHookInfo<'_>) -> Cr
     }
 }
 
-/// Renders a line-oriented report with sanitized values.
+/// 渲染带净化值的行式报告。
 ///
-/// Control characters (including newlines) are replaced with spaces so the
-/// output stays one-field-per-line and cannot be confused with a different
-/// report.
+/// 控制字符（含换行）被替换为空格，保证输出保持一行一字段，
+/// 不会与另一份报告混淆。
 pub(crate) fn render(report: &CrashReport) -> String {
     let mut out = String::with_capacity(1024);
     let _ = writeln!(out, "uix-crash-report");
@@ -112,11 +107,10 @@ fn push_field(out: &mut String, key: &str, value: &str) {
     out.push('\n');
 }
 
-/// Writes the report atomically into `directory` and returns the final path.
+/// 把报告原子写入 `directory` 并返回最终路径。
 ///
-/// The content is written to a unique temp file, fsynced, then renamed into
-/// place. A failed write removes the temp file so no partial report is ever
-/// left behind. A collision on the final name replaces the previous report.
+/// 内容先写入唯一临时文件、fsync，再 rename 到最终位置。写入失败会删除
+/// 临时文件，绝不留下部分报告。最终文件名冲突时替换先前报告。
 pub(crate) fn write_atomic(directory: &Path, report: &CrashReport) -> Result<PathBuf, Error> {
     std::fs::create_dir_all(directory).map_err(|error| {
         Error::new(
@@ -193,21 +187,21 @@ impl Drop for PanicHookGuard {
     }
 }
 
-/// Installs the framework panic hook for one Diagnostics runtime.
+/// 为一个 Diagnostics 运行时安装框架 panic hook。
 ///
-/// The hook writes a crash report only when a crash directory is configured;
-/// otherwise it behaves exactly like the previous hook. It never swallows a
-/// panic: the previous hook is always invoked, so default output and
-/// unwind/abort termination semantics are preserved. A panic inside the hook
-/// itself (including a second failure while writing) is guarded against
-/// recursion and still terminates safely.
+/// 仅当配置了崩溃目录时 hook 才写崩溃报告；否则行为与先前 hook 完全一致。
+/// 它永不吞没 panic：先前 hook 总是被调用，因此默认输出与 unwind/abort
+/// 终止语义被保留。hook 自身内部发生 panic（包括写入中的二次失败）时
+/// 有递归防护，且仍安全终止。
 pub(crate) fn install_panic_hook(diagnostics: Diagnostics) {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
+        // 递归防护：hook 内再次 panic 时不再尝试写报告，直接打印并返回。
         let Some(_guard) = PanicHookGuard::enter() else {
             eprintln!("uix: panic occurred inside the panic hook; skipping crash report");
             return;
         };
+        // 配置了目录才捕获：原子写入崩溃报告。
         if let Some(directory) = diagnostics.crash_report_directory() {
             match write_atomic(directory, &capture(&diagnostics, info)) {
                 Ok(path) => eprintln!(
@@ -220,6 +214,7 @@ pub(crate) fn install_panic_hook(diagnostics: Diagnostics) {
                 ),
             }
         }
+        // 始终转发给先前 hook，保证默认输出与终止语义。
         previous(info);
     }));
 }

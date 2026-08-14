@@ -10,23 +10,27 @@ use crate::draw::painting::{FrameEncoder, FrameImage};
 
 use super::canvas::FrameRecordingCanvas;
 
+/// 已提交的 Picture 载荷：API 中立命令流（预算内）或物化图片。
 pub(crate) enum RecordedPicturePayload {
     Encoder(FrameEncoder),
     Image(FrameImage),
 }
 
+/// 当前活动的离屏绘制会话（handle + 失败标记）。
 #[derive(Clone, Copy)]
 pub(crate) struct ActiveOffscreen {
     pub(super) handle: ImageHandle,
     pub(super) failed: bool,
 }
 
+/// 一个已录制的离屏 Picture：录制画布 + 已提交载荷。
 pub(crate) struct RecordedPicture {
     pub(super) canvas: FrameRecordingCanvas,
     pub(super) committed: Option<RecordedPicturePayload>,
 }
 
 impl RecordedPicture {
+    /// 创建指定尺寸的空 Picture 录制画布。
     pub(super) fn new(width: i32, height: i32) -> Self {
         Self {
             canvas: FrameRecordingCanvas::new(width, height),
@@ -34,6 +38,7 @@ impl RecordedPicture {
         }
     }
 
+    /// 提交录制结果：保留命令流在内存预算内，否则物化为图片。
     pub(super) fn commit(&mut self, encoder: FrameEncoder) {
         let pixel_budget = (encoder.width() as usize)
             .saturating_mul(encoder.height() as usize)
@@ -45,6 +50,7 @@ impl RecordedPicture {
         });
     }
 
+    /// 复制 Picture 的参考像素（测试 / 诊断）。
     pub(super) fn copy_pixels(&self) -> Option<(Vec<u32>, i32)> {
         match self.committed.as_ref()? {
             RecordedPicturePayload::Encoder(encoder) => {
@@ -55,6 +61,7 @@ impl RecordedPicture {
         }
     }
 
+    /// 取出（并缓存）物化图片，供 blit 使用；命令流在此被惰性光栅化。
     pub(super) fn materialized_image(&mut self) -> Option<FrameImage> {
         let payload = self.committed.take()?;
         let image = match payload {
@@ -65,6 +72,7 @@ impl RecordedPicture {
         Some(image)
     }
 
+    /// 内存占用：工作画布与已提交载荷之和。
     pub(super) fn memory_usage(&self) -> usize {
         let working = self.canvas.retained_memory_usage();
         working.saturating_add(match &self.committed {
@@ -78,6 +86,7 @@ impl RecordedPicture {
     }
 }
 
+/// 录制器持有的离屏 Picture 池：槽位数组 + 空闲 id 复用。
 #[derive(Default)]
 pub(crate) struct RecordedPicturePool {
     slots: Vec<Option<RecordedPicture>>,
@@ -86,10 +95,12 @@ pub(crate) struct RecordedPicturePool {
 }
 
 impl RecordedPicturePool {
+    /// 创建空池。
     pub(super) fn new() -> Self {
         Self::default()
     }
 
+    /// 清空全部槽位与空闲 id。
     pub(super) fn clear(&mut self) {
         self.slots.clear();
         self.free_ids.clear();
@@ -127,6 +138,7 @@ impl RecordedPicturePool {
         Ok(Some(ImageHandle(id)))
     }
 
+    /// 销毁槽位并把 id 归还空闲列表。
     pub(super) fn destroy(&mut self, handle: ImageHandle) {
         let index = handle.0 as usize;
         if index < self.slots.len() && self.slots[index].take().is_some() {
@@ -134,14 +146,17 @@ impl RecordedPicturePool {
         }
     }
 
+    /// 按 handle 取 Picture 引用。
     pub(super) fn get(&self, handle: &ImageHandle) -> Option<&RecordedPicture> {
         self.slots.get(handle.0 as usize)?.as_ref()
     }
 
+    /// 按 handle 取 Picture 可变引用。
     pub(super) fn get_mut(&mut self, handle: &ImageHandle) -> Option<&mut RecordedPicture> {
         self.slots.get_mut(handle.0 as usize)?.as_mut()
     }
 
+    /// 收缩尾部空槽并整理空闲 id / 自增计数器。
     pub(super) fn compact(&mut self) {
         while self.slots.last().is_some_and(Option::is_none) {
             self.slots.pop();
@@ -150,6 +165,7 @@ impl RecordedPicturePool {
         self.next_id = self.slots.len() as u32;
     }
 
+    /// 全部存活 Picture 的内存占用总和。
     pub(super) fn memory_usage(&self) -> usize {
         self.slots
             .iter()

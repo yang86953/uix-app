@@ -1,36 +1,41 @@
-//! 5x7 bitmap font — public domain monospace font for ASCII 32..126.
-//! Each character is defined as 5 bytes (one per column), bits 0-6 are rows.
+//! 5x7 位图字体 — 公共领域的等宽字体，覆盖 ASCII 32..126。
+//! 每个字符由 5 个字节定义（每列一个字节），bit 0-6 为行。
 
 use crate::core::{Point, Size};
 use crate::draw::TextLayoutOptions;
 
-/// A monospace bitmap font (5x7 pixels per character).
+/// 等宽位图字体（每字符 5x7 像素）。
 pub struct BitmapFont {
-    glyphs: &'static [[u8; 5]; 95], // ASCII 32..126
+    glyphs: &'static [[u8; 5]; 95], // ASCII 32..126 字形表
 }
 
 impl BitmapFont {
+    /// 创建字体实例（引用静态字形表）。
     pub const fn new() -> Self {
         Self {
             glyphs: &FONT_CHARS,
         }
     }
 
+    /// 字符宽度：5 像素字形 + 1 像素间距。
     pub fn char_width(&self) -> f32 {
         6.0
-    } // 5px + 1px spacing
+    }
+    /// 字符高度：7 像素字形 + 2 像素间距。
     pub fn char_height(&self) -> f32 {
         9.0
-    } // 7px + 2px spacing
+    }
+    /// 行高。
     pub fn line_height(&self) -> f32 {
         10.0
     }
 
-    /// Measure text size in pixels.
+    /// 测量文本尺寸（像素）。
     pub fn measure(&self, text: &str, opts: &TextLayoutOptions) -> Size {
         if text.is_empty() {
             return Size::new(0.0, 0.0);
         }
+        // 取字符宽与行高；max_width 非正时视为不限宽。
         let cw = self.char_width();
         let lh = self.line_height();
         let max_w = if opts.max_width > 0.0 {
@@ -40,6 +45,7 @@ impl BitmapFont {
         };
 
         if opts.word_wrap {
+            // 换行模式：逐字符累计行宽，超出 max_w 或遇到换行符则开新行。
             let mut lines = 1u32;
             let mut line_w = 0.0f32;
             let mut max_line = 0.0f32;
@@ -60,13 +66,14 @@ impl BitmapFont {
             max_line = max_line.max(line_w);
             Size::new(max_line.min(max_w), lines as f32 * lh)
         } else {
+            // 单行模式：宽度取非换行字符数，高度按换行符数量分行。
             let w = text.chars().filter(|&c| c != '\n').count() as f32 * cw;
             let h = (text.chars().filter(|&c| c == '\n').count() as f32 + 1.0) * lh;
             Size::new(w.min(max_w), h)
         }
     }
 
-    /// Draw text with a specific color using the premultiplied pixel callback.
+    /// 用指定颜色绘制文本，逐像素回调（预乘像素）。
     pub fn draw_colored<F: FnMut(i32, i32, u32)>(
         &self,
         text: &str,
@@ -112,9 +119,8 @@ impl Default for BitmapFont {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 5x7 bitmap font data (ASCII 32..126)
-// Generated from a public-domain 5x7 font. Each byte is a column,
-// bits 0-6 = rows 0-6 (bit 0 = top).
+// 5x7 位图字形数据（ASCII 32..126）
+// 来自公共领域 5x7 字体。每个字节是一列，bit 0-6 对应行 0-6（bit 0 为顶行）。
 // ════════════════════════════════════════════════════════════════════════════
 
 pub(crate) static FONT_CHARS: [[u8; 5]; 95] = [

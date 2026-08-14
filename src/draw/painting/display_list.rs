@@ -194,14 +194,17 @@ pub struct DisplayList {
 }
 
 impl DisplayList {
+    /// 创建空显示列表。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 列表是否不含任何绘制指令。
     pub fn is_empty(&self) -> bool {
         self.ops.is_empty()
     }
 
+    /// 指令数量。
     pub fn len(&self) -> usize {
         self.ops.len()
     }
@@ -213,6 +216,7 @@ impl DisplayList {
         &self.ops
     }
 
+    /// 追加一条绘制指令（共享存储上执行写时复制）。
     pub fn push(&mut self, op: PaintOp) {
         Arc::make_mut(&mut self.ops).push(op);
     }
@@ -229,9 +233,11 @@ impl DisplayList {
         ctx.with_recording_disabled(|ctx| self.replay_unrecorded(ctx));
     }
 
+    /// 把指令序列逐条应用到 `PaintContext`（调用方已禁用二次录制）。
     fn replay_unrecorded(&self, ctx: &mut PaintContext<'_>) {
         for op in self.ops.iter() {
             match op {
+                // 基础图元：矩形、圆、椭圆、扇形的填充与描边，参数与 PaintContext API 一一对应。
                 PaintOp::FillRect {
                     rect,
                     color,
@@ -253,6 +259,7 @@ impl DisplayList {
                     end_angle,
                     color,
                 } => ctx.fill_sector(*cx, *cy, *r, *start_angle, *end_angle, *color),
+                // 路径类：按填充规则或描边选项执行。
                 PaintOp::FillPath {
                     path,
                     color,
@@ -270,6 +277,7 @@ impl DisplayList {
                     color,
                     options,
                 } => ctx.stroke_path(path, *color, options),
+                // 直线与阴影（含环境阴影）。
                 PaintOp::DrawLine {
                     x1,
                     y1,
@@ -308,6 +316,7 @@ impl DisplayList {
                     *color,
                     *corner_radius,
                 ),
+                // 文本类：文字、居中、帧内、基线、换行、选区与字形布局，直接复用 PaintContext 排版。
                 PaintOp::DrawText {
                     text,
                     pos,
@@ -360,7 +369,9 @@ impl DisplayList {
                     color,
                     font_size,
                 } => ctx.blit_glyph_layout(layout, *pos, *color, *font_size),
+                // 字体状态切换。
                 PaintOp::SetFont { font } => ctx.set_font(*font),
+                // 渐变：线性与径向。
                 PaintOp::FillLinearGradient {
                     rect,
                     color_a,
@@ -382,6 +393,7 @@ impl DisplayList {
                     *inner_color,
                     *outer_color,
                 ),
+                // 图片：fit 时保持比例绘制，否则拉伸铺满。
                 PaintOp::DrawImage {
                     handle,
                     bounds,
@@ -393,6 +405,7 @@ impl DisplayList {
                         ctx.draw_image_fill(*handle, *bounds);
                     }
                 }
+                // 状态类：裁剪、变换、透明度与混合模式。
                 PaintOp::PushClip { rect } => ctx.push_clip(*rect),
                 PaintOp::PushClipPath { path } => ctx.push_clip_path(path),
                 PaintOp::PopClip => ctx.pop_clip(),
@@ -400,6 +413,7 @@ impl DisplayList {
                 PaintOp::SetTransform { transform } => ctx.set_transform(*transform),
                 PaintOp::SetOpacity { opacity } => ctx.set_opacity(*opacity),
                 PaintOp::SetBlendMode { mode } => ctx.set_blend_mode(*mode),
+                // 画布状态栈。
                 PaintOp::Save => ctx.save(),
                 PaintOp::Restore => ctx.restore(),
             }
@@ -418,6 +432,7 @@ impl DisplayList {
         let mut text = TextRenderService::new(font, font_service, surface_w);
         for op in self.ops.iter() {
             match op {
+                // 基础图元：矩形、圆、椭圆、扇形的填充与描边，直接落到目标 Canvas。
                 PaintOp::FillRect {
                     rect,
                     color,
@@ -441,6 +456,7 @@ impl DisplayList {
                     end_angle,
                     color,
                 } => canvas.fill_sector(*cx, *cy, *r, *start_angle, *end_angle, *color),
+                // 路径类：按填充规则或描边选项执行。
                 PaintOp::FillPath {
                     path,
                     color,
@@ -458,6 +474,7 @@ impl DisplayList {
                     color,
                     options,
                 } => canvas.stroke_path(path, *color, options),
+                // 直线与阴影（含环境阴影）。
                 PaintOp::DrawLine {
                     x1,
                     y1,
@@ -496,6 +513,7 @@ impl DisplayList {
                     *color,
                     *corner_radius,
                 ),
+                // 文本类：全部经 TextRenderService 排版后绘制（Picture 离屏回放不含复杂布局状态）。
                 PaintOp::DrawText {
                     text: s,
                     pos,
@@ -555,9 +573,11 @@ impl DisplayList {
                     color,
                     font_size,
                 } => text.blit_to(canvas, layout, *pos, *color, *font_size),
+                // 字体切换：只影响本函数内创建的 TextRenderService。
                 PaintOp::SetFont { font } => {
                     text.set_font(*font);
                 }
+                // 渐变：线性与径向。
                 PaintOp::FillLinearGradient {
                     rect,
                     color_a,
@@ -579,6 +599,7 @@ impl DisplayList {
                     *inner_color,
                     *outer_color,
                 ),
+                // 图片：需要调用方提供 ImageService；缺失时跳过（与录制路径的 no-op 语义一致）。
                 PaintOp::DrawImage {
                     handle,
                     bounds,
@@ -588,6 +609,7 @@ impl DisplayList {
                         blit_handle(svc, canvas, *handle, *bounds, *fit);
                     }
                 }
+                // 状态类：裁剪、变换、透明度与混合模式。
                 PaintOp::PushClip { rect } => canvas.push_clip(*rect),
                 PaintOp::PushClipPath { path } => canvas.push_clip_path(path),
                 PaintOp::PopClip => canvas.pop_clip(),
@@ -595,6 +617,7 @@ impl DisplayList {
                 PaintOp::SetTransform { transform } => canvas.set_transform(*transform),
                 PaintOp::SetOpacity { opacity } => canvas.set_opacity(*opacity),
                 PaintOp::SetBlendMode { mode } => canvas.set_blend_mode(*mode),
+                // 画布状态栈。
                 PaintOp::Save => canvas.save(),
                 PaintOp::Restore => canvas.restore(),
             }

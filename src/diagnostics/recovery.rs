@@ -1,7 +1,7 @@
-//! Private recovery Module owned by the Diagnostics System.
+//! Diagnostics System 拥有的私有 recovery Module。
 //!
-//! The Module owns exact-code handler registrations and their RAII lifetime;
-//! the public action/outcome/subscription types are the System contract.
+//! 该 Module 拥有精确错误码处理器注册及其 RAII 生命周期；公开的
+//! action/outcome/subscription 类型是 System 契约。
 
 use std::cell::Cell;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -13,17 +13,17 @@ thread_local! {
     static RUNNING_RECOVERY: Cell<bool> = const { Cell::new(false) };
 }
 
-/// Decision returned by a registered recovery handler.
+/// 已注册恢复处理器返回的决定。
 pub enum RecoveryAction {
-    /// This handler cannot recover the error; try the next matching handler.
+    /// 该处理器无法恢复此错误；尝试下一个匹配的处理器。
     NotHandled,
-    /// The handler restored the invariant owned by its domain.
+    /// 处理器已恢复其所属领域持有的不变量。
     Recovered,
-    /// Recovery itself failed with a typed error.
+    /// 恢复本身以类型化错误失败。
     Failed(Error),
 }
 
-/// Result of running all matching recovery handlers.
+/// 运行全部匹配恢复处理器后的结果。
 pub enum RecoveryOutcome {
     Recovered,
     Unhandled(Error),
@@ -35,8 +35,7 @@ impl RecoveryOutcome {
         matches!(self, Self::Recovered)
     }
 
-    /// Returns the unhandled or recovery error when operation could not be
-    /// restored.
+    /// 当操作未能恢复时返回未处理或恢复错误。
     pub fn into_error(self) -> Option<Error> {
         match self {
             Self::Recovered => None,
@@ -91,10 +90,12 @@ impl RecoveryModule {
     }
 
     pub(super) fn attempt(&self, error: Error) -> RecoveryOutcome {
+        // 恢复过程内不允许嵌套再次触发恢复，防止递归。
         let Some(_guard) = RecoveryGuard::enter() else {
             return RecoveryOutcome::Unhandled(error);
         };
 
+        // 快照当前匹配该错误码的处理器（含 id），随后在锁外执行。
         let handlers = {
             let state = self.lock_state();
             state
@@ -105,6 +106,7 @@ impl RecoveryModule {
                 .collect::<Vec<_>>()
         };
 
+        // 按注册顺序逐一尝试；handler 被 panic 包裹，避免破坏诊断系统。
         for (handler_id, handler) in handlers {
             match catch_unwind(AssertUnwindSafe(|| handler(&error))) {
                 Ok(RecoveryAction::NotHandled) => {}
@@ -117,6 +119,7 @@ impl RecoveryModule {
                     );
                     return RecoveryOutcome::Recovered;
                 }
+                // 恢复失败：保留原始错误作为来源链。
                 Ok(RecoveryAction::Failed(recovery_error)) => {
                     let recovery_error = recovery_error.with_appended_source(error);
                     return RecoveryOutcome::Failed(
@@ -124,6 +127,7 @@ impl RecoveryModule {
                             .with_source(recovery_error),
                     );
                 }
+                // 处理器 panic：转换为类型化错误并保留原始错误。
                 Err(_) => {
                     return RecoveryOutcome::Failed(
                         Error::new(Errc::TaskAbandoned, "registered error recovery panicked")
@@ -133,6 +137,7 @@ impl RecoveryModule {
             }
         }
 
+        // 所有匹配处理器都未能处理，原样返回未处理结果。
         RecoveryOutcome::Unhandled(error)
     }
 
@@ -147,11 +152,10 @@ impl RecoveryModule {
     }
 }
 
-/// RAII registration for one exact `Errc` recovery handler.
+/// 一个精确 `Errc` 恢复处理器的 RAII 注册。
 ///
-/// Dropping it prevents future attempts from selecting the handler. An attempt
-/// that already cloned the handler may finish once without holding the
-/// registry lock.
+/// 丢弃它会阻止未来的 attempt 选择该处理器。已经克隆了处理器的 attempt
+/// 可能在不持有注册表锁的情况下多完成一次。
 pub struct RecoverySubscription {
     id: u64,
     registry: Weak<RecoveryModule>,

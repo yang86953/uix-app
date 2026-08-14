@@ -4,8 +4,8 @@ use crate::draw::Color;
 use crate::draw::geometry::spatial::PhysicalUnit;
 // 反馈 capability 启用时才需要警告提示状态级别。
 #[cfg(feature = "feedback")]
-use crate::native::capabilities::system::StatusLevel;
-use crate::native::windowing::input::{ControlSize, ScrollDirection};
+use crate::platform::capabilities::StatusLevel;
+use crate::platform::windowing::{ControlSize, ScrollDirection};
 use crate::ui::form::FormLayout;
 use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 // 引入主题感知颜色值与通用样式快照类型。

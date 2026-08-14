@@ -489,7 +489,7 @@ mod tests {
     // 复用通知布局实现与父模块导入的组件类型。
     use super::*;
     // 引入通知状态级别以构造最小条目。
-    use crate::native::capabilities::system::StatusLevel;
+    use crate::platform::capabilities::StatusLevel;
 
     // 标记窄窗口双侧留白回归契约。
     #[test]

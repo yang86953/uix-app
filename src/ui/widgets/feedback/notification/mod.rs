@@ -7,7 +7,7 @@ use crate::component;
 use crate::core::error::{Error, Result as CoreResult};
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
-use crate::native::capabilities::system::StatusLevel;
+use crate::platform::capabilities::StatusLevel;
 use crate::native::notification::{NotificationService, ToastEntry};
 use crate::ui::animation::AnimationConfig;
 use crate::ui::component::paint_context::PaintContext;

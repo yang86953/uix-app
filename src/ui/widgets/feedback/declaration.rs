@@ -8,7 +8,7 @@ use crate::component;
 // 引入类型化错误、布局约束和零尺寸。
 use crate::core::{Constraints, Rect, Result, Size};
 // 引入反馈状态等级。
-use crate::native::capabilities::system::StatusLevel;
+use crate::platform::capabilities::StatusLevel;
 // 引入零绘制实现所需上下文与树类型。
 use crate::ui::WidgetTree;
 use crate::ui::component::paint_context::PaintContext;

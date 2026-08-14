@@ -1,51 +1,53 @@
-//! Conservative tessellation for GPU-native path fills/strokes (#169).
+//! 保守网格化（tessellation）：为 GPU 原生的路径填充 / 描边生成三角形列表（#169）。
 //!
-//! - **Fill**: strict contour forests use the compact ear-clip / `earcut` fast
-//!   path; intersecting, touching and self-intersecting contours use a
-//!   fill-rule-aware continuous y-band decomposition into trapezoid triangles.
-//! - **Stroke**: build a shared cap/join-aware stroke outline → tessellate the
-//!   resulting fill region through the same strict/complex paths.
+//! - **填充**：严格轮廓森林走紧凑 ear-clip / `earcut` 快速路径；相交、相触与
+//!   自相交轮廓走 fill-rule 感知的连续 y 带分解，切成梯形三角形。
+//! - **描边**：先构建共享的 cap/join 感知描边轮廓，再经由相同的严格 / 复杂
+//!   路径流程对结果填充区域做网格化。
 //!
-//! Non-finite input, resource-budget overflow or numerically ambiguous
-//! tessellation returns `None` so callers can soft-fallback.
+//! 非有限输入、资源预算溢出或数值歧义的网格化返回 `None`，供调用方软回退。
 
 use super::flattener;
 use super::path::{FillRule, Path, PathSegment};
 use super::stroker::{self, StrokeOptions};
 use crate::core::Point;
 
-/// Max vertices in a ring we attempt to tessellate (keeps GPU upload bounded).
+/// 尝试网格化的单个环最大顶点数（限制 GPU 上传规模）。
 const MAX_RING_VERTS: usize = 512;
-/// Max flattened vertices across all rings before the topology guard falls back.
+/// 全部环累计扁平化顶点上限，超过后拓扑守卫触发回退。
 const MAX_PATH_VERTS: usize = 2048;
-/// Max unique vertex/intersection y events in the complex-path decomposition.
+/// 复杂路径分解中唯一顶点 / 交点 y 事件的上限。
 const MAX_COMPLEX_EVENTS: usize = 8192;
-/// Max cumulative pair, edge-band scan and crossing-sort work.
+/// 顶点对、边带扫描与交点排序的累计工作量上限。
 const MAX_COMPLEX_WORK: usize = 4_194_304;
-/// Max triangles emitted by the complex-path decomposition.
+/// 复杂路径分解最多产出的三角形数。
 pub(crate) const MAX_COMPLEX_TRIANGLES: usize = 65_536;
 
-/// Tessellate a path into a triangle-list of xy pairs (`[x0,y0, x1,y1, …]`).
+/// 把路径网格化为 xy 坐标对三角形列表（`[x0,y0, x1,y1, …]`）。
 ///
-/// Native constraints:
-/// - identity caller (transform applied upstream)
-/// - bounded flatten output and tessellation work
-/// - arbitrary contour order/direction, intersections, touches and self-crosses
-/// - exact `EvenOdd` parity and `NonZero` accumulated-winding state per y-band
+/// 原生约束：
+/// - 恒等调用方（变换在上游应用）
+/// - 有界的扁平化输出与网格化工作量
+/// - 任意轮廓顺序 / 方向、相交、相触与自交叉
+/// - 每个 y 带内精确的 `EvenOdd` 奇偶与 `NonZero` 累计绕数状态
 pub fn tessellate_fill(path: &Path, fill_rule: FillRule) -> Option<Vec<f32>> {
     if !path_is_finite(path) {
+        // 非有限坐标无法可靠网格化，返回 None 让调用方软回退。
         return None;
     }
     let polys = flattener::flatten(path.segments(), 0.25);
     if polys.is_empty() {
+        // 空路径视为空三角形列表。
         return Some(Vec::new());
     }
     let mut rings = Vec::with_capacity(polys.len());
     let mut path_vertices = 0usize;
     for poly in &polys {
+        // 逐环清理：剔除退化环，并累计全部顶点数。
         let Some(ring) = clean_ring(poly).ok()? else {
             continue;
         };
+        // 单环或全局顶点超预算时拒绝网格化，避免 GPU 上传失控。
         path_vertices = path_vertices.checked_add(ring.len())?;
         if ring.len() > MAX_RING_VERTS || path_vertices > MAX_PATH_VERTS {
             return None;
@@ -57,13 +59,16 @@ pub fn tessellate_fill(path: &Path, fill_rule: FillRule) -> Option<Vec<f32>> {
     }
 
     if rings.iter().all(|ring| ring_is_simple(ring)) {
+        // 全部环简单（无自交、互不相交）：走严格轮廓森林的快速 ear-clip 路径。
         if let Some(tris) = tessellate_strict_fill(&rings, fill_rule) {
             return Some(tris);
         }
     }
+    // 存在相交 / 自交轮廓或严格路径失败：降级为 y 带分解的复杂路径网格化。
     tessellate_complex_fill(&rings, fill_rule)
 }
 
+/// 检查路径全部控制点是否为有限浮点坐标。
 fn path_is_finite(path: &Path) -> bool {
     let finite = |point: Point| point.x.is_finite() && point.y.is_finite();
     path.segments().iter().all(|segment| match *segment {
@@ -76,22 +81,26 @@ fn path_is_finite(path: &Path) -> bool {
     })
 }
 
+/// 严格轮廓森林填充：先按包含关系分组，再逐组 ear-clip 成三角形。
 fn tessellate_strict_fill(rings: &[Vec<Point>], fill_rule: FillRule) -> Option<Vec<f32>> {
+    // 按 fill rule 建立包含森林并划分「外环 + 洞」组。
     let groups = classify_fill_groups(rings, fill_rule)?;
     let mut tris = Vec::new();
     for group in &groups {
+        // 每组独立网格化后顺序拼接。
         tris.extend(tessellate_fill_group(rings, group)?);
     }
+    // 三角形过少说明输入退化为无面积轮廓，拒绝输出。
     if tris.len() < 6 {
         return None;
     }
     Some(tris)
 }
 
-/// Tessellate a stroke outline into a non-overlapping triangle list.
+/// 把描边轮廓网格化为不重叠三角形列表。
 ///
-/// Cap/join geometry is shared with the CPU rasterizer. Unsupported outline
-/// topology returns `None`, so callers retain the existing soft fallback.
+/// cap/join 几何与 CPU 光栅化器共享；不支持的轮廓拓扑返回 `None`，调用方
+/// 保留既有软回退。
 pub fn tessellate_stroke(path: &Path, opts: &StrokeOptions) -> Option<Vec<f32>> {
     let rings = stroker::stroke_outline_rings(path, opts)?;
     if rings.is_empty() {
@@ -100,6 +109,7 @@ pub fn tessellate_stroke(path: &Path, opts: &StrokeOptions) -> Option<Vec<f32>> 
     tessellate_fill(&stroker::path_from_outline_rings(rings), FillRule::NonZero)
 }
 
+/// 清理单个环：剔除非有限点与相邻重复点，闭合首尾，退化环返回 `None`。
 fn clean_ring(pts: &[Point]) -> Result<Option<Vec<Point>>, ()> {
     if pts.len() < 3 {
         return Ok(None);
@@ -129,6 +139,7 @@ fn clean_ring(pts: &[Point]) -> Result<Option<Vec<Point>>, ()> {
     Ok(Some(out))
 }
 
+/// 判断环是否简单：任意非相邻边对都不相交或相触。
 fn ring_is_simple(ring: &[Point]) -> bool {
     let len = ring.len();
     for i in 0..len {
@@ -148,24 +159,28 @@ fn ring_is_simple(ring: &[Point]) -> bool {
     true
 }
 
+/// 一个严格填充组：一个外环（outer）加若干洞环（holes）。
 #[derive(Debug)]
 struct FillGroup {
     outer: usize,
     holes: Vec<usize>,
 }
 
-/// Build a strict containment forest, then classify every ring by the fill
-/// state immediately outside and inside that boundary.
+/// 构建严格包含森林，并按边界内外两侧的填充状态给每个环归类。
 fn classify_fill_groups(rings: &[Vec<Point>], fill_rule: FillRule) -> Option<Vec<FillGroup>> {
+    // 预计算每个环的有符号面积（f64 保持精度）。
     let areas: Vec<f64> = rings.iter().map(|ring| polygon_area_f64(ring)).collect();
+    // 面积非有限或接近零（退化环）时无法确定绕数方向，拒绝归类。
     if areas
         .iter()
         .any(|area| !area.is_finite() || area.abs() <= 1e-8)
     {
         return None;
     }
+    // 预计算包围盒，先做快速排除再逐环判定包含关系。
     let bounds: Vec<_> = rings.iter().map(|ring| ring_bounds(ring)).collect();
     let mut parents = vec![None; rings.len()];
+    // 两两检查包围盒重叠的环对：相交 / 相触或互相包含都属于非严格拓扑。
     for i in 0..rings.len() {
         for j in i + 1..rings.len() {
             if !bounds_overlap(bounds[i], bounds[j]) {
@@ -180,6 +195,7 @@ fn classify_fill_groups(rings: &[Vec<Point>], fill_rule: FillRule) -> Option<Vec
                 return None;
             }
             if i_in_j {
+                // 环 i 完全位于环 j 内：登记父子关系（面积最小者胜出）。
                 update_parent(&mut parents, &areas, i, j)?;
             } else if j_in_i {
                 update_parent(&mut parents, &areas, j, i)?;
@@ -188,6 +204,7 @@ fn classify_fill_groups(rings: &[Vec<Point>], fill_rule: FillRule) -> Option<Vec
     }
 
     let mut order: Vec<usize> = (0..rings.len()).collect();
+    // 按面积绝对值降序处理，保证父环先于子环被归类。
     order.sort_by(|&a, &b| {
         areas[b]
             .abs()
@@ -195,12 +212,14 @@ fn classify_fill_groups(rings: &[Vec<Point>], fill_rule: FillRule) -> Option<Vec
             .then_with(|| a.cmp(&b))
     });
 
+    // 记录每个环「边界内」的绕数 / 奇偶状态及其所属组，供子环继承。
     let mut inside_winding = vec![None::<i32>; rings.len()];
     let mut inside_parity = vec![None::<bool>; rings.len()];
     let mut active_group = vec![None::<usize>; rings.len()];
     let mut groups = Vec::<FillGroup>::new();
 
     for ring in order {
+        // 从直接父环继承边界外的填充事实；无父环时边界外为空。
         let (outside_winding, outside_parity, outside_group) = match parents[ring] {
             Some(parent) => (
                 inside_winding[parent]?,
@@ -209,9 +228,11 @@ fn classify_fill_groups(rings: &[Vec<Point>], fill_rule: FillRule) -> Option<Vec
             ),
             None => (0, false, None),
         };
+        // 面积符号给出环方向：正面积 +1 绕数，负面积 -1。
         let winding_delta = if areas[ring] > 0.0 { 1 } else { -1 };
         let winding = outside_winding.checked_add(winding_delta)?;
         let parity = !outside_parity;
+        // 按 fill rule 分别判定边界外 / 内是否被填充。
         let outside_filled = match fill_rule {
             FillRule::EvenOdd => outside_parity,
             FillRule::NonZero => outside_winding != 0,
@@ -221,7 +242,9 @@ fn classify_fill_groups(rings: &[Vec<Point>], fill_rule: FillRule) -> Option<Vec
             FillRule::NonZero => winding != 0,
         };
 
+        // 四种内外组合决定环的角色：新建组 / 加入洞 / 透传组 / 非法拓扑。
         let group = match (outside_filled, inside_filled) {
+            // 外空内实：本环是新填充组的外环（同一区域不得嵌套两个组）。
             (false, true) => {
                 if outside_group.is_some() {
                     return None;
@@ -233,15 +256,19 @@ fn classify_fill_groups(rings: &[Vec<Point>], fill_rule: FillRule) -> Option<Vec
                 });
                 Some(group)
             }
+            // 外实内空：本环是所在组的一个洞。
             (true, false) => {
                 let group = outside_group?;
                 groups.get_mut(group)?.holes.push(ring);
                 None
             }
+            // 外实内实：本环位于既有组的填充内部，继续沿用该组。
             (true, true) => Some(outside_group?),
+            // 外空内空：无任何填充贡献的孤立区域，属于未定义拓扑。
             (false, false) => return None,
         };
 
+        // 记录本环边界内的填充事实供子环继承。
         inside_winding[ring] = Some(winding);
         inside_parity[ring] = Some(parity);
         active_group[ring] = group;
@@ -254,6 +281,7 @@ fn classify_fill_groups(rings: &[Vec<Point>], fill_rule: FillRule) -> Option<Vec
     }
 }
 
+/// 若 `candidate` 面积更小则把 `child` 的直接父环更新为 `candidate`。
 fn update_parent(
     parents: &mut [Option<usize>],
     areas: &[f64],
@@ -270,8 +298,10 @@ fn update_parent(
     Some(())
 }
 
+/// 网格化单个填充组：无洞走自实现 ear-clip，有洞把全部环拼给 earcut。
 fn tessellate_fill_group(rings: &[Vec<Point>], group: &FillGroup) -> Option<Vec<f32>> {
     let outer = rings.get(group.outer)?;
+    // 期望面积 = 外环面积减去全部洞面积；非正说明洞与环重叠或退化。
     let expected_area =
         group
             .holes
@@ -285,8 +315,10 @@ fn tessellate_fill_group(rings: &[Vec<Point>], group: &FillGroup) -> Option<Vec<
     }
 
     let tris = if group.holes.is_empty() {
+        // 简单无洞多边形：自实现 ear-clip。
         ear_clip(outer)?
     } else {
+        // 带洞多边形：把所有环顶点拼进同一数组，并记录每个洞的起始索引。
         let vertex_count = group.holes.iter().try_fold(outer.len(), |count, &hole| {
             count.checked_add(rings.get(hole)?.len())
         })?;
@@ -298,12 +330,14 @@ fn tessellate_fill_group(rings: &[Vec<Point>], group: &FillGroup) -> Option<Vec<
             vertices.extend(rings.get(hole)?.iter().map(|point| [point.x, point.y]));
         }
 
+        // 交给 earcut 生成三角形索引；索引不完整视为失败。
         let mut indices = Vec::<usize>::new();
         earcut::Earcut::<f32>::new().earcut(vertices.iter().copied(), &hole_indices, &mut indices);
         if indices.len() < 3 || !indices.chunks_exact(3).remainder().is_empty() {
             return None;
         }
 
+        // 把每个三角形索引展开为 xy 坐标序列。
         let mut triangles = Vec::with_capacity(indices.len().checked_mul(2)?);
         for triangle in indices.chunks_exact(3) {
             let a = *vertices.get(triangle[0])?;
@@ -314,9 +348,11 @@ fn tessellate_fill_group(rings: &[Vec<Point>], group: &FillGroup) -> Option<Vec<
         triangles
     };
 
+    // 总面积校验：网格化结果必须与期望面积在容差内一致。
     validate_triangle_area(&tris, expected_area).then_some(tris)
 }
 
+/// 校验三角形列表的累计面积与期望面积一致（容差内），并拒绝非有限坐标。
 fn validate_triangle_area(tris: &[f32], expected_area: f64) -> bool {
     if tris.len() < 6 || !tris.chunks_exact(6).remainder().is_empty() {
         return false;
@@ -335,6 +371,7 @@ fn validate_triangle_area(tris: &[f32], expected_area: f64) -> bool {
     (triangulated_area - expected_area).abs() <= tolerance
 }
 
+/// 双精度点：复杂路径分解中用以保持交点与事件坐标的数值稳定。
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct F64Point {
     pub(crate) x: f64,
@@ -342,6 +379,7 @@ pub(crate) struct F64Point {
 }
 
 impl From<Point> for F64Point {
+    /// f32 点无损提升为 f64 点。
     fn from(point: Point) -> Self {
         Self {
             x: point.x as f64,
@@ -350,6 +388,7 @@ impl From<Point> for F64Point {
     }
 }
 
+/// 复杂路径中的一条有向边：记录端点、y 范围与方向绕数。
 #[derive(Debug, Clone, Copy)]
 struct ComplexEdge {
     id: usize,
@@ -361,6 +400,7 @@ struct ComplexEdge {
 }
 
 impl ComplexEdge {
+    /// 求边在给定 y 处的 x 坐标；水平边（dy==0）返回 None。
     fn x_at(self, y: f64) -> Option<f64> {
         let dy = self.end.y - self.start.y;
         if dy == 0.0 {
@@ -371,6 +411,7 @@ impl ComplexEdge {
     }
 }
 
+/// 一个 y 带内某条边在带上下边界与中点处的 x 采样，及其绕数贡献。
 #[derive(Debug, Clone, Copy)]
 struct BandCrossing {
     edge_id: usize,
@@ -380,15 +421,16 @@ struct BandCrossing {
     winding: i32,
 }
 
+/// 一条填充跨度左 / 右边界的线性插值线段。
 #[derive(Debug, Clone, Copy)]
 struct BoundaryLine {
     x0: f64,
     x1: f64,
 }
 
-/// Decompose arbitrary directed contours into non-overlapping filled
-/// trapezoids. Every vertex and proper crossing y is a band boundary, so edge
-/// order is stable inside each open band.
+/// 把任意有向轮廓分解为不重叠填充梯形。
+///
+/// 每个顶点与正规交点的 y 都是带边界，因此每个开放带内边的顺序保持稳定。
 pub(crate) fn tessellate_complex_fill(
     rings: &[Vec<Point>],
     fill_rule: FillRule,
@@ -396,6 +438,7 @@ pub(crate) fn tessellate_complex_fill(
     let mut edges = Vec::<ComplexEdge>::new();
     let mut events = Vec::<f64>::new();
     for ring in rings {
+        // 收集环顶点 y 作为带边界。
         events.extend(ring.iter().map(|point| point.y as f64));
         for index in 0..ring.len() {
             let start = F64Point::from(ring[index]);
@@ -403,11 +446,14 @@ pub(crate) fn tessellate_complex_fill(
             let dx = end.x - start.x;
             let dy = end.y - start.y;
             if dx == 0.0 && dy == 0.0 {
+                // 退化点边跳过。
                 continue;
             }
             if dy == 0.0 {
+                // 水平边不参与带扫描，跳过。
                 continue;
             }
+            // 方向绕数：向下的边 +1，向上的边 -1。
             edges.push(ComplexEdge {
                 id: edges.len(),
                 start,
@@ -422,6 +468,7 @@ pub(crate) fn tessellate_complex_fill(
         return Some(Vec::new());
     }
 
+    // 边对工作量预算：O(n²) 求交尝试先于实际求交执行。
     let mut work = edges
         .len()
         .checked_mul(edges.len().saturating_sub(1))?
@@ -430,6 +477,7 @@ pub(crate) fn tessellate_complex_fill(
         return None;
     }
 
+    // 求所有包围盒重叠边对的正规交点 y，作为额外带边界。
     let max_event_candidates = MAX_COMPLEX_EVENTS.checked_mul(8)?;
     for left in 0..edges.len() {
         for right in left + 1..edges.len() {
@@ -445,6 +493,7 @@ pub(crate) fn tessellate_complex_fill(
         }
     }
 
+    // 排序去重后得到全部带边界；事件过少时没有任何开放带。
     events.sort_by(f64::total_cmp);
     events.dedup_by(|a, b| *a == *b);
     if events.len() > MAX_COMPLEX_EVENTS {
@@ -453,6 +502,7 @@ pub(crate) fn tessellate_complex_fill(
     if events.len() < 2 {
         return Some(Vec::new());
     }
+    // 带数 × 边数的累计扫描工作量预算。
     work = work.checked_add(edges.len().checked_mul(events.len() - 1)?)?;
     if work > MAX_COMPLEX_WORK {
         return None;
@@ -466,10 +516,11 @@ pub(crate) fn tessellate_complex_fill(
             continue;
         }
         if approximately_equal(y0, y1) {
-            // Do not merge distinct near-coincident events: their ordering is
-            // numerically ambiguous, so preserve correctness via soft fallback.
+            // 不合并彼此接近但不同的事件：其顺序在数值上存在歧义，
+            // 通过软回退保持正确性。
             return None;
         }
+        // 扫描与带中点相交的全部边，收集带两端与中点的 x 采样。
         let y_mid = y0 + (y1 - y0) * 0.5;
         let mut crossings = Vec::<BandCrossing>::new();
         for &edge in &edges {
@@ -487,11 +538,13 @@ pub(crate) fn tessellate_complex_fill(
         if crossings.is_empty() {
             continue;
         }
+        // 排序工作量预算（按 crossing 数估算比较层数）。
         let sort_levels = usize::BITS as usize - crossings.len().leading_zeros() as usize;
         work = work.checked_add(crossings.len().checked_mul(sort_levels)?)?;
         if work > MAX_COMPLEX_WORK {
             return None;
         }
+        // 按带中点 x 排序；并列时依次以带两端 x 与边 id 稳定排序。
         crossings.sort_by(|a, b| {
             a.x_mid
                 .total_cmp(&b.x_mid)
@@ -500,24 +553,28 @@ pub(crate) fn tessellate_complex_fill(
                 .then_with(|| a.edge_id.cmp(&b.edge_id))
         });
 
+        // 自左向右扫描 crossings：维护绕数 / 奇偶与当前填充跨度的左边界。
         let mut winding = 0i32;
         let mut parity = false;
         let mut left_boundary = None::<BoundaryLine>;
         let mut index = 0usize;
         while index < crossings.len() {
+            // 归并中点 x 近似相同的并列 crossing 组，整组一次翻转填充状态。
             let mut end = index + 1;
             while end < crossings.len()
                 && approximately_equal(crossings[index].x_mid, crossings[end].x_mid)
             {
                 if !same_band_line(crossings[index], crossings[end], &edges) {
-                    // Approximate proximity is not proof of coincidence. A
-                    // distinct near line or lost crossing is ambiguous.
+                    // 近似接近不能证明共线：接近但不重合的线或丢失的
+                    // 交点属于数值歧义，直接回退。
                     return None;
                 }
                 end += 1;
             }
 
+            // 记录翻转前的填充状态。
             let before = fill_state(fill_rule, winding, parity);
+            // 按 fill rule 更新绕数 / 奇偶：EvenOdd 奇数次翻转，NonZero 累加带符号绕数。
             match fill_rule {
                 FillRule::EvenOdd => {
                     if (end - index) % 2 == 1 {
@@ -532,10 +589,12 @@ pub(crate) fn tessellate_complex_fill(
                 }
             }
             let after = fill_state(fill_rule, winding, parity);
+            // 边界处取带两端 x 的插值作为跨度边界线。
             let boundary = BoundaryLine {
                 x0: crossings[index].x0,
                 x1: crossings[index].x1,
             };
+            // 进入填充：记录左边界；离开填充：用左右边界生成梯形三角形。
             match (before, after) {
                 (false, true) => {
                     if left_boundary.replace(boundary).is_some() {
@@ -550,6 +609,7 @@ pub(crate) fn tessellate_complex_fill(
             }
             index = end;
         }
+        // 带尾必须回到未填充状态，否则说明 crossing 解析不一致。
         if fill_state(fill_rule, winding, parity) || left_boundary.is_some() {
             return None;
         }
@@ -558,9 +618,11 @@ pub(crate) fn tessellate_complex_fill(
     if triangles.is_empty() {
         return Some(triangles);
     }
+    // 与严格路径一致，做总面积校验后交付。
     validate_triangle_area(&triangles, expected_area).then_some(triangles)
 }
 
+/// 两条复杂边的包围盒是否重叠（含边界）。
 fn complex_edge_bounds_overlap(a: ComplexEdge, b: ComplexEdge) -> bool {
     let a_min_x = a.start.x.min(a.end.x);
     let a_max_x = a.start.x.max(a.end.x);
@@ -569,8 +631,8 @@ fn complex_edge_bounds_overlap(a: ComplexEdge, b: ComplexEdge) -> bool {
     a_min_x <= b_max_x && b_min_x <= a_max_x && a.ymin <= b.ymax && b.ymin <= a.ymax
 }
 
-/// Return `Some(Some(y))` for a proper interior crossing, `Some(None)` for no
-/// crossing/parallel lines, and `None` for non-finite arithmetic.
+/// 返回正规内点交点的 y：`Some(Some(y))` 表示存在正规交点，
+/// `Some(None)` 表示不相交或平行，`None` 表示非有限算术。
 fn proper_intersection_y(a: ComplexEdge, b: ComplexEdge) -> Option<Option<f64>> {
     let a_direction = F64Point {
         x: a.end.x - a.start.x,
@@ -603,6 +665,7 @@ fn proper_intersection_y(a: ComplexEdge, b: ComplexEdge) -> Option<Option<f64>> 
     y.is_finite().then_some(Some(y))
 }
 
+/// 按 fill rule 计算当前（绕数, 奇偶）对应的填充布尔值。
 fn fill_state(fill_rule: FillRule, winding: i32, parity: bool) -> bool {
     match fill_rule {
         FillRule::EvenOdd => parity,
@@ -610,6 +673,7 @@ fn fill_state(fill_rule: FillRule, winding: i32, parity: bool) -> bool {
     }
 }
 
+/// 判断两条边在带内是否共线：平行、共起点且带内 x 采样一致。
 fn same_band_line(a: BandCrossing, b: BandCrossing, edges: &[ComplexEdge]) -> bool {
     let a_edge = edges[a.edge_id];
     let b_edge = edges[b.edge_id];
@@ -633,11 +697,13 @@ fn same_band_line(a: BandCrossing, b: BandCrossing, edges: &[ComplexEdge]) -> bo
         && approximately_equal(a.x1, b.x1)
 }
 
+/// 相对容差近似相等（以两者中较大绝对值为尺度）。
 fn approximately_equal(a: f64, b: f64) -> bool {
     let scale = a.abs().max(b.abs()).max(1.0);
     (a - b).abs() <= scale * 1e-10
 }
 
+/// 用左右边界线生成一个梯形（两个三角形）并追加到输出，返回其面积。
 fn append_complex_span(
     triangles: &mut Vec<f32>,
     left: BoundaryLine,
@@ -670,6 +736,7 @@ fn append_complex_span(
     Some(area)
 }
 
+/// 追加一个三角形（6 个 f32），拒绝非有限坐标、零面积与超预算三角形。
 pub(crate) fn append_complex_triangle(
     triangles: &mut Vec<f32>,
     a: F64Point,
@@ -696,6 +763,7 @@ pub(crate) fn append_complex_triangle(
     Some(())
 }
 
+/// 返回有序的 (left, right)；若仅因浮点误差倒置则在近似相等时收敛为中点。
 fn ordered_or_snapped(left: f64, right: f64) -> Option<(f64, f64)> {
     if left <= right {
         return Some((left, right));
@@ -707,10 +775,12 @@ fn ordered_or_snapped(left: f64, right: f64) -> Option<(f64, f64)> {
     None
 }
 
+/// f64 二维叉积。
 fn cross_f64(a: F64Point, b: F64Point) -> f64 {
     a.x * b.y - a.y * b.x
 }
 
+/// 鞋带公式计算多边形有符号面积（f64）。
 fn polygon_area_f64(pts: &[Point]) -> f64 {
     let mut area = 0.0f64;
     for i in 0..pts.len() {
@@ -721,6 +791,7 @@ fn polygon_area_f64(pts: &[Point]) -> f64 {
     area * 0.5
 }
 
+/// 计算环的包围盒 (min_x, min_y, max_x, max_y)。
 fn ring_bounds(ring: &[Point]) -> (f32, f32, f32, f32) {
     ring.iter().fold(
         (
@@ -740,15 +811,18 @@ fn ring_bounds(ring: &[Point]) -> (f32, f32, f32, f32) {
     )
 }
 
+/// 包围盒是否重叠（含 epsilon 容差）。
 fn bounds_overlap(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> bool {
     const EPSILON: f32 = 1e-5;
     a.0 <= b.2 + EPSILON && a.2 + EPSILON >= b.0 && a.1 <= b.3 + EPSILON && a.3 + EPSILON >= b.1
 }
 
+/// 两条边是否在环中相邻（共享端点）。
 fn edges_are_adjacent(a: usize, b: usize, len: usize) -> bool {
     a == b || (a + 1) % len == b || (b + 1) % len == a
 }
 
+/// 两个环的任意边对是否相交或相触。
 fn rings_intersect_or_touch(a: &[Point], b: &[Point]) -> bool {
     for i in 0..a.len() {
         let a0 = a[i];
@@ -764,6 +838,7 @@ fn rings_intersect_or_touch(a: &[Point], b: &[Point]) -> bool {
     false
 }
 
+/// 判断两线段是否正规相交或端点相触（含 epsilon 容差）。
 fn segments_intersect_or_touch(a0: Point, a1: Point, b0: Point, b1: Point) -> bool {
     const EPSILON: f32 = 1e-5;
 
@@ -780,6 +855,7 @@ fn segments_intersect_or_touch(a0: Point, a1: Point, b0: Point, b1: Point) -> bo
         || (o4.abs() <= EPSILON && point_on_segment(a1, b0, b1, EPSILON))
 }
 
+/// 点在包围盒意义上是否位于线段上（配合 epsilon）。
 fn point_on_segment(p: Point, a: Point, b: Point, epsilon: f32) -> bool {
     p.x >= a.x.min(b.x) - epsilon
         && p.x <= a.x.max(b.x) + epsilon
@@ -787,6 +863,7 @@ fn point_on_segment(p: Point, a: Point, b: Point, epsilon: f32) -> bool {
         && p.y <= a.y.max(b.y) + epsilon
 }
 
+/// 射线法判断点是否位于环内。
 fn point_in_ring(point: Point, ring: &[Point]) -> bool {
     let mut inside = false;
     let mut j = ring.len() - 1;
@@ -805,6 +882,7 @@ fn point_in_ring(point: Point, ring: &[Point]) -> bool {
     inside
 }
 
+/// 鞋带公式计算多边形有符号面积（f32，供 ear-clip 定向使用）。
 fn polygon_area(pts: &[Point]) -> f32 {
     let n = pts.len();
     let mut a = 0.0;
@@ -816,10 +894,12 @@ fn polygon_area(pts: &[Point]) -> f32 {
     a * 0.5
 }
 
+/// 以 o 为原点的二维叉积（判断三点转向）。
 pub(crate) fn cross(o: Point, a: Point, b: Point) -> f32 {
     (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
 }
 
+/// 点是否位于三角形内（含边界，同侧法）。
 pub(crate) fn point_in_triangle(p: Point, a: Point, b: Point, c: Point) -> bool {
     let c1 = cross(a, b, p);
     let c2 = cross(b, c, p);
@@ -829,6 +909,7 @@ pub(crate) fn point_in_triangle(p: Point, a: Point, b: Point, c: Point) -> bool 
     !(has_neg && has_pos)
 }
 
+/// 顶点在给定环绕方向下是否凸出。
 fn is_convex(prev: Point, curr: Point, next: Point, ccw: bool) -> bool {
     let c = cross(prev, curr, next);
     if ccw {
@@ -838,6 +919,7 @@ fn is_convex(prev: Point, curr: Point, next: Point, ccw: bool) -> bool {
     }
 }
 
+/// 判断顶点是否为「耳朵」：凸出且三角形内不包含其他顶点。
 fn is_ear(pts: &[Point], indices: &[usize], ear_i: usize, ccw: bool) -> bool {
     let n = indices.len();
     let i_prev = indices[(ear_i + n - 1) % n];
@@ -860,20 +942,26 @@ fn is_ear(pts: &[Point], indices: &[usize], ear_i: usize, ccw: bool) -> bool {
     true
 }
 
+/// 自实现 ear-clip：对无洞简单多边形输出三角形列表，失败返回 None。
 fn ear_clip(ring: &[Point]) -> Option<Vec<f32>> {
     let area = polygon_area(ring);
+    // 零面积退化环没有可切内容。
     if area.abs() < 1e-8 {
         return None;
     }
+    // 由面积符号确定环绕方向。
     let ccw = area > 0.0;
+    // 用剩余顶点索引表模拟不断收缩的多边形。
     let mut indices: Vec<usize> = (0..ring.len()).collect();
     let mut tris: Vec<f32> = Vec::with_capacity((ring.len().saturating_sub(2)) * 6);
+    // 防死循环守卫：每轮必须切下一个耳朵，否则放弃。
     let mut guard = ring.len() * ring.len() + 8;
     while indices.len() > 3 {
         if guard == 0 {
             return None;
         }
         guard -= 1;
+        // 扫描剩余顶点找第一个耳朵。
         let n = indices.len();
         let mut found = None;
         for i in 0..n {
@@ -882,7 +970,9 @@ fn ear_clip(ring: &[Point]) -> Option<Vec<f32>> {
                 break;
             }
         }
+        // 找不到耳朵说明多边形退化，放弃。
         let i = found?;
+        // 切下耳朵：输出三角形并删除该顶点。
         let i_prev = indices[(i + n - 1) % n];
         let i_curr = indices[i];
         let i_next = indices[(i + 1) % n];
@@ -892,6 +982,7 @@ fn ear_clip(ring: &[Point]) -> Option<Vec<f32>> {
         tris.extend_from_slice(&[a.x, a.y, b.x, b.y, c.x, c.y]);
         indices.remove(i);
     }
+    // 最后三个顶点构成收尾三角形。
     let a = ring[indices[0]];
     let b = ring[indices[1]];
     let c = ring[indices[2]];

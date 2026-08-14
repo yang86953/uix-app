@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::draw::Color;
-use crate::native::windowing::input::ControlSize;
+use crate::platform::windowing::ControlSize;
 use crate::ui::form::form::{FormItem, ValidateStatus};
 use crate::ui::form::form_validation::{FormModel, IntoFormValue};
 use crate::ui::view::{View, ViewNode};

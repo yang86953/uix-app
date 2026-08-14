@@ -1,9 +1,7 @@
-//! Windows Vulkan support used by the integration tests in the tests
-//! directory.
+//! 供 tests 目录下集成测试使用的 Windows Vulkan 支持。
 //!
-//! This module deliberately contains no test entry points. It keeps the
-//! native resource boundary inside the library while the test names,
-//! assertions and observations remain integration-test code.
+//! 本模块刻意不包含测试入口点：原生资源边界保留在库内部，
+//! 测试名称、断言与观测仍属于集成测试代码。
 
 use crate::core::{Errc, Error};
 use crate::draw::backend::cpu::noop_canvas_2d::NoopCanvas2D;
@@ -35,13 +33,12 @@ use windows::Win32::System::Threading::{
     GetCurrentProcess, GetGuiResources, GR_GDIOBJECTS, GR_USEROBJECTS,
 };
 
-/// A typed failure boundary exposed only for the Windows Vulkan integration
-/// test harness.
+/// 仅向 Windows Vulkan 集成测试夹具暴露的类型化失败边界。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GfxR5Error {
-    /// Stable UIX error category used by the test assertions.
+    /// 测试断言使用的稳定 UIX 错误类别。
     pub code: &'static str,
-    /// Full native error text, including the Vulkan result when available.
+    /// 完整原生错误文本，可用时包含 Vulkan 结果码。
     pub message: String,
 }
 
@@ -53,7 +50,7 @@ impl fmt::Display for GfxR5Error {
 
 impl std::error::Error for GfxR5Error {}
 
-/// Result type shared by the GFX-R5 test support operations.
+/// GFX-R5 测试支持操作共享的结果类型。
 pub type GfxR5Result<T> = Result<T, GfxR5Error>;
 
 pub(crate) fn error_code(code: Errc) -> &'static str {
@@ -90,18 +87,17 @@ pub(crate) fn drawable_extent(context: &dyn PixelUploadSurface) -> (i32, i32) {
     (surface.drawable_width, surface.drawable_height)
 }
 
-/// A visible Windows window whose native handle remains valid for the whole
-/// lifetime of the Vulkan surface under test.
+/// 一个可见的 Windows 窗口，其原生句柄在整个被测 Vulkan surface 生命周期内保持有效。
 pub struct NativeWindow {
-    // WindowBinding stores a raw pointer to WindowsPlatform. Pin the platform
-    // on the heap so moving this wrapper cannot invalidate that callback ptr.
+    // WindowBinding 存储指向 WindowsPlatform 的裸指针；把平台固定在堆上，
+    // 使移动本包装器不会使该回调指针失效。
     _platform: Box<WindowsPlatform>,
     window: Box<dyn PlatformWindow>,
     closed: bool,
 }
 
 impl NativeWindow {
-    /// Creates and shows a real Win32 window.
+    /// 创建并显示一个真实的 Win32 窗口。
     pub fn new(width: i32, height: i32) -> GfxR5Result<Self> {
         let mut platform = Box::new(WindowsPlatform::new());
         let mut window = platform
@@ -115,7 +111,7 @@ impl NativeWindow {
         })
     }
 
-    /// Returns the HWND used to create the Vulkan surface.
+    /// 返回用于创建 Vulkan surface 的 HWND。
     pub fn surface(&self) -> GfxR5Result<*mut c_void> {
         let surface = self.window.native_surface_ptr();
         if surface.is_null() {
@@ -124,7 +120,7 @@ impl NativeWindow {
         Ok(surface)
     }
 
-    /// Resizes the native window without touching a Vulkan context.
+    /// 调整原生窗口尺寸，不触碰任何 Vulkan context。
     pub fn resize(&mut self, width: i32, height: i32) -> GfxR5Result<()> {
         self.window
             .properties_mut()
@@ -132,7 +128,7 @@ impl NativeWindow {
             .map_err(map_error)
     }
 
-    /// Moves the native window to an absolute virtual-desktop position.
+    /// 将原生窗口移动到虚拟桌面的绝对位置。
     pub fn set_position(&mut self, x: i32, y: i32) -> GfxR5Result<()> {
         self.window
             .properties_mut()
@@ -140,14 +136,16 @@ impl NativeWindow {
             .map_err(map_error)
     }
 
-    /// Returns the effective per-window DPI reported by Win32.
+    /// 返回 Win32 报告的每窗口有效 DPI。
     pub fn dpi(&self) -> GfxR5Result<u32> {
         Ok(dpi_for_window(self.surface()?))
     }
 
-    /// Returns the physical bounds of the monitor currently containing the window.
+    /// 返回当前包含该窗口的监视器的物理边界。
     pub fn monitor_bounds(&self) -> GfxR5Result<(i32, i32, i32, i32)> {
         let hwnd = HWND(self.surface()?);
+        // SAFETY：hwnd 由本对象持有的平台窗口提供且尚未销毁（surface() 已校验非空）；
+        // MonitorFromWindow 为纯查询，不写调用方内存，返回 NULL 时由下方显式处理。
         let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
         if monitor.0.is_null() {
             return Err(support_failure(
@@ -158,6 +156,8 @@ impl NativeWindow {
             cbSize: std::mem::size_of::<MONITORINFO>() as u32,
             ..Default::default()
         };
+        // SAFETY：monitor 非空（上方已校验）；info 为存活且 cbSize 已初始化为
+        // MONITORINFO 大小的输出缓冲，函数最多写入该结构体大小的内容。
         if !unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() {
             return Err(support_failure(
                 "GFX-R5 GetMonitorInfoW failed for the current monitor",
@@ -171,8 +171,7 @@ impl NativeWindow {
         ))
     }
 
-    /// Closes the native window once, preserving the destroyed HWND for
-    /// explicit native-surface failure tests.
+    /// 关闭原生窗口一次，保留已销毁的 HWND 供显式原生 surface 失败测试使用。
     pub fn close(&mut self) -> GfxR5Result<()> {
         if self.closed {
             return Ok(());
@@ -227,7 +226,7 @@ pub(crate) fn move_to_monitor(
     Ok((window.dpi()?, reached, actual_bounds))
 }
 
-/// Structured evidence for one mixed-DPI transition leg.
+/// 一次混合 DPI 迁移段的结构化证据。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DpiTransitionEvidence {
     pub observed_dpi: u32,
@@ -237,7 +236,7 @@ pub struct DpiTransitionEvidence {
     pub drawable_extent: (i32, i32),
 }
 
-/// A monitor topology sample used by the mixed-DPI exact.
+/// 混合 DPI 场景使用的监视器拓扑样本。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MonitorSample {
     pub bounds: (i32, i32, i32, i32),
@@ -245,7 +244,7 @@ pub struct MonitorSample {
     pub dpi_y: u32,
 }
 
-/// Evidence for a real monitor-to-monitor DPI round trip.
+/// 真实监视器间 DPI 往返的证据。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MixedDpiEvidence {
     pub adapter_diagnostic: String,
@@ -255,8 +254,8 @@ pub struct MixedDpiEvidence {
     pub return_transition: DpiTransitionEvidence,
 }
 
-/// Moves one native window across two real monitors and keeps one logical
-/// extent while rebuilding the Vulkan drawable at each observed DPI.
+/// 将一个原生窗口在两块真实监视器间迁移，保持同一逻辑尺寸，
+/// 并在每次观测到的 DPI 下重建 Vulkan drawable。
 pub fn run_mixed_dpi_transition(window: &mut NativeWindow) -> GfxR5Result<MixedDpiEvidence> {
     let targets = monitor_targets()?;
     let pair = targets.iter().enumerate().find_map(|(index, first)| {

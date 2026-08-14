@@ -1,19 +1,19 @@
-//! Ant Design 5 Design Token System — modular architecture.
+//! Ant Design 5 设计令牌系统——模块化架构。
 //!
-//! Decomposed into domain-specific sub-traits (`IColorTokens`, `ITypographyTokens`,
-//! `ISpacingTokens`, `IBoxShadowTokens`) and aggregated by `TokenProvider`.
-//! Concrete presets in `DesignTokens` with light & dark modes.
+//! 拆分为领域专属子 trait（`IColorTokens`、`ITypographyTokens`、
+//! `ISpacingTokens`、`IBoxShadowTokens`），并由 `TokenProvider` 聚合。
+//! 具体预设位于 `DesignTokens`，含亮色与暗色两套模式。
 //!
-//! ## Architecture
+//! ## 架构
 //!
-//! - `IColorTokens` — brand, neutral, semantic, and shadow color tokens
-//! - `ITypographyTokens` — font family, sizes, weights, line height
-//! - `ISpacingTokens` — padding, border radius, control sizes, motion, breakpoints
-//! - `IBoxShadowTokens` — structured multi-layer box shadows
-//! - `TokenProvider` — supertrait aggregating all above; add `is_dark()` directly
-//! - `DesignTokens` — concrete provider with `antd_light()` & `antd_dark()` presets
-//! - `Theme` — wraps `Arc<dyn TokenProvider>` for runtime polymorphism
-//! - `PaintContext` carries `&dyn TokenProvider` for widget rendering
+//! - `IColorTokens` —— 品牌、中性、语义与阴影颜色令牌
+//! - `ITypographyTokens` —— 字体族、字号、字重、行高
+//! - `ISpacingTokens` —— 内边距、圆角、控件尺寸、动效、断点
+//! - `IBoxShadowTokens` —— 结构化多层盒阴影
+//! - `TokenProvider` —— 聚合以上全部的超 trait；`is_dark()` 直接加在此处
+//! - `DesignTokens` —— 提供 `antd_light()` 与 `antd_dark()` 预设的具体实现
+//! - `Theme` —— 包装 `Arc<dyn TokenProvider>` 实现运行时多态
+//! - `PaintContext` —— 携带 `&dyn TokenProvider` 供 widget 渲染使用
 
 pub(crate) mod color_tokens;
 pub(crate) mod design_tokens;

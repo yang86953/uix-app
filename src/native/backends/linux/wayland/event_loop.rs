@@ -79,6 +79,10 @@ impl WaylandBackend {
         let pending_failures = self.pending_failures.clone();
         EventLoopWaker::new(move || {
             let byte = [1_u8];
+            // SAFETY：fd 是 pipe2 创建的写端（O_NONBLOCK|O_CLOEXEC），在平台对象
+            // 生命周期契约内保持有效（即使后端已关闭，write 至多返回 EBADF，不构成
+            // 内存不安全）；byte 为栈上存活的 1 字节数组，write 同步返回；单字节
+            // 小于 PIPE_BUF，跨线程并发唤醒时写入仍原子。
             let result = unsafe { libc::write(fd, byte.as_ptr().cast(), byte.len()) };
             if result < 0 {
                 let error = std::io::Error::last_os_error();
@@ -159,6 +163,9 @@ impl WaylandBackend {
             }));
         }
         let poll_len = self.poll_fds.len();
+        // SAFETY：poll_fds 由本对象独占（&mut self），指针指向存活 Vec 缓冲且
+        // nfds 等于其实际长度；列表内 fd 均为当前有效描述符（display、wake pipe、
+        // clipboard 读写端），poll 只同步写入数组内的 revents 字段。
         let ret = unsafe {
             poll(
                 self.poll_fds.as_mut_ptr(),
@@ -250,6 +257,8 @@ impl WaylandBackend {
     fn drain_wake_pipe(&self) {
         let mut buf = [0_u8; 64];
         loop {
+            // SAFETY：wake_read_fd 为 pipe2 创建的非阻塞读端，在 backend 存活期内有效；
+            // buf 为栈上存活的 64 字节数组，read 最多写入 buf.len() 字节后同步返回。
             let ret = unsafe { libc::read(self.wake_read_fd, buf.as_mut_ptr().cast(), buf.len()) };
             if ret > 0 {
                 continue;

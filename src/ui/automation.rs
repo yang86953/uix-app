@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use crate::core::{ComponentId, Point, Rect, WindowId};
-use crate::native::windowing::input::{KeyCode, KeyMod, MouseButton};
+use crate::platform::windowing::{KeyCode, KeyMod, MouseButton};
 pub use crate::ui::SelectionSnapshot as AutomationSelection;
 pub use crate::ui::accessibility::semantic_snapshot::{
     SemanticNode as AutomationNode, SemanticTarget as AutomationTarget,

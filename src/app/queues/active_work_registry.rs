@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
@@ -182,10 +181,6 @@ impl ActiveWorkRegistry {
                 ActiveWorkKind::Animation(id) if deadline.is_none() => Some(id),
                 _ => None,
             })
-    }
-
-    pub(crate) fn len(&self) -> usize {
-        self.entries.len()
     }
 
     pub(crate) fn sync_timers<I>(&mut self, timers: I, now: Instant)

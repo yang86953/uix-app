@@ -1,5 +1,5 @@
 use crate::core::Rect;
-use crate::native::windowing::input::ControlSize;
+use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
 use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::reactive::state::State;

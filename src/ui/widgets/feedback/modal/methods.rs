@@ -4,7 +4,7 @@ use std::cell::{Cell, RefCell};
 
 use crate::core::{Point, Rect, Size};
 use crate::draw::Color;
-use crate::native::windowing::input::ControlSize;
+use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
 use crate::ui::animation::{AnimationConfig, TransitionPlayer, presets};
 use crate::ui::component::paint_context::PaintContext;

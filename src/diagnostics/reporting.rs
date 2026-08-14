@@ -1,8 +1,8 @@
-//! Private reporting Module owned by the Diagnostics System.
+//! Diagnostics System 拥有的私有 reporting Module。
 //!
-//! The Module turns one typed error into a bounded report, owns retention,
-//! and emits the resulting immutable observation. Its nested `store` and
-//! `emit` modules are Components, not public or sibling Modules.
+//! 该 Module 把一个类型化错误转换为有界报告，负责留存，并发射生成的
+//! 不可变观察结果。其嵌套的 `store` 与 `emit` 模块是 Component，
+//! 不是公开或同级 Module。
 
 use std::backtrace::Backtrace;
 use std::fmt::{self, Write};
@@ -30,8 +30,7 @@ const MAX_CAUSES: usize = 16;
 const MAX_METADATA_TEXT_BYTES: usize = 256;
 const RESERVED_FIXED_BYTES: usize = 2 * 1024;
 
-/// Private Module that owns report retention and structured diagnostics
-/// emission for one `Diagnostics` System instance.
+/// 为一个 `Diagnostics` System 实例持有报告留存与结构化诊断发射的私有 Module。
 pub(super) struct ReportingModule {
     store: Mutex<ReportStore>,
     emergency_count: AtomicU64,
@@ -57,6 +56,7 @@ impl ReportingModule {
         origin: ReportOrigin,
         report_site: &'static Location<'static>,
     ) -> ReportId {
+        // 构建有界草稿 → 入库 → 取出完整报告发射（发射失败不阻塞上报）。
         let draft = ReportDraftBuilder::new(backtrace_policy).build(&error, origin, report_site);
         let id = self.lock_store().insert(runtime_id, draft);
 
@@ -76,8 +76,8 @@ impl ReportingModule {
     }
 }
 
-/// Component that converts a typed error into a bounded, sanitized report
-/// draft. It owns no runtime state and cannot access the reporting store.
+/// 把类型化错误转换为有界、净化过的报告草稿的 Component。
+/// 它不持有运行时状态，也无法访问 reporting store。
 struct ReportDraftBuilder {
     backtrace_policy: BacktracePolicy,
 }
@@ -93,8 +93,10 @@ impl ReportDraftBuilder {
         origin: ReportOrigin,
         report_site: &'static Location<'static>,
     ) -> ReportDraft {
+        // 预留固定开销后得到正文预算，所有文本字段共用同一预算。
         let mut budget = TextBudget::new(MAX_REPORT_BYTES.saturating_sub(RESERVED_FIXED_BYTES));
 
+        // 净化来源元数据：目标、操作与资源（资源含 kind/id 两项）。
         let origin_target = budget.sanitize(origin.target, MAX_METADATA_TEXT_BYTES).text;
         let operation = origin
             .operation
@@ -106,6 +108,7 @@ impl ReportDraftBuilder {
             )
         });
 
+        // 错误站点与报告调用站点都只取文件名与行号。
         let error_site = ReportSite {
             file: budget
                 .sanitize(file_basename(error.file()), MAX_METADATA_TEXT_BYTES)
@@ -125,6 +128,7 @@ impl ReportDraftBuilder {
         let summary = summary_result.text;
         let mut causes_truncated = summary_result.truncated;
 
+        // 沿来源链收集成因，条数与字节预算都设上限。
         let mut causes = Vec::new();
         let mut source = error.source_error();
         while let Some(cause) = source {
@@ -157,6 +161,7 @@ impl ReportDraftBuilder {
             causes_truncated = true;
         }
 
+        // 按策略捕获回溯，并写入剩余预算内（超出的部分被截断）。
         let backtrace = if should_capture_backtrace(self.backtrace_policy, error.severity()) {
             let backtrace = Backtrace::capture();
             let mut output = BoundedFormatter::new(budget.remaining());
@@ -186,6 +191,7 @@ impl ReportDraftBuilder {
 }
 
 fn should_capture_backtrace(policy: BacktracePolicy, severity: ErrorSeverity) -> bool {
+    // 按策略分级决定是否在最终上报边界捕获回溯。
     match policy {
         BacktracePolicy::Disabled => false,
         BacktracePolicy::FatalOnly => severity == ErrorSeverity::Fatal,
@@ -228,6 +234,7 @@ impl TextBudget {
     }
 
     fn sanitize(&mut self, input: &str, segment_limit: usize) -> SanitizedText {
+        // 段上限与剩余预算取较小者；控制字符替换为空格。
         let limit = segment_limit.min(self.remaining);
         let mut text = String::with_capacity(limit.min(input.len()));
         let mut truncated = false;
@@ -238,6 +245,7 @@ impl TextBudget {
             } else {
                 character
             };
+            // 超出上限即截断，且预算一并扣减已写入部分。
             let required = character.len_utf8();
             if text.len().saturating_add(required) > limit {
                 truncated = true;
@@ -269,6 +277,7 @@ impl BoundedFormatter {
 
 impl fmt::Write for BoundedFormatter {
     fn write_str(&mut self, value: &str) -> fmt::Result {
+        // 控制字符替换为空格（保留换行），超过上限即停止写入。
         for character in value.chars() {
             let character = if character.is_control() && character != '\n' {
                 ' '

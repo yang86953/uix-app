@@ -1,9 +1,8 @@
-//! Bounded callback-to-owner failure delivery for one Diagnostics System.
+//! 一个 Diagnostics System 的有界回调→owner 失败投递。
 //!
-//! Callback code may only enqueue a typed failure. The source owner drains it
-//! later at an owner-thread boundary, where recovery or final reporting is
-//! allowed. The queue is shared by all sources in one runtime, while each
-//! source receives only its own failures.
+//! 回调代码只能入队一个类型化失败。源 owner 稍后在 owner 线程边界排空它，
+//! 该处才允许执行恢复或最终上报。队列被同一运行时内的所有源共享，而每个
+//! 源只收到属于自己的失败。
 
 use std::collections::VecDeque;
 use std::sync::{
@@ -13,8 +12,8 @@ use std::sync::{
 
 use crate::core::{Errc, Error};
 
-/// Fixed runtime budget for callback failures. Overflow is observable as one
-/// typed `InsufficientResources` failure at the source's owner boundary.
+/// 回调失败的固定运行时预算。溢出会在源的 owner 边界以一条类型化的
+/// `InsufficientResources` 失败形式被观察到。
 pub(crate) const PENDING_FAILURE_CAPACITY: usize = 64;
 
 #[derive(Clone)]
@@ -32,12 +31,11 @@ struct PendingFailure {
     error: Error,
 }
 
-/// One owner identity within a shared runtime queue.
+/// 共享运行时队列中的一个 owner 身份。
 ///
-/// A source is intentionally cheap to clone: one clone stays with the
-/// owner-thread resource and callback clones can enqueue without borrowing the
-/// resource. Dropping the final clone closes the source and discards any stale
-/// entries, preventing teardown callbacks from reaching a replacement owner.
+/// 源故意设计为廉价克隆：一个克隆留在 owner 线程资源上，回调克隆可以入队
+/// 而无需借用该资源。丢弃最后一个克隆会关闭源并丢弃任何过期条目，防止
+/// teardown 回调到达一个替代 owner。
 #[derive(Clone)]
 pub(crate) struct PendingFailureSource {
     inner: Arc<PendingFailureSourceInner>,
@@ -87,8 +85,7 @@ impl Default for PendingFailureQueue {
 }
 
 impl PendingFailureSource {
-    /// Enqueues without invoking tracing, recovery handlers, subscribers, or
-    /// any other user code.
+    /// 入队时不调用 tracing、恢复处理器、订阅者或任何其他用户代码。
     pub(crate) fn enqueue(&self, error: Error) -> PendingFailureEnqueue {
         if self.inner.closed.load(Ordering::Acquire) {
             return PendingFailureEnqueue::Closed;
@@ -114,9 +111,8 @@ impl PendingFailureSource {
         PendingFailureEnqueue::Queued
     }
 
-    /// Takes one failure in FIFO order. Overflow is surfaced after all queued
-    /// real failures so the first observed cause is never replaced by a
-    /// synthetic budget error.
+    /// 按 FIFO 顺序取出一条失败。溢出信号在所有已排队的真实失败之后
+    /// 才浮出，保证最先观察到的成因不会被合成预算错误替代。
     pub(crate) fn take(&self) -> Option<Error> {
         if self.inner.closed.load(Ordering::Acquire) {
             return None;
@@ -287,8 +283,8 @@ mod tests {
         assert_eq!(queued, PENDING_FAILURE_CAPACITY);
         assert_eq!(overflowed, PRODUCER_COUNT * ATTEMPTS_PER_PRODUCER - queued);
 
-        // All producers only enqueue. The owner thread alone drains the source
-        // and must observe real failures first, followed by one budget signal.
+        // 所有生产者只入队。只有 owner 线程排空源，并且必须先看到真实失败，
+        // 随后才是一条预算信号。
         let mut real_failures = 0;
         let mut overflow_signals = 0;
         while let Some(error) = source.take() {

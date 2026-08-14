@@ -1,8 +1,7 @@
-//! Process-wide routing and window discovery for the opt-in Agent Bridge.
+//! 可选的 Agent Bridge 的进程级路由与窗口发现。
 //!
-//! This layer is transport-neutral. The native transport owns connection
-//! authentication and JSON framing, then delegates authenticated requests to
-//! [`AgentProcessBridge`]. It never receives a `WidgetTree` reference.
+//! 本层与具体传输无关。原生传输层负责连接认证与 JSON 帧划分，随后把已认证
+//! 的请求委派给 [`AgentProcessBridge`]。本层永远不会拿到 `WidgetTree` 引用。
 
 #![cfg_attr(not(any(test, feature = "agent-control")), allow(dead_code))]
 
@@ -93,8 +92,8 @@ struct AgentBridgeDirectoryShared {
     state: Mutex<AgentBridgeDirectoryState>,
 }
 
-/// Cheap process metadata shared with Bridge workers. UI-owned semantic state
-/// publishes scalar changes here; the directory never traverses a widget tree.
+/// 与 Bridge worker 共享的廉价进程元数据。UI 侧语义状态只把标量变更
+/// 发布到这里；目录永不遍历 widget 树。
 #[derive(Debug, Clone, Default)]
 pub(crate) struct AgentBridgeDirectory {
     shared: Arc<AgentBridgeDirectoryShared>,
@@ -191,9 +190,8 @@ impl AgentBridgeDirectory {
                 .is_some_and(|window| !window.closed)
     }
 
-    /// Blocks only the calling Bridge worker. UI state changes publish into
-    /// this directory and notify the condition variable without scheduling a
-    /// frame or waking the native event loop.
+    /// 只阻塞调用它的 Bridge worker。UI 状态变更发布到本目录并通过条件变量
+    /// 通知，不调度帧也不唤醒原生事件循环。
     pub(crate) fn wait(
         &self,
         window_id: WindowId,
@@ -362,8 +360,8 @@ fn wait_outcome(
     }
 }
 
-/// UI-side publisher tied to exactly one `(window_id, generation)` pair.
-/// Re-registering the same id makes old publishers harmlessly stale.
+/// 与恰好一个 `(window_id, generation)` 对绑定的 UI 侧发布器。
+/// 同一 id 重新注册后，旧发布器会无害地变为过期状态。
 #[derive(Debug, Clone)]
 pub(crate) struct AgentWindowRegistration {
     directory: AgentBridgeDirectory,
@@ -391,9 +389,9 @@ impl AgentSemanticsPort for AgentWindowRegistration {
     }
 }
 
-/// Process adapter consumed by authenticated transport workers.
-/// Snapshot/perform return tickets completed by the target UI turn; wait
-/// blocks only its calling transport worker on directory notifications.
+/// 供已认证的 transport worker 消费的进程适配器。
+/// Snapshot/perform 返回的 ticket 由目标 UI turn 完成；wait 只阻塞调用它的
+/// transport worker 等待目录通知。
 #[derive(Clone)]
 // 进程桥由认证 transport 或外部 GUI 测试创建，默认库测试不构造它。
 #[cfg_attr(test, allow(dead_code))]

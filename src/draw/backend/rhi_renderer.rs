@@ -2,7 +2,6 @@
 //! 本文件只负责把已经完成设备空间几何降级的 solid mesh 编码为
 //! `FramePlan`；它不理解 widget、路径或任何原生 API 对象。
 
-#![allow(dead_code)]
 // 引入共享字节载荷和三角 mesh 的所有权类型。
 use std::sync::Arc;
 

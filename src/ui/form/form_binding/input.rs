@@ -1,4 +1,4 @@
-use crate::native::windowing::input::ControlSize;
+use crate::platform::windowing::ControlSize;
 use crate::ui::form::form_validation::{FormModel, IntoFormValue};
 use crate::ui::view::{EventExt, View, ViewNode};
 use crate::ui::widgets::combinators::input;

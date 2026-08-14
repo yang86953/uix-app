@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 
 use crate::app::queues::active_work_registry::ActiveWorkRegistry;
 use crate::app::queues::agent_command_queue::AgentCommandQueue;
@@ -6,7 +5,7 @@ use crate::app::queues::app_timer::AppTimerQueue;
 use crate::app::queues::main_thread_queue::MainThreadQueue;
 use crate::app::queues::window_agent_state::{AgentCommandExecutor, WindowAgentState};
 use crate::app::window_semantics::{
-    AgentSemanticsPort, WindowSemanticSnapshot, WindowSemanticState,
+    AgentSemanticsPort, WindowSemanticState,
 };
 use crate::core::{Error, Rect, WindowId};
 use crate::draw::scene::NodeId;
@@ -83,10 +82,6 @@ pub(crate) struct ViewFactorySlot {
 }
 
 impl ViewFactorySlot {
-    pub(crate) fn is_installed(&self) -> bool {
-        self.factory.is_some()
-    }
-
     pub(crate) fn build(
         &self,
         store: crate::ui::component_state::ComponentStateStore,
@@ -109,7 +104,6 @@ pub(crate) struct WindowSession {
     main_thread_queue: MainThreadQueue,
     pending_root: Option<ViewNode>,
     reconcile_pending: bool,
-    window_visible: bool,
     view_factory: ViewFactorySlot,
     text_input: WindowTextInputState,
     semantic_state: WindowSemanticState,
@@ -132,68 +126,6 @@ pub(crate) struct WindowSessionParts<'a> {
 }
 
 impl WindowSession {
-    pub(crate) fn from_root(
-        root_node: ViewNode,
-        engine: Box<dyn RenderTarget>,
-        width: i32,
-        height: i32,
-    ) -> Self {
-        Self::from_root_for_window(WindowId::ROOT, root_node, engine, width, height)
-    }
-
-    pub(crate) fn from_root_for_window(
-        window_id: WindowId,
-        root_node: ViewNode,
-        engine: Box<dyn RenderTarget>,
-        width: i32,
-        height: i32,
-    ) -> Self {
-        let mut tree = ViewAdapter::build_nodes(root_node);
-        if let Some(root) = tree.root_mut() {
-            root.set_frame(Rect::new(0.0, 0.0, width as f32, height as f32));
-        }
-        tree.layout();
-        tree.mark_full_frame_dirty();
-        #[cfg(feature = "test-harness")]
-        tree.configure_automation_from_env(window_id);
-
-        #[allow(unused_mut)]
-        let mut semantic_state = WindowSemanticState::new(window_id);
-        #[cfg(feature = "test-harness")]
-        if tree.automation_snapshot_configured() {
-            semantic_state.enable(&tree);
-        }
-
-        Self {
-            window_id,
-            tree,
-            engine,
-            engine_shutdown: false,
-            loop_state: WindowLoopState::Active,
-            active_work: ActiveWorkRegistry::new(),
-            app_timers: AppTimerQueue::new(),
-            main_thread_queue: MainThreadQueue::new(),
-            pending_root: None,
-            reconcile_pending: false,
-            window_visible: true,
-            view_factory: ViewFactorySlot::default(),
-            text_input: WindowTextInputState::default(),
-            semantic_state,
-            agent_commands: WindowAgentState::new(),
-        }
-    }
-
-    pub(crate) fn from_root_factory<F>(
-        build_root: F,
-        engine: Box<dyn RenderTarget>,
-        width: i32,
-        height: i32,
-    ) -> Self
-    where
-        F: Fn() -> ViewNode + Send + Sync + 'static,
-    {
-        Self::from_root_factory_for_window(WindowId::ROOT, build_root, engine, width, height)
-    }
 
     pub(crate) fn from_root_factory_for_window<F>(
         window_id: WindowId,
@@ -232,7 +164,6 @@ impl WindowSession {
             main_thread_queue: MainThreadQueue::new(),
             pending_root: None,
             reconcile_pending: false,
-            window_visible: true,
             view_factory: ViewFactorySlot {
                 factory: Some(factory),
             },
@@ -240,10 +171,6 @@ impl WindowSession {
             semantic_state,
             agent_commands: WindowAgentState::new(),
         }
-    }
-
-    pub(crate) fn tree_and_engine_mut(&mut self) -> (&mut WidgetTree, &mut dyn RenderTarget) {
-        (&mut self.tree, self.engine.as_mut())
     }
 
     pub(crate) fn try_shutdown(&mut self) -> Result<(), Error> {
@@ -339,53 +266,6 @@ impl WindowSession {
         self.tree.set_app_state(app_state);
     }
 
-    pub(crate) fn active_work_mut(&mut self) -> &mut ActiveWorkRegistry {
-        &mut self.active_work
-    }
-
-    pub(crate) fn loop_state(&self) -> WindowLoopState {
-        self.loop_state
-    }
-
-    pub(crate) fn active_work(&self) -> &ActiveWorkRegistry {
-        &self.active_work
-    }
-
-    pub(crate) fn main_thread_queue(&self) -> MainThreadQueue {
-        self.main_thread_queue.clone()
-    }
-
-    pub(crate) fn request_reconcile(&mut self) {
-        self.reconcile_pending = true;
-    }
-
-    pub(crate) fn reconcile_pending(&self) -> bool {
-        self.reconcile_pending
-    }
-
-    pub(crate) fn take_pending_root(&mut self) -> Option<ViewNode> {
-        self.pending_root.take()
-    }
-
-    pub(crate) fn window_visible(&self) -> bool {
-        self.window_visible
-    }
-
-    pub(crate) fn view_factory(&self) -> &ViewFactorySlot {
-        &self.view_factory
-    }
-
-    pub(crate) fn enable_semantic_tracking(&mut self) -> bool {
-        self.semantic_state.enable(&self.tree)
-    }
-
-    pub(crate) fn semantic_snapshot(&self) -> Option<&WindowSemanticSnapshot> {
-        self.semantic_state.snapshot()
-    }
-
-    pub(crate) fn agent_command_queue(&self) -> AgentCommandQueue {
-        self.agent_commands.queue()
-    }
 }
 
 impl Drop for WindowSession {

@@ -8,7 +8,7 @@
 //! 空态渲染回调（`EmptyRenderer`）因跨 component/widgets 消费归 System
 //! 私有边界（`render_handler`）。
 
-use crate::native::windowing::input::ControlSize;
+use crate::platform::windowing::ControlSize;
 use crate::ui::component::config::{
     use_config, with_config, ComponentConfig, ComponentOverrides, ComponentTokenOverrides,
 };

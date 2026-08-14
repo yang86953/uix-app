@@ -21,10 +21,9 @@ use super::geometry::{
     union_frame_rect,
 };
 
-/// State-preserving CPU scratch rasterizer. Consecutive CPU draws accumulate
-/// in scratch and flush at painter-order barriers (native / Picture / finish),
-/// so glyphs and rounded fills share one packed CpuSegment instead of
-/// re-scanning the window after every op.
+/// 状态保持的 CPU scratch 光栅化器。连续的 CPU 绘制累积在 scratch 中，
+/// 在 painter-order 屏障（native / Picture / finish）处 flush，使字形与
+/// 圆角填充共享一个打包的 CpuSegment，而不是每笔操作后重新扫描窗口。
 pub(super) struct FrameRecordingCanvas {
     pub(super) scratch: SharedRasterizer,
     pub(super) encoder: Option<FrameEncoder>,
@@ -33,8 +32,8 @@ pub(super) struct FrameRecordingCanvas {
     pub(super) scratch_dirty: bool,
     /// 当前 scratch 批次是否必须以 Additive sampled texture 合成。
     pub(super) scratch_additive: bool,
-    /// Surface-space AABB covering pixels written since the last flush.
-    /// Pack scans only this region (plus AA pad) instead of the full window.
+    /// 上次 flush 以来被写入像素的 surface 空间 AABB。
+    /// pack 只扫描该区域（外加抗锯齿余量）而不是整个窗口。
     pub(super) scratch_pack_bounds: Option<FrameRect>,
     pub(super) deferred_error: Option<Error>,
     pub(super) width: i32,
@@ -42,6 +41,7 @@ pub(super) struct FrameRecordingCanvas {
 }
 
 impl FrameRecordingCanvas {
+    /// 创建最小（1×1）录制画布；目标尺寸在 resize / 录制时按需分配。
     pub(super) fn new(width: i32, height: i32) -> Self {
         let width = width.max(1);
         let height = height.max(1);
@@ -61,6 +61,7 @@ impl FrameRecordingCanvas {
         }
     }
 
+    /// 校验并规范化目标尺寸（至少 1×1）。
     pub(super) fn prepare_resize(width: i32, height: i32) -> Result<(i32, i32), Error> {
         let width = width.max(1);
         let height = height.max(1);
@@ -68,6 +69,7 @@ impl FrameRecordingCanvas {
         Ok((width, height))
     }
 
+    /// 提交新尺寸并重置全部录制状态。
     pub(super) fn commit_resize(&mut self, width: i32, height: i32) {
         self.width = width;
         self.height = height;
@@ -83,11 +85,11 @@ impl FrameRecordingCanvas {
         self.deferred_error = None;
     }
 
+    /// 开始一帧录制：重置 scratch 状态并创建新的 `FrameEncoder`。
     pub(super) fn begin_recording(&mut self, clear_target: bool) -> Result<(), Error> {
-        // A successful flush clears every touched scratch pixel. Reuse that
-        // allocation instead of reallocating and zeroing the full window each
-        // frame. An abandoned recording may have unflushed pixels, so only
-        // that recovery boundary pays for a conservative full clear.
+        // 成功 flush 会清空所有被触及的 scratch 像素。复用该分配，而不是
+        // 每帧重新分配并清零整个窗口。被放弃的录制可能残留未 flush 像素，
+        // 因此只有该恢复边界需要保守地全量清除。
         if self.encoder.is_some() || self.scratch_dirty || self.deferred_error.is_some() {
             self.scratch.surface_mut().clear_all();
         }
@@ -107,6 +109,7 @@ impl FrameRecordingCanvas {
         Ok(())
     }
 
+    /// 结束录制：flush 剩余 scratch 并交出 `FrameEncoder`。
     pub(super) fn finish_recording(&mut self) -> Result<FrameEncoder, Error> {
         self.flush_scratch()?;
         if let Some(error) = self.deferred_error.take() {
@@ -120,6 +123,7 @@ impl FrameRecordingCanvas {
         })
     }
 
+    /// 仅 flush 当前 scratch 并检查 deferred 错误（不结束录制）。
     pub(super) fn flush_recording(&mut self) -> Result<(), Error> {
         self.flush_scratch()?;
         if let Some(error) = self.deferred_error.take() {
@@ -128,6 +132,7 @@ impl FrameRecordingCanvas {
         Ok(())
     }
 
+    /// 放弃当前录制：清理 scratch 状态并释放大块分配。
     pub(super) fn abandon_recording(&mut self) {
         if (
             self.scratch.surface().width(),
@@ -148,6 +153,7 @@ impl FrameRecordingCanvas {
         self.release_scratch_allocation();
     }
 
+    /// 把 scratch 表面缩回 1×1，释放大块分配（保留光栅化状态）。
     pub(super) fn release_scratch_allocation(&mut self) {
         if (
             self.scratch.surface().width(),
@@ -160,6 +166,7 @@ impl FrameRecordingCanvas {
         self.scratch.reset_state_for_extent(self.width, self.height);
     }
 
+    /// 保留内存估算：scratch 与未提交编码器之和。
     pub(super) fn retained_memory_usage(&self) -> usize {
         self.scratch.memory_usage().saturating_add(
             self.encoder
@@ -169,6 +176,7 @@ impl FrameRecordingCanvas {
         )
     }
 
+    /// 追加一组已验证命令（先 flush 前置 scratch）。
     pub(super) fn record_validated_commands(
         &mut self,
         commands: Vec<crate::draw::painting::FrameCommand>,
@@ -180,6 +188,7 @@ impl FrameRecordingCanvas {
         Ok(())
     }
 
+    /// 录制 Picture blit：可直连时走 PictureBlit，否则经 scratch 软回退。
     pub(super) fn record_picture_blit(
         &mut self,
         image: FrameImage,
@@ -211,6 +220,7 @@ impl FrameRecordingCanvas {
         self.flush_scratch()
     }
 
+    /// 尝试把 raw image 直接录制为 PictureBlit；不可直连返回 `Ok(false)`。
     pub(super) fn record_direct_image_blit(
         &mut self,
         pixels: &[u32],
@@ -293,6 +303,7 @@ impl FrameRecordingCanvas {
         Ok(true)
     }
 
+    /// 记录本地绘制区域扩展后的打包边界（并入当前 scratch 批次）。
     pub(super) fn note_scratch_bounds(&mut self, local: Rect, pad: f32) {
         // 先在本地空间扩展线宽、模糊或抗锯齿边界，使缩放和剪切不会截断像素。
         let local_pad = pad.max(0.0);
@@ -326,6 +337,7 @@ impl FrameRecordingCanvas {
         });
     }
 
+    /// 把纯源贡献的软件操作录制为普通 SrcOver CPU segment 批次。
     pub(super) fn draw_cpu(
         &mut self,
         local_bounds: Rect,
@@ -335,8 +347,8 @@ impl FrameRecordingCanvas {
         if self.deferred_error.is_some() {
             return;
         }
-        // Transparent scratch + source-over upload cannot preserve Additive
-        // against prior commands; only explicitly promoted destination-dependent Native ops are equivalent.
+        // 透明 scratch + source-over 上传无法保留相对既有命令的 Additive
+        // 语义；只有显式提升的目标相关 Native 命令才等价。
         if self.blend_mode == BlendMode::Additive {
             self.unsupported_state("destination-dependent Additive blend via CPU segment");
             return;
@@ -372,7 +384,7 @@ impl FrameRecordingCanvas {
     }
 
     /// 根据当前 blend 为只产生源贡献的软件操作选择普通 CPU segment 或
-    /// Additive sampled segment。
+    /// Additive sampled segment（后者以采样纹理对累计目标饱和合成）。
     pub(super) fn draw_cpu_source(
         &mut self,
         local_bounds: Rect,
@@ -421,11 +433,12 @@ impl FrameRecordingCanvas {
         self.scratch_dirty = true;
         // 保存本批最终合成需要使用的 blend 事实。
         self.scratch_additive = additive;
-        // Defer flush until a painter-order barrier (native op / Picture blit /
-        // finish). Per-op flush re-scanned and re-uploaded after every glyph
-        // and rounded fill, dominating record time on dense pages.
+        // 延迟到 painter-order 屏障（native op / Picture blit / finish）再
+        // flush。逐操作 flush 会在每个字形和圆角填充后重新扫描上传，
+        // 在密集页面上占据主要录制时间。
     }
 
+    /// 把当前 scratch 批次编码为 CPU segment / Additive sampled 命令并清空。
     pub(super) fn flush_scratch(&mut self) -> Result<(), Error> {
         if !self.scratch_dirty {
             return Ok(());
@@ -479,6 +492,7 @@ impl FrameRecordingCanvas {
         Ok(())
     }
 
+    /// 按需分配与目标同尺寸的 scratch 表面。
     pub(super) fn ensure_scratch(&mut self) -> Result<(), Error> {
         if (
             self.scratch.surface().width(),
@@ -492,6 +506,7 @@ impl FrameRecordingCanvas {
         Ok(())
     }
 
+    /// 取当前帧编码器；未在录制中则返回错误。
     pub(super) fn encoder_mut(&mut self) -> Result<&mut FrameEncoder, Error> {
         self.encoder.as_mut().ok_or_else(|| {
             Error::new(
@@ -501,19 +516,21 @@ impl FrameRecordingCanvas {
         })
     }
 
+    /// 记住首个 deferred 错误（后续错误被忽略，保留最早失败事实）。
     pub(super) fn remember_error(&mut self, error: Error) {
         if self.deferred_error.is_none() {
             self.deferred_error = Some(error);
         }
     }
 
+    /// identity transform 下返回可直达的整数 SrcOver 矩形与矩形 clip。
     pub(super) fn native_src_over_rects(&self, rect: Rect) -> Option<(FrameRect, FrameRect)> {
         if !self.scratch.current_transform().is_identity() {
             return None;
         }
 
-        // Match SoftwareRasterizer's identity-transform fill path exactly: offset
-        // changes x/y only, while width/height retain their original f32 values.
+        // 与 SoftwareRasterizer 的 identity-transform 填充路径完全一致：
+        // offset 只改变 x/y，width/height 保留原始 f32 值。
         let (offset_x, offset_y) = self.scratch.offset();
         let mapped = Rect::new(rect.x + offset_x, rect.y + offset_y, rect.w, rect.h);
         let right = f64::from(mapped.x) + f64::from(mapped.w);
@@ -541,6 +558,7 @@ impl FrameRecordingCanvas {
         ))
     }
 
+    /// identity transform 下返回可直达的字形整数位置与 clip。
     pub(super) fn native_src_over_glyph(&self, x: i32, y: i32) -> Option<(FrameRect, i32, i32)> {
         if !self.scratch.current_transform().is_identity() {
             return None;
@@ -558,6 +576,7 @@ impl FrameRecordingCanvas {
         Some((self.native_src_over_fill_clip()?, x, y))
     }
 
+    /// 返回当前可直达的 SrcOver 矩形 clip（存在路径 mask 或非 SrcOver blend 时 None）。
     pub(super) fn native_src_over_fill_clip(&self) -> Option<FrameRect> {
         if self.scratch.has_clip_mask()
             || !matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver)
@@ -571,6 +590,7 @@ impl FrameRecordingCanvas {
         )
     }
 
+    /// 录制字形：可直达时走 Native BlitGlyphs，否则进入 sampled scratch。
     pub(super) fn record_glyph_shared(
         &mut self,
         x: i32,
@@ -887,10 +907,12 @@ impl FrameRecordingCanvas {
         Some((src, sampled))
     }
 
+    /// 返回完整 surface 矩形（f32）。
     pub(super) fn full_rect(&self) -> Rect {
         Rect::new(0.0, 0.0, self.width as f32, self.height as f32)
     }
 
+    /// 记录「无法保真下放」的 deferred typed failure。
     pub(super) fn unsupported_state(&mut self, detail: &'static str) {
         self.remember_error(Error::new(
             Errc::NotImplemented,

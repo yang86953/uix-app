@@ -1,4 +1,4 @@
-//! Finite animation composition over existing `Animated<T>` sources.
+//! 基于现有 `Animated<T>` 源的有限动画组合。
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -71,7 +71,7 @@ where
     }
 }
 
-/// A type-erased finite `Animated<T>` source accepted by [`AnimationGroup`].
+/// 被 [`AnimationGroup`] 接受的类型擦除有限 `Animated<T>` 源。
 #[derive(Clone)]
 pub struct AnimationGroupItem {
     control: Arc<dyn AnimationGroupControl>,
@@ -112,7 +112,7 @@ impl fmt::Debug for AnimationGroupItem {
     }
 }
 
-/// Failure to construct a finite animation group.
+/// 构造有限动画组失败。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AnimationGroupError {
     Empty,
@@ -161,11 +161,10 @@ enum GroupSchedule {
     Stagger(Duration),
 }
 
-/// Parallel, sequential, or staggered control over existing finite animation sources.
+/// 对现有有限动画源的并行、串行或交错控制。
 ///
-/// The group does not register frame work of its own. Reading group progress
-/// captures each child source, and scheduling uses each child's existing open
-/// or deadline registration.
+/// 组自身不注册帧工作。读取组进度会捕获每个子源，调度则复用每个子源
+/// 已有的 open 或 deadline 注册。
 #[derive(Clone)]
 pub struct AnimationGroup {
     items: Vec<ScheduledItem>,
@@ -186,7 +185,7 @@ impl AnimationGroup {
         Self::build(items, GroupSchedule::Sequential)
     }
 
-    /// Starts each item after one additional normalized interval.
+    /// 每个子项在额外一个归一化间隔之后启动。
     pub fn stagger(
         items: impl IntoIterator<Item = AnimationGroupItem>,
         interval: f64,
@@ -194,7 +193,7 @@ impl AnimationGroup {
         Self::build(items, GroupSchedule::Stagger(normalized_offset(interval)))
     }
 
-    /// A finite no-op animation item for sequential gaps or trailing holds.
+    /// 用于串行间隙或末尾停留的有限空操作动画项。
     pub fn delay(duration: f64) -> AnimationGroupItem {
         let duration = if duration.is_finite() {
             duration.max(0.0)
@@ -211,10 +210,12 @@ impl AnimationGroup {
         schedule: GroupSchedule,
     ) -> Result<Self, AnimationGroupError> {
         let items = items.into_iter().collect::<Vec<_>>();
+        // 空组直接拒绝。
         if items.is_empty() {
             return Err(AnimationGroupError::Empty);
         }
 
+        // 同一动画源只能出现一次，重复则报告首尾位置。
         let mut source_indices = HashMap::with_capacity(items.len());
         for (index, item) in items.iter().enumerate() {
             if let Some(first) = source_indices.insert(item.control.source_id(), index) {
@@ -225,6 +226,7 @@ impl AnimationGroup {
             }
         }
 
+        // 校验每个子项的时序类型：有限时长可用，其余状态报错。
         let durations = items
             .iter()
             .enumerate()
@@ -237,6 +239,7 @@ impl AnimationGroup {
             .collect::<Result<Vec<_>, _>>()?;
 
         let now = Instant::now();
+        // 串行模式下用游标累积偏移；总时长取所有子项结束点的最大值。
         let mut cursor = Duration::ZERO;
         let mut total = Duration::ZERO;
         let scheduled = items
@@ -251,6 +254,7 @@ impl AnimationGroup {
                         interval.saturating_mul(u32::try_from(index).unwrap_or(u32::MAX))
                     }
                 };
+                // 立即按偏移调度子源，使其在各自截止时刻启动。
                 item.control.schedule_at(offset, now);
                 let end = offset.saturating_add(duration);
                 total = total.max(end);
@@ -272,22 +276,25 @@ impl AnimationGroup {
         })
     }
 
-    /// Total scheduled duration in seconds.
+    /// 总调度时长（秒）。
     pub fn duration(&self) -> f64 {
         self.duration.as_secs_f64()
     }
 
-    /// Group timeline progress. Reading it captures every child source.
+    /// 组时间线进度。读取时会捕获每个子源。
     pub fn progress(&self) -> f64 {
+        // 收集所有子源进度后折算为组时间线上的已过时长。
         let progress = self
             .items
             .iter()
             .map(|scheduled| scheduled.item.control.progress())
             .collect::<Vec<_>>();
+        // 零时长组直接视为完成。
         if self.duration.is_zero() {
             return 1.0;
         }
 
+        // 每个子项按其完成/进度推算时间线位置，取最大值作为组已过时长。
         let elapsed =
             self.items
                 .iter()
@@ -308,7 +315,7 @@ impl AnimationGroup {
         (elapsed / self.duration.as_secs_f64()).clamp(0.0, 1.0)
     }
 
-    /// Returns true after every scheduled child, including delay items, rests.
+    /// 每个已调度子项（含延迟项、停留项）都结束后返回 true。
     pub fn is_finished(&self) -> bool {
         self.items
             .iter()
@@ -317,6 +324,7 @@ impl AnimationGroup {
 
     pub fn pause(&self) {
         let now = Instant::now();
+        // 统一暂停全部子源，保持组内相对时序。
         for scheduled in &self.items {
             scheduled.item.control.pause_at(now);
         }
@@ -324,6 +332,7 @@ impl AnimationGroup {
 
     pub fn resume(&self) {
         let now = Instant::now();
+        // 统一恢复全部子源，剩余延迟按暂停余额重建。
         for scheduled in &self.items {
             scheduled.item.control.resume_at(now);
         }
@@ -331,12 +340,14 @@ impl AnimationGroup {
 
     pub fn restart(&self) {
         let now = Instant::now();
+        // 统一重启全部子源，重新执行各自的偏移延迟。
         for scheduled in &self.items {
             scheduled.item.control.restart_at(now);
         }
     }
 
     pub fn stop(&self) {
+        // 统一停止全部子源。
         for scheduled in &self.items {
             scheduled.item.control.stop();
         }

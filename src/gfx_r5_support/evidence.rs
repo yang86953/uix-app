@@ -369,7 +369,9 @@ fn configured_soak_seconds() -> GfxR5Result<u64> {
 }
 
 fn gui_handle_count() -> GfxR5Result<u32> {
+    // SAFETY：GetCurrentProcess 返回当前进程的伪句柄，无参数、不写调用方内存。
     let process = unsafe { GetCurrentProcess() };
+    // SAFETY：伪句柄对 GetGuiResources 有效；两个调用均为只读统计查询，不写内存。
     let gdi = unsafe { GetGuiResources(process, GR_GDIOBJECTS) };
     let user = unsafe { GetGuiResources(process, GR_USEROBJECTS) };
     let count = gdi.saturating_add(user);
