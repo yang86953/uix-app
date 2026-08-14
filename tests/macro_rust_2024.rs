@@ -237,6 +237,31 @@ fn public_uix_macro_compiles_ordered_computed_values() {
     assert_eq!(array_items.len(), 2);
 }
 
+// 验证真实消费 crate 可编译默认与具名 Slot 的调用方内容。
+#[test]
+fn public_uix_macro_compiles_component_slots() {
+    // 构造只能由调用方插槽表达式读取的 Rust 局部文本。
+    let slot_text = String::from("调用方内容");
+    // 让过程宏生成带默认主体与具名 footer 的容器组件。
+    let _view: ViewNode = uix::uix!(
+        r#"
+        <Component name="SlotPanel" props="title: String">
+          <Container>
+            <Text>{title}</Text>
+            <Slot />
+            <Container><Slot name="footer" /></Container>
+          </Container>
+        </Component>
+        <SlotPanel title="插槽">
+          <Text>{slot_text}</Text>
+          <Button slot="footer">完成</Button>
+        </SlotPanel>
+        "#
+    );
+    // 插槽表达式展开只能借用调用方文本，不能移动原值。
+    assert_eq!(slot_text, "调用方内容");
+}
+
 // 验证真实消费 crate 可编译完整 FloatButton 标签契约。
 #[test]
 fn public_uix_macro_compiles_float_button() {
