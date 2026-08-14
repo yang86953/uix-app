@@ -27,7 +27,9 @@ const FADE_DURATION_SECS: f32 = 0.3;
 /// 轮播切换效果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CarouselEffect {
+    /// 使用滑动式页面切换。
     Slide,
+    /// 使用前后页面淡入淡出切换。
     Fade,
 }
 
@@ -576,6 +578,7 @@ impl Carousel {
         }
     }
 
+    /// 创建显示指示点和默认箭头的空轮播组件。
     pub fn new() -> Self {
         Self {
             children: WidgetChildren::new(),
@@ -596,11 +599,13 @@ impl Carousel {
         }
     }
 
+    /// 设置是否显示底部页码指示点。
     pub fn show_dots(mut self, v: bool) -> Self {
         self.show_dots = v;
         self
     }
 
+    /// 设置是否显示上一页和下一页箭头。
     pub fn show_arrows(mut self, v: bool) -> Self {
         self.show_arrows = v;
         self
@@ -612,12 +617,14 @@ impl Carousel {
         self
     }
 
+    /// 设置幻灯片切换效果。
     pub fn effect(mut self, effect: CarouselEffect) -> Self {
         self.effect = effect;
         self.runtime.effect.set(effect);
         self
     }
 
+    /// 设置指针悬停时是否暂停自动播放。
     pub fn pause_on_hover(mut self, pause: bool) -> Self {
         self.pause_on_hover = pause;
         self
@@ -712,17 +719,19 @@ impl Carousel {
         self.has_custom_arrows()
     }
 
-    /// Sets the preferred Carousel viewport size.
+    /// 设置轮播视口的首选宽高；负值归一化为零。
     pub fn size(mut self, width: f32, height: f32) -> Self {
         self.fixed_width = Some(width.max(0.0));
         self.fixed_height = Some(height.max(0.0));
         self
     }
 
+    /// 返回已按当前幻灯片数量归一化的活动索引。
     pub fn current_index(&self) -> usize {
         self.runtime.current.get()
     }
 
+    /// 返回当前参与轮播的幻灯片数量。
     pub fn slide_count(&self) -> usize {
         self.runtime.child_count.get()
     }
