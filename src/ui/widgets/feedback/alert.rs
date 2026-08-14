@@ -323,6 +323,7 @@ impl Default for Alert {
 }
 
 impl Alert {
+    /// 创建默认显示图标、状态为信息且当前可见的警示条。
     pub fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
@@ -345,22 +346,27 @@ impl Alert {
         }
     }
 
+    /// 创建成功状态的警示条。
     pub fn success(message: impl Into<String>) -> Self {
         Self::new(message).type_(StatusLevel::Success)
     }
 
+    /// 创建信息状态的警示条。
     pub fn info(message: impl Into<String>) -> Self {
         Self::new(message).type_(StatusLevel::Info)
     }
 
+    /// 创建警告状态的警示条。
     pub fn warning(message: impl Into<String>) -> Self {
         Self::new(message).type_(StatusLevel::Warning)
     }
 
+    /// 创建错误状态的警示条。
     pub fn error(message: impl Into<String>) -> Self {
         Self::new(message).type_(StatusLevel::Error)
     }
 
+    /// 设置操作按钮标签及其激活回调。
     pub fn action<F>(mut self, label: impl Into<String>, action: F) -> Self
     where
         F: Fn() + 'static,
@@ -370,31 +376,38 @@ impl Alert {
         self
     }
 
+    /// 设置是否使用无圆角的横幅外观。
     pub fn banner(mut self, banner: bool) -> Self {
         self.banner = banner;
         self
     }
+    /// 设置警示条的补充说明文本。
     pub fn description(mut self, d: impl Into<String>) -> Self {
         self.description = d.into();
         self
     }
+    /// 设置警示条的状态级别。
     pub fn type_(mut self, t: StatusLevel) -> Self {
         self.type_ = t;
         self
     }
+    /// 启用关闭控件。
     pub fn closable(mut self) -> Self {
         self.closable = true;
         self
     }
+    /// 设置是否显示状态图标。
     pub fn show_icon(mut self, show: bool) -> Self {
         self.show_icon = show;
         self
     }
 
+    /// 返回警示条当前是否可见。
     pub fn is_visible(&self) -> bool {
         self.visible
     }
 
+    /// 显示警示条并请求重新布局。
     pub fn open(&mut self) {
         if !self.visible {
             self.visible = true;
@@ -404,6 +417,7 @@ impl Alert {
         }
     }
 
+    /// 隐藏警示条、清除交互状态并请求重新布局。
     pub fn close(&mut self) {
         if self.visible {
             self.visible = false;
