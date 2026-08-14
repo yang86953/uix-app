@@ -49,6 +49,7 @@
 - Notification 的条目宽度先从规范化窗口 frame 扣除双侧 `HORIZONTAL_INSET`，再受 384px 设计上限约束；`notification_rects` 是绘制、动画后命中、Overlay bounds 与 dirty bounds 的共同几何来源，窄窗口不得为保留固定条目宽度而牺牲单侧留白。
 - Table 的选择列先绘制，随后以 `COLUMN_PAINT_ORDER` 统一表头、分组表头和表体的列区层级：Middle → Left → Right；两层表头必须以列区为最外层，并在每个列区内依次完成有标题分组与叶表头阶段，跨两层无标题单列不得因处于全局叶阶段而覆盖更高层固定区。有标题分组片段在同一列区内保持声明顺序。跨行合并锚点在全部物理行之后补绘时，必须使用扣除更高列区覆盖后的最终可见裁剪；普通按层绘制仍使用完整列区裁剪。逻辑列合并不能用“锚点 x + 声明宽度之和”推导物理矩形：`span_bounds` 必须联合全部覆盖列的真实位置，末尾重绘再用 `merged_span_repaint_clip_for` 按列区提取实际覆盖片段并保留固定区层级。普通文本在统一逻辑矩形中绘制并由各片段裁剪，覆盖列命中继续由 `cell_anchor` 回落到唯一锚点。合并单元格覆绘后，物理行展开控件最后绘制。`column_at`、选择动作、展开动作与列宽调整句柄必须以视觉层级决定命中：固定列侵入 32px 选择区时，只有 `column_at` 返回空才允许复选框动作；真实数据行的尾部 32px 展开交互区优先于选择列和普通单元格，表头与展开内容区除外；调整句柄按 Right → Left → Middle 分层且仅在同层按距离择优。
 - `Container` 与 `Space` 共享子 frame 内容外尺寸计算：Space 必须传递子项 margin，缓存取可见 frame 末端并补入正右/下 margin，不用父级受限的求解器总尺寸冒充真实内容范围。
+- 透明单子节点包装器可通过 component 边界的 `measure_from_children` 窄钩子在同一测量轮次读取直接子节点自然尺寸；Popconfirm 组合 trigger 使用该事实向父级 Row/Column 报告真实 border-box，不以零尺寸或上一帧缓存猜测布局。
 - `ScrollView` 在纵向/双向纵列与横向单行中统一消费子项 margin，滚动条首轮判断使用自然外尺寸，非滚动轴填充先扣两侧 margin；双轴 `content_bounds` 补入对侧经典沟槽，使 `max_scroll` 仍按外视口相减却等价于真实内容视口。
 - `VirtualScroll` 只接受有限正行高与 viewport 参与范围计算，offset 先夹到内容边界；每次最多物化 4096 行，可见行优先于 overscan，总高度、滚动状态与最终行 frame 均保持有限。
 - 容器组件组合 `FlexLayout`/`GridLayout`，不复制第二套算法。
