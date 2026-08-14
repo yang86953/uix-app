@@ -139,26 +139,32 @@ impl Error {
 
     // ── 访问器 ──
 
+    /// 返回错误分类码。
     pub fn code(&self) -> Errc {
         self.code
     }
 
+    /// 返回错误消息。
     pub fn message(&self) -> &str {
         &self.message
     }
 
+    /// 返回错误严重级别。
     pub fn severity(&self) -> ErrorSeverity {
         self.severity
     }
 
+    /// 返回创建该错误的调用点源文件。
     pub fn file(&self) -> &'static str {
         self.file
     }
 
+    /// 返回创建该错误的调用点行号。
     pub fn line(&self) -> u32 {
         self.line
     }
 
+    /// 返回错误创建时间。
     pub fn timestamp(&self) -> SystemTime {
         self.timestamp
     }
@@ -193,36 +199,43 @@ impl Error {
 
     // ── 便利工厂方法 ──
 
+    /// 创建参数无效错误，并记录调用位置。
     #[track_caller]
     pub fn invalid_arg(message: impl Into<String>) -> Self {
         Self::new(Errc::InvalidArgument, message)
     }
 
+    /// 创建资源未找到错误，并记录调用位置。
     #[track_caller]
     pub fn not_found(message: impl Into<String>) -> Self {
         Self::new(Errc::NotFound, message)
     }
 
+    /// 创建状态无效错误，并记录调用位置。
     #[track_caller]
     pub fn invalid_state(message: impl Into<String>) -> Self {
         Self::new(Errc::InvalidState, message)
     }
 
+    /// 创建功能尚未实现错误，并记录调用位置。
     #[track_caller]
     pub fn not_implemented(message: impl Into<String>) -> Self {
         Self::new(Errc::NotImplemented, message)
     }
 
+    /// 创建输入输出错误，并记录调用位置。
     #[track_caller]
     pub fn io_error(message: impl Into<String>) -> Self {
         Self::new(Errc::IoError, message)
     }
 
+    /// 创建写入失败错误，并记录调用位置。
     #[track_caller]
     pub fn write_failure(message: impl Into<String>) -> Self {
         Self::new(Errc::WriteFailure, message)
     }
 
+    /// 创建未知错误，并记录调用位置。
     #[track_caller]
     pub fn unknown(message: impl Into<String>) -> Self {
         Self::new(Errc::Unknown, message)
