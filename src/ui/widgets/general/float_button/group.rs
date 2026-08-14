@@ -46,9 +46,12 @@ impl FloatButtonGroup {
                     // 取得运行时类型检查所需的可变 Any 视图。
                     .as_any_mut()
                     // 把组件窄化为 FloatButton。
-                    .downcast_mut::<FloatButton>()
-                    // 非 FloatButton 子根属于公开构建契约错误，应在发布前立即失败。
-                    .expect("FloatButtonGroup::button_views 的直接子根必须是 FloatButton");
+                    .downcast_mut::<FloatButton>();
+                // 非 FloatButton 子根属于公开构建契约错误，应在发布前立即失败。
+                let Some(button) = button else {
+                    // 公开构建契约被违反时保留明确诊断。
+                    panic!("FloatButtonGroup::button_views 的直接子根必须是 FloatButton");
+                };
                 // 复用兼容入口相同的组内标记与几何推导。
                 Self::prepare_button(button)
             })

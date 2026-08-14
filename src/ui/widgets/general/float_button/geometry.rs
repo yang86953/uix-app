@@ -176,7 +176,10 @@ fn anchored_control(
     // 返回表面内控件矩形。
 ) -> Rect {
     // 有效调用必然携带显式 placement。
-    let placement = input.placement.expect("表面锚定需要显式 placement");
+    let Some(placement) = input.placement else {
+        // 缺失 placement 表示内部几何分派违反了表面锚定前置条件。
+        panic!("表面锚定需要显式 placement");
+    };
     // 控件宽度不能超过当前表面。
     let width = natural_width.min(input.surface.w).max(0.0);
     // 控件高度不能超过当前表面。

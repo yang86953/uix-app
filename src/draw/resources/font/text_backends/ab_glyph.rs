@@ -204,11 +204,20 @@ impl TextBackend for AbGlyphBackend {
                 height: 0.0,
             };
         };
-        // 有效句柄必然对应仍存活的字体借用。
-        let f = self.fonts[idx]
-            .font
-            .as_ref()
-            .expect("valid font slot must retain its parsed font");
+        // 槽位字体若已失效，则沿用无效句柄的空布局语义。
+        let Some(f) = self.fonts[idx].font.as_ref() else {
+            // 返回稳定的空布局，禁止内部槽位漂移触发进程级 panic。
+            return TextLayout {
+                // 空布局不包含字形。
+                glyphs: vec![],
+                // 空布局不包含行。
+                lines: vec![],
+                // 空布局宽度为零。
+                width: 0.0,
+                // 空布局高度为零。
+                height: 0.0,
+            };
+        };
         let fs = text_backend::bounded_font_size(opts.font_size);
         let sf = f.as_scaled(PxScale { x: fs, y: fs });
 
@@ -395,14 +404,11 @@ impl TextBackend for AbGlyphBackend {
             // 通过既有入口生成兼容结果。
             return self.layout_text(font, text, opts);
         };
-        // 有效槽位必须保留已解析字体。
-        let parsed_font = self.fonts[idx]
-            // 借用字体解析结果。
-            .font
-            // 转为只读引用。
-            .as_ref()
-            // 有效句柄不允许出现空字体槽位。
-            .expect("valid font slot must retain its parsed font");
+        // 槽位字体若已失效，则回退到统一兼容布局入口。
+        let Some(parsed_font) = self.fonts[idx].font.as_ref() else {
+            // 保持无效字体句柄与方向布局的一致退化行为。
+            return self.layout_text(font, text, opts);
+        };
         // 约束异常字号以避免非有限 shaping 缩放。
         let font_size = text_backend::bounded_font_size(opts.font_size);
         // 建立与普通入口一致的像素缩放字体。
@@ -480,11 +486,11 @@ impl TextBackend for AbGlyphBackend {
         };
         let pixel_size = pixel_size as f32;
         let gid = GlyphId(glyph_id as u16);
-        // 有效句柄必然对应仍存活的字体借用。
-        let f = self.fonts[idx]
-            .font
-            .as_ref()
-            .expect("valid font slot must retain its parsed font");
+        // 槽位字体若已失效，则返回稳定的空栅格。
+        let Some(f) = self.fonts[idx].font.as_ref() else {
+            // 禁止内部槽位漂移触发进程级 panic。
+            return GlyphRaster::empty();
+        };
         let glyph = gid.with_scale_and_position(pixel_size, point(0.0, 0.0));
         let scale_factor = f
             .as_scaled(PxScale {
@@ -557,15 +563,11 @@ impl TextBackend for AbGlyphBackend {
     fn horizontal_line_metrics(&self, font: &FontHandle, pixel_size: f32) -> Option<LineMetrics> {
         let i = self.idx(font)?;
         let pixel_size = text_backend::normalized_raster_pixel_size(pixel_size)? as f32;
-        // 有效句柄必然对应仍存活的字体借用。
-        let sc = self.fonts[i]
-            .font
-            .as_ref()
-            .expect("valid font slot must retain its parsed font")
-            .as_scaled(PxScale {
-                x: pixel_size,
-                y: pixel_size,
-            });
+        // 槽位字体若已失效，则按 Option 契约返回无指标。
+        let sc = self.fonts[i].font.as_ref()?.as_scaled(PxScale {
+            x: pixel_size,
+            y: pixel_size,
+        });
         Some(LineMetrics {
             ascent: sc.ascent(),
             descent: -sc.descent(),

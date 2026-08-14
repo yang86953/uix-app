@@ -189,9 +189,15 @@ impl AppFeedbackState {
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             // handles 已确保目标窗口存在。
-            let window = windows
-                .get_mut(&window_id)
-                .expect("feedback window must exist after handles()");
+            let Some(window) = windows.get_mut(&window_id) else {
+                // 若所有权表被并发破坏，则以类型化内部状态错误终止登记。
+                return Err(Error::new(
+                    // 该分支表示运行时状态机不一致。
+                    Errc::InvalidState,
+                    // 保留可定位的窗口所有权上下文。
+                    "feedback window missing after handles initialization",
+                ));
+            };
             // 同窗口同类型同 key 只允许一个声明来源。
             if window.declarations.contains_key(&(kind, key.clone())) {
                 // 拒绝重复来源，防止两个节点争用同一租约。
