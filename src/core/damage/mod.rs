@@ -11,12 +11,16 @@ const MAX_TRACKED_PRESENT_IMAGES: usize = 8;
 /// Dirty region tracking for incremental rendering.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DirtyRegion {
+    /// 需要重绘的离散逻辑矩形。
     pub rects: Vec<Rect>,
+    /// 是否要求重绘完整帧。
     pub full_frame: bool,
+    /// 是否需要在绘制前清理目标区域。
     pub clear_required: bool,
 }
 
 impl DirtyRegion {
+    /// 创建要求清理并重绘完整帧的脏区。
     pub fn full() -> Self {
         Self {
             rects: Vec::new(),
@@ -25,6 +29,7 @@ impl DirtyRegion {
         }
     }
 
+    /// 创建不包含任何无效区域的脏区。
     pub fn empty() -> Self {
         Self {
             rects: Vec::new(),
@@ -33,6 +38,7 @@ impl DirtyRegion {
         }
     }
 
+    /// 从单个有效矩形创建局部脏区。
     pub fn area(rect: Rect) -> Self {
         Self {
             rects: if rect.w > 0.0 && rect.h > 0.0 {
@@ -45,14 +51,17 @@ impl DirtyRegion {
         }
     }
 
+    /// 将脏区重置为空状态。
     pub fn reset(&mut self) {
         *self = Self::empty();
     }
 
+    /// 判断当前是否没有任何重绘或清理需求。
     pub fn is_empty(&self) -> bool {
         !self.full_frame && self.rects.is_empty() && !self.clear_required
     }
 
+    /// 添加一个有效矩形，并在数量达到阈值时合并边界。
     pub fn add_rect(&mut self, rect: Rect) {
         if rect.w <= 0.0 || rect.h <= 0.0 || self.full_frame {
             return;
@@ -71,6 +80,7 @@ impl DirtyRegion {
         }
     }
 
+    /// 返回所有离散脏矩形的包围矩形。
     pub fn bounds(&self) -> Rect {
         if self.rects.is_empty() {
             return Rect::zero();
@@ -91,6 +101,7 @@ impl DirtyRegion {
         self.clone()
     }
 
+    /// 判断指定矩形是否与任一脏区相交。
     pub fn intersects(&self, rect: Rect) -> bool {
         if self.full_frame {
             return true;
@@ -103,6 +114,7 @@ impl DirtyRegion {
             .any(|&dirty| dirty.intersect(&rect).is_some())
     }
 
+    /// 借用当前保存的离散脏矩形。
     pub fn rects(&self) -> &[Rect] {
         &self.rects
     }
@@ -117,11 +129,14 @@ impl Default for DirtyRegion {
 /// Rendering damage region.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DamageRegion {
+    /// 是否要求提交完整表面。
     pub full: bool,
+    /// 局部提交使用的逻辑矩形。
     pub rects: Vec<Rect>,
 }
 
 impl DamageRegion {
+    /// 创建完整表面损伤。
     pub fn full() -> Self {
         Self {
             full: true,
@@ -129,10 +144,12 @@ impl DamageRegion {
         }
     }
 
+    /// 从离散逻辑矩形创建局部损伤。
     pub fn partial(rects: Vec<Rect>) -> Self {
         Self { full: false, rects }
     }
 
+    /// 从单个矩形创建损伤，无效矩形会保守退化为完整损伤。
     pub fn from_rect(rect: Rect) -> Self {
         if rect.w <= 0.0 || rect.h <= 0.0 {
             Self::full()
@@ -141,6 +158,7 @@ impl DamageRegion {
         }
     }
 
+    /// 返回局部损伤的包围矩形，完整或空损伤返回空值。
     pub fn bounds(&self) -> Option<Rect> {
         if self.full || self.rects.is_empty() {
             return None;
@@ -188,11 +206,14 @@ impl Default for DamageRegion {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum PresentDamage {
     #[default]
+    /// 提交完整缓冲区。
     Full,
+    /// 提交物理缓冲区坐标中的离散矩形。
     Partial(Vec<(i32, i32, i32, i32)>),
 }
 
 impl PresentDamage {
+    /// 从单个物理矩形创建提交损伤。
     pub fn single(x: i32, y: i32, w: i32, h: i32) -> Self {
         if w <= 0 || h <= 0 {
             Self::Full
@@ -201,6 +222,7 @@ impl PresentDamage {
         }
     }
 
+    /// 判断是否要求提交完整缓冲区。
     pub fn is_full(&self) -> bool {
         matches!(self, Self::Full)
     }
@@ -245,13 +267,21 @@ pub enum PresentCoherency {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum PresentTransform {
     #[default]
+    /// 不转换逻辑坐标。
     Identity,
+    /// 顺时针旋转九十度。
     Rotate90,
+    /// 顺时针旋转一百八十度。
     Rotate180,
+    /// 顺时针旋转二百七十度。
     Rotate270,
+    /// 水平镜像。
     HorizontalMirror,
+    /// 水平镜像后顺时针旋转九十度。
     HorizontalMirrorRotate90,
+    /// 水平镜像后顺时针旋转一百八十度。
     HorizontalMirrorRotate180,
+    /// 水平镜像后顺时针旋转二百七十度。
     HorizontalMirrorRotate270,
 }
 
@@ -270,15 +300,20 @@ impl PresentTransform {
 /// Live surface metadata required for safe logical-to-drawable damage mapping.
 #[derive(Debug, Clone, Copy)]
 pub struct PresentSurface {
+    /// 可绘制缓冲区的物理宽度。
     pub drawable_width: i32,
+    /// 可绘制缓冲区的物理高度。
     pub drawable_height: i32,
+    /// 逻辑坐标到物理像素的缩放比例。
     pub device_pixel_ratio: f32,
+    /// 逻辑坐标到缓冲区的方向转换。
     pub transform: PresentTransform,
     /// Changes whenever the native surface is rebuilt, even at the same extent.
     pub generation: u64,
 }
 
 impl PresentSurface {
+    /// 创建一份完整的呈现表面元数据。
     pub const fn new(
         drawable_width: i32,
         drawable_height: i32,
@@ -295,6 +330,7 @@ impl PresentSurface {
         }
     }
 
+    /// 创建不带方向转换的呈现表面元数据。
     pub const fn identity(
         drawable_width: i32,
         drawable_height: i32,
@@ -310,6 +346,7 @@ impl PresentSurface {
         )
     }
 
+    /// 判断尺寸和像素比例是否可用于损伤映射。
     pub fn is_valid(self) -> bool {
         self.drawable_width > 0
             && self.drawable_height > 0
@@ -341,11 +378,14 @@ impl Eq for PresentSurface {}
 /// Identity of the drawable swapchain image acquired for the current frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PresentImage {
+    /// 当前取得的交换链图像索引。
     pub index: usize,
+    /// 交换链包含的图像总数。
     pub image_count: usize,
 }
 
 impl PresentImage {
+    /// 创建交换链图像身份。
     pub const fn new(index: usize, image_count: usize) -> Self {
         Self { index, image_count }
     }
@@ -363,11 +403,14 @@ impl PresentImage {
 /// to be current in the acquired image before submitting `present_damage`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PresentDamagePlan {
+    /// 调用方必须修复或重绘的区域。
     pub draw_damage: PresentDamage,
+    /// 提交给原生呈现接口的损伤区域。
     pub present_damage: PresentDamage,
 }
 
 impl PresentDamagePlan {
+    /// 创建完整绘制和完整提交计划。
     pub fn full() -> Self {
         Self {
             draw_damage: PresentDamage::Full,
@@ -404,14 +447,17 @@ pub struct PresentDamageTracker {
 }
 
 impl PresentDamageTracker {
+    /// 创建尚无任何成功呈现历史的跟踪器。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 清除表面、图像和损伤历史。
     pub fn reset(&mut self) {
         *self = Self::default();
     }
 
+    /// 根据缓冲保留能力和成功呈现历史规划本帧损伤。
     pub fn plan(
         &self,
         coherency: PresentCoherency,
