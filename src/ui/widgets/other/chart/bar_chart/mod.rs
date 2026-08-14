@@ -419,6 +419,7 @@ impl BarChart {
     const DEFAULT_WIDTH: f32 = 300.0;
     const DEFAULT_HEIGHT: f32 = 200.0;
 
+    /// 创建空的垂直柱状图，并默认显示数值标签。
     pub fn new() -> Self {
         Self {
             data: Vec::new(),
@@ -453,43 +454,53 @@ impl BarChart {
             zoom: Cell::new(1.0),
         }
     }
+    /// 替换单序列柱状图的数据项。
     pub fn data(mut self, d: Vec<BarData>) -> Self {
         self.data = d;
         self
     }
+    /// 设置固定宽度；非法或非正值恢复为自动宽度。
     pub fn width(mut self, w: f32) -> Self {
         self.fixed_width = Self::optional_dimension(w);
         self
     }
+    /// 设置固定高度；非法或非正值恢复为默认高度。
     pub fn height(mut self, h: f32) -> Self {
         self.fixed_height = Self::optional_dimension(h);
         self
     }
+    /// 设置纵轴显式最大值；非法或非正值恢复为自动上界。
     pub fn max_value(mut self, v: f32) -> Self {
         self.max_value = if v.is_finite() && v > 0.0 { v } else { 0.0 };
         self
     }
+    /// 设置是否在空间足够的柱条旁绘制数值标签。
     pub fn show_value(mut self, v: bool) -> Self {
         self.show_value = v;
         self
     }
+    /// 设置柱条圆角半径；非有限值归零，负值夹取为零。
     pub fn bar_radius(mut self, r: f32) -> Self {
         self.bar_radius = if r.is_finite() { r.max(0.0) } else { 0.0 };
         self
     }
 
+    /// 设置多序列是否在同一分类内并排分组显示。
     pub fn grouped(mut self, value: bool) -> Self {
         self.grouped = value;
         self
     }
+    /// 设置多序列是否在同一分类内堆叠显示，并优先于分组模式。
     pub fn stacked(mut self, value: bool) -> Self {
         self.stacked = value;
         self
     }
+    /// 设置柱条是否沿水平方向从纵轴伸展。
     pub fn horizontal(mut self, value: bool) -> Self {
         self.horizontal = value;
         self
     }
+    /// 设置同一分类内柱条间距比例，并夹取到零至 0.9。
     pub fn bar_gap(mut self, value: f32) -> Self {
         self.bar_gap = if value.is_finite() {
             value.clamp(0.0, 0.9)
@@ -498,6 +509,7 @@ impl BarChart {
         };
         self
     }
+    /// 设置相邻分类之间的留白比例，并夹取到零至 0.9。
     pub fn category_gap(mut self, value: f32) -> Self {
         self.category_gap = if value.is_finite() {
             value.clamp(0.0, 0.9)
@@ -506,6 +518,7 @@ impl BarChart {
         };
         self
     }
+    /// 设置多序列数据；当前兼容入口仅接受柱状数据序列列表。
     pub fn series<T: 'static>(mut self, series: T) -> Self {
         if let Ok(series) =
             (Box::new(series) as Box<dyn Any>).downcast::<Vec<ChartSeries<Vec<BarData>>>>()
@@ -517,14 +530,17 @@ impl BarChart {
         }
         self
     }
+    /// 设置图例相对绘图区的保留位置。
     pub fn legend(mut self, position: LegendPosition) -> Self {
         self.legend = position;
         self
     }
+    /// 设置图表内容区域的背景颜色。
     pub fn bg(mut self, color: Color) -> Self {
         self.background = Some(color);
         self
     }
+    /// 设置图表内容内边距；非有限值归零，负值夹取为零。
     pub fn padding(mut self, padding: f32) -> Self {
         self.padding = if padding.is_finite() {
             padding.max(0.0)
@@ -533,30 +549,37 @@ impl BarChart {
         };
         self
     }
+    /// 设置显示在绘图区上方的标题。
     pub fn title(mut self, title: impl Into<String>) -> Self {
         self.title = title.into();
         self
     }
+    /// 设置显示在标题下方的副标题。
     pub fn subtitle(mut self, subtitle: impl Into<String>) -> Self {
         self.subtitle = subtitle.into();
         self
     }
+    /// 设置图表是否使用父约束提供的响应式尺寸。
     pub fn responsive(mut self, responsive: bool) -> Self {
         self.responsive = responsive;
         self
     }
+    /// 启用并配置缩放、平移或数据点击交互。
     pub fn interactive(mut self, config: InteractionConfig) -> Self {
         self.interaction = Some(config);
         self
     }
+    /// 启用并配置绘图区范围刷选交互。
     pub fn brush(mut self, config: BrushConfig) -> Self {
         self.brush_config = Some(config);
         self
     }
+    /// 启用并配置柱条数据提示框。
     pub fn tooltip(mut self, config: TooltipConfig) -> Self {
         self.tooltip_config = Some(config);
         self
     }
+    /// 启用图表动画；当前保留配置参数供后续动画策略使用。
     pub fn animation(mut self, _animation: crate::ui::animation::AnimationConfig) -> Self {
         self.animation_enabled = true;
         self
