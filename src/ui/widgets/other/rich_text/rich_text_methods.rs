@@ -108,7 +108,7 @@ impl RichText {
             // 清除上次约束。
             self.last_layout_width.set(0.0);
             // 清除主题颜色键。
-            self.last_layout_color.set(None);
+            self.last_layout_palette.set(None);
             // 清除代码复制区域。
             self.code_regions.borrow_mut().clear();
             // 清除代码悬停状态。

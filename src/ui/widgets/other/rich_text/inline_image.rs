@@ -491,7 +491,8 @@ mod tests {
     use crate::ui::theme::Theme;
     // 引入公开段与样式模型。
     use crate::ui::widgets::other::rich_text::{
-        LayoutGlyphKind, RichTextSegment, RichTextStyle, layout_rich_text_with_images,
+        LayoutGlyphKind, RichTextPalette, RichTextSegment, RichTextStyle,
+        layout_rich_text_with_images,
     };
 
     // 验证固有比例和单轴覆盖解析为稳定几何。
@@ -552,8 +553,8 @@ mod tests {
             30.0,
             // 设置十二像素默认字号。
             12.0,
-            // 使用稳定测试颜色。
-            crate::draw::Color::black(),
+            // 从稳定测试颜色派生无主题调色板。
+            RichTextPalette::estimated(crate::draw::Color::black()),
             // 不提供运行时固有尺寸。
             &InlineImageStates::new(),
         );
@@ -579,8 +580,8 @@ mod tests {
             f32::INFINITY,
             // 保持默认字号不变。
             12.0,
-            // 保持测试颜色不变。
-            crate::draw::Color::black(),
+            // 保持派生测试调色板不变。
+            RichTextPalette::estimated(crate::draw::Color::black()),
             // 不提供运行时固有尺寸。
             &InlineImageStates::new(),
         );
@@ -614,8 +615,8 @@ mod tests {
             100.0,
             // 使用十二像素默认字号。
             12.0,
-            // 使用稳定测试颜色。
-            crate::draw::Color::black(),
+            // 从稳定测试颜色派生无主题调色板。
+            RichTextPalette::estimated(crate::draw::Color::black()),
             // 空状态代表资源仍待加载。
             &InlineImageStates::new(),
         );
