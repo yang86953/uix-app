@@ -61,6 +61,7 @@ pub struct ConfigProvider<F = MissingConfigProviderChild> {
 }
 
 impl ConfigProvider<MissingConfigProviderChild> {
+    /// 创建继承外层配置且尚未绑定子 View 的配置提供器。
     pub fn new() -> Self {
         Self {
             patch: ConfigPatch::default(),
@@ -76,31 +77,37 @@ impl Default for ConfigProvider<MissingConfigProviderChild> {
 }
 
 impl<F> ConfigProvider<F> {
+    /// 覆盖子树中的默认控件尺寸。
     pub fn component_size(mut self, size: ControlSize) -> Self {
         self.patch.size = Some(size);
         self
     }
 
+    /// 覆盖子树中的默认禁用状态。
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.patch.disabled = Some(disabled);
         self
     }
 
+    /// 覆盖子树使用的主题。
     pub fn theme(mut self, theme: Theme) -> Self {
         self.patch.theme = Some(theme);
         self
     }
 
+    /// 替换子树的通用组件覆盖配置。
     pub fn overrides(mut self, overrides: ComponentOverrides) -> Self {
         self.patch.overrides = Some(overrides);
         self
     }
 
+    /// 为指定组件类型合并令牌补丁。
     pub fn component_tokens<T: WidgetComponent>(mut self, patch: TokenPatch) -> Self {
         self.patch.component_tokens.insert::<T>(patch);
         self
     }
 
+    /// 设置子树空态内容的渲染回调。
     pub fn render_empty<R, V>(mut self, renderer: R) -> Self
     where
         R: Fn(EmptyContext) -> V + Send + Sync + 'static,
@@ -110,6 +117,7 @@ impl<F> ConfigProvider<F> {
         self
     }
 
+    /// 绑定在所解析配置作用域内构建的唯一子 View。
     pub fn child<G, V>(self, child: G) -> ConfigProvider<impl FnOnce() -> ViewNode>
     where
         G: FnOnce() -> V + 'static,
@@ -132,6 +140,7 @@ pub struct LocaleProvider<F = MissingLocaleProviderChild> {
 }
 
 impl LocaleProvider<MissingLocaleProviderChild> {
+    /// 创建使用指定语言包且尚未绑定子 View 的语言提供器。
     pub fn new(locale: Locale) -> Self {
         Self {
             locale,
@@ -139,16 +148,19 @@ impl LocaleProvider<MissingLocaleProviderChild> {
         }
     }
 
+    /// 创建使用简体中文语言包的提供器。
     pub fn zh_cn() -> Self {
         Self::new(zh_cn())
     }
 
+    /// 创建使用美式英语语言包的提供器。
     pub fn en_us() -> Self {
         Self::new(en_us())
     }
 }
 
 impl<F> LocaleProvider<F> {
+    /// 绑定在当前语言作用域内构建的唯一子 View。
     pub fn child<G, V>(self, child: G) -> LocaleProvider<impl FnOnce() -> ViewNode>
     where
         G: FnOnce() -> V + 'static,
