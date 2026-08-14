@@ -39,6 +39,58 @@ impl LayerTree {
             hover_pos,
             render_objects,
             true,
+            true,
+        )
+    }
+
+    /// 只重放正常根树，供 ScenePipeline 在同一最终 present 前重建 clean backdrop。
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn render_content(
+        // 借用本帧唯一绘制目标。
+        &mut self,
+        // 接收可录制或真实 retained target。
+        engine: &mut dyn RenderTarget,
+        // 借用当前场景事实。
+        scene: &impl ScenePaint,
+        // 使用本次正常树重建区域。
+        paint_region: &DirtyRegion,
+        // 传入字体句柄。
+        font: FontHandle,
+        // 传入字体服务。
+        font_service: &FontService,
+        // 传入图片服务。
+        image_service: &ImageService,
+        // 保留调试模式语义。
+        debug_mode: bool,
+        // 保留 hover 调试位置。
+        hover_pos: Option<Point>,
+        // 可选同步渲染对象树。
+        render_objects: Option<&mut RenderObjectTree>,
+    ) -> Result<(), crate::core::Error> {
+        // 复用唯一遍历器，并明确关闭 overlay 重放。
+        self.render_scope(
+            // 正常树写入调用方给定 target。
+            engine,
+            // 读取同一场景。
+            scene,
+            // 使用调用方指定区域。
+            paint_region,
+            // 传递字体句柄。
+            font,
+            // 传递字体服务。
+            font_service,
+            // 传递图片服务。
+            image_service,
+            // 传递调试状态。
+            debug_mode,
+            // 传递 hover 位置。
+            hover_pos,
+            // 传递渲染对象同步目标。
+            render_objects,
+            // 正常根树必须重放。
+            true,
+            // overlay 留到 snapshot/blur 完成后再重放。
+            false,
         )
     }
 
@@ -68,6 +120,7 @@ impl LayerTree {
             hover_pos,
             render_objects,
             false,
+            true,
         )
     }
 
@@ -84,6 +137,7 @@ impl LayerTree {
         hover_pos: Option<Point>,
         mut render_objects: Option<&mut RenderObjectTree>,
         render_root: bool,
+        render_overlays: bool,
     ) -> Result<(), crate::core::Error> {
         let dpi = engine.dpi();
         let dpr = engine.device_pixel_ratio();
@@ -140,6 +194,12 @@ impl LayerTree {
                 root.mark_clean();
             }
         }
+        // 正常树 refresh 阶段必须在 clean snapshot 前排除全部 overlay。
+        if !render_overlays {
+            // 根树已完成，直接返回给 ScenePipeline 的中间提交边界。
+            return Ok(());
+        }
+        // overlay 阶段按原有 z-order 重放。
         for overlay in &mut self.overlays {
             // Isolate sibling overlays too: one overlay cannot clip or translate
             // the next one, and neither can inherit normal-tree state.

@@ -4,7 +4,8 @@ impl D3d11Pipeline {
     pub(crate) fn new(device: &ID3D11Device) -> Result<Self> {
         let vs_blob = compile_shader(RECT_HLSL, c"VSMain", c"vs_4_0")?;
         let ps_blob = compile_shader(RECT_HLSL, c"PSMain", c"ps_4_0")?;
-        let blit_vs_blob = compile_shader(BLIT_HLSL, c"VSMain", c"vs_4_0")?;
+        // BlurCB 与 BlitCB ABI 不同，必须编译 blur 自己的顶点 shader。
+        let blur_vs_blob = compile_shader(BLUR_HLSL, c"VSMain", c"vs_4_0")?;
         let glyph_vs_blob = compile_shader(GLYPH_HLSL, c"VSMain", c"vs_4_0")?;
         let glyph_ps_blob = compile_shader(GLYPH_HLSL, c"PSMain", c"ps_4_0")?;
         // 编译 RGBA8 MSDF 字形的共享 VS/PS 源，保证其 constant ABI 自洽。
@@ -53,21 +54,33 @@ impl D3d11Pipeline {
         let ps_rect =
             ps_rect.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no rect PS"))?;
 
-        let mut vs_blit = None;
+        // 创建读取 BlurCB 区域与尺寸字段的专用顶点 shader。
+        let mut vs_blur = None;
+        // 从已编译 blur VS 字节码创建原生对象。
         unsafe {
+            // D3D11 device 拥有 shader 生命周期。
             device
+                // 使用 BLUR_HLSL 的 VSMain，而不是 ABI 不兼容的 blit VS。
                 .CreateVertexShader(
+                    // 借用完整已编译字节码。
                     std::slice::from_raw_parts(
-                        blit_vs_blob.GetBufferPointer() as *const u8,
-                        blit_vs_blob.GetBufferSize(),
+                        // 取得字节码首地址。
+                        blur_vs_blob.GetBufferPointer() as *const u8,
+                        // 取得字节码长度。
+                        blur_vs_blob.GetBufferSize(),
                     ),
+                    // 不使用 class linkage。
                     None,
-                    Some(&mut vs_blit),
+                    // 写入唯一 blur VS owner。
+                    Some(&mut vs_blur),
                 )
-                .map_err(|e| d3d_error("CreateVertexShader(blit)", e))?;
+                // 保留平台创建失败的原始 HRESULT。
+                .map_err(|e| d3d_error("CreateVertexShader(blur)", e))?;
         }
-        let vs_blit =
-            vs_blit.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blit VS"))?;
+        // 创建成功后取得非空 shader。
+        let vs_blur = vs_blur
+            // 缺失对象属于稳定平台错误。
+            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blur VS"))?;
 
         // 可分离高斯模糊 PS 只供通用 RHI BLUR_PASS 使用。
         let blur_ps_blob = compile_shader(BLUR_HLSL, c"PSMain", c"ps_4_0")?;
@@ -479,7 +492,8 @@ impl D3d11Pipeline {
             vs_rect,
             ps_rect,
             layout,
-            vs_blit,
+            // 保存与 BlurCB ABI 匹配的专用顶点 shader。
+            vs_blur,
             ps_blur,
             vs_glyph,
             ps_glyph,

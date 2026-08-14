@@ -64,6 +64,41 @@ fn real_registered_components_cover_pointer_keyboard_and_dynamic_visual_states()
     println!("component visual evidence: {}", evidence_root.display());
 }
 
+// 在真实 D3D11 窗口中验收 overlay backdrop blur 的背景/前景分离视觉。
+#[test]
+#[ignore = "requires an interactive Windows desktop and writes PNG visual evidence"]
+fn real_overlay_backdrop_blur_keeps_foreground_sharp() {
+    // 创建本测试唯一稳定证据目录。
+    let evidence_root = backdrop_evidence_root();
+    // 清理本测试上次生成的精确证据目录。
+    reset_evidence_root(&evidence_root);
+    // 启动只拥有 backdrop blur 验收页面的独立进程。
+    let (mut demo, mut client, window) = start_visual("backdrop-visual");
+    // 读取首帧派生语义树，确保前景 Modal 真实呈现。
+    let snapshot = client.snapshot(window);
+    // Modal 标题必须通过公开语义树可观察。
+    assert_eq!(
+        // 按精确可访问名称定位前景。
+        node_by_name(&snapshot, "Overlay Backdrop Blur 已启用")["role"],
+        // Modal 使用 dialog 语义。
+        "dialog"
+    );
+    // 等待 Modal 入场动画与 effect 事务收敛后再捕获稳定像素。
+    thread::sleep(Duration::from_millis(500));
+    // 捕获真实 HWND 无损像素证据。
+    let evidence = evidence_root.join("backdrop-blur-d3d11.png");
+    // 由 Win32 Adapter 捕获客户区，不读取 renderer 私有状态。
+    visual_capture::capture_png(&demo, &evidence);
+    // 固定条纹边界必须保留两侧颜色，并在边界两边形成多像素混合。
+    visual_capture::assert_backdrop_blur_transition(&evidence);
+    // 输出稳定证据位置供 AI 视觉审阅。
+    println!("overlay backdrop visual evidence: {}", evidence.display());
+    // 关闭协议连接让进程回收不等待客户端。
+    drop(client);
+    // 回收 backdrop 验收窗口。
+    let _ = demo.stop_and_collect();
+}
+
 // 验收 Badge 的布局锚点、指针、Tab 顺序与动态显隐残影。
 fn accept_badge(evidence_root: &Path, images: &mut Vec<PathBuf>) {
     // 启动只拥有 Badge 验收页面的独立进程。
@@ -587,6 +622,18 @@ fn evidence_root() -> PathBuf {
         .join("debug-captures")
         // 隔离本组组件交互证据。
         .join("uix-component-visual")
+}
+
+// 返回仓库 target 下不进入提交的 backdrop blur 视觉证据目录。
+fn backdrop_evidence_root() -> PathBuf {
+    // 从根 crate 清单目录构造确定路径。
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        // 进入构建输出目录。
+        .join("target")
+        // 进入 AI 可读捕获目录。
+        .join("debug-captures")
+        // 隔离 backdrop blur 证据。
+        .join("uix-backdrop-visual")
 }
 
 // 精确重建本测试拥有的证据目录。

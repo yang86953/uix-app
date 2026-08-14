@@ -34,7 +34,8 @@
 - 默认区域使用 entry 的 mask/hit bounds；`region` 可以提供独立窗口逻辑区域。OverlayStack 把同帧多个请求收敛为区域并集与最大半径，ScenePipeline 只执行一次 snapshot/blur 计划。
 - `RenderTarget::supports_backdrop_blur()` 是真实能力查询；不支持时保留纯色 mask，不伪报 blur。资源、copy、draw、submit 或 destroy 失败保持 typed failure 并中止当前帧。
 - GPU owner 同时保留未模糊 clean snapshot 与由它派生的 effect texture。策略、半径或区域变化时销毁旧派生纹理并从 clean snapshot 重新复制、模糊，不重复 acquire/present，也不对旧 blur 结果累计取样；离场开始以 no-op 半径释放派生效果。
-- 当前普通树内容变化仍会使 overlay 快照进入安全阻塞并退化为整树 mask-only 重绘；主题/窗口变化后在 overlay 保持期间完成“正常树提交→新 clean snapshot→blur→overlay”的单 present 事务，仍属于 #806 后续实现，不能把本批的 effect 配置失效等同于该事务已闭合。
+- 普通树、主题或窗口尺寸变化时，GPU-native ScenePipeline 强制完整重建正常树，通过 API-neutral FrameEncoder 先写 retained texture（无 present），再执行新 clean snapshot→effect blur→restore，最后只重放 overlay 并由原帧 `end_frame` 做唯一最终 present；中间阶段不重复 acquire/present，任一 typed failure 都保留 invalidation 并中止当前帧。
+- D3D11 真窗验收以 100px 红蓝交错背景和显式 24px 半径生成无损 PNG：AI 视觉审阅确认背景边界连续柔化且 Modal 标题、正文、边框和按钮保持清晰；像素断言同时拒绝无 blur 的硬切边界与错误 UV 导致的整幅单色。
 
 `FloatButton` 的显式 `Placement` 由本模块解释为窗口 logical 客户区锚点；组件只保存 placement、有限作者偏移与内容配置，并用同一个私有几何结果驱动 control、description、badge、tooltip、damage、命中和 entry bounds。未显式 placement、普通布局占位及 `FloatButtonGroup` 子按钮继续服从所属布局 frame，避免 overlay 模块夺取容器布局所有权。
 
