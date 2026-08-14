@@ -21,12 +21,16 @@ const WHEEL_STEP: f32 = 40.0;
 /// A single tab definition.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tab {
+    /// 标签栏显示的文字。
     pub label: String,
+    /// 标识面板身份、语义事件和快照的稳定键。
     pub key: String,
+    /// 显示在标签文字前方的可选 Lucide 图标名称。
     pub icon: String,
 }
 
 impl Tab {
+    /// 使用文字创建标签，并默认以相同文字作为稳定键。
     pub fn new(label: impl Into<String>) -> Self {
         let label = label.into();
         Self {
@@ -36,6 +40,7 @@ impl Tab {
         }
     }
 
+    /// 设置显示在标签文字前方的 Lucide 图标名称。
     pub fn icon(mut self, icon: impl Into<String>) -> Self {
         self.icon = icon.into();
         self
@@ -53,9 +58,13 @@ impl Tab {
 /// Tab bar position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TabPosition {
+    /// 将标签栏放在内容面板上方。
     Top,
+    /// 将标签栏放在内容面板下方。
     Bottom,
+    /// 将标签栏垂直放在内容面板左侧。
     Left,
+    /// 将标签栏垂直放在内容面板右侧。
     Right,
 }
 
@@ -420,6 +429,7 @@ impl Tabs {
         )
     }
 
+    /// 创建顶部标签栏、无标签且未启用编辑或滚动的组件。
     pub fn new() -> Self {
         Self {
             tabs: Vec::new(),
@@ -444,6 +454,7 @@ impl Tabs {
         }
     }
 
+    /// 添加标签并切换为非受控模式。
     pub fn tab(mut self, label: &str, key: &str) -> Self {
         self.value_binding = None;
         self.tabs.push(Tab {
@@ -453,19 +464,23 @@ impl Tabs {
         });
         self
     }
+    /// 替换全部标签并切换为非受控模式。
     pub fn tabs(mut self, tabs: Vec<Tab>) -> Self {
         self.value_binding = None;
         self.tabs = tabs;
         self
     }
+    /// 设置非受控活动索引，并夹取到当前标签范围。
     pub fn active(mut self, index: usize) -> Self {
         self.value_binding = None;
         self.active_index = index.min(self.tabs.len().saturating_sub(1));
         self
     }
+    /// 返回当前活动标签的零基索引。
     pub fn active_index(&self) -> usize {
         self.active_index
     }
+    /// 返回当前活动标签的稳定键；没有有效标签时返回空值。
     pub fn current_key(&self) -> Option<&str> {
         self.tabs.get(self.active_index).map(|tab| tab.key.as_str())
     }
@@ -497,24 +512,29 @@ impl Tabs {
         component.bind_values(state, values);
         component
     }
+    /// 设置标签栏相对内容面板的位置。
     pub fn position(mut self, pos: TabPosition) -> Self {
         self.position = pos;
         self
     }
 
+    /// [`Self::position`] 的兼容别名。
     pub fn tab_position(self, pos: TabPosition) -> Self {
         self.position(pos)
     }
 
+    /// 创建已启用新增和关闭入口的空标签组件。
     pub fn editable() -> Self {
         Self::new().editable_mode()
     }
 
+    /// 为当前标签组件启用新增和关闭入口。
     pub fn editable_mode(mut self) -> Self {
         self.editable = true;
         self
     }
 
+    /// 注册用户点击新增入口时调用的候选键回调。
     pub fn on_add<F>(mut self, callback: F) -> Self
     where
         F: Fn(&str) + 'static,
@@ -523,6 +543,7 @@ impl Tabs {
         self
     }
 
+    /// 注册标签关闭前接收其稳定键的回调。
     pub fn on_close<F>(mut self, callback: F) -> Self
     where
         F: Fn(&str) + 'static,
@@ -531,10 +552,12 @@ impl Tabs {
         self
     }
 
+    /// 设置标签栏溢出时是否响应滚轮滚动。
     pub fn scrollable(mut self, scrollable: bool) -> Self {
         self.scrollable = scrollable;
         self
     }
+    /// 设置标签组件请求的固定宽度与高度。
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.fixed_width = Some(w);
         self.fixed_height = Some(h);
