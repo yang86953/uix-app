@@ -10,6 +10,8 @@ pub(crate) struct ComponentDeclaration {
     pub(crate) props: Vec<ComponentProp>,
     // 保存源码顺序中的私有 state。
     pub(crate) states: Vec<ComponentState>,
+    // 保存组件体获准引用的 Rust 外部符号。
+    pub(crate) external: Vec<String>,
     // 保存组件视图体的有序节点。
     pub(crate) children: Vec<Node>,
     // 保存完整 Component 声明跨度。

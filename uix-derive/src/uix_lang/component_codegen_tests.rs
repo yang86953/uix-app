@@ -1,6 +1,64 @@
 // 引入组件感知生成入口与文档解析器。
 use super::{generate_document_view, parse_document};
 
+// 验证 external 显式开放 Rust 符号且保留 For 局部变量与语言内建。
+#[test]
+fn accepts_declared_external_and_closed_component_names() {
+    // 解析外部格式化函数、循环绑定、状态与主题内建组合。
+    let document = parse_document(
+        // 只有 items 与 format 来自 Rust 调用点。
+        r#"
+        <Component name="Rows" state="active: false" external="items, format">
+          <Column>
+            <For {item} {index} in {items} key={item.id}>
+              <Text>{format(item.name)}: {index}</Text>
+            </For>
+            <Button @click="setState(active: !active)">{active}</Button>
+            <Button @click="setTheme('dark')">主题</Button>
+          </Column>
+        </Component>
+        <Rows />
+        "#,
+    )
+    // 合法封闭名称集合必须解析成功。
+    .expect("external 与局部名称文档应解析成功");
+    // 生成阶段必须接受全部已声明或内建名称。
+    let tokens = generate_document_view(&document)
+        // external 不承担 Rust 可见性判断。
+        .expect("已声明 external 应成功生成")
+        // 转成稳定文本检查外部名称保留。
+        .to_string();
+    // Rust 外部函数名称必须保留给调用点解析。
+    assert!(tokens.contains("format"));
+    // Rust 外部数据源名称必须保留给调用点解析。
+    assert!(tokens.contains("items"));
+}
+
+// 验证组件体未声明外部名称得到表达式位置诊断。
+#[test]
+fn rejects_undeclared_component_external_at_expression_span() {
+    // 解析缺少 external 的多行组件。
+    let document = parse_document(
+        // 把违规标识符放在稳定的第四行插值中。
+        "<Component name=\"Search\" props=\"count: number\">\n  <Column>\n    <Text>Count</Text>\n    <Text>{format(count)}</Text>\n  </Column>\n</Component>\n<Search count={1} />",
+    )
+    // 声明语法本身合法。
+    .expect("未声明 external 应在组件展开阶段诊断");
+    // 读取组件封装诊断。
+    let error = generate_document_view(&document)
+        // 未声明 Rust 外部名称必须失败。
+        .expect_err("未声明 external 不得生成");
+    // 诊断必须包含具体名称。
+    assert!(
+        error.message.contains("未声明的外部符号 format"),
+        "实际诊断：{error:?}"
+    );
+    // 诊断必须回到违规表达式所在 UIX 行。
+    assert_eq!(error.span.line, 4);
+    // 诊断必须提供可直接采用的 external 修复。
+    assert!(error.suggestion.contains("external=\"format\""));
+}
+
 // 验证私有状态、回调 prop 与静态组件组合生成确定性令牌。
 #[test]
 fn generates_state_callback_and_composition_tokens() {
@@ -120,7 +178,7 @@ fn generates_per_node_dynamic_style_identity_inside_for() {
     let document = parse_document(
         r#"
         selectedRow { padding: 8px; }
-        <Component name="Rows">
+        <Component name="Rows" external="items">
           <Column><For {item} in {items} key={item.id}><Text @click="setStyle('selectedRow')">{item.name}</Text></For></Column>
         </Component>
         <Rows />

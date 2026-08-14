@@ -59,7 +59,7 @@ UIX Lang 是 UIX Rust API 的文本投影，**转换由 uix-app 框架在编译�
 | `styleName { ... }` 样式类 | 编译期展开 `extends` 与同名属性覆盖，再精确更新 `Style` | 已实现（限已登记样式属性） |
 | `@theme light { ... }` | App 作用域 `Theme` / `ThemeTokens` | 已实现（`primaryColor` / `backgroundColor`） |
 | `<App title="..." size="...">` | 现有 `App` builder + 根工厂 | 已实现（由 `uix_app!` 返回，不调用 `run`） |
-| `<Component name="X">` | 编译期展开 props、state、回调与组件体 | 已实现（组件体限已登记标签） |
+| `<Component name="X">` | 编译期展开 props、state、external、回调与组件体 | 已实现（组件体外部符号须显式声明） |
 | `<For {item} in {items}>` | `for` 循环生成 `ViewNode` 列表 | 已实现（须位于容器内） |
 | `@import` / `@export` | 过程宏递归解析文件依赖图并合并显式公开组件 | 已实现（仅文件入口；嵌套无环；全量或具名导入） |
 

@@ -1,5 +1,5 @@
-// 引入确定性组件与字段映射。
-use std::collections::BTreeMap;
+// 引入确定性组件、字段与名称集合。
+use std::collections::{BTreeMap, BTreeSet};
 
 // 引入过程宏标识符与令牌流。
 use proc_macro2::{Ident, Span, TokenStream};
@@ -90,6 +90,10 @@ pub(super) struct ComponentExpander {
     pub(super) styles: StyleClassResolver,
     // 保存最近 UIX Component 的运行时作用域局部变量。
     pub(super) component_scope_stack: Vec<Ident>,
+    // 保存最近 UIX Component 获准使用的 Rust 外部符号。
+    pub(super) external_scope_stack: Vec<BTreeSet<String>>,
+    // 保存嵌套 For 引入的词法局部标识符。
+    pub(super) local_scope_stack: Vec<BTreeSet<String>>,
     // 保存嵌套 For 当前实际实例路径的局部变量。
     pub(super) for_path_stack: Vec<Ident>,
 }
@@ -152,6 +156,10 @@ impl ComponentExpander {
             styles,
             // 文档根尚未进入任何 UIX Component。
             component_scope_stack: Vec::new(),
+            // 文档根没有组件 external 白名单。
+            external_scope_stack: Vec::new(),
+            // 文档根没有 For 词法局部变量。
+            local_scope_stack: Vec::new(),
             // 文档根尚未进入任何 For 实例。
             for_path_stack: Vec::new(),
         })
@@ -295,6 +303,8 @@ impl ComponentExpander {
                 )?;
             }
         }
+        // 标记是否为当前 For 压入了词法局部变量。
+        let mut pushed_for_locals = false;
         // 改写 If 或 For 控制表达式。
         if let Some(control) = &mut expanded.control {
             // 按控制绑定形状改写。
@@ -311,7 +321,17 @@ impl ComponentExpander {
                     false,
                 )?,
                 // 改写 For 数据源与可选 key。
-                ControlBinding::For { iterable, key, .. } => {
+                ControlBinding::For {
+                    // 借用循环项绑定名称。
+                    binding,
+                    // 借用可选索引绑定名称。
+                    index_binding,
+                    // 借用数据源与稳定 key。
+                    iterable,
+                    key,
+                    // 忽略仅用于诊断的绑定跨度。
+                    ..
+                } => {
                     // 改写循环数据源。
                     self.transform_expression(
                         // 可变借用数据源表达式。
@@ -323,10 +343,23 @@ impl ComponentExpander {
                         // 数据源不是句柄位。
                         false,
                     )?;
+                    // 保存当前 For 为 key 与子树引入的词法绑定。
+                    let mut locals = BTreeSet::new();
+                    // 循环项始终属于当前 For 局部作用域。
+                    locals.insert(binding.clone());
+                    // 可选索引存在时加入同一局部作用域。
+                    if let Some(index_binding) = index_binding {
+                        // 保存索引绑定名称。
+                        locals.insert(index_binding.clone());
+                    }
+                    // 在 key 与子树展开期间启用当前词法作用域。
+                    self.local_scope_stack.push(locals);
+                    // 记录当前元素负责恢复该作用域。
+                    pushed_for_locals = true;
                     // 存在 key 时同步改写。
                     if let Some(key) = key {
                         // 改写稳定身份表达式。
-                        self.transform_expression(
+                        let key_result = self.transform_expression(
                             // 可变借用 key 表达式。
                             &mut key.expression,
                             // 使用当前字段绑定。
@@ -335,7 +368,14 @@ impl ComponentExpander {
                             false,
                             // key 不是句柄位。
                             false,
-                        )?;
+                        );
+                        // key 诊断前先恢复词法作用域。
+                        if let Err(error) = key_result {
+                            // 弹出当前 For 局部变量。
+                            self.local_scope_stack.pop();
+                            // 返回原始 key 诊断。
+                            return Err(error);
+                        }
                     }
                 }
             }
@@ -347,13 +387,20 @@ impl ComponentExpander {
             // 压入当前循环路径。
             self.for_path_stack.push(path.clone());
         }
-        // 展开全部有序子节点。
-        expanded.children = self.expand_nodes(&element.children, bindings, child_inside_for)?;
+        // 展开全部有序子节点并暂存诊断以确保作用域恢复。
+        let expanded_children = self.expand_nodes(&element.children, bindings, child_inside_for);
         // 离开 For 子树后恢复外层实例路径。
         if for_path.is_some() {
             // 弹出刚才压入的循环路径。
             self.for_path_stack.pop();
         }
+        // 离开 For 子树后恢复外层词法变量。
+        if pushed_for_locals {
+            // 弹出当前 For 局部变量集合。
+            self.local_scope_stack.pop();
+        }
+        // 在所有作用域恢复后传播子树诊断。
+        expanded.children = expanded_children?;
         // 返回单一普通元素节点。
         Ok(vec![Node::Element(expanded)])
     }
@@ -478,6 +525,8 @@ impl ComponentExpander {
         let attributes = validate_component_attributes(element, &component)?;
         // 进入当前组件展开栈。
         self.stack.push(component.name.clone());
+        // 标记当前调用是否已进入被调用组件的 external 作用域。
+        let mut pushed_external = false;
         // 在闭包内展开以确保错误路径也弹栈。
         let result = (|| {
             // 组件体只看见自身字段。
@@ -529,6 +578,12 @@ impl ComponentExpander {
                 // 生成类型化 prop 绑定。
                 self.emit_prop_binding(prop, attribute, outer_bindings, &mut bindings)?;
             }
+            // props 在调用方作用域求值完成后进入被调用组件白名单。
+            self.external_scope_stack
+                // 转为确定性集合供 state 与组件体表达式查询。
+                .push(component.external.iter().cloned().collect());
+            // 记录错误路径也需要恢复被调用组件作用域。
+            pushed_external = true;
             // 按声明顺序生成私有状态。
             for state in &component.states {
                 // 生成 State 句柄与读值。
@@ -563,6 +618,11 @@ impl ComponentExpander {
             // 返回附带作用域标记的组件展开结果。
             Ok(nodes)
         })();
+        // 已进入被调用组件时恢复调用方 external 作用域。
+        if pushed_external {
+            // 弹出被调用组件外部符号白名单。
+            self.external_scope_stack.pop();
+        }
         // 离开当前组件展开栈。
         self.stack.pop();
         // 返回展开结果或诊断。

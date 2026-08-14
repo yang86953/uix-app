@@ -8,8 +8,8 @@ use quote::quote;
 
 // 引入组件展开器与字段绑定。
 use super::component_codegen::{Bindings, ComponentExpander};
-// 引入数据类型构造链识别。
-use super::is_data_constructor_chain;
+// 引入数据类型构造链与根名称识别。
+use super::{is_data_constructor_chain, is_registered_data_type};
 // 引入调用参数、表达式与诊断 AST。
 use super::{CallArgument, Diagnostic, Expression, ExpressionKind};
 
@@ -150,6 +150,16 @@ impl ComponentExpander {
                         // 普通位置替换为读值名称。
                         *name = binding.value_name.clone();
                     }
+                } else if !self.is_component_identifier_allowed(name) {
+                    // 返回组件封装边界诊断。
+                    return Err(Diagnostic::new(
+                        // 指向未声明标识符的表达式位置。
+                        expression.span,
+                        // 说明缺失的外部依赖名称。
+                        format!("组件表达式引用了未声明的外部符号 {name}"),
+                        // 给出最小声明修复。
+                        format!("在 Component 上添加 external=\"{name}\"，或把它声明为 prop/state"),
+                    ));
                 }
             }
             // 一元表达式递归改写操作数。
@@ -325,6 +335,49 @@ impl ComponentExpander {
         }
         // 报告表达式改写成功。
         Ok(())
+    }
+
+    // 判断标识符是否属于当前组件允许的封闭名称集合。
+    fn is_component_identifier_allowed(&self, name: &str) -> bool {
+        // 文档根不执行 Component external 封装检查。
+        let Some(external) = self.external_scope_stack.last() else {
+            // 保持公开宏根表达式由 Rust 名称解析负责。
+            return true;
+        };
+        // external 显式白名单直接放行。
+        if external.contains(name) {
+            // 返回已声明结果。
+            return true;
+        }
+        // 任一嵌套 For 词法作用域可提供局部名称。
+        if self
+            // 遍历当前嵌套的循环作用域。
+            .local_scope_stack
+            // 借用作用域迭代器。
+            .iter()
+            // 查找同名局部变量。
+            .any(|scope| scope.contains(name))
+        {
+            // 返回词法绑定结果。
+            return true;
+        }
+        // UIX 内建、事件占位符与 Option 构造不依赖调用方声明。
+        if matches!(
+            // 匹配语言保留名称。
+            name,
+            // 列出当前表达式与专用组件生成器拥有的内建。
+            "$event" | "setState" | "setStyle" | "setTheme" | "submitForm" | "Some" | "None"
+        ) {
+            // 返回内建结果。
+            return true;
+        }
+        // 已登记数据构造器属于语言标准名称表。
+        if is_registered_data_type(name) {
+            // 返回数据构造器结果。
+            return true;
+        }
+        // 生成器内部卫生标识符不属于作者依赖。
+        name.starts_with("__uix_")
     }
 
     // 把 setState 命名参数调用降低为卫生闭包调用。

@@ -44,6 +44,8 @@ mod window_drag_region_codegen_tests;
 mod codegen_tests;
 // 定义 Component、props 与 state 的结构化 AST。
 mod component_ast;
+// 定义 Component 声明头与 external 白名单解析。
+mod component_declaration_parser;
 // 定义 Component props 与私有状态的类型化 Rust 绑定。
 mod component_binding_codegen;
 // 定义完整文档中的组件调用展开。
@@ -464,7 +466,7 @@ pub(crate) use component_ast::*;
 // 导出语言面数据类型到公开构造 API 的映射查询。
 pub(crate) use data_binding_codegen::{
     DataConstructorSpec, data_chain_root, data_constructor_spec, is_data_constructor_chain,
-    normalize_number_literals, step_status_path,
+    is_registered_data_type, normalize_number_literals, step_status_path,
 };
 // 向过程宏入口暴露组件感知文档生成函数。
 pub(crate) use component_codegen::generate_document_view;
@@ -472,8 +474,10 @@ pub(crate) use component_codegen::generate_document_view;
 pub(crate) use app_codegen::generate_document_app;
 // 向后续转换 Gate 暴露稳定诊断类型。
 pub(crate) use diagnostic::*;
-// 向文档解析器暴露 Component 与 Record 声明验证入口。
-pub(crate) use component_parser::{parse_component_declaration, parse_record_declaration};
+// 向文档解析器暴露 Component 声明验证入口。
+pub(crate) use component_declaration_parser::parse_component_declaration;
+// 向文档解析器暴露 Record 声明验证入口。
+pub(crate) use component_parser::parse_record_declaration;
 // 向 uix_items! 与组件绑定暴露 record 生成与类型映射入口。
 pub(crate) use record_codegen::{generate_record_items, value_type_tokens};
 // 向文档解析器暴露顶层声明入口。

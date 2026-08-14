@@ -3,6 +3,48 @@ use super::{
     ComponentPropType, ComponentStateInitial, ComponentValueType, Declaration, parse_document,
 };
 
+// 验证 external 白名单按源码顺序进入组件声明。
+#[test]
+fn parses_component_external_contract() {
+    // 解析两个显式 Rust 外部依赖。
+    let document = parse_document(
+        // 使用逗号与空白覆盖规范化行为。
+        r#"<Component name="SearchBox" external="debounce, format"><Text>{format('x')}</Text></Component><SearchBox />"#,
+    )
+    // 合法 external 声明必须解析成功。
+    .expect("组件 external 契约应成功解析");
+    // 提取组件声明。
+    let Declaration::Component(component) = &document.declarations[0] else {
+        // 结构不匹配时失败。
+        panic!("首个声明应为 Component");
+    };
+    // external 名称必须保持源码顺序并去除周围空白。
+    assert_eq!(component.external, ["debounce", "format"]);
+}
+
+// 验证 external 只接受唯一的普通 Rust 标识符。
+#[test]
+fn rejects_invalid_or_duplicate_component_external_names() {
+    // 解析包含成员路径的非法 external 名称。
+    let invalid = parse_document(
+        // external 只声明根标识符而不是 Rust 路径。
+        r#"<Component name="Bad" external="service::format"><Text>A</Text></Component><Bad />"#,
+    )
+    // 非标识符名称必须在声明阶段失败。
+    .expect_err("非法 external 名称不得通过");
+    // 诊断必须说明 Rust 标识符约束。
+    assert!(invalid.message.contains("不是合法 Rust 标识符"));
+    // 解析重复 external 名称。
+    let duplicate = parse_document(
+        // 相同名称出现两次。
+        r#"<Component name="Bad" external="format, format"><Text>A</Text></Component><Bad />"#,
+    )
+    // 重复名称必须在声明阶段失败。
+    .expect_err("重复 external 名称不得通过");
+    // 诊断必须包含具体重复名称。
+    assert!(duplicate.message.contains("external 符号 format 重复声明"));
+}
+
 // 验证四类 props 与私有 state 按源码顺序结构化解析。
 #[test]
 fn parses_component_props_and_state_contract() {
