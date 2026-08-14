@@ -86,11 +86,6 @@ const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
         name: "ProgressBar",
         category: "内置组件 / 反馈组件",
     },
-    // 反馈组件规划项。
-    PlannedBuiltin {
-        name: "FloatButtonBackTop",
-        category: "内置组件 / 反馈组件",
-    },
 ];
 
 // 为已登记但规划中的内置组件生成类别化诊断。
@@ -109,7 +104,7 @@ pub(crate) fn planned_builtin_diagnostic(element: &Element) -> Option<Diagnostic
             element.name, entry.category
         ),
         // 给出当前真实支持集合。
-        "当前使用 Text、Label、Button、ButtonGroup、FloatButton、FloatButtonGroup、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、WindowDragRegion、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Image、ImageGroup、List、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Steps、Pagination、Breadcrumb、Anchor、QRCode、Watermark、RichText、Alert、Modal、Drawer、Tooltip、Popover、FocusTrap 或 Spin；Col 仅作为 Row/Grid 的直接子项，或先完成该组件的属性映射 Gate",
+        "当前使用 Text、Label、Button、ButtonGroup、FloatButton、FloatButtonGroup、FloatButtonBackTop、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、WindowDragRegion、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Avatar、Image、ImageGroup、List、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Steps、Pagination、Breadcrumb、Anchor、QRCode、Watermark、RichText、Alert、Modal、Drawer、Tooltip、Popover、FocusTrap 或 Spin；Col 仅作为 Row/Grid 的直接子项，或先完成该组件的属性映射 Gate",
     ))
 }
 

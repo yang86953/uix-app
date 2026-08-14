@@ -34,20 +34,35 @@ pub(crate) fn generate_back_top(element: &Element) -> Result<TokenStream, Diagno
             "使用 scrollY={scroll_y}",
         )
     })?;
-    // 状态句柄必须来自表达式而不是字面量。
-    let AttributeValue::Expression(scroll_expression) = &scroll_attribute.value else {
-        // 返回绑定形状诊断。
-        return Err(Diagnostic::new(
-            // 指向非法属性。
-            scroll_attribute.span,
-            // 说明公开运行时类型要求。
-            "BackTop scrollY 必须绑定 State<f32> 表达式",
-            // 给出合法绑定示例。
-            "使用 scrollY={scroll_y}",
-        ));
+    // 根据属性形状生成状态绑定或只读数值快照调用。
+    let scroll_configuration = match &scroll_attribute.value {
+        // 表达式保留既有 State<f32> 双向状态所有权。
+        AttributeValue::Expression(scroll_expression) => {
+            // 生成受限 Rust 状态表达式。
+            let scroll_state = generate_expression(&scroll_expression.expression, None)?;
+            // 借用应用拥有的状态句柄。
+            quote! { .scroll_state(&(#scroll_state)) }
+        }
+        // 数值字面量只建立本轮只读滚动快照。
+        AttributeValue::Literal(_) => {
+            // 复用有限数值与长度字面量诊断。
+            let scroll_y = numeric_value(scroll_attribute)?;
+            // 调用公开只读快照构建器。
+            quote! { .scroll_y(#scroll_y) }
+        }
+        // 内联样式对象不能表达滚动位置。
+        AttributeValue::InlineStyle(_) => {
+            // 返回精确的属性形状诊断。
+            return Err(Diagnostic::new(
+                // 指向非法 scrollY 属性。
+                scroll_attribute.span,
+                // 说明允许的两种公开输入。
+                "BackTop scrollY 必须绑定 State<f32> 或使用数值字面量",
+                // 给出状态绑定和只读快照示例。
+                "使用 scrollY={scroll_y} 或 scrollY=\"450\"",
+            ));
+        }
     };
-    // 生成受限 Rust 状态表达式。
-    let scroll_state = generate_expression(&scroll_expression.expression, None)?;
     // 从公开默认构造器开始配置。
     let mut widget = quote! { ::uix::prelude::BackTop::new() };
     // 可选阈值支持长度字面量与受限数值表达式。
@@ -57,8 +72,8 @@ pub(crate) fn generate_back_top(element: &Element) -> Result<TokenStream, Diagno
         // 映射到现有公开 visibility_height 构建器。
         widget = quote! { (#widget).visibility_height(#threshold) };
     }
-    // 最后绑定应用拥有的滚动状态句柄。
-    widget = quote! { (#widget).scroll_state(&(#scroll_state)) };
+    // 最后应用状态绑定或只读快照配置。
+    widget = quote! { (#widget) #scroll_configuration };
     // 先物化为公开叶 View，再应用统一尺寸、样式与自动化属性。
     let base = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
     // 消费专有属性并返回公共 View 表达式。
