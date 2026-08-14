@@ -6,6 +6,8 @@ use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields,
     SnapshotTransferItem, SystemEvent, WidgetTree,
 };
+// 引入 Transfer 私有排版值契约消费的主题接口。
+use crate::ui::ThemeTokens;
 // 引入组件局部状态与待发变化记录所需的单线程容器。
 use std::cell::{Cell, RefCell};
 // 引入稳定身份集合，确保同一 pane 的条目不会共享动态状态命名空间。
@@ -26,6 +28,35 @@ const SEARCH_BAR_H: f32 = 24.0;
 const ROW_H: f32 = 28.0;
 // 面板最小半宽（像素），窄窗下保证按钮列可用。
 const MIN_PANE_HALF_W: f32 = 40.0;
+// 条目字号位于小号正文与正文 token 的中点。
+const ITEM_FONT_MIDPOINT_WEIGHT: f32 = 0.5;
+
+// 保存一次绘制内解析出的 Transfer 排版值。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TransferTypography {
+    // 搜索说明与面板标题使用小号正文。
+    caption: f32,
+    // 列表条目使用小号正文与正文之间的紧凑字号。
+    item: f32,
+}
+
+// 将主题排版 token 转换为组件私有绘制值。
+impl TransferTypography {
+    // 从当前组件主题作用域解析排版。
+    fn resolve(tokens: &dyn ThemeTokens) -> Self {
+        // 读取主题拥有的小号正文字号。
+        let caption = tokens.font_size_sm();
+        // 读取主题拥有的正文字号。
+        let body = tokens.font_size();
+        // 返回供当前绘制批次复用的稳定值。
+        Self {
+            // 搜索说明与标题直接使用小号正文 token。
+            caption,
+            // 默认主题下保持原 13px，同时跟随两个相邻 token 变化。
+            item: caption + (body - caption) * ITEM_FONT_MIDPOINT_WEIGHT,
+        }
+    }
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // Transfer
@@ -169,6 +200,8 @@ component! {
         let text_sec = ctx.tokens().color_text_quaternary();
         let primary = ctx.tokens().color_primary();
         let fill = ctx.tokens().color_fill_tertiary();
+        // 在组件主题作用域内只解析一次排版值。
+        let typography = TransferTypography::resolve(ctx.tokens());
         let search_h = if self.searchable { SEARCH_BAR_H } else { 0.0 };
         let content_header_h = LIST_HEADER_H + search_h;
         let half = ((frame.w - BTN_COL_W) * 0.5).max(MIN_PANE_HALF_W);
@@ -198,20 +231,21 @@ component! {
                 &format!("搜索: {}", self.search_query),
                 Point::new(frame.x + 8.0, frame.y + 6.0),
                 text_sec,
-                11.0,
+                typography.caption,
             );
         }
         ctx.draw_text(
             &format!("{} ({}项)", source_title, self.source.len()),
             Point::new(frame.x + 8.0, frame.y + search_h + 6.0),
             text_sec,
-            12.0,
+            typography.caption,
         );
         for (i, raw_index) in self.visible_indices(TransferPane::Source).into_iter().enumerate() {
             let item = &self.source[raw_index];
             let y = frame.y + content_header_h + i as f32 * item_h;
             let row_rect = Rect::new(frame.x, y, half, item_h);
-            let row_y = ctx.visual_center_y(row_rect, 13.0);
+            // 文字垂直定位与实际绘制共享同一个主题派生字号。
+            let row_y = ctx.visual_center_y(row_rect, typography.item);
             if item.selected { ctx.fill_rect(row_rect, fill, None); }
             if self.focused
                 && tree.keyboard_focus_visible()
@@ -228,7 +262,17 @@ component! {
                 12.0,
             );
             if self.item_renderer.is_none() {
-                ctx.draw_text(&item.title, Point::new(frame.x + 26.0, row_y), text, 13.0);
+                // 默认条目文本使用主题派生的紧凑字号。
+                ctx.draw_text(
+                    // 绘制当前源条目标题。
+                    &item.title,
+                    // 保持既有条目文本起点。
+                    Point::new(frame.x + 26.0, row_y),
+                    // 使用当前主题正文颜色。
+                    text,
+                    // 使用与垂直定位一致的派生字号。
+                    typography.item,
+                );
             }
         }
         let btn_y = frame.y + frame.h * 0.5 - 20.0;
@@ -275,20 +319,21 @@ component! {
                 &format!("搜索: {}", self.search_query),
                 Point::new(right_x + 8.0, frame.y + 6.0),
                 text_sec,
-                11.0,
+                typography.caption,
             );
         }
         ctx.draw_text(
             &format!("{} ({}项)", target_title, self.target.len()),
             Point::new(right_x + 8.0, frame.y + search_h + 6.0),
             text_sec,
-            12.0,
+            typography.caption,
         );
         for (i, raw_index) in self.visible_indices(TransferPane::Target).into_iter().enumerate() {
             let item = &self.target[raw_index];
             let y = frame.y + content_header_h + i as f32 * item_h;
             let row_rect = Rect::new(right_x, y, half, item_h);
-            let row_y = ctx.visual_center_y(row_rect, 13.0);
+            // 文字垂直定位与实际绘制共享同一个主题派生字号。
+            let row_y = ctx.visual_center_y(row_rect, typography.item);
             if item.selected { ctx.fill_rect(row_rect, fill, None); }
             if self.focused
                 && tree.keyboard_focus_visible()
@@ -305,7 +350,17 @@ component! {
                 12.0,
             );
             if self.item_renderer.is_none() {
-                ctx.draw_text(&item.title, Point::new(right_x + 26.0, row_y), text, 13.0);
+                // 默认条目文本使用主题派生的紧凑字号。
+                ctx.draw_text(
+                    // 绘制当前目标条目标题。
+                    &item.title,
+                    // 保持既有条目文本起点。
+                    Point::new(right_x + 26.0, row_y),
+                    // 使用当前主题正文颜色。
+                    text,
+                    // 使用与垂直定位一致的派生字号。
+                    typography.item,
+                );
             }
         }
     }
@@ -680,5 +735,31 @@ impl Transfer {
 impl Default for Transfer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// 验证 Transfer 排版随主题 token 解析。
+#[cfg(test)]
+mod typography_tests {
+    // 引入被测私有排版值契约。
+    use super::TransferTypography;
+    // 引入可定制的主题 token 实现。
+    use crate::ui::theme::DesignTokens;
+
+    // 自定义排版 token 必须驱动标题与条目字号。
+    #[test]
+    fn transfer_typography_resolves_custom_theme_tokens() {
+        // 从完整亮色主题建立测试 token。
+        let mut tokens = DesignTokens::antd_light();
+        // 覆写小号正文以证明组件没有保留固定 12px。
+        tokens.font_size_sm = 10.0;
+        // 覆写正文以证明紧凑条目字号由主题相邻 token 派生。
+        tokens.font_size = 18.0;
+        // 解析当前测试主题的组件排版。
+        let typography = TransferTypography::resolve(&tokens);
+        // 标题与搜索说明必须直接使用小号正文 token。
+        assert_eq!(typography.caption, 10.0);
+        // 条目字号必须是两个相邻 token 的中点。
+        assert_eq!(typography.item, 14.0);
     }
 }
