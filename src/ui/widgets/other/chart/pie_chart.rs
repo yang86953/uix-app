@@ -14,13 +14,18 @@ use super::advanced::{
 };
 
 #[derive(Debug, Clone, PartialEq)]
+/// 饼图中的单个分类扇区数据。
 pub struct PieData {
+    /// 显示在标签、图例和提示框中的分类名称。
     pub label: String,
+    /// 用于计算扇区占比的原始数值。
     pub value: f32,
+    /// 绘制该扇区时使用的颜色。
     pub color: Color,
 }
 
 impl PieData {
+    /// 使用分类名称、数值和扇区颜色创建数据项。
     pub fn new(label: impl Into<String>, value: f32, color: Color) -> Self {
         Self {
             label: label.into(),
@@ -357,6 +362,7 @@ impl Default for PieChart {
 impl PieChart {
     const DEFAULT_SIZE: f32 = 180.0;
 
+    /// 创建空的完整饼图，并默认显示内部标签和右侧图例。
     pub fn new() -> Self {
         Self {
             data: Vec::new(),
@@ -389,14 +395,17 @@ impl PieChart {
             zoom: Cell::new(1.0),
         }
     }
+    /// 替换饼图的全部分类数据。
     pub fn data(mut self, d: Vec<PieData>) -> Self {
         self.data = d;
         self
     }
+    /// 设置固定正方形边长；非法或非正值恢复为默认尺寸。
     pub fn size(mut self, s: f32) -> Self {
         self.fixed_size = if s.is_finite() && s > 0.0 { s } else { 0.0 };
         self
     }
+    /// 设置圆孔半径占图表半径的比例，并夹取到零至 0.9。
     pub fn donut(mut self, r: f32) -> Self {
         self.hole_radius = if r.is_finite() {
             r.clamp(0.0, 0.9)
@@ -406,48 +415,58 @@ impl PieChart {
         self
     }
 
+    /// 设置是否用等角扇区和数据驱动半径呈现南丁格尔玫瑰图。
     pub fn rose(mut self, value: bool) -> Self {
         self.rose = value;
         self
     }
+    /// 设置玫瑰图按半径或面积映射数据占比。
     pub fn rose_style(mut self, style: RoseStyle) -> Self {
         self.rose_style = style;
         self
     }
+    /// 设置扇区扫描的起始角度；非有限输入被忽略。
     pub fn start_angle(mut self, angle: f32) -> Self {
         if angle.is_finite() {
             self.start_angle = angle;
         }
         self
     }
+    /// 设置未指定显式扫描终点时使用的结束角度。
     pub fn end_angle(mut self, angle: f32) -> Self {
         if angle.is_finite() {
             self.end_angle = angle;
         }
         self
     }
+    /// 设置替代 `end_angle` 的显式扫描终止角；非有限输入被忽略。
     pub fn total(mut self, total: f32) -> Self {
         if total.is_finite() {
             self.total = Some(total);
         }
         self
     }
+    /// 设置是否绘制各扇区的数据标签。
     pub fn label_visible(mut self, visible: bool) -> Self {
         self.label_visible = visible;
         self
     }
+    /// 设置数据标签相对扇区的位置。
     pub fn label_position(mut self, position: LabelPosition) -> Self {
         self.label_position = position;
         self
     }
+    /// 设置图例相对绘图区的保留位置。
     pub fn legend(mut self, position: LegendPosition) -> Self {
         self.legend = position;
         self
     }
+    /// 设置图表内容区域的背景颜色。
     pub fn bg(mut self, color: Color) -> Self {
         self.background = Some(color);
         self
     }
+    /// 设置图表内容内边距；非有限值归零，负值夹取为零。
     pub fn padding(mut self, padding: f32) -> Self {
         self.padding = if padding.is_finite() {
             padding.max(0.0)
@@ -456,30 +475,37 @@ impl PieChart {
         };
         self
     }
+    /// 设置显示在绘图区上方的标题。
     pub fn title(mut self, title: impl Into<String>) -> Self {
         self.title = title.into();
         self
     }
+    /// 设置显示在标题下方的副标题。
     pub fn subtitle(mut self, subtitle: impl Into<String>) -> Self {
         self.subtitle = subtitle.into();
         self
     }
+    /// 设置图表是否使用父约束提供的响应式尺寸。
     pub fn responsive(mut self, responsive: bool) -> Self {
         self.responsive = responsive;
         self
     }
+    /// 启用并配置缩放、平移或数据点击交互。
     pub fn interactive(mut self, config: InteractionConfig) -> Self {
         self.interaction = Some(config);
         self
     }
+    /// 启用并配置绘图区范围刷选交互。
     pub fn brush(mut self, config: BrushConfig) -> Self {
         self.brush_config = Some(config);
         self
     }
+    /// 启用并配置扇区数据提示框。
     pub fn tooltip(mut self, config: TooltipConfig) -> Self {
         self.tooltip_config = Some(config);
         self
     }
+    /// 启用图表动画；当前保留配置参数供后续动画策略使用。
     pub fn animation(mut self, _animation: crate::ui::animation::AnimationConfig) -> Self {
         self.animation_enabled = true;
         self
