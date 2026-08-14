@@ -16,7 +16,10 @@ use std::cell::Cell;
 
 /// 可绑定到 `InputNumber` 的数值类型。
 pub trait InputNumberValue: Clone + PartialEq + Send + Sync + 'static {
+    /// 将绑定值投影为组件内部使用的 `f64`。
     fn to_f64(&self) -> f64;
+
+    /// 将组件提交的 `f64` 转换回绑定类型。
     fn from_f64(value: f64) -> Self;
 }
 
@@ -417,6 +420,7 @@ component! {
 }
 
 impl InputNumber {
+    /// 创建使用无限制值域、步长一和标准配置尺寸的数字输入框。
     pub fn new() -> Self {
         let config = crate::ui::component::config::use_config();
         Self {
@@ -463,11 +467,13 @@ impl InputNumber {
         self
     }
 
+    /// 设置尚未配置数值时显示的占位文本。
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.placeholder = placeholder.into();
         self
     }
 
+    /// 设置有限下界，并在必要时同步抬高上界和当前值。
     pub fn min(mut self, v: f64) -> Self {
         if v.is_finite() {
             self.min = v;
@@ -479,6 +485,7 @@ impl InputNumber {
         self
     }
 
+    /// 设置有限上界，并在必要时同步降低下界和当前值。
     pub fn max(mut self, v: f64) -> Self {
         if v.is_finite() {
             self.max = v;
@@ -490,6 +497,7 @@ impl InputNumber {
         self
     }
 
+    /// 设置正有限步长；非法值回退为一。
     pub fn step(mut self, v: f64) -> Self {
         self.step = if v.is_finite() && v > 0.0 { v } else { 1.0 };
         self
@@ -505,6 +513,7 @@ impl InputNumber {
         self
     }
 
+    /// 设置是否禁止所有用户输入交互。
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self
@@ -530,6 +539,7 @@ impl InputNumber {
         self
     }
 
+    /// 设置数字输入框使用的标准控件尺寸。
     pub fn size(mut self, size: ControlSize) -> Self {
         self.input_size = size;
         self
