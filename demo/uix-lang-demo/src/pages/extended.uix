@@ -154,8 +154,8 @@
 // 结束输入组件页组件。
 </Component>
 
-// 声明数据展示页组件。
-<Component name="DataPage">
+// 声明数据展示页组件并持有稳定选中与展开状态。
+<Component name="DataPage" state="selected_item: Option<String> = None, active_panels: Vec<String> = []">
   // 组织数据展示内容。
   <Column gap="16px">
     // 展示数据组件标题。
@@ -179,6 +179,30 @@
       // 结束卡片列表内容。
       </Column>
     // 结束卡片列表面板。
+    </Container>
+    // 展示选择、折叠与徽标组件面板。
+    <Container class="pagePanel">
+      // 组织三个新登记数据展示组件。
+      <Column gap="12px">
+        // 展示面板小节标题。
+        <Text fontSize="heading5">SelectableList / Collapse / Badge</Text>
+        // 使用稳定 id 与可空状态驱动可选中列表。
+        <SelectableList items={[SelectableItem('overview', '总览'), SelectableItem('details', '详情'), SelectableItem('history', '历史记录')]} active={selected_item} width="320px" height="150px" automationId="demo-selectable-list" />
+        // 使用稳定 key 集合驱动手风琴折叠面板。
+        <Collapse panels={[CollapsePanel('基础信息', '展示公开字段与状态。').key('basic'), CollapsePanel('高级信息', '展示稳定 key 与受控展开。').key('advanced')]} accordion activeKeys={active_panels} width="420px" automationId="demo-collapse" />
+        // 排列数字、圆点与文字徽标。
+        <Container direction="row" gap="18px" align="center">
+          // 用数字徽标装饰真实业务按钮。
+          <Badge count="5"><Button>通知</Button></Badge>
+          // 用圆点徽标装饰真实头像。
+          <Badge dot><Avatar text="UI" /></Badge>
+          // 展示零子节点文字徽标。
+          <Badge text="NEW" automationId="demo-badge" />
+        // 结束徽标行。
+        </Container>
+      // 结束选择、折叠与徽标内容。
+      </Column>
+    // 结束选择、折叠与徽标面板。
     </Container>
     // 展示时间轴面板。
     <Container class="pagePanel">
@@ -260,15 +284,15 @@
       </Column>
     // 结束状态组件面板。
     </Container>
-    // 说明未登记标签边界。
-    <Alert message="Table 已登记类型化 data / columns 生成映射；SelectableList、Collapse、Badge 标签仍保持 Rust API 边界。" type="info" />
+    // 说明数据展示标签已完成声明式覆盖。
+    <Alert message="Table、SelectableList、Collapse 与 Badge 均由 uix-lang 生成并复用公开受控状态契约。" type="success" />
   // 结束数据展示内容。
   </Column>
 // 结束数据展示页组件。
 </Component>
 
-// 声明反馈组件页组件：受控浮层由组件私有 state 与 setState 驱动。
-<Component name="FeedbackPage" state="feedback_open: false, drawer_open: false">
+// 声明反馈组件页组件：受控浮层与确认计数由组件私有 state 驱动。
+<Component name="FeedbackPage" state="feedback_open: false, drawer_open: false, confirm_count: 0, cancel_count: 0">
   // 组织反馈组件内容。
   <Column gap="16px">
     // 展示反馈组件标题。
@@ -290,6 +314,28 @@
       // 结束警告内容。
       </Column>
     // 结束警告提示面板。
+    </Container>
+    // 展示 keyed 消息、通知与确认气泡面板。
+    <Container class="pagePanel">
+      // 组织声明式反馈租约与确认交互。
+      <Column gap="12px">
+        // 展示面板小节标题。
+        <Text fontSize="heading5">Message / Notification / Popconfirm</Text>
+        // 声明不会自动超时的可关闭成功消息。
+        <Message key="demo-message" type="success" content="主演示 Message 已由 uix-lang 声明" duration="0" closable />
+        // 声明不会自动超时的可关闭通知。
+        <Notification key="demo-notification" type="info" title="声明式通知" content="逐窗 overlay host 持有稳定 keyed 租约" duration="0" closable />
+        // 展示确认与取消结果计数。
+        <Text>确认 {confirm_count} 次 · 取消 {cancel_count} 次</Text>
+        // 使用真实按钮作为确认气泡唯一 trigger。
+        <Popconfirm title="确认执行主演示操作？" confirmText="确认" cancelText="取消" placement="bottom" @confirm="setState(confirm_count: confirm_count + 1)" @cancel="setState(cancel_count: cancel_count + 1)">
+          // 保留业务按钮自己的布局与交互身份。
+          <Button type="primary" automationId="demo-popconfirm-trigger">打开 Popconfirm</Button>
+        // 结束确认气泡。
+        </Popconfirm>
+      // 结束声明式反馈内容。
+      </Column>
+    // 结束声明式反馈面板。
     </Container>
     // 展示浮层面板。
     <Container class="pagePanel">
@@ -383,8 +429,8 @@
       </Column>
     // 结束加载反馈面板。
     </Container>
-    // 说明未登记标签边界。
-    <Alert message="Message、Notification、Popconfirm 标签尚未注册，保留 Rust API 边界。" type="info" />
+    // 说明反馈标签已完成声明式覆盖。
+    <Alert message="Message、Notification 与 Popconfirm 已进入主演示并复用逐窗反馈 owner。" type="success" />
   // 结束反馈组件内容。
   </Column>
 // 结束反馈组件页组件。
@@ -405,8 +451,8 @@
 // 结束图表能力页组件。
 </Component>
 
-// 声明其他组件页组件。
-<Component name="OtherPage">
+// 声明其他组件页组件并持有上传队列唯一状态。
+<Component name="OtherPage" state="upload_files: Vec<UploadFile> = []">
   // 组织其他组件内容。
   <Column gap="16px">
     // 展示其他组件标题。
@@ -430,6 +476,20 @@
       // 结束媒体内容。
       </Column>
     // 结束媒体组件面板。
+    </Container>
+    // 展示受控上传组件面板。
+    <Container class="pagePanel">
+      // 组织上传拖放区与边界说明。
+      <Column gap="12px">
+        // 展示面板小节标题。
+        <Text fontSize="heading5">Upload — 受控文件队列</Text>
+        // 绑定组件私有文件状态并启用扩展名、数量与大小门禁。
+        <Upload files={upload_files} accept=".png,*.jpg" multiple maxCount="8" maxSize="10485760" drag width="480px" height="240px" automationId="demo-upload" />
+        // 说明上传运行时所有权边界。
+        <Text fontSize="small">Upload 只拥有拖放与列表瞬态状态；文件队列由 Vec&lt;UploadFile&gt; state 唯一持有。</Text>
+      // 结束上传内容。
+      </Column>
+    // 结束上传面板。
     </Container>
     // 展示语义色面板。
     <Container class="pagePanel">
@@ -457,8 +517,8 @@
       </Column>
     // 结束语义色面板。
     </Container>
-    // 说明未登记标签边界。
-    <Alert message="Transfer、Upload 标签尚未注册，保留 Rust API 边界。" type="info" />
+    // 说明仅剩的输入迁移边界。
+    <Alert message="Upload 已由 uix-lang 生成；Transfer 仍保留 Rust API 边界。" type="info" />
   // 结束其他组件内容。
   </Column>
 // 结束其他组件页组件。

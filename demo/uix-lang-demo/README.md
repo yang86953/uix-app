@@ -61,15 +61,17 @@ Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。Windows 入口
 - 声明式状态：12 个页面各自声明为 `<Component>`；双向绑定（输入、勾选、选择、日期、
   分页、步骤、受控 Modal / Drawer）直接使用组件私有 state 与 `setState`，类型化
   state 注解覆盖基础类型（`u32` / `usize` / `f32` / `i32`）、语义类型（Date / Time /
-  Color / Point / CascaderValue / HashSet&lt;String&gt;）与 record 模型。
-- 类型化数据（SelectOption、CascaderOption、TreeNode、TimelineItem、DescriptionsItem、
-  BreadcrumbItem、AnchorItem、Step）由语言面数据构造链直接声明：`SelectOption('中国', 'cn')`、
+  Color / Point / CascaderValue / HashSet&lt;String&gt; / Option&lt;String&gt; / Vec&lt;String&gt; /
+  Vec&lt;UploadFile&gt;）与 record 模型。
+- 类型化数据（SelectableItem、CollapsePanel、SelectOption、CascaderOption、TreeNode、
+  TimelineItem、DescriptionsItem、BreadcrumbItem、AnchorItem、Step）由语言面数据构造链直接声明：`SelectOption('中国', 'cn')`、
   `CascaderOption('浙江', 'zj').children([...])`、`Step('注册').status('finish')`；数组字面量
   `['female', 'male']` 编译为 vec，同一数据绑定可被多个标签按值 clone 复用。
 - 语言能力：props（String / number / bool / State<T> / 回调签名）、样式类继承与内联
   style、If / For 控制流、setTheme 框架内置操作（主题请求通道，无调用方桥接）、
   `<Record>` 类型化业务模型（`uix_items!` 生成模块级结构体供 Rust 侧回调引用）。
-- Transfer 与图表等尚未登记的 UIX 标签保留 Rust API 边界，并在界面中明确说明。
+- Transfer 与图表等尚未登记的 UIX 标签保留 Rust API 边界；SelectableList、Collapse、
+  Badge、Upload、Message、Notification 与 Popconfirm 已在主演示中提供声明样例。
 - 真窗验收控制面是测试侧能力，不复制到声明式产品界面；主演示通过
   `agent-control` feature 与 `--agent-control` 参数双门禁复用现有 App System 控制面。
 - 图形恢复页面通过 `test-harness` feature 与 `--test-graphics-recovery` 参数双门禁独立
