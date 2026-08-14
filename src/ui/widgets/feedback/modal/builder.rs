@@ -47,54 +47,64 @@ impl ModalBuilder {
     }
 
     // 设置已经物化的有序内容 View，供声明式生成器保留 If/For 展开结果。
+    /// 替换已经物化、按声明顺序排列的全部内容节点。
     pub fn content_nodes(mut self, content: Vec<crate::ui::view::ViewNode>) -> Self {
         // 直接取得 View 集合所有权，避免复制运行节点或生命周期句柄。
         self.content = content;
         self
     }
 
+    /// 设置对话框标题。
     pub fn title(mut self, title: impl Into<String>) -> Self {
         self.modal.title = title.into();
         self
     }
 
+    /// 设置非负宽度；非有限数值会归零。
     pub fn width(mut self, width: f32) -> Self {
         self.modal.width = Modal::normalize_dimension(width);
         self
     }
 
+    /// 设置非负高度；非有限数值会归零。
     pub fn height(mut self, height: f32) -> Self {
         self.modal.height = Modal::normalize_dimension(height);
         self
     }
 
+    /// 同时设置非负宽高；非有限数值会归零。
     pub fn size(mut self, width: f32, height: f32) -> Self {
         self.modal.width = Modal::normalize_dimension(width);
         self.modal.height = Modal::normalize_dimension(height);
         self
     }
 
+    /// 设置控件尺寸档位及其对应的预设宽高。
     pub fn modal_size(mut self, size: ControlSize) -> Self {
         self.modal = self.modal.modal_size(size);
         self
     }
 
+    /// 设置是否显示并响应右上角关闭按钮。
     pub fn closable(mut self, closable: bool) -> Self {
         self.modal.closable = closable;
         self
     }
 
+    /// 设置点击遮罩区域是否关闭对话框。
     pub fn mask_closable(mut self, mask_closable: bool) -> Self {
         self.modal.mask_closable = mask_closable;
         self
     }
 
+    /// 设置默认底部确认和取消操作区是否可见。
     pub fn footer_visible(mut self, footer_visible: bool) -> Self {
         self.modal.footer_visible = footer_visible;
         self
     }
 
     // 注册确认操作的同步窄回调。
+    /// 注册用户执行有效确认操作时同步调用的回调。
     pub fn on_ok<F>(mut self, callback: F) -> Self
     where
         // 回调由 Modal 实例持有并在有效确认输入中同步调用。
@@ -107,6 +117,7 @@ impl ModalBuilder {
     }
 
     // 注册取消、遮罩、关闭槽与 Escape 共用的同步窄回调。
+    /// 注册有效取消、遮罩、关闭按钮或 Escape 操作共用的同步回调。
     pub fn on_cancel<F>(mut self, callback: F) -> Self
     where
         // 回调由 Modal 实例持有并在有效取消输入中同步调用。
@@ -118,11 +129,13 @@ impl ModalBuilder {
         self
     }
 
+    /// 设置非浮层模式下是否在可用区域中居中对话框。
     pub fn centered(mut self, centered: bool) -> Self {
         self.modal.centered = centered;
         self
     }
 
+    /// 设置是否把对话框登记为覆盖宿主表面的浮层。
     pub fn overlay(mut self, overlay: bool) -> Self {
         self.modal.overlay = overlay;
         self
@@ -136,16 +149,19 @@ impl ModalBuilder {
         self
     }
 
+    /// 设置退出动画完成后是否从组件树销毁内容子树。
     pub fn destroy_on_close(mut self, destroy_on_close: bool) -> Self {
         self.modal.destroy_on_close = destroy_on_close;
         self
     }
 
+    /// 设置打开时播放的动画。
     pub fn enter_animation(mut self, animation: AnimationConfig) -> Self {
         self.modal = self.modal.enter_animation(animation);
         self
     }
 
+    /// 设置关闭时播放的动画。
     pub fn leave_animation(mut self, animation: AnimationConfig) -> Self {
         self.modal = self.modal.leave_animation(animation);
         self
