@@ -13,6 +13,7 @@ use std::rc::Rc;
 
 /// Modal 内容回调上下文；关闭请求只作用于持有该上下文的 Modal。
 impl Modal {
+    /// 创建默认关闭、居中、带遮罩关闭能力和底部操作区的模态框。
     pub fn new(title: &str) -> Self {
         let size = crate::ui::component::config::use_config().size;
         Self {
@@ -55,6 +56,7 @@ impl Modal {
         .modal_size(size)
     }
 
+    /// 设置初始可见性，并通过正式打开或关闭生命周期应用状态。
     pub fn visible(mut self, v: bool) -> Self {
         self.set_visible(v);
         self
@@ -147,6 +149,7 @@ impl Modal {
         .title(title)
     }
 
+    /// 创建带信息图标和单个确定按钮的快捷对话框。
     pub fn info(title: impl Into<String>, content: impl Into<String>) -> ModalBuilder {
         Self::shortcut(
             title,
@@ -157,6 +160,7 @@ impl Modal {
         )
     }
 
+    /// 创建带警告图标和单个确定按钮的快捷对话框。
     pub fn warning(title: impl Into<String>, content: impl Into<String>) -> ModalBuilder {
         Self::shortcut(
             title,
@@ -167,6 +171,7 @@ impl Modal {
         )
     }
 
+    /// 创建带错误图标和单个确定按钮的快捷对话框。
     pub fn error(title: impl Into<String>, content: impl Into<String>) -> ModalBuilder {
         Self::shortcut(
             title,
@@ -204,12 +209,14 @@ impl Modal {
         .title(title)
     }
 
+    /// 设置自定义对话框宽高，并将非法尺寸归一化。
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.width = Self::normalize_dimension(w);
         self.height = Self::normalize_dimension(h);
         self
     }
 
+    /// 设置控件尺寸档位及其对应的预设宽高。
     pub fn modal_size(mut self, s: ControlSize) -> Self {
         self.modal_size = s;
         match s {
@@ -229,26 +236,31 @@ impl Modal {
         self
     }
 
+    /// 设置是否显示并响应右上角关闭按钮。
     pub fn closable(mut self, v: bool) -> Self {
         self.closable = v;
         self
     }
 
+    /// 设置点击遮罩区域是否关闭对话框。
     pub fn mask_closable(mut self, v: bool) -> Self {
         self.mask_closable = v;
         self
     }
 
+    /// 设置默认底部确认和取消操作区是否可见。
     pub fn footer_visible(mut self, v: bool) -> Self {
         self.footer_visible = v;
         self
     }
 
+    /// 设置非浮层模式下是否在可用区域中居中对话框。
     pub fn centered(mut self, v: bool) -> Self {
         self.centered = v;
         self
     }
 
+    /// 设置是否把对话框登记为覆盖宿主表面的浮层。
     pub fn overlay(mut self, v: bool) -> Self {
         self.overlay = v;
         self
@@ -262,6 +274,7 @@ impl Modal {
         self
     }
 
+    /// 设置退出动画完成后是否从组件树销毁关闭的内容子树。
     pub fn destroy_on_close(mut self, v: bool) -> Self {
         self.destroy_on_close = v;
         self
@@ -286,10 +299,12 @@ impl Modal {
         self
     }
 
+    /// 返回对话框是否处于稳定打开状态。
     pub fn is_visible(&self) -> bool {
         self.visible
     }
 
+    /// 通过正式生命周期打开或关闭对话框。
     pub fn set_visible(&mut self, v: bool) {
         if v {
             self.open();
@@ -298,6 +313,7 @@ impl Modal {
         }
     }
 
+    /// 打开对话框、启动进入动画并同步受控状态。
     pub fn open(&mut self) {
         // 记录调用前是否已经处于稳定打开态，保证回调幂等。
         let was_open = self.visible && !self.closing;
@@ -312,6 +328,7 @@ impl Modal {
         }
     }
 
+    /// 关闭对话框、启动退出动画并同步受控状态。
     pub fn close(&mut self) {
         // 记录调用前是否处于可关闭的稳定打开态。
         let was_open = self.visible && !self.closing;
@@ -418,6 +435,7 @@ impl Modal {
         }
     }
 
+    /// 执行确认回调，并按正常关闭生命周期离开对话框。
     pub fn confirm_close(&mut self) {
         // 公开确认关闭入口复用确认回调与受控写回语义。
         self.confirm_action();
