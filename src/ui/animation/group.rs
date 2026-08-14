@@ -115,10 +115,20 @@ impl fmt::Debug for AnimationGroupItem {
 /// 构造有限动画组失败。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AnimationGroupError {
+    /// 动画组没有任何子项。
     Empty,
-    DuplicateItem { first: usize, duplicate: usize },
+    /// 动画组重复引用了同一个动画源。
+    DuplicateItem {
+        /// 动画源首次出现的索引。
+        first: usize,
+        /// 重复动画源的索引。
+        duplicate: usize,
+    },
+    /// 指定索引的动画源没有可播放内容。
     InactiveItem(usize),
+    /// 指定索引的动画源已经包含延迟。
     DelayedItem(usize),
+    /// 指定索引的动画源没有有限时长。
     UnboundedItem(usize),
 }
 
@@ -173,12 +183,14 @@ pub struct AnimationGroup {
 }
 
 impl AnimationGroup {
+    /// 创建所有子项同时启动的有限动画组。
     pub fn parallel(
         items: impl IntoIterator<Item = AnimationGroupItem>,
     ) -> Result<Self, AnimationGroupError> {
         Self::build(items, GroupSchedule::Parallel)
     }
 
+    /// 创建按输入顺序逐项启动的有限动画组。
     pub fn sequential(
         items: impl IntoIterator<Item = AnimationGroupItem>,
     ) -> Result<Self, AnimationGroupError> {
@@ -322,6 +334,7 @@ impl AnimationGroup {
             .all(|scheduled| scheduled.item.control.is_finished())
     }
 
+    /// 在同一时间点暂停全部子动画并保留组内相对时序。
     pub fn pause(&self) {
         let now = Instant::now();
         // 统一暂停全部子源，保持组内相对时序。
@@ -330,6 +343,7 @@ impl AnimationGroup {
         }
     }
 
+    /// 在同一时间点恢复全部子动画及剩余延迟。
     pub fn resume(&self) {
         let now = Instant::now();
         // 统一恢复全部子源，剩余延迟按暂停余额重建。
@@ -338,6 +352,7 @@ impl AnimationGroup {
         }
     }
 
+    /// 从各自初始状态重启全部子动画及偏移延迟。
     pub fn restart(&self) {
         let now = Instant::now();
         // 统一重启全部子源，重新执行各自的偏移延迟。
@@ -346,6 +361,7 @@ impl AnimationGroup {
         }
     }
 
+    /// 停止全部子动画。
     pub fn stop(&self) {
         // 统一停止全部子源。
         for scheduled in &self.items {
