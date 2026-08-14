@@ -1,5 +1,7 @@
 // 引入组件声明字段解析器。
 use super::component_parser::{parse_computed, parse_props, parse_states, validate_component_name};
+// 引入组件模板插槽声明验证器。
+use super::component_slot_parser::parse_component_slots;
 // 引入组件声明 AST、通用元素与诊断。
 use super::{AttributeValue, ComponentDeclaration, Diagnostic, Element, SourceSpan};
 // 引入名称去重集合。
@@ -128,6 +130,8 @@ pub(crate) fn parse_component_declaration(
         // 未声明 external 时使用空列表。
         None => Vec::new(),
     };
+    // 递归收集并验证组件模板中的默认与具名插槽。
+    let slots = parse_component_slots(&element.children)?;
     // props 与 state 共享组件体标识符命名空间。
     for state in &states {
         // 查找同名 prop。
@@ -182,6 +186,8 @@ pub(crate) fn parse_component_declaration(
         states,
         // 保存有序 computed 派生值。
         computed,
+        // 保存已验证插槽声明。
+        slots,
         // 保存外部符号白名单。
         external,
         // 转移有序组件体。

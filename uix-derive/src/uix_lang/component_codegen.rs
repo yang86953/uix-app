@@ -94,6 +94,8 @@ pub(super) struct ComponentExpander {
     pub(super) external_scope_stack: Vec<BTreeSet<String>>,
     // 保存当前 computed 表达式尚不可引用的派生名称。
     pub(super) pending_computed_scope_stack: Vec<BTreeSet<String>>,
+    // 保存当前组件调用已经在调用方作用域展开的插槽内容。
+    pub(super) slot_projection_stack: Vec<BTreeMap<String, Vec<Node>>>,
     // 保存嵌套 For 引入的词法局部标识符。
     pub(super) local_scope_stack: Vec<BTreeSet<String>>,
     // 保存嵌套 For 当前实际实例路径的局部变量。
@@ -162,6 +164,8 @@ impl ComponentExpander {
             external_scope_stack: Vec::new(),
             // 文档根不在 computed 有序求值期间。
             pending_computed_scope_stack: Vec::new(),
+            // 文档根没有等待模板占位消费的插槽内容。
+            slot_projection_stack: Vec::new(),
             // 文档根没有 For 词法局部变量。
             local_scope_stack: Vec::new(),
             // 文档根尚未进入任何 For 实例。
@@ -235,6 +239,11 @@ impl ComponentExpander {
         // 标记是否位于 For 动态实例作用域。
         inside_for: bool,
     ) -> Result<Vec<Node>, Diagnostic> {
+        // Slot 占位由组件调用投影栈直接内联。
+        if element.name == "Slot" {
+            // 返回已经在调用方作用域完成展开的节点。
+            return self.expand_slot_placeholder(element);
+        }
         // 自定义标签交给组件调用展开。
         if self.components.contains_key(&element.name) {
             // 返回组件展开节点。
@@ -518,8 +527,8 @@ impl ComponentExpander {
                 "移除自调用，或把递归数据改为 For 迭代的有限 View",
             ));
         }
-        // 当前组件语法没有默认 slot。
-        if element.children.iter().any(is_renderable_node) {
+        // 没有任何 Slot 声明的组件继续拒绝调用方子节点。
+        if component.slots.is_empty() && element.children.iter().any(is_renderable_node) {
             // 返回未声明 slot 的诊断。
             return Err(Diagnostic::new(
                 // 指向完整调用。
@@ -536,8 +545,25 @@ impl ComponentExpander {
         self.stack.push(component.name.clone());
         // 标记当前调用是否已进入被调用组件的 external 作用域。
         let mut pushed_external = false;
+        // 标记当前调用是否已压入调用方插槽投影。
+        let mut pushed_slots = false;
         // 在闭包内展开以确保错误路径也弹栈。
         let result = (|| {
+            // 在进入被调用组件作用域前先按调用方绑定展开全部插槽内容。
+            let projections = self.prepare_slot_projections(
+                // 传递完整组件调用节点。
+                element,
+                // 传递声明的插槽集合。
+                &component,
+                // 使用调用方字段绑定。
+                outer_bindings,
+                // 沿用调用方 For 动态实例事实。
+                inside_for,
+            )?;
+            // 压入本次模板展开可消费的插槽投影。
+            self.slot_projection_stack.push(projections);
+            // 记录错误路径也必须恢复插槽投影栈。
+            pushed_slots = true;
             // 组件体只看见自身字段。
             let mut bindings = Bindings::new();
             // 仅为拥有私有状态的静态调用创建窗口私有的运行时作用域。
@@ -633,6 +659,11 @@ impl ComponentExpander {
         if pushed_external {
             // 弹出被调用组件外部符号白名单。
             self.external_scope_stack.pop();
+        }
+        // 已进入插槽投影上下文时恢复外层组件投影。
+        if pushed_slots {
+            // 弹出当前组件调用的投影表。
+            self.slot_projection_stack.pop();
         }
         // 离开当前组件展开栈。
         self.stack.pop();
