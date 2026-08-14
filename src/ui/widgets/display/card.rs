@@ -21,7 +21,7 @@ use crate::ui::{
 };
 
 component! {
-    /// Card widget with shadow elevation, hover highlight, and content padding.
+    /// 支持阴影层级、悬停高亮和内容内边距的卡片组件。
     pub struct Card {
         title: Option<String>,
         children: WidgetChildren,
@@ -545,6 +545,7 @@ impl Card {
         )
     }
 
+    /// 创建带边框、一级阴影和默认内边距的卡片。
     pub fn new() -> Self {
         Self {
             title: None,
@@ -566,35 +567,43 @@ impl Card {
         }
     }
 
+    /// 设置卡片标题。
     pub fn title(mut self, t: &str) -> Self {
         self.title = Some(t.to_string());
         self
     }
+    /// 设置是否绘制卡片边框。
     pub fn bordered(mut self, v: bool) -> Self {
         self.bordered = v;
         self
     }
+    /// 启用卡片悬停高亮。
     pub fn hoverable(mut self) -> Self {
         self.hoverable = true;
         self
     }
+    /// 设置固定宽高；非有限值或非正值会恢复对应的默认尺寸。
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.fixed_width = Self::optional_dimension(w);
         self.fixed_height = Self::optional_dimension(h);
         self
     }
+    /// 设置内容内边距；非有限值归零，负值截断为零。
     pub fn padding(mut self, p: f32) -> Self {
         self.padding = if p.is_finite() { p.max(0.0) } else { 0.0 };
         self
     }
+    /// 设置阴影层级，最大为三级。
     pub fn elevation(mut self, e: u8) -> Self {
         self.elevation = e.min(3);
         self
     }
+    /// 设置弹性布局增长因子；非有限值归零，负值截断为零。
     pub fn flex_grow(mut self, v: f32) -> Self {
         self.flex_grow_val = if v.is_finite() { v.max(0.0) } else { 0.0 };
         self
     }
+    /// 设置操作标签，并移除仅含空白的项目。
     pub fn actions(mut self, list: Vec<impl Into<String>>) -> Self {
         self.actions = list
             .into_iter()
@@ -603,16 +612,20 @@ impl Card {
             .collect();
         self
     }
+    /// 返回当前聚焦的操作索引；没有操作时返回 `None`。
     pub fn focused_action(&self) -> Option<usize> {
         (!self.actions.is_empty()).then_some(self.focused_action)
     }
+    /// 返回卡片操作标签。
     pub fn action_labels(&self) -> &[String] {
         &self.actions
     }
+    /// 在卡片末尾追加一个子组件。
     pub fn child(self, w: impl WidgetComponent + 'static) -> Self {
         self.children.add(w);
         self
     }
+    /// 替换卡片中的全部子组件。
     pub fn children(self, widgets: Vec<Box<dyn WidgetComponent>>) -> Self {
         self.children.set_all(widgets);
         self
