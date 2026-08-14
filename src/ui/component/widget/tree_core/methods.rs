@@ -68,10 +68,12 @@ impl WidgetTree {
         self.theme_tokens.clone()
     }
 
+    /// 创建拥有独立树作用域、管理器和失效状态的空组件树。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 返回节点结构每次发布变化后递增的树版本。
     pub fn tree_version(&self) -> u64 {
         self.tree_version
     }
@@ -90,16 +92,19 @@ impl WidgetTree {
         std::mem::take(&mut self.pending_window_actions)
     }
 
+    /// 返回焦点、交互、拖拽等树级管理器的共享借用。
     pub fn managers(&self) -> &WidgetManagers {
         &self.managers
     }
 
+    /// 返回树级管理器的可变借用；停止树不允许重新建立运行态。
     pub fn managers_mut(&mut self) -> &mut WidgetManagers {
         // 停止树不得重新建立任何交互、焦点或拖拽运行态。
         assert!(self.accepts_coordination_work());
         &mut self.managers
     }
 
+    /// 接管 AppState 句柄并事务化同步当前已挂载节点快照。
     pub fn set_app_state(&mut self, app_state: AppState) {
         // AppState 快照会调用组件快照能力，公开入口必须建立异常事务边界。
         self.with_component_state_transaction(Vec::new(), |tree| {
@@ -112,6 +117,7 @@ impl WidgetTree {
         });
     }
 
+    /// 返回当前 AppState 共享句柄；尚未配置时返回空值。
     pub fn app_state(&self) -> Option<AppState> {
         self.app_state.clone()
     }
@@ -255,6 +261,7 @@ impl WidgetTree {
         }
     }
 
+    /// 分配属于本树作用域且带 generation 的新组件标识。
     pub fn alloc_id(&mut self) -> ComponentId {
         // 停止树不得再分配能够逃逸到调用方的新组件身份。
         assert!(self.accepts_coordination_work());
@@ -293,6 +300,7 @@ impl WidgetTree {
         }
     }
 
+    /// 安装根组件及其直接子组件，并返回根组件标识。
     pub fn set_root_with_children(
         &mut self,
         widget: Box<dyn WidgetComponent>,
@@ -305,6 +313,7 @@ impl WidgetTree {
         id
     }
 
+    /// 向父节点添加组件及其直接子组件，并返回新组件标识。
     pub fn add_child_with_children(
         &mut self,
         parent_id: ComponentId,
@@ -384,6 +393,7 @@ impl WidgetTree {
         }
     }
 
+    /// 向全部节点发布主题变化，并重绘使用调色板的节点。
     pub fn notify_theme_changed(&mut self) {
         // fail-stop 后不得再次调用节点的主题生命周期。
         if !self.accepts_external_work() {
@@ -401,9 +411,11 @@ impl WidgetTree {
         }
     }
 
+    /// 返回当前根节点；空树或停止树返回空值。
     pub fn root(&self) -> Option<&BoxedWidget> {
         self.root_id.and_then(|id| self.get(id))
     }
+    /// 返回当前根组件标识；空树或停止树返回空值。
     pub fn root_id(&self) -> Option<ComponentId> {
         // fail-stop 后不向公开调用方暴露半提交根身份。
         if !self.accepts_coordination_work() {
@@ -412,10 +424,12 @@ impl WidgetTree {
         }
         self.root_id
     }
+    /// 返回当前根节点的可变借用；空树或停止树返回空值。
     pub fn root_mut(&mut self) -> Option<&mut BoxedWidget> {
         self.root_id.and_then(|id| self.get_mut(id))
     }
 
+    /// 按树遍历顺序返回首个指定组件类型的标识。
     pub fn find_by_type<T: WidgetComponent + 'static>(&self) -> Option<ComponentId> {
         for &id in self.traverse().iter() {
             if let Some(node) = self.get(id) {
@@ -427,6 +441,7 @@ impl WidgetTree {
         None
     }
 
+    /// 按树遍历顺序返回全部指定组件类型及其共享借用。
     pub fn find_all_by_type<T: WidgetComponent + 'static>(&self) -> Vec<(ComponentId, &T)> {
         let mut results = Vec::new();
         for &id in self.traverse().iter() {
@@ -439,6 +454,7 @@ impl WidgetTree {
         results
     }
 
+    /// 在异常事务边界内修改首个指定类型的组件并返回其标识。
     pub fn find_by_type_and_modify<T: WidgetComponent + 'static>(
         &mut self,
         f: impl FnOnce(&mut T),
@@ -461,6 +477,7 @@ impl WidgetTree {
         })
     }
 
+    /// 使用树作用域、槽位与 generation 安全查询节点。
     pub fn get(&self, id: ComponentId) -> Option<&BoxedWidget> {
         // 停止树不得泄漏可继续调用用户组件的半提交节点引用。
         if !self.accepts_coordination_work() {
@@ -478,6 +495,7 @@ impl WidgetTree {
         // 返回仅限 tree_core 资源释放使用的节点引用。
         self.nodes.get(slot).and_then(|n| n.as_ref())
     }
+    /// 使用树作用域、槽位与 generation 安全查询节点的可变借用。
     pub fn get_mut(&mut self, id: ComponentId) -> Option<&mut BoxedWidget> {
         // 停止树不得泄漏可直接执行用户组件方法的可变节点引用。
         if !self.accepts_coordination_work() {
@@ -496,6 +514,7 @@ impl WidgetTree {
         self.nodes.get_mut(slot).and_then(|n| n.as_mut())
     }
 
+    /// 设置节点的兄弟绘制层级；节点不存在时保持无操作。
     pub fn set_z_index(&mut self, id: ComponentId, z: i32) -> &mut Self {
         if let Some(n) = self.get_mut(id) {
             n.set_z_index(z);
@@ -503,6 +522,7 @@ impl WidgetTree {
         self
     }
 
+    /// 事务化移除节点子树并按逆序执行组件生命周期。
     pub fn remove(&mut self, id: ComponentId) {
         // 公开移除会执行组件生命周期，必须统一进入 panic 事务边界。
         self.with_component_state_transaction(Vec::new(), |tree| {
@@ -583,6 +603,7 @@ impl WidgetTree {
         self.prune_component_state_scopes_if_idle();
     }
 
+    /// 事务化设置节点及其全部后代的可见性。
     pub fn set_visible(&mut self, id: ComponentId, visible: bool) {
         // 公开可见性传播会执行组件生命周期，统一进入 panic 事务边界。
         self.with_component_state_transaction(Vec::new(), |tree| {
@@ -664,6 +685,7 @@ impl WidgetTree {
         std::cell::Ref::map(self.cached_traversal.borrow(), |(ids, _)| ids.as_slice())
     }
 
+    /// 收集当前可调度定时器的树级工作键与延迟。
     pub fn active_timers(&mut self) -> Vec<(u64, std::time::Duration)> {
         // 停止树不得再向窗口调度任何用户定时器。
         if !self.accepts_external_work() {
@@ -726,6 +748,7 @@ impl WidgetTree {
             ^ local_id.rotate_left(33)
     }
 
+    /// 更新节点 frame，并在几何变化时请求布局与绘制失效传播。
     pub fn set_frame_dirty(&mut self, id: ComponentId, new_frame: Rect) {
         if !self.apply_frame_paint(id, new_frame) {
             return;
