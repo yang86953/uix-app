@@ -1,4 +1,4 @@
-//! Skeleton loading placeholder.
+//! 骨架屏加载占位组件。
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
@@ -8,14 +8,18 @@ use crate::ui::component::widget::WidgetTree;
 use std::cell::Cell;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// 骨架占位内容的形状。
 pub enum SkeletonShape {
+    /// 圆角矩形占位。
     Rect,
+    /// 圆形头像占位。
     Circle,
+    /// 多行文本占位。
     Text,
 }
 
 component! {
-    /// A static loading placeholder.
+    /// 可选用流光动画的加载占位组件。
     pub struct Skeleton {
         shape: SkeletonShape,
         w: f32,
@@ -88,6 +92,7 @@ impl Default for Skeleton {
 impl Skeleton {
     const MAX_PARAGRAPH_LINES: usize = 64;
 
+    /// 创建默认宽 200、高 16 且未启用动画的矩形占位。
     pub fn new() -> Self {
         Self {
             shape: SkeletonShape::Rect,
@@ -101,22 +106,26 @@ impl Skeleton {
         }
     }
 
+    /// 设置骨架占位形状。
     pub fn shape(mut self, s: SkeletonShape) -> Self {
         self.shape = s;
         self
     }
 
+    /// 设置占位宽高；非有限值归零，负值截断为零。
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.w = Self::normalized_dimension(w);
         self.h = Self::normalized_dimension(h);
         self
     }
 
+    /// 设置占位宽度；非有限值归零，负值截断为零。
     pub fn width(mut self, width: f32) -> Self {
         self.w = Self::normalized_dimension(width);
         self
     }
 
+    /// 设置占位高度；非有限值归零，负值截断为零。
     pub fn height(mut self, height: f32) -> Self {
         self.h = Self::normalized_dimension(height);
         self
@@ -132,6 +141,7 @@ impl Skeleton {
         self
     }
 
+    /// 设置文本段落占位行数，并限制在一至六十四行。
     pub fn paragraph(mut self, lines: usize) -> Self {
         self.shape = SkeletonShape::Text;
         self.paragraph_lines = lines.clamp(1, Self::MAX_PARAGRAPH_LINES);
@@ -139,6 +149,7 @@ impl Skeleton {
         self
     }
 
+    /// 设置是否播放流光动画。
     pub fn active(mut self, active: bool) -> Self {
         self.active = active;
         self
