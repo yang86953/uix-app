@@ -16,6 +16,7 @@ use super::types::{
 };
 
 impl Table {
+    /// 创建默认行高、无边框且未启用排序、选择或虚拟滚动的空表格。
     pub fn new() -> Self {
         Self {
             columns: Vec::new(),
@@ -438,6 +439,7 @@ impl Table {
             .or(self.hover_resize_column.get())
     }
 
+    /// 替换未分组列、规范化列宽并清除列分组定义。
     pub fn columns(mut self, cols: Vec<TableColumn>) -> Self {
         self.columns = Self::normalized_columns(cols);
         self.column_groups.clear();
@@ -449,6 +451,7 @@ impl Table {
         self.columns = Self::normalized_columns(self.columns);
         self
     }
+    /// 替换全部行，并按新顺序生成隐式行键。
     pub fn rows(mut self, rows: Vec<TableRow>) -> Self {
         self.row_keys = implicit_row_keys(rows.len());
         self.rows = rows;
@@ -510,6 +513,7 @@ impl Table {
         self.fixed_height = Some(finite_nonnegative(height));
         self
     }
+    /// 设置固定行高；有限值至少为一，非有限值恢复为默认行高。
     pub fn row_height(mut self, h: f32) -> Self {
         self.row_h = Self::normalized_row_height(h);
         self
@@ -530,30 +534,37 @@ impl Table {
         self.row_h = Self::normalized_row_height(height);
         self
     }
+    /// 返回当前选中行的索引。
     pub fn selected_row(&self) -> Option<usize> {
         self.selected_row.get()
     }
+    /// 设置当前选中行索引，不对索引范围作验证。
     pub fn set_selected_row(&self, row: Option<usize>) {
         self.selected_row.set(row);
     }
+    /// 返回当前选中行的稳定键；未选中或索引无效时返回 `None`。
     pub fn selected_row_key(&self) -> Option<&str> {
         self.selected_row
             .get()
             .and_then(|row| self.row_keys.get(row))
             .map(String::as_str)
     }
+    /// 返回当前展开行的索引。
     pub fn expanded_row(&self) -> Option<usize> {
         self.expanded_row.get()
     }
+    /// 返回当前勾选行的索引列表。
     pub fn checked_rows(&self) -> &[usize] {
         &self.checked_rows
     }
+    /// 返回当前有效勾选行对应的稳定键。
     pub fn checked_row_keys(&self) -> Vec<&str> {
         self.checked_rows
             .iter()
             .filter_map(|row| self.row_keys.get(*row).map(String::as_str))
             .collect()
     }
+    /// 设置无数据时显示的默认文本。
     pub fn empty_text(mut self, t: impl Into<String>) -> Self {
         self.empty_text = t.into();
         self
@@ -592,6 +603,7 @@ impl Table {
             empty_renderer: None,
         }
     }
+    /// 设置本地分页每页行数。
     pub fn page_size(mut self, n: usize) -> Self {
         self.page_size = n;
         self
