@@ -272,6 +272,7 @@ impl Default for Layout {
 }
 
 impl Layout {
+    /// 创建使用纵向主轴且不覆盖主题背景的页面布局容器。
     pub fn new() -> Self {
         Self {
             // 默认不覆盖主题背景。
@@ -280,6 +281,7 @@ impl Layout {
             direction: FlexDirection::Column,
         }
     }
+    /// 设置布局容器背景颜色。
     pub fn bg(mut self, c: Color) -> Self {
         self.bg_color = Some(c);
         self
@@ -322,6 +324,7 @@ impl Default for Header {
 }
 
 impl Header {
+    /// 创建指定逻辑高度且不覆盖主题背景的顶部栏。
     pub fn new(height: f32) -> Self {
         Self {
             height,
@@ -329,6 +332,7 @@ impl Header {
             title: None,
         }
     }
+    /// 设置顶部栏背景颜色。
     pub fn bg(mut self, c: Color) -> Self {
         self.bg_color = Some(c);
         self
@@ -359,6 +363,7 @@ impl Header {
 }
 
 impl Sider {
+    /// 创建指定展开宽度且默认不可折叠的侧边栏。
     pub fn new(width: f32) -> Self {
         Self {
             width,
@@ -368,18 +373,22 @@ impl Sider {
             collapsed_width: 80.0,
         }
     }
+    /// 设置侧边栏背景颜色。
     pub fn bg(mut self, c: Color) -> Self {
         self.bg_color = Some(c);
         self
     }
+    /// 设置侧边栏是否声明为可折叠。
     pub fn collapsible(mut self, v: bool) -> Self {
         self.collapsible = v;
         self
     }
+    /// 设置侧边栏是否使用折叠宽度。
     pub fn collapsed(mut self, v: bool) -> Self {
         self.collapsed = v;
         self
     }
+    /// 设置侧边栏折叠状态下的逻辑宽度。
     pub fn collapsed_width(mut self, w: f32) -> Self {
         self.collapsed_width = w;
         self
@@ -428,9 +437,11 @@ impl Default for Content {
 }
 
 impl Content {
+    /// 创建不覆盖主题背景的内容区。
     pub fn new() -> Self {
         Self { bg_color: None }
     }
+    /// 设置内容区背景颜色。
     pub fn bg(mut self, c: Color) -> Self {
         self.bg_color = Some(c);
         self
@@ -460,12 +471,14 @@ impl Content {
 }
 
 impl Footer {
+    /// 创建指定逻辑高度且不覆盖主题背景的底部栏。
     pub fn new(height: f32) -> Self {
         Self {
             height,
             bg_color: None,
         }
     }
+    /// 设置底部栏背景颜色。
     pub fn bg(mut self, c: Color) -> Self {
         self.bg_color = Some(c);
         self
