@@ -5,6 +5,8 @@ use quote::quote;
 
 // 引入动态样式包裹入口。
 use super::dynamic_style_codegen::apply_dynamic_style;
+// 引入状态伪类叠加入口。
+use super::pseudo_style_codegen::apply_pseudo_style;
 // 引入组件状态装饰与诊断。
 use super::{ComponentScopeMarker, Diagnostic};
 
@@ -38,6 +40,11 @@ pub(super) fn apply_component_scopes(
             ComponentScopeMarker::DynamicStyle(binding) => {
                 // 应用组件私有状态、闭合 setter 与完整样式分支。
                 view = apply_dynamic_style(view, binding)?;
+            }
+            // 状态伪类在基础与自定义动态样式之上只叠加声明字段。
+            ComponentScopeMarker::PseudoStyle(binding) => {
+                // 应用自动 hover 与既有 disabled/checked 事实选择。
+                view = apply_pseudo_style(view, binding)?;
             }
         }
     }

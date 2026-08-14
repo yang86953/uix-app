@@ -153,6 +153,10 @@
         <StyleAction />
         // 说明 setStyle 不依赖调用方同名函数或运行时字符串注册表。
         <Text fontSize="small">setStyle 由编译器生成闭合 Style 分支；悬停替换当前 View 的动态 class，离开时恢复原始 class，内联 style 始终保持作者覆盖优先级。</Text>
+        // 演示状态伪类自动选择与差异字段叠加。
+        <PseudoStateAction />
+        // 说明伪类与 setStyle 的职责边界。
+        <Text fontSize="small">:hover 自动维护指针事实，:disabled / :checked 复用元素同名状态；变体只叠加声明字段。setStyle 继续用于自定义动态 class 切换。</Text>
       // 结束主题内容。
       </Column>
     // 结束主题卡片。

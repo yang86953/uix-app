@@ -12,7 +12,7 @@
 
 - **入口宏**：`uix!`（内嵌源码与 `.uix` 文件入口）、`uix_app!`（`<App>` 根）、`uix_items!`（`<Record>` 模块级结构体）。
 - **语法面**：顶层声明区（样式类、`@theme`、`<Component>`、`<Record>`、`@import` / `@export`）；`<If>` 条件渲染；`<For>` 循环（索引、`key` 身份）；受限表达式子集；数据类型构造链与对象字面量；`setState` / `setTheme` / `setStyle` 内置操作；句柄位绑定。
-- **样式与主题**：样式类、内联样式、`extends` 组合；`@theme` 白名单 `primaryColor` / `backgroundColor`；`#token` 主题引用；`setTheme` 切换。
+- **样式与主题**：样式类、内联样式、`extends` 组合；`:hover/:disabled/:checked` 差异叠加；`@theme` 完整 `DesignTokens` 白名单；类型化 `#token` 引用；`setTheme` 与 `setStyle` 切换。
 - **组件矩阵**：布局、通用、输入、展示、反馈、导航六类约 90+ 标签已登记（见 [README](../README.md) 与各[组件参考](../参考/组件/布局组件.md)）。
 - **模块系统**：`@import` / `@export`（具名/全量、递归依赖、增量编译）。
 - **诊断模型**：未登记能力编译期诊断（位置 + 修复建议）；解析错误 SourceSpan。
@@ -21,6 +21,7 @@
 
 | 日期 | 范围 | 说明 | 关联 |
 |---|---|---|---|
+| 2026-08-15 | 样式 / 主题 | 实现 hover、disabled、checked 状态伪类差异叠加；`@theme` 对齐完整运行时设计 token 字段并增加类型化 `#tokenName` 校验 | #1010 |
 | 2026-08-15 | Component / Slot | 实现默认与具名内容插槽、调用方作用域投影、嵌套转发及 For 内纯组件展开；补充主演示容器复用 | #1013 |
 | 2026-08-15 | 表达式 / Component | 实现不可变数组操作扩展、单参数受限闭包与按声明顺序求值的 computed 派生值；补充真实宏消费者和主演示 | #1012 |
 | 2026-08-15 | 编译契约 / Component | `uix!` 与 `uix_app!` 写入确定性生成文件并以来源注释回映表达式；实现 `external` 外部依赖白名单与未声明标识符诊断 | #1011 |
@@ -28,4 +29,4 @@
 
 ### 目标设计（未实现，不构成兼容性承诺）
 
-见 [目标设计](目标设计.md)：主题 token 全量扩展、状态伪类、语法小项（If/ElseIf/Else、事件载荷表、props 默认值、类型白名单）仍未实现。内容插槽、错误行号回映、数组操作与受限闭包、computed 派生值已回填规范正文。对应 Vikunja 任务 #2157-#2161。
+见 [目标设计](目标设计.md)：语法小项（If/ElseIf/Else、事件载荷表、props 默认值、类型白名单）仍未实现。内容插槽、错误行号回映、数组操作与受限闭包、computed、完整主题 token 与状态伪类已回填规范正文。对应 Vikunja 任务 #2161。

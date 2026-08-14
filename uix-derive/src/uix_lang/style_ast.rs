@@ -43,12 +43,41 @@ pub(crate) struct ExportDeclaration {
 pub(crate) struct StyleClassDeclaration {
     // 保存样式类名。
     pub(crate) name: String,
+    // 保存可选状态伪类。
+    pub(crate) state: Option<StylePseudoState>,
     // 保存可选继承目标。
     pub(crate) extends: Option<String>,
     // 保存源码顺序中的样式属性。
     pub(crate) properties: Vec<StyleProperty>,
     // 保存完整声明跨度。
     pub(crate) span: SourceSpan,
+}
+
+// 表示编译期登记的样式状态伪类。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum StylePseudoState {
+    // 指针位于组件命中区域内。
+    Hover,
+    // 组件现有 disabled 事实为真。
+    Disabled,
+    // 组件现有 checked 事实为真。
+    Checked,
+}
+
+// 实现状态名称的规范文本映射。
+impl StylePseudoState {
+    // 返回 UIX 源码中的状态名称。
+    pub(crate) const fn as_str(self) -> &'static str {
+        // 按闭合白名单返回规范名称。
+        match self {
+            // 返回 hover 名称。
+            Self::Hover => "hover",
+            // 返回 disabled 名称。
+            Self::Disabled => "disabled",
+            // 返回 checked 名称。
+            Self::Checked => "checked",
+        }
+    }
 }
 
 // 表示一个具名主题。

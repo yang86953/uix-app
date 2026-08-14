@@ -46,8 +46,16 @@ pub(crate) fn register_declaration_name(
 ) -> Result<(), Diagnostic> {
     // 样式类名称不得重复。
     if let Declaration::StyleClass(style) = declaration {
+        // 基础类与每个状态变体使用独立的闭合登记键。
+        let key = style
+            // 借用可选状态。
+            .state
+            // 拼接规范伪类名称。
+            .map(|state| format!("{}:{}", style.name, state.as_str()))
+            // 基础类直接使用原名。
+            .unwrap_or_else(|| style.name.clone());
         // 首次插入成功时通过。
-        if style_names.insert(style.name.clone()) {
+        if style_names.insert(key) {
             // 返回成功。
             return Ok(());
         }
@@ -56,7 +64,14 @@ pub(crate) fn register_declaration_name(
             // 指向重复声明。
             style.span,
             // 陈述失败原因。
-            format!("样式类 {} 重复声明", style.name),
+            format!(
+                "样式类 {}{} 重复声明",
+                style.name,
+                style
+                    .state
+                    .map(|state| format!(":{}", state.as_str()))
+                    .unwrap_or_default()
+            ),
             // 给出修复建议。
             "合并同名样式类或使用不同名称",
         ));
@@ -170,16 +185,59 @@ pub(crate) fn parse_style_class(cursor: &mut Cursor<'_>) -> Result<Declaration, 
             "使用 baseButton { color: red; }",
         )
     })?;
+    // 可选冒号开始状态伪类名称。
+    let state = if cursor.consume(":") {
+        // 冒号后必须紧跟规范状态名称。
+        let (state, span) = cursor.identifier().ok_or_else(|| {
+            // 返回缺失状态诊断。
+            Diagnostic::new(
+                cursor.point_span(),
+                "样式伪类缺少状态名称",
+                "使用 :hover、:disabled 或 :checked",
+            )
+        })?;
+        // 把闭合状态名称映射到 AST。
+        Some(match state.as_str() {
+            // 登记悬停状态。
+            "hover" => super::StylePseudoState::Hover,
+            // 登记禁用状态。
+            "disabled" => super::StylePseudoState::Disabled,
+            // 登记勾选状态。
+            "checked" => super::StylePseudoState::Checked,
+            // 拒绝未批准状态。
+            _ => {
+                return Err(Diagnostic::new(
+                    span,
+                    format!("不支持样式伪类 :{state}"),
+                    "使用 :hover、:disabled 或 :checked",
+                ));
+            }
+        })
+    } else {
+        // 没有冒号表示普通基础类。
+        None
+    };
     // 跳过名称后 trivia。
     cursor.skip_trivia()?;
     // 提取块源码和内容位置。
     let (source, _, content_span) = cursor.braced_style_source()?;
     // 使用共享样式语法并允许 extends。
     let (extends, properties) = parse_style_properties(&source, content_span, true)?;
+    // 状态变体固定隐含继承同前缀基础类，不接受其他父类。
+    if state.is_some() && extends.is_some() {
+        // 返回伪类继承诊断。
+        return Err(Diagnostic::new(
+            cursor.span_from(start),
+            "状态伪类不能显式声明 extends",
+            "删除 extends；状态变体会自动叠加到同前缀基础类",
+        ));
+    }
     // 返回样式类声明。
     Ok(Declaration::StyleClass(StyleClassDeclaration {
         // 保存名称。
         name,
+        // 保存可选状态伪类。
+        state,
         // 保存继承目标。
         extends,
         // 保存有序属性。

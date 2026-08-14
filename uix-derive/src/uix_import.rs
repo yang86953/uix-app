@@ -618,8 +618,19 @@ fn collect_node_dependencies(
 fn declaration_identity(declaration: &Declaration) -> Option<(DeclarationKind, String)> {
     // 按声明种类提取名称。
     match declaration {
-        // 样式类使用样式命名空间。
-        Declaration::StyleClass(style) => Some((DeclarationKind::Style, style.name.clone())),
+        // 样式类使用包含伪状态的完整限定名，允许基础类与状态变体共同导入。
+        Declaration::StyleClass(style) => Some((
+            // 保持样式命名空间不变。
+            DeclarationKind::Style,
+            // 状态变体以 `类名:状态` 形成独立身份。
+            style
+                // 读取可选伪状态。
+                .state
+                // 存在状态时拼接限定名。
+                .map(|state| format!("{}:{}", style.name, state.as_str()))
+                // 基础类继续只使用原始名称。
+                .unwrap_or_else(|| style.name.clone()),
+        )),
         // 主题使用主题命名空间。
         Declaration::Theme(theme) => Some((DeclarationKind::Theme, theme.name.clone())),
         // 组件使用组件命名空间。

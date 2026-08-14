@@ -610,6 +610,24 @@ fn dynamic_style_compiles_against_public_uix_api() {
     );
 }
 
+// 验证状态伪类的自动 hover 与既有 disabled/checked 事实通过公开 API 类型检查。
+#[test]
+fn pseudo_styles_compile_against_public_uix_api() {
+    // 展开基础样式与三个只含差异字段的状态叠加层。
+    let _stateful: ViewNode = uix!(
+        r##"
+        stateful { padding: 8px; color: #colorText; }
+        stateful:hover { backgroundColor: #colorFillTertiary; }
+        stateful:checked { borderColor: #colorPrimary; borderWidth: 2px; }
+        stateful:disabled { opacity: 0.5; }
+        <Component name="Stateful" state="checked: bool = false, disabled: bool = false">
+          <Checkbox class="stateful" text="状态" checked={checked} disabled={disabled} />
+        </Component>
+        <Stateful />
+        "##
+    );
+}
+
 // 验证组件私有状态、共享状态、回调与组合在真实公开 API 中通过类型检查。
 #[test]
 fn generated_components_compile_against_public_uix_api() {
@@ -778,12 +796,26 @@ fn set_theme_builtin_compiles_without_caller_function() {
 // 验证 uix_app! 生成物通过公开 App、主题与 View API 类型检查。
 #[test]
 fn generated_app_compiles_against_public_uix_api() {
-    // 展开带同文档主题与语义颜色引用的完整应用入口。
+    // 展开带完整类型主题 token 与语义引用的应用入口。
     let _app: App = uix_derive::__uix_app_internal!(
         r#"
-        @theme ocean { primaryColor: #336699; backgroundColor: #101820; }
+        @theme ocean {
+          primaryColor: #336699;
+          backgroundColor: #101820;
+          colorText: #eef4ff;
+          colorBgRaised: rgba(20,30,40,0.9);
+          fontFamily: 'Segoe UI';
+          fontSize: 16px;
+          padding: 18px;
+          borderRadius: 9px;
+          motionDurationFast: 0.12;
+          motionEasingDefault: 'linear';
+          screenMD: 800px;
+          boxShadow: 0 2px 8px rgba(0,0,0,0.1), 0 4px 16px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.06);
+          isDark: true;
+        }
         <App title="消费者" size="640x480" theme="ocean" settings="settings.toml">
-          <Button style="color: #primaryColor; backgroundColor: #backgroundColor;" @click="setTheme('dark')">切换</Button>
+          <Button style="color: #colorText; backgroundColor: #backgroundColor; fontSize: #fontSize; padding: #padding;" @click="setTheme('dark')">切换</Button>
         </App>
         "#
     );

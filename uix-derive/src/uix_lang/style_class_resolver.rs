@@ -4,13 +4,35 @@ use std::collections::BTreeMap;
 // 引入样式类、元素与诊断 AST。
 use super::{
     Attribute, AttributeValue, Declaration, Diagnostic, Document, Element, StyleClassDeclaration,
-    StyleProperty,
+    StyleProperty, StylePseudoState,
 };
 
 // 保存已经展开继承的样式类注册表。
 pub(crate) struct StyleClassResolver {
     // 按名称保存最终属性列表。
     classes: BTreeMap<String, Vec<StyleProperty>>,
+    // 按基础类名与状态保存只含差异字段的伪类注册表。
+    variants: BTreeMap<String, BTreeMap<StylePseudoState, Vec<StyleProperty>>>,
+}
+
+// 保存一个元素按 class 顺序合并后的状态差异字段。
+#[derive(Default)]
+pub(crate) struct ResolvedPseudoStyles {
+    // 保存悬停状态差异字段。
+    pub(crate) hover: Vec<StyleProperty>,
+    // 保存禁用状态差异字段。
+    pub(crate) disabled: Vec<StyleProperty>,
+    // 保存勾选状态差异字段。
+    pub(crate) checked: Vec<StyleProperty>,
+}
+
+// 实现伪类集合查询。
+impl ResolvedPseudoStyles {
+    // 判断元素是否没有任何状态差异。
+    pub(crate) fn is_empty(&self) -> bool {
+        // 三个闭合状态都为空才表示没有伪类。
+        self.hover.is_empty() && self.disabled.is_empty() && self.checked.is_empty()
+    }
 }
 
 // 实现文档级样式类校验与元素改写。
@@ -25,8 +47,10 @@ impl StyleClassResolver {
             .iter()
             // 只保留样式类。
             .filter_map(|declaration| match declaration {
-                // 复制名称与声明。
-                Declaration::StyleClass(style) => Some((style.name.clone(), style.clone())),
+                // 基础类进入继承解析表。
+                Declaration::StyleClass(style) if style.state.is_none() => {
+                    Some((style.name.clone(), style.clone()))
+                }
                 // 忽略其他声明类别。
                 _ => None,
             })
@@ -41,8 +65,121 @@ impl StyleClassResolver {
             // 展开并缓存当前样式类。
             resolve_class(name, &declarations, &mut classes, &mut stack)?;
         }
+        // 保存按基础类和状态组织的差异字段。
+        let mut variants =
+            BTreeMap::<String, BTreeMap<StylePseudoState, Vec<StyleProperty>>>::new();
+        // 登记全部状态变体并验证同前缀基础类存在。
+        for style in document
+            .declarations
+            .iter()
+            .filter_map(|declaration| match declaration {
+                // 只选择状态样式声明。
+                Declaration::StyleClass(style) if style.state.is_some() => Some(style),
+                // 忽略基础类与其他声明。
+                _ => None,
+            })
+        {
+            // 状态变体必须有同名基础类作为隐含父级。
+            if !classes.contains_key(&style.name) {
+                // 返回未声明基础类诊断。
+                return Err(Diagnostic::new(
+                    style.span,
+                    format!("状态伪类 {} 缺少同前缀基础类", style.name),
+                    format!("先声明 {} {{ ... }}", style.name),
+                ));
+            }
+            // 解析器已保证状态存在且同状态不重复。
+            variants.entry(style.name.clone()).or_default().insert(
+                style.state.expect("状态声明必须携带状态"),
+                style.properties.clone(),
+            );
+        }
         // 返回完成验证的注册表。
-        Ok(Self { classes })
+        Ok(Self { classes, variants })
+    }
+
+    // 解析元素 class 引用对应的全部状态差异。
+    pub(super) fn pseudo_styles(
+        &self,
+        element: &Element,
+    ) -> Result<ResolvedPseudoStyles, Diagnostic> {
+        // 创建空的状态合并结果。
+        let mut resolved = ResolvedPseudoStyles::default();
+        // 按属性源码顺序查找 class。
+        for attribute in &element.attributes {
+            // 只处理 class 属性。
+            if attribute.name != "class" {
+                // 继续下一属性。
+                continue;
+            }
+            // 状态类与普通类共享静态 class 契约。
+            let AttributeValue::Literal(source) = &attribute.value else {
+                // 返回动态类名诊断。
+                return Err(Diagnostic::new(
+                    attribute.span,
+                    "状态伪类只支持静态 class 名称",
+                    "使用 class=\"baseButton\"，自定义动态切换继续使用 setStyle",
+                ));
+            };
+            // 多个类按从左到右顺序覆盖同状态字段。
+            for name in source.split_whitespace() {
+                // 没有状态变体的普通类无需处理。
+                let Some(states) = self.variants.get(name) else {
+                    // 继续下一类名。
+                    continue;
+                };
+                // 合并 hover 差异。
+                if let Some(properties) = states.get(&StylePseudoState::Hover) {
+                    // 后出现类覆盖先出现类的同名字段。
+                    merge_properties(&mut resolved.hover, properties.clone());
+                }
+                // 合并 disabled 差异。
+                if let Some(properties) = states.get(&StylePseudoState::Disabled) {
+                    // 后出现类覆盖先出现类的同名字段。
+                    merge_properties(&mut resolved.disabled, properties.clone());
+                }
+                // 合并 checked 差异。
+                if let Some(properties) = states.get(&StylePseudoState::Checked) {
+                    // 后出现类覆盖先出现类的同名字段。
+                    merge_properties(&mut resolved.checked, properties.clone());
+                }
+            }
+        }
+        // 返回闭合状态集合。
+        Ok(resolved)
+    }
+
+    // 判断节点树是否使用需要私有 hover 状态的伪类。
+    pub(super) fn nodes_use_hover(&self, nodes: &[super::Node]) -> bool {
+        // 任一元素自身或后代引用 hover 变体即需要组件状态作用域。
+        nodes.iter().any(|node| match node {
+            // 元素递归检查自身与后代。
+            super::Node::Element(element) => {
+                self.element_uses_hover(element) || self.nodes_use_hover(&element.children)
+            }
+            // 文本和插值没有 class。
+            _ => false,
+        })
+    }
+
+    // 判断单个元素是否引用已登记 hover 变体。
+    fn element_uses_hover(&self, element: &Element) -> bool {
+        // 查找静态 class 中任一具名 hover 变体。
+        element.attributes.iter().any(|attribute| {
+            // 只匹配静态 class。
+            attribute.name == "class"
+                && match &attribute.value {
+                    // 检查空白分隔的每个类名。
+                    AttributeValue::Literal(source) => source.split_whitespace().any(|name| {
+                        // 查找类状态表中的 hover 项。
+                        self.variants
+                            .get(name)
+                            .is_some_and(|states| states.contains_key(&StylePseudoState::Hover))
+                    }),
+                    // 动态 class 由后续诊断负责。
+                    _ => false,
+                }
+        })
     }
 
     // 把元素的 class 与内联 style 合并为单一结构化 style。
