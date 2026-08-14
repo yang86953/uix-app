@@ -1,14 +1,5 @@
-// 引入解析与核心生成入口。
-use super::{Diagnostic, generate_view, parse_document};
-
-// 生成测试源码的稳定令牌快照。
-fn generate(source: &str) -> Result<String, Diagnostic> {
-    // 先解析完整 UIX 文档。
-    let document = parse_document(source)?;
-    // 再生成公开 Rust View 表达式。
-    generate_view(&document.root).map(|tokens| tokens.to_string())
-    // 结束测试生成入口。
-}
+// 引入与公开宏一致的完整文档测试生成入口。
+use super::generate_test_document_view as generate;
 
 // 验证 FocusTrap 有序子树与公共属性的完整生成契约。
 #[test]
@@ -32,8 +23,12 @@ fn preserves_control_flow_and_empty_scope() {
     let dynamic = generate(r#"<FocusTrap><If {show_primary}><Button>主要</Button></If><For {action} in {actions}><Button>{action}</Button></For></FocusTrap>"#).expect("焦点作用域应保留普通控制流");
     // 条件分支必须保留为 Rust if。
     assert!(dynamic.contains("if show_primary"));
-    // 循环分支必须保留为 Rust for。
-    assert!(dynamic.contains("for action in"));
+    // 循环分支必须保留内部位置枚举与作者绑定。
+    assert!(
+        dynamic.contains("__uix_for_ordinal")
+            && dynamic.contains("enumerate")
+            && dynamic.contains("action")
+    );
     // 空作用域不应由编译层猜测运行时可聚焦性。
     let empty = generate(r#"<FocusTrap />"#).expect("空焦点作用域应保持可构造");
     // 空作用域仍必须声明稳定 FocusTrap 身份。

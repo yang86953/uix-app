@@ -1,13 +1,5 @@
-// 引入解析与核心生成入口。
-use super::{Diagnostic, generate_view, parse_document};
-
-// 生成测试源码的稳定令牌快照。
-fn generate(source: &str) -> Result<String, Diagnostic> {
-    // 先解析完整 UIX 文档。
-    let document = parse_document(source)?;
-    // 再生成公开 Rust View 表达式。
-    generate_view(&document.root).map(|tokens| tokens.to_string())
-}
+// 引入与公开宏一致的完整文档测试生成入口。
+use super::generate_test_document_view as generate;
 
 // 验证 Carousel 动态自动播放、有序子树与公共属性生成。
 #[test]
@@ -26,8 +18,12 @@ fn generates_dynamic_carousel_contract() {
     );
     // 子树必须通过公开 ViewNode 与有序子节点向量进入运行时。
     assert!(snapshot.contains("ViewNode :: new") && snapshot.contains("__uix_children"));
-    // If 与 For 控制流必须保持在生成代码中。
-    assert!(snapshot.contains("if show_extra") && snapshot.contains("for slide in"));
+    // If 与带位置身份的 For 控制流必须保持在生成代码中。
+    assert!(
+        snapshot.contains("if show_extra")
+            && snapshot.contains("__uix_for_ordinal")
+            && snapshot.contains("enumerate")
+    );
     // 公共宽度与自动化标识继续由公共属性层消费。
     assert!(snapshot.contains("width (320.0)") && snapshot.contains("automation_id"));
 }

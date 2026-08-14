@@ -1,14 +1,5 @@
-// 引入解析与核心生成入口。
-use super::{Diagnostic, generate_view, parse_document};
-
-// 生成测试源码的稳定令牌快照。
-fn generate(source: &str) -> Result<String, Diagnostic> {
-    // 先解析完整 UIX 文档。
-    let document = parse_document(source)?;
-    // 再生成公开 Rust View 表达式。
-    generate_view(&document.root).map(|tokens| tokens.to_string())
-    // 结束测试生成入口。
-}
+// 引入与公开宏一致的完整文档测试生成入口。
+use super::generate_test_document_view as generate;
 
 // 验证 Spin 动态配置、提示文字与公共属性的完整生成契约。
 #[test]
@@ -44,8 +35,12 @@ fn preserves_wrapper_children_and_control_flow() {
     assert!(snapshot.contains("\"静态\""));
     // 条件分支必须保留为 Rust if。
     assert!(snapshot.contains("if show_more"));
-    // 循环分支必须保留为 Rust for。
-    assert!(snapshot.contains("for item in"));
+    // 循环分支必须保留内部位置枚举与作者绑定。
+    assert!(
+        snapshot.contains("__uix_for_ordinal")
+            && snapshot.contains("enumerate")
+            && snapshot.contains("item")
+    );
 }
 
 // 验证 Spin 缺省值和布尔简写映射。

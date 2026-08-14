@@ -657,3 +657,12 @@ pub(crate) use value_codegen::{
     align_value, boolean_value, deferred_style_diagnostic, justify_value, literal_string,
     numeric_value, rust_identifier, string_value, typography_value,
 };
+
+// 为需要控制流身份的测试提供与公开 uix! 一致的完整文档入口。
+#[cfg(test)]
+pub(crate) fn generate_test_document_view(source: &str) -> Result<String, Diagnostic> {
+    // 先执行完整文档解析与声明校验。
+    let document = parse_document(source)?;
+    // 再经过组件展开生成稳定令牌文本。
+    generate_document_view(&document).map(|tokens| tokens.to_string())
+}
