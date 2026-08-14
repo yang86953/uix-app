@@ -744,9 +744,11 @@ pub(super) fn is_state_handle_attribute(element_name: &str, attribute_name: &str
         // 步骤条与分页器读取 State<usize> 受控状态。
         "Steps" => &["current"],
         "Pagination" => &["current", "pageSize"],
+        // 标签页读取 State<String> 活动 key 句柄。
+        "Tabs" => &["activeKey"],
         // 滚动容器与固钉组件读取滚动状态。
         "ScrollView" => &["offset"],
-        "Affix" | "BackTop" => &["scrollY"],
+        "Affix" | "BackTop" | "FloatButtonBackTop" => &["scrollY"],
         // 类型化表单读取 State<M> 模型句柄。
         "Form" => &["model"],
         // 其余元素没有句柄位属性。

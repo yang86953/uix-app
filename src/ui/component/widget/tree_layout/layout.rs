@@ -283,6 +283,8 @@ impl WidgetTree {
         order: &[WidgetId],
         changes: &mut Vec<(WidgetId, bool)>,
     ) -> bool {
+        // 保留同步前的焦点，待全部门控更新后按组件约定迁移。
+        let focused_before = self.managers().focus.focused_component();
         changes.clear();
         for &parent_id in order {
             let Some(parent) = self.get(parent_id) else {
@@ -302,7 +304,8 @@ impl WidgetTree {
         for (child_id, visible) in changes.iter() {
             let old_bounds = self.visual_subtree_bounds(*child_id);
             if !visible {
-                self.cancel_subtree_interaction(*child_id);
+                // 先取消隐藏子树的指针交互，焦点在所有门控更新后统一处理。
+                self.cancel_pointer_state_in_subtree(*child_id);
             }
             if let Some(child) = self.get_mut(*child_id) {
                 child.set_parent_visible(*visible);
@@ -314,6 +317,16 @@ impl WidgetTree {
                     self.push_paint_invalidation(*child_id, Some(rect));
                 }
             }
+        }
+        // 仅在旧焦点因门控变化失效时执行迁移或通用清理。
+        if let Some(focused) = focused_before.filter(|id| !self.focus_target_available(*id)) {
+            // 通过 System 私有边界查询具体组件的替代焦点约定。
+            let replacement =
+                crate::ui::tree_widget_hooks::focus_replacement_after_child_visibility(
+                    self, focused, changes,
+                );
+            // 触发完整的 FocusOut/FocusIn 生命周期。
+            self.set_focus(replacement);
         }
         !changes.is_empty()
     }

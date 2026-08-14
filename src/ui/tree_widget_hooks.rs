@@ -15,9 +15,9 @@ use crate::ui::widgets::{Container, Grid, ScrollView, Space};
 // 反馈 capability 启用时才引入 Modal 生命周期类型。
 #[cfg(feature = "feedback")]
 use crate::ui::widgets::Modal;
-// 导航 capability 启用时才引入兄弟项联动所需类型。
+// 导航 capability 启用时才引入兄弟项联动与 Tabs 焦点迁移所需类型。
 #[cfg(feature = "navigation")]
-use crate::ui::widgets::NavItem;
+use crate::ui::widgets::{NavItem, Tabs};
 
 /// 最近 viewport 祖先允许内容溢出的轴。
 ///
@@ -182,5 +182,60 @@ pub(crate) fn invalidate_nav_siblings(tree: &mut WidgetTree, clicked: WidgetId) 
     #[cfg(not(feature = "navigation"))]
     {
         let _ = (tree, clicked);
+    }
+}
+
+/// 父级可见性切换隐藏当前焦点时，返回具体组件约定的替代焦点。
+pub(crate) fn focus_replacement_after_child_visibility(
+    tree: &WidgetTree,
+    focused: WidgetId,
+    changes: &[(WidgetId, bool)],
+) -> Option<WidgetId> {
+    // 导航能力启用时执行 Tabs 面板切换的焦点迁移约定。
+    #[cfg(feature = "navigation")]
+    {
+        // 只处理包含旧焦点且刚被隐藏的直接面板。
+        let hidden_panel = changes.iter().find_map(|(child, visible)| {
+            // 可见面板不可能是旧焦点失效的来源。
+            if *visible || !tree.is_descendant_of(focused, *child) {
+                // 继续检查其余可见性变化。
+                return None;
+            }
+            // 返回被隐藏的直接面板标识。
+            Some(*child)
+        })?;
+        // 读取被隐藏面板的父节点。
+        let tabs_id = tree.get(hidden_panel)?.parent()?;
+        // 确认父节点确实是 Tabs，避免改变其他容器的通用行为。
+        let tabs = tree
+            .get(tabs_id)?
+            .component()
+            .as_any()
+            .downcast_ref::<Tabs>()?;
+        // 找到切换后处于活动状态的直接面板。
+        let active_panel = tree
+            .get(tabs_id)?
+            .children()
+            .get(tabs.active_index())
+            .copied();
+        // 优先把焦点迁移到新面板内第一个可聚焦控件。
+        if let Some(target) =
+            active_panel.and_then(|panel| tree.collect_focusable_within(panel).into_iter().next())
+        {
+            // 返回新面板内的首个可聚焦目标。
+            return Some(target);
+        }
+        // 新面板没有可聚焦控件时退回 Tabs 标签栏自身。
+        tree.get(tabs_id)
+            .is_some_and(|node| node.is_focusable() && tree.focus_target_available(tabs_id))
+            .then_some(tabs_id)
+    }
+    // 关闭导航能力时消费参数并保留通用清焦点行为。
+    #[cfg(not(feature = "navigation"))]
+    {
+        // 避免无导航构建产生未使用参数告警。
+        let _ = (tree, focused, changes);
+        // 不为其他组件提供替代焦点。
+        None
     }
 }
