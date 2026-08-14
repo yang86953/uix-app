@@ -27,6 +27,7 @@ fn finite_virtual_coordinate(value: f64) -> f32 {
 
 // 保存可变行高的稀疏测量结果，并按版本支持整体失效。
 #[derive(Debug, Clone, Default)]
+/// 按绝对索引保存可变行高，并用估算值补齐未测量项目的稀疏缓存。
 pub struct VirtualListMeasurementCache {
     // 只为已经物化并完成测量的绝对索引分配存储。
     measurements: BTreeMap<usize, f32>,
@@ -38,42 +39,49 @@ pub struct VirtualListMeasurementCache {
 
 impl VirtualListMeasurementCache {
     // 创建空的可变行高缓存。
+    /// 创建版本为零且不含任何实际测量的缓存。
     pub fn new() -> Self {
         // 使用默认状态保持缓存不占用数据项数组空间。
         Self::default()
     }
 
     // 返回当前测量版本。
+    /// 返回调用方设置的测量失效版本。
     pub fn version(&self) -> u64 {
         // 版本值只作为失效边界，不参与几何计算。
         self.version
     }
 
     // 返回当前测量结构版本。
+    /// 返回测量映射发生实际变化时递增的结构代数。
     pub fn generation(&self) -> u64 {
         // 结构版本只用于判断物化窗口是否需要复核。
         self.generation
     }
 
     // 返回已经成功记录的项目数量。
+    /// 返回已记录有效实际高度的项目数量。
     pub fn len(&self) -> usize {
         // 稀疏缓存长度只统计有效正高度。
         self.measurements.len()
     }
 
     // 判断缓存是否没有有效项目。
+    /// 返回是否没有任何有效实际高度。
     pub fn is_empty(&self) -> bool {
         // 直接复用有序表的空状态。
         self.measurements.is_empty()
     }
 
     // 读取某一绝对索引的已测量高度。
+    /// 返回指定绝对索引已记录的有效实际高度。
     pub fn get(&self, index: usize) -> Option<f32> {
         // 缓存只暴露已经通过有限正值校验的结果。
         self.measurements.get(&index).copied()
     }
 
     // 记录一个有限正的项目高度，并报告缓存是否发生变化。
+    /// 记录有限正高度，并在新增或改变测量时返回 `true`。
     pub fn record(&mut self, index: usize, height: f32) -> bool {
         // 非法测量不覆盖旧值，调用方会继续使用估算行高。
         let Some(height) = positive_measurement(height).map(|value| value as f32) else {
@@ -94,6 +102,7 @@ impl VirtualListMeasurementCache {
     }
 
     // 删除一个项目的测量结果，并报告是否确实删除了缓存项。
+    /// 删除指定绝对索引的测量，并在确实存在时返回 `true`。
     pub fn invalidate(&mut self, index: usize) -> bool {
         // 删除后该项目回退到估算高度。
         let removed = self.measurements.remove(&index).is_some();
@@ -107,6 +116,7 @@ impl VirtualListMeasurementCache {
     }
 
     // 清空所有已测量高度。
+    /// 清空全部实际高度，并在原缓存非空时推进结构代数。
     pub fn clear(&mut self) {
         // 版本变化和显式失效都复用同一清理路径。
         if !self.measurements.is_empty() {
@@ -118,6 +128,7 @@ impl VirtualListMeasurementCache {
     }
 
     // 绑定新的字体、宽度、主题或数据版本并清理旧测量。
+    /// 切换失效版本并清空旧测量；版本改变时返回 `true`。
     pub fn set_version(&mut self, version: u64) -> bool {
         // 相同版本不应破坏仍可复用的测量。
         if self.version == version {
@@ -146,6 +157,7 @@ impl VirtualListMeasurementCache {
     }
 
     // 根据估算高度读取一个项目的有效高度。
+    /// 返回实际高度，未测量时回退到有限正的估算高度或零。
     pub fn height_for(&self, index: usize, estimated_height: f32) -> f32 {
         // 已测量项目优先使用实际高度。
         if let Some(height) = self.get(index) {
@@ -159,6 +171,7 @@ impl VirtualListMeasurementCache {
     }
 
     // 计算从内容起点到指定项目起点的有限偏移。
+    /// 计算指定绝对索引起点的有限累计偏移。
     pub fn offset_for_index(&self, index: usize, estimated_height: f32) -> f32 {
         // 无效估算值无法为未知项目建立单调坐标。
         let Some(estimated_height) = positive_measurement(estimated_height) else {
@@ -181,12 +194,14 @@ impl VirtualListMeasurementCache {
     }
 
     // 计算所有项目的有限总高度。
+    /// 根据实际测量和估算高度计算指定项目数的有限总高度。
     pub fn total_height(&self, item_count: usize, estimated_height: f32) -> f32 {
         // item_count 的前缀起点已经包含所有项目高度。
         self.offset_for_index(item_count, estimated_height)
     }
 
     // 计算指定滚动状态下的首个可见项目。
+    /// 返回给定滚动位置和视口下首个可见项目的绝对索引。
     pub fn first_visible_index(
         &self,
         item_count: usize,
@@ -303,6 +318,7 @@ fn materialization_window(
 }
 
 // 使用稀疏测量缓存计算可变行高列表的物化范围。
+/// 计算包含可见项和 overscan、且不超过物化预算的绝对索引半开区间。
 pub fn virtual_list_index_range_with_measurements(
     item_count: usize,
     estimated_height: f32,
