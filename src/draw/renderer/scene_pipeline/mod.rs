@@ -17,22 +17,35 @@ use crate::draw::{RasterPipeline, RenderTarget, ScrollCopy, UpdateStrategy};
 
 /// 单帧渲染输入。
 pub struct FrameRenderInput<'a> {
+    /// 是否已经成功渲染过首帧。
     pub rendered_first: bool,
+    /// 本帧需要重新绘制的脏区域。
     pub dirty_region: &'a DirtyRegion,
+    /// 调用方观察到的场景树版本。
     pub tree_version: u64,
+    /// 可选的滚动复制操作，每项包含区域及水平、垂直位移。
     pub scroll_move: Option<Vec<(Rect, f32, f32)>>,
+    /// 本帧使用的默认字体句柄。
     pub font: FontHandle,
+    /// 提供字体与文本资源的服务。
     pub font_service: &'a FontService,
+    /// 提供图像资源的服务。
     pub image_service: &'a ImageService,
+    /// 是否启用调试绘制。
     pub debug_mode: bool,
+    /// 可选的当前悬停位置。
     pub hover_pos: Option<Point>,
+    /// 可选的渲染指标收集器。
     pub metrics: Option<&'a RenderMetrics>,
 }
 
 /// 单帧渲染输出。
 pub struct FrameRenderOutput {
+    /// 本帧的渲染、空闲或失败结果。
     pub outcome: RenderOutcome,
+    /// 触发本帧工作的失效来源。
     pub inv_source: InvalidationSource,
+    /// 本帧处理的场景树版本。
     pub tree_version: u64,
 }
 
