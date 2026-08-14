@@ -192,6 +192,7 @@ pub struct AnchorItem {
 }
 
 impl AnchorItem {
+    /// 创建显示文本和目标标识组成的锚点项。
     pub fn new(label: impl Into<String>, href: impl Into<String>) -> Self {
         Self {
             label: label.into(),
@@ -224,6 +225,7 @@ impl Anchor {
         Size::new(w, self.items.len() as f32 * 36.0)
     }
 
+    /// 创建默认显示墨线、激活首项且偏移为零的锚点导航。
     pub fn new(items: Vec<AnchorItem>) -> Self {
         let count = items.len();
         Self {
@@ -259,20 +261,24 @@ impl Anchor {
         self.active_index = idx;
     }
 
+    /// 设置滚动定位时从锚点位置扣除的顶部偏移。
     pub fn set_offset_top(mut self, v: f32) -> Self {
         self.offset_top = v;
         self
     }
 
+    /// 设置目标顶部偏移，是 [`Self::set_offset_top`] 的别名。
     pub fn target_offset(self, offset: f32) -> Self {
         self.set_offset_top(offset)
     }
 
+    /// 设置是否显示当前锚点墨线。
     pub fn show_ink(mut self, show: bool) -> Self {
         self.show_ink = show;
         self
     }
 
+    /// 设置滚动激活边界；负值截断为零，非有限值恢复为十。
     pub fn bounds(mut self, bounds: f32) -> Self {
         self.bounds = if bounds.is_finite() {
             bounds.max(0.0)
@@ -282,6 +288,7 @@ impl Anchor {
         self
     }
 
+    /// 设置与锚点导航共同布局的动态内容容器工厂。
     pub fn container<F, V>(mut self, factory: F) -> Self
     where
         F: Fn() -> V + 'static,
@@ -333,19 +340,23 @@ impl Anchor {
         self.container_enabled && self.container_view.is_some()
     }
 
+    /// 设置锚点导航背景颜色。
     pub fn bg(mut self, c: Color) -> Self {
         self.bg_color = Some(c);
         self
     }
+    /// 返回当前高亮锚点索引。
     pub fn active_index(&self) -> usize {
         self.active_index
     }
+    /// 返回当前高亮锚点标识；没有有效条目时返回空字符串。
     pub fn active_href(&self) -> &str {
         self.items
             .get(self.active_index)
             .map(|i| i.href.as_str())
             .unwrap_or("")
     }
+    /// 返回全部锚点项。
     pub fn items(&self) -> &[AnchorItem] {
         &self.items
     }
