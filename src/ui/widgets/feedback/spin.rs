@@ -1,4 +1,4 @@
-//! Animated loading indicator.
+//! 提供动画加载指示器。
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
@@ -10,14 +10,18 @@ use crate::ui::component::widget::WidgetTree;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// 加载指示器的预设尺寸。
 pub enum SpinSize {
+    /// 小尺寸加载指示器。
     Small,
+    /// 默认尺寸加载指示器。
     Default,
+    /// 大尺寸加载指示器。
     Large,
 }
 
 component! {
-    /// Loading indicator.
+    /// 显示可延迟启动的动画加载指示器。
     pub struct Spin {
         size: SpinSize,
         color: Option<Color>,
@@ -257,6 +261,7 @@ impl Default for Spin {
 }
 
 impl Spin {
+    /// 创建默认尺寸且立即开始旋转的加载指示器。
     pub fn new() -> Self {
         Self {
             size: SpinSize::Default,
@@ -270,47 +275,56 @@ impl Spin {
         }
     }
 
+    /// 将加载指示器设为小尺寸。
     pub fn small(mut self) -> Self {
         self.size = SpinSize::Small;
         self
     }
 
+    /// 将加载指示器设为大尺寸。
     pub fn large(mut self) -> Self {
         self.size = SpinSize::Large;
         self
     }
 
+    /// 设置加载指示器的预设尺寸。
     pub fn size(mut self, size: SpinSize) -> Self {
         self.size = size;
         self
     }
 
+    /// 设置开始显示加载动画前的延迟时长，并重置延迟计时。
     pub fn delay(mut self, delay: Duration) -> Self {
         self.delay = delay;
         self.delay_elapsed = 0.0;
         self
     }
 
+    /// 设置加载指示器颜色。
     pub fn color(mut self, c: Color) -> Self {
         self.color = Some(c);
         self
     }
 
+    /// 设置是否显示并推进加载动画。
     pub fn spinning(mut self, v: bool) -> Self {
         self.spinning = v;
         self
     }
 
+    /// 设置加载指示器下方的提示文本。
     pub fn tip(mut self, t: impl Into<String>) -> Self {
         self.tip = t.into();
         self
     }
 
+    /// 启用包裹模式，在子组件上方绘制加载遮罩。
     pub fn wrapper_mode(mut self) -> Self {
         self.wrapper_mode = true;
         self
     }
 
+    /// 返回当前动画相位。
     pub fn phase(&self) -> f32 {
         self.phase
     }
