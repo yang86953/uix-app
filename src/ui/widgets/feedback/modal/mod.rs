@@ -324,12 +324,18 @@ component! {
         };
         let dialog = self.apply_transition_to_dialog(dialog);
         self.last_dialog_rect.set(dialog);
-        let overlay_alpha = (128.0 * self.transition_opacity()).round().clamp(0.0, 128.0) as u8;
+        // 保留主题遮罩色的基础 alpha，并按当前进出场进度衰减。
+        let mask = super::fade_token_color(
+            // 读取当前组件主题作用域的遮罩 token。
+            ctx.tokens().color_bg_mask(),
+            // 使用 Modal 生命周期拥有的过渡不透明度。
+            self.transition_opacity(),
+        );
 
         ctx.fill_rect(
             surface,
-            // 遮罩：黑色 token + 动态 alpha（保持视觉等价，色相随主题可换）。
-            ctx.tokens().color_black().with_alpha(overlay_alpha),
+            // 绘制已经解析主题与动画的遮罩色。
+            mask,
             None,
         );
 
