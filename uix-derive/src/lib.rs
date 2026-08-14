@@ -80,6 +80,21 @@ pub fn uix(input: TokenStream) -> TokenStream {
     uix_entry::expand_public(&input).into()
 }
 
+/// 把根为 `<App>` 的 UIX 文档编译为现有 `uix::App` builder。
+///
+/// 宏不会调用 `run()`；调用方可继续链式配置启动钩子、Agent 控制或标题栏：
+///
+/// ```ignore
+/// uix_app!("src/main.uix").on_start(...).run();
+/// ```
+#[proc_macro]
+pub fn uix_app(input: TokenStream) -> TokenStream {
+    // 要求入口接收单个字符串字面量。
+    let input = syn::parse_macro_input!(input as syn::LitStr);
+    // 自动选择内嵌源码或 .uix 文件并返回 App builder。
+    uix_entry::expand_app_public(&input).into()
+}
+
 /// 把 `.uix` 文档中的 `<Record>` 声明生成为模块级结构体，供 uix! 与 Rust 侧共同引用。
 ///
 /// 在模块级调用一次即可让 Rust 侧函数引用语言面声明的业务模型：
@@ -106,6 +121,17 @@ pub fn __uix_view_internal(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::LitStr);
     // 委托共享内嵌入口并返回生成令牌。
     uix_entry::expand_inline(&input).into()
+}
+
+// 为根 crate 的真实消费者编译 Gate 保留内部 App 内嵌入口。
+#[doc(hidden)]
+// 声明内部过程宏以隔离文件路径与消费者类型检查。
+#[proc_macro]
+pub fn __uix_app_internal(input: TokenStream) -> TokenStream {
+    // 要求测试入口接收单个内嵌字符串字面量。
+    let input = syn::parse_macro_input!(input as syn::LitStr);
+    // 委托共享内嵌 App 入口并返回生成令牌。
+    uix_entry::expand_app_inline(&input).into()
 }
 
 /// `CamelCase` → `kebab-case`（连续大写缩写按词边界拆分：`APIVersion` → `api-version`）。

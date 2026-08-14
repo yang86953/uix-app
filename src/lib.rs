@@ -208,7 +208,7 @@ extern crate self as uix;
 extern crate windows_core;
 
 // 导出 uix-lang 编译期入口与路由 key 派生宏。
-pub use uix_derive::{Display, uix, uix_items};
+pub use uix_derive::{Display, uix, uix_app, uix_items};
 // 真实消费者编译 Gate 仅在测试构建中接入。
 #[cfg(test)]
 // 隔离 uix-lang 核心生成物的公开 API 编译测试。

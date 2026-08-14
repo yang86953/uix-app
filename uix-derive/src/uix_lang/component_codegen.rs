@@ -45,6 +45,18 @@ pub(super) type Bindings = BTreeMap<String, Binding>;
 
 // 把完整文档中的自定义组件展开为现有核心 View 代码。
 pub(crate) fn generate_document_view(document: &Document) -> Result<TokenStream, Diagnostic> {
+    // uix! 永久保持 ViewNode 契约，不接受应用生命周期根。
+    if document.root.name == "App" {
+        // 返回定向迁移诊断。
+        return Err(Diagnostic::new(
+            // 指向完整 App 根。
+            document.root.span,
+            // 说明入口契约冲突。
+            "uix! 只生成 ViewNode，不能生成 <App> 应用入口",
+            // 指向独立的 App builder 宏。
+            "把该调用改为 uix_app!(...)，或移除 <App> 并保留单个 View 根",
+        ));
+    }
     // 创建组件感知展开器。
     let mut expander = ComponentExpander::new(document)?;
     // 展开根元素与全部组件调用。

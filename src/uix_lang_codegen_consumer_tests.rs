@@ -754,3 +754,17 @@ fn set_theme_builtin_compiles_without_caller_function() {
         r#"<Button @click="setTheme('dark')">暗色主题</Button>"#
     );
 }
+
+// 验证 uix_app! 生成物通过公开 App、主题与 View API 类型检查。
+#[test]
+fn generated_app_compiles_against_public_uix_api() {
+    // 展开带同文档主题与语义颜色引用的完整应用入口。
+    let _app: App = uix_derive::__uix_app_internal!(
+        r#"
+        @theme ocean { primaryColor: #336699; backgroundColor: #101820; }
+        <App title="消费者" size="640x480" theme="ocean" settings="settings.toml">
+          <Button style="color: #primaryColor; backgroundColor: #backgroundColor;" @click="setTheme('dark')">切换</Button>
+        </App>
+        "#
+    );
+}

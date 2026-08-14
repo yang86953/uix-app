@@ -520,6 +520,20 @@ fn parse_number(
 
 // 生成 ColorValue 令牌。
 fn color_value(property: &StyleProperty) -> Result<TokenStream, Diagnostic> {
+    // 主题主色引用映射到运行期主题令牌。
+    if property.value.source == "#primaryColor" {
+        // 返回公开主色色板引用。
+        return Ok(quote! {
+            ::uix::prelude::ColorValue::palette(::uix::prelude::PaletteColor::Primary)
+        });
+    }
+    // 主题背景引用映射到运行期布局背景令牌。
+    if property.value.source == "#backgroundColor" {
+        // 返回公开布局背景中性色引用。
+        return Ok(quote! {
+            ::uix::prelude::ColorValue::neutral(::uix::prelude::NeutralRole::BgLayout)
+        });
+    }
     // 解析颜色的 RGBA 通道。
     let (red, green, blue, alpha) = parse_color(&property.value.source, property)?;
     // 生成公开自定义颜色值。
@@ -606,7 +620,12 @@ fn parse_length_signed(source: &str, property: &StyleProperty) -> Result<TokenSt
 }
 
 // 解析文档允许的常用颜色形态。
-fn parse_color(source: &str, property: &StyleProperty) -> Result<(u8, u8, u8, u8), Diagnostic> {
+pub(crate) fn parse_color(
+    // 接收主题或样式中的颜色源码。
+    source: &str,
+    // 接收用于精确诊断的属性。
+    property: &StyleProperty,
+) -> Result<(u8, u8, u8, u8), Diagnostic> {
     // 十六进制颜色走精确位数解析。
     if let Some(hex) = source.strip_prefix('#') {
         // 主题引用不能伪装为十六进制颜色。

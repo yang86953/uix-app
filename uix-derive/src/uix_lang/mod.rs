@@ -89,6 +89,11 @@ mod splitter_codegen;
 mod splitter_codegen_tests;
 // 定义应用布局壳五类标签的公开 API 代码生成边界。
 mod app_layout_codegen;
+// 定义 <App> 根文档到现有 App builder 的编译期组装边界。
+mod app_codegen;
+// 集中验证应用入口属性、主题与拒绝路径。
+#[cfg(test)]
+mod app_codegen_tests;
 // 集中验证布局壳嵌套、布尔简写与拒绝路径。
 #[cfg(test)]
 mod app_layout_codegen_tests;
@@ -403,6 +408,8 @@ pub(crate) use data_binding_codegen::{
 };
 // 向过程宏入口暴露组件感知文档生成函数。
 pub(crate) use component_codegen::generate_document_view;
+// 向过程宏入口暴露 App builder 生成函数。
+pub(crate) use app_codegen::generate_document_app;
 // 向后续转换 Gate 暴露稳定诊断类型。
 pub(crate) use diagnostic::*;
 // 向文档解析器暴露 Component 与 Record 声明验证入口。
@@ -557,6 +564,8 @@ pub(crate) use style_codegen::apply_inline_style;
 pub(crate) use style_class_resolver::StyleClassResolver;
 // 向文档解析器暴露共享样式入口。
 pub(crate) use style_parser::parse_style_properties;
+// 向 App 主题生成器暴露共享颜色字面量解析。
+pub(crate) use style_value_codegen::parse_color;
 // 向 View 生成器暴露属性值共享映射入口。
 pub(crate) use value_codegen::{
     align_value, boolean_value, deferred_style_diagnostic, justify_value, literal_string,

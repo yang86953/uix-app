@@ -108,8 +108,8 @@ impl DemoStates {
     }
 }
 
-// 声明由应用组合根调用并接收窗口级持久状态的界面构造函数。
-fn build_view(states: DemoStates) -> ViewNode {
+// 声明接收窗口级持久状态并返回现有 App builder 的语言入口。
+fn build_app(states: DemoStates) -> App {
     // 一次按值解构把声明文件引用的全部 Rust 绑定放入函数作用域。
     let DemoStates {
         // 取出窗口级生命周期状态句柄。
@@ -119,9 +119,9 @@ fn build_view(states: DemoStates) -> ViewNode {
         // 取出仍由 Rust 构造的私有类型演示数据。
         virtual_items,
     } = states;
-    // 编译期读取相对当前 crate 清单目录的 uix-lang 文件。
-    uix!("src/main.uix")
-    // 结束界面构造函数。
+    // 编译期读取 <App> 根文档并返回尚未运行的现有 App builder。
+    uix_app!("src/main.uix")
+    // 结束应用构造函数。
 }
 
 // 启动由 Rust 持有窗口与运行生命周期的演示应用。
@@ -163,12 +163,8 @@ fn main() {
 
 // 组装并运行 uix-lang 演示窗口。
 fn run_gui(states: DemoStates, tick: State<f64>) {
-    // 组装演示 App 与窗口级句柄。
-    let app = App::new()
-        // 设置演示窗口标题。
-        .title("UIX Demo")
-        // 使用与 API GUI Demo 一致的初始窗口尺寸。
-        .size(1200, 800)
+    // 由语言面组装演示 App 与根 View。
+    let app = build_app(states)
         // 由声明式根视图绘制与 API GUI Demo 一致的自定义标题栏。
         .custom_title_bar(true)
         // 启动后注册秒级计时器。
@@ -183,14 +179,8 @@ fn run_gui(states: DemoStates, tick: State<f64>) {
                 })
                 .detach();
         });
-    // 把捕获持久状态句柄的 ViewNode 工厂交给应用组合根。
-    app.root(move || {
-        // 每次 reconcile 只复制句柄，底层状态槽保持不变。
-        build_view(states.clone())
-        // 结束声明式根构造闭包。
-    })
-    // 进入并由 App 持有原生窗口事件循环。
-    .run();
+    // 进入并由同一个现有 App 持有原生窗口事件循环。
+    app.run();
 }
 
 // 初始化演示程序使用的环境过滤日志订阅器。

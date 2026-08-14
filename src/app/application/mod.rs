@@ -10,3 +10,5 @@ pub(crate) mod app_handle;
 pub mod application;
 pub mod cli;
 pub mod di;
+// 保存 UIX 文档生成的 App 作用域具名主题表。
+mod named_themes;
