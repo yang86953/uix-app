@@ -671,7 +671,6 @@ impl View for FormSegmentedItem {
 }
 
 /// 一个已登记字段的声明式日期输入项。
-
 impl FormModel {
     pub fn checkbox_item(
         &self,

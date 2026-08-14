@@ -755,7 +755,7 @@ impl App {
                 return;
             };
             // 通过公开 App 级主题通道提交切换。
-            let _ = theme_requester_runtime.set_theme(theme);
+            theme_requester_runtime.set_theme(theme);
         }));
 
         run_window_session_loop_with_system_theme_and_tasks(

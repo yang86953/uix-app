@@ -488,7 +488,7 @@ impl RhiRenderer {
     // 把 f32 切片编码为当前 host 的紧密字节载荷。
     fn encode_f32s(values: &[f32]) -> Arc<[u8]> {
         // 预留精确容量，避免资源上传前再次扩容。
-        let mut bytes = Vec::with_capacity(values.len() * std::mem::size_of::<f32>());
+        let mut bytes = Vec::with_capacity(std::mem::size_of_val(values));
         // 使用 native endian，adapter 与 CPU 在同一 host 上解释 uniform/vertex。
         for value in values {
             // 保持每个 float 的原始 IEEE 字节表示。
@@ -501,7 +501,7 @@ impl RhiRenderer {
     // 把 u32 BGRA 像素编码成纹理上传所需的原生字节序列。
     fn encode_u32s(values: &[u32]) -> Arc<[u8]> {
         // 预留精确容量，避免上传前再次扩容。
-        let mut bytes = Vec::with_capacity(values.len() * std::mem::size_of::<u32>());
+        let mut bytes = Vec::with_capacity(std::mem::size_of_val(values));
         // D3D11 B8G8R8A8_UNORM 在 Windows 小端内存中与该布局一致。
         for value in values {
             // 保持每个 packed pixel 的原始字节表示。

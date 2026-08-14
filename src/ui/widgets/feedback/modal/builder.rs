@@ -6,7 +6,6 @@ use crate::ui::animation::AnimationConfig;
 use std::rc::Rc;
 
 /// Modal 内容回调上下文；关闭请求只作用于持有该上下文的 Modal。
-
 pub struct ModalBuilder {
     pub(crate) modal: Modal,
     // 保存按声明顺序进入 Modal 内容区的全部 View。

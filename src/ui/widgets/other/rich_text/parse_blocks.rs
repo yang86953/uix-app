@@ -146,7 +146,7 @@ fn parse_atx_heading(text: &str) -> Option<(u8, &str)> {
         return None;
     }
     // 去除标题标记后的前置空白。
-    let content = text[marker_len..].trim_start_matches(|ch| ch == ' ' || ch == '\t');
+    let content = text[marker_len..].trim_start_matches([' ', '\t']);
     // 去除可选的行尾闭合井号及其外围空白。
     let content = trim_atx_heading_closer(content);
     // 返回标题级别与可继续解析内联语法的正文。
@@ -156,7 +156,7 @@ fn parse_atx_heading(text: &str) -> Option<(u8, &str)> {
 // 去除 ATX 标题末尾可选的闭合井号。
 fn trim_atx_heading_closer(content: &str) -> &str {
     // 只去除 Markdown ATX 闭合标记允许的尾随 ASCII 空格与制表符。
-    let trimmed = content.trim_end_matches(|ch| ch == ' ' || ch == '\t');
+    let trimmed = content.trim_end_matches([' ', '\t']);
     // 从正文末尾向前扫描连续 ASCII 闭合井号。
     let mut hash_start = trimmed.len();
     // 连续井号均是单字节，回退后仍位于 UTF-8 边界。
@@ -172,7 +172,7 @@ fn trim_atx_heading_closer(content: &str) -> &str {
             .is_some_and(|ch| ch == ' ' || ch == '\t')
     {
         // 去除连续闭合井号以及它前面的 ASCII 分隔空白。
-        return trimmed[..hash_start].trim_end_matches(|ch| ch == ' ' || ch == '\t');
+        return trimmed[..hash_start].trim_end_matches([' ', '\t']);
     }
     // 普通正文中的末尾井号保持字面值。
     trimmed

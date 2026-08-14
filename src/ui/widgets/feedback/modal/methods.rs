@@ -12,7 +12,6 @@ use crate::ui::component::paint_context::PaintContext;
 use std::rc::Rc;
 
 /// Modal 内容回调上下文；关闭请求只作用于持有该上下文的 Modal。
-
 impl Modal {
     pub fn new(title: &str) -> Self {
         let size = crate::ui::component::config::use_config().size;
@@ -546,7 +545,7 @@ impl Modal {
         // 每个按钮不超过八十逻辑像素且平分可用空间。
         let button_width = (available_width * 0.5).min(80.0);
         // 底部上下各保留八像素，并限制标准按钮高度。
-        let button_height = (footer_height - 16.0).max(0.0).min(32.0);
+        let button_height = (footer_height - 16.0).clamp(0.0, 32.0);
         // 在底部区域内垂直居中按钮。
         let button_y = dialog.y + dialog.h - footer_height + (footer_height - button_height) * 0.5;
         // 确认按钮靠右排列。

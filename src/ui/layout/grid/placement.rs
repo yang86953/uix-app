@@ -39,9 +39,7 @@ fn placement_row_limit(column_count: usize) -> usize {
     // 调用方只能在至少有一列时进入放置阶段。
     debug_assert!(column_count > 0);
     // 列数越多，可物化行数越少，确保乘积不超过单元格预算。
-    (MAX_GRID_PLACEMENT_CELLS / column_count)
-        .min(MAX_GRID_TRACKS_PER_AXIS)
-        .max(1)
+    (MAX_GRID_PLACEMENT_CELLS / column_count).clamp(1, MAX_GRID_TRACKS_PER_AXIS)
 }
 
 // 将外部 span 收敛到当前起点之后的可用轨道。

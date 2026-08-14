@@ -128,9 +128,8 @@ impl PendingFailureSource {
             .iter()
             .position(|failure| failure.source_id == self.inner.id)
         {
-            let Some(failure) = pending.remove(index) else {
-                return None;
-            };
+            // 索引来自同一锁保护下的当前队列，缺失时直接返回无结果。
+            let failure = pending.remove(index)?;
             return Some(failure.error);
         }
         drop(pending);

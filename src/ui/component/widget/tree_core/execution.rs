@@ -13,10 +13,13 @@ impl WidgetTree {
         // 接收首次根捕获已经使用的窗口私有存储。
         store: crate::ui::component_state::ComponentStateStore,
     ) -> Self {
-        // 先建立其余默认运行时资源。
-        let mut tree = Self::default();
-        // 再用捕获根指定的窗口私有存储替换默认值。
-        tree.component_state_store = store;
+        // 在构造时注入捕获根指定的窗口私有存储，其余资源沿用默认值。
+        let tree = Self {
+            // 保持窗口树对组件状态存储的单一所有权。
+            component_state_store: store,
+            // 复用其余默认运行时资源。
+            ..Self::default()
+        };
         // 返回拥有单一状态存储的树。
         tree
     }

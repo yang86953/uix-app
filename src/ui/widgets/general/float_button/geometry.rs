@@ -129,9 +129,7 @@ pub(super) fn resolve_float_button_geometry(
     // 表面锚定模式下把损伤收敛到当前窗口客户区。
     if uses_surface_placement {
         // 窗口外绘制会被裁剪，因此不应扩大 damage。
-        paint_bounds = paint_bounds
-            .intersect(&input.surface)
-            .unwrap_or(Rect::zero());
+        paint_bounds = paint_bounds.intersect(&input.surface).unwrap_or_default();
     }
     // 返回所有调用方共享的不可变几何。
     FloatButtonGeometry {

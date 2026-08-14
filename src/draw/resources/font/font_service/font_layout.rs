@@ -194,7 +194,7 @@ impl FontService {
                         // 索引相对于 skip 后的迭代器，需要恢复完整行索引。
                         .get(first_content + index + 1)
                         // 不同 cluster 或行尾都表示当前 cluster 已完整。
-                        .map_or(true, |next| {
+                        .is_none_or(|next| {
                             // 相同逻辑起点代表仍是同一 shaping cluster。
                             next.glyph.char_index != glyph.glyph.char_index
                         });
