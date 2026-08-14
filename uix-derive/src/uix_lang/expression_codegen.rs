@@ -416,12 +416,18 @@ fn generate_member(
                 "把事件成员访问移入 @click 处理器",
             )
         })?;
-        // x 与 y 映射到公开 ClickEvent.pos 坐标。
+        // 按登记表支持的字段名称投影实际载荷。
         return match member {
             // 生成 x 坐标读取。
             "x" => Ok(quote! { (#event).pos.x }),
             // 生成 y 坐标读取。
             "y" => Ok(quote! { (#event).pos.y }),
+            // change、select、submit 与 close 的 value 就是现有实际载荷。
+            "value" => Ok(quote! { (#event) }),
+            // 键盘 key 保留公开 KeyCode 值。
+            "key" => Ok(quote! { (#event) }),
+            // 运行时没有第二套物理码，code 使用稳定 KeyCode 调试文本。
+            "code" => Ok(quote! { ::std::format!("{:?}", (#event)) }),
             // 其他成员按 ClickEvent 的公开字段映射。
             _ => {
                 // 验证成员名可映射为 Rust 标识符。

@@ -4,11 +4,13 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 // 引入解析后的核心语法树与诊断类型。
 use super::{
-    Attribute, AttributeValue, ComponentScopeMarker, ControlBinding, Diagnostic, Element,
+    Attribute, ComponentScopeMarker, ControlBinding, Diagnostic, Element,
     ExpressionNode, Node, SourceSpan,
 };
 // 引入独立元素分派入口。
 use super::element_codegen::generate_element;
+// 引入通用事件属性生成入口。
+use super::event_codegen::apply_event;
 // 引入相邻条件链生成入口。
 use super::conditional_chain_codegen::generate_conditional_chain;
 // 引入 For 实际实例路径内部标识符读取。
@@ -16,7 +18,7 @@ use super::for_identity_codegen::{internal_control_ident, optional_internal_cont
 // 引入最终 ViewNode 的组件状态装饰应用。
 use super::view_decoration_codegen::apply_component_scopes;
 // 引入受限表达式与事件处理器生成入口。
-use super::{expression_uses_event, generate_expression, generate_handler_expression};
+use super::generate_expression;
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
     align_value, apply_inline_style, boolean_value, deferred_style_diagnostic, justify_value,
@@ -344,113 +346,6 @@ pub(super) fn apply_common_attributes(
     }
     // 返回完整 View 表达式。
     Ok(view)
-}
-
-// 生成当前核心 Gate 支持的点击事件。
-fn apply_event(
-    // 接收已经生成的 View。
-    view: TokenStream,
-    // 接收事件属性。
-    attribute: &Attribute,
-) -> Result<TokenStream, Diagnostic> {
-    // 鼠标进入与离开使用原始指针事件且不吞掉组件处理器。
-    if matches!(attribute.name.as_str(), "@mouseEnter" | "@mouseLeave") {
-        // 事件解析器保证事件值是表达式。
-        let AttributeValue::Expression(expression) = &attribute.value else {
-            // 返回内部形状保护诊断。
-            return Err(Diagnostic::new(
-                attribute.span,
-                "鼠标事件处理器必须是受限表达式",
-                "使用 @mouseEnter=\"handler()\" 或 @mouseLeave=\"handler()\"",
-            ));
-        };
-        // 当前两个无载荷事件不伪装为 ClickEvent。
-        if expression_uses_event(&expression.expression) {
-            // 返回精确载荷边界诊断。
-            return Err(Diagnostic::new(
-                expression.span,
-                "$event 目前只在 @click 中提供 ClickEvent 载荷",
-                "在 @mouseEnter/@mouseLeave 中调用无参数处理器",
-            ));
-        }
-        // 生成无事件参数的处理器主体。
-        let handler = generate_handler_expression(&expression.expression, None)?;
-        // 选择对应系统指针事件分支。
-        let event_variant = if attribute.name == "@mouseEnter" {
-            // 鼠标进入映射到 PointerEnter。
-            quote! { ::uix::prelude::SystemEvent::PointerEnter }
-        } else {
-            // 鼠标离开映射到 PointerLeave。
-            quote! { ::uix::prelude::SystemEvent::PointerLeave }
-        };
-        // 返回不会截断组件自身 Enter/Leave 的指针监听器。
-        return Ok(quote! {
-            // 复用公开指针事件注册入口。
-            (#view).on_pointer(move |__uix_pointer_event| {
-                // 只在声明的进入或离开事件执行语言处理器。
-                if matches!(__uix_pointer_event, &#event_variant) {
-                    // 丢弃处理器返回值并保留副作用。
-                    let _ = { #handler };
-                }
-                // 继续交付组件自身处理器并向父节点冒泡。
-                ::uix::prelude::EventResult::NotHandled
-            })
-        });
-    }
-    // 其余核心事件当前只登记 click。
-    if attribute.name != "@click" {
-        // 返回未登记事件诊断。
-        return Err(Diagnostic::new(
-            // 指向完整事件属性。
-            attribute.span,
-            // 说明缺少事件映射。
-            format!("事件 {} 尚无已登记的 Rust API 映射", attribute.name),
-            // 给出当前支持集合。
-            "当前核心 Gate 使用 @click、@mouseEnter 或 @mouseLeave；其他事件由内置组件映射矩阵登记",
-        ));
-    }
-    // 事件解析器保证事件值是表达式。
-    let AttributeValue::Expression(expression) = &attribute.value else {
-        // 返回内部形状保护诊断。
-        return Err(Diagnostic::new(
-            // 指向完整事件属性。
-            attribute.span,
-            // 说明事件值形状错误。
-            "事件处理器必须是受限表达式",
-            // 给出规范写法。
-            "使用 @click=\"handler()\"",
-        ));
-    };
-    // 需要事件载荷时使用公开 on_click_event。
-    if expression_uses_event(&expression.expression) {
-        // 创建卫生的语义事件变量。
-        let semantic_event = Ident::new("__uix_semantic_event", Span::mixed_site());
-        // 创建卫生的点击载荷变量。
-        let click_event = Ident::new("__uix_click_event", Span::mixed_site());
-        // 生成把 $event 映射到 ClickEvent 的处理器主体。
-        let handler = generate_handler_expression(&expression.expression, Some(&click_event))?;
-        // 返回带点击载荷筛选的事件链。
-        return Ok(quote! {
-            // 使用公开点击事件注册入口。
-            (#view).on_click_event(move |#semantic_event| {
-                // 只在语义事件带点击载荷时执行语言处理器。
-                if let ::std::option::Option::Some(#click_event) = #semantic_event.click_payload() {
-                    // 丢弃处理器返回值并保留副作用。
-                    let _ = { #handler };
-                }
-            })
-        });
-    }
-    // 不读取事件载荷时使用轻量点击闭包。
-    let handler = generate_handler_expression(&expression.expression, None)?;
-    // 返回无事件参数点击链。
-    Ok(quote! {
-        // 使用公开无状态点击入口。
-        (#view).on_click_fn(move || {
-            // 丢弃处理器返回值并保留副作用。
-            let _ = { #handler };
-        })
-    })
 }
 
 // 生成保持 painter 与组合顺序的子节点向量。

@@ -7,7 +7,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Alert 属性、表达式、值映射与诊断契约。
 use super::{
-    Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_handler_expression,
+    Attribute, AttributeValue, Diagnostic, Element, boolean_value,
+    generate_event_handler_expression,
     literal_string, string_value,
 };
 
@@ -71,7 +72,7 @@ pub(crate) fn generate_alert(element: &Element) -> Result<TokenStream, Diagnosti
         // 创建卫生的变更文本变量。
         let value = Ident::new("__uix_alert_change", Span::mixed_site());
         // 生成裸处理器或显式载荷调用。
-        let handler = generate_handler_expression(&expression.expression, Some(&value))?;
+        let handler = generate_event_handler_expression(&expression.expression, &value, "@change")?;
         // 使用公开 Change 注册入口，并过滤未来可能新增的其他变更事实。
         view = quote! {
             (#view).on_change_fn(move |#value| {

@@ -8,7 +8,7 @@ use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 SelectableList 属性、表达式、事件与诊断契约。
 use super::{
     Attribute, AttributeValue, Diagnostic, Element, generate_expression,
-    generate_handler_expression,
+    generate_event_handler_expression,
 };
 
 // 生成拥有类型化条目并可绑定稳定活动 id 的可选中列表。
@@ -86,7 +86,7 @@ pub(crate) fn generate_selectable_list(element: &Element) -> Result<TokenStream,
         // 创建卫生的稳定 id 文本变量。
         let value = Ident::new("__uix_selectable_list_change", Span::mixed_site());
         // 生成裸处理器或显式载荷调用。
-        let handler = generate_handler_expression(&expression.expression, Some(&value))?;
+        let handler = generate_event_handler_expression(&expression.expression, &value, "@change")?;
         // 复用公开 View Change 注册入口。
         view = quote! {
             (#view).on_change_fn(move |#value| {

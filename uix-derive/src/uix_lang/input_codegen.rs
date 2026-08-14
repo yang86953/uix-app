@@ -8,7 +8,7 @@ use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Input 属性、表达式、值映射与诊断契约。
 use super::{
     Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_expression,
-    generate_handler_expression, literal_string, string_value,
+    generate_event_handler_expression, literal_string, string_value,
 };
 
 // 生成保持 State<String> 双向绑定的文本输入节点。
@@ -108,7 +108,7 @@ pub(crate) fn generate_input(element: &Element) -> Result<TokenStream, Diagnosti
         // 创建卫生的文本载荷变量。
         let value = Ident::new("__uix_change_value", Span::mixed_site());
         // 生成裸处理器或显式载荷调用。
-        let handler = generate_handler_expression(&expression.expression, Some(&value))?;
+        let handler = generate_event_handler_expression(&expression.expression, &value, "@change")?;
         // 使用公开 View Change 注册入口保存处理器。
         view = quote! {
             // 注册只接收当前文本借用的变更闭包。

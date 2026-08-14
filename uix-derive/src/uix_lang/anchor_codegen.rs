@@ -8,7 +8,7 @@ use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Anchor 属性、表达式、事件、数值与诊断契约。
 use super::{
     Attribute, AttributeValue, Diagnostic, Element, generate_expression,
-    generate_handler_expression, numeric_value,
+    generate_event_handler_expression, numeric_value,
 };
 
 // 生成拥有类型化滚动目标并由运行时保持选择生命周期的 Anchor。
@@ -77,7 +77,7 @@ pub(crate) fn generate_anchor(element: &Element) -> Result<TokenStream, Diagnost
         // 创建卫生的 href 文本变量。
         let value = Ident::new("__uix_anchor_change", Span::mixed_site());
         // 生成裸处理器或显式载荷调用。
-        let handler = generate_handler_expression(&expression.expression, Some(&value))?;
+        let handler = generate_event_handler_expression(&expression.expression, &value, "@change")?;
         // 使用公开 View Change 注册入口保存处理器。
         view = quote! {
             // 注册只接收现有 href 文本借用的闭包。

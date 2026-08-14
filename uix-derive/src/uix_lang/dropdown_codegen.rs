@@ -8,7 +8,7 @@ use super::codegen::{apply_common_attributes, generate_node_view, is_renderable_
 // 引入 Dropdown 属性、表达式、事件与诊断契约。
 use super::{
     Attribute, AttributeValue, Diagnostic, Element, Node, generate_expression,
-    generate_handler_expression, literal_string,
+    generate_event_handler_expression, literal_string,
 };
 
 // 生成拥有唯一静态 trigger View 与 keyed 选项树的 Dropdown。
@@ -127,7 +127,7 @@ pub(crate) fn generate_dropdown(element: &Element) -> Result<TokenStream, Diagno
         // 创建卫生的稳定 key 文本变量。
         let value = Ident::new("__uix_dropdown_change", Span::mixed_site());
         // 生成裸处理器或显式载荷调用。
-        let handler = generate_handler_expression(&expression.expression, Some(&value))?;
+        let handler = generate_event_handler_expression(&expression.expression, &value, "@change")?;
         // 复用公开 Change 注册入口发布 stable key。
         view = quote! {
             (#view).on_change_fn(move |#value| {
