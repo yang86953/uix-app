@@ -5,6 +5,14 @@ use super::{
 };
 // 引入响应式状态作为受控队列唯一真值。
 use crate::ui::reactive::state::State;
+// 引入真实声明树构建入口以验证标准 Click 路由。
+use crate::ui::adapter::ViewAdapter;
+// 引入完整声明节点以登记公开点击处理器。
+use crate::ui::view::ViewNode;
+// 引入键盘事件、组件树与修饰键契约。
+use crate::ui::{EventResult, KeyCode, KeyMod, SystemEvent};
+// 引入测试点击计数器。
+use std::cell::Cell;
 // 引入测试观察器的单线程可变记录容器。
 use std::cell::RefCell;
 // 引入测试观察器的共享所有权句柄。
@@ -16,6 +24,50 @@ fn file(id: &str, name: &str) -> UploadFile {
     let id = UploadFileId::new(id).expect("测试 UploadFileId 应合法");
     // 返回等待处理的最小文件项。
     UploadFile::with_id(id, name, 8)
+}
+
+// 验证 Upload 的 Enter/Space 手势通过组件树生成一次标准 Click。
+#[test]
+fn upload_keyboard_activation_dispatches_standard_click() {
+    // 建立调用方拥有的点击计数器。
+    let clicks = Rc::new(Cell::new(0));
+    // 为点击处理器克隆共享计数句柄。
+    let handler_clicks = Rc::clone(&clicks);
+    // 构造带标准点击处理器的 Upload 声明。
+    let view = ViewNode::leaf(Upload::new()).on_click_fn(move || {
+        // 每次标准 Click 只累加一次。
+        handler_clicks.set(handler_clicks.get() + 1);
+    });
+    // 通过真实声明适配器建立组件树与处理器表。
+    let mut tree = ViewAdapter::build(view);
+    // 读取 Upload 的稳定根身份。
+    let root = tree.root_id().expect("Upload 根组件必须存在");
+    // 完成布局以建立键盘合成 Click 所需的组件几何。
+    tree.layout();
+    // 把键盘焦点交给 Upload。
+    tree.set_focus(Some(root));
+    // Enter 按下只武装键盘激活手势。
+    let down = tree.dispatch_event(&SystemEvent::KeyDown {
+        // 使用标准确认键。
+        key: KeyCode::Enter,
+        // 测试不携带组合修饰键。
+        mods: KeyMod::NONE,
+    });
+    // 武装阶段必须由 Upload 处理。
+    assert_eq!(down, EventResult::Handled);
+    // KeyDown 不得提前发布 Click。
+    assert_eq!(clicks.get(), 0);
+    // 配对的 Enter 释放完成激活。
+    let up = tree.dispatch_event(&SystemEvent::KeyUp {
+        // 释放与武装相同的确认键。
+        key: KeyCode::Enter,
+        // 测试不携带组合修饰键。
+        mods: KeyMod::NONE,
+    });
+    // 释放阶段必须完成标准键盘激活。
+    assert_eq!(up, EventResult::Handled);
+    // 组件树必须只生成一次标准 Click。
+    assert_eq!(clicks.get(), 1);
 }
 
 // 验证稳定身份与 accept 首版语法都返回类型化格式结果。

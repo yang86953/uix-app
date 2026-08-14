@@ -567,7 +567,10 @@ mod tests {
     use super::Drawer;
     // 引入受控状态公开契约。
     use crate::ui::State;
-    use crate::ui::component::traits::WidgetAnimation;
+    // 引入事件与动画窄契约以验证 Escape 关闭路径。
+    use crate::ui::component::traits::{EventHandler, WidgetAnimation};
+    // 引入键盘事件值。
+    use crate::ui::{KeyCode, KeyMod, SystemEvent};
 
     // 验证外部状态能驱动 Drawer 的完整进退场。
     #[test]
@@ -633,6 +636,31 @@ mod tests {
         drawer.update_animation(10.0);
         // Drawer 应完全退出呈现。
         assert!(!drawer.is_present());
+    }
+
+    // 验证 closable 只控制关闭按钮，不阻断与 Modal 一致的 Escape 关闭语义。
+    #[test]
+    fn escape_closes_drawer_when_close_button_is_hidden() {
+        // 构造隐藏关闭按钮但已经呈现的 Drawer。
+        let mut drawer = Drawer::new("").closable(false).show();
+        // 发送不携带修饰键的 Escape。
+        let result = EventHandler::on_event(
+            // 把事件直接交给 Drawer 的组件边界。
+            &mut drawer,
+            // 使用标准键盘关闭事件。
+            &SystemEvent::KeyDown {
+                // Escape 必须独立于关闭按钮可见性。
+                key: KeyCode::Escape,
+                // 本用例不携带组合修饰键。
+                mods: KeyMod::NONE,
+            },
+        );
+        // Drawer 必须消费关闭手势。
+        assert_eq!(result, crate::ui::EventResult::Handled);
+        // 稳定可见性必须立即切换为关闭。
+        assert!(!drawer.is_visible());
+        // 离场动画期间仍保留呈现资格。
+        assert!(drawer.is_present());
     }
 
     // 验证声明重建替换绑定时不会写入旧 State。
