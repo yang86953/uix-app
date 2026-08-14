@@ -21,6 +21,7 @@ impl Default for Select {
 }
 
 impl Select {
+    /// 创建继承全局尺寸、禁用和搜索配置的单选选择器。
     pub fn new() -> Self {
         let config = crate::ui::component::config::use_config();
         let control_height = crate::ui::component::config::control_height(config.size);
@@ -83,6 +84,7 @@ impl Select {
         self
     }
 
+    /// 设置显示文案与稳定值相同的未分组选项。
     pub fn options<I, S>(mut self, opts: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -111,7 +113,7 @@ impl Select {
         self
     }
 
-    /// Render each dropdown option with an arbitrary View while preserving Select interaction.
+    /// 使用任意 View 渲染下拉选项，同时保留选择器交互。
     pub fn render_option<F, V>(mut self, renderer: F) -> SelectOptionView
     where
         F: Fn(&str) -> V + 'static,
@@ -124,6 +126,7 @@ impl Select {
         }
     }
 
+    /// 设置兼容格式的分组选项，并同步外部绑定值。
     pub fn optgroups(mut self, groups: Vec<OptGroup>) -> Self {
         self.optgroups = groups;
         self.sync_bound_selection();
@@ -178,16 +181,19 @@ impl Select {
         self.value(state)
     }
 
+    /// 设置未选择内容时显示的占位文本。
     pub fn placeholder(mut self, p: impl Into<String>) -> Self {
         self.placeholder = p.into();
         self
     }
 
+    /// 设置选择器是否禁用。
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self
     }
 
+    /// 设置控件尺寸，并立即同步控件区域高度。
     pub fn size(mut self, size: ControlSize) -> Self {
         self.select_size = size;
         let control = self.control_rect.get();
@@ -200,20 +206,24 @@ impl Select {
         self
     }
 
+    /// 返回下拉列表是否处于打开阶段。
     pub fn is_open(&self) -> bool {
         self.open
     }
 
+    /// 返回下拉列表是否打开或仍在执行关闭过渡。
     pub fn is_present(&self) -> bool {
         self.open || self.closing
     }
 
+    /// 返回当前单选项的稳定值；索引无效时返回 `None`。
     pub fn current_value(&self) -> Option<String> {
         self.all_options()
             .get(self.selected)
             .map(|value| (*value).to_owned())
     }
 
+    /// 返回当前全部多选项的稳定值集合。
     pub fn current_values(&self) -> HashSet<String> {
         let options = self.all_options();
         self.selected_multi
@@ -233,6 +243,7 @@ impl Select {
             .map(|(_, rect)| *rect)
     }
 
+    /// 打开下拉列表、重置滚动位置并建立初始高亮项。
     pub fn open(&mut self) {
         if self.closing {
             self.search_query.clear();
@@ -258,6 +269,7 @@ impl Select {
         self.transition_dirty = true;
     }
 
+    /// 关闭下拉列表，并在列表存在时启动离场过渡。
     pub fn close(&mut self) {
         if !self.is_present() {
             self.open = false;
