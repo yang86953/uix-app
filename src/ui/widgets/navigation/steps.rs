@@ -24,24 +24,35 @@ const STEP_EXTENT: f32 = 80.0;
 /// 但各自语义与变体独立（本枚举是向导流程阶段态），勿强行合并。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum StepStatus {
+    /// 步骤尚未开始。
     Wait,
+    /// 步骤当前正在处理。
     Process,
+    /// 步骤已经成功完成。
     Finish,
+    /// 步骤以错误状态结束或需要修正。
     Error,
 }
 
+/// 步骤条排列步骤与连接线的方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepsDirection {
+    /// 从左向右水平排列步骤。
     Horizontal,
+    /// 从上向下垂直排列步骤。
     Vertical,
 }
 
 /// 单个步骤定义。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Step {
+    /// 步骤的主要标题。
     pub title: String,
+    /// 显示在标题旁或下方的补充说明。
     pub description: String,
+    /// 步骤当前的流程状态。
     pub status: StepStatus,
+    /// 替代默认状态标记的可选 Lucide 图标名称。
     pub icon: String,
 }
 
@@ -289,6 +300,7 @@ impl Steps {
         }
     }
 
+    /// 使用步骤列表创建默认水平、可点击的步骤条。
     pub fn new(steps: Vec<Step>) -> Self {
         let current = Cell::new(0);
         Self {
@@ -305,6 +317,7 @@ impl Steps {
             last_frame_and_step_w: Cell::new(None),
         }
     }
+    /// 设置非受控模式的初始步骤索引，并夹取到有效范围。
     pub fn current(self, v: usize) -> Self {
         // 显式数值构造切回非受控初始值模式。
         let mut this = self;
@@ -315,7 +328,7 @@ impl Steps {
         // 返回完成配置的组件。
         this
     }
-    // 将当前步骤双向绑定到声明端 State<usize>。
+    /// 将当前步骤双向绑定到声明端 `State<usize>`。
     pub fn current_state(mut self, state: &State<usize>) -> Self {
         // 克隆轻量状态句柄，保持声明端为唯一事实源。
         self.current_binding = Some(state.clone());
@@ -324,12 +337,12 @@ impl Steps {
         // 返回受控组件。
         self
     }
-    // 返回组件当前采用的已归一化步骤索引。
+    /// 返回组件当前采用的已归一化步骤索引。
     pub fn get_current(&self) -> usize {
         // 读取组件本地镜像；外部 State 更新会通过 reconcile 或事件入口同步。
         self.current.get()
     }
-    // 以命令式入口更新 current，但不伪造用户 Change 事件。
+    /// 命令式更新当前步骤并写回绑定状态，但不伪造用户变更事件。
     pub fn set_current(&self, v: usize) {
         // 把请求索引限制在当前步骤集合中。
         let current = self.clamp_index(v);
@@ -338,14 +351,17 @@ impl Steps {
         // 受控模式同时写回声明端状态。
         self.write_bound_value(current);
     }
+    /// 将步骤与连接线切换为水平排列。
     pub fn horizontal(mut self) -> Self {
         self.direction = StepsDirection::Horizontal;
         self
     }
+    /// 将步骤与连接线切换为垂直排列。
     pub fn vertical(mut self) -> Self {
         self.direction = StepsDirection::Vertical;
         self
     }
+    /// 返回步骤条中声明的步骤数量。
     pub fn step_count(&self) -> usize {
         self.steps.len()
     }
@@ -549,6 +565,7 @@ mod tests {
 }
 
 impl Step {
+    /// 使用标题创建等待状态且无描述和图标的步骤。
     pub fn new(title: &str) -> Self {
         Self {
             title: title.to_string(),
@@ -557,15 +574,18 @@ impl Step {
             icon: String::new(),
         }
     }
+    /// 设置步骤的补充说明。
     pub fn description(mut self, d: &str) -> Self {
         self.description = d.to_string();
         self
     }
+    /// 设置步骤当前的流程状态。
     pub fn status(mut self, s: StepStatus) -> Self {
         self.status = s;
         self
     }
 
+    /// 设置替代默认状态标记的 Lucide 图标名称。
     pub fn icon(mut self, icon: impl Into<String>) -> Self {
         self.icon = icon.into();
         self
@@ -573,16 +593,19 @@ impl Step {
 }
 
 impl Steps {
+    /// 设置用户是否可以点击或按键切换步骤。
     pub fn clickable(mut self, clickable: bool) -> Self {
         self.clickable = clickable;
         self
     }
 
+    /// 设置是否用圆点替代编号或状态图标。
     pub fn dot(mut self, dot: bool) -> Self {
         self.dot = dot;
         self
     }
 
+    /// 注册用户切换步骤时接收目标索引与步骤定义的回调。
     pub fn on_step<F>(mut self, callback: F) -> Self
     where
         F: Fn(usize, &Step) + 'static,
