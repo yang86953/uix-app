@@ -48,7 +48,7 @@ impl Menu {
             );
         } else if let Some(display) = item.label.chars().next() {
             // 无图标项以首字符提供可识别的紧凑回退。
-            ctx.text_center(&display.to_string(), item_rect, item_color, 16.0);
+            ctx.text_center(&display.to_string(), item_rect, item_color, ctx.tokens().font_size_lg());
         }
         // 紧凑呈现已经处理该菜单项。
         true

@@ -225,7 +225,11 @@ mod tests {
         // 控制点边界应覆盖原矩形，不得产生非有限或反向尺寸。
         // 缺失边界说明 helper 生成了不完整路径，直接让测试失败并保留原因。
         let Some(bounds) = path.bounds() else {
-            panic!("rounded rect path has no bounds");
+            // 附带路径段数，便于判断 helper 是否丢失了闭合轮廓。
+            panic!(
+                "rounded rect path has no bounds (segments={})",
+                path.segments().len()
+            );
         };
         assert!(bounds.x <= 10.0);
         assert!(bounds.y <= 20.0);

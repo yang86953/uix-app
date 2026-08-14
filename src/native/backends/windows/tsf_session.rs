@@ -104,6 +104,7 @@ impl TsfSession {
             })?
         };
 
+        // SAFETY: thread_mgr 为刚创建且存活的 TSF 接口，Activate 在本 COM 公寓线程同步执行。
         let client_id = unsafe { thread_mgr.Activate() }.map_err(|err| {
             windows_diag(
                 Errc::PlatformError,
@@ -111,7 +112,9 @@ impl TsfSession {
             )
         })?;
 
+        // SAFETY: thread_mgr 存活；CreateDocumentMgr 返回的接口由类型接管。
         let doc_mgr = unsafe { thread_mgr.CreateDocumentMgr() }.map_err(|err| {
+            // SAFETY: 失败清理路径中 thread_mgr 仍存活，Deactivate 只影响本线程 TSF 状态。
             let _ = unsafe { thread_mgr.Deactivate() };
             windows_diag(
                 Errc::PlatformError,
@@ -121,9 +124,11 @@ impl TsfSession {
 
         let mut context: Option<ITfContext> = None;
         let mut edit_cookie = 0u32;
+        // SAFETY: doc_mgr 存活；punk 为存活 IUnknown；context/edit_cookie 为栈上可写输出。
         if let Err(err) =
             unsafe { doc_mgr.CreateContext(client_id, 0, &punk, &mut context, &mut edit_cookie) }
         {
+            // SAFETY: thread_mgr 仍存活，失败清理调用合法。
             let _ = unsafe { thread_mgr.Deactivate() };
             return Err(windows_diag(
                 Errc::PlatformError,
@@ -131,13 +136,16 @@ impl TsfSession {
             ));
         }
         let Some(context) = context else {
+            // SAFETY: thread_mgr 仍存活，失败清理调用合法。
             let _ = unsafe { thread_mgr.Deactivate() };
             return Err(Error::new(
                 Errc::PlatformError,
                 "TSF: CreateContext returned null context",
             ));
         };
+        // SAFETY: doc_mgr 与 context 均存活；Push 同步执行。
         if let Err(err) = unsafe { doc_mgr.Push(&context) } {
+            // SAFETY: thread_mgr 仍存活，失败清理调用合法。
             let _ = unsafe { thread_mgr.Deactivate() };
             return Err(windows_diag(
                 Errc::PlatformError,
@@ -146,13 +154,18 @@ impl TsfSession {
         }
 
         if let Err(err) = associate_focus(&thread_mgr, hwnd, Some(&doc_mgr)) {
+            // SAFETY: doc_mgr 仍存活，失败清理路径按 TSF 会话逆序弹出。
             let _ = unsafe { doc_mgr.Pop(TF_POPF_ALL) };
+            // SAFETY: thread_mgr 仍存活，失败清理调用合法。
             let _ = unsafe { thread_mgr.Deactivate() };
             return Err(err);
         }
+        // SAFETY: thread_mgr 与 doc_mgr 均存活，SetFocus 同步执行。
         if let Err(err) = unsafe { thread_mgr.SetFocus(&doc_mgr) } {
             let _ = associate_focus(&thread_mgr, hwnd, None);
+            // SAFETY: doc_mgr 仍存活，失败清理路径按 TSF 会话逆序弹出。
             let _ = unsafe { doc_mgr.Pop(TF_POPF_ALL) };
+            // SAFETY: thread_mgr 仍存活，失败清理调用合法。
             let _ = unsafe { thread_mgr.Deactivate() };
             return Err(windows_diag(
                 Errc::PlatformError,
@@ -174,7 +187,9 @@ impl TsfSession {
 
     pub(crate) fn deactivate(self) {
         let _ = associate_focus(&self.thread_mgr, self.hwnd, None);
+        // SAFETY: doc_mgr 仍存活且由本会话持有，按 TSF 会话逆序弹出。
         let _ = unsafe { self.doc_mgr.Pop(TF_POPF_ALL) };
+        // SAFETY: thread_mgr 仍存活且由本会话持有，Deactivate 只影响本线程 TSF 状态。
         let _ = unsafe { self.thread_mgr.Deactivate() };
     }
 }
@@ -185,6 +200,7 @@ fn associate_focus(
     hwnd: HWND,
     doc_mgr: Option<&ITfDocumentMgr>,
 ) -> Result<()> {
+    // SAFETY: thread_mgr 存活；prev 为栈上可写输出；new_abi 指向存活的 doc_mgr 或 null；vtable 调用与后续 from_abi 在同一 COM 公寓线程同步执行。
     unsafe {
         let mut prev = std::ptr::null_mut();
         let new_abi = match doc_mgr {
@@ -216,6 +232,7 @@ fn associate_focus(
     }
 }
 
+// SAFETY: CoInitializeEx(None) 无指针输入，COINIT_APARTMENTTHREADED 为有效初始化标志。
 fn ensure_com_apartment() {
     let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
 }

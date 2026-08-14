@@ -346,7 +346,7 @@ component! {
             // 使用主题主色绘制兼容按钮背景。
             ctx.fill_rect(btn_rect, ctx.tokens().color_primary(), r);
             // 旧 label 只服务兼容触发器展示。
-            ctx.text_center(&self.label, btn_rect, crate::draw::Color::white(), 13.0);
+            ctx.text_center(&self.label, btn_rect, ctx.tokens().color_white(), 13.0);
             // 键盘焦点可见时绘制兼容触发器焦点环。
             if self.focused && tree.keyboard_focus_visible() {
                 // 焦点环使用主题活动主色。
@@ -441,6 +441,23 @@ component! {
         } else {
             frame
         }
+    }
+
+    // 打开时登记浮层，保证外部点击关闭与 Esc 路由在 OverlayStack 生效。
+    overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+        if !self.is_present() {
+            return None;
+        }
+        // 菜单从触发区下方展开，浮层命中范围与 hit_test_frame 一致。
+        let menu_h = self.visible_items().iter().map(Self::row_height).sum::<f32>();
+        let bounds = Rect::new(frame.x, frame.y, frame.w, 32.0 + menu_h);
+        Some(
+            crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
+                .bounds(bounds)
+                .z_index(900)
+                // 外部点击由树的 System 私有取消端口回调 owner 关闭。
+                .dismiss_on_outside(true),
+        )
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {

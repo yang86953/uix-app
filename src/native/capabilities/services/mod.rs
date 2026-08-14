@@ -1,6 +1,6 @@
 //! 平台业务服务。
 
-pub mod filesystem;
-pub mod notification;
+pub(crate) mod filesystem;
+pub(crate) mod notification;
 
-pub use filesystem::{FileSystemCore, SpecialDirProvider};
+pub(crate) use filesystem::{FileSystemCore, SpecialDirProvider};

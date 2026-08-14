@@ -19,6 +19,7 @@ use crate::ui::{
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+// 折叠头部高度（36.0）；同名常量在 selectable_list/calendar/date_calendar 各为 48/40/32。
 const HEADER_HEIGHT: f32 = 36.0;
 const HEADER_FONT_SIZE: f32 = 14.0;
 const CONTENT_FONT_SIZE: f32 = 12.0;
@@ -27,6 +28,7 @@ const HEADER_ICON_SLOT: f32 = 28.0;
 const HEADER_RIGHT_PADDING: f32 = 12.0;
 const CONTENT_HORIZONTAL_PADDING: f32 = 16.0;
 const CONTENT_VERTICAL_PADDING: f32 = 8.0;
+// 组件默认尺寸（本组件设计值）；其他组件同名常量值不同，属各自设计。
 const DEFAULT_WIDTH: f32 = 240.0;
 const MAX_INTRINSIC_WIDTH: f32 = 320.0;
 

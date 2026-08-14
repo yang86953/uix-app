@@ -19,6 +19,9 @@ use std::rc::Rc;
 const STEP_EXTENT: f32 = 80.0;
 
 /// 步骤状态。
+///
+/// 与 ValidateStatus/InputStatus/BadgeStatus/UploadStatus 共享「组件状态」命名模式，
+/// 但各自语义与变体独立（本枚举是向导流程阶段态），勿强行合并。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum StepStatus {
     Wait,
@@ -131,7 +134,8 @@ component! {
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();
         let fill = ctx.tokens().color_fill();
-        let white = Color::white();
+        // 步骤圆点反白色：白色 token。
+        let white = ctx.tokens().color_white();
         let count = self.steps.len();
         if count == 0 { return; }
 
@@ -169,20 +173,21 @@ component! {
                 ctx.stroke_circle(cx, circle_y, circle_r, border_c, 2.0);
                 // 步骤编号/图标（在圆圈内居中）
                 let circle_rect = Rect::new(cx - circle_r, circle_y - circle_r, circle_r * 2.0, circle_r * 2.0);
+                // 步骤图标/编号字号：统一使用主题 font_size token。
                 if self.dot {
                     ctx.fill_circle(cx, circle_y, circle_r * 0.35, text_c);
                 } else if !step.icon.is_empty() {
-                    crate::ui::widgets::icon::Icon::paint_in_frame(ctx, &step.icon, circle_rect, text_c, 14.0);
+                    crate::ui::widgets::icon::Icon::paint_in_frame(ctx, &step.icon, circle_rect, text_c, ctx.tokens().font_size());
                 } else if step.status == StepStatus::Finish {
                     crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
                         "check",
                         circle_rect,
                         text_c,
-                        14.0,
+                        ctx.tokens().font_size(),
                     );
                 } else {
-                    ctx.text_center(&(i + 1).to_string(), circle_rect, text_c, 14.0);
+                    ctx.text_center(&(i + 1).to_string(), circle_rect, text_c, ctx.tokens().font_size());
                 }
                 // 标题（在圆圈下方居中）
                 let title_c = if i <= self.current.get() { text } else { text_sec };
@@ -232,17 +237,17 @@ component! {
                 if self.dot {
                     ctx.fill_circle(circle_x, cy, circle_r * 0.35, text_c);
                 } else if !step.icon.is_empty() {
-                    crate::ui::widgets::icon::Icon::paint_in_frame(ctx, &step.icon, circle_rect, text_c, 14.0);
+                    crate::ui::widgets::icon::Icon::paint_in_frame(ctx, &step.icon, circle_rect, text_c, ctx.tokens().font_size());
                 } else if step.status == StepStatus::Finish {
                     crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
                         "check",
                         circle_rect,
                         text_c,
-                        14.0,
+                        ctx.tokens().font_size(),
                     );
                 } else {
-                    ctx.text_center(&(i + 1).to_string(), circle_rect, text_c, 14.0);
+                    ctx.text_center(&(i + 1).to_string(), circle_rect, text_c, ctx.tokens().font_size());
                 }
                 let title_color = if i <= self.current.get() { text } else { text_sec };
                 ctx.draw_text_in_frame(

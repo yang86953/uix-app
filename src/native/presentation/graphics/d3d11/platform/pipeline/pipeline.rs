@@ -23,6 +23,7 @@ impl D3d11Pipeline {
         let (vs_sector, ps_sector) = rhi_sector::create_sector_shaders(device)?;
 
         let mut vs_rect = None;
+        // SAFETY: vs_blob 为本函数刚编译成功的字节码，GetBufferPointer/GetBufferSize 在调用期间有效；device 存活；输出指针指向栈上 Option。
         unsafe {
             device
                 .CreateVertexShader(
@@ -39,6 +40,7 @@ impl D3d11Pipeline {
             vs_rect.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no rect VS"))?;
 
         let mut ps_rect = None;
+        // SAFETY: ps_blob 为本函数刚编译成功的字节码，指针与长度在调用期间有效；device 存活；输出指针指向栈上 Option。
         unsafe {
             device
                 .CreatePixelShader(
@@ -57,6 +59,7 @@ impl D3d11Pipeline {
         // 创建读取 BlurCB 区域与尺寸字段的专用顶点 shader。
         let mut vs_blur = None;
         // 从已编译 blur VS 字节码创建原生对象。
+        // SAFETY: blur_vs_blob 为本函数刚编译成功的字节码，指针与长度在调用期间有效；device 存活；输出指针指向栈上 Option。
         unsafe {
             // D3D11 device 拥有 shader 生命周期。
             device
@@ -85,6 +88,7 @@ impl D3d11Pipeline {
         // 可分离高斯模糊 PS 只供通用 RHI BLUR_PASS 使用。
         let blur_ps_blob = compile_shader(BLUR_HLSL, c"PSMain", c"ps_4_0")?;
         let mut ps_blur = None;
+        // SAFETY: blur_ps_blob 为本函数刚编译成功的字节码，指针与长度在调用期间有效；device 存活；输出指针指向栈上 Option。
         unsafe {
             device
                 .CreatePixelShader(
@@ -101,6 +105,7 @@ impl D3d11Pipeline {
             ps_blur.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blur PS"))?;
 
         let mut vs_glyph = None;
+        // SAFETY: glyph_vs_blob 为本函数刚编译成功的字节码，指针与长度在调用期间有效；device 存活；输出指针指向栈上 Option。
         unsafe {
             device
                 .CreateVertexShader(
@@ -117,6 +122,7 @@ impl D3d11Pipeline {
             .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no glyph VS"))?;
 
         let mut ps_glyph = None;
+        // SAFETY: glyph_ps_blob 为本函数刚编译成功的字节码，指针与长度在调用期间有效；device 存活；输出指针指向栈上 Option。
         unsafe {
             device
                 .CreatePixelShader(
@@ -190,6 +196,7 @@ impl D3d11Pipeline {
             .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no RHI textured PS"))?;
 
         let mut vs_grad = None;
+        // SAFETY: grad_vs_blob 为本函数刚编译成功的字节码，指针与长度在调用期间有效；device 存活；输出指针指向栈上 Option。
         unsafe {
             device
                 .CreateVertexShader(
@@ -206,6 +213,7 @@ impl D3d11Pipeline {
             vs_grad.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no grad VS"))?;
 
         let mut ps_grad = None;
+        // SAFETY: grad_ps_blob 为本函数刚编译成功的字节码，指针与长度在调用期间有效；device 存活；输出指针指向栈上 Option。
         unsafe {
             device
                 .CreatePixelShader(
@@ -222,6 +230,7 @@ impl D3d11Pipeline {
             ps_grad.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no grad PS"))?;
 
         let mut vs_mesh = None;
+        // SAFETY: mesh_vs_blob 为本函数刚编译成功的字节码，指针与长度在调用期间有效；device 存活；输出指针指向栈上 Option。
         unsafe {
             device
                 .CreateVertexShader(
@@ -238,6 +247,7 @@ impl D3d11Pipeline {
             vs_mesh.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no mesh VS"))?;
 
         let mut ps_mesh = None;
+        // SAFETY: mesh_ps_blob 为本函数刚编译成功的字节码，指针与长度在调用期间有效；device 存活；输出指针指向栈上 Option。
         unsafe {
             device
                 .CreatePixelShader(
@@ -254,6 +264,7 @@ impl D3d11Pipeline {
             ps_mesh.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no mesh PS"))?;
 
         let mut vs_shadow = None;
+        // SAFETY: shadow_vs_blob 为本函数刚编译成功的字节码，指针与长度在调用期间有效；device 存活；输出指针指向栈上 Option。
         unsafe {
             device
                 .CreateVertexShader(
@@ -270,6 +281,7 @@ impl D3d11Pipeline {
             .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no shadow VS"))?;
 
         let mut ps_shadow = None;
+        // SAFETY: shadow_ps_blob 为本函数刚编译成功的字节码，指针与长度在调用期间有效；device 存活；输出指针指向栈上 Option。
         unsafe {
             device
                 .CreatePixelShader(
@@ -295,6 +307,7 @@ impl D3d11Pipeline {
             InstanceDataStepRate: 0,
         }];
         let mut layout = None;
+        // SAFETY: input_elems 为栈上完整初始化的描述数组；vs_blob 字节码指针与长度在调用期间有效；输出指针指向栈上 Option。
         unsafe {
             device
                 .CreateInputLayout(
@@ -340,6 +353,7 @@ impl D3d11Pipeline {
             },
         ];
         let mut layout_glyph = None;
+        // SAFETY: glyph_elems 为栈上完整初始化的描述数组；glyph_vs_blob 字节码指针与长度在调用期间有效；输出指针指向栈上 Option。
         unsafe {
             device
                 .CreateInputLayout(
@@ -371,6 +385,7 @@ impl D3d11Pipeline {
                 RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as u8,
             }; 8],
         };
+        // SAFETY: alpha_desc 为栈上完整初始化的混合描述；输出指针指向栈上 Option。
         unsafe {
             device
                 .CreateBlendState(&alpha_desc, Some(&mut blend_alpha))
@@ -394,6 +409,7 @@ impl D3d11Pipeline {
                 RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as u8,
             }; 8],
         };
+        // SAFETY: premultiplied_desc 为栈上完整初始化的混合描述；输出指针指向栈上 Option。
         unsafe {
             device
                 .CreateBlendState(&premultiplied_desc, Some(&mut blend_premultiplied))
@@ -435,6 +451,7 @@ impl D3d11Pipeline {
             }; 8],
         };
         // 在当前 D3D11 device 上创建加法状态对象。
+        // SAFETY: additive_desc 为栈上完整初始化的混合描述；输出指针指向栈上 Option。
         unsafe {
             device
                 .CreateBlendState(&additive_desc, Some(&mut blend_additive))
@@ -459,6 +476,7 @@ impl D3d11Pipeline {
                 RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as u8,
             }; 8],
         };
+        // SAFETY: replace_desc 为栈上完整初始化的混合描述；输出指针指向栈上 Option。
         unsafe {
             device
                 .CreateBlendState(&replace_desc, Some(&mut blend_replace))
@@ -480,6 +498,7 @@ impl D3d11Pipeline {
             MultisampleEnable: FALSE,
             AntialiasedLineEnable: FALSE,
         };
+        // SAFETY: rs_desc 为栈上完整初始化的光栅化描述；输出指针指向栈上 Option。
         unsafe {
             device
                 .CreateRasterizerState(&rs_desc, Some(&mut rasterizer))

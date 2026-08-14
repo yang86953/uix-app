@@ -133,6 +133,8 @@ pub enum SnapshotFields {
         item_h: f32,
     },
     Switch {
+        // 展示名称供无障碍 name 播报（空时回退为无名称开关）。
+        label: String,
         checked: bool,
         disabled: bool,
         size: f32,

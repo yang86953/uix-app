@@ -1,6 +1,6 @@
 use crate::ui::view::ViewNode;
 
-pub type WindowRootFactory = Box<dyn Fn() -> ViewNode + Send + Sync + 'static>;
+pub(crate) type WindowRootFactory = Box<dyn Fn() -> ViewNode + Send + Sync + 'static>;
 
 /// Runtime configuration for a secondary application window.
 pub struct WindowConfig {

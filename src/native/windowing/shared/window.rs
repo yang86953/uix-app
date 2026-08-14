@@ -32,7 +32,7 @@ use crate::native::windowing::window::{
 // IWindowProperties + INativeHandle 三个 trait 的完整实现。
 // ════════════════════════════════════════════════════════════════════════════
 
-pub trait WindowOps {
+pub(crate) trait WindowOps {
     // ── 必须实现（无默认，编译期强制）────────────────────────────
     fn os_show(&mut self) -> Result<()>;
     fn os_hide(&mut self) -> Result<()>;
@@ -157,7 +157,7 @@ pub trait WindowOps {
 }
 
 /// 报告未实现的窗口操作。
-pub fn unimpl(method: &str) -> Result<()> {
+pub(crate) fn unimpl(method: &str) -> Result<()> {
     tracing::debug!("WindowOps::{} 未实现！该平台不支持此窗口操作。", method);
     Err(Error::new(
         Errc::NotImplemented,
@@ -223,7 +223,7 @@ macro_rules! state_write {
 // 一次实现 PlatformWindow + IWindowProperties + INativeHandle。
 // ════════════════════════════════════════════════════════════════════════════
 
-pub struct PlatformWindowCore<O: WindowOps> {
+pub(crate) struct PlatformWindowCore<O: WindowOps> {
     state: Rc<RefCell<WindowState>>,
     ops: O,
     presenter: Box<dyn IPresenter>,
@@ -231,7 +231,7 @@ pub struct PlatformWindowCore<O: WindowOps> {
 }
 
 impl<O: WindowOps> PlatformWindowCore<O> {
-    pub fn new(state: Rc<RefCell<WindowState>>, ops: O, presenter: Box<dyn IPresenter>) -> Self {
+    pub(crate) fn new(state: Rc<RefCell<WindowState>>, ops: O, presenter: Box<dyn IPresenter>) -> Self {
         Self {
             state,
             ops,
@@ -242,7 +242,7 @@ impl<O: WindowOps> PlatformWindowCore<O> {
 
     // 保留共享状态句柄访问器，供平台集成与测试按需读取。
     #[allow(dead_code)]
-    pub fn state_rc(&self) -> Rc<RefCell<WindowState>> {
+    pub(crate) fn state_rc(&self) -> Rc<RefCell<WindowState>> {
         Rc::clone(&self.state)
     }
 }

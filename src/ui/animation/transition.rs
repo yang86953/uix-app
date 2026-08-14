@@ -200,55 +200,55 @@ fn placement_offset(placement: Placement, distance: f32) -> Point {
 }
 
 /// 内建组件使用的动画预设。
-pub mod presets {
+pub(crate) mod presets {
     use super::*;
 
     // Modal 组件属于 feedback capability。
     #[cfg(feature = "feedback")]
-    pub fn modal_enter() -> AnimationConfig {
+    pub(crate) fn modal_enter() -> AnimationConfig {
         // Modal 默认瞬时出现；需要缩放进场时由调用方显式配置 duration。
         AnimationConfig::zoom_in(0.0)
     }
 
     // Modal 退场预设只由 feedback capability 消费。
     #[cfg(feature = "feedback")]
-    pub fn modal_exit() -> AnimationConfig {
+    pub(crate) fn modal_exit() -> AnimationConfig {
         AnimationConfig::zoom_out(0.2)
     }
 
     // Drawer 组件属于 feedback capability。
     #[cfg(feature = "feedback")]
-    pub fn drawer_enter(placement: Placement) -> AnimationConfig {
+    pub(crate) fn drawer_enter(placement: Placement) -> AnimationConfig {
         // Drawer 默认瞬时滑入到终态；需要过渡时由调用方显式配置 duration。
         AnimationConfig::slide_in(placement, 0.0).with_distance(180.0)
     }
 
     // Drawer 退场预设只由 feedback capability 消费。
     #[cfg(feature = "feedback")]
-    pub fn drawer_exit(placement: Placement) -> AnimationConfig {
+    pub(crate) fn drawer_exit(placement: Placement) -> AnimationConfig {
         AnimationConfig::slide_out(placement, 0.2).with_distance(180.0)
     }
 
-    pub fn tooltip_enter() -> AnimationConfig {
+    pub(crate) fn tooltip_enter() -> AnimationConfig {
         AnimationConfig::fade_in(0.15)
     }
 
-    pub fn tooltip_exit() -> AnimationConfig {
+    pub(crate) fn tooltip_exit() -> AnimationConfig {
         AnimationConfig::fade_out(0.1)
     }
 
-    pub fn collapse_expand() -> AnimationConfig {
+    pub(crate) fn collapse_expand() -> AnimationConfig {
         AnimationConfig::fade_in(0.15)
     }
 
-    pub fn collapse_collapse() -> AnimationConfig {
+    pub(crate) fn collapse_collapse() -> AnimationConfig {
         AnimationConfig::fade_out(0.1)
     }
 }
 
 /// 管理单个 widget 的一次进场或离场动画状态。
 #[derive(Debug, Clone)]
-pub struct TransitionPlayer {
+pub(crate) struct TransitionPlayer {
     config: AnimationConfig,
     /// 当前透明度进度 [0, 1]。
     pub opacity_progress: f32,
@@ -266,7 +266,7 @@ pub struct TransitionPlayer {
 }
 
 impl TransitionPlayer {
-    pub fn new(config: AnimationConfig) -> Self {
+    pub(crate) fn new(config: AnimationConfig) -> Self {
         let opacity_anim = config.opacity_animation();
         let offset_anim = config.offset_animation();
         let scale_anim = config.scale_animation();
@@ -323,7 +323,7 @@ impl TransitionPlayer {
     /// 重置动画以重新播放。
     /// 原公开面遗留（SMC-04 模块收口后无内部消费方；保留供外部集成）。
     #[allow(dead_code)]
-    pub fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.opacity_anim = self.config.opacity_animation();
         self.offset_anim = self.config.offset_animation();
         self.scale_anim = self.config.scale_animation();
@@ -347,7 +347,7 @@ impl TransitionPlayer {
     }
 
     /// 按帧推进动画。
-    pub fn update(&mut self, dt: f64) {
+    pub(crate) fn update(&mut self, dt: f64) {
         if self.finished {
             return;
         }
@@ -382,7 +382,7 @@ impl TransitionPlayer {
 }
 
 /// 声明式入场/离场动画的紧凑类型：文档「目标写法」的 `Transition::fade_in` /
-/// `stagger` / `slide_up` 等直接绑定到 [`View`] 的 `enter` / `leave`。
+/// `stagger` / `slide_up` 等直接绑定到 [`crate::ui::view::View`] 的 `enter` / `leave`。
 ///
 /// `Transition` 是 [`AnimationConfig`] 的薄封装，`Into<AnimationConfig>` 后由
 /// 既有播放管线消费，不改变任何现有 API。

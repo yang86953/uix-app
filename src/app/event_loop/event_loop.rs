@@ -40,7 +40,7 @@ pub(crate) fn push_coalesced_event(events: &mut Vec<UiEvent>, event: &UiEvent) {
 // 保留旧的完整事件循环入口，供兼容组装方按需调用。
 #[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
-pub fn run_widget_loop<M, X, F>(
+pub(crate) fn run_widget_loop<M, X, F>(
     platform: &mut dyn Platform,
     platform_window: &mut dyn PlatformWindow,
     engine: &mut dyn RenderTarget,

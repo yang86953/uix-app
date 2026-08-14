@@ -179,14 +179,15 @@ pub(crate) fn typography_value(attribute: &Attribute) -> Result<TokenStream, Dia
 pub(crate) fn align_value(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
     // 对齐必须是确定字面量。
     let value = literal_string(attribute, "align")?;
-    // 映射公开 AlignItems 变体。
+    // 映射公开 AlignItems 变体；kebab 为文档登记值面（布局组件.md），
+    // start/end 为旧版兼容驼峰别名（保留以不破坏既有 .uix 源码）。
     match value.as_str() {
         // 映射起始对齐。
-        "start" | "flex-start" => Ok(quote! { ::uix::prelude::AlignItems::Start }),
+        "flex-start" | "start" => Ok(quote! { ::uix::prelude::AlignItems::Start }),
         // 映射居中对齐。
         "center" => Ok(quote! { ::uix::prelude::AlignItems::Center }),
         // 映射末端对齐。
-        "end" | "flex-end" => Ok(quote! { ::uix::prelude::AlignItems::End }),
+        "flex-end" | "end" => Ok(quote! { ::uix::prelude::AlignItems::End }),
         // 映射拉伸对齐。
         "stretch" => Ok(quote! { ::uix::prelude::AlignItems::Stretch }),
         // 未登记值返回诊断。
@@ -195,8 +196,8 @@ pub(crate) fn align_value(attribute: &Attribute) -> Result<TokenStream, Diagnost
             attribute.span,
             // 说明未知对齐值。
             format!("align={value:?} 不受支持"),
-            // 给出合法集合。
-            "使用 start/flex-start、center、end/flex-end 或 stretch",
+            // 给出合法集合（kebab 为文档登记值面）。
+            "使用 flex-start、center、flex-end 或 stretch",
         )),
     }
 }
@@ -205,27 +206,28 @@ pub(crate) fn align_value(attribute: &Attribute) -> Result<TokenStream, Diagnost
 pub(crate) fn justify_value(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
     // 对齐必须是确定字面量。
     let value = literal_string(attribute, "justify")?;
-    // 映射公开 JustifyContent 变体。
+    // 映射公开 JustifyContent 变体；kebab 为文档登记值面（布局组件.md），
+    // 驼峰 start/end/spaceBetween 等为旧版兼容别名（保留以不破坏既有 .uix 源码）。
     match value.as_str() {
         // 映射起始对齐。
-        "start" | "flex-start" => Ok(quote! { ::uix::prelude::JustifyContent::Start }),
+        "flex-start" | "start" => Ok(quote! { ::uix::prelude::JustifyContent::Start }),
         // 映射居中对齐。
         "center" => Ok(quote! { ::uix::prelude::JustifyContent::Center }),
         // 映射末端对齐。
-        "end" | "flex-end" => Ok(quote! { ::uix::prelude::JustifyContent::End }),
+        "flex-end" | "end" => Ok(quote! { ::uix::prelude::JustifyContent::End }),
         // 映射两端分布。
-        "spaceBetween" | "space-between" => {
-            // 同时接受语言驼峰值与布局文档 CSS 关键字。
+        "space-between" | "spaceBetween" => {
+            // 兼容旧驼峰别名，文档登记值为 kebab。
             Ok(quote! { ::uix::prelude::JustifyContent::SpaceBetween })
         }
         // 映射环绕分布。
-        "spaceAround" | "space-around" => {
-            // 同时接受语言驼峰值与布局文档 CSS 关键字。
+        "space-around" | "spaceAround" => {
+            // 兼容旧驼峰别名，文档登记值为 kebab。
             Ok(quote! { ::uix::prelude::JustifyContent::SpaceAround })
         }
         // 映射均匀分布。
-        "spaceEvenly" | "space-evenly" => {
-            // 同时接受语言驼峰值与布局文档 CSS 关键字。
+        "space-evenly" | "spaceEvenly" => {
+            // 兼容旧驼峰别名，文档登记值为 kebab。
             Ok(quote! { ::uix::prelude::JustifyContent::SpaceEvenly })
         }
         // 映射拉伸。
@@ -236,8 +238,8 @@ pub(crate) fn justify_value(attribute: &Attribute) -> Result<TokenStream, Diagno
             attribute.span,
             // 说明未知对齐值。
             format!("justify={value:?} 不受支持"),
-            // 给出合法集合。
-            "使用 start/flex-start、center、end/flex-end、space-between、space-around、space-evenly 或对应驼峰值",
+            // 给出合法集合（kebab 为文档登记值面）。
+            "使用 flex-start、center、flex-end、space-between、space-around、space-evenly 或对应驼峰兼容别名",
         )),
     }
 }

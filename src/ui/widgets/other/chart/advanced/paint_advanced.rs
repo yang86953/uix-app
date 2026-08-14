@@ -136,9 +136,9 @@ impl ChartPlaceholder {
                 h.max(0.0),
             );
             ctx.fill_rect(rect, color, None);
-            // 数值标签。
+            // 数值标签（深色块上反白）：白色 token。
             if self.show_values {
-                ctx.text_center(&format!("{}", finite_value), rect, Color::white(), 9.0);
+                ctx.text_center(&format!("{}", finite_value), rect, ctx.tokens().color_white(), 9.0);
             }
         }
         // x 轴标签（底部）。
@@ -268,7 +268,8 @@ impl ChartPlaceholder {
                         10.0,
                     );
                 } else {
-                    ctx.text_center(&label, label_rect, Color::white(), 10.0);
+                    // 轴标签（深色块上反白）：白色 token。
+                    ctx.text_center(&label, label_rect, ctx.tokens().color_white(), 10.0);
                 }
             }
         }
@@ -565,7 +566,8 @@ impl ChartPlaceholder {
                 path.close();
                 ctx.fill_path(
                     &path.build(),
-                    Color::from_rgba(color.r, color.g, color.b, (255.0 * self.fill_opacity) as u8),
+                    // 面积填充：在系列色上应用 fill_opacity 透明度（用 with_alpha 收敛 alpha 混合）。
+                    color.with_alpha((255.0 * self.fill_opacity) as u8),
                     FillRule::NonZero,
                 );
             }
@@ -674,9 +676,9 @@ impl ChartPlaceholder {
             let color = palette_color(depth * nodes.len() + index);
             ctx.fill_rect(rect, color, None);
             if node.children.is_empty() {
-                // 叶子：居中显示标签。
+                // 叶子：居中显示标签（深色块上反白）：白色 token。
                 if self.label_visible {
-                    ctx.text_center(&node.label, rect, Color::white(), 11.0);
+                    ctx.text_center(&node.label, rect, ctx.tokens().color_white(), 11.0);
                 }
             } else {
                 // 分支：顶部显示标签并递归分块子节点。
@@ -684,7 +686,8 @@ impl ChartPlaceholder {
                     ctx.draw_text(
                         &node.label,
                         Point::new(rect.x + 4.0, rect.y + 12.0),
-                        Color::white(),
+                        // 分支标题（深色块上反白）：白色 token。
+                        ctx.tokens().color_white(),
                         10.0,
                     );
                 }

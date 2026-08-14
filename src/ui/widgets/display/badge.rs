@@ -22,6 +22,10 @@ use crate::ui::component::widget::WidgetTree;
 use crate::ui::LayoutChild;
 use crate::ui::SnapshotFields;
 
+/// 徽章状态。
+///
+/// 与 ValidateStatus/InputStatus/StepStatus/UploadStatus 共享「组件状态」命名模式，
+/// 但各自语义与变体独立（本枚举含 Default/Processing 徽章专用态），勿强行合并。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BadgeStatus {
     Success,
@@ -43,6 +47,7 @@ pub enum BadgeColor {
 
 impl BadgeColor {
     /// 映射为对应的 `Color`。
+    /// 预设品牌色表（AntD 色板）：纯函数无主题上下文，保留字面量、不随换肤变化。
     pub fn to_color(self) -> Color {
         match self {
             BadgeColor::Blue => Color::hex("#1677ff"),
@@ -290,10 +295,11 @@ component! {
         }
 
         let bg = self.color.unwrap_or(ctx.tokens().color_error());
+        // 自适应前景：按亮度取黑白 token 对比色。
         let foreground = if self.adaptive_foreground && bg.is_light() {
-            Color::black()
+            ctx.tokens().color_black()
         } else {
-            Color::white()
+            ctx.tokens().color_white()
         };
         if self.ribbon {
             self.render_ribbon(ctx, actual_frame, bg, foreground);

@@ -11,6 +11,9 @@ use crate::draw::Color;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::{EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
 
+// 无主题上下文路径（命中测试/动作区测量）使用的默认字号，与 token font_size 默认值一致。
+const RESULT_ACTION_FONT_SIZE: f32 = 14.0;
+
 /// 结果类型。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ResultType {
@@ -80,7 +83,7 @@ component! {
             frame
         } else {
             let local_frame = Rect::new(0.0, 0.0, frame.w, frame.h);
-            let action = self.layout(local_frame).action;
+            let action = self.layout(local_frame, RESULT_ACTION_FONT_SIZE).action;
             self.last_action_rect.set(action);
             Rect::new(
                 frame.x + action.x,
@@ -141,7 +144,8 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
-        let geometry = self.layout(frame);
+        // 动作区布局使用主题字号 token。
+        let geometry = self.layout(frame, ctx.tokens().font_size());
         if geometry.frame.w <= 0.0 || geometry.frame.h <= 0.0 {
             self.last_action_rect.set(Rect::zero());
             return;
@@ -174,7 +178,8 @@ component! {
                     ctx,
                     icon,
                     geometry.icon,
-                    Color::white(),
+                    // 结果图标反白色：白色 token。
+                    ctx.tokens().color_white(),
                     (radius * 0.8).max(1.0),
                 );
             }
@@ -203,7 +208,8 @@ component! {
                 let focus = Self::inset(btn_rect, 2.0);
                 ctx.stroke_rect(
                     focus,
-                    Color::white(),
+                    // 聚焦描边：白色 token。
+                    ctx.tokens().color_white(),
                     2.0,
                     Some(crate::draw::Radius::uniform(
                         radius_value.min(focus.w.min(focus.h) * 0.5),
@@ -257,7 +263,7 @@ impl ResultView {
         (title, subtitle)
     }
 
-    fn layout(&self, frame: Rect) -> ResultGeometry {
+    fn layout(&self, frame: Rect, action_font_size: f32) -> ResultGeometry {
         let frame = Self::normalized_frame(frame);
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return ResultGeometry {
@@ -346,7 +352,7 @@ impl ResultView {
         y += subtitle_height + action_gap;
         let action = if has_action {
             let action_width =
-                (Self::estimated_text_width(&self.extra_text, 14.0) + 32.0).clamp(0.0, inner.w);
+                (Self::estimated_text_width(&self.extra_text, action_font_size) + 32.0).clamp(0.0, inner.w);
             Rect::new(
                 inner.x + (inner.w - action_width) * 0.5,
                 y,
@@ -451,9 +457,10 @@ impl ResultView {
             (frame.w - horizontal_padding * 2.0).max(0.0),
             frame.h,
         );
-        if let Some(value) = Self::elide_single_line(ctx, value, 14.0, content.w) {
+        if let Some(value) = Self::elide_single_line(ctx, value, ctx.tokens().font_size(), content.w) {
             ctx.push_clip(content);
-            ctx.text_center(&value, content, Color::white(), 14.0);
+            // 结果描述文本：白色 token。
+            ctx.text_center(&value, content, ctx.tokens().color_white(), ctx.tokens().font_size());
             ctx.pop_clip();
         }
     }
@@ -506,7 +513,7 @@ impl ResultView {
             return rendered;
         }
         let size = self.intrinsic_size();
-        self.layout(Rect::new(0.0, 0.0, size.w, size.h)).action
+        self.layout(Rect::new(0.0, 0.0, size.w, size.h), RESULT_ACTION_FONT_SIZE).action
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

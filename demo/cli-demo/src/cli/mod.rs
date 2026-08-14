@@ -98,9 +98,9 @@ pub fn demo_state() {
         move || a.get() + b.get()
     });
     println!("  Computed: {}+{}={}", a.get(), b.get(), sum.get());
+    // Computed 依赖自动追踪：a 更新后 sum 无需手动失效即可读到新值。
     a.set(10);
-    sum.invalidate();
-    println!("  After a=10, invalidate: sum={}", sum.get());
+    println!("  After a=10, sum={}", sum.get());
 }
 
 pub fn demo_flex() {

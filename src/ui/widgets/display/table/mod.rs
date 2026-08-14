@@ -1,7 +1,7 @@
 //! 数据表格组件：静态列 / 数据驱动 / 虚拟滚动 / 分页与排序。
 //!
-//! 子模块划分（P2 行数治理）：[`types`] 公开类型、[`builder`] 构建器、
-//! [`table_a`] / [`table_b`] 组件实现、[`tests`] 测试。
+//! 子模块划分（P2 行数治理）：`types` 公开类型、`builder` 构建器、
+//! `table_a` / `table_b` 组件实现、`tests` 测试。
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};

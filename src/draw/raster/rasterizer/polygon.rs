@@ -13,7 +13,7 @@ use super::fill_span;
 
 /// 一条扫描线边。
 #[derive(Debug, Clone, Copy)]
-pub struct Edge {
+pub(crate) struct Edge {
     /// 当前扫描线的 x 坐标（随 y 递增更新）。
     x: f32,
     /// 边的最小 y，用于从 clip 中途激活时重新计算交点。
@@ -53,7 +53,7 @@ fn make_edge(p0: Point, p1: Point) -> Edge {
 /// `clip`: 裁剪矩形（像素坐标）。
 /// `color`: 填充颜色（BGRA 32bit premultiplied）。
 /// `fill_rule`: 填充规则。
-pub fn fill_polygons(
+pub(crate) fn fill_polygons(
     polys: &[Vec<Point>],
     pixels: &mut [u32],
     width: i32,

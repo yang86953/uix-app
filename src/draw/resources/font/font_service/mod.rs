@@ -496,10 +496,11 @@ impl FontService {
             return GlyphRaster {
                 width: cached.width,
                 height: cached.height,
-                coverage: cached.coverage,
+                // Arc 字段克隆仅增加引用计数，覆盖像素数据零拷贝。
+                coverage: cached.coverage.clone(),
                 bearing_x: cached.bearing_x,
                 bearing_y: cached.bearing_y,
-                outline_mesh: cached.outline_mesh,
+                outline_mesh: cached.outline_mesh.clone(),
             };
         }
 

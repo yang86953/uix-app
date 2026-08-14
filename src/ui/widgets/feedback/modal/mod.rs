@@ -3,7 +3,7 @@ use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::{Color, Radius};
+use crate::draw::Radius;
 use crate::platform::windowing::ControlSize;
 use crate::ui::animation::{AnimationConfig, TransitionPlayer};
 use crate::ui::component::paint_context::PaintContext;
@@ -303,7 +303,7 @@ component! {
             }
             ctx.push_clip(trigger);
             ctx.fill_rect(trigger, primary, Some(Radius::uniform(ctx.tokens().border_radius())));
-            ctx.text_center("打开 Modal", trigger, Color::white(), 13.0);
+            ctx.text_center("打开 Modal", trigger, ctx.tokens().color_white(), 13.0);
             ctx.pop_clip();
             return;
         }
@@ -328,7 +328,8 @@ component! {
 
         ctx.fill_rect(
             surface,
-            Color::from_rgba(0, 0, 0, overlay_alpha),
+            // 遮罩：黑色 token + 动态 alpha（保持视觉等价，色相随主题可换）。
+            ctx.tokens().color_black().with_alpha(overlay_alpha),
             None,
         );
 
@@ -354,7 +355,7 @@ component! {
             (dialog.x + dialog.w - close_w - title_x).max(0.0),
             title_h,
         );
-        Self::paint_elided_text(ctx, &self.title, title_content, text_color, 16.0);
+        Self::paint_elided_text(ctx, &self.title, title_content, text_color, ctx.tokens().font_size_lg());
         if title_h < dialog.h {
             ctx.fill_rect(
                 Rect::new(dialog.x, dialog.y + title_h, dialog.w, 1.0),
@@ -441,7 +442,8 @@ component! {
             ctx.text_center(
                 crate::ui::component::locale::use_locale().ok_text,
                 ok_rect,
-                Color::white(),
+                // 确认按钮文字：白色 token。
+                ctx.tokens().color_white(),
                 13.0,
             );
         }

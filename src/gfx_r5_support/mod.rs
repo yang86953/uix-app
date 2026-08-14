@@ -7,7 +7,7 @@ use crate::core::{Errc, Error};
 use crate::draw::backend::cpu::noop_canvas_2d::NoopCanvas2D;
 use crate::draw::backend::DamageRegion;
 use crate::draw::renderer::{
-    RecoveryAction, RecoveryDriver, RenderOutcome, RenderTarget, RenderTargetRebuilder,
+    GraphicsRecoveryAction, RecoveryDriver, RenderOutcome, RenderTarget, RenderTargetRebuilder,
     UpdateStrategy,
 };
 use crate::draw::Canvas2D;

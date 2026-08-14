@@ -206,7 +206,8 @@ impl Select {
                 break;
             }
             let close_width = if self.disabled { 0.0 } else { 18.0 };
-            let desired_width = ctx.measure_text(label, 12.0).w + 12.0 + close_width;
+            // 标签字号统一使用主题 font_size_sm token（后一个 12.0 是间距，保留）。
+            let desired_width = ctx.measure_text(label, ctx.tokens().font_size_sm()).w + 12.0 + close_width;
             let tag_width = desired_width.min(remaining);
             let tag_rect = Rect::new(x, tag_y, tag_width, tag_height);
             ctx.fill_rect(
@@ -228,9 +229,9 @@ impl Select {
                 tag_rect.h,
             );
             if label_rect.w > 0.0 {
-                let y = ctx.visual_center_y(label_rect, 12.0);
+                let y = ctx.visual_center_y(label_rect, ctx.tokens().font_size_sm());
                 ctx.push_clip(label_rect);
-                ctx.draw_text(label, Point::new(label_rect.x, y), text, 12.0);
+                ctx.draw_text(label, Point::new(label_rect.x, y), text, ctx.tokens().font_size_sm());
                 ctx.pop_clip();
             }
             if close_width > 0.0 && close_rect.w > 0.0 {
@@ -416,9 +417,9 @@ impl Select {
                         (row_rect.w - 20.0).max(0.0),
                         row_rect.h,
                     );
-                    let y = ctx.visual_center_y(content, 12.0);
+                    let y = ctx.visual_center_y(content, ctx.tokens().font_size_sm());
                     ctx.push_clip(content);
-                    ctx.draw_text(label, Point::new(content.x, y), text_secondary, 12.0);
+                    ctx.draw_text(label, Point::new(content.x, y), text_secondary, ctx.tokens().font_size_sm());
                     ctx.pop_clip();
                 }
             }
@@ -453,7 +454,8 @@ impl Select {
                             ctx,
                             "check",
                             check_rect,
-                            Color::white(),
+                            // 选中勾：白色 token。
+                            ctx.tokens().color_white(),
                             10.0,
                         );
                     } else {

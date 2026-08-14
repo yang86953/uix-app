@@ -13,11 +13,11 @@ const DESCRIPTION_GAP: f32 = 6.0;
 const DESCRIPTION_TRAILING_PADDING: f32 = 14.0;
 // 声明不依赖字体后端的说明文字宽度估算。
 const DESCRIPTION_CHARACTER_WIDTH: f32 = 7.0;
-// 声明提示框文字两侧的总留白。
+// 声明提示框文字两侧的总留白（20.0）；通用 tooltip_primitives 为 16.0。
 const TOOLTIP_HORIZONTAL_PADDING: f32 = 20.0;
 // 声明提示框的最小宽度。
 const TOOLTIP_MIN_WIDTH: f32 = 44.0;
-// 声明提示框的固定高度。
+// 声明提示框的固定高度（28.0）；通用 tooltip_primitives 为 26.0。
 const TOOLTIP_HEIGHT: f32 = 28.0;
 // 声明提示框与按钮之间的间距。
 const TOOLTIP_GAP: f32 = 8.0;

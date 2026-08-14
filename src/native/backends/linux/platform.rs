@@ -14,8 +14,6 @@ use crate::core::Error;
 use crate::diagnostics::PendingFailureQueue;
 use crate::native::capabilities::*;
 use crate::native::platform::*;
-use crate::native::present::*;
-use crate::native::presentation::*;
 use crate::native::windowing::event::{EventLoopWaker, UiEvent};
 use crate::native::windowing::shared::{OsEventSource, WindowState};
 use crate::native::windowing::*;
@@ -32,7 +30,7 @@ use crate::native::backends::linux::wayland::WaylandBackend;
 // LinuxPlatform
 // ════════════════════════════════════════════════════════════════════════════
 
-pub struct LinuxPlatform {
+pub(crate) struct LinuxPlatform {
     // ── 共享窗口状态（与 PlatformWindowCore 共享）─────────
     window: Rc<RefCell<WindowState>>,
 
@@ -56,7 +54,7 @@ pub struct LinuxPlatform {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl LinuxPlatform {
-    pub fn new(pending_failures: PendingFailureQueue) -> Result<Self, Error> {
+    pub(crate) fn new(pending_failures: PendingFailureQueue) -> Result<Self, Error> {
         let pending_source = pending_failures.source();
         let backend = match WaylandBackend::new(pending_source.clone()) {
             Ok(wl) => {

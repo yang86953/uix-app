@@ -5,7 +5,7 @@
 use crate::native::windowing::input::KeyCode;
 
 /// 将 Linux evdev 键码映射到平台无关的 KeyCode。
-pub fn linux_keycode_to_keycode(code: u32) -> KeyCode {
+pub(crate) fn linux_keycode_to_keycode(code: u32) -> KeyCode {
     match code {
         1 => KeyCode::Escape,
         2..=11 => [
@@ -95,7 +95,7 @@ pub fn linux_keycode_to_keycode(code: u32) -> KeyCode {
 }
 
 /// 将 KeyCode 转换为可打印字符（仅处理 ASCII 可打印范围）。
-pub fn keycode_to_char(code: KeyCode, shift: bool) -> Option<String> {
+pub(crate) fn keycode_to_char(code: KeyCode, shift: bool) -> Option<String> {
     use KeyCode::*;
     let ch = match (code, shift) {
         (A, false) => 'a',

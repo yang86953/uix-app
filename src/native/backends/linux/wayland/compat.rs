@@ -139,7 +139,7 @@ impl WaylandDispatchState {
             .unwrap_or_else(|error| error.into_inner())
             .remove(&key);
 
-        let Some(mut callback) = callback else {
+        let Some(callback) = callback else {
             return;
         };
 

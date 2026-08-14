@@ -11,9 +11,13 @@ const MAX_WIDTH: f32 = 320.0;
 const MIN_HEIGHT: f32 = 100.0;
 const TEXT_FONT_SIZE: f32 = 13.0;
 const TEXT_LINE_HEIGHT: f32 = 1.5;
+// 空状态水平内边距（16.0）；descriptions 为 8.0，组件独立设计。
 const HORIZONTAL_PADDING: f32 = 16.0;
+// 空状态垂直内边距（12.0）；descriptions 为 6.0，组件独立设计。
 const VERTICAL_PADDING: f32 = 12.0;
+// 空状态插图（32.0）；breadcrumb 导航图标为 14.0，语境不同。
 const ICON_SIZE: f32 = 32.0;
+// 空状态图标与文字间距（12.0）；breadcrumb 为 4.0，语境不同。
 const ICON_TEXT_GAP: f32 = 12.0;
 
 component! {

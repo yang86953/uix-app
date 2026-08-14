@@ -422,10 +422,19 @@ impl TestApp {
 
     pub fn press_key(&mut self, key: KeyCode, mods: KeyMod) -> Result<(), AutomationError> {
         self.settle()?;
-        let _ = self
+        // KeyDown/KeyUp 返回 EventResult 而非 Result，无法直接 `?` 传播；
+        // 与同文件 click 的严格 NotHandled 检查不同，按键可合法无接收方
+        // （如无焦点组件），这里仅记录日志，保持返回值语义不变。
+        if self
             .tree
-            .dispatch_event(&SystemEvent::KeyDown { key, mods });
-        let _ = self.tree.dispatch_event(&SystemEvent::KeyUp { key, mods });
+            .dispatch_event(&SystemEvent::KeyDown { key, mods })
+            == EventResult::NotHandled
+        {
+            tracing::warn!(key = ?key, "automation press_key KeyDown was not handled");
+        }
+        if self.tree.dispatch_event(&SystemEvent::KeyUp { key, mods }) == EventResult::NotHandled {
+            tracing::warn!(key = ?key, "automation press_key KeyUp was not handled");
+        }
         self.settle()?;
         Ok(())
     }
@@ -433,10 +442,18 @@ impl TestApp {
     pub fn resize(&mut self, width: f32, height: f32) -> Result<(), AutomationError> {
         self.settle()?;
         self.viewport = (width.max(1.0), height.max(1.0));
-        let _ = self.tree.dispatch_event(&SystemEvent::Resize {
+        // Resize 同 KeyDown/KeyUp：EventResult 无法 `?`，未处理仅记录日志，行为不变。
+        if self.tree.dispatch_event(&SystemEvent::Resize {
             width: self.viewport.0,
             height: self.viewport.1,
-        });
+        }) == EventResult::NotHandled
+        {
+            tracing::warn!(
+                width = self.viewport.0,
+                height = self.viewport.1,
+                "automation resize was not handled"
+            );
+        }
         set_root_frame(&mut self.tree, self.viewport);
         self.tree.layout();
         self.settle()?;
@@ -663,7 +680,7 @@ fn write_snapshot(path: &Path, contents: &str) -> std::io::Result<()> {
 }
 
 fn write_node_json(out: &mut String, node: &AutomationNode) {
-    let role = accessibility_role_name(node.accessibility.role);
+    let role = node.accessibility.role.automation_name();
     let state = &node.accessibility.state;
     let _ = write!(
         out,
@@ -748,37 +765,6 @@ fn accessibility_state_json(state: &AccessibilityState) -> String {
         state.password,
         state.required
     )
-}
-
-fn accessibility_role_name(role: AccessibilityRole) -> &'static str {
-    match role {
-        AccessibilityRole::None => "none",
-        AccessibilityRole::Generic => "generic",
-        AccessibilityRole::Alert => "alert",
-        AccessibilityRole::Button => "button",
-        AccessibilityRole::Checkbox => "checkbox",
-        AccessibilityRole::Combobox => "combobox",
-        AccessibilityRole::Dialog => "dialog",
-        AccessibilityRole::Group => "group",
-        AccessibilityRole::Heading => "heading",
-        AccessibilityRole::Image => "image",
-        AccessibilityRole::List => "list",
-        AccessibilityRole::Menu => "menu",
-        AccessibilityRole::Navigation => "navigation",
-        AccessibilityRole::ProgressBar => "progress_bar",
-        AccessibilityRole::RadioGroup => "radio_group",
-        // 主题分隔线使用稳定的自动化角色名称。
-        AccessibilityRole::Separator => "separator",
-        AccessibilityRole::Slider => "slider",
-        AccessibilityRole::SpinButton => "spin_button",
-        AccessibilityRole::Status => "status",
-        AccessibilityRole::Switch => "switch",
-        AccessibilityRole::Table => "table",
-        AccessibilityRole::TabList => "tab_list",
-        AccessibilityRole::Text => "text",
-        AccessibilityRole::TextBox => "text_box",
-        AccessibilityRole::Tree => "tree",
-    }
 }
 
 fn json_string(value: &str) -> String {

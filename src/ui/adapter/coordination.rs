@@ -23,7 +23,7 @@ impl crate::ui::adapter::ViewAdapter {
     }
 
     /// 把已经展开的 ViewNode 树构建为运行时 WidgetTree。
-    pub fn build_nodes(mut root: ViewNode) -> WidgetTree {
+    pub(crate) fn build_nodes(mut root: ViewNode) -> WidgetTree {
         // 复用捕获根携带的存储，保证首次构建与后续协调归属同一窗口。
         let mut tree = root
             .component_state_store
@@ -74,7 +74,7 @@ impl crate::ui::adapter::ViewAdapter {
     }
 
     /// 把已经捕获的 ViewNode 树协调到既有 WidgetTree。
-    pub fn reconcile_nodes(tree: &mut WidgetTree, mut root: ViewNode) {
+    pub(crate) fn reconcile_nodes(tree: &mut WidgetTree, mut root: ViewNode) {
         // 外部协调只可从正常运行态开始，拒绝输入会在离开作用域时释放其回执。
         if !tree.accepts_external_work() {
             // 不接管失败树或已关闭树的任何声明输出。

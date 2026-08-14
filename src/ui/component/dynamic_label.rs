@@ -28,7 +28,7 @@ pub(crate) struct DynamicLabel {
 }
 
 impl DynamicLabel {
-    pub fn new<F: Fn() -> String + 'static>(f: F) -> Self {
+    pub(crate) fn new<F: Fn() -> String + 'static>(f: F) -> Self {
         Self {
             text_fn: Box::new(f),
             state_sources: Vec::new(),

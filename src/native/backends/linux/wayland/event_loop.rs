@@ -107,16 +107,6 @@ impl WaylandBackend {
             .pop_front()
     }
 
-    /// 检查是否已关闭。
-    pub(crate) fn is_closed(&self) -> bool {
-        self.closed
-    }
-
-    /// 检查事件队列是否为空。
-    pub(crate) fn has_pending_events(&self) -> bool {
-        self.events.lock().map(|q| !q.is_empty()).unwrap_or(false)
-    }
-
     // ── 内部辅助 ──────────────────────────────────────────
 
     fn dispatch_polled(&mut self, timeout_ms: i32, context: &str) -> bool {

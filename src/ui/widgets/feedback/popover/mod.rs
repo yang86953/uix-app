@@ -17,6 +17,7 @@ use self::geometry::*;
 const POPOVER_WIDTH: f32 = 220.0;
 const POPOVER_HEIGHT: f32 = 100.0;
 const TRIGGER_WIDTH: f32 = 80.0;
+// Popover 触发器高度（28.0）；cascader 触发器为 32.0，组件独立设计。
 const TRIGGER_HEIGHT: f32 = 28.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,6 +112,11 @@ component! {
             SystemEvent::FocusOut => {
                 self.focused = false;
                 self.cancel_pending_activation();
+                // 焦点离开即关闭弹层（与 Dropdown 的 FocusOut 语义对齐）。
+                // hover 触发的打开不依赖焦点：hover 路径由 PointerEnter/Leave
+                // 驱动，FocusOut 只发生在组件曾获得焦点的场景，不会误关
+                // 纯 hover 打开的弹层。
+                self.close();
                 return EventResult::Handled;
             }
             SystemEvent::KeyDown { key: key @ (KeyCode::Enter | KeyCode::Space), .. }
@@ -270,7 +276,7 @@ component! {
             r,
         );
         if !self.custom_trigger {
-            Self::paint_elided_text(ctx, "Popover", frame, text_secondary, 12.0, true);
+            Self::paint_elided_text(ctx, "Popover", frame, text_secondary, ctx.tokens().font_size_sm(), true);
         }
 
         if self.is_present() && popup_geometry.popup.w > 0.0 && popup_geometry.popup.h > 0.0 {
@@ -312,7 +318,7 @@ component! {
                     content_width,
                     title_height,
                 );
-                Self::paint_elided_text(ctx, &self.title, title_rect, popup_text, 14.0, false);
+                Self::paint_elided_text(ctx, &self.title, title_rect, popup_text, ctx.tokens().font_size(), false);
                 if pop_rect.h > title_height {
                     ctx.fill_rect(
                         Rect::new(
@@ -367,7 +373,9 @@ component! {
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
                 .bounds(popup)
-                .z_index(900),
+                .z_index(900)
+                // 外部点击由树的 System 私有取消端口回调 owner 关闭。
+                .dismiss_on_outside(true),
         )
     }
 

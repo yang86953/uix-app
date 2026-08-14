@@ -30,13 +30,13 @@
 pub(crate) mod agent_transport;
 pub(crate) mod backends;
 pub(crate) mod capabilities;
-pub mod factory;
+pub(crate) mod factory;
 pub(crate) mod platform;
 pub(crate) mod present;
 pub(crate) mod presentation;
 #[cfg(feature = "test-harness")]
-pub mod test_harness;
+pub(crate) mod test_harness;
 pub(crate) mod windowing;
 
-pub use crate::core::error::*;
-pub use capabilities::services::notification;
+pub(crate) use crate::core::error::*;
+pub(crate) use capabilities::services::notification;

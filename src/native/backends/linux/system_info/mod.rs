@@ -13,7 +13,7 @@
 // ============================================================================
 
 pub(crate) mod fonts;
-pub use fonts::*;
+pub(crate) use fonts::*;
 
 use crate::native::capabilities::system::ISystemInfo;
 use crate::native::capabilities::system::{MemoryInfo, OsInfo};
@@ -26,10 +26,10 @@ use std::fs;
 // ════════════════════════════════════════════════════════════════════════════
 
 #[derive(Debug, Clone)]
-pub struct LinuxSystemInfo;
+pub(crate) struct LinuxSystemInfo;
 
 impl LinuxSystemInfo {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self
     }
 }

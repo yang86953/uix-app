@@ -533,11 +533,13 @@ impl ImageGroup {
         }
         let geometry = Self::preview_geometry(surface, self.images.len(), self.current_index());
         ctx.push_clip(surface);
-        ctx.fill_rect(surface, Color::from_rgba(0, 0, 0, 214), None);
+        // 预览暗底：黑色 token + 原 alpha（保持视觉等价，色相随主题可换）。
+        ctx.fill_rect(surface, ctx.tokens().color_black().with_alpha(214), None);
         if geometry.preview.w > 0.0 && geometry.preview.h > 0.0 {
+            // 预览占位底：原为 18,18,18 深灰，收敛为黑色 token（视觉近似，色相随主题可换）。
             ctx.fill_rect(
                 geometry.preview,
-                Color::from_rgba(18, 18, 18, 255),
+                ctx.tokens().color_black().with_alpha(255),
                 Some(Radius::uniform(4.0)),
             );
             if let Some(path) = self.images.get(self.current_index()) {
@@ -546,10 +548,12 @@ impl ImageGroup {
         }
 
         if let Some(previous) = geometry.previous {
-            Self::paint_navigation_control(ctx, previous, "chevron-left", Color::white());
+            // 导航箭头（暗底上反白）：白色 token。
+            Self::paint_navigation_control(ctx, previous, "chevron-left", ctx.tokens().color_white());
         }
         if let Some(next) = geometry.next {
-            Self::paint_navigation_control(ctx, next, "chevron-right", Color::white());
+            // 导航箭头（暗底上反白）：白色 token。
+            Self::paint_navigation_control(ctx, next, "chevron-right", ctx.tokens().color_white());
         }
         for &(index, rect) in &geometry.thumbnails {
             if let Some(path) = self.images.get(index) {
@@ -560,7 +564,8 @@ impl ImageGroup {
                 if index == self.current_index() {
                     ctx.tokens().color_primary()
                 } else {
-                    Color::from_rgba(255, 255, 255, 120)
+                    // 缩略图边框：白色 token + 原 alpha（保持视觉等价，色相随主题可换）。
+                    ctx.tokens().color_white().with_alpha(120)
                 },
                 if index == self.current_index() {
                     2.0
@@ -576,13 +581,15 @@ impl ImageGroup {
                 geometry.close.x + geometry.close.w * 0.5,
                 geometry.close.y + geometry.close.h * 0.5,
                 geometry.close.w.min(geometry.close.h) * 0.5,
-                Color::from_rgba(0, 0, 0, 180),
+                // 关闭按钮底：黑色 token + 原 alpha（保持视觉等价，色相随主题可换）。
+                ctx.tokens().color_black().with_alpha(180),
             );
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 "x",
                 geometry.close,
-                Color::white(),
+                // 关闭图标（暗底上反白）：白色 token。
+                ctx.tokens().color_white(),
                 20.0_f32.min(geometry.close.w.min(geometry.close.h) * 0.6),
             );
         }
@@ -595,7 +602,8 @@ impl ImageGroup {
         ctx.text_center(
             &format!("{} / {}", self.current_index() + 1, self.images.len()),
             counter,
-            Color::white(),
+            // 计数文本（暗底上反白）：白色 token。
+            ctx.tokens().color_white(),
             13.0,
         );
         ctx.pop_clip();
@@ -665,7 +673,8 @@ impl ImageGroup {
             circle.x + circle.w * 0.5,
             circle.y + circle.h * 0.5,
             diameter * 0.5,
-            Color::from_rgba(0, 0, 0, 128),
+            // 状态角标底：黑色 token + 原 alpha（保持视觉等价，色相随主题可换）。
+            ctx.tokens().color_black().with_alpha(128),
         );
         crate::ui::widgets::icon::Icon::paint_in_frame(
             ctx,

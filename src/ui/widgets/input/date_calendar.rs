@@ -7,9 +7,12 @@ use crate::ui::widgets::input::date_picker::{days_in_month, first_weekday, Date,
 pub(crate) const CALENDAR_PANEL_HEIGHT: f32 = 250.0;
 // 允许日期选择器的表面解析器复用月历自然最小宽度。
 pub(crate) const CALENDAR_PANEL_MIN_WIDTH: f32 = 160.0;
+// 日期面板头部高度（32.0）；同名常量在 calendar/collapse/selectable_list 各为 40/36/48。
 const HEADER_HEIGHT: f32 = 32.0;
+// 月视图星期栏高度（24.0）；display/calendar 组件用推导值 16，两组件独立布局。
 const WEEKDAY_HEIGHT: f32 = 24.0;
 const CELL_HEIGHT: f32 = 30.0;
+// 月视图面板水平内边距（8.0）；toast 家族（Message/Notification）同名常量为 24.0，语境不同。
 const HORIZONTAL_INSET: f32 = 8.0;
 const NAVIGATION_WIDTH: f32 = 32.0;
 

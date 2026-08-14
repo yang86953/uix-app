@@ -29,6 +29,7 @@ impl WindowsPlatform {
 
     pub(crate) fn register_class(&mut self) -> Result<(), Error> {
         let class_name = self.class_name();
+        // SAFETY: GetModuleHandleW(null) 返回当前进程模块句柄且无指针输入；wc 为完整初始化的类描述，class_name 为存活 NUL 结尾 UTF-16；RegisterClassExW 同步注册。
         unsafe {
             let hinstance = GetModuleHandleW(std::ptr::null_mut());
             if hinstance.is_null() {
@@ -78,6 +79,7 @@ impl WindowsPlatform {
 impl WindowsPlatform {
     pub(crate) fn get_modifier_state() -> KeyMod {
         let mut mods = KeyMod::NONE;
+        // SAFETY: GetAsyncKeyState 只接收虚拟键码常量，不依赖窗口句柄，无指针参数。
         unsafe {
             if GetAsyncKeyState(VK_SHIFT as i32) < 0 {
                 mods |= KeyMod::SHIFT;
@@ -242,6 +244,7 @@ impl WindowsPlatform {
             data.mods = mods;
         }
         self.push_event(window_id, ev);
+        // SAFETY: hwnd 为当前同步消息的窗口句柄且存活；SetCapture 同步设置捕获。
         unsafe {
             SetCapture(hwnd);
         }
@@ -261,6 +264,7 @@ impl WindowsPlatform {
             data.mods = mods;
         }
         self.push_event(window_id, ev);
+        // SAFETY: ReleaseCapture 无句柄参数，释放当前线程的鼠标捕获。
         unsafe {
             ReleaseCapture();
         }
@@ -272,6 +276,7 @@ impl WindowsPlatform {
         window_id: crate::core::WindowId,
         hdrop: *mut std::ffi::c_void,
     ) {
+        // SAFETY: hdrop 为 WM_DROPFILES 提供的有效 HDROP 句柄，在本次消息处理期间存活；缓冲与输出指针均为有效栈上存储；DragFinish 在最后释放该句柄一次。
         unsafe {
             let count = DragQueryFileW(hdrop, 0xFFFFFFFF, std::ptr::null_mut(), 0);
             let mut files = Vec::with_capacity(count as usize);
@@ -302,6 +307,7 @@ impl WindowsPlatform {
         wparam: usize,
         lparam: isize,
     ) -> isize {
+        // SAFETY: hwnd/msg/wparam/lparam 为窗口过程转发的当前消息参数，DefWindowProcW 同步处理。
         unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
     }
 }

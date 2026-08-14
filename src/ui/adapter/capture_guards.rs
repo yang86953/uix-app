@@ -59,7 +59,7 @@ impl DynamicViewCaptureContext {
 // 把 View 捕获入口放在独立模块，避免适配器主体超过规模上限。
 impl crate::ui::adapter::ViewAdapter {
     /// Builds a ViewNode while capturing State bindings.
-    pub fn capture_root<F>(build_root: F) -> crate::ui::view::ViewNode
+    pub(crate) fn capture_root<F>(build_root: F) -> crate::ui::view::ViewNode
     where
         // 接收任意一次性根工厂闭包。
         F: FnOnce() -> crate::ui::view::ViewNode,

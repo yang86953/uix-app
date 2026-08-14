@@ -252,6 +252,45 @@ component! {
                             self.hover_date.set(None);
                             EventResult::Handled
                         }
+                        // 上下方向键以周为单位移动键盘聚焦日期；Left/Right 保持切月。
+                        KeyCode::Up | KeyCode::Down => {
+                            // 无聚焦日期时依次回退到待选起点、当前范围起点或今天。
+                            let anchor = self
+                                .hover_date
+                                .get()
+                                .or_else(|| self.pending_start.get())
+                                .or_else(|| self.current_range().map(|(start, _)| start))
+                                .unwrap_or_else(Date::today);
+                            // 在日历网格中按周移动：上移 7 天、下移 7 天。
+                            let moved = add_days(anchor, if *key == KeyCode::Up { -7 } else { 7 });
+                            // 禁用日期不承接键盘焦点（与指针悬停过滤一致）。
+                            if !self.is_date_disabled(moved) {
+                                self.hover_date.set(Some(moved));
+                                // 跨月移动时同步视图月份，保持网格内可见焦点。
+                                self.view_year.set(moved.year);
+                                self.view_month.set(moved.month);
+                            }
+                            EventResult::Handled
+                        }
+                        // 回车确认：无聚焦日期时以当前范围起点为锚，复用指针点击的
+                        // 两段式选择语义（先定起点、再定终点）。
+                        KeyCode::Enter => {
+                            let target = self
+                                .hover_date
+                                .get()
+                                .or_else(|| self.pending_start.get())
+                                .or_else(|| self.current_range().map(|(start, _)| start))
+                                .unwrap_or_else(Date::today);
+                            if !self.is_date_disabled(target) {
+                                if let Some(start) = self.pending_start.get() {
+                                    self.commit_range(start, target);
+                                    self.close_popup();
+                                } else {
+                                    self.pending_start.set(Some(target));
+                                }
+                            }
+                            EventResult::Handled
+                        }
                         _ => EventResult::NotHandled,
                     }
                 } else if *key == KeyCode::Space || *key == KeyCode::Enter {

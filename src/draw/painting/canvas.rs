@@ -185,7 +185,7 @@ pub trait Canvas2D {
         self.blit_glyph_outline_shared(x, y, mesh, None, width, height, color);
     }
 
-    /// 与 [`blit_glyph_outline`] 相同，可携带缓存的面积 coverage（物理 1:1 时复用，
+    /// 与 [`Self::blit_glyph_outline`] 相同，可携带缓存的面积 coverage（物理 1:1 时复用，
     /// 稳定 atlas 键）。
     #[allow(
         clippy::too_many_arguments,

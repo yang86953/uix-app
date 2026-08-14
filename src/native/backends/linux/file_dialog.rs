@@ -15,10 +15,10 @@ use crate::native::{Errc, Error, Result};
 // ════════════════════════════════════════════════════════════════════════════
 
 #[derive(Debug)]
-pub struct LinuxFileDialog;
+pub(crate) struct LinuxFileDialog;
 
 impl LinuxFileDialog {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self
     }
 }

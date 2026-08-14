@@ -31,8 +31,10 @@ impl VulkanContext {
             .size(size)
             .usage(vk::BufferUsageFlags::TRANSFER_SRC)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
+        // SAFETY: device 存活；buffer_info 为栈上完整初始化的创建描述；分配器传 None。
         let buffer = unsafe { self.device.create_buffer(&buffer_info, None) }
             .map_err(|err| vk_err("vkCreateBuffer", err))?;
+        // SAFETY: buffer 为刚创建的存活对象，查询内存需求为只读操作。
         let requirements = unsafe { self.device.get_buffer_memory_requirements(buffer) };
         let runtime = self.runtime.as_ref().ok_or_else(|| {
             Error::new(
@@ -48,6 +50,7 @@ impl VulkanContext {
         ) {
             Ok(index) => index,
             Err(error) => {
+                // SAFETY: buffer 为本函数刚创建、仍存活且失败后不再使用。
                 unsafe { self.device.destroy_buffer(buffer, None) };
                 return Err(error);
             }
@@ -55,14 +58,18 @@ impl VulkanContext {
         let alloc = vk::MemoryAllocateInfo::default()
             .allocation_size(requirements.size)
             .memory_type_index(memory_index);
+        // SAFETY: device 存活；alloc 为栈上完整初始化的分配描述；分配器传 None。
         let memory = match unsafe { self.device.allocate_memory(&alloc, None) } {
             Ok(memory) => memory,
             Err(err) => {
+                // SAFETY: buffer 为本函数刚创建、仍存活且失败后不再使用。
                 unsafe { self.device.destroy_buffer(buffer, None) };
                 return Err(vk_err("vkAllocateMemory staging", err));
             }
         };
+        // SAFETY: buffer/memory 均为刚创建且匹配（由同一次分配绑定）；偏移 0 有效。
         if let Err(err) = unsafe { self.device.bind_buffer_memory(buffer, memory, 0) } {
+            // SAFETY: 绑定失败时两者仍存活且不再使用，按创建逆序释放。
             unsafe {
                 self.device.free_memory(memory, None);
                 self.device.destroy_buffer(buffer, None);
@@ -77,6 +84,7 @@ impl VulkanContext {
                 size: requirements.size,
             },
         );
+        // SAFETY: previous 中的对象被替换出来后仍存活且不再被引用，先删 buffer 再释放内存。
         unsafe {
             if previous.buffer != vk::Buffer::null() {
                 self.device.destroy_buffer(previous.buffer, None);
@@ -108,6 +116,7 @@ impl VulkanContext {
         self.wait_for_previous_upload()?;
         let needed_size = staging_size(width, height);
         self.recreate_upload_buffer(needed_size)?;
+        // SAFETY: upload.memory 存活且未被映射；needed_size 不超过分配大小；pixels 切片长度已在上方验证足够；mapped 指针由 map/unmap 对保证有效。
         unsafe {
             let mapped = self
                 .device
@@ -167,6 +176,7 @@ impl VulkanContext {
             ));
         }
         let mut shadow = allocate_cpu_shadow(needed_pixels)?;
+        // SAFETY: upload.memory 存活且未被映射；shadow 容量与 needed_pixels 匹配；mapped 指针由 map/unmap 对保证有效。
         unsafe {
             let mapped = self
                 .device
@@ -194,6 +204,7 @@ impl VulkanContext {
         let range = color_subresource_range();
         let begin = vk::CommandBufferBeginInfo::default()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+        // SAFETY: command_buffer 存活且未被录制中；image 为当前 swapchain 存活 image；barrier/copy 描述引用栈上对象且在命令提交前有效。
         unsafe {
             self.device
                 .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())
@@ -276,6 +287,7 @@ impl VulkanContext {
     /// itself fails, no queue operation will signal it, so replace it with a
     /// fresh signaled fence before returning a typed failure.
     pub(super) fn restore_signaled_frame_fence(&mut self) -> Result<()> {
+        // SAFETY: device 存活；fence 创建描述为栈上完整初始化；分配器传 None。
         let replacement = unsafe {
             self.device.create_fence(
                 &vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED),
@@ -284,6 +296,7 @@ impl VulkanContext {
         }
         .map_err(|err| vk_err("vkCreateFence after failed submit", err))?;
         let previous = std::mem::replace(&mut self.frame_fence, replacement);
+        // SAFETY: previous 为替换出来的旧 fence，仍存活且不再被引用，只销毁一次。
         unsafe {
             self.device.destroy_fence(previous, None);
         }
@@ -297,6 +310,7 @@ fn find_memory_type(
     type_bits: u32,
     flags: vk::MemoryPropertyFlags,
 ) -> Result<u32> {
+    // SAFETY: instance 存活且 physical_device 有效，查询内存属性为只读操作。
     let props = unsafe { instance.get_physical_device_memory_properties(physical_device) };
     for index in 0..props.memory_type_count {
         let supported = (type_bits & (1 << index)) != 0;

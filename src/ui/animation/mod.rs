@@ -25,14 +25,14 @@
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::expect_used)]
 
-pub mod animated;
-pub mod core;
-pub mod easing;
-pub mod group;
-pub mod keyframe;
-pub mod spring;
+pub(crate) mod animated;
+pub(crate) mod core;
+pub(crate) mod easing;
+pub(crate) mod group;
+pub(crate) mod keyframe;
+pub(crate) mod spring;
 pub(crate) mod traits;
-pub mod transition;
+pub(crate) mod transition;
 
 pub use animated::*;
 pub use core::*;

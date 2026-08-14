@@ -5,8 +5,8 @@
 //! public fields. Factory functions `antd_light()` and `antd_dark()` provide
 //! complete Ant Design 5 presets (defined in the `presets` submodule).
 
-pub mod presets;
-pub mod primitives;
+pub(crate) mod presets;
+pub(crate) mod primitives;
 
 use super::color_tokens::{IColorTokens, NeutralRole, ShadowToken};
 use crate::draw::Color;

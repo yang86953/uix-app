@@ -6,19 +6,19 @@
 //!
 //! | Module | 职责 | 依赖 |
 //! |--------|------|------|
-//! | [`application`] | 应用生命周期：App / AppMode / CLI / DI / AppHandle | event-loop、window、agent、queues（全部单向） |
-//! | [`event_loop`] | 主循环：event loop（窗口会话驱动） | window、System 私有 queues（全部单向） |
-//! | [`window`] | 窗口生命周期与会话：Window / window_driver / window_session / window_actions / window_config / text_input / bridge / frame_scheduler | System 私有 queues / window_semantics |
-//! | [`agent`] | 同用户本机 IPC 与自动化：agent_bridge / agent_control / agent_protocol / agent_transport（feature `agent-control` 相关） | 无（只依赖 System 私有边界） |
+//! | `application` | 应用生命周期：App / AppMode / CLI / DI / AppHandle | event-loop、window、agent、queues（全部单向） |
+//! | `event_loop` | 主循环：event loop（窗口会话驱动） | window、System 私有 queues（全部单向） |
+//! | `window` | 窗口生命周期与会话：Window / window_driver / window_session / window_actions / window_config / text_input / bridge / frame_scheduler | System 私有 queues / window_semantics |
+//! | `agent` | 同用户本机 IPC 与自动化：agent_bridge / agent_control / agent_protocol / agent_transport（feature `agent-control` 相关） | 无（只依赖 System 私有边界） |
 //!
 //! System 私有边界（组合根与跨 Module 契约，任何 Module 不拥有）：
 //!
 //! | 归属 | 内容 |
 //! |------|------|
-//! | [`session_runtime`] | 组合根：AppRuntime / SessionRuntime 创建并注入各 Module 组件实例（agent bridge / transport / command queue、window session、event-loop waker） |
-//! | [`window_semantics`] | 每窗口语义修订状态（event-loop / window / agent 共用） |
-//! | [`queues`] | 主循环与 Agent 命令的 System 私有契约/队列（clock / active_work_registry / app_timer / main_thread_queue / agent_command_queue / window_agent_state）：event-loop、window 与组合根共用，任何 Module 不拥有 |
-//! | [`app_events`] | System 私有边界事件契约与总线（SystemEvent(SMC)：主题变更事实等）：任何 Module 不拥有，订阅进入路由清单 |
+//! | `session_runtime` | 组合根：AppRuntime / SessionRuntime 创建并注入各 Module 组件实例（agent bridge / transport / command queue、window session、event-loop waker） |
+//! | `window_semantics` | 每窗口语义修订状态（event-loop / window / agent 共用） |
+//! | `queues` | 主循环与 Agent 命令的 System 私有契约/队列（clock / active_work_registry / app_timer / main_thread_queue / agent_command_queue / window_agent_state）：event-loop、window 与组合根共用，任何 Module 不拥有 |
+//! | `app_events` | System 私有边界事件契约与总线（SystemEvent(SMC)：主题变更事实等）：任何 Module 不拥有，订阅进入路由清单 |
 //!
 //! 兄弟隔离现状（SMC-06，2026-08-03 全量审核修正，2026-08-04 P1 修复落地）：
 //! agent 不引用任何兄弟 Module；application 只下行引用 event-loop / window /

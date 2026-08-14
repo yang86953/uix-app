@@ -20,7 +20,7 @@ use crate::app::queues::agent_command_queue::{
 use crate::app::window_semantics::WindowSemanticSnapshot;
 use crate::core::{ComponentId, Point, Rect, WindowId};
 use crate::ui::accessibility::semantic_snapshot::{SemanticNode, SemanticTarget};
-use crate::ui::component_snapshot::{AccessibilityRole, AccessibilityState};
+use crate::ui::component_snapshot::AccessibilityState;
 use crate::ui::semantic_action::SemanticAction;
 use crate::ui::{KeyCode, KeyMod};
 
@@ -41,6 +41,7 @@ const AGENT_SEMANTIC_ACTIONS: &[&str] = &[
     "toggle",
     "increment",
     "decrement",
+    "adjust",
     "scroll",
 ];
 const AGENT_WINDOW_ACTIONS: &[&str] = &[
@@ -533,3 +534,10 @@ mod wire;
 
 use self::wire::*;
 pub(crate) use self::wire::encode_session_token;
+
+// 协议线解析与帧往返专项测试（仅 agent-control 能力下编译）。
+#[cfg(all(test, feature = "agent-control"))]
+// 从仓库测试目录引入，保持协议实现文件低于行数上限。
+#[path = "../../../../tests/unit/app/agent/agent_protocol_tests.rs"]
+// 将外置测试作为协议模块的私有子模块编译。
+mod agent_protocol_tests;

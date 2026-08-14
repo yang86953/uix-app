@@ -141,6 +141,11 @@ pub enum AccessibilityRole {
 }
 
 impl AccessibilityRole {
+    /// ARIA 规范角色名（WAI-ARIA 拼写，如 `progressbar`/`spinbutton`/`tablist`）。
+    ///
+    /// 与 `automation_name`（snake_case 自动化/协议稳定名）是两套不同命名：
+    /// 本方法输出 ARIA 规范名用于 Web 语义；自动化快照与 Agent 线协议使用
+    /// `automation_name`。
     pub fn aria_role(self) -> Option<&'static str> {
         match self {
             Self::None | Self::Generic | Self::Text => None,
@@ -166,6 +171,44 @@ impl AccessibilityRole {
             Self::TabList => Some("tablist"),
             Self::TextBox => Some("textbox"),
             Self::Tree => Some("tree"),
+        }
+    }
+
+    /// 自动化/线协议稳定角色名（snake_case，如 `progress_bar`/`spin_button`/`tab_list`）。
+    ///
+    /// 供自动化快照（`ui::automation`，test-harness feature）与 Agent 协议
+    /// （`agent_protocol::wire`，agent-control feature）共用，是角色名的单一
+    /// 事实来源；与 [`Self::aria_role`] 的 ARIA 规范拼写（`progressbar` 等）
+    /// 不同，两套命名各自稳定，勿互相替换。
+    #[cfg_attr(not(any(test, feature = "test-harness", feature = "agent-control")), allow(dead_code))]
+    pub(crate) fn automation_name(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Generic => "generic",
+            Self::Alert => "alert",
+            Self::Button => "button",
+            Self::Checkbox => "checkbox",
+            Self::Combobox => "combobox",
+            Self::Dialog => "dialog",
+            Self::Group => "group",
+            Self::Heading => "heading",
+            Self::Image => "image",
+            Self::List => "list",
+            Self::Menu => "menu",
+            Self::Navigation => "navigation",
+            Self::ProgressBar => "progress_bar",
+            Self::RadioGroup => "radio_group",
+            // 主题分隔线使用稳定的自动化角色名称。
+            Self::Separator => "separator",
+            Self::Slider => "slider",
+            Self::SpinButton => "spin_button",
+            Self::Status => "status",
+            Self::Switch => "switch",
+            Self::Table => "table",
+            Self::TabList => "tab_list",
+            Self::Text => "text",
+            Self::TextBox => "text_box",
+            Self::Tree => "tree",
         }
     }
 }
@@ -430,3 +473,10 @@ impl SnapshotTransferItem {
 pub enum SnapshotValue {
     Debug(String),
 }
+
+// 无障碍快照与角色双命名映射专项测试。
+#[cfg(test)]
+// 从仓库测试目录引入，保持快照实现文件低于行数上限。
+#[path = "../../../tests/unit/ui/component_snapshot/accessibility_snapshot_tests.rs"]
+// 将外置测试作为快照模块的私有子模块编译。
+mod accessibility_snapshot_tests;

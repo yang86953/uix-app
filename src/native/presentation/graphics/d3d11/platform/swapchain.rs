@@ -113,6 +113,9 @@ impl D3d11SwapChain {
     }
 
     // 获取当前 D3D11 可写 back buffer。
+    ///
+    /// # Safety
+    /// 调用者必须保证 index 小于当前 swapchain 缓冲数，且 swapchain 在调用期间存活（本实例持有）。
     pub(crate) unsafe fn get_buffer<T>(&self, index: u32) -> ::windows::core::Result<T>
     where
         // 目标接口必须满足 Windows COM 类型约束。
@@ -121,13 +124,18 @@ impl D3d11SwapChain {
         // 两种形态都通过共同 IDXGISwapChain 基接口读取 buffer。
         match self {
             // flip-model 仍由继承的 GetBuffer 提供当前 D3D11 buffer 0。
+            // SAFETY: swapchain 由本实例持有且存活；index 由调用方限制在当前缓冲数内。
             Self::Tracked(swap_chain) => unsafe { swap_chain.GetBuffer(index) },
             // legacy 路径沿用原生 GetBuffer。
+            // SAFETY: swapchain 由本实例持有且存活；index 由调用方限制在当前缓冲数内。
             Self::Legacy(swap_chain) => unsafe { swap_chain.GetBuffer(index) },
         }
     }
 
     // 在释放所有 back-buffer 引用后重建当前交换链尺寸。
+    ///
+    /// # Safety
+    /// 调用者必须保证所有 back-buffer 引用（RTV/视图）已释放且 GPU 不再使用旧缓冲，尺寸为正。
     pub(crate) unsafe fn resize_buffers(
         &self,
         width: u32,
@@ -136,6 +144,7 @@ impl D3d11SwapChain {
         // 两种形态都保留构造期的 buffer count 与 flags。
         match self {
             // flip-model 使用继承的 ResizeBuffers，并由 surface 代际隔离旧历史。
+            // SAFETY: 调用方已释放 back-buffer 引用并等待 GPU；尺寸已验证为正；0 表示保持原缓冲数。
             Self::Tracked(swap_chain) => unsafe {
                 swap_chain.ResizeBuffers(
                     0,
@@ -146,6 +155,7 @@ impl D3d11SwapChain {
                 )
             },
             // legacy 路径保持相同 resize 参数。
+            // SAFETY: 调用方已释放 back-buffer 引用并等待 GPU；尺寸已验证为正；0 表示保持原缓冲数。
             Self::Legacy(swap_chain) => unsafe {
                 swap_chain.ResizeBuffers(
                     0,
@@ -203,8 +213,10 @@ impl D3d11SwapChain {
         // 两种交换链都从共同 Present(TEST) 状态边界探测。
         let result = match self {
             // flip-model 使用继承的 Present 进行无数据探测。
+            // SAFETY: swapchain 存活且只在其 owner UI thread 上调用；TEST 标志不提交帧数据。
             Self::Tracked(swap_chain) => unsafe { swap_chain.Present(0, DXGI_PRESENT_TEST) },
             // legacy 路径维持既有探测。
+            // SAFETY: swapchain 存活且只在其 owner UI thread 上调用；TEST 标志不提交帧数据。
             Self::Legacy(swap_chain) => unsafe { swap_chain.Present(0, DXGI_PRESENT_TEST) },
         };
         // 统一保留 Occluded 与 typed failure。
@@ -221,11 +233,13 @@ fn create_tracked_swap_chain(
     height: i32,
 ) -> Result<D3d11SwapChain> {
     // 获取支持 CreateSwapChainForHwnd 的 DXGI 1.2 factory。
+    // SAFETY: adapter 存活；GetParent 返回的接口由 windows crate 类型接管。
     let factory: IDXGIFactory2 = unsafe { adapter.GetParent() }
         .map_err(|error| d3d_error("IDXGIAdapter::GetParent<IDXGIFactory2>", error))?;
     // 构造 FLIP_SEQUENTIAL 双缓冲 descriptor。
     let descriptor = tracked_swap_chain_desc(width, height);
     // 创建 HWND flip-model swapchain。
+    // SAFETY: device/adapter 存活；hwnd 为有效非空窗口句柄；descriptor 为栈上完整初始化的描述；输出参数传 None。
     let swap_chain = unsafe {
         factory.CreateSwapChainForHwnd(device, HWND(hwnd), &descriptor, None, None::<&IDXGIOutput>)
     }
@@ -247,6 +261,7 @@ fn create_legacy_swap_chain(
     height: i32,
 ) -> Result<D3d11SwapChain> {
     // 获取所有受支持 DXGI 版本都具备的基础 factory。
+    // SAFETY: adapter 存活；GetParent 返回的接口由 windows crate 类型接管。
     let factory: IDXGIFactory = unsafe { adapter.GetParent() }
         .map_err(|error| d3d_error("IDXGIAdapter::GetParent<IDXGIFactory>", error))?;
     // 构造已经验证的 bitblt DISCARD descriptor。
@@ -254,6 +269,7 @@ fn create_legacy_swap_chain(
     // 接收 legacy CreateSwapChain 返回值。
     let mut swap_chain = None;
     // 执行基础 factory 创建并保留 HRESULT 分类。
+    // SAFETY: factory 存活；descriptor 为栈上完整初始化的描述；输出指针指向栈上 Option。
     map_dxgi_operation_result("IDXGIFactory::CreateSwapChain", unsafe {
         factory.CreateSwapChain(device, &descriptor, &mut swap_chain)
     })?;
@@ -281,6 +297,7 @@ pub(crate) fn create_swap_chain(
         .cast()
         .map_err(|error| d3d_error("ID3D11Device::cast<IDXGIDevice>", error))?;
     // 读取与 device 同源的 adapter，禁止另选显卡创建 swapchain。
+    // SAFETY: dxgi_device 存活；GetAdapter 返回的接口由 windows crate 类型接管。
     let adapter = unsafe { dxgi_device.GetAdapter() }
         .map_err(|error| d3d_error("IDXGIDevice::GetAdapter", error))?;
     // 优先创建已批准的 FLIP_SEQUENTIAL + SwapChain3 主路径。

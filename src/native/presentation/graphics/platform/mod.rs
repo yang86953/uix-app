@@ -1,7 +1,7 @@
 //! Shared platform surface descriptors for graphics API modules.
 
 #[cfg(windows)]
-pub mod windows;
+pub(crate) mod windows;
 
 #[cfg(all(unix, not(target_os = "macos")))]
-pub mod linux;
+pub(crate) mod linux;

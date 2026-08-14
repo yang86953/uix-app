@@ -761,9 +761,11 @@ impl Button {
             None => false,
         };
         if filled_dark {
-            Color::white().with_alpha(56)
+            // 波纹浅色：白色 token + 原 alpha（保持视觉等价）。
+            ctx.tokens().color_white().with_alpha(56)
         } else {
-            Color::black().with_alpha(36)
+            // 波纹深色：黑色 token + 原 alpha（保持视觉等价）。
+            ctx.tokens().color_black().with_alpha(36)
         }
     }
 }

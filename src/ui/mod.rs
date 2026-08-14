@@ -7,18 +7,18 @@
 //!
 //! | Module | 职责 | 依赖 |
 //! |--------|------|------|
-//! | [`reactive`] | 响应式状态（State / Computed / Effect）与 Provider 上下文 | 无（只依赖 core / draw） |
-//! | [`event`] | 事件模型与注册（SystemEvent / SemanticEvent / EventResult / 系统事件注册） | reactive（handler 指纹捕获，1 处窄契约） |
-//! | [`layout`] | 布局引擎与盒模型（Flex / Grid / LayoutChild / BoxModel） | 无（只依赖 core / draw） |
-//! | [`animation`] | 动画（Animated / Keyframe / Spring / Transition）与 Animatable 契约 | reactive（Animated 绑定 State） |
-//! | [`overlay`] | 浮层注册表与 Placement 定位 | 无（只依赖 core） |
-//! | [`theme`] | 主题令牌、设计令牌与 Style 样式系统 | layout（样式引用布局枚举） |
-//! | [`accessibility`] | 无障碍语义快照与覆盖 | component（语义树消费）、component_snapshot（类型） |
-//! | [`component`] | 组件运行时：WidgetTree / WidgetNode / 组件契约 / 管理器 / 配置与 i18n | reactive、event、layout、animation、theme、overlay、accessibility（全部单向窄契约） |
-//! | [`view`] | 声明式 View DSL：View / ViewNode / 扩展 trait / Provider 组件 | component、reactive、event、animation、theme、accessibility |
-//! | [`virtualization`] | 虚拟滚动（VirtualScroll / VirtualScrollBuilder） | view、component |
-//! | [`widgets`] | 内置组件库与声明式组合子（combinators） | component、view、reactive、event、animation、layout、theme、overlay、accessibility |
-//! | [`form`] | 类型化表单模型与表单组件 | widgets、component、view、reactive、event |
+//! | `reactive` | 响应式状态（State / Computed / Effect）与 Provider 上下文 | 无（只依赖 core / draw） |
+//! | `event` | 事件模型与注册（SystemEvent / SemanticEvent / EventResult / 系统事件注册） | reactive（handler 指纹捕获，1 处窄契约） |
+//! | `layout` | 布局引擎与盒模型（Flex / Grid / LayoutChild / BoxModel） | 无（只依赖 core / draw） |
+//! | `animation` | 动画（Animated / Keyframe / Spring / Transition）与 Animatable 契约 | reactive（Animated 绑定 State） |
+//! | `overlay` | 浮层注册表与 Placement 定位 | 无（只依赖 core） |
+//! | `theme` | 主题令牌、设计令牌与 Style 样式系统 | layout（样式引用布局枚举） |
+//! | `accessibility` | 无障碍语义快照与覆盖 | component（语义树消费）、component_snapshot（类型） |
+//! | `component` | 组件运行时：WidgetTree / WidgetNode / 组件契约 / 管理器 / 配置与 i18n | reactive、event、layout、animation、theme、overlay、accessibility（全部单向窄契约） |
+//! | `view` | 声明式 View DSL：View / ViewNode / 扩展 trait / Provider 组件 | component、reactive、event、animation、theme、accessibility |
+//! | `virtualization` | 虚拟滚动（VirtualScroll / VirtualScrollBuilder） | view、component |
+//! | `widgets` | 内置组件库与声明式组合子（combinators） | component、view、reactive、event、animation、layout、theme、overlay、accessibility |
+//! | `form` | 类型化表单模型与表单组件 | widgets、component、view、reactive、event |
 //!
 //! 兄弟隔离约束（SMC-04）：reactive / layout / overlay 对任何兄弟
 //! Module 引用为 0；event / animation / theme / accessibility 只消费依赖基座
@@ -31,15 +31,15 @@
 //!
 //! | 归属 | 内容 |
 //! |------|------|
-//! | [`adapter`] | ViewAdapter：ViewNode → WidgetNode 展开与 reconcile（view/component/widgets 粘合） |
-//! | [`render_handler`] | 节点级渲染注册表（表格单元格 / 展开 / 下拉选项 / 虚拟列表项）与空态渲染回调（EmptyRenderer / render_empty_for） |
-//! | [`style_paint`] | Style 绘制辅助（跨 component/widgets 的视觉应用，theme::style 再导出） |
-//! | [`tree_dynamic`] | 动态内容刷新协调：表格单元格 / 日历格子 / 折叠内容 / Select 选项 / 虚拟列表 |
-//! | [`text_selection`] | 跨组件文字拖选协调（Typography / Label / RichText 参与者） |
-//! | [`tree_widget_hooks`] | 树对具体组件语义的访问点（Modal 生命周期 / viewport 滚动轴 / 显式尺寸锁 / 导航兄弟联动） |
-//! | [`component_snapshot`] | 组件配置与无障碍快照（component 产出、widgets 描述、automation 消费） |
-//! | [`semantic_action`] | 语义动作执行器（automation / agent / accessibility 共用） |
-//! | [`automation`] | 测试替身（`test-harness` feature） |
+//! | `adapter` | ViewAdapter：ViewNode → WidgetNode 展开与 reconcile（view/component/widgets 粘合） |
+//! | `render_handler` | 节点级渲染注册表（表格单元格 / 展开 / 下拉选项 / 虚拟列表项）与空态渲染回调（EmptyRenderer / render_empty_for） |
+//! | `style_paint` | Style 绘制辅助（跨 component/widgets 的视觉应用，theme::style 再导出） |
+//! | `tree_dynamic` | 动态内容刷新协调：表格单元格 / 日历格子 / 折叠内容 / Select 选项 / 虚拟列表 |
+//! | `text_selection` | 跨组件文字拖选协调（Typography / Label / RichText 参与者） |
+//! | `tree_widget_hooks` | 树对具体组件语义的访问点（Modal 生命周期 / viewport 滚动轴 / 显式尺寸锁 / 导航兄弟联动） |
+//! | `component_snapshot` | 组件配置与无障碍快照（component 产出、widgets 描述、automation 消费） |
+//! | `semantic_action` | 语义动作执行器（automation / agent / accessibility 共用） |
+//! | `automation` | 测试替身（`test-harness` feature） |
 //! | [`macros`] | 公开宏定义（`component!` / `views!` / `impl_widget_component!` 等） |
 //!
 //! 业务流向由 System 编排（公开面收口于本根），Module 之间除上表窄契约外

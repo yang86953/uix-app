@@ -6,7 +6,7 @@ use crate::ui::ComponentId;
 /// 原公开面遗留（SMC-04 模块收口后无内部消费方；保留供外部集成）。
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DragEventResult {
+pub(crate) enum DragEventResult {
     Accepted,
     Rejected,
     Ignored,

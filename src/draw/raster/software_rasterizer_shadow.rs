@@ -49,7 +49,7 @@ fn scan_bounds(rect: Rect) -> (i32, i32, i32, i32) {
 // 为共享软件执行器补充状态完整的两种盒阴影入口。
 impl SoftwareRasterizer {
     // 定向阴影使用标准 shadow coverage 曲线。
-    pub fn draw_box_shadow(
+    pub(crate) fn draw_box_shadow(
         // 只读取当前绘制状态。
         &self,
         // 写入调用方持有的像素目标。
@@ -124,7 +124,7 @@ impl SoftwareRasterizer {
     }
 
     // 环境阴影使用柔和的 ambient coverage 曲线。
-    pub fn draw_box_shadow_ambient(
+    pub(crate) fn draw_box_shadow_ambient(
         // 只读取当前绘制状态。
         &self,
         // 写入调用方持有的像素目标。

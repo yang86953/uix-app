@@ -1,6 +1,5 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::Color;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::{SnapshotFields, WidgetTree};
 use qrcode::{types::Color as QrModuleColor, EcLevel, QrCode};
@@ -28,12 +27,14 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        let bg = Color::white();
-        let fg = Color::black();
+        // QR 码默认底色/前景色：黑白 token（可被用户配置覆盖）。
+        let bg = ctx.tokens().color_white();
+        let fg = ctx.tokens().color_black();
         ctx.fill_rect(frame, bg, None);
 
         if self.encoding_error.is_some() || self.module_count == 0 {
-            ctx.text_center("QR !", frame, ctx.tokens().color_error(), 14.0);
+            // QR 错误提示字号：统一使用主题 font_size token。
+            ctx.text_center("QR !", frame, ctx.tokens().color_error(), ctx.tokens().font_size());
             return;
         }
 

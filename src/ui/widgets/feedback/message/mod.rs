@@ -313,11 +313,13 @@ impl Message {
     const MSG_HEIGHT_PER_ITEM: f32 = 48.0;
     const MSG_INSET: f32 = 12.0;
     const SHADOW_MARGIN: f32 = 12.0;
+    // toast 家族动作字号，与 Notification 保持一致（12.0）；Card 独立用 13.0。
     const ACTION_FONT_SIZE: f32 = 12.0;
     const ACTION_HORIZONTAL_PADDING: f32 = 16.0;
     const ACTION_MIN_WIDTH: f32 = 40.0;
     const ACTION_MAX_WIDTH: f32 = 112.0;
     const CONTROL_GAP: f32 = 4.0;
+    // toast 家族内容尾部间隙；Notification 侧为 8.0，存在 1px 历史差异，保留原值。
     const CONTENT_TRAILING_GAP: f32 = 7.0;
 
     pub fn new() -> Self {

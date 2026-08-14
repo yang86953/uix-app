@@ -8,10 +8,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::core::{Error, WindowId};
-use crate::native::capabilities::*;
-use crate::native::platform::*;
-use crate::native::present::*;
-use crate::native::presentation::*;
 use crate::native::windowing::shared::{PlatformWindowCore, WindowState};
 use crate::native::windowing::*;
 
@@ -36,14 +32,12 @@ impl IWindowManager for WaylandBackend {
         let mut ops = WaylandWindowOps::new(
             window_id,
             self._compositor.clone(),
-            self._shm.clone(),
             self.events.clone(),
             self.surface_windows.clone(),
             // 传入已绑定 seat 的协议引用，不复制任何输入 serial。
             self.seat.clone(),
             // 所有窗口共享后端唯一的一次性激活注册表。
             self.pointer_activations.clone(),
-            self.outputs.clone(),
             self._xdg_activation.clone(),
         );
 
@@ -61,7 +55,6 @@ impl IWindowManager for WaylandBackend {
         )?;
 
         let presenter = super::presenter::WaylandPresenter::new(
-            self._compositor.clone(),
             self._shm.clone(),
             ops.surface.clone(),
             width,

@@ -31,6 +31,7 @@ use geometry::{
 const POPUP_GAP: f32 = 2.0;
 const POPUP_HEIGHT: f32 = 200.0;
 const POPUP_MIN_WIDTH: f32 = 120.0;
+// 时间选择列项高度（32.0）；timeline 时间线条目为 60.0，语境不同。
 const ITEM_HEIGHT: f32 = 32.0;
 const HOUR_COUNT: usize = 24;
 const MINUTE_COUNT: usize = 60;
@@ -305,7 +306,8 @@ component! {
         } else {
             0.0
         };
-        let font_size = 14.0 * scale;
+        // 基准字号取自主题 token，再按控件高度缩放。
+        let font_size = ctx.tokens().font_size() * scale;
         let horizontal_padding = 12.0 * scale;
         let icon_gap = 4.0 * scale;
         let icon_slot_width = 24.0 * scale;
@@ -389,14 +391,16 @@ component! {
                     ctx.fill_rect(Rect::new(popup.x, y, col_w, ITEM_HEIGHT), primary_bg, None);
                 }
                 let item_rect = Rect::new(popup.x, y, col_w, ITEM_HEIGHT);
-                let text_y = ctx.visual_center_y(item_rect, 14.0);
+                // 时间列字号：统一使用主题 font_size token。
+                let text_y = ctx.visual_center_y(item_rect, ctx.tokens().font_size());
                 let label = format!("{:02}", i);
-                let text_width = ctx.measure_text(&label, 14.0).w;
+                let text_width = ctx.measure_text(&label, ctx.tokens().font_size()).w;
                 ctx.draw_text(
                     &label,
                     Point::new(item_rect.x + (item_rect.w - text_width) * 0.5, text_y),
                     if is_hover { primary } else { text_color },
-                    14.0,
+                    // 时间列字号：统一使用主题 font_size token。
+                    ctx.tokens().font_size(),
                 );
             }
 
@@ -412,14 +416,16 @@ component! {
                     );
                 }
                 let item_rect = Rect::new(popup.x + col_w, y, col_w, ITEM_HEIGHT);
-                let text_y = ctx.visual_center_y(item_rect, 14.0);
+                // 时间列字号：统一使用主题 font_size token。
+                let text_y = ctx.visual_center_y(item_rect, ctx.tokens().font_size());
                 let label = format!("{:02}", i);
-                let text_width = ctx.measure_text(&label, 14.0).w;
+                let text_width = ctx.measure_text(&label, ctx.tokens().font_size()).w;
                 ctx.draw_text(
                     &label,
                     Point::new(item_rect.x + (item_rect.w - text_width) * 0.5, text_y),
                     if is_hover { primary } else { text_color },
-                    14.0,
+                    // 时间列字号：统一使用主题 font_size token。
+                    ctx.tokens().font_size(),
                 );
             }
 

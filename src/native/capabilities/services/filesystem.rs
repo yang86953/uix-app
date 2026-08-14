@@ -9,18 +9,18 @@ use crate::native::capabilities::system::IFileSystem;
 use crate::native::capabilities::system::SpecialDir;
 use crate::native::{Errc, Error, Result};
 /// 平台特殊目录解析接口。
-pub trait SpecialDirProvider {
+pub(crate) trait SpecialDirProvider {
     fn special_dir(&self, dir: SpecialDir) -> Result<String>;
 }
 
 /// 文件系统共享实现。
 #[derive(Debug, Clone)]
-pub struct FileSystemCore<P> {
+pub(crate) struct FileSystemCore<P> {
     provider: P,
 }
 
 impl<P: Default> FileSystemCore<P> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             provider: P::default(),
         }
@@ -30,11 +30,11 @@ impl<P: Default> FileSystemCore<P> {
 // 保留自定义 provider 注入与读取接口，供平台扩展和外部组装测试使用。
 #[allow(dead_code)]
 impl<P> FileSystemCore<P> {
-    pub fn with_provider(provider: P) -> Self {
+    pub(crate) fn with_provider(provider: P) -> Self {
         Self { provider }
     }
 
-    pub fn provider(&self) -> &P {
+    pub(crate) fn provider(&self) -> &P {
         &self.provider
     }
 }

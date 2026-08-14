@@ -525,7 +525,8 @@ mod tests {
         // 内层分发：命中同一处理器但占用中 → 跳过并计数。
         let inner = match inner_report.borrow().as_ref() {
             Some(r) => *r,
-            None => panic!("嵌套分发报告缺失"),
+            // 内层分发报告缺失：附带外层报告便于定位时序问题。
+            None => panic!("嵌套分发报告缺失 (outer report = {report:?})"),
         };
         assert_eq!(inner.matched, 1);
         assert_eq!(inner.executed, 0);

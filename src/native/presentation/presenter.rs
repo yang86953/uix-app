@@ -16,10 +16,10 @@ use crate::native::present::PresentDamage;
 ///
 /// 用于初始化阶段（窗口尚未创建）或测试场景。
 #[derive(Default)]
-pub struct NullPresenter;
+pub(crate) struct NullPresenter;
 
 impl NullPresenter {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self
     }
 }

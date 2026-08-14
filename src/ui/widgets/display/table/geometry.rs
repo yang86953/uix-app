@@ -40,7 +40,7 @@ pub(crate) struct TableColumnGeometry {
 }
 
 impl TableColumnGeometry {
-    pub fn new(
+    pub(crate) fn new(
         columns: &[TableColumn],
         origin_x: f32,
         viewport_width: f32,
@@ -102,7 +102,7 @@ impl TableColumnGeometry {
         }
     }
 
-    pub fn clip_for(&self, zone: ColumnZone, y: f32, height: f32) -> Option<Rect> {
+    pub(crate) fn clip_for(&self, zone: ColumnZone, y: f32, height: f32) -> Option<Rect> {
         let viewport = Rect::new(self.origin_x, y, self.viewport_width, height);
         let zone_rect = match zone {
             ColumnZone::Left => Rect::new(
@@ -123,7 +123,7 @@ impl TableColumnGeometry {
     }
 
     // 解析逻辑连续列合并锚点当前使用的完整绘制矩形。
-    pub fn span_bounds(
+    pub(crate) fn span_bounds(
         // 接收列几何快照。
         &self,
         // 接收合并锚点的逻辑列索引。
@@ -142,7 +142,7 @@ impl TableColumnGeometry {
     }
 
     // 解析列合并锚点在指定列区中的普通可见片段。
-    pub fn span_clip_for(
+    pub(crate) fn span_clip_for(
         // 接收列几何快照。
         &self,
         // 接收合并锚点的逻辑列索引。
@@ -165,7 +165,7 @@ impl TableColumnGeometry {
     }
 
     // 解析列合并锚点在末尾重绘时指定列区的最终可见片段。
-    pub fn merged_span_repaint_clip_for(
+    pub(crate) fn merged_span_repaint_clip_for(
         // 接收列几何快照。
         &self,
         // 接收合并锚点的逻辑列索引。
@@ -227,7 +227,7 @@ impl TableColumnGeometry {
     }
 
     // 解析行合并锚点在末尾重绘时可使用的最终可见裁剪。
-    pub fn merged_repaint_clip_for(
+    pub(crate) fn merged_repaint_clip_for(
         // 接收需要重绘的锚点所属列区。
         &self,
         // 接收重绘列区。
@@ -269,7 +269,7 @@ impl TableColumnGeometry {
         ))
     }
 
-    pub fn column_at(&self, x: f32) -> Option<usize> {
+    pub(crate) fn column_at(&self, x: f32) -> Option<usize> {
         // 按绘制顺序逆序命中，使重叠区选择视觉上最上层的列。
         for zone in COLUMN_PAINT_ORDER.into_iter().rev() {
             if zone == ColumnZone::Middle

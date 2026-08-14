@@ -200,7 +200,7 @@ component! {
                 accent,
                 16.0,
             );
-            Self::paint_elided_text(ctx, &item.title, geometry.title, text, 14.0);
+            Self::paint_elided_text(ctx, &item.title, geometry.title, text, ctx.tokens().font_size());
             if !item.description.is_empty() {
                 Self::paint_elided_text(
                     ctx,
@@ -318,10 +318,12 @@ impl Default for Notification {
 impl Notification {
     const DEFAULT_DURATION_MS: u64 = 4500;
     const WIDTH: f32 = 384.0;
+    // toast 水平内边距（24.0）；date_calendar 月视图面板为 8.0，语境不同。
     const HORIZONTAL_INSET: f32 = 24.0;
     const VERTICAL_INSET: f32 = 12.0;
     const GAP: f32 = 12.0;
     const SHADOW_MARGIN: f32 = 12.0;
+    // toast 家族动作字号，与 Message 保持一致（12.0）；Card 独立用 13.0。
     const ACTION_FONT_SIZE: f32 = 12.0;
     const CLOSE_FONT_SIZE: f32 = 11.0;
     const ACTION_HORIZONTAL_PADDING: f32 = 16.0;
@@ -331,6 +333,7 @@ impl Notification {
     const CLOSE_MIN_WIDTH: f32 = 40.0;
     const CLOSE_MAX_WIDTH: f32 = 112.0;
     const CONTROL_GAP: f32 = 4.0;
+    // toast 家族内容尾部间隙；Message 侧为 7.0，存在 1px 历史差异，保留原值。
     const CONTENT_TRAILING_GAP: f32 = 8.0;
 
     pub fn new() -> Self {

@@ -73,7 +73,7 @@ fn scan_bounds(rect: Rect) -> (i32, i32, i32, i32) {
 // 在当前软件状态下绘制线性渐变。
 impl SoftwareRasterizer {
     // 线性渐变在设备像素中心逆映射后计算局部颜色。
-    pub fn fill_linear_gradient(
+    pub(crate) fn fill_linear_gradient(
         // 只读取当前状态，不改变 save/restore 栈。
         &self,
         // 写入调用方持有的像素目标。
@@ -163,7 +163,7 @@ impl SoftwareRasterizer {
         reason = "gradient geometry and surface bounds mirror the canvas contract"
     )]
     // 在当前软件状态下绘制径向渐变。
-    pub fn fill_radial_gradient(
+    pub(crate) fn fill_radial_gradient(
         // 只读取当前状态。
         &self,
         // 写入调用方持有的像素目标。

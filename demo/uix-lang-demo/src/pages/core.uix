@@ -155,7 +155,7 @@
           // 展示左上角浮动按钮。
           <FloatButton icon="plus" description="新建" tooltip="新建项目" position="leftTop" />
           // 展示带徽标反馈浮动按钮。
-          <FloatButton icon="message" tooltip="反馈" badge={{ count: 7, dot: false }} />
+          <FloatButton icon="message-circle" tooltip="反馈" badge={{ count: 7, dot: false }} />
         // 结束浮动按钮行。
         </Container>
       // 结束间距内容。

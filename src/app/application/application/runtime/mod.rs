@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::diagnostics::{Diagnostics, PendingFailureQueue};
-use crate::draw::renderer::{RebuildRequest, RecoveryAction};
+use crate::draw::renderer::{GraphicsRecoveryAction, RebuildRequest};
 
 /// 在应用 owner 线程边界排空原生回调失败。
 ///

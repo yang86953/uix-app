@@ -24,6 +24,10 @@ DEFECTS_OLD = "\u7f3a\u9677.md"
 
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 WIKI_LINK_RE = re.compile(r"\[\[[^\]\n]+\]\]")
+# Markdown fenced 代码块（含未闭合结尾），链接扫描前先整体剥离。
+CODE_FENCE_RE = re.compile(r"```.*?(?:```|$)", re.DOTALL)
+# 行内反引号代码（不跨行），链接扫描前剥离。
+INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
 USAGE_EXAMPLE_ID_RE = re.compile(
     r"^```rust[^\n]*\buix-compile=([A-Za-z0-9_-]+)", re.MULTILINE
 )
@@ -59,6 +63,17 @@ SCAN = [
     *sorted((ROOT / "assets").rglob("*.md")),
     *sorted((ROOT / "docs").rglob("*.md")),
 ]
+
+
+def strip_code_for_links(text: str) -> str:
+    """Strip fenced code blocks and inline code before link extraction."""
+
+    # 代码块整体移除，但保留其换行数量，避免相邻行拼接成假链接。
+    text = CODE_FENCE_RE.sub(
+        lambda m: "\n" * m.group(0).count("\n"), text
+    )
+    # 行内代码（已被代码块处理过）直接移除。
+    return INLINE_CODE_RE.sub("", text)
 
 
 def slugify(heading: str) -> str:
@@ -225,7 +240,7 @@ def main() -> int:
                     )
                 else:
                     usage_example_owners[example_id] = md
-        for m in LINK_RE.finditer(text):
+        for m in LINK_RE.finditer(strip_code_for_links(text)):
             raw = m.group(1).strip()
             if is_external_target(raw):
                 if is_external_document_target(raw):

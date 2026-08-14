@@ -11,7 +11,7 @@ use crate::draw::geometry::types::ImageHandle;
 use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 #[cfg(feature = "test-harness")]
 use crate::draw::renderer::test_harness::GraphicsFaultSignal;
-use crate::draw::renderer::{GraphicsFailure, GraphicsRecovery, RecoveryAction, RenderOutcome};
+use crate::draw::renderer::{GraphicsFailure, GraphicsRecovery, GraphicsRecoveryAction, RenderOutcome};
 use crate::draw::{Canvas2D, GraphicsCapabilities, RenderTarget, UpdateStrategy};
 use crate::native::present::PresentTestResult;
 use std::sync::Arc;
@@ -58,7 +58,7 @@ impl RebuildRequest {
 /// only recreate the exact action requested here; this keeps probe policy out
 /// of frame recording and makes fallback order auditable.
 pub type RenderTargetRebuilder =
-    Box<dyn FnMut(RecoveryAction, i32, i32) -> Result<Box<dyn RenderTarget>, Error>>;
+    Box<dyn FnMut(GraphicsRecoveryAction, i32, i32) -> Result<Box<dyn RenderTarget>, Error>>;
 
 /// A render target plus its finite recovery state.
 pub struct RecoveryDriver {
@@ -193,14 +193,14 @@ impl RecoveryDriver {
         let failure = self.pending_failure.take()?;
         let action = self.recovery.on_failure(&failure);
         match action {
-            RecoveryAction::Abort | RecoveryAction::AbortOutOfMemory => {
+            GraphicsRecoveryAction::Abort | GraphicsRecoveryAction::AbortOutOfMemory => {
                 self.terminal_failure = Some(failure.clone());
                 return Some(RenderOutcome::Failed(failure));
             }
-            RecoveryAction::RebuildSurface
-            | RecoveryAction::RebuildRecipe
-            | RecoveryAction::TryNextRecipe
-            | RecoveryAction::UseSoftware => {}
+            GraphicsRecoveryAction::RebuildSurface
+            | GraphicsRecoveryAction::RebuildRecipe
+            | GraphicsRecoveryAction::TryNextRecipe
+            | GraphicsRecoveryAction::UseSoftware => {}
         }
 
         // 同一 native surface 不能假定可同时持有旧、新两个 live swapchain。
@@ -716,7 +716,7 @@ mod tests {
 
     fn counting_rebuilder(rebuilds: &Arc<AtomicUsize>) -> RenderTargetRebuilder {
         let rebuilds = Arc::clone(rebuilds);
-        Box::new(move |_action: RecoveryAction, _width: i32, _height: i32| {
+        Box::new(move |_action: GraphicsRecoveryAction, _width: i32, _height: i32| {
             rebuilds.fetch_add(1, AtomicOrdering::SeqCst);
             Ok(Box::new(StubTarget::new()) as Box<dyn RenderTarget>)
         })
@@ -767,7 +767,7 @@ mod tests {
                 .recovery
                 .on_failure(driver.pending_failure.as_ref().unwrap()),
             // 不应再尝试另一条可能同样不可见的 GPU swapchain。
-            RecoveryAction::UseSoftware
+            GraphicsRecoveryAction::UseSoftware
         );
     }
 

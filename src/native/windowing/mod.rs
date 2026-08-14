@@ -9,11 +9,11 @@
 //! （OS 提供者在 `backends` 中实现），`shared` 是窗口与事件共享状态。
 //! 本 Module 只依赖 core，不依赖兄弟 Module。
 
-pub mod event;
-pub mod input;
-pub mod shared;
-pub mod window;
+pub(crate) mod event;
+pub(crate) mod input;
+pub(crate) mod shared;
+pub(crate) mod window;
 
-pub use event::*;
-pub use input::*;
-pub use window::*;
+pub(crate) use event::*;
+pub(crate) use input::*;
+pub(crate) use window::*;

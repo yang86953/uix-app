@@ -163,8 +163,9 @@ component! {
 
             let label_x = navigation.x + 16.0;
             let row_rect = Rect::new(navigation.x, y, navigation.w, 36.0);
-            let label_y = ctx.visual_center_y(row_rect, 14.0);
-            ctx.draw_text(&item.label, Point::new(label_x, label_y), color, 14.0);
+            // 锚点标签字号：统一使用主题 font_size token。
+            let label_y = ctx.visual_center_y(row_rect, ctx.tokens().font_size());
+            ctx.draw_text(&item.label, Point::new(label_x, label_y), color, ctx.tokens().font_size());
         }
         ctx.pop_clip();
 

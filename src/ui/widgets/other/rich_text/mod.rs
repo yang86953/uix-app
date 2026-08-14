@@ -231,6 +231,7 @@ component! {
             segments: Vec::new(),
             default_font_size: 14.0,
             default_font_size_unit: None,
+            // 默认文字色：未启用 use_theme_color 时的固定回退色（内容呈现色，保留字面量）。
             default_color: Color::from_rgb(200, 200, 200),
             use_theme_color: true,
             layout_lines: RefCell::new(Vec::new()),
@@ -727,6 +728,7 @@ component! {
                     let pressed = self.pressed_action
                         == Some(RichTextPointerAction::CopyCode(segment_idx));
                     if hovered || pressed {
+                        // 复制按钮底：与代码块深色底配套的固定暗色（随代码块整体风格，不随主题）。
                         ctx.fill_rect(
                             visible_btn,
                             if pressed {
@@ -740,6 +742,7 @@ component! {
                             ctx,
                             "copy",
                             visible_btn,
+                            // 复制图标：与代码块暗底配套的固定亮灰。
                             Color::from_rgb(200, 200, 200),
                             10.0_f32.min(visible_btn.h * 0.65),
                         );

@@ -9,6 +9,7 @@ use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::widget::WidgetTree;
 use crate::ui::SnapshotFields;
 
+// 时间线条目高度（60.0）；time_picker/cascader 选择列项为 32.0，语境不同。
 const ITEM_HEIGHT: f32 = 60.0;
 const MIN_ITEM_HEIGHT: f32 = 28.0;
 const DOT_RADIUS: f32 = 5.0;
@@ -380,6 +381,7 @@ impl Default for Timeline {
 impl TimelineItem {
     pub fn new(label: &str) -> Self {
         Self {
+            // 默认点色：与主题 token color_primary 默认值一致（构造器无主题上下文，保留字面量）。
             color: Color::from_rgba(22, 119, 255, 255),
             label: label.to_string(),
             description: String::new(),

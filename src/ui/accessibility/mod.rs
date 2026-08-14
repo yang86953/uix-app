@@ -7,4 +7,4 @@
 //! 因跨 automation / agent 协调归 System 私有边界。
 
 pub(crate) mod accessibility_override;
-pub mod semantic_snapshot;
+pub(crate) mod semantic_snapshot;

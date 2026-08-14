@@ -5,11 +5,9 @@ use crate::core::geometry::{Point, Rect};
 
 // 输入值类型与剪贴板契约已收口到 platform 公开面；此处保持既有
 // `crate::native::windowing::input::*` 路径可解析（类型所有权归 platform）。
-pub use crate::platform::windowing::{
-    ControlSize, CursorType, IClipboard, KeyCode, KeyMod, MouseButton, ScrollDirection,
-};
+pub(crate) use crate::platform::windowing::{CursorType, IClipboard, KeyCode, KeyMod, MouseButton};
 
-pub trait ICursor {
+pub(crate) trait ICursor {
     fn set_cursor(&mut self, cursor: CursorType) -> Result<()>;
     fn show_cursor(&mut self, visible: bool) -> Result<()>;
     fn cursor_position(&self) -> Result<Point>;
@@ -19,7 +17,7 @@ pub trait ICursor {
     fn release_mouse(&mut self) -> Result<()>;
 }
 
-pub trait ITextInput {
+pub(crate) trait ITextInput {
     /// Select the native window that owns the following IME session calls.
     ///
     /// Text input is window-scoped even when a platform exposes one process-wide
@@ -35,7 +33,7 @@ pub trait ITextInput {
     fn set_cursor_rect(&mut self, rect: Rect) -> Result<()>;
 }
 
-pub trait IKeyboard {
+pub(crate) trait IKeyboard {
     fn is_down(&self, key: KeyCode) -> bool;
     fn idle_ms(&self) -> u32;
     fn double_click_ms(&self) -> u32;

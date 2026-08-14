@@ -55,6 +55,7 @@ impl OpenGlRhiDevice {
             ));
         }
         // 使用紧密 row pitch 把子区域上传到已登记的 GL texture。
+        // SAFETY: texture.native 存活且区域已在上方按 extent 与数据长度校验；data 切片为有效内存且紧密排列（UNPACK_ALIGNMENT=1）；context 保持 current。
         unsafe {
             gl.bind_texture(glow::TEXTURE_2D, Some(texture.native));
             gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, 1);

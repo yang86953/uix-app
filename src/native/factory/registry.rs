@@ -19,14 +19,14 @@ use crate::native::present::{
 /// legal raster × present combinations, each of which must be probed and
 /// validated independently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct GraphicsRecipe {
-    pub backend: GraphicsApi,
-    pub raster: RasterMode,
-    pub present: PresentMode,
+pub(crate) struct GraphicsRecipe {
+    pub(crate) backend: GraphicsApi,
+    pub(crate) raster: RasterMode,
+    pub(crate) present: PresentMode,
 }
 
 impl GraphicsRecipe {
-    pub const fn new(backend: GraphicsApi, raster: RasterMode, present: PresentMode) -> Self {
+    pub(crate) const fn new(backend: GraphicsApi, raster: RasterMode, present: PresentMode) -> Self {
         Self {
             backend,
             raster,
@@ -47,7 +47,7 @@ impl std::fmt::Display for GraphicsRecipe {
 
 /// Compile-time availability of a registry row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BackendStatus {
+pub(crate) enum BackendStatus {
     Active,
     /// Placeholder API — skipped during Auto probe with diagnostic.
     Planned,
@@ -64,14 +64,14 @@ pub(crate) type GraphicsContextFactory =
 /// its immutable snapshot before renderer assembly receives the validated recipe owner. These fields
 /// document the combination this entry is expected to provide
 /// ([架构 · 图形](docs/架构.md#图形-api与帧提交硬约束)).
-pub struct GraphicsBackendEntry {
-    pub id: GraphicsApi,
-    pub priority: u8,
-    pub status: BackendStatus,
+pub(crate) struct GraphicsBackendEntry {
+    pub(crate) id: GraphicsApi,
+    pub(crate) priority: u8,
+    pub(crate) status: BackendStatus,
     /// Declared raster axis for this registry row.
-    pub raster: RasterMode,
+    pub(crate) raster: RasterMode,
     /// Declared present axis for this registry row.
-    pub present: PresentMode,
+    pub(crate) present: PresentMode,
     /// Construction stays inside native factory routing so every context is
     /// recipe-validated and can later receive the shared thread-affinity
     /// binding. Callers must use a recipe-level factory entry instead of
@@ -80,11 +80,11 @@ pub struct GraphicsBackendEntry {
 }
 
 impl GraphicsBackendEntry {
-    pub const fn recipe(&self) -> GraphicsRecipe {
+    pub(crate) const fn recipe(&self) -> GraphicsRecipe {
         GraphicsRecipe::new(self.id, self.raster, self.present)
     }
 
-    pub fn is_probe_candidate(&self) -> bool {
+    pub(crate) fn is_probe_candidate(&self) -> bool {
         self.status == BackendStatus::Active
     }
 }
@@ -100,17 +100,17 @@ use crate::native::factory::registry_windows::PLATFORM_ENTRIES;
 pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[];
 
 /// All registry rows for the current platform in declaration order.
-pub fn active_entries() -> &'static [GraphicsBackendEntry] {
+pub(crate) fn active_entries() -> &'static [GraphicsBackendEntry] {
     PLATFORM_ENTRIES
 }
 
 /// Lookup a registry row by backend id.
-pub fn entry_for(backend: GraphicsApi) -> Option<&'static GraphicsBackendEntry> {
+pub(crate) fn entry_for(backend: GraphicsApi) -> Option<&'static GraphicsBackendEntry> {
     PLATFORM_ENTRIES.iter().find(|entry| entry.id == backend)
 }
 
 /// Looks up one exact recipe row.
-pub fn entry_for_recipe(recipe: GraphicsRecipe) -> Option<&'static GraphicsBackendEntry> {
+pub(crate) fn entry_for_recipe(recipe: GraphicsRecipe) -> Option<&'static GraphicsBackendEntry> {
     PLATFORM_ENTRIES
         .iter()
         .find(|entry| entry.recipe() == recipe)
@@ -294,7 +294,7 @@ pub(crate) fn active_recipes_by_priority(
 }
 
 /// Runtime platform label used by graphics bootstrap diagnostics.
-pub fn graphics_runtime_platform() -> &'static str {
+pub(crate) fn graphics_runtime_platform() -> &'static str {
     #[cfg(windows)]
     {
         "windows"
@@ -314,12 +314,12 @@ pub fn graphics_runtime_platform() -> &'static str {
 }
 
 /// Recipe-level probe candidates used by graphics bootstrap.
-pub fn gpu_recipe_candidates(requested: GraphicsSelection) -> Vec<GraphicsRecipe> {
+pub(crate) fn gpu_recipe_candidates(requested: GraphicsSelection) -> Vec<GraphicsRecipe> {
     active_recipes_by_priority(active_entries(), requested)
 }
 
 /// Describes why an explicit backend request has no active registry row.
-pub fn describe_backend_availability(requested: GraphicsSelection) -> Option<&'static str> {
+pub(crate) fn describe_backend_availability(requested: GraphicsSelection) -> Option<&'static str> {
     // 自动策略没有单一 API 可供可用性诊断。
     let GraphicsSelection::Explicit(api) = requested else {
         return None;

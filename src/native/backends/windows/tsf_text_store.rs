@@ -112,6 +112,7 @@ mod tests {
         let acp: ITextStoreACP = store.to_interface();
 
         TEST_PANIC_NEXT_CALLBACK.store(true, Ordering::SeqCst);
+        // SAFETY: acp 为 store.to_interface() 刚创建的 COM 接口实例，测试中调用合法。
         let result = unsafe { acp.GetStatus() };
         let Err(error) = result else {
             panic!("a generated TSF thunk panic must become E_FAIL");
@@ -156,6 +157,7 @@ mod tests {
         // 请求下一次生成 thunk 正文在 ffi_guard 内故意 panic。
         TEST_PANIC_NEXT_CALLBACK.store(true, Ordering::SeqCst);
         // 空 composition 参数是 ABI 可表示的测试占位，guard 会在读取前触发。
+        // SAFETY: composition 为 to_interface() 刚创建的 COM 接口实例；None 参数在 guard 读取前即触发 panic，无悬垂访问。
         let result = unsafe { composition.OnStartComposition(None::<&ITfCompositionView>) };
         // 生成 thunk 必须把 panic 转成 HRESULT 错误。
         let Err(error) = result else {
@@ -261,6 +263,7 @@ fn notify_lock_granted(
     let Some(sink) = sink else {
         return HRESULT(0);
     };
+    // SAFETY: sink 为存活并已成功 AdviseSink 的 TSF sink 接口引用，本调用在 TSF owner 线程同步执行。
     match unsafe { sink.OnLockGranted(kind.flags()) } {
         Ok(()) => HRESULT(0),
         Err(error) => {
@@ -284,6 +287,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             "ITextStoreACP::AdviseSink",
             {
                 require_pointer(riid)?;
+                // SAFETY: riid 已由 require_pointer 验证非空且指向调用方存活的 GUID。
                 let iid = unsafe { *riid };
                 if iid != ITextStoreACPSink::IID {
                     return Ok(());
@@ -373,6 +377,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
                 if !state.contains_range(acpteststart, acptestend) {
                     return Err(WinError::from(E_INVALIDARG));
                 }
+                // SAFETY: 两个输出指针均已由 require_pointer 验证非空，指向调用方分配的可写缓冲。
                 unsafe {
                     *pacpresultstart = acpteststart;
                     *pacpresultend = acptestend;
@@ -400,11 +405,13 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
                 require_read_lock(&state)?;
                 let mut fetched = 0u32;
                 if ulcount > 0 && ulindex == 0 {
+                    // SAFETY: pselection 非空已由上方条件验证，指向调用方分配的可写 TS_SELECTION_ACP。
                     unsafe {
                         *pselection = state.selection();
                     }
                     fetched = 1;
                 }
+                // SAFETY: pcfetched 非空已由上方条件验证，指向可写 u32。
                 unsafe {
                     *pcfetched = fetched;
                 }
@@ -424,6 +431,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
                 let mut state = self.state.write()?;
                 require_write_lock(&state)?;
                 if ulcount > 0 {
+                    // SAFETY: pselection 非空已由上方条件验证，指向调用方存活的只读 TS_SELECTION_ACP。
                     let sel = unsafe { *pselection };
                     state.text_range(sel.acpStart, sel.acpEnd)?;
                     state.sel_start = sel.acpStart;
@@ -463,6 +471,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             let available = range.end - range.start;
             let copy_len = available.min(cchplainreq as usize);
             if copy_len > 0 && !pchplain.is_null() {
+                // SAFETY: pchplain 已由 require_buffer 验证非空且容量 ≥ cchplainreq；copy_len ≤ cchplainreq；源切片为存活 UTF-16 文本。
                 unsafe {
                     std::ptr::copy_nonoverlapping(
                         state.text[range.start..].as_ptr(),
@@ -471,6 +480,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
                     );
                 }
             }
+            // SAFETY: 三个输出指针均已由 require_pointer 验证非空，prgruninfo 由 require_buffer 验证容量。
             unsafe {
                 *pcchplainret = copy_len as u32;
                 *pacpnext = (range.start + copy_len) as i32;
@@ -504,6 +514,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             } else if pchtext.0.is_null() {
                 return Err(WinError::from(E_INVALIDARG));
             } else {
+                // SAFETY: pchtext 非空已由 else-if 条件验证，cch 为调用方声明的元素数，切片生命周期仅限本次调用。
                 unsafe { std::slice::from_raw_parts(pchtext.0, cch as usize) }
             };
             state.replace_range(acpstart, acpend, insert)
@@ -585,6 +596,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
                 let start = state.sel_start;
                 let end = state.sel_end;
                 if dwflags & TS_IAS_QUERYONLY != 0 {
+                    // SAFETY: pacpstart/pacpend 已由 returns_range 分支的 require_pointer 验证非空。
                     unsafe {
                         *pacpstart = start;
                         *pacpend = end;
@@ -596,16 +608,19 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
                 } else if pchtext.0.is_null() {
                     return Err(WinError::from(E_INVALIDARG));
                 } else {
+                    // SAFETY: pchtext 非空已由 else-if 条件验证，cch 为调用方声明的元素数。
                     unsafe { std::slice::from_raw_parts(pchtext.0, cch as usize) }
                 };
                 let change = state.replace_range(start, end, insert)?;
                 if dwflags & TS_IAS_NOQUERY == 0 {
+                    // SAFETY: pacpstart/pacpend 已由 returns_range 分支的 require_pointer 验证非空。
                     unsafe {
                         *pacpstart = change.acpStart;
                         *pacpend = change.acpNewEnd;
                     }
                 }
                 if !pchange.is_null() {
+                    // SAFETY: pchange 非空已由条件验证，指向调用方分配的可写 TS_TEXTCHANGE。
                     unsafe {
                         *pchange = change;
                     }
@@ -699,6 +714,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
                 require_pointer(pacpnext)?;
                 require_pointer(pffound)?;
                 require_pointer(plfoundoffset)?;
+                // SAFETY: 三个输出指针均已由 require_pointer 验证非空，指向调用方分配的可写存储。
                 unsafe {
                     *pacpnext = 0;
                     *pffound = false.into();
@@ -721,6 +737,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             {
                 require_buffer(paattrvals, ulcount)?;
                 require_pointer(pcfetched)?;
+                // SAFETY: pcfetched 已由 require_pointer 验证非空。
                 unsafe {
                     *pcfetched = 0;
                 }
@@ -782,6 +799,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
                 require_read_lock(&state)?;
                 state.text_range(acpstart, acpend)?;
                 let rect = state.cursor_screen_rect()?;
+                // SAFETY: prc/pfclipped 非空已由上方条件验证，指向调用方分配的可写结构。
                 unsafe {
                     *prc = rect;
                     *pfclipped = false.into();

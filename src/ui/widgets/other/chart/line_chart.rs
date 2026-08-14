@@ -363,7 +363,8 @@ component! {
             let bottom = start.y.max(end.y).clamp(frame.y, frame.y + frame.h);
             ctx.fill_rect(
                 Rect::new(x, y, (right - x).max(0.0), (bottom - y).max(0.0)),
-                Color::from_rgba(22, 119, 255, 48),
+                // 框选填充：token 主色 + 固定 alpha（替换原硬编码 22,119,255，随主题换肤）。
+                ctx.tokens().color_primary().with_alpha(48),
                 None,
             );
         }
@@ -417,6 +418,7 @@ impl Default for LineChart {
     }
 }
 impl LineChart {
+    // 图表组件默认尺寸；其他组件同名常量值不同，属各自设计。
     const DEFAULT_WIDTH: f32 = 300.0;
     const DEFAULT_HEIGHT: f32 = 200.0;
 

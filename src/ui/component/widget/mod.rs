@@ -1,9 +1,9 @@
-pub use crate::core::ComponentId;
-pub use crate::core::Point;
+pub(crate) use crate::core::ComponentId;
+pub(crate) use crate::core::Point;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::geometry::spatial::{Ray3D, SpatialContext};
 use crate::draw::scene::PicturePolicy;
-pub use crate::platform::windowing::{KeyCode, KeyMod, MouseButton};
+pub(crate) use crate::platform::windowing::{KeyCode, KeyMod, MouseButton};
 use crate::ui::accessibility::accessibility_override::AccessibilityOverride;
 use crate::ui::component::focus_handle::FocusHandle;
 use crate::ui::component::provider_context::{
@@ -14,22 +14,22 @@ use crate::ui::component_snapshot::{
     AccessibilitySnapshot, ComponentConfigSnapshot, SnapshotFields,
 };
 use crate::ui::event::system_event_handler::SystemEventHandlerRegistration;
-pub use crate::ui::event::SystemEvent;
+pub(crate) use crate::ui::event::SystemEvent;
 use crate::ui::event::{HandlerRegistration, HandlerSignature};
 use crate::ui::render_handler::RenderHandlerRegistration;
 
 pub(crate) type WidgetId = ComponentId;
 
 // EventResult 归 event Module（事件处理结果契约）；此处重导出保持树内路径不变。
-pub use crate::ui::event::EventResult;
+pub(crate) use crate::ui::event::EventResult;
 
 // 重新导出 api 中的 trait 定义
-pub use crate::ui::component::traits::{
+pub(crate) use crate::ui::component::traits::{
     EventHandler, WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetLifecycle, WidgetRender,
     WidgetTextInput,
 };
 
-pub trait WidgetCore {
+pub(crate) trait WidgetCore {
     // 测试与 test-harness 目标保留组件 id 观测契约，生产默认路径不直接读取它。
     #[cfg_attr(any(test, feature = "test-harness"), allow(dead_code))]
     #[cfg(any(test, feature = "test-harness"))]
@@ -53,7 +53,7 @@ pub trait WidgetCore {
 mod boxed;
 mod node;
 
-pub use self::boxed::BoxedWidget;
+pub(crate) use self::boxed::BoxedWidget;
 pub use self::node::WidgetNode;
 
 pub(crate) mod tree_core;

@@ -1,6 +1,2 @@
-# 避免大型调试/测试图长期累积数 GiB 增量缓存；项目配置覆盖用户级配置。
-[profile.dev]
-incremental = false
-
-[profile.test]
-incremental = false
+# 增量缓存策略已由各 manifest 的 [profile.*] 显式声明（根 Cargo.toml 与 demo/Cargo.toml），
+# 此处不再重复配置，避免两处定义互相覆盖时产生歧义。

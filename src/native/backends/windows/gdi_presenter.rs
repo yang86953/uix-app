@@ -161,7 +161,12 @@ struct DibHandle {
 }
 
 impl DibHandle {
+    /// 创建与窗口 DC 兼容的 DIB 段和内存 DC。
+    ///
+    /// # Safety
+    /// 调用者必须保证 hwnd 为存活窗口句柄且 w/h 为正，调用期间窗口未被销毁。
     unsafe fn new(hwnd: *mut std::ffi::c_void, w: i32, h: i32) -> Result<Self, Error> {
+        // SAFETY: hwnd 由调用方保证存活；hdc/hdc_mem/pbits 为输出句柄，失败路径逐一释放已创建对象避免泄漏。
         unsafe {
             let hdc = GetDC(hwnd);
             if hdc.is_null() {
@@ -227,6 +232,7 @@ impl DibHandle {
 
 impl Drop for DibHandle {
     fn drop(&mut self) {
+        // SAFETY: 句柄经 null 检查且本对象独占所有权，只在此释放一次。
         unsafe {
             if !self.hbitmap.is_null() {
                 DeleteObject(self.hbitmap);
@@ -252,6 +258,10 @@ pub struct GdiPresenter {
 }
 
 impl GdiPresenter {
+    /// 创建 GDI presenter；hwnd 由调用方（窗口会话）持有。
+    ///
+    /// # Safety
+    /// 调用者必须保证 hwnd 存活且 w/h 为正，presenter 生命周期内窗口不被销毁。
     #[allow(clippy::missing_safety_doc)]
     pub unsafe fn new(hwnd: *mut std::ffi::c_void, w: i32, h: i32) -> Result<Self, Error> {
         if w <= 0 || h <= 0 {
@@ -260,6 +270,7 @@ impl GdiPresenter {
                 format!("GdiPresenter: dimensions must be positive, got {}x{}", w, h),
             ));
         }
+        // SAFETY: hwnd 已由本函数调用方保证存活；尺寸已验证为正。
         let dib = unsafe { DibHandle::new(hwnd, w, h)? };
         Ok(Self {
             hwnd,
@@ -317,6 +328,7 @@ impl GdiPresenter {
             }
             None => None,
         };
+        // SAFETY: hwnd 存活（本 presenter 持有）；hdc 为 GetDC 返回且在同一调用内 ReleaseDC 配对；dib.hdc_mem/hbitmap 为存活 GDI 对象；坐标已缩放且在目标范围内。
         unsafe {
             let hdc = GetDC(self.hwnd);
             if hdc.is_null() {
@@ -401,6 +413,7 @@ impl GdiPresenter {
         dh: i32,
     ) -> Option<(i32, i32, i32, i32)> {
         let (dx, dy, dw, dh) = clip_damage_rect(dx, dy, dw, dh, self.width, self.height)?;
+        // SAFETY: 区域已按 DIB extent 裁剪；pixels 切片与 dib.bits 指向的有效内存按相同行宽布局，拷贝长度受切片边界约束。
         unsafe {
             let src_row_start = (dy * self.width + dx) as usize;
             let dst_row_start = src_row_start;
@@ -465,6 +478,7 @@ impl IPresenter for GdiPresenter {
         if width != self.width || height != self.height {
             self.resize(width, height)?;
         }
+        // SAFETY: resize 后 width/height 与 DIB extent 匹配；pixels 长度已按 width×height 校验，拷贝不越界。
         unsafe {
             if self.dib.bits.is_null() {
                 return Err(Error::new(
@@ -508,6 +522,7 @@ impl IPresenter for GdiPresenter {
         }
 
         // Create new DIB first, then swap
+        // SAFETY: hwnd 由本 presenter 持有且存活；尺寸已验证为正。
         let new_dib = unsafe { DibHandle::new(self.hwnd, width, height)? };
         self.dib = new_dib;
         self.width = width;

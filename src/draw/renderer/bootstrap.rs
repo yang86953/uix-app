@@ -12,16 +12,16 @@ use crate::platform::presentation::{
 
 /// One failed probe attempt recorded for diagnostics and tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProbeFailure {
+pub(crate) struct ProbeFailure {
     /// 失败对应的具体候选；候选集合为空时为 None。
-    pub candidate: Option<GraphicsApi>,
-    pub message: String,
+    pub(crate) candidate: Option<GraphicsApi>,
+    pub(crate) message: String,
 }
 
 /// Aggregated probe failures when every GPU candidate fails.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct ProbeReport {
-    pub failures: Vec<ProbeFailure>,
+pub(crate) struct ProbeReport {
+    pub(crate) failures: Vec<ProbeFailure>,
 }
 
 impl ProbeReport {
@@ -78,11 +78,11 @@ impl ProbeStage {
 }
 
 /// Successful GPU bootstrap result.
-pub struct GpuBootstrap {
-    pub renderer: Renderer,
-    pub selected: GraphicsApi,
-    pub selected_recipe: GraphicsRecipe,
-    pub report: ProbeReport,
+pub(crate) struct GpuBootstrap {
+    pub(crate) renderer: Renderer,
+    pub(crate) selected: GraphicsApi,
+    pub(crate) selected_recipe: GraphicsRecipe,
+    pub(crate) report: ProbeReport,
 }
 
 /// Renderer-assembly stages shared by initial probe and runtime recipe recovery.

@@ -1,6 +1,6 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::{Color, Radius};
+use crate::draw::Radius;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields,
@@ -12,6 +12,20 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 // 引入应用 renderer 与回调的单线程共享所有权句柄。
 use std::rc::Rc;
+
+// ════════════════════════════════════════════════════════════════════════════
+// Transfer 面板布局常量（绘制、布局与命中测试共用，保持三处数值一致）。
+// ════════════════════════════════════════════════════════════════════════════
+// 中间操作按钮列宽（像素）。
+const BTN_COL_W: f32 = 60.0;
+// 面板头部高度（像素）。
+const LIST_HEADER_H: f32 = 24.0;
+// 搜索框高度（像素）。
+const SEARCH_BAR_H: f32 = 24.0;
+// 列表行高（像素）。
+const ROW_H: f32 = 28.0;
+// 面板最小半宽（像素），窄窗下保证按钮列可用。
+const MIN_PANE_HALF_W: f32 = 40.0;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Transfer
@@ -79,9 +93,9 @@ component! {
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(crate::ui::ComponentId, Rect)>
     {
-        let half = ((frame.w - 60.0) * 0.5).max(40.0);
-        let row_h = 28.0;
-        let header_h = 24.0 + if self.searchable { 24.0 } else { 0.0 };
+        let half = ((frame.w - BTN_COL_W) * 0.5).max(MIN_PANE_HALF_W);
+        let row_h = ROW_H;
+        let header_h = LIST_HEADER_H + if self.searchable { SEARCH_BAR_H } else { 0.0 };
         let mut layouts = Vec::with_capacity(children.len());
         for (index, child) in children.iter().enumerate() {
             let (pane, raw_index) = if index < self.source.len() {
@@ -91,7 +105,7 @@ component! {
             };
             let visible = self.visible_indices(pane).into_iter().position(|item| item == raw_index);
             let rect = if let Some(visible_index) = visible {
-                let x = if pane == TransferPane::Source { frame.x } else { frame.x + half + 60.0 };
+                let x = if pane == TransferPane::Source { frame.x } else { frame.x + half + BTN_COL_W };
                 Rect::new(x, frame.y + header_h + visible_index as f32 * row_h, half, row_h)
             } else {
                 Rect::zero()
@@ -155,12 +169,10 @@ component! {
         let text_sec = ctx.tokens().color_text_quaternary();
         let primary = ctx.tokens().color_primary();
         let fill = ctx.tokens().color_fill_tertiary();
-        const LIST_HEADER_H: f32 = 24.0;
-        let search_h = if self.searchable { 24.0 } else { 0.0 };
+        let search_h = if self.searchable { SEARCH_BAR_H } else { 0.0 };
         let content_header_h = LIST_HEADER_H + search_h;
-        const BTN_COL_W: f32 = 60.0;
-        let half = ((frame.w - BTN_COL_W) * 0.5).max(40.0);
-        let item_h = 28.0;
+        let half = ((frame.w - BTN_COL_W) * 0.5).max(MIN_PANE_HALF_W);
+        let item_h = ROW_H;
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
         let left_rect = Rect::new(frame.x, frame.y, half, frame.h);
         ctx.fill_rect(left_rect, bg, r);
@@ -227,7 +239,8 @@ component! {
             ctx,
             "arrow-right",
             rbtn_rect,
-            Color::white(),
+            // 移动箭头（主色按钮上反白）：白色 token。
+            ctx.tokens().color_white(),
             14.0,
         );
         ctx.fill_rect(lbtn_rect, border, Some(Radius::uniform(3.0)));
@@ -514,21 +527,18 @@ impl Transfer {
     }
 
     fn pointer_down(&mut self, pos: Point) -> EventResult {
-        const HEADER: f32 = 24.0;
-        let header = HEADER + if self.searchable { 24.0 } else { 0.0 };
-        const BUTTONS: f32 = 60.0;
-        const ROW: f32 = 28.0;
+        let header = LIST_HEADER_H + if self.searchable { SEARCH_BAR_H } else { 0.0 };
         let Some(frame) = self.last_frame.get().filter(|frame| frame.contains(pos)) else {
             return EventResult::NotHandled;
         };
         let x = pos.x - frame.x;
         let y = pos.y - frame.y;
-        let half = ((frame.w - BUTTONS) * 0.5).max(40.0);
-        let row = (y >= header).then(|| ((y - header) / ROW) as usize);
+        let half = ((frame.w - BTN_COL_W) * 0.5).max(MIN_PANE_HALF_W);
+        let row = (y >= header).then(|| ((y - header) / ROW_H) as usize);
         if x < half {
             return self.toggle_visible_row(TransferPane::Source, row);
         }
-        if x > half + BUTTONS {
+        if x > half + BTN_COL_W {
             return self.toggle_visible_row(TransferPane::Target, row);
         }
         let button_y = frame.h * 0.5 - 20.0;

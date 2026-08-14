@@ -131,6 +131,7 @@ impl Spin {
             let dx = angle.cos() * r;
             let dy = angle.sin() * r;
             let opacity = 0.25 + (i as f32 / 8.0) * 0.75;
+            // 点渐隐：对主题色做预乘淡化（保持原算法，避免直接 alpha 在亮背景上过亮）。
             let dot_color = Color::from_rgba(
                 (c.r as f32 * opacity) as u8,
                 (c.g as f32 * opacity) as u8,

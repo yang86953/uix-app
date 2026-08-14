@@ -70,12 +70,14 @@ impl D3d11Context {
     }
 
     pub(super) fn create_rtv(&mut self) -> Result<()> {
+        // SAFETY: swap_chain 由本 context 持有且存活，get_buffer 返回的纹理由接口类型接管。
         let back_buffer: ID3D11Texture2D = unsafe {
             self.swap_chain
                 .get_buffer(0)
                 .map_err(|err| d3d_error("IDXGISwapChain::GetBuffer", err))?
         };
         let mut rtv = None;
+        // SAFETY: back_buffer 为刚取得的存活纹理；输出指针指向栈上 Option；device 存活。
         unsafe {
             self.device
                 .CreateRenderTargetView(&back_buffer, None, Some(&mut rtv))
@@ -87,6 +89,7 @@ impl D3d11Context {
                 "D3d11Context: CreateRenderTargetView returned no RTV",
             )
         })?;
+        // SAFETY: rtv 为刚创建的存活视图且克隆自本 context；depth 传 None。
         unsafe {
             self.context
                 .OMSetRenderTargets(Some(&[Some(rtv.clone())]), None);
@@ -123,6 +126,7 @@ impl D3d11Context {
         // 先解除旧 RTV 绑定，满足 ResizeBuffers 的资源生命周期要求。
         self.release_rtv();
         // 让 DXGI 执行 backbuffer 的原生尺寸重建。
+        // SAFETY: 尺寸已在上方验证为正；旧 RTV 已释放，满足 ResizeBuffers 的引用释放要求。
         if let Err(error) = unsafe {
             self.swap_chain
                 .resize_buffers(physical_width as u32, physical_height as u32)
@@ -143,6 +147,7 @@ impl D3d11Context {
     }
 
     pub(super) fn release_rtv(&mut self) {
+        // SAFETY: OMSetRenderTargets 传 None 表示清空所有 render target 槽位，不引用任何对象。
         unsafe {
             self.context.OMSetRenderTargets(None, None);
         }
@@ -167,6 +172,7 @@ impl D3d11Context {
             MinDepth: 0.0,
             MaxDepth: 1.0,
         };
+        // SAFETY: vp 为栈上完整初始化的 viewport；宽高已做 max(1) 下限保护。
         unsafe {
             self.context.RSSetViewports(Some(&[vp]));
         }
@@ -182,6 +188,7 @@ impl D3d11Context {
     pub(super) fn bind_current_draw_target(&mut self) -> Result<()> {
         self.ensure_rtv()?;
         if let Some(rtv) = self.rtv.as_ref() {
+            // SAFETY: rtv 为本 context 创建且仍存活的视图；depth 传 None。
             unsafe {
                 self.context
                     .OMSetRenderTargets(Some(&[Some(rtv.clone())]), None);
@@ -240,6 +247,7 @@ pub(crate) fn create_with_driver(
     let mut context = None;
     let mut selected_level = D3D_FEATURE_LEVEL_10_0;
 
+    // SAFETY: 无指针输入；feature_levels 切片与输出指针在调用期间有效，driver.native() 为合法驱动类型枚举。
     unsafe {
         D3D11CreateDevice(
             None,

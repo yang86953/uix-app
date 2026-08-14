@@ -517,7 +517,8 @@ component! {
                 ctx,
                 confirm,
                 confirm_rect,
-                fade_color(Color::white(), opacity),
+                // 确认按钮文字：白色 token 随透明度淡入淡出。
+                fade_color(ctx.tokens().color_white(), opacity),
                 12.0,
                 true,
             );
@@ -541,10 +542,10 @@ component! {
             } else {
                 &self.cancel_text
             };
-            Self::paint_elided_text(ctx, cancel, cancel_rect, popup_text, 12.0, true);
+            Self::paint_elided_text(ctx, cancel, cancel_rect, popup_text, ctx.tokens().font_size_sm(), true);
             if self.focused && tree.keyboard_focus_visible() && self.visible {
                 let (focus_rect, focus_color) = if self.focused_action == 0 {
-                    (confirm_rect, fade_color(Color::white(), opacity))
+                    (confirm_rect, fade_color(ctx.tokens().color_white(), opacity))
                 } else {
                     (cancel_rect, popup_primary)
                 };

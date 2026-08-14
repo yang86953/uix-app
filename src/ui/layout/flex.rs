@@ -11,7 +11,7 @@ pub(super) use justify::compute_justify;
 /// cross-axis alignment via AlignItems and per-child align_self,
 /// flex-grow/shrink distribution, flex-basis, min_size/max_size constraints,
 /// and multi-line wrapping.
-pub fn compute_flex_layout(input: &FlexInput<'_>) -> FlexOutput {
+pub(crate) fn compute_flex_layout(input: &FlexInput<'_>) -> FlexOutput {
     let inner = Rect {
         x: input.container.x + input.padding.left,
         y: input.container.y + input.padding.top,

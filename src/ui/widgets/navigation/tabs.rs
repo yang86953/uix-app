@@ -249,7 +249,7 @@ component! {
             let extent = if vertical {
                 self.tab_height
             } else {
-                ctx.measure_text(&tab.label, 14.0).w
+                ctx.measure_text(&tab.label, ctx.tokens().font_size()).w
                     + TAB_HORIZONTAL_PADDING * 2.0
                     + icon_w
                     + close_w
@@ -299,7 +299,8 @@ component! {
             };
             let is_active = i == self.active_index;
             let text_color = if is_active { primary } else { text_secondary };
-            let tab_text_y = ctx.visual_center_y(tab_rect, 14.0);
+            // 标签字号：统一使用主题 font_size token。
+            let tab_text_y = ctx.visual_center_y(tab_rect, ctx.tokens().font_size());
             let mut text_x = tab_rect.x + TAB_HORIZONTAL_PADDING;
             if !tab.icon.is_empty() {
                 crate::ui::widgets::icon::Icon::paint_in_frame(
@@ -320,7 +321,8 @@ component! {
                 &tab.label,
                 Point::new(text_x, tab_text_y),
                 text_color,
-                14.0,
+                // 标签字号：统一使用主题 font_size token。
+                ctx.tokens().font_size(),
             );
 
             if self.editable {
@@ -368,7 +370,8 @@ component! {
                 "plus",
                 add,
                 primary,
-                14.0,
+                // 添加按钮图标字号：统一使用主题 font_size token。
+                ctx.tokens().font_size(),
             );
         }
         ctx.pop_clip();

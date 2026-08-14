@@ -25,16 +25,17 @@ nul
 # Python cache
 __pycache__/
 
-# Rust documentation build
-# target/ already covers target/doc/
-
 # Reasonix 扩展机器状态（桌面会话主题元数据，不入库）
 .reasonix/
 
-# 图形调试产物
+# 图形调试产物（仅忽略调试快照，assets/ 下的正式资产不受影响）
 *.png
+!assets/**
 *.log
 
 # demo 工作区构建产物
 demo/target/
-Cargo.lock
+
+# Cargo.lock：根工作区与 uix-derive 入库锁定；demo/ 为独立工作区，其 Cargo.lock 一并入库
+/Cargo.lock
+uix-derive/Cargo.lock

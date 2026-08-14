@@ -41,6 +41,7 @@ type RawHandle = *mut std::ffi::c_void;
 
 impl WindowsConsole {
     pub fn new() -> Self {
+        // SAFETY: GetStdHandle 无指针输入，返回标准输出句柄或 INVALID_HANDLE_VALUE；失败由后续控制台调用以返回码 0 呈现。
         Self {
             stdout: unsafe { GetStdHandle(STD_OUTPUT_HANDLE) },
         }
@@ -55,6 +56,7 @@ impl Default for WindowsConsole {
 
 impl IConsole for WindowsConsole {
     fn write(&mut self, text: &str) -> Result<()> {
+        // SAFETY: self.stdout 为本实例取得的句柄；bytes 切片在同步调用期间存活且长度可转为 u32；written 为栈上可写输出。
         unsafe {
             let bytes = text.as_bytes();
             let mut written: u32 = 0;
@@ -83,6 +85,7 @@ impl IConsole for WindowsConsole {
 
     fn set_color(&mut self, color: ConsoleColor) -> Result<()> {
         let attr = COLORS[color as usize];
+        // SAFETY: self.stdout 为本实例取得的句柄；attr 为合法颜色属性值。
         unsafe {
             if SetConsoleTextAttribute(self.stdout, attr) == 0 {
                 return Err(Error::new(
@@ -95,6 +98,7 @@ impl IConsole for WindowsConsole {
     }
 
     fn reset_color(&mut self) -> Result<()> {
+        // SAFETY: self.stdout 为本实例取得的句柄；COLORS[0] 为默认颜色属性值。
         unsafe {
             if SetConsoleTextAttribute(self.stdout, COLORS[0]) == 0 {
                 return Err(Error::new(
@@ -107,6 +111,7 @@ impl IConsole for WindowsConsole {
     }
 
     fn show_terminal_cursor(&mut self, visible: bool) -> Result<()> {
+        // SAFETY: self.stdout 为本实例取得的句柄；info 为完整初始化的可写结构。
         unsafe {
             let mut info = CONSOLE_CURSOR_INFO {
                 dwSize: 25,
@@ -124,6 +129,7 @@ impl IConsole for WindowsConsole {
 
     fn set_terminal_title(&mut self, title: &str) -> Result<()> {
         let wide = to_wide(title);
+        // SAFETY: wide 为存活且 NUL 结尾的 UTF-16 缓冲。
         unsafe {
             if SetConsoleTitleW(wide.as_ptr()) == 0 {
                 return Err(Error::new(
@@ -136,6 +142,7 @@ impl IConsole for WindowsConsole {
     }
 
     fn capabilities(&self) -> TerminalCapabilities {
+        // SAFETY: self.stdout 为本实例取得的句柄；info 为完整初始化的可写结构，GetConsoleScreenBufferInfo 只写入它。
         unsafe {
             let mut info = CONSOLE_SCREEN_BUFFER_INFO {
                 dwSize: COORD { X: 0, Y: 0 },

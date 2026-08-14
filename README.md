@@ -59,7 +59,7 @@ cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo
 | 路径 | 内容 |
 |---|---|
 | `src/` | 框架实现与公开 API |
-| `demo/` | 多项目演示工作区：`uix-lang-demo`（`.uix` 主演示）、`cli-demo`（CLI 功能域） |
+| `demo/` | 多项目演示工作区：`uix-lang-demo`（`.uix` 主演示）、`cli-demo`（CLI 功能域）与 6 个独立真窗验收程序（`badge-visual` / `selectable-list-visual` / `collapse-visual` / `popconfirm-visual` / `upload-visual` / `backdrop-visual`） |
 | `uix-derive/` | UIX 派生宏 |
 | `tests/` | 契约、集成与真窗测试入口 |
 | `scripts/` | 内部打包工具 |

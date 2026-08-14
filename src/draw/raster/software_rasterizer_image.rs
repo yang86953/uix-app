@@ -110,7 +110,7 @@ fn scan_bounds(rect: Rect) -> (i32, i32, i32, i32) {
 // 为共享软件执行器补充状态完整的图片采样入口。
 impl SoftwareRasterizer {
     // 以 nearest sampling 把设备像素中心逆映射到 offset 后局部目标。
-    pub fn blit_image(
+    pub(crate) fn blit_image(
         // 只读取当前绘制状态。
         &self,
         // 写入调用方持有的像素目标。

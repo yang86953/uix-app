@@ -12,12 +12,15 @@ use std::cell::Cell;
 use std::collections::BTreeSet;
 
 const BREADCRUMB_HEIGHT: f32 = 22.0;
+// 面包屑标题字号（13.0）；card/descriptions 同名常量为 15.0，组件独立设计。
 const TITLE_FONT_SIZE: f32 = 13.0;
 const TITLE_GLYPH_WIDTH: f32 = 7.5;
 const SEPARATOR_FONT_SIZE: f32 = 12.0;
 const SEPARATOR_GLYPH_WIDTH: f32 = 8.0;
+// 面包屑导航小图标（14.0）；Empty 空状态插图为 32.0，语境不同。
 const ICON_SIZE: f32 = 14.0;
 const ICON_SLOT_WIDTH: f32 = 16.0;
+// 面包屑图标与文字间距（4.0）；Empty 空状态为 12.0，语境不同。
 const ICON_TEXT_GAP: f32 = 4.0;
 const OVERFLOW_ROW_HEIGHT: f32 = 28.0;
 const OVERFLOW_MIN_WIDTH: f32 = 112.0;

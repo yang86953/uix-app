@@ -144,14 +144,18 @@ pub(super) fn logical_cluster_order(glyphs: Vec<PositionedGlyph>) -> Vec<Positio
         });
         // 相同 cluster 追加到现有组。
         if same_cluster {
-            // 最后一个 cluster 已由条件保证存在。
-            clusters
-                // 取得最后一个 cluster 的可变引用。
-                .last_mut()
-                // 仅在异常空数组时跳过。
-                .expect("same cluster requires a previous glyph group")
-                // 保留 cluster 内后端视觉字形顺序。
-                .push(glyph);
+            // 最后一个 cluster 已由 same_cluster 条件保证存在；缺失说明内部状态被破坏。
+            let Some(last) = clusters.last_mut() else {
+                // 附带当前 cluster 数与源区间，便于定位异常输入。
+                panic!(
+                    "same cluster requires a previous glyph group (clusters={}, char_range={}..{})",
+                    clusters.len(),
+                    glyph.char_index,
+                    glyph.char_end
+                );
+            };
+            // 保留 cluster 内后端视觉字形顺序。
+            last.push(glyph);
         // 新源区间开始新的 cluster。
         } else {
             // 使用当前字形创建 cluster。
@@ -197,14 +201,18 @@ pub(super) fn reorder_line(
         });
         // 相同 cluster 保留内部视觉字形顺序。
         if same_cluster {
-            // 最后一个 cluster 已由条件保证存在。
-            clusters
-                // 取得最后一个 cluster。
-                .last_mut()
-                // 防止异常内部状态静默丢字形。
-                .expect("same cluster requires a previous line glyph group")
-                // 追加当前字形。
-                .push(glyph);
+            // 最后一个 cluster 已由 same_cluster 条件保证存在；缺失说明内部状态被破坏。
+            let Some(last) = clusters.last_mut() else {
+                // 附带当前 cluster 数与源区间，便于定位异常输入。
+                panic!(
+                    "same cluster requires a previous line glyph group (clusters={}, char_range={}..{})",
+                    clusters.len(),
+                    glyph.glyph.char_index,
+                    glyph.glyph.char_end
+                );
+            };
+            // 追加当前字形。
+            last.push(glyph);
         // 新源区间开始新的 cluster。
         } else {
             // 使用当前字形创建新组。

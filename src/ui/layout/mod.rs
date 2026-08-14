@@ -9,7 +9,7 @@ use crate::core::{EdgeInsets, Rect, Size};
 use std::f32;
 
 // 内部模块（仅同 crate 内部使用，不对外公开）
-pub mod engine;
+pub(crate) mod engine;
 pub(crate) mod flex;
 pub(crate) mod grid;
 

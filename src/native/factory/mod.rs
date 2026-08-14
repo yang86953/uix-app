@@ -19,7 +19,7 @@ use crate::native::capabilities::system::ISystemInfo;
 use crate::native::platform::Platform;
 
 pub(crate) use registry::try_create_gpu_recipe_with_queue;
-pub use registry::{
+pub(crate) use registry::{
     GraphicsRecipe, describe_backend_availability, gpu_recipe_candidates, graphics_runtime_platform,
 };
 
@@ -130,7 +130,7 @@ pub(crate) fn unsupported_platform_message() -> String {
 // 保留平台诊断查询入口，默认应用路径不直接依赖它。
 #[allow(dead_code)]
 #[cfg(all(unix, not(target_os = "macos")))]
-pub fn available_memory_bytes() -> u64 {
+pub(crate) fn available_memory_bytes() -> u64 {
     crate::native::backends::linux::system_info::LinuxSystemInfo::new()
         .memory_info()
         .map(|info| info.available_bytes)
@@ -140,7 +140,7 @@ pub fn available_memory_bytes() -> u64 {
 // 保留平台诊断查询入口，默认应用路径不直接依赖它。
 #[allow(dead_code)]
 #[cfg(windows)]
-pub fn available_memory_bytes() -> u64 {
+pub(crate) fn available_memory_bytes() -> u64 {
     crate::native::backends::windows::system_info::WindowsSystemInfo::new()
         .memory_info()
         .map(|info| info.available_bytes)
@@ -150,13 +150,13 @@ pub fn available_memory_bytes() -> u64 {
 // 保留平台诊断查询入口，默认应用路径不直接依赖它。
 #[allow(dead_code)]
 #[cfg(target_os = "macos")]
-pub fn available_memory_bytes() -> u64 {
+pub(crate) fn available_memory_bytes() -> u64 {
     512 * 1024 * 1024
 }
 
 // 保留平台诊断查询入口，默认应用路径不直接依赖它。
 #[allow(dead_code)]
 #[cfg(not(any(windows, all(unix, not(target_os = "macos")), target_os = "macos")))]
-pub fn available_memory_bytes() -> u64 {
+pub(crate) fn available_memory_bytes() -> u64 {
     512 * 1024 * 1024
 }

@@ -9,7 +9,7 @@ use crate::native::windowing::shared::WindowState;
 
 // 保留窗口生命周期事件辅助器，供尚未接入的异步平台回调使用。
 #[allow(dead_code)]
-pub fn push_window_close(events: &Arc<Mutex<VecDeque<UiEvent>>>, window_id: WindowId) {
+pub(crate) fn push_window_close(events: &Arc<Mutex<VecDeque<UiEvent>>>, window_id: WindowId) {
     let _ = events
         .lock()
         .map(|mut queue| queue.push_back(UiEvent::close().for_window(window_id)));
@@ -17,7 +17,7 @@ pub fn push_window_close(events: &Arc<Mutex<VecDeque<UiEvent>>>, window_id: Wind
 
 // 保留窗口生命周期事件辅助器，供尚未接入的异步平台回调使用。
 #[allow(dead_code)]
-pub fn push_window_resize(
+pub(crate) fn push_window_resize(
     events: &Arc<Mutex<VecDeque<UiEvent>>>,
     window_id: WindowId,
     state: &Rc<RefCell<WindowState>>,

@@ -283,7 +283,7 @@ fn normalize_non_negative_insets(insets: EdgeInsets) -> EdgeInsets {
 // 原公开面遗留（SMC-04 模块收口后无内部消费方；保留供外部集成）。
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub struct LayoutOutput3D {
+pub(crate) struct LayoutOutput3D {
     pub positions: Vec<Rect>,
     pub z_values: Vec<f32>,
     pub total_size: Size,
@@ -293,7 +293,7 @@ pub struct LayoutOutput3D {
 #[allow(dead_code)]
 impl LayoutOutput3D {
     /// 从 LayoutOutput + z 值创建。
-    pub fn from_2d(output: &LayoutOutput, z: f32) -> Self {
+    pub(crate) fn from_2d(output: &LayoutOutput, z: f32) -> Self {
         let count = output.positions.len();
         Self {
             positions: output.positions.clone(),
@@ -303,7 +303,7 @@ impl LayoutOutput3D {
     }
 
     /// 每个子节点独立 z 值。
-    pub fn from_2d_zipped(output: &LayoutOutput, z_values: Vec<f32>) -> Self {
+    pub(crate) fn from_2d_zipped(output: &LayoutOutput, z_values: Vec<f32>) -> Self {
         Self {
             positions: output.positions.clone(),
             z_values,
@@ -312,7 +312,7 @@ impl LayoutOutput3D {
     }
 
     /// 转换为 AABB3D 列表（所有盒子 d=0）。
-    pub fn to_aabbs(&self) -> Vec<AABB3D> {
+    pub(crate) fn to_aabbs(&self) -> Vec<AABB3D> {
         self.positions
             .iter()
             .zip(self.z_values.iter())

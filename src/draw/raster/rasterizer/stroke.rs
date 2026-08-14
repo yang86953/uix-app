@@ -10,7 +10,7 @@ use crate::draw::geometry::color::Color;
 use crate::draw::geometry::types::Radius;
 
 /// 纯函数：描边矩形，可选圆角。
-pub fn stroke_rect(
+pub(crate) fn stroke_rect(
     pixels: &mut [u32],
     surface_w: i32,
     surface_h: i32,
@@ -197,7 +197,8 @@ mod tests {
         let rect = Rect::new(8.75, 5.0, 35.0, 35.0);
         // 与实现相同的边界对齐：左右/上下边界分别就近取整。
         let Some(aligned) = align_rounded_rect(rect) else {
-            panic!("align_rounded_rect must succeed for a positive rect");
+            // 正矩形必须可对齐；附带矩形几何便于定位亚像素输入。
+            panic!("align_rounded_rect must succeed for a positive rect ({rect:?})");
         };
         let clip = Rect::new(0.0, 0.0, w as f32, h as f32);
         stroke_rect(
@@ -225,7 +226,8 @@ mod tests {
         let rect = Rect::new(8.75, 5.0, 35.0, 35.0);
         // 与实现相同的边界对齐：左右/上下边界分别就近取整。
         let Some(aligned) = align_rounded_rect(rect) else {
-            panic!("align_rounded_rect must succeed for a positive rect");
+            // 正矩形必须可对齐；附带矩形几何便于定位亚像素输入。
+            panic!("align_rounded_rect must succeed for a positive rect ({rect:?})");
         };
         let clip = Rect::new(0.0, 0.0, w as f32, h as f32);
         let lw = 1.0;

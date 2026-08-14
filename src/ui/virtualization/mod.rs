@@ -9,7 +9,7 @@ pub mod virtual_scroll;
 // 隔离 VirtualScroll 键工厂、行工厂与 builder 生命周期契约。
 mod renderer;
 // 导出可变行高测量缓存及其范围计算协议。
-pub mod measurement_cache;
+pub(crate) mod measurement_cache;
 
 // 保留既有虚拟滚动入口。
 pub use virtual_scroll::*;

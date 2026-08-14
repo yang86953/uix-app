@@ -25,18 +25,18 @@ use super::types::{UiEvent, UiEventType};
 use std::cell::RefCell;
 
 /// 事件处理函数签名：接收事件引用，无返回值（事件分发不承诺业务应答）。
-pub type EventHandler = Box<dyn FnMut(&UiEvent)>;
+pub(crate) type EventHandler = Box<dyn FnMut(&UiEvent)>;
 
 /// 默认优先级（中间值）。
-pub const PRIORITY_DEFAULT: i32 = 0;
+pub(crate) const PRIORITY_DEFAULT: i32 = 0;
 /// 最高优先级（最先执行）。
 // 保留优先级边界常量，供后续平台订阅者排序策略使用。
 #[allow(dead_code)]
-pub const PRIORITY_HIGHEST: i32 = i32::MAX;
+pub(crate) const PRIORITY_HIGHEST: i32 = i32::MAX;
 /// 最低优先级（最后执行）。
 // 保留优先级边界常量，供后续平台订阅者排序策略使用。
 #[allow(dead_code)]
-pub const PRIORITY_LOWEST: i32 = i32::MIN;
+pub(crate) const PRIORITY_LOWEST: i32 = i32::MIN;
 
 struct SubscriberEntry {
     id: usize,
@@ -72,14 +72,14 @@ struct SubscriberEntry {
 ///   处理器内注册/注销本总线未声明支持，业务代码不得依赖；
 /// - 处理器失败（panic）会沿发布调用传播：本通道面向平台输入事件，
 ///   处理器由 platform 私有边界控制，panic 属进程级缺陷，不隔离。
-pub struct EventBus {
+pub(crate) struct EventBus {
     subscribers: RefCell<Vec<SubscriberEntry>>,
     next_id: usize,
 }
 
 impl EventBus {
     /// 创建新事件总线。
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             subscribers: RefCell::new(Vec::new()),
             next_id: 1,
@@ -112,7 +112,7 @@ impl EventBus {
     /// 订阅特定类型的事件。
     ///
     /// 返回 subscription ID（用于取消订阅）。
-    pub fn subscribe<F>(&mut self, event_type: UiEventType, handler: F) -> usize
+    pub(crate) fn subscribe<F>(&mut self, event_type: UiEventType, handler: F) -> usize
     where
         F: FnMut(&UiEvent) + 'static,
     {
@@ -122,7 +122,7 @@ impl EventBus {
     /// 订阅所有事件（通配符订阅）。
     ///
     /// 返回 subscription ID（用于取消订阅）。
-    pub fn subscribe_all<F>(&mut self, handler: F) -> usize
+    pub(crate) fn subscribe_all<F>(&mut self, handler: F) -> usize
     where
         F: FnMut(&UiEvent) + 'static,
     {
@@ -134,7 +134,7 @@ impl EventBus {
     /// 按优先级订阅特定类型的事件。
     ///
     /// `priority` 越高越先执行。相同优先级按注册顺序。
-    pub fn subscribe_with_priority<F>(
+    pub(crate) fn subscribe_with_priority<F>(
         &mut self,
         event_type: UiEventType,
         priority: i32,
@@ -147,7 +147,7 @@ impl EventBus {
     }
 
     /// 按优先级订阅所有事件。
-    pub fn subscribe_all_with_priority<F>(&mut self, priority: i32, handler: F) -> usize
+    pub(crate) fn subscribe_all_with_priority<F>(&mut self, priority: i32, handler: F) -> usize
     where
         F: FnMut(&UiEvent) + 'static,
     {
@@ -157,7 +157,7 @@ impl EventBus {
     // ── 一次性订阅 ─────────────────────────────────────────────
 
     /// 一次性订阅特定类型的事件：触发一次后自动取消订阅。
-    pub fn subscribe_once<F>(&mut self, event_type: UiEventType, handler: F) -> usize
+    pub(crate) fn subscribe_once<F>(&mut self, event_type: UiEventType, handler: F) -> usize
     where
         F: FnMut(&UiEvent) + 'static,
     {
@@ -165,7 +165,7 @@ impl EventBus {
     }
 
     /// 一次性订阅所有事件：触发一次后自动取消订阅。
-    pub fn subscribe_all_once<F>(&mut self, handler: F) -> usize
+    pub(crate) fn subscribe_all_once<F>(&mut self, handler: F) -> usize
     where
         F: FnMut(&UiEvent) + 'static,
     {
@@ -173,7 +173,7 @@ impl EventBus {
     }
 
     /// 一次性 + 优先级订阅特定类型的事件。
-    pub fn subscribe_once_with_priority<F>(
+    pub(crate) fn subscribe_once_with_priority<F>(
         &mut self,
         event_type: UiEventType,
         priority: i32,
@@ -188,7 +188,7 @@ impl EventBus {
     // ── 取消订阅 ───────────────────────────────────────────────
 
     /// 取消订阅（幂等）：对已注销或不存在的 id 注销为 no-op。
-    pub fn unsubscribe(&mut self, id: usize) {
+    pub(crate) fn unsubscribe(&mut self, id: usize) {
         self.subscribers.borrow_mut().retain(|e| e.id != id);
     }
 
@@ -201,7 +201,7 @@ impl EventBus {
     ///
     /// 事件分发不承诺业务应答：退出事件循环等请求经直接契约流转，
     /// 不通过本总线的返回值表达。
-    pub fn publish(&self, event: &UiEvent) {
+    pub(crate) fn publish(&self, event: &UiEvent) {
         let mut subs = self.subscribers.borrow_mut();
 
         // 按优先级降序排序（高优先级先执行）
@@ -227,12 +227,12 @@ impl EventBus {
     }
 
     /// 清空所有订阅。
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.subscribers.borrow_mut().clear();
     }
 
     /// 当前订阅者数量。
-    pub fn subscriber_count(&self) -> usize {
+    pub(crate) fn subscriber_count(&self) -> usize {
         self.subscribers.borrow().len()
     }
 }

@@ -69,6 +69,10 @@ fn apply_window_track_constraints(
 // 窗口过程回调
 // ════════════════════════════════════════════════════════════════════════════
 
+/// Win32 窗口过程回调入口（由系统经 ABI 调用）。
+///
+/// # Safety
+/// 由 Win32 消息循环调用：hwnd 为存活窗口句柄，msg/wparam/lparam 为当前消息参数；Rust panic 被 run_wnd_proc_boundary 捕获不会越过 ABI 边界。
 pub(crate) unsafe extern "system" fn wnd_proc(
     hwnd: *mut std::ffi::c_void,
     msg: u32,
@@ -76,8 +80,11 @@ pub(crate) unsafe extern "system" fn wnd_proc(
     lparam: isize,
 ) -> isize {
     run_wnd_proc_boundary(
+        // SAFETY: hwnd/msg/wparam/lparam 为 Win32 传入的当前消息参数，wnd_proc 自身的不变量保证其有效。
         || unsafe { wnd_proc_inner(hwnd, msg, wparam, lparam) },
+        // SAFETY: 同上，panic 通知路径只读取窗口绑定指针。
         || unsafe { enqueue_wnd_proc_panic(hwnd, msg) },
+        // SAFETY: DefWindowProcW 接受同一组当前消息参数，且不跨越 ABI 展开。
         || unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
     )
 }
@@ -106,6 +113,10 @@ where
     }
 }
 
+/// 在 panic 越界时通知平台所有者，记录回调失败。
+///
+/// # Safety
+/// 调用者必须保证 hwnd 存活且其 GWLP_USERDATA 保存的是本模块写入的 WindowBinding 指针（本窗口过程在 WM_NCCREATE 写入）。
 unsafe fn enqueue_wnd_proc_panic(hwnd: *mut std::ffi::c_void, msg: u32) { unsafe {
     let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
     if ptr == 0 {
@@ -118,6 +129,10 @@ unsafe fn enqueue_wnd_proc_panic(hwnd: *mut std::ffi::c_void, msg: u32) { unsafe
     ));
 }}
 
+/// 窗口过程正文：消息分发与状态更新。
+///
+/// # Safety
+/// 调用者（wnd_proc 或本模块边界）必须保证 hwnd 存活、消息参数有效，且 GWLP_USERDATA 保存的 WindowBinding 指针在调用期间未被销毁。
 unsafe fn wnd_proc_inner(
     hwnd: *mut std::ffi::c_void,
     msg: u32,
@@ -224,6 +239,7 @@ impl WindowsPlatform {
                 };
                 let maximized =
                     super::custom_chrome::is_effectively_maximized(hwnd, style, state_maximized);
+                // SAFETY: hwnd 属于当前同步消息的窗口；custom_chrome 只在本消息期间使用其句柄。
                 if let Some(result) = unsafe {
                     super::custom_chrome::handle_nc_calc_size(
                         hwnd, style, wparam, lparam, maximized,
@@ -242,6 +258,7 @@ impl WindowsPlatform {
                         return self.def_window_proc(hwnd, msg, wparam, lparam);
                     }
                 };
+                // SAFETY: hwnd 属于当前同步消息的窗口；custom_chrome 只在本消息期间使用其句柄。
                 match unsafe {
                     super::custom_chrome::handle_nc_hit_test(hwnd, style, lparam, resizable)
                 } {
@@ -340,6 +357,7 @@ impl WindowsPlatform {
                         let mut chrome_failure = None;
                         if schedule_extended_frame_refresh {
                             // 延迟到当前还原 WM_SIZE 返回后再重算非客户区，避免旧尺寸重入。
+                            // SAFETY: hwnd 属于当前同步消息的窗口；PostMessageW 投递自定义消息不持有指针。
                             if unsafe { PostMessageW(hwnd, WM_UIX_REFRESH_EXTENDED_FRAME, 0, 0) }
                                 == 0
                             {
@@ -408,6 +426,7 @@ impl WindowsPlatform {
             WM_DPICHANGED => {
                 // Windows 在 lParam 中给出按新 DPI 计算的 physical 外窗矩形；
                 // SetWindowPos 同步产生的 WM_SIZE 继续走唯一 resize/graphics 重建路径。
+                // SAFETY: hwnd 存活（当前同步消息）；lparam 指向 Win32 提供的 RECT，调用期间有效。
                 let result = unsafe {
                     super::dpi::apply_suggested_window_rect(
                         hwnd,
@@ -612,6 +631,7 @@ impl WindowsPlatform {
                     y: Self::hiword_signed(lparam) as i32,
                 };
                 let mut client_pt = screen_pt;
+                // SAFETY: hwnd 属于当前同步消息的窗口；client_pt 为栈上可写坐标，ScreenToClient 同步转换。
                 unsafe {
                     ScreenToClient(hwnd, &mut client_pt);
                 }
@@ -633,6 +653,7 @@ impl WindowsPlatform {
                     .lock()
                     .unwrap_or_else(|error| error.into_inner());
                 if set.remove(&timer_id) {
+                    // SAFETY: hwnd 属于当前同步消息的窗口；timer_id 为本平台创建并登记的计时器。
                     unsafe {
                         KillTimer(hwnd, timer_id);
                     }
@@ -653,6 +674,7 @@ impl WindowsPlatform {
             WM_SETCURSOR => {
                 let hit = Self::loword(lparam) as u32;
                 if hit == HTCLIENT {
+                    // SAFETY: LoadCursorW 的 null 模块句柄表示系统游标，IDC_ARROW 为存活字符串常量；SetCursor 接受系统游标句柄。
                     unsafe {
                         let cursor = LoadCursorW(std::ptr::null_mut(), IDC_ARROW as *const u16);
                         SetCursor(cursor);

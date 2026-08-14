@@ -8,7 +8,7 @@ pub enum BacktracePolicy {
     ErrorsAndFatal,
 }
 
-/// 用于创建一个运行时作用域 [`Diagnostics`] 的不可变配置。
+/// 用于创建一个运行时作用域 [`crate::diagnostics::Diagnostics`] 的不可变配置。
 ///
 /// 单份报告的安全预算属于框架固定不变量，故意不可配置。
 #[derive(Debug, Clone)]

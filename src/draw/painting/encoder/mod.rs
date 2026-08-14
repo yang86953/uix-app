@@ -4,9 +4,9 @@
 //! clear、原生工作、CPU 回退分段与 Picture/offscreen blit；唯一的表现入口
 //! 消费编码器本身，因此一帧录制结果不可能被提交两次。
 //!
-//! 子模块划分（P2 行数治理）：[`geometry`] 值类型、[`commands`] 命令与
-//! 执行契约、[`error`] 错误契约、[`source_over`] SrcOver 分组证明与裁剪、
-//! [`pixels`] CPU 参考光栅原语；本文件只保留 [`FrameEncoder`] 主体并重导出
+//! 子模块划分（P2 行数治理）：`geometry` 值类型、`commands` 命令与
+//! 执行契约、`error` 错误契约、`source_over` SrcOver 分组证明与裁剪、
+//! `pixels` CPU 参考光栅原语；本文件只保留 [`FrameEncoder`] 主体并重导出
 //! 全部公开类型，`crate::draw::painting::encoder::*` 路径保持不变。
 
 pub(crate) mod commands;

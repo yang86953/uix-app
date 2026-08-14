@@ -218,8 +218,17 @@ component! {
         }
 
         let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
-        let bg = fade_color(self.bg_color.unwrap_or(Color::from_rgba(50, 50, 50, 230)), opacity);
-        let txt_color = fade_color(self.text_color.unwrap_or(Color::white()), opacity);
+        // 气泡底：原为 50,50,50 深灰，收敛为黑色 token（AntD 标准 tooltip 色，alpha 保持原值）。
+        let bg = fade_color(
+            self.bg_color
+                .unwrap_or(ctx.tokens().color_black().with_alpha(230)),
+            opacity,
+        );
+        let txt_color = fade_color(
+            self.text_color
+                .unwrap_or(ctx.tokens().color_white()),
+            opacity,
+        );
         paint_tooltip_bubble(
             ctx,
             &self.text,

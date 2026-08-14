@@ -6,9 +6,14 @@ use crate::core::error::{Errc, Error, Result};
 // 文件系统
 // ════════════════════════════════════════════════════════════════════════════
 
+// 与 [`crate::platform::services::SpecialDir`] 保持共享语义：platform 版是公开
+// 权威（6 个 OS-known 目录），本类型是 native 内部文件系统契约，额外提供
+// Temp/Current/Executable 三个内部变体（后两者由 FileSystemCore 直接处理）。
+// 两处定义通过下方 `From` 转换与 `special_dir_consistency` 测试保持同步，
+// 增删共享变体时必须同时修改两处。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum SpecialDir {
+pub(crate) enum SpecialDir {
     Home,
     Temp,
     AppData,
@@ -20,24 +25,38 @@ pub enum SpecialDir {
     Executable,
 }
 
+// platform 公开的 6 个 OS-known 目录是 native 9 变体的子集，可无损转换。
+impl From<crate::platform::services::SpecialDir> for SpecialDir {
+    fn from(dir: crate::platform::services::SpecialDir) -> Self {
+        match dir {
+            crate::platform::services::SpecialDir::Home => Self::Home,
+            crate::platform::services::SpecialDir::AppData => Self::AppData,
+            crate::platform::services::SpecialDir::LocalAppData => Self::LocalAppData,
+            crate::platform::services::SpecialDir::Documents => Self::Documents,
+            crate::platform::services::SpecialDir::Desktop => Self::Desktop,
+            crate::platform::services::SpecialDir::Downloads => Self::Downloads,
+        }
+    }
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // 系统信息
 // ════════════════════════════════════════════════════════════════════════════
 
 #[derive(Debug, Clone)]
-pub struct MemoryInfo {
-    pub total_bytes: u64,
-    pub available_bytes: u64,
-    pub process_working_set: usize,
-    pub process_private_bytes: usize,
+pub(crate) struct MemoryInfo {
+    pub(crate) total_bytes: u64,
+    pub(crate) available_bytes: u64,
+    pub(crate) process_working_set: usize,
+    pub(crate) process_private_bytes: usize,
 }
 
 #[derive(Debug, Clone)]
-pub struct OsInfo {
-    pub name: String,
-    pub version: String,
-    pub build: String,
-    pub is_64bit: bool,
+pub(crate) struct OsInfo {
+    pub(crate) name: String,
+    pub(crate) version: String,
+    pub(crate) build: String,
+    pub(crate) is_64bit: bool,
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -46,7 +65,7 @@ pub struct OsInfo {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum ConsoleColor {
+pub(crate) enum ConsoleColor {
     Default = 0,
     Trace,
     Debug,
@@ -57,16 +76,16 @@ pub enum ConsoleColor {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct TerminalCapabilities {
-    pub has_color: bool,
-    pub has_raw_mode: bool,
-    pub has_cursor_control: bool,
+pub(crate) struct TerminalCapabilities {
+    pub(crate) has_color: bool,
+    pub(crate) has_raw_mode: bool,
+    pub(crate) has_cursor_control: bool,
 }
 
 /// 通用状态级别（类型已收口到 platform 公开面，此处保持 native 路径可解析）。
-pub use crate::platform::capabilities::StatusLevel;
+pub(crate) use crate::platform::capabilities::StatusLevel;
 
-pub trait IFileDialog {
+pub(crate) trait IFileDialog {
     /// 打开文件选择对话框。`Ok(None)` 表示用户取消；`Err` 表示对话框本身失败。
     fn open(&mut self, title: &str, filters: &str) -> Result<Option<Vec<String>>>;
     /// 打开保存对话框。`Ok(None)` 表示用户取消；`Err` 表示对话框本身失败。
@@ -75,24 +94,24 @@ pub trait IFileDialog {
     fn open_folder(&mut self, title: &str) -> Result<Option<String>>;
 }
 
-pub trait IFileSystem {
+pub(crate) trait IFileSystem {
     fn get_special_dir(&self, dir: SpecialDir) -> Result<String>;
     fn executable_path(&self) -> Result<String>;
     fn executable_dir(&self) -> Result<String>;
     fn read_file(&self, path: &str) -> Result<Vec<u8>, Error>;
 }
 
-pub trait INotification {
+pub(crate) trait INotification {
     /// 显示系统通知。失败时返回 typed error（如通知区域不可用、notify-send 缺失）。
     fn show(&mut self, title: &str, message: &str) -> Result<()>;
 }
 
-pub trait ITimer {
+pub(crate) trait ITimer {
     fn set(&mut self, interval_ms: u32, repeating: bool) -> Result<u32>;
     fn clear(&mut self, id: u32) -> Result<()>;
 }
 
-pub trait ISystemInfo {
+pub(crate) trait ISystemInfo {
     fn os_info(&self) -> Result<OsInfo>;
     fn cpu_count(&self) -> Result<u32>;
     fn memory_info(&self) -> Result<MemoryInfo>;
@@ -121,7 +140,7 @@ pub trait ISystemInfo {
     }
 }
 
-pub trait IConsole {
+pub(crate) trait IConsole {
     fn write(&mut self, text: &str) -> Result<()>;
     fn write_line(&mut self, text: &str) -> Result<()>;
     fn set_color(&mut self, color: ConsoleColor) -> Result<()>;
@@ -129,4 +148,41 @@ pub trait IConsole {
     fn show_terminal_cursor(&mut self, visible: bool) -> Result<()>;
     fn set_terminal_title(&mut self, title: &str) -> Result<()>;
     fn capabilities(&self) -> TerminalCapabilities;
+}
+
+#[cfg(test)]
+mod special_dir_consistency {
+    use super::SpecialDir;
+
+    // 断言 platform 公开的 6 个 OS-known 目录逐一映射到 native 契约变体；
+    // 任一侧增删共享变体都会使本测试失败，提醒同步两处定义。
+    #[test]
+    fn platform_variants_are_a_subset_of_native() {
+        let pairs = [
+            (crate::platform::services::SpecialDir::Home, SpecialDir::Home),
+            (
+                crate::platform::services::SpecialDir::AppData,
+                SpecialDir::AppData,
+            ),
+            (
+                crate::platform::services::SpecialDir::LocalAppData,
+                SpecialDir::LocalAppData,
+            ),
+            (
+                crate::platform::services::SpecialDir::Documents,
+                SpecialDir::Documents,
+            ),
+            (
+                crate::platform::services::SpecialDir::Desktop,
+                SpecialDir::Desktop,
+            ),
+            (
+                crate::platform::services::SpecialDir::Downloads,
+                SpecialDir::Downloads,
+            ),
+        ];
+        for (platform, native) in pairs {
+            assert_eq!(SpecialDir::from(platform), native);
+        }
+    }
 }

@@ -1,7 +1,6 @@
 //! 应用入口 — 统一 GUI / CLI 生命周期。
 
 use std::cell::{Cell, RefCell};
-use std::path::Path;
 use std::rc::Rc;
 use std::sync::{atomic::AtomicBool, Arc};
 use std::time::{Duration, Instant};
@@ -420,7 +419,7 @@ impl App {
         };
 
         let settings = SettingsService::new();
-        let load_result = resolve_configured_settings_path(path)
+        let load_result = crate::data::settings::resolve_configured_settings_path(path)
             .and_then(|resolved_path| settings.load(&resolved_path));
         if let Err(err) = load_result {
             tracing::error!("load settings failed: {}", err.short_what());
@@ -576,11 +575,28 @@ impl App {
         let feedback = AppFeedbackState::new();
         // 通过 DI 共享同一个 owner，不向组件暴露全局注册表。
         self.container.singleton(feedback.clone());
-        let locale = self.container.resolve_clone::<Locale>().unwrap_or_default();
-        let component_config = self
-            .container
-            .resolve_clone::<ComponentConfig>()
-            .unwrap_or_default();
+        // DI 未注册 Locale 时回退默认值并记录缺失，避免静默降级（保持回退行为）。
+        let locale = match self.container.resolve_clone::<Locale>() {
+            Some(locale) => locale,
+            None => {
+                tracing::warn!(
+                    ty = %std::any::type_name::<Locale>(),
+                    "DI resolve failed, falling back to default"
+                );
+                Locale::default()
+            }
+        };
+        // DI 未注册 ComponentConfig 时回退默认配置并记录缺失（保持回退行为）。
+        let component_config = match self.container.resolve_clone::<ComponentConfig>() {
+            Some(component_config) => component_config,
+            None => {
+                tracing::warn!(
+                    ty = %std::any::type_name::<ComponentConfig>(),
+                    "DI resolve failed, falling back to default"
+                );
+                ComponentConfig::default()
+            }
+        };
 
         let root_window_id = platform_window.window_id();
         // 根窗口工厂捕获 owner，而不是捕获某个临时 Host 实例。
@@ -632,7 +648,12 @@ impl App {
             platform_window.is_visible(),
             initially_agent_presentable(platform_window.as_ref()),
         ) {
-            let _ = session.bind_agent_window(registration);
+            // bind_agent_window 只返回 bool，无法区分「已绑定」与「窗口已关闭/
+            // id 不匹配」等失败原因；改为 Result 会波及全部调用点与签名，
+            // 本次仅记录日志，保留弱返回值契约。
+            if !session.bind_agent_window(registration) {
+                tracing::warn!(window_id = ?root_window_id, "agent window binding failed");
+            }
         }
         #[cfg(feature = "agent-control")]
         if self.agent_control_enabled {
@@ -847,32 +868,7 @@ impl App {
     }
 }
 
-fn resolve_configured_settings_path(path: &str) -> crate::core::Result<String> {
-    if path.trim().is_empty() {
-        return Err(Error::invalid_arg("settings: path must not be empty"));
-    }
-    let configured = Path::new(path);
-    let resolved = if configured.is_absolute() {
-        configured.to_path_buf()
-    } else {
-        let executable = std::env::current_exe()?;
-        let executable_dir = executable.parent().ok_or_else(|| {
-            Error::new(
-                Errc::InvalidState,
-                "settings: current executable has no parent directory",
-            )
-        })?;
-        executable_dir.join(configured)
-    };
-
-    resolved.into_os_string().into_string().map_err(|_| {
-        Error::new(
-            Errc::FormatError,
-            "settings: configured path is not valid UTF-8",
-        )
-    })
-}
-
+// 次要窗口会话模型由运行时节拍直接消费（经本模块 re-export 给子模块）。
 mod secondary;
 
 use self::secondary::SecondaryWindowSession;

@@ -29,7 +29,6 @@ pub(crate) mod window_ops;
 use self::compat::{Main, ProxyContext, WaylandDispatchState};
 // 引入 Wayland 私有的一次性指针激活注册表。
 use self::pointer_activation::WaylandPointerActivationRegistry;
-use self::shm_buffer::ShmBuffer;
 use crate::core::{Error, Point, WindowId};
 use crate::diagnostics::PendingFailureSource;
 use crate::native::windowing::event::*;
@@ -45,8 +44,8 @@ use std::sync::{Arc, Mutex};
 use wayland_client::{
     globals::{registry_queue_init, GlobalList},
     protocol::{
-        wl_compositor, wl_data_device_manager, wl_keyboard, wl_output, wl_pointer, wl_region,
-        wl_seat, wl_shm, wl_surface,
+        wl_compositor, wl_data_device_manager, wl_keyboard, wl_output, wl_pointer, wl_seat,
+        wl_shm,
     },
     Connection, EventQueue,
 };
@@ -54,7 +53,7 @@ use wayland_protocols::wp::text_input::zv3::client::{
     zwp_text_input_manager_v3::ZwpTextInputManagerV3, zwp_text_input_v3::ZwpTextInputV3,
 };
 use wayland_protocols::xdg::activation::v1::client::xdg_activation_v1::XdgActivationV1;
-use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
+use wayland_protocols::xdg::shell::client::xdg_wm_base;
 
 // ════════════════════════════════════════════════════════════════════════════
 // ShmBuffer — RAII 包装：SHM 池 + 缓冲区 + 后备文件
@@ -79,7 +78,7 @@ pub(crate) struct HeldKeyInfo {
 // WaylandBackend — Wayland 后端主结构体
 // ════════════════════════════════════════════════════════════════════════════
 
-pub struct WaylandBackend {
+pub(crate) struct WaylandBackend {
     // ── Wayland 连接 ──────────────────────────────────────────────
     pub(crate) display: Connection,
     pub(crate) event_queue: EventQueue<WaylandDispatchState>,
@@ -92,25 +91,12 @@ pub struct WaylandBackend {
     pub(crate) _wm_base: Main<xdg_wm_base::XdgWmBase>,
     pub(crate) _shm: Main<wl_shm::WlShm>,
 
-    // ── 窗口对象 ──────────────────────────────────────────────────
-    pub(crate) surface: Option<Main<wl_surface::WlSurface>>,
-    pub(crate) xdg_surface: Option<Main<xdg_surface::XdgSurface>>,
-    pub(crate) toplevel: Option<Main<xdg_toplevel::XdgToplevel>>,
-
     // ── 窗口状态 ──────────────────────────────────────────────────
-    pub(crate) width: i32,
-    pub(crate) height: i32,
-    pub(crate) shown: bool,
     pub(crate) closed: bool,
-    pub(crate) configured: bool,
     pub(crate) pending_failures: PendingFailureSource,
 
     // ── 事件队列（线程安全，供 quick_assign 回调写入）───────────
     pub(crate) events: Arc<Mutex<VecDeque<UiEvent>>>,
-
-    // ── SHM 双缓冲 ────────────────────────────────────────────────
-    pub(crate) shm_buffers: [Option<ShmBuffer>; 2],
-    pub(crate) active_buffer: usize,
 
     // ── Seat 及输入代理 ───────────────────────────────────────────
     pub(crate) seat: Option<Main<wl_seat::WlSeat>>,
@@ -118,7 +104,6 @@ pub struct WaylandBackend {
     pub(crate) keyboard: Arc<Mutex<Option<Main<wl_keyboard::WlKeyboard>>>>,
     pub(crate) last_pointer: Arc<Mutex<LastPointerState>>,
     pub(crate) keys_down: Arc<Mutex<HashSet<KeyCode>>>,
-    pub(crate) input_region: Option<Main<wl_region::WlRegion>>,
     pub(crate) surface_windows: Arc<Mutex<SurfaceWindowTargets>>,
     // 单一注册表关联原生 PointerDown、surface 代次与协议 serial。
     pub(crate) pointer_activations: Arc<Mutex<WaylandPointerActivationRegistry>>,
@@ -166,7 +151,7 @@ pub struct WaylandBackend {
 
 impl WaylandBackend {
     /// 返回事件队列句柄（供定时器子系统使用）。
-    pub fn event_queue_handle(&self) -> Arc<Mutex<VecDeque<UiEvent>>> {
+    pub(crate) fn event_queue_handle(&self) -> Arc<Mutex<VecDeque<UiEvent>>> {
         self.events.clone()
     }
 
@@ -192,7 +177,7 @@ impl WaylandBackend {
         }
     }
 
-    pub fn new(pending_failures: PendingFailureSource) -> Result<Self, String> {
+    pub(crate) fn new(pending_failures: PendingFailureSource) -> Result<Self, String> {
         let display =
             Connection::connect_to_env().map_err(|e| format!("Wayland connect failed: {e}"))?;
         let (globals, mut event_queue) = registry_queue_init::<WaylandDispatchState>(&display)
@@ -312,17 +297,8 @@ impl WaylandBackend {
             _compositor,
             _wm_base,
             _shm,
-            surface: None,
-            xdg_surface: None,
-            toplevel: None,
-            width: 800,
-            height: 600,
-            shown: false,
             closed: false,
-            configured: false,
             pending_failures,
-            shm_buffers: [None, None],
-            active_buffer: 0,
             events,
             seat: None,
             pointer: Arc::new(Mutex::new(None)),
@@ -340,7 +316,6 @@ impl WaylandBackend {
             repeat_delay: Arc::new(Mutex::new(400)),
             held_key_info: Arc::new(Mutex::new(None)),
             last_repeat_time: Arc::new(Mutex::new(None)),
-            input_region: None,
             data_device_manager,
             data_device: None,
             clipboard_text,

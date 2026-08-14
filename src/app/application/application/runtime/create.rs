@@ -118,10 +118,28 @@ pub(super) fn create_secondary_window(
 
     // 副窗从 Application 容器取得同一个反馈 owner。
     let feedback = container.resolve_clone::<AppFeedbackState>();
-    let locale = container.resolve_clone::<Locale>().unwrap_or_default();
-    let component_config = container
-        .resolve_clone::<ComponentConfig>()
-        .unwrap_or_default();
+    // DI 未注册 Locale 时回退默认值并记录缺失，避免静默降级（保持回退行为）。
+    let locale = match container.resolve_clone::<Locale>() {
+        Some(locale) => locale,
+        None => {
+            tracing::warn!(
+                ty = %std::any::type_name::<Locale>(),
+                "DI resolve failed, falling back to default"
+            );
+            Locale::default()
+        }
+    };
+    // DI 未注册 ComponentConfig 时回退默认配置并记录缺失（保持回退行为）。
+    let component_config = match container.resolve_clone::<ComponentConfig>() {
+        Some(component_config) => component_config,
+        None => {
+            tracing::warn!(
+                ty = %std::any::type_name::<ComponentConfig>(),
+                "DI resolve failed, falling back to default"
+            );
+            ComponentConfig::default()
+        }
+    };
     let wrapped_root = move || {
         with_config(&component_config, || {
             with_locale(&locale, || {
@@ -149,7 +167,12 @@ pub(super) fn create_secondary_window(
         platform_window.is_visible(),
         initially_agent_presentable(platform_window.as_ref()),
     ) {
-        let _ = session.bind_agent_window(registration);
+        // bind_agent_window 只返回 bool，无法区分「已绑定」与「窗口已关闭/
+        // id 不匹配」等失败原因；改为 Result 会波及全部调用点与签名，
+        // 本次仅记录日志，保留弱返回值契约。
+        if !session.bind_agent_window(registration) {
+            tracing::warn!(window_id = ?window_id, "agent window binding failed");
+        }
     }
     let handle = AppHandle::new(
         window_id,
@@ -202,7 +225,7 @@ pub(crate) fn graphics_recovery_rebuilder_with_pending(
     let candidates = gpu_recipe_candidates(requested);
     let mut current_recipe = selected_recipe;
     Box::new(move |action, width, height| match action {
-        RecoveryAction::RebuildSurface | RecoveryAction::RebuildRecipe => {
+        GraphicsRecoveryAction::RebuildSurface | GraphicsRecoveryAction::RebuildRecipe => {
             recreate_exact_graphics_recipe(
                 surface,
                 width,
@@ -211,7 +234,7 @@ pub(crate) fn graphics_recovery_rebuilder_with_pending(
                 &pending_failures,
             )
         }
-        RecoveryAction::TryNextRecipe => {
+        GraphicsRecoveryAction::TryNextRecipe => {
             let start = candidates
                 .iter()
                 .position(|recipe| *recipe == current_recipe)
@@ -238,8 +261,8 @@ pub(crate) fn graphics_recovery_rebuilder_with_pending(
             }
             Err(last_error)
         }
-        RecoveryAction::UseSoftware => create_software_recovery_engine(width, height),
-        RecoveryAction::Abort | RecoveryAction::AbortOutOfMemory => Err(Error::new(
+        GraphicsRecoveryAction::UseSoftware => create_software_recovery_engine(width, height),
+        GraphicsRecoveryAction::Abort | GraphicsRecoveryAction::AbortOutOfMemory => Err(Error::new(
             Errc::InvalidState,
             format!("graphics recovery: forbidden action {action:?}"),
         )),

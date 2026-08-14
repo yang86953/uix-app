@@ -135,6 +135,7 @@ impl OpenGlRhiDevice {
     // 在已经 current 的 GLES 3 context 中创建共享 VAO。
     pub(super) fn new(gl: &glow::Context) -> Result<Self> {
         // 创建 VAO 失败必须阻止 context 进入 RHI 路径。
+        // SAFETY: 调用时 GL context 已由调用方设为 current；create_vertex_array 不接收指针参数，失败走错误返回而非 UB。
         let vao = unsafe {
             gl.create_vertex_array()
                 .map_err(|error| gl_error("create RHI vertex array", error))?
@@ -243,11 +244,13 @@ impl OpenGlRhiDevice {
     // 为 render target texture 创建并检查颜色 framebuffer。
     fn create_framebuffer(gl: &glow::Context, texture: glow::Texture) -> Result<glow::Framebuffer> {
         // 创建 framebuffer 对象。
+        // SAFETY: 本函数前置条件为 context current；create_framebuffer 无指针参数，失败走错误返回。
         let framebuffer = unsafe {
             gl.create_framebuffer()
                 .map_err(|error| gl_error("create RHI framebuffer", error))?
         };
         // 把 texture 接到颜色附件并检查完整性。
+        // SAFETY: framebuffer 与 texture 均由本设备刚创建且未销毁，句柄存活；context 保持 current；组合正确性由随后的完整性检查兜底。
         unsafe {
             gl.bind_framebuffer(glow::FRAMEBUFFER, Some(framebuffer));
             gl.framebuffer_texture_2d(
@@ -259,14 +262,17 @@ impl OpenGlRhiDevice {
             );
         }
         // 读取当前 framebuffer 完整性状态。
+        // SAFETY: 上一步刚绑定的 framebuffer 此时仍处于绑定状态且存活，查询为只读操作；context 保持 current。
         let complete =
             unsafe { gl.check_framebuffer_status(glow::FRAMEBUFFER) } == glow::FRAMEBUFFER_COMPLETE;
         // 不让资源表保留不完整的 framebuffer。
+        // SAFETY: 解绑不依赖任何对象句柄，仅将当前 GL 状态恢复为无 framebuffer；context 保持 current。
         unsafe {
             gl.bind_framebuffer(glow::FRAMEBUFFER, None);
         }
         if !complete {
             // 释放不完整 framebuffer 并返回平台错误。
+            // SAFETY: framebuffer 由本函数刚创建、未被其他位置引用，删除后不再使用，仅在此销毁一次；context 保持 current。
             unsafe {
                 gl.delete_framebuffer(framebuffer);
             }
@@ -294,11 +300,13 @@ impl OpenGlRhiDevice {
             return Err(rhi_invalid("OpenGL RHI vertex/index stride is invalid"));
         }
         // 创建底层 buffer。
+        // SAFETY: 本设备方法约定调用时 GL context current；create_buffer 无指针参数，失败走错误返回。
         let native = unsafe {
             gl.create_buffer()
                 .map_err(|error| gl_error("create RHI buffer", error))?
         };
         // 为所有通用 buffer 分配固定字节容量；uniform 由 CPU 镜像解码。
+        // SAFETY: native 刚创建且存活；容量已在上方验证非零且 ≤ i32::MAX；绑定与解绑在同步调用内成对完成；context 保持 current。
         unsafe {
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(native));
             gl.buffer_data_size(
@@ -339,6 +347,7 @@ impl OpenGlRhiDevice {
         // 写入 CPU 镜像，供随后 draw 的 uniform 解码使用。
         buffer.data[offset..end].copy_from_slice(data);
         // 上传同一范围到 GLES buffer。
+        // SAFETY: buffer.native 存活；offset+len 已在上方验证不越过资源容量；data 切片指向的有效内存贯穿整个同步调用；context 保持 current。
         unsafe {
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(buffer.native));
             gl.buffer_sub_data_u8_slice(glow::ARRAY_BUFFER, offset as i32, data);
@@ -361,11 +370,13 @@ impl OpenGlRhiDevice {
         // 取得 GL 内部格式、上传格式和每像素字节数。
         let (internal, upload_format, _) = Self::texture_format(desc.format);
         // 创建底层 texture。
+        // SAFETY: 调用时 GL context current；create_texture 无指针参数，失败走错误返回。
         let native = unsafe {
             gl.create_texture()
                 .map_err(|error| gl_error("create RHI texture", error))?
         };
         // 分配紧密排列的二维 texture 存储并设置 clamp sampler 默认值。
+        // SAFETY: native 刚创建且存活；extent 已验证为正（宽高非零）；PixelUnpackData::Slice(None) 不传递 CPU 指针；其余均为有效 GLES3 常量；context 保持 current。
         unsafe {
             gl.bind_texture(glow::TEXTURE_2D, Some(native));
             gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, 1);
@@ -425,11 +436,13 @@ impl OpenGlRhiDevice {
         desc: SamplerDesc,
     ) -> Result<SamplerHandle> {
         // 创建 sampler 对象。
+        // SAFETY: 调用时 GL context current；create_sampler 无指针参数，失败走错误返回。
         let native = unsafe {
             gl.create_sampler()
                 .map_err(|error| gl_error("create RHI sampler", error))?
         };
         // 让 sampler 的过滤与 texture 的边界策略可被 draw 复用。
+        // SAFETY: native 刚创建且存活；参数均为有效 GL 枚举且无指针；context 保持 current。
         unsafe {
             let filter = if desc.linear {
                 glow::LINEAR as i32
@@ -457,6 +470,7 @@ impl OpenGlRhiDevice {
         let (vertex, fragment) = shader_sources(desc.key)
             .ok_or_else(|| rhi_not_implemented("OpenGL RHI pipeline key"))?;
         // 编译 program；shader 失败时不登记半成品资源。
+        // SAFETY: 编译期间 context 保持 current（compile_program 自身的前置条件），shader 源码为存活且静态的生命周期字符串。
         let program = unsafe { compile_program(gl, vertex, fragment, "RHI pipeline")? };
         // 保存 key 和 program 的 owner-thread 生命周期。
         self.pipelines.push(Some(OpenGlRhiPipeline {
@@ -483,6 +497,7 @@ impl OpenGlRhiDevice {
             return Err(rhi_invalid("OpenGL RHI buffer was already destroyed"));
         };
         // 删除底层对象。
+        // SAFETY: buffer 刚经 slot.take() 取出、仍存活且此后不再被引用，只在销毁路径删除一次；context 保持 current。
         unsafe {
             gl.delete_buffer(buffer.native);
         }
@@ -513,6 +528,7 @@ impl OpenGlRhiDevice {
             return Err(rhi_invalid("OpenGL RHI texture was already destroyed"));
         };
         // 删除 framebuffer 和 texture 对象。
+        // SAFETY: 上方已确认该 texture 不是当前 pass 的活动 target；texture 刚被取出、仍存活且此后不再引用；先删 framebuffer 再删 texture 顺序安全；context 保持 current。
         unsafe {
             if let Some(framebuffer) = texture.framebuffer {
                 gl.delete_framebuffer(framebuffer);
@@ -543,6 +559,7 @@ impl OpenGlRhiDevice {
             return Err(rhi_invalid("OpenGL RHI sampler was already destroyed"));
         };
         // 删除底层 sampler 对象。
+        // SAFETY: sampler 刚被取出、仍存活且此后不再引用，只在销毁路径删除一次；context 保持 current。
         unsafe {
             gl.delete_sampler(sampler.native);
         }
@@ -570,6 +587,7 @@ impl OpenGlRhiDevice {
             return Err(rhi_invalid("OpenGL RHI pipeline was already destroyed"));
         };
         // 删除底层 program。
+        // SAFETY: pipeline 刚被取出、仍存活且此后不再引用，只在销毁路径删除一次；context 保持 current。
         unsafe {
             gl.delete_program(pipeline.program);
         }
@@ -604,6 +622,7 @@ impl OpenGlRhiDevice {
             return Err(rhi_invalid("OpenGL RHI render target extent is invalid"));
         }
         // 绑定 framebuffer 并清理按 pass 指定的颜色。
+        // SAFETY: framebuffer 取自存活 texture（surface 时为 None，解绑合法）；RhiColor 为固定四元素数组，颜色参数有效；context 保持 current。
         unsafe {
             gl.bind_framebuffer(glow::FRAMEBUFFER, framebuffer);
             if let LoadAction::Clear(RhiColor(color)) = load {
@@ -633,6 +652,7 @@ impl OpenGlRhiDevice {
             ));
         }
         // OpenGL viewport 保持正尺寸，Y 方向由 draw 时的目标身份决定。
+        // SAFETY: viewport 已在上方验证为正且 pass 已打开，宽高经 i32 转换后仍为正；无指针参数；context 保持 current。
         unsafe {
             gl.viewport(
                 0,
@@ -660,6 +680,7 @@ impl OpenGlRhiDevice {
             .active_extent
             .ok_or_else(|| rhi_invalid("OpenGL RHI scissor has no active target"))?;
         // 按 RHI 的左上原点 ABI 校验并转换坐标。
+        // SAFETY: scissor 坐标与尺寸均为非负整数，且已按 active target 的物理 extent 校验不越界；无指针参数；context 保持 current。
         unsafe {
             if let Some(scissor) = scissor {
                 if !scissor.is_valid()
@@ -726,6 +747,7 @@ impl OpenGlRhiDevice {
             return Err(rhi_invalid("OpenGL RHI render pass is not open"));
         }
         // 解除 texture/sampler 和 framebuffer 状态。
+        // SAFETY: 全部为解绑/关闭操作，不引用任何已销毁对象；bind_sampler 的 0 号单元在 GLES3 中存在；context 保持 current。
         unsafe {
             // 结束 pass 时显式关闭 scissor，避免下一 target 继承旧裁剪。
             gl.disable(glow::SCISSOR_TEST);
@@ -775,6 +797,7 @@ impl OpenGlRhiDevice {
             return Err(rhi_invalid("OpenGL RHI texture copy is outside extent"));
         }
         // 复制前绑定源 framebuffer 作为 READ_FRAMEBUFFER，并绑定目标 texture。
+        // SAFETY: source/destination 为存活 texture，source.framebuffer 已确认存在；复制矩形已按两边 extent 校验不越界；context 保持 current。
         unsafe {
             gl.bind_framebuffer(glow::READ_FRAMEBUFFER, source.framebuffer);
             gl.bind_texture(glow::TEXTURE_2D, Some(destination.native));
@@ -802,6 +825,7 @@ impl OpenGlRhiDevice {
             return Err(rhi_invalid("OpenGL RHI submit has an open render pass"));
         }
         // 令驱动在最终 swap 前观察到当前命令序列。
+        // SAFETY: flush 不接收对象或指针参数，只需 context current。
         unsafe {
             gl.flush();
         }
@@ -829,6 +853,7 @@ impl OpenGlRhiDevice {
         // 按资源表逆序释放底层对象，避免依赖关系被提前拆除。
         for slot in self.pipelines.iter_mut().rev() {
             if let Some(pipeline) = slot.take() {
+                // SAFETY: pipeline 刚被取出、仍存活且此后不再引用；释放期间调用方保证 context current（见本函数文档）。
                 unsafe {
                     gl.delete_program(pipeline.program);
                 }
@@ -837,6 +862,7 @@ impl OpenGlRhiDevice {
         // 先删除 texture framebuffer，再删除 texture。
         for slot in self.textures.iter_mut().rev() {
             if let Some(texture) = slot.take() {
+                // SAFETY: texture 刚被取出、仍存活且此后不再引用；先删 framebuffer 再删 texture；释放期间 context 保持 current。
                 unsafe {
                     if let Some(framebuffer) = texture.framebuffer {
                         gl.delete_framebuffer(framebuffer);
@@ -848,6 +874,7 @@ impl OpenGlRhiDevice {
         // 删除 sampler 资源。
         for slot in self.samplers.iter_mut().rev() {
             if let Some(sampler) = slot.take() {
+                // SAFETY: sampler 刚被取出、仍存活且此后不再引用；释放期间 context 保持 current。
                 unsafe {
                     gl.delete_sampler(sampler.native);
                 }
@@ -856,11 +883,13 @@ impl OpenGlRhiDevice {
         // 删除 buffer 资源和共享 VAO。
         for slot in self.buffers.iter_mut().rev() {
             if let Some(buffer) = slot.take() {
+                // SAFETY: buffer 刚被取出、仍存活且此后不再引用；释放期间 context 保持 current。
                 unsafe {
                     gl.delete_buffer(buffer.native);
                 }
             }
         }
+        // SAFETY: vao 为本设备创建、仍存活且此后不再引用；释放期间 context 保持 current。
         unsafe {
             gl.delete_vertex_array(self.vao);
         }

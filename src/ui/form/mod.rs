@@ -5,7 +5,7 @@
 //! form Module 消费 widgets（Input / Select / 日期选择等）与 view DSL，
 //! 是 ui System 的叶子 Module；不依赖兄弟 Module 的私有实现。
 
-pub mod form;
+pub(crate) mod form;
 pub mod form_binding;
 pub mod form_list;
 pub mod form_validation;
