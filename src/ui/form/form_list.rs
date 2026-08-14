@@ -12,6 +12,7 @@ use crate::ui::form::{Form, FormBuilder, FormField, FormModel, IntoFormValue, Va
 pub struct FormListItemId(u64);
 
 impl FormListItemId {
+    /// 返回此行身份的原始整数值。
     pub const fn get(self) -> u64 {
         self.0
     }
@@ -20,6 +21,7 @@ impl FormListItemId {
 /// 动态表单结构变更失败。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormListError {
+    /// 无法再为新行分配不重复的整数身份。
     ItemIdExhausted,
 }
 
@@ -43,18 +45,22 @@ pub struct FormListFieldError {
 }
 
 impl FormListFieldError {
+    /// 返回发生错误的稳定行身份。
     pub fn item_id(&self) -> FormListItemId {
         self.item_id
     }
 
+    /// 返回发生错误的行在本次校验中的顺序索引。
     pub fn item_index(&self) -> usize {
         self.item_index
     }
 
+    /// 返回未通过校验的字段名称。
     pub fn field(&self) -> &str {
         &self.field
     }
 
+    /// 返回字段校验错误消息。
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -82,20 +88,24 @@ pub struct FormListValues {
 }
 
 impl FormListValues {
+    /// 按稳定行身份获取该行校验后的字段值。
     pub fn get(&self, item_id: FormListItemId) -> Option<&Values> {
         self.items
             .iter()
             .find_map(|(id, values)| (*id == item_id).then_some(values))
     }
 
+    /// 按当前行顺序获取稳定身份和校验后的字段值。
     pub fn item(&self, index: usize) -> Option<(FormListItemId, &Values)> {
         self.items.get(index).map(|(id, values)| (*id, values))
     }
 
+    /// 返回已校验行的数量。
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
+    /// 返回是否没有已校验的行。
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
@@ -107,6 +117,7 @@ pub struct FormListFields {
 }
 
 impl FormListFields {
+    /// 从给定名称和标签开始声明列表中每行的首个字段。
     pub fn field(self, name: impl Into<String>, label: impl Into<String>) -> FormBuilder {
         FormBuilder::new(self.layout, name, label)
     }
@@ -129,6 +140,7 @@ impl FormListBuilder {
         }
     }
 
+    /// 构建不含数据行的动态表单模型。
     pub fn build(self) -> FormListModel {
         FormListModel {
             name: self.name,
@@ -157,10 +169,12 @@ pub struct FormListModel {
 }
 
 impl FormListModel {
+    /// 返回列表在所属表单中的名称。
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// 返回每行复用的表单布局声明。
     pub fn layout(&self) -> &Form {
         &self.layout
     }
@@ -190,6 +204,7 @@ impl FormListModel {
         Some(removed)
     }
 
+    /// 删除所有数据行，并在列表非空时发布结构变更。
     pub fn clear(&mut self) {
         if self.items.is_empty() {
             return;
@@ -218,18 +233,22 @@ impl FormListModel {
             .collect()
     }
 
+    /// 为稳定行身份生成限定在此表单列表内的 View key。
     pub fn item_key(&self, item_id: FormListItemId) -> String {
         format!("form-list:{}:{}", self.name, item_id.get())
     }
 
+    /// 返回当前数据行数量。
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
+    /// 返回当前是否没有数据行。
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
+    /// 更新指定行的字段值；行或字段不存在时返回 `false`。
     pub fn set_value<V: IntoFormValue>(
         &mut self,
         item_id: FormListItemId,
@@ -242,6 +261,7 @@ impl FormListModel {
             .is_some_and(|item| item.model.set_value(field, value))
     }
 
+    /// 通知指定行的字段失焦；行或字段不存在时返回 `false`。
     pub fn blur(&mut self, item_id: FormListItemId, field: &str) -> bool {
         self.items
             .iter_mut()
