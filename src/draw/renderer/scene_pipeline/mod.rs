@@ -6,7 +6,7 @@ use crate::core::DirtyRegion;
 
 use crate::draw::backend::DamageRegion;
 use crate::draw::debug::DebugRenderService;
-use crate::draw::painting::{recorder::CommandRecorder, EncodedFrameExecution, FrameImage};
+use crate::draw::painting::{EncodedFrameExecution, FrameImage, recorder::CommandRecorder};
 use crate::draw::renderer::{InvalidationSource, RenderMetrics};
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::font::text::TextRenderService;
@@ -55,6 +55,8 @@ pub struct ScenePipeline {
     /// real surface already contains overlay pixels and can no longer become a
     /// clean backdrop. Wait for every overlay to leave before capturing again.
     overlay_backdrop_blocked: bool,
+    /// 上一帧已经应用或明确降级的 typed overlay effect 计划。
+    overlay_backdrop_effect: Option<crate::draw::OverlayBackdropEffect>,
     /// Prevents Picture handles created by one raster owner from being reused
     /// after bounded recovery switches the live engine.
     raster_pipeline: Option<RasterPipeline>,

@@ -123,6 +123,8 @@ impl GpuBackend {
             rhi_surface_frame_pending_present: false,
             // 启动时尚未捕获 overlay 干净背景。
             rhi_overlay_backdrop_texture: None,
+            // 启动时不存在派生的 overlay effect 纹理。
+            rhi_overlay_backdrop_effect_texture: None,
             // 没有 backdrop texture 时不存在对应 surface 代际。
             rhi_overlay_backdrop_token: None,
             surface: NativeGpuDrawSurface {

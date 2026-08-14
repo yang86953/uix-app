@@ -98,6 +98,11 @@ pub trait ISpacingTokens: Send + Sync {
     fn control_height_lg(&self) -> f32 {
         40.0
     }
+    /// overlay backdrop blur 的默认逻辑像素半径。
+    fn backdrop_blur_radius(&self) -> f32 {
+        // 产品默认值由 #805 决策固定为 8 逻辑像素。
+        8.0
+    }
     fn motion_duration_fast(&self) -> f32 {
         0.1
     }

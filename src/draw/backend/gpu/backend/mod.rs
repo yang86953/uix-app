@@ -80,6 +80,8 @@ pub struct GpuBackend {
     pub(crate) rhi_surface_frame_pending_present: bool,
     /// 保存 overlay 干净背景的通用 RHI 纹理。
     pub(crate) rhi_overlay_backdrop_texture: Option<TextureHandle>,
+    /// 保存从干净背景复制并应用当前 blur 策略的 RHI 纹理。
+    pub(crate) rhi_overlay_backdrop_effect_texture: Option<TextureHandle>,
     /// 记录 overlay 背景纹理所属的 surface generation 和 extent。
     pub(crate) rhi_overlay_backdrop_token: Option<crate::native::present::rhi::SurfaceToken>,
 }

@@ -21,6 +21,8 @@ const ROOT_NODE: NodeId = ComponentId::new(1);
 enum BackdropFailurePoint {
     // 快照资源事务返回设备丢失。
     Snapshot,
+    // 模糊派生事务返回设备丢失。
+    Blur,
     // 恢复复制事务返回表面丢失。
     Restore,
     // 显式释放事务返回资源不足。
@@ -37,6 +39,10 @@ struct FailingBackdropTarget {
     end_calls: usize,
     // 提供完全无副作用的 Canvas2D 实现。
     canvas: NoopCanvas2D,
+    // 记录成功 snapshot 后存在的测试 backdrop owner。
+    has_backdrop: bool,
+    // 记录 blur 调用的逻辑区域与半径。
+    blur_calls: Vec<(Rect, f32)>,
 }
 
 // 提供紧凑、确定的测试 target 构造入口。
@@ -53,6 +59,10 @@ impl FailingBackdropTarget {
             end_calls: 0,
             // 无操作画布不持有原生资源。
             canvas: NoopCanvas2D,
+            // Restore 用例从已登记 owner 开始，其余用例等待 snapshot。
+            has_backdrop: failure_point == BackdropFailurePoint::Restore,
+            // 尚未执行任何 blur。
+            blur_calls: Vec::new(),
         }
     }
 }
@@ -117,7 +127,33 @@ impl RenderTarget for FailingBackdropTarget {
                 "test overlay backdrop snapshot device lost",
             ));
         }
-        // 其余用例无需创建真实纹理。
+        // 其余用例登记一个可供 blur/restore 查询的测试 owner。
+        self.has_backdrop = true;
+        // 向场景管线报告快照成功。
+        Ok(true)
+    }
+
+    // 测试 target 显式声明真实 blur 能力，允许场景管线进入事务。
+    fn supports_backdrop_blur(&self) -> bool {
+        // 本 mock 用调用记录模拟通用 RHI renderer。
+        true
+    }
+
+    // 记录 typed effect 传播，并在指定用例注入设备丢失。
+    fn blur_overlay_backdrop(&mut self, region: Rect, radius: f32) -> Result<bool, Error> {
+        // 保存 ScenePipeline 实际下发的稳定值。
+        self.blur_calls.push((region, radius));
+        // 只在选定边界返回 typed failure。
+        if self.failure_point == BackdropFailurePoint::Blur {
+            // 使用生产恢复器识别的设备丢失分类。
+            return Err(Error::new(
+                // 保持与真实 RHI submit failure 相同的错误码。
+                Errc::GraphicsDeviceLost,
+                // 提供可定位的测试诊断。
+                "test overlay backdrop blur device lost",
+            ));
+        }
+        // 其余用例报告事务真实执行。
         Ok(true)
     }
 
@@ -149,14 +185,19 @@ impl RenderTarget for FailingBackdropTarget {
                 "test overlay backdrop release resource failure",
             ));
         }
+        // Restore 故障用例保留既有模拟 owner，以精确进入恢复失败边界。
+        if self.failure_point != BackdropFailurePoint::Restore {
+            // 其余用例按真实 release 清除 owner。
+            self.has_backdrop = false;
+        }
         // 其余用例保持释放成功。
         Ok(())
     }
 
     // 恢复用例模拟已经登记的同代 backdrop owner。
     fn has_overlay_backdrop(&self) -> bool {
-        // 只有恢复用例需要绕过快照并进入 restore。
-        self.failure_point == BackdropFailurePoint::Restore
+        // 返回 snapshot/release 更新后的 owner 事实。
+        self.has_backdrop
     }
 }
 
@@ -164,6 +205,8 @@ impl RenderTarget for FailingBackdropTarget {
 struct StubScene {
     // 空根用于验证浮层离场 release，非空根用于 snapshot/restore。
     root: Option<NodeId>,
+    // 保存当前帧已经解析的 typed effect。
+    effect: Option<crate::draw::OverlayBackdropEffect>,
 }
 
 // 实现最小 ScenePaint，确保测试只观察 backdrop 生命周期。
@@ -220,6 +263,12 @@ impl ScenePaint for StubScene {
     fn node_is_overlay(&self, _id: NodeId) -> bool {
         // 仅存在于 snapshot/restore 用例的根就是浮层。
         self.root.is_some()
+    }
+
+    // 向 ScenePipeline 提供当前帧唯一 effect 计划。
+    fn overlay_backdrop_effect(&self) -> Option<crate::draw::OverlayBackdropEffect> {
+        // Copy 值避免测试场景引入共享可变状态。
+        self.effect
     }
 
     // 测试不使用子树裁剪。
@@ -310,7 +359,12 @@ fn overlay_backdrop_release_failure_stops_before_begin_frame() {
     // 创建只在 release 边界失败的 target。
     let mut target = FailingBackdropTarget::new(BackdropFailurePoint::Release);
     // 空根表示所有 overlay 已离场。
-    let scene = StubScene { root: None };
+    let scene = StubScene {
+        // 空根表示所有 overlay 已离场。
+        root: None,
+        // 离场场景没有效果请求。
+        effect: None,
+    };
     // 全帧 dirty 确保若错误被吞掉就会进入 begin_frame。
     let dirty = DirtyRegion::full();
     // 创建无需加载真实字体的服务。
@@ -348,6 +402,8 @@ fn overlay_backdrop_snapshot_device_lost_reaches_frame_failure() {
     let scene = StubScene {
         // 使用固定 overlay 根节点。
         root: Some(ROOT_NODE),
+        // 快照失败用例不需要额外效果。
+        effect: None,
     };
     // 全帧 dirty 允许后续帧动作具备可观察性。
     let dirty = DirtyRegion::full();
@@ -386,6 +442,8 @@ fn overlay_backdrop_restore_surface_lost_stops_before_end_frame() {
     let scene = StubScene {
         // 使用固定 overlay 根节点。
         root: Some(ROOT_NODE),
+        // 恢复失败用例不需要额外效果。
+        effect: None,
     };
     // 全帧 dirty 使 overlay backdrop 具备恢复资格。
     let dirty = DirtyRegion::full();
@@ -412,5 +470,56 @@ fn overlay_backdrop_restore_surface_lost_stops_before_end_frame() {
     // restore 位于 begin_frame 之后，因此应恰好开始一次帧。
     assert_eq!(target.begin_calls, 1);
     // restore 失败后不得进入 end_frame 或 present。
+    assert_eq!(target.end_calls, 0);
+}
+
+// 验证 UI typed effect 会在 begin_frame 前驱动唯一 blur，且失败不会被 mask fallback 吞掉。
+#[test]
+fn overlay_backdrop_blur_failure_stops_before_begin_frame() {
+    // 创建只在 blur 边界失败的 target。
+    let mut target = FailingBackdropTarget::new(BackdropFailurePoint::Blur);
+    // 创建有效逻辑区域与半径。
+    let effect = crate::draw::OverlayBackdropEffect::new(
+        // 使用非原点区域证明值按原样传播。
+        Rect::new(2.0, 3.0, 40.0, 24.0),
+        // 使用非默认半径证明显式值不会被替换。
+        9.0,
+    )
+    // 测试输入必须满足 typed 契约。
+    .expect("test backdrop effect should be valid");
+    // 非空 overlay 根请求真实 blur。
+    let scene = StubScene {
+        // 使用固定 overlay 根节点。
+        root: Some(ROOT_NODE),
+        // 下发已经解析的唯一计划。
+        effect: Some(effect),
+    };
+    // 全帧 dirty 保持失败前置边界可观察。
+    let dirty = DirtyRegion::full();
+    // 创建无需真实字体的服务。
+    let fonts = FontService::new();
+    // 创建无需真实图片的服务。
+    let images = ImageService::new();
+    // 执行 snapshot→blur 前置事务。
+    let output = ScenePipeline::new().render_frame(
+        // 传入故障 target。
+        &mut target,
+        // 传入带 typed effect 的 overlay 场景。
+        &scene,
+        // 传入共享帧参数。
+        frame_input(&dirty, &fonts, &images),
+    );
+    // blur 的设备丢失必须抵达恢复层分类。
+    assert!(matches!(
+        // 检查最终失败结果。
+        output.outcome,
+        // 不允许静默降级并继续 present。
+        RenderOutcome::Failed(GraphicsFailure::DeviceLost(_))
+    ));
+    // snapshot 后只能下发一次聚合 blur。
+    assert_eq!(target.blur_calls, vec![(effect.region(), effect.radius())]);
+    // 前置 blur 失败后不得 acquire/begin 新帧。
+    assert_eq!(target.begin_calls, 0);
+    // 更不得结束或呈现失败帧。
     assert_eq!(target.end_calls, 0);
 }

@@ -10,6 +10,8 @@ impl ScenePipeline {
             recording_extent: None,
             overlay_backdrop: None,
             overlay_backdrop_blocked: false,
+            // 初始没有 overlay effect 计划。
+            overlay_backdrop_effect: None,
             raster_pipeline: None,
         }
     }
@@ -53,6 +55,10 @@ impl ScenePipeline {
         let has_overlay = scene
             .root_id()
             .is_some_and(|root| Self::scene_has_overlay(scene, root));
+        // UI 已把 Theme、区域策略与多 overlay 聚合为单一 typed 计划。
+        let requested_backdrop_effect = scene.overlay_backdrop_effect();
+        // 策略、半径或逻辑区域任一变化都属于 effect 失效。
+        let backdrop_effect_changed = self.overlay_backdrop_effect != requested_backdrop_effect;
         if !has_overlay {
             self.overlay_backdrop = None;
             // 浮层离场时的资源释放失败必须在任何新帧动作前进入恢复路径。
@@ -61,8 +67,14 @@ impl ScenePipeline {
                 return Self::failed_backdrop_frame(error, cur_version);
             }
             self.overlay_backdrop_blocked = false;
+            // 浮层离场同时清除已解析计划。
+            self.overlay_backdrop_effect = None;
         }
-        if input.rendered_first && input.dirty_region.is_empty() && input.scroll_move.is_none() {
+        if input.rendered_first
+            && input.dirty_region.is_empty()
+            && input.scroll_move.is_none()
+            && !backdrop_effect_changed
+        {
             return FrameRenderOutput {
                 outcome: RenderOutcome::Idle,
                 inv_source: InvalidationSource::None,
@@ -74,6 +86,19 @@ impl ScenePipeline {
         let scroll_moves = input.scroll_move.as_deref().unwrap_or_default();
         // 即使上游只交付 scroll 参数，也由帧边界补齐 exposed strip；调用方仍零维护。
         let mut dirty_for_paint = input.dirty_region.clone();
+        // effect 变化必须把旧、新逻辑区域同时送入区域失效。
+        if backdrop_effect_changed {
+            // 旧区域需要清除上一策略的像素影响。
+            if let Some(effect) = self.overlay_backdrop_effect {
+                // DirtyRegion 负责后续合并与裁剪。
+                dirty_for_paint.add_rect(effect.region());
+            }
+            // 新区域需要绘制新的 backdrop 结果。
+            if let Some(effect) = requested_backdrop_effect {
+                // DPR 只由 backend blur boundary 应用一次。
+                dirty_for_paint.add_rect(effect.region());
+            }
+        }
         for &(viewport, dx, dy) in scroll_moves {
             if let Some(exposed) = scroll_exposed_rect(viewport, dx, dy) {
                 dirty_for_paint.add_rect(exposed);
@@ -110,6 +135,19 @@ impl ScenePipeline {
                     region.add_rect(viewport);
                 }
             }
+            // present damage 同样包含旧、新 effect 区域。
+            if backdrop_effect_changed {
+                // 清除旧策略影响。
+                if let Some(effect) = self.overlay_backdrop_effect {
+                    // 记录旧逻辑区域。
+                    region.add_rect(effect.region());
+                }
+                // 呈现新策略结果。
+                if let Some(effect) = requested_backdrop_effect {
+                    // 记录新逻辑区域。
+                    region.add_rect(effect.region());
+                }
+            }
             region
         };
 
@@ -130,6 +168,36 @@ impl ScenePipeline {
             }
             self.overlay_backdrop_blocked = true;
         } else if has_overlay
+            && backdrop_effect_changed
+            && engine.has_overlay_backdrop()
+            && !self.overlay_backdrop_blocked
+        {
+            // 已有独立干净快照时，策略变化只重新派生 effect，不重复快照。
+            let blur_request = if engine.supports_backdrop_blur() {
+                // Some 应用新效果；None 以 0 半径释放派生效果。
+                requested_backdrop_effect
+                    // 新请求直接携带区域与半径。
+                    .map(|effect| (effect.region(), effect.radius()))
+                    // 离场开始或关闭效果时复用旧区域发出 reset 事务。
+                    .or_else(|| {
+                        self.overlay_backdrop_effect
+                            .map(|effect| (effect.region(), 0.0))
+                    })
+            } else {
+                // 能力丢失时也必须清除旧派生结果，显式降级为 mask-only。
+                self.overlay_backdrop_effect
+                    // 仅在过去确实有 blur 时发送 reset。
+                    .map(|effect| (effect.region(), 0.0))
+            };
+            // 无旧、新 effect 时不触碰底层资源。
+            if let Some((region, radius)) = blur_request {
+                // typed failure 必须中止当前帧，不能伪装为 fallback 成功。
+                if let Err(error) = engine.blur_overlay_backdrop(region, radius) {
+                    // 保留 dirty 状态，交给有界 recovery。
+                    return Self::failed_backdrop_frame(error, cur_version);
+                }
+            }
+        } else if has_overlay
             && self.overlay_backdrop.is_none()
             && !engine.has_overlay_backdrop()
             && !self.overlay_backdrop_blocked
@@ -147,6 +215,24 @@ impl ScenePipeline {
                         // 快照失败后不允许继续 begin_frame 或绘制浮层。
                         return Self::failed_backdrop_frame(error, cur_version);
                     }
+                    // 真实 GPU 能力存在时，在独立干净快照上应用唯一效果计划。
+                    if engine.has_overlay_backdrop() && engine.supports_backdrop_blur() {
+                        // 默认关闭时不创建派生纹理。
+                        if let Some(effect) = requested_backdrop_effect {
+                            // blur 只执行 device submit，不重复 acquire/present。
+                            match engine.blur_overlay_backdrop(effect.region(), effect.radius()) {
+                                // 已执行后继续 overlay 帧。
+                                Ok(true) => {}
+                                // 能力在事务间失效时明确降级为 mask-only。
+                                Ok(false) => {}
+                                // 真实资源或提交失败进入 typed recovery。
+                                Err(error) => {
+                                    // 失败后禁止 begin_frame、paint 与 present。
+                                    return Self::failed_backdrop_frame(error, cur_version);
+                                }
+                            }
+                        }
+                    }
                 }
                 self.overlay_backdrop_blocked =
                     self.overlay_backdrop.is_none() && !engine.has_overlay_backdrop();
@@ -154,6 +240,8 @@ impl ScenePipeline {
                 self.overlay_backdrop_blocked = true;
             }
         }
+        // 只有同步/降级事务未失败时才消费本帧请求计划。
+        self.overlay_backdrop_effect = requested_backdrop_effect;
         let requested_present_damage = compute_present_damage(
             &dirty_with_scroll,
             input.dirty_region.full_frame,

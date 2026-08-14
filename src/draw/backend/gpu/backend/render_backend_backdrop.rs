@@ -201,8 +201,36 @@ pub(super) fn restore_rhi_overlay_backdrop(
 
 // 为 GpuBackend 提供 backdrop owner 生命周期。
 impl GpuBackend {
+    // 检查式销毁当前派生 effect texture；失败时恢复 owner 状态供重试。
+    fn destroy_rhi_overlay_backdrop_effect_texture(&mut self) -> Result<(), Error> {
+        // 没有派生纹理时保持幂等成功。
+        let Some(texture) = self.rhi_overlay_backdrop_effect_texture.take() else {
+            // 不触碰独立的干净 backdrop owner。
+            return Ok(());
+        };
+        // 资源必须由创建它的组合 RHI context 检查式销毁。
+        let result = self
+            // 取得当前 owner context。
+            .gpu_ctx
+            // 只借用一次底层资源表。
+            .rhi_context()
+            // 由 adapter 执行底层 texture 释放。
+            .and_then(|context| context.destroy_texture(texture));
+        // 销毁失败时恢复派生 owner，供 recovery 或 shutdown 重试。
+        if let Err(error) = result {
+            // 保留真实资源身份。
+            self.rhi_overlay_backdrop_effect_texture = Some(texture);
+            // 传播 owner-thread typed failure。
+            return Err(error);
+        }
+        // 派生 effect 已完整释放。
+        Ok(())
+    }
+
     // 检查式销毁当前 backdrop texture；失败时恢复 owner 状态供重试。
     pub(super) fn destroy_rhi_overlay_backdrop_texture(&mut self) -> Result<(), Error> {
+        // 派生纹理依赖干净源，必须先检查式释放。
+        self.destroy_rhi_overlay_backdrop_effect_texture()?;
         // 没有纹理时只清理不可能独立存在的代际标记。
         let Some(texture) = self.rhi_overlay_backdrop_texture.take() else {
             // 空 owner 不应保留陈旧 token。
@@ -305,6 +333,8 @@ impl GpuBackend {
             // 交由上层重新捕获干净背景。
             return Ok(false);
         }
+        // 每次策略、半径或区域变化都从独立干净源重新派生。
+        self.destroy_rhi_overlay_backdrop_effect_texture()?;
         // 非有限或负半径是调用契约错误，不能静默伪装成功。
         if !radius.is_finite() || radius < 0.0 {
             // 返回稳定 typed 参数错误。
@@ -317,8 +347,13 @@ impl GpuBackend {
         }
         // 小于半像素的半径按现有 blur 语义保持无资源 no-op。
         if radius < 0.5 {
-            // owner 有效且请求无需改写，报告事务已处理。
+            // 清除派生效果后恢复到纯净背景，供离场开始或显式关闭使用。
             return Ok(true);
+        }
+        // 缺失通用 renderer 时明确报告不支持，调用方保持 mask-only 降级。
+        if self.rhi_renderer.is_none() {
+            // 不创建任何派生资源，也不伪装 blur 成功。
+            return Ok(false);
         }
         // 从与 recipe owner 同一原子 surface 快照读取 DPR。
         let device_pixel_ratio = super::device_pixel_ratio_from_surface(
@@ -336,46 +371,67 @@ impl GpuBackend {
         );
         // 无帧多阶段事务也必须先执行 device maintenance。
         self.prepare_rhi_device()?;
-        // 分开借用组合 context 与通用 renderer cache。
-        let (gpu_ctx, rhi_renderer) = (&mut self.gpu_ctx, &mut self.rhi_renderer);
-        // 缺失 renderer cache 时禁止走平台专属效果路径。
-        let Some(renderer) = rhi_renderer.as_mut() else {
-            // 返回稳定的迁移期未实现错误。
-            return Err(Error::new(
-                // 能力未装配归类为未实现。
-                Errc::NotImplemented,
-                // 诊断明确要求通用 renderer owner。
-                "overlay backdrop blur requires the RHI renderer cache",
-            ));
+        // 在一次不重叠的字段借用中完成干净复制与 blur，避免产生第二资源 owner。
+        let (effect, blur_result) = {
+            // 分开借用组合 context 与通用 renderer cache。
+            let (gpu_ctx, rhi_renderer) = (&mut self.gpu_ctx, &mut self.rhi_renderer);
+            // 前置能力查询已证明 renderer cache 存在。
+            let Some(renderer) = rhi_renderer.as_mut() else {
+                // 防御性状态缺口明确降级，且尚未创建派生资源。
+                return Ok(false);
+            };
+            // 只有构造期验证的组合 RHI context 可以执行计划。
+            let context = gpu_ctx.rhi_context()?;
+            // native surface 代际必须仍与快照一致。
+            if context.token() != backdrop_token {
+                // 迟到事务不触碰重建后的资源表。
+                return Ok(false);
+            }
+            // 从干净源创建独立派生纹理，保证策略变化不会重复模糊旧结果。
+            let effect = create_rhi_overlay_backdrop(
+                // 使用同一 owner-thread device。
+                context,
+                // 每次都从未模糊的 clean backdrop 复制。
+                backdrop,
+                // 派生纹理保持同代同尺寸。
+                backdrop_token.extent,
+            )?;
+            // 复用通用 renderer 的 backdrop 原位双 pass 入口。
+            let blur_result = renderer.execute_overlay_backdrop_blur(
+                // 传入 owner-thread context。
+                context,
+                // 派生纹理同时作为 blur source 和最终 target。
+                effect,
+                // 使用登记代际的物理 extent。
+                backdrop_token.extent,
+                // 使用已经完成 DPR lowering 的 scissor。
+                physical_region,
+                // 保留调用方半径。
+                radius,
+            );
+            // 把资源身份和 typed 结果一起交回 owner 登记边界。
+            (effect, blur_result)
         };
-        // 只有构造期验证的组合 RHI context 可以执行计划。
-        let context = gpu_ctx.rhi_context()?;
-        // native surface 代际也必须仍与快照一致。
-        if context.token() != backdrop_token {
-            // 迟到事务不触碰重建后的资源表。
-            return Ok(false);
+        // 先登记派生 owner，确保成功与失败清理都走同一 checked 边界。
+        self.rhi_overlay_backdrop_effect_texture = Some(effect);
+        // blur 失败时必须回收派生纹理，并保留原始 typed failure。
+        if let Err(error) = blur_result {
+            // 清理失败时把原始 blur 错误挂入 source 链。
+            return match self.destroy_rhi_overlay_backdrop_effect_texture() {
+                // 清理成功则返回原始事务错误。
+                Ok(()) => Err(error),
+                // 清理失败优先报告资源 owner 失败，并保留 blur 原因。
+                Err(cleanup_error) => Err(cleanup_error.with_source(error)),
+            };
         }
-        // 复用通用 renderer 的 backdrop 原位双 pass 入口。
-        renderer.execute_overlay_backdrop_blur(
-            // 传入 owner-thread context。
-            context,
-            // backdrop 同时作为 source 和最终 target。
-            backdrop,
-            // 使用登记代际的物理 extent。
-            backdrop_token.extent,
-            // 使用已经完成 DPR lowering 的 scissor。
-            physical_region,
-            // 保留调用方半径。
-            radius,
-        )?;
-        // 事务完整提交且 scratch 已清理。
+        // 事务完整提交且派生 owner 已登记。
         Ok(true)
     }
 
     // 将已验证同代的干净背景恢复到 retained surface。
     pub(super) fn restore_overlay_backdrop_impl(&mut self) -> Result<bool, Error> {
         // 同时读取快照、retained target 与二者的代际。
-        let (Some(backdrop), Some(backdrop_token), Some(retained), Some(surface_token)) = (
+        let (Some(clean_backdrop), Some(backdrop_token), Some(retained), Some(surface_token)) = (
             self.rhi_overlay_backdrop_texture,
             self.rhi_overlay_backdrop_token,
             self.rhi_surface_texture,
@@ -384,6 +440,12 @@ impl GpuBackend {
             // 任一 owner 缺失都不能伪造恢复成功。
             return Ok(false);
         };
+        // 有效派生纹理优先恢复；否则恢复未经模糊的干净背景。
+        let backdrop = self
+            // 读取当前策略生成的 effect owner。
+            .rhi_overlay_backdrop_effect_texture
+            // mask-only 或未支持路径使用干净源。
+            .unwrap_or(clean_backdrop);
         // backdrop 只能写回创建它的同代同尺寸 retained surface。
         if backdrop_token != surface_token {
             // resize 或 recovery 后交由场景整树重绘。

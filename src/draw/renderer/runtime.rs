@@ -516,6 +516,12 @@ impl RenderTarget for Renderer {
         Some((cpu.pixels().to_vec(), cpu.width()))
     }
 
+    // 把公开能力查询转发到当前唯一 backend owner。
+    fn supports_backdrop_blur(&self) -> bool {
+        // PixelUpload/CPU backend 会通过默认实现明确返回 false。
+        self.session.backend().supports_backdrop_blur()
+    }
+
     fn snapshot_overlay_backdrop(&mut self) -> Result<bool, Error> {
         self.session.backend_mut().snapshot_overlay_backdrop()
     }

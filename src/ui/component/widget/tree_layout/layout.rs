@@ -351,6 +351,8 @@ impl WidgetTree {
                     entry.is_modal(),
                     entry.dismisses_on_outside(),
                     entry.traps_focus(),
+                    // backdrop 请求属于 overlay 拓扑与效果失效事实。
+                    entry.backdrop_blur_value(),
                 )
             })
             .collect();
@@ -395,6 +397,8 @@ impl WidgetTree {
                     entry.is_modal(),
                     entry.dismisses_on_outside(),
                     entry.traps_focus(),
+                    // 请求变化必须触发同帧 effect 重解析与合成失效。
+                    entry.backdrop_blur_value(),
                 )
             }));
 
@@ -640,7 +644,9 @@ impl WidgetTree {
                 } else if has_resized_child {
                     tracing::debug!(
                         "[Layout] Phase 2: id={} re-layout siblings (child resized, frame=({:.0},{:.0}))",
-                        id, node_frame.w, node_frame.h,
+                        id,
+                        node_frame.w,
+                        node_frame.h,
                     );
                 }
                 // 重新布局子节点（容器扩展后 or 子节点被扩展过）。

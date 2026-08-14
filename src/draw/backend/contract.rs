@@ -342,6 +342,12 @@ pub trait RenderBackend {
         ))
     }
 
+    /// 查询当前 backend 是否具备真实 overlay backdrop blur 事务。
+    fn supports_backdrop_blur(&self) -> bool {
+        // 普通 backend 默认显式降级为 mask-only。
+        false
+    }
+
     /// 捕获保留主色缓冲为 overlay 干净背景；资源失败保持 typed error。
     fn snapshot_overlay_backdrop(&mut self) -> Result<bool, Error> {
         Ok(false)

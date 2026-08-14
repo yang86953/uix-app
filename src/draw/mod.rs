@@ -63,12 +63,12 @@ pub mod target;
 
 pub use crate::core::{DamageRegion, DirtyRegion};
 pub use backend::{BackendCapabilities, BackendKind, RenderBackend};
-pub use geometry::color::{colors, Color};
+pub use geometry::color::{Color, colors};
 pub use geometry::path::{FillRule, LineCap, LineJoin, Path, PathBuilder, PathSegment};
 pub use geometry::spatial::unit::AngleExt;
 pub use geometry::spatial::{
-    IntoAABB3D, Mat4, Orientation, PhysicalBox, PhysicalUnit, PhysicalUnitExt, Quad2D, Ray3D,
-    SpatialContext, Vec2, Vec3, Vec4, AABB3D,
+    AABB3D, IntoAABB3D, Mat4, Orientation, PhysicalBox, PhysicalUnit, PhysicalUnitExt, Quad2D,
+    Ray3D, SpatialContext, Vec2, Vec3, Vec4,
 };
 pub use geometry::stroker::StrokeOptions;
 pub use geometry::types::{
@@ -91,4 +91,5 @@ pub use resources::{
     BitmapFont, BitmapHandle, FontService, GlyphRaster, ImageService, ImageSlot, LineInfo,
     LineMetrics, PositionedGlyph, TextLayout,
 };
-pub use scene::NodeId;
+// 导出公开的场景节点身份与已解析 overlay effect 值。
+pub use scene::{NodeId, OverlayBackdropEffect};

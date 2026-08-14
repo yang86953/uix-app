@@ -245,6 +245,8 @@ fn design_tokens_defaults(is_dark: bool) -> DesignTokens {
         control_height_sm: 24.0,
         control_height: 32.0,
         control_height_lg: 40.0,
+        // #805 决策规定的默认 overlay backdrop blur 半径。
+        backdrop_blur_radius: 8.0,
         box_shadow: crate::ui::theme::color_tokens::ShadowToken {
             layer_1: (0.0, 2.0, 8.0, Color::from_rgba(0, 0, 0, 24)),
             layer_2: (0.0, 4.0, 16.0, Color::from_rgba(0, 0, 0, 20)),
