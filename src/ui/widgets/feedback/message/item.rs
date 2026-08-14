@@ -21,6 +21,15 @@ pub struct MessageHandle {
 }
 
 impl MessageHandle {
+    /// 创建独立消息队列句柄，所有权由窗口反馈状态接管。
+    pub(crate) fn new() -> Self {
+        // 每个窗口只创建一次队列，克隆句柄仍指向同一状态。
+        Self {
+            // 使用反馈模块现有的稳定 ID 队列实现。
+            queue: ToastQueue::new(),
+        }
+    }
+
     /// 添加提示并返回稳定 ID。
     pub fn add(&self, item: MessageItem) -> u64 {
         let duration_ms = item.duration_ms;
