@@ -2,14 +2,14 @@
 
 > **定位**：UIX Lang 是 UIX 框架的 UI 描述语言，也是**使用方编写界面的推荐方式（产品方向声明）**——写应用时用 uix-lang 描述界面结构与样式，编译时 uix-app 框架自动将 `.uix` 文档转换为 Rust 声明式代码（过程宏 / 构建期转换），运行期零解释器开销。本文档是语言规范的唯一当前位置。
 >
-> **状态声明**：本规范包含**已实现能力与目标设计**。界面描述支持两种方式（见[定位与原则](../产品/定位与原则.md#定位)）：uix-lang 为**推荐方式**，Rust 声明式 API 为**支持方式**。公开 `uix!` 已支持内嵌源码与相对调用 crate 的 `.uix` 文件，并在编译期生成 `ViewNode`；当前已登记 `Text`、`Label`、`Button`、`ButtonGroup`、`FloatButton`、`Icon`、`Divider`、`Space`、`Typography`、`ThemeToggle`、`WindowControl`、`WindowDragRegion`、`Container`、`Row`、`Column`、`Grid`、`ScrollView`、`VirtualScroll`、`Splitter`、`Affix`、`BackTop`、`Layout`、`Sider`、`Header`、`Content`、`Footer`、`Input`、`InputNumber`、`InputGroup`、`Slider`、`RangeSlider`、`Rate`、`Checkbox`、`Switch`、`Radio`、`Segmented`、`Select`、`Cascader`、`TreeSelect`、`AutoComplete`、`Mentions`、`DatePicker`、`DateRangePicker`、`TimePicker`、`ColorPicker`、`Avatar`、`Image`、`ImageGroup`、`List`、`Skeleton`、`Empty`、`ResultView`、`Tag`、`Card`、`Descriptions`、`Timeline`、`Calendar`、`Carousel`、`Tree`、`Steps`、`Pagination`、`Breadcrumb`、`Anchor`、`QRCode`、`Watermark`、`RichText`、`Alert`、`Modal`、`Drawer`、`Popover`、`Tooltip`、`FocusTrap`、`Spin`、`Form`、`FormInputItem`、`FormSelectItem`、`FormCheckboxItem`、`FormRadioItem`、`FormSwitchItem`、`FormSliderItem`，`Col` 作为 `Row` / `Grid` 的直接子项登记。完整 `App` 应用入口及展示、反馈、导航类未登记组件仍为规划中；转换器会对未登记或规划中能力产生带来源位置和修复建议的编译错误，不会静默降级。实现差距由 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 跟踪。
+> **状态声明**：本规范包含**已实现能力与目标设计**。界面描述支持两种方式（见[定位与原则](../产品/定位与原则.md#定位)）：uix-lang 为**推荐方式**，Rust 声明式 API 为**支持方式**。公开 `uix!` 已支持内嵌源码与相对调用 crate 的 `.uix` 文件并在编译期生成 `ViewNode`；公开 `uix_app!` 已支持 `<App>` 根的 `title` / `size` / `theme` / `settings`、同文档主题与现有 `App` builder 组装。当前已登记 `Text`、`Label`、`Button`、`ButtonGroup`、`FloatButton`、`Icon`、`Divider`、`Space`、`Typography`、`ThemeToggle`、`WindowControl`、`WindowDragRegion`、`Container`、`Row`、`Column`、`Grid`、`ScrollView`、`VirtualScroll`、`Splitter`、`Affix`、`BackTop`、`Layout`、`Sider`、`Header`、`Content`、`Footer`、`Input`、`InputNumber`、`InputGroup`、`Slider`、`RangeSlider`、`Rate`、`Checkbox`、`Switch`、`Radio`、`Segmented`、`Select`、`Cascader`、`TreeSelect`、`AutoComplete`、`Mentions`、`DatePicker`、`DateRangePicker`、`TimePicker`、`ColorPicker`、`Avatar`、`Image`、`ImageGroup`、`List`、`Skeleton`、`Empty`、`ResultView`、`Tag`、`Card`、`Descriptions`、`Timeline`、`Calendar`、`Carousel`、`Tree`、`Steps`、`Pagination`、`Breadcrumb`、`Anchor`、`QRCode`、`Watermark`、`RichText`、`Alert`、`Modal`、`Drawer`、`Popover`、`Tooltip`、`FocusTrap`、`Spin`、`Form`、`FormInputItem`、`FormSelectItem`、`FormCheckboxItem`、`FormRadioItem`、`FormSwitchItem`、`FormSliderItem`，`Col` 作为 `Row` / `Grid` 的直接子项登记。展示、反馈、导航类未登记组件仍为规划中；转换器会对未登记或规划中能力产生带来源位置和修复建议的编译错误，不会静默降级。实现差距由 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 跟踪。
 
 ## 为什么需要 UIX Lang
 
-UIX 产品原则是「Rust 优先——没有第二门运行语言」。公开 `uix!` 已是已登记 View 子集的可用编译期入口；Rust 声明式 API 继续持有应用 / 窗口生命周期和尚未登记的完整组件能力。UIX Lang 让**应用开发以 uix-lang 描述 UI 为主路径**：`.uix` 文档是应用源码的一部分，编译时由 uix-app 框架自动转换为 Rust 声明式代码，运行时不再解析界面文本。
+UIX 产品原则是「Rust 优先——没有第二门运行语言」。公开 `uix!` 生成已登记 View 子集，`uix_app!` 把 `<App>` 文档组装成现有 App builder；Rust 声明式 API 继续持有应用 / 窗口生命周期和尚未登记的完整组件能力。UIX Lang 让**应用开发以 uix-lang 描述 UI 为主路径**：`.uix` 文档是应用源码的一部分，编译时由 uix-app 框架自动转换为 Rust 声明式代码，运行时不再解析界面文本。
 
 ```text
-.uix 文档（应用源码）──uix-app 编译期转换（uix! 宏）──> Rust 声明式代码 ──cargo 编译──> 原生可执行文件
+.uix 文档（应用源码）──uix-app 编译期转换（uix! / uix_app!）──> Rust 声明式代码 ──cargo 编译──> 原生可执行文件
 ```
 
 转换发生在编译时：`.uix` 文档经 uix-app 转换器生成 Rust 声明式代码，随 crate 一起编译，运行期没有解释器、没有运行时开销。每个标签、属性、样式规则都有确定的 Rust 等价物——这是本语言与 HTML/CSS 的本质区别（无隐式盒模型差异、无浏览器历史包袱，语义与 UIX 布局引擎一一对应）。除应用开发主路径外，文本形态还服务三类场景：
@@ -54,7 +54,8 @@ UIX Lang 是 UIX Rust API 的文本投影，**转换由 uix-app 框架在编译�
 |---|---|---|
 | `<Button class="primary" @click="...">` | 编译期展开样式类后生成 `button("...").map_style(...).on_click(...)` | 已实现（限已登记属性与事件） |
 | `styleName { ... }` 样式类 | 编译期展开 `extends` 与同名属性覆盖，再精确更新 `Style` | 已实现（限已登记样式属性） |
-| `@theme light { ... }` | 主题令牌（`ThemeTokens`） | 语法解析已实现，主题生成仍为目标设计 |
+| `@theme light { ... }` | App 作用域 `Theme` / `ThemeTokens` | 已实现（`primaryColor` / `backgroundColor`） |
+| `<App title="..." size="...">` | 现有 `App` builder + 根工厂 | 已实现（由 `uix_app!` 返回，不调用 `run`） |
 | `<Component name="X">` | 编译期展开 props、state、回调与组件体 | 已实现（组件体限已登记标签） |
 | `<For {item} in {items}>` | `for` 循环生成 `ViewNode` 列表 | 已实现（须位于容器内） |
 

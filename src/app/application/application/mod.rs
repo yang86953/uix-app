@@ -12,6 +12,8 @@ use crate::app::application::app_handle::{
 };
 use crate::app::application::cli::Cli;
 use crate::app::application::di::Container;
+// 引入 App 作用域的 UIX 具名主题表。
+use crate::app::application::named_themes::NamedThemes;
 use crate::app::event_loop::run_window_session_loop_with_system_theme_and_tasks;
 use crate::app::queues::app_timer::{AppTimerQueue, TimerHandle};
 use crate::app::queues::clock::{system_clock, AppClock};
@@ -90,6 +92,8 @@ pub struct App {
     size: (i32, i32),
     custom_title_bar: bool,
     theme: Theme,
+    // 保存当前 App 的 UIX 具名主题，不与其他 App 共享可变注册表。
+    named_themes: NamedThemes,
     pub(crate) follow_system_theme: bool,
     app_state: AppState,
     pub(crate) app_timers: AppTimerQueue,
@@ -133,6 +137,8 @@ impl Default for App {
             size: (800, 600),
             custom_title_bar: false,
             theme: Theme::antd_light(),
+            // 为普通 Rust App 保留 light 与 dark 内建名称。
+            named_themes: NamedThemes::default(),
             follow_system_theme: false,
             app_state: AppState::new(),
             app_timers,
@@ -182,6 +188,27 @@ impl App {
     /// 设置主题（GUI + root 时生效）。
     pub fn theme(mut self, theme: Theme) -> Self {
         self.theme = theme;
+        self
+    }
+
+    /// 安装 UIX 编译器生成的 App 作用域主题表与初始主题。
+    #[doc(hidden)]
+    pub fn __uix_named_themes<I>(mut self, themes: I, initial: &str) -> Self
+    where
+        // 接受宏生成的静态名称与拥有所有权主题序列。
+        I: IntoIterator<Item = (&'static str, Theme)>,
+    {
+        // 文档主题按声明结果覆盖同名内建预设。
+        for (name, theme) in themes {
+            // 写入 App 私有主题表。
+            self.named_themes.insert(name.to_string(), theme);
+        }
+        // 宏已在编译期验证名称；运行期仍避免不可恢复 panic。
+        if let Some(theme) = self.named_themes.resolve(initial) {
+            // 安装初始主题。
+            self.theme = theme;
+        }
+        // 返回可继续链式配置的同一 App builder。
         self
     }
 
@@ -691,14 +718,16 @@ impl App {
         // 事件处理器按名称提交主题，由既有 runtime.set_theme 通道在下一轮
         // runtime tasks 中应用并发布 ThemeApplied。
         let theme_requester_runtime = self.runtime.clone();
+        // 克隆当前 App 的具名主题快照供事件循环请求器解析。
+        let named_themes = self.named_themes.clone();
         // 注册到当前 UI 线程的窗口循环作用域。
         crate::ui::__private::uix_install_theme_requester(Box::new(move |name: &str| {
-            // 按语言面登记名称选择公开主题预设。
-            let theme = match name {
-                // 暗色主题。
-                "dark" => Theme::antd_dark(),
-                // 其余名称回到亮色主题。
-                _ => Theme::antd_light(),
+            // 未登记名称保持当前主题，并暴露可检索诊断。
+            let Some(theme) = named_themes.resolve(name) else {
+                // 记录错误名称，不再静默回退到亮色主题。
+                tracing::warn!(theme_name = name, "uix-lang requested unknown App theme");
+                // 结束本次无效请求。
+                return;
             };
             // 通过公开 App 级主题通道提交切换。
             let _ = theme_requester_runtime.set_theme(theme);

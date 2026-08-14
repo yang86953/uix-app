@@ -1393,5 +1393,9 @@ hoverStyleAction {
   </Column>
 // 结束声明式演示组件。
 </Component>
-// 实例化文档的唯一根组件并传入窗口级持久状态句柄。
-<DemoApp page={page} count={count} tick={tick} />
+// 声明应用入口的窗口规格与内建初始主题。
+<App title="UIX Demo" size="1200x800" theme="light">
+  // 实例化唯一 View 根并传入窗口级持久状态句柄。
+  <DemoApp page={page} count={count} tick={tick} />
+// 结束应用入口。
+</App>
