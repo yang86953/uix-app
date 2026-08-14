@@ -47,7 +47,8 @@ pub(crate) const D3D11_FEATURE_LEVELS: [D3D_FEATURE_LEVEL; 4] = [
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum D3d11DriverKind {
+// D3D11 驱动种类只用于 crate 内部诊断与配方选择。
+pub(crate) enum D3d11DriverKind {
     Hardware,
     Warp,
 }
@@ -60,7 +61,8 @@ impl D3d11DriverKind {
         }
     }
 
-    pub const fn as_str(self) -> &'static str {
+    // 返回 crate 内部诊断使用的稳定驱动名称。
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Hardware => "hardware",
             Self::Warp => "warp",
@@ -69,12 +71,18 @@ impl D3d11DriverKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct D3d11AdapterInfo {
-    pub driver: D3d11DriverKind,
-    pub description: String,
-    pub vendor_id: u32,
-    pub device_id: u32,
-    pub dedicated_video_memory: u64,
+// D3D11 适配器事实只在 crate 内部图形诊断中传播。
+pub(crate) struct D3d11AdapterInfo {
+    // 保存实际创建上下文使用的驱动种类。
+    pub(crate) driver: D3d11DriverKind,
+    // 保存 DXGI 提供的适配器描述。
+    pub(crate) description: String,
+    // 保存 PCI 厂商标识。
+    pub(crate) vendor_id: u32,
+    // 保存 PCI 设备标识。
+    pub(crate) device_id: u32,
+    // 保存专用显存字节数。
+    pub(crate) dedicated_video_memory: u64,
 }
 
 impl D3d11AdapterInfo {
@@ -88,7 +96,8 @@ impl D3d11AdapterInfo {
         }
     }
 
-    pub fn diagnostic_summary(&self) -> String {
+    // 生成 crate 内部日志使用的稳定适配器摘要。
+    pub(crate) fn diagnostic_summary(&self) -> String {
         format!(
             "driver={}; adapter=\"{}\"; vendor={:#06X}; device={:#06X}; dedicated_vram_mb={}",
             self.driver.as_str(),
@@ -123,7 +132,8 @@ fn query_adapter_info(device: &ID3D11Device, driver: D3d11DriverKind) -> Result<
     })
 }
 
-pub struct D3d11Context {
+// D3D11 原生上下文只由 crate 内部图形配方拥有。
+pub(crate) struct D3d11Context {
     device: ID3D11Device,
     pub(crate) context: ID3D11DeviceContext,
     // 保存构造期冻结为 tracked 或 legacy 的唯一 swapchain owner。

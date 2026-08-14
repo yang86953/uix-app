@@ -18,7 +18,8 @@ pub(crate) mod pipeline;
 mod swapchain;
 
 #[cfg(windows)]
-pub use context::D3d11Context;
+// D3D11 上下文只在 crate 内部图形组合边界重导出。
+pub(crate) use context::D3d11Context;
 
 // 从实际创建的 DXGI swapchain 事实组装 D3D11 静态 recipe 能力。
 #[cfg(windows)]
