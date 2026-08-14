@@ -16,6 +16,7 @@ use crate::ui::component_snapshot::{
 use crate::ui::event::SemanticEvent;
 
 #[derive(Clone)]
+/// 不延长组件树或应用状态生命周期的弱组件访问句柄。
 pub struct ComponentHandle {
     id: ComponentId,
     #[cfg(test)]
@@ -46,10 +47,12 @@ impl ComponentHandle {
         }
     }
 
+    /// 返回此句柄指向的稳定组件身份。
     pub fn id(&self) -> ComponentId {
         self.id
     }
 
+    /// 返回所属运行时仍存在且组件身份仍可解析时是否为真。
     pub fn is_alive(&self) -> bool {
         #[cfg(test)]
         if let Some(tree) = self.tree.as_ref().and_then(RcWeak::upgrade) {
@@ -71,6 +74,7 @@ impl ComponentHandle {
             })
     }
 
+    /// 返回当前完整组件配置快照。
     pub fn snapshot(&self) -> Option<ComponentConfigSnapshot> {
         self.map_snapshot(Clone::clone)
     }
@@ -97,6 +101,7 @@ impl ComponentHandle {
             })
     }
 
+    /// 返回当前组件类型专属的快照字段。
     pub fn snapshot_fields(&self) -> Option<SnapshotFields> {
         self.map_snapshot_fields(Clone::clone)
     }
@@ -105,19 +110,23 @@ impl ComponentHandle {
         self.map_snapshot(|snapshot| map(&snapshot.fields))
     }
 
+    /// 返回当前组件的无障碍快照。
     pub fn accessibility(&self) -> Option<AccessibilitySnapshot> {
         self.map_snapshot(ComponentConfigSnapshot::accessibility)
     }
 
+    /// 返回当前组件解析后的 ARIA role 名称。
     pub fn aria_role(&self) -> Option<&'static str> {
         self.accessibility()?.aria_role()
     }
 
+    /// 返回当前组件解析后的 ARIA 属性集合。
     pub fn aria_attributes(&self) -> Option<Vec<AriaAttribute>> {
         self.accessibility()
             .map(|accessibility| accessibility.aria_attributes())
     }
 
+    /// 返回按钮或标签组件的显示文本。
     pub fn text(&self) -> Option<String> {
         self.map_snapshot_fields(|fields| match fields {
             SnapshotFields::Button { text, .. } | SnapshotFields::Label { text, .. } => {
@@ -128,10 +137,12 @@ impl ComponentHandle {
         .flatten()
     }
 
+    /// 返回按钮或标签组件的显示文本，等价于 [`Self::text`]。
     pub fn label(&self) -> Option<String> {
         self.text()
     }
 
+    /// 返回支持占位文本的输入或选择组件当前占位内容。
     pub fn placeholder(&self) -> Option<String> {
         self.map_snapshot_fields(|fields| match fields {
             SnapshotFields::Input { placeholder, .. }
@@ -151,6 +162,7 @@ impl ComponentHandle {
         .flatten()
     }
 
+    /// 返回支持禁用状态的组件当前是否禁用。
     pub fn disabled(&self) -> Option<bool> {
         self.map_snapshot_fields(|fields| match fields {
             SnapshotFields::Button { disabled, .. }
@@ -168,6 +180,7 @@ impl ComponentHandle {
         .flatten()
     }
 
+    /// 返回复选框或开关组件当前是否选中。
     pub fn checked(&self) -> Option<bool> {
         self.map_snapshot_fields(|fields| match fields {
             SnapshotFields::Checkbox { checked, .. } | SnapshotFields::Switch { checked, .. } => {
@@ -178,6 +191,7 @@ impl ComponentHandle {
         .flatten()
     }
 
+    /// 返回支持数值快照的组件当前数值。
     pub fn numeric_value(&self) -> Option<f64> {
         self.map_snapshot_fields(|fields| match fields {
             SnapshotFields::Slider { value, .. } => Some(*value),
@@ -193,6 +207,7 @@ impl ComponentHandle {
         .flatten()
     }
 
+    /// 请求此组件重绘，并在应用运行时中唤醒事件循环。
     pub fn invalidate(&self) {
         #[cfg(test)]
         if let Some(tree) = self.tree.as_ref().and_then(RcWeak::upgrade) {
@@ -213,6 +228,7 @@ impl ComponentHandle {
         }
     }
 
+    /// 以此组件为目标派发语义事件；目标不可用时返回未处理。
     pub fn emit(&self, mut event: SemanticEvent) -> EventResult {
         #[cfg(test)]
         if let Some(tree) = self.tree.as_ref().and_then(RcWeak::upgrade) {
