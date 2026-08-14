@@ -6,6 +6,8 @@
 mod qrcode;
 mod transfer;
 mod upload;
+// Upload 的几何、排版与展示格式保持在组件私有 presentation 边界。
+mod upload_presentation;
 // 拆分 Upload 的公开数据契约，保持组件实现文件低于行数门禁。
 mod upload_types;
 // 聚焦验证 Upload 受控队列、稳定身份与类型化事实。

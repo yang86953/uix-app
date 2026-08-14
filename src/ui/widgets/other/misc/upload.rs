@@ -10,19 +10,13 @@ use super::{
     UploadAcceptError, UploadChange, UploadFile, UploadFileId, UploadQueueResult,
     UploadRejectReason, UploadRejection, UploadStatus, UploadUpdateError,
 };
+// 引入同一组件域拥有的展示值、几何常量与格式化入口。
+use super::upload_presentation::{
+    FILE_ROW_H, LIST_RIGHT_PAD, LIST_TOP, UploadTypography, format_file_size,
+};
 use std::cell::Cell;
 // 引入类型化变化观察器的共享所有权句柄。
 use std::rc::Rc;
-
-// ════════════════════════════════════════════════════════════════════════════
-// Upload 文件列表布局常量（绘制与命中测试共用，保持两处数值一致）。
-// ════════════════════════════════════════════════════════════════════════════
-// 列表区顶部相对控件的偏移（像素）。
-const LIST_TOP: f32 = 104.0;
-// 文件行高（像素）。
-const FILE_ROW_H: f32 = 32.0;
-// 列表右侧留白（像素），为状态图标区保留空间。
-const LIST_RIGHT_PAD: f32 = 56.0;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Upload
@@ -114,6 +108,8 @@ component! {
         let primary = ctx.tokens().color_primary();
         let error = ctx.tokens().color_error();
         let success = ctx.tokens().color_success();
+        // 在组件主题作用域内只解析一次排版值。
+        let typography = UploadTypography::resolve(ctx.tokens());
         let r = Some(Radius::uniform(ctx.tokens().border_radius()));
         let upload_rect = Rect::new(frame.x, frame.y, frame.w, 100.0);
         ctx.fill_rect(upload_rect, bg, r);
@@ -134,10 +130,12 @@ component! {
             24.0,
         );
         let loc = crate::ui::component::locale::use_locale();
-        ctx.draw_text(loc.upload_drag, Point::new(frame.x + frame.w * 0.5 - 48.0, frame.y + 60.0), text_sec, 13.0);
+        // 拖放主说明使用主题派生的紧凑正文字号。
+        ctx.draw_text(loc.upload_drag, Point::new(frame.x + frame.w * 0.5 - 48.0, frame.y + 60.0), text_sec, typography.prompt);
         if !self.accept.is_empty() && self.accept != "*" {
             let suffix = format!("{}: {}", loc.filter_title, self.accept);
-            ctx.draw_text(&suffix, Point::new(frame.x + frame.w * 0.5 - 36.0, frame.y + 78.0), text_sec, 10.0);
+            // 过滤条件使用主题派生的辅助说明字号。
+            ctx.draw_text(&suffix, Point::new(frame.x + frame.w * 0.5 - 36.0, frame.y + 78.0), text_sec, typography.supporting);
         }
 
         if !self.show_upload_list {
@@ -196,13 +194,14 @@ component! {
             let text_x = frame.x + if drew_preview { 34.0 } else { 28.0 };
             let file_text_clip = Rect::new(text_x, y, (frame.x + frame.w - LIST_RIGHT_PAD - text_x).max(0.0), FILE_ROW_H);
             ctx.push_clip(file_text_clip);
-            // 文件名/大小字号：统一使用主题 font_size_sm token。
-            ctx.draw_text(&f.name, Point::new(text_x, y + 2.0), text, ctx.tokens().font_size_sm());
+            // 文件名使用小号正文，大小使用从小号正文派生的辅助说明字号。
+            ctx.draw_text(&f.name, Point::new(text_x, y + 2.0), text, typography.file_name);
             ctx.draw_text(
-                &Self::format_file_size(f.size),
+                // 使用 presentation 边界拥有的文件大小格式化入口。
+                &format_file_size(f.size),
                 Point::new(text_x, y + 17.0),
                 text_sec,
-                10.0,
+                typography.supporting,
             );
             if f.status == UploadStatus::Uploading {
                 let bar_w = (frame.x + frame.w - LIST_RIGHT_PAD - text_x).max(0.0);
@@ -698,18 +697,6 @@ impl Upload {
         // remove_file 已先写回唯一状态并同步发布类型化事实。
         let _ = removed;
         EventResult::Handled
-    }
-
-    fn format_file_size(bytes: u64) -> String {
-        const KIB: f64 = 1024.0;
-        const MIB: f64 = KIB * 1024.0;
-        if bytes >= MIB as u64 {
-            format!("{:.1} MiB", bytes as f64 / MIB)
-        } else if bytes >= KIB as u64 {
-            format!("{:.1} KiB", bytes as f64 / KIB)
-        } else {
-            format!("{bytes} B")
-        }
     }
 
     fn queue_dropped_files(&mut self, files: &[String]) -> EventResult {
