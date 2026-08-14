@@ -23,8 +23,8 @@ VERIFIER = ROOT / "scripts" / "verify_internal_release.ps1"
 POWERSHELL = shutil.which("powershell")
 # 固化清单必须覆盖的七个 payload 顺序。
 PAYLOAD_NAMES = (
-    # Windows release Demo。
-    "uix-demo.exe",
+    # uix-lang release Demo。
+    "uix-lang-demo.exe",
     # 当前版本内部 crate。
     "uix-0.0.1.crate",
     # 专有许可。
@@ -288,7 +288,7 @@ class InternalReleaseContractTests(unittest.TestCase):
     # 验证仅大小写不同的重复条目也会失败。
     def test_rejects_case_insensitive_duplicate_entry(self) -> None:
         # 在合法包后加入 Windows 语义下重复的 Demo 名称。
-        entries = self.valid_entries() + [("UIX-DEMO.EXE", b"duplicate")]
+        entries = self.valid_entries() + [("UIX-LANG-DEMO.EXE", b"duplicate")]
         # 写入重复条目 fixture。
         path = self.write_zip("duplicate.zip", entries)
         # 执行真实校验器。

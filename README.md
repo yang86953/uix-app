@@ -19,8 +19,7 @@ UIX（/ˈjuːɪks/）是一个 Rust 原生 UI 框架。
 python -X utf8 -m unittest discover -s tests -p "test_*.py"
 cargo test --lib --quiet
 cargo test --tests --quiet
-cargo test --manifest-path demo/Cargo.toml -p uix-gui-demo --bin uix-demo --quiet
-cargo run --release --manifest-path demo/Cargo.toml --bin uix-demo
+cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo
 ```
 
 项目完成状态只以这些测试目标通过为准，不维护独立验证命令。
@@ -60,7 +59,7 @@ cargo run --release --manifest-path demo/Cargo.toml --bin uix-demo
 | 路径 | 内容 |
 |---|---|
 | `src/` | 框架实现与公开 API |
-| `demo/` | 多项目演示工作区：`gui-demo`（Rust GUI 全景）、`uix-lang-demo`（`.uix` 文件入口）、`cli-demo`（CLI 功能域） |
+| `demo/` | 多项目演示工作区：`uix-lang-demo`（`.uix` 主演示）、`cli-demo`（CLI 功能域） |
 | `uix-derive/` | UIX 派生宏 |
 | `tests/` | 契约、集成与真窗测试入口 |
 | `scripts/` | 内部打包工具 |

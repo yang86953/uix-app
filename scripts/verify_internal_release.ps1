@@ -65,8 +65,8 @@ if (-not $resolvedZip.EndsWith('.zip', [StringComparison]::OrdinalIgnoreCase)) {
 
 # 声明必须被哈希清单逐项覆盖的七个 payload。
 $expectedPayload = @(
-    # Windows release Demo 是首个可执行载荷。
-    'uix-demo.exe'
+    # uix-lang release Demo 是首个可执行载荷。
+    'uix-lang-demo.exe'
     # 内部 crate 使用精确版本命名。
     "uix-$Version.crate"
     # 专有许可必须随包交付。

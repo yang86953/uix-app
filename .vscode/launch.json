@@ -2,22 +2,6 @@
   "version": "0.2.0",
   "configurations": [
     {
-      // GUI 多页演示（uix-gui-demo 包，bin 名 uix-demo）
-      "name": "调试 uix-demo (GUI)",
-      "type": "lldb",
-      "request": "launch",
-      // 调试专用 profile 产物，见 demo/Cargo.toml [profile.debug-full]
-      "program": "${workspaceFolder}/demo/target/debug-full/uix-demo",
-      "args": [],
-      "cwd": "${workspaceFolder}",
-      "env": {
-        "RUST_BACKTRACE": "1",
-        "RUST_LOG": "info"
-      },
-      "sourceLanguages": ["rust"],
-      "preLaunchTask": "build: uix-demo (debug-full)"
-    },
-    {
       // uix-lang GUI 演示（bin 名 uix-lang-demo）
       "name": "调试 uix-lang-demo (GUI)",
       "type": "lldb",
