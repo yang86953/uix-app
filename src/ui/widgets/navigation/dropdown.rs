@@ -21,17 +21,24 @@ use std::rc::Rc;
 use crate::ui::widgets::TriggerMode;
 
 #[derive(Debug, Clone, PartialEq)]
+/// 下拉菜单中的可选择条目、分组或分隔线。
 pub struct DropdownItem {
     /// 与展示 label 分离的稳定业务身份。
     pub key: String,
+    /// 向用户展示的条目文本。
     pub label: String,
+    /// 指示此条目是否仅渲染为不可选择的分隔线。
     pub divider: bool,
+    /// 指示此条目是否禁止选择和键盘高亮。
     pub disabled: bool,
+    /// 条目前显示的图标名称；空字符串表示不显示图标。
     pub icon: String,
+    /// 此条目展开时显示的嵌套子菜单条目。
     pub children: Vec<DropdownItem>,
 }
 
 impl DropdownItem {
+    /// 创建叶子条目，并使用展示文本作为兼容业务 key。
     pub fn new(label: impl Into<String>) -> Self {
         // 兼容旧字符串构造时以 label 作为稳定 key。
         let label = label.into();
@@ -47,6 +54,7 @@ impl DropdownItem {
         }
     }
 
+    /// 创建不可选择且不携带业务身份的分隔线条目。
     pub fn divider() -> Self {
         Self {
             // 分隔线不承担可选择身份。
@@ -75,16 +83,19 @@ impl DropdownItem {
         self
     }
 
+    /// 设置此条目展开时显示的嵌套子菜单。
     pub fn children(mut self, children: Vec<Self>) -> Self {
         self.children = children;
         self
     }
 
+    /// 设置此条目是否禁止选择和键盘高亮。
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
     }
 
+    /// 设置条目前显示的图标名称。
     pub fn icon(mut self, icon: impl Into<String>) -> Self {
         self.icon = icon.into();
         self
@@ -507,6 +518,7 @@ impl Dropdown {
         Size::new(160.0, 32.0)
     }
 
+    /// 创建使用文本按钮和点击触发方式的空下拉菜单。
     pub fn new(label: impl Into<String>) -> Self {
         Self {
             label: label.into(),
@@ -533,6 +545,9 @@ impl Dropdown {
         }
     }
 
+    /// 设置可转换为下拉条目的顶层菜单数据。
+    ///
+    /// 字符串条目会同时使用其文本作为展示标签和稳定 key。
     pub fn items<T>(mut self, items: Vec<T>) -> Self
     where
         T: Into<DropdownItem>,
@@ -576,28 +591,34 @@ impl Dropdown {
         self
     }
 
+    /// 设置打开或关闭下拉菜单的触发方式。
     pub fn trigger(mut self, trigger: TriggerMode) -> Self {
         self.trigger_mode = trigger;
         self
     }
 
+    /// 返回菜单是否处于接受交互的打开状态。
     pub fn is_open(&self) -> bool {
         self.open
     }
 
+    /// 返回菜单是否仍需呈现，包括正在执行退出动画的状态。
     pub fn is_present(&self) -> bool {
         self.open || self.closing
     }
 
+    /// 返回当前选中条目在可见扁平条目序列中的索引。
     pub fn selected_index(&self) -> Option<usize> {
         self.selected_index
     }
 
+    /// 返回当前选中条目的稳定业务 key。
     pub fn current_value(&self) -> Option<&str> {
         // 兼容方法现在返回稳定 key；旧构造仍保持 key=label。
         self.selected_value.as_deref()
     }
 
+    /// 打开菜单、启动进入动画并高亮当前或首个可选择条目。
     pub fn open(&mut self) {
         self.open = true;
         self.closing = false;
@@ -609,6 +630,7 @@ impl Dropdown {
         self.transition_dirty = true;
     }
 
+    /// 关闭菜单并在需要时启动退出动画。
     pub fn close(&mut self) {
         if !self.is_present() {
             self.open = false;
