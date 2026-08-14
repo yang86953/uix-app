@@ -1,6 +1,6 @@
 # UIX Lang Demo
 
-这个项目展示与 API GUI Demo 对齐的 uix-lang 多页入口：`src/main.uix` 声明 1200×800
+这个项目是仓库主演示：`src/main.uix` 声明 1200×800
 应用外壳、12 个页面组件、组件私有状态与全部已注册内置标签；`src/main.rs` 在编译期
 调用公开 `uix_app!` 宏生成现有 `App` builder，并继续由 Rust 持有应用与窗口生命周期。
 
@@ -12,8 +12,8 @@
 cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo
 ```
 
-Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。Windows 入口与 API GUI
-Demo 一致地在 8MB 大栈 UI 线程上运行，承载声明文件展开出的深层 ViewNode 树。
+Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。Windows 入口在 8MB
+大栈 UI 线程上运行，承载声明文件展开出的深层 ViewNode 树。
 
 ## 对齐范围
 
@@ -35,7 +35,7 @@ Demo 一致地在 8MB 大栈 UI 线程上运行，承载声明文件展开出的
 - 图表、表格、菜单、标签页、Transfer、Upload、Badge、Collapse、SelectableList、
   Message / Notification / ProgressBar / Popconfirm 等尚未登记的标签保留 Rust API
   边界，并在界面中明确说明。
-- Agent 控制与 test-harness 是 API Demo 的测试入口，不复制到声明式产品界面。
+- 真窗验收（agent-control / test-harness）是测试侧能力，不复制到声明式产品界面。
 
 ## 当前边界
 

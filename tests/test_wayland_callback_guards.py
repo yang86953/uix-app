@@ -13,8 +13,8 @@ COMPAT = ROOT / "src/native/backends/linux/wayland/compat.rs"
 PLATFORM = ROOT / "src/native/backends/linux/platform.rs"
 # 定位 Wayland 窗口操作与装饰模式实现。
 WINDOW_OPS = ROOT / "src/native/backends/linux/wayland/window_ops.rs"
-# 定位实际启用自定义标题栏的 GUI 演示入口。
-GUI_DEMO = ROOT / "demo/gui-demo/src/gui/mod.rs"
+# 定位实际启用自定义标题栏的主演示入口（uix-lang-demo）。
+GUI_DEMO = ROOT / "demo/uix-lang-demo/src/main.rs"
 
 
 class WaylandCallbackGuardTests(unittest.TestCase):
@@ -55,7 +55,7 @@ class WaylandCallbackGuardTests(unittest.TestCase):
     def test_custom_title_bar_uses_wayland_client_side_decoration(self) -> None:
         # 读取 Wayland 窗口操作实现。
         window_ops = WINDOW_OPS.read_text(encoding="utf-8")
-        # 读取 GUI 演示的窗口配置。
+        # 读取主演示的窗口配置。
         gui_demo = GUI_DEMO.read_text(encoding="utf-8")
         # Wayland 后端必须实现统一的系统标题栏可见性能力。
         self.assertIn("fn os_set_system_title_bar_visible", window_ops)
@@ -76,12 +76,8 @@ class WaylandCallbackGuardTests(unittest.TestCase):
             # 获取顶层窗口释放语句位置。
             close_source.index("self.toplevel = None"),
         )
-        # 演示必须实际启用自定义标题栏。
-        self.assertIn(".custom_title_bar(true);", gui_demo)
-        # 不得恢复仅 Windows 启用的旧分支。
-        self.assertNotIn("#[cfg(windows)]\n    let app = App::new()", gui_demo)
-        # 不得恢复非 Windows 跳过自定义标题栏的旧分支。
-        self.assertNotIn("#[cfg(not(windows))]\n    let app = App::new().title", gui_demo)
+        # 主演示必须实际启用自定义标题栏。
+        self.assertIn(".custom_title_bar(true)", gui_demo)
 
 
 if __name__ == "__main__":

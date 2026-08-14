@@ -22,7 +22,7 @@ App::new()
     .run();
 ```
 
-demo 启用方式：`cargo run --manifest-path demo/Cargo.toml --features agent-control --bin uix-demo -- --agent-control`。
+当前仓库主演示 `uix-lang-demo` 未接入 agent-control 入口；agent-control 作为库能力由契约测试与 Windows 真窗验收覆盖。
 
 ## 端点协议
 
