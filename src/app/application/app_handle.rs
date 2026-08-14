@@ -155,6 +155,7 @@ fn apply_default_app_root_background(mut root: ViewNode) -> ViewNode {
 }
 
 #[derive(Clone)]
+/// 向特定应用窗口调度任务、更新视图和访问应用服务的可克隆句柄。
 pub struct AppHandle {
     window_id: WindowId,
     app_state: AppState,
@@ -180,10 +181,12 @@ impl AppHandle {
         }
     }
 
+    /// 返回此句柄关联的窗口身份。
     pub fn window_id(&self) -> WindowId {
         self.window_id
     }
 
+    /// 返回可克隆的应用状态访问句柄。
     pub fn app_state(&self) -> AppState {
         self.app_state.clone()
     }
@@ -196,10 +199,12 @@ impl AppHandle {
         self.runtime.diagnostics()
     }
 
+    /// 从应用依赖容器解析并克隆指定服务。
     pub fn resolve<T: 'static + Send + Sync + Clone>(&self) -> Option<T> {
         self.container.resolve_clone::<T>()
     }
 
+    /// 在窗口仍存活时安排一次延迟任务，否则返回非活动计时器句柄。
     pub fn run_after<F>(&self, delay: Duration, f: F) -> TimerHandle
     where
         F: FnOnce() + Send + 'static,
@@ -210,6 +215,7 @@ impl AppHandle {
         self.runtime.run_after(self.window_id, delay, f)
     }
 
+    /// 在窗口仍存活时安排周期任务，否则返回非活动计时器句柄。
     pub fn run_interval<F>(&self, interval: Duration, f: F) -> TimerHandle
     where
         F: FnMut() + Send + 'static,
@@ -220,6 +226,7 @@ impl AppHandle {
         self.runtime.run_interval(self.window_id, interval, f)
     }
 
+    /// 在窗口仍存活时向其 UI 线程投递一次任务。
     pub fn post_to_ui<F>(&self, f: F)
     where
         F: FnOnce() + Send + 'static,
@@ -297,6 +304,7 @@ impl AppHandle {
 
     // 把消息条目显式投递到此 AppHandle 对应的窗口。
     #[cfg(feature = "feedback")]
+    /// 向此窗口的消息队列投递条目并返回本地稳定 ID。
     pub fn push_message(&self, item: MessageItem) -> Result<u64> {
         // 先验证窗口生命周期，再访问逐窗 owner。
         let feedback = self.feedback_state()?;
@@ -310,6 +318,7 @@ impl AppHandle {
 
     // 把通知条目显式投递到此 AppHandle 对应的窗口。
     #[cfg(feature = "feedback")]
+    /// 向此窗口的通知队列投递条目并返回本地稳定 ID。
     pub fn push_notification(&self, item: NotificationItem) -> Result<u64> {
         // 先验证窗口生命周期，再访问逐窗 owner。
         let feedback = self.feedback_state()?;
@@ -323,6 +332,7 @@ impl AppHandle {
 
     // 把应用错误转换为目标窗口原生语义通知。
     #[cfg(feature = "feedback")]
+    /// 按反馈策略把非致命错误转换为此窗口的通知。
     pub fn notify_error(&self, error: &Error) -> Result<Option<u64>> {
         // 先验证窗口生命周期，再访问逐窗 owner。
         let feedback = self.feedback_state()?;
@@ -339,6 +349,7 @@ impl AppHandle {
 
     // 反馈 capability 启用时才暴露消息关闭入口。
     #[cfg(feature = "feedback")]
+    /// 请求关闭此窗口中使用本地稳定 ID 标识的消息。
     pub fn dismiss_message(&self, id: u64) -> Result<bool> {
         // 先验证窗口生命周期，再访问逐窗 owner。
         let feedback = self.feedback_state()?;
@@ -355,6 +366,7 @@ impl AppHandle {
 
     // 反馈 capability 启用时才暴露通知关闭入口。
     #[cfg(feature = "feedback")]
+    /// 请求关闭此窗口中使用本地稳定 ID 标识的通知。
     pub fn dismiss_notification(&self, id: u64) -> Result<bool> {
         // 先验证窗口生命周期，再访问逐窗 owner。
         let feedback = self.feedback_state()?;
@@ -371,6 +383,7 @@ impl AppHandle {
 
     // 关闭由 notify_error 返回外部稳定 ID 对应的原生错误通知。
     #[cfg(feature = "feedback")]
+    /// 请求关闭由 [`Self::notify_error`] 返回外部 ID 标识的错误通知。
     pub fn dismiss_error_notification(&self, id: u64) -> Result<bool> {
         // 先验证窗口生命周期，再访问逐窗 owner。
         let feedback = self.feedback_state()?;
@@ -388,6 +401,7 @@ impl AppHandle {
         Ok(dismissed)
     }
 
+    /// 在窗口 UI 上下文中重新构建并替换应用根视图。
     pub fn update_view<F>(&self, build_root: F)
     where
         F: FnOnce() -> ViewNode + Send + 'static,
@@ -406,6 +420,7 @@ impl AppHandle {
         }
     }
 
+    /// 使用给定声明式 View 替换此窗口的应用根视图。
     pub fn set_root<V>(&self, view: V)
     where
         V: View + Send + 'static,
@@ -413,6 +428,7 @@ impl AppHandle {
         self.update_view(move || view.build());
     }
 
+    /// 请求创建另一个应用窗口并返回其独立句柄。
     pub fn open_window(&self, config: WindowConfig) -> Result<AppHandle> {
         if !self.alive.load(Ordering::Acquire) {
             return Err(Error::new(
