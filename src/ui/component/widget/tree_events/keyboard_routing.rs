@@ -118,6 +118,11 @@ impl WidgetTree {
             }
 
             self.invalidate_paint(target);
+            // 已武装的 KeyUp 仍须经过父级捕获，完成复合 trigger 的同一键盘手势。
+            if self.capture_to(target, event).is_some() {
+                // 捕获 owner 已处理释放时，不再向目标合成重复 Click。
+                return EventResult::Handled;
+            }
             // 已接受的 KeyDown 锁定目标；匹配 KeyUp 必须回到同一目标完成释放。
             let _ = self.dispatch_to(target, event);
             let click = ClickEvent {

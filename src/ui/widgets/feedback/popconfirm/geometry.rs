@@ -840,5 +840,48 @@ mod tests {
             crate::ui::tree_widget_hooks::pointer_focus_target(&tree, root),
             child
         );
+
+        // 先用 Escape 结束指针打开周期，并保留焦点代理到真实 trigger。
+        assert_eq!(
+            tree.dispatch_event(&SystemEvent::KeyDown {
+                // 使用浮层统一拥有的取消键。
+                key: KeyCode::Escape,
+                // 本次取消不携带修饰键。
+                mods: KeyMod::NONE,
+            }),
+            EventResult::Handled
+        );
+        // 关闭态 Enter 按下必须由父级捕获并继续交给真实子按钮。
+        assert_eq!(
+            tree.dispatch_event(&SystemEvent::KeyDown {
+                // 使用标准键盘激活键。
+                key: KeyCode::Enter,
+                // 本次激活不携带修饰键。
+                mods: KeyMod::NONE,
+            }),
+            EventResult::Handled
+        );
+        // 配对 KeyUp 必须完成父级打开与子按钮唯一 Click。
+        assert_eq!(
+            tree.dispatch_event(&SystemEvent::KeyUp {
+                // 释放与按下相同的激活键。
+                key: KeyCode::Enter,
+                // KeyUp 事件无需重复修饰键。
+                mods: KeyMod::NONE,
+            }),
+            EventResult::Handled
+        );
+        // 键盘周期必须重新打开确认气泡。
+        let runtime = tree.get(root).expect("Popconfirm 根必须存在");
+        // 读取具体组件确认父级已完成开关动作。
+        let runtime = runtime
+            .component()
+            .as_any()
+            .downcast_ref::<Popconfirm>()
+            .expect("根组件必须是 Popconfirm");
+        // Enter 释放后气泡必须可见。
+        assert!(runtime.is_visible());
+        // 指针与键盘各自只能让真实 trigger Click 一次。
+        assert_eq!(clicks.get(), 2);
     }
 }
