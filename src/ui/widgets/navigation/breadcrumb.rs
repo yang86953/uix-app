@@ -42,14 +42,19 @@ enum BreadcrumbHit {
 /// 面包屑的一项。
 #[derive(Debug, Clone, PartialEq)]
 pub struct BreadcrumbItem {
+    /// 向用户展示的路径标题。
     pub title: String,
     // 保存用于路由身份与 Change 载荷的稳定链接。
+    /// 用作路由身份和选择事件载荷的稳定链接。
     pub link: String,
+    /// 指示此条目是否代表当前路径位置。
     pub active: bool,
+    /// 标题前显示的图标名称；空字符串表示不显示图标。
     pub icon: String,
 }
 
 impl BreadcrumbItem {
+    /// 创建没有链接、图标且尚未激活的路径条目。
     pub fn new(title: impl Into<String>) -> Self {
         Self {
             title: title.into(),
@@ -59,12 +64,14 @@ impl BreadcrumbItem {
             icon: String::new(),
         }
     }
+    /// 将此条目标记为当前路径位置。
     pub fn active(mut self) -> Self {
         self.active = true;
         self
     }
 
     // 设置当前条目的稳定导航链接。
+    /// 设置与展示标题分离的稳定导航链接。
     pub fn link(mut self, link: impl Into<String>) -> Self {
         // 保存拥有型链接，避免借用越过组件生命周期。
         self.link = link.into();
@@ -72,6 +79,7 @@ impl BreadcrumbItem {
         self
     }
 
+    /// 设置标题前显示的图标名称。
     pub fn icon(mut self, icon: impl Into<String>) -> Self {
         self.icon = icon.into();
         self
@@ -268,6 +276,7 @@ impl Breadcrumb {
         Size::new(line_width, BREADCRUMB_HEIGHT)
     }
 
+    /// 创建使用斜杠分隔且不折叠条目的空面包屑导航。
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
@@ -280,17 +289,20 @@ impl Breadcrumb {
             pending_change: Cell::new(None),
         }
     }
+    /// 追加路径条目，并保证仅有一个活动条目。
     pub fn item(mut self, item: BreadcrumbItem) -> Self {
         self.items.push(item);
         self.normalize_active();
         self
     }
+    /// 替换全部路径条目，并保证仅有一个活动条目。
     pub fn items(mut self, items: Vec<BreadcrumbItem>) -> Self {
         self.items = items;
         self.normalize_active();
         self
     }
     // 把末项声明为当前页，空集合保持安全无选中项。
+    /// 将最后一个路径条目标记为当前页。
     pub fn last_active(mut self) -> Self {
         // 仅在至少存在一个条目时更新组件拥有的激活状态。
         if !self.items.is_empty() {
@@ -302,11 +314,13 @@ impl Breadcrumb {
         // 返回配置完成的 Breadcrumb。
         self
     }
+    /// 设置相邻可见路径条目之间的分隔文本。
     pub fn separator(mut self, s: impl Into<String>) -> Self {
         self.separator = s.into();
         self
     }
 
+    /// 设置折叠前最多显示的条目数；零表示显示全部，正数至少显示三项。
     pub fn max_items(mut self, maximum: usize) -> Self {
         self.max_items = maximum;
         self
@@ -353,10 +367,12 @@ impl Breadcrumb {
         self.pending_change.set(None);
     }
 
+    /// 返回当前活动条目索引；空集合返回零。
     pub fn active_index(&self) -> usize {
         self.items.iter().position(|item| item.active).unwrap_or(0)
     }
 
+    /// 返回当前活动条目的展示标题。
     pub fn active_title(&self) -> Option<&str> {
         self.items
             .get(self.active_index())
@@ -364,6 +380,7 @@ impl Breadcrumb {
     }
 
     // 读取当前项的稳定链接；旧无链接条目返回 None。
+    /// 返回当前活动条目的非空稳定链接。
     pub fn active_link(&self) -> Option<&str> {
         // 取得当前激活项并过滤空链接兼容值。
         self.items
