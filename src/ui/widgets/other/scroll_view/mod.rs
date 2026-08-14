@@ -628,6 +628,7 @@ impl ScrollView {
         Constraints::loose(Size::new(max_w, max_h))
     }
 
+    /// 创建指定滚动方向、没有子组件和固定尺寸的滚动视图。
     pub fn new(direction: ScrollDirection) -> Self {
         Self {
             children: WidgetChildren::new(),
@@ -647,38 +648,45 @@ impl ScrollView {
         }
     }
 
+    /// 追加一个由此滚动视图拥有的子组件。
     pub fn child(self, w: impl WidgetComponent + 'static) -> Self {
         self.children.add(w);
         self
     }
 
+    /// 替换此滚动视图拥有的全部子组件。
     pub fn children(self, widgets: Vec<Box<dyn WidgetComponent>>) -> Self {
         self.children.set_all(widgets);
         self
     }
 
+    /// 设置滚动视口的首选宽度和高度。
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.fixed_width = Some(w);
         self.fixed_height = Some(h);
         self
     }
 
+    /// 设置此视图作为 Flex 子项时的扩张系数。
     pub fn flex_grow(mut self, v: f32) -> Self {
         self.flex_grow_val = v;
         self
     }
 
+    /// 设置此视图作为 Flex 子项时的收缩系数。
     pub fn flex_shrink(mut self, v: f32) -> Self {
         self.flex_shrink_val = v;
         self
     }
 
+    /// 同时设置水平和垂直滚动条是否可见。
     pub fn show_scrollbar(mut self, v: bool) -> Self {
         self.scrollbar_v.show = v;
         self.scrollbar_h.show = v;
         self
     }
 
+    /// 设置非受控初始滚动位置，并移除外部偏移绑定。
     pub fn scroll_to(mut self, x: f32, y: f32) -> Self {
         self.scroll_binding = None;
         self.scroll_x = Self::normalize_axis(x);
@@ -727,14 +735,17 @@ impl ScrollView {
         }
     }
 
+    /// 返回当前非负水平滚动位置。
     pub fn scroll_x(&self) -> f32 {
         self.scroll_x
     }
 
+    /// 返回当前非负垂直滚动位置。
     pub fn scroll_y(&self) -> f32 {
         self.scroll_y
     }
 
+    /// 设置非负水平滚动位置并写回已绑定的外部状态。
     pub fn set_scroll_x(&mut self, x: f32) {
         let old_x = self.scroll_x;
         self.scroll_x = Self::normalize_axis(x);
@@ -742,6 +753,7 @@ impl ScrollView {
         self.write_bound_offset();
     }
 
+    /// 设置非负垂直滚动位置并写回已绑定的外部状态。
     pub fn set_scroll_y(&mut self, y: f32) {
         let old_y = self.scroll_y;
         self.scroll_y = Self::normalize_axis(y);
@@ -749,6 +761,7 @@ impl ScrollView {
         self.write_bound_offset();
     }
 
+    /// 同时设置滚动位置，并在已有布局范围内夹到内容末端。
     pub fn scroll_to_xy(&mut self, x: f32, y: f32) {
         let old_x = self.scroll_x;
         let old_y = self.scroll_y;
@@ -758,6 +771,7 @@ impl ScrollView {
         self.write_bound_offset();
     }
 
+    /// 返回最近一次内容布局计算出的最大水平滚动位置。
     pub fn max_scroll_x(&self) -> f32 {
         // 只有完成至少一轮内容布局后才存在横向滚动范围。
         match self.content_bounds.get() {
@@ -777,6 +791,7 @@ impl ScrollView {
         }
     }
 
+    /// 返回最近一次内容布局计算出的最大垂直滚动位置。
     pub fn max_scroll_y(&self) -> f32 {
         // 只有完成至少一轮内容布局后才存在纵向滚动范围。
         match self.content_bounds.get() {
