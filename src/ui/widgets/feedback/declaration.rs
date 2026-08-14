@@ -15,21 +15,28 @@ use crate::ui::component::paint_context::PaintContext;
 
 // 声明条目的关闭原因。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 已挂载反馈条目离开可见队列的原因。
 pub enum FeedbackCloseReason {
     // 用户点击关闭入口。
+    /// 用户通过可见关闭入口移除条目。
     Manual,
     // 展示时长到期。
+    /// 条目的展示时长到期。
     Timeout,
     // Rust API 主动关闭。
+    /// 应用代码主动请求移除条目。
     Programmatic,
 }
 
 // 已确认关闭的类型化事实。
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// 反馈条目真实关闭后传递给观察器的事实。
 pub struct FeedbackClosed {
     // 返回声明条目的稳定 key。
+    /// 被关闭声明条目的稳定 key。
     pub key: String,
     // 返回实际关闭原因。
+    /// 条目实际离开可见队列的原因。
     pub reason: FeedbackCloseReason,
 }
 
@@ -198,6 +205,7 @@ component! {
 
 impl MessageDeclaration {
     // 创建必需 key 与 content 已满足的消息声明。
+    /// 创建默认信息等级、展示三秒且不可手动关闭的消息声明。
     pub fn new(key: impl Into<String>, content: impl Into<String>) -> Self {
         // 保存文档默认值并等待 Application 绑定。
         Self {
@@ -224,6 +232,7 @@ impl MessageDeclaration {
     }
 
     // 设置消息状态等级。
+    /// 设置消息的状态等级。
     pub fn type_(mut self, type_: StatusLevel) -> Self {
         // 更新声明配置。
         self.spec.type_ = type_;
@@ -232,6 +241,7 @@ impl MessageDeclaration {
     }
 
     // 设置毫秒展示时长。
+    /// 设置展示时长（毫秒）；零表示不自动关闭。
     pub fn duration_ms(mut self, duration_ms: u64) -> Self {
         // 零保留为不自动关闭。
         self.spec.duration_ms = duration_ms;
@@ -240,6 +250,7 @@ impl MessageDeclaration {
     }
 
     // 按 UIX 秒单位设置展示时长并安全归一化非法动态输入。
+    /// 设置展示时长（秒）；非法输入会记录错误并退化为不自动关闭。
     pub fn duration_seconds(mut self, seconds: f64) -> Self {
         // 只接受有限非负且能转换为毫秒的秒数。
         if seconds.is_finite() && seconds >= 0.0 && seconds <= u64::MAX as f64 / 1_000.0 {
@@ -256,6 +267,7 @@ impl MessageDeclaration {
     }
 
     // 设置手动关闭能力。
+    /// 设置是否向用户提供手动关闭入口。
     pub fn closable(mut self, closable: bool) -> Self {
         // 保存声明能力。
         self.spec.closable = closable;
@@ -264,6 +276,7 @@ impl MessageDeclaration {
     }
 
     // 注册真实关闭后的类型化观察器。
+    /// 注册仅在条目真实关闭后调用的观察器。
     pub fn on_close<F>(mut self, callback: F) -> Self
     where
         // 回调可能由逐窗 owner 保存，必须满足线程安全边界。
@@ -370,6 +383,7 @@ component! {
 
 impl NotificationDeclaration {
     // 创建必需 key、title 与 content 已满足的通知声明。
+    /// 创建默认信息等级、展示四点五秒且不可手动关闭的通知声明。
     pub fn new(
         key: impl Into<String>,
         title: impl Into<String>,
@@ -402,6 +416,7 @@ impl NotificationDeclaration {
     }
 
     // 设置通知状态等级。
+    /// 设置通知的状态等级。
     pub fn type_(mut self, type_: StatusLevel) -> Self {
         // 更新声明配置。
         self.spec.type_ = type_;
@@ -410,6 +425,7 @@ impl NotificationDeclaration {
     }
 
     // 设置毫秒展示时长。
+    /// 设置展示时长（毫秒）；零表示不自动关闭。
     pub fn duration_ms(mut self, duration_ms: u64) -> Self {
         // 零保留为不自动关闭。
         self.spec.duration_ms = duration_ms;
@@ -418,6 +434,7 @@ impl NotificationDeclaration {
     }
 
     // 按 UIX 秒单位设置展示时长并安全归一化非法动态输入。
+    /// 设置展示时长（秒）；非法输入会记录错误并退化为不自动关闭。
     pub fn duration_seconds(mut self, seconds: f64) -> Self {
         // 只接受有限非负且能转换为毫秒的秒数。
         if seconds.is_finite() && seconds >= 0.0 && seconds <= u64::MAX as f64 / 1_000.0 {
@@ -434,6 +451,7 @@ impl NotificationDeclaration {
     }
 
     // 设置手动关闭能力。
+    /// 设置是否向用户提供手动关闭入口。
     pub fn closable(mut self, closable: bool) -> Self {
         // 保存声明能力。
         self.spec.closable = closable;
@@ -442,6 +460,7 @@ impl NotificationDeclaration {
     }
 
     // 注册真实关闭后的类型化观察器。
+    /// 注册仅在条目真实关闭后调用的观察器。
     pub fn on_close<F>(mut self, callback: F) -> Self
     where
         // 回调可能由逐窗 owner 保存，必须满足线程安全边界。
