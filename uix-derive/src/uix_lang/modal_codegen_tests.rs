@@ -1,13 +1,5 @@
-// 引入解析与核心生成入口。
-use super::{Diagnostic, generate_view, parse_document};
-
-// 生成测试源码的稳定令牌快照。
-fn generate(source: &str) -> Result<String, Diagnostic> {
-    // 先解析完整 UIX 文档。
-    let document = parse_document(source)?;
-    // 再生成公开 Rust View 表达式。
-    generate_view(&document.root).map(|tokens| tokens.to_string())
-}
+// 引入与公开宏一致的完整文档测试生成入口。
+use super::generate_test_document_view as generate;
 
 // 验证 Modal 受控状态、配置、事件、有序子树与公共属性的完整生成契约。
 #[test]
@@ -37,8 +29,12 @@ fn generates_controlled_modal_contract() {
     assert!(snapshot.contains("正文"));
     // If 控制流必须保留。
     assert!(snapshot.contains("if show_extra"));
-    // For 控制流必须保留。
-    assert!(snapshot.contains("for item in") && snapshot.contains("items"));
+    // For 控制流必须带内部位置身份并保留输入集合。
+    assert!(
+        snapshot.contains("__uix_for_ordinal")
+            && snapshot.contains("enumerate")
+            && snapshot.contains("items")
+    );
     // 公共自动化身份必须继续映射。
     assert!(snapshot.contains("automation_id"));
 }

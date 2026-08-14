@@ -1,14 +1,5 @@
-// 引入解析与核心生成入口。
-use super::{Diagnostic, generate_view, parse_document};
-
-// 生成测试源码的稳定令牌快照。
-fn generate(source: &str) -> Result<String, Diagnostic> {
-    // 先解析完整 UIX 文档。
-    let document = parse_document(source)?;
-    // 再生成公开 Rust View 表达式。
-    generate_view(&document.root).map(|tokens| tokens.to_string())
-    // 结束测试生成辅助函数。
-}
+// 引入与公开宏一致的完整文档测试生成入口。
+use super::generate_test_document_view as generate;
 
 // 验证 Card 标题、操作项、子树与公共属性的完整生成契约。
 #[test]
@@ -63,8 +54,12 @@ fn generates_dynamic_and_controlled_card_values() {
     assert!(controlled.contains("if show_details"));
     // 条件内文本必须生成公开 View。
     assert!(controlled.contains("label (\"详情\")"));
-    // 循环绑定必须在 Card 子节点向量作用域内展开。
-    assert!(controlled.contains("for item in") && controlled.contains("items"));
+    // 循环绑定必须通过内部位置枚举在 Card 子节点作用域内展开。
+    assert!(
+        controlled.contains("__uix_for_ordinal")
+            && controlled.contains("enumerate")
+            && controlled.contains("items")
+    );
     // 循环项插值必须保留当前绑定表达式。
     assert!(controlled.contains("ToString") && controlled.contains("item"));
     // 结束动态与控制流测试。

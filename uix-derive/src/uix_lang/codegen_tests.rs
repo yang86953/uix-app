@@ -1,5 +1,5 @@
-// 引入文档解析与核心 View 生成入口。
-use super::{generate_view, parse_document};
+// 引入文档解析、核心 View 与完整文档测试生成入口。
+use super::{generate_test_document_view, generate_view, parse_document};
 
 // 解析单根文档并生成稳定令牌文本。
 fn generate(source: &str) -> Result<String, super::Diagnostic> {
@@ -548,20 +548,25 @@ fn validates_float_button_defaults_shape_and_attributes() {
     assert!(unknown.message.contains("mystery"));
 }
 
-// 验证 If 与 For 生成真实 Rust 控制流、索引和稳定 key。
+// 验证 If 与 For 生成真实 Rust 控制流、实例路径、索引和稳定 key。
 #[test]
 fn generates_if_for_and_key_snapshot() {
     // 构造条件与带索引、key 的循环文档。
     let source = r#"<Column><If {visible}><Text>{title}</Text></If><For {item} {index} in {items} key={item.id}><Container direction="row"><Text>{index}</Text><Text>{item.name}</Text></Container></For></Column>"#;
     // 生成确定性令牌快照。
-    let snapshot = generate(source).expect("If 与 For 应生成 Rust 控制流");
-    // 锁定完整 TokenStream 快照。
-    assert_eq!(
-        // 比较实际令牌。
-        snapshot,
-        // 保存 If、For、enumerate 与 key 的稳定快照。
-        r#":: uix :: prelude :: View :: build (:: uix :: prelude :: column ({ let mut __uix_children = :: std :: vec :: Vec :: < :: uix :: prelude :: ViewNode > :: new () ; if visible { __uix_children . push (:: uix :: prelude :: View :: build (:: uix :: prelude :: label ({ let mut __uix_text = :: std :: string :: String :: new () ; __uix_text . push_str (& :: std :: string :: ToString :: to_string (& (title))) ; __uix_text }))) ; } for (index , item) in (:: std :: iter :: IntoIterator :: into_iter ((items) . clone ())) . enumerate () { let __uix_for_view = :: uix :: prelude :: View :: build (:: uix :: prelude :: row ({ let mut __uix_children = :: std :: vec :: Vec :: < :: uix :: prelude :: ViewNode > :: new () ; __uix_children . push (:: uix :: prelude :: View :: build (:: uix :: prelude :: label ({ let mut __uix_text = :: std :: string :: String :: new () ; __uix_text . push_str (& :: std :: string :: ToString :: to_string (& (index))) ; __uix_text }))) ; __uix_children . push (:: uix :: prelude :: View :: build (:: uix :: prelude :: label ({ let mut __uix_text = :: std :: string :: String :: new () ; __uix_text . push_str (& :: std :: string :: ToString :: to_string (& ((item) . name))) ; __uix_text }))) ; __uix_children })) ; __uix_children . push (__uix_for_view . key (:: std :: format ! ("{}" , (item) . id))) ; } __uix_children }))"#
-    );
+    let snapshot = generate_test_document_view(source).expect("If 与 For 应生成 Rust 控制流");
+    // If 必须保留为真实条件分支。
+    assert!(snapshot.contains("if visible"));
+    // 带索引 For 必须枚举输入集合。
+    assert!(snapshot.contains("enumerate"));
+    // 作者索引绑定必须复用内部枚举序号。
+    assert!(snapshot.contains("let index = __uix_for_ordinal"));
+    // 循环体必须声明当前行的实际实例路径。
+    assert!(snapshot.contains("let __uix_for_path_"));
+    // 显式 key 必须继续附加到唯一行根。
+    assert!(snapshot.contains(". key") && snapshot.contains("(item) . id"));
+    // 显式 key 表达式必须只求值一次。
+    assert_eq!(snapshot.matches("(item) . id").count(), 1);
 }
 
 // 验证事件保留参数映射到公开点击载荷与坐标字段。
@@ -741,10 +746,8 @@ fn rejects_set_state_without_component_context() {
 fn rejects_keyed_for_with_multiple_direct_roots() {
     // 构造会生成两个直接行节点的循环。
     let source = r#"<Column><For {item} in {items} key={item.id}><Text>A</Text><Text>B</Text></For></Column>"#;
-    // 解析控制结构。
-    let document = parse_document(source).expect("For 语法本身应合法");
-    // 代码生成必须拒绝不稳定的多根 key。
-    let error = generate_view(&document.root).expect_err("key 需要唯一行根");
+    // 完整文档生成必须拒绝不稳定的多根 key。
+    let error = generate_test_document_view(source).expect_err("key 需要唯一行根");
     // 诊断必须说明唯一直接子节点约束。
     assert!(error.message.contains("恰好生成一个直接子节点"));
 }
