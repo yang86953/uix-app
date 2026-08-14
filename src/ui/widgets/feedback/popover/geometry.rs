@@ -3,6 +3,7 @@
 use super::*;
 
 impl Popover {
+    /// 创建默认置于上方、点击触发且初始隐藏的气泡卡片。
     pub fn new(content: impl Into<String>) -> Self {
         Self {
             title: String::new(),
@@ -35,28 +36,34 @@ impl Popover {
             surface_rect: Cell::new(Rect::zero()),
         }
     }
+    /// 设置气泡卡片标题。
     pub fn title(mut self, t: impl Into<String>) -> Self {
         self.title = t.into();
         self
     }
+    /// 设置气泡卡片相对触发区域的放置方向。
     pub fn placement(mut self, p: PopoverPlacement) -> Self {
         self.placement = p;
         self
     }
+    /// 设置打开和关闭气泡卡片的触发方式。
     pub fn trigger(mut self, t: PopoverTrigger) -> Self {
         self.trigger = t;
         self
     }
+    /// 设置是否绘制指向触发区域的箭头。
     pub fn arrow(mut self, v: bool) -> Self {
         self.arrow = v;
         self
     }
 
+    /// 设置气泡卡片背景颜色。
     pub fn bg(mut self, color: Color) -> Self {
         self.background = Some(color);
         self
     }
 
+    /// 设置替代默认触发区域的自定义 View。
     pub fn trigger_view<V: crate::ui::view::View>(mut self, trigger: V) -> Self {
         self.custom_trigger = true;
         self.custom_trigger_view = Some(Rc::new(RefCell::new(Some(crate::ui::view::View::build(
@@ -85,14 +92,17 @@ impl Popover {
         self
     }
 
+    /// 返回气泡卡片是否处于可见阶段。
     pub fn is_visible(&self) -> bool {
         self.visible
     }
 
+    /// 返回气泡卡片是否可见或仍在执行关闭过渡。
     pub fn is_present(&self) -> bool {
         self.visible || self.closing
     }
 
+    /// 打开气泡卡片、启动进场动画并同步受控状态。
     pub fn open(&mut self) {
         self.open_now();
         self.write_bound_open(true);
@@ -105,6 +115,7 @@ impl Popover {
         self
     }
 
+    /// 设置打开状态，并同步受控状态及相应过渡动画。
     pub fn set_open(&mut self, open: bool) {
         if open {
             self.open();
@@ -122,6 +133,7 @@ impl Popover {
         self.transition_dirty = true;
     }
 
+    /// 关闭气泡卡片、启动离场动画并同步受控状态。
     pub fn close(&mut self) {
         self.close_now();
         self.write_bound_open(false);
