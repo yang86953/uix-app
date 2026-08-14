@@ -80,9 +80,13 @@ impl ButtonRipple {
 /// 按钮在 ButtonGroup 中的位置，控制视觉圆角连接。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ButtonGroupPosition {
+    /// 按钮位于连接组的最左侧。
     Left,
+    /// 按钮位于连接组的两个相邻按钮之间。
     Middle,
+    /// 按钮位于连接组的最右侧。
     Right,
+    /// 按钮不与同组其他按钮连接。
     Single,
 }
 
@@ -471,6 +475,7 @@ impl Button {
     /// 键盘激活用的中心原点哨兵（局部坐标不可能为负）。
     pub(crate) const CENTER_ORIGIN: Point = Point::new(-1.0, -1.0);
 
+    /// 创建继承当前组件尺寸、禁用状态和按钮样式覆盖的文本按钮。
     pub fn new(text: impl Into<String>) -> Self {
         let config = crate::ui::component::config::use_config();
         let style_set = config
@@ -509,25 +514,30 @@ impl Button {
         }
     }
 
+    /// 替换按钮正常、悬停、按压、焦点和禁用状态的样式集合。
     pub fn style_set(mut self, style_set: StyleSet) -> Self {
         self.style_set = Arc::new(style_set);
         self
     }
 
+    /// 设置按钮使用的控件尺寸档位。
     pub fn size(mut self, size: ControlSize) -> Self {
         self.button_size = size;
         self
     }
 
+    /// 设置在状态样式解析后应用的固定样式覆盖。
     pub fn style(mut self, style: Style) -> Self {
         self.style = Arc::new(style);
         self
     }
 
+    /// 返回按钮当前显示文本。
     pub fn text(&self) -> &str {
         self.text.as_str()
     }
 
+    /// 替换按钮显示文本。
     pub fn set_text(&mut self, text: impl Into<String>) {
         self.text = text.into();
     }
@@ -548,6 +558,7 @@ impl Button {
         self.style = next.style;
     }
 
+    /// 切换为主操作按钮预设样式。
     pub fn primary(self) -> Self {
         Self {
             style_set: primary_button_style_set(),
@@ -555,6 +566,7 @@ impl Button {
         }
     }
 
+    /// 切换为透明背景的幽灵按钮预设样式。
     pub fn ghost(self) -> Self {
         Self {
             style_set: ghost_button_style_set(),
@@ -562,6 +574,7 @@ impl Button {
         }
     }
 
+    /// 切换为危险操作按钮预设样式。
     pub fn danger(self) -> Self {
         Self {
             style_set: danger_button_style_set(),
@@ -569,11 +582,13 @@ impl Button {
         }
     }
 
+    /// 设置按钮是否拒绝激活交互。
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
     }
 
+    /// 设置按钮是否占满父级提供的可用宽度。
     pub fn block(mut self, block: bool) -> Self {
         self.block = block;
         self
