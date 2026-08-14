@@ -157,6 +157,10 @@
         <PseudoStateAction />
         // 说明伪类与 setStyle 的职责边界。
         <Text fontSize="small">:hover 自动维护指针事实，:disabled / :checked 复用元素同名状态；变体只叠加声明字段。setStyle 继续用于自定义动态 class 切换。</Text>
+        // 省略 label 调用参数，真实覆盖默认 prop、条件链、事件字段与扩展状态类型。
+        <PhaseFiveAction />
+        // 说明阶段五能力全部由编译期转换器验证。
+        <Text fontSize="small">阶段 5 演示同时覆盖 If/ElseIf/Else 短路链、keyDown code 载荷、prop 默认值、非空 Vec 与 Some 初始值。</Text>
       // 结束主题内容。
       </Column>
     // 结束主题卡片。

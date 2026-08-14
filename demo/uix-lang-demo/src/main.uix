@@ -108,6 +108,25 @@ pseudoStateCheck:checked {
 // 结束状态伪类演示组件。
 </Component>
 
+// 声明阶段五语法小项的真实编译演示组件。
+<Component name="PhaseFiveAction" props="label: String = '阶段 5 默认标题'" state="primary: bool = false, fallback: bool = true, scores: Vec<number> = [1, 2], tags: Vec<String> = ['语法', '类型'], selected: Option<String> = Some('ready')">
+  // 纵向组织默认 prop、扩展状态和条件链。
+  <Column gap="8px">
+    // 省略调用参数时显示 prop 默认值，并读取非空数字集合。
+    <Text>{label} · 分数项 {scores.length}</Text>
+    // 点击切换首分支，键盘事件读取按事件登记的 code 字段。
+    <Button automationId="uix-phase-five-action" @click="setState(primary: !primary)" @keyDown="setState(primary: $event.code == 'Enter')">切换阶段 5 条件链</Button>
+    // 首分支命中时只渲染这一项。
+    <If {primary}><Tag color="success">If 命中 · {tags.length} 个标签</Tag></If>
+    // 首分支未命中时继续短路判断。
+    <ElseIf {fallback}><Tag color="info">ElseIf 命中</Tag></ElseIf>
+    // 前两个条件均不命中时渲染尾分支。
+    <Else><Tag color="warning">Else 命中</Tag></Else>
+  // 结束阶段五演示内容。
+  </Column>
+// 结束阶段五语法小项演示组件。
+</Component>
+
 // 声明页头标题组件，由共享 page 状态驱动条件标题。
 <Component name="PageTitle" props="page: State<number>">
   // 显示首页标题。
