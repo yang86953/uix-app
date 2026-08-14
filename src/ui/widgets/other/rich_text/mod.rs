@@ -736,13 +736,15 @@ component! {
                     let pressed = self.pressed_action
                         == Some(RichTextPointerAction::CopyCode(segment_idx));
                     if hovered || pressed {
-                        // 复制按钮底：与代码块深色底配套的固定暗色（随代码块整体风格，不随主题）。
+                        // 复制按钮底从当前主题交互填充 token 解析。
                         ctx.fill_rect(
                             visible_btn,
                             if pressed {
-                                Color::from_rgb(35, 35, 40)
+                                // 按压态使用更强的次级填充。
+                                ctx.tokens().color_fill_secondary()
                             } else {
-                                Color::from_rgb(55, 55, 62)
+                                // 悬停态使用较弱的三级填充。
+                                ctx.tokens().color_fill_tertiary()
                             },
                             Some(Radius::uniform(3.0)),
                         );
@@ -750,8 +752,8 @@ component! {
                             ctx,
                             "copy",
                             visible_btn,
-                            // 复制图标：与代码块暗底配套的固定亮灰。
-                            Color::from_rgb(200, 200, 200),
+                            // 复制图标使用当前主题次级文字色。
+                            ctx.tokens().color_text_secondary(),
                             10.0_f32.min(visible_btn.h * 0.65),
                         );
                     }
