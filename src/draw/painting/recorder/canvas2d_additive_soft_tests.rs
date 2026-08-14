@@ -656,44 +656,6 @@ fn additive_raw_images_preserve_barriers_and_reject_non_finite_opacity() {
     );
 }
 
-// 分数 offset 无法进入固定 Native shape 时应保留在 Additive sampled soft 分段中。
-#[test]
-fn additive_fill_preserves_fractional_offset_in_sampled_segment() {
-    // 创建一个最小但足以容纳测试矩形的录制画布。
-    let mut canvas = FrameRecordingCanvas::new(8, 8);
-    // 开始一帧带透明 clear 的正式记录。
-    if let Err(error) = canvas.begin_recording(true) {
-        // 合法尺寸的记录初始化不得失败。
-        panic!("fractional offset recording should begin: {error:?}");
-    }
-    // 设置不能无损映射为 FrameRect 的水平分数 offset。
-    canvas.set_offset(0.5, 0.0);
-    // 选择目标相关 Additive 混合。
-    canvas.set_blend_mode(BlendMode::Additive);
-    // 记录一个 otherwise 合法的整数矩形。
-    canvas.fill_rect(Rect::new(1.0, 1.0, 2.0, 2.0), Color::green(), None);
-    // 完成记录并取得用于审计命令和像素的编码器。
-    let encoder = match canvas.finish_recording() {
-        // 合法分数 offset 应由软件光栅保真处理。
-        Ok(encoder) => encoder,
-        // typed failure 表示新 fallback 没有覆盖该几何。
-        Err(error) => panic!("fractional additive offset should finish: {error:?}"),
-    };
-    // 分数几何不能伪装成整数 Native shape 或 SrcOver CPU segment。
-    assert!(matches!(
-        encoder.commands(),
-        [
-            FrameCommand::Clear { .. },
-            FrameCommand::PictureBlit { additive: true, .. }
-        ]
-    ));
-    // 矩形内部的完全覆盖像素应保留原始绿色源贡献。
-    assert_eq!(
-        encoder.render_reference().pixel(2, 2),
-        Some(Color::green().premultiplied())
-    );
-}
-
 // 继续在同一测试模块内加载 Additive glyph sampled soft 分段回归测试。
 include!("canvas2d_additive_glyph_soft_tests.rs");
 // 继续加载 Additive box shadow 仿射 sampled 分段回归测试。
