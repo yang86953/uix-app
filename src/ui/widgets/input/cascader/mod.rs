@@ -1,4 +1,4 @@
-//! Cascader widget - linked multi-level popup selection.
+//! 在多列联动浮层中选择层级路径的级联选择器。
 
 use crate::core::{Point, Rect};
 use crate::draw::Color;
@@ -14,14 +14,20 @@ const POPUP_HEIGHT: f32 = 200.0;
 const ITEM_HEIGHT: f32 = 32.0;
 
 #[derive(Debug, Clone, PartialEq)]
+/// 级联选择器中的一个树形选项。
 pub struct CascaderOption {
+    /// 选项显示文本。
     pub label: String,
+    /// 选项稳定值。
     pub value: String,
+    /// 下一层子选项。
     pub children: Vec<CascaderOption>,
+    /// 该选项是否禁止选择。
     pub disabled: bool,
 }
 
 impl CascaderOption {
+    /// 创建没有子项且可选择的级联选项。
     pub fn new(label: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
             label: label.into(),
@@ -31,11 +37,13 @@ impl CascaderOption {
         }
     }
 
+    /// 替换该选项的全部子项。
     pub fn children(mut self, children: Vec<CascaderOption>) -> Self {
         self.children = children;
         self
     }
 
+    /// 设置该选项是否禁止选择。
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self
@@ -43,8 +51,11 @@ impl CascaderOption {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// 一条已选择级联路径的显示文本和值。
 pub struct CascaderValue {
+    /// 从根到叶的显示文本路径。
     pub labels: Vec<String>,
+    /// 从根到叶的稳定值路径。
     pub values: Vec<String>,
 }
 
