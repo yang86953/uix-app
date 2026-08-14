@@ -18,7 +18,7 @@
         // 展示双向绑定文本输入。
         <Input value={input_name} placeholder="请输入文本" type="text" @change="on_name_change($event)" width="320px" />
         // 展示密码输入。
-        <Input placeholder="密码输入" type="password" width="320px" />
+        <Input placeholder="密码输入" type="password" width="320px" automationId="demo-password-input" />
         // 展示多行输入。
         <Input placeholder="多行输入" type="textarea" width="320px" />
         // 展示带范围与步长的类型化 i32 数字输入。

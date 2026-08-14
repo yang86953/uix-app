@@ -69,6 +69,12 @@ cargo test --features "agent-control,image-codecs" --test uix_lang_multi_window_
 cargo test --features "agent-control,image-codecs" --test uix_lang_system_theme_windows -- --ignored --nocapture
 ```
 
+十二页派生语义树、焦点/调用动作与密码值清除使用公开 Agent 快照验收：
+
+```powershell
+cargo test --features agent-control --test uix_lang_accessibility_windows -- --ignored --nocapture
+```
+
 测试会验证页面标题、组件角色 / 状态 / 动作、主题平均亮度差、D3D11 recipe 与无软件
 回退，并把 PNG 与联系表写入 `target/debug-captures/uix-lang-visual` 供视觉审阅。
 
