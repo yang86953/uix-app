@@ -193,6 +193,8 @@ pub(crate) fn normalize_number_literals(expression: &mut Expression) {
                 normalize_number_literals(item);
             }
         }
+        // 受限闭包递归规范化唯一表达式体。
+        ExpressionKind::Closure { body, .. } => normalize_number_literals(body),
         // 其余叶节点不需要规范化。
         ExpressionKind::Identifier(_) | ExpressionKind::String(_) | ExpressionKind::Boolean(_) => {}
     }

@@ -155,6 +155,8 @@ fn contains_object_literal(expression: &Expression) -> bool {
         ExpressionKind::Object(_) => true,
         // 数组字面量递归检查全部元素。
         ExpressionKind::Array(items) => items.iter().any(contains_object_literal),
+        // 受限闭包递归检查唯一表达式体。
+        ExpressionKind::Closure { body, .. } => contains_object_literal(body),
         // 一元表达式递归检查操作数。
         ExpressionKind::Unary { operand, .. } => contains_object_literal(operand),
         // 二元表达式递归检查两侧。

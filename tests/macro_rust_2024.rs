@@ -141,10 +141,67 @@ struct Rust2024Profile {
     volume: f64,
 }
 
+// 定义扩展数组操作真实宏消费使用的拥有型业务项。
+#[derive(Clone)]
+// 保存稳定排序键与显示名称。
+struct ArrayOperationItem {
+    // 保存谓词、排序与查找共用的稳定编号。
+    id: i32,
+    // 保存映射操作读取的拥有型名称。
+    name: String,
+}
+
 // 提供公开 Form 宏生成代码调用的类型化提交函数。
 fn submit_rust_2024_profile(_profile: Rust2024Profile) -> Result<(), String> {
     // 编译 Gate 不需要业务副作用。
     Ok(())
+}
+
+// 验证真实消费 crate 可编译全部扩展数组操作与受限闭包捕获。
+#[test]
+fn public_uix_macro_compiles_extended_array_operations() {
+    // 构造由各操作不可变克隆的原始业务数组。
+    let array_items = vec![
+        // 首项用于过滤、删除与排序。
+        ArrayOperationItem {
+            // 保存较大的首项编号以验证排序键。
+            id: 2,
+            // 保存首项拥有型名称。
+            name: String::from("second"),
+        },
+        // 次项提供首个匹配目标。
+        ArrayOperationItem {
+            // 保存目标编号。
+            id: 1,
+            // 保存次项拥有型名称。
+            name: String::from("first"),
+        },
+    ];
+    // 构造 insertAt 与 updateAt 共用的新业务项。
+    let replacement = ArrayOperationItem {
+        // 保存替换项编号。
+        id: 3,
+        // 保存替换项名称。
+        name: String::from("third"),
+    };
+    // 保存由多个闭包捕获的调用方目标编号。
+    let target_id = 1_i32;
+    // 让过程宏在真实 Rust 2024 消费边界生成全部扩展操作。
+    let _view: ViewNode = uix::uix!(
+        r#"<Column>
+          <Text>{array_items.insertAt(1, replacement.clone()).length}</Text>
+          <Text>{array_items.updateAt(0, replacement.clone()).length}</Text>
+          <Text>{array_items.removeBy(|it| it.id == target_id).length}</Text>
+          <Text>{array_items.filter(|it| it.id >= target_id).length}</Text>
+          <Text>{array_items.map(|it| it.name).length}</Text>
+          <Text>{array_items.sortBy(|it| it.id).length}</Text>
+          <Text>{array_items.find(|it| it.id == target_id).is_some()}</Text>
+        </Column>"#
+    );
+    // 全部语言操作都必须保持调用方原数组不变。
+    assert_eq!(array_items.len(), 2);
+    // 插入与替换值也不能被宏展开移动。
+    assert_eq!(replacement.id, 3);
 }
 
 // 验证真实消费 crate 可编译完整 FloatButton 标签契约。

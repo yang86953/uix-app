@@ -606,6 +606,42 @@ fn maps_ternary_and_immutable_array_operations() {
     assert_eq!(snapshot.matches("len ()").count(), 2);
 }
 
+// 验证扩展数组操作生成拥有型迭代器与不可变更新结构。
+#[test]
+fn maps_extended_array_operations_and_restricted_closures() {
+    // 用多个文本插值覆盖全部新增操作且避免生成结果参与组件属性类型推断。
+    let source = r#"<Column>
+        <Text>{values.insertAt(index, value).length}</Text>
+        <Text>{values.updateAt(index, value).length}</Text>
+        <Text>{values.removeBy(|it| it.id == target).length}</Text>
+        <Text>{values.filter(|it| it.active).length}</Text>
+        <Text>{values.map(|it| it.name).length}</Text>
+        <Text>{values.sortBy(|it| it.order).length}</Text>
+        <Text>{values.find(|it| it.id == target)}</Text>
+    </Column>"#;
+    // 生成全部数组操作 Rust 令牌。
+    let snapshot = generate(source).expect("扩展数组操作应生成 Rust 代码");
+    // insertAt 必须映射为 Vec::insert。
+    assert!(snapshot.contains("insert (index , value)"));
+    // updateAt 必须映射为索引赋值。
+    assert!(snapshot.contains("[index] = value"));
+    // removeBy 必须查找首个位置后调用一次 remove。
+    assert!(snapshot.contains("iter () . position") && snapshot.contains("remove"));
+    // filter 与 map 必须基于克隆数组的拥有型迭代器。
+    assert!(snapshot.matches("into_iter").count() >= 3);
+    // filter 与 map 必须收集新的 Vec。
+    assert!(
+        snapshot
+            .matches("collect :: < :: std :: vec :: Vec")
+            .count()
+            >= 2
+    );
+    // sortBy 必须使用标准库稳定键排序。
+    assert!(snapshot.contains("sort_by_key"));
+    // find 必须保留 Option 返回语义。
+    assert!(snapshot.contains("find"));
+}
+
 // 验证事件保留参数不能逃逸到普通文本表达式。
 #[test]
 fn rejects_event_parameter_outside_handler() {

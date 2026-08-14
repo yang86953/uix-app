@@ -537,6 +537,8 @@ fn validate_expression_theme_requests(
             // 验证数组项。
             validate_expression_theme_requests(item, themes)
         }),
+        // 受限闭包递归验证唯一表达式体中的主题请求。
+        ExpressionKind::Closure { body, .. } => validate_expression_theme_requests(body, themes),
         // 一元表达式递归操作数。
         ExpressionKind::Unary { operand, .. } => {
             // 验证一元操作数。

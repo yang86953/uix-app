@@ -97,6 +97,15 @@ fn generate_expression_inner(
             // 返回可推断元素类型的 vec 字面量。
             Ok(quote! { ::std::vec![#(#items),*] })
         }
+        // 闭包必须由已登记数组操作消费，不能独立生成。
+        ExpressionKind::Closure { .. } => Err(Diagnostic::new(
+            // 指向完整闭包。
+            expression.span,
+            // 说明生成边界。
+            "受限闭包只能用于数组操作方法参数",
+            // 列出开放闭包的数组操作。
+            "把闭包用于 removeBy、filter、map、sortBy 或 find",
+        )),
         // 一元表达式递归生成操作数。
         ExpressionKind::Unary { operator, operand } => {
             // 生成一元操作数。
@@ -271,6 +280,8 @@ pub(crate) fn expression_uses_event(expression: &Expression) -> bool {
             .iter()
             // 任一元素读取事件即命中。
             .any(expression_uses_event),
+        // 受限闭包递归检查唯一表达式体。
+        ExpressionKind::Closure { body, .. } => expression_uses_event(body),
         // 其余字面量不读取事件。
         ExpressionKind::Number(_) | ExpressionKind::String(_) | ExpressionKind::Boolean(_) => {
             // 返回未命中。
@@ -476,37 +487,10 @@ fn generate_call(
     }
     // 识别不可变数组操作。
     if let ExpressionKind::Member { object, member } = &callee.kind {
-        // push 与 removeAt 都要求一个位置参数。
-        if matches!(member.as_str(), "push" | "removeAt") {
-            // 验证参数数量和形状。
-            let argument = single_positional_argument(arguments, member, span)?;
-            // 生成数组对象。
-            let object = generate_expression_inner(object, event)?;
-            // 生成操作参数。
-            let value = generate_expression_inner(&argument.value, event)?;
-            // 为生成局部变量选择固定卫生名称。
-            let array = Ident::new("__uix_array_value", proc_macro2::Span::mixed_site());
-            // push 克隆后追加并返回新数组。
-            if member == "push" {
-                // 返回不可变更新块。
-                return Ok(quote! {{
-                    // 克隆原数组以保持语言的不可变更新语义。
-                    let mut #array = (#object).clone();
-                    // 向新数组追加元素。
-                    #array.push(#value);
-                    // 返回新数组。
-                    #array
-                }});
-            }
-            // removeAt 克隆后移除指定下标并返回新数组。
-            return Ok(quote! {{
-                // 克隆原数组以保持语言的不可变更新语义。
-                let mut #array = (#object).clone();
-                // 从新数组移除指定位置。
-                #array.remove(#value);
-                // 返回新数组。
-                #array
-            }});
+        // 已登记数组操作由唯一不可变更新生成器消费。
+        if let Some(generated) = generate_array_operation(object, member, arguments, span, event) {
+            // 返回数组操作生成结果或对应诊断。
+            return generated;
         }
         // Step.status 的字符串语义值映射为公开枚举路径。
         if member == "status" && data_chain_root(object) == Some("Step") {
@@ -627,6 +611,233 @@ fn generate_call(
         .collect::<Result<Vec<_>, _>>()?;
     // 返回 Rust 调用表达式。
     Ok(quote! { (#callee)(#(#arguments),*) })
+}
+
+// 生成一个已登记的不可变数组操作，普通成员调用返回 None。
+fn generate_array_operation(
+    // 接收数组对象表达式。
+    object: &Expression,
+    // 接收语言面操作名称。
+    member: &str,
+    // 接收操作参数。
+    arguments: &[CallArgument],
+    // 接收完整调用跨度。
+    span: SourceSpan,
+    // 接收可选事件载荷变量。
+    event: Option<&Ident>,
+) -> Option<Result<TokenStream, Diagnostic>> {
+    // 只接管规范登记的数组操作名称。
+    if !matches!(
+        member,
+        "push"
+            | "removeAt"
+            | "insertAt"
+            | "updateAt"
+            | "removeBy"
+            | "filter"
+            | "map"
+            | "sortBy"
+            | "find"
+    ) {
+        // 普通 Rust 成员调用留给后续路径。
+        return None;
+    }
+    // 在内部闭包中生成完整数组操作。
+    Some((|| {
+        // 生成只求值一次的数组对象。
+        let object = generate_expression_inner(object, event)?;
+        // 为不可变更新局部数组选择卫生名称。
+        let array = Ident::new("__uix_array_value", proc_macro2::Span::mixed_site());
+        // 按操作名称生成确定性 Rust 语义。
+        match member {
+            // push 克隆后追加并返回新数组。
+            "push" => {
+                // 读取唯一追加值。
+                let argument = single_positional_argument(arguments, member, span)?;
+                // 生成追加值表达式。
+                let value = generate_expression_inner(&argument.value, event)?;
+                // 返回不可变追加块。
+                Ok(quote! {{
+                    // 克隆原数组以保持语言的不可变更新语义。
+                    let mut #array = (#object).clone();
+                    // 向新数组追加元素。
+                    #array.push(#value);
+                    // 返回新数组。
+                    #array
+                }})
+            }
+            // removeAt 克隆后按下标删除并返回新数组。
+            "removeAt" => {
+                // 读取唯一删除下标。
+                let argument = single_positional_argument(arguments, member, span)?;
+                // 生成下标表达式。
+                let index = generate_expression_inner(&argument.value, event)?;
+                // 返回不可变删除块。
+                Ok(quote! {{
+                    // 克隆原数组以保持语言的不可变更新语义。
+                    let mut #array = (#object).clone();
+                    // 从新数组移除指定位置。
+                    #array.remove(#index);
+                    // 返回新数组。
+                    #array
+                }})
+            }
+            // insertAt 克隆后在指定下标插入并返回新数组。
+            "insertAt" => {
+                // 读取索引和值两个位置参数。
+                let (index, value) = two_positional_arguments(arguments, member, span)?;
+                // 生成插入下标。
+                let index = generate_expression_inner(&index.value, event)?;
+                // 生成插入值。
+                let value = generate_expression_inner(&value.value, event)?;
+                // 返回不可变插入块。
+                Ok(quote! {{
+                    // 克隆原数组以保持调用方绑定不被移动。
+                    let mut #array = (#object).clone();
+                    // 在新数组指定位置插入元素。
+                    #array.insert(#index, #value);
+                    // 返回新数组。
+                    #array
+                }})
+            }
+            // updateAt 克隆后替换指定下标并返回新数组。
+            "updateAt" => {
+                // 读取索引和值两个位置参数。
+                let (index, value) = two_positional_arguments(arguments, member, span)?;
+                // 生成替换下标。
+                let index = generate_expression_inner(&index.value, event)?;
+                // 生成替换值。
+                let value = generate_expression_inner(&value.value, event)?;
+                // 返回不可变替换块。
+                Ok(quote! {{
+                    // 克隆原数组以保持调用方绑定不被移动。
+                    let mut #array = (#object).clone();
+                    // 替换新数组指定位置的元素。
+                    #array[#index] = #value;
+                    // 返回新数组。
+                    #array
+                }})
+            }
+            // removeBy 克隆后删除首个谓词匹配项。
+            "removeBy" => {
+                // 生成唯一受限闭包参数与表达式体。
+                let (parameter, body) = generate_array_closure(arguments, member, span, event)?;
+                // 为首个匹配位置选择卫生名称。
+                let index = Ident::new("__uix_match_index", proc_macro2::Span::mixed_site());
+                // 返回首匹配不可变删除块。
+                Ok(quote! {{
+                    // 克隆原数组以保持调用方绑定不被移动。
+                    let mut #array = (#object).clone();
+                    // 查找首个满足谓词的元素位置。
+                    if let ::std::option::Option::Some(#index) = #array.iter().position(|#parameter| #body) {
+                        // 只删除首个匹配元素。
+                        #array.remove(#index);
+                    }
+                    // 返回新数组。
+                    #array
+                }})
+            }
+            // filter 对克隆数组按值迭代并收集匹配元素。
+            "filter" => {
+                // 生成唯一受限闭包参数与表达式体。
+                let (parameter, body) = generate_array_closure(arguments, member, span, event)?;
+                // 返回拥有型过滤结果。
+                Ok(quote! {
+                    (#object).clone().into_iter().filter(|#parameter| #body).collect::<::std::vec::Vec<_>>()
+                })
+            }
+            // map 对克隆数组按值迭代并收集映射元素。
+            "map" => {
+                // 生成唯一受限闭包参数与表达式体。
+                let (parameter, body) = generate_array_closure(arguments, member, span, event)?;
+                // 返回拥有型映射结果。
+                Ok(quote! {
+                    (#object).clone().into_iter().map(|#parameter| #body).collect::<::std::vec::Vec<_>>()
+                })
+            }
+            // sortBy 克隆后按闭包键执行稳定升序排序。
+            "sortBy" => {
+                // 生成唯一受限闭包参数与表达式体。
+                let (parameter, body) = generate_array_closure(arguments, member, span, event)?;
+                // 返回稳定排序后的新数组。
+                Ok(quote! {{
+                    // 克隆原数组以保持调用方绑定不被移动。
+                    let mut #array = (#object).clone();
+                    // 使用标准库稳定键排序。
+                    #array.sort_by_key(|#parameter| #body);
+                    // 返回新数组。
+                    #array
+                }})
+            }
+            // find 对克隆数组按值迭代并返回首个拥有型匹配项。
+            "find" => {
+                // 生成唯一受限闭包参数与表达式体。
+                let (parameter, body) = generate_array_closure(arguments, member, span, event)?;
+                // 返回首个匹配项或 None。
+                Ok(quote! { (#object).clone().into_iter().find(|#parameter| #body) })
+            }
+            // 操作名称已由入口闭合集合保证。
+            _ => unreachable!(),
+        }
+    })())
+}
+
+// 生成数组操作唯一受限闭包的参数与表达式体。
+fn generate_array_closure(
+    // 接收调用参数。
+    arguments: &[CallArgument],
+    // 接收操作名称。
+    operation: &str,
+    // 接收完整调用跨度。
+    span: SourceSpan,
+    // 接收可选事件载荷变量。
+    event: Option<&Ident>,
+) -> Result<(Ident, TokenStream), Diagnostic> {
+    // 先验证唯一位置参数。
+    let argument = single_positional_argument(arguments, operation, span)?;
+    // 参数必须保持闭包 AST 形状。
+    let ExpressionKind::Closure { parameter, body } = &argument.value.kind else {
+        // 返回防御性闭包形状诊断。
+        return Err(Diagnostic::new(
+            // 指向实际参数。
+            argument.span,
+            // 说明操作参数要求。
+            format!("{operation} 必须接收一个受限闭包"),
+            // 给出规范示例。
+            format!("使用 array.{operation}(|item| expression)"),
+        ));
+    };
+    // 把闭包参数验证并转换为 Rust 标识符。
+    let parameter = rust_member(parameter, argument.value.span)?;
+    // 生成闭包唯一表达式体。
+    let body = generate_expression_inner(body, event)?;
+    // 返回闭包两部分供具体迭代器操作拼接。
+    Ok((parameter, body))
+}
+
+// 验证并返回数组双参数更新操作的位置参数。
+fn two_positional_arguments<'a>(
+    // 接收调用参数。
+    arguments: &'a [CallArgument],
+    // 接收操作名称。
+    operation: &str,
+    // 接收完整调用跨度。
+    span: SourceSpan,
+) -> Result<(&'a CallArgument, &'a CallArgument), Diagnostic> {
+    // 要求恰好两个无名称参数。
+    if arguments.len() == 2 && arguments.iter().all(|argument| argument.name.is_none()) {
+        // 返回索引和值参数。
+        return Ok((&arguments[0], &arguments[1]));
+    }
+    // 返回双参数数组操作诊断。
+    Err(Diagnostic::new(
+        // 指向完整调用。
+        span,
+        // 说明索引和值要求。
+        format!("{operation} 必须接收索引和值两个位置参数"),
+        // 给出对应规范示例。
+        format!("使用 array.{operation}(index, value)"),
+    ))
 }
 
 // 验证数组操作只有一个位置参数。

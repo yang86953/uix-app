@@ -25,6 +25,13 @@ pub(crate) enum ExpressionKind {
     Object(Vec<ObjectField>),
     // 保存数据绑定与不可变更新使用的数组字面量。
     Array(Vec<Expression>),
+    // 保存只允许作为数组操作参数的单参数闭包。
+    Closure {
+        // 保存闭包局部参数名称。
+        parameter: String,
+        // 保存唯一表达式闭包体。
+        body: Box<Expression>,
+    },
     // 保存一元运算。
     Unary {
         // 保存一元运算符。

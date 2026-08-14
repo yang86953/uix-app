@@ -259,13 +259,16 @@ fn validate_virtual_key_expression(
             validate_virtual_key_expression(index, binding, index_binding)
         }
         // 调用、数组与对象字面量可能产生副作用或隐藏外部依赖，不属于稳定身份子语言。
-        ExpressionKind::Call { .. } | ExpressionKind::Object(_) | ExpressionKind::Array(_) => {
+        ExpressionKind::Call { .. }
+        | ExpressionKind::Object(_)
+        | ExpressionKind::Array(_)
+        | ExpressionKind::Closure { .. } => {
             // 返回不允许的复杂结构诊断。
             Err(Diagnostic::new(
                 // 指向不允许的复杂结构。
                 expression.span,
                 // 说明 key 工厂必须保持无副作用。
-                "VirtualScroll 的 For key 不能包含调用、数组或对象字面量",
+                "VirtualScroll 的 For key 不能包含调用、数组、对象字面量或闭包",
                 // 引导使用当前项的稳定字段或纯组合。
                 "使用 key={item.id} 或 item/index 的纯成员与算术表达式",
             ))
