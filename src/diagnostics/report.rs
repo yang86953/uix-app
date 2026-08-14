@@ -146,44 +146,54 @@ impl ErrorReport {
         }
     }
 
+    /// 返回该报告在当前诊断运行时内的唯一标识。
     pub fn id(&self) -> ReportId {
         self.id
     }
 
+    /// 返回错误被观测到的系统时间。
     pub fn observed_at(&self) -> SystemTime {
         self.observed_at
     }
 
+    /// 返回错误分类码。
     pub fn code(&self) -> Errc {
         self.code
     }
 
+    /// 返回错误严重级别。
     pub fn severity(&self) -> ErrorSeverity {
         self.severity
     }
 
+    /// 返回经过清洗的错误摘要。
     pub fn summary(&self) -> &str {
         &self.summary
     }
 
+    /// 返回报告来源的目标名称。
     pub fn origin_target(&self) -> &str {
         &self.origin_target
     }
 
+    /// 返回可选的来源操作名称。
     pub fn operation(&self) -> Option<&str> {
         self.operation.as_deref()
     }
 
+    /// 返回可选的资源种类及其不透明标识。
     pub fn resource(&self) -> Option<(&str, &str)> {
         self.resource
             .as_ref()
             .map(|(kind, id)| (kind.as_str(), id.as_str()))
     }
 
+    /// 返回错误原因链是否因容量限制而被截断。
     pub fn causes_truncated(&self) -> bool {
         self.causes_truncated
     }
 
+    /// 返回该报告是否已经成功发出诊断事件。
     pub fn event_emitted(&self) -> bool {
         self.event_emitted
     }
@@ -198,14 +208,17 @@ pub struct DiagnosticsSnapshot {
 }
 
 impl DiagnosticsSnapshot {
+    /// 返回快照中仍被保留的错误报告。
     pub fn reports(&self) -> &[ErrorReport] {
         &self.reports
     }
 
+    /// 返回该运行时累计接收的报告数，包括已淘汰报告。
     pub fn total_reports(&self) -> u64 {
         self.total_reports
     }
 
+    /// 返回因保留容量限制而被淘汰的报告数。
     pub fn evicted_reports(&self) -> u64 {
         self.evicted_reports
     }
