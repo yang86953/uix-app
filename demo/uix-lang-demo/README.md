@@ -84,8 +84,9 @@ cargo test --features "agent-control,image-codecs" --test uix_lang_foreground_wi
 测试会验证页面标题、组件角色 / 状态 / 动作、主题平均亮度差、D3D11 recipe 与无软件
 回退，并把 PNG 与联系表写入 `target/debug-captures/uix-lang-visual` 供视觉审阅。
 
-Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。Windows 入口在 8MB
-大栈 UI 线程上运行，承载声明文件展开出的深层 ViewNode 树。
+Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。入口统一经
+`uix::platform::run_on_ui_thread` 运行：Windows 在 8MB 大栈 UI 线程上执行，
+承载声明文件展开出的深层 ViewNode 树；其他平台直接在进程主线程执行。
 
 ## 对齐范围
 

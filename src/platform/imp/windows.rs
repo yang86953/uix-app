@@ -63,6 +63,36 @@ impl Drop for State {
     }
 }
 
+// Windows 主线程默认栈较小；深层 ViewNode 树的构建、协调与布局递归需要
+// 有界大栈 UI 线程，与应用入口约定的容量一致。
+const UI_THREAD_STACK_BYTES: usize = 8 * 1024 * 1024;
+
+// 在命名的大栈 UI 线程上运行闭包，并把线程结果或 panic 恢复到调用方。
+pub(crate) fn run_on_ui_thread<F, R>(thread_name: &str, run: F) -> R
+where
+    // 闭包只运行一次、可跨线程移动，且与返回值都可以跨线程发送。
+    F: FnOnce() -> R + Send + 'static,
+    R: Send,
+{
+    // 用目标名与固定大栈创建专用 UI 线程。
+    let ui_thread = match std::thread::Builder::new()
+        .name(thread_name.to_owned())
+        .stack_size(UI_THREAD_STACK_BYTES)
+        .spawn(run) {
+        // 返回已创建的 UI 线程。
+        Ok(ui_thread) => ui_thread,
+        // 线程创建失败属于不可恢复的平台错误，文案带线程名便于诊断。
+        Err(error) => panic!("spawn UI thread {thread_name:?}: {error}"),
+    };
+    // 等待 UI 线程结束；panic 按原样恢复到调用线程。
+    match ui_thread.join() {
+        // 返回闭包结果。
+        Ok(result) => result,
+        // 把子线程 panic 负载恢复到当前线程继续展开。
+        Err(payload) => std::panic::resume_unwind(payload),
+    }
+}
+
 pub(crate) fn is_main_thread() -> Result<bool> {
     // Windows exposes no direct main-thread predicate. The initial process
     // thread is the live process thread with the earliest creation timestamp.

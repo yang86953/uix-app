@@ -245,46 +245,17 @@ fn main() {
     let states = DemoStates::new();
     // 克隆 tick 句柄供 on_start 秒级计时器更新。
     let tick = states.tick.clone();
-    // 声明式文档展开出较深视图树，按平台入口执行窗口事件循环。
-    #[cfg(windows)]
-    {
-        // Windows 主线程默认栈较小；深层 ViewNode 树的构建、协调与布局递归
-        // 需要与 API GUI Demo 一致的有界大栈 UI 线程。
-        const WINDOWS_GUI_STACK_BYTES: usize = 8 * 1024 * 1024;
-        // 在专用大栈线程上运行声明式演示窗口。
-        let ui_thread = match std::thread::Builder::new()
-            .name("uix-lang-demo-gui".to_string())
-            .stack_size(WINDOWS_GUI_STACK_BYTES)
-            .spawn(move || {
-                // 把已经通过前置门禁的全部启动选择交给 UI 线程组合根。
-                run_gui(
-                    states.clone(),
-                    tick.clone(),
-                    options.agent_control,
-                    options.graphics_recovery_test,
-                    options.follow_system_theme,
-                )
-            }) {
-            // 返回已创建的 UI 线程。
-            Ok(ui_thread) => ui_thread,
-            // 线程创建失败直接失败退出。
-            Err(error) => panic!("spawn Windows UI thread: {error}"),
-        };
-        // 把子线程 panic 恢复到主线程。
-        if let Err(payload) = ui_thread.join() {
-            std::panic::resume_unwind(payload);
-        }
-    }
-
-    // 其他平台沿用主线程入口。
-    #[cfg(not(windows))]
-    run_gui(
-        states,
-        tick,
-        options.agent_control,
-        options.graphics_recovery_test,
-        options.follow_system_theme,
-    );
+    // 声明式文档展开出较深视图树；是否换用大栈 UI 线程由平台层决定。
+    uix::platform::run_on_ui_thread("uix-lang-demo-gui", move || {
+        // 把已经通过前置门禁的全部启动选择交给 UI 入口组合根。
+        run_gui(
+            states,
+            tick,
+            options.agent_control,
+            options.graphics_recovery_test,
+            options.follow_system_theme,
+        )
+    });
     // 结束进程入口。
 }
 

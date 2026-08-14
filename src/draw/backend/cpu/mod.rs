@@ -1,7 +1,8 @@
 //! CPU 渲染后端 — PixelSurface + CpuCanvas2D。
 
 pub(crate) mod canvas_2d;
-#[cfg(any(test, all(windows, feature = "vulkan")))]
+// 与 gfx_r5_support 的三重门控对齐，非 test-harness 生产构建不编译空实现。
+#[cfg(any(test, all(windows, feature = "vulkan", feature = "test-harness")))]
 pub(crate) mod noop_canvas_2d;
 pub(crate) mod offscreen;
 // 将 Picture blur 与后续合成的 CPU 回归拆到独立测试文件。
