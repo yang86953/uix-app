@@ -31,17 +31,22 @@ use geometry::{absolute_date_picker_popup_rect, date_picker_surface_rect};
 /// 归一到合法年月日的公历日期。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Date {
+    /// 公历年份。
     pub year: i32,
+    /// 公历月份；通过构造器创建时范围为一至十二。
     pub month: usize,
+    /// 月内日期；通过构造器创建时夹取到该月有效范围。
     pub day: usize,
 }
 
 impl Date {
+    /// 创建日期，并将月份和月内日期夹取到有效公历范围。
     pub fn new(year: i32, month: usize, day: usize) -> Self {
         let month = month.clamp(1, 12);
         let day = day.clamp(1, days_in_month(year, month));
         Self { year, month, day }
     }
+    /// 返回以连字符分隔并补零的年月日文本。
     pub fn format(&self) -> String {
         format!("{:04}-{:02}-{:02}", self.year, self.month, self.day)
     }
@@ -64,16 +69,24 @@ impl Date {
 /// 公历星期，顺序从周一到周日。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Weekday {
+    /// 星期一。
     Monday,
+    /// 星期二。
     Tuesday,
+    /// 星期三。
     Wednesday,
+    /// 星期四。
     Thursday,
+    /// 星期五。
     Friday,
+    /// 星期六。
     Saturday,
+    /// 星期日。
     Sunday,
 }
 
 impl Weekday {
+    /// 返回当前星期是否为星期六或星期日。
     pub const fn is_weekend(self) -> bool {
         matches!(self, Self::Saturday | Self::Sunday)
     }
@@ -107,9 +120,13 @@ impl Weekday {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PickerMode {
     #[default]
+    /// 选择并写回具体公历日期。
     Date,
+    /// 选择日期所在周，并写回该周星期一。
     Week,
+    /// 选择月份，并写回该月第一天。
     Month,
+    /// 选择季度，并写回该季度第一天。
     Quarter,
 }
 
@@ -524,6 +541,7 @@ impl DatePicker {
         )
     }
 
+    /// 创建未选值、按日期选择且使用当前 Provider 尺寸的选择器。
     pub fn new() -> Self {
         let today = Date::today();
         let config = crate::ui::component::config::use_config();
@@ -568,11 +586,13 @@ impl DatePicker {
         self
     }
 
+    /// 设置未选择日期时显示的占位文本。
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.placeholder = placeholder.into();
         self
     }
 
+    /// 设置日期输入框使用的标准控件尺寸。
     pub fn size(mut self, size: ControlSize) -> Self {
         self.picker_size = size;
         self
@@ -597,9 +617,11 @@ impl DatePicker {
     pub fn current_value(&self) -> Date {
         self.value.get()
     }
+    /// 返回日期面板当前是否已打开。
     pub fn is_open(&self) -> bool {
         self.open.get()
     }
+    /// 返回当前日期、周、月或季度选择粒度。
     pub fn picker_mode(&self) -> PickerMode {
         self.mode
     }
