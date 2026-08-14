@@ -1,6 +1,5 @@
 //! LineChart — line chart with grid lines and data point markers.
 
-use std::any::Any;
 use std::cell::Cell;
 
 use crate::component;
@@ -14,13 +13,22 @@ use super::advanced::{
     TooltipTrigger, catmull_rom_points, normalized_ratio,
 };
 
+// 将构造、默认值与链式配置集中到独立的组件配置模块。
+#[path = "line_chart/config.rs"]
+// 编译折线图的公开配置实现。
+mod config;
+
+/// 折线图中的单个分类数据点。
 #[derive(Debug, Clone, PartialEq)]
 pub struct LineData {
+    /// 显示在横轴与提示框中的分类标签。
     pub label: String,
+    /// 数据点在纵轴上的原始数值。
     pub value: f32,
 }
 
 impl LineData {
+    /// 使用分类标签和数值创建数据点。
     pub fn new(label: impl Into<String>, value: f32) -> Self {
         Self {
             label: label.into(),
@@ -412,160 +420,7 @@ struct LinePlot {
     points: Vec<Point>,
 }
 
-impl Default for LineChart {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 impl LineChart {
-    // 图表组件默认尺寸；其他组件同名常量值不同，属各自设计。
-    const DEFAULT_WIDTH: f32 = 300.0;
-    const DEFAULT_HEIGHT: f32 = 200.0;
-
-    pub fn new() -> Self {
-        Self {
-            data: Vec::new(),
-            fixed_width: 0.0,
-            fixed_height: 200.0,
-            line_color: None,
-            max_value: 0.0,
-            auto_min: false,
-            show_grid: true,
-            show_dots: true,
-            line_width: 2.0,
-            dot_radius: 3.0,
-            series: Vec::new(),
-            legend: LegendPosition::None,
-            smooth: false,
-            step: false,
-            background: None,
-            padding: 0.0,
-            title: String::new(),
-            subtitle: String::new(),
-            responsive: false,
-            interaction: None,
-            brush_config: None,
-            tooltip_config: None,
-            animation_enabled: false,
-            last_frame: Cell::new(None),
-            hovered_pos: Cell::new(None),
-            tooltip_pos: Cell::new(None),
-            brush_start: Cell::new(None),
-            pan_start: Cell::new(None),
-            pan_origin: Cell::new(0.0),
-            pan_offset: Cell::new(0.0),
-            zoom: Cell::new(1.0),
-        }
-    }
-    pub fn data(mut self, d: Vec<LineData>) -> Self {
-        self.data = d;
-        self
-    }
-    pub fn width(mut self, w: f32) -> Self {
-        self.fixed_width = Self::optional_dimension(w);
-        self
-    }
-    pub fn height(mut self, h: f32) -> Self {
-        self.fixed_height = Self::optional_dimension(h);
-        self
-    }
-    pub fn line_color(mut self, c: Color) -> Self {
-        self.line_color = Some(c);
-        self
-    }
-    pub fn max_value(mut self, v: f32) -> Self {
-        self.max_value = if v.is_finite() && v > 0.0 { v } else { 0.0 };
-        self
-    }
-    pub fn auto_min(mut self, v: bool) -> Self {
-        self.auto_min = v;
-        self
-    }
-    pub fn show_grid(mut self, v: bool) -> Self {
-        self.show_grid = v;
-        self
-    }
-    pub fn show_dots(mut self, v: bool) -> Self {
-        self.show_dots = v;
-        self
-    }
-    pub fn line_width(mut self, w: f32) -> Self {
-        self.line_width = if w.is_finite() && w > 0.0 { w } else { 1.0 };
-        self
-    }
-    pub fn dot_radius(mut self, radius: f32) -> Self {
-        self.dot_radius = if radius.is_finite() {
-            radius.max(0.0)
-        } else {
-            0.0
-        };
-        self
-    }
-
-    pub fn series<T: 'static>(mut self, series: T) -> Self {
-        if let Ok(series) =
-            (Box::new(series) as Box<dyn Any>).downcast::<Vec<ChartSeries<Vec<LineData>>>>()
-        {
-            self.series = *series;
-            if let Some(first) = self.series.first() {
-                self.data = first.data.clone();
-            }
-        }
-        self
-    }
-    pub fn legend(mut self, position: LegendPosition) -> Self {
-        self.legend = position;
-        self
-    }
-    pub fn smooth(mut self, value: bool) -> Self {
-        self.smooth = value;
-        self
-    }
-    pub fn step(mut self, value: bool) -> Self {
-        self.step = value;
-        self
-    }
-    pub fn bg(mut self, color: Color) -> Self {
-        self.background = Some(color);
-        self
-    }
-    pub fn padding(mut self, padding: f32) -> Self {
-        self.padding = if padding.is_finite() {
-            padding.max(0.0)
-        } else {
-            0.0
-        };
-        self
-    }
-    pub fn title(mut self, title: impl Into<String>) -> Self {
-        self.title = title.into();
-        self
-    }
-    pub fn subtitle(mut self, subtitle: impl Into<String>) -> Self {
-        self.subtitle = subtitle.into();
-        self
-    }
-    pub fn responsive(mut self, responsive: bool) -> Self {
-        self.responsive = responsive;
-        self
-    }
-    pub fn interactive(mut self, config: InteractionConfig) -> Self {
-        self.interaction = Some(config);
-        self
-    }
-    pub fn brush(mut self, config: BrushConfig) -> Self {
-        self.brush_config = Some(config);
-        self
-    }
-    pub fn tooltip(mut self, config: TooltipConfig) -> Self {
-        self.tooltip_config = Some(config);
-        self
-    }
-    pub fn animation(mut self, _animation: crate::ui::animation::AnimationConfig) -> Self {
-        self.animation_enabled = true;
-        self
-    }
-
     fn intrinsic_size(&self) -> Size {
         let width = if self.fixed_width > 0.0 {
             self.fixed_width
