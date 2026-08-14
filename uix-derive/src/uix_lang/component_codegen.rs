@@ -340,7 +340,7 @@ impl ComponentExpander {
         if let Some(control) = &mut expanded.control {
             // 按控制绑定形状改写。
             match control {
-                // 改写 If 条件。
+                // 改写 If 或 ElseIf 条件。
                 ControlBinding::If(condition) => self.transform_expression(
                     // 可变借用条件表达式。
                     &mut condition.expression,

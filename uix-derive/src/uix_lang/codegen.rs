@@ -2,7 +2,6 @@
 use proc_macro2::{Ident, Span, TokenStream};
 // 引入确定性令牌拼接宏。
 use quote::quote;
-
 // 引入解析后的核心语法树与诊断类型。
 use super::{
     Attribute, AttributeValue, ComponentScopeMarker, ControlBinding, Diagnostic, Element,
@@ -10,7 +9,8 @@ use super::{
 };
 // 引入独立元素分派入口。
 use super::element_codegen::generate_element;
-// 引入组件内动态样式包裹入口。
+// 引入相邻条件链生成入口。
+use super::conditional_chain_codegen::generate_conditional_chain;
 // 引入 For 实际实例路径内部标识符读取。
 use super::for_identity_codegen::{internal_control_ident, optional_internal_control_ident};
 // 引入最终 ViewNode 的组件状态装饰应用。
@@ -26,7 +26,7 @@ use super::{
 // 生成一个可直接消费的公开 UIX View 表达式。
 pub(crate) fn generate_view(element: &Element) -> Result<TokenStream, Diagnostic> {
     // 控制节点只能在父元素的有序子节点列表中展开。
-    if matches!(element.name.as_str(), "If" | "For") {
+    if matches!(element.name.as_str(), "If" | "ElseIf" | "Else" | "For") {
         // 返回根控制节点形状诊断。
         return Err(Diagnostic::new(
             // 指向完整控制元素。
@@ -34,7 +34,7 @@ pub(crate) fn generate_view(element: &Element) -> Result<TokenStream, Diagnostic
             // 说明单根 View 要求。
             format!("<{}> 不能作为独立 View 根节点生成", element.name),
             // 给出父容器修复建议。
-            "把 If 或 For 放入 Container、Row 或 Column 内",
+            "把 If、ElseIf、Else 或 For 放入 Container、Row 或 Column 内",
         ));
     }
     // 普通元素委托映射矩阵生成。
@@ -471,7 +471,7 @@ pub(super) fn generate_children(children: &[Node]) -> Result<TokenStream, Diagno
 }
 
 // 生成一组节点的顺序追加语句。
-fn generate_child_statements(
+pub(super) fn generate_child_statements(
     // 接收有序语言节点。
     children: &[Node],
     // 接收目标子节点向量。
@@ -479,20 +479,54 @@ fn generate_child_statements(
 ) -> Result<TokenStream, Diagnostic> {
     // 保存有序语句令牌。
     let mut statements = Vec::new();
-    // 按源码顺序处理每个节点。
-    for child in children {
+    // 按源码顺序处理每个节点索引，条件链可一次消费多个相邻分支。
+    let mut index = 0;
+    // 逐项生成直到消费全部节点。
+    while index < children.len() {
+        // 借用当前节点。
+        let child = &children[index];
         // 忽略布局容器之间仅用于排版源码的空白。
         if matches!(child, Node::Text(text) if text.value.trim().is_empty()) {
             // 继续处理下一节点。
+            // 前进到下一节点。
+            index += 1;
+            // 继续扫描。
             continue;
         }
         // 控制元素在当前向量作用域内展开。
         if let Node::Element(element) = child {
-            // If 与 For 生成控制流语句而非占位节点。
-            if matches!(element.name.as_str(), "If" | "For") {
+            // If 会连同相邻 ElseIf/Else 生成单次短路条件链。
+            if element.name == "If" {
+                // 生成链并取得下一个尚未消费的节点索引。
+                let (chain, next_index) =
+                    generate_conditional_chain(children, index, output)?;
+                // 保存完整条件链语句。
+                statements.push(chain);
+                // 跳过已经归入链内的分支和空白。
+                index = next_index;
+                // 继续处理链后节点。
+                continue;
+            }
+            // 孤立 ElseIf 或 Else 没有前导 If，必须在编译期拒绝。
+            if matches!(element.name.as_str(), "ElseIf" | "Else") {
+                // 返回相邻配对诊断。
+                return Err(Diagnostic::new(
+                    // 指向孤立分支。
+                    element.span,
+                    // 陈述缺少前导条件链。
+                    format!("孤立 <{}> 缺少相邻的前导 If", element.name),
+                    // 给出紧邻修复方式。
+                    "把该分支紧接在 <If> 或 <ElseIf> 后，且中间不要插入其他元素",
+                ));
+            }
+            // For 生成控制流语句而非占位节点。
+            if element.name == "For" {
                 // 生成控制流语句。
                 statements.push(generate_control(element, output)?);
                 // 继续处理下一节点。
+                // 前进到下一节点。
+                index += 1;
+                // 继续扫描。
                 continue;
             }
         }
@@ -500,6 +534,8 @@ fn generate_child_statements(
         let view = generate_node_view(child)?;
         // 按顺序追加到目标向量。
         statements.push(quote! { #output.push(#view); });
+        // 前进到下一节点。
+        index += 1;
     }
     // 拼接全部有序语句。
     Ok(quote! { #(#statements)* })
@@ -540,28 +576,6 @@ fn generate_control(
 ) -> Result<TokenStream, Diagnostic> {
     // 按控制绑定结构生成。
     match (&element.name[..], element.control.as_ref()) {
-        // If 按条件决定是否追加子节点。
-        ("If", Some(ControlBinding::If(condition))) => {
-            // 生成条件表达式。
-            let condition = generate_expression(&condition.expression, None)?;
-            // 生成分支内有序子节点。
-            let children = generate_scoped_child_statements(
-                // 传递分支内的有序子节点。
-                &element.children,
-                // 传递外层目标子节点向量。
-                output,
-                // 传递控制元素继承的组件作用域标记。
-                &element.component_scopes,
-            )?;
-            // 返回不生成占位节点的条件分支。
-            Ok(quote! {
-                // 条件为真时才追加分支子节点。
-                if #condition {
-                    // 保持分支内部源码顺序。
-                    #children
-                }
-            })
-        }
         // For 按数据源生成重复子节点。
         (
             "For",
@@ -619,7 +633,7 @@ fn generate_control(
 }
 
 // 生成控制流内部子节点，并把控制元素继承的作用域传播到每个实际根。
-fn generate_scoped_child_statements(
+pub(super) fn generate_scoped_child_statements(
     // 接收需要按源码顺序生成的子节点。
     children: &[Node],
     // 接收外层目标子节点向量。

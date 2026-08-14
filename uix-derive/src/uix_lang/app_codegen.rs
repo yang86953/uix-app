@@ -443,7 +443,7 @@ fn validate_element_theme_requests(
     if let Some(control) = &element.control {
         // 按控制绑定形状递归。
         match control {
-            // 验证 If 条件表达式。
+            // 验证 If 或 ElseIf 条件表达式。
             ControlBinding::If(condition) => {
                 // 递归条件表达式。
                 validate_expression_theme_requests(&condition.expression, themes)?;
