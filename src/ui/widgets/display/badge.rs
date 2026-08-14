@@ -19,8 +19,7 @@ use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::tree_measure::child_from_tree_with_constraints;
 use crate::ui::component::widget::WidgetTree;
 // 引入组合布局快照类型。
-use crate::ui::LayoutChild;
-use crate::ui::SnapshotFields;
+use crate::ui::{LayoutChild, PrimaryHue, SnapshotFields, ThemeTokens};
 
 /// 徽章状态。
 ///
@@ -47,16 +46,86 @@ pub enum BadgeColor {
 
 impl BadgeColor {
     /// 映射为对应的 `Color`。
-    /// 预设品牌色表（AntD 色板）：纯函数无主题上下文，保留字面量、不随换肤变化。
+    /// 无主题上下文时返回 theme 层 Ant Design 色阶的兼容主色。
     pub fn to_color(self) -> Color {
+        // 兼容纯值 API 只读取 theme 层拥有的预设色阶。
         match self {
-            BadgeColor::Blue => Color::hex("#1677ff"),
-            BadgeColor::Green => Color::hex("#52c41a"),
-            BadgeColor::Orange => Color::hex("#fa8c16"),
-            BadgeColor::Red => Color::hex("#f5222d"),
-            BadgeColor::Purple => Color::hex("#722ed1"),
+            // 蓝色返回预设蓝色色阶主色。
+            BadgeColor::Blue => PrimaryHue::Blue.primary(),
+            // 绿色返回预设绿色色阶主色。
+            BadgeColor::Green => PrimaryHue::Green.primary(),
+            // 橙色返回预设橙色色阶主色。
+            BadgeColor::Orange => PrimaryHue::Orange.primary(),
+            // 红色返回预设红色色阶主色。
+            BadgeColor::Red => PrimaryHue::Red.primary(),
+            // 紫色返回预设紫色色阶主色。
+            BadgeColor::Purple => PrimaryHue::Purple.primary(),
         }
     }
+
+    // 在拥有主题上下文时解析预设色。
+    fn resolve(self, tokens: &dyn ThemeTokens) -> Color {
+        // 可定制功能角色服从当前主题 token，其余色相读取 theme 色阶。
+        match self {
+            // 蓝色徽章跟随当前主题品牌主色。
+            BadgeColor::Blue => tokens.color_primary(),
+            // 绿色徽章跟随当前主题成功色。
+            BadgeColor::Green => tokens.color_success(),
+            // 橙色徽章保留明确的预设色相。
+            BadgeColor::Orange => PrimaryHue::Orange.primary(),
+            // 红色徽章跟随当前主题错误色。
+            BadgeColor::Red => tokens.color_error(),
+            // 紫色徽章保留明确的预设色相。
+            BadgeColor::Purple => PrimaryHue::Purple.primary(),
+        }
+    }
+
+    // 从兼容纯色值恢复框架拥有的预设身份。
+    fn from_compat_color(color: Color) -> Option<Self> {
+        // 依次匹配五个稳定预设主色。
+        [
+            // 蓝色预设。
+            Self::Blue,
+            // 绿色预设。
+            Self::Green,
+            // 橙色预设。
+            Self::Orange,
+            // 红色预设。
+            Self::Red,
+            // 紫色预设。
+            Self::Purple,
+        ]
+        // 转为按值遍历。
+        .into_iter()
+        // 查找产生相同兼容颜色的预设。
+        .find(|preset| preset.to_color() == color)
+    }
+}
+
+// 解析 Badge 最终背景色并保持自定义颜色优先级。
+fn resolve_badge_background(
+    // 保存构建器登记的可选颜色。
+    color: Option<Color>,
+    // 标记该颜色是否来自框架预设。
+    adaptive_foreground: bool,
+    // 提供当前主题 token。
+    tokens: &dyn ThemeTokens,
+) -> Color {
+    // 没有显式颜色时继续使用错误色默认值。
+    let Some(color) = color else {
+        // 默认徽章服从当前主题错误色。
+        return tokens.color_error();
+    };
+    // 只有框架预设才允许重新解析主题角色。
+    if adaptive_foreground {
+        // 从稳定兼容色恢复预设身份。
+        if let Some(preset) = BadgeColor::from_compat_color(color) {
+            // 返回当前主题下的预设结果。
+            return preset.resolve(tokens);
+        }
+    }
+    // 任意调用方颜色保持原值。
+    color
 }
 
 /// 可用于 [`Badge::color`] 的颜色输入。
@@ -294,7 +363,8 @@ component! {
             return;
         }
 
-        let bg = self.color.unwrap_or(ctx.tokens().color_error());
+        // 预设色在绘制时解析当前主题，自定义色保持原值。
+        let bg = resolve_badge_background(self.color, self.adaptive_foreground, ctx.tokens());
         // 自适应前景：按亮度取黑白 token 对比色。
         let foreground = if self.adaptive_foreground && bg.is_light() {
             ctx.tokens().color_black()

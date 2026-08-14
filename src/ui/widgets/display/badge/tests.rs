@@ -14,12 +14,44 @@ use crate::ui::component_snapshot::AccessibilityRole;
 use crate::ui::adapter::ViewAdapter;
 // 引入事件结果、系统事件、ViewNode 与公开按钮。
 use crate::ui::{EventResult, SystemEvent, ViewNode};
+// 引入可定制主题 token 以验证预设颜色延迟解析。
+use crate::ui::theme::DesignTokens;
 // 引入公开按钮组件与水平组合器。
 use crate::ui::widgets::{Button, row};
 // 引入点击次数共享单元。
 use std::cell::Cell as CounterCell;
 // 引入点击处理器共享所有权。
 use std::rc::Rc as Shared;
+
+// 验证预设颜色跟随主题而任意颜色保持调用方所有权。
+#[test]
+fn preset_color_resolves_theme_without_rewriting_custom_color() {
+    // 从完整亮色主题建立测试 token。
+    let mut tokens = DesignTokens::antd_light();
+    // 覆写品牌主色以证明蓝色预设不是固定色表。
+    tokens.color_primary = Color::from_rgb(1, 2, 3);
+    // 覆写默认错误色以验证无显式颜色路径。
+    tokens.color_error = Color::from_rgb(4, 5, 6);
+    // 使用预设兼容值模拟公开 BadgeColor 构建器结果。
+    let preset = Some(BadgeColor::Blue.to_color());
+    // 预设标记存在时必须解析当前品牌 token。
+    assert_eq!(
+        resolve_badge_background(preset, true, &tokens),
+        tokens.color_primary
+    );
+    // 相同数值由任意 Color 输入时仍归调用方所有。
+    assert_eq!(
+        // 关闭预设标记以模拟 Badge::color(Color)。
+        resolve_badge_background(preset, false, &tokens),
+        // 原兼容颜色不得被主题重写。
+        BadgeColor::Blue.to_color()
+    );
+    // 未指定颜色时必须使用当前主题错误色。
+    assert_eq!(
+        resolve_badge_background(None, false, &tokens),
+        tokens.color_error
+    );
+}
 
 // 验证零子节点仍使用旧固有尺寸，而组合模式由真实子外尺寸参与布局。
 #[test]
