@@ -139,3 +139,67 @@ fn rejects_unknown_theme_property() {
     // 诊断保留字段名。
     assert!(error.message.contains("accentColor"));
 }
+
+// 验证主题生成覆盖运行时设计 token 的全部字段类型与样式引用类型。
+#[test]
+fn generates_full_design_token_types_and_references() {
+    // 声明颜色、字符串、数值、阴影、动效和布尔代表值。
+    let tokens = normalized(
+        r#"@theme ocean {
+            colorText: #223344;
+            colorBgRaised: rgba(10,20,30,0.8);
+            fontFamily: 'Segoe UI';
+            fontSize: 16px;
+            padding: 18px;
+            borderRadius: 9px;
+            motionDurationFast: 0.12;
+            motionEasingDefault: 'linear';
+            screenMD: 800px;
+            boxShadow: 0 2px 8px rgba(0,0,0,0.1), 0 4px 16px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.06);
+            isDark: true;
+        }
+        <App theme="ocean"><Text style="color: #colorText; fontSize: #fontSize; padding: #padding;">主题</Text></App>"#,
+    );
+    // 颜色 token 必须写入精确运行时字段。
+    assert!(tokens.contains("color_text") && tokens.contains("color_bg_raised"));
+    // 静态字符串与数值 token 必须写入对应字段。
+    assert!(tokens.contains("font_family") && tokens.contains("font_size"));
+    // 间距、圆角、动效和断点必须进入完整白名单。
+    assert!(
+        tokens.contains("padding")
+            && tokens.contains("border_radius")
+            && tokens.contains("motion_duration_fast")
+            && tokens.contains("screen_md")
+    );
+    // 三层阴影与明暗事实必须构造既有运行时类型。
+    assert!(tokens.contains("ShadowToken") && tokens.contains("is_dark = true"));
+    // 样式颜色引用优先保留既有中性色语义角色。
+    assert!(tokens.contains("NeutralRole :: Text"));
+    // 样式数值引用必须读取当前主题提供者，而非固化默认值。
+    assert!(tokens.contains("tokens () . font_size") && tokens.contains("tokens () . padding"));
+}
+
+// 验证未知或类型不兼容的样式 token 在宏展开期失败。
+#[test]
+fn rejects_invalid_style_token_references() {
+    // 未知颜色 token 必须失败。
+    let unknown = parse_document("<App><Text style=\"color: #accentColor;\">主题</Text></App>")
+        .expect("未知 token 名不影响结构解析");
+    // 诊断必须保留未知名称。
+    assert!(
+        generate_document_app(&unknown)
+            .expect_err("未知颜色 token 必须失败")
+            .message
+            .contains("accentColor")
+    );
+    // 数值 token 不能用于颜色属性。
+    let incompatible = parse_document("<App><Text style=\"color: #padding;\">主题</Text></App>")
+        .expect("类型不兼容 token 名不影响结构解析");
+    // 诊断必须说明颜色类型边界。
+    assert!(
+        generate_document_app(&incompatible)
+            .expect_err("数值 token 不能用于颜色")
+            .message
+            .contains("颜色")
+    );
+}
