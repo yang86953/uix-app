@@ -59,8 +59,12 @@ pub(crate) fn generate_document_view(document: &Document) -> Result<TokenStream,
     }
     // 创建组件感知展开器。
     let mut expander = ComponentExpander::new(document)?;
+    // 由伪类模块为文档根按需建立 hover 生命周期作用域。
+    let root_hover_scope = expander.begin_document_pseudo_scope(document);
     // 展开根元素与全部组件调用。
-    let root = expander.expand_root(&document.root)?;
+    let mut root = expander.expand_root(&document.root)?;
+    // 由伪类模块恢复作用域栈并把生命周期标记绑定到实际根。
+    expander.finish_document_pseudo_scope(&mut root, root_hover_scope);
     // 委托核心映射生成 ViewNode。
     let view = generate_view(&root)?;
     // 取出按依赖顺序生成的局部准备语句。
@@ -282,10 +286,19 @@ impl ComponentExpander {
             // 普通元素不创建循环路径。
             None
         };
+        // 在 class 被消费前绑定状态伪类与元素既有事实。
+        let pseudo_style = self.prepare_pseudo_style(&expanded, bindings)?;
         // 优先降低组件内动态样式，否则走既有静态样式路径。
         if !self.prepare_dynamic_style(&mut expanded, bindings)? {
             // 合并 class、继承与内联 style。
             self.styles.apply(&mut expanded)?;
+        }
+        // 伪类最后叠加，避免自定义动态样式覆盖自动状态外观。
+        if let Some(binding) = pseudo_style {
+            // 保存最终 View 包裹所需的状态差异元数据。
+            expanded
+                .component_scopes
+                .push(ComponentScopeMarker::PseudoStyle(binding));
         }
         // 逐个改写普通属性与事件表达式。
         for attribute in &mut expanded.attributes {
@@ -497,9 +510,14 @@ impl ComponentExpander {
             .expect("组件存在性已在调用前确认");
         // 预先判断当前组件是否声明动态样式私有状态。
         let uses_dynamic_style = nodes_use_set_style(&component.children);
+        // 预先判断当前组件是否需要自动 hover 私有状态。
+        let uses_hover_style = self.styles.nodes_use_hover(&component.children);
         // For 内的状态、prop 或动态样式需要运行时逐实例存储。
         if inside_for
-            && (!component.props.is_empty() || !component.states.is_empty() || uses_dynamic_style)
+            && (!component.props.is_empty()
+                || !component.states.is_empty()
+                || uses_dynamic_style
+                || uses_hover_style)
         {
             // 返回明确的动态实例边界诊断。
             return Err(Diagnostic::new(
@@ -567,7 +585,7 @@ impl ComponentExpander {
             // 组件体只看见自身字段。
             let mut bindings = Bindings::new();
             // 仅为拥有私有状态的静态调用创建窗口私有的运行时作用域。
-            let scope = if component.states.is_empty() && !uses_dynamic_style {
+            let scope = if component.states.is_empty() && !uses_dynamic_style && !uses_hover_style {
                 // 无私有状态的组件不进入运行时作用域，保留既有 For 语义。
                 None
             } else {

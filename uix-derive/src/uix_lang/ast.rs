@@ -52,6 +52,36 @@ pub(crate) enum ComponentScopeMarker {
     },
     // 保存需要包裹事件 View 的动态样式状态。
     DynamicStyle(DynamicStyleBinding),
+    // 保存自动状态伪类的叠加样式与既有事实读取。
+    PseudoStyle(PseudoStyleBinding),
+}
+
+// 保存一个元素的状态伪类叠加元数据。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PseudoStyleBinding {
+    // hover 存在时保存最近组件作用域名称。
+    pub(crate) hover_scope_name: Option<String>,
+    // 保存 hover 私有状态子作用域的稳定声明标识。
+    pub(crate) declaration_id: u64,
+    // 保存当前节点所属最近 For 实例路径。
+    pub(crate) instance_path_name: Option<String>,
+    // 保存 hover 只声明的差异字段。
+    pub(crate) hover: Vec<StyleProperty>,
+    // 保存 disabled 事实与差异字段。
+    pub(crate) disabled: Option<(PseudoStyleCondition, Vec<StyleProperty>)>,
+    // 保存 checked 事实与差异字段。
+    pub(crate) checked: Option<(PseudoStyleCondition, Vec<StyleProperty>)>,
+}
+
+// 表示伪类选择使用的既有布尔事实形状。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PseudoStyleCondition {
+    // 保存静态布尔属性。
+    Literal(bool),
+    // 保存已经降低为布尔值的表达式。
+    Value(ExpressionNode),
+    // 保存需要读取 get() 的 State<bool> 表达式。
+    State(ExpressionNode),
 }
 
 // 表示标签上的一个具名属性。

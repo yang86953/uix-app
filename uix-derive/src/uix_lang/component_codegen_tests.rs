@@ -237,6 +237,84 @@ fn generates_typed_dynamic_style_and_pointer_event_tokens() {
     assert!(tokens.contains("padding") && tokens.contains("4.0") && tokens.contains("12.0"));
 }
 
+// 验证状态伪类自动读取既有事实并按 hover、checked、disabled 优先级叠加。
+#[test]
+fn generates_pseudo_style_overlay_from_existing_state_facts() {
+    // 声明基础类、三个状态差异与拥有现有布尔状态的复选框组件。
+    let document = parse_document(
+        r##"
+        stateful { padding: 8px; color: #colorText; }
+        stateful:hover { backgroundColor: #colorFillTertiary; }
+        stateful:checked { borderColor: #colorPrimary; borderWidth: 2px; }
+        stateful:disabled { opacity: 0.5; }
+        <Component name="Stateful" state="checked: bool = false, disabled: bool = false">
+          <Checkbox class="stateful" text="状态" checked={checked} disabled={disabled} />
+        </Component>
+        <Stateful />
+        "##,
+    )
+    .expect("状态伪类组件文档应解析成功");
+    // 生成完整编译期展开令牌。
+    let tokens = generate_document_view(&document)
+        .expect("状态伪类应生成成功")
+        .to_string();
+    // hover 必须复用组件私有状态存储与实际节点子作用域。
+    assert!(
+        tokens.contains("uix_component_child_scope") && tokens.contains("__uix_pseudo_hover_state")
+    );
+    // 自动指针监听器必须同时处理进入与离开且不吞噬组件事件。
+    assert!(
+        tokens.contains("SystemEvent :: PointerEnter")
+            && tokens.contains("SystemEvent :: PointerLeave")
+            && tokens.contains("EventResult :: NotHandled")
+    );
+    // checked 必须读取现有 State<bool>，disabled 必须读取组件布尔值绑定。
+    assert!(tokens.contains(". get ()") && tokens.contains("disabled"));
+    // 基础与三个差异字段必须都进入样式更新，但变体只通过 map_style 叠加。
+    assert!(
+        tokens.contains("padding")
+            && tokens.contains("background")
+            && tokens.contains("border_color")
+            && tokens.contains("opacity")
+            && tokens.matches("map_style").count() >= 4
+    );
+    // disabled 包装位于最终输出，形成高于 checked 与 hover 的选择层。
+    let hover = tokens
+        .find("__uix_pseudo_hover_current")
+        .expect("应生成 hover 事实");
+    let opacity = tokens.rfind("opacity").expect("应生成 disabled 差异");
+    assert!(hover < opacity);
+}
+
+// 验证状态伪类拒绝缺失事实并允许文档根复用既有状态存储。
+#[test]
+fn rejects_pseudo_style_without_required_runtime_facts() {
+    // disabled 变体要求使用元素声明同名属性。
+    let missing = parse_document(
+        "stateful { color: red; } stateful:disabled { opacity: 0.5; } <Component name=\"Stateful\"><Button class=\"stateful\">状态</Button></Component><Stateful />",
+    )
+    .expect("缺失事实不影响结构解析");
+    // 生成期必须给出同名事实诊断。
+    let error = generate_document_view(&missing).expect_err("缺失 disabled 事实必须失败");
+    // 诊断必须保留属性名。
+    assert!(error.message.contains("disabled 属性"));
+    // 文档根 hover 自动取得隐式生命周期作用域。
+    let outside = parse_document(
+        "stateful { color: red; } stateful:hover { color: blue; } <Button class=\"stateful\">状态</Button>",
+    )
+    .expect("组件外 hover 不影响结构解析");
+    // 生成期必须复用既有组件状态存储而不要求显式 Component。
+    let tokens = generate_document_view(&outside)
+        .expect("文档根 hover 应生成隐式生命周期作用域")
+        .to_string();
+    // 根作用域、子作用域与生命周期标记必须闭合。
+    assert!(
+        tokens.contains("__uix_document_scope_")
+            && tokens.contains("uix_component_child_scope")
+            && tokens.contains("uix_component_scope")
+    );
+}
+
 // 验证 setStyle 目标与组件所有权在生成期关闭。
 #[test]
 fn rejects_unknown_or_component_external_dynamic_style() {

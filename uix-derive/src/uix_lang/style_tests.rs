@@ -1,5 +1,8 @@
 // 引入文档解析入口及声明、样式 AST。
-use super::{AttributeValue, Declaration, Node, StyleHashKind, parser::parse_document};
+use super::{
+    AttributeValue, Declaration, Node, StyleClassResolver, StyleHashKind, StylePseudoState,
+    parser::parse_document,
+};
 
 // 验证顶层声明保持源码顺序并解析全部本 Gate 结构。
 #[test]
@@ -267,4 +270,72 @@ fn preserves_component_children_after_declaration_validation() {
         // 验证标签名。
         Node::Element(value) if value.name == "Container"
     ));
+}
+
+// 验证三个状态伪类使用独立登记键并保留差异属性。
+#[test]
+fn parses_registered_style_pseudo_states() {
+    // 声明基础类及全部批准状态。
+    let document = parse_document(
+        "baseButton { padding: 8px; } baseButton:hover { color: blue; } baseButton:disabled { opacity: 0.5; } baseButton:checked { borderColor: red; } <App />",
+    )
+    .expect("三个批准状态应完成解析");
+    // 四个样式声明必须全部保留。
+    assert_eq!(document.declarations.len(), 4);
+    // 状态声明应按源码顺序映射为闭合枚举。
+    for (index, expected) in [
+        StylePseudoState::Hover,
+        StylePseudoState::Disabled,
+        StylePseudoState::Checked,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        // 取得对应状态声明。
+        let Declaration::StyleClass(style) = &document.declarations[index + 1] else {
+            // 非样式声明表示解析结构损坏。
+            panic!("状态声明应保持为样式类");
+        };
+        // 基础前缀与状态必须分别保存。
+        assert_eq!(style.name, "baseButton");
+        // 状态必须精确匹配白名单枚举。
+        assert_eq!(style.state, Some(expected));
+    }
+}
+
+// 验证状态伪类拒绝未知状态、显式继承、重复项和缺失基础类。
+#[test]
+fn rejects_invalid_style_pseudo_state_contracts() {
+    // 解析期拒绝三类非法伪类声明。
+    for (source, expected) in [
+        (
+            "base { color: red; } base:focus { color: blue; } <App />",
+            "不支持样式伪类",
+        ),
+        (
+            "base { color: red; } base:hover { extends: base; color: blue; } <App />",
+            "不能显式声明 extends",
+        ),
+        (
+            "base { color: red; } base:hover { color: blue; } base:hover { color: green; } <App />",
+            "重复声明",
+        ),
+    ] {
+        // 非法声明必须返回定向诊断。
+        let error = parse_document(source).expect_err("非法伪类声明必须失败");
+        // 诊断必须命中对应规则。
+        assert!(error.message.contains(expected), "{}", error.message);
+    }
+    // 缺失基础类在样式注册阶段失败。
+    let document = parse_document("missing:hover { color: blue; } <App />")
+        .expect("缺失基础类不影响声明结构解析");
+    // 注册表必须拒绝无法隐含继承的状态变体。
+    let error = match StyleClassResolver::new(&document) {
+        // 成功表示错误接受了孤立状态变体。
+        Ok(_) => panic!("状态变体必须有基础类"),
+        // 保存预期诊断。
+        Err(error) => error,
+    };
+    // 诊断必须说明基础类缺失。
+    assert!(error.message.contains("缺少同前缀基础类"));
 }

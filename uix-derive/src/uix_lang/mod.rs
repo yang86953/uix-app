@@ -6,6 +6,8 @@ mod builtin_matrix;
 mod data_binding_codegen;
 // 定义组件内 setStyle 的闭合分支代码生成。
 mod dynamic_style_codegen;
+// 定义状态伪类的自动事实选择与差异叠加代码生成。
+mod pseudo_style_codegen;
 // 定义 For 实际实例路径的内部标识符读取。
 mod for_identity_codegen;
 // 定义最终 ViewNode 的组件状态装饰应用。
@@ -68,6 +70,8 @@ mod component_slot_tests;
 mod component_expression_lower;
 // 定义组件内 setStyle 的作用域校验与表达式降低。
 mod dynamic_style_lower;
+// 定义状态伪类到既有 hover、disabled 与 checked 事实的降低。
+mod pseudo_style_lower;
 // 定义 Component 声明级语法与类型白名单解析。
 mod component_parser;
 // 集中验证 Component props、state 与名称诊断。

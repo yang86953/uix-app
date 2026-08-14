@@ -1,3 +1,25 @@
+// 使用完整设计 token 字段覆盖内建 light 主题的代表值。
+@theme light {
+  // 保留品牌主色并驱动关联色板推导。
+  primaryColor: #1677FF;
+  // 保留应用布局背景兼容别名。
+  backgroundColor: #F5F5F5;
+  // 精确覆盖正文与边框语义色。
+  colorText: #1F1F1F;
+  colorBorder: #D9D9D9;
+  // 精确覆盖容器背景。
+  colorBgContainer: #FFFFFF;
+  // 展示排版、间距和圆角数值 token。
+  fontSize: 14px;
+  padding: 16px;
+  borderRadius: 6px;
+  // 展示动效与断点 token。
+  motionDurationFast: 0.1;
+  screenMD: 768px;
+  // 明确主题模式事实。
+  isDark: false;
+}
+
 // 声明文档级样式类：统一内容面板底与边框。
 pagePanel {
   padding: 16px;
@@ -32,11 +54,58 @@ hoverStyleAction {
   borderRadius: 8px;
 }
 
+// 声明自动 hover 与 disabled 伪类共用的按钮基础样式。
+pseudoStateButton {
+  padding: 8px 12px;
+  borderWidth: 1px;
+  borderColor: #colorBorder;
+  borderRadius: #borderRadius;
+  backgroundColor: #colorBgContainer;
+}
+
+// 悬停只覆盖背景与边框颜色，其他字段隐含继承基础类。
+pseudoStateButton:hover {
+  backgroundColor: #colorPrimaryBg;
+  borderColor: #colorPrimary;
+}
+
+// 禁用只覆盖透明度，优先于悬停叠加层。
+pseudoStateButton:disabled {
+  opacity: 0.5;
+}
+
+// 声明 checked 演示的复选框基础样式。
+pseudoStateCheck {
+  borderWidth: 1px;
+  borderColor: #colorBorder;
+}
+
+// 勾选时只覆盖边框颜色与宽度。
+pseudoStateCheck:checked {
+  borderColor: #colorPrimary;
+  borderWidth: 2px;
+}
+
 // 声明拥有独立动态样式状态的悬停操作组件。
 <Component name="StyleAction">
   // 当前 Button 自己接收事件；内联颜色在两个动态 class 分支中保持最高优先级。
   <Button class="normalStyleAction" style="color: #1677FF;" automationId="uix-set-style-action" @mouseEnter="setStyle('hoverStyleAction')" @mouseLeave="setStyle('')">悬停切换 setStyle</Button>
 // 结束动态样式组件。
+</Component>
+
+// 声明消费既有 disabled 与 checked 状态事实的伪类演示组件。
+<Component name="PseudoStateAction" state="checked: bool = false, disabled: bool = false">
+  // 纵向组织状态控件与切换操作。
+  <Column gap="8px">
+    // Button 的 hover 自动切换，disabled 读取同名布尔事实。
+    <Button class="pseudoStateButton" disabled={disabled} automationId="uix-pseudo-state-button">自动 hover / disabled</Button>
+    // Checkbox 的 checked 直接读取其既有 State<bool> 绑定。
+    <Checkbox class="pseudoStateCheck" text="checked 状态叠加" checked={checked} />
+    // 使用既有 setState 切换禁用事实。
+    <Button @click="setState(disabled: !disabled)">切换 disabled</Button>
+  // 结束状态伪类内容。
+  </Column>
+// 结束状态伪类演示组件。
 </Component>
 
 // 声明页头标题组件，由共享 page 状态驱动条件标题。
