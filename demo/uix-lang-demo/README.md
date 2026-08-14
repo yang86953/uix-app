@@ -37,6 +37,18 @@ cargo run --release --manifest-path demo/Cargo.toml --features "agent-control,te
 `on_start` 交付的逐窗 `AppHandle` 并调用公开 test-harness 故障入口。普通主演示不编译该
 模块，也不会展示或开放故障按钮。
 
+仓库根目录的 Windows 真实窗口测试会依次注入 DeviceLost 与 SurfaceLost，并在每轮等待
+`presented_revision` 后执行恢复后交互。由于 demo 是独立 workspace，先构建主演示，再
+运行被显式忽略的真实窗口测试：
+
+```powershell
+cargo build --manifest-path demo/Cargo.toml --features "agent-control,test-harness" --bin uix-lang-demo
+cargo test --features "agent-control,test-harness" --test uix_lang_graphics_recovery_windows -- --ignored --nocapture
+```
+
+该测试需要交互式 Windows 桌面与 D3D11 驱动；测试 Adapter 只使用公开
+`uix.agent.v1` 协议、启动参数和稳定 automation ID，不依赖 app System 私有实现。
+
 Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。Windows 入口在 8MB
 大栈 UI 线程上运行，承载声明文件展开出的深层 ViewNode 树。
 
