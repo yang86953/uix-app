@@ -4,7 +4,7 @@ pagePanel {
   borderWidth: 1px;
   borderColor: #E5E7EB;
   borderRadius: 8px;
-  backgroundColor: #FFFFFF;
+  backgroundColor: #backgroundColor;
 }
 
 // 声明继承面板样式并增加左侧强调线的强调面板。
@@ -17,7 +17,7 @@ accentPanel {
 // 声明 setStyle 演示的原始动态 class。
 normalStyleAction {
   padding: 6px 12px;
-  backgroundColor: #FFFFFF;
+  backgroundColor: #backgroundColor;
   borderWidth: 1px;
   borderColor: #D1D5DB;
   borderRadius: 6px;
@@ -79,9 +79,9 @@ hoverStyleAction {
 
 <Component name="DemoApp" props="page: State<number>, count: State<number>, tick: State<number>">
   // 使用纵向根布局承载自定义标题栏与应用主体。
-  <Column flexGrow={1} backgroundColor="#F5F5F5">
+  <Column flexGrow={1} style="backgroundColor: #backgroundColor;">
     // 构造与 API GUI Demo 对齐的自定义标题栏。
-    <Container direction="row" height="48px" gap="10px" align="center" backgroundColor="#FFFFFF">
+    <Container direction="row" height="48px" gap="10px" align="center" style="backgroundColor: #backgroundColor;">
       // 只让非交互标题内容占据可拖拽区域。
       <WindowDragRegion flexGrow={1} height="48px" automationId="window-titlebar-drag">
         // 使用横向容器绘制应用标识与标题。
@@ -106,43 +106,43 @@ hoverStyleAction {
     // 使用横向应用布局组织侧边栏与主内容区。
     <Layout direction="row" flexGrow={1}>
       // 构造与 API GUI Demo 同宽的侧边导航。
-      <Sider width="220px" backgroundColor="#FFFFFF">
+      <Sider width="220px" style="backgroundColor: #backgroundColor;">
         // 使用纵向容器组织导航分组。
         <Column gap="6px" padding="12px">
           // 标记入门导航分组。
           <Text fontSize="small">入门</Text>
           // 导航到首页。
-          <Button @click="setState(page: 0)">首页</Button>
+          <Button @click="setState(page: 0)" automationId="sidebar-page-0">首页</Button>
           // 导航到应用能力页。
-          <Button @click="setState(page: 1)">应用能力</Button>
+          <Button @click="setState(page: 1)" automationId="sidebar-page-1">应用能力</Button>
           // 导航到框架能力页。
-          <Button @click="setState(page: 10)">框架能力</Button>
+          <Button @click="setState(page: 10)" automationId="sidebar-page-10">框架能力</Button>
           // 分隔入门与组件导航。
           <Divider />
           // 标记组件导航分组。
           <Text fontSize="small">组件</Text>
           // 导航到通用组件页。
-          <Button @click="setState(page: 2)">通用</Button>
+          <Button @click="setState(page: 2)" automationId="sidebar-page-2">通用</Button>
           // 导航到布局组件页。
-          <Button @click="setState(page: 3)">布局</Button>
+          <Button @click="setState(page: 3)" automationId="sidebar-page-3">布局</Button>
           // 导航到导航组件页。
-          <Button @click="setState(page: 4)">导航</Button>
+          <Button @click="setState(page: 4)" automationId="sidebar-page-4">导航</Button>
           // 导航到输入组件页。
-          <Button @click="setState(page: 5)">输入</Button>
+          <Button @click="setState(page: 5)" automationId="sidebar-page-5">输入</Button>
           // 导航到数据展示页。
-          <Button @click="setState(page: 6)">数据展示</Button>
+          <Button @click="setState(page: 6)" automationId="sidebar-page-6">数据展示</Button>
           // 导航到反馈组件页。
-          <Button @click="setState(page: 7)">反馈</Button>
+          <Button @click="setState(page: 7)" automationId="sidebar-page-7">反馈</Button>
           // 导航到图表能力页。
-          <Button @click="setState(page: 8)">图表</Button>
+          <Button @click="setState(page: 8)" automationId="sidebar-page-8">图表</Button>
           // 导航到其他组件页。
-          <Button @click="setState(page: 9)">其他</Button>
+          <Button @click="setState(page: 9)" automationId="sidebar-page-9">其他</Button>
           // 分隔组件与参考导航。
           <Divider />
           // 标记参考导航分组。
           <Text fontSize="small">参考</Text>
           // 导航到覆盖清单页。
-          <Button @click="setState(page: 11)">覆盖清单</Button>
+          <Button @click="setState(page: 11)" automationId="sidebar-page-11">覆盖清单</Button>
         // 结束侧边导航容器。
         </Column>
       // 结束侧边导航。
@@ -151,7 +151,7 @@ hoverStyleAction {
       // 使用纵向布局承载页头、内容与状态栏。
       <Layout flexGrow={1}>
         // 构造当前页面标题栏。
-        <Header height="56px" padding="12px" backgroundColor="#FFFFFF">
+        <Header height="56px" padding="12px" style="backgroundColor: #backgroundColor;">
           // 使用横向容器排列标题与运行状态。
           <Container direction="row" gap="10px" align="center">
             // 复用页头标题组件。
@@ -174,7 +174,7 @@ hoverStyleAction {
         // 让主内容区填满剩余空间。
         <Content flexGrow={1}>
           // 允许较长页面垂直滚动。
-          <ScrollView direction="vertical">
+          <ScrollView direction="vertical" automationId="main-page-scroll">
             // 使用统一间距承载全部条件页面。
             <Column gap="16px" padding="24px">
               // 按当前页面状态显示首页。
@@ -209,7 +209,7 @@ hoverStyleAction {
         </Content>
 
         // 构造与 API GUI Demo 对齐的状态栏。
-        <Footer height="36px" padding="8px" backgroundColor="#FFFFFF">
+        <Footer height="36px" padding="8px" style="backgroundColor: #backgroundColor;">
           // 展示运行与能力边界摘要。
           <Container direction="row" gap="10px" align="center" automationId="app-status-bar">
             // 展示状态栏图标。

@@ -49,6 +49,17 @@ cargo test --features "agent-control,test-harness" --test uix_lang_graphics_reco
 该测试需要交互式 Windows 桌面与 D3D11 驱动；测试 Adapter 只使用公开
 `uix.agent.v1` 协议、启动参数和稳定 automation ID，不依赖 app System 私有实现。
 
+十二页与已登记组件的浅色 / 深色真实窗口矩阵使用同一公开协议和进程外 HWND 捕获
+Adapter。由于 demo 是独立 workspace，同样要先重建主演示：
+
+```powershell
+cargo build --manifest-path demo/Cargo.toml --features agent-control --bin uix-lang-demo
+cargo test --features "agent-control,image-codecs" --test uix_lang_visual_windows -- --ignored --nocapture
+```
+
+测试会验证页面标题、组件角色 / 状态 / 动作、主题平均亮度差、D3D11 recipe 与无软件
+回退，并把 PNG 与联系表写入 `target/debug-captures/uix-lang-visual` 供视觉审阅。
+
 Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。Windows 入口在 8MB
 大栈 UI 线程上运行，承载声明文件展开出的深层 ViewNode 树。
 

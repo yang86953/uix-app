@@ -138,9 +138,9 @@
         // 排列主题操作。
         <Container direction="row" gap="12px" align="center">
           // 通过 setTheme 内置操作切换到暗色。
-          <Button @click="setTheme('dark')">暗色主题</Button>
+          <Button automationId="theme-dark" @click="setTheme('dark')">暗色主题</Button>
           // 通过 setTheme 内置操作切换到亮色。
-          <Button @click="setTheme('light')">亮色主题</Button>
+          <Button automationId="theme-light" @click="setTheme('light')">亮色主题</Button>
           // 复用标题栏主题切换组件。
           <ThemeToggle />
         // 结束主题操作。

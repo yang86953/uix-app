@@ -44,8 +44,10 @@ impl AgentClient {
             // 提供 descriptor token 与测试客户端身份。
             json!({
                 "token": token,
-                "client": { "name": "uix-lang-graphics-recovery-acceptance" },
+                "client": { "name": "uix-lang-windows-acceptance" },
             }),
+            // 握手必须成功。
+            true,
         );
         // 返回已经通过鉴权的客户端。
         client
@@ -54,7 +56,7 @@ impl AgentClient {
     // 列出并取得专用验收模式的唯一窗口。
     pub(crate) fn list_single_window(&mut self) -> AgentWindow {
         // 执行无额外字段的窗口 Query。
-        let response = self.request("list_windows", json!({}));
+        let response = self.request("list_windows", json!({}), true);
         // 读取窗口数组。
         let windows = response["windows"]
             // 协议必须返回数组。
@@ -86,6 +88,8 @@ impl AgentClient {
             "snapshot",
             // 只传递当前窗口 ID。
             json!({ "window_id": window.id }),
+            // 快照 Query 必须成功。
+            true,
         );
         // 返回拥有所有权的快照值。
         response["snapshot"].clone()
@@ -93,24 +97,92 @@ impl AgentClient {
 
     // 对稳定 automation ID 执行公开 invoke Command。
     pub(crate) fn invoke(&mut self, window: AgentWindow, automation_id: &str) -> u64 {
+        // 委托通用动作入口并固定 invoke 语义。
+        self.perform(
+            // 保持当前窗口身份。
+            window,
+            // 使用稳定自动化标识定位目标。
+            Some(json!({ "automation_id": automation_id })),
+            // 使用公开 invoke 动作。
+            json!({ "kind": "invoke" }),
+        )
+    }
+
+    // 对当前窗口执行公开 Agent 动作并返回新 revision。
+    pub(crate) fn perform(
+        &mut self,
+        // 接收跨请求稳定窗口身份。
+        window: AgentWindow,
+        // 接收可选稳定目标；窗口级动作可以省略。
+        target: Option<Value>,
+        // 接收协议公开动作对象。
+        action: Value,
+    ) -> u64 {
+        // 组织窗口、代际与动作字段。
+        let mut fields = json!({
+            // 指定唯一窗口。
+            "window_id": window.id,
+            // 防止动作误投递到重建后的窗口。
+            "generation": window.generation,
+            // 保存调用方选择的公开动作。
+            "action": action,
+        });
+        // 只有组件动作才安装目标字段。
+        if let Some(target) = target {
+            // JSON 对象形状已经由本函数固定建立。
+            fields["target"] = target;
+        }
         // 执行带 generation 的语义动作。
-        let response = self.request(
-            // 使用公开 perform operation。
-            "perform",
-            // 指定窗口、代际、稳定目标和 invoke 动作。
-            json!({
-                "window_id": window.id,
-                "generation": window.generation,
-                "target": { "automation_id": automation_id },
-                "action": { "kind": "invoke" },
-            }),
-        );
+        let response = self.request("perform", fields, true);
         // 返回命令建立的新语义 revision。
         response["revision"]
             // revision 必须是数值。
             .as_u64()
             // 缺失值时报告具体响应形状错误。
             .expect("perform response revision")
+    }
+
+    // 尝试可无变化的公开动作并把内部无操作拒绝投影为 None。
+    pub(crate) fn perform_optional(
+        &mut self,
+        // 接收跨请求稳定窗口身份。
+        window: AgentWindow,
+        // 接收稳定目标。
+        target: Value,
+        // 接收协议公开动作对象。
+        action: Value,
+    ) -> Option<u64> {
+        // 组织窗口、代际、目标与动作字段。
+        let fields = json!({
+            // 指定唯一窗口。
+            "window_id": window.id,
+            // 防止动作误投递到重建后的窗口。
+            "generation": window.generation,
+            // 安装调用方指定目标。
+            "target": target,
+            // 安装调用方指定动作。
+            "action": action,
+        });
+        // 允许协议返回可识别的无操作拒绝。
+        let response = self.request("perform", fields, false);
+        // 成功时返回新 revision。
+        if response["ok"] == true {
+            // 提取成功响应 revision。
+            return Some(
+                response["revision"]
+                    // revision 必须是数值。
+                    .as_u64()
+                    // 成功响应缺失 revision 属于协议错误。
+                    .expect("optional perform response revision"),
+            );
+        }
+        // 当前协议把不可滚动方向报告为内部动作失败。
+        assert_eq!(
+            response["error"]["code"], "internal",
+            "unexpected optional action error: {response}"
+        );
+        // 返回无 revision 表示视图没有变化。
+        None
     }
 
     // 等待指定 revision 已由真实窗口完成 present。
@@ -126,13 +198,15 @@ impl AgentClient {
                 "presented_revision": revision,
                 "timeout_ms": PRESENT_TIMEOUT_MS,
             }),
+            // 等待 Query 必须成功。
+            true,
         );
         // 只有明确 presented outcome 才证明真实提交完成。
         assert_eq!(response["outcome"], "presented");
     }
 
     // 发送一条带唯一 request ID 的公开协议请求。
-    fn request(&mut self, operation: &str, fields: Value) -> Value {
+    fn request(&mut self, operation: &str, fields: Value, require_success: bool) -> Value {
         // 为当前连接生成单调且可诊断的 request ID。
         let request_id = format!("graphics-recovery-{operation}-{}", self.next_request);
         // 推进下一请求后缀，避免超时或失败时复用身份。
@@ -202,8 +276,11 @@ impl AgentClient {
         assert_eq!(response["schema"], "uix.agent.v1");
         // 响应必须精确关联当前请求。
         assert_eq!(response["request_id"], request_id);
-        // 本验收路径的每条请求都必须明确成功。
-        assert_eq!(response["ok"], true, "Agent protocol error: {response}");
+        // 强契约调用必须明确成功，可选动作由调用方检查拒绝原因。
+        if require_success {
+            // 报告完整但不含握手 token 的协议响应。
+            assert_eq!(response["ok"], true, "Agent protocol error: {response}");
+        }
         // 返回经过关联与成功校验的响应。
         response
     }
