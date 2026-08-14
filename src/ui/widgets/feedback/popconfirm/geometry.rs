@@ -883,5 +883,17 @@ mod tests {
         assert!(runtime.is_visible());
         // 指针与键盘各自只能让真实 trigger Click 一次。
         assert_eq!(clicks.get(), 2);
+        // 构造打开态确认动作的按下事件。
+        let confirm_down = SystemEvent::KeyDown { key: KeyCode::Enter, mods: KeyMod::NONE };
+        // 构造与确认按下配对的释放事件。
+        let confirm_up = SystemEvent::KeyUp { key: KeyCode::Enter, mods: KeyMod::NONE };
+        // 打开态 Enter 按下必须继续由父级确认组件接管。
+        assert_eq!(tree.dispatch_event(&confirm_down), EventResult::Handled);
+        // 配对释放必须提交确认动作并启动离场。
+        assert_eq!(tree.dispatch_event(&confirm_up), EventResult::Handled);
+        // 读取确认后的运行时状态，区分业务关闭与动画完成。
+        let runtime = tree.get(root).expect("Popconfirm 根必须存在").component().as_any().downcast_ref::<Popconfirm>().expect("根组件必须是 Popconfirm");
+        // 确认后应立即结束可见态并保留离场呈现态。
+        assert!(!runtime.is_visible() && runtime.is_present());
     }
 }
