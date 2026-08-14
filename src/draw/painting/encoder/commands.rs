@@ -20,78 +20,97 @@ use super::geometry::{
 /// source-over 合成并不等价，禁止作为替代实现。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameRasterOp {
+    /// 使用普通 SrcOver 填充整数矩形。
     FillRect {
+        /// 目标整数像素矩形。
         rect: FrameRect,
+        /// 直通填充颜色。
         color: Color,
     },
     /// 使用共享 SDF coverage 对圆角区域执行普通 SrcOver 填充。
     FillRoundedRect {
+        /// 目标整数像素矩形。
         rect: FrameRect,
+        /// 直通填充颜色。
         color: Color,
+        /// 已验证的四角半径。
         radius: FrameRadius,
     },
     /// 使用原始圆角几何，仅以整数 surface-space 矩形硬裁剪 SrcOver 覆盖。
     /// `radius == 0` 时同时承载普通矩形的 clipped fast path。
     FillRoundedRectClipped {
+        /// 保持圆角语义的原始目标矩形。
         rect: FrameRect,
+        /// 直通填充颜色。
         color: Color,
+        /// 已验证的四角半径。
         radius: FrameRadius,
+        /// 最终整数表面裁剪。
         clip: FrameRect,
     },
     /// 使用亚像素矩形几何和整数 surface clip 执行普通 SrcOver 圆角填充。
     FillRoundedRectSubpixel {
-        // 保存经验证的亚像素矩形。
+        /// 保存经验证的亚像素矩形。
         rect: FrameSampledRect,
-        // 保存直通颜色。
+        /// 保存直通颜色。
         color: Color,
-        // 保存四角半径。
+        /// 保存四角半径。
         radius: FrameRadius,
-        // 保存最终整数裁剪。
+        /// 保存最终整数裁剪。
         clip: FrameRect,
     },
     /// Ordered SrcOver glyph coverage blits sharing one integer surface clip.
     BlitGlyphs {
+        /// 按顺序执行的字形覆盖率载荷。
         glyphs: Vec<FrameGlyphBlit>,
+        /// 批次共享的整数表面裁剪。
         clip: FrameRect,
     },
     /// Ordered SrcOver 字形轮廓批次，由 GPU 端生成 MSDF coverage。
     BlitGlyphOutlines {
-        // 保存共享字体轮廓载荷。
+        /// 保存共享字体轮廓载荷。
         glyphs: Vec<FrameGlyphOutline>,
-        // 保存统一整数 surface 裁剪。
+        /// 保存统一整数 surface 裁剪。
         clip: FrameRect,
     },
     /// Ordered centered rectangle strokes sharing one surface clip and blend fact.
     StrokeRoundedRects {
+        /// 按顺序执行的圆角矩形描边。
         strokes: Vec<FrameStrokeRect>,
+        /// 批次共享的整数表面裁剪。
         clip: FrameRect,
         /// 为 true 时逐通道饱和加到累计目标；为 false 时使用普通 SrcOver。
         additive: bool,
     },
     /// 使用亚像素矩形几何执行单条普通 SrcOver 圆角描边。
     StrokeRoundedRectSubpixel {
-        // 保存经验证的亚像素矩形。
+        /// 保存经验证的亚像素矩形。
         rect: FrameSampledRect,
-        // 保存直通颜色。
+        /// 保存直通颜色。
         color: Color,
-        // 保存四角半径。
+        /// 保存四角半径。
         radius: FrameRadius,
-        // 保存正有限线宽。
+        /// 保存正有限线宽。
         line_width: FrameStrokeWidth,
-        // 保存最终整数裁剪。
+        /// 保存最终整数裁剪。
         clip: FrameRect,
     },
     /// Channel-wise saturating add into the destination (CPU Additive blend).
     FillRectAdditive {
+        /// 目标整数像素矩形。
         rect: FrameRect,
+        /// 逐通道相加的直通颜色。
         color: Color,
         /// 把目标相关填充限制在已经验证的 surface-space 整数矩形内。
         clip: FrameRect,
     },
     /// 使用共享 SDF coverage 对圆角区域执行逐通道饱和加法。
     FillRoundedRectAdditive {
+        /// 目标整数像素矩形。
         rect: FrameRect,
+        /// 逐通道相加的直通颜色。
         color: Color,
+        /// 已验证的四角半径。
         radius: FrameRadius,
         /// 保留圆角原始几何，仅由该 surface-space 矩形裁剪最终覆盖。
         clip: FrameRect,
@@ -99,8 +118,11 @@ pub enum FrameRasterOp {
     /// 把 `viewport` 中按 `(dx, dy)` 平移后的像素复制回同一视口；
     /// 语义与 [`crate::draw::Canvas2D::scroll_region`] 一致，位移取整。
     ScrollCopy {
+        /// 限制读取和写入的整数视口。
         viewport: FrameRect,
+        /// 水平像素位移。
         dx: i32,
+        /// 垂直像素位移。
         dy: i32,
     },
 }
@@ -108,21 +130,34 @@ pub enum FrameRasterOp {
 /// A single ordered frame command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameCommand {
+    /// 使用单一颜色清除当前目标。
     Clear {
+        /// 清除使用的直通颜色。
         color: Color,
     },
+    /// 在当前目标上执行原生光栅操作。
     Native {
+        /// 保持顺序的 API 中立光栅操作。
         operation: FrameRasterOp,
     },
+    /// 将 CPU 生成的像素片段复制到目标。
     CpuSegment {
+        /// 自包含的 CPU 图像。
         image: FrameImage,
+        /// 图像内的整数来源区域。
         src: FrameRect,
+        /// 目标内的整数落点区域。
         dst: FrameRect,
     },
+    /// 将物化 Picture 图像采样到目标。
     PictureBlit {
+        /// 自包含的 Picture 图像。
         image: FrameImage,
+        /// 图像内的整数来源区域。
         src: FrameRect,
+        /// 目标内可缩放的采样矩形。
         dst: FrameSampledRect,
+        /// 合成时使用的规范透明度。
         opacity: FrameOpacity,
         /// 父画布 Additive 时为 true；严格 GPU 走 One+One 纹理 pipeline。
         additive: bool,
@@ -136,8 +171,11 @@ pub enum FrameCommand {
 /// materialization inside the draw pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GpuFrameViolationKind {
+    /// 帧包含 CPU 光栅像素片段。
     CpuRasterSegment,
+    /// 帧包含 CPU 生成的字形覆盖率。
     CpuGlyphCoverage,
+    /// 帧包含 CPU 物化的 Picture。
     MaterializedPicture,
 }
 
@@ -154,19 +192,27 @@ impl std::fmt::Display for GpuFrameViolationKind {
 /// Allocation-free audit of one encoded frame's raster provenance.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct GpuFrameAudit {
+    /// CPU 光栅片段数量。
     pub cpu_raster_segments: usize,
+    /// CPU 光栅片段占用的字节数。
     pub cpu_raster_bytes: usize,
+    /// CPU 覆盖率字形数量。
     pub cpu_glyphs: usize,
+    /// CPU 覆盖率字形占用的字节数。
     pub cpu_glyph_bytes: usize,
+    /// CPU 物化 Picture 数量。
     pub materialized_pictures: usize,
+    /// CPU 物化 Picture 占用的字节数。
     pub materialized_picture_bytes: usize,
 }
 
 impl GpuFrameAudit {
+    /// 判断帧是否完全由原生 GPU 命令生成最终像素。
     pub const fn is_gpu_native(self) -> bool {
         self.cpu_raster_segments == 0 && self.cpu_glyphs == 0 && self.materialized_pictures == 0
     }
 
+    /// 返回按稳定优先级发现的第一类 GPU 原生契约违规。
     pub const fn first_violation(self) -> Option<GpuFrameViolationKind> {
         if self.cpu_raster_segments != 0 {
             Some(GpuFrameViolationKind::CpuRasterSegment)
@@ -183,6 +229,7 @@ impl GpuFrameAudit {
 /// Result of one successful final presentation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PresentOutcome {
+    /// 最终呈现已成功提交。
     Presented,
 }
 
@@ -192,7 +239,9 @@ pub enum PresentOutcome {
 /// changing the raster contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EncodedPictureExecution {
+    /// 后端已无损执行完整 Picture 命令流。
     Executed,
+    /// 后端不支持无损执行该命令流。
     Unsupported,
 }
 
@@ -201,14 +250,18 @@ pub enum EncodedPictureExecution {
 /// will reach the sole final presenter; execution itself must not present.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EncodedFrameExecution {
+    /// 后端已执行完整主表面命令流但尚未呈现。
     Executed,
+    /// 后端不支持执行完整主表面命令流。
     Unsupported,
 }
 
 /// The sole final-submission boundary for an encoded frame.
 pub trait FramePresenter {
+    /// 最终呈现失败类型。
     type Error;
 
+    /// 提交参考帧并返回最终呈现结果。
     fn present(&mut self, frame: &ReferenceFrame) -> Result<PresentOutcome, Self::Error>;
 }
 
@@ -221,18 +274,22 @@ pub struct ReferenceFrame {
 }
 
 impl ReferenceFrame {
+    /// 返回参考帧宽度。
     pub const fn width(&self) -> i32 {
         self.width
     }
 
+    /// 返回参考帧高度。
     pub const fn height(&self) -> i32 {
         self.height
     }
 
+    /// 借用参考帧的预乘 AARRGGBB 像素。
     pub fn pixels(&self) -> &[u32] {
         &self.pixels
     }
 
+    /// 返回指定坐标的像素，越界时返回空值。
     pub fn pixel(&self, x: i32, y: i32) -> Option<u32> {
         if x < 0 || y < 0 || x >= self.width || y >= self.height {
             return None;
