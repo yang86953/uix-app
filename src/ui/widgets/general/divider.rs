@@ -1,4 +1,4 @@
-//! Divider widget — Ant Design style horizontal/vertical divider with optional text.
+//! Ant Design 风格的水平或垂直分隔线，支持可选文本。
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
@@ -7,23 +7,28 @@ use crate::ui::SnapshotFields;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::widget::WidgetTree;
 
-/// Divider orientation for text placement.
+/// 水平分隔线的文本位置。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DividerOrientation {
+    /// 文本靠左放置。
     Left,
+    /// 文本居中放置。
     Center,
+    /// 文本靠右放置。
     Right,
 }
 
-/// Divider direction.
+/// 分隔线方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DividerDirection {
+    /// 水平分隔线。
     Horizontal,
+    /// 垂直分隔线。
     Vertical,
 }
 
 component! {
-    /// Divider widget with optional label.
+    /// 支持可选标签的分隔线组件。
     pub struct Divider {
         text: Option<String>,
         orientation: DividerOrientation,
@@ -131,6 +136,7 @@ impl Default for Divider {
 }
 
 impl Divider {
+    /// 创建居中的无文本水平实线分隔线。
     pub fn new() -> Self {
         Self {
             text: None,
@@ -142,22 +148,27 @@ impl Divider {
         }
     }
 
+    /// 设置水平分隔线显示的文本。
     pub fn with_text(mut self, t: &str) -> Self {
         self.text = Some(t.to_string());
         self
     }
+    /// 设置水平分隔线的文本位置。
     pub fn orientation(mut self, o: DividerOrientation) -> Self {
         self.orientation = o;
         self
     }
+    /// 将分隔线方向设为垂直。
     pub fn vertical(mut self) -> Self {
         self.direction = DividerDirection::Vertical;
         self
     }
+    /// 设置分隔线颜色。
     pub fn color(mut self, c: Color) -> Self {
         self.color = Some(c);
         self
     }
+    /// 将分隔线设为虚线。
     pub fn dashed(mut self) -> Self {
         self.dashed = true;
         self
