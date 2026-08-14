@@ -19,12 +19,16 @@ use crate::draw::geometry::spatial::AABB3D;
 /// 父布局先消费 margin；本层从 border-box frame 扣除 border 与 padding 得到内容区域。
 #[derive(Debug, Clone, Copy)]
 pub struct BoxModel {
+    /// border-box 外侧由父布局消费的外边距。
     pub margin: EdgeInsets,
+    /// border-box 内侧各边的边框厚度。
     pub border_width: EdgeInsets,
+    /// 边框与内容区域之间的内边距。
     pub padding: EdgeInsets,
 }
 
 impl BoxModel {
+    /// 不包含外边距、边框和内边距的零值盒模型。
     pub const ZERO: Self = Self {
         margin: EdgeInsets::zero(),
         border_width: EdgeInsets::zero(),
@@ -80,9 +84,13 @@ impl BoxModel {
 /// - 分配 frame 时：交叉轴起始位置 = cross_offset + margin.cross_start
 #[derive(Debug, Clone)]
 pub struct LayoutChild {
+    /// 子组件在布局树中的稳定标识。
     pub id: ComponentId,
+    /// 子组件在当前约束下测得的自然尺寸。
     pub measured_size: Size,
+    /// 主轴存在剩余空间时的伸展权重。
     pub flex_grow: f32,
+    /// 主轴空间不足时的收缩权重。
     pub flex_shrink: f32,
     /// 外边距——参与布局计算，推开兄弟节点
     pub margin: crate::core::EdgeInsets,
@@ -97,6 +105,7 @@ pub struct LayoutChild {
 }
 
 impl LayoutChild {
+    /// 使用组件标识和自然尺寸创建默认布局子项。
     pub fn new(id: ComponentId, measured_size: Size) -> Self {
         Self {
             id,
@@ -111,17 +120,20 @@ impl LayoutChild {
         }
     }
 
+    /// 设置 Flex 伸展与收缩权重。
     pub fn with_flex(mut self, grow: f32, shrink: f32) -> Self {
         self.flex_grow = grow;
         self.flex_shrink = shrink;
         self
     }
 
+    /// 将子项放入指定的 Grid 起始单元格。
     pub fn with_grid_cell(mut self, cell: usize) -> Self {
         self.grid_cell = Some(cell);
         self
     }
 
+    /// 设置子项跨越的 Grid 列数与行数，最小值均为一。
     pub fn with_grid_span(mut self, columns: u32, rows: u32) -> Self {
         self.grid_column_span = columns.max(1);
         self.grid_row_span = rows.max(1);
@@ -168,7 +180,9 @@ pub trait LayoutEngine {
 /// 布局引擎的输出：子节点位置 + 内容总尺寸。
 #[derive(Debug, Clone)]
 pub struct LayoutOutput {
+    /// 与输入子项顺序一致的 border-box 布局矩形。
     pub positions: Vec<Rect>,
+    /// 布局内容在两个轴向上的总占用尺寸。
     pub total_size: Size,
 }
 
@@ -329,10 +343,15 @@ impl LayoutOutput3D {
 /// 可被任何容器 widget 组合使用。
 #[derive(Debug, Clone)]
 pub struct FlexLayout {
+    /// 子项排列使用的主轴方向。
     pub direction: FlexDirection,
+    /// 相邻子项之间的固定间距。
     pub gap: f32,
+    /// 子项在主轴剩余空间中的分布方式。
     pub justify: JustifyContent,
+    /// 子项在交叉轴上的默认对齐方式。
     pub align: AlignItems,
+    /// 是否允许子项换行或换列。
     pub wrap: bool,
     /// 允许内容溢出（跳过 flex-shrink，子节点按自然尺寸流式堆叠）
     pub overflow_content: bool,
@@ -341,6 +360,7 @@ pub struct FlexLayout {
 }
 
 impl FlexLayout {
+    /// 创建垂直排列、无间距且默认拉伸子项的 Flex 布局。
     pub fn new() -> Self {
         Self {
             direction: FlexDirection::Column,
@@ -366,18 +386,22 @@ impl FlexLayout {
         }
     }
 
+    /// 设置子项排列使用的主轴方向。
     pub fn with_direction(mut self, d: FlexDirection) -> Self {
         self.direction = d;
         self
     }
+    /// 设置相邻子项之间的固定间距。
     pub fn with_gap(mut self, g: f32) -> Self {
         self.gap = g;
         self
     }
+    /// 设置子项在主轴剩余空间中的分布方式。
     pub fn with_justify(mut self, j: JustifyContent) -> Self {
         self.justify = j;
         self
     }
+    /// 设置子项在交叉轴上的默认对齐方式。
     pub fn with_align(mut self, a: AlignItems) -> Self {
         self.align = a;
         self
@@ -675,17 +699,24 @@ fn overflow_layout(
 /// 可被任何容器 widget 组合使用。
 #[derive(Debug, Clone)]
 pub struct GridLayout {
+    /// 按声明顺序参与网格计算的列轨定义。
     pub columns: Vec<GridTrack>,
+    /// 按声明顺序参与网格计算的行轨定义。
     pub rows: Vec<GridTrack>,
+    /// 相邻列轨之间的固定间距。
     pub col_gap: f32,
+    /// 相邻行轨之间的固定间距。
     pub row_gap: f32,
+    /// 子项在单元格交叉轴上的默认对齐方式。
     pub align_items: AlignItems,
+    /// 子项在单元格主轴上的默认对齐方式。
     pub justify_items: JustifyContent,
-    // 整组列轨在父级水平剩余空间中的对齐方式。
+    /// 整组列轨在父级水平剩余空间中的对齐方式。
     pub justify_content: JustifyContent,
 }
 
 impl GridLayout {
+    /// 创建不含轨道和间距的默认 Grid 布局。
     pub fn new() -> Self {
         Self {
             columns: Vec::new(),
@@ -699,23 +730,28 @@ impl GridLayout {
         }
     }
 
+    /// 设置按声明顺序参与计算的列轨。
     pub fn with_columns(mut self, cols: Vec<GridTrack>) -> Self {
         self.columns = cols;
         self
     }
+    /// 设置按声明顺序参与计算的行轨。
     pub fn with_rows(mut self, rows: Vec<GridTrack>) -> Self {
         self.rows = rows;
         self
     }
+    /// 同时设置列间距与行间距。
     pub fn with_gap(mut self, col_gap: f32, row_gap: f32) -> Self {
         self.col_gap = col_gap;
         self.row_gap = row_gap;
         self
     }
+    /// 设置子项在单元格交叉轴上的默认对齐方式。
     pub fn with_align(mut self, a: AlignItems) -> Self {
         self.align_items = a;
         self
     }
+    /// 设置子项在单元格主轴上的默认对齐方式。
     pub fn with_justify(mut self, j: JustifyContent) -> Self {
         self.justify_items = j;
         self
