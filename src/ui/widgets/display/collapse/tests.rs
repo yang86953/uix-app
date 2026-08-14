@@ -119,6 +119,10 @@ fn controlled_sync_from_uses_latest_external_keys() {
     let active = State::new(vec!["alpha".to_string()]);
     // 构造将被原位同步的当前组件。
     let mut current = Collapse::new().panels(panels()).active_keys(&active);
+    // 保存首项内容 Canvas 已捕获的透明度句柄。
+    let alpha_opacity = current.content_opacities[0].clone();
+    // 保存次项内容 Canvas 已捕获的透明度句柄。
+    let beta_opacity = current.content_opacities[1].clone();
     // 调用方在下一声明前切换到次项。
     active.set(vec!["beta".to_string()]);
     // 使用同一状态句柄构造下一帧声明。
@@ -129,6 +133,20 @@ fn controlled_sync_from_uses_latest_external_keys() {
 
     // 界面必须采用最新外部稳定 key。
     assert_eq!(current.expanded_keys(), vec!["beta".to_string()]);
+    // 受控重建不得替换首项已物化 Canvas 持有的句柄。
+    assert!(std::rc::Rc::ptr_eq(
+        &alpha_opacity,
+        &current.content_opacities[0]
+    ));
+    // 受控重建不得替换次项已物化 Canvas 持有的句柄。
+    assert!(std::rc::Rc::ptr_eq(
+        &beta_opacity,
+        &current.content_opacities[1]
+    ));
+    // 折叠首项必须把原句柄更新到完全透明。
+    assert_eq!(alpha_opacity.get(), 0.0);
+    // 展开次项必须把原句柄更新到完全不透明。
+    assert_eq!(beta_opacity.get(), 1.0);
     // 外部状态不得被旧内部快照覆盖。
     assert_eq!(active.get(), vec!["beta".to_string()]);
 }

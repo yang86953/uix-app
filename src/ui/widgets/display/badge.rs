@@ -230,6 +230,12 @@ component! {
         crate::draw::scene::PicturePolicy::Eligible
     }
 
+    // 单 child 装饰器必须在真实子树完成后绘制角标。
+    paint_after_children => (&self) -> bool {
+        // 叶模式继续只使用 Content 阶段。
+        self.composite && self.child_count == 1
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         // 组合模式只在真实子树绘制完成后叠加装饰。
         let expected_pass = if self.composite && self.child_count == 1 {

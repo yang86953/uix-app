@@ -9,5 +9,9 @@ fn record_panel(_panel_key: &str) {
 // 启动 Collapse 独立真窗验收应用。
 fn main() {
     // 编译期读取验收声明并进入现有原生窗口事件循环。
-    uix_app!("src/main.uix").run();
+    uix_app!("src/main.uix")
+        // 专用验收程序显式开放同用户本机 Agent Adapter。
+        .enable_agent_control()
+        // 进入现有原生窗口事件循环。
+        .run();
 }

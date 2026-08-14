@@ -268,6 +268,7 @@ macro_rules! __component_upcast_method {
     (uses_palette; $T:ty) => {};
     (dirty_rect; $T:ty) => {};
     (children_clip; $T:ty) => {};
+    (paint_after_children; $T:ty) => {};
     (overlay_entry; $T:ty) => {};
     (draw_margin; $T:ty) => {};
     (on_event; $T:ty) => { $crate::wc_upcast!($T; EventHandler); };

@@ -119,18 +119,27 @@ component! {
         views
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
+        // 借用全部已物化内容条目，稳定 key 保留原面板身份。
         let entries = self.materialized_content.borrow();
+        // 通用布局入口只传入当前有效可见子集，不能再使用压缩后的索引。
         children
             .iter()
-            .enumerate()
-            .filter_map(|(child_index, child)| {
-                let entry = entries.get(child_index)?;
+            // 按动态子节点自身稳定 key 回查原始面板条目。
+            .filter_map(|child| {
+                // 读取当前树中仍存活的真实子节点。
+                let child_node = tree.get(child.id)?;
+                // 动态 Collapse 内容必须保留协调时登记的稳定 key。
+                let child_key = child_node.key()?;
+                // 在完整条目表中恢复未压缩的原始 panel_index。
+                let entry = entries.iter().find(|entry| entry.key == child_key)?;
+                // 使用真实面板索引计算标题之后的内容 frame。
                 self.content_frame(frame, entry.panel_index)
                     .map(|content_frame| (child.id, content_frame))
             })
+            // 返回当前可见子集的确定放置结果。
             .collect()
     }
 

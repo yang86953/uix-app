@@ -35,7 +35,7 @@ acceptancePanel {
       // 结束动态圆点样例。
       </Badge>
       // 独立按钮只负责切换圆点状态。
-      <Button @click="setState(show_dot: !show_dot)">切换圆点</Button>
+      <Button @click="setState(show_dot: !show_dot)">切换圆点：{show_dot}</Button>
     // 结束动态样例行。
     </Container>
     // 第二行覆盖 Icon、文本胶囊与零子节点兼容行为。

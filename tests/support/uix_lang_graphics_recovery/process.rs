@@ -42,7 +42,7 @@ pub(crate) struct DemoProcess {
 // 实现主演示 fixture 的确定启动、连接与回收。
 impl DemoProcess {
     // 定位与当前测试 profile 对齐的主演示二进制。
-    fn binary_path() -> PathBuf {
+    fn binary_path(binary_name: &str) -> PathBuf {
         // 测试 profile 与 demo workspace 的构建 profile 必须一致。
         let profile = if cfg!(debug_assertions) {
             // 普通 cargo test 使用 debug 产物。
@@ -59,13 +59,13 @@ impl DemoProcess {
             .join("target")
             // 选择当前 profile。
             .join(profile)
-            // 选择 Windows 主演示可执行文件。
-            .join("uix-lang-demo.exe");
+            // 选择调用方登记的 Windows 验收可执行文件。
+            .join(format!("{binary_name}.exe"));
         // 缺失产物时提供可直接执行的精确构建命令。
         assert!(
             path.is_file(),
-            "主演示二进制不存在：{}；请先执行：\ncargo build --manifest-path demo/Cargo.toml --features \"agent-control,test-harness\" --bin uix-lang-demo",
-            path.display()
+            "验收二进制不存在：{}；请先构建 demo workspace 中的 {binary_name}",
+            path.display(),
         );
         // 返回已经验证存在的精确路径。
         path
@@ -74,23 +74,29 @@ impl DemoProcess {
     // 启动强制 D3D11 的专用图形恢复验收进程。
     pub(crate) fn spawn() -> Self {
         // 复用通用主演示启动器并选择图形恢复页面。
-        Self::spawn_with_args(&["--test-graphics-recovery"])
+        Self::spawn_with_args("uix-lang-demo", &["--test-graphics-recovery"])
     }
 
     // 启动强制 D3D11 的普通主演示视觉验收进程。
     pub(crate) fn spawn_main() -> Self {
         // 普通模式不附加测试页面参数。
-        Self::spawn_with_args(&[])
+        Self::spawn_with_args("uix-lang-demo", &[])
     }
 
     // 启动带指定公开参数的普通主演示验收进程。
     pub(crate) fn spawn_main_with_args(extra_args: &[&str]) -> Self {
         // 复用同一隔离、Agent 与 D3D11 启动路径。
-        Self::spawn_with_args(extra_args)
+        Self::spawn_with_args("uix-lang-demo", extra_args)
+    }
+
+    // 启动已经显式组装 Agent Module 的独立真窗验收程序。
+    pub(crate) fn spawn_visual(binary_name: &str) -> Self {
+        // 独立验收程序忽略主演示参数但复用隔离与 D3D11 环境。
+        Self::spawn_with_args(binary_name, &[])
     }
 
     // 使用同一进程所有权与 discovery 隔离启动指定主演示模式。
-    fn spawn_with_args(extra_args: &[&str]) -> Self {
+    fn spawn_with_args(binary_name: &str, extra_args: &[&str]) -> Self {
         // 为并发或重复测试构造不冲突的目录后缀。
         let unique = SystemTime::now()
             // 计算自 Unix epoch 起的稳定递增时长。
@@ -114,7 +120,7 @@ impl DemoProcess {
             .expect("create isolated Agent discovery directory");
 
         // 从已构建主演示创建子进程命令。
-        let mut command = Command::new(Self::binary_path());
+        let mut command = Command::new(Self::binary_path(binary_name));
         // 配置双运行时门禁、隔离环境和输出管道。
         command
             // 显式启用本机 Agent Bridge。

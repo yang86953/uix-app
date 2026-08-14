@@ -6,7 +6,7 @@ use crate::draw::painting::{PaintContext, PaintPass, PaintSurfaceConfig};
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
 use crate::draw::scene::picture::{
-    blit_picture_cache, rasterize_picture_to_offscreen, LayerRenderEnv,
+    LayerRenderEnv, blit_picture_cache, rasterize_picture_to_offscreen,
 };
 use crate::draw::scene::render_object::RenderObjectTree;
 use crate::draw::scene::viewport_transform::{needs_paint, needs_paint_rect};
@@ -440,7 +440,9 @@ impl LayerTree {
                     Self::apply_canvas_transform(engine.canvas_2d(), Transform::translate(sx, sy));
                 }
                 engine.canvas_2d().pop_clip();
-                if Self::should_paint_node(scene, *node_id, dirty_region) {
+                if scene.node_paints_after_children(*node_id)
+                    && Self::should_paint_node(scene, *node_id, dirty_region)
+                {
                     let mut ctx = Self::paint_context(engine, env, surface_w, surface_h);
                     Self::paint_widget(*node_id, &mut ctx, scene, PaintPass::AfterChildren, None);
                 }
@@ -552,6 +554,19 @@ impl LayerTree {
         Self::paint_widget(id, ctx, scene, PaintPass::Content, None);
     }
 
+    /// 在子树完成后渲染 widget 自身的覆盖视觉。
+    pub(crate) fn render_widget_after_children(
+        // 接收当前场景节点身份。
+        id: NodeId,
+        // 借用当前目标的绘制上下文。
+        ctx: &mut PaintContext<'_>,
+        // 借用只读场景快照。
+        scene: &impl ScenePaint,
+    ) {
+        // AfterChildren 不进入仅缓存 Content 的 RenderObject。
+        Self::paint_widget(id, ctx, scene, PaintPass::AfterChildren, None);
+    }
+
     /// 渲染 widget 自身及其子节点（直接遍历 children LayerNodes）。
     fn render_widget_and_children(
         engine: &mut dyn RenderTarget,
@@ -599,6 +614,15 @@ impl LayerTree {
                 )?;
             }
         }
+        // 普通直绘节点也必须在全部子节点完成后获得覆盖绘制阶段。
+        if scene.node_paints_after_children(id) && Self::should_paint_node(scene, id, dirty_region)
+        {
+            // 为当前主表面构造一次短生命周期绘制上下文。
+            let mut ctx = Self::paint_context(engine, env, surface_w, surface_h);
+            // AfterChildren 始终绕过只记录 Content 的显示列表缓存。
+            Self::paint_widget(id, &mut ctx, scene, PaintPass::AfterChildren, None);
+        }
+        // 当前节点与子树全部绘制成功。
         Ok(())
     }
 

@@ -1,14 +1,14 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::core::Rect;
+use crate::draw::RenderTarget;
 use crate::draw::geometry::types::ImageHandle;
 use crate::draw::painting::DisplayList;
 use crate::draw::scene::NodeId;
 use crate::draw::scene::{PicturePolicy, ScenePaint};
-use crate::draw::RenderTarget;
 
 use super::{
-    LayerNode, LayerTree, PictureCandidate, PictureSubtreeStats, PICTURE_CACHE_BUDGET_BYTES,
+    LayerNode, LayerTree, PICTURE_CACHE_BUDGET_BYTES, PictureCandidate, PictureSubtreeStats,
 };
 
 impl LayerTree {
@@ -454,6 +454,8 @@ impl LayerTree {
 
     fn node_allows_picture(scene: &impl ScenePaint, id: NodeId, frame: Rect) -> bool {
         scene.node_picture_policy(id) == PicturePolicy::Eligible
+            // 二阶段覆盖节点不能被只缓存 Content 的 Picture 吞掉。
+            && !scene.node_paints_after_children(id)
             && !scene.node_has_semantic_handlers(id)
             && !scene.node_has_dynamic_content(id)
             && !scene.node_has_interactive_state(id)
