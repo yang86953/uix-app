@@ -315,8 +315,14 @@ impl Message {
     const CONTENT_TRAILING_GAP: f32 = 7.0;
 
     pub fn new() -> Self {
-        let this = Self {
-            queue: ToastQueue::new(),
+        // Rust 直接构造获得独立队列，不再修改任何进程级注册表。
+        Self::from_handle(MessageHandle::new())
+    }
+
+    pub(crate) fn from_handle(handle: MessageHandle) -> Self {
+        // Host 只接收 Application System 分配给目标窗口的窄句柄。
+        Self {
+            queue: handle.queue,
             motion: RefCell::new(ToastMotion::default()),
             placement: Placement::Top,
             enter_animation: None,
@@ -330,10 +336,7 @@ impl Message {
             action_label: None,
             action_callback: None,
             icon_name: None,
-        };
-        // E-04：构造即注册为当前消息门面目标（最近挂载生效）。
-        crate::ui::widgets::feedback::facade::register_message(this.handle());
-        this
+        }
     }
 
     pub fn placement(mut self, placement: Placement) -> Self {
@@ -837,4 +840,3 @@ impl Message {
         )
     }
 }
-

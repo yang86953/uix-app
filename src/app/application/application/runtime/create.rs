@@ -116,7 +116,8 @@ pub(super) fn create_secondary_window(
     };
     // 与主窗一致：首帧 present 成功后再 show，避免空窗白屏。
 
-    let notifications = container.resolve_clone::<AppNotificationState>();
+    // 副窗从 Application 容器取得同一个反馈 owner。
+    let feedback = container.resolve_clone::<AppFeedbackState>();
     let locale = container.resolve_clone::<Locale>().unwrap_or_default();
     let component_config = container
         .resolve_clone::<ComponentConfig>()
@@ -125,8 +126,8 @@ pub(super) fn create_secondary_window(
         with_config(&component_config, || {
             with_locale(&locale, || {
                 let root_node = root();
-                // 副窗与主窗复用同一应用根默认值和通知浮层组装入口。
-                prepare_app_root(root_node, notifications.clone(), window_id)
+                // 副窗与主窗复用同一应用根默认值和逐窗反馈浮层组装入口。
+                prepare_app_root(root_node, feedback.clone(), window_id)
             })
         })
     };

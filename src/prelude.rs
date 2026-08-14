@@ -110,11 +110,11 @@ pub use crate::ui::{
     UploadQueueResult, UploadRejectReason, UploadRejection, UploadStatus, UploadUpdateError,
     ValidateStatus, Values, VirtualScroll, VirtualScrollBuilder, Watermark, Weekday,
 };
-// 反馈 capability 启用时才在 prelude 暴露组件、门面与专属模型。
+// 反馈 capability 启用时才在 prelude 暴露组件与专属模型。
 #[cfg(feature = "feedback")]
 // 共享的 TriggerMode 与 TooltipPlacement 已留在基础导入面。
 pub use crate::ui::{
-    Alert, Drawer, DrawerPlacement, Message, MessageFacade, MessageItem, Modal, ModalBuilder,
+    Alert, Drawer, DrawerPlacement, Message, MessageItem, Modal, ModalBuilder,
     ModalContext, Notification, NotificationItem, Popconfirm, PopconfirmPlacement, Popover,
     PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode, ProgressType, Spin, SpinSize,
     Tooltip,
@@ -175,10 +175,6 @@ pub use crate::ui::{
     IntoViewChildren, ScrollBuilder, StyleExt, TransitionExt, View, ViewNode, button, canvas,
     column, column_fit, dynamic_label, embed, grid, input, label, row, scroll, show, space,
 };
-// 反馈 capability 启用时才在 prelude 暴露全局消息与通知门面函数。
-#[cfg(feature = "feedback")]
-// 两个函数与反馈组件注册表共享同一能力边界。
-pub use crate::ui::{message, notify};
 pub use crate::views;
 pub use crate::with_cloned;
 

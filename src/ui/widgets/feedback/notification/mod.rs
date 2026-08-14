@@ -328,12 +328,12 @@ impl Notification {
     const CONTENT_TRAILING_GAP: f32 = 8.0;
 
     pub fn new() -> Self {
+        // Rust 直接构造获得独立队列，不再修改任何进程级注册表。
         Self::from_handle(NotificationHandle::new())
     }
 
     pub(crate) fn from_handle(handle: NotificationHandle) -> Self {
-        // E-04：构造即注册为当前通知门面目标（最近挂载生效）。
-        crate::ui::widgets::feedback::facade::register_notification(handle.clone());
+        // Host 只接收 Application System 分配给目标窗口的窄句柄。
         Self {
             queue: handle.queue,
             motion: RefCell::new(ToastMotion::default()),

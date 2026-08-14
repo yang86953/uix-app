@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use crate::app::app_events::ThemeApplied;
 use crate::app::application::app_handle::{
-    prepare_app_root, AppHandle, AppNotificationState,
+    prepare_app_root, AppFeedbackState, AppHandle,
 };
 use crate::app::application::cli::Cli;
 use crate::app::application::di::Container;
@@ -571,8 +571,10 @@ impl App {
             None
         };
 
-        let notifications = AppNotificationState::new();
-        self.container.singleton(notifications.clone());
+        // Application System 创建唯一反馈 owner，所有窗口只分配各自句柄组。
+        let feedback = AppFeedbackState::new();
+        // 通过 DI 共享同一个 owner，不向组件暴露全局注册表。
+        self.container.singleton(feedback.clone());
         let locale = self.container.resolve_clone::<Locale>().unwrap_or_default();
         let component_config = self
             .container
@@ -580,16 +582,17 @@ impl App {
             .unwrap_or_default();
 
         let root_window_id = platform_window.window_id();
-        let root_notifications = notifications.clone();
+        // 根窗口工厂捕获 owner，而不是捕获某个临时 Host 实例。
+        let root_feedback = feedback.clone();
         let mut session = WindowSession::from_root_factory_for_window(
             root_window_id,
             move || {
                 with_config(&component_config, || {
                     with_locale(&locale, || {
-                        // 初始主窗通过统一入口应用根背景默认值并组装通知浮层。
+                        // 初始主窗通过统一入口应用根背景默认值并组装逐窗反馈浮层。
                         prepare_app_root(
                             root_factory(),
-                            Some(root_notifications.clone()),
+                            Some(root_feedback.clone()),
                             root_window_id,
                         )
                     })
