@@ -1,3 +1,6 @@
+// 引入线程局部的生成文件标记开关。
+use std::cell::Cell;
+
 // 引入过程宏令牌与标识符类型。
 use proc_macro2::{Ident, TokenStream};
 // 引入确定性令牌拼接宏。
@@ -10,8 +13,53 @@ use super::{
     step_status_path,
 };
 
+// 保存当前线程是否正在为生成文件输出来源标记。
+thread_local! {
+    // 纯 codegen 默认不携带仅供写盘消费的内部令牌。
+    static SOURCE_MARKERS_ENABLED: Cell<bool> = const { Cell::new(false) };
+}
+
+// 在一次宏入口代码生成期间启用来源标记。
+pub(crate) fn with_source_markers<T>(operation: impl FnOnce() -> T) -> T {
+    // 在当前过程宏线程内切换标记状态。
+    SOURCE_MARKERS_ENABLED.with(|enabled| {
+        // 保存嵌套调用前的原状态。
+        let previous = enabled.replace(true);
+        // 执行完整文档代码生成。
+        let result = operation();
+        // 恢复调用前状态，避免污染后续纯 codegen。
+        enabled.set(previous);
+        // 返回原始生成结果。
+        result
+    })
+}
+
 // 把已验证表达式转换为 Rust 表达式令牌。
 pub(crate) fn generate_expression(
+    // 接收确定性表达式语法树。
+    expression: &Expression,
+    // 接收可选的事件载荷局部变量。
+    event: Option<&Ident>,
+) -> Result<TokenStream, Diagnostic> {
+    // 先生成不含定位包装的完整表达式。
+    let generated = generate_expression_inner(expression, event)?;
+    // 仅在生成文件入口为最外层加入源码位置标记。
+    Ok(maybe_mark_source_expression(generated, expression.span))
+}
+
+// 生成不携带文件来源标记的规范表达式令牌。
+pub(crate) fn generate_expression_without_source_marker(
+    // 接收确定性表达式语法树。
+    expression: &Expression,
+    // 接收可选的事件载荷局部变量。
+    event: Option<&Ident>,
+) -> Result<TokenStream, Diagnostic> {
+    // 直接调用内部递归生成器。
+    generate_expression_inner(expression, event)
+}
+
+// 递归生成表达式内部令牌而不重复加入来源标记。
+fn generate_expression_inner(
     // 接收确定性表达式语法树。
     expression: &Expression,
     // 接收可选的事件载荷局部变量。
@@ -43,7 +91,7 @@ pub(crate) fn generate_expression(
                 // 按源码顺序生成。
                 .iter()
                 // 递归转换每个元素。
-                .map(|item| generate_expression(item, event))
+                .map(|item| generate_expression_inner(item, event))
                 // 收集或返回首个诊断。
                 .collect::<Result<Vec<_>, _>>()?;
             // 返回可推断元素类型的 vec 字面量。
@@ -52,7 +100,7 @@ pub(crate) fn generate_expression(
         // 一元表达式递归生成操作数。
         ExpressionKind::Unary { operator, operand } => {
             // 生成一元操作数。
-            let operand = generate_expression(operand, event)?;
+            let operand = generate_expression_inner(operand, event)?;
             // 按运算符拼接 Rust 一元表达式。
             Ok(match operator {
                 // 逻辑非保持 Rust 语义。
@@ -68,9 +116,9 @@ pub(crate) fn generate_expression(
             right,
         } => {
             // 生成左操作数。
-            let left = generate_expression(left, event)?;
+            let left = generate_expression_inner(left, event)?;
             // 生成右操作数。
-            let right = generate_expression(right, event)?;
+            let right = generate_expression_inner(right, event)?;
             // 按运算符拼接 Rust 二元表达式。
             Ok(generate_binary(&left, *operator, &right))
         }
@@ -81,11 +129,11 @@ pub(crate) fn generate_expression(
             else_branch,
         } => {
             // 生成条件表达式。
-            let condition = generate_expression(condition, event)?;
+            let condition = generate_expression_inner(condition, event)?;
             // 生成真分支表达式。
-            let then_branch = generate_expression(then_branch, event)?;
+            let then_branch = generate_expression_inner(then_branch, event)?;
             // 生成假分支表达式。
-            let else_branch = generate_expression(else_branch, event)?;
+            let else_branch = generate_expression_inner(else_branch, event)?;
             // 返回类型由 Rust 编译器统一检查的条件表达式。
             Ok(quote! { if #condition { #then_branch } else { #else_branch } })
         }
@@ -97,9 +145,9 @@ pub(crate) fn generate_expression(
         // 下标访问保持 Rust 索引语义。
         ExpressionKind::Index { object, index } => {
             // 生成被索引对象。
-            let object = generate_expression(object, event)?;
+            let object = generate_expression_inner(object, event)?;
             // 生成索引表达式。
-            let index = generate_expression(index, event)?;
+            let index = generate_expression_inner(index, event)?;
             // 返回带括号的 Rust 索引表达式。
             Ok(quote! { (#object)[#index] })
         }
@@ -109,6 +157,39 @@ pub(crate) fn generate_expression(
             generate_call(callee, arguments, expression.span, event)
         }
     }
+}
+
+// 用稳定内部令牌标记一段用户表达式的 UIX 源位置。
+fn mark_source_expression(generated: TokenStream, span: SourceSpan) -> TokenStream {
+    // 把一基行列编码为不会与用户标识符冲突的卫生名称。
+    let marker = Ident::new(
+        // 生成文件写入器会把该令牌替换为真实映射注释。
+        &format!("__uix_source_marker_{}_{}", span.line, span.column),
+        // 使用混合卫生避免参与调用方名称解析。
+        proc_macro2::Span::mixed_site(),
+    );
+    // 把可移除标识符放在原表达式前，不增加会改变 place 语义的块。
+    quote! {
+        // 该令牌只存在于过程宏内部，写盘前会变成注释。
+        #marker
+        // 紧随完全不变的原始表达式令牌。
+        #generated
+    }
+}
+
+// 根据当前入口上下文选择原始或带来源标记的表达式。
+fn maybe_mark_source_expression(generated: TokenStream, span: SourceSpan) -> TokenStream {
+    // 查询当前线程的生成文件模式。
+    SOURCE_MARKERS_ENABLED.with(|enabled| {
+        // 生成文件模式需要写入可替换标记。
+        if enabled.get() {
+            // 返回带来源标记的表达式。
+            mark_source_expression(generated, span)
+        } else {
+            // 纯 codegen 保持原有令牌形状。
+            generated
+        }
+    })
 }
 
 // 生成事件处理器主体，并兼容无括号处理器名。
@@ -124,8 +205,13 @@ pub(crate) fn generate_handler_expression(
         if name != "$event" {
             // 生成可调用标识符。
             let handler = generate_identifier(name, expression.span, event)?;
-            // 返回零参数调用。
-            return Ok(quote! { (#handler)() });
+            // 返回带 UIX 源位置标记的零参数调用。
+            return Ok(maybe_mark_source_expression(
+                // 生成原始零参数调用。
+                quote! { (#handler)() },
+                // 沿用事件表达式跨度。
+                expression.span,
+            ));
         }
     }
     // 其他结构按普通受限表达式生成。
@@ -335,7 +421,7 @@ fn generate_member(
         };
     }
     // 生成普通对象表达式。
-    let object = generate_expression(object, event)?;
+    let object = generate_expression_inner(object, event)?;
     // length 按语言契约映射为 Rust len 调用。
     if member == "length" {
         // 返回集合长度。
@@ -384,7 +470,7 @@ fn generate_call(
         // 参数形状已在解析期验证为单个字符串位置参数。
         let argument = single_positional_argument(arguments, "setTheme", span)?;
         // 生成主题名称参数。
-        let name = generate_expression(&argument.value, event)?;
+        let name = generate_expression_inner(&argument.value, event)?;
         // 生成框架主题切换入口调用。
         return Ok(quote! { ::uix::ui::__private::uix_set_theme(&(#name)) });
     }
@@ -395,9 +481,9 @@ fn generate_call(
             // 验证参数数量和形状。
             let argument = single_positional_argument(arguments, member, span)?;
             // 生成数组对象。
-            let object = generate_expression(object, event)?;
+            let object = generate_expression_inner(object, event)?;
             // 生成操作参数。
-            let value = generate_expression(&argument.value, event)?;
+            let value = generate_expression_inner(&argument.value, event)?;
             // 为生成局部变量选择固定卫生名称。
             let array = Ident::new("__uix_array_value", proc_macro2::Span::mixed_site());
             // push 克隆后追加并返回新数组。
@@ -425,7 +511,7 @@ fn generate_call(
         // Step.status 的字符串语义值映射为公开枚举路径。
         if member == "status" && data_chain_root(object) == Some("Step") {
             // 生成对象表达式。
-            let object_tokens = generate_expression(object, event)?;
+            let object_tokens = generate_expression_inner(object, event)?;
             // 状态语义值必须是单个字符串字面量。
             let argument = single_positional_argument(arguments, "status", span)?;
             // 提取语言面字符串值。
@@ -488,7 +574,7 @@ fn generate_call(
                         normalize_number_literals(&mut value);
                     }
                     // 生成规范化后的参数。
-                    generate_expression(&value, event)
+                    generate_expression_inner(&value, event)
                 })
                 // 收集或返回首个诊断。
                 .collect::<Result<Vec<_>, _>>()?;
@@ -515,7 +601,7 @@ fn generate_call(
     // 成员调用直接生成方法调用形式，避免与方法同名字段产生解析歧义。
     if let ExpressionKind::Member { object, member } = &callee.kind {
         // 生成成员所属对象。
-        let object = generate_expression(object, event)?;
+        let object = generate_expression_inner(object, event)?;
         // 验证成员名可映射为 Rust 方法名。
         let member = rust_member(member, span)?;
         // 生成全部位置参数。
@@ -523,20 +609,20 @@ fn generate_call(
             // 遍历有序参数。
             .iter()
             // 转换每个参数表达式。
-            .map(|argument| generate_expression(&argument.value, event))
+            .map(|argument| generate_expression_inner(&argument.value, event))
             // 收集或返回首个诊断。
             .collect::<Result<Vec<_>, _>>()?;
         // 返回方法调用表达式。
         return Ok(quote! { (#object).#member(#(#arguments),*) });
     }
     // 生成普通调用目标。
-    let callee = generate_expression(callee, event)?;
+    let callee = generate_expression_inner(callee, event)?;
     // 生成全部位置参数。
     let arguments = arguments
         // 遍历有序参数。
         .iter()
         // 转换每个参数表达式。
-        .map(|argument| generate_expression(&argument.value, event))
+        .map(|argument| generate_expression_inner(&argument.value, event))
         // 收集或返回首个诊断。
         .collect::<Result<Vec<_>, _>>()?;
     // 返回 Rust 调用表达式。

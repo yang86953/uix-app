@@ -489,7 +489,8 @@ pub(crate) use declaration_parser::{
 pub(crate) use expression_ast::*;
 // 向 View 生成器暴露表达式与事件处理器生成入口。
 pub(crate) use expression_codegen::{
-    expression_uses_event, generate_expression, generate_handler_expression,
+    expression_uses_event, generate_expression, generate_expression_without_source_marker,
+    generate_handler_expression, with_source_markers,
 };
 // 向表达式解析器暴露词法标记。
 pub(crate) use expression_lexer::*;

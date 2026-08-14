@@ -34,6 +34,35 @@ fn accepts_declared_external_and_closed_component_names() {
     assert!(tokens.contains("items"));
 }
 
+// 验证 VirtualScroll item 一致性属性使用直接 For 的局部绑定而非 external。
+#[test]
+fn accepts_virtual_scroll_item_binding_inside_component() {
+    // 解析只把真实宿主数据源声明为 external 的虚拟滚动组件。
+    let document = parse_document(
+        // item 属性必须复用直接 For 绑定且不额外开放宿主名称。
+        r#"
+        <Component name="Rows" external="items">
+          <VirtualScroll data={items} rowHeight="32px" item={item}>
+            <For {item} {index} in {items} key={item.id}>
+              <Text>{index}: {item.name}</Text>
+            </For>
+          </VirtualScroll>
+        </Component>
+        <Rows />
+        "#,
+    )
+    // 合法局部绑定文档必须解析成功。
+    .expect("VirtualScroll 组件文档应解析成功");
+    // 生成阶段必须接受 item 与直接 For 绑定的一致性声明。
+    let tokens = generate_document_view(&document)
+        // item 不是需要声明的宿主 external。
+        .expect("VirtualScroll item 局部绑定应生成成功")
+        // 转成稳定文本确认数据源仍被生成。
+        .to_string();
+    // 唯一真实外部数据源必须保留到最终 Rust 令牌。
+    assert!(tokens.contains("items"));
+}
+
 // 验证组件体未声明外部名称得到表达式位置诊断。
 #[test]
 fn rejects_undeclared_component_external_at_expression_span() {

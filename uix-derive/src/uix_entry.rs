@@ -14,10 +14,12 @@ use syn::LitStr;
 // 引入完整 UIX 文档解析与生成入口。
 use crate::uix_lang::{
     Diagnostic, Document, generate_document_app, generate_document_view, generate_record_items,
-    parse_document,
+    parse_document, with_source_markers,
 };
 // 引入过程宏边界拥有的文件依赖解析 Gate。
 use crate::uix_import::{ImportDiagnostic, ResolvedDocument, reject_inline_imports, resolve_file};
+// 引入生成文件与 include! 输出边界。
+use crate::uix_generated::emit_generated_expression;
 
 // 公开 uix! 自动区分 .uix 路径与内嵌源码。
 pub(crate) fn expand_public(input: &LitStr) -> TokenStream {
@@ -106,14 +108,16 @@ fn expand_app_file_at(input: &LitStr, manifest_dir: &Path) -> TokenStream {
     // 使用用户请求路径生成 App 诊断。
     let source_name = input.value();
     // 生成合并文档对应的 App builder。
-    let generated = match generate_document_app(&resolved.document) {
+    let generated = match with_source_markers(|| generate_document_app(&resolved.document)) {
         // 保存成功生成的 App builder。
         Ok(generated) => generated,
         // 转换结构化 codegen 诊断。
         Err(error) => return diagnostic_error(&source_name, &error, input),
     };
     // 注入全部文件的 rustc 编译依赖。
-    tracked_expression(generated, &resolved.tracked_files, input)
+    let tracked = tracked_expression(generated, &resolved.tracked_files, input);
+    // 写入可查看的 App 生成文件并返回 include!。
+    generated_expression(tracked, &source_name, "app", input)
 }
 
 // 解析 UIX 源码并生成公开 App builder 令牌。
@@ -128,7 +132,7 @@ fn expand_app_source(
     // 执行纯编译期解析、内嵌导入 Gate 与 App 代码生成。
     let generated = parse_inline_document(source)
         // 解析成功后生成现有 App builder。
-        .and_then(|document| generate_document_app(&document));
+        .and_then(|document| with_source_markers(|| generate_document_app(&document)));
     // 失败时生成包含来源、位置、原因与建议的编译错误。
     let app = match generated {
         // 保存成功生成的 App builder。
@@ -136,8 +140,8 @@ fn expand_app_source(
         // 转换结构化 UIX 诊断。
         Err(error) => return diagnostic_error(source_name, &error, input),
     };
-    // 内嵌入口直接返回预生成 App builder。
-    app
+    // 内嵌入口同样写入可查看的 App 生成文件。
+    generated_expression(app, source_name, "app", input)
 }
 
 // 从调用 crate 的 CARGO_MANIFEST_DIR 读取 .uix 文件。
@@ -181,14 +185,16 @@ fn expand_file_at(input: &LitStr, manifest_dir: &Path) -> TokenStream {
     // 使用用户请求路径生成 View 诊断。
     let source_name = input.value();
     // 生成合并文档对应的 View。
-    let generated = match generate_document_view(&resolved.document) {
+    let generated = match with_source_markers(|| generate_document_view(&resolved.document)) {
         // 保存成功生成的 View。
         Ok(generated) => generated,
         // 转换结构化 codegen 诊断。
         Err(error) => return diagnostic_error(&source_name, &error, input),
     };
     // 注入全部文件的 rustc 编译依赖。
-    tracked_expression(generated, &resolved.tracked_files, input)
+    let tracked = tracked_expression(generated, &resolved.tracked_files, input);
+    // 写入可查看的 View 生成文件并返回 include!。
+    generated_expression(tracked, &source_name, "view", input)
 }
 
 // 公开 uix_items! 自动区分 .uix 路径与内嵌源码。
@@ -299,7 +305,7 @@ fn expand_source(
     // 执行纯编译期解析、内嵌导入 Gate 与代码生成。
     let generated = parse_inline_document(source)
         // 解析成功后生成组件感知 View。
-        .and_then(|document| generate_document_view(&document));
+        .and_then(|document| with_source_markers(|| generate_document_view(&document)));
     // 失败时生成包含来源、位置、原因与建议的编译错误。
     let view = match generated {
         // 保存成功生成的 Rust View。
@@ -307,8 +313,41 @@ fn expand_source(
         // 转换结构化 UIX 诊断。
         Err(error) => return diagnostic_error(source_name, &error, input),
     };
-    // 内嵌入口直接返回预生成 View。
-    view
+    // 内嵌入口同样写入可查看的 View 生成文件。
+    generated_expression(view, source_name, "view", input)
+}
+
+// 把预生成表达式写盘并把文件系统错误转换为入口诊断。
+fn generated_expression(
+    // 接收预生成 View 或 App 表达式。
+    generated: TokenStream,
+    // 接收 UIX 来源显示名称。
+    source_name: &str,
+    // 接收稳定入口类别。
+    entry_kind: &str,
+    // 接收宏调用字面量。
+    input: &LitStr,
+) -> TokenStream {
+    // 委托唯一生成文件写入器。
+    match emit_generated_expression(generated, source_name, entry_kind, input) {
+        // 成功时返回 include! 表达式。
+        Ok(included) => included,
+        // 文件系统失败时生成结构化编译错误。
+        Err(error) => entry_error(
+            // 保留 UIX 来源名称。
+            source_name,
+            // 写盘错误固定在入口一行。
+            1,
+            // 写盘错误固定在入口一列。
+            1,
+            // 写入具体文件系统错误。
+            error,
+            // 给出 OUT_DIR 权限与空间修复方向。
+            "确认 Cargo OUT_DIR 可写且磁盘空间充足",
+            // 锚定宏调用字面量。
+            input,
+        ),
+    }
 }
 
 // 解析内嵌文档并拒绝无法确定基准目录的导入。
@@ -462,18 +501,18 @@ mod tests {
     // 引入父模块入口。
     use super::*;
 
-    // 验证内嵌源码直接展开为 View 且不携带 parser。
+    // 验证内嵌源码通过生成文件展开为 View 且不携带 parser。
     #[test]
     fn inline_entry_generates_view_without_runtime_parser() {
         // 创建合法内嵌 UIX 字面量。
         let input = LitStr::new("<Text>Hello</Text>", Span::call_site());
         // 生成并规范化令牌文本。
         let tokens = expand_public(&input).to_string();
-        // 生成物应调用公开 label View。
-        assert!(tokens.contains("label"));
+        // 宏结果应只包含稳定生成文件入口。
+        assert!(tokens.contains("include !"));
         // 生成物不能包含编译期解析函数。
         assert!(!tokens.contains("parse_document"));
-        // 内嵌入口不需要文件依赖追踪。
+        // 内嵌入口的生成文件不需要源文件依赖追踪。
         assert!(!tokens.contains("include_str"));
     }
 
@@ -530,10 +569,8 @@ mod tests {
         let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         // 生成文件入口令牌。
         let tokens = expand_file_at(&input, &repository_root).to_string();
-        // 生成物应包含 rustc 依赖追踪。
-        assert!(tokens.contains("include_str"));
-        // 生成物应包含公开 View 构造代码。
-        assert!(tokens.contains("column"));
+        // 宏结果应只包含稳定生成文件入口。
+        assert!(tokens.contains("include !"));
         // 生成物不能包含编译期 parser 调用。
         assert!(!tokens.contains("parse_document"));
     }
@@ -566,12 +603,18 @@ mod tests {
             // 展开公开 uix_items! 文件路径。
             expand_items_file_at(&input, &repository_root),
         ];
-        // 每个入口都必须追踪根、页面与共享组件三个文件。
-        for output in outputs {
+        // 每个入口都必须保留其生成形态与依赖边界。
+        for (index, output) in outputs.into_iter().enumerate() {
             // 规范化令牌便于计数。
             let tokens = output.to_string();
-            // 三个规范文件各生成一个依赖常量。
-            assert_eq!(tokens.matches("include_str").count(), 3, "{tokens}");
+            // View 与 App 使用 include!，items 保持模块级直接令牌。
+            if index < 2 {
+                // 表达式入口必须引用生成文件。
+                assert!(tokens.contains("include !"), "{tokens}");
+            } else {
+                // items 仍直接携带三个文件依赖追踪常量。
+                assert_eq!(tokens.matches("include_str").count(), 3, "{tokens}");
+            }
             // 展开结果不能包含运行时 parser 调用。
             assert!(!tokens.contains("parse_document"));
         }

@@ -276,6 +276,11 @@ impl ComponentExpander {
         }
         // 逐个改写普通属性与事件表达式。
         for attribute in &mut expanded.attributes {
+            // VirtualScroll item 只声明直接 For 的行绑定名称，不读取组件或宿主值。
+            if element.name == "VirtualScroll" && attribute.name == "item" {
+                // 保留原标识符，交给 VirtualScroll 契约与直接 For 绑定做一致性校验。
+                continue;
+            }
             // 只有表达式属性需要字段改写。
             if let AttributeValue::Expression(expression) = &mut attribute.value {
                 // 事件为字段创建独立克隆。

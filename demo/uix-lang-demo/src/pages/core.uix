@@ -168,7 +168,7 @@
 </Component>
 
 // 声明布局组件页组件：持有吸顶演示的滚动位置状态。
-<Component name="LayoutPage" state="scroll_y: f32 = 180, scroll_point: Point = Point(0.0, 0.0)">
+<Component name="LayoutPage" external="virtual_items" state="scroll_y: f32 = 180, scroll_point: Point = Point(0.0, 0.0)">
   // 组织布局组件内容。
   <Column gap="16px">
     // 展示布局组件标题。
@@ -359,7 +359,7 @@
 </Component>
 
 // 声明导航组件页组件：持有步骤、分页、标签页、菜单与侧栏受控状态。
-<Component name="NavPage" state="steps_current: usize = 1, page_current: usize = 1, page_size: usize = 10, active_tab: 'account', menu_selected: Option<String> = None, menu_open: Vec<String> = [], nav_active: Option<String> = None, nav_open: Vec<String> = [], nav_collapsed: false">
+<Component name="NavPage" external="on_page_change, on_anchor_change" state="steps_current: usize = 1, page_current: usize = 1, page_size: usize = 10, active_tab: 'account', menu_selected: Option<String> = None, menu_open: Vec<String> = [], nav_active: Option<String> = None, nav_open: Vec<String> = [], nav_collapsed: false">
   // 组织导航组件内容。
   <Column gap="16px">
     // 展示导航组件标题。
