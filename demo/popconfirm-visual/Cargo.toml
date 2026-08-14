@@ -1,0 +1,26 @@
+# 声明 Popconfirm 真窗视觉与交互验收程序。
+[package]
+# 使用独立二进制名称便于自动化精确启动。
+name = "popconfirm-visual"
+# 与仓库当前演示版本保持一致。
+version = "0.0.1"
+# 使用仓库统一的 Rust 版本语义。
+edition = "2024"
+# 验收程序不发布到注册表。
+publish = false
+# 复用仓库许可证。
+license-file = "../../LICENSE"
+
+# 声明真窗运行所需的最小依赖。
+[dependencies]
+# 只启用 Windows 图形与反馈组件能力。
+uix = { path = "../..", default-features = false, features = ["d3d11", "feedback"] }
+
+# 登记唯一验收二进制入口。
+[[bin]]
+# 与包名保持一致。
+name = "popconfirm-visual"
+# 指向小型真窗入口。
+path = "src/main.rs"
+# 该二进制只用于运行验收，不生成独立测试壳。
+test = false

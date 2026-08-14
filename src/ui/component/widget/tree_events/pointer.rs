@@ -89,7 +89,10 @@ impl WidgetTree {
                     .iter()
                     .any(|action| action.preserves_keyboard_focus());
             if !preserves_keyboard_focus {
-                self.set_focus(Some(target));
+                // 组合 owner 可通过 System 私有端口把焦点交还真实 trigger 子树。
+                let focus_target = crate::ui::tree_widget_hooks::pointer_focus_target(self, target);
+                // 触发完整焦点生命周期并保持具体组件边界不泄漏到通用事件模块。
+                self.set_focus(Some(focus_target));
             }
         } else if button != MouseButton::Right {
             self.set_focus(None);
