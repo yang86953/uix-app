@@ -48,6 +48,8 @@ mod component_ast;
 mod component_declaration_parser;
 // 定义 Component props 与私有状态的类型化 Rust 绑定。
 mod component_binding_codegen;
+// 定义 Component 有序 computed 派生值的静态绑定。
+mod component_computed_codegen;
 // 定义完整文档中的组件调用展开。
 mod component_codegen;
 // 集中验证组件展开、状态与拒绝路径。

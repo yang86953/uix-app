@@ -152,6 +152,16 @@ impl ComponentExpander {
                         // 普通位置替换为读值名称。
                         *name = binding.value_name.clone();
                     }
+                } else if self.is_pending_computed_identifier(name) {
+                    // 返回 computed 自引用或前向引用诊断。
+                    return Err(Diagnostic::new(
+                        // 指向非法派生引用所在表达式。
+                        expression.span,
+                        // 说明当前名称尚未按声明顺序建立绑定。
+                        format!("computed 表达式引用了尚未声明的派生值 {name}"),
+                        // 给出确定的依赖排序修复方式。
+                        "把依赖项移到当前 computed 之前，并只引用先声明的 computed",
+                    ));
                 } else if !self.is_component_identifier_allowed(name) {
                     // 返回组件封装边界诊断。
                     return Err(Diagnostic::new(
@@ -428,6 +438,16 @@ impl ComponentExpander {
             .rev()
             // 查找最近声明。
             .any(|locals| locals.contains(name))
+    }
+
+    // 判断名称是否是当前 computed 尚不可见的自身或后续派生值。
+    fn is_pending_computed_identifier(&self, name: &str) -> bool {
+        // 只查询最近一次有序 computed 展开上下文。
+        self.pending_computed_scope_stack
+            // 借用当前待声明名称集合。
+            .last()
+            // 判断集合是否包含目标名称。
+            .is_some_and(|pending| pending.contains(name))
     }
 
     // 把 setState 命名参数调用降低为卫生闭包调用。

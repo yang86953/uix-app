@@ -92,6 +92,8 @@ pub(super) struct ComponentExpander {
     pub(super) component_scope_stack: Vec<Ident>,
     // 保存最近 UIX Component 获准使用的 Rust 外部符号。
     pub(super) external_scope_stack: Vec<BTreeSet<String>>,
+    // 保存当前 computed 表达式尚不可引用的派生名称。
+    pub(super) pending_computed_scope_stack: Vec<BTreeSet<String>>,
     // 保存嵌套 For 引入的词法局部标识符。
     pub(super) local_scope_stack: Vec<BTreeSet<String>>,
     // 保存嵌套 For 当前实际实例路径的局部变量。
@@ -158,6 +160,8 @@ impl ComponentExpander {
             component_scope_stack: Vec::new(),
             // 文档根没有组件 external 白名单。
             external_scope_stack: Vec::new(),
+            // 文档根不在 computed 有序求值期间。
+            pending_computed_scope_stack: Vec::new(),
             // 文档根没有 For 词法局部变量。
             local_scope_stack: Vec::new(),
             // 文档根尚未进入任何 For 实例。
@@ -601,6 +605,8 @@ impl ComponentExpander {
                     &mut bindings,
                 )?;
             }
+            // 按声明顺序生成无缓存的派生局部绑定。
+            self.emit_computed_bindings(&component.computed, &mut bindings)?;
             // 动态样式降低期间使用最近 UIX Component 作用域。
             if let Some(scope) = scope.as_ref() {
                 // 压入当前组件运行时作用域。

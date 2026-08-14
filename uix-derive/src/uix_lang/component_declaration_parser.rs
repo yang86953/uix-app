@@ -1,5 +1,5 @@
 // 引入组件声明字段解析器。
-use super::component_parser::{parse_props, parse_states, validate_component_name};
+use super::component_parser::{parse_computed, parse_props, parse_states, validate_component_name};
 // 引入组件声明 AST、通用元素与诊断。
 use super::{AttributeValue, ComponentDeclaration, Diagnostic, Element, SourceSpan};
 // 引入名称去重集合。
@@ -30,6 +30,8 @@ pub(crate) fn parse_component_declaration(
     let mut props_source = None;
     // 保存可选 state 声明及跨度。
     let mut state_source = None;
+    // 保存可选 computed 声明及跨度。
+    let mut computed_source = None;
     // 保存可选 external 声明及跨度。
     let mut external_source = None;
     // 验证 Component 只包含已登记声明属性。
@@ -55,7 +57,7 @@ pub(crate) fn parse_component_declaration(
                 // 说明不接受运行期表达式。
                 format!("Component {} 必须使用字符串字面量", attribute.name),
                 // 给出规范形式。
-                "使用 name、props、state 或 external 的字符串字面量",
+                "使用 name、props、state、computed 或 external 的字符串字面量",
             ));
         };
         // 按保留属性名保存源码。
@@ -66,6 +68,8 @@ pub(crate) fn parse_component_declaration(
             "props" => props_source = Some((value.as_str(), attribute.span)),
             // 保存 state 声明。
             "state" => state_source = Some((value.as_str(), attribute.span)),
+            // 保存 computed 声明。
+            "computed" => computed_source = Some((value.as_str(), attribute.span)),
             // 保存 external 声明。
             "external" => external_source = Some((value.as_str(), attribute.span)),
             // 其他属性不属于 Component 元数据。
@@ -77,7 +81,7 @@ pub(crate) fn parse_component_declaration(
                     // 说明未知元数据。
                     format!("Component 不支持属性 {}", attribute.name),
                     // 给出允许集合。
-                    "只使用 name、props、state 与 external",
+                    "只使用 name、props、state、computed 与 external",
                 ));
             }
         }
@@ -110,6 +114,13 @@ pub(crate) fn parse_component_declaration(
         // 未声明 state 时使用空列表。
         None => Vec::new(),
     };
+    // 解析可选有序派生表达式。
+    let computed = match computed_source {
+        // 解析存在的 computed。
+        Some((source, span)) => parse_computed(source, span)?,
+        // 未声明 computed 时使用空列表。
+        None => Vec::new(),
+    };
     // 解析可选外部符号白名单。
     let external = match external_source {
         // 解析存在的 external。
@@ -132,6 +143,35 @@ pub(crate) fn parse_component_declaration(
             ));
         }
     }
+    // computed 与 props/state 共享组件体标识符命名空间。
+    for derived in &computed {
+        // 查找同名 prop 或私有 state。
+        if props.iter().any(|prop| prop.name == derived.name)
+            || states.iter().any(|state| state.name == derived.name)
+        {
+            // 返回跨类别重复诊断。
+            return Err(Diagnostic::new(
+                // 指向 computed 声明。
+                derived.span,
+                // 说明名称冲突。
+                format!("组件字段 {} 与 computed 派生值同名", derived.name),
+                // 给出改名建议。
+                "为 prop、state 与 computed 使用不同名称",
+            ));
+        }
+        // computed 不能遮蔽显式 Rust 外部依赖。
+        if external.iter().any(|name| name == &derived.name) {
+            // 返回本地与外部依赖冲突诊断。
+            return Err(Diagnostic::new(
+                // 指向 computed 声明。
+                derived.span,
+                // 说明 external 被遮蔽。
+                format!("computed {} 与 external 外部符号同名", derived.name),
+                // 给出明确改名动作。
+                "重命名 computed 或删除同名 external 声明",
+            ));
+        }
+    }
     // 返回结构化组件声明。
     Ok(ComponentDeclaration {
         // 保存组件名。
@@ -140,6 +180,8 @@ pub(crate) fn parse_component_declaration(
         props,
         // 保存 states。
         states,
+        // 保存有序 computed 派生值。
+        computed,
         // 保存外部符号白名单。
         external,
         // 转移有序组件体。

@@ -204,6 +204,39 @@ fn public_uix_macro_compiles_extended_array_operations() {
     assert_eq!(replacement.id, 3);
 }
 
+// 验证真实消费 crate 可编译 computed 有序依赖与闭包捕获。
+#[test]
+fn public_uix_macro_compiles_ordered_computed_values() {
+    // 构造 computed 中不可变筛选的原始业务数组。
+    let array_items = vec![
+        // 首项满足捕获谓词。
+        ArrayOperationItem {
+            // 保存大于阈值的编号。
+            id: 2,
+            // 保存首项显示名称。
+            name: String::from("second"),
+        },
+        // 次项不满足捕获谓词。
+        ArrayOperationItem {
+            // 保存小于阈值的编号。
+            id: 0,
+            // 保存次项显示名称。
+            name: String::from("zero"),
+        },
+    ];
+    // 让过程宏生成 prop 派生、state 捕获、筛选与后续长度的有序局部绑定。
+    let _view: ViewNode = uix::uix!(
+        r#"
+        <Component name="Summary" props="factor: number" state="threshold: i32 = 1" external="array_items" computed="doubled: factor + factor, filtered: array_items.filter(|it| it.id >= threshold), remaining: filtered.length">
+          <Text>{remaining}</Text>
+        </Component>
+        <Summary factor={2} />
+        "#
+    );
+    // computed 只能克隆外部数组，不能移动或改变调用方值。
+    assert_eq!(array_items.len(), 2);
+}
+
 // 验证真实消费 crate 可编译完整 FloatButton 标签契约。
 #[test]
 fn public_uix_macro_compiles_float_button() {

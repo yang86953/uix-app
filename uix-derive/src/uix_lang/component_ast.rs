@@ -10,11 +10,24 @@ pub(crate) struct ComponentDeclaration {
     pub(crate) props: Vec<ComponentProp>,
     // 保存源码顺序中的私有 state。
     pub(crate) states: Vec<ComponentState>,
+    // 保存源码顺序中的派生值。
+    pub(crate) computed: Vec<ComponentComputed>,
     // 保存组件体获准引用的 Rust 外部符号。
     pub(crate) external: Vec<String>,
     // 保存组件视图体的有序节点。
     pub(crate) children: Vec<Node>,
     // 保存完整 Component 声明跨度。
+    pub(crate) span: SourceSpan,
+}
+
+// 表示一个按组件展开时机重新求值的有序派生值。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ComponentComputed {
+    // 保存组件体可引用的派生名称。
+    pub(crate) name: String,
+    // 保存已经通过受限语法验证的派生表达式。
+    pub(crate) expression: Expression,
+    // 保存所属 computed 属性跨度。
     pub(crate) span: SourceSpan,
 }
 

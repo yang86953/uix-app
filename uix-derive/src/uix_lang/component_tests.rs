@@ -1,7 +1,61 @@
 // 引入组件 AST 与文档解析入口。
 use super::{
-    ComponentPropType, ComponentStateInitial, ComponentValueType, Declaration, parse_document,
+    ComponentPropType, ComponentStateInitial, ComponentValueType, Declaration, ExpressionKind,
+    parse_document,
 };
+
+// 验证 computed 按源码顺序保存名称与受限表达式。
+#[test]
+fn parses_ordered_component_computed_contract() {
+    // 解析依赖 state 与先前 computed 的两个派生值。
+    let document = parse_document(
+        // 后项 remaining 合法引用前项 doubled。
+        r#"<Component name="Summary" state="count: 1" computed="doubled: count + count, remaining: doubled + 1"><Text>{remaining}</Text></Component><Summary />"#,
+    )
+    // 合法有序派生声明必须解析成功。
+    .expect("computed 声明契约应成功解析");
+    // 提取组件声明。
+    let Declaration::Component(component) = &document.declarations[0] else {
+        // 结构不匹配时失败。
+        panic!("首个声明应为 Component");
+    };
+    // 两个派生值必须保持源码顺序。
+    assert_eq!(component.computed.len(), 2);
+    // 首个派生名称必须保持不变。
+    assert_eq!(component.computed[0].name, "doubled");
+    // 后续派生名称必须保持不变。
+    assert_eq!(component.computed[1].name, "remaining");
+    // 派生值必须复用受限表达式 AST。
+    assert!(matches!(
+        // 检查首个派生表达式形状。
+        component.computed[0].expression.kind,
+        // 加法表达式必须解析为二元节点。
+        ExpressionKind::Binary { .. }
+    ));
+}
+
+// 验证 computed 名称在自身与组件字段命名空间中唯一。
+#[test]
+fn rejects_duplicate_or_colliding_component_computed_names() {
+    // 解析重复派生名称。
+    let duplicate = parse_document(
+        // 同一 computed 属性两次声明 total。
+        r#"<Component name="Bad" computed="total: 1, total: 2"><Text>A</Text></Component><Bad />"#,
+    )
+    // 重复派生名称必须失败。
+    .expect_err("重复 computed 名称不得通过");
+    // 诊断必须包含具体重复名称。
+    assert!(duplicate.message.contains("computed total 重复声明"));
+    // 解析与私有 state 重名的派生值。
+    let collision = parse_document(
+        // count 同时声明为 state 与 computed。
+        r#"<Component name="Bad" state="count: 1" computed="count: 2"><Text>A</Text></Component><Bad />"#,
+    )
+    // 跨类别名称冲突必须失败。
+    .expect_err("computed/state 重名不得通过");
+    // 诊断必须说明 computed 名称冲突。
+    assert!(collision.message.contains("与 computed 派生值同名"));
+}
 
 // 验证 external 白名单按源码顺序进入组件声明。
 #[test]
