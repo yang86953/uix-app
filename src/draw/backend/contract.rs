@@ -28,13 +28,18 @@ pub enum BackendKind {
 /// 后端能力声明。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BackendCapabilities {
+    /// 像素提交由后端还是外部 presenter 管理。
     pub presentation_mode: PresentationMode,
+    /// 后端是否能只重绘并提交损坏区域。
     pub partial_redraw: bool,
+    /// 后端是否拥有可作为 Picture 目标的离屏表面。
     pub offscreen: bool,
+    /// 主表面是否支持安全的滚动区域像素搬移。
     pub scroll_memmove: bool,
 }
 
 impl BackendCapabilities {
+    /// 返回软件栅格后端支持的默认能力集合。
     pub fn cpu() -> Self {
         Self {
             presentation_mode: PresentationMode::ExternalPresenter,
@@ -110,22 +115,31 @@ impl From<BackendCapabilities> for crate::draw::GraphicsCapabilities {
 
 /// 可绘制 surface — Backend 提供，Pipeline 通过此接口写入。
 pub trait DrawSurface {
+    /// 返回当前可绘制表面的像素尺寸。
     fn size(&self) -> Size;
+    /// 返回表面的整数像素宽度。
     fn width(&self) -> i32 {
         self.size().w as i32
     }
+    /// 返回表面的整数像素高度。
     fn height(&self) -> i32 {
         self.size().h as i32
     }
 
+    /// 将矩形裁剪压入表面裁剪栈。
     fn push_clip(&mut self, rect: Rect);
+    /// 弹出最近压入的表面裁剪。
     fn pop_clip(&mut self);
 
+    /// 清除整个表面的全部像素。
     fn clear_all(&mut self);
+    /// 使用整数像素坐标清除指定矩形区域。
     fn clear_rect_raw(&mut self, x: i32, y: i32, w: i32, h: i32);
 
+    /// 将源矩形像素复制到目标左上角，允许同一表面内重叠。
     fn copy_region(&mut self, src: Rect, dst: Point);
 
+    /// 返回绑定当前表面的立即模式二维画布借用。
     fn canvas(&mut self) -> &mut dyn Canvas2D;
 
     /// Canvas2D keeps its immediate-mode compatibility surface, so operations
@@ -151,9 +165,12 @@ pub trait DrawSurface {
 /// }
 /// ```
 pub trait RenderBackend {
+    /// 返回后端偏好的软件或 GPU 栅格路径。
     fn kind(&self) -> BackendKind;
+    /// 返回后端当前实现保证的 surface 与提交能力。
     fn capabilities(&self) -> BackendCapabilities;
 
+    /// 调整后端拥有的主表面尺寸。
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error>;
 
     /// Initializes draw-owned state for a context whose factory has already
@@ -171,6 +188,7 @@ pub trait RenderBackend {
     /// contexts. Recovery retains the previous owner when this returns `Err`.
     fn try_shutdown(&mut self) -> Result<(), Error>;
 
+    /// 返回后端拥有的主绘制表面可变借用。
     fn surface(&mut self) -> &mut dyn DrawSurface;
 
     /// 在一帧开始前准备后端自有状态。
@@ -180,6 +198,7 @@ pub trait RenderBackend {
         Ok(())
     }
 
+    /// 返回逻辑像素到设备像素的当前缩放倍率。
     fn device_pixel_ratio(&self) -> f32 {
         1.0
     }
@@ -215,10 +234,12 @@ pub trait RenderBackend {
         ))
     }
 
+    /// 返回指定离屏资源绑定的立即模式画布；不支持时返回空值。
     fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
         let _ = handle;
         None
     }
+    /// 复制离屏资源像素并返回像素数组与每行像素跨度。
     fn copy_offscreen_pixels(&self, handle: &ImageHandle) -> Option<(Vec<u32>, i32)> {
         let _ = handle;
         None
@@ -374,6 +395,7 @@ pub trait RenderBackend {
         false
     }
 
+    /// 提交损坏区域覆盖的主表面内容。
     fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {
         let _ = damage;
         Ok(())
@@ -390,5 +412,6 @@ pub trait RenderBackend {
 
     /// 用于唯一 Renderer 查询具体后端的内部能力。
     fn as_any(&self) -> &dyn Any;
+    /// 返回用于唯一 Renderer 下行查询具体后端的可变类型擦除借用。
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
