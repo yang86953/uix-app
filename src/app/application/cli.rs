@@ -3,16 +3,21 @@ use std::collections::HashMap;
 /// 解析后的命令行参数。
 #[derive(Debug, Clone)]
 pub struct CliArgs {
+    /// 解析得到的命令名；未提供命令时为空字符串。
     pub command: String,
+    /// 未被识别为命令或选项的位置参数。
     pub positional: Vec<String>,
+    /// 去除前导连字符后的选项键值。
     pub options: HashMap<String, String>,
 }
 
 impl CliArgs {
+    /// 返回指定选项的值。
     pub fn get(&self, key: &str) -> Option<&str> {
         self.options.get(key).map(|s| s.as_str())
     }
 
+    /// 返回指定选项的值，缺失时返回调用方提供的默认值。
     pub fn get_or<'a>(&'a self, key: &str, default: &'a str) -> &'a str {
         match self.options.get(key) {
             Some(s) => s.as_str(),
@@ -20,6 +25,7 @@ impl CliArgs {
         }
     }
 
+    /// 判断是否提供了指定选项。
     pub fn has(&self, key: &str) -> bool {
         self.options.contains_key(key)
     }
@@ -38,6 +44,7 @@ pub struct Cli {
 }
 
 impl Cli {
+    /// 创建尚未注册命令的命令行路由器。
     pub fn new() -> Self {
         Self::default()
     }
@@ -84,6 +91,7 @@ impl Cli {
         1
     }
 
+    /// 解析参数并把首个参数保存为帮助信息中的程序名。
     pub fn parse(&mut self, argv: &[String]) -> CliArgs {
         let mut result = CliArgs {
             command: String::new(),
@@ -150,9 +158,12 @@ impl Cli {
         println!("  {:<20} Show this help message", "help");
     }
 
+    /// 返回最近一次非空参数解析得到的程序名。
     pub fn program_name(&self) -> &str {
         &self.program_name
     }
+
+    /// 返回当前注册的命令及其处理器。
     pub fn commands(&self) -> &HashMap<String, CommandHandler> {
         &self.commands
     }
