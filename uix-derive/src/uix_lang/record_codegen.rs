@@ -91,6 +91,10 @@ pub(crate) fn value_type_tokens(value_type: ComponentValueType) -> TokenStream {
         }
         // 字符串向量对应 Vec<String>。
         ComponentValueType::VecOfString => quote! { ::std::vec::Vec<::std::string::String> },
+        // 可空字符串对应 Option<String>。
+        ComponentValueType::OptionalString => {
+            quote! { ::std::option::Option<::std::string::String> }
+        }
         // record 名直接引用模块级结构体。
         ComponentValueType::Record(name) => {
             // 验证名称可映射为 Rust 标识符。

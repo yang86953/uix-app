@@ -1,8 +1,8 @@
 // 引入组件 AST、通用元素、表达式解析与诊断。
 use super::{
-    parse_expression, AttributeValue, ComponentDeclaration, ComponentProp, ComponentPropType,
-    ComponentState, ComponentStateInitial, ComponentValueType, Diagnostic, Element, RecordField,
-    RecordDeclaration, SourceSpan,
+    AttributeValue, ComponentDeclaration, ComponentProp, ComponentPropType, ComponentState,
+    ComponentStateInitial, ComponentValueType, Diagnostic, Element, RecordDeclaration, RecordField,
+    SourceSpan, parse_expression,
 };
 // 引入名称去重集合。
 use std::collections::HashSet;
@@ -328,6 +328,8 @@ fn parse_value_type(source: &str) -> Option<ComponentValueType> {
         "number" => Some(ComponentValueType::Number),
         // 映射 bool。
         "bool" => Some(ComponentValueType::Bool),
+        // 映射可空字符串选择。
+        "Option<String>" => Some(ComponentValueType::OptionalString),
         // 其他名称不在白名单。
         _ => None,
     }
@@ -387,7 +389,7 @@ fn split_typed_state_initial(
             // 说明类型不在白名单。
             format!("不支持 state 类型 {type_source:?}"),
             // 给出完整允许集合。
-            "使用 String、number、bool、u32、usize、f32、i32、Date、Time、Color、Point、CascaderValue、HashSet<String>、Vec<String> 或文档内声明的 record 名",
+            "使用 String、number、bool、u32、usize、f32、i32、Date、Time、Color、Point、CascaderValue、HashSet<String>、Vec<String>、Option<String> 或文档内声明的 record 名",
         )
     })?;
     // 返回类型与等号右侧的初始值源码。
@@ -426,6 +428,8 @@ pub(crate) fn parse_typed_value(source: &str) -> Option<ComponentValueType> {
         "HashSet<String>" => ComponentValueType::HashSetOfString,
         // 映射字符串向量。
         "Vec<String>" => ComponentValueType::VecOfString,
+        // 映射可空字符串单选。
+        "Option<String>" => ComponentValueType::OptionalString,
         // 未知 PascalCase 标识符暂存为 record 引用，由文档级校验兑底。
         _ if is_pascal_identifier(source) => ComponentValueType::Record(source.to_string()),
         // 其余名称不在白名单。
@@ -591,7 +595,7 @@ pub(crate) fn parse_record_declaration(element: Element) -> Result<RecordDeclara
                 // 说明类型不在白名单。
                 format!("不支持 record 字段类型 {type_source:?}"),
                 // 给出允许集合。
-                "使用 String、number、bool、u32、usize、f32、i32、Date、Time、Color、Point、CascaderValue、HashSet<String>、Vec<String> 或文档内声明的 record 名",
+                "使用 String、number、bool、u32、usize、f32、i32、Date、Time、Color、Point、CascaderValue、HashSet<String>、Vec<String>、Option<String> 或文档内声明的 record 名",
             )
         })?;
         // 保存有序字段。

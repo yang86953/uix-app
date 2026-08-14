@@ -65,6 +65,13 @@ fn generates_registered_data_constructor_calls() {
     let tab = generate("Tab('账户').key('account')");
     // 快照必须包含公开构造路径与 key 配置。
     assert!(tab.contains("Tab") && tab.contains("key"), "{tab}");
+    // 菜单项生成显式 label/key 构造并支持递归 children 链。
+    let menu = generate("MenuItem('设置', 'settings').children([MenuItem('账户', 'account')])");
+    // 快照必须包含公开构造入口与递归成员链。
+    assert!(
+        menu.contains("MenuItem") && menu.contains("from_text") && menu.contains("children"),
+        "{menu}"
+    );
     // 时间轴事件支持 description 成员链。
     let timeline = generate("TimelineItem('创建').description('2026-08-01')");
     // 快照必须包含构造与成员链。

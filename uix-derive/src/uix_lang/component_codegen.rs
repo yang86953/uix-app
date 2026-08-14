@@ -746,6 +746,8 @@ pub(super) fn is_state_handle_attribute(element_name: &str, attribute_name: &str
         "Pagination" => &["current", "pageSize"],
         // 标签页读取 State<String> 活动 key 句柄。
         "Tabs" => &["activeKey"],
+        // 菜单读取 typed 单选与展开状态句柄。
+        "Menu" => &["selectedKey", "openKeys"],
         // 滚动容器与固钉组件读取滚动状态。
         "ScrollView" => &["offset"],
         "Affix" | "BackTop" | "FloatButtonBackTop" => &["scrollY"],

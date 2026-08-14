@@ -1,6 +1,6 @@
 // 引入组件 AST 与文档解析入口。
 use super::{
-    parse_document, ComponentPropType, ComponentStateInitial, ComponentValueType, Declaration,
+    ComponentPropType, ComponentStateInitial, ComponentValueType, Declaration, parse_document,
 };
 
 // 验证四类 props 与私有 state 按源码顺序结构化解析。
@@ -136,7 +136,7 @@ fn rejects_duplicate_component_name() {
 #[test]
 fn parses_typed_private_state_annotations() {
     // 构造带 u32 与 usize 类型注解的状态声明。
-    let source = r#"<Component name="Typed" state="rating: u32 = 7, current: usize = 1, offset: f32 = 20, signed: i32 = -3, labeled: String = 'hi'"><Text>A</Text></Component><Typed />"#;
+    let source = r#"<Component name="Typed" state="rating: u32 = 7, current: usize = 1, offset: f32 = 20, signed: i32 = -3, labeled: String = 'hi', selected: Option<String> = None"><Text>A</Text></Component><Typed />"#;
     // 解析完整文档。
     let document = parse_document(source).expect("类型化 state 声明应成功解析");
     // 提取组件声明。
@@ -144,8 +144,8 @@ fn parses_typed_private_state_annotations() {
         // 结构不匹配时失败。
         panic!("首个声明应为 Component");
     };
-    // 五个类型化状态必须全部保留。
-    assert_eq!(component.states.len(), 5);
+    // 六个类型化状态必须全部保留。
+    assert_eq!(component.states.len(), 6);
     // u32 注解必须保存。
     assert!(matches!(
         // 检查首个状态初始值。
@@ -180,6 +180,13 @@ fn parses_typed_private_state_annotations() {
         &component.states[4].initial,
         // 要求 String 类型化表达式。
         ComponentStateInitial::TypedExpression(ComponentValueType::String, _)
+    ));
+    // Option<String> 注解必须保存。
+    assert!(matches!(
+        // 检查第六个状态初始值。
+        &component.states[5].initial,
+        // 要求可空字符串类型化表达式。
+        ComponentStateInitial::TypedExpression(ComponentValueType::OptionalString, _)
     ));
 }
 

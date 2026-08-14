@@ -5,14 +5,16 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
+use crate::ui::SnapshotFields;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
-use crate::ui::SnapshotFields;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
+use std::fmt::Display;
+use std::rc::Rc;
 
 /// Menu direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,17 +66,106 @@ impl MenuKeyCollection for State<Vec<String>> {
     }
 }
 
+/// 擦除类型参数后连接受控单选与展开状态。
+trait MenuControlledBinding {
+    /// 返回当前匹配菜单项的稳定字符串 key。
+    fn selected_key(&self) -> Option<String>;
+    /// 返回当前匹配菜单项的展开 key 集合。
+    fn open_keys(&self) -> Vec<String>;
+    /// 把用户选择写回调用方拥有的单选状态。
+    fn select_key(&self, key: &str);
+    /// 把用户展开集合写回调用方拥有的状态。
+    fn set_open_keys(&self, keys: &[String]);
+}
+
+/// 保存具体 K 与字符串稳定 key 的双向映射。
+struct StateMenuControlledBinding<K> {
+    /// 调用方拥有的唯一选择事实。
+    selected: State<Option<K>>,
+    /// 调用方拥有的子菜单展开事实。
+    open: State<Vec<K>>,
+    /// 按首个有效菜单项顺序保存 key 映射。
+    values: Vec<(String, K)>,
+}
+
+/// 为任意可比较 key 实现运行时类型擦除绑定。
+impl<K> MenuControlledBinding for StateMenuControlledBinding<K>
+where
+    K: Clone + PartialEq + Send + Sync + 'static,
+{
+    /// 只把仍在菜单树内的外部选择投影为活动项。
+    fn selected_key(&self) -> Option<String> {
+        // 读取调用方状态但不改写失效值。
+        let selected = self.selected.get()?;
+        // 返回首个相等 typed key 对应的稳定字符串。
+        self.values
+            .iter()
+            .find(|(_, value)| value == &selected)
+            .map(|(key, _)| key.clone())
+    }
+
+    /// 保持外部顺序并过滤菜单树中不存在的展开 key。
+    fn open_keys(&self) -> Vec<String> {
+        // 读取调用方拥有的 typed key 集合。
+        let open = self.open.get();
+        // 把每个 typed key 投影到首个有效稳定字符串。
+        open.iter()
+            .filter_map(|value| {
+                // 查找同值的首个菜单项。
+                self.values
+                    .iter()
+                    .find(|(_, candidate)| candidate == value)
+                    .map(|(key, _)| key.clone())
+            })
+            .collect()
+    }
+
+    /// 有效用户选择先写回调用方状态。
+    fn select_key(&self, key: &str) {
+        // 查找稳定字符串对应的 typed key。
+        let Some((_, value)) = self.values.iter().find(|(candidate, _)| candidate == key) else {
+            // 不存在的 key 不得污染外部状态。
+            return;
+        };
+        // 重复选择不触发额外状态更新。
+        if self.selected.get().as_ref() != Some(value) {
+            // 写回拥有所有权的 typed key。
+            self.selected.set(Some(value.clone()));
+        }
+    }
+
+    /// 展开变化原子写回 typed key 集合。
+    fn set_open_keys(&self, keys: &[String]) {
+        // 按内部稳定字符串顺序恢复 typed key。
+        let next = keys
+            .iter()
+            .filter_map(|key| {
+                // 查找每个字符串对应的首个 typed key。
+                self.values
+                    .iter()
+                    .find(|(candidate, _)| candidate == key)
+                    .map(|(_, value)| value.clone())
+            })
+            .collect::<Vec<_>>();
+        // 只在集合实际变化时写回。
+        if self.open.get() != next {
+            // 更新调用方拥有的展开事实。
+            self.open.set(next);
+        }
+    }
+}
+
 /// Single menu item.
 #[derive(Debug, Clone, PartialEq)]
-pub struct MenuItem {
-    pub key: String,
+pub struct MenuItem<K = String> {
+    pub key: K,
     pub label: String,
     pub icon: String,
-    pub children: Vec<MenuItem>,
+    pub children: Vec<MenuItem<K>>,
     pub disabled: bool,
 }
 
-impl MenuItem {
+impl MenuItem<String> {
     pub fn new(label: impl Into<String>) -> Self {
         let label = label.into();
         Self {
@@ -86,6 +177,39 @@ impl MenuItem {
         }
     }
 
+    /// 覆盖字符串菜单项的稳定 key。
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        // 保存调用方提供的稳定业务 key。
+        self.key = key.into();
+        // 返回完成配置的菜单项。
+        self
+    }
+
+    /// 使用文本 label/key 构造 UIX 默认字符串菜单项。
+    pub fn from_text(label: impl Into<String>, key: impl Into<String>) -> Self {
+        // 把两个文本输入都提升为拥有所有权的 String。
+        Self::with_key(label, key.into())
+    }
+}
+
+impl<K> MenuItem<K> {
+    /// 使用显式 typed key 构造菜单项。
+    pub fn with_key(label: impl Into<String>, key: K) -> Self {
+        // 保存展示标签、稳定 key 与空的可选元数据。
+        Self {
+            // typed key 由调用方和受控 State 共同拥有其值语义。
+            key,
+            // 标签只承担展示，不参与身份。
+            label: label.into(),
+            // 缺省不绘制图标。
+            icon: String::new(),
+            // 缺省没有递归子菜单。
+            children: Vec::new(),
+            // 缺省允许交互。
+            disabled: false,
+        }
+    }
+
     pub fn children(mut self, children: Vec<Self>) -> Self {
         self.children = children;
         self
@@ -93,6 +217,14 @@ impl MenuItem {
 
     pub fn icon(mut self, icon: impl Into<String>) -> Self {
         self.icon = icon.into();
+        self
+    }
+
+    /// 配置菜单项禁用状态。
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        // 保存交互门控状态。
+        self.disabled = disabled;
+        // 返回完成配置的菜单项。
         self
     }
 }
@@ -110,9 +242,13 @@ component! {
         #[snapshot(skip)]
         open_keys_binding: Option<State<Vec<String>>>,
         #[snapshot(skip)]
+        controlled_binding: Option<Rc<dyn MenuControlledBinding>>,
+        #[snapshot(skip)]
         selected_keys_configured: bool,
         #[snapshot(skip)]
         open_keys_configured: bool,
+        collapsible: bool,
+        diagnostics: Vec<String>,
         hovered_idx: Cell<usize>,
         focused: bool,
         item_h: f32,
@@ -143,7 +279,7 @@ component! {
                             return EventResult::NotHandled;
                         }
                         self.select_key(key.clone());
-                        if self.mode != MenuMode::Inline && has_children {
+                        if self.collapsible && has_children {
                             self.toggle_open_key(&key);
                         }
                         self.hovered_idx.set(i);
@@ -404,7 +540,7 @@ impl Menu {
         visit(
             &self.items,
             &self.open_keys,
-            self.mode == MenuMode::Inline,
+            !self.collapsible,
             0,
             &mut output,
         );
@@ -412,6 +548,19 @@ impl Menu {
     }
 
     fn sync_bound_keys(&mut self) {
+        if let Some(binding) = self.controlled_binding.as_ref() {
+            // 外部失效选择保持原值，但界面显示无选择。
+            self.active_key = binding.selected_key().unwrap_or_default();
+            // 单选快照只包含当前有效活动 key。
+            self.selected_keys = (!self.active_key.is_empty())
+                .then(|| self.active_key.clone())
+                .into_iter()
+                .collect();
+            // 展开集合过滤失效值但不反向归一化外部状态。
+            self.open_keys = Self::deduplicate_keys(binding.open_keys());
+            // typed 受控绑定拥有最高优先级。
+            return;
+        }
         if let Some(state) = self.selected_keys_binding.as_ref() {
             self.apply_selected_keys(state.get());
         }
@@ -445,6 +594,10 @@ impl Menu {
     }
 
     fn write_selected_keys(&self) {
+        if let Some(binding) = self.controlled_binding.as_ref() {
+            // 先把选择写回 typed State<Option<K>>。
+            binding.select_key(&self.active_key);
+        }
         if let Some(state) = self.selected_keys_binding.as_ref() {
             if state.get() != self.selected_keys {
                 state.set(self.selected_keys.clone());
@@ -453,6 +606,10 @@ impl Menu {
     }
 
     fn write_open_keys(&self) {
+        if let Some(binding) = self.controlled_binding.as_ref() {
+            // 把展开集合恢复成 typed key 并写回外部状态。
+            binding.set_open_keys(&self.open_keys);
+        }
         if let Some(state) = self.open_keys_binding.as_ref() {
             if state.get() != self.open_keys {
                 state.set(self.open_keys.clone());
@@ -477,8 +634,11 @@ impl Menu {
             open_keys: Vec::new(),
             selected_keys_binding: None,
             open_keys_binding: None,
+            controlled_binding: None,
             selected_keys_configured: false,
             open_keys_configured: false,
+            collapsible: false,
+            diagnostics: Vec::new(),
             hovered_idx: Cell::new(usize::MAX),
             focused: false,
             item_h: 32.0,
@@ -498,6 +658,54 @@ impl Menu {
             self.apply_selected_keys(self.selected_keys.clone());
         }
         self
+    }
+
+    /// 使用 typed MenuItem 树建立单选与展开双向受控 Menu。
+    pub fn controlled<K, I>(items: I, selected: &State<Option<K>>, open: &State<Vec<K>>) -> Self
+    where
+        K: Clone + PartialEq + Display + Send + Sync + 'static,
+        I: IntoIterator<Item = MenuItem<K>>,
+    {
+        // 擦除绘制层不需要的 K 类型，同时保存稳定回写映射。
+        let (items, values, diagnostics) = Self::erase_controlled_items(items);
+        // 构造兼容运行时并安装 typed 状态绑定。
+        let mut menu = Self::new();
+        // 保存去重后的拥有型菜单树。
+        menu.items = items;
+        // 保存可观察的重复 key 诊断。
+        menu.diagnostics = diagnostics;
+        // 由 trait object 隔离具体 K 与非泛型组件绘制层。
+        menu.controlled_binding = Some(Rc::new(StateMenuControlledBinding {
+            // 克隆调用方单选状态句柄。
+            selected: selected.clone(),
+            // 克隆调用方展开状态句柄。
+            open: open.clone(),
+            // 保存首项优先的 typed key 映射。
+            values,
+        }));
+        // 首次物化立即从唯一事实源同步界面状态。
+        menu.sync_bound_keys();
+        // 返回完整受控菜单。
+        menu
+    }
+
+    /// 配置含 children 的菜单组是否允许展开和收起。
+    pub fn collapsible(mut self, collapsible: bool) -> Self {
+        // 保存子菜单组交互策略。
+        self.collapsible = collapsible;
+        // 不可折叠时全部子菜单都参与布局。
+        if !collapsible {
+            // 清除内部展开过滤，不改写外部状态。
+            self.open_keys.clear();
+        }
+        // 返回完成配置的菜单。
+        self
+    }
+
+    /// 返回首次物化时产生的菜单树诊断。
+    pub fn diagnostics(&self) -> &[String] {
+        // 只读暴露稳定诊断集合。
+        &self.diagnostics
     }
     pub fn mode(mut self, m: MenuMode) -> Self {
         self.mode = m;
@@ -564,18 +772,30 @@ impl Menu {
         self.item_h = next.item_h;
         self.selected_keys_binding = next.selected_keys_binding;
         self.open_keys_binding = next.open_keys_binding;
+        self.controlled_binding = next.controlled_binding;
         self.selected_keys_configured = next.selected_keys_configured;
         self.open_keys_configured = next.open_keys_configured;
-        if self.selected_keys_configured {
+        self.collapsible = next.collapsible;
+        self.diagnostics = next.diagnostics;
+        if self.controlled_binding.is_some() {
+            // typed 受控状态始终覆盖组件内部兼容状态。
+            self.sync_bound_keys();
+        } else if self.selected_keys_configured {
             self.apply_selected_keys(next.selected_keys);
         } else {
             self.selected_keys = previous_selected_keys;
         }
-        self.open_keys = if self.open_keys_configured {
-            next.open_keys
-        } else {
-            previous_open_keys
-        };
+        // typed 受控绑定已经从外部唯一事实源同步展开集合，不再使用兼容状态覆盖。
+        if self.controlled_binding.is_none() {
+            // 兼容 String 状态绑定继续采用既有重建语义。
+            self.open_keys = if self.open_keys_configured {
+                // 显式配置时采用新视图携带的展开集合。
+                next.open_keys
+            } else {
+                // 非受控模式保留旧视图的内部展开集合。
+                previous_open_keys
+            };
+        }
         self.hovered_idx.set(usize::MAX);
     }
 
@@ -586,5 +806,76 @@ impl Menu {
             mode: self.mode,
             item_h: self.item_h,
         }
+    }
+
+    /// 擦除 typed 菜单项并按全树首项优先去除重复 key。
+    fn erase_controlled_items<K, I>(items: I) -> (Vec<MenuItem>, Vec<(String, K)>, Vec<String>)
+    where
+        K: Display,
+        I: IntoIterator<Item = MenuItem<K>>,
+    {
+        /// 递归转换同一棵菜单树。
+        fn visit<K>(
+            items: impl IntoIterator<Item = MenuItem<K>>,
+            seen: &mut HashSet<String>,
+            values: &mut Vec<(String, K)>,
+            diagnostics: &mut Vec<String>,
+        ) -> Vec<MenuItem>
+        where
+            K: Display,
+        {
+            // 保存当前层通过全局唯一门禁的菜单项。
+            let mut output = Vec::new();
+            // 按源码或调用方集合顺序遍历菜单项。
+            for item in items {
+                // 拆出 typed key 与展示字段，避免不必要克隆。
+                let MenuItem {
+                    key,
+                    label,
+                    icon,
+                    children,
+                    disabled,
+                } = item;
+                // Display 文本成为跨类型擦除边界的稳定 key。
+                let key_text = key.to_string();
+                // 重复 key 保留首项并记录确定诊断。
+                if !seen.insert(key_text.clone()) {
+                    // 记录可由测试、诊断面板或日志消费的消息。
+                    diagnostics.push(format!("Menu 忽略重复 key {key_text:?}，保留首项"));
+                    // 被忽略项及其子树不再拥有运行时身份。
+                    continue;
+                }
+                // 保存稳定字符串到 typed key 的首项映射。
+                values.push((key_text.clone(), key));
+                // 子树共享同一 seen 集合以保证全局唯一。
+                let children = visit(children, seen, values, diagnostics);
+                // 生成非泛型绘制层拥有的菜单项。
+                output.push(MenuItem {
+                    // 擦除后的 key 继续承担渲染与语义事件身份。
+                    key: key_text,
+                    // 保留展示标签。
+                    label,
+                    // 保留可选图标。
+                    icon,
+                    // 保留去重后的递归子树。
+                    children,
+                    // 保留交互禁用状态。
+                    disabled,
+                });
+            }
+            // 返回当前层的稳定菜单项集合。
+            output
+        }
+
+        // 全树共享已见 key 集合。
+        let mut seen = HashSet::new();
+        // 保存字符串到 typed key 的回写映射。
+        let mut values = Vec::new();
+        // 保存重复 key 等可观察诊断。
+        let mut diagnostics = Vec::new();
+        // 递归擦除并去重完整输入树。
+        let items = visit(items, &mut seen, &mut values, &mut diagnostics);
+        // 返回绘制树、typed 映射与诊断。
+        (items, values, diagnostics)
     }
 }

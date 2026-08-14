@@ -36,6 +36,8 @@ const DATA_TYPE_NAMES: &[&str] = &[
     "AnchorItem",
     // 标签页元数据。
     "Tab",
+    // 菜单树条目。
+    "MenuItem",
     // 日期语义类型。
     "Date",
     // 时间语义类型。
@@ -68,6 +70,12 @@ pub(crate) fn data_constructor_spec(name: &str) -> Option<DataConstructorSpec> {
         "AnchorItem" => (quote! { ::uix::prelude::AnchorItem }, None, false),
         // 映射标签页元数据。
         "Tab" => (quote! { ::uix::prelude::Tab }, None, false),
+        // 菜单项使用显式 label/key 构造入口。
+        "MenuItem" => (
+            quote! { ::uix::prelude::MenuItem },
+            Some(Ident::new("from_text", proc_macro2::Span::mixed_site())),
+            false,
+        ),
         // 日期构造 year/month/day。
         "Date" => (quote! { ::uix::prelude::Date }, None, false),
         // 时间构造 hour/minute。
