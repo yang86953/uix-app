@@ -97,9 +97,11 @@ thread_local! {
 }
 static NEXT_STATE_SLOT: AtomicU64 = AtomicU64::new(1);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// 标识响应式状态存储槽的进程内稳定身份。
 pub struct StateSlotId(pub(crate) u64);
 
 impl StateSlotId {
+    /// 返回槽身份的原始整数值。
     pub fn get(self) -> u64 {
         self.0
     }
@@ -284,12 +286,16 @@ fn fire_reconcile_bindings(sites: &Arc<std::sync::Mutex<Vec<ReconcileBindSite>>>
 
 /// State 变更时推送精确 Paint 失效的绑定接口。
 pub trait StatePaintBind: Send + Sync {
+    /// 注册状态变化时调用的结构协调回调。
     fn bind_reconcile(&self, reconcile: ReconcileCallback);
+    /// 使用树站点身份注册可精确释放的结构协调回调。
     fn bind_reconcile_site(&self, _key: usize, reconcile: ReconcileCallback) {
         self.bind_reconcile(reconcile);
     }
     // 撤销一份结构性树订阅；不支持订阅的源保持无操作。
+    /// 释放指定树站点持有的一份结构协调订阅。
     fn unbind_reconcile_site(&self, _key: usize) {}
+    /// 注册状态变化时向指定组件队列推送的精确绘制失效。
     fn bind_paint(
         &self,
         component_id: ComponentId,
@@ -465,6 +471,7 @@ struct StateInner<T> {
 }
 
 impl<T: Clone + Send + Sync + 'static> State<T> {
+    /// 创建代数为零、拥有独立稳定槽身份的响应式状态。
     pub fn new(value: T) -> Self {
         let reconcile_sites = Arc::new(std::sync::Mutex::new(Vec::new()));
         let paint_sites = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -494,11 +501,13 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         bind_paint_site(&self.paint_sites, component_id, queue, rect);
     }
 
+    /// 为指定树站点登记结构协调失效回调。
     pub fn bind_reconcile_invalidation(&self, key: usize, reconcile: ReconcileCallback) {
         bind_reconcile_site(&self.reconcile_sites, key, reconcile);
     }
 
     // 释放一份由树或节点生命周期持有的结构性订阅。
+    /// 释放指定树站点持有的一份结构协调订阅。
     pub fn unbind_reconcile_invalidation(&self, key: usize) {
         // 从同树站点扣除当前租约。
         unbind_reconcile_site(&self.reconcile_sites, key);
@@ -518,6 +527,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         }
     }
 
+    /// 克隆当前值，并把本次读取登记到活动依赖捕获上下文。
     pub fn get(&self) -> T {
         // 预先保存 generation 检查器需要共享的状态存储。
         let self_clone = self.inner.clone();
@@ -568,6 +578,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             .clone()
     }
 
+    /// 替换当前值，推进代数并同步通知 Effect、观察器和失效站点。
     pub fn set(&self, value: T) {
         let watchers: Vec<StateWatcher<T>>;
         // 保存准备在 State 锁外通知的存活 Effect。
@@ -590,6 +601,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         Self::fire_invalidation(&self.reconcile_sites, &self.paint_sites);
     }
 
+    /// 原地修改当前值，推进代数并同步通知 Effect、观察器和失效站点。
     pub fn update<F>(&self, f: F)
     where
         F: FnOnce(&mut T),
@@ -623,6 +635,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         fire_reconcile_bindings(reconcile_sites);
     }
 
+    /// 注册每次值变化后在状态写锁外同步调用的观察器。
     pub fn watch<F: Fn(&T) + Send + Sync + 'static>(&self, f: F) {
         self.inner
             .write()
@@ -639,6 +652,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         effect::subscriber_count(&self.effect_subscribers)
     }
 
+    /// 返回每次 [`Self::set`] 或 [`Self::update`] 后递增的状态代数。
     pub fn generation(&self) -> u64 {
         self.inner
             .read()
@@ -646,6 +660,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             .generation
     }
 
+    /// 返回此状态共享存储槽的稳定身份。
     pub fn slot_id(&self) -> StateSlotId {
         self.inner.read().unwrap_or_else(|e| e.into_inner()).slot_id
     }
