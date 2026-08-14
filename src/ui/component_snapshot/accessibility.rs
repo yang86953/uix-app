@@ -511,11 +511,31 @@ pub(super) fn badge_accessibility(
         return AccessibilitySnapshot::new(AccessibilityRole::None);
     }
 
+    // 纯视觉圆点没有可发布名称时不创建空播报节点。
+    if dot && text.is_empty() && status.is_none() {
+        // 真实子节点语义仍由组件树独立暴露。
+        return AccessibilitySnapshot::new(AccessibilityRole::None);
+    }
+
     let numeric = !dot && status.is_none() && text.is_empty();
     let name = if !text.is_empty() {
         text.to_owned()
     } else if numeric {
         format!("{}{}", count.min(max), if count > max { "+" } else { "" })
+    } else if let Some(status) = status {
+        // 无显式文字时为状态 marker 发布稳定状态名称。
+        match status {
+            // 成功状态使用简洁播报名称。
+            BadgeStatus::Success => "成功".to_owned(),
+            // 处理中状态使用简洁播报名称。
+            BadgeStatus::Processing => "处理中".to_owned(),
+            // 默认状态使用中性播报名称。
+            BadgeStatus::Default => "状态".to_owned(),
+            // 错误状态使用简洁播报名称。
+            BadgeStatus::Error => "错误".to_owned(),
+            // 警告状态使用简洁播报名称。
+            BadgeStatus::Warning => "警告".to_owned(),
+        }
     } else {
         String::new()
     };

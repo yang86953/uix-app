@@ -197,6 +197,11 @@ mod avatar_codegen;
 // 集中验证 Avatar 生成、默认值与拒绝路径。
 #[cfg(test)]
 mod avatar_codegen_tests;
+// 定义 Badge 零或单真实子 View 与公开属性的代码生成边界。
+mod badge_codegen;
+// 集中验证 Badge 生成、组合形状与拒绝路径。
+#[cfg(test)]
+mod badge_codegen_tests;
 // 定义 Image 来源、固有尺寸与运行时配置的公开 API 代码生成边界。
 mod image_codegen;
 // 集中验证 Image 生成、默认值与拒绝路径。
@@ -514,6 +519,8 @@ pub(crate) use time_picker_codegen::generate_time_picker;
 pub(crate) use color_picker_codegen::generate_color_picker;
 // 向核心元素生成器暴露 Avatar 叶组件专用映射。
 pub(crate) use avatar_codegen::generate_avatar;
+// 向核心元素生成器暴露 Badge 组合装饰器专用映射。
+pub(crate) use badge_codegen::generate_badge;
 // 向核心元素生成器暴露 Image 叶组件专用映射。
 pub(crate) use image_codegen::generate_image;
 // 向核心元素生成器暴露 ImageGroup 叶组件专用映射。

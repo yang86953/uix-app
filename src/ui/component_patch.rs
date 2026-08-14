@@ -53,6 +53,68 @@ pub(crate) fn builtin_widget_config_changed(
     next: &SnapshotFields,
 ) -> Option<bool> {
     match (current, next) {
+        // Badge 快照包含布局后子存在事实与最终装饰边界，配置比较必须排除运行态。
+        (
+            SnapshotFields::Badge {
+                count: current_count,
+                max: current_max,
+                dot: current_dot,
+                color: current_color,
+                adaptive_foreground: current_adaptive_foreground,
+                ribbon: current_ribbon,
+                status: current_status,
+                show_zero: current_show_zero,
+                text: current_text,
+                offset_x: current_offset_x,
+                offset_y: current_offset_y,
+                offset_unit: current_offset_unit,
+                composite: current_composite,
+                ..
+            },
+            SnapshotFields::Badge {
+                count: next_count,
+                max: next_max,
+                dot: next_dot,
+                color: next_color,
+                adaptive_foreground: next_adaptive_foreground,
+                ribbon: next_ribbon,
+                status: next_status,
+                show_zero: next_show_zero,
+                text: next_text,
+                offset_x: next_offset_x,
+                offset_y: next_offset_y,
+                offset_unit: next_offset_unit,
+                composite: next_composite,
+                ..
+            },
+        ) => Some(
+            // 只比较作者声明配置，忽略 child_present 与 decoration_bounds。
+            current_count != next_count
+                // 最大计数改变可见标签。
+                || current_max != next_max
+                // 圆点模式改变绘制形态。
+                || current_dot != next_dot
+                // 自定义颜色改变装饰绘制。
+                || current_color != next_color
+                // 自适应前景策略改变文字颜色。
+                || current_adaptive_foreground != next_adaptive_foreground
+                // 丝带模式改变装饰几何。
+                || current_ribbon != next_ribbon
+                // 状态 marker 改变语义与绘制。
+                || current_status != next_status
+                // 零值显隐改变装饰存在性。
+                || current_show_zero != next_show_zero
+                // 文字改变测量、语义与绘制。
+                || current_text != next_text
+                // 像素横向偏移改变装饰位置。
+                || current_offset_x != next_offset_x
+                // 像素纵向偏移改变装饰位置。
+                || current_offset_y != next_offset_y
+                // 物理单位偏移改变 DPI 解析位置。
+                || current_offset_unit != next_offset_unit
+                // 叶与组合模式切换改变布局所有权。
+                || current_composite != next_composite,
+        ),
         (
             SnapshotFields::Collapse {
                 panels: current_panels,
@@ -419,6 +481,44 @@ pub(crate) fn patch_builtin_widget(
 mod tests {
     // 复用当前模块的快照类型与分类函数。
     use super::*;
+    // 引入组合 Badge 测试使用的真实子 ViewNode。
+    use crate::ui::view::ViewNode;
+
+    // 验证 Badge 配置比较忽略布局后运行态但仍识别作者字段变化。
+    #[test]
+    // 测试名称陈述组合子存在事实与装饰配置边界。
+    fn badge_config_comparison_ignores_runtime_child_fact() {
+        // 构造已经挂载唯一真实子节点的当前 Badge。
+        let mut current = Badge::new()
+            // 使用稳定数字配置。
+            .count(3)
+            // 使用真实按钮子 View。
+            .child(ViewNode::leaf(Button::new("通知")));
+        // 模拟组件树登记唯一子节点，令 child_present 成为 true。
+        WidgetComponent::on_children_changed(&mut current, 1);
+        // 构造作者配置相同但尚未挂载子树的新声明。
+        let next = Badge::new()
+            // 保持数字配置不变。
+            .count(3)
+            // 保持组合模式不变。
+            .child(ViewNode::leaf(Button::new("通知")));
+        // 运行时 child_present 差异不得伪造作者配置变化。
+        assert_eq!(
+            builtin_widget_config_changed(&current.snapshot_fields(), &next.snapshot_fields()),
+            Some(false)
+        );
+        // 改变作者计数必须仍被配置比较识别。
+        let changed = Badge::new()
+            // 使用不同数字配置。
+            .count(4)
+            // 保持组合模式与子形状相同。
+            .child(ViewNode::leaf(Button::new("通知")));
+        // 作者字段变化必须产生配置失效。
+        assert_eq!(
+            builtin_widget_config_changed(&current.snapshot_fields(), &changed.snapshot_fields()),
+            Some(true)
+        );
+    }
 
     // 验证未知和自定义快照都显式进入布局失效分类。
     #[test]

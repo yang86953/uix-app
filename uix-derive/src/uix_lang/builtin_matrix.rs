@@ -23,11 +23,6 @@ const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
     },
     // 展示组件规划项。
     PlannedBuiltin {
-        name: "Badge",
-        category: "内置组件 / 展示组件",
-    },
-    // 展示组件规划项。
-    PlannedBuiltin {
         name: "SelectableList",
         category: "内置组件 / 展示组件",
     },
