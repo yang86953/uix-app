@@ -52,9 +52,16 @@ mod component_binding_codegen;
 mod component_computed_codegen;
 // 定义完整文档中的组件调用展开。
 mod component_codegen;
+// 定义 Component Slot 调用方投影与模板内联。
+mod component_slot_codegen;
+// 定义 Component 模板 Slot 声明验证。
+mod component_slot_parser;
 // 集中验证组件展开、状态与拒绝路径。
 #[cfg(test)]
 mod component_codegen_tests;
+// 集中验证默认与具名 Slot 的展开和诊断。
+#[cfg(test)]
+mod component_slot_tests;
 // 定义组件字段表达式改写与 setState 降低。
 mod component_expression_lower;
 // 定义组件内 setStyle 的作用域校验与表达式降低。

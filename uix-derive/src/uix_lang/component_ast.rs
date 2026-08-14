@@ -12,11 +12,22 @@ pub(crate) struct ComponentDeclaration {
     pub(crate) states: Vec<ComponentState>,
     // 保存源码顺序中的派生值。
     pub(crate) computed: Vec<ComponentComputed>,
+    // 保存组件模板中已经完成唯一性验证的插槽声明。
+    pub(crate) slots: Vec<ComponentSlot>,
     // 保存组件体获准引用的 Rust 外部符号。
     pub(crate) external: Vec<String>,
     // 保存组件视图体的有序节点。
     pub(crate) children: Vec<Node>,
     // 保存完整 Component 声明跨度。
+    pub(crate) span: SourceSpan,
+}
+
+// 表示组件模板中的一个默认或具名插槽占位。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ComponentSlot {
+    // 保存具名插槽名称；None 表示默认插槽。
+    pub(crate) name: Option<String>,
+    // 保存完整 Slot 元素跨度供调用诊断使用。
     pub(crate) span: SourceSpan,
 }
 
