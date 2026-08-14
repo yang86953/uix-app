@@ -49,6 +49,8 @@ pub(crate) struct ComponentProp {
     pub(crate) name: String,
     // 保存经过白名单验证的参数类型。
     pub(crate) kind: ComponentPropType,
+    // 保存可选的声明期默认表达式；None 表示调用必填。
+    pub(crate) default: Option<Expression>,
     // 保存所属 props 属性跨度。
     pub(crate) span: SourceSpan,
 }
