@@ -1,0 +1,6 @@
+// 显式公开共享辅助组件。
+@export('Helper')
+// 定义可由页面间接依赖的辅助组件。
+<Component name="Helper"><Text>共享依赖</Text></Component>
+// 提供组件库独立检查所需的唯一根。
+<Helper />

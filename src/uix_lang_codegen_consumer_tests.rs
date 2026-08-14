@@ -111,6 +111,8 @@ fn public_uix_macro_compiles_inline_and_file_entries() {
     let _inline: ViewNode = uix!(r#"<Text>Inline entry</Text>"#);
     // 以调用 crate 清单目录为基准读取并展开 .uix 文件。
     let _file: ViewNode = uix!("tests/fixtures/uix_lang/public_entry.uix");
+    // 编译真实两层导入图并验证公开宏生成结果类型。
+    let _imported: ViewNode = uix!("tests/fixtures/uix_lang/imports/root.uix");
     // 通过 crate 根路径再次验证宏导出。
     let _root_export: ViewNode = crate::uix!(r#"<Button>Root export</Button>"#);
     // 验证通用组件文档中的 Label 别名真实生成。
