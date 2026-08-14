@@ -1,10 +1,9 @@
-//! Private, API-neutral producer for one ordered main [`FrameEncoder`].
+//! 私有、API 中立的单个主 [`FrameEncoder`] 有序生产者。
 //!
-//! The compositor paints into this command target instead of a live presentation
-//! surface. Every visual operation is either lowered to a proven native op or
-//! rasterized into one transparent CPU segment. Picture offscreens retain the
-//! same API-neutral stream while it stays within the former BGRA memory budget;
-//! unsafe mappings materialize that stream lazily as one ordered image blit.
+//! 合成器把绘制命令录制到这个命令目标而不是实时表现 surface：每个视觉
+//! 操作要么降级为已证明的原生操作，要么光栅化进一个透明 CPU 分段。Picture
+//! 离屏在前 BGRA 内存预算内保留同样的 API 中立流；超预算时由 unsafe 映射
+//! 把该流惰性物化为一次有序图片 blit。
 //!
 //! 子模块划分（P2 行数治理）：[`offscreen`] 离屏池、[`canvas`] 画布录制器、
 //! [`canvas2d`] `Canvas2D` 实现、[`geometry`] 几何辅助；本文件保留
@@ -33,6 +32,7 @@ use crate::draw::{Canvas2D, GraphicsCapabilities, RenderTarget, UpdateStrategy};
 
 use self::canvas::FrameRecordingCanvas;
 
+/// 录制一个有序主帧的命令录制器：持有主画布、离屏池与当前活动离屏。
 pub(crate) struct CommandRecorder {
     canvas: FrameRecordingCanvas,
     offscreens: RecordedPicturePool,
@@ -46,6 +46,7 @@ impl Default for CommandRecorder {
 }
 
 impl CommandRecorder {
+    /// 创建空录制器（1×1 画布，尺寸在首次 resize 时确定）。
     pub(crate) fn new() -> Self {
         Self {
             canvas: FrameRecordingCanvas::new(1, 1),
@@ -54,12 +55,11 @@ impl CommandRecorder {
         }
     }
 
-    /// Start a new main-frame recording.
+    /// 开始一帧新的主帧录制。
     ///
-    /// `clear_target`: full frames emit an initial Clear so
-    /// `execute_into_pixels` replaces the whole CPU/GPU target. Dirty frames
-    /// omit it — the real surface already cleared only the damage AABB, and
-    /// undamaged pixels must survive.
+    /// `clear_target`：全帧录制发射初始 Clear，让 `execute_into_pixels`
+    /// 整体替换 CPU/GPU 目标；脏帧省略 Clear——真实 surface 已只清除过
+    /// damage AABB，未损坏像素必须保留。
     pub(crate) fn begin_recording(&mut self, clear_target: bool) -> Result<(), Error> {
         if self.active_offscreen.is_some() {
             return Err(Error::new(
@@ -70,6 +70,7 @@ impl CommandRecorder {
         self.canvas.begin_recording(clear_target)
     }
 
+    /// 结束录制：flush 剩余 scratch 并交出完整的 `FrameEncoder`。
     pub(crate) fn finish_recording(&mut self) -> Result<FrameEncoder, Error> {
         if self.active_offscreen.is_some() {
             return Err(Error::new(
@@ -80,9 +81,8 @@ impl CommandRecorder {
         self.canvas.finish_recording()
     }
 
-    /// Restores one immutable retained main-surface snapshot at the start of
-    /// an otherwise full frame. The image is recorded in painter order so
-    /// subsequent root-level overlays compose over the clean backdrop.
+    /// 在整帧录制开始时恢复一帧不可变的主 surface 快照。图片按 painter
+    /// 顺序录制，后续根级覆盖层会合成在干净背景之上。
     pub(crate) fn record_main_image(&mut self, image: FrameImage) -> Result<(), Error> {
         if self.active_offscreen.is_some() {
             return Err(Error::new(
@@ -118,6 +118,7 @@ impl CommandRecorder {
         ))
     }
 
+    /// 录制主画布上的 Picture blit：可 splice 时复用命令流，否则物化为图片。
     fn record_main_picture_blit(
         &mut self,
         handle: &ImageHandle,
@@ -145,6 +146,8 @@ impl CommandRecorder {
         self.canvas.record_picture_blit(image, src_rect, dst_rect)
     }
 
+    /// 尝试把 Picture 的已提交命令流平移后直接拼入目标画布；不可 splice
+    /// 时返回 None（调用方改走物化图片）。
     fn translated_picture_commands(
         &self,
         handle: &ImageHandle,
@@ -168,6 +171,7 @@ impl CommandRecorder {
         encoder.translated_source_over_commands_in(src, dx, dy, target.width, target.height)
     }
 
+    /// 标记当前活动离屏为失败，便于结束时放弃其录制。
     fn mark_active_failed(&mut self) {
         if let Some(active) = self.active_offscreen.as_mut() {
             active.failed = true;
@@ -176,10 +180,12 @@ impl CommandRecorder {
 }
 
 impl RenderTarget for CommandRecorder {
+    /// 初始化目标尺寸（等价于 resize）。
     fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.resize(width, height)
     }
 
+    /// 关闭录制器：清空离屏池并缩回最小画布。
     fn try_shutdown(&mut self) -> Result<(), Error> {
         self.active_offscreen = None;
         self.offscreens.clear();
@@ -187,26 +193,31 @@ impl RenderTarget for CommandRecorder {
         Ok(())
     }
 
+    /// 调整主画布尺寸（含 1×1 下限校验）。
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         let (width, height) = FrameRecordingCanvas::prepare_resize(width, height)?;
         self.canvas.commit_resize(width, height);
         Ok(())
     }
 
+    /// 录制器不参与帧级呈现调度：每帧开始时都视为需要全量重绘。
     fn begin_frame(&mut self, _strategy: UpdateStrategy) -> RenderOutcome {
         RenderOutcome::FrameReady(DamageRegion::full())
     }
 
+    /// 录制器不能呈现最终帧（由合成器 / 后端呈现）。
     fn end_frame(&mut self, _present_damage: &DamageRegion) -> RenderOutcome {
         RenderOutcome::Failed(crate::draw::outcome::GraphicsFailure::from_error(
             Error::new(Errc::InvalidState, "CommandRecorder cannot present a frame"),
         ))
     }
 
+    /// 暴露录制画布为 `Canvas2D`。
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
         &mut self.canvas
     }
 
+    /// 录制器自带离屏池，报告后端托管能力。
     fn capabilities(&self) -> GraphicsCapabilities {
         GraphicsCapabilities::backend_managed_with_offscreen()
     }
@@ -239,16 +250,19 @@ impl RenderTarget for CommandRecorder {
         Ok(())
     }
 
+    /// 取离屏 Picture 的画布（仅录制语义）。
     fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
         self.offscreens
             .get_mut(handle)
             .map(|picture| &mut picture.canvas as &mut dyn Canvas2D)
     }
 
+    /// 读取离屏 Picture 的参考像素（测试 / 诊断）。
     fn copy_offscreen_pixels(&self, handle: &ImageHandle) -> Option<(Vec<u32>, i32)> {
         self.offscreens.get(handle)?.copy_pixels()
     }
 
+    /// 把编码好的命令流执行进活动 Picture 目标（校验 handle、尺寸与 splice）。
     fn try_execute_encoded_picture(
         &mut self,
         handle: &ImageHandle,
@@ -306,6 +320,7 @@ impl RenderTarget for CommandRecorder {
         result
     }
 
+    /// 录制器不执行最终帧。
     fn try_execute_encoded_frame(
         &mut self,
         _encoder: &FrameEncoder,
@@ -316,6 +331,7 @@ impl RenderTarget for CommandRecorder {
         ))
     }
 
+    /// 开始离屏 Picture 绘制：进入活动目标并开始其录制。
     fn try_begin_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
         if self.active_offscreen.is_some() {
             return Err(Error::new(
@@ -337,6 +353,7 @@ impl RenderTarget for CommandRecorder {
         Ok(())
     }
 
+    /// 冲刷离屏录制（不结束录制，供中途取像素等场景）。
     fn try_flush_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
         let result = (|| {
             let active = self.active_offscreen.ok_or_else(|| {
@@ -365,6 +382,7 @@ impl RenderTarget for CommandRecorder {
         result
     }
 
+    /// 结束离屏绘制：成功则提交编码器，失败则放弃录制。
     fn try_end_offscreen_paint(&mut self) -> Result<(), Error> {
         let active = self.active_offscreen.take();
         let Some(active) = active else {
@@ -393,6 +411,7 @@ impl RenderTarget for CommandRecorder {
         }
     }
 
+    /// 离屏 src 到目标（主画布或另一离屏）的 blit。
     fn try_blit_offscreen_src(
         &mut self,
         handle: &ImageHandle,
@@ -470,6 +489,7 @@ impl RenderTarget for CommandRecorder {
         self.record_main_picture_blit(handle, src_rect, dst_rect)
     }
 
+    /// 录制器内存占用：离屏池与 scratch 之和。
     fn memory_usage(&self) -> usize {
         self.offscreens
             .memory_usage()

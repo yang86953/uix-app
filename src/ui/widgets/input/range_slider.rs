@@ -6,7 +6,7 @@ use std::ops::RangeInclusive;
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::{Color, Radius};
-use crate::native::windowing::input::ControlSize;
+use crate::platform::windowing::ControlSize;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 use crate::ui::SnapshotFields;
@@ -16,6 +16,7 @@ use crate::ui::{
 
 use super::slider::decimal_places;
 
+/// 滑块拇指标识：左（起始）或右（结束）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RangeSliderThumb {
     Start,
@@ -47,9 +48,11 @@ component! {
         constraints.clamp(Size::new(200.0, self.control_height()))
     }
 
+    // 事件入口：指针拖动与键盘步进，并同步外部绑定值。
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         self.sync_bound_values();
         match event {
+            // 左键按下：就近选中拇指并开始拖动。
             SystemEvent::PointerDown {
                 pos,
                 button: MouseButton::Left,
@@ -58,6 +61,7 @@ component! {
                 let Some(frame) = self.last_frame.get() else {
                     return EventResult::NotHandled;
                 };
+                // 框外或范围非法时忽略。
                 if !frame.contains(*pos) || self.max <= self.min {
                     return EventResult::NotHandled;
                 }
@@ -68,6 +72,7 @@ component! {
                 self.update_active_from_pos(pos.x, frame);
                 EventResult::Handled
             }
+            // 指针移动：拖动时更新值，否则更新悬浮拇指。
             SystemEvent::PointerMove { pos, .. } => {
                 if let Some(frame) = self.last_frame.get() {
                     if self.dragging {
@@ -83,6 +88,7 @@ component! {
                 }
                 EventResult::Handled
             }
+            // 左键抬起：结束拖动。
             SystemEvent::PointerUp {
                 pos,
                 button: MouseButton::Left,
@@ -111,6 +117,7 @@ component! {
                 self.focused = false;
                 EventResult::Handled
             }
+            // 方向键按步长增减当前拇指值。
             SystemEvent::KeyDown { key, .. } => match key {
                 KeyCode::Right | KeyCode::Up => {
                     self.step_active(1.0);
@@ -126,12 +133,14 @@ component! {
         }
     }
 
+    // 语义事件：取出待发范围变更并上报 change。
     semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change.take().map(|(start, end)| {
             SemanticEvent::change(id, format!("{start}..{end}"))
         })
     }
 
+    // 渲染：轨道、已选区间、双拇指与焦点框。
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         self.capture_bound_value_dependencies();
         let control_rect = Rect::new(
@@ -140,8 +149,10 @@ component! {
             frame.w.max(0.0),
             frame.h.max(0.0).min(self.control_height()),
         );
+        // 记录局部坐标系下的控件矩形（事件命中用）。
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, control_rect.w, control_rect.h)));
+        // 空尺寸或范围非法时直接返回。
         if control_rect.w <= 0.0 || control_rect.h <= 0.0 || self.max <= self.min {
             return;
         }
@@ -156,17 +167,20 @@ component! {
         let (start_x, end_x) = self.thumb_positions(control_rect);
 
         ctx.push_clip(control_rect);
+        // 底色轨道。
         ctx.fill_rect(
             Rect::new(track_x, cy - track_h * 0.5, track_w, track_h),
             fill,
             Some(Radius::uniform(track_h * 0.5)),
         );
+        // 已选区间高亮轨道。
         ctx.fill_rect(
             Rect::new(start_x, cy - track_h * 0.5, (end_x - start_x).max(0.0), track_h),
             primary,
             Some(Radius::uniform(track_h * 0.5)),
         );
 
+        // 顶层拇指优先显示拖动/悬浮中的那个，先画底层再画顶层。
         let top_thumb = if self.dragging {
             self.active_thumb
         } else {
@@ -181,6 +195,7 @@ component! {
                 RangeSliderThumb::Start => start_x,
                 RangeSliderThumb::End => end_x,
             };
+            // 颜色：拖动中主题高亮，悬浮主题色，否则白色。
             let color = if self.dragging && self.active_thumb == thumb {
                 primary_hover
             } else if self.hovered_thumb == Some(thumb) {
@@ -197,6 +212,7 @@ component! {
             );
         }
 
+        // 聚焦时绘制控件焦点框。
         if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(control_rect, primary, 1.5, Some(Radius::uniform(4.0)));
         }
@@ -205,6 +221,7 @@ component! {
 }
 
 impl RangeSlider {
+    /// 创建范围滑块；范围非法时自动归一化为升序。
     pub fn new(range: RangeInclusive<f64>) -> Self {
         let (min, max) = normalize_range(range);
         let config = crate::ui::component::config::use_config();
@@ -226,6 +243,7 @@ impl RangeSlider {
         }
     }
 
+    /// 设置步长；非法值视为无步长（连续取值）。
     pub fn step(mut self, step: f64) -> Self {
         self.step = if step.is_finite() && step > 0.0 {
             step
@@ -251,21 +269,26 @@ impl RangeSlider {
         self
     }
 
+    /// 设置控件尺寸规格（小/中/大）。
     pub fn size(mut self, size: ControlSize) -> Self {
         self.slider_size = size;
         self
     }
 
+    /// 当前起止值。
     pub fn current_range(&self) -> (f64, f64) {
         (self.start_value, self.end_value)
     }
 
+    /// 当前活动拇指。
     pub fn active_thumb(&self) -> RangeSliderThumb {
         self.active_thumb
     }
 
+    /// 按指针位置更新当前活动拇指的值（含步长取整）。
     fn update_active_from_pos(&mut self, px: f32, frame: Rect) {
         let raw = self.value_from_pos(px, frame);
+        // 有步长时四舍五入到最近的步长格点。
         let value = if self.step > 0.0 {
             let stepped = self.min + ((raw - self.min) / self.step).round() * self.step;
             self.normalize_step_value(stepped)
@@ -275,7 +298,9 @@ impl RangeSlider {
         self.set_thumb(self.active_thumb, value);
     }
 
+    /// 键盘步进：在当前值附近取格点并向指定方向移动一步。
     fn step_active(&mut self, direction: f64) {
+        // 无步长时键盘步进无效。
         if self.step <= 0.0 {
             return;
         }
@@ -284,6 +309,7 @@ impl RangeSlider {
             RangeSliderThumb::End => self.end_value,
         };
         let position = (current - self.min) / self.step;
+        // 已在格点上则直接 ±1，否则朝目标方向取相邻格点。
         let nearest = position.round();
         let on_grid = (position - nearest).abs() <= 1e-9 * position.abs().max(1.0);
         let index = if on_grid {
@@ -299,9 +325,11 @@ impl RangeSlider {
         );
     }
 
+    /// 设置拇指值：夹紧范围、保证起止不相交，并回写外部绑定状态。
     fn set_thumb(&mut self, thumb: RangeSliderThumb, value: f64) {
         let value = self.clamp_value(value);
         let changed = match thumb {
+            // 起始拇指不得超过结束值。
             RangeSliderThumb::Start => {
                 let value = value.min(self.end_value);
                 if value == self.start_value {
@@ -316,6 +344,7 @@ impl RangeSlider {
                     true
                 }
             }
+            // 结束拇指不得小于起始值。
             RangeSliderThumb::End => {
                 let value = value.max(self.start_value);
                 if value == self.end_value {
@@ -331,12 +360,14 @@ impl RangeSlider {
                 }
             }
         };
+        // 值有变化时登记待发的 change 语义事件。
         if changed {
             self.pending_change
                 .set(Some((self.start_value, self.end_value)));
         }
     }
 
+    /// 从外部绑定状态同步当前值（事件处理前调用）。
     fn sync_bound_values(&mut self) {
         if let Some(state) = self.start_binding.as_ref() {
             self.start_value = self.clamp_value(state.get());
@@ -347,6 +378,7 @@ impl RangeSlider {
         self.normalize_values();
     }
 
+    /// 读取绑定值以登记响应式依赖（渲染期调用）。
     fn capture_bound_value_dependencies(&self) {
         if let Some(state) = self.start_binding.as_ref() {
             let _ = state.get();
@@ -356,6 +388,7 @@ impl RangeSlider {
         }
     }
 
+    /// 夹紧并保证起止值不交叉。
     fn normalize_values(&mut self) {
         self.start_value = self.clamp_value(self.start_value);
         self.end_value = self.clamp_value(self.end_value);
@@ -364,6 +397,7 @@ impl RangeSlider {
         }
     }
 
+    /// 将值夹紧到 [min, max]；非有限值回退为 min。
     fn clamp_value(&self, value: f64) -> f64 {
         if value.is_finite() {
             value.clamp(self.min, self.max)
@@ -372,7 +406,9 @@ impl RangeSlider {
         }
     }
 
+    /// 按步长精度四舍五入，消除浮点残差。
     fn normalize_step_value(&self, value: f64) -> f64 {
+        // 取 min/step 的最大小数位作为舍入精度（上限 15 位）。
         let precision = decimal_places(self.min)
             .max(decimal_places(self.step))
             .min(15);
@@ -385,6 +421,7 @@ impl RangeSlider {
         }
     }
 
+    /// 指针 x 坐标转范围值（按轨道比例线性映射）。
     fn value_from_pos(&self, px: f32, frame: Rect) -> f64 {
         let (track_x, track_w) = self.track_span(frame);
         let pct = if track_w > 0.0 {
@@ -397,6 +434,7 @@ impl RangeSlider {
         self.min + pct * (self.max - self.min)
     }
 
+    /// 返回离指针最近的拇指；距离相等时倾向起始拇指。
     fn nearest_thumb(&self, px: f32, frame: Rect) -> RangeSliderThumb {
         let (start_x, end_x) = self.thumb_positions(frame);
         let start_distance = (px - start_x).abs();
@@ -408,6 +446,7 @@ impl RangeSlider {
         }
     }
 
+    /// 两个拇指在轨道上的 x 坐标。
     fn thumb_positions(&self, frame: Rect) -> (f32, f32) {
         let (track_x, track_w) = self.track_span(frame);
         let span = self.max - self.min;
@@ -416,10 +455,12 @@ impl RangeSlider {
         (track_x + start_pct * track_w, track_x + end_pct * track_w)
     }
 
+    /// 控件高度（按尺寸规格）。
     fn control_height(&self) -> f32 {
         crate::ui::component::config::control_height(self.slider_size)
     }
 
+    /// 轨道厚度（按尺寸规格与视觉缩放）。
     fn track_height(&self, frame: Rect) -> f32 {
         let nominal = match self.slider_size {
             ControlSize::Small => 3.0,
@@ -429,6 +470,7 @@ impl RangeSlider {
         (nominal * self.visual_scale(frame)).min(frame.h)
     }
 
+    /// 拇指半径（按尺寸规格与视觉缩放）。
     fn thumb_radius(&self, frame: Rect) -> f32 {
         let nominal = match self.slider_size {
             ControlSize::Small => 5.0,
@@ -441,6 +483,7 @@ impl RangeSlider {
             .max(0.0)
     }
 
+    /// 视觉缩放比例：控件被压缩时按比例缩小轨道与拇指。
     fn visual_scale(&self, frame: Rect) -> f32 {
         if self.control_height() > 0.0 {
             (frame.h / self.control_height()).clamp(0.0, 1.0)
@@ -449,6 +492,7 @@ impl RangeSlider {
         }
     }
 
+    /// 轨道横向范围：两端各留出拇指半径的内边距。
     fn track_span(&self, frame: Rect) -> (f32, f32) {
         let inset = self.thumb_radius(frame);
         (frame.x + inset, (frame.w - inset * 2.0).max(0.0))
@@ -462,6 +506,7 @@ impl Default for RangeSlider {
 }
 
 impl RangeSlider {
+    /// 导出快照字段（供快照同步使用）。
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::RangeSlider {
             min: self.min,
@@ -474,7 +519,9 @@ impl RangeSlider {
         }
     }
 
+    /// 同步快照：有绑定时保留现有值，无绑定时采用新值。
     pub(crate) fn sync_from(&mut self, next: Self) {
+        // 绑定存在时值由外部状态驱动，忽略快照中的值。
         let start_value = next
             .start_binding
             .as_ref()
@@ -495,6 +542,7 @@ impl RangeSlider {
     }
 }
 
+/// 归一化范围：非有限值回退默认值，逆序自动交换。
 fn normalize_range(range: RangeInclusive<f64>) -> (f64, f64) {
     let (start, end) = range.into_inner();
     let start = if start.is_finite() { start } else { 0.0 };

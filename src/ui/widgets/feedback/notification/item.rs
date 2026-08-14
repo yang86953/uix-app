@@ -1,6 +1,6 @@
 //! 通知条目与挂载句柄。
 
-use crate::native::capabilities::system::StatusLevel;
+use crate::platform::capabilities::StatusLevel;
 use crate::native::notification::ToastEntry;
 
 use crate::ui::widgets::feedback::toast_motion::ToastQueue;

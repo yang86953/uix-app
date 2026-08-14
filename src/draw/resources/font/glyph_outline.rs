@@ -7,8 +7,6 @@
 //! 光栅器给出的真实面积覆盖率 R8。
 //!
 
-#![cfg_attr(not(test), allow(dead_code))]
-
 //! MSDF：Chlumsky 真边着色（角点切换 CMY 双通道色），编码为
 //! `0.5 + sd / MSDF_RANGE`；采样时取 `median(r,g,b)` 再转 coverage，利于大字号缩放保角。
 
@@ -268,6 +266,8 @@ pub(crate) fn msdf_from_colored_edges(
 }
 
 /// MSDF 三通道 → coverage（median + 线性 AA）；供 soft / 单测对齐 GPU sample。
+// 非测试构建下暂无生产调用（仅供测试对齐），保留实现并精确标注。
+#[cfg_attr(not(test), allow(dead_code))]
 #[inline]
 pub(crate) fn msdf_encoded_to_coverage(r: f32, g: f32, b: f32) -> f32 {
     let m = median3(r, g, b);
@@ -277,6 +277,8 @@ pub(crate) fn msdf_encoded_to_coverage(r: f32, g: f32, b: f32) -> f32 {
 }
 
 /// 将 MSDF RGBA 栅格转为 R8 coverage（soft 验证 / 调试）。
+// 非测试构建下暂无生产调用（仅供测试验证），保留实现并精确标注。
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn coverage_from_msdf(msdf_rgba: &[u8], width: usize, height: usize) -> Option<Vec<u8>> {
     let expected = width.checked_mul(height)?.checked_mul(4)?;
     if width == 0 || height == 0 || msdf_rgba.len() < expected {
@@ -298,6 +300,8 @@ pub(crate) fn coverage_from_msdf(msdf_rgba: &[u8], width: usize, height: usize) 
     Some(coverage)
 }
 
+// 仅被测试使用的 msdf_encoded_to_coverage 链引用，非测试构建下同样精确标注。
+#[cfg_attr(not(test), allow(dead_code))]
 #[inline]
 fn median3(a: f32, b: f32, c: f32) -> f32 {
     a.max(b).min(a.max(c)).min(b.max(c))

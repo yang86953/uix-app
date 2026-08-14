@@ -1,12 +1,12 @@
-//! Runtime-scoped error observation shared by UIX and its applications.
+//! UIX 与其应用共享的运行时作用域错误观察。
 //!
-//! SMC boundary for this vertical slice:
-//! - `Diagnostics` is the public platform System and owns runtime state,
-//!   cross-module orchestration, and failure/reporting policy.
-//! - `reporting` and `recovery` are private Modules owned by one System
-//!   instance; neither Module is exported or discovers the other.
-//! - report draft construction, bounded storage, and tracing emission are
-//!   narrow Components selected and owned by the reporting Module.
+//! 本纵向切片的 SMC 边界：
+//! - `Diagnostics` 是公开平台 System，拥有运行时状态、跨模块编排与
+//!   失败/上报策略。
+//! - `reporting` 与 `recovery` 是一个 System 实例拥有的私有 Module；
+//!   两个 Module 都不可导出，也不互相发现。
+//! - 报告草稿构造、有界存储与 tracing 发射是由 reporting Module 选择并
+//!   拥有的窄 Component。
 //!
 //! # 私有 Module 边界 compile-fail 测试
 //!
@@ -76,11 +76,10 @@ struct DiagnosticsInner {
     recovery: Arc<recovery::RecoveryModule>,
 }
 
-/// Public Diagnostics System handle for one runtime.
+/// 一个运行时的公开 Diagnostics System 句柄。
 ///
-/// The handle exposes only the System contract. Its reporting and recovery
-/// Modules, their Components, and their mutable state remain private to this
-/// runtime instance.
+/// 句柄只暴露 System 契约。其 reporting 与 recovery Module、它们的
+/// Component 以及可变状态对本运行时实例保持私有。
 #[derive(Clone)]
 pub struct Diagnostics {
     inner: Arc<DiagnosticsInner>,
@@ -100,8 +99,7 @@ impl Diagnostics {
         }
     }
 
-    /// Reports an application-owned typed error at its final responsibility
-    /// boundary.
+    /// 在最终责任边界上报一个应用持有的类型化错误。
     ///
     /// > **tracing 初始化顺序**:事件经 `tracing::event!` 发射,tracing 对每个
     /// > callsite 的 interest 首次注册即缓存。若在本进程设置 tracing
@@ -112,7 +110,7 @@ impl Diagnostics {
         self.report_with_origin(error, ReportOrigin::application())
     }
 
-    /// Re-evaluates tracing's process-wide callsite interest cache.
+    /// 重新评估 tracing 的进程级 callsite interest 缓存。
     ///
     /// tracing 对每个 callsite 的 `Interest` 首次注册即缓存;若某个 callsite 在
     /// 尚无任何 subscriber 的上下文下注册,会被缓存为 `never`,之后即使设置了
@@ -123,23 +121,21 @@ impl Diagnostics {
         tracing::callsite::rebuild_interest_cache();
     }
 
-    /// Returns an immutable point-in-time snapshot ordered by `ReportId`.
+    /// 返回按 `ReportId` 排序的不可变时间点快照。
     pub fn snapshot(&self) -> DiagnosticsSnapshot {
         self.inner.reporting.snapshot()
     }
 
-    /// Returns the runtime queue used by native callbacks to deliver typed
-    /// failures to their owner-thread resource. The queue never invokes user
-    /// code while a callback is running.
+    /// 返回原生回调用于把类型化失败投递给 owner 线程资源的运行时队列。
+    /// 回调运行期间队列绝不调用用户代码。
     pub(crate) fn pending_failure_queue(&self) -> PendingFailureQueue {
         self.inner.pending_failures.clone()
     }
 
-    /// Registers recovery logic for one exact typed error code.
+    /// 为一个精确类型化错误码注册恢复逻辑。
     ///
-    /// Handlers run synchronously, in stable registration order, only when
-    /// [`Self::attempt_recovery`] is called from a safe owner/caller thread.
-    /// Native callbacks must enqueue failures instead of invoking user code.
+    /// 处理器仅在 [`Self::attempt_recovery`] 从安全 owner/调用线程被调用时
+    /// 以稳定注册顺序同步运行。原生回调必须入队失败而不是调用用户代码。
     pub fn on_error<F>(&self, code: crate::core::Errc, handler: F) -> RecoverySubscription
     where
         F: Fn(&Error) -> RecoveryAction + Send + Sync + 'static,
@@ -147,16 +143,14 @@ impl Diagnostics {
         self.inner.recovery.register(code, handler)
     }
 
-    /// Attempts registered recovery without implicitly reporting an
-    /// unhandled error.
+    /// 尝试注册的恢复，而不隐式上报未处理错误。
     ///
-    /// Callers may keep propagating the typed error and report it only if they
-    /// become its final responsibility boundary.
+    /// 调用方可继续传播该类型化错误，并且只在成为其最终责任边界时上报。
     pub fn attempt_recovery(&self, error: Error) -> RecoveryOutcome {
         self.inner.recovery.attempt(error)
     }
 
-    /// Framework-only reporting entry with a bounded, typed origin.
+    /// 仅框架内部使用的上报入口，携带一个有界、类型化的来源。
     #[track_caller]
     pub(crate) fn report_with_origin(&self, error: Error, origin: ReportOrigin) -> ReportId {
         let report_site = Location::caller();
@@ -177,12 +171,10 @@ impl Diagnostics {
         self.inner.runtime_id
     }
 
-    /// Installs the framework panic hook bound to this runtime.
+    /// 安装绑定到本运行时的框架 panic hook。
     ///
-    /// Panics are never swallowed: the previous hook is always invoked, so
-    /// default output and unwind/abort semantics are preserved. When a crash
-    /// directory is configured, a bounded crash report is written atomically
-    /// before forwarding.
+    /// panic 永不吞没：先前 hook 总是被调用，因此默认输出与 unwind/abort
+    /// 语义被保留。配置了崩溃目录时，转发前会原子写入一份有界崩溃报告。
     pub(crate) fn install_panic_hook(&self) {
         crash::install_panic_hook(self.clone());
     }

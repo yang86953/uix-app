@@ -89,10 +89,6 @@ impl WindowAgentState {
         self.queue = queue;
     }
 
-    pub(crate) fn queue(&self) -> AgentCommandQueue {
-        self.queue.clone()
-    }
-
     pub(crate) fn has_work(&self) -> bool {
         !self.in_flight.is_empty() || !self.queue.is_empty()
     }

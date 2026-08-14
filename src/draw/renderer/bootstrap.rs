@@ -4,14 +4,11 @@ use crate::core::{Errc, Error, Result};
 use crate::diagnostics::PendingFailureQueue;
 use crate::draw::renderer::Renderer;
 use crate::draw::target::RenderTarget;
-use crate::native::factory::{
+// recipe 装配输入与图形选择面经 platform 公开面消费。
+use crate::platform::presentation::{
     describe_backend_availability, gpu_recipe_candidates, try_create_gpu_recipe_with_queue,
-    GraphicsRecipe,
+    GraphicsApi, GraphicsRecipe, GraphicsRecipeOwner, GraphicsSelection, NativeSurfaceHandle,
 };
-// 引入 native factory 已验证的 renderer 装配输入。
-use crate::native::present::GraphicsRecipeOwner;
-// 引入 bootstrap 的 recipe 诊断与 surface 输入。
-use crate::native::present::{GraphicsApi, GraphicsSelection, NativeSurfaceHandle};
 
 /// One failed probe attempt recorded for diagnostics and tests.
 #[derive(Debug, Clone, PartialEq, Eq)]

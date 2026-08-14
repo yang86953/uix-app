@@ -4,13 +4,11 @@ use super::*;
 use crate::diagnostics::{Diagnostics, PendingFailureQueue};
 use crate::draw::renderer::{RebuildRequest, RecoveryAction};
 
-/// Drains native callback failures at the application owner-thread boundary.
+/// 在应用 owner 线程边界排空原生回调失败。
 ///
-/// Native callbacks only enqueue typed errors. This function is intentionally
-/// called by the app loop, where reporting or a future domain recovery action
-/// is allowed to run. Registered recovery handlers run first at this safe
-/// point; only errors that remain unhandled reach the final report, matching
-/// the "报告不能恢复的" runtime guarantee.
+/// 原生回调只能入队类型化错误。本函数特意由应用循环调用：只有在这里才允许
+/// 执行上报或未来的领域恢复动作。已注册的恢复处理器先在此安全点运行，只有
+/// 仍未处理的错误才进入最终上报，符合「报告不能恢复的」运行时保证。
 pub(crate) fn drain_platform_pending_failures(
     platform: &mut dyn Platform,
     diagnostics: &Diagnostics,
@@ -103,6 +101,7 @@ pub(crate) fn drain_pending_open_windows_with_backend(
     secondary_windows: &mut Vec<SecondaryWindowSession>,
 ) -> usize {
     let mut created = 0;
+    // 逐个取出待打开的副窗请求，创建成功后才登记到会话列表。
     while let Some(request) = runtime.take_next_open_window() {
         if let Some(mut window) = create_secondary_window(
             platform,
@@ -113,9 +112,11 @@ pub(crate) fn drain_pending_open_windows_with_backend(
             recovery_request.clone(),
             request,
         ) {
+            // 创建成功后回调通知外部（如测试）拿到窗口句柄。
             if let Some(callback) = on_window_start {
                 callback(window.handle.clone());
             }
+            // 立即排空主线程队列，避免打开瞬间积压的 UI 工作滞留到下一帧。
             window.drain_main_thread_work();
             secondary_windows.push(window);
             created += 1;
@@ -200,9 +201,11 @@ fn drain_secondary_window_frames_impl(
 ) -> bool {
     let mut drained = false;
     let now = clock.now();
+    // 有平台句柄与无平台句柄共用同一帧排空逻辑，仅是否携带平台上下文不同。
     match platform {
         Some(platform) => {
             for window in secondary_windows {
+                // 仅当窗口在当前时刻确有帧工作时才驱动一帧。
                 if window.has_frame_work(now) {
                     drained |= window.drain_frame(
                         font_service,
@@ -249,6 +252,7 @@ pub(crate) fn dispatch_secondary_window_event(
     platform: &mut dyn Platform,
     event: &UiEvent,
 ) -> bool {
+    // 事件未标注窗口或目标窗口已不在会话列表时直接放弃。
     let Some(window_id) = event.window_id else {
         return false;
     };
@@ -262,6 +266,7 @@ pub(crate) fn dispatch_secondary_window_event(
     if secondary_windows[index].handle_event(platform, event) {
         true
     } else {
+        // 窗口自身判定事件已不可继续处理（如关闭请求），摘除并释放会话。
         secondary_windows.remove(index).close();
         true
     }
@@ -290,6 +295,7 @@ pub(crate) fn apply_runtime_theme_change(
     next_theme: Theme,
 ) {
     let is_dark = next_theme.is_dark();
+    // 先落盘主题值，再向主窗口树与所有副窗广播系统主题变更事件。
     *theme.borrow_mut() = next_theme;
     root_tree.dispatch_event(&SystemEvent::ThemeChanged { is_dark });
     dispatch_secondary_system_theme_changed(secondary_windows, is_dark);
@@ -336,8 +342,12 @@ pub(crate) fn format_gpu_probe_fallback(
 // ════════════════════════════════════════════════════════════════════════════
 
 /// 将平台 `UiEvent` 转换为 `SystemEvent`。
+///
+/// 每个分支校验事件携带的载荷类型与事件类型一致；载荷缺失或类型不符时
+/// 返回 `None`（事件被丢弃，不产生系统事件）。
 pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
     match ev.type_ {
+        // ── 指针类事件：按下/双击/抬起携带位置、按键与修饰键 ──
         UiEventType::PointerDown => {
             if let UiEventPayload::PointerButton(ref d) = ev.payload {
                 Some(SystemEvent::PointerDown {
@@ -371,6 +381,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
                 None
             }
         }
+        // 指针移动不携带按键信息，仅传递位置与修饰键。
         UiEventType::PointerMove => {
             if let UiEventPayload::PointerMove(ref d) = ev.payload {
                 Some(SystemEvent::PointerMove {
@@ -381,6 +392,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
                 None
             }
         }
+        // 滚轮事件：把分开的 delta 分量合并为 Point。
         UiEventType::Wheel => {
             if let UiEventPayload::Wheel(ref d) = ev.payload {
                 Some(SystemEvent::Wheel {
@@ -391,6 +403,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
                 None
             }
         }
+        // ── 键盘事件：按下/抬起携带按键码与修饰键 ──
         UiEventType::KeyDown => {
             if let UiEventPayload::Key(ref d) = ev.payload {
                 Some(SystemEvent::KeyDown {
@@ -411,6 +424,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
                 None
             }
         }
+        // ── 剪贴板命令：复制/剪切无载荷，粘贴携带剪贴板文本 ──
         UiEventType::Copy => Some(SystemEvent::Copy),
         UiEventType::Cut => Some(SystemEvent::Cut),
         UiEventType::Paste => {
@@ -422,6 +436,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
                 None
             }
         }
+        // ── 文本输入：直接文本与 IME 组合过程 ──
         UiEventType::TextInput => {
             if let UiEventPayload::TextInput(ref d) = ev.payload {
                 Some(SystemEvent::TextInput {
@@ -431,6 +446,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
                 None
             }
         }
+        // IME 组合开始无载荷；更新与结束均携带当前组合文本。
         UiEventType::ImeCompositionStart => Some(SystemEvent::ImeCompositionStart),
         UiEventType::ImeCompositionUpdate => {
             if let UiEventPayload::ImeComposition(ref d) = ev.payload {
@@ -450,6 +466,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
                 None
             }
         }
+        // ── 环境变更：主题深浅与区域设置 ──
         UiEventType::ThemeChanged => {
             if let UiEventPayload::ThemeChanged(ref d) = ev.payload {
                 Some(SystemEvent::ThemeChanged { is_dark: d.is_dark })
@@ -466,6 +483,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
                 None
             }
         }
+        // ── 窗口状态：尺寸（像素转逻辑坐标）与最大化/最小化等 ──
         UiEventType::WindowResize => {
             if let UiEventPayload::Resize(ref d) = ev.payload {
                 Some(SystemEvent::Resize {
@@ -476,11 +494,13 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
                 None
             }
         }
+        // 最大化/最小化/恢复/焦点得失均为无载荷信号，直接透传。
         UiEventType::WindowMaximize => Some(SystemEvent::WindowMaximize),
         UiEventType::WindowMinimize => Some(SystemEvent::WindowMinimize),
         UiEventType::WindowRestore => Some(SystemEvent::WindowRestore),
         UiEventType::WindowFocus => Some(SystemEvent::WindowFocus),
         UiEventType::WindowBlur => Some(SystemEvent::WindowBlur),
+        // 计时器回调：透传 timer id 供应用定位到期定时器。
         UiEventType::Timer => {
             if let UiEventPayload::Timer(ref d) = ev.payload {
                 Some(SystemEvent::Timer { id: d.timer_id })
@@ -488,6 +508,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
                 None
             }
         }
+        // 文件拖放：携带文件列表与落点坐标。
         UiEventType::FileDrop => {
             if let UiEventPayload::FileDrop(ref d) = ev.payload {
                 Some(SystemEvent::FileDrop {
@@ -498,6 +519,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
                 None
             }
         }
+        // 其余未知事件类型统一丢弃，避免向系统事件空间泄漏。
         _ => None,
     }
 }

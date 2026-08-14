@@ -1,9 +1,8 @@
-//! Shared per-window frame driver.
+//! 共享的逐窗口帧驱动。
 //!
-//! The outer application loops own event collection and window lifetime. This
-//! type owns the ordered work -> animation -> reconcile -> layout -> paint ->
-//! present pipeline so root and secondary windows cannot drift into different
-//! frame semantics.
+//! 外层应用循环负责事件收集与窗口生命周期。本类型持有有序的
+//! work → animation → reconcile → layout → paint → present 管线，
+//! 保证主窗口与副窗口不会漂移成不同的帧语义。
 
 mod availability;
 mod support;
@@ -94,6 +93,7 @@ pub(crate) fn sync_graphics_maintenance(
     active_work: &mut ActiveWorkRegistry,
     engine: &dyn RenderTarget,
 ) {
+    // 引擎声明了空闲资源维护截止时刻时注册维护工作，否则取消注册。
     if let Some(deadline) = engine.idle_resource_deadline() {
         active_work.register(ActiveWorkKind::GraphicsMaintenance, deadline);
     } else {
@@ -106,11 +106,13 @@ pub(crate) fn sync_animation_registrations(
     tree: &WidgetTree,
     animation_updates: &[(NodeId, bool)],
 ) {
+    // 汇总树内动画源注册：内建源 + 视图过渡源，再与组件动画同步。
     let mut managed_registrations = tree.animated_source_registrations();
     tree.extend_view_transition_registrations(&mut managed_registrations);
     active_work.sync_animated_sources(managed_registrations);
     active_work.sync_component_animations(tree.component_animation_ids());
 
+    // 逐条应用调用方报告的动画启停变化，未由注册表管理的才单独登记。
     for &(id, animating) in animation_updates {
         if active_work.manages_animation(id) {
             continue;

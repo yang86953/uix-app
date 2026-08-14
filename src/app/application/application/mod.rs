@@ -41,12 +41,13 @@ use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
 use crate::draw::target::RenderTarget;
 use crate::draw::Renderer;
-use crate::native::factory::{
-    create_platform_with_pending, gpu_recipe_candidates, graphics_runtime_platform,
-    try_create_gpu_recipe_with_queue, GraphicsRecipe,
-};
+// recipe 装配输入经 platform 公开面消费；create_platform_with_pending 保留组合根直调。
+use crate::native::factory::create_platform_with_pending;
 use crate::native::platform::Platform;
-use crate::native::present::{GraphicsApi, GraphicsSelection, NativeSurfaceHandle};
+use crate::platform::presentation::{
+    gpu_recipe_candidates, graphics_runtime_platform, try_create_gpu_recipe_with_queue,
+    GraphicsApi, GraphicsRecipe, GraphicsSelection, NativeSurfaceHandle,
+};
 use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::windowing::window::{PlatformWindow, WindowOcclusionState};
 use crate::platform::graphics::GraphicsBackend;

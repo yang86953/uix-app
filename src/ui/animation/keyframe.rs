@@ -1,4 +1,4 @@
-//! Typed single-value keyframe animation.
+//! 类型化单值关键帧动画。
 
 use std::error::Error;
 use std::fmt;
@@ -10,10 +10,9 @@ use super::Easing;
 
 type FinishCallback = Arc<Mutex<Option<Box<dyn FnOnce() + Send + 'static>>>>;
 
-/// A value and easing curve declared at one normalized timeline offset.
+/// 在归一化时间线上的一个偏移处声明的值与其缓动曲线。
 ///
-/// The easing curve belongs to the segment that starts at this keyframe; the
-/// final keyframe's easing is therefore ignored.
+/// 缓动曲线属于从该关键帧开始的片段；因此最后一帧的缓动会被忽略。
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Keyframe<T> {
     pub offset: f64,
@@ -36,7 +35,7 @@ impl<T> Keyframe<T> {
     }
 }
 
-/// Keyframe sequence construction failure.
+/// 关键帧序列构造失败。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KeyframeError {
     Empty,
@@ -54,7 +53,7 @@ impl fmt::Display for KeyframeError {
 
 impl Error for KeyframeError {}
 
-/// A fixed-duration, typed single-value keyframe sequence.
+/// 固定时长、类型化单值关键帧序列。
 #[derive(Clone)]
 pub struct KeyframeAnimation<T: Animatable> {
     frames: Vec<Keyframe<T>>,
@@ -66,11 +65,10 @@ pub struct KeyframeAnimation<T: Animatable> {
 }
 
 impl<T: Animatable> KeyframeAnimation<T> {
-    /// Builds a normalized sequence.
+    /// 构建归一化序列。
     ///
-    /// Offsets are clamped to `[0, 1]`, then stably sorted. At duplicate
-    /// offsets the last declaration wins. Missing boundaries repeat the first
-    /// or last declared value.
+    /// 偏移会被钳制到 `[0, 1]` 再稳定排序。重复偏移处后声明的帧生效。
+    /// 缺失的边界用首个或末个已声明值补齐。
     pub fn new(
         frames: impl IntoIterator<Item = Keyframe<T>>,
         duration: f64,
@@ -91,6 +89,7 @@ impl<T: Animatable> KeyframeAnimation<T> {
         duration: f64,
         current: Option<T>,
     ) -> Result<Self, KeyframeError> {
+        // 逐帧校验偏移有限性并钳制到 [0, 1]。
         let mut frames = frames
             .into_iter()
             .map(|mut frame| {
@@ -108,6 +107,7 @@ impl<T: Animatable> KeyframeAnimation<T> {
             return Err(KeyframeError::Empty);
         }
 
+        // 按偏移稳定排序，重复偏移处以后声明的帧覆盖先前的。
         frames.sort_by(|left, right| left.offset.total_cmp(&right.offset));
         let mut normalized = Vec::<Keyframe<T>>::with_capacity(frames.len() + 2);
         for frame in frames {
@@ -123,6 +123,7 @@ impl<T: Animatable> KeyframeAnimation<T> {
             }
         }
 
+        // 补齐边界：起点不在 0 处时用当前值（或首帧值）补一帧，终点同理。
         let first = normalized[0];
         if first.offset > 0.0 {
             normalized.insert(0, Keyframe::new(0.0, current.unwrap_or(first.value)));
@@ -132,6 +133,7 @@ impl<T: Animatable> KeyframeAnimation<T> {
             normalized.push(Keyframe::new(1.0, last.value));
         }
 
+        // 时长非有限或为负时归零；零时长视为立即完成。
         let duration = if duration.is_finite() {
             duration.max(0.0)
         } else {
@@ -148,7 +150,7 @@ impl<T: Animatable> KeyframeAnimation<T> {
         })
     }
 
-    /// Sets a one-shot callback shared by clones and fired globally at most once.
+    /// 设置由克隆共享的一次性回调，全局最多触发一次。
     pub fn on_finish<F>(mut self, callback: F) -> Self
     where
         F: FnOnce() + Send + 'static,
@@ -158,6 +160,7 @@ impl<T: Animatable> KeyframeAnimation<T> {
     }
 
     pub fn update(&mut self, dt: f64) -> T {
+        // 仅运行中推进时间；到达时长后停止并触发一次完成回调。
         if self.running {
             let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
             self.elapsed = (self.elapsed + dt).min(self.duration);
@@ -170,6 +173,7 @@ impl<T: Animatable> KeyframeAnimation<T> {
     }
 
     pub fn value(&self) -> T {
+        // 倒放时从时间线末尾镜像进度。
         let progress = if self.reversed {
             1.0 - self.progress()
         } else {
@@ -228,6 +232,7 @@ impl<T: Animatable> KeyframeAnimation<T> {
     }
 
     fn sample(&self, progress: f64) -> T {
+        // 越界进度直接取端点值。
         if progress <= 0.0 {
             return self.frames[0].value;
         }
@@ -235,6 +240,7 @@ impl<T: Animatable> KeyframeAnimation<T> {
             return self.frames[self.frames.len() - 1].value;
         }
 
+        // 二分定位进度所在片段，并在片段内按缓动曲线插值。
         let upper = self
             .frames
             .partition_point(|frame| frame.offset <= progress);
@@ -245,6 +251,7 @@ impl<T: Animatable> KeyframeAnimation<T> {
     }
 
     fn fire_finish_callback(&mut self) {
+        // 取出共享回调（全局只触发一次），毒锁也继续取。
         let Some(callback) = self.finish_callback.as_ref() else {
             return;
         };

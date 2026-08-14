@@ -13,12 +13,10 @@
 //! | [`damage`] | 增量失效与提交前后真相 | `geometry`（窄契约） |
 //! | [`error`] | typed error 和统一结果语义 | 无 |
 //!
-//! `glyph_outline` 是跨 System 共享的模式外纯算法，暂留 core 根，不作为角色登记。
-//!
 //! # 旧路径 compile-fail 测试
 //!
-//! 下列契约锁定 SMC-01 后的模块边界：旧平铺路径与私有基础算法对外不可达，
-//! 任何恢复旧路径或把 `glyph_outline` 提升为公开模块的改动都会编译失败。
+//! 下列契约锁定 SMC-01 后的模块边界：旧平铺路径对外不可达，
+//! 任何恢复旧路径的改动都会编译失败。
 //!
 //! ```compile_fail
 //! // 旧平铺路径不得复活：ComponentId 归 identity 模块。
@@ -30,18 +28,11 @@
 //! use uix::core::window_id::WindowId;
 //! ```
 //!
-//! ```compile_fail
-//! // glyph_outline 是模式外私有基础算法，不得作为公开面。
-//! use uix::core::glyph_outline::colorize_edges;
-//! ```
+
 
 pub mod damage;
 pub mod error;
 pub mod geometry;
-// 该纯算法模块保留为跨系统私有基础能力，当前版本没有直接调用方。
-#[allow(dead_code)]
-// 保持旧路径的 crate-private 契约，禁止误提升为公开模块。
-pub(crate) mod glyph_outline;
 pub mod identity;
 
 pub use damage::*;

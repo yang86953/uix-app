@@ -63,14 +63,8 @@ pub struct TerminalCapabilities {
     pub has_cursor_control: bool,
 }
 
-/// 通用状态级别。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StatusLevel {
-    Success,
-    Info,
-    Warning,
-    Error,
-}
+/// 通用状态级别（类型已收口到 platform 公开面，此处保持 native 路径可解析）。
+pub use crate::platform::capabilities::StatusLevel;
 
 pub trait IFileDialog {
     /// 打开文件选择对话框。`Ok(None)` 表示用户取消；`Err` 表示对话框本身失败。

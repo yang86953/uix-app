@@ -11,19 +11,23 @@ use super::{
 
 impl ChartPlaceholder {
 
+    /// 高级图表总入口：背景、标题、图例布局、缩放平移、分类型绘制与交互层。
     pub(crate) fn paint(&self, ctx: &mut PaintContext, frame: Rect) {
+        // 空尺寸直接跳过。
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
         self.last_frame.set(Some(frame));
         let bg = self.background.unwrap_or(ctx.tokens().color_bg_container());
         ctx.fill_rect(frame, bg, None);
+        // 绘图区 = 帧减去内边距。
         let mut plot = Rect::new(
             frame.x + self.padding,
             frame.y + self.padding,
             (frame.w - self.padding * 2.0).max(0.0),
             (frame.h - self.padding * 2.0).max(0.0),
         );
+        // 标题占据一行并下移绘图区。
         if !self.title.is_empty() {
             ctx.draw_text(
                 &self.title,
@@ -34,6 +38,7 @@ impl ChartPlaceholder {
             plot.y += 20.0;
             plot.h = (plot.h - 20.0).max(0.0);
         }
+        // 副标题占一行（字号更小）。
         if !self.subtitle.is_empty() && plot.h > 0.0 {
             ctx.draw_text(
                 &self.subtitle,
@@ -44,9 +49,11 @@ impl ChartPlaceholder {
             plot.y += 16.0;
             plot.h = (plot.h - 16.0).max(0.0);
         }
+        // 标题/副标题占满后无剩余绘图空间。
         if plot.w <= 0.0 || plot.h <= 0.0 {
             return;
         }
+        // 图例切分：仅在无绘图空间时单独绘制图例。
         let (mut plot, legend_rect) = self.legend_layout(plot);
         if plot.w <= 0.0 || plot.h <= 0.0 {
             if let Some(legend_rect) = legend_rect {
@@ -54,14 +61,17 @@ impl ChartPlaceholder {
             }
             return;
         }
+        // 缩放：放大时水平扩展绘图区并保持居中。
         let base_width = plot.w;
         let zoom = self.zoom.get();
         if zoom > 1.0 {
             plot.w = base_width * zoom;
             plot.x += (base_width - plot.w) * 0.5;
         }
+        // 平移偏移。
         plot.x += self.pan_offset.get();
         ctx.push_clip(frame);
+        // 入场动画：按透明度进度裁剪绘图区宽度。
         let progress = self
             .animation_player
             .as_ref()
@@ -70,6 +80,7 @@ impl ChartPlaceholder {
         if animated {
             ctx.push_clip(Rect::new(plot.x, plot.y, plot.w * progress, plot.h));
         }
+        // 按图表类型分发到对应绘制实现。
         if self.has_data() {
             match self.kind {
                 ChartKind::Bar => self.paint_bars(ctx, plot),
@@ -85,6 +96,7 @@ impl ChartPlaceholder {
                 ChartKind::Generic => unreachable!("generic charts do not contain data"),
             }
         } else {
+            // 无数据：空态提示。
             ctx.stroke_rect(plot, ctx.tokens().color_border(), 1.0, None);
             ctx.text_center("暂无数据", plot, ctx.tokens().color_text_secondary(), 12.0);
         }
@@ -94,11 +106,14 @@ impl ChartPlaceholder {
         if let Some(legend_rect) = legend_rect {
             self.paint_legend(ctx, legend_rect);
         }
+        // 交互层（框选、十字线、tooltip）在数据之上绘制。
         self.paint_interaction(ctx, frame);
         ctx.pop_clip();
     }
 
+    /// 交互层绘制：框选矩形、十字线、悬停/点击 tooltip。
     pub(crate) fn paint_interaction(&self, ctx: &mut PaintContext, frame: Rect) {
+        // 框选：从起点到当前悬浮点绘制半透明矩形。
         if let Some(start) = self.brush_start.get() {
             if let Some(end) = self.hovered_pos.get() {
                 let x = start.x.min(end.x).clamp(frame.x, frame.x + frame.w);
@@ -113,6 +128,7 @@ impl ChartPlaceholder {
             }
         }
         let hovered = self.hovered_pos.get().filter(|pos| frame.contains(*pos));
+        // 十字线：沿悬浮点画横竖参考线。
         if self
             .interaction
             .as_ref()
@@ -124,6 +140,7 @@ impl ChartPlaceholder {
                 ctx.draw_line(frame.x, pos.y, frame.x + frame.w, pos.y, color, 1.0);
             }
         }
+        // tooltip：按触发模式取位置并绘制气泡。
         if let Some(config) = &self.tooltip_config {
             let pos = match config.trigger_mode() {
                 TooltipTrigger::Hover => hovered,
@@ -132,6 +149,7 @@ impl ChartPlaceholder {
             let Some(pos) = pos else { return };
             if let Some(text) = self.tooltip_text_at(pos, frame) {
                 let size = ctx.measure_text(&text, 10.0);
+                // 气泡位置偏向指针右下，越界时向内收拢。
                 let x = (pos.x + 12.0).min(frame.x + frame.w - size.w - 12.0);
                 let y = (pos.y - size.h - 12.0).max(frame.y + 4.0);
                 let rect = Rect::new(x.max(frame.x + 4.0), y, size.w + 8.0, size.h + 8.0);
@@ -147,6 +165,7 @@ impl ChartPlaceholder {
         }
     }
 
+    /// 坐标轴绘制：x/y 轴线、轴标题与参考线。
     pub(crate) fn paint_axes(&self, ctx: &mut PaintContext, plot: Rect) {
         let axis = ctx.tokens().color_border();
         ctx.fill_rect(
@@ -155,6 +174,7 @@ impl ChartPlaceholder {
             None,
         );
         ctx.fill_rect(Rect::new(plot.x, plot.y, 1.0, plot.h), axis, None);
+        // x 轴标题（底部居中）。
         if !self.x_axis.is_empty() {
             ctx.text_center(
                 &self.x_axis,
@@ -163,6 +183,7 @@ impl ChartPlaceholder {
                 10.0,
             );
         }
+        // y 轴标题（左上角）。
         if !self.y_axis.is_empty() {
             ctx.draw_text(
                 &self.y_axis,
@@ -171,6 +192,7 @@ impl ChartPlaceholder {
                 10.0,
             );
         }
+        // 参考线：按最大绝对值归一化位置，虚线分 12 段绘制。
         let max = self
             .reference_lines
             .iter()
@@ -181,6 +203,7 @@ impl ChartPlaceholder {
             let color = ctx.tokens().color_warning();
             let segments = if *style == LineStyle::Dashed { 12 } else { 1 };
             for segment in 0..segments {
+                // 虚线跳过偶数段间隙。
                 if *style == LineStyle::Dashed && segment % 2 == 1 {
                     continue;
                 }
@@ -194,8 +217,10 @@ impl ChartPlaceholder {
         }
     }
 
+    /// 柱状图绘制：支持分组/堆叠、横向/纵向，以及标签。
     pub(crate) fn paint_bars(&self, ctx: &mut PaintContext, plot: Rect) {
         self.paint_axes(ctx, plot);
+        // 汇集载荷中的柱数据序列。
         let series: Vec<&[BarData]> = match &self.payload {
             ChartPayload::Bars(data) => vec![data.as_slice()],
             ChartPayload::BarSeries(series) => {
@@ -209,9 +234,11 @@ impl ChartPlaceholder {
             _ => Vec::new(),
         };
         let count = series.iter().map(|items| items.len()).max().unwrap_or(0);
+        // 无数据或未渲染过则跳过。
         if count == 0 {
             return;
         }
+        // 扫描全部值的全局最小值/最大值。
         let mut min_value: f32 = 0.0;
         let mut max_value: f32 = 0.0;
         for items in &series {
@@ -231,8 +258,10 @@ impl ChartPlaceholder {
             |value: f32| plot.x + normalized_ratio(value, min_value, max_value) * plot.w;
         let category_w = plot.w / count as f32;
         let category_h = plot.h / count as f32;
+        // 多序列且非堆叠时自动分组并列。
         let grouped = self.grouped || (!self.stacked && series.len() > 1);
         let group_count = if grouped { series.len() } else { 1 } as f32;
+        // 堆叠累加器：正负值分别累积。
         let mut positive_stack = vec![0.0_f32; count];
         let mut negative_stack = vec![0.0_f32; count];
         for (series_index, items) in series.iter().enumerate() {
@@ -245,6 +274,7 @@ impl ChartPlaceholder {
                 } else {
                     0.0
                 };
+                // 堆叠时从累加器取起点，否则从 0 画到 value。
                 let (start, end) = if self.stacked {
                     if value >= 0.0 {
                         let start = positive_stack[index];
@@ -259,6 +289,7 @@ impl ChartPlaceholder {
                     (0.0, value)
                 };
                 if self.horizontal {
+                    // 横向柱：按行高与分组偏移定位。
                     let h = (category_h * (1.0 - self.category_gap)).max(1.0);
                     let y = plot.y
                         + index as f32 * category_h
@@ -280,6 +311,7 @@ impl ChartPlaceholder {
                         item.color,
                         None,
                     );
+                    // 首个序列绘制类别标签。
                     if series_index == 0 {
                         ctx.draw_text(
                             &item.label,
@@ -289,6 +321,7 @@ impl ChartPlaceholder {
                         );
                     }
                 } else {
+                    // 纵向柱：按列宽与分组偏移定位。
                     let w = (category_w * (1.0 - self.category_gap)).max(1.0);
                     let x = plot.x
                         + index as f32 * category_w
@@ -310,6 +343,7 @@ impl ChartPlaceholder {
                         item.color,
                         None,
                     );
+                    // 首个序列绘制类别标签。
                     if series_index == 0 {
                         ctx.text_center(
                             &item.label,
@@ -323,8 +357,10 @@ impl ChartPlaceholder {
         }
     }
 
+    /// 折线/面积图绘制：支持堆叠、阶梯、平滑与面积填充。
     pub(crate) fn paint_lines(&self, ctx: &mut PaintContext, plot: Rect) {
         self.paint_axes(ctx, plot);
+        // 汇集载荷中的线数据序列。
         let series: Vec<Vec<LineData>> = match &self.payload {
             ChartPayload::Lines(data) => vec![data.clone()],
             ChartPayload::LineSeries(series) => {
@@ -341,6 +377,7 @@ impl ChartPlaceholder {
         if count == 0 {
             return;
         }
+        // 预计算每序列的上下边界（堆叠时为累计值）。
         let mut lower_values = vec![vec![0.0_f32; count]; series.len()];
         let mut upper_values = vec![vec![0.0_f32; count]; series.len()];
         let mut min_value = 0.0_f32;
@@ -349,6 +386,7 @@ impl ChartPlaceholder {
             for index in 0..count {
                 let raw = data.get(index).map_or(0.0, |item| item.value);
                 let value = if raw.is_finite() { raw } else { 0.0 };
+                // 堆叠时下界取前一序列上界。
                 let lower = if self.stacked && series_index > 0 {
                     upper_values[series_index - 1][index]
                 } else {
@@ -361,6 +399,7 @@ impl ChartPlaceholder {
                 max_value = max_value.max(lower.max(upper));
             }
         }
+        // 索引与值映射为屏幕坐标（单点居中）。
         let to_point = |index: usize, value: f32| {
             let x = if count == 1 {
                 plot.x + plot.w * 0.5
@@ -380,6 +419,7 @@ impl ChartPlaceholder {
                 continue;
             }
             let color = palette_color(series_index);
+            // 面积图：闭合上沿与下沿路径并填充。
             if self.kind == ChartKind::Area && points.len() >= 2 {
                 let mut path = PathBuilder::new();
                 path.move_to(points[0].x, points[0].y);
@@ -396,11 +436,13 @@ impl ChartPlaceholder {
                 ctx.fill_path(&path.build(), fill, FillRule::NonZero);
             }
             if self.step {
+                // 阶梯线：先水平后垂直。
                 for pair in points.windows(2) {
                     ctx.draw_line(pair[0].x, pair[0].y, pair[1].x, pair[0].y, color, 2.0);
                     ctx.draw_line(pair[1].x, pair[0].y, pair[1].x, pair[1].y, color, 2.0);
                 }
             } else {
+                // 平滑时对点集做 Catmull-Rom 插值后连线。
                 let line_points = if self.smooth {
                     catmull_rom_points(&points, 8)
                 } else {
@@ -410,14 +452,17 @@ impl ChartPlaceholder {
                     ctx.draw_line(pair[0].x, pair[0].y, pair[1].x, pair[1].y, color, 2.0);
                 }
             }
+            // 数据点标记。
             for point in points {
                 ctx.fill_circle(point.x, point.y, self.point_size, color);
             }
         }
     }
 
+    /// 散点/气泡图绘制：按数据极值归一化坐标，支持多种点样式。
     pub(crate) fn paint_scatter(&self, ctx: &mut PaintContext, plot: Rect) {
         self.paint_axes(ctx, plot);
+        // 汇集 (x, y, 半径, 是否气泡) 元组序列。
         let series: Vec<Vec<(f32, f32, f32, bool)>> = match &self.payload {
             ChartPayload::Scatter(data) => vec![data
                 .iter()
@@ -439,6 +484,7 @@ impl ChartPlaceholder {
                 .collect(),
             _ => Vec::new(),
         };
+        // 过滤非法点并计算 x/y 极值。
         let points = series
             .iter()
             .flatten()
@@ -471,8 +517,10 @@ impl ChartPlaceholder {
                 if !x.is_finite() || !y.is_finite() {
                     continue;
                 }
+                // 坐标线性映射到绘图区（y 轴翻转）。
                 let px = plot.x + (x - min_x) / dx * plot.w;
                 let py = plot.y + plot.h - (y - min_y) / dy * plot.h;
+                // 半径：气泡上限更大。
                 let radius = if *bubbles {
                     finite_or_zero(*radius).clamp(2.0, 24.0)
                 } else {
@@ -481,6 +529,7 @@ impl ChartPlaceholder {
                 match self.point_style {
                     PointStyle::Circle => ctx.fill_circle(px, py, radius, point_color),
                     PointStyle::Diamond => {
+                        // 菱形以矩形近似。
                         ctx.fill_rect(
                             Rect::new(px - radius, py - radius, radius * 2.0, radius * 2.0),
                             point_color,
@@ -496,7 +545,9 @@ impl ChartPlaceholder {
         }
     }
 
+    /// 雷达图绘制：网格（多边形/圆形）、轴线标签与各系列数据多边形。
     pub(crate) fn paint_radar(&self, ctx: &mut PaintContext, plot: Rect) {
+        // 轴数取轴列表与各系列数据的最大长度（至少 3）。
         let count = self
             .radar_axes
             .len()
@@ -511,6 +562,7 @@ impl ChartPlaceholder {
         let center = Point::new(plot.x + plot.w * 0.5, plot.y + plot.h * 0.5);
         let radius = plot.w.min(plot.h) * 0.38;
         let grid = ctx.tokens().color_border();
+        // 分层网格：圆形或正多边形。
         for level in 1..=self.grid_levels.max(1) {
             let r = radius * level as f32 / self.grid_levels.max(1) as f32;
             if self.radar_shape == RadarShape::Circle {
@@ -532,6 +584,7 @@ impl ChartPlaceholder {
                 }
             }
         }
+        // 轴射线与轴标签（自顶部顺时针均分）。
         for axis in 0..count {
             let angle =
                 -std::f32::consts::FRAC_PI_2 + axis as f32 * std::f32::consts::TAU / count as f32;
@@ -557,12 +610,14 @@ impl ChartPlaceholder {
                 );
             }
         }
+        // 各系列：按轴范围归一化值并闭合为多边形。
         for (series_index, series) in self.radar_series.iter().enumerate() {
             let points = series
                 .data
                 .iter()
                 .enumerate()
                 .map(|(index, value)| {
+                    // 取该轴配置的范围，缺省 [0, 100]。
                     let range = self
                         .radar_axes
                         .get(index)
@@ -600,6 +655,7 @@ impl ChartPlaceholder {
                 continue;
             }
             let color = palette_color(series_index);
+            // 三点以上填充闭合多边形，否则退化为点。
             if points.len() >= 3 {
                 let mut path = PathBuilder::new();
                 path.move_to(points[0].x, points[0].y);
@@ -613,6 +669,7 @@ impl ChartPlaceholder {
             } else {
                 ctx.fill_circle(points[0].x, points[0].y, 3.0, color);
             }
+            // 首尾闭合的轮廓线。
             for pair in points
                 .iter()
                 .chain(points.first())

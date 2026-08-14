@@ -13,16 +13,20 @@ use super::{
 
 impl ChartPlaceholder {
 
+    /// 热力图配色：色阶存在时按位置插值，否则在两端色之间线性插值。
     pub(crate) fn heatmap_color(&self, value: f32) -> Color {
+        // 色阶不足两档时直接在两色之间插值。
         if self.color_stops.len() < 2 {
             return lerp_color(self.color_min, self.color_max, value);
         }
         let value = value.clamp(0.0, 1.0);
+        // 找到 value 所在的相邻色阶区间。
         let Some(window) = self
             .color_stops
             .windows(2)
             .find(|window| value <= window[1].0)
         else {
+            // 超出最大色阶位置时取末档颜色。
             return self
                 .color_stops
                 .last()
@@ -32,10 +36,12 @@ impl ChartPlaceholder {
         lerp_color(window[0].1, window[1].1, (value - window[0].0) / span)
     }
 
+    /// 热力图绘制：普通网格或日历模式，含坐标标签与数值。
     pub(crate) fn paint_heatmap(&self, ctx: &mut PaintContext, plot: Rect) {
         let ChartPayload::Heatmap(cells) = &self.payload else {
             return;
         };
+        // 日历模式：把天数换算为 (周列, 星期行)；普通模式直接取网格坐标。
         let leap = is_leap_year(self.year);
         let calendar_days = calendar_day_count(self.year);
         let calendar_offset = january_first_weekday(self.year);
@@ -54,6 +60,7 @@ impl ChartPlaceholder {
                 .map(|cell| (cell.x, cell.y, cell.value))
                 .collect::<Vec<_>>()
         };
+        // 网格列数：日历按周数，普通模式按最大 x（受限）。
         let max_x = if self.calendar_mode {
             (calendar_offset + calendar_days - 1) / 7 + 1
         } else {
@@ -65,6 +72,7 @@ impl ChartPlaceholder {
                 .saturating_add(1)
                 .min(MAX_HEATMAP_DIMENSION)
         };
+        // 网格行数：日历固定 7，普通模式按最大 y（受限）。
         let max_y = if self.calendar_mode {
             7
         } else {
@@ -76,6 +84,7 @@ impl ChartPlaceholder {
                 .saturating_add(1)
                 .min(MAX_HEATMAP_DIMENSION)
         };
+        // 全局最大值（至少为 1 避免除零）。
         let max = cells
             .iter()
             .map(|cell| {
@@ -87,6 +96,7 @@ impl ChartPlaceholder {
             })
             .fold(0.0_f32, f32::max)
             .max(1.0);
+        // 坐标标签占用区域。
         let label_left = if self.y_labels.is_empty() { 0.0 } else { 42.0 };
         let label_bottom = if self.x_labels.is_empty() { 0.0 } else { 20.0 };
         let cells_plot = Rect::new(
@@ -95,6 +105,7 @@ impl ChartPlaceholder {
             (plot.w - label_left).max(0.0),
             (plot.h - label_bottom).max(0.0),
         );
+        // 单元格尺寸：日历模式用配置尺寸，普通模式自适应铺满。
         let configured = if self.calendar_mode {
             self.cell_size
         } else {
@@ -110,6 +121,7 @@ impl ChartPlaceholder {
         } else {
             ((cells_plot.h - self.cell_gap * max_y as f32) / max_y as f32).max(0.0)
         };
+        // 逐个绘制单元格：按归一化值取色。
         for (x, y, value) in &calendar {
             if *x >= max_x || *y >= max_y {
                 continue;
@@ -124,10 +136,12 @@ impl ChartPlaceholder {
                 h.max(0.0),
             );
             ctx.fill_rect(rect, color, None);
+            // 数值标签。
             if self.show_values {
                 ctx.text_center(&format!("{}", finite_value), rect, Color::white(), 9.0);
             }
         }
+        // x 轴标签（底部）。
         for (index, label) in self.x_labels.iter().take(max_x).enumerate() {
             let rect = Rect::new(
                 cells_plot.x + index as f32 * (w + self.cell_gap),
@@ -137,6 +151,7 @@ impl ChartPlaceholder {
             );
             ctx.text_center(label, rect, ctx.tokens().color_text_secondary(), 9.0);
         }
+        // y 轴标签（左侧）。
         for (index, label) in self.y_labels.iter().take(max_y).enumerate() {
             let rect = Rect::new(
                 plot.x,
@@ -146,6 +161,7 @@ impl ChartPlaceholder {
             );
             ctx.text_center(label, rect, ctx.tokens().color_text_secondary(), 9.0);
         }
+        // 日历模式：每月首行绘制「N月」标签（2 月按闰年处理）。
         if self.calendar_mode {
             let month_lengths = [31_usize, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
             let mut day = 0_usize;
@@ -167,10 +183,12 @@ impl ChartPlaceholder {
         }
     }
 
+    /// 漏斗图绘制：按值比例收窄的梯形，支持对齐、对称与转化率。
     pub(crate) fn paint_funnel(&self, ctx: &mut PaintContext, plot: Rect) {
         let ChartPayload::Funnel(data) = &self.payload else {
             return;
         };
+        // 最大值（至少 1）用于归一化宽度。
         let max = data
             .iter()
             .map(|item| {
@@ -181,6 +199,7 @@ impl ChartPlaceholder {
                 }
             })
             .fold(1.0, f32::max);
+        // 段高与段间间隙（间隙不超过单段高）。
         let gap = self
             .funnel_gap
             .min(plot.h / data.len().max(1) as f32)
@@ -192,6 +211,7 @@ impl ChartPlaceholder {
             } else {
                 0.0
             };
+            // 本段宽度与下一段宽度（最小 5%）。
             let width = plot.w * (value / max).clamp(0.05, 1.0);
             let next_width = data.get(index + 1).map_or(0.05, |item| {
                 let value = if item.value.is_finite() {
@@ -201,6 +221,7 @@ impl ChartPlaceholder {
                 };
                 (value / max).clamp(0.05, 1.0)
             }) * plot.w;
+            // 对称形状强制居中，否则按对齐配置。
             let align = if self.funnel_shape == FunnelShape::Symmetric {
                 FunnelAlign::Center
             } else {
@@ -217,6 +238,7 @@ impl ChartPlaceholder {
                 FunnelAlign::Left => plot.x,
                 FunnelAlign::Right => plot.x + plot.w - next_width,
             };
+            // 梯形路径：上宽下窄。
             let mut path = PathBuilder::new();
             path.move_to(x, y);
             path.line_to(x + width, y);
@@ -225,6 +247,7 @@ impl ChartPlaceholder {
             path.close();
             let funnel_color = ctx.tokens().color_primary();
             ctx.fill_path(&path.build(), funnel_color, FillRule::NonZero);
+            // 标签：可含转化率（相对上一段）。
             if self.label_visible {
                 let mut label = format!("{} {}", item.label, value);
                 if self.show_conversion_rate && index > 0 {
@@ -236,6 +259,7 @@ impl ChartPlaceholder {
                     label.push_str(&format!(" ({:.0}%)", value / previous * 100.0));
                 }
                 let label_rect = Rect::new(x, y, width, h);
+                // 右侧标签绘制在梯形外，否则居中。
                 if self.label_position == LabelPosition::Right {
                     ctx.draw_text(
                         &label,
@@ -250,6 +274,7 @@ impl ChartPlaceholder {
         }
     }
 
+    /// 瀑布图绘制：增量/减量/总计三种段的起止范围与连接线。
     pub(crate) fn paint_waterfall(&self, ctx: &mut PaintContext, plot: Rect) {
         let ChartPayload::Waterfall(data) = &self.payload else {
             return;
@@ -258,6 +283,7 @@ impl ChartPlaceholder {
             return;
         }
         self.paint_axes(ctx, plot);
+        // 逐个计算段的起止值并跟踪累计值与全局范围。
         let mut ranges = Vec::with_capacity(data.len());
         let mut cumulative = 0.0;
         let mut min_value = 0.0_f32;
@@ -268,6 +294,7 @@ impl ChartPlaceholder {
             } else {
                 0.0
             };
+            // 总计段从 0 开始；其余段从累计值开始。
             let start = match item.kind {
                 WaterfallKind::Total => 0.0,
                 _ => cumulative,
@@ -289,6 +316,7 @@ impl ChartPlaceholder {
         let bar_w = category_w * 0.7;
         let bar_h = category_h * 0.7;
         for (index, (item, (start, end))) in data.iter().zip(ranges.iter()).enumerate() {
+            // 按段类型着色：增/减/总计。
             let color = match item.kind {
                 WaterfallKind::Increase => ctx.tokens().color_success(),
                 WaterfallKind::Decrease => ctx.tokens().color_error(),
@@ -312,6 +340,7 @@ impl ChartPlaceholder {
                 )
             };
             ctx.fill_rect(rect, color, None);
+            // 类别标签。
             if self.horizontal {
                 ctx.draw_text(
                     &item.label,
@@ -327,6 +356,7 @@ impl ChartPlaceholder {
                     9.0,
                 );
             }
+            // 段间连接线（从本段末端到下一段起点）。
             if let Some((next_start, _)) = ranges.get(index + 1) {
                 let connector_color = ctx.tokens().color_border();
                 if self.horizontal {
@@ -355,8 +385,10 @@ impl ChartPlaceholder {
         }
     }
 
+    /// 组合图绘制：柱 + 线/面积按左右轴共存，虚线/面积样式可选。
     pub(crate) fn paint_combo(&self, ctx: &mut PaintContext, plot: Rect) {
         self.paint_axes(ctx, plot);
+        // 右侧轴标题。
         if !self.y_axis_right.is_empty() {
             let size = ctx.measure_text(&self.y_axis_right, 10.0);
             ctx.draw_text(
@@ -366,6 +398,7 @@ impl ChartPlaceholder {
                 10.0,
             );
         }
+        // 汇集柱/线数据：优先组合系列，否则回退到独立系列。
         let mut bars: Vec<(String, Vec<BarData>, AxisSide)> = Vec::new();
         let mut lines: Vec<(String, Vec<LineData>, AxisSide, LineStyle, bool)> = Vec::new();
         if !self.combo_series.is_empty() {
@@ -395,6 +428,7 @@ impl ChartPlaceholder {
                     .iter()
                     .map(|series| (series.name.clone(), series.data.clone(), AxisSide::Left)),
             );
+            // 有线或右轴标题时线走右轴，否则左轴。
             let line_axis = if !self.y_axis_right.is_empty() || !self.bar_series.is_empty() {
                 AxisSide::Right
             } else {
@@ -419,6 +453,7 @@ impl ChartPlaceholder {
         if count == 0 {
             return;
         }
+        // 按轴分别统计值域。
         let range_for = |axis: AxisSide| {
             let mut min = 0.0_f32;
             let mut max = 0.0_f32;
@@ -462,6 +497,7 @@ impl ChartPlaceholder {
         };
         let category_w = plot.w / count as f32;
         let bar_count = bars.len().max(1) as f32;
+        // 柱：分组并列，从各自轴基线绘制。
         for (bar_index, (_, data, axis)) in bars.iter().enumerate() {
             for (index, item) in data.iter().enumerate() {
                 let value = if item.value.is_finite() {
@@ -479,6 +515,7 @@ impl ChartPlaceholder {
                 let baseline = to_y(0.0, *axis);
                 let rect = Rect::new(x, y.min(baseline), bar_w, (baseline - y).abs().max(1.0));
                 ctx.fill_rect(rect, item.color, None);
+                // 首个序列绘制类别标签。
                 if bar_index == 0 {
                     ctx.text_center(
                         &item.label,
@@ -489,6 +526,7 @@ impl ChartPlaceholder {
                 }
             }
         }
+        // 线/面积：按轴映射点坐标。
         for (line_index, (_, data, axis, line_style, area)) in lines.iter().enumerate() {
             let points = data
                 .iter()
@@ -513,6 +551,7 @@ impl ChartPlaceholder {
                 continue;
             }
             let color = palette_color(bars.len() + line_index);
+            // 面积填充：闭合到基线。
             if *area && points.len() >= 2 {
                 let baseline = to_y(0.0, *axis);
                 let mut path = PathBuilder::new();
@@ -530,6 +569,7 @@ impl ChartPlaceholder {
                     FillRule::NonZero,
                 );
             }
+            // 连线：虚线按 8 段交替绘制。
             for pair in points.windows(2) {
                 if *line_style == LineStyle::Dashed {
                     for segment in 0..8 {
@@ -552,12 +592,14 @@ impl ChartPlaceholder {
                     ctx.draw_line(pair[0].x, pair[0].y, pair[1].x, pair[1].y, color, 2.0);
                 }
             }
+            // 数据点标记。
             for point in points {
                 ctx.fill_circle(point.x, point.y, self.point_size, color);
             }
         }
     }
 
+    /// 矩形树图入口：从根节点列表开始递归分块。
     pub(crate) fn paint_treemap(&self, ctx: &mut PaintContext, plot: Rect) {
         let ChartPayload::Treemap(nodes) = &self.payload else {
             return;
@@ -565,6 +607,7 @@ impl ChartPlaceholder {
         self.paint_treemap_nodes(ctx, nodes, plot, 0);
     }
 
+    /// 矩形树递归分块：奇偶深度交替水平/垂直切分，权重取子节点总和。
     pub(crate) fn paint_treemap_nodes(
         &self,
         ctx: &mut PaintContext,
@@ -575,6 +618,7 @@ impl ChartPlaceholder {
         if nodes.is_empty() || plot.w <= 0.0 || plot.h <= 0.0 {
             return;
         }
+        // 节点权重：有子节点取子节点值之和，否则取自身值。
         let total = nodes
             .iter()
             .map(|node| {
@@ -591,6 +635,7 @@ impl ChartPlaceholder {
             })
             .sum::<f32>()
             .max(f32::EPSILON);
+        // 深度交替方向避免长条矩形。
         let horizontal = depth.is_multiple_of(2);
         let mut cursor = if horizontal { plot.x } else { plot.y };
         for (index, node) in nodes.iter().enumerate() {
@@ -606,6 +651,7 @@ impl ChartPlaceholder {
                     node.value.max(0.0)
                 }
             };
+            // 按权重分配主方向上的跨度。
             let extent = if horizontal {
                 plot.w * weight / total
             } else {
@@ -616,6 +662,7 @@ impl ChartPlaceholder {
             } else {
                 Rect::new(plot.x, cursor, plot.w, extent)
             };
+            // 内部留间隙。
             let gap = self.treemap_gap.min(raw.w * 0.5).min(raw.h * 0.5);
             let rect = Rect::new(
                 raw.x + gap * 0.5,
@@ -623,13 +670,16 @@ impl ChartPlaceholder {
                 (raw.w - gap).max(0.0),
                 (raw.h - gap).max(0.0),
             );
+            // 按深度与索引取色。
             let color = palette_color(depth * nodes.len() + index);
             ctx.fill_rect(rect, color, None);
             if node.children.is_empty() {
+                // 叶子：居中显示标签。
                 if self.label_visible {
                     ctx.text_center(&node.label, rect, Color::white(), 11.0);
                 }
             } else {
+                // 分支：顶部显示标签并递归分块子节点。
                 if self.label_visible {
                     ctx.draw_text(
                         &node.label,
@@ -650,9 +700,11 @@ impl ChartPlaceholder {
         }
     }
 
+    /// 仪表盘绘制：扇区/环、分段色、指针与读数标签。
     pub(crate) fn paint_gauge(&self, ctx: &mut PaintContext, plot: Rect) {
         let center = Point::new(plot.x + plot.w * 0.5, plot.y + plot.h * 0.56);
         let radius = plot.w.min(plot.h) * 0.38;
+        // 仪表盘类型决定起始角与扫过角度。
         let (start, sweep) = match self.gauge_type {
             GaugeType::Dashboard => (std::f32::consts::PI, std::f32::consts::PI),
             GaugeType::Full | GaugeType::Ring => {
@@ -663,8 +715,10 @@ impl ChartPlaceholder {
         let range_max = self.gauge_min.max(self.gauge_max);
         let ratio = normalized_ratio(self.gauge_value, range_min, range_max);
         let bg = ctx.tokens().color_fill_tertiary();
+        // 底色扇区。
         ctx.fill_sector(center.x, center.y, radius, start, start + sweep, bg);
         if self.gauge_ranges.is_empty() {
+            // 无分段：单色按比例填充。
             let color = ctx.tokens().color_primary();
             ctx.fill_sector(
                 center.x,
@@ -675,6 +729,7 @@ impl ChartPlaceholder {
                 color,
             );
         } else {
+            // 分段：按各段范围与当前值裁剪填充。
             for segment in &self.gauge_ranges {
                 if !segment.start.is_finite() || !segment.end.is_finite() {
                     continue;
@@ -696,6 +751,7 @@ impl ChartPlaceholder {
                 }
             }
         }
+        // 环型：中心掏空。
         if self.gauge_type == GaugeType::Ring {
             ctx.fill_circle(
                 center.x,
@@ -704,6 +760,7 @@ impl ChartPlaceholder {
                 ctx.tokens().color_bg_container(),
             );
         }
+        // 指针：从中心指向当前角度。
         if self.pointer_width > 0.0 {
             let angle = start + sweep * ratio;
             let pointer_color = self.pointer_color.unwrap_or(ctx.tokens().color_text());
@@ -717,6 +774,7 @@ impl ChartPlaceholder {
             );
             ctx.fill_circle(center.x, center.y, self.pointer_width * 1.5, pointer_color);
         }
+        // 读数标签（可自定义格式化）。
         let label = self
             .value_format
             .as_ref()
@@ -730,12 +788,15 @@ impl ChartPlaceholder {
         );
     }
 
+    /// 快照同步：保留交互/动画运行时状态，避免更新组件时打断体验。
     pub(crate) fn sync_from(&mut self, mut next: Self) {
+        // 先保存运行时状态。
         let last_frame = self.last_frame.get();
         let hovered_pos = self.hovered_pos.get();
         let tooltip_pos = self.tooltip_pos.get();
         let pan_offset = self.pan_offset.get();
         let zoom = self.zoom.get();
+        // 动画配置不变则保留播放器进度，否则换用新播放器。
         let same_animation = self.animation_config == next.animation_config;
         let animation_player = if same_animation {
             self.animation_player.take()
@@ -747,6 +808,7 @@ impl ChartPlaceholder {
         } else {
             next.animation_dirty.get()
         };
+        // 新配置是否仍需要指针跟踪/平移/缩放/点击 tooltip。
         let tracks_pointer = next.interaction.is_some()
             || next.brush_config.is_some()
             || next.tooltip_config.is_some();
@@ -758,6 +820,7 @@ impl ChartPlaceholder {
             .is_some_and(|config| config.trigger_mode() == TooltipTrigger::Click);
 
         *self = next;
+        // 按新配置是否仍启用对应交互来决定保留或复位运行时状态。
         self.last_frame.set(last_frame);
         self.hovered_pos
             .set(tracks_pointer.then_some(hovered_pos).flatten());

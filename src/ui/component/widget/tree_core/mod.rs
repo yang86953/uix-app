@@ -1,7 +1,7 @@
 use super::*;
 use crate::core::{Constraints, Rect};
 use crate::draw::renderer::{Invalidation, InvalidationQueueHandle};
-use crate::native::windowing::input::{KeyCode, KeyMod};
+use crate::platform::windowing::{KeyCode, KeyMod};
 use crate::ui::animation::AnimatedSource;
 use crate::ui::component::app_state::{AppState, FocusRequest};
 use crate::ui::component::focus_handle::FocusHandle;

@@ -4,7 +4,7 @@ use std::cell::Cell;
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::{Color, Radius};
-use crate::native::windowing::input::ControlSize;
+use crate::platform::windowing::ControlSize;
 use crate::ui::animation::{AnimationConfig, TransitionPlayer};
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::{EventResult, MouseButton, State, SystemEvent, WidgetTree};

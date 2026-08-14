@@ -3,9 +3,9 @@
 use crate::core::{Errc, Error, Rect};
 use crate::draw::painting::{FrameEncoderError, FrameRect};
 
-/// Packs one transparent full-surface scratch operation into its smallest
-/// alpha-visible tile. When `scan_bounds` is set, only that AABB is scanned —
-/// per-op flushes otherwise re-scanned the entire window every glyph/round-rect.
+/// 把一次透明的全表面 scratch 操作打包进最小的 alpha 可见 tile。给定
+/// `scan_bounds` 时只扫描该 AABB——逐操作 flush 原本会在每个字形 / 圆角后
+/// 重新扫描整个窗口。
 pub(super) fn pack_visible_scratch_tile(
     pixels: &[u32],
     width: i32,
@@ -64,6 +64,7 @@ pub(super) fn pack_visible_scratch_tile(
     Some((packed, FrameRect::new(left, top, tile_width, tile_height)))
 }
 
+/// 把本地 AABB（含 pad 与 clip 限制）映射为 surface 空间的整数打包边界。
 pub(super) fn surface_pack_bounds(
     local: Rect,
     pad: f32,
@@ -100,6 +101,7 @@ pub(super) fn surface_pack_bounds(
     Some(FrameRect::new(left, top, right - left, bottom - top))
 }
 
+/// 两个整数矩形的并集（作为打包边界用）。
 pub(super) fn union_frame_rect(a: FrameRect, b: FrameRect) -> FrameRect {
     let left = a.x.min(b.x);
     let top = a.y.min(b.y);
@@ -108,6 +110,7 @@ pub(super) fn union_frame_rect(a: FrameRect, b: FrameRect) -> FrameRect {
     FrameRect::new(left, top, right - left, bottom - top)
 }
 
+/// 把整像素 `Rect` 转为 `FrameRect`；非有限或分数坐标返回参数错误。
 pub(super) fn rect_to_frame(rect: Rect) -> Result<FrameRect, Error> {
     if !rect.x.is_finite()
         || !rect.y.is_finite()
@@ -131,6 +134,7 @@ pub(super) fn rect_to_frame(rect: Rect) -> Result<FrameRect, Error> {
     ))
 }
 
+/// 把 `FrameEncoderError` 统一映射为 graphics `Error`（InvalidState）。
 pub(super) fn frame_encoder_error(error: FrameEncoderError) -> Error {
     Error::new(
         Errc::InvalidState,

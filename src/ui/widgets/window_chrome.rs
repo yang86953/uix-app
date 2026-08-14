@@ -3,7 +3,7 @@
 use std::any::Any;
 
 use crate::core::{ComponentId, Constraints, EdgeInsets, Rect, Size};
-use crate::native::windowing::input::{KeyCode, MouseButton};
+use crate::platform::windowing::{KeyCode, MouseButton};
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::traits::{
     EventHandler, WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender,

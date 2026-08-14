@@ -1,8 +1,10 @@
 use super::{SelectionSnapshot, SnapshotFields};
 
 impl SnapshotFields {
+    /// 从快照字段中提取选择类控件（单选框/下拉/分段控件）的统一选择状态。
     pub(super) fn selection(&self) -> Option<SelectionSnapshot> {
         match self {
+            // 单选框：单选，选中索引超出选项数则视为未选中。
             Self::Radio {
                 options, selected, ..
             } => Some(SelectionSnapshot {
@@ -15,6 +17,7 @@ impl SnapshotFields {
                 multiple: false,
                 expanded: false,
             }),
+            // 下拉：支持分组选项展平、多选与加载态全禁用。
             Self::Select {
                 options,
                 optgroups,
@@ -25,6 +28,7 @@ impl SnapshotFields {
                 loading,
                 ..
             } => {
+                // 存在分组时把各组选项展平为单一列表。
                 let options = if optgroups.is_empty() {
                     options.clone()
                 } else {
@@ -33,6 +37,7 @@ impl SnapshotFields {
                         .flat_map(|group| group.options.iter().cloned())
                         .collect()
                 };
+                // 多选取选中集合，单选取单个索引；均过滤越界索引。
                 let selected_indices = if *multiple {
                     selected_multi
                         .iter()
@@ -45,6 +50,7 @@ impl SnapshotFields {
                         .into_iter()
                         .collect()
                 };
+                // 加载中禁用全部选项。
                 let disabled_indices = if *loading {
                     (0..options.len()).collect()
                 } else {
@@ -58,6 +64,7 @@ impl SnapshotFields {
                     expanded: *open,
                 })
             }
+            // 分段控件：单选，按禁用标记收集禁用索引并过滤越界。
             Self::Segmented {
                 options,
                 selected,
@@ -78,6 +85,7 @@ impl SnapshotFields {
                 multiple: false,
                 expanded: false,
             }),
+            // 其余快照类型不具备选择语义，返回 None。
             _ => None,
         }
     }

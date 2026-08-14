@@ -17,26 +17,32 @@ use super::canvas::FrameRecordingCanvas;
 use super::geometry::{frame_encoder_error, rect_to_frame};
 
 impl Canvas2D for FrameRecordingCanvas {
+    /// 读取当前仿射变换。
     fn current_transform(&self) -> Transform {
         self.scratch.current_transform()
     }
 
+    /// 设置当前仿射变换。
     fn set_transform(&mut self, transform: Transform) {
         self.scratch.set_transform(transform);
     }
 
+    /// 读取像素级平移 offset。
     fn offset(&self) -> (f32, f32) {
         self.scratch.offset()
     }
 
+    /// 设置像素级平移 offset。
     fn set_offset(&mut self, dx: f32, dy: f32) {
         self.scratch.set_offset(dx, dy);
     }
 
+    /// 追加像素级平移。
     fn translate(&mut self, dx: f32, dy: f32) {
         self.scratch.translate(dx, dy);
     }
 
+    /// 录制矩形填充：Additive 走 Native shape，SrcOver 可直达则直达，否则软回退。
     fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
         // Additive 提升同时取得已经验证的几何与矩形裁剪事实。
         if let Some((rect, clip, native_color, radius)) =
@@ -205,6 +211,7 @@ impl Canvas2D for FrameRecordingCanvas {
         });
     }
 
+    /// 录制矩形描边：Additive 与可直达 SrcOver 走 Native，其余软回退。
     fn stroke_rect(&mut self, rect: Rect, color: Color, width: f32, radius: Option<Radius>) {
         // 已证明安全的固定 Additive 描边优先保留为目标相关 Native 命令。
         if let Some((native_rect, clip, native_color, radius)) =
@@ -326,8 +333,8 @@ impl Canvas2D for FrameRecordingCanvas {
                 .is_some()
                 || self.native_src_over_rects(bounds).is_some())
         {
-            // A circle stroke is the shared rounded-rect stroke SDF over a
-            // square whose four radii equal half the extent.
+            // 圆形描边是共享 rounded-rect 描边 SDF 在「四角半径等于边长
+            // 一半的正方形」上的特例。
             self.stroke_rect(bounds, color, width, Some(Radius::uniform(r)));
             return;
         }
@@ -446,6 +453,7 @@ impl Canvas2D for FrameRecordingCanvas {
             scratch.blit_image(src, src_w, src_rect, dst_rect)
         });
     }
+    /// 录制字形（带 coverage 借用切片）。
     fn blit_glyph(
         &mut self,
         x: i32,
@@ -458,6 +466,7 @@ impl Canvas2D for FrameRecordingCanvas {
         self.record_glyph_shared(x, y, Arc::from(coverage), width, height, color);
     }
 
+    /// 录制字形（共享 coverage，避免拷贝）。
     fn blit_glyph_shared(
         &mut self,
         x: i32,
@@ -470,6 +479,7 @@ impl Canvas2D for FrameRecordingCanvas {
         self.record_glyph_shared(x, y, coverage, width, height, color);
     }
 
+    /// 保存画布状态（含 blend 镜像）。
     fn save(&mut self) {
         self.scratch.save();
         self.blend_stack.push(self.blend_mode);
@@ -495,18 +505,22 @@ impl Canvas2D for FrameRecordingCanvas {
         }
     }
 
+    /// 压入矩形裁剪。
     fn push_clip(&mut self, rect: Rect) {
         self.scratch.push_clip(rect);
     }
 
+    /// 弹出最近一次裁剪。
     fn pop_clip(&mut self) {
         self.scratch.pop_clip();
     }
 
+    /// 设置全局透明度。
     fn set_opacity(&mut self, opacity: f32) {
         self.scratch.set_opacity(opacity);
     }
 
+    /// 读取当前全局透明度。
     fn opacity(&self) -> f32 {
         self.scratch.opacity()
     }
@@ -526,14 +540,17 @@ impl Canvas2D for FrameRecordingCanvas {
         self.blend_mode = mode;
     }
 
+    /// 录制路径裁剪（仅 Additive 下可保真）。
     fn push_clip_path(&mut self, path: &Path) {
         self.record_path_clip(path);
     }
 
+    /// 读取当前 scratch 像素（测试 / 诊断）。
     fn pixels(&self) -> &[u32] {
         self.scratch.surface().pixels()
     }
 
+    /// 测试用可变像素入口（标记批次并沿用当前 blend 事实）。
     #[cfg(test)]
     fn pixels_mut(&mut self) -> &mut [u32] {
         if let Err(error) = self.ensure_scratch() {
@@ -546,10 +563,12 @@ impl Canvas2D for FrameRecordingCanvas {
         self.scratch.pixels_mut()
     }
 
+    /// 读取 surface 尺寸。
     fn surface_size(&self) -> crate::core::Size {
         crate::core::Size::new(self.width as f32, self.height as f32)
     }
 
+    /// 读取当前矩形裁剪。
     fn current_clip(&self) -> Rect {
         self.scratch.current_clip()
     }

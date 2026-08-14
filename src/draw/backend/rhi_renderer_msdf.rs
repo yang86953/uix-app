@@ -449,11 +449,6 @@ impl RhiRenderer {
         first_error.map_or(Ok(()), Err)
     }
 
-    // 生成 position/uv/color float8 的 MSDF 两三角顶点。
-    pub(super) fn msdf_quad_vertices(quad: &RhiMsdfQuad) -> [f32; 48] {
-        // 默认完整 UV 仍保留给单独的资源契约测试和临时 texture 语义。
-        Self::msdf_quad_vertices_with_uv(quad, [0.0, 0.0, 1.0, 1.0])
-    }
 
     // 生成携带 atlas placement UV 的 position/uv/color float8 顶点。
     pub(super) fn msdf_quad_vertices_with_uv(quad: &RhiMsdfQuad, uv: [f32; 4]) -> [f32; 48] {

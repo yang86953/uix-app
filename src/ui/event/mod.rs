@@ -6,7 +6,7 @@ use std::hash::{Hash, Hasher};
 
 use crate::core::{ComponentId, Point, WindowId};
 
-use crate::native::windowing::input::{KeyCode, KeyMod, MouseButton};
+use crate::platform::windowing::{KeyCode, KeyMod, MouseButton};
 
 pub(crate) mod system_event_handler;
 /// 事件处理结果。

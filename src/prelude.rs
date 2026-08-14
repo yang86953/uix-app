@@ -21,8 +21,8 @@ pub use crate::core::{
 
 // UI-facing input values and platform graphics selection
 
-pub use crate::native::capabilities::system::StatusLevel;
-pub use crate::native::windowing::input::{
+pub use crate::platform::capabilities::StatusLevel;
+pub use crate::platform::windowing::{
     ControlSize, CursorType, KeyCode, KeyMod, MouseButton, ScrollDirection,
 };
 pub use crate::platform::graphics::GraphicsBackend;

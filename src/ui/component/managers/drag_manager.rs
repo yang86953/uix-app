@@ -1,5 +1,5 @@
 use crate::core::Point;
-use crate::native::windowing::input::{KeyMod, MouseButton};
+use crate::platform::windowing::{KeyMod, MouseButton};
 use crate::ui::ComponentId;
 
 /// Result of a drag target operation.

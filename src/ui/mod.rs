@@ -76,8 +76,8 @@ pub(crate) mod virtualization;
 pub(crate) mod widgets;
 
 pub use crate::core::ComponentId;
-pub use crate::native::capabilities::system::StatusLevel;
-pub use crate::native::windowing::input::{
+pub use crate::platform::capabilities::StatusLevel;
+pub use crate::platform::windowing::{
     ControlSize, CursorType, KeyCode, KeyMod, MouseButton, ScrollDirection,
 };
 pub use animation::traits::Animatable;

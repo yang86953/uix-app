@@ -3,17 +3,14 @@
 //! 默认不可选中：导航/标题等 UI 文案不应出现拖选高亮。
 //! 需要复制选区时调用 `.selectable()`。
 
-use std::cell::Cell;
-use std::cell::RefCell;
-
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::geometry::spatial::PhysicalUnit;
-// 引入共享扩展字素簇边界模型。
-use crate::draw::resources::font::text_index::{BoundaryBias, CharIndex, TextIndexMap};
 use crate::draw::TextLayoutOptions;
 use crate::ui::component::clipboard;
 use crate::ui::component::paint_context::PaintContext;
+// 引入共享的单节点文字选区实现。
+use crate::ui::text_selection::per_node::PerNodeTextSelection;
 use crate::ui::theme::style::Style;
 use crate::ui::{EventResult, KeyCode, KeyMod, MouseButton, SystemEvent, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
@@ -28,15 +25,6 @@ fn normalized_label_font_size(size: f32) -> f32 {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct TextLineHit {
-    y: f32,
-    glyph_start: usize,
-    glyph_count: usize,
-    start_char: usize,
-    end_char: usize,
-}
-
 component! {
     pub struct Label {
         pub text: String,
@@ -48,19 +36,8 @@ component! {
         pub fixed_height: Option<f32>,
         /// 是否允许拖选 / Ctrl+A / Ctrl+C 选区。默认 false。
         selectable: bool,
-        /// 渲染时缓存的字形 x 位置（文本局部坐标）。
-        glyph_xs: RefCell<Vec<f32>>,
-        /// 与 glyph_xs 平行的字形 advance，用于按中点选择最近光标边界。
-        glyph_widths: RefCell<Vec<f32>>,
-        /// 与 glyph_xs 平行的字符下标（`chars()` 序）。
-        glyph_char_indices: RefCell<Vec<usize>>,
-        /// 每行的字符范围与字形范围，用于二维命中测试。
-        line_info: RefCell<Vec<TextLineHit>>,
-        selection: Cell<Option<(usize, usize)>>,
-        sel_anchor: Cell<usize>,
-        sel_dragging: Cell<bool>,
-        /// 上次渲染时的文本 draw_pos（用于事件命中测试）。
-        draw_pos: Cell<crate::core::Point>,
+        /// 共享的选区状态：布局缓存、选区、拖选锚点与绘制偏移。
+        sel: PerNodeTextSelection,
         /// 统一样式覆盖（优先于 color/font_size 独立字段）。
         pub(crate) style: Option<Style>,
     }
@@ -98,6 +75,7 @@ component! {
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        // 默认不可选中：整个事件处理直接让出。
         if !self.selectable {
             return EventResult::NotHandled;
         }
@@ -107,52 +85,36 @@ component! {
                 button: MouseButton::Left,
                 mods,
             } => {
-                let dp = self.draw_pos.get();
-                let text_x = pos.x - dp.x;
-                let text_y = pos.y - dp.y;
-                let ci = self.char_at_xy(text_x, text_y);
-                if mods.contains(KeyMod::SHIFT) {
-                    let anchor = self.sel_anchor.get();
-                    self.set_selection_range(anchor, ci);
-                } else {
-                    self.selection.set(None);
-                    self.sel_anchor.set(ci);
-                }
-                self.sel_dragging.set(true);
+                // 按下即进入拖选：Shift 扩展选区，否则重设锚点。
+                self.sel.pointer_down(&self.text, *pos, mods.contains(KeyMod::SHIFT));
                 EventResult::Handled
             }
             SystemEvent::PointerMove { pos, .. } => {
-                if !self.sel_dragging.get() { return EventResult::NotHandled; }
-                let dp = self.draw_pos.get();
-                let text_x = pos.x - dp.x;
-                let text_y = pos.y - dp.y;
-                let ci = self.char_at_xy(text_x, text_y);
-                let anchor = self.sel_anchor.get();
-                self.set_selection_range(anchor, ci);
+                // 拖选中才消费移动事件并扩展选区。
+                if !self.sel.pointer_move(&self.text, *pos) {
+                    return EventResult::NotHandled;
+                }
                 EventResult::Handled
             }
             SystemEvent::PointerUp {
                 button: MouseButton::Left,
                 ..
             } => {
-                self.sel_dragging.set(false);
-                if let Some((s, e)) = self.selection.get() {
-                    if s == e { self.selection.set(None); }
-                }
+                // 结束拖选并清除空选区。
+                self.sel.pointer_up();
                 EventResult::Handled
             }
             SystemEvent::KeyDown { key, mods } => {
                 let ctrl = mods.contains(KeyMod::CTRL);
                 match key {
                     KeyCode::A if ctrl => {
-                        let len = self.text.chars().count();
-                        self.sel_anchor.set(0);
-                        self.set_selection_range(0, len);
+                        // Ctrl+A 全选当前文本。
+                        self.sel.select_all(&self.text);
                         EventResult::Handled
                     }
                     KeyCode::C if ctrl => {
-                        if let Some((s, e)) = self.selection.get() {
-                            let selected = self.slice_range(s, e);
+                        // 有选区复制选区，否则复制全文。
+                        if let Some(selected) = self.sel.selected_text(&self.text) {
                             clipboard::copy_to_clipboard(&selected);
                         } else {
                             clipboard::copy_to_clipboard(&self.text);
@@ -210,42 +172,15 @@ component! {
             .map(|s| s.padding)
             .unwrap_or_default();
         let draw_pos = crate::core::Point::new(pad.left, pad.top);
-        self.draw_pos.set(draw_pos);
+        self.sel.set_draw_pos(draw_pos);
         let abs_pos = crate::core::Point::new(frame.x + draw_pos.x, frame.y + draw_pos.y);
 
         if !self.text.is_empty() {
-            // 缓存字形 x 与对应字符下标（选区/命中用字符序）
-            {
-                let mut xs = self.glyph_xs.borrow_mut();
-                let mut widths = self.glyph_widths.borrow_mut();
-                let mut cis = self.glyph_char_indices.borrow_mut();
-                xs.clear();
-                widths.clear();
-                cis.clear();
-                for g in &layout.glyphs {
-                    xs.push(g.x);
-                    widths.push(g.width.max(0.0));
-                    cis.push(g.char_index);
-                }
-            }
-
-            // 缓存行信息（用于 y 轴命中测试）
-            {
-                let mut li = self.line_info.borrow_mut();
-                li.clear();
-                for line in &layout.lines {
-                    li.push(TextLineHit {
-                        y: line.y,
-                        glyph_start: line.glyph_start,
-                        glyph_count: line.glyph_count,
-                        start_char: line.start_char,
-                        end_char: line.end_char,
-                    });
-                }
-            }
+            // 缓存字形 x / advance / 字符下标与行信息（选区与命中测试用）。
+            self.sel.cache_layout(&layout);
 
             // 绘制选中背景（按字符下标匹配字形）
-            if let Some((sel_s, sel_e)) = self.selection.get() {
+            if let Some((sel_s, sel_e)) = self.sel.selection() {
                 if sel_s < sel_e {
                     let visual_h = ctx.font_service()
                         .horizontal_line_metrics(&fh, fs)
@@ -313,14 +248,7 @@ impl Label {
             fixed_width: None,
             fixed_height: None,
             selectable: false,
-            glyph_xs: RefCell::new(Vec::new()),
-            glyph_widths: RefCell::new(Vec::new()),
-            glyph_char_indices: RefCell::new(Vec::new()),
-            line_info: RefCell::new(Vec::new()),
-            selection: Cell::new(None),
-            sel_anchor: Cell::new(0),
-            sel_dragging: Cell::new(false),
-            draw_pos: Cell::new(crate::core::Point::new(0.0, 0.0)),
+            sel: PerNodeTextSelection::new(),
             style: None,
         }
     }
@@ -343,13 +271,9 @@ impl Label {
 
     pub fn set_text(&mut self, text: impl Into<String>) {
         self.text = text.into();
-        self.glyph_xs.borrow_mut().clear();
-        self.glyph_widths.borrow_mut().clear();
-        self.glyph_char_indices.borrow_mut().clear();
-        self.line_info.borrow_mut().clear();
-        self.selection.set(None);
-        self.sel_anchor.set(0);
-        self.sel_dragging.set(false);
+        // 文本变更：清空布局缓存并重置选区状态。
+        self.sel.clear_caches();
+        self.sel.reset_selection();
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
@@ -362,9 +286,9 @@ impl Label {
         self.fixed_width = next.fixed_width;
         self.fixed_height = next.fixed_height;
         self.selectable = next.selectable;
+        // 关闭可选中时同步清除残留选区。
         if !self.selectable {
-            self.selection.set(None);
-            self.sel_dragging.set(false);
+            self.sel.reset_selection();
         }
         self.style = next.style;
     }
@@ -394,39 +318,37 @@ impl Label {
     }
 
     pub fn selected_text(&self) -> Option<String> {
-        self.selection.get().map(|(s, e)| self.slice_range(s, e))
+        self.sel.selected_text(&self.text)
     }
 
     pub(crate) fn participates_in_cross_text_selection(&self) -> bool {
+        // 仅显式可选的 Label 参与跨节点拖选。
         self.selectable
     }
 
     pub(crate) fn is_cross_text_dragging(&self) -> bool {
-        self.selectable && self.sel_dragging.get()
+        // 拖选状态同样以可选中为前提。
+        self.selectable && self.sel.is_dragging()
     }
 
     pub(crate) fn cross_text_len(&self) -> usize {
-        self.text.chars().count()
+        self.sel.cross_text_len(&self.text)
     }
 
     pub(crate) fn cross_text_anchor(&self) -> usize {
-        self.sel_anchor.get()
+        self.sel.cross_text_anchor()
     }
 
     pub(crate) fn set_cross_text_range(&self, range: Option<(usize, usize)>) {
+        // 不可选中的 Label 不接收跨节点选区。
         if !self.selectable {
             return;
         }
-        match range {
-            // 跨节点选择仍复用本节点完整字素簇归一规则。
-            Some((a, b)) if a != b => self.set_selection_range(a, b),
-            _ => self.selection.set(None),
-        }
+        self.sel.set_cross_text_range(&self.text, range);
     }
 
     pub(crate) fn cross_text_char_at(&self, frame_local: crate::core::Point) -> usize {
-        let dp = self.draw_pos.get();
-        self.char_at_xy(frame_local.x - dp.x, frame_local.y - dp.y)
+        self.sel.cross_text_char_at(&self.text, frame_local)
     }
 
     fn intrinsic_size(&self) -> Size {
@@ -462,105 +384,5 @@ impl Label {
                 h.unwrap_or(text_height + pad.vertical()),
             )
         }
-    }
-
-    // 先保留布局层给出的原始 shaping cluster 字符边界。
-    fn raw_char_at_xy(&self, text_x: f32, text_y: f32) -> usize {
-        let xs = self.glyph_xs.borrow();
-        let widths = self.glyph_widths.borrow();
-        let cis = self.glyph_char_indices.borrow();
-        let li = self.line_info.borrow();
-        if xs.is_empty() {
-            return 0;
-        }
-        if li.is_empty() {
-            for i in 0..xs.len() {
-                let boundary = xs[i] + widths.get(i).copied().unwrap_or_default() * 0.5;
-                if text_x < boundary {
-                    return cis.get(i).copied().unwrap_or(i);
-                }
-            }
-            return cis
-                .last()
-                .map(|c| c + 1)
-                .unwrap_or(self.text.chars().count());
-        }
-        let target_y = text_y.max(li[0].y);
-        let Some(line) = li
-            .iter()
-            .enumerate()
-            .find(|(index, line)| {
-                let next_y = li.get(index + 1).map_or(f32::MAX, |next| next.y);
-                target_y >= line.y && target_y < next_y
-            })
-            .map(|(_, line)| line)
-            .or_else(|| li.last())
-        else {
-            return 0;
-        };
-        let start = line.glyph_start.min(xs.len());
-        let end = (start + line.glyph_count).min(xs.len());
-        for i in start..end {
-            let boundary = xs[i] + widths.get(i).copied().unwrap_or_default() * 0.5;
-            if text_x < boundary {
-                return cis.get(i).copied().unwrap_or(i);
-            }
-        }
-        if end > start {
-            line.end_char
-        } else {
-            line.start_char
-        }
-    }
-
-    // 把普通文本命中统一约束到扩展字素簇边界。
-    fn char_at_xy(&self, text_x: f32, text_y: f32) -> usize {
-        // 查询现有布局几何给出的原始字符位置。
-        let raw_index = self.raw_char_at_xy(text_x, text_y);
-        // 命中采用最近合法字素簇边界。
-        TextIndexMap::new(&self.text)
-            // 归一显式字符位置。
-            .normalize_char(CharIndex(raw_index), BoundaryBias::Nearest)
-            // 返回兼容字符下标。
-            .0
-    }
-
-    pub(crate) fn set_selection_range(&self, a: usize, b: usize) {
-        // 同一逻辑位置始终表示空选择，不因旧位置非法而扩展文本。
-        if a == b {
-            // 清除空选择。
-            self.selection.set(None);
-            // 无需构造范围。
-            return;
-        }
-        // 把无方向选择向外扩展到完整字素簇边界。
-        let (start, end) = TextIndexMap::new(&self.text)
-            // 归一显式字符范围。
-            .normalize_selection(CharIndex(a), CharIndex(b));
-        // 空范围不保留选择。
-        if start == end {
-            self.selection.set(None);
-        } else {
-            // 保存合法字符边界组成的选择范围。
-            self.selection.set(Some((start.0, end.0)));
-        }
-    }
-
-    fn slice_range(&self, start_char: usize, end_char: usize) -> String {
-        // 建立字符到 UTF-8 字节的显式转换表。
-        let index_map = TextIndexMap::new(&self.text);
-        // 防御性地把调用范围扩展到完整字素簇。
-        let (start, end) = index_map.normalize_selection(
-            // 包装字符起点。
-            CharIndex(start_char),
-            // 包装字符终点。
-            CharIndex(end_char),
-        );
-        // 转换合法字符起点为字节偏移。
-        let byte_start = index_map.char_to_byte(start).0;
-        // 转换合法字符终点为字节偏移。
-        let byte_end = index_map.char_to_byte(end).0;
-        // 返回完整 UTF-8 字素簇片段。
-        self.text[byte_start..byte_end].to_owned()
     }
 }

@@ -1,4 +1,4 @@
-//! Process lifecycle for the authenticated native Agent Bridge endpoint.
+//! 认证原生 Agent Bridge 端点的进程生命周期管理。
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -71,6 +71,7 @@ type ConnectionRegistry = Arc<Mutex<BTreeMap<u64, Arc<dyn AgentStreamCancelIo>>>
 
 impl AgentTransportHandle {
     pub(crate) fn start(bridge: AgentProcessBridge) -> Result<Self, AgentTransportError> {
+        // 生成 32 字节会话 token，并取前 24 字节作为端点 nonce。
         let mut token = [0u8; 32];
         fill_secure_random(&mut token).map_err(|source| AgentTransportError::Io {
             stage: "random token generation",
@@ -79,6 +80,7 @@ impl AgentTransportHandle {
         let encoded_token = encode_session_token(&token);
         let nonce = &encoded_token[..24];
         let process_id = std::process::id();
+        // 绑定命名端点（含进程 id 与 nonce，保证进程间唯一）。
         let mut endpoint =
             AgentEndpoint::bind(process_id, nonce).map_err(|source| AgentTransportError::Io {
                 stage: "endpoint bind",
@@ -88,6 +90,7 @@ impl AgentTransportHandle {
             endpoint: endpoint.endpoint_name(),
             discovery_path: endpoint.discovery_path().to_path_buf(),
         };
+        // 序列化发现描述符：协议版本、端点地址与会话 token。
         let descriptor = serde_json::to_vec_pretty(&json!({
             "schema": AGENT_PROTOCOL_SCHEMA,
             "process_id": process_id,
@@ -99,6 +102,7 @@ impl AgentTransportHandle {
             stage: "discovery serialization",
             source: io::Error::new(io::ErrorKind::InvalidData, source),
         })?;
+        // 发布发现文件，供外部 agent 定位本进程端点。
         endpoint
             .publish_discovery(&descriptor, nonce)
             .map_err(|source| AgentTransportError::Io {
@@ -110,6 +114,7 @@ impl AgentTransportHandle {
         let connections: ConnectionRegistry = Arc::new(Mutex::new(BTreeMap::new()));
         let wake_listener = endpoint.waker();
         let session_token = Arc::new(token);
+        // 启动专用监听线程：接受连接、认证并按连接分派 worker 线程。
         let listener_shutdown = shutdown.clone();
         let listener_connections = connections.clone();
         let listener_thread = thread::Builder::new()
@@ -143,10 +148,12 @@ impl AgentTransportHandle {
     }
 
     pub(crate) fn shutdown(&mut self) {
+        // 首次关闭：置位标志、唤醒监听线程并取消全部活跃连接。
         if !self.shutdown.swap(true, Ordering::AcqRel) {
             self.wake_listener.wake();
             cancel_connections(&self.connections);
         }
+        // 等待监听线程退出，避免进程结束前残留未回收线程。
         if let Some(listener_thread) = self.listener_thread.take() {
             if listener_thread.join().is_err() {
                 tracing::error!("agent listener thread panicked during shutdown");
@@ -170,27 +177,32 @@ fn listener_loop(
 ) {
     let next_connection_id = AtomicU64::new(1);
     let mut workers = Vec::new();
+    // 循环接受新连接，直到收到关闭信号。
     while !shutdown.load(Ordering::Acquire) {
         let accepted = match endpoint.accept() {
             Ok(accepted) => accepted,
             Err(error) => {
+                // 非关闭状态下的 accept 失败视为致命错误，终止监听。
                 if !shutdown.load(Ordering::Acquire) {
                     tracing::error!("agent listener stopped after accept failure: {error}");
                 }
                 break;
             }
         };
+        // 关闭竞态：刚接受就收到关闭信号则取消该连接。
         if shutdown.load(Ordering::Acquire) {
             accepted.cancel.cancel();
             break;
         }
 
+        // 分配连接序号（从 1 开始）并登记取消句柄。
         let connection_id = next_connection_id.fetch_add(1, Ordering::Relaxed).max(1);
         let AcceptedAgentStream { stream, cancel } = accepted;
         {
             let mut active = connections
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
+            // 活跃连接数达到上限时直接拒绝并取消新连接。
             if active.len() >= MAX_AGENT_CONNECTIONS {
                 drop(active);
                 cancel.cancel();
@@ -199,6 +211,7 @@ fn listener_loop(
             active.insert(connection_id, cancel.clone());
         }
 
+        // 每个连接一个 worker 线程，串行处理该连接上的协议请求。
         let worker_bridge = bridge.clone();
         let worker_token = session_token.clone();
         let worker_shutdown = shutdown.clone();
@@ -211,16 +224,19 @@ fn listener_loop(
                         tracing::error!("agent connection ended after I/O failure: {error}");
                     }
                 }
+                // worker 退出时从注册表摘除自身，释放连接名额。
                 worker_connections
                     .lock()
                     .unwrap_or_else(|error| error.into_inner())
                     .remove(&connection_id);
             }) {
             Ok(worker) => {
+                // 让取消句柄持有 worker，便于关闭时终止阻塞中的线程。
                 cancel.bind_worker(&worker);
                 workers.push(worker);
             }
             Err(error) => {
+                // 线程创建失败：回滚登记并记录错误。
                 connections
                     .lock()
                     .unwrap_or_else(|lock_error| lock_error.into_inner())
@@ -230,6 +246,7 @@ fn listener_loop(
         }
     }
 
+    // 监听结束：取消全部连接并回收 worker 线程。
     cancel_connections(&connections);
     for worker in workers {
         if worker.join().is_err() {
@@ -239,6 +256,7 @@ fn listener_loop(
 }
 
 fn cancel_connections(connections: &ConnectionRegistry) {
+    // 快照全部连接后逐个取消，避免持锁期间调用平台取消逻辑。
     let active = connections
         .lock()
         .unwrap_or_else(|error| error.into_inner())
@@ -258,10 +276,13 @@ fn serve_connection(
     let mut reader = BufReader::new(stream);
     let mut protocol = AgentProtocolSession::new(bridge, session_token);
     let mut line = Vec::new();
+    // 逐行读取并响应，直到 EOF 或协议要求关闭连接。
     loop {
         let reply = match read_bounded_line(&mut reader, &mut line)? {
+            // 客户端关闭连接：正常结束。
             BoundedLine::Eof => return Ok(()),
             BoundedLine::Line => protocol.handle_line(&line),
+            // 帧过长或无换行结尾：以框架错误回复并关闭连接。
             BoundedLine::TooLarge => framing_error_reply("message exceeds the protocol limit"),
             BoundedLine::Unterminated => {
                 framing_error_reply("JSON Lines request is missing a newline")
@@ -294,16 +315,20 @@ pub(crate) fn read_bounded_line<R: BufRead>(
     line.clear();
     loop {
         let (consumed, ended) = {
+            // 取缓冲中当前可用的一段，避免整行读到内存后才发现超限。
             let available = reader.fill_buf()?;
             if available.is_empty() {
+                // 数据流已尽：无内容为 EOF，有半行则为未终止帧。
                 return Ok(if line.is_empty() {
                     BoundedLine::Eof
                 } else {
                     BoundedLine::Unterminated
                 });
             }
+            // 复制到首个换行符为止（无换行则复制整段）。
             let newline = available.iter().position(|byte| *byte == b'\n');
             let copied = newline.unwrap_or(available.len());
+            // 累计长度超过协议上限即判定超限，不再继续累积。
             if line.len().saturating_add(copied) > MAX_AGENT_MESSAGE_BYTES {
                 return Ok(BoundedLine::TooLarge);
             }

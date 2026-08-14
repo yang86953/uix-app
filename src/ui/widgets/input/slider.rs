@@ -6,7 +6,7 @@ use std::ops::RangeInclusive;
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::{Color, Radius};
-use crate::native::windowing::input::ControlSize;
+use crate::platform::windowing::ControlSize;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 // Slider 只依赖基础层提示气泡原语，不依赖反馈组件实现。

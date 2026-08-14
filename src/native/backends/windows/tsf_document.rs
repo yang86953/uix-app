@@ -53,6 +53,8 @@ impl TsfEventSink {
         }
         drop(queue);
         // 与 EventLoopWaker 同形；仅唤醒拥有该 HWND 的消息循环。
+        // SAFETY：hwnd 由活动文本输入会话持有，在本调用期间未被销毁；消息只携带
+        // 0 值参数（无指针载荷），PostMessageW 异步投递，返回后无需保持窗口存活。
         if let Err(error) = unsafe {
             windows::Win32::UI::WindowsAndMessaging::PostMessageW(
                 Some(self.hwnd),
@@ -109,6 +111,7 @@ impl TsfStoreState {
     pub(crate) fn screen_extent(&self) -> WinResult<RECT> {
         let hwnd = self.event_sink.hwnd;
         // 最小化窗口没有可呈现的文本表面，向 TIP 返回空范围。
+        // SAFETY：hwnd 由活动文本输入会话持有；IsIconic 只读查询窗口状态，不写内存。
         if unsafe { windows::Win32::UI::WindowsAndMessaging::IsIconic(hwnd) }.as_bool() {
             return Ok(RECT::default());
         }

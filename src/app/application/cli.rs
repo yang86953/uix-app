@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-/// Parsed command-line arguments.
+/// 解析后的命令行参数。
 #[derive(Debug, Clone)]
 pub struct CliArgs {
     pub command: String,
@@ -25,10 +25,10 @@ impl CliArgs {
     }
 }
 
-/// CLI command handler.
+/// CLI 命令处理器。
 pub type CommandHandler = fn(&CliArgs) -> i32;
 
-/// Command-line interface for non-GUI operation.
+/// 非 GUI 操作的命令行接口。
 #[derive(Default)]
 pub struct Cli {
     commands: HashMap<String, CommandHandler>,
@@ -42,7 +42,7 @@ impl Cli {
         Self::default()
     }
 
-    /// Register a command.
+    /// 注册一条命令。
     pub fn command(&mut self, name: &str, handler: CommandHandler, description: &str) -> &mut Self {
         self.commands.insert(name.to_string(), handler);
         if !description.is_empty() {
@@ -52,22 +52,24 @@ impl Cli {
         self
     }
 
-    /// Set the default handler (when no command matches).
+    /// 设置默认处理器（当没有命令匹配时使用）。
     pub fn default_command(&mut self, handler: CommandHandler) -> &mut Self {
         self.default_handler = Some(handler);
         self
     }
 
-    /// Parse and run the CLI.
-    /// Returns the exit code.
+    /// 解析并运行 CLI。
+    /// 返回退出码。
     pub fn run(&mut self, argv: &[String]) -> i32 {
         let args = self.parse(argv);
 
+        // 无命令或显式请求帮助：打印帮助并正常退出。
         if args.command.is_empty() || args.command == "help" {
             self.print_help();
             return 0;
         }
 
+        // 优先查找已注册命令，其次回退到默认处理器。
         if let Some(&handler) = self.commands.get(&args.command) {
             return handler(&args);
         }
@@ -76,6 +78,7 @@ impl Cli {
             return handler(&args);
         }
 
+        // 未知命令：记录错误并以非零退出码结束。
         tracing::error!("Unknown command: {}", args.command);
         self.print_help();
         1
@@ -95,7 +98,7 @@ impl Cli {
         self.program_name = argv[0].clone();
 
         let mut i = 1;
-        // First non-option argument is the command
+        // 第一个非选项参数视为命令名。
         if i < argv.len() && !argv[i].starts_with('-') {
             result.command = argv[i].clone();
             i += 1;
@@ -103,10 +106,12 @@ impl Cli {
 
         while i < argv.len() {
             let arg = &argv[i];
+            // 帮助请求：把命令改写为 help 以便统一处理。
             if arg == "--help" || arg == "-h" {
                 result.command = "help".to_string();
                 i += 1;
             } else if arg.starts_with("--") {
+                // 长选项：`--key=value` 拆成键值对，否则视为布尔开关。
                 let opt = arg.trim_start_matches("--");
                 if let Some(eq_pos) = opt.find('=') {
                     let key = &opt[..eq_pos];
@@ -117,6 +122,7 @@ impl Cli {
                 }
                 i += 1;
             } else if arg.starts_with('-') && arg.len() > 1 {
+                // 短选项：后跟非选项参数时消费为选项值，否则视为布尔开关。
                 let key = &arg[1..];
                 if i + 1 < argv.len() && !argv[i + 1].starts_with('-') {
                     result.options.insert(key.to_string(), argv[i + 1].clone());
@@ -126,6 +132,7 @@ impl Cli {
                     i += 1;
                 }
             } else {
+                // 其余参数归入位置参数列表。
                 result.positional.push(arg.clone());
                 i += 1;
             }

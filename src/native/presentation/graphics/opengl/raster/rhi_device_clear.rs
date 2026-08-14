@@ -47,6 +47,9 @@ impl OpenGlRhiDevice {
         // 暂时把原生 scissor 切换到待清理区域。
         self.set_scissor(gl, Some(scissor))?;
         // 发出透明或指定 premultiplied-alpha 颜色的矩形清理。
+        // SAFETY：调用者保证当前线程绑定有效 GL 上下文（与同设备其他 GL 调用一致）；
+        // 颜色分量已通过 is_finite 校验；scissor 由上方 set_scissor 成功切换；
+        // pass_open 保证 framebuffer 已绑定，清理只影响该 framebuffer 的 color buffer。
         unsafe {
             gl.clear_color(color.0[0], color.0[1], color.0[2], color.0[3]);
             gl.clear(glow::COLOR_BUFFER_BIT);

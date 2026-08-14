@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-/// Controls when a backtrace is captured at the final reporting boundary.
+/// 控制最终上报边界何时捕获回溯。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BacktracePolicy {
     Disabled,
@@ -8,10 +8,9 @@ pub enum BacktracePolicy {
     ErrorsAndFatal,
 }
 
-/// Immutable configuration used to create one runtime-scoped [`Diagnostics`].
+/// 用于创建一个运行时作用域 [`Diagnostics`] 的不可变配置。
 ///
-/// Safety budgets for individual reports are fixed framework invariants and
-/// deliberately are not configurable.
+/// 单份报告的安全预算属于框架固定不变量，故意不可配置。
 #[derive(Debug, Clone)]
 pub struct DiagnosticsConfig {
     pub(crate) report_capacity: usize,
@@ -20,20 +19,20 @@ pub struct DiagnosticsConfig {
 }
 
 impl DiagnosticsConfig {
-    /// Sets the number of retained reports. A zero capacity is normalized to
-    /// one so every successful `report` call can retain its report.
+    /// 设置留存报告数量。零容量会被归一化为 1，保证每次成功的 `report`
+    /// 调用都能留存其报告。
     pub fn report_capacity(mut self, capacity: usize) -> Self {
         self.report_capacity = capacity.max(1);
         self
     }
 
-    /// Sets the directory used by the emergency crash-report path.
+    /// 设置紧急崩溃报告路径使用的目录。
     pub fn crash_report_directory(mut self, directory: impl Into<PathBuf>) -> Self {
         self.crash_report_directory = Some(directory.into());
         self
     }
 
-    /// Sets the final-boundary backtrace capture policy.
+    /// 设置最终边界的回溯捕获策略。
     pub fn backtrace(mut self, policy: BacktracePolicy) -> Self {
         self.backtrace = policy;
         self

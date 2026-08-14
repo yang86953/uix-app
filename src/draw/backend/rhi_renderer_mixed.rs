@@ -846,27 +846,4 @@ impl RhiRenderer {
             (Ok(()), Ok(())) => Ok(()),
         }
     }
-    // 执行一个已经存在的 sampled texture quad，不重新上传源纹理。
-    pub(crate) fn execute_sampled_quad(
-        &mut self,
-        context: &mut dyn GraphicsContextRhi,
-        damage: PresentDamage,
-        viewport: RhiViewport,
-        load: LoadAction,
-        target: RenderTargetRef,
-        quad: RhiSampledQuad,
-    ) -> Result<()> {
-        // 将单个 Picture 合成操作复用同一套 FramePlan 资源和清理边界。
-        let operation = RhiOp::Sampled(quad);
-        // 仍由混合执行器负责能力校验、submit 和临时资源生命周期。
-        self.execute_ops(
-            context,
-            damage,
-            viewport,
-            load,
-            target,
-            std::slice::from_ref(&operation),
-            true,
-        )
-    }
 }

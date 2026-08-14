@@ -2,7 +2,7 @@ use std::any::TypeId;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::native::windowing::input::ControlSize;
+use crate::platform::windowing::ControlSize;
 use crate::ui::component::traits::WidgetComponent;
 pub use crate::ui::render_handler::{render_empty_for, EmptyContext, EmptyRenderer};
 use crate::ui::theme::style::StyleSet;
@@ -158,8 +158,8 @@ pub struct FormOverrides {
     pub layout: Option<FormLayout>,
 }
 
-/// 表单布局模式。
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// 表单布局模式（Form / FormItem 与组件配置共用同一类型）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormLayout {
     Horizontal,
     Vertical,
