@@ -8,6 +8,8 @@ use super::{
     uix_component_scope,
     // 引入代码生成器使用的状态取得入口。
     uix_component_state,
+    // 引入动态节点稳定子作用域派生入口。
+    uix_component_child_scope,
     // 引入带异常回滚的捕获事务入口。
     with_component_state_capture,
     // 引入动态宿主命名空间感知的捕获事务入口。
@@ -38,7 +40,30 @@ fn test_scope(declaration: u64) -> UixComponentScope {
         occurrence: 0,
         // 手工构造的静态作用域不附加动态实例命名空间。
         namespace: None,
+        // 测试根作用域不包含组件内部动态节点路径。
+        dynamic_path: Vec::new(),
     }
+}
+
+// 验证动态节点子作用域同时受组件实例、静态声明与实际 key 隔离。
+#[test]
+fn dynamic_child_scope_uses_declaration_and_stable_key_identity() {
+    // 创建同一组件实例的稳定父作用域。
+    let parent = test_scope(91);
+    // 相同声明与 key 必须跨 reconcile 派生相等身份。
+    let first = uix_component_child_scope(&parent, 7, "row-a");
+    // 重复派生同一实际节点身份。
+    let repeated = uix_component_child_scope(&parent, 7, "row-a");
+    // 相同实际节点必须复用状态作用域。
+    assert_eq!(first, repeated);
+    // key 变化必须形成不同作用域并释放旧实例状态。
+    let changed_key = uix_component_child_scope(&parent, 7, "row-b");
+    // 不同 key 不得共享动态样式状态。
+    assert_ne!(first, changed_key);
+    // 节点类型或静态位置变化通过声明标识形成不同作用域。
+    let changed_declaration = uix_component_child_scope(&parent, 8, "row-a");
+    // 不同声明不得复活旧动态样式状态。
+    assert_ne!(first, changed_declaration);
 }
 
 // 构造带固定静态槽位的动态实例命名空间。

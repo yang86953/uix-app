@@ -40,13 +40,18 @@ pub(crate) struct Element {
     pub(crate) component_scopes: Vec<ComponentScopeMarker>,
 }
 
-// 表示一个应随 ViewNode 保留的组件私有状态作用域标记。
+// 表示一个应在最终 ViewNode 外层应用的组件状态装饰。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ComponentScopeMarker {
-    // 保存生成阶段创建的卫生作用域局部变量名称。
-    pub(crate) scope_name: String,
-    // 保存组件多根输出中的稳定根序号。
-    pub(crate) root_ordinal: u64,
+pub(crate) enum ComponentScopeMarker {
+    // 保存普通组件根的生命周期作用域标记。
+    Scope {
+        // 保存生成阶段创建的卫生作用域局部变量名称。
+        scope_name: String,
+        // 保存组件多根输出中的稳定根序号。
+        root_ordinal: u64,
+    },
+    // 保存需要包裹事件 View 的动态样式状态。
+    DynamicStyle(DynamicStyleBinding),
 }
 
 // 表示标签上的一个具名属性。
@@ -69,6 +74,45 @@ pub(crate) enum AttributeValue {
     Expression(ExpressionNode),
     // 保存使用共享样式语法解析的内联属性。
     InlineStyle(Vec<StyleProperty>),
+}
+
+// 保存一个动态样式节点的组件状态与稳定身份元数据。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DynamicStyleBinding {
+    // 保存最近组件作用域的卫生局部变量名称。
+    pub(crate) component_scope_name: String,
+    // 保存节点类型与静态位置共同形成的子作用域声明标识。
+    pub(crate) declaration_id: u64,
+    // 保存子作用域内动态样式状态的稳定字段标识。
+    pub(crate) field_id: u64,
+    // 保存生成的闭合样式枚举名称。
+    pub(crate) enum_name: String,
+    // 保存当前节点所属最近 For 实例路径的卫生名称。
+    pub(crate) instance_path_name: Option<String>,
+    // 保存参与实际节点身份的可选 key。
+    pub(crate) key: Option<DynamicStyleKey>,
+    // 保存原始类与所有可达目标类的类型化分支。
+    pub(crate) variants: Vec<DynamicStyleVariant>,
+}
+
+// 保存动态样式节点用于 reconcile 的显式 key。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum DynamicStyleKey {
+    // 保存字符串字面量 key。
+    Literal(String),
+    // 保存已经完成组件字段改写的表达式 key。
+    Expression(ExpressionNode),
+}
+
+// 保存一个动态样式枚举分支及其零参数状态写入器。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DynamicStyleVariant {
+    // 保存生成枚举变体的卫生名称。
+    pub(crate) variant_name: String,
+    // 保存每个调用点独占的卫生 setter 名称，避免事件闭包重复移动。
+    pub(crate) setter_names: Vec<String>,
+    // 保存类层与内联层合并后的完整 Style 字段更新。
+    pub(crate) properties: Vec<StyleProperty>,
 }
 
 // 表示条件渲染或循环元素的专用绑定。

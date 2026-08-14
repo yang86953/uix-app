@@ -27,6 +27,17 @@ pub(crate) fn apply_inline_style(
             "使用 style=\"color: #fff; padding: 8px;\"",
         ));
     };
+    // 委托属性列表入口保持静态与动态样式字段语义一致。
+    apply_style_properties(view, properties)
+}
+
+// 把一组已经映射的样式属性精确应用到既有 View 表达式。
+pub(crate) fn apply_style_properties(
+    // 接收已经生成的 View 表达式。
+    view: TokenStream,
+    // 接收按优先级完成合并的样式属性。
+    properties: &[StyleProperty],
+) -> Result<TokenStream, Diagnostic> {
     // 创建不会与调用方绑定冲突的样式参数。
     let style = Ident::new("__uix_style", Span::mixed_site());
     // 保存源码顺序中的精确字段更新。

@@ -13,6 +13,8 @@ use super::{
 };
 // 引入既有核心 View 生成入口。
 use super::generate_view;
+// 引入组件动态样式使用检测。
+use super::dynamic_style_lower::nodes_use_set_style;
 
 // 保存组件字段展开后的 Rust 局部绑定。
 #[derive(Clone)]
@@ -74,6 +76,10 @@ pub(super) struct ComponentExpander {
     pub(super) stack: Vec<String>,
     // 保存已经展开继承的样式类注册表。
     pub(super) styles: StyleClassResolver,
+    // 保存最近 UIX Component 的运行时作用域局部变量。
+    pub(super) component_scope_stack: Vec<Ident>,
+    // 保存嵌套 For 当前实际实例路径的局部变量。
+    pub(super) for_path_stack: Vec<Ident>,
 }
 
 // 实现文档级组件展开与结构校验。
@@ -132,6 +138,10 @@ impl ComponentExpander {
             stack: Vec::new(),
             // 写入样式类注册表。
             styles,
+            // 文档根尚未进入任何 UIX Component。
+            component_scope_stack: Vec::new(),
+            // 文档根尚未进入任何 For 实例。
+            for_path_stack: Vec::new(),
         })
     }
 
@@ -208,8 +218,42 @@ impl ComponentExpander {
         }
         // 克隆普通核心或未知元素。
         let mut expanded = element.clone();
-        // 在表达式改写前合并 class、继承与内联 style。
-        self.styles.apply(&mut expanded)?;
+        // 为 For 子树创建实际实例路径名称并写入内部控制属性。
+        let for_path = if element.name == "For" {
+            // 为当前循环生成卫生路径局部变量。
+            let path = self.fresh_ident("for_path", "instance");
+            // 保存当前循环路径名称供控制流代码生成读取。
+            expanded.attributes.push(Attribute {
+                // 使用不属于 UIX 公共属性的内部名称。
+                name: "__uix_for_path".to_string(),
+                // 保存卫生局部变量名称。
+                value: AttributeValue::Literal(path.to_string()),
+                // 沿用控制元素跨度。
+                span: element.span,
+            });
+            // 存在父循环时同时保存父实例路径名称。
+            if let Some(parent) = self.for_path_stack.last() {
+                // 追加父路径内部属性。
+                expanded.attributes.push(Attribute {
+                    // 使用内部父路径名称。
+                    name: "__uix_for_parent_path".to_string(),
+                    // 保存父路径卫生名称。
+                    value: AttributeValue::Literal(parent.to_string()),
+                    // 沿用控制元素跨度。
+                    span: element.span,
+                });
+            }
+            // 返回当前循环路径供展开子树期间压栈。
+            Some(path)
+        } else {
+            // 普通元素不创建循环路径。
+            None
+        };
+        // 优先降低组件内动态样式，否则走既有静态样式路径。
+        if !self.prepare_dynamic_style(&mut expanded, bindings)? {
+            // 合并 class、继承与内联 style。
+            self.styles.apply(&mut expanded)?;
+        }
         // 逐个改写普通属性与事件表达式。
         for attribute in &mut expanded.attributes {
             // 只有表达式属性需要字段改写。
@@ -286,8 +330,18 @@ impl ComponentExpander {
         }
         // For 的直接子树进入动态实例作用域。
         let child_inside_for = inside_for || element.name == "For";
+        // For 子节点继承当前实际实例路径名称。
+        if let Some(path) = for_path.as_ref() {
+            // 压入当前循环路径。
+            self.for_path_stack.push(path.clone());
+        }
         // 展开全部有序子节点。
         expanded.children = self.expand_nodes(&element.children, bindings, child_inside_for)?;
+        // 离开 For 子树后恢复外层实例路径。
+        if for_path.is_some() {
+            // 弹出刚才压入的循环路径。
+            self.for_path_stack.pop();
+        }
         // 返回单一普通元素节点。
         Ok(vec![Node::Element(expanded)])
     }
@@ -364,8 +418,12 @@ impl ComponentExpander {
             .cloned()
             // 注册表检查保证存在。
             .expect("组件存在性已在调用前确认");
-        // For 内的状态或 prop 需要运行时逐实例存储。
-        if inside_for && (!component.props.is_empty() || !component.states.is_empty()) {
+        // 预先判断当前组件是否声明动态样式私有状态。
+        let uses_dynamic_style = nodes_use_set_style(&component.children);
+        // For 内的状态、prop 或动态样式需要运行时逐实例存储。
+        if inside_for
+            && (!component.props.is_empty() || !component.states.is_empty() || uses_dynamic_style)
+        {
             // 返回明确的动态实例边界诊断。
             return Err(Diagnostic::new(
                 // 指向组件调用。
@@ -413,7 +471,7 @@ impl ComponentExpander {
             // 组件体只看见自身字段。
             let mut bindings = Bindings::new();
             // 仅为拥有私有状态的静态调用创建窗口私有的运行时作用域。
-            let scope = if component.states.is_empty() {
+            let scope = if component.states.is_empty() && !uses_dynamic_style {
                 // 无私有状态的组件不进入运行时作用域，保留既有 For 语义。
                 None
             } else {
@@ -471,8 +529,20 @@ impl ComponentExpander {
                     &mut bindings,
                 )?;
             }
+            // 动态样式降低期间使用最近 UIX Component 作用域。
+            if let Some(scope) = scope.as_ref() {
+                // 压入当前组件运行时作用域。
+                self.component_scope_stack.push(scope.clone());
+            }
             // 沿用调用点的动态实例上下文展开组件体与所有嵌套组件。
-            let mut nodes = self.expand_nodes(&component.children, &bindings, inside_for)?;
+            let expanded_nodes = self.expand_nodes(&component.children, &bindings, inside_for);
+            // 组件体展开完成后恢复外层组件作用域。
+            if scope.is_some() {
+                // 弹出当前组件运行时作用域。
+                self.component_scope_stack.pop();
+            }
+            // 在作用域栈恢复后再传播组件体诊断。
+            let mut nodes = expanded_nodes?;
             // 拥有私有状态的组件必须把作用域标记附到每个展开后的顶层根。
             if let Some(scope) = scope.as_ref() {
                 // 使运行时能在卸载时回收并在 reconcile 时复用正确实例的状态槽。
@@ -494,7 +564,7 @@ impl ComponentExpander {
             // 只有元素可以承载或向控制流传播 ViewNode 元数据。
             if let Node::Element(element) = node {
                 // 把当前组件作用域追加到已有嵌套组件标记之后。
-                element.component_scopes.push(ComponentScopeMarker {
+                element.component_scopes.push(ComponentScopeMarker::Scope {
                     // 保存卫生局部变量名称，以便最终令牌重建标识符。
                     scope_name: scope.to_string(),
                     // 保存当前顶层根的稳定序号。

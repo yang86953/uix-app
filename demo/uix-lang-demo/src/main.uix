@@ -14,6 +14,31 @@ accentPanel {
   borderColor: #1677FF;
 }
 
+// 声明 setStyle 演示的原始动态 class。
+normalStyleAction {
+  padding: 6px 12px;
+  backgroundColor: #FFFFFF;
+  borderWidth: 1px;
+  borderColor: #D1D5DB;
+  borderRadius: 6px;
+}
+
+// 声明 setStyle 演示的悬停动态 class，并覆盖布局与绘制字段。
+hoverStyleAction {
+  padding: 10px 18px;
+  backgroundColor: #E6F4FF;
+  borderWidth: 2px;
+  borderColor: #1677FF;
+  borderRadius: 8px;
+}
+
+// 声明拥有独立动态样式状态的悬停操作组件。
+<Component name="StyleAction">
+  // 当前 Button 自己接收事件；内联颜色在两个动态 class 分支中保持最高优先级。
+  <Button class="normalStyleAction" style="color: #1677FF;" automationId="uix-set-style-action" @mouseEnter="setStyle('hoverStyleAction')" @mouseLeave="setStyle('')">悬停切换 setStyle</Button>
+// 结束动态样式组件。
+</Component>
+
 // 声明语言面类型化业务模型：Form 演示的提交载荷与 Rust 侧回调共享同一类型。
 <Record name="Profile" fields="email: String, level: String, accepted: bool, channel: String, notifications: bool, volume: number" />
 
@@ -193,6 +218,10 @@ accentPanel {
         </Container>
         // 说明内置操作的真实调用路径。
         <Text fontSize="small">setTheme 是框架内置操作，生成主题请求通道调用；App 组合根在窗口循环内注册请求器并复用 runtime.set_theme 通道。</Text>
+        // 直接演示组件私有动态 class、布局更新与离开恢复。
+        <StyleAction />
+        // 说明 setStyle 不依赖调用方同名函数或运行时字符串注册表。
+        <Text fontSize="small">setStyle 由编译器生成闭合 Style 分支；悬停替换当前 View 的动态 class，离开时恢复原始 class，内联 style 始终保持作者覆盖优先级。</Text>
       // 结束主题内容。
       </Column>
     // 结束主题卡片。
