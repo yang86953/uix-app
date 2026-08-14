@@ -593,8 +593,8 @@ hoverStyleAction {
 // 结束布局组件页组件。
 </Component>
 
-// 声明导航组件页组件：持有类型化步骤、分页与标签页状态。
-<Component name="NavPage" state="steps_current: usize = 1, page_current: usize = 1, page_size: usize = 10, active_tab: 'account', menu_selected: Option<String> = None, menu_open: Vec<String> = []">
+// 声明导航组件页组件：持有步骤、分页、标签页、菜单与侧栏受控状态。
+<Component name="NavPage" state="steps_current: usize = 1, page_current: usize = 1, page_size: usize = 10, active_tab: 'account', menu_selected: Option<String> = None, menu_open: Vec<String> = [], nav_active: Option<String> = None, nav_open: Vec<String> = [], nav_collapsed: false">
   // 组织导航组件内容。
   <Column gap="16px">
     // 展示导航组件标题。
@@ -683,8 +683,18 @@ hoverStyleAction {
       </Column>
     // 结束标签页面板。
     </Container>
-    // 说明剩余规划中导航标签边界。
-    <Alert message="Navigation 标签仍在规划矩阵登记，保持 Rust API 边界。" type="info" />
+    // 展示只拥有侧栏外壳并复用受控 Menu 的 Navigation。
+    <Container class="pagePanel">
+      // 组织完整侧栏组合内容。
+      <Column gap="12px">
+        // 展示面板小节标题。
+        <Text fontSize="heading5">Navigation</Text>
+        // 选择、展开与整栏折叠分别绑定调用方唯一状态。
+        <Navigation title="UIX Demo" items={[MenuItem('首页', 'home').icon('home'), MenuItem('管理', 'admin').icon('settings').children([MenuItem('用户', 'users'), MenuItem('权限', 'roles')])]} activeKey={nav_active} openKeys={nav_open} collapsed={nav_collapsed} version="v0.0.1" width="320px" height="320px" />
+      // 结束完整侧栏组合内容。
+      </Column>
+    // 结束 Navigation 面板。
+    </Container>
   // 结束导航组件内容。
   </Column>
 // 结束导航组件页组件。
@@ -1257,7 +1267,7 @@ hoverStyleAction {
         // 说明反馈标签覆盖。
         <Text>反馈：Alert / Modal / Drawer / Tooltip / Popover / FocusTrap / Spin</Text>
         // 说明导航与框架标签覆盖。
-        <Text>导航与框架：Menu / Dropdown / Steps / Pagination / Breadcrumb / Anchor / Tabs / ThemeToggle / WindowControl / WindowDragRegion / QRCode / Watermark</Text>
+        <Text>导航与框架：Menu / Dropdown / Navigation / Steps / Pagination / Breadcrumb / Anchor / Tabs / ThemeToggle / WindowControl / WindowDragRegion / QRCode / Watermark</Text>
         // 展示语言能力小节。
         <Text fontSize="heading5">语言能力</Text>
         // 说明组件与状态能力。

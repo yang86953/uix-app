@@ -26,7 +26,9 @@ use crate::ui::widgets::Table;
 // 导航 capability 启用时才引入对应 patch 目标类型。
 #[cfg(feature = "navigation")]
 // 该导入覆盖全部拥有运行时组件状态的导航目标。
-use crate::ui::widgets::{Anchor, Breadcrumb, Dropdown, Menu, NavItem, Pagination, Steps, Tabs};
+use crate::ui::widgets::{
+    Anchor, Breadcrumb, Dropdown, Menu, NavItem, NavigationShell, Pagination, Steps, Tabs,
+};
 // 二维码 capability 启用时才引入对应组件类型。
 #[cfg(feature = "qrcode")]
 // 该导入仅供内建组件 patch 分派使用。
@@ -36,11 +38,11 @@ use crate::ui::widgets::QRCode;
 // 该导入仅供内建组件 patch 分派使用。
 use crate::ui::widgets::RichText;
 // 树组件 capability 启用时才引入展示树与树选择器 patch 目标。
+use crate::ui::SnapshotFields;
+use crate::ui::WidgetComponent;
 #[cfg(feature = "tree-widgets")]
 // 两个类型共享同一源码与公开面门禁。
 use crate::ui::widgets::{Tree, TreeSelect};
-use crate::ui::SnapshotFields;
-use crate::ui::WidgetComponent;
 // 导入区分布局字段与纯绘制字段所需的统一样式快照。
 use crate::ui::theme::style::Style;
 
@@ -375,6 +377,9 @@ pub(crate) fn patch_builtin_widget(
     // 导航 capability 启用时才生成导航项类型化 patch 分支。
     #[cfg(feature = "navigation")]
     patch_as!(NavItem);
+    // 导航 capability 启用时才生成 Navigation 外壳 patch 分支。
+    #[cfg(feature = "navigation")]
+    patch_as!(NavigationShell);
     // 导航 capability 启用时才生成锚点类型化 patch 分支。
     #[cfg(feature = "navigation")]
     patch_as!(Anchor);

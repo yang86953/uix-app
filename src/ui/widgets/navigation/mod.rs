@@ -5,6 +5,8 @@ pub mod breadcrumb;
 pub mod dropdown;
 pub mod menu;
 pub mod nav;
+// Navigation 组合组件的侧栏外壳实现。
+pub mod navigation_shell;
 pub mod pagination;
 pub mod steps;
 pub mod tabs;
@@ -18,12 +20,16 @@ mod menu_tests;
 // 集中验证 Tabs 面板门控、状态保留与焦点迁移契约。
 #[cfg(test)]
 mod tabs_tests;
+// 集中验证 Navigation 外壳与受控 Menu 的唯一所有权边界。
+#[cfg(test)]
+mod navigation_shell_tests;
 
 pub use anchor::*;
 pub use breadcrumb::*;
 pub use dropdown::*;
 pub use menu::*;
 pub use nav::*;
+pub use navigation_shell::*;
 pub use pagination::*;
 pub use steps::*;
 pub use tabs::*;

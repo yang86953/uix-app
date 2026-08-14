@@ -748,6 +748,8 @@ pub(super) fn is_state_handle_attribute(element_name: &str, attribute_name: &str
         "Tabs" => &["activeKey"],
         // 菜单读取 typed 单选与展开状态句柄。
         "Menu" => &["selectedKey", "openKeys"],
+        // Navigation 复用 Menu 的选择/展开句柄并额外读取整栏折叠句柄。
+        "Navigation" => &["activeKey", "openKeys", "collapsed"],
         // 滚动容器与固钉组件读取滚动状态。
         "ScrollView" => &["offset"],
         "Affix" | "BackTop" | "FloatButtonBackTop" => &["scrollY"],

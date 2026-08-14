@@ -2,6 +2,11 @@
 //!
 //! Supports hover highlight, active selection, disabled items, icons, and
 //! keyboard navigation.
+// 紧凑侧栏呈现拆分到子模块，避免 Menu 主文件超过规模边界。
+mod compact;
+// typed 受控构造拆分到子模块，保持状态映射边界集中。
+mod controlled;
+
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
@@ -248,6 +253,8 @@ component! {
         #[snapshot(skip)]
         open_keys_configured: bool,
         collapsible: bool,
+        #[snapshot(skip)]
+        compact_binding: Option<State<bool>>,
         diagnostics: Vec<String>,
         hovered_idx: Cell<usize>,
         focused: bool,
@@ -392,6 +399,11 @@ component! {
                     if is_active || is_hover {
                         ctx.fill_rect(item_rect, fill, Some(r));
                     }
+                    // 紧凑侧栏绘制由专属呈现模块处理。
+                    if self.paint_compact_item(ctx, item, item_rect, item_c) {
+                        // 紧凑项已完成本行绘制。
+                        continue;
+                    }
                     let label_pad = if item.icon.is_empty() { 16.0 } else { 36.0 }
                         + *depth as f32 * 16.0;
                     if !item.icon.is_empty() {
@@ -429,7 +441,11 @@ impl Menu {
                 Size::new(w.max(100.0), self.item_h)
             }
             MenuMode::Vertical | MenuMode::Inline => {
-                Size::new(200.0, items.len() as f32 * self.item_h)
+                // 折叠侧栏使用稳定紧凑宽度，展开态保持兼容宽度。
+                Size::new(
+                    if self.is_compact() { 56.0 } else { 200.0 },
+                    items.len() as f32 * self.item_h,
+                )
             }
         }
     }
@@ -521,6 +537,11 @@ impl Menu {
     }
 
     fn visible_items(&self) -> Vec<(&MenuItem, usize)> {
+        // 整栏折叠时只显示顶层身份，但不改写调用方 openKeys。
+        if self.is_compact() {
+            // 返回顶层菜单项的稳定源码顺序。
+            return self.items.iter().map(|item| (item, 0)).collect();
+        }
         fn visit<'a>(
             items: &'a [MenuItem],
             open_keys: &[String],
@@ -638,6 +659,7 @@ impl Menu {
             selected_keys_configured: false,
             open_keys_configured: false,
             collapsible: false,
+            compact_binding: None,
             diagnostics: Vec::new(),
             hovered_idx: Cell::new(usize::MAX),
             focused: false,
@@ -660,35 +682,6 @@ impl Menu {
         self
     }
 
-    /// 使用 typed MenuItem 树建立单选与展开双向受控 Menu。
-    pub fn controlled<K, I>(items: I, selected: &State<Option<K>>, open: &State<Vec<K>>) -> Self
-    where
-        K: Clone + PartialEq + Display + Send + Sync + 'static,
-        I: IntoIterator<Item = MenuItem<K>>,
-    {
-        // 擦除绘制层不需要的 K 类型，同时保存稳定回写映射。
-        let (items, values, diagnostics) = Self::erase_controlled_items(items);
-        // 构造兼容运行时并安装 typed 状态绑定。
-        let mut menu = Self::new();
-        // 保存去重后的拥有型菜单树。
-        menu.items = items;
-        // 保存可观察的重复 key 诊断。
-        menu.diagnostics = diagnostics;
-        // 由 trait object 隔离具体 K 与非泛型组件绘制层。
-        menu.controlled_binding = Some(Rc::new(StateMenuControlledBinding {
-            // 克隆调用方单选状态句柄。
-            selected: selected.clone(),
-            // 克隆调用方展开状态句柄。
-            open: open.clone(),
-            // 保存首项优先的 typed key 映射。
-            values,
-        }));
-        // 首次物化立即从唯一事实源同步界面状态。
-        menu.sync_bound_keys();
-        // 返回完整受控菜单。
-        menu
-    }
-
     /// 配置含 children 的菜单组是否允许展开和收起。
     pub fn collapsible(mut self, collapsible: bool) -> Self {
         // 保存子菜单组交互策略。
@@ -702,11 +695,6 @@ impl Menu {
         self
     }
 
-    /// 返回首次物化时产生的菜单树诊断。
-    pub fn diagnostics(&self) -> &[String] {
-        // 只读暴露稳定诊断集合。
-        &self.diagnostics
-    }
     pub fn mode(mut self, m: MenuMode) -> Self {
         self.mode = m;
         self
@@ -776,6 +764,7 @@ impl Menu {
         self.selected_keys_configured = next.selected_keys_configured;
         self.open_keys_configured = next.open_keys_configured;
         self.collapsible = next.collapsible;
+        self.compact_binding = next.compact_binding;
         self.diagnostics = next.diagnostics;
         if self.controlled_binding.is_some() {
             // typed 受控状态始终覆盖组件内部兼容状态。
