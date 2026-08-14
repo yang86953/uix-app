@@ -5,31 +5,52 @@ use super::commands::GpuFrameViolationKind;
 /// Recording errors that are deterministically detectable without a GPU.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameEncoderError {
+    /// 图像或目标宽高不是正整数。
     InvalidExtent {
+        /// 收到的像素宽度。
         width: i32,
+        /// 收到的像素高度。
         height: i32,
     },
+    /// 像素载荷数量与声明的二维尺寸不一致。
     PixelCountMismatch {
+        /// 声明的像素宽度。
         width: i32,
+        /// 声明的像素高度。
         height: i32,
+        /// 实际提供的像素数量。
         actual: usize,
     },
+    /// 依赖目标像素的操作无法记录为透明 CPU 片段。
     DestinationDependentCpuSegment {
+        /// 触发目标像素依赖的操作名称。
         operation: &'static str,
     },
+    /// 圆角半径不是有限非负值。
     InvalidRadius {
+        /// 包含非法半径的圆角名称。
         corner: &'static str,
     },
+    /// 描边宽度不是有限正值。
     InvalidStrokeWidth,
+    /// Picture 采样目标矩形包含非有限坐标或非正尺寸。
     InvalidSampledRect,
+    /// 字形覆盖率载荷不足以覆盖声明的像素尺寸。
     InvalidGlyphCoverage {
+        /// 声明的字形像素宽度。
         width: usize,
+        /// 声明的字形像素高度。
         height: usize,
+        /// 实际提供的覆盖率字节数。
         actual: usize,
     },
+    /// 记录帧命令时内存分配失败。
     CommandAllocationFailed,
+    /// GPU 原生帧包含禁止的 CPU 物化载荷。
     GpuNativeViolation {
+        /// 检测到的禁止载荷分类。
         kind: GpuFrameViolationKind,
+        /// 禁止载荷占用的字节数。
         payload_bytes: usize,
     },
 }
