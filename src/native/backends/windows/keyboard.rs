@@ -8,10 +8,12 @@
 use crate::native::windowing::input::IKeyboard;
 use crate::native::windowing::input::KeyCode;
 
-pub struct WindowsKeyboard;
+// Windows 键盘后端只在 crate 内部平台注册表中构造。
+pub(crate) struct WindowsKeyboard;
 
 impl WindowsKeyboard {
-    pub fn new() -> Self {
+    // 创建无状态 Windows 键盘后端。
+    pub(crate) fn new() -> Self {
         Self
     }
 }

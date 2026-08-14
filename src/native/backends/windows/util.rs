@@ -4,21 +4,25 @@
 #![allow(clippy::upper_case_acronyms)]
 
 use crate::native::{Errc, Error};
-pub fn to_wide(s: &str) -> Vec<u16> {
+// 把 UTF-8 文本转换为 crate 内部 Win32 调用使用的宽字符串。
+pub(crate) fn to_wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-pub fn to_utf8(wide: &[u16]) -> String {
+// 把 Win32 宽字符串转换为内部 UTF-8 文本。
+pub(crate) fn to_utf8(wide: &[u16]) -> String {
     let len = wide.iter().position(|&c| c == 0).unwrap_or(wide.len());
     String::from_utf16_lossy(&wide[..len])
 }
 
-pub fn get_last_error_string() -> String {
+// 读取最近 Win32 错误的可诊断文本。
+pub(crate) fn get_last_error_string() -> String {
     let code = unsafe { GetLastError() };
     windows_error_string(code)
 }
 
-pub fn windows_error_string(code: u32) -> String {
+// 把指定 Win32 错误码转换为可诊断文本。
+pub(crate) fn windows_error_string(code: u32) -> String {
     if code == 0 {
         "no error".to_string()
     } else {
@@ -26,11 +30,13 @@ pub fn windows_error_string(code: u32) -> String {
     }
 }
 
-pub fn windows_diag(code: Errc, context: &str) -> Error {
+// 使用最近 Win32 错误构造 crate 内部诊断。
+pub(crate) fn windows_diag(code: Errc, context: &str) -> Error {
     Error::new(code, format!("{}: {}", context, get_last_error_string()))
 }
 
-pub fn windows_diag_for_code(code: Errc, context: &str, windows_code: u32) -> Error {
+// 使用指定 Win32 错误码构造 crate 内部诊断。
+pub(crate) fn windows_diag_for_code(code: Errc, context: &str, windows_code: u32) -> Error {
     Error::new(
         code,
         format!("{}: {}", context, windows_error_string(windows_code)),
@@ -54,7 +60,8 @@ fn file_exists(path: &str) -> bool {
     unsafe { GetFileAttributesW(wide.as_ptr()) != INVALID_FILE_ATTRIBUTES }
 }
 
-pub fn system_default_font_paths() -> Vec<String> {
+// 枚举 crate 内部字体服务使用的系统默认字体路径。
+pub(crate) fn system_default_font_paths() -> Vec<String> {
     let Some(fonts_dir) = windows_fonts_dir() else {
         return Vec::new();
     };
@@ -80,12 +87,12 @@ pub fn system_default_font_paths() -> Vec<String> {
 }
 
 /// 探测一枚可用的 CJK 字体路径（启动至多再装这一枚）。
-pub fn probe_cjk_font_path() -> Option<String> {
+pub(crate) fn probe_cjk_font_path() -> Option<String> {
     probe_cjk_font_paths().into_iter().next()
 }
 
 /// 有序 CJK 候选（存在的文件）；调用方依次尝试直至加载成功。
-pub fn probe_cjk_font_paths() -> Vec<String> {
+pub(crate) fn probe_cjk_font_paths() -> Vec<String> {
     let Some(fonts_dir) = windows_fonts_dir() else {
         return Vec::new();
     };
@@ -107,7 +114,8 @@ pub fn probe_cjk_font_paths() -> Vec<String> {
     paths
 }
 
-pub fn probe_family_font_path(family: &str) -> Option<String> {
+// 探测指定字体族的首个可用路径。
+pub(crate) fn probe_family_font_path(family: &str) -> Option<String> {
     let fonts_dir = windows_fonts_dir()?;
 
     if let Some(filename) = family_name_to_filename(family) {
@@ -141,7 +149,8 @@ pub fn probe_family_font_path(family: &str) -> Option<String> {
     })
 }
 
-pub fn scan_random_font_path() -> Option<String> {
+// 扫描可用于回退的任意系统字体路径。
+pub(crate) fn scan_random_font_path() -> Option<String> {
     let fonts_dir = windows_fonts_dir()?;
     let bad_keywords = [
         "bold",

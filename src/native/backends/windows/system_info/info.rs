@@ -16,10 +16,12 @@ use crate::native::{Errc, Error, Result};
 // ════════════════════════════════════════════════════════════════════════════
 
 #[derive(Debug, Clone)]
-pub struct WindowsSystemInfo;
+// Windows 系统信息后端只在 crate 内部平台注册表中构造。
+pub(crate) struct WindowsSystemInfo;
 
 impl WindowsSystemInfo {
-    pub fn new() -> Self {
+    // 创建无状态 Windows 系统信息后端。
+    pub(crate) fn new() -> Self {
         Self
     }
 }
@@ -330,7 +332,7 @@ unsafe extern "system" {
 
 /// 获取当前进程的内存使用统计（工作集字节, 私有字节）。
 // SAFETY: pmc 为 MaybeUninit 零初始化且容量正确；h_process 为 GetCurrentProcess 返回的伪句柄；assume_init 仅在 GetProcessMemoryInfo 成功返回后执行。
-pub fn get_process_memory() -> Result<(usize, usize)> {
+pub(crate) fn get_process_memory() -> Result<(usize, usize)> {
     unsafe {
         let mut pmc = std::mem::MaybeUninit::<PROCESS_MEMORY_COUNTERS>::zeroed();
         let h_process = GetCurrentProcess();

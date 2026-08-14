@@ -58,23 +58,27 @@ pub(crate) fn notification_owner_action(
     }
 }
 
-pub struct WindowsNotification {
+// Windows 通知后端只在 crate 内部平台注册表中构造。
+pub(crate) struct WindowsNotification {
     hwnd: *mut std::ffi::c_void,
     active_owner: usize,
 }
 
 impl WindowsNotification {
-    pub fn new() -> Self {
+    // 创建未绑定窗口的通知后端。
+    pub(crate) fn new() -> Self {
         Self {
             hwnd: ptr::null_mut(),
             active_owner: 0,
         }
     }
-    pub fn set_hwnd(&mut self, hwnd: *mut std::ffi::c_void) {
+    // 绑定当前平台窗口句柄。
+    pub(crate) fn set_hwnd(&mut self, hwnd: *mut std::ffi::c_void) {
         self.hwnd = hwnd;
     }
     /// Remove the notification icon. Called on Drop.
-    pub fn remove_icon(&mut self) {
+    // 移除当前通知区域图标所有者。
+    pub(crate) fn remove_icon(&mut self) {
         let owner = std::mem::take(&mut self.active_owner);
         if owner != 0 {
             Self::remove_icon_for(owner);

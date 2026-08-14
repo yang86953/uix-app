@@ -33,14 +33,16 @@ const COLORS: [u16; 7] = [
 // ════════════════════════════════════════════════════════════════════════════
 
 #[derive(Debug)]
-pub struct WindowsConsole {
+// Windows 控制台后端只在 crate 内部平台注册表中构造。
+pub(crate) struct WindowsConsole {
     stdout: RawHandle,
 }
 
 type RawHandle = *mut std::ffi::c_void;
 
 impl WindowsConsole {
-    pub fn new() -> Self {
+    // 捕获当前进程标准输出句柄。
+    pub(crate) fn new() -> Self {
         // SAFETY: GetStdHandle 无指针输入，返回标准输出句柄或 INVALID_HANDLE_VALUE；失败由后续控制台调用以返回码 0 呈现。
         Self {
             stdout: unsafe { GetStdHandle(STD_OUTPUT_HANDLE) },

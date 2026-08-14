@@ -15,10 +15,12 @@ use std::ptr;
 // WindowsFileSystem
 // ════════════════════════════════════════════════════════════════════════════
 
-pub type WindowsFileSystem = FileSystemCore<WindowsSpecialDirs>;
+// Windows 文件系统别名只供 crate 内部平台注册表使用。
+pub(crate) type WindowsFileSystem = FileSystemCore<WindowsSpecialDirs>;
 
 #[derive(Debug, Clone, Default)]
-pub struct WindowsSpecialDirs;
+// Windows 特殊目录解析器只供 crate 内部文件系统使用。
+pub(crate) struct WindowsSpecialDirs;
 
 impl SpecialDirProvider for WindowsSpecialDirs {
     fn special_dir(&self, dir: SpecialDir) -> Result<String> {

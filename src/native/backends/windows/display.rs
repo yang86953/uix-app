@@ -22,12 +22,14 @@ use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::MONITORINFOF_PRIMARY;
 use windows::core::BOOL;
 
-pub struct WindowsDisplay {
+// Windows 显示后端只在 crate 内部平台注册表中构造。
+pub(crate) struct WindowsDisplay {
     hwnd: Cell<usize>,
 }
 
 impl WindowsDisplay {
-    pub fn new() -> Self {
+    // 创建未绑定窗口的显示后端。
+    pub(crate) fn new() -> Self {
         Self { hwnd: Cell::new(0) }
     }
 

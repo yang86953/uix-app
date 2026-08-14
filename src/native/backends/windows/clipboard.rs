@@ -128,18 +128,21 @@ pub(crate) fn global_memory_text_round_trip(text: &str) -> Option<String> {
     LockedGlobalMemory::lock(memory.handle()).map(|locked| locked.text())
 }
 
-pub struct WindowsClipboard {
+// Windows 剪贴板所有者只在 crate 内部平台注册表中构造。
+pub(crate) struct WindowsClipboard {
     hwnd: *mut std::ffi::c_void,
 }
 
 impl WindowsClipboard {
-    pub fn new() -> Self {
+    // 创建未绑定窗口的剪贴板后端。
+    pub(crate) fn new() -> Self {
         Self {
             hwnd: ptr::null_mut(),
         }
     }
 
-    pub fn set_hwnd(&mut self, hwnd: *mut std::ffi::c_void) {
+    // 绑定当前平台窗口句柄。
+    pub(crate) fn set_hwnd(&mut self, hwnd: *mut std::ffi::c_void) {
         self.hwnd = hwnd;
     }
 }

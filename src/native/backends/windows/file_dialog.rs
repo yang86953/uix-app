@@ -11,17 +11,20 @@ use crate::native::capabilities::system::IFileDialog;
 use crate::native::{Errc, Error, Result};
 use std::ptr;
 
-pub struct WindowsFileDialog {
+// Windows 文件对话框后端只在 crate 内部平台注册表中构造。
+pub(crate) struct WindowsFileDialog {
     hwnd: *mut std::ffi::c_void,
 }
 
 impl WindowsFileDialog {
-    pub fn new() -> Self {
+    // 创建未绑定窗口的文件对话框后端。
+    pub(crate) fn new() -> Self {
         Self {
             hwnd: ptr::null_mut(),
         }
     }
-    pub fn set_hwnd(&mut self, hwnd: *mut std::ffi::c_void) {
+    // 绑定当前平台窗口句柄。
+    pub(crate) fn set_hwnd(&mut self, hwnd: *mut std::ffi::c_void) {
         self.hwnd = hwnd;
     }
 }

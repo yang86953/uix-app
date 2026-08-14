@@ -248,7 +248,8 @@ impl Drop for DibHandle {
 // GdiPresenter
 // ════════════════════════════════════════════════════════════════════════════
 
-pub struct GdiPresenter {
+// GDI 呈现器只在 crate 内部呈现配方中构造。
+pub(crate) struct GdiPresenter {
     hwnd: *mut std::ffi::c_void,
     dib: DibHandle,
     width: i32,
@@ -263,7 +264,8 @@ impl GdiPresenter {
     /// # Safety
     /// 调用者必须保证 hwnd 存活且 w/h 为正，presenter 生命周期内窗口不被销毁。
     #[allow(clippy::missing_safety_doc)]
-    pub unsafe fn new(hwnd: *mut std::ffi::c_void, w: i32, h: i32) -> Result<Self, Error> {
+    // 由 crate 内部呈现配方在窗口句柄有效期内创建。
+    pub(crate) unsafe fn new(hwnd: *mut std::ffi::c_void, w: i32, h: i32) -> Result<Self, Error> {
         if w <= 0 || h <= 0 {
             return Err(Error::new(
                 Errc::InvalidArgument,

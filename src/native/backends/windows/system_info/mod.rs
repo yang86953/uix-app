@@ -2,6 +2,8 @@
 // platform/windows/system_info/mod.rs — Windows 系统信息
 // ============================================================================
 
-pub mod info;
+// 系统信息实现只供 crate 内部平台注册表使用。
+pub(crate) mod info;
 
-pub use info::*;
+// 在 Windows 后端内部重导出系统信息实现。
+pub(crate) use info::*;

@@ -52,7 +52,8 @@ pub(crate) struct WindowBinding {
     pub(crate) frame_pacer: SharedWindowsFramePacerState,
 }
 
-pub struct WindowsPlatform {
+// Windows 平台聚合只由 crate 内部工厂创建。
+pub(crate) struct WindowsPlatform {
     pub(crate) event_queue: Arc<Mutex<VecDeque<UiEvent>>>,
     pub(crate) event_bus: EventBus,
     pub(crate) hwnd: *mut std::ffi::c_void,
@@ -83,7 +84,8 @@ impl Default for WindowsPlatform {
 }
 
 impl WindowsPlatform {
-    pub fn new() -> Self {
+    // 创建使用独立失败队列的 Windows 平台聚合。
+    pub(crate) fn new() -> Self {
         Self::new_with_pending(PendingFailureQueue::new())
     }
 
