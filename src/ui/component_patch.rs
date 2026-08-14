@@ -13,7 +13,8 @@ use crate::ui::widgets::{
 #[cfg(feature = "feedback")]
 // 该导入覆盖反馈组件族全部拥有运行时状态的组件。
 use crate::ui::widgets::{
-    Alert, Drawer, Message, Modal, Notification, Popconfirm, Popover, ProgressBar, Spin, Tooltip,
+    Alert, Drawer, Message, MessageDeclaration, Modal, Notification, NotificationDeclaration,
+    Popconfirm, Popover, ProgressBar, Spin, Tooltip,
 };
 // 图表 capability 启用时才引入对应 patch 目标类型。
 #[cfg(feature = "charts")]
@@ -465,6 +466,12 @@ pub(crate) fn patch_builtin_widget(
     // 反馈 capability 启用时才生成通知容器类型化 patch 分支。
     #[cfg(feature = "feedback")]
     patch_as!(Notification);
+    // 反馈 capability 启用时保持 Message 声明租约原位同步。
+    #[cfg(feature = "feedback")]
+    patch_as!(MessageDeclaration);
+    // 反馈 capability 启用时保持 Notification 声明租约原位同步。
+    #[cfg(feature = "feedback")]
+    patch_as!(NotificationDeclaration);
     // 富文本 capability 启用时才参与内建组件 patch 分派。
     #[cfg(feature = "rich-text")]
     patch_as!(RichText);

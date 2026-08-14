@@ -52,6 +52,26 @@ fn on_point(
 ) {
 }
 
+// 提供接收类型化反馈关闭事实的 Rust 侧回调。
+#[cfg(feature = "feedback")]
+fn on_feedback_closed(
+    // 接收稳定 key 与实际关闭原因。
+    _closed: FeedbackClosed,
+) {
+}
+
+// 验证两类 keyed 反馈声明在真实公开 API 消费者中通过类型检查。
+#[cfg(feature = "feedback")]
+#[test]
+fn feedback_declarations_compile_against_public_uix_api() {
+    // 动态秒数经运行时有限非负边界验证。
+    let message_seconds = 2.0_f64;
+    // 展开两个零布局声明节点与类型化关闭事件。
+    let _view: ViewNode = uix!(
+        r#"<Container><Message key="saved" type="success" content="保存成功" duration={message_seconds} closable @close="on_feedback_closed($event)" /><Notification key="sync" title="同步完成" content="数据已更新" /></Container>"#
+    );
+}
+
 // 验证核心生成物在真实 uix 公开 API 消费者中通过类型检查。
 #[test]
 fn generated_view_compiles_against_public_uix_api() {

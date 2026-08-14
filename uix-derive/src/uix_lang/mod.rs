@@ -232,6 +232,11 @@ mod upload_codegen;
 // 集中验证 Upload 生成、默认值与拒绝路径。
 #[cfg(test)]
 mod upload_codegen_tests;
+// 定义 Message / Notification keyed 声明租约生成边界。
+mod feedback_declaration_codegen;
+// 集中验证反馈声明生成、默认值与拒绝路径。
+#[cfg(test)]
+mod feedback_declaration_codegen_tests;
 // 定义 Skeleton 静态外观与尺寸的公开 API 代码生成边界。
 mod skeleton_codegen;
 // 集中验证 Skeleton 生成与拒绝路径。
@@ -548,6 +553,10 @@ pub(crate) use selectable_list_codegen::generate_selectable_list;
 pub(crate) use collapse_codegen::generate_collapse;
 // 向核心元素生成器暴露 Upload 叶组件专用映射。
 pub(crate) use upload_codegen::generate_upload;
+// 向核心元素生成器暴露两类反馈声明专用映射。
+pub(crate) use feedback_declaration_codegen::{
+    generate_message_declaration, generate_notification_declaration,
+};
 // 向核心元素生成器暴露 Skeleton 专用映射。
 pub(crate) use skeleton_codegen::generate_skeleton;
 // 向核心元素生成器暴露 Empty 专用映射。

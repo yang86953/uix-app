@@ -1,16 +1,9 @@
-// 反馈 capability 启用时才维护逐窗反馈句柄表。
-#[cfg(feature = "feedback")]
-use std::collections::HashMap;
 use std::sync::{atomic::AtomicBool, atomic::Ordering, Arc};
-// 反馈 capability 启用时才需要原生通知序号与同步容器。
-#[cfg(feature = "feedback")]
-use std::sync::{atomic::AtomicU64, Mutex};
 use std::time::Duration;
-// 反馈 capability 启用时才为原生错误通知记录创建时刻。
-#[cfg(feature = "feedback")]
-use std::time::Instant;
 
 use crate::app::application::di::Container;
+// 连接 Application Module 私有逐窗 owner；无 feedback 时为零尺寸哨兵。
+use crate::app::application::feedback_state::AppFeedbackState;
 use crate::app::queues::app_timer::TimerHandle;
 use crate::app::session_runtime::AppRuntime;
 use crate::app::window::window_config::WindowConfig;
@@ -23,9 +16,6 @@ use crate::diagnostics::Diagnostics;
 // 反馈 capability 启用时才生成反馈浮层根组件实现。
 #[cfg(feature = "feedback")]
 use crate::impl_widget_component;
-// 反馈 capability 启用时才把原生错误通知转换为 UI 项。
-#[cfg(feature = "feedback")]
-use crate::native::notification::ToastEntry;
 use crate::ui::adapter::ViewAdapter;
 // 反馈 capability 启用时才实现反馈浮层根布局。
 #[cfg(feature = "feedback")]
@@ -33,14 +23,17 @@ use crate::ui::component::traits::WidgetLayout;
 // 引入应用根默认背景所需的主题样式值。
 use crate::ui::theme::style::ColorValue;
 use crate::ui::view::{View, ViewNode};
+// 引入 UI 反馈 Module 定义的窄声明租约契约。
+#[cfg(feature = "feedback")]
+use crate::ui::widgets::feedback::declaration::{
+    FeedbackKind, MessageDeclaration, NotificationDeclaration,
+};
 // 反馈 capability 启用时才连接应用逐窗反馈状态与 Message Host。
 #[cfg(feature = "feedback")]
-use crate::ui::widgets::feedback::message::{Message, MessageHandle, MessageItem};
+use crate::ui::widgets::feedback::message::{Message, MessageItem};
 // Notification Host 与条目继续使用反馈 Module 公开的窄句柄契约。
 #[cfg(feature = "feedback")]
-use crate::ui::widgets::feedback::notification::{
-    Notification, NotificationHandle, NotificationItem,
-};
+use crate::ui::widgets::feedback::notification::{Notification, NotificationItem};
 // 引入应用状态、主题与布局背景语义角色。
 use crate::ui::{AppState, NeutralRole, Theme};
 
@@ -70,99 +63,31 @@ impl WidgetLayout for AppOverlayRoot {
     }
 }
 
-// 保存单个窗口的两类反馈队列句柄，避免在 Application System 外复制 owner。
+// 在建树前递归为反馈声明节点注入目标窗口窄端口。
 #[cfg(feature = "feedback")]
-#[derive(Clone)]
-struct AppWindowFeedback {
-    // Message Host 与声明条目共享这一窗口私有队列。
-    message: MessageHandle,
-    // Notification Host 与原生错误桥共享这一窗口私有队列。
-    notification: NotificationHandle,
-}
-
-// Application System 持有的唯一逐窗反馈状态。
-#[derive(Clone)]
-pub(crate) struct AppFeedbackState {
-    // 反馈能力启用时保存逐窗 Message 与 Notification 句柄。
-    #[cfg(feature = "feedback")]
-    windows: Arc<Mutex<HashMap<WindowId, AppWindowFeedback>>>,
-    // 反馈能力启用时生成稳定的原生错误通知 ID。
-    #[cfg(feature = "feedback")]
-    next_id: Arc<AtomicU64>,
-    // 反馈能力启用时限制同时可见通知数。
-    #[cfg(feature = "feedback")]
-    max_visible: usize,
-}
-
-impl AppFeedbackState {
-    pub(crate) fn new() -> Self {
-        // 反馈能力启用时初始化完整逐窗反馈状态。
-        #[cfg(feature = "feedback")]
-        {
-            Self {
-                windows: Arc::new(Mutex::new(HashMap::new())),
-                next_id: Arc::new(AtomicU64::new(0)),
-                max_visible: 5,
-            }
-        }
-        // 关闭反馈能力时保留零尺寸 DI 哨兵，通用应用流程无需分叉。
-        #[cfg(not(feature = "feedback"))]
-        {
-            Self {}
-        }
+fn bind_feedback_declarations(
+    node: &mut ViewNode,
+    feedback: &AppFeedbackState,
+    window_id: WindowId,
+) {
+    // Message 声明只能获取 Message 类型端口。
+    if let Some(declaration) = node.widget.as_any_mut().downcast_mut::<MessageDeclaration>() {
+        // 注入绑定目标窗口的 acquire 能力。
+        declaration.bind(feedback.declaration_binding(window_id, FeedbackKind::Message));
     }
-
-    // 反馈 capability 启用时按需创建并返回同一窗口的完整反馈句柄组。
-    #[cfg(feature = "feedback")]
-    fn handles(&self, window_id: WindowId) -> AppWindowFeedback {
-        // 锁中只进行轻量查找或首次队列创建，不执行用户回调。
-        self.windows
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .entry(window_id)
-            .or_insert_with(|| AppWindowFeedback {
-                // 为目标窗口创建唯一 Message 队列。
-                message: MessageHandle::new(),
-                // 为目标窗口创建唯一 Notification 队列。
-                notification: NotificationHandle::new(),
-            })
-            .clone()
+    // Notification 声明只能获取 Notification 类型端口。
+    if let Some(declaration) = node
+        .widget
+        .as_any_mut()
+        .downcast_mut::<NotificationDeclaration>()
+    {
+        // 注入绑定目标窗口的 acquire 能力。
+        declaration.bind(feedback.declaration_binding(window_id, FeedbackKind::Notification));
     }
-
-    // 把 Rust 侧消息加入目标窗口队列。
-    #[cfg(feature = "feedback")]
-    fn push_message(&self, window_id: WindowId, item: MessageItem) -> u64 {
-        // 队列生成的 ID 在对应窗口和反馈类型内稳定。
-        self.handles(window_id).message.add(item)
-    }
-
-    // 把 Rust 侧通知加入目标窗口队列。
-    #[cfg(feature = "feedback")]
-    fn push_notification(&self, window_id: WindowId, item: NotificationItem) -> u64 {
-        // 队列生成的 ID 在对应窗口和反馈类型内稳定。
-        self.handles(window_id).notification.add(item)
-    }
-
-    // 反馈 capability 启用时才把应用错误加入通知队列。
-    #[cfg(feature = "feedback")]
-    pub(crate) fn notify_error(&self, window_id: WindowId, error: &Error) -> Option<u64> {
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let toast = ToastEntry::from_error(id, error, Instant::now())?;
-        let item = NotificationItem::from_toast_entry(&toast);
-        // 原生错误桥只写入目标窗口的 Notification 队列。
-        let handle = self.handles(window_id).notification;
-        handle.push_external(id, item);
-        handle.retain_latest(self.max_visible);
-        Some(id)
-    }
-
-    // 反馈 capability 启用时才清理逐窗反馈状态。
-    #[cfg(feature = "feedback")]
-    pub(crate) fn remove_window(&self, window_id: WindowId) {
-        self.windows
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .remove(&window_id);
+    // 递归覆盖任意容器与控制流展开产生的后代。
+    for child in &mut node.children {
+        // 所有后代沿用同一个 WindowId owner。
+        bind_feedback_declarations(child, feedback, window_id);
     }
 }
 
@@ -182,6 +107,10 @@ pub(crate) fn prepare_app_root(
     // 反馈能力启用时把两个 Host 挂载到应用根节点上层。
     #[cfg(feature = "feedback")]
     {
+        // 在生命周期 mount 前把声明节点绑定到目标窗口 owner。
+        let mut root = root;
+        // 递归处理业务根中全部反馈声明节点。
+        bind_feedback_declarations(&mut root, &feedback, window_id);
         // 同一次查找取得同一窗口的 Message 与 Notification 句柄。
         let handles = feedback.handles(window_id);
         // Message Host 只消费当前窗口消息队列。
@@ -520,6 +449,9 @@ mod tests {
     // 引入反馈状态等级以构造最小消息条目。
     #[cfg(feature = "feedback")]
     use crate::native::capabilities::system::StatusLevel;
+    // 引入声明组件挂载与卸载生命周期入口。
+    #[cfg(feature = "feedback")]
+    use crate::ui::component::traits::WidgetLifecycle;
 
     // 验证透明根节点获得主题布局背景。
     #[test]
@@ -592,6 +524,41 @@ mod tests {
         assert_eq!(feedback.handles(WindowId::ROOT).message.len(), 1);
         // 第二个窗口必须获得独立的空队列。
         assert_eq!(feedback.handles(WindowId::new(1)).message.len(), 0);
+    }
+
+    // 验证应用根准备阶段注入端口且声明生命周期只操作 Host 队列。
+    #[cfg(feature = "feedback")]
+    #[test]
+    fn prepared_message_declaration_mounts_updates_and_releases_window_lease() {
+        // 创建可观察的逐窗 owner。
+        let feedback = AppFeedbackState::new();
+        // 构造零布局 Message 声明业务根。
+        let root = ViewNode::leaf(MessageDeclaration::new("saved", "初始"));
+        // 应用根准备阶段递归注入根窗口端口。
+        let mut prepared = prepare_app_root(root, Some(feedback.clone()), WindowId::ROOT);
+        // 业务根仍位于覆盖 Host 之前。
+        let declaration = prepared.children[0]
+            .widget
+            .as_any_mut()
+            .downcast_mut::<MessageDeclaration>()
+            .expect("业务根必须保留 MessageDeclaration 类型");
+        // 模拟树执行首次挂载生命周期。
+        WidgetLifecycle::on_mount(declaration);
+        // 首次挂载只写入一个 Message Host 条目。
+        assert_eq!(feedback.handles(WindowId::ROOT).message.len(), 1);
+        // 同 key reconcile 更新内容但保留租约和稳定 ID。
+        declaration.sync_from(MessageDeclaration::new("saved", "更新"));
+        // 队列仍只有一个条目。
+        assert_eq!(feedback.handles(WindowId::ROOT).message.len(), 1);
+        // 最新内容必须进入同一 Host 队列。
+        assert_eq!(
+            feedback.handles(WindowId::ROOT).message.items()[0].content,
+            "更新"
+        );
+        // 模拟树执行真正卸载生命周期。
+        WidgetLifecycle::on_unmount(declaration);
+        // 卸载释放条目且不保留不可达队列项。
+        assert_eq!(feedback.handles(WindowId::ROOT).message.len(), 0);
     }
 
     // 验证关闭后的 AppHandle 返回类型化失败而不是伪 ID。

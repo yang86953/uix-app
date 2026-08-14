@@ -14,6 +14,8 @@ use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::widget::WidgetTree;
 use crate::ui::{EventResult, MouseButton, Placement, SystemEvent};
 
+// 引入关闭原因以区分用户关闭与到期关闭。
+use super::declaration::FeedbackCloseReason;
 use super::toast_motion::{ToastMotion, ToastQueue};
 
 mod item;
@@ -80,7 +82,9 @@ component! {
                 self.hovered_close.set(target);
                 if let Some(key) = armed_close {
                     if target == Some(key) {
-                        self.queue.remove_keys(&[key]);
+                        // 用户点击关闭产生 Manual 关闭事实。
+                        self.queue
+                            .close_keys(&[key], FeedbackCloseReason::Manual);
                         self.sync_motion();
                     }
                     EventResult::Handled
@@ -121,7 +125,9 @@ component! {
                 if expired.is_empty() {
                     EventResult::NotHandled
                 } else {
-                    self.queue.remove_keys(&expired);
+                    // 计时到期产生 Timeout 关闭事实。
+                    self.queue
+                        .close_keys(&expired, FeedbackCloseReason::Timeout);
                     EventResult::Handled
                 }
             }

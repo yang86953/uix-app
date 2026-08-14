@@ -13,7 +13,8 @@ use super::{
     generate_drawer, generate_dropdown, generate_empty, generate_float_button,
     generate_float_button_group, generate_focus_trap, generate_form, generate_grid, generate_input,
     generate_input_group, generate_input_number, generate_list, generate_mentions, generate_menu,
-    generate_modal, generate_navigation, generate_orphan_col, generate_orphan_form_checkbox_item,
+    generate_message_declaration, generate_modal, generate_navigation,
+    generate_notification_declaration, generate_orphan_col, generate_orphan_form_checkbox_item,
     generate_orphan_form_input_item, generate_orphan_form_radio_item,
     generate_orphan_form_select_item, generate_orphan_form_slider_item,
     generate_orphan_form_switch_item, generate_pagination, generate_popconfirm, generate_popover,
@@ -131,6 +132,10 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "Collapse" => generate_collapse(element),
         // 上传组件映射到受控文件队列、确定过滤和类型化 Change 契约。
         "Upload" => generate_upload(element),
+        // Message 映射为零布局 keyed 声明租约节点。
+        "Message" => generate_message_declaration(element),
+        // Notification 映射为零布局 keyed 声明租约节点。
+        "Notification" => generate_notification_declaration(element),
         // 骨架屏映射到公开形状与固有尺寸契约。
         "Skeleton" => generate_skeleton(element),
         // 空状态映射到公开描述与图标契约。

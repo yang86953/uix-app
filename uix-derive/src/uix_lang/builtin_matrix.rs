@@ -16,16 +16,6 @@ const PLANNED_BUILTINS: &[PlannedBuiltin] = &[
         name: "App",
         category: "标签语法 / App 应用入口",
     },
-    // 反馈组件规划项。
-    PlannedBuiltin {
-        name: "Message",
-        category: "内置组件 / 反馈组件",
-    },
-    // 反馈组件规划项。
-    PlannedBuiltin {
-        name: "Notification",
-        category: "内置组件 / 反馈组件",
-    },
 ];
 
 // 为已登记但规划中的内置组件生成类别化诊断。
@@ -71,10 +61,7 @@ mod tests {
             .iter()
             .map(|entry| entry.category)
             .collect::<BTreeSet<_>>();
-        // 仍有规划中标签的反馈组件类别必须出现。
-        for category in ["内置组件 / 反馈组件"] {
-            // 当前类别必须存在至少一个登记项。
-            assert!(categories.contains(category));
-        }
+        // App 是当前唯一仍规划中的内置入口类别。
+        assert!(categories.contains("标签语法 / App 应用入口"));
     }
 }
