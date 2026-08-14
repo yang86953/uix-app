@@ -9,9 +9,9 @@ use super::component_codegen::{Binding, BindingKind, Bindings, ComponentExpander
 use super::component_expression_lower::{collect_number_sources, restore_number_sources};
 // 引入组件字段、属性、表达式与诊断 AST。
 use super::{
-    Attribute, AttributeValue, ComponentProp, ComponentPropType, ComponentState,
-    ComponentStateInitial, ComponentValueType, Diagnostic, Expression, ExpressionKind,
-    ExpressionNode, ObjectField, rust_identifier, value_type_tokens,
+    rust_identifier, value_type_tokens, Attribute, AttributeValue, ComponentProp,
+    ComponentPropType, ComponentState, ComponentStateInitial, ComponentValueType, Diagnostic,
+    Expression, ExpressionKind, ExpressionNode, ObjectField,
 };
 // 引入既有受限表达式生成入口。
 use super::generate_expression;
@@ -105,6 +105,13 @@ impl ComponentExpander {
             } => {
                 // 生成调用方回调表达式。
                 let callback = self.callback_argument_tokens(attribute, outer_bindings)?;
+                // 为可重复 View 根中的当前回调来源分配卫生名称。
+                let callback_source = self.fresh_ident("callback_source", &prop.name);
+                // 在创建 move 适配器前克隆调用方回调，避免移出外层 Fn 根工厂。
+                self.setup.push(quote! {
+                    // 每次 View 构建取得一份独立可调用所有权。
+                    let #callback_source = ::std::clone::Clone::clone(&(#callback));
+                });
                 // 为适配器参数生成卫生名称。
                 let arguments = parameters
                     // 遍历参数位置。
@@ -142,7 +149,7 @@ impl ComponentExpander {
                         // 捕获调用方函数或闭包并提供可克隆句柄。
                         ::std::sync::Arc::new(move |#(#arguments: #parameter_types),*| {
                             // 按声明顺序转发全部参数。
-                            (#callback)(#(#arguments),*)
+                            (#callback_source)(#(#arguments),*)
                         });
                 });
                 // 登记组件体中的回调绑定。

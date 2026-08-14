@@ -77,7 +77,7 @@ hoverStyleAction {
 // 导入框架与覆盖清单页面。
 @import('./pages/reference.uix')
 
-<Component name="DemoApp" props="page: State<number>, count: State<number>, tick: State<number>">
+<Component name="DemoApp" props="page: State<number>, count: State<number>, tick: State<number>, theme_status: State<String>, multi_window_status: State<String>, set_dark_theme: (), set_light_theme: (), open_theme_window: ()">
   // 使用纵向根布局承载自定义标题栏与应用主体。
   <Column flexGrow={1} style="backgroundColor: #backgroundColor;">
     // 构造与 API GUI Demo 对齐的自定义标题栏。
@@ -180,7 +180,7 @@ hoverStyleAction {
               // 按当前页面状态显示首页。
               <If {page == 0}><HomePage page={page} count={count} /></If>
               // 按当前页面状态显示应用能力页。
-              <If {page == 1}><RuntimePage tick={tick} count={count} /></If>
+              <If {page == 1}><RuntimePage tick={tick} count={count} theme_status={theme_status} multi_window_status={multi_window_status} set_dark_theme={set_dark_theme} set_light_theme={set_light_theme} open_theme_window={open_theme_window} /></If>
               // 按当前页面状态显示通用组件页。
               <If {page == 2}><GeneralPage /></If>
               // 按当前页面状态显示布局组件页。
@@ -231,6 +231,6 @@ hoverStyleAction {
 // 声明应用入口的窗口规格与内建初始主题。
 <App title="UIX Demo" size="1200x800" theme="light">
   // 实例化唯一 View 根并传入窗口级持久状态句柄。
-  <DemoApp page={page} count={count} tick={tick} />
+  <DemoApp page={page} count={count} tick={tick} theme_status={theme_status} multi_window_status={multi_window_status} set_dark_theme={set_dark_theme} set_light_theme={set_light_theme} open_theme_window={open_theme_window} />
 // 结束应用入口。
 </App>

@@ -57,6 +57,12 @@ cargo build --manifest-path demo/Cargo.toml --features agent-control --bin uix-l
 cargo test --features "agent-control,image-codecs" --test uix_lang_visual_windows -- --ignored --nocapture
 ```
 
+多窗口、跨窗主题与逐窗关闭使用第二条真实窗口验收：
+
+```powershell
+cargo test --features "agent-control,image-codecs" --test uix_lang_multi_window_windows -- --ignored --nocapture
+```
+
 测试会验证页面标题、组件角色 / 状态 / 动作、主题平均亮度差、D3D11 recipe 与无软件
 回退，并把 PNG 与联系表写入 `target/debug-captures/uix-lang-visual` 供视觉审阅。
 

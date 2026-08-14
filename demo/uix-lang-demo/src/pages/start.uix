@@ -95,8 +95,8 @@
 // 结束首页组件。
 </Component>
 
-// 声明应用能力组件：展示 App Timer、响应式状态与 setTheme。
-<Component name="RuntimePage" props="tick: State<number>, count: State<number>">
+// 声明应用能力组件：展示 App Timer、响应式状态、多窗口与应用主题。
+<Component name="RuntimePage" props="tick: State<number>, count: State<number>, theme_status: State<String>, multi_window_status: State<String>, set_dark_theme: (), set_light_theme: (), open_theme_window: ()">
   // 组织应用能力内容。
   <Column gap="16px">
     // 展示应用能力标题。
@@ -137,16 +137,18 @@
       <Column gap="8px">
         // 排列主题操作。
         <Container direction="row" gap="12px" align="center">
-          // 通过 setTheme 内置操作切换到暗色。
-          <Button automationId="theme-dark" @click="setTheme('dark')">暗色主题</Button>
-          // 通过 setTheme 内置操作切换到亮色。
-          <Button automationId="theme-light" @click="setTheme('light')">亮色主题</Button>
+          // 通过 Rust 组合根的公开 AppHandle 广播暗色主题。
+          <Button automationId="theme-dark" @click="set_dark_theme()">暗色主题</Button>
+          // 通过 Rust 组合根的公开 AppHandle 广播亮色主题。
+          <Button automationId="theme-light" @click="set_light_theme()">亮色主题</Button>
           // 复用标题栏主题切换组件。
           <ThemeToggle />
         // 结束主题操作。
         </Container>
-        // 说明内置操作的真实调用路径。
-        <Text fontSize="small">setTheme 是框架内置操作，生成主题请求通道调用；App 组合根在窗口循环内注册请求器并复用 runtime.set_theme 通道。</Text>
+        // 显示所有窗口共享的应用主题状态。
+        <Text automationId="runtime-theme-state">{theme_status}</Text>
+        // 说明主题所有权的真实调用路径。
+        <Text fontSize="small">主窗与子窗都经公开 AppHandle.set_theme 更新应用主题；逐窗 View 只消费同一主题事实。</Text>
         // 直接演示组件私有动态 class、布局更新与离开恢复。
         <StyleAction />
         // 说明 setStyle 不依赖调用方同名函数或运行时字符串注册表。
@@ -155,8 +157,22 @@
       </Column>
     // 结束主题卡片。
     </Card>
-    // 展示多窗口与 PicturePolicy 边界。
-    <Alert message="多窗口 open_window、PicturePolicy 与 component! 自定义组件保留 Rust API 边界，不在声明文件复制运行时所有权。" type="info" />
+    // 展示多窗口 Rust 组合边界。
+    <Card title="Multi-window — Rust 组合根">
+      // 组织按需打开入口与可观察状态。
+      <Column gap="10px">
+        // 通过 Rust 回调请求公开 open_window。
+        <Button type="primary" automationId="runtime-open-theme-window" @click="open_theme_window()">打开主题联动窗口</Button>
+        // 显示窗口创建结果。
+        <Text automationId="runtime-multi-window-status">{multi_window_status}</Text>
+        // 说明窗口私有资源不跨窗共享。
+        <Text fontSize="small">open_window 与 WindowConfig 由 Rust 组合根持有；uix-lang 只调用窄回调，不接触 WindowSession、焦点或 swapchain。</Text>
+      // 结束多窗口内容。
+      </Column>
+    // 结束多窗口卡片。
+    </Card>
+    // 展示 PicturePolicy 与自定义组件边界。
+    <Alert message="PicturePolicy 与 component! 自定义组件保留 Rust API 边界，不在声明文件复制运行时所有权。" type="info" />
     // 展示编译期生成说明。
     <Alert message="uix! 在编译期生成公开 ViewNode，不引入运行时解释器。" type="success" />
   // 结束应用能力内容。
