@@ -36,25 +36,36 @@ use std::time::Duration;
 pub struct WidgetCapabilities(u16);
 
 impl WidgetCapabilities {
+    /// 布局能力位。
     pub const LAYOUT: u16 = 0b0_0001;
+    /// 渲染能力位。
     pub const RENDER: u16 = 0b0_0010;
+    /// 事件处理能力位。
     pub const EVENT: u16 = 0b0_0100;
+    /// 生命周期能力位。
     pub const LIFECYCLE: u16 = 0b0_1000;
+    /// 动画能力位。
     pub const ANIMATION: u16 = 0b1_0000;
+    /// 平台文本输入能力位。
     pub const TEXT_INPUT: u16 = 0b10_0000;
 
+    /// 创建不包含任何可选能力的标记。
     pub const fn new() -> Self {
         Self(0)
     }
+    /// 从原始能力位创建标记。
     pub const fn from_bits(bits: u16) -> Self {
         Self(bits)
     }
+    /// 插入一个或多个能力位。
     pub fn insert(&mut self, cap: u16) {
         self.0 |= cap;
     }
+    /// 判断是否包含指定能力位中的任意一位。
     pub fn contains(&self, cap: u16) -> bool {
         self.0 & cap != 0
     }
+    /// 返回原始能力位。
     pub fn bits(&self) -> u16 {
         self.0
     }
@@ -62,9 +73,13 @@ impl WidgetCapabilities {
 
 /// 组件核心标识 — 所有 widget 必须实现。
 pub trait WidgetComponent: 'static {
+    /// 以动态类型借用组件。
     fn as_any(&self) -> &dyn Any;
+    /// 以动态类型可变借用组件。
     fn as_any_mut(&mut self) -> &mut dyn Any;
+    /// 将组件所有权转换为动态类型。
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
+    /// 返回自动化和语义快照使用的稳定字段。
     fn snapshot_fields(&self) -> crate::ui::component_snapshot::SnapshotFields {
         crate::ui::component_snapshot::snapshot_fields_from_any(self.as_any())
     }
@@ -74,6 +89,7 @@ pub trait WidgetComponent: 'static {
     fn visible(&self) -> bool {
         true
     }
+    /// 构建并交出组件直接拥有的子组件。
     fn build(&self) -> Vec<Box<dyn WidgetComponent>> {
         vec![]
     }
@@ -108,41 +124,53 @@ pub trait WidgetComponent: 'static {
     fn declared_semantic_actions(&self) -> &'static [crate::ui::SemanticAction] {
         &[]
     }
+    /// 返回组件的离屏 Picture 缓存策略。
     fn picture_policy(&self) -> PicturePolicy {
         PicturePolicy::Never
     }
+    /// 判断组件内容是否会在没有结构变化时动态更新。
     fn has_dynamic_content(&self) -> bool {
         false
     }
 
     // ── 可选能力上转型（宏自动生成） ──
+    /// 按能力标记上转型为布局契约。
     fn as_layout(&self) -> Option<&dyn WidgetLayout> {
         None
     }
+    /// 按能力标记上转型为只读渲染契约。
     fn as_render(&self) -> Option<&dyn WidgetRender> {
         None
     }
+    /// 按能力标记上转型为可变渲染契约。
     fn as_render_mut(&mut self) -> Option<&mut dyn WidgetRender> {
         None
     }
+    /// 按能力标记上转型为只读事件契约。
     fn as_event(&self) -> Option<&dyn EventHandler> {
         None
     }
+    /// 按能力标记上转型为可变事件契约。
     fn as_event_mut(&mut self) -> Option<&mut dyn EventHandler> {
         None
     }
+    /// 按能力标记上转型为只读生命周期契约。
     fn as_lifecycle(&self) -> Option<&dyn WidgetLifecycle> {
         None
     }
+    /// 按能力标记上转型为可变生命周期契约。
     fn as_lifecycle_mut(&mut self) -> Option<&mut dyn WidgetLifecycle> {
         None
     }
+    /// 按能力标记上转型为只读动画契约。
     fn as_animation(&self) -> Option<&dyn WidgetAnimation> {
         None
     }
+    /// 按能力标记上转型为可变动画契约。
     fn as_animation_mut(&mut self) -> Option<&mut dyn WidgetAnimation> {
         None
     }
+    /// 按能力标记上转型为文本输入契约。
     fn as_text_input(&self) -> Option<&dyn WidgetTextInput> {
         None
     }
@@ -154,10 +182,12 @@ pub trait WidgetComponent: 'static {
 /// text editor and to position the native composition/candidate UI without
 /// depending on a concrete widget type.
 pub trait WidgetTextInput: WidgetComponent {
+    /// 判断组件当前是否接受平台文本输入。
     fn accepts_text_input(&self) -> bool {
         true
     }
 
+    /// 返回平台输入法候选窗口应跟随的光标矩形。
     fn text_input_cursor_rect(&self) -> Rect {
         Rect::zero()
     }
@@ -165,6 +195,7 @@ pub trait WidgetTextInput: WidgetComponent {
 
 /// 布局行为：尺寸、弹性、子节点排列。
 pub trait WidgetLayout: WidgetComponent {
+    /// 在给定约束下测量组件固有尺寸。
     fn measure(&self, constraints: Constraints) -> Size {
         constraints.clamp(Size::zero())
     }
@@ -177,24 +208,31 @@ pub trait WidgetLayout: WidgetComponent {
     ) -> Option<Size> {
         None
     }
+    /// 返回 Flex 扩展系数。
     fn flex_grow(&self) -> f32 {
         0.0
     }
+    /// 返回 Flex 收缩系数。
     fn flex_shrink(&self) -> f32 {
         1.0
     }
+    /// 返回当前子项的交叉轴覆盖对齐方式。
     fn align_self(&self) -> Option<AlignItems> {
         None
     }
+    /// 返回兼容的一维 Grid 单元索引。
     fn grid_cell(&self) -> Option<usize> {
         None
     }
+    /// 返回 Grid 跨列数。
     fn grid_column_span(&self) -> u32 {
         1
     }
+    /// 返回 Grid 跨行数。
     fn grid_row_span(&self) -> u32 {
         1
     }
+    /// 返回参与父布局计算的外边距。
     fn layout_margin(&self) -> EdgeInsets {
         EdgeInsets::zero()
     }
@@ -239,13 +277,17 @@ pub trait WidgetLayout: WidgetComponent {
 
 /// 渲染行为：绘制、覆盖层、脏区域。
 pub trait WidgetRender: WidgetComponent {
+    /// 在已排列矩形内绘制组件内容。
     fn render(&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree);
+    /// 判断组件绘制是否依赖当前主题色板。
     fn uses_palette(&self) -> bool {
         true
     }
+    /// 返回布局边界之外额外受绘制影响的距离。
     fn draw_margin(&self) -> f32 {
         0.0
     }
+    /// 返回包含组件全部绘制像素的脏矩形。
     fn dirty_rect(&self, frame: Rect) -> Rect {
         let m = self.draw_margin();
         if m > 0.0 {
@@ -259,6 +301,7 @@ pub trait WidgetRender: WidgetComponent {
             frame
         }
     }
+    /// 返回应用到直接子树的可选裁剪矩形。
     fn children_clip(&self, _frame: Rect) -> Option<Rect> {
         None
     }
@@ -267,6 +310,7 @@ pub trait WidgetRender: WidgetComponent {
         // 普通组件只绘制 Content，避免父背景在子树之后重复覆盖。
         false
     }
+    /// 创建可选的浮层登记。
     fn overlay_entry(&self, _id: ComponentId, _frame: Rect) -> Option<OverlayEntry> {
         None
     }
@@ -289,6 +333,7 @@ pub trait WidgetRender: WidgetComponent {
 
 /// 事件行为：输入事件处理、滚动偏移、命中测试。
 pub trait EventHandler: WidgetComponent {
+    /// 处理一个已路由到组件的系统事件。
     fn on_event(&mut self, _event: &SystemEvent) -> EventResult {
         EventResult::NotHandled
     }
@@ -306,6 +351,7 @@ pub trait EventHandler: WidgetComponent {
     fn take_window_action(&mut self) -> Option<WindowAction> {
         None
     }
+    /// 将系统事件转换为组件语义事件。
     fn semantic_event(&self, _id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
         None
     }
@@ -316,6 +362,7 @@ pub trait EventHandler: WidgetComponent {
     fn take_layout_request(&mut self) -> bool {
         false
     }
+    /// 返回本次事件产生的滚动位移。
     fn scroll_delta(&self, _frame: Rect) -> Option<(f32, f32)> {
         None
     }
@@ -335,9 +382,11 @@ pub trait EventHandler: WidgetComponent {
     fn scroll_descendant_by(&mut self, _dx: f32, _dy: f32) -> bool {
         false
     }
+    /// 返回组件当前请求的计时器标识与周期。
     fn active_timer(&self) -> Option<(u64, Duration)> {
         None
     }
+    /// 判断组件是否需要在捕获阶段接收事件。
     fn wants_capture_phase(&self) -> bool {
         false
     }
@@ -347,6 +396,7 @@ pub trait EventHandler: WidgetComponent {
     fn wants_continuous_pointer_move(&self) -> bool {
         false
     }
+    /// 返回组件参与二维命中测试的矩形。
     fn hit_test_frame(&self, actual_frame: Rect) -> Rect {
         actual_frame
     }
@@ -354,6 +404,7 @@ pub trait EventHandler: WidgetComponent {
     fn hit_test_children(&self) -> bool {
         true
     }
+    /// 判断三维射线是否命中组件所在的二维平面区域。
     fn hit_test_3d(&self, ray: &Ray3D, _spatial: &SpatialContext, frame: Rect) -> bool {
         if let Some(hit_point) = ray.intersect_z0() {
             hit_point.x >= frame.x
@@ -368,14 +419,23 @@ pub trait EventHandler: WidgetComponent {
 
 /// 生命周期行为。
 pub trait WidgetLifecycle: WidgetComponent {
+    /// 组件实例完成初始化时调用。
     fn on_init(&mut self) {}
+    /// 组件附加到树时调用。
     fn on_attach(&mut self) {}
+    /// 组件挂载到活动窗口时调用。
     fn on_mount(&mut self) {}
+    /// 组件进入活动状态时调用。
     fn on_active(&mut self) {}
+    /// 组件离开活动状态时调用。
     fn on_inactive(&mut self) {}
+    /// 活动主题发生变化时调用。
     fn on_theme_changed(&mut self) {}
+    /// 组件从活动窗口卸载时调用。
     fn on_unmount(&mut self) {}
+    /// 组件从树分离时调用。
     fn on_detach(&mut self) {}
+    /// 组件即将销毁时调用。
     fn on_destroy(&mut self) {}
 }
 
@@ -398,6 +458,7 @@ pub trait WidgetAnimation: WidgetComponent {
 
 /// 转换为 WidgetNode 的 trait。
 pub trait IntoWidgetNode {
+    /// 将值转换为拥有完整生命周期的组件树节点。
     fn into_node(self) -> WidgetNode;
 }
 
