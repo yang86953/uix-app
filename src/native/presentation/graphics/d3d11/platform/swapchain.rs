@@ -531,15 +531,18 @@ mod tests {
     // 引入被测纯数据函数与常量。
     use super::{
         DXGI_SWAP_EFFECT_DISCARD, DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL, legacy_swap_chain_contract,
-        legacy_swap_chain_desc, map_dxgi_device_removed_reason, tracked_swap_chain_contract,
-        tracked_swap_chain_desc, validated_dirty_rects,
+        legacy_swap_chain_desc, map_dxgi_device_removed_reason, map_dxgi_present_result,
+        map_dxgi_present_test_result, tracked_swap_chain_contract, tracked_swap_chain_desc,
+        validated_dirty_rects,
     };
     // 引入共享 damage、错误码与 coherency 类型。
     use crate::core::{Errc, PresentCoherency, PresentDamage};
     // 引入 Windows HRESULT 及设备移除状态。
     use ::windows::core::HRESULT;
-    // 引入 DXGI 设备移除码。
-    use ::windows::Win32::Graphics::Dxgi::DXGI_ERROR_DEVICE_REMOVED;
+    // 引入 DXGI 遮挡状态。
+    use ::windows::Win32::Foundation::DXGI_STATUS_OCCLUDED;
+    // 引入 DXGI 设备移除与重置码。
+    use ::windows::Win32::Graphics::Dxgi::{DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET};
 
     // 验证 S_OK 被视为健康设备状态。
     #[test]
@@ -559,6 +562,39 @@ mod tests {
             Ok(()) => panic!("device removal HRESULT must be reported"),
         };
         // 验证恢复层可以按 GraphicsDeviceLost 选择重建 device。
+        assert_eq!(error.code(), Errc::GraphicsDeviceLost);
+    }
+
+    // 验证正常 present 的遮挡状态保持可恢复 typed error。
+    #[test]
+    fn present_maps_occlusion_without_committing_frame() {
+        // 将 DXGI 的成功状态形态遮挡码交给最终 present 分类。
+        let error = map_dxgi_present_result(DXGI_STATUS_OCCLUDED)
+            // 遮挡不能被当作成功帧。
+            .expect_err("occluded present must not report a committed frame");
+        // 上层恢复与 idle 调度必须收到 GraphicsOccluded。
+        assert_eq!(error.code(), Errc::GraphicsOccluded);
+    }
+
+    // 验证无帧探测把遮挡编码为状态而不是失败。
+    #[test]
+    fn present_test_reports_occluded_state() {
+        // 执行与 DXGI_PRESENT_TEST 相同的 HRESULT 分类。
+        let result = map_dxgi_present_test_result(DXGI_STATUS_OCCLUDED)
+            // 遮挡探测本身应成功返回状态。
+            .expect("present test occlusion is a recoverable probe result");
+        // 调度器必须继续保持 Occluded idle。
+        assert_eq!(result, crate::native::present::PresentTestResult::Occluded);
+    }
+
+    // 验证最终 present 的设备重置进入统一 device-lost 恢复路径。
+    #[test]
+    fn present_maps_device_reset_to_device_loss() {
+        // 将交换链 present 可能返回的 reset HRESULT 交给分类边界。
+        let error = map_dxgi_present_result(DXGI_ERROR_DEVICE_RESET)
+            // 设备重置不得伪装为 present 成功。
+            .expect_err("device reset must fail the current present");
+        // 恢复层必须按 GraphicsDeviceLost 重建设备与 surface。
         assert_eq!(error.code(), Errc::GraphicsDeviceLost);
     }
 
