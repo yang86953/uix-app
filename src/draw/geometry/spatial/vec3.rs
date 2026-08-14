@@ -16,17 +16,22 @@ use std::ops::{Add, Mul, Sub};
 /// 由 [`crate::draw::geometry::spatial::SpatialContext`] 的 MVP 矩阵统一推进。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vec3 {
+    /// X 轴分量。
     pub x: f32,
+    /// Y 轴分量。
     pub y: f32,
+    /// Z 轴分量。
     pub z: f32,
 }
 
 impl Vec3 {
+    /// 使用三个轴分量构造向量。
     #[inline(always)]
     pub const fn new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
     }
 
+    /// 构造所有分量均为零的向量。
     #[inline(always)]
     pub const fn zero() -> Self {
         Self {
@@ -124,13 +129,18 @@ impl Mul<Vec3> for f32 {
 /// `w=1` 表示点，`w=0` 表示方向向量。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vec4 {
+    /// X 轴分量。
     pub x: f32,
+    /// Y 轴分量。
     pub y: f32,
+    /// Z 轴分量。
     pub z: f32,
+    /// 齐次坐标分量。
     pub w: f32,
 }
 
 impl Vec4 {
+    /// 使用四个分量构造齐次坐标向量。
     #[inline(always)]
     pub const fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
         Self { x, y, z, w }
