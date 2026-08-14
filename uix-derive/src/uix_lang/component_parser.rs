@@ -6,6 +6,8 @@ use super::{
 };
 // 引入名称去重集合。
 use std::collections::HashSet;
+// 引入 prop 类型与默认表达式切分入口。
+use super::component_prop_default_parser::split_prop_type_default;
 
 // 解析逗号分隔的 props 声明。
 pub(super) fn parse_props(
@@ -39,14 +41,30 @@ pub(super) fn parse_props(
                 "合并同名 prop 或使用不同名称",
             ));
         }
+        // 切分类型与可选默认表达式并验证默认值形状。
+        let (type_source, default) = split_prop_type_default(type_source, span)?;
         // 解析类型白名单。
         let kind = parse_prop_type(type_source, span)?;
+        // State 句柄与回调必须由调用方显式提供，不能以值表达式伪造默认值。
+        if default.is_some() && !matches!(kind, ComponentPropType::Value(_)) {
+            // 返回默认值所有权诊断。
+            return Err(Diagnostic::new(
+                // 指向完整 props 声明。
+                span,
+                // 陈述不支持的默认值类别。
+                format!("prop {name} 的 State 或回调类型不能声明默认值"),
+                // 给出基础值或必填修复方式。
+                "移除默认值保持调用必填，或把 prop 改为基础值类型",
+            ));
+        }
         // 保存有序 prop。
         props.push(ComponentProp {
             // 保存名称。
             name: name.to_string(),
             // 保存类型。
             kind,
+            // 保存可选默认表达式。
+            default,
             // 保存所属属性跨度。
             span,
         });
@@ -255,6 +273,14 @@ fn parse_value_type(source: &str) -> Option<ComponentValueType> {
         "number" => Some(ComponentValueType::Number),
         // 映射 bool。
         "bool" => Some(ComponentValueType::Bool),
+        // 映射公开日期语义值。
+        "Date" => Some(ComponentValueType::Date),
+        // 映射公开时间语义值。
+        "Time" => Some(ComponentValueType::Time),
+        // 映射公开颜色语义值。
+        "Color" => Some(ComponentValueType::Color),
+        // 映射公开坐标语义值。
+        "Point" => Some(ComponentValueType::Point),
         // 映射可空字符串选择。
         "Option<String>" => Some(ComponentValueType::OptionalString),
         // 其他名称不在白名单。

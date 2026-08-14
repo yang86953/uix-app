@@ -79,9 +79,16 @@ mod dynamic_style_lower;
 mod pseudo_style_lower;
 // 定义 Component 声明级语法与类型白名单解析。
 mod component_parser;
+// 定义 Component prop 类型后缀与受限默认表达式解析。
+mod component_prop_default_parser;
+// 定义组件调用属性完整性、唯一性与必填校验。
+mod component_call_validator;
 // 集中验证 Component props、state 与名称诊断。
 #[cfg(test)]
 mod component_tests;
+// 集中验证 Component prop 默认值、覆盖与必填诊断。
+#[cfg(test)]
+mod component_prop_default_tests;
 // 定义包含位置、原因与修复建议的解析诊断。
 mod diagnostic;
 // 定义顶层指令、样式类与主题解析。

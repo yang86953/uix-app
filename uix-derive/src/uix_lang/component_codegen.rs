@@ -9,12 +9,15 @@ use quote::quote;
 // 引入组件、文档、表达式与视图 AST。
 use super::{
     Attribute, AttributeValue, ComponentDeclaration, ComponentScopeMarker, ControlBinding,
-    Declaration, Diagnostic, Document, Element, Node, RecordDeclaration, StyleClassResolver,
+    Declaration, Diagnostic, Document, Element, ExpressionKind, ExpressionNode, Node,
+    RecordDeclaration, StyleClassResolver,
 };
 // 引入既有核心 View 生成入口。
 use super::generate_view;
 // 引入组件动态样式使用检测。
 use super::dynamic_style_lower::nodes_use_set_style;
+// 引入组件调用属性完整性与必填校验入口。
+use super::component_call_validator::validate_component_attributes;
 
 // 保存组件字段展开后的 Rust 局部绑定。
 #[derive(Clone)]
@@ -620,14 +623,48 @@ impl ComponentExpander {
             };
             // 按声明顺序生成 props。
             for prop in &component.props {
-                // 读取已经验证存在的属性。
-                let attribute = attributes
-                    // 按 prop 名称查找。
-                    .get(&prop.name)
-                    // 复制属性借用。
-                    .copied()
-                    // 完整性验证保证存在。
-                    .expect("必需 prop 已完成存在性验证");
+                // 为省略的可选 prop 保留一个声明期合成属性槽。
+                let default_attribute;
+                // 优先读取调用方属性，否则使用已验证默认表达式。
+                let attribute = if let Some(attribute) = attributes.get(&prop.name) {
+                    // 返回显式调用参数。
+                    *attribute
+                } else {
+                    // 调用校验保证省略的 prop 一定拥有默认值。
+                    let default = prop.default.clone().expect("可选 prop 必须拥有默认值");
+                    // 字面量复用既有 prop 类型物化，数据构造保留表达式生成。
+                    let default_value = match &default.kind {
+                        // 字符串默认值交给拥有型 String 转换。
+                        ExpressionKind::String(value) => AttributeValue::Literal(value.clone()),
+                        // 数字默认值保留作者数值文本。
+                        ExpressionKind::Number(value) => AttributeValue::Literal(value.clone()),
+                        // 布尔默认值恢复为严格字面文本。
+                        ExpressionKind::Boolean(value) => {
+                            // 转换为 true 或 false。
+                            AttributeValue::Literal(value.to_string())
+                        }
+                        // 已登记数据构造继续使用表达式路径。
+                        _ => AttributeValue::Expression(ExpressionNode {
+                            // 保存可辨识的内部来源文本。
+                            source: format!("<default:{}>", prop.name),
+                            // 保存已验证默认表达式。
+                            expression: default,
+                            // 沿用 props 声明跨度。
+                            span: prop.span,
+                        }),
+                    };
+                    // 构造只在本轮绑定期间借用的合成属性。
+                    default_attribute = Attribute {
+                        // 沿用 prop 名称供类型诊断使用。
+                        name: prop.name.clone(),
+                        // 保存按形状物化的默认值。
+                        value: default_value,
+                        // 沿用 props 声明跨度。
+                        span: prop.span,
+                    };
+                    // 返回合成默认属性借用。
+                    &default_attribute
+                };
                 // 生成类型化 prop 绑定。
                 self.emit_prop_binding(prop, attribute, outer_bindings, &mut bindings)?;
             }
@@ -749,87 +786,6 @@ impl ComponentExpander {
         // 使用调用点跨度，使表达式 AST 重建的同名标识符可解析到该绑定。
         Ident::new(&name, Span::call_site())
     }
-}
-
-// 验证组件调用属性完整、唯一且无未知字段。
-fn validate_component_attributes<'a>(
-    // 接收组件调用元素。
-    element: &'a Element,
-    // 接收目标组件声明。
-    component: &ComponentDeclaration,
-) -> Result<BTreeMap<String, &'a Attribute>, Diagnostic> {
-    // 保存调用属性映射。
-    let mut attributes = BTreeMap::new();
-    // 按源码顺序登记属性。
-    for attribute in &element.attributes {
-        // 组件调用事件应通过回调 prop 传入。
-        if attribute.name.starts_with('@') {
-            // 返回未知事件属性诊断。
-            return Err(Diagnostic::new(
-                // 指向事件属性。
-                attribute.span,
-                // 说明事件不属于声明 props。
-                format!(
-                    "组件调用 <{}> 不接受事件属性 {}",
-                    element.name, attribute.name
-                ),
-                // 给出回调 prop 模式。
-                "通过组件声明的回调 prop 传入处理器",
-            ));
-        }
-        // 检查同名 prop 声明。
-        let known = component
-            // 遍历 props。
-            .props
-            // 借用迭代器。
-            .iter()
-            // 判断名称是否匹配。
-            .any(|prop| prop.name == attribute.name);
-        // 未声明属性不能静默透传。
-        if !known {
-            // 返回未知 prop 诊断。
-            return Err(Diagnostic::new(
-                // 指向未知属性。
-                attribute.span,
-                // 说明组件未声明输入。
-                format!("<{}> 未声明 prop {}", element.name, attribute.name),
-                // 给出删除或声明建议。
-                "删除该属性，或把同名字段加入 Component props",
-            ));
-        }
-        // 拒绝重复传入同一 prop。
-        if attributes
-            .insert(attribute.name.clone(), attribute)
-            .is_some()
-        {
-            // 返回重复属性诊断。
-            return Err(Diagnostic::new(
-                // 指向后出现的属性。
-                attribute.span,
-                // 说明 prop 重复传值。
-                format!("<{}> 重复传入 prop {}", element.name, attribute.name),
-                // 给出唯一传值要求。
-                "每个 prop 在一次组件调用中只传入一次",
-            ));
-        }
-    }
-    // 检查全部必需 props。
-    for prop in &component.props {
-        // 缺少同名属性时返回诊断。
-        if !attributes.contains_key(&prop.name) {
-            // 返回缺失 prop 诊断。
-            return Err(Diagnostic::new(
-                // 指向完整组件调用。
-                element.span,
-                // 说明缺少必需输入。
-                format!("<{}> 缺少必需 prop {}", element.name, prop.name),
-                // 给出修复建议。
-                format!("在调用处加入 {}=...", prop.name),
-            ));
-        }
-    }
-    // 返回完成验证的属性映射。
-    Ok(attributes)
 }
 
 // 判断节点是否会生成可见或结构 View。
