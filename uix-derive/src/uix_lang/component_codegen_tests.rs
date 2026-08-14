@@ -495,9 +495,9 @@ fn rejects_style_class_inheritance_cycle() {
 fn rewrites_state_fields_to_handles_in_handle_position_attributes() {
     // 解析由私有 state 控制的受控组件与双向绑定组件。
     let document = parse_document(
-        // Modal、Switch、RangeSlider 与 SelectableList 受控属性都读取句柄本身。
+        // Modal、Switch、RangeSlider、SelectableList 与 Upload 受控属性都读取句柄本身。
         r#"
-        <Component name="Controlled" state="open: false, checked: true, start: 20, end: 80, active: Option<String> = None, collapse_keys: Vec<String> = []">
+        <Component name="Controlled" state="open: false, checked: true, start: 20, end: 80, active: Option<String> = None, collapse_keys: Vec<String> = [], upload_files: Vec<UploadFile> = []">
           <Column>
             <Modal open={open} title="受控">
               <Text>{open}</Text>
@@ -507,6 +507,7 @@ fn rewrites_state_fields_to_handles_in_handle_position_attributes() {
             <RangeSlider value={{ start: start, end: end }} min="0" max="100" />
             <SelectableList items={[SelectableItem('alpha', 'Alpha')]} active={active} />
             <Collapse panels={[CollapsePanel('面板', '内容').key('panel')]} activeKeys={collapse_keys} />
+            <Upload files={upload_files} />
           </Column>
         </Component>
         <Controlled />
@@ -534,6 +535,8 @@ fn rewrites_state_fields_to_handles_in_handle_position_attributes() {
     assert!(tokens.contains(". active_state (& (__uix_state_"));
     // Collapse activeKeys 必须绑定稳定 key 集合状态句柄。
     assert!(tokens.contains(". active_keys (& (__uix_state_"));
+    // Upload files 必须绑定完整上传文件队列状态句柄。
+    assert!(tokens.contains("Upload :: new () . files (& (__uix_state_"));
 }
 
 // 验证句柄位属性引用只读 prop 时返回明确诊断。

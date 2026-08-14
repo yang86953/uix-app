@@ -91,6 +91,10 @@ pub(crate) fn value_type_tokens(value_type: ComponentValueType) -> TokenStream {
         }
         // 字符串向量对应 Vec<String>。
         ComponentValueType::VecOfString => quote! { ::std::vec::Vec<::std::string::String> },
+        // 上传队列对应 Vec<UploadFile>。
+        ComponentValueType::VecOfUploadFile => {
+            quote! { ::std::vec::Vec<::uix::prelude::UploadFile> }
+        }
         // 可空字符串对应 Option<String>。
         ComponentValueType::OptionalString => {
             quote! { ::std::option::Option<::std::string::String> }
