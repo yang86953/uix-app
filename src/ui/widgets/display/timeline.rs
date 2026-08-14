@@ -29,7 +29,9 @@ struct TimelineGeometry {
 pub struct TimelineItem {
     /// 显式节点色；透明色作为未指定哨兵，由绘制阶段解析为当前主题主色。
     pub color: Color,
+    /// 节点的主要标签文本。
     pub label: String,
+    /// 节点标签下方的辅助描述文本。
     pub description: String,
 }
 
@@ -150,6 +152,7 @@ component! {
 }
 
 impl Timeline {
+    /// 创建不含节点且未启用等待状态的时间线。
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
@@ -157,10 +160,12 @@ impl Timeline {
             reverse: false,
         }
     }
+    /// 替换时间线的全部节点。
     pub fn items(mut self, items: Vec<TimelineItem>) -> Self {
         self.items = items;
         self
     }
+    /// 向时间线末尾追加一个节点。
     #[allow(
         clippy::should_implement_trait,
         reason = "add is the established fluent builder API, not arithmetic addition"
@@ -169,10 +174,13 @@ impl Timeline {
         self.items.push(item);
         self
     }
+    /// 设置是否在所有事件节点之后显示等待节点。
     pub fn pending(mut self, v: bool) -> Self {
         self.pending = v;
         self
     }
+
+    /// 设置是否反向展示事件节点；等待节点仍位于末尾。
     pub fn reverse(mut self, v: bool) -> Self {
         self.reverse = v;
         self
@@ -385,6 +393,7 @@ impl Default for Timeline {
 }
 
 impl TimelineItem {
+    /// 使用主要标签创建跟随当前主题主色的节点。
     pub fn new(label: &str) -> Self {
         Self {
             // 构造阶段不拥有主题上下文，透明哨兵由绘制阶段解析为 color_primary。
@@ -393,10 +402,13 @@ impl TimelineItem {
             description: String::new(),
         }
     }
+    /// 设置节点的辅助描述文本。
     pub fn description(mut self, d: &str) -> Self {
         self.description = d.to_string();
         self
     }
+
+    /// 设置节点的显式绘制颜色。
     pub fn color(mut self, c: Color) -> Self {
         // 显式颜色保持高于主题默认值的优先级。
         self.color = c;
