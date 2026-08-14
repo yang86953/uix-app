@@ -12,6 +12,15 @@
 cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo
 ```
 
+需要执行本机 Agent 语义验收时，必须同时打开 Cargo feature 与运行时参数：
+
+```powershell
+cargo run --release --manifest-path demo/Cargo.toml --features agent-control --bin uix-lang-demo -- --agent-control
+```
+
+普通启动不会发布 Agent 端点；只传 `--agent-control` 但未启用 feature 会在创建窗口前
+以退出码 2 返回定向错误。
+
 Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。Windows 入口在 8MB
 大栈 UI 线程上运行，承载声明文件展开出的深层 ViewNode 树。
 
@@ -32,16 +41,16 @@ Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。Windows 入口
 - 语言能力：props（String / number / bool / State<T> / 回调签名）、样式类继承与内联
   style、If / For 控制流、setTheme 框架内置操作（主题请求通道，无调用方桥接）、
   `<Record>` 类型化业务模型（`uix_items!` 生成模块级结构体供 Rust 侧回调引用）。
-- Transfer、Upload、Message / Notification
-  等尚未登记的标签保留 Rust API
-  边界，并在界面中明确说明。
-- 真窗验收（agent-control / test-harness）是测试侧能力，不复制到声明式产品界面。
+- Transfer 与图表等尚未登记的 UIX 标签保留 Rust API 边界，并在界面中明确说明。
+- 真窗验收控制面是测试侧能力，不复制到声明式产品界面；主演示通过
+  `agent-control` feature 与 `--agent-control` 参数双门禁复用现有 App System 控制面。
 
 ## 当前边界
 
 `uix!` 继续只生成 `ViewNode`；本项目使用 `uix_app!` 消费 `<App>` 根并返回尚未运行的现有
-`App` builder。窗口标题、尺寸和初始主题来自语言面，`custom_title_bar`、`on_start` 与最终
-`run()` 仍由 Rust 薄入口链式配置，没有引入运行时解释器或第二套窗口所有者。
+`App` builder。窗口标题、尺寸和初始主题来自语言面，`custom_title_bar`、`on_start`、可选
+`enable_agent_control` 与最终 `run()` 仍由 Rust 薄入口链式配置，没有引入运行时解释器或
+第二套窗口所有者。
 
 Rust 侧只保留三类内容：窗口生命周期状态（页面、计数与秒级 tick）与 App 组合根，以及
 由 Rust 构造的私有类型演示数据（VirtualScroll 的 DemoRow 行）。类型化状态（集合、级联

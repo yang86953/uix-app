@@ -22,7 +22,13 @@ App::new()
     .run();
 ```
 
-当前仓库主演示 `uix-lang-demo` 未接入 agent-control 入口；agent-control 作为库能力由契约测试与 Windows 真窗验收覆盖。
+当前仓库主演示 `uix-lang-demo` 已接入相同的显式双门禁，可用以下命令启动 Windows 真窗验收载体：
+
+```powershell
+cargo run --release --manifest-path demo/Cargo.toml --features agent-control --bin uix-lang-demo -- --agent-control
+```
+
+只启用 feature 或只传参数都不会发布端点：前者保持普通主演示，后者在创建窗口前以退出码 2 定向失败。
 
 ## 端点协议
 

@@ -4,6 +4,29 @@ use std::time::Duration;
 
 use uix::prelude::*;
 
+// 保存主演示组合根支持的显式启动选项。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct LaunchOptions {
+    // 记录调用方是否请求启用本机 Agent Bridge。
+    agent_control: bool,
+}
+
+// 解析主演示启动参数，不把控制面选择泄漏到声明式界面。
+fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions {
+    // 从全部关闭的安全默认值开始。
+    let mut options = LaunchOptions::default();
+    // 按调用方顺序读取参数。
+    for argument in args {
+        // 只识别已经登记的显式控制面开关。
+        if argument == "--agent-control" {
+            // 记录运行时第二道启用门禁。
+            options.agent_control = true;
+        }
+    }
+    // 返回不包含任何运行时资源的纯配置值。
+    options
+}
+
 // 生成 main.uix 中 <Record> 声明的模块级业务模型，供 uix! 与 Rust 侧回调共同引用。
 uix_items!("src/main.uix");
 
@@ -128,6 +151,18 @@ fn build_app(states: DemoStates) -> App {
 fn main() {
     // 安装环境过滤日志订阅器（UIX 日志域默认 info）。
     init_tracing();
+    // 在创建状态或窗口前解析组合根启动选项。
+    let options = parse_launch_options(std::env::args().skip(1));
+    // 未编译 Agent 能力时，显式请求必须定向失败而不是静默降级。
+    #[cfg(not(feature = "agent-control"))]
+    if options.agent_control {
+        // 输出可直接执行的 feature 与参数双门禁命令。
+        eprintln!(
+            "--agent-control 需要同时启用 Cargo feature：\n  cargo run --manifest-path demo/Cargo.toml --features agent-control --bin uix-lang-demo -- --agent-control"
+        );
+        // 在任何窗口或 Agent 资源创建前返回参数错误。
+        std::process::exit(2);
+    }
     // 创建窗口级持久状态槽与演示数据。
     let states = DemoStates::new();
     // 克隆 tick 句柄供 on_start 秒级计时器更新。
@@ -142,7 +177,7 @@ fn main() {
         let ui_thread = match std::thread::Builder::new()
             .name("uix-lang-demo-gui".to_string())
             .stack_size(WINDOWS_GUI_STACK_BYTES)
-            .spawn(move || run_gui(states.clone(), tick.clone()))
+            .spawn(move || run_gui(states.clone(), tick.clone(), options.agent_control))
         {
             // 返回已创建的 UI 线程。
             Ok(ui_thread) => ui_thread,
@@ -157,12 +192,19 @@ fn main() {
 
     // 其他平台沿用主线程入口。
     #[cfg(not(windows))]
-    run_gui(states, tick);
+    run_gui(states, tick, options.agent_control);
     // 结束进程入口。
 }
 
 // 组装并运行 uix-lang 演示窗口。
-fn run_gui(states: DemoStates, tick: State<f64>) {
+fn run_gui(
+    // 接收窗口级持久状态与演示数据。
+    states: DemoStates,
+    // 接收秒级计时状态句柄。
+    tick: State<f64>,
+    // 接收已经通过启动参数选择的 Agent 控制开关。
+    agent_control: bool,
+) {
     // 由语言面组装演示 App 与根 View。
     let app = build_app(states)
         // 由声明式根视图绘制与 API GUI Demo 一致的自定义标题栏。
@@ -179,6 +221,23 @@ fn run_gui(states: DemoStates, tick: State<f64>) {
                 })
                 .detach();
         });
+    // feature 存在且启动参数显式请求时才开放 Agent Bridge。
+    #[cfg(feature = "agent-control")]
+    let app = if agent_control {
+        // 复用 App System 唯一的 Agent Module 组装入口。
+        app.enable_agent_control()
+    } else {
+        // 普通主演示保持控制面关闭。
+        app
+    };
+    // feature 缺失时保留同一 App 类型，并锁定前置门禁已经拒绝请求。
+    #[cfg(not(feature = "agent-control"))]
+    let app = {
+        // 调试构建核对参数 Gate 没有被后续改动绕过。
+        debug_assert!(!agent_control);
+        // 返回未启用控制面的应用构建器。
+        app
+    };
     // 进入并由同一个现有 App 持有原生窗口事件循环。
     app.run();
 }
