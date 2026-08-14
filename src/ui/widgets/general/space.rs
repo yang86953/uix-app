@@ -21,13 +21,18 @@ use crate::ui::{ComponentId, WidgetComponent, WidgetTree};
 /// Predefined space sizes matching Ant Design.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpaceSize {
+    /// 八逻辑像素的紧凑间距。
     Small,  // 8px
+    /// 十六逻辑像素的标准间距。
     Middle, // 16px
+    /// 二十四逻辑像素的宽松间距。
     Large,  // 24px
+    /// 调用方提供的自定义逻辑像素间距。
     Custom(f32),
 }
 
 impl SpaceSize {
+    /// 返回此间距档位对应的逻辑像素值。
     pub fn value(&self) -> f32 {
         match self {
             Self::Small => 8.0,
@@ -165,6 +170,7 @@ impl Space {
         (self.fixed_width.is_some(), self.fixed_height.is_some())
     }
 
+    /// 创建水平、居中对齐、不换行且使用紧凑间距的空容器。
     pub fn new() -> Self {
         Self {
             children: WidgetChildren::new(),
@@ -180,36 +186,44 @@ impl Space {
         }
     }
 
+    /// 追加一个由此容器拥有的子组件。
     pub fn child(self, w: impl WidgetComponent + 'static) -> Self {
         self.children.add(w);
         self
     }
 
+    /// 替换此容器拥有的全部子组件。
     pub fn children(self, widgets: Vec<Box<dyn WidgetComponent>>) -> Self {
         self.children.set_all(widgets);
         self
     }
 
+    /// 设置子组件沿主轴排列的方向。
     pub fn direction(mut self, d: FlexDirection) -> Self {
         self.direction = d;
         self
     }
+    /// 设置相邻子组件之间的统一间距。
     pub fn size(mut self, s: SpaceSize) -> Self {
         self.space_size = s;
         self
     }
+    /// 设置子组件在主轴上的空间分配方式。
     pub fn justify(mut self, j: JustifyContent) -> Self {
         self.justify = j;
         self
     }
+    /// 设置子组件在交叉轴上的默认对齐方式。
     pub fn align(mut self, a: AlignItems) -> Self {
         self.align = a;
         self
     }
+    /// 设置首选宽度；正值锁定宽度，零按未指定尺寸处理。
     pub fn width(mut self, w: f32) -> Self {
         self.fixed_width = Some(w);
         self
     }
+    /// 设置首选高度；正值锁定高度，零按未指定尺寸处理。
     pub fn height(mut self, h: f32) -> Self {
         self.fixed_height = Some(h);
         self
@@ -220,10 +234,12 @@ impl Space {
         self.flex_grow_val = v;
         self
     }
+    /// 将排列方向切换为从上到下的垂直方向。
     pub fn vertical(mut self) -> Self {
         self.direction = FlexDirection::Column;
         self
     }
+    /// 设置主轴空间不足时是否把子组件换到下一行或列。
     pub fn wrap(mut self, v: bool) -> Self {
         self.wrap = v;
         self
