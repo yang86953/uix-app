@@ -98,10 +98,12 @@ impl Style {
         self.background
     }
 
+    /// 使用主题令牌解析最终文本颜色。
     pub fn resolve_color(&self, tokens: &dyn ThemeTokens) -> Color {
         self.color.resolve(tokens)
     }
 
+    /// 使用主题令牌解析最终字体大小。
     pub fn resolve_font_size(&self, tokens: &dyn ThemeTokens) -> f32 {
         self.font_size.resolve(tokens)
     }
@@ -252,23 +254,28 @@ impl Style {
 
     // ── 盒模型链式方法 ──
 
+    /// 设置四边外边距。
     pub fn with_margin(mut self, m: EdgeInsets) -> Self {
         self.margin = m;
         self
     }
+    /// 设置四边内边距。
     pub fn with_padding(mut self, p: EdgeInsets) -> Self {
         self.padding = p;
         self
     }
+    /// 设置统一宽度和颜色的边框。
     pub fn with_border(mut self, color: impl Into<ColorValue>, width: f32) -> Self {
         self.border_color = Some(color.into());
         self.border_width = EdgeInsets::uniform(width);
         self
     }
+    /// 分别设置四边边框宽度。
     pub fn with_border_width(mut self, width: impl Into<EdgeInsets>) -> Self {
         self.border_width = width.into();
         self
     }
+    /// 设置圆角半径。
     pub fn with_rounded(mut self, r: f32) -> Self {
         self.border_radius = r;
         self
@@ -276,14 +283,17 @@ impl Style {
 
     // ── 尺寸链式方法 ──
 
+    /// 设置显式宽度。
     pub fn with_width(mut self, w: f32) -> Self {
         self.width = Some(w);
         self
     }
+    /// 设置显式高度。
     pub fn with_height(mut self, h: f32) -> Self {
         self.height = Some(h);
         self
     }
+    /// 同时设置显式宽度和高度。
     pub fn with_size(mut self, w: f32, h: f32) -> Self {
         self.width = Some(w);
         self.height = Some(h);
@@ -292,67 +302,83 @@ impl Style {
 
     // ── 布局链式方法 ──
 
+    /// 设置显示与布局模式。
     pub fn with_display(mut self, d: DisplayMode) -> Self {
         self.display = d;
         self
     }
+    /// 设置 Flex 主轴方向。
     pub fn with_direction(mut self, d: FlexDirection) -> Self {
         self.flex_direction = d;
         self
     }
+    /// 设置 Flex 子项是否换行。
     pub fn with_wrap(mut self, w: bool) -> Self {
         self.flex_wrap = w;
         self
     }
+    /// 设置 Flex 主轴对齐方式。
     pub fn with_justify(mut self, j: JustifyContent) -> Self {
         self.justify_content = j;
         self
     }
+    /// 设置 Flex 交叉轴对齐方式。
     pub fn with_align(mut self, a: AlignItems) -> Self {
         self.align_items = a;
         self
     }
+    /// 设置子项统一间距。
     pub fn with_gap(mut self, g: f32) -> Self {
         self.gap = g;
         self
     }
+    /// 设置 Grid 列轨道模板。
     pub fn with_grid_columns(mut self, columns: Vec<GridTrack>) -> Self {
         self.grid_template_columns = columns;
         self
     }
+    /// 设置 Grid 行轨道模板。
     pub fn with_grid_rows(mut self, rows: Vec<GridTrack>) -> Self {
         self.grid_template_rows = rows;
         self
     }
+    /// 分别设置 Grid 列间距和行间距。
     pub fn with_grid_gap(mut self, col_gap: f32, row_gap: f32) -> Self {
         self.grid_column_gap = col_gap;
         self.grid_row_gap = row_gap;
         self
     }
+    /// 设置 Flex 扩展系数。
     pub fn with_grow(mut self, g: f32) -> Self {
         self.flex_grow = g;
         self
     }
+    /// 设置 Flex 收缩系数。
     pub fn with_shrink(mut self, s: f32) -> Self {
         self.flex_shrink = s;
         self
     }
+    /// 设置当前子项的交叉轴覆盖对齐方式。
     pub fn with_align_self(mut self, a: AlignItems) -> Self {
         self.align_self = Some(a);
         self
     }
+    /// 设置兼容的一维 Grid 单元索引。
     pub fn with_grid_cell(mut self, cell: usize) -> Self {
         self.grid_cell = Some(cell);
         self
     }
+    /// 设置至少为一的 Grid 跨列数。
     pub fn with_grid_column_span(mut self, span: u32) -> Self {
         self.grid_column_span = span.max(1);
         self
     }
+    /// 设置至少为一的 Grid 跨行数。
     pub fn with_grid_row_span(mut self, span: u32) -> Self {
         self.grid_row_span = span.max(1);
         self
     }
+    /// 同时设置至少为一的 Grid 跨列数和跨行数。
     pub fn with_grid_span(mut self, columns: u32, rows: u32) -> Self {
         self.grid_column_span = columns.max(1);
         self.grid_row_span = rows.max(1);
@@ -361,38 +387,47 @@ impl Style {
 
     // ── 视觉链式方法 ──
 
+    /// 设置常态背景色。
     pub fn with_bg(mut self, c: impl Into<ColorValue>) -> Self {
         self.background = Some(c.into());
         self
     }
+    /// 设置悬停态背景色。
     pub fn with_bg_hover(mut self, c: impl Into<ColorValue>) -> Self {
         self.background_hover = Some(c.into());
         self
     }
+    /// 设置聚焦态背景色。
     pub fn with_bg_focus(mut self, c: impl Into<ColorValue>) -> Self {
         self.background_focus = Some(c.into());
         self
     }
+    /// 设置激活态背景色。
     pub fn with_bg_active(mut self, c: impl Into<ColorValue>) -> Self {
         self.background_active = Some(c.into());
         self
     }
+    /// 设置文本颜色。
     pub fn with_color(mut self, c: impl Into<ColorValue>) -> Self {
         self.color = c.into();
         self
     }
+    /// 设置字体大小令牌。
     pub fn with_font_size(mut self, s: impl Into<TypographyToken>) -> Self {
         self.font_size = s.into();
         self
     }
+    /// 设置全局透明度。
     pub fn with_opacity(mut self, o: f32) -> Self {
         self.opacity = o;
         self
     }
+    /// 设置盒阴影。
     pub fn with_shadow(mut self, shadow: BoxShadowDef) -> Self {
         self.box_shadow = Some(shadow);
         self
     }
+    /// 设置样式可见性。
     pub fn with_visible(mut self, v: bool) -> Self {
         self.visible = v;
         self
