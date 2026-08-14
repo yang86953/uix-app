@@ -154,12 +154,39 @@
 // 结束输入组件页组件。
 </Component>
 
+// 声明以默认与具名 Slot 复用的演示面板容器。
+<Component name="DemoSlotPanel" props="title: String">
+  // 统一提供主演示面板外观与内容排列。
+  <Container class="pagePanel">
+    // 组织标题、默认主体与具名操作区。
+    <Column gap="12px">
+      // 展示由容器 prop 提供的小节标题。
+      <Text fontSize="heading5">{title}</Text>
+      // 在调用方作用域内联默认主体。
+      <Slot />
+      // 排列调用方归入 footer 的操作内容。
+      <Container direction="row" gap="8px"><Slot name="footer" /></Container>
+    // 结束插槽面板内容。
+    </Column>
+  // 结束插槽面板容器。
+  </Container>
+// 结束可复用插槽面板组件。
+</Component>
+
 // 声明数据展示页组件并持有稳定选中、展开状态与有序派生值。
 <Component name="DataPage" external="on_gallery_change" state="selected_item: Option<String> = None, active_panels: Vec<String> = []" computed="visible_panels: active_panels.filter(|key| key.length > 0), remaining: visible_panels.length">
   // 组织数据展示内容。
   <Column gap="16px">
     // 展示数据组件标题。
     <Text fontSize="heading2">数据展示</Text>
+    // 使用默认与具名 Slot 复用统一面板外壳。
+    <DemoSlotPanel title="Slot — 调用方内容投影">
+      // 默认插槽内容在 DataPage 调用方作用域读取 computed。
+      <Text>默认主体可读取剩余数量：{remaining}</Text>
+      // 具名 footer 内容按模板占位归位。
+      <Button slot="footer">具名操作区</Button>
+    // 结束插槽容器调用。
+    </DemoSlotPanel>
     // 展示选择、折叠与徽标组件面板。
     <Container class="pagePanel">
       // 组织三个新登记数据展示组件。
