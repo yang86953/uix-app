@@ -22,8 +22,11 @@ const RESPONSIVE_GRID_UNITS: usize = 24;
 /// 自定义响应式断点无效时返回的 typed 错误。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BreakpointError {
+    /// 至少一个断点不是有限数值。
     NonFinite,
+    /// 至少一个断点为负数。
     Negative,
+    /// 断点没有从固定的零宽度起点严格递增。
     NotStrictlyAscending,
 }
 
@@ -83,26 +86,32 @@ impl Breakpoints {
         }
     }
 
+    /// 返回固定为零的超小断点。
     pub const fn xs(self) -> f32 {
         0.0
     }
 
+    /// 返回小断点。
     pub const fn sm(self) -> f32 {
         self.sm
     }
 
+    /// 返回中等断点。
     pub const fn md(self) -> f32 {
         self.md
     }
 
+    /// 返回大断点。
     pub const fn lg(self) -> f32 {
         self.lg
     }
 
+    /// 返回超大断点。
     pub const fn xl(self) -> f32 {
         self.xl
     }
 
+    /// 返回双倍超大断点。
     pub const fn xxl(self) -> f32 {
         self.xxl
     }
@@ -128,6 +137,7 @@ pub struct Col {
 }
 
 impl Col {
+    /// 创建默认跨越全部二十四单元的列配置。
     pub const fn new() -> Self {
         Self {
             span: RESPONSIVE_GRID_UNITS as u8,
@@ -141,54 +151,65 @@ impl Col {
         }
     }
 
+    /// 设置一到二十四之间的基础跨列数。
     pub fn span(mut self, span: u32) -> Self {
         self.span = Self::normalize_span(span);
         self
     }
 
+    /// 设置小断点及以上的跨列数。
     pub fn sm(mut self, span: u32) -> Self {
         self.sm = Some(Self::normalize_span(span));
         self
     }
 
+    /// 设置中等断点及以上的跨列数。
     pub fn md(mut self, span: u32) -> Self {
         self.md = Some(Self::normalize_span(span));
         self
     }
 
+    /// 设置大断点及以上的跨列数。
     pub fn lg(mut self, span: u32) -> Self {
         self.lg = Some(Self::normalize_span(span));
         self
     }
 
+    /// 设置超大断点及以上的跨列数。
     pub fn xl(mut self, span: u32) -> Self {
         self.xl = Some(Self::normalize_span(span));
         self
     }
 
+    /// 设置双倍超大断点及以上的跨列数。
     pub fn xxl(mut self, span: u32) -> Self {
         self.xxl = Some(Self::normalize_span(span));
         self
     }
 
+    /// 设置当前列之前保留的栅格单元数。
     pub fn offset(mut self, offset: u32) -> Self {
         self.offset = offset.min((RESPONSIVE_GRID_UNITS - 1) as u32) as u8;
         self
     }
 
+    /// 设置不改变源节点身份的视觉排序值。
     pub fn order(mut self, order: i32) -> Self {
         self.order = order;
         self
     }
 
+    /// 返回基础跨列数。
     pub const fn base_span(self) -> u8 {
         self.span
     }
 
+    /// 返回基础前置偏移单元数。
     pub const fn base_offset(self) -> u8 {
         self.offset
     }
 
+    /// 返回视觉排序值。
     pub const fn visual_order(self) -> i32 {
         self.order
     }
@@ -386,6 +407,7 @@ impl SnapshotSource for Grid {
 }
 
 impl Grid {
+    /// 创建使用 Grid 显示模式的空容器。
     pub fn new() -> Self {
         Self {
             style: Style::default().with_display(DisplayMode::Grid),
@@ -467,12 +489,14 @@ impl Grid {
         .visual_rect(frame)
     }
 
+    /// 替换样式并强制保持 Grid 显示模式。
     pub fn style(mut self, style: Style) -> Self {
         self.style = style.with_display(DisplayMode::Grid);
         self.ensure_responsive_tracks();
         self
     }
 
+    /// 设置显式列轨并关闭响应式二十四单元模式。
     pub fn columns(mut self, cols: Vec<GridTrack>) -> Self {
         self.style.grid_template_columns = cols;
         self.breakpoints = None;
@@ -503,25 +527,30 @@ impl Grid {
         self
     }
 
+    /// 判断是否启用了响应式二十四单元模式。
     pub fn is_responsive(&self) -> bool {
         self.breakpoints.is_some()
     }
 
+    /// 设置显式行轨。
     pub fn rows(mut self, rows: Vec<GridTrack>) -> Self {
         self.style.grid_template_rows = rows;
         self
     }
 
+    /// 设置列轨间距。
     pub fn col_gap(mut self, gap: f32) -> Self {
         self.style.grid_column_gap = gap;
         self
     }
 
+    /// 设置行轨间距。
     pub fn row_gap(mut self, gap: f32) -> Self {
         self.style.grid_row_gap = gap;
         self
     }
 
+    /// 同时设置通用、列轨和行轨间距。
     pub fn gap(mut self, gap: f32) -> Self {
         self.style.gap = gap;
         self.style.grid_column_gap = gap;
@@ -529,38 +558,45 @@ impl Grid {
         self
     }
 
+    /// 设置内容内边距。
     pub fn pad(mut self, padding: EdgeInsets) -> Self {
         self.style.padding = padding;
         self
     }
 
+    /// 设置自定义背景色。
     pub fn bg(mut self, color: Color) -> Self {
         self.style.background = Some(ColorValue::Custom(color));
         self
     }
 
+    /// 设置统一颜色和宽度的边框。
     pub fn border(mut self, color: Color, width: f32) -> Self {
         self.style.border_color = Some(ColorValue::Custom(color));
         self.style.border_width = EdgeInsets::uniform(width);
         self
     }
 
+    /// 设置圆角半径。
     pub fn rounded(mut self, radius: f32) -> Self {
         self.style.border_radius = radius;
         self
     }
 
+    /// 同时设置显式宽度和高度。
     pub fn size(mut self, width: f32, height: f32) -> Self {
         self.style.width = Some(width);
         self.style.height = Some(height);
         self
     }
 
+    /// 设置单元格内子项的交叉轴对齐方式。
     pub fn align(mut self, align: AlignItems) -> Self {
         self.style.align_items = align;
         self
     }
 
+    /// 设置整组列轨在可用空间内的水平分布。
     pub fn justify(mut self, justify: JustifyContent) -> Self {
         self.style.justify_content = justify;
         self
@@ -577,16 +613,19 @@ impl Grid {
         )
     }
 
+    /// 合并非默认样式字段并保持 Grid 显示模式。
     pub fn apply_style(&mut self, style: &Style) {
         self.style = self.style.clone().apply(style.clone());
         self.style.display = DisplayMode::Grid;
         self.ensure_responsive_tracks();
     }
 
+    /// 创建两个等宽弹性列的 Grid。
     pub fn two_columns() -> Self {
         Self::new().columns(vec![GridTrack::Fr(1.0), GridTrack::Fr(1.0)])
     }
 
+    /// 创建三个等宽弹性列的 Grid。
     pub fn three_columns() -> Self {
         Self::new().columns(vec![
             GridTrack::Fr(1.0),
