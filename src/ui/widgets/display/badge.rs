@@ -27,20 +27,30 @@ use crate::ui::{LayoutChild, PrimaryHue, SnapshotFields, ThemeTokens};
 /// 但各自语义与变体独立（本枚举含 Default/Processing 徽章专用态），勿强行合并。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BadgeStatus {
+    /// 表示操作成功或状态正常。
     Success,
+    /// 表示操作正在进行中。
     Processing,
+    /// 表示不带功能色倾向的默认状态。
     Default,
+    /// 表示操作失败或发生错误。
     Error,
+    /// 表示需要用户注意的警告状态。
     Warning,
 }
 
 /// 预设徽章颜色。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BadgeColor {
+    /// 蓝色预设；在主题上下文中跟随品牌主色。
     Blue,
+    /// 绿色预设；在主题上下文中跟随成功色。
     Green,
+    /// 橙色预设。
     Orange,
+    /// 红色预设；在主题上下文中跟随错误色。
     Red,
+    /// 紫色预设。
     Purple,
 }
 
@@ -130,6 +140,7 @@ fn resolve_badge_background(
 
 /// 可用于 [`Badge::color`] 的颜色输入。
 pub trait IntoBadgeColor {
+    /// 转换为兼容颜色及是否应按当前主题重新解析预设色的标志。
     fn into_badge_color(self) -> (Color, bool);
 }
 
@@ -586,6 +597,7 @@ impl Badge {
         )
     }
 
+    /// 创建计数为零、上限为 99 且默认隐藏零值的徽标。
     pub fn new() -> Self {
         Self {
             count: 0,
@@ -616,14 +628,17 @@ impl Badge {
             offset_unit: None,
         }
     }
+    /// 设置非负计数；负数会被归零。
     pub fn count(mut self, n: i32) -> Self {
         self.count = n.max(0);
         self
     }
+    /// 设置计数显示上限；小于一的值会被归一化为一。
     pub fn max(mut self, n: i32) -> Self {
         self.max = n.max(1);
         self
     }
+    /// 启用圆点模式并把计数设置为一。
     pub fn dot(mut self) -> Self {
         self.dot = true;
         self.count = 1;
@@ -636,6 +651,7 @@ impl Badge {
         // 返回配置后的组件。
         self
     }
+    /// 设置自定义颜色或可随主题解析的预设颜色。
     pub fn color(mut self, c: impl IntoBadgeColor) -> Self {
         let (color, adaptive_foreground) = c.into_badge_color();
         self.color = Some(color);
@@ -655,14 +671,17 @@ impl Badge {
         badge.ribbon = true;
         badge
     }
+    /// 设置徽标的语义状态样式。
     pub fn status(mut self, s: BadgeStatus) -> Self {
         self.status = Some(s);
         self
     }
+    /// 设置计数为零时是否仍呈现徽标。
     pub fn show_zero(mut self, v: bool) -> Self {
         self.show_zero = v;
         self
     }
+    /// 设置徽标中显示的自定义文本。
     pub fn text(mut self, t: &str) -> Self {
         self.text = t.to_string();
         self
