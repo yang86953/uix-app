@@ -8,17 +8,26 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// 为 `Result<T, Error>` 提供 UIX 特定的便捷方法。
 pub trait ResultExt<T> {
+    /// 返回结果是否包含成功值。
     fn has_value(&self) -> bool;
+    /// 返回结果是否包含 UIX 错误。
     fn has_error(&self) -> bool;
+    /// 借用成功值，错误结果返回 `None`。
     fn value(&self) -> Option<&T>;
+    /// 可变借用成功值，错误结果返回 `None`。
     fn value_mut(&mut self) -> Option<&mut T>;
+    /// 消耗结果并取得成功值，错误结果返回 `None`。
     fn into_value(self) -> Option<T>;
+    /// 借用 UIX 错误，成功结果返回 `None`。
     fn error(&self) -> Option<&Error>;
+    /// 克隆成功值，或在错误时把默认值转换为结果类型。
     fn value_or<U>(&self, default: U) -> T
     where
         T: Clone,
         U: Into<T>;
+    /// 返回错误消息，成功结果返回 `None`。
     fn err_message(&self) -> Option<&str>;
+    /// 返回错误代码，成功结果返回 `None`。
     fn err_code(&self) -> Option<Errc>;
 }
 
@@ -73,9 +82,13 @@ impl<T> ResultExt<T> for Result<T, Error> {
     }
 }
 
+/// 为使用 UIX [`Error`] 的结果提供显式成功和失败构造器。
 pub trait ResultErrorExt<T> {
+    /// 从成功值构造结果。
     fn ok_value(value: T) -> Self;
+    /// 从现有 UIX 错误构造失败结果。
     fn err_error(err: Error) -> Self;
+    /// 从错误代码和消息构造失败结果。
     fn fail(code: Errc, message: impl Into<String>) -> Self;
 }
 
@@ -93,7 +106,9 @@ impl<T> ResultErrorExt<T> for Result<T, Error> {
     }
 }
 
+/// 为无返回值的 UIX 结果提供成功构造器。
 pub trait ResultVoidExt {
+    /// 构造包含单元值的成功结果。
     fn ok_void() -> Self;
 }
 
@@ -103,6 +118,7 @@ impl ResultVoidExt for Result<(), Error> {
     }
 }
 
+/// 从错误代码和消息创建 UIX 错误。
 pub fn make_error(code: Errc, message: impl Into<String>) -> Error {
     Error::new(code, message)
 }
