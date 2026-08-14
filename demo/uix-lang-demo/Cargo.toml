@@ -40,6 +40,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = tr
 # 默认启用演示日志订阅，与既有演示行为一致。
 default = ["demo-logging"]
 demo-logging = ["dep:tracing-subscriber", "uix/demo-logging"]
+# 显式透传本机 Agent Bridge 能力，运行时仍需 --agent-control 二次启用。
+agent-control = ["uix/agent-control"]
 
 [[bin]]
 name = "uix-lang-demo"
