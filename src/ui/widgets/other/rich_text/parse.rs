@@ -1,7 +1,5 @@
 //! 富文本解析与布局辅助。
-
 use super::*;
-
 // 复用独立的块级 Markdown 解析辅助，避免主解析器继续膨胀。
 #[path = "parse_blocks.rs"]
 mod parse_blocks;
@@ -20,9 +18,7 @@ mod parse_autolink;
 // 普通行内链接的分隔符、解码与目标字符校验保持在私有辅助边界。
 #[path = "parse_link.rs"]
 mod parse_link;
-// 图片编解码能力启用时才编译 Markdown 图片候选解析器。
-#[cfg(feature = "image-codecs")]
-// 把图片语法边界隔离为独立解析组件。
+// 把图片语法边界隔离为独立解析组件；能力关闭时仍用它完整保留字面候选。
 #[path = "parse_image.rs"]
 mod parse_image;
 // 跨行扫描与 Setext 消费独立归入行解析辅助模块。
@@ -43,6 +39,9 @@ pub fn layout_rich_text_segments(
     let char_count: usize = segments
         .iter()
         .map(|s| match s {
+            // 图片能力开启时 alt 是图片替换对象的逻辑文本。
+            #[cfg(feature = "image-codecs")]
+            RichTextSegment::Image { alt, .. } => alt.chars().count(),
             RichTextSegment::ThematicBreak => 0,
             RichTextSegment::NewLine => 1,
             RichTextSegment::Text { content, .. } => content.chars().count(),
@@ -164,6 +163,54 @@ fn parse_inline_element(
 ) -> Option<usize> {
     // 取出从当前位置开始的剩余文本。
     let remaining = &text[cursor..];
+    // 优先识别感叹号图片，避免内部标签在能力关闭时退化为普通链接。
+    if remaining.starts_with("![") {
+        // 私有图片辅助返回合法图片或完整字面候选。
+        if let Some(parsed) = parse_image::parse_inline_image(remaining) {
+            // 读取完整候选消费量。
+            let consumed = parsed.consumed();
+            // 图片能力开启时根据资源边界投影公开图片段或普通文本。
+            #[cfg(feature = "image-codecs")]
+            match parsed {
+                // 合法本地图片使用默认固有尺寸策略。
+                parse_image::ParsedInlineImage::Image { alt, src, .. } => {
+                    // 输出编译期门控的公开图片段。
+                    segments.push(RichTextSegment::Image {
+                        // 保存本地资源路径。
+                        src,
+                        // 保存复制与无障碍替代文本。
+                        alt,
+                        // Markdown 不覆盖固有宽度。
+                        width: None,
+                        // Markdown 不覆盖固有高度。
+                        height: None,
+                        // 默认保持固有比例居中。
+                        fit: true,
+                        // Markdown 默认没有额外圆角。
+                        radius: None,
+                    });
+                }
+                // 非本地或非法候选完整保持字面值。
+                parse_image::ParsedInlineImage::Literal { .. } => {
+                    // 沿用外层样式保存原始 Markdown 标记。
+                    push_text_segment(&remaining[..consumed], style, segments);
+                }
+            }
+            // 图片能力关闭时完整候选只能保持普通文本。
+            #[cfg(not(feature = "image-codecs"))]
+            {
+                // 显式消费合法候选字段，确保关闭能力构建没有潜伏未读状态。
+                if let parse_image::ParsedInlineImage::Image { alt, src, .. } = parsed {
+                    // 字段只用于分类，不进入任何公开图片段。
+                    let _ = (alt, src);
+                }
+                // 保留完整 Markdown 标记，禁止内部标签退化成 Link。
+                push_text_segment(&remaining[..consumed], style, segments);
+            }
+            // 返回图片候选完整源范围。
+            return Some(consumed);
+        }
+    }
     // 内联代码优先于其他标记，保证代码内容按字面解释。
     if remaining.starts_with('`') {
         // 统计开头连续反引号的 delimiter 长度。
@@ -274,7 +321,7 @@ fn may_start_inline_element(text: &str, cursor: usize) -> bool {
         return false;
     };
     // 只有这些 ASCII 标点可能触发内联解析。
-    matches!(ch, '`' | '[' | '<' | '*' | '_' | '~' | '+')
+    matches!(ch, '`' | '[' | '<' | '*' | '_' | '~' | '+' | '!')
 }
 
 /// 判断反斜杠后的字符是否属于可转义 Markdown 标点。

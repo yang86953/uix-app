@@ -255,6 +255,37 @@ pub(super) fn rich_text_accessibility(
     segments: &[RichTextSegment],
     focused_link: Option<usize>,
 ) -> AccessibilitySnapshot {
+    // 图片能力开启时，单一图片 RichText 直接暴露图片语义与 alt 名称。
+    #[cfg(feature = "image-codecs")]
+    if segments
+        // 必须且只能包含一个图片段。
+        .iter()
+        // 统计图片段数量。
+        .filter(|segment| matches!(segment, RichTextSegment::Image { .. }))
+        // 单图片组件才能映射为唯一 Image 节点。
+        .count()
+        == 1
+        // 其他段只能是该图片源码行的换行。
+        && segments.iter().all(|segment| {
+            // 拒绝把混合正文吞并进图片节点。
+            matches!(segment, RichTextSegment::Image { .. } | RichTextSegment::NewLine)
+        })
+    {
+        // 从唯一图片段提取替代文本。
+        let alt = segments.iter().find_map(|segment| match segment {
+            // 返回图片的公开 alt。
+            RichTextSegment::Image { alt, .. } => Some(alt.clone()),
+            // 源码换行没有图片名称。
+            _ => None,
+        });
+        // 构造标准图片语义快照，named 会把空 alt 规范为无名称。
+        return AccessibilitySnapshot::named(
+            // 使用标准图片角色。
+            AccessibilityRole::Image,
+            // 唯一图片分支必定拥有 alt 字段。
+            alt.unwrap_or_default(),
+        );
+    }
     // 单一组件只含主题分隔线和其源码换行时，直接暴露 separator 语义。
     let is_separator = segments
         // 遍历完整公开段列表。
@@ -280,6 +311,9 @@ pub(super) fn rich_text_accessibility(
             RichTextSegment::Text { content, .. }
             | RichTextSegment::Code { content }
             | RichTextSegment::Link { content, .. } => content.as_str(),
+            // 混合文档把图片 alt 纳入单一文本节点名称。
+            #[cfg(feature = "image-codecs")]
+            RichTextSegment::Image { alt, .. } => alt.as_str(),
             RichTextSegment::ThematicBreak => "",
             RichTextSegment::NewLine => "\n",
         })
@@ -360,6 +394,36 @@ mod rich_text_thematic_break_tests {
         assert_eq!(snapshot.role, AccessibilityRole::Text);
         // 名称保留两个换行，但不包含源 Markdown 标记。
         assert_eq!(snapshot.name.as_deref(), Some("上\n\n"));
+    }
+
+    // 单一图片 RichText 必须暴露图片语义和 alt 名称。
+    #[cfg(feature = "image-codecs")]
+    #[test]
+    fn standalone_inline_image_exposes_image_role_and_alt() {
+        // 构造不依赖真实资源加载的公开图片段。
+        let snapshot = rich_text_accessibility(
+            // 只提供一个图片原子。
+            &[RichTextSegment::Image {
+                // 路径只参与资源身份，不进入可访问名称。
+                src: "assets/cover.png".into(),
+                // alt 作为图片名称。
+                alt: "产品封面".into(),
+                // 使用固有宽度。
+                width: None,
+                // 使用固有高度。
+                height: None,
+                // 默认保持比例。
+                fit: true,
+                // 不使用圆角。
+                radius: None,
+            }],
+            // 图片不拥有链接焦点。
+            None,
+        );
+        // 快照必须使用标准图片角色。
+        assert_eq!(snapshot.role, AccessibilityRole::Image);
+        // 可访问名称只包含 alt。
+        assert_eq!(snapshot.name.as_deref(), Some("产品封面"));
     }
 }
 

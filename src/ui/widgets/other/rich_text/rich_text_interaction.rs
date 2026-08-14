@@ -112,7 +112,7 @@ impl RichText {
                     // RTL 视觉左半区对应逻辑排他终点，LTR 对应逻辑起点。
                     return if glyph.bidi_level % 2 == 1 {
                         // RTL 字符左缘返回逻辑后一边界。
-                        glyph.global_char_idx + 1
+                        glyph.global_char_idx + glyph.source_char_len
                     // LTR 字符左缘返回逻辑起点。
                     } else {
                         // LTR 字符左缘返回逻辑起点。
@@ -129,7 +129,7 @@ impl RichText {
                 // LTR 字符右缘返回逻辑排他终点。
                 } else {
                     // LTR 字符右缘返回逻辑排他终点。
-                    last.global_char_idx + 1
+                    last.global_char_idx + last.source_char_len
                 };
             }
         }
@@ -171,7 +171,7 @@ impl RichText {
                 // LTR 视觉右侧对应逻辑排他终点。
                 } else {
                     // 返回 LTR 逻辑排他终点。
-                    glyph.global_char_idx + 1
+                    glyph.global_char_idx + glyph.source_char_len
                 }
             })
             // 指针位于整行左侧时按首字符方向返回视觉左边界。
@@ -181,7 +181,7 @@ impl RichText {
                     // RTL 视觉左侧对应逻辑排他终点。
                     if glyph.bidi_level % 2 == 1 {
                         // 返回 RTL 逻辑排他终点。
-                        glyph.global_char_idx + 1
+                        glyph.global_char_idx + glyph.source_char_len
                     // LTR 视觉左侧对应逻辑起点。
                     } else {
                         // 返回 LTR 逻辑起点。
@@ -289,13 +289,60 @@ impl RichText {
         let (start, end) = TextIndexMap::new(&text)
             // 归一显式字符范围。
             .normalize_selection(CharIndex(a), CharIndex(b));
+        // 图片能力开启时，任何与图片 alt 相交的范围扩展到完整原子跨度。
+        #[cfg(feature = "image-codecs")]
+        let (start, end) = self.expand_inline_image_selection(start.0, end.0);
+        // 图片能力关闭时直接使用字素簇归一结果。
+        #[cfg(not(feature = "image-codecs"))]
+        let (start, end) = (start.0, end.0);
         // 空范围不保留选择。
         if start == end {
             self.selection.set(None);
         } else {
             // 保存合法字符边界组成的选择范围。
-            self.selection.set(Some((start.0, end.0)));
+            self.selection.set(Some((start, end)));
         }
+    }
+
+    // 把与任一图片 alt 相交的选择扩展到完整原子逻辑跨度。
+    #[cfg(feature = "image-codecs")]
+    fn expand_inline_image_selection(&self, mut start: usize, mut end: usize) -> (usize, usize) {
+        // 保存当前段在完整逻辑源中的字符起点。
+        let mut offset = 0usize;
+        // 按公开段顺序扫描全部逻辑范围。
+        for segment in &self.segments {
+            // 计算当前段逻辑字符数量。
+            let length = match segment {
+                // 文本、代码与链接使用可见正文长度。
+                RichTextSegment::Text { content, .. }
+                | RichTextSegment::Code { content }
+                | RichTextSegment::Link { content, .. } => content.chars().count(),
+                // 图片使用完整 alt 长度。
+                RichTextSegment::Image { alt, .. } => alt.chars().count(),
+                // 主题分隔线不占逻辑字符。
+                RichTextSegment::ThematicBreak => 0,
+                // 显式换行占一个逻辑字符。
+                RichTextSegment::NewLine => 1,
+            };
+            // 图片原子只在非空 alt 范围与选择相交时扩展。
+            if matches!(segment, RichTextSegment::Image { .. })
+                // 空 alt 没有可扩展逻辑范围。
+                && length > 0
+                // 选择终点必须晚于图片起点。
+                && end > offset
+                // 选择起点必须早于图片终点。
+                && start < offset + length
+            {
+                // 向前扩展到图片 alt 起点。
+                start = start.min(offset);
+                // 向后扩展到图片 alt 排他终点。
+                end = end.max(offset + length);
+            }
+            // 推进到下一段逻辑起点。
+            offset += length;
+        }
+        // 返回保持方向归一后的完整原子范围。
+        (start, end)
     }
 
     pub(super) fn extract_text_range(&self, start: usize, end: usize) -> String {
@@ -313,6 +360,9 @@ impl RichText {
         let mut offset = 0;
         for segment in &self.segments {
             let segment_length = match segment {
+                // 图片以 alt 的完整逻辑跨度参与选择与复制。
+                #[cfg(feature = "image-codecs")]
+                RichTextSegment::Image { alt, .. } => alt.chars().count(),
                 RichTextSegment::ThematicBreak => 0,
                 RichTextSegment::NewLine => 1,
                 RichTextSegment::Text { content, .. }
@@ -325,6 +375,18 @@ impl RichText {
                 let local_start = start.saturating_sub(segment_start);
                 let local_end = end.min(segment_end) - segment_start;
                 match segment {
+                    // 图片复制只输出 alt，不泄漏 Markdown 标记或本地路径。
+                    #[cfg(feature = "image-codecs")]
+                    RichTextSegment::Image { alt, .. } => {
+                        // 按逻辑选择范围提取 alt 子区间。
+                        result.extend(
+                            alt.chars()
+                                // 跳过图片逻辑范围前未选字符。
+                                .skip(local_start)
+                                // 只复制当前选择覆盖的 alt 字符。
+                                .take(local_end - local_start),
+                        );
+                    }
                     RichTextSegment::ThematicBreak => {}
                     RichTextSegment::NewLine => result.push('\n'),
                     RichTextSegment::Text { content, .. }

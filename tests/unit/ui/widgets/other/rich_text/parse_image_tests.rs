@@ -1,5 +1,7 @@
 // 引入当前图片候选解析器的私有结果类型与入口。
 use super::{ParsedInlineImage, parse_inline_image};
+// 引入公开解析入口和图片段模型，验证最终投影。
+use super::super::{RichTextSegment, parse_rich_text};
 
 // 验证平衡分隔符、转义和本地路径被完整解码。
 #[test]
@@ -73,4 +75,85 @@ fn leaves_unclosed_candidates_unclassified() {
     assert!(parse_inline_image("![图(assets/a.png)").is_none());
     // 缺少目标闭圆括号时同样没有完整候选。
     assert!(parse_inline_image("![图](assets/a.png").is_none());
+}
+
+// 验证合法候选投影为使用固有尺寸默认值的公开图片段。
+#[test]
+#[cfg(feature = "image-codecs")]
+fn projects_local_candidate_to_public_image_segment() {
+    // 解析带相邻正文的本地 Markdown 图片。
+    let segments = parse_rich_text("前![封面](assets/cover.png)后");
+    // 图片必须保持文档顺序并携带默认几何策略。
+    assert_eq!(
+        segments,
+        // 构造完整公开段序列。
+        vec![
+            // 图片前正文。
+            RichTextSegment::Text {
+                // 保存可见前缀。
+                content: "前".into(),
+                // 使用默认样式。
+                style: Default::default(),
+            },
+            // 合法本地图片原子。
+            RichTextSegment::Image {
+                // 保存本地路径。
+                src: "assets/cover.png".into(),
+                // 保存替代文本。
+                alt: "封面".into(),
+                // Markdown 不覆盖固有宽度。
+                width: None,
+                // Markdown 不覆盖固有高度。
+                height: None,
+                // 默认保持固有比例。
+                fit: true,
+                // Markdown 默认没有圆角。
+                radius: None,
+            },
+            // 图片后正文。
+            RichTextSegment::Text {
+                // 保存可见后缀。
+                content: "后".into(),
+                // 使用默认样式。
+                style: Default::default(),
+            },
+        ]
+    );
+}
+
+// 验证远程图片候选不会把内部标签误解析为普通链接。
+#[test]
+fn keeps_remote_image_candidate_wholly_literal() {
+    // 解析结构完整但不在首版本地资源范围内的候选。
+    let segments = parse_rich_text("![远程](https://example.com/a.png)");
+    // 完整候选必须作为单一普通文本保留。
+    assert_eq!(
+        segments,
+        // 只允许一个字面文本段。
+        vec![RichTextSegment::Text {
+            // 不丢失感叹号、标签或目标。
+            content: "![远程](https://example.com/a.png)".into(),
+            // 保持默认样式。
+            style: Default::default(),
+        }]
+    );
+}
+
+// 图片能力关闭时，本地候选也必须完整保持普通文本。
+#[cfg(not(feature = "image-codecs"))]
+#[test]
+fn keeps_local_image_candidate_literal_without_capability() {
+    // 解析原本可作为本地图片的完整候选。
+    let segments = parse_rich_text("![封面](assets/cover.png)");
+    // 能力关闭构建不得暴露图片段或把内部标签变成链接。
+    assert_eq!(
+        segments,
+        // 只允许完整字面文本段。
+        vec![RichTextSegment::Text {
+            // 保留全部 Markdown 标记。
+            content: "![封面](assets/cover.png)".into(),
+            // 保持默认样式。
+            style: Default::default(),
+        }]
+    );
 }
