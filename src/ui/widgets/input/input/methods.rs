@@ -26,6 +26,7 @@ impl Input {
         }
     }
 
+    /// 创建空的单行输入框，并从当前组件配置读取尺寸、禁用和装饰默认值。
     pub fn new(placeholder: impl Into<String>) -> Self {
         let config = crate::ui::component::config::use_config();
         let input_overrides = config.overrides.input;
@@ -91,6 +92,7 @@ impl Input {
     pub fn search_input() -> Self {
         Self::search()
     }
+    /// 设置非受控初始值，并移除已有外部状态绑定。
     pub fn with_value(mut self, value: impl Into<String>) -> Self {
         self.value_binding = None;
         self.replace_value(value.into());
@@ -102,14 +104,17 @@ impl Input {
         self.replace_value(state.get());
         self
     }
+    /// 设置输入框使用的控件尺寸档位。
     pub fn size(mut self, s: ControlSize) -> Self {
         self.input_size = s;
         self
     }
+    /// 设置输入框是否拒绝编辑交互。
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self
     }
+    /// 设置值为空时显示的占位文本。
     pub fn placeholder(mut self, text: impl Into<String>) -> Self {
         self.placeholder = text.into();
         self
@@ -118,6 +123,7 @@ impl Input {
     pub fn current_value(&self) -> &str {
         &self.value
     }
+    /// 替换当前值、重置编辑位置，并写回已绑定的外部状态。
     pub fn set_value(&mut self, v: impl Into<String>) {
         self.replace_value(v.into());
         self.write_bound_value();
@@ -200,43 +206,53 @@ impl Input {
     pub(crate) fn controlled_value_changed(&self, next: &Self) -> bool {
         next.value_binding.is_some() && self.value != next.value
     }
+    /// 设置输入区域内部、文本之前显示的前缀。
     pub fn prefix(mut self, s: &str) -> Self {
         self.prefix = s.to_string();
         self
     }
+    /// 设置输入区域内部、文本之后显示的后缀。
     pub fn suffix(mut self, s: &str) -> Self {
         self.suffix = s.to_string();
         self
     }
+    /// 设置输入框边框之前连接显示的附加文本。
     pub fn addon_before(mut self, s: &str) -> Self {
         self.addon_before = s.to_string();
         self
     }
+    /// 设置输入框边框之后连接显示的附加文本。
     pub fn addon_after(mut self, s: &str) -> Self {
         self.addon_after = s.to_string();
         self
     }
+    /// 设置非空输入是否显示清除按钮。
     pub fn clearable(mut self, v: bool) -> Self {
         self.clearable = v;
         self
     }
+    /// 设置是否显示搜索动作并让 Enter 触发提交。
     pub fn search_enabled(mut self, v: bool) -> Self {
         self.search = v;
         self
     }
+    /// 设置输入框的校验状态样式。
     pub fn status(mut self, status: InputStatus) -> Self {
         self.status = Some(status);
         self
     }
+    /// 设置输入框下方显示的状态说明文本。
     pub fn message(mut self, message: impl Into<String>) -> Self {
         self.status_message = message.into();
         self
     }
+    /// 清除校验状态及其说明文本。
     pub fn clear_status(mut self) -> Self {
         self.status = None;
         self.status_message.clear();
         self
     }
+    /// 启用多行模式并设置至少为一的最小可见行数。
     pub fn rows(mut self, rows: usize) -> Self {
         self.textarea = true;
         self.textarea_rows = rows.max(1);
@@ -246,6 +262,7 @@ impl Input {
         }
         self
     }
+    /// 限制后续用户输入允许包含的最大字符数。
     pub fn max_length(mut self, max_length: usize) -> Self {
         self.max_length = Some(max_length);
         self
