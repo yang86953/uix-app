@@ -746,6 +746,8 @@ pub(super) fn is_state_handle_attribute(element_name: &str, attribute_name: &str
         "Pagination" => &["current", "pageSize"],
         // 标签页读取 State<String> 活动 key 句柄。
         "Tabs" => &["activeKey"],
+        // 可选中列表读取 State<Option<String>> 稳定活动 id 句柄。
+        "SelectableList" => &["active"],
         // 菜单读取 typed 单选与展开状态句柄。
         "Menu" => &["selectedKey", "openKeys"],
         // Navigation 复用 Menu 的选择/展开句柄并额外读取整栏折叠句柄。

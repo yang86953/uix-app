@@ -32,7 +32,7 @@ Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。Windows 入口
 - 语言能力：props（String / number / bool / State<T> / 回调签名）、样式类继承与内联
   style、If / For 控制流、setTheme 框架内置操作（主题请求通道，无调用方桥接）、
   `<Record>` 类型化业务模型（`uix_items!` 生成模块级结构体供 Rust 侧回调引用）。
-- Transfer、Upload、Badge、Collapse、SelectableList、Message / Notification
+- Transfer、Upload、Collapse、Message / Notification
   等尚未登记的标签保留 Rust API
   边界，并在界面中明确说明。
 - 真窗验收（agent-control / test-harness）是测试侧能力，不复制到声明式产品界面。

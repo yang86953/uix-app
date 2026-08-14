@@ -6,6 +6,8 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::ui::component::paint_context::PaintContext;
+// 引入稳定条目 id 的受控状态句柄。
+use crate::ui::reactive::state::State;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
@@ -137,6 +139,16 @@ impl SelectableList {
         let index = index.min(self.items.len() - 1);
         let changed = index != self.active_index;
         self.active_index = index;
+        // 用户选择先写回外部唯一事实源，再登记语义变化事件。
+        if let Some(state) = self.active_binding.as_ref() {
+            // 只发布当前集合中确实存在的稳定条目 id。
+            let selected = Some(self.items[index].id.clone());
+            // 避免向响应式状态重复写入相同值。
+            if state.get() != selected {
+                // 受控状态必须在 Change 事件被消费前完成更新。
+                state.set(selected);
+            }
+        }
         if changed || activate_unchanged {
             self.pending_action
                 .set(Some(SelectableListAction::Row(index)));
@@ -150,7 +162,11 @@ impl SelectableList {
         if self.items.is_empty() {
             return;
         }
-        let next = if forward {
+        // 外部空值或失效 id 从首尾边界开始恢复键盘选择。
+        let next = if self.active_index >= self.items.len() {
+            // 向下从首项开始，向上从末项开始。
+            if forward { 0 } else { self.items.len() - 1 }
+        } else if forward {
             (self.active_index + 1).min(self.items.len() - 1)
         } else {
             self.active_index.saturating_sub(1)
@@ -179,12 +195,30 @@ impl SelectableList {
 
     pub fn items(mut self, items: Vec<SelectableItem>) -> Self {
         self.items = items;
-        self.active_index = self.active_index.min(self.items.len().saturating_sub(1));
+        // 受控模式按稳定 id 重新定位，非受控模式保留索引兼容行为。
+        if self.active_binding.is_some() {
+            // 数据晚于状态绑定设置时也必须采用外部事实。
+            self.sync_bound_active();
+        } else {
+            // 旧索引在集合缩短后收敛到最后一个有效位置。
+            self.active_index = self.active_index.min(self.items.len().saturating_sub(1));
+        }
         self
     }
 
     pub fn active(mut self, index: usize) -> Self {
+        // 显式索引构建器保持原有非受控语义。
+        self.active_binding = None;
         self.active_index = index.min(self.items.len().saturating_sub(1));
+        self
+    }
+
+    // 将当前活动条目的稳定 id 绑定到外部可空状态。
+    pub fn active_state(mut self, state: &State<Option<String>>) -> Self {
+        // 克隆轻量状态句柄供交互写回与响应式依赖捕获使用。
+        self.active_binding = Some(state.clone());
+        // 构造时立即同步，确保首帧快照和绘制使用外部事实。
+        self.sync_bound_active();
         self
     }
 
@@ -217,16 +251,47 @@ impl SelectableList {
             .map(|item| item.text.as_str())
     }
 
+    // 从外部稳定 id 同步当前内部命中索引。
+    fn sync_bound_active(&mut self) {
+        // 未绑定时完整保留组件内部索引状态。
+        let Some(active) = self.active_binding.as_ref().map(State::get) else {
+            return;
+        };
+        // 空值或失效 id 均显示为无活动项，且不反向归一化外部状态。
+        self.active_index = active
+            .as_deref()
+            .and_then(|id| self.items.iter().position(|item| item.id == id))
+            .unwrap_or(usize::MAX);
+    }
+
+    // 在绘制期登记外部活动状态的响应式读取依赖。
+    fn capture_bound_active_dependency(&self) {
+        // 仅受控模式需要触发声明视图重建。
+        if let Some(state) = self.active_binding.as_ref() {
+            // 读取值即可由状态系统捕获当前组件依赖。
+            let _ = state.get();
+        }
+    }
+
     pub(crate) fn sync_from(&mut self, next: Self) {
         let selected_id = self.selected_id().map(str::to_owned);
         self.items = next.items;
         self.header_button_text = next.header_button_text;
         self.footer_text = next.footer_text;
         self.item_height = next.item_height;
-        self.active_index = selected_id
-            .as_deref()
-            .and_then(|id| self.items.iter().position(|item| item.id == id))
-            .unwrap_or_else(|| next.active_index.min(self.items.len().saturating_sub(1)));
+        // 下一帧声明决定是否进入受控模式。
+        self.active_binding = next.active_binding;
+        // 受控状态覆盖旧内部选择，非受控模式继续按稳定 id 调和。
+        if self.active_binding.is_some() {
+            // 外部状态是当前活动项的唯一事实源。
+            self.sync_bound_active();
+        } else {
+            // 非受控重建优先保留旧活动条目的稳定身份。
+            self.active_index = selected_id
+                .as_deref()
+                .and_then(|id| self.items.iter().position(|item| item.id == id))
+                .unwrap_or_else(|| next.active_index.min(self.items.len().saturating_sub(1)));
+        }
         self.body_scroll.clamp_to_content(
             self.items.len(),
             self.item_stride(),
@@ -378,6 +443,9 @@ component! {
     pub struct SelectableList {
         pub items: Vec<SelectableItem>,
         pub active_index: usize,
+        // 外部状态只拥有稳定 id，不接管列表数据与滚动状态。
+        #[snapshot(skip)]
+        active_binding: Option<State<Option<String>>>,
         pub header_button_text: String,
         pub footer_text: String,
         pub item_height: f32,
@@ -396,6 +464,8 @@ component! {
         Self {
             items: Vec::new(),
             active_index: 0,
+            // 缺省保持既有非受控索引模式。
+            active_binding: None,
             header_button_text: String::new(),
             footer_text: String::new(),
             item_height: 36.0,
@@ -427,6 +497,8 @@ component! {
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        // 每次交互前重新读取外部事实，避免基于过期活动项处理输入。
+        self.sync_bound_active();
         match event {
             SystemEvent::PointerDown {
                 pos,
@@ -555,7 +627,7 @@ component! {
                     self.select(self.items.len() - 1, false);
                     EventResult::Handled
                 }
-                KeyCode::Enter | KeyCode::Space if !self.items.is_empty() => {
+                KeyCode::Enter | KeyCode::Space if self.selected_id().is_some() => {
                     self.select(self.active_index, true);
                     EventResult::Handled
                 }
@@ -602,6 +674,8 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
+        // 登记受控活动状态依赖，外部更新会重建并同步当前组件。
+        self.capture_bound_active_dependency();
         let geometry = self.geometry(frame);
         let frame = geometry.frame;
         self.last_frame.set(Some(frame));
@@ -786,3 +860,7 @@ component! {
         ctx.pop_clip();
     }
 }
+
+// 集中验证稳定 id 受控绑定与非受控兼容边界。
+#[cfg(test)]
+mod tests;

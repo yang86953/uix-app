@@ -495,9 +495,9 @@ fn rejects_style_class_inheritance_cycle() {
 fn rewrites_state_fields_to_handles_in_handle_position_attributes() {
     // 解析由私有 state 控制的受控组件与双向绑定组件。
     let document = parse_document(
-        // Modal open、Switch checked 与 RangeSlider value 都读取句柄本身。
+        // Modal、Switch、RangeSlider 与 SelectableList 受控属性都读取句柄本身。
         r#"
-        <Component name="Controlled" state="open: false, checked: true, start: 20, end: 80">
+        <Component name="Controlled" state="open: false, checked: true, start: 20, end: 80, active: Option<String> = None">
           <Column>
             <Modal open={open} title="受控">
               <Text>{open}</Text>
@@ -505,6 +505,7 @@ fn rewrites_state_fields_to_handles_in_handle_position_attributes() {
             </Modal>
             <Switch checked={checked} />
             <RangeSlider value={{ start: start, end: end }} min="0" max="100" />
+            <SelectableList items={[SelectableItem('alpha', 'Alpha')]} active={active} />
           </Column>
         </Component>
         <Controlled />
@@ -528,6 +529,8 @@ fn rewrites_state_fields_to_handles_in_handle_position_attributes() {
     assert!(tokens.contains(". start (& (__uix_state_"));
     // 区间终点同样读取句柄。
     assert!(tokens.contains(". end (& (__uix_state_"));
+    // SelectableList active 必须绑定可空稳定 id 状态句柄。
+    assert!(tokens.contains(". active_state (& (__uix_state_"));
 }
 
 // 验证句柄位属性引用只读 prop 时返回明确诊断。

@@ -26,6 +26,8 @@ const DATA_TYPE_NAMES: &[&str] = &[
     "TreeNode",
     // 时间轴事件项。
     "TimelineItem",
+    // 可选中列表条目。
+    "SelectableItem",
     // 步骤条步骤。
     "Step",
     // 描述列表条目。
@@ -62,6 +64,8 @@ pub(crate) fn data_constructor_spec(name: &str) -> Option<DataConstructorSpec> {
         "TreeNode" => (quote! { ::uix::prelude::TreeNode }, None, false),
         // 映射时间轴事件。
         "TimelineItem" => (quote! { ::uix::prelude::TimelineItem }, None, false),
+        // 映射可选中列表条目。
+        "SelectableItem" => (quote! { ::uix::prelude::SelectableItem }, None, false),
         // 映射步骤。
         "Step" => (quote! { ::uix::prelude::Step }, None, false),
         // 映射描述条目。
