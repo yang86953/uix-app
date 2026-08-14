@@ -7,9 +7,9 @@
 // 把闭包移动到平台线程执行并返回其结果。
 pub fn run_on_ui_thread<F, R>(thread_name: &str, run: F) -> R
 where
-    // 闭包只运行一次、可跨线程移动，且与返回值都可以跨线程发送。
+    // 统一契约覆盖 Windows 独立线程，闭包与返回值都不得借用调用栈。
     F: FnOnce() -> R + Send + 'static,
-    R: Send,
+    R: Send + 'static,
 {
     // 平台差异（大栈线程 vs 当前线程直接执行）全部藏在 imp 内。
     super::imp::run_on_ui_thread(thread_name, run)

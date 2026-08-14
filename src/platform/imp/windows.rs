@@ -70,9 +70,9 @@ const UI_THREAD_STACK_BYTES: usize = 8 * 1024 * 1024;
 // 在命名的大栈 UI 线程上运行闭包，并把线程结果或 panic 恢复到调用方。
 pub(crate) fn run_on_ui_thread<F, R>(thread_name: &str, run: F) -> R
 where
-    // 闭包只运行一次、可跨线程移动，且与返回值都可以跨线程发送。
+    // 闭包与返回值都进入独立线程，必须可发送且不借用调用栈。
     F: FnOnce() -> R + Send + 'static,
-    R: Send,
+    R: Send + 'static,
 {
     // 用目标名与固定大栈创建专用 UI 线程。
     let ui_thread = match std::thread::Builder::new()
