@@ -470,6 +470,7 @@ pub struct SettingsService {
 }
 
 impl SettingsService {
+    /// 创建尚未加载文件且不含设置项的共享服务。
     pub fn new() -> Self {
         Self::default()
     }
@@ -521,6 +522,7 @@ impl SettingsService {
         Ok(())
     }
 
+    /// 设置字符串值；值发生变化时将服务标记为待保存。
     pub fn set(&self, key: &str, value: &str) {
         let mut state = self.write_state();
         if state
@@ -534,15 +536,17 @@ impl SettingsService {
         state.dirty = true;
     }
 
+    /// 返回指定键的字符串值副本。
     pub fn get(&self, key: &str) -> Option<String> {
         self.read_state().values.get(key).cloned()
     }
 
+    /// 返回指定键的字符串值，键不存在时返回给定默认值。
     pub fn get_or(&self, key: &str, default: &str) -> String {
         self.get(key).unwrap_or_else(|| default.to_string())
     }
 
-    /// Stores a scalar using its canonical text representation.
+    /// 使用规范文本表示存储标量。
     pub fn set_typed<T>(&self, key: &str, value: T)
     where
         T: Display,
@@ -550,7 +554,7 @@ impl SettingsService {
         self.set(key, &value.to_string());
     }
 
-    /// Parses a scalar without performing any file I/O.
+    /// 解析标量且不执行文件读写。
     pub fn get_typed<T>(&self, key: &str) -> Result<Option<T>>
     where
         T: FromStr,
@@ -565,7 +569,7 @@ impl SettingsService {
             .transpose()
     }
 
-    /// Returns the parsed scalar or `default` when the key is absent.
+    /// 返回解析后的标量，键不存在时返回 `default`。
     pub fn get_typed_or<T>(&self, key: &str, default: T) -> Result<T>
     where
         T: FromStr,
@@ -574,7 +578,7 @@ impl SettingsService {
         Ok(self.get_typed(key)?.unwrap_or(default))
     }
 
-    /// Returns a parsed scalar and reports an absent key as `NotFound`.
+    /// 返回解析后的标量，键不存在时报告 `NotFound`。
     pub fn require_typed<T>(&self, key: &str) -> Result<T>
     where
         T: FromStr,
@@ -588,7 +592,7 @@ impl SettingsService {
         })
     }
 
-    /// Serializes one structured value into a string-valued settings entry.
+    /// 将一个结构化值序列化为字符串设置项。
     #[cfg(feature = "settings-serde")]
     pub fn set_struct<T>(&self, key: &str, value: &T) -> Result<()>
     where
@@ -604,7 +608,7 @@ impl SettingsService {
         Ok(())
     }
 
-    /// Deserializes one structured value without performing any file I/O.
+    /// 反序列化一个结构化值且不执行文件读写。
     #[cfg(feature = "settings-serde")]
     pub fn get_struct<T>(&self, key: &str) -> Result<Option<T>>
     where
@@ -625,7 +629,7 @@ impl SettingsService {
             .transpose()
     }
 
-    /// Returns a structured value and reports an absent key as `NotFound`.
+    /// 返回结构化值，键不存在时报告 `NotFound`。
     #[cfg(feature = "settings-serde")]
     pub fn require_struct<T>(&self, key: &str) -> Result<T>
     where
@@ -639,10 +643,12 @@ impl SettingsService {
         })
     }
 
+    /// 返回指定键是否存在。
     pub fn has(&self, key: &str) -> bool {
         self.read_state().values.contains_key(key)
     }
 
+    /// 移除指定键；实际移除时将服务标记为待保存。
     pub fn remove(&self, key: &str) {
         let mut state = self.write_state();
         if state.values.remove(key).is_some() {
@@ -650,6 +656,7 @@ impl SettingsService {
         }
     }
 
+    /// 清除全部设置项；非空状态被清除时标记为待保存。
     pub fn clear(&self) {
         let mut state = self.write_state();
         if state.values.is_empty() {
@@ -659,18 +666,22 @@ impl SettingsService {
         state.dirty = true;
     }
 
+    /// 返回当前全部设置项的独立快照。
     pub fn all(&self) -> HashMap<String, String> {
         self.read_state().values.clone()
     }
 
+    /// 返回最近一次成功加载所配置的文件路径。
     pub fn loaded_path(&self) -> Option<String> {
         self.read_state().path.clone()
     }
 
+    /// 返回当前状态是否存在尚未保存的变化。
     pub fn dirty(&self) -> bool {
         self.read_state().dirty
     }
 
+    /// 返回当前设置项数量。
     pub fn count(&self) -> usize {
         self.read_state().values.len()
     }
