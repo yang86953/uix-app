@@ -251,3 +251,47 @@ fn crlf_is_one_mandatory_break_with_correct_ranges() {
         (3, 4)
     );
 }
+
+// 验证 FontService 只拉伸自动换行产生的段落非末行。
+#[test]
+fn text_align_justify_skips_paragraph_final_and_mandatory_break_lines() {
+    // 使用二十四像素容器启用两端对齐。
+    let mut justify_options = options(24.0);
+    // 选择中性两端对齐模式。
+    justify_options.h_align = HAlign::Justify;
+    // 自动换行应产生一个可拉伸首行和自然末行。
+    let wrapped = service().layout_text(&FontHandle::new(0), "a b c", &justify_options);
+    // 首行必须精确占满容器。
+    assert_eq!(wrapped.lines[0].width, 24.0);
+    // 末行只有一个字符并保持六像素自然宽度。
+    assert_eq!(wrapped.lines[1].width, 6.0);
+    // 首行内部空白 advance 必须包含分配后的剩余宽度。
+    assert_eq!(wrapped.glyphs[1].width, 12.0);
+    // 显式换行前的段落末行不得拉伸。
+    let mandatory = service().layout_text(&FontHandle::new(0), "a b\nc", &justify_options);
+    // 显式换行前一行保持十八像素自然宽度。
+    assert_eq!(mandatory.lines[0].width, 18.0);
+}
+
+// 验证左、居中与右对齐使用同一有限容器计算稳定偏移。
+#[test]
+fn text_align_left_center_right_use_expected_offsets() {
+    // 逐个验证闭合非拉伸对齐值及其首字形横坐标。
+    for (alignment, expected_x) in [
+        // 左对齐保持自然起点。
+        (HAlign::Left, 0.0),
+        // 三十像素容器中的十二像素文本居中偏移九像素。
+        (HAlign::Center, 9.0),
+        // 右对齐把十八像素剩余宽度放在文本左侧。
+        (HAlign::Right, 18.0),
+    ] {
+        // 使用三十像素稳定容器。
+        let mut align_options = options(30.0);
+        // 应用当前待验证对齐值。
+        align_options.h_align = alignment;
+        // 两字符文本保持十二像素自然宽度。
+        let layout = service().layout_text(&FontHandle::new(0), "ab", &align_options);
+        // 首字形必须位于对应对齐偏移。
+        assert_eq!(layout.glyphs[0].x, expected_x);
+    }
+}

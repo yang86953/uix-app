@@ -162,6 +162,8 @@ macro_rules! snapshot_fields_part_one {
                 color_override: Option<Color>,
                 /// 可选的倍率或像素行高。
                 line_height: Option<crate::ui::theme::style::LineHeight>,
+                /// 可选的统一样式文本水平对齐，保留显式 left。
+                text_align: Option<crate::ui::theme::style::TextAlign>,
                 /// 可选的统一样式文本装饰，保留显式 none。
                 text_decoration: Option<crate::ui::theme::style::TextDecoration>,
             },

@@ -165,14 +165,48 @@ component! {
             .and_then(|style| style.resolve_line_height(fs))
             // 未声明时保持 Label 既有 normal 行高。
             .unwrap_or(fs * 1.5);
+        // 提前解析内边距，使文本对齐使用真实内容框宽度。
+        let pad = self
+            // 借用可选统一样式。
+            .style
+            // 只读取布局已经消费的内边距。
+            .as_ref()
+            // 提取内容框内边距。
+            .map(|s| s.padding)
+            // 未声明样式时不增加内边距。
+            .unwrap_or_default();
+        // 从 Style 解析闭合对齐值并转换为 draw 中性契约。
+        let h_align = self
+            // 借用可选统一样式。
+            .style
+            // 只对存在的样式读取有效对齐。
+            .as_ref()
+            // 显式 left 仍保留覆盖语义。
+            .map(Style::effective_text_align)
+            // 无样式时保持 Label 既有左对齐。
+            .unwrap_or_default()
+            // 在 UI 边界完成到 draw 值的单向适配。
+            .to_draw();
+        // 对齐容器使用扣除水平内边距后的有限宽度。
+        let content_width = (frame.w - pad.left - pad.right).max(0.0);
+        // 非正或非有限 frame 回退自然文本宽度。
+        let max_width = if content_width.is_finite() && content_width > 0.0 {
+            // 保留有效内容框宽度。
+            content_width
+        } else {
+            // 无限宽度让文本按自然宽度布局。
+            f32::MAX
+        };
 
         // 单次布局：同时用于 hit-test 缓存、选中背景和文字绘制
         let opts = TextLayoutOptions {
-            max_width: f32::MAX,
+            // 对齐使用最终内容框宽度。
+            max_width,
             max_height: 0.0,
             line_height,
             word_wrap: false,
-            h_align: crate::draw::HAlign::Left,
+            // 使用 UI Style 映射后的水平对齐。
+            h_align,
             v_align: crate::draw::VAlign::Top,
             font_size: fs,
         };
@@ -182,11 +216,6 @@ component! {
 
         // 内边距 + 顶对齐绘制。过高 frame 时的垂直居中由父级 AlignItems 负责，
         // 不在此用 visual_center_y 二次修正。
-        let pad = self
-            .style
-            .as_ref()
-            .map(|s| s.padding)
-            .unwrap_or_default();
         let draw_pos = crate::core::Point::new(pad.left, pad.top);
         self.sel.set_draw_pos(draw_pos);
         let abs_pos = crate::core::Point::new(frame.x + draw_pos.x, frame.y + draw_pos.y);
