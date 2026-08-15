@@ -21,13 +21,22 @@ use crate::draw::{BlendMode, Color, FontHandle, Radius, Transform};
 /// 绘制表面配置（组合 dpi/pr/orientation/size 减少参数传递）。
 #[derive(Clone, Copy, Debug)]
 pub struct PaintSurfaceConfig {
+    /// 绘制表面的每英寸像素数，用于把物理单位换算为绘制坐标。
     pub dpi: f32,
+    /// 逻辑像素到设备像素的缩放比。
     pub device_pixel_ratio: f32,
+    /// 绘制表面采用的屏幕坐标轴方向。
     pub orientation: Orientation,
+    /// 绘制表面在屏幕像素坐标系中的宽度。
     pub surface_w: i32,
+    /// 绘制表面在屏幕像素坐标系中的高度。
     pub surface_h: i32,
 }
 
+/// 组件绘制入口，负责向当前表面提交或录制规范化绘制命令。
+///
+/// 上下文在一次绘制期间独占借用底层画布，并组合空间变换、文字、图片和调试绘制服务；
+/// 组件无需也不能通过此类型访问具体渲染后端。
 pub struct PaintContext<'a> {
     /// 3D 空间上下文（持有 Canvas2D 引用）。
     spatial: SpatialContext<'a>,
