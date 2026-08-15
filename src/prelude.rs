@@ -59,6 +59,8 @@ pub use crate::ui::theme::style::{
 };
 // 公开 UIX 生成代码与手写消费者共享的边框线型契约。
 pub use crate::ui::theme::style::BorderStyle;
+// 公开 UIX 生成代码与手写消费者共享的字体族列表契约。
+pub use crate::ui::theme::style::FontFamily;
 // 公开 UIX 生成代码与手写消费者共享的字体粗细契约。
 pub use crate::ui::theme::style::FontWeight;
 // 公开 UIX 生成代码与手写消费者共享的行高契约。

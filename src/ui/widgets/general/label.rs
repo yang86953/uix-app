@@ -211,7 +211,13 @@ component! {
             font_size: fs,
         };
         let backend_opts = crate::draw::resources::font::text_backend::TextLayoutOptions::from(opts);
-        let fh = *ctx.font();
+        // 字体族选择与布局、选区度量和绘制共享同一最终句柄。
+        let fh = crate::ui::text_family::resolve(
+            // 传入当前绘制上下文。
+            ctx,
+            // 从统一样式借用显式有序字体族列表。
+            self.style.as_ref().and_then(|style| style.font_family.as_ref()),
+        );
         let layout = ctx.font_service().layout_text(&fh, &self.text, &backend_opts);
 
         // 内边距 + 顶对齐绘制。过高 frame 时的垂直居中由父级 AlignItems 负责，

@@ -70,6 +70,8 @@ pub(crate) mod semantic_action;
 pub(crate) mod style_paint;
 // 集中生成并绘制文本装饰线段，保持 draw System 的中性边界。
 pub(crate) mod text_decoration;
+// 将 UI 字体族列表单向解析为 draw System 字体句柄。
+pub(crate) mod text_family;
 // 将 UI 字重单向适配为 draw System 的常规或合成粗体字形提交。
 pub(crate) mod text_weight;
 pub(crate) mod text_selection;
@@ -140,6 +142,8 @@ pub use semantic_action::{SemanticAction, SemanticActionKind};
 pub use theme::style::{ColorValue, PaletteColor, Style, StyleSet, StyleState, TypographyToken};
 // 公开 UI System 自有的边框线型契约。
 pub use theme::style::BorderStyle;
+// 公开 UI System 自有的字体族列表值契约。
+pub use theme::style::FontFamily;
 // 公开 UI System 自有的字体粗细值契约。
 pub use theme::style::FontWeight;
 // 公开 UI System 自有的行高值契约。

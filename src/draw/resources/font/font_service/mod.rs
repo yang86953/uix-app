@@ -90,6 +90,40 @@ impl FontService {
         }
     }
 
+    /// 按调用方声明顺序解析第一个已加载字体族。
+    pub fn resolve_font_families<'a, I>(
+        &self,
+        // 接收中性族名视图，不依赖 UI 样式类型。
+        families: I,
+        // 接收全部族名不可用时的当前字体句柄。
+        fallback: FontHandle,
+    ) -> FontHandle
+    where
+        // 允许 UI 适配器直接传入零分配字符串迭代器。
+        I: IntoIterator<Item = &'a str>,
+    {
+        // 逐项遵守声明的字体回退优先级。
+        for family in families {
+            // generic family 表示沿用平台当前字体，不要求注册表存在同名字体。
+            if is_generic_family(family) {
+                // 返回调用方进入绘制阶段时的当前系统字体。
+                return fallback;
+            }
+            // 在仍有效的注册表槽位中执行大小写不敏感匹配。
+            if let Some(slot) = self.registry.iter().find(|slot| {
+                // 已卸载槽位使用哨兵句柄，不能再次被选择。
+                slot.handle.0 != u32::MAX
+                    // 字体族名称使用 ASCII 大小写不敏感比较。
+                    && slot.face.family.eq_ignore_ascii_case(family)
+            }) {
+                // 返回第一个可用族对应的稳定句柄。
+                return slot.handle;
+            }
+        }
+        // 没有已加载匹配项时稳定回退当前系统字体。
+        fallback
+    }
+
     /// 返回字体文件路径（若从文件加载）。
     pub fn font_path(&self, handle: &FontHandle) -> Option<&str> {
         let i = handle.0 as usize;
@@ -731,6 +765,18 @@ impl FontService {
     }
 }
 
+// 判断 CSS 通用字体族是否应保留平台当前字体。
+fn is_generic_family(family: &str) -> bool {
+    // 去除调用边界可能保留的外围空白。
+    let family = family.trim();
+    // 对固定小集合执行零分配大小写不敏感匹配。
+    ["system-ui", "sans-serif", "serif", "monospace", "cursive", "fantasy"]
+        // 遍历全部系统 UI 与 CSS 传统通用字体族。
+        .iter()
+        // 任一名称匹配即保留平台当前字体。
+        .any(|generic| family.eq_ignore_ascii_case(generic))
+}
+
 impl Default for FontService {
     fn default() -> Self {
         Self::new()
@@ -777,5 +823,28 @@ mod tests {
         assert!(service.registry[handle.0 as usize].face.family.is_empty());
         // 确认路径字符串所有权已释放。
         assert!(service.registry[handle.0 as usize].face.path.is_none());
+    }
+
+    // 验证字体族解析遵守顺序、大小写、通用族和稳定后备。
+    #[test]
+    fn font_family_resolves_first_registered_match_or_current_fallback() {
+        // 创建默认字体服务。
+        let mut service = FontService::new();
+        // 注册两个稳定族名槽位。
+        let preferred = FontHandle::new(3);
+        // 为首选句柄登记混合大小写族名。
+        service.register_font(preferred, "Segoe UI".to_owned(), None);
+        // 注册低优先级候选。
+        let later = FontHandle::new(4);
+        // 为后备句柄登记另一族名。
+        service.register_font(later, "Arial".to_owned(), None);
+        // 定义调用方当前字体句柄。
+        let fallback = FontHandle::new(9);
+        // 缺失项后的小写名称必须命中首选注册字体。
+        assert_eq!(service.resolve_font_families(["Missing", "segoe ui"], fallback), preferred);
+        // 首项 generic family 必须立即保留当前字体，不继续选择后项。
+        assert_eq!(service.resolve_font_families(["sans-serif", "Arial"], fallback), fallback);
+        // 全部缺失时必须返回调用方当前字体。
+        assert_eq!(service.resolve_font_families(["Missing"], fallback), fallback);
     }
 }
