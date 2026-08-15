@@ -174,7 +174,7 @@
 </Component>
 
 // 声明数据展示页组件并读取静态表格数据、媒体回调与组件私有状态。
-<Component name="DataPage" external="table_rows, table_columns, on_gallery_change" state="selected_item: Option<String> = None, active_panels: Vec<String> = []" computed="visible_panels: active_panels.filter(|key| key.length > 0), remaining: visible_panels.length">
+<Component name="DataPage" external="table_rows, table_columns, on_gallery_change, on_calendar_change" state="selected_item: Option<String> = None, active_panels: Vec<String> = [], calendar_date: Date = Date(2026, 8, 15)" computed="visible_panels: active_panels.filter(|key| key.length > 0), remaining: visible_panels.length">
   // 组织数据展示内容。
   <Column gap="16px">
     // 展示数据组件标题。
@@ -329,8 +329,8 @@
           <ResultView status="error" title="加载失败" width="200px" />
         // 结束结果状态行。
         </Container>
-        // 展示月视图日历。
-        <Calendar width="300px" />
+        // 展示双向日期状态与规范日期 Change 载荷。
+        <Calendar value={calendar_date} @change="on_calendar_change($event)" width="300px" />
         // 展示可选中 Markdown 富文本。
         <RichText content="**RichText** 与 `QRCode` 均由已注册标签生成。" selectable width="320px" />
       // 结束状态组件内容。

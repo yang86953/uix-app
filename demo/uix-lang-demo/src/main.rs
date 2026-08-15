@@ -87,6 +87,12 @@ fn on_gallery_change(index: &str) {
     tracing::info!(index, "uix-lang ImageGroup @change");
 }
 
+// 记录 Calendar @change 的规范日期文本载荷。
+fn on_calendar_change(date: &str) {
+    // 输出变化日期供演示日志核对。
+    tracing::info!(date, "uix-lang Calendar @change");
+}
+
 // 记录 Pagination @change 的页码文本载荷。
 fn on_page_change(value: &str) {
     // 输出变化页码供演示日志核对。

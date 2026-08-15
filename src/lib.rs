@@ -213,6 +213,9 @@ pub use uix_derive::{Display, uix, uix_app, uix_items};
 #[cfg(test)]
 // 隔离 uix-lang 核心生成物的公开 API 编译测试。
 mod uix_lang_codegen_consumer_tests;
+// 隔离 Calendar 日期所有权与 Change 映射的公开 API 编译测试。
+#[cfg(test)]
+mod uix_lang_calendar_consumer_tests;
 // 隔离 Container 复合视觉简写的公开 API 编译测试。
 #[cfg(test)]
 mod uix_lang_container_consumer_tests;
