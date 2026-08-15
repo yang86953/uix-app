@@ -119,6 +119,12 @@ fn calendar_date_cell(date: Date, info: CalendarCellInfo) -> ViewNode {
     ViewNode::leaf(Label::new(format!("{marker}{}", date.day)))
 }
 
+// 为主演示每次声明构建创建独立 tooltip 配置，避免跨线程捕获 Rc 渲染器。
+fn chart_tooltip() -> TooltipConfig {
+    // 返回只包含静态模板的公开配置值。
+    TooltipConfig::new().template("{label}: {value}")
+}
+
 // 记录 Pagination @change 的页码文本载荷。
 fn on_page_change(value: &str) {
     // 输出变化页码供演示日志核对。
@@ -248,7 +254,7 @@ fn build_app(
         TableColumn::new("能力", 220.0),
         // 展示演示能力状态列。
         TableColumn::new("状态", 140.0),
-    // 结束静态表格列集合。
+        // 结束静态表格列集合。
     ];
     // 构造数据展示页唯一的静态表格行集合。
     let table_rows: Vec<TableRow> = vec![
@@ -256,7 +262,7 @@ fn build_app(
         vec!["UIX 组件映射".to_string(), "已登记".to_string()],
         // 展示类型化数据契约状态。
         vec!["TableRow / TableColumn".to_string(), "已复用".to_string()],
-    // 结束静态表格行集合。
+        // 结束静态表格行集合。
     ];
     // 构造 Calendar 演示使用的类型化事件标记集合。
     let calendar_events = vec![
@@ -265,6 +271,26 @@ fn build_app(
         // 标记九月十二号的设计评审。
         CalendarEvent::new(Date::new(2026, 9, 12), "设计评审", Color::GREEN),
     ];
+    // 构造图表声明复用的入场动画配置快照。
+    let chart_animation = AnimationConfig::fade_in(0.35);
+    // 构造图表声明复用的点击、缩放、平移与十字线配置快照。
+    let chart_interaction = InteractionConfig {
+        // 允许主演示通过滚轮缩放图表。
+        zoom: true,
+        // 允许主演示拖拽平移图表。
+        pan: true,
+        // 在主演示中显示十字参考线。
+        crosshair: true,
+        // 主演示不绑定业务点击回调。
+        on_click: None,
+    };
+    // 构造图表声明复用的刷选配置快照。
+    let chart_brush = BrushConfig {
+        // 启用主演示的范围刷选。
+        enabled: true,
+        // 主演示不绑定业务刷选回调。
+        on_select: None,
+    };
     // 编译期读取 <App> 根文档并返回尚未运行的现有 App builder。
     uix_app!("src/main.uix")
     // 结束应用构造函数。

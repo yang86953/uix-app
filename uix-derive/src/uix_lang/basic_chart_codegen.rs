@@ -5,11 +5,10 @@ use quote::quote;
 
 // 引入公共属性与叶节点形状判定。
 use super::codegen::{apply_common_attributes, is_renderable_node};
+// 引入十二类图表共享的高级配置映射。
+use super::chart_common_codegen::{apply_common_chart_attribute, is_common_chart_attribute};
 // 引入属性、表达式、布尔值与诊断契约。
-use super::{
-    Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_expression,
-    literal_string,
-};
+use super::{Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_expression};
 
 // 生成三类基础图表的类型化静态数据映射。
 pub(crate) fn generate_basic_chart(element: &Element) -> Result<TokenStream, Diagnostic> {
@@ -64,6 +63,11 @@ pub(crate) fn generate_basic_chart(element: &Element) -> Result<TokenStream, Dia
                 "title",
                 "subtitle",
                 "responsive",
+                "legend",
+                "animation",
+                "interactive",
+                "brush",
+                "tooltip",
             ],
         ),
         // 折线图取得 LineData 集合所有权。
@@ -87,6 +91,11 @@ pub(crate) fn generate_basic_chart(element: &Element) -> Result<TokenStream, Dia
                 "title",
                 "subtitle",
                 "responsive",
+                "legend",
+                "animation",
+                "interactive",
+                "brush",
+                "tooltip",
             ],
         ),
         // 饼图取得 PieData 集合所有权。
@@ -108,6 +117,11 @@ pub(crate) fn generate_basic_chart(element: &Element) -> Result<TokenStream, Dia
                 "title",
                 "subtitle",
                 "responsive",
+                "legend",
+                "animation",
+                "interactive",
+                "brush",
+                "tooltip",
             ],
         ),
         // 分派入口只允许三个已登记标签。
@@ -143,18 +157,10 @@ fn apply_chart_attribute(
     // 接收当前属性。
     attribute: &Attribute,
 ) -> Result<TokenStream, Diagnostic> {
-    // 标题和副标题使用静态字符串，避免引入隐式动态刷新所有者。
-    if matches!(attribute.name.as_str(), "title" | "subtitle") {
-        // 读取静态文本。
-        let value = literal_string(attribute, "图表文本属性")?;
-        // 调用对应公开构建器。
-        return Ok(if attribute.name == "title" {
-            // 设置图表标题。
-            quote! { (#widget).title(#value) }
-        } else {
-            // 设置图表副标题。
-            quote! { (#widget).subtitle(#value) }
-        });
+    // 共享属性统一投影到 ChartPlaceholder 公开 builder。
+    if is_common_chart_attribute(&attribute.name) {
+        // 返回共享属性映射结果。
+        return apply_common_chart_attribute(widget, attribute);
     }
     // 布尔属性复用统一简写和表达式规则。
     if matches!(
@@ -170,7 +176,6 @@ fn apply_chart_attribute(
             | "step"
             | "rose"
             | "labelVisible"
-            | "responsive"
     ) {
         // 生成布尔值。
         let value = boolean_value(attribute)?;
@@ -198,8 +203,6 @@ fn apply_chart_attribute(
             "rose" => quote! { (#widget).rose(#value) },
             // 饼图标签开关。
             "labelVisible" => quote! { (#widget).label_visible(#value) },
-            // 响应式测量开关。
-            "responsive" => quote! { (#widget).responsive(#value) },
             // 布尔集合已经穷尽。
             _ => unreachable!("图表布尔属性集合已穷尽"),
         });

@@ -14,7 +14,7 @@ fn generate(source: &str) -> Result<String, Diagnostic> {
 fn generates_heatmap_and_waterfall_charts() {
     // 热力图覆盖混合数值数据、标签、日历与单元配置。
     let heatmap = generate(
-        "<Heatmap data={[HeatmapCell(0, 1, 12)]} xLabels={['周一']} yLabels={['上午', '下午']} calendarMode year=\"2026\" cellSize=\"14\" cellGap=\"2\" showValues />",
+        "<Heatmap data={[HeatmapCell(0, 1, 12)]} xLabels={['周一']} yLabels={['上午', '下午']} calendarMode year=\"2026\" cellSize=\"14\" cellGap=\"2\" showValues animation={animation} />",
     )
     // 合法热力图必须生成。
     .expect("Heatmap 应生成");
@@ -25,6 +25,7 @@ fn generates_heatmap_and_waterfall_charts() {
             && heatmap.contains("calendar_mode (true)")
             && heatmap.contains("year (2026)")
             && heatmap.contains("show_values (true)")
+            && heatmap.contains("animation ((animation) . clone ())")
     );
     // 瀑布图覆盖三类变化项、方向与坐标轴标题。
     let waterfall = generate(

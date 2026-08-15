@@ -7,6 +7,8 @@ use quote::quote;
 use super::basic_chart_codegen::{f32_value, required_attribute};
 // 引入公共属性与叶节点形状判定。
 use super::codegen::{apply_common_attributes, is_renderable_node};
+// 引入十二类图表共享的高级配置映射。
+use super::chart_common_codegen::{apply_common_chart_attribute, is_common_chart_attribute};
 // 复用内联图表数据构造器错配校验。
 use super::static_chart_codegen::validate_inline_data;
 // 引入属性、表达式、布尔值与诊断契约。
@@ -83,6 +85,11 @@ pub(crate) fn generate_matrix_delta_chart(
                 "title",
                 "subtitle",
                 "responsive",
+                "legend",
+                "animation",
+                "interactive",
+                "brush",
+                "tooltip",
             ],
         ),
         // 瀑布图收集变化项。
@@ -103,6 +110,11 @@ pub(crate) fn generate_matrix_delta_chart(
                 "title",
                 "subtitle",
                 "responsive",
+                "legend",
+                "animation",
+                "interactive",
+                "brush",
+                "tooltip",
             ],
         ),
         // 分派入口已经限制标签集合。
@@ -136,19 +148,17 @@ fn apply_chart_attribute(
     // 接收当前属性。
     attribute: &Attribute,
 ) -> Result<TokenStream, Diagnostic> {
-    // 标题、副标题与坐标轴标题使用静态字符串。
-    if matches!(
-        attribute.name.as_str(),
-        "title" | "subtitle" | "xAxis" | "yAxis"
-    ) {
+    // 共享属性统一投影到 ChartPlaceholder 公开 builder。
+    if is_common_chart_attribute(&attribute.name) {
+        // 返回共享属性映射结果。
+        return apply_common_chart_attribute(widget, attribute);
+    }
+    // 坐标轴标题使用静态字符串。
+    if matches!(attribute.name.as_str(), "xAxis" | "yAxis") {
         // 读取静态文本。
         let value = literal_string(attribute, "图表文本属性")?;
         // 映射到精确公开构建器。
         return Ok(match attribute.name.as_str() {
-            // 设置图表标题。
-            "title" => quote! { (#widget).title(#value) },
-            // 设置图表副标题。
-            "subtitle" => quote! { (#widget).subtitle(#value) },
             // 设置横轴标题。
             "xAxis" => quote! { (#widget).x_axis(#value) },
             // 设置纵轴标题。
@@ -191,7 +201,7 @@ fn apply_chart_attribute(
     // 布尔属性复用统一简写和表达式规则。
     if matches!(
         attribute.name.as_str(),
-        "calendarMode" | "showValues" | "horizontal" | "responsive"
+        "calendarMode" | "showValues" | "horizontal"
     ) {
         // 生成布尔值。
         let value = boolean_value(attribute)?;
@@ -203,8 +213,6 @@ fn apply_chart_attribute(
             "showValues" => quote! { (#widget).show_values(#value) },
             // 设置横向瀑布图。
             "horizontal" => quote! { (#widget).horizontal(#value) },
-            // 设置响应式测量。
-            "responsive" => quote! { (#widget).responsive(#value) },
             // 布尔属性集合已经穷尽。
             _ => unreachable!("矩阵与增量图表布尔属性集合已穷尽"),
         });

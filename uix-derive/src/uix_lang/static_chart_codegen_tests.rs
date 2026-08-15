@@ -14,7 +14,7 @@ fn generate(source: &str) -> Result<String, Diagnostic> {
 fn generates_area_scatter_and_funnel_charts() {
     // 面积图覆盖 LineData、填充与曲线属性。
     let area = generate(
-        "<AreaChart data={[LineData('Jan', 10)]} stacked smooth fillOpacity=\"0.3\" width=\"420px\" />",
+        "<AreaChart data={[LineData('Jan', 10)]} stacked smooth fillOpacity=\"0.3\" legend={legend} width=\"420px\" />",
     )
     // 合法面积图必须生成。
     .expect("AreaChart 应生成");
@@ -24,6 +24,7 @@ fn generates_area_scatter_and_funnel_charts() {
             && area.contains("Vec < :: uix :: prelude :: LineData >")
             && area.contains("stacked (true)")
             && area.contains("fill_opacity (0.3)")
+            && area.contains("legend ((legend) . clone ())")
     );
     // 散点图覆盖坐标数据、轴标题与点样式。
     let scatter = generate(

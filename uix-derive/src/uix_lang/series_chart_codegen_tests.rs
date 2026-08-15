@@ -14,7 +14,7 @@ fn generate(source: &str) -> Result<String, Diagnostic> {
 fn generates_radar_and_combo_charts() {
     // 雷达图覆盖闭区间轴、泛型系列、形状与网格配置。
     let radar = generate(
-        "<RadarChart axes={[RadarAxis('速度', 0, 100), RadarAxis('力量', 0, 100)]} series={[ChartSeries('当前', [RadarData(80), RadarData(70)])]} shape=\"circle\" gridLevels=\"5\" fillOpacity=\"0.2\" />",
+        "<RadarChart axes={[RadarAxis('速度', 0, 100), RadarAxis('力量', 0, 100)]} series={[ChartSeries('当前', [RadarData(80), RadarData(70)])]} shape=\"circle\" gridLevels=\"5\" fillOpacity=\"0.2\" interactive={interaction} brush={brush} />",
     )
     // 合法雷达图必须生成。
     .expect("RadarChart 应生成");
@@ -26,6 +26,8 @@ fn generates_radar_and_combo_charts() {
                 .contains("ChartSeries < :: std :: vec :: Vec < :: uix :: prelude :: RadarData")
             && radar.contains("RadarShape :: Circle")
             && radar.contains("grid_levels (5)")
+            && radar.contains("interactive ((interaction) . clone ())")
+            && radar.contains("brush ((brush) . clone ())")
     );
     // 组合图覆盖柱/线两类精确泛型系列与双轴标题。
     let combo = generate(

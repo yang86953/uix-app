@@ -13,7 +13,7 @@ fn generate(source: &str) -> Result<String, Diagnostic> {
 #[test]
 fn generates_bar_line_and_pie_charts() {
     // 柱状图覆盖类型化数据、布尔和数值属性。
-    let bar = generate(r##"<BarChart data={[BarData('Q1', 12, Color('#1677ff'))]} grouped showValue barRadius="3" width="320px" />"##)
+    let bar = generate(r##"<BarChart data={[BarData('Q1', 12, Color('#1677ff'))]} grouped showValue barRadius="3" legend="bottom" animation={animation} interactive={interaction} brush={brush} tooltip={tooltip} width="320px" />"##)
         // 合法柱状图必须生成。
         .expect("BarChart 应生成");
     // 必须收集成公开 BarData 并调用现有构建器。
@@ -24,6 +24,11 @@ fn generates_bar_line_and_pie_charts() {
     assert!(
         bar.contains("grouped (true)")
             && bar.contains("bar_radius (3.0)")
+            && bar.contains("LegendPosition :: Bottom")
+            && bar.contains("animation ((animation) . clone ())")
+            && bar.contains("interactive ((interaction) . clone ())")
+            && bar.contains("brush ((brush) . clone ())")
+            && bar.contains("tooltip ((tooltip) . clone ())")
             && bar.contains("width (320.0)")
     );
     // 折线图覆盖基础线形配置。
@@ -50,7 +55,7 @@ fn generates_bar_line_and_pie_charts() {
     );
 }
 
-// 验证数据、子树与未登记高级配置拒绝。
+// 验证数据、子树与高级配置诊断。
 #[test]
 fn rejects_invalid_basic_chart_contracts() {
     // 缺少 data 时没有图表数据源。
@@ -67,10 +72,16 @@ fn rejects_invalid_basic_chart_contracts() {
         .expect_err("图表子节点必须失败");
     // 诊断必须说明叶边界。
     assert!(child.message.contains("不接受子节点"));
-    // 首批不暴露高级交互对象。
-    let advanced = generate("<BarChart data={items} tooltip={config} />")
-        // 未登记属性必须失败。
-        .expect_err("高级 tooltip 配置不得被近似");
-    // 诊断必须保留具体属性名。
-    assert!(advanced.message.contains("tooltip"));
+    // tooltip 字符串不能伪装成类型化配置对象。
+    let tooltip = generate("<BarChart data={items} tooltip=\"hover\" />")
+        // 非表达式配置必须失败。
+        .expect_err("tooltip 字符串必须失败");
+    // 诊断必须说明类型化表达式契约。
+    assert!(tooltip.message.contains("类型化配置表达式"));
+    // 静态图例只接受完整公开枚举集合。
+    let legend = generate("<BarChart data={items} legend=\"center\" />")
+        // 未登记图例位置必须失败。
+        .expect_err("非法 legend 必须失败");
+    // 诊断必须包含非法值。
+    assert!(legend.message.contains("center"));
 }

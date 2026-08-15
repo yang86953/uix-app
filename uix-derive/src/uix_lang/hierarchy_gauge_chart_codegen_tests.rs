@@ -14,7 +14,7 @@ fn generate(source: &str) -> Result<String, Diagnostic> {
 fn generates_treemap_and_gauge_charts() {
     // 矩形树图覆盖递归节点、间隙与标签配置。
     let treemap = generate(
-        "<Treemap data={[TreemapNode('技术', 45).children([TreemapNode('前端', 20), TreemapNode('后端', 25)])]} gap=\"4\" labelVisible title=\"部门占比\" />",
+        "<Treemap data={[TreemapNode('技术', 45).children([TreemapNode('前端', 20), TreemapNode('后端', 25)])]} gap=\"4\" labelVisible tooltip={tooltip} title=\"部门占比\" />",
     )
     // 合法矩形树图必须生成。
     .expect("Treemap 应生成");
@@ -24,6 +24,7 @@ fn generates_treemap_and_gauge_charts() {
             && treemap.contains("children")
             && treemap.contains("gap (4.0)")
             && treemap.contains("label_visible (true)")
+            && treemap.contains("tooltip ((tooltip) . clone ())")
     );
     // 仪表盘覆盖色带、类型、指针与数值范围。
     let gauge = generate(
@@ -62,10 +63,10 @@ fn rejects_invalid_hierarchy_and_gauge_contracts() {
         .expect_err("pointerColor 字符串必须失败");
     // 诊断必须说明 Color 表达式。
     assert!(color.message.contains("Color 表达式"));
-    // 高级 tooltip 配置仍未登记。
-    let tooltip = generate("<Treemap data={items} tooltip={config} />")
-        // 未登记 tooltip 必须失败。
-        .expect_err("tooltip 不得静默映射");
-    // 诊断必须保留具体属性名。
-    assert!(tooltip.message.contains("tooltip"));
+    // 动画字符串不能伪装成类型化配置对象。
+    let animation = generate("<Treemap data={items} animation=\"fade\" />")
+        // 非表达式配置必须失败。
+        .expect_err("animation 字符串必须失败");
+    // 诊断必须说明类型化表达式契约。
+    assert!(animation.message.contains("类型化配置表达式"));
 }

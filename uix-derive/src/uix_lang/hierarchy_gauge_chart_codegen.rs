@@ -7,6 +7,8 @@ use quote::quote;
 use super::basic_chart_codegen::{f32_value, required_attribute};
 // 引入公共属性与叶节点形状判定。
 use super::codegen::{apply_common_attributes, is_renderable_node};
+// 引入十二类图表共享的高级配置映射。
+use super::chart_common_codegen::{apply_common_chart_attribute, is_common_chart_attribute};
 // 复用内联图表数据构造器错配校验。
 use super::static_chart_codegen::validate_inline_data;
 // 引入属性、表达式、布尔值与诊断契约。
@@ -105,6 +107,11 @@ fn generate_treemap_start(
             "title",
             "subtitle",
             "responsive",
+            "legend",
+            "animation",
+            "interactive",
+            "brush",
+            "tooltip",
         ],
     ))
 }
@@ -134,6 +141,11 @@ fn generate_gauge_start(
             "title",
             "subtitle",
             "responsive",
+            "legend",
+            "animation",
+            "interactive",
+            "brush",
+            "tooltip",
         ],
     ))
 }
@@ -145,31 +157,17 @@ fn apply_chart_attribute(
     // 接收当前属性。
     attribute: &Attribute,
 ) -> Result<TokenStream, Diagnostic> {
-    // 标题和副标题使用静态字符串。
-    if matches!(attribute.name.as_str(), "title" | "subtitle") {
-        // 读取静态文本。
-        let value = literal_string(attribute, "图表文本属性")?;
-        // 映射到精确公开构建器。
-        return Ok(if attribute.name == "title" {
-            // 设置图表标题。
-            quote! { (#widget).title(#value) }
-        } else {
-            // 设置图表副标题。
-            quote! { (#widget).subtitle(#value) }
-        });
+    // 共享属性统一投影到 ChartPlaceholder 公开 builder。
+    if is_common_chart_attribute(&attribute.name) {
+        // 返回共享属性映射结果。
+        return apply_common_chart_attribute(widget, attribute);
     }
-    // 两个布尔属性复用统一表达式规则。
-    if matches!(attribute.name.as_str(), "labelVisible" | "responsive") {
+    // 标签可见性复用统一表达式规则。
+    if attribute.name == "labelVisible" {
         // 生成布尔值。
         let value = boolean_value(attribute)?;
-        // 映射到精确公开构建器。
-        return Ok(if attribute.name == "labelVisible" {
-            // 设置矩形树图标签可见性。
-            quote! { (#widget).label_visible(#value) }
-        } else {
-            // 设置响应式测量。
-            quote! { (#widget).responsive(#value) }
-        });
+        // 设置矩形树图标签可见性。
+        return Ok(quote! { (#widget).label_visible(#value) });
     }
     // 仪表盘类型只接受静态语义值。
     if attribute.name == "gaugeType" {

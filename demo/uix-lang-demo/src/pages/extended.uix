@@ -490,15 +490,15 @@
 </Component>
 
 // 声明图表能力页组件。
-<Component name="ChartsPage">
+<Component name="ChartsPage" external="chart_animation, chart_interaction, chart_brush, chart_tooltip">
   // 组织图表能力内容。
   <Column gap="16px">
     // 展示图表能力标题。
     <Text fontSize="heading2">图表</Text>
     // 说明 Rust 图表文档列出的十二类标签已进入声明式生成路径。
-    <Alert message="十二类图表标签已全部登记类型化静态映射；气泡、自定义混合系列和高级交互继续使用 Rust API。" type="success" />
-    // 展示类型化柱状图数据与基础配置。
-    <BarChart data={[BarData('Q1', 120, Color('#1677ff')), BarData('Q2', 200, Color('#52c41a')), BarData('Q3', 150, Color('#faad14'))]} showValue barRadius="3" title="季度产出" width="420px" height="260px" />
+    <Alert message="十二类图表标签已登记类型化静态映射及图例、动画、缩放平移、刷选与 tooltip 共同配置。" type="success" />
+    // 展示类型化柱状图数据与完整共同高级配置。
+    <BarChart data={[BarData('Q1', 120, Color('#1677ff')), BarData('Q2', 200, Color('#52c41a')), BarData('Q3', 150, Color('#faad14'))]} showValue barRadius="3" title="季度产出" legend="bottom" animation={chart_animation} interactive={chart_interaction} brush={chart_brush} tooltip={chart_tooltip()} width="420px" height="260px" />
     // 展示类型化折线图数据与线形配置。
     <LineChart data={[LineData('Jan', 100), LineData('Feb', 150), LineData('Mar', 130)]} smooth lineWidth="2" dotRadius="4" title="月度趋势" width="420px" height="260px" />
     // 展示类型化饼图数据与环形配置。
