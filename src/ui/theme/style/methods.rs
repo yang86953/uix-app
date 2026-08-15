@@ -116,6 +116,8 @@ impl Style {
         self.padding = s.padding;
         self.border_color = s.border_color;
         self.border_width = s.border_width;
+        // 完整替换保留显式 solid 与未声明之间的差异。
+        self.border_style = s.border_style;
         self.border_radius = s.border_radius;
         self.width = s.width;
         self.height = s.height;
@@ -161,6 +163,11 @@ impl Style {
         }
         if other.border_width != EdgeInsets::zero() {
             self.border_width = other.border_width;
+        }
+        // 仅显式线型覆盖既有值，None 表示没有声明而不是 CSS none。
+        if other.border_style.is_some() {
+            // Option 内的 BorderStyle::None 仍会作为显式值复制。
+            self.border_style = other.border_style;
         }
         if other.border_radius != 0.0 {
             self.border_radius = other.border_radius;
@@ -273,6 +280,13 @@ impl Style {
     /// 分别设置四边边框宽度。
     pub fn with_border_width(mut self, width: impl Into<EdgeInsets>) -> Self {
         self.border_width = width.into();
+        self
+    }
+    /// 设置显式边框线型。
+    pub fn with_border_style(mut self, border_style: BorderStyle) -> Self {
+        // Some 保留显式 solid 覆盖继承值的语义。
+        self.border_style = Some(border_style);
+        // 返回可继续链式设置的样式。
         self
     }
     /// 设置圆角半径。
@@ -436,10 +450,18 @@ impl Style {
     /// 当前样式是否需要绘制边框。
     pub fn has_border(&self) -> bool {
         self.border_color.is_some()
+            // CSS none 只关闭绘制，不改变边框宽度。
+            && self.effective_border_style() != BorderStyle::None
             && (self.border_width.left > 0.0
                 || self.border_width.top > 0.0
                 || self.border_width.right > 0.0
                 || self.border_width.bottom > 0.0)
+    }
+
+    /// 返回未显式声明时采用 CSS 默认 solid 的有效线型。
+    pub fn effective_border_style(&self) -> BorderStyle {
+        // Option 只表达声明存在性，公开有效值始终确定。
+        self.border_style.unwrap_or(BorderStyle::Solid)
     }
 
     /// 返回当前 Canvas 描边使用的单一宽度，取四边最大值。

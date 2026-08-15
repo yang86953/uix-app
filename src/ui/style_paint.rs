@@ -4,6 +4,10 @@ use crate::core::Rect;
 use crate::draw::Radius;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::theme::style::Style;
+// 隔离边框线型到 draw 公共描边契约的几何映射。
+#[path = "style_paint/border.rs"]
+// 编译 UI System 私有的边框绘制实现。
+mod border;
 
 /// Applies a `Style` to a rectangular area.
 pub fn apply_style(ctx: &mut PaintContext, rect: Rect, style: &Style) {
@@ -33,7 +37,21 @@ pub fn apply_style(ctx: &mut PaintContext, rect: Rect, style: &Style) {
         }
         if style.has_border() {
             if let Some(border_color) = border_color {
-                ctx.stroke_rect(rect, border_color, style.stroke_width(), radius);
+                // UI System 在私有边界内解释 CSS 线型并调用 draw 公共契约。
+                border::paint_border(
+                    // 传入 draw System 的公开绘制上下文。
+                    ctx,
+                    // 传入当前组件布局矩形。
+                    rect,
+                    // 传入已经解析的最终边框颜色。
+                    border_color,
+                    // 保持现有四边最大宽度描边契约。
+                    style.stroke_width(),
+                    // 传入圆角以保持线型与现有实线几何一致。
+                    radius,
+                    // 传入确定的 UI 有效线型。
+                    style.effective_border_style(),
+                );
             }
         }
     };

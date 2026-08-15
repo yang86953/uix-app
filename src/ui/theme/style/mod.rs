@@ -17,9 +17,13 @@
 
 pub mod edge_insets;
 mod methods;
+// 定义边框线型及其有效默认语义。
+mod border;
 mod types;
 mod variant;
 
+// 公开 UI System 自有的边框线型契约。
+pub use self::border::BorderStyle;
 pub use self::types::{BoxShadowDef, ColorValue, DisplayMode, PaletteColor, TypographyToken};
 
 pub use crate::ui::style_paint::apply_style;
@@ -50,6 +54,8 @@ pub struct Style {
     pub border_color: Option<ColorValue>,
     /// 四边边框宽度。
     pub border_width: EdgeInsets,
+    /// 显式边框线型；None 表示使用 CSS 默认 solid。
+    pub border_style: Option<BorderStyle>,
     /// 边框圆角
     pub border_radius: f32,
 
@@ -127,6 +133,8 @@ impl Default for Style {
             padding: EdgeInsets::zero(),
             border_color: None,
             border_width: EdgeInsets::zero(),
+            // 未显式声明时保持 CSS 默认实线。
+            border_style: None,
             border_radius: 0.0,
 
             width: None,
