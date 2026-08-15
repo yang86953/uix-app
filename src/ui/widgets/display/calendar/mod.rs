@@ -7,7 +7,6 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintPass;
 use crate::draw::{Color, Radius};
 use crate::ui::SnapshotFields;
-use crate::ui::component::locale::Locale;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::widgets::input::date_picker::{Date, days_in_month, first_weekday};
 use crate::ui::{
@@ -17,8 +16,12 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 mod geometry;
+// 日历标题本地化与文字适配由无状态格式化子模块负责。
+mod formatting;
 
 use self::geometry::CalendarGeometry;
+// 绘制路径只消费格式化子模块的两个窄函数。
+use self::formatting::{fitted_font_size, localized_month_title};
 
 // 日历头部总高（40.0，标题行 24 + 星期栏 16）；同名常量在 selectable_list/collapse/
 // date_calendar 各为 48/36/32，组件独立设计。
@@ -34,20 +37,27 @@ const MAX_YEAR: i32 = 9999;
 /// 日期格渲染上下文。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CalendarCellInfo {
+    /// 当前日期格是否对应系统今天。
     pub is_today: bool,
+    /// 当前日期格是否对应日历选中日期。
     pub is_selected: bool,
+    /// 当前日期格是否属于正在展示的月份。
     pub is_current_month: bool,
 }
 
 /// 日期格中的事件标记。
 #[derive(Debug, Clone, PartialEq)]
 pub struct CalendarEvent {
+    /// 事件标记所属的日期。
     pub date: Date,
+    /// 事件在日期格中显示的标题。
     pub title: String,
+    /// 事件标记使用的颜色。
     pub color: Color,
 }
 
 impl CalendarEvent {
+    /// 创建指定日期、标题与颜色的日历事件标记。
     pub fn new(date: Date, title: impl Into<String>, color: Color) -> Self {
         Self {
             date,
@@ -460,6 +470,7 @@ component! {
 }
 
 impl Calendar {
+    /// 创建展示 2026 年 6 月、尚未选择日期的日历。
     pub fn new() -> Self {
         Self {
             year: Cell::new(2026),
@@ -480,16 +491,20 @@ impl Calendar {
             last_geometry: Cell::new(None),
         }
     }
+    /// 设置日期格首选边长；无效值会归一化到支持范围。
     pub fn cell_size(mut self, s: f32) -> Self {
         self.cell_size = Self::normalize_cell_size(s);
         self
     }
+    /// 返回当前选中日期的日号；尚未选择时返回 `None`。
     pub fn selected_day(&self) -> Option<usize> {
         self.selected_date.get().map(|date| date.day)
     }
+    /// 返回当前完整选中日期；尚未选择时返回 `None`。
     pub fn selected_date(&self) -> Option<Date> {
         self.selected_date.get()
     }
+    /// 返回当前展示的年份与一至十二月月份编号。
     pub fn displayed_month(&self) -> (i32, usize) {
         (self.year.get(), self.month.get())
     }
@@ -529,11 +544,13 @@ impl Calendar {
         self
     }
 
+    /// 设置按日期绘制的事件标记集合。
     pub fn events(mut self, events: Vec<CalendarEvent>) -> Self {
         self.events = events;
         self
     }
 
+    /// 设置禁止选择日期的判定函数。
     pub fn disabled_date<F>(self, predicate: F) -> Self
     where
         F: Fn(Date) -> bool + 'static,
@@ -837,64 +854,6 @@ impl Calendar {
             .cell_rect(self.year.get(), self.month.get(), day)
             .map(|rect| Point::new(rect.x + rect.w * 0.5, rect.y + rect.h * 0.5))
     }
-}
-
-fn localized_month_title(locale: &Locale, year: i32, month: usize) -> String {
-    let month_index = month.saturating_sub(1).min(11);
-    let numeric_month = (month_index + 1).to_string();
-    let year = year.to_string();
-    let affixed_numeric = locale.year_format != "{0}" || locale.month_format != "{0}";
-    let (first, second) = if affixed_numeric {
-        (year.as_str(), numeric_month.as_str())
-    } else {
-        (locale.months_long[month_index], year.as_str())
-    };
-    replace_two_placeholders(locale.month_year_format, first, second).unwrap_or_else(|| {
-        if affixed_numeric {
-            format!("{year}-{:02}", month_index + 1)
-        } else {
-            format!("{} {year}", locale.months_long[month_index])
-        }
-    })
-}
-
-fn replace_two_placeholders(pattern: &str, first: &str, second: &str) -> Option<String> {
-    let with_first = pattern.replacen("{}", first, 1);
-    if with_first == pattern {
-        return None;
-    }
-    let with_second = with_first.replacen("{}", second, 1);
-    (with_second != with_first).then_some(with_second)
-}
-
-fn fitted_font_size(
-    ctx: &mut PaintContext,
-    text: &str,
-    base_size: f32,
-    max_width: f32,
-    max_height: f32,
-) -> f32 {
-    if !base_size.is_finite()
-        || base_size <= 0.0
-        || !max_width.is_finite()
-        || max_width <= 0.0
-        || !max_height.is_finite()
-        || max_height <= 0.0
-    {
-        return 0.0;
-    }
-    let measured = ctx.measure_text(text, base_size);
-    let width_scale = if measured.w > 0.0 {
-        max_width / measured.w
-    } else {
-        1.0
-    };
-    let height_scale = if measured.h > 0.0 {
-        max_height / measured.h
-    } else {
-        1.0
-    };
-    base_size * width_scale.min(height_scale).clamp(0.0, 1.0)
 }
 
 impl Default for Calendar {
