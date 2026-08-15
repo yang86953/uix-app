@@ -147,6 +147,7 @@ impl ImageGroup {
     const INLINE_THUMB_STRIP_HEIGHT: f32 = 56.0;
     const PREVIEW_THUMB_STRIP_HEIGHT: f32 = 72.0;
 
+    /// 创建没有图片、起始索引为零且预览关闭的图片组。
     pub fn new() -> Self {
         Self {
             images: Vec::new(),
@@ -165,6 +166,7 @@ impl ImageGroup {
     // 图片编解码 capability 启用时才公开路径集合入口。
     #[cfg(feature = "image-codecs")]
     // 关闭 capability 后 ImageGroup 不接受无法解码的来源。
+    /// 替换图片路径集合，并按起始索引夹紧当前项；空集合会关闭预览。
     pub fn images<I, S>(mut self, images: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -179,6 +181,7 @@ impl ImageGroup {
         self
     }
 
+    /// 设置初始图片索引，并按当前图片数量夹紧当前项。
     pub fn start_index(mut self, index: usize) -> Self {
         self.start_index = index;
         self.current
@@ -186,10 +189,12 @@ impl ImageGroup {
         self
     }
 
+    /// 返回夹紧到当前图片集合的索引；空集合返回零。
     pub fn current_index(&self) -> usize {
         self.current.get().min(self.images.len().saturating_sub(1))
     }
 
+    /// 返回模态画廊预览当前是否处于逻辑打开状态。
     pub fn is_preview_open(&self) -> bool {
         self.preview_open
     }
@@ -201,6 +206,7 @@ impl ImageGroup {
         }
     }
 
+    /// 关闭当前窗口内的模态画廊预览。
     pub fn close_preview(&mut self) {
         self.preview_open = false;
     }
