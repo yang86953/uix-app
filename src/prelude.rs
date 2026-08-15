@@ -57,6 +57,10 @@ pub use crate::ui::theme::style::{
     BoxShadowDef, ColorValue, DisplayMode, PaletteColor, Style, StyleSet, StyleState,
     TypographyToken,
 };
+// 公开 UIX 生成代码与手写消费者共享的背景图层值契约。
+pub use crate::ui::theme::style::{
+    BackgroundAxisPosition, BackgroundImage, BackgroundPosition, BackgroundRepeat,
+};
 // 公开 UIX 生成代码与手写消费者共享的边框线型契约。
 pub use crate::ui::theme::style::BorderStyle;
 // 公开 UIX 生成代码与手写消费者共享的字体族列表契约。

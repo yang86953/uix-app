@@ -139,6 +139,12 @@ impl Style {
         self.grid_column_span = s.grid_column_span;
         self.grid_row_span = s.grid_row_span;
         self.background = s.background;
+        // 完整替换保留未声明与显式 none 之间的差异。
+        self.background_image = s.background_image;
+        // 完整替换保留未声明与显式左上角之间的差异。
+        self.background_position = s.background_position;
+        // 完整替换保留未声明与显式 repeat 之间的差异。
+        self.background_repeat = s.background_repeat;
         self.background_hover = s.background_hover;
         self.background_focus = s.background_focus;
         self.background_active = s.background_active;
@@ -241,6 +247,21 @@ impl Style {
         }
         if other.background.is_some() {
             self.background = other.background;
+        }
+        // 只有显式背景图声明覆盖继承值，包括显式 none。
+        if other.background_image.is_some() {
+            // 保存已经类型化的单层背景图来源。
+            self.background_image = other.background_image;
+        }
+        // 只有显式背景定位覆盖继承值。
+        if other.background_position.is_some() {
+            // 保存两个轴的确定定位值。
+            self.background_position = other.background_position;
+        }
+        // 只有显式重复方式覆盖继承值，包括显式 repeat。
+        if other.background_repeat.is_some() {
+            // 保存闭合重复枚举。
+            self.background_repeat = other.background_repeat;
         }
         if other.background_hover.is_some() {
             self.background_hover = other.background_hover;
@@ -440,6 +461,37 @@ impl Style {
     pub fn with_bg(mut self, c: impl Into<ColorValue>) -> Self {
         self.background = Some(c.into());
         self
+    }
+    /// 设置显式背景图来源。
+    pub fn with_background_image(mut self, image: BackgroundImage) -> Self {
+        // Some 保留显式 none 与未声明之间的差异。
+        self.background_image = Some(image);
+        // 返回可继续链式设置的样式。
+        self
+    }
+    /// 设置显式背景定位。
+    pub fn with_background_position(mut self, position: BackgroundPosition) -> Self {
+        // 保存两个轴的类型化定位值。
+        self.background_position = Some(position);
+        // 返回可继续链式设置的样式。
+        self
+    }
+    /// 返回最终背景定位；未声明时使用左上角。
+    pub fn effective_background_position(&self) -> BackgroundPosition {
+        // 公共 Style 层只提供稳定默认值。
+        self.background_position.unwrap_or_default()
+    }
+    /// 设置显式背景重复方式。
+    pub fn with_background_repeat(mut self, repeat: BackgroundRepeat) -> Self {
+        // Some 保留显式 repeat 与未声明之间的差异。
+        self.background_repeat = Some(repeat);
+        // 返回可继续链式设置的样式。
+        self
+    }
+    /// 返回最终背景重复方式；未声明时沿两个轴重复。
+    pub fn effective_background_repeat(&self) -> BackgroundRepeat {
+        // 公共 Style 层只提供稳定默认值。
+        self.background_repeat.unwrap_or_default()
     }
     /// 设置悬停态背景色。
     pub fn with_bg_hover(mut self, c: impl Into<ColorValue>) -> Self {

@@ -17,6 +17,8 @@
 
 pub mod edge_insets;
 mod methods;
+// 定义背景图来源、定位与重复的纯值契约。
+mod background;
 // 定义边框线型及其有效默认语义。
 mod border;
 // 定义有序字体族列表及其显式覆盖语义。
@@ -34,6 +36,10 @@ mod variant;
 
 // 公开 UI System 自有的边框线型契约。
 pub use self::border::BorderStyle;
+// 公开 UI System 自有的背景图层值契约。
+pub use self::background::{
+    BackgroundAxisPosition, BackgroundImage, BackgroundPosition, BackgroundRepeat,
+};
 // 公开 UI System 自有的字体族列表契约。
 pub use self::font_family::FontFamily;
 // 公开 UI System 自有的字体粗细契约。
@@ -126,6 +132,12 @@ pub struct Style {
     // ── 视觉 ────────────────────────────────────────────────
     /// 背景色
     pub background: Option<ColorValue>,
+    /// 显式背景图来源；None 表示未声明。
+    pub background_image: Option<BackgroundImage>,
+    /// 显式背景定位；None 表示使用左上角。
+    pub background_position: Option<BackgroundPosition>,
+    /// 显式背景重复方式；None 表示两个轴重复。
+    pub background_repeat: Option<BackgroundRepeat>,
     /// 悬停状态背景色
     pub background_hover: Option<ColorValue>,
     /// 焦点状态背景色
@@ -190,6 +202,12 @@ impl Default for Style {
             grid_row_span: 1,
 
             background: None,
+            // 未声明时保留 CSS 的无背景图默认值。
+            background_image: None,
+            // 未声明时由有效值方法提供左上角定位。
+            background_position: None,
+            // 未声明时由有效值方法提供双轴重复。
+            background_repeat: None,
             background_hover: None,
             background_focus: None,
             background_active: None,
