@@ -238,6 +238,7 @@ impl SnapshotSource for Label {
 }
 
 impl Label {
+    /// 创建使用默认字号、主题颜色且不可选中的文本标签。
     pub fn new(text: impl Into<String>) -> Self {
         let t = text.into();
         Self {
@@ -265,10 +266,12 @@ impl Label {
         self
     }
 
+    /// 返回标签当前持有的文本。
     pub fn text(&self) -> &str {
         &self.text
     }
 
+    /// 替换标签文本，并清除旧布局缓存与文本选区。
     pub fn set_text(&mut self, text: impl Into<String>) {
         self.text = text.into();
         // 文本变更：清空布局缓存并重置选区状态。
@@ -293,11 +296,13 @@ impl Label {
         self.style = next.style;
     }
 
+    /// 设置标签文字颜色。
     pub fn color(mut self, c: crate::draw::Color) -> Self {
         self.color = Some(c);
         self
     }
 
+    /// 设置逻辑像素字号并清除物理单位字号；非法值回退默认字号。
     pub fn font_size(mut self, s: f32) -> Self {
         self.font_size = normalized_label_font_size(s);
         self.font_size_unit = None;
@@ -311,12 +316,14 @@ impl Label {
         self
     }
 
+    /// 设置标签请求的固定宽度与高度。
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.fixed_width = Some(w);
         self.fixed_height = Some(h);
         self
     }
 
+    /// 返回当前非空文本选区的拥有型内容；没有选区时返回 `None`。
     pub fn selected_text(&self) -> Option<String> {
         self.sel.selected_text(&self.text)
     }
