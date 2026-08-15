@@ -281,7 +281,7 @@ impl Drop for RunningLease<'_> {
     }
 }
 
-// 创建时立即运行并自动订阅读取到的依赖。
+/// 创建时立即运行，并自动订阅读取到的响应式依赖。
 #[derive(Clone)]
 // 保持既有可复制公开句柄契约。
 pub struct Effect {
@@ -290,7 +290,7 @@ pub struct Effect {
 }
 
 impl Effect {
-    // 创建并执行一次用户副作用。
+    /// 创建副作用，立即执行一次并捕获本轮读取的依赖。
     pub fn new<F: Fn() + Send + Sync + 'static>(f: F) -> Self {
         // 提升用户闭包为可共享所有权。
         let effect_fn: Arc<dyn Fn() + Send + Sync> = Arc::new(f);
@@ -330,7 +330,7 @@ impl Effect {
         effect
     }
 
-    // 查询是否已有上游请求下一轮 tick。
+    /// 返回上游依赖是否已请求下一轮执行。
     pub fn has_pending(&self) -> bool {
         // 使用获取语义读取锁外通知。
         self.inner.pending.load(Ordering::Acquire)
@@ -344,7 +344,9 @@ impl Effect {
         refresh_dependency_leases(deps, &self.inner.leases, &self.inner.deps, subscriber);
     }
 
-    // 检查失效依赖并在需要时重跑副作用。
+    /// 消费待处理通知，并在依赖确实变化时重新运行副作用。
+    ///
+    /// 当本次调用实际重新运行了副作用时返回 `true`。
     pub fn tick(&self) -> bool {
         // 只有一个竞争者可消费本轮 pending。
         if self
