@@ -42,6 +42,7 @@ struct AppTimerEntry {
     active: Arc<AtomicBool>,
 }
 
+/// 控制定时器取消与脱离所有权语义的句柄。
 pub struct TimerHandle {
     id: TimerId,
     queue: Weak<Mutex<AppTimerQueueInner>>,
@@ -234,6 +235,7 @@ impl TimerHandle {
         self.detach_on_drop = true;
     }
 
+    /// 立即取消定时器，并唤醒所属运行时重新计算截止时间。
     pub fn cancel(mut self) {
         self.detach_on_drop = false;
         self.cancel_inner();
