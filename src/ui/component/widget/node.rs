@@ -9,6 +9,8 @@ pub struct WidgetNode {
     pub(crate) provider_context: ProviderContext,
     pub(crate) visible: bool,
     pub(crate) visual_transform: ViewTransform,
+    // 保存待挂载节点的完整定位声明。
+    pub(crate) position: crate::ui::position::PositionedLayout,
     // 保存待挂载节点声明的文字选择策略。
     pub(crate) user_select: crate::ui::UserSelect,
     // 保存待挂载节点显式声明的指针光标；None 表示继承。
@@ -51,6 +53,8 @@ impl WidgetNode {
             provider_context: current_provider_context(),
             visible: true,
             visual_transform: ViewTransform::default(),
+            // 命令式节点默认参与正常布局流。
+            position: crate::ui::position::PositionedLayout::default(),
             // 命令式节点默认保留组件自身选择能力。
             user_select: crate::ui::UserSelect::Auto,
             // 命令式节点默认不覆盖父节点光标。
@@ -95,6 +99,8 @@ impl WidgetNode {
             provider_context: current_provider_context(),
             visible: true,
             visual_transform: ViewTransform::default(),
+            // 命令式叶节点默认参与正常布局流。
+            position: crate::ui::position::PositionedLayout::default(),
             // 命令式叶节点默认保留组件自身选择能力。
             user_select: crate::ui::UserSelect::Auto,
             // 命令式叶节点默认不覆盖父节点光标。
@@ -132,6 +138,13 @@ impl WidgetNode {
     }
     pub(crate) fn with_visual_transform(mut self, transform: ViewTransform) -> Self {
         self.visual_transform = transform;
+        self
+    }
+    // 设置待挂载节点的完整定位声明。
+    pub(crate) fn with_position(mut self, position: crate::ui::position::PositionedLayout) -> Self {
+        // 保留模式与四边值供组件树统一求解。
+        self.position = position;
+        // 返回可继续组装的节点。
         self
     }
     // 设置待挂载节点声明的文字选择策略。

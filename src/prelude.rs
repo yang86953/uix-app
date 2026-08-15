@@ -80,13 +80,13 @@ pub use crate::ui::{
     ComponentTokenOverrides, Config, ConfigProvider, EmptyContext, EmptyRenderer, EventResult,
     FocusHandle, FocusHandleError, HandlerId, HandlerOptions, HandlerRegistration,
     IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, IntoWidgetNode, Locale,
-    LocaleProvider, PaintContext, Placement, SemanticAction, SemanticActionKind, SemanticEvent,
-    SemanticKind, SemanticPayload, SnapshotCollapsePanel, SnapshotField, SnapshotFields,
-    SnapshotSource, SnapshotTransferItem, SnapshotValue, SystemEvent, SystemEventKind, ThemeTokens,
-    TokenProvider, TransformOrigin, TransformOriginValue, UserSelect, WidgetChildren,
-    WidgetComponent, WindowControl, copy_to_clipboard, en_us, read_text_from_clipboard,
-    render_empty_for, use_config, use_locale, window_control, window_control_named,
-    window_drag_region, with_config, with_locale, zh_cn,
+    LocaleProvider, PaintContext, Placement, PositionInsets, PositionMode, SemanticAction,
+    SemanticActionKind, SemanticEvent, SemanticKind, SemanticPayload, SnapshotCollapsePanel,
+    SnapshotField, SnapshotFields, SnapshotSource, SnapshotTransferItem, SnapshotValue,
+    SystemEvent, SystemEventKind, ThemeTokens, TokenProvider, TransformOrigin,
+    TransformOriginValue, UserSelect, WidgetChildren, WidgetComponent, WindowControl,
+    copy_to_clipboard, en_us, read_text_from_clipboard, render_empty_for, use_config, use_locale,
+    window_control, window_control_named, window_drag_region, with_config, with_locale, zh_cn,
 };
 // 在便捷导入面公开标准窗口控制组合构造器。
 pub use crate::ui::window_controls;

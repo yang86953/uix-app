@@ -29,7 +29,7 @@ impl WidgetTree {
                 child.measured_size.h = child.measured_size.h.max(cf.h);
             }
         }
-        layout.layout_children(frame, &measured, self)
+        self.arrange_positioned_children(layout, frame, measured)
     }
 
     /// 更新所有 viewport 容器的 content_bounds。
@@ -219,7 +219,7 @@ impl WidgetTree {
                 let mut has_visible = false;
                 for &cid in children.iter() {
                     if let Some(child) = self.get(cid) {
-                        if child.visible() {
+                        if child.visible() && !child.position().mode.is_out_of_flow() {
                             let cf = child.frame();
                             let child_bottom = cf.y + cf.h;
                             if child_bottom > 0.0 {

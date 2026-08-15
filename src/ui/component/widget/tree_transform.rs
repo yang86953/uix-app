@@ -6,8 +6,13 @@ use crate::ui::component::view_transform::ViewTransform;
 impl WidgetTree {
     /// 判断节点是否为悬浮层节点（overlay 挂载点）。
     fn is_overlay_node(&self, id: WidgetId) -> bool {
-        self.get(id)
-            .is_some_and(|node| node.overlay_entry(id, node.frame()).is_some())
+        // fixed 节点与组件浮层都从祖先滚动和裁剪路径中提升。
+        self.node_is_fixed(id)
+            || self
+                // 读取组件自身声明的浮层入口。
+                .get(id)
+                // 存在浮层条目时截断视觉父链。
+                .is_some_and(|node| node.overlay_entry(id, node.frame()).is_some())
     }
 
     /// 计算从树根到指定节点的视觉路径（遇悬浮层节点截断，根在前）。
@@ -35,7 +40,8 @@ impl WidgetTree {
         let mut transform = Transform::identity();
         for (index, current_id) in path.iter().copied().enumerate() {
             let node = self.get(current_id)?;
-            transform = transform.concat(node.visual_transform_matrix());
+            // 合成 relative/sticky 定位偏移与作者视觉变换。
+            transform = transform.concat(self.positioned_visual_transform(current_id));
             // 除末尾节点外，还需补偿视口滚动偏移（子节点相对滚动）。
             if index + 1 < path.len() {
                 if let Some((sx, sy)) = node.viewport_scroll_offset() {
@@ -132,7 +138,8 @@ impl WidgetTree {
             if !current.visible() {
                 return None;
             }
-            transform = transform.concat(current.visual_transform_matrix());
+            // 使用与合成器一致的定位与作者变换组合。
+            transform = transform.concat(self.positioned_visual_transform(current_id));
             if index + 1 < path.len() {
                 // 与子裁剪区求交，无交集则返回 None。
                 if let Some(clip) = current.children_clip(current.frame()) {

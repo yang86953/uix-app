@@ -10,6 +10,9 @@ mod captured_state_binds;
 // 拆分透明包装节点的同轮子测量分发，保持主文件低于规模上限。
 #[path = "boxed/layout_measure.rs"]
 mod layout_measure;
+// 拆分定位元数据与子布局求解，保持主体低于规模上限。
+#[path = "boxed/position_layout.rs"]
+mod position_layout;
 // 拆分视觉变换与光标元数据访问，保持主体文件低于规模上限。
 #[path = "boxed/visual_metadata.rs"]
 // 编译运行时节点视觉元数据的私有实现模块。
@@ -33,6 +36,8 @@ pub struct BoxedWidget {
     visible: bool,
     parent_visible: bool,
     visual_transform: ViewTransform,
+    // 保存当前运行时节点的定位模式与四边值。
+    position: crate::ui::position::PositionedLayout,
     // 保存当前节点自己的文字选择声明。
     declared_user_select: crate::ui::UserSelect,
     // 保存结合祖先边界解析后的最终文字选择策略。
@@ -115,6 +120,8 @@ impl BoxedWidget {
             visible: true,
             parent_visible: true,
             visual_transform: ViewTransform::default(),
+            // 新节点默认参与正常布局流。
+            position: crate::ui::position::PositionedLayout::default(),
             // 新节点默认没有选择策略覆盖。
             declared_user_select: crate::ui::UserSelect::Auto,
             // 没有父节点时 auto 保持组件默认能力。
@@ -478,34 +485,6 @@ impl BoxedWidget {
             .as_layout()
             .map(|layout| layout.child_overflow_expands_parent())
             .unwrap_or(true)
-    }
-    pub fn layout_children(
-        &self,
-        frame: Rect,
-        children: &[ComponentId],
-        tree: &WidgetTree,
-    ) -> Vec<(ComponentId, Rect)> {
-        // 在所有定制父布局的共同入口移除整棵有效不可见子树。
-        let visible_children: Vec<ComponentId> = children
-            // 保留声明顺序，确保恢复可见后的布局索引保持稳定。
-            .iter()
-            // 后续布局只需要复制轻量组件标识。
-            .copied()
-            // 同时尊重节点自身、父级门控和组件运行态可见性。
-            .filter(|child_id| tree.is_effectively_visible(*child_id))
-            // 物化切片以继续兼容现有 WidgetLayout 接口。
-            .collect();
-        self.with_component_context(|component| {
-            component
-                .as_layout()
-                .map(|layout| {
-                    // 测量阶段不得再观察或缓存隐藏子节点。
-                    let measured = layout.measure_children(frame, &visible_children, tree);
-                    // 放置阶段接收与测量一致的可见子集。
-                    layout.layout_children(frame, &measured, tree)
-                })
-                .unwrap_or_default()
-        })
     }
     pub fn children_clip(&self, frame: Rect) -> Option<Rect> {
         self.component()
