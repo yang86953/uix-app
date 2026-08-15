@@ -499,6 +499,8 @@ mod style_codegen;
 mod style_class_resolver;
 // 定义样式值、颜色、边距与枚举的编译期映射。
 mod style_value_codegen;
+// 定义 transform 函数列表到公开二维仿射矩阵的编译期映射。
+mod style_transform_codegen;
 // 定义样式块与内联样式共享解析器。
 mod style_parser;
 // 集中验证顶层声明与样式 Gate。

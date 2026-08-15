@@ -770,6 +770,58 @@ fn rejects_invalid_z_index_values() {
     }
 }
 
+// 验证 transform 四类函数按源码顺序映射到公开二维矩阵。
+#[test]
+fn generates_transform_runtime_mapping() {
+    // 解析覆盖平移、旋转、非等比缩放与双轴倾斜的函数列表。
+    let document = parse_document(
+        r#"<Text style="transform: translate(10px, -4px) rotate(0.25turn) scale(2, 0.5) skew(10deg, 0);">Hello</Text>"#,
+    )
+    // 已登记函数与单位必须完成语法解析。
+    .expect("transform 函数列表语法应合法");
+    // 生成可消费的 View 令牌。
+    let tokens = generate_view(&document.root)
+        // 四类函数都已有公开运行时等价入口。
+        .expect("transform 应映射到二维仿射运行时")
+        // 规范化令牌便于断言组合事实。
+        .to_string();
+    // 最终节点必须通过唯一公开视觉变换入口更新。
+    assert!(tokens.contains("affine_transform"));
+    // 四类构造器必须全部保留并使用 concat 组合。
+    assert!(
+        tokens.contains("Transform :: translate")
+            && tokens.contains("Transform :: rotate")
+            && tokens.contains("Transform :: scale")
+            && tokens.contains("Transform :: skew")
+            && tokens.matches("concat").count() == 4
+    );
+}
+
+// 验证 transform 拒绝未知函数、非法单位与不可逆矩阵。
+#[test]
+fn rejects_invalid_transform_values() {
+    // 覆盖函数白名单、角度单位、相对长度和零缩放。
+    for (value, expected) in [
+        // 未登记 matrix 函数必须明确拒绝。
+        ("matrix(1,0,0,1,0,0)", "未知"),
+        // 非零旋转必须提供角度单位。
+        ("rotate(45)", "单位"),
+        // 百分比平移尚无帧尺寸上下文。
+        ("translate(50%)", "百分比"),
+        // 零缩放会破坏命中逆变换。
+        ("scale(0)", "不可逆"),
+    ] {
+        // 构造单一待拒绝变换。
+        let source = format!(r#"<Text style="transform: {value};">Hello</Text>"#);
+        // 样式语法层保留函数文本供映射层诊断。
+        let document = parse_document(&source).expect("transform 原始值应完成语法解析");
+        // 代码生成必须返回确定诊断。
+        let error = generate_view(&document.root).expect_err("非法 transform 必须失败");
+        // 诊断必须命中对应失败原因。
+        assert!(error.message.contains(expected), "{}", error.message);
+    }
+}
+
 // 验证规划中样式不会伪装为已支持。
 #[test]
 fn rejects_planned_inline_style_at_compile_time() {
