@@ -9,12 +9,16 @@ use crate::draw::{Color, FontHandle, HAlign, VAlign};
 
 /// 文本渲染服务 — 字体管理、文本布局、glyph 光栅化。
 pub struct TextRenderService<'a> {
+    /// 当前用于布局和绘制文本的字体句柄。
     pub font: FontHandle,
+    /// 提供字体解析、布局与字形缓存的字体服务。
     pub font_service: &'a FontService,
+    /// 单次文本布局允许使用的最大宽度。
     pub max_text_width: f32,
 }
 
 impl<'a> TextRenderService<'a> {
+    /// 使用指定字体服务、字体和最大文本宽度创建渲染服务。
     pub fn new(font: FontHandle, font_service: &'a FontService, max_text_width: f32) -> Self {
         Self {
             font,
