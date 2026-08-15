@@ -125,6 +125,8 @@ impl Style {
         self.flex_direction = s.flex_direction;
         self.flex_wrap = s.flex_wrap;
         self.overflow_content = s.overflow_content;
+        // 完整替换保留未声明与显式 visible 之间的差异。
+        self.clip_content = s.clip_content;
         self.justify_content = s.justify_content;
         self.align_items = s.align_items;
         self.gap = s.gap;
@@ -205,6 +207,11 @@ impl Style {
         }
         if other.overflow_content {
             self.overflow_content = other.overflow_content;
+        }
+        // 只有显式 overflow 声明覆盖既有裁剪策略。
+        if other.clip_content.is_some() {
+            // 复制显式 visible 或 hidden 结果。
+            self.clip_content = other.clip_content;
         }
         if other.justify_content != JustifyContent::default() {
             self.justify_content = other.justify_content;

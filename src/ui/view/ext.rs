@@ -306,6 +306,12 @@ pub trait StyleExt: Into<ViewNode> + Sized {
         self.into().overflow_content()
     }
 
+    /// 显式设置直接子树是否裁剪到当前节点边界。
+    fn clip_content(self, clip: bool) -> ViewNode {
+        // 委托 ViewNode 保存显式裁剪声明。
+        self.into().clip_content(clip)
+    }
+
     /// 设置统一宽度和颜色的边框。
     fn border(self, width: f32, color: impl Into<ColorValue>) -> ViewNode {
         self.into().border(width, color)

@@ -100,6 +100,8 @@ pub struct Style {
     pub flex_wrap: bool,
     /// 允许子内容溢出容器（流式堆叠，跳过 flex-shrink）
     pub overflow_content: bool,
+    /// 子树裁剪声明；None 表示沿用组件默认不裁剪。
+    pub clip_content: Option<bool>,
     /// 主轴对齐
     pub justify_content: JustifyContent,
     /// 交叉轴对齐
@@ -186,6 +188,8 @@ impl Default for Style {
             flex_direction: FlexDirection::default(),
             flex_wrap: false,
             overflow_content: false,
+            // 默认不改变组件既有子树裁剪语义。
+            clip_content: None,
             justify_content: JustifyContent::default(),
             align_items: AlignItems::default(),
             gap: 0.0,

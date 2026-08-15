@@ -82,6 +82,11 @@ component! {
 
     align_self => (&self) -> Option<AlignItems> { self.style.align_self }
 
+    children_clip => (&self, frame: Rect) -> Option<Rect> {
+        // 只有显式 overflow hidden 才裁剪直接子树。
+        self.style.clip_content.unwrap_or(false).then_some(frame)
+    }
+
     grid_cell => (&self) -> Option<usize> { self.style.grid_cell }
 
     grid_column_span => (&self) -> u32 { self.style.grid_column_span }
@@ -509,6 +514,8 @@ mod tests {
     use super::*;
     // 导入调用布局 trait 所需的公开接口。
     use crate::ui::WidgetLayout;
+    // 导入调用子树裁剪契约所需的渲染 trait。
+    use crate::ui::WidgetRender;
 
     // 验证内容缓存包含子项尾侧 margin。
     #[test]
@@ -527,5 +534,42 @@ mod tests {
         assert_eq!(positions[0].1, Rect::new(2.0, 3.0, 20.0, 10.0));
         // 缓存必须记录包含右下 margin 的完整外尺寸。
         assert_eq!(container.cached_content_size.get(), Size::new(30.0, 20.0));
+    }
+
+    // 验证默认可见溢出与显式隐藏裁剪具有不同运行时结果。
+    #[test]
+    fn explicit_clip_content_controls_container_children_clip() {
+        // 使用非零边界验证返回矩形保持完整。
+        let frame = Rect::new(4.0, 6.0, 80.0, 40.0);
+        // 默认容器不得意外裁剪既有 Rust 子树。
+        assert_eq!(Container::new().children_clip(frame), None);
+        // 构造显式 overflow hidden 对应的样式。
+        let hidden_style = Style {
+            // 开启直接子树裁剪。
+            clip_content: Some(true),
+            // 保留其他容器默认字段。
+            ..Style::container()
+        };
+        // 显式隐藏必须裁剪到当前完整 frame。
+        assert_eq!(
+            // 使用公开样式替换入口构造隐藏溢出容器。
+            Container::new().style(hidden_style).children_clip(frame),
+            // 裁剪边界必须等于节点边界。
+            Some(frame)
+        );
+        // 显式 visible 必须能够清除裁剪而不改变身份。
+        let visible_style = Style {
+            // 保存显式不裁剪声明。
+            clip_content: Some(false),
+            // 保留其他容器默认字段。
+            ..Style::container()
+        };
+        // 显式可见与默认行为一致。
+        assert_eq!(
+            // 应用显式可见样式。
+            Container::new().style(visible_style).children_clip(frame),
+            // 子树不应取得裁剪矩形。
+            None
+        );
     }
 }

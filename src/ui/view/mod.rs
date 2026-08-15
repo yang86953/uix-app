@@ -460,6 +460,14 @@ impl ViewNode {
         self
     }
 
+    /// 显式设置直接子树是否裁剪到当前节点边界。
+    pub fn clip_content(mut self, clip: bool) -> Self {
+        // 保存显式真假值以支持状态样式清除旧裁剪。
+        self.style.clip_content = Some(clip);
+        // 返回节点以继续声明式链式配置。
+        self
+    }
+
     /// 设置统一宽度和颜色的边框。
     pub fn border(mut self, width: f32, color: impl Into<ColorValue>) -> Self {
         self.style.border_width = EdgeInsets::uniform(width);
