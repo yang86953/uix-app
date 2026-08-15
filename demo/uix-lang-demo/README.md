@@ -37,52 +37,13 @@ cargo run --release --manifest-path demo/Cargo.toml --features "agent-control,te
 `on_start` 交付的逐窗 `AppHandle` 并调用公开 test-harness 故障入口。普通主演示不编译该
 模块，也不会展示或开放故障按钮。
 
-仓库根目录的 Windows 真实窗口测试会依次注入 DeviceLost 与 SurfaceLost，并在每轮等待
-`presented_revision` 后执行恢复后交互。由于 demo 是独立 workspace，先构建主演示，再
-运行被显式忽略的真实窗口测试：
+仓库测试已精简为公开 API 契约测试（`tests/*_public_api.rs`）；设备丢失、表面丢失与
+恢复后交互的真窗注入验收由本 demo 的 `--test-graphics-recovery` 页面承担，不再作为
+独立 cargo test target 运行。
 
-```powershell
-cargo build --manifest-path demo/Cargo.toml --features "agent-control,test-harness" --bin uix-lang-demo
-cargo test --features "agent-control,test-harness" --test uix_lang_graphics_recovery_windows -- --ignored --nocapture
-```
-
-该测试需要交互式 Windows 桌面与 D3D11 驱动；测试 Adapter 只使用公开
-`uix.agent.v1` 协议、启动参数和稳定 automation ID，不依赖 app System 私有实现。
-
-十二页与已登记组件的浅色 / 深色真实窗口矩阵使用同一公开协议和进程外 HWND 捕获
-Adapter。由于 demo 是独立 workspace，同样要先重建主演示：
-
-```powershell
-cargo build --manifest-path demo/Cargo.toml --features agent-control --bin uix-lang-demo
-cargo test --features "agent-control,image-codecs" --test uix_lang_visual_windows -- --ignored --nocapture
-```
-
-多窗口、跨窗主题与逐窗关闭使用第二条真实窗口验收：
-
-```powershell
-cargo test --features "agent-control,image-codecs" --test uix_lang_multi_window_windows -- --ignored --nocapture
-```
-
-跟随 Windows 系统主题的可恢复真窗验收会临时切换并立即恢复 `AppsUseLightTheme`：
-
-```powershell
-cargo test --features "agent-control,image-codecs" --test uix_lang_system_theme_windows -- --ignored --nocapture
-```
-
-十二页派生语义树、焦点/调用动作与密码值清除使用公开 Agent 快照验收：
-
-```powershell
-cargo test --features agent-control --test uix_lang_accessibility_windows -- --ignored --nocapture
-```
-
-窗口最大化/还原二十轮与键盘/指针焦点环像素门禁使用：
-
-```powershell
-cargo test --features "agent-control,image-codecs" --test uix_lang_foreground_windows -- --ignored --nocapture
-```
-
-测试会验证页面标题、组件角色 / 状态 / 动作、主题平均亮度差、D3D11 recipe 与无软件
-回退，并把 PNG 与联系表写入 `target/debug-captures/uix-lang-visual` 供视觉审阅。
+十二页与已登记组件的浅色 / 深色真实窗口矩阵、多窗口与跨窗主题、系统主题跟随、
+派生语义树与前景焦点像素门禁等 Windows 真窗验收同步精简，由公开 API 契约测试与
+本 demo 的 `--agent-control` 协议验证共同覆盖。
 
 Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。入口统一经
 `uix::platform::run_on_ui_thread` 运行：Windows 在 8MB 大栈 UI 线程上执行，
