@@ -704,7 +704,7 @@ pub(crate) use badge_codegen::generate_badge;
 pub(crate) use image_codegen::generate_image;
 // 向核心元素生成器暴露 ImageGroup 叶组件专用映射。
 pub(crate) use image_group_codegen::generate_image_group;
-// 向核心元素生成器暴露 List 叶组件专用映射。
+// 向核心元素生成器暴露 List 数据与命名节点插槽专用映射。
 pub(crate) use list_codegen::generate_list;
 // 向核心元素生成器暴露 SelectableList 叶组件专用映射。
 pub(crate) use selectable_list_codegen::generate_selectable_list;

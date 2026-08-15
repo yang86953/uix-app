@@ -126,7 +126,7 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "Image" => generate_image(element),
         // 图片组映射到公开路径集合、初始索引与运行时变化事实契约。
         "ImageGroup" => generate_image_group(element),
-        // 文本列表映射到公开数据集合、字符串槽位与空态替代契约。
+        // 文本列表映射到公开数据集合、兼容字符串、命名节点槽与空态替代契约。
         "List" => generate_list(element),
         // 可选中列表映射到类型化条目、可空稳定 id 状态与 Change 契约。
         "SelectableList" => generate_selectable_list(element),
