@@ -490,7 +490,7 @@
 </Component>
 
 // 声明图表能力页组件。
-<Component name="ChartsPage" external="chart_animation, chart_interaction, chart_brush, chart_tooltip, heatmap_color_stops">
+<Component name="ChartsPage" external="chart_animation, chart_interaction, chart_brush, chart_tooltip, heatmap_color_stops, chart_reference_lines">
   // 组织图表能力内容。
   <Column gap="16px">
     // 展示图表能力标题。
@@ -503,8 +503,8 @@
     <LineChart data={[LineData('Jan', 100), LineData('Feb', 150), LineData('Mar', 130)]} smooth lineWidth="2" dotRadius="4" title="月度趋势" width="420px" height="260px" />
     // 展示类型化饼图数据与环形配置。
     <PieChart data={[PieData('产品 A', 40, Color('#1677ff')), PieData('产品 B', 30, Color('#52c41a')), PieData('产品 C', 30, Color('#faad14'))]} donut="0.55" title="产品占比" width="320px" height="280px" />
-    // 展示类型化面积图数据与填充配置。
-    <AreaChart data={[LineData('Jan', 80), LineData('Feb', 120), LineData('Mar', 105)]} smooth fillOpacity="0.3" title="面积趋势" width="420px" height="260px" />
+    // 展示类型化面积图数据、参考线与填充配置。
+    <AreaChart data={[LineData('Jan', 80), LineData('Feb', 120), LineData('Mar', 105)]} smooth fillOpacity="0.3" referenceLines={chart_reference_lines()} title="面积趋势" width="420px" height="260px" />
     // 展示类型化散点数据与坐标配置。
     <ScatterChart data={[ScatterData('A', 2.5, 6.3), ScatterData('B', 3.1, 5.8), ScatterData('C', 4.2, 7.1)]} xAxis="宽度" yAxis="高度" pointStyle="diamond" title="样本分布" width="420px" height="260px" />
     // 展示类型化气泡数据、第三维大小与统一缩放配置。

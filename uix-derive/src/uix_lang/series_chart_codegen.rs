@@ -183,6 +183,7 @@ fn generate_combo_start(
             "subtitle",
             "responsive",
             "legend",
+            "referenceLines",
             "animation",
             "interactive",
             "brush",

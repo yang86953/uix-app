@@ -14,7 +14,7 @@ fn generate(source: &str) -> Result<String, Diagnostic> {
 fn generates_area_scatter_and_funnel_charts() {
     // 面积图覆盖 LineData、填充与曲线属性。
     let area = generate(
-        "<AreaChart data={[LineData('Jan', 10)]} stacked smooth fillOpacity=\"0.3\" legend={legend} width=\"420px\" />",
+        "<AreaChart data={[LineData('Jan', 10)]} stacked smooth fillOpacity=\"0.3\" legend={legend} referenceLines={references} width=\"420px\" />",
     )
     // 合法面积图必须生成。
     .expect("AreaChart 应生成");
@@ -25,10 +25,11 @@ fn generates_area_scatter_and_funnel_charts() {
             && area.contains("stacked (true)")
             && area.contains("fill_opacity (0.3)")
             && area.contains("legend ((legend) . clone ())")
+            && area.contains("reference_line")
     );
     // 散点图覆盖坐标数据、轴标题与点样式。
     let scatter = generate(
-        "<ScatterChart data={[ScatterData('A', 2, 6)]} xAxis=\"宽度\" yAxis=\"高度\" pointSize=\"6\" pointStyle=\"diamond\" />",
+        "<ScatterChart data={[ScatterData('A', 2, 6)]} xAxis=\"宽度\" yAxis=\"高度\" pointSize=\"6\" pointStyle=\"diamond\" referenceLines={references} />",
     )
     // 合法散点图必须生成。
     .expect("ScatterChart 应生成");
@@ -37,6 +38,7 @@ fn generates_area_scatter_and_funnel_charts() {
         scatter.contains("Vec < :: uix :: prelude :: ScatterData >")
             && scatter.contains("x_axis (\"宽度\")")
             && scatter.contains("PointStyle :: Diamond")
+            && scatter.contains("reference_line")
     );
     // 气泡图覆盖显式 BubbleData 入口与大小缩放。
     let bubble = generate(

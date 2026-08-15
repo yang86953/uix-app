@@ -21,6 +21,7 @@ pub(super) fn is_common_chart_attribute(name: &str) -> bool {
             | "interactive"
             | "brush"
             | "tooltip"
+            | "referenceLines"
     )
 }
 
@@ -58,6 +59,11 @@ pub(super) fn apply_common_chart_attribute(
         // 调用现有图例 builder。
         return Ok(quote! { (#widget).legend(#value) });
     }
+    // 坐标图参考线使用精确集合并依次调用现有 builder。
+    if attribute.name == "referenceLines" {
+        // 生成参考线集合映射。
+        return reference_lines(widget, attribute);
+    }
     // 其余四项高级配置只接受类型化 Rust 表达式。
     let value = typed_config_expression(attribute)?;
     // 按属性名调用精确公开 builder，并克隆声明快照以支持重复构建。
@@ -72,6 +78,42 @@ pub(super) fn apply_common_chart_attribute(
         "tooltip" => quote! { (#widget).tooltip((#value).clone()) },
         // 调用方已经通过共享属性白名单收窄集合。
         _ => unreachable!("图表共同属性集合已穷尽"),
+    })
+}
+
+// 把类型化参考线集合投影为重复 builder 调用。
+fn reference_lines(
+    // 接收前序图表构建器链。
+    widget: TokenStream,
+    // 接收参考线集合属性。
+    attribute: &Attribute,
+) -> Result<TokenStream, Diagnostic> {
+    // 参考线必须通过 Rust 表达式提供类型化集合。
+    let AttributeValue::Expression(expression) = &attribute.value else {
+        // 返回明确的集合类型诊断。
+        return Err(Diagnostic::new(
+            // 指向非法参考线属性。
+            attribute.span,
+            // 说明目标值形状。
+            "图表 referenceLines 必须是类型化参考线集合表达式",
+            // 给出公开集合类型。
+            "使用 Vec<(f32, String, LineStyle)> 表达式",
+        ));
+    };
+    // 生成受限集合表达式。
+    let value = generate_expression(&expression.expression, None)?;
+    // 先固定公开元素类型，再折叠到既有 reference_line builder。
+    Ok(quote! {
+        ::std::iter::IntoIterator::into_iter((#value).clone())
+            .collect::<::std::vec::Vec<(
+                f32,
+                ::std::string::String,
+                ::uix::prelude::LineStyle
+            )>>()
+            .into_iter()
+            .fold(#widget, |chart, (value, label, style)| {
+                chart.reference_line(value, label, style)
+            })
     })
 }
 
