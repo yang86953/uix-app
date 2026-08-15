@@ -59,6 +59,74 @@ fn parses_top_level_declarations_in_source_order() {
     assert_eq!(document.root.name, "App");
 }
 
+// 验证关键帧声明解析、偏移规范化与排序。
+#[test]
+fn parses_keyframes_with_named_and_percentage_offsets() {
+    // 构造乱序百分比与具名端点声明。
+    let document = parse_document(
+        "@keyframes fade { to { opacity: 1; } 40% { opacity: 0.4; } from { opacity: 0; } } <Text />",
+    )
+    // 合法关键帧必须成功解析。
+    .expect("关键帧声明应成功解析");
+    // 提取关键帧声明。
+    let Declaration::Keyframes(keyframes) = &document.declarations[0] else {
+        // 结构不匹配时失败。
+        panic!("首个声明应为关键帧");
+    };
+    // 名称必须保留。
+    assert_eq!(keyframes.name, "fade");
+    // 帧必须按规范化偏移排序。
+    assert_eq!(
+        // 收集排序后的偏移。
+        keyframes
+            // 遍历帧。
+            .frames
+            // 借用迭代器。
+            .iter()
+            // 提取百万分比偏移。
+            .map(|frame| frame.offset_millionths)
+            // 收集为向量。
+            .collect::<Vec<_>>(),
+        // 对比预期顺序。
+        vec![0, 400_000, 1_000_000]
+    );
+}
+
+// 验证相同关键帧名称不能重复声明。
+#[test]
+fn rejects_duplicate_keyframe_names() {
+    // 解析两个同名声明。
+    let error = parse_document(
+        "@keyframes fade { from { opacity: 0; } } @keyframes fade { to { opacity: 1; } } <Text />",
+    )
+    // 重复名称必须失败。
+    .expect_err("重复关键帧名称必须失败");
+    // 诊断必须指出动画名冲突。
+    assert!(error.message.contains("关键帧 fade 重复声明"));
+}
+
+// 验证越界关键帧偏移在解析期失败。
+#[test]
+fn rejects_out_of_range_keyframe_offset() {
+    // 解析超出闭区间的偏移。
+    let error = parse_document("@keyframes fade { 120% { opacity: 1; } } <Text />")
+        // 越界偏移必须失败。
+        .expect_err("越界关键帧偏移必须失败");
+    // 诊断必须保留原始选择器。
+    assert!(error.message.contains("120%"));
+}
+
+// 验证空关键帧块不能形成伪支持声明。
+#[test]
+fn rejects_empty_keyframe_block() {
+    // 解析没有属性的单帧。
+    let error = parse_document("@keyframes fade { from { } } <Text />")
+        // 空帧必须失败。
+        .expect_err("空关键帧必须失败");
+    // 诊断必须指出缺少动画值。
+    assert!(error.message.contains("不能为空"));
+}
+
 // 验证十六进制颜色和主题属性引用具有不同 AST。
 #[test]
 fn distinguishes_hex_colors_from_theme_references() {

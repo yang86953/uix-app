@@ -1,7 +1,7 @@
 // 引入顶层声明、共享游标、样式解析与诊断。
 use super::{
-    Cursor, Declaration, Diagnostic, ExportDeclaration, ImportDeclaration, StyleClassDeclaration,
-    ThemeDeclaration, parse_style_properties,
+    Cursor, Declaration, Diagnostic, ExportDeclaration, ImportDeclaration, KeyframeDeclaration,
+    KeyframesDeclaration, StyleClassDeclaration, ThemeDeclaration, parse_style_properties,
 };
 // 引入顶层名称去重集合。
 use std::collections::HashSet;
@@ -42,6 +42,7 @@ pub(crate) fn register_declaration_name(
     declaration: &Declaration,
     style_names: &mut HashSet<String>,
     theme_names: &mut HashSet<String>,
+    keyframe_names: &mut HashSet<String>,
     component_names: &mut HashSet<String>,
 ) -> Result<(), Diagnostic> {
     // 样式类名称不得重复。
@@ -91,6 +92,23 @@ pub(crate) fn register_declaration_name(
             format!("主题 {} 重复声明", theme.name),
             // 给出修复建议。
             "合并同名主题或使用不同名称",
+        ));
+    }
+    // 关键帧名称在独立动画命名空间内不得重复。
+    if let Declaration::Keyframes(keyframes) = declaration {
+        // 首次插入成功时通过。
+        if keyframe_names.insert(keyframes.name.clone()) {
+            // 返回成功。
+            return Ok(());
+        }
+        // 返回重复关键帧声明诊断。
+        return Err(Diagnostic::new(
+            // 指向重复声明。
+            keyframes.span,
+            // 陈述失败原因。
+            format!("关键帧 {} 重复声明", keyframes.name),
+            // 给出修复建议。
+            "合并同名 @keyframes 或使用不同名称",
         ));
     }
     // 自定义组件名称不得重复。
@@ -146,7 +164,7 @@ pub(crate) fn parse_at_declaration(cursor: &mut Cursor<'_>) -> Result<Declaratio
             // 陈述失败原因。
             "顶层指令缺少名称",
             // 给出支持指令。
-            "使用 @import、@export 或 @theme",
+            "使用 @import、@export、@theme 或 @keyframes",
         )
     })?;
     // 按指令名分派解析。
@@ -157,6 +175,8 @@ pub(crate) fn parse_at_declaration(cursor: &mut Cursor<'_>) -> Result<Declaratio
         "export" => parse_export(cursor, start),
         // 解析主题声明。
         "theme" => parse_theme(cursor, start),
+        // 解析关键帧动画声明。
+        "keyframes" => parse_keyframes(cursor, start),
         // 其他 @ 指令不属于当前规范。
         _ => Err(Diagnostic::new(
             // 指向未知名称。
@@ -164,9 +184,213 @@ pub(crate) fn parse_at_declaration(cursor: &mut Cursor<'_>) -> Result<Declaratio
             // 陈述失败原因。
             format!("不支持顶层指令 @{name}"),
             // 给出支持集合。
-            "使用 @import、@export 或 @theme",
+            "使用 @import、@export、@theme 或 @keyframes",
         )),
     }
+}
+
+// 解析具名关键帧动画声明。
+fn parse_keyframes(cursor: &mut Cursor<'_>, start: usize) -> Result<Declaration, Diagnostic> {
+    // 指令名后允许换行与注释。
+    cursor.skip_trivia()?;
+    // 读取 animation 属性引用的关键帧名称。
+    let (name, _) = cursor.identifier().ok_or_else(|| {
+        // 返回缺少名称诊断。
+        Diagnostic::new(
+            // 指向名称应出现的位置。
+            cursor.point_span(),
+            // 陈述失败原因。
+            "@keyframes 缺少名称",
+            // 给出合法示例。
+            "使用 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }",
+        )
+    })?;
+    // 名称与外围块之间允许 trivia。
+    cursor.skip_trivia()?;
+    // 外围左花括号必须显式出现。
+    if !cursor.consume("{") {
+        // 返回缺少动画块诊断。
+        return Err(Diagnostic::new(
+            // 指向当前位置。
+            cursor.point_span(),
+            // 陈述失败原因。
+            "@keyframes 声明缺少 {",
+            // 给出修复建议。
+            "在关键帧名称后添加 { ... }",
+        ));
+    }
+    // 保存解析后的关键帧序列。
+    let mut frames = Vec::new();
+    // 保存规范化偏移位模式以拒绝 from 与 0% 等语义重复。
+    let mut offsets = HashSet::new();
+    // 持续解析到外围右花括号。
+    loop {
+        // 跳过相邻关键帧之间的空白与注释。
+        cursor.skip_trivia()?;
+        // 外围右花括号结束声明。
+        if cursor.consume("}") {
+            // 退出关键帧循环。
+            break;
+        }
+        // 输入结束表示外围声明没有闭合。
+        if cursor.is_eof() {
+            // 返回未闭合声明诊断。
+            return Err(Diagnostic::new(
+                // 覆盖从指令起点到输入末尾。
+                cursor.span_from(start),
+                // 陈述失败原因。
+                "@keyframes 声明缺少结束花括号",
+                // 给出修复建议。
+                "在最后一个关键帧之后添加 }",
+            ));
+        }
+        // 保存当前选择器与帧块的起点。
+        let frame_start = cursor.offset();
+        // 扫描到当前帧样式块的左花括号。
+        while !cursor.starts_with("{") {
+            // 外围结束或输入结束都表示当前选择器缺少样式块。
+            if cursor.is_eof() || cursor.starts_with("}") {
+                // 返回缺少帧块诊断。
+                return Err(Diagnostic::new(
+                    // 指向当前不完整帧。
+                    cursor.span_from(frame_start),
+                    // 陈述失败原因。
+                    "关键帧偏移后缺少样式块",
+                    // 给出修复建议。
+                    "使用 from { ... }、to { ... } 或 50% { ... }",
+                ));
+            }
+            // 按 UTF-8 字符边界推进选择器扫描。
+            cursor.bump();
+        }
+        // 保存选择器结束位置。
+        let selector_end = cursor.offset();
+        // 去除选择器外围空白但保留原始诊断跨度。
+        let selector = cursor.source()[frame_start..selector_end].trim();
+        // 把 from、to 或百分比转换到零到一闭区间。
+        let offset_millionths = parse_keyframe_offset(
+            // 传递规范化前的选择器文本。
+            selector,
+            // 传递选择器精确跨度。
+            cursor.span_between(frame_start, selector_end),
+        )?;
+        // 使用共享样式块扫描器读取当前帧内容。
+        let (source, _, content_span) = cursor.braced_style_source()?;
+        // 复用样式属性语法且禁止 extends。
+        let (_, properties) = parse_style_properties(&source, content_span, false)?;
+        // 空帧不能形成任何动画值。
+        if properties.is_empty() {
+            // 返回空帧诊断。
+            return Err(Diagnostic::new(
+                // 覆盖选择器和空块。
+                cursor.span_from(frame_start),
+                // 陈述失败原因。
+                "关键帧样式块不能为空",
+                // 给出修复建议。
+                "至少声明一个可动画样式属性，例如 opacity: 1;",
+            ));
+        }
+        // 相同规范化偏移只能声明一次。
+        if !offsets.insert(offset_millionths) {
+            // 返回重复偏移诊断。
+            return Err(Diagnostic::new(
+                // 覆盖重复帧。
+                cursor.span_from(frame_start),
+                // 陈述失败原因。
+                format!("关键帧偏移 {selector} 重复声明"),
+                // 给出修复建议。
+                "合并相同偏移的样式属性",
+            ));
+        }
+        // 保存已经结构化的关键帧。
+        frames.push(KeyframeDeclaration {
+            // 保存确定性的百万分比时间偏移。
+            offset_millionths,
+            // 保存当前帧属性。
+            properties,
+            // 保存完整帧跨度。
+            span: cursor.span_from(frame_start),
+        });
+    }
+    // 空关键帧声明不能被 animation 消费。
+    if frames.is_empty() {
+        // 返回空声明诊断。
+        return Err(Diagnostic::new(
+            // 覆盖完整关键帧声明。
+            cursor.span_from(start),
+            // 陈述失败原因。
+            "@keyframes 至少需要一个关键帧",
+            // 给出修复建议。
+            "添加 from、to 或百分比关键帧",
+        ));
+    }
+    // 生成器按偏移顺序构造稳定 typed keyframe 序列。
+    frames.sort_by_key(|frame| frame.offset_millionths);
+    // 返回具名关键帧声明。
+    Ok(Declaration::Keyframes(KeyframesDeclaration {
+        // 保存声明名。
+        name,
+        // 保存有序帧。
+        frames,
+        // 保存完整声明跨度。
+        span: cursor.span_from(start),
+    }))
+}
+
+// 把关键帧选择器规范化为零到一闭区间偏移。
+fn parse_keyframe_offset(selector: &str, span: super::SourceSpan) -> Result<u32, Diagnostic> {
+    // from 是零偏移别名。
+    if selector == "from" {
+        // 返回动画起点。
+        return Ok(0);
+    }
+    // to 是一偏移别名。
+    if selector == "to" {
+        // 返回动画终点。
+        return Ok(1_000_000);
+    }
+    // 百分比选择器必须以百分号结尾。
+    let Some(number) = selector.strip_suffix('%') else {
+        // 返回未知选择器诊断。
+        return Err(Diagnostic::new(
+            // 指向完整选择器。
+            span,
+            // 陈述失败原因。
+            format!("不支持关键帧偏移 {selector}"),
+            // 给出合法集合。
+            "使用 from、to 或 0% 到 100% 的百分比",
+        ));
+    };
+    // 百分比主体必须是有限数值。
+    let value = number.parse::<f32>().ok().filter(|value| value.is_finite());
+    // 拒绝缺失、非数值与非有限值。
+    let Some(value) = value else {
+        // 返回非法百分比诊断。
+        return Err(Diagnostic::new(
+            // 指向完整选择器。
+            span,
+            // 陈述失败原因。
+            format!("关键帧偏移 {selector} 不是有限百分比"),
+            // 给出合法示例。
+            "使用 0%、50% 或 100%",
+        ));
+    };
+    // 百分比必须位于闭区间内。
+    if !(0.0..=100.0).contains(&value) {
+        // 返回越界诊断。
+        return Err(Diagnostic::new(
+            // 指向完整选择器。
+            span,
+            // 陈述失败原因。
+            format!("关键帧偏移 {selector} 超出 0% 到 100%"),
+            // 给出修复建议。
+            "把偏移调整到闭区间 0%..=100%",
+        ));
+    }
+    // 把百分比确定性量化为百万分比，避免浮点值破坏 AST 的 Eq 契约。
+    let millionths = (value * 10_000.0).round() as u32;
+    // 返回零到一百万闭区间偏移。
+    Ok(millionths)
 }
 
 // 解析具名样式类声明。

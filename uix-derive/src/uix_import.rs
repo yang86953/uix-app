@@ -71,13 +71,15 @@ struct DeclarationMerge {
     names: BTreeMap<(DeclarationKind, String), (PathBuf, Declaration)>,
 }
 
-// 区分 parser 已定义的四类具名声明命名空间。
+// 区分 parser 已定义的五类具名声明命名空间。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum DeclarationKind {
     // 保存样式类命名空间。
     Style,
     // 保存主题命名空间。
     Theme,
+    // 保存关键帧动画命名空间。
+    Keyframes,
     // 保存组件命名空间。
     Component,
     // 保存 record 命名空间。
@@ -561,8 +563,11 @@ fn select_imported_declarations(
         .filter(|entry| match &entry.declaration {
             // 组件必须位于依赖闭包。
             Declaration::Component(component) => selected.contains(&component.name),
-            // 样式、主题与 record 是所选组件的编译期支持声明。
-            Declaration::StyleClass(_) | Declaration::Theme(_) | Declaration::Record(_) => true,
+            // 样式、主题、关键帧与 record 是所选组件的编译期支持声明。
+            Declaration::StyleClass(_)
+            | Declaration::Theme(_)
+            | Declaration::Keyframes(_)
+            | Declaration::Record(_) => true,
             // import/export 已由 resolver 消费。
             Declaration::Import(_) | Declaration::Export(_) => false,
         })
@@ -633,6 +638,11 @@ fn declaration_identity(declaration: &Declaration) -> Option<(DeclarationKind, S
         )),
         // 主题使用主题命名空间。
         Declaration::Theme(theme) => Some((DeclarationKind::Theme, theme.name.clone())),
+        // 关键帧使用动画命名空间。
+        Declaration::Keyframes(keyframes) => {
+            // 返回关键帧声明名称。
+            Some((DeclarationKind::Keyframes, keyframes.name.clone()))
+        }
         // 组件使用组件命名空间。
         Declaration::Component(component) => {
             // 返回组件名称。
@@ -653,6 +663,8 @@ fn declaration_kind_name(kind: DeclarationKind) -> &'static str {
         DeclarationKind::Style => "样式类",
         // 主题文案。
         DeclarationKind::Theme => "主题",
+        // 关键帧文案。
+        DeclarationKind::Keyframes => "关键帧",
         // 组件文案。
         DeclarationKind::Component => "组件",
         // record 文案。
@@ -672,6 +684,8 @@ fn declaration_span(declaration: &Declaration) -> SourceSpan {
         Declaration::StyleClass(value) => value.span,
         // 返回主题跨度。
         Declaration::Theme(value) => value.span,
+        // 返回关键帧跨度。
+        Declaration::Keyframes(value) => value.span,
         // 返回组件跨度。
         Declaration::Component(value) => value.span,
         // 返回 record 跨度。

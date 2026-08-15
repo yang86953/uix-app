@@ -12,6 +12,8 @@ pub(crate) enum Declaration {
     StyleClass(StyleClassDeclaration),
     // 保存主题声明。
     Theme(ThemeDeclaration),
+    // 保存具名关键帧动画声明。
+    Keyframes(KeyframesDeclaration),
     // 保存已经验证 props、state 与视图体的顶层组件定义。
     Component(ComponentDeclaration),
     // 保存语言面声明的类型化业务模型。
@@ -50,6 +52,28 @@ pub(crate) struct StyleClassDeclaration {
     // 保存源码顺序中的样式属性。
     pub(crate) properties: Vec<StyleProperty>,
     // 保存完整声明跨度。
+    pub(crate) span: SourceSpan,
+}
+
+// 表示一个具名关键帧动画声明。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct KeyframesDeclaration {
+    // 保存 animation 属性引用的声明名。
+    pub(crate) name: String,
+    // 保存按规范化偏移升序排列的关键帧。
+    pub(crate) frames: Vec<KeyframeDeclaration>,
+    // 保存完整声明跨度。
+    pub(crate) span: SourceSpan,
+}
+
+// 表示关键帧序列中的单个偏移与样式快照。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct KeyframeDeclaration {
+    // 保存零到一百万闭区间内的确定性百万分比时间偏移。
+    pub(crate) offset_millionths: u32,
+    // 保存当前关键帧声明的样式属性。
+    pub(crate) properties: Vec<StyleProperty>,
+    // 保存包含选择器与样式块的完整跨度。
     pub(crate) span: SourceSpan,
 }
 
