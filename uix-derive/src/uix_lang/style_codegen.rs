@@ -29,6 +29,8 @@ use super::style_text_decoration_codegen::text_decoration_field;
 use super::style_transform_codegen::{transform_origin_value, transform_value};
 // 引入 userSelect 到 UI 运行时选择策略的独立映射。
 use super::style_user_select_codegen::user_select_value;
+// 引入 cursor 文档值到公开平台无关枚举的独立映射。
+use super::style_cursor_codegen::cursor_value;
 // 引入样式值与字段映射辅助。
 use super::style_value_codegen::*;
 

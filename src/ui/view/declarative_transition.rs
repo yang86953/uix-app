@@ -148,6 +148,23 @@ pub struct UixDeclarativeTransition {
     inner: Arc<Mutex<TransitionValues>>,
 }
 
+/// 组合声明位置或 For 路径与最终 View key，形成 transition 状态身份。
+#[doc(hidden)]
+pub fn uix_transition_identity(
+    // 借用已经完成 key 应用的最终目标节点。
+    view: &ViewNode,
+    // 接收静态位置或实际 For 实例路径。
+    instance_path: &str,
+) -> String {
+    // 显式 key 存在时参与实际节点身份。
+    match &view.key {
+        // 组合路径与 key，避免同位置换 key 复用旧动画。
+        Some(key) => format!("{instance_path}|{key}"),
+        // 无 key 时直接沿用静态或循环实例路径。
+        None => instance_path.to_string(),
+    }
+}
+
 /// 从首次挂载的最终目标 View 创建静止 transition 状态。
 #[doc(hidden)]
 pub fn uix_transition_state(

@@ -13,14 +13,14 @@ use super::{
 
 // 实现状态伪类的编译期事实绑定。
 impl ComponentExpander {
-    // 为直接使用 hover 或 animation 的文档根建立组件状态生命周期作用域。
+    // 为直接使用 hover、animation 或 transition 的文档根建立状态生命周期作用域。
     pub(super) fn begin_document_style_scope(
         // 可变借用展开器以登记准备语句和作用域。
         &mut self,
         // 接收当前完整文档。
         document: &Document,
     ) -> Option<Ident> {
-        // 根子树既没有 hover 也没有 animation 时维持零状态开销。
+        // 根子树没有任何样式状态能力时维持零状态开销。
         if !self
             // 从已解析样式注册表检测根子树。
             .styles
@@ -30,6 +30,10 @@ impl ComponentExpander {
             && !self
                 .styles
                 .nodes_use_animation(&[Node::Element(document.root.clone())])
+            // transition 同样需要跨 reconcile 私有状态。
+            && !self
+                .styles
+                .nodes_use_transition(&[Node::Element(document.root.clone())])
         {
             // 报告无需附加作用域。
             return None;
@@ -55,7 +59,7 @@ impl ComponentExpander {
                 #declaration_id,
             );
         });
-        // 让根子树展开期间能派生逐节点 hover 与 animation 状态。
+        // 让根子树展开期间能派生逐节点 hover、animation 与 transition 状态。
         self.component_scope_stack.push(scope.clone());
         // 保存作用域供展开后附加生命周期标记。
         Some(scope)

@@ -229,7 +229,7 @@ pub mod __private {
     // 重导出 UIX transition 生成器使用的目标比较与原位重定向桥接。
     pub use super::view::declarative_transition::{
         UixDeclarativeTransition, UixTransitionError, UixTransitionProperty, UixTransitionSpec,
-        uix_apply_transition, uix_transition_state,
+        uix_apply_transition, uix_transition_identity, uix_transition_state,
     };
     // 重导出 uix-lang setTheme 内置操作使用的主题请求通道。
     pub use super::theme_request::{
