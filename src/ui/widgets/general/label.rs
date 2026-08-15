@@ -27,12 +27,17 @@ fn normalized_label_font_size(size: f32) -> f32 {
 
 component! {
     pub struct Label {
+        /// 标签当前持有并参与布局、绘制与选择的文本。
         pub text: String,
+        /// 未设置物理单位字号时使用的逻辑像素字号。
         pub font_size: f32,
         /// 物理单位字号（可选，优先级高于 font_size）。
         pub font_size_unit: Option<PhysicalUnit>,
+        /// 可选文字颜色覆写；`None` 使用主题正文色。
         pub color: Option<crate::draw::Color>,
+        /// 可选固定布局宽度。
         pub fixed_width: Option<f32>,
+        /// 可选固定布局高度。
         pub fixed_height: Option<f32>,
         /// 是否允许拖选 / Ctrl+A / Ctrl+C 选区。默认 false。
         selectable: bool,

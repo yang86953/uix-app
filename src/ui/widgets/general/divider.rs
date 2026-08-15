@@ -33,6 +33,7 @@ component! {
         text: Option<String>,
         orientation: DividerOrientation,
         direction: DividerDirection,
+        /// 可选的分隔线颜色覆写；`None` 使用主题边框色。
         pub color: Option<Color>,
         text_size: f32,
         dashed: bool,

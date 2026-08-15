@@ -250,6 +250,7 @@ impl Default for Col {
 component! {
     /// Grid container widget.
     pub struct Grid {
+        /// 控制网格容器尺寸、间距、对齐与伸缩行为的统一样式。
         pub style: Style,
         breakpoints: Option<Breakpoints>,
         cols: Vec<Col>,
