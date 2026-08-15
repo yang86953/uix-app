@@ -71,6 +71,7 @@ component! {
     }
 }
 impl QRCode {
+    /// 创建承载指定文本且使用默认尺寸和纠错等级的二维码。
     pub fn new(value: &str) -> Self {
         let mut qr = Self {
             value: value.to_string(),
@@ -83,12 +84,14 @@ impl QRCode {
         qr.rebuild_encoding();
         qr
     }
+    /// 设置二维码组件的方形边长。
     pub fn size(mut self, s: f32) -> Self {
         if s.is_finite() {
             self.size = s.max(1.0);
         }
         self
     }
+    /// 设置从低到高编号为 `0..=3` 的纠错等级。
     pub fn error_level(mut self, lv: u8) -> Self {
         self.error_level = lv.min(3);
         self.rebuild_encoding();
@@ -105,6 +108,7 @@ impl QRCode {
         self.encoding_error.as_deref()
     }
 
+    /// 返回当前内容是否已成功编码为非空二维码矩阵。
     pub fn is_valid(&self) -> bool {
         self.encoding_error.is_none() && self.module_count > 0
     }
