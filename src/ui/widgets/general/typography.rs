@@ -14,8 +14,10 @@ use crate::ui::component::clipboard;
 use crate::ui::component::paint_context::PaintContext;
 // 引入共享的单节点文字选区实现。
 use crate::ui::text_selection::per_node::PerNodeTextSelection;
-// 引入 UI System 拥有的行高、文本对齐、文本装饰与样式契约。
-use crate::ui::theme::style::{FontWeight, LineHeight, Style, TextAlign, TextDecoration};
+// 引入 UI System 拥有的字体族、字重、行高、文本对齐、文本装饰与样式契约。
+use crate::ui::theme::style::{
+    FontFamily, FontWeight, LineHeight, Style, TextAlign, TextDecoration,
+};
 // 引入主题颜色值与组件运行契约。
 use crate::ui::{
     ColorValue, ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent,
@@ -60,6 +62,8 @@ component! {
         semantic_color: Option<ColorValue>,
         color_override: Option<Color>,
         spacing: f32,
+        /// 可选的统一样式字体族列表，None 保留当前系统字体。
+        font_family: Option<FontFamily>,
         /// 可选的统一样式字体粗细，显式 normal 也覆盖标题或 strong 默认值。
         font_weight: Option<FontWeight>,
         /// 可选的样式行高，优先于段落 spacing 构建器。
@@ -224,7 +228,8 @@ component! {
             font_size: fs,
         };
         let backend_opts = crate::draw::resources::font::text_backend::TextLayoutOptions::from(opts);
-        let fh = *ctx.font();
+        // 字体族选择与布局、选区度量和绘制共享同一最终句柄。
+        let fh = crate::ui::text_family::resolve(ctx, self.font_family.as_ref());
         let mut layout = ctx.font_service().layout_text(&fh, &self.content, &backend_opts);
         if indent > 0.0 {
             if let Some(first_line) = layout.lines.first_mut() {
@@ -364,6 +369,8 @@ impl Typography {
             semantic_color: None,
             color_override: None,
             spacing: 0.0,
+            // 未声明统一样式时保留绘制上下文当前系统字体。
+            font_family: None,
             // 未声明统一样式时保留标题与 strong 的既有字重。
             font_weight: None,
             // 未声明时保持 Typography 既有 normal 或 spacing 语义。
@@ -703,6 +710,8 @@ impl Typography {
 impl Typography {
     // 从 View 适配边界接收本组件实际消费的样式字段。
     pub(crate) fn apply_view_style(&mut self, style: &Style) {
+        // 克隆有序列表以脱离 View Style 生命周期并参与组件协调。
+        self.font_family = style.font_family.clone();
         // 显式 Some 包括 normal，能够覆盖标题或 strong 默认字重。
         self.font_weight = style.font_weight;
         // next widget 的默认 None 会在 reconcile 时清除旧值；这里只复制当前显式值。
@@ -733,6 +742,8 @@ impl Typography {
         self.semantic_color = next.semantic_color;
         self.color_override = next.color_override;
         self.spacing = next.spacing;
+        // 同步显式字体族列表以触发布局和绘制快照差异。
+        self.font_family = next.font_family;
         // 同步显式字体粗细以触发绘制快照差异。
         self.font_weight = next.font_weight;
         // 同步显式行高以触发布局快照差异。
@@ -765,6 +776,8 @@ impl Typography {
             // 快照保留主题值身份而不是提前固化为某个主题的 RGB。
             semantic_color: self.semantic_color,
             color_override: self.color_override,
+            // 快照保留字体族声明顺序与未声明身份。
+            font_family: self.font_family.clone(),
             // 快照保留未声明与显式 normal 的差异。
             font_weight: self.font_weight,
             // 快照保留行高单位和值以支持精确布局失效。
@@ -777,114 +790,6 @@ impl Typography {
     }
 }
 
-// 只在单元测试目标验证主题值解析契约。
+// 只在单元测试目标验证主题值与统一文本样式适配契约。
 #[cfg(test)]
-mod tests {
-    // 引入待验证的排版组件与主题颜色值。
-    use super::*;
-    // 引入预设主题和语义角色。
-    use crate::ui::{NeutralRole, PaletteColor, Theme};
-
-    // 验证排版语义颜色由当前主题令牌解析。
-    #[test]
-    fn semantic_color_resolves_against_current_theme_tokens() {
-        // 创建亮色主题令牌快照。
-        let light = Theme::antd_light().tokens_arc();
-        // 创建暗色主题令牌快照。
-        let dark = Theme::antd_dark().tokens_arc();
-        // 配置次要文字语义色。
-        let secondary = Typography::text("secondary")
-            // 使用中性次要文字角色。
-            .semantic_color(ColorValue::neutral(NeutralRole::TextSecondary));
-        // 亮色主题必须解析为自身的次要文字令牌。
-        assert_eq!(
-            // 调用组件内部绘制颜色解析边界。
-            secondary.resolved_text_color(light.as_ref()),
-            // 读取亮色主题期望值。
-            light.color_text_secondary()
-        );
-        // 暗色主题必须重新解析而不是复用亮色 RGB。
-        assert_eq!(
-            // 使用同一声明式组件解析暗色主题。
-            secondary.resolved_text_color(dark.as_ref()),
-            // 读取暗色主题期望值。
-            dark.color_text_secondary()
-        );
-        // 配置危险语义色对应的错误色板角色。
-        let danger = Typography::text("danger")
-            // 使用主题错误色而非固定颜色常量。
-            .semantic_color(ColorValue::palette(PaletteColor::Error));
-        // 危险文字必须解析为当前主题错误色。
-        assert_eq!(
-            // 解析亮色主题危险色。
-            danger.resolved_text_color(light.as_ref()),
-            // 读取亮色主题错误令牌。
-            light.color_error()
-        );
-    }
-
-    // 验证 Style 行高优先于 Typography 专有段落 spacing。
-    #[test]
-    fn line_height_style_overrides_typography_spacing() {
-        // 创建带两倍段落 spacing 的排版组件。
-        let mut typography = Typography::paragraph("line height")
-            // 既有专有入口先声明两倍行高。
-            .spacing(2.0);
-        // 未应用 Style 时保留专有 spacing。
-        assert_eq!(typography.resolved_line_height(10.0), 20.0);
-        // 构造固定十八像素的统一样式。
-        let style = Style::default().with_line_height(
-            // 正像素值必须构造成功。
-            LineHeight::pixels(18.0).expect("正像素行高必须有效"),
-        );
-        // 通过 View 私有适配入口应用统一样式。
-        typography.apply_view_style(&style);
-        // 显式 Style 行高必须覆盖较早的 spacing。
-        assert_eq!(typography.resolved_line_height(10.0), 18.0);
-    }
-
-    // 验证显式 Style 文本装饰覆盖既有局部构建器标记。
-    #[test]
-    fn text_decoration_style_explicit_none_overrides_typography_builders() {
-        // 创建同时启用下划线和删除线的兼容组件。
-        let mut typography = Typography::text("decoration")
-            // 启用既有下划线入口。
-            .underline()
-            // 启用既有删除线入口。
-            .delete();
-        // 未应用 Style 时两个局部标记保持有效。
-        assert!(typography.underline && typography.delete);
-        // 构造显式关闭文本装饰的统一样式。
-        let style = Style::default().with_text_decoration(TextDecoration::None);
-        // 通过 View 适配边界应用统一样式。
-        typography.apply_view_style(&style);
-        // 显式 none 必须被保存，不能退化为未声明。
-        assert_eq!(typography.text_decoration, Some(TextDecoration::None));
-    }
-
-    // 验证 View 适配边界把显式对齐交给 Typography。
-    #[test]
-    fn text_align_style_reaches_typography_layout() {
-        // 创建保持默认左对齐的排版组件。
-        let mut typography = Typography::paragraph("alignment");
-        // 构造显式两端对齐的统一样式。
-        let style = Style::default().with_text_align(TextAlign::Justify);
-        // 通过 View 私有适配入口应用统一样式。
-        typography.apply_view_style(&style);
-        // 组件必须保存闭合对齐值供布局阶段消费。
-        assert_eq!(typography.text_align, Some(TextAlign::Justify));
-    }
-
-    // 验证显式 normal 到达 Typography 并可覆盖 strong 兼容入口。
-    #[test]
-    fn font_weight_style_explicit_normal_reaches_strong_typography() {
-        // 创建启用既有粗体入口的排版组件。
-        let mut typography = Typography::text("weight").strong();
-        // 构造显式常规字重样式。
-        let style = Style::default().with_font_weight(FontWeight::NORMAL);
-        // 通过 View 私有适配入口应用统一样式。
-        typography.apply_view_style(&style);
-        // 绘制阶段优先读取该显式值，因此不会退回 strong 粗体面。
-        assert_eq!(typography.font_weight, Some(FontWeight::NORMAL));
-    }
-}
+mod tests;

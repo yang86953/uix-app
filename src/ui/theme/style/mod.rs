@@ -19,6 +19,8 @@ pub mod edge_insets;
 mod methods;
 // 定义边框线型及其有效默认语义。
 mod border;
+// 定义有序字体族列表及其显式覆盖语义。
+mod font_family;
 // 定义一百到九百的精确字体粗细与字体面选择语义。
 mod font_weight;
 // 定义行高单位与字体尺寸解析语义。
@@ -32,6 +34,8 @@ mod variant;
 
 // 公开 UI System 自有的边框线型契约。
 pub use self::border::BorderStyle;
+// 公开 UI System 自有的字体族列表契约。
+pub use self::font_family::FontFamily;
 // 公开 UI System 自有的字体粗细契约。
 pub use self::font_weight::FontWeight;
 // 公开 UI System 自有的行高值契约。
@@ -132,6 +136,8 @@ pub struct Style {
     pub color: ColorValue,
     /// 字号
     pub font_size: TypographyToken,
+    /// 显式字体族回退列表；None 保留当前系统字体。
+    pub font_family: Option<FontFamily>,
     /// 显式字体粗细；None 保留组件自身默认字重。
     pub font_weight: Option<FontWeight>,
     /// 显式行高；None 保持组件既有 normal 行高。
@@ -189,6 +195,8 @@ impl Default for Style {
             background_active: None,
             color: ColorValue::Neutral(NeutralRole::Text),
             font_size: TypographyToken::Body,
+            // 未声明时保留绘制上下文当前系统字体。
+            font_family: None,
             // 未声明时由各文本组件保留常规、标题或 strong 字重。
             font_weight: None,
             // 未声明时由各文本组件保持既有 normal 行高。

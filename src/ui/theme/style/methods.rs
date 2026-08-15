@@ -144,6 +144,8 @@ impl Style {
         self.background_active = s.background_active;
         self.color = s.color;
         self.font_size = s.font_size;
+        // 完整替换保留未声明字体族与显式列表的差异。
+        self.font_family = s.font_family;
         // 完整替换保留未声明字重与显式 normal 的差异。
         self.font_weight = s.font_weight;
         // 完整替换保留未声明行高与显式行高的差异。
@@ -254,6 +256,11 @@ impl Style {
         }
         if other.font_size != TypographyToken::Body {
             self.font_size = other.font_size;
+        }
+        // 只有显式字体族列表覆盖继承值。
+        if other.font_family.is_some() {
+            // 完整替换列表以保留声明顺序和 CSS 回退语义。
+            self.font_family = other.font_family;
         }
         // 只有显式字重覆盖继承值，包括显式 normal。
         if other.font_weight.is_some() {
@@ -457,6 +464,13 @@ impl Style {
     /// 设置字体大小令牌。
     pub fn with_font_size(mut self, s: impl Into<TypographyToken>) -> Self {
         self.font_size = s.into();
+        self
+    }
+    /// 设置显式字体族回退列表。
+    pub fn with_font_family(mut self, font_family: FontFamily) -> Self {
+        // Some 区分显式列表与未声明时的当前系统字体。
+        self.font_family = Some(font_family);
+        // 返回可继续链式设置的样式。
         self
     }
     /// 设置显式字体粗细。
