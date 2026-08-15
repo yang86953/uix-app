@@ -490,7 +490,7 @@
 </Component>
 
 // 声明图表能力页组件。
-<Component name="ChartsPage" external="chart_animation, chart_interaction, chart_brush, chart_tooltip, heatmap_color_stops, chart_reference_lines">
+<Component name="ChartsPage" external="chart_animation, chart_interaction, chart_brush, chart_tooltip, heatmap_color_stops, chart_reference_lines, format_gauge_percent">
   // 组织图表能力内容。
   <Column gap="16px">
     // 展示图表能力标题。
@@ -513,8 +513,8 @@
     <FunnelChart data={[FunnelData('浏览', 5000), FunnelData('点击', 2300), FunnelData('下单', 420), FunnelData('支付', 310)]} showConversionRate labelPosition="right" shape="symmetric" title="转化漏斗" width="420px" height="320px" />
     // 展示递归矩形树节点与间隙配置。
     <Treemap data={[TreemapNode('技术', 45).children([TreemapNode('前端', 20), TreemapNode('后端', 18), TreemapNode('运维', 7)]), TreemapNode('市场', 30), TreemapNode('行政', 15)]} gap="4" labelVisible title="部门占比" width="420px" height="300px" />
-    // 展示仪表盘数值、色带与指针配置。
-    <Gauge value="68" min="0" max="100" gaugeType="dashboard" rangeColors={[GaugeRange(0, 30, Color('#ff4d4f')), GaugeRange(30, 70, Color('#faad14')), GaugeRange(70, 100, Color('#52c41a'))]} pointerWidth="4" pointerColor={Color('#1677ff')} title="完成率" width="320px" height="260px" />
+    // 展示仪表盘数值、色带、指针与类型化中心文本格式化器。
+    <Gauge value="68" min="0" max="100" gaugeType="dashboard" rangeColors={[GaugeRange(0, 30, Color('#ff4d4f')), GaugeRange(30, 70, Color('#faad14')), GaugeRange(70, 100, Color('#52c41a'))]} pointerWidth="4" pointerColor={Color('#1677ff')} format={format_gauge_percent} title="完成率" width="320px" height="260px" />
     // 展示矩阵热力数据、双轴标签、单元配置与带位置自定义色阶。
     <Heatmap data={[HeatmapCell(0, 0, 12), HeatmapCell(1, 0, 45), HeatmapCell(2, 0, 28), HeatmapCell(0, 1, 36), HeatmapCell(1, 1, 62), HeatmapCell(2, 1, 51)]} xLabels={['周一', '周二', '周三']} yLabels={['上午', '下午']} colorStops={heatmap_color_stops()} cellGap="2" showValues title="活跃热力" width="420px" height="260px" />
     // 展示瀑布变化类型、方向与坐标轴配置。

@@ -149,6 +149,12 @@ fn chart_reference_lines() -> Vec<(f32, String, LineStyle)> {
     ]
 }
 
+// 为主演示格式化仪表盘中心百分比文本。
+fn format_gauge_percent(value: f32) -> String {
+    // 保留一位小数并追加百分号。
+    format!("{value:.1}%")
+}
+
 // 记录 Pagination @change 的页码文本载荷。
 fn on_page_change(value: &str) {
     // 输出变化页码供演示日志核对。

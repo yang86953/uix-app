@@ -26,9 +26,9 @@ fn generates_treemap_and_gauge_charts() {
             && treemap.contains("label_visible (true)")
             && treemap.contains("tooltip ((tooltip) . clone ())")
     );
-    // 仪表盘覆盖色带、类型、指针与数值范围。
+    // 仪表盘覆盖色带、类型、指针、格式化器与数值范围。
     let gauge = generate(
-        r##"<Gauge value="68" min="0" max="100" gaugeType="ring" rangeColors={[GaugeRange(0, 30, Color('#ff4d4f')), GaugeRange(30, 100, Color('#52c41a'))]} pointerWidth="4" pointerColor={Color('#1677ff')} />"##,
+        r##"<Gauge value="68" min="0" max="100" gaugeType="ring" rangeColors={[GaugeRange(0, 30, Color('#ff4d4f')), GaugeRange(30, 100, Color('#52c41a'))]} pointerWidth="4" pointerColor={Color('#1677ff')} format={gauge_format} />"##,
     )
     // 合法仪表盘必须生成。
     .expect("Gauge 应生成");
@@ -39,6 +39,7 @@ fn generates_treemap_and_gauge_charts() {
             && gauge.contains("Vec < :: uix :: prelude :: GaugeRange >")
             && gauge.contains("GaugeType :: Ring")
             && gauge.contains("pointer_color")
+            && gauge.contains("format ((gauge_format) . clone ())")
     );
 }
 
@@ -63,6 +64,12 @@ fn rejects_invalid_hierarchy_and_gauge_contracts() {
         .expect_err("pointerColor 字符串必须失败");
     // 诊断必须说明 Color 表达式。
     assert!(color.message.contains("Color 表达式"));
+    // 仪表盘格式化器不接受无类型字符串。
+    let formatter = generate("<Gauge value=\"10\" format=\"percent\" />")
+        // 字符串格式化器必须失败。
+        .expect_err("format 字符串必须失败");
+    // 诊断必须说明类型化格式化器契约。
+    assert!(formatter.message.contains("类型化格式化器"));
     // 动画字符串不能伪装成类型化配置对象。
     let animation = generate("<Treemap data={items} animation=\"fade\" />")
         // 非表达式配置必须失败。
