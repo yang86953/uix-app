@@ -238,6 +238,8 @@ impl RenderTarget for FailingBackdropTarget {
 struct RefreshScene {
     // 保存当前帧 typed effect。
     effect: crate::draw::OverlayBackdropEffect,
+    // 决定正常树是否故意产生 CPU 光栅分段。
+    cpu_raster_normal: bool,
 }
 
 // 两节点场景精确触发 normal_tree_dirty 与 overlay membership。
@@ -352,9 +354,13 @@ impl ScenePaint for RefreshScene {
         (id == OVERLAY_NODE).then_some(ROOT_NODE)
     }
 
-    // 使用空绘制即可观察事务顺序。
-    fn paint(&self, _id: NodeId, _frame: Rect, _ctx: &mut PaintContext<'_>) {
-        // 不记录额外图元。
+    // 默认使用空绘制，降级用例则在正常树产生一个软件椭圆。
+    fn paint(&self, id: NodeId, _frame: Rect, ctx: &mut PaintContext<'_>) {
+        // 只在指定用例的正常根节点下发 CPU 光栅操作。
+        if self.cpu_raster_normal && id == ROOT_NODE {
+            // FrameRecordingCanvas 对椭圆使用可审计的 CPU segment，直接 GPU canvas 仍可正常绘制。
+            ctx.fill_ellipse(Rect::new(4.0, 4.0, 12.0, 8.0), crate::draw::Color::blue());
+        }
     }
 }
 
@@ -696,7 +702,12 @@ fn overlay_backdrop_refresh_rebuilds_clean_source_before_single_present() {
     // 测试 effect 必须有效。
     .expect("refresh effect should be valid");
     // 正常根 dirty，overlay 子节点保持可见。
-    let scene = RefreshScene { effect };
+    let scene = RefreshScene {
+        // 成功事务使用合法原生正常树。
+        effect,
+        // 不注入 CPU 光栅分段。
+        cpu_raster_normal: false,
+    };
     // refresh 从完整 dirty 区域开始。
     let dirty = DirtyRegion::full();
     // 创建空字体服务。
@@ -735,4 +746,65 @@ fn overlay_backdrop_refresh_rebuilds_clean_source_before_single_present() {
     assert_eq!(target.begin_calls, 1);
     // 整个事务只 end/present 一次。
     assert_eq!(target.end_calls, 1);
+}
+
+// 验证正常树含 CPU 光栅分段时放弃 backdrop 优化，但仍完成当前 GPU 帧。
+#[test]
+fn overlay_backdrop_refresh_falls_back_for_cpu_raster_normal_tree() {
+    // 创建不注入资源失败的 retained GPU mock。
+    let mut target = FailingBackdropTarget::new(BackdropFailurePoint::None);
+    // 创建有效效果请求以触发首帧 backdrop refresh。
+    let effect = crate::draw::OverlayBackdropEffect::new(
+        // 使用稳定部分区域。
+        Rect::new(4.0, 5.0, 32.0, 20.0),
+        // 使用有效模糊半径。
+        7.0,
+    )
+    // 测试 effect 必须有效。
+    .expect("fallback effect should be valid");
+    // 构造会在 API-neutral recorder 中产生 CPU segment 的正常树。
+    let scene = RefreshScene {
+        // 保留同一 typed effect。
+        effect,
+        // 显式打开 CPU 光栅注入。
+        cpu_raster_normal: true,
+    };
+    // 使用完整 dirty 区域模拟初次展示浮层。
+    let dirty = DirtyRegion::full();
+    // 创建空字体服务。
+    let fonts = FontService::new();
+    // 创建空图片服务。
+    let images = ImageService::new();
+    // 构造首帧输入。
+    let mut input = frame_input(&dirty, &fonts, &images);
+    // 首帧尚无可复用的历史表面。
+    input.rendered_first = false;
+    // 保存管线以审计降级状态。
+    let mut pipeline = ScenePipeline::new();
+    // 执行含非原生正常树的首帧。
+    let output = pipeline.render_frame(
+        // 传入可成功直绘的 GPU target。
+        &mut target,
+        // 传入正常树与 overlay 场景。
+        &scene,
+        // 移交首帧输入。
+        input,
+    );
+    // 降级不得把能力缺口升级为窗口帧失败。
+    assert!(matches!(
+        // 读取真实帧结果。
+        output.outcome,
+        // 测试 target 会在一次 begin/end 后报告 Present。
+        RenderOutcome::Present(_) | RenderOutcome::PresentPending(_)
+    ));
+    // 非原生编码器必须在进入 backend 前被识别。
+    assert_eq!(target.encoded_frame_calls, 0);
+    // 降级不得从未提交的正常树捕获快照。
+    assert_eq!(target.snapshot_calls, 0);
+    // 降级帧仍只开始一次最终帧。
+    assert_eq!(target.begin_calls, 1);
+    // 降级帧仍只结束并呈现一次。
+    assert_eq!(target.end_calls, 1);
+    // 当前 overlay 生命周期必须禁止重试同一 retained 优化。
+    assert!(pipeline.overlay_backdrop_blocked);
 }
