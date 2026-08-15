@@ -127,11 +127,14 @@ pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic
     let submit_form = Ident::new("__uix_submit_form", Span::mixed_site());
     // 生成类型化回调表达式。
     let submit_handler = generate_submit_handler(&submit_expression.expression, &submitted)?;
+    // 生成按声明顺序排列的全模型规则构建链。
+    let model_rules = generate_model_rules(element)?;
     // 生成运行时拥有校验与提交生命周期的 View。
     let view = quote! {{
         // 构建类型化字段与回调。
         let #form = ::uix::prelude::Form::model(&(#model))
             #(#fields)*
+            #(#model_rules)*
             .on_submit_typed(move |#submitted| { #submit_handler })
             .build();
         // 克隆同一表单句柄供按钮触发。
@@ -147,7 +150,7 @@ pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic
         )
     }};
     // 应用 Form 外层公共属性。
-    apply_common_attributes(view, &element.attributes, &["model", "@submit"])
+    apply_common_attributes(view, &element.attributes, &["model", "rules", "@submit"])
 }
 
 // 拒绝失去 Form 类型化上下文的字段项。
@@ -694,6 +697,55 @@ fn parse_rules(element: &Element) -> Result<(bool, bool), Diagnostic> {
     }
     // 返回确定规则集合。
     Ok((required, email))
+}
+
+// 生成 Form 顶层全模型规则的有序构建链。
+fn generate_model_rules(element: &Element) -> Result<Vec<TokenStream>, Diagnostic> {
+    // 未声明时保持空规则集合。
+    let Some(attribute) = find_attribute(element, "rules") else {
+        // 返回无附加链片段。
+        return Ok(Vec::new());
+    };
+    // 顶层规则必须使用表达式数组。
+    let AttributeValue::Expression(expression) = &attribute.value else {
+        // 返回数组形状诊断。
+        return Err(Diagnostic::new(
+            attribute.span,
+            "Form rules 必须是全模型校验函数标识符数组",
+            "使用 rules={[validate_profile, validate_access]}",
+        ));
+    };
+    // 只接受编译期结构明确的数组字面量。
+    let ExpressionKind::Array(rules) = &expression.expression.kind else {
+        // 动态集合不能保证函数签名与声明顺序。
+        return Err(Diagnostic::new(
+            attribute.span,
+            "Form rules 必须使用数组字面量",
+            "使用 rules={[validate_profile]}，函数签名为 fn(&M) -> Result<(), String>",
+        ));
+    };
+    // 保存源码顺序中的构建链片段。
+    rules
+        // 按数组顺序遍历规则表达式。
+        .iter()
+        // 把每个函数标识符生成独立 model_rule 调用。
+        .map(|rule| {
+            // 首版只登记可由 Rust 类型检查签名的函数标识符。
+            if !matches!(&rule.kind, ExpressionKind::Identifier(_)) {
+                // 拒绝调用、运算与其他无法作为函数值的形状。
+                return Err(Diagnostic::new(
+                    rule.span,
+                    "Form rules 数组项必须是全模型校验函数标识符",
+                    "传入函数名，不要在 rules 中调用；签名为 fn(&M) -> Result<(), String>",
+                ));
+            }
+            // 生成卫生的 Rust 函数标识符令牌。
+            let validator = generate_expression(rule, None)?;
+            // 追加公开运行时规则入口。
+            Ok(quote! { .model_rule(#validator) })
+        })
+        // 收集全部有序链片段或首个诊断。
+        .collect()
 }
 
 // 解析当前字段组件登记的唯一 required 规则。
