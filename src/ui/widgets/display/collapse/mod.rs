@@ -37,12 +37,16 @@ const MAX_INTRINSIC_WIDTH: f32 = 320.0;
 pub struct CollapsePanel {
     // 保存可选显式稳定 key，缺省时兼容使用 header。
     key: Option<String>,
+    /// 面板标题与未显式设置键时使用的兼容身份。
     pub header: String,
+    /// 面板展开后显示的文字内容。
     pub content: String,
+    /// 面板当前是否展开。
     pub expanded: bool,
 }
 
 impl CollapsePanel {
+    /// 创建以标题作为兼容稳定身份、初始折叠的面板。
     pub fn new(header: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
             // 缺省稳定身份继续兼容现有 header。
@@ -52,11 +56,12 @@ impl CollapsePanel {
             expanded: false,
         }
     }
+    /// 将面板初始状态设置为展开。
     pub fn expanded(mut self) -> Self {
         self.expanded = true;
         self
     }
-    // 设置非空稳定面板 key。
+    /// 设置非空稳定面板键；空白值保持标题兼容身份。
     pub fn key(mut self, key: impl Into<String>) -> Self {
         // 空 key 不覆盖兼容 header 身份。
         let key = key.into();
@@ -67,7 +72,7 @@ impl CollapsePanel {
         }
         self
     }
-    // 返回显式 key 或兼容 header 身份。
+    /// 返回显式稳定键，未设置时返回标题兼容身份。
     pub fn stable_key(&self) -> &str {
         // 旧调用方无需修改即可取得确定身份。
         self.key.as_deref().unwrap_or(&self.header)
