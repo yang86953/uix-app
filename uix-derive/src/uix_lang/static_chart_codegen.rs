@@ -80,41 +80,74 @@ pub(crate) fn generate_static_chart(element: &Element) -> Result<TokenStream, Di
     };
     // 内联数组中的已知图表构造器必须与标签一致。
     validate_inline_data(&data_expression.expression, expected_data_type)?;
-    // 生成受限数据表达式。
+    // 生成受限载荷表达式。
     let data = generate_expression(&data_expression.expression, None)?;
     // 按标签选择公开组件和精确元素类型。
     let (mut widget, consumed): (TokenStream, &[&str]) = match element.name.as_str() {
-        // 面积图取得 LineData 集合所有权。
-        "AreaChart" => (
-            // 生成精确类型收集，避免运行时泛型 downcast 静默失败。
-            quote! {
-                ::uix::prelude::AreaChart::new().data(
-                    ::std::iter::IntoIterator::into_iter((#data).clone())
-                        .collect::<::std::vec::Vec<::uix::prelude::LineData>>()
-                )
-            },
-            // 登记面积图专有属性。
-            &[
-                "data",
-                "stacked",
-                "smooth",
-                "step",
-                "fillOpacity",
-                "title",
-                "subtitle",
-                "responsive",
-                "legend",
-                "referenceLines",
-                "animation",
-                "interactive",
-                "brush",
-                "tooltip",
-            ],
-        ),
-        // 散点图按显式入口取得 ScatterData 或 BubbleData 集合所有权。
+        // 面积图取得 LineData 单集合或多系列快照所有权。
+        "AreaChart" => {
+            // 按互斥入口生成精确公开 builder 调用。
+            let widget = if expected_data_type == "ChartSeries" {
+                // 多系列固定收集嵌套 LineData 泛型。
+                quote! {
+                    ::uix::prelude::AreaChart::new().series(
+                        ::std::iter::IntoIterator::into_iter((#data).clone())
+                            .collect::<::std::vec::Vec<
+                                ::uix::prelude::ChartSeries<
+                                    ::std::vec::Vec<::uix::prelude::LineData>
+                                >
+                            >>()
+                    )
+                }
+            } else {
+                // 单集合保持既有 LineData 映射。
+                quote! {
+                    ::uix::prelude::AreaChart::new().data(
+                        ::std::iter::IntoIterator::into_iter((#data).clone())
+                            .collect::<::std::vec::Vec<::uix::prelude::LineData>>()
+                    )
+                }
+            };
+            // 返回构造链与面积图专有属性。
+            (
+                widget,
+                &[
+                    // 单集合入口。
+                    "data",
+                    // 多系列入口。
+                    "series",
+                    "stacked",
+                    "smooth",
+                    "step",
+                    "fillOpacity",
+                    "title",
+                    "subtitle",
+                    "responsive",
+                    "legend",
+                    "referenceLines",
+                    "animation",
+                    "interactive",
+                    "brush",
+                    "tooltip",
+                ],
+            )
+        }
+        // 散点图按显式入口取得 ScatterData、BubbleData 或多系列所有权。
         "ScatterChart" => {
             // 按数据契约选择精确集合类型，避免 Any 下转失败静默为空图。
-            let widget = if expected_data_type == "BubbleData" {
+            let widget = if expected_data_type == "ChartSeries" {
+                // 多系列固定收集嵌套 ScatterData 泛型。
+                quote! {
+                    ::uix::prelude::ScatterChart::new().series(
+                        ::std::iter::IntoIterator::into_iter((#data).clone())
+                            .collect::<::std::vec::Vec<
+                                ::uix::prelude::ChartSeries<
+                                    ::std::vec::Vec<::uix::prelude::ScatterData>
+                                >
+                            >>()
+                    )
+                }
+            } else if expected_data_type == "BubbleData" {
                 // 气泡入口精确收集 BubbleData。
                 quote! {
                     ::uix::prelude::ScatterChart::new().data(
@@ -138,6 +171,8 @@ pub(crate) fn generate_static_chart(element: &Element) -> Result<TokenStream, Di
                 &[
                     "data",
                     "bubbleData",
+                    // 多系列散点入口。
+                    "series",
                     "xAxis",
                     "yAxis",
                     "pointSize",
@@ -188,8 +223,8 @@ pub(crate) fn generate_static_chart(element: &Element) -> Result<TokenStream, Di
     };
     // 按源码顺序应用当前图表允许的专有属性。
     for attribute in &element.attributes {
-        // 两类数据入口已在构造阶段消费。
-        if matches!(attribute.name.as_str(), "data" | "bubbleData") {
+        // 三类数据入口已在构造阶段消费。
+        if matches!(attribute.name.as_str(), "data" | "bubbleData" | "series") {
             // 跳过重复处理。
             continue;
         }
@@ -207,22 +242,59 @@ pub(crate) fn generate_static_chart(element: &Element) -> Result<TokenStream, Di
     apply_common_attributes(view, &element.attributes, consumed)
 }
 
-// 解析每类静态图表的唯一类型化数据入口。
+// 解析每类静态图表唯一的单集合或多系列数据入口。
 fn chart_data_contract<'a>(
     // 接收完整图表元素。
     element: &'a Element,
 ) -> Result<(&'a Attribute, &'static str), Diagnostic> {
-    // 非散点标签继续要求既有 data 属性。
-    if element.name != "ScatterChart" {
-        // 按标签返回既有精确元素类型。
-        return Ok(match element.name.as_str() {
-            // 面积图复用折线数据。
-            "AreaChart" => (required_attribute(element, "data")?, "LineData"),
-            // 漏斗图使用阶段数据。
-            "FunnelChart" => (required_attribute(element, "data")?, "FunnelData"),
-            // 分派入口只允许三个已登记标签。
-            _ => unreachable!("静态高级图表分派已限制标签集合"),
-        });
+    // 漏斗图运行时没有多系列 builder，继续要求单集合 FunnelData。
+    if element.name == "FunnelChart" {
+        // 返回既有必填 data 契约。
+        return Ok((required_attribute(element, "data")?, "FunnelData"));
+    }
+    // 面积图允许 LineData 单集合与 ChartSeries 多系列二选一。
+    if element.name == "AreaChart" {
+        // 查找单集合入口。
+        let data = element
+            // 遍历当前标签属性。
+            .attributes
+            // 创建只读迭代器。
+            .iter()
+            // 匹配 data 属性。
+            .find(|attribute| attribute.name == "data");
+        // 查找多系列入口。
+        let series = element
+            // 遍历当前标签属性。
+            .attributes
+            // 创建只读迭代器。
+            .iter()
+            // 匹配 series 属性。
+            .find(|attribute| attribute.name == "series");
+        // 两个面积载荷入口必须恰好选择一个。
+        return match (data, series) {
+            // 返回单集合 LineData 入口。
+            (Some(attribute), None) => Ok((attribute, "LineData")),
+            // 返回多系列 ChartSeries 入口。
+            (None, Some(attribute)) => Ok((attribute, "ChartSeries")),
+            // 同时提供会产生不明确的运行时载荷。
+            (Some(_), Some(attribute)) => Err(Diagnostic::new(
+                // 指向第二个互斥入口。
+                attribute.span,
+                // 点名冲突属性。
+                "AreaChart data 与 series 不能同时使用",
+                // 给出两种精确选择。
+                "单集合使用 data={items}；多系列使用 series={items}",
+            )),
+            // 缺少两个入口时没有可绘制载荷。
+            (None, None) => Err(Diagnostic::new(
+                // 指向完整面积图元素。
+                element.span,
+                // 说明至少需要一个入口。
+                "<AreaChart> 缺少 data 或 series 属性",
+                // 给出两种最小合法写法。
+                "使用 <AreaChart data={items} /> 或 <AreaChart series={items} />",
+            )),
+        };
     }
     // 查找普通散点数据入口。
     let scatter = element
@@ -234,7 +306,32 @@ fn chart_data_contract<'a>(
         .attributes
         .iter()
         .find(|attribute| attribute.name == "bubbleData");
-    // 两个数据入口必须恰好选择一个。
+    // 查找多系列散点入口。
+    let series = element
+        // 遍历当前标签属性。
+        .attributes
+        // 创建只读迭代器。
+        .iter()
+        // 匹配 series 属性。
+        .find(|attribute| attribute.name == "series");
+    // series 必须独占散点载荷入口。
+    if let Some(series_attribute) = series {
+        // 单集合或气泡入口与多系列不能共存。
+        if scatter.is_some() || bubble.is_some() {
+            // 返回互斥诊断。
+            return Err(Diagnostic::new(
+                // 指向多系列入口。
+                series_attribute.span,
+                // 说明三类入口互斥。
+                "ScatterChart data、bubbleData 与 series 只能使用一个",
+                // 给出三种精确选择。
+                "普通散点使用 data={items}；气泡图使用 bubbleData={items}；多系列使用 series={items}",
+            ));
+        }
+        // 多系列精确收集 ChartSeries<Vec<ScatterData>>。
+        return Ok((series_attribute, "ChartSeries"));
+    }
+    // 两个单集合数据入口必须恰好选择一个。
     let (attribute, expected) = match (scatter, bubble) {
         // 普通散点入口。
         (Some(attribute), None) => (attribute, "ScatterData"),
@@ -252,16 +349,16 @@ fn chart_data_contract<'a>(
                 "普通散点使用 data={items}；气泡图使用 bubbleData={items}",
             ));
         }
-        // 缺少两个入口时没有可绘制载荷。
+        // 缺少三个入口时没有可绘制载荷。
         (None, None) => {
             // 返回必需入口诊断。
             return Err(Diagnostic::new(
                 // 指向完整元素。
                 element.span,
                 // 说明至少需要一个入口。
-                "<ScatterChart> 缺少 data 或 bubbleData 属性",
-                // 给出两种最小合法写法。
-                "使用 <ScatterChart data={items} /> 或 <ScatterChart bubbleData={items} />",
+                "<ScatterChart> 缺少 data、bubbleData 或 series 属性",
+                // 给出三种最小合法写法。
+                "使用 <ScatterChart data={items} />、<ScatterChart bubbleData={items} /> 或 <ScatterChart series={items} />",
             ));
         }
     };
@@ -333,10 +430,10 @@ pub(super) fn validate_inline_data(
         return Err(Diagnostic::new(
             // 指向错配的数据项。
             item.span,
-            // 点名实际与期望构造器。
-            format!("当前图表 data 需要 {expected}，不能使用 {actual}"),
-            // 给出目标构造器修复建议。
-            format!("改用 {expected}(...)，或传入 Vec<{expected}> 表达式"),
+            // 点名实际与期望载荷构造器。
+            format!("当前图表载荷需要 {expected}，不能使用 {actual}"),
+            // 给出目标载荷构造器修复建议。
+            format!("改用 {expected}(...)，或传入对应的类型化集合表达式"),
         ));
     }
     // 全部显式数据项均符合目标类型。

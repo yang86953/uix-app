@@ -7,6 +7,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入十二类图表共享的高级配置映射。
 use super::chart_common_codegen::{apply_common_chart_attribute, is_common_chart_attribute};
+// 复用高级静态图表的内联构造器类型校验。
+use super::static_chart_codegen::validate_inline_data;
 // 引入属性、表达式、布尔值与诊断契约。
 use super::{Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_expression};
 
@@ -24,85 +26,144 @@ pub(crate) fn generate_basic_chart(element: &Element) -> Result<TokenStream, Dia
             format!("使用 <{} data={{items}} />", element.name),
         ));
     }
-    // 三类图表都要求显式类型化数据表达式。
-    let data_attribute = required_attribute(element, "data")?;
-    // 字符串不能伪装成结构化图表数据。
-    let AttributeValue::Expression(data_expression) = &data_attribute.value else {
+    // 解析当前标签唯一且精确的单集合或多系列入口。
+    let (payload_attribute, expected_item_type, is_series) = basic_chart_data_contract(element)?;
+    // 字符串不能伪装成结构化图表载荷。
+    let AttributeValue::Expression(payload_expression) = &payload_attribute.value else {
         // 返回数据表达式诊断。
         return Err(Diagnostic::new(
-            // 指向非法 data 属性。
-            data_attribute.span,
+            // 指向非法载荷属性。
+            payload_attribute.span,
             // 说明当前标签需要的类型化数据。
-            format!("{} data 必须是类型化数据表达式", element.name),
-            // 给出三类公开数据构造器。
-            "使用 BarData(...)、LineData(...) 或 PieData(...) 数组表达式",
+            format!(
+                "{} {} 必须是类型化数据表达式",
+                element.name, payload_attribute.name
+            ),
+            // 给出单集合与多系列公开构造器。
+            "使用 BarData(...)、LineData(...)、PieData(...) 或 ChartSeries(...) 数组表达式",
         ));
     };
-    // 生成受限数据表达式。
-    let data = generate_expression(&data_expression.expression, None)?;
+    // 多系列内联数组只接受 ChartSeries，单集合继续核对精确数据项。
+    let expected_constructor = if is_series {
+        // 多系列统一使用公开 ChartSeries 构造器。
+        "ChartSeries"
+    } else {
+        // 单集合使用当前图表的精确数据构造器。
+        expected_item_type
+    };
+    // 拒绝借用其他图表载荷构造器的内联数组。
+    validate_inline_data(&payload_expression.expression, expected_constructor)?;
+    // 生成受限载荷表达式。
+    let payload = generate_expression(&payload_expression.expression, None)?;
     // 按标签选择公开组件和元素类型。
     let (mut widget, consumed): (TokenStream, &[&str]) = match element.name.as_str() {
-        // 柱状图取得 BarData 集合所有权。
-        "BarChart" => (
-            quote! {
-                ::uix::prelude::BarChart::new().data(
-                    ::std::iter::IntoIterator::into_iter((#data).clone())
-                        .collect::<::std::vec::Vec<::uix::prelude::BarData>>()
-                )
-            },
-            &[
-                "data",
-                "maxValue",
-                "showValue",
-                "barRadius",
-                "grouped",
-                "stacked",
-                "horizontal",
-                "barGap",
-                "categoryGap",
-                "title",
-                "subtitle",
-                "responsive",
-                "legend",
-                "animation",
-                "interactive",
-                "brush",
-                "tooltip",
-            ],
-        ),
-        // 折线图取得 LineData 集合所有权。
-        "LineChart" => (
-            quote! {
-                ::uix::prelude::LineChart::new().data(
-                    ::std::iter::IntoIterator::into_iter((#data).clone())
-                        .collect::<::std::vec::Vec<::uix::prelude::LineData>>()
-                )
-            },
-            &[
-                "data",
-                "maxValue",
-                "autoMin",
-                "showGrid",
-                "showDots",
-                "lineWidth",
-                "dotRadius",
-                "smooth",
-                "step",
-                "title",
-                "subtitle",
-                "responsive",
-                "legend",
-                "animation",
-                "interactive",
-                "brush",
-                "tooltip",
-            ],
-        ),
+        // 柱状图取得 BarData 单集合或多系列快照所有权。
+        "BarChart" => {
+            // 按互斥入口生成精确公开 builder 调用。
+            let widget = if is_series {
+                // 多系列固定收集嵌套 BarData 泛型，避免运行时下转静默失败。
+                quote! {
+                    ::uix::prelude::BarChart::new().series(
+                        ::std::iter::IntoIterator::into_iter((#payload).clone())
+                            .collect::<::std::vec::Vec<
+                                ::uix::prelude::ChartSeries<
+                                    ::std::vec::Vec<::uix::prelude::BarData>
+                                >
+                            >>()
+                    )
+                }
+            } else {
+                // 单集合保持既有 BarData 映射。
+                quote! {
+                    ::uix::prelude::BarChart::new().data(
+                        ::std::iter::IntoIterator::into_iter((#payload).clone())
+                            .collect::<::std::vec::Vec<::uix::prelude::BarData>>()
+                    )
+                }
+            };
+            // 返回构造链和柱状图属性白名单。
+            (
+                widget,
+                &[
+                    // 单集合入口。
+                    "data",
+                    // 多系列入口。
+                    "series",
+                    "maxValue",
+                    "showValue",
+                    "barRadius",
+                    "grouped",
+                    "stacked",
+                    "horizontal",
+                    "barGap",
+                    "categoryGap",
+                    "title",
+                    "subtitle",
+                    "responsive",
+                    "legend",
+                    "animation",
+                    "interactive",
+                    "brush",
+                    "tooltip",
+                ],
+            )
+        }
+        // 折线图取得 LineData 单集合或多系列快照所有权。
+        "LineChart" => {
+            // 按互斥入口生成精确公开 builder 调用。
+            let widget = if is_series {
+                // 多系列固定收集嵌套 LineData 泛型。
+                quote! {
+                    ::uix::prelude::LineChart::new().series(
+                        ::std::iter::IntoIterator::into_iter((#payload).clone())
+                            .collect::<::std::vec::Vec<
+                                ::uix::prelude::ChartSeries<
+                                    ::std::vec::Vec<::uix::prelude::LineData>
+                                >
+                            >>()
+                    )
+                }
+            } else {
+                // 单集合保持既有 LineData 映射。
+                quote! {
+                    ::uix::prelude::LineChart::new().data(
+                        ::std::iter::IntoIterator::into_iter((#payload).clone())
+                            .collect::<::std::vec::Vec<::uix::prelude::LineData>>()
+                    )
+                }
+            };
+            // 返回构造链和折线图属性白名单。
+            (
+                widget,
+                &[
+                    // 单集合入口。
+                    "data",
+                    // 多系列入口。
+                    "series",
+                    "maxValue",
+                    "autoMin",
+                    "showGrid",
+                    "showDots",
+                    "lineWidth",
+                    "dotRadius",
+                    "smooth",
+                    "step",
+                    "title",
+                    "subtitle",
+                    "responsive",
+                    "legend",
+                    "animation",
+                    "interactive",
+                    "brush",
+                    "tooltip",
+                ],
+            )
+        }
         // 饼图取得 PieData 集合所有权。
         "PieChart" => (
             quote! {
                 ::uix::prelude::PieChart::new().data(
-                    ::std::iter::IntoIterator::into_iter((#data).clone())
+                    ::std::iter::IntoIterator::into_iter((#payload).clone())
                         .collect::<::std::vec::Vec<::uix::prelude::PieData>>()
                 )
             },
@@ -129,8 +190,8 @@ pub(crate) fn generate_basic_chart(element: &Element) -> Result<TokenStream, Dia
     };
     // 按源码顺序应用当前图表允许的专有属性。
     for attribute in &element.attributes {
-        // data 已在构造阶段消费。
-        if attribute.name == "data" {
+        // 单集合与多系列载荷已在构造阶段消费。
+        if matches!(attribute.name.as_str(), "data" | "series") {
             // 跳过重复处理。
             continue;
         }
@@ -146,6 +207,71 @@ pub(crate) fn generate_basic_chart(element: &Element) -> Result<TokenStream, Dia
     let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
     // 应用公共尺寸、样式与自动化属性。
     apply_common_attributes(view, &element.attributes, consumed)
+}
+
+// 解析基础图表唯一的单集合或多系列数据入口。
+fn basic_chart_data_contract<'a>(
+    // 接收完整基础图表元素。
+    element: &'a Element,
+) -> Result<(&'a Attribute, &'static str, bool), Diagnostic> {
+    // 饼图运行时没有多系列 builder，继续要求单集合 PieData。
+    if element.name == "PieChart" {
+        // 返回既有必填 data 契约。
+        return Ok((required_attribute(element, "data")?, "PieData", false));
+    }
+    // 查找单集合入口。
+    let data = element
+        // 遍历当前标签属性。
+        .attributes
+        // 创建只读迭代器。
+        .iter()
+        // 匹配 data 属性。
+        .find(|attribute| attribute.name == "data");
+    // 查找多系列入口。
+    let series = element
+        // 遍历当前标签属性。
+        .attributes
+        // 创建只读迭代器。
+        .iter()
+        // 匹配 series 属性。
+        .find(|attribute| attribute.name == "series");
+    // 选择当前标签的内部数据项类型。
+    let expected_item_type = match element.name.as_str() {
+        // 柱状图系列包含 BarData。
+        "BarChart" => "BarData",
+        // 折线图系列包含 LineData。
+        "LineChart" => "LineData",
+        // 分派入口只允许三类基础图表。
+        _ => unreachable!("基础图表分派已限制标签集合"),
+    };
+    // 两个载荷入口必须恰好选择一个。
+    match (data, series) {
+        // 返回单集合入口。
+        (Some(attribute), None) => Ok((attribute, expected_item_type, false)),
+        // 返回多系列入口。
+        (None, Some(attribute)) => Ok((attribute, expected_item_type, true)),
+        // 同时提供会产生不明确的运行时载荷。
+        (Some(_), Some(attribute)) => Err(Diagnostic::new(
+            // 指向第二个互斥入口。
+            attribute.span,
+            // 点名冲突属性。
+            format!("{} data 与 series 不能同时使用", element.name),
+            // 给出两种精确选择。
+            "单集合使用 data={items}；多系列使用 series={items}",
+        )),
+        // 缺少两个入口时没有可绘制载荷。
+        (None, None) => Err(Diagnostic::new(
+            // 指向完整图表元素。
+            element.span,
+            // 说明至少需要一个入口。
+            format!("<{}> 缺少 data 或 series 属性", element.name),
+            // 给出两种最小合法写法。
+            format!(
+                "使用 <{} data={{items}} /> 或 <{} series={{items}} />",
+                element.name, element.name
+            ),
+        )),
+    }
 }
 
 // 应用一个已经登记的图表专有属性。

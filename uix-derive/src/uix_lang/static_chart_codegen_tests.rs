@@ -68,6 +68,36 @@ fn generates_area_scatter_and_funnel_charts() {
     );
 }
 
+// 验证面积图与散点图登记精确的 ChartSeries 多系列入口。
+#[test]
+fn generates_static_chart_multi_series() {
+    // 面积图内联多系列使用 ChartSeries<Vec<LineData>>。
+    let area = generate(
+        "<AreaChart series={[ChartSeries('收入', [LineData('Jan', 10)]), ChartSeries('成本', [LineData('Jan', 4)])]} stacked />",
+    )
+    // 合法面积图多系列必须生成。
+    .expect("AreaChart series 应生成");
+    // 生成代码必须固定嵌套 LineData 泛型并保留面积类型。
+    assert!(
+        area.contains("ChartSeries < :: std :: vec :: Vec < :: uix :: prelude :: LineData")
+            && area.contains("series")
+            && area.contains("stacked (true)")
+    );
+    // 散点图动态多系列表达式交给 Rust 核对精确泛型。
+    let scatter = generate(
+        "<ScatterChart series={scatter_series} xAxis=\"宽度\" yAxis=\"高度\" legend=\"bottom\" />",
+    )
+    // 合法散点图多系列必须生成。
+    .expect("ScatterChart series 应生成");
+    // 生成代码必须克隆声明快照并固定嵌套 ScatterData 泛型。
+    assert!(
+        scatter.contains("(scatter_series) . clone ()")
+            && scatter
+                .contains("ChartSeries < :: std :: vec :: Vec < :: uix :: prelude :: ScatterData")
+            && scatter.contains("x_axis (\"宽度\")")
+    );
+}
+
 // 验证未登记数据、属性、枚举与子树都得到编译诊断。
 #[test]
 fn rejects_unregistered_static_chart_contracts() {
@@ -99,12 +129,30 @@ fn rejects_unregistered_static_chart_contracts() {
         .expect_err("气泡图 pointSize 必须失败");
     // 诊断必须指向气泡大小契约。
     assert!(point.suggestion.contains("bubbleScale"));
-    // 多系列仍由 Rust API 承担。
-    let series = generate("<AreaChart data={items} series={series} />")
-        // 未登记 series 必须失败。
-        .expect_err("series 不得静默映射");
-    // 诊断必须保留具体属性名。
-    assert!(series.message.contains("series"));
+    // 单集合与多系列不能同时决定面积图载荷。
+    let area_series = generate("<AreaChart data={items} series={series} />")
+        // 两个入口必须互斥。
+        .expect_err("AreaChart data 与 series 同时使用必须失败");
+    // 诊断必须点名两个互斥入口。
+    assert!(area_series.message.contains("data") && area_series.message.contains("series"));
+    // 气泡单集合与普通散点多系列不能同时决定载荷。
+    let scatter_series = generate("<ScatterChart bubbleData={items} series={series} />")
+        // 两个入口必须互斥。
+        .expect_err("ScatterChart bubbleData 与 series 同时使用必须失败");
+    // 诊断必须点名三类互斥入口。
+    assert!(
+        scatter_series.message.contains("bubbleData") && scatter_series.message.contains("series")
+    );
+    // 多系列内联数组不能借用自定义组合系列构造器。
+    let mismatched_series =
+        generate("<ScatterChart series={[ComboSeries('样本', [LineData('Jan', 10)])]} />")
+            // 构造器错配必须在宏展开期失败。
+            .expect_err("ScatterChart series 构造器错配必须失败");
+    // 诊断必须点名实际与目标构造器。
+    assert!(
+        mismatched_series.message.contains("ComboSeries")
+            && mismatched_series.message.contains("ChartSeries")
+    );
     // 非法枚举必须在宏展开期拒绝。
     let style = generate("<ScatterChart data={items} pointStyle=\"square\" />")
         // 未登记点形状必须失败。

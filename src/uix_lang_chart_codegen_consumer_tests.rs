@@ -86,3 +86,57 @@ fn chart_advanced_config_compiles_against_public_uix_api() {
     // 展开自定义组合系列并要求公开 ComboChart builder 完成类型检查。
     let _combo: ViewNode = crate::uix!(r#"<ComboChart series={combo_series} />"#);
 }
+
+// 验证基础坐标图多系列生成代码通过真实公开 API 类型检查。
+#[test]
+fn basic_chart_multi_series_compiles_against_public_uix_api() {
+    // 提供柱状图精确多系列声明快照。
+    let bar_series = vec![
+        // 声明 2025 年柱状数据系列。
+        ChartSeries::new(
+            // 声明系列名称。
+            "2025",
+            // 声明系列数据项。
+            vec![BarData::new("Q1", 120.0, Color::BLUE)],
+        ),
+    ];
+    // 展开柱状图多系列并要求公开 builder 完成类型检查。
+    let _bar: ViewNode = crate::uix!(r#"<BarChart series={bar_series} grouped />"#);
+    // 提供折线与面积图共享的精确多系列声明快照。
+    let line_series = vec![
+        // 声明收入折线系列。
+        ChartSeries::new(
+            // 声明系列名称。
+            "收入",
+            // 声明系列数据项。
+            vec![LineData::new("Jan", 100.0)],
+        ),
+    ];
+    // 展开折线图多系列并要求公开 builder 完成类型检查。
+    let _line: ViewNode = crate::uix!(r#"<LineChart series={line_series} smooth />"#);
+    // 为面积图创建独立快照，证明生成代码按值克隆且不转移前一声明。
+    let area_series = vec![
+        // 声明成本面积系列。
+        ChartSeries::new(
+            // 声明系列名称。
+            "成本",
+            // 声明系列数据项。
+            vec![LineData::new("Jan", 40.0)],
+        ),
+    ];
+    // 展开面积图多系列并要求 ChartPlaceholder 公开 builder 完成类型检查。
+    let _area: ViewNode = crate::uix!(r#"<AreaChart series={area_series} stacked />"#);
+    // 提供散点图精确多系列声明快照。
+    let scatter_series = vec![
+        // 声明实验组散点系列。
+        ChartSeries::new(
+            // 声明系列名称。
+            "实验组",
+            // 声明系列数据项。
+            vec![ScatterData::new("A", 1.0, 2.0)],
+        ),
+    ];
+    // 展开散点图多系列并要求 ChartPlaceholder 公开 builder 完成类型检查。
+    let _scatter: ViewNode =
+        crate::uix!(r#"<ScatterChart series={scatter_series} xAxis="宽度" yAxis="高度" />"#);
+}
