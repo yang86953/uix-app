@@ -5,8 +5,11 @@ use quote::quote;
 
 // 引入公共属性与叶节点形状判定。
 use super::codegen::{apply_common_attributes, is_renderable_node};
-// 引入 List 属性、表达式、字符串与诊断契约。
-use super::{Attribute, AttributeValue, Diagnostic, Element, generate_expression, string_value};
+// 引入 List 属性、表达式、布尔值、字面量字符串与诊断契约。
+use super::{
+    Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_expression,
+    literal_string, string_value,
+};
 
 // 生成只声明文本数据与字符串槽位的 List 叶节点。
 pub(crate) fn generate_list(element: &Element) -> Result<TokenStream, Diagnostic> {
@@ -69,6 +72,20 @@ pub(crate) fn generate_list(element: &Element) -> Result<TokenStream, Diagnostic
         // 构造期间临时借用加载更多文字，运行时负责复制。
         widget = quote! { (#widget).load_more(&*(#load_more)) };
     }
+    // 可选边框开关直接投影公开 List 构建器。
+    if let Some(attribute) = find_attribute(element, "bordered") {
+        // 接受布尔简写、字面量或受限表达式。
+        let bordered = boolean_value(attribute)?;
+        // 运行时继续独占边框绘制策略。
+        widget = quote! { (#widget).bordered(#bordered) };
+    }
+    // 可选尺寸关键字映射到公开控件尺寸枚举。
+    if let Some(attribute) = find_attribute(element, "size") {
+        // 生成确定的公开尺寸枚举。
+        let size = list_size(attribute)?;
+        // 运行时继续独占行高、测量与绘制行为。
+        widget = quote! { (#widget).size(#size) };
+    }
 
     // 使用公开 View 契约保留空数据时的 Empty 替代生命周期。
     let view = quote! { ::uix::prelude::View::build(#widget) };
@@ -79,8 +96,32 @@ pub(crate) fn generate_list(element: &Element) -> Result<TokenStream, Diagnostic
         // 保留属性源码顺序供公共映射处理。
         &element.attributes,
         // 防止专有属性进入公共映射。
-        &["data", "header", "footer", "loadMore"],
+        &["data", "header", "footer", "loadMore", "bordered", "size"],
     )
+}
+
+// 映射 List 的编译期尺寸关键字。
+fn list_size(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
+    // 尺寸必须在编译期确定以拒绝未登记关键字。
+    let value = literal_string(attribute, "List size")?;
+    // 按公开三档控件尺寸生成枚举。
+    match value.as_str() {
+        // 小尺寸映射到 Small。
+        "small" => Ok(quote! { ::uix::prelude::ControlSize::Small }),
+        // 文档中尺寸映射到 Medium。
+        "middle" => Ok(quote! { ::uix::prelude::ControlSize::Medium }),
+        // 大尺寸映射到 Large。
+        "large" => Ok(quote! { ::uix::prelude::ControlSize::Large }),
+        // 其他关键字不能静默回退到运行时默认值。
+        _ => Err(Diagnostic::new(
+            // 指向完整 size 属性。
+            attribute.span,
+            // 陈述未知尺寸值。
+            format!("List size={value:?} 不受支持"),
+            // 给出完整合法集合。
+            "使用 small、middle 或 large",
+        )),
+    }
 }
 
 // 查找元素上的具名属性。
