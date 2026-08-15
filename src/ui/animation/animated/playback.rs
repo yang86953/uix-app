@@ -4,7 +4,10 @@ use std::fmt;
 use std::time::{Duration, Instant};
 
 use crate::ui::animation::traits::Animatable;
-use crate::ui::animation::{Animation, KeyframeAnimation, SpringAnimation};
+use crate::ui::animation::{
+    Animation, KeyframeAnimation, KeyframeDirection, KeyframeFillMode, KeyframePlayback,
+    SpringAnimation,
+};
 
 use super::AnimatedRegistration;
 
@@ -14,6 +17,7 @@ pub(super) enum LoopMode {
     Count(u64),
     Forever,
     Alternate,
+    AlternateCount(u64),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -112,7 +116,8 @@ impl<T: Animatable> AnimatedMotion<T> {
     }
 
     fn supports_loops(&self) -> bool {
-        matches!(self, Self::Timed(_))
+        // 定时与关键帧动画都具有可重启的固定单轮时长。
+        matches!(self, Self::Timed(_) | Self::Keyframes(_))
     }
 }
 
@@ -125,6 +130,14 @@ pub(super) struct AnimatedPlayback<T: Animatable> {
     pub(super) delay: Duration,
     delay_state: DelayState,
     finish_callback: Option<Box<dyn FnOnce() + Send + 'static>>,
+    // 保存不应用关键帧填充时恢复的调用方基础值。
+    underlying: T,
+    // 保存关键帧声明是否在延迟期显示首帧。
+    fill_backwards: bool,
+    // 保存关键帧声明是否在完成后保留终帧。
+    fill_forwards: bool,
+    // 保存整个播放序列的基础倒放方向。
+    base_reversed: bool,
 }
 
 impl<T: Animatable> AnimatedPlayback<T> {
@@ -135,6 +148,8 @@ impl<T: Animatable> AnimatedPlayback<T> {
         now: Instant,
     ) -> Self {
         let mut playback = Self {
+            // 普通定时动画的基础值是原始起点。
+            underlying: animation.from,
             original_from: animation.from,
             original_to: animation.to,
             motion: AnimatedMotion::Timed(animation),
@@ -143,6 +158,12 @@ impl<T: Animatable> AnimatedPlayback<T> {
             delay,
             delay_state: DelayState::None,
             finish_callback: None,
+            // 普通定时动画没有 CSS 延迟填充差异。
+            fill_backwards: true,
+            // 普通定时动画保持既有终值行为。
+            fill_forwards: true,
+            // 普通定时动画初始正放。
+            base_reversed: false,
         };
         playback.arm_delay(now);
         playback
@@ -150,6 +171,8 @@ impl<T: Animatable> AnimatedPlayback<T> {
 
     pub(super) fn new_spring(animation: SpringAnimation<T>) -> Self {
         Self {
+            // 弹簧动画的基础值是原始起点。
+            underlying: animation.from,
             original_from: animation.from,
             original_to: animation.to,
             motion: AnimatedMotion::Spring(animation),
@@ -158,26 +181,110 @@ impl<T: Animatable> AnimatedPlayback<T> {
             delay: Duration::ZERO,
             delay_state: DelayState::None,
             finish_callback: None,
+            // 弹簧没有关键帧延迟填充差异。
+            fill_backwards: true,
+            // 弹簧保持既有终值行为。
+            fill_forwards: true,
+            // 弹簧初始正放。
+            base_reversed: false,
         }
     }
 
-    pub(super) fn new_keyframes(animation: KeyframeAnimation<T>) -> Self {
-        Self {
-            original_from: animation.value(),
-            original_to: animation.frames()[animation.frames().len() - 1].value,
+    pub(super) fn new_keyframes(
+        mut animation: KeyframeAnimation<T>,
+        underlying: T,
+        options: KeyframePlayback,
+        now: Instant,
+    ) -> Self {
+        // 反向与交替反向都从倒放轮次开始。
+        let base_reversed = matches!(
+            options.direction,
+            KeyframeDirection::Reverse | KeyframeDirection::AlternateReverse
+        );
+        // 首轮在构造期就切到声明方向。
+        animation.seek(0.0, base_reversed);
+        // 判断是否每轮交替方向。
+        let alternate = matches!(
+            options.direction,
+            KeyframeDirection::Alternate | KeyframeDirection::AlternateReverse
+        );
+        // 把有限、无限与交替组合映射到统一循环状态机。
+        let loop_mode = match (options.iterations, alternate) {
+            // 单轮无需循环分支。
+            (Some(1), _) => LoopMode::Once,
+            // 普通有限轮次复用计数循环。
+            (Some(count), false) => LoopMode::Count(count),
+            // 交替有限轮次保留奇偶方向。
+            (Some(count), true) => LoopMode::AlternateCount(count),
+            // 普通无限轮次持续正向或反向重播。
+            (None, false) => LoopMode::Forever,
+            // 交替无限轮次持续来回播放。
+            (None, true) => LoopMode::Alternate,
+        };
+        // 填充策略决定延迟期是否显示首帧。
+        let fill_backwards = matches!(
+            options.fill_mode,
+            KeyframeFillMode::Backwards | KeyframeFillMode::Both
+        );
+        // 填充策略决定完成后是否保留终帧。
+        let fill_forwards = matches!(
+            options.fill_mode,
+            KeyframeFillMode::Forwards | KeyframeFillMode::Both
+        );
+        // 从规范化关键帧读取正向两端。
+        let original_from = animation.frames()[0].value;
+        // 读取最后一个规范化帧作为正向终点。
+        let original_to = animation.frames()[animation.frames().len() - 1].value;
+        // 构造统一播放状态。
+        let mut playback = Self {
+            // 保存关键帧外部基础值。
+            underlying,
+            // 保存正向起点。
+            original_from,
+            // 保存正向终点。
+            original_to,
+            // 交给统一 motion 分派推进。
             motion: AnimatedMotion::Keyframes(animation),
-            loop_mode: LoopMode::Once,
+            // 保存由迭代与方向组合出的循环模式。
+            loop_mode,
+            // 新播放尚未完成任何轮次。
             completed_plays: 0,
-            delay: Duration::ZERO,
+            // 统一归一化非有限或负延迟。
+            delay: normalized_delay(options.delay),
+            // 构造后由统一入口武装 deadline。
             delay_state: DelayState::None,
+            // 新播放没有完成回调。
             finish_callback: None,
+            // 保存延迟期填充事实。
+            fill_backwards,
+            // 保存完成后填充事实。
+            fill_forwards,
+            // 保存首轮基础方向。
+            base_reversed,
+        };
+        // 使用所属窗口当前时刻登记可休眠延迟。
+        playback.arm_delay(now);
+        // 零轮迭代必须立即进入完成态，避免留下不会续帧的半活跃播放。
+        if matches!(
+            playback.loop_mode,
+            LoopMode::Count(0) | LoopMode::AlternateCount(0)
+        ) {
+            // 统一完成路径会按 fill-mode 选择最终可见值。
+            playback.finish_forward(0);
+            // 零轮播放不保留启动延迟。
+            playback.delay_state = DelayState::None;
         }
+        // 返回完整关键帧播放状态。
+        playback
     }
 
     fn is_active(&self) -> bool {
         matches!(self.delay_state, DelayState::None)
             && self.motion.is_running()
-            && !matches!(self.loop_mode, LoopMode::Count(0))
+            && !matches!(
+                self.loop_mode,
+                LoopMode::Count(0) | LoopMode::AlternateCount(0)
+            )
             && !self.motion.is_finished()
     }
 
@@ -208,8 +315,8 @@ impl<T: Animatable> AnimatedPlayback<T> {
             return 0.0;
         }
         match self.loop_mode {
-            LoopMode::Count(0) => 1.0,
-            LoopMode::Count(total) => {
+            LoopMode::Count(0) | LoopMode::AlternateCount(0) => 1.0,
+            LoopMode::Count(total) | LoopMode::AlternateCount(total) => {
                 if self.completed_plays >= total && self.motion.is_finished() {
                     1.0
                 } else {
@@ -231,7 +338,8 @@ impl<T: Animatable> AnimatedPlayback<T> {
                 self.motion.resume();
                 if self.motion.is_finished() {
                     self.finish_forward(self.completed_plays);
-                    return (Some(self.motion.value()), false);
+                    // 零时长完成同样必须立即应用 fill-mode。
+                    return (Some(self.value()), false);
                 }
                 dt = now.saturating_duration_since(deadline).as_secs_f64();
             }
@@ -250,11 +358,21 @@ impl<T: Animatable> AnimatedPlayback<T> {
         // 按循环模式分派推进策略。
         let (value, active) = match self.loop_mode {
             LoopMode::Once => self.advance_once(dt),
-            LoopMode::Count(total_plays) => self.advance_counted(dt, total_plays),
+            LoopMode::Count(total_plays) => self.advance_counted(dt, total_plays, false),
+            LoopMode::AlternateCount(total_plays) => {
+                // 有限交替迭代按奇偶轮次切换方向。
+                self.advance_counted(dt, total_plays, true)
+            }
             LoopMode::Forever => self.advance_repeating(dt, false),
             LoopMode::Alternate => self.advance_repeating(dt, true),
         };
-        (Some(value), active)
+        // 完成帧必须立即应用 fill-mode，而不是短暂发布底层终值。
+        if !active {
+            // 返回完成后的最终可见值。
+            return (Some(self.value()), false);
+        }
+        // 活跃播放直接发布本轮采样值。
+        (Some(value), true)
     }
 
     fn advance_once(&mut self, dt: f64) -> (T, bool) {
@@ -264,8 +382,8 @@ impl<T: Animatable> AnimatedPlayback<T> {
         (value, active)
     }
 
-    fn advance_counted(&mut self, dt: f64, total_plays: u64) -> (T, bool) {
-        // 计数循环只对定时动画生效，其余类型退化回单次播放。
+    fn advance_counted(&mut self, dt: f64, total_plays: u64, alternate: bool) -> (T, bool) {
+        // 计数循环只对固定时长动画生效，弹簧退化回单次播放。
         if !self.motion.supports_loops() {
             return self.advance_once(dt);
         }
@@ -277,7 +395,11 @@ impl<T: Animatable> AnimatedPlayback<T> {
 
         let (duration, elapsed) = match &self.motion {
             AnimatedMotion::Timed(animation) => (animation.duration, animation.elapsed + dt),
-            AnimatedMotion::Keyframes(_) | AnimatedMotion::Spring(_) => {
+            AnimatedMotion::Keyframes(animation) => {
+                // 关键帧使用同一轮次时长与已用时计算跨帧轮数。
+                (animation.duration(), animation.elapsed() + dt)
+            }
+            AnimatedMotion::Spring(_) => {
                 return self.advance_once(dt);
             }
         };
@@ -290,14 +412,21 @@ impl<T: Animatable> AnimatedPlayback<T> {
         // 计算本帧越过的完整轮次，并重置到当前轮次对应的阶段位置。
         let crossed = (elapsed / duration).floor() as u64;
         self.completed_plays = self.completed_plays.saturating_add(crossed);
-        self.set_leg(self.original_from, self.original_to, elapsed % duration);
+        // 有限交替模式按当前完成轮次决定下一轮方向。
+        let reverse_leg = alternate && self.completed_plays % 2 == 1;
+        // 把剩余时间定位到当前轮次。
+        self.set_leg(reverse_leg, elapsed % duration);
         (self.motion.value(), true)
     }
 
     fn advance_repeating(&mut self, dt: f64, alternate: bool) -> (T, bool) {
         let (duration, elapsed) = match &self.motion {
             AnimatedMotion::Timed(animation) => (animation.duration, animation.elapsed + dt),
-            AnimatedMotion::Keyframes(_) | AnimatedMotion::Spring(_) => {
+            AnimatedMotion::Keyframes(animation) => {
+                // 关键帧使用同一轮次时长与已用时计算跨帧轮数。
+                (animation.duration(), animation.elapsed() + dt)
+            }
+            AnimatedMotion::Spring(_) => {
                 return self.advance_once(dt);
             }
         };
@@ -306,47 +435,93 @@ impl<T: Animatable> AnimatedPlayback<T> {
         // 交替模式下奇偶轮次互换起点与终点，形成来回摆动。
         let reverse_leg = alternate && self.completed_plays % 2 == 1;
         if reverse_leg {
-            self.set_leg(self.original_to, self.original_from, elapsed % duration);
+            self.set_leg(true, elapsed % duration);
         } else {
-            self.set_leg(self.original_from, self.original_to, elapsed % duration);
+            self.set_leg(false, elapsed % duration);
         }
         (self.motion.value(), true)
     }
 
-    fn set_leg(&mut self, from: T, to: T, elapsed: f64) {
-        // 直接改写定时动画的阶段起止值与已耗时，复用同一底层动画对象。
-        if let AnimatedMotion::Timed(animation) = &mut self.motion {
-            animation.from = from;
-            animation.to = to;
-            animation.elapsed = elapsed;
-            animation.running = true;
+    fn set_leg(&mut self, alternate_reversed: bool, elapsed: f64) {
+        // 基础倒放与交替轮次按异或组合最终方向。
+        let reversed = self.base_reversed ^ alternate_reversed;
+        // 按 motion 类型原位定位当前轮次。
+        match &mut self.motion {
+            // 定时动画直接改写阶段端点与已耗时。
+            AnimatedMotion::Timed(animation) => {
+                // 倒放轮次互换原始端点。
+                let (from, to) = if reversed {
+                    // 返回倒放端点。
+                    (self.original_to, self.original_from)
+                } else {
+                    // 返回正放端点。
+                    (self.original_from, self.original_to)
+                };
+                // 保存本轮起点。
+                animation.from = from;
+                // 保存本轮终点。
+                animation.to = to;
+                // 定位本轮时间。
+                animation.elapsed = elapsed;
+                // 跨轮后继续运行。
+                animation.running = true;
+            }
+            // 关键帧原位定位时间并设置方向。
+            AnimatedMotion::Keyframes(animation) => animation.seek(elapsed, reversed),
+            // 弹簧不支持循环定位。
+            AnimatedMotion::Spring(_) => {}
         }
     }
 
     fn finish_forward(&mut self, completed_plays: u64) {
-        // 定格在终点：定时动画拨到末帧，关键帧/弹簧动画直接停止。
+        // 有限交替播放按最后一轮奇偶性决定终点方向。
+        let alternate_reversed = matches!(self.loop_mode, LoopMode::AlternateCount(_))
+            // 至少完成一轮时才存在最后一轮方向。
+            && completed_plays > 0
+            // 第二、第四等偶数轮为反向轮次。
+            && (completed_plays - 1) % 2 == 1;
+        // 先定位到真实最后一轮终点。
+        self.set_leg(alternate_reversed, self.motion_duration());
+        // 停止底层推进并保留刚才定位的方向。
         match &mut self.motion {
             AnimatedMotion::Timed(animation) => {
-                animation.from = self.original_from;
-                animation.to = self.original_to;
-                animation.elapsed = animation.duration;
+                // 当前轮次已经由 set_leg 定位到末端。
                 animation.running = false;
             }
-            AnimatedMotion::Keyframes(animation) => animation.stop(),
+            AnimatedMotion::Keyframes(animation) => {
+                // seek 已定位到末端，只需停止继续推进。
+                animation.pause();
+            }
             AnimatedMotion::Spring(animation) => animation.stop(),
         }
         self.completed_plays = completed_plays;
     }
 
+    // 返回当前 motion 的单轮规范化时长。
+    fn motion_duration(&self) -> f64 {
+        // 按 motion 类型读取稳定时长。
+        match &self.motion {
+            // 定时动画公开保存秒级时长。
+            AnimatedMotion::Timed(animation) => animation.duration,
+            // 关键帧通过只读入口暴露规范化时长。
+            AnimatedMotion::Keyframes(animation) => animation.duration(),
+            // 弹簧没有固定单轮时长，完成定位交给自身 stop。
+            AnimatedMotion::Spring(_) => 0.0,
+        }
+    }
+
     pub(super) fn restart(&mut self, now: Instant) {
         self.completed_plays = 0;
-        if matches!(self.loop_mode, LoopMode::Count(0)) {
+        if matches!(
+            self.loop_mode,
+            LoopMode::Count(0) | LoopMode::AlternateCount(0)
+        ) {
             // 计数为零直接进入完成态。
             self.finish_forward(0);
         } else {
             // 支持循环的动画回到起点并重新武装延迟，其余类型直接重启。
             if self.motion.supports_loops() {
-                self.set_leg(self.original_from, self.original_to, 0.0);
+                self.set_leg(false, 0.0);
             } else {
                 self.motion.restart();
             }
@@ -355,11 +530,11 @@ impl<T: Animatable> AnimatedPlayback<T> {
     }
 
     pub(super) fn reverse(&mut self, now: Instant) {
-        // 交换原始起止点后重播，实现倒放；非循环类型走底层 reverse。
-        std::mem::swap(&mut self.original_from, &mut self.original_to);
+        // 切换整个播放序列的基础方向。
+        self.base_reversed = !self.base_reversed;
         self.completed_plays = 0;
         if self.motion.supports_loops() {
-            self.set_leg(self.original_from, self.original_to, 0.0);
+            self.set_leg(false, 0.0);
         } else {
             self.motion.reverse();
         }
@@ -374,7 +549,7 @@ impl<T: Animatable> AnimatedPlayback<T> {
         self.loop_mode = loop_mode;
         self.completed_plays = 0;
         // 配置为不播时立即定格为终点值。
-        if matches!(loop_mode, LoopMode::Count(0)) {
+        if matches!(loop_mode, LoopMode::Count(0) | LoopMode::AlternateCount(0)) {
             self.delay_state = DelayState::None;
             self.finish_forward(0);
             return Some(self.motion.value());
@@ -410,6 +585,21 @@ impl<T: Animatable> AnimatedPlayback<T> {
     }
 
     pub(super) fn value(&self) -> T {
+        // 延迟期未声明 backwards 时显示调用方基础值。
+        if matches!(
+            self.delay_state,
+            DelayState::Waiting(_) | DelayState::Paused(_)
+        ) && !self.fill_backwards
+        {
+            // 返回未应用动画的基础值。
+            return self.underlying;
+        }
+        // 完成后未声明 forwards 时恢复调用方基础值。
+        if self.is_finished() && !self.fill_forwards {
+            // 返回未应用动画的基础值。
+            return self.underlying;
+        }
+        // 其余阶段返回当前动画采样值。
         self.motion.value()
     }
 
@@ -462,6 +652,86 @@ where
             .field("delay_state", &self.delay_state)
             .field("has_finish_callback", &self.finish_callback.is_some())
             .finish()
+    }
+}
+
+// 验证关键帧播放配置在统一状态机中的方向、迭代与填充语义。
+#[cfg(test)]
+mod tests {
+    // 引入当前私有播放状态机。
+    use super::*;
+    // 引入 typed 关键帧构造器。
+    use crate::ui::animation::Keyframe;
+
+    // 构造从零到十的单秒关键帧动画。
+    fn sample_animation() -> KeyframeAnimation<f32> {
+        // 两端显式声明，避免基础值补帧影响断言。
+        KeyframeAnimation::new(
+            // 提供线性两端帧。
+            [Keyframe::new(0.0, 0.0), Keyframe::new(1.0, 10.0)],
+            // 单轮一秒。
+            1.0,
+        )
+        // 测试输入始终非空且偏移有限。
+        .expect("测试关键帧必须有效")
+    }
+
+    // 验证有限交替播放按真实最后一轮方向定格。
+    #[test]
+    fn alternate_count_finishes_at_last_reverse_endpoint() {
+        // 固定起始时刻以控制跨轮推进。
+        let now = Instant::now();
+        // 构造两轮交替且保留终值的播放。
+        let mut playback = AnimatedPlayback::new_keyframes(
+            // 使用标准测试序列。
+            sample_animation(),
+            // 基础值不参与 forwards 终值。
+            5.0,
+            // 两轮交替后应回到起点。
+            KeyframePlayback::new(1.0)
+                // 总共播放两轮。
+                .with_iterations(2)
+                // 第二轮倒放。
+                .with_direction(KeyframeDirection::Alternate),
+            // 绑定固定起始时刻。
+            now,
+        );
+        // 一帧跨过两轮并进入完成态。
+        let (value, active) = playback.advance(now + Duration::from_secs(2), 2.0);
+        // 有限两轮完成后不再活跃。
+        assert!(!active);
+        // 交替第二轮的终点必须是原始起点。
+        assert_eq!(value, Some(0.0));
+    }
+
+    // 验证 none 填充在延迟期与完成后都恢复基础值。
+    #[test]
+    fn none_fill_uses_underlying_value_before_and_after_playback() {
+        // 固定起始时刻以控制延迟截止点。
+        let now = Instant::now();
+        // 构造带一秒延迟且不填充的单轮播放。
+        let mut playback = AnimatedPlayback::new_keyframes(
+            // 使用标准测试序列。
+            sample_animation(),
+            // 保存区别于关键帧端点的基础值。
+            5.0,
+            // 单轮配置增加延迟并明确 none 填充。
+            KeyframePlayback::new(1.0)
+                // 等待一秒后开始。
+                .with_delay(1.0)
+                // 延迟前后均不保留关键帧值。
+                .with_fill_mode(KeyframeFillMode::None),
+            // 绑定固定起始时刻。
+            now,
+        );
+        // 延迟期应直接读取基础值。
+        assert_eq!(playback.value(), 5.0);
+        // 截止点后跨过完整单轮。
+        let (value, active) = playback.advance(now + Duration::from_secs(2), 2.0);
+        // 单轮完成后停止续帧。
+        assert!(!active);
+        // 完成后立即恢复基础值。
+        assert_eq!(value, Some(5.0));
     }
 }
 

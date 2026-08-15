@@ -10,6 +10,109 @@ use super::Easing;
 
 type FinishCallback = Arc<Mutex<Option<Box<dyn FnOnce() + Send + 'static>>>>;
 
+/// 声明关键帧序列每轮的播放方向。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum KeyframeDirection {
+    /// 每轮都从起点播放到终点。
+    #[default]
+    Normal,
+    /// 每轮都从终点播放到起点。
+    Reverse,
+    /// 奇数轮正放、偶数轮倒放。
+    Alternate,
+    /// 奇数轮倒放、偶数轮正放。
+    AlternateReverse,
+}
+
+/// 声明关键帧在延迟期与完成后的可见填充行为。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum KeyframeFillMode {
+    /// 延迟期与完成后都显示调用方基础值。
+    #[default]
+    None,
+    /// 完成后保留最后一个可见关键帧值。
+    Forwards,
+    /// 延迟期显示第一帧值，完成后恢复基础值。
+    Backwards,
+    /// 延迟期显示第一帧值且完成后保留最后一帧值。
+    Both,
+}
+
+/// 配置关键帧播放的完整时间、迭代、方向与填充契约。
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct KeyframePlayback {
+    /// 单轮动画时长，单位为秒。
+    pub duration: f64,
+    /// 首轮开始前的等待时长，单位为秒。
+    pub delay: f64,
+    /// 总播放轮数；`None` 表示无限循环。
+    pub iterations: Option<u64>,
+    /// 每轮正放、倒放或交替方向。
+    pub direction: KeyframeDirection,
+    /// 延迟期与完成后的值填充策略。
+    pub fill_mode: KeyframeFillMode,
+}
+
+// 提供保持旧 typed keyframe 行为的紧凑构造与链式配置。
+impl KeyframePlayback {
+    /// 创建单次正放并保留终值的关键帧配置。
+    pub const fn new(duration: f64) -> Self {
+        // 返回兼容既有 `to_keyframes` 的默认行为。
+        Self {
+            // 保存调用方声明的单轮时长。
+            duration,
+            // 默认没有启动延迟。
+            delay: 0.0,
+            // 默认只播放一次。
+            iterations: Some(1),
+            // 默认正向播放。
+            direction: KeyframeDirection::Normal,
+            // 旧 API 完成后一直保留终值。
+            fill_mode: KeyframeFillMode::Forwards,
+        }
+    }
+
+    /// 设置首轮开始前的等待时长。
+    pub const fn with_delay(mut self, delay: f64) -> Self {
+        // 保存原始值并由运行时统一归一化。
+        self.delay = delay;
+        // 返回更新后的配置。
+        self
+    }
+
+    /// 设置有限总播放轮数。
+    pub const fn with_iterations(mut self, iterations: u64) -> Self {
+        // Some 明确区分有限轮数与无限循环。
+        self.iterations = Some(iterations);
+        // 返回更新后的配置。
+        self
+    }
+
+    /// 设置为无限循环。
+    pub const fn infinite(mut self) -> Self {
+        // None 表示调度器需要持续续帧。
+        self.iterations = None;
+        // 返回更新后的配置。
+        self
+    }
+
+    /// 设置每轮播放方向。
+    pub const fn with_direction(mut self, direction: KeyframeDirection) -> Self {
+        // 保存闭合方向枚举。
+        self.direction = direction;
+        // 返回更新后的配置。
+        self
+    }
+
+    /// 设置延迟期与完成后的填充行为。
+    pub const fn with_fill_mode(mut self, fill_mode: KeyframeFillMode) -> Self {
+        // 保存闭合填充枚举。
+        self.fill_mode = fill_mode;
+        // 返回更新后的配置。
+        self
+    }
+}
+
 /// 在归一化时间线上的一个偏移处声明的值与其缓动曲线。
 ///
 /// 缓动曲线属于从该关键帧开始的片段；因此最后一帧的缓动会被忽略。
@@ -213,6 +316,28 @@ impl<T: Animatable> KeyframeAnimation<T> {
     /// 返回规范化后的动画时长（秒）。
     pub const fn duration(&self) -> f64 {
         self.duration
+    }
+
+    // 返回播放状态机计算跨轮推进所需的当前已用时。
+    pub(crate) const fn elapsed(&self) -> f64 {
+        // 暴露只读时间值但不转移关键帧所有权。
+        self.elapsed
+    }
+
+    // 把同一关键帧对象定位到指定轮次内时间与方向。
+    pub(crate) fn seek(&mut self, elapsed: f64, reversed: bool) {
+        // 把非有限输入归零并钳制到单轮时长。
+        self.elapsed = if elapsed.is_finite() {
+            // 有限时间限制在合法闭区间。
+            elapsed.clamp(0.0, self.duration)
+        } else {
+            // 非有限输入不能污染动画时间线。
+            0.0
+        };
+        // 保存当前轮次的明确方向。
+        self.reversed = reversed;
+        // 只有尚未到达终点的正时长动画需要继续推进。
+        self.running = self.duration > 0.0 && self.elapsed < self.duration;
     }
 
     /// 返回已排序、去重并补齐边界的关键帧序列。
