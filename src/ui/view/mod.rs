@@ -34,6 +34,9 @@ use std::sync::Arc;
 pub(crate) mod providers;
 // 拆分声明式动画绑定，保持 ViewNode 核心低于规模上限。
 mod animation_bindings;
+// 拆分 UIX 状态过渡的目标比较与原位重定向组件。
+#[doc(hidden)]
+pub mod declarative_transition;
 // 拆分定位链式入口，保持声明节点主体低于规模上限。
 mod position;
 
