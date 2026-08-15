@@ -140,6 +140,8 @@ pub use theme::style::{ColorValue, PaletteColor, Style, StyleSet, StyleState, Ty
 pub use theme::style::BorderStyle;
 // 公开 UI System 自有的行高值契约。
 pub use theme::style::LineHeight;
+// 公开 UI System 自有的文本水平对齐契约。
+pub use theme::style::TextAlign;
 // 公开 UI System 自有的文本装饰契约。
 pub use theme::style::TextDecoration;
 pub use theme::traits::{

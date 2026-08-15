@@ -146,6 +146,8 @@ impl Style {
         self.font_size = s.font_size;
         // 完整替换保留未声明行高与显式行高的差异。
         self.line_height = s.line_height;
+        // 完整替换保留未声明对齐与显式 left 的差异。
+        self.text_align = s.text_align;
         // 完整替换保留未声明装饰与显式 none 的差异。
         self.text_decoration = s.text_decoration;
         self.opacity = s.opacity;
@@ -255,6 +257,11 @@ impl Style {
         if other.line_height.is_some() {
             // 行高值已由构造器保证为正有限数值。
             self.line_height = other.line_height;
+        }
+        // 只有显式对齐覆盖继承值，包括显式 left。
+        if other.text_align.is_some() {
+            // 保存闭合枚举值而不改变盒模型测量。
+            self.text_align = other.text_align;
         }
         // 只有显式装饰覆盖继承值，包括显式 none。
         if other.text_decoration.is_some() {
@@ -456,6 +463,18 @@ impl Style {
     pub fn resolve_line_height(&self, font_size: f32) -> Option<f32> {
         // 只解析显式值，让文本组件保留各自既有 normal 策略。
         self.line_height.map(|value| value.resolve(font_size))
+    }
+    /// 设置显式文本水平对齐。
+    pub fn with_text_align(mut self, alignment: TextAlign) -> Self {
+        // Some 保留显式 left 与未声明之间的差异。
+        self.text_align = Some(alignment);
+        // 返回可继续链式设置的样式。
+        self
+    }
+    /// 返回最终文本水平对齐；未声明时使用默认 left。
+    pub fn effective_text_align(&self) -> TextAlign {
+        // 公共 Style 层只负责稳定默认值。
+        self.text_align.unwrap_or_default()
     }
     /// 设置显式文本装饰。
     pub fn with_text_decoration(mut self, decoration: TextDecoration) -> Self {

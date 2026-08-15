@@ -16,6 +16,8 @@ use super::FontService;
 use super::bidi_layout::{
     BidiFontSegment, LineGlyph, logical_cluster_order, reorder_line, split_font_segments,
 };
+// 引入视觉行两端对齐的中性几何算法。
+use super::text_justify::justify_line;
 
 /// 布局辅助：按字体分割的文本段（追踪字节偏移）。
 pub(super) struct FontSegment {
@@ -469,15 +471,31 @@ impl FontService {
         } else {
             lines.iter().fold(0.0f32, |m, l| m.max(l.width))
         };
+        // 缓存逻辑字符以判断段落末行和显式换行边界。
+        let text_chars = text.chars().collect::<Vec<_>>();
 
         let mut all_glyphs = Vec::new();
         let mut line_infos = Vec::new();
-        for l in &lines {
+        // 逐行应用对齐并转移最终中性字形。
+        for l in &mut lines {
+            // 两端对齐只扩展自动换行形成的段落非末行。
+            if h_align == HAlign::Justify {
+                // 段尾或显式换行字符之前的视觉行保持自然宽度。
+                let paragraph_final = text_chars
+                    // 查询行逻辑终点之后的首字符。
+                    .get(l.char_end)
+                    // 文本结束或强制换行都结束当前段落。
+                    .is_none_or(|ch| matches!(ch, '\r' | '\n'));
+                // 同步更新空白 advance、后续字形坐标与行宽。
+                l.width = justify_line(&mut l.glyphs, l.width, container_w, paragraph_final);
+            }
             let gs = all_glyphs.len();
             let align_off = match h_align {
                 HAlign::Left => 0.0,
                 HAlign::Center => (container_w - l.width) * 0.5,
                 HAlign::Right => (container_w - l.width).max(0.0),
+                // 两端对齐已经在视觉字形几何中填满容器。
+                HAlign::Justify => 0.0,
             };
             for g in &l.glyphs {
                 let mut shifted = g.glyph;
@@ -505,7 +523,7 @@ impl FontService {
     /// - 垂直基线对齐：不同字体段共享同一行基线，用段 ascent 修正 y 偏移。
     /// - 换行：CRLF / CR / LF 强制换行；word_wrap 使用 UAX #14，并仅为超长字母数字词保留 cluster 级紧急折行。
     /// - LineInfo：按实际行构建，每行包含正确的起止字符偏移、glyph 索引、宽度和高度。
-    /// - 水平对齐：根据 opts.h_align（Left/Center/Right）在容器宽度内对齐各行。
+    /// - 水平对齐：根据 opts.h_align 在容器宽度内完成左、右、居中或段落两端对齐。
     pub fn layout_text(
         &self,
         font: &FontHandle,

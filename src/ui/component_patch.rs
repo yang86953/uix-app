@@ -523,6 +523,19 @@ mod tests {
         assert_ne!(current, next);
     }
 
+    // 验证文本对齐只改变组件内部字形位置而不改变盒模型测量。
+    #[test]
+    fn text_align_change_is_paint_only() {
+        // 构造未声明文本对齐的基础样式。
+        let current = Style::default();
+        // 构造只改变右对齐绘制的下一样式。
+        let next = Style::default().with_text_align(crate::ui::theme::style::TextAlign::Right);
+        // 内部字形平移不得触发父级测量或放置失效。
+        assert!(!style_layout_changed(&current, &next));
+        // 完整样式仍然不同，协调器可以据此触发重绘。
+        assert_ne!(current, next);
+    }
+
     // 验证 Badge 配置比较忽略布局后运行态但仍识别作者字段变化。
     #[test]
     // 测试名称陈述组合子存在事实与装饰配置边界。

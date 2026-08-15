@@ -14,8 +14,8 @@ use crate::ui::component::clipboard;
 use crate::ui::component::paint_context::PaintContext;
 // 引入共享的单节点文字选区实现。
 use crate::ui::text_selection::per_node::PerNodeTextSelection;
-// 引入 UI System 拥有的行高、文本装饰与样式契约。
-use crate::ui::theme::style::{LineHeight, Style, TextDecoration};
+// 引入 UI System 拥有的行高、文本对齐、文本装饰与样式契约。
+use crate::ui::theme::style::{LineHeight, Style, TextAlign, TextDecoration};
 // 引入主题颜色值与组件运行契约。
 use crate::ui::{
     ColorValue, ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent,
@@ -62,6 +62,8 @@ component! {
         spacing: f32,
         /// 可选的样式行高，优先于段落 spacing 构建器。
         line_height: Option<LineHeight>,
+        /// 可选的统一样式文本水平对齐，显式 left 也覆盖继承值。
+        text_align: Option<TextAlign>,
         /// 可选的统一样式文本装饰，显式 none 也覆盖局部构建器。
         text_decoration: Option<TextDecoration>,
         indent: f32,
@@ -200,6 +202,8 @@ component! {
         } else {
             text_width
         };
+        // 把 UI 文本对齐语义转换为 draw 中性布局值。
+        let h_align = self.text_align.unwrap_or_default().to_draw();
 
         // 单次布局：同时用于 hit-test 缓存、选中背景和文字绘制
         let opts = crate::draw::TextLayoutOptions {
@@ -207,7 +211,8 @@ component! {
             max_height: 0.0,
             line_height,
             word_wrap: wraps,
-            h_align: crate::draw::HAlign::Left,
+            // 使用 UI Style 映射后的水平对齐。
+            h_align,
             v_align: crate::draw::VAlign::Top,
             font_size: fs,
         };
@@ -361,6 +366,8 @@ impl Typography {
             spacing: 0.0,
             // 未声明时保持 Typography 既有 normal 或 spacing 语义。
             line_height: None,
+            // 未声明统一样式时保持既有左对齐语义。
+            text_align: None,
             // 未声明统一样式时保留 underline/delete 构建器语义。
             text_decoration: None,
             indent: 0.0,
@@ -696,6 +703,8 @@ impl Typography {
     pub(crate) fn apply_view_style(&mut self, style: &Style) {
         // next widget 的默认 None 会在 reconcile 时清除旧值；这里只复制当前显式值。
         self.line_height = style.line_height;
+        // 显式 Some 包括 left，能够覆盖继承的其他对齐值。
+        self.text_align = style.text_align;
         // 显式 Some 包括 none，能够覆盖局部 underline/delete 构建器。
         self.text_decoration = style.text_decoration;
     }
@@ -722,6 +731,8 @@ impl Typography {
         self.spacing = next.spacing;
         // 同步显式行高以触发布局快照差异。
         self.line_height = next.line_height;
+        // 同步显式文本对齐以触发绘制快照差异。
+        self.text_align = next.text_align;
         // 同步显式文本装饰以触发绘制快照差异。
         self.text_decoration = next.text_decoration;
         self.indent = next.indent;
@@ -750,6 +761,8 @@ impl Typography {
             color_override: self.color_override,
             // 快照保留行高单位和值以支持精确布局失效。
             line_height: self.line_height,
+            // 快照保留未声明与显式 left 的差异。
+            text_align: self.text_align,
             // 快照保留未声明与显式 none 的差异。
             text_decoration: self.text_decoration,
         }
@@ -839,5 +852,18 @@ mod tests {
         typography.apply_view_style(&style);
         // 显式 none 必须被保存，不能退化为未声明。
         assert_eq!(typography.text_decoration, Some(TextDecoration::None));
+    }
+
+    // 验证 View 适配边界把显式对齐交给 Typography。
+    #[test]
+    fn text_align_style_reaches_typography_layout() {
+        // 创建保持默认左对齐的排版组件。
+        let mut typography = Typography::paragraph("alignment");
+        // 构造显式两端对齐的统一样式。
+        let style = Style::default().with_text_align(TextAlign::Justify);
+        // 通过 View 私有适配入口应用统一样式。
+        typography.apply_view_style(&style);
+        // 组件必须保存闭合对齐值供布局阶段消费。
+        assert_eq!(typography.text_align, Some(TextAlign::Justify));
     }
 }

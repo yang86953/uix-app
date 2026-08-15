@@ -70,6 +70,8 @@ pub enum HAlign {
     Center,
     /// 右对齐文本。
     Right,
+    /// 扩展段落非末行的可折叠空白以实现两端对齐。
+    Justify,
 }
 
 /// Text vertical alignment.

@@ -61,6 +61,8 @@ pub use crate::ui::theme::style::{
 pub use crate::ui::theme::style::BorderStyle;
 // 公开 UIX 生成代码与手写消费者共享的行高契约。
 pub use crate::ui::theme::style::LineHeight;
+// 公开 UIX 生成代码与手写消费者共享的文本水平对齐契约。
+pub use crate::ui::theme::style::TextAlign;
 // 公开 UIX 生成代码与手写消费者共享的文本装饰契约。
 pub use crate::ui::theme::style::TextDecoration;
 pub use crate::ui::theme::{

@@ -21,6 +21,8 @@ mod methods;
 mod border;
 // 定义行高单位与字体尺寸解析语义。
 mod line_height;
+// 定义闭合文本水平对齐及显式 left 语义。
+mod text_align;
 // 定义闭合文本装饰及显式 none 语义。
 mod text_decoration;
 mod types;
@@ -30,6 +32,8 @@ mod variant;
 pub use self::border::BorderStyle;
 // 公开 UI System 自有的行高值契约。
 pub use self::line_height::LineHeight;
+// 公开 UI System 自有的文本水平对齐契约。
+pub use self::text_align::TextAlign;
 // 公开 UI System 自有的文本装饰契约。
 pub use self::text_decoration::TextDecoration;
 pub use self::types::{BoxShadowDef, ColorValue, DisplayMode, PaletteColor, TypographyToken};
@@ -126,6 +130,8 @@ pub struct Style {
     pub font_size: TypographyToken,
     /// 显式行高；None 保持组件既有 normal 行高。
     pub line_height: Option<LineHeight>,
+    /// 显式文本水平对齐；None 保留组件自身默认语义。
+    pub text_align: Option<TextAlign>,
     /// 显式文本装饰；None 保留组件自身装饰语义。
     pub text_decoration: Option<TextDecoration>,
     /// 整体透明度
@@ -179,6 +185,8 @@ impl Default for Style {
             font_size: TypographyToken::Body,
             // 未声明时由各文本组件保持既有 normal 行高。
             line_height: None,
+            // 未声明时由各文本组件保持既有左对齐语义。
+            text_align: None,
             // 未声明时由各文本组件保持既有装饰语义。
             text_decoration: None,
             opacity: 1.0,
