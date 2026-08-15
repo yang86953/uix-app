@@ -86,7 +86,9 @@
 
 ## 测试
 
-- `tests/layout_invariants.rs` 覆盖盒模型、Flex、Grid、ScrollView、VirtualScroll、RichText、Notification 与 Table 的布局不变量。
-- `tests/flex_overflow_invariants.rs` 与 `tests/flex_overflow_flexibility.rs` 覆盖溢出、换行、轴转置、镜像、负 margin/gap 和弹性冻结组合。
+- 布局不变量（盒模型、Flex、Grid、ScrollView、VirtualScroll、RichText、Notification
+  与 Table，以及溢出、换行、轴转置、镜像、负 margin/gap 和弹性冻结组合）的专项
+  集成测试已随测试精简移除；公开 API 契约测试（`tests/ui_public_api.rs`）从使用方
+  视角锁定布局入口契约。
 - 组件内部测试覆盖缓存失效、子结构协调、绘制与命中一致性，以及病理数值的有界处理。
 - 本模块只以自动测试结果判断完成状态。
