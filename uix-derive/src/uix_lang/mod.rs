@@ -500,6 +500,11 @@ mod style_border_codegen;
 // 集中验证 borderStyle 的完整枚举生成与拒绝路径。
 #[cfg(test)]
 mod style_border_codegen_tests;
+// 定义 lineHeight 倍率与像素值到 UI 行高契约的独立映射。
+mod style_line_height_codegen;
+// 集中验证 lineHeight 的单位生成与拒绝路径。
+#[cfg(test)]
+mod style_line_height_codegen_tests;
 // 定义样式类继承、引用与内联优先级改写。
 mod style_class_resolver;
 // 定义样式值、颜色、边距与枚举的编译期映射。
