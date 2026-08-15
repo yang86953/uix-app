@@ -232,6 +232,12 @@ pub trait StyleExt: Into<ViewNode> + Sized {
         self.into().affine_transform(transform)
     }
 
+    /// 设置布局帧确定后解析的二维视觉变换原点。
+    fn transform_origin(self, origin: crate::ui::TransformOrigin) -> ViewNode {
+        // 先物化节点，再委托唯一的视觉变换原点实现。
+        self.into().transform_origin(origin)
+    }
+
     /// 设置 Flex 扩展系数。
     fn flex_grow(self, g: f32) -> ViewNode {
         self.into().flex_grow(g)

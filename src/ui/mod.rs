@@ -39,6 +39,7 @@
 //! | `tree_widget_hooks` | 树对具体组件语义的访问点（Modal 生命周期 / viewport 滚动轴 / 显式尺寸锁 / 导航兄弟联动） |
 //! | `component_snapshot` | 组件配置与无障碍快照（component 产出、widgets 描述、automation 消费） |
 //! | `semantic_action` | 语义动作执行器（automation / agent / accessibility 共用） |
+//! | `transform_origin` | View 与 component 共享的公开二维变换原点值契约 |
 //! | `automation` | 测试替身（`test-harness` feature） |
 //! | [`macros`] | 公开宏定义（`component!` / `views!` / `impl_widget_component!` 等） |
 //!
@@ -69,6 +70,7 @@ pub(crate) mod semantic_action;
 pub(crate) mod style_paint;
 pub(crate) mod text_selection;
 pub(crate) mod theme;
+pub(crate) mod transform_origin;
 pub(crate) mod tree_dynamic;
 pub(crate) mod tree_widget_hooks;
 pub(crate) mod view;
@@ -140,6 +142,8 @@ pub use theme::{
     FunctionalColorRole, IColorTokens, NEUTRAL_PALETTE, NeutralColorScale, NeutralRole, PrimaryHue,
     ShadowToken, Theme, ThemePrimitives, TokenPatch, generate_color_scale,
 };
+// 导出由 UI System 拥有的二维变换原点公开值契约。
+pub use transform_origin::{TransformOrigin, TransformOriginValue};
 pub use view::providers::ConfigProvider;
 pub use view::providers::LocaleProvider;
 pub use view::{AccessibilityExt, EventExt, StyleExt, TransitionExt, View, ViewNode};

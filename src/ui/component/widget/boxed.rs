@@ -264,6 +264,8 @@ impl BoxedWidget {
                 scale: player.scale,
                 // 过渡动画仍只覆盖平移与缩放，不注入额外仿射内容。
                 affine: crate::draw::Transform::identity(),
+                // 过渡覆盖层使用默认值，占位但不覆盖基础声明原点。
+                origin: crate::ui::TransformOrigin::default(),
             })
             .unwrap_or_default();
         self.visual_transform
