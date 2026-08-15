@@ -40,7 +40,9 @@ pub enum LineJoin {
 /// 路径段类型。
 #[derive(Debug, Clone, Copy)]
 pub enum PathSegment {
+    /// 将当前位置移动到指定点，并开始新的子路径。
     MoveTo(Point),
+    /// 从当前位置绘制直线到指定点。
     LineTo(Point),
     /// 二次贝塞尔：(控制点, 终点)
     QuadTo(Point, Point),
@@ -183,6 +185,7 @@ pub struct PathBuilder {
 }
 
 impl PathBuilder {
+    /// 创建一个不含任何路径段的构建器。
     pub fn new() -> Self {
         Self {
             segments: Vec::new(),

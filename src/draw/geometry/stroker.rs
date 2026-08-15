@@ -15,9 +15,13 @@ const MAX_ARC_STEPS: usize = 512;
 /// 描边参数。
 #[derive(Debug, Clone, Copy)]
 pub struct StrokeOptions {
+    /// 描边的完整线宽。
     pub width: f32,
+    /// 开放子路径端点使用的线帽样式。
     pub cap: LineCap,
+    /// 相邻线段转角使用的连接样式。
     pub join: LineJoin,
+    /// 尖角连接相对半线宽允许的最大长度比例。
     pub miter_limit: f32,
 }
 
