@@ -1,8 +1,9 @@
 //! Icon widget — renders icons from Lucide TTF font.
 //!
-//! Maps the release-supported icon names to Unicode Private Use Area
-//! codepoints from Lucide v1.17.0 (ISC license). The parent app is responsible for
-//! loading `assets/fonts/lucide.ttf` into the engine via `load_font`.
+//! Maps icon names to Unicode Private Use Area codepoints from Lucide
+//! v1.31.0 (ISC license); the full name → codepoint table lives in the
+//! generated `icon_map` module. The parent app is responsible for loading
+//! `assets/fonts/lucide.ttf` into the engine via `load_font`.
 
 use std::sync::OnceLock;
 
@@ -13,6 +14,7 @@ use crate::draw::{Color, FontHandle};
 use crate::ui::SnapshotFields;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::widget::WidgetTree;
+use crate::ui::widgets::general::icon_map::ICON_MAP;
 
 /// 全局 Lucide 字体句柄（由 app 启动时加载）。
 /// FontHandle 为 Copy 类型，无需 Mutex 保护——OnceLock 本身保证线程安全初始化。
@@ -40,144 +42,12 @@ pub fn lucide_handle() -> Option<FontHandle> {
 }
 
 /// Map icon name → Lucide PUA codepoint character.
-/// Generated from lucide-static v1.17.0 codepoints.json.
+/// 全量映射表见 icon_map 模块（生成自 lucide-static v1.31.0 codepoints.json）。
 pub(crate) fn icon_char(name: &str) -> &'static str {
-    match name {
-        "search" => "\u{E151}",
-        "home" => "\u{E0F5}",
-        "settings" => "\u{E154}",
-        "user" => "\u{E19F}",
-        "menu" => "\u{E115}",
-        "x" => "\u{E1B2}",
-        "check" => "\u{E06C}",
-        "chevron-left" => "\u{E06E}",
-        "chevron-right" => "\u{E06F}",
-        "chevron-down" => "\u{E06D}",
-        "chevron-up" => "\u{E070}",
-        "plus" => "\u{E13D}",
-        "minus" => "\u{E11C}",
-        "alert-circle" => "\u{E077}",
-        "info" => "\u{E0F9}",
-        "mail" => "\u{E10F}",
-        "bell" => "\u{E059}",
-        "clock" => "\u{E087}",
-        "calendar" => "\u{E063}",
-        "heart" => "\u{E0F2}",
-        "star" => "\u{E176}",
-        "sun" => "\u{E178}",
-        "moon" => "\u{E11E}",
-        "edit" => "\u{E172}",
-        "trash-2" => "\u{E18E}",
-        "trash" => "\u{E18D}",
-        "external-link" => "\u{E0B9}",
-        "arrow-left" => "\u{E048}",
-        "arrow-right" => "\u{E049}",
-        "arrow-down" => "\u{E042}",
-        "arrow-up" => "\u{E04A}",
-        "upload" => "\u{E19E}",
-        "download" => "\u{E0B2}",
-        "camera" => "\u{E064}",
-        "image" => "\u{E0F6}",
-        "video" => "\u{E1A5}",
-        "music" => "\u{E122}",
-        "phone" => "\u{E133}",
-        "map-pin" => "\u{E111}",
-        "map" => "\u{E110}",
-        "lock" => "\u{E10B}",
-        "unlock" => "\u{E10C}",
-        "eye" => "\u{E0BA}",
-        "eye-off" => "\u{E0BB}",
-        "bookmark" => "\u{E060}",
-        "tag" => "\u{E17F}",
-        "share" => "\u{E155}",
-        "send" => "\u{E152}",
-        "flag" => "\u{E0D1}",
-        "filter" => "\u{E0DC}",
-        "refresh-cw" => "\u{E145}",
-        "refresh-ccw" => "\u{E144}",
-        "copy" => "\u{E09E}",
-        "clipboard" => "\u{E085}",
-        "credit-card" => "\u{E0AA}",
-        "printer" => "\u{E141}",
-        "bluetooth" => "\u{E05C}",
-        "bold" => "\u{E05D}",
-        "book" => "\u{E05E}",
-        "box" => "\u{E061}",
-        "briefcase" => "\u{E062}",
-        "bar-chart" => "\u{E06A}",
-        "chart-bar" => "\u{E2A2}",
-        "chart-line" => "\u{E2A5}",
-        "chart-pie" => "\u{E06B}",
-        "cpu" => "\u{E0A9}",
-        "layers" => "\u{E529}",
-        "alert-triangle" => "\u{E193}",
-        "check-circle" => "\u{E07C}",
-        "check-square" => "\u{E16A}",
-        "circle" => "\u{E076}",
-        "database" => "\u{E0AD}",
-        "delete" => "\u{E0AE}",
-        "file" => "\u{E0C0}",
-        "file-text" => "\u{E0CC}",
-        "folder" => "\u{E0D7}",
-        "gift" => "\u{E0E1}",
-        "globe" => "\u{E0E8}",
-        "grid" => "\u{E0E9}",
-        "grip-horizontal" => "\u{E0EA}",
-        "grip-vertical" => "\u{E0EB}",
-        "hard-drive" => "\u{E0ED}",
-        "inbox" => "\u{E0F7}",
-        "keyboard" => "\u{E284}",
-        "layout" => "\u{E12C}",
-        "life-buoy" => "\u{E101}",
-        "link" => "\u{E102}",
-        "link-2" => "\u{E103}",
-        "list" => "\u{E106}",
-        "loader" => "\u{E109}",
-        "log-in" => "\u{E10D}",
-        "log-out" => "\u{E10E}",
-        "maximize" => "\u{E112}",
-        "minimize" => "\u{E11A}",
-        "message-circle" => "\u{E116}",
-        "message-square" => "\u{E117}",
-        "mouse-pointer" => "\u{E11F}",
-        "navigation" => "\u{E123}",
-        "package" => "\u{E129}",
-        "pause" => "\u{E12E}",
-        "play" => "\u{E13C}",
-        "power" => "\u{E140}",
-        "repeat" => "\u{E146}",
-        "scissors" => "\u{E14E}",
-        "server" => "\u{E153}",
-        "shield" => "\u{E158}",
-        "shopping-cart" => "\u{E15C}",
-        "sliders" => "\u{E162}",
-        "square" => "\u{E167}",
-        "table" => "\u{E17D}",
-        "terminal" => "\u{E181}",
-        "triangle" => "\u{E192}",
-        "type" => "\u{E198}",
-        "umbrella" => "\u{E199}",
-        "volume" => "\u{E1A9}",
-        "volume-1" => "\u{E1AA}",
-        "volume-2" => "\u{E1AB}",
-        "volume-x" => "\u{E1AC}",
-        "watch" => "\u{E1AD}",
-        "wifi" => "\u{E1AE}",
-        "wind" => "\u{E1B0}",
-        "zap" => "\u{E1B4}",
-        "zoom-in" => "\u{E1B6}",
-        "zoom-out" => "\u{E1B7}",
-        "activity" => "\u{E038}",
-        "award" => "\u{E04F}",
-        "anchor" => "\u{E03F}",
-        "palette" => "\u{E1DD}",
-        "x-circle" => "\u{E084}",
-        "x-square" => "\u{E175}",
-        "stop-circle" => "\u{E083}",
-        "maximize-2" => "\u{E113}",
-        "minimize-2" => "\u{E11B}",
-        "share-2" => "\u{E156}",
-        _ => {
+    // 表按名称升序排列，使用二分查找避免手写 match 的维护成本。
+    match ICON_MAP.binary_search_by_key(&name, |entry| entry.0) {
+        Ok(idx) => ICON_MAP[idx].1,
+        Err(_) => {
             // 未知图标名落入 search 兜底字形，记录一次以便诊断拼写错误。
             tracing::warn!(
                 "icon_char: unknown icon name {:?}, falling back to search",
@@ -282,5 +152,27 @@ impl Icon {
 
     fn intrinsic_size(&self) -> Size {
         Size::new(self.size, self.size)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::icon_char;
+
+    /// 全量表中已知名称应解析为具体字形（而非 fallback 的 search）。
+    #[test]
+    fn icon_char_resolves_known_names() {
+        // 抽查常见与历史保留名称；search 本身字形即兜底字符，单独断言。
+        assert_eq!(icon_char("search"), "\u{E151}");
+        for name in ["home", "bell", "layout-dashboard", "terminal"] {
+            let glyph = icon_char(name);
+            assert_ne!(glyph, "\u{E151}", "{name} 不应落入 search 兜底");
+        }
+    }
+
+    /// 未知名称应落入 search 兜底字形。
+    #[test]
+    fn icon_char_falls_back_for_unknown_names() {
+        assert_eq!(icon_char("definitely-not-an-icon"), "\u{E151}");
     }
 }
