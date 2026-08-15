@@ -386,6 +386,8 @@ where
 
     let pending_events = RefCell::new(Vec::<UiEvent>::new());
     let foreign_events = RefCell::new(Vec::<UiEvent>::new());
+    // 未知初始值保证每个窗口循环至少同步一次平台光标。
+    let active_pointer_cursor = Cell::new(None);
     tree.bind_invalidation();
     // bind 会清空失效队列；首帧须保留全帧 Paint，避免 RenderObject 重放空缓存
     tree.mark_full_frame_dirty();
@@ -492,6 +494,15 @@ where
                 UiEventType::PointerMove => {
                     if let UiEventPayload::PointerMove(ref data) = ev.payload {
                         cursor_pos.set(data.pos);
+                        // 树事件处理已经确定悬停路由，此时同步有效继承光标。
+                        super::pointer_cursor::apply_pointer_cursor(
+                            // App System 持有平台能力根。
+                            platform,
+                            // UI System 只返回平台无关的有效光标值。
+                            tree.active_pointer_cursor(),
+                            // 相同请求由窗口循环状态去重。
+                            &active_pointer_cursor,
+                        );
                         // debug hover 链：仅 hit 目标变化时标脏（#105；非每 move 全帧）。
                         if debug_mode.get() {
                             let hit = tree.hit_test(data.pos);
@@ -618,6 +629,15 @@ where
             on_runtime_tasks: &mut on_runtime_tasks,
             on_frame: &on_frame,
         });
+        // 协调可能在指针静止时替换悬停节点的 cursor 声明，帧后再次去重同步。
+        super::pointer_cursor::apply_pointer_cursor(
+            // App System 仍是唯一的平台调用所有者。
+            platform,
+            // 读取协调完成后的有效继承光标。
+            tree.active_pointer_cursor(),
+            // 已在事件路径应用的相同值不会重复调用平台。
+            &active_pointer_cursor,
+        );
         // 非原生事件触发的运行时动作不得借用历史指针授权。
         if let Err(error) = apply_pending_window_actions(
             // 转交当前窗口树。
