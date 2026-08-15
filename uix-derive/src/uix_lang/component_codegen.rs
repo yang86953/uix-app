@@ -109,6 +109,8 @@ pub(super) struct ComponentExpander {
     pub(super) local_scope_stack: Vec<BTreeSet<String>>,
     // 保存嵌套 For 当前实际实例路径的局部变量。
     pub(super) for_path_stack: Vec<Ident>,
+    // 保存嵌套 For 子树各自需要在每次迭代克隆的拥有型事件捕获。
+    pub(super) for_iteration_clone_stack: Vec<Vec<String>>,
 }
 
 // 实现文档级组件展开与结构校验。
@@ -199,6 +201,8 @@ impl ComponentExpander {
             local_scope_stack: Vec::new(),
             // 文档根尚未进入任何 For 实例。
             for_path_stack: Vec::new(),
+            // 文档根没有等待收集的循环事件捕获。
+            for_iteration_clone_stack: Vec::new(),
         })
     }
 
@@ -254,6 +258,8 @@ impl ComponentExpander {
             span: root.span,
             // 合成容器不属于用户组件实例，因此不携带私有状态作用域。
             component_scopes: Vec::new(),
+            // 合成容器不是 For，因此没有逐迭代事件捕获。
+            for_iteration_clones: Vec::new(),
         })
     }
 
@@ -446,11 +452,21 @@ impl ComponentExpander {
         if let Some(path) = for_path.as_ref() {
             // 压入当前循环路径。
             self.for_path_stack.push(path.clone());
+            // 为当前 For 建立独立的逐迭代捕获收集区。
+            self.for_iteration_clone_stack.push(Vec::new());
         }
         // 展开全部有序子节点并暂存诊断以确保作用域恢复。
         let expanded_children = self.expand_nodes(&element.children, bindings, child_inside_for);
         // 离开 For 子树后恢复外层实例路径。
         if for_path.is_some() {
+            // 把当前 For 子树收集到的捕获写回控制元素契约。
+            expanded.for_iteration_clones = self
+                // 取出最近循环的独立收集区。
+                .for_iteration_clone_stack
+                // 弹出当前循环收集区。
+                .pop()
+                // For 路径存在时收集区必然同步存在。
+                .expect("For 捕获收集栈必须与路径栈同步");
             // 弹出刚才压入的循环路径。
             self.for_path_stack.pop();
         }

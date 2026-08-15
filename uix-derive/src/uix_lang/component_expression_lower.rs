@@ -631,6 +631,8 @@ impl ComponentExpander {
                 }
             };
         });
+        // For 子树中的 setState 更新器必须为每一行取得独立闭包所有权。
+        self.register_for_iteration_clone(&setter_ident);
         // 用普通位置参数闭包调用替换 AST。
         expression.kind = ExpressionKind::Call {
             // 更新调用目标为卫生更新器。

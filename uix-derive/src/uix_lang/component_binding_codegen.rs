@@ -18,6 +18,15 @@ use super::generate_expression;
 
 // 实现 props、私有状态与调用参数的类型化绑定。
 impl ComponentExpander {
+    // 把拥有型事件捕获登记到最近 For 的逐迭代克隆契约。
+    pub(super) fn register_for_iteration_clone(&mut self, ident: &Ident) {
+        // 只有位于 For 子树内时才需要额外克隆。
+        if let Some(clones) = self.for_iteration_clone_stack.last_mut() {
+            // 保存卫生标识符文本供后续控制流代码生成恢复。
+            clones.push(ident.to_string());
+        }
+    }
+
     // 生成一个类型化 prop 的 Rust 局部绑定。
     pub(super) fn emit_prop_binding(
         // 可变借用展开状态。
@@ -425,6 +434,8 @@ impl ComponentExpander {
                     let #value_ident = (#source_ident).clone();
                 });
             }
+            // For 子树中的事件必须在每次迭代重新克隆这份拥有型捕获。
+            self.register_for_iteration_clone(&value_ident);
             // 保存事件专用绑定并复用 State 句柄。
             event_bindings.insert(
                 // 保留源码字段名。
