@@ -237,8 +237,31 @@ component! {
                 }
             }
 
+            // 在移动拥有型布局前按显式 Style 解析文本装饰。
+            let decoration = self
+                // 借用可选统一样式。
+                .style
+                // 只对显式存在的样式解析公共默认语义。
+                .as_ref()
+                // 从 Style 取得最终闭合装饰值。
+                .map(Style::effective_text_decoration)
+                // 没有统一样式时 Label 默认不绘制装饰。
+                .unwrap_or_default();
+            // 预计算线段以允许后续移动布局所有权。
+            let decoration_segments = crate::ui::text_decoration::segments(
+                // 复用文字与选区使用的同一布局。
+                &layout,
+                // 使用文字绘制的绝对原点。
+                abs_pos,
+                // 使用最终解析字号。
+                fs,
+                // 使用 Style 解析出的装饰值。
+                decoration,
+            );
             // 绘制文本（使用同一布局）
             ctx.blit_owned_glyph_layout(layout, abs_pos, c, fs);
+            // 在文字上方提交装饰直线，确保删除线和上下划线可见。
+            crate::ui::text_decoration::paint(ctx, &decoration_segments, c);
         }
     }
 }

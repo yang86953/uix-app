@@ -146,6 +146,8 @@ impl Style {
         self.font_size = s.font_size;
         // 完整替换保留未声明行高与显式行高的差异。
         self.line_height = s.line_height;
+        // 完整替换保留未声明装饰与显式 none 的差异。
+        self.text_decoration = s.text_decoration;
         self.opacity = s.opacity;
         self.box_shadow = s.box_shadow;
         self.visible = s.visible;
@@ -253,6 +255,11 @@ impl Style {
         if other.line_height.is_some() {
             // 行高值已由构造器保证为正有限数值。
             self.line_height = other.line_height;
+        }
+        // 只有显式装饰覆盖继承值，包括显式 none。
+        if other.text_decoration.is_some() {
+            // 保存闭合枚举值而不影响布局属性。
+            self.text_decoration = other.text_decoration;
         }
         if other.opacity != 1.0 {
             self.opacity = other.opacity;
@@ -449,6 +456,18 @@ impl Style {
     pub fn resolve_line_height(&self, font_size: f32) -> Option<f32> {
         // 只解析显式值，让文本组件保留各自既有 normal 策略。
         self.line_height.map(|value| value.resolve(font_size))
+    }
+    /// 设置显式文本装饰。
+    pub fn with_text_decoration(mut self, decoration: TextDecoration) -> Self {
+        // Some 保留显式 none 与未声明之间的差异。
+        self.text_decoration = Some(decoration);
+        // 返回可继续链式设置的样式。
+        self
+    }
+    /// 返回最终文本装饰；未声明时使用 CSS 默认 none。
+    pub fn effective_text_decoration(&self) -> TextDecoration {
+        // 只在公共 Style 层提供默认值，不替代组件兼容策略。
+        self.text_decoration.unwrap_or_default()
     }
     /// 设置全局透明度。
     pub fn with_opacity(mut self, o: f32) -> Self {
