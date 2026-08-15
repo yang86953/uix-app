@@ -219,6 +219,9 @@ mod uix_lang_container_consumer_tests;
 // 隔离 Form 顶层全模型规则的公开 API 编译测试。
 #[cfg(test)]
 mod uix_lang_form_rules_consumer_tests;
+// 隔离 FocusTrap active 开关的公开 API 编译测试。
+#[cfg(test)]
+mod uix_lang_focus_trap_consumer_tests;
 // 隔离 Image 命名状态 View 的公开 API 编译测试。
 #[cfg(test)]
 mod uix_lang_image_slots_consumer_tests;
