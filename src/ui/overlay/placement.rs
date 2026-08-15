@@ -3,13 +3,21 @@
 /// 浮层相对所属窗口逻辑客户区的放置位置。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Placement {
+    /// 沿客户区顶部居中放置。
     Top,
+    /// 沿客户区左上角放置。
     TopLeft,
+    /// 沿客户区右上角放置。
     TopRight,
+    /// 沿客户区底部居中放置。
     Bottom,
+    /// 沿客户区左下角放置。
     BottomLeft,
+    /// 沿客户区右下角放置。
     BottomRight,
+    /// 沿客户区左侧垂直居中放置。
     Left,
+    /// 沿客户区右侧垂直居中放置。
     Right,
 }
 

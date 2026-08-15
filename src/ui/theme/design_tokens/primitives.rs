@@ -30,17 +30,25 @@ use super::DesignTokens;
 #[derive(Debug, Clone)]
 pub struct ThemePrimitives {
     // ── 品牌色 ──
+    /// 品牌主色种子，用于推导主色、链接与默认信息色阶。
     pub primary: Color,
 
     // ── 语义色 ──
+    /// 成功状态的语义色种子。
     pub success: Color,
+    /// 警告状态的语义色种子。
     pub warning: Color,
+    /// 错误状态的语义色种子。
     pub error: Color,
+    /// 信息状态的语义色种子。
     pub info: Color,
 
     // ── 中性色（随 dark/light 模式切换）──
+    /// 当前明暗模式的基础背景色种子。
     pub bg: Color,
+    /// 当前明暗模式的基础文本色种子。
     pub text: Color,
+    /// 当前明暗模式的基础边框色种子。
     pub border: Color,
 }
 
