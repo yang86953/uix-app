@@ -20,6 +20,8 @@
 
 ViewNode 是声明快照，不是持久组件。reconcile 以父范围内“同类型 + 同 key”保留 ComponentId 和运行态；类型或 key 变化才销毁重建。
 
+`userSelect` 属于树结构元数据而非视觉 `Style`。`ViewNode` 保存声明值，adapter 写入 `WidgetNode`，`WidgetTree` 再按祖先边界解析实际值并同步到文字组件；reconcile 改变策略时必须重算既有子树并清理失效选择。
+
 ## 组件：ViewAdapter
 
 adapter 把声明属性分类为结构、Layout、Paint 或 Composite patch；同 key reconcile 不应覆盖组件用户运行态。

@@ -847,7 +847,6 @@ pub(super) fn is_planned_property(name: &str) -> bool {
             | "backgroundRepeat"
             | "animation"
             | "transition"
-            | "userSelect"
     )
 }
 

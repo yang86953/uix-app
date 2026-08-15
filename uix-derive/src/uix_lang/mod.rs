@@ -537,6 +537,11 @@ mod style_transform_codegen_tests;
 // 集中验证 cursor 的公开枚举生成与拒绝路径。
 #[cfg(test)]
 mod style_cursor_codegen_tests;
+// 定义 userSelect 关键字到 UI 文字选择策略的独立映射。
+mod style_user_select_codegen;
+// 集中验证 userSelect 的公开枚举生成与拒绝路径。
+#[cfg(test)]
+mod style_user_select_codegen_tests;
 // 定义样式块与内联样式共享解析器。
 mod style_parser;
 // 集中验证顶层声明与样式 Gate。

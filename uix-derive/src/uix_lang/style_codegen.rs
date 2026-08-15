@@ -19,6 +19,8 @@ use super::style_text_align_codegen::text_align_field;
 use super::style_text_decoration_codegen::text_decoration_field;
 // 引入 transform 与原点到运行时公共契约的独立映射。
 use super::style_transform_codegen::{transform_origin_value, transform_value};
+// 引入 userSelect 到 UI 运行时选择策略的独立映射。
+use super::style_user_select_codegen::user_select_value;
 // 引入样式值与字段映射辅助。
 use super::style_value_codegen::*;
 
@@ -64,6 +66,8 @@ pub(crate) fn apply_style_properties(
     let mut transform_origin = None;
     // 保存由运行时命中树继承并交给平台的指针光标更新。
     let mut cursor = None;
+    // 保存由运行时组件树解析声明值与实际值的文字选择策略。
+    let mut user_select = None;
     // 转换每一个已经解析的样式属性。
     for property in properties {
         // z-index 直接映射到 View 的绘制与命中顺序。
@@ -92,6 +96,13 @@ pub(crate) fn apply_style_properties(
             // 解析文档登记的五种光标值。
             cursor = Some(cursor_value(property)?);
             // 结构光标不进入 Style 字段生成。
+            continue;
+        }
+        // userSelect 映射到公开的树级选择策略枚举。
+        if property.name == "userSelect" {
+            // 解析文档登记的四种文字选择值。
+            user_select = Some(user_select_value(property)?);
+            // 结构选择策略不进入 Style 字段生成。
             continue;
         }
         // 把属性转换为单个字段更新语句。
@@ -129,13 +140,21 @@ pub(crate) fn apply_style_properties(
         // 没有原点声明时保持当前节点不变。
         transformed
     };
-    // 光标存在时交给 View 运行时沿命中父链继承。
-    if let Some(cursor) = cursor {
-        // 返回同时携带全部视觉结构与光标语义的节点。
-        return Ok(quote! { (#with_origin).cursor(#cursor) });
+    // 保存已经应用命中光标策略的节点表达式。
+    let with_cursor = if let Some(cursor) = cursor {
+        // 同时携带全部视觉结构与光标语义。
+        quote! { (#with_origin).cursor(#cursor) }
+    } else {
+        // 没有光标声明时保持当前节点不变。
+        with_origin
+    };
+    // 文字选择策略存在时交给 WidgetTree 解析继承与组件默认值。
+    if let Some(user_select) = user_select {
+        // 返回同时携带视觉、光标与文字选择语义的节点。
+        return Ok(quote! { (#with_cursor).user_select(#user_select) });
     }
     // 返回已经完成全部受控更新的节点。
-    Ok(with_origin)
+    Ok(with_cursor)
 }
 
 // 把单个已映射样式属性转换为 Style 字段更新。
