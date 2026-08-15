@@ -229,6 +229,7 @@ impl List {
         Size::new(400.0, h.max(100.0))
     }
 
+    /// 创建使用当前配置尺寸、带边框且无内容的列表。
     pub fn new() -> Self {
         Self {
             header: String::new(),
@@ -239,26 +240,32 @@ impl List {
             load_more_text: String::new(),
         }
     }
+    /// 替换列表按声明顺序展示的文本项。
     pub fn items(mut self, items: Vec<impl Into<String>>) -> Self {
         self.items = items.into_iter().map(|s| s.into()).collect();
         self
     }
+    /// 设置列表头文本；空文本不占用列表头行。
     pub fn header(mut self, h: &str) -> Self {
         self.header = h.to_string();
         self
     }
+    /// 设置列表尾文本；空文本不占用列表尾行。
     pub fn footer(mut self, f: &str) -> Self {
         self.footer = f.to_string();
         self
     }
+    /// 设置是否绘制列表外框与行分隔线。
     pub fn bordered(mut self, v: bool) -> Self {
         self.bordered = v;
         self
     }
+    /// 设置列表行采用的控件尺寸规格。
     pub fn size(mut self, s: ControlSize) -> Self {
         self.list_size = s;
         self
     }
+    /// 设置列表末尾的加载更多文本；空文本不创建该区域。
     pub fn load_more(mut self, text: impl Into<String>) -> Self {
         self.load_more_text = text.into();
         self
