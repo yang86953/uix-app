@@ -82,6 +82,8 @@ pub(crate) fn generate_matrix_delta_chart(
                 "cellSize",
                 "cellGap",
                 "showValues",
+                "colorRange",
+                "colorStops",
                 "title",
                 "subtitle",
                 "responsive",
@@ -152,6 +154,11 @@ fn apply_chart_attribute(
     if is_common_chart_attribute(&attribute.name) {
         // 返回共享属性映射结果。
         return apply_common_chart_attribute(widget, attribute);
+    }
+    // 热力图颜色配置保持精确公开类型，避免运行时 Any 接口静默忽略错型值。
+    if matches!(attribute.name.as_str(), "colorRange" | "colorStops") {
+        // 生成对应的颜色范围或带位置色阶。
+        return apply_heatmap_color_attribute(widget, attribute);
     }
     // 坐标轴标题使用静态字符串。
     if matches!(attribute.name.as_str(), "xAxis" | "yAxis") {
@@ -234,6 +241,46 @@ fn apply_chart_attribute(
         "cellGap" => quote! { (#widget).cell_gap(#value) },
         // 专有数值属性集合已经穷尽。
         _ => unreachable!("矩阵与增量图表数值属性集合已穷尽"),
+    })
+}
+
+// 应用一个热力图自定义色阶属性。
+fn apply_heatmap_color_attribute(
+    // 接收前序构建器链。
+    widget: TokenStream,
+    // 接收颜色配置属性。
+    attribute: &Attribute,
+) -> Result<TokenStream, Diagnostic> {
+    // 颜色配置必须通过 Rust 表达式提供类型化值。
+    let AttributeValue::Expression(expression) = &attribute.value else {
+        // 返回包含具体属性名的诊断。
+        return Err(Diagnostic::new(
+            // 指向非法颜色配置属性。
+            attribute.span,
+            // 说明类型化表达式要求。
+            format!("Heatmap {} 必须是类型化颜色表达式", attribute.name),
+            // 给出两类已登记颜色契约。
+            "使用 colorRange={(min, max)} 或 colorStops={stops}",
+        ));
+    };
+    // 生成受限 Rust 表达式。
+    let value = generate_expression(&expression.expression, None)?;
+    // 按属性映射到现有 Heatmap builder，并显式固定公开类型。
+    Ok(match attribute.name.as_str() {
+        // 两端颜色使用精确 Color 元组。
+        "colorRange" => quote! {{
+            let color_range: (::uix::prelude::Color, ::uix::prelude::Color) = (#value).clone();
+            (#widget).color_range(color_range.0, color_range.1)
+        }},
+        // 多段色阶按值收集为带归一化位置的 Color 集合。
+        "colorStops" => quote! {
+            (#widget).color_stops(
+                ::std::iter::IntoIterator::into_iter((#value).clone())
+                    .collect::<::std::vec::Vec<(f32, ::uix::prelude::Color)>>()
+            )
+        },
+        // 调用方已经收窄为两个颜色属性。
+        _ => unreachable!("Heatmap 颜色属性集合已穷尽"),
     })
 }
 
