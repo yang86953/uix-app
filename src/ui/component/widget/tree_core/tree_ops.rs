@@ -9,6 +9,7 @@ impl WidgetTree {
         Constraints::loose(Self::ROOT_BOOTSTRAP_SIZE)
     }
 
+    /// 拆除现有树，并将组件及其构建出的后代安装为新根。
     pub fn set_root(&mut self, widget: Box<dyn WidgetComponent>) -> ComponentId {
         // 公开换根会调用用户 build 与生命周期，必须统一进入 panic 事务边界。
         self.with_component_state_transaction(Vec::new(), |tree| {
@@ -93,6 +94,7 @@ impl WidgetTree {
         id
     }
 
+    /// 将组件及其构建出的后代添加到指定父节点下。
     pub fn add_child(
         &mut self,
         parent_id: ComponentId,
@@ -201,6 +203,7 @@ impl WidgetTree {
 
     // WidgetNode tree building.
 
+    /// 使用声明式节点及其后代重建组件树。
     pub fn build(&mut self, node: WidgetNode) -> ComponentId {
         // 公开 WidgetNode 建树仍可能调用组件生命周期与动态 renderer。
         self.with_component_state_transaction(Vec::new(), |tree| {
@@ -221,6 +224,7 @@ impl WidgetTree {
         })
     }
 
+    /// 用新的声明式节点列表替换指定父节点的全部子树。
     pub fn set_children(&mut self, parent_id: ComponentId, children: Vec<WidgetNode>) {
         // 公开子列表替换可能触发生命周期与 renderer，统一建立事务边界。
         self.with_component_state_transaction(Vec::new(), |tree| {
