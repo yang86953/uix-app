@@ -1,6 +1,6 @@
 # theme 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 ui 系统的主题令牌、组件配置、本地化与子树上下文。依赖：[view](view.md)、[graphics/geometry](../graphics/geometry.md)。导出：组件解析视觉值、行为默认值和内置文案的统一 Provider 契约。
 >

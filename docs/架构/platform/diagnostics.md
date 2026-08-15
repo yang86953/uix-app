@@ -1,6 +1,6 @@
 # diagnostics 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 platform 系统的目标 `diagnostics` 模块，权威持有 runtime-scoped 错误观察与恢复协调。依赖：[core/error](../core/error.md)。导出：`uix::diagnostics`。
 

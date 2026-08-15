@@ -1,6 +1,6 @@
 # reactive 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 ui 系统的响应式状态、依赖捕获和受控副作用。依赖：[core/identity](../core/identity.md)、[component](component.md)。导出：`State`、`Computed`、`Effect` 与根/节点依赖契约。
 >

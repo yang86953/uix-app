@@ -1,6 +1,6 @@
 # capabilities 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 platform 系统的目标 `capabilities` 模块，权威持有独立平台查询与轻量系统服务。依赖：[core/error](../core/error.md)、[core/geometry](../core/geometry.md)。导出：应用可使用的 `Platform` 门面和 owned 描述值。
 

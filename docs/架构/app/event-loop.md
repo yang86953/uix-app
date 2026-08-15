@@ -1,6 +1,6 @@
 # event-loop 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 app 系统的等待/唤醒、事件路由、活动工作和逐窗帧机会。依赖：[platform/windowing](../platform/windowing.md)、[platform/presentation](../platform/presentation.md)、[window](window.md)、[graphics/renderer](../graphics/renderer.md)，以及 app System 私有队列契约。导出：应用运行时内部的主循环与逐窗调度契约。
 >

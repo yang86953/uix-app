@@ -1,6 +1,6 @@
 # component 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 ui 系统的持久组件树、基础组件能力和树级运行态。依赖：[core/identity](../core/identity.md)、[core/geometry](../core/geometry.md)。导出：供 view、reactive、layout、event 等模块扩展的组件身份、树生命周期和阶段挂载点。
 >

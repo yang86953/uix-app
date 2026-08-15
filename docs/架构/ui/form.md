@@ -1,6 +1,6 @@
 # form 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 ui 系统的表单模型、字段绑定协议、校验与提交契约。依赖：[component](component.md)、[reactive](reactive.md)、[event](event.md)。导出：`FormModel`、与具体控件无关的字段适配协议和校验结果，供 widgets 组合。
 >
