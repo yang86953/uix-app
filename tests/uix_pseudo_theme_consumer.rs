@@ -46,3 +46,16 @@ fn full_theme_tokens_compile_for_real_consumer() {
         "#
     );
 }
+
+// 验证静态与伪状态 transform 通过公开 View 仿射入口完成真实宏展开。
+#[test]
+fn transform_styles_compile_for_real_consumer() {
+    // 展开基础旋转缩放与悬停平移倾斜的完整样式级联。
+    let _transformed: ViewNode = uix::uix!(
+        r#"
+        transformed { transform: rotate(15deg) scale(1.1); }
+        transformed:hover { transform: translate(4px, -2px) skew(3deg); }
+        <Text class="transformed">变换</Text>
+        "#
+    );
+}
