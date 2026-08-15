@@ -14,6 +14,8 @@ use crate::draw::resources::image::ImageService;
 use crate::draw::scene::{LayerTree, RenderObjectTree, ScenePaint};
 use crate::draw::{Color, FontHandle, RenderOutcome};
 use crate::draw::{RasterPipeline, RenderTarget, ScrollCopy, UpdateStrategy};
+// 帧诊断需要单调时钟与时长类型。
+use std::time::{Duration, Instant};
 
 /// 单帧渲染输入。
 pub struct FrameRenderInput<'a> {
@@ -73,6 +75,18 @@ pub struct ScenePipeline {
     /// Prevents Picture handles created by one raster owner from being reused
     /// after bounded recovery switches the live engine.
     raster_pipeline: Option<RasterPipeline>,
+    // 帧诊断：最近一帧 GPU 路径的记录阶段耗时（场景遍历 + 绘制编码）。
+    last_record_us: Duration,
+    // 帧诊断：最近一帧 GPU 路径的提交阶段耗时（end_frame 提交与 present 等待）。
+    last_submit_us: Duration,
+}
+
+// 帧诊断：返回最近一帧 GPU 路径的记录/提交阶段耗时。
+impl ScenePipeline {
+    /// 返回最近一帧 GPU 路径的记录/提交阶段耗时，供帧诊断定位卡顿段。
+    pub(crate) fn last_frame_stage_times(&self) -> (Duration, Duration) {
+        (self.last_record_us, self.last_submit_us)
+    }
 }
 
 mod damage;

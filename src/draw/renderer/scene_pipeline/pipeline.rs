@@ -14,6 +14,9 @@ impl ScenePipeline {
             // 初始没有 overlay effect 计划。
             overlay_backdrop_effect: None,
             raster_pipeline: None,
+            // 帧诊断阶段耗时从零开始。
+            last_record_us: Duration::ZERO,
+            last_submit_us: Duration::ZERO,
         }
     }
 
@@ -695,6 +698,8 @@ impl ScenePipeline {
         damage: DamageRegion,
         use_overlay_backdrop: bool,
     ) -> FrameRenderOutput {
+        // 帧诊断：GPU 路径记录阶段起点（含场景遍历与绘制编码）。
+        let stage_start = Instant::now();
         let mut use_overlay_backdrop = use_overlay_backdrop;
         if use_overlay_backdrop {
             // 不支持或代际不匹配仍可退回整树重绘，真实 typed failure 则终止本帧。
@@ -826,10 +831,16 @@ impl ScenePipeline {
                 tree_version: cur_version,
             };
         }
+        // 帧诊断：记录阶段耗时（场景遍历 + 绘制编码）。
+        self.last_record_us = stage_start.elapsed();
         if input.debug_mode {
             draw_debug_telemetry(engine, input.metrics, input.font, input.font_service);
         }
+        // 帧诊断：提交阶段起点（end_frame 含 GPU 提交与 present 等待）。
+        let submit_start = Instant::now();
         let end_outcome = engine.end_frame(&damage);
+        // 帧诊断：提交阶段耗时。
+        self.last_submit_us = submit_start.elapsed();
 
         let caps = engine.capabilities();
         let outcome = normalize_end_outcome(end_outcome, caps, damage);
