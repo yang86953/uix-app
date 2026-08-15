@@ -39,6 +39,8 @@ const CHART_DATA_CONSTRUCTORS: &[&str] = &[
     "WaterfallData",
     // 通用图表系列。
     "ChartSeries",
+    // 自定义组合图系列。
+    "ComboSeries",
     // 雷达图维度轴。
     "RadarAxis",
     // 雷达图维度值。

@@ -66,4 +66,23 @@ fn chart_advanced_config_compiles_against_public_uix_api() {
     let gauge_format = |value: f32| format!("{value:.1}%");
     // 展开格式化器并要求公开 Gauge builder 完成类型检查。
     let _gauge: ViewNode = crate::uix!(r#"<Gauge value="68" format={gauge_format} />"#);
+    // 提供使用既有公开枚举配置的自定义组合系列。
+    let combo_series = vec![
+        // 柱系列复用 LineData 载荷并绑定左轴。
+        ComboSeries::new("访问量", vec![LineData::new("Jan", 100.0)])
+            // 指定柱状绘制类型。
+            .chart_type(ChartType::Bar)
+            // 指定左侧坐标轴。
+            .y_axis(AxisSide::Left),
+        // 面积系列绑定右轴并使用虚线。
+        ComboSeries::new("转化率", vec![LineData::new("Jan", 10.0)])
+            // 指定面积绘制类型。
+            .chart_type(ChartType::Area)
+            // 指定右侧坐标轴。
+            .y_axis(AxisSide::Right)
+            // 指定虚线样式。
+            .line_style(LineStyle::Dashed),
+    ];
+    // 展开自定义组合系列并要求公开 ComboChart builder 完成类型检查。
+    let _combo: ViewNode = crate::uix!(r#"<ComboChart series={combo_series} />"#);
 }
