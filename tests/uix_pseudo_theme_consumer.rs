@@ -111,3 +111,24 @@ fn line_height_styles_compile_for_real_consumer() {
         "#
     );
 }
+
+// 验证 textDecoration 四值通过公开 Style 和 TextDecoration 契约完成真实宏展开。
+#[test]
+fn text_decoration_styles_compile_for_real_consumer() {
+    // 展开普通文本与语义排版组件的全部闭合装饰值。
+    let _decorations: ViewNode = uix::uix!(
+        // 同时覆盖显式 none、下划线、上划线与删除线。
+        r#"
+        noDecoration { textDecoration: none; }
+        underlined { textDecoration: underline; }
+        overlined { textDecoration: overline; }
+        struck { textDecoration: line-through; }
+        <Container>
+          <Text class="noDecoration">无装饰</Text>
+          <Text class="underlined">下划线</Text>
+          <Typography class="overlined">上划线</Typography>
+          <Typography class="struck">删除线</Typography>
+        </Container>
+        "#
+    );
+}

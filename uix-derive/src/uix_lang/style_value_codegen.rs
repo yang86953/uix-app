@@ -845,7 +845,6 @@ pub(super) fn is_planned_property(name: &str) -> bool {
             | "fontFamily"
             | "fontWeight"
             | "textAlign"
-            | "textDecoration"
             | "backgroundImage"
             | "backgroundPosition"
             | "backgroundRepeat"
