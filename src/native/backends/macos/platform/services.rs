@@ -116,32 +116,6 @@ impl IDisplay for MacosDisplay {
     }
 }
 
-// 文件对话框组件仅对 macOS Platform System 内部可见。
-pub(super) struct MacosFileDialog;
-
-impl IFileDialog for MacosFileDialog {
-    fn open(&mut self, _title: &str, _filters: &str) -> Result<Option<Vec<String>>> {
-        Err(Error::new(
-            Errc::NotImplemented,
-            "MacosFileDialog::open: not implemented",
-        ))
-    }
-
-    fn save(&mut self, _title: &str, _filters: &str) -> Result<Option<String>> {
-        Err(Error::new(
-            Errc::NotImplemented,
-            "MacosFileDialog::save: not implemented",
-        ))
-    }
-
-    fn open_folder(&mut self, _title: &str) -> Result<Option<String>> {
-        Err(Error::new(
-            Errc::NotImplemented,
-            "MacosFileDialog::open_folder: not implemented",
-        ))
-    }
-}
-
 // 文件系统适配器仅对 macOS Platform System 内部可见。
 pub(super) type MacosFileSystem = FileSystemCore<MacosSpecialDirs>;
 

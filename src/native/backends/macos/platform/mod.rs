@@ -33,6 +33,8 @@ use super::window_delegate::{self, WindowDelegateContext};
 use app_event::MacosAppEvent;
 // 将 Cocoa 像素提交端口暴露给同级 presenter 组件。
 use cocoa::present_layer_pixels;
+// 将 AppKit 文件对话框组件暴露给 macOS Platform System 根模块。
+use file_dialog::MacosFileDialog;
 // 将呈现器组件实现暴露给 macOS 窗口工厂。
 use presenter::MacosPresenter;
 // 将基础平台服务组件暴露给 macOS Platform System 根模块。
@@ -43,8 +45,6 @@ use services::{
     MacosCursor,
     // 显示服务由平台根对象统一持有。
     MacosDisplay,
-    // 文件对话框服务由平台根对象统一持有。
-    MacosFileDialog,
     // 文件系统适配器由平台根对象统一持有。
     MacosFileSystem,
     // 键盘服务由平台根对象统一持有。
@@ -361,6 +361,8 @@ pub(crate) unsafe fn set_metal_layer_drawable_size(layer: cocoa::Id, width: i32,
 
 mod app_event;
 mod cocoa;
+mod file_dialog;
+mod file_dialog_filters;
 mod presenter;
 mod services;
 mod services2;
