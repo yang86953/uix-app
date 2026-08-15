@@ -21,8 +21,10 @@ use crate::ui::widgets::input::{Date, Time};
 
 /// 把公开默认值转换成可保留具体类型的表单值，并提供供文本规则使用的稳定投影。
 pub trait IntoFormValue {
+    /// 表单模型实际持有并按具体类型返回的拥有型值。
     type Stored: Send + Sync + 'static;
 
+    /// 将调用方输入转换为表单模型保存的拥有型值。
     fn into_form_value(self) -> Self::Stored;
 
     /// 返回内置文本规则与 inline custom validator 读取的稳定文本。
@@ -182,14 +184,17 @@ impl Values {
         self.entries.get(field)?.as_ref().downcast_ref::<T>()
     }
 
+    /// 返回成功校验结果中是否包含指定字段。
     pub fn contains(&self, field: &str) -> bool {
         self.entries.contains_key(field)
     }
 
+    /// 返回成功校验结果包含的字段数量。
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    /// 返回成功校验结果是否不包含任何字段。
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -219,14 +224,17 @@ impl FieldError {
         }
     }
 
+    /// 返回校验失败对应的字段名。
     pub fn field(&self) -> &str {
         &self.field
     }
 
+    /// 返回该字段首个失败规则的错误信息。
     pub fn message(&self) -> &str {
         &self.message
     }
 
+    /// 消费错误并返回拥有所有权的字段名与错误信息。
     pub fn into_parts(self) -> (String, String) {
         (self.field, self.message)
     }
