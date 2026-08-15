@@ -18,6 +18,7 @@ impl Cascader {
         Size::new(120.0, 32.0)
     }
 
+    /// 创建持有候选树、空选择路径且未展开的级联选择器。
     pub fn new(options: Vec<CascaderOption>, placeholder: impl Into<String>) -> Self {
         Self {
             options: options.clone(),
@@ -79,6 +80,7 @@ impl Cascader {
         self.hovered_option = None;
     }
 
+    /// 选择指定层级的可用选项；进入子级，或在叶项处提交完整路径并关闭。
     pub fn select_option(&mut self, level: usize, index: usize) {
         if level >= self.current_levels.len() {
             return;
@@ -157,6 +159,7 @@ impl Cascader {
         self.hovered_option = None;
     }
 
+    /// 返回当前逐级选择形成的标签与稳定值路径。
     pub fn selected(&self) -> &CascaderValue {
         &self.selected
     }
@@ -175,6 +178,7 @@ impl Cascader {
         }
     }
 
+    /// 设置尚未选中路径时显示的占位文本。
     pub fn placeholder(mut self, p: impl Into<String>) -> Self {
         self.placeholder = p.into();
         self
@@ -204,14 +208,17 @@ impl Cascader {
         self
     }
 
+    /// 返回弹层当前是否处于逻辑展开状态。
     pub fn is_open(&self) -> bool {
         self.open
     }
 
+    /// 返回弹层当前是否仍需呈现，包括退出过渡阶段。
     pub fn is_present(&self) -> bool {
         self.open || self.closing
     }
 
+    /// 展开弹层，并从根级选项重建导航与搜索结果。
     pub fn open(&mut self) {
         self.init_levels();
         self.refresh_search_results();
@@ -222,6 +229,7 @@ impl Cascader {
         self.transition_dirty = true;
     }
 
+    /// 清除搜索状态并关闭弹层，已呈现时启动退出过渡。
     pub fn close(&mut self) {
         if !self.is_present() {
             self.open = false;
