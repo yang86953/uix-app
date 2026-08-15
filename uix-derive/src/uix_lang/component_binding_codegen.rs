@@ -70,14 +70,10 @@ impl ComponentExpander {
                 let value = self.state_argument_tokens(attribute, outer_bindings)?;
                 // 生成 State 内部值类型。
                 let rust_type = value_type_tokens(value_type.clone());
-                // 为当前读值分配卫生名称。
-                let read_ident = self.fresh_ident("state_value", &prop.name);
-                // 克隆共享句柄并读取当前值。
+                // 克隆共享句柄但不在组件构建入口读取当前值。
                 self.setup.push(quote! {
                     // 克隆句柄并保持同一底层状态槽。
                     let #value_ident: ::uix::prelude::State<#rust_type> = (#value).clone();
-                    // 在 View 构建期读取响应式依赖。
-                    let #read_ident: #rust_type = #value_ident.get();
                 });
                 // 登记可读写共享状态。
                 bindings.insert(
@@ -85,8 +81,8 @@ impl ComponentExpander {
                     prop.name.clone(),
                     // 保存读值与句柄绑定。
                     Binding {
-                        // 普通表达式读取当前值。
-                        value_name: read_ident.to_string(),
+                        // 普通表达式按实际使用位置从该句柄读取当前值。
+                        value_name: value_ident.to_string(),
                         // setState 写回共享句柄。
                         state_name: Some(value_ident.to_string()),
                         // 标记响应式状态类别。
@@ -187,8 +183,6 @@ impl ComponentExpander {
     ) -> Result<(), Diagnostic> {
         // 为 State 句柄生成卫生名称。
         let state_ident = self.fresh_ident("state", &state.name);
-        // 为当前读值生成卫生名称。
-        let read_ident = self.fresh_ident("state_value", &state.name);
         // 生成规范化初始值与可选显式类型。
         let (initial, rust_type, authored_numbers) =
             self.private_state_initial(&state.initial, bindings)?;
@@ -205,8 +199,6 @@ impl ComponentExpander {
                 let #state_ident: ::uix::prelude::State<#rust_type> =
                     // 从当前组件实例作用域复用或创建规范化初始值对应的状态槽。
                     ::uix::ui::__private::uix_component_state(&#scope, #field_id, || #initial);
-                // 读取当前值并登记 View 依赖。
-                let #read_ident: #rust_type = #state_ident.get();
             });
         } else {
             // 复合表达式或空数组由 Rust 推断类型。
@@ -220,8 +212,6 @@ impl ComponentExpander {
                     // 延迟构造初始值，避免重建时重复求值。
                     || #initial,
                 );
-                // 读取当前值供组件体使用。
-                let #read_ident = #state_ident.get();
             });
         }
         // 登记私有状态读写绑定。
@@ -230,8 +220,8 @@ impl ComponentExpander {
             state.name.clone(),
             // 保存读值与句柄。
             Binding {
-                // 普通表达式读取当前值。
-                value_name: read_ident.to_string(),
+                // 普通表达式按实际使用位置从该句柄读取当前值。
+                value_name: state_ident.to_string(),
                 // setState 写回私有句柄。
                 state_name: Some(state_ident.to_string()),
                 // 标记响应式状态类别。
@@ -408,7 +398,7 @@ impl ComponentExpander {
         for (name, binding) in bindings {
             // 为事件值分配卫生名称。
             let value_ident = self.fresh_ident("event_value", name);
-            // State 在注册事件时读取当前值。
+            // State 在注册事件时只克隆句柄，事件执行时再读取最新值。
             if binding.kind == BindingKind::State {
                 // 读取必有的 State 句柄。
                 let state_ident = super::component_expression_lower::ident_from_name(
@@ -418,10 +408,10 @@ impl ComponentExpander {
                         .as_deref()
                         .expect("State 绑定必须包含句柄"),
                 );
-                // 生成事件专用状态值。
+                // 生成事件闭包专用状态句柄。
                 self.setup.push(quote! {
-                    // 每个事件持有独立状态值副本。
-                    let #value_ident = #state_ident.get();
+                    // 每个事件持有同一底层状态槽的独立句柄所有权。
+                    let #value_ident = #state_ident.clone();
                 });
             } else {
                 // 读取普通值或 Arc 回调名称。
@@ -443,8 +433,14 @@ impl ComponentExpander {
                 Binding {
                     // 事件表达式读取专用副本。
                     value_name: value_ident.to_string(),
-                    // setState 仍写入同一槽。
-                    state_name: binding.state_name.clone(),
+                    // State 事件值与 setState 都使用事件闭包拥有的同槽句柄。
+                    state_name: if binding.kind == BindingKind::State {
+                        // 返回事件闭包专用句柄名称。
+                        Some(value_ident.to_string())
+                    } else {
+                        // 普通值与回调没有可写状态句柄。
+                        binding.state_name.clone()
+                    },
                     // 保留字段类别。
                     kind: binding.kind,
                     // 保留数字形状策略。
@@ -657,6 +653,22 @@ impl ComponentExpander {
             if let ExpressionKind::Identifier(name) = &expression.expression.kind {
                 // 查找调用方组件字段。
                 if let Some(binding) = outer_bindings.get(name) {
+                    // State 值 prop 必须读取当前快照，而不是克隆句柄本身。
+                    if binding.kind == BindingKind::State {
+                        // 读取必有的 State 句柄名称。
+                        let state_name = binding
+                            // 借用状态句柄。
+                            .state_name
+                            // State 类别必须始终拥有句柄。
+                            .as_deref()
+                            // 内部不变量失败时立即暴露。
+                            .expect("State 绑定必须包含句柄");
+                        // 恢复卫生 State 标识符。
+                        let state_ident =
+                            super::component_expression_lower::ident_from_name(state_name);
+                        // 值 prop 在当前构建位置读取并取得拥有型快照。
+                        return Ok(quote! { (#state_ident).get() });
+                    }
                     // 恢复字段标识符。
                     let ident = super::component_expression_lower::ident_from_name(
                         // 借用卫生字段名称。

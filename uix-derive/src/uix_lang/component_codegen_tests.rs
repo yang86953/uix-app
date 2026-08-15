@@ -751,8 +751,10 @@ fn rewrites_state_fields_to_handles_in_handle_position_attributes() {
         .to_string();
     // Modal open 必须直接绑定私有 state 句柄而非读值。
     assert!(tokens.contains(". open (& (__uix_state_"));
-    // 插值必须继续读取当前值，走 value 读值标识符。
-    assert!(tokens.contains("__uix_state_value_"));
+    // 插值必须生成动态标签，并在延迟闭包内读取当前值。
+    assert!(tokens.contains("dynamic_label"));
+    // 组件入口不得再生成会订阅根节点的预读值标识符。
+    assert!(!tokens.contains("__uix_state_value_"));
     // Switch checked 必须绑定私有 state 句柄。
     assert!(tokens.contains(". checked (& (__uix_state_"));
     // RangeSlider 对象字段必须改写为两个独立 state 句柄。
