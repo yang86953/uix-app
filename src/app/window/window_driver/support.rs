@@ -1,4 +1,8 @@
 use super::*;
+// 帧诊断：读取每秒文本布局调用计数。
+use crate::draw::resources::font::font_service::take_text_layout_calls;
+// 卡顿阈值环境变量只解析一次。
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct WindowFrameResult {
@@ -320,5 +324,368 @@ pub(super) fn record_idle(metrics: Option<&Cell<RenderMetrics>>, source: Invalid
         let mut value = metrics.get();
         value.record_idle_with_source(source);
         metrics.set(value);
+    }
+}
+
+// 帧诊断：统计活跃动画节点数及最大动画节点 frame 占窗口面积比例。
+pub(super) fn animation_diag(
+    // 接收逐窗活动工作注册表。
+    active_work: &ActiveWorkRegistry,
+    // 读取动画节点的布局框。
+    tree: &WidgetTree,
+    // 接收窗口逻辑宽度。
+    window_w: i32,
+    // 接收窗口逻辑高度。
+    window_h: i32,
+) -> (u32, f64) {
+    // 收集当前活跃动画身份。
+    let ids: Vec<_> = active_work.animation_ids().collect();
+    // 动画节点数量。
+    let count = ids.len() as u32;
+    // 窗口面积，用于计算动画 frame 占比。
+    let total = (window_w as f32) * (window_h as f32);
+    // 追踪最大动画节点 frame 面积。
+    let mut biggest = 0.0f32;
+    // 遍历全部活跃动画节点取最大 frame。
+    for id in ids {
+        // 节点可能已随树变化移除，仅统计仍存在的节点。
+        if let Some(node) = tree.get(id) {
+            let frame = node.frame();
+            let area = frame.w * frame.h;
+            // 保留最大的动画区域。
+            if area > biggest {
+                biggest = area;
+            }
+        }
+    }
+    // 窗口尺寸有效时返回面积占比，否则记为零。
+    if total > 0.0 {
+        (count, (biggest / total) as f64)
+    } else {
+        (count, 0.0)
+    }
+}
+
+// 帧诊断：读取失效队列统计（条目数、最大 Paint 失效矩形）。
+pub(super) fn invalidation_diag(
+    // 读取树持有的失效队列。
+    tree: &WidgetTree,
+) -> (usize, Option<(NodeId, Rect)>) {
+    // 在锁内读取统计快照，避免失效中途变化。
+    tree.invalidation
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .diag_largest_paint()
+}
+
+// 卡顿帧判定阈值：超过即自动记录现场，默认 100ms，可用环境变量覆盖。
+fn slow_frame_threshold() -> Duration {
+    // 只解析一次环境变量。
+    static THRESHOLD: OnceLock<Duration> = OnceLock::new();
+    // 取环境变量或默认值。
+    *THRESHOLD.get_or_init(|| {
+        std::env::var("UIX_SLOW_FRAME_MS")
+            // 非法值回退默认阈值。
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(Duration::from_millis)
+            .unwrap_or(Duration::from_millis(100))
+    })
+}
+
+// 卡顿自动记录：检测单帧超阈值，输出开始/结束/持续中的现场详情。
+fn record_slow_frame(
+    // 接收窗口持有的诊断统计。
+    diag: &mut super::FrameDiagnostics,
+    // 接收本帧总耗时。
+    frame_us: Duration,
+    // 接收本帧各阶段耗时。
+    layout_us: Duration,
+    render_us: Duration,
+    submit_us: Duration,
+    present_us: Duration,
+    // 接收本帧重绘范围与失效现场。
+    dirty_full: bool,
+    dirty_area_pct: f64,
+    inval_count: usize,
+    inval_big_slot: u64,
+    inval_big_pct: f64,
+    // 接收本帧动画与协调现场。
+    anim_count: u32,
+    reconcile_ran: bool,
+    version_delta: u64,
+    source: InvalidationSource,
+) {
+    // 超过阈值进入或延续卡顿段。
+    let slow = frame_us > slow_frame_threshold();
+    if slow {
+        // 跟踪卡顿段峰值。
+        diag.slow_peak = diag.slow_peak.max(frame_us);
+        // 首次进入卡顿段时记录开始时刻。
+        if !diag.slow_active {
+            diag.slow_active = true;
+            diag.slow_since = Some(Instant::now());
+            // 卡顿开始：立即输出现场详情。
+            tracing::warn!(
+                "[FrameDiag] SLOW START {:.0}ms layout={:.1}ms render={:.1}ms submit={:.1}ms present={:.1}ms dirty={:.0}% full={} inval={} invslot={} invbig={:.0}% anims={} rc={} vd={} source={}",
+                // 帧总耗时。
+                frame_us.as_secs_f64() * 1000.0,
+                // 布局耗时。
+                layout_us.as_secs_f64() * 1000.0,
+                // 渲染耗时。
+                render_us.as_secs_f64() * 1000.0,
+                // 提交耗时。
+                submit_us.as_secs_f64() * 1000.0,
+                // 呈现耗时。
+                present_us.as_secs_f64() * 1000.0,
+                // 脏区占比。
+                dirty_area_pct * 100.0,
+                // 全幅标记。
+                dirty_full,
+                // 失效条目数。
+                inval_count,
+                // 最大失效节点。
+                inval_big_slot,
+                // 最大失效矩形占比。
+                inval_big_pct * 100.0,
+                // 动画数。
+                anim_count,
+                // 是否协调。
+                reconcile_ran,
+                // 版本增量。
+                version_delta,
+                // 失效来源。
+                source.label(),
+            );
+        }
+        return;
+    }
+    // 低于阈值且处于卡顿段：输出结束摘要。
+    if diag.slow_active {
+        diag.slow_active = false;
+        // 计算卡顿段持续时长。
+        let duration = diag
+            .slow_since
+            .take()
+            .map(|start| start.elapsed())
+            .unwrap_or_default();
+        // 取峰值耗时。
+        let peak = diag.slow_peak;
+        // 复位峰值统计。
+        diag.slow_peak = Duration::ZERO;
+        // 卡顿结束：报告持续时长与峰值。
+        tracing::warn!(
+            "[FrameDiag] SLOW END lasted={:.1}s peak={:.0}ms",
+            // 持续秒数。
+            duration.as_secs_f64(),
+            // 峰值毫秒。
+            peak.as_secs_f64() * 1000.0,
+        );
+    }
+}
+
+// 累计一帧的阶段耗时，并每隔一秒输出一次性能摘要（定位卡顿用）。
+pub(super) fn accumulate_frame_diagnostics(
+    // 接收窗口持有的累计诊断统计。
+    diag: &mut super::FrameDiagnostics,
+    // 接收本帧总耗时。
+    frame_us: Duration,
+    // 接收本帧布局阶段耗时。
+    layout_us: Duration,
+    // 接收本帧渲染阶段耗时。
+    render_us: Duration,
+    // 接收本帧呈现阶段耗时。
+    present_us: Duration,
+    // 接收本帧 GPU 提交阶段耗时。
+    submit_us: Duration,
+    // 接收本帧是否全幅重绘。
+    dirty_full: bool,
+    // 接收本帧脏区面积占窗口面积比例（0~1）。
+    dirty_area_pct: f64,
+    // 接收本帧活跃动画节点数。
+    anim_count: u32,
+    // 接收本帧最大动画节点 frame 占窗口面积比例（0~1）。
+    anim_biggest_pct: f64,
+    // 接收本帧失效条目数。
+    inval_count: usize,
+    // 接收本帧最大 Paint 失效节点的槽位。
+    inval_big_slot: u64,
+    // 接收本帧最大 Paint 失效矩形占窗口面积比例（0~1）。
+    inval_big_pct: f64,
+    // 接收本帧是否执行了整树协调。
+    reconcile_ran: bool,
+    // 接收本帧协调导致的树版本增量。
+    version_delta: u64,
+    // 接收本帧失效来源标签。
+    source: InvalidationSource,
+) {
+    // 卡顿自动记录：先检测本帧是否超阈值并输出开始/结束现场。
+    record_slow_frame(
+        diag,
+        frame_us,
+        layout_us,
+        render_us,
+        submit_us,
+        present_us,
+        dirty_full,
+        dirty_area_pct,
+        inval_count,
+        inval_big_slot,
+        inval_big_pct,
+        anim_count,
+        reconcile_ran,
+        version_delta,
+        source,
+    );
+    // 累计帧数，饱和加法避免极端时间戳溢出。
+    diag.frames = diag.frames.saturating_add(1);
+    // 累计总耗时。
+    diag.frame_sum = diag.frame_sum.saturating_add(frame_us);
+    // 跟踪单帧最大耗时。
+    diag.frame_max = diag.frame_max.max(frame_us);
+    // 累计各阶段耗时。
+    diag.layout_sum = diag.layout_sum.saturating_add(layout_us);
+    diag.render_sum = diag.render_sum.saturating_add(render_us);
+    diag.present_sum = diag.present_sum.saturating_add(present_us);
+    // 累计 GPU 提交阶段耗时。
+    diag.submit_sum = diag.submit_sum.saturating_add(submit_us);
+    // 累计全幅重绘帧数。
+    if dirty_full {
+        diag.full_frames = diag.full_frames.saturating_add(1);
+    }
+    // 累计脏区面积比例。
+    diag.dirty_area_sum += dirty_area_pct.clamp(0.0, 1.0);
+    // 每满一秒输出一次摘要，避免日志刷屏。
+    if diag.last_report.elapsed() < Duration::from_secs(1) {
+        return;
+    }
+    // 帧数下限保护，避免除零。
+    let frames = diag.frames.max(1);
+    // 计算阶段平均耗时（毫秒）。
+    let avg = |sum: Duration| sum.as_secs_f64() * 1000.0 / frames as f64;
+    // 以平均帧耗时为基数换算近似帧率。
+    let avg_frame_ms = avg(diag.frame_sum).max(0.001);
+    // 输出每秒性能摘要，供复测对照卡顿场景。
+    // 读取并清零文本布局调用计数，得到本秒 shaping 次数。
+    let text_layout_calls = take_text_layout_calls();
+    tracing::info!(
+        "[FrameDiag] fps={:.1} avg={:.2}ms max={:.2}ms layout={:.2}ms render={:.2}ms submit={:.2}ms present={:.2}ms full={}% dirty={:.0}% shapes={} anims={} big={:.0}% inval={} invslot={} invbig={:.0}% rc={} vd={} source={}",
+        // 帧率。
+        1000.0 / avg_frame_ms,
+        // 平均帧耗时。
+        avg_frame_ms,
+        // 单帧最大耗时。
+        diag.frame_max.as_secs_f64() * 1000.0,
+        // 布局平均耗时。
+        avg(diag.layout_sum),
+        // 渲染平均耗时。
+        avg(diag.render_sum),
+        // GPU 提交平均耗时。
+        avg(diag.submit_sum),
+        // 呈现平均耗时。
+        avg(diag.present_sum),
+        // 全幅重绘占比。
+        diag.full_frames * 100 / frames,
+        // 平均脏区面积占比。
+        diag.dirty_area_sum * 100.0 / frames as f64,
+        // 本秒文本布局（shaping）调用次数。
+        text_layout_calls,
+        // 最近一帧活跃动画数。
+        anim_count,
+        // 最近一帧最大动画 frame 占窗口比例。
+        anim_biggest_pct * 100.0,
+        // 最近一帧失效条目数。
+        inval_count,
+        // 最近一帧最大 Paint 失效节点槽位。
+        inval_big_slot,
+        // 最近一帧最大 Paint 失效矩形占窗口比例。
+        inval_big_pct * 100.0,
+        // 最近一帧是否执行整树协调。
+        reconcile_ran,
+        // 最近一帧树版本增量。
+        version_delta,
+        // 最近一帧失效来源。
+        source.label(),
+    );
+    // 输出后清空统计，只保留下一次输出的计时起点与卡顿段状态。
+    *diag = super::FrameDiagnostics {
+        last_report: Instant::now(),
+        // 保留卡顿段的进行中状态与峰值，避免摘要重置打断异常记录。
+        slow_active: diag.slow_active,
+        slow_peak: diag.slow_peak,
+        slow_since: diag.slow_since,
+        ..Default::default()
+    };
+}
+
+// 卡顿自动记录状态机的单元测试。
+#[cfg(test)]
+mod slow_frame_tests {
+    // 复用本模块的检测函数与类型。
+    use super::*;
+
+    // 构造一次带默认现场的检测调用。
+    fn detect(
+        diag: &mut super::super::FrameDiagnostics,
+        frame_us: Duration,
+    ) {
+        // 只有总耗时参与判定，阶段耗时与现场字段不进入状态机。
+        record_slow_frame(
+            diag,
+            frame_us,
+            Duration::ZERO,
+            Duration::ZERO,
+            Duration::ZERO,
+            Duration::ZERO,
+            false,
+            0.0,
+            0,
+            0,
+            0.0,
+            0,
+            false,
+            0,
+            InvalidationSource::None,
+        );
+    }
+
+    // 验证正常帧不触发、慢帧开始、峰值跟踪、恢复结束的完整状态迁移。
+    #[test]
+    fn records_start_peak_and_end_across_threshold() {
+        // 默认阈值 100ms 下构造诊断统计。
+        let mut diag = super::super::FrameDiagnostics::default();
+        // 正常帧不进入卡顿段。
+        detect(&mut diag, Duration::from_millis(20));
+        assert!(!diag.slow_active);
+        // 第一帧慢帧进入卡顿段。
+        detect(&mut diag, Duration::from_millis(500));
+        assert!(diag.slow_active);
+        // 更慢的帧更新峰值。
+        detect(&mut diag, Duration::from_millis(900));
+        assert!(diag.slow_active);
+        assert_eq!(diag.slow_peak, Duration::from_millis(900));
+        // 恢复帧结束卡顿段并复位峰值。
+        detect(&mut diag, Duration::from_millis(20));
+        assert!(!diag.slow_active);
+        assert_eq!(diag.slow_peak, Duration::ZERO);
+        assert!(diag.slow_since.is_none());
+    }
+
+    // 验证持续慢帧段内只保持激活状态，不重复开始。
+    #[test]
+    fn stays_active_during_continuous_slow_frames() {
+        // 构造诊断统计。
+        let mut diag = super::super::FrameDiagnostics::default();
+        // 连续两帧均慢。
+        detect(&mut diag, Duration::from_millis(400));
+        assert!(diag.slow_active);
+        detect(&mut diag, Duration::from_millis(450));
+        assert!(diag.slow_active);
+        // 峰值保持最大帧耗时。
+        assert_eq!(diag.slow_peak, Duration::from_millis(450));
+        // 开始时刻只记录一次。
+        let since = diag.slow_since;
+        detect(&mut diag, Duration::from_millis(300));
+        assert_eq!(diag.slow_since, since);
     }
 }

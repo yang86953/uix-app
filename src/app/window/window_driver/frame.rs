@@ -142,6 +142,15 @@ impl WindowDriver {
         self.started_at.get_or_insert(now);
         self.publish_agent_window_availability(semantic_state, platform_window);
 
+        // 帧诊断：记录本帧起点，后续在帧尾累计并每秒输出摘要。
+        let frame_start = Instant::now();
+        // 帧诊断：各阶段耗时累计变量。
+        let mut layout_us = Duration::ZERO;
+        let mut render_us = Duration::ZERO;
+        let mut present_us = Duration::ZERO;
+        // 帧诊断：GPU 提交阶段耗时（仅 GPU 路径填充，其余保持零）。
+        let mut submit_us = Duration::ZERO;
+
         active_work.sync_timers(tree.active_timers(), now);
         self.sync_app_timers(active_work, app_timers);
         active_work.drain_due_into(now, &mut self.due_work_scratch);
@@ -525,6 +534,8 @@ impl WindowDriver {
         }
 
         let mut reconcile_ran = false;
+        // 帧诊断：记录本帧协调前的树版本，用于判断是否发生了整树重建。
+        let pre_reconcile_version = tree.tree_version();
         if *reconcile_pending {
             let root = pending_root
                 .take()
@@ -591,6 +602,8 @@ impl WindowDriver {
 
         let mut laid_out = false;
         if needs_layout {
+            // 帧诊断：布局阶段起点。
+            let layout_start = Instant::now();
             let before_version = tree.tree_version();
             tree.layout();
             record_layout(metrics);
@@ -629,6 +642,8 @@ impl WindowDriver {
                 record_layout(metrics);
                 tree.mark_full_frame_dirty();
             }
+            // 帧诊断：布局阶段耗时。
+            layout_us = layout_start.elapsed();
         }
 
         let need_render = !self.rendered_first || tree.has_render_work();
@@ -654,6 +669,8 @@ impl WindowDriver {
 
         let invalidation_revision_before_render = tree.invalidation_revision();
         let dirty_region = tree.dirty_region();
+        // 帧诊断：渲染前读取失效队列（帧尾时队列已被消费，无法反映本帧失效来源）。
+        let (inval_count, inval_biggest) = invalidation_diag(tree);
         // 记录 GPU 首帧前已经成功显示的窗口，避免成功后重复调用 show。
         let mut pre_present_shown = false;
         let (outcome, outcome_source) = if !need_render {
@@ -677,6 +694,8 @@ impl WindowDriver {
                     ),
                 }
             }
+            // 帧诊断：渲染阶段起点。
+            let render_start = Instant::now();
             let frame_out = self.frame_renderer.render_frame(
                 engine,
                 tree,
@@ -693,6 +712,10 @@ impl WindowDriver {
                     metrics: metrics_ref.as_ref(),
                 },
             );
+            // 帧诊断：渲染阶段耗时。
+            render_us = render_start.elapsed();
+            // 帧诊断：读取 GPU 路径的阶段耗时细分（记录/提交）。
+            let (record_us, submit_us) = self.frame_renderer.last_frame_stage_times();
             (frame_out.outcome, frame_out.inv_source)
         };
         if let Some(platform) = platform {
@@ -747,6 +770,8 @@ impl WindowDriver {
                         present_image,
                         &damage,
                     );
+                    // 帧诊断：呈现阶段起点。
+                    let present_start = Instant::now();
                     match presenter.present(
                         canvas.pixels(),
                         width,
@@ -761,6 +786,8 @@ impl WindowDriver {
                                 &damage,
                             );
                             engine.external_present_succeeded();
+                            // 帧诊断：呈现阶段耗时。
+                            present_us = present_start.elapsed();
                             record_present(metrics, outcome_source);
                             self.rendered_first = true;
                             frame_committed = true;
@@ -894,6 +921,61 @@ impl WindowDriver {
             self.frame_scheduler.is_renderable(),
             self.frame_scheduler.has_due_opportunity(frame_time),
             agent_commands.has_work(),
+        );
+        // 帧诊断：脏区面积占窗口面积比例（全幅记为 100%）。
+        let dirty_area_pct: f64 = if dirty_region.full_frame {
+            1.0
+        } else {
+            // 部分脏区取包围矩形面积与窗口面积之比。
+            let bounds = dirty_region.bounds();
+            let area = bounds.w * bounds.h;
+            let total = (native_width as f32) * (native_height as f32);
+            // 窗口尺寸无效时按零面积处理。
+            if total > 0.0 {
+                (area / total) as f64
+            } else {
+                0.0
+            }
+        };
+        // 帧诊断：活跃动画节点数与其最大 frame 占窗口比例。
+        let (anim_count, anim_biggest_pct) = animation_diag(active_work, tree, native_width, native_height);
+        // 帧诊断：最大 Paint 失效矩形的节点槽位与面积占比。
+        let (inval_big_slot, inval_big_pct) = match inval_biggest {
+            Some((id, rect)) => {
+                let total = (native_width as f32) * (native_height as f32);
+                let pct = if total > 0.0 {
+                    (rect.w * rect.h / total) as f64
+                } else {
+                    0.0
+                };
+                (id.slot() as u64, pct)
+            }
+            None => (0, 0.0),
+        };
+        // 帧诊断：累计本帧各阶段耗时，每秒输出一次摘要。
+        accumulate_frame_diagnostics(
+            &mut self.frame_diag,
+            frame_start.elapsed(),
+            layout_us,
+            render_us,
+            present_us,
+            // GPU 提交阶段耗时（end_frame 提交与 present 等待）。
+            submit_us,
+            // 使用渲染输入同源的脏区快照，input 已移入渲染管线。
+            dirty_region.full_frame,
+            // 脏区面积占比。
+            dirty_area_pct,
+            // 活跃动画节点数与最大动画 frame 占比。
+            anim_count,
+            anim_biggest_pct,
+            // 失效条目数与最大 Paint 失效节点。
+            inval_count,
+            inval_big_slot,
+            inval_big_pct,
+            // 本帧是否执行了协调（整树重建）及其版本跨度。
+            reconcile_ran,
+            tree.tree_version().saturating_sub(pre_reconcile_version),
+            outcome_source,
         );
         WindowFrameResult { did_work: true }
     }
