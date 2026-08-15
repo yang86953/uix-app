@@ -312,17 +312,17 @@ pub(super) fn typography_field(
     Ok(quote! { #style.font_size = #value; })
 }
 
-// 生成 overflow_content 字段更新。
+// 生成显式子树裁剪字段更新。
 pub(super) fn overflow_field(
     style: &Ident,
     property: &StyleProperty,
 ) -> Result<TokenStream, Diagnostic> {
-    // 只映射 Style 当前可表达的两个值。
+    // 只映射 Style 当前可表达的两个裁剪值。
     let value = match property.value.source.as_str() {
-        // visible 允许自然内容溢出。
-        "visible" => true,
-        // hidden 禁止自然内容溢出。
-        "hidden" => false,
+        // visible 保留子树在节点边界外绘制与命中。
+        "visible" => false,
+        // hidden 把直接子树裁剪到当前节点边界。
+        "hidden" => true,
         // scroll 与 auto 必须使用滚动组件。
         "scroll" | "auto" => {
             return Err(value_diagnostic(
@@ -340,8 +340,8 @@ pub(super) fn overflow_field(
             ));
         }
     };
-    // 更新溢出字段。
-    Ok(quote! { #style.overflow_content = #value; })
+    // 保存显式真假值以支持状态样式清除旧裁剪。
+    Ok(quote! { #style.clip_content = ::std::option::Option::Some(#value); })
 }
 
 // 生成 Grid 轨道向量字段更新。

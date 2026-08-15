@@ -56,6 +56,82 @@ fn generates_responsive_row_col_contract() {
     assert!(left < right);
 }
 
+// 验证 Container 第一批视觉与布局简写映射到既有公开 View 契约。
+#[test]
+fn generates_container_visual_and_layout_shorthands() {
+    // 构造覆盖确定关键字、静态数值与动态表达式的 Container。
+    let tokens = generate(
+        // 保留外部变量名以直接检查动态布尔和高度令牌。
+        r##"<Container alignSelf="center" bg="#112233" radius="8px" w="120px" h={panel_height} opacity="0.5" visible={shown} overflow="hidden"><Text>内容</Text></Container>"##,
+    )
+    // 全部登记简写必须生成成功。
+    .expect("Container 第一批简写应生成");
+    // alignSelf 必须复用统一 AlignItems。
+    assert!(tokens.contains("align_self") && tokens.contains("AlignItems :: Center"));
+    // 背景色必须进入既有 bg 入口。
+    assert!(tokens.contains("bg") && tokens.contains("#112233"));
+    // 静态圆角必须进入 radius。
+    assert!(tokens.contains("radius (8"));
+    // 宽度简写必须进入固定宽度入口。
+    assert!(tokens.contains("width (120"));
+    // 动态高度表达式必须保持原变量。
+    assert!(tokens.contains("height (panel_height)"));
+    // 透明度必须进入整体透明度入口。
+    assert!(tokens.contains("opacity (0.5"));
+    // 动态可见性必须保持布尔表达式。
+    assert!(tokens.contains("visible (shown)"));
+    // hidden 必须生成显式子树裁剪。
+    assert!(tokens.contains("clip_content (true)"));
+}
+
+// 验证 Container overflow 与内联样式共享显式裁剪契约。
+#[test]
+fn maps_container_overflow_without_reusing_scroll_layout_flag() {
+    // 直接简写 visible 必须显式清除旧裁剪。
+    let visible = generate(r#"<Container overflow="visible" />"#)
+        // 文档默认关键字必须生成成功。
+        .expect("Container overflow visible 应生成");
+    // visible 必须调用裁剪入口且传入 false。
+    assert!(visible.contains("clip_content (false)"));
+    // 规范内联样式 hidden 必须更新新三态字段。
+    let style = generate(r#"<Container style="overflow: hidden;" />"#)
+        // 已登记样式属性必须继续生成。
+        .expect("内联 overflow hidden 应生成");
+    // 样式生成不得再误用自然尺寸溢出字段。
+    assert!(style.contains("clip_content") && !style.contains("overflow_content ="));
+    // hidden 必须保存显式 Some(true)。
+    assert!(style.contains("Option :: Some (true)"));
+}
+
+// 验证 Container 简写静态边界和滚动所有权诊断。
+#[test]
+fn rejects_invalid_container_shorthand_values() {
+    // 负圆角不得传入运行时。
+    let radius = generate(r#"<Container radius="-1px" />"#)
+        // 提取预期范围诊断。
+        .expect_err("负 Container radius 必须失败");
+    // 诊断必须点名 radius 与越界值。
+    assert!(radius.message.contains("radius") && radius.message.contains("-1"));
+    // 大于一的透明度不得静默钳制。
+    let opacity = generate(r#"<Container opacity="1.5" />"#)
+        // 提取预期范围诊断。
+        .expect_err("越界 Container opacity 必须失败");
+    // 建议必须给出零到一范围。
+    assert!(opacity.suggestion.contains("0 到 1"));
+    // Container 不拥有滚动状态。
+    let scroll = generate(r#"<Container overflow="scroll" />"#)
+        // 提取滚动所有权诊断。
+        .expect_err("Container overflow scroll 必须失败");
+    // 诊断必须引导到专用滚动组件。
+    assert!(scroll.suggestion.contains("ScrollView"));
+    // 未登记 alignSelf 关键字必须复用统一对齐诊断。
+    let align = generate(r#"<Container alignSelf="baseline" />"#)
+        // 提取预期关键字诊断。
+        .expect_err("未登记 alignSelf 必须失败");
+    // 诊断必须保留实际关键字。
+    assert!(align.message.contains("baseline"));
+}
+
 // 验证 Grid/Col 生成显式轨道与跨轨道样式。
 #[test]
 fn generates_explicit_grid_col_contract() {

@@ -860,6 +860,15 @@ fn general_component_properties_compile_against_public_uix_api() {
     );
 }
 
+// 验证 Container 第一批简写只依赖公开 View、StyleExt 与裁剪契约。
+#[test]
+fn container_shorthands_compile_against_public_uix_api() {
+    // 展开覆盖布局、视觉、可见性和溢出裁剪的静态 Container。
+    let _view: ViewNode = uix!(
+        r##"<Container alignSelf="center" bg="#112233" radius="8px" w="120px" h="64px" opacity="0.75" visible overflow="hidden"><Text>内容</Text></Container>"##
+    );
+}
+
 // 验证 setTheme 作为框架内置操作生成主题请求通道调用，不依赖调用方同名函数。
 #[test]
 fn set_theme_builtin_compiles_without_caller_function() {
