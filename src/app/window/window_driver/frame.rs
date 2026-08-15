@@ -214,10 +214,13 @@ impl WindowDriver {
             return result;
         }
         let had_agent_pending = agent_commands.has_work();
+        let presentable = self.agent_surface_presentable(platform_window);
+        let mut window_ops = PlatformWindowAgentOps::new(platform_window);
         let had_agent_command_work = agent_commands.drain_ready(
             tree,
             semantic_state,
-            self.agent_surface_presentable(platform_window),
+            presentable,
+            &mut window_ops,
         );
         // Agent 命令可能在内部捕获发布 panic，必须在处理 AppState 前停止本帧。
         if let Some(result) = self.finish_if_tree_fail_stopped(

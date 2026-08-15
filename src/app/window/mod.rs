@@ -12,6 +12,7 @@ pub(crate) mod text_input;
 #[allow(clippy::module_inception)]
 pub(crate) mod window;
 pub(crate) mod window_actions;
+pub(crate) mod window_agent_ops;
 pub(crate) mod window_config;
 pub(crate) mod window_driver;
 pub(crate) mod window_session;

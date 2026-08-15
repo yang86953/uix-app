@@ -9,6 +9,7 @@
 
 pub(crate) mod agent_bridge;
 pub(crate) mod agent_control;
+pub(crate) mod agent_policy;
 #[cfg(feature = "agent-control")]
 pub(crate) mod agent_protocol;
 #[cfg(feature = "agent-control")]

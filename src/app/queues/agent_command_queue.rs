@@ -10,7 +10,6 @@ use std::collections::VecDeque;
 use std::sync::mpsc::RecvTimeoutError;
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Arc, Mutex};
-#[cfg(any(test, feature = "agent-control"))]
 use std::time::Duration;
 
 use crate::app::window_semantics::WindowSemanticSnapshot;
@@ -38,6 +37,11 @@ pub(crate) enum AgentWindowAction {
     PointerMove { position: Point },
     PointerDown { position: Point },
     PointerUp { position: Point },
+    Resize { width: i32, height: i32 },
+    Move { x: i32, y: i32 },
+    Maximize,
+    Minimize,
+    Restore,
 }
 
 /// 命令请求契约：快照或执行语义动作。
@@ -58,7 +62,19 @@ pub(crate) enum AgentCommandRequest {
         expected_revision: Option<u64>,
         action: AgentWindowAction,
     },
+    /// 用户确认流程：AI 确认执行先前命中 `requires_confirmation` 的动作。
+    Confirm {
+        confirm_id: u64,
+    },
+    /// 用户确认流程：应用侧交回用户决定（UI turn 内处理）。
+    ResolveConfirmation {
+        confirm_id: u64,
+        allow: bool,
+    },
 }
+
+/// 确认流程有效期：确认请求在登记后超过该时长仍未 resolve 视为超时。
+pub(crate) const MAX_AGENT_CONFIRM_TTL: Duration = Duration::from_secs(60);
 
 /// 命令响应契约。
 #[derive(Debug, Clone, PartialEq)]
@@ -94,6 +110,14 @@ pub(crate) enum AgentErrorCode {
     #[cfg(any(test, feature = "agent-control"))]
     UnsupportedAction,
     #[cfg(any(test, feature = "agent-control"))]
+    Forbidden,
+    #[cfg(any(test, feature = "agent-control"))]
+    RequiresConfirmation,
+    #[cfg(any(test, feature = "agent-control"))]
+    ConfirmationRejected,
+    #[cfg(any(test, feature = "agent-control"))]
+    ConfirmationNotFound,
+    #[cfg(any(test, feature = "agent-control"))]
     InvalidValue,
     #[cfg(any(test, feature = "agent-control"))]
     NotInteractable,
@@ -103,6 +127,9 @@ pub(crate) enum AgentErrorCode {
     DidNotSettle,
     #[cfg(any(test, feature = "agent-control"))]
     NotPresentable,
+    /// 窗口管理动作调用平台窗口失败。
+    #[cfg(any(test, feature = "agent-control"))]
+    WindowOperationFailed,
     Timeout,
     AppClosed,
     #[cfg(any(test, feature = "agent-control"))]
@@ -126,11 +153,16 @@ impl AgentErrorCode {
             Self::NodeNotFound => "node_not_found",
             Self::AmbiguousTarget => "ambiguous_target",
             Self::UnsupportedAction => "unsupported_action",
+            Self::Forbidden => "forbidden",
+            Self::RequiresConfirmation => "requires_confirmation",
+            Self::ConfirmationRejected => "confirmation_rejected",
+            Self::ConfirmationNotFound => "confirmation_not_found",
             Self::InvalidValue => "invalid_value",
             Self::NotInteractable => "not_interactable",
             Self::Blocked => "blocked",
             Self::DidNotSettle => "did_not_settle",
             Self::NotPresentable => "not_presentable",
+            Self::WindowOperationFailed => "window_operation_failed",
             Self::Timeout => "timeout",
             Self::AppClosed => "app_closed",
             Self::Internal => "internal",
@@ -158,6 +190,27 @@ pub(crate) enum AgentCommandError {
         target: String,
         action: SemanticActionKind,
     },
+    /// 动作策略拒绝：只读模式、受保护目标或禁止的动作类别。
+    Forbidden {
+        target: String,
+    },
+    /// 动作需要用户确认（命中 `require_confirm` 策略）。
+    ///
+    /// 执行器返回时 `confirm_id` 为 0（占位）；`WindowAgentState` 登记
+    /// 待确认动作后以真实一次性标识重建错误回给请求方。
+    RequiresConfirmation {
+        target: String,
+        action: SemanticActionKind,
+        confirm_id: u64,
+    },
+    /// 确认流程被用户拒绝。
+    ConfirmationRejected {
+        confirm_id: u64,
+    },
+    /// 确认流程超时或确认不存在（已失效）。
+    ConfirmationNotFound {
+        confirm_id: u64,
+    },
     InvalidValue {
         target: String,
         action: SemanticActionKind,
@@ -169,6 +222,11 @@ pub(crate) enum AgentCommandError {
     },
     DidNotSettle {
         passes: usize,
+    },
+    /// 窗口管理动作调用平台窗口失败。
+    WindowOperationFailed {
+        operation: &'static str,
+        message: String,
     },
     NotPresentable,
     AppClosed,
@@ -186,10 +244,15 @@ impl AgentCommandError {
             Self::NodeNotFound(_) => AgentErrorCode::NodeNotFound,
             Self::AmbiguousTarget { .. } => AgentErrorCode::AmbiguousTarget,
             Self::UnsupportedAction { .. } => AgentErrorCode::UnsupportedAction,
+            Self::Forbidden { .. } => AgentErrorCode::Forbidden,
+            Self::RequiresConfirmation { .. } => AgentErrorCode::RequiresConfirmation,
+            Self::ConfirmationRejected { .. } => AgentErrorCode::ConfirmationRejected,
+            Self::ConfirmationNotFound { .. } => AgentErrorCode::ConfirmationNotFound,
             Self::InvalidValue { .. } => AgentErrorCode::InvalidValue,
             Self::NotInteractable(_) => AgentErrorCode::NotInteractable,
             Self::Blocked { .. } => AgentErrorCode::Blocked,
             Self::DidNotSettle { .. } => AgentErrorCode::DidNotSettle,
+            Self::WindowOperationFailed { .. } => AgentErrorCode::WindowOperationFailed,
             Self::NotPresentable => AgentErrorCode::NotPresentable,
             Self::AppClosed => AgentErrorCode::AppClosed,
             Self::Internal => AgentErrorCode::Internal,
