@@ -101,4 +101,25 @@ mod tests {
             _ => panic!("ButtonBuilder::group_position 必须生成 Button 节点"),
         }
     }
+
+    // 验证 ButtonBuilder 把加载态交给既有 Button 生命周期。
+    #[test]
+    fn button_builder_loading_reaches_button_snapshot() {
+        // 构造加载中的按钮并物化公开 ViewNode。
+        let node: ViewNode = button("Loading")
+            // 启用加载旋转器与交互禁用语义。
+            .loading(true)
+            // 使用公开 View 契约完成构建。
+            .build();
+        // 读取底层按钮的类型化快照。
+        match node.widget.snapshot_fields() {
+            // 检查加载字段保持为真。
+            SnapshotFields::Button { loading, .. } => {
+                // 构建器输入必须抵达既有 Button。
+                assert!(loading);
+            }
+            // 其他组件类型表示构建器物化契约被破坏。
+            _ => panic!("ButtonBuilder::loading 必须生成 Button 节点"),
+        }
+    }
 }
