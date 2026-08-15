@@ -1,13 +1,13 @@
 //! 折叠面板行为实现。
 
-use super::free::*;
 use super::*;
 
 impl Collapse {
     pub(super) fn preferred_width(&self) -> f32 {
         let mut width = DEFAULT_WIDTH;
         for panel in &self.panels {
-            let header = single_line(&panel.header);
+            // 将标题换行规范化为空格以匹配共享单行绘制语义。
+            let header = panel.header.replace(['\r', '\n'], " ");
             let header_width = crate::draw::resources::font::text_backend::estimate_text_metrics(
                 &header,
                 f32::INFINITY,

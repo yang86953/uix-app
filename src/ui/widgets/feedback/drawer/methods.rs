@@ -479,40 +479,16 @@ impl Drawer {
         if value.is_empty() || frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
-        let value = value.replace(['\r', '\n'], " ");
-        let visible = if Self::text_width(ctx, &value, font_size) <= frame.w {
-            value
-        } else {
-            const ELLIPSIS: char = '…';
-            let mut visible = String::new();
-            for ch in value.chars() {
-                visible.push(ch);
-                visible.push(ELLIPSIS);
-                let fits = Self::text_width(ctx, &visible, font_size) <= frame.w;
-                visible.pop();
-                if !fits {
-                    visible.pop();
-                    break;
-                }
-            }
-            visible.push(ELLIPSIS);
-            visible
+        // 复用共享算法，并在极窄宽度连省略号也放不下时停止绘制。
+        let Some(visible) = ctx.elide_single_line(value, font_size, frame.w) else {
+            // 保持组件原有的无可见文本早退策略。
+            return;
+        // 结束极窄宽度分支。
         };
         ctx.push_clip(frame);
         let y = ctx.visual_center_y(frame, font_size);
         ctx.draw_text(&visible, Point::new(frame.x, y), color, font_size);
         ctx.pop_clip();
-    }
-
-    fn text_width(ctx: &mut PaintContext, value: &str, font_size: f32) -> f32 {
-        ctx.measure_text(value, font_size).w.max(
-            crate::draw::resources::font::text_backend::estimate_text_metrics(
-                value,
-                f32::INFINITY,
-                font_size,
-            )
-            .max_line_width,
-        )
     }
 
     fn animation_placement_for(placement: DrawerPlacement) -> crate::ui::Placement {

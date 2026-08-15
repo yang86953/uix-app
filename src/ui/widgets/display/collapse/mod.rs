@@ -1,9 +1,6 @@
 //! Collapse widget — 折叠面板。
 
-mod free;
 mod methods;
-
-use self::free::*;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
@@ -323,8 +320,8 @@ component! {
                 12.0_f32.min(header_rect.h * 0.6),
             );
             let text_width = (header_rect.w - HEADER_ICON_SLOT - HEADER_RIGHT_PADDING).max(0.0);
-            if let Some(visible_header) = elide_single_line(
-                ctx,
+            // 复用 UI 绘制上下文拥有的保守单行省略算法。
+            if let Some(visible_header) = ctx.elide_single_line(
                 &p.header,
                 HEADER_FONT_SIZE,
                 text_width,
