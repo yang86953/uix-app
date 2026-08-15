@@ -191,6 +191,7 @@ impl WidgetTree {
         true
     }
 
+    /// 在失效批次边界内向组件树分发系统事件。
     pub fn dispatch_event(&mut self, event: &SystemEvent) -> EventResult {
         // 已停止的树不得继续分发可能触发组件回调的系统事件。
         if !self.accepts_external_work() {

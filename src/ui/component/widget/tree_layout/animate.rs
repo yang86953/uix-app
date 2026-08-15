@@ -233,7 +233,7 @@ impl WidgetTree {
         self.replace_animated_source_owner(owner, Vec::new());
     }
 
-    // 推进整棵树的动画，并报告是否仍存在活动工作项。
+    /// 推进整棵树的动画，并报告是否仍存在活动工作项。
     pub fn update(&mut self, dt: f64) -> bool {
         // 已停止的树不得再推进会执行组件或动画源代码的动画时钟。
         if !self.accepts_external_work() {
