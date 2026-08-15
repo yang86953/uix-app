@@ -32,6 +32,7 @@ const MAX_DROPDOWN_VIEWPORT_HEIGHT: f32 = 280.0;
 const MIN_DROPDOWN_WIDTH: f32 = 200.0;
 
 component! {
+    /// 通过窗口内树形弹层选择并绑定稳定节点键的组件。
     pub struct TreeSelect {
         placeholder: String,
         value: String,

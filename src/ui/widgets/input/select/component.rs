@@ -16,6 +16,7 @@ use super::{OptGroup, SelectOption, SelectValueBinding, select_dirty_rect, selec
 const DROPDOWN_ROW_HEIGHT: f32 = 28.0;
 
 component! {
+    /// 支持分组、单选或多选、搜索与弹层导航的选择组件。
     pub struct Select {
         pub(crate) options: Vec<SelectOption>,
         pub(crate) optgroups: Vec<OptGroup>,

@@ -14,6 +14,7 @@ use std::cell::Cell;
 const THUMB_INSET: f32 = 2.0;
 
 component! {
+    /// 支持受控布尔状态、标签和键盘切换的开关组件。
     pub struct Switch {
         // 展示名称，供无障碍播报与语义快照使用。
         label: String,
