@@ -405,6 +405,7 @@ impl ColorPicker {
         Size::new(height, height)
     }
 
+    /// 创建使用内置色板、当前配置尺寸且未展开的颜色选择器。
     pub fn new() -> Self {
         let config = crate::ui::component::config::use_config();
         Self {
@@ -461,19 +462,23 @@ impl ColorPicker {
         self.value.get()
     }
 
+    /// 设置颜色触发器采用的控件尺寸规格。
     pub fn size(mut self, size: ControlSize) -> Self {
         self.picker_size = size;
         self
     }
 
+    /// 返回颜色面板当前是否处于逻辑展开状态。
     pub fn is_open(&self) -> bool {
         self.open
     }
 
+    /// 返回颜色面板当前是否仍需呈现，包括退出过渡阶段。
     pub fn is_present(&self) -> bool {
         self.open || self.closing
     }
 
+    /// 展开颜色面板，并高亮当前颜色或首个预设色。
     pub fn open(&mut self) {
         // 仅从完全未呈现状态进入时开始新的面板呈现周期。
         if !self.is_present() {
@@ -487,6 +492,7 @@ impl ColorPicker {
         self.transition_dirty = true;
     }
 
+    /// 关闭颜色面板并在已呈现时启动退出过渡。
     pub fn close(&mut self) {
         if !self.is_present() {
             self.open = false;
