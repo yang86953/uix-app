@@ -41,8 +41,10 @@ pub use decode::decode_to_pixels;
 pub struct BitmapHandle(pub u64);
 
 impl BitmapHandle {
+    /// 不指向任何位图槽位的哨兵句柄。
     pub const INVALID: Self = Self(u64::MAX);
 
+    /// 返回该值是否不是无效哨兵；资源是否仍存在应由 [`ImageService::is_valid`] 检查。
     pub fn is_valid(self) -> bool {
         self.0 != u64::MAX
     }
@@ -83,14 +85,17 @@ impl ImageSlot {
         }
     }
 
+    /// 返回位图的固有像素宽度。
     pub fn width(&self) -> i32 {
         self.width
     }
 
+    /// 返回位图的固有像素高度。
     pub fn height(&self) -> i32 {
         self.height
     }
 
+    /// 借用按行紧密排列的预乘 AARRGGBB 像素。
     pub fn pixels(&self) -> &[u32] {
         &self.pixels
     }
@@ -123,6 +128,7 @@ impl Default for ImageService {
 }
 
 impl ImageService {
+    /// 创建没有已登记位图、派生缓存或后台解码任务的图片服务。
     pub fn new() -> Self {
         Self {
             slots: RefCell::new(Vec::new()),
