@@ -206,6 +206,7 @@ mod cocoa {
     static mut TARGET_CONTEXT_OFFSET: isize = objc_runtime::INVALID_IVAR_OFFSET;
 
     #[link(name = "objc")]
+    // SAFETY: 这些声明与 Objective-C runtime C ABI 一致；动态类、selector、IMP 与名称指针均由下方窄封装校验。
     unsafe extern "C" {
         fn objc_getClass(name: *const c_char) -> Id;
         fn sel_registerName(name: *const c_char) -> Sel;
@@ -217,24 +218,31 @@ mod cocoa {
     }
 
     #[link(name = "AppKit", kind = "framework")]
+    // SAFETY: 该空声明只请求链接 AppKit framework，不向 Rust 暴露可直接调用的符号。
     unsafe extern "C" {}
 
     #[link(name = "Foundation", kind = "framework")]
+    // SAFETY: Foundation 全局对象声明与 framework ABI 一致，读取点只借用系统拥有的 NSRunLoopCommonModes。
     unsafe extern "C" {
         static NSRunLoopCommonModes: Id;
     }
 
     #[link(name = "QuartzCore", kind = "framework")]
+    // SAFETY: CACurrentMediaTime 声明与 QuartzCore C ABI 一致，无参数且只返回单调媒体时间快照。
     unsafe extern "C" {
         fn CACurrentMediaTime() -> f64;
     }
 
     #[link(name = "CoreFoundation", kind = "framework")]
+    // SAFETY: 两个运行循环函数声明与 CoreFoundation C ABI 一致，调用点只传入系统返回的主循环对象。
     unsafe extern "C" {
         fn CFRunLoopGetMain() -> Id;
         fn CFRunLoopWakeUp(run_loop: Id);
     }
 
+    ///
+    /// # Safety
+    /// 必须在 macOS 主线程传入存活的 NSWindow；`context` 中的队列与邮箱必须至少存活到 target dealloc 接管并释放。
     pub(super) unsafe fn create_window_display_link(
         window: Id,
         context: DisplayLinkTargetContext,
@@ -296,10 +304,14 @@ mod cocoa {
         Ok(Some(display_link))
     }
 
+    ///
+    /// # Safety
+    /// `display_link` 必须是仍存活且响应 `setPaused:` 的 CADisplayLink 实例，并由当前线程合法访问。
     pub(super) unsafe fn set_paused(display_link: Id, paused: bool) {
         msg_void_bool(display_link, "setPaused:", if paused { YES } else { NO });
     }
 
+    // SAFETY: 调用方必须位于 macOS 主线程；Once 保证动态类只注册一次，返回类由 Objective-C runtime 永久拥有。
     unsafe fn target_class() -> Id {
         TARGET_CLASS.call_once(|| {
             let superclass = class("NSObject");
@@ -338,6 +350,7 @@ mod cocoa {
         TARGET_CLASS_PTR
     }
 
+    // SAFETY: 仅作为已登记的 CADisplayLink IMP 调用，runtime 保证 target、selector 与 display_link 参数遵循 v@:@ ABI。
     unsafe extern "C" fn display_link_fired(target: Id, _cmd: Sel, display_link: Id) {
         let pending_failures = if target.is_null() {
             None
@@ -346,6 +359,7 @@ mod cocoa {
                 objc_runtime::box_ptr::<DisplayLinkTargetContext>(target, TARGET_CONTEXT_OFFSET);
             (!context.is_null()).then(|| (*context).pending_failures.clone())
         };
+        // SAFETY: 回调入口已经取得 runtime 提供的存活 target/display_link；闭包被 catch_unwind 包围，不跨 FFI 展开。
         let result = catch_unwind(AssertUnwindSafe(|| unsafe {
             display_link_fired_inner(target, display_link);
         }));
@@ -359,6 +373,7 @@ mod cocoa {
         }
     }
 
+    // SAFETY: 参数必须来自 display_link_fired；target 的 Rust context 槽在 target dealloc 前保持唯一存活。
     unsafe fn display_link_fired_inner(target: Id, display_link: Id) {
         if display_link.is_null() {
             return;
@@ -393,6 +408,7 @@ mod cocoa {
         }
     }
 
+    // SAFETY: 仅作为已登记的 dealloc IMP 调用；runtime 保证 target 是当前动态类实例且该释放链只执行一次。
     unsafe extern "C" fn target_dealloc(target: Id, _cmd: Sel) {
         let context =
             objc_runtime::take_box::<DisplayLinkTargetContext>(target, TARGET_CONTEXT_OFFSET);
@@ -400,6 +416,7 @@ mod cocoa {
             .as_ref()
             .map(|context| context.pending_failures.clone());
         drop(context);
+        // SAFETY: target 正处于当前类 dealloc 链，Rust Box 已先清空；super 调用被 catch_unwind 隔离在 FFI 边界内。
         let result = catch_unwind(AssertUnwindSafe(|| unsafe {
             objc_runtime::call_super_dealloc(target, TARGET_CLASS_PTR);
         }));
@@ -413,6 +430,7 @@ mod cocoa {
         }
     }
 
+    // SAFETY: display_link 必须是存活的 CADisplayLink，并响应返回 double 的 targetTimestamp selector。
     unsafe fn target_present_time(display_link: Id, frame_time: Instant) -> Option<Instant> {
         let target_timestamp = msg_f64(display_link, "targetTimestamp");
         let media_time = CACurrentMediaTime();
@@ -426,12 +444,16 @@ mod cocoa {
         frame_time.checked_add(Duration::from_secs_f64(remaining))
     }
 
+    // SAFETY: receiver 必须是存活 Objective-C 对象；respondsToSelector: 的 BOOL 返回签名由 runtime 固定。
     unsafe fn responds_to_selector(receiver: Id, selector: &str) -> bool {
+        // SAFETY: FnType 精确匹配 respondsToSelector: 的 Objective-C C ABI 参数与 BOOL 返回值。
         type FnType = unsafe extern "C" fn(Id, Sel, Sel) -> Bool;
+        // SAFETY: objc_msgSend 只在此处转换为上方已经核对的 selector 查询签名。
         let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         function(receiver, sel("respondsToSelector:"), sel(selector)) != 0
     }
 
+    // SAFETY: class 必须是尚未注册的存活动态类，imp 与 encoding 必须准确描述回调的 extern C ABI。
     unsafe fn add_method(class: Id, name: &str, imp: *const c_void, encoding: &str) -> bool {
         let Ok(encoding) = CString::new(encoding) else {
             return false;
@@ -440,6 +462,7 @@ mod cocoa {
         !selector.is_null() && class_addMethod(class, selector, imp, encoding.as_ptr()) != 0
     }
 
+    // SAFETY: objc_getClass 同步读取零结尾名称且不保留 Rust 指针；返回类对象由 runtime 拥有。
     unsafe fn class(name: &str) -> Id {
         CString::new(name)
             .ok()
@@ -447,6 +470,7 @@ mod cocoa {
             .unwrap_or(std::ptr::null_mut())
     }
 
+    // SAFETY: sel_registerName 同步复制零结尾名称；返回 selector 由 runtime 永久拥有。
     unsafe fn sel(name: &str) -> Sel {
         CString::new(name)
             .ok()
@@ -454,38 +478,58 @@ mod cocoa {
             .unwrap_or(std::ptr::null_mut())
     }
 
+    // SAFETY: receiver 必须响应无额外参数且返回对象的 selector，调用方负责返回对象的约定所有权。
     unsafe fn msg_id(receiver: Id, selector: &str) -> Id {
+        // SAFETY: FnType 精确描述该 Objective-C 消息的对象返回 ABI。
         type FnType = unsafe extern "C" fn(Id, Sel) -> Id;
+        // SAFETY: objc_msgSend 只转换为本函数已经约束的对象返回签名。
         let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         function(receiver, sel(selector))
     }
 
+    // SAFETY: receiver 必须响应接收一个对象和一个 selector 并返回对象的消息，所有参数在同步调用期间存活。
     unsafe fn msg_id_id_sel(receiver: Id, selector: &str, value: Id, action: Sel) -> Id {
+        // SAFETY: FnType 精确描述 displayLinkWithTarget:selector: 的对象返回 ABI。
         type FnType = unsafe extern "C" fn(Id, Sel, Id, Sel) -> Id;
+        // SAFETY: objc_msgSend 只转换为本函数已经约束的双参数对象返回签名。
         let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         function(receiver, sel(selector), value, action)
     }
 
+    ///
+    /// # Safety
+    /// `receiver` 必须响应无额外参数且无返回值的 `selector`，并在同步消息发送期间保持存活。
     pub(super) unsafe fn msg_void(receiver: Id, selector: &str) {
+        // SAFETY: FnType 精确描述无参数、无返回值的 Objective-C 消息 ABI。
         type FnType = unsafe extern "C" fn(Id, Sel);
+        // SAFETY: objc_msgSend 只转换为本函数已经约束的 void 签名。
         let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         function(receiver, sel(selector));
     }
 
+    // SAFETY: receiver 必须响应接收 BOOL 且无返回值的 selector，并在同步调用期间保持存活。
     unsafe fn msg_void_bool(receiver: Id, selector: &str, value: Bool) {
+        // SAFETY: FnType 精确描述单 BOOL 参数、无返回值的 Objective-C 消息 ABI。
         type FnType = unsafe extern "C" fn(Id, Sel, Bool);
+        // SAFETY: objc_msgSend 只转换为本函数已经约束的 BOOL 参数签名。
         let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         function(receiver, sel(selector), value);
     }
 
+    // SAFETY: receiver 必须响应接收两个对象且无返回值的 selector，两个对象在同步调用期间保持存活。
     unsafe fn msg_void_id_id(receiver: Id, selector: &str, first: Id, second: Id) {
+        // SAFETY: FnType 精确描述双对象参数、无返回值的 Objective-C 消息 ABI。
         type FnType = unsafe extern "C" fn(Id, Sel, Id, Id);
+        // SAFETY: objc_msgSend 只转换为本函数已经约束的双对象参数签名。
         let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         function(receiver, sel(selector), first, second);
     }
 
+    // SAFETY: receiver 必须响应无额外参数且返回 double 的 selector，并在同步调用期间保持存活。
     unsafe fn msg_f64(receiver: Id, selector: &str) -> f64 {
+        // SAFETY: FnType 精确描述无参数、f64 返回值的 Objective-C 消息 ABI。
         type FnType = unsafe extern "C" fn(Id, Sel) -> f64;
+        // SAFETY: objc_msgSend 只转换为本函数已经约束的 f64 返回签名。
         let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         function(receiver, sel(selector))
     }
