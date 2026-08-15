@@ -110,6 +110,7 @@ pub struct CpuBackend {
 }
 
 impl CpuBackend {
+    /// 创建尺寸为零、透明清除色且没有离屏资源的软件后端。
     pub fn new() -> Self {
         Self {
             width: 0,
@@ -121,23 +122,28 @@ impl CpuBackend {
         }
     }
 
+    /// 更新记录的清除色并应用到当前主表面。
     pub fn set_clear_color(&mut self, color: Color) {
         self.clear_color = color;
         self.main.set_clear_color(color);
     }
 
+    /// 返回当前记录的主表面清除色。
     pub fn clear_color(&self) -> Color {
         self.clear_color
     }
 
+    /// 返回当前主表面的只读像素缓冲。
     pub fn pixels(&self) -> &[u32] {
         self.main.surface().pixels()
     }
 
+    /// 返回当前主表面宽度。
     pub fn width(&self) -> i32 {
         self.width
     }
 
+    /// 返回当前主表面高度。
     pub fn height(&self) -> i32 {
         self.height
     }
@@ -423,6 +429,7 @@ impl CpuBackend {
         self.offscreens.copy_pixels(handle)
     }
 
+    /// 返回主表面与全部离屏表面占用的像素内存字节数。
     pub fn memory_usage(&self) -> usize {
         let surf = self.main.surface();
         surf.memory_usage()
