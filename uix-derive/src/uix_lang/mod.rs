@@ -4,6 +4,8 @@ mod ast;
 mod builtin_matrix;
 // 定义语言面结构化数据类型到公开构造 API 的编译期映射。
 mod data_binding_codegen;
+// 定义语言面数据构造器到公开 Rust API 的参数级生成规则。
+mod data_constructor_codegen;
 // 定义组件内 setStyle 的闭合分支代码生成。
 mod dynamic_style_codegen;
 // 定义状态伪类的自动事实选择与差异叠加代码生成。
@@ -413,6 +415,11 @@ mod hierarchy_gauge_chart_codegen;
 // 集中验证矩形树图与仪表盘生成、数据构造和拒绝路径。
 #[cfg(test)]
 mod hierarchy_gauge_chart_codegen_tests;
+// 定义 Heatmap 与 WaterfallChart 的混合数据静态生成边界。
+mod matrix_delta_chart_codegen;
+// 集中验证热力图与瀑布图生成、混合数据和拒绝路径。
+#[cfg(test)]
+mod matrix_delta_chart_codegen_tests;
 // 定义 Popconfirm 唯一触发子树、六向位置与同步回调的公开 API 代码生成边界。
 mod popconfirm_codegen;
 // 集中验证 Popconfirm 生成、组合 trigger、回调与拒绝路径。
@@ -672,6 +679,8 @@ pub(crate) use basic_chart_codegen::generate_basic_chart;
 pub(crate) use static_chart_codegen::generate_static_chart;
 // 向核心元素生成器暴露矩形树图与仪表盘叶组件映射。
 pub(crate) use hierarchy_gauge_chart_codegen::generate_hierarchy_gauge_chart;
+// 向核心元素生成器暴露热力图与瀑布图叶组件映射。
+pub(crate) use matrix_delta_chart_codegen::generate_matrix_delta_chart;
 // 向核心元素生成器暴露 Popconfirm 组合组件专用映射。
 pub(crate) use popconfirm_codegen::generate_popconfirm;
 // 向核心元素生成器暴露 Modal 容器组件专用映射。
