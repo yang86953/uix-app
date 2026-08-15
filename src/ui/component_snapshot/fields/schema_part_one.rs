@@ -160,6 +160,8 @@ macro_rules! snapshot_fields_part_one {
                 semantic_color: Option<ColorValue>,
                 /// 显式指定且优先于语义颜色的固定颜色。
                 color_override: Option<Color>,
+                /// 可选的精确字体粗细，保留显式 normal。
+                font_weight: Option<crate::ui::theme::style::FontWeight>,
                 /// 可选的倍率或像素行高。
                 line_height: Option<crate::ui::theme::style::LineHeight>,
                 /// 可选的统一样式文本水平对齐，保留显式 left。

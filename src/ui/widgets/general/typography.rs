@@ -15,7 +15,7 @@ use crate::ui::component::paint_context::PaintContext;
 // 引入共享的单节点文字选区实现。
 use crate::ui::text_selection::per_node::PerNodeTextSelection;
 // 引入 UI System 拥有的行高、文本对齐、文本装饰与样式契约。
-use crate::ui::theme::style::{LineHeight, Style, TextAlign, TextDecoration};
+use crate::ui::theme::style::{FontWeight, LineHeight, Style, TextAlign, TextDecoration};
 // 引入主题颜色值与组件运行契约。
 use crate::ui::{
     ColorValue, ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent,
@@ -60,6 +60,8 @@ component! {
         semantic_color: Option<ColorValue>,
         color_override: Option<Color>,
         spacing: f32,
+        /// 可选的统一样式字体粗细，显式 normal 也覆盖标题或 strong 默认值。
+        font_weight: Option<FontWeight>,
         /// 可选的样式行高，优先于段落 spacing 构建器。
         line_height: Option<LineHeight>,
         /// 可选的统一样式文本水平对齐，显式 left 也覆盖继承值。
@@ -184,7 +186,12 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
-        let (fs, fw) = self.compute_font_style();
+        let (fs, default_weight) = self.compute_font_style();
+        // 显式 Style 字重优先，其次保留 strong 构建器与标题默认语义。
+        let font_weight = self.font_weight.unwrap_or_else(|| {
+            // strong 是显式兼容构建器，未被 Style 覆盖时使用 bold。
+            if self.strong { FontWeight::BOLD } else { default_weight }
+        });
         // 为测量、布局与绘制解析唯一最终行高。
         let line_height = self.resolved_line_height(fs);
         // 在绘制阶段通过当前 Provider 主题解析语义颜色。
@@ -299,15 +306,8 @@ component! {
                 }
             }
 
-            ctx.blit_glyph_layout(&layout, abs_pos, text_c, fs);
-            if self.strong || fw >= 600.0 {
-                ctx.blit_glyph_layout(
-                    &layout,
-                    Point::new(abs_pos.x + 0.6, abs_pos.y),
-                    text_c,
-                    fs,
-                );
-            }
+            // 通过 UI 私有适配器选择常规或合成粗体面，不向 draw 泄漏样式类型。
+            crate::ui::text_weight::paint(ctx, &layout, abs_pos, text_c, fs, font_weight);
             // 按 Style 覆盖优先级或兼容构建器收集最终装饰线段。
             let decoration_segments = self.text_decoration_segments(&layout, abs_pos, fs);
             // 通过 UI 私有适配器提交 draw System 的中性直线命令。
@@ -364,6 +364,8 @@ impl Typography {
             semantic_color: None,
             color_override: None,
             spacing: 0.0,
+            // 未声明统一样式时保留标题与 strong 的既有字重。
+            font_weight: None,
             // 未声明时保持 Typography 既有 normal 或 spacing 语义。
             line_height: None,
             // 未声明统一样式时保持既有左对齐语义。
@@ -520,15 +522,15 @@ impl Typography {
         self.sel.cross_text_char_at(&self.content, frame_local)
     }
 
-    fn compute_font_style(&self) -> (f32, f32) {
+    fn compute_font_style(&self) -> (f32, FontWeight) {
         match self.type_ {
-            TypographyType::Heading1 => (38.0, 600.0),
-            TypographyType::Heading2 => (30.0, 600.0),
-            TypographyType::Heading3 => (24.0, 600.0),
-            TypographyType::Heading4 => (20.0, 600.0),
-            TypographyType::Heading5 => (16.0, 600.0),
-            TypographyType::Paragraph => (14.0, 400.0),
-            TypographyType::Text => (14.0, 400.0),
+            TypographyType::Heading1 => (38.0, FontWeight::SEMIBOLD),
+            TypographyType::Heading2 => (30.0, FontWeight::SEMIBOLD),
+            TypographyType::Heading3 => (24.0, FontWeight::SEMIBOLD),
+            TypographyType::Heading4 => (20.0, FontWeight::SEMIBOLD),
+            TypographyType::Heading5 => (16.0, FontWeight::SEMIBOLD),
+            TypographyType::Paragraph => (14.0, FontWeight::NORMAL),
+            TypographyType::Text => (14.0, FontWeight::NORMAL),
         }
     }
 
@@ -701,6 +703,8 @@ impl Typography {
 impl Typography {
     // 从 View 适配边界接收本组件实际消费的样式字段。
     pub(crate) fn apply_view_style(&mut self, style: &Style) {
+        // 显式 Some 包括 normal，能够覆盖标题或 strong 默认字重。
+        self.font_weight = style.font_weight;
         // next widget 的默认 None 会在 reconcile 时清除旧值；这里只复制当前显式值。
         self.line_height = style.line_height;
         // 显式 Some 包括 left，能够覆盖继承的其他对齐值。
@@ -729,6 +733,8 @@ impl Typography {
         self.semantic_color = next.semantic_color;
         self.color_override = next.color_override;
         self.spacing = next.spacing;
+        // 同步显式字体粗细以触发绘制快照差异。
+        self.font_weight = next.font_weight;
         // 同步显式行高以触发布局快照差异。
         self.line_height = next.line_height;
         // 同步显式文本对齐以触发绘制快照差异。
@@ -759,6 +765,8 @@ impl Typography {
             // 快照保留主题值身份而不是提前固化为某个主题的 RGB。
             semantic_color: self.semantic_color,
             color_override: self.color_override,
+            // 快照保留未声明与显式 normal 的差异。
+            font_weight: self.font_weight,
             // 快照保留行高单位和值以支持精确布局失效。
             line_height: self.line_height,
             // 快照保留未声明与显式 left 的差异。
@@ -865,5 +873,18 @@ mod tests {
         typography.apply_view_style(&style);
         // 组件必须保存闭合对齐值供布局阶段消费。
         assert_eq!(typography.text_align, Some(TextAlign::Justify));
+    }
+
+    // 验证显式 normal 到达 Typography 并可覆盖 strong 兼容入口。
+    #[test]
+    fn font_weight_style_explicit_normal_reaches_strong_typography() {
+        // 创建启用既有粗体入口的排版组件。
+        let mut typography = Typography::text("weight").strong();
+        // 构造显式常规字重样式。
+        let style = Style::default().with_font_weight(FontWeight::NORMAL);
+        // 通过 View 私有适配入口应用统一样式。
+        typography.apply_view_style(&style);
+        // 绘制阶段优先读取该显式值，因此不会退回 strong 粗体面。
+        assert_eq!(typography.font_weight, Some(FontWeight::NORMAL));
     }
 }

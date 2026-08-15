@@ -287,8 +287,18 @@ component! {
                 // 使用 Style 解析出的装饰值。
                 decoration,
             );
-            // 绘制文本（使用同一布局）
-            ctx.blit_owned_glyph_layout(layout, abs_pos, c, fs);
+            // 从统一样式解析最终字重；无样式时采用文档默认 normal。
+            let font_weight = self
+                // 借用可选统一样式。
+                .style
+                // 只对存在的样式读取有效字重。
+                .as_ref()
+                // 显式 normal 仍保留覆盖语义。
+                .map(Style::effective_font_weight)
+                // 无样式时使用常规字重。
+                .unwrap_or_default();
+            // 通过 UI 私有适配器绘制常规或合成粗体文字。
+            crate::ui::text_weight::paint(ctx, &layout, abs_pos, c, fs, font_weight);
             // 在文字上方提交装饰直线，确保删除线和上下划线可见。
             crate::ui::text_decoration::paint(ctx, &decoration_segments, c);
         }
