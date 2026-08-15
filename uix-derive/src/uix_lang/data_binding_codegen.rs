@@ -50,6 +50,10 @@ const DATA_TYPE_NAMES: &[&str] = &[
     "LineData",
     // 饼图分类数据。
     "PieData",
+    // 散点图坐标数据。
+    "ScatterData",
+    // 漏斗图阶段数据。
+    "FunnelData",
     // 日期语义类型。
     "Date",
     // 时间语义类型。
@@ -104,6 +108,10 @@ pub(crate) fn data_constructor_spec(name: &str) -> Option<DataConstructorSpec> {
         "LineData" => (quote! { ::uix::prelude::LineData }, None, true),
         // 饼图数据构造器接收 f32 数值与颜色。
         "PieData" => (quote! { ::uix::prelude::PieData }, None, true),
+        // 散点图数据构造器接收两个 f32 坐标。
+        "ScatterData" => (quote! { ::uix::prelude::ScatterData }, None, true),
+        // 漏斗图数据构造器接收 f32 阶段值。
+        "FunnelData" => (quote! { ::uix::prelude::FunnelData }, None, true),
         // 日期构造 year/month/day。
         "Date" => (quote! { ::uix::prelude::Date }, None, false),
         // 时间构造 hour/minute。

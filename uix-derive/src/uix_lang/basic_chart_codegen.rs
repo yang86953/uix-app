@@ -234,7 +234,7 @@ fn apply_chart_attribute(
 }
 
 // 生成 f32 字面量或动态表达式。
-fn f32_value(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
+pub(super) fn f32_value(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
     // 按属性值形状生成。
     match &attribute.value {
         // 静态数值在宏展开期验证。
@@ -286,7 +286,12 @@ fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a Attribute>
 }
 
 // 查找基础图表必需属性。
-fn required_attribute<'a>(element: &'a Element, name: &str) -> Result<&'a Attribute, Diagnostic> {
+pub(super) fn required_attribute<'a>(
+    // 接收需要查询的图表元素。
+    element: &'a Element,
+    // 接收必需属性名。
+    name: &str,
+) -> Result<&'a Attribute, Diagnostic> {
     // 缺失数据时返回确定诊断。
     find_attribute(element, name).ok_or_else(|| {
         // 点名当前图表与缺失属性。

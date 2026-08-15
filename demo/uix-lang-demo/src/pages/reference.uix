@@ -111,8 +111,8 @@
         <Text>反馈：Message / Notification / Alert / Modal / Drawer / Tooltip / Popover / Popconfirm / FocusTrap / ProgressBar / Spin</Text>
         // 说明导航与框架标签覆盖。
         <Text>导航与框架：Menu / Dropdown / Navigation / Steps / Pagination / Breadcrumb / Anchor / Tabs / ThemeToggle / WindowControl / WindowDragRegion / QRCode / Watermark</Text>
-        // 说明基础图表标签覆盖。
-        <Text>图表：BarChart / LineChart / PieChart（类型化静态数据与基础视觉配置）</Text>
+        // 说明六类静态图表标签覆盖。
+        <Text>图表：BarChart / LineChart / PieChart / AreaChart / ScatterChart / FunnelChart（类型化静态数据与基础视觉配置）</Text>
         // 展示语言能力小节。
         <Text fontSize="heading5">语言能力</Text>
         // 说明组件与状态能力。
@@ -122,7 +122,7 @@
         // 展示保留边界小节。
         <Text fontSize="heading5">保留边界</Text>
         // 说明保留在 Rust API 的边界。
-        <Text>高级图表配置、其余图表标签，以及 Agent 控制与 test-harness 专用入口。</Text>
+        <Text>气泡、多系列、高级图表配置、其余图表标签，以及 Agent 控制与 test-harness 专用入口。</Text>
         // 展示验收状态标签。
         <Container direction="row" gap="8px">
           // 标记结构对齐状态。
