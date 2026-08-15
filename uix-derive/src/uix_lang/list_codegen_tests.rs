@@ -91,7 +91,30 @@ fn maps_list_appearance_values() {
     }
 }
 
-// 验证 List 必需集合与叶节点边界。
+// 验证 List 的三个静态命名插槽映射到真实 View 构建器。
+#[test]
+// 声明 List 节点插槽生成测试。
+fn generates_list_named_view_slots() {
+    // 使用不同组件覆盖三个角色与加载按钮交互生成。
+    let snapshot = generate(
+        // 每个直接子 View 通过静态 slot 明确归位。
+        r#"<List data={list_items}><Text slot="header">任务</Text><Container slot="footer"><Text>汇总</Text></Container><Button slot="loadMore" @click="load_more">加载更多</Button></List>"#,
+    )
+    // 合法命名插槽必须成功生成。
+    .expect("List 三个节点插槽应映射到公开 View API");
+    // 页首必须进入真实 header_view 构建器。
+    assert!(snapshot.contains("header_view"), "{snapshot}");
+    // 页尾必须进入真实 footer_view 构建器并保留子树。
+    assert!(snapshot.contains("footer_view") && snapshot.contains("汇总"));
+    // 加载入口必须进入真实 load_more_view 构建器。
+    assert!(snapshot.contains("load_more_view") && snapshot.contains("加载更多"));
+    // 按钮点击处理器必须留在目标 View 而非 List 父组件。
+    assert!(snapshot.contains("on_click") && snapshot.contains("load_more"));
+    // 编译期归位属性不得泄漏到子节点公共属性映射。
+    assert!(!snapshot.contains("slot"));
+}
+
+// 验证 List 必需集合与默认插槽边界。
 #[test]
 // 声明 List 基础拒绝测试。
 fn rejects_missing_literal_and_children() {
@@ -107,12 +130,57 @@ fn rejects_missing_literal_and_children() {
         .expect_err("字面量 List data 必须被拒绝");
     // 诊断必须说明可迭代表达式要求。
     assert!(literal.message.contains("可迭代字符串表达式"));
-    // List 运行时绘制文本行，不能接受任意 View 子树。
+    // List 不提供未命名默认插槽。
     let child = generate(r#"<List data={list_items}><Text>额外节点</Text></List>"#)
-        // 嵌套元素必须失败。
-        .expect_err("List 子节点必须被拒绝");
-    // 诊断必须点明叶组件边界。
-    assert!(child.message.contains("不接受子节点"));
+        // 未命名嵌套元素必须失败。
+        .expect_err("List 默认插槽必须被拒绝");
+    // 诊断必须要求显式命名归位。
+    assert!(child.message.contains("命名 slot"));
+}
+
+// 验证 List 节点角色唯一、静态且不能与兼容属性冲突。
+#[test]
+// 声明 List 节点插槽拒绝测试。
+fn rejects_invalid_list_named_slots() {
+    // 同一角色的第二个节点不能获得不确定身份。
+    let duplicate = generate(
+        // 连续声明两个页首节点。
+        r#"<List data={list_items}><Text slot="header">A</Text><Text slot="header">B</Text></List>"#,
+    )
+    // 重复角色必须失败。
+    .expect_err("重复 List 插槽必须被拒绝");
+    // 诊断必须点名重复声明。
+    assert!(duplicate.message.contains("重复声明"));
+    // 未登记名称不能静默成为默认内容。
+    let unknown = generate(r#"<List data={list_items}><Text slot="body">A</Text></List>"#)
+        // 未知角色必须失败。
+        .expect_err("未知 List 插槽必须被拒绝");
+    // 诊断必须回显未知名称。
+    assert!(unknown.message.contains("body"));
+    // 动态名称无法建立编译期稳定角色。
+    let dynamic = generate(r#"<List data={list_items}><Text slot={role}>A</Text></List>"#)
+        // 动态角色必须失败。
+        .expect_err("动态 List slot 必须被拒绝");
+    // 诊断必须要求字符串字面量。
+    assert!(dynamic.message.contains("字符串字面量"));
+    // 直接控制流会改变角色根身份。
+    let control = generate(
+        // If 不能直接伪装为页首。
+        r#"<List data={list_items}><If {show}><Text>A</Text></If></List>"#,
+    )
+    // 动态直接角色必须失败。
+    .expect_err("List 直接控制流插槽必须被拒绝");
+    // 诊断必须提示用稳定容器包裹。
+    assert!(control.message.contains("静态直接 View"), "{control:?}");
+    // 兼容文本和真实节点不能同时拥有页首角色。
+    let conflict = generate(
+        // 同时声明 header 属性与 header 节点。
+        r#"<List data={list_items} header="文本"><Text slot="header">节点</Text></List>"#,
+    )
+    // 双重来源必须失败。
+    .expect_err("List 文本属性与节点插槽冲突必须被拒绝");
+    // 诊断必须点明两种声明来源。
+    assert!(conflict.message.contains("字符串属性与节点插槽"));
 }
 
 // 验证 List 非法外观值与未登记属性不能穿过公共映射。

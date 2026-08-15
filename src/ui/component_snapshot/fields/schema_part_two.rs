@@ -236,6 +236,12 @@ macro_rules! snapshot_fields_part_two {
                 items: Vec<String>,
                 /// 列表加载更多入口显示的文字。
                 load_more_text: String,
+                /// 页首是否由真实声明子树负责。
+                header_view: bool,
+                /// 页尾是否由真实声明子树负责。
+                footer_view: bool,
+                /// 加载入口是否由真实声明子树负责。
+                load_more_view: bool,
             },
             /// 折叠面板的条目、手风琴模式与焦点状态快照。
             Collapse {

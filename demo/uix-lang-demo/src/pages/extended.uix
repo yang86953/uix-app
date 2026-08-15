@@ -225,8 +225,20 @@
           <Text>Card 可承载异质有序子树。</Text>
         // 结束操作卡片。
         </Card>
-        // 展示带头尾文本的数据列表。
-        <List data={['视觉基线', '语义断言', '交互回归']} header="用户列表" footer="共 3 人" loadMore="加载更多" width="320px" />
+        // 展示带真实页首、页尾与加载入口节点的数据列表。
+        <List data={['视觉基线', '语义断言', '交互回归']} width="320px" automationId="demo-list-slots">
+          // 使用真实文字节点承载页首。
+          <Text slot="header">验收任务</Text>
+          // 使用真实容器子树承载页尾汇总。
+          <Container slot="footer">
+            // 显示列表当前条目总数。
+            <Text>共 3 项</Text>
+          // 结束页尾容器。
+          </Container>
+          // 使用真实按钮承载加载入口并保留交互语义。
+          <Button slot="loadMore">加载更多</Button>
+        // 结束节点插槽列表。
+        </List>
         // 展示三列描述列表。
         <Descriptions data={[DescriptionsItem('姓名', 'Ada'), DescriptionsItem('角色', '管理员'), DescriptionsItem('邮箱', 'ada@ex.com')]} columns="2" width="480px" />
       // 结束卡片列表内容。

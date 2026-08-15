@@ -17,3 +17,18 @@ fn list_configuration_compiles_against_public_uix_api() {
     // 动态布尔表达式仍由调用方持有。
     assert!(!show_border);
 }
+
+// 验证 List 三个命名节点插槽只依赖公开 UIX 运行时契约。
+#[test]
+// 测试名称陈述节点型首尾与加载入口的公开生成边界。
+fn list_view_slots_compile_against_public_uix_api() {
+    // 提供非空文本集合以保留 List 根组件。
+    let list_items = ["待处理", "已完成"];
+    // 展开三个静态命名插槽的真实消费者文档。
+    let _view: ViewNode = uix!(
+        // Text、Container 与 Button 分别验证简单节点、子树与交互组件形状。
+        r#"<List data={list_items} width="320px"><Text slot="header">任务</Text><Container slot="footer"><Text>共 2 项</Text></Container><Button slot="loadMore">加载更多</Button></List>"#
+    );
+    // 生成代码必须复制集合，保留调用方所有权。
+    assert_eq!(list_items[1], "已完成");
+}
