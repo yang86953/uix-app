@@ -25,12 +25,16 @@ pub enum RecoveryAction {
 
 /// 运行全部匹配恢复处理器后的结果。
 pub enum RecoveryOutcome {
+    /// 至少一个匹配处理器成功恢复错误。
     Recovered,
+    /// 没有匹配处理器能够恢复错误。
     Unhandled(Error),
+    /// 匹配处理器尝试恢复，但恢复过程失败。
     Failed(Error),
 }
 
 impl RecoveryOutcome {
+    /// 返回恢复流程是否成功恢复了错误。
     pub fn is_recovered(&self) -> bool {
         matches!(self, Self::Recovered)
     }
