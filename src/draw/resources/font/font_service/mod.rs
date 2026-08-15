@@ -8,6 +8,8 @@ mod font_cache;
 mod font_layout;
 // 保存中性文本布局的两端对齐空白扩展算法。
 mod text_justify;
+// 帧诊断：向窗口驱动暴露文本布局调用计数器。
+pub(crate) use font_layout::take_text_layout_calls;
 // 保存 FontService 的 UAX #9 字体段切分与视觉 cluster 重排。
 mod bidi_layout;
 // 使用独立纯内存后端覆盖 FontService 的 UAX #14 集成契约。

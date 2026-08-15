@@ -118,6 +118,29 @@ impl InvalidationQueue {
         !self.layout_ids.is_empty()
     }
 
+    /// 帧诊断：返回失效条目数及最大 Paint 失效节点身份与矩形。
+    pub(crate) fn diag_largest_paint(&self) -> (usize, Option<(NodeId, Rect)>) {
+        // 累计失效条目数。
+        let mut count = 0;
+        // 追踪面积最大的 Paint 失效。
+        let mut largest: Option<(NodeId, Rect)> = None;
+        // 遍历全部失效条目。
+        for item in &self.items {
+            count += 1;
+            // 只统计带显式矩形的 Paint 失效。
+            if let Invalidation::Paint { id, rect: Some(r) } = item {
+                // 保留面积更大的矩形。
+                if largest
+                    .as_ref()
+                    .is_none_or(|(_, cur)| r.w * r.h > cur.w * cur.h)
+                {
+                    largest = Some((*id, *r));
+                }
+            }
+        }
+        (count, largest)
+    }
+
     /// 是否含 Paint 或 Composite 失效（需要绘制）。
     pub fn has_paint_or_composite(&self) -> bool {
         self.items.iter().any(|i| {

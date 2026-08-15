@@ -15,6 +15,8 @@ impl WindowDriver {
             app_timer_deadlines_scratch: Vec::new(),
             app_timer_deadline_revision: None,
             due_work_scratch: Vec::new(),
+            // 诊断统计从零开始，计时起点由 Default 取当前时刻。
+            frame_diag: FrameDiagnostics::default(),
         }
     }
 

@@ -8,6 +8,8 @@ use crate::draw::resources::font::text_backend::TextDirection;
 use crate::draw::{FontHandle, HAlign, VAlign};
 // 使用扩展字素簇边界选择回退字体，避免拆开组合文本。
 use unicode_segmentation::UnicodeSegmentation;
+// 帧诊断：统计每秒文本布局（shaping）调用次数，供性能摘要读取。
+use std::sync::atomic::{AtomicU64, Ordering};
 
 // 引入字体模块共享的 UAX #14 断行边界。
 use super::super::line_break::LineBreakMap;
@@ -18,6 +20,15 @@ use super::bidi_layout::{
 };
 // 引入视觉行两端对齐的中性几何算法。
 use super::text_justify::justify_line;
+
+// 帧诊断：文本布局调用计数器，每秒摘要读取后清零。
+static TEXT_LAYOUT_CALLS: AtomicU64 = AtomicU64::new(0);
+
+// 帧诊断：读取并清零文本布局调用计数。
+pub(crate) fn take_text_layout_calls() -> u64 {
+    // 原子交换取出当前计数并复位。
+    TEXT_LAYOUT_CALLS.swap(0, Ordering::Relaxed)
+}
 
 /// 布局辅助：按字体分割的文本段（追踪字节偏移）。
 pub(super) struct FontSegment {
@@ -530,6 +541,8 @@ impl FontService {
         text: &str,
         opts: &TextLayoutOptions,
     ) -> TextLayout {
+        // 帧诊断：每次调用累计一次文本布局计数。
+        TEXT_LAYOUT_CALLS.fetch_add(1, Ordering::Relaxed);
         if !self.text_backend.is_valid(font) || text.is_empty() {
             return TextLayout {
                 glyphs: vec![],
