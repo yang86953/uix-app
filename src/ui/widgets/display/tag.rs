@@ -124,6 +124,7 @@ struct TagGeometry {
 }
 
 component! {
+    /// 展示可关闭或可勾选短文本状态的标签组件。
     pub struct Tag {
         text: String,
         color: TagColor,

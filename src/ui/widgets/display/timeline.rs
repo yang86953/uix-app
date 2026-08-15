@@ -37,6 +37,7 @@ pub struct TimelineItem {
 
 // Timeline — 时间线组件。
 component! {
+    /// 按声明顺序展示状态节点、标签与描述的时间线组件。
     pub struct Timeline {
         items: Vec<TimelineItem>,
         pending: bool,

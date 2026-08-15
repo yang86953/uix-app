@@ -20,6 +20,7 @@ pub fn list_item_height(size: ControlSize) -> f32 {
 
 // List — 列表组件。
 component! {
+    /// 按顺序展示文本项及可选头部、尾部和加载入口的列表组件。
     pub struct List {
         header: String,
         footer: String,
