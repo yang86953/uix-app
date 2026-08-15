@@ -176,3 +176,20 @@ fn font_weight_styles_compile_for_real_consumer() {
         "#
     );
 }
+
+// 验证 fontFamily 有序列表通过公开 Style 和 FontFamily 契约完成真实宏展开。
+#[test]
+fn font_family_styles_compile_for_real_consumer() {
+    // 展开普通文本与语义排版组件的已加载名称和通用族回退列表。
+    let _font_families: ViewNode = uix::uix!(
+        // 同时覆盖带空格名称、缺失名称、裸名称与通用字体族。
+        r#"
+        registeredFallback { fontFamily: 'Missing Family', 'Segoe UI', Arial, sans-serif; }
+        genericFallback { fontFamily: monospace; }
+        <Container>
+          <Text class="registeredFallback">已加载字体回退</Text>
+          <Typography class="genericFallback">系统字体回退</Typography>
+        </Container>
+        "#
+    );
+}
