@@ -2,6 +2,9 @@
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+// Unix 通知 Provider 的可执行文件探测由 Linux 与 macOS Adapter 复用。
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod unix_provider;
 #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 mod unsupported;
 #[cfg(windows)]

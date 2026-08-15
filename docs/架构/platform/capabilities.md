@@ -37,6 +37,8 @@
 
 Windows 未配置 AUMID 时，发送返回 typed `NotImplemented` 并给出配置/安装指引；已配置但 MSIX 或安装器快捷方式未登记同一 AUMID 时，发送返回 typed `InvalidState`。只有只读登记探测成功后才调用 WinRT Toast API，系统拒绝提交时返回 typed 平台错误，不伪造成功。
 
+Linux 与 macOS Adapter 通过私有 Unix Provider 探测组件只读检查 `PATH` 中的 `notify-send` 与 `osascript`：仅普通可执行文件可形成 `Available`，缺失或不可执行时形成 `Unsupported`。探测不启动外部进程，发送阶段继续独立承担权限、桌面会话与退出状态的 typed failure。
+
 同步 adapter 枚举按公开 backend 精确分派：只有 Windows D3D11 返回 DXGI owned values，其他已启用 backend 返回 typed `NotImplemented`，不保留空成功或不可达的幽灵成功路径。
 
 当所有图形 backend feature 都关闭时，`GraphicsBackend` 没有可构造变体，facade 以穷尽空分派表达这一编译期事实；它不会伪造运行期 backend、成功值或失败值。
