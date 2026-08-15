@@ -54,6 +54,10 @@ const DATA_TYPE_NAMES: &[&str] = &[
     "ScatterData",
     // 漏斗图阶段数据。
     "FunnelData",
+    // 矩形树图层级节点。
+    "TreemapNode",
+    // 仪表盘色带区间。
+    "GaugeRange",
     // 日期语义类型。
     "Date",
     // 时间语义类型。
@@ -112,6 +116,10 @@ pub(crate) fn data_constructor_spec(name: &str) -> Option<DataConstructorSpec> {
         "ScatterData" => (quote! { ::uix::prelude::ScatterData }, None, true),
         // 漏斗图数据构造器接收 f32 阶段值。
         "FunnelData" => (quote! { ::uix::prelude::FunnelData }, None, true),
+        // 矩形树图节点构造器接收 f32 权重并允许 children 链。
+        "TreemapNode" => (quote! { ::uix::prelude::TreemapNode }, None, true),
+        // 仪表盘色带构造器接收两个 f32 边界与颜色。
+        "GaugeRange" => (quote! { ::uix::prelude::GaugeRange }, None, true),
         // 日期构造 year/month/day。
         "Date" => (quote! { ::uix::prelude::Date }, None, false),
         // 时间构造 hour/minute。
