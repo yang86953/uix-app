@@ -1,8 +1,8 @@
 //! Declarative, runtime-driven animation values.
 
 use super::{
-    Animation, AnimationGroupItem, Easing, Keyframe, KeyframeAnimation, KeyframeError, Spring,
-    SpringAnimation, group::GroupItemTiming,
+    Animation, AnimationGroupItem, Easing, Keyframe, KeyframeAnimation, KeyframeError,
+    KeyframePlayback, Spring, SpringAnimation, group::GroupItemTiming,
 };
 
 mod playback;
@@ -185,7 +185,19 @@ impl<T: Animatable + Sync> Animated<T> {
         frames: impl IntoIterator<Item = Keyframe<T>>,
         duration: f64,
     ) -> Result<Self, KeyframeError> {
-        self.animate_keyframes(frames, duration)?;
+        self.animate_keyframes_with(frames, KeyframePlayback::new(duration))?;
+        Ok(self)
+    }
+
+    /// 使用完整播放配置启动 typed keyframe 序列，并返回同一共享句柄。
+    pub fn to_keyframes_with(
+        self,
+        frames: impl IntoIterator<Item = Keyframe<T>>,
+        playback: KeyframePlayback,
+    ) -> Result<Self, KeyframeError> {
+        // 委托共享原位配置入口。
+        self.animate_keyframes_with(frames, playback)?;
+        // 返回同一共享句柄供链式绑定。
         Ok(self)
     }
 
@@ -279,16 +291,33 @@ impl<T: Animatable + Sync> Animated<T> {
         frames: impl IntoIterator<Item = Keyframe<T>>,
         duration: f64,
     ) -> Result<(), KeyframeError> {
+        // 使用兼容旧 API 的单次正放配置。
+        self.animate_keyframes_with(frames, KeyframePlayback::new(duration))
+    }
+
+    /// 使用完整播放配置从当前值启动 typed keyframe 序列。
+    pub fn animate_keyframes_with(
+        &self,
+        frames: impl IntoIterator<Item = Keyframe<T>>,
+        playback: KeyframePlayback,
+    ) -> Result<(), KeyframeError> {
+        // 保存关键帧外部基础值供 fill-mode 恢复。
         let current = self.inner.current.get_untracked();
-        let next = KeyframeAnimation::from_current(current, frames, duration)?;
+        // 使用声明时长构造规范化关键帧序列。
+        let next = KeyframeAnimation::from_current(current, frames, playback.duration)?;
+        // 使用统一播放状态机组合延迟、迭代、方向与填充。
+        let next = AnimatedPlayback::new_keyframes(next, current, playback, Instant::now());
+        // 延迟期可见值由填充策略决定。
         let value = next.value();
+        // 原子替换当前播放状态。
         *self
             .inner
             .playback
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
-            Some(AnimatedPlayback::new_keyframes(next));
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(next);
+        // 发布初始可见值并触发声明式依赖。
         self.inner.current.set(value);
+        // 返回成功。
         Ok(())
     }
 
@@ -464,10 +493,23 @@ impl<T: Animatable + Sync> Animated<T> {
             (AnimatedMotion::Timed(animation), LoopMode::Count(count)) => {
                 animation.duration * count as f64
             }
+            (AnimatedMotion::Timed(animation), LoopMode::AlternateCount(count)) => {
+                // 有限交替定时动画与普通计数动画具有相同总时长。
+                animation.duration * count as f64
+            }
             (AnimatedMotion::Timed(_), LoopMode::Forever | LoopMode::Alternate) => {
                 return GroupItemTiming::Unbounded;
             }
-            (AnimatedMotion::Keyframes(animation), _) => animation.duration(),
+            (AnimatedMotion::Keyframes(animation), LoopMode::Once) => animation.duration(),
+            (AnimatedMotion::Keyframes(animation), LoopMode::Count(count))
+            | (AnimatedMotion::Keyframes(animation), LoopMode::AlternateCount(count)) => {
+                // 有限关键帧轮次按单轮时长求总时长。
+                animation.duration() * count as f64
+            }
+            (AnimatedMotion::Keyframes(_), LoopMode::Forever | LoopMode::Alternate) => {
+                // 无限关键帧序列不能形成有限动画组时长。
+                return GroupItemTiming::Unbounded;
+            }
             (AnimatedMotion::Spring(_), _) => return GroupItemTiming::Unbounded,
         };
         Duration::try_from_secs_f64(seconds)
