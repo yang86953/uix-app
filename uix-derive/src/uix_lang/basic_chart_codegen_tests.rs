@@ -1,0 +1,76 @@
+// 引入解析与核心生成入口。
+use super::{Diagnostic, generate_view, parse_document};
+
+// 生成测试源码的稳定令牌快照。
+fn generate(source: &str) -> Result<String, Diagnostic> {
+    // 先解析完整 UIX 文档。
+    let document = parse_document(source)?;
+    // 再生成公开 Rust View 表达式。
+    generate_view(&document.root).map(|tokens| tokens.to_string())
+}
+
+// 验证三类基础图表与类型化数据构造器映射。
+#[test]
+fn generates_bar_line_and_pie_charts() {
+    // 柱状图覆盖类型化数据、布尔和数值属性。
+    let bar = generate(r##"<BarChart data={[BarData('Q1', 12, Color('#1677ff'))]} grouped showValue barRadius="3" width="320px" />"##)
+        // 合法柱状图必须生成。
+        .expect("BarChart 应生成");
+    // 必须收集成公开 BarData 并调用现有构建器。
+    assert!(
+        bar.contains("BarChart :: new") && bar.contains("Vec < :: uix :: prelude :: BarData >")
+    );
+    // 专有和公共属性必须各自映射。
+    assert!(
+        bar.contains("grouped (true)")
+            && bar.contains("bar_radius (3.0)")
+            && bar.contains("width (320.0)")
+    );
+    // 折线图覆盖基础线形配置。
+    let line = generate(
+        "<LineChart data={[LineData('Jan', 10)]} smooth showDots={dots} lineWidth=\"2\" />",
+    )
+    // 合法折线图必须生成。
+    .expect("LineChart 应生成");
+    // 必须使用公开 LineData 与配置方法。
+    assert!(
+        line.contains("Vec < :: uix :: prelude :: LineData >")
+            && line.contains("smooth (true)")
+            && line.contains("show_dots (dots)")
+    );
+    // 饼图覆盖颜色数据、环形比例和标签开关。
+    let pie = generate(r##"<PieChart data={[PieData('A', 40, Color('#52c41a'))]} donut="0.5" labelVisible={labels} />"##)
+        // 合法饼图必须生成。
+        .expect("PieChart 应生成");
+    // 必须使用公开 PieData 与环形配置。
+    assert!(
+        pie.contains("Vec < :: uix :: prelude :: PieData >")
+            && pie.contains("donut (0.5)")
+            && pie.contains("label_visible (labels)")
+    );
+}
+
+// 验证数据、子树与未登记高级配置拒绝。
+#[test]
+fn rejects_invalid_basic_chart_contracts() {
+    // 缺少 data 时没有图表数据源。
+    let missing = generate("<BarChart />").expect_err("缺少 data 必须失败");
+    // 诊断必须点名 data。
+    assert!(missing.message.contains("data"));
+    // 字符串不能伪装成 LineData 集合。
+    let literal = generate("<LineChart data=\"items\" />").expect_err("字符串 data 必须失败");
+    // 诊断必须说明类型化数据。
+    assert!(literal.message.contains("类型化数据"));
+    // 图表叶组件不能接收可见子树。
+    let child = generate("<PieChart data={items}><Text>非法</Text></PieChart>")
+        // 子树必须失败。
+        .expect_err("图表子节点必须失败");
+    // 诊断必须说明叶边界。
+    assert!(child.message.contains("不接受子节点"));
+    // 首批不暴露高级交互对象。
+    let advanced = generate("<BarChart data={items} tooltip={config} />")
+        // 未登记属性必须失败。
+        .expect_err("高级 tooltip 配置不得被近似");
+    // 诊断必须保留具体属性名。
+    assert!(advanced.message.contains("tooltip"));
+}

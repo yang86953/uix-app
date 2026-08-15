@@ -483,10 +483,14 @@
   <Column gap="16px">
     // 展示图表能力标题。
     <Text fontSize="heading2">图表</Text>
-    // 明确当前声明式标签边界。
-    <Alert message="charts 能力已与 API Demo 一致启用（Bar / Line / Pie / Area / Radar / Heatmap / Gauge 等），但图表标签尚未注册到 uix-lang。" type="warning" />
-    // 说明当前可用调用路径。
-    <Card title="当前边界"><Text>图表继续通过 Rust API 构造；待标签契约登记后再迁入声明文件。</Text></Card>
+    // 说明基础图表已进入声明式生成路径。
+    <Alert message="Bar / Line / Pie 已登记类型化静态映射；高级交互与其余图表继续使用 Rust API。" type="success" />
+    // 展示类型化柱状图数据与基础配置。
+    <BarChart data={[BarData('Q1', 120, Color('#1677ff')), BarData('Q2', 200, Color('#52c41a')), BarData('Q3', 150, Color('#faad14'))]} showValue barRadius="3" title="季度产出" width="420px" height="260px" />
+    // 展示类型化折线图数据与线形配置。
+    <LineChart data={[LineData('Jan', 100), LineData('Feb', 150), LineData('Mar', 130)]} smooth lineWidth="2" dotRadius="4" title="月度趋势" width="420px" height="260px" />
+    // 展示类型化饼图数据与环形配置。
+    <PieChart data={[PieData('产品 A', 40, Color('#1677ff')), PieData('产品 B', 30, Color('#52c41a')), PieData('产品 C', 30, Color('#faad14'))]} donut="0.55" title="产品占比" width="320px" height="280px" />
   // 结束图表能力内容。
   </Column>
 // 结束图表能力页组件。

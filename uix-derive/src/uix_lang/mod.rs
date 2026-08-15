@@ -398,6 +398,11 @@ mod progress_codegen;
 // 集中验证 ProgressBar 生成、默认值与拒绝路径。
 #[cfg(test)]
 mod progress_codegen_tests;
+// 定义 BarChart、LineChart 与 PieChart 的基础静态生成边界。
+mod basic_chart_codegen;
+// 集中验证三类基础图表生成、数据类型与拒绝路径。
+#[cfg(test)]
+mod basic_chart_codegen_tests;
 // 定义 Popconfirm 唯一触发子树、六向位置与同步回调的公开 API 代码生成边界。
 mod popconfirm_codegen;
 // 集中验证 Popconfirm 生成、组合 trigger、回调与拒绝路径。
@@ -651,6 +656,8 @@ pub(crate) use rich_text_codegen::generate_rich_text;
 pub(crate) use alert_codegen::generate_alert;
 // 向核心元素生成器暴露 ProgressBar 叶组件专用映射。
 pub(crate) use progress_codegen::generate_progress_bar;
+// 向核心元素生成器暴露三类基础图表叶组件映射。
+pub(crate) use basic_chart_codegen::generate_basic_chart;
 // 向核心元素生成器暴露 Popconfirm 组合组件专用映射。
 pub(crate) use popconfirm_codegen::generate_popconfirm;
 // 向核心元素生成器暴露 Modal 容器组件专用映射。

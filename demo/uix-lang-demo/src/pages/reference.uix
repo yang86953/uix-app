@@ -111,16 +111,18 @@
         <Text>反馈：Message / Notification / Alert / Modal / Drawer / Tooltip / Popover / Popconfirm / FocusTrap / ProgressBar / Spin</Text>
         // 说明导航与框架标签覆盖。
         <Text>导航与框架：Menu / Dropdown / Navigation / Steps / Pagination / Breadcrumb / Anchor / Tabs / ThemeToggle / WindowControl / WindowDragRegion / QRCode / Watermark</Text>
+        // 说明基础图表标签覆盖。
+        <Text>图表：BarChart / LineChart / PieChart（类型化静态数据与基础视觉配置）</Text>
         // 展示语言能力小节。
         <Text fontSize="heading5">语言能力</Text>
         // 说明组件与状态能力。
         <Text>组件：props / 私有 state / 类型化 state（u32、usize、f32、i32、Date、Time、Color、Point、CascaderValue、HashSet、Option、Vec、UploadFile）/ setState / 句柄位绑定 / If / For / 样式类继承 / setTheme。</Text>
         // 说明数据声明能力。
-        <Text>数据：数组字面量 / 数据类型构造链（含 SelectableItem、CollapsePanel、SelectOption、TreeNode、TimelineItem、Step、MenuItem、DropdownItem、Date、Time、Color、Point）/ Record 类型化业务模型。</Text>
+        <Text>数据：数组字面量 / 数据类型构造链（含 SelectableItem、CollapsePanel、SelectOption、TreeNode、TimelineItem、Step、MenuItem、DropdownItem、BarData、LineData、PieData、Date、Time、Color、Point）/ Record 类型化业务模型。</Text>
         // 展示保留边界小节。
         <Text fontSize="heading5">保留边界</Text>
         // 说明保留在 Rust API 的边界。
-        <Text>图表等未登记标签，以及 Agent 控制与 test-harness 专用入口。</Text>
+        <Text>高级图表配置、其余图表标签，以及 Agent 控制与 test-harness 专用入口。</Text>
         // 展示验收状态标签。
         <Container direction="row" gap="8px">
           // 标记结构对齐状态。
