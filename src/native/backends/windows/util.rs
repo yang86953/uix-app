@@ -17,6 +17,7 @@ pub(crate) fn to_utf8(wide: &[u16]) -> String {
 
 // 读取最近 Win32 错误的可诊断文本。
 pub(crate) fn get_last_error_string() -> String {
+    // SAFETY: GetLastError 无参数且只读取调用线程的最近错误码。
     let code = unsafe { GetLastError() };
     windows_error_string(code)
 }
@@ -44,6 +45,7 @@ pub(crate) fn windows_diag_for_code(code: Errc, context: &str, windows_code: u32
 }
 
 fn windows_fonts_dir() -> Option<String> {
+    // SAFETY: 可写 UTF-16 缓冲区长度与传给 GetWindowsDirectoryW 的容量一致，返回长度在切片前校验。
     unsafe {
         let mut win_dir = vec![0u16; 260];
         let len = GetWindowsDirectoryW(win_dir.as_mut_ptr(), win_dir.len() as u32);
@@ -57,6 +59,7 @@ fn windows_fonts_dir() -> Option<String> {
 
 fn file_exists(path: &str) -> bool {
     let wide = to_wide(path);
+    // SAFETY: wide 是以 NUL 结尾的 UTF-16 缓冲区，并在同步调用期间保持有效。
     unsafe { GetFileAttributesW(wide.as_ptr()) != INVALID_FILE_ATTRIBUTES }
 }
 
@@ -179,6 +182,7 @@ pub(crate) fn scan_random_font_path() -> Option<String> {
 }
 
 fn scan_fonts_dir(fonts_dir: &str, mut accept: impl FnMut(&str) -> bool) -> Option<String> {
+    // SAFETY: 搜索模式和 WIN32_FIND_DATAW 在调用期间有效，成功获得的搜索句柄在所有返回路径上关闭。
     unsafe {
         let scan_pattern = format!("{}*.*", fonts_dir);
         let wide_pattern = to_wide(&scan_pattern);
@@ -268,6 +272,7 @@ struct WIN32_FIND_DATAW {
 }
 
 #[link(name = "kernel32")]
+// SAFETY: 声明严格对应 kernel32 文件枚举与路径 API 的 Win32 ABI，调用方维护缓冲区和搜索句柄契约。
 unsafe extern "system" {
     fn GetLastError() -> u32;
     fn GetWindowsDirectoryW(lpBuffer: *mut u16, uSize: u32) -> u32;

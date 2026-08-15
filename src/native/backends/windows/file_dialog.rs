@@ -55,6 +55,7 @@ impl IFileDialog for WindowsFileDialog {
         let wide_filters = to_wide(filters);
         let mut buf = [0u16; 4096];
         let wide_title = to_wide(title);
+        // SAFETY: OPENFILENAMEW 中的所有指针均指向本作用域内存活且可写范围已知的缓冲区，系统调用返回后才解析结果。
         unsafe {
             let mut ofn = OPENFILENAMEW {
                 lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
@@ -131,6 +132,7 @@ impl IFileDialog for WindowsFileDialog {
         let wide_filters = to_wide(filters);
         let mut buf = [0u16; 4096];
         let wide_title = to_wide(title);
+        // SAFETY: OPENFILENAMEW 仅借用本作用域中的 UTF-16 缓冲区，调用期间这些缓冲区不会移动或失效。
         unsafe {
             let mut ofn = OPENFILENAMEW {
                 lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
@@ -169,6 +171,7 @@ impl IFileDialog for WindowsFileDialog {
     fn open_folder(&mut self, title: &str) -> Result<Option<String>> {
         let wide_title = to_wide(title);
         let mut buf = [0u16; 4096];
+        // SAFETY: BROWSEINFOW 的输入与输出缓冲区在同步调用期间保持有效，返回的 PIDL 最终由 CoTaskMemFree 释放。
         unsafe {
             let mut bi = BROWSEINFOW {
                 hwndOwner: self.hwnd,
@@ -236,6 +239,7 @@ const OFN_PATHMUSTEXIST: u32 = 0x00000800;
 const OFN_OVERWRITEPROMPT: u32 = 0x00000002;
 
 #[link(name = "comdlg32")]
+// SAFETY: 这些声明严格对应 comdlg32 的 Win32 ABI，调用方负责提供有效且尺寸正确的 OPENFILENAMEW。
 unsafe extern "system" {
     fn GetOpenFileNameW(lpofn: *mut OPENFILENAMEW) -> i32;
     fn GetSaveFileNameW(lpofn: *mut OPENFILENAMEW) -> i32;
@@ -251,6 +255,7 @@ struct BROWSEINFOW {
     pszDisplayName: *mut u16,
     lpszTitle: *const u16,
     ulFlags: u32,
+    // SAFETY: 回调函数若存在必须遵守 SHBrowseForFolderW 规定的 system ABI 与参数生命周期。
     lpfn: Option<unsafe extern "system" fn(*mut BROWSEINFOW, *mut std::ffi::c_void) -> i32>,
     lParam: isize,
     iImage: i32,
@@ -260,12 +265,14 @@ const BIF_RETURNONLYFSDIRS: u32 = 0x0001;
 const BIF_NEWDIALOGSTYLE: u32 = 0x0040;
 
 #[link(name = "shell32")]
+// SAFETY: 这些声明严格对应 shell32 的 Win32 ABI，调用方负责缓冲区有效性并接管返回 PIDL 的释放责任。
 unsafe extern "system" {
     fn SHBrowseForFolderW(lpbi: *mut BROWSEINFOW) -> *mut std::ffi::c_void;
     fn SHGetPathFromIDListW(pidl: *mut std::ffi::c_void, pszPath: *mut u16) -> i32;
 }
 
 #[link(name = "ole32")]
+// SAFETY: CoTaskMemFree 的声明对应 ole32 ABI，仅可传入 COM 任务分配器返回的指针。
 unsafe extern "system" {
     fn CoTaskMemFree(pv: *mut std::ffi::c_void);
 }

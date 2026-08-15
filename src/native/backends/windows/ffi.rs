@@ -19,6 +19,7 @@ use super::bindings::{
 // ════════════════════════════════════════════════════════════════════════════
 
 #[link(name = "dwmapi")]
+// SAFETY: DwmFlush 的声明严格对应 dwmapi 导出的 system ABI，调用方检查其 HRESULT。
 unsafe extern "system" {
     /// Blocks the calling thread until the next DWM compositor present.
     pub(crate) fn DwmFlush() -> i32;
@@ -29,6 +30,7 @@ unsafe extern "system" {
 // ════════════════════════════════════════════════════════════════════════════
 
 #[link(name = "kernel32")]
+// SAFETY: 本块声明与 kernel32 的 Win32 ABI 一致，调用方分别维护句柄、指针和缓冲区的有效性。
 unsafe extern "system" {
     pub(crate) fn GetModuleHandleW(lpModuleName: *const u16) -> *mut std::ffi::c_void;
     pub(crate) fn GetLastError() -> u32;
@@ -47,6 +49,7 @@ unsafe extern "system" {
 // ════════════════════════════════════════════════════════════════════════════
 
 #[link(name = "user32")]
+// SAFETY: 本块声明与 user32 的 Win32 ABI 一致，调用方负责窗口句柄、回调 ABI 和输出缓冲区契约。
 unsafe extern "system" {
     pub(super) fn RegisterClassExW(lpwcx: *const WNDCLASSEXW) -> u16;
     pub(crate) fn CreateWindowExW(
@@ -184,6 +187,7 @@ unsafe extern "system" {
         hwnd: *mut std::ffi::c_void,
         nIDEvent: u32,
         uElapse: u32,
+        // SAFETY: 定时器回调若存在必须遵循 SetTimer 规定的 system ABI，且不得跨 FFI 边界展开 panic。
         lpTimerFunc: Option<unsafe extern "system" fn()>,
     ) -> usize;
     pub(crate) fn KillTimer(hwnd: *mut std::ffi::c_void, uIDEvent: u32) -> i32;
@@ -242,6 +246,7 @@ pub(crate) const REG_DWORD: u32 = 4;
 pub(crate) const ERROR_SUCCESS: i32 = 0;
 
 #[link(name = "advapi32")]
+// SAFETY: 注册表声明严格对应 advapi32 ABI，调用方负责键句柄和长度标注缓冲区的有效性。
 unsafe extern "system" {
     pub(crate) fn RegOpenKeyExW(
         hKey: *mut std::ffi::c_void,
@@ -266,6 +271,7 @@ unsafe extern "system" {
 // ════════════════════════════════════════════════════════════════════════════
 
 #[link(name = "imm32")]
+// SAFETY: 输入法声明严格对应 imm32 ABI，调用方只传入仍然有效的窗口与输入上下文句柄。
 unsafe extern "system" {
     pub(crate) fn ImmAssociateContextEx(
         hwnd: *mut std::ffi::c_void,
