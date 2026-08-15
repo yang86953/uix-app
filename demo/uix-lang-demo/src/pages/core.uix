@@ -12,6 +12,8 @@
       <Column gap="8px">
         // 展示面板小节标题。
         <Text fontSize="heading5">Typography — 标题层级</Text>
+        // 展示与 Text 共享公开运行时的 Label 别名。
+        <Label>Label — 可选择的通用文本</Label>
         // 展示一级标题。
         <Typography level="1">Heading 1 — 一级标题</Typography>
         // 展示二级标题。
@@ -158,6 +160,14 @@
           <FloatButton icon="message-circle" tooltip="反馈" badge={{ count: 7, dot: false }} />
         // 结束浮动按钮行。
         </Container>
+        // 展示只接收稳定直接子按钮的浮动按钮组。
+        <FloatButtonGroup trigger="click" automationId="demo-float-button-group">
+          // 展示组内编辑按钮。
+          <FloatButton icon="edit" tooltip="编辑" />
+          // 展示组内分享按钮。
+          <FloatButton icon="share-2" tooltip="分享" />
+        // 结束浮动按钮组。
+        </FloatButtonGroup>
       // 结束间距内容。
       </Column>
     // 结束间距与浮动按钮面板。
@@ -345,8 +355,10 @@
           <Affix offsetTop="12" scrollY={scroll_y}><Button type="primary">已吸顶</Button></Affix>
           // 展示读取组件私有滚动状态的回到顶部按钮。
           <FloatButtonBackTop threshold="100" scrollY={scroll_y} />
+          // 展示同一状态契约下的标准 BackTop 标签。
+          <BackTop threshold="120" scrollY={scroll_y} />
           // 说明状态来源。
-          <Text fontSize="small">Affix / FloatButtonBackTop 读取组件私有 scroll_y 状态（f32 = 180 模拟已滚动）</Text>
+          <Text fontSize="small">Affix / FloatButtonBackTop / BackTop 读取组件私有 scroll_y 状态（f32 = 180 模拟已滚动）</Text>
         // 结束吸顶演示行。
         </Container>
       // 结束滚动内容。

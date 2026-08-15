@@ -210,6 +210,22 @@ fn build_app(
         // 只请求 Application System 创建新窗口。
         move || controller.open_theme_window()
     };
+    // 构造数据展示页唯一的静态表格列声明。
+    let table_columns = vec![
+        // 展示演示能力名称列。
+        TableColumn::new("能力", 220.0),
+        // 展示演示能力状态列。
+        TableColumn::new("状态", 140.0),
+    // 结束静态表格列集合。
+    ];
+    // 构造数据展示页唯一的静态表格行集合。
+    let table_rows: Vec<TableRow> = vec![
+        // 展示声明式组件映射状态。
+        vec!["UIX 组件映射".to_string(), "已登记".to_string()],
+        // 展示类型化数据契约状态。
+        vec!["TableRow / TableColumn".to_string(), "已复用".to_string()],
+    // 结束静态表格行集合。
+    ];
     // 编译期读取 <App> 根文档并返回尚未运行的现有 App builder。
     uix_app!("src/main.uix")
     // 结束应用构造函数。
