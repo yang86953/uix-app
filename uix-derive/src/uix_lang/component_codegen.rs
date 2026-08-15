@@ -866,8 +866,8 @@ pub(super) fn is_state_handle_attribute(element_name: &str, attribute_name: &str
         "Radio" | "Segmented" | "Select" | "TreeSelect" => &["value"],
         // 双向绑定结构化路径与颜色状态。
         "Cascader" | "ColorPicker" => &["value"],
-        // 双向绑定日期与时间状态。
-        "DatePicker" | "TimePicker" => &["value"],
+        // 双向绑定输入日期、日历日期与时间状态。
+        "DatePicker" | "Calendar" | "TimePicker" => &["value"],
         // 区间滑块读取对象形式的双 State<f64> 句柄。
         "RangeSlider" | "DateRangePicker" => &["value"],
         // 步骤条与分页器读取 State<usize> 受控状态。

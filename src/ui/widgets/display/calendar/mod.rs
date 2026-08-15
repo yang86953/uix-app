@@ -10,7 +10,7 @@ use crate::ui::SnapshotFields;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::widgets::input::date_picker::{Date, days_in_month, first_weekday};
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, State, SystemEvent, WidgetTree,
 };
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -18,6 +18,8 @@ use std::rc::Rc;
 mod geometry;
 // 日历标题本地化与文字适配由无状态格式化子模块负责。
 mod formatting;
+// 受控日期构造器由窄绑定适配子模块负责。
+mod binding;
 
 use self::geometry::CalendarGeometry;
 // 绘制路径只消费格式化子模块的两个窄函数。
@@ -102,6 +104,8 @@ component! {
         year: Cell<i32>,
         month: Cell<usize>,
         selected_date: Cell<Option<Date>>,
+        // 可选受控状态是选中日期的唯一外部所有者。
+        value_binding: Option<State<Date>>,
         focused_day: Cell<usize>,
         cell_size: f32,
         year_jump: bool,
@@ -477,6 +481,8 @@ impl Calendar {
             year: Cell::new(2026),
             month: Cell::new(6),
             selected_date: Cell::new(None),
+            // 默认保持非受控选择生命周期。
+            value_binding: None,
             focused_day: Cell::new(1),
             cell_size: DEFAULT_CELL_SIZE,
             year_jump: false,
@@ -510,7 +516,9 @@ impl Calendar {
         (self.year.get(), self.month.get())
     }
     /// 设置初始选中日期；后续 reconcile 保留用户运行态选择。
-    pub fn default_date(self, date: Date) -> Self {
+    pub fn default_date(mut self, date: Date) -> Self {
+        // 最后调用的默认值显式切回非受控模式。
+        self.value_binding = None;
         let date = Self::normalize_date(date);
         self.year.set(date.year);
         self.month.set(date.month);
@@ -577,6 +585,8 @@ impl Calendar {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        // reconcile 时从下一棵声明树读取最新受控值。
+        let controlled_date = next.value_binding.as_ref().map(State::get);
         let next_cell_size = Self::normalize_cell_size(next.cell_size);
         if self.cell_size != next_cell_size {
             self.last_geometry.set(None);
@@ -587,6 +597,19 @@ impl Calendar {
         self.disabled_predicate = next.disabled_predicate;
         self.custom_cell = next.custom_cell;
         self.custom_cell_factory = next.custom_cell_factory;
+        // 替换绑定能力；None 表示继续保留最后一次运行态选择。
+        self.value_binding = next.value_binding;
+        // 受控值始终覆盖本地投影与当前月份。
+        if let Some(date) = controlled_date.map(Self::normalize_date) {
+            // 同步完整选中日期。
+            self.selected_date.set(Some(date));
+            // 同步展示年份。
+            self.year.set(date.year);
+            // 同步展示月份。
+            self.month.set(date.month);
+            // 同步键盘焦点日。
+            self.focused_day.set(date.day);
+        }
         self.custom_cell_factory_generation.set(
             self.custom_cell_factory_generation
                 .get()
@@ -827,6 +850,14 @@ impl Calendar {
         }
         if self.selected_date.get() != Some(date) {
             self.selected_date.set(Some(date));
+            // 受控模式先提交唯一外部状态，再允许观察者读取 Change。
+            if let Some(state) = self.value_binding.as_ref() {
+                // 避免向相同日期产生冗余状态版本。
+                if state.get() != date {
+                    // 回写已归一化且确定的用户选择。
+                    state.set(date);
+                }
+            }
             self.pending_change.set(Some(date));
             if self.custom_cell {
                 self.layout_requested.set(true);
@@ -862,3 +893,7 @@ impl Default for Calendar {
         Self::new()
     }
 }
+
+// 将受控状态回归与主实现分文件保存，确保组件文件不超过规模上限。
+#[cfg(test)]
+mod tests;
