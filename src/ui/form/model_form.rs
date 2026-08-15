@@ -13,6 +13,11 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+// 定义类型化全模型规则的独立所有权与执行边界。
+mod model_rules;
+// 引入全模型规则存储与验证入口。
+use model_rules::{ModelRule, validate_model_rules};
+
 /// 断言字段已在内部模型登记：未登记属 `Form::model` 投影误用，给出
 /// 带明确提示的可诊断 panic（开发者契约错误，非运行时失败）。
 fn field_bound_or_panic<T>(value: Option<T>, contract: &str) -> T {
@@ -388,6 +393,8 @@ pub struct ModelFormBuilder<M> {
     model: State<M>,
     layout: Form,
     fields: Vec<Box<dyn ModelField<M>>>,
+    // 保存按声明顺序执行的类型化全模型规则。
+    model_rules: Vec<ModelRule<M>>,
     on_submit: Option<Box<dyn Fn(M) -> Result<(), String>>>,
 }
 
@@ -458,6 +465,8 @@ impl<M: Clone + Send + Sync + 'static> ModelFormBuilder<M> {
             inner: Rc::new(ModelFormInner {
                 form,
                 fields: self.fields,
+                // 把规则所有权交给共享表单句柄。
+                model_rules: self.model_rules,
                 on_submit: self.on_submit,
             }),
         }
@@ -484,6 +493,8 @@ impl<M: Clone + Send + Sync + 'static> Clone for ModelForm<M> {
 struct ModelFormInner<M> {
     form: FormModel,
     fields: Vec<Box<dyn ModelField<M>>>,
+    // 保存候选模型组装后执行的规则。
+    model_rules: Vec<ModelRule<M>>,
     on_submit: Option<Box<dyn Fn(M) -> Result<(), String>>>,
 }
 
@@ -506,6 +517,8 @@ impl<M: Clone + Send + Sync + 'static> ModelForm<M> {
         for field in &self.inner.fields {
             field.write_back(&mut next);
         }
+        // 字段规则通过后再按声明顺序校验完整候选模型。
+        validate_model_rules(&self.inner.model_rules, &next)?;
         Ok(next)
     }
 
@@ -547,6 +560,8 @@ impl Form {
             model: model.clone(),
             layout: Form::new(),
             fields: Vec::new(),
+            // 默认不登记全模型规则。
+            model_rules: Vec::new(),
             on_submit: None,
         }
     }
