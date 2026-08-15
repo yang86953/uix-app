@@ -525,6 +525,7 @@ impl Mentions {
         Size::new(200.0, CONTROL_HEIGHT)
     }
 
+    /// 创建使用指定占位文字和默认 `@` 触发符的提及输入框。
     pub fn new(placeholder: impl Into<String>) -> Self {
         Self {
             value: String::new(),
@@ -577,7 +578,7 @@ impl Mentions {
         self
     }
 
-    // 将完整提及文本绑定到外部字符串状态。
+    /// 将完整提及文本双向绑定到外部字符串状态。
     pub fn bind_value(mut self, state: &State<String>) -> Self {
         // 克隆轻量状态句柄供后续编辑与候选提交使用。
         self.value_binding = Some(state.clone());

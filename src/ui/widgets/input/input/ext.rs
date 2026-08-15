@@ -25,6 +25,7 @@ impl SnapshotSource for Input {
 
 /// Compatibility extension for the former `.search(bool)` builder.
 pub trait InputSearchExt: Sized {
+    /// 设置输入框是否启用搜索语义。
     fn search(self, enabled: bool) -> Self;
 }
 

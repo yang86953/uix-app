@@ -19,7 +19,9 @@ use super::slider::decimal_places;
 /// 滑块拇指标识：左（起始）或右（结束）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RangeSliderThumb {
+    /// 表示范围的起始值拇指。
     Start,
+    /// 表示范围的结束值拇指。
     End,
 }
 

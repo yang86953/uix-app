@@ -16,6 +16,7 @@ pub mod radio;
 pub mod range_slider;
 pub mod rate;
 pub mod segmented;
+/// 单选与多选下拉选择组件。
 pub mod select;
 pub mod slider;
 pub mod switch;
@@ -23,6 +24,7 @@ pub mod time_picker;
 // 树组件 capability 关闭时不解析树选择器实现。
 #[cfg(feature = "tree-widgets")]
 // 启用后保留既有 input::tree_select 子模块路径。
+/// 支持层级数据的树形选择组件。
 pub mod tree_select;
 
 pub use autocomplete::*;
