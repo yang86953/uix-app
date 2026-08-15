@@ -614,6 +614,7 @@ impl TreeSelect {
         }
     }
 
+    /// 创建一个使用默认占位文本、空节点树且未展开的树选择器。
     pub fn new() -> Self {
         Self {
             placeholder: "Please select".into(),
@@ -645,17 +646,19 @@ impl TreeSelect {
             dropdown_damage_rect: Cell::new(Rect::zero()),
         }
     }
+    /// 设置尚未选中节点时显示的占位文本。
     pub fn placeholder(mut self, p: &str) -> Self {
         self.placeholder = p.to_string();
         self
     }
+    /// 替换候选节点树，并按当前稳定节点键重新解析显示标题。
     pub fn nodes(mut self, n: Vec<TreeNode>) -> Self {
         self.nodes = n;
         // 支持先绑定 value 再设置树节点的构造顺序。
         self.sync_bound_value();
         self
     }
-    // 将稳定节点 key 绑定到外部字符串状态。
+    /// 将稳定节点键双向绑定到外部字符串状态。
     pub fn bind_value(mut self, state: &State<String>) -> Self {
         // 克隆轻量状态句柄供交互提交使用。
         self.value_binding = Some(state.clone());
@@ -663,21 +666,26 @@ impl TreeSelect {
         self.sync_bound_value();
         self
     }
+    /// 返回当前选中节点用于展示的标题。
     pub fn value(&self) -> &str {
         &self.value
     }
+    /// 返回当前选中节点的稳定键。
     pub fn value_key(&self) -> &str {
         &self.value_key
     }
 
+    /// 返回弹层当前是否处于逻辑展开状态。
     pub fn is_open(&self) -> bool {
         self.open
     }
 
+    /// 返回弹层当前是否仍需呈现，包括退出过渡阶段。
     pub fn is_present(&self) -> bool {
         self.open || self.closing
     }
 
+    /// 展开弹层、重置其表面缓存，并高亮当前选择或首个可用节点。
     pub fn open(&mut self) {
         // 新呈现周期重新收集弹层脏区。
         self.dropdown_damage_rect.set(Rect::zero());
@@ -707,6 +715,7 @@ impl TreeSelect {
         self.transition_dirty = true;
     }
 
+    /// 关闭弹层并在已呈现时启动退出过渡。
     pub fn close(&mut self) {
         if !self.is_present() {
             self.open = false;
