@@ -39,6 +39,7 @@ impl WindowsDisplay {
 
     /// 读取 Windows 注册表检测系统深色/浅色模式
     pub(crate) fn detect_os_theme() -> Result<bool> {
+        // SAFETY: UTF-16 键名在同步调用期间有效，注册表键在成功打开后关闭，DWORD 输出缓冲区及长度字段匹配。
         unsafe {
             let sub_key =
                 to_wide("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
@@ -149,12 +150,14 @@ struct MonitorInventory {
     failed: bool,
 }
 
+// SAFETY: 该回调只由 monitors() 的同步枚举调用，inventory 必须指向枚举期间唯一存活的 MonitorInventory。
 unsafe extern "system" fn collect_monitor(
     monitor: HMONITOR,
     _device_context: HDC,
     _bounds: *mut RECT,
     inventory: LPARAM,
 ) -> BOOL {
+    // SAFETY: EnumDisplayMonitors 传回原始 monitor 与 inventory；外层捕获 panic，避免异常跨越 FFI 边界。
     match catch_unwind(AssertUnwindSafe(|| unsafe {
         collect_monitor_unchecked(monitor, inventory)
     })) {

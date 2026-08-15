@@ -165,6 +165,7 @@ impl FramePacerWorker {
                         continue;
                     }
 
+                    // SAFETY: DwmFlush 无参数，工作线程只同步等待 DWM 合成机会并检查 HRESULT。
                     let result = unsafe { DwmFlush() };
                     let still_pending = state
                         .lock()
@@ -191,6 +192,7 @@ impl FramePacerWorker {
                     }
 
                     let (wparam, lparam) = epoch_to_message(ticket.epoch);
+                    // SAFETY: 保存的整数只还原为不透明 HWND，消息参数不含指针；窗口失效时 PostMessageW 会安全失败。
                     let posted = unsafe {
                         PostMessageW(
                             hwnd as *mut std::ffi::c_void,

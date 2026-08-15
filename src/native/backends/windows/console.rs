@@ -214,6 +214,7 @@ struct CONSOLE_CURSOR_INFO {
 }
 
 #[link(name = "kernel32")]
+// SAFETY: 声明对应 kernel32 控制台 ABI，调用方负责句柄、缓冲区长度、结构尺寸和 NUL 结尾标题契约。
 unsafe extern "system" {
     fn GetStdHandle(nStdHandle: u32) -> RawHandle;
     fn SetConsoleTextAttribute(hConsoleOutput: RawHandle, wAttributes: u16) -> i32;

@@ -86,6 +86,7 @@ impl WindowsNotification {
     }
 
     fn remove_icon_for(owner: usize) {
+        // SAFETY: 零初始化对 NOTIFYICONDATAW 的标量、句柄和数组字段均有效，cbSize 随后设置且 owner 仅作不透明 HWND 使用。
         unsafe {
             let mut nid: NOTIFYICONDATAW = std::mem::zeroed();
             nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
@@ -122,6 +123,7 @@ impl INotification for WindowsNotification {
                 "WindowsNotification::show: owner HWND is null",
             ));
         }
+        // SAFETY: NOTIFYICONDATAW 的尺寸、字符串边界和有效 HWND 均在调用前设置，Shell_NotifyIconW 不保留 Rust 借用。
         unsafe {
             let mut nid: NOTIFYICONDATAW = std::mem::zeroed();
             nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
@@ -195,6 +197,7 @@ const WM_APP_NOTIFY: u32 = 0x8000;
 const IDI_APPLICATION: u16 = 32512;
 
 #[link(name = "shell32")]
+// SAFETY: Shell_NotifyIconW 声明对应 shell32 ABI，调用方提供尺寸正确且在同步调用期间可写的通知结构。
 unsafe extern "system" {
     fn Shell_NotifyIconW(dwMessage: u32, lpdata: *mut NOTIFYICONDATAW) -> i32;
 }

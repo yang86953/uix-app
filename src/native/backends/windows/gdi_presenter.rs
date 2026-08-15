@@ -19,6 +19,7 @@ use crate::native::{Errc, Error};
 // ── Windows FFI declarations ────────────────────────────────────────────────
 
 #[link(name = "gdi32")]
+// SAFETY: 声明对应 gdi32 ABI，调用方负责 HDC/HBITMAP 所有权、选择恢复顺序及像素输出槽的有效性。
 unsafe extern "system" {
     fn CreateDIBSection(
         hdc: *mut std::ffi::c_void,
