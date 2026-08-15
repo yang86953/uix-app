@@ -1,8 +1,8 @@
 # accessibility 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
-> **接口**：声明 ui 系统的无障碍语义、实时快照和动作桥。依赖：[component](component.md)、[event](event.md)。导出：统一语义树和无障碍动作契约；公开标注见[使用 · 事件](../../使用/事件.md#无障碍)。
+> **接口**：声明 ui 系统的无障碍语义、实时快照和动作桥。依赖：[component](component.md)、[event](event.md)。导出：统一语义树和无障碍动作契约；公开标注见[使用 · 事件](../../使用/交互与反馈/事件.md#无障碍)。
 >
 > **当前实现线索**：相关实现暂位于 `src/ui/accessibility/accessibility_override.rs`、`src/ui/component_snapshot/`、`src/ui/accessibility/semantic_snapshot.rs` 等位置；重构后由本模块统一派生语义树。
 

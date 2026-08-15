@@ -1,6 +1,6 @@
 # window 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 app 系统的窗口创建、逐窗会话、单帧驱动、文本输入和关闭协议。依赖：[platform/windowing](../platform/windowing.md)、[platform/presentation](../platform/presentation.md)、[ui/component](../ui/component.md)、[ui/view](../ui/view.md)、[graphics/renderer](../graphics/renderer.md)，以及 app System 私有队列/语义契约。导出：`Window`、`WindowConfig`、逐窗 drive/result 契约和内部会话，供 application 组合根与 event-loop 调度使用。
 >

@@ -1,6 +1,6 @@
 # agent-transport 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 platform 系统的可选 `agent-transport` 模块，权威持有同用户本机 IPC、peer 校验和 discovery 原子发布。依赖：[windowing](windowing.md)、[diagnostics](diagnostics.md)。导出：供 app/agent 使用的字节流与生命周期句柄。
 

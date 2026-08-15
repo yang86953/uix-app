@@ -1,6 +1,6 @@
 # view 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 ui 系统的声明式 View、组合器和 reconcile 输入。依赖：[component](component.md)、[reactive](reactive.md)。导出：`View`、`ViewNode`、combinator 与组件 DSL；theme 等上下文通过通用构建上下文扩展。
 >
