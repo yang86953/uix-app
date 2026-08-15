@@ -13,12 +13,22 @@ fn generate(source: &str) -> Result<String, Diagnostic> {
 #[test]
 fn generates_typed_form_contract() {
     // 生成模型、字段、规则与提交按钮。
-    let snapshot = generate(r#"<Form model={profile} @submit="on_submit($event)" width="320px"><FormInputItem field="email" label="邮箱" rules="required,email" /><Button type="primary" @click="submitForm">提交</Button></Form>"#).expect("Form 应生成");
+    let snapshot = generate(r#"<Form model={profile} rules={[validate_profile, validate_access]} @submit="on_submit($event)" width="320px"><FormInputItem field="email" label="邮箱" rules="required,email" /><Button type="primary" @click="submitForm">提交</Button></Form>"#).expect("Form 应生成");
     // 核对模型、成员投影与规则。
     assert!(snapshot.contains("Form :: model (& (profile))"));
     assert!(snapshot.contains("& mut __uix_form_model . email"));
     assert!(snapshot.contains("label (\"邮箱\")"));
     assert!(snapshot.contains("required (true)") && snapshot.contains("email (true)"));
+    // 顶层规则必须按数组顺序生成公开 model_rule 调用。
+    let profile_rule = snapshot
+        .find("model_rule (validate_profile)")
+        .expect("缺少首条全模型规则");
+    // 定位第二条全模型规则。
+    let access_rule = snapshot
+        .find("model_rule (validate_access)")
+        .expect("缺少第二条全模型规则");
+    // 规则顺序必须与文档数组一致。
+    assert!(profile_rule < access_rule);
     // 核对类型化回调、触发器和公共属性。
     assert!(snapshot.contains("on_submit") && snapshot.contains("__uix_submitted_model"));
     assert!(snapshot.contains("__uix_submit_form . submit_typed"));
@@ -130,6 +140,18 @@ fn rejects_incomplete_form_contracts() {
 // 验证规则与父子边界。
 #[test]
 fn rejects_invalid_form_field_shapes() {
+    // 顶层 rules 字符串不得冒充函数数组。
+    let literal_rules = generate(r#"<Form model={profile} rules="validate_profile" @submit="save"><FormInputItem field="name" /><Button @click="submitForm">提交</Button></Form>"#).expect_err("字符串顶层 rules 必须失败");
+    // 诊断必须给出数组写法。
+    assert!(literal_rules.suggestion.contains("rules={["));
+    // 动态规则集合不能替代静态函数数组。
+    let dynamic_rules = generate(r#"<Form model={profile} rules={form_rules} @submit="save"><FormInputItem field="name" /><Button @click="submitForm">提交</Button></Form>"#).expect_err("动态顶层 rules 必须失败");
+    // 诊断必须要求数组字面量。
+    assert!(dynamic_rules.message.contains("数组字面量"));
+    // 数组项不得提前调用校验函数。
+    let called_rule = generate(r#"<Form model={profile} rules={[validate_profile()]} @submit="save"><FormInputItem field="name" /><Button @click="submitForm">提交</Button></Form>"#).expect_err("调用形态顶层 rule 必须失败");
+    // 建议必须要求传入函数名。
+    assert!(called_rule.suggestion.contains("函数名"));
     // 未登记规则必须失败。
     let rule = generate(r#"<Form model={profile} @submit="save"><FormInputItem field="name" rules="required,length" /><Button @click="submitForm">提交</Button></Form>"#).expect_err("未知规则");
     // 诊断必须包含具体规则。

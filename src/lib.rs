@@ -216,6 +216,9 @@ mod uix_lang_codegen_consumer_tests;
 // 隔离 Container 复合视觉简写的公开 API 编译测试。
 #[cfg(test)]
 mod uix_lang_container_consumer_tests;
+// 隔离 Form 顶层全模型规则的公开 API 编译测试。
+#[cfg(test)]
+mod uix_lang_form_rules_consumer_tests;
 
 /// 按 key 取当前资源表文案（E-08）：`t!("common.save")`。
 ///
