@@ -316,12 +316,14 @@ pub(crate) fn special_dir(directory: SpecialDir) -> Result<PathBuf> {
     }
 }
 
+// SAFETY: 该回调只由 displays() 的同步枚举调用，data 必须指向枚举期间唯一存活的 MonitorInventory。
 unsafe extern "system" fn collect_monitor(
     monitor: HMONITOR,
     _device_context: HDC,
     _bounds: *mut RECT,
     data: LPARAM,
 ) -> BOOL {
+    // SAFETY: EnumDisplayMonitors 传回原始 monitor 和 data；外层捕获 panic，避免异常跨越 FFI 边界。
     match catch_unwind(AssertUnwindSafe(|| unsafe {
         collect_monitor_unchecked(monitor, data)
     })) {
@@ -583,6 +585,7 @@ const FOLDERID_DOWNLOADS: Guid = Guid {
 };
 
 #[link(name = "ole32")]
+// SAFETY: 声明与 ole32 的 Win32 ABI 一致，调用方按线程配对 COM 初始化并只释放 COM 分配的内存。
 unsafe extern "system" {
     fn CoInitializeEx(reserved: *mut c_void, coinit: u32) -> i32;
     fn CoUninitialize();
@@ -590,6 +593,7 @@ unsafe extern "system" {
 }
 
 #[link(name = "shell32")]
+// SAFETY: 声明与 shell32 的 Win32 ABI 一致，调用方提供有效 GUID 和可写输出槽并接管返回内存。
 unsafe extern "system" {
     fn SHGetKnownFolderPath(
         folder: *const Guid,
@@ -600,11 +604,13 @@ unsafe extern "system" {
 }
 
 #[link(name = "ntdll")]
+// SAFETY: RtlGetVersion 声明与 ntdll ABI 一致，调用方提供已填写结构尺寸的可写对象。
 unsafe extern "system" {
     fn RtlGetVersion(version: *mut RtlOsVersionInfo) -> i32;
 }
 
 #[link(name = "kernel32")]
+// SAFETY: 本块声明与 kernel32 ABI 一致，调用方负责所有句柄、结构尺寸和输出指针的有效性。
 unsafe extern "system" {
     fn CloseHandle(handle: *mut c_void) -> i32;
     fn CreateToolhelp32Snapshot(flags: u32, process_id: u32) -> *mut c_void;
