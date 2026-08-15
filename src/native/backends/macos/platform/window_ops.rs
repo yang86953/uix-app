@@ -125,6 +125,7 @@ impl WindowOps for MacosWindowOps {
 
     fn os_raise(&mut self) -> crate::core::Result<()> {
         self.ensure_valid_window("os_raise")?;
+        // SAFETY: ensure_valid_window 已确认 NSWindow 仍由本对象持有，show_window 只在同步 AppKit 调用期间使用该指针。
         unsafe {
             cocoa::show_window(self.window);
         }
@@ -133,6 +134,7 @@ impl WindowOps for MacosWindowOps {
 
     fn os_lower(&mut self) -> crate::core::Result<()> {
         self.ensure_valid_window("os_lower")?;
+        // SAFETY: ensure_valid_window 已确认 NSWindow 仍由本对象持有，hide_window 只在同步 AppKit 调用期间使用该指针。
         unsafe {
             cocoa::hide_window(self.window);
         }
