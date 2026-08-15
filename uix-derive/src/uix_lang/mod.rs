@@ -501,6 +501,9 @@ mod style_class_resolver;
 mod style_value_codegen;
 // 定义 transform 函数列表到公开二维仿射矩阵的编译期映射。
 mod style_transform_codegen;
+// 集中验证 transform 与 transformOrigin 的生成和拒绝路径。
+#[cfg(test)]
+mod style_transform_codegen_tests;
 // 定义样式块与内联样式共享解析器。
 mod style_parser;
 // 集中验证顶层声明与样式 Gate。

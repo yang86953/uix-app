@@ -53,8 +53,8 @@ fn transform_styles_compile_for_real_consumer() {
     // 展开基础旋转缩放与悬停平移倾斜的完整样式级联。
     let _transformed: ViewNode = uix::uix!(
         r#"
-        transformed { transform: rotate(15deg) scale(1.1); }
-        transformed:hover { transform: translate(4px, -2px) skew(3deg); }
+        transformed { transform: rotate(15deg) scale(1.1); transformOrigin: top left; }
+        transformed:hover { transform: translate(4px, -2px) skew(3deg); transformOrigin: 25% 12px 0; }
         <Text class="transformed">变换</Text>
         "#
     );

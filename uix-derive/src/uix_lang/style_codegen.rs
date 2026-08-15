@@ -5,8 +5,8 @@ use quote::quote;
 
 // 引入结构化属性、诊断与样式属性。
 use super::{Attribute, AttributeValue, Diagnostic, StyleProperty};
-// 引入 transform 函数列表到运行时矩阵的独立映射。
-use super::style_transform_codegen::transform_value;
+// 引入 transform 与原点到运行时公共契约的独立映射。
+use super::style_transform_codegen::{transform_origin_value, transform_value};
 // 引入样式值与字段映射辅助。
 use super::style_value_codegen::*;
 
@@ -48,6 +48,8 @@ pub(crate) fn apply_style_properties(
     let mut z_index = None;
     // 保存由 View 视觉变换运行时拥有的二维仿射更新。
     let mut transform = None;
+    // 保存由 View 运行时在布局帧确定后解析的变换原点更新。
+    let mut transform_origin = None;
     // 转换每一个已经解析的样式属性。
     for property in properties {
         // z-index 直接映射到 View 的绘制与命中顺序。
@@ -55,6 +57,13 @@ pub(crate) fn apply_style_properties(
             // 解析有符号整数层级并留待样式更新后应用。
             z_index = Some(z_index_value(property)?);
             // 结构属性不进入 Style 字段生成。
+            continue;
+        }
+        // transformOrigin 映射到 View 的公开原点值契约。
+        if property.name == "transformOrigin" {
+            // 解析关键字、百分比、像素与可选零 Z 值。
+            transform_origin = Some(transform_origin_value(property)?);
+            // 结构原点不进入 Style 字段生成。
             continue;
         }
         // transform 直接映射到 View 的视觉与命中矩阵。
@@ -83,13 +92,21 @@ pub(crate) fn apply_style_properties(
         // 没有层级声明时保持样式节点不变。
         styled
     };
-    // 视觉变换存在时交给 View 运行时的唯一公开入口。
-    if let Some(transform) = transform {
-        // 返回同时携带样式、层级与仿射变换的节点。
-        return Ok(quote! { (#layered).affine_transform(#transform) });
+    // 保存已经应用仿射矩阵的节点表达式。
+    let transformed = if let Some(transform) = transform {
+        // 同时携带样式、层级与仿射变换。
+        quote! { (#layered).affine_transform(#transform) }
+    } else {
+        // 没有矩阵声明时保持当前节点不变。
+        layered
+    };
+    // 变换原点存在时交给 View 运行时在布局帧上解析。
+    if let Some(transform_origin) = transform_origin {
+        // 返回同时携带矩阵与原点语义的节点。
+        return Ok(quote! { (#transformed).transform_origin(#transform_origin) });
     }
     // 返回已经完成全部受控更新的节点。
-    Ok(layered)
+    Ok(transformed)
 }
 
 // 把单个已映射样式属性转换为 Style 字段更新。

@@ -9,6 +9,237 @@ use super::{Diagnostic, StyleProperty};
 // 保存代码生成期可验证的二维 3x2 仿射矩阵。
 type Matrix = [f32; 6];
 
+// 保存单轴变换原点的公开运行时值。
+#[derive(Clone, Copy)]
+enum OriginCoordinate {
+    // 保存相对布局帧尺寸的比例。
+    Fraction(f32),
+    // 保存相对布局帧起点的像素偏移。
+    Pixels(f32),
+}
+
+// 保存关键字携带的轴限制或无轴长度值。
+#[derive(Clone, Copy)]
+enum OriginToken {
+    // 只允许出现在水平轴位置。
+    Horizontal(OriginCoordinate),
+    // 只允许出现在垂直轴位置。
+    Vertical(OriginCoordinate),
+    // 可按上下文解释为任一轴中心。
+    Center,
+    // 无轴限制的长度或百分比。
+    Coordinate(OriginCoordinate),
+}
+
+// 把 transformOrigin 映射为公开二维原点值表达式。
+pub(super) fn transform_origin_value(
+    // 接收结构化样式属性。
+    property: &StyleProperty,
+) -> Result<TokenStream, Diagnostic> {
+    // 按 CSS 空白分隔一到三个原点分量。
+    let mut parts = property
+        // 读取未改写值源码。
+        .value
+        // 借用源码字符串。
+        .source
+        // 按连续空白切分。
+        .split_whitespace()
+        // 收集以便处理可选第三轴。
+        .collect::<Vec<_>>();
+    // 原点至少需要一个分量，最多允许文档默认中的第三轴零值。
+    if parts.is_empty() || parts.len() > 3 {
+        // 返回分量数量诊断。
+        return Err(transform_diagnostic(
+            property,
+            "transformOrigin 需要一到三个分量",
+            "使用 center、top left、25% 12px 或 50% 50% 0",
+        ));
+    }
+    // 三分量形式的 Z 轴当前只允许二维等价值零。
+    if parts.len() == 3 {
+        // 读取第三轴文本。
+        let depth = parts[2];
+        // 仅接受有限的无单位零或零像素。
+        if !is_zero_depth(depth) {
+            // 返回二维运行时能力边界诊断。
+            return Err(transform_diagnostic(
+                property,
+                "transformOrigin 第三个 Z 轴分量必须为 0",
+                "二维运行时只支持 0 或 0px",
+            ));
+        }
+        // 移除已验证的零 Z 轴，只生成二维原点。
+        parts.pop();
+    }
+    // 单分量使用 CSS 默认的另一轴中心语义。
+    let (horizontal, vertical) = if parts.len() == 1 {
+        // 解析唯一分量。
+        single_origin(parts[0], property)?
+    } else {
+        // 两分量允许常规顺序与 top left 关键字交换顺序。
+        pair_origin(parts[0], parts[1], property)?
+    };
+    // 生成两个轴的公开值表达式。
+    let horizontal = origin_coordinate_tokens(horizontal);
+    // 生成垂直轴公开值表达式。
+    let vertical = origin_coordinate_tokens(vertical);
+    // 返回由 UI System 根公开的二维原点构造器。
+    Ok(quote! {
+        ::uix::prelude::TransformOrigin::new(#horizontal, #vertical)
+    })
+}
+
+// 解析单分量原点并补齐另一轴中心。
+fn single_origin(
+    // 接收唯一分量文本。
+    source: &str,
+    // 接收诊断所属属性。
+    property: &StyleProperty,
+) -> Result<(OriginCoordinate, OriginCoordinate), Diagnostic> {
+    // 解析关键字或数值分量。
+    let token = origin_token(source, property)?;
+    // 中心比例在两个轴上相同。
+    let center = OriginCoordinate::Fraction(0.5);
+    // 按分量轴限制补齐另一轴。
+    match token {
+        // 水平关键字保留指定值，垂直轴居中。
+        OriginToken::Horizontal(value) => Ok((value, center)),
+        // 垂直关键字保持指定值，水平轴居中。
+        OriginToken::Vertical(value) => Ok((center, value)),
+        // 单独 center 表示两轴中心。
+        OriginToken::Center => Ok((center, center)),
+        // 单独长度或百分比解释为水平轴，垂直轴居中。
+        OriginToken::Coordinate(value) => Ok((value, center)),
+    }
+}
+
+// 解析两个原点分量并确定水平与垂直轴。
+fn pair_origin(
+    // 接收第一分量。
+    first: &str,
+    // 接收第二分量。
+    second: &str,
+    // 接收诊断所属属性。
+    property: &StyleProperty,
+) -> Result<(OriginCoordinate, OriginCoordinate), Diagnostic> {
+    // 解析第一分量语义。
+    let first = origin_token(first, property)?;
+    // 解析第二分量语义。
+    let second = origin_token(second, property)?;
+    // 中心比例可按上下文充当任一轴。
+    let center = OriginCoordinate::Fraction(0.5);
+    // 覆盖规范顺序、垂直关键字前置和 center 消歧。
+    match (first, second) {
+        // 标准水平关键字加垂直关键字。
+        (OriginToken::Horizontal(x), OriginToken::Vertical(y)) => Ok((x, y)),
+        // top left 等垂直关键字前置形式需要交换轴。
+        (OriginToken::Vertical(y), OriginToken::Horizontal(x)) => Ok((x, y)),
+        // 水平关键字后接 center。
+        (OriginToken::Horizontal(x), OriginToken::Center) => Ok((x, center)),
+        // center 后接垂直关键字。
+        (OriginToken::Center, OriginToken::Vertical(y)) => Ok((center, y)),
+        // 垂直关键字后接 center。
+        (OriginToken::Vertical(y), OriginToken::Center) => Ok((center, y)),
+        // center 后接水平关键字时交换为水平值与垂直中心。
+        (OriginToken::Center, OriginToken::Horizontal(x)) => Ok((x, center)),
+        // 两个 center 表示两轴中心。
+        (OriginToken::Center, OriginToken::Center) => Ok((center, center)),
+        // 两个无轴长度值按水平、垂直顺序解释。
+        (OriginToken::Coordinate(x), OriginToken::Coordinate(y)) => Ok((x, y)),
+        // 水平关键字可与垂直数值组合。
+        (OriginToken::Horizontal(x), OriginToken::Coordinate(y)) => Ok((x, y)),
+        // 水平数值可与垂直关键字组合。
+        (OriginToken::Coordinate(x), OriginToken::Vertical(y)) => Ok((x, y)),
+        // 垂直关键字前置时允许第二项为水平数值。
+        (OriginToken::Vertical(y), OriginToken::Coordinate(x)) => Ok((x, y)),
+        // 水平数值后接 center 时垂直轴居中。
+        (OriginToken::Coordinate(x), OriginToken::Center) => Ok((x, center)),
+        // center 后接数值时数值解释为垂直轴。
+        (OriginToken::Center, OriginToken::Coordinate(y)) => Ok((center, y)),
+        // 其余组合重复声明同一轴或顺序含糊。
+        _ => Err(transform_diagnostic(
+            property,
+            "transformOrigin 两个分量无法确定水平与垂直轴",
+            "使用 left top、top left、center bottom、25% 12px 等明确组合",
+        )),
+    }
+}
+
+// 解析一个关键字、百分比或像素分量。
+fn origin_token(
+    // 接收分量文本。
+    source: &str,
+    // 接收诊断所属属性。
+    property: &StyleProperty,
+) -> Result<OriginToken, Diagnostic> {
+    // 映射五个文档关键字，否则解析长度。
+    match source {
+        // 左侧是水平零比例。
+        "left" => Ok(OriginToken::Horizontal(OriginCoordinate::Fraction(0.0))),
+        // 右侧是水平完整比例。
+        "right" => Ok(OriginToken::Horizontal(OriginCoordinate::Fraction(1.0))),
+        // 顶部是垂直零比例。
+        "top" => Ok(OriginToken::Vertical(OriginCoordinate::Fraction(0.0))),
+        // 底部是垂直完整比例。
+        "bottom" => Ok(OriginToken::Vertical(OriginCoordinate::Fraction(1.0))),
+        // center 由分量上下文决定轴。
+        "center" => Ok(OriginToken::Center),
+        // 其他文本必须是静态百分比或像素值。
+        _ => parse_origin_coordinate(source, property).map(OriginToken::Coordinate),
+    }
+}
+
+// 解析百分比、像素或无单位固定值。
+fn parse_origin_coordinate(
+    // 接收分量文本。
+    source: &str,
+    // 接收诊断所属属性。
+    property: &StyleProperty,
+) -> Result<OriginCoordinate, Diagnostic> {
+    // 百分比转换为运行时零到一比例，保留帧外数值能力。
+    if let Some(percent) = source.strip_suffix('%') {
+        // 解析有限百分比并换算比例。
+        let value = parse_finite(percent, "transformOrigin 百分比", property)? / 100.0;
+        // 返回比例轴值。
+        return Ok(OriginCoordinate::Fraction(value));
+    }
+    // 去除可选 px 后缀；其他单位会在数值解析时失败。
+    let pixels = source.strip_suffix("px").unwrap_or(source);
+    // 解析有限固定像素值。
+    let value = parse_finite(pixels, "transformOrigin 长度", property)?;
+    // 返回像素轴值。
+    Ok(OriginCoordinate::Pixels(value))
+}
+
+// 判断可选第三轴是否为二维等价零。
+fn is_zero_depth(source: &str) -> bool {
+    // 去除唯一允许的 px 后缀。
+    let number = source.strip_suffix("px").unwrap_or(source);
+    // 只接受可解析的有限零值。
+    number
+        // 解析为 f32 以覆盖 +0 与 -0。
+        .parse::<f32>()
+        // 非有限值不能作为零深度。
+        .is_ok_and(|value| value.is_finite() && value == 0.0)
+}
+
+// 生成单轴公开原点值表达式。
+fn origin_coordinate_tokens(value: OriginCoordinate) -> TokenStream {
+    // 按轴值类型选择公开构造器。
+    match value {
+        // 比例值延迟到布局帧确定后解析。
+        OriginCoordinate::Fraction(value) => {
+            // 生成比例构造器。
+            quote! { ::uix::prelude::TransformOriginValue::fraction(#value) }
+        }
+        // 像素值相对布局帧起点解析。
+        OriginCoordinate::Pixels(value) => {
+            // 生成像素构造器。
+            quote! { ::uix::prelude::TransformOriginValue::pixels(#value) }
+        }
+    }
+}
+
 // 把 transform 函数列表映射为公开 Transform 组合表达式。
 pub(super) fn transform_value(property: &StyleProperty) -> Result<TokenStream, Diagnostic> {
     // 读取已经由样式解析器去除外围空白的源码。
