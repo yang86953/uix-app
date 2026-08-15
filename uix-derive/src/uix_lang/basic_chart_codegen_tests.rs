@@ -55,6 +55,33 @@ fn generates_bar_line_and_pie_charts() {
     );
 }
 
+// 验证柱状图与折线图登记精确的 ChartSeries 多系列入口。
+#[test]
+fn generates_basic_chart_multi_series() {
+    // 柱状图内联多系列使用 ChartSeries<Vec<BarData>>。
+    let bar = generate(
+        "<BarChart series={[ChartSeries('2024', [BarData('Q1', 10, Color('#1677ff'))]), ChartSeries('2025', [BarData('Q1', 12, Color('#52c41a'))])]} grouped />",
+    )
+    // 合法柱状图多系列必须生成。
+    .expect("BarChart series 应生成");
+    // 生成代码必须固定嵌套 BarData 泛型并调用 series builder。
+    assert!(
+        bar.contains("ChartSeries < :: std :: vec :: Vec < :: uix :: prelude :: BarData")
+            && bar.contains("series")
+            && bar.contains("grouped (true)")
+    );
+    // 折线图动态多系列表达式交给 Rust 核对精确泛型。
+    let line = generate("<LineChart series={line_series} smooth legend=\"top\" />")
+        // 合法折线图多系列必须生成。
+        .expect("LineChart series 应生成");
+    // 生成代码必须克隆声明快照并固定嵌套 LineData 泛型。
+    assert!(
+        line.contains("(line_series) . clone ()")
+            && line.contains("ChartSeries < :: std :: vec :: Vec < :: uix :: prelude :: LineData")
+            && line.contains("smooth (true)")
+    );
+}
+
 // 验证数据、子树与高级配置诊断。
 #[test]
 fn rejects_invalid_basic_chart_contracts() {
@@ -84,6 +111,21 @@ fn rejects_invalid_basic_chart_contracts() {
         .expect_err("非法 legend 必须失败");
     // 诊断必须包含非法值。
     assert!(legend.message.contains("center"));
+    // 单集合与多系列不能同时决定柱状图载荷。
+    let duplicate = generate("<BarChart data={items} series={series} />")
+        // 两个入口必须互斥。
+        .expect_err("BarChart data 与 series 同时使用必须失败");
+    // 诊断必须点名两个互斥入口。
+    assert!(duplicate.message.contains("data") && duplicate.message.contains("series"));
+    // 多系列内联数组不能借用自定义组合系列构造器。
+    let mismatched =
+        generate("<LineChart series={[ComboSeries('访问量', [LineData('Jan', 10)])]} />")
+            // 构造器错配必须在宏展开期失败。
+            .expect_err("LineChart series 构造器错配必须失败");
+    // 诊断必须点名实际与目标构造器。
+    assert!(
+        mismatched.message.contains("ComboSeries") && mismatched.message.contains("ChartSeries")
+    );
     // 基础专用柱图没有高级 ChartPlaceholder 的参考线 builder。
     let bar_reference = generate("<BarChart data={items} referenceLines={references} />")
         // 无效果配置必须在宏展开期失败。

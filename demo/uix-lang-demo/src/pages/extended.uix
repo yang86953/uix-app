@@ -496,17 +496,17 @@
     // 展示图表能力标题。
     <Text fontSize="heading2">图表</Text>
     // 说明 Rust 图表文档列出的十二类标签已进入声明式生成路径。
-    <Alert message="十二类图表标签已登记类型化静态映射及图例、动画、缩放平移、刷选与 tooltip 共同配置。" type="success" />
-    // 展示类型化柱状图数据与完整共同高级配置。
-    <BarChart data={[BarData('Q1', 120, Color('#1677ff')), BarData('Q2', 200, Color('#52c41a')), BarData('Q3', 150, Color('#faad14'))]} showValue barRadius="3" title="季度产出" legend="bottom" animation={chart_animation} interactive={chart_interaction} brush={chart_brush} tooltip={chart_tooltip()} width="420px" height="260px" />
-    // 展示类型化折线图数据与线形配置。
-    <LineChart data={[LineData('Jan', 100), LineData('Feb', 150), LineData('Mar', 130)]} smooth lineWidth="2" dotRadius="4" title="月度趋势" width="420px" height="260px" />
+    <Alert message="十二类图表标签已登记类型化静态映射、基础坐标图多系列及图例、动画、缩放平移、刷选与 tooltip 共同配置。" type="success" />
+    // 展示类型化柱状图多系列与完整共同高级配置。
+    <BarChart series={[ChartSeries('2025', [BarData('Q1', 120, Color('#1677ff')), BarData('Q2', 200, Color('#1677ff')), BarData('Q3', 150, Color('#1677ff'))]), ChartSeries('2026', [BarData('Q1', 140, Color('#52c41a')), BarData('Q2', 230, Color('#52c41a')), BarData('Q3', 180, Color('#52c41a'))])]} grouped showValue barRadius="3" title="季度产出" legend="bottom" animation={chart_animation} interactive={chart_interaction} brush={chart_brush} tooltip={chart_tooltip()} width="420px" height="260px" />
+    // 展示类型化折线图多系列与线形配置。
+    <LineChart series={[ChartSeries('CPU', [LineData('Jan', 40), LineData('Feb', 60), LineData('Mar', 50)]), ChartSeries('内存', [LineData('Jan', 30), LineData('Feb', 50), LineData('Mar', 45)])]} smooth lineWidth="2" dotRadius="4" legend="top" title="月度趋势" width="420px" height="260px" />
     // 展示类型化饼图数据与环形配置。
     <PieChart data={[PieData('产品 A', 40, Color('#1677ff')), PieData('产品 B', 30, Color('#52c41a')), PieData('产品 C', 30, Color('#faad14'))]} donut="0.55" title="产品占比" width="320px" height="280px" />
-    // 展示类型化面积图数据、参考线与填充配置。
-    <AreaChart data={[LineData('Jan', 80), LineData('Feb', 120), LineData('Mar', 105)]} smooth fillOpacity="0.3" referenceLines={chart_reference_lines()} title="面积趋势" width="420px" height="260px" />
-    // 展示类型化散点数据与坐标配置。
-    <ScatterChart data={[ScatterData('A', 2.5, 6.3), ScatterData('B', 3.1, 5.8), ScatterData('C', 4.2, 7.1)]} xAxis="宽度" yAxis="高度" pointStyle="diamond" title="样本分布" width="420px" height="260px" />
+    // 展示类型化面积图多系列、参考线与堆叠填充配置。
+    <AreaChart series={[ChartSeries('收入', [LineData('Jan', 80), LineData('Feb', 120), LineData('Mar', 105)]), ChartSeries('成本', [LineData('Jan', 40), LineData('Feb', 55), LineData('Mar', 48)])]} stacked smooth fillOpacity="0.3" referenceLines={chart_reference_lines()} legend="top" title="面积趋势" width="420px" height="260px" />
+    // 展示类型化散点多系列与坐标配置。
+    <ScatterChart series={[ChartSeries('实验组', [ScatterData('A', 2.5, 6.3), ScatterData('B', 3.1, 5.8)]), ChartSeries('对照组', [ScatterData('C', 4.2, 7.1), ScatterData('D', 3.8, 6.6)])]} xAxis="宽度" yAxis="高度" pointStyle="diamond" legend="bottom" title="样本分布" width="420px" height="260px" />
     // 展示类型化气泡数据、第三维大小与统一缩放配置。
     <ScatterChart bubbleData={[BubbleData('中国', 1.4, 12, 80), BubbleData('美国', 0.33, 21, 50)]} bubbleScale="0.8" xAxis="人口（十亿）" yAxis="GDP（万亿美元）" title="经济气泡" width="420px" height="280px" />
     // 展示类型化漏斗阶段与转化率配置。
