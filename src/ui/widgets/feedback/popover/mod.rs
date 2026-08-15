@@ -66,6 +66,7 @@ pub enum PopoverTrigger {
 }
 
 component! {
+    /// 拥有唯一触发器并按配置交互显示窗口内内容气泡的组合组件。
     pub struct Popover {
         title: String,
         content: String,

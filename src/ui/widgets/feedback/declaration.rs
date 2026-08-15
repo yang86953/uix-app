@@ -174,6 +174,7 @@ impl FeedbackLease {
 
 // Message 的零布局 keyed 声明节点。
 component! {
+    /// 以稳定声明身份取得并维护逐窗 Message 队列租约的零布局组件。
     pub struct MessageDeclaration {
         // 保存当前声明配置。
         spec: MessageDeclarationSpec,
@@ -352,6 +353,7 @@ impl MessageDeclaration {
 
 // Notification 的零布局 keyed 声明节点。
 component! {
+    /// 以稳定声明身份取得并维护逐窗 Notification 队列租约的零布局组件。
     pub struct NotificationDeclaration {
         // 保存当前声明配置。
         spec: NotificationDeclarationSpec,

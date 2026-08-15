@@ -25,6 +25,7 @@ pub use self::item::{NotificationHandle, NotificationItem};
 use self::layout::{fade_color, finite_or_zero, transitioned_rect, union_nonempty};
 
 component! {
+    /// 拥有窗口内通知队列、过渡动画与放置方向的浮层宿主组件。
     pub struct Notification {
         queue: ToastQueue<NotificationItem>,
         motion: RefCell<ToastMotion<NotificationItem>>,

@@ -58,6 +58,7 @@ pub enum PopconfirmPlacement {
 }
 
 component! {
+    /// 拥有唯一触发器、确认气泡和一次性确认或取消动作的组合组件。
     pub struct Popconfirm {
         title: String,
         confirm_text: String,

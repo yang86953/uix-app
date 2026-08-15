@@ -58,6 +58,7 @@ pub struct Step {
 
 // Steps — 步骤条组件。
 component! {
+    /// 按声明顺序展示步骤并通过可选受控索引提交进度变化的组件。
     pub struct Steps {
         steps: Vec<Step>,
         current: Cell<usize>,

@@ -23,6 +23,7 @@ const PAGINATION_SIZE_WIDTH: f32 = 80.0;
 
 // Pagination — 分页器。
 component! {
+    /// 拥有页码、每页条数与可选受控状态的分页导航组件。
     pub struct Pagination {
         total: usize,
         page_size: usize,
