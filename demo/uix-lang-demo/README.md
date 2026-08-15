@@ -108,8 +108,8 @@ Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。入口统一�
   不可变数组操作与受限闭包、按顺序求值的 computed 派生值、`<Record>` 类型化业务模型
   （`uix_items!` 生成模块级结构体供 Rust 侧回调引用）。数据展示页以 `filter` 派生有效
   展开项，再由后续 computed 展示剩余数量；同页通过默认与具名 `Slot` 复用统一面板容器。
-- BarChart、LineChart 与 PieChart 已登记类型化静态映射；Transfer、高级图表配置及其余
-  图表标签保留 Rust API 边界。SelectableList、Collapse、Badge、Upload、Message、
+- BarChart、LineChart、PieChart、AreaChart、ScatterChart 与 FunnelChart 已登记类型化静态映射；
+  Transfer、气泡、多系列、高级图表配置及其余图表标签保留 Rust API 边界。SelectableList、Collapse、Badge、Upload、Message、
   Notification 与 Popconfirm 已在主演示中提供声明样例。
 - 真窗验收控制面是测试侧能力，不复制到声明式产品界面；主演示通过
   `agent-control` feature 与 `--agent-control` 参数双门禁复用现有 App System 控制面。

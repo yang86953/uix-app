@@ -21,10 +21,10 @@ use super::{
     generate_progress_bar, generate_qrcode, generate_radio, generate_range_slider, generate_rate,
     generate_result_view, generate_rich_text, generate_row, generate_scroll_view,
     generate_segmented, generate_select, generate_skeleton, generate_slider, generate_space,
-    generate_spin, generate_splitter, generate_steps, generate_switch, generate_table,
-    generate_tabs, generate_tag, generate_theme_toggle, generate_time_picker, generate_timeline,
-    generate_tooltip, generate_tree, generate_tree_select, generate_typography, generate_upload,
-    generate_virtual_scroll, generate_watermark, generate_window_control,
+    generate_spin, generate_splitter, generate_static_chart, generate_steps, generate_switch,
+    generate_table, generate_tabs, generate_tag, generate_theme_toggle, generate_time_picker,
+    generate_timeline, generate_tooltip, generate_tree, generate_tree_select, generate_typography,
+    generate_upload, generate_virtual_scroll, generate_watermark, generate_window_control,
     generate_window_drag_region, planned_builtin_diagnostic,
 };
 // 引入 SelectableList 独立生成入口。
@@ -186,6 +186,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "ProgressBar" => generate_progress_bar(element),
         // 三类基础图表映射到现有静态 Chart Component。
         "BarChart" | "LineChart" | "PieChart" => generate_basic_chart(element),
+        // 三类静态高级图表映射到现有 Chart Module Component。
+        "AreaChart" | "ScatterChart" | "FunnelChart" => generate_static_chart(element),
         // 确认气泡映射到唯一真实 trigger、六向位置与同步操作回调契约。
         "Popconfirm" => generate_popconfirm(element),
         // 模态框映射到 State<bool>、同步操作回调与完整有序内容子树契约。
@@ -248,7 +250,7 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、FloatButtonGroup、FloatButtonBackTop、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、WindowDragRegion、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Upload、Avatar、Image、ImageGroup、List、SelectableList、Collapse、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Table、Menu、Navigation、Dropdown、Steps、Pagination、Breadcrumb、Anchor、Tabs、QRCode、Watermark、RichText、Alert、ProgressBar、Popconfirm、Modal、Drawer、Tooltip、Popover、FocusTrap、Spin、BarChart、LineChart 或 PieChart，或先登记组件状态",
+            "使用 Text、Label、Button、ButtonGroup、FloatButton、FloatButtonGroup、FloatButtonBackTop、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、WindowDragRegion、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Upload、Avatar、Image、ImageGroup、List、SelectableList、Collapse、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Table、Menu、Navigation、Dropdown、Steps、Pagination、Breadcrumb、Anchor、Tabs、QRCode、Watermark、RichText、Alert、ProgressBar、Popconfirm、Modal、Drawer、Tooltip、Popover、FocusTrap、Spin、BarChart、LineChart、PieChart、AreaChart、ScatterChart 或 FunnelChart，或先登记组件状态",
         )),
     }
     // 结束元素分派函数。
