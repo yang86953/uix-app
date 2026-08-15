@@ -350,7 +350,6 @@ impl Popover {
         }
         ctx.pop_clip();
     }
-
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -693,5 +692,26 @@ mod tests {
         );
         // 关闭事实立即生效，离场动画可继续呈现。
         assert!(!popover.visible);
+    }
+
+    // 受控打开状态必须双向同步，且不引入第二可见性事实源。
+    #[test]
+    fn controlled_open_synchronizes_external_updates_and_user_close() {
+        // 创建由调用方拥有且初始打开的状态句柄。
+        let open = State::new(true);
+        // 构造绑定该句柄的气泡卡片。
+        let mut popover = Popover::new("content").controlled_open(&open);
+        // 初始外部事实必须立即驱动可见状态。
+        assert!(popover.is_visible());
+        // 用户关闭路径必须回写同一外部事实。
+        popover.close();
+        // 外部状态不得继续声称打开。
+        assert!(!open.get());
+        // 调用方重新打开同一状态。
+        open.set(true);
+        // 模拟下一次事件入口同步受控事实。
+        popover.sync_bound_open();
+        // 运行时必须取消离场并重新进入可见状态。
+        assert!(popover.is_visible() && !popover.closing);
     }
 }
