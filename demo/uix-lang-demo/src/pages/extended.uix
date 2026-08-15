@@ -483,8 +483,8 @@
   <Column gap="16px">
     // 展示图表能力标题。
     <Text fontSize="heading2">图表</Text>
-    // 说明六类图表已进入声明式生成路径。
-    <Alert message="Bar / Line / Pie / Area / Scatter / Funnel 已登记类型化静态映射；高级交互与其余图表继续使用 Rust API。" type="success" />
+    // 说明八类图表已进入声明式生成路径。
+    <Alert message="Bar / Line / Pie / Area / Scatter / Funnel / Treemap / Gauge 已登记类型化静态映射；高级交互与其余图表继续使用 Rust API。" type="success" />
     // 展示类型化柱状图数据与基础配置。
     <BarChart data={[BarData('Q1', 120, Color('#1677ff')), BarData('Q2', 200, Color('#52c41a')), BarData('Q3', 150, Color('#faad14'))]} showValue barRadius="3" title="季度产出" width="420px" height="260px" />
     // 展示类型化折线图数据与线形配置。
@@ -497,6 +497,10 @@
     <ScatterChart data={[ScatterData('A', 2.5, 6.3), ScatterData('B', 3.1, 5.8), ScatterData('C', 4.2, 7.1)]} xAxis="宽度" yAxis="高度" pointStyle="diamond" title="样本分布" width="420px" height="260px" />
     // 展示类型化漏斗阶段与转化率配置。
     <FunnelChart data={[FunnelData('浏览', 5000), FunnelData('点击', 2300), FunnelData('下单', 420), FunnelData('支付', 310)]} showConversionRate labelPosition="right" shape="symmetric" title="转化漏斗" width="420px" height="320px" />
+    // 展示递归矩形树节点与间隙配置。
+    <Treemap data={[TreemapNode('技术', 45).children([TreemapNode('前端', 20), TreemapNode('后端', 18), TreemapNode('运维', 7)]), TreemapNode('市场', 30), TreemapNode('行政', 15)]} gap="4" labelVisible title="部门占比" width="420px" height="300px" />
+    // 展示仪表盘数值、色带与指针配置。
+    <Gauge value="68" min="0" max="100" gaugeType="dashboard" rangeColors={[GaugeRange(0, 30, Color('#ff4d4f')), GaugeRange(30, 70, Color('#faad14')), GaugeRange(70, 100, Color('#52c41a'))]} pointerWidth="4" pointerColor={Color('#1677ff')} title="完成率" width="320px" height="260px" />
   // 结束图表能力内容。
   </Column>
 // 结束图表能力页组件。

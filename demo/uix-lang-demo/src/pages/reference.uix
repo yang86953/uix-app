@@ -111,8 +111,8 @@
         <Text>反馈：Message / Notification / Alert / Modal / Drawer / Tooltip / Popover / Popconfirm / FocusTrap / ProgressBar / Spin</Text>
         // 说明导航与框架标签覆盖。
         <Text>导航与框架：Menu / Dropdown / Navigation / Steps / Pagination / Breadcrumb / Anchor / Tabs / ThemeToggle / WindowControl / WindowDragRegion / QRCode / Watermark</Text>
-        // 说明六类静态图表标签覆盖。
-        <Text>图表：BarChart / LineChart / PieChart / AreaChart / ScatterChart / FunnelChart（类型化静态数据与基础视觉配置）</Text>
+        // 说明八类静态图表标签覆盖。
+        <Text>图表：BarChart / LineChart / PieChart / AreaChart / ScatterChart / FunnelChart / Treemap / Gauge（类型化静态数据与基础视觉配置）</Text>
         // 展示语言能力小节。
         <Text fontSize="heading5">语言能力</Text>
         // 说明组件与状态能力。

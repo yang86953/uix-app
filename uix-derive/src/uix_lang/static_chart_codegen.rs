@@ -27,6 +27,10 @@ const CHART_DATA_CONSTRUCTORS: &[&str] = &[
     "BubbleData",
     // 漏斗图数据。
     "FunnelData",
+    // 矩形树图节点。
+    "TreemapNode",
+    // 仪表盘色带。
+    "GaugeRange",
 ];
 
 // 生成面积、散点与漏斗三类静态图表映射。
@@ -164,7 +168,12 @@ pub(crate) fn generate_static_chart(element: &Element) -> Result<TokenStream, Di
 }
 
 // 验证内联数组没有借用其他图表的数据构造器。
-fn validate_inline_data(expression: &Expression, expected: &str) -> Result<(), Diagnostic> {
+pub(super) fn validate_inline_data(
+    // 接收可能是内联数组的数据表达式。
+    expression: &Expression,
+    // 接收当前图表要求的数据构造器名。
+    expected: &str,
+) -> Result<(), Diagnostic> {
     // 动态集合表达式继续交给 Rust 精确核对元素类型。
     let ExpressionKind::Array(items) = &expression.kind else {
         // 非数组不需要生成层结构检查。
