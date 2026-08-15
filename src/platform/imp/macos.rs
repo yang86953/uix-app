@@ -143,8 +143,8 @@ pub(crate) fn open_files(
     // 过滤器值已经在构造时规范化。
     filters: &[FileDialogFilter],
 ) -> Result<Option<Box<[PathBuf]>>> {
-    // 编码 AppKit 纯解析组件消费的可移植描述。
-    let filters = crate::platform::file_dialog::portable_filters(filters);
+    // 只编码扩展名模式，避免 AppKit 把小写显示名称误识别为文件类型。
+    let filters = crate::platform::file_dialog::macos_filters(filters);
     // 调用 crate 内部 AppKit 组件并传播 typed failure。
     crate::native::backends::macos::platform::file_dialog::choose_files(title, &filters)
         // 把 AppKit UTF-8 路径复制为平台公开的 owned PathBuf。
@@ -172,8 +172,8 @@ pub(crate) fn save_file(
     // 过滤器值已经在构造时规范化。
     filters: &[FileDialogFilter],
 ) -> Result<Option<PathBuf>> {
-    // 编码 AppKit 纯解析组件消费的可移植描述。
-    let filters = crate::platform::file_dialog::portable_filters(filters);
+    // 只编码扩展名模式，避免 AppKit 把小写显示名称误识别为文件类型。
+    let filters = crate::platform::file_dialog::macos_filters(filters);
     // 调用 crate 内部 AppKit 组件并转换 owned 路径。
     crate::native::backends::macos::platform::file_dialog::choose_save_file(title, &filters)
         // 取消保持空值，确认结果转换为 owned PathBuf。
