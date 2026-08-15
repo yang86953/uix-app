@@ -33,6 +33,7 @@ impl IKeyboard for WindowsKeyboard {
     }
 
     fn idle_ms(&self) -> u32 {
+        // SAFETY: LASTINPUTINFO 的尺寸字段和可写地址有效，GetTickCount 不接收指针且两次调用均在当前线程同步完成。
         unsafe {
             let mut info = LASTINPUTINFO {
                 cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
@@ -48,6 +49,7 @@ impl IKeyboard for WindowsKeyboard {
     }
 
     fn double_click_ms(&self) -> u32 {
+        // SAFETY: GetDoubleClickTime 无参数，只读取系统双击时间配置。
         unsafe { GetDoubleClickTime() }
     }
 }
@@ -126,10 +128,12 @@ const VK_NEXT: u32 = 0x22;
 use super::ffi::GetAsyncKeyState;
 
 fn is_key_down(vk: u32) -> bool {
+    // SAFETY: GetAsyncKeyState 接收按值传递的虚拟键码，不借用任何 Rust 内存。
     unsafe { GetAsyncKeyState(vk as i32) < 0 }
 }
 
 #[link(name = "user32")]
+// SAFETY: 声明与 user32 ABI 一致，调用方为 LASTINPUTINFO 提供正确尺寸并只传入有效虚拟键码。
 unsafe extern "system" {
     fn GetLastInputInfo(plii: *mut LASTINPUTINFO) -> i32;
     fn GetTickCount() -> u32;

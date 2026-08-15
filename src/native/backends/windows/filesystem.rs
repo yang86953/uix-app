@@ -53,6 +53,7 @@ impl SpecialDirProvider for WindowsSpecialDirs {
 // ════════════════════════════════════════════════════════════════════════════
 
 fn get_temp_dir() -> Result<String> {
+    // SAFETY: 闭包把切片的实际容量和可写首指针同时交给 GetTempPathW，外层会按返回长度扩容或截取。
     read_variable_wide_path(|buffer| unsafe {
         GetTempPathW(buffer.len() as u32, buffer.as_mut_ptr()) as usize
     })
@@ -91,6 +92,7 @@ pub(crate) fn read_variable_wide_path(
 }
 
 fn get_known_folder_path(guid: &GUID) -> Result<String> {
+    // SAFETY: GUID 在同步调用期间有效；成功返回的 NUL 结尾路径只读到终止符并由 CoTaskMemFree 精确释放一次。
     unsafe {
         let mut path_ptr: *mut u16 = ptr::null_mut();
         let hr = SHGetKnownFolderPath(guid as *const GUID, 0, ptr::null_mut(), &mut path_ptr);
@@ -181,16 +183,19 @@ const MAX_WIN32_PATH_UNITS: usize = 32_768;
 // ════════════════════════════════════════════════════════════════════════════
 
 #[link(name = "kernel32")]
+// SAFETY: GetTempPathW 声明对应 kernel32 ABI，调用方负责容量标注与可写 UTF-16 缓冲区契约。
 unsafe extern "system" {
     fn GetTempPathW(nBufferLength: u32, lpBuffer: *mut u16) -> u32;
 }
 
 #[link(name = "ole32")]
+// SAFETY: CoTaskMemFree 声明对应 ole32 ABI，只可释放 COM 任务分配器返回的内存。
 unsafe extern "system" {
     fn CoTaskMemFree(pv: *mut std::ffi::c_void);
 }
 
 #[link(name = "shell32")]
+// SAFETY: SHGetKnownFolderPath 声明对应 shell32 ABI，调用方提供有效 GUID 与输出槽并接管返回内存。
 unsafe extern "system" {
     fn SHGetKnownFolderPath(
         rfid: *const GUID,

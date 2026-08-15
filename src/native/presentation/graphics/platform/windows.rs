@@ -24,6 +24,7 @@ pub(crate) struct Rect {
 }
 
 #[link(name = "user32")]
+// SAFETY: 声明与 user32 ABI 一致，调用方负责 HWND、HDC 和可写 RECT 的生命周期及配对释放。
 unsafe extern "system" {
     fn GetClientRect(hwnd: *mut c_void, lp_rect: *mut Rect) -> i32;
     #[cfg(feature = "opengles")]
@@ -43,7 +44,12 @@ pub(crate) struct DrawableSize {
     pub(crate) height: i32,
 }
 
+/// 查询仍然有效的 Win32 窗口客户区。
+///
+/// # Safety
+/// `hwnd` 必须是调用期间有效且可由当前线程查询的窗口句柄。
 pub(crate) unsafe fn query_client_rect(hwnd: *mut c_void) -> Option<Rect> {
+    // SAFETY: 调用者保证 HWND 有效，rect 是尺寸正确且在调用期间唯一可写的栈对象。
     unsafe {
         let mut rect = Rect {
             left: 0,
@@ -60,6 +66,7 @@ pub(crate) unsafe fn query_client_rect(hwnd: *mut c_void) -> Option<Rect> {
 }
 
 fn physical_client_size(hwnd: *mut c_void) -> Option<(i32, i32)> {
+    // SAFETY: 本模块只会传入调用期间仍有效的窗口句柄，查询不保留该句柄。
     unsafe {
         query_client_rect(hwnd).map(|rect| {
             (

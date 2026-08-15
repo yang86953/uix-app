@@ -182,6 +182,7 @@ impl OsEventSource for WindowsPlatform {
             if hwnd == 0 {
                 return;
             }
+            // SAFETY: 保存的整数只还原为不透明 HWND；窗口已销毁时 PostMessageW 会安全失败且不会解引用该值。
             unsafe {
                 PostMessageW(hwnd as *mut std::ffi::c_void, WM_NULL, 0, 0);
             }
@@ -189,6 +190,7 @@ impl OsEventSource for WindowsPlatform {
     }
 
     fn dispatch_pending(&mut self) -> bool {
+        // SAFETY: MSG 是已初始化的可写结构，取得的消息只交给同线程的标准 Win32 分派函数。
         unsafe {
             let mut msg = MSG::default();
             while PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
@@ -204,6 +206,7 @@ impl OsEventSource for WindowsPlatform {
 
     fn dispatch_blocking(&mut self) -> bool {
         loop {
+            // SAFETY: MSG 在每轮均初始化，PeekMessageW/TranslateMessage/DispatchMessageW 按同一线程消息队列契约配套使用。
             unsafe {
                 // 先非阻塞检查是否有待处理消息
                 let mut msg = MSG::default();
@@ -227,6 +230,7 @@ impl OsEventSource for WindowsPlatform {
         }
         let timeout_ms = timeout.as_millis().min(u32::MAX as u128) as u32;
         let result =
+            // SAFETY: 等待句柄数为零，因此空句柄数组合法；调用仅等待当前线程的消息队列或超时。
             unsafe { MsgWaitForMultipleObjects(0, std::ptr::null(), 0, timeout_ms, QS_ALLINPUT) };
         if result != WAIT_TIMEOUT && !self.dispatch_pending() {
             return false;
@@ -271,6 +275,7 @@ impl IWindowManager for WindowsPlatform {
         let class_name = self.class_name();
         let style = WS_OVERLAPPEDWINDOW;
 
+        // SAFETY: UTF-16 参数在同步创建期间有效；WindowBinding 的裸指针在失败路径回收，成功路径重新封装并与窗口同寿命。
         unsafe {
             let dpi_scope = PerMonitorV2Scope::enter()?;
             let frame_pacer = shared_frame_pacer_state();

@@ -304,11 +304,13 @@ const UNLEN: usize = 256;
 // ════════════════════════════════════════════════════════════════════════════
 
 #[link(name = "ntdll")]
+// SAFETY: RtlGetVersion 声明对应 ntdll ABI，调用方提供尺寸字段正确的可写版本结构。
 unsafe extern "system" {
     fn RtlGetVersion(lpVersionInformation: *mut RTL_OSVERSIONINFOW) -> i32;
 }
 
 #[link(name = "kernel32")]
+// SAFETY: 本块声明对应 kernel32 ABI，调用方保证结构尺寸、缓冲区容量与输出指针有效。
 unsafe extern "system" {
     fn GetNativeSystemInfo(lpSystemInfo: *mut SYSTEM_INFO);
     fn GlobalMemoryStatusEx(lpBuffer: *mut MEMORYSTATUSEX) -> i32;
@@ -317,11 +319,13 @@ unsafe extern "system" {
 }
 
 #[link(name = "advapi32")]
+// SAFETY: GetUserNameW 声明对应 advapi32 ABI，调用方提供与长度字段一致的可写 UTF-16 缓冲区。
 unsafe extern "system" {
     fn GetUserNameW(lpBuffer: *mut u16, nSize: *mut u32) -> i32;
 }
 
 #[link(name = "psapi")]
+// SAFETY: GetProcessMemoryInfo 声明对应 psapi ABI，调用方提供有效进程句柄及尺寸正确的可写计数结构。
 unsafe extern "system" {
     fn GetProcessMemoryInfo(
         hProcess: *mut std::ffi::c_void,
@@ -351,6 +355,7 @@ pub(crate) fn get_process_memory() -> Result<(usize, usize)> {
 }
 
 #[link(name = "kernel32")]
+// SAFETY: GetCurrentProcess 声明对应 kernel32 ABI，返回值是无需关闭且仅供当前进程 API 使用的伪句柄。
 unsafe extern "system" {
     fn GetCurrentProcess() -> *mut std::ffi::c_void;
 }
