@@ -13,11 +13,16 @@ use crate::ui::{EventResult, MouseButton, State, SystemEvent, WidgetTree};
 
 mod methods;
 
+/// 抽屉面板进入窗口的边缘方向。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DrawerPlacement {
+    /// 从窗口右侧进入。
     Right,
+    /// 从窗口左侧进入。
     Left,
+    /// 从窗口顶部进入。
     Top,
+    /// 从窗口底部进入。
     Bottom,
 }
 
