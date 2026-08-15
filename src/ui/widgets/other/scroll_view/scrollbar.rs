@@ -9,7 +9,9 @@ use crate::ui::component::paint_context::PaintContext;
 /// Which axis this scrollbar controls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollbarOrientation {
+    /// 控制纵向滚动位置。
     Vertical,
+    /// 控制横向滚动位置。
     Horizontal,
 }
 
