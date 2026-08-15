@@ -66,6 +66,7 @@ unsafe extern "C" {
 // khronos-egl v6 的 static 绑定不携带 #[link]；项目刻意使用 no-pkg-config，
 // 因此这里显式声明系统 libEGL 链接，保证 egl* 符号进入最终链接。
 #[link(name = "EGL")]
+// SAFETY: 该空声明只请求链接系统 libEGL，不声明可被 Rust 直接调用的符号。
 unsafe extern "C" {}
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -104,10 +105,12 @@ impl EglContext {
     pub(crate) fn new(native_surface: *mut c_void, width: i32, height: i32) -> Result<Self, Error> {
         use khronos_egl as egl;
 
+        // SAFETY: native_surface 来自平台 surface recipe，在本构造调用期间指向存活的 WaylandSurfaceHandle。
         let wayland = unsafe { WaylandSurfaceHandle::from_native(native_surface)? };
         let egl = egl::Instance::new(egl::Static);
 
         // 1. 获取 display —— Wayland 下传入 display 连接指针
+        // SAFETY: wayland.display 已由 WaylandSurfaceHandle 校验非空，并在 EGL 上下文生命周期内保持连接存活。
         let display = unsafe { egl.get_display(wayland.display as egl::NativeDisplayType) }
             .ok_or_else(|| {
                 Error::new(
@@ -179,6 +182,7 @@ impl EglContext {
         };
 
         // 5. 创建 wl_egl_window（Wayland 原生窗口封装）
+        // SAFETY: wayland.surface 已校验非空且仍由平台窗口拥有，width/height 是当前物理 surface 尺寸。
         let egl_window = unsafe { wl_egl_window_create(wayland.surface, width, height) };
         if egl_window.is_null() {
             let _ = egl.terminate(display);
@@ -189,10 +193,12 @@ impl EglContext {
         }
 
         // 6. 创建 EGL surface
+        // SAFETY: display/config 已由同一 EGL 实例创建，egl_window 非空且在调用期间保持存活。
         let surface = unsafe {
             egl.create_window_surface(display, config, egl_window as egl::NativeWindowType, None)
         }
         .map_err(|e| {
+            // SAFETY: surface 创建失败时 egl_window 仍由本构造函数唯一拥有，此处只销毁一次。
             unsafe {
                 wl_egl_window_destroy(egl_window);
             }
@@ -214,6 +220,7 @@ impl EglContext {
         let context = egl
             .create_context(display, config, None, &ctx3_attribs)
             .map_err(|e| {
+                // SAFETY: context 创建失败时 surface 与 egl_window 仍存活且由本构造函数唯一负责回滚。
                 unsafe {
                     let _ = egl.destroy_surface(display, surface);
                     wl_egl_window_destroy(egl_window);
@@ -229,6 +236,7 @@ impl EglContext {
         // 8. make current
         egl.make_current(display, Some(surface), Some(surface), Some(context))
             .map_err(|e| {
+                // SAFETY: make_current 失败时 context、surface 与 egl_window 均未交付给 Self，此处按逆序各销毁一次。
                 unsafe {
                     let _ = egl.destroy_context(display, context);
                     let _ = egl.destroy_surface(display, surface);
@@ -251,6 +259,7 @@ impl EglContext {
             );
         let pipeline =
             OpenGlRasterPipeline::new(runtime, width, height, width, height).map_err(|error| {
+                // SAFETY: pipeline 创建失败时同一构造函数仍唯一拥有 context、surface 与 egl_window，并按逆序回滚。
                 unsafe {
                     let _ = egl.destroy_context(display, context);
                     let _ = egl.destroy_surface(display, surface);
@@ -337,6 +346,7 @@ impl EglContext {
             self.display_terminated = true;
         }
         if !self.egl_window.is_null() {
+            // SAFETY: 非空 egl_window 由当前 EglContext 唯一拥有，shutdown 只在置空前调用一次销毁。
             unsafe {
                 wl_egl_window_destroy(self.egl_window);
             }
@@ -384,6 +394,7 @@ impl EglContext {
         self.height = height;
         // 通知 Wayland EGL window 更新其 native buffer 尺寸。
         if !self.egl_window.is_null() {
+            // SAFETY: 非空 egl_window 仍由当前 EglContext 拥有，尺寸参数来自已验证的当前 surface extent。
             unsafe {
                 wl_egl_window_resize(self.egl_window, width, height, 0, 0);
             }
