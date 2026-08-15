@@ -735,6 +735,41 @@ fn generates_mapped_inline_style_fields() {
     assert!(!tokens.contains("parse_style"));
 }
 
+// 验证 z-index 复用 View 运行时的绘制与命中层级。
+#[test]
+fn generates_z_index_runtime_mapping() {
+    // 解析同时携带结构层级与普通视觉字段的样式。
+    let document = parse_document(r#"<Text style="z-index: -3; color: #fff;">Hello</Text>"#)
+        // 已映射的层级语法必须合法。
+        .expect("z-index 样式语法应合法");
+    // 生成可消费的 View 令牌。
+    let tokens = generate_view(&document.root)
+        // 运行时已有等价入口时不得继续返回规划中诊断。
+        .expect("z-index 应映射到 View 运行时")
+        // 规范化令牌便于锁定结构事实。
+        .to_string();
+    // 普通视觉字段仍通过 Style 受控更新。
+    assert!(tokens.contains("map_style") && tokens.contains("color"));
+    // 层级必须通过 ViewNode 的公开入口应用，并保留负整数。
+    assert!(tokens.contains("z_index") && tokens.contains("- 3i32"));
+}
+
+// 验证 z-index 拒绝无法由运行时 i32 精确表达的值。
+#[test]
+fn rejects_invalid_z_index_values() {
+    // 覆盖小数与超过 i32 上界的输入。
+    for value in ["1.5", "2147483648"] {
+        // 构造单一非法层级属性。
+        let source = format!(r#"<Text style="z-index: {value};">Hello</Text>"#);
+        // 语法层保留原始值供映射层诊断。
+        let document = parse_document(&source).expect("z-index 原始值应完成语法解析");
+        // 代码生成必须拒绝非精确 i32。
+        let error = generate_view(&document.root).expect_err("非法 z-index 必须失败");
+        // 诊断必须同时说明属性与整数契约。
+        assert!(error.message.contains("z-index") && error.message.contains("整数"));
+    }
+}
+
 // 验证规划中样式不会伪装为已支持。
 #[test]
 fn rejects_planned_inline_style_at_compile_time() {
