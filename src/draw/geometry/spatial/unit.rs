@@ -104,11 +104,17 @@ impl Add for PhysicalUnit {
 /// let fs = 12.0.pt();
 /// ```
 pub trait PhysicalUnitExt {
+    /// 把数值包装为设备无关像素单位。
     fn px(self) -> PhysicalUnit;
+    /// 把数值包装为毫米单位。
     fn mm(self) -> PhysicalUnit;
+    /// 把数值包装为厘米单位。
     fn cm(self) -> PhysicalUnit;
+    /// 把数值包装为米单位。
     fn m(self) -> PhysicalUnit;
+    /// 把数值包装为印刷点单位。
     fn pt(self) -> PhysicalUnit;
+    /// 把数值包装为英寸单位。
     fn inch(self) -> PhysicalUnit;
 }
 
