@@ -228,6 +228,9 @@ mod uix_lang_image_slots_consumer_tests;
 // 隔离 Popover 完整配置与受控状态的公开 API 编译测试。
 #[cfg(test)]
 mod uix_lang_popover_consumer_tests;
+// 隔离 Tooltip 方向与触发方式的公开 API 编译测试。
+#[cfg(test)]
+mod uix_lang_tooltip_consumer_tests;
 
 /// 按 key 取当前资源表文案（E-08）：`t!("common.save")`。
 ///
