@@ -72,3 +72,25 @@ fn cursor_styles_compile_for_real_consumer() {
         "#
     );
 }
+
+// 验证五种 borderStyle 值通过公开 Style 与 BorderStyle 契约完成真实宏展开。
+#[test]
+fn border_style_values_compile_for_real_consumer() {
+    // 展开基础虚线、悬停实线及其余三个线型的完整样式级联。
+    let _border_styles: ViewNode = uix::uix!(
+        // 保留所有规范关键字以验证真实消费者可见的枚举路径。
+        r##"
+        bordered { borderColor: #colorBorder; borderWidth: 3px; borderStyle: dashed; }
+        bordered:hover { borderStyle: solid; }
+        noBorder { borderWidth: 3px; borderStyle: none; }
+        dottedBorder { borderWidth: 3px; borderStyle: dotted; }
+        doubleBorder { borderWidth: 6px; borderStyle: double; }
+        <Container>
+          <Text class="bordered">虚线</Text>
+          <Text class="noBorder">无绘制</Text>
+          <Text class="dottedBorder">圆点</Text>
+          <Text class="doubleBorder">双线</Text>
+        </Container>
+        "##
+    );
+}

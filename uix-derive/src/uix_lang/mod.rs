@@ -495,6 +495,11 @@ mod parser;
 mod style_ast;
 // 定义已映射内联样式到公开 Style 字段的编译期转换。
 mod style_codegen;
+// 定义 borderStyle 关键字到 UI 边框线型契约的独立映射。
+mod style_border_codegen;
+// 集中验证 borderStyle 的完整枚举生成与拒绝路径。
+#[cfg(test)]
+mod style_border_codegen_tests;
 // 定义样式类继承、引用与内联优先级改写。
 mod style_class_resolver;
 // 定义样式值、颜色、边距与枚举的编译期映射。
