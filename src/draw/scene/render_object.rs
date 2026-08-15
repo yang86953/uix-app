@@ -12,8 +12,11 @@ use crate::draw::scene::ScenePaint;
 /// 单个 widget 的 Content 阶段绘制缓存。
 #[derive(Debug, Clone)]
 pub struct RenderObjectEntry {
+    /// 最近一次场景同步得到的节点布局框。
     pub frame: Rect,
+    /// 可重放的 Content 阶段绘制命令；尚未录制或不可缓存时为空。
     pub display_list: Option<DisplayList>,
+    /// 当前缓存是否因场景或节点变化而不可重放。
     pub is_dirty: bool,
 }
 
@@ -37,18 +40,22 @@ pub struct RenderObjectTree {
 }
 
 impl RenderObjectTree {
+    /// 创建尚未同步任何场景节点的空索引树。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 返回当前索引中的可见场景节点数量。
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    /// 判断索引中是否没有可见场景节点。
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
+    /// 返回指定节点的 Content 缓存条目。
     pub fn get(&self, id: NodeId) -> Option<&RenderObjectEntry> {
         self.entries.get(&id)
     }
