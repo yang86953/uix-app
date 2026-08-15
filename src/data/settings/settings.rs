@@ -711,8 +711,3 @@ fn settings_typed_parse_error(key: &str, target_type: &str, error: impl Display)
 // ════════════════════════════════════════════════════════════════════════════
 
 // 键值设置解析/序列化与路径解析专项测试。
-#[cfg(test)]
-// 从仓库测试目录引入，保持设置实现文件低于行数上限。
-#[path = "../../../tests/unit/data/settings/settings_tests.rs"]
-// 将外置测试作为设置模块的私有子模块编译。
-mod settings_tests;

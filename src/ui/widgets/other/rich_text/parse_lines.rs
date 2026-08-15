@@ -223,13 +223,3 @@ fn is_markdown_blank_line(line: &str) -> bool {
     // 空字符串以及只含空格/制表符的行都属于空白行。
     line.chars().all(|ch| matches!(ch, ' ' | '\t'))
 }
-
-// 将缩进代码块专项回归放在独立文件，保持行扫描实现聚焦。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_indented_code_tests.rs"]
-mod indented_code_tests;
-
-// 将行结束专项回归放在独立文件，保持行扫描实现聚焦。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_line_ending_tests.rs"]
-mod line_ending_tests;

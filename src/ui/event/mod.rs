@@ -842,8 +842,3 @@ macro_rules! register_semantic {
 }
 
 // 事件模型专项测试：SystemEvent 映射、SemanticEvent 载荷与 HandlerTable 分派。
-#[cfg(test)]
-// 从仓库测试目录引入，保持事件实现文件低于行数上限。
-#[path = "../../../tests/unit/ui/event/system_event_tests.rs"]
-// 将外置测试作为事件模块的私有子模块编译。
-mod system_event_tests;

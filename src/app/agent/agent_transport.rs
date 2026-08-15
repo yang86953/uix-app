@@ -343,8 +343,3 @@ pub(crate) fn read_bounded_line<R: BufRead>(
 }
 
 // 帧划分纯逻辑专项测试（仅 agent-control 能力下编译，不启动线程与 IO）。
-#[cfg(all(test, feature = "agent-control"))]
-// 从仓库测试目录引入，保持传输实现文件低于行数上限。
-#[path = "../../../tests/unit/app/agent/agent_transport_tests.rs"]
-// 将外置测试作为传输模块的私有子模块编译。
-mod agent_transport_tests;

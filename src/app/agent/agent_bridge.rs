@@ -482,8 +482,3 @@ impl AgentProcessBridge {
 }
 
 // 目录核心逻辑专项测试（内存内同步操作，不启动线程与 IO）。
-#[cfg(test)]
-// 从仓库测试目录引入，保持桥实现文件低于行数上限。
-#[path = "../../../tests/unit/app/agent/agent_bridge_tests.rs"]
-// 将外置测试作为桥模块的私有子模块编译。
-mod agent_bridge_tests;

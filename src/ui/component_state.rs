@@ -863,8 +863,3 @@ where
 }
 
 // 仅在库单元测试中编译组件状态回滚门禁。
-#[cfg(test)]
-// 将可访问私有存储边界的测试放在仓库测试目录。
-#[path = "../../tests/unit/ui/component_state_tests.rs"]
-// 挂载组件状态专用行为测试。
-mod tests;

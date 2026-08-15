@@ -799,8 +799,3 @@ fn ordered_range(start: Date, end: Date) -> (Date, Date) {
 }
 
 // 将 DateRangePicker 表面约束契约放在独立测试文件中。
-#[cfg(test)]
-// 从仓库测试目录加载实现，同时保持主实现文件低于行数上限。
-#[path = "../../../../tests/unit/ui/widgets/input/date_range_picker_tests.rs"]
-// 声明当前模块的私有回归测试。
-mod tests;

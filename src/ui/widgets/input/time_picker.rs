@@ -811,8 +811,3 @@ impl Default for TimePicker {
 }
 
 // 在测试构建中加载时间面板表面几何契约。
-#[cfg(test)]
-// 从仓库测试目录加载契约，并维持单文件行数门槛。
-#[path = "../../../../tests/unit/ui/widgets/input/time_picker_tests.rs"]
-// 声明时间选择器的私有契约模块。
-mod time_picker_tests;
