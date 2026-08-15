@@ -14,6 +14,8 @@ use crate::ui::component::clipboard;
 use crate::ui::component::paint_context::PaintContext;
 // 引入共享的单节点文字选区实现。
 use crate::ui::text_selection::per_node::PerNodeTextSelection;
+// 引入 UI System 拥有的行高与样式契约。
+use crate::ui::theme::style::{LineHeight, Style};
 // 引入主题颜色值与组件运行契约。
 use crate::ui::{
     ColorValue, ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent,
@@ -58,6 +60,8 @@ component! {
         semantic_color: Option<ColorValue>,
         color_override: Option<Color>,
         spacing: f32,
+        /// 可选的样式行高，优先于段落 spacing 构建器。
+        line_height: Option<LineHeight>,
         indent: f32,
         ellipsis: bool,
         /// 共享的选区状态：布局缓存、选区、拖选锚点与绘制偏移。
@@ -89,7 +93,7 @@ component! {
                 } else {
                     (estimated.max_line_width + indent).min(text_width) + copy_space
                 },
-                self.paragraph_line_height(fs) * estimated.line_count as f32,
+                self.resolved_line_height(fs) * estimated.line_count as f32,
             );
         }
         constraints.clamp(intrinsic)
@@ -177,6 +181,8 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let (fs, fw) = self.compute_font_style();
+        // 为测量、布局与绘制解析唯一最终行高。
+        let line_height = self.resolved_line_height(fs);
         // 在绘制阶段通过当前 Provider 主题解析语义颜色。
         let text_c = self.resolved_text_color(ctx.tokens());
         let copy_space = if self.copyable { 28.0 } else { 0.0 };
@@ -197,11 +203,7 @@ component! {
         let opts = crate::draw::TextLayoutOptions {
             max_width: layout_width,
             max_height: 0.0,
-            line_height: if wraps {
-                self.paragraph_line_height(fs)
-            } else {
-                fs * 1.5
-            },
+            line_height,
             word_wrap: wraps,
             h_align: crate::draw::HAlign::Left,
             v_align: crate::draw::VAlign::Top,
@@ -377,6 +379,8 @@ impl Typography {
             semantic_color: None,
             color_override: None,
             spacing: 0.0,
+            // 未声明时保持 Typography 既有 normal 或 spacing 语义。
+            line_height: None,
             indent: 0.0,
             ellipsis: false,
             sel: PerNodeTextSelection::new(),
@@ -549,10 +553,18 @@ impl Typography {
         }
     }
 
-    fn paragraph_line_height(&self, font_size: f32) -> f32 {
-        let factor = if self.spacing > 0.0 {
+    fn resolved_line_height(&self, font_size: f32) -> f32 {
+        // UIX Style 显式行高优先于 Typography 专有 spacing。
+        if let Some(line_height) = self.line_height {
+            // 倍率与像素值均按最终字号解析。
+            return line_height.resolve(font_size);
+        }
+        // 未声明时段落 spacing 保持现有构建器优先级。
+        let factor = if matches!(self.type_, TypographyType::Paragraph) && self.spacing > 0.0 {
+            // 只有段落类型消费专有 spacing 构建器。
             self.spacing
         } else {
+            // 标题、普通文本与未声明段落保持既有 normal 倍率。
             1.5
         };
         let line_height = font_size * factor;
@@ -572,7 +584,13 @@ impl Typography {
         let copy_space = if self.copyable { 28.0 } else { 0.0 };
         let w = self.content.chars().count() as f32 * fs * 0.6 + copy_space;
         // 与 Label 一致：单行用视觉字高，避免光学居中后量高偏大
-        let h = fs * 1.2;
+        let h = self
+            // 只有显式样式行高改变单行固有高度。
+            .line_height
+            // 按语义字号解析行盒。
+            .map(|line_height| line_height.resolve(fs))
+            // 未声明时保留既有视觉字高。
+            .unwrap_or(fs * 1.2);
         Size::new(w, h)
     }
 
@@ -642,6 +660,12 @@ impl Typography {
 }
 
 impl Typography {
+    // 从 View 适配边界接收本组件实际消费的样式字段。
+    pub(crate) fn apply_view_style(&mut self, style: &Style) {
+        // next widget 的默认 None 会在 reconcile 时清除旧值；这里只复制当前显式值。
+        self.line_height = style.line_height;
+    }
+
     pub(crate) fn sync_from(&mut self, next: Self) {
         if self.content != next.content {
             self.content = next.content;
@@ -662,6 +686,8 @@ impl Typography {
         self.semantic_color = next.semantic_color;
         self.color_override = next.color_override;
         self.spacing = next.spacing;
+        // 同步显式行高以触发布局快照差异。
+        self.line_height = next.line_height;
         self.indent = next.indent;
         self.ellipsis = next.ellipsis;
         if !self.copyable || self.disabled {
@@ -686,6 +712,8 @@ impl Typography {
             // 快照保留主题值身份而不是提前固化为某个主题的 RGB。
             semantic_color: self.semantic_color,
             color_override: self.color_override,
+            // 快照保留行高单位和值以支持精确布局失效。
+            line_height: self.line_height,
         }
     }
 }
@@ -734,5 +762,25 @@ mod tests {
             // 读取亮色主题错误令牌。
             light.color_error()
         );
+    }
+
+    // 验证 Style 行高优先于 Typography 专有段落 spacing。
+    #[test]
+    fn line_height_style_overrides_typography_spacing() {
+        // 创建带两倍段落 spacing 的排版组件。
+        let mut typography = Typography::paragraph("line height")
+            // 既有专有入口先声明两倍行高。
+            .spacing(2.0);
+        // 未应用 Style 时保留专有 spacing。
+        assert_eq!(typography.resolved_line_height(10.0), 20.0);
+        // 构造固定十八像素的统一样式。
+        let style = Style::default().with_line_height(
+            // 正像素值必须构造成功。
+            LineHeight::pixels(18.0).expect("正像素行高必须有效"),
+        );
+        // 通过 View 私有适配入口应用统一样式。
+        typography.apply_view_style(&style);
+        // 显式 Style 行高必须覆盖较早的 spacing。
+        assert_eq!(typography.resolved_line_height(10.0), 18.0);
     }
 }

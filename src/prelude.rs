@@ -59,6 +59,8 @@ pub use crate::ui::theme::style::{
 };
 // 公开 UIX 生成代码与手写消费者共享的边框线型契约。
 pub use crate::ui::theme::style::BorderStyle;
+// 公开 UIX 生成代码与手写消费者共享的行高契约。
+pub use crate::ui::theme::style::LineHeight;
 pub use crate::ui::theme::{
     ColorScale, DATA_VISUALIZATION_PALETTE, DataVisualizationPalette, DesignTokens, DynTokens,
     FunctionalColorRole, NEUTRAL_PALETTE, NeutralColorScale, NeutralRole, PrimaryHue, ShadowToken,
