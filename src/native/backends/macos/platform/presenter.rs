@@ -1,13 +1,15 @@
 use super::*;
 
-struct MacosPresenter {
+// 呈现器仅向 macOS Platform System 根模块开放构造与持有。
+pub(super) struct MacosPresenter {
     layer: cocoa::Id,
     width: i32,
     height: i32,
 }
 
 impl MacosPresenter {
-    fn new(layer: cocoa::Id, width: i32, height: i32) -> Self {
+    // 由 macOS 窗口工厂为新 CAMetalLayer 构造呈现器。
+    pub(super) fn new(layer: cocoa::Id, width: i32, height: i32) -> Self {
         Self {
             layer,
             width,

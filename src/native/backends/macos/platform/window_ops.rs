@@ -1,8 +1,7 @@
 use super::*;
 
-use super::*;
-
-struct MacosWindowOps {
+// 原生窗口操作组件仅由 macOS 窗口工厂构造并交给共享窗口核心持有。
+pub(super) struct MacosWindowOps {
     window: cocoa::Id,
     layer: cocoa::Id,
     window_id: WindowId,
@@ -12,7 +11,8 @@ struct MacosWindowOps {
 }
 
 impl MacosWindowOps {
-    fn new(
+    // 为单个 NSWindow 构造 AppKit 操作端口与帧节拍器。
+    pub(super) fn new(
         window: cocoa::Id,
         layer: cocoa::Id,
         window_id: WindowId,

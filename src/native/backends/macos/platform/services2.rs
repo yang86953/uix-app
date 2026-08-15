@@ -1,5 +1,4 @@
-use super::*;
-
+// 导入 macOS Platform System 根模块统一拥有的契约与基础服务类型。
 use super::*;
 
 impl INotification for MacosNotification {
@@ -11,7 +10,8 @@ impl INotification for MacosNotification {
     }
 }
 
-struct MacosConsole;
+// 控制台组件仅对 macOS Platform System 内部可见。
+pub(super) struct MacosConsole;
 
 impl IConsole for MacosConsole {
     fn write(&mut self, text: &str) -> Result<()> {
@@ -86,7 +86,8 @@ impl IConsole for MacosConsole {
     }
 }
 
-struct MacosSystemInfo;
+// 系统信息组件仅对 macOS Platform System 内部可见。
+pub(super) struct MacosSystemInfo;
 
 impl ISystemInfo for MacosSystemInfo {
     fn os_info(&self) -> Result<OsInfo> {
