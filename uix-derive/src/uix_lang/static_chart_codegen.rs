@@ -35,6 +35,12 @@ const CHART_DATA_CONSTRUCTORS: &[&str] = &[
     "HeatmapCell",
     // 瀑布图变化项。
     "WaterfallData",
+    // 通用图表系列。
+    "ChartSeries",
+    // 雷达图维度轴。
+    "RadarAxis",
+    // 雷达图维度值。
+    "RadarData",
 ];
 
 // 生成面积、散点与漏斗三类静态图表映射。
