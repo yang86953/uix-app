@@ -27,7 +27,7 @@ use super::{
     generate_table, generate_tabs, generate_tag, generate_theme_toggle, generate_time_picker,
     generate_timeline, generate_tooltip, generate_tree, generate_tree_select, generate_typography,
     generate_upload, generate_virtual_scroll, generate_watermark, generate_window_control,
-    generate_window_drag_region, planned_builtin_diagnostic,
+    generate_window_drag_region, planned_builtin_diagnostic, SUPPORTED_BUILTIN_TAGS,
 };
 // 引入 SelectableList 独立生成入口。
 use super::generate_selectable_list;
@@ -258,7 +258,9 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
             // 说明没有静默猜测映射。
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
-            "使用 Text、Label、Button、ButtonGroup、FloatButton、FloatButtonGroup、FloatButtonBackTop、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、WindowDragRegion、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Upload、Avatar、Image、ImageGroup、List、SelectableList、Collapse、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Table、Menu、Navigation、Dropdown、Steps、Pagination、Breadcrumb、Anchor、Tabs、QRCode、Watermark、RichText、Alert、ProgressBar、Popconfirm、Modal、Drawer、Tooltip、Popover、FocusTrap、Spin、BarChart、LineChart、PieChart、AreaChart、ScatterChart、FunnelChart、Treemap、Gauge、Heatmap、WaterfallChart、RadarChart 或 ComboChart，或先登记组件状态",
+            format!(
+                "使用 {SUPPORTED_BUILTIN_TAGS}；Col 仅作为 Row/Grid 的直接子项，或先登记组件状态"
+            ),
         )),
     }
     // 结束元素分派函数。
