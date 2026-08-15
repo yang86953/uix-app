@@ -507,6 +507,8 @@
     <AreaChart data={[LineData('Jan', 80), LineData('Feb', 120), LineData('Mar', 105)]} smooth fillOpacity="0.3" title="面积趋势" width="420px" height="260px" />
     // 展示类型化散点数据与坐标配置。
     <ScatterChart data={[ScatterData('A', 2.5, 6.3), ScatterData('B', 3.1, 5.8), ScatterData('C', 4.2, 7.1)]} xAxis="宽度" yAxis="高度" pointStyle="diamond" title="样本分布" width="420px" height="260px" />
+    // 展示类型化气泡数据、第三维大小与统一缩放配置。
+    <ScatterChart bubbleData={[BubbleData('中国', 1.4, 12, 80), BubbleData('美国', 0.33, 21, 50)]} bubbleScale="0.8" xAxis="人口（十亿）" yAxis="GDP（万亿美元）" title="经济气泡" width="420px" height="280px" />
     // 展示类型化漏斗阶段与转化率配置。
     <FunnelChart data={[FunnelData('浏览', 5000), FunnelData('点击', 2300), FunnelData('下单', 420), FunnelData('支付', 310)]} showConversionRate labelPosition="right" shape="symmetric" title="转化漏斗" width="420px" height="320px" />
     // 展示递归矩形树节点与间隙配置。

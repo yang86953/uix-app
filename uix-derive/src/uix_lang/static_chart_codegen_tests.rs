@@ -38,6 +38,18 @@ fn generates_area_scatter_and_funnel_charts() {
             && scatter.contains("x_axis (\"宽度\")")
             && scatter.contains("PointStyle :: Diamond")
     );
+    // 气泡图覆盖显式 BubbleData 入口与大小缩放。
+    let bubble = generate(
+        "<ScatterChart bubbleData={[BubbleData('中国', 1.4, 12, 80)]} bubbleScale=\"0.8\" xAxis=\"人口\" yAxis=\"GDP\" />",
+    )
+    // 合法气泡图必须生成。
+    .expect("ScatterChart bubbleData 应生成");
+    // 气泡图必须精确收集 BubbleData、规范化数值并应用缩放。
+    assert!(
+        bubble.contains("BubbleData :: new (\"中国\" , 1.4 , 12.0 , 80.0)")
+            && bubble.contains("Vec < :: uix :: prelude :: BubbleData >")
+            && bubble.contains("bubble_scale (0.8)")
+    );
     // 漏斗图覆盖阶段数据、枚举、布尔与间隙。
     let funnel = generate(
         "<FunnelChart data={[FunnelData('浏览', 500)]} showConversionRate labelPosition=\"right\" align=\"left\" shape=\"symmetric\" gap=\"4\" />",
@@ -57,12 +69,34 @@ fn generates_area_scatter_and_funnel_charts() {
 // 验证未登记数据、属性、枚举与子树都得到编译诊断。
 #[test]
 fn rejects_unregistered_static_chart_contracts() {
-    // 气泡数据构造器仍未登记，不能借散点标签静默通过。
-    let bubble = generate("<ScatterChart data={[BubbleData('A', 1, 2, 3)]} />")
-        // 未登记构造器必须失败。
-        .expect_err("BubbleData 不得静默映射");
-    // 诊断必须点名未登记构造器。
-    assert!(bubble.message.contains("BubbleData"));
+    // 普通散点与气泡数据入口不能同时决定载荷。
+    let duplicate = generate(
+        "<ScatterChart data={[ScatterData('A', 1, 2)]} bubbleData={[BubbleData('B', 2, 3, 4)]} />",
+    )
+    // 两个入口必须互斥。
+    .expect_err("data 与 bubbleData 同时使用必须失败");
+    // 诊断必须点名两个入口。
+    assert!(duplicate.message.contains("data") && duplicate.message.contains("bubbleData"));
+    // bubbleData 不能借用普通散点构造器。
+    let mismatched = generate("<ScatterChart bubbleData={[ScatterData('A', 1, 2)]} />")
+        // 类型错配必须在宏展开期失败。
+        .expect_err("bubbleData 类型错配必须失败");
+    // 诊断必须同时点名实际与目标类型。
+    assert!(
+        mismatched.message.contains("ScatterData") && mismatched.message.contains("BubbleData")
+    );
+    // 普通散点不能携带无效气泡缩放。
+    let scale = generate("<ScatterChart data={items} bubbleScale=\"0.8\" />")
+        // 无效配置必须失败。
+        .expect_err("普通散点 bubbleScale 必须失败");
+    // 诊断必须指出 bubbleData 前提。
+    assert!(scale.message.contains("bubbleData"));
+    // 气泡图不能携带无效普通点大小。
+    let point = generate("<ScatterChart bubbleData={items} pointSize=\"6\" />")
+        // 无效配置必须失败。
+        .expect_err("气泡图 pointSize 必须失败");
+    // 诊断必须指向气泡大小契约。
+    assert!(point.suggestion.contains("bubbleScale"));
     // 多系列仍由 Rust API 承担。
     let series = generate("<AreaChart data={items} series={series} />")
         // 未登记 series 必须失败。

@@ -32,4 +32,8 @@ fn chart_advanced_config_compiles_against_public_uix_api() {
     let _chart: ViewNode = crate::uix!(
         r##"<BarChart data={[BarData('Q1', 12, Color('#1677ff'))]} legend={chart_legend} animation={chart_animation} interactive={chart_interaction} brush={chart_brush} tooltip={chart_tooltip} />"##
     );
+    // 展开气泡数据入口并要求精确 BubbleData 集合通过公开 API 类型检查。
+    let _bubble: ViewNode = crate::uix!(
+        r#"<ScatterChart bubbleData={[BubbleData('A', 1, 2, 3)]} bubbleScale="0.8" />"#
+    );
 }

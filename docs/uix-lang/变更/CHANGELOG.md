@@ -22,6 +22,7 @@
 | 日期 | 范围 | 说明 | 关联 |
 |---|---|---|---|
 | 2026-08-15 | 组件 / 图表 | 为十二类图表登记 `legend`、`animation`、`interactive`、`brush` 与 `tooltip` 共同配置，并保留运行时图表组件的交互状态唯一所有权 | #1096 |
+| 2026-08-16 | 组件 / 图表 | 为 `ScatterChart` 登记互斥的 `bubbleData`、`BubbleData` 构造器与 `bubbleScale`，保持动态集合精确类型检查 | #1097 |
 | 2026-08-15 | 样式 / 背景 | 实现本地单层背景图、固定方向双色渐变、剩余空间定位与四种图片重复方式；接入 Style、ImageService、状态差异和真实宏消费者 | #1068 |
 | 2026-08-15 | 样式 / 布局 | 将与 Flex/Grid 架构冲突的 float/clear 从伪规划项收敛为明确非目标，并提供属性级编译诊断与可执行替代建议 | #1069 |
 | 2026-08-15 | 语法 / Component / 事件 | 实现相邻 If/ElseIf/Else 短路链、按事件登记的 `$event` 字段校验、prop 默认值与必填诊断，以及 Vec<number>/Vec<Record>、Some 和嵌套 record 集合初始值 | #1014 |
