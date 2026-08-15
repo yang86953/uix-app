@@ -27,6 +27,7 @@ pub mod timeline;
 // 树组件 capability 关闭时不解析展示树实现目录。
 #[cfg(feature = "tree-widgets")]
 // 启用后保留既有 display::tree 子模块路径。
+/// 用于展示层级数据的树组件。
 pub mod tree;
 
 pub use avatar::*;

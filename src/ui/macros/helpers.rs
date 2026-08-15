@@ -1,4 +1,5 @@
 #[macro_export]
+/// 创建捕获响应式状态、计算值或窗口句柄的语义事件处理器。
 macro_rules! semantic_handler {
     (
         // 语义类型参数采用 Rust 2024 表达式片段语义。

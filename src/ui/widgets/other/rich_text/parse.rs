@@ -28,6 +28,7 @@ mod parse_lines;
 // 同字符粗斜体嵌套的 delimiter 扫描保持在 RichText 私有解析边界。
 #[path = "parse_style.rs"]
 mod parse_style;
+/// 计算富文本片段在给定宽度下的高度、逻辑字符数与最大行宽。
 pub fn layout_rich_text_segments(
     segments: &[RichTextSegment],
     max_width: f32,
