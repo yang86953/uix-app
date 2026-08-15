@@ -91,6 +91,19 @@ impl WindowOps for MacosWindowOps {
         Ok(())
     }
 
+    // 将应用层关闭意图交给 AppKit，最终关闭事实仍由 windowWillClose 委托回调发布。
+    fn os_request_close(&mut self) -> crate::core::Result<()> {
+        // 已关闭或失效窗口返回明确的 InvalidState，不伪造成功结果。
+        self.ensure_valid_window("os_request_close")?;
+        // SAFETY: ensure_valid_window 已确认 NSWindow 仍由本对象持有；performClose: 仅同步借用该指针。
+        unsafe {
+            // 使用标准 AppKit 关闭入口，避免绕过委托或提前释放窗口所有权。
+            cocoa::request_window_close(self.window);
+        }
+        // AppKit 已接受同步关闭请求；Application System 将在 close 事件后执行统一销毁。
+        Ok(())
+    }
+
     fn os_set_title(&mut self, title: &str) -> crate::core::Result<()> {
         self.ensure_valid_window("os_set_title")?;
         // SAFETY: self.window is valid and title is converted to a temporary

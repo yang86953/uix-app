@@ -243,6 +243,13 @@ pub unsafe fn close_window(window: Id) {
     msg_void(window, "close");
 }
 
+// 通过 AppKit 的标准用户关闭入口请求窗口关闭，让委托回调发布最终关闭事实。
+// SAFETY: window 必须是仍存活且尚未关闭的 NSWindow，本函数不释放调用方的 +1 所有权。
+pub unsafe fn request_window_close(window: Id) {
+    // performClose: 会执行与标题栏关闭按钮相同的 AppKit 关闭语义，并同步触发窗口委托链。
+    msg_void_id(window, "performClose:", std::ptr::null_mut());
+}
+
 // SAFETY: 非空 object 必须持有可由当前调用精确消费一次的 Objective-C +1 引用。
 pub unsafe fn release_object(object: Id) {
     if !object.is_null() {
