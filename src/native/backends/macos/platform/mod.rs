@@ -140,6 +140,10 @@ impl OsEventSource for MacosPlatform {
 }
 
 impl MacosPlatform {
+    /// 从 AppKit 队列同步取出并分派一个事件。
+    ///
+    /// # Safety
+    /// `until` 必须是调用期间有效的 NSDate 对象，且本方法必须在 AppKit UI 线程执行。
     unsafe fn dispatch_cocoa_event(&mut self, until: cocoa::Id) -> bool {
         let Some(event) = cocoa::dispatch_one_event(until) else {
             return false;
@@ -318,6 +322,9 @@ fn find_existing_path(paths: &[&str]) -> Option<String> {
 }
 
 /// Update MoltenVK / Metal drawable extent before Vulkan swapchain recreate.
+///
+/// # Safety
+/// `layer` 必须是仍然存活的 CAMetalLayer，且调用发生在其所属窗口的 UI 线程。
 pub(crate) unsafe fn set_metal_layer_drawable_size(layer: cocoa::Id, width: i32, height: i32) {
     cocoa::set_metal_layer_drawable_size(layer, width, height);
 }
