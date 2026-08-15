@@ -1,6 +1,9 @@
 // 引入结构化元素与诊断。
 use super::{Diagnostic, Element};
 
+// 保存当前已进入生成矩阵的完整标签集合，供规划中与未知标签诊断复用。
+pub(crate) const SUPPORTED_BUILTIN_TAGS: &str = "Text、Label、Button、Container、Row、Column、Grid、ScrollView、VirtualScroll、Affix、BackTop、FloatButtonBackTop、Splitter、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Avatar、Badge、Image、ImageGroup、List、SelectableList、Collapse、Upload、Message、Notification、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Table、Tabs、Menu、Dropdown、Navigation、Steps、Pagination、Breadcrumb、Anchor、QRCode、Watermark、RichText、Alert、ProgressBar、BarChart、LineChart、PieChart、AreaChart、ScatterChart、FunnelChart、Treemap、Gauge、Heatmap、WaterfallChart、RadarChart、ComboChart、Popconfirm、Modal、Drawer、Tooltip、Popover、FocusTrap、Spin、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Col、Icon、Divider、Space、Typography、ThemeToggle、ButtonGroup、WindowControl、WindowDragRegion、FloatButton、FloatButtonGroup";
+
 // 保存一个规划中内置组件的文档类别。
 struct PlannedBuiltin {
     // 保存 PascalCase 标签名。
@@ -33,8 +36,10 @@ pub(crate) fn planned_builtin_diagnostic(element: &Element) -> Option<Diagnostic
             "内置组件 <{}> 已登记于{}，但 uix-lang 生成映射仍为规划中",
             element.name, entry.category
         ),
-        // 给出当前真实支持集合。
-        "当前使用 Text、Label、Button、ButtonGroup、FloatButton、FloatButtonGroup、FloatButtonBackTop、Icon、Divider、Space、Typography、ThemeToggle、WindowControl、WindowDragRegion、Container、Row、Column、Grid、ScrollView、VirtualScroll、Splitter、Affix、BackTop、Layout、Sider、Header、Content、Footer、Input、InputNumber、InputGroup、Slider、RangeSlider、Rate、Checkbox、Switch、Radio、Segmented、Select、Cascader、TreeSelect、AutoComplete、Mentions、DatePicker、DateRangePicker、TimePicker、ColorPicker、Form、FormInputItem、FormSelectItem、FormCheckboxItem、FormRadioItem、FormSwitchItem、FormSliderItem、Upload、Avatar、Image、ImageGroup、List、SelectableList、Collapse、Skeleton、Empty、ResultView、Tag、Card、Descriptions、Timeline、Calendar、Carousel、Tree、Table、Menu、Navigation、Dropdown、Steps、Pagination、Breadcrumb、Anchor、Tabs、QRCode、Watermark、RichText、Alert、ProgressBar、Popconfirm、Modal、Drawer、Tooltip、Popover、FocusTrap、Spin、BarChart、LineChart、PieChart、AreaChart、ScatterChart、FunnelChart、Treemap、Gauge、Heatmap、WaterfallChart、RadarChart 或 ComboChart；Col 仅作为 Row/Grid 的直接子项，或先完成该组件的属性映射 Gate",
+        // 给出当前真实支持集合；Col 受直接子项位置约束。
+        format!(
+            "当前使用 {SUPPORTED_BUILTIN_TAGS}；Col 仅作为 Row/Grid 的直接子项，或先完成该组件的属性映射 Gate"
+        ),
     ))
 }
 
@@ -42,7 +47,7 @@ pub(crate) fn planned_builtin_diagnostic(element: &Element) -> Option<Diagnostic
 #[cfg(test)]
 mod tests {
     // 引入登记表与名称集合。
-    use super::PLANNED_BUILTINS;
+    use super::{PLANNED_BUILTINS, SUPPORTED_BUILTIN_TAGS};
     // 引入有序去重集合。
     use std::collections::BTreeSet;
 
@@ -63,5 +68,21 @@ mod tests {
             .collect::<BTreeSet<_>>();
         // App 是当前唯一仍规划中的内置入口类别。
         assert!(categories.contains("标签语法 / App 应用入口"));
+    }
+
+    // 验证诊断建议里的标签清单与元素生成矩阵同源且数量稳定。
+    #[test]
+    fn supported_tag_hint_covers_current_generation_matrix() {
+        // 诊断建议按顿号分隔，最后一项使用“或”。
+        let names = SUPPORTED_BUILTIN_TAGS
+            .split('、')
+            .map(|name| name.trim_end_matches("或").trim())
+            .collect::<BTreeSet<_>>();
+        // 生成矩阵当前共 108 个标签，新增映射时必须同步本清单。
+        assert_eq!(names.len(), 108);
+        // 清单必须覆盖文档最近补齐的展示与反馈标签。
+        for expected in ["Badge", "Message", "Notification", "Col"] {
+            assert!(names.contains(expected), "缺少已登记标签 {expected}");
+        }
     }
 }

@@ -13,7 +13,7 @@
 - **入口宏**：`uix!`（内嵌源码与 `.uix` 文件入口）、`uix_app!`（`<App>` 根）、`uix_items!`（`<Record>` 模块级结构体）。
 - **语法面**：顶层声明区（样式类、`@theme`、`<Component>`、`<Record>`、`@import` / `@export`）；`<If>` / `<ElseIf>` / `<Else>` 相邻条件链；`<For>` 循环（索引、`key` 身份）；受限表达式子集；数据类型构造链与对象字面量；`setState` / `setTheme` / `setStyle` 内置操作；句柄位绑定。
 - **样式与主题**：样式类、内联样式、`extends` 组合；`:hover/:disabled/:checked` 差异叠加；`@theme` 完整 `DesignTokens` 白名单；类型化 `#token` 引用；`setTheme` 与 `setStyle` 切换。
-- **组件矩阵**：布局、通用、输入、展示、反馈、导航六类约 90+ 标签已登记（见 [README](../README.md) 与各[组件参考](../参考/组件/布局组件.md)）。
+- **组件矩阵**：布局、通用、输入、展示、反馈、导航六类 108 个标签已登记（含仅作为 `Row` / `Grid` 直接子项使用的 `Col`；完整清单见 [README](../README.md#状态声明) 与各[组件参考](../参考/组件/布局组件.md)）。
 - **模块系统**：`@import` / `@export`（具名/全量、递归依赖、增量编译）。
 - **诊断模型**：未登记能力编译期诊断（位置 + 修复建议）；解析错误 SourceSpan。
 
