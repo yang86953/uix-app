@@ -125,6 +125,19 @@ fn chart_tooltip() -> TooltipConfig {
     TooltipConfig::new().template("{label}: {value}")
 }
 
+// 为主演示每次声明构建创建独立的热力图带位置色阶。
+fn heatmap_color_stops() -> Vec<(f32, Color)> {
+    // 返回浅色、中间色与深色三档渐变。
+    vec![
+        // 声明色阶起点。
+        (0.0, Color::hex("#f7fbff")),
+        // 声明色阶中点。
+        (0.5, Color::hex("#6baed6")),
+        // 声明色阶终点。
+        (1.0, Color::hex("#08306b")),
+    ]
+}
+
 // 记录 Pagination @change 的页码文本载荷。
 fn on_page_change(value: &str) {
     // 输出变化页码供演示日志核对。

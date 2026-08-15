@@ -14,7 +14,7 @@ fn generate(source: &str) -> Result<String, Diagnostic> {
 fn generates_heatmap_and_waterfall_charts() {
     // 热力图覆盖混合数值数据、标签、日历与单元配置。
     let heatmap = generate(
-        "<Heatmap data={[HeatmapCell(0, 1, 12)]} xLabels={['周一']} yLabels={['上午', '下午']} calendarMode year=\"2026\" cellSize=\"14\" cellGap=\"2\" showValues animation={animation} />",
+        "<Heatmap data={[HeatmapCell(0, 1, 12)]} xLabels={['周一']} yLabels={['上午', '下午']} calendarMode year=\"2026\" cellSize=\"14\" cellGap=\"2\" showValues colorRange={color_range} colorStops={color_stops} animation={animation} />",
     )
     // 合法热力图必须生成。
     .expect("Heatmap 应生成");
@@ -25,6 +25,8 @@ fn generates_heatmap_and_waterfall_charts() {
             && heatmap.contains("calendar_mode (true)")
             && heatmap.contains("year (2026)")
             && heatmap.contains("show_values (true)")
+            && heatmap.contains("color_range")
+            && heatmap.contains("Vec < (f32 , :: uix :: prelude :: Color) >")
             && heatmap.contains("animation ((animation) . clone ())")
     );
     // 瀑布图覆盖三类变化项、方向与坐标轴标题。
@@ -64,10 +66,19 @@ fn rejects_invalid_matrix_and_delta_contracts() {
         .expect_err("Heatmap 字符串标签必须失败");
     // 诊断必须说明集合要求。
     assert!(labels.message.contains("字符串集合"));
-    // 颜色范围仍未登记，不能静默忽略。
-    let color = generate("<Heatmap data={items} colorRange={colors} />")
-        // 未登记颜色范围必须失败。
-        .expect_err("colorRange 不得静默映射");
+    // 颜色范围不接受字符串冒充类型化颜色元组。
+    let color_range = generate("<Heatmap data={items} colorRange=\"#ffffff,#000000\" />")
+        // 字符串颜色范围必须失败。
+        .expect_err("colorRange 字符串不得映射");
+    // 诊断必须保留具体属性名和表达式要求。
+    assert!(
+        color_range.message.contains("colorRange")
+            && color_range.message.contains("类型化颜色表达式")
+    );
+    // 多段色阶同样只接受类型化集合表达式。
+    let color_stops = generate("<Heatmap data={items} colorStops=\"red,blue\" />")
+        // 字符串色阶必须失败。
+        .expect_err("colorStops 字符串不得映射");
     // 诊断必须保留具体属性名。
-    assert!(color.message.contains("colorRange"));
+    assert!(color_stops.message.contains("colorStops"));
 }

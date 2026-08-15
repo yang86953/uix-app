@@ -36,4 +36,19 @@ fn chart_advanced_config_compiles_against_public_uix_api() {
     let _bubble: ViewNode = crate::uix!(
         r#"<ScatterChart bubbleData={[BubbleData('A', 1, 2, 3)]} bubbleScale="0.8" />"#
     );
+    // 提供热力图两端颜色的精确元组。
+    let heatmap_range = (Color::hex("#f7fbff"), Color::hex("#08306b"));
+    // 提供热力图带归一化位置的精确色阶集合。
+    let heatmap_stops = vec![
+        // 声明色阶起点。
+        (0.0, Color::hex("#f7fbff")),
+        // 声明色阶中点。
+        (0.5, Color::hex("#6baed6")),
+        // 声明色阶终点。
+        (1.0, Color::hex("#08306b")),
+    ];
+    // 展开两类热力图颜色配置并要求公开 API 完成类型检查。
+    let _heatmap: ViewNode = crate::uix!(
+        r#"<Heatmap data={[HeatmapCell(0, 0, 12)]} colorRange={heatmap_range} colorStops={heatmap_stops} />"#
+    );
 }
