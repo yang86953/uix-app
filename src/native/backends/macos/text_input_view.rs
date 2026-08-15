@@ -105,6 +105,9 @@ impl crate::native::windowing::input::ITextInput for MacosTextInput {
     }
 }
 
+///
+/// # Safety
+/// 必须在 macOS 主线程创建视图；`owner` 与事件队列必须至少存活到 UixContentView dealloc 回收其 context。
 pub(crate) unsafe fn create_content_view(
     width: f64,
     height: f64,
@@ -147,6 +150,9 @@ pub(crate) unsafe fn create_content_view(
     Ok(view)
 }
 
+///
+/// # Safety
+/// `window` 必须是与 `window_id` 匹配且仍存活的 UIX NSWindow，并只能在其主线程激活输入。
 pub(crate) unsafe fn make_window_text_input_active(
     owner: &SharedImeOwner,
     window_id: WindowId,
@@ -156,6 +162,9 @@ pub(crate) unsafe fn make_window_text_input_active(
     start_selected(owner)
 }
 
+///
+/// # Safety
+/// `window` 必须是与 `window_id` 匹配且仍存活的 UIX NSWindow，并只能在其主线程停用输入。
 pub(crate) unsafe fn make_window_text_input_inactive(
     owner: &SharedImeOwner,
     window_id: WindowId,
@@ -165,6 +174,7 @@ pub(crate) unsafe fn make_window_text_input_inactive(
     stop_selected(owner)
 }
 
+// SAFETY: native_window 必须是存活 NSWindow；其 contentView 必须由本模块创建并与 window_id 具有相同身份。
 unsafe fn select_window(
     owner: &SharedImeOwner,
     window_id: WindowId,
@@ -194,6 +204,7 @@ unsafe fn select_window(
     Ok(target)
 }
 
+// SAFETY: owner 当前选中目标必须是存活 UixContentView；generation 状态只由当前主线程推进。
 unsafe fn start_selected(owner: &SharedImeOwner) -> crate::core::Result<()> {
     let activation = lock_owner(owner).activate_selected().ok_or_else(|| {
         Error::new(
@@ -223,6 +234,7 @@ unsafe fn start_selected(owner: &SharedImeOwner) -> crate::core::Result<()> {
     Ok(())
 }
 
+// SAFETY: owner 的活动 session 必须仍指向存活 UixContentView；停止只消费当前 generation。
 unsafe fn stop_selected(owner: &SharedImeOwner) -> crate::core::Result<()> {
     let Some(session) = lock_owner(owner).deactivate_selected() else {
         // A delayed blur may select an old window after another window became
@@ -234,6 +246,7 @@ unsafe fn stop_selected(owner: &SharedImeOwner) -> crate::core::Result<()> {
     Ok(())
 }
 
+// SAFETY: 调用方必须位于主线程并保证 owner 中登记的活动 view 尚未释放，shutdown 只消费一次活动 session。
 unsafe fn shutdown_owner(owner: &SharedImeOwner) {
     let Some(session) = lock_owner(owner).deactivate_active() else {
         return;
@@ -297,6 +310,7 @@ mod cocoa {
     }
 
     #[link(name = "objc")]
+    // SAFETY: 这些声明与 Objective-C runtime C ABI 一致；类、selector、IMP 与名称指针由下方窄封装校验。
     unsafe extern "C" {
         fn objc_getClass(name: *const c_char) -> Id;
         fn sel_registerName(name: *const c_char) -> Sel;
@@ -307,6 +321,9 @@ mod cocoa {
         fn objc_registerClassPair(cls: Id);
     }
 
+    ///
+    /// # Safety
+    /// 必须在 macOS 主线程调用；Once 保证动态 NSView 子类只注册一次，返回类由 Objective-C runtime 永久拥有。
     pub unsafe fn content_view_class() -> Id {
         VIEW_CLASS.call_once(|| {
             let superclass = class("NSView");
@@ -372,6 +389,9 @@ mod cocoa {
         VIEW_CLASS_PTR
     }
 
+    ///
+    /// # Safety
+    /// `view` 必须是当前动态类的新实例，其 context ivar 必须仍为空且只允许安装一次。
     pub unsafe fn install_view_context(
         view: Id,
         context: Box<TextInputContext>,
@@ -379,15 +399,22 @@ mod cocoa {
         objc_runtime::install_box(view, VIEW_CONTEXT_OFFSET, context)
     }
 
+    // SAFETY: view 必须是仍存活的当前动态类实例；返回指针不得越过 view dealloc 或跨线程使用。
     unsafe fn view_context(view: Id) -> *mut TextInputContext {
         objc_runtime::box_ptr(view, VIEW_CONTEXT_OFFSET)
     }
 
+    ///
+    /// # Safety
+    /// `view` 必须是仍存活的 UixContentView，context 在本同步查询期间不得进入 dealloc。
     pub unsafe fn view_window_id(view: Id) -> Option<WindowId> {
         let context = view_context(view);
         (!context.is_null()).then(|| (*context).window_id)
     }
 
+    ///
+    /// # Safety
+    /// `session.target.native_id` 必须指向存活 UixContentView，且 session generation 来自同一 `NativeImeOwner`。
     pub unsafe fn begin_view_session(session: NativeImeSession) -> bool {
         let view = session.target.native_id as Id;
         let context = view_context(view);
@@ -398,6 +425,9 @@ mod cocoa {
         true
     }
 
+    ///
+    /// # Safety
+    /// `session.target.native_id` 必须指向存活 UixContentView；只有匹配的当前 generation 才能完成并清理组合态。
     pub unsafe fn finish_view_session(session: NativeImeSession) {
         let view = session.target.native_id as Id;
         let context = view_context(view);
@@ -416,6 +446,9 @@ mod cocoa {
         );
     }
 
+    ///
+    /// # Safety
+    /// `view` 必须是附着于存活 NSWindow 的 UixContentView，并在该窗口主线程调用。
     pub unsafe fn make_view_first_responder(view: Id) -> bool {
         if view.is_null() {
             return false;
@@ -427,6 +460,9 @@ mod cocoa {
         msg_bool_id(window, "makeFirstResponder:", view) != NO
     }
 
+    ///
+    /// # Safety
+    /// `view` 必须是存活 UixContentView；只有它仍是所属 NSWindow 的 firstResponder 时才会清除。
     pub unsafe fn resign_view_first_responder(view: Id) {
         if view.is_null() {
             return;
@@ -450,11 +486,13 @@ mod cocoa {
         }
     }
 
+    // SAFETY: view 必须是回调期间存活的 UixContentView，其 context 只被同步借用以克隆线程安全失败源。
     unsafe fn callback_failure_source(view: Id) -> Option<PendingFailureSource> {
         let context = view_context(view);
         (!context.is_null()).then(|| (*context).pending_failures.clone())
     }
 
+    // SAFETY: view 必须在 Objective-C 回调期间存活；callback 不得保存裸 context 借用，panic 会被截获并返回 fallback。
     unsafe fn with_callback<T, F>(view: Id, callback_name: &str, fallback: T, callback: F) -> T
     where
         F: FnOnce() -> T,
@@ -469,6 +507,7 @@ mod cocoa {
         }
     }
 
+    // SAFETY: 仅作为已登记的 dealloc IMP 调用；runtime 保证 view 是当前类实例且释放链只执行一次。
     unsafe extern "C" fn view_dealloc(view: Id, _cmd: Sel) {
         // SAFETY: UixContentView installs the Box once before publication and
         // clears the ivar here, making this the unique Rust reclaim point.
@@ -501,10 +540,12 @@ mod cocoa {
         }
     }
 
+    // SAFETY: 仅由 AppKit 按 c@: ABI 调用，view 在同步回调期间保持存活且 panic 被 with_callback 截获。
     unsafe extern "C" fn accepts_first_responder(view: Id, _cmd: Sel) -> Bool {
         with_callback(view, "acceptsFirstResponder", NO, || YES)
     }
 
+    // SAFETY: 仅由 NSTextInputClient 按 c@: ABI 调用，view 在同步回调期间保持存活。
     unsafe extern "C" fn has_marked_text(view: Id, _cmd: Sel) -> Bool {
         with_callback(view, "hasMarkedText", NO, || {
             let context = view_context(view);
@@ -520,6 +561,7 @@ mod cocoa {
         })
     }
 
+    // SAFETY: 仅由 NSTextInputClient 按 NSRange 返回 ABI 调用，view 在同步回调期间保持存活。
     unsafe extern "C" fn marked_range(view: Id, _cmd: Sel) -> NSRange {
         with_callback(view, "markedRange", not_found_range(), || {
             let context = view_context(view);
@@ -538,10 +580,12 @@ mod cocoa {
         })
     }
 
+    // SAFETY: 仅由 NSTextInputClient 按 NSRange 返回 ABI 调用，view 在同步回调期间保持存活。
     unsafe extern "C" fn selected_range(view: Id, _cmd: Sel) -> NSRange {
         with_callback(view, "selectedRange", not_found_range(), not_found_range)
     }
 
+    // SAFETY: 仅由 NSTextInputClient 按登记 encoding 调用；string 与 NSRange 参数在同步回调期间有效。
     unsafe extern "C" fn set_marked_text(
         view: Id,
         _cmd: Sel,
@@ -569,6 +613,7 @@ mod cocoa {
         });
     }
 
+    // SAFETY: 仅由 NSTextInputClient 按登记 encoding 调用；view 与 string 在同步回调期间有效。
     unsafe extern "C" fn insert_text(view: Id, _cmd: Sel, string: Id, _replacement_range: NSRange) {
         with_callback(view, "insertText", (), || {
             let context = view_context(view);
@@ -590,6 +635,7 @@ mod cocoa {
         });
     }
 
+    // SAFETY: 仅由 NSTextInputClient 按 v@: ABI 调用，view 在同步回调期间保持存活。
     unsafe extern "C" fn unmark_text(view: Id, _cmd: Sel) {
         with_callback(view, "unmarkText", (), || {
             let context = view_context(view);
@@ -605,6 +651,7 @@ mod cocoa {
         });
     }
 
+    // SAFETY: 仅由 AppKit 按 v@:@ ABI 调用，view 与 NSEvent 在同步回调期间保持存活。
     unsafe extern "C" fn key_down(view: Id, _cmd: Sel, event: Id) {
         with_callback(view, "keyDown", (), || {
             let context = view_context(view);
@@ -632,6 +679,7 @@ mod cocoa {
         }
     }
 
+    // SAFETY: value 必须是存活 NSString 或响应 string/UTF8String 的兼容对象；返回 C 字符串只在同步复制期间借用。
     unsafe fn id_to_string(value: Id) -> Option<String> {
         if value.is_null() {
             return None;
@@ -657,6 +705,7 @@ mod cocoa {
         None
     }
 
+    // SAFETY: class 必须尚未注册，imp 与 encoding 必须精确描述待登记 NSTextInputClient 回调 ABI。
     unsafe fn add_method(class: Id, name: &str, imp: *const c_void, encoding: &str) -> bool {
         let Ok(encoding) = CString::new(encoding) else {
             return false;
@@ -665,6 +714,7 @@ mod cocoa {
         !selector.is_null() && class_addMethod(class, selector, imp, encoding.as_ptr()) != 0
     }
 
+    // SAFETY: objc_getClass 同步读取零结尾名称且不保留 Rust 指针；返回类由 runtime 拥有。
     unsafe fn class(name: &str) -> Id {
         CString::new(name)
             .ok()
@@ -672,6 +722,7 @@ mod cocoa {
             .unwrap_or(std::ptr::null_mut())
     }
 
+    // SAFETY: sel_registerName 同步复制零结尾名称；返回 selector 由 runtime 永久拥有。
     unsafe fn sel(name: &str) -> Sel {
         CString::new(name)
             .ok()
@@ -679,50 +730,80 @@ mod cocoa {
             .unwrap_or(std::ptr::null_mut())
     }
 
+    ///
+    /// # Safety
+    /// `receiver` 必须响应无额外参数且返回对象的 `selector`，并在同步消息发送期间保持存活。
     pub unsafe fn msg_id(receiver: Id, selector: &str) -> Id {
+        // SAFETY: FnType 精确描述无参数、对象返回值的 Objective-C 消息 ABI。
         type FnType = unsafe extern "C" fn(Id, Sel) -> Id;
+        // SAFETY: objc_msgSend 只转换为本函数已经约束的对象返回签名。
         let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         function(receiver, sel(selector))
     }
 
+    ///
+    /// # Safety
+    /// `receiver` 必须响应接收 CGRect 且返回对象的 `selector`，并在同步消息发送期间保持存活。
     pub unsafe fn msg_id_rect(receiver: Id, selector: &str, rect: CGRect) -> Id {
+        // SAFETY: FnType 精确描述单 CGRect 参数、对象返回值的 Objective-C 消息 ABI。
         type FnType = unsafe extern "C" fn(Id, Sel, CGRect) -> Id;
+        // SAFETY: objc_msgSend 只转换为本函数已经约束的 CGRect 参数签名。
         let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         function(receiver, sel(selector), rect)
     }
 
+    // SAFETY: receiver 必须响应接收一个对象且返回对象的 selector，两个对象在同步调用期间保持存活。
     unsafe fn msg_id_id(receiver: Id, selector: &str, arg: Id) -> Id {
+        // SAFETY: FnType 精确描述单对象参数、对象返回值的 Objective-C 消息 ABI。
         type FnType = unsafe extern "C" fn(Id, Sel, Id) -> Id;
+        // SAFETY: objc_msgSend 只转换为本函数已经约束的单对象参数签名。
         let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         function(receiver, sel(selector), arg)
     }
 
+    // SAFETY: receiver 必须响应接收一个对象且返回 BOOL 的 selector，两个对象在同步调用期间保持存活。
     unsafe fn msg_bool_id(receiver: Id, selector: &str, arg: Id) -> Bool {
+        // SAFETY: FnType 精确描述单对象参数、BOOL 返回值的 Objective-C 消息 ABI。
         type FnType = unsafe extern "C" fn(Id, Sel, Id) -> Bool;
+        // SAFETY: objc_msgSend 只转换为本函数已经约束的单对象参数签名。
         let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         function(receiver, sel(selector), arg)
     }
 
+    // SAFETY: receiver 必须响应接收 selector 且返回 BOOL 的消息，并在同步调用期间保持存活。
     unsafe fn msg_bool_sel(receiver: Id, selector: &str, arg: Sel) -> Bool {
+        // SAFETY: FnType 精确描述 selector 参数、BOOL 返回值的 Objective-C 消息 ABI。
         type FnType = unsafe extern "C" fn(Id, Sel, Sel) -> Bool;
+        // SAFETY: objc_msgSend 只转换为本函数已经约束的 selector 参数签名。
         let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         function(receiver, sel(selector), arg)
     }
 
+    ///
+    /// # Safety
+    /// `receiver` 必须响应无额外参数且无返回值的 `selector`，并在同步消息发送期间保持存活。
     pub unsafe fn msg_void(receiver: Id, selector: &str) {
+        // SAFETY: FnType 精确描述无参数、无返回值的 Objective-C 消息 ABI。
         type FnType = unsafe extern "C" fn(Id, Sel);
+        // SAFETY: objc_msgSend 只转换为本函数已经约束的 void 签名。
         let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         function(receiver, sel(selector));
     }
 
+    // SAFETY: receiver 必须响应接收一个对象且无返回值的 selector，两个对象在同步调用期间保持存活。
     unsafe fn msg_void_id(receiver: Id, selector: &str, arg: Id) {
+        // SAFETY: FnType 精确描述单对象参数、无返回值的 Objective-C 消息 ABI。
         type FnType = unsafe extern "C" fn(Id, Sel, Id);
+        // SAFETY: objc_msgSend 只转换为本函数已经约束的单对象参数签名。
         let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         function(receiver, sel(selector), arg);
     }
 
+    // SAFETY: receiver 必须响应无参数且返回 UTF-8 C 字符串指针的 selector；指针只在对象存活时同步借用。
     unsafe fn msg_const_char_ptr(receiver: Id, selector: &str) -> *const c_char {
+        // SAFETY: FnType 精确描述无参数、C 字符串指针返回值的 Objective-C 消息 ABI。
         type FnType = unsafe extern "C" fn(Id, Sel) -> *const c_char;
+        // SAFETY: objc_msgSend 只转换为本函数已经约束的字符指针返回签名。
         let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         function(receiver, sel(selector))
     }
