@@ -79,9 +79,9 @@ fn generates_calendar_controlled_change_contract() {
 #[test]
 // 声明 Calendar 配置正向生成测试。
 fn generates_calendar_non_node_configuration() {
-    // 生成显示月份、导航、尺寸、事件与禁用策略配置。
+    // 生成显示月份、导航、尺寸、事件、禁用策略与日期格工厂配置。
     let snapshot = generate(
-        r#"<Calendar defaultDisplayed={displayed_date} cellSize="32px" yearJump={jump_by_year} events={calendar_events} disabledDate={is_disabled_date} />"#,
+        r#"<Calendar defaultDisplayed={displayed_date} cellSize="32px" yearJump={jump_by_year} events={calendar_events} disabledDate={is_disabled_date} dateCell={calendar_date_cell} />"#,
     )
     // 全部已登记配置必须成功生成。
     .expect("Calendar 非节点配置应映射到公开构造器");
@@ -97,6 +97,8 @@ fn generates_calendar_non_node_configuration() {
     assert!(snapshot.contains("CalendarEvent") && snapshot.contains("events"));
     // 禁用策略必须调用公开 disabled_date。
     assert!(snapshot.contains("disabled_date") && snapshot.contains("is_disabled_date"));
+    // 日期格工厂必须调用公开 date_cell 并保留调用方函数。
+    assert!(snapshot.contains("date_cell") && snapshot.contains("calendar_date_cell"));
 }
 
 // 验证默认日期与受控值不能形成两个状态所有者。
@@ -151,6 +153,16 @@ fn rejects_calendar_configuration_literals() {
         .expect_err("Calendar disabledDate 字面量必须被拒绝");
     // 诊断必须说明函数类型要求。
     assert!(disabled_error.message.contains("Fn(Date) -> bool"));
+    // 日期格字符串不提供类型化 View 工厂。
+    let date_cell_error = generate(r#"<Calendar dateCell="compact" />"#)
+        // 非工厂字面量必须失败。
+        .expect_err("Calendar dateCell 字面量必须被拒绝");
+    // 诊断必须说明日期、上下文与 View 返回契约。
+    assert!(
+        date_cell_error.message.contains("Date")
+            && date_cell_error.message.contains("CalendarCellInfo")
+            && date_cell_error.message.contains("View")
+    );
     // 非数值格子尺寸不能进入运行时归一化。
     let cell_size_error = generate(r#"<Calendar cellSize="large" />"#)
         // 非数值字面量必须失败。
@@ -165,14 +177,14 @@ fn rejects_calendar_configuration_literals() {
     assert!(year_jump_error.message.contains("布尔值"));
 }
 
-// 验证 Calendar 未登记的后续能力保持编译期 Gate。
+// 验证 Calendar 未登记属性继续保持编译期 Gate。
 #[test]
 // 声明 Calendar 未知属性测试。
 fn rejects_unknown_calendar_attribute() {
-    // dateCell 节点协议尚未进入 UIX 映射矩阵。
-    let error = generate(r#"<Calendar dateCell={date_cell_factory} />"#)
+    // calendarTone 不属于 Calendar 公开配置矩阵。
+    let error = generate(r#"<Calendar calendarTone="quiet" />"#)
         // 未登记属性必须失败。
         .expect_err("Calendar 未登记属性必须被拒绝");
     // 诊断必须包含具体未知属性名。
-    assert!(error.message.contains("dateCell"));
+    assert!(error.message.contains("calendarTone"));
 }

@@ -99,6 +99,26 @@ fn is_calendar_date_disabled(date: Date) -> bool {
     date.day == 1
 }
 
+// 为 Calendar Demo 构造带日期状态标记的真实日期格 View。
+fn calendar_date_cell(date: Date, info: CalendarCellInfo) -> ViewNode {
+    // 根据 Calendar 提供的只读上下文选择状态标记。
+    let marker = if info.is_selected {
+        // 选中日期显示实心圆点。
+        "●"
+    } else if info.is_today {
+        // 今天显示“今”标记。
+        "今"
+    } else if info.is_current_month {
+        // 当月普通日期只显示数字。
+        ""
+    } else {
+        // 非当月日期保留明确来源标记。
+        "外"
+    };
+    // 返回由 Calendar 日期稳定 key 拥有的 Label 子树。
+    ViewNode::leaf(Label::new(format!("{marker}{}", date.day)))
+}
+
 // 记录 Pagination @change 的页码文本载荷。
 fn on_page_change(value: &str) {
     // 输出变化页码供演示日志核对。
