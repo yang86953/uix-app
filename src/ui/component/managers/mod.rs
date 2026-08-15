@@ -23,12 +23,17 @@ pub use text_manager::*;
 /// 支持 per-component override：个别 component 可使用独立实例，否则回退到树级默认。
 #[derive(Default)]
 pub struct WidgetManagers {
+    /// 树级默认的类型化组件状态槽管理器。
     pub state: StateManager,
     /// Legacy style preset manager. Prefer `ui::style::Style` on components.
     pub style: StyleManager,
+    /// 树级默认的文本内容与绘制属性管理器。
     pub text: TextManager,
+    /// 组件树的指针交互状态管理器。
     pub interaction: InteractionManager,
+    /// 组件树的键盘焦点与 Tab 顺序管理器。
     pub focus: FocusManager,
+    /// 组件树的拖放手势状态管理器。
     pub drag: DragManager,
     /// Per-component manager overrides keyed by ComponentId.
     overrides: HashMap<ComponentId, Box<WidgetManagersOverrides>>,
@@ -43,6 +48,7 @@ struct WidgetManagersOverrides {
 }
 
 impl WidgetManagers {
+    /// 创建全部子管理器均为默认状态且没有组件级覆写的聚合器。
     pub fn new() -> Self {
         Self::default()
     }
