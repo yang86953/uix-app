@@ -317,6 +317,12 @@ pub trait StyleExt: Into<ViewNode> + Sized {
         self.into().border(width, color)
     }
 
+    /// 设置或清除保留完整偏移的盒阴影定义。
+    fn box_shadow(self, shadow: Option<crate::ui::theme::style::BoxShadowDef>) -> ViewNode {
+        // 通过受控样式更新入口保留其他声明字段。
+        self.into().map_style(|style| style.box_shadow = shadow)
+    }
+
     /// 设置圆角半径。
     fn radius(self, r: f32) -> ViewNode {
         self.into().radius(r)
