@@ -361,7 +361,8 @@ pub(crate) unsafe fn set_metal_layer_drawable_size(layer: cocoa::Id, width: i32,
 
 mod app_event;
 mod cocoa;
-mod file_dialog;
+// 允许公开 Platform System 只调用文件对话框窄 Adapter，不暴露组件状态。
+pub(crate) mod file_dialog;
 mod file_dialog_filters;
 mod presenter;
 mod services;

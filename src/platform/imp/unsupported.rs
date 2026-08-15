@@ -4,7 +4,7 @@ use crate::core::{Errc, Error, Result};
 use crate::platform::hardware::{DisplayInfo, MemoryInfo, OsInfo};
 // 引入跨平台通知身份与能力状态契约。
 use crate::platform::services::{
-    AppUserModelId, SpecialDir, SystemNotification, SystemNotificationCapability,
+    AppUserModelId, FileDialogFilter, SpecialDir, SystemNotification, SystemNotificationCapability,
 };
 
 pub(crate) struct State;
@@ -47,6 +47,37 @@ pub(crate) fn displays() -> Result<Box<[DisplayInfo]>> {
 
 pub(crate) fn special_dir(_directory: SpecialDir) -> Result<PathBuf> {
     Err(unsupported("Platform::special_dir"))
+}
+
+// 未适配目标明确拒绝文件多选，不伪造取消结果。
+pub(crate) fn open_files(
+    // 保留统一标题签名。
+    _title: &str,
+    // 保留统一过滤器签名。
+    _filters: &[FileDialogFilter],
+) -> Result<Option<Box<[PathBuf]>>> {
+    // 返回稳定的 typed NotImplemented。
+    Err(unsupported("Platform::open_files"))
+}
+
+// 未适配目标明确拒绝文件保存，不伪造取消结果。
+pub(crate) fn save_file(
+    // 保留统一标题签名。
+    _title: &str,
+    // 保留统一过滤器签名。
+    _filters: &[FileDialogFilter],
+) -> Result<Option<PathBuf>> {
+    // 返回稳定的 typed NotImplemented。
+    Err(unsupported("Platform::save_file"))
+}
+
+// 未适配目标明确拒绝目录选择，不伪造取消结果。
+pub(crate) fn open_folder(
+    // 保留统一标题签名。
+    _title: &str,
+) -> Result<Option<PathBuf>> {
+    // 返回稳定的 typed NotImplemented。
+    Err(unsupported("Platform::open_folder"))
 }
 
 // 没有平台 Provider 的目标返回显式 Unsupported 状态。

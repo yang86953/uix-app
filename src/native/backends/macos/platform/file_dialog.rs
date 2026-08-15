@@ -44,6 +44,30 @@ impl IFileDialog for MacosFileDialog {
     }
 }
 
+// 通过公开 Platform System 的窄 Adapter 打开多选文件面板。
+pub(crate) fn choose_files(title: &str, filters: &str) -> Result<Option<Vec<String>>> {
+    // 每次同步调用创建无状态 AppKit 对话框组件。
+    let mut dialog = MacosFileDialog;
+    // 复用既有主线程门禁、AppKit 生命周期与取消语义。
+    dialog.open(title, filters)
+}
+
+// 通过公开 Platform System 的窄 Adapter 打开保存面板。
+pub(crate) fn choose_save_file(title: &str, filters: &str) -> Result<Option<String>> {
+    // 每次同步调用创建无状态 AppKit 对话框组件。
+    let mut dialog = MacosFileDialog;
+    // 复用既有主线程门禁、AppKit 生命周期与取消语义。
+    dialog.save(title, filters)
+}
+
+// 通过公开 Platform System 的窄 Adapter 打开目录面板。
+pub(crate) fn choose_folder(title: &str) -> Result<Option<String>> {
+    // 每次同步调用创建无状态 AppKit 对话框组件。
+    let mut dialog = MacosFileDialog;
+    // 复用既有主线程门禁、AppKit 生命周期与取消语义。
+    dialog.open_folder(title)
+}
+
 // 拒绝从非 AppKit 主线程启动模态面板。
 fn ensure_appkit_thread(operation: &str) -> Result<()> {
     // SAFETY: pthread_main_np 无参数且只返回当前线程是否为进程主线程。
