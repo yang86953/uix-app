@@ -8,6 +8,10 @@
 // ============================================================================
 
 use crate::native::capabilities::system::IFileDialog;
+// 引入 platform capabilities Module 统一拥有的外部对话框退出分类。
+use crate::native::capabilities::services::file_dialog_process::{
+    ExternalDialogOutcome, classify_external_dialog_exit,
+};
 use crate::native::{Errc, Error, Result};
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -117,7 +121,8 @@ fn zenity_open_file(title: &str, filters: &str) -> Result<Option<Vec<String>>> {
     }
 
     let output = spawn_dialog("zenity", &mut cmd)?;
-    if !output.status.success() {
+    // 只把明确取消码归一化为成功空值。
+    if !dialog_was_confirmed("zenity", &output)? {
         return Ok(None);
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -151,7 +156,8 @@ fn zenity_save_file(title: &str, filters: &str) -> Result<Option<String>> {
     }
 
     let output = spawn_dialog("zenity", &mut cmd)?;
-    if !output.status.success() {
+    // 只把明确取消码归一化为成功空值。
+    if !dialog_was_confirmed("zenity", &output)? {
         return Ok(None);
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -162,7 +168,8 @@ fn zenity_open_folder(title: &str) -> Result<Option<String>> {
     let mut cmd = std::process::Command::new("zenity");
     cmd.args(["--file-selection", "--title", title, "--directory"]);
     let output = spawn_dialog("zenity", &mut cmd)?;
-    if !output.status.success() {
+    // 只把明确取消码归一化为成功空值。
+    if !dialog_was_confirmed("zenity", &output)? {
         return Ok(None);
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -177,7 +184,8 @@ fn kde_open_file(title: &str, filters: &str) -> Result<Option<Vec<String>>> {
     let mut cmd = std::process::Command::new("kdialog");
     cmd.args(["--title", title, "--getopenfilename", ".", filters]);
     let output = spawn_dialog("kdialog", &mut cmd)?;
-    if !output.status.success() {
+    // 只把明确取消码归一化为成功空值。
+    if !dialog_was_confirmed("kdialog", &output)? {
         return Ok(None);
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -194,7 +202,8 @@ fn kde_save_file(title: &str, filters: &str) -> Result<Option<String>> {
     let mut cmd = std::process::Command::new("kdialog");
     cmd.args(["--title", title, "--getsavefilename", ".", filters]);
     let output = spawn_dialog("kdialog", &mut cmd)?;
-    if !output.status.success() {
+    // 只把明确取消码归一化为成功空值。
+    if !dialog_was_confirmed("kdialog", &output)? {
         return Ok(None);
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -205,18 +214,36 @@ fn kde_open_folder(title: &str) -> Result<Option<String>> {
     let mut cmd = std::process::Command::new("kdialog");
     cmd.args(["--title", title, "--getexistingdirectory", "."]);
     let output = spawn_dialog("kdialog", &mut cmd)?;
-    if !output.status.success() {
+    // 只把明确取消码归一化为成功空值。
+    if !dialog_was_confirmed("kdialog", &output)? {
         return Ok(None);
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
     Ok(Some(stdout.trim().to_string()))
 }
 
+// 把子进程输出收窄为确认布尔值或 typed failure。
+fn dialog_was_confirmed(program: &str, output: &std::process::Output) -> Result<bool> {
+    // 由 capabilities Module 统一解释退出码与有界标准错误。
+    let outcome = classify_external_dialog_exit(program, output.status.code(), &output.stderr)?;
+    // 只有确认结果允许调用方继续解析标准输出。
+    Ok(matches!(outcome, ExternalDialogOutcome::Confirmed))
+}
+
 /// 启动对话框进程;进程无法启动(程序缺失等)视为对话框本身失败。
 fn spawn_dialog(program: &str, cmd: &mut std::process::Command) -> Result<std::process::Output> {
     cmd.output().map_err(|err| {
+        // 权限拒绝与普通启动 I/O 故障需要可区分分类。
+        let code = if err.kind() == std::io::ErrorKind::PermissionDenied {
+            // 可执行文件存在但当前进程无启动权限。
+            Errc::PermissionDenied
+        } else {
+            // 缺失程序与其他启动故障保留现有 I/O 分类。
+            Errc::IoError
+        };
         Error::new(
-            Errc::IoError,
+            // 传播已经按 OS 错误种类选择的 typed code。
+            code,
             format!("LinuxFileDialog: failed to launch {program}: {err}"),
         )
     })
