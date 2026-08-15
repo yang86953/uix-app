@@ -53,6 +53,7 @@
 - `ScrollView` 在纵向/双向纵列与横向单行中统一消费子项 margin，滚动条首轮判断使用自然外尺寸，非滚动轴填充先扣两侧 margin；双轴 `content_bounds` 补入对侧经典沟槽，使 `max_scroll` 仍按外视口相减却等价于真实内容视口。
 - `VirtualScroll` 只接受有限正行高与 viewport 参与范围计算，offset 先夹到内容边界；每次最多物化 4096 行，可见行优先于 overscan，总高度、滚动状态与最终行 frame 均保持有限。
 - 容器组件组合 `FlexLayout`/`GridLayout`，不复制第二套算法。
+- CSS `float` / `clear` 明确不属于 UIX 目标布局模型：左右贴靠、换行分组和二维分区分别由 Flex 对齐/增长、Row/Column 子树和 Grid 轨道表达；编译器提供替代诊断，layout Module 不保存浮动格式上下文或平行清除状态。
 
 ## 增量与缓存
 

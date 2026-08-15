@@ -833,7 +833,7 @@ pub(super) fn cursor_value(property: &StyleProperty) -> Result<TokenStream, Diag
 // 判断属性是否由文档明确标记为规划中。
 pub(super) fn is_planned_property(name: &str) -> bool {
     // 匹配样式参考中的规划中矩阵。
-    matches!(name, "float" | "clear" | "animation" | "transition")
+    matches!(name, "animation" | "transition")
 }
 
 // 构造指向样式值的统一诊断。

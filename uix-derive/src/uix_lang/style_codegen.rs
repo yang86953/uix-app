@@ -15,6 +15,8 @@ use super::style_border_codegen::border_style_field;
 use super::style_font_family_codegen::font_family_field;
 // 引入 fontWeight 到 UI 运行时字体粗细的独立映射。
 use super::style_font_weight_codegen::font_weight_field;
+// 引入 float/clear 非目标布局决策的专用诊断。
+use super::style_float_codegen::reject_float_or_clear;
 // 引入 lineHeight 到 UI 运行时行高的独立映射。
 use super::style_line_height_codegen::line_height_field;
 // 引入 position 与四边差异值到运行时结构契约的独立映射。
@@ -338,6 +340,8 @@ fn generate_style_statement(
         "boxShadow" => box_shadow_field(style, property),
         // 可见性映射到布尔值。
         "visible" => boolean_field(style, property, "visible"),
+        // UIX 不建立第二套 CSS 浮动格式上下文。
+        "float" | "clear" => reject_float_or_clear(property),
         // 文档标注规划中的属性必须明确拒绝。
         name if is_planned_property(name) => Err(Diagnostic::new(
             // 指向完整规划中属性。
