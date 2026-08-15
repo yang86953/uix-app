@@ -64,6 +64,8 @@ pub(crate) mod i18n;
 pub(crate) mod layout;
 pub mod macros;
 pub(crate) mod overlay;
+// 公开 UI System 自有的布局定位模式与四边值契约。
+mod position;
 pub(crate) mod reactive;
 pub(crate) mod render_handler;
 pub(crate) mod semantic_action;
@@ -138,6 +140,8 @@ pub use overlay::{
     OverlayBackdropBlur, OverlayBackdropRegion, OverlayEntry, OverlayId, OverlayKind, OverlayStack,
     Placement,
 };
+// 导出所有 View 节点共享的定位值契约。
+pub use position::{PositionInsets, PositionMode};
 pub use reactive::state::{Computed, Effect, State, StateSlotId};
 pub use render_handler::{EmptyContext, EmptyRenderer, render_empty_for};
 pub use semantic_action::{SemanticAction, SemanticActionKind};

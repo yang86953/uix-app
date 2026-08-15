@@ -32,6 +32,8 @@ use crate::ui::{
 use std::sync::Arc;
 
 pub(crate) mod providers;
+// 拆分定位链式入口，保持声明节点主体低于规模上限。
+mod position;
 
 /// 用户层 UI 声明 trait。
 pub trait View: 'static {
@@ -51,6 +53,8 @@ pub struct ViewNode {
     pub(crate) provider_context: ProviderContext,
     pub(crate) style: Style,
     pub(crate) visual_transform: ViewTransform,
+    // 保存由组件树布局 Module 求解的节点定位元数据。
+    pub(crate) position: crate::ui::position::PositionedLayout,
     // 保存当前声明节点的文字选择策略；Auto 由运行时结合祖先解析。
     pub(crate) user_select: crate::ui::UserSelect,
     // 保存当前声明节点显式覆盖的指针光标；None 表示继承父节点。
@@ -104,6 +108,8 @@ impl ViewNode {
             provider_context: current_provider_context(),
             style: Style::default(),
             visual_transform: ViewTransform::default(),
+            // 新声明节点默认参与正常布局流且四边均为 auto。
+            position: crate::ui::position::PositionedLayout::default(),
             // 新声明节点默认保留组件自身选择能力。
             user_select: crate::ui::UserSelect::Auto,
             // 未声明 cursor 时交给运行时沿父链继承。
@@ -143,6 +149,8 @@ impl ViewNode {
             provider_context: current_provider_context(),
             style: Style::default(),
             visual_transform: ViewTransform::default(),
+            // 新声明子树默认参与正常布局流且四边均为 auto。
+            position: crate::ui::position::PositionedLayout::default(),
             // 新声明子树默认保留组件自身选择能力。
             user_select: crate::ui::UserSelect::Auto,
             // 未声明 cursor 时交给运行时沿父链继承。

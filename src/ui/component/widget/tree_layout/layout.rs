@@ -535,14 +535,20 @@ impl WidgetTree {
             }
 
             // 检查是否有直接子节点在本趟中被扩展过
-            let has_resized_child = children.iter().any(|cid| resized_children.contains(cid));
+            let has_resized_child = children.iter().any(|cid| {
+                // out-of-flow 子项扩展不推动正常流父容器重新分配槽位。
+                self.get(*cid).is_some_and(|child| {
+                    // 只有正常流子项的实际扩展需要重排兄弟。
+                    !child.position().mode.is_out_of_flow() && resized_children.contains(cid)
+                })
+            });
 
             // 取所有可见子节点的最大右/下边界
             let mut max_right = node_frame.x + node_frame.w;
             let mut max_bottom = node_frame.y + node_frame.h;
             for &cid in children.iter() {
                 if let Some(child) = self.get(cid) {
-                    if child.visible() {
+                    if child.visible() && !child.position().mode.is_out_of_flow() {
                         let cf = child.frame();
                         let child_right = cf.x + cf.w;
                         let child_bottom = cf.y + cf.h;

@@ -69,11 +69,12 @@ impl WidgetTree {
         // Undo the same transform/scroll chain used by compositor painting.
         let layout_pos = self.point_to_node_layout(id, pos)?;
 
-        let can_hit_children = node.hit_test_children()
+        let can_hit_regular_children = node.hit_test_children()
             && node
                 .children_clip(node.frame())
                 .is_none_or(|clip| clip.contains(layout_pos));
-        if can_hit_children {
+        // fixed 直接子树即使位于父裁剪外也必须进入命中遍历。
+        if node.hit_test_children() {
             // 把父节点视口坐标转换为子内容坐标，供片段裁剪命中复用。
             let child_clip_pos = node
                 // 读取父节点施加在全部子项上的滚动偏移。
@@ -103,17 +104,25 @@ impl WidgetTree {
                 start = end;
             }
             for &child_id in &sorted {
+                // fixed 子树脱离当前父级的滚动与裁剪命中门禁。
+                let fixed = self.node_is_fixed(child_id);
+                // 普通子树仍要求指针位于父级可命中裁剪内。
+                if !fixed && !can_hit_regular_children {
+                    // 继续检查可能提升为 fixed 的其他兄弟。
+                    continue;
+                }
                 // 先按父布局为该子树声明的片段集合过滤命中。
-                let inside_parent_regions = self
-                    // 读取当前子节点保存的父级片段元数据。
-                    .get(child_id)
-                    // 缺少片段表示普通未裁剪子树，存在片段则要求命中任一矩形。
-                    .and_then(|child| child.parent_clip_regions())
-                    // 空片段集合自然拒绝全部命中。
-                    .is_none_or(|regions| {
-                        // 不连续片段使用集合命中，不能退化为联合包围盒。
-                        regions.iter().any(|region| region.contains(child_clip_pos))
-                    });
+                let inside_parent_regions = fixed
+                    || self
+                        // 读取当前子节点保存的父级片段元数据。
+                        .get(child_id)
+                        // 缺少片段表示普通未裁剪子树，存在片段则要求命中任一矩形。
+                        .and_then(|child| child.parent_clip_regions())
+                        // 空片段集合自然拒绝全部命中。
+                        .is_none_or(|regions| {
+                            // 不连续片段使用集合命中，不能退化为联合包围盒。
+                            regions.iter().any(|region| region.contains(child_clip_pos))
+                        });
                 // 指针落在片段间隙时跳过整个子树。
                 if !inside_parent_regions {
                     // 继续检查下一层视觉兄弟节点。
@@ -152,6 +161,11 @@ impl WidgetTree {
                 // 返回失败避免事件落到失效节点。
                 return false;
             };
+            // fixed 根及其内部边界已经检查完毕，不再继承外层父级片段。
+            if self.node_is_fixed(id) {
+                // 结束祖先裁剪遍历。
+                break;
+            }
             // 保存父节点标识供本轮片段换算与下一轮遍历。
             let parent = node.parent();
             // 只在父布局声明片段时执行集合命中。

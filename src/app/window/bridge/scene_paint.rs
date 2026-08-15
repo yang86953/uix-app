@@ -54,9 +54,8 @@ impl ScenePaint for WidgetTree {
     }
 
     fn node_transform(&self, id: NodeId) -> crate::draw::Transform {
-        self.get(id)
-            .map(|node| node.visual_transform_matrix())
-            .unwrap_or_else(crate::draw::Transform::identity)
+        // 让合成器、命中和脏区共享 relative/sticky 最终变换。
+        self.positioned_visual_transform(id)
     }
 
     fn node_opacity(&self, id: NodeId) -> f32 {
@@ -134,8 +133,13 @@ impl ScenePaint for WidgetTree {
             // 对合成器保守报告该节点不是浮层。
             return false;
         }
-        self.get(id)
-            .is_some_and(|n| n.overlay_entry(id, n.frame()).is_some())
+        // fixed 节点作为合成浮层脱离祖先滚动和裁剪，同时保留树生命周期。
+        self.node_is_fixed(id)
+            || self
+                // 读取组件自身声明的浮层入口。
+                .get(id)
+                // 普通浮层继续使用既有条目判定。
+                .is_some_and(|n| n.overlay_entry(id, n.frame()).is_some())
     }
 
     // 把 UI overlay 栈与当前 Theme token 解析为 draw System 的唯一效果计划。

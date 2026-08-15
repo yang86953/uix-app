@@ -99,6 +99,8 @@ impl ViewAdapter {
             // 保存非根或动态声明节点交接给所属节点的动画源。
             animated_sources: Vec<std::sync::Arc<dyn crate::ui::animation::AnimatedSource>>,
             visual_transform: crate::ui::component::view_transform::ViewTransform,
+            // 保存声明节点的完整定位元数据。
+            position: crate::ui::position::PositionedLayout,
             // 保存声明节点的文字选择策略。
             user_select: crate::ui::UserSelect,
             // 保存声明节点可继承的指针光标覆盖。
@@ -136,6 +138,7 @@ impl ViewAdapter {
                 provider_context,
                 style,
                 visual_transform,
+                position,
                 user_select,
                 cursor,
                 enter_animation,
@@ -174,6 +177,7 @@ impl ViewAdapter {
                 // 保留本声明节点拥有的动画源输出。
                 animated_sources,
                 visual_transform,
+                position,
                 user_select,
                 cursor,
                 enter_animation,
@@ -236,6 +240,8 @@ impl ViewAdapter {
             {
                 wnode = wnode.with_visual_transform(frame.visual_transform);
             }
+            // 所有定位值交给实际树统一求解正常流、包含块和视口语义。
+            wnode = wnode.with_position(frame.position);
             // 所有值都保留给实际树执行父子 used-value 解析。
             wnode = wnode.with_user_select(frame.user_select);
             // 显式光标覆盖需要随声明节点进入运行时树。
@@ -305,6 +311,7 @@ impl ViewAdapter {
             provider_context,
             style,
             visual_transform,
+            position,
             user_select,
             cursor,
             enter_animation: _,
@@ -413,6 +420,8 @@ impl ViewAdapter {
             tree.set_focus(None);
         }
         let widget_impact = Self::patch_widget(tree, id, widget);
+        // 定位变化需要重排父槽位并重建绘制与命中投影。
+        let position_changed = tree.set_node_position(id, position);
         // patch 可能替换具体组件，因此在其后重算子树并同步最终选择策略。
         tree.set_node_user_select(id, user_select);
         if style.visible {
@@ -424,8 +433,9 @@ impl ViewAdapter {
             current.set_accessibility_override(accessibility_override);
         }
 
-        let mut paint_changed = widget_impact.paint_changed || context_changed;
-        let mut layout_changed = widget_impact.layout_changed || context_changed;
+        let mut paint_changed = widget_impact.paint_changed || context_changed || position_changed;
+        let mut layout_changed =
+            widget_impact.layout_changed || context_changed || position_changed;
         if tree.set_visual_transform(id, visual_transform) {
             paint_changed = true;
         }

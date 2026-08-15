@@ -36,3 +36,5 @@ pub(crate) struct LayoutFrameScratch {
 mod animate;
 mod layout;
 mod layout_children;
+// 统一求解正常流、包含块、根视口和 sticky 视觉偏移。
+mod position;

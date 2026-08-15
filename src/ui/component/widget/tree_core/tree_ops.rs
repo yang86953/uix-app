@@ -259,6 +259,7 @@ impl WidgetTree {
             provider_context,
             visible,
             visual_transform,
+            position,
             user_select,
             cursor,
             enter_animation,
@@ -295,6 +296,8 @@ impl WidgetTree {
         if let Some(node) = self.get_mut(id) {
             node.set_visible(visible);
             node.set_visual_transform(visual_transform);
+            // 在首次布局前安装节点完整定位声明。
+            node.set_position(position);
             // 先安装节点声明，随后结合真实父链解析 used-value。
             node.set_declared_user_select(user_select);
             // 把声明节点的可继承光标覆盖安装到运行时节点。
