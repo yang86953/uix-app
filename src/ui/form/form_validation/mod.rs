@@ -217,7 +217,7 @@ pub struct FieldError {
 }
 
 impl FieldError {
-    fn new(field: &str, message: impl Into<String>) -> Self {
+    pub(crate) fn new(field: &str, message: impl Into<String>) -> Self {
         Self {
             field: field.to_string(),
             message: message.into(),
