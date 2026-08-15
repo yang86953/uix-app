@@ -44,13 +44,23 @@ use crate::ui::{
 pub enum RichTextSegment {
     /// 普通文本段（带独立样式）
     Text {
+        /// 参与布局、选择与复制的文本内容。
         content: String,
+        /// 只作用于该文本段的样式覆写。
         style: RichTextStyle,
     },
     /// 内联代码（等宽字体 + 深色背景 + 圆角）
-    Code { content: String },
+    Code {
+        /// 以代码样式显示并可独立复制的文本内容。
+        content: String,
+    },
     /// 可点击链接（自动带下划线和交互色）
-    Link { content: String, url: String },
+    Link {
+        /// 链接在富文本中显示的文字。
+        content: String,
+        /// 激活链接时通过语义事件提交给应用的目标地址。
+        url: String,
+    },
     /// 本地图片原子替换对象；仅在 image-codecs capability 开启时可用
     #[cfg(feature = "image-codecs")]
     Image {

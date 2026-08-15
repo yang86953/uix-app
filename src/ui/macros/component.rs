@@ -1,3 +1,4 @@
+/// 声明组件状态，并按所列窄能力方法生成对应的组件 trait 实现与快照入口。
 #[macro_export]
 macro_rules! component {
     (
@@ -67,6 +68,7 @@ macro_rules! component {
 
         $(
             impl $name {
+                #[doc = concat!("创建 `", stringify!($name), "` 的默认配置实例。")]
                 pub fn new() -> Self $new_body
             }
         )?
