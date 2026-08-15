@@ -4,6 +4,7 @@ use super::*;
 use crate::ui::view::{View, ViewNode};
 
 impl FloatButtonGroup {
+    /// 创建默认由悬停触发展开的空浮动按钮组。
     pub fn new() -> Self {
         let mut transition = TransitionPlayer::new(presets::collapse_collapse());
         transition.update(1.0);
@@ -25,6 +26,7 @@ impl FloatButtonGroup {
         }
     }
 
+    /// 设置由按钮组直接持有和布局的浮动按钮列表。
     pub fn buttons(mut self, mut buttons: Vec<FloatButton>) -> Self {
         self.item_layouts = buttons.iter_mut().map(Self::prepare_button).collect();
         self.buttons = Rc::new(RefCell::new(Some(buttons)));
@@ -66,6 +68,7 @@ impl FloatButtonGroup {
         }
     }
 
+    /// 设置按钮组展开与收起使用的触发模式。
     pub fn trigger(mut self, trigger: TriggerMode) -> Self {
         self.trigger = trigger;
         self
