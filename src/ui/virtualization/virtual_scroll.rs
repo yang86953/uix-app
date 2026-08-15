@@ -233,6 +233,7 @@ use crate::ui::{ComponentId, EventResult, SystemEvent, WidgetTree};
 pub use super::renderer::VirtualScrollBuilder;
 
 component! {
+    /// 只物化当前可见范围并拥有滚动与测量缓存的虚拟滚动组件。
     pub struct VirtualScroll {
         item_count: usize,
         item_height: f32,

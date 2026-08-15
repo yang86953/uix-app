@@ -9,6 +9,7 @@ use qrcode::{EcLevel, QrCode, types::Color as QrModuleColor};
 // ════════════════════════════════════════════════════════════════════════════
 
 component! {
+    /// 将文本值编码并绘制为可配置尺寸与纠错等级的二维码组件。
     pub struct QRCode {
         value: String,
         size: f32,

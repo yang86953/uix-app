@@ -42,6 +42,7 @@ pub enum TypographyType {
 }
 
 component! {
+    /// 按标题、段落或普通文本语义绘制并支持行内样式的排版组件。
     pub struct Typography {
         content: String,
         type_: TypographyType,

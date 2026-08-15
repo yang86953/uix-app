@@ -23,6 +23,7 @@ use std::rc::Rc;
 // ════════════════════════════════════════════════════════════════════════════
 
 component! {
+    /// 拥有文件队列、筛选、拖放和应用侧上传状态写回的组件。
     pub struct Upload {
         accept: String,
         multiple: bool,
