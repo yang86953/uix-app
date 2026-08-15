@@ -505,6 +505,11 @@ mod style_line_height_codegen;
 // 集中验证 lineHeight 的单位生成与拒绝路径。
 #[cfg(test)]
 mod style_line_height_codegen_tests;
+// 定义 textAlign 关键字到 UI 文本水平对齐契约的独立映射。
+mod style_text_align_codegen;
+// 集中验证 textAlign 的完整枚举生成与拒绝路径。
+#[cfg(test)]
+mod style_text_align_codegen_tests;
 // 定义 textDecoration 关键字到 UI 文本装饰契约的独立映射。
 mod style_text_decoration_codegen;
 // 集中验证 textDecoration 的完整枚举生成与拒绝路径。

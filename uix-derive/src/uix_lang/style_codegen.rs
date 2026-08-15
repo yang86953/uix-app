@@ -9,6 +9,8 @@ use super::{Attribute, AttributeValue, Diagnostic, StyleProperty};
 use super::style_border_codegen::border_style_field;
 // 引入 lineHeight 到 UI 运行时行高的独立映射。
 use super::style_line_height_codegen::line_height_field;
+// 引入 textAlign 到 UI 运行时文本水平对齐的独立映射。
+use super::style_text_align_codegen::text_align_field;
 // 引入 textDecoration 到 UI 运行时文本装饰的独立映射。
 use super::style_text_decoration_codegen::text_decoration_field;
 // 引入 transform 与原点到运行时公共契约的独立映射。
@@ -244,6 +246,8 @@ fn generate_style_statement(
         "fontSize" => typography_field(style, property),
         // 行高映射到显式倍率或逻辑像素值。
         "lineHeight" => line_height_field(style, property),
+        // 文本水平对齐映射到显式闭合枚举。
+        "textAlign" => text_align_field(style, property),
         // 文本装饰映射到显式闭合枚举。
         "textDecoration" => text_decoration_field(style, property),
         // 普通背景映射到可选 ColorValue。

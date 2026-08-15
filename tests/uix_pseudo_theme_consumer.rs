@@ -132,3 +132,24 @@ fn text_decoration_styles_compile_for_real_consumer() {
         "#
     );
 }
+
+// 验证 textAlign 四值通过公开 Style 和 TextAlign 契约完成真实宏展开。
+#[test]
+fn text_align_styles_compile_for_real_consumer() {
+    // 展开普通文本与语义排版组件的全部闭合对齐值。
+    let _alignments: ViewNode = uix::uix!(
+        // 同时覆盖显式左、右、居中与段落两端对齐。
+        r#"
+        leftAligned { width: 160px; textAlign: left; }
+        rightAligned { width: 160px; textAlign: right; }
+        centered { width: 160px; textAlign: center; }
+        justified { width: 160px; textAlign: justify; }
+        <Container>
+          <Text class="leftAligned">左对齐</Text>
+          <Text class="rightAligned">右对齐</Text>
+          <Typography class="centered">居中</Typography>
+          <Typography class="justified">两端对齐段落文本</Typography>
+        </Container>
+        "#
+    );
+}
