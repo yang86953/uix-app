@@ -144,6 +144,8 @@ impl Style {
         self.background_active = s.background_active;
         self.color = s.color;
         self.font_size = s.font_size;
+        // 完整替换保留未声明字重与显式 normal 的差异。
+        self.font_weight = s.font_weight;
         // 完整替换保留未声明行高与显式行高的差异。
         self.line_height = s.line_height;
         // 完整替换保留未声明对齐与显式 left 的差异。
@@ -252,6 +254,11 @@ impl Style {
         }
         if other.font_size != TypographyToken::Body {
             self.font_size = other.font_size;
+        }
+        // 只有显式字重覆盖继承值，包括显式 normal。
+        if other.font_weight.is_some() {
+            // 保存已经验证的精确数值。
+            self.font_weight = other.font_weight;
         }
         // 只有显式行高覆盖继承值。
         if other.line_height.is_some() {
@@ -451,6 +458,18 @@ impl Style {
     pub fn with_font_size(mut self, s: impl Into<TypographyToken>) -> Self {
         self.font_size = s.into();
         self
+    }
+    /// 设置显式字体粗细。
+    pub fn with_font_weight(mut self, font_weight: FontWeight) -> Self {
+        // Some 保留显式 normal 与未声明之间的差异。
+        self.font_weight = Some(font_weight);
+        // 返回可继续链式设置的样式。
+        self
+    }
+    /// 返回最终字体粗细；未声明时使用文档默认 normal。
+    pub fn effective_font_weight(&self) -> FontWeight {
+        // 公共 Style 层只提供稳定默认值，不替代组件兼容语义。
+        self.font_weight.unwrap_or_default()
     }
     /// 设置显式行高。
     pub fn with_line_height(mut self, line_height: LineHeight) -> Self {
