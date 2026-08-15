@@ -246,6 +246,7 @@ impl<K> MenuItem<K> {
 
 // Navigation menu component.
 component! {
+    /// 按稳定键管理选择、展开与键盘导航状态的菜单组件。
     pub struct Menu {
         items: Vec<MenuItem>,
         active_key: String,

@@ -49,6 +49,7 @@ fn paint_nav_item_bg(
 
 // NavItem — 侧边栏导航项
 component! {
+    /// 展示图标与标签并通过稳定键发布导航动作的侧边栏条目组件。
     pub struct NavItem {
         label: String,
         key: String,
