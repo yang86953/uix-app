@@ -1,6 +1,6 @@
 # agent 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 app 系统的可选本机 Agent 控制面、协议、安全边界和 UI 动作桥。依赖：app System 私有的命令/语义端口、[ui/accessibility](../ui/accessibility.md)、[ui/event](../ui/event.md)、[platform/agent-transport](../platform/agent-transport.md)。导出：显式启用的 `uix.agent.v1` 控制能力。
 >

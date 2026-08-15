@@ -1,6 +1,6 @@
 # windowing 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 platform 系统的目标 `windowing` 模块，权威持有原生窗口、事件源、输入、剪贴板和 IME 的平台边界。依赖：core。导出：供 app window/event-loop 使用的能力契约。
 

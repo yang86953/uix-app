@@ -1,6 +1,6 @@
 # resources 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 graphics 系统的目标 `resources` 模块及字体、文本布局、图像生命周期。依赖：[geometry](geometry.md)、[backend](backend.md)。导出：`FontService`、`ImageService` 及资源句柄。
 

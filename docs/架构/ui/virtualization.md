@@ -1,6 +1,6 @@
 # virtualization 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 ui 系统的大数据视图物化、范围计算和复用策略。依赖：[component](component.md)、[layout](layout.md)、[view](view.md)。导出：虚拟列表状态、物化协议和 renderer 生命周期。
 >

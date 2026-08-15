@@ -1,6 +1,6 @@
 # geometry 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 graphics 系统的目标 `geometry` 模块及绘制值契约。依赖：[core/geometry](../core/geometry.md)。导出：供 painting、scene、renderer 与 ui 使用。
 

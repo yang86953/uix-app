@@ -1,6 +1,6 @@
 # identity 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 core 系统的目标 `identity` 模块及其组件契约。依赖：无。导出：跨 ui、graphics、platform、app 传递的稳定身份值。
 
