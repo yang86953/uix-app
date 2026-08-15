@@ -161,6 +161,7 @@ pub(super) fn create_secondary_window(
         session.set_agent_command_queue(queue);
     }
     session.set_agent_command_executor(runtime.agent_command_executor());
+    session.set_agent_confirm_ui(runtime.agent_confirm_ui());
     if let Some(registration) = runtime.register_agent_window(
         window_id,
         title,

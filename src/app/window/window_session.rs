@@ -3,6 +3,7 @@ use crate::app::queues::agent_command_queue::AgentCommandQueue;
 use crate::app::queues::app_timer::AppTimerQueue;
 use crate::app::queues::main_thread_queue::MainThreadQueue;
 use crate::app::queues::window_agent_state::{AgentCommandExecutor, WindowAgentState};
+use crate::app::agent::agent_policy::AgentConfirmationRequest;
 use crate::app::window_semantics::{AgentSemanticsPort, WindowSemanticState};
 use crate::core::{Error, Rect, WindowId};
 use crate::draw::scene::NodeId;
@@ -245,6 +246,14 @@ impl WindowSession {
         executor: std::sync::Arc<dyn AgentCommandExecutor>,
     ) {
         self.agent_commands.set_executor(executor);
+    }
+
+    /// 组装期注入 Agent 确认 UI 回调（应用配置，组合根转发）。
+    pub(crate) fn set_agent_confirm_ui(
+        &mut self,
+        handler: Option<std::sync::Arc<dyn Fn(AgentConfirmationRequest) + Send + Sync>>,
+    ) {
+        self.agent_commands.set_confirm_ui(self.window_id, handler);
     }
 
     pub(crate) fn bind_agent_window(

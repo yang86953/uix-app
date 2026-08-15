@@ -169,6 +169,27 @@ pub(super) fn parse_action(value: &Value) -> Result<ParsedAgentAction, WireError
                 position: Point::new(required_f32(object, "x")?, required_f32(object, "y")?),
             }));
         }
+        "resize_window" => {
+            return Ok(ParsedAgentAction::Window(AgentWindowAction::Resize {
+                width: required_i32(object, "width")?,
+                height: required_i32(object, "height")?,
+            }));
+        }
+        "move_window" => {
+            return Ok(ParsedAgentAction::Window(AgentWindowAction::Move {
+                x: required_i32(object, "x")?,
+                y: required_i32(object, "y")?,
+            }));
+        }
+        "maximize_window" => {
+            return Ok(ParsedAgentAction::Window(AgentWindowAction::Maximize));
+        }
+        "minimize_window" => {
+            return Ok(ParsedAgentAction::Window(AgentWindowAction::Minimize));
+        }
+        "restore_window" => {
+            return Ok(ParsedAgentAction::Window(AgentWindowAction::Restore));
+        }
         _ => return Err(WireError::invalid("unknown action kind")),
     };
     Ok(ParsedAgentAction::Semantic(semantic))
@@ -229,6 +250,14 @@ pub(super) fn required_f32(object: &Map<String, Value>, field: &str) -> Result<f
         ));
     }
     Ok(value as f32)
+}
+
+pub(super) fn required_i32(object: &Map<String, Value>, field: &str) -> Result<i32, WireError> {
+    let value = object
+        .get(field)
+        .and_then(Value::as_i64)
+        .ok_or_else(|| WireError::invalid("required integer field is missing or invalid"))?;
+    i32::try_from(value).map_err(|_| WireError::invalid("integer field is outside the i32 range"))
 }
 
 pub(super) fn optional_f32(
@@ -313,14 +342,43 @@ pub(super) fn command_error_reply(
         AgentCommandError::NodeNotFound(_) => "target node was not found",
         AgentCommandError::AmbiguousTarget { .. } => "target matched multiple nodes",
         AgentCommandError::UnsupportedAction { .. } => "target does not support the action",
+        AgentCommandError::Forbidden { .. } => "action is forbidden by the agent policy",
+        AgentCommandError::RequiresConfirmation { .. } => "action requires user confirmation",
+        AgentCommandError::ConfirmationRejected { .. } => "confirmation was rejected",
+        AgentCommandError::ConfirmationNotFound { .. } => "confirmation is unknown or expired",
         AgentCommandError::InvalidValue { .. } => "action value is invalid for the target",
         AgentCommandError::NotInteractable(_) => "action target is not interactable",
         AgentCommandError::Blocked { .. } => "target is blocked",
         AgentCommandError::DidNotSettle { .. } => "UI did not settle within its pass limit",
+        AgentCommandError::WindowOperationFailed { .. } => "window operation failed",
         AgentCommandError::NotPresentable => "window is not presentable",
         AgentCommandError::AppClosed => "application is closed",
         AgentCommandError::Internal => "internal command failure",
     };
+    // 需要确认的错误携带一次性 confirm_id，供后续 confirm 请求使用。
+    if let AgentCommandError::RequiresConfirmation {
+        target,
+        action,
+        confirm_id,
+    } = &error
+    {
+        return AgentProtocolReply::from_value(
+            json!({
+                "schema": AGENT_PROTOCOL_SCHEMA,
+                "request_id": request_id,
+                "ok": false,
+                "error": {
+                    "code": error.code().as_str(),
+                    "message": message,
+                    "confirm_id": confirm_id,
+                    "target": target,
+                    "action": action.as_str(),
+                }
+            }),
+            false,
+            error.code().as_str(),
+        );
+    }
     error_reply(Some(request_id), error.code(), message, false)
 }
 

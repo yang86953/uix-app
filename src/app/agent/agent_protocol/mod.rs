@@ -31,7 +31,14 @@ pub(crate) const MAX_AGENT_CONNECTIONS: usize = 8;
 const MAX_REQUEST_ID_BYTES: usize = 128;
 const MAX_AUTOMATION_ID_BYTES: usize = 512;
 const AGENT_COMMAND_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
-const AGENT_REQUEST_TYPES: &[&str] = &["hello", "list_windows", "snapshot", "perform", "wait"];
+const AGENT_REQUEST_TYPES: &[&str] = &[
+    "hello",
+    "list_windows",
+    "snapshot",
+    "perform",
+    "confirm",
+    "wait",
+];
 const AGENT_SEMANTIC_ACTIONS: &[&str] = &[
     "invoke",
     "focus",
@@ -256,6 +263,7 @@ impl AgentProtocolSession {
             "list_windows" => self.handle_list_windows(request_id),
             "snapshot" => self.handle_snapshot(object, request_id),
             "perform" => self.handle_perform(object, request_id),
+            "confirm" => self.handle_confirm(object, request_id),
             "wait" => self.handle_wait(object, request_id),
             _ => error_reply(
                 Some(request_id),
@@ -465,6 +473,63 @@ impl AgentProtocolSession {
                 Some(request_id),
                 AgentErrorCode::Timeout,
                 "UI command timed out",
+                false,
+            ),
+            Err(RecvTimeoutError::Disconnected) => error_reply(
+                Some(request_id),
+                AgentErrorCode::AppClosed,
+                "application closed before responding",
+                false,
+            ),
+        }
+    }
+
+    /// 用户确认流程：确认执行先前命中 `requires_confirmation` 的动作。
+    /// 请求携带 confirm_id；命令在 UI turn 内弹起应用确认 UI，ticket 挂起
+    /// 直到用户决定（resolve）或确认失效。
+    fn handle_confirm(&self, object: &Map<String, Value>, request_id: String) -> AgentProtocolReply {
+        let window_id = match parse_window_id(object) {
+            Ok(window_id) => window_id,
+            Err(error) => return error.into_reply(Some(request_id), false),
+        };
+        let confirm_id = match required_u64(object, "confirm_id") {
+            Ok(confirm_id) => confirm_id,
+            Err(error) => return error.into_reply(Some(request_id), false),
+        };
+        let ticket = match self.bridge.confirm(window_id, confirm_id) {
+            Ok(ticket) => ticket,
+            Err(error) => return submit_error_reply(request_id, error),
+        };
+        // 确认流程等待用户决定；超时上限与命令响应一致，AI 可重查确认状态。
+        match ticket.recv_timeout(AGENT_COMMAND_RESPONSE_TIMEOUT) {
+            Ok(Ok(AgentCommandResponse::Performed {
+                window_id,
+                generation,
+                revision,
+                presented_revision,
+                settled,
+            })) => success_reply(
+                request_id,
+                "confirm",
+                json!({
+                    "window_id": window_id.raw(),
+                    "generation": generation,
+                    "revision": revision,
+                    "presented_revision": presented_revision,
+                    "settled": settled,
+                }),
+            ),
+            Ok(Ok(AgentCommandResponse::Snapshot(_))) => error_reply(
+                Some(request_id),
+                AgentErrorCode::Internal,
+                "unexpected command response",
+                false,
+            ),
+            Ok(Err(error)) => command_error_reply(request_id, error),
+            Err(RecvTimeoutError::Timeout) => error_reply(
+                Some(request_id),
+                AgentErrorCode::Timeout,
+                "confirmation timed out while waiting for the user",
                 false,
             ),
             Err(RecvTimeoutError::Disconnected) => error_reply(

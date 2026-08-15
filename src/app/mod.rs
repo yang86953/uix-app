@@ -39,6 +39,7 @@ pub(crate) mod window;
 pub(crate) mod window_semantics;
 
 pub use crate::ui::AppState;
+pub use agent::agent_policy::AgentConfirmationRequest;
 pub use application::app_handle::AppHandle;
 pub use application::application::{App, AppMode, map_ui_event};
 pub use application::cli::{Cli, CliArgs};
