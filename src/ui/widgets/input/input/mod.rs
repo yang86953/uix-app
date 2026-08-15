@@ -23,6 +23,7 @@ use crate::ui::{
 };
 use crate::ui::{SnapshotFields, SnapshotSource};
 
+/// 返回指定控件尺寸对应的输入框标准高度。
 pub fn input_height(size: ControlSize) -> f32 {
     match size {
         ControlSize::Small => 24.0,
@@ -44,8 +45,11 @@ const STATUS_MESSAGE_HEIGHT: f32 = 18.0;
 /// 但各自语义与变体独立（本枚举仅输入反馈三态，无校验专用态），勿强行合并。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputStatus {
+    /// 表示输入内容有效或操作成功。
     Success,
+    /// 表示输入内容需要用户注意。
     Warning,
+    /// 表示输入内容无效或操作失败。
     Error,
 }
 

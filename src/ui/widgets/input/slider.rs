@@ -519,6 +519,7 @@ impl Slider {
         super::RangeSlider::new(range)
     }
 
+    /// 创建使用指定闭区间且初始值位于下界的单值滑块。
     pub fn new(range: RangeInclusive<f64>) -> Self {
         let (min, max) = Self::normalize_range(range);
         let config = crate::ui::component::config::use_config();
@@ -542,6 +543,7 @@ impl Slider {
         }
     }
 
+    /// 设置键盘和拖动操作使用的离散步长。
     pub fn step(mut self, step: f64) -> Self {
         self.step = if step.is_finite() && step > 0.0 {
             step
@@ -565,10 +567,12 @@ impl Slider {
         self
     }
 
+    /// 返回滑块当前经过区间约束后的值。
     pub fn current_value(&self) -> f64 {
         self.value
     }
 
+    /// 设置滑块采用的控件尺寸。
     pub fn size(mut self, size: ControlSize) -> Self {
         self.slider_size = size;
         self
