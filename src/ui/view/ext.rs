@@ -238,6 +238,12 @@ pub trait StyleExt: Into<ViewNode> + Sized {
         self.into().transform_origin(origin)
     }
 
+    /// 设置指针命中节点时请求的平台光标。
+    fn cursor(self, cursor: crate::platform::windowing::CursorType) -> ViewNode {
+        // 委托 ViewNode 保存可继承的光标声明。
+        self.into().cursor(cursor)
+    }
+
     /// 设置 Flex 扩展系数。
     fn flex_grow(self, g: f32) -> ViewNode {
         self.into().flex_grow(g)

@@ -8,6 +8,45 @@ use crate::ui::WidgetTree;
 
 // 根协调入口保持在 ViewAdapter 私有 Module 内，避免泄漏事务状态。
 impl crate::ui::adapter::ViewAdapter {
+    // 判断声明节点能否复用既有运行时身份。
+    pub(super) fn can_reuse(
+        // 接收现有运行时树。
+        tree: &WidgetTree,
+        // 接收待复用节点身份。
+        id: crate::ui::ComponentId,
+        // 接收新一轮声明节点。
+        node: &ViewNode,
+    ) -> bool {
+        // 类型相同仍需要求内联组件作用域列表完全一致。
+        tree.get(id).is_some_and(|current| {
+            // 组件具体类型必须保持一致。
+            current.component().as_any().type_id() == node.widget_type_id()
+                // 根序号与嵌套顺序共同决定实际组件实例身份。
+                && current.uix_component_scopes() == node.uix_component_scopes.as_slice()
+        })
+    }
+
+    // 判断当前与下一轮处理器身份是否都已稳定登记 generation。
+    pub(super) fn handler_signatures_are_stable(
+        // 接收当前运行时处理器签名。
+        current: &[crate::ui::event::HandlerSignature],
+        // 接收下一轮声明处理器签名。
+        next: &[crate::ui::event::HandlerSignature],
+    ) -> bool {
+        // 两侧每个签名都必须持有稳定 generation。
+        current
+            // 遍历当前签名。
+            .iter()
+            // 拒绝仍缺少 generation 的当前签名。
+            .all(|signature| signature.generation.is_some())
+            // 下一轮也必须全部稳定。
+            && next
+                // 遍历下一轮签名。
+                .iter()
+                // 拒绝仍缺少 generation 的新签名。
+                .all(|signature| signature.generation.is_some())
+    }
+
     /// 构建 View 并捕获其结构性 State 绑定。
     #[cfg(any(test, feature = "test-harness"))]
     pub fn capture_view(view: impl View) -> ViewNode {

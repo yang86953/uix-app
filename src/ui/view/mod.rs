@@ -51,6 +51,8 @@ pub struct ViewNode {
     pub(crate) provider_context: ProviderContext,
     pub(crate) style: Style,
     pub(crate) visual_transform: ViewTransform,
+    // 保存当前声明节点显式覆盖的指针光标；None 表示继承父节点。
+    pub(crate) cursor: Option<crate::platform::windowing::CursorType>,
     pub(crate) enter_animation: Option<crate::ui::animation::AnimationConfig>,
     pub(crate) enter_deadline: Option<std::time::Instant>,
     pub(crate) leave_animation: Option<crate::ui::animation::AnimationConfig>,
@@ -100,6 +102,8 @@ impl ViewNode {
             provider_context: current_provider_context(),
             style: Style::default(),
             visual_transform: ViewTransform::default(),
+            // 未声明 cursor 时交给运行时沿父链继承。
+            cursor: None,
             enter_animation: None,
             enter_deadline: None,
             leave_animation: None,
@@ -135,6 +139,8 @@ impl ViewNode {
             provider_context: current_provider_context(),
             style: Style::default(),
             visual_transform: ViewTransform::default(),
+            // 未声明 cursor 时交给运行时沿父链继承。
+            cursor: None,
             enter_animation: None,
             enter_deadline: None,
             leave_animation: None,
@@ -310,6 +316,14 @@ impl ViewNode {
     pub fn transform_origin(mut self, origin: crate::ui::TransformOrigin) -> Self {
         // 只更新原点值，保留既有矩阵、offset、scale 与动画绑定。
         self.visual_transform.origin = origin;
+        // 返回可继续链式声明的节点。
+        self
+    }
+
+    /// 设置指针命中当前节点时请求的平台光标。
+    pub fn cursor(mut self, cursor: crate::platform::windowing::CursorType) -> Self {
+        // 显式保存 Arrow 以允许子节点覆盖父节点的继承光标。
+        self.cursor = Some(cursor);
         // 返回可继续链式声明的节点。
         self
     }

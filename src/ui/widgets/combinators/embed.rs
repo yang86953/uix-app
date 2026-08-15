@@ -41,6 +41,8 @@ pub(super) fn adopt_widget_node(
         style: crate::ui::theme::style::Style::default(),
         // 保留运行时视觉变换。
         visual_transform: node.visual_transform,
+        // 保留运行时节点显式声明的可继承光标。
+        cursor: node.cursor,
         // 保留入场动画配置。
         enter_animation: node.enter_animation,
         // 保留入场截止时间。
