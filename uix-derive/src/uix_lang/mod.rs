@@ -500,6 +500,11 @@ mod style_border_codegen;
 // 集中验证 borderStyle 的完整枚举生成与拒绝路径。
 #[cfg(test)]
 mod style_border_codegen_tests;
+// 定义 fontWeight 关键字与整数到 UI 字体粗细契约的独立映射。
+mod style_font_weight_codegen;
+// 集中验证 fontWeight 的完整生成与拒绝路径。
+#[cfg(test)]
+mod style_font_weight_codegen_tests;
 // 定义 lineHeight 倍率与像素值到 UI 行高契约的独立映射。
 mod style_line_height_codegen;
 // 集中验证 lineHeight 的单位生成与拒绝路径。

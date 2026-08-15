@@ -153,3 +153,26 @@ fn text_align_styles_compile_for_real_consumer() {
         "#
     );
 }
+
+// 验证 fontWeight 关键字与数值通过公开 Style 和 FontWeight 契约完成真实宏展开。
+#[test]
+fn font_weight_styles_compile_for_real_consumer() {
+    // 展开普通文本与语义排版组件的关键字、边界和精确区间值。
+    let _font_weights: ViewNode = uix::uix!(
+        // 同时覆盖显式 normal、bold、区间内任意整数与上下边界。
+        r#"
+        normalWeight { fontWeight: normal; }
+        boldWeight { fontWeight: bold; }
+        minimumWeight { fontWeight: 100; }
+        exactWeight { fontWeight: 550; }
+        maximumWeight { fontWeight: 900; }
+        <Container>
+          <Text class="normalWeight">常规</Text>
+          <Text class="boldWeight">粗体</Text>
+          <Text class="minimumWeight">最细</Text>
+          <Typography class="exactWeight">精确数值</Typography>
+          <Typography class="maximumWeight">最粗</Typography>
+        </Container>
+        "#
+    );
+}

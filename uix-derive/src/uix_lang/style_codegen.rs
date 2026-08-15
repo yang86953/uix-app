@@ -7,6 +7,8 @@ use quote::quote;
 use super::{Attribute, AttributeValue, Diagnostic, StyleProperty};
 // 引入 borderStyle 到 UI 运行时线型的独立映射。
 use super::style_border_codegen::border_style_field;
+// 引入 fontWeight 到 UI 运行时字体粗细的独立映射。
+use super::style_font_weight_codegen::font_weight_field;
 // 引入 lineHeight 到 UI 运行时行高的独立映射。
 use super::style_line_height_codegen::line_height_field;
 // 引入 textAlign 到 UI 运行时文本水平对齐的独立映射。
@@ -244,6 +246,8 @@ fn generate_style_statement(
         "color" => color_field(style, property, "color", false),
         // 字号映射到 TypographyToken。
         "fontSize" => typography_field(style, property),
+        // 字体粗细映射到显式精确数值契约。
+        "fontWeight" => font_weight_field(style, property),
         // 行高映射到显式倍率或逻辑像素值。
         "lineHeight" => line_height_field(style, property),
         // 文本水平对齐映射到显式闭合枚举。
