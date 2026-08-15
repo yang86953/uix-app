@@ -244,6 +244,7 @@ impl Rate {
         }
     }
 
+    /// 创建默认五级、整级、可交互且不可清空的评分组件。
     pub fn new() -> Self {
         let config = crate::ui::component::config::use_config();
         Self {
@@ -261,6 +262,7 @@ impl Rate {
             control_rect: Cell::new(Rect::zero()),
         }
     }
+    /// 设置评分项数量，并将当前值夹紧到新的可用范围。
     pub fn count(mut self, n: usize) -> Self {
         self.count = n;
         if self.value_binding.is_some() {
@@ -285,10 +287,12 @@ impl Rate {
         self
     }
 
+    /// 返回当前评分状态值；半级模式下一个单位表示半级。
     pub fn current_value(&self) -> u32 {
         self.state_value()
     }
 
+    /// 启用半级评分，并将状态值解释为半级单位。
     pub fn allow_half(mut self) -> Self {
         self.half = true;
         if self.value_binding.is_some() {
@@ -298,18 +302,22 @@ impl Rate {
         }
         self
     }
+    /// 设置组件是否禁用指针与键盘评分交互。
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self
     }
+    /// 允许再次选择当前评分时将其清零。
     pub fn clearable(mut self) -> Self {
         self.clearable = true;
         self
     }
+    /// 设置每个评分项绘制的自定义字符；空字符串使用默认星形。
     pub fn character(mut self, c: impl Into<String>) -> Self {
         self.character = c.into();
         self
     }
+    /// 设置评分项采用的控件尺寸规格。
     pub fn size(mut self, size: ControlSize) -> Self {
         self.rate_size = size;
         self

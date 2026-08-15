@@ -47,17 +47,21 @@ enum TimeColumn {
 /// 时间结构
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Time {
+    /// 小时分量；通过 [`Time::new`] 构造时会夹紧到 `0..=23`。
     pub hour: u32,
+    /// 分钟分量；通过 [`Time::new`] 构造时会夹紧到 `0..=59`。
     pub minute: u32,
 }
 
 impl Time {
+    /// 创建时间值，并将小时与分钟分别夹紧到有效范围。
     pub fn new(hour: u32, minute: u32) -> Self {
         Self {
             hour: hour.min(23),
             minute: minute.min(59),
         }
     }
+    /// 按二十四小时制 `HH:MM` 格式返回时间文本。
     pub fn format(&self) -> String {
         format!("{:02}:{:02}", self.hour, self.minute)
     }
@@ -479,6 +483,7 @@ component! {
 }
 
 impl TimePicker {
+    /// 创建使用当前区域占位文本、默认尺寸且未展开的时间选择器。
     pub fn new() -> Self {
         let config = crate::ui::component::config::use_config();
         Self {
@@ -525,11 +530,13 @@ impl TimePicker {
         self
     }
 
+    /// 设置尚未配置时间值时显示的占位文本。
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.placeholder = placeholder.into();
         self
     }
 
+    /// 设置触发器采用的控件尺寸规格。
     pub fn size(mut self, size: ControlSize) -> Self {
         self.picker_size = size;
         self
@@ -540,6 +547,7 @@ impl TimePicker {
         self.value.get()
     }
 
+    /// 返回时间选择面板当前是否处于逻辑展开状态。
     pub fn is_open(&self) -> bool {
         self.open.get()
     }
