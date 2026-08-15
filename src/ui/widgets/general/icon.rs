@@ -267,12 +267,14 @@ impl Default for Icon {
 }
 
 impl Icon {
+    /// 创建使用指定图标名称和默认尺寸的图标组件。
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             size: 24.0,
         }
     }
+    /// 设置图标的方形边长。
     pub fn size(mut self, s: f32) -> Self {
         self.size = s;
         self
