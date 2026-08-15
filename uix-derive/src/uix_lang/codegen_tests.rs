@@ -824,17 +824,21 @@ fn rejects_invalid_transform_values() {
     }
 }
 
-// 验证规划中样式不会伪装为已支持。
+// 验证已经落地的定位样式继续生成公开五模式契约。
 #[test]
-fn rejects_planned_inline_style_at_compile_time() {
-    // 解析文档明确标为规划中的定位属性。
+fn maps_position_inline_style_at_compile_time() {
+    // 解析文档已登记的绝对定位属性。
     let document = parse_document(r#"<Text style="position: absolute;">Hello</Text>"#)
-        // 语法层允许规划中属性进入映射矩阵。
-        .expect("规划中样式语法应合法");
-    // 代码生成必须明确拒绝缺失的 Rust 字段。
-    let error = generate_view(&document.root).expect_err("规划中样式不得伪装支持");
-    // 诊断必须包含具体属性和文档状态。
-    assert!(error.message.contains("position") && error.message.contains("规划中"));
+        // 语法层必须接受已实现属性。
+        .expect("position 样式语法应合法");
+    // 代码生成必须返回公开 View 链。
+    let tokens = generate_view(&document.root)
+        // 已实现定位不得回退成规划中诊断。
+        .expect("position 样式必须生成")
+        // 转换成稳定文本供公开枚举断言。
+        .to_string();
+    // 绝对定位必须映射到公开 PositionMode 枚举。
+    assert!(tokens.contains("position") && tokens.contains("PositionMode :: Absolute"));
 }
 
 // 验证已映射字段的未实现子取值也不会被静默近似。
