@@ -5,8 +5,8 @@ use quote::quote;
 
 // 引入公共属性、有序子树生成与可见节点判定入口。
 use super::codegen::{apply_common_attributes, generate_children, is_renderable_node};
-// 引入 Tooltip 属性、语法树与诊断契约。
-use super::{Attribute, Diagnostic, Element, Node, string_value};
+// 引入 Tooltip 属性、语法树、字面量与诊断契约。
+use super::{Attribute, Diagnostic, Element, Node, literal_string, string_value};
 
 // 生成由一个静态直接触发 View 包裹的 Tooltip 文字提示。
 pub(crate) fn generate_tooltip(element: &Element) -> Result<TokenStream, Diagnostic> {
@@ -50,14 +50,80 @@ pub(crate) fn generate_tooltip(element: &Element) -> Result<TokenStream, Diagnos
     // 生成字符串字面量或受限字符串表达式。
     let text = string_value(text_attribute)?;
     // 临时借用提示文字，让运行时 Tooltip 复制并独占内容。
-    let widget = quote! { ::uix::prelude::Tooltip::new(&*(#text)) };
+    let mut widget = quote! { ::uix::prelude::Tooltip::new(&*(#text)) };
+    // 可选 placement 在编译期选择四种公开方向之一。
+    if let Some(attribute) = find_attribute(element, "placement") {
+        // 把文档关键字映射到公开运行时枚举。
+        let placement = tooltip_placement(attribute)?;
+        // 定位、越界翻转与裁剪继续由运行时负责。
+        widget = quote! { (#widget).placement(#placement) };
+    }
+    // 可选 trigger 在编译期选择四种公开交互方式之一。
+    if let Some(attribute) = find_attribute(element, "trigger") {
+        // 把文档关键字映射到公开运行时枚举。
+        let trigger = tooltip_trigger(attribute)?;
+        // 输入、待触发计时和显隐继续由运行时负责。
+        widget = quote! { (#widget).trigger(#trigger) };
+    }
     // 按源码顺序生成唯一触发 View 及其内部控制流。
     let children = generate_children(&element.children)?;
     // 使用公开 ViewNode 子树承载触发器、样式与生命周期身份。
     let view = quote! { ::uix::prelude::ViewNode::new(#widget, #children) };
-    // 消费 Tooltip 专有文字属性并应用公共尺寸、样式、身份与事件。
-    apply_common_attributes(view, &element.attributes, &["text"])
+    // 消费 Tooltip 专有属性并应用公共尺寸、样式、身份与事件。
+    apply_common_attributes(view, &element.attributes, &["text", "placement", "trigger"])
     // 结束 Tooltip 生成函数。
+}
+
+// 映射 Tooltip 的确定放置方向。
+fn tooltip_placement(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
+    // placement 必须在编译期选择运行时枚举变体。
+    let value = literal_string(attribute, "Tooltip placement")?;
+    // 按公开四方向生成对应枚举。
+    match value.as_str() {
+        // 上方提示。
+        "top" => Ok(quote! { ::uix::prelude::TooltipPlacement::Top }),
+        // 下方提示。
+        "bottom" => Ok(quote! { ::uix::prelude::TooltipPlacement::Bottom }),
+        // 左侧提示。
+        "left" => Ok(quote! { ::uix::prelude::TooltipPlacement::Left }),
+        // 右侧提示。
+        "right" => Ok(quote! { ::uix::prelude::TooltipPlacement::Right }),
+        // 其他关键字不能静默回退到 Top。
+        _ => Err(Diagnostic::new(
+            // 指向完整 placement 属性。
+            attribute.span,
+            // 陈述未知方向。
+            format!("Tooltip placement={value:?} 不受支持"),
+            // 给出完整合法集合。
+            "使用 top、bottom、left 或 right",
+        )),
+    }
+}
+
+// 映射 Tooltip 的确定触发方式。
+fn tooltip_trigger(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
+    // trigger 必须在编译期选择运行时枚举变体。
+    let value = literal_string(attribute, "Tooltip trigger")?;
+    // 按公开四种交互生成对应枚举。
+    match value.as_str() {
+        // 指针悬停触发。
+        "hover" => Ok(quote! { ::uix::prelude::TriggerMode::Hover }),
+        // 主按钮点击触发。
+        "click" => Ok(quote! { ::uix::prelude::TriggerMode::Click }),
+        // 键盘焦点进入触发。
+        "focus" => Ok(quote! { ::uix::prelude::TriggerMode::Focus }),
+        // 上下文菜单请求触发。
+        "contextMenu" => Ok(quote! { ::uix::prelude::TriggerMode::ContextMenu }),
+        // 其他关键字不能静默回退到 Hover。
+        _ => Err(Diagnostic::new(
+            // 指向完整 trigger 属性。
+            attribute.span,
+            // 陈述未知触发方式。
+            format!("Tooltip trigger={value:?} 不受支持"),
+            // 给出完整合法集合。
+            "使用 hover、click、focus 或 contextMenu",
+        )),
+    }
 }
 
 // 查找元素上的具名属性。
