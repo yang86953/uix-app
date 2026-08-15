@@ -52,6 +52,9 @@ pub(super) fn shader_sources(key: u64) -> Option<(&'static str, &'static str)> {
 }
 
 // 编译并链接一个 GLES 3.0 shader program。
+///
+/// # Safety
+/// 调用线程必须持有并 current `gl` 所属的有效 GLES 3 上下文，且在本函数返回前不得切换或销毁该上下文。
 pub(super) unsafe fn compile_program(
     gl: &glow::Context,
     vertex_source: &str,
