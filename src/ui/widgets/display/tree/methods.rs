@@ -220,6 +220,7 @@ impl Tree {
             .set((current.0 + dx, current.1 + dy));
     }
 
+    /// 创建持有完整节点树、无选择且默认折叠的树组件。
     pub fn new(nodes: Vec<TreeNode>) -> Self {
         let mut tree = Self {
             nodes,
@@ -299,14 +300,17 @@ impl Tree {
         }
     }
 
+    /// 返回当前主选择节点的稳定键；无选择时为空字符串。
     pub fn selected_key(&self) -> &str {
         &self.selected_key
     }
 
+    /// 返回当前多选集合中的稳定节点键。
     pub fn selected_keys(&self) -> &[String] {
         &self.selected_keys
     }
 
+    /// 设置主选择键；单选模式下同时替换选择集合。
     pub fn set_selected_key(&mut self, key: &str) {
         self.selected_key = key.to_string();
         if !self.multiple {
@@ -317,6 +321,7 @@ impl Tree {
         }
     }
 
+    /// 设置是否允许节点多选。
     pub fn multiple(mut self, v: bool) -> Self {
         self.multiple = v;
         self
@@ -343,6 +348,7 @@ impl Tree {
         self.refresh_search();
     }
 
+    /// 清空搜索关键字并恢复按展开状态计算的可见节点。
     pub fn clear_search(&mut self) {
         self.search_query.clear();
         self.refresh_search();
@@ -355,6 +361,7 @@ impl Tree {
         self.flat.iter().map(|node| node.key.clone()).collect()
     }
 
+    /// 设置是否允许拖拽节点。
     pub fn draggable(mut self, v: bool) -> Self {
         self.draggable = v;
         self

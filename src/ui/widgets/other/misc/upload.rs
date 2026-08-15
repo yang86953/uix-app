@@ -233,6 +233,7 @@ component! {
     }
 }
 impl Upload {
+    /// 创建接受任意类型、单选、启用拖放且显示文件列表的上传组件。
     pub fn new() -> Self {
         Self {
             accept: "*".into(),
@@ -254,6 +255,7 @@ impl Upload {
             activation_key: Cell::new(None),
         }
     }
+    /// 创建启用拖放区域的上传组件。
     pub fn dragger() -> Self {
         Self::new().drag(true)
     }
@@ -309,10 +311,12 @@ impl Upload {
             pattern: pattern.to_string(),
         })
     }
+    /// 设置单次文件选择或拖放是否允许接收多个候选。
     pub fn multiple(mut self, v: bool) -> Self {
         self.multiple = v;
         self
     }
+    /// 设置是否启用文件拖放交互。
     pub fn drag(mut self, v: bool) -> Self {
         self.drag = v;
         self
@@ -337,6 +341,7 @@ impl Upload {
         // 返回完成观察器配置的组件。
         self
     }
+    /// 设置用户新入队文件的数量上限，不截断已有或受控队列。
     pub fn max_count(mut self, n: usize) -> Self {
         self.max_count = n;
         self
@@ -346,6 +351,7 @@ impl Upload {
         self.max_size = Some(bytes);
         self
     }
+    /// 设置是否绘制上传文件列表，不改变队列内容。
     pub fn show_upload_list(mut self, show: bool) -> Self {
         self.show_upload_list = show;
         self
@@ -638,6 +644,7 @@ impl Upload {
         // 报告更新成功。
         Ok(())
     }
+    /// 返回组件当前队列快照中的文件数量。
     pub fn file_count(&self) -> usize {
         self.file_list.len()
     }
