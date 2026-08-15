@@ -563,6 +563,8 @@ pub struct ButtonBuilder {
     disabled: bool,
     block: bool,
     size: crate::platform::windowing::ControlSize,
+    // 保存待物化到底层 Button 的加载态。
+    loading: bool,
     handlers: Vec<HandlerRegistration>,
 }
 
@@ -575,7 +577,9 @@ impl ButtonBuilder {
                 self.disabled,
                 self.block,
                 self.size,
-            ),
+            )
+            // 复用 Button 既有旋转器、禁用点击与逐帧生命周期。
+            .loading(self.loading),
             self.handlers,
         )
     }
@@ -618,6 +622,14 @@ impl ButtonBuilder {
     /// 设置按钮使用的标准控件尺寸档位。
     pub fn size(mut self, size: crate::platform::windowing::ControlSize) -> Self {
         self.size = size;
+        self
+    }
+
+    /// 设置按钮是否显示加载旋转器并拒绝点击。
+    pub fn loading(mut self, loading: bool) -> Self {
+        // 保存配置直到构建器物化底层 Button。
+        self.loading = loading;
+        // 返回构建器以继续链式配置。
         self
     }
 
@@ -771,6 +783,8 @@ pub fn button(text: impl Into<String>) -> ButtonBuilder {
         disabled: config.disabled,
         block: false,
         size: config.size,
+        // 默认不进入加载态。
+        loading: false,
         handlers: Vec::new(),
     }
 }
