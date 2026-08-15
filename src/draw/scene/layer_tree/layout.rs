@@ -12,6 +12,7 @@ use super::{
 };
 
 impl LayerTree {
+    /// 创建不包含根图层或浮层的空图层树。
     pub fn new() -> Self {
         Self {
             root: None,
@@ -133,6 +134,7 @@ impl LayerTree {
         }
     }
 
+    /// 返回图层树是否包含可供渲染的根图层或浮层。
     pub fn is_ready(&self) -> bool {
         self.root.is_some() || !self.overlays.is_empty()
     }

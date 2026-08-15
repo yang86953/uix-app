@@ -16,6 +16,7 @@ use crate::draw::{Canvas2D, FontHandle, RenderTarget};
 use super::{DebugHover, LayerNode, LayerTree};
 
 impl LayerTree {
+    /// 按图层顺序将指定损伤区域渲染到目标表面。
     pub fn render(
         &mut self,
         engine: &mut dyn RenderTarget,
