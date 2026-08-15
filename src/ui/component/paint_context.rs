@@ -30,6 +30,7 @@ macro_rules! delegate_mut {
     ($($name:ident($($arg:ident: $ty:ty),*) $(-> $ret:ty)?;)*) => {
         $(
             #[inline(always)]
+            #[doc = concat!("将绘制命令 `", stringify!($name), "` 转发到底层绘制上下文。")]
             pub fn $name(&mut self, $($arg: $ty),*) $(-> $ret)? {
                 self.inner.$name($($arg),*)
             }
@@ -42,6 +43,7 @@ macro_rules! delegate_shared {
     ($($name:ident($($arg:ident: $ty:ty),*) $(-> $ret:ty)?;)*) => {
         $(
             #[inline(always)]
+            #[doc = concat!("将查询 `", stringify!($name), "` 转发到底层绘制上下文。")]
             pub fn $name(&self, $($arg: $ty),*) $(-> $ret)? {
                 self.inner.$name($($arg),*)
             }
