@@ -33,16 +33,17 @@ use crate::ui::component::widget::WidgetCore;
 use crate::ui::theme::Theme;
 use crate::ui::{EventResult, WidgetTree};
 use std::cell::{Cell, RefCell};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 pub(crate) use support::{
     WindowFrameResult, animation_clock_should_advance, ensure_surface_matches_window,
     has_invalidation_work, native_client_logical_extent, sync_root_frame_exactly_to_engine,
     sync_root_frame_to_engine,
 };
 use support::{
-    dispatch_due_active_work, earliest_deadline, has_layout_work, next_loop_state,
-    observe_agent_settle, protocol_failure, record_idle, record_layout, record_present,
-    report_graphics_frame_failure, report_graphics_resize_error, report_window_operation_error,
+    accumulate_frame_diagnostics, animation_diag, dispatch_due_active_work, earliest_deadline,
+    has_layout_work, invalidation_diag, next_loop_state, observe_agent_settle, protocol_failure,
+    record_idle, record_layout, record_present, report_graphics_frame_failure,
+    report_graphics_resize_error, report_window_operation_error,
     update_scheduled_and_discovered_animations, with_platform_clipboard,
 };
 pub(crate) struct WindowFrameContext<'a, 'platform> {
@@ -74,6 +75,58 @@ pub(crate) struct WindowFrameContext<'a, 'platform> {
     pub(crate) on_frame: &'a dyn Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn Platform),
 }
 
+// 帧诊断统计：累计帧数与各阶段耗时，供每秒输出一次性能摘要。
+#[derive(Debug)]
+pub(crate) struct FrameDiagnostics {
+    // 已累计的渲染帧数。
+    frames: u32,
+    // 已累计的帧总耗时。
+    frame_sum: Duration,
+    // 本周期内单帧最大耗时。
+    frame_max: Duration,
+    // 已累计的布局阶段耗时。
+    layout_sum: Duration,
+    // 已累计的渲染阶段耗时。
+    render_sum: Duration,
+    // 已累计的呈现阶段耗时。
+    present_sum: Duration,
+    // 已累计的 GPU 提交阶段耗时（end_frame 提交与 present 等待）。
+    submit_sum: Duration,
+    // 本周期内全幅重绘帧数。
+    full_frames: u32,
+    // 本周期内脏区面积占窗口面积比例的累计（用于估算平均重绘范围）。
+    dirty_area_sum: f64,
+    // 上次输出摘要的时刻。
+    last_report: Instant,
+    // 卡顿自动记录：当前是否处于连续超阈值帧段。
+    slow_active: bool,
+    // 卡顿自动记录：当前卡顿段内的峰值帧耗时。
+    slow_peak: Duration,
+    // 卡顿自动记录：当前卡顿段的开始时刻。
+    slow_since: Option<Instant>,
+}
+
+// 默认统计从零开始，计时起点取当前时刻。
+impl Default for FrameDiagnostics {
+    fn default() -> Self {
+        Self {
+            frames: 0,
+            frame_sum: Duration::ZERO,
+            frame_max: Duration::ZERO,
+            layout_sum: Duration::ZERO,
+            render_sum: Duration::ZERO,
+            present_sum: Duration::ZERO,
+            submit_sum: Duration::ZERO,
+            full_frames: 0,
+            dirty_area_sum: 0.0,
+            last_report: Instant::now(),
+            slow_active: false,
+            slow_peak: Duration::ZERO,
+            slow_since: None,
+        }
+    }
+}
+
 pub(crate) struct WindowDriver {
     frame_renderer: ScenePipeline,
     rendered_first: bool,
@@ -87,6 +140,8 @@ pub(crate) struct WindowDriver {
     app_timer_deadlines_scratch: Vec<(TimerId, Instant)>,
     app_timer_deadline_revision: Option<u64>,
     due_work_scratch: Vec<ActiveWorkKind>,
+    // 帧诊断统计，用于定位卡顿时的阶段耗时分布。
+    frame_diag: FrameDiagnostics,
 }
 
 pub(crate) fn sync_graphics_maintenance(
