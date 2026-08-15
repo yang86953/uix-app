@@ -138,6 +138,7 @@ impl Default for Avatar {
 }
 
 impl Avatar {
+    /// 创建使用主题颜色、默认 32 像素圆形和给定后备文字的头像。
     pub fn new(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
@@ -149,18 +150,22 @@ impl Avatar {
             cached: Cell::new(None),
         }
     }
+    /// 设置头像边长；非正数或非有限值回退为 32 像素。
     pub fn size(mut self, s: f32) -> Self {
         self.size = if s.is_finite() && s > 0.0 { s } else { 32.0 };
         self
     }
+    /// 设置头像背景色，覆盖主题默认值。
     pub fn bg(mut self, c: Color) -> Self {
         self.bg_color = Some(c);
         self
     }
+    /// 设置后备文字颜色，覆盖主题默认值。
     pub fn text_color(mut self, c: Color) -> Self {
         self.text_color = Some(c);
         self
     }
+    /// 设置头像是否使用方形而非圆形裁剪。
     pub fn square(mut self, v: bool) -> Self {
         self.square = v;
         self
@@ -168,6 +173,7 @@ impl Avatar {
     // 图片编解码 capability 启用时才公开头像路径入口。
     #[cfg(feature = "image-codecs")]
     // 关闭 capability 后使用方无法设置需要解码的图片来源。
+    /// 设置头像图片路径并清除旧位图缓存；加载不可用时显示后备文字。
     pub fn src(mut self, s: &str) -> Self {
         self.src = s.to_string();
         self.cached.set(None);

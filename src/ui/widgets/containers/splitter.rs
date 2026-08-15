@@ -229,6 +229,7 @@ impl Default for Splitter {
 }
 
 impl Splitter {
+    /// 创建两个等分、水平排列且最小尺寸均为 50 像素的分割面板。
     pub fn new() -> Self {
         Self {
             children: WidgetChildren::new(),
@@ -245,6 +246,7 @@ impl Splitter {
         }
     }
 
+    /// 设置运行时面板数量并重置为等分比例；零会归一化为一个面板。
     pub fn panels(mut self, count: usize) -> Self {
         let count = count.max(1);
         let ratio = 1.0 / count as f32;
@@ -263,10 +265,12 @@ impl Splitter {
         self
     }
 
+    /// 设置面板是否沿垂直方向上下排列。
     pub fn vertical(mut self, v: bool) -> Self {
         self.vertical = v;
         self
     }
+    /// 设置指定面板的非负最小尺寸；无效索引不产生变化。
     pub fn min_size(mut self, index: usize, size: f32) -> Self {
         if index < self.min_sizes.len() {
             self.min_sizes[index] = Self::normalize_size(size);
@@ -274,10 +278,12 @@ impl Splitter {
         self
     }
 
+    /// 返回各面板当前所占内容空间的比例。
     pub fn ratios(&self) -> &[f32] {
         &self.ratios
     }
 
+    /// 返回当前键盘操作或拖拽选中的分隔手柄索引。
     pub fn active_handle(&self) -> usize {
         self.active_handle
     }
