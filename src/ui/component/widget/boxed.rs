@@ -10,6 +10,10 @@ mod captured_state_binds;
 // 拆分透明包装节点的同轮子测量分发，保持主文件低于规模上限。
 #[path = "boxed/layout_measure.rs"]
 mod layout_measure;
+// 拆分视觉变换与光标元数据访问，保持主体文件低于规模上限。
+#[path = "boxed/visual_metadata.rs"]
+// 编译运行时节点视觉元数据的私有实现模块。
+mod visual_metadata;
 pub struct BoxedWidget {
     component: Box<dyn WidgetComponent>,
     caps: WidgetCapabilities,
@@ -25,6 +29,8 @@ pub struct BoxedWidget {
     visible: bool,
     parent_visible: bool,
     visual_transform: ViewTransform,
+    // 保存当前运行时节点显式覆盖的指针光标；None 表示沿父链继承。
+    cursor: Option<crate::platform::windowing::CursorType>,
     view_transition: Option<crate::ui::animation::TransitionPlayer>,
     view_transition_deadline: Option<std::time::Instant>,
     leave_animation: Option<crate::ui::animation::AnimationConfig>,
@@ -101,6 +107,8 @@ impl BoxedWidget {
             visible: true,
             parent_visible: true,
             visual_transform: ViewTransform::default(),
+            // 新运行时节点默认继承父节点光标。
+            cursor: None,
             view_transition: None,
             view_transition_deadline: None,
             leave_animation: None,
@@ -245,36 +253,6 @@ impl BoxedWidget {
     ) {
         // 整体替换以保持声明树和挂载树一致。
         self.uix_component_scopes = scopes;
-    }
-
-    pub(crate) fn visual_transform(&self) -> ViewTransform {
-        self.visual_transform
-    }
-
-    pub(crate) fn set_visual_transform(&mut self, transform: ViewTransform) {
-        self.visual_transform = transform;
-    }
-
-    pub(crate) fn visual_transform_matrix(&self) -> crate::draw::Transform {
-        let transition = self
-            .view_transition
-            .as_ref()
-            .map(|player| ViewTransform {
-                offset: player.offset,
-                scale: player.scale,
-                // 过渡动画仍只覆盖平移与缩放，不注入额外仿射内容。
-                affine: crate::draw::Transform::identity(),
-                // 过渡覆盖层使用默认值，占位但不覆盖基础声明原点。
-                origin: crate::ui::TransformOrigin::default(),
-            })
-            .unwrap_or_default();
-        self.visual_transform
-            .combined(transition)
-            .matrix(self.frame)
-    }
-
-    pub(crate) fn has_effective_visual_transform(&self) -> bool {
-        !self.visual_transform_matrix().is_identity()
     }
 
     pub(crate) fn set_enter_animation(

@@ -9,6 +9,8 @@ pub struct WidgetNode {
     pub(crate) provider_context: ProviderContext,
     pub(crate) visible: bool,
     pub(crate) visual_transform: ViewTransform,
+    // 保存待挂载节点显式声明的指针光标；None 表示继承。
+    pub(crate) cursor: Option<crate::platform::windowing::CursorType>,
     pub(crate) enter_animation: Option<crate::ui::animation::AnimationConfig>,
     pub(crate) enter_deadline: Option<std::time::Instant>,
     pub(crate) leave_animation: Option<crate::ui::animation::AnimationConfig>,
@@ -47,6 +49,8 @@ impl WidgetNode {
             provider_context: current_provider_context(),
             visible: true,
             visual_transform: ViewTransform::default(),
+            // 命令式节点默认不覆盖父节点光标。
+            cursor: None,
             enter_animation: None,
             enter_deadline: None,
             leave_animation: None,
@@ -87,6 +91,8 @@ impl WidgetNode {
             provider_context: current_provider_context(),
             visible: true,
             visual_transform: ViewTransform::default(),
+            // 命令式叶节点默认不覆盖父节点光标。
+            cursor: None,
             enter_animation: None,
             enter_deadline: None,
             leave_animation: None,
@@ -120,6 +126,13 @@ impl WidgetNode {
     }
     pub(crate) fn with_visual_transform(mut self, transform: ViewTransform) -> Self {
         self.visual_transform = transform;
+        self
+    }
+    // 设置待挂载节点显式声明的指针光标。
+    pub(crate) fn with_cursor(mut self, cursor: crate::platform::windowing::CursorType) -> Self {
+        // Some(Arrow) 保留“覆盖继承为默认箭头”的语义。
+        self.cursor = Some(cursor);
+        // 返回可继续组装的声明节点。
         self
     }
     pub(crate) fn with_enter_animation(

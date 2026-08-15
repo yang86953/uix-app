@@ -96,6 +96,8 @@ impl ViewAdapter {
             // 保存非根或动态声明节点交接给所属节点的动画源。
             animated_sources: Vec<std::sync::Arc<dyn crate::ui::animation::AnimatedSource>>,
             visual_transform: crate::ui::component::view_transform::ViewTransform,
+            // 保存声明节点可继承的指针光标覆盖。
+            cursor: Option<crate::platform::windowing::CursorType>,
             enter_animation: Option<crate::ui::animation::AnimationConfig>,
             enter_deadline: Option<std::time::Instant>,
             leave_animation: Option<crate::ui::animation::AnimationConfig>,
@@ -129,6 +131,7 @@ impl ViewAdapter {
                 provider_context,
                 style,
                 visual_transform,
+                cursor,
                 enter_animation,
                 enter_deadline,
                 leave_animation,
@@ -165,6 +168,7 @@ impl ViewAdapter {
                 // 保留本声明节点拥有的动画源输出。
                 animated_sources,
                 visual_transform,
+                cursor,
                 enter_animation,
                 enter_deadline,
                 leave_animation,
@@ -224,6 +228,11 @@ impl ViewAdapter {
                 != crate::ui::component::view_transform::ViewTransform::default()
             {
                 wnode = wnode.with_visual_transform(frame.visual_transform);
+            }
+            // 显式光标覆盖需要随声明节点进入运行时树。
+            if let Some(cursor) = frame.cursor {
+                // 保留 Arrow 覆盖父节点的语义，不能按默认值吞掉。
+                wnode = wnode.with_cursor(cursor);
             }
             if let Some(animation) = frame.enter_animation {
                 wnode = wnode.with_enter_animation(animation, frame.enter_deadline);
@@ -353,15 +362,6 @@ impl ViewAdapter {
         widget
     }
 
-    fn can_reuse(tree: &WidgetTree, id: ComponentId, node: &ViewNode) -> bool {
-        tree.get(id).is_some_and(|current| {
-            // 类型相同仍需要求内联组件作用域列表完全一致。
-            current.component().as_any().type_id() == node.widget_type_id()
-                    // 根序号与嵌套顺序共同决定实际组件实例身份。
-                    && current.uix_component_scopes() == node.uix_component_scopes.as_slice()
-        })
-    }
-
     fn reconcile_existing(tree: &mut WidgetTree, id: ComponentId, node: ViewNode) {
         let ViewNode {
             widget,
@@ -375,6 +375,7 @@ impl ViewAdapter {
             provider_context,
             style,
             visual_transform,
+            cursor,
             enter_animation: _,
             enter_deadline: _,
             leave_animation,
@@ -401,6 +402,8 @@ impl ViewAdapter {
         if let Some(current) = tree.get_mut(id) {
             current.set_provider_context(provider_context);
             current.set_leave_animation(leave_animation);
+            // 原位协调必须同时更新可继承的光标声明。
+            current.set_cursor(cursor);
             // 更新非视觉元数据，使现有节点身份与声明根严格一致。
             current.set_uix_component_scopes(uix_component_scopes);
             // 用本轮捕获的 Effect 完整替换此节点的旧声明实例。
@@ -730,16 +733,6 @@ impl ViewAdapter {
                 .push((signature.generation, signature.options));
         }
         groups
-    }
-
-    fn handler_signatures_are_stable(
-        current: &[HandlerSignature],
-        next: &[HandlerSignature],
-    ) -> bool {
-        current
-            .iter()
-            .all(|signature| signature.generation.is_some())
-            && next.iter().all(|signature| signature.generation.is_some())
     }
 
     fn patch_widget(

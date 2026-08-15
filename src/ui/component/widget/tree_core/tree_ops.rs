@@ -259,6 +259,7 @@ impl WidgetTree {
             provider_context,
             visible,
             visual_transform,
+            cursor,
             enter_animation,
             enter_deadline,
             leave_animation,
@@ -293,6 +294,8 @@ impl WidgetTree {
         if let Some(node) = self.get_mut(id) {
             node.set_visible(visible);
             node.set_visual_transform(visual_transform);
+            // 把声明节点的可继承光标覆盖安装到运行时节点。
+            node.set_cursor(cursor);
             node.set_enter_animation(enter_animation, enter_deadline);
             node.set_leave_animation(leave_animation);
             node.set_key(key);
