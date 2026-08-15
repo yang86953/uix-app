@@ -6,10 +6,12 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 impl WidgetTree {
+    /// 返回组件树共享的失效队列句柄。
     pub fn invalidation(&self) -> &InvalidationQueueHandle {
         &self.invalidation
     }
 
+    /// 克隆组件树共享的失效队列句柄，供树外调度器持有。
     pub fn invalidation_handle(&self) -> InvalidationQueueHandle {
         self.invalidation.clone()
     }
@@ -21,14 +23,17 @@ impl WidgetTree {
             .revision()
     }
 
+    /// 返回一个线程安全回调，用于请求所属组件树执行声明协调。
     pub fn reconcile_requester(&self) -> Arc<dyn Fn() + Send + Sync> {
         Arc::clone(&self.reconcile_callback)
     }
 
+    /// 返回协调请求端口在当前组件树中的稳定身份键。
     pub fn reconcile_requester_key(&self) -> usize {
         Arc::as_ptr(&self.reconcile_requested) as usize
     }
 
+    /// 原子消费一次待处理协调请求；非运行态组件树始终返回 `false`。
     pub fn take_reconcile_requested(&self) -> bool {
         // 非运行态树不得让窗口驱动在协调中或失败后重入声明更新。
         if !self.accepts_external_work() {
@@ -167,6 +172,7 @@ impl WidgetTree {
         true
     }
 
+    /// 返回当前失效队列聚合得到的绘制脏区快照。
     pub fn dirty_region(&self) -> DirtyRegion {
         self.invalidation
             .lock()
@@ -238,6 +244,7 @@ impl WidgetTree {
         }
     }
 
+    /// 将指定节点及其全部后代批量标记为绘制失效。
     pub fn invalidate_paint_subtree(&mut self, id: ComponentId) {
         let ids: Vec<WidgetId> = {
             let mut result = vec![id];
@@ -300,6 +307,7 @@ impl WidgetTree {
         }
     }
 
+    /// 将根节点同时标记为完整绘制与布局失效。
     pub fn mark_full_frame_dirty(&mut self) {
         if let Some(root) = self.root_id {
             self.push_invalidations([
@@ -447,6 +455,7 @@ impl WidgetTree {
         self.effects.extend(effects);
     }
 
+    /// 返回运行态组件树是否拥有等待执行的根级或节点级 Effect。
     pub fn has_pending_effects(&self) -> bool {
         // 已停止的树不得再把 Effect 作为待执行工作暴露给窗口循环。
         if !self.accepts_external_work() {
