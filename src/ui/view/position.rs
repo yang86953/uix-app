@@ -51,4 +51,40 @@ impl ViewNode {
         // 返回可继续链式声明的节点。
         self
     }
+
+    // 只把顶边定位恢复为 auto，并保留其他三边。
+    #[doc(hidden)]
+    pub fn top_auto(mut self) -> Self {
+        // 清除顶边显式像素值以支持 UIX 差异级联。
+        self.position.insets = self.position.insets.auto_top();
+        // 返回可继续链式声明的节点。
+        self
+    }
+
+    // 只把右边定位恢复为 auto，并保留其他三边。
+    #[doc(hidden)]
+    pub fn right_auto(mut self) -> Self {
+        // 清除右边显式像素值以支持 UIX 差异级联。
+        self.position.insets = self.position.insets.auto_right();
+        // 返回可继续链式声明的节点。
+        self
+    }
+
+    // 只把底边定位恢复为 auto，并保留其他三边。
+    #[doc(hidden)]
+    pub fn bottom_auto(mut self) -> Self {
+        // 清除底边显式像素值以支持 UIX 差异级联。
+        self.position.insets = self.position.insets.auto_bottom();
+        // 返回可继续链式声明的节点。
+        self
+    }
+
+    // 只把左边定位恢复为 auto，并保留其他三边。
+    #[doc(hidden)]
+    pub fn left_auto(mut self) -> Self {
+        // 清除左边显式像素值以支持 UIX 差异级联。
+        self.position.insets = self.position.insets.auto_left();
+        // 返回可继续链式声明的节点。
+        self
+    }
 }

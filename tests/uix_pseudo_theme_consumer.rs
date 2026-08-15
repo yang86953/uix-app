@@ -96,6 +96,30 @@ fn user_select_styles_compile_for_real_consumer() {
     );
 }
 
+// 验证五种 position 模式与四边差异通过公开 View 定位契约完成真实宏展开。
+#[test]
+fn position_styles_compile_for_real_consumer() {
+    // 展开正常流、相对、绝对、固定和粘滞定位及 hover 单边 auto。
+    let _positioned: ViewNode = uix::uix!(
+        // 同时覆盖基础 class、伪类差异与所有公开定位枚举。
+        r#"
+        staticItem { position: static; top: 99px; }
+        relativeItem { position: relative; left: 4px; bottom: -2px; }
+        absoluteItem { position: absolute; top: 8px; right: 12px; }
+        absoluteItem:hover { top: auto; left: 3px; }
+        fixedItem { position: fixed; right: 6px; bottom: 7px; }
+        stickyItem { position: sticky; top: 5px; }
+        <Container>
+          <Text class="staticItem">正常流</Text>
+          <Text class="relativeItem">相对定位</Text>
+          <Text class="absoluteItem">绝对定位</Text>
+          <Text class="fixedItem">固定定位</Text>
+          <Text class="stickyItem">粘滞定位</Text>
+        </Container>
+        "#
+    );
+}
+
 // 验证五种 borderStyle 值通过公开 Style 与 BorderStyle 契约完成真实宏展开。
 #[test]
 fn border_style_values_compile_for_real_consumer() {

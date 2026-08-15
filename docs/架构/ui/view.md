@@ -22,6 +22,8 @@ ViewNode 是声明快照，不是持久组件。reconcile 以父范围内“同�
 
 `userSelect` 属于树结构元数据而非视觉 `Style`。`ViewNode` 保存声明值，adapter 写入 `WidgetNode`，`WidgetTree` 再按祖先边界解析实际值并同步到文字组件；reconcile 改变策略时必须重算既有子树并清理失效选择。
 
+`position` 与四边 inset 同样属于树结构元数据。`ViewNode` 保存完整声明，adapter 在首次挂载和同 key reconcile 时交接给 `WidgetTree`；树级布局 Module 负责正常流分类、absolute 包含块、fixed 根视口和 sticky 滚动约束，绘制、脏区与命中复用同一定位视觉变换。fixed 只提升合成坐标路径，不转移组件生命周期所有权。
+
 ## 组件：ViewAdapter
 
 adapter 把声明属性分类为结构、Layout、Paint 或 Composite patch；同 key reconcile 不应覆盖组件用户运行态。

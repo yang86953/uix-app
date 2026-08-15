@@ -114,6 +114,38 @@ impl PositionInsets {
         // 返回复制值避免暴露内部可变状态。
         self.left
     }
+
+    // 把顶边恢复为 auto，供差异样式只清除单一声明。
+    pub(crate) fn auto_top(mut self) -> Self {
+        // 清除顶边显式像素值。
+        self.top = None;
+        // 返回保留其他三边的值。
+        self
+    }
+
+    // 把右边恢复为 auto，供差异样式只清除单一声明。
+    pub(crate) fn auto_right(mut self) -> Self {
+        // 清除右边显式像素值。
+        self.right = None;
+        // 返回保留其他三边的值。
+        self
+    }
+
+    // 把底边恢复为 auto，供差异样式只清除单一声明。
+    pub(crate) fn auto_bottom(mut self) -> Self {
+        // 清除底边显式像素值。
+        self.bottom = None;
+        // 返回保留其他三边的值。
+        self
+    }
+
+    // 把左边恢复为 auto，供差异样式只清除单一声明。
+    pub(crate) fn auto_left(mut self) -> Self {
+        // 清除左边显式像素值。
+        self.left = None;
+        // 返回保留其他三边的值。
+        self
+    }
 }
 
 // 保存声明节点已经归一化的完整定位元数据。
