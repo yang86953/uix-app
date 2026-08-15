@@ -247,6 +247,7 @@ where
 }
 
 impl FormModel {
+    /// 使用指定字段和值状态创建文本输入项；字段未登记时返回 `None`。
     pub fn input_item(
         &self,
         field: impl AsRef<str>,

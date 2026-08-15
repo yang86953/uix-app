@@ -670,8 +670,9 @@ impl View for FormSegmentedItem {
     }
 }
 
-/// 一个已登记字段的声明式日期输入项。
+/// 为已登记字段创建双向绑定布尔状态的声明式复选框项。
 impl FormModel {
+    /// 使用指定字段和值状态创建复选框项；字段未登记时返回 `None`。
     pub fn checkbox_item(
         &self,
         field: impl AsRef<str>,

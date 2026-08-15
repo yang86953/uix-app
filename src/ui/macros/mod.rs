@@ -115,6 +115,7 @@ macro_rules! impl_widget_component {
 }
 
 #[macro_export]
+/// 将组件及其可选子列表构造成声明式组件树节点。
 macro_rules! tree {
     // 父组件与子组件列表均采用 Rust 2024 表达式片段语义。
     ($parent:expr => [$($child:expr),+ $(,)?]) => {
