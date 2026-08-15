@@ -262,6 +262,8 @@ impl BoxedWidget {
             .map(|player| ViewTransform {
                 offset: player.offset,
                 scale: player.scale,
+                // 过渡动画仍只覆盖平移与缩放，不注入额外仿射内容。
+                affine: crate::draw::Transform::identity(),
             })
             .unwrap_or_default();
         self.visual_transform

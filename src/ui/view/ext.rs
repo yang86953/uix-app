@@ -226,6 +226,12 @@ pub trait StyleExt: Into<ViewNode> + Sized {
         self.into().scale_animated(scale)
     }
 
+    /// 设置围绕布局帧中心应用的二维仿射视觉变换。
+    fn affine_transform(self, transform: crate::draw::Transform) -> ViewNode {
+        // 先物化节点，再委托唯一的视觉变换实现。
+        self.into().affine_transform(transform)
+    }
+
     /// 设置 Flex 扩展系数。
     fn flex_grow(self, g: f32) -> ViewNode {
         self.into().flex_grow(g)

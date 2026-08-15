@@ -298,6 +298,14 @@ impl ViewNode {
         self.scale(scale.value())
     }
 
+    /// 设置围绕布局帧中心应用的二维仿射视觉变换。
+    pub fn affine_transform(mut self, transform: crate::draw::Transform) -> Self {
+        // 只更新声明矩阵，保留既有 offset、scale 与动画绑定。
+        self.visual_transform.affine = transform;
+        // 返回可继续链式声明的节点。
+        self
+    }
+
     /// Plays a one-shot visual transition when this node is first mounted.
     pub fn enter_animation(mut self, animation: crate::ui::animation::AnimationConfig) -> Self {
         assert!(
