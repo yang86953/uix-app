@@ -42,19 +42,35 @@ pub(crate) fn apply_style_properties(
     let style = Ident::new("__uix_style", Span::mixed_site());
     // 保存源码顺序中的精确字段更新。
     let mut statements = Vec::new();
+    // 保存由 View 运行时而非 Style 拥有的层级更新。
+    let mut z_index = None;
     // 转换每一个已经解析的样式属性。
     for property in properties {
+        // z-index 直接映射到 View 的绘制与命中顺序。
+        if property.name == "z-index" {
+            // 解析有符号整数层级并留待样式更新后应用。
+            z_index = Some(z_index_value(property)?);
+            // 结构属性不进入 Style 字段生成。
+            continue;
+        }
         // 把属性转换为单个字段更新语句。
         statements.push(generate_style_statement(&style, property)?);
     }
-    // 通过公开受控更新入口保留未声明字段。
-    Ok(quote! {
+    // 先生成保留未声明字段的 Style 更新。
+    let styled = quote! {
         // 只更新内联样式明确声明的字段。
         (#view).map_style(|#style| {
             // 按源码顺序执行确定的字段更新。
             #(#statements)*
         })
-    })
+    };
+    // 结构层级存在时交给 View 运行时的唯一公开入口。
+    if let Some(z_index) = z_index {
+        // 返回同时携带视觉样式与绘制命中层级的节点。
+        return Ok(quote! { (#styled).z_index(#z_index) });
+    }
+    // 通过公开受控更新入口保留未声明字段。
+    Ok(styled)
 }
 
 // 把单个已映射样式属性转换为 Style 字段更新。

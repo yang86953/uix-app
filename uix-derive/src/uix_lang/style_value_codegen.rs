@@ -332,6 +332,21 @@ pub(super) fn span_field(
     Ok(quote! { #style.#field = #value; })
 }
 
+// 生成 View 绘制与命中层级的有符号整数值。
+pub(super) fn z_index_value(property: &StyleProperty) -> Result<TokenStream, Diagnostic> {
+    // 按运行时公开契约解析完整 i32 范围。
+    let value = property.value.source.parse::<i32>().map_err(|_| {
+        // 返回同时覆盖小数、非数值与越界输入的确定诊断。
+        value_diagnostic(
+            property,
+            "z-index 必须是 i32 范围内的整数",
+            "使用如 -1、0 或 1000 的整数",
+        )
+    })?;
+    // 生成可直接传给 View::z_index 的整数令牌。
+    Ok(quote! { #value })
+}
+
 // 生成 display 枚举值。
 pub(super) fn display_value(property: &StyleProperty) -> Result<TokenStream, Diagnostic> {
     // 映射文档登记值。
@@ -797,7 +812,6 @@ pub(super) fn is_planned_property(name: &str) -> bool {
             | "right"
             | "bottom"
             | "left"
-            | "z-index"
             | "float"
             | "clear"
             | "borderStyle"
