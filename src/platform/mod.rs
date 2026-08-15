@@ -6,6 +6,8 @@
 // 平台公开面的输入契约、能力状态与呈现装配窄 API（ui/draw/app 收口入口）。
 pub mod capabilities;
 mod facade;
+// 文件对话框的输入验证与平台编码保持为 Platform System 私有组件。
+mod file_dialog;
 pub mod graphics;
 pub mod hardware;
 mod imp;

@@ -8,7 +8,7 @@ use crate::native::platform::Platform as NativePlatform;
 use crate::platform::hardware::{DisplayInfo, MemoryInfo, OsInfo};
 // 引入跨平台通知身份与能力状态契约。
 use crate::platform::services::{
-    AppUserModelId, SpecialDir, SystemNotification, SystemNotificationCapability,
+    AppUserModelId, FileDialogFilter, SpecialDir, SystemNotification, SystemNotificationCapability,
 };
 
 pub(crate) struct State;
@@ -134,6 +134,58 @@ pub(crate) fn special_dir(directory: SpecialDir) -> Result<PathBuf> {
         SpecialDir::Downloads => home.join("Downloads"),
     };
     Ok(path)
+}
+
+// 把公开多选契约适配到 AppKit 文件面板组件。
+pub(crate) fn open_files(
+    // 标题已经由 Platform 门面验证。
+    title: &str,
+    // 过滤器值已经在构造时规范化。
+    filters: &[FileDialogFilter],
+) -> Result<Option<Box<[PathBuf]>>> {
+    // 编码 AppKit 纯解析组件消费的可移植描述。
+    let filters = crate::platform::file_dialog::portable_filters(filters);
+    // 调用 crate 内部 AppKit 组件并传播 typed failure。
+    crate::native::backends::macos::platform::file_dialog::choose_files(title, &filters)
+        // 把 AppKit UTF-8 路径复制为平台公开的 owned PathBuf。
+        .map(|paths| {
+            // 取消保持成功空值。
+            paths.map(|paths| {
+                // 多选结果收窄为不可增删的 owned slice。
+                paths
+                    // 按 AppKit 返回顺序转换每条路径。
+                    .into_iter()
+                    // PathBuf 不暴露 Objective-C 对象生命周期。
+                    .map(PathBuf::from)
+                    // 先收集为可增长列表。
+                    .collect::<Vec<_>>()
+                    // 再固定为公开 owned slice。
+                    .into_boxed_slice()
+            })
+        })
+}
+
+// 把公开保存契约适配到 AppKit 文件面板组件。
+pub(crate) fn save_file(
+    // 标题已经由 Platform 门面验证。
+    title: &str,
+    // 过滤器值已经在构造时规范化。
+    filters: &[FileDialogFilter],
+) -> Result<Option<PathBuf>> {
+    // 编码 AppKit 纯解析组件消费的可移植描述。
+    let filters = crate::platform::file_dialog::portable_filters(filters);
+    // 调用 crate 内部 AppKit 组件并转换 owned 路径。
+    crate::native::backends::macos::platform::file_dialog::choose_save_file(title, &filters)
+        // 取消保持空值，确认结果转换为 owned PathBuf。
+        .map(|path| path.map(PathBuf::from))
+}
+
+// 把公开目录选择契约适配到 AppKit 文件面板组件。
+pub(crate) fn open_folder(title: &str) -> Result<Option<PathBuf>> {
+    // 调用 crate 内部 AppKit 组件并转换 owned 路径。
+    crate::native::backends::macos::platform::file_dialog::choose_folder(title)
+        // 取消保持空值，确认结果转换为 owned PathBuf。
+        .map(|path| path.map(PathBuf::from))
 }
 
 // macOS provider 不需要 Windows 应用身份，命令故障由发送结果报告。

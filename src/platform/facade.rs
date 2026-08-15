@@ -23,7 +23,7 @@ use super::hardware::{CpuInfo, DisplayInfo, MemoryInfo, OsInfo};
 use super::imp;
 // 引入平台服务值与系统通知身份、能力状态契约。
 use super::services::{
-    AppUserModelId, SpecialDir, SystemNotification, SystemNotificationCapability,
+    AppUserModelId, FileDialogFilter, SpecialDir, SystemNotification, SystemNotificationCapability,
 };
 
 static INSTANCE_LIVE: AtomicBool = AtomicBool::new(false);
@@ -148,6 +148,48 @@ impl Platform {
     pub fn special_dir(&self, directory: SpecialDir) -> Result<PathBuf> {
         self.ensure_owner("Platform::special_dir")?;
         imp::special_dir(directory)
+    }
+
+    /// 同步打开允许多选的文件选择对话框。
+    pub fn open_files(
+        &mut self,
+        // 标题由 Platform System 统一验证后交给 OS Provider。
+        title: &str,
+        // 空切片表示允许选择任意文件类型。
+        filters: &[FileDialogFilter],
+    ) -> Result<Option<Box<[PathBuf]>>> {
+        // 原生模态对话框只能在 Platform owner thread 驱动。
+        self.ensure_owner("Platform::open_files")?;
+        // 标题必须满足三平台公共输入契约。
+        super::file_dialog::validate_title("Platform::open_files", title)?;
+        // Provider 返回 owned 路径；取消保持成功空值。
+        imp::open_files(title, filters)
+    }
+
+    /// 同步打开单路径保存对话框。
+    pub fn save_file(
+        &mut self,
+        // 标题由 Platform System 统一验证后交给 OS Provider。
+        title: &str,
+        // 空切片表示不限制保存文件类型。
+        filters: &[FileDialogFilter],
+    ) -> Result<Option<PathBuf>> {
+        // 原生模态对话框只能在 Platform owner thread 驱动。
+        self.ensure_owner("Platform::save_file")?;
+        // 标题必须满足三平台公共输入契约。
+        super::file_dialog::validate_title("Platform::save_file", title)?;
+        // Provider 返回 owned 路径；取消保持成功空值。
+        imp::save_file(title, filters)
+    }
+
+    /// 同步打开单路径目录选择对话框。
+    pub fn open_folder(&mut self, title: &str) -> Result<Option<PathBuf>> {
+        // 原生模态对话框只能在 Platform owner thread 驱动。
+        self.ensure_owner("Platform::open_folder")?;
+        // 标题必须满足三平台公共输入契约。
+        super::file_dialog::validate_title("Platform::open_folder", title)?;
+        // Provider 返回 owned 路径；取消保持成功空值。
+        imp::open_folder(title)
     }
 
     /// 配置部署层已经登记的 Windows AUMID。

@@ -55,6 +55,30 @@ impl IFileDialog for LinuxFileDialog {
     }
 }
 
+// 通过 Platform System 窄 Adapter 打开多选文件面板。
+pub(crate) fn choose_files(title: &str, filters: &str) -> Result<Option<Vec<String>>> {
+    // 每次同步调用创建无状态 Linux 对话框组件。
+    let mut dialog = LinuxFileDialog::new();
+    // 复用既有桌面环境探测与取消语义。
+    dialog.open(title, filters)
+}
+
+// 通过 Platform System 窄 Adapter 打开保存面板。
+pub(crate) fn choose_save_file(title: &str, filters: &str) -> Result<Option<String>> {
+    // 每次同步调用创建无状态 Linux 对话框组件。
+    let mut dialog = LinuxFileDialog::new();
+    // 复用既有桌面环境探测与取消语义。
+    dialog.save(title, filters)
+}
+
+// 通过 Platform System 窄 Adapter 打开目录面板。
+pub(crate) fn choose_folder(title: &str) -> Result<Option<String>> {
+    // 每次同步调用创建无状态 Linux 对话框组件。
+    let mut dialog = LinuxFileDialog::new();
+    // 复用既有桌面环境探测与取消语义。
+    dialog.open_folder(title)
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // Desktop environment detection
 // ════════════════════════════════════════════════════════════════════════════
