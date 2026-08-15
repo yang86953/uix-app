@@ -97,6 +97,7 @@ component! {
 
 // Calendar — 日历组件。
 component! {
+    /// 拥有月份导航、日期选择与键盘焦点状态的月历组件。
     pub struct Calendar {
         year: Cell<i32>,
         month: Cell<usize>,

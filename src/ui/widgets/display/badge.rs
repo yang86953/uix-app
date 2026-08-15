@@ -161,6 +161,7 @@ fn finite_badge_offset(value: f32) -> f32 {
 }
 
 component! {
+    /// 在可选子内容上叠加数字、圆点或文字角标的装饰组件。
     pub struct Badge {
         count: i32,
         max: i32,

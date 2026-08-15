@@ -19,6 +19,7 @@ use crate::ui::component::paint_scope::current_paint_widget;
 use crate::ui::component::widget::WidgetTree;
 
 component! {
+    /// 展示图片或自适应后备文字的头像组件。
     pub struct Avatar {
         text: String,
         size: f32,

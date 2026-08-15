@@ -23,6 +23,7 @@ use super::image_state::ImageLoadState;
 
 // Image — 图片显示组件。
 component! {
+    /// 拥有资源加载、占位、错误内容与模态预览生命周期的图片组件。
     pub struct Image {
         src: String,
         alt: String,

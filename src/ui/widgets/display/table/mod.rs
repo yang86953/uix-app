@@ -40,6 +40,7 @@ pub use types::{
 };
 
 component! {
+    /// 拥有列、行、选择、展开、排序与虚拟滚动状态的数据表格组件。
     pub struct Table {
         columns: Vec<TableColumn>,
         column_groups: Vec<ColumnGroupRange>,
