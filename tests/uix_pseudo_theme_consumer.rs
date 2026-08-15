@@ -59,3 +59,16 @@ fn transform_styles_compile_for_real_consumer() {
         "#
     );
 }
+
+// 验证 cursor 基础与伪状态值通过公开 View 光标入口完成真实宏展开。
+#[test]
+fn cursor_styles_compile_for_real_consumer() {
+    // 展开基础手形与悬停文字光标的完整样式级联。
+    let _cursor: ViewNode = uix::uix!(
+        r#"
+        cursorTarget { cursor: pointer; }
+        cursorTarget:hover { cursor: text; }
+        <Text class="cursorTarget">光标</Text>
+        "#
+    );
+}

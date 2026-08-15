@@ -50,6 +50,8 @@ pub(crate) fn apply_style_properties(
     let mut transform = None;
     // 保存由 View 运行时在布局帧确定后解析的变换原点更新。
     let mut transform_origin = None;
+    // 保存由运行时命中树继承并交给平台的指针光标更新。
+    let mut cursor = None;
     // 转换每一个已经解析的样式属性。
     for property in properties {
         // z-index 直接映射到 View 的绘制与命中顺序。
@@ -71,6 +73,13 @@ pub(crate) fn apply_style_properties(
             // 解析完整函数列表并留待样式更新后应用。
             transform = Some(transform_value(property)?);
             // 结构变换不进入 Style 字段生成。
+            continue;
+        }
+        // cursor 映射到公开平台无关光标枚举。
+        if property.name == "cursor" {
+            // 解析文档登记的五种光标值。
+            cursor = Some(cursor_value(property)?);
+            // 结构光标不进入 Style 字段生成。
             continue;
         }
         // 把属性转换为单个字段更新语句。
@@ -100,13 +109,21 @@ pub(crate) fn apply_style_properties(
         // 没有矩阵声明时保持当前节点不变。
         layered
     };
-    // 变换原点存在时交给 View 运行时在布局帧上解析。
-    if let Some(transform_origin) = transform_origin {
-        // 返回同时携带矩阵与原点语义的节点。
-        return Ok(quote! { (#transformed).transform_origin(#transform_origin) });
+    // 保存已经应用变换原点的节点表达式。
+    let with_origin = if let Some(transform_origin) = transform_origin {
+        // 同时携带矩阵与原点语义。
+        quote! { (#transformed).transform_origin(#transform_origin) }
+    } else {
+        // 没有原点声明时保持当前节点不变。
+        transformed
+    };
+    // 光标存在时交给 View 运行时沿命中父链继承。
+    if let Some(cursor) = cursor {
+        // 返回同时携带全部视觉结构与光标语义的节点。
+        return Ok(quote! { (#with_origin).cursor(#cursor) });
     }
     // 返回已经完成全部受控更新的节点。
-    Ok(transformed)
+    Ok(with_origin)
 }
 
 // 把单个已映射样式属性转换为 Style 字段更新。
