@@ -31,7 +31,7 @@ fn generates_radar_and_combo_charts() {
     );
     // 组合图覆盖柱/线两类精确泛型系列与双轴标题。
     let combo = generate(
-        r##"<ComboChart barSeries={[ChartSeries('销售额', [BarData('Jan', 100, Color('#1677ff'))])]} lineSeries={[ChartSeries('利润率', [LineData('Jan', 20)])]} yAxisLeft="销售额" yAxisRight="利润率" />"##,
+        r##"<ComboChart barSeries={[ChartSeries('销售额', [BarData('Jan', 100, Color('#1677ff'))])]} lineSeries={[ChartSeries('利润率', [LineData('Jan', 20)])]} yAxisLeft="销售额" yAxisRight="利润率" referenceLines={references} />"##,
     )
     // 合法组合图必须生成。
     .expect("ComboChart 应生成");
@@ -41,6 +41,7 @@ fn generates_radar_and_combo_charts() {
             && combo.contains("Vec < :: uix :: prelude :: ChartSeries < :: std :: vec :: Vec < :: uix :: prelude :: LineData")
             && combo.contains("y_axis_left (\"销售额\")")
             && combo.contains("y_axis_right (\"利润率\")")
+            && combo.contains("reference_line")
     );
 }
 

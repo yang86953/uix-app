@@ -113,6 +113,7 @@ pub(crate) fn generate_matrix_delta_chart(
                 "subtitle",
                 "responsive",
                 "legend",
+                "referenceLines",
                 "animation",
                 "interactive",
                 "brush",

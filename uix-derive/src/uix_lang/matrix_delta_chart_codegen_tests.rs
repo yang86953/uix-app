@@ -31,7 +31,7 @@ fn generates_heatmap_and_waterfall_charts() {
     );
     // 瀑布图覆盖三类变化项、方向与坐标轴标题。
     let waterfall = generate(
-        "<WaterfallChart data={[WaterfallData('起始', 1000, 'total'), WaterfallData('收入', 500, 'increase'), WaterfallData('成本', -300, 'decrease')]} horizontal xAxis=\"项目\" yAxis=\"金额\" />",
+        "<WaterfallChart data={[WaterfallData('起始', 1000, 'total'), WaterfallData('收入', 500, 'increase'), WaterfallData('成本', -300, 'decrease')]} horizontal xAxis=\"项目\" yAxis=\"金额\" referenceLines={references} />",
     )
     // 合法瀑布图必须生成。
     .expect("WaterfallChart 应生成");
@@ -42,6 +42,7 @@ fn generates_heatmap_and_waterfall_charts() {
             && waterfall.contains("WaterfallKind :: Increase")
             && waterfall.contains("WaterfallKind :: Decrease")
             && waterfall.contains("horizontal (true)")
+            && waterfall.contains("reference_line")
     );
 }
 

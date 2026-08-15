@@ -84,4 +84,10 @@ fn rejects_invalid_basic_chart_contracts() {
         .expect_err("非法 legend 必须失败");
     // 诊断必须包含非法值。
     assert!(legend.message.contains("center"));
+    // 基础专用柱图没有高级 ChartPlaceholder 的参考线 builder。
+    let bar_reference = generate("<BarChart data={items} referenceLines={references} />")
+        // 无效果配置必须在宏展开期失败。
+        .expect_err("基础 BarChart referenceLines 必须失败");
+    // 诊断必须保留具体属性名。
+    assert!(bar_reference.message.contains("referenceLines"));
 }

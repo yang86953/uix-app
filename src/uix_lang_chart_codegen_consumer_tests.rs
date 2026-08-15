@@ -51,4 +51,15 @@ fn chart_advanced_config_compiles_against_public_uix_api() {
     let _heatmap: ViewNode = crate::uix!(
         r#"<Heatmap data={[HeatmapCell(0, 0, 12)]} colorRange={heatmap_range} colorStops={heatmap_stops} />"#
     );
+    // 提供坐标图可复用的精确参考线集合。
+    let chart_references = vec![
+        // 声明目标实线。
+        (80.0, "目标".to_owned(), LineStyle::Solid),
+        // 声明警戒虚线。
+        (60.0, "警戒".to_owned(), LineStyle::Dashed),
+    ];
+    // 展开参考线集合并要求公开 builder 完成类型检查。
+    let _references: ViewNode = crate::uix!(
+        r#"<AreaChart data={[LineData('Q1', 72)]} referenceLines={chart_references} />"#
+    );
 }

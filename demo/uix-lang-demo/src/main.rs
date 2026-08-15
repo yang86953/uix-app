@@ -138,6 +138,17 @@ fn heatmap_color_stops() -> Vec<(f32, Color)> {
     ]
 }
 
+// 为主演示每次声明构建创建独立的坐标图参考线集合。
+fn chart_reference_lines() -> Vec<(f32, String, LineStyle)> {
+    // 返回目标实线与警戒虚线。
+    vec![
+        // 声明目标实线。
+        (180.0, "目标".to_owned(), LineStyle::Solid),
+        // 声明警戒虚线。
+        (120.0, "警戒".to_owned(), LineStyle::Dashed),
+    ]
+}
+
 // 记录 Pagination @change 的页码文本载荷。
 fn on_page_change(value: &str) {
     // 输出变化页码供演示日志核对。
