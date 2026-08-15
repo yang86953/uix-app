@@ -369,6 +369,7 @@ impl Default for Segmented {
 }
 
 impl Segmented {
+    /// 创建按声明顺序持有选项且默认选择首项的分段选择器。
     pub fn new<I, S>(options: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -398,6 +399,7 @@ impl Segmented {
         }
     }
 
+    /// 替换全部选项，并按受控值重新解析当前索引与固有尺寸。
     pub fn options<I, S>(mut self, options: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -426,23 +428,28 @@ impl Segmented {
         self
     }
 
+    /// 返回当前索引对应的拥有型选项值；索引无效时返回 `None`。
     pub fn current_value(&self) -> Option<String> {
         self.options.get(self.selected).cloned()
     }
 
+    /// 返回当前有效选项索引。
     pub fn current_index(&self) -> Option<usize> {
         (self.selected < self.options.len()).then_some(self.selected)
     }
 
+    /// 设置整个分段选择器是否禁用交互。
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self
     }
+    /// 设置分段项采用的控件尺寸规格并重算固有尺寸。
     pub fn size(mut self, size: ControlSize) -> Self {
         self.segmented_size = size;
         self.reset_nominal_geometry();
         self
     }
+    /// 将指定索引的选项标记为不可交互。
     pub fn disable_option(mut self, idx: usize) -> Self {
         while self.disabled_options.len() <= idx {
             self.disabled_options.push(false);
