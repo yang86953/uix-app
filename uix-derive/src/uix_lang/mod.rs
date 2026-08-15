@@ -500,6 +500,11 @@ mod style_border_codegen;
 // 集中验证 borderStyle 的完整枚举生成与拒绝路径。
 #[cfg(test)]
 mod style_border_codegen_tests;
+// 定义 fontFamily 有序列表到 UI 字体族契约的独立映射。
+mod style_font_family_codegen;
+// 集中验证 fontFamily 的列表生成与拒绝路径。
+#[cfg(test)]
+mod style_font_family_codegen_tests;
 // 定义 fontWeight 关键字与整数到 UI 字体粗细契约的独立映射。
 mod style_font_weight_codegen;
 // 集中验证 fontWeight 的完整生成与拒绝路径。
