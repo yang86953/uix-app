@@ -58,6 +58,10 @@ const DATA_TYPE_NAMES: &[&str] = &[
     "TreemapNode",
     // 仪表盘色带区间。
     "GaugeRange",
+    // 热力图矩阵单元。
+    "HeatmapCell",
+    // 瀑布图变化项。
+    "WaterfallData",
     // 日期语义类型。
     "Date",
     // 时间语义类型。
@@ -120,6 +124,10 @@ pub(crate) fn data_constructor_spec(name: &str) -> Option<DataConstructorSpec> {
         "TreemapNode" => (quote! { ::uix::prelude::TreemapNode }, None, true),
         // 仪表盘色带构造器接收两个 f32 边界与颜色。
         "GaugeRange" => (quote! { ::uix::prelude::GaugeRange }, None, true),
+        // 热力图单元由表达式生成层单独规范化第三个 f32 参数。
+        "HeatmapCell" => (quote! { ::uix::prelude::HeatmapCell }, None, false),
+        // 瀑布图数据由表达式生成层单独映射数值与类型参数。
+        "WaterfallData" => (quote! { ::uix::prelude::WaterfallData }, None, false),
         // 日期构造 year/month/day。
         "Date" => (quote! { ::uix::prelude::Date }, None, false),
         // 时间构造 hour/minute。

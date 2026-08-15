@@ -31,6 +31,10 @@ const CHART_DATA_CONSTRUCTORS: &[&str] = &[
     "TreemapNode",
     // 仪表盘色带。
     "GaugeRange",
+    // 热力图矩阵单元。
+    "HeatmapCell",
+    // 瀑布图变化项。
+    "WaterfallData",
 ];
 
 // 生成面积、散点与漏斗三类静态图表映射。

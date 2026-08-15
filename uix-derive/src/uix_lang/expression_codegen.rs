@@ -6,11 +6,12 @@ use proc_macro2::{Ident, TokenStream};
 // 引入确定性令牌拼接宏。
 use quote::quote;
 
+// 引入独立数据构造器生成入口。
+use super::data_constructor_codegen::generate_data_constructor;
 // 引入表达式语法树、运算符与结构化诊断。
 use super::{
-    BinaryOperator, CallArgument, DataConstructorSpec, Diagnostic, Expression, ExpressionKind,
-    SourceSpan, UnaryOperator, data_chain_root, data_constructor_spec, normalize_number_literals,
-    step_status_path,
+    BinaryOperator, CallArgument, Diagnostic, Expression, ExpressionKind, SourceSpan,
+    UnaryOperator, data_chain_root, step_status_path,
 };
 
 // 保存当前线程是否正在为生成文件输出来源标记。
@@ -59,7 +60,7 @@ pub(crate) fn generate_expression_without_source_marker(
 }
 
 // 递归生成表达式内部令牌而不重复加入来源标记。
-fn generate_expression_inner(
+pub(super) fn generate_expression_inner(
     // 接收确定性表达式语法树。
     expression: &Expression,
     // 接收可选的事件载荷局部变量。
@@ -537,43 +538,12 @@ fn generate_call(
             return Ok(quote! { (#object_tokens).status(#status) });
         }
     }
-    // 语言面数据类型构造生成公开 API 的构造调用。
+    // 语言面数据类型由独立生成器映射公开构造 API。
     if let ExpressionKind::Identifier(name) = &callee.kind {
-        // 查找类型名对应的公开构造规格。
-        if let Some(spec) = data_constructor_spec(name) {
-            // 解构构造规格。
-            let DataConstructorSpec {
-                // 取出公开路径。
-                path,
-                // 取出可选构造函数名。
-                method,
-                // 取出数字规范化策略。
-                normalize_numbers,
-            } = spec;
-            // 生成全部位置参数。
-            let arguments = arguments
-                // 遍历有序参数。
-                .iter()
-                // 转换每个参数表达式。
-                .map(|argument| {
-                    // 复制参数值以支持数字形状规范化。
-                    let mut value = argument.value.clone();
-                    // 坐标等 f32 参数把整数规范化为小数形状。
-                    if normalize_numbers {
-                        // 规范化参数中的整数数字。
-                        normalize_number_literals(&mut value);
-                    }
-                    // 生成规范化后的参数。
-                    generate_expression_inner(&value, event)
-                })
-                // 收集或返回首个诊断。
-                .collect::<Result<Vec<_>, _>>()?;
-            // 选择公开构造函数（默认 new）。
-            let method = method
-                // 缺省映射为 new。
-                .unwrap_or_else(|| Ident::new("new", proc_macro2::Span::mixed_site()));
-            // 生成公开构造调用。
-            return Ok(quote! { #path::#method(#(#arguments),*) });
+        // 已登记构造器直接返回生成结果。
+        if let Some(generated) = generate_data_constructor(name, arguments, span, event) {
+            // 传播构造结果或诊断。
+            return generated;
         }
     }
     // 普通调用不允许命名参数。
