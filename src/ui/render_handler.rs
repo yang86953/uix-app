@@ -383,6 +383,7 @@ impl EmptyContext {
         }
     }
 
+    /// 返回请求空态视图的组件短类型名。
     pub fn component_name(self) -> &'static str {
         self.component_name
     }
@@ -395,6 +396,7 @@ pub struct EmptyRenderer {
 }
 
 impl EmptyRenderer {
+    /// 使用将空态上下文转换为视图的工厂创建渲染器。
     pub fn new<F, V>(renderer: F) -> Self
     where
         F: Fn(EmptyContext) -> V + Send + Sync + 'static,
@@ -405,6 +407,7 @@ impl EmptyRenderer {
         }
     }
 
+    /// 为指定组件类型构建一棵空态视图节点树。
     pub fn render<T: WidgetComponent>(&self) -> ViewNode {
         (self.renderer)(EmptyContext::of::<T>())
     }
