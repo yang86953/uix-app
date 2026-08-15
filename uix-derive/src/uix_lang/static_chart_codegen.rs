@@ -25,7 +25,7 @@ const CHART_DATA_CONSTRUCTORS: &[&str] = &[
     "PieData",
     // 散点图数据。
     "ScatterData",
-    // 尚未登记的气泡图数据。
+    // 气泡图数据。
     "BubbleData",
     // 漏斗图数据。
     "FunnelData",
@@ -59,8 +59,8 @@ pub(crate) fn generate_static_chart(element: &Element) -> Result<TokenStream, Di
             format!("使用 <{} data={{items}} />", element.name),
         ));
     }
-    // 三类图表都要求显式类型化数据表达式。
-    let data_attribute = required_attribute(element, "data")?;
+    // 解析当前标签唯一且精确的数据入口。
+    let (data_attribute, expected_data_type) = chart_data_contract(element)?;
     // 字符串不能伪装成结构化图表数据。
     let AttributeValue::Expression(data_expression) = &data_attribute.value else {
         // 返回数据表达式诊断。
@@ -68,21 +68,13 @@ pub(crate) fn generate_static_chart(element: &Element) -> Result<TokenStream, Di
             // 指向非法 data 属性。
             data_attribute.span,
             // 说明当前标签需要的类型化数据。
-            format!("{} data 必须是类型化数据表达式", element.name),
+            format!(
+                "{} {} 必须是类型化数据表达式",
+                element.name, data_attribute.name
+            ),
             // 给出本批公开数据构造器。
-            "使用 LineData(...)、ScatterData(...) 或 FunnelData(...) 数组表达式",
+            "使用 LineData(...)、ScatterData(...)、BubbleData(...) 或 FunnelData(...) 数组表达式",
         ));
-    };
-    // 按图表标签确定内联数据构造器。
-    let expected_data_type = match element.name.as_str() {
-        // 面积图复用折线数据。
-        "AreaChart" => "LineData",
-        // 散点图使用坐标数据。
-        "ScatterChart" => "ScatterData",
-        // 漏斗图使用阶段数据。
-        "FunnelChart" => "FunnelData",
-        // 分派入口只允许三个已登记标签。
-        _ => unreachable!("静态高级图表分派已限制标签集合"),
     };
     // 内联数组中的已知图表构造器必须与标签一致。
     validate_inline_data(&data_expression.expression, expected_data_type)?;
@@ -116,32 +108,49 @@ pub(crate) fn generate_static_chart(element: &Element) -> Result<TokenStream, Di
                 "tooltip",
             ],
         ),
-        // 散点图取得 ScatterData 集合所有权。
-        "ScatterChart" => (
-            // 生成精确类型收集，气泡数据保持未登记。
-            quote! {
-                ::uix::prelude::ScatterChart::new().data(
-                    ::std::iter::IntoIterator::into_iter((#data).clone())
-                        .collect::<::std::vec::Vec<::uix::prelude::ScatterData>>()
-                )
-            },
-            // 登记散点图专有属性。
-            &[
-                "data",
-                "xAxis",
-                "yAxis",
-                "pointSize",
-                "pointStyle",
-                "title",
-                "subtitle",
-                "responsive",
-                "legend",
-                "animation",
-                "interactive",
-                "brush",
-                "tooltip",
-            ],
-        ),
+        // 散点图按显式入口取得 ScatterData 或 BubbleData 集合所有权。
+        "ScatterChart" => {
+            // 按数据契约选择精确集合类型，避免 Any 下转失败静默为空图。
+            let widget = if expected_data_type == "BubbleData" {
+                // 气泡入口精确收集 BubbleData。
+                quote! {
+                    ::uix::prelude::ScatterChart::new().data(
+                        ::std::iter::IntoIterator::into_iter((#data).clone())
+                            .collect::<::std::vec::Vec<::uix::prelude::BubbleData>>()
+                    )
+                }
+            } else {
+                // 普通散点入口精确收集 ScatterData。
+                quote! {
+                    ::uix::prelude::ScatterChart::new().data(
+                        ::std::iter::IntoIterator::into_iter((#data).clone())
+                            .collect::<::std::vec::Vec<::uix::prelude::ScatterData>>()
+                    )
+                }
+            };
+            // 返回构造链与完整属性白名单。
+            (
+                widget,
+                // 登记散点图与气泡图专有属性。
+                &[
+                    "data",
+                    "bubbleData",
+                    "xAxis",
+                    "yAxis",
+                    "pointSize",
+                    "pointStyle",
+                    "bubbleScale",
+                    "title",
+                    "subtitle",
+                    "responsive",
+                    "legend",
+                    "animation",
+                    "interactive",
+                    "brush",
+                    "tooltip",
+                ],
+            )
+        }
         // 漏斗图取得 FunnelData 集合所有权。
         "FunnelChart" => (
             // 生成精确类型收集。
@@ -175,8 +184,8 @@ pub(crate) fn generate_static_chart(element: &Element) -> Result<TokenStream, Di
     };
     // 按源码顺序应用当前图表允许的专有属性。
     for attribute in &element.attributes {
-        // data 已在构造阶段消费。
-        if attribute.name == "data" {
+        // 两类数据入口已在构造阶段消费。
+        if matches!(attribute.name.as_str(), "data" | "bubbleData") {
             // 跳过重复处理。
             continue;
         }
@@ -192,6 +201,102 @@ pub(crate) fn generate_static_chart(element: &Element) -> Result<TokenStream, Di
     let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
     // 应用公共尺寸、样式与自动化属性。
     apply_common_attributes(view, &element.attributes, consumed)
+}
+
+// 解析每类静态图表的唯一类型化数据入口。
+fn chart_data_contract<'a>(
+    // 接收完整图表元素。
+    element: &'a Element,
+) -> Result<(&'a Attribute, &'static str), Diagnostic> {
+    // 非散点标签继续要求既有 data 属性。
+    if element.name != "ScatterChart" {
+        // 按标签返回既有精确元素类型。
+        return Ok(match element.name.as_str() {
+            // 面积图复用折线数据。
+            "AreaChart" => (required_attribute(element, "data")?, "LineData"),
+            // 漏斗图使用阶段数据。
+            "FunnelChart" => (required_attribute(element, "data")?, "FunnelData"),
+            // 分派入口只允许三个已登记标签。
+            _ => unreachable!("静态高级图表分派已限制标签集合"),
+        });
+    }
+    // 查找普通散点数据入口。
+    let scatter = element
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == "data");
+    // 查找气泡数据入口。
+    let bubble = element
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == "bubbleData");
+    // 两个数据入口必须恰好选择一个。
+    let (attribute, expected) = match (scatter, bubble) {
+        // 普通散点入口。
+        (Some(attribute), None) => (attribute, "ScatterData"),
+        // 气泡图入口。
+        (None, Some(attribute)) => (attribute, "BubbleData"),
+        // 同时提供会产生不明确的运行时载荷。
+        (Some(_), Some(attribute)) => {
+            // 返回互斥诊断。
+            return Err(Diagnostic::new(
+                // 指向第二个数据入口。
+                attribute.span,
+                // 说明互斥契约。
+                "ScatterChart data 与 bubbleData 不能同时使用",
+                // 给出两种精确选择。
+                "普通散点使用 data={items}；气泡图使用 bubbleData={items}",
+            ));
+        }
+        // 缺少两个入口时没有可绘制载荷。
+        (None, None) => {
+            // 返回必需入口诊断。
+            return Err(Diagnostic::new(
+                // 指向完整元素。
+                element.span,
+                // 说明至少需要一个入口。
+                "<ScatterChart> 缺少 data 或 bubbleData 属性",
+                // 给出两种最小合法写法。
+                "使用 <ScatterChart data={items} /> 或 <ScatterChart bubbleData={items} />",
+            ));
+        }
+    };
+    // 气泡缩放不能成为普通散点的无效配置。
+    if expected == "ScatterData"
+        && let Some(scale) = element
+            .attributes
+            .iter()
+            .find(|attribute| attribute.name == "bubbleScale")
+    {
+        // 返回数据入口与配置不匹配诊断。
+        return Err(Diagnostic::new(
+            // 指向无效缩放属性。
+            scale.span,
+            // 说明气泡缩放的数据前提。
+            "ScatterChart bubbleScale 仅适用于 bubbleData",
+            // 给出修复路径。
+            "改用 bubbleData={items}，或移除 bubbleScale",
+        ));
+    }
+    // 点大小与点形状不能成为气泡图的无效配置。
+    if expected == "BubbleData"
+        && let Some(point) = element.attributes.iter().find(|attribute| {
+            // 查找普通散点专有外观属性。
+            matches!(attribute.name.as_str(), "pointSize" | "pointStyle")
+        })
+    {
+        // 返回数据入口与配置不匹配诊断。
+        return Err(Diagnostic::new(
+            // 指向无效散点属性。
+            point.span,
+            // 说明气泡大小的唯一来源。
+            format!("ScatterChart {} 不适用于 bubbleData", point.name),
+            // 给出气泡缩放入口。
+            "使用 BubbleData 的 size 参数与 bubbleScale",
+        ));
+    }
+    // 返回唯一入口及其精确元素类型。
+    Ok((attribute, expected))
 }
 
 // 验证内联数组没有借用其他图表的数据构造器。
@@ -301,6 +406,8 @@ fn apply_chart_attribute(
         "fillOpacity" => quote! { (#widget).fill_opacity(#value) },
         // 设置散点大小。
         "pointSize" => quote! { (#widget).point_size(#value) },
+        // 设置气泡大小缩放系数。
+        "bubbleScale" => quote! { (#widget).bubble_scale(#value) },
         // 设置漏斗层级间隙。
         "gap" => quote! { (#widget).gap(#value) },
         // 专有数值属性集合已经穷尽。

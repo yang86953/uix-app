@@ -52,6 +52,8 @@ const DATA_TYPE_NAMES: &[&str] = &[
     "PieData",
     // 散点图坐标数据。
     "ScatterData",
+    // 气泡图三维数据。
+    "BubbleData",
     // 漏斗图阶段数据。
     "FunnelData",
     // 矩形树图层级节点。
@@ -124,6 +126,8 @@ pub(crate) fn data_constructor_spec(name: &str) -> Option<DataConstructorSpec> {
         "PieData" => (quote! { ::uix::prelude::PieData }, None, true),
         // 散点图数据构造器接收两个 f32 坐标。
         "ScatterData" => (quote! { ::uix::prelude::ScatterData }, None, true),
+        // 气泡图数据构造器接收两个坐标与气泡大小。
+        "BubbleData" => (quote! { ::uix::prelude::BubbleData }, None, true),
         // 漏斗图数据构造器接收 f32 阶段值。
         "FunnelData" => (quote! { ::uix::prelude::FunnelData }, None, true),
         // 矩形树图节点构造器接收 f32 权重并允许 children 链。
