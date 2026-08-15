@@ -10,7 +10,9 @@ use super::vec3::Vec3;
 /// MVP 矩阵投影后落到屏幕空间。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AABB3D {
+    /// 包围盒在三个坐标轴上的最小角点。
     pub min: Vec3,
+    /// 包围盒在三个坐标轴上的最大角点。
     pub max: Vec3,
 }
 
