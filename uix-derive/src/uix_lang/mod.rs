@@ -495,6 +495,11 @@ mod parser;
 mod style_ast;
 // 定义已映射内联样式到公开 Style 字段的编译期转换。
 mod style_codegen;
+// 定义三个背景图层属性到 UI 运行时契约的独立映射。
+mod style_background_codegen;
+// 集中验证背景来源、定位、重复与拒绝路径。
+#[cfg(test)]
+mod style_background_codegen_tests;
 // 定义 borderStyle 关键字到 UI 边框线型契约的独立映射。
 mod style_border_codegen;
 // 集中验证 borderStyle 的完整枚举生成与拒绝路径。

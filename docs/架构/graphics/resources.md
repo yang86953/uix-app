@@ -23,7 +23,7 @@
 
 ## 组件：ImageService
 
-组件保存 handle 而非 texture；解码失败返回 typed error，释放或设备重建使旧 generation 失效。
+组件保存 handle 而非 texture；解码失败返回 typed error，释放或设备重建使旧 generation 失效。UI `Style` 的本地背景路径复用同一 `ImageService` 路径缓存与固有尺寸，不建立第二套图片资源所有权；加载失败由 UI 绘制适配降级为不绘制图片，同时保留已有背景色。
 
 ## 模块不变量
 

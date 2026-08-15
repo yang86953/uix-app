@@ -546,7 +546,7 @@ fn parse_number(
 }
 
 // 生成 ColorValue 令牌。
-fn color_value(property: &StyleProperty) -> Result<TokenStream, Diagnostic> {
+pub(super) fn color_value(property: &StyleProperty) -> Result<TokenStream, Diagnostic> {
     // 闭合主题颜色引用从当前 Provider 上下文读取。
     if let Some(value) = color_token_reference(&property.value.source, property)? {
         // 返回已验证的主题颜色表达式。
@@ -833,16 +833,7 @@ pub(super) fn cursor_value(property: &StyleProperty) -> Result<TokenStream, Diag
 // 判断属性是否由文档明确标记为规划中。
 pub(super) fn is_planned_property(name: &str) -> bool {
     // 匹配样式参考中的规划中矩阵。
-    matches!(
-        name,
-        "float"
-            | "clear"
-            | "backgroundImage"
-            | "backgroundPosition"
-            | "backgroundRepeat"
-            | "animation"
-            | "transition"
-    )
+    matches!(name, "float" | "clear" | "animation" | "transition")
 }
 
 // 构造指向样式值的统一诊断。
