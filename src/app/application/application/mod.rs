@@ -134,6 +134,12 @@ impl Default for App {
             main_thread_queue.clone(),
             handle_alive.clone(),
         );
+        // Application 组合根预注册所有窗口都必须拥有的默认语言。
+        let mut container = Container::new();
+        // 默认语言单例消除主窗和次窗首次解析时的预期失败告警。
+        container.singleton(Locale::default());
+        // 默认组件配置与语言共享同一应用级生命周期。
+        container.singleton(ComponentConfig::default());
 
         Self {
             mode: AppMode::GUI,
@@ -154,7 +160,8 @@ impl Default for App {
             on_window_start: None,
             on_exit: None,
             cli: None,
-            container: Container::new(),
+            // 保存已经具备框架默认服务的应用容器。
+            container,
             settings_path: None,
             graphics_backend: None,
             #[cfg(feature = "test-harness")]
