@@ -4,7 +4,7 @@ use uix::prelude::*;
 // 构造带稳定标题、边框和宽度的单个验收卡片。
 fn acceptance_card(title: &'static str, width: f32, segments: Vec<RichTextSegment>) -> ViewNode {
     // 卡片标题与待验收 RichText 使用同一列布局。
-    column((
+    column_fit((
         // 标明当前卡片覆盖的契约边界。
         label(title),
         // 使用真实 RichText 组件渲染指定段列表。
@@ -67,7 +67,7 @@ fn acceptance_view() -> ViewNode {
     // 使用两列矩阵并排展示宽度与解析边界。
     let matrix = row((
         // 左列覆盖宽卡片下的解析和混排行为。
-        column((
+        column_fit((
             // 三种合法标记必须都渲染为主题线。
             acceptance_card(
                 // 标明输入来源和预期数量。
@@ -90,7 +90,7 @@ fn acceptance_view() -> ViewNode {
         // 左列内部保持稳定间距。
         .gap(18.0),
         // 右列覆盖 Setext 优先级与窄宽边界。
-        column((
+        column_fit((
             // Setext 标记行优先形成标题，后续孤立标记才形成主题线。
             acceptance_card(
                 // 标明预期只出现一条主题线。
