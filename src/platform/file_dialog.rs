@@ -50,6 +50,22 @@ pub(super) fn portable_filters(filters: &[FileDialogFilter]) -> String {
         .join(";")
 }
 
+// 编码 AppKit allowedFileTypes 解析组件所需的纯扩展名模式。
+pub(super) fn macos_filters(filters: &[FileDialogFilter]) -> String {
+    // AppKit 不展示命名过滤器组，只需要规范扩展名事实。
+    filters
+        // 保持调用方过滤器组顺序。
+        .iter()
+        // 展开每组已经稳定去重的扩展名。
+        .flat_map(|filter| filter.extensions().iter())
+        // 补回 AppKit 解析器识别的星号点号前缀。
+        .map(|extension| format!("*.{extension}"))
+        // 收集所有纯模式。
+        .collect::<Vec<_>>()
+        // 分号只分隔扩展名，不携带可能被误识别的显示名称。
+        .join(";")
+}
+
 // 编码 Win32 OPENFILENAMEW 要求的双 NUL 过滤器列表。
 pub(super) fn windows_filters(filters: &[FileDialogFilter]) -> String {
     // 无过滤器时显式提供不受限组，避免传入不完整的单 NUL 列表。
@@ -90,7 +106,7 @@ pub(super) fn windows_filters(filters: &[FileDialogFilter]) -> String {
 #[cfg(test)]
 mod tests {
     // 引入私有编码器与公开过滤器构造器。
-    use super::{FileDialogFilter, portable_filters, windows_filters};
+    use super::{FileDialogFilter, macos_filters, portable_filters, windows_filters};
 
     // 三平台编码必须保留规范顺序并去除重复扩展名。
     #[test]
@@ -105,6 +121,21 @@ mod tests {
         assert_eq!(windows_filters(&[images]), "Images\0*.png;*.jpg\0\0");
         // 不受限 Win32 对话框仍得到有效双 NUL 列表。
         assert_eq!(windows_filters(&[]), "All Files\0*.*\0\0");
+    }
+
+    // AppKit 编码不能把小写显示名称降格成可选文件类型。
+    #[test]
+    fn macos_filter_encoding_excludes_display_names() {
+        // 小写名称曾会被 AppKit 解析器误识别为裸扩展名。
+        let images = FileDialogFilter::new("images", ["png", "jpg"])
+            // 测试夹具必须满足公开构造契约。
+            .expect("lowercase display name should be valid");
+        // 含空格名称同样只能承担应用侧描述职责。
+        let source = FileDialogFilter::new("source code", ["rs"])
+            // 测试夹具必须满足公开构造契约。
+            .expect("spaced display name should be valid");
+        // 编码结果只包含规范扩展名模式，不包含任一显示名称词。
+        assert_eq!(macos_filters(&[images, source]), "*.png;*.jpg;*.rs");
     }
 
     // 模糊通配符、路径和空扩展名必须在 Provider 前被拒绝。
