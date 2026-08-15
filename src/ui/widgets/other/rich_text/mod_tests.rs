@@ -141,6 +141,32 @@ fn selectable_controls_keyboard_selection_and_defaults_to_false() {
     assert_eq!(enabled.selected_text().as_deref(), Some("abc"));
 }
 
+// 验证树级 userSelect 能覆盖默认关闭能力并在 none 时清理范围。
+#[test]
+fn user_select_policy_controls_rich_text_selection_lifecycle() {
+    // 构造默认不可选择的富文本正文。
+    let mut rich = RichText::new().content(parse_rich_text("abc"));
+    // 树级 text 应启用普通文字选择而不改写公开 selectable 构建器。
+    rich.set_user_select_policy(crate::ui::UserSelect::Text);
+    // 构造统一 Ctrl+A 全选事件。
+    let select_all = SystemEvent::KeyDown {
+        // 使用全选按键。
+        key: KeyCode::A,
+        // 使用控制修饰键。
+        mods: KeyMod::CTRL,
+    };
+    // text 策略必须让默认实例消费全选。
+    assert_eq!(rich.on_event(&select_all), EventResult::Handled);
+    // 完整正文应进入普通文字选区。
+    assert_eq!(rich.selected_text().as_deref(), Some("abc"));
+    // 树级 none 应立即终止选择生命周期。
+    rich.set_user_select_policy(crate::ui::UserSelect::None);
+    // 旧选区不得在策略关闭后残留。
+    assert_eq!(rich.selected_text(), None);
+    // none 下的普通全选必须重新让出。
+    assert_eq!(rich.on_event(&select_all), EventResult::NotHandled);
+}
+
 // 验证主题分隔线零宽且跨越复制只保留其源码换行。
 #[test]
 fn thematic_break_selection_copies_one_line_break_without_markers() {

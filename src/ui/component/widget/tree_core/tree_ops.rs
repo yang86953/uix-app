@@ -259,6 +259,7 @@ impl WidgetTree {
             provider_context,
             visible,
             visual_transform,
+            user_select,
             cursor,
             enter_animation,
             enter_deadline,
@@ -294,6 +295,8 @@ impl WidgetTree {
         if let Some(node) = self.get_mut(id) {
             node.set_visible(visible);
             node.set_visual_transform(visual_transform);
+            // 先安装节点声明，随后结合真实父链解析 used-value。
+            node.set_declared_user_select(user_select);
             // 把声明节点的可继承光标覆盖安装到运行时节点。
             node.set_cursor(cursor);
             node.set_enter_animation(enter_animation, enter_deadline);
@@ -314,6 +317,8 @@ impl WidgetTree {
             // 保存声明展开携带的全部组件私有状态作用域。
             node.set_uix_component_scopes(uix_component_scopes);
         }
+        // 在构建任何后代前让当前节点取得稳定有效选择策略。
+        self.set_node_user_select(id, user_select);
         self.register_focusable(id);
         // 非根节点已加入当前树后才由自身生命周期持有结构性 State 租约。
         if parent.is_some() {

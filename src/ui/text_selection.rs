@@ -20,14 +20,17 @@ use crate::ui::component::widget::tree_core::WidgetTree;
 use crate::ui::component::widget::{BoxedWidget, WidgetCore, WidgetId};
 use crate::ui::widgets::general::label::Label;
 use crate::ui::widgets::general::typography::Typography;
+// 引入 UI System 公开的闭合选择策略值。
+use crate::ui::UserSelect;
 // 富文本 capability 关闭时不引用已裁剪的组件模块。
 #[cfg(feature = "rich-text")]
 use crate::ui::widgets::other::rich_text::RichText;
 
 pub(crate) fn participates(node: &BoxedWidget) -> bool {
     let c = node.component();
-    if c.as_any().is::<Typography>() {
-        return true;
+    if let Some(typography) = c.as_any().downcast_ref::<Typography>() {
+        // Typography 默认可选，但仍必须服从树级 none 策略。
+        return typography.selection_enabled();
     }
     // 启用富文本后只把显式可选择的 RichText 纳入跨节点参与者。
     #[cfg(feature = "rich-text")]
@@ -138,25 +141,221 @@ fn node_selected_text(node: &BoxedWidget) -> Option<String> {
     None
 }
 
+// 把树级最终策略同步到实际文本组件的私有选择状态。
+fn apply_component_policy(node: &mut BoxedWidget, policy: UserSelect) {
+    // Label 保留自身 selectable 构建器并叠加树级策略。
+    if let Some(label) = node.component_mut().as_any_mut().downcast_mut::<Label>() {
+        // 交给组件清理策略关闭时的局部选区。
+        label.set_user_select_policy(policy);
+        // 一个实际节点只持有一种具体组件。
+        return;
+    }
+    // Typography 默认允许选择，但仍接受 none/all 的结构约束。
+    if let Some(typography) = node
+        // 取得组件可变借用。
+        .component_mut()
+        // 访问动态具体类型。
+        .as_any_mut()
+        // 尝试排版组件下转型。
+        .downcast_mut::<Typography>()
+    {
+        // 交给组件清理策略关闭时的局部选区。
+        typography.set_user_select_policy(policy);
+        // 一个实际节点只持有一种具体组件。
+        return;
+    }
+    // 富文本 capability 启用时同步相同结构策略。
+    #[cfg(feature = "rich-text")]
+    if let Some(rich_text) = node
+        // 取得组件可变借用。
+        .component_mut()
+        // 访问动态具体类型。
+        .as_any_mut()
+        // 尝试富文本组件下转型。
+        .downcast_mut::<RichText>()
+    {
+        // 交给组件清理策略关闭时的局部选区。
+        rich_text.set_user_select_policy(policy);
+    }
+}
+
 impl WidgetTree {
+    // 安装一个节点的声明并重算其既有子树最终选择策略。
+    pub(crate) fn set_node_user_select(&mut self, root: WidgetId, declared: UserSelect) {
+        // 先保存当前声明，避免重算仍读取旧值。
+        let Some(root_node) = self.get_mut(root) else {
+            // 已移除节点没有可更新的策略状态。
+            return;
+        };
+        // 声明身份与 used-value 分开保存。
+        root_node.set_declared_user_select(declared);
+        // 读取真实父节点已经解析出的最终策略。
+        let inherited = root_node
+            // 取得可选父节点身份。
+            .parent()
+            // 从树中读取父节点。
+            .and_then(|parent| self.get(parent))
+            // 复制父节点最终策略。
+            .map(BoxedWidget::effective_user_select)
+            // 根节点使用无约束 auto 起点。
+            .unwrap_or(UserSelect::Auto);
+        // 使用显式栈按父到子顺序重算任意深度子树。
+        let mut stack = vec![(root, inherited)];
+        // 直到全部既有后代完成协调。
+        while let Some((id, parent_policy)) = stack.pop() {
+            // 在单次可变借用中更新元数据与具体组件。
+            let Some((effective, children, changed)) = self.get_mut(id).map(|node| {
+                // 结合父级最终值解析当前声明。
+                let effective = node
+                    // 读取当前节点自己的声明。
+                    .declared_user_select()
+                    // 应用闭合父子 used-value 规则。
+                    .resolve_with_parent(parent_policy);
+                // 记录是否需要使现有选区绘制失效。
+                let changed = node.effective_user_select() != effective;
+                // 保存最终策略供事件查询和后代解析。
+                node.set_effective_user_select(effective);
+                // 同步具体文本组件的私有选择状态。
+                apply_component_policy(node, effective);
+                // 复制子身份以在释放节点借用后继续遍历。
+                let children = node.children().to_vec();
+                // 返回本轮后续所需的小型值。
+                (effective, children, changed)
+            }) else {
+                // 协调中失效的节点直接跳过。
+                continue;
+            };
+            // 策略变化可能清除选区或改变选择高亮参与资格。
+            if changed {
+                // 只使当前实际节点的绘制输出失效。
+                self.invalidate_paint(id);
+            }
+            // 逆序压栈以保持实际处理顺序与声明文档序一致。
+            for child in children.into_iter().rev() {
+                // 后代使用当前节点刚解析出的最终策略。
+                stack.push((child, effective));
+            }
+        }
+    }
+
+    // 查找目标所属的最近显式 all 选择边界。
+    fn nearest_all_boundary(&self, target: WidgetId) -> Option<WidgetId> {
+        // 非 all 最终策略不存在整体选择边界。
+        if self
+            // 读取目标实际节点。
+            .get(target)
+            // 查询已解析策略。
+            .is_none_or(|node| node.effective_user_select() != UserSelect::All)
+        {
+            // 直接返回无整体边界。
+            return None;
+        }
+        // 从目标向根查找最近的显式 all 声明。
+        let mut current = Some(target);
+        // 父链有限，直到根节点结束。
+        while let Some(id) = current {
+            // 失效节点终止边界解析。
+            let node = self.get(id)?;
+            // 最近显式 all 声明拥有整体选择范围。
+            if node.declared_user_select() == UserSelect::All {
+                // 返回稳定实际节点身份。
+                return Some(id);
+            }
+            // 继续检查直接父节点。
+            current = node.parent();
+        }
+        // 防御性处理不一致元数据。
+        None
+    }
+
+    // 按文档序收集一个实际子树中的全部文字选择参与者。
+    fn selection_nodes_in_subtree(&self, root: WidgetId) -> Vec<WidgetId> {
+        // 保存稳定的先序文档顺序结果。
+        let mut result = Vec::new();
+        // 显式栈避免深声明树递归溢出。
+        let mut stack = vec![root];
+        // 遍历全部实际后代。
+        while let Some(id) = stack.pop() {
+            // 已移除节点没有可选择内容。
+            let Some(node) = self.get(id) else {
+                // 继续处理其余稳定身份。
+                continue;
+            };
+            // 支持的文字组件按最终策略决定参与资格。
+            if participates(node) {
+                // 保存当前文字节点身份。
+                result.push(id);
+            }
+            // 逆序压栈使弹出顺序保持声明顺序。
+            for child in node.children().iter().rev() {
+                // 复制小型节点身份。
+                stack.push(*child);
+            }
+        }
+        // 返回稳定文档序参与者集合。
+        result
+    }
+
+    // 若目标位于 all 边界内，选择边界中的全部文字并返回成功事实。
+    pub(crate) fn select_all_user_select_subtree(&mut self, target: WidgetId) -> bool {
+        // 只有实际文字参与者上的交互才能启动整体选择。
+        if !self.get(target).is_some_and(participates) {
+            // 非文字按钮或容器交互不应意外建立文字选区。
+            return false;
+        }
+        // 找到最近 all 声明拥有的实际子树。
+        let Some(boundary) = self.nearest_all_boundary(target) else {
+            // 普通 auto/text 继续沿用既有选择行为。
+            return false;
+        };
+        // 按文档序收集边界中的全部支持文字节点。
+        let nodes = self.selection_nodes_in_subtree(boundary);
+        // 空文本子树不声称已经选择。
+        if nodes.is_empty() {
+            // 返回未建立选择。
+            return false;
+        }
+        // 为每个参与者建立完整逻辑文本范围。
+        for id in nodes {
+            // 读取当前节点完整逻辑字符数量。
+            let length = self.get(id).map(text_len).unwrap_or(0);
+            // 使用组件自身的字素簇和原子对象归一规则保存范围。
+            if let Some(node) = self.get(id) {
+                // 零长度组件自然清除空范围。
+                set_range(node, Some((0, length)));
+            }
+            // 选区背景变化只需要重新绘制当前文字节点。
+            self.invalidate_paint(id);
+        }
+        // 已完成整个边界的同步选择。
+        true
+    }
+
     /// 按同父级文档序聚合跨节点选区文本；无任何选区时返回 `None`。
     /// 多节点选区以 `\n` 连接，与视觉分行一致。
     pub(crate) fn aggregate_cross_text_selection(&self, anchor: WidgetId) -> Option<String> {
         if !self.get(anchor).is_some_and(participates) {
             return None;
         }
-        let group: Vec<WidgetId> = match self.get(anchor).and_then(|n| n.parent()) {
-            Some(parent) => self
-                .get(parent)
-                .map(|p| {
-                    p.children()
-                        .iter()
-                        .copied()
-                        .filter(|&id| self.get(id).is_some_and(participates))
-                        .collect()
-                })
-                .unwrap_or_default(),
-            None => vec![anchor],
+        // all 使用最近显式边界的完整子树，普通拖选继续使用同父级参与者。
+        let group: Vec<WidgetId> = if let Some(boundary) = self.nearest_all_boundary(anchor) {
+            // 整体选择按边界内完整文档序聚合。
+            self.selection_nodes_in_subtree(boundary)
+        } else {
+            // 普通跨节点拖选保持既有同父级范围。
+            match self.get(anchor).and_then(|n| n.parent()) {
+                Some(parent) => self
+                    .get(parent)
+                    .map(|p| {
+                        p.children()
+                            .iter()
+                            .copied()
+                            .filter(|&id| self.get(id).is_some_and(participates))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                None => vec![anchor],
+            }
         };
         let mut parts: Vec<String> = Vec::new();
         for id in group {
@@ -382,3 +581,7 @@ impl WidgetTree {
             .unwrap_or(content_frame)
     }
 }
+
+// 集中验证 userSelect 的树级传播、清理与整体选择行为。
+#[cfg(test)]
+mod user_select_tests;

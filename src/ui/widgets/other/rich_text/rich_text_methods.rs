@@ -58,8 +58,8 @@ impl RichText {
 
     // 从声明式下一实例同步公开配置并保留运行时状态。
     pub(crate) fn sync_from(&mut self, next: Self) {
-        // 记录 reconcile 是否关闭了已有选择能力。
-        let selection_disabled = self.selectable && !next.selectable;
+        // 记录协调前结构策略与公开构建器组合后的选择能力。
+        let selection_was_enabled = self.selection_enabled();
         // 记录公开段是否变化。
         let segments_changed = self.segments != next.segments;
         // 汇总全部影响布局缓存的配置变化。
@@ -81,6 +81,8 @@ impl RichText {
         self.use_theme_color = next.use_theme_color;
         // 同步公开的选择配置。
         self.selectable = next.selectable;
+        // 只在最终组合能力由开变关时清理选择生命周期。
+        let selection_disabled = selection_was_enabled && !self.selection_enabled();
         // 只用新实例中明确提供的回调替换旧回调。
         if next.on_link.is_some() {
             // 保存新链接回调。

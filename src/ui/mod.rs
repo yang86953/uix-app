@@ -73,12 +73,14 @@ pub(crate) mod text_decoration;
 // 将 UI 字体族列表单向解析为 draw System 字体句柄。
 pub(crate) mod text_family;
 // 将 UI 字重单向适配为 draw System 的常规或合成粗体字形提交。
-pub(crate) mod text_weight;
 pub(crate) mod text_selection;
+pub(crate) mod text_weight;
 pub(crate) mod theme;
 pub(crate) mod transform_origin;
 pub(crate) mod tree_dynamic;
 pub(crate) mod tree_widget_hooks;
+// 公开 UI System 自有的文字选择策略值契约。
+mod user_select;
 pub(crate) mod view;
 pub(crate) mod virtualization;
 pub(crate) mod widgets;
@@ -162,6 +164,8 @@ pub use theme::{
 };
 // 导出由 UI System 拥有的二维变换原点公开值契约。
 pub use transform_origin::{TransformOrigin, TransformOriginValue};
+// 导出所有 View 节点共享的文字选择策略。
+pub use user_select::UserSelect;
 pub use view::providers::ConfigProvider;
 pub use view::providers::LocaleProvider;
 pub use view::{AccessibilityExt, EventExt, StyleExt, TransitionExt, View, ViewNode};

@@ -12,7 +12,7 @@ use crate::ui::component::paint_context::PaintContext;
 // 引入共享的单节点文字选区实现。
 use crate::ui::text_selection::per_node::PerNodeTextSelection;
 use crate::ui::theme::style::Style;
-use crate::ui::{EventResult, KeyCode, KeyMod, MouseButton, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, KeyMod, MouseButton, SystemEvent, UserSelect, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
 
 const DEFAULT_LABEL_FONT_SIZE: f32 = 12.0;
@@ -42,6 +42,8 @@ component! {
         pub fixed_height: Option<f32>,
         /// 是否允许拖选 / Ctrl+A / Ctrl+C 选区。默认 false。
         selectable: bool,
+        /// 由 WidgetTree 结合祖先声明解析出的最终选择策略。
+        user_select_policy: UserSelect,
         /// 共享的选区状态：布局缓存、选区、拖选锚点与绘制偏移。
         sel: PerNodeTextSelection,
         /// 统一样式覆盖（优先于 color/font_size 独立字段）。
@@ -82,7 +84,7 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         // 默认不可选中：整个事件处理直接让出。
-        if !self.selectable {
+        if !self.selection_enabled() {
             return EventResult::NotHandled;
         }
         match event {
@@ -91,6 +93,13 @@ component! {
                 button: MouseButton::Left,
                 mods,
             } => {
+                // all 把当前文本作为原子整体，不启动可收缩的拖选会话。
+                if self.user_select_policy == UserSelect::All {
+                    // 先选择完整当前文本，树层随后扩展到最近 all 子树。
+                    self.sel.select_all(&self.text);
+                    // 当前文字节点已经消费按下事件。
+                    return EventResult::Handled;
+                }
                 // 按下即进入拖选：Shift 扩展选区，否则重设锚点。
                 self.sel.pointer_down(&self.text, *pos, mods.contains(KeyMod::SHIFT));
                 EventResult::Handled
@@ -337,6 +346,8 @@ impl Label {
             fixed_width: None,
             fixed_height: None,
             selectable: false,
+            // 未挂载或没有结构声明时保留 Label 默认不可选语义。
+            user_select_policy: UserSelect::Auto,
             sel: PerNodeTextSelection::new(),
             style: None,
         }
@@ -346,6 +357,23 @@ impl Label {
     pub fn selectable(mut self) -> Self {
         self.selectable = true;
         self
+    }
+
+    // 接收 WidgetTree 已结合祖先约束解析出的最终选择策略。
+    pub(crate) fn set_user_select_policy(&mut self, value: UserSelect) {
+        // 保存新策略供事件与跨节点参与资格共同读取。
+        self.user_select_policy = value;
+        // 策略关闭当前组件选择能力时立即清理旧选区和拖选。
+        if !self.selection_enabled() {
+            // 复用共享选择状态的完整重置入口。
+            self.sel.reset_selection();
+        }
+    }
+
+    // 判断结构策略与组件显式构建器组合后的最终选择能力。
+    fn selection_enabled(&self) -> bool {
+        // auto 保留 selectable 构建器，其余值由公开策略决定。
+        self.user_select_policy.allows_text(self.selectable)
     }
 
     /// 设置统一样式（覆盖文字颜色/字号等视觉属性）。
@@ -378,7 +406,7 @@ impl Label {
         self.fixed_height = next.fixed_height;
         self.selectable = next.selectable;
         // 关闭可选中时同步清除残留选区。
-        if !self.selectable {
+        if !self.selection_enabled() {
             self.sel.reset_selection();
         }
         self.style = next.style;
@@ -417,13 +445,13 @@ impl Label {
     }
 
     pub(crate) fn participates_in_cross_text_selection(&self) -> bool {
-        // 仅显式可选的 Label 参与跨节点拖选。
-        self.selectable
+        // 使用结构策略与显式构建器组合后的最终能力。
+        self.selection_enabled()
     }
 
     pub(crate) fn is_cross_text_dragging(&self) -> bool {
         // 拖选状态同样以可选中为前提。
-        self.selectable && self.sel.is_dragging()
+        self.selection_enabled() && self.sel.is_dragging()
     }
 
     pub(crate) fn cross_text_len(&self) -> usize {
@@ -436,7 +464,7 @@ impl Label {
 
     pub(crate) fn set_cross_text_range(&self, range: Option<(usize, usize)>) {
         // 不可选中的 Label 不接收跨节点选区。
-        if !self.selectable {
+        if !self.selection_enabled() {
             return;
         }
         self.sel.set_cross_text_range(&self.text, range);

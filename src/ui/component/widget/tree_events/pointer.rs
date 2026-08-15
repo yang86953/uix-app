@@ -77,9 +77,13 @@ impl WidgetTree {
             self.dispatch_to(target, event)
         };
         if result == EventResult::Handled {
-            if self
-                .get(target)
-                .is_some_and(crate::ui::text_selection::participates)
+            // all 在普通文字按下后扩展为最近声明子树的完整选择。
+            let selected_all = self.select_all_user_select_subtree(target);
+            // 普通 auto/text 拖选继续清理同级旧范围；all 已整体重建范围。
+            if !selected_all
+                && self
+                    .get(target)
+                    .is_some_and(crate::ui::text_selection::participates)
             {
                 self.clear_sibling_cross_text_selections(target);
             }

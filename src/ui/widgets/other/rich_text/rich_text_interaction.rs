@@ -28,10 +28,31 @@ impl RichText {
         self
     }
 
+    // 接收 WidgetTree 已结合祖先约束解析出的最终选择策略。
+    pub(crate) fn set_user_select_policy(&mut self, value: crate::ui::UserSelect) {
+        // 保存新策略供事件与跨节点参与资格共同读取。
+        self.user_select_policy = value;
+        // 禁止策略必须终止当前普通选区和拖选生命周期。
+        if !self.selection_enabled() {
+            // 清除旧选区。
+            self.selection.set(None);
+            // 把锚点恢复到初始位置。
+            self.sel_anchor.set(0);
+            // 结束旧拖选会话。
+            self.sel_dragging.set(false);
+        }
+    }
+
+    // 判断结构策略与 RichText 显式构建器组合后的最终选择能力。
+    pub(crate) fn selection_enabled(&self) -> bool {
+        // auto 保留 selectable 构建器，其余值由公开策略决定。
+        self.user_select_policy.allows_text(self.selectable)
+    }
+
     /// 返回当前实例是否参加跨节点文字选择协调。
     pub(crate) fn participates_in_cross_text_selection(&self) -> bool {
-        // 只暴露组件自身拥有的选择配置。
-        self.selectable
+        // 使用结构策略与显式构建器组合后的最终能力。
+        self.selection_enabled()
     }
 
     pub(super) fn local_frame(&self) -> Rect {
@@ -270,7 +291,7 @@ impl RichText {
 
     pub(super) fn set_selection_range(&self, a: usize, b: usize) {
         // 关闭能力时任何内部协调入口都不得建立选区。
-        if !self.selectable {
+        if !self.selection_enabled() {
             // 防御性清除可能残留的旧选区。
             self.selection.set(None);
             // 结束当前范围更新。

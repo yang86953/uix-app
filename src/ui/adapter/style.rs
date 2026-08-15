@@ -1,0 +1,100 @@
+//! View 声明样式到具体组件私有配置的适配边界。
+
+// 引入组件公开运行契约。
+use crate::ui::component::traits::WidgetComponent;
+// 引入 UI System 拥有的统一样式值。
+use crate::ui::theme::style::Style;
+// 引入窗口交互区域的专用样式适配入口。
+use crate::ui::widgets::window_chrome::WindowInteractionRegion;
+// 引入当前已登记消费统一样式的具体组件。
+use crate::ui::widgets::{Button, Container, Grid, Label, Typography};
+
+// 引入所属适配器类型。
+use super::ViewAdapter;
+
+// 集中实现具体组件样式适配，避免主协调文件超过规模上限。
+impl ViewAdapter {
+    // 把声明样式应用到当前具体组件并保留组件私有语义。
+    pub(crate) fn apply_style(
+        mut widget: Box<dyn WidgetComponent>,
+        style: &Style,
+        flex_grow_override: Option<f32>,
+        flex_shrink_override: Option<f32>,
+    ) -> Box<dyn WidgetComponent> {
+        let style_is_default = style == &Style::default();
+        if style_is_default && flex_grow_override.is_none() && flex_shrink_override.is_none() {
+            return widget;
+        }
+
+        let tid = widget.as_any().type_id();
+
+        if tid == std::any::TypeId::of::<Container>() {
+            if let Some(c) = widget.as_any_mut().downcast_mut::<Container>() {
+                if !style_is_default {
+                    c.style = c.style.clone().apply(style.clone());
+                }
+                // View DSL 显式 flex 覆盖（含 0.0），Style::apply 无法表达「设为默认值」
+                if let Some(g) = flex_grow_override {
+                    c.style.flex_grow = g;
+                }
+                if let Some(s) = flex_shrink_override {
+                    c.style.flex_shrink = s;
+                }
+            }
+        } else if tid == std::any::TypeId::of::<Label>() {
+            if let Some(l) = widget.as_any_mut().downcast_mut::<Label>() {
+                let mut merged = l.style.clone().unwrap_or_default().apply(style.clone());
+                if let Some(g) = flex_grow_override {
+                    merged.flex_grow = g;
+                }
+                if let Some(s) = flex_shrink_override {
+                    merged.flex_shrink = s;
+                }
+                // ViewNode width/height → Label 固定尺寸（section 色条等）
+                if let Some(w) = style.width {
+                    l.fixed_width = Some(w);
+                }
+                if let Some(h) = style.height {
+                    l.fixed_height = Some(h);
+                }
+                l.style = Some(merged);
+            }
+        } else if tid == std::any::TypeId::of::<Button>() {
+            if let Some(b) = widget.as_any_mut().downcast_mut::<Button>() {
+                let mut button_style = style.clone();
+                if let Some(g) = flex_grow_override {
+                    button_style.flex_grow = g;
+                }
+                if let Some(s) = flex_shrink_override {
+                    button_style.flex_shrink = s;
+                }
+                b.style = button_style.into();
+            }
+        // Typography 只取得自己消费的文本排版字段，不取得 View 生命周期。
+        } else if let Some(typography) = widget.as_any_mut().downcast_mut::<Typography>() {
+            // 把公开 Style 中排版组件消费的文本字段交给组件。
+            typography.apply_view_style(style);
+        } else if tid == std::any::TypeId::of::<Grid>() {
+            if let Some(g) = widget.as_any_mut().downcast_mut::<Grid>() {
+                g.apply_style(style);
+            }
+        } else if tid == std::any::TypeId::of::<crate::ui::component::dynamic_label::DynamicLabel>()
+        {
+            if let Some(dl) = widget
+                .as_any_mut()
+                .downcast_mut::<crate::ui::component::dynamic_label::DynamicLabel>()
+            {
+                dl.set_style(style.clone());
+            }
+        } else if tid == std::any::TypeId::of::<WindowInteractionRegion>() {
+            if let Some(region) = widget
+                .as_any_mut()
+                .downcast_mut::<WindowInteractionRegion>()
+            {
+                region.apply_view_style(style, flex_grow_override, flex_shrink_override);
+            }
+        }
+
+        widget
+    }
+}
