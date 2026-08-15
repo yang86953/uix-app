@@ -39,6 +39,7 @@ impl Collapse {
         h
     }
 
+    /// 创建没有面板、采用非受控多展开模式的折叠组件。
     pub fn new() -> Self {
         Self {
             panels: Vec::new(),
@@ -60,6 +61,7 @@ impl Collapse {
             materialized_content: RefCell::new(Vec::new()),
         }
     }
+    /// 设置面板集合并按受控稳定键或非受控初值建立展开状态。
     pub fn panels(mut self, ps: Vec<CollapsePanel>) -> Self {
         self.panels = ps;
         // 受控模式按稳定 key 同步，非受控模式只归一化面板初值。
@@ -74,12 +76,13 @@ impl Collapse {
         self.content_opacities = Self::opacity_handles(&self.transitions);
         self
     }
+    /// 启用手风琴模式，使用户交互后最多展开一个面板。
     pub fn accordion(self) -> Self {
         // 兼容既有无参数手风琴构建器。
         self.accordion_enabled(true)
     }
 
-    // 按布尔值启用或关闭手风琴模式。
+    /// 按布尔值启用或关闭手风琴模式。
     pub fn accordion_enabled(mut self, value: bool) -> Self {
         // 保存声明配置。
         self.accordion = value;
@@ -96,7 +99,7 @@ impl Collapse {
         self
     }
 
-    // 将展开面板稳定 key 集合绑定到外部状态。
+    /// 将展开面板稳定键集合双向绑定到外部状态。
     pub fn active_keys(mut self, state: &State<Vec<String>>) -> Self {
         // 克隆轻量状态句柄供交互写回与依赖捕获使用。
         self.active_keys_binding = Some(state.clone());
@@ -109,20 +112,24 @@ impl Collapse {
         self
     }
 
+    /// 设置是否隐藏面板组边框。
     pub fn borderless(mut self, value: bool) -> Self {
         self.borderless = value;
         self
     }
 
+    /// 设置折叠后是否销毁对应内容视图。
     pub fn destroy_on_hide(mut self, value: bool) -> Self {
         self.destroy_on_hide = value;
         self
     }
 
+    /// 返回当前接收键盘操作的面板标题索引。
     pub fn focused_header(&self) -> usize {
         self.focused_header
     }
 
+    /// 按声明顺序返回当前实际展开的面板索引。
     pub fn expanded_indices(&self) -> Vec<usize> {
         self.panels
             .iter()
@@ -131,7 +138,7 @@ impl Collapse {
             .collect()
     }
 
-    // 返回当前界面实际展开的稳定 key 集合。
+    /// 按声明顺序返回当前界面实际展开的稳定键集合。
     pub fn expanded_keys(&self) -> Vec<String> {
         // 只投影当前有效且实际展开的面板。
         self.panels
