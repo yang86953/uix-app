@@ -188,13 +188,21 @@ pub(crate) fn open_folder(title: &str) -> Result<Option<PathBuf>> {
         .map(|path| path.map(PathBuf::from))
 }
 
-// macOS provider 不需要 Windows 应用身份，命令故障由发送结果报告。
+// macOS provider 不需要 Windows 应用身份，能力查询只读探测命令可发现性。
 pub(crate) fn system_notification_capability(
     // 跨平台门面统一传入身份，macOS 明确忽略。
     _app_user_model_id: Option<&AppUserModelId>,
 ) -> Result<SystemNotificationCapability> {
-    // osascript provider 已编译进入当前目标。
-    Ok(SystemNotificationCapability::Available)
+    // 仅在 PATH 中存在可执行 osascript 时报告 Provider 已就绪。
+    let capability = if super::unix_provider::command_is_available("osascript") {
+        // 可执行 Provider 已发现，调用方可以尝试发送。
+        SystemNotificationCapability::Available
+    } else {
+        // Provider 不可发现时显式报告不支持，禁止伪装成功。
+        SystemNotificationCapability::Unsupported
+    };
+    // 能力查询本身成功，枚举值表达当前环境状态。
+    Ok(capability)
 }
 
 pub(crate) fn show_notification(
