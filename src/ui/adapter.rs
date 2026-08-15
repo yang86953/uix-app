@@ -29,8 +29,10 @@ use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::theme::style::Style;
 use crate::ui::view::ViewNode;
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
-// 引入 Carousel、Image 与 Transfer 以识别各自的专属动态子树协调边界。
-use crate::ui::widgets::{Button, Calendar, Carousel, Container, Grid, Image, Label, Transfer};
+// 引入动态子树组件与 Typography 以识别各自的私有适配边界。
+use crate::ui::widgets::{
+    Button, Calendar, Carousel, Container, Grid, Image, Label, Transfer, Typography,
+};
 // 导航 capability 启用时才识别 Anchor 的专属动态容器协调边界。
 #[cfg(feature = "navigation")]
 use crate::ui::widgets::navigation::Anchor;
@@ -338,6 +340,10 @@ impl ViewAdapter {
                 }
                 b.style = button_style.into();
             }
+        // Typography 只取得自己消费的文本排版字段，不取得 View 生命周期。
+        } else if let Some(typography) = widget.as_any_mut().downcast_mut::<Typography>() {
+            // 把公开 Style 中的显式行高交给排版组件。
+            typography.apply_view_style(style);
         } else if tid == std::any::TypeId::of::<Grid>() {
             if let Some(g) = widget.as_any_mut().downcast_mut::<Grid>() {
                 g.apply_style(style);

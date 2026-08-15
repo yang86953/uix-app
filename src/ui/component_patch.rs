@@ -204,6 +204,8 @@ fn style_layout_changed(current: &Style, next: &Style) -> bool {
         || current.grid_row_span != next.grid_row_span
         // 字号参与文本组件的固有尺寸测量。
         || current.font_size != next.font_size
+        // 显式行高参与文本行盒与多行测量。
+        || current.line_height != next.line_height
         // 可见性决定节点是否参与布局。
         || current.visible != next.visible
 }

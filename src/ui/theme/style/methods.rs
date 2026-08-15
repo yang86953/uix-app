@@ -144,6 +144,8 @@ impl Style {
         self.background_active = s.background_active;
         self.color = s.color;
         self.font_size = s.font_size;
+        // 完整替换保留未声明行高与显式行高的差异。
+        self.line_height = s.line_height;
         self.opacity = s.opacity;
         self.box_shadow = s.box_shadow;
         self.visible = s.visible;
@@ -246,6 +248,11 @@ impl Style {
         }
         if other.font_size != TypographyToken::Body {
             self.font_size = other.font_size;
+        }
+        // 只有显式行高覆盖继承值。
+        if other.line_height.is_some() {
+            // 行高值已由构造器保证为正有限数值。
+            self.line_height = other.line_height;
         }
         if other.opacity != 1.0 {
             self.opacity = other.opacity;
@@ -430,6 +437,18 @@ impl Style {
     pub fn with_font_size(mut self, s: impl Into<TypographyToken>) -> Self {
         self.font_size = s.into();
         self
+    }
+    /// 设置显式行高。
+    pub fn with_line_height(mut self, line_height: LineHeight) -> Self {
+        // 保存已经验证的倍率或像素值。
+        self.line_height = Some(line_height);
+        // 返回可继续链式设置的样式。
+        self
+    }
+    /// 按当前字体尺寸解析显式行高；未声明时返回空值。
+    pub fn resolve_line_height(&self, font_size: f32) -> Option<f32> {
+        // 只解析显式值，让文本组件保留各自既有 normal 策略。
+        self.line_height.map(|value| value.resolve(font_size))
     }
     /// 设置全局透明度。
     pub fn with_opacity(mut self, o: f32) -> Self {

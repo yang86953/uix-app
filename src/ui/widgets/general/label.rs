@@ -155,12 +155,22 @@ component! {
             self.font_size
         };
         let fs = normalized_label_font_size(fs);
+        // 显式 lineHeight 同时驱动文本布局与固有测量。
+        let line_height = self
+            // 只在存在统一样式时读取显式值。
+            .style
+            // 借用样式而不取得其所有权。
+            .as_ref()
+            // 按最终字号解析倍率或像素值。
+            .and_then(|style| style.resolve_line_height(fs))
+            // 未声明时保持 Label 既有 normal 行高。
+            .unwrap_or(fs * 1.5);
 
         // 单次布局：同时用于 hit-test 缓存、选中背景和文字绘制
         let opts = TextLayoutOptions {
             max_width: f32::MAX,
             max_height: 0.0,
-            line_height: fs * 1.5,
+            line_height,
             word_wrap: false,
             h_align: crate::draw::HAlign::Left,
             v_align: crate::draw::VAlign::Top,
@@ -188,10 +198,14 @@ component! {
             // 绘制选中背景（按字符下标匹配字形）
             if let Some((sel_s, sel_e)) = self.sel.selection() {
                 if sel_s < sel_e {
-                    let visual_h = ctx.font_service()
+                    // 选区背景至少覆盖最终行盒，避免大行高留下未选中的垂直空隙。
+                    let selection_height = ctx.font_service()
                         .horizontal_line_metrics(&fh, fs)
                         .map(|m| m.ascent + m.descent)
-                        .unwrap_or(fs * 1.2);
+                        // 显式或默认行高与实际字形高度取较大值。
+                        .map(|glyph_height| glyph_height.max(line_height))
+                        // 缺少字体度量时直接使用最终行高。
+                        .unwrap_or(line_height);
                     for line in &layout.lines {
                         let gs = line.glyph_start;
                         let ge = (gs + line.glyph_count).min(layout.glyphs.len());
@@ -214,7 +228,7 @@ component! {
                             let y0 = abs_pos.y + line.y;
                             // 绘制当前连续选择片段。
                             ctx.fill_rect(
-                                Rect::new(x0, y0, (x1 - x0).max(0.0), visual_h),
+                                Rect::new(x0, y0, (x1 - x0).max(0.0), selection_height),
                                 ctx.tokens().color_primary().with_alpha(64),
                                 None,
                             );
@@ -379,6 +393,14 @@ impl Label {
                 .or_else(|| self.style.as_ref().map(|s| s.font_size.default_size()))
                 .unwrap_or(self.font_size);
             let fs = normalized_label_font_size(raw_font_size);
+            // 显式行高按最终字号解析，未声明时继续使用既有测量策略。
+            let explicit_line_height = self
+                // 读取可选统一样式。
+                .style
+                // 借用样式以保留组件所有权。
+                .as_ref()
+                // 只解析显式 lineHeight。
+                .and_then(|style| style.resolve_line_height(fs));
             let estimated = crate::draw::resources::font::text_backend::estimate_text_metrics(
                 &self.text,
                 f32::INFINITY,
@@ -387,9 +409,14 @@ impl Label {
             // 单行固有高度 = 行盒（≈ ascent+descent）；与顶对齐绘制一致。
             // 与 Icon 同行时由父级 AlignItems::Center 对齐，勿在 paint 里二次居中。
             // 显式多行保留完整 line box，禁止后继节点压到实际字形上。
-            let text_height = if estimated.line_count == 1 {
+            let text_height = if let Some(line_height) = explicit_line_height {
+                // 显式行高对单行与多行统一生效。
+                line_height * estimated.line_count as f32
+            } else if estimated.line_count == 1 {
+                // 未声明时保留现有单行视觉字高。
                 fs * 1.2
             } else {
+                // 未声明时保留现有多行 normal 行高。
                 fs * 1.5 * estimated.line_count as f32
             };
             Size::new(
@@ -397,5 +424,28 @@ impl Label {
                 h.unwrap_or(text_height + pad.vertical()),
             )
         }
+    }
+}
+
+// 只在单元测试目标验证显式行高对 Label 固有测量的影响。
+#[cfg(test)]
+mod line_height_tests {
+    // 引入待验证的 Label 私有测量入口。
+    use super::Label;
+    // 引入公开行高与样式构造器。
+    use crate::ui::theme::style::{LineHeight, Style};
+
+    // 验证固定像素行高成为单行 Label 的固有高度。
+    #[test]
+    fn line_height_changes_label_intrinsic_height() {
+        // 创建二十四像素显式行高样式。
+        let style = Style::default().with_line_height(
+            // 正像素值必须构造成功。
+            LineHeight::pixels(24.0).expect("正像素行高必须有效"),
+        );
+        // 把统一样式应用到真实 Label 组件。
+        let label = Label::new("line height").style(style);
+        // 固有高度必须使用显式行盒而非默认视觉字高。
+        assert_eq!(label.intrinsic_size().h, 24.0);
     }
 }
