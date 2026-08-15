@@ -41,6 +41,7 @@ impl D3d11Pipeline {
             ));
         }
         // 绑定通用 sampled quad 的输入布局、资源和 blend 状态。
+        // SAFETY: sampled texture、sampler、buffer 与 shader 均由当前 device 创建并存活，调用只发生在 owner thread。
         unsafe {
             // 输入布局与已有 glyph 的 float8 ABI 完全一致。
             context.IASetInputLayout(&self.layout_glyph);

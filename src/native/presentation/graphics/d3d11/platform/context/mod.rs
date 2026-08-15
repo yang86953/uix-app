@@ -113,8 +113,10 @@ fn query_adapter_info(device: &ID3D11Device, driver: D3d11DriverKind) -> Result<
     let dxgi_device: IDXGIDevice = device
         .cast()
         .map_err(|err| d3d_error("ID3D11Device::cast<IDXGIDevice>", err))?;
+    // SAFETY: dxgi_device 是由存活 D3D11 device 查询得到的 COM 接口，GetAdapter 同步返回带引用计数的接口。
     let adapter = unsafe { dxgi_device.GetAdapter() }
         .map_err(|err| d3d_error("IDXGIDevice::GetAdapter", err))?;
+    // SAFETY: adapter 是上一步成功取得的存活 COM 接口，GetDesc 只写入返回值并同步完成。
     let desc =
         unsafe { adapter.GetDesc() }.map_err(|err| d3d_error("IDXGIAdapter::GetDesc", err))?;
     let description_len = desc

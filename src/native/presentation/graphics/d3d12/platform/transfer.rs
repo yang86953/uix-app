@@ -36,6 +36,7 @@ pub(super) fn create_readback_buffer(device: &ID3D12Device, size: u64) -> Result
     };
     let desc = buffer_resource_desc(size);
     let mut resource = None;
+    // SAFETY: device 存活，heap/desc 完整初始化，输出槽在同步调用期间有效且结果由 COM 智能指针接管。
     unsafe {
         device.CreateCommittedResource(
             &heap,
@@ -72,6 +73,7 @@ pub(super) fn record_transition(
             Transition: ManuallyDrop::new(transition),
         },
     };
+    // SAFETY: list 与 transition resource 存活，barrier 在同步调用期间有效；随后只手动释放联合体中克隆的 COM 引用一次。
     unsafe {
         list.ResourceBarrier(std::slice::from_ref(&barrier));
         let transition = &mut *barrier.Anonymous.Transition;
@@ -105,6 +107,7 @@ pub(super) fn texture_copy_location_footprint(
 }
 
 pub(super) fn release_copy_location(location: &mut D3D12_TEXTURE_COPY_LOCATION) {
+    // SAFETY: location 由本模块构造且 pResource 的 ManuallyDrop 尚未释放，此处只消费该 COM 引用一次。
     unsafe {
         ManuallyDrop::drop(&mut location.pResource);
     }

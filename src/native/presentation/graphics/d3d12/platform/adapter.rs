@@ -45,6 +45,7 @@ impl D3d12AdapterInfo {
 }
 
 fn adapter_info(adapter: &IDXGIAdapter1, driver: D3d12DriverKind) -> Result<D3d12AdapterInfo> {
+    // SAFETY: adapter 是存活且带引用计数的 DXGI COM 接口，GetDesc1 同步返回完整描述值。
     let desc = unsafe { adapter.GetDesc1() }
         .map_err(|error| d3d12_error("IDXGIAdapter1::GetDesc1", error))?;
     let description_len = desc
@@ -63,6 +64,7 @@ fn adapter_info(adapter: &IDXGIAdapter1, driver: D3d12DriverKind) -> Result<D3d1
 
 fn create_device_for_adapter(adapter: &IDXGIAdapter1) -> Result<ID3D12Device> {
     let mut device = None;
+    // SAFETY: adapter 在同步调用期间存活，device 输出槽有效且由 windows crate 负责 COM 引用计数。
     unsafe { D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0, &mut device) }
         .map_err(|error| d3d12_error("D3D12CreateDevice", error))?;
     device.ok_or_else(|| platform_error("D3d12Context: D3D12CreateDevice returned no device"))
@@ -74,11 +76,13 @@ pub(crate) fn select_hardware_adapter(
     let mut index = 0u32;
     let mut failures = Vec::new();
     loop {
+        // SAFETY: factory 是存活 DXGI COM 接口，index 按顺序枚举，成功结果自带引用计数。
         let adapter = match unsafe { factory.EnumAdapters1(index) } {
             Ok(adapter) => adapter,
             Err(_) => break,
         };
         index += 1;
+        // SAFETY: adapter 是本轮成功枚举的存活 COM 接口，GetDesc1 同步返回完整描述值。
         let desc = match unsafe { adapter.GetDesc1() } {
             Ok(desc) => desc,
             Err(error) => {
@@ -106,6 +110,7 @@ pub(crate) fn select_hardware_adapter(
 pub(super) fn select_warp_adapter(
     factory: &IDXGIFactory4,
 ) -> Result<(IDXGIAdapter1, ID3D12Device, D3d12AdapterInfo)> {
+    // SAFETY: factory 是存活 DXGI COM 接口，EnumWarpAdapter 返回带引用计数的 IDXGIAdapter1。
     let adapter: IDXGIAdapter1 = unsafe { factory.EnumWarpAdapter() }
         .map_err(|error| d3d12_error("IDXGIFactory4::EnumWarpAdapter", error))?;
     let device = create_device_for_adapter(&adapter)?;

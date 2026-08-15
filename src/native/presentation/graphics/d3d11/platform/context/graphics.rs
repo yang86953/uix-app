@@ -70,6 +70,7 @@ impl D3d11Context {
         }
 
         (|| -> Result<Vec<u32>> {
+            // SAFETY: swap_chain 由当前 context 拥有且索引 0 是当前存活的 D3D11 back buffer。
             let back_buffer: ID3D11Texture2D = unsafe {
                 self.swap_chain
                     .get_buffer(0)
@@ -91,6 +92,7 @@ impl D3d11Context {
                 MiscFlags: 0,
             };
             let mut staging = None;
+            // SAFETY: device 属于当前 owner thread，desc 完整初始化，输出槽在同步调用期间有效。
             unsafe {
                 self.device
                     .CreateTexture2D(&desc, None, Some(&mut staging))
@@ -102,10 +104,12 @@ impl D3d11Context {
                     "D3d11Context: read_pixels staging texture was not created",
                 )
             })?;
+            // SAFETY: staging 与 back_buffer 由同一 D3D11 device 创建，复制在 immediate context owner thread 执行。
             unsafe {
                 self.context.CopyResource(&staging, &back_buffer);
             }
             let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+            // SAFETY: staging 以 CPU_READ staging usage 创建，mapped 输出槽在同步 Map 调用期间有效。
             unsafe {
                 self.context
                     .Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
@@ -113,6 +117,7 @@ impl D3d11Context {
             }
             let mut pixels = vec![0u32; (read_w as usize).saturating_mul(read_h as usize)];
             for row in 0..read_h as usize {
+                // SAFETY: Map 成功后 pData 非空，读区与 RowPitch 偏移已由裁剪后的 x/y/read_w/read_h 限制。
                 let src = unsafe {
                     mapped
                         .pData
@@ -121,10 +126,12 @@ impl D3d11Context {
                         .cast::<u32>()
                 };
                 let dst = pixels[row * read_w as usize..].as_mut_ptr();
+                // SAFETY: src 和 dst 各自至少覆盖 read_w 个 u32 且位于不同资源，目标切片容量由上方分配保证。
                 unsafe {
                     std::ptr::copy_nonoverlapping(src, dst, read_w as usize);
                 }
             }
+            // SAFETY: staging 在本函数中只成功 Map 一次，此处在返回前于同一 immediate context 上配对 Unmap。
             unsafe {
                 self.context.Unmap(&staging, 0);
             }

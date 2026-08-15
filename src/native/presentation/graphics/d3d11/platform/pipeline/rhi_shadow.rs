@@ -36,6 +36,7 @@ impl D3d11Pipeline {
             ));
         }
         // 绑定现有 SHADOW_HLSL 与本次 AffineShadowConstants uniform。
+        // SAFETY: shadow 资源和常量缓冲由当前 device 创建并存活，绑定和 Draw 在 immediate context owner thread 执行。
         unsafe {
             // 输入布局与单位 quad 的 float2 ABI 一致。
             context.IASetInputLayout(&self.layout);
