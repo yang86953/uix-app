@@ -169,3 +169,55 @@ impl WidgetRender for DynamicLabel {
         );
     }
 }
+
+// 仅在测试构建中验证动态文本的响应式生命周期契约。
+#[cfg(test)]
+mod tests {
+    // 引入被测 DynamicLabel 私有实现。
+    use super::DynamicLabel;
+    // 引入精确组件身份与绘制矩形。
+    use crate::core::{ComponentId, Rect};
+    // 引入共享失效队列。
+    use crate::draw::renderer::InvalidationQueue;
+    // 引入动态闭包依赖探测入口。
+    use crate::ui::reactive::state::{begin_state_bind_capture, end_state_bind_capture};
+    // 引入公开响应式状态。
+    use crate::ui::State;
+
+    // 验证动态文本读取最新语义并只推送自身矩形的 Paint 失效。
+    #[test]
+    fn state_change_invalidates_only_dynamic_label_paint() {
+        // 创建由测试调用方拥有的响应式值。
+        let value = State::new(1_u32);
+        // 克隆同一状态槽供动态文本闭包拥有。
+        let source = value.clone();
+        // 创建每次读取当前值的动态标签。
+        let label = DynamicLabel::new(move || format!("tick: {}", source.get()));
+        // 创建独立树失效队列。
+        let queue = InvalidationQueue::shared();
+        // 使用非根组件身份验证失效范围。
+        let component_id = ComponentId::new(7);
+        // 指定动态文本自身的已布局矩形。
+        let paint_rect = Rect::new(12.0, 20.0, 80.0, 24.0);
+        // 开始捕获闭包内 State::get 依赖。
+        begin_state_bind_capture(component_id, queue.clone(), Some(paint_rect));
+        // 执行一次与布局后绑定相同的依赖探测。
+        label.probe_dependencies();
+        // 将捕获依赖绑定为精确 Paint 失效。
+        end_state_bind_capture(component_id);
+        // 初始无障碍语义必须读取当前文本。
+        assert_eq!(label.semantic_text(), "tick: 1");
+        // 更新 State 应触发已绑定动态文本节点。
+        value.set(2);
+        // 无障碍语义必须立即反映最新状态。
+        assert_eq!(label.semantic_text(), "tick: 2");
+        // 读取状态更新产生的失效证据。
+        let queue = queue.lock().expect("动态文本失效队列应可读取");
+        // 动态文本值变化不得请求结构布局。
+        assert!(!queue.has_layout());
+        // 只有绑定的动态文本组件需要绘制。
+        assert!(queue.node_needs_paint(component_id));
+        // 已知组件矩形不得退化为全帧绘制。
+        assert!(!queue.needs_full_frame());
+    }
+}

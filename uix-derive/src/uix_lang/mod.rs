@@ -40,6 +40,11 @@ mod data_binding_codegen_tests;
 mod button_group_codegen;
 // 定义核心元素、属性、事件与控制流的 Rust View 代码生成。
 mod codegen;
+// 定义动态 Text 插值的拥有型捕获与延迟求值生成。
+mod dynamic_text_codegen;
+// 集中验证动态文本不会建立无条件根结构依赖。
+#[cfg(test)]
+mod dynamic_text_codegen_tests;
 // 定义相邻 If、ElseIf 与 Else 的配对和短路条件链生成。
 mod conditional_chain_codegen;
 // 集中验证条件链相邻配对、短路生成与拒绝路径。

@@ -9,6 +9,8 @@ use super::{
 };
 // 引入独立元素分派入口。
 use super::element_codegen::generate_element;
+// 引入动态 Text 插值的延迟求值生成入口。
+use super::dynamic_text_codegen::{generate_dynamic_label, has_interpolation};
 // 引入通用事件属性生成入口。
 use super::event_codegen::apply_event;
 // 引入相邻条件链生成入口。
@@ -49,6 +51,13 @@ pub(crate) fn generate_view(element: &Element) -> Result<TokenStream, Diagnostic
 
 // 生成文本元素。
 pub(super) fn generate_text(element: &Element) -> Result<TokenStream, Diagnostic> {
+    // Text 插值由 DynamicLabel 在测量、绘制和语义读取时延迟求值。
+    if element.name == "Text" && has_interpolation(&element.children) {
+        // 生成拥有全部表达式捕获的动态文本 View。
+        let base = generate_dynamic_label(&element.children, element.span)?;
+        // 公共样式、字号、身份与事件继续走统一 View 装饰链。
+        return apply_common_attributes(base, &element.attributes, &[]);
+    }
     // 把有序文本与插值组合成单一内容表达式。
     let content = generate_text_content(&element.children, element.span)?;
     // Label 专属 selectable 在物化 ViewNode 前配置底层组件。

@@ -47,6 +47,59 @@ impl ComponentExpander {
         // 标记是否把字符串规范化为 String、把整数补为 f64 形状。
         normalize_literals: bool,
     ) -> Result<(), Diagnostic> {
+        // State 普通读值位置改写为就地 get()，避免组件入口无条件建立结构依赖。
+        if let ExpressionKind::Identifier(name) = &expression.kind {
+            // 当前 For 或闭包局部变量仍优先遮蔽组件字段。
+            if !self.is_local_identifier(name) {
+                // 只处理当前组件中已登记的响应式状态字段。
+                if let Some(binding) = bindings
+                    // 按源码名称查找字段绑定。
+                    .get(name)
+                    // 仅保留 State 类别。
+                    .filter(|binding| binding.kind == super::component_codegen::BindingKind::State)
+                {
+                    // 句柄位仍由既有分支直接返回 State 本身。
+                    if !handle_mode {
+                        // 读取必有的 State 句柄名称。
+                        let state_name = binding
+                            // 借用句柄名称。
+                            .state_name
+                            // State 绑定不允许缺失句柄。
+                            .as_deref()
+                            // 暴露内部不变量失败。
+                            .expect("State 绑定必须包含句柄")
+                            // 取得拥有型名称供 AST 替换。
+                            .to_string();
+                        // 保存原表达式跨度。
+                        let span = expression.span;
+                        // 把字段引用替换为 State::get 调用。
+                        expression.kind = ExpressionKind::Call {
+                            // 构造句柄的 get 成员调用目标。
+                            callee: Box::new(super::Expression {
+                                // 使用点号成员访问保持公开 State API。
+                                kind: ExpressionKind::Member {
+                                    // 句柄标识符由组件展开器生成。
+                                    object: Box::new(super::Expression {
+                                        // 恢复卫生句柄名称。
+                                        kind: ExpressionKind::Identifier(state_name),
+                                        // 沿用原字段跨度。
+                                        span,
+                                    }),
+                                    // 调用公开当前值读取入口。
+                                    member: "get".to_string(),
+                                },
+                                // 沿用原字段跨度。
+                                span,
+                            }),
+                            // get 不接收参数。
+                            arguments: Vec::new(),
+                        };
+                        // 当前 State 字段已经完成完整改写。
+                        return Ok(());
+                    }
+                }
+            }
+        }
         // 先识别需要替换整个节点的 setState 调用。
         let is_set_state = matches!(
             // 借用表达式形状。
