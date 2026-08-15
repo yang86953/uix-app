@@ -7,6 +7,7 @@ pub struct ComponentId {
 }
 
 impl ComponentId {
+    /// 创建树作用域为零、代际为零的槽位身份。
     pub const fn new(slot: usize) -> Self {
         Self {
             tree_scope: 0,
@@ -15,6 +16,7 @@ impl ComponentId {
         }
     }
 
+    /// 由槽位和代际创建树作用域为零的组件身份。
     pub const fn from_parts(slot: usize, generation: u32) -> Self {
         Self {
             tree_scope: 0,
@@ -31,10 +33,12 @@ impl ComponentId {
         }
     }
 
+    /// 返回组件在所属树槽表中的索引。
     pub const fn slot(self) -> usize {
         self.slot
     }
 
+    /// 返回用于拒绝已回收槽位旧身份的代际值。
     pub const fn generation(self) -> u32 {
         self.generation
     }
