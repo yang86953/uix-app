@@ -10,8 +10,11 @@ const MAX_FLATTEN_DEPTH: u8 = 16;
 /// 展平后的线段序列：（起点, 终点）。
 /// 连续的线段构成一个子路径，Close 表示回到子路径起点。
 pub enum FlatSegment {
+    /// 开始一个以给定点为起点的新子路径。
     MoveTo(Point),
+    /// 从当前点连接到给定终点。
     LineTo(Point),
+    /// 显式闭合当前子路径并回到起点。
     Close,
 }
 
@@ -21,7 +24,9 @@ pub enum FlatSegment {
 /// 子路径仍应绘制端帽。
 #[derive(Debug, Clone)]
 pub struct FlatSubpath {
+    /// 按绘制顺序保存的展平路径点。
     pub points: Vec<Point>,
+    /// 该子路径是否由显式 `Close` 段闭合。
     pub closed: bool,
 }
 
