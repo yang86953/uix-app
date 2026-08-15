@@ -585,6 +585,8 @@ fn generate_control(
                 element.span,
                 // 传递控制元素继承的组件作用域标记。
                 &element.component_scopes,
+                // 传递循环子树拥有型事件捕获的逐迭代克隆契约。
+                &element.for_iteration_clones,
                 // 传递当前循环路径局部变量。
                 &path,
                 // 传递可选父循环路径局部变量。
@@ -660,6 +662,8 @@ fn generate_for(
     span: SourceSpan,
     // 接收控制元素继承的组件私有状态作用域标记。
     component_scopes: &[ComponentScopeMarker],
+    // 接收每次迭代都必须重新克隆的拥有型事件捕获名称。
+    iteration_clones: &[String],
     // 接收当前循环实际实例路径名称。
     path: &Ident,
     // 接收可选父循环实际实例路径名称。
@@ -675,6 +679,14 @@ fn generate_for(
         .transpose()?;
     // 生成数据源表达式。
     let iterable = generate_expression(&iterable.expression, None)?;
+    // 从展开阶段保存的卫生名称恢复逐迭代捕获标识符。
+    let iteration_clones = iteration_clones
+        // 遍历稳定声明顺序。
+        .iter()
+        // 生成仅供宏展开代码使用的 Rust 标识符。
+        .map(|name| Ident::new(name, Span::call_site()))
+        // 收集供 quote 重复展开。
+        .collect::<Vec<_>>();
     // 每次生成拥有所有权的克隆项，避免借用逃逸到事件闭包。
     let iterator = quote! { ::std::iter::IntoIterator::into_iter((#iterable).clone()) };
     // 创建内部枚举下标以同时支持身份与可选作者索引绑定。
@@ -773,6 +785,8 @@ fn generate_for(
         for (#ordinal, #binding) in (#iterator).enumerate() {
             // 在作者声明时暴露同一 usize 索引绑定。
             #index_setup
+            // 为当前行克隆全部拥有型事件捕获，避免首行闭包移走外层值。
+            #(let #iteration_clones = (#iteration_clones).clone();)*
             // 按源码顺序生成当前项节点。
             #body
         }

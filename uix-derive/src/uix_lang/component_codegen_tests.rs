@@ -368,6 +368,41 @@ fn generates_per_node_dynamic_style_identity_inside_for() {
     assert!(tokens.contains("uix_component_child_scope"));
 }
 
+// 验证 For 内事件为每个迭代实例重新克隆字段捕获和 setState 更新器。
+#[test]
+fn clones_owned_event_captures_for_each_for_iteration() {
+    // 解析循环行事件同时读取私有状态并执行 setState 的组件。
+    let document = parse_document(
+        // 使用外部集合避免让测试依赖数组状态的具体类型推断。
+        r#"
+        <Component name="Rows" state="count: 0" external="items">
+          <Column><For {item} in {items}><Button @click="setState(count: count + 1)">{item}</Button></For></Column>
+        </Component>
+        <Rows />
+        "#,
+    )
+    // 合法循环事件文档必须解析成功。
+    .expect("For 事件文档应解析成功");
+    // 生成包含组件准备区与真实循环体的完整令牌。
+    let tokens = generate_document_view(&document)
+        // 循环事件必须可以完成组件展开。
+        .expect("For 事件应生成成功")
+        // 转换为稳定文本以检查所有权边界。
+        .to_string();
+    // 定位真实循环体，排除组件全局准备区中的首次捕获声明。
+    let loop_tokens = tokens
+        // For 代码生成固定使用内部位置与项绑定元组。
+        .split_once("for (__uix_for_ordinal")
+        // 生成器契约必须保留可定位的真实 Rust for。
+        .expect("输出应包含 For 循环")
+        // 只检查循环开始后的令牌。
+        .1;
+    // 循环体必须重新声明事件字段副本，避免第一行闭包移走全局副本。
+    assert!(loop_tokens.contains("let __uix_event_value_") && loop_tokens.contains(". clone ()"));
+    // 循环体必须重新声明 setState 更新器，保证每行闭包拥有独立可调用值。
+    assert!(loop_tokens.contains("let __uix_set_state_") && loop_tokens.contains("set_state"));
+}
+
 // 验证同一静态组件的多个调用各自生成不同的作用域局部变量与生命周期标记。
 #[test]
 fn generates_distinct_scopes_for_multiple_static_component_calls() {

@@ -38,6 +38,8 @@ pub(crate) struct Element {
     pub(crate) span: SourceSpan,
     // 保存由组件展开附加到实际 View 根节点的私有状态作用域标记。
     pub(crate) component_scopes: Vec<ComponentScopeMarker>,
+    // 保存 For 每次迭代都必须重新克隆的拥有型事件捕获名称。
+    pub(crate) for_iteration_clones: Vec<String>,
 }
 
 // 表示一个应在最终 ViewNode 外层应用的组件状态装饰。
