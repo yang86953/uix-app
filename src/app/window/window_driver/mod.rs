@@ -98,6 +98,12 @@ pub(crate) struct FrameDiagnostics {
     dirty_area_sum: f64,
     // 上次输出摘要的时刻。
     last_report: Instant,
+    // 卡顿自动记录：当前是否处于连续超阈值帧段。
+    slow_active: bool,
+    // 卡顿自动记录：当前卡顿段内的峰值帧耗时。
+    slow_peak: Duration,
+    // 卡顿自动记录：当前卡顿段的开始时刻。
+    slow_since: Option<Instant>,
 }
 
 // 默认统计从零开始，计时起点取当前时刻。
@@ -114,6 +120,9 @@ impl Default for FrameDiagnostics {
             full_frames: 0,
             dirty_area_sum: 0.0,
             last_report: Instant::now(),
+            slow_active: false,
+            slow_peak: Duration::ZERO,
+            slow_since: None,
         }
     }
 }
