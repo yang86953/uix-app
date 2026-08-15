@@ -13,6 +13,7 @@
 | `ThemePrimitives` | struct | 保存品牌、语义、背景、文字和边框基色 |
 | `DesignTokens` / `Theme` | struct | 提供运行时语义视觉令牌 |
 | `ThemeTokens` / `TokenProvider` | trait | 定义组件读取令牌的最小契约 |
+| `Style` / `BackgroundImage` / `BackgroundPosition` / `BackgroundRepeat` | value | 保存可级联的视觉声明及单层背景纯值 |
 | `TokenPatch` | struct | 只覆写显式字段，其余委托父主题 |
 | `ComponentConfig` | struct | 保存组件行为与尺寸默认值 |
 | `ConfigProvider` | View component | 覆写子树中的组件配置或 token patch |
@@ -27,6 +28,10 @@ Primitives 通过稳定推导规则生成文本、背景、边框、状态、间
 
 优先级为组件局部属性 > 最近 Provider > App 根上下文 > 框架预设。Provider 只覆盖显式字段；配置变化按字段分类为 reconcile、Layout 或 Paint，不能无条件重建整棵树。
 
+## 组件：Style 背景值与绘制适配
+
+`Style` 只拥有背景来源、定位与重复的纯值，不执行文件 I/O 或 draw 调用。ui 私有 `style_paint` 在主题边界解析颜色，并按背景色 → 单层图片/渐变 → 边框的顺序调用 graphics 公开契约；整体透明度包裹完整表面。图片路径交给 `ImageService`，绘制适配只读取固有尺寸并生成矩形裁剪内的平铺目标；加载失败保持安全空操作。渐变直接消费已解析颜色，graphics 不反向知道 Theme、Style 或 UIX 属性。
+
 ## 组件：LocaleProvider
 
 节点捕获最近 Locale，measure、render、事件提示和无障碍名称读取同一上下文，避免显示文案与语义文案不一致。系统语言变化只有在应用显式接受后才更新根上下文。
@@ -38,5 +43,6 @@ Primitives 通过稳定推导规则生成文本、背景、边框、状态、间
 ## 模块不变量
 
 - Theme、组件配置和 Locale 属于 ui；graphics 与 platform 不反向依赖 Provider。
+- 背景平铺几何属于 ui 绘制适配的纯计算；图片解码、缓存与代际句柄仍只属于 graphics resources。
 - 设置持久化属于 data，theme 只持有当前运行时上下文。
 - Provider 继承只有一套优先级和一份有效值，不建立 manager/config 的平行真相。

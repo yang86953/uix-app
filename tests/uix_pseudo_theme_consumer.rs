@@ -120,6 +120,43 @@ fn position_styles_compile_for_real_consumer() {
     );
 }
 
+// 验证背景来源、定位与重复通过公开 Style 契约完成真实宏展开。
+#[test]
+fn background_styles_compile_for_real_consumer() {
+    // 展开本地图片、主题双色渐变、二维定位与四种重复方式。
+    let _backgrounds: ViewNode = uix::uix!(
+        // 同时覆盖基础 class、伪类差异、主题颜色端点与公开背景枚举。
+        r##"
+        imageBackdrop {
+          backgroundColor: #101820;
+          backgroundImage: url('assets/pattern.png');
+          backgroundPosition: 50% 25%;
+          backgroundRepeat: repeat-x;
+          opacity: 0.8;
+        }
+        imageBackdrop:hover {
+          backgroundImage: linear-gradient(#colorPrimary, rgba(0,0,0,0.5));
+          backgroundPosition: center;
+          backgroundRepeat: no-repeat;
+        }
+        radialBackdrop {
+          backgroundImage: radial-gradient(white, transparent);
+          backgroundPosition: bottom right;
+          backgroundRepeat: repeat-y;
+        }
+        repeatingBackdrop {
+          backgroundImage: none;
+          backgroundRepeat: repeat;
+        }
+        <Container>
+          <Text class="imageBackdrop">图片背景</Text>
+          <Text class="radialBackdrop">径向背景</Text>
+          <Text class="repeatingBackdrop">显式默认值</Text>
+        </Container>
+        "##
+    );
+}
+
 // 验证五种 borderStyle 值通过公开 Style 与 BorderStyle 契约完成真实宏展开。
 #[test]
 fn border_style_values_compile_for_real_consumer() {

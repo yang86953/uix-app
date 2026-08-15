@@ -5,6 +5,10 @@ use quote::quote;
 
 // 引入结构化属性、诊断与样式属性。
 use super::{Attribute, AttributeValue, Diagnostic, StyleProperty};
+// 引入三个背景图层属性到 UI 运行时值的独立映射。
+use super::style_background_codegen::{
+    background_image_field, background_position_field, background_repeat_field,
+};
 // 引入 borderStyle 到 UI 运行时线型的独立映射。
 use super::style_border_codegen::border_style_field;
 // 引入 fontFamily 到 UI 运行时有序字体族列表的独立映射。
@@ -314,6 +318,12 @@ fn generate_style_statement(
         "textDecoration" => text_decoration_field(style, property),
         // 普通背景映射到可选 ColorValue。
         "backgroundColor" => color_field(style, property, "background", true),
+        // 单层背景来源映射到显式 BackgroundImage。
+        "backgroundImage" => background_image_field(style, property),
+        // 背景二维定位映射到显式 BackgroundPosition。
+        "backgroundPosition" => background_position_field(style, property),
+        // 背景重复方式映射到显式 BackgroundRepeat。
+        "backgroundRepeat" => background_repeat_field(style, property),
         // 悬停背景映射到状态字段。
         "backgroundColor:hover" => color_field(style, property, "background_hover", true),
         // 焦点背景映射到状态字段。
