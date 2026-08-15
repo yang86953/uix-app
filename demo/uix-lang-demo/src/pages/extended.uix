@@ -173,8 +173,8 @@
 // 结束可复用插槽面板组件。
 </Component>
 
-// 声明数据展示页组件并持有稳定选中、展开状态与有序派生值。
-<Component name="DataPage" external="on_gallery_change" state="selected_item: Option<String> = None, active_panels: Vec<String> = []" computed="visible_panels: active_panels.filter(|key| key.length > 0), remaining: visible_panels.length">
+// 声明数据展示页组件并读取静态表格数据、媒体回调与组件私有状态。
+<Component name="DataPage" external="table_rows, table_columns, on_gallery_change" state="selected_item: Option<String> = None, active_panels: Vec<String> = []" computed="visible_panels: active_panels.filter(|key| key.length > 0), remaining: visible_panels.length">
   // 组织数据展示内容。
   <Column gap="16px">
     // 展示数据组件标题。
@@ -232,6 +232,18 @@
       // 结束卡片列表内容。
       </Column>
     // 结束卡片列表面板。
+    </Container>
+    // 展示类型化数据表格面板。
+    <Container class="pagePanel">
+      // 组织表格演示内容。
+      <Column gap="12px">
+        // 展示面板小节标题。
+        <Text fontSize="heading5">Table — 类型化行列</Text>
+        // 读取 Rust 侧静态 TableRow 与 TableColumn 集合。
+        <Table data={table_rows} columns={table_columns} width="420px" automationId="demo-table" />
+      // 结束表格演示内容。
+      </Column>
+    // 结束类型化数据表格面板。
     </Container>
     // 展示时间轴面板。
     <Container class="pagePanel">
