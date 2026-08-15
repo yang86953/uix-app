@@ -26,6 +26,7 @@ fn normalized_label_font_size(size: f32) -> f32 {
 }
 
 component! {
+    /// 支持主题样式、固定尺寸与可选文本选择的单样式标签组件。
     pub struct Label {
         /// 标签当前持有并参与布局、绘制与选择的文本。
         pub text: String,

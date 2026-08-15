@@ -38,6 +38,7 @@ impl LineData {
 }
 
 component! {
+    /// 按有序数据点绘制折线、标记与坐标轴的图表组件。
     pub struct LineChart {
         data: Vec<LineData>,
         fixed_width: f32,

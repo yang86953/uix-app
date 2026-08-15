@@ -100,6 +100,7 @@ enum TransferPane {
 }
 
 component! {
+    /// 在来源与目标双栏之间按稳定条目身份移动数据的穿梭框组件。
     pub struct Transfer {
         source: Vec<TransferItem>,
         target: Vec<TransferItem>,

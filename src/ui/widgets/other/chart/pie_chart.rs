@@ -36,6 +36,7 @@ impl PieData {
 }
 
 component! {
+    /// 按具名数据项绘制饼图、环图或南丁格尔玫瑰图的组件。
     pub struct PieChart {
         data: Vec<PieData>,
         fixed_size: f32,

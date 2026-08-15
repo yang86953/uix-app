@@ -20,6 +20,7 @@ pub use self::data::BarData;
 use self::plot::map_x;
 
 component! {
+    /// 按具名数据项绘制柱形、坐标轴与可选数值标签的图表组件。
     pub struct BarChart {
         data: Vec<BarData>,
         fixed_width: f32,

@@ -34,6 +34,7 @@ const FLOAT_BUTTON_GROUP_GAP: f32 = 8.0;
 
 // FloatButton — 浮动操作按钮。
 component! {
+    /// 锚定窗口逻辑表面并支持图标、说明、提示与徽标的浮动操作按钮。
     pub struct FloatButton {
         icon: String,
         // 保存按钮展开说明文字。
