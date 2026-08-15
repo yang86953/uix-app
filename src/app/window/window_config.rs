@@ -4,14 +4,20 @@ pub(crate) type WindowRootFactory = Box<dyn Fn() -> ViewNode + Send + Sync + 'st
 
 /// Runtime configuration for a secondary application window.
 pub struct WindowConfig {
+    /// 平台窗口标题。
     pub title: String,
+    /// 请求的初始客户区宽度。
     pub width: i32,
+    /// 请求的初始客户区高度。
     pub height: i32,
+    /// 是否隐藏系统标题栏并由根 View 提供标题栏。
     pub custom_title_bar: bool,
+    /// 在窗口建立时创建其根 View 的线程安全工厂。
     pub root: WindowRootFactory,
 }
 
 impl WindowConfig {
+    /// 创建使用系统标题栏的次窗口运行时配置。
     pub fn new<F>(title: impl Into<String>, width: i32, height: i32, root: F) -> Self
     where
         F: Fn() -> ViewNode + Send + Sync + 'static,

@@ -38,6 +38,7 @@ pub struct Window {
 }
 
 impl Window {
+    /// 创建拥有指定平台实现、尚未建立平台窗口的应用窗口控制器。
     pub fn new(platform: Box<dyn Platform>) -> Self {
         let debug_mode = std::env::var("UIX_DEBUG").is_ok();
         if debug_mode {
@@ -54,10 +55,12 @@ impl Window {
         }
     }
 
+    /// 返回窗口控制器拥有的平台实现共享借用。
     pub fn platform(&self) -> &dyn Platform {
         self.platform.as_ref()
     }
 
+    /// 返回窗口控制器拥有的平台实现可变借用。
     pub fn platform_mut(&mut self) -> &mut dyn Platform {
         self.platform.as_mut()
     }
@@ -67,7 +70,7 @@ impl Window {
         &self.window
     }
 
-    /// 获取当前窗口大小。
+    /// 返回创建窗口时记录的初始尺寸。
     pub fn size(&self) -> (i32, i32) {
         self.initial_size
     }
@@ -118,6 +121,7 @@ impl Window {
         }
     }
 
+    /// 显示已创建的平台窗口；尚未创建窗口时直接成功。
     pub fn show(&mut self) -> Result<()> {
         if let Some(ref mut w) = self.window {
             w.show()?;
@@ -125,6 +129,7 @@ impl Window {
         Ok(())
     }
 
+    /// 停止事件循环并关闭已创建的平台窗口。
     pub fn close(&mut self) -> Result<()> {
         self.running = false;
         if let Some(ref mut w) = self.window {
@@ -133,6 +138,7 @@ impl Window {
         Ok(())
     }
 
+    /// 返回简易事件循环当前是否正在运行。
     pub fn is_running(&self) -> bool {
         self.running
     }
