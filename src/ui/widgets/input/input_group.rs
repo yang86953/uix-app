@@ -15,6 +15,7 @@ pub struct InputGroup {
 }
 
 impl InputGroup {
+    /// 创建没有附加文本且尚未配置内部输入框的组合。
     pub fn new() -> Self {
         Self {
             addon_before: String::new(),
@@ -23,11 +24,13 @@ impl InputGroup {
         }
     }
 
+    /// 设置绘制在输入内容前方的附加文本。
     pub fn addon_before(mut self, text: impl Into<String>) -> Self {
         self.addon_before = text.into();
         self
     }
 
+    /// 设置组合唯一拥有的内部输入框及其既有配置。
     pub fn input(mut self, input: Input) -> Self {
         self.input = Some(input);
         self
@@ -43,11 +46,13 @@ impl InputGroup {
         self
     }
 
+    /// 设置绘制在输入内容后方的附加文本。
     pub fn addon_after(mut self, text: impl Into<String>) -> Self {
         self.addon_after = text.into();
         self
     }
 
+    /// 消费组合并把两侧附加文本应用到唯一内部输入框。
     pub fn into_input(self) -> Input {
         self.input
             .unwrap_or_else(|| Input::new(""))

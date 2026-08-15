@@ -12,10 +12,15 @@ use crate::ui::{ComponentId, SnapshotFields, WidgetTree};
 /// 但各自语义与变体独立（本枚举含 None/Validating 校验专用态），勿强行合并。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ValidateStatus {
+    /// 尚未产生校验结果。
     None,
+    /// 字段校验成功。
     Success,
+    /// 字段存在不阻止提交的警告。
     Warning,
+    /// 字段校验失败。
     Error,
+    /// 字段校验仍在进行。
     Validating,
 }
 
