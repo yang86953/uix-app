@@ -83,6 +83,7 @@ impl WidgetChildren {
     pub fn len(&self) -> usize {
         self.inner.borrow().as_ref().map_or(0, |v| v.len())
     }
+    /// 返回当前是否没有存储任何子组件。
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }

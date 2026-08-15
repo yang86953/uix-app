@@ -60,6 +60,7 @@ mod coordination;
 /// `WidgetComponent` 移出，由本边界 trait 承载；树构建经 `as_view_children`
 /// 上转型消费，widgets 经 `component!` 宏实现。
 pub trait ViewChildrenProvider: WidgetComponent {
+    /// 构建由组件声明并交给运行时树展开的 View 子节点。
     fn build_view_children(&self) -> Vec<ViewNode>;
 }
 /// 读取组件的声明期 View 子节点（无端口时为空）。
@@ -239,7 +240,6 @@ impl ViewAdapter {
             if !frame.render_handlers.is_empty() {
                 wnode = wnode.with_render_handlers(frame.render_handlers);
             }
-
             // 把动态子树捕获的 State 绑定交接给将来拥有该节点的树。
             wnode = wnode.with_captured_state_binds(frame.captured_state_binds);
             // 把动态子树捕获的 Effect 交接给将来拥有该节点的节点生命周期。

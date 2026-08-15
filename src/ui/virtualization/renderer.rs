@@ -68,7 +68,7 @@ impl super::virtual_scroll::VirtualScroll {
         }
     }
 
-    // 为可排序、插入或删除的数据声明业务稳定键与惰性行工厂。
+    /// 为可排序、插入或删除的数据声明业务稳定键与惰性行工厂。
     pub fn render_keyed<K, V>(
         // 消费 VirtualScroll 声明并进入 renderer builder 阶段。
         self,
