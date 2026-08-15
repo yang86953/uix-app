@@ -64,6 +64,7 @@ impl FontSlot {
     }
 }
 
+/// 使用 `ab_glyph` 提供字体解析、布局与字形光栅化的文本后端。
 pub struct AbGlyphBackend {
     pub(crate) fonts: Vec<FontSlot>,
 }
@@ -118,6 +119,7 @@ fn padded_area_coverage(
 }
 
 impl AbGlyphBackend {
+    /// 创建尚未加载任何字体的文本后端。
     pub fn new() -> Self {
         Self { fonts: vec![] }
     }
