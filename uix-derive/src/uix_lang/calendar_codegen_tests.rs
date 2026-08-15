@@ -75,6 +75,30 @@ fn generates_calendar_controlled_change_contract() {
     assert!(snapshot.contains("__uix_calendar_change"));
 }
 
+// 验证 Calendar 非节点配置完整映射到公开运行时构造器。
+#[test]
+// 声明 Calendar 配置正向生成测试。
+fn generates_calendar_non_node_configuration() {
+    // 生成显示月份、导航、尺寸、事件与禁用策略配置。
+    let snapshot = generate(
+        r#"<Calendar defaultDisplayed={displayed_date} cellSize="32px" yearJump={jump_by_year} events={calendar_events} disabledDate={is_disabled_date} />"#,
+    )
+    // 全部已登记配置必须成功生成。
+    .expect("Calendar 非节点配置应映射到公开构造器");
+    // 默认显示日期必须单次求值后映射年月。
+    assert!(
+        snapshot.contains("__uix_calendar_displayed") && snapshot.contains("default_displayed")
+    );
+    // 日期格尺寸必须调用公开 cell_size。
+    assert!(snapshot.contains("cell_size"));
+    // 整年导航必须调用公开 year_jump。
+    assert!(snapshot.contains("year_jump"));
+    // 事件集合必须收集为公开 CalendarEvent 向量。
+    assert!(snapshot.contains("CalendarEvent") && snapshot.contains("events"));
+    // 禁用策略必须调用公开 disabled_date。
+    assert!(snapshot.contains("disabled_date") && snapshot.contains("is_disabled_date"));
+}
+
 // 验证默认日期与受控值不能形成两个状态所有者。
 #[test]
 // 声明 Calendar 所有权冲突测试。
@@ -105,14 +129,50 @@ fn rejects_calendar_date_literals() {
     assert!(value_error.message.contains("State<Date>"));
 }
 
+// 验证 Calendar 类型化配置拒绝字符串伪装的数据与策略。
+#[test]
+// 声明 Calendar 配置形状错误测试。
+fn rejects_calendar_configuration_literals() {
+    // 默认显示月份字符串不提供 Date 类型。
+    let displayed_error = generate(r#"<Calendar defaultDisplayed="2026-09" />"#)
+        // 非 Date 字面量必须失败。
+        .expect_err("Calendar defaultDisplayed 字面量必须被拒绝");
+    // 诊断必须说明 Date 表达式要求。
+    assert!(displayed_error.message.contains("Date 表达式"));
+    // 事件字符串不提供 CalendarEvent 集合。
+    let events_error = generate(r#"<Calendar events="holiday" />"#)
+        // 非集合字面量必须失败。
+        .expect_err("Calendar events 字面量必须被拒绝");
+    // 诊断必须说明 CalendarEvent 集合要求。
+    assert!(events_error.message.contains("CalendarEvent"));
+    // 禁用日期字符串不提供判定函数。
+    let disabled_error = generate(r#"<Calendar disabledDate="weekend" />"#)
+        // 非函数字面量必须失败。
+        .expect_err("Calendar disabledDate 字面量必须被拒绝");
+    // 诊断必须说明函数类型要求。
+    assert!(disabled_error.message.contains("Fn(Date) -> bool"));
+    // 非数值格子尺寸不能进入运行时归一化。
+    let cell_size_error = generate(r#"<Calendar cellSize="large" />"#)
+        // 非数值字面量必须失败。
+        .expect_err("Calendar cellSize 非数值字面量必须被拒绝");
+    // 诊断必须说明 f32 数值映射要求。
+    assert!(cell_size_error.message.contains("f32"));
+    // 非布尔整年策略不能静默视为 true。
+    let year_jump_error = generate(r#"<Calendar yearJump="sometimes" />"#)
+        // 非布尔字面量必须失败。
+        .expect_err("Calendar yearJump 非布尔字面量必须被拒绝");
+    // 诊断必须说明布尔值要求。
+    assert!(year_jump_error.message.contains("布尔值"));
+}
+
 // 验证 Calendar 未登记的后续能力保持编译期 Gate。
 #[test]
 // 声明 Calendar 未知属性测试。
 fn rejects_unknown_calendar_attribute() {
-    // yearJump 尚未进入 UIX 映射矩阵。
-    let error = generate(r#"<Calendar yearJump />"#)
+    // dateCell 节点协议尚未进入 UIX 映射矩阵。
+    let error = generate(r#"<Calendar dateCell={date_cell_factory} />"#)
         // 未登记属性必须失败。
         .expect_err("Calendar 未登记属性必须被拒绝");
     // 诊断必须包含具体未知属性名。
-    assert!(error.message.contains("yearJump"));
+    assert!(error.message.contains("dateCell"));
 }

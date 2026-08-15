@@ -93,6 +93,12 @@ fn on_calendar_change(date: &str) {
     tracing::info!(date, "uix-lang Calendar @change");
 }
 
+// 为 Calendar Demo 判定不可选择的月初日期。
+fn is_calendar_date_disabled(date: Date) -> bool {
+    // 月初一号保持不可选择以展示日期策略。
+    date.day == 1
+}
+
 // 记录 Pagination @change 的页码文本载荷。
 fn on_page_change(value: &str) {
     // 输出变化页码供演示日志核对。
@@ -231,6 +237,13 @@ fn build_app(
         // 展示类型化数据契约状态。
         vec!["TableRow / TableColumn".to_string(), "已复用".to_string()],
     // 结束静态表格行集合。
+    ];
+    // 构造 Calendar 演示使用的类型化事件标记集合。
+    let calendar_events = vec![
+        // 标记九月三号的产品发布日。
+        CalendarEvent::new(Date::new(2026, 9, 3), "产品发布", Color::BLUE),
+        // 标记九月十二号的设计评审。
+        CalendarEvent::new(Date::new(2026, 9, 12), "设计评审", Color::GREEN),
     ];
     // 编译期读取 <App> 根文档并返回尚未运行的现有 App builder。
     uix_app!("src/main.uix")

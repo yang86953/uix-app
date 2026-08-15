@@ -100,6 +100,52 @@ fn controlled_reconcile_reads_latest_external_date() {
     assert_eq!(calendar.displayed_month(), (2026, 9));
 }
 
+// 验证受控值未变化时 reconcile 保留用户独立导航月份。
+#[test]
+fn unchanged_controlled_value_preserves_navigated_month() {
+    // 创建八月十号受控状态。
+    let selected = State::new(Date::new(2026, 8, 10));
+    // 创建受控日历。
+    let mut calendar = Calendar::new().value(&selected);
+    // 用户导航到下一个月但不改变选中日期。
+    let _ = EventHandler::on_event(
+        // 借用日历事件处理器。
+        &mut calendar,
+        // 发送按月翻页事件。
+        &SystemEvent::KeyDown {
+            // 使用 PageDown 进入九月。
+            key: KeyCode::PageDown,
+            // 不附加修饰键。
+            mods: KeyMod::NONE,
+        },
+    );
+    // 用户导航必须只改变显示月份。
+    assert_eq!(calendar.displayed_month(), (2026, 9));
+    // 模拟与日期无关的声明树协调。
+    calendar.sync_from(Calendar::new().value(&selected));
+    // 未变化的受控值不得把显示月份重置回八月。
+    assert_eq!(calendar.displayed_month(), (2026, 9));
+    // 选中日期仍由外部状态拥有。
+    assert_eq!(calendar.selected_date(), Some(Date::new(2026, 8, 10)));
+}
+
+// 验证显式默认显示月份可以独立于初始受控选择。
+#[test]
+fn default_displayed_month_can_differ_from_controlled_selection() {
+    // 创建八月十号受控状态。
+    let selected = State::new(Date::new(2026, 8, 10));
+    // 在受控选择后显式声明九月初始显示月份。
+    let calendar = Calendar::new()
+        // 先建立受控选中日期。
+        .value(&selected)
+        // 再覆盖初始显示月份。
+        .default_displayed(2026, 9);
+    // 选择仍来自八月外部状态。
+    assert_eq!(calendar.selected_date(), Some(Date::new(2026, 8, 10)));
+    // 显示月份必须使用显式九月初值。
+    assert_eq!(calendar.displayed_month(), (2026, 9));
+}
+
 // 验证 default_date 最后调用时切回非受控所有权。
 #[test]
 fn default_date_after_value_restores_uncontrolled_selection() {

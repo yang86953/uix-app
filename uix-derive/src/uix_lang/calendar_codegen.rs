@@ -7,8 +7,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Calendar 属性、表达式、事件与诊断契约。
 use super::{
-    Attribute, AttributeValue, Diagnostic, Element, generate_event_handler_expression,
-    generate_expression,
+    Attribute, AttributeValue, Diagnostic, Element, boolean_value,
+    generate_event_handler_expression, generate_expression, numeric_value,
 };
 
 // 生成使用运行时默认交互契约的 Calendar 叶节点。
@@ -84,6 +84,89 @@ pub(crate) fn generate_calendar(element: &Element) -> Result<TokenStream, Diagno
         // 借用调用方状态句柄建立受控 Calendar。
         widget = quote! { (#widget).value(&(#state)) };
     }
+    // 可选默认显示日期只消费年月，并在选择初值后覆盖初始月视图。
+    if let Some(attribute) = find_attribute(element, "defaultDisplayed") {
+        // 默认显示月份必须由 Date 表达式提供类型化年月。
+        let AttributeValue::Expression(expression) = &attribute.value else {
+            // 返回字面量形状诊断。
+            return Err(Diagnostic::new(
+                // 指向非法默认显示属性。
+                attribute.span,
+                // 说明公开构造器需要 Date 表达式。
+                "Calendar defaultDisplayed 必须是 Date 表达式",
+                // 给出规范日期引用写法。
+                "使用 defaultDisplayed={displayed_date}",
+            ));
+        };
+        // 生成受限日期表达式。
+        let date = generate_expression(&expression.expression, None)?;
+        // 创建卫生的单次求值日期变量。
+        let displayed = Ident::new("__uix_calendar_displayed", Span::mixed_site());
+        // 只求值一次并把年月交给公开默认显示构造器。
+        widget = quote! {{
+            // 固定调用方表达式的 Date 类型并取得拥有型快照。
+            let #displayed: ::uix::prelude::Date = (#date).clone();
+            // 选择日期和显示月份保持两个独立运行时事实。
+            (#widget).default_displayed(#displayed.year, #displayed.month)
+        }};
+    }
+    // 可选日期格边长复用统一数值与像素字面量契约。
+    if let Some(attribute) = find_attribute(element, "cellSize") {
+        // 生成 f32 数值并保留运行时最小值归一化。
+        let cell_size = numeric_value(attribute)?;
+        // 调用公开日期格尺寸构造器。
+        widget = quote! { (#widget).cell_size(#cell_size) };
+    }
+    // 可选整年跳转接受布尔简写、字面量或受限表达式。
+    if let Some(attribute) = find_attribute(element, "yearJump") {
+        // 复用统一布尔诊断与表达式类型检查。
+        let year_jump = boolean_value(attribute)?;
+        // 调用公开导航策略构造器。
+        widget = quote! { (#widget).year_jump(#year_jump) };
+    }
+    // 可选事件标记集合映射到公开拥有型数据入口。
+    if let Some(attribute) = find_attribute(element, "events") {
+        // 字面量不能表达类型化 CalendarEvent 集合。
+        let AttributeValue::Expression(expression) = &attribute.value else {
+            // 返回集合形状诊断。
+            return Err(Diagnostic::new(
+                // 指向非法事件集合属性。
+                attribute.span,
+                // 说明公开运行时数据类型。
+                "Calendar events 必须是可迭代 CalendarEvent 表达式",
+                // 给出规范集合引用写法。
+                "使用 events={calendar_events}",
+            ));
+        };
+        // 生成受限事件集合表达式。
+        let events = generate_expression(&expression.expression, None)?;
+        // 把数组或 Vec 统一收集为公开拥有型事件集合。
+        let events = quote! {
+            ::std::iter::IntoIterator::into_iter((#events).clone())
+                .collect::<::std::vec::Vec<::uix::prelude::CalendarEvent>>()
+        };
+        // 让 Calendar 运行时取得本轮事件数据所有权。
+        widget = quote! { (#widget).events(#events) };
+    }
+    // 可选禁用日期策略映射到公开窄判定函数入口。
+    if let Some(attribute) = find_attribute(element, "disabledDate") {
+        // 字面量不能提供 Fn(Date) -> bool 策略。
+        let AttributeValue::Expression(expression) = &attribute.value else {
+            // 返回函数形状诊断。
+            return Err(Diagnostic::new(
+                // 指向非法禁用日期属性。
+                attribute.span,
+                // 说明公开判定函数类型。
+                "Calendar disabledDate 必须是 Fn(Date) -> bool 表达式",
+                // 给出规范函数引用写法。
+                "使用 disabledDate={is_disabled_date}",
+            ));
+        };
+        // 生成受限函数表达式并保留 Rust 类型检查。
+        let predicate = generate_expression(&expression.expression, None)?;
+        // 把窄日期策略交给 Calendar 运行时持有。
+        widget = quote! { (#widget).disabled_date(#predicate) };
+    }
 
     // 先物化公开叶节点，Change 处理器与公共样式由 View 契约拥有。
     let mut view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
@@ -122,7 +205,24 @@ pub(crate) fn generate_calendar(element: &Element) -> Result<TokenStream, Diagno
         // 保留属性源码顺序供公共映射处理。
         &element.attributes,
         // 防止专有属性与 Change 事件被二次映射。
-        &["defaultDate", "value", "@change"],
+        &[
+            // 消费非受控选中初值。
+            "defaultDate",
+            // 消费受控选中状态。
+            "value",
+            // 消费独立显示月份初值。
+            "defaultDisplayed",
+            // 消费日期格首选尺寸。
+            "cellSize",
+            // 消费标题导航跨度策略。
+            "yearJump",
+            // 消费事件标记数据。
+            "events",
+            // 消费禁用日期策略。
+            "disabledDate",
+            // 消费统一日期变化事件。
+            "@change",
+        ],
     )
 }
 

@@ -585,8 +585,6 @@ impl Calendar {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
-        // reconcile 时从下一棵声明树读取最新受控值。
-        let controlled_date = next.value_binding.as_ref().map(State::get);
         let next_cell_size = Self::normalize_cell_size(next.cell_size);
         if self.cell_size != next_cell_size {
             self.last_geometry.set(None);
@@ -597,19 +595,8 @@ impl Calendar {
         self.disabled_predicate = next.disabled_predicate;
         self.custom_cell = next.custom_cell;
         self.custom_cell_factory = next.custom_cell_factory;
-        // 替换绑定能力；None 表示继续保留最后一次运行态选择。
-        self.value_binding = next.value_binding;
-        // 受控值始终覆盖本地投影与当前月份。
-        if let Some(date) = controlled_date.map(Self::normalize_date) {
-            // 同步完整选中日期。
-            self.selected_date.set(Some(date));
-            // 同步展示年份。
-            self.year.set(date.year);
-            // 同步展示月份。
-            self.month.set(date.month);
-            // 同步键盘焦点日。
-            self.focused_day.set(date.day);
-        }
+        // 由窄绑定适配器协调受控值与独立显示月份。
+        self.sync_value_binding(next.value_binding);
         self.custom_cell_factory_generation.set(
             self.custom_cell_factory_generation
                 .get()
