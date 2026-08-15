@@ -342,7 +342,7 @@ impl ViewAdapter {
             }
         // Typography 只取得自己消费的文本排版字段，不取得 View 生命周期。
         } else if let Some(typography) = widget.as_any_mut().downcast_mut::<Typography>() {
-            // 把公开 Style 中的显式行高交给排版组件。
+            // 把公开 Style 中排版组件消费的文本字段交给组件。
             typography.apply_view_style(style);
         } else if tid == std::any::TypeId::of::<Grid>() {
             if let Some(g) = widget.as_any_mut().downcast_mut::<Grid>() {

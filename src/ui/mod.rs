@@ -68,6 +68,8 @@ pub(crate) mod reactive;
 pub(crate) mod render_handler;
 pub(crate) mod semantic_action;
 pub(crate) mod style_paint;
+// 集中生成并绘制文本装饰线段，保持 draw System 的中性边界。
+pub(crate) mod text_decoration;
 pub(crate) mod text_selection;
 pub(crate) mod theme;
 pub(crate) mod transform_origin;
@@ -138,6 +140,8 @@ pub use theme::style::{ColorValue, PaletteColor, Style, StyleSet, StyleState, Ty
 pub use theme::style::BorderStyle;
 // 公开 UI System 自有的行高值契约。
 pub use theme::style::LineHeight;
+// 公开 UI System 自有的文本装饰契约。
+pub use theme::style::TextDecoration;
 pub use theme::traits::{
     IBoxShadowTokens, ISpacingTokens, ITypographyTokens, ThemeTokens, TokenProvider,
 };

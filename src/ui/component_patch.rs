@@ -507,6 +507,21 @@ mod tests {
     use crate::ui::view::ViewNode;
     // 引入 Collapse 受控稳定 key 测试使用的响应式状态。
     use crate::ui::State;
+    // 引入纯绘制文本装饰契约。
+    use crate::ui::theme::style::TextDecoration;
+
+    // 验证文本装饰变化不会错误触发布局失效。
+    #[test]
+    fn text_decoration_change_is_paint_only() {
+        // 构造未声明文本装饰的基础样式。
+        let current = Style::default();
+        // 构造只改变下划线绘制的下一样式。
+        let next = Style::default().with_text_decoration(TextDecoration::Underline);
+        // 纯装饰变化不得进入测量或放置失效。
+        assert!(!style_layout_changed(&current, &next));
+        // 完整样式仍然不同，协调器可以据此触发重绘。
+        assert_ne!(current, next);
+    }
 
     // 验证 Badge 配置比较忽略布局后运行态但仍识别作者字段变化。
     #[test]

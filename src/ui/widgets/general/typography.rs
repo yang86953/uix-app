@@ -14,8 +14,8 @@ use crate::ui::component::clipboard;
 use crate::ui::component::paint_context::PaintContext;
 // 引入共享的单节点文字选区实现。
 use crate::ui::text_selection::per_node::PerNodeTextSelection;
-// 引入 UI System 拥有的行高与样式契约。
-use crate::ui::theme::style::{LineHeight, Style};
+// 引入 UI System 拥有的行高、文本装饰与样式契约。
+use crate::ui::theme::style::{LineHeight, Style, TextDecoration};
 // 引入主题颜色值与组件运行契约。
 use crate::ui::{
     ColorValue, ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent,
@@ -62,6 +62,8 @@ component! {
         spacing: f32,
         /// 可选的样式行高，优先于段落 spacing 构建器。
         line_height: Option<LineHeight>,
+        /// 可选的统一样式文本装饰，显式 none 也覆盖局部构建器。
+        text_decoration: Option<TextDecoration>,
         indent: f32,
         ellipsis: bool,
         /// 共享的选区状态：布局缓存、选区、拖选锚点与绘制偏移。
@@ -301,32 +303,10 @@ component! {
                     fs,
                 );
             }
-            if self.underline || self.delete {
-                for line in &layout.lines {
-                    if let Some(bounds) = Self::line_bounds(&layout, line, abs_pos, fs) {
-                        if self.underline {
-                            ctx.draw_line(
-                                bounds.x,
-                                bounds.y + bounds.h - 1.0,
-                                bounds.x + bounds.w,
-                                bounds.y + bounds.h - 1.0,
-                                text_c,
-                                1.0,
-                            );
-                        }
-                        if self.delete {
-                            ctx.draw_line(
-                                bounds.x,
-                                bounds.y + bounds.h * 0.52,
-                                bounds.x + bounds.w,
-                                bounds.y + bounds.h * 0.52,
-                                text_c,
-                                1.0,
-                            );
-                        }
-                    }
-                }
-            }
+            // 按 Style 覆盖优先级或兼容构建器收集最终装饰线段。
+            let decoration_segments = self.text_decoration_segments(&layout, abs_pos, fs);
+            // 通过 UI 私有适配器提交 draw System 的中性直线命令。
+            crate::ui::text_decoration::paint(ctx, &decoration_segments, text_c);
         }
 
         // copyable 图标
@@ -381,6 +361,8 @@ impl Typography {
             spacing: 0.0,
             // 未声明时保持 Typography 既有 normal 或 spacing 语义。
             line_height: None,
+            // 未声明统一样式时保留 underline/delete 构建器语义。
+            text_decoration: None,
             indent: 0.0,
             ellipsis: false,
             sel: PerNodeTextSelection::new(),
@@ -579,6 +561,56 @@ impl Typography {
         self.indent * font_size
     }
 
+    // 按统一样式优先级生成当前排版组件的文本装饰线段。
+    fn text_decoration_segments(
+        // 借用与文字绘制相同的布局。
+        &self,
+        // 借用稳定的文本布局类型。
+        layout: &crate::draw::resources::font::text_backend::TextLayout,
+        // 接收文字的绝对绘制原点。
+        origin: Point,
+        // 接收最终语义字号。
+        font_size: f32,
+    ) -> Vec<crate::ui::text_decoration::DecorationSegment> {
+        // 显式统一样式拥有最高优先级，包括显式 none。
+        if let Some(decoration) = self.text_decoration {
+            // 只生成统一样式指定的一种闭合装饰。
+            return crate::ui::text_decoration::segments(layout, origin, font_size, decoration);
+        }
+        // 未声明 Style 时保留既有两个布尔构建器可同时启用的行为。
+        let mut segments = Vec::new();
+        // 兼容既有下划线构建器。
+        if self.underline {
+            // 追加每个视觉行的下划线。
+            segments.extend(crate::ui::text_decoration::segments(
+                // 复用文字布局。
+                layout,
+                // 复用文字原点。
+                origin,
+                // 复用最终字号。
+                font_size,
+                // 映射既有 underline 标记。
+                TextDecoration::Underline,
+            ));
+        }
+        // 兼容既有删除线构建器。
+        if self.delete {
+            // 追加每个视觉行的删除线。
+            segments.extend(crate::ui::text_decoration::segments(
+                // 复用文字布局。
+                layout,
+                // 复用文字原点。
+                origin,
+                // 复用最终字号。
+                font_size,
+                // 映射既有 delete 标记。
+                TextDecoration::LineThrough,
+            ));
+        }
+        // 返回兼容构建器产生的零至两组线段。
+        segments
+    }
+
     fn intrinsic_size(&self) -> Size {
         let (fs, _fw) = self.compute_font_style();
         let copy_space = if self.copyable { 28.0 } else { 0.0 };
@@ -664,6 +696,8 @@ impl Typography {
     pub(crate) fn apply_view_style(&mut self, style: &Style) {
         // next widget 的默认 None 会在 reconcile 时清除旧值；这里只复制当前显式值。
         self.line_height = style.line_height;
+        // 显式 Some 包括 none，能够覆盖局部 underline/delete 构建器。
+        self.text_decoration = style.text_decoration;
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
@@ -688,6 +722,8 @@ impl Typography {
         self.spacing = next.spacing;
         // 同步显式行高以触发布局快照差异。
         self.line_height = next.line_height;
+        // 同步显式文本装饰以触发绘制快照差异。
+        self.text_decoration = next.text_decoration;
         self.indent = next.indent;
         self.ellipsis = next.ellipsis;
         if !self.copyable || self.disabled {
@@ -714,6 +750,8 @@ impl Typography {
             color_override: self.color_override,
             // 快照保留行高单位和值以支持精确布局失效。
             line_height: self.line_height,
+            // 快照保留未声明与显式 none 的差异。
+            text_decoration: self.text_decoration,
         }
     }
 }
@@ -782,5 +820,24 @@ mod tests {
         typography.apply_view_style(&style);
         // 显式 Style 行高必须覆盖较早的 spacing。
         assert_eq!(typography.resolved_line_height(10.0), 18.0);
+    }
+
+    // 验证显式 Style 文本装饰覆盖既有局部构建器标记。
+    #[test]
+    fn text_decoration_style_explicit_none_overrides_typography_builders() {
+        // 创建同时启用下划线和删除线的兼容组件。
+        let mut typography = Typography::text("decoration")
+            // 启用既有下划线入口。
+            .underline()
+            // 启用既有删除线入口。
+            .delete();
+        // 未应用 Style 时两个局部标记保持有效。
+        assert!(typography.underline && typography.delete);
+        // 构造显式关闭文本装饰的统一样式。
+        let style = Style::default().with_text_decoration(TextDecoration::None);
+        // 通过 View 适配边界应用统一样式。
+        typography.apply_view_style(&style);
+        // 显式 none 必须被保存，不能退化为未声明。
+        assert_eq!(typography.text_decoration, Some(TextDecoration::None));
     }
 }
