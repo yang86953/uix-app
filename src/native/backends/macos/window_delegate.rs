@@ -22,6 +22,9 @@ pub(crate) struct WindowDelegateContext {
 
 /// Installs a delegate that is strongly owned by `window` and owns its Rust
 /// context through a raw-pointer ivar.
+///
+/// # Safety
+/// 必须在 macOS 主线程传入存活的 NSWindow；`context` 的内部 Rc 只能由同一窗口线程访问直至 delegate dealloc。
 pub(crate) unsafe fn install(
     window: cocoa::Id,
     context: WindowDelegateContext,
@@ -65,6 +68,9 @@ pub(crate) unsafe fn install(
 }
 
 /// Resolves a live UIX NSWindow to its stable framework window identity.
+///
+/// # Safety
+/// `window` 必须是仍存活且由 `install` 配置过的 UIX NSWindow，并在本同步查询期间保持有效。
 pub(crate) unsafe fn window_id(window: cocoa::Id) -> Option<WindowId> {
     let delegate = cocoa::owned_delegate(window);
     let context = cocoa::delegate_context(delegate);
@@ -85,6 +91,7 @@ mod cocoa {
     static mut WINDOW_DELEGATE_OWNER_KEY: u8 = 0;
 
     #[link(name = "objc")]
+    // SAFETY: 这些声明与 Objective-C runtime C ABI 一致；类、selector、IMP、关联对象键与结构体返回由窄封装校验。
     unsafe extern "C" {
         fn objc_getClass(name: *const c_char) -> Id;
         fn sel_registerName(name: *const c_char) -> Sel;
@@ -99,6 +106,9 @@ mod cocoa {
         fn objc_getAssociatedObject(object: Id, key: *const c_void) -> Id;
     }
 
+    ///
+    /// # Safety
+    /// 必须在 macOS 主线程调用；Once 保证动态类只注册一次，返回类由 Objective-C runtime 永久拥有。
     pub unsafe fn delegate_class() -> Id {
         DELEGATE_CLASS.call_once(|| {
             let superclass = class("NSObject");
@@ -157,6 +167,9 @@ mod cocoa {
         DELEGATE_CLASS_PTR
     }
 
+    ///
+    /// # Safety
+    /// `delegate` 必须是当前动态类的新实例，其 context ivar 必须仍为空且只允许安装一次。
     pub unsafe fn install_delegate_context(
         delegate: Id,
         context: Box<WindowDelegateContext>,
@@ -164,10 +177,16 @@ mod cocoa {
         objc_runtime::install_box(delegate, DELEGATE_CONTEXT_OFFSET, context)
     }
 
+    ///
+    /// # Safety
+    /// `delegate` 必须是仍存活的当前动态类实例；返回指针不得越过 delegate dealloc 或跨线程使用。
     pub unsafe fn delegate_context(delegate: Id) -> *mut WindowDelegateContext {
         objc_runtime::box_ptr(delegate, DELEGATE_CONTEXT_OFFSET)
     }
 
+    ///
+    /// # Safety
+    /// `window` 与 `delegate` 必须是存活 Objective-C 对象；关联键唯一且调用必须发生在窗口主线程。
     pub unsafe fn retain_delegate_for_window(window: Id, delegate: Id) {
         objc_setAssociatedObject(
             window,
@@ -177,6 +196,9 @@ mod cocoa {
         );
     }
 
+    ///
+    /// # Safety
+    /// `window` 必须是存活 Objective-C 对象；返回 delegate 只在 window 继续存活时借用。
     pub unsafe fn owned_delegate(window: Id) -> Id {
         if window.is_null() {
             return std::ptr::null_mut();
@@ -184,10 +206,12 @@ mod cocoa {
         objc_getAssociatedObject(window, delegate_owner_key())
     }
 
+    // SAFETY: 返回地址指向进程期静态字节，仅用作不解引用的 Objective-C 关联对象唯一键。
     unsafe fn delegate_owner_key() -> *const c_void {
         std::ptr::addr_of!(WINDOW_DELEGATE_OWNER_KEY).cast::<c_void>()
     }
 
+    // SAFETY: 仅作为已登记的 dealloc IMP 调用；runtime 保证 delegate 是当前类实例且释放链只执行一次。
     unsafe extern "C" fn delegate_dealloc(delegate: Id, _cmd: Sel) {
         // SAFETY: this class installs the Box exactly once before publication;
         // replacing the ivar with null makes dealloc the unique reclaim point.
@@ -197,6 +221,7 @@ mod cocoa {
             .as_ref()
             .map(|context| context.pending_failures.clone());
         drop(context);
+        // SAFETY: delegate 正处于当前类 dealloc 链，Rust Box 已清空；super 调用被 catch_unwind 隔离在 FFI 边界内。
         let result = catch_unwind(AssertUnwindSafe(|| unsafe {
             objc_runtime::call_super_dealloc(delegate, DELEGATE_CLASS_PTR);
         }));
@@ -210,6 +235,7 @@ mod cocoa {
         }
     }
 
+    // SAFETY: 仅由 NSWindowDelegate runtime 按 v@:@ ABI 调用，delegate 在回调期间保持存活。
     unsafe extern "C" fn window_will_close(delegate: Id, _cmd: Sel, _notification: Id) {
         with_context(delegate, "windowWillClose", |context| {
             context.open.set(false);
@@ -217,6 +243,7 @@ mod cocoa {
         });
     }
 
+    // SAFETY: 仅由 NSWindowDelegate runtime 按 v@:@ ABI 调用，notification 是当前 resize 通知对象。
     unsafe extern "C" fn window_did_resize(delegate: Id, _cmd: Sel, notification: Id) {
         with_context(delegate, "windowDidResize", |context| {
             let window = window_from_notification(notification);
@@ -231,14 +258,17 @@ mod cocoa {
         });
     }
 
+    // SAFETY: 仅由 NSWindowDelegate runtime 按 v@:@ ABI 调用，delegate 在回调期间保持存活。
     unsafe extern "C" fn window_did_become_key(delegate: Id, _cmd: Sel, _notification: Id) {
         push_focus_event(delegate, UiEventType::WindowFocus);
     }
 
+    // SAFETY: 仅由 NSWindowDelegate runtime 按 v@:@ ABI 调用，delegate 在回调期间保持存活。
     unsafe extern "C" fn window_did_resign_key(delegate: Id, _cmd: Sel, _notification: Id) {
         push_focus_event(delegate, UiEventType::WindowBlur);
     }
 
+    // SAFETY: 仅由 NSWindowDelegate runtime 按 v@:@ ABI 调用，delegate 在回调期间保持存活。
     unsafe extern "C" fn window_did_change_occlusion_state(
         delegate: Id,
         _cmd: Sel,
@@ -247,10 +277,12 @@ mod cocoa {
         push_window_event(delegate, UiEvent::window_occlusion_changed());
     }
 
+    // SAFETY: delegate 必须是存活的当前动态类实例，其 Rust context 尚未被 dealloc 接管。
     unsafe fn push_focus_event(delegate: Id, event_type: UiEventType) {
         push_window_event(delegate, UiEvent::new(event_type, UiEventPayload::None));
     }
 
+    // SAFETY: delegate 必须是存活的当前动态类实例，其事件队列在同步入队期间保持有效。
     unsafe fn push_window_event(delegate: Id, event: UiEvent) {
         with_context(delegate, "window event", |context| {
             let event = event.for_window(context.window_id);
@@ -261,6 +293,7 @@ mod cocoa {
         });
     }
 
+    // SAFETY: delegate 必须是回调期间存活的当前动态类实例；callback 不得保存借用或越过 catch_unwind 展开。
     unsafe fn with_context<F>(delegate: Id, callback_name: &str, callback: F)
     where
         F: FnOnce(&WindowDelegateContext),
@@ -278,6 +311,7 @@ mod cocoa {
         }
     }
 
+    // SAFETY: notification 必须是存活的 NSNotification，并响应无参数、对象返回的 object selector。
     unsafe fn window_from_notification(notification: Id) -> Id {
         if notification.is_null() {
             return std::ptr::null_mut();
@@ -285,6 +319,7 @@ mod cocoa {
         msg_id(notification, "object")
     }
 
+    // SAFETY: window 必须是存活 NSWindow；contentView 与 frame selector 的返回 ABI 必须符合 AppKit 契约。
     unsafe fn content_view_size(window: Id) -> (i32, i32) {
         if window.is_null() {
             return (0, 0);
@@ -300,6 +335,7 @@ mod cocoa {
         )
     }
 
+    // SAFETY: class 必须尚未注册，imp 与 encoding 必须精确描述待登记回调的 extern C ABI。
     unsafe fn add_method(class: Id, name: &str, imp: *const c_void, encoding: &str) -> bool {
         let Ok(encoding) = CString::new(encoding) else {
             return false;
@@ -308,6 +344,7 @@ mod cocoa {
         !selector.is_null() && class_addMethod(class, selector, imp, encoding.as_ptr()) != 0
     }
 
+    // SAFETY: objc_getClass 同步读取零结尾名称且不保留 Rust 指针；返回类由 runtime 拥有。
     unsafe fn class(name: &str) -> Id {
         CString::new(name)
             .ok()
@@ -315,6 +352,7 @@ mod cocoa {
             .unwrap_or(std::ptr::null_mut())
     }
 
+    // SAFETY: sel_registerName 同步复制零结尾名称；返回 selector 由 runtime 永久拥有。
     unsafe fn sel(name: &str) -> Sel {
         CString::new(name)
             .ok()
@@ -322,20 +360,35 @@ mod cocoa {
             .unwrap_or(std::ptr::null_mut())
     }
 
+    ///
+    /// # Safety
+    /// `receiver` 必须响应无额外参数且返回对象的 `selector`，并在同步消息发送期间保持存活。
     pub unsafe fn msg_id(receiver: Id, selector: &str) -> Id {
+        // SAFETY: FnType 精确描述无参数、对象返回值的 Objective-C 消息 ABI。
         type FnType = unsafe extern "C" fn(Id, Sel) -> Id;
+        // SAFETY: objc_msgSend 只转换为本函数已经约束的对象返回签名。
         let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         function(receiver, sel(selector))
     }
 
+    ///
+    /// # Safety
+    /// `receiver` 必须响应无额外参数且无返回值的 `selector`，并在同步消息发送期间保持存活。
     pub unsafe fn msg_void(receiver: Id, selector: &str) {
+        // SAFETY: FnType 精确描述无参数、无返回值的 Objective-C 消息 ABI。
         type FnType = unsafe extern "C" fn(Id, Sel);
+        // SAFETY: objc_msgSend 只转换为本函数已经约束的 void 签名。
         let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         function(receiver, sel(selector));
     }
 
+    ///
+    /// # Safety
+    /// `receiver` 必须响应接收一个对象且无返回值的 `selector`，两个对象均须在同步调用期间保持存活。
     pub unsafe fn msg_void_id(receiver: Id, selector: &str, arg: Id) {
+        // SAFETY: FnType 精确描述单对象参数、无返回值的 Objective-C 消息 ABI。
         type FnType = unsafe extern "C" fn(Id, Sel, Id);
+        // SAFETY: objc_msgSend 只转换为本函数已经约束的单对象参数签名。
         let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         function(receiver, sel(selector), arg);
     }
@@ -354,10 +407,13 @@ mod cocoa {
         size: CGSize,
     }
 
+    // SAFETY: receiver 必须响应无参数且返回 CGRect 的 selector；架构分支必须使用各自规定的结构体返回 ABI。
     unsafe fn msg_rect(receiver: Id, selector: &str) -> CGRect {
         #[cfg(target_arch = "x86_64")]
         {
+            // SAFETY: x86_64 的 objc_msgSend_stret 使用首参数写入 CGRect，与 AppKit frame 返回 ABI 一致。
             type FnType = unsafe extern "C" fn(*mut CGRect, Id, Sel);
+            // SAFETY: 原始 stret 符号只转换为上方已核对的 CGRect 写入签名。
             let function: FnType =
                 std::mem::transmute(objc_msgSend_stret as unsafe extern "C" fn());
             let mut result = std::mem::MaybeUninit::<CGRect>::uninit();
@@ -366,7 +422,9 @@ mod cocoa {
         }
         #[cfg(not(target_arch = "x86_64"))]
         {
+            // SAFETY: 非 x86_64 架构按普通寄存器 ABI 返回 CGRect。
             type FnType = unsafe extern "C" fn(Id, Sel) -> CGRect;
+            // SAFETY: objc_msgSend 只转换为上方已核对的 CGRect 返回签名。
             let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
             function(receiver, sel(selector))
         }
