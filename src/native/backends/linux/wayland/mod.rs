@@ -165,6 +165,7 @@ impl WaylandBackend {
     pub(crate) fn create_wake_pipe() -> Result<(RawFd, RawFd), String> {
         let mut fds = [0; 2];
         let flags = libc::O_CLOEXEC | libc::O_NONBLOCK;
+        // SAFETY: fds 指向两个连续且可写的 RawFd 槽，pipe2 成功时会完整初始化二者。
         let ret = unsafe { libc::pipe2(fds.as_mut_ptr(), flags) };
         if ret == 0 {
             Ok((fds[0], fds[1]))
@@ -345,6 +346,7 @@ impl Drop for WaylandBackend {
         // 先拆除 seat 回调与输入代理，打断兼容回调表的强引用环。
         self.shutdown_seat_and_input();
         self.pending_failures.close();
+        // SAFETY: 两个描述符由 create_wake_pipe 独占创建，到此尚未关闭且 Drop 只执行一次。
         let _ = unsafe { libc::close(self.wake_read_fd) };
         let _ = unsafe { libc::close(self.wake_write_fd) };
     }

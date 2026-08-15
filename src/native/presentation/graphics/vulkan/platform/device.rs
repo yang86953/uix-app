@@ -49,6 +49,7 @@ impl VulkanRuntime {
     }
 
     fn create() -> Result<Rc<Self>> {
+        // SAFETY: ash 负责按平台加载 Vulkan 动态库及校验入口符号，返回的 Entry 持有符号所需的库生命周期。
         let entry =
             unsafe { Entry::load() }.map_err(|error| loader_err("load Vulkan loader", error))?;
         let mut instance_extensions = surface_instance_extensions();

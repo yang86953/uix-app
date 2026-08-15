@@ -318,6 +318,7 @@ impl Main<wl_shm::WlShm> {
     pub(crate) fn create_pool(&self, fd: i32, size: i32) -> Main<wl_shm_pool::WlShmPool> {
         // The request sends the descriptor immediately; the borrowed lifetime
         // only needs to cover this call.
+        // SAFETY: fd 由调用方在本次同步协议请求期间保持打开，本借用不接管也不关闭该描述符。
         let fd = unsafe { BorrowedFd::borrow_raw(fd) };
         let proxy = self.proxy.create_pool(fd, size, &self.queue_handle(), ());
         self.child(proxy)

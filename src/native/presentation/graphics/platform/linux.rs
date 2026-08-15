@@ -23,6 +23,10 @@ impl WaylandSurfaceHandle {
         !self.display.is_null() && !self.surface.is_null()
     }
 
+    /// 从原生指针按值读取 Wayland surface 描述。
+    ///
+    /// # Safety
+    /// `native_surface` 必须指向调用期间有效、正确对齐且已初始化的 [`WaylandSurfaceHandle`]。
     pub(crate) unsafe fn from_native(native_surface: *mut c_void) -> Result<Self> {
         if native_surface.is_null() {
             return Err(Error::new(
