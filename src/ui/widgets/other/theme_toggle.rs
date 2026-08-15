@@ -82,6 +82,7 @@ component! {
 }
 
 impl ThemeToggle {
+    /// 创建初始处于亮色模式的主题切换按钮。
     pub fn new() -> Self {
         Self {
             dark: Cell::new(false),
@@ -91,12 +92,14 @@ impl ThemeToggle {
         }
     }
 
+    /// 设置组件的初始暗色模式状态。
     pub fn dark(mut self, dark: bool) -> Self {
         self.dark.set(dark);
         self.initial_dark = dark;
         self
     }
 
+    /// 返回组件当前是否处于暗色模式。
     pub fn is_dark(&self) -> bool {
         self.dark.get()
     }
