@@ -17,6 +17,8 @@ use super::line_chart::LineData;
 mod builder;
 mod component;
 mod helpers;
+// 将热力图色阶插值拆为无状态绘制辅助，不引入新的图表状态 owner。
+mod heatmap_color;
 mod paint_advanced;
 mod paint_series;
 

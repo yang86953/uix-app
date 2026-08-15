@@ -1,5 +1,6 @@
 use crate::core::{Point, Rect};
-use crate::draw::{Color, FillRule, PathBuilder};
+// 高级图表主体只直接构造填充规则与路径。
+use crate::draw::{FillRule, PathBuilder};
 use crate::ui::component::paint_context::PaintContext;
 
 use super::super::bar_chart::BarData;
@@ -7,34 +8,10 @@ use super::super::line_chart::LineData;
 use super::{
     AxisSide, ChartPayload, ChartPlaceholder, ChartType, FunnelAlign, FunnelShape, GaugeType,
     LabelPosition, LineStyle, MAX_HEATMAP_DIMENSION, TooltipTrigger, TreemapNode, WaterfallKind,
-    calendar_day_count, is_leap_year, january_first_weekday, lerp_color, normalized_ratio,
-    palette_color,
+    calendar_day_count, is_leap_year, january_first_weekday, normalized_ratio, palette_color,
 };
 
 impl ChartPlaceholder {
-    /// 热力图配色：色阶存在时按位置插值，否则在两端色之间线性插值。
-    pub(crate) fn heatmap_color(&self, value: f32) -> Color {
-        // 色阶不足两档时直接在两色之间插值。
-        if self.color_stops.len() < 2 {
-            return lerp_color(self.color_min, self.color_max, value);
-        }
-        let value = value.clamp(0.0, 1.0);
-        // 找到 value 所在的相邻色阶区间。
-        let Some(window) = self
-            .color_stops
-            .windows(2)
-            .find(|window| value <= window[1].0)
-        else {
-            // 超出最大色阶位置时取末档颜色。
-            return self
-                .color_stops
-                .last()
-                .map_or(self.color_max, |(_, color)| *color);
-        };
-        let span = (window[1].0 - window[0].0).max(f32::EPSILON);
-        lerp_color(window[0].1, window[1].1, (value - window[0].0) / span)
-    }
-
     /// 热力图绘制：普通网格或日历模式，含坐标标签与数值。
     pub(crate) fn paint_heatmap(&self, ctx: &mut PaintContext, plot: Rect) {
         let ChartPayload::Heatmap(cells) = &self.payload else {
