@@ -13,6 +13,7 @@ use crate::ui::{
 use std::cell::Cell;
 
 component! {
+    /// 支持受控勾选状态、标签和禁用语义的复选框组件。
     pub struct Checkbox {
         checked: bool,
         checked_binding: Option<State<bool>>,

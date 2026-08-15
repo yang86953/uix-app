@@ -23,6 +23,7 @@ const ITEM_HEIGHT: f32 = 32.0;
 const WHEEL_STEP: f32 = 40.0;
 
 component! {
+    /// 按层级浏览并以完整稳定路径提交叶节点选择的级联组件。
     pub struct Cascader {
         pub(crate) options: Vec<CascaderOption>,
         pub(crate) selected: CascaderValue,

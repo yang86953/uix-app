@@ -35,6 +35,7 @@ const PANEL_PADDING: f32 = 8.0;
 
 // ColorPicker — 颜色选择器。
 component! {
+    /// 通过窗口内预设色面板选择并提交颜色值的组件。
     pub struct ColorPicker {
         value: Cell<Color>,
         value_binding: Option<State<Color>>,

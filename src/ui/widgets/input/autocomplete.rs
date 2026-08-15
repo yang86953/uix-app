@@ -37,6 +37,7 @@ const FONT_SIZE: f32 = 13.0;
 
 // AutoComplete — 自动完成输入框。
 component! {
+    /// 拥有输入文本、过滤候选与弹层交互状态的自动完成组件。
     pub struct AutoComplete {
         placeholder: String,
         value: String,

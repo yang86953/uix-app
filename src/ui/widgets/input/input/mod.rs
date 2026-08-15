@@ -70,6 +70,7 @@ fn addon_width(text: &str) -> f32 {
 }
 
 component! {
+    /// 拥有文本编辑、选区、校验展示与可选双向绑定的输入组件。
     pub struct Input {
         value: String,
         value_binding: Option<State<String>>,
