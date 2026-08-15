@@ -10,6 +10,9 @@ use crate::ui::component_snapshot::ComponentConfigSnapshot;
 use crate::ui::event::SemanticEvent;
 
 #[derive(Clone, Default)]
+/// 可克隆的应用级组件快照与受控句柄注册表。
+///
+/// 组件登记和查询必须在所属 UI 线程执行；后台操作应通过 `AppHandle` 投递。
 pub struct AppState {
     pub(crate) inner: Arc<Mutex<AppStateInner>>,
 }
@@ -36,6 +39,7 @@ struct AppStateEntry {
 }
 
 impl AppState {
+    /// 创建绑定到当前线程且尚未登记组件的状态注册表。
     pub fn new() -> Self {
         Self::default()
     }
@@ -60,6 +64,7 @@ impl AppState {
             .unregister(id);
     }
 
+    /// 返回当前仍登记的组件句柄。
     pub fn get_handle(&self, id: ComponentId) -> Option<ComponentHandle> {
         self.inner
             .lock()
@@ -111,6 +116,7 @@ impl AppState {
             .has_focus_requests_for_scope(tree_scope)
     }
 
+    /// 返回指定组件当前配置快照的 owned 副本。
     pub fn get_snapshot(&self, id: ComponentId) -> Option<ComponentConfigSnapshot> {
         self.inner
             .lock()
@@ -118,6 +124,7 @@ impl AppState {
             .snapshot(id)
     }
 
+    /// 判断指定组件身份当前是否仍登记。
     pub fn contains(&self, id: ComponentId) -> bool {
         self.inner
             .lock()
@@ -125,10 +132,12 @@ impl AppState {
             .contains(id)
     }
 
+    /// 返回当前登记的组件数量。
     pub fn len(&self) -> usize {
         self.inner.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
+    /// 判断当前是否没有登记任何组件。
     pub fn is_empty(&self) -> bool {
         self.inner
             .lock()
