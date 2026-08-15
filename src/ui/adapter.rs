@@ -28,11 +28,8 @@ use crate::ui::event::{HandlerRegistration, HandlerSignature, SemanticKind};
 use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::theme::style::Style;
 use crate::ui::view::ViewNode;
-use crate::ui::widgets::window_chrome::WindowInteractionRegion;
-// 引入动态子树组件与 Typography 以识别各自的私有适配边界。
-use crate::ui::widgets::{
-    Button, Calendar, Carousel, Container, Grid, Image, Label, Transfer, Typography,
-};
+// 引入动态子树组件以识别各自的私有协调边界。
+use crate::ui::widgets::{Calendar, Carousel, Image, Transfer};
 // 导航 capability 启用时才识别 Anchor 的专属动态容器协调边界。
 #[cfg(feature = "navigation")]
 use crate::ui::widgets::navigation::Anchor;
@@ -56,6 +53,10 @@ mod dynamic_reconcile;
 #[path = "adapter/coordination.rs"]
 // 编译根构建与协调的私有事务入口。
 mod coordination;
+// 拆分具体组件样式适配，保持协调主体低于文件规模上限。
+#[path = "adapter/style.rs"]
+// 编译统一 Style 到 widgets 私有配置的单向适配入口。
+mod style;
 /// 声明期 View 子节点能力端口（System 私有边界）。
 ///
 /// `component → view` 依赖环消除（SMC-04）：`build_view_children` 从
@@ -98,6 +99,8 @@ impl ViewAdapter {
             // 保存非根或动态声明节点交接给所属节点的动画源。
             animated_sources: Vec<std::sync::Arc<dyn crate::ui::animation::AnimatedSource>>,
             visual_transform: crate::ui::component::view_transform::ViewTransform,
+            // 保存声明节点的文字选择策略。
+            user_select: crate::ui::UserSelect,
             // 保存声明节点可继承的指针光标覆盖。
             cursor: Option<crate::platform::windowing::CursorType>,
             enter_animation: Option<crate::ui::animation::AnimationConfig>,
@@ -133,6 +136,7 @@ impl ViewAdapter {
                 provider_context,
                 style,
                 visual_transform,
+                user_select,
                 cursor,
                 enter_animation,
                 enter_deadline,
@@ -170,6 +174,7 @@ impl ViewAdapter {
                 // 保留本声明节点拥有的动画源输出。
                 animated_sources,
                 visual_transform,
+                user_select,
                 cursor,
                 enter_animation,
                 enter_deadline,
@@ -231,6 +236,8 @@ impl ViewAdapter {
             {
                 wnode = wnode.with_visual_transform(frame.visual_transform);
             }
+            // 所有值都保留给实际树执行父子 used-value 解析。
+            wnode = wnode.with_user_select(frame.user_select);
             // 显式光标覆盖需要随声明节点进入运行时树。
             if let Some(cursor) = frame.cursor {
                 // 保留 Arrow 覆盖父节点的语义，不能按默认值吞掉。
@@ -285,89 +292,6 @@ impl ViewAdapter {
         }
     }
 
-    pub(crate) fn apply_style(
-        mut widget: Box<dyn WidgetComponent>,
-        style: &Style,
-        flex_grow_override: Option<f32>,
-        flex_shrink_override: Option<f32>,
-    ) -> Box<dyn WidgetComponent> {
-        let style_is_default = style == &Style::default();
-        if style_is_default && flex_grow_override.is_none() && flex_shrink_override.is_none() {
-            return widget;
-        }
-
-        let tid = widget.as_any().type_id();
-
-        if tid == std::any::TypeId::of::<Container>() {
-            if let Some(c) = widget.as_any_mut().downcast_mut::<Container>() {
-                if !style_is_default {
-                    c.style = c.style.clone().apply(style.clone());
-                }
-                // View DSL 显式 flex 覆盖（含 0.0），Style::apply 无法表达「设为默认值」
-                if let Some(g) = flex_grow_override {
-                    c.style.flex_grow = g;
-                }
-                if let Some(s) = flex_shrink_override {
-                    c.style.flex_shrink = s;
-                }
-            }
-        } else if tid == std::any::TypeId::of::<Label>() {
-            if let Some(l) = widget.as_any_mut().downcast_mut::<Label>() {
-                let mut merged = l.style.clone().unwrap_or_default().apply(style.clone());
-                if let Some(g) = flex_grow_override {
-                    merged.flex_grow = g;
-                }
-                if let Some(s) = flex_shrink_override {
-                    merged.flex_shrink = s;
-                }
-                // ViewNode width/height → Label 固定尺寸（section 色条等）
-                if let Some(w) = style.width {
-                    l.fixed_width = Some(w);
-                }
-                if let Some(h) = style.height {
-                    l.fixed_height = Some(h);
-                }
-                l.style = Some(merged);
-            }
-        } else if tid == std::any::TypeId::of::<Button>() {
-            if let Some(b) = widget.as_any_mut().downcast_mut::<Button>() {
-                let mut button_style = style.clone();
-                if let Some(g) = flex_grow_override {
-                    button_style.flex_grow = g;
-                }
-                if let Some(s) = flex_shrink_override {
-                    button_style.flex_shrink = s;
-                }
-                b.style = button_style.into();
-            }
-        // Typography 只取得自己消费的文本排版字段，不取得 View 生命周期。
-        } else if let Some(typography) = widget.as_any_mut().downcast_mut::<Typography>() {
-            // 把公开 Style 中排版组件消费的文本字段交给组件。
-            typography.apply_view_style(style);
-        } else if tid == std::any::TypeId::of::<Grid>() {
-            if let Some(g) = widget.as_any_mut().downcast_mut::<Grid>() {
-                g.apply_style(style);
-            }
-        } else if tid == std::any::TypeId::of::<crate::ui::component::dynamic_label::DynamicLabel>()
-        {
-            if let Some(dl) = widget
-                .as_any_mut()
-                .downcast_mut::<crate::ui::component::dynamic_label::DynamicLabel>()
-            {
-                dl.set_style(style.clone());
-            }
-        } else if tid == std::any::TypeId::of::<WindowInteractionRegion>() {
-            if let Some(region) = widget
-                .as_any_mut()
-                .downcast_mut::<WindowInteractionRegion>()
-            {
-                region.apply_view_style(style, flex_grow_override, flex_shrink_override);
-            }
-        }
-
-        widget
-    }
-
     fn reconcile_existing(tree: &mut WidgetTree, id: ComponentId, node: ViewNode) {
         let ViewNode {
             widget,
@@ -381,6 +305,7 @@ impl ViewAdapter {
             provider_context,
             style,
             visual_transform,
+            user_select,
             cursor,
             enter_animation: _,
             enter_deadline: _,
@@ -488,6 +413,8 @@ impl ViewAdapter {
             tree.set_focus(None);
         }
         let widget_impact = Self::patch_widget(tree, id, widget);
+        // patch 可能替换具体组件，因此在其后重算子树并同步最终选择策略。
+        tree.set_node_user_select(id, user_select);
         if style.visible {
             tree.set_node_visibility(id, true);
         }

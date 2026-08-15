@@ -51,6 +51,8 @@ pub struct ViewNode {
     pub(crate) provider_context: ProviderContext,
     pub(crate) style: Style,
     pub(crate) visual_transform: ViewTransform,
+    // 保存当前声明节点的文字选择策略；Auto 由运行时结合祖先解析。
+    pub(crate) user_select: crate::ui::UserSelect,
     // 保存当前声明节点显式覆盖的指针光标；None 表示继承父节点。
     pub(crate) cursor: Option<crate::platform::windowing::CursorType>,
     pub(crate) enter_animation: Option<crate::ui::animation::AnimationConfig>,
@@ -102,6 +104,8 @@ impl ViewNode {
             provider_context: current_provider_context(),
             style: Style::default(),
             visual_transform: ViewTransform::default(),
+            // 新声明节点默认保留组件自身选择能力。
+            user_select: crate::ui::UserSelect::Auto,
             // 未声明 cursor 时交给运行时沿父链继承。
             cursor: None,
             enter_animation: None,
@@ -139,6 +143,8 @@ impl ViewNode {
             provider_context: current_provider_context(),
             style: Style::default(),
             visual_transform: ViewTransform::default(),
+            // 新声明子树默认保留组件自身选择能力。
+            user_select: crate::ui::UserSelect::Auto,
             // 未声明 cursor 时交给运行时沿父链继承。
             cursor: None,
             enter_animation: None,
@@ -202,6 +208,14 @@ impl ViewNode {
         // 只把当前节点的样式借给同步更新闭包。
         update(&mut self.style);
         // 返回完成样式更新的节点。
+        self
+    }
+
+    // 声明当前节点及其文本子树的文字选择策略。
+    pub fn user_select(mut self, value: crate::ui::UserSelect) -> Self {
+        // 保留显式 Auto，以便运行时按同一父子规则重新协调。
+        self.user_select = value;
+        // 返回携带结构性交互元数据的原节点。
         self
     }
 

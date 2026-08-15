@@ -62,6 +62,16 @@ impl WidgetTree {
         let Some(target) = self.managers().focus.focused_component() else {
             return EventResult::NotHandled;
         };
+        // all 的 Ctrl+A 由树层扩展到最近显式整体边界。
+        if key == KeyCode::A
+            // 只处理标准全选组合键。
+            && mods.contains(KeyMod::CTRL)
+            // 非 all 策略继续交给具体文字组件。
+            && self.select_all_user_select_subtree(target)
+        {
+            // 整体范围已经同步建立。
+            return EventResult::Handled;
+        }
         // 跨节点文字选区：Ctrl+C 须聚合兄弟选区，不能只读焦点节点。
         if key == KeyCode::C
             && mods.contains(KeyMod::CTRL)

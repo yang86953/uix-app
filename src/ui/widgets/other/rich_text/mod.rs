@@ -29,7 +29,7 @@ use crate::ui::component::clipboard;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SnapshotFields,
-    SystemEvent, WidgetTree,
+    SystemEvent, UserSelect, WidgetTree,
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -220,6 +220,8 @@ component! {
         // ── 选择状态 ──
         /// 控制普通文字是否允许建立选区；链接与代码复制不受影响。
         selectable: bool,
+        /// 由 WidgetTree 结合祖先声明解析出的最终选择策略。
+        user_select_policy: UserSelect,
         selection: Cell<Option<(usize, usize)>>,
         sel_anchor: Cell<usize>,
         sel_dragging: Cell<bool>,
@@ -258,6 +260,8 @@ component! {
             image_states: RefCell::new(inline_image::InlineImageStates::new()),
             // UIX 文档契约要求文字选择默认关闭。
             selectable: false,
+            // 未挂载或没有结构声明时保留 RichText 默认不可选语义。
+            user_select_policy: UserSelect::Auto,
             selection: Cell::new(None),
             sel_anchor: Cell::new(0),
             sel_dragging: Cell::new(false),
@@ -336,9 +340,20 @@ component! {
 
                 // 文字选择
                 // 未显式开启时把普通文字保持为非交互内容。
-                if !self.selectable { return EventResult::NotHandled; }
+                if !self.selection_enabled() { return EventResult::NotHandled; }
                 if !self.local_frame().contains(*pos) {
                     return EventResult::NotHandled;
+                }
+                // all 把当前富文本作为原子整体，不启动可收缩的拖选会话。
+                if self.user_select_policy == UserSelect::All {
+                    // 计算全部富文本逻辑字符范围。
+                    let total = self.cross_text_len();
+                    // 保存完整范围并沿用字素簇归一规则。
+                    self.set_selection_range(0, total);
+                    // all 不保留指针拖选状态。
+                    self.sel_dragging.set(false);
+                    // 当前文字节点已经消费按下事件。
+                    return EventResult::Handled;
                 }
                 let lines = self.layout_lines.borrow();
                 let char_idx = self.char_at_pos(*pos, &lines);
@@ -429,7 +444,7 @@ component! {
                 let ctrl = mods.contains(KeyMod::CTRL);
                 match key {
                     // 全选只属于显式开启的文字选择契约。
-                    KeyCode::A if ctrl && self.selectable => {
+                    KeyCode::A if ctrl && self.selection_enabled() => {
                         let total: usize = self.segments.iter()
                             .map(|s| match s {
                                 RichTextSegment::Text { content, .. } => content.chars().count(),
@@ -446,7 +461,7 @@ component! {
                         EventResult::Handled
                     }
                     // 复制选区只在选择能力开启时消费快捷键。
-                    KeyCode::C if ctrl && self.selectable => {
+                    KeyCode::C if ctrl && self.selection_enabled() => {
                         if let Some((s, e)) = self.selection.get() {
                             let selected = self.extract_text_range(s, e);
                             clipboard::copy_to_clipboard(&selected);

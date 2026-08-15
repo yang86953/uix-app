@@ -9,6 +9,8 @@ pub struct WidgetNode {
     pub(crate) provider_context: ProviderContext,
     pub(crate) visible: bool,
     pub(crate) visual_transform: ViewTransform,
+    // 保存待挂载节点声明的文字选择策略。
+    pub(crate) user_select: crate::ui::UserSelect,
     // 保存待挂载节点显式声明的指针光标；None 表示继承。
     pub(crate) cursor: Option<crate::platform::windowing::CursorType>,
     pub(crate) enter_animation: Option<crate::ui::animation::AnimationConfig>,
@@ -49,6 +51,8 @@ impl WidgetNode {
             provider_context: current_provider_context(),
             visible: true,
             visual_transform: ViewTransform::default(),
+            // 命令式节点默认保留组件自身选择能力。
+            user_select: crate::ui::UserSelect::Auto,
             // 命令式节点默认不覆盖父节点光标。
             cursor: None,
             enter_animation: None,
@@ -91,6 +95,8 @@ impl WidgetNode {
             provider_context: current_provider_context(),
             visible: true,
             visual_transform: ViewTransform::default(),
+            // 命令式叶节点默认保留组件自身选择能力。
+            user_select: crate::ui::UserSelect::Auto,
             // 命令式叶节点默认不覆盖父节点光标。
             cursor: None,
             enter_animation: None,
@@ -126,6 +132,13 @@ impl WidgetNode {
     }
     pub(crate) fn with_visual_transform(mut self, transform: ViewTransform) -> Self {
         self.visual_transform = transform;
+        self
+    }
+    // 设置待挂载节点声明的文字选择策略。
+    pub(crate) fn with_user_select(mut self, value: crate::ui::UserSelect) -> Self {
+        // 保留显式策略供实际树结合父级解析。
+        self.user_select = value;
+        // 返回可继续组装的节点。
         self
     }
     // 设置待挂载节点显式声明的指针光标。

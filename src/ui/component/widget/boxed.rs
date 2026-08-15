@@ -14,6 +14,10 @@ mod layout_measure;
 #[path = "boxed/visual_metadata.rs"]
 // 编译运行时节点视觉元数据的私有实现模块。
 mod visual_metadata;
+// 拆分文字选择元数据访问，保持主体文件低于规模上限。
+#[path = "boxed/user_select_metadata.rs"]
+// 编译声明值与 used-value 的节点私有存储入口。
+mod user_select_metadata;
 pub struct BoxedWidget {
     component: Box<dyn WidgetComponent>,
     caps: WidgetCapabilities,
@@ -29,6 +33,10 @@ pub struct BoxedWidget {
     visible: bool,
     parent_visible: bool,
     visual_transform: ViewTransform,
+    // 保存当前节点自己的文字选择声明。
+    declared_user_select: crate::ui::UserSelect,
+    // 保存结合祖先边界解析后的最终文字选择策略。
+    effective_user_select: crate::ui::UserSelect,
     // 保存当前运行时节点显式覆盖的指针光标；None 表示沿父链继承。
     cursor: Option<crate::platform::windowing::CursorType>,
     view_transition: Option<crate::ui::animation::TransitionPlayer>,
@@ -107,6 +115,10 @@ impl BoxedWidget {
             visible: true,
             parent_visible: true,
             visual_transform: ViewTransform::default(),
+            // 新节点默认没有选择策略覆盖。
+            declared_user_select: crate::ui::UserSelect::Auto,
+            // 没有父节点时 auto 保持组件默认能力。
+            effective_user_select: crate::ui::UserSelect::Auto,
             // 新运行时节点默认继承父节点光标。
             cursor: None,
             view_transition: None,

@@ -21,7 +21,7 @@ use crate::ui::theme::style::{
 // 引入主题颜色值与组件运行契约。
 use crate::ui::{
     ColorValue, ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent,
-    WidgetTree,
+    UserSelect, WidgetTree,
 };
 
 use super::icon::Icon;
@@ -58,6 +58,8 @@ component! {
         strong: bool,
         italic: bool,
         copyable: bool,
+        /// 由 WidgetTree 结合祖先声明解析出的最终选择策略。
+        user_select_policy: UserSelect,
         // 保存由主题模块拥有的可选语义文字颜色。
         semantic_color: Option<ColorValue>,
         color_override: Option<Color>,
@@ -126,11 +128,28 @@ component! {
                     self.copy_content(true);
                     return EventResult::Handled;
                 }
+                // none 只禁止普通文字选择，不阻断上方已经处理的复制按钮。
+                if !self.selection_enabled() {
+                    // 把事件交给其余冒泡处理器。
+                    return EventResult::NotHandled;
+                }
+                // all 把当前文本作为原子整体，不启动可收缩的拖选会话。
+                if self.user_select_policy == UserSelect::All {
+                    // 先选择完整当前文本，树层随后扩展到最近 all 子树。
+                    self.sel.select_all(&self.content);
+                    // 当前文字节点已经消费按下事件。
+                    return EventResult::Handled;
+                }
                 // 按下即进入拖选：Shift 扩展选区，否则重设锚点。
                 self.sel.pointer_down(&self.content, *pos, mods.contains(KeyMod::SHIFT));
                 EventResult::Handled
             }
             SystemEvent::PointerMove { pos, .. } => {
+                // 关闭选择时不消费普通指针移动。
+                if !self.selection_enabled() {
+                    // 允许其他交互组件继续观察移动事件。
+                    return EventResult::NotHandled;
+                }
                 // 拖选中才消费移动事件并扩展选区。
                 if !self.sel.pointer_move(&self.content, *pos) {
                     return EventResult::NotHandled;
@@ -141,6 +160,11 @@ component! {
                 button: MouseButton::Left,
                 ..
             } => {
+                // 关闭选择时没有需要结束的拖选会话。
+                if !self.selection_enabled() {
+                    // 允许事件继续冒泡。
+                    return EventResult::NotHandled;
+                }
                 // 结束拖选并清除空选区。
                 self.sel.pointer_up();
                 EventResult::Handled
@@ -158,12 +182,12 @@ component! {
             SystemEvent::KeyDown { key, mods } => {
                 let ctrl = mods.contains(KeyMod::CTRL);
                 match key {
-                    KeyCode::A if ctrl => {
+                    KeyCode::A if ctrl && self.selection_enabled() => {
                         // Ctrl+A 全选当前文本。
                         self.sel.select_all(&self.content);
                         EventResult::Handled
                     }
-                    KeyCode::C if ctrl => {
+                    KeyCode::C if ctrl && self.selection_enabled() => {
                         // 有选区复制选区，否则复制全文。
                         if let Some(selected) = self.sel.selected_text(&self.content) {
                             clipboard::copy_to_clipboard(&selected);
@@ -365,6 +389,8 @@ impl Typography {
             strong: false,
             italic: false,
             copyable: false,
+            // 没有结构声明时 Typography 保留既有默认可选语义。
+            user_select_policy: UserSelect::Auto,
             // 默认沿用当前主题的正文颜色。
             semantic_color: None,
             color_override: None,
@@ -473,6 +499,23 @@ impl Typography {
         self
     }
 
+    // 接收 WidgetTree 已结合祖先约束解析出的最终选择策略。
+    pub(crate) fn set_user_select_policy(&mut self, value: UserSelect) {
+        // 保存新策略供事件与跨节点参与资格共同读取。
+        self.user_select_policy = value;
+        // none 切换必须终止当前选区和拖选生命周期。
+        if !self.selection_enabled() {
+            // 复用共享选择状态的完整重置入口。
+            self.sel.reset_selection();
+        }
+    }
+
+    // 判断结构策略与 Typography 默认能力组合后的最终选择能力。
+    pub(crate) fn selection_enabled(&self) -> bool {
+        // Typography 的组件默认值为允许普通文字选择。
+        self.user_select_policy.allows_text(true)
+    }
+
     /// 设置段落行高相对字号的倍率；非有限值归零。
     pub fn spacing(mut self, value: f32) -> Self {
         self.spacing = if value.is_finite() {
@@ -510,7 +553,8 @@ impl Typography {
     }
 
     pub(crate) fn is_cross_text_dragging(&self) -> bool {
-        self.sel.is_dragging()
+        // 禁止策略不允许旧拖选状态继续参与树协调。
+        self.selection_enabled() && self.sel.is_dragging()
     }
 
     pub(crate) fn cross_text_len(&self) -> usize {
@@ -522,6 +566,13 @@ impl Typography {
     }
 
     pub(crate) fn set_cross_text_range(&self, range: Option<(usize, usize)>) {
+        // 禁止策略不能经树级协调重新建立选区。
+        if !self.selection_enabled() {
+            // 防御性清除可能残留的旧范围。
+            self.sel.set_cross_text_range(&self.content, None);
+            // 结束当前范围更新。
+            return;
+        }
         self.sel.set_cross_text_range(&self.content, range);
     }
 
