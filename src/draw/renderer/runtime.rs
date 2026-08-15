@@ -168,6 +168,7 @@ impl Renderer {
         }
     }
 
+    /// 返回运行时持有的统一渲染会话。
     pub fn session(&self) -> &RenderSession {
         &self.session
     }

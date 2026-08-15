@@ -86,6 +86,7 @@ pub struct Diagnostics {
 }
 
 impl Diagnostics {
+    /// 使用指定配置创建相互隔离的诊断运行时实例。
     pub fn new(config: DiagnosticsConfig) -> Self {
         let runtime_id = NEXT_RUNTIME_ID.fetch_add(1, Ordering::Relaxed);
         Self {

@@ -44,6 +44,7 @@ use crate::native::present::rhi::TextureHandle;
 
 use super::canvas::NativeGpuCanvas2D;
 
+/// 拥有原生 GPU 绘制表面、RHI 渲染器及离屏资源的后端。
 pub struct GpuBackend {
     // 保存构造期已验证的 GPU recipe owner，不直接依赖迁移期兼容 trait object。
     pub(crate) gpu_ctx: GpuRecipeOwner,
