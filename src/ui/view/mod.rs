@@ -32,6 +32,8 @@ use crate::ui::{
 use std::sync::Arc;
 
 pub(crate) mod providers;
+// 拆分声明式动画绑定，保持 ViewNode 核心低于规模上限。
+mod animation_bindings;
 // 拆分定位链式入口，保持声明节点主体低于规模上限。
 mod position;
 
@@ -205,6 +207,14 @@ impl ViewNode {
         self
     }
 
+    /// 设置背景颜色。
+    pub fn background_color(mut self, color: impl Into<ColorValue>) -> Self {
+        // 保存可在主题解析阶段统一求值的背景色。
+        self.style.background = Some(color.into());
+        // 返回完成样式更新的节点。
+        self
+    }
+
     /// 设置字体大小令牌。
     pub fn font_size(mut self, size: impl Into<TypographyToken>) -> Self {
         self.style.font_size = size.into();
@@ -288,20 +298,10 @@ impl ViewNode {
         self
     }
 
-    /// Binds width to an existing declarative animation source.
-    pub fn width_animated(self, width: &crate::ui::animation::Animated<f32>) -> Self {
-        self.width(width.value())
-    }
-
     /// 设置显式高度。
     pub fn height(mut self, h: f32) -> Self {
         self.style.height = Some(h);
         self
-    }
-
-    /// Binds height to an existing declarative animation source.
-    pub fn height_animated(self, height: &crate::ui::animation::Animated<f32>) -> Self {
-        self.height(height.value())
     }
 
     /// Offsets this node's rendered subtree without changing its layout slot.
@@ -470,25 +470,10 @@ impl ViewNode {
         self
     }
 
-    /// Binds corner radius to an existing declarative animation source.
-    pub fn radius_animated(self, radius: &crate::ui::animation::Animated<f32>) -> Self {
-        self.radius(radius.value())
-    }
-
     /// 设置节点透明度。
     pub fn opacity(mut self, o: f32) -> Self {
         self.style.opacity = o;
         self
-    }
-
-    /// Binds opacity to an existing declarative animation source.
-    pub fn opacity_animated(self, opacity: &crate::ui::animation::Animated<f32>) -> Self {
-        self.opacity(opacity.value())
-    }
-
-    /// Binds foreground/text color to an existing declarative animation source.
-    pub fn color_animated(self, color: &crate::ui::animation::Animated<Color>) -> Self {
-        self.color(color.value())
     }
 
     /// 保留节点身份，但让整棵子树退出布局、绘制、命中与焦点候选。

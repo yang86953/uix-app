@@ -1,5 +1,12 @@
 // 定义转换器内部共享的带跨度语法树。
 mod ast;
+// 定义静态 animation 简写到持久化 Animated 状态的降低。
+mod animation_lower;
+// 定义静态 animation 装饰的关键帧代码生成。
+mod animation_codegen;
+// 集中验证 animation 完整简写、字段矩阵与拒绝路径。
+#[cfg(test)]
+mod animation_codegen_tests;
 // 定义六类文档内置组件的已登记与规划中矩阵。
 mod builtin_matrix;
 // 定义语言面结构化数据类型到公开构造 API 的编译期映射。

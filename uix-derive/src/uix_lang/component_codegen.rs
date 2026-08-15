@@ -9,8 +9,8 @@ use quote::quote;
 // 引入组件、文档、表达式与视图 AST。
 use super::{
     Attribute, AttributeValue, ComponentDeclaration, ComponentScopeMarker, ControlBinding,
-    Declaration, Diagnostic, Document, Element, ExpressionKind, ExpressionNode, Node,
-    RecordDeclaration, StyleClassResolver,
+    Declaration, Diagnostic, Document, Element, ExpressionKind, ExpressionNode,
+    KeyframesDeclaration, Node, RecordDeclaration, StyleClassResolver,
 };
 // 引入既有核心 View 生成入口。
 use super::generate_view;
@@ -62,12 +62,12 @@ pub(crate) fn generate_document_view(document: &Document) -> Result<TokenStream,
     }
     // 创建组件感知展开器。
     let mut expander = ComponentExpander::new(document)?;
-    // 由伪类模块为文档根按需建立 hover 生命周期作用域。
-    let root_hover_scope = expander.begin_document_pseudo_scope(document);
+    // 为文档根按需建立 hover 或 animation 生命周期作用域。
+    let root_style_scope = expander.begin_document_style_scope(document);
     // 展开根元素与全部组件调用。
     let mut root = expander.expand_root(&document.root)?;
-    // 由伪类模块恢复作用域栈并把生命周期标记绑定到实际根。
-    expander.finish_document_pseudo_scope(&mut root, root_hover_scope);
+    // 恢复作用域栈并把样式状态生命周期标记绑定到实际根。
+    expander.finish_document_style_scope(&mut root, root_style_scope);
     // 委托核心映射生成 ViewNode。
     let view = generate_view(&root)?;
     // 取出按依赖顺序生成的局部准备语句。
@@ -87,6 +87,8 @@ pub(super) struct ComponentExpander {
     pub(super) components: BTreeMap<String, ComponentDeclaration>,
     // 保存名称到 record 声明的完整副本。
     pub(super) records: BTreeMap<String, RecordDeclaration>,
+    // 保存名称到关键帧声明的完整副本。
+    pub(super) keyframes: BTreeMap<String, KeyframesDeclaration>,
     // 保存最终 View 之前执行的有序准备语句。
     pub(super) setup: Vec<TokenStream>,
     // 保存卫生名称的单调递增编号。
@@ -149,6 +151,24 @@ impl ComponentExpander {
             })
             // 收集到有序映射。
             .collect();
+        // 收集全部已完成名称去重验证的关键帧声明。
+        let keyframes = document
+            // 遍历顶层声明。
+            .declarations
+            // 借用声明迭代器。
+            .iter()
+            // 只保留关键帧声明。
+            .filter_map(|declaration| match declaration {
+                // 复制关键帧名称与声明。
+                Declaration::Keyframes(keyframes) => {
+                    // 返回映射条目。
+                    Some((keyframes.name.clone(), keyframes.clone()))
+                }
+                // 其他声明不占用动画命名空间。
+                _ => None,
+            })
+            // 收集到有序映射。
+            .collect();
         // 构造并验证样式类继承注册表。
         let styles = StyleClassResolver::new(document)?;
         // 返回初始展开状态。
@@ -157,6 +177,8 @@ impl ComponentExpander {
             components,
             // 写入 record 注册表。
             records,
+            // 写入关键帧注册表。
+            keyframes,
             // 初始没有准备语句。
             setup: Vec::new(),
             // 卫生编号从零开始。
@@ -295,6 +317,8 @@ impl ComponentExpander {
         if !self.prepare_dynamic_style(&mut expanded, bindings)? {
             // 合并 class、继承与内联 style。
             self.styles.apply(&mut expanded)?;
+            // 消费 animation 并附加持久化 Animated 装饰。
+            self.prepare_animation(&mut expanded)?;
         }
         // 伪类最后叠加，避免自定义动态样式覆盖自动状态外观。
         if let Some(binding) = pseudo_style {
@@ -515,12 +539,15 @@ impl ComponentExpander {
         let uses_dynamic_style = nodes_use_set_style(&component.children);
         // 预先判断当前组件是否需要自动 hover 私有状态。
         let uses_hover_style = self.styles.nodes_use_hover(&component.children);
+        // 预先判断当前组件是否需要持久化声明式动画。
+        let uses_animation_style = self.styles.nodes_use_animation(&component.children);
         // For 内的状态、prop 或动态样式需要运行时逐实例存储。
         if inside_for
             && (!component.props.is_empty()
                 || !component.states.is_empty()
                 || uses_dynamic_style
-                || uses_hover_style)
+                || uses_hover_style
+                || uses_animation_style)
         {
             // 返回明确的动态实例边界诊断。
             return Err(Diagnostic::new(
@@ -588,7 +615,11 @@ impl ComponentExpander {
             // 组件体只看见自身字段。
             let mut bindings = Bindings::new();
             // 仅为拥有私有状态的静态调用创建窗口私有的运行时作用域。
-            let scope = if component.states.is_empty() && !uses_dynamic_style && !uses_hover_style {
+            let scope = if component.states.is_empty()
+                && !uses_dynamic_style
+                && !uses_hover_style
+                && !uses_animation_style
+            {
                 // 无私有状态的组件不进入运行时作用域，保留既有 For 语义。
                 None
             } else {

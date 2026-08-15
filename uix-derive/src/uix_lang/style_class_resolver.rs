@@ -162,6 +162,52 @@ impl StyleClassResolver {
         })
     }
 
+    // 判断节点树是否使用需要持久化 Animated 状态的 animation 属性。
+    pub(super) fn nodes_use_animation(&self, nodes: &[super::Node]) -> bool {
+        // 任一元素自身或后代声明 animation 即需要组件状态作用域。
+        nodes.iter().any(|node| match node {
+            // 元素递归检查自身与后代。
+            super::Node::Element(element) => {
+                // 合并当前元素与后代结果。
+                self.element_uses_animation(element) || self.nodes_use_animation(&element.children)
+            }
+            // 文本和插值没有样式属性。
+            _ => false,
+        })
+    }
+
+    // 判断单个元素的静态 class 或内联 style 是否声明 animation。
+    fn element_uses_animation(&self, element: &Element) -> bool {
+        // 任一静态样式来源包含 animation 即返回真。
+        element.attributes.iter().any(|attribute| {
+            // 按属性种类检查类注册表或内联属性。
+            match (attribute.name.as_str(), &attribute.value) {
+                // 静态 class 按空白分隔名称查找已解析属性。
+                ("class", AttributeValue::Literal(source)) => source
+                    // 遍历 class 名称。
+                    .split_whitespace()
+                    // 任一类声明 animation 即命中。
+                    .any(|name| {
+                        // 查找继承展开后的最终属性。
+                        self.classes.get(name).is_some_and(|properties| {
+                            // 检查最终级联属性名。
+                            properties
+                                .iter()
+                                .any(|property| property.name == "animation")
+                        })
+                    }),
+                // 内联样式直接检查结构化属性。
+                ("style", AttributeValue::InlineStyle(properties)) => properties
+                    // 遍历显式内联字段。
+                    .iter()
+                    // 查找 animation 简写。
+                    .any(|property| property.name == "animation"),
+                // 其他属性不影响动画作用域。
+                _ => false,
+            }
+        })
+    }
+
     // 判断单个元素是否引用已登记 hover 变体。
     fn element_uses_hover(&self, element: &Element) -> bool {
         // 查找静态 class 中任一具名 hover 变体。

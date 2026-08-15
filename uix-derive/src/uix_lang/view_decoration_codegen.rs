@@ -3,6 +3,8 @@ use proc_macro2::{Ident, Span, TokenStream};
 // 引入确定性令牌拼接宏。
 use quote::quote;
 
+// 引入声明式关键帧动画包裹入口。
+use super::animation_codegen::apply_animation;
 // 引入动态样式包裹入口。
 use super::dynamic_style_codegen::apply_dynamic_style;
 // 引入状态伪类叠加入口。
@@ -45,6 +47,11 @@ pub(super) fn apply_component_scopes(
             ComponentScopeMarker::PseudoStyle(binding) => {
                 // 应用自动 hover 与既有 disabled/checked 事实选择。
                 view = apply_pseudo_style(view, binding)?;
+            }
+            // 声明式关键帧动画在普通、动态与伪类样式完成后绑定最终字段。
+            ComponentScopeMarker::Animation(binding) => {
+                // 应用持久化 Animated 状态与窗口帧调度绑定。
+                view = apply_animation(view, binding)?;
             }
         }
     }

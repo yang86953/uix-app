@@ -241,6 +241,25 @@ impl ComponentExpander {
                 properties: take_inline_style(&mut target),
             });
         }
+        // 动态 setStyle 分支暂不允许隐式重启动画状态。
+        if let Some(property) = variants
+            // 遍历全部闭合样式分支。
+            .iter()
+            // 遍历每个分支的最终级联属性。
+            .flat_map(|variant| variant.properties.iter())
+            // 定位任一 animation 简写。
+            .find(|property| property.name == "animation")
+        {
+            // 返回组合边界诊断，避免普通 Style 生成器误报规划中属性。
+            return Err(Diagnostic::new(
+                // 指向实际 animation 属性。
+                property.span,
+                // 陈述失败原因。
+                "setStyle 动态分支暂不支持切换 animation 播放实例",
+                // 给出当前可执行写法。
+                "把 animation 放到不使用 setStyle 的静态节点；状态变化动画使用 transition",
+            ));
+        }
         // 把全部 setStyle 调用替换为已生成 setter 调用。
         for attribute in &mut expanded.attributes {
             // 只改写事件表达式。

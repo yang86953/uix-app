@@ -13,19 +13,23 @@ use super::{
 
 // 实现状态伪类的编译期事实绑定。
 impl ComponentExpander {
-    // 为直接使用 hover 的文档根建立既有组件状态生命周期作用域。
-    pub(super) fn begin_document_pseudo_scope(
+    // 为直接使用 hover 或 animation 的文档根建立组件状态生命周期作用域。
+    pub(super) fn begin_document_style_scope(
         // 可变借用展开器以登记准备语句和作用域。
         &mut self,
         // 接收当前完整文档。
         document: &Document,
     ) -> Option<Ident> {
-        // 没有根级 hover 时维持零状态开销。
+        // 根子树既没有 hover 也没有 animation 时维持零状态开销。
         if !self
             // 从已解析样式注册表检测根子树。
             .styles
             // 把根包装为节点复用递归检测。
             .nodes_use_hover(&[Node::Element(document.root.clone())])
+            // animation 同样需要跨 reconcile 私有状态。
+            && !self
+                .styles
+                .nodes_use_animation(&[Node::Element(document.root.clone())])
         {
             // 报告无需附加作用域。
             return None;
@@ -35,7 +39,7 @@ impl ComponentExpander {
         // 使用根标签与源码跨度形成稳定声明身份。
         let declaration_id = Self::stable_component_id(&format!(
             // 固定身份前缀并纳入源码位置。
-            "document-hover:{}:{}:{}",
+            "document-style-state:{}:{}:{}",
             // 使用根标签名称。
             document.root.name,
             // 使用根起始偏移。
@@ -45,20 +49,20 @@ impl ComponentExpander {
         ));
         // 在展开前取得窗口私有的既有组件状态作用域。
         self.setup.push(quote! {
-            // 复用组件状态存储作为文档根 hover 生命周期所有者。
+            // 复用组件状态存储作为文档根样式状态生命周期所有者。
             let #scope = ::uix::ui::__private::uix_component_scope(
                 concat!(module_path!(), ":", file!(), ":", line!(), ":", column!()),
                 #declaration_id,
             );
         });
-        // 让根子树展开期间能派生逐节点 hover 状态。
+        // 让根子树展开期间能派生逐节点 hover 与 animation 状态。
         self.component_scope_stack.push(scope.clone());
         // 保存作用域供展开后附加生命周期标记。
         Some(scope)
     }
 
-    // 在文档根展开后恢复栈并绑定 hover 状态生命周期。
-    pub(super) fn finish_document_pseudo_scope(
+    // 在文档根展开后恢复栈并绑定样式状态生命周期。
+    pub(super) fn finish_document_style_scope(
         // 可变借用展开器以恢复作用域栈。
         &mut self,
         // 接收已经展开的最终核心根元素。
@@ -68,7 +72,7 @@ impl ComponentExpander {
     ) {
         // 仅在建立过作用域时执行恢复与绑定。
         let Some(scope) = scope else {
-            // 没有 hover 时无需收尾。
+            // 没有样式状态时无需收尾。
             return;
         };
         // 弹出刚才创建的文档根作用域。
@@ -97,6 +101,29 @@ impl ComponentExpander {
         if styles.is_empty() {
             // 报告没有伪类元数据。
             return Ok(None);
+        }
+        // 伪类 animation 会要求状态进入时重建播放实例，当前由 transition 契约负责。
+        if let Some(property) = styles
+            // 依次检查 hover、disabled 与 checked 差异。
+            .hover
+            // 借用 hover 属性。
+            .iter()
+            // 串接 disabled 属性。
+            .chain(styles.disabled.iter())
+            // 串接 checked 属性。
+            .chain(styles.checked.iter())
+            // 定位 animation 简写。
+            .find(|property| property.name == "animation")
+        {
+            // 返回明确组合诊断。
+            return Err(Diagnostic::new(
+                // 指向伪类 animation 属性。
+                property.span,
+                // 陈述失败原因。
+                "状态伪类暂不支持启动 animation 播放实例",
+                // 指向状态变化的正式契约。
+                "把 animation 放到基础样式；hover/disabled/checked 的平滑变化使用 transition",
+            ));
         }
         // hover 需要现有组件私有状态存储来跨 reconcile 保持事实。
         let hover_scope_name = if styles.hover.is_empty() {
