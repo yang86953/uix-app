@@ -18,6 +18,7 @@ impl D3d11Context {
             return map_dxgi_device_removed_reason(DXGI_ERROR_DEVICE_REMOVED);
         }
         // GetDeviceRemovedReason 不提交新命令，只读取当前设备健康状态。
+        // SAFETY: device 是当前 context 持有的存活 COM 接口，调用不接收裸指针且在 owner thread 执行。
         let reason = unsafe { self.device.GetDeviceRemovedReason() };
         // 健康设备直接通过维护边界，不生成额外错误对象。
         let Err(error) = reason else {

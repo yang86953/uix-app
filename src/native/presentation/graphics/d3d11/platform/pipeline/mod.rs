@@ -460,6 +460,7 @@ fn d3d_error(operation: &str, err: ::windows::core::Error) -> Error {
 fn compile_shader(source: &str, entry: &CStr, target: &CStr) -> Result<ID3DBlob> {
     let mut code = None;
     let mut errors = None;
+    // SAFETY: source/entry/target 指针在同步编译期间有效且长度准确，两个输出槽完整初始化并由 COM 接管。
     let hr = unsafe {
         D3DCompile(
             source.as_ptr().cast(),
@@ -479,11 +480,14 @@ fn compile_shader(source: &str, entry: &CStr, target: &CStr) -> Result<ID3DBlob>
         let detail = errors
             .as_ref()
             .map(|blob| {
+                // SAFETY: blob 是 D3DCompile 返回的存活 ID3DBlob，指针在 blob 存活期间有效。
                 let ptr = unsafe { blob.GetBufferPointer() } as *const u8;
+                // SAFETY: 同一存活 blob 返回与上方指针对应的字节长度。
                 let len = unsafe { blob.GetBufferSize() };
                 if ptr.is_null() || len == 0 {
                     return String::new();
                 }
+                // SAFETY: ptr 已校验非空且 blob 保持存活，GetBufferSize 保证该区域覆盖 len 字节。
                 let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
                 String::from_utf8_lossy(bytes).into_owned()
             })

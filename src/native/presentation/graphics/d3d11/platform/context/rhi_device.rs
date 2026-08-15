@@ -601,6 +601,7 @@ impl GraphicsDevice for D3d11Context {
                 (rtv, texture.extent)
             };
         // 绑定本 pass 的唯一 render target。
+        // SAFETY: rtv 来自当前 device 的 swapchain 或 texture，数组在同步调用期间存活且 context 位于 owner thread。
         unsafe {
             self.context
                 .OMSetRenderTargets(Some(&[Some(rtv.clone())]), None);

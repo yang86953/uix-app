@@ -36,6 +36,7 @@ impl D3d11Pipeline {
             ));
         }
         // 绑定渐变 shader、常量和 alpha blend 状态。
+        // SAFETY: buffer、shader、layout 与 blend 均由当前 device 创建并存活，绑定和 Draw 在 owner thread 执行。
         unsafe {
             context.IASetInputLayout(&self.layout);
             context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
