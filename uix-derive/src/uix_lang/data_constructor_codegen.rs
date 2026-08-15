@@ -32,10 +32,54 @@ pub(super) fn generate_data_constructor(
         // 返回专用构造结果。
         return Some(generate_waterfall_data(arguments, span, event));
     }
+    // RadarAxis 把最小/最大值组合为运行时闭区间。
+    if name == "RadarAxis" {
+        // 返回专用构造结果。
+        return Some(generate_radar_axis(arguments, span, event));
+    }
     // 查找普通数据类型的公开构造规格。
     let spec = data_constructor_spec(name)?;
     // 返回普通已登记构造结果。
     Some(generate_registered_data(arguments, event, spec))
+}
+
+// 生成 RadarAxis(label, min, max) 到闭区间的公开构造调用。
+fn generate_radar_axis(
+    // 接收源码顺序中的三个参数。
+    arguments: &[CallArgument],
+    // 接收完整调用跨度。
+    span: SourceSpan,
+    // 接收可选事件载荷变量。
+    event: Option<&Ident>,
+) -> Result<TokenStream, Diagnostic> {
+    // 必须严格使用三个位置参数。
+    if arguments.len() != 3 || arguments.iter().any(|argument| argument.name.is_some()) {
+        // 返回精确参数形状诊断。
+        return Err(Diagnostic::new(
+            // 指向完整构造调用。
+            span,
+            // 说明参数要求。
+            "RadarAxis 必须接收 label、min、max 三个位置参数",
+            // 给出合法示例。
+            "使用 RadarAxis('速度', 0, 100)",
+        ));
+    }
+    // 生成维度标签表达式。
+    let label = generate_expression_inner(&arguments[0].value, event)?;
+    // 复制最小值以进行 f32 字面量规范化。
+    let mut min = arguments[1].value.clone();
+    // 规范化最小值中的整数数字。
+    normalize_number_literals(&mut min);
+    // 生成规范化后的最小值。
+    let min = generate_expression_inner(&min, event)?;
+    // 复制最大值以进行 f32 字面量规范化。
+    let mut max = arguments[2].value.clone();
+    // 规范化最大值中的整数数字。
+    normalize_number_literals(&mut max);
+    // 生成规范化后的最大值。
+    let max = generate_expression_inner(&max, event)?;
+    // 调用公开雷达轴构造器并形成闭区间。
+    Ok(quote! { ::uix::prelude::RadarAxis::new(#label, (#min)..=(#max)) })
 }
 
 // 生成普通已登记数据类型的公开构造调用。

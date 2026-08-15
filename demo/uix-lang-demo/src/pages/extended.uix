@@ -483,8 +483,8 @@
   <Column gap="16px">
     // 展示图表能力标题。
     <Text fontSize="heading2">图表</Text>
-    // 说明十类图表已进入声明式生成路径。
-    <Alert message="Bar / Line / Pie / Area / Scatter / Funnel / Treemap / Gauge / Heatmap / Waterfall 已登记类型化静态映射；高级交互与其余图表继续使用 Rust API。" type="success" />
+    // 说明 Rust 图表文档列出的十二类标签已进入声明式生成路径。
+    <Alert message="十二类图表标签已全部登记类型化静态映射；气泡、自定义混合系列和高级交互继续使用 Rust API。" type="success" />
     // 展示类型化柱状图数据与基础配置。
     <BarChart data={[BarData('Q1', 120, Color('#1677ff')), BarData('Q2', 200, Color('#52c41a')), BarData('Q3', 150, Color('#faad14'))]} showValue barRadius="3" title="季度产出" width="420px" height="260px" />
     // 展示类型化折线图数据与线形配置。
@@ -505,6 +505,10 @@
     <Heatmap data={[HeatmapCell(0, 0, 12), HeatmapCell(1, 0, 45), HeatmapCell(2, 0, 28), HeatmapCell(0, 1, 36), HeatmapCell(1, 1, 62), HeatmapCell(2, 1, 51)]} xLabels={['周一', '周二', '周三']} yLabels={['上午', '下午']} cellGap="2" showValues title="活跃热力" width="420px" height="260px" />
     // 展示瀑布变化类型、方向与坐标轴配置。
     <WaterfallChart data={[WaterfallData('起始', 1000, 'total'), WaterfallData('收入', 500, 'increase'), WaterfallData('成本', -300, 'decrease'), WaterfallData('税费', -100, 'decrease'), WaterfallData('净利', 1100, 'total')]} xAxis="项目" yAxis="金额" title="利润变化" width="460px" height="280px" />
+    // 展示雷达轴闭区间、精确系列与形状配置。
+    <RadarChart axes={[RadarAxis('速度', 0, 100), RadarAxis('力量', 0, 100), RadarAxis('耐力', 0, 100), RadarAxis('技巧', 0, 100), RadarAxis('协作', 0, 100)]} series={[ChartSeries('选手 A', [RadarData(85), RadarData(70), RadarData(90), RadarData(60), RadarData(75)]), ChartSeries('选手 B', [RadarData(65), RadarData(85), RadarData(60), RadarData(80), RadarData(70)])]} shape="circle" gridLevels="5" fillOpacity="0.2" title="能力雷达" width="380px" height="320px" />
+    // 展示柱线双轴组合图的两个精确泛型系列集合。
+    <ComboChart barSeries={[ChartSeries('销售额', [BarData('Jan', 100, Color('#1677ff')), BarData('Feb', 140, Color('#1677ff')), BarData('Mar', 125, Color('#1677ff'))])]} lineSeries={[ChartSeries('利润率', [LineData('Jan', 20), LineData('Feb', 28), LineData('Mar', 24)])]} yAxisLeft="销售额" yAxisRight="利润率" title="销售与利润" width="460px" height="280px" />
   // 结束图表能力内容。
   </Column>
 // 结束图表能力页组件。

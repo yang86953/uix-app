@@ -420,6 +420,11 @@ mod matrix_delta_chart_codegen;
 // 集中验证热力图与瀑布图生成、混合数据和拒绝路径。
 #[cfg(test)]
 mod matrix_delta_chart_codegen_tests;
+// 定义 RadarChart 与 ComboChart 的精确泛型系列生成边界。
+mod series_chart_codegen;
+// 集中验证雷达图与组合图生成、泛型集合和拒绝路径。
+#[cfg(test)]
+mod series_chart_codegen_tests;
 // 定义 Popconfirm 唯一触发子树、六向位置与同步回调的公开 API 代码生成边界。
 mod popconfirm_codegen;
 // 集中验证 Popconfirm 生成、组合 trigger、回调与拒绝路径。
@@ -681,6 +686,8 @@ pub(crate) use static_chart_codegen::generate_static_chart;
 pub(crate) use hierarchy_gauge_chart_codegen::generate_hierarchy_gauge_chart;
 // 向核心元素生成器暴露热力图与瀑布图叶组件映射。
 pub(crate) use matrix_delta_chart_codegen::generate_matrix_delta_chart;
+// 向核心元素生成器暴露雷达图与组合图叶组件映射。
+pub(crate) use series_chart_codegen::generate_series_chart;
 // 向核心元素生成器暴露 Popconfirm 组合组件专用映射。
 pub(crate) use popconfirm_codegen::generate_popconfirm;
 // 向核心元素生成器暴露 Modal 容器组件专用映射。

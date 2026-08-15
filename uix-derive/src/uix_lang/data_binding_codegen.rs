@@ -62,6 +62,12 @@ const DATA_TYPE_NAMES: &[&str] = &[
     "HeatmapCell",
     // 瀑布图变化项。
     "WaterfallData",
+    // 通用图表系列。
+    "ChartSeries",
+    // 雷达图维度轴。
+    "RadarAxis",
+    // 雷达图维度值。
+    "RadarData",
     // 日期语义类型。
     "Date",
     // 时间语义类型。
@@ -128,6 +134,12 @@ pub(crate) fn data_constructor_spec(name: &str) -> Option<DataConstructorSpec> {
         "HeatmapCell" => (quote! { ::uix::prelude::HeatmapCell }, None, false),
         // 瀑布图数据由表达式生成层单独映射数值与类型参数。
         "WaterfallData" => (quote! { ::uix::prelude::WaterfallData }, None, false),
+        // 通用图表系列保留内部数据集合的独立构造规则。
+        "ChartSeries" => (quote! { ::uix::prelude::ChartSeries }, None, false),
+        // 雷达轴由表达式生成层把最小/最大值组合为闭区间。
+        "RadarAxis" => (quote! { ::uix::prelude::RadarAxis }, None, false),
+        // 雷达维度值构造器接收 f32 数值。
+        "RadarData" => (quote! { ::uix::prelude::RadarData }, None, true),
         // 日期构造 year/month/day。
         "Date" => (quote! { ::uix::prelude::Date }, None, false),
         // 时间构造 hour/minute。
