@@ -152,7 +152,9 @@ impl ScenePipeline {
             // debug overlay 不参与可复用 backdrop。
             && !input.debug_mode
             // 中间 FrameEncoder 提交只对 retained GPU 路径开放。
-            && engine.raster_pipeline() == RasterPipeline::GpuNative;
+            && engine.raster_pipeline() == RasterPipeline::GpuNative
+            // 本次 overlay 生命周期已证明正常树不可纯 GPU 编码时禁止重试优化。
+            && !self.overlay_backdrop_blocked;
         // refresh 必须从完整正常树建立确定的 clean source。
         let draw_full = refresh_overlay_backdrop
             || !input.rendered_first

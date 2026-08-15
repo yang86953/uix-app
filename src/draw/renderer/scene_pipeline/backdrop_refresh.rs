@@ -180,6 +180,79 @@ impl ScenePipeline {
                 return Self::failed_backdrop_frame(error, tree_version);
             }
         };
+        // CPU 光栅分段等非原生载荷只表示 retained backdrop 优化无法无损执行。
+        if normal_frame.validate_gpu_native().is_err() {
+            // 记录当前 overlay 生命周期的能力事实，避免每帧重复录制同一个非原生树。
+            self.overlay_backdrop_blocked = true;
+            // 丢弃可能来自上一代正常树的快照，禁止复用过期像素。
+            if let Err(error) = engine.release_overlay_backdrop() {
+                // 真实资源释放失败仍保留 typed recovery 语义。
+                return Self::failed_backdrop_frame(error, tree_version);
+            }
+            // 强制完整树重绘，确保前置录制没有消费场景 dirty 事实。
+            self.layer_tree.invalidate();
+            // 降级分支仍需要建立唯一最终帧，直绘函数本身不拥有 begin 边界。
+            match engine.begin_frame(UpdateStrategy::FullRedraw) {
+                // 只有可绘制帧允许继续直绘。
+                RenderOutcome::FrameReady(_) => {}
+                // begin 不得越过 paint/end 直接报告呈现。
+                RenderOutcome::Present(_) | RenderOutcome::PresentPending(_) => {
+                    // 保留场景 dirty 并返回稳定状态错误。
+                    return Self::failed_backdrop_frame(
+                        // 构造 begin 合同违反诊断。
+                        Error::new(
+                            // 该结果表示当前帧生命周期非法。
+                            Errc::InvalidState,
+                            // 说明降级阶段发现的边界。
+                            "overlay backdrop fallback begin reported presentation",
+                        ),
+                        // 保留当前场景代际。
+                        tree_version,
+                    );
+                }
+                // 暂无可绘制 surface 时不消费 invalidation。
+                RenderOutcome::Idle => {
+                    // 返回无副作用的 idle 帧。
+                    return FrameRenderOutput {
+                        // 保留 target 的 idle 事实。
+                        outcome: RenderOutcome::Idle,
+                        // 未呈现时禁止消费 dirty。
+                        inv_source: InvalidationSource::None,
+                        // 保留当前树代际。
+                        tree_version,
+                    };
+                }
+                // 真实 begin 失败保持原始图形分类。
+                RenderOutcome::Failed(error) => {
+                    // 返回不可提交的失败帧。
+                    return FrameRenderOutput {
+                        // 不重写底层 GraphicsFailure。
+                        outcome: RenderOutcome::Failed(error),
+                        // 失败帧不消费 invalidation。
+                        inv_source: InvalidationSource::None,
+                        // 保留当前树代际。
+                        tree_version,
+                    };
+                }
+            }
+            // 在同一最终 present 内直接由 GPU canvas 绘制正常树与浮层。
+            return self.render_gpu_native(
+                // 复用唯一 retained GPU target。
+                engine,
+                // 复用同一场景代际。
+                scene,
+                // 传递本帧服务与调试输入。
+                input,
+                // 保留当前树代际。
+                tree_version,
+                // refresh 原本已要求完整树区域。
+                region,
+                // 降级帧保留调用方计算的完整 damage。
+                damage,
+                // 无有效 clean snapshot 时禁止恢复 backdrop。
+                false,
+            );
+        }
         // 第一阶段只写 retained texture，不触发 acquire 或 present。
         match engine.try_execute_encoded_frame(&normal_frame) {
             // 完整 normal tree 已成为新的 clean retained 内容。
