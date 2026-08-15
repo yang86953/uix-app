@@ -6,10 +6,14 @@
 //! 提供执行实现（`AgentCommandExecutor`），由组合根 `session_runtime` 组装
 //! 期注入。
 
+use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
+use std::time::Instant;
 
+use crate::app::agent::agent_policy::AgentConfirmationRequest;
 #[cfg(any(test, feature = "agent-control"))]
 use crate::app::queues::agent_command_queue::AgentWindowAction;
+use crate::app::queues::agent_command_queue::MAX_AGENT_CONFIRM_TTL;
 use crate::app::queues::agent_command_queue::{
     AgentCommandError, AgentCommandQueue, AgentCommandRequest, AgentCommandResponse,
     AgentCommandResult, MAX_AGENT_SETTLE_PASSES, send_result,
@@ -18,6 +22,26 @@ use crate::app::window_semantics::WindowSemanticState;
 use crate::ui::WidgetTree;
 use crate::ui::accessibility::semantic_snapshot::SemanticTarget;
 use crate::ui::semantic_action::SemanticAction;
+
+/// 窗口级 Agent 动作的操作契约：由 window 系统实现，经 UI turn 传入。
+///
+/// 窗口动作（缩放 / 移动 / 最大化等）必须通过平台窗口执行；执行器不持有
+/// 平台窗口引用，由驱动层在每帧 UI turn 内提供借用。契约只在窗口 UI
+/// 线程内同步调用，不要求 Send / Sync。
+pub(crate) trait AgentWindowOps {
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), AgentWindowOpsError>;
+    fn move_to(&mut self, x: i32, y: i32) -> Result<(), AgentWindowOpsError>;
+    fn maximize(&mut self) -> Result<(), AgentWindowOpsError>;
+    fn minimize(&mut self) -> Result<(), AgentWindowOpsError>;
+    fn restore(&mut self) -> Result<(), AgentWindowOpsError>;
+}
+
+/// 窗口管理动作的平台失败载荷。
+#[derive(Debug, Clone)]
+pub(crate) struct AgentWindowOpsError {
+    pub(crate) operation: &'static str,
+    pub(crate) message: String,
+}
 
 /// Agent 命令执行契约：由 `agent` Module 实现，组合根组装期注入。
 ///
@@ -44,12 +68,27 @@ pub(crate) trait AgentCommandExecutor: Send + Sync {
         presentable: bool,
         generation: u64,
         expected_revision: Option<u64>,
+        window: &mut dyn AgentWindowOps,
         action: AgentWindowAction,
     ) -> Result<(), AgentCommandError>;
 }
 
 struct PendingAgentResponse {
     response: std::sync::mpsc::SyncSender<AgentCommandResult>,
+}
+
+/// 待用户确认的 Agent 动作（确认流程状态）。
+///
+/// `response` 在 AI 发出 `Confirm` 请求后填充；`ResolveConfirmation`
+/// 在 UI turn 内交回用户决定并完成该响应。超过 `MAX_AGENT_CONFIRM_TTL`
+/// 未 resolve 的确认在下次命令处理时惰性清理为 `confirmation_not_found`。
+struct PendingConfirmation {
+    confirm_id: u64,
+    generation: u64,
+    target: crate::ui::accessibility::semantic_snapshot::SemanticTarget,
+    action: crate::ui::semantic_action::SemanticAction,
+    created_at: Instant,
+    response: Option<std::sync::mpsc::SyncSender<AgentCommandResult>>,
 }
 
 /// 每窗口 Agent 命令状态机：有界队列 + in-flight 追踪 + settle 轮次上限。
@@ -61,6 +100,13 @@ pub(crate) struct WindowAgentState {
     in_flight: Vec<PendingAgentResponse>,
     settle_passes: usize,
     executor: Option<Arc<dyn AgentCommandExecutor>>,
+    /// 待用户确认的动作（确认流程状态机）。
+    confirm_pending: Vec<PendingConfirmation>,
+    confirm_next_id: u64,
+    /// 本状态机所属窗口（组装期注入，确认载荷用）。
+    window_id: Option<crate::core::WindowId>,
+    /// 应用注入的确认 UI 回调：在 UI turn 内收到待确认请求并展示确认界面。
+    confirm_ui: Option<Arc<dyn Fn(AgentConfirmationRequest) + Send + Sync>>,
 }
 
 impl Default for WindowAgentState {
@@ -76,7 +122,30 @@ impl WindowAgentState {
             in_flight: Vec::new(),
             settle_passes: 0,
             executor: None,
+            confirm_pending: Vec::new(),
+            confirm_next_id: 1,
+            window_id: None,
+            confirm_ui: None,
         }
+    }
+
+    /// 组装期注入确认 UI 回调（组合根提供，应用配置）。
+    pub(crate) fn set_confirm_ui(
+        &mut self,
+        window_id: crate::core::WindowId,
+        handler: Option<Arc<dyn Fn(AgentConfirmationRequest) + Send + Sync>>,
+    ) {
+        self.window_id = Some(window_id);
+        self.confirm_ui = handler.map(|handler| {
+            let wrapped: Arc<dyn Fn(AgentConfirmationRequest) + Send + Sync> =
+                Arc::new(move |request: AgentConfirmationRequest| {
+                    handler(AgentConfirmationRequest {
+                        window_id,
+                        ..request
+                    })
+                });
+            wrapped
+        });
     }
 
     /// 组装期注入执行器（组合根调用；替换队列会先关闭旧队列）。
@@ -102,6 +171,8 @@ impl WindowAgentState {
         tree: &mut WidgetTree,
         semantic_state: &mut WindowSemanticState,
         presentable: bool,
+        #[cfg_attr(not(any(test, feature = "agent-control")), allow(unused_variables))]
+        window: &mut dyn AgentWindowOps,
     ) -> bool {
         if !self.in_flight.is_empty() {
             return false;
@@ -150,6 +221,32 @@ impl WindowAgentState {
                             response: envelope.response,
                         });
                     }
+                    // 命中确认策略：登记待确认动作，错误携带一次性 confirm_id。
+                    Err(AgentCommandError::RequiresConfirmation {
+                        target: _,
+                        action: _,
+                        confirm_id: _,
+                    }) => {
+                        let confirm_id = self.next_confirm_id();
+                        let target_label = target.label();
+                        let action_kind = action.kind();
+                        self.confirm_pending.push(PendingConfirmation {
+                            confirm_id,
+                            generation,
+                            target,
+                            action,
+                            created_at: Instant::now(),
+                            response: None,
+                        });
+                        send_result(
+                            envelope.response,
+                            Err(AgentCommandError::RequiresConfirmation {
+                                target: target_label,
+                                action: action_kind,
+                                confirm_id,
+                            }),
+                        );
+                    }
                     Err(error) => send_result(envelope.response, Err(error)),
                 },
                 #[cfg(any(test, feature = "agent-control"))]
@@ -163,6 +260,7 @@ impl WindowAgentState {
                     presentable,
                     generation,
                     expected_revision,
+                    window,
                     action,
                 ) {
                     Ok(()) => {
@@ -173,6 +271,19 @@ impl WindowAgentState {
                     }
                     Err(error) => send_result(envelope.response, Err(error)),
                 },
+                AgentCommandRequest::Confirm { confirm_id } => {
+                    self.handle_confirm_request(envelope.response, confirm_id);
+                }
+                AgentCommandRequest::ResolveConfirmation { confirm_id, allow } => {
+                    self.handle_resolve_confirmation(
+                        tree,
+                        semantic_state,
+                        presentable,
+                        envelope.response,
+                        confirm_id,
+                        allow,
+                    );
+                }
             }
         }
 
@@ -214,6 +325,7 @@ impl WindowAgentState {
         presentable: bool,
         generation: u64,
         expected_revision: Option<u64>,
+        window: &mut dyn AgentWindowOps,
         action: AgentWindowAction,
     ) -> Result<(), AgentCommandError> {
         match self.executor.as_deref() {
@@ -223,6 +335,7 @@ impl WindowAgentState {
                 presentable,
                 generation,
                 expected_revision,
+                window,
                 action,
             ),
             None => Err(AgentCommandError::Internal),
@@ -268,12 +381,178 @@ impl WindowAgentState {
         if !self.in_flight.is_empty() {
             self.finish_all(Err(AgentCommandError::NotPresentable));
         }
+        self.fail_confirmations();
     }
 
     pub(crate) fn close(&mut self) {
         self.queue.close();
         if !self.in_flight.is_empty() {
             self.finish_all(Err(AgentCommandError::AppClosed));
+        }
+        self.fail_confirmations();
+    }
+
+    /// AI 确认执行：挂起响应并调用应用注入的确认 UI（UI turn 内）。
+    fn handle_confirm_request(
+        &mut self,
+        response: SyncSender<AgentCommandResult>,
+        confirm_id: u64,
+    ) {
+        // 惰性清理：过期的待确认动作直接失效。
+        self.expire_confirmations();
+        let Some(index) = self
+            .confirm_pending
+            .iter()
+            .position(|pending| pending.confirm_id == confirm_id)
+        else {
+            send_result(
+                response,
+                Err(AgentCommandError::ConfirmationNotFound { confirm_id }),
+            );
+            return;
+        };
+        // 重复确认请求拒绝：一次确认流程只接受一次 Confirm。
+        if self.confirm_pending[index].response.is_some() {
+            send_result(
+                response,
+                Err(AgentCommandError::ConfirmationNotFound { confirm_id }),
+            );
+            return;
+        }
+        // 未注入确认 UI：立即失败并移除登记，避免 ticket 永久挂起。
+        let Some(handler) = self.confirm_ui.clone() else {
+            self.confirm_pending.remove(index);
+            send_result(
+                response,
+                Err(AgentCommandError::ConfirmationNotFound { confirm_id }),
+            );
+            return;
+        };
+        let request = AgentConfirmationRequest {
+            window_id: self
+                .window_id
+                .unwrap_or(crate::core::WindowId::ROOT),
+            confirm_id,
+            target: self.confirm_pending[index].target.label(),
+            action: self.confirm_pending[index].action.kind().as_str().to_owned(),
+        };
+        self.confirm_pending[index].response = Some(response);
+        handler(request);
+    }
+
+    /// 应用侧交回用户决定：允许则执行登记的动作，拒绝则完成拒绝错误。
+    fn handle_resolve_confirmation(
+        &mut self,
+        tree: &mut WidgetTree,
+        semantic_state: &WindowSemanticState,
+        presentable: bool,
+        response: SyncSender<AgentCommandResult>,
+        confirm_id: u64,
+        allow: bool,
+    ) {
+        let Some(index) = self
+            .confirm_pending
+            .iter()
+            .position(|pending| pending.confirm_id == confirm_id)
+        else {
+            send_result(
+                response,
+                Err(AgentCommandError::ConfirmationNotFound { confirm_id }),
+            );
+            return;
+        };
+        let mut pending = self.confirm_pending.remove(index);
+        if !allow {
+            if let Some(ticket_response) = pending.response.take() {
+                send_result(
+                    ticket_response,
+                    Err(AgentCommandError::ConfirmationRejected { confirm_id }),
+                );
+            }
+            let result = semantic_state.snapshot().map_or_else(
+                || Err(AgentCommandError::Internal),
+                |snapshot| {
+                    Ok(AgentCommandResponse::Performed {
+                        window_id: snapshot.window_id,
+                        generation: snapshot.generation,
+                        revision: snapshot.revision,
+                        presented_revision: snapshot.presented_revision,
+                        settled: true,
+                    })
+                },
+            );
+            send_result(response, result);
+            return;
+        }
+        // 允许：在 UI turn 内执行登记的动作；成功进入 in-flight settle。
+        match self.perform_command(
+            tree,
+            semantic_state,
+            presentable,
+            pending.generation,
+            None,
+            &pending.target,
+            &pending.action,
+        ) {
+            Ok(()) => {
+                self.in_flight.push(PendingAgentResponse { response });
+                if let Some(ticket_response) = pending.response.take() {
+                    self.in_flight.push(PendingAgentResponse {
+                        response: ticket_response,
+                    });
+                }
+            }
+            Err(error) => {
+                if let Some(ticket_response) = pending.response.take() {
+                    send_result(ticket_response, Err(error.clone()));
+                }
+                send_result(response, Err(error));
+            }
+        }
+    }
+
+    fn next_confirm_id(&mut self) -> u64 {
+        let id = self.confirm_next_id;
+        self.confirm_next_id = self.confirm_next_id.saturating_add(1).max(1);
+        id
+    }
+
+    /// 惰性清理过期确认：有挂起响应的完成 `confirmation_not_found`。
+    fn expire_confirmations(&mut self) {
+        let expired = self
+            .confirm_pending
+            .iter()
+            .filter(|pending| pending.created_at.elapsed() > MAX_AGENT_CONFIRM_TTL)
+            .map(|pending| pending.confirm_id)
+            .collect::<Vec<_>>();
+        for confirm_id in expired {
+            let Some(index) = self
+                .confirm_pending
+                .iter()
+                .position(|pending| pending.confirm_id == confirm_id)
+            else {
+                continue;
+            };
+            let mut pending = self.confirm_pending.remove(index);
+            if let Some(ticket_response) = pending.response.take() {
+                send_result(
+                    ticket_response,
+                    Err(AgentCommandError::ConfirmationNotFound { confirm_id }),
+                );
+            }
+        }
+    }
+
+    fn fail_confirmations(&mut self) {
+        for mut pending in self.confirm_pending.drain(..) {
+            if let Some(ticket_response) = pending.response.take() {
+                send_result(
+                    ticket_response,
+                    Err(AgentCommandError::ConfirmationNotFound {
+                        confirm_id: pending.confirm_id,
+                    }),
+                );
+            }
         }
     }
 
@@ -282,5 +561,76 @@ impl WindowAgentState {
             send_result(pending.response, result.clone());
         }
         self.settle_passes = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::queues::agent_command_queue::AgentCommandResult;
+    use crate::ui::accessibility::semantic_snapshot::SemanticTarget;
+    use crate::ui::semantic_action::SemanticAction;
+    use std::sync::mpsc::{self, RecvTimeoutError};
+    use std::time::Duration;
+
+    fn pending(confirm_id: u64, created_at: Instant) -> PendingConfirmation {
+        PendingConfirmation {
+            confirm_id,
+            generation: 1,
+            target: SemanticTarget::AutomationId("danger-button".to_owned()),
+            action: SemanticAction::Invoke,
+            created_at,
+            response: None,
+        }
+    }
+
+    fn recv_result(rx: mpsc::Receiver<AgentCommandResult>) -> Result<AgentCommandResult, RecvTimeoutError> {
+        rx.recv_timeout(Duration::from_millis(100))
+    }
+
+    #[test]
+    fn confirm_ids_increment() {
+        let mut state = WindowAgentState::new();
+        assert_eq!(state.next_confirm_id(), 1);
+        assert_eq!(state.next_confirm_id(), 2);
+    }
+
+    #[test]
+    fn expire_confirmations_completes_pending_ticket() {
+        let mut state = WindowAgentState::new();
+        let (tx, rx) = mpsc::sync_channel(1);
+        state.confirm_pending.push(pending(7, Instant::now() - Duration::from_secs(120)));
+        state.confirm_pending[0].response = Some(tx);
+        state.expire_confirmations();
+        assert!(state.confirm_pending.is_empty());
+        match recv_result(rx) {
+            Ok(Err(AgentCommandError::ConfirmationNotFound { confirm_id })) => {
+                assert_eq!(confirm_id, 7);
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn expire_confirmations_keeps_fresh_pending() {
+        let mut state = WindowAgentState::new();
+        state.confirm_pending.push(pending(7, Instant::now()));
+        state.expire_confirmations();
+        assert_eq!(state.confirm_pending.len(), 1);
+    }
+
+    #[test]
+    fn fail_confirmations_completes_all_pending() {
+        let mut state = WindowAgentState::new();
+        let (tx1, rx1) = mpsc::sync_channel(1);
+        let (tx2, rx2) = mpsc::sync_channel(1);
+        state.confirm_pending.push(pending(1, Instant::now()));
+        state.confirm_pending[0].response = Some(tx1);
+        state.confirm_pending.push(pending(2, Instant::now()));
+        state.confirm_pending[1].response = Some(tx2);
+        state.fail_confirmations();
+        assert!(state.confirm_pending.is_empty());
+        assert!(recv_result(rx1).is_ok());
+        assert!(recv_result(rx2).is_ok());
     }
 }

@@ -6,10 +6,15 @@
 //! （`AgentCommandQueue` / `WindowAgentState`）归 System 私有边界所有，由
 //! 组合根 `session_runtime` 组装期注入本实现。
 
+use crate::app::agent::agent_policy::{AgentPolicy, PolicyDecision};
 use crate::app::queues::agent_command_queue::AgentCommandError;
 #[cfg(any(test, feature = "agent-control"))]
 use crate::app::queues::agent_command_queue::AgentWindowAction;
-use crate::app::queues::window_agent_state::AgentCommandExecutor;
+use crate::app::queues::window_agent_state::{
+    AgentCommandExecutor, AgentWindowOpsError,
+};
+#[cfg(any(test, feature = "agent-control"))]
+use crate::app::queues::window_agent_state::AgentWindowOps;
 use crate::app::window_semantics::{WindowSemanticSnapshot, WindowSemanticState};
 use crate::core::ComponentId;
 use crate::ui::WidgetTree;
@@ -19,7 +24,16 @@ use crate::ui::semantic_action::{SemanticAction, SemanticActionError};
 use crate::ui::{KeyMod, MouseButton, SystemEvent};
 
 /// 无状态命令执行器：由组合根创建，注入每窗口 `WindowAgentState`。
-pub(crate) struct AgentCommandExecutorImpl;
+/// 持有动作策略（授权第二层），在 UI turn 入口检查后放行动作。
+pub(crate) struct AgentCommandExecutorImpl {
+    policy: std::sync::Arc<AgentPolicy>,
+}
+
+impl AgentCommandExecutorImpl {
+    pub(crate) fn new(policy: std::sync::Arc<AgentPolicy>) -> Self {
+        Self { policy }
+    }
+}
 
 impl AgentCommandExecutor for AgentCommandExecutorImpl {
     fn perform(
@@ -32,10 +46,30 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
         target: &SemanticTarget,
         action: &SemanticAction,
     ) -> Result<(), AgentCommandError> {
-        let node_id = resolve_target(
-            validate_command(semantic_state, generation, expected_revision)?,
-            target,
-        )?;
+        let snapshot = validate_command(semantic_state, generation, expected_revision)?;
+        let node_id = resolve_target(snapshot, target)?;
+        // 动作策略检查：受保护目标 / 禁止动作 / 只读模式在进入 UI 语义路径前拒绝；
+        // 需要确认的目标登记确认流程（confirm_id 由状态机分配）。
+        let automation_id = snapshot
+            .nodes
+            .iter()
+            .find(|node| node.id == node_id)
+            .and_then(|node| node.automation_id.as_deref());
+        match self.policy.check_semantic(automation_id, action.kind()) {
+            PolicyDecision::Forbidden => {
+                return Err(AgentCommandError::Forbidden {
+                    target: target.label(),
+                });
+            }
+            PolicyDecision::RequiresConfirmation => {
+                return Err(AgentCommandError::RequiresConfirmation {
+                    target: target.label(),
+                    action: action.kind(),
+                    confirm_id: 0,
+                });
+            }
+            PolicyDecision::Allow => {}
+        }
         if !presentable {
             return Err(AgentCommandError::NotPresentable);
         }
@@ -51,9 +85,16 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
         presentable: bool,
         generation: u64,
         expected_revision: Option<u64>,
+        window: &mut dyn AgentWindowOps,
         action: AgentWindowAction,
     ) -> Result<(), AgentCommandError> {
         validate_command(semantic_state, generation, expected_revision)?;
+        // 窗口动作都是写操作：只读策略拒绝全部窗口动作。
+        if self.policy.check_window() == PolicyDecision::Forbidden {
+            return Err(AgentCommandError::Forbidden {
+                target: format!("window {action:?}"),
+            });
+        }
         if !presentable {
             return Err(AgentCommandError::NotPresentable);
         }
@@ -127,8 +168,23 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
                     },
                 )?;
             }
+            // 窗口管理动作：经平台窗口操作契约执行，失败映射为命令失败。
+            AgentWindowAction::Resize { width, height } => window
+                .resize(width, height)
+                .map_err(map_window_ops_error)?,
+            AgentWindowAction::Move { x, y } => window.move_to(x, y).map_err(map_window_ops_error)?,
+            AgentWindowAction::Maximize => window.maximize().map_err(map_window_ops_error)?,
+            AgentWindowAction::Minimize => window.minimize().map_err(map_window_ops_error)?,
+            AgentWindowAction::Restore => window.restore().map_err(map_window_ops_error)?,
         }
         Ok(())
+    }
+}
+
+fn map_window_ops_error(error: AgentWindowOpsError) -> AgentCommandError {
+    AgentCommandError::WindowOperationFailed {
+        operation: error.operation,
+        message: error.message,
     }
 }
 

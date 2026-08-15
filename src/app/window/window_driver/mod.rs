@@ -13,6 +13,7 @@ use crate::app::queues::main_thread_queue::{MainThreadContext, MainThreadQueue};
 use crate::app::queues::window_agent_state::WindowAgentState;
 use crate::app::window::frame_scheduler::{FrameScheduler, SurfaceSuspendReason};
 use crate::app::window::text_input::sync_window_text_input;
+use crate::app::window::window_agent_ops::PlatformWindowAgentOps;
 use crate::app::window::window_session::{ViewFactorySlot, WindowLoopState, WindowTextInputState};
 use crate::app::window_semantics::WindowSemanticState;
 use crate::core::{Errc, Error, Point, PresentDamageTracker, Rect};

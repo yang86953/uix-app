@@ -12,6 +12,7 @@ use crate::app::agent::agent_bridge::{
     AgentWindowRegistration,
 };
 use crate::app::agent::agent_control::AgentCommandExecutorImpl;
+use crate::app::agent::agent_policy::{AgentConfirmationRequest, AgentPolicy};
 #[cfg(feature = "agent-control")]
 use crate::app::agent::agent_transport::{
     AgentTransportError, AgentTransportHandle, AgentTransportInfo,
@@ -43,7 +44,9 @@ pub(crate) struct AppRuntime {
     event_loop_waker: Arc<Mutex<EventLoopWaker>>,
     text_input_coordinator: TextInputCoordinator,
     agent_bridge: AgentBridgeDirectory,
-    agent_executor: Arc<dyn AgentCommandExecutor>,
+    agent_policy: Arc<AgentPolicy>,
+    /// 应用注入的 Agent 确认 UI 回调（默认空操作：无确认 UI 时确认请求直接失败）。
+    agent_confirm_ui: Arc<dyn Fn(AgentConfirmationRequest) + Send + Sync>,
     #[cfg(feature = "agent-control")]
     agent_transport: Arc<Mutex<Option<AgentTransportHandle>>>,
 }
@@ -77,9 +80,29 @@ impl AppRuntime {
         Self::default()
     }
 
-    /// 组装期默认：Agent 命令执行器由组合根创建，注入每窗口状态机。
+    /// 组装期默认：Agent 命令执行器由组合根按当前动作策略创建，注入每窗口状态机。
     pub(crate) fn agent_command_executor(&self) -> Arc<dyn AgentCommandExecutor> {
-        self.agent_executor.clone()
+        Arc::new(AgentCommandExecutorImpl::new(self.agent_policy.clone()))
+    }
+
+    /// 组装期设置 Agent 动作策略（授权第二层）；窗口创建前调用。
+    pub(crate) fn set_agent_policy(&mut self, policy: AgentPolicy) {
+        self.agent_policy = Arc::new(policy);
+    }
+
+    /// 组装期注入 Agent 确认 UI 回调（授权第三层）；窗口创建前调用。
+    pub(crate) fn set_agent_confirm_ui(
+        &mut self,
+        handler: impl Fn(AgentConfirmationRequest) + Send + Sync + 'static,
+    ) {
+        self.agent_confirm_ui = Arc::new(handler);
+    }
+
+    /// 窗口组装期取确认 UI 回调。
+    pub(crate) fn agent_confirm_ui(
+        &self,
+    ) -> Option<Arc<dyn Fn(AgentConfirmationRequest) + Send + Sync>> {
+        Some(self.agent_confirm_ui.clone())
     }
 
     pub(crate) fn set_diagnostics(&mut self, config: DiagnosticsConfig) {
@@ -545,7 +568,8 @@ impl Default for AppRuntime {
             event_loop_waker: Arc::new(Mutex::new(EventLoopWaker::default())),
             text_input_coordinator: TextInputCoordinator::default(),
             agent_bridge: AgentBridgeDirectory::default(),
-            agent_executor: Arc::new(AgentCommandExecutorImpl),
+            agent_policy: Arc::new(AgentPolicy::default()),
+            agent_confirm_ui: Arc::new(|_: AgentConfirmationRequest| {}),
             #[cfg(feature = "agent-control")]
             agent_transport: Arc::new(Mutex::new(None)),
         }

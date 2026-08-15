@@ -454,6 +454,16 @@ impl AgentProcessBridge {
         )
     }
 
+    /// 用户确认流程：AI 确认执行先前命中 `requires_confirmation` 的动作。
+    #[cfg(any(test, feature = "agent-control"))]
+    pub(crate) fn confirm(
+        &self,
+        window_id: WindowId,
+        confirm_id: u64,
+    ) -> Result<AgentCommandTicket, AgentSubmitError> {
+        self.submit_for_live_window(window_id, AgentCommandRequest::Confirm { confirm_id })
+    }
+
     pub(crate) fn wait(
         &self,
         window_id: WindowId,
