@@ -4,8 +4,8 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 // 引入解析后的核心语法树与诊断类型。
 use super::{
-    Attribute, ComponentScopeMarker, ControlBinding, Diagnostic, Element,
-    ExpressionNode, Node, SourceSpan,
+    Attribute, ComponentScopeMarker, ControlBinding, Diagnostic, Element, ExpressionNode, Node,
+    SourceSpan,
 };
 // 引入独立元素分派入口。
 use super::element_codegen::generate_element;
@@ -51,6 +51,32 @@ pub(crate) fn generate_view(element: &Element) -> Result<TokenStream, Diagnostic
 pub(super) fn generate_text(element: &Element) -> Result<TokenStream, Diagnostic> {
     // 把有序文本与插值组合成单一内容表达式。
     let content = generate_text_content(&element.children, element.span)?;
+    // Label 专属 selectable 在物化 ViewNode 前配置底层组件。
+    if element.name == "Label" {
+        // 查找可选的文本选择布尔属性。
+        if let Some(attribute) = element
+            // 遍历当前元素属性。
+            .attributes
+            // 借用属性迭代器。
+            .iter()
+            // 只匹配 Label 专属 selectable。
+            .find(|attribute| attribute.name == "selectable")
+        {
+            // 接受布尔简写、字面量或受限表达式。
+            let selectable = boolean_value(attribute)?;
+            // 使用公开 Label 构造器在布尔两支中保持同一组件类型。
+            let base = quote! {
+                ::uix::prelude::ViewNode::leaf({
+                    // 构造既有 Label 组件。
+                    let __uix_label = ::uix::prelude::Label::new(#content);
+                    // 为真时启用既有选择语义，否则保留默认不可选。
+                    if #selectable { __uix_label.selectable() } else { __uix_label }
+                })
+            };
+            // 消费 selectable 后继续应用文本公共样式与事件。
+            return apply_common_attributes(base, &element.attributes, &["selectable"]);
+        }
+    }
     // 构造公开 label View。
     let base = quote! { ::uix::prelude::label(#content) };
     // 应用文本支持的公共属性与事件。
@@ -118,6 +144,41 @@ pub(super) fn generate_button_with_group_position(
             // 应用块级状态。
             view = quote! { (#view).block(#value) };
         }
+        // 标准尺寸关键字映射到公开 ControlSize。
+        if attribute.name == "size" {
+            // 尺寸必须在编译期确定以拒绝未登记关键字。
+            let size = literal_string(attribute, "Button size")?;
+            // 选择公开尺寸枚举变体。
+            let size = match size.as_str() {
+                // 小尺寸映射到 Small。
+                "small" => quote! { ::uix::prelude::ControlSize::Small },
+                // 文档默认中尺寸映射到 Medium。
+                "middle" => quote! { ::uix::prelude::ControlSize::Medium },
+                // 大尺寸映射到 Large。
+                "large" => quote! { ::uix::prelude::ControlSize::Large },
+                // 未登记关键字返回定向诊断。
+                _ => {
+                    // 指出实际非法尺寸与合法集合。
+                    return Err(Diagnostic::new(
+                        // 指向完整 size 属性。
+                        attribute.span,
+                        // 说明非法值。
+                        format!("Button size={size:?} 尚无公开尺寸映射"),
+                        // 给出文档登记的三个关键字。
+                        "使用 small、middle 或 large",
+                    ));
+                }
+            };
+            // 在 View 物化前应用 ButtonBuilder 尺寸。
+            view = quote! { (#view).size(#size) };
+        }
+        // 加载态映射到公开 ButtonBuilder 生命周期入口。
+        if attribute.name == "loading" {
+            // 接受布尔简写、字面量或受限表达式。
+            let loading = boolean_value(attribute)?;
+            // 复用既有旋转器与交互禁用实现。
+            view = quote! { (#view).loading(#loading) };
+        }
     }
     // ButtonGroup 子按钮在公共样式与事件物化前写入连体位置。
     if let Some(position) = group_position {
@@ -125,7 +186,14 @@ pub(super) fn generate_button_with_group_position(
         view = quote! { (#view).group_position(#position) };
     }
     // 在按钮专有属性之后应用公共 View 属性与事件。
-    apply_common_attributes(view, &element.attributes, &["type", "disabled", "block"])
+    apply_common_attributes(
+        // 传入已经完成专属配置的按钮构建链。
+        view,
+        // 保留原始属性供公共样式与事件处理。
+        &element.attributes,
+        // 标记所有已由按钮生成器消费的专属属性。
+        &["type", "disabled", "block", "size", "loading"],
+    )
 }
 
 // 生成图标元素。
@@ -393,8 +461,7 @@ pub(super) fn generate_child_statements(
             // If 会连同相邻 ElseIf/Else 生成单次短路条件链。
             if element.name == "If" {
                 // 生成链并取得下一个尚未消费的节点索引。
-                let (chain, next_index) =
-                    generate_conditional_chain(children, index, output)?;
+                let (chain, next_index) = generate_conditional_chain(children, index, output)?;
                 // 保存完整条件链语句。
                 statements.push(chain);
                 // 跳过已经归入链内的分支和空白。

@@ -843,6 +843,23 @@ fn declarative_transition_compiles_against_public_uix_api() {
     );
 }
 
+// 验证通用组件新登记属性只调用公开 ButtonBuilder、ControlSize 与 Label API。
+#[test]
+fn general_component_properties_compile_against_public_uix_api() {
+    // 展开带组件私有布尔状态的按钮和可选择标签。
+    let _view: ViewNode = uix!(
+        r#"
+        <Component name="CommonProperties" state="busy: bool = true, can_select: bool = true">
+          <Column>
+            <Button size="large" loading={busy}>处理中</Button>
+            <Label selectable={can_select}>可选择文字</Label>
+          </Column>
+        </Component>
+        <CommonProperties />
+        "#
+    );
+}
+
 // 验证 setTheme 作为框架内置操作生成主题请求通道调用，不依赖调用方同名函数。
 #[test]
 fn set_theme_builtin_compiles_without_caller_function() {
