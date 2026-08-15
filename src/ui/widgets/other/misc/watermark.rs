@@ -61,6 +61,7 @@ impl Watermark {
     const DEFAULT_GAP_X: f32 = 200.0;
     const DEFAULT_GAP_Y: f32 = 160.0;
 
+    /// 创建使用主题文本样式与默认平铺参数的文字水印。
     pub fn new(text: &str) -> Self {
         Self {
             text: text.to_string(),
@@ -76,15 +77,18 @@ impl Watermark {
             y_offset: 0.0,
         }
     }
+    /// 设置水印文字颜色；透明色表示绘制时使用主题正文色。
     pub fn color(mut self, c: Color) -> Self {
         self.color = c;
         self
     }
+    /// 设置水印字号；非正数或非有限值回退到主题正文字号。
     pub fn font_size(mut self, s: f32) -> Self {
         // 非法显式字号回退到主题默认哨兵。
         self.font_size = Self::positive_or(s, 0.0);
         self
     }
+    /// 设置水印不透明度，有限值会夹紧到 `0..=1`，非法值回退默认值。
     pub fn opacity(mut self, o: f32) -> Self {
         self.opacity = if o.is_finite() {
             o.clamp(0.0, 1.0)
@@ -93,6 +97,7 @@ impl Watermark {
         };
         self
     }
+    /// 设置水印文字旋转角度；非有限值回退默认角度。
     pub fn rotate(mut self, r: f32) -> Self {
         self.rotate = if r.is_finite() {
             r
@@ -101,11 +106,13 @@ impl Watermark {
         };
         self
     }
+    /// 设置相邻水印的水平与垂直间距；非法分量分别回退默认间距。
     pub fn gap(mut self, x: f32, y: f32) -> Self {
         self.gap_x = Self::positive_or(x, Self::DEFAULT_GAP_X);
         self.gap_y = Self::positive_or(y, Self::DEFAULT_GAP_Y);
         self
     }
+    /// 设置平铺起点偏移；非有限分量分别回退为零。
     pub fn offset(mut self, x: f32, y: f32) -> Self {
         self.x_offset = if x.is_finite() { x } else { 0.0 };
         self.y_offset = if y.is_finite() { y } else { 0.0 };
