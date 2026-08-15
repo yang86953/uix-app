@@ -25,9 +25,11 @@ use crate::ui::{EventResult, SystemEvent, WidgetTree};
 /// 自定义标题栏可触发的标准窗口控制。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowControl {
+    /// 将窗口最小化到系统任务栏。
     Minimize,
     /// 在最大化与还原之间切换。
     MaximizeRestore,
+    /// 请求关闭当前窗口。
     Close,
 }
 
