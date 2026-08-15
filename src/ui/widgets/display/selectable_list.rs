@@ -465,15 +465,19 @@ impl SelectableList {
 component! {
     /// A vertical list with selectable rows.
     pub struct SelectableList {
+        /// 按展示顺序持有的可选择条目。
         pub items: Vec<SelectableItem>,
+        /// 非受控模式下当前活动条目的原始索引。
         pub active_index: usize,
         // 外部状态只拥有稳定 id，不接管列表数据与滚动状态。
         #[snapshot(skip)]
         active_binding: Option<State<Option<String>>>,
+        /// 列表顶部操作按钮的文本；空字符串隐藏该入口。
         pub header_button_text: String,
+        /// 列表底部显示的文本；空字符串隐藏页脚。
         pub footer_text: String,
+        /// 每个列表条目的逻辑行高。
         pub item_height: f32,
-
         hovered_index: Cell<Option<usize>>,
         hovered_header: Cell<bool>,
         pressed_action: Cell<Option<SelectableListAction>>,
@@ -483,7 +487,6 @@ component! {
         pub(crate) last_frame: Cell<Option<Rect>>,
         pending_action: Cell<Option<SelectableListAction>>,
     }
-
     @new -> Self {
         Self {
             items: Vec::new(),
@@ -503,11 +506,9 @@ component! {
             pending_action: Cell::new(None),
         }
     }
-
     tab_index => (&self) -> i32 {
         i32::from(!self.items.is_empty() || !self.header_button_text.is_empty())
     }
-
     measure => (&self, constraints: Constraints) -> Size {
         let mut h = 0.0;
         if !self.header_button_text.is_empty() {

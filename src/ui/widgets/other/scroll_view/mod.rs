@@ -29,7 +29,9 @@ component! {
     /// A scrollable viewport that clips its children.
     pub struct ScrollView {
         pub(crate) children: WidgetChildren,
+        /// 当前水平滚动偏移。
         pub scroll_x: f32,
+        /// 当前垂直滚动偏移。
         pub scroll_y: f32,
         scroll_binding: Option<State<Point>>,
         direction: ScrollDirection,

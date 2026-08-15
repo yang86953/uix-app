@@ -15,6 +15,7 @@ component! {
     /// ThemeToggle — 主题切换按钮。
     pub struct ThemeToggle {
         #[snapshot(skip)]
+        /// 当前是否选择暗色主题的内部可变状态。
         pub dark: Cell<bool>,
         initial_dark: bool,
         focused: bool,
