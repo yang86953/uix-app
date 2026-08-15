@@ -11,6 +11,7 @@ pub struct Container {
 }
 
 impl Container {
+    /// 创建尚未注册任何单例服务的容器。
     pub fn new() -> Self {
         Self::default()
     }
@@ -39,10 +40,12 @@ impl Container {
         self.resolve::<T>().cloned()
     }
 
+    /// 返回容器是否已注册指定类型的单例服务。
     pub fn has<T: Any + Send + Sync>(&self) -> bool {
         self.singletons.contains_key(&TypeId::of::<T>())
     }
 
+    /// 移除指定类型的单例服务；未注册时不执行操作。
     pub fn remove<T: Any + Send + Sync>(&mut self) {
         self.singletons.remove(&TypeId::of::<T>());
     }
