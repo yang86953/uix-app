@@ -226,6 +226,11 @@ pub mod __private {
     pub use super::component_state::{
         UixComponentScope, uix_component_child_scope, uix_component_scope, uix_component_state,
     };
+    // 重导出 UIX transition 生成器使用的目标比较与原位重定向桥接。
+    pub use super::view::declarative_transition::{
+        UixDeclarativeTransition, UixTransitionError, UixTransitionProperty, UixTransitionSpec,
+        uix_apply_transition, uix_transition_state,
+    };
     // 重导出 uix-lang setTheme 内置操作使用的主题请求通道。
     pub use super::theme_request::{
         uix_clear_theme_requester, uix_install_theme_requester, uix_set_theme,
