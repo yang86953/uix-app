@@ -507,6 +507,11 @@ mod style_border_codegen;
 mod style_border_codegen_tests;
 // 定义 fontFamily 有序列表到 UI 字体族契约的独立映射。
 mod style_font_family_codegen;
+// 定义 float/clear 非目标布局决策的专用编译诊断。
+mod style_float_codegen;
+// 集中验证规范值、非法值与可执行替代建议。
+#[cfg(test)]
+mod style_float_codegen_tests;
 // 集中验证 fontFamily 的列表生成与拒绝路径。
 #[cfg(test)]
 mod style_font_family_codegen_tests;

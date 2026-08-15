@@ -157,6 +157,27 @@ fn background_styles_compile_for_real_consumer() {
     );
 }
 
+// 验证 float/clear 的推荐 Flex 与 Grid 替代写法可由真实消费者宏展开。
+#[test]
+fn float_clear_flex_alternatives_compile_for_real_consumer() {
+    // 用行容器对齐和显式新行分组表达浮动与清除的产品意图。
+    let _layout: ViewNode = uix::uix!(
+        // 同时覆盖 row、主轴两端分布、flexGrow 与后继 Column 分组。
+        r#"
+        floatingRow { display: flex; flexDirection: row; justifyContent: space-between; }
+        leadingItem { flexGrow: 1; }
+        clearedRow { display: flex; flexDirection: column; }
+        <Column>
+          <Container class="floatingRow">
+            <Text class="leadingItem">起点内容</Text>
+            <Text>终点内容</Text>
+          </Container>
+          <Column class="clearedRow"><Text>新行内容</Text></Column>
+        </Column>
+        "#
+    );
+}
+
 // 验证五种 borderStyle 值通过公开 Style 与 BorderStyle 契约完成真实宏展开。
 #[test]
 fn border_style_values_compile_for_real_consumer() {
