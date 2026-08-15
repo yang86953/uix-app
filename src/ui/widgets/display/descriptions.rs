@@ -104,7 +104,8 @@ component! {
                 (title_rect.w - 24.0).max(0.0),
                 title_rect.h,
             );
-            if let Some(title) = elide_single_line(ctx, &self.title, TITLE_FONT_SIZE, text_rect.w) {
+            // 复用 UI 绘制上下文拥有的保守单行省略算法。
+            if let Some(title) = ctx.elide_single_line(&self.title, TITLE_FONT_SIZE, text_rect.w) {
                 let ty = ctx.visual_center_y(title_rect, TITLE_FONT_SIZE);
                 ctx.push_clip(text_rect);
                 ctx.draw_text(&title, Point::new(text_rect.x, ty), text, TITLE_FONT_SIZE);
@@ -377,45 +378,3 @@ fn draw_wrapped_cell_text(
     ctx.pop_clip();
 }
 
-fn conservative_text_width(ctx: &mut PaintContext, text: &str, font_size: f32) -> f32 {
-    ctx.measure_text(text, font_size).w.max(
-        crate::draw::resources::font::text_backend::estimate_text_metrics(
-            text,
-            f32::INFINITY,
-            font_size,
-        )
-        .max_line_width,
-    )
-}
-
-fn elide_single_line(
-    ctx: &mut PaintContext,
-    text: &str,
-    font_size: f32,
-    max_width: f32,
-) -> Option<String> {
-    if !max_width.is_finite() || max_width <= 0.0 {
-        return None;
-    }
-    let text = text.replace(['\r', '\n'], " ");
-    if conservative_text_width(ctx, &text, font_size) <= max_width {
-        return Some(text);
-    }
-    const ELLIPSIS: &str = "…";
-    if conservative_text_width(ctx, ELLIPSIS, font_size) > max_width {
-        return None;
-    }
-    let mut visible = String::new();
-    for ch in text.chars() {
-        visible.push(ch);
-        visible.push_str(ELLIPSIS);
-        let fits = conservative_text_width(ctx, &visible, font_size) <= max_width;
-        visible.pop();
-        if !fits {
-            visible.pop();
-            break;
-        }
-    }
-    visible.push_str(ELLIPSIS);
-    Some(visible)
-}

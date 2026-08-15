@@ -349,7 +349,8 @@ impl Notification {
         color: Color,
         font_size: f32,
     ) {
-        let Some(value) = Self::elide_single_line(ctx, value, font_size, frame.w) else {
+        // 复用 UI 绘制上下文拥有的保守单行省略算法。
+        let Some(value) = ctx.elide_single_line(value, font_size, frame.w) else {
             return;
         };
         if frame.h <= 0.0 {
@@ -368,7 +369,8 @@ impl Notification {
         color: Color,
         font_size: f32,
     ) {
-        let Some(value) = Self::elide_single_line(ctx, value, font_size, frame.w) else {
+        // 复用 UI 绘制上下文拥有的保守单行省略算法。
+        let Some(value) = ctx.elide_single_line(value, font_size, frame.w) else {
             return;
         };
         if frame.h <= 0.0 {
@@ -379,48 +381,6 @@ impl Notification {
         ctx.pop_clip();
     }
 
-    fn elide_single_line(
-        ctx: &mut PaintContext,
-        value: &str,
-        font_size: f32,
-        max_width: f32,
-    ) -> Option<String> {
-        if !max_width.is_finite() || max_width <= 0.0 {
-            return None;
-        }
-        let value = value.replace(['\r', '\n'], " ");
-        if Self::text_width(ctx, &value, font_size) <= max_width {
-            return Some(value);
-        }
-        const ELLIPSIS: &str = "…";
-        if Self::text_width(ctx, ELLIPSIS, font_size) > max_width {
-            return None;
-        }
-        let mut visible = String::new();
-        for ch in value.chars() {
-            visible.push(ch);
-            visible.push_str(ELLIPSIS);
-            let fits = Self::text_width(ctx, &visible, font_size) <= max_width;
-            visible.pop();
-            if !fits {
-                visible.pop();
-                break;
-            }
-        }
-        visible.push_str(ELLIPSIS);
-        Some(visible)
-    }
-
-    fn text_width(ctx: &mut PaintContext, value: &str, font_size: f32) -> f32 {
-        ctx.measure_text(value, font_size).w.max(
-            crate::draw::resources::font::text_backend::estimate_text_metrics(
-                value,
-                f32::INFINITY,
-                font_size,
-            )
-            .max_line_width,
-        )
-    }
 }
 
 #[derive(Debug, Clone, Copy)]

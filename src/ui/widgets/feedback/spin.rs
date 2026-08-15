@@ -180,10 +180,12 @@ impl Spin {
 
     fn render_tip(&self, ctx: &mut PaintContext, frame: Rect) {
         const FONT_SIZE: f32 = 13.0;
-        let Some(text) = Self::elide_single_line(ctx, &self.tip, FONT_SIZE, frame.w) else {
+        // 复用 UI 绘制上下文拥有的保守单行省略算法。
+        let Some(text) = ctx.elide_single_line(&self.tip, FONT_SIZE, frame.w) else {
             return;
         };
-        let text_width = Self::text_width(ctx, &text, FONT_SIZE);
+        // 使用同一保守宽度契约居中截断后的提示文本。
+        let text_width = ctx.conservative_text_width(&text, FONT_SIZE);
         let y = ctx.visual_center_y(frame, FONT_SIZE);
         ctx.draw_text(
             &text,
@@ -191,49 +193,6 @@ impl Spin {
             ctx.tokens().color_text_secondary(),
             FONT_SIZE,
         );
-    }
-
-    fn elide_single_line(
-        ctx: &mut PaintContext,
-        value: &str,
-        font_size: f32,
-        max_width: f32,
-    ) -> Option<String> {
-        if !max_width.is_finite() || max_width <= 0.0 {
-            return None;
-        }
-        let value = value.replace(['\r', '\n'], " ");
-        if Self::text_width(ctx, &value, font_size) <= max_width {
-            return Some(value);
-        }
-        const ELLIPSIS: &str = "…";
-        if Self::text_width(ctx, ELLIPSIS, font_size) > max_width {
-            return None;
-        }
-        let mut visible = String::new();
-        for ch in value.chars() {
-            visible.push(ch);
-            visible.push_str(ELLIPSIS);
-            let fits = Self::text_width(ctx, &visible, font_size) <= max_width;
-            visible.pop();
-            if !fits {
-                visible.pop();
-                break;
-            }
-        }
-        visible.push_str(ELLIPSIS);
-        Some(visible)
-    }
-
-    fn text_width(ctx: &mut PaintContext, value: &str, font_size: f32) -> f32 {
-        ctx.measure_text(value, font_size).w.max(
-            crate::draw::resources::font::text_backend::estimate_text_metrics(
-                value,
-                f32::INFINITY,
-                font_size,
-            )
-            .max_line_width,
-        )
     }
 
     fn normalize_frame(frame: Rect) -> Rect {

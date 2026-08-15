@@ -746,52 +746,13 @@ fn fitted_text(
     } else {
         return None;
     };
-    let visible = elide_text_to_width(ctx, &visible, font_size, max_width)?;
+    // 复用 UI 绘制上下文拥有的保守单行省略算法。
+    let visible = ctx.elide_single_line(&visible, font_size, max_width)?;
     Some((visible, font_size))
-}
-
-fn conservative_text_width(ctx: &mut PaintContext, text: &str, font_size: f32) -> f32 {
-    let measured = ctx.measure_text(text, font_size).w;
-    let estimated = crate::draw::resources::font::text_backend::estimate_text_metrics(
-        text,
-        f32::INFINITY,
-        font_size,
-    )
-    .max_line_width;
-    measured.max(estimated)
 }
 
 fn conservative_text_height(ctx: &mut PaintContext, text: &str, font_size: f32) -> f32 {
     ctx.measure_text(text, font_size)
         .h
         .max(ctx.line_box_height(font_size))
-}
-
-fn elide_text_to_width(
-    ctx: &mut PaintContext,
-    text: &str,
-    font_size: f32,
-    max_width: f32,
-) -> Option<String> {
-    if conservative_text_width(ctx, text, font_size) <= max_width {
-        return Some(text.to_string());
-    }
-
-    const ELLIPSIS: &str = "…";
-    if conservative_text_width(ctx, ELLIPSIS, font_size) > max_width {
-        return None;
-    }
-    let mut visible = String::new();
-    for ch in text.chars() {
-        visible.push(ch);
-        visible.push_str(ELLIPSIS);
-        let fits = conservative_text_width(ctx, &visible, font_size) <= max_width;
-        visible.pop();
-        if !fits {
-            visible.pop();
-            break;
-        }
-    }
-    visible.push_str(ELLIPSIS);
-    Some(visible)
 }
