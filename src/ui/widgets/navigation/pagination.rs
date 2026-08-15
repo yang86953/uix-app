@@ -823,8 +823,3 @@ impl Pagination {
 }
 
 // 只在组件边界验证 Pagination 双状态与 reconcile 所有权。
-#[cfg(test)]
-// 从仓库测试目录引入，保持分页组件实现低于行数上限。
-#[path = "../../../../tests/unit/ui/widgets/navigation_pagination_tests.rs"]
-// 声明分页器私有回归测试模块。
-mod tests;

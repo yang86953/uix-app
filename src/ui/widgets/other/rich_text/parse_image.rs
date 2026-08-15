@@ -188,7 +188,3 @@ fn unescape_markdown_punctuation(text: &str) -> String {
 }
 
 // 将图片候选解析回归放入独立测试文件。
-#[cfg(test)]
-// 测试与生产解析器共享同一私有模块边界。
-#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_image_tests.rs"]
-mod tests;

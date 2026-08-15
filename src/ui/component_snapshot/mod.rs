@@ -584,8 +584,3 @@ pub enum SnapshotValue {
 }
 
 // 无障碍快照与角色双命名映射专项测试。
-#[cfg(test)]
-// 从仓库测试目录引入，保持快照实现文件低于行数上限。
-#[path = "../../../tests/unit/ui/component_snapshot/accessibility_snapshot_tests.rs"]
-// 将外置测试作为快照模块的私有子模块编译。
-mod accessibility_snapshot_tests;

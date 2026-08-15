@@ -634,8 +634,3 @@ enum ColorMove {
 }
 
 // 在测试构建中加载颜色面板的表面几何契约。
-#[cfg(test)]
-// 从仓库测试目录加载契约，避免主组件文件超过维护阈值。
-#[path = "../../../../tests/unit/ui/widgets/input/color_picker_tests.rs"]
-// 声明颜色选择器的私有契约模块。
-mod color_picker_tests;

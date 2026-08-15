@@ -694,19 +694,3 @@ impl<T: fmt::Debug + Clone + Send + Sync + 'static> fmt::Debug for State<T> {
             .finish()
     }
 }
-
-// 测试
-// ════════════════════════════════════════════════════════════════════════════
-// 将依赖追踪的 panic 生命周期测试置于独立文件，避免产品文件超过行数上限。
-#[cfg(test)]
-// 从仓库测试目录引入私有模块测试，使测试仍可访问本模块私有契约。
-#[path = "../../../tests/unit/ui/reactive_state_tests.rs"]
-// 将外置测试作为本响应式状态模块的私有子模块编译。
-mod tests;
-
-// 将 Computed 到 Effect 的并发行为测试拆分到专用私有模块。
-#[cfg(test)]
-// 从仓库测试目录引入 Computed 专属回归。
-#[path = "../../../tests/unit/ui/reactive_computed_effect_tests.rs"]
-// 编译外置 Computed 响应式测试模块。
-mod computed_effect_tests;

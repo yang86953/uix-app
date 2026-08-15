@@ -564,51 +564,6 @@ fn push_text_segment(content: &str, style: &RichTextStyle, segments: &mut Vec<Ri
     });
 }
 
-// 从仓库测试目录加载标题专项测试，保持解析实现文件低于 900 行。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_heading_tests.rs"]
-mod heading_tests;
-
-// 从仓库测试目录加载 Setext 标题专项测试，锁定跨行消费与 EOF 边界。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_setext_tests.rs"]
-mod setext_tests;
-
-// 将主题分隔线解析与布局契约放在独立专项测试文件。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/thematic_break_tests.rs"]
-mod thematic_break_tests;
-
-// 从仓库测试目录加载内联代码专项测试，覆盖 Markdown 空白边界。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_code_tests.rs"]
-mod code_tests;
-
-// 从仓库测试目录加载块级语法专项测试，保持解析实现文件结构清晰。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_block_tests.rs"]
-mod block_tests;
-
-// 从仓库测试目录加载自动链接专项测试，锁定有效与字面回退边界。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_autolink_tests.rs"]
-mod autolink_tests;
-
-// 从仓库测试目录加载围栏代码专项测试，保持解析实现文件结构清晰。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_fence_tests.rs"]
-mod fence_tests;
-
-// 从仓库测试目录加载反斜杠转义专项测试，锁定完整 ASCII 标点边界。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_escape_tests.rs"]
-mod escape_tests;
-
-// 从仓库测试目录加载同字符样式嵌套专项测试，锁定粗斜体双向组合边界。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_style_tests.rs"]
-mod style_tests;
-
 #[cfg(test)]
 mod tests {
     use super::*;

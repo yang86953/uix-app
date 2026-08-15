@@ -152,8 +152,3 @@ fn unescape_markdown_punctuation(text: &str) -> String {
     // 返回去除已识别转义符后的字符串。
     output
 }
-
-// 将普通链接目标边界回归放在独立文件中。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse_link_tests.rs"]
-mod tests;

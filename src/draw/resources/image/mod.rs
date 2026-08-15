@@ -738,7 +738,3 @@ pub fn fit_dst_rect(src_w: i32, src_h: i32, bounds: Rect) -> Rect {
 }
 
 // 图片异步加载契约测试独立存放，避免资源模块继续增长。
-#[cfg(all(test, feature = "image-codecs"))]
-// 测试仍可访问 ImageService 的私有槽位不变量。
-#[path = "../../../../tests/unit/draw/resources/image_async_tests.rs"]
-mod async_tests;

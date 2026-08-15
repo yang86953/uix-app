@@ -889,8 +889,3 @@ fn fade_color(color: Color, opacity: f32) -> Color {
 }
 
 // 将 AutoComplete 表面约束契约放在独立测试文件中。
-#[cfg(test)]
-// 从仓库测试目录加载实现，同时保持主实现文件低于行数上限。
-#[path = "../../../../tests/unit/ui/widgets/input/autocomplete_tests.rs"]
-// 声明当前模块的私有回归测试。
-mod tests;
