@@ -7,6 +7,8 @@ use quote::quote;
 use super::{Attribute, AttributeValue, Diagnostic, StyleProperty};
 // 引入 borderStyle 到 UI 运行时线型的独立映射。
 use super::style_border_codegen::border_style_field;
+// 引入 lineHeight 到 UI 运行时行高的独立映射。
+use super::style_line_height_codegen::line_height_field;
 // 引入 transform 与原点到运行时公共契约的独立映射。
 use super::style_transform_codegen::{transform_origin_value, transform_value};
 // 引入样式值与字段映射辅助。
@@ -238,6 +240,8 @@ fn generate_style_statement(
         "color" => color_field(style, property, "color", false),
         // 字号映射到 TypographyToken。
         "fontSize" => typography_field(style, property),
+        // 行高映射到显式倍率或逻辑像素值。
+        "lineHeight" => line_height_field(style, property),
         // 普通背景映射到可选 ColorValue。
         "backgroundColor" => color_field(style, property, "background", true),
         // 悬停背景映射到状态字段。

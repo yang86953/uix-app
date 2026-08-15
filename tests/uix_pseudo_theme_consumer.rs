@@ -94,3 +94,20 @@ fn border_style_values_compile_for_real_consumer() {
         "##
     );
 }
+
+// 验证 lineHeight 倍率与像素值通过公开 Style 和 LineHeight 契约完成真实宏展开。
+#[test]
+fn line_height_styles_compile_for_real_consumer() {
+    // 展开 Text 倍率行高与 Typography 固定像素行高。
+    let _line_heights: ViewNode = uix::uix!(
+        // 同时覆盖普通文本标签与语义排版组件的适配路径。
+        r#"
+        readable { lineHeight: 1.5; }
+        fixedLine { lineHeight: 24px; }
+        <Container>
+          <Text class="readable">倍率行高</Text>
+          <Typography class="fixedLine">固定行高</Typography>
+        </Container>
+        "#
+    );
+}
