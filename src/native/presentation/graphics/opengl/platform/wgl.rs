@@ -33,7 +33,9 @@ type HDC = *mut c_void;
 type HGLRC = *mut c_void;
 type HWND = *mut c_void;
 
+// SAFETY: 该函数指针只由同名 WGL 扩展符号解析，调用点负责提供存活 HDC/HGLRC 与零结尾属性表。
 type CreateContextAttribsFn = unsafe extern "system" fn(HDC, HGLRC, *const i32) -> HGLRC;
+// SAFETY: 该函数指针只由同名 WGL 扩展符号解析，调用点负责提供有效属性数组与输出缓冲区。
 type ChoosePixelFormatArbFn =
     unsafe extern "system" fn(HDC, *const i32, *const f32, u32, *mut i32, *mut u32) -> i32;
 
@@ -86,7 +88,7 @@ struct PIXELFORMATDESCRIPTOR {
 }
 
 #[link(name = "gdi32")]
-// 标记 GDI32 外部符号调用需要由调用方维护指针与句柄安全契约。
+// SAFETY: GDI32 声明与 Windows system ABI 一致；每个调用点继续验证 HDC、结构体指针和缓冲区生命周期。
 unsafe extern "system" {
     fn ChoosePixelFormat(hdc: HDC, ppfd: *const PIXELFORMATDESCRIPTOR) -> i32;
     fn DescribePixelFormat(
@@ -100,7 +102,7 @@ unsafe extern "system" {
 }
 
 #[link(name = "opengl32")]
-// 标记 OpenGL32 外部符号调用需要由调用方维护当前上下文安全契约。
+// SAFETY: OpenGL32 声明与 Windows system ABI 一致；每个调用点继续维护 HDC/HGLRC 存活和 current 上下文。
 unsafe extern "system" {
     fn wglCreateContext(hdc: HDC) -> HGLRC;
     fn wglMakeCurrent(hdc: HDC, hglrc: HGLRC) -> i32;
@@ -109,7 +111,7 @@ unsafe extern "system" {
 }
 
 #[link(name = "kernel32")]
-// 标记 Kernel32 外部符号调用需要由调用方维护模块句柄与符号地址安全契约。
+// SAFETY: Kernel32 声明与 Windows system ABI 一致；每个调用点继续提供零结尾名称并验证模块句柄。
 unsafe extern "system" {
     fn GetModuleHandleA(module_name: *const i8) -> *mut c_void;
     fn GetModuleHandleW(module_name: *const u16) -> *mut c_void;
@@ -117,7 +119,7 @@ unsafe extern "system" {
 }
 
 #[link(name = "user32")]
-// 标记 User32 外部符号调用需要由调用方维护窗口与设备上下文安全契约。
+// SAFETY: User32 声明与 Windows system ABI 一致；每个调用点继续维护窗口、类名和实例句柄的生命周期。
 unsafe extern "system" {
     fn CreateWindowExW(
         ex_style: u32,
