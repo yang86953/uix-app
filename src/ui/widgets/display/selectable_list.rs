@@ -13,6 +13,9 @@ use crate::ui::{
     WidgetTree,
 };
 
+// 可选择条目的无状态构造方法由同名子模块维护。
+mod item;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SelectableListAction {
     Header,
@@ -62,9 +65,13 @@ struct SelectableListGeometry {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// 可选择列表中的稳定业务条目。
 pub struct SelectableItem {
+    /// 条目用于选择状态与变更事件的稳定业务标识。
     pub id: String,
+    /// 条目向用户显示的文字。
     pub text: String,
+    /// 条目可选的图标名称。
     pub icon: Option<String>,
 }
 
@@ -218,6 +225,7 @@ impl SelectableList {
         self.push_scroll_delta(0.0, self.body_scroll.scroll_offset() - old_offset);
     }
 
+    /// 替换列表条目，并按当前受控身份或非受控索引调和选择。
     pub fn items(mut self, items: Vec<SelectableItem>) -> Self {
         self.items = items;
         // 受控模式按稳定 id 重新定位，非受控模式保留索引兼容行为。
@@ -231,6 +239,7 @@ impl SelectableList {
         self
     }
 
+    /// 设置非受控模式下的初始活动条目索引。
     pub fn active(mut self, index: usize) -> Self {
         // 显式索引构建器保持原有非受控语义。
         self.active_binding = None;
@@ -238,7 +247,7 @@ impl SelectableList {
         self
     }
 
-    // 将当前活动条目的稳定 id 绑定到外部可空状态。
+    /// 将当前活动条目的稳定标识双向绑定到外部可空状态。
     pub fn active_state(mut self, state: &State<Option<String>>) -> Self {
         // 克隆轻量状态句柄供交互写回与响应式依赖捕获使用。
         self.active_binding = Some(state.clone());
@@ -247,16 +256,19 @@ impl SelectableList {
         self
     }
 
+    /// 设置列表头部动作按钮的文字。
     pub fn header_button(mut self, text: impl Into<String>) -> Self {
         self.header_button_text = text.into();
         self
     }
 
+    /// 设置列表底部的辅助文字。
     pub fn footer(mut self, text: impl Into<String>) -> Self {
         self.footer_text = text.into();
         self
     }
 
+    /// 设置行高；仅有限值生效，并至少归一化为二十像素。
     pub fn row_height(mut self, height: f32) -> Self {
         if height.is_finite() {
             self.item_height = height.max(20.0);
@@ -264,12 +276,14 @@ impl SelectableList {
         self
     }
 
+    /// 返回当前活动条目的稳定标识；没有有效活动项时返回 `None`。
     pub fn selected_id(&self) -> Option<&str> {
         self.items
             .get(self.active_index)
             .map(|item| item.id.as_str())
     }
 
+    /// 返回当前活动条目的显示文字；没有有效活动项时返回 `None`。
     pub fn selected_text(&self) -> Option<&str> {
         self.items
             .get(self.active_index)
@@ -445,21 +459,6 @@ impl SelectableList {
             )
             .max_line_width,
         )
-    }
-}
-
-impl SelectableItem {
-    pub fn new(id: impl Into<String>, text: impl Into<String>) -> Self {
-        Self {
-            id: id.into(),
-            text: text.into(),
-            icon: None,
-        }
-    }
-
-    pub fn icon(mut self, icon: &str) -> Self {
-        self.icon = Some(icon.to_string());
-        self
     }
 }
 
