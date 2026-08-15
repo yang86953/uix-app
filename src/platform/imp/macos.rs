@@ -280,7 +280,8 @@ fn non_empty(value: String) -> Option<String> {
 }
 
 #[link(name = "System")]
-extern "C" {
+// Rust 2024 要求显式标记外部符号声明块的调用安全边界。
+unsafe extern "C" {
     fn pthread_main_np() -> i32;
     fn sysctlbyname(
         name: *const c_char,

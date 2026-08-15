@@ -2,19 +2,29 @@ use super::*;
 
 // 保留拆分前 MacosAppEvent 的诊断与复制能力。
 #[derive(Debug, Clone)]
-struct MacosAppEvent {
-    window_id: Option<WindowId>,
-    kind: isize,
-    location: crate::core::Point,
-    button_number: isize,
-    delta_x: f64,
-    delta_y: f64,
-    key_code: u16,
-    modifiers: usize,
-    text: String,
+pub(super) struct MacosAppEvent {
+    // 窗口身份供平台根模块执行文本输入抑制判定。
+    pub(super) window_id: Option<WindowId>,
+    // 原生事件种类供本组件转换 UIX 事件。
+    pub(super) kind: isize,
+    // 原生坐标供指针事件转换使用。
+    pub(super) location: crate::core::Point,
+    // 原生鼠标按钮编号供按钮映射使用。
+    pub(super) button_number: isize,
+    // 水平滚动增量供滚轮事件转换使用。
+    pub(super) delta_x: f64,
+    // 垂直滚动增量供滚轮事件转换使用。
+    pub(super) delta_y: f64,
+    // 原生键码供键盘事件映射使用。
+    pub(super) key_code: u16,
+    // 原生修饰键位图供键盘事件映射使用。
+    pub(super) modifiers: usize,
+    // 原生文本载荷供文本输入事件转换使用。
+    pub(super) text: String,
 }
 impl MacosAppEvent {
-    fn into_ui_events(self, suppress_keydown_text: bool) -> Vec<UiEvent> {
+    // 将 AppKit 传输对象转换为平台中立 UIX 事件。
+    pub(super) fn into_ui_events(self, suppress_keydown_text: bool) -> Vec<UiEvent> {
         let Some(window_id) = self.window_id else {
             return Vec::new();
         };

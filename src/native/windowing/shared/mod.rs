@@ -28,4 +28,7 @@ pub(crate) mod window_target;
 
 pub(crate) use event_loop::OsEventSource;
 pub(crate) use state::WindowState;
-pub(crate) use window::PlatformWindowCore;
+// 向各原生平台后端统一暴露共享窗口核心与其操作端口契约。
+pub(crate) use window::{PlatformWindowCore, WindowOps};
+// 向异步原生委托统一暴露窗口生命周期事实投递辅助器。
+pub(crate) use window_lifecycle::{push_window_close, push_window_resize};

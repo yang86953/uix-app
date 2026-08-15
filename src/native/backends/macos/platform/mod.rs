@@ -29,6 +29,36 @@ use super::display_link::MacosFramePacer;
 use super::text_input_view::{self, MacosTextInput};
 use super::window_delegate::{self, WindowDelegateContext};
 
+// 将事件转换组件的内部传输类型暴露给 macOS Platform System 根模块。
+use app_event::MacosAppEvent;
+// 将 Cocoa 像素提交端口暴露给同级 presenter 组件。
+use cocoa::present_layer_pixels;
+// 将呈现器组件实现暴露给 macOS 窗口工厂。
+use presenter::MacosPresenter;
+// 将基础平台服务组件暴露给 macOS Platform System 根模块。
+use services::{
+    // 剪贴板服务由平台根对象统一持有。
+    MacosClipboard,
+    // 光标服务由平台根对象统一持有。
+    MacosCursor,
+    // 显示服务由平台根对象统一持有。
+    MacosDisplay,
+    // 文件对话框服务由平台根对象统一持有。
+    MacosFileDialog,
+    // 文件系统适配器由平台根对象统一持有。
+    MacosFileSystem,
+    // 键盘服务由平台根对象统一持有。
+    MacosKeyboard,
+    // 通知服务由 services2 组件实现并由平台根对象持有。
+    MacosNotification,
+    // 定时器服务由平台根对象统一持有。
+    MacosTimer,
+};
+// 将剩余系统服务组件暴露给 macOS Platform System 根模块。
+use services2::{MacosConsole, MacosSystemInfo};
+// 将原生窗口操作组件暴露给 macOS 窗口工厂。
+use window_ops::MacosWindowOps;
+
 pub struct MacosPlatform {
     pending_failures: PendingFailureSource,
     events: Arc<Mutex<VecDeque<UiEvent>>>,

@@ -1,12 +1,14 @@
+// 导入 macOS Platform System 根模块统一拥有的契约与辅助类型。
 use super::*;
 
-use super::*;
-
-struct MacosClipboard;
+// 剪贴板组件仅对 macOS Platform System 内部可见。
+pub(super) struct MacosClipboard;
 
 impl MacosClipboard {
-    fn new() -> Self {
-        Self::default()
+    // 由平台根对象构造剪贴板组件。
+    pub(super) fn new() -> Self {
+        // 无状态剪贴板组件直接构造单元结构体。
+        Self
     }
 }
 
@@ -33,13 +35,15 @@ impl IClipboard for MacosClipboard {
     }
 }
 
-struct MacosCursor {
+// 光标组件仅对 macOS Platform System 内部可见。
+pub(super) struct MacosCursor {
     cursor: CursorType,
     position: crate::core::Point,
 }
 
 impl MacosCursor {
-    fn new() -> Self {
+    // 由平台根对象构造光标组件。
+    pub(super) fn new() -> Self {
         Self {
             cursor: CursorType::Arrow,
             position: crate::core::Point::zero(),
@@ -79,7 +83,8 @@ impl ICursor for MacosCursor {
     }
 }
 
-struct MacosDisplay;
+// 显示组件仅对 macOS Platform System 内部可见。
+pub(super) struct MacosDisplay;
 
 impl IDisplay for MacosDisplay {
     fn dpi_scale(&self) -> Result<f32> {
@@ -111,7 +116,8 @@ impl IDisplay for MacosDisplay {
     }
 }
 
-struct MacosFileDialog;
+// 文件对话框组件仅对 macOS Platform System 内部可见。
+pub(super) struct MacosFileDialog;
 
 impl IFileDialog for MacosFileDialog {
     fn open(&mut self, _title: &str, _filters: &str) -> Result<Option<Vec<String>>> {
@@ -136,10 +142,12 @@ impl IFileDialog for MacosFileDialog {
     }
 }
 
-type MacosFileSystem = FileSystemCore<MacosSpecialDirs>;
+// 文件系统适配器仅对 macOS Platform System 内部可见。
+pub(super) type MacosFileSystem = FileSystemCore<MacosSpecialDirs>;
 
 #[derive(Debug, Clone, Default)]
-struct MacosSpecialDirs;
+// 特殊目录策略随文件系统适配器在 macOS Platform System 内部共享。
+pub(super) struct MacosSpecialDirs;
 
 impl SpecialDirProvider for MacosSpecialDirs {
     fn special_dir(&self, dir: SpecialDir) -> Result<String> {
@@ -161,12 +169,15 @@ impl SpecialDirProvider for MacosSpecialDirs {
     }
 }
 
-struct MacosKeyboard {
-    keys_down: HashSet<KeyCode>,
+// 键盘组件仅对 macOS Platform System 内部可见。
+pub(super) struct MacosKeyboard {
+    // 平台事件循环维护当前按下键集合，查询能力只读该状态。
+    pub(super) keys_down: HashSet<KeyCode>,
 }
 
 impl MacosKeyboard {
-    fn new() -> Self {
+    // 由平台根对象构造键盘组件。
+    pub(super) fn new() -> Self {
         Self {
             keys_down: HashSet::new(),
         }
@@ -187,10 +198,12 @@ impl IKeyboard for MacosKeyboard {
     }
 }
 
-struct MacosTimer;
+// 定时器组件仅对 macOS Platform System 内部可见。
+pub(super) struct MacosTimer;
 
 impl MacosTimer {
-    fn new() -> Self {
+    // 由平台根对象构造定时器组件。
+    pub(super) fn new() -> Self {
         Self
     }
 }
@@ -211,4 +224,5 @@ impl ITimer for MacosTimer {
     }
 }
 
-struct MacosNotification;
+// 通知组件在 services2 中实现契约，并由平台根对象持有。
+pub(super) struct MacosNotification;
