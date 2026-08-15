@@ -14,6 +14,7 @@ struct ObjcSuper {
 }
 
 #[link(name = "objc")]
+// SAFETY: 这些声明与 Objective-C runtime 的 C ABI 一致；所有调用点负责校验类、对象、ivar 与名称指针。
 unsafe extern "C" {
     fn class_addIvar(
         cls: Class,
@@ -32,6 +33,9 @@ unsafe extern "C" {
 ///
 /// The caller must invoke this before registering `class` and use the returned
 /// offset only with instances of that class.
+///
+/// # Safety
+/// `class` 必须是尚未注册且在调用期间存活的 Objective-C 类；返回偏移只能用于该类及兼容子类的实例。
 pub(crate) unsafe fn add_raw_pointer_ivar(class: Class, name: &str) -> Option<isize> {
     if class.is_null() {
         return None;
@@ -61,6 +65,9 @@ pub(crate) unsafe fn add_raw_pointer_ivar(class: Class, name: &str) -> Option<is
 ///
 /// On failure, ownership is returned to the caller; no Objective-C retain or
 /// release operation is ever applied to the Rust pointer.
+///
+/// # Safety
+/// `object` 必须是包含指定原始指针 ivar 的存活实例，`offset` 必须来自该类的 `add_raw_pointer_ivar` 结果。
 pub(crate) unsafe fn install_box<T>(
     object: Id,
     offset: isize,
@@ -77,6 +84,9 @@ pub(crate) unsafe fn install_box<T>(
 }
 
 /// Borrows the pointer stored in a raw-pointer ivar without changing ownership.
+///
+/// # Safety
+/// `object` 和 `offset` 必须标识由本模块安装的 `T` 指针槽；返回指针不得在所属对象释放后使用。
 pub(crate) unsafe fn box_ptr<T>(object: Id, offset: isize) -> *mut T {
     raw_pointer_slot::<T>(object, offset)
         .map(|slot| *slot)
@@ -84,6 +94,9 @@ pub(crate) unsafe fn box_ptr<T>(object: Id, offset: isize) -> *mut T {
 }
 
 /// Clears a raw-pointer ivar and recovers its Rust allocation exactly once.
+///
+/// # Safety
+/// `object` 和 `offset` 必须标识由本模块唯一拥有的 `T` 指针槽，且调用方必须保证没有并发读取或重复接管。
 pub(crate) unsafe fn take_box<T>(object: Id, offset: isize) -> Option<Box<T>> {
     let slot = raw_pointer_slot::<T>(object, offset)?;
     let pointer = slot.replace(std::ptr::null_mut());
@@ -95,6 +108,9 @@ pub(crate) unsafe fn take_box<T>(object: Id, offset: isize) -> Option<Box<T>> {
 }
 
 /// Finishes a dynamically implemented `dealloc` by invoking the superclass.
+///
+/// # Safety
+/// `object` 必须是 `current_class` 的存活实例并正处于一次 `dealloc` 链；本函数每个对象只能在该链中调用一次。
 pub(crate) unsafe fn call_super_dealloc(object: Id, current_class: Class) {
     if object.is_null() || current_class.is_null() {
         return;
@@ -107,11 +123,14 @@ pub(crate) unsafe fn call_super_dealloc(object: Id, current_class: Class) {
         receiver: object,
         super_class: superclass,
     };
+    // SAFETY: objc_msgSendSuper 按 Objective-C C ABI 接收 ObjcSuper 指针与 selector，具体签名与 dealloc 无返回值契约一致。
     type FnType = unsafe extern "C" fn(*mut ObjcSuper, Sel);
+    // SAFETY: 原始符号只在这里转换为上方已核对的 dealloc super 调用签名。
     let function: FnType = std::mem::transmute(objc_msgSendSuper as unsafe extern "C" fn());
     function(&mut receiver, selector("dealloc"));
 }
 
+// SAFETY: 调用方必须传入存活的兼容对象以及该对象类中已登记的非负原始指针 ivar 偏移。
 unsafe fn raw_pointer_slot<T>(object: Id, offset: isize) -> Option<*mut *mut T> {
     if object.is_null() || offset < 0 {
         return None;
@@ -119,8 +138,10 @@ unsafe fn raw_pointer_slot<T>(object: Id, offset: isize) -> Option<*mut *mut T> 
     Some(object.cast::<u8>().offset(offset).cast::<*mut T>())
 }
 
+// SAFETY: 返回 selector 仅交给 Objective-C runtime；注册函数同步复制零结尾名称，不保留 Rust 字符串指针。
 unsafe fn selector(name: &str) -> Sel {
     #[link(name = "objc")]
+    // SAFETY: sel_registerName 声明与 Objective-C runtime C ABI 一致，调用点提供调用期间存活的零结尾名称。
     unsafe extern "C" {
         fn sel_registerName(name: *const c_char) -> Sel;
     }
