@@ -1,6 +1,6 @@
 # renderer 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 graphics 系统的目标 `renderer` 模块及帧会话、提交结果与恢复契约。依赖：[scene](scene.md)、[backend](backend.md)、[resources](resources.md)、[platform/presentation](../platform/presentation.md)。导出：`Renderer` 与 app 使用的 `RenderTarget`。
 

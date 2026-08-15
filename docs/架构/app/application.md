@@ -1,6 +1,6 @@
 # application 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 app 系统的应用组装、运行模式、共享服务和生命周期根。依赖：全部下层系统，以及 [event-loop](event-loop.md)、[window](window.md) 和可选 [agent](agent.md)。导出：`App`、`AppMode`、`AppHandle` 与应用级服务容器。
 >

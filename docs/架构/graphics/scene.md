@@ -1,6 +1,6 @@
 # scene 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 graphics 系统的目标 `scene` 模块及场景/Picture 合成契约。依赖：[painting](painting.md)。导出：renderer 消费的 LayerTree。
 

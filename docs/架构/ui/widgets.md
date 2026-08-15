@@ -1,6 +1,6 @@
 # widgets 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 ui 系统的内置通用组件库及组件分类边界。依赖：[component](component.md)、[layout](layout.md)、[event](event.md)、[theme](theme.md)、[overlay](overlay.md)、[form](form.md)、[virtualization](virtualization.md)。导出：`uix::ui` 与 prelude 中的组件类型。
 >
@@ -24,7 +24,7 @@ Button、Label、Typography、Icon、Container 等基础组件只组合 componen
 
 ## 组件：复合组件
 
-Form、Table、Tree、Modal、Menu 等复合组件分别复用 form、virtualization、overlay 等目标模块。每个组件通过 `WidgetComponent` 暴露必要能力，运行态只由组件实例和树 side table 持有；公开教程与参数表归[使用 · 组件](../../使用/组件.md)。
+Form、Table、Tree、Modal、Menu 等复合组件分别复用 form、virtualization、overlay 等目标模块。每个组件通过 `WidgetComponent` 暴露必要能力，运行态只由组件实例和树 side table 持有；公开教程与参数表归[使用 · 组件](../../使用/界面构建/组件.md)。
 
 ## 模块不变量
 

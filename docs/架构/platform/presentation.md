@@ -1,6 +1,6 @@
 # presentation 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 platform 系统的目标 `presentation` 模块，权威持有原生 surface、图形 recipe、thin RHI provider、presenter 与提交能力。依赖：[windowing](windowing.md)、core。导出：供 graphics [backend](../graphics/backend.md) bootstrap/执行使用的平台图形边界。
 

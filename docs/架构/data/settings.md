@@ -1,6 +1,6 @@
 # settings 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 data 系统的应用设置模型、编解码和可恢复持久化。依赖：[core/error](../core/error.md)。导出：`SettingsService` 供 [app/application](../app/application.md) 按需注册。
 >

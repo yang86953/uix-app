@@ -1,6 +1,6 @@
 # painting 模块
 
-[← 架构索引](../../架构.md)
+[← 返回架构索引](../../架构.md)
 
 > **接口**：声明 graphics 系统的目标 `painting` 模块，权威持有组件绘制入口、canonical 操作、DisplayList 与帧编码。依赖：[geometry](geometry.md)。导出：UI 使用的 `PaintContext` 和 renderer/scene 使用的命令序列。
 

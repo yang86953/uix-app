@@ -47,7 +47,7 @@ UIX 产品原则是「Rust 优先——没有第二门运行语言」。公开 `
 
 当前已登记以下 108 个标签（`Col` 仅作为 `Row` / `Grid` 的直接子项使用）：`Text`、`Label`、`Button`、`ButtonGroup`、`FloatButton`、`FloatButtonGroup`、`FloatButtonBackTop`、`Icon`、`Divider`、`Space`、`Typography`、`ThemeToggle`、`WindowControl`、`WindowDragRegion`、`Container`、`Row`、`Column`、`Grid`、`ScrollView`、`VirtualScroll`、`Splitter`、`Affix`、`BackTop`、`Layout`、`Sider`、`Header`、`Content`、`Footer`、`Input`、`InputNumber`、`InputGroup`、`Slider`、`RangeSlider`、`Rate`、`Checkbox`、`Switch`、`Radio`、`Segmented`、`Select`、`Cascader`、`TreeSelect`、`AutoComplete`、`Mentions`、`DatePicker`、`DateRangePicker`、`TimePicker`、`ColorPicker`、`Avatar`、`Image`、`ImageGroup`、`List`、`Skeleton`、`Empty`、`ResultView`、`Tag`、`Card`、`Descriptions`、`Timeline`、`Calendar`、`Carousel`、`Tree`、`Table`、`Menu`、`Dropdown`、`Navigation`、`Steps`、`Pagination`、`Breadcrumb`、`Anchor`、`Tabs`、`QRCode`、`Watermark`、`RichText`、`Message`、`Notification`、`Alert`、`Popconfirm`、`Modal`、`Drawer`、`Popover`、`Tooltip`、`FocusTrap`、`ProgressBar`、`Spin`、`Form`、`FormInputItem`、`FormSelectItem`、`FormCheckboxItem`、`FormRadioItem`、`FormSwitchItem`、`FormSliderItem`、`Upload`、`SelectableList`、`Collapse`、`Badge`、`BarChart`、`LineChart`、`PieChart`、`AreaChart`、`ScatterChart`、`FunnelChart`、`Treemap`、`Gauge`、`Heatmap`、`WaterfallChart`、`RadarChart`、`ComboChart`。未登记组件仍由编译期诊断明确拒绝，不会静默降级。实现差距由 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 跟踪。
 
-Rust 图表文档列出的十二类标签已全部登记类型化静态数据与基础视觉配置；气泡、自定义混合系列和高级交互继续以 [Rust 图表使用文档](../使用/图表.md)为边界，尚未登记时会在编译期拒绝。
+Rust 图表文档列出的十二类标签已全部登记类型化静态数据与基础视觉配置；气泡、自定义混合系列和高级交互继续以 [Rust 图表使用文档](../使用/数据展示/图表.md)为边界，尚未登记时会在编译期拒绝。
 
 ## 与 Rust API 的映射关系
 
