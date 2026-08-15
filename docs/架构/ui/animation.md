@@ -28,10 +28,12 @@
 
 ## UIX 声明降低
 
-- `uix-derive` 拥有 `@keyframes`、固定位置 `animation` 简写和首批字段矩阵的编译期验证；它只生成 typed `Animated<T>`、`Keyframe<T>` 与 `KeyframePlayback`，不拥有时钟。
+- `uix-derive` 拥有 `@keyframes`、固定位置 `animation` / `transition` 简写和首批字段矩阵的编译期验证；它只生成 typed `Animated<T>`、`Keyframe<T>` 与 `KeyframePlayback`，不拥有时钟。
 - 每个动画节点从最近文档根或 `Component` 作用域派生私有子作用域，各字段使用稳定编号保存 `State<Animated<T>>`；`For` 实例路径进入身份键，同身份 reconcile 复用 source。
 - View 的 `*_animated` 方法是取值适配器，不创建播放器或第二套调度器；`.value()` 把 source 交给既有窗口捕获与活动源登记。
-- 基础静态样式提供 fill-mode 恢复值。伪类与 `setStyle` 不得创建竞争播放生命周期，编译器给出定向 `transition` 诊断。
+- `animation` 在首次挂载启动，基础静态样式提供 fill-mode 恢复值；伪类与 `setStyle` 不得另建关键帧播放生命周期。
+- `transition` 装饰位于静态、伪类和 `setStyle` 样式合成之后：首次挂载以最终目标静止初始化，后续 reconcile 比较 typed 目标，变化时对同一 source 调用 `animate_to_after`。最终 View key 与 `For` 路径进入身份键。
+- 同一节点的 `animation` 与 `transition` 会争用同一属性播放所有权，编译期直接拒绝；两者都复用现有活动源登记与帧调度，不创建竞争时钟。
 
 ## 帧驱动
 

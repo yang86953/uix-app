@@ -820,6 +820,29 @@ fn record_items_and_semantic_states_compile_against_public_uix_api() {
     }
 }
 
+// 验证 transition 生成物只依赖公开 UIX 运行时契约并可在真实消费者中类型检查。
+#[test]
+fn declarative_transition_compiles_against_public_uix_api() {
+    // 展开同时改变透明度与背景色的 hover 状态过渡。
+    let _view: ViewNode = uix!(
+        r#"
+        card {
+          opacity: 1;
+          backgroundColor: rgb(10, 20, 30);
+          transition: all 250ms ease-in-out 50ms;
+        }
+        card:hover {
+          opacity: 0.5;
+          backgroundColor: rgb(30, 40, 50);
+        }
+        <Component name="TransitionCard">
+          <Text class="card">平滑卡片</Text>
+        </Component>
+        <TransitionCard />
+        "#
+    );
+}
+
 // 验证 setTheme 作为框架内置操作生成主题请求通道调用，不依赖调用方同名函数。
 #[test]
 fn set_theme_builtin_compiles_without_caller_function() {
