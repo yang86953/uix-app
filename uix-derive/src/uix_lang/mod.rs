@@ -7,6 +7,13 @@ mod animation_codegen;
 // 集中验证 animation 完整简写、字段矩阵与拒绝路径。
 #[cfg(test)]
 mod animation_codegen_tests;
+// 定义 transition 最终目标比较装饰的代码生成。
+mod transition_codegen;
+// 集中验证 transition 状态目标、动态分支与拒绝路径。
+#[cfg(test)]
+mod transition_codegen_tests;
+// 定义 transition 简写、字段矩阵与状态分支的编译期降低。
+mod transition_lower;
 // 定义六类文档内置组件的已登记与规划中矩阵。
 mod builtin_matrix;
 // 定义语言面结构化数据类型到公开构造 API 的编译期映射。
@@ -553,6 +560,8 @@ mod style_class_resolver;
 mod style_value_codegen;
 // 定义 transform 函数列表到公开二维仿射矩阵的编译期映射。
 mod style_transform_codegen;
+// 定义 cursor 文档值到公开平台无关枚举的独立映射。
+mod style_cursor_codegen;
 // 集中验证 transform 与 transformOrigin 的生成和拒绝路径。
 #[cfg(test)]
 mod style_transform_codegen_tests;

@@ -56,6 +56,8 @@ pub(crate) enum ComponentScopeMarker {
     PseudoStyle(PseudoStyleBinding),
     // 保存静态 animation 声明的持久化播放绑定。
     Animation(AnimationBinding),
+    // 保存 transition 声明的持久化目标比较绑定。
+    Transition(TransitionBinding),
 }
 
 // 保存一个元素 animation 声明的运行时作用域与类型化关键帧。
@@ -166,6 +168,25 @@ pub(crate) enum AnimationPropertyKind {
     Color,
     // 普通背景颜色。
     BackgroundColor,
+}
+
+// 保存一个元素 transition 声明的状态作用域、播放配置与字段集合。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TransitionBinding {
+    // 保存最近组件或文档根状态作用域名称。
+    pub(crate) component_scope_name: String,
+    // 保存节点类型与静态位置形成的子作用域声明标识。
+    pub(crate) declaration_id: u64,
+    // 保存当前节点所属最近 For 实例路径。
+    pub(crate) instance_path_name: Option<String>,
+    // 保存过渡时长的微秒整数。
+    pub(crate) duration_micros: u64,
+    // 保存启动延迟的微秒整数。
+    pub(crate) delay_micros: u64,
+    // 保存闭合缓动曲线。
+    pub(crate) easing: AnimationEasing,
+    // 保存实际参与目标比较的闭合字段集合。
+    pub(crate) properties: Vec<AnimationPropertyKind>,
 }
 
 // 保存一个元素的状态伪类叠加元数据。

@@ -327,6 +327,8 @@ impl ComponentExpander {
                 .component_scopes
                 .push(ComponentScopeMarker::PseudoStyle(binding));
         }
+        // 消费 transition 并在全部状态样式之外附加目标比较装饰。
+        self.prepare_transition(&mut expanded)?;
         // 逐个改写普通属性与事件表达式。
         for attribute in &mut expanded.attributes {
             // VirtualScroll item 只声明直接 For 的行绑定名称，不读取组件或宿主值。
@@ -541,13 +543,16 @@ impl ComponentExpander {
         let uses_hover_style = self.styles.nodes_use_hover(&component.children);
         // 预先判断当前组件是否需要持久化声明式动画。
         let uses_animation_style = self.styles.nodes_use_animation(&component.children);
+        // 预先判断当前组件是否需要持久化声明式状态过渡。
+        let uses_transition_style = self.styles.nodes_use_transition(&component.children);
         // For 内的状态、prop 或动态样式需要运行时逐实例存储。
         if inside_for
             && (!component.props.is_empty()
                 || !component.states.is_empty()
                 || uses_dynamic_style
                 || uses_hover_style
-                || uses_animation_style)
+                || uses_animation_style
+                || uses_transition_style)
         {
             // 返回明确的动态实例边界诊断。
             return Err(Diagnostic::new(
@@ -619,6 +624,7 @@ impl ComponentExpander {
                 && !uses_dynamic_style
                 && !uses_hover_style
                 && !uses_animation_style
+                && !uses_transition_style
             {
                 // 无私有状态的组件不进入运行时作用域，保留既有 For 语义。
                 None

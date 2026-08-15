@@ -211,7 +211,7 @@ fn playback_tokens(binding: &AnimationBinding) -> TokenStream {
 }
 
 // 生成运行时缓动枚举令牌。
-fn easing_tokens(value: AnimationEasing) -> TokenStream {
+pub(super) fn easing_tokens(value: AnimationEasing) -> TokenStream {
     // 按闭合集合映射现有 Easing API。
     match value {
         // 线性插值。

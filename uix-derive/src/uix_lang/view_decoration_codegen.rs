@@ -9,6 +9,8 @@ use super::animation_codegen::apply_animation;
 use super::dynamic_style_codegen::apply_dynamic_style;
 // 引入状态伪类叠加入口。
 use super::pseudo_style_codegen::apply_pseudo_style;
+// 引入声明式状态过渡包裹入口。
+use super::transition_codegen::apply_transition;
 // 引入组件状态装饰与诊断。
 use super::{ComponentScopeMarker, Diagnostic};
 
@@ -52,6 +54,11 @@ pub(super) fn apply_component_scopes(
             ComponentScopeMarker::Animation(binding) => {
                 // 应用持久化 Animated 状态与窗口帧调度绑定。
                 view = apply_animation(view, binding)?;
+            }
+            // transition 在全部状态样式完成后比较最终目标。
+            ComponentScopeMarker::Transition(binding) => {
+                // 应用持久化目标快照与原位 Animated retarget。
+                view = apply_transition(view, binding);
             }
         }
     }
