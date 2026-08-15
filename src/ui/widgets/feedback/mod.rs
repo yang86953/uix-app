@@ -16,11 +16,15 @@ fn fade_token_color(color: Color, opacity: f32) -> Color {
 pub mod alert;
 // 声明租约组件与关闭事实共享反馈 capability。
 pub mod declaration;
+/// 抽屉式窗口内浮层组件。
 pub mod drawer;
 pub mod message;
+/// 模态对话框与焦点陷阱组件。
 pub mod modal;
 pub mod notification;
+/// 由触发器拥有的气泡确认组件。
 pub mod popconfirm;
+/// 由触发器拥有的通用气泡内容组件。
 pub mod popover;
 pub mod progress;
 // 集中验证 ProgressBar fraction、模式、动画与可观察归一化契约。
@@ -28,6 +32,7 @@ pub mod progress;
 mod progress_tests;
 pub mod spin;
 pub(crate) mod toast_motion;
+/// 提示文字浮层组件。
 pub mod tooltip;
 
 pub use alert::*;
