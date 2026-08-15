@@ -14,11 +14,17 @@ use super::unit::PhysicalUnit;
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct PhysicalBox {
+    /// 盒子最小角的 X 轴坐标。
     pub x: PhysicalUnit,
+    /// 盒子最小角的 Y 轴坐标。
     pub y: PhysicalUnit,
+    /// 盒子最小角的 Z 轴坐标。
     pub z: PhysicalUnit,
+    /// 盒子沿 X 轴的宽度。
     pub w: PhysicalUnit,
+    /// 盒子沿 Y 轴的高度。
     pub h: PhysicalUnit,
+    /// 盒子沿 Z 轴的深度。
     pub d: PhysicalUnit,
 }
 
