@@ -493,6 +493,8 @@ mod float_button_group_codegen;
 mod float_button_group_codegen_tests;
 // 定义布局容器、Row/Col 栅格与 Grid/Col 的公开 API 代码生成边界。
 mod layout_codegen;
+// 定义 Container 专属视觉与布局简写的独立生成边界。
+mod container_style_codegen;
 // 集中验证布局标签生成、父子形状与拒绝路径。
 #[cfg(test)]
 mod layout_codegen_tests;
@@ -561,6 +563,8 @@ mod style_text_decoration_codegen_tests;
 mod style_class_resolver;
 // 定义样式值、颜色、边距与枚举的编译期映射。
 mod style_value_codegen;
+// 定义完整盒阴影值与字段更新的编译期映射。
+mod style_shadow_codegen;
 // 定义 transform 函数列表到公开二维仿射矩阵的编译期映射。
 mod style_transform_codegen;
 // 定义 cursor 文档值到公开平台无关枚举的独立映射。

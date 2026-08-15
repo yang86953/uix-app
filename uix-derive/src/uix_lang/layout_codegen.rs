@@ -7,10 +7,12 @@ use quote::quote;
 use super::codegen::{
     apply_common_attributes, generate_children, generate_node_view, is_renderable_node,
 };
+// 引入 Container 专属简写生成与消费登记。
+use super::container_style_codegen::{CONTAINER_CONSUMED_ATTRIBUTES, apply_container_shorthands};
 // 引入布局映射所需的语言 AST、诊断与共享属性值解析。
 use super::{
-    Attribute, AttributeValue, Diagnostic, Element, Node, SourceSpan, align_value, boolean_value,
-    generate_expression, literal_string, numeric_value, string_value,
+    Attribute, AttributeValue, Diagnostic, Element, Node, SourceSpan, generate_expression,
+    literal_string, numeric_value,
 };
 
 // 生成通用 Flex Container。
@@ -52,104 +54,7 @@ pub(crate) fn generate_container(element: &Element) -> Result<TokenStream, Diagn
         quote! { ::uix::prelude::column(#children) }
     };
     // 按源码顺序应用 Container 专属简写属性。
-    for attribute in &element.attributes {
-        // 只处理本组件已登记的第一批专属简写。
-        base = match attribute.name.as_str() {
-            // 当前容器作为父布局子项时覆盖交叉轴对齐。
-            "alignSelf" => {
-                // 复用统一 AlignItems 关键字验证。
-                let value = align_value(attribute)?;
-                // 应用公开 View 对齐入口。
-                quote! { (#base).align_self(#value) }
-            }
-            // 背景色简写复用公开颜色值入口。
-            "bg" => {
-                // 接受字符串字面量或受限表达式。
-                let value = string_value(attribute)?;
-                // 应用现有背景色契约。
-                quote! { (#base).bg(#value) }
-            }
-            // 圆角简写只接受有限非负数值。
-            "radius" => {
-                // 验证静态边界并生成动态表达式。
-                let value =
-                    container_number(attribute, "Container radius", NumberBoundary::NonNegative)?;
-                // 应用现有统一圆角入口。
-                quote! { (#base).radius(#value) }
-            }
-            // 固定宽度简写只接受有限非负逻辑像素。
-            "w" => {
-                // 验证静态边界并生成动态表达式。
-                let value =
-                    container_number(attribute, "Container w", NumberBoundary::NonNegative)?;
-                // 应用现有固定宽度入口。
-                quote! { (#base).width(#value) }
-            }
-            // 固定高度简写只接受有限非负逻辑像素。
-            "h" => {
-                // 验证静态边界并生成动态表达式。
-                let value =
-                    container_number(attribute, "Container h", NumberBoundary::NonNegative)?;
-                // 应用现有固定高度入口。
-                quote! { (#base).height(#value) }
-            }
-            // 透明度简写静态值限制在零到一。
-            "opacity" => {
-                // 验证静态边界并生成动态表达式。
-                let value =
-                    container_number(attribute, "Container opacity", NumberBoundary::UnitInterval)?;
-                // 应用现有整体透明度入口。
-                quote! { (#base).opacity(#value) }
-            }
-            // 可见性保持节点身份并切换完整子树参与资格。
-            "visible" => {
-                // 接受布尔简写、字面量或受限表达式。
-                let value = boolean_value(attribute)?;
-                // 应用现有可见性入口。
-                quote! { (#base).visible(#value) }
-            }
-            // overflow 只登记可见与裁剪两种确定语义。
-            "overflow" => {
-                // 关键字必须在编译期确定。
-                let value = literal_string(attribute, "Container overflow")?;
-                // 把关键字映射为显式子树裁剪声明。
-                let clip = match value.as_str() {
-                    // visible 不裁剪子树。
-                    "visible" => false,
-                    // hidden 裁剪到当前节点边界。
-                    "hidden" => true,
-                    // scroll 与 auto 由滚动组件持有状态。
-                    "scroll" | "auto" => {
-                        // 返回滚动所有权诊断。
-                        return Err(Diagnostic::new(
-                            // 指向完整 overflow 属性。
-                            attribute.span,
-                            // 说明不在 Container 内隐式创建滚动状态。
-                            "Container overflow 的 scroll/auto 由滚动容器组件提供",
-                            // 给出确定替代标签。
-                            "改用 ScrollView 或 VirtualScroll",
-                        ));
-                    }
-                    // 其他关键字不能静默回退。
-                    _ => {
-                        // 返回合法集合诊断。
-                        return Err(Diagnostic::new(
-                            // 指向完整 overflow 属性。
-                            attribute.span,
-                            // 保留实际非法值。
-                            format!("Container overflow={value:?} 不受支持"),
-                            // 给出完整合法关键字集合。
-                            "使用 visible、hidden，或改用滚动容器",
-                        ));
-                    }
-                };
-                // 应用显式裁剪真假值。
-                quote! { (#base).clip_content(#clip) }
-            }
-            // 其余属性交给统一公共映射。
-            _ => base,
-        };
-    }
+    base = apply_container_shorthands(base, element)?;
     // 消费专属简写后应用统一公共属性。
     apply_common_attributes(
         // 传入已应用专属属性的容器 View。
@@ -157,77 +62,8 @@ pub(crate) fn generate_container(element: &Element) -> Result<TokenStream, Diagn
         // 保留原始属性供公共映射处理。
         &element.attributes,
         // 标记本阶段已经消费的属性集合。
-        &[
-            "direction",
-            "alignSelf",
-            "bg",
-            "radius",
-            "w",
-            "h",
-            "opacity",
-            "visible",
-            "overflow",
-        ],
+        CONTAINER_CONSUMED_ATTRIBUTES,
     )
-}
-
-// 声明 Container 简写数值的静态边界。
-#[derive(Clone, Copy)]
-enum NumberBoundary {
-    // 只允许大于等于零。
-    NonNegative,
-    // 只允许零到一闭区间。
-    UnitInterval,
-}
-
-// 验证静态 Container 数值并保留动态受限表达式。
-fn container_number(
-    // 接收待验证属性。
-    attribute: &Attribute,
-    // 接收诊断中的契约名称。
-    contract: &str,
-    // 接收允许的数值边界。
-    boundary: NumberBoundary,
-) -> Result<TokenStream, Diagnostic> {
-    // 先复用统一有限数值与 px 解析。
-    let tokens = numeric_value(attribute)?;
-    // 动态表达式交给公开 Rust API 类型检查与运行时归一。
-    let AttributeValue::Literal(source) = &attribute.value else {
-        // 返回原始动态表达式令牌。
-        return Ok(tokens);
-    };
-    // 去除可选 px 单位以取得已由统一解析验证的数值。
-    let source = source.strip_suffix("px").unwrap_or(source);
-    // 统一解析已经保证成功，这里只读取边界值。
-    let value = source.parse::<f32>().expect("numeric_value 已验证有限 f32");
-    // 根据字段契约验证静态范围。
-    let valid = match boundary {
-        // 非负字段允许零。
-        NumberBoundary::NonNegative => value >= 0.0,
-        // 透明度只允许零到一。
-        NumberBoundary::UnitInterval => (0.0..=1.0).contains(&value),
-    };
-    // 合法静态数值直接返回既有令牌。
-    if valid {
-        // 保留统一 f32 字面量生成结果。
-        return Ok(tokens);
-    }
-    // 为不同边界生成精确修复建议。
-    let suggestion = match boundary {
-        // 非负字段提示零或正数。
-        NumberBoundary::NonNegative => "使用有限非负数值",
-        // 透明度提示闭区间。
-        NumberBoundary::UnitInterval => "使用 0 到 1 之间的数值",
-    };
-    // 返回带属性跨度的范围诊断。
-    Err(Diagnostic::new(
-        // 指向完整非法属性。
-        attribute.span,
-        // 说明实际越界值。
-        format!("{contract}={value} 超出允许范围"),
-        // 给出字段对应修复建议。
-        suggestion,
-    ))
 }
 
 // 生成保留兼容性的显式 Flex Column。

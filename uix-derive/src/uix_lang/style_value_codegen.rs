@@ -564,7 +564,12 @@ fn edge_insets_value(property: &StyleProperty) -> Result<TokenStream, Diagnostic
 }
 
 // 解析一个非负长度分量。
-fn parse_length(source: &str, property: &StyleProperty) -> Result<TokenStream, Diagnostic> {
+pub(super) fn parse_length(
+    // 接收待解析长度源码。
+    source: &str,
+    // 接收用于诊断的结构化属性。
+    property: &StyleProperty,
+) -> Result<TokenStream, Diagnostic> {
     // 主题数值引用直接读取当前 Provider token。
     if let Some(value) = number_token_reference(source, property)? {
         // 返回已验证的主题数值表达式。
@@ -657,75 +662,13 @@ pub(super) fn color_value(property: &StyleProperty) -> Result<TokenStream, Diagn
     })
 }
 
-// 生成 BoxShadowDef 字段更新。
-pub(super) fn box_shadow_field(
-    style: &Ident,
+// 解析允许负值的长度分量。
+pub(super) fn parse_length_signed(
+    // 接收待解析有符号长度源码。
+    source: &str,
+    // 接收用于诊断的结构化属性。
     property: &StyleProperty,
 ) -> Result<TokenStream, Diagnostic> {
-    // none 明确清除阴影。
-    if property.value.source == "none" {
-        // 生成 None 更新。
-        return Ok(quote! { #style.box_shadow = ::std::option::Option::None; });
-    }
-    // 阴影规范需要前三个长度和其余颜色文本。
-    let mut parts = property
-        .value
-        .source
-        .splitn(4, char::is_whitespace)
-        .filter(|part| !part.is_empty());
-    // 读取水平偏移。
-    let horizontal = parts.next().ok_or_else(|| {
-        value_diagnostic(
-            property,
-            "boxShadow 缺少水平偏移",
-            "使用 0 2px 4px rgba(0,0,0,0.1)",
-        )
-    })?;
-    // 读取垂直偏移。
-    let vertical = parts.next().ok_or_else(|| {
-        value_diagnostic(
-            property,
-            "boxShadow 缺少垂直偏移",
-            "使用 0 2px 4px rgba(0,0,0,0.1)",
-        )
-    })?;
-    // 读取模糊半径。
-    let blur = parts.next().ok_or_else(|| {
-        value_diagnostic(
-            property,
-            "boxShadow 缺少模糊半径",
-            "使用 0 2px 4px rgba(0,0,0,0.1)",
-        )
-    })?;
-    // 读取颜色。
-    let color = parts.next().ok_or_else(|| {
-        value_diagnostic(
-            property,
-            "boxShadow 缺少颜色",
-            "使用 0 2px 4px rgba(0,0,0,0.1)",
-        )
-    })?;
-    // 解析水平偏移。
-    let horizontal = parse_length_signed(horizontal, property)?;
-    // 解析垂直偏移。
-    let vertical = parse_length_signed(vertical, property)?;
-    // 解析非负模糊半径。
-    let blur = parse_length(blur, property)?;
-    // 解析阴影颜色通道。
-    let (red, green, blue, alpha) = parse_color(color, property)?;
-    // 生成阴影定义更新。
-    Ok(quote! {
-        #style.box_shadow = ::std::option::Option::Some(::uix::prelude::BoxShadowDef::new(
-            ::uix::prelude::Color::from_rgba(#red, #green, #blue, #alpha),
-            #blur,
-            #horizontal,
-            #vertical,
-        ));
-    })
-}
-
-// 解析允许负值的长度分量。
-fn parse_length_signed(source: &str, property: &StyleProperty) -> Result<TokenStream, Diagnostic> {
     // 去除可选 px 后缀。
     let number = source.strip_suffix("px").unwrap_or(source);
     // 解析任意有限数值。
@@ -906,7 +849,7 @@ pub(super) fn is_planned_property(name: &str) -> bool {
 }
 
 // 构造指向样式值的统一诊断。
-fn value_diagnostic(
+pub(super) fn value_diagnostic(
     // 接收所属属性。
     property: &StyleProperty,
     // 接收失败原因。
