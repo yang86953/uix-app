@@ -377,6 +377,9 @@ fn run_gui(
     // 接收普通主演示的系统主题跟随策略。
     follow_system_theme: bool,
 ) {
+    // Agent 确认回调的 AppHandle 槽位：on_start 安装，确认回调经此自动拒绝。
+    let agent_handle_slot: std::sync::Arc<std::sync::Mutex<Option<uix::app::AppHandle>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
     // 测试能力存在时按运行时开关选择独立验收组合或普通主演示。
     #[cfg(feature = "test-harness")]
     let app = if graphics_recovery_test {
@@ -384,7 +387,12 @@ fn run_gui(
         graphics_recovery::build_app()
     } else {
         // 普通启动继续使用原有主演示组合。
-        build_demo_app(states, tick, follow_system_theme)
+        build_demo_app(
+            states,
+            tick,
+            follow_system_theme,
+            agent_handle_slot.clone(),
+        )
     };
     // 测试能力缺失时锁定前置门禁已经拒绝图形恢复请求。
     #[cfg(not(feature = "test-harness"))]
@@ -392,13 +400,40 @@ fn run_gui(
         // 调试构建核对参数 Gate 没有被后续改动绕过。
         debug_assert!(!graphics_recovery_test);
         // 保留唯一普通主演示组合路径。
-        build_demo_app(states, tick, follow_system_theme)
+        build_demo_app(
+            states,
+            tick,
+            follow_system_theme,
+            agent_handle_slot.clone(),
+        )
     };
     // feature 存在且启动参数显式请求时才开放 Agent Bridge。
     #[cfg(feature = "agent-control")]
     let app = if agent_control {
         // 复用 App System 唯一的 Agent Module 组装入口。
         app.enable_agent_control()
+            // 演示授权第二层：保护副窗口关闭按钮（AI 无法直接关闭）。
+            .agent_protect("theme-window-close")
+            // 演示授权第三层：保存类操作需要用户确认。
+            .agent_require_confirm("demo-popconfirm-trigger")
+            // 演示确认 UI：记录请求并自动拒绝（生产应用应接入真实确认界面，
+            // 用户决定经 AppHandle::resolve_agent_confirmation 交回框架）。
+            .agent_confirm_ui(move |request: uix::app::AgentConfirmationRequest| {
+                tracing::warn!(
+                    window_id = ?request.window_id,
+                    confirm_id = request.confirm_id,
+                    target = %request.target,
+                    action = %request.action,
+                    "agent confirmation requested (demo auto-rejects)"
+                );
+                if let Some(handle) = agent_handle_slot.lock().unwrap().clone() {
+                    let _ = handle.resolve_agent_confirmation(
+                        request.window_id,
+                        request.confirm_id,
+                        false,
+                    );
+                }
+            })
     } else {
         // 普通主演示保持控制面关闭。
         app
@@ -423,6 +458,8 @@ fn build_demo_app(
     tick: State<f64>,
     // 接收是否把 Windows 系统主题变化交给 App System。
     follow_system_theme: bool,
+    // 接收 Agent 确认用的 AppHandle 槽位（on_start 安装后供确认回调取用）。
+    agent_handle_slot: std::sync::Arc<std::sync::Mutex<Option<uix::app::AppHandle>>>,
 ) -> App {
     // 创建普通主演示唯一多窗口控制器。
     let multi_window = std::sync::Arc::new(multi_window::MultiWindowController::new(
@@ -441,6 +478,8 @@ fn build_demo_app(
         .on_start(move |handle| {
             // 先把 Application System 句柄安装到多窗口控制器。
             start_multi_window.attach_handle(handle.clone());
+            // 再安装到 Agent 确认槽位（确认回调经此 resolve）。
+            *agent_handle_slot.lock().unwrap() = Some(handle.clone());
             // 秒级计数器驱动声明文件中的 tick 展示。
             let ticks = tick.clone();
             // 注册一秒间隔的演示计时器。

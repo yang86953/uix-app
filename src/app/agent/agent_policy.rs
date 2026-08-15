@@ -1,0 +1,220 @@
+//! Agent 动作策略 — 授权模型的第二层（动作级授权）。
+//!
+//! 默认策略是「全放行」：通过连接鉴权（同用户 + 会话 token）的 Agent
+//! 可以自由控制应用的全部能力。应用按需收紧：全局只读、受保护目标、
+//! 禁止的动作类别。策略检查发生在命令执行器内（UI turn 入口），命中
+//! 策略拒绝时命令以 `forbidden` 错误失败，不进入 UI 语义路径。
+
+use crate::ui::semantic_action::SemanticActionKind;
+
+/// 策略检查结论。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PolicyDecision {
+    /// 放行：动作进入正常 UI 语义路径。
+    Allow,
+    /// 策略拒绝：只读模式、受保护目标或禁止的动作类别。
+    Forbidden,
+    /// 需要用户确认：目标命中 `require_confirm`，动作暂不执行，
+    /// 由 AI 发起确认流程。
+    RequiresConfirmation,
+}
+
+/// Agent 动作策略：应用声明的 AI 控制授权边界。
+#[derive(Debug, Clone, Default)]
+pub(crate) struct AgentPolicy {
+    /// 全局只读：拒绝所有写动作（语义动作与窗口动作）。
+    read_only: bool,
+    /// 受保护的 automation_id：命中后拒绝所有语义写动作。
+    protected_automation_ids: Vec<String>,
+    /// 全局禁止的语义动作类别。
+    denied_actions: Vec<SemanticActionKind>,
+    /// 需要用户确认的 automation_id：命中后动作须经确认流程。
+    require_confirm_ids: Vec<String>,
+}
+
+impl AgentPolicy {
+    /// 全局只读：Agent 只能读语义快照，不能执行任何动作。
+    pub(crate) fn read_only(mut self) -> Self {
+        self.read_only = true;
+        self
+    }
+
+    /// 保护指定 automation_id 的组件：Agent 不能对其执行语义写动作。
+    pub(crate) fn protect(mut self, automation_id: impl Into<String>) -> Self {
+        self.protected_automation_ids.push(automation_id.into());
+        self
+    }
+
+    /// 全局禁止指定语义动作类别（如 `set_value`、`toggle`）。
+    pub(crate) fn deny_action(mut self, kind: SemanticActionKind) -> Self {
+        if !self.denied_actions.contains(&kind) {
+            self.denied_actions.push(kind);
+        }
+        self
+    }
+
+    /// 指定 automation_id 的组件需要用户确认：AI 执行写动作前进入确认流程。
+    pub(crate) fn require_confirm(mut self, automation_id: impl Into<String>) -> Self {
+        let automation_id = automation_id.into();
+        if !self.require_confirm_ids.iter().any(|id| *id == automation_id) {
+            self.require_confirm_ids.push(automation_id);
+        }
+        self
+    }
+
+    /// 语义动作检查：目标 automation_id（无自动化标识时为 None）+ 动作类别。
+    ///
+    /// 优先级：只读 > 受保护目标 > 需要确认 > 禁止动作类别。
+    pub(crate) fn check_semantic(
+        &self,
+        automation_id: Option<&str>,
+        kind: SemanticActionKind,
+    ) -> PolicyDecision {
+        if self.read_only {
+            return PolicyDecision::Forbidden;
+        }
+        if let Some(id) = automation_id {
+            if self
+                .protected_automation_ids
+                .iter()
+                .any(|protected| protected == id)
+            {
+                return PolicyDecision::Forbidden;
+            }
+            if self.require_confirm_ids.iter().any(|confirmed| confirmed == id) {
+                return PolicyDecision::RequiresConfirmation;
+            }
+        }
+        if self.denied_actions.contains(&kind) {
+            return PolicyDecision::Forbidden;
+        }
+        PolicyDecision::Allow
+    }
+
+    /// 窗口动作检查：窗口动作都是写操作，只读模式一律拒绝。
+    pub(crate) fn check_window(&self) -> PolicyDecision {
+        if self.read_only {
+            PolicyDecision::Forbidden
+        } else {
+            PolicyDecision::Allow
+        }
+    }
+}
+
+/// 一次待用户确认的 Agent 动作请求（确认 UI 回调载荷）。
+///
+/// 应用注入的确认 UI 收到本请求后展示确认界面；用户在界面上的决定通过
+/// `AppHandle::resolve_agent_confirmation` 交回框架。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentConfirmationRequest {
+    /// 目标窗口。
+    pub window_id: crate::core::WindowId,
+    /// 一次性确认标识：`resolve_agent_confirmation` 用其定位本次确认。
+    pub confirm_id: u64,
+    /// 目标描述（automation_id 或节点身份）。
+    pub target: String,
+    /// 请求的动作名称（语义动作蛇形名）。
+    pub action: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_policy_allows_everything() {
+        let policy = AgentPolicy::default();
+        assert_eq!(
+            policy.check_semantic(None, SemanticActionKind::Invoke),
+            PolicyDecision::Allow
+        );
+        assert_eq!(
+            policy.check_semantic(Some("save-button"), SemanticActionKind::SetValue),
+            PolicyDecision::Allow
+        );
+        assert_eq!(policy.check_window(), PolicyDecision::Allow);
+    }
+
+    #[test]
+    fn read_only_forbids_semantic_and_window_actions() {
+        let policy = AgentPolicy::default().read_only();
+        assert_eq!(
+            policy.check_semantic(Some("save-button"), SemanticActionKind::Invoke),
+            PolicyDecision::Forbidden
+        );
+        assert_eq!(
+            policy.check_semantic(None, SemanticActionKind::Scroll),
+            PolicyDecision::Forbidden
+        );
+        assert_eq!(policy.check_window(), PolicyDecision::Forbidden);
+    }
+
+    #[test]
+    fn protected_automation_id_is_forbidden() {
+        let policy = AgentPolicy::default().protect("delete-button");
+        assert_eq!(
+            policy.check_semantic(Some("delete-button"), SemanticActionKind::Invoke),
+            PolicyDecision::Forbidden
+        );
+        // 其他目标不受影响。
+        assert_eq!(
+            policy.check_semantic(Some("save-button"), SemanticActionKind::Invoke),
+            PolicyDecision::Allow
+        );
+        // 无 automation_id 的目标不受目标保护影响。
+        assert_eq!(
+            policy.check_semantic(None, SemanticActionKind::Invoke),
+            PolicyDecision::Allow
+        );
+    }
+
+    #[test]
+    fn denied_action_kind_is_forbidden() {
+        let policy = AgentPolicy::default().deny_action(SemanticActionKind::Toggle);
+        assert_eq!(
+            policy.check_semantic(Some("switch"), SemanticActionKind::Toggle),
+            PolicyDecision::Forbidden
+        );
+        assert_eq!(
+            policy.check_semantic(Some("switch"), SemanticActionKind::Invoke),
+            PolicyDecision::Allow
+        );
+    }
+
+    #[test]
+    fn deny_action_is_idempotent() {
+        let policy = AgentPolicy::default()
+            .deny_action(SemanticActionKind::SetValue)
+            .deny_action(SemanticActionKind::SetValue);
+        assert_eq!(
+            policy.check_semantic(None, SemanticActionKind::SetValue),
+            PolicyDecision::Forbidden
+        );
+    }
+
+    #[test]
+    fn require_confirm_requests_confirmation() {
+        let policy = AgentPolicy::default().require_confirm("danger-button");
+        assert_eq!(
+            policy.check_semantic(Some("danger-button"), SemanticActionKind::Invoke),
+            PolicyDecision::RequiresConfirmation
+        );
+        // 其他目标不受影响。
+        assert_eq!(
+            policy.check_semantic(Some("save-button"), SemanticActionKind::Invoke),
+            PolicyDecision::Allow
+        );
+    }
+
+    #[test]
+    fn protected_target_wins_over_confirm() {
+        // 受保护目标优先于确认目标：保护 = 直接拒绝，不进入确认流程。
+        let policy = AgentPolicy::default()
+            .protect("danger-button")
+            .require_confirm("danger-button");
+        assert_eq!(
+            policy.check_semantic(Some("danger-button"), SemanticActionKind::Invoke),
+            PolicyDecision::Forbidden
+        );
+    }
+}

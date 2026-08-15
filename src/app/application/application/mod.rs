@@ -6,6 +6,7 @@ use std::sync::{Arc, atomic::AtomicBool};
 use std::time::{Duration, Instant};
 
 use crate::app::app_events::ThemeApplied;
+use crate::app::agent::agent_policy::{AgentConfirmationRequest, AgentPolicy};
 use crate::app::application::app_handle::{AppHandle, prepare_app_root};
 use crate::app::application::cli::Cli;
 use crate::app::application::di::Container;
@@ -57,6 +58,7 @@ use crate::ui::view::ViewNode;
 use crate::ui::{
     AppState, ComponentConfig, Locale, SystemEvent, WidgetTree, with_config, with_locale,
 };
+use crate::ui::semantic_action::SemanticActionKind;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 应用模式
@@ -117,6 +119,10 @@ pub struct App {
     graphics_faults: GraphicsFaultSignal,
     #[cfg(feature = "agent-control")]
     agent_control_enabled: bool,
+    /// Agent 动作策略（授权第二层）：默认全放行，应用按需收紧。
+    agent_policy: AgentPolicy,
+    /// Agent 确认 UI 回调（授权第三层）：默认不注入（确认请求直接失败）。
+    agent_confirm_ui: Option<Arc<dyn Fn(AgentConfirmationRequest) + Send + Sync>>,
     exit_code: i32,
 }
 
@@ -168,6 +174,8 @@ impl Default for App {
             graphics_faults: GraphicsFaultSignal::default(),
             #[cfg(feature = "agent-control")]
             agent_control_enabled: false,
+            agent_policy: AgentPolicy::default(),
+            agent_confirm_ui: None,
             exit_code: 0,
         }
     }
@@ -268,6 +276,45 @@ impl App {
     #[cfg(feature = "agent-control")]
     pub fn enable_agent_control(mut self) -> Self {
         self.agent_control_enabled = true;
+        self
+    }
+
+    /// 只读授权：Agent 只能读取窗口与语义快照，不能执行任何动作。
+    ///
+    /// 默认策略是「全放行」——已通过连接鉴权的 Agent 可以自由控制应用的
+    /// 全部能力；本方法及以下策略方法用于按需收紧。
+    pub fn agent_read_only(mut self) -> Self {
+        self.agent_policy = self.agent_policy.read_only();
+        self
+    }
+
+    /// 保护指定 `automation_id` 的组件：Agent 不能对其执行语义写动作。
+    pub fn agent_protect(mut self, automation_id: impl Into<String>) -> Self {
+        self.agent_policy = self.agent_policy.protect(automation_id);
+        self
+    }
+
+    /// 全局禁止指定语义动作类别（如 `SemanticActionKind::SetValue`）。
+    pub fn agent_deny_action(mut self, kind: SemanticActionKind) -> Self {
+        self.agent_policy = self.agent_policy.deny_action(kind);
+        self
+    }
+
+    /// 指定 `automation_id` 的组件需要用户确认：AI 对其执行写动作前进入
+    /// 确认流程（返回 `requires_confirmation`，AI 随后发起 `confirm` 请求）。
+    pub fn agent_require_confirm(mut self, automation_id: impl Into<String>) -> Self {
+        self.agent_policy = self.agent_policy.require_confirm(automation_id);
+        self
+    }
+
+    /// 注入 Agent 确认 UI 回调：AI 请求确认时在 UI turn 内调用，应用展示
+    /// 自己的确认界面；用户决定通过 `AppHandle::resolve_agent_confirmation`
+    /// 交回框架。未注入时确认请求直接失败（`confirmation_not_found`）。
+    pub fn agent_confirm_ui(
+        mut self,
+        handler: impl Fn(AgentConfirmationRequest) + Send + Sync + 'static,
+    ) -> Self {
+        self.agent_confirm_ui = Some(Arc::new(handler));
         self
     }
 
@@ -553,6 +600,13 @@ impl App {
         if self.agent_control_enabled {
             let _ = self.runtime.enable_agent_control();
         }
+        // 组装期注入 Agent 动作策略（授权第二层），窗口创建前生效。
+        self.runtime
+            .set_agent_policy(std::mem::take(&mut self.agent_policy));
+        // 组装期注入 Agent 确认 UI 回调（授权第三层），窗口创建前生效。
+        if let Some(handler) = self.agent_confirm_ui.take() {
+            self.runtime.set_agent_confirm_ui(move |request| handler(request));
+        }
         // 推迟 ShowWindow 到首帧 present 成功：否则 Vulkan/字体/首 layout 期间用户看到白屏。
         let event_loop_waker = platform.event_loop().waker();
         self.runtime.set_event_loop_waker(event_loop_waker.clone());
@@ -663,6 +717,7 @@ impl App {
             session.set_agent_command_queue(queue);
         }
         session.set_agent_command_executor(self.runtime.agent_command_executor());
+        session.set_agent_confirm_ui(self.runtime.agent_confirm_ui());
         if let Some(registration) = self.runtime.register_agent_window(
             root_window_id,
             self.title.clone(),

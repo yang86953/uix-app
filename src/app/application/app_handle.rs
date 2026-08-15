@@ -302,6 +302,33 @@ impl AppHandle {
             .ok_or_else(|| Error::new(Errc::InvalidState, "application feedback is unavailable"))
     }
 
+    /// 交回一次 Agent 确认的用户决定（确认 UI 回调收到
+    /// [`AgentConfirmationRequest`] 后调用）。
+    ///
+    /// `allow = true` 时在目标窗口 UI turn 内执行登记的动作并完成 AI 的
+    /// `confirm` 请求；`allow = false` 时以 `confirmation_rejected` 完成。
+    #[cfg(feature = "agent-control")]
+    pub fn resolve_agent_confirmation(
+        &self,
+        window_id: WindowId,
+        confirm_id: u64,
+        allow: bool,
+    ) -> Result<()> {
+        use crate::app::queues::agent_command_queue::AgentCommandRequest;
+        self.runtime
+            .submit_agent_command(
+                window_id,
+                AgentCommandRequest::ResolveConfirmation { confirm_id, allow },
+            )
+            .map(|_| ())
+            .map_err(|error| {
+                Error::new(
+                    Errc::InvalidState,
+                    format!("agent confirmation resolve failed: {error:?}"),
+                )
+            })
+    }
+
     // 把消息条目显式投递到此 AppHandle 对应的窗口。
     #[cfg(feature = "feedback")]
     /// 向此窗口的消息队列投递条目并返回本地稳定 ID。
