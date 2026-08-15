@@ -3,8 +3,11 @@ use std::path::PathBuf;
 /// 控制最终上报边界何时捕获回溯。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BacktracePolicy {
+    /// 禁止在最终上报边界捕获回溯。
     Disabled,
+    /// 仅为致命报告捕获回溯。
     FatalOnly,
+    /// 为错误和致命报告捕获回溯。
     ErrorsAndFatal,
 }
 
