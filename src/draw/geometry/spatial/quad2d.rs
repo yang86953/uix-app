@@ -14,16 +14,20 @@ use crate::core::Rect;
 /// 这是空间系统中唯一的 2D 向量类型；3D 场景请使用 [`super::vec3::Vec3`]。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vec2 {
+    /// 屏幕空间 X 轴分量。
     pub x: f32,
+    /// 屏幕空间 Y 轴分量。
     pub y: f32,
 }
 
 impl Vec2 {
+    /// 使用两个轴分量构造二维向量。
     #[inline(always)]
     pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
     }
 
+    /// 构造两个分量均为零的二维向量。
     #[inline(always)]
     pub const fn zero() -> Self {
         Self { x: 0.0, y: 0.0 }
@@ -97,9 +101,13 @@ impl Mul<Vec2> for f32 {
 /// 通常由 [`crate::draw::geometry::spatial::AABB3D`] 经投影得到，处于**屏幕空间**（screen space）。
 #[derive(Debug, Clone, Copy)]
 pub struct Quad2D {
+    /// 顶点环中的第一个屏幕空间顶点。
     pub p0: Vec2,
+    /// 顶点环中的第二个屏幕空间顶点。
     pub p1: Vec2,
+    /// 顶点环中的第三个屏幕空间顶点。
     pub p2: Vec2,
+    /// 顶点环中的第四个屏幕空间顶点。
     pub p3: Vec2,
 }
 
