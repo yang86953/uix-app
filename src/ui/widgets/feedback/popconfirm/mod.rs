@@ -43,11 +43,17 @@ enum PopconfirmTarget {
 /// Popconfirm 弹出位置。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PopconfirmPlacement {
+    /// 将确认气泡放在触发器上方，使用默认水平对齐。
     Top,
+    /// 将确认气泡放在触发器上方并与其左边缘对齐。
     TopLeft,
+    /// 将确认气泡放在触发器上方并与其右边缘对齐。
     TopRight,
+    /// 将确认气泡放在触发器下方，使用默认水平对齐。
     Bottom,
+    /// 将确认气泡放在触发器下方并与其左边缘对齐。
     BottomLeft,
+    /// 将确认气泡放在触发器下方并与其右边缘对齐。
     BottomRight,
 }
 
