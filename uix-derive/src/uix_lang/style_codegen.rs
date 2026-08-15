@@ -13,6 +13,8 @@ use super::style_font_family_codegen::font_family_field;
 use super::style_font_weight_codegen::font_weight_field;
 // 引入 lineHeight 到 UI 运行时行高的独立映射。
 use super::style_line_height_codegen::line_height_field;
+// 引入 position 与四边差异值到运行时结构契约的独立映射。
+use super::style_position_codegen::{apply_position_inset, position_value};
 // 引入 textAlign 到 UI 运行时文本水平对齐的独立映射。
 use super::style_text_align_codegen::text_align_field;
 // 引入 textDecoration 到 UI 运行时文本装饰的独立映射。
@@ -68,6 +70,10 @@ pub(crate) fn apply_style_properties(
     let mut cursor = None;
     // 保存由运行时组件树解析声明值与实际值的文字选择策略。
     let mut user_select = None;
+    // 保存由组件树布局 Module 解析的定位模式。
+    let mut position = None;
+    // 保存按源码顺序只修改单边的定位差异属性。
+    let mut position_insets = Vec::new();
     // 转换每一个已经解析的样式属性。
     for property in properties {
         // z-index 直接映射到 View 的绘制与命中顺序。
@@ -103,6 +109,20 @@ pub(crate) fn apply_style_properties(
             // 解析文档登记的四种文字选择值。
             user_select = Some(user_select_value(property)?);
             // 结构选择策略不进入 Style 字段生成。
+            continue;
+        }
+        // position 映射到公开的五模式布局定位枚举。
+        if property.name == "position" {
+            // 解析文档登记的五种定位模式。
+            position = Some(position_value(property)?);
+            // 结构定位不进入视觉 Style 字段生成。
+            continue;
+        }
+        // 四边值逐边保存，确保状态差异不会清除未声明的其他边。
+        if matches!(property.name.as_str(), "top" | "right" | "bottom" | "left") {
+            // 保存借用供视觉 Style 与其他结构属性应用后链式生成。
+            position_insets.push(property);
+            // 定位四边不进入视觉 Style 字段生成。
             continue;
         }
         // 把属性转换为单个字段更新语句。
@@ -148,13 +168,28 @@ pub(crate) fn apply_style_properties(
         // 没有光标声明时保持当前节点不变。
         with_origin
     };
+    // 保存已经应用定位模式的节点表达式。
+    let with_position = if let Some(position) = position {
+        // 同时携带结构定位模式与既有视觉交互声明。
+        quote! { (#with_cursor).position(#position) }
+    } else {
+        // 未声明 position 时保留基础类或较低状态层的模式。
+        with_cursor
+    };
+    // 逐边叠加 px 或 auto，保持差异样式未声明边不变。
+    let mut positioned = with_position;
+    // 按最终级联属性顺序应用每个显式四边值。
+    for property in position_insets {
+        // 只修改当前边并保留其他定位元数据。
+        positioned = apply_position_inset(positioned, property)?;
+    }
     // 文字选择策略存在时交给 WidgetTree 解析继承与组件默认值。
     if let Some(user_select) = user_select {
         // 返回同时携带视觉、光标与文字选择语义的节点。
-        return Ok(quote! { (#with_cursor).user_select(#user_select) });
+        return Ok(quote! { (#positioned).user_select(#user_select) });
     }
     // 返回已经完成全部受控更新的节点。
-    Ok(with_cursor)
+    Ok(positioned)
 }
 
 // 把单个已映射样式属性转换为 Style 字段更新。

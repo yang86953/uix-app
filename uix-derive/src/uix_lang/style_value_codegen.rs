@@ -835,12 +835,7 @@ pub(super) fn is_planned_property(name: &str) -> bool {
     // 匹配样式参考中的规划中矩阵。
     matches!(
         name,
-        "position"
-            | "top"
-            | "right"
-            | "bottom"
-            | "left"
-            | "float"
+        "float"
             | "clear"
             | "backgroundImage"
             | "backgroundPosition"

@@ -339,4 +339,36 @@ fn position_runtime_reconcile_preserves_identity_and_reflows_sibling() {
         tree.get(children[1]).expect("协调兄弟必须存在").frame().y,
         0.0
     );
+    // 构造同一 absolute 身份把 top 单边恢复为 auto 的下一声明树。
+    let cleared = ViewNode::new(
+        // 保持根组件类型与尺寸不变。
+        Container::new().size(100.0, 80.0),
+        // 保持 key 顺序并只清除目标顶边。
+        vec![
+            // 目标继续脱流但不再拥有显式纵向 inset。
+            box_view(20.0, 10.0)
+                // 保留稳定身份。
+                .key("moving")
+                // 保持 absolute 模式。
+                .position(PositionMode::Absolute)
+                // 先建立像素值以验证 auto 确实清除当前边。
+                .top(20.0)
+                // 单边 auto 不应影响模式或其他边。
+                .top_auto(),
+            // 未变化兄弟继续保持身份。
+            box_view(20.0, 10.0).key("sibling"),
+        ],
+    );
+    // 通过正式协调事务发布单边 auto。
+    ViewAdapter::reconcile_nodes(&mut tree, cleared);
+    // 在同一窗口表面重新布局。
+    layout_root(&mut tree, Rect::new(0.0, 0.0, 100.0, 80.0));
+    // auto 轴应回退到根包含块起点。
+    assert_eq!(
+        tree.get(children[0])
+            .expect("清除顶边后的目标必须存在")
+            .frame()
+            .y,
+        0.0
+    );
 }
