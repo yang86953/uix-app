@@ -6,6 +6,15 @@
 
 > **当前实现线索**：公开实现位于 `src/diagnostics/`；core 的历史诊断机制不定义目标公开边界。
 
+## 框架定位
+
+diagnostics 是 UIX 框架稳定运行的基石——整个框架的运行保障子系统，不只是 platform 的局部工具：它是产品原则「容错可观测——出错有类型，恢复有路径，崩溃有报告」（[定位与原则](../../产品/定位与原则.md)）的架构载体，使用层公开入口见[运行保障](../../使用/框架设施/运行保障.md)。框架与应用宿主共用同一个 `uix::diagnostics` 公开面，承担错误收集、错误处理与稳定运行保障：
+
+- **错误收集**：typed `Error` 保留错误类别、来源与责任边界；panic/崩溃由绑定 runtime 的 panic hook 捕获为有界 `CrashReport`；callback/worker 失败经 pending failure queue 投递到 owner-thread，错误发生点不执行 tracing、报告、恢复或用户代码。
+- **错误处理**：精确 `Errc` 恢复登记与协调、有界脱敏报告、结构化日志（tracing）与按 `ReportId` 排序的时点快照，供宿主展示或持久化。
+- **框架与宿主共用**：同一公开面服务框架自身（图形后端、窗口/输入/TSF 等失败分支）与应用宿主（业务 typed `Error`、日志 subscriber、报告配置与崩溃目录）。
+- **稳定运行保障**：崩溃只做最小安全记录、不吞 panic、不在损坏状态下继续运行复杂 UI；失败隔离并继续，错误不在中间层被吞掉或转换成伪成功；错误风暴不能无限增长内存。
+
 ## 组件清单
 
 | 组件 | 类型 | 职责 |
@@ -44,6 +53,25 @@ System 只通过 `ReportingModule::{report,snapshot}` 与 `RecoveryModule::{regi
 ## 组件：Diagnostics
 
 `report` 只在最终责任边界把 typed Error 转成报告；`on_error` 按精确 Errc 登记，`attempt_recovery` 在调用方选定的安全 owner thread 同步尝试。未处理结果保留原 Error。
+
+## 公开契约
+
+`uix::diagnostics` 的公开契约（用法示例见[运行保障](../../使用/框架设施/运行保障.md)）：
+
+| 入口 | 签名要点 | 语义 |
+|---|---|---|
+| `Diagnostics::new` | `new(config: DiagnosticsConfig) -> Diagnostics` | 创建单 runtime 报告存储与恢复登记 |
+| `report` | `report(&self, error: Error) -> ReportId` | 在最终责任边界把 typed Error 转成有界、脱敏报告 |
+| `snapshot` | `snapshot(&self) -> DiagnosticsSnapshot` | 按 ReportId 排序的时点快照 |
+| `on_error` | `on_error(&self, code: Errc, handler: F) -> RecoverySubscription` | 按精确 Errc 登记恢复 handler；RAII 句柄释放即注销 |
+| `attempt_recovery` | `attempt_recovery(&self, error: Error) -> RecoveryOutcome` | 在调用方选定的安全 owner thread 同步尝试；未处理结果保留原 Error |
+
+crate 内编排入口（不属公开 API，由 app 组装层调用）：
+
+| 入口 | 位置 | 语义 |
+|---|---|---|
+| `Diagnostics::install_panic_hook` | `src/diagnostics/mod.rs` | 绑定 runtime 的 panic hook；`App::run` 在配置加载前安装 |
+| `drain_platform_pending_failures` | `src/app/application/application/runtime/mod.rs` | App owner-thread 任务边界取出 callback/worker 失败，先恢复后报告 |
 
 ## Callback → owner-thread 边界
 
