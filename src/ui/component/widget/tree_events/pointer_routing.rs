@@ -102,10 +102,8 @@ impl WidgetTree {
         }
         if let Some(pressed) = pressed {
             self.invalidate_paint(pressed);
-            // PointerLeave 未被消费：仅记录日志，保持取消语义不变。
-            if self.dispatch_to(pressed, &SystemEvent::PointerLeave) == EventResult::NotHandled {
-                tracing::warn!(event = "PointerLeave", target = ?pressed, "pointer leave was not handled");
-            }
+            // PointerLeave 是可选生命周期通知；无状态组件不消费时仍保持真实返回值。
+            let _ = self.dispatch_to(pressed, &SystemEvent::PointerLeave);
         }
         self.rebuild_widget_overlays();
     }
@@ -150,16 +148,8 @@ impl WidgetTree {
             if self.capture_to(target, event).is_some() {
                 if let Some(pressed) = hold {
                     self.invalidate_paint(pressed);
-                    // PointerLeave 未被消费：仅记录日志，行为不变。
-                    if self.dispatch_to(pressed, &SystemEvent::PointerLeave)
-                        == EventResult::NotHandled
-                    {
-                        tracing::warn!(
-                            event = "PointerLeave",
-                            target = ?pressed,
-                            "pointer leave was not handled"
-                        );
-                    }
+                    // 捕获接管只需交付离开通知；零消费者是合法状态。
+                    let _ = self.dispatch_to(pressed, &SystemEvent::PointerLeave);
                 }
                 self.rebuild_widget_overlays();
                 return EventResult::Handled;
@@ -174,12 +164,8 @@ impl WidgetTree {
                     pos,
                     modifiers: mods,
                 };
-                // Click 语义未被消费：记录日志，保持合成行为不变。
-                if self.dispatch_semantic(SemanticEvent::click(target, click))
-                    == EventResult::NotHandled
-                {
-                    tracing::warn!(event = "Click", target = ?target, "click semantic was not handled");
-                }
+                // Click 是可选观察事件；零订阅者必须安静地保留 NotHandled 契约。
+                let _ = self.dispatch_semantic(SemanticEvent::click(target, click));
                 if button == MouseButton::Right {
                     let mut context_menu = SemanticEvent::context_menu(target, click);
                     // ContextMenu 语义未被消费：记录日志，行为不变。
@@ -200,15 +186,9 @@ impl WidgetTree {
             if Some(pressed) != hit {
                 self.invalidate_paint(pressed);
                 // 捕获目标外松开时，先通知指针已离开，再交付最终 PointerUp。
-                // 两者未被消费均只记录日志，保持原有分发顺序与返回值。
-                if self.dispatch_to(pressed, &SystemEvent::PointerLeave) == EventResult::NotHandled
-                {
-                    tracing::warn!(
-                        event = "PointerLeave",
-                        target = ?pressed,
-                        "pointer leave was not handled"
-                    );
-                }
+                // 离开通知没有消费者属于正常情况，不提升为路由失败。
+                let _ = self.dispatch_to(pressed, &SystemEvent::PointerLeave);
+                // PointerUp 是已建立手势的最终命令，未被消费仍保留诊断。
                 if self.dispatch_to(pressed, event) == EventResult::NotHandled {
                     tracing::warn!(event = "PointerUp", target = ?pressed, "pointer up was not handled");
                 }
@@ -309,8 +289,159 @@ impl WidgetTree {
 mod tests {
     // 引入当前模块的 WidgetTree 与输入类型。
     use super::*;
+    // 使用原子计数器记录当前测试线程收到的警告。
+    use std::sync::Arc;
+    // 引入无锁计数器及其内存序。
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    // 引入 tracing span 生命周期类型以实现最小订阅器。
+    use tracing::span::{Attributes, Id, Record};
+    // 引入 callsite 兴趣声明，确保测试订阅器能观察目标日志点。
+    use tracing::subscriber::Interest;
+    // 引入事件元数据与订阅器契约。
+    use tracing::{Event, Metadata, Subscriber};
     // 使用简单节点建立可寻址的 pressed 与 focused 目标。
     use crate::ui::widgets::Label;
+
+    // 仅统计当前线程警告事件的最小订阅器。
+    struct WarningCounter {
+        // 跨闭包共享警告数量。
+        count: Arc<AtomicUsize>,
+    }
+
+    // 为回归测试实现 tracing 订阅器契约。
+    impl Subscriber for WarningCounter {
+        // 要求 callsite 在局部订阅器启用时重新检查。
+        fn register_callsite(&self, _metadata: &'static Metadata<'static>) -> Interest {
+            // 始终允许当前测试观察事件。
+            Interest::always()
+        }
+
+        // 当前测试接收全部级别，再在 event 中筛选警告。
+        fn enabled(&self, _metadata: &Metadata<'_>) -> bool {
+            // 保持 callsite 启用。
+            true
+        }
+
+        // 测试不记录 span，只返回稳定虚拟身份。
+        fn new_span(&self, _span: &Attributes<'_>) -> Id {
+            // 使用非零稳定身份满足 tracing 契约。
+            Id::from_u64(1)
+        }
+
+        // 测试不保存 span 字段。
+        fn record(&self, _span: &Id, _values: &Record<'_>) {}
+
+        // 测试不保存 span 继承关系。
+        fn record_follows_from(&self, _span: &Id, _follows: &Id) {}
+
+        // 统计当前局部订阅器收到的警告事件。
+        fn event(&self, event: &Event<'_>) {
+            // 仅累加 WARN，忽略正常诊断级别。
+            if *event.metadata().level() == tracing::Level::WARN {
+                // 单线程测试只需宽松内存序。
+                self.count.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+
+        // 测试不保存 span 进入状态。
+        fn enter(&self, _span: &Id) {}
+
+        // 测试不保存 span 离开状态。
+        fn exit(&self, _span: &Id) {}
+    }
+
+    // 在局部订阅器中执行操作并返回警告数量。
+    fn warning_count_during(operation: impl FnOnce()) -> usize {
+        // 创建共享计数器供订阅器与断言读取。
+        let count = Arc::new(AtomicUsize::new(0));
+        // 构造仅作用于当前线程闭包的订阅器。
+        let subscriber = WarningCounter {
+            // 共享相同警告计数器。
+            count: Arc::clone(&count),
+        };
+        // 在局部 tracing 上下文中执行待验证操作。
+        tracing::subscriber::with_default(subscriber, operation);
+        // 返回操作期间观察到的最终警告数。
+        count.load(Ordering::Relaxed)
+    }
+
+    // 验证无人订阅的 Click 不会伪报路由失败。
+    #[test]
+    // 测试覆盖可命中但没有事件处理器的普通叶子节点。
+    fn unobserved_click_does_not_emit_route_warning() {
+        // 创建空组件树。
+        let mut tree = WidgetTree::new();
+        // 使用 Label 表示合法的零 Click 订阅节点。
+        let target = tree.set_root(Box::new(Label::new("passive click target")));
+        // 为根节点设置可命中的稳定几何。
+        tree.set_frame_dirty(target, Rect::new(0.0, 0.0, 80.0, 24.0));
+        // 模拟同一目标上的左键按压状态。
+        let began = tree
+            // 访问交互管理器。
+            .managers_mut()
+            // 选择按压状态。
+            .interaction
+            // 绑定目标与左键。
+            .begin_pressed_pointer(Some(target), MouseButton::Left);
+        // 确认手势成功建立。
+        assert!(began);
+        // 构造同一目标范围内的释放事件。
+        let event = SystemEvent::PointerUp {
+            // 使用根节点内部坐标。
+            pos: Point::new(8.0, 8.0),
+            // 匹配此前建立的左键手势。
+            button: MouseButton::Left,
+            // 当前没有修饰键。
+            mods: KeyMod::NONE,
+        };
+        // 捕获释放路径发出的警告。
+        let warnings = warning_count_during(|| {
+            // 分发释放并允许语义 Click 保持 NotHandled。
+            let result = tree.dispatch_pointer_release(
+                // 传入完整系统事件。
+                &event,
+                // 传入命中目标的屏幕坐标。
+                Point::new(8.0, 8.0),
+                // 匹配左键手势。
+                MouseButton::Left,
+                // 当前没有修饰键。
+                KeyMod::NONE,
+            );
+            // 被动节点的系统 PointerUp 仍应保持真实 NotHandled。
+            assert_eq!(result, EventResult::NotHandled);
+        });
+        // 零 Click 订阅者不得产生警告。
+        assert_eq!(warnings, 0);
+    }
+
+    // 验证无人消费的 PointerLeave 不会伪报路由失败。
+    #[test]
+    // 测试覆盖取消按压手势时的可选生命周期通知。
+    fn unhandled_pointer_leave_does_not_emit_route_warning() {
+        // 创建空组件树。
+        let mut tree = WidgetTree::new();
+        // 使用不处理 PointerLeave 的 Label 作为合法目标。
+        let target = tree.set_root(Box::new(Label::new("passive leave target")));
+        // 建立需要取消的左键按压状态。
+        let began = tree
+            // 访问交互管理器。
+            .managers_mut()
+            // 选择按压状态。
+            .interaction
+            // 绑定目标与左键。
+            .begin_pressed_pointer(Some(target), MouseButton::Left);
+        // 确认手势成功建立。
+        assert!(began);
+        // 捕获取消路径发出的警告。
+        let warnings = warning_count_during(|| {
+            // 取消手势会向目标交付可选 PointerLeave。
+            tree.cancel_active_pointer_gesture();
+        });
+        // 零 PointerLeave 消费者不得产生警告。
+        assert_eq!(warnings, 0);
+        // 取消后必须清除按压状态。
+        assert_eq!(tree.managers().interaction.pressed_component(), None);
+    }
 
     // 验证 native handoff 后不会残留 pressed/potential drag。
     #[test]
