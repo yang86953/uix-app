@@ -82,6 +82,7 @@ pub struct RecoveryDriver {
 }
 
 impl RecoveryDriver {
+    /// 使用初始渲染目标和重建回调创建恢复驱动器。
     pub fn new(engine: Box<dyn RenderTarget>, rebuilder: RenderTargetRebuilder) -> Self {
         Self {
             engine,

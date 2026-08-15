@@ -31,6 +31,7 @@
 
 pub mod damage;
 pub mod error;
+/// 核心二维几何值类型与约束原语。
 pub mod geometry;
 pub mod identity;
 

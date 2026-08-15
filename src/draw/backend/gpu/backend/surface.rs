@@ -13,6 +13,7 @@ use super::super::GpuSolidRect;
 // 引入同一 Module 统一导出的能力投影类型。
 use super::super::NativeRasterCaps;
 
+/// 将 GPU 画布与延迟清除、滚动复制状态组合成绘制表面。
 pub struct NativeGpuDrawSurface {
     pub(crate) canvas: NativeGpuCanvas2D,
     pub(crate) native_caps: NativeRasterCaps,
