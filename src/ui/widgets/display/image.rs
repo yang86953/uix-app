@@ -230,6 +230,7 @@ impl Image {
         )
     }
 
+    /// 创建指定固有尺寸、启用等比适配与预览且立即加载的图片组件。
     pub fn new(w: f32, h: f32) -> Self {
         Self {
             src: String::new(),
@@ -276,18 +277,22 @@ impl Image {
         self
     }
 
+    /// 设置图片的替代描述文本，并在没有后备文本时用于加载失败显示。
     pub fn alt(mut self, a: &str) -> Self {
         self.alt = a.to_string();
         self
     }
+    /// 设置资源不可用时优先显示的后备文本。
     pub fn fallback(mut self, f: &str) -> Self {
         self.fallback = f.to_string();
         self
     }
+    /// 设置非负圆角半径；负数或非有限值归一化为零。
     pub fn radius(mut self, r: f32) -> Self {
         self.radius = Self::finite_non_negative(r);
         self
     }
+    /// 设置是否允许交互式模态预览；禁用时立即关闭已有预览。
     pub fn preview(mut self, v: bool) -> Self {
         self.preview = v;
         if !v {
@@ -329,6 +334,7 @@ impl Image {
         self
     }
 
+    /// 返回模态图片预览当前是否处于逻辑打开状态。
     pub fn is_preview_open(&self) -> bool {
         self.preview_open
     }
@@ -340,6 +346,7 @@ impl Image {
         }
     }
 
+    /// 关闭当前窗口内的模态图片预览。
     pub fn close_preview(&mut self) {
         self.preview_open = false;
     }
