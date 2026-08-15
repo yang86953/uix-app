@@ -61,19 +61,41 @@ impl IFileDialog for LinuxFileDialog {
 }
 
 // 通过 Platform System 窄 Adapter 打开多选文件面板。
-pub(crate) fn choose_files(title: &str, filters: &str) -> Result<Option<Vec<String>>> {
-    // 每次同步调用创建无状态 Linux 对话框组件。
-    let mut dialog = LinuxFileDialog::new();
-    // 复用既有桌面环境探测与取消语义。
-    dialog.open(title, filters)
+pub(crate) fn choose_files(
+    // 标题已经由公开 Platform 门面验证。
+    title: &str,
+    // Zenity 编码由 Platform 私有过滤器组件生成。
+    zenity_filters: &str,
+    // KDialog 编码由 Platform 私有过滤器组件生成。
+    kdialog_filters: &str,
+) -> Result<Option<Vec<String>>> {
+    // 运行时桌面探测只选择对应 Provider 的精确协议。
+    if use_kde() {
+        // KDE 桌面只接收 Qt name filter 编码。
+        kde_open_file(title, kdialog_filters)
+    } else {
+        // GNOME 与通用 GTK 桌面只接收 Zenity 编码。
+        zenity_open_file(title, zenity_filters)
+    }
 }
 
 // 通过 Platform System 窄 Adapter 打开保存面板。
-pub(crate) fn choose_save_file(title: &str, filters: &str) -> Result<Option<String>> {
-    // 每次同步调用创建无状态 Linux 对话框组件。
-    let mut dialog = LinuxFileDialog::new();
-    // 复用既有桌面环境探测与取消语义。
-    dialog.save(title, filters)
+pub(crate) fn choose_save_file(
+    // 标题已经由公开 Platform 门面验证。
+    title: &str,
+    // Zenity 编码由 Platform 私有过滤器组件生成。
+    zenity_filters: &str,
+    // KDialog 编码由 Platform 私有过滤器组件生成。
+    kdialog_filters: &str,
+) -> Result<Option<String>> {
+    // 保存入口与打开入口使用相同的桌面 Provider 选择规则。
+    if use_kde() {
+        // KDE 桌面只接收 Qt name filter 编码。
+        kde_save_file(title, kdialog_filters)
+    } else {
+        // GNOME 与通用 GTK 桌面只接收 Zenity 编码。
+        zenity_save_file(title, zenity_filters)
+    }
 }
 
 // 通过 Platform System 窄 Adapter 打开目录面板。

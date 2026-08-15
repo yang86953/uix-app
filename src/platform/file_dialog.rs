@@ -21,33 +21,58 @@ pub(super) fn validate_title(operation: &str, title: &str) -> Result<()> {
     Ok(())
 }
 
-// 编码 Linux 与 macOS Provider 共用的可移植过滤器描述。
-pub(super) fn portable_filters(filters: &[FileDialogFilter]) -> String {
-    // 将每个公开值转换为 `名称 (*.ext *.ext)` 片段。
+// 把单个过滤器的规范扩展名编码为外部 Provider 共用的模式列表。
+fn filter_patterns(filter: &FileDialogFilter) -> String {
+    // 为每个扩展名补回原生对话框需要的通配符前缀。
+    filter
+        // 读取不可变规范扩展名。
+        .extensions()
+        // 按声明顺序编码模式。
+        .iter()
+        // 生成星号点号语法。
+        .map(|extension| format!("*.{extension}"))
+        // 收集后以空格分隔同组模式。
+        .collect::<Vec<_>>()
+        // 两个 Linux Provider 都接受空格分隔的同组模式。
+        .join(" ")
+}
+
+// 编码 Zenity 每个 `--file-filter` 参数所需的命名组。
+pub(super) fn zenity_filters(filters: &[FileDialogFilter]) -> String {
+    // 将每个公开值转换为 `名称 | *.ext *.ext` 片段。
     filters
         // 保持调用方过滤器顺序。
         .iter()
         // 每个片段只使用构造时验证过的字符。
         .map(|filter| {
-            // 为每个扩展名补回原生对话框需要的通配符前缀。
-            let patterns = filter
-                // 读取不可变规范扩展名。
-                .extensions()
-                // 按声明顺序编码模式。
-                .iter()
-                // 生成可移植星号点号语法。
-                .map(|extension| format!("*.{extension}"))
-                // 收集后以空格分隔同组模式。
-                .collect::<Vec<_>>()
-                // Linux 与 AppKit 解析器都接受空格分隔。
-                .join(" ");
-            // 名称与模式组成一个原生过滤器描述。
+            // 生成当前命名组的模式列表。
+            let patterns = filter_patterns(filter);
+            // Zenity 使用竖线分隔显示名称与模式。
+            format!("{} | {patterns}", filter.name())
+        })
+        // 收集各命名过滤器片段。
+        .collect::<Vec<_>>()
+        // 分号仅供 Linux Adapter 拆成多个独立命令参数。
+        .join(";")
+}
+
+// 编码 KDialog/Qt name filter 所需的命名组列表。
+pub(super) fn kdialog_filters(filters: &[FileDialogFilter]) -> String {
+    // 将每个公开值转换为 `名称 (*.ext *.ext)` 片段。
+    filters
+        // 保持调用方过滤器顺序。
+        .iter()
+        // 每组单独保留显示名称与模式。
+        .map(|filter| {
+            // 生成当前命名组的模式列表。
+            let patterns = filter_patterns(filter);
+            // KDialog 把组间竖线转换为 Qt name filter 换行。
             format!("{} ({patterns})", filter.name())
         })
         // 收集各命名过滤器片段。
         .collect::<Vec<_>>()
-        // 分号是现有 Linux Provider 的组分隔符。
-        .join(";")
+        // 当前 KDialog 源码使用竖线分隔多个 name filters。
+        .join("|")
 }
 
 // 编码 AppKit allowedFileTypes 解析组件所需的纯扩展名模式。
@@ -106,7 +131,9 @@ pub(super) fn windows_filters(filters: &[FileDialogFilter]) -> String {
 #[cfg(test)]
 mod tests {
     // 引入私有编码器与公开过滤器构造器。
-    use super::{FileDialogFilter, macos_filters, portable_filters, windows_filters};
+    use super::{
+        FileDialogFilter, kdialog_filters, macos_filters, windows_filters, zenity_filters,
+    };
 
     // 三平台编码必须保留规范顺序并去除重复扩展名。
     #[test]
@@ -115,8 +142,24 @@ mod tests {
         let images = FileDialogFilter::new("Images", ["PNG", "*.jpg", ".png"])
             // 测试夹具必须满足公开构造契约。
             .expect("image filter should be valid");
-        // 可移植格式为 Linux 与 AppKit 提供命名模式组。
-        assert_eq!(portable_filters(&[images.clone()]), "Images (*.png *.jpg)");
+        // 第二组验证 Linux Provider 的多组分隔与名称空格。
+        let source = FileDialogFilter::new("Source code", ["rs"])
+            // 测试夹具必须满足公开构造契约。
+            .expect("source filter should be valid");
+        // Zenity 每个组使用名称与模式竖线，并由 Adapter 拆分分号。
+        assert_eq!(
+            zenity_filters(&[images.clone(), source.clone()]),
+            "Images | *.png *.jpg;Source code | *.rs",
+        );
+        // KDialog 使用括号内模式与组间竖线。
+        assert_eq!(
+            kdialog_filters(&[images.clone(), source]),
+            "Images (*.png *.jpg)|Source code (*.rs)",
+        );
+        // 空切片不得生成伪造的 Provider 过滤器。
+        assert_eq!(zenity_filters(&[]), "");
+        // KDialog 空切片同样保留不限制类型语义。
+        assert_eq!(kdialog_filters(&[]), "");
         // Win32 格式必须包含描述、模式和最终双 NUL。
         assert_eq!(windows_filters(&[images]), "Images\0*.png;*.jpg\0\0");
         // 不受限 Win32 对话框仍得到有效双 NUL 列表。

@@ -23,7 +23,7 @@
 
 提供系统、硬件、显示器、GPU adapter、known directory、文件对话框和通知能力；返回 owned value 或 typed Result。它不拥有窗口事件循环、surface、Renderer 或 device-lost 恢复。
 
-文件对话框通过 `Platform::open_files`、`Platform::save_file` 与 `Platform::open_folder` 同步进入目标 OS Provider。应用只传入 owned `FileDialogFilter`，不拼接 Win32 双 NUL、Linux 对话框模式或 AppKit 文件类型；确认结果复制为 owned `PathBuf`，取消统一返回 `Ok(None)`。过滤器名称、扩展名与标题在进入 Adapter 前验证，路径模式、NUL 与全通配符不会被不同平台静默解释为不同语义。外部 Provider 报告确认时必须同时产生至少一条非空且可无损表示的路径；空确认、空多选项或不可表示输出返回 typed 平台错误，不得过滤、替换或伪造成 owned 路径。Linux KDialog 的 `open_files` 显式启用多选与逐行输出，保持与其他 Provider 相同的一个或多个文件契约。
+文件对话框通过 `Platform::open_files`、`Platform::save_file` 与 `Platform::open_folder` 同步进入目标 OS Provider。应用只传入 owned `FileDialogFilter`，不拼接 Win32 双 NUL、Linux 对话框模式或 AppKit 文件类型；确认结果复制为 owned `PathBuf`，取消统一返回 `Ok(None)`。过滤器名称、扩展名与标题在进入 Adapter 前验证，路径模式、NUL 与全通配符不会被不同平台静默解释为不同语义。Platform 私有编码器分别生成 Zenity 的 `名称 | 模式` 参数和 KDialog 的 Qt name filter 列表，Linux Adapter 只把运行时桌面对应的精确协议交给 Provider，不维护含糊的跨 Provider 字符串。外部 Provider 报告确认时必须同时产生至少一条非空且可无损表示的路径；空确认、空多选项或不可表示输出返回 typed 平台错误，不得过滤、替换或伪造成 owned 路径。Linux KDialog 的 `open_files` 显式启用多选与逐行输出，保持与其他 Provider 相同的一个或多个文件契约。
 
 系统通知身份由 `Platform::set_notification_app_user_model_id` 显式接收并拥有。`Platform` 是配置的 composition root，Windows Adapter 只读探测开始菜单快捷方式的 `System.AppUserModel.ID` 并提交 Toast；UIX 不创建快捷方式、不写注册表，也不推断或代替部署身份。`Platform::system_notification_capability` 区分 `Available`、`IdentityRequired`、`IdentityUnregistered` 与 `Unsupported`。
 
