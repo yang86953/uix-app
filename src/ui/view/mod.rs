@@ -306,6 +306,14 @@ impl ViewNode {
         self
     }
 
+    /// 设置布局帧确定后解析的二维视觉变换原点。
+    pub fn transform_origin(mut self, origin: crate::ui::TransformOrigin) -> Self {
+        // 只更新原点值，保留既有矩阵、offset、scale 与动画绑定。
+        self.visual_transform.origin = origin;
+        // 返回可继续链式声明的节点。
+        self
+    }
+
     /// Plays a one-shot visual transition when this node is first mounted.
     pub fn enter_animation(mut self, animation: crate::ui::animation::AnimationConfig) -> Self {
         assert!(

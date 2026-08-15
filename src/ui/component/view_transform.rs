@@ -1,5 +1,7 @@
 use crate::core::{Point, Rect};
 use crate::draw::Transform;
+// 引入 UI System 根拥有的公开变换原点值。
+use crate::ui::TransformOrigin;
 
 /// Visual-only transform metadata attached to a View/Widget node.
 ///
@@ -11,6 +13,8 @@ pub(crate) struct ViewTransform {
     pub(crate) scale: f32,
     // 保存由声明层提供、围绕节点中心应用的任意二维仿射变换。
     pub(crate) affine: Transform,
+    // 保存布局帧已知后才解析的二维变换原点。
+    pub(crate) origin: TransformOrigin,
 }
 
 impl ViewTransform {
@@ -23,6 +27,8 @@ impl ViewTransform {
             scale: self.scale * overlay.scale,
             // 基础声明变换先于覆盖层变换组合，动画覆盖层通常保持单位矩阵。
             affine: self.affine.concat(overlay.affine),
+            // 过渡覆盖层不取得声明原点所有权，始终保留基础节点原点。
+            origin: self.origin,
         }
     }
 
@@ -37,20 +43,18 @@ impl ViewTransform {
                 return Transform::translate(self.offset.x, self.offset.y);
             }
         }
-        // 计算布局帧中心，作为当前 transform 的默认原点。
-        let center_x = frame.x + frame.w * 0.5;
-        // 独立计算垂直中心，避免假设方形节点。
-        let center_y = frame.y + frame.h * 0.5;
+        // 在布局帧确定后解析比例或像素原点。
+        let origin = self.origin.resolve(frame);
         // 平移仍在全部中心变换之后应用，保持现有 offset 语义。
         Transform::translate(self.offset.x, self.offset.y)
             // 把节点中心移动到局部原点。
-            .concat(Transform::translate(center_x, center_y))
+            .concat(Transform::translate(origin.x, origin.y))
             // 声明式仿射矩阵先作用于节点局部几何。
             .concat(self.affine)
             // 既有等比缩放继续围绕节点中心应用。
             .concat(Transform::scale(self.scale, self.scale))
             // 恢复节点原有坐标空间。
-            .concat(Transform::translate(-center_x, -center_y))
+            .concat(Transform::translate(-origin.x, -origin.y))
     }
 }
 
@@ -61,6 +65,8 @@ impl Default for ViewTransform {
             scale: 1.0,
             // 默认不改变节点局部几何。
             affine: Transform::identity(),
+            // 默认围绕布局帧中心应用变换。
+            origin: TransformOrigin::default(),
         }
     }
 }
@@ -86,6 +92,8 @@ mod tests {
             scale: 1.5,
             // 保存任意仿射内容。
             affine,
+            // 默认原点保持历史中心语义。
+            origin: TransformOrigin::default(),
         };
         // 使用非原点、非方形帧验证中心计算。
         let frame = Rect::new(10.0, 20.0, 8.0, 6.0);
@@ -115,5 +123,36 @@ mod tests {
         assert!((transformed_center.x - 19.0).abs() < 0.0001);
         // 纵坐标应只增加垂直 offset。
         assert!((transformed_center.y - 20.0).abs() < 0.0001);
+    }
+
+    // 验证比例与像素轴值只在布局帧确定后解析。
+    #[test]
+    fn resolves_fraction_and_pixel_transform_origin() {
+        // 构造围绕自定义原点的二倍缩放。
+        let visual = ViewTransform {
+            // 本测试不叠加最终平移。
+            offset: Point::new(0.0, 0.0),
+            // 使用二倍缩放观察原点不动点。
+            scale: 2.0,
+            // 不叠加额外旋转或倾斜。
+            affine: Transform::identity(),
+            // 水平轴使用固定像素，垂直轴使用帧底部比例。
+            origin: TransformOrigin::new(
+                // 从布局帧左侧偏移两个像素。
+                crate::ui::TransformOriginValue::Pixels(2.0),
+                // 使用布局帧底部。
+                crate::ui::TransformOriginValue::Fraction(1.0),
+            ),
+        };
+        // 使用非原点、非方形帧证明轴解析包含帧起点与尺寸。
+        let frame = Rect::new(10.0, 20.0, 8.0, 6.0);
+        // 自定义原点应解析到横坐标十二、纵坐标二十六。
+        let origin = Point::new(12.0, 26.0);
+        // 围绕原点缩放时原点自身必须保持不动。
+        let transformed = visual.matrix(frame).transform_point(origin);
+        // 横坐标保持解析后的固定像素原点。
+        assert!((transformed.x - origin.x).abs() < 0.0001);
+        // 纵坐标保持解析后的比例原点。
+        assert!((transformed.y - origin.y).abs() < 0.0001);
     }
 }
