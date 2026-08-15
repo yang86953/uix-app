@@ -73,6 +73,29 @@ fn cursor_styles_compile_for_real_consumer() {
     );
 }
 
+// 验证 userSelect 四值通过公开 View 与 UserSelect 契约完成真实宏展开。
+#[test]
+fn user_select_styles_compile_for_real_consumer() {
+    // 展开祖先禁选、后代文字选择、完整子树选择与组件默认策略。
+    let _selection: ViewNode = uix::uix!(
+        // 同时覆盖 Container 继承边界与三种文字组件消费路径。
+        r#"
+        noSelection { userSelect: none; }
+        selectableGroup { userSelect: text; }
+        selectAll { userSelect: all; }
+        autoSelection { userSelect: auto; }
+        <Container>
+          <Container class="noSelection"><Text>禁止选择</Text></Container>
+          <Container class="selectableGroup">
+            <Text>允许选择</Text>
+            <Typography class="selectAll">整组选择</Typography>
+          </Container>
+          <Text class="autoSelection">组件默认</Text>
+        </Container>
+        "#
+    );
+}
+
 // 验证五种 borderStyle 值通过公开 Style 与 BorderStyle 契约完成真实宏展开。
 #[test]
 fn border_style_values_compile_for_real_consumer() {
