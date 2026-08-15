@@ -156,6 +156,7 @@ impl Default for Checkbox {
 }
 
 impl Checkbox {
+    /// 创建带指定标签且初始未勾选的复选框。
     pub fn new(label: impl Into<String>) -> Self {
         let config = crate::ui::component::config::use_config();
         Self {
@@ -184,14 +185,17 @@ impl Checkbox {
         self.checked = value;
         self
     }
+    /// 设置复选框是否禁用交互。
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self
     }
+    /// 设置复选框采用的控件尺寸。
     pub fn size(mut self, size: ControlSize) -> Self {
         self.checkbox_size = size;
         self
     }
+    /// 返回复选框当前是否处于勾选状态。
     pub fn is_checked(&self) -> bool {
         self.checked
     }

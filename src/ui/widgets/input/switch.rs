@@ -160,6 +160,7 @@ impl Default for Switch {
 }
 
 impl Switch {
+    /// 创建初始关闭且可交互的开关。
     pub fn new() -> Self {
         let config = crate::ui::component::config::use_config();
         Self {
@@ -195,15 +196,18 @@ impl Switch {
         self.checked = value;
         self
     }
+    /// 设置开关是否禁用交互。
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self
     }
+    /// 设置开关采用的控件尺寸。
     pub fn size(mut self, size: ControlSize) -> Self {
         self.control_size = size;
         self.size = Self::track_height(size);
         self
     }
+    /// 返回开关当前是否处于开启状态。
     pub fn is_checked(&self) -> bool {
         self.checked
     }
