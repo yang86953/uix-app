@@ -155,6 +155,69 @@ fn format_gauge_percent(value: f32) -> String {
     format!("{value:.1}%")
 }
 
+// 为主演示每次声明构建创建独立的自定义组合系列。
+fn custom_combo_series() -> Vec<ComboSeries<Vec<LineData>>> {
+    // 返回柱、折线与面积三种系列及左右轴配置。
+    vec![
+        // 访问量以柱状系列绑定左轴。
+        ComboSeries::new(
+            // 声明访问量系列名称。
+            "访问量",
+            // 声明三个月的统一折线载荷。
+            vec![
+                // 一月访问量。
+                LineData::new("Jan", 100.0),
+                // 二月访问量。
+                LineData::new("Feb", 140.0),
+                // 三月访问量。
+                LineData::new("Mar", 125.0),
+            ],
+        )
+        // 把统一载荷绘制为柱状系列。
+        .chart_type(ChartType::Bar)
+        // 把访问量绑定到左轴。
+        .y_axis(AxisSide::Left),
+        // 转化率以折线系列绑定右轴。
+        ComboSeries::new(
+            // 声明转化率系列名称。
+            "转化率",
+            // 声明三个月的转化率载荷。
+            vec![
+                // 一月转化率。
+                LineData::new("Jan", 20.0),
+                // 二月转化率。
+                LineData::new("Feb", 28.0),
+                // 三月转化率。
+                LineData::new("Mar", 24.0),
+            ],
+        )
+        // 保持折线绘制类型。
+        .chart_type(ChartType::Line)
+        // 把转化率绑定到右轴。
+        .y_axis(AxisSide::Right),
+        // 目标值以虚线面积系列绑定右轴。
+        ComboSeries::new(
+            // 声明目标系列名称。
+            "目标",
+            // 声明三个月的目标载荷。
+            vec![
+                // 一月目标值。
+                LineData::new("Jan", 25.0),
+                // 二月目标值。
+                LineData::new("Feb", 25.0),
+                // 三月目标值。
+                LineData::new("Mar", 25.0),
+            ],
+        )
+        // 把目标绘制为面积系列。
+        .chart_type(ChartType::Area)
+        // 把目标绑定到右轴。
+        .y_axis(AxisSide::Right)
+        // 使用虚线区分目标系列。
+        .line_style(LineStyle::Dashed),
+    ]
+}
+
 // 记录 Pagination @change 的页码文本载荷。
 fn on_page_change(value: &str) {
     // 输出变化页码供演示日志核对。

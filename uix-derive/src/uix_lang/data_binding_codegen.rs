@@ -66,6 +66,8 @@ const DATA_TYPE_NAMES: &[&str] = &[
     "WaterfallData",
     // 通用图表系列。
     "ChartSeries",
+    // 自定义组合图系列。
+    "ComboSeries",
     // 雷达图维度轴。
     "RadarAxis",
     // 雷达图维度值。
@@ -140,6 +142,8 @@ pub(crate) fn data_constructor_spec(name: &str) -> Option<DataConstructorSpec> {
         "WaterfallData" => (quote! { ::uix::prelude::WaterfallData }, None, false),
         // 通用图表系列保留内部数据集合的独立构造规则。
         "ChartSeries" => (quote! { ::uix::prelude::ChartSeries }, None, false),
+        // 自定义组合图系列保留 LineData 集合并由 Rust 核对泛型。
+        "ComboSeries" => (quote! { ::uix::prelude::ComboSeries }, None, false),
         // 雷达轴由表达式生成层把最小/最大值组合为闭区间。
         "RadarAxis" => (quote! { ::uix::prelude::RadarAxis }, None, false),
         // 雷达维度值构造器接收 f32 数值。

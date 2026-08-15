@@ -43,6 +43,17 @@ fn generates_radar_and_combo_charts() {
             && combo.contains("y_axis_right (\"利润率\")")
             && combo.contains("reference_line")
     );
+    // 自定义组合系列覆盖精确泛型集合与既有 series builder。
+    let custom =
+        generate("<ComboChart series={[ComboSeries('访问量', [LineData('Jan', 100)])]} />")
+            // 合法自定义组合系列必须生成。
+            .expect("ComboChart 自定义系列应生成");
+    // 自定义入口必须固定 ComboSeries<Vec<LineData>>，不能运行时猜测。
+    assert!(
+        custom.contains(
+            "Vec < :: uix :: prelude :: ComboSeries < :: std :: vec :: Vec < :: uix :: prelude :: LineData",
+        ) && custom.contains("series")
+    );
 }
 
 // 验证必需集合、形状和高级系列边界得到编译诊断。
@@ -56,18 +67,31 @@ fn rejects_invalid_series_chart_contracts() {
     assert!(axes.message.contains("axes"));
     // 组合图至少需要一类系列。
     let combo = generate("<ComboChart />").expect_err("ComboChart 缺少系列必须失败");
-    // 诊断必须说明两个可选入口。
-    assert!(combo.message.contains("barSeries") && combo.message.contains("lineSeries"));
+    // 诊断必须说明三个可选入口。
+    assert!(
+        combo.message.contains("series")
+            && combo.message.contains("barSeries")
+            && combo.message.contains("lineSeries")
+    );
     // 雷达图形状只允许两个公开值。
     let shape = generate("<RadarChart axes={axes} series={series} shape=\"square\" />")
         // 非法形状必须失败。
         .expect_err("RadarChart 非法 shape 必须失败");
     // 诊断必须包含非法值。
     assert!(shape.message.contains("square"));
-    // 自定义 ComboSeries 入口仍保持 Rust-only。
+    // 自定义 ComboSeries 与专用系列入口不能同时拥有数据。
     let custom = generate("<ComboChart barSeries={bars} series={series} />")
-        // 未登记 series 必须失败。
-        .expect_err("ComboChart series 不得静默映射");
-    // 诊断必须保留具体属性名。
-    assert!(custom.message.contains("series"));
+        // 互斥入口必须失败。
+        .expect_err("ComboChart 互斥系列入口必须失败");
+    // 诊断必须同时点名冲突入口。
+    assert!(custom.message.contains("series") && custom.message.contains("barSeries"));
+    // 自定义入口的内联数组不能借用通用 ChartSeries 构造器。
+    let mismatched =
+        generate("<ComboChart series={[ChartSeries('访问量', [LineData('Jan', 100)])]} />")
+            // 错配构造器必须失败。
+            .expect_err("ComboChart 自定义系列构造器错配必须失败");
+    // 诊断必须同时点名实际与目标构造器。
+    assert!(
+        mismatched.message.contains("ChartSeries") && mismatched.message.contains("ComboSeries")
+    );
 }

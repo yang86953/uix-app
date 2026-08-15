@@ -35,7 +35,7 @@ pub(crate) fn generate_series_chart(
     let (mut widget, consumed): (TokenStream, &[&str]) = match element.name.as_str() {
         // 雷达图要求轴和系列两个精确集合。
         "RadarChart" => generate_radar_start(element)?,
-        // 组合图要求至少一个柱或线系列集合。
+        // 组合图要求一个自定义系列入口或至少一个柱线系列集合。
         "ComboChart" => generate_combo_start(element)?,
         // 分派入口只允许两个已登记标签。
         _ => unreachable!("系列图表分派已限制标签集合"),
@@ -114,7 +114,7 @@ fn generate_radar_start(
     ))
 }
 
-// 生成 ComboChart 的一个或两个类型化系列集合。
+// 生成 ComboChart 的自定义系列或一个到两个类型化专用系列集合。
 fn generate_combo_start(
     // 接收完整组合图元素。
     element: &Element,
@@ -123,20 +123,50 @@ fn generate_combo_start(
     let bar_attribute = find_attribute(element, "barSeries");
     // 查找可选线系列属性。
     let line_attribute = find_attribute(element, "lineSeries");
-    // 至少要有一种系列才能形成组合图。
-    if bar_attribute.is_none() && line_attribute.is_none() {
+    // 查找可选自定义组合系列属性。
+    let custom_attribute = find_attribute(element, "series");
+    // 自定义入口与专用入口不能共同拥有同一图表载荷。
+    if custom_attribute.is_some() && (bar_attribute.is_some() || line_attribute.is_some()) {
+        // 返回互斥数据源诊断。
+        return Err(Diagnostic::new(
+            // 指向完整组合图元素。
+            element.span,
+            // 说明三个入口的互斥关系。
+            "<ComboChart> 的 series 不能与 barSeries 或 lineSeries 同时使用",
+            // 给出两种合法选择。
+            "单独使用 series={items}，或使用 barSeries / lineSeries 专用入口",
+        ));
+    }
+    // 至少要有一种系列入口才能形成组合图。
+    if custom_attribute.is_none() && bar_attribute.is_none() && line_attribute.is_none() {
         // 返回组合图数据源诊断。
         return Err(Diagnostic::new(
             // 指向完整组合图元素。
             element.span,
-            // 说明至少一个系列要求。
-            "<ComboChart> 至少需要 barSeries 或 lineSeries",
+            // 说明至少一个系列入口要求。
+            "<ComboChart> 至少需要 series、barSeries 或 lineSeries",
             // 给出最小合法写法。
-            "使用 <ComboChart barSeries={items} /> 或同时声明两类系列",
+            "使用 <ComboChart series={items} /> 或声明专用柱线系列",
         ));
     }
     // 从现有运行时组合图构造器开始。
     let mut widget = quote! { ::uix::prelude::ComboChart::new() };
+    // 有自定义系列时精确收集 ComboSeries<Vec<LineData>>。
+    if let Some(attribute) = custom_attribute {
+        // 读取类型化 ComboSeries 集合表达式。
+        let series = typed_expression(attribute, "ComboSeries")?;
+        // 应用既有公开通用系列构建器。
+        widget = quote! {
+            (#widget).series(
+                ::std::iter::IntoIterator::into_iter((#series).clone())
+                    .collect::<::std::vec::Vec<
+                        ::uix::prelude::ComboSeries<
+                            ::std::vec::Vec<::uix::prelude::LineData>
+                        >
+                    >>()
+            )
+        };
+    }
     // 有柱系列时精确收集 BarData 泛型系列。
     if let Some(attribute) = bar_attribute {
         // 读取类型化 ChartSeries 集合表达式。
@@ -175,6 +205,7 @@ fn generate_combo_start(
         widget,
         // 登记组合图专有属性。
         &[
+            "series",
             "barSeries",
             "lineSeries",
             "yAxisLeft",
