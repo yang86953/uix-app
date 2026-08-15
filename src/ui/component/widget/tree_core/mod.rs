@@ -75,6 +75,7 @@ mod execution;
 #[path = "../tree_layout/mod.rs"]
 mod tree_layout;
 
+/// 拥有组件节点、布局、交互、渲染处理器及事务状态的运行时树。
 pub struct WidgetTree {
     // 由 WidgetTree 唯一拥有的事务发布与 fail-stop 状态机。
     execution_state: execution_state::WidgetTreeExecutionState,
@@ -86,6 +87,7 @@ pub struct WidgetTree {
     pub(crate) root_id: Option<WidgetId>,
     pub(crate) scroll_region_moves: Vec<(Rect, f32, f32)>,
     pub(crate) pending_window_actions: Vec<WindowAction>,
+    /// 每次公开树结构或可见性变化后递增的版本号。
     pub tree_version: u64,
     /// UI 域主题令牌根；ScenePaint::paint 用它构造 UI-owned 绘制上下文。
     theme_tokens: std::sync::Arc<dyn ThemeTokens>,

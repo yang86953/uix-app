@@ -13,6 +13,7 @@ impl WidgetTree {
         path
     }
 
+    /// 沿目标到根的路径分发可变语义事件，并应用处理器请求。
     pub fn dispatch_semantic_event(&mut self, event: &mut SemanticEvent) -> EventResult {
         // 停止树不得通过语义分发触发 handler 或后续布局请求。
         if !self.accepts_external_work() {
@@ -29,6 +30,7 @@ impl WidgetTree {
         result
     }
 
+    /// 按值接收并分发语义事件。
     pub fn dispatch_semantic(&mut self, mut event: SemanticEvent) -> EventResult {
         self.dispatch_semantic_event(&mut event)
     }

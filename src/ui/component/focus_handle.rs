@@ -25,7 +25,10 @@ pub enum FocusHandleError {
     /// 句柄尚未绑定，或原目标已经从 View 树移除。
     Unbound,
     /// 同一个句柄被同时用于多个存活节点，目标不唯一。
-    AmbiguousTarget { count: usize },
+    AmbiguousTarget {
+        /// 当前仍存活的绑定目标数量。
+        count: usize,
+    },
     /// 目标绑定仍存在，但节点当前不在所属窗口的可用注册表中。
     TargetUnavailable,
 }
@@ -47,6 +50,7 @@ impl fmt::Display for FocusHandleError {
 impl std::error::Error for FocusHandleError {}
 
 impl FocusHandle {
+    /// 创建尚未绑定任何声明式节点的焦点句柄。
     pub fn new() -> Self {
         Self::default()
     }
