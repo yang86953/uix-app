@@ -93,6 +93,7 @@ pub(super) struct MSG {
 
 impl Default for MSG {
     fn default() -> Self {
+        // SAFETY: MSG 是 repr(C) 的整数、指针和 POINT 聚合体，所有字段的全零位模式均为有效初始值。
         unsafe { std::mem::zeroed() }
     }
 }
@@ -101,6 +102,7 @@ impl Default for MSG {
 pub(super) struct WNDCLASSEXW {
     pub cbSize: u32,
     pub style: u32,
+    // SAFETY: 窗口过程若存在必须遵守 Win32 WNDPROC 的 system ABI，并在内部阻止 panic 越过 FFI 边界。
     pub lpfnWndProc:
         Option<unsafe extern "system" fn(*mut std::ffi::c_void, u32, usize, isize) -> isize>,
     pub cbClsExtra: i32,

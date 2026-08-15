@@ -141,6 +141,7 @@ unsafe fn wnd_proc_inner(
     wparam: usize,
     lparam: isize,
 ) -> isize {
+    // SAFETY: 调用者保证当前消息参数及 WindowBinding 有效；所有原始指针仅在这次同步消息处理期间访问。
     unsafe {
         if msg == WM_NCCREATE {
             let cs = lparam as *const CREATESTRUCTW;

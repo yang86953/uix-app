@@ -235,6 +235,7 @@ pub(crate) unsafe fn handle_nc_calc_size(
     lparam: isize,
     maximized: bool,
 ) -> Option<isize> {
+    // SAFETY: 调用者保证 lparam 指向当前 WM_NCCALCSIZE 消息的结构；本块只在消息同步处理期间读写该内存。
     unsafe {
         if lparam == 0 || !uses_extended_client(style) {
             return None;
@@ -283,6 +284,7 @@ pub(crate) unsafe fn handle_nc_hit_test(
     lparam: isize,
     resizable: bool,
 ) -> Result<Option<isize>> {
+    // SAFETY: 调用者保证 HWND 属于当前消息；本块只查询窗口矩形并按值解析 lparam 中的屏幕坐标。
     unsafe {
         if !uses_extended_client(style) {
             return Ok(None);
