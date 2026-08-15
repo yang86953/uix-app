@@ -315,6 +315,7 @@ enum PaginationChange {
 }
 
 impl Pagination {
+    /// 创建总记录数与每页条数固定、当前页为第一页的非受控分页器。
     pub fn new(total: usize, page_size: usize) -> Self {
         Self {
             total,
@@ -338,7 +339,7 @@ impl Pagination {
             pending_change: Cell::new(None),
         }
     }
-    // 设置非受控 current 初始值。
+    /// 设置非受控当前页初始值，并按当前总页数归一化。
     pub fn current(mut self, v: usize) -> Self {
         // 显式数值配置切回非受控模式。
         self.current_binding = None;
@@ -347,7 +348,7 @@ impl Pagination {
         // 返回完成配置的分页器。
         self
     }
-    // 将 current 双向绑定到声明端 State<usize>。
+    /// 将当前页双向绑定到声明端状态，并把越界值归一化写回。
     pub fn current_state(mut self, state: &State<usize>) -> Self {
         // 克隆轻量句柄，不复制或夺取应用状态。
         self.current_binding = Some(state.clone());
@@ -356,13 +357,15 @@ impl Pagination {
         // 返回受控分页器。
         self
     }
+    /// 返回已按总页数归一化的当前页码。
     pub fn get_current(&self) -> usize {
         self.current.get()
     }
+    /// 返回已归一化为至少一条的当前每页条数。
     pub fn get_page_size(&self) -> usize {
         self.page_size
     }
-    // 设置非受控 pageSize 声明值。
+    /// 设置非受控每页条数，并重新限制当前页。
     pub fn page_size(mut self, v: usize) -> Self {
         // 显式数值配置切回非受控模式。
         self.page_size_binding = None;
@@ -375,7 +378,7 @@ impl Pagination {
         // 返回完成配置的分页器。
         self
     }
-    // 将 pageSize 双向绑定到声明端 State<usize>。
+    /// 将每页条数双向绑定到声明端状态，并把零值归一化写回。
     pub fn page_size_state(mut self, state: &State<usize>) -> Self {
         // 克隆轻量句柄，不复制或夺取应用状态。
         self.page_size_binding = Some(state.clone());
@@ -384,14 +387,17 @@ impl Pagination {
         // 返回受控分页器。
         self
     }
+    /// 设置是否显示总记录数与当前记录范围。
     pub fn show_total(mut self, v: bool) -> Self {
         self.show_total = v;
         self
     }
+    /// 设置单个页码、上一页与下一页控件的方形边长。
     pub fn item_size(mut self, v: f32) -> Self {
         self.size = v;
         self
     }
+    /// 命令式设置当前页并同步受控状态，但不产生用户变更事件。
     pub fn set_current(&self, v: usize) {
         // 归一化命令式页码。
         let current = self.clamp_current(v);
@@ -400,13 +406,16 @@ impl Pagination {
         // 受控模式同步写回应用状态，但不伪造用户事件。
         self.write_current_bound(current);
     }
+    /// 返回按当前每页条数向上取整的总页数。
     pub fn total_pages(&self) -> usize {
         self.total.div_ceil(self.page_size)
     }
+    /// 设置是否显示每页条数切换入口。
     pub fn show_size_changer(mut self, v: bool) -> Self {
         self.show_size_changer = v;
         self
     }
+    /// 设置每页条数候选项，按输入顺序归一化零值并去重。
     pub fn page_size_options(mut self, opts: Vec<usize>) -> Self {
         self.page_size_options.clear();
         for option in opts.into_iter().map(|option| option.max(1)) {
@@ -417,16 +426,19 @@ impl Pagination {
         self
     }
 
+    /// 设置是否仅显示上一页、当前页摘要与下一页。
     pub fn simple(mut self, simple: bool) -> Self {
         self.simple = simple;
         self
     }
 
+    /// 设置是否显示可输入目标页码的快速跳转框。
     pub fn show_jumper(mut self, show: bool) -> Self {
         self.show_jumper = show;
         self
     }
 
+    /// 设置总数区域的格式化函数，参数为总记录数和当前记录范围。
     pub fn total_template<F>(mut self, template: F) -> Self
     where
         F: Fn(usize, std::ops::Range<usize>) -> String + 'static,
@@ -811,90 +823,7 @@ impl Pagination {
 
 // 只在组件边界验证 Pagination 双状态与 reconcile 所有权。
 #[cfg(test)]
-// 声明分页器私有测试模块。
-mod tests {
-    // 引入待验证分页器。
-    use super::Pagination;
-    // 引入声明端状态句柄。
-    use crate::ui::State;
-
-    // 验证外部更新、用户选择与 pageSize 收敛共享同一双状态。
-    #[test]
-    // 声明双向绑定回归。
-    fn controlled_values_stay_bidirectional() {
-        // 创建声明端 current 状态。
-        let current = State::new(3_usize);
-        // 创建声明端 pageSize 状态。
-        let page_size = State::new(10_usize);
-        // 构造受控分页器并启用条数切换。
-        let mut pagination = Pagination::new(95, 10)
-            // 先绑定 pageSize。
-            .page_size_state(&page_size)
-            // 再绑定 current。
-            .current_state(&current)
-            // 启用用户 pageSize 交互入口。
-            .show_size_changer(true);
-        // 初次物化必须读取两个外部值。
-        assert_eq!(
-            (pagination.get_current(), pagination.get_page_size()),
-            (3, 10)
-        );
-        // 模拟用户选择第五页。
-        pagination.select_page(5);
-        // 用户页码变化必须写回 current State。
-        assert_eq!(current.get(), 5);
-        // 模拟用户切换到下一档 pageSize。
-        pagination.cycle_page_size(true);
-        // pageSize 必须写回二十。
-        assert_eq!(page_size.get(), 20);
-        // 外部业务把 pageSize 改成五十。
-        page_size.set(50);
-        // 下一次事件入口采用的同步 helper 吸收外部更新。
-        pagination.sync_bound_values();
-        // 九十五条在五十条每页时最多两页。
-        assert_eq!(pagination.get_current(), 2);
-        // current State 必须收到同一收敛值。
-        assert_eq!(current.get(), 2);
-        // 组件 pageSize 镜像必须与外部一致。
-        assert_eq!(pagination.get_page_size(), 50);
-    }
-
-    // 验证非法状态归一化与声明树重建均服从新 State。
-    #[test]
-    // 声明 reconcile 双状态回归。
-    fn reconcile_prefers_declared_and_normalized_values() {
-        // 创建越界 current。
-        let current = State::new(99_usize);
-        // 创建非法零 pageSize。
-        let page_size = State::new(0_usize);
-        // 初次受控构造执行双状态归一化。
-        let mut pagination = Pagination::new(30, 10)
-            // 先归一化 pageSize。
-            .page_size_state(&page_size)
-            // 再归一化 current。
-            .current_state(&current);
-        // 零 pageSize 必须归一化为一。
-        assert_eq!(page_size.get(), 1);
-        // 三十条、每页一条时最大页码为三十。
-        assert_eq!(current.get(), 30);
-        // 业务声明下一轮使用每页十五条和第二页。
-        page_size.set(15);
-        // 更新声明端 current。
-        current.set(2);
-        // 构造下一棵声明树中的受控分页器。
-        let next = Pagination::new(45, 10)
-            // 绑定更新后的 pageSize。
-            .page_size_state(&page_size)
-            // 绑定更新后的 current。
-            .current_state(&current);
-        // 让运行时复用旧实例并同步新声明。
-        pagination.sync_from(next);
-        // reconcile 必须采用最新双状态。
-        assert_eq!(
-            (pagination.get_current(), pagination.get_page_size()),
-            (2, 15)
-        );
-        // 新 total 也必须进入快照行为。
-        assert_eq!(pagination.total_pages(), 3);
-    }
-}
+// 从仓库测试目录引入，保持分页组件实现低于行数上限。
+#[path = "../../../../tests/unit/ui/widgets/navigation_pagination_tests.rs"]
+// 声明分页器私有回归测试模块。
+mod tests;
