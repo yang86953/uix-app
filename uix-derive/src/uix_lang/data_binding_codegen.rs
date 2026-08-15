@@ -44,6 +44,12 @@ const DATA_TYPE_NAMES: &[&str] = &[
     "MenuItem",
     // keyed 下拉菜单选项。
     "DropdownItem",
+    // 柱状图分类数据。
+    "BarData",
+    // 折线图分类数据。
+    "LineData",
+    // 饼图分类数据。
+    "PieData",
     // 日期语义类型。
     "Date",
     // 时间语义类型。
@@ -92,6 +98,12 @@ pub(crate) fn data_constructor_spec(name: &str) -> Option<DataConstructorSpec> {
             Some(Ident::new("from_text", proc_macro2::Span::mixed_site())),
             false,
         ),
+        // 柱状图数据构造器接收 f32 数值。
+        "BarData" => (quote! { ::uix::prelude::BarData }, None, true),
+        // 折线图数据构造器接收 f32 数值。
+        "LineData" => (quote! { ::uix::prelude::LineData }, None, true),
+        // 饼图数据构造器接收 f32 数值与颜色。
+        "PieData" => (quote! { ::uix::prelude::PieData }, None, true),
         // 日期构造 year/month/day。
         "Date" => (quote! { ::uix::prelude::Date }, None, false),
         // 时间构造 hour/minute。
