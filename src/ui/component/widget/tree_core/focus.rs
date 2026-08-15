@@ -4,12 +4,14 @@ use crate::ui::component::focus_trap::next_focus_in_order;
 use crate::ui::event::HandlerTable;
 
 impl WidgetTree {
+    /// 聚焦遍历中首个指定组件类型的节点，并返回其身份。
     pub fn focus_by_type<T: WidgetComponent + 'static>(&mut self) -> Option<ComponentId> {
         let id = self.find_by_type::<T>()?;
         self.set_focus(Some(id));
         Some(id)
     }
 
+    /// 返回当前焦点节点是否属于指定组件类型。
     pub fn is_focused_type<T: WidgetComponent + 'static>(&self) -> bool {
         self.managers
             .focus
@@ -19,6 +21,7 @@ impl WidgetTree {
             .unwrap_or(false)
     }
 
+    /// 返回事件处理器表的可变借用。
     pub fn handler_table(&mut self) -> &mut HandlerTable {
         // 停止树不得向外暴露可重新安装用户闭包的 sidecar。
         assert!(self.accepts_coordination_work());
@@ -77,10 +80,12 @@ impl WidgetTree {
         self.focus_handles.insert(id, handle);
     }
 
+    /// 返回当前窗口内悬浮层栈的共享借用。
     pub fn overlay_stack(&self) -> &OverlayStack {
         &self.overlay_stack
     }
 
+    /// 返回当前窗口内悬浮层栈的可变借用。
     pub fn overlay_stack_mut(&mut self) -> &mut OverlayStack {
         // 停止树不得重新持有悬浮层内容或用户资源。
         assert!(self.accepts_coordination_work());
@@ -89,6 +94,7 @@ impl WidgetTree {
 
     // Tab focus navigation.
 
+    /// 按 Tab 顺序收集当前可见、未移除且允许聚焦的节点。
     pub fn collect_focusable(&self) -> Vec<ComponentId> {
         let mut result = self
             .managers
@@ -162,6 +168,7 @@ impl WidgetTree {
         next_focus_in_order(focusable, current, forward)
     }
 
+    /// 返回当前焦点在 Tab 顺序中的相邻目标，但不直接改变焦点。
     pub fn focus_next(&self, forward: bool) -> Option<ComponentId> {
         let focusable = self.collect_focusable();
         self.next_focus_from_order(&focusable, self.managers.focus.focused_component(), forward)
