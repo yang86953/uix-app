@@ -79,6 +79,23 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         # 主演示必须实际启用自定义标题栏。
         self.assertIn(".custom_title_bar(true)", gui_demo)
 
+    # 确认应用主动关闭复用 Wayland 原生关闭事实，不直接销毁 surface。
+    def test_request_close_enters_the_per_window_event_queue(self) -> None:
+        # 读取 Wayland 窗口操作实现。
+        window_ops = WINDOW_OPS.read_text(encoding="utf-8")
+        # 定位主动关闭窄端口。
+        request_start = window_ops.index("fn os_request_close")
+        # 以交互移动注释限定关闭实现片段。
+        request_end = window_ops.index("// 将当前 PointerDown", request_start)
+        # 保存关闭实现，避免其他回调队列代码造成假阳性。
+        request_source = window_ops[request_start:request_end]
+        # 关闭意图必须进入当前 Wayland owner 的事件队列。
+        self.assertIn("self.events", request_source)
+        # 必须复用和 compositor close callback 相同的统一事件。
+        self.assertIn("UiEvent::close().for_window(self.window_id)", request_source)
+        # 平台窄端口不得在交付关闭意图时提前销毁原生资源。
+        self.assertNotIn("self.surface = None", request_source)
+
 
 if __name__ == "__main__":
     unittest.main()
