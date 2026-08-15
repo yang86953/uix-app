@@ -29,6 +29,8 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
     let mut style_names = HashSet::new();
     // 保存已声明主题名。
     let mut theme_names = HashSet::new();
+    // 保存已声明关键帧名。
+    let mut keyframe_names = HashSet::new();
     // 保存已声明组件名。
     let mut component_names = HashSet::new();
     // 解析根元素之前的声明区。
@@ -77,6 +79,8 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
             &mut style_names,
             // 传递主题名称集合。
             &mut theme_names,
+            // 传递关键帧名称集合。
+            &mut keyframe_names,
             // 传递组件名称集合。
             &mut component_names,
         )?;
