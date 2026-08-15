@@ -92,6 +92,8 @@ fn acceptance_card(
     .padding(18.0)
     // 固定卡片宽度便于两列比较。
     .width(card_width)
+    // 禁止父列默认 Stretch 覆盖卡片显式宽度。
+    .align_self(AlignItems::Start)
     // 使用主题容器背景验证明暗主题下的 fallback 对比。
     .bg(ColorValue::neutral(NeutralRole::BgContainer))
     // 使用主题次级边框明确裁剪范围。
