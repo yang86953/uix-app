@@ -67,6 +67,7 @@ pub struct ScreenInfo {
 }
 
 #[link(name = "objc")]
+// SAFETY: 声明严格对应 Objective-C 运行时 C ABI，消息发送器只会在按选择器签名转型后调用。
 unsafe extern "C" {
     fn objc_getClass(name: *const c_char) -> Id;
     fn sel_registerName(name: *const c_char) -> Sel;
@@ -76,15 +77,19 @@ unsafe extern "C" {
 }
 
 #[link(name = "AppKit", kind = "framework")]
+// SAFETY: 空链接块仅要求加载 AppKit 框架，不声明或调用任何符号。
 unsafe extern "C" {}
 
 #[link(name = "Foundation", kind = "framework")]
+// SAFETY: 空链接块仅要求加载 Foundation 框架，不声明或调用任何符号。
 unsafe extern "C" {}
 
 #[link(name = "QuartzCore", kind = "framework")]
+// SAFETY: 空链接块仅要求加载 QuartzCore 框架，不声明或调用任何符号。
 unsafe extern "C" {}
 
 #[link(name = "CoreFoundation", kind = "framework")]
+// SAFETY: 声明对应 CoreFoundation C ABI，调用方维护对象所有权、字节范围和运行循环句柄有效性。
 unsafe extern "C" {
     fn CFDataCreate(allocator: Id, bytes: *const u8, length: isize) -> Id;
     fn CFRelease(cf: Id);
@@ -93,6 +98,7 @@ unsafe extern "C" {
 }
 
 #[link(name = "CoreGraphics", kind = "framework")]
+// SAFETY: 声明对应 CoreGraphics C ABI，调用方负责图像尺寸、行跨度及 CF 对象的配对释放。
 unsafe extern "C" {
     fn CGColorSpaceCreateDeviceRGB() -> Id;
     fn CGDataProviderCreateWithCFData(data: Id) -> Id;
@@ -115,6 +121,7 @@ pub struct CreatedWindow {
     pub layer: Id,
 }
 
+// SAFETY: 必须在 AppKit UI 线程调用；返回的 NSWindow 为 +1 所有权，调用方负责关闭并释放。
 pub unsafe fn create_window(
     title: &str,
     width: i32,
@@ -211,15 +218,18 @@ pub unsafe fn create_window(
     Ok((window, CreatedWindow { layer }))
 }
 
+// SAFETY: window 必须是仍存活且由当前 UI 线程拥有的 NSWindow。
 pub unsafe fn show_window(window: Id) {
     msg_void_id(window, "makeKeyAndOrderFront:", std::ptr::null_mut());
     msg_void_bool(shared_application(), "activateIgnoringOtherApps:", YES);
 }
 
+// SAFETY: window 必须是仍存活且由当前 UI 线程拥有的 NSWindow。
 pub unsafe fn hide_window(window: Id) {
     msg_void_id(window, "orderOut:", std::ptr::null_mut());
 }
 
+// SAFETY: window 必须是调用期间仍存活的 NSWindow，查询必须发生在 AppKit UI 线程。
 pub unsafe fn window_occlusion_state(window: Id) -> WindowOcclusionState {
     if msg_usize(window, "occlusionState") & NS_WINDOW_OCCLUSION_STATE_VISIBLE != 0 {
         WindowOcclusionState::Visible
@@ -228,16 +238,19 @@ pub unsafe fn window_occlusion_state(window: Id) -> WindowOcclusionState {
     }
 }
 
+// SAFETY: window 必须是仍存活且尚未关闭的 NSWindow，本函数不释放调用方的 +1 所有权。
 pub unsafe fn close_window(window: Id) {
     msg_void(window, "close");
 }
 
+// SAFETY: 非空 object 必须持有可由当前调用精确消费一次的 Objective-C +1 引用。
 pub unsafe fn release_object(object: Id) {
     if !object.is_null() {
         msg_void(object, "release");
     }
 }
 
+// SAFETY: 非空 window 必须是仍存活的 NSWindow，并持有由本函数关闭后精确释放的唯一 +1 引用。
 pub unsafe fn close_and_release_window(window: Id) {
     if window.is_null() {
         return;
@@ -246,11 +259,13 @@ pub unsafe fn close_and_release_window(window: Id) {
     release_object(window);
 }
 
+// SAFETY: window 必须是存活 NSWindow；临时 NSString 在同步 setter 返回前保持有效。
 pub unsafe fn set_window_title(window: Id, title: &str) {
     let ns_title = ns_string(title);
     msg_void_id(window, "setTitle:", ns_title);
 }
 
+// SAFETY: window 必须是存活 NSWindow，CGRect 布局与当前架构的 AppKit ABI 一致。
 pub unsafe fn set_window_size(window: Id, width: i32, height: i32) {
     let frame = CGRect {
         origin: CGPoint { x: 0.0, y: 0.0 },
@@ -262,6 +277,7 @@ pub unsafe fn set_window_size(window: Id, width: i32, height: i32) {
     msg_void_rect_bool(window, "setFrame:display:", frame, YES);
 }
 
+// SAFETY: 必须在可访问 AppKit 的线程调用，所有返回对象仅在同步消息链中读取。
 pub unsafe fn clipboard_text() -> String {
     let pasteboard = general_pasteboard();
     if pasteboard.is_null() {
@@ -271,6 +287,7 @@ pub unsafe fn clipboard_text() -> String {
     ns_string_to_string(string).unwrap_or_default()
 }
 
+// SAFETY: 必须在可访问 AppKit 的线程调用，临时 NSString 在同步剪贴板写入返回前有效。
 pub unsafe fn set_clipboard_text(text: &str) {
     let pasteboard = general_pasteboard();
     if pasteboard.is_null() {
@@ -289,6 +306,7 @@ pub unsafe fn set_clipboard_text(text: &str) {
     );
 }
 
+// SAFETY: 必须在可访问 AppKit 的线程调用，粘贴板与类型对象由 AppKit 在查询期间保持存活。
 pub unsafe fn clipboard_has_text() -> bool {
     let pasteboard = general_pasteboard();
     if pasteboard.is_null() {
@@ -297,10 +315,12 @@ pub unsafe fn clipboard_has_text() -> bool {
     !msg_id_id(pasteboard, "stringForType:", pasteboard_string_type()).is_null()
 }
 
+// SAFETY: 必须在 AppKit UI 线程调用，NSScreen 单例在同步查询期间有效。
 pub unsafe fn main_screen_scale() -> f64 {
     screen_scale(main_screen())
 }
 
+// SAFETY: 必须在 AppKit UI 线程调用，NSScreen 数组在同步消息链期间由 AppKit 持有。
 pub unsafe fn screen_count() -> usize {
     let screens = msg_id(class("NSScreen"), "screens");
     if screens.is_null() {
@@ -309,6 +329,7 @@ pub unsafe fn screen_count() -> usize {
     msg_usize(screens, "count")
 }
 
+// SAFETY: 必须在 AppKit UI 线程调用，选中的 NSScreen 在全部属性查询完成前保持有效。
 pub unsafe fn screen_info(index: usize) -> ScreenInfo {
     let screen = screen_at(index);
     let frame = if screen.is_null() {
@@ -333,6 +354,7 @@ pub unsafe fn screen_info(index: usize) -> ScreenInfo {
     }
 }
 
+// SAFETY: 必须在可访问 Foundation 的线程调用，NSUserDefaults 返回对象仅在同步查询期间使用。
 pub unsafe fn is_dark_mode() -> bool {
     let defaults = msg_id(class("NSUserDefaults"), "standardUserDefaults");
     if defaults.is_null() {
@@ -344,6 +366,7 @@ pub unsafe fn is_dark_mode() -> bool {
         .unwrap_or(false)
 }
 
+// SAFETY: layer 必须是存活 CAMetalLayer；调用方须在允许更新该层的线程调用，像素切片由本函数校验并同步复制。
 pub unsafe fn set_layer_pixels(
     layer: Id,
     pixels: &[u32],
@@ -410,6 +433,7 @@ pub unsafe fn set_layer_pixels(
     Ok(())
 }
 
+// SAFETY: until 必须是存活 NSDate，且整个取出、转换和发送过程必须在 AppKit UI 线程执行。
 pub unsafe fn dispatch_one_event(until: Id) -> Option<MacosAppEvent> {
     let event = msg_id_usize_id_id_bool(
         shared_application(),
@@ -428,10 +452,12 @@ pub unsafe fn dispatch_one_event(until: Id) -> Option<MacosAppEvent> {
     Some(app_event)
 }
 
+// SAFETY: 必须在可访问 Foundation 的线程调用，返回的 NSDate 由框架管理生命周期。
 pub unsafe fn distant_past() -> Id {
     msg_id(class("NSDate"), "distantPast")
 }
 
+// SAFETY: CFRunLoopGetMain 返回进程主循环，CFRunLoopWakeUp 允许从任意线程同步唤醒该句柄。
 pub unsafe fn wake_main_run_loop() {
     let run_loop = CFRunLoopGetMain();
     if !run_loop.is_null() {
@@ -439,14 +465,17 @@ pub unsafe fn wake_main_run_loop() {
     }
 }
 
+// SAFETY: 必须在可访问 Foundation 的线程调用，返回的 NSDate 由框架管理生命周期。
 pub unsafe fn distant_future() -> Id {
     msg_id(class("NSDate"), "distantFuture")
 }
 
+// SAFETY: 必须在可访问 Foundation 的线程调用，返回的 NSDate 由框架管理生命周期。
 pub unsafe fn date_with_time_interval(seconds: f64) -> Id {
     msg_id_f64(class("NSDate"), "dateWithTimeIntervalSinceNow:", seconds)
 }
 
+// SAFETY: receiver 必须响应签名为 void(id, SEL) 的 selector；转型严格匹配该 Objective-C 方法 ABI。
 pub unsafe fn msg_void(receiver: Id, selector: &str) {
     type FnType = unsafe extern "C" fn(Id, Sel);
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
@@ -454,6 +483,7 @@ pub unsafe fn msg_void(receiver: Id, selector: &str) {
 }
 
 fn initialize_app() {
+    // SAFETY: Once 保证初始化只执行一次，调用路径限定在 AppKit UI 线程且单例对象由框架持有。
     INIT_APP.call_once(|| unsafe {
         let app = shared_application();
         msg_void_isize(
@@ -465,14 +495,17 @@ fn initialize_app() {
     });
 }
 
+// SAFETY: 必须在 AppKit UI 线程调用，返回的 NSApplication 单例由框架管理生命周期。
 unsafe fn shared_application() -> Id {
     msg_id(class("NSApplication"), "sharedApplication")
 }
 
+// SAFETY: 必须在 AppKit UI 线程调用，返回的 NSScreen 由框架在同步使用期间保持存活。
 unsafe fn main_screen() -> Id {
     msg_id(class("NSScreen"), "mainScreen")
 }
 
+// SAFETY: 必须在 AppKit UI 线程调用，NSScreen 数组和元素均由框架管理生命周期。
 unsafe fn screen_at(index: usize) -> Id {
     let screens = msg_id(class("NSScreen"), "screens");
     if screens.is_null() {
@@ -485,6 +518,7 @@ unsafe fn screen_at(index: usize) -> Id {
     msg_id_usize(screens, "objectAtIndex:", index.min(count - 1))
 }
 
+// SAFETY: 非空 screen 必须是存活 NSScreen，并在同步属性查询期间保持有效。
 unsafe fn screen_scale(screen: Id) -> f64 {
     if screen.is_null() {
         return 1.0;
@@ -492,14 +526,17 @@ unsafe fn screen_scale(screen: Id) -> f64 {
     msg_f64(screen, "backingScaleFactor").max(1.0)
 }
 
+// SAFETY: 必须在可访问 AppKit 的线程调用，返回的全局粘贴板由框架管理生命周期。
 unsafe fn general_pasteboard() -> Id {
     msg_id(class("NSPasteboard"), "generalPasteboard")
 }
 
+// SAFETY: 必须在可访问 Foundation 的线程调用，返回 NSString 只用于同步粘贴板消息。
 unsafe fn pasteboard_string_type() -> Id {
     ns_string("public.utf8-plain-text")
 }
 
+// SAFETY: event 必须是当前分派周期内存活的 NSEvent，其关联窗口和属性在转换完成前有效。
 unsafe fn macos_app_event_from_ns_event(event: Id) -> MacosAppEvent {
     let kind = msg_isize(event, "type");
     let event_window = msg_id(event, "window");
@@ -516,6 +553,7 @@ unsafe fn macos_app_event_from_ns_event(event: Id) -> MacosAppEvent {
     }
 }
 
+// SAFETY: event 必须是存活 NSEvent，关联 NSWindow/NSView 只在本次同步坐标查询期间使用。
 unsafe fn event_location(event: Id) -> crate::core::Point {
     let location = msg_point(event, "locationInWindow");
     let mut x = location.x as f32;
@@ -532,6 +570,7 @@ unsafe fn event_location(event: Id) -> crate::core::Point {
     crate::core::Point::new(x, y)
 }
 
+// SAFETY: event 必须是存活 NSEvent，只有鼠标事件种类才会发送 buttonNumber 选择器。
 unsafe fn event_button_number(event: Id, kind: isize) -> isize {
     match kind {
         NSEVENT_TYPE_LEFT_MOUSE_DOWN
@@ -545,6 +584,7 @@ unsafe fn event_button_number(event: Id, kind: isize) -> isize {
     }
 }
 
+// SAFETY: event 必须是存活 NSEvent，只有键盘事件种类才会发送 keyCode 选择器。
 unsafe fn event_key_code(event: Id, kind: isize) -> u16 {
     match kind {
         NSEVENT_TYPE_KEY_DOWN | NSEVENT_TYPE_KEY_UP => msg_u16(event, "keyCode"),
@@ -552,6 +592,7 @@ unsafe fn event_key_code(event: Id, kind: isize) -> u16 {
     }
 }
 
+// SAFETY: event 必须是存活 NSEvent，只有按键事件才会读取其 characters NSString。
 unsafe fn event_text(event: Id, kind: isize) -> String {
     match kind {
         NSEVENT_TYPE_KEY_DOWN => {
@@ -561,6 +602,7 @@ unsafe fn event_text(event: Id, kind: isize) -> String {
     }
 }
 
+// SAFETY: event 必须是存活 NSEvent，滚轮分支的 selector 必须对应返回 CGFloat 的无参属性。
 unsafe fn event_f64(event: Id, kind: isize, selector: &str) -> f64 {
     match kind {
         NSEVENT_TYPE_SCROLL_WHEEL => msg_f64(event, selector),
@@ -568,6 +610,7 @@ unsafe fn event_f64(event: Id, kind: isize, selector: &str) -> f64 {
     }
 }
 
+// SAFETY: 仅在 AppKit UI 线程访问可变静态缓存，写入的 NSString 在进程生命周期内保持可用。
 unsafe fn run_loop_mode() -> Id {
     if RUN_LOOP_MODE.is_null() {
         RUN_LOOP_MODE = ns_string("kCFRunLoopDefaultMode");
@@ -575,6 +618,7 @@ unsafe fn run_loop_mode() -> Id {
     RUN_LOOP_MODE
 }
 
+// SAFETY: 生成的 C 字符串在 objc_getClass 同步调用期间有效，返回类对象由运行时永久持有。
 unsafe fn class(name: &str) -> Id {
     CString::new(name)
         .ok()
@@ -582,6 +626,7 @@ unsafe fn class(name: &str) -> Id {
         .unwrap_or(std::ptr::null_mut())
 }
 
+// SAFETY: 生成的 C 字符串在 sel_registerName 同步调用期间有效，返回选择器由运行时永久持有。
 unsafe fn sel(name: &str) -> Sel {
     CString::new(name)
         .ok()
@@ -589,6 +634,7 @@ unsafe fn sel(name: &str) -> Sel {
         .unwrap_or(std::ptr::null_mut())
 }
 
+// SAFETY: UTF-8 C 字符串在初始化消息返回前有效，NSString 类和选择器签名与消息包装器匹配。
 unsafe fn ns_string(value: &str) -> Id {
     let string = msg_id(class("NSString"), "alloc");
     let c_string = CString::new(value).unwrap_or_default();
@@ -599,6 +645,7 @@ unsafe fn ns_string(value: &str) -> Id {
     )
 }
 
+// SAFETY: 非空 value 必须是存活 NSString，UTF8String 指针只在立即复制为 Rust String 时读取。
 unsafe fn ns_string_to_string(value: Id) -> Option<String> {
     if value.is_null() {
         return None;
@@ -610,48 +657,56 @@ unsafe fn ns_string_to_string(value: Id) -> Option<String> {
     Some(CStr::from_ptr(ptr).to_string_lossy().into_owned())
 }
 
+// SAFETY: receiver 必须响应返回对象且无额外参数的 selector，函数指针转型严格匹配 Objective-C ABI。
 unsafe fn msg_id(receiver: Id, selector: &str) -> Id {
     type FnType = unsafe extern "C" fn(Id, Sel) -> Id;
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector))
 }
 
+// SAFETY: receiver 必须响应接收一个原始指针并返回对象的 selector，ptr 须在同步调用期间有效。
 unsafe fn msg_id_ptr(receiver: Id, selector: &str, ptr: *const c_void) -> Id {
     type FnType = unsafe extern "C" fn(Id, Sel, *const c_void) -> Id;
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector), ptr)
 }
 
+// SAFETY: receiver 必须响应接收一个对象并返回对象的 selector，两个对象均须在同步调用期间有效。
 unsafe fn msg_id_id(receiver: Id, selector: &str, arg: Id) -> Id {
     type FnType = unsafe extern "C" fn(Id, Sel, Id) -> Id;
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector), arg)
 }
 
+// SAFETY: receiver 必须响应接收 NSUInteger 并返回对象的 selector，转型匹配当前架构 Objective-C ABI。
 unsafe fn msg_id_usize(receiver: Id, selector: &str, arg: usize) -> Id {
     type FnType = unsafe extern "C" fn(Id, Sel, usize) -> Id;
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector), arg)
 }
 
+// SAFETY: receiver 必须响应返回 const char 指针的无参 selector，调用方负责限制返回指针的读取生命周期。
 unsafe fn msg_const_char_ptr(receiver: Id, selector: &str) -> *const c_char {
     type FnType = unsafe extern "C" fn(Id, Sel) -> *const c_char;
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector))
 }
 
+// SAFETY: receiver 必须响应接收 CGFloat 并返回对象的 selector，转型匹配 64 位 macOS ABI。
 unsafe fn msg_id_f64(receiver: Id, selector: &str, value: f64) -> Id {
     type FnType = unsafe extern "C" fn(Id, Sel, f64) -> Id;
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector), value)
 }
 
+// SAFETY: receiver 必须响应返回 CGFloat 的无参 selector，转型匹配 64 位 macOS ABI。
 unsafe fn msg_f64(receiver: Id, selector: &str) -> f64 {
     type FnType = unsafe extern "C" fn(Id, Sel) -> f64;
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector))
 }
 
+// SAFETY: receiver 与 selector 必须匹配 NSWindow 指定初始化器的 CGRect/NSUInteger/NSInteger/BOOL 参数 ABI。
 unsafe fn msg_id_rect_usize_isize_bool(
     receiver: Id,
     selector: &str,
@@ -660,11 +715,13 @@ unsafe fn msg_id_rect_usize_isize_bool(
     backing: isize,
     defer: Bool,
 ) -> Id {
+    // SAFETY: FnType 精确描述该选择器的完整参数与对象返回值，objc_msgSend 仅以此签名调用。
     type FnType = unsafe extern "C" fn(Id, Sel, CGRect, usize, isize, Bool) -> Id;
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector), rect, style, backing, defer)
 }
 
+// SAFETY: receiver 与 selector 必须匹配事件获取方法的 NSUInteger/对象/对象/BOOL 参数 ABI。
 unsafe fn msg_id_usize_id_id_bool(
     receiver: Id,
     selector: &str,
@@ -673,35 +730,41 @@ unsafe fn msg_id_usize_id_id_bool(
     mode: Id,
     dequeue: Bool,
 ) -> Id {
+    // SAFETY: FnType 精确描述该选择器的完整参数与对象返回值，objc_msgSend 仅以此签名调用。
     type FnType = unsafe extern "C" fn(Id, Sel, usize, Id, Id, Bool) -> Id;
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector), mask, until, mode, dequeue)
 }
 
+// SAFETY: receiver 必须响应接收一个对象且无返回值的 selector，arg 在同步调用期间有效。
 unsafe fn msg_void_id(receiver: Id, selector: &str, arg: Id) {
     type FnType = unsafe extern "C" fn(Id, Sel, Id);
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector), arg);
 }
 
+// SAFETY: receiver 必须响应接收 BOOL 且无返回值的 selector，转型匹配 Objective-C ABI。
 unsafe fn msg_void_bool(receiver: Id, selector: &str, value: Bool) {
     type FnType = unsafe extern "C" fn(Id, Sel, Bool);
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector), value);
 }
 
+// SAFETY: receiver 必须响应接收 CGSize 且无返回值的 selector，结构布局匹配 64 位 macOS ABI。
 unsafe fn msg_void_cgsize(receiver: Id, selector: &str, size: CGSize) {
     type FnType = unsafe extern "C" fn(Id, Sel, CGSize);
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector), size);
 }
 
+// SAFETY: receiver 必须响应接收 NSInteger 且无返回值的 selector，转型匹配当前架构 Objective-C ABI。
 unsafe fn msg_void_isize(receiver: Id, selector: &str, value: isize) {
     type FnType = unsafe extern "C" fn(Id, Sel, isize);
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector), value);
 }
 
+// SAFETY: 非空 layer 必须是存活 CAMetalLayer，调用必须发生在允许修改该层的 UI 线程。
 pub unsafe fn set_metal_layer_drawable_size(layer: Id, width: i32, height: i32) {
     if layer.is_null() {
         return;
@@ -716,36 +779,42 @@ pub unsafe fn set_metal_layer_drawable_size(layer: Id, width: i32, height: i32) 
     );
 }
 
+// SAFETY: receiver 必须响应接收 CGRect/BOOL 且无返回值的 selector，结构布局与方法 ABI 一致。
 unsafe fn msg_void_rect_bool(receiver: Id, selector: &str, rect: CGRect, value: Bool) {
     type FnType = unsafe extern "C" fn(Id, Sel, CGRect, Bool);
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector), rect, value);
 }
 
+// SAFETY: receiver 必须响应返回 NSInteger 的无参 selector，转型匹配当前架构 Objective-C ABI。
 unsafe fn msg_isize(receiver: Id, selector: &str) -> isize {
     type FnType = unsafe extern "C" fn(Id, Sel) -> isize;
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector))
 }
 
+// SAFETY: receiver 必须响应返回 NSUInteger 的无参 selector，转型匹配当前架构 Objective-C ABI。
 unsafe fn msg_usize(receiver: Id, selector: &str) -> usize {
     type FnType = unsafe extern "C" fn(Id, Sel) -> usize;
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector))
 }
 
+// SAFETY: receiver 必须响应返回 unsigned short 的无参 selector，转型匹配 Objective-C 方法 ABI。
 unsafe fn msg_u16(receiver: Id, selector: &str) -> u16 {
     type FnType = unsafe extern "C" fn(Id, Sel) -> u16;
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector))
 }
 
+// SAFETY: receiver 必须响应返回 CGPoint 的无参 selector，结构返回 ABI 与当前架构一致。
 unsafe fn msg_point(receiver: Id, selector: &str) -> CGPoint {
     type FnType = unsafe extern "C" fn(Id, Sel) -> CGPoint;
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector))
 }
 
+// SAFETY: receiver 必须响应返回 CGRect 的无参 selector；下方按目标架构选择正确的结构返回 ABI。
 unsafe fn msg_rect(receiver: Id, selector: &str) -> CGRect {
     #[cfg(target_arch = "x86_64")]
     {
@@ -757,18 +826,21 @@ unsafe fn msg_rect(receiver: Id, selector: &str) -> CGRect {
     }
     #[cfg(not(target_arch = "x86_64"))]
     {
+        // SAFETY: 非 x86_64 macOS 直接返回 CGRect，FnType 精确匹配该架构的 objc_msgSend 结构返回 ABI。
         type FnType = unsafe extern "C" fn(Id, Sel) -> CGRect;
         let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         f(receiver, sel(selector))
     }
 }
 
+// SAFETY: receiver 必须响应接收两个对象并返回 BOOL 的 selector，所有对象在同步调用期间有效。
 unsafe fn msg_bool_id_id(receiver: Id, selector: &str, first: Id, second: Id) -> Bool {
     type FnType = unsafe extern "C" fn(Id, Sel, Id, Id) -> Bool;
     let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     f(receiver, sel(selector), first, second)
 }
 
+// SAFETY: layer 必须是存活 CAMetalLayer，像素切片须覆盖给定尺寸且调用线程允许更新该层。
 pub(crate) unsafe fn present_layer_pixels(
     layer: cocoa::Id,
     pixels: &[u32],
