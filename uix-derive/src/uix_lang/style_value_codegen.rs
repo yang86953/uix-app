@@ -842,7 +842,6 @@ pub(super) fn is_planned_property(name: &str) -> bool {
             | "left"
             | "float"
             | "clear"
-            | "borderStyle"
             | "fontFamily"
             | "fontWeight"
             | "textAlign"

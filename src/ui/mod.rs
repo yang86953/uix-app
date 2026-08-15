@@ -134,6 +134,8 @@ pub use reactive::state::{Computed, Effect, State, StateSlotId};
 pub use render_handler::{EmptyContext, EmptyRenderer, render_empty_for};
 pub use semantic_action::{SemanticAction, SemanticActionKind};
 pub use theme::style::{ColorValue, PaletteColor, Style, StyleSet, StyleState, TypographyToken};
+// 公开 UI System 自有的边框线型契约。
+pub use theme::style::BorderStyle;
 pub use theme::traits::{
     IBoxShadowTokens, ISpacingTokens, ITypographyTokens, ThemeTokens, TokenProvider,
 };

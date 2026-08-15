@@ -5,6 +5,8 @@ use quote::quote;
 
 // 引入结构化属性、诊断与样式属性。
 use super::{Attribute, AttributeValue, Diagnostic, StyleProperty};
+// 引入 borderStyle 到 UI 运行时线型的独立映射。
+use super::style_border_codegen::border_style_field;
 // 引入 transform 与原点到运行时公共契约的独立映射。
 use super::style_transform_codegen::{transform_origin_value, transform_value};
 // 引入样式值与字段映射辅助。
@@ -220,6 +222,8 @@ fn generate_style_statement(
         "borderColor" => border_color_field(style, property),
         // 四边边框宽度映射到 EdgeInsets。
         "borderWidth" => edge_insets_field(style, property, "border_width"),
+        // 边框线型映射到显式可选 BorderStyle。
+        "borderStyle" => border_style_field(style, property),
         // 单边边框宽度映射到对应字段。
         "borderTopWidth" => edge_field(style, property, "border_width", "top"),
         // 单边边框宽度映射到对应字段。
