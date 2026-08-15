@@ -99,6 +99,7 @@ impl Default for BackTop {
 }
 
 impl BackTop {
+    /// 创建使用默认可见阈值且初始隐藏的返回顶部按钮。
     pub fn new() -> Self {
         Self {
             visibility_height: DEFAULT_VISIBILITY_HEIGHT,
@@ -142,6 +143,7 @@ impl BackTop {
         self
     }
 
+    /// 设置按钮开始显示所需的纵向滚动阈值。
     pub fn visibility_height(mut self, v: f32) -> Self {
         self.visibility_height = Self::normalize_visibility_height(v);
         if let Some(scroll_y) = self.controlled_scroll_y {
@@ -149,6 +151,7 @@ impl BackTop {
         }
         self
     }
+    /// 返回按钮当前是否达到显示条件。
     pub fn is_visible(&self) -> bool {
         self.visible
     }
