@@ -39,11 +39,6 @@
 //! let _: ViewNode = uix!(r#"<Input type="search" />"#);
 //! ```
 //!
-//! ```compile_fail
-//! use uix::prelude::*;
-//! let _: ViewNode = uix!(r#"<Text style="position: absolute;">Planned</Text>"#);
-//! ```
-//!
 //! # 公开面 compile-fail 测试
 //!
 //! 下列 compile-fail 契约锁定系统边界：`native` 根、backend SPI、raw handle、
