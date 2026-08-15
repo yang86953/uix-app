@@ -10,7 +10,8 @@
 use crate::native::capabilities::system::IFileDialog;
 // 引入 platform capabilities Module 统一拥有的外部对话框退出分类。
 use crate::native::capabilities::services::file_dialog_process::{
-    ExternalDialogOutcome, classify_external_dialog_exit,
+    ExternalDialogOutcome, classify_external_dialog_exit, parse_confirmed_dialog_path,
+    parse_confirmed_dialog_paths,
 };
 use crate::native::{Errc, Error, Result};
 
@@ -125,14 +126,11 @@ fn zenity_open_file(title: &str, filters: &str) -> Result<Option<Vec<String>>> {
     if !dialog_was_confirmed("zenity", &output)? {
         return Ok(None);
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(Some(
-        stdout
-            .lines()
-            .map(|l| l.trim().to_string())
-            .filter(|l| !l.is_empty())
-            .collect(),
-    ))
+    // 确认结果必须包含一条或多条可无损表示的路径。
+    Ok(Some(parse_confirmed_dialog_paths(
+        "zenity",
+        &output.stdout,
+    )?))
 }
 
 fn zenity_save_file(title: &str, filters: &str) -> Result<Option<String>> {
@@ -160,8 +158,8 @@ fn zenity_save_file(title: &str, filters: &str) -> Result<Option<String>> {
     if !dialog_was_confirmed("zenity", &output)? {
         return Ok(None);
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(Some(stdout.trim().to_string()))
+    // 确认结果必须包含一条可无损表示的路径。
+    Ok(Some(parse_confirmed_dialog_path("zenity", &output.stdout)?))
 }
 
 fn zenity_open_folder(title: &str) -> Result<Option<String>> {
@@ -172,8 +170,8 @@ fn zenity_open_folder(title: &str) -> Result<Option<String>> {
     if !dialog_was_confirmed("zenity", &output)? {
         return Ok(None);
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(Some(stdout.trim().to_string()))
+    // 确认结果必须包含一条可无损表示的路径。
+    Ok(Some(parse_confirmed_dialog_path("zenity", &output.stdout)?))
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -182,20 +180,26 @@ fn zenity_open_folder(title: &str) -> Result<Option<String>> {
 
 fn kde_open_file(title: &str, filters: &str) -> Result<Option<Vec<String>>> {
     let mut cmd = std::process::Command::new("kdialog");
-    cmd.args(["--title", title, "--getopenfilename", ".", filters]);
+    // KDialog 必须显式开启多选并用逐行输出消除空格分隔歧义。
+    cmd.args([
+        "--title",
+        title,
+        "--multiple",
+        "--separate-output",
+        "--getopenfilename",
+        ".",
+        filters,
+    ]);
     let output = spawn_dialog("kdialog", &mut cmd)?;
     // 只把明确取消码归一化为成功空值。
     if !dialog_was_confirmed("kdialog", &output)? {
         return Ok(None);
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(Some(
-        stdout
-            .lines()
-            .map(|l| l.trim().to_string())
-            .filter(|l| !l.is_empty())
-            .collect(),
-    ))
+    // 确认结果必须包含一条或多条可无损表示的路径。
+    Ok(Some(parse_confirmed_dialog_paths(
+        "kdialog",
+        &output.stdout,
+    )?))
 }
 
 fn kde_save_file(title: &str, filters: &str) -> Result<Option<String>> {
@@ -206,8 +210,11 @@ fn kde_save_file(title: &str, filters: &str) -> Result<Option<String>> {
     if !dialog_was_confirmed("kdialog", &output)? {
         return Ok(None);
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(Some(stdout.trim().to_string()))
+    // 确认结果必须包含一条可无损表示的路径。
+    Ok(Some(parse_confirmed_dialog_path(
+        "kdialog",
+        &output.stdout,
+    )?))
 }
 
 fn kde_open_folder(title: &str) -> Result<Option<String>> {
@@ -218,8 +225,11 @@ fn kde_open_folder(title: &str) -> Result<Option<String>> {
     if !dialog_was_confirmed("kdialog", &output)? {
         return Ok(None);
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(Some(stdout.trim().to_string()))
+    // 确认结果必须包含一条可无损表示的路径。
+    Ok(Some(parse_confirmed_dialog_path(
+        "kdialog",
+        &output.stdout,
+    )?))
 }
 
 // 把子进程输出收窄为确认布尔值或 typed failure。
