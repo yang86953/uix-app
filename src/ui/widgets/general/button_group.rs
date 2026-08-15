@@ -13,12 +13,14 @@ pub struct ButtonGroup {
 }
 
 impl ButtonGroup {
+    /// 创建尚未包含按钮的视觉连体按钮组。
     pub fn new() -> Self {
         Self {
             buttons: Vec::new(),
         }
     }
 
+    /// 设置由按钮组按位置标记的按钮列表。
     pub fn buttons(mut self, buttons: Vec<Button>) -> Self {
         self.buttons = buttons;
         self

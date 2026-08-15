@@ -252,6 +252,7 @@ impl SnapshotSource for Container {
 }
 
 impl Container {
+    /// 创建使用默认容器样式的通用布局容器。
     pub fn new() -> Self {
         Self {
             style: Style::container(),
@@ -268,6 +269,7 @@ impl Container {
         self.style = next.style;
     }
 
+    /// 用指定样式完整替换容器的当前样式。
     pub fn style(mut self, s: Style) -> Self {
         self.style = s;
         self
