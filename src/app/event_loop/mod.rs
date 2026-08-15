@@ -8,5 +8,7 @@
 
 #[allow(clippy::module_inception)]
 pub(crate) mod event_loop;
+// 隔离 UI 光标请求到平台能力的去重交接。
+mod pointer_cursor;
 
 pub(crate) use event_loop::run_window_session_loop_with_system_theme_and_tasks;
