@@ -4,6 +4,7 @@ use crate::ui::component::paint_context::PaintContext;
 use crate::ui::{ComponentId, EventResult, SystemEvent, WidgetTree};
 use std::collections::HashSet;
 
+/// 按给定顺序返回相邻焦点并在两端循环；无当前项时从导航方向起点开始。
 pub fn next_focus_in_order(
     focusable: &[ComponentId],
     current: Option<ComponentId>,
@@ -64,6 +65,7 @@ impl Default for FocusTrap {
 }
 
 impl FocusTrap {
+    /// 创建默认启用且尚未收集可聚焦后代的焦点陷阱。
     pub fn new() -> Self {
         Self {
             active: true,
@@ -71,6 +73,7 @@ impl FocusTrap {
         }
     }
 
+    /// 设置该作用域是否接管焦点循环。
     pub fn active(mut self, v: bool) -> Self {
         self.active = v;
         self
@@ -85,6 +88,7 @@ impl FocusTrap {
         self.focusable_ids = ids;
     }
 
+    /// 按组件身份排序后返回作用域内的相邻焦点；禁用或空作用域返回 `None`。
     pub fn next_focus(&self, current: Option<ComponentId>, forward: bool) -> Option<ComponentId> {
         if !self.active {
             return None;
@@ -94,6 +98,7 @@ impl FocusTrap {
         next_focus_in_order(&sorted, current, forward)
     }
 
+    /// 将一个节点包装为焦点陷阱的唯一直接子节点。
     pub fn wrap(
         self,
         node: crate::ui::component::widget::WidgetNode,

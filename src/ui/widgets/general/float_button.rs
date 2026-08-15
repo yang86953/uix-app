@@ -276,10 +276,12 @@ impl FloatButton {
         self
     }
 
+    /// 设置按当前触发方式显示的提示文字。
     pub fn tooltip(mut self, t: &str) -> Self {
         self.tooltip = t.to_string();
         self
     }
+    /// 设置非负数字徽标计数；负数归一化为零。
     pub fn badge(mut self, count: i32) -> Self {
         self.badge_count = count.max(0);
         self
@@ -293,6 +295,7 @@ impl FloatButton {
         self
     }
 
+    /// 设置按钮直径；非正数或非有限值回退为 40 像素。
     pub fn size(mut self, s: f32) -> Self {
         self.size = positive_or(s, 40.0);
         self
@@ -304,6 +307,7 @@ impl FloatButton {
         self
     }
 
+    /// 设置提示或按钮组展开状态采用的交互触发方式。
     pub fn trigger(mut self, trigger: TriggerMode) -> Self {
         self.trigger_mode = trigger;
         self
@@ -683,6 +687,7 @@ pub struct FloatButtonBackTop;
 
 impl FloatButtonBackTop {
     #[allow(clippy::new_ret_no_self)]
+    /// 创建使用向上图标与“回到顶部”提示的浮动按钮。
     pub fn new() -> FloatButton {
         FloatButton::new("chevron-up").tooltip("回到顶部")
     }
