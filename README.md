@@ -35,6 +35,7 @@ cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo
 | [文档中心](docs/README.md) | 按问题选择对应的权威文档 |
 | [产品](docs/产品.md) | 查看项目定位、目标用户、能力边界与交付策略 |
 | [使用](docs/使用.md) | 查找公开 API、任务用法和示例 |
+| [UIX Lang](docs/uix-lang/README.md) | 使用推荐界面描述方式（`.uix` 文档，编译时转换为 Rust） |
 | [架构](docs/架构.md) | 查看系统边界、依赖、不变量与设计映射 |
 | [交付与许可](docs/产品/交付与许可.md) | 查看版本、平台、许可与交付物范围 |
 | [变更记录](CHANGELOG.md) | 查看用户可观察的版本变化 |
@@ -59,7 +60,7 @@ cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo
 | 路径 | 内容 |
 |---|---|
 | `src/` | 框架实现与公开 API |
-| `demo/` | 多项目演示工作区：`uix-lang-demo`（`.uix` 主演示）、`cli-demo`（CLI 功能域）与 6 个独立真窗验收程序（`badge-visual` / `selectable-list-visual` / `collapse-visual` / `popconfirm-visual` / `upload-visual` / `backdrop-visual`） |
+| `demo/` | 多项目演示工作区：`uix-lang-demo`（`.uix` 主演示）、`cli-demo`（CLI 功能域）与 8 个独立真窗验收程序（`badge-visual` / `selectable-list-visual` / `collapse-visual` / `popconfirm-visual` / `upload-visual` / `backdrop-visual` / `rich-text-visual` / `rich-text-image-visual`） |
 | `uix-derive/` | UIX 派生宏 |
 | `tests/` | 契约、集成与真窗测试入口 |
 | `scripts/` | 内部打包工具 |

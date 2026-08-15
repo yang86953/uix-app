@@ -4,7 +4,7 @@
 
 ## 为什么需要 UIX Lang
 
-UIX 产品原则是「Rust 优先——没有第二门运行语言」。公开 `uix!` 生成已登记 View 子集，`uix_app!` 把 `<App>` 文档组装成现有 App builder；Rust 声明式 API 继续持有应用 / 窗口生命周期和尚未登记的完整组件能力。UIX Lang 让**应用开发以 uix-lang 描述 UI 为主路径**：`.uix` 文档是应用源码的一部分，编译时由 uix-app 框架自动转换为 Rust 声明式代码，运行时不再解析界面文本。
+UIX 产品原则是「Rust 优先——没有第二门运行语言」。公开 `uix!` 生成已登记 View 子集，`uix_app!` 把 `<App>` 文档组装成现有 App builder；Rust 组合根继续持有最终 `.run()` 与窗口生命周期，以及尚未登记的完整组件能力。UIX Lang 让**应用开发以 uix-lang 描述 UI 为主路径**：`.uix` 文档是应用源码的一部分，编译时由 uix-app 框架自动转换为 Rust 声明式代码，运行时不再解析界面文本。
 
 ```text
 .uix 文档（应用源码）──uix-app 编译期转换（uix! / uix_app!）──> Rust 声明式代码 ──cargo 编译──> 原生可执行文件
@@ -35,7 +35,7 @@ UIX 产品原则是「Rust 优先——没有第二门运行语言」。公开 `
 | **参考** | [样式属性](参考/样式属性.md) | 全部样式属性的语法、取值、默认值与适用元素 |
 | | [事件](参考/事件.md) | 事件名与 $event 载荷登记 |
 | | [组件](参考/组件/布局组件.md) / [图表](参考/组件/图表组件.md) | 布局、通用、输入、展示、反馈、导航与基础图表参考 |
-| **指南** | [快速开始](指南/快速开始.md) | 依赖配置、Hello World、第一个 View |
+| **指南** | [快速开始](指南/快速开始.md) | 依赖配置、Hello World、第一个 View、完整计数器与主题应用 |
 | | [教程](指南/教程.md) | 从零构建完整应用 |
 | **变更** | [版本策略](变更/版本策略.md) | 语言版本、兼容性承诺、变更登记流程 |
 | | [变更日志](变更/CHANGELOG.md) | 语言面变更记录 |
@@ -45,7 +45,7 @@ UIX 产品原则是「Rust 优先——没有第二门运行语言」。公开 `
 
 公开 `uix!` 已支持内嵌源码与相对调用 crate 的 `.uix` 文件并在编译期生成 `ViewNode`；三个公开宏的文件入口都已支持相对当前文件的嵌套 `@import`、显式 `@export`、全量或具名组件选择，并追踪全部递归依赖。公开 `uix_app!` 已支持 `<App>` 根的 `title` / `size` / `theme` / `settings`、同文档主题与现有 `App` builder 组装。
 
-当前已登记 `Text`、`Label`、`Button`、`ButtonGroup`、`FloatButton`、`FloatButtonGroup`、`FloatButtonBackTop`、`Icon`、`Divider`、`Space`、`Typography`、`ThemeToggle`、`WindowControl`、`WindowDragRegion`、`Container`、`Row`、`Column`、`Grid`、`ScrollView`、`VirtualScroll`、`Splitter`、`Affix`、`BackTop`、`Layout`、`Sider`、`Header`、`Content`、`Footer`、`Input`、`InputNumber`、`InputGroup`、`Slider`、`RangeSlider`、`Rate`、`Checkbox`、`Switch`、`Radio`、`Segmented`、`Select`、`Cascader`、`TreeSelect`、`AutoComplete`、`Mentions`、`DatePicker`、`DateRangePicker`、`TimePicker`、`ColorPicker`、`Avatar`、`Image`、`ImageGroup`、`List`、`Skeleton`、`Empty`、`ResultView`、`Tag`、`Card`、`Descriptions`、`Timeline`、`Calendar`、`Carousel`、`Tree`、`Table`、`Menu`、`Dropdown`、`Navigation`、`Steps`、`Pagination`、`Breadcrumb`、`Anchor`、`Tabs`、`QRCode`、`Watermark`、`RichText`、`Message`、`Notification`、`Alert`、`Popconfirm`、`Modal`、`Drawer`、`Popover`、`Tooltip`、`FocusTrap`、`ProgressBar`、`Spin`、`Form`、`FormInputItem`、`FormSelectItem`、`FormCheckboxItem`、`FormRadioItem`、`FormSwitchItem`、`FormSliderItem`、`Upload`、`SelectableList`、`Collapse`、`Badge`、`BarChart`、`LineChart`、`PieChart`、`AreaChart`、`ScatterChart`、`FunnelChart`、`Treemap`、`Gauge`、`Heatmap`、`WaterfallChart`、`RadarChart`、`ComboChart`，`Col` 作为 `Row` / `Grid` 的直接子项登记。未登记组件仍由编译期诊断明确拒绝，不会静默降级。实现差距由 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 跟踪。
+当前已登记以下 108 个标签（`Col` 仅作为 `Row` / `Grid` 的直接子项使用）：`Text`、`Label`、`Button`、`ButtonGroup`、`FloatButton`、`FloatButtonGroup`、`FloatButtonBackTop`、`Icon`、`Divider`、`Space`、`Typography`、`ThemeToggle`、`WindowControl`、`WindowDragRegion`、`Container`、`Row`、`Column`、`Grid`、`ScrollView`、`VirtualScroll`、`Splitter`、`Affix`、`BackTop`、`Layout`、`Sider`、`Header`、`Content`、`Footer`、`Input`、`InputNumber`、`InputGroup`、`Slider`、`RangeSlider`、`Rate`、`Checkbox`、`Switch`、`Radio`、`Segmented`、`Select`、`Cascader`、`TreeSelect`、`AutoComplete`、`Mentions`、`DatePicker`、`DateRangePicker`、`TimePicker`、`ColorPicker`、`Avatar`、`Image`、`ImageGroup`、`List`、`Skeleton`、`Empty`、`ResultView`、`Tag`、`Card`、`Descriptions`、`Timeline`、`Calendar`、`Carousel`、`Tree`、`Table`、`Menu`、`Dropdown`、`Navigation`、`Steps`、`Pagination`、`Breadcrumb`、`Anchor`、`Tabs`、`QRCode`、`Watermark`、`RichText`、`Message`、`Notification`、`Alert`、`Popconfirm`、`Modal`、`Drawer`、`Popover`、`Tooltip`、`FocusTrap`、`ProgressBar`、`Spin`、`Form`、`FormInputItem`、`FormSelectItem`、`FormCheckboxItem`、`FormRadioItem`、`FormSwitchItem`、`FormSliderItem`、`Upload`、`SelectableList`、`Collapse`、`Badge`、`BarChart`、`LineChart`、`PieChart`、`AreaChart`、`ScatterChart`、`FunnelChart`、`Treemap`、`Gauge`、`Heatmap`、`WaterfallChart`、`RadarChart`、`ComboChart`。未登记组件仍由编译期诊断明确拒绝，不会静默降级。实现差距由 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 跟踪。
 
 Rust 图表文档列出的十二类标签已全部登记类型化静态数据与基础视觉配置；气泡、自定义混合系列和高级交互继续以 [Rust 图表使用文档](../使用/图表.md)为边界，尚未登记时会在编译期拒绝。
 
