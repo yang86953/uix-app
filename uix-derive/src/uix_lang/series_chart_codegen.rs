@@ -7,13 +7,12 @@ use quote::quote;
 use super::basic_chart_codegen::{f32_value, required_attribute};
 // 引入公共属性与叶节点形状判定。
 use super::codegen::{apply_common_attributes, is_renderable_node};
+// 引入十二类图表共享的高级配置映射。
+use super::chart_common_codegen::{apply_common_chart_attribute, is_common_chart_attribute};
 // 复用内联图表数据构造器错配校验。
 use super::static_chart_codegen::validate_inline_data;
-// 引入属性、表达式、布尔值与诊断契约。
-use super::{
-    Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_expression,
-    literal_string,
-};
+// 引入属性、表达式与诊断契约。
+use super::{Attribute, AttributeValue, Diagnostic, Element, generate_expression, literal_string};
 
 // 生成雷达图或组合图的类型化多集合映射。
 pub(crate) fn generate_series_chart(
@@ -106,6 +105,11 @@ fn generate_radar_start(
             "title",
             "subtitle",
             "responsive",
+            "legend",
+            "animation",
+            "interactive",
+            "brush",
+            "tooltip",
         ],
     ))
 }
@@ -178,6 +182,11 @@ fn generate_combo_start(
             "title",
             "subtitle",
             "responsive",
+            "legend",
+            "animation",
+            "interactive",
+            "brush",
+            "tooltip",
         ],
     ))
 }
@@ -214,19 +223,17 @@ fn apply_chart_attribute(
     // 接收当前属性。
     attribute: &Attribute,
 ) -> Result<TokenStream, Diagnostic> {
-    // 标题、副标题与组合图轴标题使用静态字符串。
-    if matches!(
-        attribute.name.as_str(),
-        "title" | "subtitle" | "yAxisLeft" | "yAxisRight"
-    ) {
+    // 共享属性统一投影到 ChartPlaceholder 公开 builder。
+    if is_common_chart_attribute(&attribute.name) {
+        // 返回共享属性映射结果。
+        return apply_common_chart_attribute(widget, attribute);
+    }
+    // 组合图轴标题使用静态字符串。
+    if matches!(attribute.name.as_str(), "yAxisLeft" | "yAxisRight") {
         // 读取静态文本。
         let value = literal_string(attribute, "图表文本属性")?;
         // 映射到精确公开构建器。
         return Ok(match attribute.name.as_str() {
-            // 设置图表标题。
-            "title" => quote! { (#widget).title(#value) },
-            // 设置图表副标题。
-            "subtitle" => quote! { (#widget).subtitle(#value) },
             // 设置组合图左轴标题。
             "yAxisLeft" => quote! { (#widget).y_axis_left(#value) },
             // 设置组合图右轴标题。
@@ -234,13 +241,6 @@ fn apply_chart_attribute(
             // 文本属性集合已经穷尽。
             _ => unreachable!("系列图表文本属性集合已穷尽"),
         });
-    }
-    // 响应式属性复用统一布尔表达式规则。
-    if attribute.name == "responsive" {
-        // 生成布尔值。
-        let value = boolean_value(attribute)?;
-        // 应用响应式测量构建器。
-        return Ok(quote! { (#widget).responsive(#value) });
     }
     // 雷达图形状只接受静态语义值。
     if attribute.name == "shape" {

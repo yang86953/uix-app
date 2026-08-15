@@ -424,6 +424,8 @@ mod progress_codegen;
 mod progress_codegen_tests;
 // 定义 BarChart、LineChart 与 PieChart 的基础静态生成边界。
 mod basic_chart_codegen;
+// 集中映射十二类图表共享的标题、图例、动画与交互配置。
+mod chart_common_codegen;
 // 集中验证三类基础图表生成、数据类型与拒绝路径。
 #[cfg(test)]
 mod basic_chart_codegen_tests;
