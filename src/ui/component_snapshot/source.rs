@@ -5,10 +5,13 @@ use crate::ui::widgets::*;
 
 use super::SnapshotFields;
 
+/// 允许组件直接导出其类型化配置与运行状态快照。
 pub trait SnapshotSource {
+    /// 捕获组件当前的类型专属快照字段。
     fn snapshot_fields(&self) -> SnapshotFields;
 }
 
+/// 按已登记内置组件类型捕获快照；未知类型返回 [`SnapshotFields::Unknown`]。
 pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     if let Some(button) = component.downcast_ref::<Button>() {
         return button.snapshot_fields();

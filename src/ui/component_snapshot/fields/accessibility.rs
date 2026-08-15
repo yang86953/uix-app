@@ -35,6 +35,7 @@ use super::super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState}
 use super::SnapshotFields;
 
 impl SnapshotFields {
+    /// 从组件字段快照派生默认无障碍角色、名称、状态与属性。
     pub fn accessibility(&self) -> AccessibilitySnapshot {
         match self {
             Self::Button {
