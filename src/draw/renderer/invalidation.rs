@@ -14,7 +14,9 @@ pub type InvalidationQueueHandle = Arc<Mutex<InvalidationQueue>>;
 /// 滚动增量（Composite invalidation 附带）。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScrollDelta {
+    /// 水平方向滚动增量。
     pub dx: f32,
+    /// 垂直方向滚动增量。
     pub dy: f32,
 }
 
@@ -25,19 +27,21 @@ pub enum Invalidation {
     Layout(NodeId),
     /// 视觉变化，布局不变。
     Paint {
+        /// 发生视觉变化的场景节点身份。
         id: NodeId,
         /// `None` 表示整个节点的 dirty_rect。
         rect: Option<Rect>,
     },
     /// 合成层操作（如 scroll memmove 后的 exposed strip）。
     Composite {
+        /// 需要重新合成的逻辑区域。
         rect: Rect,
+        /// 可选的滚动位移，用于复用既有像素并重绘暴露区域。
         scroll: Option<ScrollDelta>,
     },
-    /// The compositor topology changed and the whole target must be rebuilt,
-    /// while no ordinary scene node should be reported as paint-dirty. Root
-    /// overlay membership changes use this to avoid conflating z-order work
-    /// with normal-tree content changes.
+    /// 合成器拓扑已经变化，必须重建完整目标，但不把普通场景节点报告为绘制失效。
+    ///
+    /// 根级 overlay 成员变化使用该信号，避免把层级工作与普通树内容变化混为一谈。
     FullComposite,
 }
 
@@ -51,6 +55,7 @@ pub struct InvalidationQueue {
 }
 
 impl InvalidationQueue {
+    /// 创建修订号为零的空失效队列。
     pub fn new() -> Self {
         Self::default()
     }
@@ -103,8 +108,7 @@ impl InvalidationQueue {
         self.items.is_empty()
     }
 
-    /// Monotonic mutation marker used to retain invalidations raised while a
-    /// frame is being painted or presented.
+    /// 返回单调回绕的变更标记，用于保留帧绘制或呈现期间新产生的失效。
     pub fn revision(&self) -> u64 {
         self.revision
     }
@@ -190,9 +194,9 @@ impl InvalidationQueue {
         self.paint_indices.clear();
     }
 
-    /// Clears only when no producer pushed an invalidation since `revision`
-    /// was sampled. Existing and newly-added work remain together otherwise,
-    /// so the next frame can conservatively settle both.
+    /// 仅当采样修订号之后没有生产者推送失效时清空队列。
+    ///
+    /// 修订号不匹配时同时保留既有与新增工作，供下一帧保守收敛。
     pub fn clear_if_revision(&mut self, revision: u64) -> bool {
         if self.revision != revision {
             return false;
