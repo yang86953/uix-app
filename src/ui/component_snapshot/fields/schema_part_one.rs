@@ -243,40 +243,71 @@ macro_rules! snapshot_fields_part_one {
                 /// 每个评分单位显示的字符或图标文本。
                 character: String,
             },
+            /// 数值输入组件的范围、步长、格式化与显示状态快照。
             InputNumber {
+                /// 当前数值。
                 value: f64,
+                /// 允许输入的最小值。
                 min: f64,
+                /// 允许输入的最大值。
                 max: f64,
+                /// 步进操作使用的增量。
                 step: f64,
-                // 保存声明式小数位精度。
+                /// 保存声明式小数位精度。
                 precision: Option<u8>,
+                /// 空值时显示的占位文字。
                 placeholder: String,
+                /// 数值输入是否禁止交互。
                 disabled: bool,
+                /// 是否允许键盘增减数值。
                 keyboard: bool,
+                /// 是否启用格式化显示。
                 formatted: bool,
+                /// 格式化后的可选显示文字。
                 display_value: Option<String>,
             },
+            /// 头像的文字、图片、颜色、尺寸与形状快照。
             Avatar {
+                /// 图片缺失时显示的替代文字。
                 text: String,
+                /// 头像声明的方形边长。
                 size: f32,
+                /// 头像显式声明的背景颜色。
                 bg_color: Option<Color>,
+                /// 头像显式声明的文字颜色。
                 text_color: Option<Color>,
+                /// 头像是否使用方形轮廓。
                 square: bool,
+                /// 头像图片资源路径。
                 src: String,
             },
+            /// 徽标的计数、状态、位置与组合装饰快照。
             Badge {
+                /// 徽标当前显示的计数值。
                 count: i32,
+                /// 数字徽标直接显示的最大值。
                 max: i32,
+                /// 徽标是否采用圆点模式。
                 dot: bool,
+                /// 徽标显式声明的背景颜色。
                 color: Option<Color>,
+                /// 前景色是否根据背景自动选择对比色。
                 adaptive_foreground: bool,
+                /// 徽标是否采用缎带样式。
                 ribbon: bool,
+                /// 徽标声明的视觉尺寸。
                 size: f32,
+                /// 徽标可选的语义状态样式。
                 status: Option<BadgeStatus>,
+                /// 计数为零时是否仍显示徽标。
                 show_zero: bool,
+                /// 徽标附带的说明文字。
                 text: String,
+                /// 徽标相对锚点的横向偏移。
                 offset_x: f32,
+                /// 徽标相对锚点的纵向偏移。
                 offset_y: f32,
+                /// 横纵偏移分别采用的可选物理单位。
                 offset_unit: Option<(PhysicalUnit, PhysicalUnit)>,
                 /// 标记 Badge 是否作为透明组合装饰器。
                 composite: bool,
@@ -285,192 +316,327 @@ macro_rules! snapshot_fields_part_one {
                 /// 保存最终装饰绘制边界，不复制真实子节点快照。
                 decoration_bounds: crate::core::Rect,
             },
+            /// 卡片的标题、盒模型、操作区与焦点状态快照。
             Card {
+                /// 卡片可选的标题文字。
                 title: Option<String>,
+                /// 卡片是否绘制边框。
                 bordered: bool,
+                /// 卡片是否启用悬停反馈。
                 hoverable: bool,
+                /// 卡片显式声明的固定宽度。
                 fixed_width: Option<f32>,
+                /// 卡片显式声明的固定高度。
                 fixed_height: Option<f32>,
+                /// 卡片内容区使用的内边距。
                 padding: f32,
+                /// 卡片阴影采用的层级。
                 elevation: u8,
+                /// 卡片参与父级弹性分配的增长权重。
                 flex_grow: f32,
+                /// 按声明顺序保存的操作文字。
                 actions: Vec<String>,
+                /// 当前获得键盘焦点的操作索引。
                 focused_action: Option<usize>,
             },
+            /// 空状态组件的说明、图标与图片资源快照。
             Empty {
+                /// 空状态显示的说明文字。
                 description: String,
+                /// 空状态使用的图标名称。
                 icon_name: String,
+                /// 空状态使用的图片资源路径。
                 image: String,
             },
+            /// 单张图片的资源、替代内容、尺寸与预览状态快照。
             Image {
+                /// 主图片资源路径。
                 src: String,
+                /// 图片无法感知时使用的替代文字。
                 alt: String,
+                /// 主图片加载失败时使用的回退资源或文字。
                 fallback: String,
+                /// 图片声明的宽度。
                 width: f32,
+                /// 图片声明的高度。
                 height: f32,
+                /// 图片裁剪轮廓使用的圆角半径。
                 radius: f32,
+                /// 图片是否允许打开预览。
                 preview: bool,
+                /// 图片预览当前是否打开。
                 preview_open: bool,
+                /// 图片是否保持宽高比适配目标矩形。
                 fit: bool,
             },
+            /// 图片组的资源序列、起始项与预览运行状态快照。
             ImageGroup {
+                /// 按声明顺序保存的图片资源路径。
                 images: Vec<String>,
+                /// 图片组首次展示的图片索引。
                 start_index: usize,
+                /// 当前展示或预览的图片索引。
                 current: usize,
+                /// 图片组预览当前是否打开。
                 preview_open: bool,
             },
+            /// 标签的文字、颜色、能力与可见状态快照。
             Tag {
+                /// 标签显示的文字。
                 text: String,
+                /// 标签采用的预设颜色类型。
                 color: TagColor,
+                /// 标签是否提供关闭动作。
                 closable: bool,
+                /// 标签文字使用的字号。
                 font_size: f32,
+                /// 标签显式声明的自定义颜色。
                 custom_color: Option<Color>,
+                /// 标签是否允许切换选中状态。
                 checkable: bool,
+                /// 可选标签当前是否选中。
                 checked: bool,
+                /// 标签当前是否可见。
                 visible: bool,
+                /// 标签声明的图标名称。
                 icon: String,
             },
+            /// 时间轴的条目、待完成提示与排列方向快照。
             Timeline {
+                /// 按声明顺序保存的时间轴条目。
                 items: Vec<TimelineItem>,
+                /// 时间轴是否显示待完成节点。
                 pending: bool,
+                /// 时间轴是否按反向顺序呈现。
                 reverse: bool,
             },
+            /// 日历的尺寸、导航模式、展示月份与选择状态快照。
             Calendar {
+                /// 日期格的首选方形边长。
                 cell_size: f32,
+                /// 标题导航是否按整年跳转。
                 year_jump: bool,
+                /// 当前展示的年份。
                 year: i32,
+                /// 当前展示的一至十二月月份编号。
                 month: usize,
+                /// 当前选中的完整日期。
                 selected: Option<Date>,
+                /// 当前接收键盘操作的日号。
                 focused_day: usize,
             },
+            /// 骨架屏的形状与占位尺寸快照。
             Skeleton {
+                /// 骨架占位采用的形状。
                 shape: SkeletonShape,
+                /// 骨架占位的宽度。
                 width: f32,
+                /// 骨架占位的高度。
                 height: f32,
             },
+            /// 浮动按钮的内容、徽标、尺寸与放置策略快照。
             FloatButton {
+                /// 浮动按钮使用的图标名称。
                 icon: String,
-                // 保存展开说明 authored config。
+                /// 保存展开说明的声明配置。
                 description: String,
+                /// 悬停或聚焦时显示的提示文字。
                 tooltip: String,
+                /// 按钮徽标当前显示的计数。
                 badge_count: i32,
-                // 保存圆点徽标 authored config。
+                /// 保存圆点徽标的声明配置。
                 badge_dot: bool,
+                /// 浮动按钮声明的方形边长。
                 size: f32,
+                /// 兼容 frame 相对放置时的横向坐标。
                 x: f32,
+                /// 兼容 frame 相对放置时的纵向坐标。
                 y: f32,
-                // 保存可选窗口放置方向；None 保留 frame-relative 兼容语义。
+                /// 可选窗口放置方向；`None` 保留 frame 相对兼容语义。
                 placement: Option<Placement>,
+                /// 浮动按钮是否在父布局中保留占位空间。
                 reserve_layout_space: bool,
             },
+            /// 浮动按钮组的成员数量、触发方式与展开状态快照。
             FloatButtonGroup {
+                /// 按钮组登记的浮动按钮数量。
                 button_count: usize,
+                /// 按钮组展开使用的触发方式。
                 trigger: TriggerMode,
+                /// 按钮组当前是否展开。
                 expanded: bool,
             },
             // 反馈 capability 关闭时同步收缩警告提示快照变体。
             #[cfg(feature = "feedback")]
+            /// 警告提示的内容、级别、图标与关闭能力快照。
             Alert {
+                /// 警告提示的主要消息。
                 message: String,
+                /// 警告提示的补充说明。
                 description: String,
+                /// 警告提示采用的语义状态级别。
                 type_: StatusLevel,
+                /// 警告提示是否允许关闭。
                 closable: bool,
+                /// 警告提示是否显示状态图标。
                 show_icon: bool,
             },
             // 反馈 capability 关闭时同步收缩全局消息快照变体。
             #[cfg(feature = "feedback")]
+            /// 全局消息队列的位置与当前内容快照。
             Message {
+                /// 全局消息队列使用的浮层方位。
                 placement: Placement,
+                /// 按队列顺序保存的消息内容。
                 contents: Vec<String>,
             },
             // 反馈 capability 关闭时同步收缩通知快照变体。
             #[cfg(feature = "feedback")]
+            /// 通知队列的位置、标题与说明快照。
             Notification {
+                /// 通知队列使用的浮层方位。
                 placement: Placement,
+                /// 按通知顺序保存的标题。
                 titles: Vec<String>,
+                /// 与标题顺序对应的通知说明。
                 descriptions: Vec<String>,
             },
             // 反馈 capability 关闭时同步收缩进度条快照变体。
             #[cfg(feature = "feedback")]
+            /// 进度条的取值、归一化证据、颜色与几何快照。
             ProgressBar {
+                /// 归一化到零至一的当前进度。
                 progress: f32,
+                /// 进度值采用的声明输入模式。
                 mode: ProgressMode,
-                // 暴露动态输入是否经过安全归一化。
+                /// 动态输入是否经过安全归一化。
                 input_normalized: bool,
-                // 暴露动态输入的稳定归一化原因。
+                /// 动态输入发生归一化时的稳定原因。
                 normalization_reason: Option<ProgressNormalizationReason>,
+                /// 进度前景显式声明的颜色。
                 stroke_color: Option<Color>,
+                /// 进度轨道显式声明的颜色。
                 track_color: Option<Color>,
+                /// 线形进度条声明的高度。
                 height: f32,
+                /// 进度条声明的宽度。
                 width: f32,
+                /// 进度条端点是否使用圆角。
                 round: bool,
+                /// 进度条采用的线形或环形类型。
                 progress_type: ProgressType,
             },
             // 反馈 capability 关闭时同步收缩加载指示器快照变体。
             #[cfg(feature = "feedback")]
+            /// 加载指示器的尺寸、颜色、状态与包装模式快照。
             Spin {
+                /// 加载指示器采用的标准尺寸档位。
                 size: SpinSize,
+                /// 加载指示器显式声明的颜色。
                 color: Option<Color>,
+                /// 加载指示器当前是否旋转。
                 spinning: bool,
+                /// 加载状态旁显示的提示文字。
                 tip: String,
+                /// 指示器是否作为内容包装器工作。
                 wrapper_mode: bool,
             },
             // 反馈 capability 关闭时同步收缩文字提示快照变体。
             #[cfg(feature = "feedback")]
+            /// 文字提示的内容、方位、触发、样式与延迟状态快照。
             Tooltip {
+                /// 提示浮层显示的文字。
                 text: String,
+                /// 提示浮层相对锚点的方位。
                 placement: TooltipPlacement,
+                /// 提示浮层使用的触发方式。
                 trigger: TriggerMode,
+                /// 提示浮层显式声明的背景颜色。
                 bg_color: Option<Color>,
+                /// 提示浮层显式声明的文字颜色。
                 text_color: Option<Color>,
+                /// 提示浮层打开前的延迟毫秒数。
                 delay_ms: u32,
+                /// 当前延迟任务的运行时标识。
                 timer_id: u32,
+                /// 提示浮层是否显示指向箭头。
                 arrow: bool,
             },
             // 反馈 capability 关闭时同步收缩气泡卡片快照变体。
             #[cfg(feature = "feedback")]
+            /// 气泡卡片的标题、内容、方位、触发与可见状态快照。
             Popover {
+                /// 气泡卡片显示的标题。
                 title: String,
+                /// 气泡卡片显示的正文内容。
                 content: String,
+                /// 气泡卡片相对锚点的方位。
                 placement: PopoverPlacement,
+                /// 气泡卡片使用的触发方式。
                 trigger: PopoverTrigger,
+                /// 气泡卡片是否显示指向箭头。
                 arrow: bool,
+                /// 气泡卡片当前是否可见。
                 visible: bool,
             },
             // 反馈 capability 关闭时同步收缩气泡确认框快照变体。
             #[cfg(feature = "feedback")]
+            /// 气泡确认框的完整专属配置与运行状态快照。
             Popconfirm(SnapshotPopconfirm),
             // 反馈 capability 关闭时同步收缩对话框快照变体。
             #[cfg(feature = "feedback")]
+            /// 对话框的标题、尺寸、关闭策略与遮罩效果快照。
             Modal {
+                /// 对话框标题。
                 title: String,
+                /// 对话框当前是否打开。
                 open: bool,
+                /// 对话框声明的宽度。
                 width: f32,
+                /// 对话框声明的高度。
                 height: f32,
+                /// 对话框采用的标准尺寸档位。
                 modal_size: ControlSize,
+                /// 对话框是否显示关闭动作。
                 closable: bool,
+                /// 点击遮罩是否允许关闭对话框。
                 mask_closable: bool,
+                /// 对话框是否显示底部操作区。
                 footer_visible: bool,
+                /// 对话框是否在可用区域居中。
                 centered: bool,
+                /// 对话框是否作为受控浮层呈现。
                 overlay: bool,
-                // 保存声明式 Modal 的可选效果请求。
+                /// 声明式对话框请求的可选背景模糊效果。
                 backdrop_blur: Option<OverlayBackdropBlur>,
             },
             // 反馈 capability 关闭时同步收缩抽屉快照变体。
             #[cfg(feature = "feedback")]
+            /// 抽屉的标题、尺寸、方位、关闭策略与遮罩效果快照。
             Drawer {
+                /// 抽屉标题。
                 title: String,
+                /// 抽屉当前是否打开。
                 open: bool,
+                /// 抽屉声明的宽度。
                 width: f32,
+                /// 抽屉声明的高度。
                 height: f32,
+                /// 抽屉采用的标准尺寸档位。
                 drawer_size: ControlSize,
+                /// 抽屉从窗口哪一侧展开。
                 placement: DrawerPlacement,
+                /// 抽屉是否显示关闭动作。
                 closable: bool,
+                /// 点击遮罩是否允许关闭抽屉。
                 mask_closable: bool,
+                /// 抽屉是否显示遮罩。
                 mask: bool,
-                // 保存声明式 Drawer 的可选效果请求。
+                /// 声明式抽屉请求的可选背景模糊效果。
                 backdrop_blur: Option<OverlayBackdropBlur>,
+                /// 抽屉是否显示底部操作区。
                 footer_visible: bool,
+                /// 抽屉标题区显示的额外文字。
                 extra: String,
             },
         }
