@@ -62,4 +62,8 @@ fn chart_advanced_config_compiles_against_public_uix_api() {
     let _references: ViewNode = crate::uix!(
         r#"<AreaChart data={[LineData('Q1', 72)]} referenceLines={chart_references} />"#
     );
+    // 提供可克隆的无捕获仪表盘格式化器。
+    let gauge_format = |value: f32| format!("{value:.1}%");
+    // 展开格式化器并要求公开 Gauge builder 完成类型检查。
+    let _gauge: ViewNode = crate::uix!(r#"<Gauge value="68" format={gauge_format} />"#);
 }

@@ -138,6 +138,8 @@ fn generate_gauge_start(
             "gaugeType",
             "pointerWidth",
             "pointerColor",
+            // 登记类型化中心文本格式化器。
+            "format",
             "title",
             "subtitle",
             "responsive",
@@ -241,6 +243,25 @@ fn apply_chart_attribute(
         let color = generate_expression(&expression.expression, None)?;
         // 应用公开指针颜色构建器。
         return Ok(quote! { (#widget).pointer_color(#color) });
+    }
+    // 格式化器要求类型化 Rust 表达式并由声明快照克隆。
+    if attribute.name == "format" {
+        // 字符串不能伪装成可调用格式化器。
+        let AttributeValue::Expression(expression) = &attribute.value else {
+            // 返回类型化格式化器诊断。
+            return Err(Diagnostic::new(
+                // 指向非法格式化器属性。
+                attribute.span,
+                // 说明目标契约。
+                "Gauge format 必须是类型化格式化器表达式",
+                // 给出公开 Rust 函数边界。
+                "使用 format={formatter}，由 Rust 核对 Fn(f32) -> String + Clone + 'static",
+            ));
+        };
+        // 生成受限格式化器表达式。
+        let formatter = generate_expression(&expression.expression, None)?;
+        // 克隆声明快照后交给运行时图表模块持有。
+        return Ok(quote! { (#widget).format((#formatter).clone()) });
     }
     // 其余专有属性都映射到 f32 构建器。
     let value = f32_value(attribute)?;
