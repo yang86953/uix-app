@@ -5,6 +5,7 @@ pub mod button_group;
 pub mod divider;
 pub mod float_button;
 pub mod icon;
+pub mod icon_map;
 pub mod label;
 pub mod space;
 pub mod typography;
