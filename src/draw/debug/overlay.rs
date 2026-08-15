@@ -7,14 +7,17 @@ use crate::draw::renderer::{InvalidationSource, RenderMetrics};
 
 /// 调试渲染服务。
 pub struct DebugRenderService {
+    /// 是否启用调试边框、标签和遥测 HUD。
     pub debug_mode: bool,
 }
 
 impl DebugRenderService {
+    /// 使用指定启用状态创建调试绘制服务。
     pub fn new(debug_mode: bool) -> Self {
         Self { debug_mode }
     }
 
+    /// 更新调试绘制启用状态。
     pub fn set_debug_mode(&mut self, mode: bool) {
         self.debug_mode = mode;
     }
@@ -93,10 +96,15 @@ impl DebugRenderService {
 
     /// HUD 面板几何（与 `telemetry_hud_lines` / 文字绘制共用，避免错位）。
     pub const HUD_PANEL_W: f32 = 228.0;
+    /// HUD 面板高度。
     pub const HUD_PANEL_H: f32 = 118.0;
+    /// HUD 面板相对表面边缘的外边距。
     pub const HUD_MARGIN: f32 = 6.0;
+    /// HUD 内容的水平内边距。
     pub const HUD_PAD_X: f32 = 10.0;
+    /// HUD 相邻遥测行的垂直间距。
     pub const HUD_LINE_H: f32 = 14.0;
+    /// HUD 首行文本相对面板顶部的偏移。
     pub const HUD_TEXT_TOP: f32 = 12.0;
 
     /// Debug overlay：右上角显示度量计数与 invalidation 来源。
