@@ -22,8 +22,8 @@ pub(crate) fn with_clipboard<R>(
     operation: impl FnOnce() -> R,
 ) -> R {
     let pointer = NonNull::from(clipboard);
-    // `thread_local!` 的存储类型要求 trait object 为 `'static`。这里只擦除
-    // 指针上的借用期；下方作用域守卫保证它在原借用结束前被移除。
+    // SAFETY: `thread_local!` 的存储类型要求 trait object 为 `'static`。这里只擦除
+    // 指针上的借用期；下方作用域守卫保证它在原借用结束前被移除，且指针不会跨线程。
     let pointer: NonNull<dyn IClipboard> = unsafe { std::mem::transmute(pointer) };
     let previous = CURRENT.with(|slot| slot.replace(Some(pointer)));
     let _scope = ClipboardScope {
