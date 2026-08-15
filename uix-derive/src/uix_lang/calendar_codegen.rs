@@ -167,6 +167,25 @@ pub(crate) fn generate_calendar(element: &Element) -> Result<TokenStream, Diagno
         // 把窄日期策略交给 Calendar 运行时持有。
         widget = quote! { (#widget).disabled_date(#predicate) };
     }
+    // 可选日期格工厂映射到运行时已经拥有的真实 View 子树入口。
+    if let Some(attribute) = find_attribute(element, "dateCell") {
+        // 字面量不能提供带日期上下文的类型化 View 工厂。
+        let AttributeValue::Expression(expression) = &attribute.value else {
+            // 返回工厂形状诊断。
+            return Err(Diagnostic::new(
+                // 指向非法日期格工厂属性。
+                attribute.span,
+                // 说明公开运行时函数契约。
+                "Calendar dateCell 必须是 Fn(Date, CalendarCellInfo) -> View 表达式",
+                // 给出规范函数引用写法。
+                "使用 dateCell={calendar_date_cell}",
+            ));
+        };
+        // 生成受限工厂表达式并保留 Rust 对输入与返回类型的检查。
+        let factory = generate_expression(&expression.expression, None)?;
+        // 让 Calendar 运行时继续物化、布局和协调每个日期格子树。
+        widget = quote! { (#widget).date_cell(#factory) };
+    }
 
     // 先物化公开叶节点，Change 处理器与公共样式由 View 契约拥有。
     let mut view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
@@ -220,6 +239,8 @@ pub(crate) fn generate_calendar(element: &Element) -> Result<TokenStream, Diagno
             "events",
             // 消费禁用日期策略。
             "disabledDate",
+            // 消费类型化日期格 View 工厂。
+            "dateCell",
             // 消费统一日期变化事件。
             "@change",
         ],
