@@ -11,7 +11,7 @@ license-file = "LICENSE"
 # 内部 crate 使用与产品定位一致且不泄露私有仓库位置的稳定描述。
 description = "UIX cross-platform native app framework for authorized internal use"
 # 有意省略 documentation/homepage/repository 可选字段（Cargo 警告为受控事实）：
-# 仓库位于内网 SSH 地址，写入 .crate 会泄露内网信息；ui-x.dev 主页可达性未闭合。
+# 仓库位于内网 SSH 地址，写入 .crate 会泄露内网信息；当前尚未指定获授权的公开主页。
 # 决策见 Vikunja 任务 #1911（选项 A：接受警告）。
 
 [profile.dev]
