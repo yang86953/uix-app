@@ -4,7 +4,7 @@ use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::quote;
 
 // 引入结构化诊断与样式属性。
-use super::{Diagnostic, StyleProperty};
+use super::{AnimationPropertyKind, Diagnostic, StyleHashKind, StyleProperty};
 // 引入闭合设计 token 的类型化引用生成入口。
 use super::theme_token_codegen::{color_token_reference, number_token_reference};
 
@@ -17,6 +17,101 @@ pub(super) enum NumberRule {
     NonNegative,
     // 只接受零到一之间的有限数值。
     UnitInterval,
+}
+
+// 生成首批 animation 数值字段的 f32 值令牌。
+pub(super) fn animation_f32_value(
+    // 接收闭合动画字段类型。
+    kind: AnimationPropertyKind,
+    // 接收基础值或关键帧值。
+    property: &StyleProperty,
+) -> Result<TokenStream, Diagnostic> {
+    // 按字段范围规则复用现有样式数值解析。
+    match kind {
+        // 宽度只接受非 auto 的非负 px 或数值。
+        AnimationPropertyKind::Width => animation_dimension_value(property),
+        // 高度只接受非 auto 的非负 px 或数值。
+        AnimationPropertyKind::Height => animation_dimension_value(property),
+        // 圆角只接受非负数值。
+        AnimationPropertyKind::BorderRadius => number_value(property, NumberRule::NonNegative),
+        // 透明度只接受零到一闭区间。
+        AnimationPropertyKind::Opacity => number_value(property, NumberRule::UnitInterval),
+        // 颜色字段由专用生成器处理。
+        AnimationPropertyKind::Color | AnimationPropertyKind::BackgroundColor => {
+            // 返回内部字段类型错配诊断。
+            Err(value_diagnostic(
+                // 指向实际属性。
+                property,
+                // 陈述失败原因。
+                "颜色关键帧不能按 f32 生成",
+                // 指向内部映射修复。
+                "使用 animation_color_value 生成颜色字段",
+            ))
+        }
+    }
+}
+
+// 生成 animation 颜色字段的具体 Color 值令牌。
+pub(super) fn animation_color_value(
+    // 接收基础值或关键帧值。
+    property: &StyleProperty,
+) -> Result<TokenStream, Diagnostic> {
+    // 语义主题引用在 View 构建期没有 WidgetTree 最终 token 快照，不能伪装插值。
+    if property
+        // 遍历值中的哈希片段。
+        .value
+        .hashes
+        // 借用迭代器。
+        .iter()
+        // 查找主题引用。
+        .any(|hash| matches!(hash.kind, StyleHashKind::ThemeReference(_)))
+    {
+        // 返回主题颜色动画诊断。
+        return Err(value_diagnostic(
+            // 指向完整颜色属性。
+            property,
+            // 陈述失败原因。
+            "关键帧颜色暂不支持主题 token 引用",
+            // 给出可插值写法。
+            "在 @keyframes 与对应基础样式中使用十六进制、rgb 或 rgba 具体颜色",
+        ));
+    }
+    // 复用完整颜色语法解析 RGBA 通道。
+    let (red, green, blue, alpha) = parse_color(&property.value.source, property)?;
+    // 生成可直接由 Animated<Color> 插值的具体颜色。
+    Ok(quote! {
+        ::uix::prelude::Color::from_rgba(#red, #green, #blue, #alpha)
+    })
+}
+
+// 解析 animation 中不允许 auto 或百分比的固定尺寸。
+fn animation_dimension_value(property: &StyleProperty) -> Result<TokenStream, Diagnostic> {
+    // auto 没有可插值的确定数值端点。
+    if property.value.source == "auto" {
+        // 返回固定尺寸诊断。
+        return Err(value_diagnostic(
+            // 指向完整属性。
+            property,
+            // 陈述失败原因。
+            "关键帧尺寸不支持 auto",
+            // 给出数值写法。
+            "使用有限非负 px 或无单位数值",
+        ));
+    }
+    // 百分比需要父布局 used-value，当前 typed Animated 无法脱离布局解析。
+    if property.value.source.ends_with('%') {
+        // 返回百分比诊断。
+        return Err(value_diagnostic(
+            // 指向完整属性。
+            property,
+            // 陈述失败原因。
+            "关键帧尺寸暂不支持百分比",
+            // 给出数值写法。
+            "使用有限非负 px 或无单位数值",
+        ));
+    }
+    // 复用非负长度解析。
+    parse_length(&property.value.source, property)
 }
 
 // 生成普通数值字段更新。
@@ -830,10 +925,10 @@ pub(super) fn cursor_value(property: &StyleProperty) -> Result<TokenStream, Diag
     }
 }
 
-// 判断属性是否由文档明确标记为规划中。
+// 判断属性是否仍由文档明确标记为规划中。
 pub(super) fn is_planned_property(name: &str) -> bool {
-    // 匹配样式参考中的规划中矩阵。
-    matches!(name, "animation" | "transition")
+    // animation 已由独立降级阶段消费，普通样式生成器只需保留 transition 占位。
+    matches!(name, "transition")
 }
 
 // 构造指向样式值的统一诊断。

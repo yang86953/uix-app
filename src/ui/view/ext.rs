@@ -140,6 +140,23 @@ pub trait StyleExt: Into<ViewNode> + Sized {
         self.into().color(color)
     }
 
+    /// 设置背景颜色。
+    fn background_color(self, color: impl Into<ColorValue>) -> ViewNode {
+        // 委托 ViewNode 保存背景色值。
+        self.into().background_color(color)
+    }
+
+    /// 绑定动画背景颜色。
+    fn background_color_animated(
+        // 消费当前 builder 或节点。
+        self,
+        // 借用共享动画源。
+        color: &crate::ui::animation::Animated<Color>,
+    ) -> ViewNode {
+        // 委托 ViewNode 读取当前帧背景色。
+        self.into().background_color_animated(color)
+    }
+
     /// 设置字体大小令牌。
     fn font_size(self, size: impl Into<TypographyToken>) -> ViewNode {
         self.into().font_size(size)

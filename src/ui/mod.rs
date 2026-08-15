@@ -95,7 +95,8 @@ pub use crate::platform::windowing::{
 pub use animation::traits::Animatable;
 pub use animation::{
     Animated, Animation, AnimationConfig, AnimationGroup, AnimationGroupError, AnimationGroupItem,
-    Easing, Keyframe, KeyframeAnimation, KeyframeError, Spring, SpringAnimation, Transition,
+    Easing, Keyframe, KeyframeAnimation, KeyframeDirection, KeyframeError, KeyframeFillMode,
+    KeyframePlayback, Spring, SpringAnimation, Transition,
 };
 pub(crate) use component::children;
 pub use component::clipboard::{copy_to_clipboard, read_text_from_clipboard};

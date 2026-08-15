@@ -96,7 +96,8 @@ pub use crate::ui::{
 pub use crate::ui::window_controls;
 pub use crate::ui::{
     Animated, Animation, AnimationConfig, AnimationGroup, AnimationGroupError, AnimationGroupItem,
-    Easing, Keyframe, KeyframeAnimation, KeyframeError, Spring, SpringAnimation, Transition,
+    Easing, Keyframe, KeyframeAnimation, KeyframeDirection, KeyframeError, KeyframeFillMode,
+    KeyframePlayback, Spring, SpringAnimation, Transition,
 };
 // 表格 capability 启用时才在 prelude 暴露专属快照列模型。
 pub use crate::Display;

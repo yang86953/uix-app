@@ -54,6 +54,118 @@ pub(crate) enum ComponentScopeMarker {
     DynamicStyle(DynamicStyleBinding),
     // 保存自动状态伪类的叠加样式与既有事实读取。
     PseudoStyle(PseudoStyleBinding),
+    // 保存静态 animation 声明的持久化播放绑定。
+    Animation(AnimationBinding),
+}
+
+// 保存一个元素 animation 声明的运行时作用域与类型化关键帧。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AnimationBinding {
+    // 保存最近组件或文档根状态作用域名称。
+    pub(crate) component_scope_name: String,
+    // 保存节点类型与静态位置形成的子作用域声明标识。
+    pub(crate) declaration_id: u64,
+    // 保存当前节点所属最近 For 实例路径。
+    pub(crate) instance_path_name: Option<String>,
+    // 保存 animation 简写解析出的完整播放配置。
+    pub(crate) playback: AnimationPlayback,
+    // 保存按支持矩阵确定顺序排列的属性关键帧。
+    pub(crate) properties: Vec<AnimationPropertyBinding>,
+}
+
+// 保存 animation 简写的确定性播放配置。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AnimationPlayback {
+    // 保存单轮时长的微秒整数。
+    pub(crate) duration_micros: u64,
+    // 保存启动延迟的微秒整数。
+    pub(crate) delay_micros: u64,
+    // 保存有限总轮数；None 表示 infinite。
+    pub(crate) iterations: Option<u64>,
+    // 保存统一片段缓动函数。
+    pub(crate) easing: AnimationEasing,
+    // 保存每轮方向。
+    pub(crate) direction: AnimationDirection,
+    // 保存延迟期与完成后的填充模式。
+    pub(crate) fill_mode: AnimationFillMode,
+}
+
+// 保存 animation 支持的闭合缓动函数集合。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AnimationEasing {
+    // 保存线性插值。
+    Linear,
+    // 保存 CSS 默认 ease 曲线。
+    Ease,
+    // 保存缓入曲线。
+    EaseIn,
+    // 保存缓出曲线。
+    EaseOut,
+    // 保存缓入缓出曲线。
+    EaseInOut,
+}
+
+// 保存 animation 支持的闭合方向集合。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AnimationDirection {
+    // 每轮正向播放。
+    Normal,
+    // 每轮倒向播放。
+    Reverse,
+    // 从正向开始交替播放。
+    Alternate,
+    // 从倒向开始交替播放。
+    AlternateReverse,
+}
+
+// 保存 animation 支持的闭合填充模式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AnimationFillMode {
+    // 延迟期与完成后都恢复基础值。
+    None,
+    // 完成后保留终值。
+    Forwards,
+    // 延迟期显示首帧值。
+    Backwards,
+    // 同时应用 backwards 与 forwards。
+    Both,
+}
+
+// 保存一个可动画 Style 字段的基础值与有序关键帧。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AnimationPropertyBinding {
+    // 保存闭合可动画字段类型。
+    pub(crate) kind: AnimationPropertyKind,
+    // 保存 fill-mode none/backwards 需要恢复的基础值。
+    pub(crate) baseline: StyleProperty,
+    // 保存仅包含当前字段的关键帧序列。
+    pub(crate) frames: Vec<AnimationPropertyFrame>,
+}
+
+// 保存单个字段在一个偏移处的类型化前置值。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AnimationPropertyFrame {
+    // 保存零到一百万闭区间内的时间偏移。
+    pub(crate) offset_millionths: u32,
+    // 保存待由字段专用生成器解析的样式值。
+    pub(crate) property: StyleProperty,
+}
+
+// 保存首批与现有 Animated View 绑定对应的 UIX 样式字段。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum AnimationPropertyKind {
+    // 显式宽度。
+    Width,
+    // 显式高度。
+    Height,
+    // 统一圆角半径。
+    BorderRadius,
+    // 节点透明度。
+    Opacity,
+    // 前景或文本颜色。
+    Color,
+    // 普通背景颜色。
+    BackgroundColor,
 }
 
 // 保存一个元素的状态伪类叠加元数据。
