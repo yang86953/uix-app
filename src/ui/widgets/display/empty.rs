@@ -112,6 +112,7 @@ impl Default for Empty {
 }
 
 impl Empty {
+    /// 创建不带说明文字和视觉资源的空状态组件。
     pub fn new() -> Self {
         Self {
             description: String::new(),
@@ -119,14 +120,17 @@ impl Empty {
             image: String::new(),
         }
     }
+    /// 设置空状态的说明文字。
     pub fn description(mut self, d: impl Into<String>) -> Self {
         self.description = d.into();
         self
     }
+    /// 设置空状态使用的图标名称。
     pub fn icon(mut self, name: impl Into<String>) -> Self {
         self.icon_name = name.into();
         self
     }
+    /// 设置优先于图标展示的图片资源名称。
     pub fn image(mut self, name: impl Into<String>) -> Self {
         self.image = name.into();
         self

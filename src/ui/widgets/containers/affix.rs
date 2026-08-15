@@ -137,6 +137,7 @@ component! {
 }
 
 impl Affix {
+    /// 创建使用指定视口顶部偏移量的吸顶容器。
     pub fn new(offset_top: f32) -> Self {
         Self {
             children: WidgetChildren::new(),
@@ -171,16 +172,19 @@ impl Affix {
         self.refresh_affixed();
     }
 
+    /// 返回子树当前是否处于吸顶状态。
     pub fn is_affixed(&self) -> bool {
         self.affixed.get()
     }
 
+    /// 设置吸顶状态下相对视口顶部的偏移量。
     pub fn offset_top(mut self, offset_top: f32) -> Self {
         self.offset_top = Self::normalize_axis(offset_top);
         self.refresh_affixed();
         self
     }
 
+    /// 返回容器当前采用的纵向滚动位置。
     pub fn current_scroll_y(&self) -> f32 {
         self.scroll_y
     }
