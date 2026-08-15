@@ -225,6 +225,9 @@ mod uix_lang_focus_trap_consumer_tests;
 // 隔离 Image 命名状态 View 的公开 API 编译测试。
 #[cfg(test)]
 mod uix_lang_image_slots_consumer_tests;
+// 隔离 List 边框与尺寸配置的公开 API 编译测试。
+#[cfg(test)]
+mod uix_lang_list_configuration_consumer_tests;
 // 隔离 Popover 完整配置与受控状态的公开 API 编译测试。
 #[cfg(test)]
 mod uix_lang_popover_consumer_tests;
