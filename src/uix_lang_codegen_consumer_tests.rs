@@ -104,6 +104,38 @@ fn generated_view_compiles_against_public_uix_api() {
     );
 }
 
+// 验证声明式关键帧动画在真实公开宏消费者中通过类型检查。
+#[test]
+fn declarative_keyframe_animation_compiles_against_public_uix_api() {
+    // 展开六类首批可动画字段与完整播放简写。
+    let _view: ViewNode = crate::uix!(
+        r#"
+        @keyframes reveal {
+          from {
+            width: 24px;
+            height: 32px;
+            borderRadius: 2;
+            opacity: 0;
+            color: rgb(20, 30, 40);
+            backgroundColor: rgba(10, 20, 30, 0.5);
+          }
+          to {
+            width: 80px;
+            height: 96px;
+            borderRadius: 16;
+            opacity: 1;
+            color: rgb(240, 240, 240);
+            backgroundColor: rgb(30, 40, 50);
+          }
+        }
+        revealCard {
+          animation: reveal 600ms ease-in-out 50ms 2 alternate both;
+        }
+        <Text class="revealCard">声明式动画</Text>
+        "#
+    );
+}
+
 // 验证 crate 根与 prelude 导出的公开 uix! 内嵌及文件入口。
 #[test]
 fn public_uix_macro_compiles_inline_and_file_entries() {

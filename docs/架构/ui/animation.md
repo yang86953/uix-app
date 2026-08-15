@@ -16,6 +16,7 @@
 | `Easing` | enum | 线性、二/三/四次、Back、Bounce、Elastic、Bezier |
 | `Spring` / `SpringAnimation<T>` | struct | 解析式弹簧采样与静止判定 |
 | `Keyframe` / `KeyframeAnimation<T>` | struct | 有序关键帧和分段 easing |
+| `KeyframePlayback` | struct | delay、有限/无限轮次、方向与填充模式 |
 | `AnimationConfig` / `TransitionPlayer` | struct | fade/slide/zoom 的 enter/leave 播放 |
 | `AnimationGroup` / `AnimationGroupItem` | struct | parallel/sequence/stagger 的异构 source 编排 |
 | `WidgetAnimation` | trait | 组件自身逐帧能力 |
@@ -24,6 +25,13 @@
 
 - `Animation<T>`、`SpringAnimation<T>`、`KeyframeAnimation<T>` 是纯播放器；调用方传入 `dt`。
 - `Animated<T>` 把播放器结果发布到 State 并以稳定 source ID 登记到所属窗口；View 的 animated style 读取该值并沿普通 reconcile/paint 分类失效。
+
+## UIX 声明降低
+
+- `uix-derive` 拥有 `@keyframes`、固定位置 `animation` 简写和首批字段矩阵的编译期验证；它只生成 typed `Animated<T>`、`Keyframe<T>` 与 `KeyframePlayback`，不拥有时钟。
+- 每个动画节点从最近文档根或 `Component` 作用域派生私有子作用域，各字段使用稳定编号保存 `State<Animated<T>>`；`For` 实例路径进入身份键，同身份 reconcile 复用 source。
+- View 的 `*_animated` 方法是取值适配器，不创建播放器或第二套调度器；`.value()` 把 source 交给既有窗口捕获与活动源登记。
+- 基础静态样式提供 fill-mode 恢复值。伪类与 `setStyle` 不得创建竞争播放生命周期，编译器给出定向 `transition` 诊断。
 
 ## 帧驱动
 
