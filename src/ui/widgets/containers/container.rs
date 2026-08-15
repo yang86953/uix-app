@@ -516,6 +516,10 @@ mod tests {
     use crate::ui::WidgetLayout;
     // 导入调用子树裁剪契约所需的渲染 trait。
     use crate::ui::WidgetRender;
+    // 导入公开声明式样式扩展以验证完整阴影桥接。
+    use crate::ui::StyleExt;
+    // 导入声明视图展开为真实组件节点所需的转换接口。
+    use crate::ui::IntoWidgetNode;
 
     // 验证内容缓存包含子项尾侧 margin。
     #[test]
@@ -571,5 +575,33 @@ mod tests {
             // 子树不应取得裁剪矩形。
             None
         );
+    }
+
+    // 验证 StyleExt 完整阴影入口不会丢失横纵偏移。
+    #[test]
+    fn style_ext_box_shadow_preserves_full_definition() {
+        // 构造具有非零双轴偏移的阴影定义。
+        let shadow = BoxShadowDef::new(
+            // 使用确定 RGBA 颜色便于精确比较。
+            crate::draw::Color::from_rgba(10, 20, 30, 40),
+            // 保存模糊半径。
+            8.0,
+            // 保存水平负偏移。
+            -2.0,
+            // 保存垂直正偏移。
+            4.0,
+        );
+        // 使用公开 column 与 StyleExt 构造声明视图并完成适配展开。
+        let node = crate::ui::column(()).box_shadow(Some(shadow)).into_node();
+        // 读取展开后的底层 Container 完整样式快照。
+        match node.widget.snapshot_fields() {
+            // 检查阴影定义一一保留。
+            SnapshotFields::Container { style } => {
+                // 快照必须等于输入的完整定义。
+                assert_eq!(style.box_shadow, Some(shadow));
+            }
+            // 其他组件类型表示公开 column 契约被破坏。
+            _ => panic!("column 必须物化 Container 节点"),
+        }
     }
 }
