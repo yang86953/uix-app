@@ -6,37 +6,45 @@ use crate::draw::backend::DamageRegion;
 /// 帧渲染结果。
 #[derive(Debug, Clone, PartialEq)]
 pub enum RenderOutcome {
-    /// 零帧开销（无需呈现）
+    /// 零帧开销（无需呈现）。
     Idle,
     /// 已渲染，需呈现（多矩形损伤）。
     /// 录制目标已就绪；所带区域是本轮实际清除/裁剪区域，调用方必须至少重绘该区域。
     /// 仅可由 `begin_frame` 返回，不表示 swapchain 或外部 presenter 已消费此帧。
     FrameReady(DamageRegion),
-    /// Recording is complete but an external platform presenter still owns
-    /// the one final submission. This is legal only as an `end_frame` result
-    /// for [`crate::draw::PresentationMode::ExternalPresenter`].
+    /// 录制已经完成，但外部平台 presenter 仍拥有唯一最终提交。
+    ///
+    /// 仅可作为 [`crate::draw::PresentationMode::ExternalPresenter`] 的
+    /// `end_frame` 结果。
     PresentPending(DamageRegion),
-    /// The sole final submission completed. This is legal only as an
-    /// `end_frame` result after an backend-managed presenter has consumed the
-    /// frame, or after the window session has completed an external present.
+    /// 唯一最终提交已经完成。
+    ///
+    /// 仅可作为 backend presenter 消费帧后的 `end_frame` 结果，或由窗口会话完成外部
+    /// present 后建立。
     Present(DamageRegion),
-    /// A typed graphics lifecycle failure.  The frame was not committed and
-    /// callers must retain invalidation for the recovery state machine.
+    /// 类型化图形生命周期失败；帧尚未提交，调用方必须为恢复状态机保留失效区域。
     Failed(GraphicsFailure),
 }
 
-/// Graphics failures that determine the permitted recovery path at a frame
-/// boundary.  The concrete platform error remains attached for diagnostics.
+/// 在帧边界决定允许恢复路径的图形失败分类。
+///
+/// 具体平台错误始终附带在分类中供诊断使用。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GraphicsFailure {
+    /// 当前呈现 surface 已失效，需要重建 surface 相关资源。
     SurfaceLost(Error),
+    /// 当前图形设备已失效，需要重建设备及其资源。
     DeviceLost(Error),
+    /// 图形内存或等价资源不足，不能继续提交当前帧。
     OutOfMemory(Error),
+    /// surface 当前被遮挡或暂时不可呈现。
     Occluded(Error),
+    /// 不属于已知图形恢复分类的失败。
     Other(Error),
 }
 
 impl GraphicsFailure {
+    /// 根据稳定错误码把具体错误归入图形恢复分类。
     pub fn from_error(error: Error) -> Self {
         match error.code() {
             Errc::GraphicsSurfaceLost => Self::SurfaceLost(error),
@@ -47,6 +55,7 @@ impl GraphicsFailure {
         }
     }
 
+    /// 返回分类携带的原始错误。
     pub fn error(&self) -> &Error {
         match self {
             Self::SurfaceLost(error)
