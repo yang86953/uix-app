@@ -11,7 +11,9 @@ use super::vec3::Vec3;
 /// 处于**模型空间**（model space），用于命中测试。
 #[derive(Debug, Clone, Copy)]
 pub struct Ray3D {
+    /// 射线在模型空间中的起点。
     pub origin: Vec3,
+    /// 射线从起点出发的方向向量。
     pub direction: Vec3,
 }
 
