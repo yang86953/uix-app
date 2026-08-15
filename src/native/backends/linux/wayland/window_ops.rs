@@ -413,6 +413,20 @@ impl WindowOps for WaylandWindowOps {
         Ok(())
     }
 
+    // 应用主动关闭与 compositor 关闭共用同一逐窗事实，由 Application System 执行 teardown。
+    fn os_request_close(&mut self) -> Result<()> {
+        // 事件队列依旧是 Wayland callback 与 owner thread 之间的唯一交付边界。
+        self.events
+            // 毒化恢复与 xdg_toplevel::Close callback 保持一致。
+            .lock()
+            // 关闭事实不因过往 panic 丢失，后续 pending failure 仍独立上报。
+            .unwrap_or_else(|error| error.into_inner())
+            // 保留原生回调的逐窗身份与统一 close 语义。
+            .push_back(UiEvent::close().for_window(self.window_id));
+        // 成功表示关闭意图已交付，不表示 surface 已被销毁。
+        Ok(())
+    }
+
     // 将当前 PointerDown 的一次性授权提交给 xdg_toplevel 交互移动协议。
     fn os_begin_move_drag(
         // 窗口操作只在本次同步调用期间借用自身状态。
