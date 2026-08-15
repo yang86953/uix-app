@@ -62,7 +62,7 @@ fn generates_container_visual_and_layout_shorthands() {
     // 构造覆盖确定关键字、静态数值与动态表达式的 Container。
     let tokens = generate(
         // 保留外部变量名以直接检查动态布尔和高度令牌。
-        r##"<Container alignSelf="center" bg="#112233" radius="8px" w="120px" h={panel_height} opacity="0.5" visible={shown} overflow="hidden"><Text>内容</Text></Container>"##,
+        r##"<Container alignSelf="center" bg="#112233" radius="8px" w="120px" h={panel_height} opacity="0.5" visible={shown} overflow="hidden" border="1px #d9d9d9" shadow="-2px 4px 8px rgba(0, 0, 0, 0.15)"><Text>内容</Text></Container>"##,
     )
     // 全部登记简写必须生成成功。
     .expect("Container 第一批简写应生成");
@@ -82,6 +82,21 @@ fn generates_container_visual_and_layout_shorthands() {
     assert!(tokens.contains("visible (shown)"));
     // hidden 必须生成显式子树裁剪。
     assert!(tokens.contains("clip_content (true)"));
+    // border 必须生成非负宽度与具体颜色值。
+    assert!(tokens.contains("border (1") && tokens.contains("217u8 , 217u8 , 217u8 , 255u8"));
+    // shadow 必须保留负横向与正纵向偏移。
+    assert!(
+        tokens.contains("box_shadow")
+            && tokens.contains("BoxShadowDef :: new")
+            && tokens.contains("8.0 , - 2.0 , 4.0"),
+        "{tokens}"
+    );
+    // none 必须显式清除 Container 阴影。
+    let none = generate(r#"<Container shadow="none" />"#)
+        // 明确清除语法必须生成成功。
+        .expect("Container shadow none 应生成");
+    // 清除阴影必须调用公开完整阴影入口并传入 None。
+    assert!(none.contains("box_shadow") && none.contains("Option :: None"));
 }
 
 // 验证 Container overflow 与内联样式共享显式裁剪契约。
@@ -130,6 +145,30 @@ fn rejects_invalid_container_shorthand_values() {
         .expect_err("未登记 alignSelf 必须失败");
     // 诊断必须保留实际关键字。
     assert!(align.message.contains("baseline"));
+    // 负边框宽度不得进入公开 View API。
+    let border = generate(r##"<Container border="-1px #d9d9d9" />"##)
+        // 提取非负长度诊断。
+        .expect_err("负 Container border 宽度必须失败");
+    // 诊断必须说明数值不能为负。
+    assert!(border.message.contains("不能为负"));
+    // 负模糊半径不得生成盒阴影定义。
+    let shadow = generate(r##"<Container shadow="0 2px -4px #000000" />"##)
+        // 提取非负模糊半径诊断。
+        .expect_err("负 Container shadow 模糊半径必须失败");
+    // 诊断必须说明数值不能为负。
+    assert!(shadow.message.contains("不能为负"));
+    // 动态复合阴影不得在编译器中猜测分词规则。
+    let dynamic = generate(r#"<Container shadow={card_shadow} />"#)
+        // 提取复合字面量形状诊断。
+        .expect_err("动态 Container shadow 必须失败");
+    // 建议必须指向规范样式或 Rust API。
+    assert!(dynamic.message.contains("编译期确定") && dynamic.suggestion.contains("Rust API"));
+    // 颜色名称不得绕过具体颜色语法边界。
+    let named = generate(r#"<Container border="1px red" />"#)
+        // 提取具体颜色语法诊断。
+        .expect_err("Container border 颜色名称必须失败");
+    // 建议必须列出具体颜色形态。
+    assert!(named.suggestion.contains("rgb") && named.suggestion.contains("十六进制"));
 }
 
 // 验证 Grid/Col 生成显式轨道与跨轨道样式。

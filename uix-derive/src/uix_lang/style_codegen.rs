@@ -33,6 +33,8 @@ use super::style_user_select_codegen::user_select_value;
 use super::style_cursor_codegen::cursor_value;
 // 引入样式值与字段映射辅助。
 use super::style_value_codegen::*;
+// 引入完整盒阴影字段的独立生成器。
+use super::style_shadow_codegen::box_shadow_field;
 
 // 把一个结构化内联 style 精确应用到既有 View 表达式。
 pub(crate) fn apply_inline_style(
