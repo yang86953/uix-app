@@ -115,6 +115,30 @@ impl Transform {
         }
     }
 
+    /// 创建二维旋转变换；正角度在屏幕坐标系中表现为顺时针旋转。
+    pub fn rotate(angle_radians: f32) -> Self {
+        // 同时计算正弦与余弦以保持同一参数的数值一致性。
+        let (sin, cos) = angle_radians.sin_cos();
+        // 按当前 3x2 行主序契约写入旋转基向量。
+        Self {
+            // 屏幕 Y 轴向下，因此标准正角度矩阵呈现顺时针视觉结果。
+            m: [cos, -sin, 0.0, sin, cos, 0.0],
+        }
+    }
+
+    /// 创建二维倾斜变换，两个参数分别控制 X 轴与 Y 轴倾斜角。
+    pub fn skew(x_angle_radians: f32, y_angle_radians: f32) -> Self {
+        // 把角度转换为仿射矩阵需要的切线系数。
+        let x_tangent = x_angle_radians.tan();
+        // 独立计算 Y 轴倾斜系数，允许只倾斜单轴。
+        let y_tangent = y_angle_radians.tan();
+        // 写入同时支持 skewX 与 skewY 的二维线性部分。
+        Self {
+            // X 输出读取 Y 值，Y 输出读取 X 值。
+            m: [1.0, x_tangent, 0.0, y_tangent, 1.0, 0.0],
+        }
+    }
+
     /// Matrix product `self * rhs`: `rhs` is applied first, then `self`.
     pub fn concat(self, rhs: Self) -> Self {
         let [a, b, tx, c, d, ty] = self.m;
