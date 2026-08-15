@@ -1,6 +1,7 @@
 use super::*;
 
 impl ScenePipeline {
+    /// 创建一个尚未记录场景帧的空管线。
     pub fn new() -> Self {
         Self {
             layer_tree: LayerTree::new(),
@@ -16,14 +17,17 @@ impl ScenePipeline {
         }
     }
 
+    /// 返回当前由场景同步得到的渲染对象树。
     pub fn render_object_tree(&self) -> &RenderObjectTree {
         &self.render_object_tree
     }
 
+    /// 返回当前用于合成的图层树。
     pub fn layer_tree(&self) -> &LayerTree {
         &self.layer_tree
     }
 
+    /// 返回当前图层树的可变引用。
     pub fn layer_tree_mut(&mut self) -> &mut LayerTree {
         &mut self.layer_tree
     }
