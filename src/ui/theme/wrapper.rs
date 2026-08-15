@@ -55,14 +55,17 @@ impl Theme {
         Self { provider }
     }
 
+    /// 创建内置 Ant Design 风格的亮色主题。
     pub fn antd_light() -> Self {
         Self::new(super::design_tokens::DesignTokens::antd_light())
     }
 
+    /// 创建内置 Ant Design 风格的暗色主题。
     pub fn antd_dark() -> Self {
         Self::new(super::design_tokens::DesignTokens::antd_dark())
     }
 
+    /// 返回当前主题使用的令牌提供器。
     pub fn tokens(&self) -> &dyn TokenProvider {
         &*self.provider
     }
@@ -71,6 +74,7 @@ impl Theme {
         self.provider.clone()
     }
 
+    /// 返回当前主题是否采用暗色模式。
     pub fn is_dark(&self) -> bool {
         ThemeTokens::is_dark(self.provider.as_ref())
     }
