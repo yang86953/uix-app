@@ -1,5 +1,5 @@
 // 引入文档解析与普通 View 生成入口。
-use super::{Diagnostic, generate_view, parse_document};
+use super::{generate_view, parse_document, Diagnostic};
 
 // 把 UIX 源码生成 Rust 令牌字符串快照。
 fn generate(source: &str) -> Result<String, Diagnostic> {
@@ -36,6 +36,25 @@ fn generates_controlled_menu_contract() {
     assert!(tokens.contains("width (240.0)"), "{tokens}");
 }
 
+// 验证 Menu inline 映射到运行时始终展开模式。
+#[test]
+fn generates_inline_menu_mode() {
+    // 生成同时声明 Inline 与 collapsible 的完整受控菜单。
+    let tokens = generate(
+        // 该组合必须由运行时统一解决展开呈现，不由生成器改写 openKeys。
+        "<Menu items={items} selectedKey={selected} openKeys={open} mode=\"inline\" collapsible />",
+    )
+    // 已登记模式必须成功生成。
+    .expect("Menu inline 应生成成功");
+    // 生成代码必须只映射公开枚举并保留原有折叠配置。
+    assert!(
+        // 同时锁定模式与配置，防止适配层复制展开状态。
+        tokens.contains("MenuMode :: Inline") && tokens.contains("collapsible (true)"),
+        // 失败时输出完整生成令牌。
+        "{tokens}"
+    );
+}
+
 // 验证 Menu 缺失必需受控属性时返回定位诊断。
 #[test]
 fn rejects_menu_without_required_state_contract() {
@@ -62,13 +81,17 @@ fn rejects_menu_without_required_state_contract() {
 // 验证非法方向和内容子树被编译期拒绝。
 #[test]
 fn rejects_invalid_menu_mode_and_children() {
-    // inline 不在首版文档关键字集合。
+    // 未登记的 stacked 不在文档关键字集合。
     let mode =
-        generate("<Menu items={items} selectedKey={selected} openKeys={open} mode=\"inline\" />")
+        generate("<Menu items={items} selectedKey={selected} openKeys={open} mode=\"stacked\" />")
             // 生成必须失败。
             .expect_err("非法 mode 必须失败");
     // 诊断必须列出允许模式。
-    assert!(mode.message.contains("vertical") && mode.message.contains("horizontal"));
+    assert!(
+        mode.message.contains("vertical")
+            && mode.message.contains("horizontal")
+            && mode.message.contains("inline")
+    );
     // Menu 数据树由 items 唯一拥有，子 View 不得被丢弃。
     let child = generate(
         "<Menu items={items} selectedKey={selected} openKeys={open}><Text>非法</Text></Menu>",

@@ -10,9 +10,9 @@ mod controlled;
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
-use crate::ui::SnapshotFields;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
+use crate::ui::SnapshotFields;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
 };
@@ -297,7 +297,8 @@ component! {
                             return EventResult::NotHandled;
                         }
                         self.select_key(key.clone());
-                        if self.collapsible && has_children {
+                        // Inline 始终展开完整子树，不允许折叠交互改写调用方 openKeys。
+                        if self.collapsible && self.mode != MenuMode::Inline && has_children {
                             self.toggle_open_key(&key);
                         }
                         self.hovered_idx.set(i);
@@ -575,7 +576,8 @@ impl Menu {
         visit(
             &self.items,
             &self.open_keys,
-            !self.collapsible,
+            // Inline 的固定展开语义优先于可折叠交互配置。
+            self.mode == MenuMode::Inline || !self.collapsible,
             0,
             &mut output,
         );
