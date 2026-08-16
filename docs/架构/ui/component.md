@@ -1,8 +1,17 @@
-# component 模块
+# component 模块（组件运行时框架）
 
 [← 返回架构索引](../../架构.md)
 
 > **接口**：声明 ui 系统的持久组件树、基础组件能力和树级运行态。依赖：[core/identity](../core/identity.md)、[core/geometry](../core/geometry.md)。导出：供 view、reactive、layout、event 等模块扩展的组件身份、树生命周期和阶段挂载点。
+>
+> **术语与命名（SMC-07 语义基线）**：「component」在本仓库代码与架构文档中只指 SMC
+> 三层中的 **Component**——单一职责、窄契约、可独立测试与替换的原子代码单位
+> （`WidgetComponent` 契约、`ComponentId` 身份、`ComponentHandle`、widgets 组件库与
+> uix-lang component 声明均属于该层）。**本模块是 ui System 的私有 Module**（组件运行时
+> 框架：WidgetTree / WidgetNode / 组件契约 / 管理器），目录名 `src/ui/component/` 与
+> SMC Component 层同名，是历史遗留歧义源（Vikunja #2380），规划改名为 `widget_runtime`；
+> 改名完成前，本文档统一称本模块为「组件运行时框架」，不得把本模块与 SMC Component
+> 层混同。模块边界与职责不受影响。
 >
 > **当前实现线索**：相关实现已收敛于 `src/ui/component/`（traits.rs、managers/ 及各 handle 文件）；重构后保持本模块边界稳定。
 
