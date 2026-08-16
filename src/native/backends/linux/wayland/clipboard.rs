@@ -26,6 +26,8 @@ use crate::native::windowing::shared::nonblocking_write::{
 };
 use crate::native::{Errc, Error, Result};
 
+// callback disposition 允许 data-source 在 Cancelled 后消费 registry owner。
+use super::compat::CallbackDisposition;
 use super::WaylandBackend;
 
 pub(crate) const CLIPBOARD_READ_BUDGET: usize = 64 * 1024;
@@ -329,6 +331,11 @@ impl WaylandBackend {
 
     // 关闭在途 clipboard I/O 与所有过期授权状态。
     pub(crate) fn shutdown_clipboard_io(&mut self) {
+        // 共享 owners 清理前先让 active data-source 停止接收 Send/Cancelled。
+        if let Some(source) = self.clipboard_source.take() {
+            // 只注销兼容 callback，不发送协议 destroy 请求。
+            source.clear_callback();
+        }
         // 第一把锁沿用 selection Component 的 ownership owner。
         let mut owns_clipboard = self
             // 访问 backend 共享 ownership 标志。
@@ -406,10 +413,12 @@ impl IClipboard for WaylandBackend {
             })?;
             *t = text.to_string();
         }
-        let Some(ref dm) = self.data_device_manager else {
+        // 克隆 manager handle，避免后续 active source 替换持有 self 字段借用。
+        let Some(dm) = self.data_device_manager.clone() else {
             return Ok(());
         };
-        let Some(ref dd) = self.data_device else {
+        // 克隆 data-device handle，selection 提交仍使用同一协议身份。
+        let Some(dd) = self.data_device.clone() else {
             return Ok(());
         };
         // 输入 serial owner 损坏时不得继续创建或提交 selection source。
@@ -434,41 +443,76 @@ impl IClipboard for WaylandBackend {
                 "WaylandBackend::set_text: no pointer or keyboard serial for selection",
             ));
         };
+        // 新 selection 建立前先注销并释放旧 active source callback owner。
+        if let Some(previous) = self.clipboard_source.take() {
+            // 迟到旧 Send/Cancelled 不得再修改当前 clipboard owners。
+            previous.clear_callback();
+        }
+        // 旧 owner 已失效后创建新 data-source 协议对象。
         let source = dm.create_data_source();
         source.offer("text/plain;charset=utf-8".to_string());
         let bytes = Arc::<[u8]>::from(text.as_bytes());
         let writes = Arc::clone(&self.clipboard_writes);
+        // Cancelled callback 只修改同一 backend 的 ownership 标志。
+        let owns_clipboard = Arc::clone(&self.owns_clipboard);
         let pending_failures = self.pending_failures.clone();
-        source.quick_assign(move |_, event, _| {
-            if let wl_data_source::Event::Send { mime_type: _, fd } = event {
-                match ClipboardWrite::from_event_fd(fd.into_raw_fd(), Arc::clone(&bytes)) {
-                    // 成功构造后，局部 ClipboardWrite 暂时独占协议 FD。
-                    Ok(write) => {
-                        // 只有健康发送队列才能接管本次 FD owner。
-                        let Ok(mut queued) = writes.lock() else {
-                            // 队列损坏必须交给 owner-thread failure source。
+        // data-source 需要按具体事件决定 callback owner 是否继续登记。
+        source.quick_assign_with_lifecycle(move |_, event, _| {
+            // Send 可重复而 Cancelled 是当前 source 的生命周期终点。
+            match event {
+                // 每个 Send 事件建立独立非阻塞 write owner。
+                wl_data_source::Event::Send { mime_type: _, fd } => {
+                    match ClipboardWrite::from_event_fd(fd.into_raw_fd(), Arc::clone(&bytes)) {
+                        // 成功构造后，局部 ClipboardWrite 暂时独占协议 FD。
+                        Ok(write) => {
+                            // 只有健康发送队列才能接管本次 FD owner。
+                            let Ok(mut queued) = writes.lock() else {
+                                // 队列损坏必须交给 owner-thread failure source。
+                                let _ = pending_failures.enqueue(Error::new(
+                                    // callback 无法提交 cursor 属于稳定 owner 状态错误。
+                                    Errc::InvalidState,
+                                    // 保留 data_source Send 的精确失败阶段。
+                                    "Wayland clipboard Send write queue mutex poisoned",
+                                ));
+                                // 返回时局部 write Drop，确保协议 FD 不泄漏。
+                                return CallbackDisposition::Keep;
+                            };
+                            // 健康队列正式接管非阻塞 ClipboardWrite owner。
+                            queued.push(write);
+                        }
+                        Err(error) => {
                             let _ = pending_failures.enqueue(Error::new(
-                                // callback 无法提交 cursor 属于稳定 owner 状态错误。
-                                Errc::InvalidState,
-                                // 保留 data_source Send 的精确失败阶段。
-                                "Wayland clipboard Send write queue mutex poisoned",
+                                Errc::IoError,
+                                format!("Wayland clipboard send setup failed: {error}"),
                             ));
-                            // 返回时局部 write Drop，确保协议 FD 不泄漏。
-                            return;
-                        };
-                        // 健康队列正式接管非阻塞 ClipboardWrite owner。
-                        queued.push(write);
+                        }
                     }
-                    Err(error) => {
-                        let _ = pending_failures.enqueue(Error::new(
-                            Errc::IoError,
-                            format!("Wayland clipboard send setup failed: {error}"),
-                        ));
-                    }
+                    // Send 完成后继续服务当前 selection 的后续读取请求。
+                    CallbackDisposition::Keep
                 }
+                // Cancelled 表示 compositor 不再使用当前 data-source。
+                wl_data_source::Event::Cancelled => {
+                    // ownership owner 健康时提交本地 selection 失效事实。
+                    if let Ok(mut owns) = owns_clipboard.lock() {
+                        // Cancelled 后不得继续声称拥有系统剪贴板。
+                        *owns = false;
+                    } else {
+                        // callback 无返回通道，poisoned owner 进入同一 pending source。
+                        enqueue_selection_state_failure(
+                            &pending_failures,
+                            "owns flag on Cancelled",
+                        );
+                    }
+                    // lifecycle adapter 消费 callback owner，禁止 dispatch 回插。
+                    CallbackDisposition::Remove
+                }
+                // Target/Action 等非终点事件保持 callback owner。
+                _ => CallbackDisposition::Keep,
             }
         });
         dd.set_selection(Some(&source), serial);
+        // selection 请求提交后才发布新的 active source owner。
+        self.clipboard_source = Some(source);
         if let Ok(mut owns) = self.owns_clipboard.lock() {
             *owns = true;
         }
