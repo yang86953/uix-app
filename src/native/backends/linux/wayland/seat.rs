@@ -8,7 +8,8 @@
 
 use std::sync::{Arc, Mutex};
 
-use wayland_client::protocol::{wl_keyboard, wl_pointer, wl_seat};
+// data-device 事件在 seat Adapter 中只做 DnD/Selection owner 路由。
+use wayland_client::protocol::{wl_data_device, wl_keyboard, wl_pointer, wl_seat};
 use wayland_client::{Proxy, WEnum};
 
 use super::compat::Main;
@@ -248,21 +249,65 @@ impl WaylandBackend {
             let clipboard_read = self.clipboard_read.clone();
             let clipboard_text = self.clipboard_text.clone();
             let owns_clipboard = self.owns_clipboard.clone();
+            // data-device callback 与窗口能力入口共享唯一文件拖放 Component。
+            let file_drop_state = self.file_drop_state.clone();
+            // Enter 使用既有 surface 路由表解析稳定 WindowId。
+            let surface_windows = self.surface_windows.clone();
             let pending_failures = self.pending_failures.clone();
-            dev.quick_assign(move |_, event, _| {
-                // seat callback 只把完整 data-device 事件转交 clipboard owner。
-                super::clipboard::handle_selection_event(
-                    // 转交协议事件，不在 seat Module 解释 selection 状态。
-                    event,
-                    // 转交本地 ownership owner。
-                    &owns_clipboard,
-                    // 转交 read FD owner。
-                    &clipboard_read,
-                    // 转交文本缓存 owner。
-                    &clipboard_text,
-                    // 转交同一 backend pending source。
-                    &pending_failures,
-                );
+            dev.quick_assign(move |data_device, event, _| {
+                // data-device Module 按协议事件种类路由到 DnD 或 Selection owner。
+                match event {
+                    // 新 offer 先注册 MIME/Action callback，等待后续 Enter 或 Selection 分类。
+                    wl_data_device::Event::DataOffer { id } => {
+                        // child Main 复用当前 data-device 的兼容上下文。
+                        super::file_drop::register_data_offer(
+                            // 传入 callback 当前协议 owner。
+                            data_device,
+                            // 转交 event-created child。
+                            id,
+                            // 转交文件拖放 Component。
+                            &file_drop_state,
+                            // 共享同一 failure source。
+                            &pending_failures,
+                        );
+                    }
+                    // Selection 从未分类 offer 中脱离后保持既有 clipboard 行为。
+                    wl_data_device::Event::Selection { id } => {
+                        // 清理 DnD offer callback，但不销毁 clipboard 即将读取的 proxy。
+                        super::file_drop::detach_selection_offer(
+                            // 只借用可选 offer 做 identity 匹配。
+                            id.as_ref(),
+                            // 访问唯一拖放 Component。
+                            &file_drop_state,
+                            // 状态失败进入既有 source。
+                            &pending_failures,
+                        );
+                        // Selection 继续由 clipboard Module 独占业务状态。
+                        super::clipboard::handle_selection_event(
+                            // 重建被匹配消费的 Selection 事件。
+                            wl_data_device::Event::Selection { id },
+                            // 转交本地 ownership owner。
+                            &owns_clipboard,
+                            // 转交 read FD owner。
+                            &clipboard_read,
+                            // 转交文本缓存 owner。
+                            &clipboard_text,
+                            // 转交同一 backend pending source。
+                            &pending_failures,
+                        );
+                    }
+                    // Enter/Motion/Leave/Drop 只进入文件拖放 Module。
+                    event => super::file_drop::handle_data_device_event(
+                        // 转交完整 DnD 事件。
+                        event,
+                        // 解析 surface 到窗口身份。
+                        &surface_windows,
+                        // 更新会话/transfer Component。
+                        &file_drop_state,
+                        // 共享 callback failure source。
+                        &pending_failures,
+                    ),
+                }
             });
             self.data_device = Some(dev);
         }

@@ -13,6 +13,14 @@ pub(crate) mod cursor;
 pub(crate) mod cursor_state;
 pub(crate) mod display;
 pub(crate) mod event_loop;
+// 文件拖放 Component 独占 data-offer、逐窗开关与 URI read 生命周期。
+pub(crate) mod file_drop;
+// URI 解析 Component 与协议/FD owner 解耦，可执行纯单元测试。
+pub(crate) mod file_drop_uri;
+// 窗口 Adapter 校验协议能力与逐窗生命周期。
+pub(crate) mod file_drop_window;
+// 纯逐窗注册表独占启用集合并提供可执行状态单测。
+pub(crate) mod file_drop_window_registry;
 // 原生 frame callback Component 独占 one-shot 请求消费与事件投递。
 pub(crate) mod frame_callback;
 // 输入代理生命周期模块把完整 capability 快照收敛为幂等边沿。
@@ -48,6 +56,8 @@ pub(crate) mod window_activation;
 // 逐窗 callback shutdown Component 独占 xdg-shell 回调注销顺序。
 pub(crate) mod window_callback_shutdown;
 pub(crate) mod window_ops;
+// wake-pipe Module 隔离 owner-thread 的非阻塞排空操作。
+pub(crate) mod wake_pipe;
 
 // ── 依赖 ────────────────────────────────────────────────────────
 use self::compat::{Main, ProxyContext, WaylandDispatchState};
@@ -158,6 +168,8 @@ pub(crate) struct WaylandBackend {
     pub(crate) owns_clipboard: Arc<Mutex<bool>>,
     pub(crate) clipboard_read: Arc<Mutex<Option<clipboard::ClipboardRead>>>,
     pub(crate) clipboard_writes: Arc<Mutex<Vec<clipboard::ClipboardWrite>>>,
+    // 独立 Component 共享逐窗文件拖放、offer 与 read owners。
+    pub(crate) file_drop_state: Arc<Mutex<file_drop::WaylandFileDropState>>,
     pub(crate) last_input_serial: Arc<Mutex<InputSerial>>,
     pub(crate) wake_read_fd: RawFd,
     pub(crate) wake_write_fd: RawFd,
@@ -359,6 +371,8 @@ impl WaylandBackend {
         let clipboard_text: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
         let owns_clipboard: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
         let clipboard_read = Arc::new(Mutex::new(None));
+        // 初始没有启用窗口、协议 offer 或在途 URI read。
+        let file_drop_state = Arc::new(Mutex::new(file_drop::WaylandFileDropState::default()));
         let last_pointer: Arc<Mutex<LastPointerState>> =
             Arc::new(Mutex::new(LastPointerState::default()));
         let (wake_read_fd, wake_write_fd) = Self::create_wake_pipe()?;
@@ -402,6 +416,8 @@ impl WaylandBackend {
             owns_clipboard,
             clipboard_read,
             clipboard_writes: Arc::new(Mutex::new(Vec::new())),
+            // 发布 backend 唯一的文件拖放状态 owner。
+            file_drop_state,
             last_input_serial: Arc::new(Mutex::new(InputSerial::default())),
             wake_read_fd,
             wake_write_fd,
@@ -425,6 +441,8 @@ impl Drop for WaylandBackend {
     fn drop(&mut self) {
         // 先失效独立 text-input callback，避免它借用随后关闭的 seat。
         self.shutdown_text_input();
+        // 文件拖放先于 data-device callback 注销释放 offer 与 pipe owners。
+        self.shutdown_file_drop();
         // 先拆除 seat 回调与输入代理，打断兼容回调表的强引用环。
         self.shutdown_seat_and_input();
         // 再释放 clipboard 在途 read/write FD 与过期授权状态。

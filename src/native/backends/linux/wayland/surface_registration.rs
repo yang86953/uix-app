@@ -124,6 +124,8 @@ impl Drop for WaylandWindowOps {
             // source 已关闭时不存在更高层 receiver，保持既有 fail-closed 语义。
             let _ = self.pending_failures.enqueue(error);
         }
+        // 独立 teardown Adapter 即使遇到 poisoned state 也释放逐窗拖放 owners。
+        super::file_drop_window::force_disable_window(&self.file_drop_state, self.window_id);
         // Drop 没有显式重试入口，必须始终释放逐窗 callback owners。
         self.shutdown_window_callbacks();
     }

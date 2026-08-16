@@ -123,8 +123,8 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         source = EVENT_LOOP.read_text(encoding="utf-8")
         # 限定 dispatch_polled 实现。
         dispatch_start = source.index("fn dispatch_polled")
-        # wake pipe drain helper 标记 poll 实现末尾。
-        dispatch_end = source.index("fn drain_wake_pipe", dispatch_start)
+        # 按键重复 helper 标记 poll 实现末尾。
+        dispatch_end = source.index("fn generate_key_repeats", dispatch_start)
         # 保存完整 poll 编排。
         dispatch = source[dispatch_start:dispatch_end]
         # 系统 poll 调用标记快照完成边界。
@@ -164,8 +164,8 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         source = EVENT_LOOP.read_text(encoding="utf-8")
         # 限定 dispatch_polled 调用方传播片段。
         dispatch_start = source.index("fn dispatch_polled")
-        # wake pipe helper 标记 poll 编排末尾。
-        dispatch_end = source.index("fn drain_wake_pipe", dispatch_start)
+        # 按键重复 helper 标记 poll 编排末尾。
+        dispatch_end = source.index("fn generate_key_repeats", dispatch_start)
         # 保存 poll completion 调用方。
         dispatch = source[dispatch_start:dispatch_end]
         # read completion 必须通过布尔通道失败即早退。
@@ -249,8 +249,8 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         source = EVENT_LOOP.read_text(encoding="utf-8")
         # 限定 dispatch_polled 调用方传播片段。
         dispatch_start = source.index("fn dispatch_polled")
-        # wake pipe helper 标记 poll 编排末尾。
-        dispatch_end = source.index("fn drain_wake_pipe", dispatch_start)
+        # 按键重复 helper 标记 poll 编排末尾。
+        dispatch_end = source.index("fn generate_key_repeats", dispatch_start)
         # 保存 poll completion 调用方。
         dispatch = source[dispatch_start:dispatch_end]
         # 生成失败必须显式终止本轮 dispatch。
