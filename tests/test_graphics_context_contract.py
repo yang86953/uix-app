@@ -617,6 +617,32 @@ class GraphicsContextContractTests(unittest.TestCase):
         # RecoveryDriver 必须观察 idle 前的 release 失败。
         self.assertIn("let result = self.engine.release_overlay_backdrop();", recovery)
 
+    # 校验生产 OpenGL context 的 Drop 不会静默吞掉 checked shutdown 失败。
+    def test_opengl_drop_reports_checked_shutdown_failures(self) -> None:
+        # 固定 EGL/WGL context、类型名与私有 shutdown 入口的对应关系。
+        adapters = (
+            # Linux EGL context 通过公开生命周期 trait 执行 checked shutdown。
+            ("egl.rs", "EglContext", "try_shutdown"),
+            # Windows WGL context 直接调用同一 owner 的 inherent shutdown。
+            ("wgl.rs", "WglContext", "shutdown_result"),
+        )
+        # 逐个验证两个生产 OpenGL adapter 的最终 Drop 诊断边界。
+        for filename, context_name, shutdown in adapters:
+            # 读取当前平台 context 的完整源码。
+            source = (
+                ROOT / f"src/native/presentation/graphics/opengl/platform/{filename}"
+            ).read_text(encoding="utf-8")
+            # 截取目标 context 的 Drop 实现之后的源码。
+            drop_body = source[source.index(f"impl Drop for {context_name}") :]
+            # Drop 必须显式观察既有 checked shutdown 结果。
+            self.assertIn(f"if let Err(error) = self.{shutdown}()", drop_body)
+            # 最终失败必须进入结构化错误日志。
+            self.assertIn("tracing::error!", drop_body)
+            # 日志必须保留 typed error 的稳定摘要。
+            self.assertIn("error.short_what()", drop_body)
+            # 静默丢弃结果的旧路径不得恢复。
+            self.assertNotIn(f"let _ = self.{shutdown}()", drop_body)
+
     # 校验 Vulkan owner shutdown 与 lost-device generation 契约。
     def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
         # 组合读取 Vulkan context 的拆分模块，以保持顺序审计语义。

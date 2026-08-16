@@ -659,6 +659,12 @@ impl WglContext {
 impl Drop for WglContext {
     fn drop(&mut self) {
         // Drop 直接调用 inherent shutdown，避免依赖已拆出的 trait impl。
-        let _ = self.shutdown_result();
+        if let Err(error) = self.shutdown_result() {
+            // 保留 adapter 身份和完整 typed error 摘要，供最终责任边界定位泄漏。
+            tracing::error!(
+                "WglContext: checked shutdown failed during Drop: {}",
+                error.short_what()
+            );
+        }
     }
 }
