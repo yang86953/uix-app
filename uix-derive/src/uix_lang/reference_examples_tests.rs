@@ -3,8 +3,8 @@ use std::fs;
 // 引入稳定路径类型。
 use std::path::{Path, PathBuf};
 
-// 引入与公开 uix! 一致的完整文档生成测试入口。
-use super::generate_test_document_view;
+// 引入与公开 uix!、uix_app! 一致的完整文档解析和生成测试入口。
+use super::{generate_document_app, generate_test_document_view, parse_document, Diagnostic};
 
 // 返回按路径排序的组件参考 Markdown 文件。
 fn reference_markdown_paths(reference_root: &Path) -> Vec<PathBuf> {
@@ -194,4 +194,75 @@ fn style_and_event_reference_examples_generate_as_documents() {
     }
     // 至少一个非组件参考示例实际进入完整生成路径。
     assert!(total_examples > 0, "没有验证任何样式或事件参考 UIX 示例");
+}
+
+// 为指南中的完整 App、普通 View 与阶段性 Component 片段选择对应生成入口。
+fn generate_guide_example(example: &str) -> Result<(), Diagnostic> {
+    // 仅声明 Component 的教程步骤缺少文档根，需要补无业务语义的稳定 View 根。
+    let document = if example.contains("<Component") && !example.contains("<App") {
+        // 保留全部声明并追加独立空容器，以验证组件声明的完整生成。
+        format!("{example}\n<Container />")
+    } else {
+        // 已经包含普通 View 或 App 根的示例保持原始契约。
+        example.to_owned()
+    };
+    // 先解析文档，以便依据真实根元素选择公开宏对应的生成入口。
+    let parsed = parse_document(&document)?;
+    // App 根必须经过 uix_app! 使用的完整 App builder 生成路径。
+    if parsed.root.name == "App" {
+        // 丢弃令牌文本，只保留结构化成功或诊断结果。
+        generate_document_app(&parsed).map(|_| ())
+    } else {
+        // 普通 View 与补根后的组件片段经过 uix! 使用的完整 View 生成路径。
+        generate_test_document_view(&document).map(|_| ())
+    }
+}
+
+// 验证快速开始与连续教程中的全部 UIX 示例持续通过对应完整生成。
+#[test]
+fn guide_examples_generate_through_public_entry_shapes() {
+    // 从过程宏 crate 定位仓库根目录。
+    let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    // 明确列出承担入门契约的两份权威指南。
+    let guide_paths = [
+        // 快速开始覆盖首个 View、计数器 App 及主题 App。
+        repository_root.join("docs/uix-lang/指南/快速开始.md"),
+        // 教程覆盖逐步 Component 片段与最终 App。
+        repository_root.join("docs/uix-lang/指南/教程.md"),
+    ];
+    // 记录跨指南示例总数，防止输入意外退化为空。
+    let mut total_examples = 0_usize;
+    // 按声明顺序验证两份权威指南。
+    for path in guide_paths {
+        // 使用仓库相对路径生成跨机器稳定诊断。
+        let display_path = path
+            // 两份指南都必须位于仓库根目录下。
+            .strip_prefix(&repository_root)
+            // 防御性回退仍保留可读完整路径。
+            .unwrap_or(&path)
+            // 转成平台原生展示文本。
+            .display()
+            // 保存为后续 panic 可拥有的字符串。
+            .to_string();
+        // 读取 UTF-8 Markdown 权威文本。
+        let source = fs::read_to_string(&path)
+            // 文件错误必须点名具体指南。
+            .unwrap_or_else(|error| panic!("无法读取 {display_path}：{error}"));
+        // 提取当前指南全部标记为可执行的 uix 示例。
+        let examples = fenced_uix_examples(&source, &display_path);
+        // 每份指南至少应保留一个可执行示例。
+        assert!(!examples.is_empty(), "{display_path} 没有 uix 代码围栏");
+        // 累加实际进入完整生成路径的示例数量。
+        total_examples += examples.len();
+        // 分别生成每个示例以保留精确来源行号。
+        for (start_line, example) in examples {
+            // 依据真实根形状走与公开 uix! 或 uix_app! 相同的生成路径。
+            generate_guide_example(&example).unwrap_or_else(|diagnostic| {
+                // 失败必须同时报告页面、围栏起始行与结构化诊断。
+                panic!("{display_path}:{start_line} UIX 指南示例生成失败：{diagnostic:?}")
+            });
+        }
+    }
+    // 当前两份指南应恰好覆盖快速开始三个与教程六个 uix 围栏。
+    assert_eq!(total_examples, 9, "UIX 指南示例数量发生未审查变化");
 }
