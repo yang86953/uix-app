@@ -7,7 +7,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::core::{Error, WindowId};
+use crate::core::{Errc, Error, WindowId};
 use crate::native::windowing::shared::{PlatformWindowCore, WindowState};
 use crate::native::windowing::*;
 
@@ -21,6 +21,16 @@ impl IWindowManager for WaylandBackend {
         width: i32,
         height: i32,
     ) -> Result<Box<dyn PlatformWindow>, Error> {
+        // closed 事实必须成为窗口工厂访问任何 seat 或协议 owner 前的首个决策。
+        if self.closed {
+            // 致命关闭后的创建请求返回稳定生命周期错误，禁止复活 backend。
+            return Err(Error::new(
+                // 使用 InvalidState 区分关闭生命周期与能力缺失。
+                Errc::InvalidState,
+                // 保留窗口工厂与 backend shutdown 上下文。
+                "Wayland create_window requested after backend shutdown",
+            ));
+        }
         self.ensure_seat_and_input();
 
         let window_id = WindowId::new(self.next_window_id);
