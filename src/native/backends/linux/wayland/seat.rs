@@ -32,6 +32,8 @@ use super::input_proxy_owner::{
 };
 // pointer callback 把焦点与移动事件委托给多 owner 事务 Component。
 use super::pointer_focus_owner::{
+    // Axis 原子读取路由与位置并投递 Wheel。
+    handle_pointer_axis,
     // Enter 原子提交 focus、position 与 PointerMove。
     handle_pointer_enter,
     // Leave 原子撤销授权并清除精确 surface focus。
@@ -539,27 +541,30 @@ impl WaylandBackend {
                             }
                         }
                         wl_pointer::Event::Axis { axis, value, .. } => {
-                            let window_id = targets
-                                .lock()
-                                .unwrap_or_else(|error| error.into_inner())
-                                .pointer_target();
-                            if window_id.is_none() {
-                                return;
-                            }
+                            // adapter 只把协议 Axis 枚举映射为平台中立增量。
                             let (dx, dy) = match axis {
+                                // 垂直滚轮只产生 y 增量。
                                 WEnum::Value(wl_pointer::Axis::VerticalScroll) => (0.0, value),
+                                // 水平滚轮只产生 x 增量。
                                 WEnum::Value(wl_pointer::Axis::HorizontalScroll) => (value, 0.0),
+                                // 未知协议值映射为安全忽略的零增量。
                                 _ => (0.0, 0.0),
                             };
-                            if dx != 0.0 || dy != 0.0 {
-                                let scroll_pos =
-                                    pos.lock().map(|lp| lp.position).unwrap_or_default();
-                                enqueue_for_window(
-                                    &ev,
-                                    window_id,
-                                    UiEvent::wheel(scroll_pos, dx as f32, dy as f32, KeyMod::NONE),
-                                );
-                            }
+                            // 三 owner Component 检查式读取路由与位置后提交事件。
+                            handle_pointer_axis(
+                                // 将协议数值收窄为框架坐标精度。
+                                dx as f32,
+                                // 将协议数值收窄为框架坐标精度。
+                                dy as f32,
+                                // surface focus owner。
+                                &targets,
+                                // 最近位置 owner。
+                                &pos,
+                                // UI 事件队列 owner。
+                                &ev,
+                                // failure 进入 backend pending source。
+                                &pointer_failures,
+                            );
                         }
                         _ => {}
                     });
