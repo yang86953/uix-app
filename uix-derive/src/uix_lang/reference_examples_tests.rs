@@ -359,3 +359,40 @@ fn specification_examples_generate_as_documents() {
     // 当前分类后应有三十个规范示例实际进入完整生成路径。
     assert_eq!(total_examples, 30, "UIX 规范示例数量发生未审查变化");
 }
+
+// 验证已宣告完整实现的目标设计示例持续通过当前完整生成路径。
+#[test]
+fn completed_target_design_examples_generate_as_documents() {
+    // 从过程宏 crate 定位仓库根目录。
+    let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    // 目标设计页面承载已经完成并回填的七项设计事实。
+    let target_design_path = repository_root.join("docs/uix-lang/变更/目标设计.md");
+    // 使用仓库相对路径生成跨机器稳定诊断。
+    let display_path = target_design_path
+        // 目标设计页面必定位于仓库根目录之下。
+        .strip_prefix(&repository_root)
+        // 防御性回退仍保留可读完整路径。
+        .unwrap_or(&target_design_path)
+        // 转成平台原生展示文本。
+        .display()
+        // 保存为后续 panic 可拥有的字符串。
+        .to_string();
+    // 读取 UTF-8 Markdown 权威文本。
+    let source = fs::read_to_string(&target_design_path)
+        // 文件错误必须点名具体目标设计页面。
+        .unwrap_or_else(|error| panic!("无法读取 {display_path}：{error}"));
+    // 提取全部仍标记为当前可执行契约的 uix 围栏。
+    let examples = fenced_uix_examples(&source, &display_path);
+    // 当前已完成目标设计应稳定保留六个可执行示例。
+    assert_eq!(examples.len(), 6, "UIX 目标设计示例数量发生未审查变化");
+    // 分别生成每个示例以保留精确来源行号。
+    for (start_line, example) in examples {
+        // 复用规范示例规则补齐声明或元素片段的唯一根。
+        let document = materialize_specification_example(&example);
+        // 依据真实根形状走完整 View 或 App 生成路径。
+        generate_document_source(&document).unwrap_or_else(|diagnostic| {
+            // 失败必须同时报告页面、围栏起始行与结构化诊断。
+            panic!("{display_path}:{start_line} UIX 目标设计示例生成失败：{diagnostic:?}")
+        });
+    }
+}
