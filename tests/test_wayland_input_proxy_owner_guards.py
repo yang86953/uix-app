@@ -150,6 +150,84 @@ class WaylandInputProxyOwnerGuardTests(unittest.TestCase):
         # adapter 不得恢复 poisoned owner。
         self.assertNotIn("into_inner()", branch)
 
+    # 确认 keyboard Release 在六个 owners 健康后一次提交 teardown。
+    def test_keyboard_release_commits_six_owner_state_transactionally(self) -> None:
+        # 读取输入代理 owner Component。
+        owner = OWNER.read_text(encoding="utf-8")
+        # 读取 seat capability adapter。
+        seat = SEAT.read_text(encoding="utf-8")
+        # 定位六 owner 锁 helper。
+        helper_start = owner.index("fn lock_keyboard_release_owners")
+        # 公开 Release 端口标记 helper 末尾。
+        helper_end = owner.index("pub(crate) fn release_keyboard_proxy_checked", helper_start)
+        # 保存锁获取实现。
+        helper = owner[helper_start:helper_end]
+        # 固定列出六个 lock 标记。
+        locks = [
+            # 第一 owner 是 surface focus。
+            "surface_windows.lock()",
+            # 第二 owner 是可选 events。
+            "events.lock()",
+            # 第三 owner 是 keys-down。
+            "keys_down.lock()",
+            # 第四 owner 是 held-key。
+            "held_key_info.lock()",
+            # 第五 owner 是 last-time。
+            "last_repeat_time.lock()",
+            # 最后 owner 是 keyboard slot。
+            "keyboard_slot.lock()",
+        ]
+        # 计算每个 owner 在 helper 中的位置。
+        positions = [helper.index(marker) for marker in locks]
+        # 六个位置必须严格递增。
+        self.assertEqual(positions, sorted(positions))
+        # 六类 failure 都必须有独立诊断。
+        for stage in ["surface targets", "event queue", "keys-down", "held-key", "last-time", "proxy slot"]:
+            # 每个 Release owner 都保留稳定诊断。
+            self.assertIn(f"keyboard {stage} mutex poisoned during release", helper)
+        # 定位公开提交端口。
+        release_start = owner.index("pub(crate) fn release_keyboard_proxy_checked")
+        # 保存文件末尾完整提交端口。
+        release = owner[release_start:]
+        # 所有 locks 必须先于焦点清除。
+        clear_focus = release.index("owners.targets.clear_keyboard_focus()")
+        # blur 事件必须在同一事务中直接进入已持有队列。
+        blur_event = release.index("UiEvent::new(UiEventType::WindowBlur")
+        # keys 清理紧随事件事实。
+        clear_keys = release.index("owners.keys_down.clear()")
+        # held-key 与 last-time 随后清理。
+        clear_held = release.index("*owners.held_key = None")
+        # last-time 清理标记。
+        clear_last = release.index("*owners.last_repeat = None")
+        # proxy take 是锁内最后提交事实。
+        take_proxy = release.index("let keyboard = owners.slot.take()")
+        # 清理顺序保持 focus→event→keys。
+        self.assertLess(clear_focus, blur_event)
+        # blur 先于 keys 清理。
+        self.assertLess(blur_event, clear_keys)
+        # keys 先于 held-key。
+        self.assertLess(clear_keys, clear_held)
+        # held-key 先于 last-time。
+        self.assertLess(clear_held, clear_last)
+        # last-time 先于代理取出。
+        self.assertLess(clear_last, take_proxy)
+        # 协议代理清理必须发生在 guards 释放后。
+        self.assertLess(release.index("drop(owners)"), release.index("discard_keyboard_proxy(keyboard)"))
+        # seat keyboard Release 分支只委托 Component。
+        branch_start = seat.index("keyboard_transition == InputProxyTransition::Release")
+        # capability callback 结束标记分支末尾。
+        branch_end = seat.index("});", branch_start)
+        # 保存 seat keyboard Release adapter。
+        branch = seat[branch_start:branch_end]
+        # adapter 必须调用六 owner事务端口。
+        self.assertIn("release_keyboard_proxy_checked(", branch)
+        # adapter 不得直接锁 teardown owners。
+        self.assertNotIn(".lock()", branch)
+        # adapter 不得恢复 poisoned owner。
+        self.assertNotIn("into_inner()", branch)
+        # adapter 不得二次调用事件队列 helper。
+        self.assertNotIn("enqueue_for_window", branch)
+
 
 # 直接执行本文件时运行契约测试。
 if __name__ == "__main__":

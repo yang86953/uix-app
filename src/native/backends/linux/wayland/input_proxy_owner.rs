@@ -1,7 +1,13 @@
 // Wayland 输入代理 owner Component 不保存协议对象或共享状态。
 
+// keyboard Release 事务持有按键集合与事件队列 guards。
+use std::collections::{HashSet, VecDeque};
 // pointer/keyboard 槽与 activation registry 使用共享短锁句柄。
 use std::sync::{Arc, Mutex};
+// 私有事务结构显式保存六个 owner 的短期 guards。
+use std::sync::MutexGuard;
+// 重复节拍 owner 保存单调时刻。
+use std::time::Instant;
 
 // 输入代理类型属于 Wayland seat 协议。
 use wayland_client::protocol::{wl_keyboard, wl_pointer};
@@ -9,9 +15,13 @@ use wayland_client::protocol::{wl_keyboard, wl_pointer};
 use wayland_client::Proxy;
 
 // typed failure 保留稳定错误类别与责任边界。
-use crate::core::{Errc, Error};
+use crate::core::{Errc, Error, WindowId};
 // callback failure 进入 backend 已有 pending source。
 use crate::diagnostics::PendingFailureSource;
+// keyboard Release 在同一事件队列事务中投递 WindowBlur。
+use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
+// keys-down owner 使用统一框架键码。
+use crate::native::windowing::input::KeyCode;
 // surface focus 路由继续由共享 window-target Component 拥有。
 use crate::native::windowing::shared::window_target::SurfaceWindowTargets;
 
@@ -19,6 +29,8 @@ use crate::native::windowing::shared::window_target::SurfaceWindowTargets;
 use super::compat::Main;
 // pointer generation 继续由激活注册表唯一拥有。
 use super::pointer_activation::WaylandPointerActivationRegistry;
+// held-key owner 继续使用 Wayland 后端私有值类型。
+use super::HeldKeyInfo;
 
 // 将 capability 绑定状态失败投递到同一 backend source。
 fn enqueue_owner_failure(
@@ -299,6 +311,179 @@ pub(crate) fn release_pointer_proxy_checked(
     if let Some(pointer) = pointer {
         // 复用未提交代理相同的安全清理序列。
         discard_pointer_proxy(pointer);
+    }
+    // 空槽与实际释放均为幂等成功。
+    true
+}
+
+// keyboard Release 的六个 guards 只在一次 capability callback 内存活。
+struct KeyboardReleaseGuards<'a> {
+    // surface 路由 guard 拥有 keyboard focus。
+    targets: MutexGuard<'a, SurfaceWindowTargets>,
+    // 仅旧焦点存在时持有事件队列 guard。
+    events: Option<MutexGuard<'a, VecDeque<UiEvent>>>,
+    // keys-down guard 拥有全部物理按键状态。
+    keys_down: MutexGuard<'a, HashSet<KeyCode>>,
+    // held-key guard 拥有客户端重复候选。
+    held_key: MutexGuard<'a, Option<HeldKeyInfo>>,
+    // last-time guard 拥有重复节拍状态。
+    last_repeat: MutexGuard<'a, Option<Instant>>,
+    // slot guard 拥有唯一 keyboard 协议代理。
+    slot: MutexGuard<'a, Option<Main<wl_keyboard::WlKeyboard>>>,
+    // 旧焦点窗口用于同一事务内的 blur 路由。
+    blurred_window: Option<WindowId>,
+}
+
+// 按固定顺序取得 keyboard Release 所需全部 owner guards。
+fn lock_keyboard_release_owners<'a>(
+    // 第一 owner 是 surface keyboard focus。
+    surface_windows: &'a Mutex<SurfaceWindowTargets>,
+    // 第二 owner 仅在存在旧焦点时需要。
+    events: &'a Mutex<VecDeque<UiEvent>>,
+    // 第三 owner 是物理按键集合。
+    keys_down: &'a Mutex<HashSet<KeyCode>>,
+    // 第四 owner 是客户端重复候选。
+    held_key_info: &'a Mutex<Option<HeldKeyInfo>>,
+    // 第五 owner 是重复节拍。
+    last_repeat_time: &'a Mutex<Option<Instant>>,
+    // 最后 owner 是唯一 keyboard 代理槽。
+    keyboard_slot: &'a Mutex<Option<Main<wl_keyboard::WlKeyboard>>>,
+    // 静态错误文本由外层在所有 guards 释放后入队。
+) -> std::result::Result<KeyboardReleaseGuards<'a>, &'static str> {
+    // 先取得 surface target guard，尚不清除焦点。
+    let targets = surface_windows.lock().map_err(|_| {
+        // 诊断保留 keyboard Release 的首个 owner。
+        "Wayland seat capability keyboard surface targets mutex poisoned during release"
+    })?;
+    // 在同一健康 guard 下复制旧焦点窗口。
+    let blurred_window = targets.keyboard_target();
+    // 只有需要投递 blur 时才取得事件队列 owner。
+    let event_queue = if blurred_window.is_some() {
+        // event queue 损坏时自动释放 surface guard 后返回。
+        Some(events.lock().map_err(|_| {
+            // 诊断保留可选事件提交阶段。
+            "Wayland seat capability keyboard event queue mutex poisoned during release"
+        })?)
+    } else {
+        // 无旧焦点时不需要事件队列租约。
+        None
+    };
+    // 第三步检查 keys-down owner。
+    let keys_down = keys_down.lock().map_err(|_| {
+        // 诊断保留按键集合清理阶段。
+        "Wayland seat capability keyboard keys-down mutex poisoned during release"
+    })?;
+    // 第四步检查 held-key owner。
+    let held_key = held_key_info.lock().map_err(|_| {
+        // 诊断保留重复候选清理阶段。
+        "Wayland seat capability keyboard held-key mutex poisoned during release"
+    })?;
+    // 第五步检查 last-time owner。
+    let last_repeat = last_repeat_time.lock().map_err(|_| {
+        // 诊断保留重复节拍清理阶段。
+        "Wayland seat capability keyboard last-time mutex poisoned during release"
+    })?;
+    // 最后检查 keyboard proxy slot owner。
+    let slot = keyboard_slot.lock().map_err(|_| {
+        // 诊断保留代理取出提交阶段。
+        "Wayland seat capability keyboard proxy slot mutex poisoned during release"
+    })?;
+    // 全部 owners 健康后才把 guards 交给提交端口。
+    Ok(KeyboardReleaseGuards {
+        // 保存 surface focus guard。
+        targets,
+        // 保存可选事件队列 guard。
+        events: event_queue,
+        // 保存 keys-down guard。
+        keys_down,
+        // 保存 held-key guard。
+        held_key,
+        // 保存 last-time guard。
+        last_repeat,
+        // 保存 keyboard-slot guard。
+        slot,
+        // 保存旧焦点窗口快照。
+        blurred_window,
+    })
+}
+
+// 事务化清理 keyboard capability Release 涉及的六个 owner。
+pub(crate) fn release_keyboard_proxy_checked(
+    // surface targets 拥有当前 keyboard focus。
+    surface_windows: &Arc<Mutex<SurfaceWindowTargets>>,
+    // events 拥有逐窗 WindowBlur 事实。
+    events: &Arc<Mutex<VecDeque<UiEvent>>>,
+    // keys-down 拥有物理按键集合。
+    keys_down: &Arc<Mutex<HashSet<KeyCode>>>,
+    // held-key 拥有客户端重复候选。
+    held_key_info: &Arc<Mutex<Option<HeldKeyInfo>>>,
+    // last-time 拥有重复节拍。
+    last_repeat_time: &Arc<Mutex<Option<Instant>>>,
+    // keyboard 槽拥有唯一协议代理与 callback。
+    keyboard_slot: &Arc<Mutex<Option<Main<wl_keyboard::WlKeyboard>>>>,
+    // 任一状态失败进入同一 backend source。
+    pending_failures: &PendingFailureSource,
+    // false 表示所有状态均保持未修改。
+) -> bool {
+    // 锁 helper 在失败返回前自动释放已取得的所有 guards。
+    let mut owners = match lock_keyboard_release_owners(
+        // 固定第一 owner。
+        surface_windows,
+        // 固定可选第二 owner。
+        events,
+        // 固定第三 owner。
+        keys_down,
+        // 固定第四 owner。
+        held_key_info,
+        // 固定第五 owner。
+        last_repeat_time,
+        // 固定最后 owner。
+        keyboard_slot,
+    ) {
+        // 全部 guards 健康后进入唯一提交分支。
+        Ok(owners) => owners,
+        // 任一 lock failure 不产生半 teardown。
+        Err(message) => {
+            // 此处已不持有任何 owner guard。
+            enqueue_owner_failure(pending_failures, message);
+            // seat callback 必须停止。
+            return false;
+        }
+    };
+    // 全部 owners 健康后首先清除 keyboard focus。
+    owners.targets.clear_keyboard_focus();
+    // 旧焦点存在时在同一事务中投递一次 WindowBlur。
+    if let Some(window_id) = owners.blurred_window {
+        // 旧焦点存在保证可选 event guard 已取得。
+        let events = owners
+            // 借用 guards 结构中的可选队列。
+            .events
+            // 取得唯一可变队列访问。
+            .as_mut()
+            // 构造期不变量保证该分支必有 guard。
+            .expect("blurred keyboard window requires event queue guard");
+        // 投递与既有 seat adapter 相同的逐窗 WindowBlur。
+        events.push_back(
+            // 构造统一窗口模糊事实。
+            UiEvent::new(UiEventType::WindowBlur, UiEventPayload::None)
+                // 保留旧焦点窗口路由。
+                .for_window(window_id),
+        );
+    }
+    // 在同一事务中清除全部物理按键状态。
+    owners.keys_down.clear();
+    // 清除客户端重复候选。
+    *owners.held_key = None;
+    // 清除上次重复节拍。
+    *owners.last_repeat = None;
+    // 最后从唯一 owner 槽取出 keyboard 代理。
+    let keyboard = owners.slot.take();
+    // 一次释放六个 guards 后再执行协议 teardown。
+    drop(owners);
+    // 只有实际存在的代理需要在锁外注销和释放。
+    if let Some(keyboard) = keyboard {
+        // 复用未提交代理相同的安全清理序列。
+        discard_keyboard_proxy(keyboard);
     }
     // 空槽与实际释放均为幂等成功。
     true
