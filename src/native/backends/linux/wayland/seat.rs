@@ -30,6 +30,15 @@ use super::input_proxy_owner::{
     // transition 决策前同时读取 pointer/keyboard 槽快照。
     snapshot_input_proxy_slots,
 };
+// pointer callback 把焦点与移动事件委托给多 owner 事务 Component。
+use super::pointer_focus_owner::{
+    // Enter 原子提交 focus、position 与 PointerMove。
+    handle_pointer_enter,
+    // Leave 原子撤销授权并清除精确 surface focus。
+    handle_pointer_leave,
+    // Motion 原子提交 position 与 PointerMove。
+    handle_pointer_motion,
+};
 use super::{HeldKeyInfo, WaylandBackend};
 // seat owner 保留几何、窗口路由与 capability 收敛的 typed failure。
 use crate::core::{Errc, Error, Point, WindowId};
@@ -316,6 +325,8 @@ impl WaylandBackend {
                     let pos = ptr_pos.clone();
                     let pointer_serial = pointer_serial.clone();
                     let targets = surface_windows.clone();
+                    // pointer callback owner failure 复用 backend pending source。
+                    let pointer_failures = capability_failures.clone();
                     // 新回调持有共享激活注册表句柄。
                     let pointer_activations = pointer_activations.clone();
                     // 捕获创建该 pointer 代理时的稳定代次。
@@ -336,82 +347,61 @@ impl WaylandBackend {
                             surface_y,
                             ..
                         } => {
-                            let window_id = targets
-                                .lock()
-                                .unwrap_or_else(|error| error.into_inner())
-                                .pointer_enter(surface.id().protocol_id());
-                            if window_id.is_none() {
-                                return;
-                            }
+                            // adapter 只把 surface 身份与平台中立坐标转交 Component。
                             let p = Point::new(surface_x as f32, surface_y as f32);
-                            if let Ok(mut lp) = pos.lock() {
-                                lp.position = p;
-                            }
-                            enqueue_for_window(&ev, window_id, UiEvent::pointer_move(p));
+                            // 三 owner Component 检查式提交焦点、位置与事件。
+                            handle_pointer_enter(
+                                // 协议 surface 身份只用于原生路由。
+                                surface.id().protocol_id(),
+                                // 平台中立坐标进入共享输入状态。
+                                p,
+                                // surface focus owner。
+                                &targets,
+                                // 最近位置 owner。
+                                &pos,
+                                // UI 事件队列 owner。
+                                &ev,
+                                // failure 进入 backend pending source。
+                                &pointer_failures,
+                            );
                         }
                         wl_pointer::Event::Motion {
                             surface_x,
                             surface_y,
                             ..
                         } => {
-                            let window_id = targets
-                                .lock()
-                                .unwrap_or_else(|error| error.into_inner())
-                                .pointer_target();
-                            if window_id.is_none() {
-                                return;
-                            }
+                            // adapter 只把平台中立坐标转交 Component。
                             let p = Point::new(surface_x as f32, surface_y as f32);
-                            if let Ok(mut lp) = pos.lock() {
-                                lp.position = p;
-                            }
-                            enqueue_for_window(&ev, window_id, UiEvent::pointer_move(p));
+                            // 三 owner Component 检查式提交位置与事件。
+                            handle_pointer_motion(
+                                // 平台中立坐标进入共享输入状态。
+                                p,
+                                // surface focus owner。
+                                &targets,
+                                // 最近位置 owner。
+                                &pos,
+                                // UI 事件队列 owner。
+                                &ev,
+                                // failure 进入 backend pending source。
+                                &pointer_failures,
+                            );
                         }
                         wl_pointer::Event::Leave { surface, .. } => {
                             // 保存离开事件携带的精确 surface 协议身份。
                             let surface_id = surface.id().protocol_id();
-                            // 在同一 target 锁内读取旧焦点并完成清理。
-                            let window_id = {
-                                // 短时锁定共享 surface 路由状态。
-                                let mut targets = targets
-                                    // 获取焦点与注册映射的唯一可变访问。
-                                    .lock()
-                                    // 中毒时继续执行确定性 owner-thread 清理。
-                                    .unwrap_or_else(|error| error.into_inner());
-                                // 仅接受确实指向本次 leave surface 的旧焦点。
-                                let window_id = targets
-                                    // 原子投影 surface 与窗口身份。
-                                    .pointer_target_identity()
-                                    // 排除其他 surface 的迟到 leave。
-                                    .filter(|(focused_surface, _)| *focused_surface == surface_id)
-                                    // 只保留撤销授权所需的窗口身份。
-                                    .map(|(_, window_id)| window_id);
-                                // 清除共享 pointer focus，重复 leave 保持幂等。
-                                targets.pointer_leave(surface_id);
-                                // 返回 leave 前的精确窗口身份。
-                                window_id
-                                // 结束 surface 路由锁作用域。
-                            };
-                            // 只有已知焦点 surface 才能撤销对应待消费授权。
-                            if let Some(window_id) = window_id {
-                                // 在独立短锁中按 pointer 代次与窗口 surface 撤销。
-                                pointer_activations
-                                    // 获取激活注册表唯一可变访问。
-                                    .lock()
-                                    // 中毒时仍完成授权失效。
-                                    .unwrap_or_else(|error| error.into_inner())
-                                    // 防止旧代理 leave 撤销新代次授权。
-                                    .revoke_pointer_focus(
-                                        // 使用创建回调时捕获的 pointer 代次。
-                                        pointer_generation,
-                                        // 使用离开事件的 surface 身份。
-                                        surface_id,
-                                        // 使用离开前解析出的稳定窗口身份。
-                                        window_id,
-                                        // 结束精确撤销参数。
-                                    );
-                                // 结束已知焦点撤销分支。
-                            }
+                            // 双 owner Component 沿全局顺序撤销授权并清除焦点。
+                            handle_pointer_leave(
+                                // 使用事件携带的精确 surface 身份。
+                                surface_id,
+                                // 使用 callback 创建时捕获的 pointer 代次。
+                                pointer_generation,
+                                // activation registry 是全局锁序的第一 owner。
+                                &pointer_activations,
+                                // surface focus 是全局锁序的第二 owner。
+                                &targets,
+                                // failure 进入 backend pending source。
+                                &pointer_failures,
+                            );
                         }
                         wl_pointer::Event::Button {
                             serial,

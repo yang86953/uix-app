@@ -22,6 +22,8 @@ pub(crate) mod keycode;
 pub(crate) mod output;
 // 指针激活注册表独占 Wayland 拖动授权的签发与生命周期。
 pub(crate) mod pointer_activation;
+// 指针焦点 Component 事务化提交 Enter、Motion 与 Leave 的共享 owners。
+pub(crate) mod pointer_focus_owner;
 pub(crate) mod presenter;
 pub(crate) mod seat;
 pub(crate) mod shm_buffer;
