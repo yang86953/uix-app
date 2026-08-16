@@ -11,6 +11,8 @@ use crate::core::{Errc, Error, Point};
 use crate::diagnostics::PendingFailureSource;
 // PointerMove 事件在事务内直接提交到已持有队列。
 use crate::native::windowing::event::UiEvent;
+// Wheel 事件使用平台中立的空键盘修饰快照。
+use crate::native::windowing::input::KeyMod;
 // surface 路由继续由 window-target Component 唯一拥有。
 use crate::native::windowing::shared::window_target::SurfaceWindowTargets;
 
@@ -192,6 +194,103 @@ pub(crate) fn handle_pointer_motion(
     last_pointer.position = position;
     // 同一事务把 PointerMove 定向到当前焦点窗口。
     events.push_back(UiEvent::pointer_move(position).for_window(window_id));
+}
+
+// 在三个 owners 健康后一次提交 pointer Axis 的定向滚轮事件。
+pub(crate) fn handle_pointer_axis(
+    // 水平滚轮增量已由 adapter 从协议枚举映射。
+    delta_x: f32,
+    // 垂直滚轮增量已由 adapter 从协议枚举映射。
+    delta_y: f32,
+    // surface targets 提供当前稳定 pointer focus。
+    surface_windows: &Arc<Mutex<SurfaceWindowTargets>>,
+    // last pointer 提供滚轮事件发生时的精确 surface-local 坐标。
+    last_pointer: &Arc<Mutex<LastPointerState>>,
+    // UI 事件队列接收与路由快照同事务的 Wheel。
+    events: &Arc<Mutex<VecDeque<UiEvent>>>,
+    // 任一 owner failure 进入 backend pending source。
+    pending_failures: &PendingFailureSource,
+    // 端口不返回可恢复值，失败时安全丢弃当前协议事件。
+) {
+    // 未知 Axis 与精确零增量不需要访问任何共享 owner。
+    if delta_x == 0.0 && delta_y == 0.0 {
+        // 不伪造无效 Wheel 事件。
+        return;
+    }
+    // 第一把锁固定为 surface 路由 owner。
+    let targets = match surface_windows.lock() {
+        // 健康 guard 保持到滚轮事件提交完成。
+        Ok(targets) => targets,
+        // 路由损坏时不得推测旧窗口身份。
+        Err(_) => {
+            // 投递可定位的 Axis 路由失败。
+            enqueue_owner_failure(
+                // 使用同一 backend source。
+                pending_failures,
+                // 保留事件与 owner 阶段。
+                "Wayland pointer Axis surface targets mutex poisoned",
+            );
+            // 不读取位置或修改事件队列。
+            return;
+        }
+    };
+    // 无焦点 Axis 保持既有安全丢弃语义。
+    let Some(window_id) = targets.pointer_target() else {
+        // 不为无目标事件获取其余 owners。
+        return;
+    };
+    // 第二把锁固定为最近指针位置 owner。
+    let last_pointer = match last_pointer.lock() {
+        // 健康 guard 与 targets 一起保留到提交完成。
+        Ok(last_pointer) => last_pointer,
+        // 位置损坏时不得伪造默认坐标。
+        Err(_) => {
+            // 投递可定位的 Axis 位置失败。
+            enqueue_owner_failure(
+                // 使用同一 backend source。
+                pending_failures,
+                // 保留事件与 owner 阶段。
+                "Wayland pointer Axis position mutex poisoned",
+            );
+            // 不投递坐标不可信的 Wheel 事件。
+            return;
+        }
+    };
+    // 第三把锁固定为 UI 事件队列 owner。
+    let mut events = match events.lock() {
+        // 健康 guard 允许开始唯一事件提交。
+        Ok(events) => events,
+        // 队列损坏时不得恢复访问 poisoned 容器。
+        Err(_) => {
+            // 投递可定位的 Axis 队列失败。
+            enqueue_owner_failure(
+                // 使用同一 backend source。
+                pending_failures,
+                // 保留事件与 owner 阶段。
+                "Wayland pointer Axis event queue mutex poisoned",
+            );
+            // 前两份 owner 本就只读且没有部分提交。
+            return;
+        }
+    };
+    // 从健康 position owner 复制事件坐标。
+    let position = last_pointer.position;
+    // 所有 guards 健康后一次提交定向 Wheel 事件。
+    events.push_back(
+        // 构造平台中立滚轮负载。
+        UiEvent::wheel(
+            // 使用真实最近 surface-local 坐标。
+            position,
+            // 传入已映射的水平增量。
+            delta_x,
+            // 传入已映射的垂直增量。
+            delta_y,
+            // Wayland Axis 事件本身不携带修饰键快照。
+            KeyMod::NONE,
+        )
+        // 将事件绑定到同一焦点快照中的窗口。
+        .for_window(window_id),
+    );
 }
 
 // 按全局 activation→surface 顺序事务化提交精确 pointer Leave。

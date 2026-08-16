@@ -32,6 +32,8 @@ class WaylandPointerFocusOwnerTests(unittest.TestCase):
         self.assertIn("handle_pointer_motion,", seat)
         # seat 必须导入 Leave 事务端口。
         self.assertIn("handle_pointer_leave,", seat)
+        # seat 必须导入 Axis 事务端口。
+        self.assertIn("handle_pointer_axis,", seat)
 
     # 确认 Enter callback 不再直接访问共享 owners。
     def test_enter_callback_delegates_without_direct_owner_locks(self) -> None:
@@ -90,6 +92,27 @@ class WaylandPointerFocusOwnerTests(unittest.TestCase):
         # adapter 不得直接撤销激活授权。
         self.assertNotIn("revoke_pointer_focus", branch)
 
+    # 确认 Axis callback 不再直接访问共享 owners。
+    def test_axis_callback_delegates_without_direct_owner_locks(self) -> None:
+        # 读取 seat callback adapter。
+        seat = SEAT.read_text(encoding="utf-8")
+        # Axis 分支从协议模式开始。
+        start = seat.index("wl_pointer::Event::Axis")
+        # callback 默认分支标记 Axis adapter 末尾。
+        end = seat.index("_ => {}", start)
+        # 保存完整 Axis adapter。
+        branch = seat[start:end]
+        # Axis 必须委托三 owner Component。
+        self.assertIn("handle_pointer_axis(", branch)
+        # adapter 不得直接取得共享锁。
+        self.assertNotIn(".lock()", branch)
+        # adapter 不得恢复 poisoned owner。
+        self.assertNotIn("into_inner()", branch)
+        # adapter 不得绕过 Component 直接入队。
+        self.assertNotIn("enqueue_for_window", branch)
+        # adapter 不得伪造默认滚轮位置。
+        self.assertNotIn("unwrap_or_default", branch)
+
     # 确认 Component 对所有 poisoned owners 显式失败。
     def test_component_fails_closed_without_poison_recovery(self) -> None:
         # 读取 pointer focus owner Component。
@@ -118,6 +141,12 @@ class WaylandPointerFocusOwnerTests(unittest.TestCase):
             "pointer Leave activation registry mutex poisoned",
             # Leave surface owner 失败。
             "pointer Leave surface targets mutex poisoned",
+            # Axis surface owner 失败。
+            "pointer Axis surface targets mutex poisoned",
+            # Axis position owner 失败。
+            "pointer Axis position mutex poisoned",
+            # Axis queue owner 失败。
+            "pointer Axis event queue mutex poisoned",
         ]:
             # 每个稳定诊断都必须存在于 Component。
             self.assertIn(message, owner)
@@ -177,6 +206,35 @@ class WaylandPointerFocusOwnerTests(unittest.TestCase):
         self.assertLess(event_lock, position_commit)
         # 位置先于对应 UI 事件提交。
         self.assertLess(position_commit, event_commit)
+
+    # 确认 Axis 在三把 guards 健康后按固定顺序提交。
+    def test_axis_locks_and_commits_three_owners_transactionally(self) -> None:
+        # 读取 pointer focus owner Component。
+        owner = OWNER.read_text(encoding="utf-8")
+        # Axis 端口起点。
+        start = owner.index("pub(crate) fn handle_pointer_axis")
+        # Leave 端口标记 Axis 末尾。
+        end = owner.index("pub(crate) fn handle_pointer_leave", start)
+        # 保存完整 Axis 实现。
+        axis = owner[start:end]
+        # surface targets 必须最先取得。
+        target_lock = axis.index("surface_windows.lock()")
+        # position owner 必须随后取得。
+        position_lock = axis.index("last_pointer.lock()")
+        # event queue 必须最后取得。
+        event_lock = axis.index("events.lock()")
+        # 三把锁严格保持 surface→position→events 顺序。
+        self.assertEqual([target_lock, position_lock, event_lock], sorted([target_lock, position_lock, event_lock]))
+        # Wheel 提交必须晚于全部锁。
+        event_commit = axis.index("events.push_back")
+        # 最后一把锁先于唯一共享事实修改。
+        self.assertLess(event_lock, event_commit)
+        # 零增量必须在第一把锁前提前停止。
+        zero_guard = axis.index("delta_x == 0.0 && delta_y == 0.0")
+        # 未知 Axis 不访问任何 owner。
+        self.assertLess(zero_guard, target_lock)
+        # Axis 不得构造默认坐标。
+        self.assertNotIn("unwrap_or_default", axis)
 
     # 确认 Leave 沿全局锁序精确撤销授权与焦点。
     def test_leave_uses_global_activation_then_surface_order(self) -> None:
