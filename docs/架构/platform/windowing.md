@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 platform 系统的目标 `windowing` 模块，权威持有原生窗口、事件源、输入、剪贴板和 IME 的平台边界。依赖：core。导出：供 app window/event-loop 使用的能力契约。
+> **接口**：声明 platform 系统的目标 `windowing` 模块，权威持有原生窗口、事件源、输入、剪贴板、文件拖放和 IME 的平台边界。依赖：core。导出：供 app window/event-loop 使用的能力契约。
 
 > **当前实现线索**：分布在 `src/native/windowing/`（window.rs、input.rs、event/、shared/）与 `src/native/backends/`；trait 只是当前分派手段，不是架构模块。
 
@@ -12,6 +12,8 @@
 
 > **自动居中边界**：`PlatformWindow::center_on_screen` 保持统一的 typed capability 契约；Wayland 不提供普通客户端绝对定位能力，因此返回 `Errc::NotImplemented`，不得伪造居中成功。App 的主窗、次窗与 `Window::create` 把该错误视为预期能力缺失，不记录 WARN，并由 compositor 使用默认放置；其他执行错误继续记录 WARN。此策略不引入首次 configure 后偏移、异步定位状态或新的窗口生命周期所有者。
 
+> **文件拖放边界**：Application 窗口创建 Adapter 在原生窗口创建后、向调用方发布 owner 前统一调用 `enable_file_drop(true)`。`Errc::NotImplemented` 表示平台稳定缺少该能力，窗口仍可创建；其他启用失败必须关闭尚未发布的窗口并保留 typed 原因链。Windows 通过 `DragAcceptFiles` / `WM_DROPFILES` 交付本地路径；Wayland 只接受 `wl_data_device` 提供的 `text/uri-list` 与 Copy 动作，通过事件循环非阻塞读取并严格解析本地 `file:` URI。平台按 `WindowId` 投递一次 `FileDrop`，ui 再按落点命中 overlay 或主树；selection 替换、drag leave、窗口禁用/关闭和 backend teardown 必须消费 offer、pipe 与 callback owner，不得产生迟到事件。
+
 ## 组件清单
 
 | 组件 | 目标角色 | 职责 |
@@ -20,6 +22,7 @@
 | `PlatformWindow` | 窗口对象 | 可见性、尺寸、焦点、surface 关联 |
 | `EventSource` | 事件能力 | wait、wake、drain 原生事件 |
 | `InputServices` | 输入能力 | keyboard、pointer、cursor、clipboard |
+| `FileDrop` | 数据传递能力 | 协商文件 offer、读取本地路径并投递逐窗落点事件 |
 | `TextInputSession` | IME 能力 | start/stop、caret、composition/commit |
 | `WindowEvent` | 值 | 带 WindowId/generation 的平台事件 |
 
