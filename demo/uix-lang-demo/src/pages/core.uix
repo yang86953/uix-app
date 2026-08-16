@@ -438,8 +438,8 @@
       <Column gap="12px">
         // 展示面板小节标题。
         <Text fontSize="heading5">Menu</Text>
-        // 菜单组点击后写回 selectedKey，并通过 openKeys 控制递归子项。
-        <Menu items={[MenuItem('设置', 'settings').icon('settings').children([MenuItem('账户', 'account'), MenuItem('安全', 'security')]), MenuItem('帮助', 'help')]} selectedKey={menu_selected} openKeys={menu_open} collapsible width="320px" />
+        // Inline 始终显示递归子项，点击只写回 selectedKey 而不改写 openKeys。
+        <Menu items={[MenuItem('设置', 'settings').icon('settings').children([MenuItem('账户', 'account'), MenuItem('安全', 'security')]), MenuItem('帮助', 'help')]} selectedKey={menu_selected} openKeys={menu_open} mode="inline" collapsible width="320px" />
       // 结束菜单内容。
       </Column>
     // 结束菜单面板。

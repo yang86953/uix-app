@@ -7,8 +7,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Menu 属性、表达式、事件、布尔值与诊断契约。
 use super::{
-    Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_expression,
-    generate_event_handler_expression,
+    boolean_value, generate_event_handler_expression, generate_expression, Attribute,
+    AttributeValue, Diagnostic, Element,
 };
 
 // 生成拥有 typed MenuItem 树与双受控状态的 Menu。
@@ -134,7 +134,7 @@ fn required_expression(
     generate_expression(&expression.expression, None)
 }
 
-// 生成垂直或水平模式枚举路径。
+// 生成垂直、水平或始终展开的内联模式枚举路径。
 fn mode_tokens(element: &Element) -> Result<TokenStream, Diagnostic> {
     // 缺省模式固定为文档声明的 vertical。
     let Some(attribute) = find_attribute(element, "mode") else {
@@ -146,12 +146,14 @@ fn mode_tokens(element: &Element) -> Result<TokenStream, Diagnostic> {
         // 返回模式字面量诊断。
         return Err(mode_diagnostic(attribute));
     };
-    // 映射两个公开文档关键字。
+    // 映射三个公开文档关键字。
     match value.as_str() {
         // 水平模式映射公开枚举。
         "horizontal" => Ok(quote! { ::uix::prelude::MenuMode::Horizontal }),
         // 垂直模式映射公开枚举。
         "vertical" => Ok(quote! { ::uix::prelude::MenuMode::Vertical }),
+        // 内联模式映射始终展开的公开枚举。
+        "inline" => Ok(quote! { ::uix::prelude::MenuMode::Inline }),
         // 其他关键字不在首版 UIX 契约。
         _ => Err(mode_diagnostic(attribute)),
     }
@@ -164,9 +166,9 @@ fn mode_diagnostic(attribute: &Attribute) -> Diagnostic {
         // 指向 mode 属性。
         attribute.span,
         // 说明允许值集合。
-        "Menu mode 只支持 vertical 或 horizontal",
-        // 给出首版默认写法。
-        "使用 mode=\"vertical\" 或 mode=\"horizontal\"",
+        "Menu mode 只支持 vertical、horizontal 或 inline",
+        // 给出全部已登记模式写法。
+        "使用 mode=\"vertical\"、mode=\"horizontal\" 或 mode=\"inline\"",
     )
 }
 

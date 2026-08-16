@@ -238,6 +238,9 @@ mod uix_lang_image_slots_consumer_tests;
 // 隔离 List 边框与尺寸配置的公开 API 编译测试。
 #[cfg(test)]
 mod uix_lang_list_configuration_consumer_tests;
+// 隔离 Menu 内联始终展开模式的公开 API 编译测试。
+#[cfg(test)]
+mod uix_lang_menu_inline_consumer_tests;
 // 隔离 Pagination 显示策略、跳转入口与尺寸选项的公开 API 编译测试。
 #[cfg(test)]
 mod uix_lang_pagination_configuration_consumer_tests;

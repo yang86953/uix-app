@@ -1,7 +1,9 @@
 // 引入受测菜单运行时类型。
 use super::{Menu, MenuItem, MenuMode};
-// 引入指针事件、状态与组件树测试类型。
-use crate::core::Point;
+// 引入布局约束与指针坐标。
+use crate::core::{Constraints, Point};
+// 引入公开布局 trait 以核对 Inline 的完整递归高度。
+use crate::ui::component::traits::WidgetLayout;
 use crate::ui::{KeyMod, MouseButton, State, SystemEvent, WidgetTree};
 
 // 构造含递归子项的 typed 菜单数据。
@@ -137,4 +139,45 @@ fn controlled_sync_from_keeps_external_open_keys_authoritative() {
     assert_eq!(current.get_open_keys(), &["settings".to_string()]);
     // 外部状态不得被旧内部快照反向覆盖。
     assert_eq!(open.get(), vec!["settings".to_string()]);
+}
+
+// 验证 Inline 即使启用 collapsible 也始终展开且不改写外部展开状态。
+#[test]
+fn inline_mode_keeps_children_visible_without_toggling_open_keys() {
+    // 初始没有任何选中项。
+    let selected = State::new(None::<String>);
+    // 调用方保持空的展开集合。
+    let open = State::new(Vec::<String>::new());
+    // 构造同时声明 Inline 与 collapsible 的受控菜单。
+    let menu = Menu::controlled(typed_items(), &selected, &open)
+        // Inline 是垂直且始终展开的呈现模式。
+        .mode(MenuMode::Inline)
+        // 该配置在 Inline 下不得取得展开状态控制权。
+        .collapsible(true);
+    // 三个递归菜单项都必须参与固有高度。
+    assert_eq!(
+        // 使用公开布局 trait 读取完整递归列表尺寸。
+        WidgetLayout::measure(&menu, Constraints::unconstrained()).h,
+        // 每行三十二像素，父项、子项与第二个顶层项共三行。
+        96.0
+    );
+    // 使用真实组件树路由父菜单项点击。
+    let mut tree = WidgetTree::new();
+    // 菜单作为唯一可交互根节点。
+    tree.set_root(Box::new(menu));
+    // 首次布局建立三行命中区域。
+    tree.layout();
+    // 点击首行父菜单项。
+    let _ = tree.dispatch_event(&SystemEvent::PointerDown {
+        // 首行内部坐标命中设置组。
+        pos: Point::new(8.0, 8.0),
+        // 使用主指针按钮。
+        button: MouseButton::Left,
+        // 测试不携带组合修饰键。
+        mods: KeyMod::NONE,
+    });
+    // 父项选择仍需写回唯一选择状态。
+    assert_eq!(selected.get(), Some("settings".to_string()));
+    // Inline 点击不得把呈现事实写入调用方展开状态。
+    assert!(open.get().is_empty());
 }
