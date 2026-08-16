@@ -282,18 +282,16 @@ impl WaylandBackend {
                 .map(|index| self.poll_fds[index].revents)
                 .unwrap_or(0);
             if (clipboard_revents & (POLLIN | POLLHUP)) != 0 {
-                self.read_clipboard_pipe(polled_fd);
+                // completion helper 失败时终止本次 owner-thread 调度。
+                if !self.read_clipboard_pipe(polled_fd) {
+                    // 状态失败已经进入 backend pending source。
+                    return false;
+                }
             } else if (clipboard_revents & (POLLERR | POLLNVAL)) != 0 {
-                let mut active = self
-                    .clipboard_read
-                    .lock()
-                    .unwrap_or_else(|error| error.into_inner());
-                if active.as_ref().is_some_and(|read| read.fd() == polled_fd) {
-                    *active = None;
-                    self.enqueue_failure(Error::new(
-                        Errc::IoError,
-                        "Wayland clipboard read fd reported an error",
-                    ));
+                // poll error 也必须先通过 checked owner 端口移除 read。
+                if !self.discard_clipboard_read_after_poll_error(polled_fd) {
+                    // 损坏 owner 不得继续进入 write completion。
+                    return false;
                 }
             }
         }
@@ -306,7 +304,11 @@ impl WaylandBackend {
             let revents = self.poll_fds[index].revents;
             let slots_left = poll_len - index;
             let budget = (write_budget / slots_left).max(1);
-            let written = self.write_clipboard_pipe(polled_fd, revents, budget);
+            // write helper 用 None 显式传播 owner 状态失败。
+            let Some(written) = self.write_clipboard_pipe(polled_fd, revents, budget) else {
+                // 失败项不消耗本次 write budget。
+                return false;
+            };
             write_budget = write_budget.saturating_sub(written);
         }
         self.generate_key_repeats();
@@ -405,84 +407,231 @@ impl WaylandBackend {
         }
     }
 
-    fn read_clipboard_pipe(&mut self, polled_fd: RawFd) {
-        let outcome = {
-            let mut active = self
-                .clipboard_read
-                .lock()
-                .unwrap_or_else(|error| error.into_inner());
-            let Some(read) = active.as_mut() else {
-                return;
+    // 检查式移除 poll 已报告错误的 clipboard read owner。
+    fn discard_clipboard_read_after_poll_error(&mut self, polled_fd: RawFd) -> bool {
+        // 先在独立作用域中提交 owner 移除事实。
+        let removed = {
+            // read owner 损坏时不查看或移除其中的 FD。
+            let mut active = match self.clipboard_read.lock() {
+                // 健康 guard 才能检查本轮 poll 的 FD 身份。
+                Ok(active) => active,
+                // 锁中毒是稳定的 owner 状态失败。
+                Err(_) => {
+                    // failure 只进入既有 backend source。
+                    self.enqueue_failure(Error::new(
+                        // 状态损坏统一分类为 InvalidState。
+                        Errc::InvalidState,
+                        // 诊断保留 read owner 与 poll completion 阶段。
+                        "Wayland clipboard read owner mutex poisoned during poll completion",
+                    ));
+                    // 调用方必须立即终止 dispatch。
+                    return false;
+                }
             };
-            if read.fd() != polled_fd {
-                return;
+            // 只有仍由当前 owner 持有的同一 FD 才能被移除。
+            let matches_polled_fd = active
+                // 检查可选 read owner。
+                .as_ref()
+                // 比较本轮 poll 快照中的稳定 FD identity。
+                .is_some_and(|read| read.fd() == polled_fd);
+            // 匹配时提交 read owner 释放事实。
+            if matches_polled_fd {
+                // 释放由 poll 明确报告无效的 read owner。
+                *active = None;
             }
-            match read.read_available() {
-                Ok(NonBlockingReadStatus::Pending) => None,
-                Ok(NonBlockingReadStatus::Complete(bytes)) => {
-                    *active = None;
-                    Some(Ok(bytes))
-                }
-                Err(error) => {
-                    *active = None;
-                    Some(Err(error))
-                }
-            }
+            // 将是否移除传出锁作用域。
+            matches_polled_fd
         };
-
-        match outcome {
-            Some(Ok(bytes)) => {
-                *self
-                    .clipboard_text
-                    .lock()
-                    .unwrap_or_else(|error| error.into_inner()) =
-                    String::from_utf8_lossy(&bytes).into_owned();
-            }
-            Some(Err(error)) => {
-                self.enqueue_failure(Error::new(
-                    Errc::IoError,
-                    format!("Wayland clipboard read failed: {error}"),
-                ));
-            }
-            None => {}
+        // 仅为实际移除的 owner 投递 I/O failure。
+        if removed {
+            // failure 在 owner guard 释放后进入 pending source。
+            self.enqueue_failure(Error::new(
+                // FD 异常保持既有 I/O 分类。
+                Errc::IoError,
+                // 保留既有稳定诊断文本。
+                "Wayland clipboard read fd reported an error",
+            ));
         }
+        // 健康 owner 路径允许继续处理其余 completion。
+        true
     }
 
-    fn write_clipboard_pipe(&mut self, polled_fd: RawFd, revents: i16, budget: usize) -> usize {
-        let mut writes = self
-            .clipboard_writes
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let Some(index) = writes.iter().position(|write| write.fd() == polled_fd) else {
-            return 0;
+    // 事务化处理 clipboard read completion。
+    fn read_clipboard_pipe(&mut self, polled_fd: RawFd) -> bool {
+        // 把 I/O error 带出锁作用域后再投递 failure。
+        let outcome = {
+            // read owner 损坏时不得读取 FD。
+            let mut active = match self.clipboard_read.lock() {
+                // 健康 guard 才允许检查 active read。
+                Ok(active) => active,
+                // 锁中毒必须显式失败。
+                Err(_) => {
+                    // failure 只进入既有 backend source。
+                    self.enqueue_failure(Error::new(
+                        // 状态损坏统一分类为 InvalidState。
+                        Errc::InvalidState,
+                        // 诊断保留 read owner 与 completion 阶段。
+                        "Wayland clipboard read owner mutex poisoned during poll completion",
+                    ));
+                    // 调用方必须停止本轮 dispatch。
+                    return false;
+                }
+            };
+            // 已切换或已完成的 read 不消费旧 poll 事件。
+            if !active
+                // 检查当前可选 owner。
+                .as_ref()
+                // 仅接受本轮 poll 的同一 FD。
+                .is_some_and(|read| read.fd() == polled_fd)
+            {
+                // 健康的陈旧事件不属于失败。
+                return true;
+            }
+            // 文本 owner 必须在执行非阻塞 read 前确认健康。
+            let mut clipboard_text = match self.clipboard_text.lock() {
+                // 健康文本 guard 与 read guard 组成提交事务。
+                Ok(clipboard_text) => clipboard_text,
+                // 文本状态损坏时保持 read owner 与 FD 不变。
+                Err(_) => {
+                    // 先释放健康 read guard，避免跨 owner 入队。
+                    drop(active);
+                    // failure 只进入既有 backend source。
+                    self.enqueue_failure(Error::new(
+                        // 状态损坏统一分类为 InvalidState。
+                        Errc::InvalidState,
+                        // 诊断区分文本提交 owner。
+                        "Wayland clipboard text owner mutex poisoned during poll completion",
+                    ));
+                    // 调用方必须停止本轮 dispatch。
+                    return false;
+                }
+            };
+            // FD identity 已在同一 read guard 下验证。
+            let Some(read) = active.as_mut() else {
+                // 防御性保持健康空 owner 的幂等语义。
+                return true;
+            };
+            // 两个 owner 都健康后才执行非阻塞 I/O。
+            match read.read_available() {
+                // 尚未读完时保留 read 与文本 owner。
+                Ok(NonBlockingReadStatus::Pending) => None,
+                // 完成时原子提交文本并释放 read owner。
+                Ok(NonBlockingReadStatus::Complete(bytes)) => {
+                    // 先提交 UTF-8 容错转换后的文本事实。
+                    *clipboard_text = String::from_utf8_lossy(&bytes).into_owned();
+                    // 文本成功提交后再释放 read FD owner。
+                    *active = None;
+                    // 成功完成无需投递 failure。
+                    None
+                }
+                // I/O error 释放失败的 read owner。
+                Err(error) => {
+                    // 同一健康 guard 内提交 owner 释放。
+                    *active = None;
+                    // 将 error 带出 guard 作用域。
+                    Some(error)
+                }
+            }
         };
 
-        if (revents & (POLLERR | POLLHUP | POLLNVAL)) != 0 {
-            writes.swap_remove(index);
+        // I/O error 在所有 clipboard guards 释放后入队。
+        if let Some(error) = outcome {
+            // failure 进入既有 backend source。
             self.enqueue_failure(Error::new(
+                // read syscall failure 保持既有 I/O 分类。
                 Errc::IoError,
+                // 保留底层 cause 文本。
+                format!("Wayland clipboard read failed: {error}"),
+            ));
+        }
+        // 健康 owner 已完成或仍处于 pending。
+        true
+    }
+
+    // 检查式处理单个 clipboard write completion。
+    fn write_clipboard_pipe(
+        // event loop owner 负责 completion 编排。
+        &mut self,
+        // 本轮 poll 返回的 FD identity。
+        polled_fd: RawFd,
+        // 本轮 FD readiness/error 标志。
+        revents: i16,
+        // 为该 FD 分配的有界写预算。
+        budget: usize,
+        // None 专用于传播 owner 状态失败。
+    ) -> Option<usize> {
+        // write queue 损坏时不得查找、写入或移除任何 FD owner。
+        let mut writes = match self.clipboard_writes.lock() {
+            // 健康 guard 才允许进入 completion。
+            Ok(writes) => writes,
+            // 锁中毒必须显式失败。
+            Err(_) => {
+                // failure 只进入既有 backend source。
+                self.enqueue_failure(Error::new(
+                    // 状态损坏统一分类为 InvalidState。
+                    Errc::InvalidState,
+                    // 诊断保留 write owner 与 completion 阶段。
+                    "Wayland clipboard write owner mutex poisoned during poll completion",
+                ));
+                // 调用方必须停止本轮 dispatch 且不消耗预算。
+                return None;
+            }
+        };
+        // 在健康队列中定位本轮 poll 的 FD。
+        let Some(index) = writes.iter().position(|write| write.fd() == polled_fd) else {
+            // 陈旧 FD 不产生写进度，也不属于失败。
+            return Some(0);
+        };
+
+        // receiver 关闭或 FD 无效时移除对应健康 owner。
+        if (revents & (POLLERR | POLLHUP | POLLNVAL)) != 0 {
+            // 健康 guard 内提交失败 owner 移除。
+            writes.swap_remove(index);
+            // 先释放 write guard，避免跨 owner 入队。
+            drop(writes);
+            // failure 进入既有 backend source。
+            self.enqueue_failure(Error::new(
+                // receiver 关闭保持既有 I/O 分类。
+                Errc::IoError,
+                // 保留既有稳定诊断文本。
                 "Wayland clipboard receiver closed before send completed",
             ));
-            return 0;
+            // I/O failure 不消耗本次写预算。
+            return Some(0);
         }
+        // 非可写 readiness 保持 owner 与预算不变。
         if (revents & POLLOUT) == 0 {
-            return 0;
+            // 健康但无进度。
+            return Some(0);
         }
 
+        // 仅在健康 write owner 上执行有界非阻塞写。
         match writes[index].write_available(budget) {
+            // 健康写返回本次实际进度。
             Ok(progress) => {
+                // 完成时释放对应 write owner。
                 if progress.status == NonBlockingWriteStatus::Complete {
+                    // 健康 guard 内提交完成移除。
                     writes.swap_remove(index);
                 }
-                progress.written
+                // Some 区分健康进度与 owner failure。
+                Some(progress.written)
             }
+            // syscall error 释放失败 owner 并投递 typed failure。
             Err(error) => {
+                // 健康 guard 内提交失败 owner 移除。
                 writes.swap_remove(index);
+                // 先释放 write guard，避免跨 owner 入队。
+                drop(writes);
+                // failure 进入既有 backend source。
                 self.enqueue_failure(Error::new(
+                    // write syscall failure 保持既有 I/O 分类。
                     Errc::IoError,
+                    // 保留底层 cause 文本。
                     format!("Wayland clipboard send failed: {error}"),
                 ));
-                0
+                // I/O failure 不消耗本次写预算。
+                Some(0)
             }
         }
     }
