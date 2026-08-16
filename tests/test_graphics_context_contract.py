@@ -672,6 +672,28 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 无法传播失败的显式 drop 路径不得恢复。
         self.assertNotIn("drop(bootstrap)", source)
 
+    # 校验 WGL 正式 context 构造失败会传播目标 HDC 的清理失败。
+    def test_wgl_construction_rollback_checks_target_hdc_release(self) -> None:
+        # 读取生产 WGL adapter 的完整源码。
+        source = (
+            ROOT / "src/native/presentation/graphics/opengl/platform/wgl.rs"
+        ).read_text(encoding="utf-8")
+        # 截取正式 WglContext 构造事务，避免把 bootstrap 检查误算为覆盖。
+        # 先定位正式构造函数起点，避免命中更早的 bootstrap 生命周期入口。
+        construction_start = source.index("pub(crate) fn new(native_window")
+        # 从正式构造函数之后寻找 WglContext 自身的 shutdown 边界。
+        construction_end = source.index(
+            "fn shutdown_result(&mut self)", construction_start
+        )
+        # 只检查正式 context 构造与失败回滚主体。
+        construction = source[construction_start:construction_end]
+        # 目标 HDC 的失败回滚必须使用 checked Windows helper。
+        self.assertIn("release_device_context_checked(hwnd, hdc)", construction)
+        # 清理失败必须保留触发回滚的原始构造失败。
+        self.assertIn(".with_source(primary_error)", construction)
+        # 未检查 ReleaseDC 的旧回滚入口不得恢复。
+        self.assertNotIn("release_device_context(hwnd, hdc)", construction)
+
     # 校验 Vulkan owner shutdown 与 lost-device generation 契约。
     def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
         # 组合读取 Vulkan context 的拆分模块，以保持顺序审计语义。

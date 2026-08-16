@@ -136,12 +136,6 @@ pub(crate) unsafe fn device_context(hwnd: *mut c_void) -> *mut c_void {
     unsafe { GetDC(hwnd) }
 }
 
-#[cfg(feature = "opengles")]
-pub(crate) unsafe fn release_device_context(hwnd: *mut c_void, hdc: *mut c_void) {
-    // SAFETY：调用者保证 hdc 由同一 hwnd 的 GetDC 获取且尚未释放。
-    let _ = unsafe { ReleaseDC(hwnd, hdc) };
-}
-
 /// Checked release used by a `Result`-returning graphics lifecycle path.
 /// Callers retain the HDC on failure so teardown can report and retry rather
 /// than silently discarding the last native error.
