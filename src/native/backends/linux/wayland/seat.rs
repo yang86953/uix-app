@@ -36,6 +36,8 @@ use super::keyboard_focus_owner::{
     // Leave 原子清理精确焦点与输入状态。
     handle_keyboard_leave,
 };
+// keyboard Modifiers 委托修饰快照与重复状态事务 Component。
+use super::keyboard_modifier_owner::handle_keyboard_modifiers;
 // pointer Button callback 委托多 owner 事务 Component。
 use super::pointer_button_owner::{
     // Press 原子签发授权、记录 serial 并投递 PointerDown。
@@ -663,29 +665,23 @@ impl WaylandBackend {
                                 mods_locked,
                                 ..
                             } => {
-                                if let Ok(mut m) = mods.lock() {
-                                    let combined = mods_depressed | mods_latched | mods_locked;
-                                    *m = KeyMod::NONE;
-                                    if combined & 1 != 0 {
-                                        *m |= KeyMod::SHIFT;
-                                    }
-                                    if combined & 4 != 0 {
-                                        *m |= KeyMod::CTRL;
-                                    }
-                                    if combined & 8 != 0 {
-                                        *m |= KeyMod::ALT;
-                                    }
-                                    if combined & 16 != 0 {
-                                        *m |= KeyMod::SUPER;
-                                    }
-                                }
-                                // 修饰键变化时重置重复状态
-                                if let Ok(mut hki) = held_key_info.lock() {
-                                    *hki = None;
-                                }
-                                if let Ok(mut lrt) = last_repeat_time.lock() {
-                                    *lrt = None;
-                                }
+                                // 三 owner Component 原子提交修饰快照与重复状态失效。
+                                handle_keyboard_modifiers(
+                                    // 转交 depressed 协议位图。
+                                    mods_depressed,
+                                    // 转交 latched 协议位图。
+                                    mods_latched,
+                                    // 转交 locked 协议位图。
+                                    mods_locked,
+                                    // 平台中立修饰快照 owner。
+                                    &mods,
+                                    // 重复候选 owner。
+                                    &held_key_info,
+                                    // 重复节拍 owner。
+                                    &last_repeat_time,
+                                    // failure 进入 backend pending source。
+                                    &keyboard_failures,
+                                );
                             }
                             wl_keyboard::Event::RepeatInfo { rate, delay } => {
                                 if let Ok(mut rr) = repeat_rate.lock() {
