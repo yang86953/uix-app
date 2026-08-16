@@ -58,7 +58,7 @@ use crate::native::windowing::window::{NativeFrameRequest, NativeFrameRequestPha
 
 use super::compat::WaylandDispatchState;
 // 引入私有 frame callback Component，保持 WindowOps 只编排协议生命周期。
-use super::frame_callback::deliver_frame_opportunity;
+use super::frame_callback::{FrameCallbackOwner, deliver_frame_opportunity};
 // 引入 Wayland 私有授权注册表及其非致命消费结果。
 use super::pointer_activation::{
     // 消费结果区分可提交 serial 与正常竞态忽略。
@@ -91,7 +91,8 @@ pub(crate) struct WaylandWindowOps {
     seat: Option<Main<wl_seat::WlSeat>>,
     // 共享注册表是 raw pointer press serial 的唯一所有者。
     pointer_activations: Arc<Mutex<WaylandPointerActivationRegistry>>,
-    frame_request: Arc<Mutex<Option<NativeFrameRequest>>>,
+    // 单一 Component 同时拥有 active request 与在途 wl_callback handle。
+    pub(super) frame_callback: FrameCallbackOwner,
     configured_modes: Arc<Mutex<NativeWindowModeState>>,
     /// xdg-decoration 装饰对象（需维持生命周期以避免装饰被撤销）
     pub(crate) xdg_decoration: Option<Main<ZxdgToplevelDecorationV1>>,
@@ -172,7 +173,8 @@ impl WaylandWindowOps {
             seat,
             // 保存授权注册表共享句柄而不复制任何 raw serial。
             pointer_activations,
-            frame_request: Arc::new(Mutex::new(None)),
+            // 新窗口尚未登记原生 frame request 或协议 callback。
+            frame_callback: FrameCallbackOwner::new(),
             configured_modes: Arc::new(Mutex::new(NativeWindowModeState::default())),
             xdg_decoration: None,
             xdg_activation,
@@ -468,16 +470,8 @@ impl WindowOps for WaylandWindowOps {
     }
 
     fn os_close(&mut self) -> Result<()> {
-        // frame request owner 损坏时不得继续释放窗口协议对象。
-        *self.frame_request.lock().map_err(|_| {
-            // 构造稳定的窗口关闭阶段错误。
-            Error::new(
-                // 共享请求状态已无法安全访问。
-                Errc::InvalidState,
-                // 保留 frame request 与窗口关闭阶段。
-                "Wayland frame request mutex poisoned during window close",
-            )
-        })? = None;
+        // frame callback Component 先检查式消费 request 与协议 callback owner。
+        self.frame_callback.close_checked()?;
         // 注册表失败同步传播，并保留 surface identity 与协议对象供显式重试。
         self.unregister_surface()?;
         // 装饰对象依赖 xdg_toplevel，必须先于顶层窗口释放。
@@ -743,25 +737,15 @@ impl WindowOps for WaylandWindowOps {
             .surface
             .as_ref()
             .ok_or_else(|| Self::missing_proxy("os_request_native_frame", "wl_surface"))?;
-        {
-            // request owner 损坏必须向同步调用方返回 typed failure。
-            let mut active = self.frame_request.lock().map_err(|_| {
-                // 构造稳定的 request 登记阶段错误。
-                Error::new(
-                    // active request owner 已无法安全访问。
-                    Errc::InvalidState,
-                    // 保留原生 frame 请求登记阶段。
-                    "Wayland frame request mutex poisoned during registration",
-                )
-            })?;
-            if active.as_ref() == Some(&request) {
-                return Ok(true);
-            }
-            *active = Some(request);
+        // Component 完成 request 去重与旧 callback owner 替换。
+        if !self.frame_callback.prepare_request(request)? {
+            // 相同 request 已有在途 callback，保持既有能力成功形状。
+            return Ok(true);
         }
 
         let callback = surface.frame();
-        let active = Arc::clone(&self.frame_request);
+        // callback 闭包共享 Component 内唯一 active request owner。
+        let active = self.frame_callback.active_source();
         let events = Arc::clone(&self.events);
         // callback 复用窗口所属 backend 的同一 owner-thread failure source。
         let frame_failures = self.pending_failures.clone();
@@ -787,27 +771,14 @@ impl WindowOps for WaylandWindowOps {
                 let _ = frame_failures.enqueue(error);
             }
         });
+        // callback 接线完成后由同一 Component 接管协议 handle。
+        self.frame_callback.attach_callback(callback);
         Ok(true)
     }
 
     fn os_cancel_native_frame(&mut self, token: FrameRequestToken) -> Result<()> {
-        // request owner 损坏必须向同步调用方返回 typed failure。
-        let mut active = self.frame_request.lock().map_err(|_| {
-            // 构造稳定的 request 取消阶段错误。
-            Error::new(
-                // active request owner 已无法安全访问。
-                Errc::InvalidState,
-                // 保留原生 frame 请求取消阶段。
-                "Wayland frame request mutex poisoned during cancellation",
-            )
-        })?;
-        if active
-            .as_ref()
-            .is_some_and(|request| request.token == token)
-        {
-            *active = None;
-        }
-        Ok(())
+        // Component 只消费匹配 token 的 request 与 callback owner。
+        self.frame_callback.cancel_checked(token)
     }
 
     // ── 窗口状态 ──────────────────────────────────────────

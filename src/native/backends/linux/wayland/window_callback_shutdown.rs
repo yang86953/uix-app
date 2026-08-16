@@ -5,9 +5,11 @@ use super::window_ops::WaylandWindowOps;
 
 // 为逐窗 owner 提供不发送协议请求的幂等 callback teardown 端口。
 impl WaylandWindowOps {
-    // 注销并释放当前窗口的 xdg_toplevel 与 xdg_surface callback owners。
+    // 注销并释放当前窗口的 frame 与 xdg-shell callback owners。
     pub(super) fn shutdown_window_callbacks(&mut self) {
-        // pending activation token 依赖目标 surface，必须最先注销。
+        // surface 关闭前先消费仍等待 Done 的 frame request 与 callback owner。
+        self.frame_callback.shutdown();
+        // xdg-shell owners 中 pending activation token 必须先于目标 surface 注销。
         if let Some(activation_token) = self.activation_token.take() {
             // 窗口关闭后不得再处理迟到 Done 或激活旧 surface。
             activation_token.clear_callback();

@@ -620,9 +620,9 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         # callback typed failure 必须进入 backend source。
         self.assertIn("frame_failures.enqueue(error)", window_ops)
         # request 登记锁失败必须同步返回 typed error。
-        self.assertIn("frame request mutex poisoned during registration", window_ops)
+        self.assertIn("frame request mutex poisoned during registration", frame_callback)
         # request 取消锁失败必须同步返回 typed error。
-        self.assertIn("frame request mutex poisoned during cancellation", window_ops)
+        self.assertIn("frame request mutex poisoned during cancellation", frame_callback)
         # 限定原生 frame request/cancel 实现片段。
         frame_start = window_ops.index("fn os_request_native_frame")
         # 下一个窗口状态分区标记 frame 片段终点。
@@ -684,8 +684,8 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         close_end = window_ops.index("fn os_request_close", close_start)
         # 保存显式关闭事务。
         close_source = window_ops[close_start:close_end]
-        # frame request 锁中毒必须同步传播 typed failure。
-        self.assertIn("frame request mutex poisoned during window close", close_source)
+        # frame request 与 callback owner 必须通过 checked Component 同步清理。
+        self.assertIn("self.frame_callback.close_checked()?", close_source)
         # 显式关闭不得恢复损坏的 request owner。
         self.assertNotIn("into_inner()", close_source)
         # 注册表失败必须通过问号传播。
