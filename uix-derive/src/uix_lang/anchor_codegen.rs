@@ -7,8 +7,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Anchor 属性、表达式、事件、数值与诊断契约。
 use super::{
-    Attribute, AttributeValue, Diagnostic, Element, generate_expression,
-    generate_event_handler_expression, numeric_value,
+    boolean_value, generate_event_handler_expression, generate_expression, numeric_value,
+    Attribute, AttributeValue, Diagnostic, Element,
 };
 
 // 生成拥有类型化滚动目标并由运行时保持选择生命周期的 Anchor。
@@ -57,6 +57,13 @@ pub(crate) fn generate_anchor(element: &Element) -> Result<TokenStream, Diagnost
         // 调用公开 target_offset 构建器。
         widget = quote! { (#widget).target_offset(#offset_top) };
     }
+    // 显式 showInk 只声明活动锚点指示线绘制策略。
+    if let Some(attribute) = find_attribute(element, "showInk") {
+        // 解析布尔简写、字面量或表达式。
+        let show_ink = boolean_value(attribute)?;
+        // 调用公开指示线显示入口。
+        widget = quote! { (#widget).show_ink(#show_ink) };
+    }
 
     // 先物化公开叶节点，Change 处理器与样式由 View 契约拥有。
     let mut view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
@@ -95,7 +102,7 @@ pub(crate) fn generate_anchor(element: &Element) -> Result<TokenStream, Diagnost
         // 保留属性源码顺序供公共映射处理。
         &element.attributes,
         // 防止专有属性与 Change 事件被二次映射。
-        &["items", "offsetTop", "@change"],
+        &["items", "offsetTop", "showInk", "@change"],
     )
 }
 
