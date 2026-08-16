@@ -15,22 +15,22 @@ impl VulkanContext {
         let surface_loader = ash::khr::surface::Instance::new(runtime.entry(), &instance);
         let (surface, platform_loader) =
             create_platform_surface(runtime.entry(), &instance, native_surface)?;
+        // surface 创建成功后立即交给构造期唯一 owner。
+        let mut pending = PendingVulkanContext::new(&surface_loader, surface);
 
-        let selection = match select_queue(&instance, runtime.surface_loader(), surface) {
+        let selection = match select_queue(&instance, runtime.surface_loader(), pending.surface()) {
             Ok(selection) => selection,
-            Err(err) => {
-                destroy_failed_surface(&surface_loader, surface);
-                return Err(err);
-            }
+            // 提前返回时 pending Drop 统一销毁 surface。
+            Err(err) => return Err(err),
         };
         let queue_family_index = selection.family_index;
         let device_lease = match runtime.acquire_device(selection) {
             Ok(device) => device,
-            Err(err) => {
-                destroy_failed_surface(&surface_loader, surface);
-                return Err(err);
-            }
+            // device 获取失败时 pending Drop 统一销毁 surface。
+            Err(err) => return Err(err),
         };
+        // guard 持有额外 lease，保证失败回滚 device child 时 native device 仍存活。
+        pending.attach_device(device_lease.clone());
         let physical_device = device_lease.physical_device();
         let adapter_info = device_lease.info().clone();
         let device = device_lease.device().clone();
@@ -42,11 +42,11 @@ impl VulkanContext {
         // SAFETY: device 存活；command_pool_info 为栈上完整初始化的创建描述；分配器传 None。
         let command_pool = match unsafe { device.create_command_pool(&command_pool_info, None) } {
             Ok(pool) => pool,
-            Err(err) => {
-                destroy_failed_surface(&surface_loader, surface);
-                return Err(device_lease.error("vkCreateCommandPool", err));
-            }
+            // 失败时 pending Drop 仍会销毁 surface 并释放额外 device lease。
+            Err(err) => return Err(device_lease.error("vkCreateCommandPool", err)),
         };
+        // command pool 创建成功后立即登记到唯一构造 owner。
+        pending.set_command_pool(command_pool);
         let command_alloc = vk::CommandBufferAllocateInfo::default()
             .command_pool(command_pool)
             .level(vk::CommandBufferLevel::PRIMARY)
@@ -54,21 +54,11 @@ impl VulkanContext {
         // SAFETY: device 存活；command_alloc 引用刚创建的 command_pool 且描述完整。
         let command_buffer = match unsafe { device.allocate_command_buffers(&command_alloc) } {
             Ok(mut buffers) => buffers.pop(),
-            Err(err) => {
-                // SAFETY: command_pool 为本函数刚创建、仍存活且此后不再使用；分配器传 None。
-                unsafe {
-                    device.destroy_command_pool(command_pool, None);
-                }
-                destroy_failed_surface(&surface_loader, surface);
-                return Err(device_lease.error("vkAllocateCommandBuffers", err));
-            }
+            // 失败时 pending Drop 统一销毁 command pool 与 surface。
+            Err(err) => return Err(device_lease.error("vkAllocateCommandBuffers", err)),
         }
         .ok_or_else(|| {
-            // SAFETY: 失败路径同样只销毁本函数刚创建且不再使用的 command_pool。
-            unsafe {
-                device.destroy_command_pool(command_pool, None);
-            }
-            destroy_failed_surface(&surface_loader, surface);
+            // 空 command-buffer 结果只构造 typed error，native 回滚由 pending Drop 负责。
             Error::new(Errc::PlatformError, "VulkanContext: no command buffer")
         })?;
 
@@ -76,29 +66,23 @@ impl VulkanContext {
         // SAFETY: device 存活；semaphore_info 为默认初始化的创建描述；分配器传 None。
         let image_available = match unsafe { device.create_semaphore(&semaphore_info, None) } {
             Ok(sem) => sem,
-            Err(err) => {
-                // SAFETY: command_pool 为本函数刚创建、仍存活且此后不再使用。
-                unsafe {
-                    device.destroy_command_pool(command_pool, None);
-                }
-                destroy_failed_surface(&surface_loader, surface);
-                return Err(device_lease.error("vkCreateSemaphore image_available", err));
-            }
+            // 失败时 pending Drop 统一销毁 command pool 与 surface。
+            Err(err) => return Err(device_lease.error("vkCreateSemaphore image_available", err)),
         };
+        // semaphore 创建成功后立即登记到唯一构造 owner。
+        pending.set_image_available(image_available);
         let fence_info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
         // SAFETY: device 存活；fence_info 为栈上完整初始化的创建描述；分配器传 None。
         let frame_fence = match unsafe { device.create_fence(&fence_info, None) } {
             Ok(fence) => fence,
-            Err(err) => {
-                // SAFETY: image_available 与 command_pool 均为本函数刚创建、仍存活且失败后不再使用。
-                unsafe {
-                    device.destroy_semaphore(image_available, None);
-                    device.destroy_command_pool(command_pool, None);
-                }
-                destroy_failed_surface(&surface_loader, surface);
-                return Err(device_lease.error("vkCreateFence", err));
-            }
+            // 失败时 pending Drop 统一销毁 semaphore、command pool 与 surface。
+            Err(err) => return Err(device_lease.error("vkCreateFence", err)),
         };
+        // fence 创建成功后立即登记到唯一构造 owner。
+        pending.set_frame_fence(frame_fence);
+
+        // 所有前置资源创建完成后一次性移交给正式 VulkanContext。
+        let (surface, command_pool, image_available, frame_fence) = pending.into_handles();
 
         let mut ctx = Self {
             runtime: Some(runtime),
