@@ -793,6 +793,39 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 旧的 semaphore 手工失败清理不得残留在构造函数。
         self.assertNotIn("destroy_semaphore(", constructor)
 
+    # 校验 D3D11 checked shutdown 提交关闭事实并由 Drop 兜底。
+    def test_d3d11_checked_shutdown_is_idempotent_and_drop_bound(self) -> None:
+        # 读取 D3D11 context 状态、生命周期与 native 方法实现。
+        context_dir = ROOT / "src/native/presentation/graphics/d3d11/platform/context"
+        # 单独读取状态定义。
+        state = (context_dir / "mod.rs").read_text(encoding="utf-8")
+        # 单独读取 checked shutdown 实现。
+        methods = (context_dir / "methods.rs").read_text(encoding="utf-8")
+        # 单独读取 lifecycle 与 Drop 接线。
+        graphics = (context_dir / "graphics.rs").read_text(encoding="utf-8")
+        # 截取 shutdown 方法，避免混入正常 present 的 RTV 重建。
+        shutdown = methods[
+            methods.index("pub(super) fn shutdown_result") : methods.index(
+                "pub(super) fn ensure_active"
+            )
+        ]
+        # adapter 必须拥有唯一的关闭事实。
+        self.assertIn("shutdown: bool", state)
+        # 重复关闭必须在触碰 COM context 前幂等返回。
+        self.assertLess(shutdown.index("if self.shutdown"), shutdown.index("self.release_rtv()"))
+        # checked cleanup 必须先解绑 RTV，再清状态、flush，最后提交关闭事实。
+        operations = ("self.release_rtv()", ".ClearState()", ".Flush()", "self.shutdown = true")
+        # 提取每个关闭操作的位置。
+        positions = tuple(shutdown.index(operation) for operation in operations)
+        # 位置必须单调递增，固定关闭依赖顺序。
+        self.assertEqual(positions, tuple(sorted(positions)))
+        # thin RHI owner 在 shutdown 后必须拒绝重新借出。
+        self.assertIn("self.ensure_active()?", graphics)
+        # Drop 必须显式观察同一 checked shutdown 结果。
+        self.assertIn("if let Err(error) = self.shutdown_result()", graphics)
+        # Drop 不得恢复静默丢弃关闭结果的写法。
+        self.assertNotIn("let _ = self.shutdown_result()", graphics)
+
     # 校验 Vulkan owner shutdown 与 lost-device generation 契约。
     def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
         # 组合读取 Vulkan context 的拆分模块，以保持顺序审计语义。

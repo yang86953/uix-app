@@ -31,6 +31,8 @@ impl crate::native::present::GpuRecipeContext for D3d11Context {
         // 借用当前 D3D11 owner。
         &mut self,
     ) -> Result<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
+        // checked shutdown 后不得重新借出 thin RHI owner。
+        self.ensure_active()?;
         // 同一实例完整实现 GraphicsDevice 与 GraphicsSurface。
         Ok(self)
     }
@@ -41,6 +43,21 @@ impl crate::native::present::GpuRecipeContext for D3d11Context {
         let present_surface = GraphicsContextLifecycle::present_surface(self);
         // 直接借用当前原子 recipe owner，不经过分裂兼容视图。
         crate::native::present::resize_native_rhi_surface(self, present_surface, width, height)
+    }
+}
+
+// 让直接析构 D3D11 adapter 时也执行同一 checked shutdown。
+impl Drop for D3d11Context {
+    // Drop 没有错误返回通道，因此必须记录关闭失败诊断。
+    fn drop(&mut self) {
+        // 显式观察 checked shutdown 结果，禁止静默丢弃未来新增的失败。
+        if let Err(error) = self.shutdown_result() {
+            // 保留 adapter 身份与 typed error 摘要。
+            tracing::error!(
+                "D3d11Context: checked shutdown failed during Drop: {}",
+                error.short_what()
+            );
+        }
     }
 }
 

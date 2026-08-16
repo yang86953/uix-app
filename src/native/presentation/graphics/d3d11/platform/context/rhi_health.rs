@@ -12,6 +12,8 @@ use ::windows::Win32::Graphics::Dxgi::DXGI_ERROR_DEVICE_REMOVED;
 impl D3d11Context {
     // 查询 D3D11 设备是否已经移除或重置。
     pub(super) fn maintain_rhi_device(&mut self) -> Result<()> {
+        // checked shutdown 后不得继续执行 owner-thread device 维护。
+        self.ensure_active()?;
         // 测试注入复用同一 HRESULT 分类，真实 present 仍会经过本入口。
         #[cfg(feature = "test-harness")]
         if std::mem::take(&mut self.rhi_device_lost_for_test) {

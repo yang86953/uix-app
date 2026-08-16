@@ -27,6 +27,8 @@ impl GraphicsSurface for super::D3d11Context {
 
     // 获取当前 backbuffer 的 opaque target，不在此处执行最终 present。
     fn acquire(&mut self) -> Result<SurfaceFrame> {
+        // checked shutdown 后不得重新取得或创建 surface frame。
+        self.ensure_active()?;
         // 测试注入在 acquire 边界返回 surface lost，保证不写入失效目标。
         #[cfg(feature = "test-harness")]
         if std::mem::take(&mut self.rhi_surface_lost_for_test) {
@@ -48,6 +50,8 @@ impl GraphicsSurface for super::D3d11Context {
 
     // 按物理 extent 重建 swapchain，并把输入转换回窗口逻辑尺寸。
     fn resize(&mut self, extent: RhiExtent) -> Result<SurfaceToken> {
+        // checked shutdown 后不得进入 surface resize 事务。
+        self.ensure_active()?;
         // 拒绝零尺寸，避免把无效 surface 交给 DXGI。
         if !extent.is_positive() {
             // 返回稳定的参数错误。
@@ -81,6 +85,8 @@ impl GraphicsSurface for super::D3d11Context {
 
     // 读取当前 D3D11 swapchain surface 的 BGRA 像素。
     fn read_surface_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
+        // checked shutdown 后不得访问 swapchain backbuffer。
+        self.ensure_active()?;
         // 复用 context 私有的 staging texture 实现。
         self.read_surface_pixels_result(x, y, width, height)
     }
@@ -92,6 +98,8 @@ impl GraphicsSurface for super::D3d11Context {
         _submission: crate::native::present::rhi::SubmissionHandle,
         damage: PresentDamage,
     ) -> Result<()> {
+        // checked shutdown 后不得提交旧 frame 或触碰 swapchain。
+        self.ensure_active()?;
         // 拒绝旧代际 frame，避免旧 swapchain 的提交伪装成成功。
         if frame.token != self.token() {
             // 返回 surface lost，让上层保留 dirty 并进入恢复 FSM。
@@ -116,6 +124,8 @@ impl GraphicsSurface for super::D3d11Context {
 
     // 探测已经因遮挡进入 idle 的 D3D11 swapchain 是否恢复可呈现。
     fn test_present(&mut self) -> Result<PresentTestResult> {
+        // checked shutdown 后不得继续探测原生 swapchain。
+        self.ensure_active()?;
         // DXGI_PRESENT_TEST 不提交帧数据，并固定使用同步间隔零。
         // 把 Windows 专属探测严格留在冻结 swapchain adapter 内。
         self.swap_chain.test_present()
