@@ -315,20 +315,24 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         commit_end = source.index("fn discard_clipboard_read_after_poll_error", commit_start)
         # 保存重复事件提交片段。
         commit = source[commit_start:commit_end]
-        # 先取得 last-time guard。
-        commit_last_lock = commit.index("match self.last_repeat_time.lock()")
-        # 到期后再取得 event queue guard。
+        # 先取得 event queue guard。
         event_lock = commit.index("match self.events.lock()")
+        # 随后取得 last-time guard。
+        commit_last_lock = commit.index("match self.last_repeat_time.lock()")
+        # 到期判断必须在两把 guards 健康后重新执行。
+        due_check = commit.index("let should_fire = match *last_repeat")
         # 时间戳只能在两把 guard 健康后推进。
         timestamp_commit = commit.index("*last_repeat = Some(now)")
         # key-down 是首个窗口事件。
         key_event = commit.index("events.push_back(UiEvent::key_down")
         # 可选 text-input 紧随 key-down。
         text_event = commit.index("events.push_back(UiEvent::text_input")
-        # 固定保持 last-time 后 event queue 的锁顺序。
-        self.assertLess(commit_last_lock, event_lock)
-        # event queue 健康后才推进时间。
-        self.assertLess(event_lock, timestamp_commit)
+        # 固定保持 event queue 后 last-time 的全局锁顺序。
+        self.assertLess(event_lock, commit_last_lock)
+        # 两把 guards 健康后才重新判断到期。
+        self.assertLess(commit_last_lock, due_check)
+        # 到期判断后才推进时间。
+        self.assertLess(due_check, timestamp_commit)
         # 时间戳与事件保持确定性提交顺序。
         self.assertLess(timestamp_commit, key_event)
         # key-down 必须先于可选文本事件。
