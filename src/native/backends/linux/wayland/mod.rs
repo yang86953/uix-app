@@ -20,6 +20,8 @@ pub(crate) mod input_proxy_owner;
 pub(crate) mod keyboard;
 // 键盘焦点 Component 事务化提交 Enter/Leave 与输入状态清理。
 pub(crate) mod keyboard_focus_owner;
+// 键盘按键 Component 事务化提交事件、serial 与重复状态。
+pub(crate) mod keyboard_key_owner;
 // 键盘修饰 Component 事务化提交 KeyMod 与重复状态失效。
 pub(crate) mod keyboard_modifier_owner;
 // 键盘重复配置 Component 事务化提交 compositor rate/delay。
