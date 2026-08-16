@@ -833,6 +833,8 @@ impl WaylandBackend {
         self.enqueue_failure(Error::new(code, message));
         // 先建立 closed 事实，阻止后续入口开始新协议工作。
         self.closed = true;
+        // 先失效独立 text-input callback 与 IME session owner。
+        self.shutdown_text_input();
         // 随后立即撤销输入授权、焦点、重复状态与 seat 派生 callbacks。
         self.shutdown_seat_and_input();
         // 输入 callbacks 停止后确定性释放在途 clipboard I/O owners。

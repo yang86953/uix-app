@@ -373,6 +373,8 @@ impl WaylandBackend {
 
 impl Drop for WaylandBackend {
     fn drop(&mut self) {
+        // 先失效独立 text-input callback，避免它借用随后关闭的 seat。
+        self.shutdown_text_input();
         // 先拆除 seat 回调与输入代理，打断兼容回调表的强引用环。
         self.shutdown_seat_and_input();
         // 再释放 clipboard 在途 read/write FD 与过期授权状态。
