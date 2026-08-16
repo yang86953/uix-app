@@ -15,6 +15,17 @@ use wayland_client::{Proxy, WEnum};
 use super::compat::Main;
 // 引入完整 capability 快照到幂等代理边沿的纯决策。
 use super::input_proxy_lifecycle::{InputProxyTransition, input_proxy_transition};
+// capability callback 通过检查式 Component 读取和提交代理 owners。
+use super::input_proxy_owner::{
+    // keyboard callback 注册完成后检查式安装。
+    install_keyboard_proxy,
+    // pointer callback 注册完成后检查式安装。
+    install_pointer_proxy,
+    // pointer callback 创建前检查 activation generation。
+    pointer_generation_checked,
+    // transition 决策前同时读取 pointer/keyboard 槽快照。
+    snapshot_input_proxy_slots,
+};
 use super::{HeldKeyInfo, WaylandBackend};
 // seat callback 保留几何与窗口路由值类型，错误分类已归 clipboard Module。
 use crate::core::{Point, WindowId};
@@ -247,6 +258,8 @@ impl WaylandBackend {
         let surface_windows = self.surface_windows.clone();
         // 所有 pointer 回调共享 Wayland 后端唯一的激活授权注册表。
         let pointer_activations = self.pointer_activations.clone();
+        // capability owner failure 复用 backend 已有 pending source。
+        let capability_failures = self.pending_failures.clone();
         seat.quick_assign(move |seat, event, _| {
             if let wl_seat::Event::Capabilities { capabilities } = event {
                 use wayland_client::protocol::wl_seat::Capability;
@@ -265,14 +278,18 @@ impl WaylandBackend {
                     return;
                     // 结束 keyboard owner 缺失分支。
                 };
-                // Capabilities 是完整快照，先读取当前 pointer 代理是否已经绑定。
-                let pointer_is_bound = wl_pointer_handle
-                    // 短时锁定代理槽位读取边沿状态。
-                    .lock()
-                    // 中毒时仍以槽位现值完成 owner-thread 生命周期判断。
-                    .unwrap_or_else(|error| error.into_inner())
-                    // 只投影代理存在性，不延长额外锁作用域。
-                    .is_some();
+                // Capabilities 是完整快照，先检查式读取两个代理 owner 槽。
+                let Some((pointer_is_bound, keyboard_is_bound)) = snapshot_input_proxy_slots(
+                    // pointer 槽必须先验证健康。
+                    &wl_pointer_handle,
+                    // keyboard 槽随后验证健康。
+                    &wl_keyboard_handle,
+                    // 任一 failure 进入同一 backend source。
+                    &capability_failures,
+                ) else {
+                    // 槽损坏时不计算 transition、不创建协议代理。
+                    return;
+                };
                 // 将完整 pointer capability 快照映射为唯一幂等边沿。
                 let pointer_transition = input_proxy_transition(
                     // 读取 compositor 本次是否声明 pointer 能力。
@@ -281,14 +298,6 @@ impl WaylandBackend {
                     pointer_is_bound,
                     // 结束 pointer 边沿输入。
                 );
-                // 读取当前 keyboard 代理槽以计算同一快照的键盘边沿。
-                let keyboard_is_bound = wl_keyboard_handle
-                    // 短时锁定 keyboard owner 槽。
-                    .lock()
-                    // 中毒时仍以槽位现值完成生命周期判断。
-                    .unwrap_or_else(|error| error.into_inner())
-                    // 只投影代理存在性。
-                    .is_some();
                 // 将完整 keyboard capability 快照映射为唯一幂等边沿。
                 let keyboard_transition = input_proxy_transition(
                     // 读取 compositor 本次是否声明 keyboard 能力。
@@ -306,13 +315,15 @@ impl WaylandBackend {
                     // 新回调持有共享激活注册表句柄。
                     let pointer_activations = pointer_activations.clone();
                     // 捕获创建该 pointer 代理时的稳定代次。
-                    let pointer_generation = pointer_activations
-                        // 短时锁定注册表读取当前代次。
-                        .lock()
-                        // 中毒时仍恢复 owner-thread 可用状态。
-                        .unwrap_or_else(|error| error.into_inner())
-                        // 复制代次供所有迟到回调校验。
-                        .pointer_generation();
+                    let Some(pointer_generation) = pointer_generation_checked(
+                        // generation 仍由 activation registry 唯一拥有。
+                        &pointer_activations,
+                        // registry failure 进入同一 backend source。
+                        &capability_failures,
+                    ) else {
+                        // 状态失败时不调用 get_pointer 或注册 callback。
+                        return;
+                    };
                     let ptr = seat.get_pointer();
                     ptr.quick_assign(move |_, event, _| match event {
                         wl_pointer::Event::Enter {
@@ -558,12 +569,18 @@ impl WaylandBackend {
                         }
                         _ => {}
                     });
-                    // owner 槽在回调执行期间已由升级后的强引用保证存活。
-                    *wl_pointer_handle
-                        // 获取唯一代理槽的可变访问。
-                        .lock()
-                        // 中毒时仍恢复 owner-thread 绑定职责。
-                        .unwrap_or_else(|error| error.into_inner()) = Some(ptr);
+                    // callback 注册完成后检查式提交唯一 pointer owner。
+                    if !install_pointer_proxy(
+                        // 提交到 backend 的唯一 pointer 槽。
+                        &wl_pointer_handle,
+                        // 局部代理失败时由 Component 回滚。
+                        ptr,
+                        // bind failure 进入同一 backend source。
+                        &capability_failures,
+                    ) {
+                        // 槽损坏时局部代理已释放，停止本次 callback。
+                        return;
+                    }
                 // 仅在 Pointer 能力从有到无时释放代理并推进授权代次。
                 } else if pointer_transition == InputProxyTransition::Release {
                     // capability loss 先撤销全部未消费授权并使旧回调代次失效。
@@ -770,12 +787,18 @@ impl WaylandBackend {
                             _ => {}
                         }
                     });
-                    // owner 槽在回调执行期间已由升级后的强引用保证存活。
-                    *wl_keyboard_handle
-                        // 获取唯一 keyboard 代理槽的可变访问。
-                        .lock()
-                        // 中毒时仍恢复 owner-thread 绑定职责。
-                        .unwrap_or_else(|error| error.into_inner()) = Some(kbd);
+                    // callback 注册完成后检查式提交唯一 keyboard owner。
+                    if !install_keyboard_proxy(
+                        // 提交到 backend 的唯一 keyboard 槽。
+                        &wl_keyboard_handle,
+                        // 局部代理失败时由 Component 回滚。
+                        kbd,
+                        // bind failure 进入同一 backend source。
+                        &capability_failures,
+                    ) {
+                        // 槽损坏时局部代理已释放，停止本次 callback。
+                        return;
+                    }
                 // 仅在 Keyboard 能力从有到无时清理状态并释放代理。
                 } else if keyboard_transition == InputProxyTransition::Release {
                     let blurred_window = {

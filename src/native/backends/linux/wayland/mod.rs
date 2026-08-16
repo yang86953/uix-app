@@ -15,6 +15,8 @@ pub(crate) mod event_loop;
 pub(crate) mod frame_callback;
 // 输入代理生命周期模块把完整 capability 快照收敛为幂等边沿。
 pub(crate) mod input_proxy_lifecycle;
+// 输入代理 owner Component 检查式读取与提交 pointer/keyboard 槽。
+pub(crate) mod input_proxy_owner;
 pub(crate) mod keyboard;
 pub(crate) mod keycode;
 pub(crate) mod output;
