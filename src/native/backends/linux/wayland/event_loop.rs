@@ -17,7 +17,7 @@ use libc::{POLLERR, POLLHUP, POLLIN, POLLNVAL, POLLOUT, poll, pollfd};
 use wayland_client::backend::WaylandError;
 
 use crate::core::{Errc, Error};
-use crate::native::windowing::event::{EventLoopWaker, UiEvent};
+use crate::native::windowing::event::UiEvent;
 use crate::native::windowing::input::KeyMod;
 
 use super::WaylandBackend;
@@ -103,31 +103,6 @@ impl WaylandBackend {
         self.dispatch_polled(timeout_ms, "dispatch_timeout")
     }
 
-    pub(crate) fn waker(&self) -> EventLoopWaker {
-        let fd = self.wake_write_fd;
-        let pending_failures = self.pending_failures.clone();
-        EventLoopWaker::new(move || {
-            let byte = [1_u8];
-            // SAFETY：fd 是 pipe2 创建的写端（O_NONBLOCK|O_CLOEXEC），在平台对象
-            // 生命周期契约内保持有效（即使后端已关闭，write 至多返回 EBADF，不构成
-            // 内存不安全）；byte 为栈上存活的 1 字节数组，write 同步返回；单字节
-            // 小于 PIPE_BUF，跨线程并发唤醒时写入仍原子。
-            let result = unsafe { libc::write(fd, byte.as_ptr().cast(), byte.len()) };
-            if result < 0 {
-                let error = std::io::Error::last_os_error();
-                if !matches!(
-                    error.kind(),
-                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
-                ) {
-                    let _ = pending_failures.enqueue(Error::new(
-                        Errc::IoError,
-                        format!("Wayland wake pipe write failed: {error}"),
-                    ));
-                }
-            }
-        })
-    }
-
     /// 从事件队列弹出下一个事件。
     pub(crate) fn next_event(&self) -> Option<UiEvent> {
         // 无 Result 通道时先检查事件队列 owner，再决定是否访问队列。
@@ -174,6 +149,16 @@ impl WaylandBackend {
                 return false;
             }
         };
+        // 文件拖放读队列损坏时不得构造部分 poll 快照。
+        let Some(file_drop_fds) = super::file_drop::read_fds(
+            // 读取 backend 唯一的拖放 Component。
+            &self.file_drop_state,
+            // 快照失败进入既有 pending source。
+            &self.pending_failures,
+        ) else {
+            // typed failure 已入队，终止本轮 dispatch。
+            return false;
+        };
         self.poll_fds.clear();
         self.poll_fds.push(pollfd {
             fd: wayland_fd,
@@ -194,6 +179,19 @@ impl WaylandBackend {
             });
             index
         });
+        // 记录文件拖放 FD 在 poll 数组中的连续区间。
+        let file_drop_read_start = self.poll_fds.len();
+        // 每个已 Drop transfer 作为独立可读 FD。
+        self.poll_fds.extend(file_drop_fds.iter().map(|fd| pollfd {
+            // 快照只复制 FD identity。
+            fd: *fd,
+            // 数据或 EOF 均由可读/HUP completion 处理。
+            events: POLLIN,
+            // poll 将同步填写结果位。
+            revents: 0,
+        }));
+        // 区间终点同时是 clipboard write 起点。
+        let file_drop_read_end = self.poll_fds.len();
         let clipboard_write_start = self.poll_fds.len();
         // 独立检查全部 clipboard write FD owners。
         {
@@ -295,6 +293,25 @@ impl WaylandBackend {
                 }
             }
         }
+        // 按 poll 快照顺序推进全部文件拖放 URI transfer。
+        for index in file_drop_read_start..file_drop_read_end {
+            // completion 必须使用同一槽位的 FD 与结果位。
+            if !super::file_drop::complete_polled_read(
+                // 传入稳定 FD identity。
+                self.poll_fds[index].fd,
+                // 传入本轮 readiness/error 位。
+                self.poll_fds[index].revents,
+                // 访问唯一拖放 Component。
+                &self.file_drop_state,
+                // 完成事件进入 backend 队列。
+                &self.events,
+                // 共享 typed failure source。
+                &self.pending_failures,
+            ) {
+                // owner 状态失败时立即终止本轮 dispatch。
+                return false;
+            }
+        }
         let mut write_budget = super::clipboard::CLIPBOARD_WRITE_BUDGET;
         for index in clipboard_write_start..poll_len {
             if write_budget == 0 {
@@ -318,31 +335,6 @@ impl WaylandBackend {
         }
         // poll 与所有 completion 均成功。
         true
-    }
-
-    fn drain_wake_pipe(&self) {
-        let mut buf = [0_u8; 64];
-        loop {
-            // SAFETY：wake_read_fd 为 pipe2 创建的非阻塞读端，在 backend 存活期内有效；
-            // buf 为栈上存活的 64 字节数组，read 最多写入 buf.len() 字节后同步返回。
-            let ret = unsafe { libc::read(self.wake_read_fd, buf.as_mut_ptr().cast(), buf.len()) };
-            if ret > 0 {
-                continue;
-            }
-            if ret < 0 {
-                let error = std::io::Error::last_os_error();
-                if error.kind() == std::io::ErrorKind::Interrupted {
-                    continue;
-                }
-                if error.kind() != std::io::ErrorKind::WouldBlock {
-                    self.enqueue_failure(Error::new(
-                        Errc::IoError,
-                        format!("Wayland wake pipe read failed: {error}"),
-                    ));
-                }
-            }
-            break;
-        }
     }
 
     // 根据健康 owner 快照编排一次客户端按键重复。
@@ -835,6 +827,8 @@ impl WaylandBackend {
         self.closed = true;
         // 先失效独立 text-input callback 与 IME session owner。
         self.shutdown_text_input();
+        // 文件拖放先释放 offer/read，再注销捕获其状态的 data-device callback。
+        self.shutdown_file_drop();
         // 随后立即撤销输入授权、焦点、重复状态与 seat 派生 callbacks。
         self.shutdown_seat_and_input();
         // 输入 callbacks 停止后确定性释放在途 clipboard I/O owners。

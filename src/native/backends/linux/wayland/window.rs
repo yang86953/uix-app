@@ -50,6 +50,10 @@ impl IWindowManager for WaylandBackend {
             self.seat.clone(),
             // 所有窗口共享后端唯一的一次性激活注册表。
             self.pointer_activations.clone(),
+            // 所有窗口共享 backend 唯一的文件拖放 Component。
+            self.file_drop_state.clone(),
+            // 只有 seat 已建立真实 data-device owner 时能力入口才能成功。
+            self.data_device.is_some(),
             self._xdg_activation.clone(),
         );
 

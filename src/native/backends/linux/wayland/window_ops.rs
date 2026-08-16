@@ -59,6 +59,8 @@ use crate::native::windowing::window::{NativeFrameRequest, NativeFrameRequestPha
 use super::compat::WaylandDispatchState;
 // 引入私有 frame callback Component，保持 WindowOps 只编排协议生命周期。
 use super::frame_callback::{FrameCallbackOwner, deliver_frame_opportunity};
+// 文件拖放 Component 保存逐窗能力与在途协议 owner。
+use super::file_drop::WaylandFileDropState;
 // 引入 Wayland 私有授权注册表及其非致命消费结果。
 use super::pointer_activation::{
     // 消费结果区分可提交 serial 与正常竞态忽略。
@@ -91,6 +93,10 @@ pub(crate) struct WaylandWindowOps {
     seat: Option<Main<wl_seat::WlSeat>>,
     // 共享注册表是 raw pointer press serial 的唯一所有者。
     pointer_activations: Arc<Mutex<WaylandPointerActivationRegistry>>,
+    // backend 级共享 Component 允许窗口同步切换自身接收资格。
+    pub(super) file_drop_state: Arc<Mutex<WaylandFileDropState>>,
+    // 实际 data-device owner 缺失时不得伪造逐窗启用成功。
+    file_drop_available: bool,
     // 单一 Component 同时拥有 active request 与在途 wl_callback handle。
     pub(super) frame_callback: FrameCallbackOwner,
     configured_modes: Arc<Mutex<NativeWindowModeState>>,
@@ -154,6 +160,10 @@ impl WaylandWindowOps {
         seat: Option<Main<wl_seat::WlSeat>>,
         // 注入后端唯一的指针激活注册表。
         pointer_activations: Arc<Mutex<WaylandPointerActivationRegistry>>,
+        // 注入 backend 唯一的文件拖放状态 owner。
+        file_drop_state: Arc<Mutex<WaylandFileDropState>>,
+        // 注入 seat 绑定后实际建立的 data-device 能力事实。
+        file_drop_available: bool,
         xdg_activation: Option<Main<XdgActivationV1>>,
     ) -> Self {
         Self {
@@ -173,6 +183,10 @@ impl WaylandWindowOps {
             seat,
             // 保存授权注册表共享句柄而不复制任何 raw serial。
             pointer_activations,
+            // 保存共享文件拖放 Component。
+            file_drop_state,
+            // 保存不可变 data-device 能力事实。
+            file_drop_available,
             // 新窗口尚未登记原生 frame request 或协议 callback。
             frame_callback: FrameCallbackOwner::new(),
             configured_modes: Arc::new(Mutex::new(NativeWindowModeState::default())),
@@ -474,6 +488,8 @@ impl WindowOps for WaylandWindowOps {
         self.frame_callback.close_checked()?;
         // 注册表失败同步传播，并保留 surface identity 与协议对象供显式重试。
         self.unregister_surface()?;
+        // surface 注销后撤销本窗口的拖放接受资格与在途传输。
+        super::file_drop_window::disable_window(&self.file_drop_state, self.window_id)?;
         // 装饰对象依赖 xdg_toplevel，必须先于顶层窗口释放。
         self.xdg_decoration = None;
         // 先注销 xdg-shell callbacks，再释放两个逐窗协议 handles。
@@ -844,16 +860,34 @@ impl WindowOps for WaylandWindowOps {
 
     fn os_start_text_input(&mut self) -> Result<()> {
         // 旧窗口入口没有持有 TextInputSession，必须诚实拒绝而非伪造启用状态。
-        Err(Error::new(Errc::NotImplemented, "WaylandWindowOps::os_start_text_input: use Platform::text_input().start()"))
+        Err(Error::new(
+            Errc::NotImplemented,
+            "WaylandWindowOps::os_start_text_input: use Platform::text_input().start()",
+        ))
     }
 
     fn os_stop_text_input(&mut self) -> Result<()> {
         // 旧窗口入口没有持有 TextInputSession，必须诚实拒绝而非伪造停用状态。
-        Err(Error::new(Errc::NotImplemented, "WaylandWindowOps::os_stop_text_input: use Platform::text_input().stop()"))
+        Err(Error::new(
+            Errc::NotImplemented,
+            "WaylandWindowOps::os_stop_text_input: use Platform::text_input().stop()",
+        ))
     }
 
-    fn os_enable_file_drop(&mut self, _enable: bool) -> Result<()> {
-        unimpl("os_enable_file_drop")
+    fn os_enable_file_drop(&mut self, enable: bool) -> Result<()> {
+        // Adapter 同时校验 surface、协议能力与共享状态健康度。
+        super::file_drop_window::set_window_capability(
+            // 传入 backend 唯一拖放 Component。
+            &self.file_drop_state,
+            // 更新当前稳定窗口身份。
+            self.window_id,
+            // 只有活动 surface 可以发布接收资格。
+            self.surface_id.is_some(),
+            // 使用构造期协议能力事实。
+            self.file_drop_available,
+            // 传递调用方期望开关。
+            enable,
+        )
     }
 
     // ── 原生句柄 ──────────────────────────────────────────
