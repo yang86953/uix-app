@@ -126,11 +126,18 @@ impl IClipboard for WaylandBackend {
         let Some(ref dd) = self.data_device else {
             return Ok(());
         };
-        let serial = self
-            .last_input_serial
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .latest();
+        // 输入 serial owner 损坏时不得继续创建或提交 selection source。
+        let serial = self.last_input_serial.lock().map_err(|_| {
+            // 构造稳定的剪贴板 serial 状态错误。
+            Error::new(
+                // 共享输入状态已无法安全读取。
+                Errc::InvalidState,
+                // 保留 Wayland set_text 与输入 serial 阶段。
+                "Wayland clipboard input serial mutex poisoned during set_text",
+            )
+        })?;
+        // 健康 guard 只读取最近一次 pointer/keyboard serial。
+        let serial = serial.latest();
         let Some(serial) = serial else {
             if let Ok(mut owns) = self.owns_clipboard.lock() {
                 *owns = false;

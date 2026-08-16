@@ -174,6 +174,39 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         # 既有 FD 初始化失败必须继续分类为 IoError。
         self.assertIn("Errc::IoError", callback)
 
+    # 确认 set_text 不会从 poisoned 输入状态读取 selection serial。
+    def test_clipboard_set_text_checks_input_serial_owner(self) -> None:
+        # 读取 Wayland clipboard 同步 adapter 与 data source callback。
+        source = WAYLAND_CLIPBOARD.read_text(encoding="utf-8")
+        # 限定 set_text 实现。
+        set_start = source.index("fn set_text")
+        # has_text 方法标记 set_text 片段末尾。
+        set_end = source.index("fn has_text", set_start)
+        # 保存完整剪贴板写入编排。
+        set_text = source[set_start:set_end]
+        # 输入 serial mutex 必须使用 checked lock。
+        serial_lock = set_text.index("last_input_serial.lock()")
+        # data source 创建标记首个 Wayland selection 协议动作。
+        create_source = set_text.index("dm.create_data_source()")
+        # MIME offer 必须保持在健康 serial 之后。
+        offer = set_text.index('source.offer("text/plain;charset=utf-8"')
+        # selection 提交必须使用同一健康 serial。
+        set_selection = set_text.index("dd.set_selection(Some(&source), serial)")
+        # serial owner 检查必须先于任何 selection 协议对象创建。
+        self.assertLess(serial_lock, create_source)
+        # data source 必须先声明既有 MIME。
+        self.assertLess(create_source, offer)
+        # MIME 声明必须先于 selection 提交。
+        self.assertLess(offer, set_selection)
+        # 同步 adapter 不得恢复 poisoned input state。
+        self.assertNotIn("into_inner()", set_text)
+        # 锁中毒必须稳定分类为 InvalidState。
+        self.assertIn("Errc::InvalidState", set_text)
+        # 诊断必须保留 clipboard set_text 与 serial 阶段。
+        self.assertIn("clipboard input serial mutex poisoned during set_text", set_text)
+        # 既有无 serial 失败仍必须保留。
+        self.assertIn("no pointer or keyboard serial for selection", set_text)
+
     # 确认 compositor Done 检查式消费 one-shot request 并投递逐窗事件。
     def test_frame_callback_consumes_request_without_ghost_state(self) -> None:
         # 读取 frame callback Component。
