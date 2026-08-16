@@ -6,12 +6,12 @@ use std::path::{Path, PathBuf};
 // 引入与公开 uix!、uix_app! 一致的完整文档解析和生成测试入口。
 use super::{generate_document_app, generate_test_document_view, parse_document, Diagnostic};
 
-// 返回按路径排序的组件参考 Markdown 文件。
-fn reference_markdown_paths(reference_root: &Path) -> Vec<PathBuf> {
-    // 读取权威组件参考目录。
-    let entries = fs::read_dir(reference_root).unwrap_or_else(|error| {
-        // 缺失参考目录时保留具体文件系统错误。
-        panic!("无法读取 {}：{error}", reference_root.display())
+// 返回按路径排序的 Markdown 文件。
+fn markdown_paths(markdown_root: &Path) -> Vec<PathBuf> {
+    // 读取权威 Markdown 目录。
+    let entries = fs::read_dir(markdown_root).unwrap_or_else(|error| {
+        // 缺失文档目录时保留具体文件系统错误。
+        panic!("无法读取 {}：{error}", markdown_root.display())
     });
     // 只保留直接位于该目录下的 Markdown 文件。
     let mut paths = entries
@@ -80,7 +80,7 @@ fn component_reference_examples_generate_as_documents() {
     // 组件参考目录是本门禁的唯一事实输入。
     let reference_root = repository_root.join("docs/uix-lang/参考/组件");
     // 枚举所有权威组件参考页面。
-    let paths = reference_markdown_paths(&reference_root);
+    let paths = markdown_paths(&reference_root);
     // 空目录不能伪装成门禁成功。
     assert!(!paths.is_empty(), "组件参考目录没有 Markdown 页面");
     // 记录跨页面示例总数，防止全部页面意外失去围栏。
@@ -196,7 +196,21 @@ fn style_and_event_reference_examples_generate_as_documents() {
     assert!(total_examples > 0, "没有验证任何样式或事件参考 UIX 示例");
 }
 
-// 为指南中的完整 App、普通 View 与阶段性 Component 片段选择对应生成入口。
+// 依据真实根元素选择公开宏对应的生成入口。
+fn generate_document_source(document: &str) -> Result<(), Diagnostic> {
+    // 解析已经补成唯一根形状的完整文档。
+    let parsed = parse_document(document)?;
+    // App 根必须经过 uix_app! 使用的完整 App builder 生成路径。
+    if parsed.root.name == "App" {
+        // 丢弃令牌文本，只保留结构化成功或诊断结果。
+        generate_document_app(&parsed).map(|_| ())
+    } else {
+        // 普通 View 与补根后的组件片段经过 uix! 使用的完整 View 生成路径。
+        generate_test_document_view(document).map(|_| ())
+    }
+}
+
+// 为指南中的完整 App、普通 View 与阶段性 Component 片段补齐文档形状。
 fn generate_guide_example(example: &str) -> Result<(), Diagnostic> {
     // 仅声明 Component 的教程步骤缺少文档根，需要补无业务语义的稳定 View 根。
     let document = if example.contains("<Component") && !example.contains("<App") {
@@ -206,16 +220,8 @@ fn generate_guide_example(example: &str) -> Result<(), Diagnostic> {
         // 已经包含普通 View 或 App 根的示例保持原始契约。
         example.to_owned()
     };
-    // 先解析文档，以便依据真实根元素选择公开宏对应的生成入口。
-    let parsed = parse_document(&document)?;
-    // App 根必须经过 uix_app! 使用的完整 App builder 生成路径。
-    if parsed.root.name == "App" {
-        // 丢弃令牌文本，只保留结构化成功或诊断结果。
-        generate_document_app(&parsed).map(|_| ())
-    } else {
-        // 普通 View 与补根后的组件片段经过 uix! 使用的完整 View 生成路径。
-        generate_test_document_view(&document).map(|_| ())
-    }
+    // 按补齐后的真实根形状走完整生成路径。
+    generate_document_source(&document)
 }
 
 // 验证快速开始与连续教程中的全部 UIX 示例持续通过对应完整生成。
@@ -265,4 +271,91 @@ fn guide_examples_generate_through_public_entry_shapes() {
     }
     // 当前两份指南应恰好覆盖快速开始三个与教程六个 uix 围栏。
     assert_eq!(total_examples, 9, "UIX 指南示例数量发生未审查变化");
+}
+
+// 把规范中的声明、元素片段与完整文档规范化为唯一根文档。
+fn materialize_specification_example(example: &str) -> String {
+    // 查找首个承载实际源码且不是单行注释的行。
+    let first_code_line = example
+        // 按原始源码行序扫描。
+        .lines()
+        // 去除仅用于排版的首尾空白。
+        .map(str::trim)
+        // 忽略空行与位于示例开头的说明注释。
+        .find(|line| !line.is_empty() && !line.starts_with("//"))
+        // uix 围栏不得是空源码。
+        .expect("规范 uix 围栏不得为空");
+    // App 根必须保持在文档顶层，不能被普通容器包裹。
+    if first_code_line.starts_with("<App") {
+        // 返回完整 App 原文。
+        return example.to_owned();
+    }
+    // Component 与 Record 是顶层声明，不能被普通容器包裹。
+    let starts_with_declaration = first_code_line.starts_with("<Component")
+        // Record 同样属于根元素之前的声明。
+        || first_code_line.starts_with("<Record")
+        // 主题和模块指令使用 @ 前缀。
+        || first_code_line.starts_with('@')
+        // 样式类声明以标识符开头而不是元素标记。
+        || !first_code_line.starts_with('<');
+    // 普通元素片段统一放进 Column，以容纳一个或多个兄弟元素。
+    if !starts_with_declaration {
+        // Column 只提供稳定根形状，不改变被测元素自身语义。
+        return format!("<Column>\n{example}\n</Column>");
+    }
+    // 已经包含顶层声明和唯一根的完整文档保持原样。
+    if parse_document(example).is_ok() {
+        // 返回已经满足唯一根契约的源码。
+        return example.to_owned();
+    }
+    // 纯声明示例追加无业务语义的空容器，以触发全部声明生成。
+    format!("{example}\n<Container />")
+}
+
+// 验证规范目录中全部标记为可执行的 UIX 围栏持续通过完整生成。
+#[test]
+fn specification_examples_generate_as_documents() {
+    // 从过程宏 crate 定位仓库根目录。
+    let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    // 规范目录是语言当前契约示例的唯一事实输入。
+    let specification_root = repository_root.join("docs/uix-lang/规范");
+    // 枚举全部规范页面，让新增页面自动进入治理范围。
+    let paths = markdown_paths(&specification_root);
+    // 空目录不能伪装成门禁成功。
+    assert!(!paths.is_empty(), "UIX 规范目录没有 Markdown 页面");
+    // 记录全部当前可执行围栏数量，防止分类未经审查地改变。
+    let mut total_examples = 0_usize;
+    // 按确定路径顺序验证每份规范页面。
+    for path in paths {
+        // 使用仓库相对路径生成跨机器稳定诊断。
+        let display_path = path
+            // 规范页面必定位于仓库根目录之下。
+            .strip_prefix(&repository_root)
+            // 防御性回退仍保留可读完整路径。
+            .unwrap_or(&path)
+            // 转成平台原生展示文本。
+            .display()
+            // 保存为后续 panic 可拥有的字符串。
+            .to_string();
+        // 读取 UTF-8 Markdown 权威文本。
+        let source = fs::read_to_string(&path)
+            // 文件错误必须点名具体规范页面。
+            .unwrap_or_else(|error| panic!("无法读取 {display_path}：{error}"));
+        // 只提取明确标记为当前可执行契约的 uix 围栏。
+        let examples = fenced_uix_examples(&source, &display_path);
+        // 累加当前页面实际进入完整生成路径的示例数量。
+        total_examples += examples.len();
+        // 分别生成每个示例以保留精确来源行号。
+        for (start_line, example) in examples {
+            // 把声明或元素片段补成可交给公开宏的唯一根文档。
+            let document = materialize_specification_example(&example);
+            // 依据真实根形状走完整 View 或 App 生成路径。
+            generate_document_source(&document).unwrap_or_else(|diagnostic| {
+                // 失败必须同时报告页面、围栏起始行与结构化诊断。
+                panic!("{display_path}:{start_line} UIX 规范示例生成失败：{diagnostic:?}")
+            });
+        }
+    }
+    // 当前分类后应有三十个规范示例实际进入完整生成路径。
+    assert_eq!(total_examples, 30, "UIX 规范示例数量发生未审查变化");
 }
