@@ -80,6 +80,22 @@ fn lock_ime_state_checked<'a>(
 
 // Wayland text-input Module 提供无协议请求的 backend teardown 端口。
 impl WaylandBackend {
+    // 在任何 text-input owner 或协议访问前检查 backend 生命周期。
+    fn ensure_text_input_open(&self, operation: &str) -> Result<()> {
+        // closed 事实由 WaylandBackend owner-thread 唯一提交。
+        if self.closed {
+            // 关闭后访问属于稳定生命周期错误，禁止复活 IME session。
+            return Err(Error::new(
+                // 使用 InvalidState 区分生命周期与 compositor 能力错误。
+                Errc::InvalidState,
+                // 保留具体 text-input 操作以便定位调用方。
+                format!("Wayland text_input {operation} requested after backend shutdown"),
+            ));
+        }
+        // 健康 backend 继续进入既有 text-input 行为。
+        Ok(())
+    }
+
     // 失效当前 IME session、callback 与全部本地 owner 状态。
     pub(crate) fn shutdown_text_input(&mut self) {
         // 首先推进 generation，使所有旧 callback 在共享状态访问前失效。
@@ -122,11 +138,15 @@ impl ITextInput for WaylandBackend {
         window_id: WindowId,
         _native_window: *mut std::ffi::c_void,
     ) -> Result<()> {
+        // 生命周期 gate 必须先于目标窗口 owner 写入。
+        self.ensure_text_input_open("set_target_window")?;
         self.text_input_window_id = Some(window_id);
         Ok(())
     }
 
     fn start(&mut self) -> Result<()> {
+        // 生命周期 gate 必须先于目标、seat、manager 或 generation 访问。
+        self.ensure_text_input_open("start")?;
         let window_id = self.text_input_window_id.ok_or_else(|| {
             Error::new(
                 Errc::InvalidOperation,
@@ -321,6 +341,8 @@ impl ITextInput for WaylandBackend {
     }
 
     fn stop(&mut self) -> Result<()> {
+        // 生命周期 gate 必须先于 composition guards 与 generation 推进。
+        self.ensure_text_input_open("stop")?;
         // 复制 active window，检查失败前不 take session owner。
         let active_window_id = self.active_text_input_window_id;
         // Arc 克隆让 guards 不借用 self，便于后续提交其他 session 字段。
@@ -379,6 +401,8 @@ impl ITextInput for WaylandBackend {
     }
 
     fn set_cursor_rect(&mut self, rect: Rect) -> Result<()> {
+        // 生命周期 gate 必须先于 proxy owner 读取与协议请求。
+        self.ensure_text_input_open("set_cursor_rect")?;
         let Some(text_input) = self.text_input.as_ref() else {
             return Err(Error::new(
                 Errc::InvalidOperation,
