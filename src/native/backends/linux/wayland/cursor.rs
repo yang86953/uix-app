@@ -25,12 +25,28 @@ impl ICursor for WaylandBackend {
             CursorType::NotAllowed => "not-allowed",
             CursorType::Custom => "default",
         };
-        tracing::trace!("Wayland: set_cursor({}) requested", name);
-        Ok(())
+        // 未接线协议能力必须返回 typed error，禁止把日志冒充平台动作。
+        Err(Error::new(
+            // 使用 NotImplemented 表达当前 Adapter 的稳定能力缺失。
+            Errc::NotImplemented,
+            // 保留 operation、请求形状与待接线协议上下文。
+            format!(
+                // 诊断不得声称 compositor 已应用光标。
+                "WaylandBackend::set_cursor({name}): wp_cursor_shape_manager_v1 is not wired"
+            ),
+        ))
     }
     fn show_cursor(&mut self, visible: bool) -> Result<()> {
-        tracing::debug!("Wayland: show_cursor({}) — compositor-controlled", visible);
-        Ok(())
+        // 可见性同样不能以 compositor-controlled 日志伪装成功。
+        Err(Error::new(
+            // 使用相同 capability 分类供 App 交接层稳定去重。
+            Errc::NotImplemented,
+            // 保留 operation 与请求值，便于后续协议实现定位。
+            format!(
+                // 诊断明确当前缺少 cursor surface/shape 可见性接线。
+                "WaylandBackend::show_cursor({visible}): Wayland cursor visibility is not wired"
+            ),
+        ))
     }
     fn cursor_position(&self) -> Result<Point> {
         Err(Error::new(
