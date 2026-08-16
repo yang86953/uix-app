@@ -74,6 +74,45 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         # 每次健康调用只允许弹出一个事件。
         self.assertEqual(next_event.count("events.pop_front()"), 1)
 
+    # 确认阻塞 dispatch 不会依据 poisoned 按键重复状态选择 poll 策略。
+    def test_dispatch_blocking_checks_key_repeat_state_owners(self) -> None:
+        # 读取 Wayland owner-thread 事件循环。
+        source = EVENT_LOOP.read_text(encoding="utf-8")
+        # 限定阻塞 dispatch 实现。
+        dispatch_start = source.index("pub(crate) fn dispatch_blocking")
+        # 超时入口标记阻塞实现末尾。
+        dispatch_end = source.index("pub(crate) fn dispatch_timeout", dispatch_start)
+        # 保存按键重复调度决策片段。
+        dispatch = source[dispatch_start:dispatch_end]
+        # 先读取 held-key owner。
+        held_lock = dispatch.index("self.held_key_info.lock()")
+        # 再读取 repeat-rate owner。
+        rate_lock = dispatch.index("self.repeat_rate.lock()")
+        # 健康状态全部取得后才允许选择重复超时分支。
+        repeat_branch = dispatch.index("if has_held && repeat_rate > 0")
+        # 两份状态必须保持固定非嵌套读取顺序。
+        self.assertLess(held_lock, rate_lock)
+        # 调度选择必须晚于两次 owner 检查。
+        self.assertLess(rate_lock, repeat_branch)
+        # 阻塞入口不得恢复任一 poisoned mutex。
+        self.assertNotIn("into_inner()", dispatch)
+        # 两个 failure 分支都必须稳定分类为 InvalidState。
+        self.assertEqual(dispatch.count("Errc::InvalidState"), 2)
+        # held-key 诊断必须可独立定位。
+        self.assertIn("dispatch_blocking held-key mutex poisoned", dispatch)
+        # repeat-rate 诊断也必须可独立定位。
+        self.assertIn("dispatch_blocking repeat-rate mutex poisoned", dispatch)
+        # 两种 owner failure 都复用 backend pending source。
+        self.assertEqual(dispatch.count("self.enqueue_failure"), 2)
+        # 健康重复路径必须继续委托 timeout dispatch。
+        self.assertIn("self.dispatch_timeout(Duration::from_millis", dispatch)
+        # 无重复输入时仍保持无限期阻塞 poll。
+        self.assertIn('self.dispatch_polled(-1, "dispatch_blocking")', dispatch)
+        # 窄端口不得执行错误策略或用户代码。
+        for forbidden in ["tracing::", ".report(", "attempt_recovery"]:
+            # 任何一项都不得进入阻塞调度决策。
+            self.assertNotIn(forbidden, dispatch)
+
     def test_unknown_created_child_remains_an_explicit_failure_case(self) -> None:
         source = COMPAT.read_text(encoding="utf-8")
         self.assertIn("fn event_created_child", source)
