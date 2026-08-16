@@ -311,7 +311,12 @@ impl WaylandBackend {
             };
             write_budget = write_budget.saturating_sub(written);
         }
-        self.generate_key_repeats();
+        // 按键重复生成的 owner 状态失败必须终止本轮 dispatch。
+        if !self.generate_key_repeats() {
+            // failure 已进入 backend pending source。
+            return false;
+        }
+        // poll 与所有 completion 均成功。
         true
     }
 
@@ -340,71 +345,252 @@ impl WaylandBackend {
         }
     }
 
-    fn generate_key_repeats(&mut self) {
-        let Some(held) = *self.held_key_info.lock().unwrap_or_else(|e| e.into_inner()) else {
-            return;
+    // 根据健康 owner 快照编排一次客户端按键重复。
+    fn generate_key_repeats(&mut self) -> bool {
+        // held-key owner 损坏时不得读取重复输入事实。
+        let held = match self.held_key_info.lock() {
+            // HeldKeyInfo 可复制，guard 随分支结束释放。
+            Ok(held) => *held,
+            // 锁中毒必须显式失败。
+            Err(_) => {
+                // failure 只进入既有 backend source。
+                self.enqueue_failure(Error::new(
+                    // 状态损坏统一分类为 InvalidState。
+                    Errc::InvalidState,
+                    // 诊断保留 held-key 与生成阶段。
+                    "Wayland key repeat held-key mutex poisoned during generation",
+                ));
+                // 调用方必须停止本轮 dispatch。
+                return false;
+            }
         };
+        // 没有按住的键时保持健康无事件语义。
+        let Some(held) = held else {
+            // 无重复候选不属于失败。
+            return true;
+        };
+        // 复制重复事件所需的稳定按键值。
         let code = held.code;
+        // 复制按下时的修饰键事实。
         let mods = held.mods;
+        // 复制首次按下时刻用于 delay 计算。
         let first_press = held.first_press;
+        // 复制事件路由窗口。
         let window_id = held.window_id;
-        let current_target = self
-            .surface_windows
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .keyboard_target();
+        // surface 路由损坏时不得基于未知 target 生成事件。
+        let current_target = match self.surface_windows.lock() {
+            // 健康 guard 只复制当前 keyboard target。
+            Ok(targets) => targets.keyboard_target(),
+            // 锁中毒必须显式失败。
+            Err(_) => {
+                // failure 只进入既有 backend source。
+                self.enqueue_failure(Error::new(
+                    // 状态损坏统一分类为 InvalidState。
+                    Errc::InvalidState,
+                    // 诊断保留 surface target 与生成阶段。
+                    "Wayland key repeat surface target mutex poisoned during generation",
+                ));
+                // 调用方必须停止本轮 dispatch。
+                return false;
+            }
+        };
+        // 重复候选已不属于当前键盘焦点时事务化清理。
         if current_target != Some(window_id) {
-            *self
-                .held_key_info
-                .lock()
-                .unwrap_or_else(|error| error.into_inner()) = None;
-            *self
-                .last_repeat_time
-                .lock()
-                .unwrap_or_else(|error| error.into_inner()) = None;
-            return;
+            // 清理 helper 负责同时提交两份 owner 状态。
+            return self.clear_stale_key_repeat_state();
         }
 
-        let rate = *self.repeat_rate.lock().unwrap_or_else(|e| e.into_inner());
+        // repeat-rate owner 损坏时不得计算调度 interval。
+        let rate = match self.repeat_rate.lock() {
+            // 健康 guard 只复制 compositor rate。
+            Ok(rate) => *rate,
+            // 锁中毒必须显式失败。
+            Err(_) => {
+                // failure 只进入既有 backend source。
+                self.enqueue_failure(Error::new(
+                    // 状态损坏统一分类为 InvalidState。
+                    Errc::InvalidState,
+                    // 诊断保留 repeat-rate 与生成阶段。
+                    "Wayland key repeat rate mutex poisoned during generation",
+                ));
+                // 调用方必须停止本轮 dispatch。
+                return false;
+            }
+        };
+        // compositor 禁用重复时保持候选但不生成事件。
         if rate <= 0 {
-            return;
+            // 健康禁用状态不属于失败。
+            return true;
         }
-        let delay_ms = *self.repeat_delay.lock().unwrap_or_else(|e| e.into_inner());
+        // repeat-delay owner 损坏时不得计算首个触发时刻。
+        let delay_ms = match self.repeat_delay.lock() {
+            // 健康 guard 只复制 compositor delay。
+            Ok(delay) => *delay,
+            // 锁中毒必须显式失败。
+            Err(_) => {
+                // failure 只进入既有 backend source。
+                self.enqueue_failure(Error::new(
+                    // 状态损坏统一分类为 InvalidState。
+                    Errc::InvalidState,
+                    // 诊断保留 repeat-delay 与生成阶段。
+                    "Wayland key repeat delay mutex poisoned during generation",
+                ));
+                // 调用方必须停止本轮 dispatch。
+                return false;
+            }
+        };
 
+        // owner-thread 单调时钟决定本轮触发判断。
         let now = Instant::now();
+        // 计算候选键已经保持的时间。
         let elapsed = now.duration_since(first_press);
+        // delay 至少为 1ms，保留既有防御语义。
         let delay = Duration::from_millis(delay_ms.max(1) as u64);
+        // 首次 delay 尚未到期时不访问提交 owners。
         if elapsed < delay {
-            return;
+            // 健康等待状态不属于失败。
+            return true;
         }
 
+        // 依据 compositor rate 计算重复间隔。
         let interval = Duration::from_secs_f32(1.0 / rate as f32);
+        // 继续保留 10ms 的最小节拍限制。
         let min_interval = Duration::from_millis(10);
+        // 选择协议间隔与最小限制中的较大值。
         let interval = interval.max(min_interval);
+        // 到期判断与事件提交由同一 guard 事务完成。
+        self.commit_key_repeat_if_due(now, first_press, delay, interval, code, mods, window_id)
+    }
 
-        let should_fire = match *self
-            .last_repeat_time
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-        {
+    // 同时清理失去焦点的 held-key 与重复节拍状态。
+    fn clear_stale_key_repeat_state(&mut self) -> bool {
+        // 先取得 held-key guard，保持固定锁顺序。
+        let mut held_key = match self.held_key_info.lock() {
+            // 健康 guard 暂不修改，等待第二个 owner。
+            Ok(held_key) => held_key,
+            // 锁中毒必须显式失败。
+            Err(_) => {
+                // failure 只进入既有 backend source。
+                self.enqueue_failure(Error::new(
+                    // 状态损坏统一分类为 InvalidState。
+                    Errc::InvalidState,
+                    // 诊断保留焦点失配清理阶段。
+                    "Wayland key repeat held-key mutex poisoned during stale-state cleanup",
+                ));
+                // 不产生任何半清理。
+                return false;
+            }
+        };
+        // 再取得 last-time guard，两个 owner 健康后才允许提交。
+        let mut last_repeat = match self.last_repeat_time.lock() {
+            // 健康 guard 与 held-key guard 组成清理事务。
+            Ok(last_repeat) => last_repeat,
+            // 第二个 owner 损坏时保持第一份状态不变。
+            Err(_) => {
+                // 先释放第一把 guard，避免跨 owner 入队。
+                drop(held_key);
+                // failure 只进入既有 backend source。
+                self.enqueue_failure(Error::new(
+                    // 状态损坏统一分类为 InvalidState。
+                    Errc::InvalidState,
+                    // 诊断保留 last-time 与焦点失配清理阶段。
+                    "Wayland key repeat last-time mutex poisoned during stale-state cleanup",
+                ));
+                // 不产生 held-key 半清理。
+                return false;
+            }
+        };
+        // 两个 owner 均健康后清除重复候选。
+        *held_key = None;
+        // 在同一事务中清除历史节拍。
+        *last_repeat = None;
+        // 焦点失配清理成功。
+        true
+    }
+
+    // 在重复到期时事务化提交节拍和窗口事件。
+    #[allow(clippy::too_many_arguments)]
+    // 参数均为 generate_key_repeats 的不可变健康快照。
+    fn commit_key_repeat_if_due(
+        // event loop owner 负责提交事务。
+        &mut self,
+        // 本轮 owner-thread 单调时刻。
+        now: Instant,
+        // 物理按键首次按下时刻。
+        first_press: Instant,
+        // compositor 首次重复延迟。
+        delay: Duration,
+        // compositor 重复间隔与 10ms 限制的结果。
+        interval: Duration,
+        // 统一框架键码。
+        code: crate::native::windowing::input::KeyCode,
+        // 按下时的修饰键快照。
+        mods: KeyMod,
+        // 重复事件目标窗口。
+        window_id: crate::core::WindowId,
+        // 布尔结果显式传播 owner 状态失败。
+    ) -> bool {
+        // 先取得 last-time guard，保持提交锁顺序。
+        let mut last_repeat = match self.last_repeat_time.lock() {
+            // 健康 guard 用于到期判断与最终提交。
+            Ok(last_repeat) => last_repeat,
+            // 锁中毒必须显式失败。
+            Err(_) => {
+                // failure 只进入既有 backend source。
+                self.enqueue_failure(Error::new(
+                    // 状态损坏统一分类为 InvalidState。
+                    Errc::InvalidState,
+                    // 诊断保留 last-time 与事件提交阶段。
+                    "Wayland key repeat last-time mutex poisoned during event commit",
+                ));
+                // 不更新时间，也不写事件。
+                return false;
+            }
+        };
+        // 在健康节拍状态上计算本轮是否到期。
+        let should_fire = match *last_repeat {
+            // 后续重复依据上次成功提交时刻。
             Some(last) => now.duration_since(last) >= interval,
+            // 首次重复依据物理按下时刻与 delay。
             None => now >= first_press + delay,
         };
+        // 尚未到期时不需要访问事件队列。
         if !should_fire {
-            return;
+            // 健康等待状态不属于失败。
+            return true;
         }
-
-        *self
-            .last_repeat_time
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = Some(now);
-
+        // 到期后再取得 event queue guard，尚未修改 last-time。
+        let mut events = match self.events.lock() {
+            // 健康 guard 与 last-time guard 组成提交事务。
+            Ok(events) => events,
+            // 队列损坏时保持重复时间不变。
+            Err(_) => {
+                // 先释放 last-time guard，避免跨 owner 入队。
+                drop(last_repeat);
+                // failure 只进入既有 backend source。
+                self.enqueue_failure(Error::new(
+                    // 状态损坏统一分类为 InvalidState。
+                    Errc::InvalidState,
+                    // 诊断保留 event queue 与重复提交阶段。
+                    "Wayland key repeat event queue mutex poisoned during event commit",
+                ));
+                // 不推进时间，也不写入部分事件。
+                return false;
+            }
+        };
+        // 两个 owner 均健康后提交本次重复时刻。
+        *last_repeat = Some(now);
+        // 根据按下时快照决定文本转换的 Shift 状态。
         let shift_down = mods.intersects(KeyMod::SHIFT);
-        let mut q = self.events.lock().unwrap_or_else(|e| e.into_inner());
-        q.push_back(UiEvent::key_down(code, mods).for_window(window_id));
+        // 先提交与物理按下同形的 key-down 事件。
+        events.push_back(UiEvent::key_down(code, mods).for_window(window_id));
+        // 可打印键继续生成紧随其后的文本事件。
         if let Some(text) = keycode_to_char(code, shift_down) {
-            q.push_back(UiEvent::text_input(text).for_window(window_id));
+            // 文本事件保持同一窗口路由与既有顺序。
+            events.push_back(UiEvent::text_input(text).for_window(window_id));
         }
+        // 时间戳与全部事件已在同一双 guard 事务中提交。
+        true
     }
 
     // 检查式移除 poll 已报告错误的 clipboard read owner。
