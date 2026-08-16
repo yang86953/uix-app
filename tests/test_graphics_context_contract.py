@@ -748,6 +748,51 @@ class GraphicsContextContractTests(unittest.TestCase):
         # context 与 surface 删除结果同样不得被静默丢弃。
         self.assertNotIn("let _ = egl.destroy_", source)
 
+    # 校验 Vulkan 构造 guard 保活 device 并统一接管交付前的 native 资源。
+    def test_vulkan_construction_guard_owns_pre_context_rollback(self) -> None:
+        # 读取独立的 Vulkan 构造 owner 实现。
+        guard_source = (
+            ROOT
+            / "src/native/presentation/graphics/vulkan/platform/context/construction.rs"
+        ).read_text(encoding="utf-8")
+        # 读取 VulkanContext 构造函数接线。
+        methods_source = (
+            ROOT / "src/native/presentation/graphics/vulkan/platform/context/methods.rs"
+        ).read_text(encoding="utf-8")
+        # 只截取正式 context 交付前的构造函数，排除运行期 shutdown 清理。
+        constructor = methods_source[
+            methods_source.index("pub(crate) fn new") : methods_source.index(
+                "pub(super) fn active_device"
+            )
+        ]
+        # guard 必须持有共享 device lease，避免 child 清理晚于 native device 销毁。
+        self.assertIn("device_lease: Option<Rc<VulkanDevice>>", guard_source)
+        # 回滚必须严格按 fence、semaphore、command pool、surface 排序。
+        operations = (
+            "destroy_fence(self.frame_fence, None)",
+            "destroy_semaphore(self.image_available, None)",
+            "destroy_command_pool(self.command_pool, None)",
+            "destroy_failed_surface(&self.surface_loader, self.surface)",
+        )
+        # 提取每个 native teardown 操作在 guard 中的位置。
+        positions = tuple(guard_source.index(operation) for operation in operations)
+        # 位置必须单调递增，固定依赖逆序。
+        self.assertEqual(positions, tuple(sorted(positions)))
+        # 每个成功创建的 device child 都必须立即登记到唯一 owner。
+        self.assertIn("pending.set_command_pool(command_pool)", constructor)
+        # semaphore 同样不得游离于构造 owner。
+        self.assertIn("pending.set_image_available(image_available)", constructor)
+        # fence 同样不得游离于构造 owner。
+        self.assertIn("pending.set_frame_fence(frame_fence)", constructor)
+        # 成功路径必须显式、一次性移交全部 native 句柄。
+        self.assertIn("pending.into_handles()", constructor)
+        # 旧的 surface 手工失败清理不得残留在构造函数。
+        self.assertNotIn("destroy_failed_surface(", constructor)
+        # 旧的 command-pool 手工失败清理不得残留在构造函数。
+        self.assertNotIn("destroy_command_pool(", constructor)
+        # 旧的 semaphore 手工失败清理不得残留在构造函数。
+        self.assertNotIn("destroy_semaphore(", constructor)
+
     # 校验 Vulkan owner shutdown 与 lost-device generation 契约。
     def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
         # 组合读取 Vulkan context 的拆分模块，以保持顺序审计语义。

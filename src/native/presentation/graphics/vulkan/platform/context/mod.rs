@@ -21,10 +21,15 @@ use super::surface::{
     create_platform_surface, destroy_failed_surface,
 };
 
+// 构造 module 唯一持有正式 context 交付前的 Vulkan native 资源。
+mod construction;
 mod graphics;
 mod methods;
 mod swapchain;
 mod transfer;
+
+// 构造函数只通过私有 guard 完成失败回滚与成功句柄移交。
+use construction::PendingVulkanContext;
 
 #[cfg(test)]
 pub(crate) use swapchain::PresentCompletion;
