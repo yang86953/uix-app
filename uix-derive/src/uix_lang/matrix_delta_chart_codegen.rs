@@ -13,8 +13,8 @@ use super::chart_common_codegen::{apply_common_chart_attribute, is_common_chart_
 use super::static_chart_codegen::validate_inline_data;
 // 引入属性、表达式、布尔值与诊断契约。
 use super::{
-    Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_expression,
-    literal_string,
+    boolean_value, generate_expression, literal_string, Attribute, AttributeValue, Diagnostic,
+    Element,
 };
 
 // 生成热力图或瀑布图的类型化静态映射。
@@ -261,7 +261,7 @@ fn apply_heatmap_color_attribute(
             // 说明类型化表达式要求。
             format!("Heatmap {} 必须是类型化颜色表达式", attribute.name),
             // 给出两类已登记颜色契约。
-            "使用 colorRange={(min, max)} 或 colorStops={stops}",
+            "使用 colorRange={color_range} 或 colorStops={color_stops}",
         ));
     };
     // 生成受限 Rust 表达式。
