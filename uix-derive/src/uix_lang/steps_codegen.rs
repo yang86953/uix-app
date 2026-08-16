@@ -6,7 +6,7 @@ use quote::quote;
 // 引入公共属性与叶节点形状判定。
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Steps 属性、表达式与诊断契约。
-use super::{Attribute, AttributeValue, Diagnostic, Element, generate_expression};
+use super::{Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_expression};
 
 // 生成绑定 Step 集合、State<usize> current 与方向的步骤条叶节点。
 pub(crate) fn generate_steps(element: &Element) -> Result<TokenStream, Diagnostic> {
@@ -65,11 +65,25 @@ pub(crate) fn generate_steps(element: &Element) -> Result<TokenStream, Diagnosti
     let direction = generate_direction(element)?;
 
     // 先构造步骤集合，再绑定唯一 current 状态，最后应用方向。
-    let widget = quote! {
+    let mut widget = quote! {
         ::uix::prelude::Steps::new(#steps)
             .current_state(&(#current))
             #direction
     };
+    // 可选点击能力只声明交互策略，current 状态仍由调用方拥有。
+    if let Some(attribute) = find_attribute(element, "clickable") {
+        // 复用统一布尔值诊断并保留动态 bool 类型检查。
+        let clickable = boolean_value(attribute)?;
+        // 把最终点击策略传给公开运行时构建器。
+        widget = quote! { (#widget).clickable(#clickable) };
+    }
+    // 可选圆点样式只改变运行时绘制配置。
+    if let Some(attribute) = find_attribute(element, "dot") {
+        // 复用统一布尔值诊断并保留动态 bool 类型检查。
+        let dot = boolean_value(attribute)?;
+        // 把最终绘制策略传给公开运行时构建器。
+        widget = quote! { (#widget).dot(#dot) };
+    }
     // Steps 物化为公开叶 View。
     let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
     // 消费 Steps 专有属性并应用公共 View 属性。
@@ -79,7 +93,7 @@ pub(crate) fn generate_steps(element: &Element) -> Result<TokenStream, Diagnosti
         // 保留属性源码顺序供公共映射处理。
         &element.attributes,
         // 防止专有属性进入公共映射。
-        &["items", "current", "direction"],
+        &["items", "current", "direction", "clickable", "dot"],
     )
 }
 

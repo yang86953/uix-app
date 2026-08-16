@@ -13,9 +13,9 @@ fn generate(source: &str) -> Result<String, Diagnostic> {
 #[test]
 // 声明完整 Steps 生成测试。
 fn generates_bound_steps_contract() {
-    // 生成覆盖类型化数据、状态、垂直方向与公共属性的步骤条。
+    // 生成覆盖类型化数据、状态、方向、动态点击、圆点与公共属性的步骤条。
     let snapshot = generate(
-        r#"<Steps current={step} items={step_items} direction="vertical" width="320px" automationId="checkout-steps" />"#,
+        r#"<Steps current={step} items={step_items} direction="vertical" clickable={allow_step_change} dot width="320px" automationId="checkout-steps" />"#,
     )
     // 合法 Steps 必须成功生成。
     .expect("文档属性应映射到公开 Steps API");
@@ -27,6 +27,10 @@ fn generates_bound_steps_contract() {
     assert!(snapshot.contains("current_state (& (step))"));
     // 垂直方向必须调用公开构建器。
     assert!(snapshot.contains("vertical ()"));
+    // 动态点击配置必须保留调用方 bool 类型检查。
+    assert!(snapshot.contains("clickable (allow_step_change)"));
+    // 圆点布尔简写必须生成显式 true。
+    assert!(snapshot.contains("dot (true)"));
     // 公共宽度与自动化标识仍由公共属性层消费。
     assert!(snapshot.contains("width (320.0)") && snapshot.contains("automation_id"));
 }
@@ -96,9 +100,9 @@ fn rejects_invalid_steps_shape_and_attributes() {
     // 动态方向使用同一有限关键字诊断。
     assert!(dynamic.message.contains("horizontal"));
     // 未登记属性不能被公共映射静默忽略。
-    let unknown = generate(r#"<Steps current={step} items={step_items} clickable />"#)
+    let unknown = generate(r#"<Steps current={step} items={step_items} status="process" />"#)
         // 文档外属性必须失败。
         .expect_err("未知 Steps 属性必须被拒绝");
     // 诊断必须包含具体未知属性名。
-    assert!(unknown.message.contains("clickable"));
+    assert!(unknown.message.contains("status"));
 }
