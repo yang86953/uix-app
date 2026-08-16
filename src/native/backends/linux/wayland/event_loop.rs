@@ -47,14 +47,43 @@ impl WaylandBackend {
             return false;
         }
 
-        // 检查是否需要客户端侧按键重复
-        let (has_held, repeat_rate) = {
-            let hki = self.held_key_info.lock().unwrap_or_else(|e| e.into_inner());
-            let rate = *self.repeat_rate.lock().unwrap_or_else(|e| e.into_inner());
-            (hki.is_some() && rate > 0, rate)
+        // 先在独立短锁中读取是否存在客户端重复按键。
+        let has_held = match self.held_key_info.lock() {
+            // 健康 owner 只复制布尔事实，guard 随本分支结束释放。
+            Ok(held_key) => held_key.is_some(),
+            // 损坏状态不得继续影响阻塞调度决策。
+            Err(_) => {
+                // failure 进入 backend 已有 source，留待 App owner-thread 处理。
+                self.enqueue_failure(Error::new(
+                    // 客户端重复 owner 已无法安全读取。
+                    Errc::InvalidState,
+                    // 保留 held-key 与阻塞调度阶段。
+                    "Wayland dispatch_blocking held-key mutex poisoned",
+                ));
+                // 终止本次 dispatch，不进入 poll 或重复生成。
+                return false;
+            }
+        };
+        // 第一把 guard 已释放后再读取独立的重复速率状态。
+        let repeat_rate = match self.repeat_rate.lock() {
+            // 健康 owner 只复制协议速率值。
+            Ok(rate) => *rate,
+            // 损坏速率不得被恢复为调度参数。
+            Err(_) => {
+                // failure 进入同一 backend pending source。
+                self.enqueue_failure(Error::new(
+                    // 重复速率 owner 已无法安全读取。
+                    Errc::InvalidState,
+                    // 保留 repeat-rate 与阻塞调度阶段。
+                    "Wayland dispatch_blocking repeat-rate mutex poisoned",
+                ));
+                // 终止本次 dispatch，不进入 poll 或重复生成。
+                return false;
+            }
         };
 
-        if has_held {
+        // 只有实际按键与正重复速率同时成立才使用超时 dispatch。
+        if has_held && repeat_rate > 0 {
             // 按键按住 + 客户端重复启用：使用 poll 循环，
             // 超时时间基于重复速率，确保 generate_key_repeats() 按时触发
             let interval_ms = (1000 / repeat_rate).max(10).min(100) as i32;
