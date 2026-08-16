@@ -99,6 +99,57 @@ class WaylandInputProxyOwnerGuardTests(unittest.TestCase):
         # 两个 install failure 都停止 capability callback。
         self.assertGreaterEqual(seat.count("槽损坏时局部代理已释放"), 2)
 
+    # 确认 pointer Release 在三个 owners 健康后一次提交 teardown。
+    def test_pointer_release_commits_three_owner_state_transactionally(self) -> None:
+        # 读取输入代理 owner Component。
+        owner = OWNER.read_text(encoding="utf-8")
+        # 读取 seat capability adapter。
+        seat = SEAT.read_text(encoding="utf-8")
+        # 定位 checked pointer Release 端口。
+        release_start = owner.index("pub(crate) fn release_pointer_proxy_checked")
+        # 保存文件末尾的完整 Release Component。
+        release = owner[release_start:]
+        # activation registry 必须先取得。
+        activation_lock = release.index("pointer_activations.lock()")
+        # surface targets 随后取得。
+        surface_lock = release.index("surface_windows.lock()")
+        # pointer slot 最后取得。
+        slot_lock = release.index("pointer_slot.lock()")
+        # 固定保持 activation→surface 锁序。
+        self.assertLess(activation_lock, surface_lock)
+        # 固定保持 surface→slot 锁序。
+        self.assertLess(surface_lock, slot_lock)
+        # 首项 teardown 是授权失效。
+        invalidate = release.index("activations.invalidate_pointer()")
+        # 焦点清除紧随授权失效。
+        clear_focus = release.index("targets.clear_pointer_focus()")
+        # 代理取出是锁内最后提交事实。
+        take_proxy = release.index("let pointer = slot.take()")
+        # 三把 guards 均健康后才开始修改。
+        self.assertLess(slot_lock, invalidate)
+        # 授权失效先于焦点清除。
+        self.assertLess(invalidate, clear_focus)
+        # 焦点清除先于代理取出。
+        self.assertLess(clear_focus, take_proxy)
+        # callback 清理必须发生在显式释放三把 guards 后。
+        self.assertLess(release.index("drop(activations)"), release.index("discard_pointer_proxy(pointer)"))
+        # 三个 owner failure 都必须独立可定位。
+        for stage in ["activation registry", "surface targets", "proxy slot"]:
+            # 每个 Release owner 都保留稳定诊断。
+            self.assertIn(f"pointer {stage} mutex poisoned during release", release)
+        # seat Release 分支必须委托 checked Component。
+        branch_start = seat.index("pointer_transition == InputProxyTransition::Release")
+        # keyboard Bind 标记 pointer Release 分支末尾。
+        branch_end = seat.index("keyboard_transition == InputProxyTransition::Bind", branch_start)
+        # 保存 seat pointer Release adapter。
+        branch = seat[branch_start:branch_end]
+        # adapter 只允许调用事务 Component。
+        self.assertIn("release_pointer_proxy_checked(", branch)
+        # adapter 不得直接锁任何 teardown owner。
+        self.assertNotIn(".lock()", branch)
+        # adapter 不得恢复 poisoned owner。
+        self.assertNotIn("into_inner()", branch)
+
 
 # 直接执行本文件时运行契约测试。
 if __name__ == "__main__":

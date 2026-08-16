@@ -12,6 +12,8 @@ use wayland_client::Proxy;
 use crate::core::{Errc, Error};
 // callback failure 进入 backend 已有 pending source。
 use crate::diagnostics::PendingFailureSource;
+// surface focus 路由继续由共享 window-target Component 拥有。
+use crate::native::windowing::shared::window_target::SurfaceWindowTargets;
 
 // compat Main 是 callback 注册与协议代理的唯一组合 owner。
 use super::compat::Main;
@@ -209,5 +211,95 @@ pub(crate) fn install_keyboard_proxy(
     // 健康槽正式接管 Main 与 callback owner。
     *slot = Some(keyboard);
     // keyboard Bind 提交成功。
+    true
+}
+
+// 事务化清理 pointer capability Release 涉及的三个 owner。
+pub(crate) fn release_pointer_proxy_checked(
+    // activation registry 拥有授权与 pointer generation。
+    pointer_activations: &Arc<Mutex<WaylandPointerActivationRegistry>>,
+    // surface targets 拥有当前 pointer focus。
+    surface_windows: &Arc<Mutex<SurfaceWindowTargets>>,
+    // pointer 槽拥有唯一协议代理与 callback。
+    pointer_slot: &Arc<Mutex<Option<Main<wl_pointer::WlPointer>>>>,
+    // 任一状态失败进入同一 backend source。
+    pending_failures: &PendingFailureSource,
+    // false 表示没有任何 teardown 状态被修改。
+) -> bool {
+    // 先取得 activation guard，尚不推进 generation。
+    let mut activations = match pointer_activations.lock() {
+        // 健康 guard 暂不修改，等待其余 owners。
+        Ok(activations) => activations,
+        // registry 损坏时立即停止。
+        Err(_) => {
+            // 入队一次稳定 activation failure。
+            enqueue_owner_failure(
+                // 使用同一 backend source。
+                pending_failures,
+                // 诊断保留 pointer Release 阶段。
+                "Wayland seat capability pointer activation registry mutex poisoned during release",
+            );
+            // 不清焦点、不取出代理。
+            return false;
+        }
+    };
+    // 再取得 surface-targets guard，保持固定第二锁位。
+    let mut targets = match surface_windows.lock() {
+        // 两个健康 guards 继续等待代理槽。
+        Ok(targets) => targets,
+        // surface 路由损坏时保持 activation 不变。
+        Err(_) => {
+            // 先释放 activation guard，避免跨 owner 入队。
+            drop(activations);
+            // 入队一次稳定 surface-target failure。
+            enqueue_owner_failure(
+                // 使用同一 backend source。
+                pending_failures,
+                // 诊断保留 pointer Release 阶段。
+                "Wayland seat capability pointer surface targets mutex poisoned during release",
+            );
+            // 不推进 generation、不取出代理。
+            return false;
+        }
+    };
+    // 最后取得 pointer-slot guard，保持固定第三锁位。
+    let mut slot = match pointer_slot.lock() {
+        // 三个健康 guards 组成 teardown 事务。
+        Ok(slot) => slot,
+        // 代理槽损坏时保持前两份状态不变。
+        Err(_) => {
+            // 先释放 surface-targets guard。
+            drop(targets);
+            // 再释放 activation guard。
+            drop(activations);
+            // 入队一次稳定 pointer-slot failure。
+            enqueue_owner_failure(
+                // 使用同一 backend source。
+                pending_failures,
+                // 诊断保留 pointer Release commit 阶段。
+                "Wayland seat capability pointer proxy slot mutex poisoned during release",
+            );
+            // 不产生任何半 teardown。
+            return false;
+        }
+    };
+    // 三个 owners 均健康后撤销授权并推进 generation。
+    activations.invalidate_pointer();
+    // 同一事务中清除陈旧 pointer focus。
+    targets.clear_pointer_focus();
+    // 最后从唯一 owner 槽取出协议代理。
+    let pointer = slot.take();
+    // 先释放代理槽 guard。
+    drop(slot);
+    // 再释放 surface-targets guard。
+    drop(targets);
+    // 最后释放 activation guard。
+    drop(activations);
+    // 只有实际存在的代理需要在锁外注销和释放。
+    if let Some(pointer) = pointer {
+        // 复用未提交代理相同的安全清理序列。
+        discard_pointer_proxy(pointer);
+    }
+    // 空槽与实际释放均为幂等成功。
     true
 }

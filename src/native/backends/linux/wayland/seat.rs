@@ -23,6 +23,8 @@ use super::input_proxy_owner::{
     install_pointer_proxy,
     // pointer callback 创建前检查 activation generation。
     pointer_generation_checked,
+    // pointer capability loss 事务化清理授权、焦点与代理。
+    release_pointer_proxy_checked,
     // transition 决策前同时读取 pointer/keyboard 槽快照。
     snapshot_input_proxy_slots,
 };
@@ -583,25 +585,20 @@ impl WaylandBackend {
                     }
                 // 仅在 Pointer 能力从有到无时释放代理并推进授权代次。
                 } else if pointer_transition == InputProxyTransition::Release {
-                    // capability loss 先撤销全部未消费授权并使旧回调代次失效。
-                    pointer_activations
-                        // 获取注册表唯一可变访问。
-                        .lock()
-                        // 中毒时仍完成 owner-thread 生命周期失效。
-                        .unwrap_or_else(|error| error.into_inner())
-                        // 清空授权并推进 pointer generation。
-                        .invalidate_pointer();
-                    // pointer 能力消失时同步清除共享 surface 焦点。
-                    surface_windows
-                        // 短时锁定路由状态。
-                        .lock()
-                        // 中毒时继续完成确定性清理。
-                        .unwrap_or_else(|error| error.into_inner())
-                        // 防止后续无 surface 事件沿用旧窗口焦点。
-                        .clear_pointer_focus();
-                    // 统一 helper 在锁外注销回调并释放唯一 pointer 代理。
-                    release_pointer_proxy(&wl_pointer_handle);
-                    // 结束 pointer capability 边沿处理。
+                    // 三 owner Component 在全部 guards 健康后提交 teardown。
+                    if !release_pointer_proxy_checked(
+                        // 授权与 generation owner。
+                        &pointer_activations,
+                        // pointer focus owner。
+                        &surface_windows,
+                        // 唯一 pointer proxy owner 槽。
+                        &wl_pointer_handle,
+                        // failure 进入同一 backend source。
+                        &capability_failures,
+                    ) {
+                        // 状态失败时没有半清理，停止本次 capability callback。
+                        return;
+                    }
                 }
                 // 仅在 Keyboard 能力从无到有时创建一个代理与回调。
                 if keyboard_transition == InputProxyTransition::Bind {
