@@ -149,10 +149,23 @@ impl IClipboard for WaylandBackend {
         source.quick_assign(move |_, event, _| {
             if let wl_data_source::Event::Send { mime_type: _, fd } = event {
                 match ClipboardWrite::from_event_fd(fd.into_raw_fd(), Arc::clone(&bytes)) {
-                    Ok(write) => writes
-                        .lock()
-                        .unwrap_or_else(|error| error.into_inner())
-                        .push(write),
+                    // 成功构造后，局部 ClipboardWrite 暂时独占协议 FD。
+                    Ok(write) => {
+                        // 只有健康发送队列才能接管本次 FD owner。
+                        let Ok(mut queued) = writes.lock() else {
+                            // 队列损坏必须交给 owner-thread failure source。
+                            let _ = pending_failures.enqueue(Error::new(
+                                // callback 无法提交 cursor 属于稳定 owner 状态错误。
+                                Errc::InvalidState,
+                                // 保留 data_source Send 的精确失败阶段。
+                                "Wayland clipboard Send write queue mutex poisoned",
+                            ));
+                            // 返回时局部 write Drop，确保协议 FD 不泄漏。
+                            return;
+                        };
+                        // 健康队列正式接管非阻塞 ClipboardWrite owner。
+                        queued.push(write);
+                    }
                     Err(error) => {
                         let _ = pending_failures.enqueue(Error::new(
                             Errc::IoError,
