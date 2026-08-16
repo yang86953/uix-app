@@ -107,6 +107,8 @@ impl D3d11Context {
         logical_width: i32,
         logical_height: i32,
     ) -> Result<()> {
+        // checked shutdown 后不得重新创建 swapchain surface 资源。
+        self.ensure_active()?;
         // 拒绝无效尺寸，避免把非法参数传给 DXGI。
         if physical_width <= 0 || physical_height <= 0 {
             // 返回稳定的参数错误，保持 RHI 和兼容入口一致。
@@ -155,7 +157,39 @@ impl D3d11Context {
     }
 
     pub(super) fn shutdown_result(&mut self) -> Result<()> {
+        // 已完成关闭时保持幂等成功，不重复触碰 COM context。
+        if self.shutdown {
+            // 向重复关闭调用确认稳定结果。
+            return Ok(());
+        }
+        // 先解除并释放当前 backbuffer RTV。
         self.release_rtv();
+        // SAFETY: immediate context 由本 D3D11Context 唯一持有，关闭阶段不再接受新提交。
+        unsafe {
+            // 清除所有 pipeline/resource 绑定，释放 context 持有的内部 COM 引用。
+            self.context.ClearState();
+            // 把此前已排队命令提交给 driver，避免对象析构时仍残留未刷新的命令引用。
+            self.context.Flush();
+        }
+        // 只有完整完成解绑、清理与 flush 后才提交关闭事实。
+        self.shutdown = true;
+        // 向调用方确认 checked shutdown 成功。
+        Ok(())
+    }
+
+    // 拒绝 checked shutdown 之后的 D3D11 native/RHI 工作。
+    pub(super) fn ensure_active(&self) -> Result<()> {
+        // 关闭事实是 adapter 内唯一的生命周期门禁。
+        if self.shutdown {
+            // 返回稳定状态错误，不允许重新创建已关闭资源。
+            return Err(Error::new(
+                // shutdown 后调用属于 owner 生命周期错误。
+                Errc::InvalidState,
+                // 保留可诊断的 adapter 与阶段。
+                "D3d11Context: operation requested after shutdown",
+            ));
+        }
+        // context 仍处于可工作状态。
         Ok(())
     }
 
@@ -179,6 +213,8 @@ impl D3d11Context {
     }
 
     pub(super) fn ensure_rtv(&mut self) -> Result<()> {
+        // checked shutdown 后不得通过 acquire 隐式重建 RTV。
+        self.ensure_active()?;
         if self.rtv.is_none() {
             self.create_rtv()?;
         }
@@ -205,6 +241,8 @@ impl D3d11Context {
     }
 
     pub(super) fn present_result(&mut self, damage: &crate::core::PresentDamage) -> Result<()> {
+        // checked shutdown 后不得继续提交 swapchain present。
+        self.ensure_active()?;
         // 兼容 presenter 也必须消费同一 lower surface-lost 注入，避免故障
         // 因本帧没有进入 RHI acquire 而被静默跳过。
         #[cfg(feature = "test-harness")]
@@ -299,6 +337,8 @@ pub(crate) fn create_with_driver(
         height,
         // 初始 swapchain 属于第一代 surface。
         surface_generation: 0,
+        // 构造成功后 context 立即处于可工作状态。
+        shutdown: false,
         // 初始化尚未创建资源的薄 RHI 状态。
         rhi_device: D3d11RhiDevice::new(),
         // 默认不安排测试设备丢失。

@@ -149,6 +149,8 @@ pub(crate) struct D3d11Context {
     height: i32,
     /// surface 重建代际；同 extent 重建也必须推进该值。
     surface_generation: u64,
+    // 记录 checked shutdown 是否已经完整提交，阻止关闭后重新取得 RHI。
+    shutdown: bool,
     /// 迁移期薄 RHI 的 D3D11 资源与 pass 状态。
     // RHI 设备只在 context 及其实现子模块内流转，不扩大到整个 crate。
     pub(in crate::native::presentation::graphics::d3d11::platform::context) rhi_device:
