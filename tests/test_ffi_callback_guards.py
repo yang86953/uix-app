@@ -13,6 +13,8 @@ WINDOWS_HELPERS = ROOT / "src/native/backends/windows/helpers.rs"
 WINDOWS_WND_PROC = ROOT / "src/native/backends/windows/wnd_proc.rs"
 MACOS_DELEGATE = ROOT / "src/native/backends/macos/window_delegate.rs"
 MACOS_DISPLAY_LINK = ROOT / "src/native/backends/macos/display_link.rs"
+# 读取 macOS delegate 使用的共享窗口生命周期投递 helper。
+WINDOW_LIFECYCLE = ROOT / "src/native/windowing/shared/window_lifecycle.rs"
 
 
 class FfiCallbackGuardTests(unittest.TestCase):
@@ -50,6 +52,33 @@ class FfiCallbackGuardTests(unittest.TestCase):
 
         self.assertIn("catch_unwind(AssertUnwindSafe(|| callback(&*context))", source)
         self.assertIn("pending_failures.enqueue", source)
+
+    # 校验 macOS window callback 的同步投递失败进入 owner-thread failure queue。
+    def test_macos_delegate_propagates_event_queue_delivery_failures(self) -> None:
+        # 读取 delegate callback adapter。
+        delegate = MACOS_DELEGATE.read_text(encoding="utf-8")
+        # 读取 close/resize 的共享投递实现。
+        lifecycle = WINDOW_LIFECYCLE.read_text(encoding="utf-8")
+        # shared helper 必须暴露 typed Result，而不是静默吞掉 mutex poison。
+        self.assertGreaterEqual(lifecycle.count(") -> Result<()>"), 2)
+        # close 队列锁失败必须有稳定 typed 诊断。
+        self.assertIn("native window close event queue mutex poisoned", lifecycle)
+        # resize 队列锁失败必须有稳定 typed 诊断。
+        self.assertIn("native window resize event queue mutex poisoned", lifecycle)
+        # resize 状态借用冲突必须使用非 panic 的检查式路径。
+        self.assertIn("state.try_borrow_mut().map_err", lifecycle)
+        # 状态借用冲突必须有稳定 typed 诊断。
+        self.assertIn("native window resize state is already borrowed", lifecycle)
+        # 旧的 lock().map 丢弃模式不得恢复。
+        self.assertNotIn("let _ = events", lifecycle)
+        # callback 闭包必须返回 Result，由 adapter 统一转换为 failure queue 项。
+        self.assertIn("FnOnce(&WindowDelegateContext) -> crate::core::Result<()>", delegate)
+        # typed delivery failure 必须与 panic 分支分开处理。
+        self.assertIn("Ok(Err(error))", delegate)
+        # 原始 typed failure 必须进入既有 PendingFailureSource。
+        self.assertIn("pending_failures.enqueue(error)", delegate)
+        # 普通 focus/occlusion 投递也不得继续静默丢弃 lock 失败。
+        self.assertNotIn(".map(|mut events| events.push_back(event))", delegate)
 
     def test_macos_display_link_callbacks_use_the_shared_panic_boundary(self) -> None:
         source = MACOS_DISPLAY_LINK.read_text(encoding="utf-8")
