@@ -55,7 +55,6 @@ Agent 控制的能力按三层授权逐级把关；默认配置下第一层通�
 应用可声明授权边界；命中策略的动作在进入 UI 语义路径前被拒绝（`forbidden`）：
 
 ```rust uix-compile=agent-policy
-use uix::app::AgentConfirmationRequest;
 use uix::ui::SemanticActionKind;
 use uix::prelude::*;
 
