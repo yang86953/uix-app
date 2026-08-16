@@ -6,7 +6,6 @@
 // 该绑定只需执行一次，多窗口共享。
 // ============================================================================
 
-use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use wayland_client::protocol::{wl_keyboard, wl_pointer, wl_seat};
@@ -30,6 +29,13 @@ use super::input_proxy_owner::{
     // transition 决策前同时读取 pointer/keyboard 槽快照。
     snapshot_input_proxy_slots,
 };
+// keyboard Enter/Leave 委托焦点与重复状态事务 Component。
+use super::keyboard_focus_owner::{
+    // Enter 原子切换焦点并清理输入状态。
+    handle_keyboard_enter,
+    // Leave 原子清理精确焦点与输入状态。
+    handle_keyboard_leave,
+};
 // pointer Button callback 委托多 owner 事务 Component。
 use super::pointer_button_owner::{
     // Press 原子签发授权、记录 serial 并投递 PointerDown。
@@ -49,25 +55,11 @@ use super::pointer_focus_owner::{
     handle_pointer_motion,
 };
 use super::{HeldKeyInfo, WaylandBackend};
-// seat owner 保留几何、窗口路由与 capability 收敛的 typed failure。
-use crate::core::{Errc, Error, Point, WindowId};
+// seat owner 保留几何与 capability 收敛的 typed failure。
+use crate::core::{Errc, Error, Point};
 use crate::native::backends::linux::wayland::keycode::{keycode_to_char, linux_keycode_to_keycode};
 use crate::native::windowing::event::*;
 use crate::native::windowing::input::{KeyMod, MouseButton};
-
-fn enqueue_for_window(
-    events: &Arc<Mutex<VecDeque<UiEvent>>>,
-    window_id: Option<WindowId>,
-    event: UiEvent,
-) {
-    let Some(window_id) = window_id else {
-        return;
-    };
-    events
-        .lock()
-        .unwrap_or_else(|error| error.into_inner())
-        .push_back(event.for_window(window_id));
-}
 
 // 从 owner 槽取出 pointer 代理后，在锁外注销回调并按协议版本释放。
 fn release_pointer_proxy(
@@ -551,66 +543,48 @@ impl WaylandBackend {
                     let last_repeat_time = last_repeat_time.clone();
                     let keyboard_serial = keyboard_serial.clone();
                     let targets = surface_windows.clone();
+                    // keyboard callback owner failure 复用 backend pending source。
+                    let keyboard_failures = capability_failures.clone();
                     let kbd = seat.get_keyboard();
                     kbd.quick_assign(move |_, event, _| {
                         match event {
                             wl_keyboard::Event::Enter { surface, .. } => {
-                                let (previous_window, window_id) = {
-                                    let mut targets =
-                                        targets.lock().unwrap_or_else(|error| error.into_inner());
-                                    let previous = targets.keyboard_target();
-                                    let current =
-                                        targets.keyboard_enter(surface.id().protocol_id());
-                                    (previous, current)
-                                };
-                                if previous_window != window_id {
-                                    enqueue_for_window(
-                                        &ev,
-                                        previous_window,
-                                        UiEvent::new(UiEventType::WindowBlur, UiEventPayload::None),
-                                    );
-                                    enqueue_for_window(
-                                        &ev,
-                                        window_id,
-                                        UiEvent::new(
-                                            UiEventType::WindowFocus,
-                                            UiEventPayload::None,
-                                        ),
-                                    );
-                                }
-                                kd.lock().unwrap_or_else(|error| error.into_inner()).clear();
-                                *held_key_info
-                                    .lock()
-                                    .unwrap_or_else(|error| error.into_inner()) = None;
-                                *last_repeat_time
-                                    .lock()
-                                    .unwrap_or_else(|error| error.into_inner()) = None;
+                                // 五 owner Component 原子提交焦点边沿与输入状态清理。
+                                handle_keyboard_enter(
+                                    // 转交协议 surface 身份。
+                                    surface.id().protocol_id(),
+                                    // keyboard focus owner。
+                                    &targets,
+                                    // Blur/Focus 事件 owner。
+                                    &ev,
+                                    // 物理按键集合 owner。
+                                    &kd,
+                                    // 重复候选 owner。
+                                    &held_key_info,
+                                    // 重复节拍 owner。
+                                    &last_repeat_time,
+                                    // failure 进入 backend pending source。
+                                    &keyboard_failures,
+                                );
                             }
                             wl_keyboard::Event::Leave { surface, .. } => {
-                                let blurred_window = {
-                                    let mut targets =
-                                        targets.lock().unwrap_or_else(|error| error.into_inner());
-                                    let previous = targets.keyboard_target();
-                                    targets
-                                        .keyboard_leave(surface.id().protocol_id())
-                                        .then_some(previous)
-                                        .flatten()
-                                };
-                                let left_focused_surface = blurred_window.is_some();
-                                if left_focused_surface {
-                                    enqueue_for_window(
-                                        &ev,
-                                        blurred_window,
-                                        UiEvent::new(UiEventType::WindowBlur, UiEventPayload::None),
-                                    );
-                                    kd.lock().unwrap_or_else(|error| error.into_inner()).clear();
-                                    *held_key_info
-                                        .lock()
-                                        .unwrap_or_else(|error| error.into_inner()) = None;
-                                    *last_repeat_time
-                                        .lock()
-                                        .unwrap_or_else(|error| error.into_inner()) = None;
-                                }
+                                // 五 owner Component 精确匹配 surface 后原子提交 Leave。
+                                handle_keyboard_leave(
+                                    // 转交协议 surface 身份。
+                                    surface.id().protocol_id(),
+                                    // keyboard focus owner。
+                                    &targets,
+                                    // WindowBlur 事件 owner。
+                                    &ev,
+                                    // 物理按键集合 owner。
+                                    &kd,
+                                    // 重复候选 owner。
+                                    &held_key_info,
+                                    // 重复节拍 owner。
+                                    &last_repeat_time,
+                                    // failure 进入 backend pending source。
+                                    &keyboard_failures,
+                                );
                             }
                             wl_keyboard::Event::Key {
                                 serial, key, state, ..
