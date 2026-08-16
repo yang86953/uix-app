@@ -536,16 +536,17 @@ impl WindowOps for WaylandWindowOps {
             return Ok(());
             // 结束 surface 缺失分支。
         };
-        // 在短锁内完成身份、窗口、surface 与代次的原子校验和消费。
-        let outcome = self
-            // 访问共享激活注册表。
-            .pointer_activations
-            // 获取唯一可变访问。
-            .lock()
-            // 中毒时仍由 owner thread 恢复授权边界。
-            .unwrap_or_else(|error| error.into_inner())
-            // 成功时先取走 serial，防止锁外协议调用重放。
-            .consume(pointer_activation, self.window_id, surface_id);
+        // Component 检查共享 owner 后原子校验并消费一次性授权。
+        let outcome = WaylandPointerActivationRegistry::consume_checked(
+            // 传入 raw serial 的唯一共享 owner。
+            &self.pointer_activations,
+            // 校验当前原生 PointerDown 身份。
+            pointer_activation,
+            // 校验动作所属的稳定窗口身份。
+            self.window_id,
+            // 校验当前 surface 协议身份与代次。
+            surface_id,
+        )?;
         // 根据私有消费结果决定提交或安全忽略。
         match outcome {
             // 只有完整匹配的一次性授权可以获得 raw serial。
@@ -613,8 +614,6 @@ impl WindowOps for WaylandWindowOps {
         Ok(())
         // 结束 Wayland 交互移动实现。
     }
-
-    // ── 窗口外观 ──────────────────────────────────────────
 
     fn os_set_title(&mut self, title: &str) -> Result<()> {
         let toplevel = self

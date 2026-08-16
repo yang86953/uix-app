@@ -1,8 +1,12 @@
 // Wayland 指针激活注册表只保存协议授权的最小私有状态。
 use std::collections::HashMap;
+// 共享注册表句柄只在检查式入口的短锁内访问。
+use std::sync::{Arc, Mutex};
 
 // 窗口身份用于阻止其他窗口消费当前指针授权。
 use crate::core::WindowId;
+// typed error 让同步窗口操作观察注册表 owner 损坏。
+use crate::core::error::{Errc, Error, Result};
 // 不透明激活身份用于关联 native 事件与稍后的同步窗口动作。
 use crate::native::windowing::event::PointerActivationId;
 
@@ -335,6 +339,32 @@ impl WaylandPointerActivationRegistry {
             // 结束零代次修正。
         }
         // 结束 pointer capability 失效处理。
+    }
+
+    // 检查共享 owner 后原子消费当前动作对应的 raw serial。
+    pub(crate) fn consume_checked(
+        // 共享注册表是 raw serial 的唯一 owner。
+        registry: &Arc<Mutex<Self>>,
+        // 当前原生事件转交的不可解释身份。
+        activation_id: PointerActivationId,
+        // 执行动作的稳定窗口身份。
+        window_id: WindowId,
+        // 执行动作窗口当前持有的 surface 编号。
+        surface_id: u32,
+        // 返回授权结果或同步 typed failure。
+    ) -> Result<PointerActivationOutcome> {
+        // mutex poison 时不得继续读取或修改任何授权状态。
+        let mut registry = registry.lock().map_err(|_| {
+            // 构造稳定的交互移动授权错误。
+            Error::new(
+                // 授权 owner 已无法安全访问。
+                Errc::InvalidState,
+                // 保留 Wayland 移动请求与注册表阶段。
+                "Wayland pointer activation registry mutex poisoned during move request",
+            )
+        })?;
+        // 健康 guard 内继续复用既有一次性校验与消费规则。
+        Ok(registry.consume(activation_id, window_id, surface_id))
     }
 
     // 原子校验并取走当前动作对应的 raw serial。
