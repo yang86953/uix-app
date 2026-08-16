@@ -9,6 +9,8 @@
 pub(crate) mod clipboard;
 pub(crate) mod compat;
 pub(crate) mod cursor;
+// 光标状态 Component 独占期望形状、可见性与 Enter serial。
+pub(crate) mod cursor_state;
 pub(crate) mod display;
 pub(crate) mod event_loop;
 // 原生 frame callback Component 独占 one-shot 请求消费与事件投递。
@@ -75,6 +77,8 @@ use wayland_client::{
 use wayland_protocols::wp::text_input::zv3::client::{
     zwp_text_input_manager_v3::ZwpTextInputManagerV3, zwp_text_input_v3::ZwpTextInputV3,
 };
+// 可选 cursor-shape global 为 Wayland 指针提供枚举形状协议。
+use wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1;
 use wayland_protocols::xdg::activation::v1::client::xdg_activation_v1::XdgActivationV1;
 use wayland_protocols::xdg::shell::client::xdg_wm_base;
 
@@ -125,6 +129,10 @@ pub(crate) struct WaylandBackend {
     pub(crate) seat: Option<Main<wl_seat::WlSeat>>,
     pub(crate) pointer: Arc<Mutex<Option<Main<wl_pointer::WlPointer>>>>,
     pub(crate) keyboard: Arc<Mutex<Option<Main<wl_keyboard::WlKeyboard>>>>,
+    // 可选协议 global 只由 Wayland cursor Adapter 消费。
+    pub(crate) cursor_shape_manager: Option<Main<WpCursorShapeManagerV1>>,
+    // 唯一 cursor intent Component 供同步端口与 pointer callback 共享。
+    pub(crate) cursor_state: Arc<cursor_state::WaylandCursorState>,
     pub(crate) last_pointer: Arc<Mutex<LastPointerState>>,
     pub(crate) keys_down: Arc<Mutex<HashSet<KeyCode>>>,
     pub(crate) surface_windows: Arc<Mutex<SurfaceWindowTargets>>,
@@ -326,6 +334,14 @@ impl WaylandBackend {
             .bind::<wl_data_device_manager::WlDataDeviceManager, _, _>(&queue_handle, 1..=3, ())
             .ok()
             .map(|proxy| Main::new(proxy, proxy_context.clone()));
+        // cursor-shape 是可选 staging global，缺失时保持稳定 capability absence。
+        let cursor_shape_manager = globals
+            // 同时接受协议 v1 与新增兼容形状的 v2。
+            .bind::<WpCursorShapeManagerV1, _, _>(&queue_handle, 1..=2, ())
+            // bind 失败只表示当前 compositor 不提供该可选能力。
+            .ok()
+            // 复用 backend callback/child-object 上下文包装代理。
+            .map(|proxy| Main::new(proxy, proxy_context.clone()));
         let text_input_manager = globals
             .bind::<ZwpTextInputManagerV3, _, _>(&queue_handle, 1..=1, ())
             .ok()
@@ -361,6 +377,10 @@ impl WaylandBackend {
             seat: None,
             pointer: Arc::new(Mutex::new(None)),
             keyboard: Arc::new(Mutex::new(None)),
+            // 保存构造期只读发现的可选 cursor-shape global。
+            cursor_shape_manager,
+            // 默认 intent 为可见箭头且没有 Enter serial。
+            cursor_state: Arc::new(cursor_state::WaylandCursorState::default()),
             last_pointer,
             keys_down: Arc::new(Mutex::new(HashSet::new())),
             surface_windows: Arc::new(Mutex::new(SurfaceWindowTargets::default())),
