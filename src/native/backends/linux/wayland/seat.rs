@@ -30,6 +30,13 @@ use super::input_proxy_owner::{
     // transition 决策前同时读取 pointer/keyboard 槽快照。
     snapshot_input_proxy_slots,
 };
+// pointer Button callback 委托多 owner 事务 Component。
+use super::pointer_button_owner::{
+    // Press 原子签发授权、记录 serial 并投递 PointerDown。
+    handle_pointer_button_pressed,
+    // Release 原子撤销授权并投递 PointerUp。
+    handle_pointer_button_released,
+};
 // pointer callback 把焦点与移动事件委托给多 owner 事务 Component。
 use super::pointer_focus_owner::{
     // Axis 原子读取路由与位置并投递 Wheel。
@@ -411,20 +418,6 @@ impl WaylandBackend {
                             state,
                             ..
                         } => {
-                            // 原子读取 press/release 当时的 surface 与窗口焦点身份。
-                            let Some((surface_id, window_id)) = targets
-                                // 短时锁定共享 surface 路由状态。
-                                .lock()
-                                // 中毒时仍恢复 owner-thread 输入路由。
-                                .unwrap_or_else(|error| error.into_inner())
-                                // 同时投影 surface 和稳定窗口身份。
-                                .pointer_target_identity()
-                            // 未知焦点事件不得签发或撤销任何窗口授权。
-                            else {
-                                // 丢弃无法定向的按键事件。
-                                return;
-                                // 结束未知焦点分支。
-                            };
                             // 将 Linux 输入按钮编号映射为平台中立按钮。
                             let btn = match button {
                                 // BTN_LEFT 是唯一允许签发窗口拖动授权的主键。
@@ -437,101 +430,51 @@ impl WaylandBackend {
                                 _ => MouseButton::None,
                                 // 结束原生按钮映射。
                             };
-                            // 捕获按键事件发生时的最近 surface 坐标。
-                            let click_pos = pos
-                                // 短时读取共享指针位置。
-                                .lock()
-                                // 锁失败时使用默认坐标保持既有降级语义。
-                                .map(|last_pointer| last_pointer.position)
-                                // 位置读取失败不影响授权身份校验。
-                                .unwrap_or_default();
                             // 明确区分协议已知的 press、release 与未知状态。
                             match state {
                                 // press serial 仍可供剪贴板等现有输入授权使用。
                                 WEnum::Value(wl_pointer::ButtonState::Pressed) => {
-                                    // 更新通用输入 serial，但窗口拖动不读取该全局槽位。
-                                    pointer_serial
-                                        // 短时锁定既有输入 serial 状态。
-                                        .lock()
-                                        // 中毒时仍保留最新合法协议 serial。
-                                        .unwrap_or_else(|error| error.into_inner())
-                                        // 记录 compositor 实际签发值，绝不伪造零。
-                                        .record(serial);
-                                    // 先构造不携带平台细节的普通 PointerDown。
-                                    let pointer_event = UiEvent::pointer_down(click_pos, btn);
-                                    // 只有 BTN_LEFT press 才尝试签发一次性拖动激活身份。
-                                    let pointer_event = if btn == MouseButton::Left {
-                                        // 在短锁内把 raw serial 绑定到窗口与 surface 代次。
-                                        let activation = pointer_activations
-                                            // 获取激活注册表唯一可变访问。
-                                            .lock()
-                                            // 中毒时仍由 owner thread 保持授权边界。
-                                            .unwrap_or_else(|error| error.into_inner())
-                                            // 使用回调代次阻止旧 pointer 代理签发新授权。
-                                            .issue_primary_press(
-                                                // 传入创建回调时捕获的 pointer 代次。
-                                                pointer_generation,
-                                                // 绑定当前焦点 surface 身份。
-                                                surface_id,
-                                                // 绑定当前焦点窗口身份。
-                                                window_id,
-                                                // raw serial 只进入 Wayland 私有注册表。
-                                                serial,
-                                                // 结束授权签发参数。
-                                            );
-                                        // 将不可解释身份附着到同一个 native 事件。
-                                        match activation {
-                                            // 完整匹配当前注册时附着身份。
-                                            Some(activation) => pointer_event
-                                                // UI 映射层不会解释该身份。
-                                                .with_pointer_activation(activation),
-                                            // 路由或代次不匹配时仍交付普通按下事件。
-                                            None => pointer_event,
-                                            // 结束激活身份附着分支。
-                                        }
-                                    // 非主键永远没有窗口拖动授权。
-                                    } else {
-                                        // 原样保留普通指针事件。
-                                        pointer_event
-                                        // 结束非主键分支。
-                                    };
-                                    // 把事件定向到授权绑定的同一窗口。
-                                    enqueue_for_window(
-                                        // 使用共享 UI 事件队列。
+                                    // 多 owner Component 在全部 guards 健康后提交 Press。
+                                    handle_pointer_button_pressed(
+                                        // raw serial 只传入 Wayland 私有 Component。
+                                        serial,
+                                        // 传入平台中立按钮语义。
+                                        btn,
+                                        // 使用 callback 创建时捕获的 pointer 代次。
+                                        pointer_generation,
+                                        // activation registry 是主键全局第一 owner。
+                                        &pointer_activations,
+                                        // surface focus owner。
+                                        &targets,
+                                        // 最近位置 owner。
+                                        &pos,
+                                        // UI 事件队列 owner。
                                         &ev,
-                                        // 使用焦点快照的稳定窗口身份。
-                                        Some(window_id),
-                                        // 交付普通事件及可选不透明身份。
-                                        pointer_event,
-                                        // 结束定向入队参数。
+                                        // 共享输入 serial owner。
+                                        &pointer_serial,
+                                        // failure 进入 backend pending source。
+                                        &pointer_failures,
                                     );
-                                    // 结束 press 分支。
                                 }
                                 // release 必须撤销尚未消费的主键协议授权。
                                 WEnum::Value(wl_pointer::ButtonState::Released) => {
-                                    // 仅 BTN_LEFT release 影响拖动授权生命周期。
-                                    if btn == MouseButton::Left {
-                                        // 在独立短锁内撤销同一 pointer 代次授权。
-                                        pointer_activations
-                                            // 获取注册表唯一可变访问。
-                                            .lock()
-                                            // 中毒时仍完成授权撤销。
-                                            .unwrap_or_else(|error| error.into_inner())
-                                            // 旧代理 release 不得影响新代次授权。
-                                            .revoke_primary_press(pointer_generation);
-                                        // 结束主键 release 撤销。
-                                    }
-                                    // release 仍按既有 UI 输入语义定向交付。
-                                    enqueue_for_window(
-                                        // 使用共享 UI 事件队列。
+                                    // 多 owner Component 在全部 guards 健康后提交 Release。
+                                    handle_pointer_button_released(
+                                        // 传入平台中立按钮语义。
+                                        btn,
+                                        // 使用 callback 创建时捕获的 pointer 代次。
+                                        pointer_generation,
+                                        // activation registry 是主键全局第一 owner。
+                                        &pointer_activations,
+                                        // surface focus owner。
+                                        &targets,
+                                        // 最近位置 owner。
+                                        &pos,
+                                        // UI 事件队列 owner。
                                         &ev,
-                                        // 使用 release 当时的焦点窗口身份。
-                                        Some(window_id),
-                                        // 抬起事件不携带可复用激活身份。
-                                        UiEvent::pointer_up(click_pos, btn),
-                                        // 结束 release 入队参数。
+                                        // failure 进入 backend pending source。
+                                        &pointer_failures,
                                     );
-                                    // 结束 release 分支。
                                 }
                                 // 未知协议状态不能被当作 release 或 press。
                                 _ => {
