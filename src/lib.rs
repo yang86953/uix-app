@@ -232,6 +232,9 @@ mod uix_lang_image_slots_consumer_tests;
 // 隔离 List 边框与尺寸配置的公开 API 编译测试。
 #[cfg(test)]
 mod uix_lang_list_configuration_consumer_tests;
+// 隔离 Steps 点击策略与圆点样式的公开 API 编译测试。
+#[cfg(test)]
+mod uix_lang_steps_configuration_consumer_tests;
 // 隔离 Tabs 方位与溢出滚动配置的公开 API 编译测试。
 #[cfg(test)]
 mod uix_lang_tabs_configuration_consumer_tests;
