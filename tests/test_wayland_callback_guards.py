@@ -113,6 +113,47 @@ class WaylandCallbackGuardTests(unittest.TestCase):
             # 任何一项都不得进入阻塞调度决策。
             self.assertNotIn(forbidden, dispatch)
 
+    # 确认 poll 快照不会包含 poisoned clipboard I/O owner 的 FD。
+    def test_dispatch_polled_checks_clipboard_io_owners_before_poll(self) -> None:
+        # 读取 Wayland owner-thread poll 编排。
+        source = EVENT_LOOP.read_text(encoding="utf-8")
+        # 限定 dispatch_polled 实现。
+        dispatch_start = source.index("fn dispatch_polled")
+        # wake pipe drain helper 标记 poll 实现末尾。
+        dispatch_end = source.index("fn drain_wake_pipe", dispatch_start)
+        # 保存完整 poll 编排。
+        dispatch = source[dispatch_start:dispatch_end]
+        # 系统 poll 调用标记快照完成边界。
+        poll_call = dispatch.index("let ret = unsafe")
+        # 只审计系统调用前的 FD owner 快照。
+        snapshot = dispatch[:poll_call]
+        # read owner 必须先检查。
+        read_lock = snapshot.index("self.clipboard_read.lock()")
+        # write owners 随后检查。
+        write_lock = snapshot.index("self.clipboard_writes.lock()")
+        # 快照固定保持 read 后 write 的检查顺序。
+        self.assertLess(read_lock, write_lock)
+        # 系统 poll 必须晚于两份 owner 检查。
+        self.assertLess(write_lock, poll_call)
+        # poll 前不得恢复任一 poisoned clipboard owner。
+        self.assertNotIn("into_inner()", snapshot)
+        # read owner failure 必须有稳定阶段诊断。
+        self.assertIn("dispatch_polled clipboard-read mutex poisoned", snapshot)
+        # write owner failure 也必须独立可定位。
+        self.assertIn("dispatch_polled clipboard-write mutex poisoned", snapshot)
+        # 两个 failure 分支均稳定分类为 InvalidState。
+        self.assertEqual(snapshot.count("Errc::InvalidState"), 2)
+        # 两个 failure 分支都复用 backend pending source。
+        self.assertEqual(snapshot.count("self.enqueue_failure"), 2)
+        # 健康 read FD 仍监听 POLLIN。
+        self.assertIn("events: POLLIN", snapshot)
+        # 健康 write FD 仍监听 POLLOUT。
+        self.assertIn("events: POLLOUT", snapshot)
+        # 快照阶段不得执行错误策略或用户代码。
+        for forbidden in ["tracing::", ".report(", "attempt_recovery"]:
+            # 任何一项都不得进入 poll FD 构造。
+            self.assertNotIn(forbidden, snapshot)
+
     def test_unknown_created_child_remains_an_explicit_failure_case(self) -> None:
         source = COMPAT.read_text(encoding="utf-8")
         self.assertIn("fn event_created_child", source)

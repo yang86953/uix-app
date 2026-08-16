@@ -153,12 +153,27 @@ impl WaylandBackend {
             return false;
         }
         let wayland_fd = self.display.as_fd().as_raw_fd();
-        let clipboard_fd = self
-            .clipboard_read
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .as_ref()
-            .map(super::clipboard::ClipboardRead::fd);
+        // 先检查 clipboard read FD owner，再构造 poll 快照。
+        let clipboard_fd = match self.clipboard_read.lock() {
+            // 健康 owner 只复制当前可选 FD，guard 随分支结束释放。
+            Ok(active_read) => active_read
+                // 只查看当前活动 read owner。
+                .as_ref()
+                // poll 快照不接管 FD 生命周期。
+                .map(super::clipboard::ClipboardRead::fd),
+            // 损坏 read owner 的 FD 不得进入系统 poll。
+            Err(_) => {
+                // failure 进入 backend 已有 source。
+                self.enqueue_failure(Error::new(
+                    // 非阻塞 read owner 已无法安全读取。
+                    Errc::InvalidState,
+                    // 保留 poll 快照的 clipboard-read 阶段。
+                    "Wayland dispatch_polled clipboard-read mutex poisoned",
+                ));
+                // 终止本次 dispatch，不调用系统 poll。
+                return false;
+            }
+        };
         self.poll_fds.clear();
         self.poll_fds.push(pollfd {
             fd: wayland_fd,
@@ -180,11 +195,26 @@ impl WaylandBackend {
             index
         });
         let clipboard_write_start = self.poll_fds.len();
+        // 独立检查全部 clipboard write FD owners。
         {
-            let writes = self
-                .clipboard_writes
-                .lock()
-                .unwrap_or_else(|error| error.into_inner());
+            // 损坏 write queue 中的 FD 不得进入系统 poll。
+            let writes = match self.clipboard_writes.lock() {
+                // 健康 guard 只在构造本次 poll 快照期间存活。
+                Ok(writes) => writes,
+                // owner 损坏时停止本次调度。
+                Err(_) => {
+                    // failure 进入同一 backend pending source。
+                    self.enqueue_failure(Error::new(
+                        // 非阻塞 write owners 已无法安全读取。
+                        Errc::InvalidState,
+                        // 保留 poll 快照的 clipboard-write 阶段。
+                        "Wayland dispatch_polled clipboard-write mutex poisoned",
+                    ));
+                    // 终止本次 dispatch，不调用系统 poll。
+                    return false;
+                }
+            };
+            // 健康队列按既有顺序把所有 write FD 附加到快照。
             self.poll_fds.extend(writes.iter().map(|write| pollfd {
                 fd: write.fd(),
                 events: POLLOUT,
