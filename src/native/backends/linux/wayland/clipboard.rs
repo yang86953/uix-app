@@ -4,11 +4,19 @@
 
 use std::fs::File;
 use std::io;
+// Selection callback 把 pipe 写端借给 Wayland 协议请求。
+use std::os::fd::AsFd;
 use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
 use std::sync::Arc;
+// Selection Component 对三个共享 owner 使用固定事务锁序。
+use std::sync::Mutex;
 
+// data-device Selection 事件由 clipboard Module 处理。
+use wayland_client::protocol::wl_data_device;
 use wayland_client::protocol::wl_data_source;
 
+// callback typed failure 进入 backend 已有 pending source。
+use crate::diagnostics::PendingFailureSource;
 use crate::native::windowing::input::IClipboard;
 use crate::native::windowing::shared::nonblocking_read::{
     NonBlockingReadAccumulator, NonBlockingReadStatus,
@@ -70,6 +78,206 @@ impl ClipboardRead {
     pub(crate) fn read_available(&mut self) -> io::Result<NonBlockingReadStatus> {
         self.bytes
             .read_available(&mut self.file, CLIPBOARD_READ_BUDGET)
+    }
+}
+
+// 将 Selection owner 状态失败投递到 Wayland backend 的既有 source。
+fn enqueue_selection_state_failure(
+    // 每个 data-device callback 捕获同一 backend source。
+    pending_failures: &PendingFailureSource,
+    // owner 名称保持稳定且不携带敏感值。
+    owner: &'static str,
+    // callback 只入队，不执行 report/recovery/user code。
+) {
+    // 忽略 source 已关闭结果，保持迟到 callback 的 teardown 语义。
+    let _ = pending_failures.enqueue(Error::new(
+        // poisoned shared owner 统一分类为 InvalidState。
+        Errc::InvalidState,
+        // 诊断区分 Selection callback 的具体 owner。
+        format!("Wayland clipboard Selection {owner} mutex poisoned"),
+    ));
+}
+
+// 事务化接管 compositor 提供的新 clipboard offer。
+fn apply_selection_offer(
+    // 协议 offer 只在全部所需 owner 健康后使用。
+    offer: wayland_client::protocol::wl_data_offer::WlDataOffer,
+    // 本地 selection ownership 标志 owner。
+    owns_clipboard: &Arc<Mutex<bool>>,
+    // 当前非阻塞 read FD owner。
+    clipboard_read: &Arc<Mutex<Option<ClipboardRead>>>,
+    // callback failure 进入同一 backend source。
+    pending_failures: &PendingFailureSource,
+    // 无 Result 的 callback 用入队表达失败。
+) {
+    // 先取得 ownership guard，任何 I/O 前验证健康。
+    let mut owns = match owns_clipboard.lock() {
+        // 健康 guard 暂不修改，等待 read owner。
+        Ok(owns) => owns,
+        // ownership 状态损坏时立即停止。
+        Err(_) => {
+            // 入队一次稳定 owner failure。
+            enqueue_selection_state_failure(pending_failures, "owns flag");
+            // 不创建 pipe、不发送 receive。
+            return;
+        }
+    };
+    // 再取得 read guard，保持固定 owns→read 锁序。
+    let mut active_read = match clipboard_read.lock() {
+        // 两个健康 guards 组成 selection 接管事务。
+        Ok(active_read) => active_read,
+        // read owner 损坏时保持 ownership 不变。
+        Err(_) => {
+            // 先释放 ownership guard，避免跨 owner 入队。
+            drop(owns);
+            // 入队一次稳定 owner failure。
+            enqueue_selection_state_failure(pending_failures, "read owner");
+            // 不创建 pipe、不发送 receive。
+            return;
+        }
+    };
+    // 全部所需 owner 健康后才创建本地非阻塞 pipe。
+    match ClipboardRead::create_pipe() {
+        // pipe 成功后局部值暂时独占两端 FD。
+        Ok((read, write_fd)) => {
+            // 使用既有 UTF-8 文本 MIME 请求 compositor 写入。
+            offer.receive(
+                // 保留既有 MIME 协议值。
+                "text/plain;charset=utf-8".to_string(),
+                // 只把写端借给本次协议请求。
+                write_fd.as_fd(),
+            );
+            // 新外部 selection 取消本地 ownership。
+            *owns = false;
+            // 同一事务中用新 read FD 替换旧 owner。
+            *active_read = Some(read);
+        }
+        // pipe setup failure 仍必须提交 selection 已切换事实。
+        Err(error) => {
+            // 外部 selection 已使本地 ownership 失效。
+            *owns = false;
+            // 丢弃陈旧 read FD，避免读取上一 selection。
+            *active_read = None;
+            // 先释放两个 guards，避免跨 owner 入队。
+            drop(active_read);
+            // 释放 ownership guard 后再转交 I/O failure。
+            drop(owns);
+            // pipe 创建失败进入同一 pending source。
+            let _ = pending_failures.enqueue(Error::new(
+                // OS pipe setup 保持 I/O 错误分类。
+                Errc::IoError,
+                // 保留底层 cause 文本。
+                format!("Wayland clipboard pipe creation failed: {error}"),
+            ));
+        }
+    }
+}
+
+// 事务化清除 compositor 报告为空的 clipboard selection。
+fn clear_selection(
+    // 本地 selection ownership 标志 owner。
+    owns_clipboard: &Arc<Mutex<bool>>,
+    // 当前非阻塞 read FD owner。
+    clipboard_read: &Arc<Mutex<Option<ClipboardRead>>>,
+    // 已完成 clipboard 文本缓存 owner。
+    clipboard_text: &Arc<Mutex<String>>,
+    // callback failure 进入同一 backend source。
+    pending_failures: &PendingFailureSource,
+    // 无 Result 的 callback 用入队表达失败。
+) {
+    // 先取得 ownership guard，尚不修改。
+    let mut owns = match owns_clipboard.lock() {
+        // 健康 guard 暂不提交清理。
+        Ok(owns) => owns,
+        // ownership 状态损坏时立即停止。
+        Err(_) => {
+            // 入队一次稳定 owner failure。
+            enqueue_selection_state_failure(pending_failures, "owns flag");
+            // 不产生任何半清理。
+            return;
+        }
+    };
+    // 再取得 read guard，保持固定 owns→read 锁序。
+    let mut active_read = match clipboard_read.lock() {
+        // 两个健康 guards 继续等待 text owner。
+        Ok(active_read) => active_read,
+        // read owner 损坏时保持 ownership 不变。
+        Err(_) => {
+            // 先释放 ownership guard，避免跨 owner 入队。
+            drop(owns);
+            // 入队一次稳定 owner failure。
+            enqueue_selection_state_failure(pending_failures, "read owner");
+            // 不产生任何半清理。
+            return;
+        }
+    };
+    // 最后取得 text guard，保持固定 read→text 锁序。
+    let mut text = match clipboard_text.lock() {
+        // 三个健康 guards 组成清空事务。
+        Ok(text) => text,
+        // text owner 损坏时保持前两份状态不变。
+        Err(_) => {
+            // 先释放 read guard，避免跨 owner 入队。
+            drop(active_read);
+            // 再释放 ownership guard。
+            drop(owns);
+            // 入队一次稳定 owner failure。
+            enqueue_selection_state_failure(pending_failures, "text owner");
+            // 不产生任何半清理。
+            return;
+        }
+    };
+    // 全部 owners 健康后提交 ownership 失效。
+    *owns = false;
+    // 在同一事务中释放 read FD owner。
+    *active_read = None;
+    // 最后清除上一 selection 的文本缓存。
+    text.clear();
+}
+
+// 处理 wl_data_device 的 selection 状态变更 callback。
+pub(crate) fn handle_selection_event(
+    // seat callback 转交完整 data-device 事件。
+    event: wl_data_device::Event,
+    // 本地 selection ownership 标志 owner。
+    owns_clipboard: &Arc<Mutex<bool>>,
+    // 当前非阻塞 read FD owner。
+    clipboard_read: &Arc<Mutex<Option<ClipboardRead>>>,
+    // 已完成 clipboard 文本缓存 owner。
+    clipboard_text: &Arc<Mutex<String>>,
+    // callback failure 进入同一 backend source。
+    pending_failures: &PendingFailureSource,
+    // Component 忽略非 Selection data-device 事件。
+) {
+    // 只处理 compositor selection 变更。
+    let wl_data_device::Event::Selection { id } = event else {
+        // 其他 data-device 事件保持既有忽略语义。
+        return;
+    };
+    // Some 与 None 使用各自最小 owner 事务。
+    match id {
+        // 新 offer 只需 ownership 与 read owners。
+        Some(offer) => apply_selection_offer(
+            // 转交协议 offer owner。
+            offer,
+            // 转交 ownership 状态 owner。
+            owns_clipboard,
+            // 转交 read FD owner。
+            clipboard_read,
+            // 转交同一 failure source。
+            pending_failures,
+        ),
+        // 空 selection 需要同步清除三份状态。
+        None => clear_selection(
+            // 转交 ownership 状态 owner。
+            owns_clipboard,
+            // 转交 read FD owner。
+            clipboard_read,
+            // 转交文本缓存 owner。
+            clipboard_text,
+            // 转交同一 failure source。
+            pending_failures,
+        ),
     }
 }
 
