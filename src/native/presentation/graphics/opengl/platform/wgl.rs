@@ -17,8 +17,7 @@ use crate::native::backends::windows::util::windows_diag;
 // 引入共享的 OpenGL RHI host 生命周期实现。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
 use crate::native::presentation::graphics::platform::windows::{
-    DrawableSize, device_context, drawable_size_from_hdc, release_device_context,
-    release_device_context_checked,
+    DrawableSize, device_context, drawable_size_from_hdc, release_device_context_checked,
 };
 use crate::native::{Errc, Error};
 
@@ -607,13 +606,29 @@ impl WglContext {
             })
         })();
 
-        if result.is_err() {
-            // SAFETY: hwnd 与 hdc 均为本函数取得且未转移，只在此失败路径释放一次。
-            unsafe {
-                release_device_context(hwnd, hdc);
+        // 构造事务成功时把正式 context 与 HDC owner 一并交付调用方。
+        match result {
+            // 成功值已经接管 HDC，外层不得再释放。
+            Ok(context) => Ok(context),
+            // 失败时当前构造事务仍是目标 HDC 的唯一 owner。
+            Err(primary_error) => {
+                // SAFETY: hwnd/hdc 由本函数取得且尚未转移，checked helper 只在此释放一次。
+                if unsafe { release_device_context_checked(hwnd, hdc) } {
+                    // 清理成功后保留原始构造失败作为调用方应观察的主错误。
+                    Err(primary_error)
+                } else {
+                    // HDC 未完成释放时以清理失败为外层错误，并保留原构造失败原因。
+                    Err(windows_diag(
+                        // 将 Win32 关闭失败归入平台错误。
+                        Errc::PlatformError,
+                        // 保留失败的精确 native 操作名。
+                        "WglContext: construction rollback ReleaseDC failed",
+                    )
+                    // 错误链同时保留触发回滚的原始构造失败。
+                    .with_source(primary_error))
+                }
             }
         }
-        result
     }
 
     fn make_current_result(&self) -> Result<(), Error> {
