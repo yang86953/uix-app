@@ -78,6 +78,40 @@ fn lock_ime_state_checked<'a>(
     Ok((composition, events))
 }
 
+// Wayland text-input Module 提供无协议请求的 backend teardown 端口。
+impl WaylandBackend {
+    // 失效当前 IME session、callback 与全部本地 owner 状态。
+    pub(crate) fn shutdown_text_input(&mut self) {
+        // 首先推进 generation，使所有旧 callback 在共享状态访问前失效。
+        self.text_input_generation.fetch_add(1, Ordering::SeqCst);
+        // 随后发布 session 已禁用事实，阻止其他 owner 继续视为活跃。
+        self.text_input_enabled.store(false, Ordering::SeqCst);
+        // teardown 确定性取得 composition owner。
+        let mut composition = self
+            // 访问 backend 唯一 IME composition 状态。
+            .text_input_composition
+            // owner-thread 等待当前 callback 退出后取得 guard。
+            .lock()
+            // 关闭时恢复中毒 guard 只用于清除失效状态。
+            .unwrap_or_else(|error| error.into_inner());
+        // 清除未完成 composition，不发布任何 unmark UI 事件。
+        composition.active = false;
+        // 先释放 composition guard，避免跨越 proxy callback registry。
+        drop(composition);
+        // 清除活跃 session 的窗口身份。
+        self.active_text_input_window_id = None;
+        // 清除尚未启动 session 的目标窗口身份。
+        self.text_input_window_id = None;
+        // 最后从唯一 owner 槽取走协议 proxy。
+        if let Some(text_input) = self.text_input.take() {
+            // fatal/Drop teardown 只注销本地 callback，不在失效连接上发送请求。
+            text_input.clear_callback();
+            // proxy 随分支结束释放本地 owner。
+        }
+        // teardown 不关闭 pending source，根因仍由平台 owner-thread 提取。
+    }
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // ITextInput for WaylandBackend
 // ════════════════════════════════════════════════════════════════════════════
@@ -332,8 +366,12 @@ impl ITextInput for WaylandBackend {
             // unmark 成功后才释放 active window owner。
             self.active_text_input_window_id = None;
         }
-        // 协议 disable 与 IME 状态提交成功后释放代理 owner。
-        self.text_input = None;
+        // 协议 disable 与 IME 状态提交成功后取走代理 owner。
+        if let Some(text_input) = self.text_input.take() {
+            // 显式注销 callback；compat::Main 的 Drop 不自动清理 registry。
+            text_input.clear_callback();
+            // proxy 随分支结束释放本地 owner。
+        }
         // 最后发布 session 已禁用事实。
         self.text_input_enabled.store(false, Ordering::SeqCst);
         // 同步 stop 全部成功。
