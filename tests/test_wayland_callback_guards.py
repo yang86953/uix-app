@@ -19,6 +19,8 @@ WAYLAND_CLIPBOARD = ROOT / "src/native/backends/linux/wayland/clipboard.rs"
 WAYLAND_FRAME_CALLBACK = ROOT / "src/native/backends/linux/wayland/frame_callback.rs"
 # 读取 Wayland surface 跨注册表注销 Component。
 WAYLAND_SURFACE_REGISTRATION = ROOT / "src/native/backends/linux/wayland/surface_registration.rs"
+# 读取 Wayland 指针激活授权 Component。
+WAYLAND_POINTER_ACTIVATION = ROOT / "src/native/backends/linux/wayland/pointer_activation.rs"
 # 读取 Linux 平台的 owner-thread 失败提取边界。
 PLATFORM = ROOT / "src/native/backends/linux/platform.rs"
 # 定位 Wayland 窗口操作与装饰模式实现。
@@ -369,8 +371,8 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         self.assertIn("XdgDecoMode::ServerSide", window_ops)
         # 关闭窗口时必须先释放依赖顶层窗口的装饰对象。
         close_start = window_ops.index("fn os_close")
-        # 以窗口外观分区标记限定关闭实现片段。
-        close_end = window_ops.index("// ── 窗口外观", close_start)
+        # 以紧邻的主动关闭方法限定显式 teardown 片段。
+        close_end = window_ops.index("fn os_request_close", close_start)
         # 保存关闭实现，避免其他生命周期赋值影响断言。
         close_source = window_ops[close_start:close_end]
         # 装饰对象必须在顶层窗口之前释放。
@@ -409,6 +411,45 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         self.assertEqual(request_source.count("UiEvent::close().for_window(self.window_id)"), 1)
         # 平台窄端口不得在交付关闭意图时提前销毁原生资源。
         self.assertNotIn("self.surface = None", request_source)
+
+    # 确认交互移动不会从 poisoned registry 消费一次性 serial。
+    def test_move_drag_checks_pointer_activation_registry_owner(self) -> None:
+        # 读取指针激活注册表 Component。
+        activation = WAYLAND_POINTER_ACTIVATION.read_text(encoding="utf-8")
+        # 读取 WindowOps 的交互移动编排。
+        window_ops = WINDOW_OPS.read_text(encoding="utf-8")
+        # 限定 checked consume 实现。
+        checked_start = activation.index("pub(crate) fn consume_checked")
+        # 既有纯消费方法标记 checked 入口末尾。
+        checked_end = activation.index("pub(crate) fn consume(", checked_start)
+        # 保存共享 owner 检查片段。
+        checked = activation[checked_start:checked_end]
+        # mutex poison 必须稳定分类为 InvalidState。
+        self.assertIn("Errc::InvalidState", checked)
+        # 诊断必须保留移动请求与授权注册表阶段。
+        self.assertIn("pointer activation registry mutex poisoned during move request", checked)
+        # checked 入口不得恢复 poisoned registry。
+        self.assertNotIn("into_inner()", checked)
+        # 共享 owner lock 必须发生在任何授权消费之前。
+        self.assertLess(checked.index("registry.lock()"), checked.index("registry.consume("))
+        # 限定 WindowOps 交互移动实现。
+        move_start = window_ops.index("fn os_begin_move_drag")
+        # 窗口标题操作标记移动实现末尾。
+        move_end = window_ops.index("fn os_set_title", move_start)
+        # 保存移动协议编排片段。
+        move_source = window_ops[move_start:move_end]
+        # WindowOps 必须委托授权 owner 的 checked 入口。
+        checked_call = move_source.index("WaylandPointerActivationRegistry::consume_checked(")
+        # 授权结果分派只能发生在 checked 调用成功后。
+        match_outcome = move_source.index("match outcome")
+        # typed failure 必须在 seat/toplevel 检查和协议提交前返回。
+        self.assertLess(checked_call, match_outcome)
+        # WindowOps 不得自行恢复 poisoned registry。
+        self.assertNotIn("into_inner()", move_source)
+        # 同步调用方是唯一 failure receiver，不另行写 pending source。
+        self.assertNotIn("pending_failures", move_source)
+        # 健康授权仍只提交一次 Wayland move 请求。
+        self.assertEqual(move_source.count("toplevel._move(seat.as_ref(), serial)"), 1)
 
 
 if __name__ == "__main__":
