@@ -530,43 +530,12 @@ impl WaylandBackend {
         window_id: crate::core::WindowId,
         // 布尔结果显式传播 owner 状态失败。
     ) -> bool {
-        // 先取得 last-time guard，保持提交锁顺序。
-        let mut last_repeat = match self.last_repeat_time.lock() {
-            // 健康 guard 用于到期判断与最终提交。
-            Ok(last_repeat) => last_repeat,
-            // 锁中毒必须显式失败。
-            Err(_) => {
-                // failure 只进入既有 backend source。
-                self.enqueue_failure(Error::new(
-                    // 状态损坏统一分类为 InvalidState。
-                    Errc::InvalidState,
-                    // 诊断保留 last-time 与事件提交阶段。
-                    "Wayland key repeat last-time mutex poisoned during event commit",
-                ));
-                // 不更新时间，也不写事件。
-                return false;
-            }
-        };
-        // 在健康节拍状态上计算本轮是否到期。
-        let should_fire = match *last_repeat {
-            // 后续重复依据上次成功提交时刻。
-            Some(last) => now.duration_since(last) >= interval,
-            // 首次重复依据物理按下时刻与 delay。
-            None => now >= first_press + delay,
-        };
-        // 尚未到期时不需要访问事件队列。
-        if !should_fire {
-            // 健康等待状态不属于失败。
-            return true;
-        }
-        // 到期后再取得 event queue guard，尚未修改 last-time。
+        // 先取得 event queue guard，对齐 keyboard 全局锁顺序。
         let mut events = match self.events.lock() {
-            // 健康 guard 与 last-time guard 组成提交事务。
+            // 健康 guard 保持到到期判断与最终提交完成。
             Ok(events) => events,
-            // 队列损坏时保持重复时间不变。
+            // 队列锁中毒必须显式失败。
             Err(_) => {
-                // 先释放 last-time guard，避免跨 owner 入队。
-                drop(last_repeat);
                 // failure 只进入既有 backend source。
                 self.enqueue_failure(Error::new(
                     // 状态损坏统一分类为 InvalidState。
@@ -574,10 +543,41 @@ impl WaylandBackend {
                     // 诊断保留 event queue 与重复提交阶段。
                     "Wayland key repeat event queue mutex poisoned during event commit",
                 ));
-                // 不推进时间，也不写入部分事件。
+                // 不访问 last-time，也不写入事件。
                 return false;
             }
         };
+        // 再取得 last-time guard，与焦点/释放事务保持 events→last 顺序。
+        let mut last_repeat = match self.last_repeat_time.lock() {
+            // 健康 guard 与 event queue guard 组成提交事务。
+            Ok(last_repeat) => last_repeat,
+            // 节拍损坏时保持事件队列不变。
+            Err(_) => {
+                // 先释放 event queue guard，避免跨 owner 入队。
+                drop(events);
+                // failure 只进入既有 backend source。
+                self.enqueue_failure(Error::new(
+                    // 状态损坏统一分类为 InvalidState。
+                    Errc::InvalidState,
+                    // 诊断保留 last-time 与事件提交阶段。
+                    "Wayland key repeat last-time mutex poisoned during event commit",
+                ));
+                // 不推进时间，也不写入事件。
+                return false;
+            }
+        };
+        // 在两把健康 guards 内重新计算本轮是否到期。
+        let should_fire = match *last_repeat {
+            // 后续重复依据上次成功提交时刻。
+            Some(last) => now.duration_since(last) >= interval,
+            // 首次重复依据物理按下时刻与 delay。
+            None => now >= first_press + delay,
+        };
+        // 尚未到期时保持两份 owner 状态不变。
+        if !should_fire {
+            // 健康等待状态不属于失败。
+            return true;
+        }
         // 两个 owner 均健康后提交本次重复时刻。
         *last_repeat = Some(now);
         // 根据按下时快照决定文本转换的 Shift 状态。
