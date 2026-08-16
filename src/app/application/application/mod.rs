@@ -26,6 +26,8 @@ use crate::app::window::window_actions::{
     // 统一主窗与次窗的自动居中能力缺失策略。
     report_center_on_screen_result,
 };
+// 统一主窗、次窗与公开 Window 的 FileDrop 创建策略。
+use crate::app::window::window_creation::create_app_window;
 use crate::app::window::window_config::WindowConfig;
 use crate::app::window::window_driver::{WindowDriver, WindowFrameContext};
 use crate::app::window::window_session::WindowSession;
@@ -55,9 +57,7 @@ use crate::platform::presentation::{
 use crate::ui::theme::traits::TokenProvider;
 use crate::ui::theme::{DesignTokens, DynTokens, Theme};
 use crate::ui::view::ViewNode;
-use crate::ui::{
-    AppState, ComponentConfig, Locale, SystemEvent, WidgetTree, with_config, with_locale,
-};
+use crate::ui::{AppState, ComponentConfig, Locale, SystemEvent, WidgetTree, with_config, with_locale};
 use crate::ui::semantic_action::SemanticActionKind;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -481,14 +481,14 @@ impl App {
             }
         };
         drain_platform_pending_failures(&mut *platform, &diagnostics);
-
-        let mut platform_window = match platform.window_manager().create_window(&self.title, w, h) {
-            Ok(win) => win,
-            Err(e) => {
-                tracing::error!("create_window 失败: {:?}", e);
-                return 1;
-            }
-        };
+        let mut platform_window =
+            match create_app_window(platform.window_manager(), &self.title, w, h) {
+                Ok(win) => win,
+                Err(e) => {
+                    tracing::error!("create_window 失败: {:?}", e);
+                    return 1;
+                }
+            };
         if self.custom_title_bar {
             if let Err(error) = configure_custom_title_bar(platform_window.as_mut(), w, h) {
                 tracing::error!("configure custom title bar failed: {}", error.short_what());

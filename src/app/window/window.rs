@@ -15,8 +15,10 @@
 
 use std::cell::Cell;
 
-// 复用 app window Module 统一拥有的自动居中报告策略。
+// 独立 Window 入口复用统一自动居中结果分类。
 use crate::app::window::window_actions::report_center_on_screen_result;
+// 独立 Window 入口复用 Application 的能力创建策略。
+use crate::app::window::window_creation::create_app_window;
 use crate::core::{Point, Result};
 use crate::native::platform::Platform;
 use crate::native::windowing::window::PlatformWindow;
@@ -78,11 +80,7 @@ impl Window {
     /// 创建平台窗口，存储 PlatformWindow 句柄。
     pub fn create(&mut self, title: &str, width: i32, height: i32) -> bool {
         self.initial_size = (width, height);
-        match self
-            .platform
-            .window_manager()
-            .create_window(title, width, height)
-        {
+        match create_app_window(self.platform.window_manager(), title, width, height) {
             Ok(mut w) => {
                 // 独立 Window 入口与 App 主窗、次窗保持相同能力缺失语义。
                 report_center_on_screen_result(
