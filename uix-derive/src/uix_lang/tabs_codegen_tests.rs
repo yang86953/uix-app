@@ -35,6 +35,57 @@ fn generates_tabs_with_controlled_key_panels_and_change() {
     );
 }
 
+// 验证 Tabs 方位与溢出滚动配置映射到公开运行时构建器。
+#[test]
+fn generates_tabs_position_and_scrollable_configuration() {
+    // 生成静态左侧方位与动态滚动开关。
+    let configured = generate(
+        r#"<Tabs items={tabs} activeKey={active_tab} tabPosition="left" scrollable={allow_scroll}><Text>面板</Text></Tabs>"#,
+    )
+    // 合法高级配置必须成功生成。
+    .expect("Tabs 方位与滚动配置应生成成功");
+    // 静态方位必须映射到公开枚举。
+    assert!(
+        configured.contains("position (:: uix :: prelude :: TabPosition :: Left)"),
+        "{configured}"
+    );
+    // 动态滚动值必须保留调用方 bool 类型检查。
+    assert!(
+        configured.contains("scrollable (allow_scroll)"),
+        "{configured}"
+    );
+
+    // 生成动态方位与布尔简写滚动能力。
+    let dynamic = generate(
+        r#"<Tabs items={tabs} activeKey={active_tab} tabPosition={tab_position} scrollable><Text>面板</Text></Tabs>"#,
+    )
+    // 动态方位必须成功进入 Rust 类型检查边界。
+    .expect("TabPosition 表达式应生成成功");
+    // 动态枚举按声明快照克隆后传入公开构建器。
+    assert!(
+        dynamic.contains("position ((tab_position) . clone ())"),
+        "{dynamic}"
+    );
+    // 布尔简写必须生成显式 true。
+    assert!(dynamic.contains("scrollable (true)"), "{dynamic}");
+}
+
+// 验证非法 Tabs 方位在宏展开期得到定向诊断。
+#[test]
+fn rejects_unknown_tabs_position() {
+    // 生成运行时未公开的标签栏方位。
+    let error = generate(
+        r#"<Tabs items={tabs} activeKey={active_tab} tabPosition="center"><Text>面板</Text></Tabs>"#,
+    )
+    // 未登记值不能静默回退到顶部。
+    .expect_err("未知 Tabs 方位必须失败");
+    // 诊断必须点名属性与非法值。
+    assert!(
+        error.message.contains("tabPosition") && error.message.contains("center"),
+        "{error:?}"
+    );
+}
+
 // 验证 Tabs 缺失必需属性时返回定位诊断。
 #[test]
 fn rejects_tabs_without_required_contract() {
