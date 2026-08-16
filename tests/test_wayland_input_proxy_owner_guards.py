@@ -228,6 +228,39 @@ class WaylandInputProxyOwnerGuardTests(unittest.TestCase):
         # adapter 不得二次调用事件队列 helper。
         self.assertNotIn("enqueue_for_window", branch)
 
+    # 确认 capability 收敛不会把 poisoned pointer slot 当作空槽。
+    def test_capability_convergence_reports_pointer_slot_failure(self) -> None:
+        # 读取 seat owner-thread adapter。
+        seat = SEAT.read_text(encoding="utf-8")
+        # 五轮循环标记收敛片段起点。
+        convergence_start = seat.index("for _ in 0..5")
+        # 保存文件末尾的收敛实现。
+        convergence = seat[convergence_start:]
+        # pointer slot 必须使用 checked match。
+        slot_lock = convergence.index("match self.pointer.lock()")
+        # failure 必须进入 backend pending source。
+        enqueue = convergence.index("self.enqueue_failure")
+        # poison 分支必须在 flush 前返回。
+        early_return = convergence.index("return", enqueue)
+        # 健康空槽才允许进入 flush。
+        flush = convergence.index("self.flush_checked")
+        # owner 检查先于 failure 转交。
+        self.assertLess(slot_lock, enqueue)
+        # failure 入队后立即早退。
+        self.assertLess(enqueue, early_return)
+        # 早退先于任何后续 flush。
+        self.assertLess(early_return, flush)
+        # 收敛循环不得把 lock error 转为 false。
+        self.assertNotIn("unwrap_or(false)", convergence)
+        # 状态失败稳定分类为 InvalidState。
+        self.assertIn("Errc::InvalidState", convergence)
+        # 诊断必须保留 pointer slot 与 convergence 阶段。
+        self.assertIn("pointer proxy slot mutex poisoned during convergence", convergence)
+        # 健康路径保持原五轮上限。
+        self.assertIn("for _ in 0..5", convergence)
+        # 健康路径保持 flush 后 dispatch 的调用序列。
+        self.assertLess(convergence.index("self.flush_checked"), convergence.index("self.dispatch_pending_checked"))
+
 
 # 直接执行本文件时运行契约测试。
 if __name__ == "__main__":
