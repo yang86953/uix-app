@@ -311,6 +311,22 @@ impl ClipboardWrite {
 
 // Wayland clipboard Module 提供 backend owner-thread 的确定性关闭端口。
 impl WaylandBackend {
+    // 在任何 clipboard owner 访问前检查 backend 生命周期。
+    fn ensure_clipboard_open(&self, operation: &str) -> Result<()> {
+        // closed 事实由 WaylandBackend owner-thread 唯一提交。
+        if self.closed {
+            // 关闭后访问属于稳定生命周期错误，禁止伪造空值或成功。
+            return Err(Error::new(
+                // 使用 InvalidState 区分生命周期与协议/I/O 失败。
+                Errc::InvalidState,
+                // 保留具体 clipboard 操作以便 owner-thread 定位调用方。
+                format!("Wayland clipboard {operation} requested after backend shutdown"),
+            ));
+        }
+        // 健康 backend 继续进入既有 clipboard 行为。
+        Ok(())
+    }
+
     // 关闭在途 clipboard I/O 与所有过期授权状态。
     pub(crate) fn shutdown_clipboard_io(&mut self) {
         // 第一把锁沿用 selection Component 的 ownership owner。
@@ -369,6 +385,8 @@ impl WaylandBackend {
 
 impl IClipboard for WaylandBackend {
     fn text(&self) -> Result<String> {
+        // 生命周期 gate 必须先于文本 owner lock。
+        self.ensure_clipboard_open("text")?;
         self.clipboard_text.lock().map(|t| t.clone()).map_err(|_| {
             Error::new(
                 Errc::InvalidState,
@@ -377,6 +395,8 @@ impl IClipboard for WaylandBackend {
         })
     }
     fn set_text(&mut self, text: &str) -> Result<()> {
+        // 生命周期 gate 必须先于缓存写入与任何协议 owner 访问。
+        self.ensure_clipboard_open("set_text")?;
         {
             let mut t = self.clipboard_text.lock().map_err(|_| {
                 Error::new(
@@ -455,6 +475,8 @@ impl IClipboard for WaylandBackend {
         Ok(())
     }
     fn has_text(&self) -> Result<bool> {
+        // 生命周期 gate 必须先于文本 owner lock。
+        self.ensure_clipboard_open("has_text")?;
         self.clipboard_text
             .lock()
             .map(|t| !t.is_empty())
