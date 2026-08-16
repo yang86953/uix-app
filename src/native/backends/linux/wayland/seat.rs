@@ -25,6 +25,8 @@ use super::input_proxy_owner::{
     pointer_generation_checked,
     // pointer capability loss 事务化清理授权、焦点与代理。
     release_pointer_proxy_checked,
+    // keyboard capability loss 事务化清理焦点、输入状态与代理。
+    release_keyboard_proxy_checked,
     // transition 决策前同时读取 pointer/keyboard 槽快照。
     snapshot_input_proxy_slots,
 };
@@ -798,31 +800,26 @@ impl WaylandBackend {
                     }
                 // 仅在 Keyboard 能力从有到无时清理状态并释放代理。
                 } else if keyboard_transition == InputProxyTransition::Release {
-                    let blurred_window = {
-                        let mut targets = surface_windows
-                            .lock()
-                            .unwrap_or_else(|error| error.into_inner());
-                        let previous = targets.keyboard_target();
-                        targets.clear_keyboard_focus();
-                        previous
-                    };
-                    enqueue_for_window(
+                    // 六 owner Component 在全部 guards 健康后提交 teardown。
+                    if !release_keyboard_proxy_checked(
+                        // keyboard focus owner。
+                        &surface_windows,
+                        // WindowBlur 事件 owner。
                         &ptr_events,
-                        blurred_window,
-                        UiEvent::new(UiEventType::WindowBlur, UiEventPayload::None),
-                    );
-                    keys_down
-                        .lock()
-                        .unwrap_or_else(|error| error.into_inner())
-                        .clear();
-                    *held_key_info
-                        .lock()
-                        .unwrap_or_else(|error| error.into_inner()) = None;
-                    *last_repeat_time
-                        .lock()
-                        .unwrap_or_else(|error| error.into_inner()) = None;
-                    // 统一 helper 在锁外注销回调并释放唯一 keyboard 代理。
-                    release_keyboard_proxy(&wl_keyboard_handle);
+                        // 物理按键集合 owner。
+                        &keys_down,
+                        // 客户端重复候选 owner。
+                        &held_key_info,
+                        // 重复节拍 owner。
+                        &last_repeat_time,
+                        // 唯一 keyboard proxy owner 槽。
+                        &wl_keyboard_handle,
+                        // failure 进入同一 backend source。
+                        &capability_failures,
+                    ) {
+                        // 状态失败时没有半清理，停止本次 capability callback。
+                        return;
+                    }
                 }
             }
         });
