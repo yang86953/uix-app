@@ -872,13 +872,13 @@ impl WindowOps for WaylandWindowOps {
     // ── 特性开关 ──────────────────────────────────────────
 
     fn os_start_text_input(&mut self) -> Result<()> {
-        // 文本输入通过 WaylandBackend 的 text_input_manager 管理
-        Ok(())
+        // 旧窗口入口没有持有 TextInputSession，必须诚实拒绝而非伪造启用状态。
+        Err(Error::new(Errc::NotImplemented, "WaylandWindowOps::os_start_text_input: use Platform::text_input().start()"))
     }
 
     fn os_stop_text_input(&mut self) -> Result<()> {
-        // 文本输入通过 WaylandBackend 的 text_input_manager 管理
-        Ok(())
+        // 旧窗口入口没有持有 TextInputSession，必须诚实拒绝而非伪造停用状态。
+        Err(Error::new(Errc::NotImplemented, "WaylandWindowOps::os_stop_text_input: use Platform::text_input().stop()"))
     }
 
     fn os_enable_file_drop(&mut self, _enable: bool) -> Result<()> {
