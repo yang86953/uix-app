@@ -124,5 +124,7 @@ impl Drop for WaylandWindowOps {
             // source 已关闭时不存在更高层 receiver，保持既有 fail-closed 语义。
             let _ = self.pending_failures.enqueue(error);
         }
+        // Drop 没有显式重试入口，必须始终释放逐窗 callback owners。
+        self.shutdown_window_callbacks();
     }
 }
