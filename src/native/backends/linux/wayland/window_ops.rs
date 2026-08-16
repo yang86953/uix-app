@@ -25,7 +25,13 @@ use wayland_client::protocol::{
     // 结束 Wayland 核心协议类型导入。
 };
 use wayland_client::{Connection, EventQueue, globals::GlobalList};
-use wayland_protocols::xdg::activation::v1::client::xdg_activation_v1::XdgActivationV1;
+use wayland_protocols::xdg::activation::v1::client::{
+    // pending token handle 由逐窗 activation Component 持有直到 Done 或关闭。
+    xdg_activation_token_v1::XdgActivationTokenV1,
+    // activation global 继续由 backend 注入逐窗 owner。
+    xdg_activation_v1::XdgActivationV1,
+    // 结束 activation 协议类型导入。
+};
 // 引入 Wayland 顶层窗口装饰对象及客户端/服务端装饰模式。
 use wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1::{
     // 使用短别名表达系统标题栏可见性对应的协议模式。
@@ -91,6 +97,8 @@ pub(crate) struct WaylandWindowOps {
     pub(crate) xdg_decoration: Option<Main<ZxdgToplevelDecorationV1>>,
     /// xdg_activation 协议，用于请求窗口激活（raise）
     pub(crate) xdg_activation: Option<Main<XdgActivationV1>>,
+    // 单个 pending activation token 允许新请求与窗口关闭注销旧 callback。
+    pub(crate) activation_token: Option<Main<XdgActivationTokenV1>>,
 }
 
 impl WaylandWindowOps {
@@ -106,7 +114,8 @@ impl WaylandWindowOps {
         }
     }
 
-    fn missing_proxy(operation: &str, proxy: &str) -> Error {
+    // 同一 Wayland 窗口父模块下的私有 Components 共享稳定缺失代理诊断。
+    pub(super) fn missing_proxy(operation: &str, proxy: &str) -> Error {
         Error::new(
             Errc::InvalidState,
             format!("{operation}: Wayland {proxy} is unavailable"),
@@ -167,6 +176,8 @@ impl WaylandWindowOps {
             configured_modes: Arc::new(Mutex::new(NativeWindowModeState::default())),
             xdg_decoration: None,
             xdg_activation,
+            // 新窗口尚未建立异步 activation token 请求。
+            activation_token: None,
         }
     }
 
@@ -656,23 +667,8 @@ impl WindowOps for WaylandWindowOps {
     }
 
     fn os_raise(&mut self) -> Result<()> {
-        // 通过 xdg_activation_v1 请求窗口激活（提升聚焦）。
-        // 注意：此协议需要异步 done 事件获取 token 字符串，在同步上下文中
-        // 无法等待；携带空 token 的 activate 请求部分 compositor 仍会处理。
-        let xa = self
-            .xdg_activation
-            .as_ref()
-            .ok_or_else(|| Error::new(Errc::NotImplemented, "xdg_activation_v1 is unavailable"))?;
-        let surface = self
-            .surface
-            .as_ref()
-            .ok_or_else(|| Self::missing_proxy("os_raise", "wl_surface"))?;
-        let token = xa.get_activation_token();
-        token.set_surface(surface);
-        token.set_app_id("belldandy".to_string());
-        token.commit();
-        xa.activate(String::new(), surface);
-        Ok(())
+        // 同步入口只建立异步请求，不伪造 compositor 已授予焦点。
+        self.request_activation()
     }
 
     fn os_lower(&mut self) -> Result<()> {

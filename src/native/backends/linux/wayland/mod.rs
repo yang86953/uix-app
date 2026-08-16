@@ -41,6 +41,8 @@ pub(crate) mod shm_buffer;
 pub(crate) mod surface_registration;
 pub(crate) mod text_input;
 pub(crate) mod window;
+// 逐窗 activation Component 独占异步 token 请求与回调生命周期。
+pub(crate) mod window_activation;
 // 逐窗 callback shutdown Component 独占 xdg-shell 回调注销顺序。
 pub(crate) mod window_callback_shutdown;
 pub(crate) mod window_ops;

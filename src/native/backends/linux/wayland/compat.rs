@@ -311,8 +311,11 @@ impl WaylandDispatchState {
             // 把平台 panic 送到同一 owner-thread failure source。
             self.registry.report_callback_panic::<I>();
         }
-        // wl_callback 在 Done 后由服务端销毁，成功或 panic 都不得回插陈旧 owner。
-        if TypeId::of::<I>() == TypeId::of::<wl_callback::WlCallback>() {
+        // 服务端销毁的 one-shot 接口在成功或 panic 后都不得回插陈旧 owner。
+        if TypeId::of::<I>() == TypeId::of::<wl_callback::WlCallback>()
+            // activation token 同样只产生一次 Done 后即失效。
+            || TypeId::of::<I>() == TypeId::of::<XdgActivationTokenV1>()
+        {
             // 返回会释放当前 callback 闭包，协议编号复用时不会命中旧 owner。
             return;
         }
