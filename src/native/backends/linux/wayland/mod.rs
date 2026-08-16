@@ -22,6 +22,8 @@ pub(crate) mod keyboard;
 pub(crate) mod keyboard_focus_owner;
 // 键盘修饰 Component 事务化提交 KeyMod 与重复状态失效。
 pub(crate) mod keyboard_modifier_owner;
+// 键盘重复配置 Component 事务化提交 compositor rate/delay。
+pub(crate) mod keyboard_repeat_config_owner;
 pub(crate) mod keycode;
 pub(crate) mod output;
 // 指针激活注册表独占 Wayland 拖动授权的签发与生命周期。
