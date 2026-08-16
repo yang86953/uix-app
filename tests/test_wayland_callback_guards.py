@@ -395,8 +395,18 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         request_source = window_ops[request_start:request_end]
         # 关闭意图必须进入当前 Wayland owner 的事件队列。
         self.assertIn("self.events", request_source)
+        # 同步端口必须把队列损坏分类为稳定 InvalidState。
+        self.assertIn("Errc::InvalidState", request_source)
+        # 诊断必须保留主动关闭与逐窗队列阶段。
+        self.assertIn("Wayland request-close event queue mutex poisoned", request_source)
+        # 主动关闭不得恢复 poisoned queue 后伪报成功。
+        self.assertNotIn("into_inner()", request_source)
+        # 同步调用方是唯一 failure receiver，不另行写 pending source。
+        self.assertNotIn("pending_failures", request_source)
         # 必须复用和 compositor close callback 相同的统一事件。
         self.assertIn("UiEvent::close().for_window(self.window_id)", request_source)
+        # 每次健康调用只允许投递一个关闭事实。
+        self.assertEqual(request_source.count("UiEvent::close().for_window(self.window_id)"), 1)
         # 平台窄端口不得在交付关闭意图时提前销毁原生资源。
         self.assertNotIn("self.surface = None", request_source)
 

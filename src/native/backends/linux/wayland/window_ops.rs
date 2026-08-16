@@ -439,11 +439,7 @@ impl WaylandWindowOps {
     }
 }
 
-// WindowOps — Wayland 协议实现
-
 impl WindowOps for WaylandWindowOps {
-    // ── 窗口生命周期 ──────────────────────────────────────
-
     fn os_show(&mut self) -> Result<()> {
         let surface = self
             .surface
@@ -486,14 +482,18 @@ impl WindowOps for WaylandWindowOps {
 
     // 应用主动关闭与 compositor 关闭共用同一逐窗事实，由 Application System 执行 teardown。
     fn os_request_close(&mut self) -> Result<()> {
-        // 事件队列依旧是 Wayland callback 与 owner thread 之间的唯一交付边界。
-        self.events
-            // 毒化恢复与 xdg_toplevel::Close callback 保持一致。
-            .lock()
-            // 关闭事实不因过往 panic 丢失，后续 pending failure 仍独立上报。
-            .unwrap_or_else(|error| error.into_inner())
-            // 保留原生回调的逐窗身份与统一 close 语义。
-            .push_back(UiEvent::close().for_window(self.window_id));
+        // 同步窄端口必须把损坏的事件队列作为 typed failure 返回调用方。
+        let mut events = self.events.lock().map_err(|_| {
+            // 构造稳定的主动关闭队列错误。
+            Error::new(
+                // 队列 owner 已无法安全访问。
+                Errc::InvalidState,
+                // 保留 Wayland 主动关闭与逐窗事件队列阶段。
+                "Wayland request-close event queue mutex poisoned",
+            )
+        })?;
+        // 健康队列继续接收唯一的逐窗关闭事实。
+        events.push_back(UiEvent::close().for_window(self.window_id));
         // 成功表示关闭意图已交付，不表示 surface 已被销毁。
         Ok(())
     }
