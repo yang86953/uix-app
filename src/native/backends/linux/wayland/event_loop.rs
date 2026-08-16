@@ -101,10 +101,20 @@ impl WaylandBackend {
 
     /// 从事件队列弹出下一个事件。
     pub(crate) fn next_event(&self) -> Option<UiEvent> {
-        self.events
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .pop_front()
+        // 无 Result 通道时先检查事件队列 owner，再决定是否访问队列。
+        let Ok(mut events) = self.events.lock() else {
+            // typed failure 进入 backend 已有 source，留待 App owner-thread 处理。
+            self.enqueue_failure(Error::new(
+                // 损坏的事件队列属于稳定共享状态错误。
+                Errc::InvalidState,
+                // 保留 Wayland next_event 与事件队列阶段。
+                "Wayland next_event queue mutex poisoned",
+            ));
+            // 不把损坏状态恢复成伪事件或继续访问队列。
+            return None;
+        };
+        // 健康队列仍只弹出最早的一项事件。
+        events.pop_front()
     }
 
     // ── 内部辅助 ──────────────────────────────────────────

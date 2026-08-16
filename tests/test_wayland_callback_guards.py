@@ -37,6 +37,43 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         self.assertIn("callback panicked during dispatch", source)
         self.assertIn("Errc::PlatformError", source)
 
+    # 确认 owner-thread 不会从 poisoned Wayland 事件队列继续取事件。
+    def test_next_event_reports_poisoned_queue_to_pending_source(self) -> None:
+        # 读取 Wayland 事件循环 owner-thread adapter。
+        source = EVENT_LOOP.read_text(encoding="utf-8")
+        # 限定 next_event 实现。
+        next_start = source.index("pub(crate) fn next_event")
+        # 内部 poll helper 分区标记 next_event 末尾。
+        next_end = source.index("// ── 内部辅助", next_start)
+        # 保存事件提取窄端口。
+        next_event = source[next_start:next_end]
+        # 队列 owner 必须先使用 checked lock。
+        lock_queue = next_event.index("self.events.lock()")
+        # 锁失败必须进入 backend 既有 failure source。
+        enqueue_failure = next_event.index("self.enqueue_failure")
+        # poison 分支必须返回普通无事件形状。
+        return_none = next_event.index("return None")
+        # 健康路径才允许弹出队首事件。
+        pop_event = next_event.index("events.pop_front()")
+        # owner 检查必须先于 failure 转交。
+        self.assertLess(lock_queue, enqueue_failure)
+        # failure 必须先入队再返回 None。
+        self.assertLess(enqueue_failure, return_none)
+        # pop 只能位于 poison 早退之后的健康路径。
+        self.assertLess(return_none, pop_event)
+        # next_event 不得恢复 poisoned queue。
+        self.assertNotIn("into_inner()", next_event)
+        # 锁中毒必须稳定分类为 InvalidState。
+        self.assertIn("Errc::InvalidState", next_event)
+        # 诊断必须保留 next_event 队列阶段。
+        self.assertIn("Wayland next_event queue mutex poisoned", next_event)
+        # 窄端口不得执行 owner-thread 之外的错误处理策略。
+        for forbidden in ["tracing::", ".report(", "attempt_recovery"]:
+            # 任何一项都不得进入事件提取路径。
+            self.assertNotIn(forbidden, next_event)
+        # 每次健康调用只允许弹出一个事件。
+        self.assertEqual(next_event.count("events.pop_front()"), 1)
+
     def test_unknown_created_child_remains_an_explicit_failure_case(self) -> None:
         source = COMPAT.read_text(encoding="utf-8")
         self.assertIn("fn event_created_child", source)
