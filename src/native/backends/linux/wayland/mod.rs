@@ -68,7 +68,8 @@ use wayland_client::{
     Connection, EventQueue,
     globals::{GlobalList, registry_queue_init},
     protocol::{
-        wl_compositor, wl_data_device_manager, wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm,
+        wl_compositor, wl_data_device_manager, wl_data_source, wl_keyboard, wl_output, wl_pointer,
+        wl_seat, wl_shm,
     },
 };
 use wayland_protocols::wp::text_input::zv3::client::{
@@ -143,6 +144,8 @@ pub(crate) struct WaylandBackend {
     // ── 剪贴板 ────────────────────────────────────────────────────
     pub(crate) data_device_manager: Option<Main<wl_data_device_manager::WlDataDeviceManager>>,
     pub(crate) data_device: Option<Main<wayland_client::protocol::wl_data_device::WlDataDevice>>,
+    // 当前本地 selection 的 data-source callback 与协议 handle owner。
+    pub(crate) clipboard_source: Option<Main<wl_data_source::WlDataSource>>,
     pub(crate) clipboard_text: Arc<Mutex<String>>,
     pub(crate) owns_clipboard: Arc<Mutex<bool>>,
     pub(crate) clipboard_read: Arc<Mutex<Option<clipboard::ClipboardRead>>>,
@@ -373,6 +376,8 @@ impl WaylandBackend {
             last_repeat_time: Arc::new(Mutex::new(None)),
             data_device_manager,
             data_device: None,
+            // 初始尚未向 compositor 发布本地 clipboard source。
+            clipboard_source: None,
             clipboard_text,
             owns_clipboard,
             clipboard_read,

@@ -34,8 +34,30 @@ use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_ba
 use crate::core::{Errc, Error};
 use crate::diagnostics::PendingFailureSource;
 
-type Callback<I> =
-    Box<dyn FnMut(&Main<I>, <I as Proxy>::Event, &QueueHandle<WaylandDispatchState>) + 'static>;
+// 描述一次 callback 执行后 registry owner 的去留。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CallbackDisposition {
+    // 持久 callback 在当前事件后继续等待后续事件。
+    Keep,
+    // 生命周期终点事件消费 callback owner，禁止回插。
+    Remove,
+}
+
+// registry callback 返回显式生命周期 disposition。
+type Callback<I> = Box<
+    // callback 执行仍位于 registry lock 外并取得精确协议事件。
+    dyn FnMut(
+            // 当前事件所属兼容协议代理。
+            &Main<I>,
+            // 当前协议接口的强类型事件。
+            <I as Proxy>::Event,
+            // 同一 Wayland dispatch queue handle。
+            &QueueHandle<WaylandDispatchState>,
+            // 返回当前 owner 是否继续登记。
+        ) -> CallbackDisposition
+        // callback owner 与 registry 使用相同静态生命周期。
+        + 'static,
+>;
 
 // 统一描述 callback registry 的稳定协议对象键。
 type CallbackKey = (TypeId, u32);
@@ -225,7 +247,8 @@ impl ProxyContext {
     where
         I: Proxy + 'static,
         I::Event: 'static,
-        F: FnMut(&Main<I>, I::Event, &QueueHandle<WaylandDispatchState>) + 'static,
+        F: FnMut(&Main<I>, I::Event, &QueueHandle<WaylandDispatchState>) -> CallbackDisposition
+            + 'static,
     {
         // 把具体闭包收敛为规范的 Wayland callback trait object。
         let callback = Box::new(callback) as Callback<I>;
@@ -304,12 +327,17 @@ impl WaylandDispatchState {
         // panic 只在本 dispatch adapter 内转换，不能越过 Wayland ABI。
         let callback_result = catch_unwind(AssertUnwindSafe(|| {
             // 执行本次协议事件对应的唯一 callback。
-            callback(&callback_proxy, event, qh);
+            callback(&callback_proxy, event, qh)
         }));
         // callback panic 必须形成 typed failure；生命周期策略在转换完成后统一决定 owner 去留。
         if callback_result.is_err() {
             // 把平台 panic 送到同一 owner-thread failure source。
             self.registry.report_callback_panic::<I>();
+        }
+        // lifecycle callback 可以在终点事件后显式消费 owner。
+        if matches!(callback_result, Ok(CallbackDisposition::Remove)) {
+            // 当前 callback 局部值随返回释放，不进入健康 registry 回插路径。
+            return;
         }
         // 服务端销毁的 one-shot 接口在成功或 panic 后都不得回插陈旧 owner。
         if TypeId::of::<I>() == TypeId::of::<wl_callback::WlCallback>()
@@ -414,12 +442,35 @@ impl<I> Main<I> {
 }
 
 impl<I: Proxy> Main<I> {
-    pub(crate) fn quick_assign<F>(&self, callback: F)
+    pub(crate) fn quick_assign<F>(&self, mut callback: F)
     where
         I: 'static,
         I::Event: 'static,
         F: FnMut(&Main<I>, I::Event, &QueueHandle<WaylandDispatchState>) + 'static,
     {
+        // 普通 callback 保持历史持久语义，不要求所有调用方声明 disposition。
+        self.context.register(&self.proxy, move |proxy, event, qh| {
+            // 执行原始 callback，仍不持有 registry mutex。
+            callback(proxy, event, qh);
+            // 默认在健康执行或 panic 转换后继续等待后续事件。
+            CallbackDisposition::Keep
+        });
+    }
+
+    // 为具有事件级生命周期终点的协议对象登记显式 disposition callback。
+    pub(crate) fn quick_assign_with_lifecycle<F>(&self, callback: F)
+    // callback 类型必须与当前协议接口和 dispatch queue 匹配。
+    where
+        // 协议接口身份参与 callback registry 稳定键。
+        I: 'static,
+        // 强类型事件必须能够进入静态闭包。
+        I::Event: 'static,
+        // lifecycle callback 显式返回本次执行后的 owner 去留。
+        F: FnMut(&Main<I>, I::Event, &QueueHandle<WaylandDispatchState>) -> CallbackDisposition
+            + 'static,
+        // 开始 lifecycle callback 注册实现。
+    {
+        // 直接登记显式 disposition，不改变 registry 的唯一所有权。
         self.context.register(&self.proxy, callback);
     }
 
