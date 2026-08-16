@@ -183,6 +183,8 @@ impl WaylandBackend {
             .unwrap_or_else(|error| error.into_inner()) = None;
         // 先从 owner 槽取走并释放 pointer 代理。
         release_pointer_proxy(&self.pointer);
+        // backend shutdown 同时撤销不能跨代理生命周期复用的 cursor serial。
+        self.cursor_state.clear_enter();
         // 再对 keyboard 代理执行对称清理。
         release_keyboard_proxy(&self.keyboard);
         // 数据设备回调依赖 seat 生命周期，关闭时一并注销。
@@ -283,6 +285,10 @@ impl WaylandBackend {
         let surface_windows = self.surface_windows.clone();
         // 所有 pointer 回调共享 Wayland 后端唯一的激活授权注册表。
         let pointer_activations = self.pointer_activations.clone();
+        // pointer callback 共享唯一 cursor intent 与 Enter serial Component。
+        let cursor_state = Arc::clone(&self.cursor_state);
+        // 可选 cursor-shape global 在每次 Enter 重放当前 intent。
+        let cursor_shape_manager = self.cursor_shape_manager.clone();
         // capability owner failure 复用 backend 已有 pending source。
         let capability_failures = self.pending_failures.clone();
         seat.quick_assign(move |seat, event, _| {
@@ -341,6 +347,10 @@ impl WaylandBackend {
                     let pointer_failures = capability_failures.clone();
                     // 新回调持有共享激活注册表句柄。
                     let pointer_activations = pointer_activations.clone();
+                    // 新 pointer 代理捕获同一 cursor intent owner。
+                    let pointer_cursor_state = Arc::clone(&cursor_state);
+                    // cursor-shape global 与 backend 生命周期一致，可安全克隆代理 handle。
+                    let pointer_cursor_shape_manager = cursor_shape_manager.clone();
                     // 捕获创建该 pointer 代理时的稳定代次。
                     let Some(pointer_generation) = pointer_generation_checked(
                         // generation 仍由 activation registry 唯一拥有。
@@ -352,13 +362,26 @@ impl WaylandBackend {
                         return;
                     };
                     let ptr = seat.get_pointer();
-                    ptr.quick_assign(move |_, event, _| match event {
+                    ptr.quick_assign(move |pointer, event, _| match event {
                         wl_pointer::Event::Enter {
+                            serial,
                             surface,
                             surface_x,
                             surface_y,
-                            ..
                         } => {
+                            // cursor Component 先记录本次 serial 并重放形状或隐藏 intent。
+                            super::cursor::apply_cursor_on_pointer_enter(
+                                // 使用事件所属的精确 pointer 代理。
+                                pointer,
+                                // 只使用本次 Enter 授权。
+                                serial,
+                                // 缺少 optional global 时保持 compositor 默认行为。
+                                pointer_cursor_shape_manager.as_ref(),
+                                // 传入 backend 唯一 cursor intent owner。
+                                &pointer_cursor_state,
+                                // 不变量失败进入同一 backend pending source。
+                                &pointer_failures,
+                            );
                             // adapter 只把 surface 身份与平台中立坐标转交 Component。
                             let p = Point::new(surface_x as f32, surface_y as f32);
                             // 三 owner Component 检查式提交焦点、位置与事件。
@@ -414,6 +437,8 @@ impl WaylandBackend {
                                 // failure 进入 backend pending source。
                                 &pointer_failures,
                             );
+                            // 协议 Leave 已发生，无论 UI focus owner 是否健康都撤销 cursor serial。
+                            super::cursor::clear_cursor_pointer_focus(&pointer_cursor_state);
                         }
                         wl_pointer::Event::Button {
                             serial,
@@ -542,6 +567,8 @@ impl WaylandBackend {
                         // 状态失败时没有半清理，停止本次 capability callback。
                         return;
                     }
+                    // pointer 代理成功释放后，旧 Enter serial 不得进入下一代理代次。
+                    super::cursor::clear_cursor_pointer_focus(&cursor_state);
                 }
                 // 仅在 Keyboard 能力从无到有时创建一个代理与回调。
                 if keyboard_transition == InputProxyTransition::Bind {
