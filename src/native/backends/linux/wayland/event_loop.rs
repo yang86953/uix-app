@@ -835,6 +835,8 @@ impl WaylandBackend {
         self.closed = true;
         // 随后立即撤销输入授权、焦点、重复状态与 seat 派生 callbacks。
         self.shutdown_seat_and_input();
+        // 输入 callbacks 停止后确定性释放在途 clipboard I/O owners。
+        self.shutdown_clipboard_io();
         // 运行期失败统一终止当前 dispatch。
         false
     }
