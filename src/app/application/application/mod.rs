@@ -77,19 +77,10 @@ pub enum AppMode {
 const GRAPHICS_BACKEND_ENV: &str = "UIX_GRAPHICS_BACKEND";
 const GRAPHICS_BACKEND_SETTING_KEYS: [&str; 2] = ["graphics_backend", "uix.graphics_backend"];
 
-fn report_window_operation_error(context: &str, result: crate::core::Result<()>) {
-    if let Err(error) = result {
-        tracing::warn!("{context}: {}", error.short_what());
-    }
-}
-
-fn initially_agent_presentable(window: &dyn PlatformWindow) -> bool {
-    let properties = window.properties();
-    properties.width() > 0
-        && properties.height() > 0
-        && !properties.is_minimized()
-        && window.occlusion_state() != WindowOcclusionState::Occluded
-}
+// 默认构造和窗口启动 helper 保持在 application Module 内部，避免组合根文件超限。
+mod defaults;
+// 组合根与运行时子模块复用同一检查式窗口错误边界。
+use self::defaults::{initially_agent_presentable, report_window_operation_error};
 
 /// 应用入口：GUI（View 根节点）或 CLI 模式。
 pub struct App {
@@ -127,59 +118,6 @@ pub struct App {
 }
 
 type ExitPredicate = Box<dyn Fn(&UiEvent) -> bool>;
-
-impl Default for App {
-    fn default() -> Self {
-        let app_timers = AppTimerQueue::new();
-        let main_thread_queue = MainThreadQueue::new();
-        let handle_alive = Arc::new(AtomicBool::new(true));
-        let runtime = AppRuntime::new();
-        runtime.register_session(
-            WindowId::ROOT,
-            app_timers.clone(),
-            main_thread_queue.clone(),
-            handle_alive.clone(),
-        );
-        // Application 组合根预注册所有窗口都必须拥有的默认语言。
-        let mut container = Container::new();
-        // 默认语言单例消除主窗和次窗首次解析时的预期失败告警。
-        container.singleton(Locale::default());
-        // 默认组件配置与语言共享同一应用级生命周期。
-        container.singleton(ComponentConfig::default());
-
-        Self {
-            mode: AppMode::GUI,
-            title: "UIX App".to_string(),
-            size: (800, 600),
-            custom_title_bar: false,
-            theme: Theme::antd_light(),
-            // 为普通 Rust App 保留 light 与 dark 内建名称。
-            named_themes: NamedThemes::default(),
-            follow_system_theme: false,
-            app_state: AppState::new(),
-            app_timers,
-            main_thread_queue,
-            runtime,
-            handle_alive,
-            root_factory: None,
-            on_start: None,
-            on_window_start: None,
-            on_exit: None,
-            cli: None,
-            // 保存已经具备框架默认服务的应用容器。
-            container,
-            settings_path: None,
-            graphics_backend: None,
-            #[cfg(feature = "test-harness")]
-            graphics_faults: GraphicsFaultSignal::default(),
-            #[cfg(feature = "agent-control")]
-            agent_control_enabled: false,
-            agent_policy: AgentPolicy::default(),
-            agent_confirm_ui: None,
-            exit_code: 0,
-        }
-    }
-}
 
 impl App {
     /// 创建使用默认图形界面模式和运行时配置的应用。
@@ -587,8 +525,10 @@ impl App {
             recovery_request.clone(),
         );
         let engine = match preferred_engine {
-            Some(engine) => engine,
-            None => {
+            Ok(engine) => engine,
+            Err(error) => {
+                // 在关闭原生窗口前记录完整的图形初始化与候选清理原因链。
+                tracing::error!("initial graphics initialization failed: {}", error.what());
                 report_window_operation_error(
                     "initial engine failure cleanup close failed",
                     platform_window.close(),
