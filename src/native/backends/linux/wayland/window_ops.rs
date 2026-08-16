@@ -42,6 +42,8 @@ use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_ba
 
 use crate::core::WindowId;
 use crate::core::error::{Errc, Error, Result};
+// 引入 runtime-scoped callback failure source，禁止窗口对象创建第二队列。
+use crate::diagnostics::PendingFailureSource;
 use crate::native::presentation::graphics::platform::linux::WaylandSurfaceHandle;
 // 引入帧事件、UI 事件与不可解释的指针激活身份。
 use crate::native::windowing::event::{FrameRequestToken, PointerActivationId, UiEvent};
@@ -79,6 +81,8 @@ pub(crate) struct WaylandWindowOps {
     pub(crate) compositor: Main<wl_compositor::WlCompositor>,
     pub(crate) input_region: Option<Main<wl_region::WlRegion>>,
     pub(crate) events: Arc<Mutex<VecDeque<UiEvent>>>,
+    // 所有窗口 callback 复用所属 Wayland backend 的同一 failure source。
+    pending_failures: PendingFailureSource,
     surface_windows: Arc<Mutex<SurfaceWindowTargets>>,
     // seat 代理只用于提交已经通过注册表校验的交互移动请求。
     seat: Option<Main<wl_seat::WlSeat>>,
@@ -136,6 +140,8 @@ impl WaylandWindowOps {
         window_id: WindowId,
         compositor: Main<wl_compositor::WlCompositor>,
         events: Arc<Mutex<VecDeque<UiEvent>>>,
+        // 注入所属 Wayland backend 已有的 callback failure source。
+        pending_failures: PendingFailureSource,
         surface_windows: Arc<Mutex<SurfaceWindowTargets>>,
         // 注入后端已绑定的 seat 代理引用。
         seat: Option<Main<wl_seat::WlSeat>>,
@@ -153,6 +159,8 @@ impl WaylandWindowOps {
             compositor,
             input_region: None,
             events,
+            // 保存同一 source 的廉价 clone，不建立新的 failure owner。
+            pending_failures,
             surface_windows,
             // 保存只用于协议提交的 seat 代理引用。
             seat,
@@ -219,12 +227,24 @@ impl WaylandWindowOps {
 
         let tl_events = events.clone();
         let configured_modes = Arc::clone(&self.configured_modes);
+        // toplevel callback 复用窗口所属 backend 的同一 failure source。
+        let toplevel_failures = self.pending_failures.clone();
         tl.quick_assign(move |_, event, _| match event {
             xdg_toplevel::Event::Close => {
-                tl_events
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .push_back(UiEvent::close().for_window(window_id));
+                // close 事实只在健康事件队列中提交。
+                let Ok(mut queued) = tl_events.lock() else {
+                    // 事件队列损坏必须交给 owner-thread failure source。
+                    let _ = toplevel_failures.enqueue(Error::new(
+                        // callback 无法提交 close 属于稳定 owner 状态错误。
+                        Errc::InvalidState,
+                        // 保留 xdg_toplevel Close 的精确失败阶段。
+                        "Wayland xdg_toplevel Close event queue mutex poisoned",
+                    ));
+                    // 停止本次 close 提交，禁止访问 recovered 队列。
+                    return;
+                };
+                // 健康队列接收当前窗口唯一 close 事实。
+                queued.push_back(UiEvent::close().for_window(window_id));
             }
             xdg_toplevel::Event::Configure {
                 width: w,
@@ -237,23 +257,56 @@ impl WaylandWindowOps {
                 let is_full = states
                     .chunks_exact(4)
                     .any(|c| c.len() == 4 && u32::from_ne_bytes([c[0], c[1], c[2], c[3]]) == 2);
-                let (transition, maximized, fullscreen) = {
-                    let mut modes = configured_modes
-                        .lock()
-                        .unwrap_or_else(|error| error.into_inner());
-                    let transition = modes.apply_configure(is_max, is_full);
-                    let (maximized, fullscreen) = modes.snapshot();
-                    (transition, maximized, fullscreen)
+                // 先检查模式 owner，失败时不得开始 Configure 状态事务。
+                let Ok(mut modes) = configured_modes.lock() else {
+                    // 模式状态损坏必须交给 owner-thread failure source。
+                    let _ = toplevel_failures.enqueue(Error::new(
+                        // callback 无法访问唯一模式 owner。
+                        Errc::InvalidState,
+                        // 保留 xdg_toplevel Configure 模式阶段。
+                        "Wayland xdg_toplevel Configure mode state mutex poisoned",
+                    ));
+                    // 停止本次 Configure，禁止访问 recovered 模式状态。
+                    return;
                 };
-                {
-                    let mut state = window_state.borrow_mut();
-                    state.maximized = maximized;
-                    state.fullscreen = fullscreen;
-                }
-                let mut queued = tl_events.lock().unwrap_or_else(|error| error.into_inner());
+                // 再检查 WindowState 借用，冲突不得以 panic 越过 callback adapter。
+                let Ok(mut state) = window_state.try_borrow_mut() else {
+                    // 可重入状态借用冲突必须交给 owner-thread failure source。
+                    let _ = toplevel_failures.enqueue(Error::new(
+                        // callback 无法取得唯一窗口状态写权限。
+                        Errc::InvalidState,
+                        // 保留 xdg_toplevel Configure 状态阶段。
+                        "Wayland xdg_toplevel Configure WindowState already borrowed",
+                    ));
+                    // 尚未改写 modes，安全结束本次 Configure 事务。
+                    return;
+                };
+                // 最后检查事件队列，失败时 modes 与 WindowState 仍保持原值。
+                let Ok(mut queued) = tl_events.lock() else {
+                    // 事件队列损坏必须交给 owner-thread failure source。
+                    let _ = toplevel_failures.enqueue(Error::new(
+                        // callback 无法提交同源窗口事件。
+                        Errc::InvalidState,
+                        // 保留 xdg_toplevel Configure 投递阶段。
+                        "Wayland xdg_toplevel Configure event queue mutex poisoned",
+                    ));
+                    // 尚未改写 modes 或 WindowState，安全结束本次事务。
+                    return;
+                };
+                // 全部 owner 均可用后才提交模式转换。
+                let transition = modes.apply_configure(is_max, is_full);
+                // 读取刚提交的同源模式快照。
+                let (maximized, fullscreen) = modes.snapshot();
+                // 同步提交窗口最大化事实。
+                state.maximized = maximized;
+                // 同步提交窗口全屏事实。
+                state.fullscreen = fullscreen;
+                // 有效客户区尺寸继续生成 resize 事实。
                 if w > 0 && h > 0 {
+                    // resize 与本次模式快照进入同一事件事务。
                     queued.push_back(UiEvent::resize(w, h).for_window(window_id));
                 }
+                // 保持既有最大化/恢复边沿事件语义。
                 match transition {
                     NativeMaximizeTransition::Maximized => {
                         queued.push_back(UiEvent {

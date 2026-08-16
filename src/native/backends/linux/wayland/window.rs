@@ -33,6 +33,8 @@ impl IWindowManager for WaylandBackend {
             window_id,
             self._compositor.clone(),
             self.events.clone(),
+            // 所有窗口 callback 复用 backend 已绑定的 owner-thread failure source。
+            self.pending_failures.clone(),
             self.surface_windows.clone(),
             // 传入已绑定 seat 的协议引用，不复制任何输入 serial。
             self.seat.clone(),
