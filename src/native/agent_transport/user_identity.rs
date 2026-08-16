@@ -14,3 +14,8 @@ impl UnixUserId {
         self.0 == peer.0
     }
 }
+
+// 编译期锁定端点用户与同 uid peer 必须准入，避免平台分支漂移成全拒绝。
+const _: () = assert!(UnixUserId::from_raw(1_000).admits(UnixUserId::from_raw(1_000)));
+// 编译期锁定异 uid peer 必须拒绝，避免 Linux 或 macOS 凭据适配回退为全允许。
+const _: () = assert!(!UnixUserId::from_raw(1_000).admits(UnixUserId::from_raw(1_001)));
