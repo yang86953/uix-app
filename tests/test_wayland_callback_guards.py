@@ -13,6 +13,8 @@ COMPAT = ROOT / "src/native/backends/linux/wayland/compat.rs"
 WAYLAND_BACKEND = ROOT / "src/native/backends/linux/wayland/mod.rs"
 # 读取单窗口 callback adapter 的 backend source 注入点。
 WAYLAND_WINDOW_FACTORY = ROOT / "src/native/backends/linux/wayland/window.rs"
+# 读取 Wayland clipboard data_source callback。
+WAYLAND_CLIPBOARD = ROOT / "src/native/backends/linux/wayland/clipboard.rs"
 # 读取 Linux 平台的 owner-thread 失败提取边界。
 PLATFORM = ROOT / "src/native/backends/linux/platform.rs"
 # 定位 Wayland 窗口操作与装饰模式实现。
@@ -136,6 +138,35 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         for event_name in ["UiEvent::resize", "WindowMaximize", "WindowRestore"]:
             # 每类既有窗口事实都必须保留。
             self.assertIn(event_name, configure)
+
+    # 确认 clipboard Send callback 不会把 FD owner 交给中毒写队列。
+    def test_clipboard_send_callback_reports_poisoned_write_queue(self) -> None:
+        # 读取 Wayland clipboard callback adapter。
+        source = WAYLAND_CLIPBOARD.read_text(encoding="utf-8")
+        # data source callback 标记 Send 处理片段起点。
+        callback_start = source.index("source.quick_assign")
+        # selection 请求标记 callback 片段终点。
+        callback_end = source.index("dd.set_selection", callback_start)
+        # 保存 Send callback 片段。
+        callback = source[callback_start:callback_end]
+        # callback 必须先建立独占协议 FD 的 ClipboardWrite。
+        create_write = callback.index("ClipboardWrite::from_event_fd")
+        # 健康队列才允许接管 write owner。
+        lock_queue = callback.index("writes.lock()")
+        # write owner 只能在检查队列之后入队。
+        push_write = callback.index("queued.push(write)")
+        # FD owner 必须先建立，再检查唯一队列 owner。
+        self.assertLess(create_write, lock_queue)
+        # 队列检查必须先于所有权转移。
+        self.assertLess(lock_queue, push_write)
+        # 锁中毒不得继续通过 into_inner 访问发送队列。
+        self.assertNotIn("into_inner()", callback)
+        # 锁失败必须稳定分类为 InvalidState。
+        self.assertIn("Errc::InvalidState", callback)
+        # 诊断必须保留 clipboard Send 写队列阶段。
+        self.assertIn("Wayland clipboard Send write queue mutex poisoned", callback)
+        # 既有 FD 初始化失败必须继续分类为 IoError。
+        self.assertIn("Errc::IoError", callback)
 
     # 确认 Wayland dispatch 与关闭失败最终都进入 owner-thread 队列。
     def test_dispatch_failures_reach_owner_pending_source(self) -> None:
