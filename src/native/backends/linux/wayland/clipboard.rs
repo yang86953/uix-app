@@ -309,6 +309,64 @@ impl ClipboardWrite {
     }
 }
 
+// Wayland clipboard Module 提供 backend owner-thread 的确定性关闭端口。
+impl WaylandBackend {
+    // 关闭在途 clipboard I/O 与所有过期授权状态。
+    pub(crate) fn shutdown_clipboard_io(&mut self) {
+        // 第一把锁沿用 selection Component 的 ownership owner。
+        let mut owns_clipboard = self
+            // 访问 backend 共享 ownership 标志。
+            .owns_clipboard
+            // teardown 必须等待并取得唯一可变访问。
+            .lock()
+            // owner-thread 关闭时恢复中毒 guard 以确定性释放资源。
+            .unwrap_or_else(|error| error.into_inner());
+        // 第二把锁沿用既有 owns→read 顺序。
+        let mut clipboard_read = self
+            // 访问当前非阻塞 read FD owner。
+            .clipboard_read
+            // 保持 ownership guard 期间取得 read guard。
+            .lock()
+            // teardown 不再读取损坏业务值，只负责 Drop 资源。
+            .unwrap_or_else(|error| error.into_inner());
+        // 第三把锁沿用既有 read→text 顺序。
+        let mut clipboard_text = self
+            // 访问已完成 selection 文本缓存。
+            .clipboard_text
+            // 在 read guard 后取得文本唯一访问。
+            .lock()
+            // 关闭时必须清除可能保留的敏感剪贴板内容。
+            .unwrap_or_else(|error| error.into_inner());
+        // 第四把锁取得全部在途 write FD owners。
+        let mut clipboard_writes = self
+            // 访问 data-source Send callback 的发送队列。
+            .clipboard_writes
+            // input callbacks 已停止，teardown 可独占整个队列。
+            .lock()
+            // 中毒队列仍由 owner-thread 负责 Drop 其中的 File owners。
+            .unwrap_or_else(|error| error.into_inner());
+        // 第五把锁最后取得输入授权 serial owner。
+        let mut input_serial = self
+            // 访问 pointer/keyboard 最近成功 serial。
+            .last_input_serial
+            // 沿 clipboard owners 之后的固定关闭顺序取得 guard。
+            .lock()
+            // 关闭时恢复 guard 只用于清除过期授权身份。
+            .unwrap_or_else(|error| error.into_inner());
+        // 全部 guards 已取得后失效本地 selection ownership。
+        *owns_clipboard = false;
+        // Drop 当前 ClipboardRead 及其独占 read FD。
+        *clipboard_read = None;
+        // 清除 backend 关闭后不应继续暴露的文本缓存。
+        clipboard_text.clear();
+        // Drop 全部 ClipboardWrite 及其独占 write FDs。
+        clipboard_writes.clear();
+        // 清除不能跨 backend 生命周期复用的协议 serial。
+        *input_serial = Default::default();
+        // 所有 guards 随方法返回按逆序释放。
+    }
+}
+
 impl IClipboard for WaylandBackend {
     fn text(&self) -> Result<String> {
         self.clipboard_text.lock().map(|t| t.clone()).map_err(|_| {

@@ -375,6 +375,8 @@ impl Drop for WaylandBackend {
     fn drop(&mut self) {
         // 先拆除 seat 回调与输入代理，打断兼容回调表的强引用环。
         self.shutdown_seat_and_input();
+        // 再释放 clipboard 在途 read/write FD 与过期授权状态。
+        self.shutdown_clipboard_io();
         self.pending_failures.close();
         // SAFETY: 两个描述符由 create_wake_pipe 独占创建，到此尚未关闭且 Drop 只执行一次。
         let _ = unsafe { libc::close(self.wake_read_fd) };
