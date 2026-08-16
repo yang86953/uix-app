@@ -1,9 +1,7 @@
-// ============================================================================
 // platform/linux/wayland/window_ops.rs — Wayland 平台窗口操作
 // WaylandWindowOps 实现 WindowOps trait，封装 Wayland 协议窗口调用。
 // 与 PlatformWindowCore<WaylandWindowOps> 组合使用。
 // SHM 像素呈现由独立的 WaylandPresenter 处理。
-// ============================================================================
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -65,8 +63,8 @@ use super::pointer_activation::{
     WaylandPointerActivationRegistry,
     // 结束指针激活私有类型导入。
 };
-// 引入跨注册表原子注销 Component，窗口 owner 只编排协议生命周期。
-use super::surface_registration::unregister_window_surface;
+// 引入跨注册表原子登记与注销 Component，窗口 owner 只编排协议生命周期。
+use super::surface_registration::{register_window_surface, unregister_window_surface};
 
 /// Wayland 平台窗口操作句柄。
 ///
@@ -83,7 +81,7 @@ pub(crate) struct WaylandWindowOps {
     pub(crate) input_region: Option<Main<wl_region::WlRegion>>,
     pub(crate) events: Arc<Mutex<VecDeque<UiEvent>>>,
     // 所有窗口 callback 复用所属 Wayland backend 的同一 failure source。
-    pending_failures: PendingFailureSource,
+    pub(super) pending_failures: PendingFailureSource,
     surface_windows: Arc<Mutex<SurfaceWindowTargets>>,
     // seat 代理只用于提交已经通过注册表校验的交互移动请求。
     seat: Option<Main<wl_seat::WlSeat>>,
@@ -175,7 +173,7 @@ impl WaylandWindowOps {
     }
 
     // 检查式注销当前 surface，并只在事务成功后清除可重试身份。
-    fn unregister_surface(&mut self) -> Result<()> {
+    pub(super) fn unregister_surface(&mut self) -> Result<()> {
         // 重复注销保持幂等，不触碰任何共享注册表。
         let Some(surface_id) = self.surface_id else {
             // 当前窗口已经没有活动 surface 注册事实。
@@ -337,36 +335,50 @@ impl WaylandWindowOps {
 
         // 窗口装饰 — 维持装饰对象生命周期，防止过早销毁导致装饰被撤销
         let queue_handle = self.compositor.queue_handle();
-        if let Ok(dm) = globals.bind::<ZxdgDecorationManagerV1, _, _>(&queue_handle, 1..=1, ()) {
+        // 登记成功前由局部 RAII owner 持有可选装饰对象。
+        let xdg_decoration = if let Ok(dm) =
+            globals.bind::<ZxdgDecorationManagerV1, _, _>(&queue_handle, 1..=1, ())
+        {
             let dm = Main::new(dm, self.compositor.context());
             let d = dm.get_toplevel_decoration(&tl);
             d.set_mode(XdgDecoMode::ServerSide);
-            self.xdg_decoration = Some(d);
+            // 保留既有健康扩展观测信息。
             tracing::info!("[Wayland] xdg-decoration ServerSide mode requested");
+            // 健康扩展把装饰对象交给局部 owner。
+            Some(d)
         } else {
             tracing::warn!("[Wayland] no available window decoration protocol");
-        }
+            // 缺少装饰扩展保持既有无对象语义。
+            None
+        };
 
         xdg_surf.set_window_geometry(0, 0, width, height);
-        {
+        // 登记成功前由局部 RAII owner 持有输入区域。
+        let input_region = {
             let region = self.compositor.create_region();
             region.add(0, 0, width, height);
             surface.set_input_region(Some(&region));
-            self.input_region = Some(region);
-        }
-        self.surface_windows
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .register_surface(surface_id, window_id);
-        // 在路由映射建立后登记独立的 surface 授权代次。
-        self.pointer_activations
-            // 获取授权注册表唯一可变访问。
-            .lock()
-            // 中毒时仍恢复 owner-thread 注册职责。
-            .unwrap_or_else(|error| error.into_inner())
-            // 每次登记都会推进代次并撤销同编号旧授权。
-            .register_surface(surface_id, window_id);
+            // 返回已设置到 surface 的局部区域 owner。
+            region
+        };
+        // 私有 Component 在任何改写前取得两份健康注册表 guard。
+        register_window_surface(
+            // 传入 raw pointer activation 的唯一共享 owner。
+            &self.pointer_activations,
+            // 传入 surface 到窗口身份的唯一共享 owner。
+            &self.surface_windows,
+            // 登记当前协议 surface 编号。
+            surface_id,
+            // 两份注册事实绑定同一稳定窗口身份。
+            window_id,
+        )?;
+        // 两份注册事实提交后才发布可注销的 surface identity。
         self.surface_id = Some(surface_id);
+        // 登记成功后把装饰协议对象转交窗口生命周期 owner。
+        self.xdg_decoration = xdg_decoration;
+        // 登记成功后把输入区域协议对象转交窗口生命周期 owner。
+        self.input_region = Some(input_region);
+        // surface identity 与协议 owner 均已准备后再提交。
         surface.commit();
 
         self.surface = Some(surface);
@@ -427,19 +439,7 @@ impl WaylandWindowOps {
     }
 }
 
-impl Drop for WaylandWindowOps {
-    fn drop(&mut self) {
-        // Drop 没有同步返回通道，失败必须进入所属 backend 的 pending source。
-        if let Err(error) = self.unregister_surface() {
-            // source 已关闭时不存在更高层 receiver，保持既有 fail-closed 语义。
-            let _ = self.pending_failures.enqueue(error);
-        }
-    }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
 // WindowOps — Wayland 协议实现
-// ════════════════════════════════════════════════════════════════════════════
 
 impl WindowOps for WaylandWindowOps {
     // ── 窗口生命周期 ──────────────────────────────────────

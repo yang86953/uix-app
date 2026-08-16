@@ -247,12 +247,10 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         clear_identity = method.index("self.surface_id = None")
         # 失败路径必须保留 identity 供显式重试。
         self.assertLess(component_call, clear_identity)
-        # 限定 Drop 实现。
-        drop_start = window_ops.index("impl Drop for WaylandWindowOps")
-        # WindowOps trait 实现标记 Drop 片段末尾。
-        drop_end = window_ops.index("impl WindowOps for WaylandWindowOps", drop_start)
+        # 限定注册事务 Component 旁的 Drop adapter。
+        drop_start = registration.index("impl Drop for WaylandWindowOps")
         # 保存 Drop 失败转交通道。
-        drop_source = window_ops[drop_start:drop_end]
+        drop_source = registration[drop_start:]
         # Drop 必须观察注销失败。
         self.assertIn("if let Err(error) = self.unregister_surface()", drop_source)
         # 无同步接收方时必须复用 backend pending source。
@@ -276,6 +274,65 @@ class WaylandCallbackGuardTests(unittest.TestCase):
             # 获取第一个协议对象释放位置。
             close_source.index("self.xdg_decoration = None"),
         )
+
+    # 确认窗口初始化只在两份健康注册表上发布 surface owner。
+    def test_surface_registration_precedes_protocol_owner_publication(self) -> None:
+        # 读取跨注册表登记 Component。
+        registration = WAYLAND_SURFACE_REGISTRATION.read_text(encoding="utf-8")
+        # 读取 WindowOps 初始化编排。
+        window_ops = WINDOW_OPS.read_text(encoding="utf-8")
+        # 登记函数必须复用与注销相同的双 guard helper。
+        register_start = registration.index("fn register_window_surface")
+        # 注销函数标记登记片段末尾。
+        register_end = registration.index("fn unregister_window_surface", register_start)
+        # 保存登记事务实现。
+        register_source = registration[register_start:register_end]
+        # 登记必须先取得两份健康 guard。
+        lock_registries = register_source.index("lock_surface_registries(")
+        # 授权代次是第一份提交事实。
+        register_pointer = register_source.index("pointer_registry.register_surface")
+        # 窗口路由是第二份提交事实。
+        register_surface = register_source.index("surface_registry.register_surface")
+        # 两份 guard 必须先于任何注册表改写。
+        self.assertLess(lock_registries, register_pointer)
+        # 两项登记保持统一的授权后路由顺序。
+        self.assertLess(register_pointer, register_surface)
+        # 共享 helper 不得恢复 poisoned mutex。
+        self.assertNotIn("into_inner()", registration)
+        # helper 必须提供稳定登记阶段。
+        self.assertIn('"surface registration"', register_source)
+        # 限定窗口初始化实现。
+        init_start = window_ops.index("pub(crate) fn init")
+        # WindowOps trait 实现标记初始化片段末尾。
+        init_end = window_ops.index("impl WindowOps for WaylandWindowOps", init_start)
+        # 保存初始化协议 owner 编排。
+        init_source = window_ops[init_start:init_end]
+        # 初始化必须委托事务化登记 Component。
+        register_call = init_source.index("register_window_surface(")
+        # surface identity 只能在登记成功后发布。
+        publish_identity = init_source.index("self.surface_id = Some(surface_id)")
+        # 装饰 owner 只能在登记成功后发布。
+        publish_decoration = init_source.index("self.xdg_decoration = xdg_decoration")
+        # 输入区域 owner 只能在登记成功后发布。
+        publish_region = init_source.index("self.input_region = Some(input_region)")
+        # 协议 commit 只能在注册事实与本地 owner 就绪后执行。
+        commit_surface = init_source.index("surface.commit()")
+        # 双注册表事务必须先于 surface identity。
+        self.assertLess(register_call, publish_identity)
+        # identity 必须先于装饰 owner 发布。
+        self.assertLess(publish_identity, publish_decoration)
+        # 装饰与输入区域都在 commit 前归属窗口 owner。
+        self.assertLess(publish_decoration, publish_region)
+        # 输入区域发布必须先于 surface commit。
+        self.assertLess(publish_region, commit_surface)
+        # 登记前的装饰对象必须由局部 RAII owner 持有。
+        self.assertIn("let xdg_decoration = if let Ok(dm)", init_source)
+        # 登记前的输入区域也必须保持局部 owner。
+        self.assertIn("let input_region = {", init_source)
+        # 初始化注册表路径不得继续恢复 poisoned mutex。
+        pre_publish = init_source[:publish_identity]
+        # Component 调用前后都不允许直接恢复损坏注册表。
+        self.assertNotIn("into_inner()", pre_publish)
 
     # 确认 Wayland dispatch 与关闭失败最终都进入 owner-thread 队列。
     def test_dispatch_failures_reach_owner_pending_source(self) -> None:
