@@ -238,23 +238,30 @@ mod cocoa {
     // SAFETY: 仅由 NSWindowDelegate runtime 按 v@:@ ABI 调用，delegate 在回调期间保持存活。
     unsafe extern "C" fn window_will_close(delegate: Id, _cmd: Sel, _notification: Id) {
         with_context(delegate, "windowWillClose", |context| {
+            // 先执行检查式 close 投递，保留可能的队列失败。
+            let delivery = push_window_close(&context.events, context.window_id);
+            // native window 已进入关闭回调，即使事件队列失败也必须提交 open=false。
             context.open.set(false);
-            push_window_close(&context.events, context.window_id);
+            // 把投递结果交给共享 callback failure 边界。
+            delivery
         });
     }
 
     // SAFETY: 仅由 NSWindowDelegate runtime 按 v@:@ ABI 调用，notification 是当前 resize 通知对象。
     unsafe extern "C" fn window_did_resize(delegate: Id, _cmd: Sel, notification: Id) {
         with_context(delegate, "windowDidResize", |context| {
+            // 从本次通知解析唯一窗口对象。
             let window = window_from_notification(notification);
+            // 读取同一窗口当前客户区尺寸。
             let (width, height) = content_view_size(window);
+            // 检查式提交状态与 resize event，失败进入已有 failure queue。
             push_window_resize(
                 &context.events,
                 context.window_id,
                 &context.state,
                 width,
                 height,
-            );
+            )
         });
     }
 
@@ -285,29 +292,59 @@ mod cocoa {
     // SAFETY: delegate 必须是存活的当前动态类实例，其事件队列在同步入队期间保持有效。
     unsafe fn push_window_event(delegate: Id, event: UiEvent) {
         with_context(delegate, "window event", |context| {
+            // 给通用事件附加稳定窗口身份。
             let event = event.for_window(context.window_id);
-            let _ = context
-                .events
-                .lock()
-                .map(|mut events| events.push_back(event));
+            // 锁中毒必须成为 typed failure，不能静默丢失 focus/occlusion。
+            let mut events = context.events.lock().map_err(|_| {
+                // 构造可进入平台 failure queue 的稳定状态错误。
+                Error::new(
+                    // callback 事件队列已经不可安全使用。
+                    Errc::InvalidState,
+                    // 保留普通窗口事件的投递阶段。
+                    "macOS window callback event queue mutex poisoned",
+                )
+            })?;
+            // 只有成功取得队列 owner 后才提交事件。
+            events.push_back(event);
+            // 向共享 callback 边界确认投递成功。
+            Ok(())
         });
     }
 
     // SAFETY: delegate 必须是回调期间存活的当前动态类实例；callback 不得保存借用或越过 catch_unwind 展开。
     unsafe fn with_context<F>(delegate: Id, callback_name: &str, callback: F)
     where
-        F: FnOnce(&WindowDelegateContext),
+        // callback 返回同步投递结果，由本 FFI adapter 统一写入 failure queue。
+        F: FnOnce(&WindowDelegateContext) -> crate::core::Result<()>,
     {
+        // 读取仅在 delegate 生命周期内存活的 Rust context。
         let context = delegate_context(delegate);
+        // 缺少 context 表示对象尚未发布或正在释放，不得解引用。
         if context.is_null() {
+            // 无安全失败源可用，只能结束 callback。
             return;
         }
+        // 同时隔离 Rust panic 与 callback 返回的 typed delivery failure。
         let result = catch_unwind(AssertUnwindSafe(|| callback(&*context)));
-        if result.is_err() {
-            let _ = (*context).pending_failures.enqueue(Error::new(
-                Errc::PlatformError,
-                format!("macOS {callback_name} callback panicked"),
-            ));
+        // 将两种失败形态收敛到同一 PendingFailureSource。
+        match result {
+            // callback 已成功把事实投递给 owner thread。
+            Ok(Ok(())) => {}
+            // callback 返回的 typed failure 原样进入 owner-thread failure queue。
+            Ok(Err(error)) => {
+                // queue 已关闭时没有更高层可继续接收错误，保留既有 fail-closed 语义。
+                let _ = (*context).pending_failures.enqueue(error);
+            }
+            // panic 不得越过 Objective-C FFI 边界。
+            Err(_) => {
+                // 把 panic 转换为稳定平台错误并投递给 owner thread。
+                let _ = (*context).pending_failures.enqueue(Error::new(
+                    // panic 属于平台 callback 边界错误。
+                    Errc::PlatformError,
+                    // 保留发生 panic 的 selector 语义名。
+                    format!("macOS {callback_name} callback panicked"),
+                ));
+            }
         }
     }
 
