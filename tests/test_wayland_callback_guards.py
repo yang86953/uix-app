@@ -27,6 +27,8 @@ WAYLAND_POINTER_ACTIVATION = ROOT / "src/native/backends/linux/wayland/pointer_a
 PLATFORM = ROOT / "src/native/backends/linux/platform.rs"
 # 定位 Wayland 窗口操作与装饰模式实现。
 WINDOW_OPS = ROOT / "src/native/backends/linux/wayland/window_ops.rs"
+# 定位逐窗 xdg-shell callback teardown Component。
+WINDOW_CALLBACK_SHUTDOWN = ROOT / "src/native/backends/linux/wayland/window_callback_shutdown.rs"
 # 定位实际启用自定义标题栏的主演示入口（uix-lang-demo）。
 GUI_DEMO = ROOT / "demo/uix-lang-demo/src/main.rs"
 
@@ -780,6 +782,8 @@ class WaylandCallbackGuardTests(unittest.TestCase):
     def test_custom_title_bar_uses_wayland_client_side_decoration(self) -> None:
         # 读取 Wayland 窗口操作实现。
         window_ops = WINDOW_OPS.read_text(encoding="utf-8")
+        # 读取逐窗 callback teardown Component。
+        callback_shutdown = WINDOW_CALLBACK_SHUTDOWN.read_text(encoding="utf-8")
         # 读取主演示的窗口配置。
         gui_demo = GUI_DEMO.read_text(encoding="utf-8")
         # Wayland 后端必须实现统一的系统标题栏可见性能力。
@@ -794,13 +798,23 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         close_end = window_ops.index("fn os_request_close", close_start)
         # 保存关闭实现，避免其他生命周期赋值影响断言。
         close_source = window_ops[close_start:close_end]
-        # 装饰对象必须在顶层窗口之前释放。
+        # 装饰对象必须在逐窗 callback owner 消费前释放。
         self.assertLess(
             # 获取装饰释放语句位置。
             close_source.index("self.xdg_decoration = None"),
-            # 获取顶层窗口释放语句位置。
-            close_source.index("self.toplevel = None"),
+            # 获取 callback teardown Component 调用位置。
+            close_source.index("self.shutdown_window_callbacks()"),
         )
+        # Component 必须先消费并注销顶层窗口 callback owner。
+        toplevel_take = callback_shutdown.index("self.toplevel.take()")
+        # 随后才消费更底层的 xdg_surface callback owner。
+        surface_take = callback_shutdown.index("self.xdg_surface.take()")
+        # 依赖层级决定顶层窗口先于 surface role 释放。
+        self.assertLess(toplevel_take, surface_take)
+        # 顶层窗口 owner 必须显式注销 callback。
+        self.assertIn("toplevel.clear_callback()", callback_shutdown[toplevel_take:surface_take])
+        # surface role owner 也必须显式注销 callback。
+        self.assertIn("xdg_surface.clear_callback()", callback_shutdown[surface_take:])
         # 主演示必须实际启用自定义标题栏。
         self.assertIn(".custom_title_bar(true)", gui_demo)
 
