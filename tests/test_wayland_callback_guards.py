@@ -9,6 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 EVENT_LOOP = ROOT / "src/native/backends/linux/wayland/event_loop.rs"
 COMPAT = ROOT / "src/native/backends/linux/wayland/compat.rs"
+# 读取 wl_output callback 与显示状态 owner 的接线。
+WAYLAND_BACKEND = ROOT / "src/native/backends/linux/wayland/mod.rs"
 # 读取 Linux 平台的 owner-thread 失败提取边界。
 PLATFORM = ROOT / "src/native/backends/linux/platform.rs"
 # 定位 Wayland 窗口操作与装饰模式实现。
@@ -60,6 +62,29 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         self.assertLess(catch_index, panic_index)
         # 回插必须覆盖 callback 成功与 panic 两种结果。
         self.assertLess(panic_index, reinsert_index)
+
+    # 确认 wl_output callback 不会恢复并继续写入中毒显示状态。
+    def test_output_callback_reports_poisoned_display_state(self) -> None:
+        # 读取 Wayland backend 构造期的 output callback。
+        source = WAYLAND_BACKEND.read_text(encoding="utf-8")
+        # output 枚举循环标记 callback 片段起点。
+        output_start = source.index("for (index, global)")
+        # wm_base ping callback 标记 output callback 片段终点。
+        output_end = source.index("_wm_base.quick_assign", output_start)
+        # 保存单一显示状态 callback 片段。
+        output_callback = source[output_start:output_end]
+        # callback 必须复用 backend 已有 pending failure source。
+        self.assertIn("pending_failures.clone()", output_callback)
+        # 锁中毒不得继续通过 into_inner 访问显示状态。
+        self.assertNotIn("into_inner()", output_callback)
+        # 锁失败必须稳定分类为 InvalidState。
+        self.assertIn("Errc::InvalidState", output_callback)
+        # 诊断必须保留 wl_output 与 outputs mutex 阶段。
+        self.assertIn("Wayland wl_output callback outputs mutex poisoned", output_callback)
+        # 健康路径必须继续保留四类协议事实。
+        for event_name in ["Geometry", "Mode", "Scale", "Done"]:
+            # 每类 wl_output 事件都必须仍由同一 callback 处理。
+            self.assertIn(f"Event::{event_name}", output_callback)
 
     # 确认 Wayland dispatch 与关闭失败最终都进入 owner-thread 队列。
     def test_dispatch_failures_reach_owner_pending_source(self) -> None:
