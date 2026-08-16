@@ -839,6 +839,8 @@ impl WaylandBackend {
         self.shutdown_seat_and_input();
         // 输入 callbacks 停止后确定性释放在途 clipboard I/O owners。
         self.shutdown_clipboard_io();
+        // 业务回调全部停止后注销 backend 全局 callbacks 与显示状态 owner。
+        self.shutdown_global_callbacks();
         // 运行期失败统一终止当前 dispatch。
         false
     }
