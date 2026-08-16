@@ -23,6 +23,8 @@ pub(crate) mod pointer_activation;
 pub(crate) mod presenter;
 pub(crate) mod seat;
 pub(crate) mod shm_buffer;
+// surface registration Component 原子注销窗口的两份共享注册事实。
+pub(crate) mod surface_registration;
 pub(crate) mod text_input;
 pub(crate) mod window;
 pub(crate) mod window_ops;
