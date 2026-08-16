@@ -29,7 +29,8 @@ pub(crate) mod window_ops;
 use self::compat::{Main, ProxyContext, WaylandDispatchState};
 // 引入 Wayland 私有的一次性指针激活注册表。
 use self::pointer_activation::WaylandPointerActivationRegistry;
-use crate::core::{Error, Point, WindowId};
+// 引入稳定错误分类，使 wl_output callback 能传播显示状态 owner 损坏。
+use crate::core::{Errc, Error, Point, WindowId};
 use crate::diagnostics::PendingFailureSource;
 use crate::native::windowing::event::*;
 use crate::native::windowing::input::{KeyCode, KeyMod};
@@ -214,6 +215,8 @@ impl WaylandBackend {
             .filter(|global| global.interface == "wl_output")
             .enumerate()
         {
+            // 每个 output callback 只克隆同一 backend 的 failure source。
+            let output_failures = pending_failures.clone();
             let output = Main::new(
                 globals.registry().bind::<wl_output::WlOutput, _, _>(
                     global.name,
@@ -225,9 +228,18 @@ impl WaylandBackend {
             );
             let output_list = Arc::clone(&outputs);
             output.quick_assign(move |_, event, _| {
-                let mut list = output_list
-                    .lock()
-                    .unwrap_or_else(|error| error.into_inner());
+                // 中毒显示状态不得通过 PoisonError 恢复后继续改写。
+                let Ok(mut list) = output_list.lock() else {
+                    // 将 callback owner 损坏转换为稳定 typed failure。
+                    let _ = output_failures.enqueue(Error::new(
+                        // 显示状态 owner 已无法安全访问。
+                        Errc::InvalidState,
+                        // 保留 wl_output callback 的精确投递阶段。
+                        "Wayland wl_output callback outputs mutex poisoned",
+                    ));
+                    // 停止处理本次协议事件，避免写入损坏状态。
+                    return;
+                };
                 while list.len() <= index {
                     list.push(output::RawOutput::default());
                 }
