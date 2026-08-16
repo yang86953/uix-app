@@ -38,6 +38,8 @@ use super::keyboard_focus_owner::{
 };
 // keyboard Modifiers 委托修饰快照与重复状态事务 Component。
 use super::keyboard_modifier_owner::handle_keyboard_modifiers;
+// keyboard RepeatInfo 委托 rate/delay 双 owner 事务 Component。
+use super::keyboard_repeat_config_owner::handle_keyboard_repeat_info;
 // pointer Button callback 委托多 owner 事务 Component。
 use super::pointer_button_owner::{
     // Press 原子签发授权、记录 serial 并投递 PointerDown。
@@ -684,12 +686,19 @@ impl WaylandBackend {
                                 );
                             }
                             wl_keyboard::Event::RepeatInfo { rate, delay } => {
-                                if let Ok(mut rr) = repeat_rate.lock() {
-                                    *rr = rate;
-                                }
-                                if let Ok(mut rd) = repeat_delay.lock() {
-                                    *rd = delay;
-                                }
+                                // 双 owner Component 原子提交 compositor 重复配置。
+                                handle_keyboard_repeat_info(
+                                    // 转交原始有符号 repeat rate。
+                                    rate,
+                                    // 转交原始有符号 repeat delay。
+                                    delay,
+                                    // 重复速率 owner。
+                                    &repeat_rate,
+                                    // 重复延迟 owner。
+                                    &repeat_delay,
+                                    // failure 进入 backend pending source。
+                                    &keyboard_failures,
+                                );
                             }
                             _ => {}
                         }
