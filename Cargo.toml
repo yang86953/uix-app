@@ -101,6 +101,10 @@ wayland-client = { version = "0.31.15", features = ["dlopen", "system"] }
 wayland-protocols = { version = "=0.32.13", features = ["client", "unstable", "staging"] }
 khronos-egl = { version = "6", features = ["static", "no-pkg-config"], optional = true }
 
+[dev-dependencies]
+# 仅由外部消费者测试编译宿主日志配置，不进入 UIX 运行依赖。
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
 [features]
 # 默认启用生产图形后端与九项使用方能力：
 #   Windows 默认 D3D11；Linux 默认无图形后端（CPU-only 软件路径），需 opengles/vulkan 自行启用。
