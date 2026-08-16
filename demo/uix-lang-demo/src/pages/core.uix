@@ -394,8 +394,10 @@
           <Button @click="setState(steps_current: 2)">跳到第 3 步</Button>
         // 结束步骤操作行。
         </Container>
-        // 展示双状态分页器。
-        <Pagination total="120" current={page_current} pageSize={page_size} @change="on_page_change($event)" />
+        // 展示含总数、尺寸切换、尺寸选项与跳转入口的双状态分页器。
+        <Pagination total="120" current={page_current} pageSize={page_size} pageSizeOptions="10,20,50" showTotal showSizeChanger showJumper @change="on_page_change($event)" />
+        // 展示隐藏总数的非受控紧凑分页器。
+        <Pagination total="120" simple showTotal="false" />
       // 结束步骤内容。
       </Column>
     // 结束步骤与分页面板。
