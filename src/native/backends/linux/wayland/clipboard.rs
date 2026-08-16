@@ -329,6 +329,32 @@ impl WaylandBackend {
         Ok(())
     }
 
+    // 在读取系统剪贴板缓存前验证 Wayland selection 协议能力。
+    fn ensure_clipboard_data_device(&self, operation: &str) -> Result<()> {
+        // 缺少全局 data-device manager 时不能把空缓存解释为系统剪贴板为空。
+        if self.data_device_manager.is_none() {
+            // 返回稳定 capability absence 供调用方选择降级。
+            return Err(Error::new(
+                // compositor 未提供协议 global 属于未实现能力。
+                Errc::NotImplemented,
+                // 保留具体读取操作与缺失协议身份。
+                format!("WaylandBackend::{operation}: wl_data_device_manager is unavailable"),
+            ));
+        }
+        // manager 存在但当前 seat 尚未派生 data device 时同样不能读取缓存。
+        if self.data_device.is_none() {
+            // 返回稳定 session 状态错误。
+            return Err(Error::new(
+                // 协议存在但当前没有活动 seat 派生对象属于无效操作。
+                Errc::InvalidOperation,
+                // 保留具体读取操作与 seat/session 上下文。
+                format!("WaylandBackend::{operation}: no wl_data_device for active seat"),
+            ));
+        }
+        // 两层协议 owner 均存在后才允许读取最近完成的 selection 缓存。
+        Ok(())
+    }
+
     // 关闭在途 clipboard I/O 与所有过期授权状态。
     pub(crate) fn shutdown_clipboard_io(&mut self) {
         // 共享 owners 清理前先让 active data-source 停止接收 Send/Cancelled。
@@ -394,6 +420,8 @@ impl IClipboard for WaylandBackend {
     fn text(&self) -> Result<String> {
         // 生命周期 gate 必须先于文本 owner lock。
         self.ensure_clipboard_open("text")?;
+        // 协议 capability gate 必须先于缓存读取。
+        self.ensure_clipboard_data_device("text")?;
         self.clipboard_text.lock().map(|t| t.clone()).map_err(|_| {
             Error::new(
                 Errc::InvalidState,
@@ -544,6 +572,8 @@ impl IClipboard for WaylandBackend {
     fn has_text(&self) -> Result<bool> {
         // 生命周期 gate 必须先于文本 owner lock。
         self.ensure_clipboard_open("has_text")?;
+        // 协议 capability gate 必须先于缓存读取。
+        self.ensure_clipboard_data_device("has_text")?;
         self.clipboard_text
             .lock()
             .map(|t| !t.is_empty())
