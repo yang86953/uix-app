@@ -40,3 +40,12 @@ impl ShmBuffer {
         self.file.write_all(bytes)
     }
 }
+
+// 让 SHM buffer Component 在所有回滚与替换路径统一释放 callback owner。
+impl Drop for ShmBuffer {
+    // buffer handle 仍存活时注销唯一 wl_buffer::Release callback。
+    fn drop(&mut self) {
+        // 只删除兼容层 registry entry，不发送协议请求或伪造 Release。
+        self.buffer.clear_callback();
+    }
+}
