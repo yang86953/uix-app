@@ -154,6 +154,91 @@ class WaylandCallbackGuardTests(unittest.TestCase):
             # 任何一项都不得进入 poll FD 构造。
             self.assertNotIn(forbidden, snapshot)
 
+    # 确认 poll completion 不会读取、写入或移除 poisoned clipboard owner。
+    def test_clipboard_completion_propagates_owner_state_failures(self) -> None:
+        # 读取 Wayland owner-thread event loop。
+        source = EVENT_LOOP.read_text(encoding="utf-8")
+        # 限定 dispatch_polled 调用方传播片段。
+        dispatch_start = source.index("fn dispatch_polled")
+        # wake pipe helper 标记 poll 编排末尾。
+        dispatch_end = source.index("fn drain_wake_pipe", dispatch_start)
+        # 保存 poll completion 调用方。
+        dispatch = source[dispatch_start:dispatch_end]
+        # read completion 必须通过布尔通道失败即早退。
+        self.assertIn("if !self.read_clipboard_pipe(polled_fd)", dispatch)
+        # read FD error 也必须委托 checked owner helper。
+        self.assertIn("if !self.discard_clipboard_read_after_poll_error(polled_fd)", dispatch)
+        # write completion 必须通过 Option 通道区分状态失败。
+        self.assertIn("let Some(written) = self.write_clipboard_pipe", dispatch)
+        # 任一 helper 状态失败都终止本轮 dispatch。
+        self.assertGreaterEqual(dispatch.count("return false"), 4)
+        # 限定 read FD error owner helper。
+        read_error_start = source.index("fn discard_clipboard_read_after_poll_error")
+        # read completion helper 标记 error helper 末尾。
+        read_error_end = source.index("fn read_clipboard_pipe", read_error_start)
+        # 保存 read error 处理片段。
+        read_error = source[read_error_start:read_error_end]
+        # read error helper 必须 checked lock owner。
+        self.assertIn("match self.clipboard_read.lock()", read_error)
+        # read error helper 不得恢复 poisoned owner。
+        self.assertNotIn("into_inner()", read_error)
+        # read owner failure 必须稳定分类。
+        self.assertIn("Errc::InvalidState", read_error)
+        # read owner failure 诊断必须保留 completion 阶段。
+        self.assertIn("clipboard read owner mutex poisoned during poll completion", read_error)
+        # 限定 read completion helper。
+        read_start = source.index("fn read_clipboard_pipe")
+        # write completion helper标记 read helper 末尾。
+        read_end = source.index("fn write_clipboard_pipe", read_start)
+        # 保存 read completion 事务。
+        read_completion = source[read_start:read_end]
+        # read owner 必须先检查。
+        read_lock = read_completion.index("match self.clipboard_read.lock()")
+        # text owner 必须随后检查。
+        text_lock = read_completion.index("match self.clipboard_text.lock()")
+        # 非阻塞 I/O 只能在两个 owner 健康后开始。
+        read_io = read_completion.index("read.read_available()")
+        # 文本提交必须发生在 read owner 移除之前。
+        text_commit = read_completion.index("*clipboard_text =")
+        # 完成分支的首次 read owner 移除。
+        release_read = read_completion.index("*active = None")
+        # 固定保持 read 后 text 的锁顺序。
+        self.assertLess(read_lock, text_lock)
+        # 两次 owner 检查都先于 I/O。
+        self.assertLess(text_lock, read_io)
+        # 文本事实先提交，随后释放 read FD owner。
+        self.assertLess(text_commit, release_read)
+        # read completion 不得恢复任一 poisoned owner。
+        self.assertNotIn("into_inner()", read_completion)
+        # read 与 text 状态失败必须各自分类。
+        self.assertEqual(read_completion.count("Errc::InvalidState"), 2)
+        # text owner failure 诊断必须独立可定位。
+        self.assertIn("clipboard text owner mutex poisoned during poll completion", read_completion)
+        # 限定 write completion helper。
+        write_start = source.index("fn write_clipboard_pipe")
+        # failure 收口 helper 标记 write helper 末尾。
+        write_end = source.index("fn close_after_failure", write_start)
+        # 保存 write completion 片段。
+        write_completion = source[write_start:write_end]
+        # write helper 必须 checked lock owner。
+        self.assertIn("match self.clipboard_writes.lock()", write_completion)
+        # write helper 不得恢复 poisoned owner。
+        self.assertNotIn("into_inner()", write_completion)
+        # write 状态失败必须稳定分类。
+        self.assertIn("Errc::InvalidState", write_completion)
+        # write owner failure 诊断必须独立可定位。
+        self.assertIn("clipboard write owner mutex poisoned during poll completion", write_completion)
+        # owner failure 必须使用 None 且不伪装零进度。
+        self.assertIn("return None", write_completion)
+        # 健康路径仍保留协议错误 readiness。
+        self.assertIn("POLLERR | POLLHUP | POLLNVAL", write_completion)
+        # 健康路径仍只在 POLLOUT 时写入。
+        self.assertIn("(revents & POLLOUT) == 0", write_completion)
+        # completion helper 不得执行错误策略或用户代码。
+        for forbidden in ["tracing::", ".report(", "attempt_recovery"]:
+            # 所有 completion 片段都不得包含这些副作用。
+            self.assertNotIn(forbidden, read_error + read_completion + write_completion)
+
     def test_unknown_created_child_remains_an_explicit_failure_case(self) -> None:
         source = COMPAT.read_text(encoding="utf-8")
         self.assertIn("fn event_created_child", source)
