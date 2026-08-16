@@ -7,17 +7,17 @@
 // ============================================================================
 
 use std::collections::VecDeque;
-use std::os::fd::AsFd;
 use std::sync::{Arc, Mutex};
 
-use wayland_client::protocol::{wl_data_device, wl_keyboard, wl_pointer, wl_seat};
+use wayland_client::protocol::{wl_keyboard, wl_pointer, wl_seat};
 use wayland_client::{Proxy, WEnum};
 
 use super::compat::Main;
 // 引入完整 capability 快照到幂等代理边沿的纯决策。
 use super::input_proxy_lifecycle::{InputProxyTransition, input_proxy_transition};
 use super::{HeldKeyInfo, WaylandBackend};
-use crate::core::{Errc, Error, Point, WindowId};
+// seat callback 保留几何与窗口路由值类型，错误分类已归 clipboard Module。
+use crate::core::{Point, WindowId};
 use crate::native::backends::linux::wayland::keycode::{keycode_to_char, linux_keycode_to_keycode};
 use crate::native::windowing::event::*;
 use crate::native::windowing::input::{KeyMod, MouseButton};
@@ -212,38 +212,19 @@ impl WaylandBackend {
             let owns_clipboard = self.owns_clipboard.clone();
             let pending_failures = self.pending_failures.clone();
             dev.quick_assign(move |_, event, _| {
-                if let wl_data_device::Event::Selection { id } = event {
-                    *owns_clipboard
-                        .lock()
-                        .unwrap_or_else(|error| error.into_inner()) = false;
-                    if let Some(offer) = id {
-                        match super::clipboard::ClipboardRead::create_pipe() {
-                            Ok((read, write_fd)) => {
-                                offer.receive(
-                                    "text/plain;charset=utf-8".to_string(),
-                                    write_fd.as_fd(),
-                                );
-                                *clipboard_read
-                                    .lock()
-                                    .unwrap_or_else(|error| error.into_inner()) = Some(read);
-                            }
-                            Err(error) => {
-                                let _ = pending_failures.enqueue(Error::new(
-                                    Errc::IoError,
-                                    format!("Wayland clipboard pipe creation failed: {error}"),
-                                ));
-                            }
-                        }
-                    } else {
-                        *clipboard_read
-                            .lock()
-                            .unwrap_or_else(|error| error.into_inner()) = None;
-                        clipboard_text
-                            .lock()
-                            .unwrap_or_else(|error| error.into_inner())
-                            .clear();
-                    }
-                }
+                // seat callback 只把完整 data-device 事件转交 clipboard owner。
+                super::clipboard::handle_selection_event(
+                    // 转交协议事件，不在 seat Module 解释 selection 状态。
+                    event,
+                    // 转交本地 ownership owner。
+                    &owns_clipboard,
+                    // 转交 read FD owner。
+                    &clipboard_read,
+                    // 转交文本缓存 owner。
+                    &clipboard_text,
+                    // 转交同一 backend pending source。
+                    &pending_failures,
+                );
             });
             self.data_device = Some(dev);
         }

@@ -15,6 +15,8 @@ WAYLAND_BACKEND = ROOT / "src/native/backends/linux/wayland/mod.rs"
 WAYLAND_WINDOW_FACTORY = ROOT / "src/native/backends/linux/wayland/window.rs"
 # 读取 Wayland clipboard data_source callback。
 WAYLAND_CLIPBOARD = ROOT / "src/native/backends/linux/wayland/clipboard.rs"
+# 读取 Wayland seat 的 data-device callback 委托边界。
+WAYLAND_SEAT = ROOT / "src/native/backends/linux/wayland/seat.rs"
 # 读取 Wayland frame callback 私有 Component。
 WAYLAND_FRAME_CALLBACK = ROOT / "src/native/backends/linux/wayland/frame_callback.rs"
 # 读取 Wayland surface 跨注册表注销 Component。
@@ -513,6 +515,79 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         self.assertIn("clipboard input serial mutex poisoned during set_text", set_text)
         # 既有无 serial 失败仍必须保留。
         self.assertIn("no pointer or keyboard serial for selection", set_text)
+
+    # 确认 data-device Selection 只在全部 clipboard owners 健康后提交。
+    def test_clipboard_selection_commits_owner_state_transactionally(self) -> None:
+        # 读取 clipboard callback Component。
+        clipboard = WAYLAND_CLIPBOARD.read_text(encoding="utf-8")
+        # 读取 seat 的协议 callback 委托。
+        seat = WAYLAND_SEAT.read_text(encoding="utf-8")
+        # 限定 seat 内 data-device callback 片段。
+        seat_start = seat.index("// ── 剪贴板数据设备")
+        # pointer/keyboard 分区标记 data-device 片段末尾。
+        seat_end = seat.index("// ── 指针 + 键盘", seat_start)
+        # 保存 seat adapter 片段。
+        seat_callback = seat[seat_start:seat_end]
+        # seat 只允许委托 clipboard Component。
+        self.assertIn("super::clipboard::handle_selection_event", seat_callback)
+        # seat 不得直接锁 selection owners。
+        self.assertNotIn(".lock()", seat_callback)
+        # seat 不得恢复 poisoned owner。
+        self.assertNotIn("into_inner()", seat_callback)
+        # 限定 clipboard Selection Component。
+        component_start = clipboard.index("fn enqueue_selection_state_failure")
+        # write cursor owner 标记 Selection Component 末尾。
+        component_end = clipboard.index("pub(crate) struct ClipboardWrite", component_start)
+        # 保存完整 Selection Component。
+        component = clipboard[component_start:component_end]
+        # Component 不得恢复任一 poisoned owner。
+        self.assertNotIn("into_inner()", component)
+        # 状态失败统一分类为 InvalidState。
+        self.assertIn("Errc::InvalidState", component)
+        # 诊断必须保留精确 owner 名称。
+        for owner in ["owns flag", "read owner", "text owner"]:
+            # 三个 owner 都必须有稳定 failure 参数。
+            self.assertIn(f'"{owner}"', component)
+        # 限定 Some(offer) 接管事务。
+        offer_start = component.index("fn apply_selection_offer")
+        # None 清理 helper 标记接管事务末尾。
+        offer_end = component.index("fn clear_selection", offer_start)
+        # 保存 offer 接管片段。
+        offer = component[offer_start:offer_end]
+        # ownership owner 必须先取得。
+        owns_lock = offer.index("owns_clipboard.lock()")
+        # read owner 随后取得。
+        read_lock = offer.index("clipboard_read.lock()")
+        # pipe 只能在两个 owner 健康后创建。
+        create_pipe = offer.index("ClipboardRead::create_pipe()")
+        # receive 只能在 pipe 创建成功后提交。
+        receive = offer.index("offer.receive(")
+        # 固定保持 owns→read 锁序。
+        self.assertLess(owns_lock, read_lock)
+        # owner 检查全部先于 I/O。
+        self.assertLess(read_lock, create_pipe)
+        # pipe 创建先于协议 receive。
+        self.assertLess(create_pipe, receive)
+        # 健康路径保留既有 MIME。
+        self.assertIn('"text/plain;charset=utf-8"', offer)
+        # pipe error 必须清除陈旧 read owner。
+        self.assertIn("*active_read = None", offer)
+        # 限定 None selection 清理事务。
+        clear_start = component.index("fn clear_selection")
+        # 公开 handler 标记清理事务末尾。
+        clear_end = component.index("pub(crate) fn handle_selection_event", clear_start)
+        # 保存三 owner 清理片段。
+        clear = component[clear_start:clear_end]
+        # 三把锁保持 owns→read→text 顺序。
+        self.assertLess(clear.index("owns_clipboard.lock()"), clear.index("clipboard_read.lock()"))
+        # text owner 必须最后验证。
+        self.assertLess(clear.index("clipboard_read.lock()"), clear.index("clipboard_text.lock()"))
+        # 三份状态提交只能发生在最后一把锁之后。
+        self.assertLess(clear.index("clipboard_text.lock()"), clear.index("*owns = false"))
+        # callback Component 不得执行错误策略或用户代码。
+        for forbidden in ["tracing::", ".report(", "attempt_recovery"]:
+            # 每项副作用都禁止进入 Selection callback。
+            self.assertNotIn(forbidden, component)
 
     # 确认 compositor Done 检查式消费 one-shot request 并投递逐窗事件。
     def test_frame_callback_consumes_request_without_ghost_state(self) -> None:
