@@ -15,6 +15,8 @@ WAYLAND_BACKEND = ROOT / "src/native/backends/linux/wayland/mod.rs"
 WAYLAND_WINDOW_FACTORY = ROOT / "src/native/backends/linux/wayland/window.rs"
 # 读取 Wayland clipboard data_source callback。
 WAYLAND_CLIPBOARD = ROOT / "src/native/backends/linux/wayland/clipboard.rs"
+# 读取 Wayland frame callback 私有 Component。
+WAYLAND_FRAME_CALLBACK = ROOT / "src/native/backends/linux/wayland/frame_callback.rs"
 # 读取 Linux 平台的 owner-thread 失败提取边界。
 PLATFORM = ROOT / "src/native/backends/linux/platform.rs"
 # 定位 Wayland 窗口操作与装饰模式实现。
@@ -167,6 +169,43 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         self.assertIn("Wayland clipboard Send write queue mutex poisoned", callback)
         # 既有 FD 初始化失败必须继续分类为 IoError。
         self.assertIn("Errc::IoError", callback)
+
+    # 确认 compositor Done 检查式消费 one-shot request 并投递逐窗事件。
+    def test_frame_callback_consumes_request_without_ghost_state(self) -> None:
+        # 读取 frame callback Component。
+        frame_callback = WAYLAND_FRAME_CALLBACK.read_text(encoding="utf-8")
+        # 读取 WindowOps 的请求登记、callback 接线与取消路径。
+        window_ops = WINDOW_OPS.read_text(encoding="utf-8")
+        # Component 必须检查 active request owner。
+        self.assertIn("Wayland frame callback request mutex poisoned", frame_callback)
+        # Component 必须检查窗口事件队列 owner。
+        self.assertIn("Wayland frame callback event queue mutex poisoned", frame_callback)
+        # 已完成 request 必须在尝试事件投递前清除。
+        clear_request = frame_callback.index("*active = None")
+        # 事件队列锁标记可能失败的投递边界。
+        lock_events = frame_callback.index("events.lock()")
+        # callback 已到达后不得因队列失败留下幽灵 active request。
+        self.assertLess(clear_request, lock_events)
+        # 健康路径必须保留 token 与 callback 单调时间。
+        self.assertIn("UiEvent::frame_opportunity(request.token, callback_at, None)", frame_callback)
+        # 健康路径必须附加稳定 WindowId。
+        self.assertIn(".for_window(window_id)", frame_callback)
+        # WindowOps 必须委托私有 Component。
+        self.assertIn("deliver_frame_opportunity(", window_ops)
+        # callback typed failure 必须进入 backend source。
+        self.assertIn("frame_failures.enqueue(error)", window_ops)
+        # request 登记锁失败必须同步返回 typed error。
+        self.assertIn("frame request mutex poisoned during registration", window_ops)
+        # request 取消锁失败必须同步返回 typed error。
+        self.assertIn("frame request mutex poisoned during cancellation", window_ops)
+        # 限定原生 frame request/cancel 实现片段。
+        frame_start = window_ops.index("fn os_request_native_frame")
+        # 下一个窗口状态分区标记 frame 片段终点。
+        frame_end = window_ops.index("// ── 窗口状态", frame_start)
+        # 保存 frame pacing 实现。
+        frame_ops = window_ops[frame_start:frame_end]
+        # frame request、callback 与 cancel 均不得恢复 poisoned mutex。
+        self.assertNotIn("into_inner()", frame_ops)
 
     # 确认 Wayland dispatch 与关闭失败最终都进入 owner-thread 队列。
     def test_dispatch_failures_reach_owner_pending_source(self) -> None:
