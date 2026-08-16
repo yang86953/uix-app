@@ -72,6 +72,9 @@ mod window_drag_region_codegen_tests;
 // 集中验证代码生成快照、消费者编译与拒绝路径。
 #[cfg(test)]
 mod codegen_tests;
+// 集中验证组件参考文档中的 UIX 示例持续通过完整代码生成。
+#[cfg(test)]
+mod reference_examples_tests;
 // 集中验证通用 Button 与 Label 的文档属性生成和拒绝路径。
 #[cfg(test)]
 mod general_component_codegen_tests;

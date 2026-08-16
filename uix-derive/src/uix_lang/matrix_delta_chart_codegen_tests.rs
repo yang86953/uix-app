@@ -1,5 +1,5 @@
 // 引入解析与核心生成入口。
-use super::{Diagnostic, generate_view, parse_document};
+use super::{generate_view, parse_document, Diagnostic};
 
 // 生成测试源码的稳定令牌快照。
 fn generate(source: &str) -> Result<String, Diagnostic> {
@@ -76,6 +76,8 @@ fn rejects_invalid_matrix_and_delta_contracts() {
         color_range.message.contains("colorRange")
             && color_range.message.contains("类型化颜色表达式")
     );
+    // 修复建议必须使用受限表达式可接受的预构造变量。
+    assert!(color_range.suggestion.contains("color_range"));
     // 多段色阶同样只接受类型化集合表达式。
     let color_stops = generate("<Heatmap data={items} colorStops=\"red,blue\" />")
         // 字符串色阶必须失败。
