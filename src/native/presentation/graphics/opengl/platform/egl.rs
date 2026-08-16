@@ -69,6 +69,216 @@ unsafe extern "C" {
 // SAFETY: 该空声明只请求链接系统 libEGL，不声明可被 Rust 直接调用的符号。
 unsafe extern "C" {}
 
+// 在 EglContext 成功交付前唯一持有构造期 native 资源，并负责失败回滚。
+struct PendingEglContext<'a> {
+    // 借用同一构造事务的 EGL API 实例，不取得第二份资源所有权。
+    egl: &'a khronos_egl::Instance<khronos_egl::Static>,
+    // 保存已经成功初始化且尚未终止的 display。
+    display: khronos_egl::Display,
+    // 只在创建成功后登记尚未交付的 context。
+    context: Option<khronos_egl::Context>,
+    // 只在创建成功后登记尚未交付的 surface。
+    surface: Option<khronos_egl::Surface>,
+    // 保存尚未交付的 Wayland EGL window。
+    egl_window: *mut WlEglWindow,
+    // 记录构造期 context 是否已经成为当前线程的 current context。
+    current: bool,
+    // 区分仍需回滚与已经成功移交的事务状态。
+    armed: bool,
+}
+
+impl<'a> PendingEglContext<'a> {
+    // 从已经成功初始化的 display 建立构造期唯一 owner。
+    fn new(
+        // 借用创建 display 的同一 EGL API 实例。
+        egl: &'a khronos_egl::Instance<khronos_egl::Static>,
+        // 接管已初始化 display 的构造期 teardown 责任。
+        display: khronos_egl::Display,
+    ) -> Self {
+        // 其余资源尚未创建，按空 owner 状态初始化。
+        Self {
+            // 保存 EGL API 借用。
+            egl,
+            // 保存 display 句柄。
+            display,
+            // context 尚未创建。
+            context: None,
+            // surface 尚未创建。
+            surface: None,
+            // Wayland EGL window 尚未创建。
+            egl_window: ptr::null_mut(),
+            // 尚无 current context。
+            current: false,
+            // display 已初始化，因此 guard 立即进入 armed 状态。
+            armed: true,
+        }
+    }
+
+    // 创建失败时执行一次检查式回滚，并保留主错误与清理错误链。
+    fn finish_failure(&mut self, primary_error: Error) -> Error {
+        // 清理成功时仍传播触发回滚的原始初始化错误。
+        match self.rollback_result() {
+            // 所有构造期资源已释放。
+            Ok(()) => primary_error,
+            // 清理失败成为外层错误，原初始化错误保留为 source。
+            Err(cleanup_error) => cleanup_error.with_source(primary_error),
+        }
+    }
+
+    // 成功创建后原子移交 context、surface 与 Wayland EGL window。
+    fn into_handles(
+        // 消费构造期唯一 owner，防止移交后继续使用。
+        mut self,
+    ) -> (
+        // 返回正式 context 句柄。
+        khronos_egl::Context,
+        // 返回正式 surface 句柄。
+        khronos_egl::Surface,
+        // 返回正式 Wayland EGL window。
+        *mut WlEglWindow,
+    ) {
+        // 成功路径必须已经登记 context。
+        let context = self
+            // 从临时 owner 取出 context。
+            .context
+            // context 缺失表示构造事务内部不变量被破坏。
+            .take()
+            // 该错误只可能是开发期接线错误，因此使用明确断言信息。
+            .expect("EGL construction guard must own a context before handoff");
+        // 成功路径必须已经登记 surface。
+        let surface = self
+            // 从临时 owner 取出 surface。
+            .surface
+            // surface 缺失表示构造事务内部不变量被破坏。
+            .take()
+            // 该错误只可能是开发期接线错误，因此使用明确断言信息。
+            .expect("EGL construction guard must own a surface before handoff");
+        // 把 Wayland EGL window 从临时 owner 移出。
+        let egl_window = std::mem::replace(&mut self.egl_window, ptr::null_mut());
+        // 显式解除 guard，Drop 不得终止已交付 display。
+        self.armed = false;
+        // current 绑定状态随句柄一起转移给正式 EglContext。
+        self.current = false;
+        // 返回由 EglContext 字段接管的三个句柄。
+        (context, surface, egl_window)
+    }
+
+    // 按 current → context → surface → display → native window 逆序检查式回滚。
+    fn rollback_result(&mut self) -> Result<(), Error> {
+        // 已完成回滚或成功移交时保持幂等成功。
+        if !self.armed {
+            // 禁止重复触碰已释放或已交付资源。
+            return Ok(());
+        }
+        // 只有成功绑定过的 context 才需要先解除 current 状态。
+        if self.current {
+            // 解除 draw/read/current 三个绑定，失败时保留全部 owner 状态供 Drop 重试。
+            self.egl
+                // 空 surface/context 表示解除当前线程的 EGL 绑定。
+                .make_current(self.display, None, None, None)
+                // 映射为框架稳定的 typed teardown error。
+                .map_err(|error| {
+                    // 保留失败操作与 EGL 枚举。
+                    Error::new(
+                        // 构造回滚失败属于平台资源错误。
+                        Errc::PlatformError,
+                        // 记录精确 native 操作。
+                        format!(
+                            "EglContext: construction rollback eglMakeCurrent(NULL) failed: {error:?}"
+                        ),
+                    )
+                })?;
+            // 只有解绑成功后才清除 current owner 状态。
+            self.current = false;
+        }
+        // context 必须在 surface 与 display 之前删除。
+        if let Some(context) = self.context {
+            // 删除仍由 guard 唯一持有的 context。
+            self.egl
+                // context 与 display 来自同一 EGL 实例。
+                .destroy_context(self.display, context)
+                // 映射为框架稳定的 typed teardown error。
+                .map_err(|error| {
+                    // 保留失败操作与 EGL 枚举。
+                    Error::new(
+                        // 构造回滚失败属于平台资源错误。
+                        Errc::PlatformError,
+                        // 记录精确 native 操作。
+                        format!(
+                            "EglContext: construction rollback eglDestroyContext failed: {error:?}"
+                        ),
+                    )
+                })?;
+            // 只有删除成功后才清空 context owner 槽位。
+            self.context = None;
+        }
+        // surface 必须在 display 终止前删除。
+        if let Some(surface) = self.surface {
+            // 删除仍由 guard 唯一持有的 surface。
+            self.egl
+                // surface 与 display 来自同一 EGL 实例。
+                .destroy_surface(self.display, surface)
+                // 映射为框架稳定的 typed teardown error。
+                .map_err(|error| {
+                    // 保留失败操作与 EGL 枚举。
+                    Error::new(
+                        // 构造回滚失败属于平台资源错误。
+                        Errc::PlatformError,
+                        // 记录精确 native 操作。
+                        format!(
+                            "EglContext: construction rollback eglDestroySurface failed: {error:?}"
+                        ),
+                    )
+                })?;
+            // 只有删除成功后才清空 surface owner 槽位。
+            self.surface = None;
+        }
+        // display 初始化成功后必须由同一 guard 终止。
+        self.egl
+            // 终止当前构造事务初始化的 display。
+            .terminate(self.display)
+            // 映射为框架稳定的 typed teardown error。
+            .map_err(|error| {
+                // 保留失败操作与 EGL 枚举。
+                Error::new(
+                    // 构造回滚失败属于平台资源错误。
+                    Errc::PlatformError,
+                    // 记录精确 native 操作。
+                    format!(
+                        "EglContext: construction rollback eglTerminate failed: {error:?}"
+                    ),
+                )
+            })?;
+        // EGL display 终止后再销毁唯一持有的 Wayland native window。
+        if !self.egl_window.is_null() {
+            // SAFETY: 非空 window 由本 guard 唯一持有，surface 已删除且 display 已终止。
+            unsafe {
+                // wayland-egl 销毁 API 无失败返回值，只调用一次。
+                wl_egl_window_destroy(self.egl_window);
+            }
+            // native window 销毁后立即清空 owner 槽位。
+            self.egl_window = ptr::null_mut();
+        }
+        // 所有构造期资源均已完成回滚。
+        self.armed = false;
+        // 向调用方确认检查式清理成功。
+        Ok(())
+    }
+}
+
+impl Drop for PendingEglContext<'_> {
+    fn drop(&mut self) {
+        // Drop 只重试尚未完成的检查式回滚，失败必须留下最终诊断。
+        if let Err(error) = self.rollback_result() {
+            // 保留 pending owner 身份与 typed error 摘要，便于定位创建期泄漏。
+            tracing::error!(
+                "EglContext: construction guard rollback failed during Drop: {}",
+                error.short_what()
+            );
+        }
+    }
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // EglContext
 // ════════════════════════════════════════════════════════════════════════════
@@ -127,14 +337,20 @@ impl EglContext {
             )
         })?;
         tracing::info!("EglContext: EGL {major}.{minor}");
+        // display 初始化成功后立即建立构造期唯一资源 owner。
+        let mut pending = PendingEglContext::new(&egl, display);
 
         // 3. 绑定 API 到 OpenGL ES
         if let Err(e) = egl.bind_api(egl::OPENGL_ES_API) {
-            let _ = egl.terminate(display);
-            return Err(Error::new(
+            // 先构造触发回滚的原始 EGL 初始化错误。
+            let primary_error = Error::new(
+                // API 绑定失败属于平台错误。
                 Errc::PlatformError,
+                // 保留原始 EGL 枚举。
                 format!("EglContext: eglBindAPI 失败: {e:?}"),
-            ));
+            );
+            // 由唯一 guard 检查式终止 display，并保留双错误链。
+            return Err(pending.finish_failure(primary_error));
         }
 
         // 4. 选择配置：RGBA 8888, depth 24, stencil 8, GLES 3。
@@ -166,18 +382,26 @@ impl EglContext {
         let config = match choose_config(egl::OPENGL_ES3_BIT) {
             Ok(Some(config)) => config,
             Ok(None) => {
-                let _ = egl.terminate(display);
-                return Err(Error::new(
+                // 缺少 GLES 3 config 是触发回滚的原始能力错误。
+                let primary_error = Error::new(
+                    // 保持既有未实现分类。
                     Errc::NotImplemented,
+                    // 保持既有产品错误说明。
                     "EglContext: native raster requires a GLES 3 EGL config",
-                ));
+                );
+                // 由唯一 guard 检查式终止 display。
+                return Err(pending.finish_failure(primary_error));
             }
             Err(e) => {
-                let _ = egl.terminate(display);
-                return Err(Error::new(
+                // 配置查询失败是触发回滚的原始 EGL 错误。
+                let primary_error = Error::new(
+                    // 配置查询失败属于平台错误。
                     Errc::PlatformError,
+                    // 保留原始 EGL 枚举。
                     format!("EglContext: GLES 3 choose_config 失败: {e:?}"),
-                ));
+                );
+                // 由唯一 guard 检查式终止 display。
+                return Err(pending.finish_failure(primary_error));
             }
         };
 
@@ -185,29 +409,43 @@ impl EglContext {
         // SAFETY: wayland.surface 已校验非空且仍由平台窗口拥有，width/height 是当前物理 surface 尺寸。
         let egl_window = unsafe { wl_egl_window_create(wayland.surface, width, height) };
         if egl_window.is_null() {
-            let _ = egl.terminate(display);
-            return Err(Error::new(
+            // native window 创建失败是触发回滚的原始平台错误。
+            let primary_error = Error::new(
+                // 空指针结果属于平台资源失败。
                 Errc::PlatformError,
+                // 保持既有产品错误说明。
                 "EglContext: wl_egl_window_create 返回 null",
-            ));
+            );
+            // 由唯一 guard 检查式终止 display。
+            return Err(pending.finish_failure(primary_error));
         }
+        // native window 创建成功后立即登记到唯一构造期 owner。
+        pending.egl_window = egl_window;
 
         // 6. 创建 EGL surface
         // SAFETY: display/config 已由同一 EGL 实例创建，egl_window 非空且在调用期间保持存活。
-        let surface = unsafe {
+        let surface_result = unsafe {
             egl.create_window_surface(display, config, egl_window as egl::NativeWindowType, None)
-        }
-        .map_err(|e| {
-            // SAFETY: surface 创建失败时 egl_window 仍由本构造函数唯一拥有，此处只销毁一次。
-            unsafe {
-                wl_egl_window_destroy(egl_window);
+        };
+        // surface 创建失败时由 guard 统一清理 native window 与 display。
+        let surface = match surface_result {
+            // 成功值尚未交付给正式 context。
+            Ok(surface) => surface,
+            // 失败值触发构造事务回滚。
+            Err(e) => {
+                // 构造原始 EGL surface 错误。
+                let primary_error = Error::new(
+                    // surface 创建失败属于平台错误。
+                    Errc::PlatformError,
+                    // 保留原始 EGL 枚举。
+                    format!("EglContext: eglCreateWindowSurface 失败: {e:?}"),
+                );
+                // 由唯一 guard 检查式回滚已登记资源。
+                return Err(pending.finish_failure(primary_error));
             }
-            let _ = egl.terminate(display);
-            Error::new(
-                Errc::PlatformError,
-                format!("EglContext: eglCreateWindowSurface 失败: {e:?}"),
-            )
-        })?;
+        };
+        // surface 创建成功后立即登记到唯一构造期 owner。
+        pending.surface = Some(surface);
 
         // 7. 创建 GLES 3.0 上下文；没有等价 ES2 pipeline 时不得降级。
         let ctx3_attribs = [
@@ -217,37 +455,44 @@ impl EglContext {
             0,
             egl::NONE,
         ];
-        let context = egl
-            .create_context(display, config, None, &ctx3_attribs)
-            .map_err(|e| {
-                // SAFETY: context 创建失败时 surface 与 egl_window 仍存活且由本构造函数唯一负责回滚。
-                unsafe {
-                    let _ = egl.destroy_surface(display, surface);
-                    wl_egl_window_destroy(egl_window);
-                }
-                let _ = egl.terminate(display);
-                Error::new(
+        // 创建结果在登记到 guard 前不得离开本构造事务。
+        let context_result = egl.create_context(display, config, None, &ctx3_attribs);
+        // context 创建失败时由 guard 统一清理 surface、native window 与 display。
+        let context = match context_result {
+            // 成功值尚未交付给正式 context。
+            Ok(context) => context,
+            // 失败值触发构造事务回滚。
+            Err(e) => {
+                // 构造原始 GLES 3 能力错误。
+                let primary_error = Error::new(
+                    // 保持既有未实现分类。
                     Errc::NotImplemented,
+                    // 保留原始 EGL 枚举。
                     format!("EglContext: native raster requires GLES 3.0: {e:?}"),
-                )
-            })?;
+                );
+                // 由唯一 guard 检查式回滚已登记资源。
+                return Err(pending.finish_failure(primary_error));
+            }
+        };
+        // context 创建成功后立即登记到唯一构造期 owner。
+        pending.context = Some(context);
         tracing::info!("EglContext: GLES 3.0 上下文创建成功");
 
         // 8. make current
-        egl.make_current(display, Some(surface), Some(surface), Some(context))
-            .map_err(|e| {
-                // SAFETY: make_current 失败时 context、surface 与 egl_window 均未交付给 Self，此处按逆序各销毁一次。
-                unsafe {
-                    let _ = egl.destroy_context(display, context);
-                    let _ = egl.destroy_surface(display, surface);
-                    wl_egl_window_destroy(egl_window);
-                }
-                let _ = egl.terminate(display);
-                Error::new(
-                    Errc::PlatformError,
-                    format!("EglContext: eglMakeCurrent 失败: {e:?}"),
-                )
-            })?;
+        // 把刚创建的 context 同时绑定为 draw/read current。
+        if let Err(e) = egl.make_current(display, Some(surface), Some(surface), Some(context)) {
+            // 构造原始 current 绑定错误。
+            let primary_error = Error::new(
+                // current 绑定失败属于平台错误。
+                Errc::PlatformError,
+                // 保留原始 EGL 枚举。
+                format!("EglContext: eglMakeCurrent 失败: {e:?}"),
+            );
+            // 由唯一 guard 检查式删除 context、surface、display 与 native window。
+            return Err(pending.finish_failure(primary_error));
+        }
+        // 只在 EGL 绑定成功后登记 current 状态。
+        pending.current = true;
 
         let runtime =
             crate::native::presentation::graphics::opengl::NativeOpenGlRuntime::from_loader(
@@ -257,17 +502,19 @@ impl EglContext {
                         .unwrap_or(std::ptr::null())
                 },
             );
-        let pipeline =
-            OpenGlRasterPipeline::new(runtime, width, height, width, height).map_err(|error| {
-                // SAFETY: pipeline 创建失败时同一构造函数仍唯一拥有 context、surface 与 egl_window，并按逆序回滚。
-                unsafe {
-                    let _ = egl.destroy_context(display, context);
-                    let _ = egl.destroy_surface(display, surface);
-                    wl_egl_window_destroy(egl_window);
-                }
-                let _ = egl.terminate(display);
-                error
-            })?;
+        // pipeline 初始化失败时同样由构造期唯一 owner 完整回滚 native 资源。
+        let pipeline = match OpenGlRasterPipeline::new(runtime, width, height, width, height) {
+            // 成功 pipeline 将与 native 句柄一起交付 EglContext。
+            Ok(pipeline) => pipeline,
+            // 失败时保留 pipeline 初始化错误与 native 清理错误链。
+            Err(error) => {
+                // 由唯一 guard 先解绑再逆序释放所有已登记资源。
+                return Err(pending.finish_failure(error));
+            }
+        };
+
+        // 所有创建步骤成功后才把 native 句柄从 guard 移交给正式 context。
+        let (context, surface, egl_window) = pending.into_handles();
 
         Ok(Self {
             egl,

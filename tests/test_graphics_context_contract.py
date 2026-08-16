@@ -711,6 +711,43 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 旧的裸 HGLRC 删除语句不得在正式构造事务中恢复。
         self.assertNotIn("wglDeleteContext(hglrc);", source)
 
+    # 校验 EGL 构造期 guard 统一接管全部失败回滚与成功移交。
+    def test_egl_construction_guard_owns_all_native_rollback(self) -> None:
+        # 读取生产 EGL adapter 的完整源码。
+        source = (
+            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs"
+        ).read_text(encoding="utf-8")
+        # 截取构造 guard，避免把正式 EglContext shutdown 误算为创建回滚。
+        guard = source[
+            source.index("struct PendingEglContext") : source.index(
+                "pub struct EglContext"
+            )
+        ]
+        # guard 必须通过清理错误的 source 保留原初始化失败。
+        self.assertIn("cleanup_error.with_source(primary_error)", guard)
+        # 回滚必须严格按 current、context、surface、display、native window 排序。
+        operations = (
+            "make_current(self.display, None, None, None)",
+            "destroy_context(self.display, context)",
+            "destroy_surface(self.display, surface)",
+            ".terminate(self.display)",
+            "wl_egl_window_destroy(self.egl_window)",
+        )
+        # 提取每个 native teardown 操作在 guard 中的位置。
+        positions = tuple(guard.index(operation) for operation in operations)
+        # 位置必须单调递增，固定依赖逆序。
+        self.assertEqual(positions, tuple(sorted(positions)))
+        # 每个构造失败分支必须委托同一个 guard 完成回滚。
+        self.assertGreaterEqual(source.count("pending.finish_failure"), 7)
+        # 成功路径必须显式移交所有 native 句柄。
+        self.assertIn("pending.into_handles()", source)
+        # Drop 必须记录最终重试仍失败的 typed error。
+        self.assertIn("construction guard rollback failed during Drop", guard)
+        # 构造函数不得恢复静默丢弃 EGL 清理结果的旧写法。
+        self.assertNotIn("let _ = egl.terminate", source)
+        # context 与 surface 删除结果同样不得被静默丢弃。
+        self.assertNotIn("let _ = egl.destroy_", source)
+
     # 校验 Vulkan owner shutdown 与 lost-device generation 契约。
     def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
         # 组合读取 Vulkan context 的拆分模块，以保持顺序审计语义。
