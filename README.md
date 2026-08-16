@@ -68,4 +68,4 @@ cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo
 | `docs/` | 产品、架构、使用文档 |
 | `assets/` | 编译期与 Demo 运行时资源 |
 
-文档改动运行 `python tests/test_check_docs_links.py -q`。
+文档改动运行 `python tests/test_check_docs_links.py -q`；涉及 `uix-compile` 围栏时同时运行 `python tests/test_docs_compile_coverage.py -q`。
