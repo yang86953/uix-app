@@ -36,6 +36,13 @@ use super::keyboard_focus_owner::{
     // Leave 原子清理精确焦点与输入状态。
     handle_keyboard_leave,
 };
+// keyboard Key 委托按键、serial 与重复状态事务 Component。
+use super::keyboard_key_owner::{
+    // Press 原子记录 serial、事件与客户端重复候选。
+    handle_keyboard_key_pressed,
+    // Release 原子提交 KeyUp 并清理重复状态。
+    handle_keyboard_key_released,
+};
 // keyboard Modifiers 委托修饰快照与重复状态事务 Component。
 use super::keyboard_modifier_owner::handle_keyboard_modifiers;
 // keyboard RepeatInfo 委托 rate/delay 双 owner 事务 Component。
@@ -58,11 +65,11 @@ use super::pointer_focus_owner::{
     // Motion 原子提交 position 与 PointerMove。
     handle_pointer_motion,
 };
-use super::{HeldKeyInfo, WaylandBackend};
+use super::WaylandBackend;
 // seat owner 保留几何与 capability 收敛的 typed failure。
 use crate::core::{Errc, Error, Point};
-use crate::native::backends::linux::wayland::keycode::{keycode_to_char, linux_keycode_to_keycode};
-use crate::native::windowing::event::*;
+// seat adapter 只把 Linux 键码转换为平台中立键码。
+use crate::native::backends::linux::wayland::keycode::linux_keycode_to_keycode;
 use crate::native::windowing::input::{KeyMod, MouseButton};
 
 // 从 owner 槽取出 pointer 代理后，在锁外注销回调并按协议版本释放。
@@ -593,71 +600,69 @@ impl WaylandBackend {
                             wl_keyboard::Event::Key {
                                 serial, key, state, ..
                             } => {
-                                let Some(window_id) = targets
-                                    .lock()
-                                    .unwrap_or_else(|error| error.into_inner())
-                                    .keyboard_target()
-                                else {
-                                    return;
-                                };
-                                let code = linux_keycode_to_keycode(key);
-                                let mut q = ev.lock().unwrap_or_else(|e| e.into_inner());
-                                let current_mods = mods.lock().map(|m| *m).unwrap_or(KeyMod::NONE);
-                                let shift_down = current_mods.intersects(KeyMod::SHIFT);
-                                if state == WEnum::Value(wl_keyboard::KeyState::Pressed) {
-                                    // 去重：若已启用客户端侧重复且该键已被按下，
-                                    // 跳过 compositor 发送的重复 Key 事件，避免双重重复
-                                    let client_repeat_enabled =
-                                        *repeat_rate.lock().unwrap_or_else(|e| e.into_inner()) > 0;
-                                    let already_down =
-                                        kd.lock().map(|ks| ks.contains(&code)).unwrap_or(false);
-                                    if client_repeat_enabled && already_down {
-                                        // compositor 侧重复，由客户端自行处理
-                                        return;
-                                    }
-                                    keyboard_serial
-                                        .lock()
-                                        .unwrap_or_else(|error| error.into_inner())
-                                        .record(serial);
-                                    // 记录按住的键，用于客户端侧重复
-                                    if let Ok(mut kd) = kd.lock() {
-                                        kd.insert(code);
-                                    }
-                                    q.push_back(
-                                        UiEvent::key_down(code, current_mods).for_window(window_id),
-                                    );
-                                    // 始终从物理键盘生成字符事件（即使 IME 激活）
-                                    // IME 通过 CommitString 额外提交文本（如中文），两者互补
-                                    if let Some(text) = keycode_to_char(code, shift_down) {
-                                        q.push_back(
-                                            UiEvent::text_input(text).for_window(window_id),
+                                // 先把协议状态收敛为两个明确 Component 端口。
+                                match state {
+                                    // 已知 Pressed 才允许提交按下事务。
+                                    WEnum::Value(wl_keyboard::KeyState::Pressed) => {
+                                        // 在 adapter 边界完成 Linux 键码转换。
+                                        let code = linux_keycode_to_keycode(key);
+                                        // 八 owner Component 原子提交本次物理按下。
+                                        handle_keyboard_key_pressed(
+                                            // 转交 compositor 签发的真实 serial。
+                                            serial,
+                                            // 转交平台中立键码。
+                                            code,
+                                            // keyboard focus 路由 owner。
+                                            &targets,
+                                            // UI 事件 owner。
+                                            &ev,
+                                            // 修饰快照 owner。
+                                            &mods,
+                                            // compositor 重复速率 owner。
+                                            &repeat_rate,
+                                            // 物理按键集合 owner。
+                                            &kd,
+                                            // Wayland 输入 serial owner。
+                                            &keyboard_serial,
+                                            // 客户端重复候选 owner。
+                                            &held_key_info,
+                                            // 重复节拍 owner。
+                                            &last_repeat_time,
+                                            // failure 进入 backend pending source。
+                                            &keyboard_failures,
                                         );
                                     }
-                                    // 记录按住的键，用于客户端侧重复
-                                    if let Ok(mut hki) = held_key_info.lock() {
-                                        *hki = Some(HeldKeyInfo {
+                                    // 已知 Released 才允许提交抬起事务。
+                                    WEnum::Value(wl_keyboard::KeyState::Released) => {
+                                        // 在 adapter 边界完成 Linux 键码转换。
+                                        let code = linux_keycode_to_keycode(key);
+                                        // 六 owner Component 原子提交本次物理抬起。
+                                        handle_keyboard_key_released(
+                                            // 转交平台中立键码。
                                             code,
-                                            mods: current_mods,
-                                            first_press: std::time::Instant::now(),
-                                            window_id,
-                                        });
+                                            // keyboard focus 路由 owner。
+                                            &targets,
+                                            // UI 事件 owner。
+                                            &ev,
+                                            // 修饰快照 owner。
+                                            &mods,
+                                            // 物理按键集合 owner。
+                                            &kd,
+                                            // 客户端重复候选 owner。
+                                            &held_key_info,
+                                            // 重复节拍 owner。
+                                            &last_repeat_time,
+                                            // failure 进入 backend pending source。
+                                            &keyboard_failures,
+                                        );
                                     }
-                                    if let Ok(mut lrt) = last_repeat_time.lock() {
-                                        *lrt = None;
+                                    // Wayland 将来新增的已解码状态也不得被解释为 Release。
+                                    WEnum::Value(_) => {
+                                        // 非 Pressed/Released 值安全丢弃且不修改 owner。
                                     }
-                                } else {
-                                    if let Ok(mut kd) = kd.lock() {
-                                        kd.remove(&code);
-                                    }
-                                    q.push_back(
-                                        UiEvent::key_up(code, current_mods).for_window(window_id),
-                                    );
-                                    // 释放键时清除重复跟踪
-                                    if let Ok(mut hki) = held_key_info.lock() {
-                                        *hki = None;
-                                    }
-                                    if let Ok(mut lrt) = last_repeat_time.lock() {
-                                        *lrt = None;
+                                    // 未知协议枚举不得被误解释为 Release。
+                                    WEnum::Unknown(_) => {
+                                        // 迟到或未来扩展状态安全丢弃且不修改 owner。
                                     }
                                 }
                             }
