@@ -239,6 +239,111 @@ class WaylandCallbackGuardTests(unittest.TestCase):
             # 所有 completion 片段都不得包含这些副作用。
             self.assertNotIn(forbidden, read_error + read_completion + write_completion)
 
+    # 确认按键重复只在全部 owner 健康时提交状态与事件。
+    def test_key_repeat_generation_commits_owner_state_transactionally(self) -> None:
+        # 读取 Wayland owner-thread event loop。
+        source = EVENT_LOOP.read_text(encoding="utf-8")
+        # 限定 dispatch_polled 调用方传播片段。
+        dispatch_start = source.index("fn dispatch_polled")
+        # wake pipe helper 标记 poll 编排末尾。
+        dispatch_end = source.index("fn drain_wake_pipe", dispatch_start)
+        # 保存 poll completion 调用方。
+        dispatch = source[dispatch_start:dispatch_end]
+        # 生成失败必须显式终止本轮 dispatch。
+        self.assertIn("if !self.generate_key_repeats()", dispatch)
+        # 限定重复生成决策端口。
+        generate_start = source.index("fn generate_key_repeats")
+        # 焦点失配清理 helper 标记生成端口末尾。
+        generate_end = source.index("fn clear_stale_key_repeat_state", generate_start)
+        # 保存生成决策片段。
+        generate = source[generate_start:generate_end]
+        # held-key owner 必须 checked lock。
+        held_lock = generate.index("match self.held_key_info.lock()")
+        # surface target owner 随后 checked lock。
+        target_lock = generate.index("match self.surface_windows.lock()")
+        # repeat rate owner 在 target 验证后读取。
+        rate_lock = generate.index("match self.repeat_rate.lock()")
+        # repeat delay owner 最后参与时间计算。
+        delay_lock = generate.index("match self.repeat_delay.lock()")
+        # 四份读取保持固定非嵌套顺序。
+        self.assertLess(held_lock, target_lock)
+        # target 校验先于协议 rate。
+        self.assertLess(target_lock, rate_lock)
+        # rate 健康且启用后才读取 delay。
+        self.assertLess(rate_lock, delay_lock)
+        # 生成端口不得恢复 poisoned owner。
+        self.assertNotIn("into_inner()", generate)
+        # 四类读取 failure 均稳定分类为 InvalidState。
+        self.assertEqual(generate.count("Errc::InvalidState"), 4)
+        # 各 owner 诊断必须独立可定位。
+        for stage in ["held-key", "surface target", "rate", "delay"]:
+            # 每个状态阶段都必须进入生成诊断。
+            self.assertIn(f"key repeat {stage} mutex poisoned during generation", generate)
+        # 焦点失配必须委托双 owner 清理事务。
+        self.assertIn("return self.clear_stale_key_repeat_state()", generate)
+        # 健康路径保留 10ms 最小 interval。
+        self.assertIn("Duration::from_millis(10)", generate)
+        # 限定焦点失配清理事务。
+        cleanup_start = source.index("fn clear_stale_key_repeat_state")
+        # 事件提交 helper 标记清理事务末尾。
+        cleanup_end = source.index("fn commit_key_repeat_if_due", cleanup_start)
+        # 保存双 owner 清理片段。
+        cleanup = source[cleanup_start:cleanup_end]
+        # 清理先取得 held-key guard。
+        cleanup_held_lock = cleanup.index("match self.held_key_info.lock()")
+        # 清理再取得 last-time guard。
+        cleanup_last_lock = cleanup.index("match self.last_repeat_time.lock()")
+        # held-key 清除必须晚于两把健康 guard。
+        clear_held = cleanup.index("*held_key = None")
+        # last-time 清除紧随 held-key 清除。
+        clear_last = cleanup.index("*last_repeat = None")
+        # 固定保持 held-key 后 last-time 的锁顺序。
+        self.assertLess(cleanup_held_lock, cleanup_last_lock)
+        # 两把 guard 均健康后才开始清理。
+        self.assertLess(cleanup_last_lock, clear_held)
+        # 两份状态保持同一事务提交顺序。
+        self.assertLess(clear_held, clear_last)
+        # 清理事务不得恢复 poisoned owner。
+        self.assertNotIn("into_inner()", cleanup)
+        # 两类清理 failure 都稳定分类。
+        self.assertEqual(cleanup.count("Errc::InvalidState"), 2)
+        # 限定重复事件提交事务。
+        commit_start = source.index("fn commit_key_repeat_if_due")
+        # clipboard read error helper 标记提交事务末尾。
+        commit_end = source.index("fn discard_clipboard_read_after_poll_error", commit_start)
+        # 保存重复事件提交片段。
+        commit = source[commit_start:commit_end]
+        # 先取得 last-time guard。
+        commit_last_lock = commit.index("match self.last_repeat_time.lock()")
+        # 到期后再取得 event queue guard。
+        event_lock = commit.index("match self.events.lock()")
+        # 时间戳只能在两把 guard 健康后推进。
+        timestamp_commit = commit.index("*last_repeat = Some(now)")
+        # key-down 是首个窗口事件。
+        key_event = commit.index("events.push_back(UiEvent::key_down")
+        # 可选 text-input 紧随 key-down。
+        text_event = commit.index("events.push_back(UiEvent::text_input")
+        # 固定保持 last-time 后 event queue 的锁顺序。
+        self.assertLess(commit_last_lock, event_lock)
+        # event queue 健康后才推进时间。
+        self.assertLess(event_lock, timestamp_commit)
+        # 时间戳与事件保持确定性提交顺序。
+        self.assertLess(timestamp_commit, key_event)
+        # key-down 必须先于可选文本事件。
+        self.assertLess(key_event, text_event)
+        # 提交事务不得恢复 poisoned owner。
+        self.assertNotIn("into_inner()", commit)
+        # last-time 与 event queue failure 均稳定分类。
+        self.assertEqual(commit.count("Errc::InvalidState"), 2)
+        # 两类提交 owner 诊断必须独立可定位。
+        self.assertIn("last-time mutex poisoned during event commit", commit)
+        # 事件队列诊断必须保留提交阶段。
+        self.assertIn("event queue mutex poisoned during event commit", commit)
+        # 重复生成路径不得执行错误策略或用户代码。
+        for forbidden in ["tracing::", ".report(", "attempt_recovery"]:
+            # 三个重复端口都不得包含这些副作用。
+            self.assertNotIn(forbidden, generate + cleanup + commit)
+
     def test_unknown_created_child_remains_an_explicit_failure_case(self) -> None:
         source = COMPAT.read_text(encoding="utf-8")
         self.assertIn("fn event_created_child", source)
