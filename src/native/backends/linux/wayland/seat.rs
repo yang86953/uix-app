@@ -31,8 +31,8 @@ use super::input_proxy_owner::{
     snapshot_input_proxy_slots,
 };
 use super::{HeldKeyInfo, WaylandBackend};
-// seat callback 保留几何与窗口路由值类型，错误分类已归 clipboard Module。
-use crate::core::{Point, WindowId};
+// seat owner 保留几何、窗口路由与 capability 收敛的 typed failure。
+use crate::core::{Errc, Error, Point, WindowId};
 use crate::native::backends::linux::wayland::keycode::{keycode_to_char, linux_keycode_to_keycode};
 use crate::native::windowing::event::*;
 use crate::native::windowing::input::{KeyMod, MouseButton};
@@ -831,13 +831,33 @@ impl WaylandBackend {
             return;
         }
         for _ in 0..5 {
-            let has_pointer = self.pointer.lock().map(|p| p.is_some()).unwrap_or(false);
+            // 每轮先检查唯一 pointer proxy owner 槽。
+            let has_pointer = match self.pointer.lock() {
+                // 健康 guard 只复制代理是否已经绑定。
+                Ok(pointer) => pointer.is_some(),
+                // 槽损坏不得伪装为尚未绑定并继续协议分发。
+                Err(_) => {
+                    // 无 Result 通道的 owner failure 进入 backend source。
+                    self.enqueue_failure(Error::new(
+                        // poisoned proxy owner 稳定分类为 InvalidState。
+                        Errc::InvalidState,
+                        // 诊断保留 capability convergence 阶段。
+                        "Wayland seat capability pointer proxy slot mutex poisoned during convergence",
+                    ));
+                    // 不 flush、不 dispatch，也不继续剩余轮次。
+                    return;
+                }
+            };
+            // 已绑定时保持既有立即结束收敛语义。
             if has_pointer {
+                // 不执行多余 flush/dispatch。
                 break;
             }
+            // 健康空槽继续既有 flush→dispatch 收敛顺序。
             if !self.flush_checked("seat capabilities")
                 || !self.dispatch_pending_checked("seat capabilities")
             {
+                // 既有协议 failure 已由 checked helper 处理。
                 break;
             }
         }
