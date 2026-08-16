@@ -694,6 +694,23 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 未检查 ReleaseDC 的旧回滚入口不得恢复。
         self.assertNotIn("release_device_context(hwnd, hdc)", construction)
 
+    # 校验尚未交付的正式 HGLRC 由构造期临时 owner 检查式回滚。
+    def test_wgl_pending_context_owns_failed_construction_cleanup(self) -> None:
+        # 读取生产 WGL adapter 的完整源码。
+        source = (
+            ROOT / "src/native/presentation/graphics/opengl/platform/wgl.rs"
+        ).read_text(encoding="utf-8")
+        # 临时 owner 必须显式记录句柄与 current 状态。
+        self.assertIn("struct PendingWglContext", source)
+        # 创建失败必须通过同一 helper 合并主错误与清理错误。
+        self.assertGreaterEqual(source.count("pending_context.finish_failure"), 2)
+        # 创建成功必须显式把唯一句柄移交给正式 WglContext。
+        self.assertIn("pending_context.into_handle()", source)
+        # 临时 owner 的 Drop 必须记录最终重试失败。
+        self.assertIn("pending context checked shutdown failed during Drop", source)
+        # 旧的裸 HGLRC 删除语句不得在正式构造事务中恢复。
+        self.assertNotIn("wglDeleteContext(hglrc);", source)
+
     # 校验 Vulkan owner shutdown 与 lost-device generation 契约。
     def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
         # 组合读取 Vulkan context 的拆分模块，以保持顺序审计语义。

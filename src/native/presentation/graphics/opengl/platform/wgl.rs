@@ -447,6 +447,107 @@ impl Drop for BootstrapContext {
     }
 }
 
+// 在正式 WglContext 接管前唯一持有新建 HGLRC，并负责失败回滚。
+struct PendingWglContext {
+    // 保存尚未交付的 WGL context 句柄。
+    hglrc: HGLRC,
+    // 记录该 context 当前是否绑定到构造线程。
+    current: bool,
+}
+
+impl PendingWglContext {
+    // 从刚创建的非空 HGLRC 建立构造期唯一 owner。
+    fn new(hglrc: HGLRC) -> Self {
+        // 构造完成前 context 尚未成功设为 current。
+        Self {
+            // 接管调用方刚创建的 HGLRC。
+            hglrc,
+            // 初始绑定状态为 false。
+            current: false,
+        }
+    }
+
+    // 标记 wglMakeCurrent 已成功提交，回滚时必须先解绑。
+    fn mark_current(&mut self) {
+        // 只在 native 调用成功后更新 owner 状态。
+        self.current = true;
+    }
+
+    // 创建失败时执行一次检查式清理，并保留主错误与清理错误链。
+    fn finish_failure(&mut self, primary_error: Error) -> Error {
+        // 清理成功时仍向调用方传播原始创建失败。
+        match self.shutdown_result() {
+            // 临时 HGLRC 已完整释放。
+            Ok(()) => primary_error,
+            // 清理失败成为外层错误，原始创建失败保留为原因。
+            Err(cleanup_error) => cleanup_error.with_source(primary_error),
+        }
+    }
+
+    // 成功创建后把 HGLRC 所有权移交给正式 WglContext。
+    fn into_handle(mut self) -> HGLRC {
+        // 保存即将交付的唯一句柄。
+        let hglrc = self.hglrc;
+        // 清空临时 owner，防止其 Drop 删除已交付句柄。
+        self.hglrc = ptr::null_mut();
+        // current 状态随句柄一并转移给正式 owner。
+        self.current = false;
+        // 返回由 WglContext 字段接管的 HGLRC。
+        hglrc
+    }
+
+    // 按 current 绑定依赖逆序解绑并删除尚未交付的 HGLRC。
+    fn shutdown_result(&mut self) -> Result<(), Error> {
+        // 空句柄表示已清理或已移交，保持幂等成功。
+        if self.hglrc.is_null() {
+            // 不重复触碰底层 WGL API。
+            return Ok(());
+        }
+        // 只有成功设为 current 的 context 才需要先解绑。
+        if self.current {
+            // SAFETY: 当前线程创建并绑定了该 HGLRC；空参数表示解除 current 绑定。
+            if unsafe { wglMakeCurrent(ptr::null_mut(), ptr::null_mut()) } == 0 {
+                // 解绑失败时保留句柄与 current 状态供 Drop 重试。
+                return Err(windows_diag(
+                    // 将 WGL teardown 失败归入平台错误。
+                    Errc::PlatformError,
+                    // 保留失败的精确 native 操作名。
+                    "WglContext: pending context wglMakeCurrent(NULL) failed",
+                ));
+            }
+            // 只有解绑成功后才提交 current 状态清除。
+            self.current = false;
+        }
+        // SAFETY: hglrc 仍由本临时 owner 唯一持有且当前未绑定。
+        if unsafe { wglDeleteContext(self.hglrc) } == 0 {
+            // 删除失败时保留句柄供 Drop 重试。
+            return Err(windows_diag(
+                // 将 WGL teardown 失败归入平台错误。
+                Errc::PlatformError,
+                // 保留失败的精确 native 操作名。
+                "WglContext: pending context wglDeleteContext failed",
+            ));
+        }
+        // 只有删除成功后才清空唯一 owner 槽位。
+        self.hglrc = ptr::null_mut();
+        // 未交付 context 已完成检查式关闭。
+        Ok(())
+    }
+}
+
+impl Drop for PendingWglContext {
+    fn drop(&mut self) {
+        // Drop 只重试尚未完成的检查式关闭，失败必须留下最终诊断。
+        if let Err(error) = self.shutdown_result() {
+            // 保留 pending owner 身份与 typed error 摘要，便于定位创建期泄漏。
+            tracing::error!(
+                "WglContext: pending context checked shutdown failed during Drop: {}",
+                error.short_what()
+            );
+        }
+    }
+}
+
 fn create_es_context(
     hdc: HDC,
     create_ctx: CreateContextAttribsFn,
@@ -534,6 +635,7 @@ impl WglContext {
             // 在创建正式 context 前显式观察临时 bootstrap teardown 结果。
             bootstrap.shutdown_result()?;
             // bootstrap 扩展函数指针在临时 context 关闭后仍可用于创建正式 context。
+            // 先创建尚未交付给正式 WglContext 的 HGLRC。
             let hglrc = if let Some(create_ctx) = create_ctx {
                 create_es_context(hdc, create_ctx, 3, 0)?
             } else {
@@ -542,16 +644,22 @@ impl WglContext {
                     "WglContext: wglCreateContextAttribsARB unavailable",
                 ));
             };
+            // 建立构造期唯一 owner，后续失败由它检查式回滚。
+            let mut pending_context = PendingWglContext::new(hglrc);
             // SAFETY: hdc 存活、hglrc 为刚创建的非空上下文；失败时 hglrc 仍有效可删除。
-            unsafe {
-                if wglMakeCurrent(hdc, hglrc) == 0 {
-                    wglDeleteContext(hglrc);
-                    return Err(windows_diag(
-                        Errc::PlatformError,
-                        "WglContext: wglMakeCurrent failed",
-                    ));
-                }
+            if unsafe { wglMakeCurrent(hdc, hglrc) } == 0 {
+                // 在任何清理调用前捕获原始 WGL 创建失败。
+                let primary_error = windows_diag(
+                    // 将 WGL 创建失败归入平台错误。
+                    Errc::PlatformError,
+                    // 保留失败的精确 native 操作名。
+                    "WglContext: wglMakeCurrent failed",
+                );
+                // 传播主错误；若删除失败则同时保留清理错误。
+                return Err(pending_context.finish_failure(primary_error));
             }
+            // 只在 native 绑定成功后更新临时 owner 状态。
+            pending_context.mark_current();
 
             let drawable = drawable_size_from_hdc(hwnd, hdc, width, height);
             let runtime =
@@ -577,12 +685,8 @@ impl WglContext {
             ) {
                 Ok(pipeline) => pipeline,
                 Err(error) => {
-                    // SAFETY: hglrc 仍存活且此时 context 已 current（bootstrap 阶段设置），先解除再删除以避免在 current 状态下销毁。
-                    unsafe {
-                        wglMakeCurrent(ptr::null_mut(), ptr::null_mut());
-                        wglDeleteContext(hglrc);
-                    }
-                    return Err(error);
+                    // 由临时 owner 检查式解绑并删除，保留初始化与清理双错误链。
+                    return Err(pending_context.finish_failure(error));
                 }
             };
             tracing::info!(
@@ -592,6 +696,9 @@ impl WglContext {
                 drawable.logical_width,
                 drawable.logical_height,
             );
+            // 所有创建步骤成功后才把唯一 HGLRC owner 移交给正式 context。
+            let hglrc = pending_context.into_handle();
+            // 正式 WglContext 从此负责 HGLRC 的 checked teardown。
             Ok(Self {
                 hwnd,
                 hdc,
