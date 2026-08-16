@@ -643,6 +643,35 @@ class GraphicsContextContractTests(unittest.TestCase):
             # 静默丢弃结果的旧路径不得恢复。
             self.assertNotIn(f"let _ = self.{shutdown}()", drop_body)
 
+    # 校验 WGL 启动期 bootstrap owner 使用可传播、可重试的检查式关闭。
+    def test_wgl_bootstrap_context_uses_checked_shutdown(self) -> None:
+        # 读取生产 WGL adapter 的完整源码。
+        source = (
+            ROOT / "src/native/presentation/graphics/opengl/platform/wgl.rs"
+        ).read_text(encoding="utf-8")
+        # 截取 bootstrap owner 实现与 Drop 之间的检查式生命周期主体。
+        bootstrap = source[
+            source.index("impl BootstrapContext") : source.index(
+                "fn create_es_context"
+            )
+        ]
+        # bootstrap 必须暴露私有 Result 生命周期入口。
+        self.assertIn("fn shutdown_result(&mut self) -> Result<(), Error>", bootstrap)
+        # WGL context 必须检查解绑与删除结果。
+        self.assertIn("if unsafe { wglMakeCurrent", bootstrap)
+        # 删除 context 失败不得静默继续。
+        self.assertIn("if unsafe { wglDeleteContext", bootstrap)
+        # DC 释放必须使用已有的 checked Windows helper。
+        self.assertIn("release_device_context_checked", bootstrap)
+        # 隐藏窗口销毁失败也必须进入 typed error 路径。
+        self.assertIn("if unsafe { DestroyWindow", bootstrap)
+        # Drop 必须记录最终重试失败。
+        self.assertIn("bootstrap checked shutdown failed during Drop", bootstrap)
+        # 正式 context 创建路径必须显式观察临时 owner 的关闭结果。
+        self.assertIn("bootstrap.shutdown_result()?", source)
+        # 无法传播失败的显式 drop 路径不得恢复。
+        self.assertNotIn("drop(bootstrap)", source)
+
     # 校验 Vulkan owner shutdown 与 lost-device generation 契约。
     def test_direct_vulkan_uses_owner_shutdown_and_lost_device_generation(self) -> None:
         # 组合读取 Vulkan context 的拆分模块，以保持顺序审计语义。
