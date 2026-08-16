@@ -448,12 +448,18 @@
       <Column gap="12px">
         // 展示面板小节标题。
         <Text fontSize="heading5">Tabs</Text>
-        // items 只声明稳定 key 元数据，两个直接面板按源码顺序一一对应。
-        <Tabs items={[Tab('账户').key('account'), Tab('安全').key('security')]} activeKey={active_tab} height="180px">
+        // items 只声明稳定 key 元数据，五个直接面板按源码顺序一一对应。
+        <Tabs items={[Tab('账户').key('account'), Tab('安全').key('security'), Tab('通知').key('notifications'), Tab('高级').key('advanced'), Tab('日志').key('logs')]} activeKey={active_tab} tabPosition="left" scrollable height="180px">
           // 账户面板在切出后仍保持挂载状态。
           <Container padding="12px"><Text>账户资料面板</Text></Container>
           // 安全面板在活动时独占布局与命中。
           <Container padding="12px"><Button>更新安全设置</Button></Container>
+          // 通知面板验证垂直标签栏的第三个声明项。
+          <Container padding="12px"><Text>通知偏好面板</Text></Container>
+          // 高级面板扩展主轴内容以触发滚动边界。
+          <Container padding="12px"><Text>高级选项面板</Text></Container>
+          // 日志面板位于溢出标签栏的末端。
+          <Container padding="12px"><Text>审计日志面板</Text></Container>
         // 结束受控标签页。
         </Tabs>
       // 结束标签页内容。
