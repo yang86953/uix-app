@@ -7,8 +7,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Pagination 属性、表达式、事件与诊断契约。
 use super::{
-    Attribute, AttributeValue, Diagnostic, Element, generate_expression,
-    generate_event_handler_expression,
+    boolean_value, generate_event_handler_expression, generate_expression, Attribute,
+    AttributeValue, Diagnostic, Element,
 };
 
 // 生成 total、双 State<usize> 与 Change 事件绑定的分页器叶节点。
@@ -31,6 +31,17 @@ pub(crate) fn generate_pagination(element: &Element) -> Result<TokenStream, Diag
     // 构造器的非受控 pageSize 缺省为文档登记的十。
     let mut widget = quote! { ::uix::prelude::Pagination::new(#total, 10_usize) };
 
+    // pageSizeOptions 只适配拥有 usize 元素的声明集合。
+    if let Some(attribute) = find_attribute(element, "pageSizeOptions") {
+        // 解析静态整数列表或受限 Rust 可迭代表达式。
+        let options = page_size_options_value(attribute)?;
+        // 收集为公开运行时要求的 Vec<usize>。
+        widget = quote! {
+            (#widget).page_size_options(
+                (#options).into_iter().collect::<::std::vec::Vec<usize>>()
+            )
+        };
+    }
     // pageSize 出现时必须保留 State<usize> 所有权句柄。
     if let Some(attribute) = find_attribute(element, "pageSize") {
         // 解析声明端 pageSize 状态表达式。
@@ -39,6 +50,34 @@ pub(crate) fn generate_pagination(element: &Element) -> Result<TokenStream, Diag
         widget = quote! { (#widget).page_size_state(&(#state)) };
         // 文档承诺每页条数切换，绑定存在时显式启用交互入口。
         widget = quote! { (#widget).show_size_changer(true) };
+    }
+    // showTotal 显式覆盖运行时默认的总数文案策略。
+    if let Some(attribute) = find_attribute(element, "showTotal") {
+        // 解析布尔简写、字面量或表达式。
+        let show_total = boolean_value(attribute)?;
+        // 调用公开总数显示入口。
+        widget = quote! { (#widget).show_total(#show_total) };
+    }
+    // 显式 showSizeChanger 必须覆盖 pageSize 绑定带来的默认启用。
+    if let Some(attribute) = find_attribute(element, "showSizeChanger") {
+        // 解析布尔简写、字面量或表达式。
+        let show_size_changer = boolean_value(attribute)?;
+        // 在隐式默认之后应用最终声明策略。
+        widget = quote! { (#widget).show_size_changer(#show_size_changer) };
+    }
+    // simple 声明分页主体的紧凑绘制模式。
+    if let Some(attribute) = find_attribute(element, "simple") {
+        // 解析布尔简写、字面量或表达式。
+        let simple = boolean_value(attribute)?;
+        // 调用公开紧凑模式入口。
+        widget = quote! { (#widget).simple(#simple) };
+    }
+    // showJumper 声明页码跳转输入入口。
+    if let Some(attribute) = find_attribute(element, "showJumper") {
+        // 解析布尔简写、字面量或表达式。
+        let show_jumper = boolean_value(attribute)?;
+        // 调用公开跳转入口。
+        widget = quote! { (#widget).show_jumper(#show_jumper) };
     }
     // current 出现时必须保留 State<usize> 所有权句柄。
     if let Some(attribute) = find_attribute(element, "current") {
@@ -85,7 +124,72 @@ pub(crate) fn generate_pagination(element: &Element) -> Result<TokenStream, Diag
         // 保留属性源码顺序供公共映射处理。
         &element.attributes,
         // 防止专有属性与 Change 事件被二次映射。
-        &["total", "current", "pageSize", "@change"],
+        &[
+            "total",
+            "current",
+            "pageSize",
+            "pageSizeOptions",
+            "showTotal",
+            "showSizeChanger",
+            "simple",
+            "showJumper",
+            "@change",
+        ],
+    )
+}
+
+// 生成 pageSizeOptions 的静态整数列表或拥有型 usize 可迭表达式。
+fn page_size_options_value(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
+    // 按声明值形状生成拥有型集合。
+    match &attribute.value {
+        // 静态列表使用逗号分隔的十进制 usize。
+        AttributeValue::Literal(source) => {
+            // 为每个经过验证的选项保留 usize 值。
+            let mut options = Vec::new();
+            // 按逗号逐项解析静态列表。
+            for item in source.split(',') {
+                // 忽略逗号两侧的可读性空白。
+                let item = item.trim();
+                // 空项不能表达有效尺寸选项。
+                if item.is_empty() {
+                    // 返回精确列表形状诊断。
+                    return Err(page_size_options_diagnostic(attribute));
+                }
+                // 拒绝负数、小数、后缀与溢出值。
+                let value = item
+                    // 解析为运行时公开 API 要求的 usize。
+                    .parse::<usize>()
+                    // 将解析失败统一映射为属性诊断。
+                    .map_err(|_| page_size_options_diagnostic(attribute))?;
+                // 保存已验证静态选项。
+                options.push(value);
+            }
+            // 生成拥有型 Vec，后续统一走 IntoIterator 收集路径。
+            Ok(quote! { ::std::vec![#(#options),*] })
+        }
+        // 动态表达式由 Rust 核对 IntoIterator<Item = usize>。
+        AttributeValue::Expression(expression) => {
+            // 生成受限集合表达式。
+            generate_expression(&expression.expression, None)
+        }
+        // 内联样式不能携带类型化集合。
+        AttributeValue::InlineStyle(_) => {
+            // 返回精确列表形状诊断。
+            Err(page_size_options_diagnostic(attribute))
+        }
+    }
+}
+
+// 构造 pageSizeOptions 的统一值形状诊断。
+fn page_size_options_diagnostic(attribute: &Attribute) -> Diagnostic {
+    // 返回带静态和动态修复建议的诊断。
+    Diagnostic::new(
+        // 指向非法 pageSizeOptions 属性。
+        attribute.span,
+        // 说明元素和容器边界。
+        "Pagination pageSizeOptions 必须是逗号分隔的 usize 列表或可迭表达式",
+        // 给出静态列表或 Rust 绑定写法。
+        "使用 pageSizeOptions=\"10,20\" 或 pageSizeOptions={options}",
     )
 }
 
