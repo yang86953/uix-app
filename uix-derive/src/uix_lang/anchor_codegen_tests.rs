@@ -1,5 +1,5 @@
 // 引入解析与核心生成入口。
-use super::{Diagnostic, generate_view, parse_document};
+use super::{generate_view, parse_document, Diagnostic};
 
 // 生成测试源码的稳定令牌快照。
 fn generate(source: &str) -> Result<String, Diagnostic> {
@@ -9,13 +9,13 @@ fn generate(source: &str) -> Result<String, Diagnostic> {
     generate_view(&document.root).map(|tokens| tokens.to_string())
 }
 
-// 验证 Anchor 类型化条目、定位偏移、href 事件与公共属性生成。
+// 验证 Anchor 类型化条目、定位偏移、指示线、href 事件与公共属性生成。
 #[test]
 // 声明完整 Anchor 生成测试。
 fn generates_anchor_contract() {
-    // 生成覆盖类型化数据、像素偏移、事件载荷和公共属性的锚点导航。
+    // 生成覆盖类型化数据、像素偏移、动态指示线、事件载荷和公共属性的锚点导航。
     let snapshot = generate(
-        r#"<Anchor items={anchor_items} offsetTop="24px" @change="record_anchor_change($event)" width="240px" automationId="settings-anchor" />"#,
+        r#"<Anchor items={anchor_items} offsetTop="24px" showInk={show_anchor_ink} @change="record_anchor_change($event)" width="240px" automationId="settings-anchor" />"#,
     )
     // 合法 Anchor 必须成功生成。
     .expect("文档属性应映射到公开 Anchor API");
@@ -27,6 +27,8 @@ fn generates_anchor_contract() {
     assert!(snapshot.contains("Anchor :: new"));
     // 像素偏移必须映射到公开 target_offset 构建器。
     assert!(snapshot.contains("target_offset (24.0)"));
+    // 动态指示线策略必须映射到公开 show_ink 构建器。
+    assert!(snapshot.contains("show_ink (show_anchor_ink)"));
     // href Change 事实必须接入公开文本处理器。
     assert!(snapshot.contains("on_change_fn") && snapshot.contains("record_anchor_change"));
     // Anchor 必须生成叶 View。
@@ -40,11 +42,13 @@ fn generates_anchor_contract() {
 // 声明 Anchor 动态数值生成测试。
 fn generates_dynamic_anchor_offset() {
     // 使用受限表达式提供运行时偏移。
-    let snapshot = generate(r#"<Anchor items={anchor_items} offsetTop={header_height} />"#)
+    let snapshot = generate(r#"<Anchor items={anchor_items} offsetTop={header_height} showInk />"#)
         // 合法数值表达式必须成功生成。
         .expect("动态 offsetTop 应映射到公开 Anchor API");
     // 表达式必须原样进入 target_offset 类型检查位置。
     assert!(snapshot.contains("target_offset (header_height)"));
+    // 布尔简写必须映射为 true 指示线策略。
+    assert!(snapshot.contains("show_ink (true)"));
 }
 
 // 验证 Anchor 必需数据与数值诊断。
@@ -69,6 +73,12 @@ fn rejects_invalid_anchor_data() {
         .expect_err("非数值 offsetTop 必须被拒绝");
     // 诊断必须点名数值要求。
     assert!(offset.message.contains("数值"));
+    // 非布尔指示线配置不能进入公开绘制策略。
+    let ink = generate(r#"<Anchor items={anchor_items} showInk="yes" />"#)
+        // 非布尔字面量必须失败。
+        .expect_err("非法 showInk 必须被拒绝");
+    // 诊断必须明确布尔值要求。
+    assert!(ink.message.contains("布尔值"));
 }
 
 // 验证 Anchor 叶节点、属性与事件边界。
@@ -81,12 +91,12 @@ fn rejects_invalid_anchor_shape_attributes_and_events() {
         .expect_err("Anchor 子节点必须被拒绝");
     // 诊断必须点明叶组件边界。
     assert!(child.message.contains("不接受子节点"));
-    // showInk 尚未登记为 UIX 文档属性。
-    let attribute = generate(r#"<Anchor items={anchor_items} showInk="false" />"#)
+    // activeHref 尚未登记为 UIX 文档属性。
+    let attribute = generate(r#"<Anchor items={anchor_items} activeHref={active_href} />"#)
         // 文档外属性必须失败。
         .expect_err("未知 Anchor 属性必须被拒绝");
     // 诊断必须包含具体未知属性名。
-    assert!(attribute.message.contains("showInk"));
+    assert!(attribute.message.contains("activeHref"));
     // @select 不是 Anchor 登记的 href 事实事件。
     let event =
         generate(r#"<Anchor items={anchor_items} @select="record_anchor_change($event)" />"#)
