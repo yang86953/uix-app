@@ -500,7 +500,14 @@ impl OpenGlRhiHost for EglContext {
 // 释放 EGL owner-thread 的所有 GPU 资源。
 impl Drop for EglContext {
     fn drop(&mut self) {
-        let _ = self.try_shutdown();
+        // Drop 只重试既有检查式关闭；失败必须留下最终诊断而不能静默丢弃。
+        if let Err(error) = self.try_shutdown() {
+            // 保留 adapter 身份和完整 typed error 摘要，供最终责任边界定位泄漏。
+            tracing::error!(
+                "EglContext: checked shutdown failed during Drop: {}",
+                error.short_what()
+            );
+        }
     }
 }
 
