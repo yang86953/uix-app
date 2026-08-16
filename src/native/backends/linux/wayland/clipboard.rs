@@ -404,25 +404,50 @@ impl IClipboard for WaylandBackend {
     fn set_text(&mut self, text: &str) -> Result<()> {
         // 生命周期 gate 必须先于缓存写入与任何协议 owner 访问。
         self.ensure_clipboard_open("set_text")?;
-        {
-            let mut t = self.clipboard_text.lock().map_err(|_| {
-                Error::new(
-                    Errc::InvalidState,
-                    "WaylandBackend::set_text: clipboard_text lock poisoned",
-                )
-            })?;
-            *t = text.to_string();
-        }
-        // 克隆 manager handle，避免后续 active source 替换持有 self 字段借用。
-        let Some(dm) = self.data_device_manager.clone() else {
-            return Ok(());
-        };
-        // 克隆 data-device handle，selection 提交仍使用同一协议身份。
-        let Some(dd) = self.data_device.clone() else {
-            return Ok(());
-        };
+        // 缺少 selection global 时不得把本地缓存伪装成系统剪贴板。
+        let dm = self.data_device_manager.clone().ok_or_else(|| {
+            // 构造稳定的 capability absence。
+            Error::new(
+                // compositor 未提供协议 global 属于未实现能力。
+                Errc::NotImplemented,
+                // 保留 set_text 与缺失协议身份。
+                "WaylandBackend::set_text: wl_data_device_manager is unavailable",
+            )
+        })?;
+        // 当前 seat 尚未建立 data device 时不得提交局部状态。
+        let dd = self.data_device.clone().ok_or_else(|| {
+            // 构造稳定的 session 状态错误。
+            Error::new(
+                // global 存在但当前没有 seat 派生对象属于无效操作。
+                Errc::InvalidOperation,
+                // 保留 set_text、data device 与 seat 上下文。
+                "WaylandBackend::set_text: no wl_data_device for active seat",
+            )
+        })?;
+        // callback 需要独立 Arc，不借用同步事务 guard。
+        let callback_owns_clipboard = Arc::clone(&self.owns_clipboard);
+        // ownership owner 必须在任何协议动作与旧 source 替换前健康。
+        let mut owns_clipboard = self.owns_clipboard.lock().map_err(|_| {
+            // 构造稳定的 selection ownership 状态错误。
+            Error::new(
+                // 同步共享 owner 损坏统一分类为 InvalidState。
+                Errc::InvalidState,
+                // 保留 set_text 与 ownership owner 阶段。
+                "WaylandBackend::set_text: owns_clipboard lock poisoned",
+            )
+        })?;
+        // 文本缓存 owner 同样先验证，失败不得失效旧 selection。
+        let mut clipboard_text = self.clipboard_text.lock().map_err(|_| {
+            // 构造稳定的缓存 owner 状态错误。
+            Error::new(
+                // 同步共享 owner 损坏统一分类为 InvalidState。
+                Errc::InvalidState,
+                // 保留 set_text 与文本缓存阶段。
+                "WaylandBackend::set_text: clipboard_text lock poisoned",
+            )
+        })?;
         // 输入 serial owner 损坏时不得继续创建或提交 selection source。
-        let serial = self.last_input_serial.lock().map_err(|_| {
+        let serial_owner = self.last_input_serial.lock().map_err(|_| {
             // 构造稳定的剪贴板 serial 状态错误。
             Error::new(
                 // 共享输入状态已无法安全读取。
@@ -432,17 +457,15 @@ impl IClipboard for WaylandBackend {
             )
         })?;
         // 健康 guard 只读取最近一次 pointer/keyboard serial。
-        let serial = serial.latest();
-        let Some(serial) = serial else {
-            if let Ok(mut owns) = self.owns_clipboard.lock() {
-                *owns = false;
-            }
-            tracing::warn!("Wayland clipboard selection requires a pointer or keyboard serial",);
-            return Err(Error::new(
+        let serial = serial_owner.latest().ok_or_else(|| {
+            // 缺少一次性协议授权时返回错误并保持旧 selection 全部状态。
+            Error::new(
+                // 当前调用缺少必要输入身份，属于无效状态。
                 Errc::InvalidState,
+                // 保留 set_text 与 selection serial 上下文。
                 "WaylandBackend::set_text: no pointer or keyboard serial for selection",
-            ));
-        };
+            )
+        })?;
         // 新 selection 建立前先注销并释放旧 active source callback owner。
         if let Some(previous) = self.clipboard_source.take() {
             // 迟到旧 Send/Cancelled 不得再修改当前 clipboard owners。
@@ -453,8 +476,7 @@ impl IClipboard for WaylandBackend {
         source.offer("text/plain;charset=utf-8".to_string());
         let bytes = Arc::<[u8]>::from(text.as_bytes());
         let writes = Arc::clone(&self.clipboard_writes);
-        // Cancelled callback 只修改同一 backend 的 ownership 标志。
-        let owns_clipboard = Arc::clone(&self.owns_clipboard);
+        // callback failure 继续复用 backend 唯一 pending source。
         let pending_failures = self.pending_failures.clone();
         // data-source 需要按具体事件决定 callback owner 是否继续登记。
         source.quick_assign_with_lifecycle(move |_, event, _| {
@@ -493,7 +515,7 @@ impl IClipboard for WaylandBackend {
                 // Cancelled 表示 compositor 不再使用当前 data-source。
                 wl_data_source::Event::Cancelled => {
                     // ownership owner 健康时提交本地 selection 失效事实。
-                    if let Ok(mut owns) = owns_clipboard.lock() {
+                    if let Ok(mut owns) = callback_owns_clipboard.lock() {
                         // Cancelled 后不得继续声称拥有系统剪贴板。
                         *owns = false;
                     } else {
@@ -511,11 +533,12 @@ impl IClipboard for WaylandBackend {
             }
         });
         dd.set_selection(Some(&source), serial);
+        // selection 请求成功排队后才发布调用方可读取的系统剪贴板文本事实。
+        *clipboard_text = text.to_string();
+        // 同一事务随后发布本进程当前拥有 selection。
+        *owns_clipboard = true;
         // selection 请求提交后才发布新的 active source owner。
         self.clipboard_source = Some(source);
-        if let Ok(mut owns) = self.owns_clipboard.lock() {
-            *owns = true;
-        }
         Ok(())
     }
     fn has_text(&self) -> Result<bool> {

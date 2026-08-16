@@ -65,7 +65,7 @@ class WaylandClipboardClosedGateTests(unittest.TestCase):
         set_text = source[set_start:set_end]
         # lifecycle gate 必须是首个 owner 决策。
         gate = set_text.index('self.ensure_clipboard_open("set_text")?')
-        # 缓存 mutex 是第一份共享 owner 访问。
+        # 缓存 mutex 是 lifecycle gate 后需要验证的共享 owner 访问。
         cache_lock = set_text.index("self.clipboard_text.lock()")
         # data-device manager 检查必须晚于 gate。
         manager_access = set_text.index("self.data_device_manager")
