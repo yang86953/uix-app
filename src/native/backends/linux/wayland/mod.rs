@@ -11,6 +11,8 @@ pub(crate) mod compat;
 pub(crate) mod cursor;
 pub(crate) mod display;
 pub(crate) mod event_loop;
+// 原生 frame callback Component 独占 one-shot 请求消费与事件投递。
+pub(crate) mod frame_callback;
 // 输入代理生命周期模块把完整 capability 快照收敛为幂等边沿。
 pub(crate) mod input_proxy_lifecycle;
 pub(crate) mod keyboard;

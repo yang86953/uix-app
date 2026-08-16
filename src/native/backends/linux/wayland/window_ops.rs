@@ -11,7 +11,6 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 
 use super::compat::Main;
 use wayland_client::backend::WaylandError;
@@ -58,6 +57,8 @@ use crate::native::windowing::shared::WindowState;
 use crate::native::windowing::window::{NativeFrameRequest, NativeFrameRequestPhase};
 
 use super::compat::WaylandDispatchState;
+// 引入私有 frame callback Component，保持 WindowOps 只编排协议生命周期。
+use super::frame_callback::deliver_frame_opportunity;
 // 引入 Wayland 私有授权注册表及其非致命消费结果。
 use super::pointer_activation::{
     // 消费结果区分可提交 serial 与正常竞态忽略。
@@ -733,10 +734,16 @@ impl WindowOps for WaylandWindowOps {
             .as_ref()
             .ok_or_else(|| Self::missing_proxy("os_request_native_frame", "wl_surface"))?;
         {
-            let mut active = self
-                .frame_request
-                .lock()
-                .unwrap_or_else(|error| error.into_inner());
+            // request owner 损坏必须向同步调用方返回 typed failure。
+            let mut active = self.frame_request.lock().map_err(|_| {
+                // 构造稳定的 request 登记阶段错误。
+                Error::new(
+                    // active request owner 已无法安全访问。
+                    Errc::InvalidState,
+                    // 保留原生 frame 请求登记阶段。
+                    "Wayland frame request mutex poisoned during registration",
+                )
+            })?;
             if active.as_ref() == Some(&request) {
                 return Ok(true);
             }
@@ -746,38 +753,44 @@ impl WindowOps for WaylandWindowOps {
         let callback = surface.frame();
         let active = Arc::clone(&self.frame_request);
         let events = Arc::clone(&self.events);
+        // callback 复用窗口所属 backend 的同一 owner-thread failure source。
+        let frame_failures = self.pending_failures.clone();
         let window_id = self.window_id;
         callback.quick_assign(move |_, event, _| {
             if !matches!(event, wl_callback::Event::Done { .. }) {
                 return;
             }
-            let should_deliver = {
-                let mut current = active.lock().unwrap_or_else(|error| error.into_inner());
-                if current.as_ref() == Some(&request) {
-                    *current = None;
-                    true
-                } else {
-                    false
-                }
-            };
-            if should_deliver {
-                events
-                    .lock()
-                    .unwrap_or_else(|error| error.into_inner())
-                    .push_back(
-                        UiEvent::frame_opportunity(request.token, Instant::now(), None)
-                            .for_window(window_id),
-                    );
+            // 私有 Component 检查式消费 request 并投递逐窗事件。
+            if let Err(error) = deliver_frame_opportunity(
+                // 传入单窗口唯一 active request owner。
+                &active,
+                // 传入 callback 与 App owner 之间的唯一事件队列。
+                &events,
+                // 传入本底层 callback 对应的精确 token。
+                request,
+                // 绑定本次 frame opportunity 的窗口身份。
+                window_id,
+                // 在 callback 到达点记录单调时间。
+                std::time::Instant::now(),
+            ) {
+                // callback 只入队 typed failure，不执行恢复、报告或用户代码。
+                let _ = frame_failures.enqueue(error);
             }
         });
         Ok(true)
     }
 
     fn os_cancel_native_frame(&mut self, token: FrameRequestToken) -> Result<()> {
-        let mut active = self
-            .frame_request
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        // request owner 损坏必须向同步调用方返回 typed failure。
+        let mut active = self.frame_request.lock().map_err(|_| {
+            // 构造稳定的 request 取消阶段错误。
+            Error::new(
+                // active request owner 已无法安全访问。
+                Errc::InvalidState,
+                // 保留原生 frame 请求取消阶段。
+                "Wayland frame request mutex poisoned during cancellation",
+            )
+        })?;
         if active
             .as_ref()
             .is_some_and(|request| request.token == token)
