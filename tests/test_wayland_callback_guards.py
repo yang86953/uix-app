@@ -17,6 +17,8 @@ WAYLAND_WINDOW_FACTORY = ROOT / "src/native/backends/linux/wayland/window.rs"
 WAYLAND_CLIPBOARD = ROOT / "src/native/backends/linux/wayland/clipboard.rs"
 # 读取 Wayland frame callback 私有 Component。
 WAYLAND_FRAME_CALLBACK = ROOT / "src/native/backends/linux/wayland/frame_callback.rs"
+# 读取 Wayland surface 跨注册表注销 Component。
+WAYLAND_SURFACE_REGISTRATION = ROOT / "src/native/backends/linux/wayland/surface_registration.rs"
 # 读取 Linux 平台的 owner-thread 失败提取边界。
 PLATFORM = ROOT / "src/native/backends/linux/platform.rs"
 # 定位 Wayland 窗口操作与装饰模式实现。
@@ -206,6 +208,74 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         frame_ops = window_ops[frame_start:frame_end]
         # frame request、callback 与 cancel 均不得恢复 poisoned mutex。
         self.assertNotIn("into_inner()", frame_ops)
+
+    # 确认窗口关闭只在两份健康注册表上提交 surface 注销事务。
+    def test_surface_unregistration_preserves_retryable_identity(self) -> None:
+        # 读取跨注册表注销 Component。
+        registration = WAYLAND_SURFACE_REGISTRATION.read_text(encoding="utf-8")
+        # 读取 WindowOps 的显式关闭与 Drop 编排。
+        window_ops = WINDOW_OPS.read_text(encoding="utf-8")
+        # Component 不得恢复任一 poisoned registry。
+        self.assertNotIn("into_inner()", registration)
+        # 两份 owner 损坏必须分别产生稳定诊断。
+        self.assertIn("pointer activation registry mutex poisoned", registration)
+        # surface 路由 owner 损坏也必须可定位。
+        self.assertIn("surface window registry mutex poisoned", registration)
+        # 记录第一份注册表 guard 的取得位置。
+        pointer_lock = registration.index("pointer_activations.lock()")
+        # 记录第二份注册表 guard 的取得位置。
+        surface_lock = registration.index("surface_windows.lock()")
+        # 记录授权注销提交位置。
+        unregister_pointer = registration.index("pointer_registry.unregister_surface")
+        # 记录路由注销提交位置。
+        unregister_surface = registration.index("surface_registry.unregister_surface")
+        # 第二份 guard 必须在第一项注销前取得。
+        self.assertLess(pointer_lock, surface_lock)
+        # 任一共享事实都不得在两份 guard 齐备前修改。
+        self.assertLess(surface_lock, unregister_pointer)
+        # 两项注销保持既定的授权后路由顺序。
+        self.assertLess(unregister_pointer, unregister_surface)
+        # 限定窗口私有注销方法。
+        method_start = window_ops.index("fn unregister_surface")
+        # 以窗口初始化标记方法末尾。
+        method_end = window_ops.index("pub(crate) fn init", method_start)
+        # 保存身份消费编排片段。
+        method = window_ops[method_start:method_end]
+        # Component 必须先完成跨注册表事务。
+        component_call = method.index("unregister_window_surface(")
+        # surface identity 只能在成功返回后清除。
+        clear_identity = method.index("self.surface_id = None")
+        # 失败路径必须保留 identity 供显式重试。
+        self.assertLess(component_call, clear_identity)
+        # 限定 Drop 实现。
+        drop_start = window_ops.index("impl Drop for WaylandWindowOps")
+        # WindowOps trait 实现标记 Drop 片段末尾。
+        drop_end = window_ops.index("impl WindowOps for WaylandWindowOps", drop_start)
+        # 保存 Drop 失败转交通道。
+        drop_source = window_ops[drop_start:drop_end]
+        # Drop 必须观察注销失败。
+        self.assertIn("if let Err(error) = self.unregister_surface()", drop_source)
+        # 无同步接收方时必须复用 backend pending source。
+        self.assertIn("self.pending_failures.enqueue(error)", drop_source)
+        # 限定显式关闭实现。
+        close_start = window_ops.index("fn os_close")
+        # 主动关闭方法标记显式 teardown 片段末尾。
+        close_end = window_ops.index("fn os_request_close", close_start)
+        # 保存显式关闭事务。
+        close_source = window_ops[close_start:close_end]
+        # frame request 锁中毒必须同步传播 typed failure。
+        self.assertIn("frame request mutex poisoned during window close", close_source)
+        # 显式关闭不得恢复损坏的 request owner。
+        self.assertNotIn("into_inner()", close_source)
+        # 注册表失败必须通过问号传播。
+        self.assertIn("self.unregister_surface()?", close_source)
+        # 注册表注销必须先于任何协议对象释放。
+        self.assertLess(
+            # 获取 checked 注销位置。
+            close_source.index("self.unregister_surface()?"),
+            # 获取第一个协议对象释放位置。
+            close_source.index("self.xdg_decoration = None"),
+        )
 
     # 确认 Wayland dispatch 与关闭失败最终都进入 owner-thread 队列。
     def test_dispatch_failures_reach_owner_pending_source(self) -> None:

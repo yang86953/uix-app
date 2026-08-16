@@ -1,9 +1,7 @@
 // ============================================================================
 // platform/linux/wayland/window_ops.rs — Wayland 平台窗口操作
-//
 // WaylandWindowOps 实现 WindowOps trait，封装 Wayland 协议窗口调用。
 // 与 PlatformWindowCore<WaylandWindowOps> 组合使用。
-//
 // SHM 像素呈现由独立的 WaylandPresenter 处理。
 // ============================================================================
 
@@ -67,6 +65,8 @@ use super::pointer_activation::{
     WaylandPointerActivationRegistry,
     // 结束指针激活私有类型导入。
 };
+// 引入跨注册表原子注销 Component，窗口 owner 只编排协议生命周期。
+use super::surface_registration::unregister_window_surface;
 
 /// Wayland 平台窗口操作句柄。
 ///
@@ -174,22 +174,28 @@ impl WaylandWindowOps {
         }
     }
 
-    fn unregister_surface(&mut self) {
-        let Some(surface_id) = self.surface_id.take() else {
-            return;
+    // 检查式注销当前 surface，并只在事务成功后清除可重试身份。
+    fn unregister_surface(&mut self) -> Result<()> {
+        // 重复注销保持幂等，不触碰任何共享注册表。
+        let Some(surface_id) = self.surface_id else {
+            // 当前窗口已经没有活动 surface 注册事实。
+            return Ok(());
         };
-        // 先在独立短锁中撤销该 surface 的全部未消费拖动授权。
-        self.pointer_activations
-            // 获取 Wayland 激活注册表唯一可变访问。
-            .lock()
-            // 中毒时仍完成窗口 owner 的确定性清理。
-            .unwrap_or_else(|error| error.into_inner())
-            // 旧窗口不得注销后来复用同编号的新窗口注册。
-            .unregister_surface(surface_id, self.window_id);
-        self.surface_windows
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .unregister_surface(surface_id);
+        // 私有 Component 在任一修改前取得两份健康注册表 guard。
+        unregister_window_surface(
+            // 传入 raw pointer activation 的唯一共享 owner。
+            &self.pointer_activations,
+            // 传入 surface 到窗口身份的唯一共享 owner。
+            &self.surface_windows,
+            // 注销当前协议 surface 编号。
+            surface_id,
+            // 限定只能删除仍属于当前窗口的授权注册。
+            self.window_id,
+        )?;
+        // 两份注册表均成功注销后才消费窗口持有的可重试身份。
+        self.surface_id = None;
+        // 显式报告注销事务成功。
+        Ok(())
     }
 
     /// 初始化 Wayland 窗口：创建 surface/toplevel、设置装饰、绑定事件回调。
@@ -423,7 +429,11 @@ impl WaylandWindowOps {
 
 impl Drop for WaylandWindowOps {
     fn drop(&mut self) {
-        self.unregister_surface();
+        // Drop 没有同步返回通道，失败必须进入所属 backend 的 pending source。
+        if let Err(error) = self.unregister_surface() {
+            // source 已关闭时不存在更高层 receiver，保持既有 fail-closed 语义。
+            let _ = self.pending_failures.enqueue(error);
+        }
     }
 }
 
@@ -453,11 +463,18 @@ impl WindowOps for WaylandWindowOps {
     }
 
     fn os_close(&mut self) -> Result<()> {
-        *self
-            .frame_request
-            .lock()
-            .unwrap_or_else(|error| error.into_inner()) = None;
-        self.unregister_surface();
+        // frame request owner 损坏时不得继续释放窗口协议对象。
+        *self.frame_request.lock().map_err(|_| {
+            // 构造稳定的窗口关闭阶段错误。
+            Error::new(
+                // 共享请求状态已无法安全访问。
+                Errc::InvalidState,
+                // 保留 frame request 与窗口关闭阶段。
+                "Wayland frame request mutex poisoned during window close",
+            )
+        })? = None;
+        // 注册表失败同步传播，并保留 surface identity 与协议对象供显式重试。
+        self.unregister_surface()?;
         // 装饰对象依赖 xdg_toplevel，必须先于顶层窗口释放。
         self.xdg_decoration = None;
         self.toplevel = None;
