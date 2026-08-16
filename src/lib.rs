@@ -223,6 +223,9 @@ mod uix_lang_dynamic_text_consumer_tests;
 // 隔离 Anchor 活动指示线配置的公开 API 编译测试。
 #[cfg(test)]
 mod uix_lang_anchor_configuration_consumer_tests;
+// 隔离 Breadcrumb 分隔符与折叠阈值的公开 API 编译测试。
+#[cfg(test)]
+mod uix_lang_breadcrumb_configuration_consumer_tests;
 // 隔离 Form 顶层全模型规则的公开 API 编译测试。
 #[cfg(test)]
 mod uix_lang_form_rules_consumer_tests;

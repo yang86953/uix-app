@@ -5,8 +5,8 @@ use quote::quote;
 
 // 引入公共属性与叶节点形状判定。
 use super::codegen::{apply_common_attributes, is_renderable_node};
-// 引入 Breadcrumb 属性、表达式与诊断契约。
-use super::{Attribute, AttributeValue, Diagnostic, Element, generate_expression};
+// 引入 Breadcrumb 属性、表达式、字符串与诊断契约。
+use super::{generate_expression, string_value, Attribute, AttributeValue, Diagnostic, Element};
 
 // 生成拥有类型化路径数据并由运行时保持选择生命周期的 Breadcrumb。
 pub(crate) fn generate_breadcrumb(element: &Element) -> Result<TokenStream, Diagnostic> {
@@ -46,11 +46,25 @@ pub(crate) fn generate_breadcrumb(element: &Element) -> Result<TokenStream, Diag
     };
 
     // 由 Breadcrumb 运行时接收条目并落实文档的末项当前页语义。
-    let widget = quote! {
+    let mut widget = quote! {
         ::uix::prelude::Breadcrumb::new()
             .items(#breadcrumb_items)
             .last_active()
     };
+    // separator 只声明可见路径条目之间的分隔文本。
+    if let Some(attribute) = find_attribute(element, "separator") {
+        // 解析字符串字面量或表达式。
+        let separator = string_value(attribute)?;
+        // 调用公开分隔符配置入口。
+        widget = quote! { (#widget).separator(#separator) };
+    }
+    // maxItems 只声明溢出折叠前的最大可见条目数。
+    if let Some(attribute) = find_attribute(element, "maxItems") {
+        // 解析 usize 字面量或表达式。
+        let max_items = usize_value(attribute)?;
+        // 调用公开折叠阈值入口。
+        widget = quote! { (#widget).max_items(#max_items) };
+    }
     // Breadcrumb 物化为公开叶 View。
     let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
     // 消费 Breadcrumb 专有属性并应用公共 View 属性。
@@ -60,8 +74,46 @@ pub(crate) fn generate_breadcrumb(element: &Element) -> Result<TokenStream, Diag
         // 保留属性源码顺序供公共映射处理。
         &element.attributes,
         // 防止专有 items 进入公共映射。
-        &["items"],
+        &["items", "separator", "maxItems"],
     )
+}
+
+// 生成 Breadcrumb usize 字面量或表达式属性。
+fn usize_value(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
+    // 按属性值形状生成折叠阈值。
+    match &attribute.value {
+        // 字面量在生成期验证为十进制 usize。
+        AttributeValue::Literal(source) => {
+            // 拒绝负数、小数与溢出值。
+            let value = source.parse::<usize>().map_err(|_| {
+                // 返回精确 maxItems 诊断。
+                Diagnostic::new(
+                    // 指向非法属性。
+                    attribute.span,
+                    // 说明公开运行时类型。
+                    "Breadcrumb maxItems 必须是 usize 整数",
+                    // 给出字面量或表达式修复建议。
+                    "使用 maxItems=\"3\" 或 maxItems={maximum}",
+                )
+            })?;
+            // 返回已验证的 usize 字面量。
+            Ok(quote! { #value })
+        }
+        // 动态表达式由 Rust 类型系统核对 usize。
+        AttributeValue::Expression(expression) => {
+            // 生成受限 Rust 表达式。
+            generate_expression(&expression.expression, None)
+        }
+        // 内联样式不能表达折叠阈值。
+        AttributeValue::InlineStyle(_) => Err(Diagnostic::new(
+            // 指向非法属性。
+            attribute.span,
+            // 说明公开运行时类型。
+            "Breadcrumb maxItems 必须是 usize 整数",
+            // 给出字面量或表达式修复建议。
+            "使用 maxItems=\"3\" 或 maxItems={maximum}",
+        )),
+    }
 }
 
 // 查找元素上的具名属性。

@@ -408,8 +408,8 @@
       <Column gap="12px">
         // 展示面板小节标题。
         <Text fontSize="heading5">Breadcrumb / Anchor</Text>
-        // 展示末项激活面包屑。
-        <Breadcrumb items={[BreadcrumbItem('首页'), BreadcrumbItem('组件'), BreadcrumbItem('导航').active()]} />
+        // 展示自定义分隔符和折叠阈值的末项激活面包屑。
+        <Breadcrumb items={[BreadcrumbItem('首页'), BreadcrumbItem('组件'), BreadcrumbItem('导航').active()]} separator="›" maxItems="3" />
         // 展示关闭活动指示线、带偏移与 href 事件的锚点导航。
         <Anchor items={[AnchorItem('基础', '#basic'), AnchorItem('高级', '#advanced'), AnchorItem('API', '#api')]} offsetTop="24" showInk="false" @change="on_anchor_change($event)" />
       // 结束面包屑内容。
