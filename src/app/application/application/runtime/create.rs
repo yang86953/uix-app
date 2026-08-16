@@ -26,17 +26,15 @@ pub(super) fn create_secondary_window(
         root,
     } = config;
 
-    let mut platform_window = match platform
-        .window_manager()
-        .create_window(&title, width, height)
-    {
-        Ok(window) => window,
-        Err(e) => {
-            runtime.close_session(window_id);
-            tracing::error!("open_window create_window failed: {}", e.short_what());
-            return None;
-        }
-    };
+    let mut platform_window =
+        match create_app_window(platform.window_manager(), &title, width, height) {
+            Ok(window) => window,
+            Err(e) => {
+                runtime.close_session(window_id);
+                tracing::error!("open_window create_window failed: {}", e.short_what());
+                return None;
+            }
+        };
     if platform_window.window_id() != window_id {
         let actual = platform_window.window_id();
         report_window_operation_error(
