@@ -42,9 +42,7 @@ use crate::diagnostics::PendingFailureSource;
 use crate::native::presentation::graphics::platform::linux::WaylandSurfaceHandle;
 // 引入帧事件、UI 事件与不可解释的指针激活身份。
 use crate::native::windowing::event::{FrameRequestToken, PointerActivationId, UiEvent};
-use crate::native::windowing::shared::window_mode::{
-    NativeMaximizeTransition, NativeWindowModeState,
-};
+use crate::native::windowing::shared::window_mode::{NativeMaximizeTransition, NativeWindowModeState};
 use crate::native::windowing::shared::window_target::SurfaceWindowTargets;
 // 直接从共享窗口模块引入 Wayland 需要的未实现操作，避免其他目标产生未使用重导出。
 use crate::native::windowing::shared::window::{WindowOps, unimpl};
@@ -473,8 +471,8 @@ impl WindowOps for WaylandWindowOps {
         self.unregister_surface()?;
         // 装饰对象依赖 xdg_toplevel，必须先于顶层窗口释放。
         self.xdg_decoration = None;
-        self.toplevel = None;
-        self.xdg_surface = None;
+        // 先注销 xdg-shell callbacks，再释放两个逐窗协议 handles。
+        self.shutdown_window_callbacks();
         self.surface = None;
         self.input_region = None;
         Ok(())

@@ -41,6 +41,8 @@ pub(crate) mod shm_buffer;
 pub(crate) mod surface_registration;
 pub(crate) mod text_input;
 pub(crate) mod window;
+// 逐窗 callback shutdown Component 独占 xdg-shell 回调注销顺序。
+pub(crate) mod window_callback_shutdown;
 pub(crate) mod window_ops;
 
 // ── 依赖 ────────────────────────────────────────────────────────
