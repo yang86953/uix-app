@@ -181,6 +181,27 @@ impl WaylandBackend {
         self.pending_failures.take()
     }
 
+    // 确定性注销由 backend global Component 独占的协议回调与显示状态。
+    pub(crate) fn shutdown_global_callbacks(&mut self) {
+        // 先注销 wm-base ping callback，避免 backend 关闭后继续发送 pong。
+        self._wm_base.clear_callback();
+        // 再逐个注销 output callback，阻止它们继续改写共享显示状态。
+        for output in &self._wl_outputs {
+            // 每个兼容代理都必须先脱离注册表，再释放本地 handle。
+            output.clear_callback();
+        }
+        // 所有回调失效后释放 backend 持有的 output handles。
+        self._wl_outputs.clear();
+        // teardown 位于 owner thread，允许恢复锁所有权后清空不可再观察的状态。
+        self.outputs
+            // 中毒只表示旧 callback 曾 panic，不改变关闭阶段的独占清理权。
+            .lock()
+            // 关闭路径不得因遗留 PoisonError 跳过状态释放。
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            // 移除全部过期显示快照。
+            .clear();
+    }
+
     pub(crate) fn create_wake_pipe() -> Result<(RawFd, RawFd), String> {
         let mut fds = [0; 2];
         let flags = libc::O_CLOEXEC | libc::O_NONBLOCK;
@@ -379,6 +400,8 @@ impl Drop for WaylandBackend {
         self.shutdown_seat_and_input();
         // 再释放 clipboard 在途 read/write FD 与过期授权状态。
         self.shutdown_clipboard_io();
+        // 最后注销 backend 全局 callbacks 并释放显示状态 owner。
+        self.shutdown_global_callbacks();
         self.pending_failures.close();
         // SAFETY: 两个描述符由 create_wake_pipe 独占创建，到此尚未关闭且 Drop 只执行一次。
         let _ = unsafe { libc::close(self.wake_read_fd) };
