@@ -30,6 +30,37 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         self.assertIn("fn event_created_child", source)
         self.assertIn("missing event-created child dispatch", source)
 
+    # 确认 callback registry 状态损坏通过检查式 Component 进入 owner source。
+    def test_callback_registry_state_failures_are_checked(self) -> None:
+        # 读取 Wayland 0.31 callback compatibility adapter。
+        source = COMPAT.read_text(encoding="utf-8")
+        # registry Component 必须成为 callback map 的唯一 owner。
+        self.assertIn("struct CallbackRegistry", source)
+        # callback map 锁中毒不得继续通过 PoisonError 恢复访问。
+        self.assertNotIn("unwrap_or_else(|error| error.into_inner())", source)
+        # register/unregister/take/reinsert 必须共享稳定的锁中毒诊断。
+        self.assertIn("Wayland callback registry mutex poisoned during {operation}", source)
+        # 擦除 callback 类型错配必须形成稳定 typed failure。
+        self.assertIn("callback registry type mismatch", source)
+        # dispatch 必须使用检查式 downcast，而不是静默 if-let 丢弃。
+        self.assertIn("downcast_callback::<I>", source)
+        # 限定 WaylandDispatchState 的 callback 执行片段。
+        dispatch_start = source.index("fn dispatch<I>")
+        # Dispatch trait 实现标记 dispatch helper 的末尾。
+        dispatch_end = source.index("impl<I> Dispatch", dispatch_start)
+        # 保存 callback 执行与回插代码。
+        dispatch = source[dispatch_start:dispatch_end]
+        # callback panic 必须仍由 catch_unwind 隔离。
+        catch_index = dispatch.index("catch_unwind")
+        # panic 必须转换为 owner-thread failure。
+        panic_index = dispatch.index("report_callback_panic::<I>")
+        # 健康 registry 必须在 panic 转换之后仍回插 callback owner。
+        reinsert_index = dispatch.index('"callback reinsert"')
+        # panic 转换只能发生在 catch_unwind 之后。
+        self.assertLess(catch_index, panic_index)
+        # 回插必须覆盖 callback 成功与 panic 两种结果。
+        self.assertLess(panic_index, reinsert_index)
+
     # 确认 Wayland dispatch 与关闭失败最终都进入 owner-thread 队列。
     def test_dispatch_failures_reach_owner_pending_source(self) -> None:
         # 读取兼容层的 callback source 持有与入队路径。
