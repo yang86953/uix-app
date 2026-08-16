@@ -306,12 +306,17 @@ impl WaylandDispatchState {
             // 执行本次协议事件对应的唯一 callback。
             callback(&callback_proxy, event, qh);
         }));
-        // callback panic 必须形成 typed failure，但仍允许健康 registry 保留 callback。
+        // callback panic 必须形成 typed failure；生命周期策略在转换完成后统一决定 owner 去留。
         if callback_result.is_err() {
             // 把平台 panic 送到同一 owner-thread failure source。
             self.registry.report_callback_panic::<I>();
         }
-        // 无论 callback 成功或 panic，都把仍存活的 owner 放回健康 registry。
+        // wl_callback 在 Done 后由服务端销毁，成功或 panic 都不得回插陈旧 owner。
+        if TypeId::of::<I>() == TypeId::of::<wl_callback::WlCallback>() {
+            // 返回会释放当前 callback 闭包，协议编号复用时不会命中旧 owner。
+            return;
+        }
+        // 其他持久 callback 无论成功或 panic 都把仍存活的 owner 放回健康 registry。
         let _ = self.registry.insert(
             // 回插到本次 dispatch 取出的精确协议对象键。
             key,
