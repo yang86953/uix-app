@@ -11,6 +11,8 @@ EVENT_LOOP = ROOT / "src/native/backends/linux/wayland/event_loop.rs"
 COMPAT = ROOT / "src/native/backends/linux/wayland/compat.rs"
 # 读取 wl_output callback 与显示状态 owner 的接线。
 WAYLAND_BACKEND = ROOT / "src/native/backends/linux/wayland/mod.rs"
+# 读取单窗口 callback adapter 的 backend source 注入点。
+WAYLAND_WINDOW_FACTORY = ROOT / "src/native/backends/linux/wayland/window.rs"
 # 读取 Linux 平台的 owner-thread 失败提取边界。
 PLATFORM = ROOT / "src/native/backends/linux/platform.rs"
 # 定位 Wayland 窗口操作与装饰模式实现。
@@ -85,6 +87,55 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         for event_name in ["Geometry", "Mode", "Scale", "Done"]:
             # 每类 wl_output 事件都必须仍由同一 callback 处理。
             self.assertIn(f"Event::{event_name}", output_callback)
+
+    # 确认 xdg_toplevel Configure 在全部 owner 可用后才提交同源状态。
+    def test_toplevel_callback_commits_window_state_transactionally(self) -> None:
+        # 读取单窗口协议 adapter。
+        window_ops = WINDOW_OPS.read_text(encoding="utf-8")
+        # 读取 Wayland 窗口工厂。
+        window_factory = WAYLAND_WINDOW_FACTORY.read_text(encoding="utf-8")
+        # 窗口 callback 必须持有 backend 注入的 source。
+        self.assertIn("pending_failures: PendingFailureSource", window_ops)
+        # 工厂必须复用 backend source，禁止创建空 failure queue。
+        self.assertIn("self.pending_failures.clone()", window_factory)
+        # toplevel callback 接线起点。
+        callback_start = window_ops.index("let tl_events = events.clone()")
+        # 装饰初始化标记 callback 片段终点。
+        callback_end = window_ops.index("// 窗口装饰", callback_start)
+        # 保存 Close/Configure callback 片段。
+        callback = window_ops[callback_start:callback_end]
+        # callback 内不得通过 into_inner 恢复损坏 owner。
+        self.assertNotIn("into_inner()", callback)
+        # Close 队列失败必须有稳定诊断。
+        self.assertIn("Wayland xdg_toplevel Close event queue mutex poisoned", callback)
+        # Configure 三个 owner 失败必须各自可定位。
+        self.assertIn("Configure mode state mutex poisoned", callback)
+        # WindowState 借用必须使用非 panic 路径。
+        self.assertIn("window_state.try_borrow_mut()", callback)
+        # Configure 队列失败必须有稳定诊断。
+        self.assertIn("Configure event queue mutex poisoned", callback)
+        # Configure 分支标记事务代码起点。
+        configure_start = callback.index("xdg_toplevel::Event::Configure")
+        # 保存 Configure 事务片段。
+        configure = callback[configure_start:]
+        # 先取得模式 owner。
+        mode_lock = configure.index("configured_modes.lock()")
+        # 再检查 WindowState 写借用。
+        state_borrow = configure.index("window_state.try_borrow_mut()")
+        # 最后取得事件队列 owner。
+        queue_lock = configure.index("tl_events.lock()")
+        # 全部 owner 可用后才允许改写模式。
+        apply_modes = configure.index("modes.apply_configure")
+        # 锁与借用检查必须保持事务前置顺序。
+        self.assertLess(mode_lock, state_borrow)
+        # WindowState 检查必须先于事件队列检查。
+        self.assertLess(state_borrow, queue_lock)
+        # 任何模式改写必须发生在全部 owner 检查之后。
+        self.assertLess(queue_lock, apply_modes)
+        # 健康路径必须继续生成 resize/maximize/restore 三类事件。
+        for event_name in ["UiEvent::resize", "WindowMaximize", "WindowRestore"]:
+            # 每类既有窗口事实都必须保留。
+            self.assertIn(event_name, configure)
 
     # 确认 Wayland dispatch 与关闭失败最终都进入 owner-thread 队列。
     def test_dispatch_failures_reach_owner_pending_source(self) -> None:
