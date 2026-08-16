@@ -7,6 +7,11 @@ use super::window_ops::WaylandWindowOps;
 impl WaylandWindowOps {
     // 注销并释放当前窗口的 xdg_toplevel 与 xdg_surface callback owners。
     pub(super) fn shutdown_window_callbacks(&mut self) {
+        // pending activation token 依赖目标 surface，必须最先注销。
+        if let Some(activation_token) = self.activation_token.take() {
+            // 窗口关闭后不得再处理迟到 Done 或激活旧 surface。
+            activation_token.clear_callback();
+        }
         // 先取出 toplevel handle，阻止后续入口重新观察旧 owner。
         if let Some(toplevel) = self.toplevel.take() {
             // handle 仍存活时从兼容注册表注销精确 callback。
