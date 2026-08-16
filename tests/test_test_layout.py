@@ -26,6 +26,8 @@ IGNORED_PARTS = {".git", "target"}
 PYTHON_TEST_PATTERNS = ("test_*.py", "*_test.py", "*_tests.py")
 # 固化 Rust 测试源码文件命名。
 RUST_TEST_PATTERNS = ("test_*.rs", "*_test.rs", "*_tests.rs")
+# 固化当前独立 Rust 集成入口只承载公开 API 契约的命名后缀。
+PUBLIC_API_TEST_SUFFIX = "_public_api.rs"
 
 
 # 收集匹配一组测试命名模式的仓库文件。
@@ -215,10 +217,23 @@ class TestLayoutConvention(unittest.TestCase):
             # 未接线文件必须作为精确相对路径报告。
             self.assertEqual(outside_unwired_rust_tests(root, tests_root), ["src/orphan_tests.rs"])
 
-    # 确认 GFX-R5 集成入口继续位于 tests 目录。
-    def test_gfx_r5_integration_entrypoint_is_in_tests(self) -> None:
-        # 集成测试入口必须保持为 tests/tests.rs。
-        self.assertTrue((TESTS_ROOT / "tests.rs").is_file())
+    # 确认独立 Rust 集成入口只保留公开 API 契约测试。
+    def test_rust_integration_entrypoints_are_public_api_contracts(self) -> None:
+        # 收集 tests 根目录下由 Cargo 自动发现的 Rust 集成入口。
+        entrypoints = sorted(path for path in TESTS_ROOT.glob("*.rs") if path.is_file())
+        # 当前仓库必须至少保留一个公开 API 集成入口。
+        self.assertNotEqual(entrypoints, [])
+        # 收集仍使用旧聚合入口或非公开契约命名的文件。
+        violations = [
+            # 使用文件名生成跨机器稳定诊断。
+            path.name
+            # 逐个检查 Cargo 自动发现的集成入口。
+            for path in entrypoints
+            # 只接受当前仓库决策明确保留的公开 API 契约后缀。
+            if not path.name.endswith(PUBLIC_API_TEST_SUFFIX)
+        ]
+        # 不锁死入口数量，只拒绝重新引入非公开集成测试入口。
+        self.assertEqual(violations, [])
 
 
 # 允许直接执行当前测试文件。
