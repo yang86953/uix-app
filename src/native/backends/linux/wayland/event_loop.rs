@@ -822,9 +822,20 @@ impl WaylandBackend {
         }
     }
 
+    // 把首次致命运行期失败收敛为幂等 backend 关闭边沿。
     fn close_after_failure(&mut self, code: Errc, message: String) -> bool {
+        // 已关闭 backend 不重复入队根因或重复拆除输入代理。
+        if self.closed {
+            // 所有 dispatch 调用继续观察到退出状态。
+            return false;
+        }
+        // 首次根因必须在 source 仍开放时进入 owner-thread 队列。
         self.enqueue_failure(Error::new(code, message));
+        // 先建立 closed 事实，阻止后续入口开始新协议工作。
         self.closed = true;
+        // 随后立即撤销输入授权、焦点、重复状态与 seat 派生 callbacks。
+        self.shutdown_seat_and_input();
+        // 运行期失败统一终止当前 dispatch。
         false
     }
 
@@ -844,24 +855,28 @@ impl WaylandBackend {
         }
     }
 
-    pub(crate) fn flush_checked(&self, context: &str) -> bool {
+    // flush 致命失败必须取得 backend owner 并进入同一关闭边沿。
+    pub(crate) fn flush_checked(&mut self, context: &str) -> bool {
+        // 只向当前 Wayland connection 提交既有请求。
         match self.display.flush() {
+            // 健康 flush 允许继续 poll。
             Ok(()) => true,
+            // 非阻塞 socket 暂时不可写不是 backend 失效。
             Err(WaylandError::Io(error)) if error.kind() == std::io::ErrorKind::WouldBlock => true,
-            Err(WaylandError::Io(error)) => {
-                self.enqueue_failure(Error::new(
-                    Errc::IoError,
-                    format!("Wayland {context} flush error: {error}"),
-                ));
-                false
-            }
-            Err(WaylandError::Protocol(error)) => {
-                self.enqueue_failure(Error::new(
-                    Errc::PlatformError,
-                    format!("Wayland {context} protocol error: {error}"),
-                ));
-                false
-            }
+            // 其他 socket 错误表示本 backend 无法继续调度。
+            Err(WaylandError::Io(error)) => self.close_after_failure(
+                // 保留既有 I/O 错误分类。
+                Errc::IoError,
+                // 保留 flush context 与底层错误文本。
+                format!("Wayland {context} flush error: {error}"),
+            ),
+            // Wayland 协议错误同样终止当前 backend 生命周期。
+            Err(WaylandError::Protocol(error)) => self.close_after_failure(
+                // 保留既有平台协议错误分类。
+                Errc::PlatformError,
+                // 保留 flush context 与协议错误文本。
+                format!("Wayland {context} protocol error: {error}"),
+            ),
         }
     }
 }
