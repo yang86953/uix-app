@@ -1,5 +1,28 @@
 use super::*;
 
+// 在唯一 owner 槽位内关闭 fence event，并在失败时恢复所有权供上层重试。
+fn close_owned_fence_event_with(
+    // 持有待关闭 HANDLE 的唯一 owner 槽位。
+    slot: &mut Option<HANDLE>,
+    // 注入实际 Win32 关闭动作，便于可控验证失败路径。
+    close: impl FnOnce(HANDLE) -> Result<()>,
+) -> Result<()> {
+    // 没有 event 表示该资源已成功关闭，无需重复调用底层 API。
+    let Some(event) = slot.take() else {
+        // 已关闭状态保持幂等成功。
+        return Ok(());
+    };
+    // 观察底层关闭结果，禁止静默丢弃 HANDLE 生命周期失败。
+    if let Err(error) = close(event) {
+        // 关闭失败时 HANDLE 仍归当前 context 所有，恢复槽位允许 Drop 重试。
+        *slot = Some(event);
+        // 将 typed error 原样传播给图形生命周期 owner。
+        return Err(error);
+    }
+    // 关闭成功时槽位保持为空，确保底层关闭只发生一次。
+    Ok(())
+}
+
 impl D3d12Context {
     pub(crate) fn new(native_window: *mut c_void, width: i32, height: i32) -> Result<Self> {
         if native_window.is_null() {
@@ -652,13 +675,96 @@ impl D3d12Context {
         }
         self.pending_gpu_resources.clear();
         self.back_buffers.clear();
-        if let Some(event) = self.fence_event.take() {
-            // SAFETY: event 经 take() 取出后所有权唯一，只在此关闭一次，此后不再被引用。
-            unsafe {
-                let _ = CloseHandle(event);
-            }
+        // 关闭 context 唯一持有的 fence event，并保留失败后的重试所有权。
+        if let Err(error) = close_owned_fence_event_with(&mut self.fence_event, |event| {
+            // SAFETY: event 来自唯一 owner 槽位，成功后不会再次使用；失败时由 helper 恢复所有权。
+            unsafe { CloseHandle(event) }
+                // 将 Win32 失败映射为框架稳定的 typed error。
+                .map_err(|error| d3d12_error("CloseHandle fence event", error))
+        }) {
+            // 将 teardown 失败锁存到 context，供现有故障诊断链读取。
+            self.latch_fault("shutdown fence event close", &error);
+            // 传播失败，禁止把未关闭的 HANDLE 伪装成 shutdown 成功。
+            return Err(error);
         }
+        // 只有所有 GPU 资源和 fence event 都完成关闭后才提交 shutdown 状态。
         self.shutdown = true;
+        // 向上层确认本次检查式 teardown 完整成功。
         Ok(())
+    }
+}
+
+// 仅验证 D3D12 fence event owner 的关闭事务，不依赖真实 GPU 或 Win32 event。
+#[cfg(test)]
+mod fence_event_tests {
+    // 复用被测私有 helper、HANDLE 与框架错误类型。
+    use super::*;
+    // 使用 Cell 记录注入关闭动作的精确调用次数。
+    use std::cell::Cell;
+
+    // 成功关闭必须清空 owner 槽位，后续幂等调用不得重复关闭。
+    #[test]
+    fn successful_fence_event_close_runs_once() {
+        // 使用不会传给 Win32 的占位 HANDLE 验证所有权事务。
+        let mut slot = Some(HANDLE::default());
+        // 记录注入关闭动作的调用次数。
+        let calls = Cell::new(0_u32);
+        // 首次关闭应消费唯一 owner。
+        let first = close_owned_fence_event_with(&mut slot, |_| {
+            // 记录底层关闭动作确实执行一次。
+            calls.set(calls.get() + 1);
+            // 模拟 Win32 成功关闭。
+            Ok(())
+        });
+        // 首次关闭必须成功。
+        assert!(first.is_ok());
+        // 成功后 owner 槽位必须为空。
+        assert!(slot.is_none());
+        // 再次调用不得触碰底层关闭动作。
+        let second = close_owned_fence_event_with(&mut slot, |_| {
+            // 若执行到这里就说明幂等关闭破坏了唯一所有权。
+            calls.set(calls.get() + 1);
+            // 保持闭包返回类型稳定。
+            Ok(())
+        });
+        // 幂等关闭必须继续成功。
+        assert!(second.is_ok());
+        // 两次入口合计只能执行一次底层关闭。
+        assert_eq!(calls.get(), 1);
+    }
+
+    // 关闭失败必须恢复 owner，并允许下一次调用完成关闭。
+    #[test]
+    fn failed_fence_event_close_restores_owner_for_retry() {
+        // 使用不会传给 Win32 的占位 HANDLE 验证失败恢复。
+        let mut slot = Some(HANDLE::default());
+        // 记录失败与重试两次底层调用。
+        let calls = Cell::new(0_u32);
+        // 首次关闭注入稳定的 typed error。
+        let first = close_owned_fence_event_with(&mut slot, |_| {
+            // 记录第一次底层关闭尝试。
+            calls.set(calls.get() + 1);
+            // 模拟 Win32 CloseHandle 失败。
+            Err(platform_error("injected fence event close failure"))
+        });
+        // 首次关闭必须向上传播错误。
+        let error = first.expect_err("injected close failure must propagate");
+        // 错误必须保留平台失败分类。
+        assert_eq!(error.code(), Errc::PlatformError);
+        // 失败后 HANDLE 必须恢复给同一 owner。
+        assert!(slot.is_some());
+        // 重试关闭应消费恢复后的 HANDLE。
+        let retry = close_owned_fence_event_with(&mut slot, |_| {
+            // 记录第二次底层关闭尝试。
+            calls.set(calls.get() + 1);
+            // 模拟 Drop 或显式 owner 重试成功。
+            Ok(())
+        });
+        // 重试必须成功。
+        assert!(retry.is_ok());
+        // 重试成功后 owner 槽位必须为空。
+        assert!(slot.is_none());
+        // 失败与重试合计应精确调用底层两次。
+        assert_eq!(calls.get(), 2);
     }
 }
