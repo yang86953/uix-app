@@ -372,25 +372,78 @@ impl BootstrapContext {
         }
         Ok(context)
     }
+
+    // 按 WGL 依赖逆序关闭 bootstrap 资源，并只在成功后释放对应 owner 槽位。
+    fn shutdown_result(&mut self) -> Result<(), Error> {
+        // OpenGL context 必须先解绑再删除，后续 DC 与窗口才能安全释放。
+        if !self.hglrc.is_null() {
+            // SAFETY: 当前线程只持有本 bootstrap context；空 HDC/HGLRC 表示解除 current 绑定。
+            if unsafe { wglMakeCurrent(ptr::null_mut(), ptr::null_mut()) } == 0 {
+                // 解绑失败时保留全部句柄，允许 Drop 再次尝试完整 teardown。
+                return Err(windows_diag(
+                    // 将 WGL 关闭失败归入平台错误。
+                    Errc::PlatformError,
+                    // 保留失败的精确 native 操作名。
+                    "WglContext: bootstrap wglMakeCurrent(NULL) failed",
+                ));
+            }
+            // SAFETY: hglrc 仍由本对象唯一持有，且已从当前线程解除绑定。
+            if unsafe { wglDeleteContext(self.hglrc) } == 0 {
+                // 删除失败时保留 hglrc，供 Drop 重试并留下最终诊断。
+                return Err(windows_diag(
+                    // 将 WGL 关闭失败归入平台错误。
+                    Errc::PlatformError,
+                    // 保留失败的精确 native 操作名。
+                    "WglContext: bootstrap wglDeleteContext failed",
+                ));
+            }
+            // 只有删除成功后才提交 context owner 为空。
+            self.hglrc = ptr::null_mut();
+        }
+        // context 已删除后释放与隐藏窗口配对的 device context。
+        if !self.hdc.is_null() {
+            // SAFETY: hdc 来自同一 hwnd 的 GetDC，且仍由本对象唯一持有。
+            if !unsafe { release_device_context_checked(self.hwnd, self.hdc) } {
+                // 释放失败时保留 hdc 与 hwnd，允许 Drop 重试。
+                return Err(windows_diag(
+                    // 将 Win32 关闭失败归入平台错误。
+                    Errc::PlatformError,
+                    // 保留失败的精确 native 操作名。
+                    "WglContext: bootstrap ReleaseDC failed",
+                ));
+            }
+            // 只有 ReleaseDC 成功后才清空 device context owner。
+            self.hdc = ptr::null_mut();
+        }
+        // 最后销毁仅为加载 WGL 扩展而创建的隐藏窗口。
+        if !self.hwnd.is_null() {
+            // SAFETY: hwnd 由本对象创建且 context/DC 均已完成释放。
+            if unsafe { DestroyWindow(self.hwnd) } == 0 {
+                // 销毁失败时保留 hwnd，允许 Drop 重试。
+                return Err(windows_diag(
+                    // 将 Win32 关闭失败归入平台错误。
+                    Errc::PlatformError,
+                    // 保留失败的精确 native 操作名。
+                    "WglContext: bootstrap DestroyWindow failed",
+                ));
+            }
+            // 只有隐藏窗口销毁成功后才清空最终 owner 槽位。
+            self.hwnd = ptr::null_mut();
+        }
+        // 所有 bootstrap native 资源均已完成检查式关闭。
+        Ok(())
+    }
 }
 
 impl Drop for BootstrapContext {
     fn drop(&mut self) {
-        // SAFETY: 句柄均经 null 检查且本对象独占所有权；先解除 current 再删 context，随后按 hwnd/hdc 顺序释放，避免双重释放。
-        unsafe {
-            if !self.hglrc.is_null() {
-                wglMakeCurrent(ptr::null_mut(), ptr::null_mut());
-                wglDeleteContext(self.hglrc);
-                self.hglrc = ptr::null_mut();
-            }
-            if !self.hdc.is_null() {
-                release_device_context(self.hwnd, self.hdc);
-                self.hdc = ptr::null_mut();
-            }
-            if !self.hwnd.is_null() {
-                DestroyWindow(self.hwnd);
-                self.hwnd = ptr::null_mut();
-            }
+        // Drop 只重试尚未完成的检查式关闭，失败必须留下最终诊断。
+        if let Err(error) = self.shutdown_result() {
+            // 保留 bootstrap owner 身份与 typed error 摘要，便于定位启动期泄漏。
+            tracing::error!(
+                "WglContext: bootstrap checked shutdown failed during Drop: {}",
+                error.short_what()
+            );
         }
     }
 }
@@ -465,7 +518,8 @@ impl WglContext {
         }
 
         let result = (|| -> Result<Self, Error> {
-            let bootstrap = BootstrapContext::new()?;
+            // bootstrap 是加载 WGL 扩展期间唯一持有临时 native 资源的 owner。
+            let mut bootstrap = BootstrapContext::new()?;
             let choose_pixel_format = load_wgl_fn::<ChoosePixelFormatArbFn>(
                 "wglChoosePixelFormatARB",
             )
@@ -478,6 +532,9 @@ impl WglContext {
             let create_ctx = load_wgl_fn::<CreateContextAttribsFn>("wglCreateContextAttribsARB");
             let (pixel_format, pixel_format_flags) =
                 setup_arb_pixel_format(hdc, choose_pixel_format)?;
+            // 在创建正式 context 前显式观察临时 bootstrap teardown 结果。
+            bootstrap.shutdown_result()?;
+            // bootstrap 扩展函数指针在临时 context 关闭后仍可用于创建正式 context。
             let hglrc = if let Some(create_ctx) = create_ctx {
                 create_es_context(hdc, create_ctx, 3, 0)?
             } else {
@@ -486,7 +543,6 @@ impl WglContext {
                     "WglContext: wglCreateContextAttribsARB unavailable",
                 ));
             };
-            drop(bootstrap);
             // SAFETY: hdc 存活、hglrc 为刚创建的非空上下文；失败时 hglrc 仍有效可删除。
             unsafe {
                 if wglMakeCurrent(hdc, hglrc) == 0 {
