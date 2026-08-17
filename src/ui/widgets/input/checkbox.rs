@@ -288,7 +288,7 @@ mod tests {
     use super::*;
     // 引入事件行为 trait 与指针坐标类型。
     use crate::core::Point;
-    use crate::ui::{KeyMod, component::traits::EventHandler};
+    use crate::ui::{KeyMod, widget_runtime::traits::EventHandler};
 
     // 键盘激活：KeyDown 只武装，配对的 KeyUp 才完成切换（与 Button 一致）。
     #[test]
