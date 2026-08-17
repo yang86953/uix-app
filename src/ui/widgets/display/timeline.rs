@@ -6,8 +6,8 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
 use crate::ui::SnapshotFields;
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::component::widget::WidgetTree;
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::widget::WidgetTree;
 
 // 时间线条目高度（60.0）；time_picker/cascader 选择列项为 32.0，语境不同。
 const ITEM_HEIGHT: f32 = 60.0;
@@ -53,7 +53,7 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        let loc = crate::ui::component::locale::use_locale();
+        let loc = crate::ui::widget_runtime::locale::use_locale();
         let row_count = self.row_count();
         let geometry = TimelineGeometry::new(frame, row_count);
         if row_count == 0 || geometry.frame.w <= 0.0 || geometry.frame.h <= 0.0 {

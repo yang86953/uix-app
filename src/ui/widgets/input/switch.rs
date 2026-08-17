@@ -4,7 +4,7 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
@@ -162,7 +162,7 @@ impl Default for Switch {
 impl Switch {
     /// 创建初始关闭且可交互的开关。
     pub fn new() -> Self {
-        let config = crate::ui::component::config::use_config();
+        let config = crate::ui::widget_runtime::config::use_config();
         Self {
             // 无展示名称的开关保持匿名播报。
             label: String::new(),
@@ -237,7 +237,7 @@ impl Switch {
     fn intrinsic_size(&self) -> Size {
         Size::new(
             self.track_width(),
-            crate::ui::component::config::control_height(self.control_size),
+            crate::ui::widget_runtime::config::control_height(self.control_size),
         )
     }
 

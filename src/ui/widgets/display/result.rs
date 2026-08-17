@@ -8,7 +8,7 @@ use std::cell::Cell;
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
 
 // 无主题上下文路径（命中测试/动作区测量）使用的默认字号，与 token font_size 默认值一致。
@@ -35,7 +35,7 @@ pub enum ResultType {
 
 impl ResultType {
     pub(crate) fn localized_title(self) -> &'static str {
-        let loc = crate::ui::component::locale::use_locale();
+        let loc = crate::ui::widget_runtime::locale::use_locale();
         match self {
             Self::Success => loc.result_success,
             Self::Error => loc.result_error,
@@ -48,7 +48,7 @@ impl ResultType {
     }
 
     pub(crate) fn localized_subtitle(self) -> &'static str {
-        let loc = crate::ui::component::locale::use_locale();
+        let loc = crate::ui::widget_runtime::locale::use_locale();
         match self {
             Self::NotFound => loc.result_404_desc,
             Self::Forbidden => loc.result_403_desc,

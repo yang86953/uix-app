@@ -7,7 +7,7 @@ use crate::core::Rect;
 // 引入主题解析后的颜色值。
 use crate::draw::Color;
 // 引入绘制上下文。
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入响应式状态读取能力。
 use crate::ui::State;
 

@@ -6,7 +6,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::windowing::ControlSize;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{SnapshotFields, WidgetTree};
 
 // 组件默认尺寸（本组件设计值）；其他组件同名常量值不同，属各自设计。
@@ -162,7 +162,7 @@ impl Descriptions {
             bordered: false,
             column: 3,
             label_width: 100.0,
-            size: crate::ui::component::config::use_config().size,
+            size: crate::ui::widget_runtime::config::use_config().size,
         }
     }
     /// 设置描述列表标题。

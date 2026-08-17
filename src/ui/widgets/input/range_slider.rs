@@ -8,7 +8,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
@@ -226,7 +226,7 @@ impl RangeSlider {
     /// 创建范围滑块；范围非法时自动归一化为升序。
     pub fn new(range: RangeInclusive<f64>) -> Self {
         let (min, max) = normalize_range(range);
-        let config = crate::ui::component::config::use_config();
+        let config = crate::ui::widget_runtime::config::use_config();
         Self {
             min,
             max,
@@ -459,7 +459,7 @@ impl RangeSlider {
 
     /// 控件高度（按尺寸规格）。
     fn control_height(&self) -> f32 {
-        crate::ui::component::config::control_height(self.slider_size)
+        crate::ui::widget_runtime::config::control_height(self.slider_size)
     }
 
     /// 轨道厚度（按尺寸规格与视觉缩放）。

@@ -6,10 +6,10 @@
 use crate::core::{EdgeInsets, Point};
 use crate::draw::Color;
 use crate::ui::accessibility::accessibility_override::AccessibilityOverride;
-use crate::ui::component::provider_context::{ProviderContext, current_provider_context};
+use crate::ui::widget_runtime::provider_context::{ProviderContext, current_provider_context};
 // 让声明节点携带内联组件的非视觉状态作用域标记。
-use crate::ui::component::traits::WidgetComponent;
-use crate::ui::component::view_transform::ViewTransform;
+use crate::ui::widget_runtime::traits::WidgetComponent;
+use crate::ui::widget_runtime::view_transform::ViewTransform;
 use crate::ui::component_state::{
     // 引入随声明根延迟提交的私有状态写入回执。
     ComponentStateCaptureReceipt,
@@ -853,7 +853,7 @@ impl ViewNode {
 }
 
 impl crate::ui::IntoWidgetNode for ViewNode {
-    fn into_node(self) -> crate::ui::component::widget::WidgetNode {
+    fn into_node(self) -> crate::ui::widget_runtime::widget::WidgetNode {
         crate::ui::adapter::ViewAdapter::expand(self)
     }
 }

@@ -7,7 +7,7 @@ impl super::BoxedWidget {
         // 传入父级分配给包装节点的约束。
         constraints: crate::core::Constraints,
         // 传入持有全部直接子节点的单窗组件树。
-        tree: &crate::ui::component::widget::WidgetTree,
+        tree: &crate::ui::widget_runtime::widget::WidgetTree,
         // 没有代理契约时返回空并继续使用组件自身测量。
     ) -> Option<crate::core::Size> {
         // 保持代理测量与普通组件测量相同的组件上下文边界。

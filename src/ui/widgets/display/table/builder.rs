@@ -192,7 +192,7 @@ impl<R: 'static> crate::ui::view::View for DataTable<R> {
 }
 
 impl<R: 'static> crate::ui::IntoWidgetNode for DataTable<R> {
-    fn into_node(self) -> crate::ui::component::widget::WidgetNode {
+    fn into_node(self) -> crate::ui::widget_runtime::widget::WidgetNode {
         let (table, handler, empty_renderer) = self.into_parts();
         if let Some(empty) = resolve_table_empty_view(&table, empty_renderer.as_ref()) {
             return crate::ui::IntoWidgetNode::into_node(empty);
@@ -346,12 +346,12 @@ impl TableBuilder {
 }
 
 impl crate::ui::IntoWidgetNode for TableBuilder {
-    fn into_node(self) -> crate::ui::component::widget::WidgetNode {
+    fn into_node(self) -> crate::ui::widget_runtime::widget::WidgetNode {
         let (table, handlers, empty_renderer) = self.into_parts();
         if let Some(empty) = resolve_table_empty_view(&table, empty_renderer.as_ref()) {
             return crate::ui::IntoWidgetNode::into_node(empty);
         }
-        crate::ui::component::widget::WidgetNode::leaf(Box::new(table))
+        crate::ui::widget_runtime::widget::WidgetNode::leaf(Box::new(table))
             .with_render_handlers(handlers)
     }
 }

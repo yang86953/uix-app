@@ -2,9 +2,9 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 ui System 的声明式 View、组合器和 reconcile 输入。与[组件运行时框架](component.md)及[reactive](reactive.md)的协作由 ui System 编排，Module 间不直接持有实例。导出：`View`、`ViewNode`、combinator 与组件 DSL；theme 等上下文通过通用构建上下文扩展。
+> **接口**：声明 ui System 的声明式 View、组合器和 reconcile 输入。与[组件运行时框架](widget_runtime.md)及[reactive](reactive.md)的协作由 ui System 编排，Module 间不直接持有实例。导出：`View`、`ViewNode`、combinator 与组件 DSL；theme 等上下文通过通用构建上下文扩展。
 >
-> **当前实现线索**：相关实现暂位于 `src/ui/view/`、`src/ui/macros/` 和 `src/ui/component/` 上下文文件；重构后以本模块边界为准。
+> **当前实现线索**：相关实现暂位于 `src/ui/view/`、`src/ui/macros/` 和 `src/ui/widget_runtime/` 上下文文件；重构后以本模块边界为准。
 
 ## 组件清单
 

@@ -5,7 +5,7 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入 current 与 pageSize 的声明式状态句柄。
 use crate::ui::State;
 use crate::ui::{

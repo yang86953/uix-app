@@ -3,7 +3,7 @@ use super::{Breadcrumb, BreadcrumbItem};
 // 引入测试点击坐标。
 use crate::core::Point;
 // 引入事件与语义事件 trait。
-use crate::ui::component::traits::EventHandler;
+use crate::ui::widget_runtime::traits::EventHandler;
 // 引入事件身份、输入和载荷类型。
 use crate::ui::{ComponentId, KeyMod, MouseButton, SemanticPayload, SystemEvent};
 

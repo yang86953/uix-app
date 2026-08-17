@@ -6,7 +6,7 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入受控 current 的响应式状态句柄。
 use crate::ui::State;
 use crate::ui::{

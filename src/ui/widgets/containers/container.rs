@@ -1,13 +1,13 @@
 //! Container widget — flexbox layout container with background/border.
 
-use crate::ui::component::widget::WidgetCore;
+use crate::ui::widget_runtime::widget::WidgetCore;
 use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, EdgeInsets, Rect, Size};
 use crate::draw::scene::PicturePolicy;
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::component::tree_measure::child_from_tree_with_constraints;
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
 // 导入共享布局入口与内容外尺寸计算。
 use crate::ui::layout::engine::{BoxModel, FlexLayout, LayoutChild, content_size_from_children};
 

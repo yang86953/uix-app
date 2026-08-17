@@ -7,7 +7,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintPass;
 use crate::draw::{Color, Radius};
 use crate::ui::SnapshotFields;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widgets::input::date_picker::{Date, days_in_month, first_weekday};
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, State, SystemEvent, WidgetTree,
@@ -323,7 +323,7 @@ component! {
             Some(Radius::uniform(radius)),
         );
 
-        let loc = crate::ui::component::locale::use_locale();
+        let loc = crate::ui::widget_runtime::locale::use_locale();
         let title = localized_month_title(&loc, cur_year, cur_month);
         let title_width = (geometry.title_row.w - geometry.navigation_width * 2.0
             - 8.0 * geometry.scale)

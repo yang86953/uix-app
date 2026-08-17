@@ -5,7 +5,7 @@ use super::*;
 impl Drawer {
     /// 创建默认关闭、从右侧进入且带遮罩和关闭按钮的抽屉。
     pub fn new(title: &str) -> Self {
-        let size = crate::ui::component::config::use_config().size;
+        let size = crate::ui::widget_runtime::config::use_config().size;
         Self {
             title: title.to_string(),
             visible: false,
@@ -561,7 +561,7 @@ mod tests {
     // 引入受控状态公开契约。
     use crate::ui::State;
     // 引入事件与动画窄契约以验证 Escape 关闭路径。
-    use crate::ui::component::traits::{EventHandler, WidgetAnimation};
+    use crate::ui::widget_runtime::traits::{EventHandler, WidgetAnimation};
     // 引入键盘事件值。
     use crate::ui::{KeyCode, KeyMod, SystemEvent};
 

@@ -5,9 +5,9 @@ use super::geometry::FLOAT_BUTTON_SURFACE_INSET;
 // 引入真实声明树构建与语义点击载荷以验证事件所有权。
 use crate::ui::adapter::ViewAdapter;
 // 引入组件事件与渲染窄契约。
-use crate::ui::component::traits::{EventHandler, WidgetRender};
+use crate::ui::widget_runtime::traits::{EventHandler, WidgetRender};
 // 引入运行时节点直接子项读取契约。
-use crate::ui::component::widget::WidgetCore;
+use crate::ui::widget_runtime::widget::WidgetCore;
 // 引入完整子声明节点以调用保留事件的组构建入口。
 use crate::ui::view::ViewNode;
 // 引入标准点击事件契约与键盘修饰状态。

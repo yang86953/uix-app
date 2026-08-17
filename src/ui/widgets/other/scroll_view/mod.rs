@@ -1,6 +1,6 @@
 //! ScrollView widget: a scrollable viewport that clips and scrolls children.
 
-use crate::ui::component::widget::WidgetCore;
+use crate::ui::widget_runtime::widget::WidgetCore;
 pub mod scrollbar;
 #[allow(unused_imports)]
 pub(crate) use scrollbar::*;
@@ -12,8 +12,8 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintPass;
 use crate::ui::children::WidgetChildren;
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::component::tree_measure::child_from_tree_with_constraints;
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
 // 复用共享布局边界的有限化与 margin 归一规则。
 use crate::ui::layout::LayoutChild;
 use crate::ui::layout::engine::{finite_non_negative, finite_or_zero, normalize_margin};

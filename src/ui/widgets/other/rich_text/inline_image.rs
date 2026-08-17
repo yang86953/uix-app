@@ -168,9 +168,9 @@ pub(crate) fn prepare(
     // 接收组件私有图片状态表。
     states: &mut InlineImageStates,
     // 接收当前绘制上下文及图片服务。
-    ctx: &mut crate::ui::component::paint_context::PaintContext,
+    ctx: &mut crate::ui::widget_runtime::paint_context::PaintContext,
     // 接收组件树失效队列。
-    tree: &crate::ui::component::widget::WidgetTree,
+    tree: &crate::ui::widget_runtime::widget::WidgetTree,
     // 接收当前组件绘制范围。
     frame: crate::core::Rect,
 ) -> bool {
@@ -284,7 +284,7 @@ pub(crate) fn prepare(
     // 后台任务或布局变化都需要通过当前组件失效队列驱动后继帧。
     if (pending || layout_changed)
         // 绘制作用域必须能解析当前 RichText 组件身份。
-        && let Some(id) = crate::ui::component::paint_scope::current_paint_widget()
+        && let Some(id) = crate::ui::widget_runtime::paint_scope::current_paint_widget()
         // 失效队列锁失败时保持当前帧结果，不伪造提交成功。
         && let Ok(mut queue) = tree.invalidation_handle().lock()
     {
@@ -309,7 +309,7 @@ pub(crate) fn prepare(
 #[cfg(feature = "image-codecs")]
 pub(crate) fn draw(
     // 接收 UI 绘制上下文。
-    ctx: &mut crate::ui::component::paint_context::PaintContext,
+    ctx: &mut crate::ui::widget_runtime::paint_context::PaintContext,
     // 接收公开段列表。
     segments: &[super::RichTextSegment],
     // 接收组件私有资源状态。
@@ -486,7 +486,7 @@ mod tests {
     // 引入字体服务创建最小绘制依赖。
     use crate::draw::resources::font::font_service::FontService;
     // 引入 UI 主题绘制上下文。
-    use crate::ui::component::paint_context::PaintContext as UiPaintContext;
+    use crate::ui::widget_runtime::paint_context::PaintContext as UiPaintContext;
     // 引入标准浅色主题令牌。
     use crate::ui::theme::Theme;
     // 引入公开段与样式模型。

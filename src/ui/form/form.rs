@@ -1,8 +1,8 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::component::tree_measure::child_from_tree_with_constraints;
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
 use crate::ui::layout::LayoutChild;
 use crate::ui::{ComponentId, SnapshotFields, WidgetTree};
 
@@ -26,7 +26,7 @@ pub enum ValidateStatus {
 
 // 表单布局枚举与组件配置共享同一类型（config::FormLayout），
 // 保持 `crate::ui::form::FormLayout` 公开路径兼容并消除手工映射。
-pub use crate::ui::component::config::FormLayout;
+pub use crate::ui::widget_runtime::config::FormLayout;
 
 component! {
     /// 表单项组件：标签、校验状态条、帮助文本与内容区布局。
@@ -535,7 +535,7 @@ impl Form {
     /// 创建表单容器（默认水平布局、标签宽 80、间隙 8）。
     pub fn new() -> Self {
         // 缺省水平布局；与组件配置共享同一枚举，无需手工映射。
-        let layout = crate::ui::component::config::use_config()
+        let layout = crate::ui::widget_runtime::config::use_config()
             .overrides
             .form
             .layout

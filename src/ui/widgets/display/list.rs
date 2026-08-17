@@ -6,9 +6,9 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::windowing::ControlSize;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入真实子 View 测量入口。
-use crate::ui::component::tree_measure::child_from_tree_with_constraints;
+use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
 // 引入子树布局、身份与快照契约。
 use crate::ui::{ComponentId, LayoutChild, SnapshotFields, WidgetTree};
 // 引入一次性交接声明子树所需的内部可变单元。
@@ -556,7 +556,7 @@ impl List {
             header: String::new(),
             footer: String::new(),
             bordered: true,
-            list_size: crate::ui::component::config::use_config().size,
+            list_size: crate::ui::widget_runtime::config::use_config().size,
             items: Vec::new(),
             load_more_text: String::new(),
             // 缺省页首继续使用兼容文本路径。
@@ -719,7 +719,7 @@ impl Default for List {
 impl crate::ui::view::View for List {
     fn build(self) -> crate::ui::view::ViewNode {
         if self.items.is_empty() {
-            if let Some(empty) = crate::ui::component::config::render_empty_for::<Self>() {
+            if let Some(empty) = crate::ui::widget_runtime::config::render_empty_for::<Self>() {
                 return empty;
             }
             return crate::ui::view::ViewNode::leaf(crate::ui::widgets::display::Empty::new());

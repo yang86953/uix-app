@@ -277,10 +277,10 @@ impl Default for Locale {
 
 /// 获取当前生效的语言配置。
 pub fn use_locale() -> Locale {
-    crate::ui::component::provider_context::current_provider_context().locale
+    crate::ui::widget_runtime::provider_context::current_provider_context().locale
 }
 
 /// 在作用域内使用指定语言配置执行闭包。
 pub fn with_locale<T>(locale: &Locale, f: impl FnOnce() -> T) -> T {
-    crate::ui::component::provider_context::with_component_locale(locale, f)
+    crate::ui::widget_runtime::provider_context::with_component_locale(locale, f)
 }

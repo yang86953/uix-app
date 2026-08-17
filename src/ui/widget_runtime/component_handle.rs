@@ -6,10 +6,10 @@ use std::cell::RefCell;
 use std::rc::{Rc, Weak as RcWeak};
 
 use crate::core::ComponentId;
-use crate::ui::component::app_state::AppStateInner;
-use crate::ui::component::widget::EventResult;
+use crate::ui::widget_runtime::app_state::AppStateInner;
+use crate::ui::widget_runtime::widget::EventResult;
 #[cfg(test)]
-use crate::ui::component::widget::WidgetTree;
+use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::component_snapshot::{
     AccessibilitySnapshot, AriaAttribute, ComponentConfigSnapshot, SnapshotFields,
 };

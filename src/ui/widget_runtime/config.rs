@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::platform::windowing::ControlSize;
-use crate::ui::component::traits::WidgetComponent;
+use crate::ui::widget_runtime::traits::WidgetComponent;
 pub use crate::ui::render_handler::{EmptyContext, EmptyRenderer, render_empty_for};
 use crate::ui::theme::style::StyleSet;
 use crate::ui::theme::{Theme, TokenPatch};
@@ -193,10 +193,10 @@ pub enum FormLayout {
 
 /// 获取当前生效的组件配置。
 pub fn use_config() -> ComponentConfig {
-    crate::ui::component::provider_context::current_provider_context().config
+    crate::ui::widget_runtime::provider_context::current_provider_context().config
 }
 
 /// 在作用域内使用指定配置执行闭包。
 pub fn with_config<T>(config: &ComponentConfig, f: impl FnOnce() -> T) -> T {
-    crate::ui::component::provider_context::with_component_config(config, f)
+    crate::ui::widget_runtime::provider_context::with_component_config(config, f)
 }

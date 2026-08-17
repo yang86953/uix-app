@@ -1,5 +1,5 @@
-use crate::ui::component::config::ComponentConfig;
-use crate::ui::component::locale::Locale;
+use crate::ui::widget_runtime::config::ComponentConfig;
+use crate::ui::widget_runtime::locale::Locale;
 use std::cell::RefCell;
 
 /// 在 View 构建时捕获、随节点保存的 Provider 上下文。

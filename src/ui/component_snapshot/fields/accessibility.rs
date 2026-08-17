@@ -199,7 +199,7 @@ impl SnapshotFields {
             Self::Empty { description, .. } => AccessibilitySnapshot::named(
                 AccessibilityRole::Status,
                 if description.is_empty() {
-                    crate::ui::component::locale::use_locale()
+                    crate::ui::widget_runtime::locale::use_locale()
                         .empty_description
                         .to_string()
                 } else {

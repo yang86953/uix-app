@@ -21,8 +21,8 @@ use crate::ui::view::{View, ViewNode};
 
 use crate::core::{Constraints, Rect, Size};
 use crate::ui::WidgetTree;
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::component::traits::{
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::traits::{
     WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender,
 };
 use crate::ui::reactive::state::{Computed, State};
@@ -32,6 +32,12 @@ use std::any::Any;
 #[path = "combinators/embed.rs"]
 // 编译命令式节点嵌入转换的私有实现模块。
 mod embed_node;
+// 拆分标签内容转换，保持组合器主体在文件规模约束内。
+#[path = "combinators/label.rs"]
+// 编译标签内容转换的私有实现模块。
+mod label_content;
+// 保持标签构造器与内容转换契约的既有公开路径。
+pub use label_content::{IntoLabelContent, dynamic_label, label};
 
 /// 将异质 / 同质子节点收成 `Vec<ViewNode>`（公开用法见仓库 `docs/使用/布局.md`）。
 ///
@@ -356,55 +362,6 @@ impl From<ScrollBuilder> for ViewNode {
     fn from(builder: ScrollBuilder) -> Self {
         builder.build()
     }
-}
-
-/// 文本内容：静态字符串或动态闭包（公开用法见仓库 `docs/使用/组件.md`）。
-pub trait IntoLabelContent {
-    /// 消费静态或动态文本内容并构建标签视图节点。
-    fn into_label_node(self) -> ViewNode;
-}
-
-impl IntoLabelContent for String {
-    fn into_label_node(self) -> ViewNode {
-        ViewNode::leaf(crate::ui::widgets::Label::new(self))
-    }
-}
-
-impl IntoLabelContent for &str {
-    fn into_label_node(self) -> ViewNode {
-        ViewNode::leaf(crate::ui::widgets::Label::new(self))
-    }
-}
-
-impl IntoLabelContent for &String {
-    fn into_label_node(self) -> ViewNode {
-        ViewNode::leaf(crate::ui::widgets::Label::new(self.as_str()))
-    }
-}
-
-impl<F> IntoLabelContent for F
-where
-    F: Fn() -> String + 'static,
-{
-    fn into_label_node(self) -> ViewNode {
-        ViewNode::leaf(crate::ui::component::dynamic_label::DynamicLabel::new(self))
-    }
-}
-
-/// 文本标签 — 静态或动态统一入口。
-///
-/// ```ignore
-/// label("Hello");
-/// label(move || format!("计数: {}", count.get()));
-/// count.map_text(|n| format!("计数: {n}")); // 等价，少手写 clone
-/// ```
-pub fn label(content: impl IntoLabelContent) -> ViewNode {
-    content.into_label_node()
-}
-
-/// 响应式文本标签（`label(closure)` 的别名，保留兼容）。
-pub fn dynamic_label<F: Fn() -> String + 'static>(f: F) -> ViewNode {
-    label(f)
 }
 
 impl<T: Clone + Send + Sync + 'static> State<T> {
@@ -772,7 +729,7 @@ impl From<ButtonBuilder> for ViewNode {
 /// button("关闭").on_click_fn(|| close());
 /// ```
 pub fn button(text: impl Into<String>) -> ButtonBuilder {
-    let config = crate::ui::component::config::use_config();
+    let config = crate::ui::widget_runtime::config::use_config();
     ButtonBuilder {
         text: text.into(),
         style_set: config

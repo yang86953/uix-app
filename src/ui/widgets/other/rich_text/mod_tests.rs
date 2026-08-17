@@ -5,7 +5,7 @@ use crate::draw::resources::font::font_service::FontService;
 // 引入稳定的测试字体句柄。
 use crate::draw::FontHandle;
 // 引入事件与测量契约。
-use crate::ui::component::traits::{EventHandler, WidgetComponent, WidgetLayout};
+use crate::ui::widget_runtime::traits::{EventHandler, WidgetComponent, WidgetLayout};
 use crate::ui::event::SystemEvent;
 // 引入键盘、修饰键与指针按钮。
 use crate::ui::{KeyCode, KeyMod, MouseButton};

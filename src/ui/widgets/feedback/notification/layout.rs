@@ -3,7 +3,7 @@
 use crate::core::{Point, Rect, Size};
 use crate::draw::Color;
 use crate::ui::SnapshotFields;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 
 use super::{Notification, NotificationItem};
 use crate::ui::widgets::feedback::toast_motion::{ToastKey, ToastMotionEntry};

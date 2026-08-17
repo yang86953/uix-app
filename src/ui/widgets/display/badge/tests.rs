@@ -5,9 +5,9 @@ use crate::core::{EdgeInsets, Point};
 // 引入真实按钮指针事件所需的原生输入类型。
 use crate::platform::windowing::{KeyMod, MouseButton};
 // 引入适配器、组件与布局 trait 入口。
-use crate::ui::component::traits::{WidgetComponent, WidgetLayout};
+use crate::ui::widget_runtime::traits::{WidgetComponent, WidgetLayout};
 // 引入测试读取子身份与写入根 frame 所需的组件树核心契约。
-use crate::ui::component::widget::WidgetCore;
+use crate::ui::widget_runtime::widget::WidgetCore;
 // 引入 Badge 独立状态节点的无障碍角色。
 use crate::ui::component_snapshot::AccessibilityRole;
 // 引入真实声明树物化入口。

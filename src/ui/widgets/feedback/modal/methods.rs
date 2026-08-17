@@ -7,7 +7,7 @@ use crate::draw::Color;
 use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
 use crate::ui::animation::{AnimationConfig, TransitionPlayer, presets};
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 
 use std::rc::Rc;
 
@@ -15,7 +15,7 @@ use std::rc::Rc;
 impl Modal {
     /// 创建默认关闭、居中、带遮罩关闭能力和底部操作区的模态框。
     pub fn new(title: &str) -> Self {
-        let size = crate::ui::component::config::use_config().size;
+        let size = crate::ui::widget_runtime::config::use_config().size;
         Self {
             title: title.to_string(),
             visible: false,

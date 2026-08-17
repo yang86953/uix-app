@@ -136,7 +136,7 @@ impl crate::ui::adapter::ViewAdapter {
             // 保留既有节点身份并协调其可变状态。
             Reuse(crate::ui::ComponentId, ViewNode),
             // 使用已完成的纯展开结果替换根节点。
-            Replace(crate::ui::component::widget::WidgetNode),
+            Replace(crate::ui::widget_runtime::widget::WidgetNode),
         }
         // 只有替换路径需要展开声明根，panic 发生时旧运行时树仍保持可用。
         let plan = match reuse_root {

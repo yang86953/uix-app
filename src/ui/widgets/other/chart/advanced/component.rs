@@ -5,7 +5,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
 use crate::ui::animation::{AnimationConfig, TransitionPlayer};
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{EventResult, MouseButton, SystemEvent, WidgetTree};
 
 use super::super::bar_chart::BarData;

@@ -25,8 +25,8 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::geometry::spatial::PhysicalUnit;
 use crate::draw::{Color, Radius};
-use crate::ui::component::clipboard;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::clipboard;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SnapshotFields,
     SystemEvent, UserSelect, WidgetTree,

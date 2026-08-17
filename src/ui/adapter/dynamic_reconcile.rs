@@ -1,5 +1,5 @@
 // 引入动态子节点直接父子关系与离场状态的窄读取契约。
-use crate::ui::component::widget::WidgetCore;
+use crate::ui::widget_runtime::widget::WidgetCore;
 
 // 动态子树协调沿用 ViewAdapter 的私有身份与事务契约。
 impl crate::ui::adapter::ViewAdapter {

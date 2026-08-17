@@ -17,7 +17,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::animation::{TransitionPlayer, presets};
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use geometry::{FloatButtonGeometry, FloatButtonGeometryInput, resolve_float_button_geometry};
 // 浮动按钮使用基础层共享的触发方式，不依赖反馈组件族。
 use crate::ui::SnapshotFields;
@@ -137,7 +137,7 @@ component! {
         self.last_surface.set(surface);
         // 一次解析本帧全部 FloatButton 几何。
         let geometry = self.geometry_for_surface(frame, surface);
-        let loc = crate::ui::component::locale::use_locale();
+        let loc = crate::ui::widget_runtime::locale::use_locale();
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();
         // 图标反白色：白色 token。

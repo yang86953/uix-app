@@ -1,6 +1,6 @@
 use super::*;
-use crate::ui::component::focus_handle::FocusHandle;
-use crate::ui::component::focus_trap::next_focus_in_order;
+use crate::ui::widget_runtime::focus_handle::FocusHandle;
+use crate::ui::widget_runtime::focus_trap::next_focus_in_order;
 use crate::ui::event::HandlerTable;
 
 impl WidgetTree {

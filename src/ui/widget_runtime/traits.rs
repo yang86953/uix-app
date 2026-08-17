@@ -23,8 +23,8 @@
 use crate::core::{ComponentId, Constraints, EdgeInsets, Rect, Size};
 use crate::draw::geometry::spatial::{Ray3D, SpatialContext};
 use crate::draw::scene::PicturePolicy;
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::component::widget::{EventResult, SystemEvent, WidgetNode, WidgetTree};
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::widget::{EventResult, SystemEvent, WidgetNode, WidgetTree};
 use crate::ui::event::{SemanticEvent, WindowAction};
 use crate::ui::layout::{AlignItems, LayoutChild};
 use crate::ui::overlay::OverlayEntry;

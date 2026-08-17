@@ -5,11 +5,11 @@ use crate::draw::geometry::spatial::{Ray3D, SpatialContext};
 use crate::draw::scene::PicturePolicy;
 pub(crate) use crate::platform::windowing::{KeyCode, KeyMod, MouseButton};
 use crate::ui::accessibility::accessibility_override::AccessibilityOverride;
-use crate::ui::component::focus_handle::FocusHandle;
-use crate::ui::component::provider_context::{
+use crate::ui::widget_runtime::focus_handle::FocusHandle;
+use crate::ui::widget_runtime::provider_context::{
     ProviderContext, current_provider_context, with_provider_context,
 };
-use crate::ui::component::view_transform::ViewTransform;
+use crate::ui::widget_runtime::view_transform::ViewTransform;
 use crate::ui::component_snapshot::{
     AccessibilitySnapshot, ComponentConfigSnapshot, SnapshotFields,
 };
@@ -24,7 +24,7 @@ pub(crate) type WidgetId = ComponentId;
 pub(crate) use crate::ui::event::EventResult;
 
 // 重新导出 api 中的 trait 定义
-pub(crate) use crate::ui::component::traits::{
+pub(crate) use crate::ui::widget_runtime::traits::{
     EventHandler, WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetLifecycle, WidgetRender,
     WidgetTextInput,
 };

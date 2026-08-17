@@ -2,9 +2,9 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 ui System 的响应式状态、依赖捕获和受控副作用。基础依赖：[core/identity](../core/identity.md)；与[组件运行时框架](component.md)的协作由 ui System 通过依赖登记契约编排，二者不直接持有 Module 实例。导出：`State`、`Computed`、`Effect` 与根/节点依赖契约。
+> **接口**：声明 ui System 的响应式状态、依赖捕获和受控副作用。基础依赖：[core/identity](../core/identity.md)；与[组件运行时框架](widget_runtime.md)的协作由 ui System 通过依赖登记契约编排，二者不直接持有 Module 实例。导出：`State`、`Computed`、`Effect` 与根/节点依赖契约。
 >
-> **当前实现线索**：相关实现暂位于 `src/ui/reactive/state.rs`、`src/ui/component/app_state.rs` 及若干绑定点；重构后应由本模块统一拥有。
+> **当前实现线索**：相关实现暂位于 `src/ui/reactive/state.rs`、`src/ui/widget_runtime/app_state.rs` 及若干绑定点；重构后应由本模块统一拥有。
 
 ## 组件清单
 

@@ -400,7 +400,7 @@ impl BoxedWidget {
         let mut accessibility = fields.accessibility();
         if let Some(label) = component
             .as_any()
-            .downcast_ref::<crate::ui::component::dynamic_label::DynamicLabel>()
+            .downcast_ref::<crate::ui::widget_runtime::dynamic_label::DynamicLabel>()
         {
             let text = label.semantic_text();
             accessibility.role = crate::ui::AccessibilityRole::Text;
@@ -787,7 +787,7 @@ impl BoxedWidget {
     pub fn render(
         &self,
         frame: Rect,
-        ctx: &mut crate::ui::component::paint_context::PaintContext,
+        ctx: &mut crate::ui::widget_runtime::paint_context::PaintContext,
         tree: &WidgetTree,
     ) {
         let config = &self.provider_context.config;

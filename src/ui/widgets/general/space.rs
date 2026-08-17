@@ -7,8 +7,8 @@ use std::cell::Cell;
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::ui::children::WidgetChildren;
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::component::tree_measure::child_from_tree_with_constraints;
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
 // 导入共享的物理内容外尺寸计算。
 use crate::ui::SnapshotFields;
 use crate::ui::layout::LayoutChild;

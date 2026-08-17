@@ -1,6 +1,6 @@
 use super::*;
 use crate::ui::adapter::ViewAdapter;
-use crate::ui::component::provider_context::{
+use crate::ui::widget_runtime::provider_context::{
     ProviderContext, current_provider_context, with_provider_context,
 };
 

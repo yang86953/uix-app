@@ -15,8 +15,8 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
 use crate::platform::capabilities::StatusLevel;
 use crate::ui::animation::AnimationConfig;
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::component::widget::WidgetTree;
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::{EventResult, MouseButton, Placement, SnapshotFields, SystemEvent};
 
 // 引入关闭原因以区分用户关闭与到期关闭。

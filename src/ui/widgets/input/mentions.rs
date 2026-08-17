@@ -3,7 +3,7 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入提及输入完整文本的受控状态句柄。
 use crate::ui::reactive::state::State;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
@@ -436,7 +436,7 @@ component! {
                 let y = ctx.visual_center_y(no_data_area, FONT_SIZE);
                 ctx.push_clip(no_data_area);
                 ctx.draw_text(
-                    crate::ui::component::locale::use_locale().no_data,
+                    crate::ui::widget_runtime::locale::use_locale().no_data,
                     Point::new(no_data_area.x, y),
                     text_secondary,
                     FONT_SIZE,

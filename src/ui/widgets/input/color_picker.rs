@@ -7,7 +7,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::platform::windowing::ControlSize;
 use crate::ui::animation::{TransitionPlayer, presets};
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
@@ -408,7 +408,7 @@ impl ColorPicker {
 
     /// 创建使用内置色板、当前配置尺寸且未展开的颜色选择器。
     pub fn new() -> Self {
-        let config = crate::ui::component::config::use_config();
+        let config = crate::ui::widget_runtime::config::use_config();
         Self {
             value: Cell::new(Color::default()),
             value_binding: None,
@@ -550,7 +550,7 @@ impl ColorPicker {
     }
 
     fn control_height(&self) -> f32 {
-        crate::ui::component::config::control_height(self.picker_size)
+        crate::ui::widget_runtime::config::control_height(self.picker_size)
     }
 
     fn interaction_frame(&self) -> Rect {

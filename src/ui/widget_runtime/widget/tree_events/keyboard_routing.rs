@@ -101,8 +101,8 @@ impl WidgetTree {
             if node
                 .component()
                 .as_any()
-                .downcast_ref::<crate::ui::component::focus_trap::FocusTrap>()
-                .is_some_and(crate::ui::component::focus_trap::FocusTrap::is_active)
+                .downcast_ref::<crate::ui::widget_runtime::focus_trap::FocusTrap>()
+                .is_some_and(crate::ui::widget_runtime::focus_trap::FocusTrap::is_active)
             {
                 return Some(id);
             }

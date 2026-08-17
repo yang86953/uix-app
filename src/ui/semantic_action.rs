@@ -12,7 +12,7 @@ use std::fmt;
 
 use crate::core::{ComponentId, Point};
 use crate::platform::windowing::{KeyCode, KeyMod, MouseButton};
-use crate::ui::component::widget::{EventResult, WidgetTree};
+use crate::ui::widget_runtime::widget::{EventResult, WidgetTree};
 use crate::ui::component_snapshot::AccessibilityRole;
 use crate::ui::event::{ClickEvent, SemanticEvent, SemanticKind, SystemEvent};
 use crate::ui::widgets::Input;

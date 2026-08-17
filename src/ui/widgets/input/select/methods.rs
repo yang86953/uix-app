@@ -1,6 +1,6 @@
 use crate::core::{Rect, Size};
 // 读取组件树根 frame 时引入核心几何能力。
-use crate::ui::component::widget::WidgetCore;
+use crate::ui::widget_runtime::widget::WidgetCore;
 // 布局阶段通过组件树取得当前逻辑表面。
 use crate::ui::WidgetTree;
 
@@ -13,7 +13,7 @@ use super::{
 
 impl Select {
     pub(crate) fn control_height(&self) -> f32 {
-        crate::ui::component::config::control_height(self.select_size)
+        crate::ui::widget_runtime::config::control_height(self.select_size)
     }
 
     pub(crate) fn intrinsic_size(&self) -> Size {

@@ -12,9 +12,9 @@ use crate::draw::renderer::Invalidation;
 use crate::draw::resources::image::BitmapHandle;
 use crate::draw::{Color, Radius};
 use crate::ui::SnapshotFields;
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::component::paint_scope::current_paint_widget;
-use crate::ui::component::widget::WidgetTree;
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_scope::current_paint_widget;
+use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::{EventResult, KeyCode, MouseButton, OverlayEntry, OverlayKind, SystemEvent};
 // 引入同一 display Module 拥有的图片浮层调色板。
 use super::image_presentation::ImageOverlayPalette;

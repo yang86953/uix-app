@@ -630,7 +630,7 @@ impl ChartPlaceholder {
 impl crate::ui::view::View for ChartPlaceholder {
     fn build(self) -> crate::ui::view::ViewNode {
         if !self.has_data() {
-            if let Some(empty) = crate::ui::component::config::render_empty_for::<Self>() {
+            if let Some(empty) = crate::ui::widget_runtime::config::render_empty_for::<Self>() {
                 return empty;
             }
             return crate::ui::view::ViewNode::leaf(crate::ui::widgets::display::Empty::new());

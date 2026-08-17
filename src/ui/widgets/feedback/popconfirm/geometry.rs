@@ -425,9 +425,9 @@ mod tests {
     // 使用真实 ViewAdapter 发布组合 trigger 与处理器表。
     use crate::ui::adapter::ViewAdapter;
     // 引入组件与布局 trait 以核验组合生命周期和 frame。
-    use crate::ui::component::traits::WidgetComponent;
+    use crate::ui::widget_runtime::traits::WidgetComponent;
     // 引入组件包装的 frame 读写入口。
-    use crate::ui::component::widget::WidgetCore;
+    use crate::ui::widget_runtime::widget::WidgetCore;
     // 引入标准指针修饰状态与事件路由类型。
     use crate::ui::{EventResult, KeyMod, MouseButton, SystemEvent};
     // 使用真实按钮 View 验证业务 Click 不被包装器吞掉。
@@ -480,7 +480,7 @@ mod tests {
         // 先记录与缓存一致的大表面。
         popconfirm.surface_rect.set(large_surface);
         // 通过布局阶段的新能力注入缩小后的当前表面。
-        let overlay = crate::ui::component::traits::WidgetRender::overlay_entry_for_surface(
+        let overlay = crate::ui::widget_runtime::traits::WidgetRender::overlay_entry_for_surface(
             // 传入被测确认气泡组件。
             &popconfirm,
             // 使用稳定的测试组件标识。

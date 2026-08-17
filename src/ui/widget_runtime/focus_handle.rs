@@ -3,7 +3,7 @@ use std::fmt;
 use std::sync::{Arc, Mutex, Weak};
 
 use crate::core::ComponentId;
-use crate::ui::component::app_state::{AppState, AppStateInner, FocusRequest};
+use crate::ui::widget_runtime::app_state::{AppState, AppStateInner, FocusRequest};
 
 /// 应用持有、由声明式 View 绑定的编程式焦点句柄。
 ///

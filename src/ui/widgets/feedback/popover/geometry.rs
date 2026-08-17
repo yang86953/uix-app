@@ -557,9 +557,9 @@ mod tests {
     // 复用被测模块中的组件与几何辅助函数。
     use super::*;
     // 引入事件行为 trait 以驱动焦点与键盘事件。
-    use crate::ui::component::traits::EventHandler;
+    use crate::ui::widget_runtime::traits::EventHandler;
     // 引入组件渲染 trait 以验证浮层登记契约。
-    use crate::ui::component::traits::WidgetRender;
+    use crate::ui::widget_runtime::traits::WidgetRender;
     // 引入稳定测试组件身份。
     use crate::core::ComponentId;
 
@@ -610,7 +610,7 @@ mod tests {
         // 先记录与缓存一致的大表面。
         popover.surface_rect.set(large_surface);
         // 通过布局阶段的新能力注入缩小后的当前表面。
-        let overlay = crate::ui::component::traits::WidgetRender::overlay_entry_for_surface(
+        let overlay = crate::ui::widget_runtime::traits::WidgetRender::overlay_entry_for_surface(
             // 传入被测气泡组件。
             &popover,
             // 使用稳定的测试组件标识。
@@ -665,7 +665,7 @@ mod tests {
         // 关闭后不再登记浮层：等离场动画结束后验证。
         popover.close();
         // 驱动关闭动画直到完全离场。
-        while crate::ui::component::traits::WidgetAnimation::update_animation(&mut popover, 0.05) {}
+        while crate::ui::widget_runtime::traits::WidgetAnimation::update_animation(&mut popover, 0.05) {}
         assert!(
             WidgetRender::overlay_entry(
                 &popover,

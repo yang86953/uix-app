@@ -1,9 +1,9 @@
 //! 日历标题本地化与受约束字号适配。
 
 // 标题模板消费 UI System 已解析的区域设置。
-use crate::ui::component::locale::Locale;
+use crate::ui::widget_runtime::locale::Locale;
 // 字号适配只通过规范绘制上下文测量文字。
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 
 // 生成当前区域设置下的年月标题。
 pub(super) fn localized_month_title(locale: &Locale, year: i32, month: usize) -> String {

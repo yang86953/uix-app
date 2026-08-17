@@ -1,7 +1,7 @@
 use crate::core::{Point, Rect};
 // 高级图表主体只直接构造填充规则与路径。
 use crate::draw::{FillRule, PathBuilder};
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 
 use super::super::bar_chart::BarData;
 use super::super::line_chart::LineData;

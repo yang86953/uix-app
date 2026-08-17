@@ -29,7 +29,7 @@ use crate::draw::resources::font::line_break::{LineBreakMap, split_once_mandator
 #[cfg(test)]
 use crate::draw::resources::font::text_backend::PositionedGlyph;
 use crate::draw::{Color, FontHandle, Transform};
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 
 // 旧测试路径继续从布局实现模块读取无状态估算入口。
 #[cfg(test)]

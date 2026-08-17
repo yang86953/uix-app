@@ -2,7 +2,7 @@
 
 use crate::core::{Point, Rect};
 use crate::draw::Color;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use std::collections::HashSet;
 
 // 级联触发器高度（32.0）；popover 触发器为 28.0，组件独立设计。

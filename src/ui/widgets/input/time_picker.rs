@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::platform::windowing::ControlSize;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
@@ -304,7 +304,7 @@ component! {
         let radius = Some(crate::draw::Radius::uniform(border_radius_sm));
 
         let val = self.value.get();
-        let nominal_height = crate::ui::component::config::control_height(self.picker_size);
+        let nominal_height = crate::ui::widget_runtime::config::control_height(self.picker_size);
         let scale = if nominal_height > 0.0 {
             (frame.h / nominal_height).clamp(0.0, 1.0)
         } else {
@@ -485,12 +485,12 @@ component! {
 impl TimePicker {
     /// 创建使用当前区域占位文本、默认尺寸且未展开的时间选择器。
     pub fn new() -> Self {
-        let config = crate::ui::component::config::use_config();
+        let config = crate::ui::widget_runtime::config::use_config();
         Self {
             value: Cell::new(Time::default()),
             value_configured: Cell::new(false),
             value_binding: None,
-            placeholder: crate::ui::component::locale::use_locale()
+            placeholder: crate::ui::widget_runtime::locale::use_locale()
                 .placeholder
                 .to_owned(),
             open: Cell::new(false),
@@ -555,7 +555,7 @@ impl TimePicker {
     fn intrinsic_size(&self) -> Size {
         Size::new(
             120.0,
-            crate::ui::component::config::control_height(self.picker_size),
+            crate::ui::widget_runtime::config::control_height(self.picker_size),
         )
     }
 

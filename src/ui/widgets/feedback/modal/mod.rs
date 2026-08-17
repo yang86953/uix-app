@@ -1,4 +1,4 @@
-use crate::ui::component::widget::WidgetCore;
+use crate::ui::widget_runtime::widget::WidgetCore;
 use std::cell::Cell;
 
 use crate::component;
@@ -6,7 +6,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::windowing::ControlSize;
 use crate::ui::animation::{AnimationConfig, TransitionPlayer};
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{EventResult, MouseButton, State, SystemEvent, WidgetTree};
 use std::rc::Rc;
 
@@ -426,7 +426,7 @@ component! {
             ctx.stroke_rect(cancel_rect, border_secondary, 1.0, action_radius);
             // 使用当前语言环境绘制取消文案。
             ctx.text_center(
-                crate::ui::component::locale::use_locale().cancel_text,
+                crate::ui::widget_runtime::locale::use_locale().cancel_text,
                 cancel_rect,
                 text_color,
                 13.0,
@@ -446,7 +446,7 @@ component! {
             ctx.fill_rect(ok_rect, ok_fill, action_radius);
             // 使用当前语言环境绘制确认文案。
             ctx.text_center(
-                crate::ui::component::locale::use_locale().ok_text,
+                crate::ui::widget_runtime::locale::use_locale().ok_text,
                 ok_rect,
                 // 确认按钮文字：白色 token。
                 ctx.tokens().color_white(),

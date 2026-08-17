@@ -5,7 +5,7 @@ use super::{LayoutGlyph, LayoutLine, LayoutLineKind};
 // 引入绘制矩形。
 use crate::core::Rect;
 // 引入富文本绘制上下文。
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 
 // 判断整行是否满足主题分隔线标记契约。
 pub(super) fn is_thematic_break_line(text: &str) -> bool {

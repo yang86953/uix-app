@@ -8,8 +8,8 @@ use crate::component;
 use crate::core::{Constraints, EdgeInsets, Rect, Size};
 use crate::draw::Color;
 use crate::draw::scene::PicturePolicy;
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::component::tree_measure::child_from_tree_with_constraints;
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
 use crate::ui::layout::engine::{BoxModel, GridLayout, LayoutChild};
 
 use crate::ui::layout::{AlignItems, GridTrack, JustifyContent};
@@ -604,11 +604,11 @@ impl Grid {
     }
 
     /// 便捷：包裹多个子节点（等价 `tree! { Grid::responsive() => [...] }`）。
-    pub fn children<I>(self, nodes: Vec<I>) -> crate::ui::component::widget::WidgetNode
+    pub fn children<I>(self, nodes: Vec<I>) -> crate::ui::widget_runtime::widget::WidgetNode
     where
         I: crate::ui::IntoWidgetNode,
     {
-        crate::ui::component::widget::WidgetNode::new(
+        crate::ui::widget_runtime::widget::WidgetNode::new(
             Box::new(self),
             nodes.into_iter().map(|node| node.into_node()).collect(),
         )

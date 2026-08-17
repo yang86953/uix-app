@@ -1,7 +1,7 @@
 // 引入组合 Navigation、共享数据与外壳类型。
 use super::{Menu, MenuItem, Navigation, NavigationShell};
 // 引入事件行为 trait 以直接验证折叠事实建立顺序。
-use crate::ui::component::traits::EventHandler;
+use crate::ui::widget_runtime::traits::EventHandler;
 // 引入指针坐标与状态/事件类型。
 use crate::core::Point;
 use crate::ui::{KeyMod, MouseButton, State, SystemEvent};

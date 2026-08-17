@@ -23,8 +23,8 @@ impl Default for Select {
 impl Select {
     /// 创建继承全局尺寸、禁用和搜索配置的单选选择器。
     pub fn new() -> Self {
-        let config = crate::ui::component::config::use_config();
-        let control_height = crate::ui::component::config::control_height(config.size);
+        let config = crate::ui::widget_runtime::config::use_config();
+        let control_height = crate::ui::widget_runtime::config::control_height(config.size);
         Self {
             options: Vec::new(),
             optgroups: Vec::new(),

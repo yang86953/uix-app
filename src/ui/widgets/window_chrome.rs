@@ -4,8 +4,8 @@ use std::any::Any;
 
 use crate::core::{ComponentId, Constraints, EdgeInsets, Rect, Size};
 use crate::platform::windowing::{KeyCode, MouseButton};
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::component::traits::{
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::traits::{
     EventHandler, WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender,
 };
 use crate::ui::component_snapshot::SnapshotFields;

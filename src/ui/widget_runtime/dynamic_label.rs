@@ -12,11 +12,11 @@ use std::sync::Arc;
 use crate::core::{ComponentId, Constraints, Rect, Size};
 use crate::draw::renderer::InvalidationQueueHandle;
 use crate::draw::scene::PicturePolicy;
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::component::traits::{
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::traits::{
     WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender,
 };
-use crate::ui::component::widget::WidgetTree;
+use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::reactive::state::StatePaintBind;
 use crate::ui::theme::style::Style;
 

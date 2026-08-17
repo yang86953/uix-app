@@ -3,7 +3,7 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::ui::SnapshotFields;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入事件、键盘、声明式状态与组件树公开契约。
 use crate::ui::{EventResult, KeyCode, State, SystemEvent, WidgetTree};
 

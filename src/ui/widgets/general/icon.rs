@@ -12,8 +12,8 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::{Color, FontHandle};
 use crate::ui::SnapshotFields;
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::component::widget::WidgetTree;
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::widgets::general::icon_map::ICON_MAP;
 
 /// 全局 Lucide 字体句柄（由 app 启动时加载）。

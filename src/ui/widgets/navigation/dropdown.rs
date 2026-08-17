@@ -4,9 +4,9 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{TransitionPlayer, presets};
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 组合 Dropdown 使用组件树的公开子节点测量边界。
-use crate::ui::component::tree_measure::child_from_tree_with_constraints;
+use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
 // 引入直接 trigger 子节点的布局快照类型。
 use crate::ui::layout::LayoutChild;
 use crate::ui::{

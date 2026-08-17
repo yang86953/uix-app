@@ -5,7 +5,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::resources::font::text_backend::estimate_text_metrics;
 use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
@@ -158,7 +158,7 @@ impl Default for Checkbox {
 impl Checkbox {
     /// 创建带指定标签且初始未勾选的复选框。
     pub fn new(label: impl Into<String>) -> Self {
-        let config = crate::ui::component::config::use_config();
+        let config = crate::ui::widget_runtime::config::use_config();
         Self {
             checked: false,
             checked_binding: None,
@@ -227,7 +227,7 @@ impl Checkbox {
             estimate_text_metrics(&self.label, f32::INFINITY, self.font_size()).max_line_width;
         Size::new(
             self.box_size() + self.label_gap() + text_w,
-            crate::ui::component::config::control_height(self.checkbox_size),
+            crate::ui::widget_runtime::config::control_height(self.checkbox_size),
         )
     }
 

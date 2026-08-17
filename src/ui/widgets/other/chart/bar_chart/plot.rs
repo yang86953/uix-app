@@ -1,7 +1,7 @@
 //! 柱状图几何计算与绘制辅助。
 
 use crate::core::{Point, Rect, Size};
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 
 use super::super::advanced::{LegendPosition, TooltipDatum, normalized_ratio};
 use super::{BarChart, BarData};

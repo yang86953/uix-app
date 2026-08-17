@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 ui System 的输入事件、传播、语义事件与 handler 生命周期。与[组件运行时框架](component.md)及[layout](layout.md)的协作由 ui System 编排，Module 间不直接持有实例。导出：系统事件与应用语义的统一路由；公开用法见[使用 · 事件](../../使用/交互与反馈/事件.md)。
+> **接口**：声明 ui System 的输入事件、传播、语义事件与 handler 生命周期。与[组件运行时框架](widget_runtime.md)及[layout](layout.md)的协作由 ui System 编排，Module 间不直接持有实例。导出：系统事件与应用语义的统一路由；公开用法见[使用 · 事件](../../使用/交互与反馈/事件.md)。
 >
 > **当前实现线索**：相关实现暂散布于 `src/ui/event/`（mod.rs、system_event_handler.rs）、`src/ui/semantic_action.rs` 和树事件文件；重构后共同归本模块。
 

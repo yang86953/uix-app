@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::platform::windowing::ControlSize;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 use crate::ui::widgets::input::date_calendar::{
     CalendarPanelState, MonthNavigation, draw_calendar_panel_in_rect, hit_calendar_date_in_rect,
@@ -127,7 +127,7 @@ component! {
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(Size::new(
             280.0,
-            crate::ui::component::config::control_height(self.picker_size),
+            crate::ui::widget_runtime::config::control_height(self.picker_size),
         ))
     }
 
@@ -344,7 +344,7 @@ component! {
         let text_tertiary = ctx.tokens().color_text_tertiary();
         let radius = Some(crate::draw::Radius::uniform(ctx.tokens().border_radius_sm()));
 
-        let nominal_height = crate::ui::component::config::control_height(self.picker_size);
+        let nominal_height = crate::ui::widget_runtime::config::control_height(self.picker_size);
         let scale = if nominal_height > 0.0 {
             (frame.h / nominal_height).clamp(0.0, 1.0)
         } else {
@@ -506,7 +506,7 @@ impl DateRangePicker {
     /// 创建未选择范围、默认关闭并使用当前区域设置占位文本的选择器。
     pub fn new() -> Self {
         let today = Date::today();
-        let config = crate::ui::component::config::use_config();
+        let config = crate::ui::widget_runtime::config::use_config();
         Self {
             start_value: Cell::new(Date::default()),
             end_value: Cell::new(Date::default()),
@@ -514,7 +514,7 @@ impl DateRangePicker {
             end_binding: None,
             view_year: Cell::new(today.year),
             view_month: Cell::new(today.month),
-            placeholder: crate::ui::component::locale::use_locale()
+            placeholder: crate::ui::widget_runtime::locale::use_locale()
                 .placeholder
                 .to_owned(),
             presets: Vec::new(),

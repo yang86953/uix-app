@@ -176,7 +176,7 @@ impl crate::ui::view::View for ModalBuilder {
 }
 
 impl crate::ui::IntoWidgetNode for ModalBuilder {
-    fn into_node(self) -> crate::ui::component::widget::WidgetNode {
+    fn into_node(self) -> crate::ui::widget_runtime::widget::WidgetNode {
         crate::ui::adapter::ViewAdapter::expand(crate::ui::view::View::build(self))
     }
 }
@@ -192,7 +192,7 @@ mod tests {
     // 引入 Modal 私有命中目标以验证同模块运行时契约。
     use super::super::ModalPointerTarget;
     use super::*;
-    use crate::ui::component::traits::WidgetAnimation;
+    use crate::ui::widget_runtime::traits::WidgetAnimation;
     use std::cell::RefCell;
     use std::rc::Rc;
 

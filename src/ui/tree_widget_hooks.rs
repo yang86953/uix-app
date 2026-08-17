@@ -9,7 +9,7 @@
 //! 依赖方向为 `component → System 私有边界 → widgets`，与
 //! `tree_dynamic` / `render_handler` / `adapter` 同类。
 
-use crate::ui::component::widget::{WidgetCore, WidgetId, WidgetTree};
+use crate::ui::widget_runtime::widget::{WidgetCore, WidgetId, WidgetTree};
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
 use crate::ui::widgets::{Container, Grid, ScrollView, Space};
 // 反馈 capability 启用时才引入 Modal 与 Popconfirm 生命周期类型。
@@ -227,7 +227,7 @@ pub(crate) fn pointer_focus_target(tree: &WidgetTree, target: WidgetId) -> Widge
 
 /// 文本输入组件的当前值（语义快照 value_text 用）。
 pub(crate) fn component_input_value(
-    component: &dyn crate::ui::component::traits::WidgetComponent,
+    component: &dyn crate::ui::widget_runtime::traits::WidgetComponent,
 ) -> Option<String> {
     component
         .as_any()

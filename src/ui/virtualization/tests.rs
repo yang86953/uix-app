@@ -6,7 +6,7 @@ use std::collections::HashMap;
 // 导入构建测试树所需的 View 适配器。
 use crate::ui::adapter::ViewAdapter;
 // 导入访问组件树子项所需的核心 trait。
-use crate::ui::component::widget::WidgetCore;
+use crate::ui::widget_runtime::widget::WidgetCore;
 // 导入直接构造并调用布局入口所需的子项与 trait。
 use crate::ui::{LayoutChild, WidgetLayout};
 // 导入构造行 View 所需的节点类型。

@@ -10,13 +10,13 @@ use crate::draw::Color;
 // 该导入仅服务于头像路径解码入口。
 use crate::draw::renderer::invalidate_paint_handle;
 use crate::draw::resources::image::BitmapHandle;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 图片编解码 capability 启用时才追踪当前头像组件。
 use crate::ui::SnapshotFields;
 #[cfg(feature = "image-codecs")]
 // 该导入仅服务于头像路径解码后的局部失效。
-use crate::ui::component::paint_scope::current_paint_widget;
-use crate::ui::component::widget::WidgetTree;
+use crate::ui::widget_runtime::paint_scope::current_paint_widget;
+use crate::ui::widget_runtime::widget::WidgetTree;
 
 component! {
     /// 展示图片或自适应后备文字的头像组件。

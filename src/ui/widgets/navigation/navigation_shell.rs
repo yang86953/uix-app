@@ -8,7 +8,7 @@ use crate::component;
 // 引入组件身份、约束与矩形类型。
 use crate::core::{ComponentId, Constraints, Rect, Size};
 // 引入绘制上下文。
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入子节点布局快照。
 use crate::ui::layout::LayoutChild;
 // 引入调用方拥有的折叠状态。

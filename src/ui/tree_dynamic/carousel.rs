@@ -3,11 +3,11 @@ use crate::core::ComponentId;
 // 导入动态捕获与 receipt 感知的子树协调入口。
 use crate::ui::adapter::ViewAdapter;
 // 导入宿主声明期 Provider 上下文恢复能力。
-use crate::ui::component::provider_context::with_provider_context;
+use crate::ui::widget_runtime::provider_context::with_provider_context;
 // 导入 Carousel 动态子树的唯一生命周期 owner。
-use crate::ui::component::widget::tree_core::WidgetTree;
+use crate::ui::widget_runtime::widget::tree_core::WidgetTree;
 // 导入读取运行时组件与直接子节点所需的树节点契约。
-use crate::ui::component::widget::WidgetCore;
+use crate::ui::widget_runtime::widget::WidgetCore;
 // 导入专属延迟箭头工厂的合法宿主类型。
 use crate::ui::widgets::display::Carousel;
 

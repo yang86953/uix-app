@@ -2,7 +2,7 @@
 
 use crate::core::Rect;
 use crate::draw::Radius;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::theme::style::Style;
 // 隔离边框线型到 draw 公共描边契约的几何映射。
 #[path = "style_paint/border.rs"]

@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 ui System 的值插值、过渡、动画源与生命周期。与[组件运行时框架](component.md)及[reactive](reactive.md)的协作由 ui System 编排，Module 间不直接持有实例。导出：动画播放器、下一 deadline 和活动源契约，供 app 调度；公开用法见[使用 · 动画](../../使用/动画与异步/动画.md)。
+> **接口**：声明 ui System 的值插值、过渡、动画源与生命周期。与[组件运行时框架](widget_runtime.md)及[reactive](reactive.md)的协作由 ui System 编排，Module 间不直接持有实例。导出：动画播放器、下一 deadline 和活动源契约，供 app 调度；公开用法见[使用 · 动画](../../使用/动画与异步/动画.md)。
 >
 > **当前实现线索**：相关实现暂位于 `src/ui/animation/`（traits.rs 同目录）；帧调度位于 app，但依赖方向必须是 app 消费 ui 导出的活动源，ui 不反向依赖 app。
 

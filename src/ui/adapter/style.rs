@@ -1,7 +1,7 @@
 //! View 声明样式到具体组件私有配置的适配边界。
 
 // 引入组件公开运行契约。
-use crate::ui::component::traits::WidgetComponent;
+use crate::ui::widget_runtime::traits::WidgetComponent;
 // 引入 UI System 拥有的统一样式值。
 use crate::ui::theme::style::Style;
 // 引入窗口交互区域的专用样式适配入口。
@@ -78,11 +78,11 @@ impl ViewAdapter {
             if let Some(g) = widget.as_any_mut().downcast_mut::<Grid>() {
                 g.apply_style(style);
             }
-        } else if tid == std::any::TypeId::of::<crate::ui::component::dynamic_label::DynamicLabel>()
+        } else if tid == std::any::TypeId::of::<crate::ui::widget_runtime::dynamic_label::DynamicLabel>()
         {
             if let Some(dl) = widget
                 .as_any_mut()
-                .downcast_mut::<crate::ui::component::dynamic_label::DynamicLabel>()
+                .downcast_mut::<crate::ui::widget_runtime::dynamic_label::DynamicLabel>()
             {
                 dl.set_style(style.clone());
             }

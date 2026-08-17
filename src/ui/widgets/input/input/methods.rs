@@ -28,7 +28,7 @@ impl Input {
 
     /// 创建空的单行输入框，并从当前组件配置读取尺寸、禁用和装饰默认值。
     pub fn new(placeholder: impl Into<String>) -> Self {
-        let config = crate::ui::component::config::use_config();
+        let config = crate::ui::widget_runtime::config::use_config();
         let input_overrides = config.overrides.input;
         Self {
             value: String::new(),

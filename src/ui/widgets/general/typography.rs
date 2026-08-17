@@ -10,8 +10,8 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 // 引入排版快照契约。
 use crate::ui::SnapshotFields;
-use crate::ui::component::clipboard;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::clipboard;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入共享的单节点文字选区实现。
 use crate::ui::text_selection::per_node::PerNodeTextSelection;
 // 引入 UI System 拥有的字体族、字重、行高、文本对齐、文本装饰与样式契约。

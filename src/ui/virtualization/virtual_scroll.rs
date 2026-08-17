@@ -225,7 +225,7 @@ fn materialization_window(
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintPass;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入 builder 建树时登记 renderer sidecar 所需的内部注册类型。
 use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::{ComponentId, EventResult, SystemEvent, WidgetTree};
