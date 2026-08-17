@@ -69,6 +69,7 @@ mod settings_typed_scalars {
 }
 
 // 隔离 settings-structured 围栏中的 serde 结构体 codec。
+#[cfg(feature = "settings-serde")]
 mod settings_structured {
     // 引入文档承诺的公开 Error 与 SettingsService。
     use uix::prelude::*;
@@ -154,6 +155,7 @@ mod cli_mode {
 }
 
 // 隔离 settings-typed-struct 围栏中的组合根理想用法。
+#[cfg(feature = "settings-serde")]
 mod settings_typed_struct {
     // 引入文档承诺的公开 Application 与设置 prelude。
     use uix::prelude::*;
@@ -210,21 +212,23 @@ mod settings_typed_struct {
 
 // 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
 #[test]
-// 确认本批外部消费者覆盖配置文档的六个真实围栏。
+// 确认本批外部消费者覆盖默认四个围栏与两个 opt-in 围栏。
 fn config_rust_fences_compile_as_external_consumers() {
-    // 收集六个已经由编译器类型检查的公开示例标识。
+    // 收集当前 feature 图中已经由编译器类型检查的公开示例标识。
     let compile_ids = [
         // 登记应用设置服务围栏。
         settings_service::COMPILE_ID,
         // 登记 typed 标量围栏。
         settings_typed_scalars::COMPILE_ID,
-        // 登记结构体 codec 围栏。
+        // 仅在 settings-serde 下登记结构体 codec 围栏。
+        #[cfg(feature = "settings-serde")]
         settings_structured::COMPILE_ID,
         // 登记图形后端选择围栏。
         graphics_backend::COMPILE_ID,
         // 登记 CLI 模式围栏。
         cli_mode::COMPILE_ID,
-        // 登记 typed 组合根围栏。
+        // 仅在 settings-serde 下登记 typed 组合根围栏。
+        #[cfg(feature = "settings-serde")]
         settings_typed_struct::COMPILE_ID,
     ];
     // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
@@ -237,13 +241,15 @@ fn config_rust_fences_compile_as_external_consumers() {
             "settings-service",
             // typed 标量围栏标识。
             "settings-typed-scalars",
-            // 结构体 codec 围栏标识。
+            // settings-serde 下的结构体 codec 围栏标识。
+            #[cfg(feature = "settings-serde")]
             "settings-structured",
             // 图形后端选择围栏标识。
             "graphics-backend",
             // CLI 模式围栏标识。
             "cli-mode",
-            // typed 组合根围栏标识。
+            // settings-serde 下的 typed 组合根围栏标识。
+            #[cfg(feature = "settings-serde")]
             "settings-typed-struct",
         ],
     );

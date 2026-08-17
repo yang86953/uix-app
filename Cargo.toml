@@ -161,6 +161,15 @@ test-harness = []
 path = "src/lib.rs"
 test = false
 
+# Agent 文档消费者只在显式控制面 capability 下进入测试图。
+[[test]]
+# 固定 Cargo 自动发现时使用的测试目标名称。
+name = "agent_docs_public_api"
+# 指向 Agent 使用文档的外部消费者入口。
+path = "tests/agent_docs_public_api.rs"
+# 未启用控制面时跳过整个专属消费者目标。
+required-features = ["agent-control"]
+
 [lints.clippy]
 unwrap_used = "warn"
 expect_used = "warn"
