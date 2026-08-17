@@ -71,20 +71,6 @@ impl SecondaryWindowSession {
         true
     }
 
-    pub(super) fn drain_main_thread_work(&mut self) -> bool {
-        let parts = self.session.parts_mut();
-        let mut main_thread_context =
-            MainThreadContext::new(parts.pending_root, parts.reconcile_pending);
-        let had_main_thread_work = parts.main_thread_queue.drain(&mut main_thread_context);
-        let had_app_state_focus_work = parts.tree.drain_app_state_focus_requests();
-        let had_app_state_semantic_work = parts.tree.drain_app_state_semantic_events();
-
-        had_main_thread_work
-            || had_app_state_focus_work
-            || had_app_state_semantic_work
-            || *parts.reconcile_pending
-    }
-
     pub(super) fn has_frame_work(&mut self, now: Instant) -> bool {
         let parts = self.session.parts_mut();
         self.driver.has_frame_work(
@@ -184,6 +170,8 @@ impl SecondaryWindowSession {
             parts.tree,
             parts.active_work,
             &parts.app_timers,
+            // 副窗口剩余队列以即时外部 deadline 唤醒应用主循环。
+            &parts.main_thread_queue,
             parts.agent_commands,
             parts.pending_root,
             *parts.reconcile_pending,

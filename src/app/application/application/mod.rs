@@ -18,7 +18,8 @@ use crate::app::event_loop::run_window_session_loop_with_system_theme_and_tasks;
 use crate::app::queues::app_timer::{AppTimerQueue, TimerHandle};
 use crate::app::queues::agent_command_queue::AgentConfirmationRequest;
 use crate::app::queues::clock::{AppClock, system_clock};
-use crate::app::queues::main_thread_queue::{MainThreadContext, MainThreadQueue};
+// Application 组合根只保留创建窗口队列所需的 MainThreadQueue 类型。
+use crate::app::queues::main_thread_queue::MainThreadQueue;
 use crate::app::session_runtime::{AppRuntime, OpenWindowRequest};
 use crate::app::window::text_input::sync_window_text_input;
 use crate::app::window::window_actions::{
@@ -729,8 +730,6 @@ impl App {
             self.on_window_start.as_ref(),
             &mut secondary_windows.borrow_mut(),
         );
-        drain_secondary_window_queues(&mut secondary_windows.borrow_mut());
-
         let theme = RefCell::new(self.runtime.take_pending_theme().unwrap_or(self.theme));
         // UIX_DEBUG=1 启动即开调试 overlay（与 Window::new 一致）。
         let debug_mode = Cell::new(std::env::var("UIX_DEBUG").is_ok());
@@ -816,7 +815,6 @@ impl App {
                     on_window_start.as_ref(),
                     &mut secondary_windows.borrow_mut(),
                 );
-                drain_secondary_window_queues(&mut secondary_windows.borrow_mut());
                 drain_secondary_window_frames_with_platform(
                     platform,
                     &mut secondary_windows.borrow_mut(),
@@ -892,7 +890,7 @@ pub use runtime::map_ui_event;
 pub(crate) use runtime::{
     apply_runtime_theme_change, dispatch_secondary_system_theme_changed,
     dispatch_secondary_window_event, drain_pending_open_windows_with_backend,
-    drain_secondary_window_queues, resolve_graphics_backend, secondary_windows_next_deadline,
+    resolve_graphics_backend, secondary_windows_next_deadline,
 };
 use runtime::{
     create_preferred_engine, drain_platform_pending_failures,

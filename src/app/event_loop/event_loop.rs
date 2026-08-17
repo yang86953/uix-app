@@ -455,6 +455,8 @@ where
                     tree,
                     active_work,
                     &app_timers,
+                    // 把本窗口预算后保留的主线程任务纳入下一 deadline。
+                    &main_thread_queue,
                     agent_commands,
                     pending_root,
                     *reconcile_pending,
