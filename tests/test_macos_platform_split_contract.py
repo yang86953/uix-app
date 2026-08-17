@@ -31,8 +31,8 @@ class MacosPlatformSplitContractTests(unittest.TestCase):
         app_event = APP_EVENT.read_text(encoding="utf-8")
         # 拆分文件只允许借用一次父模块私有项。
         self.assertEqual(app_event.count("use super::*;"), 1)
-        # 原属性必须直接附着到拆分后的事件类型。
-        self.assertIn("#[derive(Debug, Clone)]\nstruct MacosAppEvent", app_event)
+        # 原属性必须直接附着到父 platform Module 可见的事件类型。
+        self.assertIn("#[derive(Debug, Clone)]\npub(super) struct MacosAppEvent", app_event)
 
 
 # 支持直接运行该源码契约文件。

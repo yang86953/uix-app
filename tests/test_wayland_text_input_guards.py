@@ -47,14 +47,14 @@ class WaylandTextInputGuardTests(unittest.TestCase):
     def test_callbacks_enqueue_typed_failures_before_local_state_changes(self) -> None:
         # 读取 Wayland text-input adapter。
         source = TEXT_INPUT.read_text(encoding="utf-8")
-        # 整个 adapter 不得恢复 poisoned owner。
-        self.assertNotIn("into_inner()", source)
         # 限定 callback 注册片段。
         callback_start = source.index("ti.quick_assign")
         # 协议 enable 标记 callback 片段末尾。
         callback_end = source.index("ti.enable()", callback_start)
         # 保存 callback 状态机。
         callback = source[callback_start:callback_end]
+        # 协议 callback 不得恢复 poisoned owner；最终 teardown 可只为释放资源取回 guard。
+        self.assertNotIn("into_inner()", callback)
         # Enter 必须 checked lock surface registry。
         self.assertIn("match surface_windows.lock()", callback)
         # surface failure 必须稳定分类为 InvalidState。
@@ -82,8 +82,8 @@ class WaylandTextInputGuardTests(unittest.TestCase):
         source = TEXT_INPUT.read_text(encoding="utf-8")
         # 定位双 owner helper。
         helper_start = source.index("fn lock_ime_state_checked")
-        # ITextInput 实现标记 helper 末尾。
-        helper_end = source.index("impl ITextInput for WaylandBackend", helper_start)
+        # backend 生命周期实现标记双 owner helper 末尾。
+        helper_end = source.index("impl WaylandBackend", helper_start)
         # 保存固定锁序 helper。
         helper = source[helper_start:helper_end]
         # composition owner 必须先取得。
