@@ -101,6 +101,8 @@ pub(super) fn parse_element(
                 component_scopes: Vec::new(),
                 // 源码元素尚未经过组件展开，因此没有循环事件捕获契约。
                 for_iteration_clones: Vec::new(),
+                // 源码元素尚未经过组件展开，因此没有逐迭代组件准备语句。
+                for_iteration_setup: Vec::new(),
             });
         }
         // 普通开始标签进入子节点阶段。
@@ -323,6 +325,8 @@ pub(super) fn parse_element(
                 component_scopes: Vec::new(),
                 // 源码元素尚未经过组件展开，因此没有循环事件捕获契约。
                 for_iteration_clones: Vec::new(),
+                // 源码元素尚未经过组件展开，因此没有逐迭代组件准备语句。
+                for_iteration_setup: Vec::new(),
             });
         }
         // 小于号开始嵌套元素。

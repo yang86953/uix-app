@@ -21,6 +21,7 @@
 
 | 日期 | 范围 | 说明 | 关联 |
 |---|---|---|---|
+| 2026-08-17 | Component / For | 实现 For 内 props、private state、computed、事件、状态样式与 Slot 投影的逐实例语义；key/位置完整路径同时约束组件状态复用和卸载清理 | [Gitea #22](http://100.79.245.29:3000/admin/uix-app/issues/22) |
 | 2026-08-17 | 样式 / 阴影 | 为 `boxShadow` 登记可选正负 spread，保持既有四段语法的零 spread 兼容语义 | [Gitea #5](http://100.79.245.29:3000/admin/uix-app/issues/5) |
 | 2026-08-16 | 组件 / 图表 | 为 `ScatterChart` 登记互斥的 `bubbleData`、`BubbleData` 构造器与 `bubbleScale`，保持动态集合精确类型检查 | #1097 |
 | 2026-08-15 | 组件 / 图表 | 为十二类图表登记 `legend`、`animation`、`interactive`、`brush` 与 `tooltip` 共同配置，并保留运行时图表组件的交互状态唯一所有权 | #1096 |

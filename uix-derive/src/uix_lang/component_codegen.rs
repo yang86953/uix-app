@@ -19,6 +19,9 @@ use super::dynamic_style_lower::nodes_use_set_style;
 // 引入组件调用属性完整性与必填校验入口。
 use super::component_call_validator::validate_component_attributes;
 
+// 拆分静态声明基座与 For 实际组件作用域的生成，保持主展开器规模受控。
+mod instance_scope;
+
 // 保存组件字段展开后的 Rust 局部绑定。
 #[derive(Clone)]
 pub(super) struct Binding {
@@ -111,6 +114,8 @@ pub(super) struct ComponentExpander {
     pub(super) for_path_stack: Vec<Ident>,
     // 保存嵌套 For 子树各自需要在每次迭代克隆的拥有型事件捕获。
     pub(super) for_iteration_clone_stack: Vec<Vec<String>>,
+    // 保存嵌套 For 子树各自需要在实际迭代中执行的组件准备语句。
+    pub(super) for_iteration_setup_stack: Vec<Vec<TokenStream>>,
 }
 
 // 实现文档级组件展开与结构校验。
@@ -203,6 +208,8 @@ impl ComponentExpander {
             for_path_stack: Vec::new(),
             // 文档根没有等待收集的循环事件捕获。
             for_iteration_clone_stack: Vec::new(),
+            // 文档根没有等待收集的逐迭代组件准备语句。
+            for_iteration_setup_stack: Vec::new(),
         })
     }
 
@@ -260,7 +267,21 @@ impl ComponentExpander {
             component_scopes: Vec::new(),
             // 合成容器不是 For，因此没有逐迭代事件捕获。
             for_iteration_clones: Vec::new(),
+            // 合成容器不是 For，因此没有逐迭代组件准备语句。
+            for_iteration_setup: Vec::new(),
         })
+    }
+
+    // 把准备语句路由到最近 For 实例或文档根准备区。
+    pub(super) fn push_setup(&mut self, statement: TokenStream) {
+        // For 子树中的值可能依赖当前项，必须在实际迭代中建立。
+        if let Some(setup) = self.for_iteration_setup_stack.last_mut() {
+            // 保持展开顺序追加到最近的动态实例边界。
+            setup.push(statement);
+        } else {
+            // 静态组件继续在最终 View 前只执行一次。
+            self.setup.push(statement);
+        }
     }
 
     // 展开一个元素为一个或多个同层节点。
@@ -454,6 +475,8 @@ impl ComponentExpander {
             self.for_path_stack.push(path.clone());
             // 为当前 For 建立独立的逐迭代捕获收集区。
             self.for_iteration_clone_stack.push(Vec::new());
+            // 为当前 For 建立独立的逐迭代准备语句收集区。
+            self.for_iteration_setup_stack.push(Vec::new());
         }
         // 展开全部有序子节点并暂存诊断以确保作用域恢复。
         let expanded_children = self.expand_nodes(&element.children, bindings, child_inside_for);
@@ -467,6 +490,20 @@ impl ComponentExpander {
                 .pop()
                 // For 路径存在时收集区必然同步存在。
                 .expect("For 捕获收集栈必须与路径栈同步");
+            // 取出当前 For 子树按依赖顺序生成的逐迭代准备语句。
+            expanded.for_iteration_setup = self
+                // 借用最近循环的独立准备语句收集区。
+                .for_iteration_setup_stack
+                // 弹出当前 For 的完整准备语句列表。
+                .pop()
+                // For 路径存在时准备语句收集区必然同步存在。
+                .expect("For 准备语句栈必须与路径栈同步")
+                // 把可克隆令牌保存为可比较的内部 AST 文本。
+                .into_iter()
+                // 令牌文本只在同一宏展开内重新解析，不成为公开语法。
+                .map(|statement| statement.to_string())
+                // 保持生成顺序收集到控制元素。
+                .collect();
             // 弹出刚才压入的循环路径。
             self.for_path_stack.pop();
         }
@@ -561,25 +598,6 @@ impl ComponentExpander {
         let uses_animation_style = self.styles.nodes_use_animation(&component.children);
         // 预先判断当前组件是否需要持久化声明式状态过渡。
         let uses_transition_style = self.styles.nodes_use_transition(&component.children);
-        // For 内的状态、prop 或动态样式需要运行时逐实例存储。
-        if inside_for
-            && (!component.props.is_empty()
-                || !component.states.is_empty()
-                || uses_dynamic_style
-                || uses_hover_style
-                || uses_animation_style
-                || uses_transition_style)
-        {
-            // 返回明确的动态实例边界诊断。
-            return Err(Diagnostic::new(
-                // 指向组件调用。
-                element.span,
-                // 说明缺少逐实例存储。
-                format!("For 内的 <{}> 需要逐实例 props/state 存储", element.name),
-                // 给出不共享状态的修复建议。
-                "把组件移到 For 外，或直接展开无状态无 props 的行内容",
-            ));
-        }
         // 拒绝直接或间接递归组件。
         if self.stack.contains(&component.name) {
             // 构造包含闭环的调用路径。
@@ -635,45 +653,27 @@ impl ComponentExpander {
             pushed_slots = true;
             // 组件体只看见自身字段。
             let mut bindings = Bindings::new();
-            // 仅为拥有私有状态的静态调用创建窗口私有的运行时作用域。
-            let scope = if component.states.is_empty()
-                && !uses_dynamic_style
-                && !uses_hover_style
-                && !uses_animation_style
-                && !uses_transition_style
-            {
-                // 无私有状态的组件不进入运行时作用域，保留既有 For 语义。
-                None
-            } else {
-                // 为当前静态调用生成卫生的作用域局部变量名称。
-                let scope_ident = self.fresh_ident("component_scope", &component.name);
-                // 使用组件调用标签与源码跨度形成稳定声明身份。
-                // 先拼接仅由静态 UIX 源码决定的声明身份材料。
-                let declaration_source = format!(
-                    // 保留组件标签与完整调用跨度，区分同类型的相邻静态调用。
-                    "{}:{}:{}",
-                    // 写入组件调用标签。
-                    element.name,
-                    // 写入调用开始偏移。
-                    element.span.start,
-                    // 写入调用结束偏移。
-                    element.span.end,
-                );
-                // 把声明身份材料压缩为运行时 API 约定的稳定无符号编号。
-                let declaration_id = Self::stable_component_id(&declaration_source);
-                // 在组件体展开前取得当前窗口和本轮构建专属的作用域句柄。
-                self.setup.push(quote! {
-                    // 为当前静态组件调用取得可跨 reconcile 复用的私有状态作用域。
-                    let #scope_ident = ::uix::ui::__private::uix_component_scope(
-                        // 由 Rust 宏调用点区分同一 UIX 文档的不同根工厂。
-                        concat!(module_path!(), ":", file!(), ":", line!(), ":", column!()),
-                        // 由 UIX 静态调用位置区分同一组件的多个实例。
-                        #declaration_id,
-                    );
-                });
-                // 返回后续 state 初始化和 View 标记共用的作用域局部变量。
-                Some(scope_ident)
-            };
+            // 私有 state 与状态样式需要可由实际根承载的运行时作用域。
+            let requires_scope = !component.states.is_empty()
+                // 动态 class 选择拥有组件私有状态。
+                || uses_dynamic_style
+                // hover 伪类拥有组件私有状态。
+                || uses_hover_style
+                // animation 播放拥有组件私有状态。
+                || uses_animation_style
+                // transition 目标拥有组件私有状态。
+                || uses_transition_style;
+            // 为静态调用或 For 实际实例生成对应作用域。
+            let scope = self.prepare_component_scope(
+                // 传递声明名称供卫生标识与身份生成使用。
+                &component.name,
+                // 传递实际调用元素及其稳定源码跨度。
+                element,
+                // 传递是否需要从最近 For 路径派生实例。
+                inside_for,
+                // 无状态组件保持零运行时作用域开销。
+                requires_scope,
+            );
             // 按声明顺序生成 props。
             for prop in &component.props {
                 // 为省略的可选 prop 保留一个声明期合成属性槽。
