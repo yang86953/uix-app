@@ -103,7 +103,8 @@ pub(crate) fn drain_pending_open_windows_with_backend(
     let mut created = 0;
     // 逐个取出待打开的副窗请求，创建成功后才登记到会话列表。
     while let Some(request) = runtime.take_next_open_window() {
-        if let Some(mut window) = create_secondary_window(
+        // 新窗口队列由紧随其后的唯一 WindowDriver 轮次按预算消费。
+        if let Some(window) = create_secondary_window(
             platform,
             runtime,
             app_state,
@@ -116,23 +117,11 @@ pub(crate) fn drain_pending_open_windows_with_backend(
             if let Some(callback) = on_window_start {
                 callback(window.handle.clone());
             }
-            // 立即排空主线程队列，避免打开瞬间积压的 UI 工作滞留到下一帧。
-            window.drain_main_thread_work();
             secondary_windows.push(window);
             created += 1;
         }
     }
     created
-}
-
-pub(crate) fn drain_secondary_window_queues(
-    secondary_windows: &mut [SecondaryWindowSession],
-) -> bool {
-    let mut drained = false;
-    for window in secondary_windows {
-        drained |= window.drain_main_thread_work();
-    }
-    drained
 }
 
 // 测试目标保留无平台参数的 secondary-window 帧便捷入口，供外部 GUI 测试按需调用。
