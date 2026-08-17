@@ -2,8 +2,8 @@
 
 use crate::core::Rect;
 use crate::draw::Radius;
-use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::theme::style::Style;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 隔离边框线型到 draw 公共描边契约的几何映射。
 #[path = "style_paint/border.rs"]
 // 编译 UI System 私有的边框绘制实现。
@@ -12,6 +12,49 @@ mod border;
 #[path = "style_paint/background.rs"]
 // 编译 UI System 私有的背景图层绘制实现。
 mod background;
+// 隔离 spread 几何的单元测试。
+#[cfg(test)]
+// 从独立文件编译 spread 几何契约。
+#[path = "style_paint/spread_tests.rs"]
+// 注册样式阴影扩张测试模块。
+mod spread_tests;
+
+// 计算盒阴影 spread 应用后的基准矩形与圆角。
+fn spread_shadow_geometry(
+    // 接收组件原始边框盒。
+    rect: Rect,
+    // 接收与组件边框一致的可选圆角。
+    radius: Option<Radius>,
+    // 接收向外为正、向内为负的扩张距离。
+    spread: f32,
+) -> Option<(Rect, Option<Radius>)> {
+    // Rust 直接构造的非有限 spread 按零处理，避免向绘制层传播坏几何。
+    let spread = if spread.is_finite() { spread } else { 0.0 };
+    // 计算扩张后的宽度。
+    let width = rect.w + spread * 2.0;
+    // 计算扩张后的高度。
+    let height = rect.h + spread * 2.0;
+    // 完全内缩后的空几何不提交阴影命令。
+    if width <= 0.0 || height <= 0.0 {
+        // 用 None 表示没有可绘制基准盒。
+        return None;
+    }
+    // 同步移动左上角以保持四边等距扩张。
+    let spread_rect = Rect::new(rect.x - spread, rect.y - spread, width, height);
+    // 让圆角随轮廓扩张并把负半径钳制为零。
+    let spread_radius = radius.map(|radius| Radius {
+        // 调整左上圆角。
+        tl: (radius.tl + spread).max(0.0),
+        // 调整右上圆角。
+        tr: (radius.tr + spread).max(0.0),
+        // 调整右下圆角。
+        br: (radius.br + spread).max(0.0),
+        // 调整左下圆角。
+        bl: (radius.bl + spread).max(0.0),
+    });
+    // 返回可直接交给现有阴影原语的几何。
+    Some((spread_rect, spread_radius))
+}
 
 /// Applies a `Style` to a rectangular area.
 pub fn apply_style(ctx: &mut PaintContext, rect: Rect, style: &Style) {
@@ -21,14 +64,25 @@ pub fn apply_style(ctx: &mut PaintContext, rect: Rect, style: &Style) {
         None
     };
 
-    if let Some(shadow) = style.box_shadow.as_ref() {
+    if let Some(shadow) = style.box_shadow.as_ref()
+        // 只在 spread 后仍有正面积时提交阴影。
+        && let Some((shadow_rect, shadow_radius)) =
+            spread_shadow_geometry(rect, radius, shadow.spread)
+    {
+        // 复用现有 CPU/GPU 阴影原语绘制扩张后的基准盒。
         ctx.draw_box_shadow(
-            rect,
+            // 传入应用 spread 后的阴影矩形。
+            shadow_rect,
+            // 保留声明的模糊半径。
             shadow.blur,
+            // 保留声明的水平偏移。
             shadow.offset_x,
+            // 保留声明的垂直偏移。
             shadow.offset_y,
+            // 保留声明的阴影颜色。
             shadow.color,
-            radius,
+            // 使用随 spread 同步变化的圆角。
+            shadow_radius,
         );
     }
 

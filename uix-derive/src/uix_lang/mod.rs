@@ -575,6 +575,9 @@ mod style_class_resolver;
 mod style_value_codegen;
 // 定义完整盒阴影值与字段更新的编译期映射。
 mod style_shadow_codegen;
+// 集中验证盒阴影旧语法与可选 spread 的生成契约。
+#[cfg(test)]
+mod style_shadow_codegen_tests;
 // 定义 transform 函数列表到公开二维仿射矩阵的编译期映射。
 mod style_transform_codegen;
 // 定义 cursor 文档值到公开平台无关枚举的独立映射。
