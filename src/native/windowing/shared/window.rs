@@ -21,6 +21,8 @@ use crate::native::windowing::shared::state::WindowState;
 use crate::native::windowing::window::{
     INativeHandle, IWindowProperties, NativeFrameRequest, PlatformWindow, WindowOcclusionState,
 };
+// 共享窗口核心只转交平台中立的调整大小方向。
+use crate::platform::windowing::WindowResizeEdge;
 
 // ════════════════════════════════════════════════════════════════════════════
 // WindowOps — 平台特有的窗口操作
@@ -139,6 +141,20 @@ pub(crate) trait WindowOps {
         // 保持既有未实现失败契约。
     ) -> Result<()> {
         unimpl("os_begin_move_drag")
+    }
+
+    // 默认窗口操作拒绝未由具体平台实现的交互缩放。
+    fn os_begin_resize_drag(
+        // 默认实现不解释平台中立的缩放方向。
+        &mut self,
+        // 参数只供支持原生交互缩放的平台后端使用。
+        _edge: WindowResizeEdge,
+        // 参数只供需要协议授权的平台后端使用。
+        _pointer_activation: Option<PointerActivationId>,
+        // 保持与其他可选窗口能力一致的未实现失败契约。
+    ) -> Result<()> {
+        // 使用稳定方法名向调用方暴露能力缺失。
+        unimpl("os_begin_resize_drag")
     }
 
     fn os_show_system_menu(&mut self) -> Result<()> {
@@ -292,6 +308,19 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
     ) -> Result<()> {
         // 将一次性上下文原样交给唯一的 OS 操作所有者。
         self.ops.os_begin_move_drag(pointer_activation)
+    }
+    // 共享窗口只负责把方向与当前事件上下文转交平台实现。
+    fn begin_resize_drag(
+        // 接收 UI 声明的精确窗口缩放方向。
+        &mut self,
+        // 方向不进入共享窗口状态。
+        edge: WindowResizeEdge,
+        // 接收 app 从当前原生事件转交的激活身份。
+        pointer_activation: Option<PointerActivationId>,
+        // 直接返回平台后端的提交或忽略结果。
+    ) -> Result<()> {
+        // 将两个一次性参数原样交给唯一的 OS 操作所有者。
+        self.ops.os_begin_resize_drag(edge, pointer_activation)
     }
     fn show_system_menu(&mut self) -> Result<()> {
         self.ops.os_show_system_menu()

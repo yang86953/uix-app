@@ -31,7 +31,12 @@ pub(crate) fn apply_pending_window_actions(
 ) -> Result<()> {
     for action in tree.take_window_actions() {
         // 原生交互移动会接管 pointer，UI 不应等待可能永不返回的 PointerUp。
-        let cancels_pointer_gesture = action == WindowAction::BeginMoveDrag;
+        let cancels_pointer_gesture = matches!(
+            // 移动和缩放都会把当前指针手势移交给原生窗口管理器。
+            action,
+            // 两类交互接管都必须清理 UI pressed 与潜在 drag。
+            WindowAction::BeginMoveDrag | WindowAction::BeginResizeDrag(_)
+        );
         // 将同一事件上下文只作为动作执行参数转交，不存入 UI。
         apply_window_action(window, action, pointer_activation)?;
         // 平台已提交或安全忽略接管请求后，统一清除 pressed/drag 且保留键盘焦点。
@@ -50,13 +55,18 @@ pub(crate) fn apply_window_action(
     window: &mut dyn PlatformWindow,
     // UI 动作保持无平台数据的既有枚举契约。
     action: WindowAction,
-    // 激活身份只在 BeginMoveDrag 分支中具有意义。
+    // 激活身份只在原生移动或缩放分支中具有意义。
     pointer_activation: Option<PointerActivationId>,
     // 保持既有窗口操作结果契约。
 ) -> Result<()> {
     match action {
         // 原生拖动必须关联产生该动作的同一次 PointerDown。
         WindowAction::BeginMoveDrag => window.begin_move_drag(pointer_activation),
+        // 原生缩放必须保留 UI 热区声明的方向与同一次 PointerDown 身份。
+        WindowAction::BeginResizeDrag(edge) => {
+            // 两个参数只在当前同步调用边界内生效。
+            window.begin_resize_drag(edge, pointer_activation)
+        }
         WindowAction::Minimize => window.properties_mut().minimize(),
         WindowAction::MaximizeRestore | WindowAction::ToggleMaximizeFromTitleBar => {
             if window.properties().is_maximized() {
@@ -138,6 +148,8 @@ mod tests {
     use crate::core::Point;
     // 使用真实内存窗口替身记录精确调用上下文。
     use crate::native::test_harness::FakeWindow;
+    // 引入平台中立缩放方向供窗口动作转发断言使用。
+    use crate::platform::windowing::WindowResizeEdge;
     // 引入原生事件与平台中立鼠标键。
     use crate::native::windowing::{
         // UiEvent 提供当前 PointerDown 的激活身份读取。
@@ -238,6 +250,31 @@ mod tests {
         // 测试成功完成。
         Ok(())
         // 结束激活身份转发测试。
+    }
+
+    // 验证缩放方向与同一个 PointerDown 激活身份原样到达 PlatformWindow。
+    #[test]
+    fn native_resize_forwards_edge_and_pointer_activation() -> Result<()> {
+        // 创建稳定的不可解释测试身份。
+        let activation = PointerActivationId::new(91);
+        // 创建记录窗口缩放动作的内存替身。
+        let mut window = FakeWindow::new(8, "resize-forwarding", 320, 200);
+        // 直接映射一次右下角缩放动作，隔离本测试关注的窄边界。
+        apply_window_action(
+            // 使用唯一的动作接收窗口。
+            &mut window,
+            // 保留调用热区选择的右下角方向。
+            WindowAction::BeginResizeDrag(WindowResizeEdge::BottomRight),
+            // 转交产生动作的同一次原生 PointerDown 身份。
+            Some(activation),
+        )?;
+        // 测试替身必须收到精确方向与身份，不能退化或替换。
+        assert_eq!(
+            window.state.begin_resize_drag_activations,
+            vec![(WindowResizeEdge::BottomRight, Some(activation))],
+        );
+        // 测试成功完成。
+        Ok(())
     }
     // 结束窗口动作契约测试模块。
 }

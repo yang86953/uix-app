@@ -60,5 +60,7 @@ pub(crate) mod util;
 mod window_icon;
 // 窗口操作后端只供 crate 内部窗口系统使用。
 pub(crate) mod window_ops;
+// 非客户区交互模块集中映射跨平台缩放方向与 Win32 hit-test 消息。
+pub(crate) mod window_interaction;
 // 窗口过程只供 crate 内部平台实现注册。
 pub(crate) mod wnd_proc;

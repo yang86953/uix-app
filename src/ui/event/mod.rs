@@ -7,7 +7,7 @@ use std::hash::{Hash, Hasher};
 use crate::core::{ComponentId, Point, WindowId};
 
 // 语义事件保留修饰键与鼠标按钮；按键值只由 system_event 子模块使用。
-use crate::platform::windowing::{KeyMod, MouseButton};
+use crate::platform::windowing::{KeyMod, MouseButton, WindowResizeEdge};
 
 pub(crate) mod system_event_handler;
 // 将系统事件载荷与分类映射拆到同一 Event Module 的独立实现文件。
@@ -34,6 +34,7 @@ pub enum EventResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowAction {
     BeginMoveDrag,
+    BeginResizeDrag(WindowResizeEdge),
     Minimize,
     MaximizeRestore,
     ToggleMaximizeFromTitleBar,
@@ -47,6 +48,7 @@ impl WindowAction {
         matches!(
             self,
             Self::BeginMoveDrag
+                | Self::BeginResizeDrag(_)
                 | Self::ToggleMaximizeFromTitleBar
                 | Self::ShowSystemMenuFromTitleBar
         )

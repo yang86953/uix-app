@@ -14,6 +14,7 @@ use crate::native::windowing::event::{FrameRequestToken, PointerActivationId};
 // Windows adapter 直接实现共享窗口核心所定义的私有操作契约。
 use crate::native::windowing::shared::window::WindowOps;
 use crate::native::windowing::window::NativeFrameRequest;
+use crate::platform::windowing::WindowResizeEdge;
 
 use super::frame_pacer::{SharedWindowsFramePacerState, WindowsFramePacer};
 use super::platform::WindowBinding;
@@ -226,7 +227,7 @@ impl WindowOps for WindowsWindowOps {
         Ok(())
     }
 
-    // Windows 保持现有非客户区拖动消息路径。
+    // Windows 通过独立非客户区交互 Component 提交移动消息。
     fn os_begin_move_drag(
         // Windows 使用当前 Win32 捕获状态，不消费 Wayland 式授权。
         &mut self,
@@ -235,17 +236,24 @@ impl WindowOps for WindowsWindowOps {
         // 返回原有 Win32 消息提交结果。
     ) -> Result<()> {
         self.ensure_valid_window("os_begin_move_drag")?;
-        // SAFETY: self.hwnd 已经 ensure_valid_window 验证存活；ReleaseCapture 与 PostMessageW 均为同步无指针调用。
-        unsafe {
-            ReleaseCapture();
-            if PostMessageW(self.hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0) == 0 {
-                return Err(super::util::windows_diag(
-                    Errc::PlatformError,
-                    "os_begin_move_drag: PostMessageW failed",
-                ));
-            }
-        }
-        Ok(())
+        // 句柄校验完成后由窄 Component 独占 Win32 消息映射。
+        super::window_interaction::begin_move_drag(self.hwnd)
+    }
+
+    // Windows 把公共缩放方向映射为对应非客户区 hit-test 消息。
+    fn os_begin_resize_drag(
+        // 窗口操作只在本次同步调用期间借用自身状态。
+        &mut self,
+        // 保留 UI 热区声明的精确调整大小方向。
+        edge: WindowResizeEdge,
+        // Windows 使用当前 Win32 捕获状态，不消费 Wayland 式授权。
+        _pointer_activation: Option<PointerActivationId>,
+        // 返回 Win32 消息提交结果。
+    ) -> Result<()> {
+        // 先拒绝已经失效的原生窗口句柄。
+        self.ensure_valid_window("os_begin_resize_drag")?;
+        // 句柄校验完成后由窄 Component 独占方向映射与消息提交。
+        super::window_interaction::begin_resize_drag(self.hwnd, edge)
     }
 
     fn os_show_system_menu(&mut self) -> Result<()> {

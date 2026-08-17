@@ -6,6 +6,8 @@ use crate::core::WindowId;
 use crate::core::error::{Error, Result};
 use crate::core::geometry::Point;
 use crate::native::present::IPresenter;
+// 引入平台中立的窗口缩放方向，原生窗口只解释方向而不拥有 UI 热区。
+use crate::platform::windowing::WindowResizeEdge;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeFrameRequestPhase {
@@ -98,6 +100,16 @@ pub trait PlatformWindow {
         // 激活身份只用于关联当前原生 PointerDown，平台可选择忽略。
         &mut self,
         // 未携带身份表示动作并非由可验证的原生指针激活产生。
+        pointer_activation: Option<PointerActivationId>,
+        // 返回平台请求提交结果，正常的过期授权应安全忽略。
+    ) -> Result<()>;
+    /// 将当前鼠标手势移交给窗口管理器并从指定边或角调整大小。
+    fn begin_resize_drag(
+        // 原生后端把公共方向映射为各自的窗口系统协议值。
+        &mut self,
+        // 保留调用 UI 热区声明的精确方向。
+        edge: WindowResizeEdge,
+        // 激活身份只用于关联当前原生 PointerDown，平台可选择忽略。
         pointer_activation: Option<PointerActivationId>,
         // 返回平台请求提交结果，正常的过期授权应安全忽略。
     ) -> Result<()>;

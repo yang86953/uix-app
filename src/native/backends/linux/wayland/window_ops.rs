@@ -55,6 +55,8 @@ use crate::native::windowing::shared::window::{WindowOps, unimpl};
 // 引入跨平台共享的窗口状态。
 use crate::native::windowing::shared::WindowState;
 use crate::native::windowing::window::{NativeFrameRequest, NativeFrameRequestPhase};
+// 引入平台中立的窗口缩放方向供 Wayland adapter 转交。
+use crate::platform::windowing::WindowResizeEdge;
 
 use super::compat::WaylandDispatchState;
 // 引入私有 frame callback Component，保持 WindowOps 只编排协议生命周期。
@@ -62,13 +64,7 @@ use super::frame_callback::{FrameCallbackOwner, deliver_frame_opportunity};
 // 文件拖放 Component 保存逐窗能力与在途协议 owner。
 use super::file_drop::WaylandFileDropState;
 // 引入 Wayland 私有授权注册表及其非致命消费结果。
-use super::pointer_activation::{
-    // 消费结果区分可提交 serial 与正常竞态忽略。
-    PointerActivationOutcome,
-    // 注册表独占 raw serial、surface 代次与 pointer 代次。
-    WaylandPointerActivationRegistry,
-    // 结束指针激活私有类型导入。
-};
+use super::pointer_activation::WaylandPointerActivationRegistry;
 // 引入跨注册表原子登记与注销 Component，窗口 owner 只编排协议生命周期。
 use super::surface_registration::register_window_surface;
 // Wayland HiDPI Component 独占 output 订阅、buffer scale 与共享 surface metrics。
@@ -93,8 +89,8 @@ pub(crate) struct WaylandWindowOps {
     // 所有窗口 callback 复用所属 Wayland backend 的同一 failure source。
     pub(super) pending_failures: PendingFailureSource,
     pub(super) surface_windows: Arc<Mutex<SurfaceWindowTargets>>,
-    // seat 代理只用于提交已经通过注册表校验的交互移动请求。
-    seat: Option<Main<wl_seat::WlSeat>>,
+    // seat 代理只用于提交已经通过注册表校验的交互移动或缩放请求。
+    pub(super) seat: Option<Main<wl_seat::WlSeat>>,
     // 共享注册表是 raw pointer press serial 的唯一所有者。
     pub(super) pointer_activations: Arc<Mutex<WaylandPointerActivationRegistry>>,
     // backend 级共享 Component 允许窗口同步切换自身接收资格。
@@ -498,113 +494,22 @@ impl WindowOps for WaylandWindowOps {
         pointer_activation: Option<PointerActivationId>,
         // 正常竞态统一安全忽略，协议连接失败仍由既有 pending failure 报告。
     ) -> Result<()> {
-        // 没有原生 PointerDown 身份的动作不得猜测或复用任何 serial。
-        let Some(pointer_activation) = pointer_activation else {
-            // 提供稳定调试诊断且不终止主窗口或副窗口事件循环。
-            tracing::debug!(
-                // 记录动作所属窗口用于多窗口排查。
-                window_id = self.window_id.raw(),
-                // 使用固定原因文本支持定向日志检索。
-                reason = "missing_pointer_activation",
-                // 说明本次 Wayland 移动请求被安全忽略。
-                "Wayland interactive move ignored" // 结束无身份诊断参数。
-            );
-            // 正常竞态或非原生动作不构成平台错误。
-            return Ok(());
-            // 结束无激活身份分支。
-        };
-        // 已关闭或尚未登记 surface 的窗口不能消费拖动授权。
-        let Some(surface_id) = self.surface_id else {
-            // 记录稳定的 surface 生命周期拒绝原因。
-            tracing::debug!(
-                // 记录动作所属窗口。
-                window_id = self.window_id.raw(),
-                // 标明原生 surface 当前不可用。
-                reason = "surface_unavailable",
-                // 说明本次请求被安全忽略。
-                "Wayland interactive move ignored" // 结束 surface 缺失诊断参数。
-            );
-            // surface 缺失是关闭竞态而非致命失败。
-            return Ok(());
-            // 结束 surface 缺失分支。
-        };
-        // Component 检查共享 owner 后原子校验并消费一次性授权。
-        let outcome = WaylandPointerActivationRegistry::consume_checked(
-            // 传入 raw serial 的唯一共享 owner。
-            &self.pointer_activations,
-            // 校验当前原生 PointerDown 身份。
-            pointer_activation,
-            // 校验动作所属的稳定窗口身份。
-            self.window_id,
-            // 校验当前 surface 协议身份与代次。
-            surface_id,
-        )?;
-        // 根据私有消费结果决定提交或安全忽略。
-        match outcome {
-            // 只有完整匹配的一次性授权可以获得 raw serial。
-            PointerActivationOutcome::Authorized { serial } => {
-                // capability 初始化或关闭竞态可能使 seat 不可用。
-                let Some(seat) = self.seat.as_ref() else {
-                    // serial 已消费，缺少 seat 时绝不回填或伪造。
-                    tracing::debug!(
-                        // 记录动作所属窗口。
-                        window_id = self.window_id.raw(),
-                        // 标明 seat 协议对象不可用。
-                        reason = "seat_unavailable",
-                        // 说明请求被安全忽略。
-                        "Wayland interactive move ignored" // 结束 seat 缺失诊断参数。
-                    );
-                    // seat 缺失在交互竞态中保持非致命。
-                    return Ok(());
-                    // 结束 seat 缺失分支。
-                };
-                // 窗口关闭竞态可能已经释放 xdg_toplevel。
-                let Some(toplevel) = self.toplevel.as_ref() else {
-                    // serial 已消费，缺少顶层对象时不允许重试。
-                    tracing::debug!(
-                        // 记录动作所属窗口。
-                        window_id = self.window_id.raw(),
-                        // 标明顶层协议对象不可用。
-                        reason = "toplevel_unavailable",
-                        // 说明请求被安全忽略。
-                        "Wayland interactive move ignored" // 结束顶层对象缺失诊断参数。
-                    );
-                    // 关闭竞态不应结束应用事件循环。
-                    return Ok(());
-                    // 结束顶层对象缺失分支。
-                };
-                // 锁已释放，此处只提交同一 press 的 seat 与 serial。
-                toplevel._move(seat.as_ref(), serial);
-                // 记录协议请求已排队，不宣称 compositor 已实际移动窗口。
-                tracing::debug!(
-                    // 记录提交请求的窗口身份。
-                    window_id = self.window_id.raw(),
-                    // 记录授权绑定的 surface 协议身份。
-                    surface_id,
-                    // 说明请求已交付给 Wayland 代理队列。
-                    "Wayland interactive move request submitted" // 结束提交诊断参数。
-                );
-                // 结束授权成功分支。
-            }
-            // 缺失、过期或身份不匹配都是正常的输入生命周期结果。
-            PointerActivationOutcome::Ignored(reason) => {
-                // 使用结构化原因支持定向回归与现场排查。
-                tracing::debug!(
-                    // 记录动作所属窗口。
-                    window_id = self.window_id.raw(),
-                    // 记录当前窗口 surface 身份。
-                    surface_id,
-                    // 记录稳定的私有拒绝原因枚举。
-                    ?reason,
-                    // 说明本次请求被安全忽略。
-                    "Wayland interactive move ignored" // 结束拒绝诊断参数。
-                );
-                // 结束安全忽略分支。
-            } // 结束授权消费结果分派。
-        }
-        // 协议请求已排队或正常竞态已安全降级。
-        Ok(())
-        // 结束 Wayland 交互移动实现。
+        // 由窄 Component 统一消费授权并提交移动请求。
+        super::window_interaction::begin_move_drag(self, pointer_activation)
+    }
+
+    // 将当前 PointerDown 的一次性授权提交给 xdg_toplevel 交互缩放协议。
+    fn os_begin_resize_drag(
+        // 窗口操作只在本次同步调用期间借用自身状态。
+        &mut self,
+        // 保留 UI 热区声明的精确调整大小方向。
+        edge: WindowResizeEdge,
+        // app 仅转交不可解释身份，raw serial 始终留在 Wayland 注册表。
+        pointer_activation: Option<PointerActivationId>,
+        // 正常竞态统一安全忽略，协议连接失败仍由既有 pending failure 报告。
+    ) -> Result<()> {
+        // 由窄 Component 统一消费授权并提交带方向的缩放请求。
+        super::window_interaction::begin_resize_drag(self, edge, pointer_activation)
     }
 
     fn os_set_title(&mut self, title: &str) -> Result<()> {

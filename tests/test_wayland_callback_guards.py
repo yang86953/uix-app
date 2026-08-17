@@ -23,6 +23,8 @@ WAYLAND_FRAME_CALLBACK = ROOT / "src/native/backends/linux/wayland/frame_callbac
 WAYLAND_SURFACE_REGISTRATION = ROOT / "src/native/backends/linux/wayland/surface_registration.rs"
 # 读取 Wayland 指针激活授权 Component。
 WAYLAND_POINTER_ACTIVATION = ROOT / "src/native/backends/linux/wayland/pointer_activation.rs"
+# 读取逐窗移动与缩放授权消费及协议提交 Component。
+WAYLAND_WINDOW_INTERACTION = ROOT / "src/native/backends/linux/wayland/window_interaction.rs"
 # 读取 Linux 平台的 owner-thread 失败提取边界。
 PLATFORM = ROOT / "src/native/backends/linux/platform.rs"
 # 定位 Wayland 窗口操作与装饰模式实现。
@@ -845,12 +847,14 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         # 平台窄端口不得在交付关闭意图时提前销毁原生资源。
         self.assertNotIn("self.surface = None", request_source)
 
-    # 确认交互移动不会从 poisoned registry 消费一次性 serial。
-    def test_move_drag_checks_pointer_activation_registry_owner(self) -> None:
+    # 确认移动与缩放共用检查式授权 owner 和独立协议请求。
+    def test_window_interactions_check_activation_and_submit_xdg_requests(self) -> None:
         # 读取指针激活注册表 Component。
         activation = WAYLAND_POINTER_ACTIVATION.read_text(encoding="utf-8")
-        # 读取 WindowOps 的交互移动编排。
+        # 读取 WindowOps 的窄委托。
         window_ops = WINDOW_OPS.read_text(encoding="utf-8")
+        # 读取移动与缩放协议交互 Component。
+        interaction = WAYLAND_WINDOW_INTERACTION.read_text(encoding="utf-8")
         # 限定 checked consume 实现。
         checked_start = activation.index("pub(crate) fn consume_checked")
         # 既有纯消费方法标记 checked 入口末尾。
@@ -859,30 +863,28 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         checked = activation[checked_start:checked_end]
         # mutex poison 必须稳定分类为 InvalidState。
         self.assertIn("Errc::InvalidState", checked)
-        # 诊断必须保留移动请求与授权注册表阶段。
-        self.assertIn("pointer activation registry mutex poisoned during move request", checked)
+        # 诊断必须覆盖移动和缩放共用的交互窗口请求阶段。
+        self.assertIn("during interactive window request", checked)
         # checked 入口不得恢复 poisoned registry。
         self.assertNotIn("into_inner()", checked)
         # 共享 owner lock 必须发生在任何授权消费之前。
         self.assertLess(checked.index("registry.lock()"), checked.index("registry.consume("))
-        # 限定 WindowOps 交互移动实现。
-        move_start = window_ops.index("fn os_begin_move_drag")
-        # 窗口标题操作标记移动实现末尾。
-        move_end = window_ops.index("fn os_set_title", move_start)
-        # 保存移动协议编排片段。
-        move_source = window_ops[move_start:move_end]
-        # WindowOps 必须委托授权 owner 的 checked 入口。
-        checked_call = move_source.index("WaylandPointerActivationRegistry::consume_checked(")
+        # WindowOps 必须分别委托移动与缩放窄入口。
+        self.assertIn("window_interaction::begin_move_drag", window_ops)
+        self.assertIn("window_interaction::begin_resize_drag", window_ops)
+        # 交互 Component 必须委托授权 owner 的 checked 入口。
+        checked_call = interaction.index("WaylandPointerActivationRegistry::consume_checked(")
         # 授权结果分派只能发生在 checked 调用成功后。
-        match_outcome = move_source.index("match outcome")
+        match_outcome = interaction.index("match outcome")
         # typed failure 必须在 seat/toplevel 检查和协议提交前返回。
         self.assertLess(checked_call, match_outcome)
         # WindowOps 不得自行恢复 poisoned registry。
-        self.assertNotIn("into_inner()", move_source)
+        self.assertNotIn("into_inner()", interaction)
         # 同步调用方是唯一 failure receiver，不另行写 pending source。
-        self.assertNotIn("pending_failures", move_source)
-        # 健康授权仍只提交一次 Wayland move 请求。
-        self.assertEqual(move_source.count("toplevel._move(seat.as_ref(), serial)"), 1)
+        self.assertNotIn("pending_failures", interaction)
+        # 健康授权必须各有一个 Wayland move 与 resize 请求。
+        self.assertEqual(interaction.count("toplevel._move(seat.as_ref(), serial)"), 1)
+        self.assertEqual(interaction.count("toplevel.resize(seat.as_ref(), serial"), 1)
 
 
 if __name__ == "__main__":

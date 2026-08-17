@@ -185,7 +185,8 @@ pub use widgets::combinators::{
     show, space,
 };
 pub use widgets::window_chrome::{
-    WindowControl, window_control, window_control_named, window_drag_region,
+    WindowControl, WindowResizeEdge, window_control, window_control_named, window_drag_region,
+    window_resize_region,
 };
 // 公开标准窗口控制组合构造器。
 pub use widgets::window_chrome::window_controls;

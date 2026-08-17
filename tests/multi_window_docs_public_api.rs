@@ -43,7 +43,7 @@ mod multi_window_control {
     // 暴露当前模块对应的文档编译标识。
     pub(super) const COMPILE_ID: &str = "multi-window-control";
 
-    // 编译标准控制组合、具名关闭控件与拖拽区域。
+    // 编译标准控制组合、具名关闭控件、拖拽区域与缩放热区。
     fn compile_example() {
         // 按标准顺序创建最小化、最大化与关闭控件。
         let controls = window_controls(true, true, true);
@@ -62,6 +62,16 @@ mod multi_window_control {
         );
         // 消费拖拽区域节点以保持纯编译示例。
         let _ = drag_region;
+
+        // 创建右下角透明窗口缩放热区。
+        let resize_region = window_resize_region(
+            // 使用公共八方向枚举声明精确缩放方向。
+            WindowResizeEdge::BottomRight,
+            // 以逻辑尺寸声明由布局定位的命中区域。
+            space(12.0).width(12.0),
+        );
+        // 消费缩放热区节点以保持纯编译示例。
+        let _ = resize_region;
     }
 }
 

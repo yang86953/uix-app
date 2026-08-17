@@ -12,6 +12,8 @@ use crate::native::windowing::window::{
     INativeHandle, IWindowManager, IWindowProperties, NativeFrameRequest, PlatformWindow,
     WindowOcclusionState,
 };
+// 测试窗口记录平台中立的原生缩放方向。
+use crate::platform::windowing::WindowResizeEdge;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -253,6 +255,8 @@ pub struct FakeWindowState {
     pub show_system_menu_calls: usize,
     // 记录每次原生拖动调用收到的精确指针激活上下文。
     pub begin_move_drag_activations: Vec<Option<PointerActivationId>>,
+    // 记录每次原生缩放调用收到的精确方向与指针激活上下文。
+    pub begin_resize_drag_activations: Vec<(WindowResizeEdge, Option<PointerActivationId>)>,
     pub center_called: bool,
     pub raise_calls: usize,
     pub lower_calls: usize,
@@ -299,6 +303,8 @@ impl FakeWindow {
                 show_system_menu_calls: 0,
                 // 初始没有任何原生拖动激活调用。
                 begin_move_drag_activations: Vec::new(),
+                // 初始没有任何原生缩放激活调用。
+                begin_resize_drag_activations: Vec::new(),
                 center_called: false,
                 raise_calls: 0,
                 lower_calls: 0,
@@ -343,6 +349,8 @@ impl FakeWindow {
         self.state.show_system_menu_calls = 0;
         // 清除原生拖动激活调用历史。
         self.state.begin_move_drag_activations.clear();
+        // 清除原生缩放方向与激活调用历史。
+        self.state.begin_resize_drag_activations.clear();
         self.state.center_called = false;
         self.state.raise_calls = 0;
         self.state.lower_calls = 0;
@@ -406,6 +414,25 @@ impl PlatformWindow for FakeWindow {
             .begin_move_drag_activations
             // 记录 Some(id) 或 None，二者语义不可互换。
             .push(pointer_activation);
+        Ok(())
+    }
+    // 测试替身观测统一窗口缩放动作是否被调用。
+    fn begin_resize_drag(
+        // 测试替身记录动作方向，不执行任何窗口系统操作。
+        &mut self,
+        // 保留公共缩放方向供 app/window 契约行为测试断言。
+        edge: WindowResizeEdge,
+        // 保留不可解释身份，不解释其平台内容。
+        pointer_activation: Option<PointerActivationId>,
+        // 保持内存替身的无失败结果。
+    ) -> Result<()> {
+        // 保存精确调用顺序，方向与激活身份必须成对保留。
+        self.state
+            // 访问原生缩放调用历史。
+            .begin_resize_drag_activations
+            // 记录本次公共方向与 Some(id) 或 None。
+            .push((edge, pointer_activation));
+        // 内存替身始终成功。
         Ok(())
     }
     fn show_system_menu(&mut self) -> Result<()> {

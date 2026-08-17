@@ -3,7 +3,9 @@
 use std::any::Any;
 
 use crate::core::{ComponentId, Constraints, EdgeInsets, Rect, Size};
-use crate::platform::windowing::{KeyCode, MouseButton};
+use crate::platform::windowing::{CursorType, KeyCode, MouseButton};
+// 从平台公开值契约再导出缩放方向，保持 UI 与 prelude 使用路径集中。
+pub use crate::platform::windowing::WindowResizeEdge;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::traits::{
     EventHandler, WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender,
@@ -53,6 +55,7 @@ impl WindowControl {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WindowInteraction {
     Drag,
+    Resize(WindowResizeEdge),
     Control(WindowControl),
 }
 
@@ -81,6 +84,12 @@ impl WindowInteractionRegion {
 
     fn control(control: WindowControl, accessible_name: String) -> Self {
         Self::new(WindowInteraction::Control(control), Some(accessible_name))
+    }
+
+    // 构造不参与键盘导航的窗口调整大小热区。
+    fn resize(edge: WindowResizeEdge) -> Self {
+        // 缩放动作由平台窗口管理器接管，不需要无障碍控件名称。
+        Self::new(WindowInteraction::Resize(edge), None)
     }
 
     fn new(interaction: WindowInteraction, accessible_name: Option<String>) -> Self {
@@ -154,7 +163,7 @@ impl WidgetComponent for WindowInteractionRegion {
 
     fn snapshot_fields(&self) -> SnapshotFields {
         match self.interaction {
-            WindowInteraction::Drag => SnapshotFields::Unknown,
+            WindowInteraction::Drag | WindowInteraction::Resize(_) => SnapshotFields::Unknown,
             WindowInteraction::Control(control) => SnapshotFields::WindowControl {
                 control,
                 accessible_name: self.accessible_name.clone().unwrap_or_default(),
@@ -288,6 +297,18 @@ impl EventHandler for WindowInteractionRegion {
                 EventResult::Handled
             }
             (
+                WindowInteraction::Resize(edge),
+                SystemEvent::PointerDown {
+                    button: MouseButton::Left,
+                    ..
+                },
+            ) => {
+                // 把当前 PointerDown 交给事件所属窗口的原生调整大小动作。
+                self.pending = Some(WindowAction::BeginResizeDrag(edge));
+                // 缩放热区拥有该指针手势，内容节点只负责展示。
+                EventResult::Handled
+            }
+            (
                 WindowInteraction::Drag,
                 SystemEvent::PointerDown {
                     button: MouseButton::Right,
@@ -404,6 +425,33 @@ pub fn window_drag_region(content: impl View) -> ViewNode {
     ViewNode::new(WindowInteractionRegion::drag(), vec![content.build()])
 }
 
+/// 将任意展示 View 包装为自定义窗口的调整大小热区。
+///
+/// 应用应在自定义非客户区的四条边与四个角放置对应方向的热区；包装器会同时
+/// 设置平台等价的缩放光标，并在主按钮按下时把手势移交给窗口管理器。
+pub fn window_resize_region(edge: WindowResizeEdge, content: impl View) -> ViewNode {
+    // 根据缩放方向选择用户可见的标准平台光标。
+    let cursor = match edge {
+        // 左右边共享水平缩放光标。
+        WindowResizeEdge::Left | WindowResizeEdge::Right => CursorType::ResizeH,
+        // 上下边共享垂直缩放光标。
+        WindowResizeEdge::Top | WindowResizeEdge::Bottom => CursorType::ResizeV,
+        // 左上与右下共享西北方向缩放光标。
+        WindowResizeEdge::TopLeft | WindowResizeEdge::BottomRight => CursorType::ResizeNW,
+        // 右上与左下共享东北方向缩放光标。
+        WindowResizeEdge::TopRight | WindowResizeEdge::BottomLeft => CursorType::ResizeNE,
+    };
+    // 内容不形成嵌套交互目标，整个包装节点作为原生缩放热区。
+    ViewNode::new(
+        // 保存精确缩放边，供事件边界构造窗口动作。
+        WindowInteractionRegion::resize(edge),
+        // 展示内容仍由调用方完全定制。
+        vec![content.build()],
+    )
+    // 显式设置与缩放方向一致的平台光标。
+    .cursor(cursor)
+}
+
 /// 将任意展示 View 包装为自定义标题栏窗口控制。
 ///
 /// 包装器自身负责鼠标与键盘交互，因此内容只用于展示，不形成嵌套交互目标。
@@ -505,6 +553,10 @@ pub fn window_controls(
 mod tests {
     // 引入当前模块的窗口控制构造器与快照类型。
     use super::*;
+    // 引入构造指针事件所需的平台中立输入值。
+    use crate::core::Point;
+    // 引入空修饰键掩码。
+    use crate::platform::windowing::KeyMod;
 
     // 提取组合节点直接子项的窗口动作顺序。
     fn child_controls(node: &ViewNode) -> Vec<WindowControl> {
@@ -570,5 +622,57 @@ mod tests {
         let hidden = window_controls(false, false, false);
         // 空组合不能残留任何交互节点。
         assert!(hidden.children.is_empty());
+    }
+
+    // 验证公开缩放热区同时表达光标与精确原生动作。
+    #[test]
+    fn resize_region_maps_cursor_and_pointer_action() {
+        // 声明全部方向与标准平台缩放光标的完整映射。
+        let cursor_cases = [
+            // 上边使用垂直缩放光标。
+            (WindowResizeEdge::Top, CursorType::ResizeV),
+            // 下边使用垂直缩放光标。
+            (WindowResizeEdge::Bottom, CursorType::ResizeV),
+            // 左边使用水平缩放光标。
+            (WindowResizeEdge::Left, CursorType::ResizeH),
+            // 右边使用水平缩放光标。
+            (WindowResizeEdge::Right, CursorType::ResizeH),
+            // 左上角使用西北到东南缩放光标。
+            (WindowResizeEdge::TopLeft, CursorType::ResizeNW),
+            // 右上角使用东北到西南缩放光标。
+            (WindowResizeEdge::TopRight, CursorType::ResizeNE),
+            // 左下角使用东北到西南缩放光标。
+            (WindowResizeEdge::BottomLeft, CursorType::ResizeNE),
+            // 右下角使用西北到东南缩放光标。
+            (WindowResizeEdge::BottomRight, CursorType::ResizeNW),
+        ];
+        // 逐一验证公开热区附带正确光标。
+        for (edge, expected_cursor) in cursor_cases {
+            // 使用无外观内容构造当前方向的窗口缩放热区。
+            let region = window_resize_region(edge, ViewNode::leaf(Container::new()));
+            // 热区必须显式保存与方向一致的平台光标。
+            assert_eq!(region.cursor, Some(expected_cursor));
+        }
+        // 直接构造同一方向的交互组件以验证事件动作。
+        let mut interaction = WindowInteractionRegion::resize(WindowResizeEdge::BottomRight);
+        // 主按钮按下必须由缩放热区消费。
+        assert_eq!(
+            // 提交平台中立的左键 PointerDown。
+            interaction.on_event(&SystemEvent::PointerDown {
+                // 坐标由窗口管理器使用当前原生事件解释。
+                pos: Point::new(3.0, 4.0),
+                // 只允许主按钮启动原生缩放。
+                button: MouseButton::Left,
+                // 本场景没有键盘修饰键。
+                mods: KeyMod::NONE,
+            }),
+            // 缩放热区必须终止子节点传播。
+            EventResult::Handled,
+        );
+        // 动作必须保留原始右下角方向，不能退化为通用移动。
+        assert_eq!(
+            interaction.take_window_action(),
+            Some(WindowAction::BeginResizeDrag(WindowResizeEdge::BottomRight)),
+        );
     }
 }
