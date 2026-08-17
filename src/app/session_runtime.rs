@@ -12,13 +12,14 @@ use crate::app::agent::agent_bridge::{
     AgentWindowRegistration,
 };
 use crate::app::agent::agent_control::AgentCommandExecutorImpl;
-use crate::app::agent::agent_policy::{AgentConfirmationRequest, AgentPolicy};
+use crate::app::agent::agent_policy::AgentPolicy;
 #[cfg(feature = "agent-control")]
 use crate::app::agent::agent_transport::{
     AgentTransportError, AgentTransportHandle, AgentTransportInfo,
 };
 use crate::app::queues::agent_command_queue::{
-    AgentCommandQueue, AgentCommandRequest, AgentCommandTicket, AgentSubmitError,
+    AgentCommandQueue, AgentCommandRequest, AgentCommandTicket, AgentConfirmationRequest,
+    AgentSubmitError,
 };
 use crate::app::queues::app_timer::{AppTimerQueue, TimerHandle};
 use crate::app::queues::main_thread_queue::{MainThreadContext, MainThreadQueue};

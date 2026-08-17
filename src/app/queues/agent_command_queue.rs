@@ -26,6 +26,22 @@ pub(crate) const DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY: usize = 64;
 /// in-flight 动作允许的最大 settle 轮数，超限判为 DidNotSettle。
 pub(crate) const MAX_AGENT_SETTLE_PASSES: usize = 32;
 
+/// 一次待用户确认的 Agent 动作请求（确认 UI 回调载荷）。
+///
+/// 应用注入的确认 UI 收到本请求后展示确认界面；用户在界面上的决定通过
+/// `AppHandle::resolve_agent_confirmation` 交回框架。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentConfirmationRequest {
+    /// 目标窗口。
+    pub window_id: crate::core::WindowId,
+    /// 一次性确认标识：`resolve_agent_confirmation` 用其定位本次确认。
+    pub confirm_id: u64,
+    /// 目标描述（automation_id 或节点身份）。
+    pub target: String,
+    /// 请求的动作名称（语义动作蛇形名）。
+    pub action: String,
+}
+
 /// 窗口级自动化动作（测试 / agent-control 专用命令载荷）。
 #[cfg(any(test, feature = "agent-control"))]
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -14,11 +14,10 @@
 | `AgentProtocolSession` | internal struct | 完成 hello 鉴权、消息解析和串行响应 |
 | `AgentCommandExecutorImpl` | internal struct | 实现 System 私有语义/窗口动作执行端口，执行动作策略检查 |
 | `AgentPolicy` | internal struct | 动作策略数据：只读 / 受保护目标 / 禁止动作 / 需要确认目标 |
-| `AgentConfirmationRequest` | public struct | 确认 UI 回调载荷（window_id / confirm_id / target / action） |
 | `AgentTransportHandle` | internal handle | 管理 platform IPC listener 与连接生命周期 |
 | `AgentWindowRegistration` | RAII handle | 绑定窗口在控制面中的 generation 生命周期 |
 
-app System 私有边界另外持有 `AgentCommandRequest` / `AgentCommandResponse`、`AgentCommandQueue`、`WindowAgentState`、`AgentCommandExecutor`、`AgentWindowOps` 与 `AgentSemanticsPort`。这些类型不是 agent Module 的私有实现；`event-loop` / `window` 可以依赖该 System 私有契约，但不得引用 `app::agent`。
+app System 私有边界另外持有 `AgentCommandRequest` / `AgentCommandResponse`、`AgentCommandQueue`、`WindowAgentState`、`AgentCommandExecutor`、`AgentWindowOps` 与 `AgentSemanticsPort`，并从同一命令契约边界公开重导出确认 UI 载荷 `AgentConfirmationRequest`。这些类型不是 agent Module 的私有实现；`event-loop` / `window` 可以依赖该 System 私有契约，但不得引用 `app::agent`。
 
 ## 授权模型（三层）
 
