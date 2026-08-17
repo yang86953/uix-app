@@ -355,12 +355,12 @@ impl WaylandPointerActivationRegistry {
     ) -> Result<PointerActivationOutcome> {
         // mutex poison 时不得继续读取或修改任何授权状态。
         let mut registry = registry.lock().map_err(|_| {
-            // 构造稳定的交互移动授权错误。
+            // 构造稳定的交互窗口授权错误。
             Error::new(
                 // 授权 owner 已无法安全访问。
                 Errc::InvalidState,
-                // 保留 Wayland 移动请求与注册表阶段。
-                "Wayland pointer activation registry mutex poisoned during move request",
+                // 保留 Wayland 移动或缩放请求与注册表阶段。
+                "Wayland pointer activation registry mutex poisoned during interactive window request",
             )
         })?;
         // 健康 guard 内继续复用既有一次性校验与消费规则。

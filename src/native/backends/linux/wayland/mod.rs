@@ -57,6 +57,8 @@ pub(crate) mod window;
 pub(crate) mod window_activation;
 // 逐窗 callback shutdown Component 独占 xdg-shell 回调注销顺序。
 pub(crate) mod window_callback_shutdown;
+// 逐窗交互 Component 独占移动/缩放授权消费与 xdg_toplevel 请求映射。
+pub(crate) mod window_interaction;
 pub(crate) mod window_ops;
 // 逐窗 surface helper 隔离 descriptor、装饰映射与注册注销编排。
 pub(crate) mod window_surface;
