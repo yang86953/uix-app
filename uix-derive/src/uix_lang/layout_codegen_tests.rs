@@ -99,6 +99,34 @@ fn generates_container_visual_and_layout_shorthands() {
     assert!(none.contains("box_shadow") && none.contains("Option :: None"));
 }
 
+// 验证 Container 阴影简写同时支持旧语法与有符号 spread。
+#[test]
+fn generates_container_box_shadow_spread_contract() {
+    // 生成旧四段阴影简写。
+    let legacy = generate(r##"<Container shadow="-2px 4px 8px #000000" />"##)
+        // 旧语法必须继续生成成功。
+        .expect("Container shadow 旧语法应保持兼容");
+    // 旧语法必须显式保持零 spread。
+    assert!(legacy.contains("with_spread (0.0)"), "{legacy}");
+    // 生成带负 spread 的五段阴影简写。
+    let spread = generate(r##"<Container shadow="-2px 4px 8px -3px #000000" />"##)
+        // 五段阴影语法必须生成成功。
+        .expect("Container shadow 应支持有符号 spread");
+    // 生成物必须把 spread 保存在公开阴影定义中。
+    assert!(spread.contains("with_spread (- 3.0)"), "{spread}");
+}
+
+// 验证 Container 阴影拒绝非有限 spread。
+#[test]
+fn rejects_non_finite_container_box_shadow_spread() {
+    // 非有限 spread 不得进入运行时几何。
+    let spread = generate(r##"<Container shadow="0 2px 4px NaN #000000" />"##)
+        // 提取有限值诊断。
+        .expect_err("非有限 Container shadow spread 必须失败");
+    // 诊断必须明确要求有限数值。
+    assert!(spread.message.contains("必须有限"));
+}
+
 // 验证 Container overflow 与内联样式共享显式裁剪契约。
 #[test]
 fn maps_container_overflow_without_reusing_scroll_layout_flag() {

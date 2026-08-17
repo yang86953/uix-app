@@ -229,6 +229,8 @@ pub struct BoxShadowDef {
     pub offset_x: f32,
     /// 阴影垂直偏移。
     pub offset_y: f32,
+    /// 阴影基准几何向外扩张的距离；负值表示向内收缩。
+    pub spread: f32,
 }
 
 impl BoxShadowDef {
@@ -239,7 +241,17 @@ impl BoxShadowDef {
             blur,
             offset_x,
             offset_y,
+            // 保持既有四参数构造器的零扩张语义。
+            spread: 0.0,
         }
+    }
+
+    /// 返回设置了阴影扩张距离的新定义。
+    pub const fn with_spread(mut self, spread: f32) -> Self {
+        // 只替换扩张距离，保留颜色、模糊与偏移。
+        self.spread = spread;
+        // 返回可继续用于 const 上下文的值对象。
+        self
     }
 }
 

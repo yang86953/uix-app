@@ -21,6 +21,7 @@
 
 | 日期 | 范围 | 说明 | 关联 |
 |---|---|---|---|
+| 2026-08-17 | 样式 / 阴影 | 为 `boxShadow` 登记可选正负 spread，保持既有四段语法的零 spread 兼容语义 | [Gitea #5](http://100.79.245.29:3000/admin/uix-app/issues/5) |
 | 2026-08-16 | 组件 / 图表 | 为 `ScatterChart` 登记互斥的 `bubbleData`、`BubbleData` 构造器与 `bubbleScale`，保持动态集合精确类型检查 | #1097 |
 | 2026-08-15 | 组件 / 图表 | 为十二类图表登记 `legend`、`animation`、`interactive`、`brush` 与 `tooltip` 共同配置，并保留运行时图表组件的交互状态唯一所有权 | #1096 |
 | 2026-08-15 | 样式 / 背景 | 实现本地单层背景图、固定方向双色渐变、剩余空间定位与四种图片重复方式；接入 Style、ImageService、状态差异和真实宏消费者 | #1068 |

@@ -90,10 +90,20 @@ fn box_shadow_value_with_policy(
             "使用 0 2px 4px rgba(0,0,0,0.1)",
         )
     })?;
+    // 第四分量是有限数值或 px 长度时，将其解释为可选 spread。
+    let spread_source = parts
+        // 读取模糊半径后的候选分量。
+        .get(3)
+        // 只接受有符号长度语法，避免把颜色名称误判为 spread。
+        .copied()
+        // 保留可由共享长度解析器处理的候选值。
+        .filter(|source| is_signed_length(source));
+    // 按是否存在 spread 决定颜色起始位置。
+    let color_start = if spread_source.is_some() { 4 } else { 3 };
     // 读取并清理颜色外围空白。
     let color = parts
-        // 读取前三个长度之后的全部颜色分量。
-        .get(3..)
+        // 读取全部长度分量之后的颜色文本。
+        .get(color_start..)
         // 排除没有颜色分量的空切片。
         .filter(|parts| !parts.is_empty())
         // 恢复 rgba 通道之间允许的空格。
@@ -104,7 +114,7 @@ fn box_shadow_value_with_policy(
             value_diagnostic(
                 property,
                 "boxShadow 缺少颜色",
-                "使用 0 2px 4px rgba(0,0,0,0.1)",
+                "使用 0 2px 4px rgba(0,0,0,0.1) 或 0 2px 4px 1px rgba(0,0,0,0.1)",
             )
         })?;
     // Container 复合属性只接受明确的具体颜色语法。
@@ -122,17 +132,34 @@ fn box_shadow_value_with_policy(
     let vertical = parse_length_signed(vertical, property)?;
     // 解析非负模糊半径。
     let blur = parse_length(blur, property)?;
+    // 显式 spread 接受有限正负长度；省略时保持零扩张。
+    let spread = match spread_source {
+        // 解析调用方声明的有符号 spread。
+        Some(source) => parse_length_signed(source, property)?,
+        // 为旧四段语法生成零 spread。
+        None => quote! { 0.0 },
+    };
     // 解析阴影颜色通道。
     let (red, green, blue, alpha) = parse_color(&color, property)?;
     // 生成保留完整偏移的阴影定义。
     Ok(quote! {
-        ::std::option::Option::Some(::uix::prelude::BoxShadowDef::new(
-            ::uix::prelude::Color::from_rgba(#red, #green, #blue, #alpha),
-            #blur,
-            #horizontal,
-            #vertical,
-        ))
+        ::std::option::Option::Some(
+            ::uix::prelude::BoxShadowDef::new(
+                ::uix::prelude::Color::from_rgba(#red, #green, #blue, #alpha),
+                #blur,
+                #horizontal,
+                #vertical,
+            ).with_spread(#spread)
+        )
     })
+}
+
+// 判断分量是否应按有符号长度解释。
+fn is_signed_length(source: &str) -> bool {
+    // 去除当前样式长度契约允许的可选 px 后缀。
+    let number = source.strip_suffix("px").unwrap_or(source);
+    // 数值解析成功即进入共享有限值校验，NaN 与 inf 会得到精确诊断。
+    number.parse::<f32>().is_ok()
 }
 
 // 判断颜色是否属于 Container 复合属性登记的具体语法。

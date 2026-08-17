@@ -45,6 +45,13 @@ mod style_chain {
             )
             // 声明卡片圆角。
             .radius(8.0)
+            // 声明带显式 spread 的卡片阴影。
+            .box_shadow(Some(
+                // 通过兼容构造入口创建阴影并追加 spread。
+                BoxShadowDef::new(Color::from_rgba(0, 0, 0, 40), 8.0, 0.0, 2.0)
+                    // 将阴影基准盒向外扩张一个逻辑像素。
+                    .with_spread(1.0),
+            ))
             // 声明卡片内边距。
             .padding(16.0)
             // 声明子节点间距。
