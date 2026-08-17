@@ -10,7 +10,8 @@ use crate::ui::component_snapshot::{AccessibilitySnapshot, SelectionSnapshot};
 use crate::ui::semantic_action::SemanticActionKind;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum SemanticTarget {
+/// 自动化与 Agent 共享的稳定语义目标。
+pub enum SemanticTarget {
     NodeId(ComponentId),
     AutomationId(String),
 }
@@ -43,7 +44,8 @@ impl From<&str> for SemanticTarget {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct SemanticNode {
+/// 与具体窗口后端无关的公开语义节点快照。
+pub struct SemanticNode {
     pub id: ComponentId,
     pub automation_id: Option<String>,
     pub parent: Option<ComponentId>,
@@ -59,15 +61,18 @@ pub(crate) struct SemanticNode {
 // transport-neutral node itself is also compiled for opt-in session tracking.
 #[cfg_attr(not(feature = "test-harness"), allow(dead_code))]
 impl SemanticNode {
-    pub(crate) fn is_visible(&self) -> bool {
+    /// 判断节点当前是否具有可见命中区域。
+    pub fn is_visible(&self) -> bool {
         self.visible_bounds.is_some()
     }
 
-    pub(crate) fn is_enabled(&self) -> bool {
+    /// 判断节点当前是否允许语义交互。
+    pub fn is_enabled(&self) -> bool {
         !self.accessibility.state.disabled
     }
 
-    pub(crate) fn center(&self) -> Option<Point> {
+    /// 返回当前可见区域的中心点。
+    pub fn center(&self) -> Option<Point> {
         let bounds = self.visible_bounds?;
         Some(Point::new(
             bounds.x + bounds.w * 0.5,
@@ -75,7 +80,8 @@ impl SemanticNode {
         ))
     }
 
-    pub(crate) fn supports(&self, action: SemanticActionKind) -> bool {
+    /// 判断节点是否公开指定语义动作。
+    pub fn supports(&self, action: SemanticActionKind) -> bool {
         self.actions.contains(&action)
     }
 }

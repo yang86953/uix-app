@@ -240,11 +240,9 @@ pub mod __private {
 
 #[cfg(feature = "test-harness")]
 pub mod test_harness {
-    pub use super::adapter::ViewAdapter;
     pub use super::automation::{
         AUTOMATION_DIR_ENV, AUTOMATION_SCHEMA, AutomationAction, AutomationActionKind,
         AutomationError, AutomationErrorCode, AutomationNode, AutomationSelection,
         AutomationSnapshot, AutomationTarget, TestApp,
     };
-    pub use super::widget_runtime::widget::{WidgetCore, WidgetTree};
 }
