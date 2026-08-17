@@ -49,5 +49,6 @@
 ### 发布状态
 
 - 版权归 `yangyanhui` 所有；版本按专有闭源、仅限内部授权使用的方式交付，不对外分发源码或二进制制品。
-- 已定义的 Windows 内部交付载体为 Windows 11 24H2 x64 ZIP：release Demo、内部 `.crate`、UIX 专有许可、Lucide / Feather 第三方声明、说明文件、运行时 Demo 图片与 SHA-256 清单；release 使用默认 feature 集（原生 D3D11），并保留 Software 整体回退。Linux 同属首发范围，其平台专用交付物细节由 Vikunja #770 管理。
+- 已定义的 Windows 内部交付载体为 Windows 11 24H2 x64 ZIP：release Demo、内部 `.crate`、UIX 专有许可、Lucide / Feather 第三方声明、说明文件、运行时 Demo 图片与 SHA-256 清单；release 使用默认 feature 集（原生 D3D11），并保留 Software 整体回退。
+- 已定义 Linux x64 内部候选包：以确定性 `tar.gz` 交付 Wayland/EGL OpenGL ES 主演示、内部 `.crate`、许可与说明载荷，并由独立校验器冻结条目顺序、epoch 时间、数字所有者、权限、gzip header 与逐项 SHA-256。
 - 本版本仍未发布；正式发布状态、平台矩阵与带时点的验证结果以 Vikunja 发布任务为准。

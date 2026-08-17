@@ -32,6 +32,16 @@ cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo
 
 图形后端与 Cargo feature 的选择具有平台差异：Windows 默认选择 D3D11，启用 `opengles` 时可构造 WGL/EGL OpenGL ES。配置方法、失败语义与回退边界见[图形后端配置](docs/使用/框架设施/配置.md#图形后端)；真实环境覆盖以 Vikunja 中的记录为准。
 
+## Linux 内部候选包
+
+在 Linux x86_64 的干净工作树中生成并校验内部候选包：
+
+```bash
+bash scripts/build_internal_release.sh
+```
+
+产物写入 `target/internal-release/uix-0.0.1-internal-linux-x64.tar.gz`。构建器会调用独立校验器核对精确载荷、规范路径、归档元数据与 SHA-256；候选包可生成不表示版本已正式发布，完整契约见[交付与许可](docs/产品/交付与许可.md)。
+
 ## 文档导航
 
 | 入口 | 用途 |
