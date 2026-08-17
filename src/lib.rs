@@ -204,6 +204,12 @@ extern crate windows_core;
 
 // 导出 uix-lang 编译期入口与路由 key 派生宏。
 pub use uix_derive::{Display, uix, uix_app, uix_items};
+// capability 编译合同只在 rustdoc 收集测试时进入 crate，不污染正常使用方公开面。
+#[cfg(doctest)]
+// 隐藏测试载体，用户文档只保留稳定 capability 说明。
+#[doc(hidden)]
+// 每个 feature 的启用与关闭侧都由同一模块中的条件文档测试验证。
+pub mod capability_compile_contract;
 // 真实消费者编译 Gate 仅在测试构建中接入。
 #[cfg(test)]
 // 隔离 uix-lang 核心生成物的公开 API 编译测试。
