@@ -31,7 +31,7 @@ TIMEPOINT_STATUS_FILES = (
     # 能力正文只声明能做、不做与暂缓项。
     ROOT / "docs" / "产品" / "能力.md",
     # 使用入口只声明稳定入口与权威路由。
-    ROOT / "docs" / "使用" / "入口与阅读路径.md",
+    ROOT / "docs" / "使用" / "入门" / "入口与阅读路径.md",
     # 结束时点状态文件集合。
 )
 # 列出不得重新复制到稳定事实入口的时点状态标记。
@@ -43,15 +43,15 @@ FORBIDDEN_TIMEPOINT_STATUS_MARKERS = (
     # 结束禁止标记集合。
 )
 # 定位只负责稳定入口与权威路由的使用文档。
-USAGE_ENTRY_FILE = ROOT / "docs" / "使用" / "入口与阅读路径.md"
+USAGE_ENTRY_FILE = ROOT / "docs" / "使用" / "入门" / "入口与阅读路径.md"
 # 定义项目动态状态的唯一跟踪入口。
-VIKUNJA_PROJECT_ROUTE = "https://yang-server.tail9d5559.ts.net:3456/projects/4"
+GITEA_PARENT_ISSUE_ROUTE = "http://100.79.245.29:3000/admin/uix-app/issues/1"
 # 列出使用入口必须保留的权威状态路由。
 USAGE_ENTRY_REQUIRED_ROUTES = (
     # 版本、发布与交付事实归属产品交付文档。
-    "../产品/交付与许可.md",
-    # 进行中任务、测试覆盖与环境差距归属 Vikunja。
-    VIKUNJA_PROJECT_ROUTE,
+    "../../产品/交付与许可.md",
+    # 进行中任务、测试覆盖与环境差距归属 Gitea 父 Issue。
+    GITEA_PARENT_ISSUE_ROUTE,
     # 结束权威路由集合。
 )
 # 定位只保存稳定交付契约的产品文档。
@@ -71,9 +71,9 @@ FORBIDDEN_DELIVERY_PROGRESS_MARKERS = (
 # 列出只应陈述公开行为并路由环境覆盖的使用文档。
 USAGE_COVERAGE_ROUTING_FILES = (
     # 图形配置只陈述后端选择与失败契约。
-    ROOT / "docs" / "使用" / "配置.md",
+    ROOT / "docs" / "使用" / "框架设施" / "配置.md",
     # 运行保障只陈述诊断与恢复公开契约。
-    ROOT / "docs" / "使用" / "运行保障.md",
+    ROOT / "docs" / "使用" / "框架设施" / "运行保障.md",
     # 结束环境覆盖路由文件集合。
 )
 # 列出不得复制到使用文档的实现或环境覆盖进展标记。
@@ -112,8 +112,8 @@ FORBIDDEN_PATHS = (
 
 # 定义仅测试完成口径的回归测试。
 class ValidationPolicyTests(unittest.TestCase):
-    # 确认稳定事实入口把当前项目状态留在 Vikunja。
-    def test_current_project_status_stays_in_vikunja(self) -> None:
+    # 确认稳定事实入口把当前项目状态留在 Gitea。
+    def test_current_project_status_stays_in_gitea(self) -> None:
         # 收集仍然写入时点状态副本的稳定入口。
         violations: list[str] = []
         # 遍历精确的稳定事实入口。
@@ -126,7 +126,7 @@ class ValidationPolicyTests(unittest.TestCase):
                 if marker in content:
                     # 保存便于定位的仓库相对路径与标记。
                     violations.append(f"{path.relative_to(ROOT).as_posix()}: {marker}")
-        # 时点状态必须只由 Vikunja 项目 4 持有。
+        # 时点状态必须只由 Gitea 父 Issue #1 持有。
         self.assertEqual(violations, [])
 
     # 确认使用入口把动态状态路由到各自权威来源。
@@ -135,11 +135,11 @@ class ValidationPolicyTests(unittest.TestCase):
         content = USAGE_ENTRY_FILE.read_text(encoding="utf-8")
         # 收集缺失的权威状态路由。
         missing = [route for route in USAGE_ENTRY_REQUIRED_ROUTES if route not in content]
-        # 使用入口必须同时指向产品交付文档和 Vikunja。
+        # 使用入口必须同时指向产品交付文档和 Gitea。
         self.assertEqual(missing, [])
 
-    # 确认交付文档只保存稳定契约并把发布进展路由到 Vikunja。
-    def test_delivery_contract_routes_progress_to_vikunja(self) -> None:
+    # 确认交付文档只保存稳定契约并把发布进展路由到 Gitea。
+    def test_delivery_contract_routes_progress_to_gitea(self) -> None:
         # 读取产品交付契约当前文本。
         content = DELIVERY_CONTRACT_FILE.read_text(encoding="utf-8")
         # 收集仍然复制到交付契约的发布进展标记。
@@ -147,12 +147,12 @@ class ValidationPolicyTests(unittest.TestCase):
         # 稳定交付契约不得保留发布进展副本。
         self.assertEqual(violations, [])
         # 交付契约必须路由到项目跟踪入口。
-        self.assertIn(VIKUNJA_PROJECT_ROUTE, content)
+        self.assertIn(GITEA_PARENT_ISSUE_ROUTE, content)
         # 交付契约必须明确发布父任务编号。
-        self.assertIn("#770", content)
+        self.assertIn("#1", content)
 
-    # 确认使用文档只陈述公开行为并把环境覆盖路由到 Vikunja。
-    def test_usage_docs_route_environment_coverage_to_vikunja(self) -> None:
+    # 确认使用文档只陈述公开行为并把环境覆盖路由到 Gitea。
+    def test_usage_docs_route_environment_coverage_to_gitea(self) -> None:
         # 收集仍然复制到使用文档的环境覆盖进展。
         violations: list[str] = []
         # 收集没有指向项目跟踪入口的使用文档。
@@ -168,12 +168,12 @@ class ValidationPolicyTests(unittest.TestCase):
                     # 保存便于定位的仓库相对路径与标记。
                     violations.append(f"{path.relative_to(ROOT).as_posix()}: {marker}")
             # 检查使用文档是否保留项目跟踪路由。
-            if VIKUNJA_PROJECT_ROUTE not in content:
+            if GITEA_PARENT_ISSUE_ROUTE not in content:
                 # 保存缺失路由的仓库相对路径。
                 missing_routes.append(path.relative_to(ROOT).as_posix())
         # 使用文档不得保存环境覆盖进展副本。
         self.assertEqual(violations, [])
-        # 使用文档必须把环境覆盖路由到 Vikunja。
+        # 使用文档必须把环境覆盖路由到 Gitea。
         self.assertEqual(missing_routes, [])
 
     # 确认用户文档不再宣传非测试验证命令。
