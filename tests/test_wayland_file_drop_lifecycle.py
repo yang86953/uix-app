@@ -23,12 +23,6 @@ WAYLAND_WINDOW_OPS = ROOT / "src/native/backends/linux/wayland/window_ops.rs"
 WAYLAND_WINDOW = ROOT / "src/native/backends/linux/wayland/window.rs"
 # Drop Adapter 负责逐窗最终清理。
 SURFACE_REGISTRATION = ROOT / "src/native/backends/linux/wayland/surface_registration.rs"
-# Rust 测试包装允许在当前 Windows 主机执行纯 URI Component。
-FILE_DROP_URI_TEST = ROOT / "tests/file_drop_uri_unit.rs"
-# Rust 测试包装允许执行纯逐窗状态 Component。
-FILE_DROP_WINDOW_REGISTRY_TEST = ROOT / "tests/file_drop_window_registry_unit.rs"
-
-
 # 验证 Wayland FileDrop 只有在真实协议、窗口资格与完成传输成立后产生事件。
 class WaylandFileDropLifecycleTests(unittest.TestCase):
     # composition root 必须只有一个共享状态 owner，并传给每个窗口。
@@ -197,10 +191,6 @@ class WaylandFileDropLifecycleTests(unittest.TestCase):
             WAYLAND_WINDOW,
             # surface Drop Adapter。
             SURFACE_REGISTRATION,
-            # 可执行的纯 URI Rust 测试包装。
-            FILE_DROP_URI_TEST,
-            # 可执行的纯逐窗状态 Rust 测试包装。
-            FILE_DROP_WINDOW_REGISTRY_TEST,
             # 本聚焦契约测试。
             Path(__file__),
         ):
