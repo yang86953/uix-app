@@ -17,16 +17,22 @@ BACKEND = ROOT / "src/native/backends/linux/wayland/mod.rs"
 
 # 验证逐窗 xdg-shell callback owners 的确定性关闭契约。
 class WaylandWindowCallbackShutdownTests(unittest.TestCase):
-    # 确认独立 Component 只消费两个逐窗 callback handles。
+    # 确认独立 Component 依次消费 activation 与两个 xdg-shell callback handles。
     def test_component_clears_callbacks_before_handle_release(self) -> None:
         # 读取逐窗 shutdown Component。
         source = SHUTDOWN.read_text(encoding="utf-8")
+        # 未完成的 activation token owner 必须只被取出一次。
+        self.assertEqual(source.count("self.activation_token.take()"), 1)
         # toplevel owner 必须只被取出一次。
         self.assertEqual(source.count("self.toplevel.take()"), 1)
         # xdg-surface owner 必须只被取出一次。
         self.assertEqual(source.count("self.xdg_surface.take()"), 1)
-        # 两个 callback 都必须在局部 handle 存活时注销。
-        self.assertEqual(source.count(".clear_callback()"), 2)
+        # 三个 callback 都必须在局部 handle 存活时注销。
+        self.assertEqual(source.count(".clear_callback()"), 3)
+        # 记录 activation token callback 生命周期顺序。
+        activation_take = source.index("self.activation_token.take()")
+        # 记录 activation token callback 注销位置。
+        activation_clear = source.index("activation_token.clear_callback()")
         # 记录 toplevel callback 生命周期顺序。
         toplevel_take = source.index("self.toplevel.take()")
         # 记录首个 callback 注销位置。
@@ -35,6 +41,10 @@ class WaylandWindowCallbackShutdownTests(unittest.TestCase):
         surface_take = source.index("self.xdg_surface.take()")
         # 记录第二个 callback 注销位置。
         surface_clear = source.index("xdg_surface.clear_callback()")
+        # activation token 必须先从 owner 槽取出再注销。
+        self.assertLess(activation_take, activation_clear)
+        # activation callback 必须先于目标 toplevel callback 注销。
+        self.assertLess(activation_clear, toplevel_take)
         # toplevel 必须先从公开 owner 槽取出再注销。
         self.assertLess(toplevel_take, toplevel_clear)
         # toplevel callback 必须先于其依赖的 xdg-surface callback 注销。
@@ -81,14 +91,18 @@ class WaylandWindowCallbackShutdownTests(unittest.TestCase):
         unregister = drop_impl.index("self.unregister_surface()")
         # 定位失败转交通道。
         enqueue = drop_impl.index("self.pending_failures.enqueue(error)")
+        # 定位逐窗拖放 owner 的无失败 teardown。
+        file_drop_shutdown = drop_impl.index("super::file_drop_window::force_disable_window")
         # 定位无条件 callback teardown。
         shutdown = drop_impl.index("self.shutdown_window_callbacks()")
         # Drop 先尝试撤销共享注册事实。
         self.assertLess(unregister, enqueue)
-        # 无论 if 分支是否执行，后继语句都必须继续释放 callbacks。
-        self.assertLess(enqueue, shutdown)
-        # teardown 调用不得嵌在错误分支内部。
-        self.assertIn("        }\n        // Drop 没有显式重试入口", drop_impl)
+        # 无论 if 分支是否执行，后继语句都必须先释放拖放 owner。
+        self.assertLess(enqueue, file_drop_shutdown)
+        # 拖放 owner 必须先于依赖 surface 的 callback owners 释放。
+        self.assertLess(file_drop_shutdown, shutdown)
+        # 两项 teardown 调用不得嵌在注册表错误分支内部。
+        self.assertIn("        }\n        // 独立 teardown Adapter", drop_impl)
 
     # 确认 Component 已接入唯一 Wayland 模块树。
     def test_component_is_declared_once(self) -> None:

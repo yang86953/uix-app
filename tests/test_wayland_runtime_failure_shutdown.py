@@ -55,7 +55,7 @@ class WaylandRuntimeFailureShutdownTests(unittest.TestCase):
             # 阻塞入口。
             ("pub(crate) fn dispatch_blocking", "pub(crate) fn dispatch_timeout"),
             # 超时入口。
-            ("pub(crate) fn dispatch_timeout", "pub(crate) fn waker"),
+            ("pub(crate) fn dispatch_timeout", "pub(crate) fn next_event"),
         ]
         # 逐入口验证 closed 门槛位于协议工作之前。
         for start_marker, end_marker in entries:
