@@ -29,6 +29,8 @@ WAYLAND_WINDOW_INTERACTION = ROOT / "src/native/backends/linux/wayland/window_in
 PLATFORM = ROOT / "src/native/backends/linux/platform.rs"
 # 定位 Wayland 窗口操作与装饰模式实现。
 WINDOW_OPS = ROOT / "src/native/backends/linux/wayland/window_ops.rs"
+# 定位逐窗 surface descriptor、装饰映射与注销身份 Component。
+WAYLAND_WINDOW_SURFACE = ROOT / "src/native/backends/linux/wayland/window_surface.rs"
 # 定位逐窗 xdg-shell callback teardown Component。
 WINDOW_CALLBACK_SHUTDOWN = ROOT / "src/native/backends/linux/wayland/window_callback_shutdown.rs"
 # 定位实际启用自定义标题栏的主演示入口（uix-lang-demo）。
@@ -640,6 +642,8 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         registration = WAYLAND_SURFACE_REGISTRATION.read_text(encoding="utf-8")
         # 读取 WindowOps 的显式关闭与 Drop 编排。
         window_ops = WINDOW_OPS.read_text(encoding="utf-8")
+        # 读取实际拥有可重试 surface identity 的私有 Component。
+        window_surface = WAYLAND_WINDOW_SURFACE.read_text(encoding="utf-8")
         # Component 不得恢复任一 poisoned registry。
         self.assertNotIn("into_inner()", registration)
         # 两份 owner 损坏必须分别产生稳定诊断。
@@ -661,11 +665,9 @@ class WaylandCallbackGuardTests(unittest.TestCase):
         # 两项注销保持既定的授权后路由顺序。
         self.assertLess(unregister_pointer, unregister_surface)
         # 限定窗口私有注销方法。
-        method_start = window_ops.index("fn unregister_surface")
-        # 以窗口初始化标记方法末尾。
-        method_end = window_ops.index("pub(crate) fn init", method_start)
-        # 保存身份消费编排片段。
-        method = window_ops[method_start:method_end]
+        method_start = window_surface.index("fn unregister_surface")
+        # 保存位于文件末部的身份消费编排片段。
+        method = window_surface[method_start:]
         # Component 必须先完成跨注册表事务。
         component_call = method.index("unregister_window_surface(")
         # surface identity 只能在成功返回后清除。
@@ -784,16 +786,20 @@ class WaylandCallbackGuardTests(unittest.TestCase):
     def test_custom_title_bar_uses_wayland_client_side_decoration(self) -> None:
         # 读取 Wayland 窗口操作实现。
         window_ops = WINDOW_OPS.read_text(encoding="utf-8")
+        # 读取将标题栏可见性映射到协议模式的私有 Component。
+        window_surface = WAYLAND_WINDOW_SURFACE.read_text(encoding="utf-8")
         # 读取逐窗 callback teardown Component。
         callback_shutdown = WINDOW_CALLBACK_SHUTDOWN.read_text(encoding="utf-8")
         # 读取主演示的窗口配置。
         gui_demo = GUI_DEMO.read_text(encoding="utf-8")
         # Wayland 后端必须实现统一的系统标题栏可见性能力。
         self.assertIn("fn os_set_system_title_bar_visible", window_ops)
+        # WindowOps 只通过窄 Component 映射公开布尔契约。
+        self.assertIn("Self::title_bar_decoration_mode(visible)", window_ops)
         # 隐藏系统标题栏必须请求客户端装饰。
-        self.assertIn("XdgDecoMode::ClientSide", window_ops)
+        self.assertIn("XdgDecoMode::ClientSide", window_surface)
         # 恢复系统标题栏必须请求服务端装饰。
-        self.assertIn("XdgDecoMode::ServerSide", window_ops)
+        self.assertIn("XdgDecoMode::ServerSide", window_surface)
         # 关闭窗口时必须先释放依赖顶层窗口的装饰对象。
         close_start = window_ops.index("fn os_close")
         # 以紧邻的主动关闭方法限定显式 teardown 片段。
