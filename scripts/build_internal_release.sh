@@ -67,8 +67,8 @@ esac
 (cd "$release_repo_root" && cargo build --release --locked --manifest-path demo/Cargo.toml --bin uix-lang-demo)
 # 解析内部过程宏 crate 的规范路径。
 release_derive_path="$(realpath "$release_repo_root/uix-derive")"
-# 生成不依赖外部 registry 中私有 crate 的内部 cargo package。
-(cd "$release_repo_root" && cargo package --locked --offline --config "patch.crates-io.uix-derive.path='${release_derive_path}'")
+# 生成不从外部 registry 解析私有 uix-derive 的锁定内部 cargo package。
+(cd "$release_repo_root" && cargo package --locked --config "patch.crates-io.uix-derive.path='${release_derive_path}'")
 
 # 固定 Linux 主演示产物路径。
 readonly release_demo_path="$release_repo_root/demo/target/release/uix-lang-demo"
