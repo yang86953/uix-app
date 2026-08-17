@@ -1,4 +1,4 @@
-// 仅在公开无窗口测试驱动可用时编译 Component 逐实例行为验收。
+// 仅在公开无窗口测试驱动可用时编译 Component 逐实例的外部 API 验收。
 #![cfg(feature = "test-harness")]
 
 // 引入 UIX 编译入口、响应式状态、样式扩展与公开 View 类型。
