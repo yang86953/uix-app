@@ -75,6 +75,12 @@ impl ISystemInfo for LinuxSystemInfo {
         probe_cjk_font()
     }
 
+    // 返回 fontconfig 的有序多候选列表，允许字体服务跳过实际缺少 CJK 字形的首项。
+    fn probe_cjk_font_paths(&self) -> Vec<String> {
+        // 平台 Component 只负责发现路径，真实字形覆盖仍由 FontService 验证。
+        probe_cjk_font_paths()
+    }
+
     fn probe_family_font_path(&self, family: &str) -> Option<String> {
         probe_font_path_via_fc_match(family)
     }
