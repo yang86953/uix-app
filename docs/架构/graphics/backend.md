@@ -2,81 +2,138 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 graphics 系统的目标 `backend` 模块及 CPU/GPU 执行契约，权威持有“通用 UI GPU Renderer + 薄原生 RHI”的分层。依赖：[painting](painting.md)、[platform/presentation](../platform/presentation.md)。导出：renderer 内部 `RenderBackend`。
+> **接口**：声明 graphics System 的 CPU/GPU 执行、能力协商、资源代际与降级契约。基础依赖：[platform/presentation](../platform/presentation.md)；[painting](painting.md)、[scene](scene.md)与[renderer](renderer.md)的输入由 graphics System 编排，Module 间不直接持有实例。导出：renderer 内部 `RenderBackend`。
+>
+> **当前实现线索**：通用执行位于 `src/draw/backend/`；thin RHI、类型化 recipe、registry、线程绑定与原生 Adapter 分布于 `src/native/present/`、`src/native/factory/` 和 `src/native/presentation/graphics/`。路径只用于定位迁移，不构成公开 API。
 
-> **设计状态**：🔄 迁移中。通用 FramePlan、retained RHI、D3D11 与 OpenGL ES 执行路径已经落地；overlay backdrop 的 typed UI 策略、Theme/显式半径、区域聚合、clean/effect 双纹理失效，以及普通树变化期间的单-present 快照重建已接线。剩余工作集中在真实环境矩阵。
+## 责任边界
 
-> **SMC 所有权**：graphics/backend System 拥有 FramePlan、fallback、Picture/effect 与 renderer capability 投影；platform/presentation System 只拥有原生 device/surface、thin RHI 实现、线程亲和与最终提交能力。两侧只通过 `GraphicsRecipeOwner`、`GpuRecipeContext`、`PixelUploadSurface`、`GraphicsDevice` 与 `GraphicsSurface` 交互。
+backend 把 backend-neutral 的帧计划执行到 CPU 像素目标或 GPU thin RHI。UI 图元、painter order、clip、transform、opacity、blend、Picture 和 effect 的规范语义只在 graphics System 定义一次；原生 Adapter 只实现资源、命令、surface 和 present 原语，不复制逐 UI 组件或图元算法。
 
-> **类型化构造**：adapter 创建事务直接选择 `GraphicsContextCandidate::gpu` 或 `GraphicsContextCandidate::pixel_upload` 并交付同源 `GraphicsContextCaps`。registry 校验 registry row、静态 recipe 轴与 `GraphicsRecipeContext` 分支一致；错配 checked shutdown。GPU 分支再执行基线与固定 pipeline probe，PixelUpload 分支不触碰 RHI。
+```text
+painting / scene 的规范输入
+  → graphics System 编排 FramePlan
+  → RenderBackend（CPU 或通用 GPU Renderer）
+  → platform thin RHI / PixelUploadSurface
+  → 唯一最终 present
+```
 
-> **owner 收口**：native factory 在 context 离开 platform 前构造 `GraphicsRecipeOwner::{Gpu, PixelUpload}`。`GpuRecipeOwner` 直接持有 `Box<dyn GpuRecipeContext>`，`PixelUploadRecipeOwner` 直接持有 `Box<dyn PixelUploadSurface>`；没有运行期 Option 能力查询、视图丢失或统一门面回退。
+renderer、scene、painting、UI 和应用不得取得 raw GPU/native handle。platform 也不得反向解释 Theme、Widget、PaintOp 或 UIX 属性。
 
-> **renderer 装配**：bootstrap 与 recovery 共用 `assemble_renderer`，只把已验证 recipe owner 交给 `Renderer::from_recipe_owner`。RenderSession、draw/backend 与 draw/renderer 不暂存原生 context，也不建立第二条 native 生命周期。
+## 组件清单
 
-> **surface 生命周期**：GPU resize 通过同一 `GpuRecipeContext` 进入唯一 `GraphicsSurface::resize`；CPU PixelUpload resize/提交只通过 `PixelUploadSurface`。thread-bound wrapper 仅在底层成功后刷新完整 `PresentSurface`，旧代 retained/overlay 资源继续在 generation 推进前检查式释放。
+| 组件 | 类型 | 职责 |
+|---|---|---|
+| `RenderBackend` | internal trait | 执行帧、资源、Picture/effect、提交与 checked shutdown |
+| `GpuBackend` | struct | 把规范图形语义降低为统一 `FramePlan` 并驱动 thin RHI |
+| `SoftwareRasterizer` | struct | 以同一规范语义产生 CPU 像素 |
+| `FramePlan` / pass / draw packet | values | 有序、backend-neutral 的设备执行计划 |
+| `NativeRasterCaps` | value | 从一次实际 `GraphicsCapabilities` 快照投影的 renderer 能力 |
+| `SoftFallbackTile` | staging value | 语义等价且有界的局部 CPU fallback 输入 |
+| Picture/effect planner | internal components | 编排离屏资源、采样合成、blur 和清理事务 |
 
-> **能力与提交**：生产 GPU backend 从同一次 `GraphicsCapabilities` 快照验证 GPU baseline 并派生 `NativeRasterCaps`；逐 UI capability 不在 adapter 平行声明。局部重绘只在 retained 主颜色目标和 `TrackedSwapchain` image 身份同时成立时开放；GPU 最终提交只由 `GraphicsSurface::present` 持有，CPU PixelUpload 最终提交只由 `PixelUploadSurface::present_pixels` 持有。
+## 消费的 platform 契约
 
-> **坐标与行序契约**：通用逻辑层只使用左上原点逻辑坐标，不得感知平台行序；thin RHI 的坐标与行序契约由 [platform/presentation](../platform/presentation.md) 权威持有（左上原点输入、readback top-left 输出、目标行序差异由 adapter 内消化），本模块作为消费方引用。graphics 侧始终把 texture `v=0` 视为顶部：CPU 软渲染/upload 的像素数据保持 top-left 直通，UV 跟随顶点；Picture、retained surface、sampled 合成和 blur 的每个 texture pass 都保持同一 top-left 存储，不依赖偶数次翻转抵消；机械拷贝（GPU 快照 copy、滚动 memmove）逐 texel 对位、与行序无关。OpenGL adapter 按 render target 在 draw 时选择 texture 与 native surface 的 Y 映射，并在 surface readback 内完成区域坐标换算和行反转；通用 graphics 不叠加平台翻转。
+| 契约 | 责任 |
+|---|---|
+| `GraphicsRecipeOwner::{Gpu, PixelUpload}` | 类型化交付唯一原生 recipe owner，不使用运行期 `Option` 猜测能力 |
+| `GpuRecipeContext` / `PixelUploadSurface` | 分离 GPU RHI 与 CPU 像素上传生命周期 |
+| `GraphicsDevice` / `GraphicsSurface` | 资源、pass、submit、resize、present 与可选 readback 原语 |
+| `PresentSurface` | 同一时点的 extent、DPR、transform 与 generation 原子快照 |
+| `GraphicsCapabilities` | 由可执行原语和 probe 支撑的事实能力，不是平台名称推断 |
 
-> **当前实现线索**：通用代码位于 `src/draw/backend/`，thin RHI 契约位于 `src/native/present/rhi.rs`，类型化 recipe 生命周期位于 `src/native/present/traits.rs`，candidate/owner 位于 `src/native/present/`，registry 与线程绑定在 `src/native/factory/`，生产 adapter 位于 `src/native/presentation/graphics/`。
+这些是跨 System 公开契约。backend 不取得 platform 私有 Adapter、registry 或原生句柄。
 
-## fallback 边界
+## 构造与能力协商
 
-CPU backend 继续作为完整、可验证的 renderer，而不是每个 native adapter 的补丁集合。帧内 GPU→CPU fallback 只有在像素语义、painter order、clip/opacity/blend 与最终提交协议均可保持时才允许；否则返回 typed failure，由 renderer 的恢复策略选择整后端重建或下一帧重试。连续 Additive 填充、描边、渐变、raw image、glyph coverage 与 box shadow 可以利用逐通道饱和加法的结合律，在透明 scratch 中累积源贡献，再以不透明 opacity 封装为紧边界 Additive sampled tile；描边轮廓必须先在本地空间解析 width、cap、join 与 miter，再执行 offset 后的完整仿射；线性、径向渐变、raw image、glyph 与定向/环境阴影必须把设备像素中心逆映射到 offset 后的局部空间求值，图片与 coverage 保持 point sampling，字形颜色按 opacity 和 coverage 各调制一次，阴影 offset、corner radius、blur 与 coverage 曲线在 transform 前按局部语义解析。blend 切换与 `save`/`restore` 状态切换必须形成 painter barrier，变换、裁剪和 opacity 只能烘焙一次。路径 coverage clip 仅在可强制使用 source scratch 的 Additive 状态下准入。Picture/offscreen blur 在 Picture texture 空间裁剪 region，RHI 按 source→scratch→原 Picture 执行两个同核正交 pass；它不获取或呈现主 surface，scratch 在成功和提交失败后都检查式释放。blur 后的 Picture sampled quad 从当前目标继承有限 opacity 与 SrcOver/Additive；CPU 主表面合成会临时建立 identity/zero-offset 的 surface-space 几何，再恢复调用方状态。overlay 快照保留一份未模糊 clean texture，当前策略从 clean→effect 全幅复制后在 effect 上执行区域双 pass，恢复从 effect（或 mask-only 时的 clean）写回 retained；这些事务只 submit device 命令、不 acquire/present。策略、半径或逻辑区域变化销毁旧 effect 并从 clean 重新派生，不累计模糊；resize、legacy 降级、shutdown 与显式 release 检查式回收两个 owner。快照、模糊、恢复或释放中的 create/copy/draw/submit/destroy/device-maintenance 失败通过 `RenderBackend` 与 `RenderTarget` 保持 typed error；`RecoveryDriver` 统一登记无帧事务失败。只有能力不支持、首帧无 retained 内容或代际不匹配保留 `Ok(false)` 语义，mask-only 降级可由 `supports_backdrop_blur()` 查询。
+Adapter 创建事务直接交付 GPU 或 PixelUpload candidate，并保证 recipe 类型、能力快照和 surface 来源一致。registry 与 backend 在发布 owner 前完成以下检查：
 
-GPU-native 主帧重录对 identity transform 下的 SrcOver 亚像素矩形使用 `FrameSampledRect` 保留原始 `f32` 位模式，并直接降低到共享 shape shader；不得为了适配整数 `FrameRect` 而取整或生成 CPU segment。字体服务提供合法轮廓边列表时，录制器保留轮廓并由 thin RHI 生成 MSDF coverage；只有缺失轮廓的兼容字形才允许进入显式 CPU glyph coverage 命令，而 GPU-only 提交仍会把后者报告为来源违规。
+1. candidate 类型与静态 recipe 轴一致；
+2. GPU candidate 满足统一 retained RHI 基线和固定 pipeline probe；
+3. PixelUpload candidate 只验证 CPU 提交所需能力，不触碰 RHI；
+4. 任一错配执行 checked shutdown，并返回保留原因链的 typed error。
 
-CPU 与 soft fallback 的线性、径向渐变只由 `SoftwareRasterizer` 在完整 transform、clip、opacity 与 blend 状态下执行；零调用且缺少这些状态契约的无状态平行渐变模块已经移除。
+构造成功即表示 context 已绑定目标 surface 并可进入第一帧，不再存在二阶段 `initialize` 或“默认成功”的空实现。能力快照绑定 surface/device generation；resize、设备替换或恢复后必须重新读取，不能缓存平台名或旧布尔值推断新能力。
 
-Picture/offscreen 的 create/destroy/paint/blit/blur 全部围绕唯一 RHI texture owner 执行；公共 `OffscreenTargetId`、`旧统一 context 门面` 的 create/destroy/bind/blit 入口，以及 D3D11/OpenGL ES 的平行 texture/FBO、绑定、采样和释放状态均已移除。这样两个生产 adapter 只执行同一个通用 Picture 计划、高斯核、区域裁剪、scratch 生命周期和 sampled 合成，adapter 仅保留薄 RHI 资源与底层 draw 编码。
+baseline 缺失是构造/恢复失败。可选效果可以返回明确“不支持”并采用已声明的等价降级；编译成功、API 存在或 Adapter 声称支持都不能代替运行契约。
 
-Picture 资源与绘制事务在 draw 侧只公开检查式边界：`try_create_offscreen` 返回 `Result<Option<ImageHandle>, Error>`，其中无效尺寸或不支持为 `Ok(None)`，CPU 像素分配、owner-thread context 与 RHI texture 创建失败保持 typed error；`try_destroy_offscreen` 只有在资源释放完成后返回成功，失败时保留 owner 供恢复或 shutdown 重试，替换资源的补偿释放失败追加到原错误原因链。绘制阶段只公开 `try_begin_offscreen_paint`、`try_flush_offscreen_paint`、`try_end_offscreen_paint` 与 `try_blit_offscreen_src`；`RenderBackend`、`RenderTarget`、`Renderer` 与 `RecoveryDriver` 不再保留 Option/void/bool 未检查兼容入口。未实现的默认 destroy/begin/flush/end/blit 返回 typed `NotImplemented`，不能以无操作或漏绘报告成功；GPU 最终 present 若发现 active Picture，也必须先通过 checked end，失败时停止主 surface 提交。
+## 所有权与生命周期
 
-`旧统一 context 门面::blit_soft_fallback_tile` 及 D3D11、D3D12、OpenGL adapter 内对应的私有上传纹理、pipeline 和转发已经移除；紧边界 `SoftFallbackTile` 只作为 draw backend 的 staging 描述存在。`clear_render_target`、`clear_rects`、`bind_swapchain_target` legacy 门面和对应逐 UI capability 也已删除，局部与整面清理由通用 `FramePlan` 的 `Clear` / `ClearRect` 在 retained RHI target 上执行；adapter 内部仅保留 acquire、pass 和最终 present 所需的低层 target 恢复。solid/stroke rect、glyph、linear/radial gradient、sector、solid mesh、box shadow 与 image blit 的 `旧统一 context 门面::draw_*` ABI、thread-bound 转发和原生 context wrapper 同样已经移除；`NativeRasterCaps` 是 graphics backend 从薄 RHI `GraphicsCapabilities` 投影出的 renderer 内部值，只陈述 retained framebuffer 与 RHI Additive 事实，逐图元 pipeline 由固定 RHI probe 验证。主 `FrameEncoder` 的 Additive、scroll、图片与 CPU segment 现在必须整条无损 lower 到 retained RHI，其中 CPU segment 作为 sampled texture 合成；前置 damage 先以同代纹理上的 `ClearRect` 提交，任何缺失能力都返回 typed failure，不再读回 CPU 后整面 replace。旧 `旧统一 context 门面::blit_soft_fallback`、`旧统一 context 门面::upload_surface_pixels`、逐命令 legacy frame 执行器及各 adapter 的整面上传实现也已经移除。主 surface 的最终 present 和 Picture/effect 前有序边界只接受 retained RHI 完整提交：空新帧以透明 dummy pass 初始化 retained texture，无新绘制时重新采样既有 retained 内容；未覆盖的非空队列返回 typed failure，不再销毁 retained texture 后调用逐 UI adapter 或 direct present swapchain。CPU presenter 的 `PixelBuffer` present 保持独立。
+```text
+WindowSession
+  → RenderSession
+    → 唯一 RenderBackend
+      → 唯一 GraphicsRecipeOwner
+        → device / surface / generation-scoped resources
+```
 
-页面销毁或切换阶段产生的空源、空目标或全透明 `PictureBlit` 是无像素贡献的 canonical no-op：录制入口不再把它加入新命令流，retained RHI lowering 仍能安全消费历史命令流中的同类记录。非空越界源和无法保持像素语义的输入继续返回 typed failure。
+- 所有线程亲和对象由 owner-thread 独占；cloneable handle 只携带稳定身份和 generation，不制造第二个 owner。
+- GPU resize 只经同一 `GpuRecipeContext` 进入 `GraphicsSurface::resize`；PixelUpload resize 只经 `PixelUploadSurface`。底层成功后才原子发布新的 `PresentSurface`。
+- 旧 generation 的 retained target、Picture、effect、callback 和帧计划必须在新代使用前 checked release 或明确隔离；晚到结果不能写入新 owner。
+- 关闭先停止新帧和资源创建，再隔离 callback、结束活动离屏事务、释放资源、surface 与 device。destroy/shutdown 失败保持 typed error，由最终责任边界观察，不能通过 Drop 伪装成功。
 
-GPU 基线内的操作不能依赖常态 CPU fallback。可选效果可以显式声明等价降级，但不能静默改变视觉结果。
+## 帧执行与提交
 
-## 当前映射与目标差距
+- 同窗一帧只有一条有序计划、至多一次主 surface acquire 和一次最终 present。Picture、快照、blur 与资源维护可以 submit device 命令，但不得自行 acquire/present 主 surface。
+- painter order、clip、transform、opacity 和 blend 切换形成明确 barrier；优化、合批与 fallback 不能跨越目标相关操作重排。
+- retained 主颜色目标与 swapchain image 身份都可靠时才允许 partial present；否则完整重绘。dirty rect、draw scissor 和平台提交区域从同一 damage 真相派生。
+- device submit 成功、CPU 像素已写入、帧已编码或 present 已调用都不等于画面已呈现；只有平台返回最终 present 成功才消费 damage、推进成功历史和发布 presented revision。
+- 空帧、不可呈现、遮挡、would-block 与失败是不同结果。不可呈现状态保留 dirty，但不得由 retained dirty 形成 busy loop。
 
-- 已有唯一 `RenderBackend` 抽象、通用 `GpuBackend`、有序 `FramePlan`、薄 RHI 契约和 CPU backend。
-- `旧统一 context 门面` 的逐 UI draw/clear/offscreen/upload 定义、adapter wrapper、二阶段 `initialize`、`make_current`、`swap_buffers`、通用 `resize`、RHI surface resize、分离 `width`/`height`/DPR 查询、readback、静态 `caps`、由 caps 重复派生的 backend/recipe 布尔查询、`native_raster_caps` 及默认 `present` 回退已移除；native factory 的构造成功即表示 context 已绑定 surface 并可用，RenderSession 每帧通过语义型 `prepare_frame` 进入 thin RHI 设备维护。零调用的单 backend 内部 raw-surface 工厂链、backend-only 候选投影和自动创建空故障队列的 platform/recipe 构造入口也已删除，生产 bootstrap 与恢复只按完整 `GraphicsRecipe` 精确选行并携带 runtime-scoped 故障队列。live drawable extent、DPR、transform 与 generation 只由显式 `PresentSurface` 原子快照提供，thread-bound wrapper 也只缓存并在成功生命周期变更后整体刷新该快照；`GraphicsContextCaps` 不再混入动态 DPR，也不再进入 thread-bound wrapper。生产 `GpuBackend` 从一次 `GraphicsCapabilities` 快照同时校验完整 GPU-only retained RHI baseline，并派生只含 retained framebuffer 和 RHI Additive 事实的 `NativeRasterCaps` renderer 投影；thread-bound wrapper 与 D3D11/OpenGL ES context 不再缓存或硬编码第二份能力。initialize 不再二次 resize，显式 GPU resize 只借用原子 `GpuRecipeContext` 并进入 `GraphicsSurface`；D3D11/WGL/EGL owner 复用同一 DPR/extent 校验，thread-bound wrapper 在成功后才整体刷新 `PresentSurface`。CPU × PixelUpload recipe 则在构造时验证独立 `PixelUploadSurface`，不再让 GPU adapter 包装同名生命周期入口。同步 surface readback 现在是 `GraphicsCapabilities::surface_readback` 声明的可选 `GraphicsSurface` 操作，仅 D3D11/OpenGL ES 生产 adapter 启用；Vulkan GFX-R5 与 D3D12 测试期内部诊断不构成通用能力。D3D11/OpenGL ES 无消费者的旧 rect/glyph/gradient/mesh/shadow/image pipeline 资源已经删除，D3D12 的测试期逐 UI raster pipeline 也已退出。draw backend 已无 direct swapchain legacy consumer；`PresentFrame` 与统一最终提交已退出 `旧统一 context 门面`，PixelUpload 通过专用视图提交，生产 GPU 只通过 thin RHI 最终提交，未接线的 Wayland 平行 presenter 已删除。其余迁移工作是继续收窄 `旧统一 context 门面` 的 recipe 视图并把未闭合 effect 调度收回通用 GPU Renderer。
-- 已遮挡 swapchain 的 idle present probe 也已退出 `旧统一 context 门面`：`GpuBackend` 只借用组合 thin RHI 的 `GraphicsSurface::test_present`，D3D11 在该 surface 实现内执行 `DXGI_PRESENT_TEST`，PixelUpload 明确返回不适用。探测不提交帧数据，也不改变正常帧 present 的唯一所有者。
-- D3D11 与 OpenGL ES 已接入资源、pass、draw/copy、retained framebuffer、surface resize、submit/present、错误映射和恢复边界；主 surface 未覆盖语义返回明确 typed failure。D3D11 在实际创建 `FLIP_SEQUENTIAL` 双缓冲并取得 `IDXGISwapChain3` 时冻结为 `TrackedSwapchain`，graphics backend 按当前 image index 合并错过的成功历史，以同一组物理矩形裁剪 retained-to-swapchain 绘制并调用 `Present1`；创建期接口或交换链失败回退 `DISCARD`、`FullOnly` 与完整重绘。OpenGL ES 当前继续保持 `FullOnly`。
-- overlay backdrop 已接通全部 OverlayKind 的显式 typed opt-in、Theme 默认 8.0、独立逻辑区域、区域并集/最大半径聚合、能力查询、mask-only 降级、旧/新区域 damage 与 clean→effect 重派生。普通树、主题或窗口尺寸变化通过“完整正常树 FrameEncoder 中间提交→新 clean snapshot→blur/restore→overlay→唯一 end_frame present”闭合，且中间阶段不 acquire/present。剩余差距仅是 Picture/offscreen blur 与 overlay backdrop 的跨 DPI、真实 GPU 和操作系统矩阵。
+## 坐标、像素与行序
 
-## 当前测试
+通用 graphics 使用左上原点 logical 坐标，并把 texture `v=0` 解释为顶部。CPU 像素、Picture、retained texture、sampled 合成、blur 和机械 copy 均保持同一 top-left 语义；不得依赖“偶数次翻转”偶然抵消。
 
-- Windows 真窗测试覆盖 D3D11 与 OpenGL ES/WGL 的 RHI surface、`FramePlan`、present、resize 和兼容遍历。
-- `test-harness` 测试覆盖 DeviceLost、SurfaceLost、teardown/rebuild 与恢复后交互。
-- mock RHI 测试覆盖 pass 顺序、一次最终 present、受控 SurfaceLost，以及 resize 后旧代计划拒绝与新代计划恢复；失败帧不消费 damage。
-- tracked present 测试覆盖双 image 历史修复、失败/遮挡帧不提交 history、surface generation 重建强制全帧、draw scissor 与 Present1 dirty rect 同源，以及非法或超量矩形完整提交回退。
-- Picture/offscreen blur 测试覆盖逻辑 region 不重复应用主 surface DPR、source→scratch→原 Picture 双 pass、同核水平/垂直 uniform、区域裁剪、单次 submit、无 acquire/present、失败清理与空区域无资源 no-op；sampled lowering 另覆盖目标 opacity、drawable 比例与 Additive 保真，CPU 参考覆盖真实 blur 后的目标相关 Additive 像素、clip 和状态恢复。
-- Picture owner 测试覆盖缺失 RHI renderer、无效 extent 与有效单一 owner 门禁；D3D11 默认构建和源码门禁同时证明旧高层 blur、`OffscreenTargetId`、原生 texture/FBO、专属 scratch 与 legacy sampled blit 已退出生产依赖图。
-- OpenGL ES draw、shader 编译与共享 Win32 HDC 边界使用模块级 `unsafe_op_in_unsafe_fn = deny` 门禁；每个 glow/Win32 底层调用都在保持 owner-thread、原生句柄和资源表前置责任的显式 `unsafe` 操作中执行，Rust 2024 不再把 unsafe 函数体本身视为隐式授权。
-- Linux EGL 路径同样使用模块级 `unsafe_op_in_unsafe_fn = deny` 门禁（`platform/linux.rs` 与 `opengl/platform/egl.rs`）；Wayland surface 描述符解引用、EGL/wl_egl FFI 调用都在显式 `unsafe` 操作中执行，Rust 2024 不再把 unsafe 函数体本身视为隐式授权。khronos-egl v6 的 static 绑定不携带 `#[link]`，且项目刻意使用 `no-pkg-config`，因此 `egl.rs` 内显式声明 `#[link(name = "EGL")]` 以保证 egl* 符号进入最终链接。
-- overlay backdrop recording 测试覆盖 retained→clean 快照与 effect/clean→retained 恢复的方向、全幅物理 extent、唯一 device submit、无 acquire/present，以及创建失败无半成品和 submit 失败检查式销毁；blur 测试另覆盖逻辑区域只应用一次主 surface DPR、extent 裁剪、effect→scratch→effect 顺序、单次 submit、无 acquire/present 与 scratch 检查式销毁。UI 聚合测试覆盖全部 OverlayKind、Theme/显式半径、mask/独立区域、区域并集与最大半径；场景管线测试覆盖 snapshot/blur DeviceLost、restore SurfaceLost 与 release OOM 的 typed 分类传播，并证明失败后不继续 begin/end/present。refresh 测试另锁定正常树只做一次无 present FrameEncoder 提交、一次新 snapshot/blur/restore，以及整个事务恰好一次 begin/end/final present。Windows 真窗验收使用 D3D11 与 GPU-native 红蓝条纹夹具，公开 Agent 语义确认前景 Modal，Win32 捕获与像素断言同时证明 24px 边界扩散、两侧主色保留和前景锐利；专用 blur VS 与 BlurCB 绑定，防止复用 BlitCB ABI 后整幅采样同一边缘纹理点。
-- 通用 canvas 单元测试覆盖 soft fallback 在 SrcOver/Additive 交替时的分段顺序与成功提交后的 staging 消费。
-- 通用 canvas 与 capability 单元测试覆盖 `GraphicsCapabilities` 到 `NativeRasterCaps` 的唯一投影、生产 retained RHI profile 的 Additive shape 直达入队、事实能力门禁及无 retained/Additive 能力时的 soft 回退；源码契约锁定 `旧统一 context 门面`、thread-bound wrapper 与生产 adapter 不再恢复平行 raster capability 查询。
-- FrameRecordingCanvas、FrameEncoder 与 NativeGpuCanvas2D 单元测试覆盖 Additive 矩形/圆的填充与描边命令事实、整数矩形裁剪、正负整数像素 offset、纯平移整数 transform、含非统一圆角角位重排的八种单位正交 transform、有限全局 opacity 的 premultiplied 颜色折叠、目标相关 CPU 参考像素、固定 Native shape 无法表达时矩形/圆/椭圆/扇形/路径填充、矩形/圆/路径/直线描边及线性/径向渐变的仿射 sampled soft 分段、raw image 的直接 Additive textured quad 与仿射 sampled soft 分段、glyph coverage 与定向/环境 box shadow 的仿射 sampled soft 分段、描边 width/cap/join/miter、渐变/图片/字形/阴影局部逆映射、图片源 crop、point sampling、字形与阴影 coverage、路径 clip mask、连续饱和累积、跨源图元合批、紧边界 tile、SrcOver 与 `restore` painter barrier、能力/轴对齐门禁、blend 批隔离，以及带物理 scissor 的 `AdditiveShape` lowering。
-- 缺少运行环境的组合记为未测试，不生成独立完成记录。
+native surface 的坐标与行序差异由 [platform/presentation](../platform/presentation.md) 的 Adapter 消化。readback 若受支持，必须返回 top-left 结果并在 Adapter 内完成区域换算和行反转；graphics 不再叠加平台特例。
 
-## 迁移约束与测试
+全部 extent、DPR、transform、颜色和采样参数必须有限且在资源预算内。亚像素几何保留原始精度，不能为了适配整数 fast path 而静默取整；无法等价表达时选择受控 fallback 或返回 typed error。
 
-迁移不绑定版本、日期或执行顺序；完成状态只以相应自动测试通过为准：
+## CPU 与 GPU fallback
 
-- D3D11 作为参考 adapter 完整执行薄 RHI，且 adapter 内不新增逐 UI 操作入口；
-- 至少第二个原生 API 复用同一 `GpuRenderer`、`FramePlan`、atlas、offscreen 与 effect 调度，新增 adapter 不复制 UI raster 算法；
-- bootstrap capability gate 测试覆盖首帧前拒绝缺失 GPU 基线的实现；
-- 矩形、路径、字形、图片、Picture、opacity、additive、离屏、模糊、resize、surface lost 与 device lost 由对应测试覆盖；
-- mock RHI 测试覆盖 pass 顺序、资源代际、一次最终 present 与失败帧不消费 damage。
+CPU backend 是完整 renderer，不是各原生 Adapter 的补丁集合。帧内 GPU→CPU fallback 只在以下条件同时满足时允许：
+
+- 像素语义、painter order、clip、transform、opacity 与 blend 可保持；
+- staging 区域和内存有硬上限；
+- CPU 结果能作为普通 sampled 输入回到当前有序计划；
+- fallback 不绕过 capability、generation、damage 或最终 present 契约。
+
+GPU baseline 操作不能依赖常态 CPU fallback。无法保持语义、资源不足或设备状态不安全时返回 typed failure，由 renderer 的恢复策略选择下一帧重试、surface 重建或整 backend 替换。可选 backdrop blur 不支持时可以保留纯色 mask，但不能伪报 blur 成功。
+
+## Picture、offscreen 与 effect
+
+- Picture/offscreen texture 有唯一 owner 和 generation。创建返回的“不支持/无效空尺寸”与实际分配失败必须可区分；destroy 只有资源释放完成后才成功，失败时保留 owner 供恢复或关闭重试。
+- begin/flush/end/blit 都是 checked 边界。主 surface present 前若仍有活动 Picture，必须先成功结束；未实现操作返回 typed `NotImplemented`，不能 no-op 后报告成功。
+- 无像素贡献的空源、空目标或全透明 blit 是 canonical no-op；非空越界源、无效变换或不能保持语义的输入返回 typed error。
+- backdrop blur 同时维护未模糊 clean texture 和从其派生的 effect texture；策略、半径、区域、主题、surface 或 generation 变化时从 clean 重新派生，不能累计模糊旧结果。
+- blur 的 source→scratch→target pass 不取得主 surface，不额外 present；成功与失败都按检查式事务释放 scratch。任一步失败保留 invalidation，并停止当前帧最终提交。
+
+## 恢复与失败分类
+
+`SurfaceLost`、`DeviceLost`、`Occluded`、`WouldBlock`、OOM、`NotImplemented` 与来源违规保持不同 typed 分类。backend 只陈述执行失败与可恢复状态，graphics renderer 拥有恢复算法，app 只登记窗口 deadline 和调度机会，diagnostics 只观察/协调。
+
+恢复和 bootstrap 共用同一类型化装配入口。候选 backend 在完整验证前不能替换当前 owner；替换提交后若 resize 失败，新 owner 保持唯一并进入恢复/关闭路径，不能伪装回滚到已释放旧 owner。重试必须有次数或 deadline 上限，不允许每帧无条件重建。
+
+## 数据与安全边界
+
+- shader、pipeline 和 draw packet 由框架固定生成，不把任意用户 shader、原生命令或 GPU 指针作为 UI API。
+- 图片、字体、路径和 RichText 等不可信内容在 resources/painting 边界完成大小与格式约束；backend 仍须检查缓冲长度、offset、row pitch、索引范围和整数溢出。
+- surface readback 是显式可选能力，可能包含敏感界面像素；只有授权的宿主流程才能请求，结果不得自动写日志、上传或跨窗口共享。
+- 原生 FFI 与 unsafe 操作收敛在 Adapter，逐次证明线程、句柄、长度、对齐和生命周期前置条件；unsafe 函数体本身不视为隐式授权。
+
+## 验证责任
+
+backend 变更需要按风险提供以下证据；实时环境矩阵、结果和缺口由 Vikunja 持有，本文不记录动态通过数量：
+
+- 规范语义：CPU 参考与 GPU lowering 对 painter order、clip、transform、blend、opacity、文本、图片、Picture 和 effect 的一致性；
+- 资源事务：创建/替换/销毁、generation、resize、晚到 callback、OOM 与 checked shutdown；
+- 提交真相：一次最终 present、失败帧不消费 damage、partial/full 策略和不可呈现休眠；
+- 恢复：SurfaceLost、DeviceLost、teardown/rebuild、fallback 与重试上限；
+- Adapter：至少两个原生 API 复用同一 FramePlan 和 effect 编排，不复制逐 UI raster 算法；
+- 真实环境：DPI、resize、遮挡、多 swapchain image、GPU/驱动差异和人工可见效果；缺少环境时明确标为未验证，不以 mock 结果代替。
 
 ## 模块不变量
 
-- renderer、scene、painting 与 widget 不取得 raw GPU/native handle。
-- UI 图形语义在通用 GPU Renderer 中只有一个生产实现；native adapter 不定义平行的 `draw_*` 语义层。
-- capability 必须由实际可执行原语和 bootstrap probe 支撑，不能用编译成功代替运行契约。
-- CPU 写入 retained buffer 或 GPU submit 成功均不等于 present 成功；最终提交结果由 platform surface/presenter 返回。
+- UI 图形语义只有一个生产定义；native Adapter 只提供 thin RHI / PixelUpload 原语。
+- 同一 surface generation 只有一个 backend owner、一条帧计划和一个最终 present 责任边界。
+- capability 来自实际原语和 probe，不能由平台名、编译 feature 或旧缓存推断。
+- 任一 fallback、恢复或优化都不能改变像素语义、跳过 typed failure、消费失败帧 damage 或建立第二条生命周期。

@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 ui 系统的大数据视图物化、范围计算和复用策略。依赖：[component](component.md)、[layout](layout.md)、[view](view.md)。导出：虚拟列表状态、物化协议和 renderer 生命周期。
+> **接口**：声明 ui System 的大数据视图物化、范围计算和复用策略。与[组件运行时框架](component.md)、[layout](layout.md)及[view](view.md)的协作由 ui System 编排，Module 间不直接持有实例。导出：虚拟列表状态、物化协议和 renderer 生命周期。
 >
 > **当前实现线索**：固定与可变行高 `VirtualScroll` / `VirtualListScroll` 位于 `src/ui/virtualization/virtual_scroll.rs`，可变行高的稀疏 measurement cache 位于 `src/ui/virtualization/measurement_cache.rs`；动态行 renderer 由 `src/ui/render_handler.rs` 的 owner side table 持有，并通过 `src/ui/adapter.rs` 的 keyed reconcile 接入组件树；表格和树仍可复用共享滚动状态并保留各自绘制路径。
 
@@ -27,6 +27,8 @@ viewport、scroll offset、项目度量和 overscan 共同得到物化范围。�
 
 renderer 是按 owner `ComponentId` 管理的 side-table 回调，不进入组件快照。普通 `.render(...)` 在用户行工厂执行前生成类型化绝对索引身份，框架据此统一设置节点 key 与动态组件私有状态命名空间，行工厂不得再设置根 key；它只适用于顺序不可变的数据。可排序、插入或删除的数据必须使用 `.render_keyed(key_fn, renderer)`，先计算全局唯一且稳定的业务 key，再以同一规范身份执行状态捕获和 keyed reconcile。索引身份与业务身份使用互斥内部 tag，模式切换不会误接管旧状态。
 
+当前物化窗口内出现重复业务 key 必须在发布前失败，不能按索引或遍历顺序静默消歧。数据版本、renderer signature 与 owner/tree generation 一起约束缓存和回调；异步数据结果必须携带请求/数据 revision，晚到旧页不得覆盖新版范围。
+
 ## 组件：measurement cache
 
 生产实现支持固定行高和显式 `.variable_height()` 模式。可变模式把已物化子项的 `measured_size.h` 写入稀疏缓存，未测量项目继续使用 `.item_height(...)` 估算；总高度、最大偏移、滚动比例、可见范围和最终行 frame 共用同一组缓存前缀坐标。非法或非有限测量不会覆盖旧值，字体、宽度、主题几何或数据版本变化时可切换 `measurement_version` 或显式失效缓存，并清除旧测量后重新锚定滚动位置。
@@ -38,3 +40,4 @@ renderer 是按 owner `ComponentId` 管理的 side-table 回调，不进入组�
 - 行身份优先采用业务稳定 key；只有顺序不可变时才能采用绝对索引后备 key。
 - hit-test、绘制、语义 bounds 和行 frame 使用同一 content-to-viewport 变换。
 - 虚拟化不维持固定帧；无滚动、数据或测量变化时不产生工作，测量变化才触发下一轮窗口复核。
+- renderer 只在目标窗口 UI 轮次调用并受每轮物化预算约束；owner 移除、模式切换或窗口关闭同步释放 side-table 回调和测量缓存。

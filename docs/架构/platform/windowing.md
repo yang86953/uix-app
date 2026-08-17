@@ -32,8 +32,15 @@ OS callback/poll 只采集数据并投递目标窗口事件；应用 callback �
 
 ## 组件：TextInputSession
 
-原生输入 owner 由窗口、native view 和 generation 约束；未 commit composition 不成为最终文本。Windows TSF session 将 `TsfEventSink`、`TsfTextStore` 和 `WindowsTextInput` 绑定到同一 `WindowId` 与 platform pending-failure source；composition callback 只把状态转换后的 `UiEvent` 写入共享队列，唤醒失败和 text-store 锁/借用失败由 owner-thread 取回 typed `Error`，不在 callback 栈执行应用逻辑。`wnd_proc` 外层捕获消息处理 panic 并返回 `DefWindowProcW`；TSF 的 windows-rs 生成 COM thunk 由 text-store trait guard 将 panic 转为 `E_FAIL` 和 owner failure，保证 unwind 不跨 ABI。`ITextStoreACP` 与 `ITfContextOwnerCompositionSink` 两组真实生成 vtable 均有 panic 回归覆盖。
+原生输入 owner 由窗口、native view 和 generation 约束；未 commit composition 不成为最终文本。Windows TSF session 将 `TsfEventSink`、`TsfTextStore` 和 `WindowsTextInput` 绑定到同一 `WindowId` 与 platform pending-failure source；composition callback 只把状态转换后的 `UiEvent` 写入共享队列，唤醒失败和 text-store 锁/借用失败由 owner-thread 取回 typed `Error`，不在 callback 栈执行应用逻辑。`wnd_proc` 外层捕获消息处理 panic 并返回 `DefWindowProcW`；TSF 的 COM thunk 必须把 panic 转为 `E_FAIL` 和 owner failure，保证 unwind 不跨 ABI。
+
+## 所有权、安全与生命周期
+
+- platform System 拥有每个 `PlatformWindow`、EventSource 与原生输入会话；app/window 只通过公开窗口契约驱动，不取得私有 backend 或回调对象。
+- 关闭顺序先停止新事件和文件 offer，结束 IME/composition，失效 WindowId/generation 并排空在途回调，再销毁原生窗口。迟到事件只允许丢弃或返回 stale failure。
+- 文件拖放得到的 URI、路径、文件名和声明类型都视为不可信输入。platform 只验证并投递本地路径，不读取业务内容；应用仍需重新检查权限、竞态、大小、格式和内容安全。
+- 剪贴板、输入文本与文件路径可能含敏感数据；不得由 platform 默认写入普通日志、错误回包或跨窗口全局状态。
 
 ## 模块不变量
 
-logical/physical 换算在窗口/surface 边界完成；迟到 callback 丢弃，OS 分支不泄漏到 ui/data。
+logical/physical 换算在窗口/surface 边界完成；迟到 callback 丢弃，OS 分支不泄漏到 ui/data。窗口动作需要结果时返回 typed Result，传输或 OS 接收成功不能伪装成应用已处理。

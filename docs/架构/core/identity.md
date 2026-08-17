@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 core 系统的目标 `identity` 模块及其组件契约。依赖：无。导出：跨 ui、graphics、platform、app 传递的稳定身份值。
+> **接口**：声明 core 基础契约中的目标 `identity` 边界及其组件契约。core 的 System 定级仍由[系统列表](../系统列表.md#core基础契约system-定级待定)持有。依赖：无。导出：跨 ui、graphics、platform、app 传递的稳定身份值。
 
 > **当前实现线索**：`src/core/identity/component_id.rs`、`src/core/identity/window_id.rs`；路径可重构，identity 边界保持稳定。
 
@@ -25,3 +25,4 @@
 
 - 身份值可复制、排序和哈希；解析身份必须由拥有存储的上层完成。
 - 后台句柄可保存身份，但不得据此直接访问 WidgetTree 或原生窗口。
+- 身份不延长目标生命周期，也不证明当前调用方仍获授权；每次使用都需由 owner 校验 generation、作用域和当前状态。

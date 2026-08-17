@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 ui 系统的声明式 View、组合器和 reconcile 输入。依赖：[component](component.md)、[reactive](reactive.md)。导出：`View`、`ViewNode`、combinator 与组件 DSL；theme 等上下文通过通用构建上下文扩展。
+> **接口**：声明 ui System 的声明式 View、组合器和 reconcile 输入。与[组件运行时框架](component.md)及[reactive](reactive.md)的协作由 ui System 编排，Module 间不直接持有实例。导出：`View`、`ViewNode`、combinator 与组件 DSL；theme 等上下文通过通用构建上下文扩展。
 >
 > **当前实现线索**：相关实现暂位于 `src/ui/view/`、`src/ui/macros/` 和 `src/ui/component/` 上下文文件；重构后以本模块边界为准。
 
@@ -20,6 +20,8 @@
 
 ViewNode 是声明快照，不是持久组件。reconcile 以父范围内“同类型 + 同 key”保留 ComponentId 和运行态；类型或 key 变化才销毁重建。
 
+ViewNode 保存 owned 声明值、稳定 key 和 side-table 登记签名，不拥有 `WidgetNode`、平台对象或可变 handler。相同父范围内重复 key 属于歧义输入，必须在改写现有树前返回 typed error，不能按遍历顺序任意接管旧身份。
+
 `userSelect` 属于树结构元数据而非视觉 `Style`。`ViewNode` 保存声明值，adapter 写入 `WidgetNode`，`WidgetTree` 再按祖先边界解析实际值并同步到文字组件；reconcile 改变策略时必须重算既有子树并清理失效选择。
 
 `position` 与四边 inset 同样属于树结构元数据。`ViewNode` 保存完整声明，adapter 在首次挂载和同 key reconcile 时交接给 `WidgetTree`；树级布局 Module 负责正常流分类、absolute 包含块、fixed 根视口和 sticky 滚动约束，绘制、脏区与命中复用同一定位视觉变换。fixed 只提升合成坐标路径，不转移组件生命周期所有权。
@@ -30,4 +32,6 @@ adapter 把声明属性分类为结构、Layout、Paint 或 Composite patch；�
 
 ## 模块不变量
 
-View build 可捕获 State/Provider 依赖，但不执行 present、平台 I/O 或后台任务；业务闭包不进入可快照组件 struct。
+- View build 可捕获 State/Provider 依赖，但不执行 present、平台 I/O、阻塞业务 I/O 或启动后台任务；失败发生在预检阶段时不得部分改写持久树。
+- 业务闭包只进入所属树管理的 side table，ViewNode/组件快照只保存签名或稳定登记身份；节点销毁、换根和 generation 变化同步释放登记。
+- adapter 输出 patch 只表示声明差异已分类；协调发布、布局、绘制和呈现各自由后续结果建立。

@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 ui 系统的测量、布局、盒模型和容器算法。依赖：[component](component.md)、[core/geometry](../core/geometry.md)。导出：组件布局能力与有限几何结果；公开用法见[使用 · 布局](../../使用/界面构建/布局.md)。
+> **接口**：声明 ui System 的测量、布局、盒模型和容器算法。基础依赖：[core/geometry](../core/geometry.md)；与[组件运行时框架](component.md)的协作由 ui System 通过树阶段契约编排，二者不直接持有彼此 Module 实例。导出：组件布局能力与有限几何结果；公开用法见[使用 · 布局](../../使用/界面构建/布局.md)。
 >
 > **当前实现线索**：相关实现位于 `src/ui/layout/`（engine.rs 持有 `LayoutEngine` trait）；trait 与算法共同归本模块。
 
@@ -36,59 +36,63 @@
 
 ## 组件：FlexLayout / GridLayout / ScrollView / VirtualScroll
 
-- Flex 支持主轴方向、wrap、grow/shrink、justify、align、gap 和 per-child `align_self`；`overflow_content` 只保留自然主轴尺寸，不取消分布、换行、交叉轴对齐或反向语义。单行溢出、标准固有主轴与超宽换行在获得真实 frame 后都把有限负剩余空间交给统一 justify：Center/End 分别使用半量/全量负偏移，Start 与 Space* 不产生负分布；零尺寸 bootstrap 仍从自然起点开始。wrapped 路径按当前行是否已有项目决定分行，而不是以累计占用是否大于零代替项目存在性；零主轴尺寸子项仍参与 gap 与换行边界。自然行盒形成后，默认 Stretch 再把实际交叉轴正剩余空间等分到各行并同步行起点；只有一行时与 non-wrap 填充语义一致，`align_self` 只覆盖项内对齐。单行和 wrapped 的 Stretch 最终尺寸统一经子项交叉轴 min/max 钳制；行盒可继续消费剩余空间，达到上限的子项保持行起点。非 Stretch 行组在实际交叉轴溢出时保留有限负剩余空间，Center 使用半量负偏移，End 使用全量负偏移使行组末端贴住容器末端；交叉轴 bootstrap 没有可分布的实际范围，两者都固定零偏移并由自然行组撑开输出。单行 `overflow_content` 的反向主轴在零实际主轴 bootstrap 时必须按自然内容长度镜像，不得依赖调用方另设 `intrinsic_main`；获得非零实际 frame 后与 justify 共用实际容器主轴。零交叉轴由自然外尺寸 bootstrap。空子集的固定尺寸输出保留完整 frame；固有主轴或溢出模式按零个自然子项把主轴收敛为零，交叉轴继续使用父级分配值，四种方向只决定折叠宽度或高度。
-- wrapped 求解最终只有一行且已获得真实交叉轴时，唯一行盒直接覆盖容器交叉尺寸，禁止自然行高在较小容器内绕过 Stretch 收缩，也让逐项 `align_self` 相对真实行盒定位；自然交叉外尺寸继续单独保留在 `total_size` 账本。`overflow_content` 没有实际分行时，wrapped 与流式溢出路径必须在四种方向、全部公开 justify/align、非对称 margin 和两轴 bootstrap 下返回相同子项矩形与自然尺寸账本。实际多行仍按自然行高、固定 gap 与容器级行组分布处理。主轴 justify 纯计算已拆入 `flex/justify.rs`，共享入口与公开 API 不变，核心求解文件保持在 900 行门禁内。
-- Grid 使用显式 column/row track、cell/span 与独立 row/column gap；空 track 或空 child 返回有限空输出，per-child `align_self` 覆盖容器级交叉轴对齐。
-- Grid 先确定 `Px` 与基于子项有限测量外尺寸的 `Auto`，再让正权重 `Fr` 按比例分配剩余空间；纯 `Auto` 轨道不为填满容器而膨胀。
-- Grid 水平内容对齐与单元格内子项对齐使用独立通道：`Grid::justify` / `GridLayout::with_content_justify` 在轨道解析后移动或分散整组列轨，`GridLayout::with_justify` 继续只控制子项在单元格内的位置。Center/End 分配前置剩余空间，SpaceBetween/SpaceAround/SpaceEvenly 只增加轨道间或两端分布空间，Stretch 只均分扩展 `Auto` 列；没有正剩余空间或可扩展 `Auto` 时保持 Start 几何。
-- 跨多轨道子项在 span 不含正权重 `Fr` 时，先扣除 span 内部 gap、`Px` 与已知 `Auto` 尺寸，再把未覆盖的外尺寸缺口均分给所覆盖的 `Auto` 轨道；较短 span 先结算，同跨度重叠子项基于同一轨道快照登记每轨最大计划增量，子项声明顺序不得改变轨道尺寸。
-- 子项同时跨越 `Auto` 与部分正权重 `Fr`、且 span 外仍有竞争 `Fr` 时，在父级轨道容量内按全局 Fr 权重把 span 外可让出的份额转入 span 内 `Auto`；约束按 span、起点与自然外尺寸确定性排序，并以最多 64 轮单调松弛处理相互影响。没有 `Auto` 时，列/行轴都保持声明的 Fr 权重并把子项收敛到单元格；span 覆盖全部 Fr 或父级剩余空间耗尽时同样服从父级容量，不伪造额外轨道尺寸。
-- Grid 放置层以单轴 4096 条轨道和总计 65,536 个稠密单元格同时限制辅助分配；超限 cell/span 收敛到窗口边界，无可用矩形的自动子项留在零 frame。
-- 自动放置使用可复用的二维占用数前缀和，候选矩形查询为常数时间；每个子项至多在当前矩阵和一次有界扩行后各搜索一次，不保留无限增长循环。
-- RichText 的估算测量缓存以有效宽度约束为键；宽度变化会重算折行固有高度、清除旧行坐标与代码复制命中区域，并让绘制阶段在同一宽度下以真实字体度量重建缓存。测量与绘制可使用不同度量精度，但不得跨宽度复用旧高度或旧命中几何。真实字体布局通过 OpenType shaping 保留 glyph id、advance、二维 offset 和源文本 cluster；字体回退以扩展字素簇为最小单位，行拼接不得拆开同一 shaping cluster。字体服务、无字体估算与 RichText 估算/真实路径共享 UAX #14 mandatory/allowed 边界；CRLF 作为单个强制换行，标点、NBSP、组合序列和 emoji ZWJ 序列不得被紧急折行绕过，超长字母数字词只在完整 cluster 边界兜底。完整逻辑段落还共享一次 UAX #9 分析：字体与样式段只在字素簇边界切成单向 shaping run，先按逻辑 cluster 决定 UAX #14 行边界，再对每一视觉行应用 L1/L2；glyph 始终保留逻辑源区间与行级嵌入级别，绘制、选择片段、命中和光标几何不得另行猜测 RTL 顺序。
-- Notification 的条目宽度先从规范化窗口 frame 扣除双侧 `HORIZONTAL_INSET`，再受 384px 设计上限约束；`notification_rects` 是绘制、动画后命中、Overlay bounds 与 dirty bounds 的共同几何来源，窄窗口不得为保留固定条目宽度而牺牲单侧留白。
-- Table 的选择列先绘制，随后以 `COLUMN_PAINT_ORDER` 统一表头、分组表头和表体的列区层级：Middle → Left → Right；两层表头必须以列区为最外层，并在每个列区内依次完成有标题分组与叶表头阶段，跨两层无标题单列不得因处于全局叶阶段而覆盖更高层固定区。有标题分组片段在同一列区内保持声明顺序。跨行合并锚点在全部物理行之后补绘时，必须使用扣除更高列区覆盖后的最终可见裁剪；普通按层绘制仍使用完整列区裁剪。逻辑列合并不能用“锚点 x + 声明宽度之和”推导物理矩形：`span_bounds` 必须联合全部覆盖列的真实位置，末尾重绘再用 `merged_span_repaint_clip_for` 按列区提取实际覆盖片段并保留固定区层级。普通文本在统一逻辑矩形中绘制并由各片段裁剪，覆盖列命中继续由 `cell_anchor` 回落到唯一锚点。合并单元格覆绘后，物理行展开控件最后绘制。`column_at`、选择动作、展开动作与列宽调整句柄必须以视觉层级决定命中：固定列侵入 32px 选择区时，只有 `column_at` 返回空才允许复选框动作；真实数据行的尾部 32px 展开交互区优先于选择列和普通单元格，表头与展开内容区除外；调整句柄按 Right → Left → Middle 分层且仅在同层按距离择优。
-- `Container` 与 `Space` 共享子 frame 内容外尺寸计算：Space 必须传递子项 margin，缓存取可见 frame 末端并补入正右/下 margin，不用父级受限的求解器总尺寸冒充真实内容范围。
-- 透明单子节点包装器可通过 component 边界的 `measure_from_children` 窄钩子在同一测量轮次读取直接子节点自然尺寸；Popconfirm 组合 trigger 使用该事实向父级 Row/Column 报告真实 border-box，不以零尺寸或上一帧缓存猜测布局。
-- `ScrollView` 在纵向/双向纵列与横向单行中统一消费子项 margin，滚动条首轮判断使用自然外尺寸，非滚动轴填充先扣两侧 margin；双轴 `content_bounds` 补入对侧经典沟槽，使 `max_scroll` 仍按外视口相减却等价于真实内容视口。
-- `VirtualScroll` 只接受有限正行高与 viewport 参与范围计算，offset 先夹到内容边界；每次最多物化 4096 行，可见行优先于 overscan，总高度、滚动状态与最终行 frame 均保持有限。
-- 容器组件组合 `FlexLayout`/`GridLayout`，不复制第二套算法。
-- CSS `float` / `clear` 明确不属于 UIX 目标布局模型：左右贴靠、换行分组和二维分区分别由 Flex 对齐/增长、Row/Column 子树和 Grid 轨道表达；编译器提供替代诊断，layout Module 不保存浮动格式上下文或平行清除状态。
+### Flex
+
+- 支持四种主轴方向、wrap、grow/shrink、justify、align、gap 和逐项 `align_self`；容器与内置组件不得复制第二套 Flex 求解器。
+- `overflow_content` 只保留自然主轴尺寸，不取消换行、分布、交叉轴对齐或反向语义。获得真实 frame 后，有限的正/负剩余空间统一进入 justify；零尺寸 bootstrap 使用自然内容建立有限结果。
+- 零主轴尺寸子项仍参与项目计数、gap 与换行边界。单行与实际只形成一行的 wrapped 路径，在同一输入下必须得到一致 frame 和自然尺寸账本。
+- Stretch、grow/shrink 和 min/max 约束采用确定性冻结；达到上下限的项目停止消费空间，声明顺序不得改变等价项目的结果。
+
+### Grid
+
+- 使用显式行列轨道、cell/span 和独立 row/column gap。`Px`、`Auto`、正权重 `Fr` 依次在父级有限容量内求解；纯 `Auto` 轨道不为填满容器而无条件膨胀。
+- 内容对齐与单元格内子项对齐是两条独立通道；逐项 `align_self` 只覆盖本项。没有正剩余空间时，Space/Stretch 类分布不能伪造额外尺寸。
+- 跨轨道子项先扣除 gap 和已知轨道，再把缺口确定性分配给可扩展轨道。相同输入不得因子项声明顺序不同而改变轨道尺寸。
+- 自动放置、span 松弛和辅助矩阵均有明确轮次/容量上限；超限返回 typed error 或有限空 frame，不能无限扩行、分配或搜索。
+
+### Scroll 与虚拟范围
+
+- ScrollView 的内容边界统一包含子项 margin 与已占用滚动条沟槽；`max_scroll`、绘制、命中和无障碍 bounds 使用同一 content-to-viewport 变换。
+- VirtualScroll 只接受有限正估算高度和 viewport；offset 先夹到内容边界，单次物化有硬上限且可见内容优先于 overscan。详细身份与测量缓存契约由 [virtualization](virtualization.md) 持有。
+- CSS `float` / `clear` 不属于 UIX 目标布局模型；贴靠、换行分组和二维分区分别用 Flex、Row/Column 与 Grid 表达，不建立平行浮动格式上下文。
+
+### 文本与复合几何
+
+- 文本测量缓存以有效宽度、字体、Locale、样式和资源 generation 为键；任一输入变化都使旧折行、命中和光标几何失效。
+- 字体回退和换行不得拆开扩展字素簇或 shaping cluster；CRLF、NBSP、组合序列和 emoji ZWJ 遵循统一 Unicode 边界。双向文本按逻辑 cluster 分行、按视觉行重排，glyph 始终保留逻辑源区间。
+- Table、RichText、Notification 等复合组件拥有自己的领域几何，但必须向 layout/paint/hit-test/damage/semantics 提供同一份已解析矩形和裁剪结果；视觉层级与命中层级不得各自推导。
 
 ## 增量与缓存
 
 - 只有尺寸约束、布局属性、子结构、文本度量或可见性变化才标 Layout dirty。
 - Paint-only 主题色、hover、opacity 动画不触发布局；width/height 等几何动画触发布局。
-- 声明树原位协调分别报告 Paint 与 Layout 影响；`Label`、`Container`、`Grid` 按快照字段分类，尚无定向测试的组件及 `ProviderContext` 变化继续保守请求 Layout，不能以优化名义吞掉未知几何变化。
+- 声明树原位协调分别报告 Paint 与 Layout 影响；已知字段按语义精细分类，未知组件、未知快照或未声明影响的 Provider 变化保守请求 Layout，不能以优化名义吞掉几何变化。
 - 直接子节点增加、移除或重排后，树通过组件核心通知同步依赖子结构的派生状态；空子树不能依赖 `layout_children([])` 清理，因为 Phase 1 会跳过没有直接子节点的节点。
-- `LayoutFrameScratch` / `LayoutTraversalScratch` 只跨帧复用存储，进入布局即清空本轮向量与集合；遍历缓存以 `tree_version` 为键，当前核心不持有跨帧 `LayoutOutput` 语义快照。
+- `LayoutFrameScratch` / `LayoutTraversalScratch` 只跨帧复用容量，进入布局即清空本轮内容；遍历缓存以 `tree_version` 和相关输入 revision 为键，不持有跨帧可写 `LayoutOutput` 真相。
 - 虚拟滚动在范围与挂载数量稳定且没有新版声明时不调用 renderer 或 reconcile，滚动走 composite/paint 路径；范围或 renderer 声明变化时，以业务 key 或绝对索引后备 key 协调当前有界窗口，重叠行保留原组件身份。
 
 ### 失效分类矩阵
 
-`ViewAdapter` 对声明更新统一先比较公开 `SnapshotFields`，再把结果拆为 Paint 与 Layout 两条通道。当前分类分为三层：
+`ViewAdapter` 对声明更新统一先比较公开 `SnapshotFields`，再把结果拆为 Paint 与 Layout 两条通道。分类分为三层：
 
 | 分类 | 组件 | 规则 |
 |---|---|---|
-| 精细字段 | `Label`、`Container`、`Grid` | 颜色、背景等纯视觉字段只产生 Paint；文本、字号、盒模型、Flex/Grid 轨道、可见性和响应式列等几何字段产生 Layout + Paint。 |
-| 配置与运行态分离 | `Input`、`Collapse`、`Carousel`、`ImageGroup` | `Input` 的受控运行值、以及其余组件快照中明确标为运行态的字段不参与 authored config 比较；配置变化仍按保守 Layout 处理，避免漏掉未知几何。 |
-| 显式保守 | 其余全部内建快照、`Unknown`、`Custom` | `builtin_widget_layout_changed` 的兜底为 `Some(true)`，任何配置差异都产生 Layout + Paint；新快照变体在获得定向测试前自动落入此类。 |
+| 精细字段 | 已声明稳定分类的内置组件 | 颜色、背景等纯视觉字段只产生 Paint；文本、字号、盒模型、轨道、可见性等几何字段产生 Layout + Paint。 |
+| 配置与运行态分离 | 明确区分 authored config 与受控运行值的组件 | 运行值不参与配置比较；尚未声明影响范围的配置变化仍按保守 Layout 处理。 |
+| 显式保守 | 其余内置快照、`Unknown`、`Custom` | 任一未知配置差异产生 Layout + Paint；新增快照变体默认进入此类，获得专项证据后才可收窄。 |
 
-显式保守清单覆盖：`Button`、`WindowControl`、`Space`、`Divider`、`Icon`、`Typography`、`Checkbox`、`Radio`、`Switch`、`Slider`、`RangeSlider`、`Rate`、`InputNumber`、`Avatar`、`Badge`、`Card`、`Empty`、`Image`、`Tag`、`Timeline`、`Calendar`、`Skeleton`、`FloatButton`、`FloatButtonGroup`、`Layout`、`Header`、`Sider`、`Content`、`Footer`、`Splitter`、`Affix`、`BackTop`、`List`、`Select`、`AutoComplete`、`Cascader`、`ColorPicker`、`DatePicker`、`DateRangePicker`、`TimePicker`、`Mentions`、`Segmented`、`FormItem`、`Form`、`Descriptions`、`Result`、`SelectableList`、`ScrollView`、`ThemeToggle`、`Transfer`、`Upload`、`Watermark`，以及 feature-gated 的 `Alert`、`Message`、`Notification`、`ProgressBar`、`Spin`、`Tooltip`、`Popover`、`Popconfirm`、`Modal`、`Drawer`、`Breadcrumb`、`Pagination`、`Anchor`、`Menu`、`Dropdown`、`Tabs`、`Steps`、`NavItem`、`Tree`、`TreeSelect`、`Table`、`BarChart`、`LineChart`、`PieChart`、`ChartPlaceholder`、`QRCode`、`RichText`。
-
-适配器精细分类、保守回退和 `Unknown`/`Custom` 兜底由测试共同覆盖；新增 `SnapshotFields` 变体默认不会静默丢失布局失效，补齐对应测试后才能晋升为精细分类。
+组件归入哪一类必须由组件快照契约登记，不在 layout 正文维护易过期的全量名称清单。适配器必须验证精细分类、保守回退和 `Unknown`/`Custom` 兜底；缺少证据时保持保守分类。
 
 ## 不变量
 
 - 结果尺寸和 frame 有限、非负；无界轴使用约束语义，不能把 `f32::MAX` 写入实际 frame。
 - measure、paint、hit-test 对同一组件使用同一实际 frame。
 - 布局不执行业务 I/O、任意应用 callback、present 或跨窗 wake。
+- 布局 scratch、缓存和输出由所属窗口/树独占；稳定节点 ID 不延长组件或旧 tree generation 的生命周期。
 
-## 测试
+## 验证责任
 
-- 布局不变量（盒模型、Flex、Grid、ScrollView、VirtualScroll、RichText、Notification
-  与 Table，以及溢出、换行、轴转置、镜像、负 margin/gap 和弹性冻结组合）的专项
-  集成测试已随测试精简移除；公开 API 契约测试（`tests/ui_public_api.rs`）从使用方
-  视角锁定布局入口契约。
-- 组件内部测试覆盖缓存失效、子结构协调、绘制与命中一致性，以及病理数值的有界处理。
-- 本模块只以自动测试结果判断完成状态。
+- 公开契约验证应覆盖盒模型、Flex、Grid、ScrollView、VirtualScroll、RichText、Notification 与 Table 的入口和可见失败语义。
+- 模块级验证应覆盖缓存失效、子结构协调、绘制/命中几何一致，以及非有限或病理数值的有界处理。
+- 溢出、换行、轴转置、镜像、负 margin/gap、弹性冻结和真实字体/窗口环境需要与其风险匹配的专项证据；缺少对应证据时标为未验证，不用较宽泛的测试结果替代。
+- 当前验证结果、环境矩阵和缺口由 Vikunja 持有，本文只规定稳定的不变量与验证责任。

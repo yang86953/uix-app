@@ -1,6 +1,6 @@
 # 变更记录
 
-这里记录 UIX 闭源版本的用户可观察变化。`0.0.1` 的当前事实见[交付与许可](docs/产品/交付与许可.md)。
+这里记录 UIX 闭源版本中已经发生、会影响使用方、交付物或验证方式的变化。变更条目不表示版本已发布，也不承担任务、负责人、阻塞和实时完成度管理；`0.0.1` 的发布与交付事实见[交付与许可](docs/产品/交付与许可.md)。
 
 ## 0.0.1（未发布）
 
@@ -24,18 +24,18 @@
 - 所有产品与 Demo 图标统一走 `Icon` 组件管线；内置紧凑槽位复用 `Icon::paint_in_frame`，不再以 Unicode、ASCII、本地化字符或独立手绘形状充当图标。
 - 捆绑字体固定为 `lucide-static` 1.17.0，并随内部包保留 ISC 与 Feather 派生图标 MIT 声明。
 
-### 08-14 功能扩展
+### 2026-08-14 功能扩展
 
 - Windows 系统通知接通：完成通知身份（AUMID）与发送契约（`NotificationService`），并提供真发送运行时验收；Linux（notify-send）与 macOS（osascript）经平台命令发送。
 - 富文本内联图片完整生命周期：解析边界、图片资源后台解码轮询、绘制与无障碍快照事实，随 RichText 一起交付。
 - 浮层背景模糊：Modal / Drawer 等浮层接入背景模糊策略与区域失效、快照重建，含真窗验收。
 - Popconfirm 组合触发器：多触发器组合支持（父级测量、键盘释放捕获与回归覆盖）。
 
-### 08-15 功能扩展
+### 2026-08-15 功能扩展
 
 - 新增 `rich-text-visual`（RichText 主题分隔线）与 `rich-text-image-visual`（RichText 内联图片）两个独立真窗验收程序，真窗验收程序合计 8 个。
 
-### 08-15 测试精简
+### 2026-08-15 工程与验证范围
 
 - `cargo test` 只编译运行公开 API 契约测试（`app/core/data/diagnostics/draw/native/ui` 的 `tests/*_public_api.rs`）：移除 38 个非 API 集成测试（`flex_overflow_*`、`uix_lang_*_windows`、`usage_*`、`semantic_actions`、`layout_invariants`、`tessellator_contract` 等）与未被引用的 `tests/unit` 死代码，同步清理 `platform_notification_runtime` 的 `[test]` 表声明；设备丢失/表面丢失真窗注入验收由 demo 的 `--test-graphics-recovery` 页面承担，真窗视觉与通知运行时验收随精简移除。
 
@@ -50,4 +50,4 @@
 
 - 版权归 `yangyanhui` 所有；版本按专有闭源、仅限内部授权使用的方式交付，不对外分发源码或二进制制品。
 - 已定义的 Windows 内部交付载体为 Windows 11 24H2 x64 ZIP：release Demo、内部 `.crate`、UIX 专有许可、Lucide / Feather 第三方声明、说明文件、运行时 Demo 图片与 SHA-256 清单；release 使用默认 feature 集（原生 D3D11），并保留 Software 整体回退。Linux 同属首发范围，其平台专用交付物细节由 Vikunja #770 管理。
-- 本版本仍未发布；完成状态只以仓库自动测试为准。
+- 本版本仍未发布；正式发布状态、平台矩阵与带时点的验证结果以 Vikunja 发布任务为准。

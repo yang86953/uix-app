@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 graphics 系统的目标 `resources` 模块及字体、文本布局、图像生命周期。依赖：[geometry](geometry.md)、[backend](backend.md)。导出：`FontService`、`ImageService` 及资源句柄。
+> **接口**：声明 graphics System 的 `resources` Module 及字体、文本布局、图像生命周期。[geometry](geometry.md)值与[backend](backend.md)上传端口由 graphics System 编排注入，Module 间不直接持有实例。导出：`FontService`、`ImageService` 及资源句柄。
 
 > **当前实现线索**：主要位于 `src/draw/resources/`。
 
@@ -23,8 +23,13 @@
 
 ## 组件：ImageService
 
-组件保存 handle 而非 texture；解码失败返回 typed error，释放或设备重建使旧 generation 失效。UI `Style` 的本地背景路径复用同一 `ImageService` 路径缓存与固有尺寸，不建立第二套图片资源所有权；加载失败由 UI 绘制适配降级为不绘制图片，同时保留已有背景色。
+组件保存 handle 而非 texture；解码失败返回 typed error，释放或设备重建使旧 generation 失效。UI `Style` 的本地背景路径复用同一 `ImageService` 路径缓存与固有尺寸，不建立第二套图片资源所有权；加载失败由 UI 绘制适配降级为不绘制图片，同时保留已有背景色和可观察失败。
 
-## 模块不变量
+路径和图片字节都按不可信输入处理：解码前限制格式、尺寸、像素预算和总字节，规范化本地路径并服从应用授予的文件访问范围；资源服务不因路径或元数据隐式发起网络请求。错误报告不得泄漏超出诊断策略允许范围的完整用户路径。
 
-字体/图像 I/O 与 cache 有容量和生命周期边界；资源服务不登记无条件逐帧工作。
+## 所有权与模块不变量
+
+- `FontService` / `ImageService` 拥有缓存、槽位和 backend 资源；组件句柄只标识资源及 generation，不延长服务、窗口或设备生命周期。
+- 共享 CPU 资源和逐设备 GPU 资源必须分层持有；设备替换只失效对应 generation，不污染仍有效的其他窗口/设备缓存。
+- 字体/图像 I/O、解码、glyph/image cache 和上传队列都有容量、取消与生命周期边界；资源服务不登记无条件逐帧工作。
+- 关闭后新加载立即失败，in-flight 工作按取消契约收束；晚到解码或上传结果不得复活已释放槽位。

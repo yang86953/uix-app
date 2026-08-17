@@ -1,10 +1,10 @@
-# diagnostics 模块
+# diagnostics 系统
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 platform 系统的目标 `diagnostics` 模块，权威持有 runtime-scoped 错误观察与恢复协调。依赖：[core/error](../core/error.md)。导出：`uix::diagnostics`。
+> **接口**：声明独立 `diagnostics` System，权威持有 runtime-scoped 错误观察、恢复协调、callback 失败归队与崩溃记录。依赖：[core/error](../core/error.md)。导出：`uix::diagnostics`。
 
-> **当前实现线索**：公开实现位于 `src/diagnostics/`；core 的历史诊断机制不定义目标公开边界。
+> **当前实现线索**：公开实现位于 `src/diagnostics/`；core 的历史诊断机制不定义目标公开边界。本文档暂留在 `platform/` 路径只是迁移路由，不表示 diagnostics 是 platform 私有 Module。
 
 ## 框架定位
 
@@ -75,11 +75,11 @@ crate 内编排入口（不属公开 API，由 app 组装层调用）：
 
 ## Callback → owner-thread 边界
 
-`Diagnostics` 为一个 runtime 持有共享的固定容量 pending failure queue；每个拥有异步 callback 的 graphics context 取得独立 `PendingFailureSource`。callback 只构造并入队 typed `Error`，不执行 tracing、报告、恢复 handler 或用户代码。owner-thread 在资源自己的 `ensure_active` 边界取出该 source 的错误，再交给既有图形恢复状态机；队列溢出在 owner-thread 转换为一次 `InsufficientResources`，source 关闭会清理晚到 callback，避免污染替换 context。S1-06 的回归证明四个并发 producer 在 128 次尝试下只保留固定 64 个真实失败并产生一次 overflow 信号；关闭旧 generation 后晚到 callback 被拒绝，replacement source 可以重新取得完整容量，且 owner-thread drain 保持 FIFO。
+`Diagnostics` 为一个 runtime 持有共享的固定容量 pending failure queue；每个拥有异步 callback 的资源上下文取得独立 `PendingFailureSource`。callback 只构造并入队 typed `Error`，不执行 tracing、报告、恢复 handler 或用户代码。owner-thread 在资源自己的安全边界取出对应 source 的错误，再交给资源所属 System 的恢复状态机；队列溢出必须折叠为有界的 `InsufficientResources` 信号，source 关闭必须拒绝或清理晚到 callback，旧 generation 不得污染替换资源。
 
-App 的 owner-thread 安全点（`drain_platform_pending_failures`）先对每个取出的失败调用 `attempt_recovery`：注册 handler 返回 `Recovered` 时不再 report（仅 tracing 观察），`Unhandled` / `Failed` 才最终 `report` 一次，符合「不能恢复的才报告」。App 组合根已对 `Errc::GraphicsDeviceLost` 注册真实恢复 handler：handler 只通过共享 `RebuildRequest` 请求窗口引擎在下个帧边界执行既有有界恢复序列（`RecoveryDriver::with_rebuild_request`，请求一次性且不覆盖首个未处理失败），领域恢复算法仍归 graphics；`report` 不自动执行恢复 handler 有契约测试锁定。
+App 的 owner-thread 安全点（`drain_platform_pending_failures`）先对每个取出的失败调用 `attempt_recovery`：注册 handler 返回 `Recovered` 时不再 report（仅 tracing 观察），`Unhandled` / `Failed` 才最终 `report` 一次，符合「不能恢复的才报告」。`Errc::GraphicsDeviceLost` 的恢复接线只能通过共享 `RebuildRequest` 请求窗口引擎在下个帧边界执行 graphics 拥有的有界恢复序列；请求一次性且不覆盖首个未处理失败。`report` 只建立观察事实，不得隐式执行恢复 handler；实现验证必须锁定这两个入口的分离。
 
-当前已落地覆盖包括历史 GPU 后端的 uncaptured error / device-lost / offscreen destroy 与 checked teardown、Windows `wnd_proc` 的 DPI / 窗口尺寸移动 / IMM 失败分支、Windows DWM frame pacer worker 的 `DwmFlush` / `PostMessageW` 失败、Windows custom chrome 的 `WM_NCCALCSIZE` / `WM_NCHITTEST` / `WM_SIZE` Win32/DWM 失败，以及 Windows TSF composition / text-store callback 的事件唤醒、锁回调和借用冲突失败。Windows `wnd_proc` 外层 `catch_unwind` 返回 `DefWindowProcW`；windows-rs `#[implement]` 生成的 TSF COM thunk 由 trait guard 返回 `E_FAIL` 并把 `Errc::PlatformError` 投递到 owner source，因此 unwind 不跨 Win32/COM ABI。自动化测试分别穿过 `ITextStoreACP` 与 `ITfContextOwnerCompositionSink` 的真实生成 vtable，锁定两组接口的 panic 转换与单次 owner failure 投递。Windows platform 通过 `Platform::take_pending_failure` 在 App owner-thread 任务边界把 callback/worker failure 交给 Diagnostics；custom chrome 与 TSF 不直接执行 tracing、report、subscriber、recovery 或应用用户代码，同一 `WM_SIZE` 最多保留一个 chrome failure。TSF composition callback 只做状态转换并写入共享队列，`PostMessageW` 失败保留 typed cause；真实 Wayland compositor、macOS AppKit 与其他图形后端 teardown 仍属于后续平台队列批次。
+所有跨 FFI、系统 callback 与 worker 边界必须满足同一验证义务：unwind 不跨 ABI，失败只转换并投递一次，晚到事件受 generation / teardown 状态约束，owner-thread 保持 source 内顺序，并且不会在 callback 中执行 subscriber、恢复 handler 或应用用户代码。具体平台覆盖范围和阶段性测试结果属于实现验证记录，不构成长期架构契约。
 
 ## 组件：ErrorReport
 
@@ -89,6 +89,13 @@ App 的 owner-thread 安全点（`drain_platform_pending_failures`）先对每�
 
 `CrashReport` 字段有界（线程 256B、消息 2048B、位置 512B），渲染为行式 key=value 并替换控制字符，非字符串 panic payload 以固定标记代替，不写敏感值。`App::run` 在配置加载前安装绑定 runtime 的 panic hook：配置 `crash_report_directory` 时原子写入（唯一 tmp + fsync + rename，冲突 replace，失败清理），未配置时行为等同默认；hook 始终转发 previous hook 保持默认输出与 unwind/abort 语义（不吞 panic），`PanicHookGuard` 防止 hook 内递归。
 
-## 模块不变量
+## 数据、隐私与生命周期
+
+- 报告、日志和崩溃记录默认视为敏感运行数据；路径、窗口标题、用户输入、凭据、Agent token 与原始业务载荷不得未经脱敏进入记录。
+- 内存报告受容量约束，落盘目录、保留期限、访问权限和删除策略由应用宿主显式配置；diagnostics 不擅自远程上传。
+- `AppRuntime` 唯一拥有 diagnostics System 实例；公开 clone 句柄只共享该 runtime 状态，不创建第二套报告或恢复登记。
+- 关闭顺序为停止新来源、关闭 pending source、在 owner-thread 有界 drain、注销恢复订阅、恢复/转发 panic hook；关闭完成后的 late callback 只能被拒绝或丢弃，不能重启 runtime。
+
+## System 不变量
 
 不内建通用 retry、GPU 重建、业务补偿、远程上传或第二套日志系统；结构化事件经 tracing，具体恢复归资源所属模块。

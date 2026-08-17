@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 ui 系统的主题令牌、组件配置、本地化与子树上下文。依赖：[view](view.md)、[graphics/geometry](../graphics/geometry.md)。导出：组件解析视觉值、行为默认值和内置文案的统一 Provider 契约。
+> **接口**：声明 ui System 的主题令牌、组件配置、本地化与子树上下文。基础依赖：[graphics/geometry](../graphics/geometry.md)；与[view](view.md)的协作由 ui System 通过构建上下文编排，Module 间不直接持有实例。导出：组件解析视觉值、行为默认值和内置文案的统一 Provider 契约。
 >
 > **当前实现线索**：相关实现暂分布于 `src/ui/theme/`（traits.rs 同目录）、`src/ui/component/config.rs`、`src/ui/component/provider_context.rs` 和 `src/ui/component/locale.rs`；重构后应以本模块提供统一上下文。
 
@@ -30,7 +30,7 @@ Primitives 通过稳定推导规则生成文本、背景、边框、状态、间
 
 ## 组件：Style 背景值与绘制适配
 
-`Style` 只拥有背景来源、定位与重复的纯值，不执行文件 I/O 或 draw 调用。ui 私有 `style_paint` 在主题边界解析颜色，并按背景色 → 单层图片/渐变 → 边框的顺序调用 graphics 公开契约；整体透明度包裹完整表面。图片路径交给 `ImageService`，绘制适配只读取固有尺寸并生成矩形裁剪内的平铺目标；加载失败保持安全空操作。渐变直接消费已解析颜色，graphics 不反向知道 Theme、Style 或 UIX 属性。
+`Style` 只拥有背景来源、定位与重复的纯值，不执行文件 I/O 或 draw 调用。ui 私有 `style_paint` 在主题边界解析颜色，并按背景色 → 单层图片/渐变 → 边框的顺序调用 graphics 公开契约；整体透明度包裹完整表面。图片路径交给 `ImageService`，绘制适配只读取固有尺寸并生成矩形裁剪内的平铺目标；加载失败保持背景色并传播一次可观察的 typed failure，不能静默重试。渐变直接消费已解析颜色，graphics 不反向知道 Theme、Style 或 UIX 属性。
 
 ## 组件：LocaleProvider
 
@@ -46,3 +46,4 @@ Primitives 通过稳定推导规则生成文本、背景、边框、状态、间
 - 背景平铺几何属于 ui 绘制适配的纯计算；图片解码、缓存与代际句柄仍只属于 graphics resources。
 - 设置持久化属于 data，theme 只持有当前运行时上下文。
 - Provider 继承只有一套优先级和一份有效值，不建立 manager/config 的平行真相。
+- ProviderContext、Locale 和 token 快照绑定 tree generation；节点移除后只释放引用，不允许旧上下文覆盖新根或跨窗口成为隐式全局状态。
