@@ -380,6 +380,8 @@ impl WidgetTree {
         for node in self.nodes.iter_mut().flatten() {
             // 关闭节点结构性 State 订阅。
             node.clear_reconcile_state_binds();
+            // 关闭节点绘制 State 订阅并释放失效队列强引用。
+            node.clear_paint_state_binds();
             // 清空节点 Effect，关闭后不再参与调度。
             node.replace_captured_effects(Vec::new());
         }
