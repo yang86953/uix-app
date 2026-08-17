@@ -19,8 +19,8 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 ROOT = Path(__file__).resolve().parents[1]
 # 定位被测 PowerShell 校验器。
 VERIFIER = ROOT / "scripts" / "verify_internal_release.ps1"
-# 定位当前 Windows PowerShell 运行时。
-POWERSHELL = shutil.which("powershell")
+# 定位当前 PowerShell 运行时，并兼容 PowerShell Core 的标准命令名。
+POWERSHELL = shutil.which("powershell") or shutil.which("pwsh")
 # 固化清单必须覆盖的七个 payload 顺序。
 PAYLOAD_NAMES = (
     # uix-lang release Demo。
@@ -94,8 +94,8 @@ class PackageMetadataContractTests(unittest.TestCase):
         )
 
 
-# 只在 Windows PowerShell 可用时执行发布包行为测试。
-@unittest.skipIf(POWERSHELL is None, "Windows PowerShell is required")
+# 只在任一受支持的 PowerShell 运行时可用时执行发布包行为测试。
+@unittest.skipIf(POWERSHELL is None, "PowerShell is required")
 # 验证内部 ZIP 的允许与拒绝边界。
 class InternalReleaseContractTests(unittest.TestCase):
     # 为每个用例创建独立目录。
