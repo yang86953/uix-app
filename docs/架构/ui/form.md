@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 ui System 的表单模型、字段绑定协议、校验与提交契约。与[组件运行时框架](component.md)、[reactive](reactive.md)及[event](event.md)的协作由 ui System 编排，Module 间不直接持有实例。导出：`FormModel`、与具体控件无关的字段适配协议和校验结果，供 widgets 组合。
+> **接口**：声明 ui System 的表单模型、字段绑定协议、校验与提交契约。与[组件运行时框架](widget_runtime.md)、[reactive](reactive.md)及[event](event.md)的协作由 ui System 编排，Module 间不直接持有实例。导出：`FormModel`、与具体控件无关的字段适配协议和校验结果，供 widgets 组合。
 >
 > **当前实现线索**：业务模型相关能力位于 `src/ui/form/`（form.rs、model_form.rs 等），表单视觉组件位于 `src/ui/widgets/input/`；重构后业务模型归本模块，视觉组件仍归 widgets。
 

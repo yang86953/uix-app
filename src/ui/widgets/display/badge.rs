@@ -14,10 +14,10 @@ use crate::draw::geometry::spatial::PhysicalUnit;
 // 引入组合装饰器所需的子节点后绘制阶段。
 use crate::draw::painting::PaintPass;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入从组件树测量真实子节点的 System 私有边界。
-use crate::ui::component::tree_measure::child_from_tree_with_constraints;
-use crate::ui::component::widget::WidgetTree;
+use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
+use crate::ui::widget_runtime::widget::WidgetTree;
 // 引入组合布局快照类型。
 use crate::ui::{LayoutChild, PrimaryHue, SnapshotFields, ThemeTokens};
 

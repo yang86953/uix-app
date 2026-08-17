@@ -6,7 +6,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::animation::{TransitionPlayer, presets};
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入展开面板稳定 key 集合的受控状态句柄。
 use crate::ui::reactive::state::State;
 use crate::ui::{

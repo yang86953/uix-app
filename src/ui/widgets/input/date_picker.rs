@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::platform::windowing::ControlSize;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 use crate::ui::widgets::input::date_calendar::{
     CalendarPanelState, MonthNavigation, draw_calendar_panel_in_rect, hit_calendar_date_in_rect,
@@ -411,7 +411,7 @@ component! {
 
         let val = self.value.get();
         let is_default = val == Date::default();
-        let nominal_height = crate::ui::component::config::control_height(self.picker_size);
+        let nominal_height = crate::ui::widget_runtime::config::control_height(self.picker_size);
         let scale = if nominal_height > 0.0 {
             (frame.h / nominal_height).clamp(0.0, 1.0)
         } else {
@@ -537,20 +537,20 @@ impl DatePicker {
     fn intrinsic_size(&self) -> Size {
         Size::new(
             160.0,
-            crate::ui::component::config::control_height(self.picker_size),
+            crate::ui::widget_runtime::config::control_height(self.picker_size),
         )
     }
 
     /// 创建未选值、按日期选择且使用当前 Provider 尺寸的选择器。
     pub fn new() -> Self {
         let today = Date::today();
-        let config = crate::ui::component::config::use_config();
+        let config = crate::ui::widget_runtime::config::use_config();
         Self {
             value: Cell::new(Date::default()),
             value_binding: None,
             view_year: Cell::new(today.year),
             view_month: Cell::new(today.month),
-            placeholder: crate::ui::component::locale::use_locale()
+            placeholder: crate::ui::widget_runtime::locale::use_locale()
                 .placeholder
                 .to_owned(),
             mode: PickerMode::Date,

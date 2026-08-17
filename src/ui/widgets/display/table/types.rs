@@ -253,7 +253,7 @@ pub(crate) fn resolve_table_empty_view(
     if let Some(renderer) = empty_renderer {
         return Some(renderer(table.columns.len()));
     }
-    crate::ui::component::config::render_empty_for::<Table>()
+    crate::ui::widget_runtime::config::render_empty_for::<Table>()
 }
 
 /// 变更事件。

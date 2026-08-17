@@ -19,7 +19,7 @@ use crate::impl_widget_component;
 use crate::ui::adapter::ViewAdapter;
 // 反馈 capability 启用时才实现反馈浮层根布局。
 #[cfg(feature = "feedback")]
-use crate::ui::component::traits::WidgetLayout;
+use crate::ui::widget_runtime::traits::WidgetLayout;
 // 引入应用根默认背景所需的主题样式值。
 use crate::ui::theme::style::ColorValue;
 use crate::ui::view::{View, ViewNode};
@@ -498,7 +498,7 @@ mod tests {
     use crate::native::capabilities::system::StatusLevel;
     // 引入声明组件挂载与卸载生命周期入口。
     #[cfg(feature = "feedback")]
-    use crate::ui::component::traits::WidgetLifecycle;
+    use crate::ui::widget_runtime::traits::WidgetLifecycle;
 
     // 验证透明根节点获得主题布局背景。
     #[test]

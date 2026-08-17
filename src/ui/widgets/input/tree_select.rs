@@ -2,7 +2,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{TransitionPlayer, presets};
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入稳定节点 key 的受控状态句柄。
 use crate::ui::reactive::state::State;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
@@ -370,7 +370,7 @@ component! {
             let row_y = ctx.visual_center_y(text_area, 13.0);
             ctx.push_clip(text_area);
             ctx.draw_text(
-                crate::ui::component::locale::use_locale().no_data,
+                crate::ui::widget_runtime::locale::use_locale().no_data,
                 Point::new(text_area.x, row_y),
                 text_tertiary,
                 13.0,

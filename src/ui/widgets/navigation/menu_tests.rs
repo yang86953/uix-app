@@ -3,7 +3,7 @@ use super::{Menu, MenuItem, MenuMode};
 // 引入布局约束与指针坐标。
 use crate::core::{Constraints, Point};
 // 引入公开布局 trait 以核对 Inline 的完整递归高度。
-use crate::ui::component::traits::WidgetLayout;
+use crate::ui::widget_runtime::traits::WidgetLayout;
 use crate::ui::{KeyMod, MouseButton, State, SystemEvent, WidgetTree};
 
 // 构造含递归子项的 typed 菜单数据。

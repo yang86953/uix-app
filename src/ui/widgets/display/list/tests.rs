@@ -7,9 +7,9 @@ use crate::platform::windowing::{KeyMod, MouseButton};
 // 引入真实声明树物化与协调入口。
 use crate::ui::adapter::ViewAdapter;
 // 引入组件树布局 trait。
-use crate::ui::component::traits::WidgetLayout;
+use crate::ui::widget_runtime::traits::WidgetLayout;
 // 引入读取子身份与写入根 frame 所需的组件树核心契约。
-use crate::ui::component::widget::WidgetCore;
+use crate::ui::widget_runtime::widget::WidgetCore;
 // 引入 Empty、事件、ViewNode 与公开按钮。
 use crate::ui::{EventResult, SystemEvent, ViewNode};
 // 引入公开按钮与空状态组件。

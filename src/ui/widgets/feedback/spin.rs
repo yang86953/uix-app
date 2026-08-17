@@ -5,8 +5,8 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
 use crate::draw::painting::PaintPass;
 use crate::ui::SnapshotFields;
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::component::widget::WidgetTree;
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::widget::WidgetTree;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -333,7 +333,7 @@ mod tests {
     // 复用被测加载指示器。
     use super::Spin;
     // 引入动画更新公开组件契约。
-    use crate::ui::component::traits::WidgetAnimation;
+    use crate::ui::widget_runtime::traits::WidgetAnimation;
     // 引入延迟配置类型。
     use std::time::Duration;
 

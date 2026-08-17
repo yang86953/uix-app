@@ -1,4 +1,4 @@
-# component 模块（组件运行时框架）
+# widget_runtime 模块（组件运行时框架）
 
 [← 返回架构索引](../../架构.md)
 
@@ -7,13 +7,11 @@
 > **术语与命名（SMC-07 语义基线）**：「component」在本仓库代码与架构文档中只指 SMC
 > 三层中的 **Component**——单一职责、窄契约、可独立测试与替换的原子代码单位
 > （`WidgetComponent` 契约、`ComponentId` 身份、`ComponentHandle`、widgets 组件库与
-> uix-lang component 声明均属于该层）。**本模块是 ui System 的私有 Module**（组件运行时
-> 框架：WidgetTree / WidgetNode / 组件契约 / 管理器），目录名 `src/ui/component/` 与
-> SMC Component 层同名，是历史遗留歧义源（[Gitea Issue #4](http://100.79.245.29:3000/admin/uix-app/issues/4)），规划改名为 `widget_runtime`；
-> 改名完成前，本文档统一称本模块为「组件运行时框架」，不得把本模块与 SMC Component
-> 层混同。模块边界与职责不受影响。
+> uix-lang component 声明均属于该层）。ui System 的组件运行时框架使用独立的
+> `widget_runtime` Module 名称，不得把该 Module 与 SMC Component 层混同；迁移记录见
+> [Gitea Issue #4](http://100.79.245.29:3000/admin/uix-app/issues/4)。
 >
-> **当前实现线索**：相关实现已收敛于 `src/ui/component/`（traits.rs、managers/ 及各 handle 文件）；重构后保持本模块边界稳定。
+> **当前实现线索**：相关实现已收敛于 `src/ui/widget_runtime/`（traits.rs、managers/ 及各 handle 文件）；重构后保持本模块边界稳定。
 
 ## 组件清单
 
@@ -28,7 +26,7 @@
 
 ## 组件：WidgetTree
 
-`WidgetTree` 是单个窗口 UI 线程独占的持久运行态。它拥有节点和 side table，并提供 reconcile、layout、event、paint、semantics 等阶段的受控挂载点；具体算法由对应模块扩展，component 不反向依赖这些上层模块。后台线程不得直接持有或访问树内可变对象。
+`WidgetTree` 是单个窗口 UI 线程独占的持久运行态。它拥有节点和 side table，并提供 reconcile、layout、event、paint、semantics 等阶段的受控挂载点；具体算法由对应模块扩展，widget_runtime 不反向依赖这些上层模块。后台线程不得直接持有或访问树内可变对象。
 
 协调分为“预检”和“发布”两段。View 捕获、身份检查和不触碰现有树的展开属于预检；预检失败只丢弃候选资源。首次改写节点结构或树级附件后即进入发布段，最外层事务成功结束是唯一对外线性化点。发布段发生 panic 时不得继续使用半提交树，`WidgetTree` 永久进入 fail-stop，只允许所属窗口执行受控关闭并创建全新的树。
 
@@ -36,7 +34,7 @@ fail-stop 树拒绝 reconcile、动态 renderer、event、timer、Effect、anima
 
 ## 组件：WidgetComponent
 
-`WidgetComponent` 只定义阶段无关的基础契约；layout、event、painting、animation 等模块各自定义小型扩展能力，并通过受控 slot 挂接，避免 component 反向引用所有阶段类型或形成巨型接口。业务闭包、虚拟列表 renderer 等不可快照对象按 `ComponentId` 存入由树托管的 side table，不进入组件值本身。
+`WidgetComponent` 只定义阶段无关的基础契约；layout、event、painting、animation 等模块各自定义小型扩展能力，并通过受控 slot 挂接，避免 widget_runtime 反向引用所有阶段类型或形成巨型接口。业务闭包、虚拟列表 renderer 等不可快照对象按 `ComponentId` 存入由树托管的 side table，不进入组件值本身。
 
 ## 组件：WidgetManagers
 

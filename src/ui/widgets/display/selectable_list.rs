@@ -4,7 +4,7 @@ use std::cell::Cell;
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入稳定条目 id 的受控状态句柄。
 use crate::ui::reactive::state::State;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;

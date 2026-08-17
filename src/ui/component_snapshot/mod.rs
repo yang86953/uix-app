@@ -60,7 +60,7 @@ impl ComponentConfigSnapshot {
     /// 从组件当前状态捕获配置字段并创建快照。
     pub fn from_component(
         id: ComponentId,
-        component: &dyn crate::ui::component::traits::WidgetComponent,
+        component: &dyn crate::ui::widget_runtime::traits::WidgetComponent,
     ) -> Self {
         let fields = component.snapshot_fields();
         Self::from_component_fields(id, component, fields)
@@ -68,7 +68,7 @@ impl ComponentConfigSnapshot {
 
     pub(crate) fn from_component_fields(
         id: ComponentId,
-        component: &dyn crate::ui::component::traits::WidgetComponent,
+        component: &dyn crate::ui::widget_runtime::traits::WidgetComponent,
         fields: SnapshotFields,
     ) -> Self {
         Self {

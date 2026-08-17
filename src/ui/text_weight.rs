@@ -1,7 +1,7 @@
 // 引入字体后端产出的中性布局。
 use crate::draw::resources::font::text_backend::TextLayout;
 // 引入绘制坐标、颜色与 UI 绘制上下文。
-use crate::{core::Point, draw::Color, ui::component::paint_context::PaintContext};
+use crate::{core::Point, draw::Color, ui::widget_runtime::paint_context::PaintContext};
 // 引入 UI System 自有的字体粗细契约。
 use crate::ui::theme::style::FontWeight;
 

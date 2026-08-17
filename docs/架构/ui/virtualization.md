@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 ui System 的大数据视图物化、范围计算和复用策略。与[组件运行时框架](component.md)、[layout](layout.md)及[view](view.md)的协作由 ui System 编排，Module 间不直接持有实例。导出：虚拟列表状态、物化协议和 renderer 生命周期。
+> **接口**：声明 ui System 的大数据视图物化、范围计算和复用策略。与[组件运行时框架](widget_runtime.md)、[layout](layout.md)及[view](view.md)的协作由 ui System 编排，Module 间不直接持有实例。导出：虚拟列表状态、物化协议和 renderer 生命周期。
 >
 > **当前实现线索**：固定与可变行高 `VirtualScroll` / `VirtualListScroll` 位于 `src/ui/virtualization/virtual_scroll.rs`，可变行高的稀疏 measurement cache 位于 `src/ui/virtualization/measurement_cache.rs`；动态行 renderer 由 `src/ui/render_handler.rs` 的 owner side table 持有，并通过 `src/ui/adapter.rs` 的 keyed reconcile 接入组件树；表格和树仍可复用共享滚动状态并保留各自绘制路径。
 

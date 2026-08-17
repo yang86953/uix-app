@@ -6,8 +6,8 @@ use crate::draw::{Color, Radius};
 use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
 use crate::ui::animation::{AnimationConfig, TransitionPlayer, presets};
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::component::widget::WidgetCore;
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::widget::WidgetCore;
 // 引入受控状态句柄与 Drawer 既有事件、树契约。
 use crate::ui::{EventResult, MouseButton, State, SystemEvent, WidgetTree};
 
@@ -234,7 +234,7 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_frame.set(Self::normalize_frame(frame));
-        let loc = crate::ui::component::locale::use_locale();
+        let loc = crate::ui::widget_runtime::locale::use_locale();
         if !self.is_present() {
             let local_trigger = Self::trigger_rect_for_size(frame.w, frame.h);
             self.last_trigger_rect.set(local_trigger);

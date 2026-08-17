@@ -1,15 +1,15 @@
 // 将命令式 WidgetNode 转换为可嵌入声明 View 的等价节点。
 pub(super) fn adopt_widget_node(
     // 接收已物化的命令式节点。
-    node: crate::ui::component::widget::WidgetNode,
+    node: crate::ui::widget_runtime::widget::WidgetNode,
     // 返回保存运行时元数据的声明节点。
 ) -> crate::ui::view::ViewNode {
     // 保留子组件构建所需的提供者上下文。
     let provider_context = node.provider_context.clone();
     // 在原提供者上下文内物化命令式组件声明的子节点。
-    let mut children: Vec<crate::ui::component::widget::WidgetNode> =
+    let mut children: Vec<crate::ui::widget_runtime::widget::WidgetNode> =
         // 让隐式组件子节点继承原节点的上下文。
-        crate::ui::component::provider_context::with_provider_context(&provider_context, || {
+        crate::ui::widget_runtime::provider_context::with_provider_context(&provider_context, || {
             // 取出命令式组件声明的直接子组件。
             node.widget
                 // 构建组件声明的子节点。
@@ -17,7 +17,7 @@ pub(super) fn adopt_widget_node(
                 // 遍历构建出的子组件集合。
                 .into_iter()
                 // 将每个子组件包装为运行时叶节点。
-                .map(crate::ui::component::widget::WidgetNode::leaf)
+                .map(crate::ui::widget_runtime::widget::WidgetNode::leaf)
                 // 收集为可继续追加的节点列表。
                 .collect::<Vec<_>>()
         });

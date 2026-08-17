@@ -1,7 +1,7 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入调用方拥有的上传队列状态句柄。
 use crate::ui::reactive::state::State;
 use crate::ui::{EventResult, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
@@ -130,7 +130,7 @@ component! {
             text_sec,
             24.0,
         );
-        let loc = crate::ui::component::locale::use_locale();
+        let loc = crate::ui::widget_runtime::locale::use_locale();
         // 拖放主说明使用主题派生的紧凑正文字号。
         ctx.draw_text(loc.upload_drag, Point::new(frame.x + frame.w * 0.5 - 48.0, frame.y + 60.0), text_sec, typography.prompt);
         if !self.accept.is_empty() && self.accept != "*" {

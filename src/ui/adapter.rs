@@ -15,9 +15,9 @@
 //! - render 期读取的 State / Computed 绑定窄 Paint；DynamicLabel 还会在 layout 后
 //!   主动探测闭包依赖。
 use crate::ui::accessibility::accessibility_override::AccessibilityOverride;
-use crate::ui::component::focus_handle::FocusHandle;
-use crate::ui::component::traits::WidgetComponent;
-use crate::ui::component::widget::{WidgetCore, WidgetNode};
+use crate::ui::widget_runtime::focus_handle::FocusHandle;
+use crate::ui::widget_runtime::traits::WidgetComponent;
+use crate::ui::widget_runtime::widget::{WidgetCore, WidgetNode};
 use crate::ui::component_patch::{
     builtin_widget_config_changed, builtin_widget_layout_changed, builtin_widget_runtime_changed,
     patch_builtin_widget,
@@ -98,7 +98,7 @@ impl ViewAdapter {
             captured_effects: Vec<crate::ui::reactive::state::Effect>,
             // 保存非根或动态声明节点交接给所属节点的动画源。
             animated_sources: Vec<std::sync::Arc<dyn crate::ui::animation::AnimatedSource>>,
-            visual_transform: crate::ui::component::view_transform::ViewTransform,
+            visual_transform: crate::ui::widget_runtime::view_transform::ViewTransform,
             // 保存声明节点的完整定位元数据。
             position: crate::ui::position::PositionedLayout,
             // 保存声明节点的文字选择策略。
@@ -110,7 +110,7 @@ impl ViewAdapter {
             leave_animation: Option<crate::ui::animation::AnimationConfig>,
             flex_grow_override: Option<f32>,
             flex_shrink_override: Option<f32>,
-            provider_context: crate::ui::component::provider_context::ProviderContext,
+            provider_context: crate::ui::widget_runtime::provider_context::ProviderContext,
             visible: bool,
             z_index: i32,
             key: Option<String>,
@@ -236,7 +236,7 @@ impl ViewAdapter {
                 wnode = wnode.with_visibility(false);
             }
             if frame.visual_transform
-                != crate::ui::component::view_transform::ViewTransform::default()
+                != crate::ui::widget_runtime::view_transform::ViewTransform::default()
             {
                 wnode = wnode.with_visual_transform(frame.visual_transform);
             }

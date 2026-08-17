@@ -7,7 +7,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 // 引入定位产生的视觉平移矩阵。
 use crate::draw::Transform;
 // 引入父组件布局契约和统一子项描述。
-use crate::ui::component::traits::WidgetLayout;
+use crate::ui::widget_runtime::traits::WidgetLayout;
 // 引入完整定位元数据和模式。
 use crate::ui::position::{PositionMode, PositionedLayout};
 // 引入共享布局子项类型。

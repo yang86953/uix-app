@@ -6,7 +6,7 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, LayoutChild, SemanticEvent, SystemEvent, WidgetTree,
@@ -353,7 +353,7 @@ component! {
 
         // 空状态
         if self.rows.is_empty() && !self.loading {
-            let loc = crate::ui::component::locale::use_locale();
+            let loc = crate::ui::widget_runtime::locale::use_locale();
             let empty = if self.empty_text.is_empty() { loc.empty_data } else { &self.empty_text };
             let horizontal_inset = 16.0_f32.min(frame.w * 0.25);
             Self::paint_single_line(

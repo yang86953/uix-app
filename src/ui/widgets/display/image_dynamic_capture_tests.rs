@@ -7,7 +7,7 @@ use crate::ui::adapter::ViewAdapter;
 // 导入组件私有状态作用域与状态槽创建入口。
 use crate::ui::component_state::{uix_component_scope, uix_component_state};
 // 导入读取运行时节点组件与子节点所需的树节点契约。
-use crate::ui::component::widget::WidgetCore;
+use crate::ui::widget_runtime::widget::WidgetCore;
 // 导入声明错误子树的最小节点类型。
 use crate::ui::view::ViewNode;
 // 导入错误子树使用的最小可视组件。

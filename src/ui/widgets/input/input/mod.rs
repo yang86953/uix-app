@@ -15,8 +15,8 @@ use crate::draw::resources::font::text_backend::PositionedGlyph;
 // 引入可停靠字素簇边界与显式字符索引。
 use crate::draw::resources::font::text_index::{BoundaryBias, CharIndex, TextIndexMap};
 use crate::platform::windowing::ControlSize;
-use crate::ui::component::clipboard;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::clipboard;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent, WidgetTree,

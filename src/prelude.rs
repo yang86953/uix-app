@@ -46,7 +46,7 @@ pub use crate::semantic_handler;
 pub use crate::t;
 pub use crate::t_fmt_arg;
 pub use crate::tree;
-pub use crate::ui::component::focus_trap::FocusTrap;
+pub use crate::ui::widget_runtime::focus_trap::FocusTrap;
 pub use crate::ui::i18n::{register_translations, set_translations, t_lookup, t_lookup_fmt};
 pub use crate::ui::layout::{
     AlignItems, BoxModel, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent,

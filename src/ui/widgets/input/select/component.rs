@@ -2,7 +2,7 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::platform::windowing::ControlSize;
 use crate::ui::animation::TransitionPlayer;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, LayoutChild, MouseButton, SemanticEvent, SystemEvent,
@@ -466,7 +466,7 @@ mod tests {
     // 引入布局断言所需的基础几何类型。
     use crate::core::{Rect, Size};
     // 引入根节点 frame 读写所需的组件核心 trait。
-    use crate::ui::component::widget::WidgetCore;
+    use crate::ui::widget_runtime::widget::WidgetCore;
     // 引入直接执行组件布局与设置根表面所需的树接口。
     use crate::ui::{ComponentId, LayoutChild, WidgetLayout, WidgetTree};
 
@@ -591,7 +591,7 @@ mod tests {
         // 构造比自然弹层更矮的当前逻辑表面。
         let surface = Rect::new(0.0, 0.0, 200.0, 120.0);
         // 通过组件树使用的显式表面入口创建登记。
-        let overlay = crate::ui::component::traits::WidgetRender::overlay_entry_for_surface(
+        let overlay = crate::ui::widget_runtime::traits::WidgetRender::overlay_entry_for_surface(
             // 传入被测选择组件。
             &select,
             // 使用稳定的测试组件标识。
@@ -629,7 +629,7 @@ mod tests {
         // 使用一百像素宽的窄逻辑表面。
         let surface = Rect::new(0.0, 0.0, 100.0, 120.0);
         // 通过组件树使用的显式表面入口创建登记。
-        let overlay = crate::ui::component::traits::WidgetRender::overlay_entry_for_surface(
+        let overlay = crate::ui::widget_runtime::traits::WidgetRender::overlay_entry_for_surface(
             // 传入被测选择组件。
             &select,
             // 使用稳定的测试组件标识。

@@ -5,7 +5,7 @@
 
 use crate::core::{Point, Rect};
 use crate::draw::Radius;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 /// Which axis this scrollbar controls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollbarOrientation {

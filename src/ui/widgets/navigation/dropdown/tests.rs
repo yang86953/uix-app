@@ -1,11 +1,11 @@
 // 引入被测 Dropdown 私有运行时入口与公开数据类型。
 use super::{Dropdown, DropdownItem};
 // 引入事件行为 trait 以读取 Change 事实和焦点范围通知。
-use crate::ui::component::traits::EventHandler;
+use crate::ui::widget_runtime::traits::EventHandler;
 // 引入组件基础 trait 以验证 trigger 子树挂载生命周期。
-use crate::ui::component::traits::WidgetComponent;
+use crate::ui::widget_runtime::traits::WidgetComponent;
 // 引入组件渲染 trait 以验证浮层登记契约。
-use crate::ui::component::traits::WidgetRender;
+use crate::ui::widget_runtime::traits::WidgetRender;
 // 引入稳定测试组件身份与指针坐标。
 use crate::core::{ComponentId, Point, Rect};
 // 引入触发枚举、输入事件和语义载荷。
@@ -236,7 +236,7 @@ fn open_dropdown_registers_popover_overlay_with_outside_dismiss() {
     // 关闭后不再登记浮层：等离场动画结束后验证。
     dropdown.close();
     // 驱动关闭动画直到完全离场。
-    while crate::ui::component::traits::WidgetAnimation::update_animation(&mut dropdown, 0.05) {}
+    while crate::ui::widget_runtime::traits::WidgetAnimation::update_animation(&mut dropdown, 0.05) {}
     assert!(
         WidgetRender::overlay_entry(
             &dropdown,

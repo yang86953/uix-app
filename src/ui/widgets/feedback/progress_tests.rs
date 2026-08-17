@@ -1,7 +1,7 @@
 // 引入进度条运行时公开契约。
 use super::{ProgressBar, ProgressMode, ProgressNormalizationReason, ProgressType};
 // 引入动画 trait 以直接验证帧注册返回值。
-use crate::ui::component::traits::WidgetAnimation;
+use crate::ui::widget_runtime::traits::WidgetAnimation;
 // 引入快照枚举以核对自动化可观察字段。
 use crate::ui::SnapshotFields;
 

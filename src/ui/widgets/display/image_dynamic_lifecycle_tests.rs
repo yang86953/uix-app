@@ -9,7 +9,7 @@ use crate::ui::adapter::ViewAdapter;
 // 导入错误工厂中的组件私有状态 scope 与槽创建入口。
 use crate::ui::component_state::{uix_component_scope, uix_component_state};
 // 导入读取节点组件、父子关系与离场状态的核心契约。
-use crate::ui::component::widget::WidgetCore;
+use crate::ui::widget_runtime::widget::WidgetCore;
 // 导入声明错误子树的 ViewNode。
 use crate::ui::view::ViewNode;
 // 导入最小占位与错误子组件。

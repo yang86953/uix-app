@@ -4,7 +4,7 @@ use super::{
 };
 use crate::core::{Point, Rect};
 use crate::draw::{Color, Radius};
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 
 const TEXT_SIZE: f32 = 13.0;
 const CONTROL_LEFT_PADDING: f32 = 10.0;
@@ -359,7 +359,7 @@ impl Select {
                 let y = ctx.visual_center_y(content, TEXT_SIZE);
                 ctx.push_clip(content);
                 ctx.draw_text(
-                    crate::ui::component::locale::use_locale().no_data,
+                    crate::ui::widget_runtime::locale::use_locale().no_data,
                     Point::new(content.x, y),
                     text_secondary,
                     TEXT_SIZE,

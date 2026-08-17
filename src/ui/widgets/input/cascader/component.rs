@@ -4,7 +4,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::animation::TransitionPlayer;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入级联选中路径的双向状态句柄。
 use crate::ui::reactive::state::State;
 use crate::ui::{
@@ -303,7 +303,7 @@ component! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
-        let loc = crate::ui::component::locale::use_locale();
+        let loc = crate::ui::widget_runtime::locale::use_locale();
         let primary = ctx.tokens().color_primary();
         let border_color = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();
@@ -749,7 +749,7 @@ mod tests {
         // 构造小于固定弹层高度的当前逻辑表面。
         let surface = Rect::new(0.0, 0.0, 240.0, 120.0);
         // 通过组件树使用的显式表面入口创建登记。
-        let overlay = crate::ui::component::traits::WidgetRender::overlay_entry_for_surface(
+        let overlay = crate::ui::widget_runtime::traits::WidgetRender::overlay_entry_for_surface(
             // 传入被测级联选择组件。
             &cascader,
             // 使用稳定的测试组件标识。
@@ -787,7 +787,7 @@ mod tests {
         // 使用一百像素宽的窄逻辑表面。
         let surface = Rect::new(0.0, 0.0, 100.0, 260.0);
         // 通过显式表面入口创建弹层登记。
-        let overlay = crate::ui::component::traits::WidgetRender::overlay_entry_for_surface(
+        let overlay = crate::ui::widget_runtime::traits::WidgetRender::overlay_entry_for_surface(
             // 传入被测级联选择组件。
             &cascader,
             // 使用稳定的测试组件标识。
@@ -825,7 +825,7 @@ mod tests {
         // 使用一百二十像素高表面触发向上缩高。
         let surface = Rect::new(0.0, 0.0, 240.0, 120.0);
         // 先通过显式登记入口记录实际受约束视口。
-        let _ = crate::ui::component::traits::WidgetRender::overlay_entry_for_surface(
+        let _ = crate::ui::widget_runtime::traits::WidgetRender::overlay_entry_for_surface(
             // 传入被测级联选择组件。
             &cascader,
             // 使用稳定的测试组件标识。
@@ -861,7 +861,7 @@ mod tests {
         // 三百像素宽表面不足以容纳两列各二百像素自然宽。
         let surface = Rect::new(0.0, 0.0, 300.0, 260.0);
         // 通过显式表面入口解析并缓存两列最终几何。
-        let overlay = crate::ui::component::traits::WidgetRender::overlay_entry_for_surface(
+        let overlay = crate::ui::widget_runtime::traits::WidgetRender::overlay_entry_for_surface(
             // 传入被测级联选择组件。
             &cascader,
             // 使用稳定的测试组件标识。

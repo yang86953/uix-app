@@ -7,7 +7,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::windowing::{ControlSize, KeyMod};
 use crate::ui::SnapshotFields;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
@@ -264,7 +264,7 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.capture_bound_value_dependency();
-        let control_height = crate::ui::component::config::control_height(self.input_size).min(frame.h);
+        let control_height = crate::ui::widget_runtime::config::control_height(self.input_size).min(frame.h);
         let control_frame = Rect::new(frame.x, frame.y, frame.w, control_height);
         let step_width = control_height.min(control_frame.w);
         let input_frame = Rect::new(
@@ -422,7 +422,7 @@ component! {
 impl InputNumber {
     /// 创建使用无限制值域、步长一和标准配置尺寸的数字输入框。
     pub fn new() -> Self {
-        let config = crate::ui::component::config::use_config();
+        let config = crate::ui::widget_runtime::config::use_config();
         Self {
             value: 0.0,
             min: f64::MIN,
@@ -551,7 +551,7 @@ impl InputNumber {
     }
 
     fn intrinsic_size(&self) -> Size {
-        let height = crate::ui::component::config::control_height(self.input_size);
+        let height = crate::ui::widget_runtime::config::control_height(self.input_size);
         Size::new(80.0 + height, height)
     }
 

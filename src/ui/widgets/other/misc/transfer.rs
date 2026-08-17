@@ -1,7 +1,7 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields,
     SnapshotTransferItem, SystemEvent, WidgetTree,
@@ -227,7 +227,7 @@ component! {
             border
         };
         ctx.stroke_rect(left_rect, left_border, if left_border == primary { 1.5 } else { 1.0 }, r);
-        let loc = crate::ui::component::locale::use_locale();
+        let loc = crate::ui::widget_runtime::locale::use_locale();
         let source_title = if self.source_title.is_empty() { loc.transfer_source } else { &self.source_title };
         if self.searchable {
             ctx.stroke_rect(

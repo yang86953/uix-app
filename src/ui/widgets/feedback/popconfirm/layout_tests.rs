@@ -3,7 +3,7 @@ use crate::core::Rect;
 // 使用声明适配器物化完整父子组件树。
 use crate::ui::adapter::ViewAdapter;
 // 引入组件 frame 的只读与测试写入入口。
-use crate::ui::component::widget::WidgetCore;
+use crate::ui::widget_runtime::widget::WidgetCore;
 // 使用声明节点组合父级 Row 与两个 Popconfirm。
 use crate::ui::view::ViewNode;
 // 使用真实按钮和行容器验证自然尺寸向上传递。

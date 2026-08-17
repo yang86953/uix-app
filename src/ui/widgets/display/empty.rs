@@ -3,8 +3,8 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::ui::SnapshotFields;
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::component::widget::WidgetTree;
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::widget::WidgetTree;
 
 const MIN_WIDTH: f32 = 160.0;
 const MAX_WIDTH: f32 = 320.0;
@@ -29,7 +29,7 @@ component! {
     }
 
     measure => (&self, constraints: Constraints) -> Size {
-        let loc = crate::ui::component::locale::use_locale();
+        let loc = crate::ui::widget_runtime::locale::use_locale();
         let description = if self.description.is_empty() {
             loc.empty_description
         } else {
@@ -50,7 +50,7 @@ component! {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
-        let loc = crate::ui::component::locale::use_locale();
+        let loc = crate::ui::widget_runtime::locale::use_locale();
         let desc = if self.description.is_empty() { loc.empty_description } else { &self.description };
         let text_color = ctx.tokens().color_text_secondary();
         let icon_color = ctx.tokens().color_text_tertiary();

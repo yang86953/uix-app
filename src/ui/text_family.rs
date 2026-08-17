@@ -1,5 +1,5 @@
 // 引入当前绘制字体句柄与 UI 绘制上下文。
-use crate::{draw::FontHandle, ui::component::paint_context::PaintContext};
+use crate::{draw::FontHandle, ui::widget_runtime::paint_context::PaintContext};
 // 引入 UI System 自有的字体族列表契约。
 use crate::ui::theme::style::FontFamily;
 

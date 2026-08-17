@@ -5,7 +5,7 @@ use crate::ui::adapter::ViewAdapter;
 // 导入组件私有状态 scope 与槽位创建入口。
 use crate::ui::component_state::{uix_component_scope, uix_component_state};
 // 导入运行时节点读取与组件 patch 所需契约。
-use crate::ui::component::widget::WidgetCore;
+use crate::ui::widget_runtime::widget::WidgetCore;
 // 导入最小声明节点类型。
 use crate::ui::view::ViewNode;
 // 导入幻灯片与箭头测试承载组件。

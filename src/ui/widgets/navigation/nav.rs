@@ -13,7 +13,7 @@ use std::rc::Rc;
 use crate::component;
 use crate::core::{ComponentId, Constraints, Rect, Size};
 use crate::draw::Radius;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
@@ -525,7 +525,7 @@ where
     pub fn build(
         mut self,
         tokens: &dyn crate::ui::theme::traits::TokenProvider,
-    ) -> crate::ui::component::widget::WidgetNode {
+    ) -> crate::ui::widget_runtime::widget::WidgetNode {
         self.sync_page_binding();
         let collapsed = self.collapsed_state.as_ref().is_some_and(State::get);
         let compact_items = self.compact_items || collapsed;
@@ -534,12 +534,12 @@ where
         } else {
             self.width
         };
-        let loc = crate::ui::component::locale::use_locale();
+        let loc = crate::ui::widget_runtime::locale::use_locale();
         use crate::ui::IntoWidgetNode;
         use crate::ui::widgets::{Container, Divider, Label};
 
         let item_h = if compact_items { width } else { 36.0 };
-        let mut children: Vec<crate::ui::component::widget::WidgetNode> = Vec::new();
+        let mut children: Vec<crate::ui::widget_runtime::widget::WidgetNode> = Vec::new();
 
         if let Some(collapsed_state) = self.collapsed_state.clone() {
             let callback = self.collapse_callback.clone();
@@ -596,7 +596,7 @@ where
             );
         }
 
-        crate::ui::component::widget::WidgetNode::new(
+        crate::ui::widget_runtime::widget::WidgetNode::new(
             Box::new(
                 Container::new()
                     .bg(tokens.color_bg_container())

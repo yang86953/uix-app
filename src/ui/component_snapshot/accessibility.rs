@@ -48,7 +48,7 @@ pub(super) fn timeline_accessibility(
     }
     if pending {
         entries.push(
-            crate::ui::component::locale::use_locale()
+            crate::ui::widget_runtime::locale::use_locale()
                 .timeline_pending
                 .to_string(),
         );

@@ -4,11 +4,11 @@
 //!
 //! 布局引擎（layout Module）保持对 component 零依赖：从 WidgetTree 构建
 //! `LayoutChild` 的辅助归 component Module（本文件），widgets 经
-//! `crate::ui::component::tree_measure` 消费；依赖方向为
+//! `crate::ui::widget_runtime::tree_measure` 消费；依赖方向为
 //! `widgets → component → layout`。
 
 use crate::core::{ComponentId, Constraints};
-use crate::ui::component::widget::WidgetTree;
+use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::layout::LayoutChild;
 
 // ── 辅助：从 WidgetTree 构建 LayoutChild ──────────────────────────

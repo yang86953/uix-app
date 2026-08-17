@@ -6,8 +6,8 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::ui::SnapshotFields;
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::component::widget::WidgetTree;
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, PrimaryHue, SemanticEvent, SystemEvent,
     ThemeTokens,

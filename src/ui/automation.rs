@@ -11,7 +11,7 @@ pub use crate::ui::accessibility::semantic_snapshot::{
     SemanticNode as AutomationNode, SemanticTarget as AutomationTarget,
 };
 use crate::ui::adapter::ViewAdapter;
-use crate::ui::component::widget::{EventResult, WidgetCore, WidgetTree};
+use crate::ui::widget_runtime::widget::{EventResult, WidgetCore, WidgetTree};
 use crate::ui::component_snapshot::{AccessibilityRole, AccessibilityState};
 use crate::ui::event::SystemEvent;
 use crate::ui::semantic_action::SemanticActionError;

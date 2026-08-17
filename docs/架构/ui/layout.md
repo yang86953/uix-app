@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 ui System 的测量、布局、盒模型和容器算法。基础依赖：[core/geometry](../core/geometry.md)；与[组件运行时框架](component.md)的协作由 ui System 通过树阶段契约编排，二者不直接持有彼此 Module 实例。导出：组件布局能力与有限几何结果；公开用法见[使用 · 布局](../../使用/界面构建/布局.md)。
+> **接口**：声明 ui System 的测量、布局、盒模型和容器算法。基础依赖：[core/geometry](../core/geometry.md)；与[组件运行时框架](widget_runtime.md)的协作由 ui System 通过树阶段契约编排，二者不直接持有彼此 Module 实例。导出：组件布局能力与有限几何结果；公开用法见[使用 · 布局](../../使用/界面构建/布局.md)。
 >
 > **当前实现线索**：相关实现位于 `src/ui/layout/`（engine.rs 持有 `LayoutEngine` trait）；trait 与算法共同归本模块。
 

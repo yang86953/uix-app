@@ -6,7 +6,7 @@ use crate::draw::Radius;
 use crate::draw::resources::font::text_backend::estimate_text_metrics;
 use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
@@ -334,7 +334,7 @@ impl Default for Radio {
 impl Radio {
     /// 创建空选项、水平排列且可用的单选组。
     pub fn new() -> Self {
-        let config = crate::ui::component::config::use_config();
+        let config = crate::ui::widget_runtime::config::use_config();
         Self {
             group_name: String::new(),
             options: Vec::new(),
@@ -342,7 +342,7 @@ impl Radio {
             value_binding: None,
             disabled: false,
             direction: RadioDirection::Horizontal,
-            item_h: crate::ui::component::config::control_height(config.size),
+            item_h: crate::ui::widget_runtime::config::control_height(config.size),
             hovered_idx: None,
             focused: false,
             pending_change: Cell::new(None),
@@ -410,7 +410,7 @@ impl Radio {
 
     /// 设置单选项使用的标准控件尺寸。
     pub fn size(mut self, size: ControlSize) -> Self {
-        self.item_h = crate::ui::component::config::control_height(size);
+        self.item_h = crate::ui::widget_runtime::config::control_height(size);
         self
     }
 
@@ -421,7 +421,7 @@ impl Radio {
     }
 
     fn visual_scale(&self) -> f32 {
-        self.item_h / crate::ui::component::config::control_height(ControlSize::Medium)
+        self.item_h / crate::ui::widget_runtime::config::control_height(ControlSize::Medium)
     }
 
     fn font_size(&self) -> f32 {

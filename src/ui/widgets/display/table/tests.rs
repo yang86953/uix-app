@@ -137,7 +137,7 @@ fn cross_zone_view_cell_uses_full_span_layout_frame() {
     // 使用真实节点身份建立唯一物化 View 子节点的布局描述。
     let child = LayoutChild::new(child_id, Size::zero());
     // 在一百像素视口中执行自定义单元格布局。
-    let positions = crate::ui::component::traits::WidgetLayout::layout_children(
+    let positions = crate::ui::widget_runtime::traits::WidgetLayout::layout_children(
         // 使用待审计的表格实例。
         &table,
         // 表头之后保留足够容纳首行的表体高度。
@@ -187,14 +187,14 @@ fn parent_clip_regions_reject_hit_in_fragment_gap() {
         Box::new(crate::ui::widgets::Label::new("子树")),
     );
     // 将父节点布局到一百乘二十像素的测试视口。
-    crate::ui::component::widget::WidgetCore::set_frame(
+    crate::ui::widget_runtime::widget::WidgetCore::set_frame(
         // 获取根节点的可变组件包装。
         tree.get_mut(root_id).expect("根节点必须存在"),
         // 父节点覆盖完整测试区域。
         Rect::new(0.0, 0.0, 100.0, 20.0),
     );
     // 将子树同样布局到完整逻辑跨度，保持单一状态实例。
-    crate::ui::component::widget::WidgetCore::set_frame(
+    crate::ui::widget_runtime::widget::WidgetCore::set_frame(
         // 获取子节点的可变组件包装。
         tree.get_mut(child_id).expect("子节点必须存在"),
         // 子树逻辑 frame 横跨两个可见片段及其间隙。
@@ -391,7 +391,7 @@ fn cross_zone_row_and_col_span_keep_view_layout_and_hit_consistent() {
         LayoutChild::new(third_id, Size::zero()),
     ];
     // 执行真实表格组件的子树布局入口。
-    let positions = crate::ui::component::traits::WidgetLayout::layout_children(
+    let positions = crate::ui::widget_runtime::traits::WidgetLayout::layout_children(
         // 使用待审计的表格组件。
         &table,
         // 传入会同时影响列几何、可视行和命中范围的真实 frame。

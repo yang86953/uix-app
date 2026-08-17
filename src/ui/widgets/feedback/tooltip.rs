@@ -2,7 +2,7 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
 use crate::ui::animation::{TransitionPlayer, presets};
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 反馈组件复用基础层提示气泡原语。
 use crate::ui::SnapshotFields;
 use crate::ui::widgets::tooltip_primitives::{
@@ -552,7 +552,7 @@ mod tests {
         // 使用足以容纳翻转后气泡的逻辑表面。
         let surface = Rect::new(0.0, 0.0, 200.0, 100.0);
         // 通过组件树使用的显式表面入口创建登记。
-        let overlay = crate::ui::component::traits::WidgetRender::overlay_entry_for_surface(
+        let overlay = crate::ui::widget_runtime::traits::WidgetRender::overlay_entry_for_surface(
             // 传入被测提示组件。
             &tooltip,
             // 使用稳定的测试组件标识。

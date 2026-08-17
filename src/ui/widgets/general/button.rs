@@ -9,8 +9,8 @@ use crate::draw::geometry::path::{FillRule, Path, PathBuilder};
 use crate::impl_widget_component;
 use crate::platform::windowing::{ControlSize, KeyCode, MouseButton};
 use crate::ui::animation::{Animation, Easing};
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::component::traits::{EventHandler, WidgetAnimation, WidgetLayout, WidgetRender};
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::traits::{EventHandler, WidgetAnimation, WidgetLayout, WidgetRender};
 use crate::ui::theme::style::{ColorValue, PaletteColor, Style, StyleSet, StyleState, apply_style};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
@@ -477,7 +477,7 @@ impl Button {
 
     /// 创建继承当前组件尺寸、禁用状态和按钮样式覆盖的文本按钮。
     pub fn new(text: impl Into<String>) -> Self {
-        let config = crate::ui::component::config::use_config();
+        let config = crate::ui::widget_runtime::config::use_config();
         let style_set = config
             .overrides
             .button
@@ -602,7 +602,7 @@ impl Button {
 
     /// 创建纯图标按钮。
     pub fn icon(name: impl Into<String>) -> Self {
-        let config = crate::ui::component::config::use_config();
+        let config = crate::ui::widget_runtime::config::use_config();
         let style_set = config
             .overrides
             .button
@@ -665,7 +665,7 @@ impl Button {
         // 按钮外框高度由 Style 固定；文字行盒在 render 时于 content 内居中。
         let height = base
             .height
-            .unwrap_or_else(|| crate::ui::component::config::control_height(self.button_size));
+            .unwrap_or_else(|| crate::ui::widget_runtime::config::control_height(self.button_size));
         // 纯图标按钮使用正方形尺寸。
         let width = if !self.icon.is_empty() && self.text.is_empty() {
             height

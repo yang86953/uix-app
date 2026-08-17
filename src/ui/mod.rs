@@ -53,7 +53,7 @@ pub(crate) mod adapter;
 pub(crate) mod animation;
 #[cfg(feature = "test-harness")]
 pub(crate) mod automation;
-pub(crate) mod component;
+pub(crate) mod widget_runtime;
 pub(crate) mod component_patch;
 pub(crate) mod component_snapshot;
 pub(crate) mod event;
@@ -98,19 +98,19 @@ pub use animation::{
     Easing, Keyframe, KeyframeAnimation, KeyframeDirection, KeyframeError, KeyframeFillMode,
     KeyframePlayback, Spring, SpringAnimation, Transition,
 };
-pub(crate) use component::children;
-pub use component::clipboard::{copy_to_clipboard, read_text_from_clipboard};
-pub use component::config::{
+pub(crate) use widget_runtime::children;
+pub use widget_runtime::clipboard::{copy_to_clipboard, read_text_from_clipboard};
+pub use widget_runtime::config::{
     ComponentConfig, ComponentOverrides, ComponentTokenOverrides, Config, use_config, with_config,
 };
-pub use component::focus_trap::FocusTrap;
-pub use component::locale::{Locale, en_us, use_locale, with_locale, zh_cn};
-pub use component::traits::{
+pub use widget_runtime::focus_trap::FocusTrap;
+pub use widget_runtime::locale::{Locale, en_us, use_locale, with_locale, zh_cn};
+pub use widget_runtime::traits::{
     EventHandler, IntoWidgetNode, WidgetAnimation, WidgetCapabilities, WidgetComponent,
     WidgetLayout, WidgetLifecycle, WidgetRender, WidgetTextInput,
 };
-pub(crate) use component::widget::WidgetTree;
-pub use component::{
+pub(crate) use widget_runtime::widget::WidgetTree;
+pub use widget_runtime::{
     AppState, ComponentHandle, FocusHandle, FocusHandleError, PaintContext, WidgetChildren,
 };
 pub use component_snapshot::{
@@ -193,11 +193,11 @@ pub use widgets::*;
 
 // 保持既有公开模块路径（公开面收口前的兼容层）：组件配置 / i18n / 剪贴板 /
 // 焦点陷阱 / 响应式状态 / 样式 / 虚拟滚动。
-pub use component::clipboard;
-pub use component::config;
-pub use component::focus_trap;
-pub use component::locale;
-pub use component::managers::{
+pub use widget_runtime::clipboard;
+pub use widget_runtime::config;
+pub use widget_runtime::focus_trap;
+pub use widget_runtime::locale;
+pub use widget_runtime::managers::{
     DragManager, FocusManager, InteractionManager, StateManager, TextManager, WidgetManagers,
 };
 pub use reactive::state;
@@ -218,9 +218,9 @@ pub mod __private {
     /// 宏展开所需的组件契约（macro 路径必须公开；运行时层级保持 pub(crate)）。
     pub mod traits {
         pub use super::super::adapter::ViewChildrenProvider;
-        pub use super::super::component::traits::*;
+        pub use super::super::widget_runtime::traits::*;
     }
-    pub use super::component::widget::{WidgetNode, WidgetTree};
+    pub use super::widget_runtime::widget::{WidgetNode, WidgetTree};
     // 重导出代码生成器使用的私有组件状态桥接。
     pub use super::component_snapshot::snapshot_fields_from_any;
     pub use super::component_state::{
@@ -245,5 +245,5 @@ pub mod test_harness {
         AutomationError, AutomationErrorCode, AutomationNode, AutomationSelection,
         AutomationSnapshot, AutomationTarget, TestApp,
     };
-    pub use super::component::widget::{WidgetCore, WidgetTree};
+    pub use super::widget_runtime::widget::{WidgetCore, WidgetTree};
 }

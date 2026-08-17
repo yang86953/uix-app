@@ -15,9 +15,9 @@ pub(crate) mod per_node;
 
 use crate::core::Point;
 use crate::core::Rect;
-use crate::ui::component::clipboard;
-use crate::ui::component::widget::tree_core::WidgetTree;
-use crate::ui::component::widget::{BoxedWidget, WidgetCore, WidgetId};
+use crate::ui::widget_runtime::clipboard;
+use crate::ui::widget_runtime::widget::tree_core::WidgetTree;
+use crate::ui::widget_runtime::widget::{BoxedWidget, WidgetCore, WidgetId};
 use crate::ui::widgets::general::label::Label;
 use crate::ui::widgets::general::typography::Typography;
 // 引入 UI System 公开的闭合选择策略值。

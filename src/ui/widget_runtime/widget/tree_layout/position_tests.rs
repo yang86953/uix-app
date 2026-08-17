@@ -3,7 +3,7 @@ use crate::core::{Point, Rect};
 // 引入声明树到实际树的唯一适配边界。
 use crate::ui::adapter::ViewAdapter;
 // 引入实际组件 frame 的只读和测试写入契约。
-use crate::ui::component::widget::WidgetCore;
+use crate::ui::widget_runtime::widget::WidgetCore;
 // 引入定位声明、基础组件与声明节点。
 use crate::ui::{Container, PositionMode, ScrollView, Space, ViewNode};
 // 引入纵向滚动模式。

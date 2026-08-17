@@ -1,7 +1,7 @@
 use crate::core::Rect;
 // 引入表头分层绘制需要的颜色与圆角类型。
 use crate::draw::{Color, Radius};
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 
 // 引入共享列区绘制层级与列几何快照。
 use super::Table;

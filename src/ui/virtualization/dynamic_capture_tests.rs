@@ -3,7 +3,7 @@ use super::{VirtualScroll, VirtualScrollBuilder};
 // 导入创建真实 UIX 私有组件状态所需的隐藏运行时入口。
 use crate::ui::component_state::{uix_component_scope, uix_component_state};
 // 导入按 key 读取虚拟行运行时身份所需的树节点接口。
-use crate::ui::component::widget::WidgetCore;
+use crate::ui::widget_runtime::widget::WidgetCore;
 // 导入 View 构建与协调入口。
 use crate::ui::adapter::ViewAdapter;
 // 导入声明行节点类型。

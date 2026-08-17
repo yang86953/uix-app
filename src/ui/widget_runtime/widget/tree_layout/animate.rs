@@ -69,7 +69,7 @@ impl WidgetTree {
     }
 
     // 在最外层事务成功后，按所有者提交最后一份有效动画源快照。
-    pub(in crate::ui::component::widget::tree_core) fn commit_pending_animated_source_owner_updates(
+    pub(in crate::ui::widget_runtime::widget::tree_core) fn commit_pending_animated_source_owner_updates(
         &mut self,
     ) {
         // 一次性取走成功事务积累的请求，此时已不存在活跃检查点。
@@ -94,7 +94,7 @@ impl WidgetTree {
     }
 
     // 取消匹配所有者的待提交更新，并在活跃事务内保持队列索引稳定。
-    pub(in crate::ui::component::widget::tree_core) fn cancel_pending_animated_source_owner_updates(
+    pub(in crate::ui::widget_runtime::widget::tree_core) fn cancel_pending_animated_source_owner_updates(
         &mut self,
         // 由调用方限定根、全部节点或某个实际节点。
         matches_owner: impl Fn(AnimatedSourceOwner) -> bool,
@@ -122,7 +122,7 @@ impl WidgetTree {
     }
 
     // 以所有者为原子边界替换来源集合，并保持工作身份在树内只绑定一次。
-    pub(in crate::ui::component::widget::tree_core) fn replace_animated_source_owner(
+    pub(in crate::ui::widget_runtime::widget::tree_core) fn replace_animated_source_owner(
         &mut self,
         owner: AnimatedSourceOwner,
         sources: Vec<Arc<dyn AnimatedSource>>,
@@ -195,7 +195,7 @@ impl WidgetTree {
     }
 
     // 释放所有即将因完整换根而失效的节点动画源所有权。
-    pub(in crate::ui::component::widget::tree_core) fn clear_node_animated_source_owners(
+    pub(in crate::ui::widget_runtime::widget::tree_core) fn clear_node_animated_source_owners(
         &mut self,
     ) {
         // 先逻辑取消所有已失效节点请求，且不破坏活跃事务检查点。
@@ -218,7 +218,7 @@ impl WidgetTree {
     }
 
     // 在节点实际离开树后，取消其待提交项并立即释放该节点所有权。
-    pub(in crate::ui::component::widget::tree_core) fn release_node_animated_sources_immediately(
+    pub(in crate::ui::widget_runtime::widget::tree_core) fn release_node_animated_sources_immediately(
         &mut self,
         id: WidgetId,
     ) {
@@ -329,7 +329,7 @@ impl WidgetTree {
             && !self.is_pending_removal_subtree(id)
             && node
                 .capabilities()
-                .contains(crate::ui::component::traits::WidgetCapabilities::ANIMATION);
+                .contains(crate::ui::widget_runtime::traits::WidgetCapabilities::ANIMATION);
         (view_transition || component_animation).then_some(node.frame())
     }
 

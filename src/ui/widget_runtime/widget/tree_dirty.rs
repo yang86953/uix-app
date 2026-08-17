@@ -329,7 +329,7 @@ impl WidgetTree {
 
     /// 绑定响应式 widget（DynamicLabel 等）的 State → Paint 失效。
     pub fn bind_reactive_widget_states(&mut self) {
-        use crate::ui::component::dynamic_label::DynamicLabel;
+        use crate::ui::widget_runtime::dynamic_label::DynamicLabel;
         use crate::ui::reactive::state::{begin_state_bind_capture, end_state_bind_capture};
         let handle = self.invalidation_handle();
         for &id in self.traverse().iter() {

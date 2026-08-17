@@ -7,7 +7,7 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::windowing::ControlSize;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 // Slider 只依赖基础层提示气泡原语，不依赖反馈组件实现。
 use crate::ui::SnapshotFields;
@@ -411,7 +411,7 @@ impl Slider {
     }
 
     fn control_height(&self) -> f32 {
-        crate::ui::component::config::control_height(self.slider_size)
+        crate::ui::widget_runtime::config::control_height(self.slider_size)
     }
 
     fn track_height(&self, frame: Rect) -> f32 {
@@ -522,7 +522,7 @@ impl Slider {
     /// 创建使用指定闭区间且初始值位于下界的单值滑块。
     pub fn new(range: RangeInclusive<f64>) -> Self {
         let (min, max) = Self::normalize_range(range);
-        let config = crate::ui::component::config::use_config();
+        let config = crate::ui::widget_runtime::config::use_config();
         Self {
             min,
             max,
@@ -661,7 +661,7 @@ mod tests {
             // 拖动状态下必须存在提示目标。
             .expect("拖动中的滑块应生成提示目标");
         // 通过组件树使用的显式表面入口创建登记。
-        let overlay = crate::ui::component::traits::WidgetRender::overlay_entry_for_surface(
+        let overlay = crate::ui::widget_runtime::traits::WidgetRender::overlay_entry_for_surface(
             // 传入被测滑块。
             &slider,
             // 使用稳定的测试组件标识。

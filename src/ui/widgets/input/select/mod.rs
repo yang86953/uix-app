@@ -222,7 +222,7 @@ impl From<SelectOptionView> for crate::ui::view::ViewNode {
 }
 
 impl crate::ui::IntoWidgetNode for SelectOptionView {
-    fn into_node(self) -> crate::ui::component::widget::WidgetNode {
+    fn into_node(self) -> crate::ui::widget_runtime::widget::WidgetNode {
         crate::ui::IntoWidgetNode::into_node(crate::ui::view::View::build(self))
     }
 }

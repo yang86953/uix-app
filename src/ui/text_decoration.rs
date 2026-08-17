@@ -1,7 +1,7 @@
 // 引入文本布局的中性字形与行信息。
 use crate::draw::resources::font::text_backend::TextLayout;
 // 引入线段坐标、颜色与 UI 绘制上下文。
-use crate::{core::Point, draw::Color, ui::component::paint_context::PaintContext};
+use crate::{core::Point, draw::Color, ui::widget_runtime::paint_context::PaintContext};
 // 引入 UI System 自有的文本装饰契约。
 use crate::ui::theme::style::TextDecoration;
 

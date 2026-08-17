@@ -1,6 +1,6 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{ComponentId, EventResult, SystemEvent, WidgetTree};
 use std::collections::HashSet;
 
@@ -101,9 +101,9 @@ impl FocusTrap {
     /// 将一个节点包装为焦点陷阱的唯一直接子节点。
     pub fn wrap(
         self,
-        node: crate::ui::component::widget::WidgetNode,
-    ) -> crate::ui::component::widget::WidgetNode {
-        crate::ui::component::widget::WidgetNode::new(Box::new(self), vec![node])
+        node: crate::ui::widget_runtime::widget::WidgetNode,
+    ) -> crate::ui::widget_runtime::widget::WidgetNode {
+        crate::ui::widget_runtime::widget::WidgetNode::new(Box::new(self), vec![node])
     }
 }
 

@@ -5,10 +5,10 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入共享子节点测量入口。
-use crate::ui::component::tree_measure::child_from_tree_with_constraints;
-use crate::ui::component::widget::WidgetTree;
+use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
+use crate::ui::widget_runtime::widget::WidgetTree;
 // 引入布局尺寸归一化入口。
 use crate::ui::layout::engine::normalize_layout_size;
 // 引入唯一 Flex 算法与布局方向契约。
@@ -451,8 +451,8 @@ impl Content {
     pub fn child(
         self,
         node: impl crate::ui::IntoWidgetNode,
-    ) -> crate::ui::component::widget::WidgetNode {
-        crate::ui::component::widget::WidgetNode::new(Box::new(self), vec![node.into_node()])
+    ) -> crate::ui::widget_runtime::widget::WidgetNode {
+        crate::ui::widget_runtime::widget::WidgetNode::new(Box::new(self), vec![node.into_node()])
     }
 
     fn intrinsic_size(&self) -> Size {

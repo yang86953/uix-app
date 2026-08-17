@@ -6,7 +6,7 @@ use crate::draw::Radius;
 use crate::draw::resources::font::text_backend::estimate_text_metrics;
 use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
@@ -246,7 +246,7 @@ impl Rate {
 
     /// 创建默认五级、整级、可交互且不可清空的评分组件。
     pub fn new() -> Self {
-        let config = crate::ui::component::config::use_config();
+        let config = crate::ui::widget_runtime::config::use_config();
         Self {
             count: 5,
             value: 0,
@@ -328,7 +328,7 @@ impl Rate {
     }
 
     fn control_height(&self) -> f32 {
-        crate::ui::component::config::control_height(self.rate_size)
+        crate::ui::widget_runtime::config::control_height(self.rate_size)
     }
 
     fn visual_scale(&self) -> f32 {

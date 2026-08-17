@@ -11,7 +11,7 @@ use crate::core::{Constraints, Rect, Result, Size};
 use crate::platform::capabilities::StatusLevel;
 // 引入零绘制实现所需上下文与树类型。
 use crate::ui::WidgetTree;
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 
 // 声明条目的关闭原因。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

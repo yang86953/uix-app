@@ -1,8 +1,8 @@
 use super::*;
 // 提供帧与脏区操作使用的矩形类型。
 use crate::core::Rect;
-use crate::ui::component::app_state::AppState;
-use crate::ui::component::managers::WidgetManagers;
+use crate::ui::widget_runtime::app_state::AppState;
+use crate::ui::widget_runtime::managers::WidgetManagers;
 use crate::ui::event::WindowAction;
 use crate::ui::theme::traits::ThemeTokens;
 
@@ -177,20 +177,20 @@ impl WidgetTree {
         }
         for (id, request) in requests.drain(..) {
             match request {
-                crate::ui::component::app_state::FocusRequest::Focus => {
+                crate::ui::widget_runtime::app_state::FocusRequest::Focus => {
                     if self.focus_target_available(id) {
                         self.set_keyboard_focus_visible(true);
                         self.set_focus(Some(id));
                     }
                 }
-                crate::ui::component::app_state::FocusRequest::FocusAndReveal => {
+                crate::ui::widget_runtime::app_state::FocusRequest::FocusAndReveal => {
                     if self.focus_target_available(id) {
                         self.set_keyboard_focus_visible(true);
                         self.set_focus(Some(id));
                         self.reveal_focused_target(id);
                     }
                 }
-                crate::ui::component::app_state::FocusRequest::Blur => {
+                crate::ui::widget_runtime::app_state::FocusRequest::Blur => {
                     if self.managers.focus.focused_component() == Some(id) {
                         self.set_focus(None);
                     }

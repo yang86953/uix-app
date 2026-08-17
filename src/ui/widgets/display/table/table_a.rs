@@ -1,7 +1,7 @@
 //! [`Table`] 组件实现（一）：构造与装配 — table 子模块。
 
 use crate::core::{Rect, Size};
-use crate::ui::component::paint_context::PaintContext;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
