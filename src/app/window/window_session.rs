@@ -1,9 +1,8 @@
 use crate::app::queues::active_work_registry::ActiveWorkRegistry;
-use crate::app::queues::agent_command_queue::AgentCommandQueue;
+use crate::app::queues::agent_command_queue::{AgentCommandQueue, AgentConfirmationRequest};
 use crate::app::queues::app_timer::AppTimerQueue;
 use crate::app::queues::main_thread_queue::MainThreadQueue;
 use crate::app::queues::window_agent_state::{AgentCommandExecutor, WindowAgentState};
-use crate::app::agent::agent_policy::AgentConfirmationRequest;
 use crate::app::window_semantics::{AgentSemanticsPort, WindowSemanticState};
 use crate::core::{Error, Rect, WindowId};
 use crate::draw::scene::NodeId;

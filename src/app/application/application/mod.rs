@@ -6,7 +6,7 @@ use std::sync::{Arc, atomic::AtomicBool};
 use std::time::{Duration, Instant};
 
 use crate::app::app_events::ThemeApplied;
-use crate::app::agent::agent_policy::{AgentConfirmationRequest, AgentPolicy};
+use crate::app::agent::agent_policy::AgentPolicy;
 use crate::app::application::app_handle::{AppHandle, prepare_app_root};
 use crate::app::application::cli::Cli;
 use crate::app::application::di::Container;
@@ -16,6 +16,7 @@ use crate::app::application::feedback_state::AppFeedbackState;
 use crate::app::application::named_themes::NamedThemes;
 use crate::app::event_loop::run_window_session_loop_with_system_theme_and_tasks;
 use crate::app::queues::app_timer::{AppTimerQueue, TimerHandle};
+use crate::app::queues::agent_command_queue::AgentConfirmationRequest;
 use crate::app::queues::clock::{AppClock, system_clock};
 use crate::app::queues::main_thread_queue::{MainThreadContext, MainThreadQueue};
 use crate::app::session_runtime::{AppRuntime, OpenWindowRequest};

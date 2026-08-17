@@ -10,13 +10,12 @@ use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::app::agent::agent_policy::AgentConfirmationRequest;
 #[cfg(any(test, feature = "agent-control"))]
 use crate::app::queues::agent_command_queue::AgentWindowAction;
 use crate::app::queues::agent_command_queue::MAX_AGENT_CONFIRM_TTL;
 use crate::app::queues::agent_command_queue::{
     AgentCommandError, AgentCommandQueue, AgentCommandRequest, AgentCommandResponse,
-    AgentCommandResult, MAX_AGENT_SETTLE_PASSES, send_result,
+    AgentCommandResult, AgentConfirmationRequest, MAX_AGENT_SETTLE_PASSES, send_result,
 };
 use crate::app::window_semantics::WindowSemanticState;
 use crate::ui::WidgetTree;
