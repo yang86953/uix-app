@@ -70,7 +70,11 @@ use super::pointer_activation::{
     // 结束指针激活私有类型导入。
 };
 // 引入跨注册表原子登记与注销 Component，窗口 owner 只编排协议生命周期。
-use super::surface_registration::{register_window_surface, unregister_window_surface};
+use super::surface_registration::register_window_surface;
+// Wayland HiDPI Component 独占 output 订阅、buffer scale 与共享 surface metrics。
+use super::surface_scale::{
+    WaylandOutputScaleRegistry, WaylandWindowScaleState, bind_surface_scale_events,
+};
 
 /// Wayland 平台窗口操作句柄。
 ///
@@ -78,9 +82,9 @@ use super::surface_registration::{register_window_surface, unregister_window_sur
 /// 所有 `os_*` 方法通过 Wayland 协议操作窗口。
 pub(crate) struct WaylandWindowOps {
     pub(crate) window_id: WindowId,
-    native_surface: WaylandSurfaceHandle,
+    pub(super) native_surface: WaylandSurfaceHandle,
     pub(crate) surface: Option<Main<wl_surface::WlSurface>>,
-    surface_id: Option<u32>,
+    pub(super) surface_id: Option<u32>,
     pub(crate) xdg_surface: Option<Main<xdg_surface::XdgSurface>>,
     pub(crate) toplevel: Option<Main<xdg_toplevel::XdgToplevel>>,
     pub(crate) compositor: Main<wl_compositor::WlCompositor>,
@@ -88,13 +92,17 @@ pub(crate) struct WaylandWindowOps {
     pub(crate) events: Arc<Mutex<VecDeque<UiEvent>>>,
     // 所有窗口 callback 复用所属 Wayland backend 的同一 failure source。
     pub(super) pending_failures: PendingFailureSource,
-    surface_windows: Arc<Mutex<SurfaceWindowTargets>>,
+    pub(super) surface_windows: Arc<Mutex<SurfaceWindowTargets>>,
     // seat 代理只用于提交已经通过注册表校验的交互移动请求。
     seat: Option<Main<wl_seat::WlSeat>>,
     // 共享注册表是 raw pointer press serial 的唯一所有者。
-    pointer_activations: Arc<Mutex<WaylandPointerActivationRegistry>>,
+    pub(super) pointer_activations: Arc<Mutex<WaylandPointerActivationRegistry>>,
     // backend 级共享 Component 允许窗口同步切换自身接收资格。
     pub(super) file_drop_state: Arc<Mutex<WaylandFileDropState>>,
+    // backend output registry 只通过弱引用订阅当前 surface。
+    output_scales: Arc<WaylandOutputScaleRegistry>,
+    // 当前窗口唯一的 output 集合、有效 scale 与 metrics owner。
+    surface_scale: Arc<WaylandWindowScaleState>,
     // 实际 data-device owner 缺失时不得伪造逐窗启用成功。
     file_drop_available: bool,
     // 单一 Component 同时拥有 active request 与在途 wl_callback handle。
@@ -109,46 +117,6 @@ pub(crate) struct WaylandWindowOps {
 }
 
 impl WaylandWindowOps {
-    // 将统一的系统标题栏可见性映射为 Wayland 装饰模式。
-    fn title_bar_decoration_mode(visible: bool) -> XdgDecoMode {
-        // 可见系统标题栏请求 compositor 绘制服装饰。
-        if visible {
-            // 服务端装饰对应原生标题栏。
-            XdgDecoMode::ServerSide
-        } else {
-            // 客户端装饰把标题栏区域交给 UIX 自己绘制。
-            XdgDecoMode::ClientSide
-        }
-    }
-
-    // 同一 Wayland 窗口父模块下的私有 Components 共享稳定缺失代理诊断。
-    pub(super) fn missing_proxy(operation: &str, proxy: &str) -> Error {
-        Error::new(
-            Errc::InvalidState,
-            format!("{operation}: Wayland {proxy} is unavailable"),
-        )
-    }
-
-    /// 获取 wl_surface 的原始 C 指针（供 EGL wl_egl_window_create 使用）。
-    /// 此指针仅在窗口生命周期内有效。
-    pub(crate) fn surface_c_ptr(&self) -> *mut std::ffi::c_void {
-        self.surface.as_ref().map_or(std::ptr::null_mut(), |s| {
-            // Main<WlSurface> → Attached<Proxy<WlSurface>> → Proxy<WlSurface>
-            // Proxy 内的 inner (ProxyInner) 持有 *mut wl_proxy
-            // 我们通过 id() 对应的方式获取指针：
-            // 实际上 wayland 协议中 wl_proxy 指针就是 surface 指针
-            s.c_ptr()
-        })
-    }
-
-    fn native_surface_descriptor_ptr(&self) -> *mut std::ffi::c_void {
-        if self.native_surface.is_valid() {
-            &self.native_surface as *const WaylandSurfaceHandle as *mut std::ffi::c_void
-        } else {
-            std::ptr::null_mut()
-        }
-    }
-
     pub(crate) fn new(
         window_id: WindowId,
         compositor: Main<wl_compositor::WlCompositor>,
@@ -162,6 +130,10 @@ impl WaylandWindowOps {
         pointer_activations: Arc<Mutex<WaylandPointerActivationRegistry>>,
         // 注入 backend 唯一的文件拖放状态 owner。
         file_drop_state: Arc<Mutex<WaylandFileDropState>>,
+        // 注入 backend 唯一 output scale registry。
+        output_scales: Arc<WaylandOutputScaleRegistry>,
+        // 注入当前窗口唯一 surface scale owner。
+        surface_scale: Arc<WaylandWindowScaleState>,
         // 注入 seat 绑定后实际建立的 data-device 能力事实。
         file_drop_available: bool,
         xdg_activation: Option<Main<XdgActivationV1>>,
@@ -185,6 +157,10 @@ impl WaylandWindowOps {
             pointer_activations,
             // 保存共享文件拖放 Component。
             file_drop_state,
+            // 保存 backend output scale registry 的共享句柄。
+            output_scales,
+            // 保存当前窗口唯一 surface scale owner。
+            surface_scale,
             // 保存不可变 data-device 能力事实。
             file_drop_available,
             // 新窗口尚未登记原生 frame request 或协议 callback。
@@ -195,30 +171,6 @@ impl WaylandWindowOps {
             // 新窗口尚未建立异步 activation token 请求。
             activation_token: None,
         }
-    }
-
-    // 检查式注销当前 surface，并只在事务成功后清除可重试身份。
-    pub(super) fn unregister_surface(&mut self) -> Result<()> {
-        // 重复注销保持幂等，不触碰任何共享注册表。
-        let Some(surface_id) = self.surface_id else {
-            // 当前窗口已经没有活动 surface 注册事实。
-            return Ok(());
-        };
-        // 私有 Component 在任一修改前取得两份健康注册表 guard。
-        unregister_window_surface(
-            // 传入 raw pointer activation 的唯一共享 owner。
-            &self.pointer_activations,
-            // 传入 surface 到窗口身份的唯一共享 owner。
-            &self.surface_windows,
-            // 注销当前协议 surface 编号。
-            surface_id,
-            // 限定只能删除仍属于当前窗口的授权注册。
-            self.window_id,
-        )?;
-        // 两份注册表均成功注销后才消费窗口持有的可重试身份。
-        self.surface_id = None;
-        // 显式报告注销事务成功。
-        Ok(())
     }
 
     /// 初始化 Wayland 窗口：创建 surface/toplevel、设置装饰、绑定事件回调。
@@ -257,6 +209,8 @@ impl WaylandWindowOps {
 
         let tl_events = events.clone();
         let configured_modes = Arc::clone(&self.configured_modes);
+        // configure 回调先发布 logical extent，再排队同一 resize 事实。
+        let toplevel_surface_scale = Arc::clone(&self.surface_scale);
         // toplevel callback 复用窗口所属 backend 的同一 failure source。
         let toplevel_failures = self.pending_failures.clone();
         tl.quick_assign(move |_, event, _| match event {
@@ -333,6 +287,8 @@ impl WaylandWindowOps {
                 state.fullscreen = fullscreen;
                 // 有效客户区尺寸继续生成 resize 事实。
                 if w > 0 && h > 0 {
+                    // presentation 消费事件时可读取同代 drawable 与 DPR。
+                    toplevel_surface_scale.set_logical_extent(w, h);
                     // resize 与本次模式快照进入同一事件事务。
                     queued.push_back(UiEvent::resize(w, h).for_window(window_id));
                 }
@@ -403,14 +359,31 @@ impl WaylandWindowOps {
         self.xdg_decoration = xdg_decoration;
         // 登记成功后把输入区域协议对象转交窗口生命周期 owner。
         self.input_region = Some(input_region);
+        // 初次提交前设置 fallback output 对应的正整数 buffer scale。
+        surface.set_buffer_scale(self.surface_scale.current_scale());
+        // 同一 surface callback 跟踪后续 output Enter/Leave 与动态 scale。
+        bind_surface_scale_events(
+            // callback 绑定到尚未首次提交的目标 surface。
+            &surface,
+            // 共享 backend 唯一 output scale registry。
+            Arc::clone(&self.output_scales),
+            // 共享当前窗口唯一 scale owner。
+            Arc::clone(&self.surface_scale),
+        );
         // surface identity 与协议 owner 均已准备后再提交。
         surface.commit();
 
         self.surface = Some(surface);
         self.xdg_surface = Some(xdg_surf);
         self.toplevel = Some(tl);
-        self.native_surface =
-            WaylandSurfaceHandle::new(display.backend().display_ptr().cast(), self.surface_c_ptr());
+        self.native_surface = WaylandSurfaceHandle::new(
+            // descriptor 保存当前 Wayland display 连接。
+            display.backend().display_ptr().cast(),
+            // descriptor 保存当前窗口 wl_surface 指针。
+            self.surface_c_ptr(),
+            // graphics 与 CPU presenter 共用同一逐窗 metrics owner。
+            self.surface_scale.metrics(),
+        );
 
         event_queue
             .dispatch_pending(dispatch_state)
@@ -738,7 +711,20 @@ impl WindowOps for WaylandWindowOps {
     /// 窗口尺寸变化通知。更新 xdg_surface 窗口几何和输入区域，
     /// 确保 compositor（如 niri）的布局与窗口实际尺寸一致。
     fn os_resize_notify(&mut self, w: i32, h: i32) -> Result<()> {
-        self.os_set_size(w, h)
+        // 同步入口也发布最新 logical extent，避免仅依赖 configure callback。
+        self.surface_scale.set_logical_extent(w, h);
+        // 先更新窗口几何与输入区域。
+        self.os_set_size(w, h)?;
+        // 再把当前有效 scale 保持在下一次 surface commit 上。
+        self.surface
+            // 活动窗口必须仍持有 wl_surface。
+            .as_ref()
+            // 缺失 surface 返回稳定生命周期错误。
+            .ok_or_else(|| Self::missing_proxy("os_resize_notify", "wl_surface"))?
+            // Wayland core buffer scale 必须是正整数。
+            .set_buffer_scale(self.surface_scale.current_scale());
+        // logical resize 通知成功。
+        Ok(())
     }
 
     fn native_surface_ptr(&self) -> *mut std::ffi::c_void {

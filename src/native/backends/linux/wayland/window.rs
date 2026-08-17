@@ -12,6 +12,8 @@ use crate::native::windowing::shared::{PlatformWindowCore, WindowState};
 use crate::native::windowing::*;
 
 use super::WaylandBackend;
+// 逐窗 scale owner 把 Wayland output 事实桥接到 presentation。
+use super::surface_scale::WaylandWindowScaleState;
 use super::window_ops::WaylandWindowOps;
 
 impl IWindowManager for WaylandBackend {
@@ -38,6 +40,21 @@ impl IWindowManager for WaylandBackend {
         let state = Rc::new(RefCell::new(WindowState::with_id_and_size(
             window_id, width, height,
         )));
+        // 每个窗口独占 output 进入集合，并共享 backend 的默认 output scale。
+        let surface_scale = WaylandWindowScaleState::new(
+            // 绑定目标窗口身份，确保 scale resize 不会串窗。
+            window_id,
+            // 初始 logical width 来自窗口工厂参数。
+            width,
+            // 初始 logical height 来自窗口工厂参数。
+            height,
+            // 尚无 Enter 事件时采用 backend 默认 output scale。
+            self.output_scales.preferred_scale(),
+            // scale 变化进入 backend 已有逐窗事件队列。
+            self.events.clone(),
+            // callback 错误继续写入 runtime 唯一 failure source。
+            self.pending_failures.clone(),
+        );
 
         let mut ops = WaylandWindowOps::new(
             window_id,
@@ -52,6 +69,10 @@ impl IWindowManager for WaylandBackend {
             self.pointer_activations.clone(),
             // 所有窗口共享 backend 唯一的文件拖放 Component。
             self.file_drop_state.clone(),
+            // 所有窗口共享 backend 唯一 output scale registry。
+            self.output_scales.clone(),
+            // 当前窗口持有自己的 output 进入集合与 surface metrics。
+            surface_scale.clone(),
             // 只有 seat 已建立真实 data-device owner 时能力入口才能成功。
             self.data_device.is_some(),
             self._xdg_activation.clone(),
@@ -75,6 +96,8 @@ impl IWindowManager for WaylandBackend {
             ops.surface.clone(),
             width,
             height,
+            // CPU presenter 与 EGL descriptor 消费同一逐窗 metrics。
+            surface_scale.metrics(),
         );
 
         let core = PlatformWindowCore::new(state, ops, Box::new(presenter));

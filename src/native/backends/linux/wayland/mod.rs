@@ -49,6 +49,8 @@ pub(crate) mod seat;
 pub(crate) mod shm_buffer;
 // surface registration Component 原子注销窗口的两份共享注册事实。
 pub(crate) mod surface_registration;
+// output scale registry 与逐窗 surface 状态共同托管 Wayland HiDPI。
+pub(crate) mod surface_scale;
 pub(crate) mod text_input;
 pub(crate) mod window;
 // 逐窗 activation Component 独占异步 token 请求与回调生命周期。
@@ -56,6 +58,8 @@ pub(crate) mod window_activation;
 // 逐窗 callback shutdown Component 独占 xdg-shell 回调注销顺序。
 pub(crate) mod window_callback_shutdown;
 pub(crate) mod window_ops;
+// 逐窗 surface helper 隔离 descriptor、装饰映射与注册注销编排。
+pub(crate) mod window_surface;
 // wake-pipe Module 隔离 owner-thread 的非阻塞排空操作。
 pub(crate) mod wake_pipe;
 
@@ -63,6 +67,8 @@ pub(crate) mod wake_pipe;
 use self::compat::{Main, ProxyContext, WaylandDispatchState};
 // 引入 Wayland 私有的一次性指针激活注册表。
 use self::pointer_activation::WaylandPointerActivationRegistry;
+// 引入 backend 唯一 output scale registry。
+use self::surface_scale::WaylandOutputScaleRegistry;
 // 引入稳定错误分类，使 wl_output callback 能传播显示状态 owner 损坏。
 use crate::core::{Errc, Error, Point, WindowId};
 use crate::diagnostics::PendingFailureSource;
@@ -177,6 +183,8 @@ pub(crate) struct WaylandBackend {
 
     // ── 显示器 ────────────────────────────────────────────────────
     pub(crate) outputs: Arc<Mutex<Vec<output::RawOutput>>>,
+    // output identity、动态 scale 与逐窗弱订阅的唯一 owner。
+    pub(crate) output_scales: Arc<WaylandOutputScaleRegistry>,
     #[allow(dead_code)]
     pub(crate) _wl_outputs: Vec<Main<wl_output::WlOutput>>,
 
@@ -227,6 +235,8 @@ impl WaylandBackend {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             // 移除全部过期显示快照。
             .clear();
+        // 全局 callback 注销后释放 output scale 与逐窗弱订阅事实。
+        self.output_scales.shutdown();
     }
 
     pub(crate) fn create_wake_pipe() -> Result<(RawFd, RawFd), String> {
@@ -273,6 +283,8 @@ impl WaylandBackend {
         );
 
         let outputs: Arc<Mutex<Vec<output::RawOutput>>> = Arc::new(Mutex::new(Vec::new()));
+        // 建立 backend 唯一 output scale registry，复用 runtime failure source。
+        let output_scales = Arc::new(WaylandOutputScaleRegistry::new(pending_failures.clone()));
         let mut wl_output_handles = Vec::new();
         for (index, global) in globals
             .contents()
@@ -292,7 +304,13 @@ impl WaylandBackend {
                 ),
                 proxy_context.clone(),
             );
+            // 保存协议 output identity，供 surface Enter/Leave 与 Scale 事件对齐。
+            let output_id = output.id().protocol_id();
+            // 首个枚举 output 作为没有 Enter 事实时的稳定 fallback。
+            output_scales.register_output(output_id, index == 0);
             let output_list = Arc::clone(&outputs);
+            // output callback 只克隆 backend 唯一 scale registry。
+            let output_scale_registry = Arc::clone(&output_scales);
             output.quick_assign(move |_, event, _| {
                 // 中毒显示状态不得通过 PoisonError 恢复后继续改写。
                 let Ok(mut list) = output_list.lock() else {
@@ -310,6 +328,9 @@ impl WaylandBackend {
                     list.push(output::RawOutput::default());
                 }
                 let entry = &mut list[index];
+                // Scale 通知在释放显示列表锁后再广播到逐窗状态。
+                let mut scale_update = None;
+                // 更新同一 output 的显示查询事实。
                 match event {
                     wl_output::Event::Geometry { x, y, .. } => {
                         entry.x = x;
@@ -328,9 +349,21 @@ impl WaylandBackend {
                             }
                         }
                     }
-                    wl_output::Event::Scale { factor } => entry.scale = factor,
+                    wl_output::Event::Scale { factor } => {
+                        // DisplayInfo 与 surface registry 消费同一个正 scale 事实。
+                        entry.scale = factor.max(1);
+                        // 保存锁外广播值。
+                        scale_update = Some(entry.scale);
+                    }
                     wl_output::Event::Done => entry.is_primary = index == 0,
                     _ => {}
+                }
+                // 显式释放显示列表锁，避免逐窗通知形成锁顺序耦合。
+                drop(list);
+                // 动态 Scale 只在实际事件到达时广播。
+                if let Some(scale) = scale_update {
+                    // registry 更新会逐窗排队 logical resize。
+                    output_scale_registry.update_output_scale(output_id, scale);
                 }
             });
             wl_output_handles.push(output);
@@ -423,6 +456,8 @@ impl WaylandBackend {
             wake_write_fd,
             poll_fds: Vec::with_capacity(4),
             outputs,
+            // 发布 backend 唯一 output scale registry。
+            output_scales,
             _wl_outputs: wl_output_handles,
             text_input_manager,
             text_input: None,

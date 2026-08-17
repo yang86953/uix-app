@@ -12,6 +12,8 @@
 
 use std::ffi::c_void;
 use std::ptr;
+// EGL context 与 Wayland windowing 共享逐窗 surface metrics owner。
+use std::sync::Arc;
 
 use crate::native::present::{GraphicsContextLifecycle, PresentDamage};
 // 引入共享的 OpenGL RHI host 生命周期实现。
@@ -21,7 +23,9 @@ use crate::native::{Errc, Error};
 // 引入 surface resize 使用的物理 extent 类型。
 use crate::native::present::rhi::RhiExtent;
 
-use crate::native::presentation::graphics::platform::linux::WaylandSurfaceHandle;
+use crate::native::presentation::graphics::platform::linux::{
+    WaylandSurfaceHandle, WaylandSurfaceMetrics,
+};
 
 // 将 EGL 交换错误映射为恢复 FSM 可消费的 surface/device typed failure。
 fn map_egl_swap_error(error: khronos_egl::Error) -> Error {
@@ -296,8 +300,18 @@ pub struct EglContext {
     context: khronos_egl::Context,
     surface: khronos_egl::Surface,
     egl_window: *mut WlEglWindow,
+    // 当前 EGL drawable 的物理宽度。
     width: i32,
+    // 当前 EGL drawable 的物理高度。
     height: i32,
+    // 当前窗口协议使用的逻辑宽度。
+    logical_width: i32,
+    // 当前窗口协议使用的逻辑高度。
+    logical_height: i32,
+    // 已实际应用到 EGL drawable 的 Wayland 整数 scale。
+    device_pixel_ratio: f32,
+    // windowing 与 EGL 共享的逐窗 surface 元数据。
+    metrics: Arc<WaylandSurfaceMetrics>,
     // surface 重建代际，用于拒绝迟到 FramePlan。
     surface_generation: u64,
     pipeline: OpenGlRasterPipeline,
@@ -317,6 +331,17 @@ impl EglContext {
 
         // SAFETY: native_surface 来自平台 surface recipe，在本构造调用期间指向存活的 WaylandSurfaceHandle。
         let wayland = unsafe { WaylandSurfaceHandle::from_native(native_surface)? };
+        // 读取当前 scale，再用构造参数提交初始 logical extent。
+        let current_surface = wayland.metrics.snapshot()?;
+        // 一次生成初始 logical/drawable/DPR 同代快照。
+        let initial_surface = wayland.metrics.update(
+            // graphics factory 传入窗口逻辑宽度。
+            width.max(1),
+            // graphics factory 传入窗口逻辑高度。
+            height.max(1),
+            // 保留 output registry 已发布的整数 scale。
+            current_surface.scale,
+        )?;
         let egl = egl::Instance::new(egl::Static);
 
         // 1. 获取 display —— Wayland 下传入 display 连接指针
@@ -406,8 +431,17 @@ impl EglContext {
         };
 
         // 5. 创建 wl_egl_window（Wayland 原生窗口封装）
-        // SAFETY: wayland.surface 已校验非空且仍由平台窗口拥有，width/height 是当前物理 surface 尺寸。
-        let egl_window = unsafe { wl_egl_window_create(wayland.surface, width, height) };
+        // SAFETY: wayland.surface 已校验非空且仍由平台窗口拥有，尺寸来自受检物理 drawable 快照。
+        let egl_window = unsafe {
+            wl_egl_window_create(
+                // 传入当前窗口的 wl_surface 指针。
+                wayland.surface,
+                // wl_egl_window 使用物理 buffer 宽度。
+                initial_surface.drawable_width,
+                // wl_egl_window 使用物理 buffer 高度。
+                initial_surface.drawable_height,
+            )
+        };
         if egl_window.is_null() {
             // native window 创建失败是触发回滚的原始平台错误。
             let primary_error = Error::new(
@@ -503,7 +537,18 @@ impl EglContext {
                 },
             );
         // pipeline 初始化失败时同样由构造期唯一 owner 完整回滚 native 资源。
-        let pipeline = match OpenGlRasterPipeline::new(runtime, width, height, width, height) {
+        let pipeline = match OpenGlRasterPipeline::new(
+            // 传入已加载的 GLES runtime。
+            runtime,
+            // pipeline 场景保持逻辑宽度。
+            initial_surface.logical_width,
+            // pipeline 场景保持逻辑高度。
+            initial_surface.logical_height,
+            // swapchain 使用物理 drawable 宽度。
+            initial_surface.drawable_width,
+            // swapchain 使用物理 drawable 高度。
+            initial_surface.drawable_height,
+        ) {
             // 成功 pipeline 将与 native 句柄一起交付 EglContext。
             Ok(pipeline) => pipeline,
             // 失败时保留 pipeline 初始化错误与 native 清理错误链。
@@ -523,10 +568,20 @@ impl EglContext {
             context,
             surface,
             egl_window,
-            width,
-            height,
-            // 初始 EGL swapchain 属于第一代 surface。
-            surface_generation: 0,
+            // 保存初始物理 drawable 宽度。
+            width: initial_surface.drawable_width,
+            // 保存初始物理 drawable 高度。
+            height: initial_surface.drawable_height,
+            // 保存初始逻辑宽度。
+            logical_width: initial_surface.logical_width,
+            // 保存初始逻辑高度。
+            logical_height: initial_surface.logical_height,
+            // 保存已应用的初始整数 DPR。
+            device_pixel_ratio: initial_surface.scale as f32,
+            // 接管 descriptor 克隆的共享 metrics owner。
+            metrics: wayland.metrics,
+            // 初始 EGL swapchain 使用 metrics 当前 revision。
+            surface_generation: initial_surface.revision,
             pipeline,
             shutdown: false,
             context_destroyed: false,
@@ -632,24 +687,56 @@ impl EglContext {
 
     // 直接更新 EGL surface、Wayland window 和 OpenGL RHI 的 drawable 状态。
     fn resize_surface_extent(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        // 相同物理尺寸无需重复触碰 Wayland 或推进 surface generation。
-        if width == self.width && height == self.height {
+        // 读取 windowing 已原子发布的最新 logical/drawable/DPR 快照。
+        let snapshot = self.metrics.snapshot()?;
+        // 相同逻辑尺寸、物理尺寸与 DPR 无需重复触碰 EGL 或推进代次。
+        if width == self.width
+            && height == self.height
+            && snapshot.logical_width == self.logical_width
+            && snapshot.logical_height == self.logical_height
+            && snapshot.scale as f32 == self.device_pixel_ratio
+        {
+            // 当前 EGL drawable 已满足请求。
             return Ok(());
         }
+        // 记录物理尺寸是否需要调用 wayland-egl resize。
+        let physical_changed = width != self.width || height != self.height;
         // 保存新的物理 surface 尺寸。
         self.width = width;
+        // 保存新的物理 surface 高度。
         self.height = height;
+        // 保存同代逻辑宽度。
+        self.logical_width = snapshot.logical_width;
+        // 保存同代逻辑高度。
+        self.logical_height = snapshot.logical_height;
+        // 保存已应用到 surface 的整数 DPR。
+        self.device_pixel_ratio = snapshot.scale as f32;
         // 通知 Wayland EGL window 更新其 native buffer 尺寸。
-        if !self.egl_window.is_null() {
+        if physical_changed && !self.egl_window.is_null() {
             // SAFETY: 非空 egl_window 仍由当前 EglContext 拥有，尺寸参数来自已验证的当前 surface extent。
             unsafe {
                 wl_egl_window_resize(self.egl_window, width, height, 0, 0);
             }
         }
         // 把尺寸事实同步到共享 OpenGL RHI pipeline。
-        self.pipeline.resize_swapchain(width, height, width, height);
+        self.pipeline.resize_swapchain(
+            // UI 与场景坐标保持逻辑宽度。
+            snapshot.logical_width,
+            // UI 与场景坐标保持逻辑高度。
+            snapshot.logical_height,
+            // native swapchain 使用物理宽度。
+            width,
+            // native swapchain 使用物理高度。
+            height,
+        );
         // resize 成功后推进 surface generation，隔离旧 FramePlan。
-        self.surface_generation = self.surface_generation.saturating_add(1);
+        self.surface_generation = self
+            // 先保证每次实际 adapter 状态变化单调递增。
+            .surface_generation
+            // 避免极端长生命周期回绕。
+            .saturating_add(1)
+            // 同时覆盖 windowing metrics 已发布的 revision。
+            .max(snapshot.revision);
         // 原生 EGL surface resize 已经完成。
         Ok(())
     }
@@ -662,17 +749,31 @@ impl EglContext {
 impl GraphicsContextLifecycle for EglContext {
     // 返回 EGL drawable 的完整 live surface 快照。
     fn present_surface(&self) -> crate::native::present::PresentSurface {
-        // EGL 当前逻辑与物理尺寸保持 identity 映射，并保留真实重建代际。
-        crate::native::present::PresentSurface::identity(
-            // 记录当前 EGL drawable 宽度。
-            self.width,
-            // 记录当前 EGL drawable 高度。
-            self.height,
-            // 保留既有 EGL identity DPR 语义。
-            1.0,
-            // resize 时递增的 generation 隔离旧 FramePlan。
-            self.surface_generation,
-        )
+        // resize 事务开始前必须能读取 windowing 刚发布的新 DPR。
+        match self.metrics.snapshot() {
+            // 健康快照直接报告同代 drawable 与 DPR。
+            Ok(snapshot) => crate::native::present::PresentSurface::identity(
+                // 报告目标物理 drawable 宽度。
+                snapshot.drawable_width,
+                // 报告目标物理 drawable 高度。
+                snapshot.drawable_height,
+                // Wayland core scale 是当前设备像素比。
+                snapshot.scale as f32,
+                // native 与 metrics 两侧代次取最大值拒绝旧帧。
+                self.surface_generation.max(snapshot.revision),
+            ),
+            // trait 无错误通道时回退到最后一次成功应用的 EGL 状态。
+            Err(_) => crate::native::present::PresentSurface::identity(
+                // 最后成功物理宽度。
+                self.width,
+                // 最后成功物理高度。
+                self.height,
+                // 最后成功应用的 DPR。
+                self.device_pixel_ratio,
+                // 最后成功 native surface 代次。
+                self.surface_generation,
+            ),
+        }
     }
 
     fn try_shutdown(&mut self) -> Result<(), Error> {
@@ -729,7 +830,15 @@ impl OpenGlRhiHost for EglContext {
 
     // 按物理 extent 进入 EGL 原生 surface resize helper。
     fn rhi_resize_surface(&mut self, extent: RhiExtent) -> Result<(), Error> {
-        if self.pipeline.rhi_surface_extent() == extent {
+        // 物理 extent 相同但 logical extent 或 DPR 改变时仍须同步 pipeline。
+        let snapshot = self.metrics.snapshot()?;
+        // 只有四项 surface 事实全都一致才可跳过。
+        if self.pipeline.rhi_surface_extent() == extent
+            && self.logical_width == snapshot.logical_width
+            && self.logical_height == snapshot.logical_height
+            && self.device_pixel_ratio == snapshot.scale as f32
+        {
+            // 当前 EGL 与 pipeline 已满足完整请求。
             return Ok(());
         }
         self.rhi_make_current()?;
