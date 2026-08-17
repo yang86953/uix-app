@@ -19,6 +19,34 @@ pub(crate) fn set_current_paint_widget(id: Option<ComponentId>) {
     });
 }
 
+// 以 RAII 维护当前绘制组件，覆盖嵌套调用与 panic 展开路径。
+pub(crate) struct PaintWidgetScope {
+    // 保存进入当前绘制前的外层组件身份。
+    previous: Option<ComponentId>,
+}
+
+// 提供当前绘制组件作用域的唯一进入入口。
+impl PaintWidgetScope {
+    // 安装新的当前绘制组件并保存外层上下文。
+    pub(crate) fn enter(id: ComponentId) -> Self {
+        // 原子替换线程私有槽并取回外层身份。
+        let previous = CURRENT_PAINT_WIDGET.with(|slot| slot.replace(Some(id)));
+        // 返回将在离开作用域时恢复外层身份的守卫。
+        Self { previous }
+    }
+}
+
+// 无论正常返回或 panic 都恢复进入前的绘制组件上下文。
+impl Drop for PaintWidgetScope {
+    // 在守卫生命周期结束时归还外层身份。
+    fn drop(&mut self) {
+        // 取出保存值，防止异常重复析构再次写入。
+        let previous = self.previous.take();
+        // 恢复外层组件或明确清空当前绘制身份。
+        set_current_paint_widget(previous);
+    }
+}
+
 /// 读取当前绘制 component id。
 pub(crate) fn current_paint_widget() -> Option<ComponentId> {
     CURRENT_PAINT_WIDGET.with(|slot| *slot.borrow())

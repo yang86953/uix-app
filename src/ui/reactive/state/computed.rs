@@ -20,8 +20,8 @@ use crate::draw::renderer::InvalidationQueueHandle;
 use super::effect::{self, DependencySubscriber, EffectDependency, EffectLease};
 // 引入父模块拥有的依赖追踪和绘制辅助函数。
 use super::{
-    NEXT_STATE_SLOT, PaintBindSite, STATE_BIND_CAPTURE, StateSlotId, bind_paint_site, collect_deps,
-    fire_paint_bindings, state_capture_active, track_dep,
+    NEXT_STATE_SLOT, PaintBindSite, StateSlotId, bind_persistent_paint_site, collect_deps,
+    fire_paint_bindings, state_bind_capture_active, state_capture_active, track_dep,
 };
 
 // 保存当前线程正在执行用户计算函数的 Computed 槽路径。
@@ -230,8 +230,36 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         queue: InvalidationQueueHandle,
         rect: Option<Rect>,
     ) {
-        // 更新或添加当前组件的精确端点。
-        bind_paint_site(&self.inner.paint_sites, component_id, queue, rect);
+        // 公开直接绑定保留既有持续站点语义。
+        bind_persistent_paint_site(&self.inner.paint_sites, component_id, queue, rect);
+    }
+
+    // 增加一份由实际节点拥有的派生绘制订阅。
+    pub(super) fn bind_paint_site_invalidation(
+        // 借用当前派生源。
+        &self,
+        // 接收实际组件的代际身份。
+        component_id: ComponentId,
+        // 接收所属窗口失效队列。
+        queue: InvalidationQueueHandle,
+        // 接收当前精确绘制范围。
+        rect: Option<Rect>,
+    ) {
+        // 在派生源共享站点集合中增加节点租约计数。
+        super::retain_paint_site(&self.inner.paint_sites, component_id, queue, rect);
+    }
+
+    // 释放一份实际节点拥有的派生绘制订阅。
+    pub(super) fn unbind_paint_site_invalidation(
+        // 借用当前派生源。
+        &self,
+        // 接收正在离开的组件身份。
+        component_id: ComponentId,
+        // 接收用于区分窗口端点的失效队列。
+        queue: &InvalidationQueueHandle,
+    ) {
+        // 最后一份租约离开时移除站点和窗口队列强引用。
+        super::release_paint_site(&self.inner.paint_sites, component_id, queue);
     }
 
     /// 返回对外稳定的派生槽身份。
@@ -354,8 +382,8 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         // 继续支持现有 Paint 绑定捕获。
         super::try_capture_computed_bind(self);
         // 构建或探测阶段必须额外执行一次 force 重算。
-        let force =
-            state_capture_active() || STATE_BIND_CAPTURE.with(|capture| capture.borrow().is_some());
+        // View 构建或组件绘制捕获期间都必须重新暴露当前派生依赖。
+        let force = state_capture_active() || state_bind_capture_active();
         // 先取得缓存与其不可分离的 observed generation。
         let (value, observed_generation) = self.value_with_generation(force);
         // 保存下游表供订阅闭包复用。
@@ -422,6 +450,18 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
     pub(crate) fn effect_subscriber_count(&self) -> usize {
         // 委托通用弱订阅表统计。
         effect::subscriber_count(&self.inner.subscribers)
+    }
+
+    // 暴露私有绘制端点计数供节点生命周期回归验证。
+    #[cfg(test)]
+    // 不形成公开 Computed API。
+    pub(crate) fn paint_site_count(&self) -> usize {
+        // 读取派生源当前仍保留的绘制端点数量。
+        self.inner
+            .paint_sites
+            .lock()
+            .map(|sites| sites.len())
+            .unwrap_or_default()
     }
 
     // 读取同锁缓存条目供私有并发回归验证。

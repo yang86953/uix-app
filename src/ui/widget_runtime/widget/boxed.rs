@@ -60,6 +60,8 @@ pub struct BoxedWidget {
     accessibility_override: Option<AccessibilityOverride>,
     // 保存该实际节点持有的结构性 State 订阅租约。
     reconcile_state_binds: Vec<crate::ui::reactive::state::ReconcileBindLease>,
+    // 保存该实际节点持有且可在只读绘制后替换的 Paint 订阅租约。
+    paint_state_binds: std::cell::RefCell<Vec<crate::ui::reactive::state::PaintBindLease>>,
     // 由此实际节点拥有并随真实移除释放的捕获 Effect。
     effects: Vec<crate::ui::reactive::state::Effect>,
     // 保存实际挂载节点承载的全部内联组件状态作用域。
@@ -143,6 +145,8 @@ impl BoxedWidget {
             accessibility_override: None,
             // 新节点在接收声明输出前没有结构性 State 租约。
             reconcile_state_binds: Vec::new(),
+            // 新节点在首次布局或绘制捕获前没有 Paint 租约。
+            paint_state_binds: std::cell::RefCell::new(Vec::new()),
             // 新节点在接收 View 捕获输出前不拥有 Effect。
             effects: Vec::new(),
             uix_component_scopes: Vec::new(),

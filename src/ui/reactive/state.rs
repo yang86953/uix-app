@@ -28,6 +28,13 @@ mod reconcile_lease;
 // 向树与节点生命周期边界暴露租约类型。
 pub(crate) use reconcile_lease::ReconcileBindLease;
 
+// 拆分绘制绑定租约，保持响应式状态主体低于规模上限。
+#[path = "state/paint_lease.rs"]
+// 编译绘制绑定租约与捕获作用域的私有实现模块。
+mod paint_lease;
+// 向树与节点生命周期边界暴露绘制租约和捕获作用域。
+pub(crate) use paint_lease::{PaintBindLease, StateBindCaptureGuard};
+
 // 将副作用订阅与状态主体拆分，保持各文件规模受控。
 #[path = "state/effect.rs"]
 // 编译 State 私有的 Effect 自动订阅实现。
@@ -49,6 +56,10 @@ pub(crate) struct PaintBindSite {
     component_id: ComponentId,
     queue: InvalidationQueueHandle,
     rect: Option<Rect>,
+    // 记录由实际节点生命周期持有的租约数量。
+    leases: usize,
+    // 标记公开兼容入口是否要求站点持续存活到显式覆盖。
+    persistent: bool,
 }
 
 #[derive(Clone)]
@@ -74,9 +85,9 @@ thread_local! {
         const { RefCell::new(None) };
 }
 
-// layout 后探测 DynamicLabel 闭包时捕获 `State::get()` 读取的实例。
+// 以栈保存绘制依赖捕获，隔离嵌套组件和 panic 展开路径。
 thread_local! {
-    static STATE_BIND_CAPTURE: RefCell<Option<StateBindCapture>> = const { RefCell::new(None) };
+    static STATE_BIND_CAPTURE_STACK: RefCell<Vec<StateBindCapture>> = const { RefCell::new(Vec::new()) };
 }
 
 // 保存一次 View 构建捕获的结构依赖与副作用，并由声明根显式交接给所属树。
@@ -125,39 +136,74 @@ fn state_capture_active() -> bool {
     STATE_CAPTURE_STACK.with(|stack| !stack.borrow().is_empty())
 }
 
-/// 开始探测组件测量或绘制时读取的 State / Computed。
-pub fn begin_state_bind_capture(
+// 开始探测组件测量或绘制时读取的 State / Computed。
+fn begin_state_bind_capture(
     component_id: ComponentId,
     queue: InvalidationQueueHandle,
     rect: Option<Rect>,
 ) {
-    STATE_BIND_CAPTURE.with(|c| {
-        *c.borrow_mut() = Some((component_id, queue, rect, Vec::new()));
+    // 将本层捕获压栈，使嵌套绘制不会覆盖外层上下文。
+    STATE_BIND_CAPTURE_STACK.with(|stack| {
+        // 新捕获只接收本层后续读取的依赖。
+        stack
+            .borrow_mut()
+            .push((component_id, queue, rect, Vec::new()));
     });
 }
 
-/// 结束探测并将捕获到的 State 绑定到指定 widget（仅 Paint，不 reconcile）。
-pub fn end_state_bind_capture(component_id: ComponentId) {
-    STATE_BIND_CAPTURE.with(|c| {
-        let Some((id, queue, rect, states)) = c.borrow_mut().take() else {
-            return;
-        };
-        if id != component_id {
-            tracing::warn!("State 绑定探测 component_id 不一致: 期望 {component_id}, 实际 {id}");
-        }
-        for source in states {
-            // 渲染闭包或组件在 render/measure 时读取最新值，只需 Paint。
-            // 若再绑 reconcile，周期状态会反复触发整树 reconcile+layout。
-            source.bind_paint(component_id, queue.clone(), rect);
-        }
-    });
+// 结束最内层探测并返回由调用节点接管的绘制租约。
+fn end_state_bind_capture(component_id: ComponentId) -> Vec<PaintBindLease> {
+    // 只弹出最内层上下文，恢复仍在执行的外层捕获。
+    let capture = STATE_BIND_CAPTURE_STACK.with(|stack| stack.borrow_mut().pop());
+    // 没有对应捕获时返回空集合，避免制造无所有者绑定。
+    let Some((id, queue, rect, states)) = capture else {
+        // 空捕获没有需要交接的资源。
+        return Vec::new();
+    };
+    // 身份失配说明捕获作用域没有按后进先出结束。
+    if id != component_id {
+        // 保留诊断但仍按实际捕获身份建立租约，避免跨节点投递。
+        tracing::warn!("State 绑定探测 component_id 不一致: 期望 {component_id}, 实际 {id}");
+    }
+    // 将每个读取源转换为由实际节点拥有的窄绘制租约。
+    states
+        // 逐一交接捕获源。
+        .into_iter()
+        // 渲染闭包只需 Paint，不能升级为整树 reconcile。
+        .map(|source| PaintBindLease::bind(source, id, queue.clone(), rect))
+        // 返回完整租约集合供节点整体替换。
+        .collect()
+}
+
+// 丢弃最内层未完成捕获，供 panic 展开时恢复线程上下文。
+fn discard_state_bind_capture(component_id: ComponentId) {
+    // 弹出当前作用域，不能把异常读取泄漏到下一次组件绘制。
+    let capture = STATE_BIND_CAPTURE_STACK.with(|stack| stack.borrow_mut().pop());
+    // 仅在存在失配上下文时留下可诊断证据。
+    if let Some((id, _, _, _)) = capture
+        && id != component_id
+    {
+        // 捕获栈失配属于内部生命周期错误，但析构路径不得再次 panic。
+        tracing::warn!("State 绑定捕获清理 component_id 不一致: 期望 {component_id}, 实际 {id}");
+    }
+}
+
+// 判断当前线程是否存在活动绘制依赖捕获。
+fn state_bind_capture_active() -> bool {
+    // 只检查捕获栈是否非空，不借出其中任何窗口资源。
+    STATE_BIND_CAPTURE_STACK.with(|stack| !stack.borrow().is_empty())
 }
 
 fn try_capture_state_bind<T: Clone + Send + Sync + 'static>(state: &State<T>) {
-    STATE_BIND_CAPTURE.with(|c| {
-        let mut guard = c.borrow_mut();
-        if let Some((_, _, _, ref mut captured)) = *guard {
+    // 只把依赖登记给当前最内层组件捕获。
+    STATE_BIND_CAPTURE_STACK.with(|stack| {
+        // 独占访问栈顶依赖集合。
+        let mut stack = stack.borrow_mut();
+        // 没有活动捕获时保持普通读取无副作用。
+        if let Some((_, _, _, captured)) = stack.last_mut() {
+            // 保存共享状态源，实际绑定由节点租约接管。
             let bind: Arc<dyn StatePaintBind> = Arc::new(state.clone());
+            // 允许同一闭包重复读取，由站点租约计数保持精确释放。
             captured.push(bind);
         }
     });
@@ -190,14 +236,22 @@ pub(crate) fn capture_pending_state_bind<T: Clone + Send + Sync + 'static>(state
 }
 
 fn try_capture_computed_bind<T: Clone + Send + Sync + 'static>(computed: &Computed<T>) {
-    STATE_BIND_CAPTURE.with(|c| {
-        if let Some((component_id, queue, rect, _)) = c.borrow().as_ref() {
-            computed.bind_paint_invalidation(*component_id, queue.clone(), *rect);
+    // Computed 与 State 一样只登记给最内层节点捕获。
+    STATE_BIND_CAPTURE_STACK.with(|stack| {
+        // 独占访问栈顶依赖集合。
+        let mut stack = stack.borrow_mut();
+        // 非绘制读取不建立节点站点。
+        if let Some((_, _, _, captured)) = stack.last_mut() {
+            // 以共享句柄保存派生源，避免捕获阶段直接强持有窗口队列。
+            let bind: Arc<dyn StatePaintBind> = Arc::new(computed.clone());
+            // 把实际绑定推迟到捕获作用域正常完成时。
+            captured.push(bind);
         }
     });
 }
 
-fn bind_paint_site(
+// 注册不会由节点租约自动释放的兼容绘制站点。
+fn bind_persistent_paint_site(
     sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
     component_id: ComponentId,
     queue: InvalidationQueueHandle,
@@ -208,14 +262,86 @@ fn bind_paint_site(
             .iter_mut()
             .find(|site| site.component_id == component_id && Arc::ptr_eq(&site.queue, &queue))
         {
+            // 更新同一端点的最新绘制范围。
             site.rect = rect;
+            // 公开直接绑定要求站点保持到状态源销毁。
+            site.persistent = true;
         } else {
+            // 创建首个永久兼容站点。
             guard.push(PaintBindSite {
                 component_id,
                 queue,
                 rect,
+                // 永久入口本身不计入节点租约。
+                leases: 0,
+                // 标记该站点不能因租约归零而删除。
+                persistent: true,
             });
         }
+    }
+}
+
+// 增加一份由实际节点拥有的精确绘制站点租约。
+fn retain_paint_site(
+    // 接收状态源内部站点集合。
+    sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
+    // 接收当前节点的代际身份。
+    component_id: ComponentId,
+    // 接收所属窗口失效队列。
+    queue: InvalidationQueueHandle,
+    // 接收当前布局解析出的绘制区域。
+    rect: Option<Rect>,
+) {
+    // 只在站点集合可访问时登记。
+    if let Ok(mut guard) = sites.lock() {
+        // 同一节点与队列共享一个站点并累计所有者数量。
+        if let Some(site) = guard
+            .iter_mut()
+            .find(|site| site.component_id == component_id && Arc::ptr_eq(&site.queue, &queue))
+        {
+            // 重绑时刷新最新布局范围。
+            site.rect = rect;
+            // 增加本次节点依赖持有。
+            site.leases = site.leases.saturating_add(1);
+        } else {
+            // 首份节点租约创建可自动清理的站点。
+            guard.push(PaintBindSite {
+                // 保存代际化组件身份。
+                component_id,
+                // 保存仍由节点租约负责释放的窗口队列。
+                queue,
+                // 保存当前精确绘制范围。
+                rect,
+                // 记录首份节点租约。
+                leases: 1,
+                // 节点捕获站点不具有永久所有权。
+                persistent: false,
+            });
+        }
+    }
+}
+
+// 释放一份实际节点持有的精确绘制站点租约。
+fn release_paint_site(
+    // 接收状态源内部站点集合。
+    sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
+    // 接收正在离开的组件身份。
+    component_id: ComponentId,
+    // 接收用于区分窗口端点的队列句柄。
+    queue: &InvalidationQueueHandle,
+) {
+    // 只在站点集合可访问时执行计数递减。
+    if let Ok(mut guard) = sites.lock() {
+        // 找到同一节点和窗口端点。
+        if let Some(site) = guard
+            .iter_mut()
+            .find(|site| site.component_id == component_id && Arc::ptr_eq(&site.queue, queue))
+        {
+            // 防御性饱和递减，析构路径不能因异常重复释放而下溢。
+            site.leases = site.leases.saturating_sub(1);
+        }
+        // 仅保留永久入口或仍有实际节点持有者的站点。
+        guard.retain(|site| site.persistent || site.leases != 0);
     }
 }
 
@@ -302,6 +428,15 @@ pub trait StatePaintBind: Send + Sync {
         queue: InvalidationQueueHandle,
         rect: Option<Rect>,
     );
+    /// 增加一份由实际节点生命周期持有的绘制订阅。
+    fn bind_paint_site(
+        &self,
+        component_id: ComponentId,
+        queue: InvalidationQueueHandle,
+        rect: Option<Rect>,
+    );
+    /// 释放一份实际节点持有的绘制订阅。
+    fn unbind_paint_site(&self, component_id: ComponentId, queue: &InvalidationQueueHandle);
 }
 
 impl<T: Clone + Send + Sync + 'static> StatePaintBind for State<T> {
@@ -326,6 +461,23 @@ impl<T: Clone + Send + Sync + 'static> StatePaintBind for State<T> {
     ) {
         self.bind_paint_invalidation(component_id, queue, rect);
     }
+
+    // 增加 State 的节点绘制订阅计数。
+    fn bind_paint_site(
+        &self,
+        component_id: ComponentId,
+        queue: InvalidationQueueHandle,
+        rect: Option<Rect>,
+    ) {
+        // 把租约登记到共享状态槽的绘制站点集合。
+        retain_paint_site(&self.paint_sites, component_id, queue, rect);
+    }
+
+    // 释放 State 的节点绘制订阅计数。
+    fn unbind_paint_site(&self, component_id: ComponentId, queue: &InvalidationQueueHandle) {
+        // 最后一份租约离开时移除站点和窗口队列强引用。
+        release_paint_site(&self.paint_sites, component_id, queue);
+    }
 }
 
 impl<T: Clone + Send + Sync + 'static> StatePaintBind for Computed<T> {
@@ -338,6 +490,23 @@ impl<T: Clone + Send + Sync + 'static> StatePaintBind for Computed<T> {
         rect: Option<Rect>,
     ) {
         self.bind_paint_invalidation(component_id, queue, rect);
+    }
+
+    // 增加 Computed 的节点绘制订阅计数。
+    fn bind_paint_site(
+        &self,
+        component_id: ComponentId,
+        queue: InvalidationQueueHandle,
+        rect: Option<Rect>,
+    ) {
+        // 委托 Computed 内部对象登记派生槽的绘制站点。
+        self.bind_paint_site_invalidation(component_id, queue, rect);
+    }
+
+    // 释放 Computed 的节点绘制订阅计数。
+    fn unbind_paint_site(&self, component_id: ComponentId, queue: &InvalidationQueueHandle) {
+        // 委托 Computed 内部对象释放派生槽的绘制站点。
+        self.unbind_paint_site_invalidation(component_id, queue);
     }
 }
 
@@ -498,7 +667,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         queue: InvalidationQueueHandle,
         rect: Option<Rect>,
     ) {
-        bind_paint_site(&self.paint_sites, component_id, queue, rect);
+        bind_persistent_paint_site(&self.paint_sites, component_id, queue, rect);
     }
 
     /// 为指定树站点登记结构协调失效回调。
@@ -650,6 +819,17 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
     pub(crate) fn effect_subscriber_count(&self) -> usize {
         // 委托独立注册表清理死亡弱引用并读取精确数量。
         effect::subscriber_count(&self.effect_subscribers)
+    }
+
+    // 暴露测试专用的活跃绘制站点数量以验证节点租约释放。
+    #[cfg(test)]
+    // 此计数仅用于模块私有回归，不构成公开 State 契约。
+    pub(crate) fn paint_site_count(&self) -> usize {
+        // 读取当前共享状态槽仍保留的绘制端点数量。
+        self.paint_sites
+            .lock()
+            .map(|sites| sites.len())
+            .unwrap_or_default()
     }
 
     /// 返回每次 [`Self::set`] 或 [`Self::update`] 后递增的状态代数。

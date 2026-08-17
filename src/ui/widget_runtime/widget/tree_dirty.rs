@@ -329,8 +329,8 @@ impl WidgetTree {
 
     /// 绑定响应式 widget（DynamicLabel 等）的 State → Paint 失效。
     pub fn bind_reactive_widget_states(&mut self) {
+        use crate::ui::reactive::state::StateBindCaptureGuard;
         use crate::ui::widget_runtime::dynamic_label::DynamicLabel;
-        use crate::ui::reactive::state::{begin_state_bind_capture, end_state_bind_capture};
         let handle = self.invalidation_handle();
         for &id in self.traverse().iter() {
             let type_id = self
@@ -354,11 +354,14 @@ impl WidgetTree {
                 });
                 if let Some(node) = self.get(id) {
                     if let Some(dl) = node.component().as_any().downcast_ref::<DynamicLabel>() {
-                        dl.bind_state_invalidation(id, handle.clone(), paint_rect);
-                        // 探测闭包运行时读取的 State（含 View 外创建的实例，如 README Counter）
-                        begin_state_bind_capture(id, handle.clone(), paint_rect);
+                        // 以可在 panic 时自动恢复的作用域探测闭包依赖。
+                        let capture = StateBindCaptureGuard::begin(id, handle.clone(), paint_rect);
+                        // 探测闭包运行时读取的 State（含 View 外创建的实例，如 README Counter）。
                         dl.probe_dependencies();
-                        end_state_bind_capture(id);
+                        // 正常完成后把精确绘制订阅交给实际节点。
+                        let leases = capture.finish();
+                        // 本轮集合整体替换旧依赖，防止重布局累积陈旧站点。
+                        node.replace_paint_state_binds(leases);
                     }
                 }
             }

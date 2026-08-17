@@ -6,10 +6,10 @@ use crate::draw::painting::PaintContext;
 use crate::draw::scene::NodeId;
 use crate::draw::scene::PicturePolicy;
 use crate::draw::scene::ScenePaint;
-use crate::ui::widget_runtime::paint_scope::set_current_paint_widget;
+use crate::ui::reactive::state::StateBindCaptureGuard;
+use crate::ui::widget_runtime::paint_scope::PaintWidgetScope;
 use crate::ui::widget_runtime::widget::WidgetCore;
 use crate::ui::widget_runtime::widget::WidgetTree;
-use crate::ui::reactive::state::{begin_state_bind_capture, end_state_bind_capture};
 
 impl ScenePaint for WidgetTree {
     fn root_id(&self) -> Option<NodeId> {
@@ -230,14 +230,19 @@ impl ScenePaint for WidgetTree {
                 let paint_rect = (dirty.w > 0.0 && dirty.h > 0.0)
                     .then_some(dirty)
                     .and_then(|rect| self.node_visual_rect(id, rect));
-                begin_state_bind_capture(id, self.invalidation_handle(), paint_rect);
-                set_current_paint_widget(Some(id));
+                // 建立可在用户绘制 panic 时自动恢复的响应式捕获作用域。
+                let capture =
+                    StateBindCaptureGuard::begin(id, self.invalidation_handle(), paint_rect);
+                // 建立可嵌套且在异常展开时恢复的当前绘制节点作用域。
+                let _paint_widget_scope = PaintWidgetScope::enter(id);
                 let theme_tokens = self.theme_tokens();
                 let mut ui_ctx =
                     crate::ui::widget_runtime::paint_context::PaintContext::new(ctx, theme_tokens);
                 node.render(frame, &mut ui_ctx, self);
-                set_current_paint_widget(None);
-                end_state_bind_capture(id);
+                // 正常绘制完成后将本轮依赖转换为节点所有的租约。
+                let leases = capture.finish();
+                // 整体替换旧租约，依赖变化时同步解绑不再读取的源。
+                node.replace_paint_state_binds(leases);
             }
         }
     }
