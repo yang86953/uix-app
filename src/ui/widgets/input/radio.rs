@@ -468,7 +468,7 @@ mod tests {
     // 复用被测模块中的单选组组件与事件类型。
     use super::*;
     // 引入事件行为 trait 与修饰键类型。
-    use crate::ui::{KeyMod, component::traits::EventHandler};
+    use crate::ui::{KeyMod, widget_runtime::traits::EventHandler};
 
     // 方向键导航有界：边界处不再循环回绕。
     #[test]
