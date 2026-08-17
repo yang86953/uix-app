@@ -7,9 +7,9 @@ UIX（/ˈjuːɪks/）是一个 Rust 原生 UI 框架。
 ## 当前状态
 
 - 当前版本为 `0.0.1`，处于开发中，尚未发布。
-- Windows 与 Linux 均纳入 `0.0.1` 首发交付范围；Windows 当前基线为 x64/D3D11，Linux 当前原生路径为 Wayland/EGL OpenGL ES；平台与硬件完成度以 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 为准。
+- Windows 与 Linux 均纳入 `0.0.1` 首发交付范围；Windows 当前基线为 x64/D3D11，Linux 当前原生路径为 Wayland/EGL OpenGL ES；平台与硬件完成度以 [Gitea 0.0.1 产品完成父 Issue #1](http://100.79.245.29:3000/admin/uix-app/issues/1) 为准。
 - 版本与交付物口径见[交付与许可](docs/产品/交付与许可.md)，近期变化见[变更记录](CHANGELOG.md)。
-- 仓库文档描述稳定的产品、使用与架构契约；交付任务、负责人、阻塞和带时点的测试结果只在 Vikunja 中维护。
+- 仓库文档描述稳定的产品、使用与架构契约；交付任务、负责人、阻塞和带时点的测试结果只在 Gitea 中维护。
 
 ## 从这里开始
 
@@ -28,9 +28,9 @@ cargo test --tests --quiet
 cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo
 ```
 
-这些命令只验证当前工作树的对应契约，不等同于正式发布、平台矩阵或交付任务全部完成；带时点的完成状态仍以 Vikunja 为准。
+这些命令只验证当前工作树的对应契约，不等同于正式发布、平台矩阵或交付任务全部完成；带时点的完成状态仍以 Gitea 为准。
 
-图形后端与 Cargo feature 的选择具有平台差异：Windows 默认选择 D3D11，启用 `opengles` 时可构造 WGL/EGL OpenGL ES。配置方法、失败语义与回退边界见[图形后端配置](docs/使用/框架设施/配置.md#图形后端)；真实环境覆盖以 Vikunja 中的记录为准。
+图形后端与 Cargo feature 的选择具有平台差异：Windows 默认选择 D3D11，启用 `opengles` 时可构造 WGL/EGL OpenGL ES。配置方法、失败语义与回退边界见[图形后端配置](docs/使用/框架设施/配置.md#图形后端)；真实环境覆盖以 Gitea 中的记录为准。
 
 ## Linux 内部候选包
 

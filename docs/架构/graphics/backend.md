@@ -122,7 +122,7 @@ GPU baseline 操作不能依赖常态 CPU fallback。无法保持语义、资源
 
 ## 验证责任
 
-backend 变更需要按风险提供以下证据；实时环境矩阵、结果和缺口由 Vikunja 持有，本文不记录动态通过数量：
+backend 变更需要按风险提供以下证据；实时环境矩阵、结果和缺口由 Gitea 持有，本文不记录动态通过数量：
 
 - 规范语义：CPU 参考与 GPU lowering 对 painter order、clip、transform、blend、opacity、文本、图片、Picture 和 effect 的一致性；
 - 资源事务：创建/替换/销毁、generation、resize、晚到 callback、OOM 与 checked shutdown；

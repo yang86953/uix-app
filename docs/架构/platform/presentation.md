@@ -4,7 +4,7 @@
 
 > **接口**：声明 platform System 的原生 surface、图形 recipe、thin RHI、presenter 与提交能力。基础依赖：core；[windowing](windowing.md)产生的窗口 owner 由 platform System 编排交付，Module 间不直接持有实例。导出：供 graphics [backend](../graphics/backend.md) bootstrap 和执行使用的平台图形边界。
 >
-> **当前实现线索**：共享生命周期、thin RHI、类型化 candidate/owner、registry 与线程绑定位于 `src/native/present/` 和 `src/native/factory/`；原生 Adapter 位于 `src/native/presentation/graphics/` 及各平台 context。路径只用于定位迁移，不构成公开 API；实时差距与环境矩阵由 Vikunja 持有。
+> **当前实现线索**：共享生命周期、thin RHI、类型化 candidate/owner、registry 与线程绑定位于 `src/native/present/` 和 `src/native/factory/`；原生 Adapter 位于 `src/native/presentation/graphics/` 及各平台 context。路径只用于定位迁移，不构成公开 API；实时差距与环境矩阵由 Gitea 持有。
 
 ## 责任边界
 
@@ -100,7 +100,7 @@ device submit 成功、像素上传成功、present 调用已发起和画面实�
 
 ## 验证责任
 
-presentation 变更至少按风险验证：recipe/registry 分支一致性、错误线程调用拒绝、resize 原子发布、旧 generation 隔离、capability 与实际 probe 一致、一次最终 present、失败帧不消费 damage、readback 行序、checked shutdown，以及多个原生 Adapter 复用同一 thin RHI。真实 GPU、DPI、resize、遮挡和驱动矩阵的实时结果由 Vikunja 持有；缺少环境时标为未验证。
+presentation 变更至少按风险验证：recipe/registry 分支一致性、错误线程调用拒绝、resize 原子发布、旧 generation 隔离、capability 与实际 probe 一致、一次最终 present、失败帧不消费 damage、readback 行序、checked shutdown，以及多个原生 Adapter 复用同一 thin RHI。真实 GPU、DPI、resize、遮挡和驱动矩阵的实时结果由 Gitea 持有；缺少环境时标为未验证。
 
 ## 模块不变量
 

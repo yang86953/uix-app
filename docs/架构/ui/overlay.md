@@ -35,7 +35,7 @@
 - `RenderTarget::supports_backdrop_blur()` 是真实能力查询；不支持时保留纯色 mask，不伪报 blur。资源、copy、draw、submit 或 destroy 失败保持 typed failure 并中止当前帧。
 - GPU owner 同时保留未模糊 clean snapshot 与由它派生的 effect texture。策略、半径或区域变化时销毁旧派生纹理并从 clean snapshot 重新复制、模糊，不重复 acquire/present，也不对旧 blur 结果累计取样；离场开始以 no-op 半径释放派生效果。
 - 普通树、主题或窗口尺寸变化时，GPU-native ScenePipeline 强制完整重建正常树，通过 API-neutral FrameEncoder 先写 retained texture（无 present），再执行新 clean snapshot→effect blur→restore，最后只重放 overlay 并由原帧 `end_frame` 做唯一最终 present；中间阶段不重复 acquire/present，任一 typed failure 都保留 invalidation 并中止当前帧。
-backdrop blur 的验收必须同时证明背景被处理、前景保持清晰、逻辑区域与像素裁剪一致，并覆盖不支持能力和任一中间阶段失败；阶段性设备矩阵与结果由 Vikunja 持有。
+backdrop blur 的验收必须同时证明背景被处理、前景保持清晰、逻辑区域与像素裁剪一致，并覆盖不支持能力和任一中间阶段失败；阶段性设备矩阵与结果由 Gitea 持有。
 
 `FloatButton` 等显式窗口 placement 由本模块解释为 logical 客户区锚点；组件保存 placement、有限作者偏移与内容配置，并以同一解析几何驱动绘制、damage、命中和 entry bounds。未显式 placement 的普通布局节点继续服从所属 layout frame，overlay 不夺取容器布局所有权。
 
@@ -44,7 +44,7 @@ backdrop blur 的验收必须同时证明背景被处理、前景保持清晰、
 - 弹层使用当前帧的 logical surface、触发器 frame、内容自然尺寸和作者首选方向；首选放不下时比较备选方向，最终矩形收敛到安全客户区。
 - 组件内部的多列、树、月历、时间列、色板或页脚只从最终弹层矩形继续细分；各分区不得独立选择方向或越过 surface。
 - 候选数量、内容尺寸、surface、锚点或主题几何变化时重新计算；同一打开周期保留旧矩形用于 dirty 合并，新的呈现周期不得复用旧缓存。
-- 绘制、箭头、裁剪、键盘显露、滚动上限、命中、damage 和 OverlayStack bounds 必须消费同一最终几何。一个弹层的验证结果不能外推到其他组件；实际覆盖矩阵由 Vikunja 持有。
+- 绘制、箭头、裁剪、键盘显露、滚动上限、命中、damage 和 OverlayStack bounds 必须消费同一最终几何。一个弹层的验证结果不能外推到其他组件；实际覆盖矩阵由 Gitea 持有。
 
 ## 焦点
 
