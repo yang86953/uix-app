@@ -1,5 +1,7 @@
 # UIX Lang 语言首页
 
+[← 返回文档中心](../README.md)
+
 > **定位**：UIX Lang 是 UIX 框架的 UI 描述语言，也是**使用方编写界面的推荐方式（产品方向声明）**——写应用时用 uix-lang 描述界面结构与样式，编译时 uix-app 框架自动将 `.uix` 文档转换为 Rust 声明式代码（过程宏 / 构建期转换），运行期零解释器开销。语言规范位于[规范/](规范/总览.md)。
 
 ## 为什么需要 UIX Lang
@@ -10,7 +12,7 @@ UIX 产品原则是「Rust 优先——没有第二门运行语言」。公开 `
 .uix 文档（应用源码）──uix-app 编译期转换（uix! / uix_app!）──> Rust 声明式代码 ──cargo 编译──> 原生可执行文件
 ```
 
-每个标签、属性、样式规则都有确定的 Rust 等价物——这是本语言与 HTML/CSS 的本质区别（无隐式盒模型差异、无浏览器历史包袱，语义与 UIX 布局引擎一一对应）。除应用开发主路径外，文本形态还服务三类场景：工具链生成、Agent 控制、文档与传输（详见[规范 · 总览](规范/总览.md)）。
+每个**已登记**标签、属性和样式规则都有确定的 Rust 映射；未登记输入在编译期报错，不做浏览器式容错或静默降级。UIX Lang 使用 UIX 自身的布局与绘制语义，不承诺与 HTML/CSS 兼容。除应用开发主路径外，文本形态还服务工具链生成、Agent 控制、文档与传输场景（详见[规范 · 总览](规范/总览.md)）。
 
 ## 设计原则
 
@@ -18,6 +20,7 @@ UIX 产品原则是「Rust 优先——没有第二门运行语言」。公开 `
 2. **资源优先**：声明是静态的；动态行为（状态、事件、动画）显式声明，不隐藏隐式轮询。
 3. **原生优先**：标签与样式直接映射 UIX 布局与绘制原语，不引入中间抽象层。
 4. **容错可观测**：解析错误有位置、有原因、有修复建议；运行期错误有类型、有恢复路径。
+5. **按需编译**：导入、标签和 Cargo feature 必须显式；UIX Lang 不绕过使用方的编译期能力选择。
 
 ## 文档地图
 
@@ -33,21 +36,24 @@ UIX 产品原则是「Rust 优先——没有第二门运行语言」。公开 `
 | | [模块系统](规范/模块系统.md) | @import / @export、增量编译 |
 | | [编译契约](规范/编译契约.md) | 宏契约、Rust 映射、诊断模型 |
 | **参考** | [样式属性](参考/样式属性.md) | 全部样式属性的语法、取值、默认值与适用元素 |
-| | [事件](参考/事件.md) | 事件名与 $event 载荷登记 |
-| | [组件](参考/组件/布局组件.md) / [图表](参考/组件/图表组件.md) | 布局、通用、输入、展示、反馈、导航与基础图表参考 |
+| | [事件](参考/事件.md) | 事件名与 `$event` 载荷登记 |
+| | [通用组件](参考/组件/通用组件.md) / [布局组件](参考/组件/布局组件.md) | 基础控件、图标、窗口控件与布局容器 |
+| | [输入组件](参考/组件/输入组件.md) / [展示组件](参考/组件/展示组件.md) | 输入、表单、数据与媒体展示 |
+| | [反馈组件](参考/组件/反馈组件.md) / [导航组件](参考/组件/导航组件.md) | 浮层、消息、进度、菜单与导航 |
+| | [图表组件](参考/组件/图表组件.md) | 十二类图表标签与类型化数据 |
 | **指南** | [快速开始](指南/快速开始.md) | 依赖配置、Hello World、第一个 View、完整计数器与主题应用 |
 | | [教程](指南/教程.md) | 从零构建完整应用 |
 | **变更** | [版本策略](变更/版本策略.md) | 语言版本、兼容性承诺、变更登记流程 |
 | | [变更日志](变更/CHANGELOG.md) | 语言面变更记录 |
-| | [目标设计](变更/目标设计.md) | 已批准改进设计（组合与表达式面） |
+| | [历史设计记录](变更/目标设计.md) | 已实现的组合与表达式改进及其设计理由 |
 
 ## 状态声明
 
 公开 `uix!` 已支持内嵌源码与相对调用 crate 的 `.uix` 文件并在编译期生成 `ViewNode`；三个公开宏的文件入口都已支持相对当前文件的嵌套 `@import`、显式 `@export`、全量或具名组件选择，并追踪全部递归依赖。公开 `uix_app!` 已支持 `<App>` 根的 `title` / `size` / `theme` / `settings`、同文档主题与现有 `App` builder 组装。
 
-当前已登记以下 108 个标签（`Col` 仅作为 `Row` / `Grid` 的直接子项使用）：`Text`、`Label`、`Button`、`ButtonGroup`、`FloatButton`、`FloatButtonGroup`、`FloatButtonBackTop`、`Icon`、`Divider`、`Space`、`Typography`、`ThemeToggle`、`WindowControl`、`WindowDragRegion`、`Container`、`Row`、`Column`、`Grid`、`ScrollView`、`VirtualScroll`、`Splitter`、`Affix`、`BackTop`、`Layout`、`Sider`、`Header`、`Content`、`Footer`、`Input`、`InputNumber`、`InputGroup`、`Slider`、`RangeSlider`、`Rate`、`Checkbox`、`Switch`、`Radio`、`Segmented`、`Select`、`Cascader`、`TreeSelect`、`AutoComplete`、`Mentions`、`DatePicker`、`DateRangePicker`、`TimePicker`、`ColorPicker`、`Avatar`、`Image`、`ImageGroup`、`List`、`Skeleton`、`Empty`、`ResultView`、`Tag`、`Card`、`Descriptions`、`Timeline`、`Calendar`、`Carousel`、`Tree`、`Table`、`Menu`、`Dropdown`、`Navigation`、`Steps`、`Pagination`、`Breadcrumb`、`Anchor`、`Tabs`、`QRCode`、`Watermark`、`RichText`、`Message`、`Notification`、`Alert`、`Popconfirm`、`Modal`、`Drawer`、`Popover`、`Tooltip`、`FocusTrap`、`ProgressBar`、`Spin`、`Form`、`FormInputItem`、`FormSelectItem`、`FormCheckboxItem`、`FormRadioItem`、`FormSwitchItem`、`FormSliderItem`、`Upload`、`SelectableList`、`Collapse`、`Badge`、`BarChart`、`LineChart`、`PieChart`、`AreaChart`、`ScatterChart`、`FunnelChart`、`Treemap`、`Gauge`、`Heatmap`、`WaterfallChart`、`RadarChart`、`ComboChart`。未登记组件仍由编译期诊断明确拒绝，不会静默降级。实现差距由 [Vikunja 项目 4](https://yang-server.tail9d5559.ts.net:3456/projects/4) 跟踪。
+当前共登记 108 个标签。完整清单按[通用](参考/组件/通用组件.md)、[布局](参考/组件/布局组件.md)、[输入](参考/组件/输入组件.md)、[展示](参考/组件/展示组件.md)、[反馈](参考/组件/反馈组件.md)、[导航](参考/组件/导航组件.md)和[图表](参考/组件/图表组件.md)分类维护；`Col` 仅能作为 `Row` 或 `Grid` 的直接子项。未登记组件由编译期诊断明确拒绝，不会静默降级。
 
-Rust 图表文档列出的十二类标签已全部登记类型化静态数据（含 `ScatterChart bubbleData` 气泡载荷）、基础坐标图 `ChartSeries` 多系列、基础视觉配置、`Heatmap` 两端颜色与带位置自定义色阶、四类高级坐标图参考线、`Gauge` 类型化格式化器、`ComboChart` 自定义混合系列，以及共同的图例、动画、缩放平移、刷选与 tooltip 配置；具体类型继续由 [Rust 图表使用文档](../使用/数据展示/图表.md)定义并由编译器核对。
+十二类图表标签均已登记类型化数据与当前公开配置。UIX Lang 的属性和数据构造入口以[图表组件参考](参考/组件/图表组件.md)为准，Rust 运行时类型与行为以 [Rust 图表使用文档](../使用/数据展示/图表.md)为准；动态实现差距由 Vikunja 跟踪。
 
 ## 与 Rust API 的映射关系
 

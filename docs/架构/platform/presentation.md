@@ -2,66 +2,109 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 platform 系统的目标 `presentation` 模块，权威持有原生 surface、图形 recipe、thin RHI provider、presenter 与提交能力。依赖：[windowing](windowing.md)、core。导出：供 graphics [backend](../graphics/backend.md) bootstrap/执行使用的平台图形边界。
+> **接口**：声明 platform System 的原生 surface、图形 recipe、thin RHI、presenter 与提交能力。基础依赖：core；[windowing](windowing.md)产生的窗口 owner 由 platform System 编排交付，Module 间不直接持有实例。导出：供 graphics [backend](../graphics/backend.md) bootstrap 和执行使用的平台图形边界。
+>
+> **当前实现线索**：共享生命周期、thin RHI、类型化 candidate/owner、registry 与线程绑定位于 `src/native/present/` 和 `src/native/factory/`；原生 Adapter 位于 `src/native/presentation/graphics/` 及各平台 context。路径只用于定位迁移，不构成公开 API；实时差距与环境矩阵由 Vikunja 持有。
 
-> **设计状态**：🔄 迁移中。FramePlan、thin RHI、D3D11 与 OpenGL ES 的 retained GPU 路径已经落地；本轮已物理移除统一兼容 context 门面。剩余迁移集中在未闭合 effect 语义与真实环境矩阵，完成状态只以对应自动测试和所有者验收为准。
+## 责任边界
 
-> **当前实现线索**：共享生命周期与 recipe 专用契约位于 `src/native/present/traits.rs`，薄 RHI 位于 `src/native/present/rhi.rs`，类型化 candidate/owner 位于 `src/native/present/`，构造与线程绑定位于 `src/native/factory/`。D3D11、D3D12、WGL/EGL、Vulkan 与 Metal adapter 分别在各自 platform context 内实现所需 trait。
+presentation 只拥有原生 device/surface、低层资源与命令原语、线程亲和和最终 OS present。它不拥有 FramePlan、Picture/effect 策略、路径/字形算法、字体/图片 atlas、WidgetTree 或 UI fallback。
 
-> **类型化 recipe 生命周期**：`GraphicsContextLifecycle` 只定义原子 `PresentSurface` 快照与 checked shutdown；`GpuRecipeContext: GraphicsContextLifecycle` 额外拥有不可拆分的 thin RHI、GPU surface resize，以及 `TrackedSwapchain` 所需的当前 `PresentImage` 身份（`FullOnly` adapter 返回 `None`）；`PixelUploadSurface: GraphicsContextLifecycle` 额外拥有上传 surface resize 与最终 pixels 提交。recipe 身份和 capability 在构造期冻结，不在帧内重新探测。
+```text
+platform window owner
+  → 类型化 GraphicsRecipe candidate
+  → checked registry / owner-thread 绑定
+  → GraphicsRecipeOwner
+  → graphics backend 使用 thin RHI 或 PixelUploadSurface
+  → Presenter 建立最终提交结果
+```
 
-> **candidate 与 registry 边界**：adapter 创建事务必须直接选择 `GraphicsContextCandidate::gpu` 或 `GraphicsContextCandidate::pixel_upload`，并同时交付同源 `GraphicsContextCaps`。registry 校验精确 row、静态 recipe 轴与 `GraphicsRecipeContext::{Gpu, PixelUpload}` 分支一致；错配在返回前 checked shutdown。GPU baseline 与固定 pipeline probe 只对 GPU 分支执行，PixelUpload 分支不得查询或伪造 RHI。
-
-> **线程亲和边界**：registry 校验后按具体 trait object 建立 `ThreadBoundGraphicsContext<T>`。wrapper 通过 `!Send + !Sync` 标记和 owner-thread 检查保护原生资源；resize 仅在底层成功后刷新完整 `PresentSurface`。错误线程 Drop 不触碰原生 API，checked shutdown failure 保持 typed 返回或结构化日志。
-
-> **recipe owner 边界**：`GraphicsRecipeOwner` 同时匹配类型化 context 分支和静态 raster × present 轴，再构造直接持有 `Box<dyn GpuRecipeContext>` 的 `GpuRecipeOwner`，或直接持有 `Box<dyn PixelUploadSurface>` 的 `PixelUploadRecipeOwner`。构造后不存在可选视图丢失、能力重查或统一门面回退。
-
-> **会话与窗口所有权**：native factory 在 context 离开 platform System 前返回已验证 `GraphicsRecipeOwner`；bootstrap、recovery 和 renderer 只传递该枚举。窗口只持有 native surface 与 presenter，不持有或关闭图形 context，因此 renderer/recovery 生命周期是唯一 teardown owner。
-
-> **静态与动态事实**：`GraphicsContextCaps` 只固定 backend、raster/present、构造期实际交换链的 coherency 与 occlusion；drawable extent、DPR、transform 与 generation 只来自单次 `PresentSurface` 快照，当前可写 image index 只来自同一 GPU recipe owner。thread-bound wrapper 不缓存静态 capability，recipe owner 不在运行期重新推断 recipe。
-
-> **RHI 与最终提交边界**：逐 UI draw/clear/offscreen/upload、二阶段 initialize、平台 current、通用 resize、统一 present 与 readback 均不属于共享 lifecycle。生产 GPU 只通过 `GraphicsDevice` / `GraphicsSurface` 执行资源、probe、resize、readback 与最终 present；CPU × PixelUpload 只通过 `PixelUploadSurface` 上传并提交。平台 adapter 不拥有 FramePlan、fallback、Picture 或 effect 策略；draw 侧 Picture create/destroy/begin/flush/end/blit 只允许 checked `Result` 边界，资源失败不能用 `Option`、bool 或 void 门面推迟或吞掉。`try_create_offscreen` 的 `Ok(None)` 只陈述无效尺寸或不支持，thin RHI 返回的 device/surface/OOM 分类原样进入 graphics recovery。
-
-> **坐标与行序契约**：thin RHI 输入坐标统一左上原点，viewport、scissor、顶点、UV 与 `PresentDamage` 跨平台语义一致（`RhiScissor` 保持左上原点约定）；帧缓冲行序差异只发生在呈现 adapter 内，不得泄漏到通用层。OpenGL 不再按 WGL/EGL 平台身份改写 shader，而按当前 render target 决定唯一方向：texture target 以 `u_target_y_sign = +1` 把逻辑顶部写入 GL 低 Y，也就是可直接采样的 texture `v=0` 行，scissor 直接使用 RHI 坐标；native window surface 以 `u_target_y_sign = -1` 把逻辑顶部映射到窗口顶部，scissor 换算为 GL 左下原点（height − y − h）。blur 顶点已经是 top-left NDC，OpenGL shader 只翻转写入位置而保持 top-left UV，因此每个 texture pass 都维持同一行序，不再依赖双 pass 偶数翻转抵消。D3D11 backbuffer 与 texture 原生都是 top-left，继续按其 adapter 私有映射直接消费同一 RHI 输入。`read_surface_pixels` 输出统一为 top-left 行序（row 0 = 窗口顶部）：D3D11 staging 拷贝天然满足；WGL 与 EGL window surface 的 `glReadPixels` 都从 GL 低 Y 向高 Y 返回，OpenGL adapter 先把区域 y 换算为 height − y − h，再原地反转像素行。CPU 软渲染/upload 的像素数据统一为 top-left 行序，纹理上传保持数据直通；机械拷贝（GPU 快照 copy、滚动 memmove）逐 texel 对位、与行序无关。graphics/backend 消费本契约，不在通用层叠加平台翻转。
+逐 UI `draw_*`、统一“万能 context”、二阶段初始化和默认成功的空实现不属于目标契约。graphics 只能通过本页公开的 owned value 与窄接口消费平台能力。
 
 ## 组件清单
 
 | 组件 | 目标角色 | 职责 |
 |---|---|---|
-| `platform::graphics::GraphicsBackend` | public value | 只表达当前构建已启用的具体 GPU API |
-| `GraphicsApi` / `GraphicsSelection` | crate-private value / strategy | registry 的具体 API 身份，以及 `Automatic` / `Explicit` 启动策略 |
-| `GraphicsRecipe` | value | 平台、feature、API 与 fallback 候选 |
-| `GraphicsDevice` | thin RHI interface | GPU 资源、pipeline、pass、draw/copy、submit 与 device 维护 |
-| `GraphicsSurface` | surface interface | acquire、resize、present、idle present probe、surface generation 与呈现状态 |
-| `GraphicsCapabilities` | value | RHI 原语、retained、occlusion 与 present 的事实能力 |
-| `GraphicsContext` | 迁移期门面 | 当前只组合 live surface、checked 生命周期与 recipe 专用视图；静态 recipe 能力由 adapter candidate 移交并固化在 owner，不再持有 renderer capability 投影或统一最终提交 |
-| `Presenter` | 提交接口 | CPU/GPU 结果到原生窗口的最终 present |
-| `SurfaceToken` | generation value | surface 重建与迟到 callback 隔离 |
+| `platform::graphics::GraphicsBackend` | public value | 表达当前构建启用的具体 GPU API |
+| `GraphicsApi` / `GraphicsSelection` | private value/strategy | registry 的 API 身份和 Automatic / Explicit 选择策略 |
+| `GraphicsRecipe` | value | 平台、feature、API、raster 与 present 的完整候选 |
+| `GraphicsContextCandidate` | construction value | 原子交付 GPU 或 PixelUpload context、caps 与来源 |
+| `GraphicsRecipeOwner` | owned enum | 向 graphics 交付唯一 `GpuRecipeOwner` 或 `PixelUploadRecipeOwner` |
+| `GraphicsContextLifecycle` | internal interface | `PresentSurface` 快照与 checked shutdown |
+| `GpuRecipeContext` | internal interface | 不可拆分的 thin RHI、GPU surface 与当前 image 身份 |
+| `PixelUploadSurface` | internal interface | CPU 像素 resize、上传与最终提交 |
+| `GraphicsDevice` / `GraphicsSurface` | thin RHI interfaces | GPU 资源、pass、submit、resize、probe、present 与可选 readback |
+| `GraphicsCapabilities` | value | 由实际原语和 probe 支撑的事实能力 |
+| `Presenter` | submit interface | 建立本帧最终 OS present 结果 |
+| `SurfaceToken` / `PresentSurface` | generation/snapshot values | 隔离重建、迟到 callback，并原子描述 extent、DPR 与 transform |
 
-## 组件：GraphicsRecipe
+## GraphicsRecipe 与选择
 
-registry 只陈述可构造候选；graphics 决定选择和恢复策略。显式 API 请求不偷换其他 API，自动模式可按固定候选顺序降级。内部构造不得把 recipe 降为单 backend 查找或候选投影，因为同一 API 可以拥有多个 raster × present 行；bootstrap、平台创建与运行时恢复必须携带完整 `GraphicsRecipe` 和同一作用域的 callback 故障队列，不能在兼容入口内临时创建空队列。
+registry 只陈述可构造候选；graphics System 决定使用、恢复和 fallback 策略。显式 API 请求只尝试该 API 的完整 recipe，不偷换其他 API；Automatic 按固定候选顺序选择已启用且通过验证的 recipe，GPU 候选耗尽后才由上层决定是否整体使用 CPU。
 
-公开选择面只有 `platform::graphics::GraphicsBackend`，且不包含 `Auto`。公开 builder 在边界处把具体 API 转换为 crate-private `GraphicsApi`；只有省略 builder、空配置或 `auto` 配置才构造私有 `GraphicsSelection::Automatic`。显式策略只保留同一 API 的 registry 行，自动策略只接纳 Active recipe 并保持 GPU-native 优先；CPU fallback 由 App 在 GPU 候选耗尽后整体执行，不进入任何设备/API 枚举。
+`GraphicsContextCandidate` 必须在一次构造事务中选择 GPU 或 PixelUpload 分支，并交付同源 capabilities。registry 在发布前核对平台、feature、API、raster/present 轴和分支：错配执行 checked shutdown 并返回 typed error。GPU baseline/probe 只对 GPU 分支运行；PixelUpload 不查询或伪造 RHI。
 
-## 组件：GraphicsDevice / GraphicsSurface
+构造成功表示 context 已绑定 surface、处于 owner thread 且可进入第一帧。recipe 身份和构造期静态能力在 owner 内冻结；恢复仍使用相同类型化构造流程，不从 backend 名称或临时布尔查询重新拼装 recipe。
 
-`GraphicsDevice` 只提供 buffer、texture、sampler、pipeline、render target、pass、draw/copy、submit 和 device 恢复所需的最小原语；不得提供 `draw_glyphs`、`draw_rounded_rect`、`draw_picture`、`create/bind/blit_offscreen_target`、`blur_offscreen_target` 等 UI 操作。固定 pipeline 语义、batch、atlas 与 effect pass 由 graphics/backend 持有。
+## 线程、所有权与生命周期
 
-`GraphicsSurface` 独立持有窗口 surface、swapchain、尺寸、DPR 相关像素 extent、generation 与不提交帧数据的遮挡退出探测。device 和 surface 可以由首个 adapter 在同一 owner-thread 对象中组合，但资源寿命、错误分类与重建范围必须保持可区分，也不把跨窗口 device 共享设为首版前置条件。
+- registry 验证后建立 `!Send + !Sync` 的线程绑定 owner，并在每次原生调用前校验 owner thread。
+- native factory 在 context 离开 platform System 前返回已验证 `GraphicsRecipeOwner`；窗口只持有 native window/surface 关系，不成为图形 context 的第二 teardown owner。
+- resize 只在底层成功后原子发布新的 `PresentSurface` 和 generation；失败保留旧快照及 typed 原因，不能部分刷新 extent、DPR 或 transform。
+- 错误线程 Drop 不调用原生 API。正常关闭必须在 owner thread 停止新操作、隔离 callback、checked shutdown surface/device；失败交给最终责任边界观察。
+- recipe owner、surface token、present image 和 callback source 使用同一 generation。旧代帧、资源或 callback 只能 stale，不能重定向到新 surface。
 
-原生 adapter 负责 API/OS 专属的 adapter/device/surface 创建、资源映射、命令编码、同步、acquire/present 和错误翻译；不得决定 Picture 缓存、字形 atlas、路径细分或 UI fallback。
+## GraphicsDevice 与 GraphicsSurface
 
-## 组件：GraphicsCapabilities
+`GraphicsDevice` 只提供 buffer、texture、sampler、pipeline、render target、pass、draw/copy、submit 和设备维护所需的最小原语。不得提供 `draw_glyphs`、`draw_rounded_rect`、`draw_picture`、高层 offscreen blur 等 UI 语义；固定 pipeline、batch、atlas 与 effect 编排由 graphics/backend 持有。
 
-capability 只陈述可验证的底层事实，例如 sampled texture、render-to-texture、scissor、texture copy、retained framebuffer、partial present 与 occlusion。逐 UI 操作支持由这些事实和通用 GPU Renderer 推导，不由 adapter 维护平行的 `draw_*` 布尔表。
+`GraphicsSurface` 独立持有窗口 surface、swapchain、物理 extent、generation、当前 present image 和不提交帧数据的可呈现探测。device 与 surface 可以在同一 Adapter owner 中组合，但资源寿命、错误分类和重建范围必须可区分；首版不要求跨窗口共享 device。
 
-`retained_framebuffer` 与 renderer 的 `partial_redraw` 必须保持分层：前者只描述 platform adapter 能否保存跨帧颜色纹理，后者还要求所有绘制都不绕过该纹理，并要求交换链提供可验证的 per-image coherency。D3D11 只有实际创建 `FLIP_SEQUENTIAL` 双缓冲且取得 `IDXGISwapChain3` 时报告 `TrackedSwapchain` / partial present；graphics backend 再与 retained 事实合取后开放局部重绘。创建期任一条件失败即冻结为 legacy `DISCARD` / `FullOnly`，运行期不在两种契约间漂移。
+GPU resize、present 和 readback 只经 `GraphicsSurface`；CPU 像素 resize/提交只经 `PixelUploadSurface`。共享 lifecycle 不提交帧 payload，也不暴露 external swapchain 视图。
 
-## 组件：Presenter
+## 静态能力与动态事实
 
-`Presenter` 是 renderer 面向的统一最终提交门面：生产 GPU backend 委托 `GraphicsSurface::present`，CPU × PixelUpload 委托 `PixelUploadSurface::present_pixels`；共享 lifecycle 不提交 payload，也不暴露 external swapchain 视图。同帧只能由一个 recipe owner 调用最终 OS present。CPU 写入 retained pixels 或 GPU submit 均不等于提交成功；最终 present 返回 typed Result，失败帧不能被标记为成功。
+- `GraphicsContextCaps` 只描述构造期稳定的 backend、recipe、交换链 coherency 与支持轴。
+- drawable extent、DPR、transform、surface generation 与当前 image 都是动态事实，只能来自一次原子 `PresentSurface` / owner 查询。
+- `GraphicsCapabilities` 只陈述 sampled texture、render-to-texture、scissor、copy、retained framebuffer、partial present、occlusion、readback 等可验证原语。
+- UI 操作支持由 graphics System 从这些事实推导；Adapter 不维护平行 `draw_*` 能力表。
+- `retained_framebuffer` 不等于 `partial_redraw`。局部提交还要求全部绘制经过 retained target，并且交换链能证明 per-image coherency；条件不足时固定为 FullOnly。
+
+能力在构造/恢复边界探测，不能在同一 generation 的帧内漂移。运行中真实失败仍由 typed error 表达，不用临时降级改写已发布能力含义。
+
+## 坐标与行序
+
+thin RHI 输入统一使用左上原点：viewport、scissor、顶点、UV、readback 区域与 `PresentDamage` 共享同一语义；`read_surface_pixels` 输出 row 0 也表示窗口顶部。
+
+原生 API 的 NDC、scissor 原点和 framebuffer 行序差异只在 Adapter 内转换：
+
+- texture target 与 window target 分别选择正确的 Y 映射，不修改通用 shader/场景语义；
+- readback 在 Adapter 内换算区域并按需翻转行；
+- CPU upload 数据保持 top-left 直通；
+- texture copy 和滚动搬移逐 texel 对位，不通过重复翻转偶然抵消。
+
+graphics/backend 只消费这一规范契约，不按 D3D、OpenGL、Vulkan 或 Metal 名称叠加平台特例。
+
+## Presenter 与提交真相
+
+`Presenter` 是最终提交边界：GPU recipe 委托 `GraphicsSurface::present`，PixelUpload recipe 委托 `present_pixels`。同一帧只能由一个 recipe owner 调用一次最终 OS present。
+
+device submit 成功、像素上传成功、present 调用已发起和画面实际成功是不同事实。最终 present 返回 typed result；失败、遮挡、would-block 或 stale generation 都不能标记为成功，也不能消费 graphics damage。取消、不可呈现与不支持必须使用可区分结果，不能压成布尔值。
+
+## 错误、安全与数据边界
+
+- Adapter 把 HRESULT、errno、API status 与设备原因转换为保留来源链的 typed error；OOM、SurfaceLost、DeviceLost、Occluded、WouldBlock、NotImplemented 与参数错误保持可区分。
+- raw handle、映射指针、command buffer 和 swapchain image 不越过 thin RHI。FFI/unsafe 调用逐次证明线程、句柄、长度、对齐和生命周期前置条件。
+- readback 可能包含敏感界面像素，只作为显式可选能力开放；platform 不默认记录、持久化、上传或跨窗口共享结果。
+- extent、row pitch、buffer size、offset 和 damage rect 在进入原生 API 前验证有限范围及整数溢出；无效输入不传给驱动猜测。
+
+## 验证责任
+
+presentation 变更至少按风险验证：recipe/registry 分支一致性、错误线程调用拒绝、resize 原子发布、旧 generation 隔离、capability 与实际 probe 一致、一次最终 present、失败帧不消费 damage、readback 行序、checked shutdown，以及多个原生 Adapter 复用同一 thin RHI。真实 GPU、DPI、resize、遮挡和驱动矩阵的实时结果由 Vikunja 持有；缺少环境时标为未验证。
 
 ## 模块不变量
 
-platform 只拥有原生 device/surface、低层 RHI 实现与提交能力，不拥有 UI 绘制命令、路径/字形算法、字体/图片 atlas、Picture 策略或 WidgetTree。raw native handle 不得越过 thin RHI 边界。
+- platform 只拥有原生资源、thin RHI 和最终提交能力，不拥有 UI 绘制与恢复策略。
+- 一个 recipe owner 对应一个线程亲和生命周期和一个最终 present 责任边界。
+- 静态能力与动态 surface 事实分离；旧快照不能证明新 generation 仍有效。
+- 任一失败都保留 typed 语义，不能通过空实现、`Option`、bool、Drop 或隐式 fallback 伪装成功。

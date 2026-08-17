@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 graphics 系统的目标 `geometry` 模块及绘制值契约。依赖：[core/geometry](../core/geometry.md)。导出：供 painting、scene、renderer 与 ui 使用。
+> **接口**：声明 graphics System 的 `geometry` Module 及绘制值契约。基础依赖：[core/geometry](../core/geometry.md)。值经 graphics System 公开/私有契约供 painting、scene、renderer 与 ui 消费，不授予兄弟 Module 实例依赖。
 
 > **当前实现线索**：主要位于 `src/draw/geometry/`。
 

@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 platform 系统的可选 `agent-transport` 模块，权威持有同用户本机 IPC、peer 校验和 discovery 原子发布。依赖：[windowing](windowing.md)、[diagnostics](diagnostics.md)。导出：供 app/agent 使用的字节流与生命周期句柄。
+> **接口**：声明 platform System 的可选 `agent-transport` Module，权威持有同用户本机 IPC、peer 校验和 discovery 原子发布。基础依赖：独立 [diagnostics System](diagnostics.md) 的公开契约；[windowing](windowing.md)事件由 platform System 编排，Module 间不直接持有实例。导出：供 app/agent 使用的字节流与生命周期句柄。
 
 > **当前实现线索**：位于 `src/native/agent_transport/`；受 `agent-control` feature 控制。
 
@@ -20,6 +20,13 @@
 
 Windows 拒绝远程 pipe 并限制当前用户；Unix 校验 peer uid，无法可靠取得凭据时 fail closed。
 
+## 所有权与生命周期
+
+- platform System 创建并拥有 listener、discovery publisher 和 worker；app/agent 只通过 platform 的公开传输契约取得有界字节流与可关闭句柄，不取得 platform 私有 Module 实例。
+- endpoint 成功监听且权限设置完成后才能原子发布 discovery；关闭时先停止接收新连接、取消或排空在途 I/O，再删除 discovery 并释放 listener。
+- discovery 中的端点与会话 token 属于敏感凭据。文件权限、原子替换、会话轮换和退出清理必须 fail closed；不得写入普通日志或跨用户位置。
+- 同用户本机校验限制连接范围，但不构成业务信任、沙箱或远程身份体系。动作授权仍由 app/agent System 在语义边界执行。
+
 ## 模块不变量
 
-不监听 TCP/UDP，不解析 Agent 语义协议，不访问 WidgetTree；端点成功后才发布 discovery，退出时清理。
+不监听 TCP/UDP，不解析 Agent 语义协议，不访问 WidgetTree；字节流有界并支持取消。传输接收或写入成功不等于业务请求已授权、执行或完成。

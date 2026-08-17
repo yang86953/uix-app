@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 core 系统的目标 `damage` 模块及其组件契约。依赖：[geometry](geometry.md)。导出：ui 失效、graphics 策略和 app 提交共享的区域模型。
+> **接口**：声明 core 基础契约中的目标 `damage` 边界及其组件契约。core 的 System 定级仍由[系统列表](../系统列表.md#core基础契约system-定级待定)持有；本文不以文件名预先完成定级。依赖：[geometry](geometry.md)。导出：ui 失效、graphics 策略和 app 提交共享的区域模型。
 
 > **当前实现线索**：主要位于 `src/core/damage/`。
 
@@ -25,3 +25,5 @@
 ## 模块不变量
 
 damage 描述“更新哪里”，不决定“如何绘制”；失败帧保留未提交区域，多个滚动视口不能互相覆盖为最后一个 delta。
+
+这些值本身不拥有 surface、renderer 或窗口生命周期。跨帧 `PresentDamageTracker` 由实际提交责任方实例化和拥有，其存活期不得超过对应 surface generation。

@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 ui 系统的输入事件、传播、语义事件与 handler 生命周期。依赖：[component](component.md)、[layout](layout.md)。导出：系统事件与应用语义的统一路由；公开用法见[使用 · 事件](../../使用/交互与反馈/事件.md)。
+> **接口**：声明 ui System 的输入事件、传播、语义事件与 handler 生命周期。与[组件运行时框架](component.md)及[layout](layout.md)的协作由 ui System 编排，Module 间不直接持有实例。导出：系统事件与应用语义的统一路由；公开用法见[使用 · 事件](../../使用/交互与反馈/事件.md)。
 >
 > **当前实现线索**：相关实现暂散布于 `src/ui/event/`（mod.rs、system_event_handler.rs）、`src/ui/semantic_action.rs` 和树事件文件；重构后共同归本模块。
 
@@ -44,11 +44,13 @@ platform UiEvent
 
 应用回调按 `ComponentId` 存在 `HandlerTable`，组件只保存稳定 handler signature。reconcile 比较 signature 以复用或替换登记；节点移除、换根或 generation 失效时同步删除，避免闭包进入组件快照或泄漏。
 
-语义事件在目标窗口 UI 线程同步消费；跨线程 `ComponentHandle` 只排队并 wake，`Handled` 表示已进入队列，不表示回调已经执行。
+语义事件在目标窗口 UI 线程同步消费，`Handled` 只在默认行为或目标 handler 实际消费当前事件后建立。跨线程 `ComponentHandle` 只能返回 queued/accepted 类投递结果；排队和 wake 成功不表示回调已经执行，也不能伪装成 `Handled`。
 
 ## 默认行为与安全
 
 - Agent 动作和自动化动作进入同一 `SemanticAction`/`SystemEvent` 路径，不直接改 WidgetTree。
 - password/sensitive 值不写入语义 payload、日志或 Agent 响应。
+- 平台事件、IME 文本、拖放路径和自动化 payload 都是不可信输入；先做长度、范围、枚举和目标 generation 校验，再进入路由。
 - `WindowAction` 只在所属树产生并由本窗 platform window 消费，不进全局广播。
 - 无事件时系统不轮询 handler；事件模块本身不登记帧。
+- handler 可以改变 State 或登记后续工作，但不得同步重入同一 platform dispatch；节点移除或换根后，尚未开始的旧目标事件必须 stale。

@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 ui 系统的窗口内浮层栈、层叠、焦点陷阱和进退场。依赖：[component](component.md)、[event](event.md)、[animation](animation.md)。导出：所有内置与自定义浮层共享的栈契约；公开用法见[使用 · 反馈](../../使用/交互与反馈/反馈.md)。
+> **接口**：声明 ui System 的窗口内浮层栈、层叠、焦点陷阱和进退场。与[组件运行时框架](component.md)、[event](event.md)和[animation](animation.md)的协作由 ui System 编排，Module 间不直接持有实例。导出：所有内置与自定义浮层共享的栈契约；公开用法见[使用 · 反馈](../../使用/交互与反馈/反馈.md)。
 >
 > **当前实现线索**：栈与 entry 位于 `src/ui/overlay/mod.rs`，组件树在 `src/ui/component/widget/tree_layout/layout.rs` 重建登记，焦点陷阱位于 `src/ui/component/focus_trap.rs`，具体 placement 由各浮层组件持有。
 
@@ -35,31 +35,16 @@
 - `RenderTarget::supports_backdrop_blur()` 是真实能力查询；不支持时保留纯色 mask，不伪报 blur。资源、copy、draw、submit 或 destroy 失败保持 typed failure 并中止当前帧。
 - GPU owner 同时保留未模糊 clean snapshot 与由它派生的 effect texture。策略、半径或区域变化时销毁旧派生纹理并从 clean snapshot 重新复制、模糊，不重复 acquire/present，也不对旧 blur 结果累计取样；离场开始以 no-op 半径释放派生效果。
 - 普通树、主题或窗口尺寸变化时，GPU-native ScenePipeline 强制完整重建正常树，通过 API-neutral FrameEncoder 先写 retained texture（无 present），再执行新 clean snapshot→effect blur→restore，最后只重放 overlay 并由原帧 `end_frame` 做唯一最终 present；中间阶段不重复 acquire/present，任一 typed failure 都保留 invalidation 并中止当前帧。
-- D3D11 真窗验收以 100px 红蓝交错背景和显式 24px 半径生成无损 PNG：AI 视觉审阅确认背景边界连续柔化且 Modal 标题、正文、边框和按钮保持清晰；像素断言同时拒绝无 blur 的硬切边界与错误 UV 导致的整幅单色。
+backdrop blur 的验收必须同时证明背景被处理、前景保持清晰、逻辑区域与像素裁剪一致，并覆盖不支持能力和任一中间阶段失败；阶段性设备矩阵与结果由 Vikunja 持有。
 
-`FloatButton` 的显式 `Placement` 由本模块解释为窗口 logical 客户区锚点；组件只保存 placement、有限作者偏移与内容配置，并用同一个私有几何结果驱动 control、description、badge、tooltip、damage、命中和 entry bounds。未显式 placement、普通布局占位及 `FloatButtonGroup` 子按钮继续服从所属布局 frame，避免 overlay 模块夺取容器布局所有权。
+`FloatButton` 等显式窗口 placement 由本模块解释为 logical 客户区锚点；组件保存 placement、有限作者偏移与内容配置，并以同一解析几何驱动绘制、damage、命中和 entry bounds。未显式 placement 的普通布局节点继续服从所属 layout frame，overlay 不夺取容器布局所有权。
 
-`f41fede8` 为该表面契约建立 Popover/Popconfirm 回归：触发器 frame 不变而 surface 缩小时，布局阶段的 OverlayStack bounds 与随后绘制共同消费新表面；旧缓存横坐标 150px/200px 分别收敛为 20px/60px。两项聚焦契约、布局 24 项、反馈门面 4 项与完整库 151 项测试通过。
+## 表面约束与弹层定位
 
-`5fefe2ed` 把同一契约扩展到共享提示气泡原语：Tooltip 与 Slider 的提示登记显式接收当前 surface，作者方向与主轴反向候选按越界量择优，再将最终尺寸和坐标约束到窗口内；绘制箭头使用解析后的真实方向，文字裁在最终气泡中。两项原语契约、两项组件集成契约与完整库 155 项测试通过。
-
-`d288e6c5` 进一步闭合 Select：布局从 `WidgetTree` 根 frame、绘制从 `PaintContext`、登记从 `overlay_entry_for_surface` 取得同帧 surface，共享解析器统一横向收敛、上下翻转与可用高度缩减；自定义选项布局、滚动、绘制、dirty、命中和 bounds 均复用最终矩形，过滤前后方向不同的 dirty 同时覆盖两侧。四项聚焦契约与完整库 159 项测试通过。
-
-`c386f992` 以同一原则闭合 Cascader，但把多列作为组件私有约束处理：共享解析器先把自然总宽限制到 surface，再按可见列数等分最终列宽；纵向翻转或缩高后的实际视口同时驱动列滚动、搜索滚动和键盘显露。登记与绘制记录同帧 surface，事件、绘制裁剪、dirty、命中与 bounds 复用相对弹层缓存。四项聚焦契约与完整库 163 项测试通过。
-
-`250ba978` 将同一约束延伸到 TreeSelect：组件缓存同帧 surface、触发器绝对锚点、相对弹层与跨帧绝对脏区；树节点展开或过滤改变可见行数时，仍以同一表面和锚点重算。事件命中、虚拟滚动、键盘显露、绘制裁剪、dirty、OverlayStack bounds 统一使用翻转或缩高后的实际视口，关闭动画和表面变化也保留旧弹层覆盖。五项聚焦契约与完整库 168 项测试通过。
-
-`5117f4d7` 将同一约束延伸到 AutoComplete，并区分全新呈现与同一打开周期内的连续输入：只有从非呈现状态打开时才清空缓存；过滤改变候选数时，以同一 surface 和绝对锚点重算当前弹层，OverlayStack bounds 随当前行数缩短，dirty 继续合并过滤前区域。事件命中、虚拟滚动、键盘显露和绘制裁剪共同使用实际视口。六项聚焦契约与完整库 174 项测试通过。
-
-`ed758bb3` 将同一约束延伸到 Mentions，并把呈现周期绑定到光标前的有效活动 `@` 查询：从非建议状态进入查询时清空缓存，同一查询内连续输入过滤则保留旧脏区。当前 surface、绝对触发锚点、相对弹层与历史绝对脏区由绘制、dirty、命中、虚拟滚动、键盘显露和 OverlayStack bounds 共同消费；登记只覆盖当前实际弹层，不再并入输入框。六项聚焦契约与完整库 180 项测试通过。日期类选择弹层仍需由对应测试覆盖，不能仅因 Select/Cascader/TreeSelect/AutoComplete/Mentions 已闭合就视为全部 overlay placement 完成。
-
-`677e5a7d` 将同一约束延伸到 DatePicker：表面解析器在触发器上下保留 2px 间隙，横向收敛宽度与起点，纵向优先完整向下、其次完整向上、最后选择较大空间缩高。组件缓存同帧 surface、绝对触发锚点、相对月历与当前打开周期的历史绝对脏区；共享月历则从最终矩形派生标题栏、星期栏、六行日期、导航和字体比例，使绘制与命中在 78px 受限高度下仍一致。OverlayStack 只登记当前月历，dirty 合并 resize 前后区域。五项聚焦契约与完整库 185 项测试通过。DateRangePicker、TimePicker、ColorPicker 仍需由对应测试覆盖，不能据此视为日期时间颜色类 overlay placement 全部完成。
-
-`5bbfd02f` 将约束延伸到 DateRangePicker 的“月历 + 可选预设页脚”组合面板：解析器先确定唯一的表面内组合矩形，再按同一纵向比例派生月历、间隙、页脚上留白和预设行，使日期、月份导航与预设命中始终对应绘制分区。三项预设的 332px 自然面板缩到 78px 时，日期和第二个预设仍可提交；OverlayStack 只登记当前组合面板，dirty 合并 resize 前后的历史区域。迁移后删除无消费者的自然尺寸过渡入口。六项聚焦契约与完整库 191 项测试通过。TimePicker、ColorPicker 仍需由对应测试覆盖。
-
-`fa3a6595` 将约束延伸到 TimePicker 的小时/分钟双列滚动面板：解析器先确定唯一的表面内视口，列宽随最终面板收敛，32px 行高保持不变；滚动上限、当前值显露、指针/滚轮/键盘、绘制和命中都使用实际视口。78px 视口下分钟最大偏移由错误的 1720px 修正为 1842px，第 59 分钟可达，23:59 两列高亮仍可见；OverlayStack 只登记当前面板，dirty 合并 resize 前后的历史区域。七项聚焦契约与完整库 198 项测试通过。ColorPicker 仍需由对应测试覆盖。
-
-`1e5cb989` 将约束延伸到 ColorPicker 的固定 8 列、24 色预设面板：解析器以 208×88px 为自然尺寸并保留 4px 触发间隙，横向收敛宽度与起点，纵向翻转或按较大空间缩高；共享 `ColorPanelGeometry` 从最终矩形同步派生内边距、色块槽位与命中映射。底边场景可翻到上方并缩为 76px，100px 窄表面内仍保持绘制与点击一致；关闭动画继续沿用同一受限几何。OverlayStack 只登记当前面板，dirty 合并 surface 改变前后的历史区域，重新打开的新呈现周期会重置旧损伤缓存。七项聚焦契约与完整库 205 项测试通过。日期、时间与颜色选择弹层这一子序列至此闭合，但不代表 Flex、表格组合、可变行高或真窗测试已经覆盖。
+- 弹层使用当前帧的 logical surface、触发器 frame、内容自然尺寸和作者首选方向；首选放不下时比较备选方向，最终矩形收敛到安全客户区。
+- 组件内部的多列、树、月历、时间列、色板或页脚只从最终弹层矩形继续细分；各分区不得独立选择方向或越过 surface。
+- 候选数量、内容尺寸、surface、锚点或主题几何变化时重新计算；同一打开周期保留旧矩形用于 dirty 合并，新的呈现周期不得复用旧缓存。
+- 绘制、箭头、裁剪、键盘显露、滚动上限、命中、damage 和 OverlayStack bounds 必须消费同一最终几何。一个弹层的验证结果不能外推到其他组件；实际覆盖矩阵由 Vikunja 持有。
 
 ## 焦点
 
@@ -87,3 +72,4 @@ Message/Notification 的每项可以有独立稳定 ID 和 `Entering → Holding
 - OverlayStack 不单独创建线程或跨窗 wake。
 - `Custom` entry 没有隐式 modal/dismiss/focus 行为，调用方必须显式配置。
 - 浮层内容是普通 View 子树，仍使用同一 layout/event/paint/semantics 管线。
+- entry、焦点恢复目标和缓存都绑定窗口及 tree generation；关闭或换根后晚到 timer/动画不得复活旧浮层。

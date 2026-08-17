@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 ui 系统的值插值、过渡、动画源与生命周期。依赖：[component](component.md)、[reactive](reactive.md)。导出：动画播放器、下一 deadline 和活动源契约，供 app 调度；公开用法见[使用 · 动画](../../使用/动画与异步/动画.md)。
+> **接口**：声明 ui System 的值插值、过渡、动画源与生命周期。与[组件运行时框架](component.md)及[reactive](reactive.md)的协作由 ui System 编排，Module 间不直接持有实例。导出：动画播放器、下一 deadline 和活动源契约，供 app 调度；公开用法见[使用 · 动画](../../使用/动画与异步/动画.md)。
 >
 > **当前实现线索**：相关实现暂位于 `src/ui/animation/`（traits.rs 同目录）；帧调度位于 app，但依赖方向必须是 app 消费 ui 导出的活动源，ui 不反向依赖 app。
 
@@ -59,6 +59,8 @@
 - 业务计时使用 AppTimer/Timer，不能借动画补算真实时间。
 - duration 非正时在首次推进收敛到终态；非有限参数在构造/边界处拒绝或归一，不能产生永不结束的 busy loop。
 
+每个活动 source 绑定窗口、tree generation 与 owner `ComponentId`；source ID 只用于登记和去重，不延长节点生命周期。时间来自 app 提供的单调帧时钟，系统时间回拨不能产生负 `dt`；异常长间隔按播放器契约收敛或有界采样，不能补跑无界帧数。
+
 ## View 过渡
 
 enter 只在首次 mount 启动；同类型同 key reconcile 不重启。leave 使节点进入有界 pending-removal：立即退出命中、语义、timer 和浮层管理，保留视觉/布局槽直到过渡完成；同 key 在完成前重新出现可取消离场并复用身份。
@@ -68,3 +70,5 @@ visual opacity/offset/scale 不改变 layout frame，但绘制、命中、语义
 ## 动画组与错误
 
 AnimationGroup 只编排已有 source，不创建第二份 State 或 frame registration。空组、重复 source、无限循环或无法证明有限总时长的组合返回 `AnimationGroupError`，不静默降级。
+
+动画完成、取消、owner 移除、换根、窗口暂停或关闭必须各自只有一个终结结果；晚到 frame opportunity 只被丢弃，不能重新登记已终结 source。播放器推进成功只说明值已更新，不表示 Layout/Paint 已完成或画面已呈现。

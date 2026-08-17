@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 core 系统的目标 `geometry` 模块及其组件契约。依赖：无。导出：所有上层共享的 logical geometry。
+> **接口**：声明 core 基础契约中的目标 `geometry` 边界及其组件契约。core 的 System 定级仍由[系统列表](../系统列表.md#core基础契约system-定级待定)持有。依赖：无。导出：所有上层共享的 logical geometry。
 
 > **当前实现线索**：主要位于 `src/core/geometry/`。
 
@@ -23,3 +23,9 @@
 ## 组件：Rect
 
 Rect 不携带物理像素或 OS surface 语义。platform/graphics 在边界换算 DPR，ui 的布局、命中、语义和 damage 使用同一 logical Rect。
+
+## 不变量
+
+- geometry 只定义无资源所有权的值与运算，不持有窗口、surface、组件或缓存生命周期。
+- 非有限、负尺寸和反向约束必须在建立边界时拒绝或归一化；不得把哨兵值写入实际 frame。
+- logical/physical、局部/窗口和内容/边框空间的转换必须显式发生，不能复用同一数值暗示不同坐标系。

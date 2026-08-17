@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 ui 系统的响应式状态、依赖捕获和受控副作用。依赖：[core/identity](../core/identity.md)、[component](component.md)。导出：`State`、`Computed`、`Effect` 与根/节点依赖契约。
+> **接口**：声明 ui System 的响应式状态、依赖捕获和受控副作用。基础依赖：[core/identity](../core/identity.md)；与[组件运行时框架](component.md)的协作由 ui System 通过依赖登记契约编排，二者不直接持有 Module 实例。导出：`State`、`Computed`、`Effect` 与根/节点依赖契约。
 >
 > **当前实现线索**：相关实现暂位于 `src/ui/reactive/state.rs`、`src/ui/component/app_state.rs` 及若干绑定点；重构后应由本模块统一拥有。
 
@@ -10,7 +10,7 @@
 
 | 组件 | 类型 | 职责 |
 |---|---|---|
-| `State<T>` | struct | 保存线程安全值并向已捕获依赖发布变化 |
+| `State<T>` | struct | 保存响应式值与 revision，并向已捕获依赖发布变化 |
 | `Computed<T>` | struct | 缓存派生值并传播底层依赖 |
 | `Effect` | struct | 在目标窗口工作轮次中执行受控副作用 |
 | `StateSlotId` | value | 标识状态源并防止旧订阅误命中 |
@@ -19,7 +19,7 @@
 
 ## 组件：State
 
-根 View 构建期间读取 `State` 会登记 reconcile 依赖；组件绘制绑定只登记所属节点的 Paint 或 Layout 失效。值变化沿已知目标窗口 wake，不为每个状态源创建 timer、线程或轮询。
+根 View 构建期间读取 `State` 会登记 reconcile 依赖；组件绘制绑定只登记所属节点的 Paint 或 Layout 失效。每次成功写入单调推进 revision，并沿已知目标窗口登记可合并失效。状态写入发生在目标窗口 UI 轮次；后台线程必须通过 app 的 `post_to_ui` 投递 owned 结果，不能直接写 State、执行 View/Effect/handler，也不为每个状态源创建 timer、线程或轮询。
 
 ## 组件：Computed
 
@@ -36,3 +36,5 @@
 - 状态源不拥有组件或窗口，依赖关系通过带 generation 的目标身份表达。
 - 一次工作轮次内相同目标的失效可合并；无观察者、无到期工作时系统可进入 DeepIdle。
 - 响应式更新只声明需要完成的工作，实际 reconcile、layout 和 present 由 app 系统调度。
+- 订阅、捕获上下文和 Effect 归 owner/tree generation；节点移除、协调失败或窗口关闭时必须解除，晚到 wake 不能恢复旧订阅。
+- `State::set` 成功只表示新值与 revision 已发布，不表示依赖方已经运行、业务副作用完成或画面已经呈现。
