@@ -9,7 +9,7 @@
 > （`WidgetComponent` 契约、`ComponentId` 身份、`ComponentHandle`、widgets 组件库与
 > uix-lang component 声明均属于该层）。**本模块是 ui System 的私有 Module**（组件运行时
 > 框架：WidgetTree / WidgetNode / 组件契约 / 管理器），目录名 `src/ui/component/` 与
-> SMC Component 层同名，是历史遗留歧义源（Vikunja #2380），规划改名为 `widget_runtime`；
+> SMC Component 层同名，是历史遗留歧义源（[Gitea Issue #4](http://100.79.245.29:3000/admin/uix-app/issues/4)），规划改名为 `widget_runtime`；
 > 改名完成前，本文档统一称本模块为「组件运行时框架」，不得把本模块与 SMC Component
 > 层混同。模块边界与职责不受影响。
 >
