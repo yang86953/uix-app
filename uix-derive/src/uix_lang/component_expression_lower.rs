@@ -142,7 +142,7 @@ impl ComponentExpander {
                 // 为拥有所有权转换器生成卫生名称。
                 let converter_ident = self.fresh_ident("owned_string", "literal");
                 // 生成只接收静态字面量的 String 转换闭包。
-                self.setup.push(quote! {
+                self.push_setup(quote! {
                     // 把语言字符串字面量规范化为拥有所有权的 String。
                     let #converter_ident = |value: &'static str| ::std::string::String::from(value);
                 });
@@ -619,7 +619,7 @@ impl ComponentExpander {
             // 收集全部捕获名称。
             .collect::<Vec<_>>();
         // 生成更新器闭包并克隆目标句柄。
-        self.setup.push(quote! {
+        self.push_setup(quote! {
             // 每个 setState 表达式持有独立更新器。
             let #setter_ident = {
                 // 克隆句柄而不复制底层状态槽。

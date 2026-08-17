@@ -53,7 +53,7 @@ impl ComponentExpander {
             // 为派生局部值分配卫生名称。
             let value_ident = self.fresh_ident("computed", &derived.name);
             // 每次组件 View 展开都按顺序重新计算派生值。
-            self.setup.push(quote! {
+            self.push_setup(quote! {
                 // 建立当前无缓存派生局部变量。
                 let #value_ident = #value;
             });

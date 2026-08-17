@@ -513,52 +513,64 @@ fn for_nested_allows_pure_static_components() {
     assert!(tokens.contains("固定行"));
 }
 
-// 验证 For 内的纯静态外层组件不能掩盖内层私有 state 的逐实例存储需求。
+// 验证 For 内的纯静态外层组件允许内层私有 state 按业务 key 隔离实例。
 #[test]
-fn for_nested_rejects_private_state_component() {
-    // 解析外层无状态组件包裹内层私有 state 组件的组合。
+fn for_nested_supports_private_state_component_instances() {
+    // 解析外层无状态组件包裹内层私有 state 组件的 keyed 组合。
     let document = parse_document(
-        // Leaf 的私有 state 必须在每个 For 项中独立拥有，但当前编译期契约尚未提供该存储。
+        // Leaf 的私有 state 必须按每个实际行 key 派生独立作用域。
         r#"
         <Component name="Leaf" state="selected: false"><Text>{selected}</Text></Component>
         <Component name="Row"><Leaf /></Component>
-        <Column><For {item} in {items}><Row /></For></Column>
+        <Column><For {item} in {items} key={item.id}><Row /></For></Column>
         "#,
     )
-    // 语法与组件声明本身均应合法。
-    .expect("内层 state 应在生成阶段诊断");
-    // 读取跨越嵌套组件边界的 For 诊断。
-    let error = generate_document_view(&document)
-        // 不能为动态实例错误复用同一个私有状态槽。
-        .expect_err("For 内嵌套私有 state 组件必须失败");
-    // 诊断必须指向实际需要逐实例存储的内层组件。
-    assert!(error.message.contains("<Leaf>"));
-    // 诊断必须说明该限制来自 For 动态实例边界。
-    assert!(error.message.contains("For 内"));
+    // 语法与组件声明必须解析成功。
+    .expect("For 内嵌套私有 state 组件应可解析");
+    // 生成完整逐实例作用域令牌。
+    let tokens = generate_document_view(&document)
+        // keyed For 内的私有 state 组件必须完成生成。
+        .expect("For 内嵌套私有 state 组件应生成成功")
+        // 规范化令牌便于检查实例边界。
+        .to_string();
+    // 私有状态组件必须从行路径派生运行时子作用域。
+    assert!(tokens.contains("uix_component_child_scope"));
+    // 每个实际迭代必须取得或复用自己的私有状态槽。
+    assert!(tokens.contains("uix_component_state"));
+    // 私有状态初始化必须位于真实循环之后而不是根准备区。
+    assert!(
+        tokens.find("for (__uix_for_ordinal").expect("应生成 For")
+            < tokens.find("uix_component_state").expect("应生成私有状态")
+    );
 }
 
-// 验证 For 内的纯静态外层组件不能掩盖内层 prop 的逐实例存储需求。
+// 验证 For 内的纯静态外层组件允许内层 prop 在每次迭代中求值。
 #[test]
-fn for_nested_rejects_prop_component() {
-    // 解析外层无状态组件向内层 prop 组件传入固定属性的组合。
+fn for_nested_supports_prop_component_instances() {
+    // 解析外层无状态组件向内层 prop 组件转发当前行字段的组合。
     let document = parse_document(
-        // 即使传入字面量，Leaf 仍具有 prop 契约且需要逐实例绑定边界。
+        // 每个 Leaf 必须在所属迭代中读取当前 item 的标签。
         r#"
         <Component name="Leaf" props="label: String"><Text>{label}</Text></Component>
-        <Component name="Row"><Leaf label="固定" /></Component>
-        <Column><For {item} in {items}><Row /></For></Column>
+        <Component name="Row" props="label: String"><Leaf label={label} /></Component>
+        <Column><For {item} in {items}><Row label={item.label} /></For></Column>
         "#,
     )
-    // 语法与 prop 对应关系本身均应合法。
-    .expect("内层 prop 应在生成阶段诊断");
-    // 读取跨越嵌套组件边界的 For 诊断。
-    let error = generate_document_view(&document)
-        // 不能让动态实例共享一个内层 prop 绑定上下文。
-        .expect_err("For 内嵌套 prop 组件必须失败");
-    // 诊断必须指向实际带 prop 的内层组件。
-    assert!(error.message.contains("<Leaf>"));
-    // 诊断必须说明该限制来自 For 动态实例边界。
-    assert!(error.message.contains("For 内"));
+    // 语法与 prop 对应关系必须解析成功。
+    .expect("For 内嵌套 prop 组件应可解析");
+    // 生成每次迭代的 prop 准备语句。
+    let tokens = generate_document_view(&document)
+        // 当前行 prop 必须完成生成。
+        .expect("For 内嵌套 prop 组件应生成成功")
+        // 规范化令牌便于检查声明位置。
+        .to_string();
+    // 外层和内层组件必须各自建立 String prop 绑定。
+    assert_eq!(tokens.matches("let __uix_prop_").count(), 2);
+    // 两层 prop 初始化都必须位于真实循环之后才能读取 item。
+    assert!(
+        tokens.find("for (__uix_for_ordinal").expect("应生成 For")
+            < tokens.find("let __uix_prop_").expect("应生成 prop")
+    );
 }
 
 // 验证 State<T> prop 读取与写入同一共享句柄。

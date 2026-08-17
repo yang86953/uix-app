@@ -20,6 +20,11 @@ use super::generate_expression;
 impl ComponentExpander {
     // 把拥有型事件捕获登记到最近 For 的逐迭代克隆契约。
     pub(super) fn register_for_iteration_clone(&mut self, ident: &Ident) {
+        // 已经在当前迭代内创建的值不会被前一行闭包移走。
+        if !self.for_iteration_setup_stack.is_empty() {
+            // 逐迭代准备语句本身就是所需的独立所有权边界。
+            return;
+        }
         // 只有位于 For 子树内时才需要额外克隆。
         if let Some(clones) = self.for_iteration_clone_stack.last_mut() {
             // 保存卫生标识符文本供后续控制流代码生成恢复。
@@ -52,7 +57,7 @@ impl ComponentExpander {
                 // 生成目标 Rust 类型。
                 let rust_type = value_type_tokens(value_type.clone());
                 // 声明类型化局部值。
-                self.setup.push(quote! {
+                self.push_setup(quote! {
                     // 让 Rust 编译器验证基础 prop 类型。
                     let #value_ident: #rust_type = #value;
                 });
@@ -80,7 +85,7 @@ impl ComponentExpander {
                 // 生成 State 内部值类型。
                 let rust_type = value_type_tokens(value_type.clone());
                 // 克隆共享句柄但不在组件构建入口读取当前值。
-                self.setup.push(quote! {
+                self.push_setup(quote! {
                     // 克隆句柄并保持同一底层状态槽。
                     let #value_ident: ::uix::prelude::State<#rust_type> = (#value).clone();
                 });
@@ -113,7 +118,7 @@ impl ComponentExpander {
                 // 为可重复 View 根中的当前回调来源分配卫生名称。
                 let callback_source = self.fresh_ident("callback_source", &prop.name);
                 // 在创建 move 适配器前克隆调用方回调，避免移出外层 Fn 根工厂。
-                self.setup.push(quote! {
+                self.push_setup(quote! {
                     // 每次 View 构建取得一份独立可调用所有权。
                     let #callback_source = ::std::clone::Clone::clone(&(#callback));
                 });
@@ -148,7 +153,7 @@ impl ComponentExpander {
                     // 回退为单元类型。
                     .unwrap_or_else(|| quote! { () });
                 // 生成类型擦除回调适配器。
-                self.setup.push(quote! {
+                self.push_setup(quote! {
                     // 显式 Fn 签名验证回调参数和返回值。
                     let #value_ident: ::std::sync::Arc<dyn Fn(#(#parameter_types),*) -> #return_type> =
                         // 捕获调用方函数或闭包并提供可克隆句柄。
@@ -203,7 +208,7 @@ impl ComponentExpander {
         // 基础类型使用显式 State 类型。
         if let Some(rust_type) = rust_type {
             // 写入显式类型准备语句。
-            self.setup.push(quote! {
+            self.push_setup(quote! {
                 // 创建组件私有响应式状态槽。
                 let #state_ident: ::uix::prelude::State<#rust_type> =
                     // 从当前组件实例作用域复用或创建规范化初始值对应的状态槽。
@@ -211,7 +216,7 @@ impl ComponentExpander {
             });
         } else {
             // 复合表达式或空数组由 Rust 推断类型。
-            self.setup.push(quote! {
+            self.push_setup(quote! {
                 // 从当前组件实例作用域复用或创建由 Rust 推断内部类型的状态槽。
                 let #state_ident = ::uix::ui::__private::uix_component_state(
                     // 传递当前静态组件实例的运行时作用域。
@@ -418,7 +423,7 @@ impl ComponentExpander {
                         .expect("State 绑定必须包含句柄"),
                 );
                 // 生成事件闭包专用状态句柄。
-                self.setup.push(quote! {
+                self.push_setup(quote! {
                     // 每个事件持有同一底层状态槽的独立句柄所有权。
                     let #value_ident = #state_ident.clone();
                 });
@@ -429,7 +434,7 @@ impl ComponentExpander {
                     &binding.value_name,
                 );
                 // 克隆所有权给当前 move 闭包。
-                self.setup.push(quote! {
+                self.push_setup(quote! {
                     // 避免多个事件闭包争用同一字段局部值。
                     let #value_ident = (#source_ident).clone();
                 });

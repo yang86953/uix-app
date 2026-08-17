@@ -100,6 +100,9 @@ mod component_slot_parser;
 // 集中验证组件展开、状态与拒绝路径。
 #[cfg(test)]
 mod component_codegen_tests;
+// 集中验证 For 内 Component 的逐实例身份与插槽作用域。
+#[cfg(test)]
+mod component_for_codegen_tests;
 // 集中验证默认与具名 Slot 的展开和诊断。
 #[cfg(test)]
 mod component_slot_tests;

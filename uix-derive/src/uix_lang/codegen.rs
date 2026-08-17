@@ -26,7 +26,10 @@ use super::{
     align_value, apply_inline_style, boolean_value, deferred_style_diagnostic, justify_value,
     literal_string, numeric_value, rust_identifier, string_value, typography_value,
 };
-
+// 拆分 For 逐实例准备语句恢复，保持核心代码生成器规模受控。
+mod for_setup;
+// 引入只解析编译器内部令牌文本的恢复入口。
+use for_setup::parse_for_iteration_setup;
 // 生成一个可直接消费的公开 UIX View 表达式。
 pub(crate) fn generate_view(element: &Element) -> Result<TokenStream, Diagnostic> {
     // 控制节点只能在父元素的有序子节点列表中展开。
@@ -587,6 +590,8 @@ fn generate_control(
                 &element.component_scopes,
                 // 传递循环子树拥有型事件捕获的逐迭代克隆契约。
                 &element.for_iteration_clones,
+                // 传递循环子树按依赖顺序生成的逐迭代准备语句。
+                &element.for_iteration_setup,
                 // 传递当前循环路径局部变量。
                 &path,
                 // 传递可选父循环路径局部变量。
@@ -664,6 +669,8 @@ fn generate_for(
     component_scopes: &[ComponentScopeMarker],
     // 接收每次迭代都必须重新克隆的拥有型事件捕获名称。
     iteration_clones: &[String],
+    // 接收每次迭代在构建子树前执行的组件准备语句。
+    iteration_setup: &[String],
     // 接收当前循环实际实例路径名称。
     path: &Ident,
     // 接收可选父循环实际实例路径名称。
@@ -687,6 +694,8 @@ fn generate_for(
         .map(|name| Ident::new(name, Span::call_site()))
         // 收集供 quote 重复展开。
         .collect::<Vec<_>>();
+    // 恢复只由展开器写入 AST 的内部逐迭代准备语句。
+    let iteration_setup = parse_for_iteration_setup(iteration_setup, span)?;
     // 每次生成拥有所有权的克隆项，避免借用逃逸到事件闭包。
     let iterator = quote! { ::std::iter::IntoIterator::into_iter((#iterable).clone()) };
     // 创建内部枚举下标以同时支持身份与可选作者索引绑定。
@@ -741,6 +750,10 @@ fn generate_for(
             let #row_key = ::std::format!("{}", #key);
             // 声明当前循环项供动态样式子树引用。
             let #path = #path_value;
+            // 在当前 key 实例作用域中建立 props、state、computed 与事件适配器。
+            #(#iteration_setup)*
+            // 为仍由外层准备区创建的拥有型捕获取得当前行副本。
+            #(let #iteration_clones = (#iteration_clones).clone();)*
             // 生成当前循环行 View。
             let __uix_for_view = #view;
             // 把 key 转成公开 ViewNode 接受的字符串。
@@ -775,6 +788,10 @@ fn generate_for(
         quote! {
             // 声明当前循环项供动态样式子树引用。
             let #path = #path_value;
+            // 在当前位置实例作用域中建立 props、state、computed 与事件适配器。
+            #(#iteration_setup)*
+            // 为仍由外层准备区创建的拥有型捕获取得当前行副本。
+            #(let #iteration_clones = (#iteration_clones).clone();)*
             // 保持当前项子节点源码顺序。
             #children
         }
@@ -785,8 +802,6 @@ fn generate_for(
         for (#ordinal, #binding) in (#iterator).enumerate() {
             // 在作者声明时暴露同一 usize 索引绑定。
             #index_setup
-            // 为当前行克隆全部拥有型事件捕获，避免首行闭包移走外层值。
-            #(let #iteration_clones = (#iteration_clones).clone();)*
             // 按源码顺序生成当前项节点。
             #body
         }
