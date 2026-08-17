@@ -288,14 +288,6 @@ impl TestApp {
             .to_owned())
     }
 
-    pub fn tree(&self) -> &WidgetTree {
-        &self.tree
-    }
-
-    pub fn tree_mut(&mut self) -> &mut WidgetTree {
-        &mut self.tree
-    }
-
     pub fn perform(
         &mut self,
         target: impl Into<AutomationTarget>,
