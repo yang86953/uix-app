@@ -297,14 +297,14 @@ impl FramePlan {
                                 ));
                             }
                         }
-                        // 验证类型化 Uniform 不含跨 Adapter 未定义的非有限值。
+                        // 验证类型化 Uniform 属于共享 FramePlan 值域。
                         if let FramePlanCommand::UploadUniform { data, .. } = command {
-                            // 固定值对象已经从类型上保证大小，这里只需验证数值域。
-                            if !data.is_finite() {
+                            // 固定值对象已经从类型上保证大小，这里统一验证值域。
+                            if !data.is_valid() {
                                 // 返回稳定的参数错误。
                                 return Err(Error::new(
                                     Errc::InvalidArgument,
-                                    "FramePlan uniform upload must contain finite fields",
+                                    "FramePlan uniform upload is outside the shared value domain",
                                 ));
                             }
                         }
@@ -397,9 +397,10 @@ mod tests {
     use crate::native::present::rhi::{
         BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, GraphicsSurface,
         LoadAction, PipelineBinding, PipelineHandle, PipelineKind, RenderTargetHandle,
-        RhiBufferUpload, RhiColor, RhiExtent, RhiMeshRasterParams, RhiPresentTransaction,
-        RhiSampledRasterParams, RhiScissor, RhiTextureTransfer, RhiViewport, SampledTextureBinding,
-        SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy, TextureHandle, TextureMove,
+        RhiBufferUpload, RhiColor, RhiExtent, RhiGradientRasterParams, RhiMeshRasterParams,
+        RhiPresentTransaction, RhiSampledRasterParams, RhiScissor, RhiTextureTransfer, RhiViewport,
+        SampledTextureBinding, SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy,
+        TextureHandle, TextureMove,
     };
     // 引入当前文件的计划类型。
     use super::{

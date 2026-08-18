@@ -228,7 +228,8 @@ void main() {
     } else {
         vec2 center = vec2(0.5);
         float distance_to_center = distance(v_gradient_uv, center);
-        float outer_radius = max(u_params.z, 1e-6);
+        // FramePlan 已验证径向外半径为严格正值，OpenGL 只机械消费共享字段。
+        float outer_radius = u_params.z;
         float inner_radius = u_params.y;
         if (distance_to_center > outer_radius)
             discard;

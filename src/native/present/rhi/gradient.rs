@@ -135,6 +135,31 @@ impl RhiGradientRasterParams {
         &self.values
     }
 
+    // 验证 Gradient 的有限值、模式闭集与径向外半径值域。
+    pub(crate) fn is_valid(&self) -> bool {
+        // 先拒绝所有会让两个 shader 产生未定义结果的非有限字段。
+        if !self.values.iter().all(|value| value.is_finite()) {
+            // 非有限值不得进入任一 Adapter。
+            return false;
+        }
+        // 读取共享 ABI 中唯一的模式字段。
+        let mode = self.values[GRADIENT_PARAMS_FLOAT_OFFSET];
+        // 模式只允许线性零或径向一，禁止 Adapter 解释未知模式。
+        if mode != 0.0 && mode != 1.0 {
+            // 未知模式属于共享参数错误。
+            return false;
+        }
+        // 线性模式保持既有有限值语义，不额外改变其长度规则。
+        if mode == 0.0 {
+            // 线性字段已经通过通用有限值门禁。
+            return true;
+        }
+        // 读取共享 ABI 中唯一的径向外半径字段。
+        let outer_radius = self.values[GRADIENT_PARAMS_FLOAT_OFFSET + 2];
+        // 径向外半径必须为严格正值，避免两端 shader 分叉。
+        outer_radius > 0.0
+    }
+
     // 把共享 Gradient ABI 编码为当前 host 的紧密字节载荷。
     pub(crate) fn encode_ne_bytes(&self) -> Vec<u8> {
         // 为完整 ABI 预留精确容量。
@@ -240,5 +265,43 @@ mod tests {
             // 保留调用方输入的内外半径。
             &[1.0, 0.1, 0.5, 0.0]
         );
+    }
+
+    // Gradient 值域必须只接受合法线性模式和正径向外半径。
+    #[test]
+    fn gradient_value_domain_accepts_linear_and_positive_radial() {
+        // 使用统一的最小构造器保持每个值域断言只改变参数槽。
+        let make = |params| {
+            // 构造固定物理四角和有限颜色。
+            RhiGradientRasterParams::new(
+                // 使用有效方形 viewport。
+                RhiViewport {
+                    // 保存 viewport 宽度。
+                    width: 100.0,
+                    // 保存 viewport 高度。
+                    height: 100.0,
+                },
+                // 使用单位轴对齐四角。
+                [[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]],
+                // 使用有限起始颜色。
+                [0.0; 4],
+                // 使用有限结束颜色。
+                [1.0; 4],
+                // 注入当前待验证的模式与半径参数。
+                params,
+            )
+        };
+        // 线性模式保持既有有效语义。
+        assert!(make([0.0, 2.0, -1.0, -1.0]).is_valid());
+        // 正径向外半径必须通过共享门禁。
+        assert!(make([1.0, 0.1, 0.5, 0.0]).is_valid());
+        // 未知模式不得交给任一 Adapter 猜测。
+        assert!(!make([0.5, 0.1, 0.5, 0.0]).is_valid());
+        // 零径向外半径必须被拒绝。
+        assert!(!make([1.0, 0.1, 0.0, 0.0]).is_valid());
+        // 负径向外半径必须被拒绝。
+        assert!(!make([1.0, 0.1, -0.5, 0.0]).is_valid());
+        // 非有限径向外半径必须被通用有限值门禁拒绝。
+        assert!(!make([1.0, 0.1, f32::NAN, 0.0]).is_valid());
     }
 }

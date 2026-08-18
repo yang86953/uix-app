@@ -155,16 +155,16 @@ impl FrameUniformPayload {
         }
     }
 
-    // 验证全部 Uniform 浮点都保持有限。
-    pub(crate) fn is_finite(self) -> bool {
-        // 每个变体直接借用其共享值对象的冻结字段数组。
+    // 验证 Uniform 载荷属于共享 FramePlan 值域。
+    pub(crate) fn is_valid(self) -> bool {
+        // 每个变体直接委托其共享值对象的冻结字段门禁。
         match self {
             // 检查 Mesh 全部字段。
             Self::Mesh(value) => value.as_f32s().iter().all(|field| field.is_finite()),
             // 检查 Sampled 全部字段。
             Self::Sampled(value) => value.as_f32s().iter().all(|field| field.is_finite()),
-            // 检查 Gradient 全部字段。
-            Self::Gradient(value) => value.as_f32s().iter().all(|field| field.is_finite()),
+            // Gradient 由共享值对象同时验证有限值、模式与径向半径。
+            Self::Gradient(value) => value.is_valid(),
             // 检查 Shape 全部字段。
             Self::Shape(value) => value.as_f32s().iter().all(|field| field.is_finite()),
             // 检查 Shadow 全部字段。
@@ -304,6 +304,6 @@ mod tests {
         // 编码长度必须与同一布局大小完全一致。
         assert_eq!(payload.encode_ne_bytes().len(), payload.size_bytes());
         // 构造器生成的确定字段必须全部有限。
-        assert!(payload.is_finite());
+        assert!(payload.is_valid());
     }
 }
