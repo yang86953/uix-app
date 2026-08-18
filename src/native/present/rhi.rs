@@ -43,6 +43,8 @@ mod pass_state;
 mod transfer;
 // Buffer Component 统一描述、上传语义与两个原生 API 的值域投影。
 mod buffer;
+// Texture Component 统一格式布局、资源描述和共同原生尺寸投影。
+mod texture;
 // 向 Drawing System 与各原生 Adapter 暴露同一份类型化 pipeline 契约。
 #[allow(unused_imports)]
 pub(crate) use pipeline::{
@@ -78,11 +80,13 @@ pub(crate) use pass_state::{RhiPassState, SampledTextureBinding};
 #[allow(unused_imports)]
 pub(crate) use transfer::{
     RhiTextureOrigin, RhiTextureRegion, RhiTextureRegionBounds, RhiTextureTransfer,
-    RhiTextureTransferBounds, TextureCopy, TextureMove,
+    RhiTextureTransferBounds, RhiTextureUpload, TextureCopy, TextureMove,
 };
 // 重新导出薄 RHI 消费的类型化 Buffer 契约。
 #[allow(unused_imports)]
 pub(crate) use buffer::{BufferDesc, BufferUsage, RhiBufferUpload};
+// 重新导出薄 RHI 消费的封闭纹理描述与格式契约。
+pub(crate) use texture::{TextureDesc, TextureFormat};
 // 向 Drawing System 暴露唯一 Gradient 常量构造器和固定字节数。
 pub(crate) use gradient::{GRADIENT_UNIFORM_BYTES, RhiGradientRasterParams};
 // 只有 OpenGL Adapter 需要把共享 Gradient 字节 ABI 映射为逐个原生 uniform。
@@ -202,28 +206,6 @@ mod submission;
 // 向各原生 Adapter 暴露同一份 Device submit 与 Surface present 关联契约。
 #[allow(unused_imports)]
 pub(crate) use submission::RhiSubmissionSequence;
-
-// 定义 RHI 资源格式，只保留 UIX 当前需要的有限集合。
-// 三个变体必须显式保留 Unorm 采样语义，避免后续加入 Srgb 或浮点格式时产生歧义。
-#[allow(clippy::enum_variant_names)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum TextureFormat {
-    // 定义 premultiplied BGRA 八位格式。
-    Bgra8Unorm,
-    // 定义 premultiplied RGBA 八位格式。
-    Rgba8Unorm,
-    // 定义单通道覆盖率格式。
-    R8Unorm,
-}
-
-// 定义 texture 创建描述。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TextureDesc {
-    // 保存 texture 的二维 extent。
-    pub(crate) extent: RhiExtent,
-    // 保存 texture 的通用格式。
-    pub(crate) format: TextureFormat,
-}
 
 // 定义 sampler 创建描述。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -482,26 +464,10 @@ pub(crate) trait GraphicsDevice {
         Err(rhi_not_implemented("create_texture"))
     }
 
-    // 上传纹理的紧密排列像素。
-    fn update_texture(
-        &mut self,
-        _texture: TextureHandle,
-        _extent: RhiExtent,
-        _data: &[u8],
-    ) -> Result<()> {
+    // 上传一个已经绑定纹理身份、区域与紧密像素载荷的命令。
+    fn update_texture(&mut self, _upload: RhiTextureUpload<'_>) -> Result<()> {
         // 默认实现显式拒绝，避免把空上传当作成功。
         Err(rhi_not_implemented("update_texture"))
-    }
-
-    // 上传纹理中一个带目标偏移的紧密排列子区域。
-    fn update_texture_region(
-        &mut self,
-        _texture: TextureHandle,
-        _region: RhiTextureRegion,
-        _data: &[u8],
-    ) -> Result<()> {
-        // 默认实现只允许 adapter 明确声明 atlas 子区域上传能力。
-        Err(rhi_not_implemented("update_texture_region"))
     }
 
     // 创建采样器。

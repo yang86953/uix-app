@@ -217,6 +217,133 @@ impl RhiTextureRegionBounds {
     }
 }
 
+// 描述一次绑定目标身份、完整区域与紧密像素载荷的纹理上传。
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RhiTextureUpload<'a> {
+    // 保存目标纹理身份。
+    texture: TextureHandle,
+    // 保存目标纹理中的不可拆区域。
+    region: RhiTextureRegion,
+    // 保存调用期间有效的不可变像素字节。
+    data: &'a [u8],
+}
+
+// 为纹理上传提供封闭构造、只读身份与共享载荷验证。
+impl<'a> RhiTextureUpload<'a> {
+    // 创建一次显式区域上传。
+    pub(crate) const fn new(
+        // 接收目标纹理身份。
+        texture: TextureHandle,
+        // 接收完整类型化目标区域。
+        region: RhiTextureRegion,
+        // 接收紧密排列的像素载荷。
+        data: &'a [u8],
+    ) -> Self {
+        // 把资源、区域与载荷绑定成一个命令值。
+        Self {
+            // 保存目标身份。
+            texture,
+            // 保存目标区域。
+            region,
+            // 保存不可变载荷借用。
+            data,
+        }
+    }
+
+    // 创建一次覆盖完整纹理尺寸的上传。
+    pub(crate) const fn full(
+        // 接收目标纹理身份。
+        texture: TextureHandle,
+        // 接收完整纹理尺寸。
+        extent: RhiExtent,
+        // 接收紧密排列的完整像素载荷。
+        data: &'a [u8],
+    ) -> Self {
+        // 完整上传只是零原点区域的封闭构造。
+        Self::new(texture, RhiTextureRegion::full(extent), data)
+    }
+
+    // 返回目标纹理身份。
+    pub(crate) const fn texture(self) -> TextureHandle {
+        // 句柄按值安全复制。
+        self.texture
+    }
+
+    // 返回不可拆的目标区域。
+    pub(crate) const fn region(self) -> RhiTextureRegion {
+        // 区域按值安全复制。
+        self.region
+    }
+
+    // 返回未经资源描述验证的原始载荷。
+    pub(crate) const fn data(self) -> &'a [u8] {
+        // 借用生命周期与上传命令一致。
+        self.data
+    }
+
+    // 按目标描述验证区域、格式字节宽度、载荷长度与行跨度。
+    pub(crate) fn validate(self, desc: TextureDesc) -> Result<ValidatedRhiTextureUpload<'a>> {
+        // 上传值对象独立复用创建门禁，防止非法资源描述参与原生投影。
+        desc.validate()?;
+        // 共享区域门禁统一验证原点、尺寸、溢出和资源边界。
+        let bounds = self.region.validate_within(desc.extent())?;
+        // 由共享格式与区域共同生成唯一紧密载荷布局。
+        let (required, row_pitch) = bounds
+            // 每像素字节数只能来自封闭 TextureFormat。
+            .tight_payload_layout(desc.format().bytes_per_pixel())
+            // 把长度或行跨度溢出转换成稳定参数错误。
+            .ok_or_else(|| invalid_transfer("RHI texture upload payload layout overflows"))?;
+        // 载荷必须精确覆盖类型化区域，不能读取短数据或忽略尾部字节。
+        if self.data.len() != required {
+            // 两个 Adapter 共用同一个长度拒绝结果。
+            return Err(invalid_transfer(
+                "RHI texture upload payload length is invalid",
+            ));
+        }
+        // 返回只有共享门禁能够构造的机械上传投影。
+        Ok(ValidatedRhiTextureUpload {
+            // 保存已验证区域边界。
+            bounds,
+            // 保存调用期间有效的像素字节。
+            data: self.data,
+            // 保存 D3D11 直接消费的紧密行跨度。
+            row_pitch,
+        })
+    }
+}
+
+// 保存已经通过资源描述、区域与载荷门禁的纹理上传。
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ValidatedRhiTextureUpload<'a> {
+    // 保存可机械投影到两个 Adapter 的区域边界。
+    bounds: RhiTextureRegionBounds,
+    // 保存可以直接交给原生 API 的像素切片。
+    data: &'a [u8],
+    // 保存紧密排列行跨度的无损 u32 投影。
+    row_pitch: u32,
+}
+
+// 为已验证纹理上传提供 Adapter 只读投影。
+impl<'a> ValidatedRhiTextureUpload<'a> {
+    // 返回已经完成范围与载荷校验的区域边界。
+    pub(crate) const fn bounds(self) -> RhiTextureRegionBounds {
+        // 边界按值安全复制。
+        self.bounds
+    }
+
+    // 返回已经完成长度校验的像素字节。
+    pub(crate) const fn data(self) -> &'a [u8] {
+        // 借用可以在同步原生调用期间直接使用。
+        self.data
+    }
+
+    // 返回 D3D11 UpdateSubresource 的紧密行跨度。
+    pub(crate) const fn row_pitch(self) -> u32 {
+        // 行跨度已经通过 u32 共同值域门禁。
+        self.row_pitch
+    }
+}
+
 // 描述复制与移动共用的源区域、目标原点和唯一尺寸。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RhiTextureTransfer {
@@ -314,21 +441,21 @@ impl RhiTextureTransfer {
         destination: TextureDesc,
     ) -> Result<RhiTextureTransferBounds> {
         // 两端必须使用相同像素格式，禁止驱动隐式转换。
-        if source.format != destination.format {
+        if source.format() != destination.format() {
             // 返回稳定格式错误。
             return Err(invalid_transfer("RHI texture transfer formats differ"));
         }
         // 当前跨 Adapter 基线只承诺可渲染颜色纹理传输。
-        if !is_transferable_color(source.format) {
+        if !is_transferable_color(source.format()) {
             // R8 覆盖率纹理没有共同 framebuffer copy 基线。
             return Err(invalid_transfer(
                 "RHI texture transfer requires a renderable color format",
             ));
         }
         // 源区域使用唯一共享门禁验证。
-        let source = self.source().validate_within(source.extent)?;
+        let source = self.source().validate_within(source.extent())?;
         // 目标区域从同一传输尺寸派生并使用相同门禁。
-        let destination = self.destination().validate_within(destination.extent)?;
+        let destination = self.destination().validate_within(destination.extent())?;
         // 返回两个 Adapter 直接消费的类型化边界。
         Ok(RhiTextureTransferBounds {
             // 保存已验证源区域。
@@ -542,6 +669,11 @@ fn invalid_transfer(message: &'static str) -> Error {
     Error::new(Errc::InvalidArgument, message)
 }
 
+// 把纹理上传的独立载荷测试拆出，保持生产传输 Component 低于文件行数上限。
+#[cfg(test)]
+#[path = "texture_upload_tests.rs"]
+mod texture_upload_tests;
+
 // 仅验证两个 Adapter 必须共享的纹理区域与传输语义。
 #[cfg(test)]
 mod tests {
@@ -559,12 +691,7 @@ mod tests {
     // 创建指定尺寸和格式的共享纹理描述。
     const fn texture(width: u32, height: u32, format: TextureFormat) -> TextureDesc {
         // 返回没有原生 API 状态的资源事实。
-        TextureDesc {
-            // 保存物理尺寸。
-            extent: RhiExtent::new(width, height),
-            // 保存共享格式。
-            format,
-        }
+        TextureDesc::new(RhiExtent::new(width, height), format)
     }
 
     // 创建覆盖源与目标不同偏移的有效传输。

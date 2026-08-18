@@ -10,7 +10,7 @@ use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
     GraphicsSurface, GraphicsSurfaceCapabilities, LoadAction, PipelineBinding, PipelineDesc,
     RenderTargetHandle, RhiBufferUpload, RhiColor, RhiExtent, RhiScissor, RhiSurfaceReadback,
-    RhiTextureRegion, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle,
+    RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle,
     SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy, TextureDesc, TextureHandle,
     TextureMove,
 };
@@ -79,26 +79,9 @@ where
     }
 
     // 上传 texture payload。
-    fn update_texture(
-        &mut self,
-        texture: TextureHandle,
-        extent: RhiExtent,
-        data: &[u8],
-    ) -> Result<()> {
-        self.rhi_pipeline_mut()
-            .rhi_update_texture(texture, extent, data)
-    }
-
-    // 上传通用 texture 的带偏移子区域，供通用 atlas 复用同一张纹理。
-    fn update_texture_region(
-        &mut self,
-        texture: TextureHandle,
-        region: RhiTextureRegion,
-        data: &[u8],
-    ) -> Result<()> {
-        // 让 OpenGL host 继续把资源操作交给 owner-thread raster pipeline。
-        self.rhi_pipeline_mut()
-            .rhi_update_texture_region(texture, region, data)
+    fn update_texture(&mut self, upload: RhiTextureUpload<'_>) -> Result<()> {
+        // 让 OpenGL host 保持上传命令完整交给 owner-thread raster pipeline。
+        self.rhi_pipeline_mut().rhi_update_texture(upload)
     }
 
     // 创建 sampler。

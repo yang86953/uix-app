@@ -122,9 +122,9 @@ impl GraphicsDevice for RecordingBackdropContext {
     // 创建独立 backdrop texture。
     fn create_texture(&mut self, desc: TextureDesc) -> Result<TextureHandle> {
         // helper 必须保持 surface token 的完整物理尺寸。
-        assert_eq!(desc.extent, self.token.extent);
+        assert_eq!(desc.extent(), self.token.extent);
         // backdrop 必须与 retained 主颜色目标保持 BGRA 格式一致。
-        assert_eq!(desc.format, TextureFormat::Bgra8Unorm);
+        assert_eq!(desc.format(), TextureFormat::Bgra8Unorm);
         // 按测试配置注入创建失败。
         if self.fail_create {
             // 返回可恢复的 GPU 内存错误。

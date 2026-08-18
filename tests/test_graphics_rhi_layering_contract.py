@@ -696,7 +696,9 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         # 读取 OpenGL 的颜色纹理采样 shader。
         shader = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_shaders.rs").read_text(encoding="utf-8")
         # BGRA CPU 载荷必须在原生 Adapter 内转换，不能让 shader 猜测来源布局。
-        self.assertIn("normalize_upload_payload(texture.format, data)", upload)
+        self.assertIn(
+            "normalize_upload_payload(texture.desc.format(), validated.data())", upload
+        )
         # 颜色采样必须像 D3D11 一样直接消费逻辑 RGBA 值。
         self.assertIn("vec4 sample_color = texture(u_tex, v_uv);", shader)
         # 禁止重新引入只对上传图片成立、却会破坏 render target 的 shader 通道交换。

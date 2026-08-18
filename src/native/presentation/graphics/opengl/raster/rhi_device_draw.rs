@@ -116,7 +116,7 @@ unsafe fn bind_sampled(
     // SAFETY：位置来自同一 program；None 会由 GL 安全忽略。
     unsafe { gl.uniform_1_i32(location.as_ref(), 0) };
     // 返回格式与创建时的 sampler 描述给共享 pipeline 门禁共同验证。
-    Ok((texture.format, sampler.desc))
+    Ok((texture.desc.format(), sampler.desc))
 }
 
 // 在 OpenGL ES 中执行一个已经 lowering 的 draw packet。

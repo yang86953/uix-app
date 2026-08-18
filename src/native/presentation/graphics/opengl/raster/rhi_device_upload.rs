@@ -28,52 +28,25 @@ fn normalize_upload_payload(format: TextureFormat, data: &[u8]) -> Cow<'_, [u8]>
 
 // 为 OpenGL RHI device 提供紧密排列的 texture 上传。
 impl OpenGlRhiDevice {
-    // 上传整张 texture，保持既有通用 RHI 入口的严格尺寸语义。
+    // 上传已经绑定目标身份、区域与紧密像素载荷的纹理命令。
     pub(crate) fn update_texture(
         &mut self,
         gl: &glow::Context,
-        handle: TextureHandle,
-        extent: RhiExtent,
-        data: &[u8],
+        upload: RhiTextureUpload<'_>,
     ) -> Result<()> {
-        // 读取 texture 描述并要求整块上传与资源尺寸完全一致。
-        let texture = self.texture(handle)?;
-        if extent != texture.extent {
-            return Err(rhi_invalid("OpenGL RHI texture update extent differs"));
-        }
-        // 复用零原点类型化区域，避免两条上传路径产生不同的长度检查。
-        self.update_texture_region(gl, handle, RhiTextureRegion::full(extent), data)
-    }
-
-    // 上传 texture 中任意合法的紧密排列子区域。
-    pub(crate) fn update_texture_region(
-        &mut self,
-        gl: &glow::Context,
-        handle: TextureHandle,
-        region: RhiTextureRegion,
-        data: &[u8],
-    ) -> Result<()> {
-        // 读取 texture 描述并通过共享 Component 校验目标区域。
-        let texture = self.texture(handle)?;
+        // 先解析目标身份，空载荷也不能绕过陈旧句柄门禁。
+        let texture = self.texture(upload.texture())?;
+        // 由共享 Transfer Component 统一验证描述、区域、载荷和行跨度。
+        let validated = upload.validate(texture.desc)?;
         // 共享门禁返回唯一可机械投影的原点、尺寸与远端边界。
-        let bounds = region.validate_within(texture.extent)?;
+        let bounds = validated.bounds();
         // 读取共享区域已经证明安全的 OpenGL 原点与尺寸。
         let ((native_x, native_y), (native_width, native_height)) =
             bounds.native_origin_and_size_i32();
-        // 取得格式对应的外部 GL 通道和字节宽度。
-        let (_, upload_format, bytes_per_pixel) = Self::texture_format(texture.format);
-        // 共享区域同时拥有紧密载荷长度与行跨度算法。
-        let (expected, _) = bounds
-            // 使用当前格式的字节宽度投影布局。
-            .tight_payload_layout(bytes_per_pixel)
-            .ok_or_else(|| rhi_invalid("OpenGL RHI texture region payload overflows"))?;
-        if data.len() != expected {
-            return Err(rhi_invalid(
-                "OpenGL RHI texture region payload length is invalid",
-            ));
-        }
+        // 取得格式对应的外部 GL 通道枚举。
+        let (_, upload_format) = Self::texture_format(texture.desc.format());
         // 在原生 API 边界消除 BGRA CPU 布局与 RGBA8 GL 存储之间的差异。
-        let upload_data = normalize_upload_payload(texture.format, data);
+        let upload_data = normalize_upload_payload(texture.desc.format(), validated.data());
         // 使用紧密 row pitch 把子区域上传到已登记的 GL texture。
         // SAFETY: texture.native 存活且区域已在上方按 extent 与数据长度校验；data 切片为有效内存且紧密排列（UNPACK_ALIGNMENT=1）；context 保持 current。
         unsafe {

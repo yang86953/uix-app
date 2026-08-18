@@ -9,13 +9,12 @@ use super::*;
 impl D3d11Context {
     // 创建可采样且尽可能可作为 render target 的 D3D11 texture。
     pub(super) fn rhi_create_texture(&mut self, desc: TextureDesc) -> Result<TextureHandle> {
-        // 拒绝零尺寸或超过共同原生值域的资源。
-        if !desc.extent.is_valid() {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("D3d11 RHI texture extent is invalid"));
-        }
+        // 先通过两个 Adapter 共用的非空二维原生值域门禁。
+        desc.validate()?;
         // 取得格式事实映射。
-        let (format, _bytes_per_pixel, renderable) = D3d11RhiDevice::texture_format(desc.format);
+        let format = D3d11RhiDevice::texture_format(desc.format());
+        // 颜色目标能力只由共享格式闭集决定。
+        let renderable = desc.format().supports_render_target();
         // 为 texture 选择 shader resource 和可选 render target 绑定。
         let mut bind_flags = D3D11_BIND_SHADER_RESOURCE.0 as u32;
         // 只有颜色格式进入 render target 绑定。
@@ -25,8 +24,8 @@ impl D3d11Context {
         }
         // 准备 D3D11 texture 描述。
         let native_desc = D3D11_TEXTURE2D_DESC {
-            Width: desc.extent.width,
-            Height: desc.extent.height,
+            Width: desc.extent().width,
+            Height: desc.extent().height,
             MipLevels: 1,
             ArraySize: 1,
             Format: ::windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT(format),
@@ -89,8 +88,8 @@ impl D3d11Context {
             native,
             rtv,
             srv,
-            extent: desc.extent,
-            format: desc.format,
+            // Adapter 只保存唯一共享描述，不再复制尺寸和格式字段。
+            desc,
         }));
         // 计算刚刚追加的资源句柄。
         let raw = self.rhi_device.textures.len() as u64;
