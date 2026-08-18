@@ -587,6 +587,8 @@ pub struct WglContext {
     // surface 重建代际，用于拒绝迟到 FramePlan。
     surface_generation: u64,
     pipeline: OpenGlRasterPipeline,
+    // 关闭事务一旦开始便禁止新的业务 RHI 借用，但允许 cleanup 重试。
+    shutdown_started: bool,
 }
 
 impl WglContext {
@@ -710,6 +712,8 @@ impl WglContext {
                 // 初始 WGL swapchain 属于第一代 surface。
                 surface_generation: 0,
                 pipeline,
+                // 初始 owner 尚未进入关闭事务。
+                shutdown_started: false,
             })
         })();
 
@@ -739,6 +743,8 @@ impl WglContext {
     }
 
     fn make_current_result(&self) -> Result<(), Error> {
+        // 在任何 WGL 调用前拒绝已开始关闭或句柄不完整的 owner。
+        self.ensure_rhi_active()?;
         // SAFETY: self.hdc/self.hglrc 由本对象持有且未销毁，本对象从未在线程间迁移；失败以返回码 0 表示。
         if unsafe { wglMakeCurrent(self.hdc, self.hglrc) } == 0 {
             Err(windows_diag(
@@ -764,6 +770,8 @@ impl WglContext {
     }
 
     fn shutdown_result(&mut self) -> Result<(), Error> {
+        // 在任何原生 cleanup 或 pipeline release 前发布关闭事实。
+        self.shutdown_started = true;
         if !self.hglrc.is_null() {
             // SAFETY: hglrc 非空且存活；先 current 该上下文以便 release GL 资源，再解除 current，最后删除 context；全程同一 owner 线程。
             if unsafe { wglMakeCurrent(self.hdc, self.hglrc) } == 0 {
@@ -799,6 +807,20 @@ impl WglContext {
             }
             self.hdc = ptr::null_mut();
         }
+        Ok(())
+    }
+
+    // 检查 WGL owner 是否仍可被业务 RHI 使用。
+    pub(crate) fn ensure_rhi_active(&self) -> Result<(), Error> {
+        // 关闭事务或任一关键句柄失效都统一为 InvalidState。
+        if self.shutdown_started || self.hdc.is_null() || self.hglrc.is_null() {
+            // 在触碰任何 WGL API 前返回稳定生命周期错误。
+            return Err(Error::new(
+                Errc::InvalidState,
+                "WglContext: operation requested after shutdown",
+            ));
+        }
+        // owner 的 HDC 与 HGLRC 仍完整存活。
         Ok(())
     }
 
