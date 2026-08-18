@@ -34,24 +34,36 @@ impl D3d11Context {
         self.rhi_device.pass.set_scissor(scissor)?;
         // 仅对显式 scissor 编码有限原生矩形。
         if let Some(scissor) = scissor {
+            // 读取共享几何 Component 的唯一 checked 矩形投影。
+            let (left, top, right, bottom) = scissor
+                // D3D11 不得用饱和加法掩盖远端边界溢出。
+                .native_rect()
+                // 防御未来路径绕过 pass 状态机。
+                .ok_or_else(|| rhi_invalid("D3d11 RHI scissor rect is invalid"))?;
             // SAFETY: scissor 是本函数验证过的值，context 属于 owner thread。
             unsafe {
                 self.context.RSSetScissorRects(Some(&[RECT {
-                    left: scissor.x,
-                    top: scissor.y,
-                    right: scissor.x.saturating_add(scissor.width),
-                    bottom: scissor.y.saturating_add(scissor.height),
+                    left,
+                    top,
+                    right,
+                    bottom,
                 }]));
             }
         } else {
+            // 读取共享 extent 已验证的完整原生矩形远端边界。
+            let (right, bottom) = extent
+                // 禁止 Adapter 自行把 u32 截断为 i32。
+                .native_size_i32()
+                // 活动 pass 理论上已证明有效，仍保留稳定错误。
+                .ok_or_else(|| rhi_invalid("D3d11 RHI target extent is invalid"))?;
             // 使用已经在入口验证的完整 target extent 清除历史 scissor。
             // SAFETY: extent 来自已绑定的 surface 或 RHI texture，context 属于 owner thread。
             unsafe {
                 self.context.RSSetScissorRects(Some(&[RECT {
                     left: 0,
                     top: 0,
-                    right: extent.width as i32,
-                    bottom: extent.height as i32,
+                    right,
+                    bottom,
                 }]));
             }
         }

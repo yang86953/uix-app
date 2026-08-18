@@ -92,8 +92,8 @@ impl RhiPassState {
             // 返回与原生 API 无关的状态错误。
             return Err(invalid_state("RHI render pass is already open"));
         }
-        // 所有目标必须具有正物理尺寸。
-        if !extent.is_positive() {
+        // 所有目标必须具有可由现有原生 API 无损表达的正物理尺寸。
+        if !extent.is_valid() {
             // 返回稳定的参数错误。
             return Err(invalid_argument("RHI render target extent is invalid"));
         }

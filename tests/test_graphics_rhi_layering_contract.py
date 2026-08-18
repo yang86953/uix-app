@@ -782,8 +782,8 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
 
     # Viewport 与 scissor 的目标范围必须由共享 RHI 值契约统一判定。
     def test_target_geometry_validation_is_shared_across_adapters(self) -> None:
-        # 读取共享 RHI 几何值对象。
-        rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        # 读取独立共享 RHI 几何 Component。
+        geometry = (ROOT / "src/native/present/rhi/geometry.rs").read_text(encoding="utf-8")
         # 读取唯一拥有目标范围门禁的共享 pass 状态机。
         pass_state = (ROOT / "src/native/present/rhi/pass_state.rs").read_text(encoding="utf-8")
         # 读取 OpenGL ES 的 pass 状态翻译。
@@ -791,9 +791,9 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         # 读取 D3D11 的 pass 状态翻译。
         d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_state.rs").read_text(encoding="utf-8")
         # Viewport 与 scissor 必须各自拥有一个共享目标边界方法。
-        self.assertEqual(rhi.count("pub(crate) fn fits_within(self, extent: RhiExtent) -> bool"), 2)
+        self.assertEqual(geometry.count("fits_within(self, extent: RhiExtent) -> bool"), 2)
         # 物理 viewport 必须在共享层冻结为整像素，禁止 Adapter 各自量化。
-        self.assertIn("self.width.fract() == 0.0", rhi)
+        self.assertIn("value.fract() != 0.0", geometry)
         # viewport 范围算法必须只由共享 pass 状态机调用。
         self.assertIn("viewport.fits_within(extent)", pass_state)
         # OpenGL ES 必须委托共享 viewport 门禁。

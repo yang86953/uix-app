@@ -25,6 +25,8 @@ mod primitive;
 mod pipeline;
 // 将顶点属性语义、格式、位置和偏移拆到独立共享 ABI 值对象。
 mod vertex_layout;
+// 将 extent、viewport 与 scissor 的共同原生投影拆到独立共享几何 Component。
+mod geometry;
 // 将 sample coverage 状态拆到独立共享契约，禁止 Surface 与 Adapter 各自选择。
 mod multisample;
 // 将颜色编码与混合值域拆到独立契约，禁止 Adapter 启用隐藏颜色转换。
@@ -54,6 +56,8 @@ pub(crate) use vertex_layout::{
     PIPELINE_VERTEX_ATTRIBUTE_SLOT_COUNT, PipelineVertexFormat, PipelineVertexLayout,
     PipelineVertexSemantic,
 };
+// 向 Drawing、Surface、pass 与各 Adapter 暴露唯一目标几何值对象。
+pub(crate) use geometry::{RhiExtent, RhiScissor, RhiViewport};
 // 向 pipeline、Surface 配方和两个 Adapter 暴露同一采样覆盖事实。
 pub(crate) use multisample::PipelineMultisampleState;
 // 向 Drawing、Surface 与原生 Adapter 暴露唯一颜色与清理输出解释。
@@ -130,30 +134,6 @@ pub(crate) use shape::{
     SHAPE_COLOR_FLOAT_OFFSET, SHAPE_DRAW_RECT_FLOAT_OFFSET, SHAPE_RADIUS_FLOAT_OFFSET,
     SHAPE_RECT_FLOAT_OFFSET, SHAPE_STROKE_FLOAT_OFFSET, SHAPE_VIEWPORT_FLOAT_OFFSET,
 };
-
-// 定义 GPU 资源尺寸，避免把平台 API 的 extent 类型泄漏到通用层。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct RhiExtent {
-    // 保存资源宽度，零值只允许在构造前的临时描述中出现。
-    pub(crate) width: u32,
-    // 保存资源高度，零值只允许在构造前的临时描述中出现。
-    pub(crate) height: u32,
-}
-
-// 为资源尺寸提供一个不携带平台状态的值构造器。
-impl RhiExtent {
-    // 创建资源尺寸值。
-    pub(crate) const fn new(width: u32, height: u32) -> Self {
-        // 返回调用方提供的尺寸，不在 RHI 值层偷偷修正无效输入。
-        Self { width, height }
-    }
-
-    // 判断尺寸是否可以进入资源或 surface 生命周期。
-    pub(crate) const fn is_positive(self) -> bool {
-        // GPU 资源和呈现 surface 都要求两个轴严格大于零。
-        self.width != 0 && self.height != 0
-    }
-}
 
 // 描述 surface 的代际和 drawable extent，隔离重建后的迟到命令。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -351,103 +331,6 @@ impl RhiColor {
 #[cfg(test)]
 #[path = "rhi/color_value_tests.rs"]
 mod color_value_tests;
-
-// 定义 viewport 的物理尺寸。
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct RhiViewport {
-    // 保存 viewport 宽度。
-    pub(crate) width: f32,
-    // 保存 viewport 高度。
-    pub(crate) height: f32,
-}
-
-// 为 viewport 提供跨 adapter 一致的输入检查。
-impl RhiViewport {
-    // 判断 viewport 尺寸是否为两套原生 API 都能精确表达的正整像素。
-    pub(crate) fn is_valid(self) -> bool {
-        // 零、负数、NaN 和无穷值都不能进入原生 viewport。
-        self.width.is_finite()
-            // 高度必须同样是有限值。
-            && self.height.is_finite()
-            // 两个轴都必须严格为正。
-            && self.width > 0.0
-            // 高度不能退化为零或负数。
-            && self.height > 0.0
-            // 物理像素 viewport 不允许由 OpenGL round 而 D3D11 保留小数。
-            && self.width.fract() == 0.0
-            // 两个轴必须服从同一整像素规则。
-            && self.height.fract() == 0.0
-            // OpenGL ES 的 GLsizei 和 D3D11 原生范围都必须能精确接收宽度。
-            && self.width as f64 <= i32::MAX as f64
-            // 高度也不得越过共享有符号原生值域。
-            && self.height as f64 <= i32::MAX as f64
-    }
-
-    // 判断 viewport 是否完整落在当前 render target 物理范围内。
-    pub(crate) fn fits_within(self, extent: RhiExtent) -> bool {
-        // 两个 Adapter 必须共用同一有限性、正尺寸和目标边界规则。
-        self.is_valid()
-            // viewport 当前固定从左上角零点开始，宽度不得越过目标。
-            && self.width as f64 <= extent.width as f64
-            // viewport 高度同样不得越过目标。
-            && self.height as f64 <= extent.height as f64
-    }
-}
-
-// 定义整数 scissor，坐标仍保持左上角原点约定。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct RhiScissor {
-    // 保存裁剪矩形左侧。
-    pub(crate) x: i32,
-    // 保存裁剪矩形顶部。
-    pub(crate) y: i32,
-    // 保存裁剪矩形宽度。
-    pub(crate) width: i32,
-    // 保存裁剪矩形高度。
-    pub(crate) height: i32,
-}
-
-// 为 scissor 提供跨 adapter 一致的输入检查。
-impl RhiScissor {
-    // 判断 scissor 的 extent 是否为正数且坐标没有负值。
-    pub(crate) const fn is_valid(self) -> bool {
-        // RHI 使用物理 surface 坐标，禁止负尺寸和负起点。
-        self.x >= 0 && self.y >= 0 && self.width > 0 && self.height > 0
-    }
-
-    // 计算可被两套原生矩形 ABI 精确表达的右侧与下侧边界。
-    pub(crate) fn far_edges(self) -> Option<(i32, i32)> {
-        // 基础输入无效时不允许进入边界加法。
-        if !self.is_valid() {
-            // 使用空值表达共享几何契约拒绝。
-            return None;
-        }
-        // 水平边界必须保持在原生 API 共用的有符号整数值域内。
-        let right = self.x.checked_add(self.width)?;
-        // 垂直边界必须保持在同一个有符号整数值域内。
-        let bottom = self.y.checked_add(self.height)?;
-        // 返回 Adapter 可机械编码的中立边界。
-        Some((right, bottom))
-    }
-
-    // 判断左上原点裁剪矩形是否完整落在当前 render target 内。
-    pub(crate) fn fits_within(self, extent: RhiExtent) -> bool {
-        // 只接受可以被所有已支持原生矩形 ABI 精确表达的边界。
-        let Some((right, bottom)) = self.far_edges() else {
-            // 负值、非正尺寸或有符号边界溢出都统一拒绝。
-            return false;
-        };
-        // 右边界允许恰好等于目标宽度。
-        right as u32 <= extent.width
-            // 下边界允许恰好等于目标高度。
-            && bottom as u32 <= extent.height
-    }
-}
-
-// 将 viewport 与 scissor 的共享目标边界测试拆到独立文件。
-#[cfg(test)]
-#[path = "rhi/geometry_tests.rs"]
-mod geometry_tests;
 
 // 保存已经规范化为左上原点与 0xAARRGGBB 的 surface 回读结果。
 #[derive(Debug, Clone, PartialEq, Eq)]

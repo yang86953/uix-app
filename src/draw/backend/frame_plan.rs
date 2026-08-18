@@ -196,12 +196,12 @@ impl FramePlan {
             // 只检查封闭作用域内真实存在的 SurfaceToken。
             &self.scope,
             // Device-only 计划没有可被误判的窗口 extent。
-            FramePlanScope::Surface { surface, .. } if !surface.extent.is_positive()
+            FramePlanScope::Surface { surface, .. } if !surface.extent.is_valid()
         ) {
             // 返回稳定的参数错误。
             return Err(Error::new(
                 Errc::InvalidArgument,
-                "FramePlan surface extent must be positive",
+                "FramePlan surface extent is outside the shared native domain",
             ));
         }
         // 计划必须至少包含一个 render pass。

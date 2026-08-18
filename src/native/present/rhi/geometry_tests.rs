@@ -49,8 +49,8 @@ fn viewport_and_scissor_share_exact_target_extent_contract() {
             // 高度保持最小正整像素。
             height: 1.0,
         }
-        // 最大无符号目标不能绕过共享原生值域门禁。
-        .fits_within(RhiExtent::new(u32::MAX, u32::MAX))
+        // 直接读取 viewport 自身的共同原生值域门禁。
+        .is_valid()
     );
     // 恰好贴住右下边界的 scissor 必须合法。
     assert!(
@@ -99,7 +99,7 @@ fn viewport_and_scissor_share_exact_target_extent_contract() {
     );
     // 即使无符号目标足够大，有符号原生边界溢出也必须在共享层拒绝。
     assert!(
-        !RhiScissor {
+        RhiScissor {
             // 从有符号坐标最大值开始。
             x: i32::MAX,
             // 垂直起点保持为零。
@@ -109,7 +109,62 @@ fn viewport_and_scissor_share_exact_target_extent_contract() {
             // 高度保持最小正值。
             height: 1,
         }
-        // 使用最大无符号目标证明拒绝原因来自原生边界值域而不是目标尺寸。
-        .fits_within(RhiExtent::new(u32::MAX, u32::MAX))
+        // 直接读取 scissor 自身的 checked 矩形投影。
+        .native_rect()
+        // 有符号远端边界溢出必须返回空。
+        .is_none()
     );
+}
+
+// 验证各 Adapter 只消费同一套原生尺寸、矩形与目标方向投影。
+#[test]
+fn native_geometry_projections_are_checked_and_lossless() {
+    // 创建可由全部现有原生 ABI 表达的目标尺寸。
+    let extent = RhiExtent::new(100, 80);
+    // 共享投影必须保留精确宽高。
+    assert_eq!(extent.native_size_i32(), Some((100, 80)));
+    // 零宽目标不得进入资源或 pass 生命周期。
+    assert_eq!(RhiExtent::new(0, 80).native_size_i32(), None);
+    // 超过有符号上限的目标不得由 Adapter 各自截断。
+    assert_eq!(
+        RhiExtent::new(i32::MAX as u32 + 1, 1).native_size_i32(),
+        None
+    );
+    // 创建完整目标 viewport。
+    let viewport = RhiViewport {
+        // 使用整像素宽度。
+        width: 100.0,
+        // 使用整像素高度。
+        height: 80.0,
+    };
+    // OpenGL 有符号尺寸与 D3D11 浮点尺寸必须表示同一整数。
+    assert_eq!(viewport.native_size_i32(), Some((100, 80)));
+    // 创建贴住右下角的左上原点 scissor。
+    let scissor = RhiScissor {
+        // 从右边前十像素开始。
+        x: 90,
+        // 从底边前十像素开始。
+        y: 70,
+        // 宽度延伸到目标右边界。
+        width: 10,
+        // 高度延伸到目标下边界。
+        height: 10,
+    };
+    // D3D11 RECT 与 clear 必须消费相同四边。
+    assert_eq!(scissor.native_rect(), Some((90, 70, 100, 80)));
+    // OpenGL surface 底部原点换算后该矩形从零开始。
+    assert_eq!(scissor.bottom_origin_y(extent), Some(0));
+    // 创建不贴边矩形以锁定一般坐标翻转公式。
+    let interior = RhiScissor {
+        // 水平位置不影响 Y 翻转。
+        x: 5,
+        // 从顶部十像素开始。
+        y: 10,
+        // 使用稳定正宽度。
+        width: 20,
+        // 矩形高度为二十像素。
+        height: 20,
+    };
+    // 底部原点 Y 必须等于目标高度减去顶部坐标系底边。
+    assert_eq!(interior.bottom_origin_y(extent), Some(50));
 }

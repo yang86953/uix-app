@@ -238,10 +238,10 @@ where
 
     // 按物理 extent 重建宿主 surface 并返回新代际 token。
     fn resize(&mut self, extent: RhiExtent) -> Result<SurfaceToken> {
-        if !extent.is_positive() {
+        if !extent.is_valid() {
             return Err(Error::new(
                 crate::core::error::Errc::InvalidArgument,
-                "OpenGL RHI surface extent must be positive",
+                "OpenGL RHI surface extent is outside the shared native domain",
             ));
         }
         self.rhi_resize_surface(extent)?;

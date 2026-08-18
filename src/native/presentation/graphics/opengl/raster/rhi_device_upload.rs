@@ -63,9 +63,23 @@ impl OpenGlRhiDevice {
         let end_y = destination_y
             .checked_add(extent.height)
             .ok_or_else(|| rhi_invalid("OpenGL RHI texture region y overflows"))?;
-        if !extent.is_positive() || end_x > texture.extent.width || end_y > texture.extent.height {
+        if !extent.is_valid() || end_x > texture.extent.width || end_y > texture.extent.height {
             return Err(rhi_invalid("OpenGL RHI texture region is out of range"));
         }
+        // 读取共享几何 Component 已验证的子区域有符号尺寸。
+        let (native_width, native_height) = extent
+            // Adapter 不得自行强转共享 extent。
+            .native_size_i32()
+            // 理论上已由上方 is_valid 证明，仍保留稳定错误。
+            .ok_or_else(|| rhi_invalid("OpenGL RHI texture region extent is invalid"))?;
+        // 目标 X 必须能被 OpenGL GLint 无损接收。
+        let native_x = i32::try_from(destination_x)
+            // 越界坐标不得通过强转改变符号。
+            .map_err(|_| rhi_invalid("OpenGL RHI texture region x is invalid"))?;
+        // 目标 Y 必须服从相同有符号值域。
+        let native_y = i32::try_from(destination_y)
+            // 越界坐标不得通过强转改变符号。
+            .map_err(|_| rhi_invalid("OpenGL RHI texture region y is invalid"))?;
         // 取得格式对应的外部 GL 通道和字节宽度。
         let (_, upload_format, bytes_per_pixel) = Self::texture_format(texture.format);
         let expected = (extent.width as usize)
@@ -87,10 +101,10 @@ impl OpenGlRhiDevice {
             gl.tex_sub_image_2d(
                 glow::TEXTURE_2D,
                 0,
-                destination_x as i32,
-                destination_y as i32,
-                extent.width as i32,
-                extent.height as i32,
+                native_x,
+                native_y,
+                native_width,
+                native_height,
                 upload_format,
                 glow::UNSIGNED_BYTE,
                 glow::PixelUnpackData::Slice(Some(upload_data.as_ref())),

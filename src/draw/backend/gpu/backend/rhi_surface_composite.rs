@@ -85,17 +85,19 @@ pub(super) fn plan_surface_composite(
 
 // 验证一个物理矩形可以完整落在当前 drawable 内。
 fn rect_fits_extent(x: i32, y: i32, width: i32, height: i32, extent: RhiExtent) -> bool {
-    // 使用 checked_add 同时拒绝负值、空矩形、溢出和越界。
-    x >= 0
-        && y >= 0
-        && width > 0
-        && height > 0
-        && x.checked_add(width)
-            // 右边界必须落在 drawable 宽度内。
-            .is_some_and(|right| right <= extent.width.min(i32::MAX as u32) as i32)
-        && y.checked_add(height)
-            // 下边界必须落在 drawable 高度内。
-            .is_some_and(|bottom| bottom <= extent.height.min(i32::MAX as u32) as i32)
+    // 把 damage 矩形封闭为共享左上原点 scissor 值对象。
+    RhiScissor {
+        // 保留调用方水平起点。
+        x,
+        // 保留调用方垂直起点。
+        y,
+        // 保留调用方宽度。
+        width,
+        // 保留调用方高度。
+        height,
+    }
+    // 统一委托共享 checked 远端边界和目标值域门禁。
+    .fits_within(extent)
 }
 
 // 验证最终合成严格保持 draw/present damage 一致。
