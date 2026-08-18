@@ -101,26 +101,43 @@ impl D3d11Context {
 
     // 创建带 clamp 地址模式的 D3D11 sampler。
     pub(super) fn rhi_create_sampler(&mut self, desc: SamplerDesc) -> Result<SamplerHandle> {
-        // 线性和点采样都保持边界 clamp，避免图片 quad 越界取样。
-        let native_desc = D3D11_SAMPLER_DESC {
-            // 根据通用 sampler 事实选择过滤模式。
-            Filter: if desc.uses_linear_filter() {
-                // UIX texture 固定单 mip，线性契约只覆盖 min/mag，不启用隐式三线性过滤。
+        // 穷尽映射过滤与 mip 组合，禁止 Adapter 私自选择未声明状态。
+        let native_filter = match (desc.filter(), desc.mip_mode()) {
+            // 最近点单级采样在三个维度都使用 point 选择。
+            (SamplerFilter::Nearest, SamplerMipMode::SingleLevel) => D3D11_FILTER_MIN_MAG_MIP_POINT,
+            // 线性单级采样只对 min/mag 插值，mip 维度保持 point。
+            (SamplerFilter::Linear, SamplerMipMode::SingleLevel) => {
                 D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT
-            } else {
-                D3D11_FILTER_MIN_MAG_MIP_POINT
-            },
+            }
+        };
+        // 穷尽映射二维纹理地址语义。
+        let native_address = match desc.address_mode() {
+            // 当前唯一地址模式机械映射为 D3D11 clamp。
+            SamplerAddressMode::ClampToEdge => D3D11_TEXTURE_ADDRESS_CLAMP,
+        };
+        // 穷尽映射单级纹理允许的原生 LOD 范围。
+        let (min_lod, max_lod) = match desc.mip_mode() {
+            // 两个端点都冻结为第零级，禁止未来层级被隐式观察。
+            SamplerMipMode::SingleLevel => (0.0, 0.0),
+        };
+        // 使用已经从共享描述投影出的完整原生 sampler 状态。
+        let native_desc = D3D11_SAMPLER_DESC {
+            // 过滤模式来自共享 filter 与 mip 的联合投影。
+            Filter: native_filter,
             // U/V/W 三个轴统一采用 clamp。
-            AddressU: D3D11_TEXTURE_ADDRESS_CLAMP,
-            AddressV: D3D11_TEXTURE_ADDRESS_CLAMP,
-            AddressW: D3D11_TEXTURE_ADDRESS_CLAMP,
+            AddressU: native_address,
+            // V 轴复用同一二维地址事实。
+            AddressV: native_address,
+            // 二维纹理不读取 W，但仍复用同一封闭地址事实。
+            AddressW: native_address,
             // 不使用比较采样和各向异性扩展。
             MipLODBias: 0.0,
             MaxAnisotropy: 1,
             ComparisonFunc: D3D11_COMPARISON_NEVER,
             BorderColor: [0.0; 4],
-            MinLOD: 0.0,
-            MaxLOD: f32::MAX,
+            MinLOD: min_lod,
+            // 最大 LOD 与最小 LOD 同时锁定第零级。
+            MaxLOD: max_lod,
         };
         // 为 CreateSamplerState 准备空输出槽。
         let mut native = None;

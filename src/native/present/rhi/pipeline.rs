@@ -4,7 +4,8 @@
 use super::{
     BLUR_UNIFORM_BYTES, GRADIENT_UNIFORM_BYTES, MESH_UNIFORM_BYTES, MSDF_UNIFORM_BYTES,
     PipelineHandle, PipelineMultisampleState, SAMPLED_UNIFORM_BYTES, SECTOR_UNIFORM_BYTES,
-    SHADOW_UNIFORM_BYTES, SHAPE_UNIFORM_BYTES, SamplerDesc, TextureFormat,
+    SHADOW_UNIFORM_BYTES, SHAPE_UNIFORM_BYTES, SamplerAddressMode, SamplerDesc, SamplerFilter,
+    SamplerMipMode, TextureFormat,
 };
 // 引入独立共享 Component 拥有的顶点布局值对象。
 use super::vertex_layout::PipelineVertexLayout;
@@ -158,16 +159,26 @@ impl PipelineSampling {
             Self::Msdf => matches!(format, TextureFormat::Rgba8Unorm),
         };
         // 再由同一个封闭语义决定唯一过滤方式。
-        let sampler_matches = match self {
+        let filter_matches = match self {
             // 无纹理 pipeline 不允许 sampler 绑定成为隐式依赖。
             Self::None => false,
             // 颜色、MSDF 与 Blur 都要求无 mip 的线性 min/mag 过滤。
-            Self::PremultipliedColor | Self::Msdf => sampler.uses_linear_filter(),
+            Self::PremultipliedColor | Self::Msdf => {
+                // 只接受共享描述明确声明的线性过滤。
+                matches!(sampler.filter(), SamplerFilter::Linear)
+            }
             // Coverage atlas 保持离散像素，只允许最近点过滤。
-            Self::Coverage => !sampler.uses_linear_filter(),
+            Self::Coverage => {
+                // 只接受共享描述明确声明的最近点过滤。
+                matches!(sampler.filter(), SamplerFilter::Nearest)
+            }
         };
+        // 所有二维 pipeline 都必须共享唯一的边缘限制语义。
+        let address_matches = matches!(sampler.address_mode(), SamplerAddressMode::ClampToEdge);
+        // 所有现有纹理都只允许访问创建时唯一存在的第零级。
+        let mip_matches = matches!(sampler.mip_mode(), SamplerMipMode::SingleLevel);
         // 任一事实不匹配都必须在进入原生 draw 前失败。
-        format_matches && sampler_matches
+        format_matches && filter_matches && address_matches && mip_matches
     }
 }
 

@@ -255,33 +255,91 @@ mod submission;
 #[allow(unused_imports)]
 pub(crate) use submission::RhiSubmissionSequence;
 
-// 定义 sampler 创建描述。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// 定义采样器的 min/mag 过滤语义。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum SamplerFilter {
+    // 保持离散 texel，不跨相邻像素插值。
+    Nearest,
+    // 在相邻 texel 之间执行线性插值。
+    Linear,
+}
+
+// 定义二维纹理坐标越界时的地址语义。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum SamplerAddressMode {
+    // 把 U/V 坐标限制到纹理边缘 texel。
+    ClampToEdge,
+}
+
+// 定义当前单级纹理资源允许的 mip 采样语义。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum SamplerMipMode {
+    // 只允许采样创建时唯一存在的第零级纹理。
+    SingleLevel,
+}
+
+// 定义不能被调用方拆散修改的完整 sampler 创建描述。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct SamplerDesc {
-    // 记录 clamp sampler 使用线性还是最近点过滤。
-    linear: bool,
+    // 保存 min/mag 共用的过滤语义。
+    filter: SamplerFilter,
+    // 保存二维纹理两个轴共用的地址语义。
+    address_mode: SamplerAddressMode,
+    // 保存单级纹理的 mip 选择语义。
+    mip_mode: SamplerMipMode,
 }
 
 // 为有限 sampler 契约提供不含裸布尔值的命名构造器。
 impl SamplerDesc {
     // 创建不使用 mip 过滤的线性 clamp sampler。
     pub(crate) const fn linear_clamp() -> Self {
-        // 线性事实由共享采样契约和两个 Adapter 共同读取。
-        Self { linear: true }
+        // 三项事实必须作为一个不可拆描述进入资源生命周期。
+        Self {
+            // 图片、MSDF 与 Blur 使用线性 min/mag 过滤。
+            filter: SamplerFilter::Linear,
+            // 所有二维采样都固定限制到边缘 texel。
+            address_mode: SamplerAddressMode::ClampToEdge,
+            // 当前纹理资源只创建并采样第零级。
+            mip_mode: SamplerMipMode::SingleLevel,
+        }
     }
 
     // 创建不使用 mip 过滤的最近点 clamp sampler。
     pub(crate) const fn nearest_clamp() -> Self {
-        // 最近点事实保持 coverage atlas 的离散像素语义。
-        Self { linear: false }
+        // 仅过滤语义不同，地址与 mip 事实保持统一。
+        Self {
+            // Coverage atlas 必须保持离散 texel。
+            filter: SamplerFilter::Nearest,
+            // 所有二维采样都固定限制到边缘 texel。
+            address_mode: SamplerAddressMode::ClampToEdge,
+            // 当前纹理资源只创建并采样第零级。
+            mip_mode: SamplerMipMode::SingleLevel,
+        }
     }
 
-    // 判断原生 Adapter 是否应映射为线性 min/mag 过滤。
-    pub(crate) const fn uses_linear_filter(self) -> bool {
-        // 返回构造时冻结的 API 无关过滤事实。
-        self.linear
+    // 返回原生 Adapter 必须穷尽映射的过滤语义。
+    pub(crate) const fn filter(self) -> SamplerFilter {
+        // 复制构造时冻结的封闭枚举值。
+        self.filter
+    }
+
+    // 返回原生 Adapter 必须穷尽映射的地址语义。
+    pub(crate) const fn address_mode(self) -> SamplerAddressMode {
+        // 复制构造时冻结的封闭枚举值。
+        self.address_mode
+    }
+
+    // 返回原生 Adapter 必须穷尽映射的 mip 语义。
+    pub(crate) const fn mip_mode(self) -> SamplerMipMode {
+        // 复制构造时冻结的封闭枚举值。
+        self.mip_mode
     }
 }
+
+// 将完整 sampler 描述测试保持在共享 RHI Component 下。
+#[cfg(test)]
+#[path = "rhi/sampler_tests.rs"]
+mod sampler_tests;
 
 // 定义 premultiplied-alpha 颜色值。
 #[derive(Debug, Clone, Copy, PartialEq)]

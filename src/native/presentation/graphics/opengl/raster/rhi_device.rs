@@ -15,9 +15,10 @@ use crate::native::present::rhi::{
     RhiBufferResourceTable, RhiBufferUpload, RhiBufferUploadPreflight, RhiColor,
     RhiColorClearContract, RhiExtent, RhiPassState, RhiPipelineResourceTable,
     RhiPresentTransaction, RhiResourceTable, RhiScissor, RhiSubmissionSequence, RhiTextureResource,
-    RhiTextureResourceTable, RhiTextureUpload, SampledTextureBinding, SamplerDesc, SamplerHandle,
-    SubmissionHandle, SurfaceToken, TextureCopy, TextureDesc, TextureFormat, TextureHandle,
-    TextureMove, UIX_COLOR_CLEAR_CONTRACT, ValidatedRhiPresent,
+    RhiTextureResourceTable, RhiTextureUpload, SampledTextureBinding, SamplerAddressMode,
+    SamplerDesc, SamplerFilter, SamplerHandle, SamplerMipMode, SubmissionHandle, SurfaceToken,
+    TextureCopy, TextureDesc, TextureFormat, TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
+    ValidatedRhiPresent,
 };
 
 // 将 retained 区域移动拆出，保持资源设备文件低于行数上限。
@@ -393,15 +394,35 @@ impl OpenGlRhiDevice {
         // 让 sampler 的过滤与 texture 的边界策略可被 draw 复用。
         // SAFETY: native 刚创建且存活；参数均为有效 GL 枚举且无指针；context 保持 current。
         unsafe {
-            let filter = if desc.uses_linear_filter() {
-                glow::LINEAR as i32
-            } else {
-                glow::NEAREST as i32
+            // 穷尽映射共享 min/mag 过滤语义。
+            let filter = match desc.filter() {
+                // 最近点采样直接映射为 GL_NEAREST。
+                SamplerFilter::Nearest => glow::NEAREST as i32,
+                // 线性采样直接映射为 GL_LINEAR。
+                SamplerFilter::Linear => glow::LINEAR as i32,
             };
+            // 穷尽映射共享二维地址语义。
+            let address_mode = match desc.address_mode() {
+                // 当前唯一地址模式机械映射为 GL_CLAMP_TO_EDGE。
+                SamplerAddressMode::ClampToEdge => glow::CLAMP_TO_EDGE as i32,
+            };
+            // 穷尽映射共享单级 mip 语义。
+            let (min_lod, max_lod) = match desc.mip_mode() {
+                // 第零级是当前纹理资源唯一允许的 LOD。
+                SamplerMipMode::SingleLevel => (0.0, 0.0),
+            };
+            // 把共享过滤语义应用到缩小路径。
             gl.sampler_parameter_i32(native, glow::TEXTURE_MIN_FILTER, filter);
+            // 把同一共享过滤语义应用到放大路径。
             gl.sampler_parameter_i32(native, glow::TEXTURE_MAG_FILTER, filter);
-            gl.sampler_parameter_i32(native, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
-            gl.sampler_parameter_i32(native, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
+            // U 轴只消费共享地址模式投影。
+            gl.sampler_parameter_i32(native, glow::TEXTURE_WRAP_S, address_mode);
+            // V 轴只消费同一共享地址模式投影。
+            gl.sampler_parameter_i32(native, glow::TEXTURE_WRAP_T, address_mode);
+            // 显式冻结允许的最小 LOD，避免依赖驱动默认值。
+            gl.sampler_parameter_f32(native, glow::TEXTURE_MIN_LOD, min_lod);
+            // 显式冻结允许的最大 LOD，禁止未来纹理层级引入隐式差异。
+            gl.sampler_parameter_f32(native, glow::TEXTURE_MAX_LOD, max_lod);
         }
         // 由共享资源表登记 sampler 资源。
         Ok(self.samplers.insert(OpenGlRhiSampler {

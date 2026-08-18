@@ -16,8 +16,9 @@ use crate::native::present::rhi::{
     RhiBufferResourceTable, RhiBufferUpload, RhiBufferUploadPreflight, RhiColor,
     RhiColorClearContract, RhiExtent, RhiPassState, RhiPipelineResourceTable, RhiResourceTable,
     RhiScissor, RhiSubmissionSequence, RhiTextureResource, RhiTextureResourceTable,
-    RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle, TextureCopy,
-    TextureDesc, TextureFormat, TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
+    RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerAddressMode, SamplerDesc,
+    SamplerFilter, SamplerHandle, SamplerMipMode, TextureCopy, TextureDesc, TextureFormat,
+    TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
 };
 // 引入 D3D11 的基础资源和绑定类型。
 use ::windows::Win32::Graphics::Direct3D11::{
