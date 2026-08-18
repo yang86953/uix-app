@@ -2,19 +2,24 @@
 
 // 引入稳定错误类型和结果别名。
 use crate::core::error::{Errc, Error, Result};
-// 引入绘制包与采样语义闭集。
-use crate::native::present::rhi::{DrawPacket, PipelineSampling, SampledTextureBinding};
+// 引入绘制包与封闭条件采样角色。
+use crate::native::present::rhi::{DrawPacket, DrawSamplingBinding};
 
 // 引入同层计划命令与 pass。
 use super::{FramePlanCommand, RenderPassPlan, RenderTargetRef};
 
-// 验证采样绑定不会把当前离屏输出纹理重新作为采样输入。
-pub(super) fn validate_sampled_binding_target(
+// 验证当前 Draw 的条件采样角色不会把离屏输出重新作为输入。
+pub(super) fn validate_draw_sampling_target(
     // 接收当前 pass 已冻结的逻辑目标。
     target: RenderTargetRef,
-    // 接收当前命令即将建立的原子采样绑定。
-    binding: SampledTextureBinding,
+    // 接收当前 DrawPacket 自身拥有的条件采样角色。
+    sampling: DrawSamplingBinding,
 ) -> Result<()> {
+    // 无采样 Draw 不携带任何可能形成反馈环的纹理身份。
+    let Some(binding) = sampling.sampled_texture() else {
+        // 明确无采样可以直接通过目标关系门禁。
+        return Ok(());
+    };
     // 只有离屏 texture target 才可能形成纹理反馈环。
     if let RenderTargetRef::Texture(target_texture) = target {
         // 同一纹理同时读写会依赖原生 API 的未定义反馈行为。
@@ -26,7 +31,7 @@ pub(super) fn validate_sampled_binding_target(
             ));
         }
     }
-    // Surface target 或不同纹理绑定不构成反馈环。
+    // Surface target、无采样或不同纹理绑定不构成反馈环。
     Ok(())
 }
 
@@ -87,6 +92,14 @@ pub(super) fn validate_draw_uploads(
         return Err(Error::new(
             Errc::InvalidArgument,
             "FramePlan draw uniform buffer must be bound",
+        ));
+    }
+    // 条件采样资源必须由当前 DrawPacket 自身完整拥有并匹配 pipeline。
+    if !packet.has_valid_sampling() {
+        // 禁止 Adapter 用 pass 历史状态补齐缺失或错配绑定。
+        return Err(Error::new(
+            Errc::InvalidArgument,
+            "FramePlan draw sampling binding does not match pipeline contract",
         ));
     }
     // 读取绑定身份唯一允许的顶点、Uniform、采样和混合事实。
@@ -241,35 +254,6 @@ pub(super) fn validate_draw_uploads(
             Errc::InvalidArgument,
             "FramePlan uniform upload layout does not match pipeline contract",
         ));
-    }
-    // 查找 draw 前最近一次完整的类型化采样绑定。
-    let latest_sampled = preceding.iter().rev().find_map(|command| {
-        // 只有采样绑定命令才更新当前 pipeline 的资源事实。
-        match command {
-            // 返回最近一次原子采样绑定。
-            FramePlanCommand::BindSampledTexture(binding) => Some(*binding),
-            // 其它命令不改变采样绑定事实。
-            _ => None,
-        }
-    });
-    // 需要采样的 pipeline 必须拥有与自身语义匹配的最近绑定。
-    if contract.sampling != PipelineSampling::None {
-        // 缺少绑定必须在进入 Device 前被共享层拒绝。
-        let binding = latest_sampled.ok_or_else(|| {
-            // 禁止不同 API 复用各自残留的纹理状态。
-            Error::new(
-                Errc::InvalidArgument,
-                "FramePlan sampled draw must follow a texture binding",
-            )
-        })?;
-        // 绑定语义必须与当前 Draw pipeline contract 完全一致。
-        if !binding.matches_pipeline(packet.pipeline()) {
-            // 禁止错误 pipeline 继续把资源兼容性推迟给 Adapter。
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                "FramePlan sampled binding does not match pipeline contract",
-            ));
-        }
     }
     // 当前 draw 的所有类型化资源事实与共享 pipeline 契约一致。
     Ok(())

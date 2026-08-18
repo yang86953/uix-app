@@ -33,6 +33,8 @@ mod color;
 mod capabilities;
 // 将 draw packet 拆到独立类型化契约文件，保持 pipeline 身份不可拆分。
 mod draw_packet;
+// 将 Draw 的条件采样资源从 pass 状态中独立为共享值对象。
+mod draw_sampling;
 // 将 render-pass 生命周期和资源冲突门禁收归共享状态机，禁止 Adapter 各自解释顺序。
 mod pass_state;
 // 将纹理复制与移动的格式、范围和同资源规则收归共享契约。
@@ -85,9 +87,11 @@ pub(crate) use capabilities::{GraphicsDeviceCapabilities, GraphicsSurfaceCapabil
 pub(crate) use draw_packet::{
     DrawBufferBindings, DrawPacket, DrawRange, IndexBufferBinding, IndexFormat,
 };
+// 向 Drawing、FramePlan 与 Adapter 暴露唯一条件采样资源契约。
+pub(crate) use draw_sampling::{DrawSamplingBinding, SampledTextureBinding};
 // 向各原生 Adapter 暴露唯一的 render-pass 状态事实。
 #[allow(unused_imports)]
-pub(crate) use pass_state::{RhiPassState, SampledTextureBinding};
+pub(crate) use pass_state::RhiPassState;
 // 向 Drawing、FramePlan 与各 Adapter 暴露唯一类型化纹理区域和传输契约。
 #[allow(unused_imports)]
 pub(crate) use transfer::{
@@ -568,16 +572,10 @@ pub(crate) trait GraphicsDevice {
         Err(rhi_not_implemented("preflight_texture_move"))
     }
 
-    // 在激活 Device 前预检 DrawPacket 所有真实 Buffer 角色与容量。
+    // 在激活 Device 前预检 DrawPacket 所有真实资源角色与容量。
     fn preflight_draw_resources(&self, _packet: DrawPacket) -> Result<()> {
-        // 默认实现显式拒绝未声明共享 Buffer 资源表能力的 Adapter。
+        // 默认实现显式拒绝未声明完整 Draw 资源表能力的 Adapter。
         Err(rhi_not_implemented("preflight_draw_resources"))
-    }
-
-    // 在激活 Device 前预检 sampled binding 的真实纹理与 sampler 资源。
-    fn preflight_sampled_binding(&self, _binding: SampledTextureBinding) -> Result<()> {
-        // 默认实现显式拒绝未声明共享 sampled 资源表能力的 Adapter。
-        Err(rhi_not_implemented("preflight_sampled_binding"))
     }
 
     // 上传一个已经绑定纹理身份、区域与紧密像素载荷的命令。
@@ -635,12 +633,6 @@ pub(crate) trait GraphicsDevice {
     fn clear_rect(&mut self, _color: RhiColor, _scissor: RhiScissor) -> Result<()> {
         // 默认 adapter 必须显式声明局部清理原语，不能静默忽略 damage。
         Err(rhi_not_implemented("clear_rect"))
-    }
-
-    // 绑定当前固定 shader ABI 的完整采样资源。
-    fn bind_sampled_texture(&mut self, _binding: SampledTextureBinding) -> Result<()> {
-        // 默认实现显式拒绝，避免纹理命令被忽略。
-        Err(rhi_not_implemented("bind_sampled_texture"))
     }
 
     // 执行一个已经完成高层降级的 draw packet。

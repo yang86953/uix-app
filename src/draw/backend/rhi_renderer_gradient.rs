@@ -4,7 +4,8 @@
 use crate::core::error::Result;
 // 引入薄 RHI 的设备、命令和 pass 类型。
 use crate::native::present::rhi::{
-    DrawBufferBindings, DrawPacket, DrawRange, LoadAction, RhiGradientRasterParams, RhiViewport,
+    DrawBufferBindings, DrawPacket, DrawRange, DrawSamplingBinding, LoadAction,
+    RhiGradientRasterParams, RhiViewport,
 };
 
 // 引入父 renderer 的帧计划、target 和渐变载荷。
@@ -138,6 +139,8 @@ impl RhiRenderer {
             pass.push(FramePlanCommand::Draw(DrawPacket::new(
                 pipeline,
                 DrawBufferBindings::new(vertex_buffer, uniform_buffer),
+                // Gradient quad 不使用采样纹理。
+                DrawSamplingBinding::none(),
                 // 单位 quad 使用封闭的六顶点非索引范围。
                 DrawRange::vertices(6),
             )));

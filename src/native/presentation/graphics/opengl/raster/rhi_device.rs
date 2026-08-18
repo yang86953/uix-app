@@ -184,12 +184,19 @@ impl OpenGlRhiDevice {
         self.textures.resolve_render_target(texture)
     }
 
-    // 只读预检 DrawPacket 的真实 Buffer 角色与容量。
+    // 只读预检 DrawPacket 的真实 Buffer 与条件采样资源。
     pub(super) fn preflight_draw_resources(&self, packet: DrawPacket) -> Result<()> {
         // 先由共享 pipeline 表验证句柄存活及真实 kind 语义。
         self.pipelines.get(packet.pipeline())?;
-        // 再由共享 Buffer 表验证所有资源角色和范围关系。
-        self.buffers.validate_draw(packet)
+        // 再由共享 Buffer 表验证固定资源角色和范围关系。
+        self.buffers.validate_draw(packet)?;
+        // 只有当前 packet 明确携带采样资源时才解析纹理与 sampler。
+        if let Some(binding) = packet.sampling().sampled_texture() {
+            // 条件资源必须由真实描述满足绑定时冻结的采样语义。
+            self.validate_sampled_resources(binding)?;
+        }
+        // 当前 DrawPacket 的全部真实资源均已通过只读预检。
+        Ok(())
     }
 
     // 只读预检普通 texture copy 的资源与传输关系。
@@ -205,7 +212,7 @@ impl OpenGlRhiDevice {
     }
 
     // 只读预检 sampled texture 与 sampler 的真实资源语义。
-    pub(super) fn preflight_sampled_binding(
+    fn validate_sampled_resources(
         // 只读借用 OpenGL 设备，不触碰 pass 或 native 状态。
         &self,
         // 接收不可拆分的共享 sampled 绑定事实。
@@ -219,7 +226,7 @@ impl OpenGlRhiDevice {
         let format = texture.desc.format();
         // 复制 sampler 描述，供绑定契约统一校验。
         let sampler_desc = sampler.desc;
-        // 只执行资源语义预检，不建立 pass 绑定状态。
+        // 只执行资源语义预检，不建立任何 pass-local 绑定状态。
         binding.validate_resources(format, sampler_desc)
     }
 
@@ -487,8 +494,6 @@ impl OpenGlRhiDevice {
             }
             gl.delete_texture(texture.native);
         }
-        // 清理可能残留的共享采样绑定。
-        self.pass.unbind_texture(handle);
         // 返回统一成功结果。
         Ok(())
     }
@@ -506,8 +511,6 @@ impl OpenGlRhiDevice {
         unsafe {
             gl.delete_sampler(sampler.native);
         }
-        // 清理可能残留的共享采样绑定。
-        self.pass.unbind_sampler(handle);
         // 返回统一成功结果。
         Ok(())
     }
@@ -641,16 +644,6 @@ impl OpenGlRhiDevice {
                 gl.disable(glow::SCISSOR_TEST);
             }
         }
-        // 返回统一成功结果。
-        Ok(())
-    }
-
-    // 记录 texture/sampler 绑定，实际 GL 绑定在 draw 时完成。
-    pub(super) fn bind_sampled_texture(&mut self, binding: SampledTextureBinding) -> Result<()> {
-        // 复用只读资源预检，保持执行期绑定的最后一道防御。
-        self.preflight_sampled_binding(binding)?;
-        // 由共享状态机统一验证 pass 和目标反馈环后原子记录绑定。
-        self.pass.bind_sampled_texture(binding)?;
         // 返回统一成功结果。
         Ok(())
     }

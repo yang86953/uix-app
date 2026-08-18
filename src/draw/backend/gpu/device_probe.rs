@@ -9,8 +9,8 @@ use crate::draw::backend::frame_plan::{
 };
 // 引入探针创建、绘制和销毁所需的共享薄 RHI 类型。
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, GraphicsDevice,
-    LoadAction, PipelineBinding, PipelineDesc, PipelineKind, RhiColor, RhiExtent,
+    BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawSamplingBinding,
+    GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc, PipelineKind, RhiColor, RhiExtent,
     RhiMeshRasterParams, RhiScissor, RhiShapeRasterParams, RhiTextureRegion, RhiTextureTransfer,
     RhiTextureUpload, RhiViewport, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat,
     TextureHandle, TextureMove,
@@ -378,6 +378,8 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
             pipelines[0],
             // 复用单位 quad 前三个顶点并绑定 Solid uniform。
             DrawBufferBindings::new(vertex_buffer, solid_uniform_buffer),
+            // Solid probe draw 不使用采样资源。
+            DrawSamplingBinding::none(),
             // 用封闭非索引范围绘制一个三角形。
             DrawRange::vertices(3),
         )));
@@ -394,6 +396,8 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
             pipelines[4],
             // Shape 使用完整单位 quad 并绑定共享 Shape ABI uniform。
             DrawBufferBindings::new(vertex_buffer, shape_uniform_buffer),
+            // Shape probe draw 不使用采样资源。
+            DrawSamplingBinding::none(),
             // 用封闭非索引范围绘制两个三角形组成的 quad。
             DrawRange::vertices(6),
         )));

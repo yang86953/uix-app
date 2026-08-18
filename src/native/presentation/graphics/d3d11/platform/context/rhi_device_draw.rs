@@ -3,10 +3,36 @@
 // 引入统一结果类型。
 use crate::core::error::Result;
 // 引入 draw packet 与有限资源语义。
-use crate::native::present::rhi::{BufferUsage, DrawPacket, PipelineKind};
+use crate::native::present::rhi::{BufferUsage, DrawPacket, PipelineKind, SampledTextureBinding};
 
 // 引入父模块的 D3D11 context、资源状态和错误辅助。
 use super::{D3d11Context, D3d11IndexBinding, rhi_invalid};
+
+// 从当前 DrawPacket 取得已验证且不与活动输出冲突的采样资源。
+fn packet_sampled_binding(
+    // 只读借用当前 D3D11 owner 与共享 pass 状态。
+    context: &D3d11Context,
+    // 接收已经冻结全部资源角色的 DrawPacket。
+    packet: DrawPacket,
+) -> Result<SampledTextureBinding> {
+    // sampled pipeline 必须由同一个 packet 携带完整纹理与 sampler。
+    let binding = packet
+        // 只读取得封闭条件采样角色。
+        .sampling()
+        // 只读投影完整采样资源事实。
+        .sampled_texture()
+        // 防御直接 Device 调用绕过 FramePlan 结构门禁。
+        .ok_or_else(|| rhi_invalid("D3d11 RHI sampled draw binding is missing"))?;
+    // 共享 pass 只验证当前输出与 packet 输入不会形成反馈环。
+    context
+        .rhi_device
+        .pass
+        .validate_sampled_texture(binding.texture())?;
+    // 最终 Adapter 防御复用真实资源描述与绑定采样语义门禁。
+    context.rhi_validate_sampled_resources(binding)?;
+    // 返回仍保持纹理、sampler 与采样语义原子的绑定值。
+    Ok(binding)
+}
 
 // 为 D3D11 context 编码通用 draw packet。
 impl D3d11Context {
@@ -14,6 +40,11 @@ impl D3d11Context {
     pub(super) fn draw_rhi_packet(&mut self, packet: DrawPacket) -> Result<()> {
         // draw 必须发生在显式 render pass 内。
         self.rhi_device.pass.require_open()?;
+        // 直接 Device 调用也不得用历史原生状态补齐残缺采样角色。
+        if !packet.has_valid_sampling() {
+            // 使用稳定参数错误拒绝缺失、多余或语义错配的条件绑定。
+            return Err(rhi_invalid("D3d11 RHI draw sampling binding is invalid"));
+        }
         // 先由共享 pipeline 表验证句柄仍存活且 kind 与资源一致。
         self.rhi_device.pipeline(packet.pipeline())?;
         // 读取 FramePlan 绑定的共享 pipeline 语义。
@@ -118,12 +149,8 @@ impl D3d11Context {
             }
             // 采样 quad 使用 16 字节 viewport uniform 和 t0/s0 绑定。
             PipelineKind::TexturedQuad | PipelineKind::TexturedQuadAdditive => {
-                // 读取 draw 前由 FramePlan 写入的完整采样绑定。
-                let binding = self
-                    .rhi_device
-                    .pass
-                    // 从共享状态取得与当前 pipeline 匹配的原子绑定。
-                    .sampled_binding_for(packet.pipeline())?;
+                // 只从当前 packet 取得完整采样资源并验证目标关系。
+                let binding = packet_sampled_binding(self, packet)?;
                 // 解析 SRV 并复制 COM 句柄，结束资源表借用。
                 let texture = self.rhi_device.texture(binding.texture())?;
                 // 解析已经在 bind 边界验证的 sampler 原生状态。
@@ -150,12 +177,8 @@ impl D3d11Context {
             }
             // R8 字形覆盖率 quad 复用 16 字节 viewport uniform 和 t0/s0 绑定。
             PipelineKind::GlyphCoverageQuad => {
-                // 读取 draw 前由 FramePlan 写入的完整采样绑定。
-                let binding = self
-                    .rhi_device
-                    .pass
-                    // 从共享状态取得与当前 pipeline 匹配的原子绑定。
-                    .sampled_binding_for(packet.pipeline())?;
+                // 只从当前 packet 取得完整采样资源并验证目标关系。
+                let binding = packet_sampled_binding(self, packet)?;
                 // 解析已经在 bind 边界验证为 R8 的 coverage 纹理。
                 let texture = self.rhi_device.texture(binding.texture())?;
                 // 解析已经在 bind 边界验证的最近点 sampler 原生状态。
@@ -182,12 +205,8 @@ impl D3d11Context {
             }
             // RGBA8 MSDF 字形 quad 使用 32 字节 viewport/extent/range uniform。
             PipelineKind::MsdfGlyphQuad => {
-                // 读取 draw 前由 FramePlan 写入的完整采样绑定。
-                let binding = self
-                    .rhi_device
-                    .pass
-                    // 从共享状态取得与当前 pipeline 匹配的原子绑定。
-                    .sampled_binding_for(packet.pipeline())?;
+                // 只从当前 packet 取得完整采样资源并验证目标关系。
+                let binding = packet_sampled_binding(self, packet)?;
                 // 解析已经在 bind 边界验证为 RGBA8 的 MSDF 距离纹理。
                 let texture = self.rhi_device.texture(binding.texture())?;
                 // 解析已经在 bind 边界验证的线性 sampler 原生状态。
@@ -278,12 +297,8 @@ impl D3d11Context {
             }
             // 单方向 blur 使用 304 字节 BlurConstants 和 float2 区域 quad。
             PipelineKind::BlurPass => {
-                // 读取 draw 前由 FramePlan 写入的完整采样绑定。
-                let binding = self
-                    .rhi_device
-                    .pass
-                    // 从共享状态取得与当前 pipeline 匹配的原子绑定。
-                    .sampled_binding_for(packet.pipeline())?;
+                // 只从当前 packet 取得完整采样资源并验证目标关系。
+                let binding = packet_sampled_binding(self, packet)?;
                 // 解析已经在 bind 边界验证的 Blur 颜色源纹理。
                 let texture = self.rhi_device.texture(binding.texture())?;
                 // 解析已经在 bind 边界验证的线性 sampler 原生状态。

@@ -71,7 +71,7 @@ where
         }
     }
 
-    // 按统一顺序完成 target、transfer、upload、draw 和 sampled 资源预检。
+    // 按统一顺序完成 target、transfer、upload 和完整 Draw 资源预检。
     fn run(&self, steps: &[FramePlanStep]) -> Result<()> {
         // 先完成 scope 专属 target 校验。
         self.validate_targets(steps)?;
@@ -79,10 +79,8 @@ where
         self.validate_transfers(steps)?;
         // 再预检所有 pass 内类型化 Buffer 上传。
         self.validate_buffer_uploads(steps)?;
-        // 再预检所有 pass 内 Draw 的真实 Buffer 资源。
-        self.validate_draw_resources(steps)?;
-        // 最后预检所有 pass 内 sampled binding 资源。
-        self.validate_sampled_bindings(steps)
+        // 最后预检所有 pass 内 Draw 的全部真实资源。
+        self.validate_draw_resources(steps)
     }
 
     // 校验 scope 与所有 render pass target 的组合关系。
@@ -190,7 +188,7 @@ where
         Ok(())
     }
 
-    // 预检所有 pass 内 Draw 的真实 Buffer 资源。
+    // 预检所有 pass 内 Draw 的真实 Buffer 与条件采样资源。
     fn validate_draw_resources(&self, steps: &[FramePlanStep]) -> Result<()> {
         // 按 FramePlan 顶层顺序逐个观察 render pass。
         for step in steps {
@@ -200,33 +198,13 @@ where
                 for command in &pass.commands {
                     // 只预检实际 Draw packet。
                     if let FramePlanCommand::Draw(packet) = command {
-                        // 共享资源表必须在任何 native side effect 前证明真实 Buffer 角色。
+                        // 共享资源表必须在任何 native side effect 前证明全部资源角色。
                         self.device.preflight_draw_resources(*packet)?;
                     }
                 }
             }
         }
-        // 所有 Draw 的真实 Buffer 描述都已通过共享预检。
-        Ok(())
-    }
-
-    // 预检所有 pass 内 sampled binding 的真实资源。
-    fn validate_sampled_bindings(&self, steps: &[FramePlanStep]) -> Result<()> {
-        // 按 FramePlan 顶层顺序逐个观察 render pass。
-        for step in steps {
-            // 只有 render pass 包含 sampled binding 命令。
-            if let FramePlanStep::Pass(pass) = step {
-                // 保持 pass 内命令顺序扫描。
-                for command in &pass.commands {
-                    // 只预检实际 sampled binding。
-                    if let FramePlanCommand::BindSampledTexture(binding) = command {
-                        // 共享资源表必须在任何 native side effect 前证明真实 sampled 资源。
-                        self.device.preflight_sampled_binding(*binding)?;
-                    }
-                }
-            }
-        }
-        // 所有 sampled binding 的真实资源都已通过共享预检。
+        // 所有 Draw 的真实资源描述都已通过共享预检。
         Ok(())
     }
 }
@@ -340,11 +318,6 @@ where
             FramePlanCommand::ClearRect { color, scissor } => {
                 // 将规范颜色和物理矩形一起交给 Adapter。
                 self.device.clear_rect(*color, *scissor)
-            }
-            // 绑定已经由计划冻结的原子 sampled resource。
-            FramePlanCommand::BindSampledTexture(binding) => {
-                // Adapter 只解析值对象中的两个不透明资源句柄。
-                self.device.bind_sampled_texture(*binding)
             }
             // 在唯一执行边界把类型化顶点编码为 Device 原语所需字节。
             FramePlanCommand::UploadVertex { buffer, data } => {

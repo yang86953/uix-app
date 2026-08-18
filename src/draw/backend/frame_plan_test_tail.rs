@@ -156,6 +156,8 @@ fn executes_clear_rect_in_order() {
         PipelineBinding::for_test(PipelineHandle::from_raw(1), PipelineKind::SolidMesh),
         // 原子绑定前序类型化上传的顶点与 Uniform buffer。
         DrawBufferBindings::new(BufferHandle::from_raw(3), BufferHandle::from_raw(4)),
+        // SolidMesh 不读取纹理，显式选择无采样角色。
+        DrawSamplingBinding::none(),
         // 保留三个顶点的最小非空范围。
         DrawRange::vertices(3),
     );
@@ -514,12 +516,12 @@ fn gradient_frame_plan_validates_radial_outer_radius_before_adapter() {
     assert_eq!(negative_error.code(), Errc::InvalidArgument);
 }
 
-// 构造由多个采样绑定依次覆盖的 coverage FramePlan。
-fn coverage_plan_with_binding_kinds(
+// 构造由当前 DrawPacket 自身拥有条件采样资源的 coverage FramePlan。
+fn coverage_plan_with_sampling_kind(
     // 冻结测试 Surface 的代际与物理范围。
     token: SurfaceToken,
-    // 按命令顺序提供每次绑定的 pipeline 语义。
-    binding_kinds: &[PipelineKind],
+    // 提供完整绑定使用的 pipeline 语义，None 用于验证缺失角色。
+    binding_kind: Option<PipelineKind>,
 ) -> FramePlan {
     // 复用具备完整 viewport、上传和 draw 的最小计划。
     let mut plan = test_plan(token);
@@ -547,89 +549,78 @@ fn coverage_plan_with_binding_kinds(
                     height: 64.0,
                 }));
             }
-            // draw 必须冻结 coverage pipeline 语义。
+            // draw 必须同时冻结 coverage pipeline 与条件采样资源。
             FramePlanCommand::Draw(packet) => {
-                // 保留完整 Buffer bindings 与范围，只替换 coverage pipeline。
-                *packet = packet.with_pipeline(PipelineBinding::for_test(
+                // 创建当前 Draw 唯一的 coverage pipeline 身份。
+                let pipeline = PipelineBinding::for_test(
                     // 使用稳定且独立的 draw pipeline 句柄。
                     PipelineHandle::from_raw(10),
                     // 选择 R8 最近点采样语义。
                     PipelineKind::GlyphCoverageQuad,
-                ));
+                );
+                // 按测试输入构造完整采样资源或明确缺失角色。
+                let sampling = match binding_kind {
+                    // 有绑定时从指定 pipeline 语义派生不可拆资源事实。
+                    Some(kind) => DrawSamplingBinding::sampled(
+                        // 一次绑定纹理、sampler 与采样语义。
+                        SampledTextureBinding::for_pipeline(
+                            // 使用稳定的非目标纹理身份。
+                            TextureHandle::from_raw(30),
+                            // 使用稳定 sampler 身份。
+                            SamplerHandle::from_raw(31),
+                            // 使用独立身份冻结调用方指定的采样语义。
+                            PipelineBinding::for_test(PipelineHandle::from_raw(20), kind),
+                        ),
+                    ),
+                    // 缺失分支显式构造无采样角色供共享门禁拒绝。
+                    None => DrawSamplingBinding::none(),
+                };
+                // 保留 Buffer 与范围，只替换完整 pipeline 和采样事实。
+                *packet = packet.with_pipeline(pipeline).with_sampling(sampling);
             }
             // viewport 与 scissor 不参与本测试的采样语义。
             _ => {}
         }
     }
-    // 定位唯一 draw，使全部测试绑定严格位于其前方。
-    let draw_index = pass
-        // 只读遍历当前命令顺序。
-        .commands
-        // 查找唯一 draw 命令。
-        .iter()
-        // 返回命令索引供稳定插入。
-        .position(|command| matches!(command, FramePlanCommand::Draw(_)))
-        // 测试基线必须继续包含 draw。
-        .expect("test plan must contain a draw");
-    // 按调用方顺序插入全部采样绑定。
-    for (offset, kind) in binding_kinds.iter().copied().enumerate() {
-        // 每个测试 pipeline 使用独立不透明句柄，避免伪造陈旧身份。
-        let pipeline = PipelineBinding::for_test(
-            // 从稳定基值生成互不重复的句柄。
-            PipelineHandle::from_raw(20 + offset as u64),
-            // 使用调用方指定的封闭采样语义。
-            kind,
-        );
-        // 把绑定插入 draw 前，并保持调用方提供的先后顺序。
-        pass.commands.insert(
-            // 后续插入点随已插入命令向后移动。
-            draw_index + offset,
-            // 构造完整的类型化采样绑定命令。
-            FramePlanCommand::BindSampledTexture(SampledTextureBinding::for_pipeline(
-                // 使用稳定的非目标纹理身份。
-                TextureHandle::from_raw(30),
-                // 使用稳定 sampler 身份，实际描述由 Device 边界验证。
-                SamplerHandle::from_raw(31),
-                // 采样语义只能从本次 pipeline 身份派生。
-                pipeline,
-            )),
-        );
-    }
-    // 返回已经按顺序冻结采样绑定的完整计划。
+    // 返回采样资源已经原子收归唯一 DrawPacket 的完整计划。
     plan
 }
 
-// FramePlan 必须只接受 draw 前最近且语义匹配的采样绑定。
+// FramePlan 必须只接受当前 DrawPacket 自身完整且语义匹配的采样绑定。
 #[test]
-fn sampled_draw_validates_the_latest_binding_before_device() {
+fn sampled_draw_validates_packet_owned_binding_before_device() {
     // 创建稳定的第一代 Surface token。
     let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
-    // 较旧错配绑定被后续 coverage 绑定覆盖时计划必须有效。
-    let valid = coverage_plan_with_binding_kinds(
+    // 当前 packet 拥有 coverage 绑定时计划必须有效。
+    let valid = coverage_plan_with_sampling_kind(
         // 复用同一 Surface 事实。
         token,
-        // 最近绑定使用 coverage 语义。
-        &[PipelineKind::TexturedQuad, PipelineKind::GlyphCoverageQuad],
+        // packet 绑定使用 coverage 语义。
+        Some(PipelineKind::GlyphCoverageQuad),
     );
     // 完整共享门禁必须接受最近绑定匹配的计划。
     assert!(valid.validate().is_ok());
-    // 最近绑定被颜色语义覆盖时必须在 Device 前失败。
-    let invalid = coverage_plan_with_binding_kinds(
+    // 当前 packet 携带颜色采样语义时必须在 Device 前失败。
+    let invalid = coverage_plan_with_sampling_kind(
         // 复用同一 Surface 事实。
         token,
-        // 最近绑定故意使用 premultiplied color 语义。
-        &[PipelineKind::GlyphCoverageQuad, PipelineKind::TexturedQuad],
+        // packet 绑定故意使用 premultiplied color 语义。
+        Some(PipelineKind::TexturedQuad),
     );
     // 执行共享 FramePlan 门禁并取得稳定错误。
     let error = invalid
         // 不进入任何 RecordingDevice 方法。
         .validate()
         // 错配必须显式失败。
-        .expect_err("latest sampled binding mismatch must fail");
+        .expect_err("packet sampled binding mismatch must fail");
     // 采样语义错配属于共享参数错误。
     assert_eq!(error.code(), Errc::InvalidArgument);
     // 诊断必须明确指向绑定与 pipeline contract。
-    assert!(error.what().contains("sampled binding does not match"));
+    assert!(error.what().contains("sampling binding does not match"));
+    // 采样 pipeline 明确缺失绑定时也必须在 Device 前失败。
+    let missing = coverage_plan_with_sampling_kind(token, None);
+    // 条件角色不完整不能由任一 Adapter 的历史状态补齐。
+    assert!(missing.validate().is_err());
 }
 
 // FramePlan 必须在 Device 前拒绝离屏目标与采样纹理相同的反馈环。
@@ -638,10 +629,11 @@ fn sampled_binding_rejects_feedback_loop_before_device() {
     // 创建稳定的测试 Surface token 以复用完整计划 fixture。
     let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
     // 构造绑定纹理为三十的完整 sampled plan。
-    let mut invalid = coverage_plan_with_binding_kinds(token, &[PipelineKind::GlyphCoverageQuad]);
+    let mut invalid =
+        coverage_plan_with_sampling_kind(token, Some(PipelineKind::GlyphCoverageQuad));
     // 把计划作用域切换为只允许显式离屏目标的 Device 事务。
     invalid.scope = FramePlanScope::Offscreen;
-    // 让目标与 BindSampledTexture 使用同一个纹理身份。
+    // 让目标与当前 DrawPacket 的采样纹理使用同一个身份。
     {
         // 只在本作用域内借用计划中的 render pass。
         let FramePlanStep::Pass(pass) = &mut invalid.steps[0] else {
@@ -683,7 +675,7 @@ fn sampled_resource_preflight_rejects_before_device() {
     // 创建稳定的第一代 Surface token。
     let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
     // 构造完整的 coverage sampled 计划。
-    let plan = coverage_plan_with_binding_kinds(token, &[PipelineKind::GlyphCoverageQuad]);
+    let plan = coverage_plan_with_sampling_kind(token, Some(PipelineKind::GlyphCoverageQuad));
     // 注入 sampled 资源预检失败。
     let mut rejected = recording_context(token);
     // 只影响 shared sampled 资源预检，不改变其它 Device 行为。

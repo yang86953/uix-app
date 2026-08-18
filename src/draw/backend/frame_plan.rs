@@ -11,7 +11,7 @@ use crate::core::PresentDamage;
 // 引入 platform 私有的薄 RHI 原语。
 use crate::native::present::rhi::{
     DrawPacket, GraphicsContextRhi, GraphicsDevice, LoadAction, RhiColor, RhiScissor, RhiViewport,
-    SampledTextureBinding, SubmissionHandle, SurfaceToken, TextureCopy, TextureHandle, TextureMove,
+    SubmissionHandle, SurfaceToken, TextureCopy, TextureHandle, TextureMove,
 };
 // 将不触发 surface present 的离屏执行边界拆到独立文件。
 #[path = "frame_plan_execution.rs"]
@@ -47,8 +47,6 @@ pub(crate) enum FramePlanCommand {
         // 保存左上原点的物理清理区域。
         scissor: RhiScissor,
     },
-    // 绑定固定 t0/s0 ABI 的原子采样资源。
-    BindSampledTexture(SampledTextureBinding),
     // 在 pass 内按 painter order 上传一个类型化顶点流。
     UploadVertex {
         // 保存目标顶点 buffer。
@@ -257,11 +255,6 @@ impl FramePlan {
                     }
                     // 验证 pass 内的命令顺序元素。
                     for (command_index, command) in pass.commands.iter().enumerate() {
-                        // 每条采样命令都必须立即通过当前 pass 目标反馈环门禁。
-                        if let FramePlanCommand::BindSampledTexture(binding) = command {
-                            // 不等待后续覆盖绑定，保持 painter order 的失败语义。
-                            validation::validate_sampled_binding_target(pass.target, *binding)?;
-                        }
                         // 拒绝空范围或超过两个原生 ABI 共同值域的 draw packet。
                         if let FramePlanCommand::Draw(packet) = command {
                             // 统一范围门禁避免 Adapter 对同一个 u32 产生不同解释。
@@ -272,7 +265,14 @@ impl FramePlan {
                                     "FramePlan draw packet range is invalid",
                                 ));
                             }
-                            // 句柄绑定、前序上传布局和采样状态必须匹配共享 pipeline 契约。
+                            // 当前 Draw 自身的采样输入必须与离屏输出保持资源分离。
+                            validation::validate_draw_sampling_target(
+                                // 使用当前 pass 已冻结的逻辑目标。
+                                pass.target,
+                                // 只读取 packet 原子拥有的条件采样角色。
+                                packet.sampling(),
+                            )?;
+                            // 句柄绑定、前序上传布局和采样角色必须匹配共享 pipeline 契约。
                             validation::validate_draw_uploads(pass, command_index, *packet)?;
                         }
                         // 验证 viewport 不携带非有限或零尺寸。
@@ -428,10 +428,10 @@ mod tests {
     use crate::core::error::{Errc, Error, Result};
     // 引入测试计划依赖的薄 RHI 类型。
     use crate::native::present::rhi::{
-        BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, GraphicsDevice,
-        GraphicsDeviceCapabilities, GraphicsSurface, IndexBufferBinding, IndexFormat, LoadAction,
-        PipelineBinding, PipelineHandle, PipelineKind, RenderTargetHandle, RhiBufferUpload,
-        RhiBufferUploadPreflight, RhiColor, RhiExtent, RhiGradientRasterParams,
+        BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawSamplingBinding,
+        GraphicsDevice, GraphicsDeviceCapabilities, GraphicsSurface, IndexBufferBinding,
+        IndexFormat, LoadAction, PipelineBinding, PipelineHandle, PipelineKind, RenderTargetHandle,
+        RhiBufferUpload, RhiBufferUploadPreflight, RhiColor, RhiExtent, RhiGradientRasterParams,
         RhiMeshRasterParams, RhiPresentTransaction, RhiSampledRasterParams, RhiScissor,
         RhiTextureTransfer, RhiViewport, SampledTextureBinding, SamplerHandle, SubmissionHandle,
         SurfaceFrame, SurfaceToken, TextureCopy, TextureHandle, TextureMove,
@@ -532,8 +532,8 @@ mod tests {
             Ok(())
         }
 
-        // 在任何 Device 原语前预检 Draw 真实 Buffer 资源。
-        fn preflight_draw_resources(&self, _packet: DrawPacket) -> Result<()> {
+        // 在任何 Device 原语前预检 Draw 的全部真实资源。
+        fn preflight_draw_resources(&self, packet: DrawPacket) -> Result<()> {
             // 注入失败时保持 Device 日志为空。
             if self.fail_draw_preflight {
                 // 返回共享参数错误，模拟资源表角色或容量拒绝。
@@ -542,21 +542,15 @@ mod tests {
                     "recording draw resource preflight failed",
                 ));
             }
-            // 关闭注入后允许合法 Draw 继续执行。
-            Ok(())
-        }
-
-        // 在任何 Device 原语前预检 sampled binding 真实资源。
-        fn preflight_sampled_binding(&self, _binding: SampledTextureBinding) -> Result<()> {
-            // 注入失败时保持 Device 日志为空。
-            if self.fail_sampled_preflight {
+            // 只有携带条件采样资源的 Draw 才消费 sampled 失败注入。
+            if packet.sampling().sampled_texture().is_some() && self.fail_sampled_preflight {
                 // 返回共享参数错误，模拟纹理格式或 sampler 过滤拒绝。
                 return Err(Error::new(
                     Errc::InvalidArgument,
                     "recording sampled resource preflight failed",
                 ));
             }
-            // 关闭注入后允许合法 sampled binding 继续执行。
+            // 关闭注入后允许合法完整 Draw 继续执行。
             Ok(())
         }
 
@@ -608,14 +602,6 @@ mod tests {
         fn clear_rect(&mut self, _color: RhiColor, _scissor: RhiScissor) -> Result<()> {
             // 记录调用事件。
             self.log.push_back("clear_rect");
-            // 返回成功。
-            Ok(())
-        }
-
-        // 记录纹理绑定。
-        fn bind_sampled_texture(&mut self, _binding: SampledTextureBinding) -> Result<()> {
-            // 记录调用事件。
-            self.log.push_back("bind_sampled_texture");
             // 返回成功。
             Ok(())
         }
@@ -731,12 +717,6 @@ mod tests {
             self.device.preflight_draw_resources(packet)
         }
 
-        // 把 sampled 资源预检委托给内嵌记录 device。
-        fn preflight_sampled_binding(&self, binding: SampledTextureBinding) -> Result<()> {
-            // 复用唯一测试资源预检路径。
-            self.device.preflight_sampled_binding(binding)
-        }
-
         // 把 owner-context 激活委托给内嵌记录 device。
         fn activate(&mut self) -> Result<()> {
             // surface 与 offscreen 模式必须观察同一激活边界。
@@ -775,12 +755,6 @@ mod tests {
         fn clear_rect(&mut self, color: RhiColor, scissor: RhiScissor) -> Result<()> {
             // 复用唯一测试记录路径。
             self.device.clear_rect(color, scissor)
-        }
-
-        // 把采样资源绑定委托给内嵌记录 device。
-        fn bind_sampled_texture(&mut self, binding: SampledTextureBinding) -> Result<()> {
-            // 复用唯一测试记录路径。
-            self.device.bind_sampled_texture(binding)
         }
 
         // 把不可变上传载荷委托给内嵌记录 device。

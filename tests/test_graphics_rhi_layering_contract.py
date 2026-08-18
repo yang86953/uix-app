@@ -236,16 +236,16 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         self.assertIn("pub(crate) struct RhiPassState", pass_state)
         # 活动目标、extent、scissor 与绑定必须由一个原子值共同生灭。
         self.assertIn("active: Option<ActiveRhiPass>", pass_state)
-        # 目标反馈环必须从原子绑定读取纹理并在 API 无关层拒绝。
-        self.assertIn("if active.target.texture() == Some(binding.texture())", pass_state)
+        # 目标反馈环必须只接收当前 packet 的纹理身份并在 API 无关层拒绝。
+        self.assertIn("if target.texture() == Some(texture)", pass_state)
         # OpenGL 必须把 pass 开始委托给共享状态机。
         self.assertIn("self.pass.begin(target, extent, load)?;", opengl)
         # D3D11 必须把同一转换委托给共享状态机。
         self.assertIn("self.rhi_device.pass.begin(target, extent, load)?;", d3d11)
-        # OpenGL 的采样绑定必须使用共享原子绑定与反馈环门禁。
-        self.assertIn("self.pass.bind_sampled_texture(binding)?;", opengl)
-        # D3D11 的采样绑定必须使用完全相同的共享门禁。
-        self.assertIn("self.rhi_device.pass.bind_sampled_texture(binding)?;", d3d11_resources)
+        self.assertIn("packet.sampling()", opengl)
+        self.assertIn("packet.sampling()", d3d11_resources + d3d11)
+        self.assertNotIn("sampled_binding_for", opengl + d3d11_resources + d3d11)
+        self.assertNotIn("bind_sampled_texture", opengl + d3d11_resources + d3d11)
         # 两个 Adapter 不得保留会再次漂移的平行状态字段。
         for adapter, source in (("opengl", opengl), ("d3d11", d3d11)):
             # 逐个拒绝旧的重复事实来源。

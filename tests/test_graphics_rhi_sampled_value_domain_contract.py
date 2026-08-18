@@ -95,15 +95,15 @@ class GraphicsRhiSampledValueDomainContractTests(unittest.TestCase):
         # MSDF 必须与颜色采样共同通过封闭枚举只接受线性过滤。
         self.assertIn("matches!(sampler.filter(), SamplerFilter::Linear)", sampling_gate)
         # OpenGL 共享 helper 必须取得与 pipeline 匹配的绑定。
-        self.assertIn("sampled_binding_for(pipeline)", opengl_draw_source)
-        # OpenGL Coverage draw 必须把当前 pipeline 交给共享 helper。
-        self.assertIn("bind_sampled(gl, self, program, packet.pipeline())", gl_coverage_draw)
+        self.assertIn("packet.sampling()", opengl_draw_source)
+        # OpenGL Coverage draw 必须把当前 packet 的条件采样角色交给共享 helper。
+        self.assertIn("bind_sampled(gl, self, program, packet.sampling())", gl_coverage_draw)
         # OpenGL MSDF draw 必须复用同一共享 helper。
-        self.assertIn("bind_sampled(gl, self, program, packet.pipeline())", gl_msdf_draw)
-        # D3D11 Coverage draw 必须取得与 packet pipeline 匹配的绑定。
-        self.assertIn("sampled_binding_for(packet.pipeline())", d3d_coverage_draw)
+        self.assertIn("bind_sampled(gl, self, program, packet.sampling())", gl_msdf_draw)
+        # D3D11 Coverage draw 必须通过共享 helper 取得当前 packet 的完整绑定。
+        self.assertIn("packet_sampled_binding(self, packet)?", d3d_coverage_draw)
         # D3D11 MSDF draw 复用同一共享绑定门禁。
-        self.assertIn("sampled_binding_for(packet.pipeline())", d3d_msdf_draw)
+        self.assertIn("packet_sampled_binding(self, packet)?", d3d_msdf_draw)
         # OpenGL Coverage 必须直接量化已验证的 sample 与 tint。
         self.assertIn("floor(texture(u_tex, v_uv).r * 255.0 + 0.5)", gl_coverage)
         # OpenGL Coverage 必须直接量化已验证的 tint。

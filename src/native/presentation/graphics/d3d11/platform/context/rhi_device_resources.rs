@@ -172,14 +172,12 @@ impl D3d11Context {
     pub(super) fn rhi_destroy_sampler(&mut self, sampler: SamplerHandle) -> Result<()> {
         // 由共享资源表检查式取出 sampler 及其原生状态。
         self.rhi_device.samplers.take(sampler)?;
-        // 清理共享 pass 中可能残留的 sampler 绑定身份。
-        self.rhi_device.pass.unbind_sampler(sampler);
         // 返回成功。
         Ok(())
     }
 
     // 只读验证 sampled binding 指向的真实纹理与 sampler 资源。
-    pub(super) fn rhi_validate_sampled_binding(
+    pub(super) fn rhi_validate_sampled_resources(
         // 只读借用 D3D11 owner，避免预检触碰原生状态。
         &self,
         // 接收共享 pipeline 语义绑定。
@@ -195,18 +193,5 @@ impl D3d11Context {
         let sampler_desc = sampler.desc;
         // 委托共享绑定契约验证资源描述与 pipeline sampling 语义。
         binding.validate_resources(format, sampler_desc)
-    }
-
-    // 绑定当前 pass 的采样纹理和 sampler。
-    pub(super) fn rhi_bind_sampled_texture(
-        &mut self,
-        binding: SampledTextureBinding,
-    ) -> Result<()> {
-        // 先复用只读资源真实性与采样语义预检。
-        self.rhi_validate_sampled_binding(binding)?;
-        // 由共享状态机统一验证 pass 和目标反馈环后原子记录绑定。
-        self.rhi_device.pass.bind_sampled_texture(binding)?;
-        // 返回绑定成功。
-        Ok(())
     }
 }

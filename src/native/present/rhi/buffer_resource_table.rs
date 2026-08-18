@@ -99,8 +99,9 @@ mod tests {
     use crate::core::Errc;
     // 引入 DrawPacket 与 Buffer 共享值对象。
     use crate::native::present::rhi::{
-        BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, IndexBufferBinding,
-        IndexFormat, PipelineBinding, PipelineHandle, PipelineKind, RhiBufferUploadPreflight,
+        BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawSamplingBinding,
+        IndexBufferBinding, IndexFormat, PipelineBinding, PipelineHandle, PipelineKind,
+        RhiBufferUploadPreflight,
     };
 
     // 保存测试资源的共享描述事实。
@@ -126,6 +127,8 @@ mod tests {
             PipelineBinding::for_test(PipelineHandle::from_raw(1), PipelineKind::SolidMesh),
             // 原子绑定真实顶点与 Uniform 句柄。
             DrawBufferBindings::new(vertex, uniform),
+            // SolidMesh 不读取纹理，显式选择无采样角色。
+            DrawSamplingBinding::none(),
             // 固定两个 float2 顶点。
             DrawRange::vertices(2),
         )
@@ -168,6 +171,8 @@ mod tests {
             PipelineBinding::for_test(PipelineHandle::from_raw(1), PipelineKind::SolidMesh),
             // 复用两个存活 Buffer 角色。
             DrawBufferBindings::new(vertex, uniform),
+            // SolidMesh 不读取纹理，显式选择无采样角色。
+            DrawSamplingBinding::none(),
             // 使用共享非索引范围表达容量越界。
             DrawRange::vertices(3),
         );
@@ -184,6 +189,8 @@ mod tests {
             PipelineBinding::for_test(PipelineHandle::from_raw(1), PipelineKind::SolidMesh),
             // 复用两个存活 Buffer 角色。
             DrawBufferBindings::new(vertex, uniform),
+            // SolidMesh 不读取纹理，显式选择无采样角色。
+            DrawSamplingBinding::none(),
             // 绑定两个索引并从第一个索引开始读取。
             DrawRange::indices(IndexBufferBinding::new(index, IndexFormat::Uint32), 2, 1),
         );

@@ -11,9 +11,8 @@ use crate::native::present::rhi::{
     GraphicsSurface, GraphicsSurfaceCapabilities, LoadAction, PipelineBinding, PipelineDesc,
     RenderTargetHandle, RhiBufferUpload, RhiBufferUploadPreflight, RhiColor, RhiExtent,
     RhiPresentTransaction, RhiScissor, RhiSurfaceReadback, RhiSurfaceResizeTransaction,
-    RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle,
-    SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy, TextureDesc, TextureHandle,
-    TextureMove,
+    RhiTextureUpload, RhiViewport, SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceFrame,
+    SurfaceToken, TextureCopy, TextureDesc, TextureHandle, TextureMove,
 };
 // 引入 OpenGL surface test_present 的共享结果类型。
 use crate::native::present::PresentTestResult;
@@ -103,7 +102,7 @@ where
         self.rhi_pipeline().rhi_resolve_render_target(texture)
     }
 
-    // 在共享资源表上只读预检 DrawPacket 的 Buffer 资源。
+    // 在共享资源表上只读预检 DrawPacket 的全部资源。
     fn preflight_draw_resources(&self, packet: DrawPacket) -> Result<()> {
         // 先拒绝已关闭 owner，不恢复 native context。
         self.rhi_ensure_active()?;
@@ -125,14 +124,6 @@ where
         self.rhi_ensure_active()?;
         // 只读转发不产生 OpenGL 状态或资源副作用。
         self.rhi_pipeline().rhi_preflight_texture_move(movement)
-    }
-
-    // 在共享资源表上只读预检完整 sampled 绑定事实。
-    fn preflight_sampled_binding(&self, binding: SampledTextureBinding) -> Result<()> {
-        // 先拒绝已关闭 owner，不恢复 native context。
-        self.rhi_ensure_active()?;
-        // 只读转发不产生 OpenGL 状态或资源副作用。
-        self.rhi_pipeline().rhi_preflight_sampled_binding(binding)
     }
 
     // 在共享资源表上只读预检 Buffer 上传的资源身份与载荷。
@@ -222,13 +213,6 @@ where
         self.rhi_ensure_active()?;
         // 将局部清理交给 owner-thread raster RHI。
         self.rhi_pipeline_mut().rhi_clear_rect(color, scissor)
-    }
-
-    // 绑定完整 sampled texture 事实。
-    fn bind_sampled_texture(&mut self, binding: SampledTextureBinding) -> Result<()> {
-        // 在绑定 native sampled resource 前先拒绝已关闭 owner。
-        self.rhi_ensure_active()?;
-        self.rhi_pipeline_mut().rhi_bind_sampled_texture(binding)
     }
 
     // 执行 draw packet。

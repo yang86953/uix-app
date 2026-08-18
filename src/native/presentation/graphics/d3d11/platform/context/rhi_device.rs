@@ -394,14 +394,21 @@ impl GraphicsDevice for D3d11Context {
         self.rhi_device.textures.validate_move(movement)
     }
 
-    // 在执行 draw 前只读预检真实 pipeline 与 Buffer 资源角色。
+    // 在执行 draw 前只读预检真实 pipeline、Buffer 与条件采样资源角色。
     fn preflight_draw_resources(&self, packet: DrawPacket) -> Result<()> {
         // 关闭后的 owner 必须先于资源表查询拒绝 draw 预检。
         self.ensure_active()?;
         // 共享 pipeline 表先验证句柄仍存活且 kind 与身份一致。
         self.rhi_device.pipeline(packet.pipeline())?;
-        // 共享 Buffer 表读取冻结描述并统一验证 draw 资源关系。
-        self.rhi_device.buffers.validate_draw(packet)
+        // 共享 Buffer 表读取冻结描述并统一验证固定 draw 资源关系。
+        self.rhi_device.buffers.validate_draw(packet)?;
+        // 只有当前 packet 明确携带采样资源时才解析纹理与 sampler。
+        if let Some(binding) = packet.sampling().sampled_texture() {
+            // 条件资源必须由真实描述满足绑定时冻结的采样语义。
+            self.rhi_validate_sampled_resources(binding)?;
+        }
+        // 当前 DrawPacket 的全部真实资源均已通过只读预检。
+        Ok(())
     }
 
     // 在执行 Buffer 上传前只读预检真实句柄、用途、元素 ABI 与范围。
@@ -410,14 +417,6 @@ impl GraphicsDevice for D3d11Context {
         self.ensure_active()?;
         // 共享 Buffer 表读取冻结描述并统一验证上传关系。
         self.rhi_device.buffers.validate_upload(upload)
-    }
-
-    // 在执行 sampled bind 前只读预检真实纹理与 sampler 资源。
-    fn preflight_sampled_binding(&self, binding: SampledTextureBinding) -> Result<()> {
-        // 关闭后的 owner 必须先于资源表查询拒绝 sampled 预检。
-        self.ensure_active()?;
-        // 共享资源 helper 只读取冻结描述并验证采样语义，不触碰 native 状态。
-        self.rhi_validate_sampled_binding(binding)
     }
 
     // 创建当前 D3D11 适配器已经具备 shader ABI 的有限 pipeline。
@@ -497,8 +496,6 @@ impl GraphicsDevice for D3d11Context {
         self.rhi_device.pass.validate_texture_destroy(texture)?;
         // 由共享资源表检查式取出资源，离开作用域时释放 texture 与 views。
         self.rhi_device.textures.take(texture)?;
-        // 清理当前 pass 可能持有的 sampled texture 身份。
-        self.rhi_device.pass.unbind_texture(texture);
         // 返回成功。
         Ok(())
     }
@@ -579,14 +576,6 @@ impl GraphicsDevice for D3d11Context {
         self.rhi_device.active_target = Some(rtv);
         // 返回 pass 开始成功。
         Ok(())
-    }
-
-    // 绑定当前 pass 的采样纹理和 sampler。
-    fn bind_sampled_texture(&mut self, binding: SampledTextureBinding) -> Result<()> {
-        // 关闭后的 owner 必须先于共享 pass 或原生绑定拒绝采样绑定。
-        self.ensure_active()?;
-        // 把绑定校验和状态保存委托给 resource helper。
-        self.rhi_bind_sampled_texture(binding)
     }
 
     // 设置当前 pass viewport。

@@ -62,6 +62,9 @@ class GraphicsRhiDrawRangeContractTests(unittest.TestCase):
         self.assertIn("binding: IndexBufferBinding", shared)
         # DrawPacket 必须只引用封闭范围。
         self.assertIn("range: DrawRange", shared)
+        # DrawPacket 必须原子拥有采样选择。
+        self.assertIn("sampling: DrawSamplingBinding", shared)
+        self.assertIn("pub(crate) const fn sampling(self)", shared)
         # DrawBufferBindings 必须把顶点与 uniform 绑定封装为不可拆的私有值。
         self.assertIn("pub(crate) struct DrawBufferBindings", shared)
         # 两个 buffer 绑定字段必须保持非可选且对外只读。
@@ -127,6 +130,8 @@ class GraphicsRhiDrawRangeContractTests(unittest.TestCase):
         self.assertEqual(producers.count("DrawPacket::new("), 19)
         # 当前十九个 packet 必须显式构造完整 typed buffer bindings。
         self.assertEqual(producers.count("DrawBufferBindings::new("), 19)
+        # 全部生产 packet 必须显式选择采样绑定。
+        self.assertEqual(producers.count("DrawSamplingBinding::"), 19)
         # 生产端不得退回结构字面量或可选 uniform 绑定。
         self.assertNotIn("DrawPacket {", producers)
         self.assertNotIn("uniform_buffer: Some", producers)
