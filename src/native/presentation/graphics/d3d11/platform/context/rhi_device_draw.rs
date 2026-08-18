@@ -74,6 +74,15 @@ impl D3d11Context {
             // 非索引 packet 不绑定 index buffer。
             None
         };
+        // 在 shader helper 分派前统一绑定共享二维光栅与深度模板状态。
+        self.pipeline.apply_rhi_fixed_state(
+            // 使用当前 owner-thread immediate context。
+            &self.context,
+            // 传入 FramePlan pipeline 的共享光栅状态。
+            contract.raster,
+            // 传入 FramePlan pipeline 的共享深度模板状态。
+            contract.depth_stencil,
+        )?;
         // 按封闭 pipeline 语义选择已经验证过的 D3D11 shader ABI。
         match pipeline_kind {
             // 实心 mesh 使用 32 字节 MeshConstants（viewport、padding、颜色）。

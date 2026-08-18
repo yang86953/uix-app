@@ -61,8 +61,6 @@ impl D3d11Pipeline {
             context.PSSetShaderResources(0, Some(&[Some(texture.clone())]));
             // 绑定当前 sampler。
             context.PSSetSamplers(0, Some(&[Some(sampler.clone())]));
-            // 复用无剔除 rasterizer。
-            context.RSSetState(&self.rasterizer);
             // 根据 pipeline 语义选择 SrcOver 或 Additive blend。
             context.OMSetBlendState(blend_state, None, 0xffff_ffff);
             // 按 packet 的索引形态编码实际 draw。

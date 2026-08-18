@@ -41,9 +41,11 @@ mod transfer;
 // 向 Drawing System 与各原生 Adapter 暴露同一份类型化 pipeline 契约。
 #[allow(unused_imports)]
 pub(crate) use pipeline::{
-    PipelineBinding, PipelineBlend, PipelineBlendFactor, PipelineBlendOperation,
-    PipelineBlendState, PipelineColorWriteMask, PipelineContract, PipelineDesc, PipelineKind,
-    PipelineSampling, PipelineUniformLayout, PipelineVertexLayout,
+    PIPELINE_DEPTH_STENCIL_DISABLED, PIPELINE_RASTER_2D, PipelineBinding, PipelineBlend,
+    PipelineBlendFactor, PipelineBlendOperation, PipelineBlendState, PipelineColorWriteMask,
+    PipelineContract, PipelineCullMode, PipelineDepthClip, PipelineDepthState,
+    PipelineDepthStencilState, PipelineDesc, PipelineFrontFace, PipelineKind, PipelineRasterState,
+    PipelineSampling, PipelineStencilState, PipelineUniformLayout, PipelineVertexLayout,
 };
 // 向 Drawing、Surface 与原生 Adapter 暴露唯一颜色解释。
 pub(crate) use color::{RhiColorContract, UIX_COLOR_CONTRACT};

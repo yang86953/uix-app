@@ -33,6 +33,182 @@ fn d3d11_color_write_mask(mask: PipelineColorWriteMask) -> u8 {
     }
 }
 
+// 把 API 无关面剔除模式翻译为 D3D11 枚举。
+fn d3d11_cull_mode(cull_mode: PipelineCullMode) -> D3D11_CULL_MODE {
+    // 只映射共享层允许的封闭剔除集合。
+    match cull_mode {
+        // None 对应不剔除任何绕序。
+        PipelineCullMode::None => D3D11_CULL_NONE,
+    }
+}
+
+// 把 API 无关正面绕序翻译为 D3D11 布尔值。
+fn d3d11_front_counter_clockwise(front_face: PipelineFrontFace) -> BOOL {
+    // 只映射共享层允许的封闭绕序集合。
+    match front_face {
+        // CounterClockwise 在 D3D11 中必须显式启用逆时针正面。
+        PipelineFrontFace::CounterClockwise => TRUE,
+    }
+}
+
+// 把 API 无关深度裁剪语义翻译为 D3D11 布尔值。
+fn d3d11_depth_clip_enabled(depth_clip: PipelineDepthClip) -> BOOL {
+    // 只映射共享层允许的封闭裁剪集合。
+    match depth_clip {
+        // Enabled 与 OpenGL ES 固定裁剪体保持一致。
+        PipelineDepthClip::Enabled => TRUE,
+    }
+}
+
+// 把 API 无关深度状态翻译为 D3D11 测试开关。
+fn d3d11_depth_enabled(depth: PipelineDepthState) -> BOOL {
+    // 只映射共享层允许的封闭深度集合。
+    match depth {
+        // Disabled 关闭深度测试。
+        PipelineDepthState::Disabled => FALSE,
+    }
+}
+
+// 把 API 无关深度状态翻译为 D3D11 写入开关。
+fn d3d11_depth_write_mask(depth: PipelineDepthState) -> D3D11_DEPTH_WRITE_MASK {
+    // 只映射共享层允许的封闭深度集合。
+    match depth {
+        // Disabled 同时关闭深度写入。
+        PipelineDepthState::Disabled => D3D11_DEPTH_WRITE_MASK_ZERO,
+    }
+}
+
+// 把 API 无关深度状态翻译为禁用时的稳定 D3D11 比较函数。
+fn d3d11_depth_comparison(depth: PipelineDepthState) -> D3D11_COMPARISON_FUNC {
+    // 只映射共享层允许的封闭深度集合。
+    match depth {
+        // Disabled 使用 Always，避免描述继续携带默认 Less 语义。
+        PipelineDepthState::Disabled => D3D11_COMPARISON_ALWAYS,
+    }
+}
+
+// 把 API 无关模板状态翻译为 D3D11 测试开关。
+fn d3d11_stencil_enabled(stencil: PipelineStencilState) -> BOOL {
+    // 只映射共享层允许的封闭模板集合。
+    match stencil {
+        // Disabled 关闭模板测试与写入。
+        PipelineStencilState::Disabled => FALSE,
+    }
+}
+
+// 从共享二维状态创建一个 D3D11 rasterizer 对象。
+fn create_rhi_rasterizer_state(
+    // 借用当前 pipeline 所属的 D3D11 device。
+    device: &ID3D11Device,
+    // 接收 API 无关二维光栅状态。
+    state: PipelineRasterState,
+) -> Result<ID3D11RasterizerState> {
+    // 构造只做机械枚举翻译的原生描述。
+    let desc = D3D11_RASTERIZER_DESC {
+        // UIX 当前只提交实心三角形。
+        FillMode: D3D11_FILL_SOLID,
+        // 翻译共享面剔除语义。
+        CullMode: d3d11_cull_mode(state.cull_mode),
+        // 翻译共享正面绕序。
+        FrontCounterClockwise: d3d11_front_counter_clockwise(state.front_face),
+        // 二维 pipeline 不使用常量深度偏移。
+        DepthBias: 0,
+        // 二维 pipeline 不使用深度偏移钳制。
+        DepthBiasClamp: 0.0,
+        // 二维 pipeline 不使用斜率深度偏移。
+        SlopeScaledDepthBias: 0.0,
+        // 翻译与 OpenGL ES 对齐的共享深度裁剪语义。
+        DepthClipEnable: d3d11_depth_clip_enabled(state.depth_clip),
+        // 动态 scissor 由共享 pass 状态控制，rasterizer 必须允许该状态生效。
+        ScissorEnable: TRUE,
+        // 当前 render target 与 texture 都是单样本资源。
+        MultisampleEnable: FALSE,
+        // RHI 只提交三角形，不启用线抗锯齿。
+        AntialiasedLineEnable: FALSE,
+    };
+    // 保存 D3D11 返回的状态对象。
+    let mut native = None;
+    // SAFETY：desc 完整初始化且输出指针指向当前栈帧中的 Option。
+    unsafe {
+        // 让 D3D11 device 创建不可变 rasterizer 对象。
+        device
+            // 传入共享状态机械翻译后的描述。
+            .CreateRasterizerState(&desc, Some(&mut native))
+            // 保留稳定原生操作名。
+            .map_err(|error| d3d_error("CreateRasterizerState(RHI)", error))?;
+    }
+    // 驱动成功但没有返回对象仍属于平台错误。
+    native.ok_or_else(|| {
+        // 返回稳定的状态对象缺失错误。
+        Error::new(
+            // 状态对象缺失属于平台失败。
+            Errc::PlatformError,
+            // 保留固定诊断文本。
+            "D3d11Pipeline: no RHI rasterizer",
+        )
+    })
+}
+
+// 从共享关闭状态创建一个 D3D11 depth-stencil 对象。
+fn create_rhi_depth_stencil_state(
+    // 借用当前 pipeline 所属的 D3D11 device。
+    device: &ID3D11Device,
+    // 接收 API 无关深度模板状态。
+    state: PipelineDepthStencilState,
+) -> Result<ID3D11DepthStencilState> {
+    // 构造禁用模板时仍完整初始化的稳定正反面描述。
+    let stencil_face = D3D11_DEPTH_STENCILOP_DESC {
+        // 模板测试失败时保持原值。
+        StencilFailOp: D3D11_STENCIL_OP_KEEP,
+        // 深度测试失败时保持原值。
+        StencilDepthFailOp: D3D11_STENCIL_OP_KEEP,
+        // 两项测试通过时仍保持原值。
+        StencilPassOp: D3D11_STENCIL_OP_KEEP,
+        // 禁用模板时使用稳定 Always 比较。
+        StencilFunc: D3D11_COMPARISON_ALWAYS,
+    };
+    // 构造只做机械枚举翻译的原生描述。
+    let desc = D3D11_DEPTH_STENCIL_DESC {
+        // 翻译共享深度测试开关。
+        DepthEnable: d3d11_depth_enabled(state.depth),
+        // 翻译共享深度写入开关。
+        DepthWriteMask: d3d11_depth_write_mask(state.depth),
+        // 翻译共享深度比较语义。
+        DepthFunc: d3d11_depth_comparison(state.depth),
+        // 翻译共享模板测试开关。
+        StencilEnable: d3d11_stencil_enabled(state.stencil),
+        // 禁用模板时不读取模板位。
+        StencilReadMask: 0,
+        // 禁用模板时不写入模板位。
+        StencilWriteMask: 0,
+        // 正面使用同一个稳定禁用描述。
+        FrontFace: stencil_face,
+        // 反面使用同一个稳定禁用描述。
+        BackFace: stencil_face,
+    };
+    // 保存 D3D11 返回的状态对象。
+    let mut native = None;
+    // SAFETY：desc 完整初始化且输出指针指向当前栈帧中的 Option。
+    unsafe {
+        // 让 D3D11 device 创建不可变 depth-stencil 对象。
+        device
+            // 传入共享状态机械翻译后的描述。
+            .CreateDepthStencilState(&desc, Some(&mut native))
+            // 保留稳定原生操作名。
+            .map_err(|error| d3d_error("CreateDepthStencilState(RHI)", error))?;
+    }
+    // 驱动成功但没有返回对象仍属于平台错误。
+    native.ok_or_else(|| {
+        // 返回稳定的状态对象缺失错误。
+        Error::new(
+            // 状态对象缺失属于平台失败。
+            Errc::PlatformError,
+            // 保留固定诊断文本。
+            "D3d11Pipeline: no RHI depth-stencil state",
+        )
+    })
+}
+
 // 从共享状态创建一个 D3D11 blend 对象。
 fn create_rhi_blend_state(
     // 借用当前 pipeline 所属的 D3D11 device。
@@ -500,27 +676,14 @@ impl D3d11Pipeline {
             "CreateBlendState(replace)",
         )?;
 
-        let mut rasterizer = None;
-        let rs_desc = D3D11_RASTERIZER_DESC {
-            FillMode: D3D11_FILL_SOLID,
-            CullMode: D3D11_CULL_NONE,
-            FrontCounterClockwise: FALSE,
-            DepthBias: 0,
-            DepthBiasClamp: 0.0,
-            SlopeScaledDepthBias: 0.0,
-            DepthClipEnable: FALSE,
-            ScissorEnable: TRUE,
-            MultisampleEnable: FALSE,
-            AntialiasedLineEnable: FALSE,
-        };
-        // SAFETY: rs_desc 为栈上完整初始化的光栅化描述；输出指针指向栈上 Option。
-        unsafe {
-            device
-                .CreateRasterizerState(&rs_desc, Some(&mut rasterizer))
-                .map_err(|e| d3d_error("CreateRasterizerState", e))?;
-        }
-        let rasterizer = rasterizer
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no rasterizer"))?;
+        // 冻结全部现有 pipeline 共用的共享二维光栅语义。
+        let raster_state = PIPELINE_RASTER_2D;
+        // 由共享二维状态创建唯一 D3D11 rasterizer 对象。
+        let rasterizer = create_rhi_rasterizer_state(device, raster_state)?;
+        // 冻结全部现有 pipeline 共用的共享关闭深度模板语义。
+        let depth_stencil_state = PIPELINE_DEPTH_STENCIL_DISABLED;
+        // 由共享关闭状态创建唯一 D3D11 depth-stencil 对象。
+        let depth_stencil = create_rhi_depth_stencil_state(device, depth_stencil_state)?;
 
         Ok(Self {
             vs_rect,
@@ -547,6 +710,12 @@ impl D3d11Pipeline {
             blend_additive,
             blend_replace,
             rasterizer,
+            // 保留原生 rasterizer 的共享创建身份。
+            raster_state,
+            // 保持显式 depth-stencil 对象的生命周期。
+            depth_stencil,
+            // 保留原生 depth-stencil 的共享创建身份。
+            depth_stencil_state,
         })
     }
 }

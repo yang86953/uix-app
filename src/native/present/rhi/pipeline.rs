@@ -332,6 +332,80 @@ impl PipelineBlend {
     }
 }
 
+// 定义两个 Adapter 都必须显式编码的面剔除语义。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum PipelineCullMode {
+    // UIX 二维三角形不剔除任何绕序。
+    None,
+}
+
+// 定义两个 Adapter 共享的正面绕序。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum PipelineFrontFace {
+    // 使用逆时针作为统一正面绕序。
+    CounterClockwise,
+}
+
+// 定义两个 Adapter 共享的深度裁剪语义。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum PipelineDepthClip {
+    // 按 OpenGL ES 固定裁剪体启用深度裁剪。
+    Enabled,
+}
+
+// 保存两个 Adapter 必须逐项映射的二维光栅状态。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct PipelineRasterState {
+    // 保存面剔除模式。
+    pub(crate) cull_mode: PipelineCullMode,
+    // 保存统一正面绕序。
+    pub(crate) front_face: PipelineFrontFace,
+    // 保存深度裁剪开关。
+    pub(crate) depth_clip: PipelineDepthClip,
+}
+
+// 定义两个 Adapter 共享的深度测试与写入语义。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum PipelineDepthState {
+    // 同时关闭深度测试与深度写入。
+    Disabled,
+}
+
+// 定义两个 Adapter 共享的模板测试语义。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum PipelineStencilState {
+    // 关闭模板测试与模板写入。
+    Disabled,
+}
+
+// 保存两个 Adapter 必须逐项映射的深度模板状态。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct PipelineDepthStencilState {
+    // 保存深度测试与写入语义。
+    pub(crate) depth: PipelineDepthState,
+    // 保存模板测试语义。
+    pub(crate) stencil: PipelineStencilState,
+}
+
+// 定义全部现有 UI pipeline 共用的二维光栅状态。
+pub(crate) const PIPELINE_RASTER_2D: PipelineRasterState = PipelineRasterState {
+    // 二维 UI 图元不做面剔除。
+    cull_mode: PipelineCullMode::None,
+    // 两个 Adapter 都使用逆时针正面绕序。
+    front_face: PipelineFrontFace::CounterClockwise,
+    // D3D11 必须与 OpenGL ES 的固定裁剪体保持一致。
+    depth_clip: PipelineDepthClip::Enabled,
+};
+
+// 定义全部现有 UI pipeline 共用的关闭深度模板状态。
+pub(crate) const PIPELINE_DEPTH_STENCIL_DISABLED: PipelineDepthStencilState =
+    PipelineDepthStencilState {
+        // UIX 二维 draw 不读取或写入深度附件。
+        depth: PipelineDepthState::Disabled,
+        // UIX 二维 draw 不读取或写入模板附件。
+        stencil: PipelineStencilState::Disabled,
+    };
+
 // 汇总一个 pipeline 在所有图形 API 上必须相同的 ABI 事实。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct PipelineContract {
@@ -343,6 +417,10 @@ pub(crate) struct PipelineContract {
     pub(crate) sampling: PipelineSampling,
     // 保存固定颜色混合语义。
     pub(crate) blend: PipelineBlend,
+    // 保存固定二维光栅状态。
+    pub(crate) raster: PipelineRasterState,
+    // 保存固定深度模板状态。
+    pub(crate) depth_stencil: PipelineDepthStencilState,
 }
 
 // 为 pipeline 身份提供唯一共享契约。
@@ -361,6 +439,10 @@ impl PipelineKind {
                 sampling: PipelineSampling::None,
                 // solid 颜色保持 straight-alpha SrcOver。
                 blend: PipelineBlend::StraightAlpha,
+                // solid 使用共享二维光栅状态。
+                raster: PIPELINE_RASTER_2D,
+                // solid 禁用深度与模板。
+                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
             },
             // 普通采样 quad 使用 premultiplied SrcOver。
             Self::TexturedQuad => PipelineContract {
@@ -372,6 +454,10 @@ impl PipelineKind {
                 sampling: PipelineSampling::PremultipliedColor,
                 // 图片像素在进入 RHI 前已经 premultiply。
                 blend: PipelineBlend::PremultipliedAlpha,
+                // sampled quad 使用共享二维光栅状态。
+                raster: PIPELINE_RASTER_2D,
+                // sampled quad 禁用深度与模板。
+                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
             },
             // 渐变颜色由 shader 以 straight-alpha 输出。
             Self::GradientRect => PipelineContract {
@@ -383,6 +469,10 @@ impl PipelineKind {
                 sampling: PipelineSampling::None,
                 // 插值颜色保持 straight-alpha SrcOver。
                 blend: PipelineBlend::StraightAlpha,
+                // gradient 使用共享二维光栅状态。
+                raster: PIPELINE_RASTER_2D,
+                // gradient 禁用深度与模板。
+                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
             },
             // coverage quad 把覆盖率乘入输出颜色。
             Self::GlyphCoverageQuad => PipelineContract {
@@ -394,6 +484,10 @@ impl PipelineKind {
                 sampling: PipelineSampling::Coverage,
                 // shader 已把 coverage 乘入 rgba。
                 blend: PipelineBlend::PremultipliedAlpha,
+                // coverage 使用共享二维光栅状态。
+                raster: PIPELINE_RASTER_2D,
+                // coverage 禁用深度与模板。
+                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
             },
             // 普通 Shape 使用 premultiplied coverage 输出。
             Self::ShapeRect => PipelineContract {
@@ -405,6 +499,10 @@ impl PipelineKind {
                 sampling: PipelineSampling::None,
                 // shader 已把分析 coverage 乘入 rgba。
                 blend: PipelineBlend::PremultipliedAlpha,
+                // Shape 使用共享二维光栅状态。
+                raster: PIPELINE_RASTER_2D,
+                // Shape 禁用深度与模板。
+                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
             },
             // Additive Shape 只改变混合语义。
             Self::ShapeRectAdditive => PipelineContract {
@@ -416,6 +514,10 @@ impl PipelineKind {
                 sampling: PipelineSampling::None,
                 // 仅目标混合切换为加法。
                 blend: PipelineBlend::Additive,
+                // Additive Shape 使用共享二维光栅状态。
+                raster: PIPELINE_RASTER_2D,
+                // Additive Shape 禁用深度与模板。
+                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
             },
             // Shadow shader 输出 straight-alpha 颜色与覆盖率。
             Self::BoxShadow => PipelineContract {
@@ -427,6 +529,10 @@ impl PipelineKind {
                 sampling: PipelineSampling::None,
                 // Shadow 与既有 D3D11 像素契约保持 straight-alpha。
                 blend: PipelineBlend::StraightAlpha,
+                // Shadow 使用共享二维光栅状态。
+                raster: PIPELINE_RASTER_2D,
+                // Shadow 禁用深度与模板。
+                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
             },
             // Additive sampled quad 只改变混合语义。
             Self::TexturedQuadAdditive => PipelineContract {
@@ -438,6 +544,10 @@ impl PipelineKind {
                 sampling: PipelineSampling::PremultipliedColor,
                 // 目标混合切换为加法。
                 blend: PipelineBlend::Additive,
+                // Additive sampled quad 使用共享二维光栅状态。
+                raster: PIPELINE_RASTER_2D,
+                // Additive sampled quad 禁用深度与模板。
+                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
             },
             // Blur pass 直接替换目标区域。
             Self::BlurPass => PipelineContract {
@@ -449,6 +559,10 @@ impl PipelineKind {
                 sampling: PipelineSampling::PremultipliedColor,
                 // 两阶段 blur 都完整替换目标区域。
                 blend: PipelineBlend::Replace,
+                // Blur 使用共享二维光栅状态。
+                raster: PIPELINE_RASTER_2D,
+                // Blur 禁用深度与模板。
+                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
             },
             // MSDF shader 把解析 coverage 乘入输出颜色。
             Self::MsdfGlyphQuad => PipelineContract {
@@ -460,6 +574,10 @@ impl PipelineKind {
                 sampling: PipelineSampling::Msdf,
                 // shader 已输出 premultiplied coverage。
                 blend: PipelineBlend::PremultipliedAlpha,
+                // MSDF 使用共享二维光栅状态。
+                raster: PIPELINE_RASTER_2D,
+                // MSDF 禁用深度与模板。
+                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
             },
             // Sector shader 把分析 coverage 乘入颜色。
             Self::Sector => PipelineContract {
@@ -471,6 +589,10 @@ impl PipelineKind {
                 sampling: PipelineSampling::None,
                 // shader 已输出 premultiplied coverage。
                 blend: PipelineBlend::PremultipliedAlpha,
+                // Sector 使用共享二维光栅状态。
+                raster: PIPELINE_RASTER_2D,
+                // Sector 禁用深度与模板。
+                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
             },
         }
     }
@@ -654,6 +776,43 @@ mod tests {
             assert_eq!(state.alpha_operation, PipelineBlendOperation::Add);
             // 全部现有 pipeline 必须显式写入完整 RGBA。
             assert_eq!(state.write_mask, PipelineColorWriteMask::All);
+        }
+    }
+
+    // 所有现有 pipeline 必须显式使用同一二维固定状态。
+    #[test]
+    fn pipeline_contracts_own_fixed_raster_and_depth_stencil_state() {
+        // 遍历完整 pipeline 闭集，禁止新增语义遗漏固定状态。
+        for kind in [
+            // 验证实心网格。
+            PipelineKind::SolidMesh,
+            // 验证普通采样 quad。
+            PipelineKind::TexturedQuad,
+            // 验证渐变。
+            PipelineKind::GradientRect,
+            // 验证 coverage 字形。
+            PipelineKind::GlyphCoverageQuad,
+            // 验证普通 Shape。
+            PipelineKind::ShapeRect,
+            // 验证加法 Shape。
+            PipelineKind::ShapeRectAdditive,
+            // 验证阴影。
+            PipelineKind::BoxShadow,
+            // 验证加法采样 quad。
+            PipelineKind::TexturedQuadAdditive,
+            // 验证 Blur。
+            PipelineKind::BlurPass,
+            // 验证 MSDF 字形。
+            PipelineKind::MsdfGlyphQuad,
+            // 验证扇形。
+            PipelineKind::Sector,
+        ] {
+            // 读取该 pipeline 的唯一共享契约。
+            let contract = kind.contract();
+            // 全部二维图元必须使用相同光栅状态。
+            assert_eq!(contract.raster, PIPELINE_RASTER_2D);
+            // 全部二维图元必须显式关闭深度与模板。
+            assert_eq!(contract.depth_stencil, PIPELINE_DEPTH_STENCIL_DISABLED);
         }
     }
 
