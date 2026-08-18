@@ -260,12 +260,23 @@ impl RhiPassState {
         self.active.and_then(|active| active.sampled_binding)
     }
 
-    // 判断指定纹理是否正作为活动 render target。
-    pub(crate) fn references_target(&self, texture: TextureHandle) -> bool {
-        // 只比较 API 无关身份，不借用或解释原生 view。
-        self.active
-            // 取得可能存在的活动目标。
+    // 验证指定纹理可以从 Device 资源表中销毁。
+    pub(crate) fn validate_texture_destroy(&self, texture: TextureHandle) -> Result<()> {
+        // 两个 Adapter 都不得销毁正在承载当前 pass 输出的资源。
+        if self
+            // 只读取共享活动 pass 事实。
+            .active
+            // 使用封闭 target 投影比较类型化 texture 身份。
             .is_some_and(|active| active.target.texture() == Some(texture))
+        {
+            // 生命周期违例统一使用 API 无关的 InvalidState。
+            return Err(invalid_state(
+                // 诊断不携带 D3D11 或 OpenGL 平台名称。
+                "RHI cannot destroy the active render target",
+            ));
+        }
+        // 关闭 pass、Surface target 或其它 texture 都允许继续检查式销毁。
+        Ok(())
     }
 
     // 清除被销毁纹理留下的采样绑定身份。
@@ -330,6 +341,8 @@ fn invalid_argument(message: &'static str) -> Error {
 // 仅验证两个 Adapter 必须共享的 pass 状态转换。
 #[cfg(test)]
 mod tests {
+    // 引入统一错误分类。
+    use crate::core::Errc;
     // 引入被测共享状态机。
     use super::{RhiPassState, SampledTextureBinding};
     // 引入构造 pass 输入与资源身份所需的共享值。
@@ -481,6 +494,43 @@ mod tests {
         state.unbind_texture(TEXTURE);
         // 不允许留下只有 sampler 的半绑定状态。
         assert_eq!(state.sampled_binding(), None);
+    }
+
+    // 验证活动目标销毁在两个 Adapter 之前共享同一生命周期错误。
+    #[test]
+    fn texture_destroy_rejects_only_the_active_target() {
+        // 创建并开始一个离屏 texture pass。
+        let mut state = RhiPassState::new();
+        // 使用稳定物理范围建立活动目标。
+        state
+            // 使用共享封闭 texture target。
+            .begin(TARGET, RhiExtent::new(20, 10), LoadAction::Load)
+            // 测试设置必须成功。
+            .expect("pass should begin");
+        // 取得当前 target 携带的同一 texture 身份。
+        let target_texture = TARGET.texture().expect("target should be a texture");
+        // 在 pass 仍打开时销毁输出目标必须失败。
+        let error = state
+            // 调用两个 Adapter 共用的销毁前门禁。
+            .validate_texture_destroy(target_texture)
+            // 活动目标不得通过。
+            .expect_err("active render target destroy must fail");
+        // 该违例属于调用顺序错误，不是资源参数错误。
+        assert_eq!(error.code(), Errc::InvalidState);
+        // 同一 pass 中未作为输出的 texture 允许进入资源表销毁。
+        state
+            // 使用与目标不同的类型化 texture 身份。
+            .validate_texture_destroy(TEXTURE)
+            // 共享门禁必须放行。
+            .expect("non-target texture destroy should pass");
+        // 结束 pass 后旧目标不再被活动状态引用。
+        state.end().expect("pass should end");
+        // 已结束目标应允许正常销毁。
+        state
+            // 重新验证原 target texture。
+            .validate_texture_destroy(target_texture)
+            // 关闭状态不得拒绝。
+            .expect("closed-pass target destroy should pass");
     }
 
     // 验证 end 原子清除所有 pass 级事实。

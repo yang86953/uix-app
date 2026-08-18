@@ -356,10 +356,8 @@ impl OpenGlRhiDevice {
         gl: &glow::Context,
         handle: TextureHandle,
     ) -> Result<()> {
-        // 当前 pass 不能销毁正在绑定的目标。
-        if self.pass.references_target(handle) {
-            return Err(rhi_invalid("OpenGL RHI cannot destroy active target"));
-        }
+        // 由共享 pass 状态统一拒绝当前活动 render target。
+        self.pass.validate_texture_destroy(handle)?;
         // 由共享资源表检查式取出仍然存活的 texture。
         let texture = self.textures.take(handle)?;
         // 删除 framebuffer 和 texture 对象。

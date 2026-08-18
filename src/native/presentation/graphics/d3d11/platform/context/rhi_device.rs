@@ -384,14 +384,8 @@ impl GraphicsDevice for D3d11Context {
 
     // 销毁 texture 资源槽。
     fn destroy_texture(&mut self, texture: TextureHandle) -> Result<()> {
-        // 不能在当前 pass 仍引用资源时销毁它。
-        if self.rhi_device.pass.references_target(texture) {
-            // 返回稳定的状态错误。
-            return Err(Error::new(
-                Errc::InvalidState,
-                "D3d11 RHI cannot destroy the active render target",
-            ));
-        }
+        // 由共享 pass 状态统一拒绝当前活动 render target。
+        self.rhi_device.pass.validate_texture_destroy(texture)?;
         // 由共享资源表检查式取出资源，离开作用域时释放 texture 与 views。
         self.rhi_device.textures.take(texture)?;
         // 清理当前 pass 可能持有的 sampled texture 身份。
