@@ -118,6 +118,13 @@ impl RhiRenderer {
         let mut pass = RenderPassPlan::new(target, load);
         // 所有渐变共享同一个物理 viewport。
         pass.push(FramePlanCommand::SetViewport(viewport));
+        // 在第一个 Gradient draw 前建立静态单位 quad 的类型化内容事实。
+        pass.push(FramePlanCommand::UploadVertex {
+            // 绑定本次 Gradient 资源创建的静态 vertex buffer。
+            buffer: vertex_buffer,
+            // 使用共享 renderer 工厂提供固定 float2 payload。
+            data: RhiRenderer::unit_quad_vertex_payload(),
+        });
         // 每个渐变只更新常量并保留 painter order。
         for gradient in gradients {
             // 在 draw 前设置当前渐变的裁剪。

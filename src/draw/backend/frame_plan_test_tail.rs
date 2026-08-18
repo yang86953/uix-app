@@ -65,6 +65,13 @@ fn executes_clear_rect_in_order() {
             height: 11,
         },
     });
+    // 追加与 SolidMesh 契约一致的类型化顶点上传。
+    pass.push(FramePlanCommand::UploadVertex {
+        // 使用稳定测试顶点 buffer。
+        buffer: BufferHandle::from_raw(3),
+        // 构造三个完整 position-float2 顶点。
+        data: FrameVertexPayload::position_f32x2([0.0, 0.0, 1.0, 0.0, 0.0, 1.0]),
+    });
     // 追加与 SolidMesh 契约一致的类型化 Uniform 上传。
     pass.push(FramePlanCommand::UploadUniform {
         // 使用稳定测试 Uniform buffer。
@@ -117,6 +124,7 @@ fn executes_clear_rect_in_order() {
             "viewport",
             "clear_rect",
             "update_buffer",
+            "update_buffer",
             "draw",
             "end_pass",
             "submit"
@@ -124,6 +132,31 @@ fn executes_clear_rect_in_order() {
     );
     // 验证清理计划仍只触发一次最终 present。
     assert_eq!(context.surface.present_count, 1);
+}
+
+// 验证缺失类型化顶点上传时必须在进入 Adapter 前拒绝计划。
+#[test]
+fn rejects_draw_without_typed_vertex_upload_before_adapter() {
+    // 创建可验证的第一代 surface。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 复用包含完整顶点上传的有效计划。
+    let mut plan = test_plan(token);
+    // 取得唯一 render pass 以移除顶点内容事实。
+    let FramePlanStep::Pass(pass) = &mut plan.steps[0] else {
+        // 测试基线漂移时立即失败。
+        panic!("test plan must start with a render pass");
+    };
+    // 删除所有类型化顶点上传，保留 Uniform 与 Draw 顺序。
+    pass.commands
+        .retain(|command| !matches!(command, FramePlanCommand::UploadVertex { .. }));
+    // 验证必须在触碰 Adapter 前返回稳定参数错误。
+    let error = plan
+        .validate()
+        .expect_err("missing vertex upload must fail");
+    // 缺失顶点内容属于稳定计划参数错误。
+    assert_eq!(error.code(), Errc::InvalidArgument);
+    // 诊断必须明确指出类型化顶点上传缺失。
+    assert!(error.what().contains("typed vertex upload"));
 }
 
 // 验证类型化顶点上传不能进入不匹配的 pipeline 顶点 ABI。

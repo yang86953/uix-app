@@ -44,8 +44,16 @@ pub(super) fn validate_draw_uploads(
             _ => None,
         }
     });
-    // 动态上传存在时必须与 pipeline 的共享顶点布局完全一致。
-    if latest_vertex.is_some_and(|data| data.layout() != contract.vertex) {
+    // 每个 draw 都必须在当前 pass 内先建立同一 vertex buffer 的类型化内容事实。
+    let data = latest_vertex.ok_or_else(|| {
+        // 禁止 Adapter 复用未由当前 FramePlan 明确交付的旧顶点内容。
+        Error::new(
+            Errc::InvalidArgument,
+            "FramePlan draw must follow a typed vertex upload",
+        )
+    })?;
+    // 先行类型化上传必须与 pipeline 的共享顶点布局完全一致。
+    if data.layout() != contract.vertex {
         // 在进入 Adapter 前拒绝布局错配。
         return Err(Error::new(
             Errc::InvalidArgument,
