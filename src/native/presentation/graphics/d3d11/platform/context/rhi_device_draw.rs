@@ -78,6 +78,8 @@ impl D3d11Context {
         self.pipeline.apply_rhi_fixed_state(
             // 使用当前 owner-thread immediate context。
             &self.context,
+            // 传入 FramePlan pipeline 的共享原语拓扑。
+            contract.topology,
             // 传入 FramePlan pipeline 的共享光栅状态。
             contract.raster,
             // 传入 FramePlan pipeline 的共享深度模板状态。

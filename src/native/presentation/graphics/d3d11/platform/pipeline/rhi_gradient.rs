@@ -32,7 +32,6 @@ impl D3d11Pipeline {
         // SAFETY: buffer、shader、layout 与 blend 均由当前 device 创建并存活，绑定和 Draw 在 owner thread 执行。
         unsafe {
             context.IASetInputLayout(&self.layout);
-            context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             context.IASetVertexBuffers(
                 0,
                 1,

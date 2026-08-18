@@ -37,8 +37,6 @@ impl D3d11Pipeline {
         unsafe {
             // 输入布局与已有 glyph 的 float8 ABI 完全一致。
             context.IASetInputLayout(&self.layout_glyph);
-            // 所有 RHI sampled quad 都由两个三角形组成。
-            context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             // 绑定本次 packet 的顶点 buffer 和步长。
             context.IASetVertexBuffers(
                 0,

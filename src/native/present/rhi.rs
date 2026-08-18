@@ -44,8 +44,9 @@ pub(crate) use pipeline::{
     PIPELINE_DEPTH_STENCIL_DISABLED, PIPELINE_RASTER_2D, PipelineBinding, PipelineBlend,
     PipelineBlendFactor, PipelineBlendOperation, PipelineBlendState, PipelineColorWriteMask,
     PipelineContract, PipelineCullMode, PipelineDepthClip, PipelineDepthState,
-    PipelineDepthStencilState, PipelineDesc, PipelineFrontFace, PipelineKind, PipelineRasterState,
-    PipelineSampling, PipelineStencilState, PipelineUniformLayout, PipelineVertexLayout,
+    PipelineDepthStencilState, PipelineDesc, PipelineFrontFace, PipelineKind,
+    PipelinePrimitiveTopology, PipelineRasterState, PipelineSampling, PipelineStencilState,
+    PipelineUniformLayout, PipelineVertexLayout,
 };
 // 向 Drawing、Surface 与原生 Adapter 暴露唯一颜色解释。
 pub(crate) use color::{RhiColorContract, UIX_COLOR_CONTRACT};

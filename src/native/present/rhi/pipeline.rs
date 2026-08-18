@@ -406,6 +406,13 @@ pub(crate) const PIPELINE_DEPTH_STENCIL_DISABLED: PipelineDepthStencilState =
         stencil: PipelineStencilState::Disabled,
     };
 
+// 定义两个 Adapter 都必须穷尽映射的原语拓扑。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum PipelinePrimitiveTopology {
+    // 把每三个顶点或索引解释为一个独立三角形。
+    TriangleList,
+}
+
 // 汇总一个 pipeline 在所有图形 API 上必须相同的 ABI 事实。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct PipelineContract {
@@ -417,10 +424,42 @@ pub(crate) struct PipelineContract {
     pub(crate) sampling: PipelineSampling,
     // 保存固定颜色混合语义。
     pub(crate) blend: PipelineBlend,
+    // 保存固定原语拓扑。
+    pub(crate) topology: PipelinePrimitiveTopology,
     // 保存固定二维光栅状态。
     pub(crate) raster: PipelineRasterState,
     // 保存固定深度模板状态。
     pub(crate) depth_stencil: PipelineDepthStencilState,
+}
+
+// 用唯一公共边界构造现有 UI 二维 pipeline 契约。
+const fn ui_2d_pipeline_contract(
+    // 接收 pipeline 特有的顶点布局。
+    vertex: PipelineVertexLayout,
+    // 接收 pipeline 特有的 uniform 布局。
+    uniform: PipelineUniformLayout,
+    // 接收 pipeline 特有的采样语义。
+    sampling: PipelineSampling,
+    // 接收 pipeline 特有的混合语义。
+    blend: PipelineBlend,
+) -> PipelineContract {
+    // 返回同时冻结公共几何和输出状态的完整契约。
+    PipelineContract {
+        // 保留调用分支选择的顶点布局。
+        vertex,
+        // 保留调用分支选择的 uniform 布局。
+        uniform,
+        // 保留调用分支选择的采样语义。
+        sampling,
+        // 保留调用分支选择的混合语义。
+        blend,
+        // 全部现有 UI draw 使用独立三角形列表。
+        topology: PipelinePrimitiveTopology::TriangleList,
+        // 全部现有 UI draw 使用同一二维光栅状态。
+        raster: PIPELINE_RASTER_2D,
+        // 全部现有 UI draw 显式关闭深度与模板。
+        depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
+    }
 }
 
 // 为 pipeline 身份提供唯一共享契约。
@@ -430,170 +469,126 @@ impl PipelineKind {
         // 每个 pipeline 必须显式完成闭集映射，新增变体时由编译器要求补齐。
         match self {
             // 实心颜色由 shader 以 straight-alpha 输出。
-            Self::SolidMesh => PipelineContract {
+            Self::SolidMesh => ui_2d_pipeline_contract(
                 // solid 使用 position float2。
-                vertex: PipelineVertexLayout::PositionF32x2,
+                PipelineVertexLayout::PositionF32x2,
                 // solid 使用 MeshConstants。
-                uniform: PipelineUniformLayout::Mesh,
+                PipelineUniformLayout::Mesh,
                 // solid 不读取纹理。
-                sampling: PipelineSampling::None,
+                PipelineSampling::None,
                 // solid 颜色保持 straight-alpha SrcOver。
-                blend: PipelineBlend::StraightAlpha,
-                // solid 使用共享二维光栅状态。
-                raster: PIPELINE_RASTER_2D,
-                // solid 禁用深度与模板。
-                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
-            },
+                PipelineBlend::StraightAlpha,
+            ),
             // 普通采样 quad 使用 premultiplied SrcOver。
-            Self::TexturedQuad => PipelineContract {
+            Self::TexturedQuad => ui_2d_pipeline_contract(
                 // sampled quad 使用 float8 顶点。
-                vertex: PipelineVertexLayout::PositionUvColorF32,
+                PipelineVertexLayout::PositionUvColorF32,
                 // sampled quad 只需要 viewport。
-                uniform: PipelineUniformLayout::Sampled,
+                PipelineUniformLayout::Sampled,
                 // sampled quad 读取四通道颜色。
-                sampling: PipelineSampling::PremultipliedColor,
+                PipelineSampling::PremultipliedColor,
                 // 图片像素在进入 RHI 前已经 premultiply。
-                blend: PipelineBlend::PremultipliedAlpha,
-                // sampled quad 使用共享二维光栅状态。
-                raster: PIPELINE_RASTER_2D,
-                // sampled quad 禁用深度与模板。
-                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
-            },
+                PipelineBlend::PremultipliedAlpha,
+            ),
             // 渐变颜色由 shader 以 straight-alpha 输出。
-            Self::GradientRect => PipelineContract {
+            Self::GradientRect => ui_2d_pipeline_contract(
                 // 渐变使用单位 position float2 quad。
-                vertex: PipelineVertexLayout::PositionF32x2,
+                PipelineVertexLayout::PositionF32x2,
                 // 渐变使用完整仿射常量。
-                uniform: PipelineUniformLayout::Gradient,
+                PipelineUniformLayout::Gradient,
                 // 渐变不读取纹理。
-                sampling: PipelineSampling::None,
+                PipelineSampling::None,
                 // 插值颜色保持 straight-alpha SrcOver。
-                blend: PipelineBlend::StraightAlpha,
-                // gradient 使用共享二维光栅状态。
-                raster: PIPELINE_RASTER_2D,
-                // gradient 禁用深度与模板。
-                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
-            },
+                PipelineBlend::StraightAlpha,
+            ),
             // coverage quad 把覆盖率乘入输出颜色。
-            Self::GlyphCoverageQuad => PipelineContract {
+            Self::GlyphCoverageQuad => ui_2d_pipeline_contract(
                 // coverage 复用 sampled float8 顶点。
-                vertex: PipelineVertexLayout::PositionUvColorF32,
+                PipelineVertexLayout::PositionUvColorF32,
                 // coverage 复用 viewport 常量。
-                uniform: PipelineUniformLayout::Sampled,
+                PipelineUniformLayout::Sampled,
                 // coverage 只接受 R8。
-                sampling: PipelineSampling::Coverage,
+                PipelineSampling::Coverage,
                 // shader 已把 coverage 乘入 rgba。
-                blend: PipelineBlend::PremultipliedAlpha,
-                // coverage 使用共享二维光栅状态。
-                raster: PIPELINE_RASTER_2D,
-                // coverage 禁用深度与模板。
-                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
-            },
+                PipelineBlend::PremultipliedAlpha,
+            ),
             // 普通 Shape 使用 premultiplied coverage 输出。
-            Self::ShapeRect => PipelineContract {
+            Self::ShapeRect => ui_2d_pipeline_contract(
                 // Shape 使用单位 position float2 quad。
-                vertex: PipelineVertexLayout::PositionF32x2,
+                PipelineVertexLayout::PositionF32x2,
                 // Shape 使用共享值对象 ABI。
-                uniform: PipelineUniformLayout::Shape,
+                PipelineUniformLayout::Shape,
                 // Shape 不读取纹理。
-                sampling: PipelineSampling::None,
+                PipelineSampling::None,
                 // shader 已把分析 coverage 乘入 rgba。
-                blend: PipelineBlend::PremultipliedAlpha,
-                // Shape 使用共享二维光栅状态。
-                raster: PIPELINE_RASTER_2D,
-                // Shape 禁用深度与模板。
-                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
-            },
+                PipelineBlend::PremultipliedAlpha,
+            ),
             // Additive Shape 只改变混合语义。
-            Self::ShapeRectAdditive => PipelineContract {
+            Self::ShapeRectAdditive => ui_2d_pipeline_contract(
                 // Additive Shape 保持相同顶点布局。
-                vertex: PipelineVertexLayout::PositionF32x2,
+                PipelineVertexLayout::PositionF32x2,
                 // Additive Shape 保持相同 uniform。
-                uniform: PipelineUniformLayout::Shape,
+                PipelineUniformLayout::Shape,
                 // Additive Shape 不读取纹理。
-                sampling: PipelineSampling::None,
+                PipelineSampling::None,
                 // 仅目标混合切换为加法。
-                blend: PipelineBlend::Additive,
-                // Additive Shape 使用共享二维光栅状态。
-                raster: PIPELINE_RASTER_2D,
-                // Additive Shape 禁用深度与模板。
-                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
-            },
+                PipelineBlend::Additive,
+            ),
             // Shadow shader 输出 straight-alpha 颜色与覆盖率。
-            Self::BoxShadow => PipelineContract {
+            Self::BoxShadow => ui_2d_pipeline_contract(
                 // Shadow 复用单位 position float2 quad。
-                vertex: PipelineVertexLayout::PositionF32x2,
+                PipelineVertexLayout::PositionF32x2,
                 // Shadow 使用独立仿射常量语义。
-                uniform: PipelineUniformLayout::Shadow,
+                PipelineUniformLayout::Shadow,
                 // Shadow 不读取纹理。
-                sampling: PipelineSampling::None,
+                PipelineSampling::None,
                 // Shadow 与既有 D3D11 像素契约保持 straight-alpha。
-                blend: PipelineBlend::StraightAlpha,
-                // Shadow 使用共享二维光栅状态。
-                raster: PIPELINE_RASTER_2D,
-                // Shadow 禁用深度与模板。
-                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
-            },
+                PipelineBlend::StraightAlpha,
+            ),
             // Additive sampled quad 只改变混合语义。
-            Self::TexturedQuadAdditive => PipelineContract {
+            Self::TexturedQuadAdditive => ui_2d_pipeline_contract(
                 // Additive 图片保持 float8 顶点。
-                vertex: PipelineVertexLayout::PositionUvColorF32,
+                PipelineVertexLayout::PositionUvColorF32,
                 // Additive 图片保持 viewport 常量。
-                uniform: PipelineUniformLayout::Sampled,
+                PipelineUniformLayout::Sampled,
                 // Additive 图片仍读取四通道颜色。
-                sampling: PipelineSampling::PremultipliedColor,
+                PipelineSampling::PremultipliedColor,
                 // 目标混合切换为加法。
-                blend: PipelineBlend::Additive,
-                // Additive sampled quad 使用共享二维光栅状态。
-                raster: PIPELINE_RASTER_2D,
-                // Additive sampled quad 禁用深度与模板。
-                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
-            },
+                PipelineBlend::Additive,
+            ),
             // Blur pass 直接替换目标区域。
-            Self::BlurPass => PipelineContract {
+            Self::BlurPass => ui_2d_pipeline_contract(
                 // Blur 使用 NDC position float2 区域 quad。
-                vertex: PipelineVertexLayout::PositionF32x2,
+                PipelineVertexLayout::PositionF32x2,
                 // Blur 使用固定高斯核常量。
-                uniform: PipelineUniformLayout::Blur,
+                PipelineUniformLayout::Blur,
                 // Blur 读取四通道颜色。
-                sampling: PipelineSampling::PremultipliedColor,
+                PipelineSampling::PremultipliedColor,
                 // 两阶段 blur 都完整替换目标区域。
-                blend: PipelineBlend::Replace,
-                // Blur 使用共享二维光栅状态。
-                raster: PIPELINE_RASTER_2D,
-                // Blur 禁用深度与模板。
-                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
-            },
+                PipelineBlend::Replace,
+            ),
             // MSDF shader 把解析 coverage 乘入输出颜色。
-            Self::MsdfGlyphQuad => PipelineContract {
+            Self::MsdfGlyphQuad => ui_2d_pipeline_contract(
                 // MSDF 复用 sampled float8 顶点。
-                vertex: PipelineVertexLayout::PositionUvColorF32,
+                PipelineVertexLayout::PositionUvColorF32,
                 // MSDF 使用 atlas 尺寸与 range 常量。
-                uniform: PipelineUniformLayout::Msdf,
+                PipelineUniformLayout::Msdf,
                 // MSDF 只接受 RGBA8 atlas。
-                sampling: PipelineSampling::Msdf,
+                PipelineSampling::Msdf,
                 // shader 已输出 premultiplied coverage。
-                blend: PipelineBlend::PremultipliedAlpha,
-                // MSDF 使用共享二维光栅状态。
-                raster: PIPELINE_RASTER_2D,
-                // MSDF 禁用深度与模板。
-                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
-            },
+                PipelineBlend::PremultipliedAlpha,
+            ),
             // Sector shader 把分析 coverage 乘入颜色。
-            Self::Sector => PipelineContract {
+            Self::Sector => ui_2d_pipeline_contract(
                 // Sector 使用单位 position float2 quad。
-                vertex: PipelineVertexLayout::PositionF32x2,
+                PipelineVertexLayout::PositionF32x2,
                 // Sector 使用四个 float4 常量。
-                uniform: PipelineUniformLayout::Sector,
+                PipelineUniformLayout::Sector,
                 // Sector 不读取纹理。
-                sampling: PipelineSampling::None,
+                PipelineSampling::None,
                 // shader 已输出 premultiplied coverage。
-                blend: PipelineBlend::PremultipliedAlpha,
-                // Sector 使用共享二维光栅状态。
-                raster: PIPELINE_RASTER_2D,
-                // Sector 禁用深度与模板。
-                depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED,
-            },
+                PipelineBlend::PremultipliedAlpha,
+            ),
         }
     }
 }
@@ -779,9 +774,9 @@ mod tests {
         }
     }
 
-    // 所有现有 pipeline 必须显式使用同一二维固定状态。
+    // 所有现有 pipeline 必须显式使用同一二维几何与输出状态。
     #[test]
-    fn pipeline_contracts_own_fixed_raster_and_depth_stencil_state() {
+    fn pipeline_contracts_own_fixed_geometry_and_output_state() {
         // 遍历完整 pipeline 闭集，禁止新增语义遗漏固定状态。
         for kind in [
             // 验证实心网格。
@@ -809,6 +804,8 @@ mod tests {
         ] {
             // 读取该 pipeline 的唯一共享契约。
             let contract = kind.contract();
+            // 全部二维图元必须使用独立三角形列表。
+            assert_eq!(contract.topology, PipelinePrimitiveTopology::TriangleList);
             // 全部二维图元必须使用相同光栅状态。
             assert_eq!(contract.raster, PIPELINE_RASTER_2D);
             // 全部二维图元必须显式关闭深度与模板。

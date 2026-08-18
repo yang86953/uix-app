@@ -16,13 +16,14 @@ use crate::native::present::rhi::{
     MSDF_RANGE_FLOAT_OFFSET, MSDF_TEXTURE_SIZE_FLOAT_OFFSET, MSDF_VIEWPORT_FLOAT_OFFSET,
     PipelineBlend, PipelineBlendFactor, PipelineBlendOperation, PipelineColorWriteMask,
     PipelineCullMode, PipelineDepthClip, PipelineDepthState, PipelineDepthStencilState,
-    PipelineFrontFace, PipelineKind, PipelineRasterState, PipelineStencilState,
-    SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET, SECTOR_COLOR_FLOAT_OFFSET,
-    SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET, SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET,
-    SHADOW_COLOR_FLOAT_OFFSET, SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET,
-    SHADOW_RADIUS_FLOAT_OFFSET, SHADOW_VIEWPORT_FLOAT_OFFSET, SHAPE_COLOR_FLOAT_OFFSET,
-    SHAPE_DRAW_RECT_FLOAT_OFFSET, SHAPE_RADIUS_FLOAT_OFFSET, SHAPE_RECT_FLOAT_OFFSET,
-    SHAPE_STROKE_FLOAT_OFFSET, SHAPE_VIEWPORT_FLOAT_OFFSET, SamplerDesc, TextureFormat,
+    PipelineFrontFace, PipelineKind, PipelinePrimitiveTopology, PipelineRasterState,
+    PipelineStencilState, SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET,
+    SECTOR_COLOR_FLOAT_OFFSET, SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET,
+    SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET, SHADOW_COLOR_FLOAT_OFFSET,
+    SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET, SHADOW_RADIUS_FLOAT_OFFSET,
+    SHADOW_VIEWPORT_FLOAT_OFFSET, SHAPE_COLOR_FLOAT_OFFSET, SHAPE_DRAW_RECT_FLOAT_OFFSET,
+    SHAPE_RADIUS_FLOAT_OFFSET, SHAPE_RECT_FLOAT_OFFSET, SHAPE_STROKE_FLOAT_OFFSET,
+    SHAPE_VIEWPORT_FLOAT_OFFSET, SamplerDesc, TextureFormat,
 };
 // 复用父资源表、目标方向、类型化 shader 语义和错误辅助。
 use super::{OpenGlRhiDevice, rhi_invalid, target_y_sign};
@@ -564,6 +565,8 @@ impl OpenGlRhiDevice {
         unsafe { apply_pipeline_fixed_state(gl, contract.raster, contract.depth_stencil) };
         // SAFETY: contract 只包含固定 GL blend 映射，当前 owner thread 的 context 保持 current。
         unsafe { apply_pipeline_blend(gl, contract.blend) };
+        // 把共享原语拓扑翻译一次，供 indexed 与 non-indexed draw 共用。
+        let primitive_topology = gl_primitive_topology(contract.topology);
         // Indexed draw 需要固定 uint32 index ABI，非 indexed draw 使用顶点范围。
         // SAFETY: index buffer 已校验为 Index usage 且 stride=4；first_index.saturating_mul(4) 防止偏移溢出；index_count/vertex_count 已校验非零；program/vao/vertex 存活；context 保持 current。
         unsafe {
@@ -577,7 +580,7 @@ impl OpenGlRhiDevice {
                 }
                 gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(index.native));
                 gl.draw_elements(
-                    glow::TRIANGLES,
+                    primitive_topology,
                     packet.index_count as i32,
                     glow::UNSIGNED_INT,
                     packet.first_index.saturating_mul(4) as i32,
@@ -585,7 +588,7 @@ impl OpenGlRhiDevice {
             } else {
                 gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, None);
                 gl.draw_arrays(
-                    glow::TRIANGLES,
+                    primitive_topology,
                     packet.first_vertex as i32,
                     packet.vertex_count as i32,
                 );
@@ -673,6 +676,15 @@ fn gl_front_face(front_face: PipelineFrontFace) -> u32 {
     match front_face {
         // CounterClockwise 对应 GL_CCW。
         PipelineFrontFace::CounterClockwise => glow::CCW,
+    }
+}
+
+// 把 API 无关原语拓扑翻译为 OpenGL ES 枚举。
+fn gl_primitive_topology(topology: PipelinePrimitiveTopology) -> u32 {
+    // 只映射共享层允许的封闭拓扑集合。
+    match topology {
+        // TriangleList 对应每三个顶点形成独立三角形的 GL_TRIANGLES。
+        PipelinePrimitiveTopology::TriangleList => glow::TRIANGLES,
     }
 }
 

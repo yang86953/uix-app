@@ -137,7 +137,6 @@ impl D3d11Pipeline {
         // SAFETY: sector 资源与固定 shader ABI 已在上方验证，全部 COM 对象存活且 context 位于 owner thread。
         unsafe {
             context.IASetInputLayout(&self.layout);
-            context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             context.IASetVertexBuffers(
                 0,
                 1,
