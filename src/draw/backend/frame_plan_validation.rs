@@ -114,6 +114,66 @@ pub(super) fn validate_draw_uploads(
             "FramePlan vertex upload layout does not match pipeline contract",
         ));
     }
+    // 索引 DrawRange 必须消费同一 buffer 的最近一次类型化索引上传。
+    if let Some(index_binding) = packet.range.index_binding() {
+        // 只观察 draw 前且句柄匹配的索引上传。
+        let latest_index = preceding.iter().rev().find_map(|command| {
+            // 只有类型化索引上传才建立可读取的索引内容事实。
+            match command {
+                // 返回最近一次匹配索引 buffer 的类型化载荷。
+                FramePlanCommand::UploadIndex { buffer, data }
+                    if *buffer == index_binding.buffer() =>
+                {
+                    // 借出载荷供格式和范围比较。
+                    Some(data)
+                }
+                // 其它命令不改变当前索引 buffer 的内容事实。
+                _ => None,
+            }
+        });
+        // 缺少前序类型化索引上传不得让 Adapter 读取旧内容。
+        let index_data = latest_index.ok_or_else(|| {
+            // 使用稳定参数错误明确缺少 typed index upload。
+            Error::new(
+                Errc::InvalidArgument,
+                "FramePlan indexed draw must follow a typed index upload",
+            )
+        })?;
+        // 索引 payload 格式必须与同次 DrawRange 绑定格式一致。
+        if index_data.format() != index_binding.format() {
+            // 禁止 Adapter 按自身索引格式猜测字节宽度。
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "FramePlan index upload format does not match draw range",
+            ));
+        }
+        // 索引范围必须完整落在本次类型化索引上传内。
+        let selected_max = index_data
+            .max_index_in_range(packet.range.first_index(), packet.range.index_count())
+            .ok_or_else(|| {
+                // 使用稳定参数错误明确范围越过 typed index upload。
+                Error::new(
+                    Errc::InvalidArgument,
+                    "FramePlan draw index range exceeds typed upload",
+                )
+            })?;
+        // 读取同次 draw 已匹配的最近顶点 payload 完整顶点数。
+        let uploaded_vertex_count = data.vertex_count().ok_or_else(|| {
+            // 残缺顶点 payload 不得成为索引访问的隐式依据。
+            Error::new(
+                Errc::InvalidArgument,
+                "FramePlan indexed draw vertex exceeds typed upload",
+            )
+        })?;
+        // 最大索引必须严格落在最近类型化顶点 payload 内。
+        if selected_max >= uploaded_vertex_count {
+            // 在进入 Device 前统一拒绝越界顶点访问。
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "FramePlan indexed draw vertex exceeds typed upload",
+            ));
+        }
+    }
     // 非索引 DrawRange 必须完整落在最近一次类型化顶点上传内。
     if packet.range.index_binding().is_none() {
         // checked 末端溢出必须在进入任一 Adapter 前拒绝。

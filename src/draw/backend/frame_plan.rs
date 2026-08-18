@@ -16,14 +16,14 @@ use crate::native::present::rhi::{
 // 将不触发 surface present 的离屏执行边界拆到独立文件。
 #[path = "frame_plan_execution.rs"]
 mod execution;
-// 将顶点与 Uniform 类型化载荷拆到独立契约文件。
+// 将顶点、索引与 Uniform 类型化载荷拆到独立契约文件。
 #[path = "frame_plan_upload.rs"]
 mod upload;
 // 将 draw 与前序类型化上传的布局核对拆到独立验证组件。
 #[path = "frame_plan_validation.rs"]
 mod validation;
 // 让通用 renderer 只能构造 FramePlan 明确允许的上传闭集。
-pub(crate) use upload::{FrameUniformPayload, FrameVertexPayload};
+pub(crate) use upload::{FrameIndexPayload, FrameUniformPayload, FrameVertexPayload};
 // 描述 render pass 目标，surface 目标在 acquire 后才绑定具体句柄。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RenderTargetRef {
@@ -55,6 +55,13 @@ pub(crate) enum FramePlanCommand {
         buffer: crate::native::present::rhi::BufferHandle,
         // 保存声明布局和有限浮点值组成的顶点载荷。
         data: FrameVertexPayload,
+    },
+    // 在 pass 内按 painter order 上传一个类型化索引流。
+    UploadIndex {
+        // 保存目标索引 buffer。
+        buffer: crate::native::present::rhi::BufferHandle,
+        // 保存不可拆分的索引格式与元素载荷。
+        data: FrameIndexPayload,
     },
     // 在 pass 内完整上传一个类型化 Uniform 值对象。
     UploadUniform {
@@ -302,6 +309,17 @@ impl FramePlan {
                                 ));
                             }
                         }
+                        // 验证类型化索引载荷非空且数量可由 DrawRange 表达。
+                        if let FramePlanCommand::UploadIndex { data, .. } = command {
+                            // 索引格式和元素值必须保持在 FramePlan 封闭契约内。
+                            if !data.is_valid() {
+                                // 返回稳定参数错误，禁止空或不可表示索引流进入 Adapter。
+                                return Err(Error::new(
+                                    Errc::InvalidArgument,
+                                    "FramePlan index upload must contain representable indices",
+                                ));
+                            }
+                        }
                         // 验证类型化 Uniform 属于共享 FramePlan 值域。
                         if let FramePlanCommand::UploadUniform { data, .. } = command {
                             // 固定值对象已经从类型上保证大小，这里统一验证值域。
@@ -400,17 +418,18 @@ mod tests {
     use crate::core::error::{Errc, Error, Result};
     // 引入测试计划依赖的薄 RHI 类型。
     use crate::native::present::rhi::{
-        BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, GraphicsSurface,
-        LoadAction, PipelineBinding, PipelineHandle, PipelineKind, RenderTargetHandle,
-        RhiBufferUpload, RhiBufferUploadPreflight, RhiColor, RhiExtent, RhiGradientRasterParams,
+        BufferHandle, DrawPacket, DrawRange, GraphicsDevice, GraphicsDeviceCapabilities,
+        GraphicsSurface, IndexBufferBinding, IndexFormat, LoadAction, PipelineBinding,
+        PipelineHandle, PipelineKind, RenderTargetHandle, RhiBufferUpload,
+        RhiBufferUploadPreflight, RhiColor, RhiExtent, RhiGradientRasterParams,
         RhiMeshRasterParams, RhiPresentTransaction, RhiSampledRasterParams, RhiScissor,
         RhiTextureTransfer, RhiViewport, SampledTextureBinding, SamplerHandle, SubmissionHandle,
         SurfaceFrame, SurfaceToken, TextureCopy, TextureHandle, TextureMove,
     };
     // 引入当前文件的计划类型。
     use super::{
-        FramePlan, FramePlanCommand, FramePlanScope, FramePlanStep, FrameUniformPayload,
-        FrameVertexPayload, RenderPassPlan, RenderTargetRef,
+        FrameIndexPayload, FramePlan, FramePlanCommand, FramePlanScope, FramePlanStep,
+        FrameUniformPayload, FrameVertexPayload, RenderPassPlan, RenderTargetRef,
     };
 
     // 记录一个不会触碰真实图形 API 的 mock device。

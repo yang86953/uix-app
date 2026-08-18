@@ -81,3 +81,63 @@ fn test_plan_for_target(mut plan: FramePlan, target: RenderTargetRef) -> FramePl
     // 返回测试计划。
     plan
 }
+
+// 在标准顶点和 Uniform 计划上构造类型化索引 Draw。
+fn test_indexed_plan<const N: usize>(
+    // 接收必须与 Surface 保持一致的代际。
+    token: SurfaceToken,
+    // 接收由 FramePlan 获取不可变所有权的 u32 索引。
+    indices: [u32; N],
+    // 接收 DrawRange 声明的索引数量。
+    count: u32,
+    // 接收 DrawRange 声明的首索引位置。
+    first: u32,
+) -> FramePlan {
+    // 从已经具有完整顶点、Uniform 和 raster state 的基线开始。
+    let mut plan = test_plan(token);
+    // 取得基线的唯一 render pass 以插入索引事实。
+    let FramePlanStep::Pass(pass) = &mut plan.steps[0] else {
+        // 基线结构漂移时立即失败。
+        panic!("test plan must start with a render pass");
+    };
+    // 使用独立句柄避免与顶点或 Uniform 角色重叠。
+    let index_buffer = BufferHandle::from_raw(5);
+    // 定位应当消费索引载荷的唯一 Draw。
+    let draw_index = pass
+        // 只观察当前 pass 的有序命令。
+        .commands
+        // 以不可变方式搜索 Draw 位置。
+        .iter()
+        // 返回第一个也应是唯一一个 Draw 索引。
+        .position(|command| matches!(command, FramePlanCommand::Draw(_)))
+        // 基线若不再含 Draw，测试 fixture 必须显式失败。
+        .expect("test plan must contain a draw");
+    // 在 Draw 之前插入同一 pass 拥有的类型化索引内容。
+    pass.commands.insert(
+        // 保持索引上传先于 Draw 生效。
+        draw_index,
+        // 把句柄与不可变 u32 序列绑定为一条命令。
+        FramePlanCommand::UploadIndex {
+            // 上传和 DrawRange 共享同一索引 Buffer 身份。
+            buffer: index_buffer,
+            // 通过唯一构造器冻结 u32 格式。
+            data: FrameIndexPayload::uint32(indices),
+        },
+    );
+    // 取得插入后后移一位的 Draw 命令。
+    let FramePlanCommand::Draw(packet) = &mut pass.commands[draw_index + 1] else {
+        // 插入不得改变基线 Draw 的相对位置。
+        panic!("typed index upload must precede the draw");
+    };
+    // 用同一 Buffer 身份和 Uint32 格式替换非索引范围。
+    packet.range = DrawRange::indices(
+        // 索引资源与元素格式始终作为不可拆事实。
+        IndexBufferBinding::new(index_buffer, IndexFormat::Uint32),
+        // 保留调用方指定的有符号范围长度。
+        count,
+        // 保留调用方指定的首索引位置。
+        first,
+    );
+    // 返回可以继续变异或执行的索引计划。
+    plan
+}

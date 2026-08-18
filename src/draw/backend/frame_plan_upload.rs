@@ -1,13 +1,13 @@
-//! FramePlan 拥有的类型化顶点与 Uniform 上传载荷。
+//! FramePlan 拥有的类型化顶点、索引与 Uniform 上传载荷。
 
-// 使用共享引用计数切片保存不可变顶点事实，避免帧计划复制大网格。
+// 使用共享引用计数切片保存不可变顶点和索引事实，避免帧计划复制大网格。
 use std::sync::Arc;
 
 // 引入已经由共享 RHI 冻结字段语义的各类常量值对象。
 use crate::native::present::rhi::{
-    PipelineUniformLayout, PipelineVertexLayout, RhiBlurRasterParams, RhiGradientRasterParams,
-    RhiMeshRasterParams, RhiMsdfRasterParams, RhiSampledRasterParams, RhiSectorRasterParams,
-    RhiShadowRasterParams, RhiShapeRasterParams,
+    IndexFormat, PipelineUniformLayout, PipelineVertexLayout, RhiBlurRasterParams,
+    RhiGradientRasterParams, RhiMeshRasterParams, RhiMsdfRasterParams, RhiSampledRasterParams,
+    RhiSectorRasterParams, RhiShadowRasterParams, RhiShapeRasterParams,
 };
 
 // 保存 FramePlan 允许上传的封闭顶点布局与浮点值。
@@ -124,6 +124,93 @@ impl FrameVertexPayload {
     }
 }
 
+// 保存 FramePlan 唯一允许的索引格式与不可变索引值。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum FrameIndexPayload {
+    // 保存紧密的 host-order u32 索引序列。
+    Uint32(Arc<[u32]>),
+}
+
+// 为索引载荷提供封闭构造、验证、范围查询与编码入口。
+impl FrameIndexPayload {
+    // 通过唯一构造器接收共享不可变的 u32 索引值。
+    pub(crate) fn uint32(values: impl Into<Arc<[u32]>>) -> Self {
+        // 将调用方值收回 FramePlan 的不可变所有权。
+        Self::Uint32(values.into())
+    }
+
+    // 返回索引载荷的唯一共享格式。
+    pub(crate) const fn format(&self) -> IndexFormat {
+        // 封闭枚举禁止调用方另传格式。
+        match self {
+            // 当前唯一载荷变体固定为 Uint32。
+            Self::Uint32(_) => IndexFormat::Uint32,
+        }
+    }
+
+    // 返回只读索引值切片。
+    pub(crate) fn values(&self) -> &[u32] {
+        // 只投影封闭载荷内部的共享值，不暴露可变存储。
+        match self {
+            // 返回 u32 序列的只读视图。
+            Self::Uint32(values) => values,
+        }
+    }
+
+    // 验证索引载荷非空且数量可表达为共享 u32 计数。
+    pub(crate) fn is_valid(&self) -> bool {
+        // 与可用计数投影共享同一非空和 u32 值域门禁。
+        self.index_count().is_some()
+    }
+
+    // 返回可安全传入 DrawRange 的索引数量。
+    pub(crate) fn index_count(&self) -> Option<u32> {
+        // 空载荷不得向 DrawRange 伪造可用的零计数。
+        if self.values().is_empty() {
+            // 用无结果保留索引载荷的非空不变式。
+            return None;
+        }
+        // 索引数量通过 checked 转换收敛到 DrawRange 的 u32 值域。
+        u32::try_from(self.values().len()).ok()
+    }
+
+    // 返回紧密 u32 索引序列的字节数量。
+    pub(crate) fn size_bytes(&self) -> usize {
+        // 每个索引固定占用一个 u32 的 native 字节宽度。
+        self.values().len() * std::mem::size_of::<u32>()
+    }
+
+    // 查询 DrawRange 指定非空子范围中的最大索引值。
+    pub(crate) fn max_index_in_range(&self, first: u32, count: u32) -> Option<u32> {
+        // 将起始位置转换为平台切片索引并拒绝无法转换的值。
+        let start = usize::try_from(first).ok()?;
+        // 将范围长度转换为平台切片长度并拒绝无法转换的值。
+        let length = usize::try_from(count).ok()?;
+        // 使用 checked 加法计算独占末端，避免整数回绕。
+        let end = start.checked_add(length)?;
+        // 空范围不产生最大索引。
+        if length == 0 {
+            // 统一将空 DrawRange 映射为无结果。
+            return None;
+        }
+        // 切片越界时返回无结果，合法范围再求最大值。
+        self.values().get(start..end)?.iter().copied().max()
+    }
+
+    // 将索引序列编码为唯一的 native-endian 紧密字节表示。
+    pub(crate) fn encode_ne_bytes(&self) -> Vec<u8> {
+        // 为完整索引序列预留精确字节容量。
+        let mut bytes = Vec::with_capacity(self.size_bytes());
+        // 按值顺序编码每个 u32，不插入填充字节。
+        for value in self.values() {
+            // FramePlan 与 Device 位于同一 host，使用 native-endian 编码。
+            bytes.extend_from_slice(&value.to_ne_bytes());
+        }
+        // 返回仅在上传边界使用的字节表示。
+        bytes
+    }
+}
+
 // 保存 FramePlan 允许上传的封闭 Uniform 语义值。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum FrameUniformPayload {
@@ -230,6 +317,52 @@ mod tests {
     use super::*;
     // 导入构造基础 Uniform 所需的共享 viewport。
     use crate::native::present::rhi::RhiViewport;
+
+    // 索引载荷必须拒绝空值并保持共享格式、数量和字节大小一致。
+    #[test]
+    fn index_payload_validates_shape_and_range() {
+        // 构造空索引载荷验证非空门禁。
+        let empty = FrameIndexPayload::uint32(Vec::<u32>::new());
+        // 空载荷必须无效。
+        assert!(!empty.is_valid());
+        // 无效载荷不得提供索引数量。
+        assert_eq!(empty.index_count(), None);
+        // 空载荷的范围查询必须返回无结果。
+        assert_eq!(empty.max_index_in_range(0, 1), None);
+        // 构造完整的 u32 索引序列。
+        let payload = FrameIndexPayload::uint32([7_u32, 2, 9, 4]);
+        // 非空且数量可表示的载荷必须有效。
+        assert!(payload.is_valid());
+        // 载荷格式必须由封闭变体固定为 Uint32。
+        assert_eq!(payload.format(), IndexFormat::Uint32);
+        // 索引数量必须准确投影为 u32。
+        assert_eq!(payload.index_count(), Some(4));
+        // 字节大小必须等于元素数乘以 u32 宽度。
+        assert_eq!(payload.size_bytes(), 4 * std::mem::size_of::<u32>());
+        // 合法非空子范围必须返回所选元素最大值。
+        assert_eq!(payload.max_index_in_range(1, 2), Some(9));
+        // 覆盖完整序列的范围也必须返回最大值。
+        assert_eq!(payload.max_index_in_range(0, 4), Some(9));
+        // 空范围不得伪造最大索引。
+        assert_eq!(payload.max_index_in_range(0, 0), None);
+        // 起点落在末端之后的范围必须被拒绝。
+        assert_eq!(payload.max_index_in_range(4, 1), None);
+        // 末端溢出载荷长度的范围必须被拒绝。
+        assert_eq!(payload.max_index_in_range(3, 2), None);
+        // 编码长度必须与类型化字节大小一致。
+        let encoded = payload.encode_ne_bytes();
+        // 编码不得丢失或增加任何索引字节。
+        assert_eq!(encoded.len(), payload.size_bytes());
+        // 以同一 native-endian 规则构造精确期望字节。
+        let mut expected = Vec::new();
+        // 按原始索引顺序拼接每个 u32 的 native-endian 字节。
+        for value in [7_u32, 2, 9, 4] {
+            // 期望表示必须保持紧密无填充布局。
+            expected.extend_from_slice(&value.to_ne_bytes());
+        }
+        // 实际编码内容必须与唯一编码规则完全一致。
+        assert_eq!(encoded, expected);
+    }
 
     // 顶点载荷必须按声明布局验证完整且有限的顶点。
     #[test]

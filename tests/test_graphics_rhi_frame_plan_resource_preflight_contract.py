@@ -97,8 +97,8 @@ class GraphicsRhiFramePlanResourcePreflightContractTests(unittest.TestCase):
         self.assertIn("self.device.preflight_texture_copy(*copy)?", preflight)
         # move 预检必须进入共享 GraphicsDevice 只读入口。
         self.assertIn("self.device.preflight_texture_move(*movement)?", preflight)
-        # 顶点与 Uniform 上传都必须进入共享只读预检入口。
-        self.assertEqual(preflight.count("self.device.preflight_buffer_upload("), 2)
+        # 顶点、索引与 Uniform 上传都必须进入共享只读预检入口。
+        self.assertEqual(preflight.count("self.device.preflight_buffer_upload("), 3)
         # Draw 预检必须进入共享 GraphicsDevice 只读入口。
         self.assertIn("self.device.preflight_draw_resources(*packet)?", preflight)
         # sampled 预检必须进入共享 GraphicsDevice 只读入口。

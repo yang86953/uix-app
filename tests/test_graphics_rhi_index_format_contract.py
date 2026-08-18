@@ -15,6 +15,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 DrawPacket 索引绑定契约。
 SHARED = ROOT / "src/native/present/rhi/draw_packet.rs"
+# 定位 FramePlan 命令闭集。
+FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
+# 定位 FramePlan 拥有的类型化上传值对象。
+FRAME_UPLOAD = ROOT / "src/draw/backend/frame_plan_upload.rs"
+# 定位 indexed Draw 的 pass-local 契约验证。
+FRAME_VALIDATION = ROOT / "src/draw/backend/frame_plan_validation.rs"
+# 定位 FramePlan 只读预检与 Device 执行边界。
+FRAME_EXECUTION = ROOT / "src/draw/backend/frame_plan_execution.rs"
 # 定位 OpenGL draw 格式翻译。
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs"
 # 定位 D3D11 draw 分派边界。
@@ -47,6 +55,48 @@ class GraphicsRhiIndexFormatContractTests(unittest.TestCase):
         self.assertIn("pub(crate) const fn byte_offset", shared)
         # 偏移溢出必须显式失败。
         self.assertIn("first_index.checked_mul(self.stride_bytes())", shared)
+
+    # FramePlan 必须拥有 indexed Draw 的格式、内容和可访问范围。
+    def test_frame_plan_owns_typed_index_content(self) -> None:
+        # 读取 FramePlan 命令闭集。
+        frame_plan = FRAME_PLAN.read_text(encoding="utf-8")
+        # 读取类型化索引载荷。
+        upload = FRAME_UPLOAD.read_text(encoding="utf-8")
+        # 读取 indexed Draw 共享验证。
+        validation = FRAME_VALIDATION.read_text(encoding="utf-8")
+        # 读取上传只读预检和唯一执行边界。
+        execution = FRAME_EXECUTION.read_text(encoding="utf-8")
+        # 截取索引命令的唯一 Device 执行分支。
+        index_execution = execution.split("FramePlanCommand::UploadIndex { buffer, data } =>", maxsplit=1)[1].split(
+            # 以后续 Uniform 分支作为索引分支的稳定右边界。
+            "FramePlanCommand::UploadUniform",
+            # 只截取第一个分支间隔。
+            maxsplit=1,
+        )[0]
+        # 命令闭集必须显式交付索引 Buffer 和类型化内容。
+        self.assertIn("UploadIndex {", frame_plan)
+        # FramePlan 必须用封闭值对象拥有索引序列。
+        self.assertIn("pub(crate) enum FrameIndexPayload", upload)
+        # 当前共享 ABI 必须将 Uint32 格式与 u32 值绑定。
+        self.assertIn("Uint32(Arc<[u32]>)", upload)
+        # 上层计划不得退回无语义的裸字节所有权。
+        self.assertNotIn("Arc<[u8]>", upload)
+        # 值对象必须提供选中范围的最大索引查询。
+        self.assertIn("fn max_index_in_range", upload)
+        # 索引载荷只能在 Device 边界编码为字节。
+        self.assertIn("let bytes = data.encode_ne_bytes();", index_execution)
+        # 索引字节必须通过共享上传值对象交付 Device。
+        self.assertIn("RhiBufferUpload::new(*buffer, &bytes)", index_execution)
+        # indexed Draw 必须查找当前 pass 中同一 Buffer 的最近上传。
+        self.assertIn("if *buffer == index_binding.buffer()", validation)
+        # DrawRange 格式必须与类型化内容格式一致。
+        self.assertIn("index_data.format() != index_binding.format()", validation)
+        # DrawRange 只能选择已交付的索引值。
+        self.assertIn(".max_index_in_range(packet.range.first_index(), packet.range.index_count())", validation)
+        # 选中的最大索引必须小于已交付顶点数量。
+        self.assertIn("selected_max >= uploaded_vertex_count", validation)
+        # 真实索引 Buffer 角色与容量必须在 Surface acquire 前预检。
+        self.assertIn("RhiBufferUploadPreflight::index(*buffer, data.size_bytes())", execution)
 
     # OpenGL 必须只从共享格式派生步长、原生类型和偏移。
     def test_opengl_maps_shared_index_format(self) -> None:
