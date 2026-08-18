@@ -14,13 +14,14 @@ use crate::native::present::rhi::{
     GRADIENT_ORIGIN_EDGE_X_FLOAT_OFFSET, GRADIENT_PARAMS_FLOAT_OFFSET,
     GRADIENT_VIEWPORT_FLOAT_OFFSET, MESH_COLOR_FLOAT_OFFSET, MESH_VIEWPORT_FLOAT_OFFSET,
     MSDF_RANGE_FLOAT_OFFSET, MSDF_TEXTURE_SIZE_FLOAT_OFFSET, MSDF_VIEWPORT_FLOAT_OFFSET,
-    PipelineBlend, PipelineBlendFactor, PipelineBlendOperation, PipelineKind,
-    SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET, SECTOR_COLOR_FLOAT_OFFSET,
-    SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET, SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET,
-    SHADOW_COLOR_FLOAT_OFFSET, SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET,
-    SHADOW_RADIUS_FLOAT_OFFSET, SHADOW_VIEWPORT_FLOAT_OFFSET, SHAPE_COLOR_FLOAT_OFFSET,
-    SHAPE_DRAW_RECT_FLOAT_OFFSET, SHAPE_RADIUS_FLOAT_OFFSET, SHAPE_RECT_FLOAT_OFFSET,
-    SHAPE_STROKE_FLOAT_OFFSET, SHAPE_VIEWPORT_FLOAT_OFFSET, SamplerDesc, TextureFormat,
+    PipelineBlend, PipelineBlendFactor, PipelineBlendOperation, PipelineColorWriteMask,
+    PipelineKind, SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET,
+    SECTOR_COLOR_FLOAT_OFFSET, SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET,
+    SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET, SHADOW_COLOR_FLOAT_OFFSET,
+    SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET, SHADOW_RADIUS_FLOAT_OFFSET,
+    SHADOW_VIEWPORT_FLOAT_OFFSET, SHAPE_COLOR_FLOAT_OFFSET, SHAPE_DRAW_RECT_FLOAT_OFFSET,
+    SHAPE_RADIUS_FLOAT_OFFSET, SHAPE_RECT_FLOAT_OFFSET, SHAPE_STROKE_FLOAT_OFFSET,
+    SHAPE_VIEWPORT_FLOAT_OFFSET, SamplerDesc, TextureFormat,
 };
 // 复用父资源表、目标方向、类型化 shader 语义和错误辅助。
 use super::{OpenGlRhiDevice, rhi_invalid, target_y_sign};
@@ -654,6 +655,15 @@ fn gl_blend_operation(operation: PipelineBlendOperation) -> u32 {
     }
 }
 
+// 把 API 无关颜色写掩码翻译为 OpenGL ES 的四通道开关。
+fn gl_color_write_mask(mask: PipelineColorWriteMask) -> [bool; 4] {
+    // 只映射共享层允许的封闭写掩码集合。
+    match mask {
+        // All 对应完整 RGBA 写入。
+        PipelineColorWriteMask::All => [true, true, true, true],
+    }
+}
+
 /// 按共享 pipeline 状态设置唯一颜色混合公式。
 ///
 /// # Safety
@@ -661,6 +671,13 @@ fn gl_blend_operation(operation: PipelineBlendOperation) -> u32 {
 unsafe fn apply_pipeline_blend(gl: &glow::Context, blend: PipelineBlend) {
     // 从共享层读取完整颜色与 alpha 因子。
     let state = blend.state();
+    // 把共享写掩码翻译为 OpenGL 的四个通道开关。
+    let [write_red, write_green, write_blue, write_alpha] = gl_color_write_mask(state.write_mask);
+    // SAFETY：调用者保证当前 owner thread 的 GL context current。
+    unsafe {
+        // 每次 draw 前显式恢复写掩码，禁止继承兼容 context 的遗留状态。
+        gl.color_mask(write_red, write_green, write_blue, write_alpha);
+    }
     // Replace 等语义关闭硬件混合并直接覆盖目标。
     if !state.enabled {
         // SAFETY：调用者保证当前 owner thread 的 GL context current。

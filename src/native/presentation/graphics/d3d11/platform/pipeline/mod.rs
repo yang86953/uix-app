@@ -13,7 +13,9 @@ use std::ffi::CStr;
 
 use crate::core::{Errc, Error, Result};
 // 引入跨 Adapter 共享的颜色混合语义。
-use crate::native::present::rhi::{PipelineBlend, PipelineBlendFactor, PipelineBlendOperation};
+use crate::native::present::rhi::{
+    PipelineBlend, PipelineBlendFactor, PipelineBlendOperation, PipelineColorWriteMask,
+};
 use ::windows::Win32::Foundation::{FALSE, TRUE};
 use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use ::windows::Win32::Graphics::Direct3D::{D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST, ID3DBlob};
