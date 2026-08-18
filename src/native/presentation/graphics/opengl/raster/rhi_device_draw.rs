@@ -12,12 +12,12 @@ use crate::native::present::rhi::{
     BLUR_WEIGHT_COUNT, BLUR_WEIGHTS_FLOAT_OFFSET, BufferUsage, DrawPacket,
     GRADIENT_COLOR_A_FLOAT_OFFSET, GRADIENT_COLOR_B_FLOAT_OFFSET, GRADIENT_EDGE_Y_FLOAT_OFFSET,
     GRADIENT_ORIGIN_EDGE_X_FLOAT_OFFSET, GRADIENT_PARAMS_FLOAT_OFFSET,
-    GRADIENT_VIEWPORT_FLOAT_OFFSET, MESH_COLOR_FLOAT_OFFSET, MESH_VIEWPORT_FLOAT_OFFSET,
-    MSDF_RANGE_FLOAT_OFFSET, MSDF_TEXTURE_SIZE_FLOAT_OFFSET, MSDF_VIEWPORT_FLOAT_OFFSET,
-    PipelineBlend, PipelineBlendFactor, PipelineBlendOperation, PipelineColorWriteMask,
-    PipelineCullMode, PipelineDepthClip, PipelineDepthState, PipelineDepthStencilState,
-    PipelineDitherState, PipelineFrontFace, PipelineKind, PipelineMultisampleState,
-    PipelinePrimitiveTopology, PipelineRasterState, PipelineStencilState,
+    GRADIENT_VIEWPORT_FLOAT_OFFSET, IndexFormat, MESH_COLOR_FLOAT_OFFSET,
+    MESH_VIEWPORT_FLOAT_OFFSET, MSDF_RANGE_FLOAT_OFFSET, MSDF_TEXTURE_SIZE_FLOAT_OFFSET,
+    MSDF_VIEWPORT_FLOAT_OFFSET, PipelineBlend, PipelineBlendFactor, PipelineBlendOperation,
+    PipelineColorWriteMask, PipelineCullMode, PipelineDepthClip, PipelineDepthState,
+    PipelineDepthStencilState, PipelineDitherState, PipelineFrontFace, PipelineKind,
+    PipelineMultisampleState, PipelinePrimitiveTopology, PipelineRasterState, PipelineStencilState,
     SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET, SECTOR_COLOR_FLOAT_OFFSET,
     SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET, SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET,
     SHADOW_COLOR_FLOAT_OFFSET, SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET,
@@ -571,23 +571,39 @@ impl OpenGlRhiDevice {
         unsafe { apply_pipeline_blend(gl, contract.blend) };
         // 把共享原语拓扑翻译一次，供 indexed 与 non-indexed draw 共用。
         let primitive_topology = gl_primitive_topology(contract.topology);
-        // Indexed draw 需要固定 uint32 index ABI，非 indexed draw 使用顶点范围。
-        // SAFETY: index buffer 已校验为 Index usage 且 stride=4；first_index.saturating_mul(4) 防止偏移溢出；index_count/vertex_count 已校验非零；program/vao/vertex 存活；context 保持 current。
+        // Indexed draw 从 FramePlan 绑定读取格式，非 indexed draw 使用顶点范围。
+        // SAFETY: index buffer 已按共享格式校验用途、步长和 checked 偏移；index_count/vertex_count 已校验非零；program/vao/vertex 存活；context 保持 current。
         unsafe {
-            if let Some(index_handle) = packet.index_buffer {
-                let index = self.buffer(index_handle)?;
-                if index.usage != BufferUsage::Index || index.stride_bytes != 4 {
-                    return Err(rhi_invalid("OpenGL RHI index buffer ABI is not uint32"));
+            if let Some(index_binding) = packet.index_buffer {
+                // 解析 FramePlan 已绑定格式的索引资源。
+                let index = self.buffer(index_binding.buffer())?;
+                // 读取共享格式，后续步长、原生枚举和偏移都只从该值派生。
+                let index_format = index_binding.format();
+                // 资源用途与创建步长必须精确符合共享格式。
+                if index.usage != BufferUsage::Index
+                    || index.stride_bytes != index_format.stride_bytes()
+                {
+                    // 返回不泄漏原生枚举的稳定格式错误。
+                    return Err(rhi_invalid("OpenGL RHI index buffer format is invalid"));
                 }
+                // 索引绘制必须携带非空元素范围。
                 if packet.index_count == 0 {
                     return Err(rhi_invalid("OpenGL RHI indexed draw range is empty"));
                 }
+                // 首索引偏移必须落在两个 Adapter 共用的可表达范围内。
+                let index_offset = index_format
+                    // 复用共享 checked 字节偏移算法。
+                    .byte_offset(packet.first_index)
+                    // 拒绝旧实现的饱和或截断行为。
+                    .ok_or_else(|| rhi_invalid("OpenGL RHI index offset is invalid"))?;
+                // 绑定已经验证的原生索引资源。
                 gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(index.native));
+                // 使用共享拓扑、格式和范围编码索引绘制。
                 gl.draw_elements(
                     primitive_topology,
                     packet.index_count as i32,
-                    glow::UNSIGNED_INT,
-                    packet.first_index.saturating_mul(4) as i32,
+                    gl_index_type(index_format),
+                    index_offset,
                 );
             } else {
                 gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, None);
@@ -689,6 +705,15 @@ fn gl_primitive_topology(topology: PipelinePrimitiveTopology) -> u32 {
     match topology {
         // TriangleList 对应每三个顶点形成独立三角形的 GL_TRIANGLES。
         PipelinePrimitiveTopology::TriangleList => glow::TRIANGLES,
+    }
+}
+
+// 把 API 无关索引格式翻译为 OpenGL ES 元素类型。
+fn gl_index_type(format: IndexFormat) -> u32 {
+    // 只映射共享层允许的封闭格式集合。
+    match format {
+        // Uint32 对应 OpenGL ES 三十二位无符号索引。
+        IndexFormat::Uint32 => glow::UNSIGNED_INT,
     }
 }
 

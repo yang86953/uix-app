@@ -14,10 +14,11 @@ use std::ffi::CStr;
 use crate::core::{Errc, Error, Result};
 // 引入跨 Adapter 共享的 pipeline 固定状态语义。
 use crate::native::present::rhi::{
-    PIPELINE_DEPTH_STENCIL_DISABLED, PIPELINE_RASTER_2D, PipelineBlend, PipelineBlendFactor,
-    PipelineBlendOperation, PipelineColorWriteMask, PipelineCullMode, PipelineDepthClip,
-    PipelineDepthState, PipelineDepthStencilState, PipelineDitherState, PipelineFrontFace,
-    PipelineMultisampleState, PipelinePrimitiveTopology, PipelineRasterState, PipelineStencilState,
+    IndexFormat, PIPELINE_DEPTH_STENCIL_DISABLED, PIPELINE_RASTER_2D, PipelineBlend,
+    PipelineBlendFactor, PipelineBlendOperation, PipelineColorWriteMask, PipelineCullMode,
+    PipelineDepthClip, PipelineDepthState, PipelineDepthStencilState, PipelineDitherState,
+    PipelineFrontFace, PipelineMultisampleState, PipelinePrimitiveTopology, PipelineRasterState,
+    PipelineStencilState,
 };
 use ::windows::Win32::Foundation::{FALSE, TRUE};
 use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
@@ -36,7 +37,8 @@ use ::windows::Win32::Graphics::Direct3D11::{
     ID3D11RenderTargetView, ID3D11SamplerState, ID3D11ShaderResourceView, ID3D11VertexShader,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT_R32_UINT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32G32B32A32_FLOAT,
+    DXGI_FORMAT, DXGI_FORMAT_R32_UINT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32G32B32A32_FLOAT,
+    DXGI_FORMAT_UNKNOWN,
 };
 use ::windows::core::{BOOL, PCSTR};
 
@@ -572,6 +574,49 @@ fn d3d11_primitive_topology(topology: PipelinePrimitiveTopology) -> D3D_PRIMITIV
 fn d3d11_sample_mask(state: PipelineMultisampleState) -> u32 {
     // 共享值对象已经穷尽定义每个变体的输出位集合。
     state.sample_mask()
+}
+
+// 保存已经由共享格式映射完成的 D3D11 索引资源绑定。
+pub(crate) struct D3d11IndexBinding {
+    // 保持原生索引 buffer 在 draw 编码期间存活。
+    native: ID3D11Buffer,
+    // 保存与共享 IndexFormat 对应的 DXGI 枚举。
+    format: DXGI_FORMAT,
+}
+
+// 为 D3D11 索引绑定提供唯一格式翻译入口。
+impl D3d11IndexBinding {
+    // 从已验证资源与共享格式构造原生绑定。
+    pub(crate) fn new(native: ID3D11Buffer, format: IndexFormat) -> Self {
+        // 穷尽映射共享层允许的索引格式。
+        let format = match format {
+            // Uint32 对应 D3D11 的 R32_UINT 索引解释。
+            IndexFormat::Uint32 => DXGI_FORMAT_R32_UINT,
+        };
+        // 返回同时冻结 COM 生命周期与原生格式的绑定。
+        Self { native, format }
+    }
+}
+
+/// 绑定或清除一个已经完成共享格式映射的 D3D11 索引资源。
+///
+/// # Safety
+/// 调用者必须保证 context 与可选 buffer 属于同一 owner-thread D3D11 device。
+unsafe fn bind_rhi_index_buffer(
+    // 借用当前 immediate context。
+    context: &ID3D11DeviceContext,
+    // 接收可选的类型化原生索引绑定。
+    index: Option<&D3d11IndexBinding>,
+) {
+    // 把可选绑定投影为 D3D11 要求的资源与格式对。
+    let (native, format) = match index {
+        // 索引绘制同时绑定资源和已映射格式。
+        Some(binding) => (Some(&binding.native), binding.format),
+        // 非索引绘制清除旧资源并使用无格式占位。
+        None => (None, DXGI_FORMAT_UNKNOWN),
+    };
+    // SAFETY：调用者保证 context 与 buffer 归属同一 owner-thread device。
+    unsafe { context.IASetIndexBuffer(native, format, 0) };
 }
 
 // 验证 D3D11 固有颜色输出行为能够满足共享抖动语义。

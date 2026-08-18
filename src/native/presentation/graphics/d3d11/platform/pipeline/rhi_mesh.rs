@@ -9,7 +9,7 @@ impl D3d11Pipeline {
         context: &ID3D11DeviceContext,
         vertex: &ID3D11Buffer,
         vertex_stride: u32,
-        index: Option<&ID3D11Buffer>,
+        index: Option<&D3d11IndexBinding>,
         uniform: &ID3D11Buffer,
         blend: PipelineBlend,
         vertex_count: u32,
@@ -38,14 +38,14 @@ impl D3d11Pipeline {
                 Some(&0),
             );
             // None 会清除前一个 packet 留下的索引绑定。
-            context.IASetIndexBuffer(index, DXGI_FORMAT_R32_UINT, 0);
+            bind_rhi_index_buffer(context, index);
             context.VSSetShader(&self.vs_mesh, None);
             context.PSSetShader(&self.ps_mesh, None);
             context.VSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
             context.PSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
             context.OMSetBlendState(self.rhi_blend_state(blend), None, self.rhi_sample_mask());
             if index.is_some() {
-                // 索引 ABI 固定为 uint32，base vertex 保留 D3D11 原生语义。
+                // 索引格式已由共享绑定映射，base vertex 继续使用 packet 值。
                 context.DrawIndexed(index_count, first_index, base_vertex);
             } else {
                 // 非索引 packet 直接使用顶点范围。

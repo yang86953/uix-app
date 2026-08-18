@@ -11,7 +11,7 @@ impl D3d11Pipeline {
         context: &ID3D11DeviceContext,
         vertex: &ID3D11Buffer,
         vertex_stride: u32,
-        index: Option<&ID3D11Buffer>,
+        index: Option<&D3d11IndexBinding>,
         uniform: &ID3D11Buffer,
         texture: &ID3D11ShaderResourceView,
         sampler: &ID3D11SamplerState,
@@ -46,7 +46,7 @@ impl D3d11Pipeline {
                 Some(&0),
             );
             // 清理可能由前一个 packet 留下的索引绑定。
-            context.IASetIndexBuffer(index, DXGI_FORMAT_R32_UINT, 0);
+            bind_rhi_index_buffer(context, index);
             // 复用按 viewport uniform 计算位置的 glyph vertex shader。
             context.VSSetShader(&self.vs_glyph, None);
             // 根据 RHI pipeline 语义选择颜色纹理或 R8 coverage pixel shader。
@@ -63,7 +63,7 @@ impl D3d11Pipeline {
             context.OMSetBlendState(blend_state, None, self.rhi_sample_mask());
             // 按 packet 的索引形态编码实际 draw。
             if index.is_some() {
-                // 索引 ABI 固定为 uint32，base vertex 保留 D3D11 原生语义。
+                // 索引格式已由共享绑定映射，base vertex 继续使用 packet 值。
                 context.DrawIndexed(index_count, first_index, base_vertex);
             } else {
                 // 非索引 packet 直接使用顶点范围。
@@ -86,7 +86,7 @@ impl D3d11Pipeline {
         context: &ID3D11DeviceContext,
         vertex: &ID3D11Buffer,
         vertex_stride: u32,
-        index: Option<&ID3D11Buffer>,
+        index: Option<&D3d11IndexBinding>,
         uniform: &ID3D11Buffer,
         texture: &ID3D11ShaderResourceView,
         sampler: &ID3D11SamplerState,
@@ -125,7 +125,7 @@ impl D3d11Pipeline {
         context: &ID3D11DeviceContext,
         vertex: &ID3D11Buffer,
         vertex_stride: u32,
-        index: Option<&ID3D11Buffer>,
+        index: Option<&D3d11IndexBinding>,
         uniform: &ID3D11Buffer,
         texture: &ID3D11ShaderResourceView,
         sampler: &ID3D11SamplerState,
@@ -162,7 +162,7 @@ impl D3d11Pipeline {
         context: &ID3D11DeviceContext,
         vertex: &ID3D11Buffer,
         vertex_stride: u32,
-        index: Option<&ID3D11Buffer>,
+        index: Option<&D3d11IndexBinding>,
         uniform: &ID3D11Buffer,
         texture: &ID3D11ShaderResourceView,
         sampler: &ID3D11SamplerState,
