@@ -10,10 +10,10 @@ use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, LoadAction, PipelineColorWriteMask, PipelineDesc,
     PipelineDitherState, PipelineHandle, PipelineKind, RenderTargetHandle, RhiBufferUpload,
-    RhiColor, RhiColorClearContract, RhiExtent, RhiPassState, RhiScissor, RhiSubmissionSequence,
-    RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle,
-    SubmissionHandle, TextureCopy, TextureDesc, TextureFormat, TextureHandle, TextureMove,
-    UIX_COLOR_CLEAR_CONTRACT,
+    RhiColor, RhiColorClearContract, RhiExtent, RhiPassState, RhiResourceTable, RhiScissor,
+    RhiSubmissionSequence, RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc,
+    SamplerHandle, SubmissionHandle, TextureCopy, TextureDesc, TextureFormat, TextureHandle,
+    TextureMove, UIX_COLOR_CLEAR_CONTRACT,
 };
 
 // 将 retained 区域移动拆出，保持资源设备文件低于行数上限。
@@ -74,15 +74,15 @@ fn target_y_sign(target: RenderTargetHandle) -> f32 {
 // 持有 OpenGL ES RHI 的资源表、pass 状态和 VAO。
 pub(super) struct OpenGlRhiDevice {
     // 保存按一开始从 1 分配的 buffer 句柄索引的资源表。
-    buffers: Vec<Option<OpenGlRhiBuffer>>,
+    buffers: RhiResourceTable<BufferHandle, OpenGlRhiBuffer>,
     // 保存按一开始从 1 分配的 texture 句柄索引的资源表。
-    textures: Vec<Option<OpenGlRhiTexture>>,
+    textures: RhiResourceTable<TextureHandle, OpenGlRhiTexture>,
     // 保存必须活到下一次原生 submit 之后才能删除的临时移动纹理。
     texture_move_scratch_after_submit: Vec<TextureHandle>,
     // 保存按一开始从 1 分配的 pipeline 句柄索引的资源表。
-    pipelines: Vec<Option<OpenGlRhiPipeline>>,
+    pipelines: RhiResourceTable<PipelineHandle, OpenGlRhiPipeline>,
     // 保存按一开始从 1 分配的 sampler 句柄索引的资源表。
-    samplers: Vec<Option<OpenGlRhiSampler>>,
+    samplers: RhiResourceTable<SamplerHandle, OpenGlRhiSampler>,
     // 保存所有 RHI draw 共用的 VAO。
     vao: glow::VertexArray,
     // 保存两个 Adapter 共用的 pass 生命周期、目标、几何与采样绑定事实。
@@ -138,12 +138,12 @@ impl OpenGlRhiDevice {
         };
         // 返回没有打开 pass 的 owner-thread 状态。
         Ok(Self {
-            buffers: Vec::new(),
-            textures: Vec::new(),
+            buffers: RhiResourceTable::new(),
+            textures: RhiResourceTable::new(),
             // 新设备尚未产生等待提交的临时移动资源。
             texture_move_scratch_after_submit: Vec::new(),
-            pipelines: Vec::new(),
-            samplers: Vec::new(),
+            pipelines: RhiResourceTable::new(),
+            samplers: RhiResourceTable::new(),
             vao,
             // 使用 API 无关状态机初始化 pass 生命周期。
             pass: RhiPassState::new(),
@@ -183,16 +183,14 @@ impl OpenGlRhiDevice {
             );
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
         }
-        // 保存资源事实和初始化为零的 CPU 镜像。
-        self.buffers.push(Some(OpenGlRhiBuffer {
+        // 由共享资源表原子登记资源事实和初始化为零的 CPU 镜像。
+        Ok(self.buffers.insert(OpenGlRhiBuffer {
             native,
             // Adapter 只保存唯一共享描述，不再复制三个可漂移字段。
             desc,
             // CPU 镜像与已经验证的资源容量精确一致。
             data: vec![0; desc.size_bytes()],
-        }));
-        // 句柄从一开始递增，零值永远表示无资源。
-        Ok(BufferHandle::from_raw(self.buffers.len() as u64))
+        }))
     }
 
     // 更新 Buffer 从零开始的已验证元素前缀，并同步 CPU Uniform 镜像。
@@ -280,14 +278,13 @@ impl OpenGlRhiDevice {
         } else {
             None
         };
-        // 保存资源并返回新的 opaque texture 句柄。
-        self.textures.push(Some(OpenGlRhiTexture {
+        // 由共享资源表登记资源并返回新的 opaque texture 句柄。
+        Ok(self.textures.insert(OpenGlRhiTexture {
             native,
             framebuffer,
             // Adapter 只保存唯一共享描述，不再复制尺寸和格式字段。
             desc,
-        }));
-        Ok(TextureHandle::from_raw(self.textures.len() as u64))
+        }))
     }
 
     // 创建 clamp sampler。
@@ -315,15 +312,13 @@ impl OpenGlRhiDevice {
             gl.sampler_parameter_i32(native, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
             gl.sampler_parameter_i32(native, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
         }
-        // 记录 sampler 资源。
-        self.samplers.push(Some(OpenGlRhiSampler {
+        // 由共享资源表登记 sampler 资源。
+        Ok(self.samplers.insert(OpenGlRhiSampler {
             // 保持原生 sampler 的 owner-thread 生命周期。
             native,
             // 保留创建描述供共享 PipelineSampling 在 draw 前核对。
             desc,
-        }));
-        // 返回从一开始递增的 sampler 句柄。
-        Ok(SamplerHandle::from_raw(self.samplers.len() as u64))
+        }))
     }
 
     // 编译并登记一个固定 pipeline。
@@ -337,13 +332,11 @@ impl OpenGlRhiDevice {
         // 编译 program；shader 失败时不登记半成品资源。
         // SAFETY: 编译期间 context 保持 current（compile_program 自身的前置条件），shader 源码为存活且静态的生命周期字符串。
         let program = unsafe { compile_program(gl, vertex, fragment, "RHI pipeline")? };
-        // 保存类型化语义和 program 的 owner-thread 生命周期。
-        self.pipelines.push(Some(OpenGlRhiPipeline {
+        // 由共享资源表保存类型化语义和 program 的 owner-thread 生命周期。
+        Ok(self.pipelines.insert(OpenGlRhiPipeline {
             kind: desc.kind,
             program,
-        }));
-        // 返回新的 pipeline 句柄。
-        Ok(PipelineHandle::from_raw(self.pipelines.len() as u64))
+        }))
     }
 
     // 销毁 buffer 资源。
@@ -352,15 +345,8 @@ impl OpenGlRhiDevice {
         gl: &glow::Context,
         handle: BufferHandle,
     ) -> Result<()> {
-        // 取得目标槽位。
-        let index = Self::index(handle.raw(), "buffer")?;
-        let Some(slot) = self.buffers.get_mut(index) else {
-            return Err(rhi_invalid("OpenGL RHI buffer handle is stale"));
-        };
-        // 只能销毁仍然存在的资源。
-        let Some(buffer) = slot.take() else {
-            return Err(rhi_invalid("OpenGL RHI buffer was already destroyed"));
-        };
+        // 由共享资源表检查式取出仍然存活的 buffer。
+        let buffer = self.buffers.take(handle)?;
         // 删除底层对象。
         // SAFETY: buffer 刚经 slot.take() 取出、仍存活且此后不再被引用，只在销毁路径删除一次；context 保持 current。
         unsafe {
@@ -380,15 +366,8 @@ impl OpenGlRhiDevice {
         if self.pass.references_target(handle) {
             return Err(rhi_invalid("OpenGL RHI cannot destroy active target"));
         }
-        // 取得目标槽位。
-        let index = Self::index(handle.raw(), "texture")?;
-        let Some(slot) = self.textures.get_mut(index) else {
-            return Err(rhi_invalid("OpenGL RHI texture handle is stale"));
-        };
-        // 只能销毁仍然存在的资源。
-        let Some(texture) = slot.take() else {
-            return Err(rhi_invalid("OpenGL RHI texture was already destroyed"));
-        };
+        // 由共享资源表检查式取出仍然存活的 texture。
+        let texture = self.textures.take(handle)?;
         // 删除 framebuffer 和 texture 对象。
         // SAFETY: 上方已确认该 texture 不是当前 pass 的活动 target；texture 刚被取出、仍存活且此后不再引用；先删 framebuffer 再删 texture 顺序安全；context 保持 current。
         unsafe {
@@ -409,15 +388,8 @@ impl OpenGlRhiDevice {
         gl: &glow::Context,
         handle: SamplerHandle,
     ) -> Result<()> {
-        // 取得目标槽位。
-        let index = Self::index(handle.raw(), "sampler")?;
-        let Some(slot) = self.samplers.get_mut(index) else {
-            return Err(rhi_invalid("OpenGL RHI sampler handle is stale"));
-        };
-        // 只能销毁仍然存在的资源。
-        let Some(sampler) = slot.take() else {
-            return Err(rhi_invalid("OpenGL RHI sampler was already destroyed"));
-        };
+        // 由共享资源表检查式取出仍然存活的 sampler。
+        let sampler = self.samplers.take(handle)?;
         // 删除底层 sampler 对象。
         // SAFETY: sampler 刚被取出、仍存活且此后不再引用，只在销毁路径删除一次；context 保持 current。
         unsafe {
@@ -435,15 +407,8 @@ impl OpenGlRhiDevice {
         gl: &glow::Context,
         handle: PipelineHandle,
     ) -> Result<()> {
-        // 取得目标槽位。
-        let index = Self::index(handle.raw(), "pipeline")?;
-        let Some(slot) = self.pipelines.get_mut(index) else {
-            return Err(rhi_invalid("OpenGL RHI pipeline handle is stale"));
-        };
-        // 只能销毁仍然存在的资源。
-        let Some(pipeline) = slot.take() else {
-            return Err(rhi_invalid("OpenGL RHI pipeline was already destroyed"));
-        };
+        // 由共享资源表检查式取出仍然存活的 pipeline。
+        let pipeline = self.pipelines.take(handle)?;
         // 删除底层 program。
         // SAFETY: pipeline 刚被取出、仍存活且此后不再引用，只在销毁路径删除一次；context 保持 current。
         unsafe {
@@ -685,42 +650,34 @@ impl OpenGlRhiDevice {
     // 释放所有 RHI 资源；调用方必须保证 GL context current。
     pub(super) fn release(&mut self, gl: &glow::Context) {
         // 按资源表逆序释放底层对象，避免依赖关系被提前拆除。
-        for slot in self.pipelines.iter_mut().rev() {
-            if let Some(pipeline) = slot.take() {
-                // SAFETY: pipeline 刚被取出、仍存活且此后不再引用；释放期间调用方保证 context current（见本函数文档）。
-                unsafe {
-                    gl.delete_program(pipeline.program);
-                }
+        for pipeline in self.pipelines.drain_reverse() {
+            // SAFETY: pipeline 刚被共享资源表取出、仍存活且此后不再引用；释放期间调用方保证 context current（见本函数文档）。
+            unsafe {
+                gl.delete_program(pipeline.program);
             }
         }
         // 先删除 texture framebuffer，再删除 texture。
-        for slot in self.textures.iter_mut().rev() {
-            if let Some(texture) = slot.take() {
-                // SAFETY: texture 刚被取出、仍存活且此后不再引用；先删 framebuffer 再删 texture；释放期间 context 保持 current。
-                unsafe {
-                    if let Some(framebuffer) = texture.framebuffer {
-                        gl.delete_framebuffer(framebuffer);
-                    }
-                    gl.delete_texture(texture.native);
+        for texture in self.textures.drain_reverse() {
+            // SAFETY: texture 刚被共享资源表取出、仍存活且此后不再引用；先删 framebuffer 再删 texture；释放期间 context 保持 current。
+            unsafe {
+                if let Some(framebuffer) = texture.framebuffer {
+                    gl.delete_framebuffer(framebuffer);
                 }
+                gl.delete_texture(texture.native);
             }
         }
         // 删除 sampler 资源。
-        for slot in self.samplers.iter_mut().rev() {
-            if let Some(sampler) = slot.take() {
-                // SAFETY: sampler 刚被取出、仍存活且此后不再引用；释放期间 context 保持 current。
-                unsafe {
-                    gl.delete_sampler(sampler.native);
-                }
+        for sampler in self.samplers.drain_reverse() {
+            // SAFETY: sampler 刚被共享资源表取出、仍存活且此后不再引用；释放期间 context 保持 current。
+            unsafe {
+                gl.delete_sampler(sampler.native);
             }
         }
         // 删除 buffer 资源和共享 VAO。
-        for slot in self.buffers.iter_mut().rev() {
-            if let Some(buffer) = slot.take() {
-                // SAFETY: buffer 刚被取出、仍存活且此后不再引用；释放期间 context 保持 current。
-                unsafe {
-                    gl.delete_buffer(buffer.native);
-                }
+        for buffer in self.buffers.drain_reverse() {
+            // SAFETY: buffer 刚被共享资源表取出、仍存活且此后不再引用；释放期间 context 保持 current。
+            unsafe {
+                gl.delete_buffer(buffer.native);
             }
         }
         // SAFETY: vao 为本设备创建、仍存活且此后不再引用；释放期间 context 保持 current。

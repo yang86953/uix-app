@@ -13,10 +13,10 @@ use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
     LoadAction, PipelineBinding, PipelineDesc, PipelineHandle, PipelineKind, RenderTargetHandle,
-    RhiBufferUpload, RhiColor, RhiColorClearContract, RhiExtent, RhiPassState, RhiScissor,
-    RhiSubmissionSequence, RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc,
-    SamplerHandle, TextureCopy, TextureDesc, TextureFormat, TextureHandle, TextureMove,
-    UIX_COLOR_CLEAR_CONTRACT,
+    RhiBufferUpload, RhiColor, RhiColorClearContract, RhiExtent, RhiPassState, RhiResourceTable,
+    RhiScissor, RhiSubmissionSequence, RhiTextureUpload, RhiViewport, SampledTextureBinding,
+    SamplerDesc, SamplerHandle, TextureCopy, TextureDesc, TextureFormat, TextureHandle,
+    TextureMove, UIX_COLOR_CLEAR_CONTRACT,
 };
 // 引入 D3D11 的基础资源和绑定类型。
 use ::windows::Win32::Graphics::Direct3D11::{
@@ -90,13 +90,13 @@ struct D3d11RhiSampler {
 // 持有 D3D11 RHI 资源表与 owner-thread pass 状态。
 pub(super) struct D3d11RhiDevice {
     // 保存按不透明 id 索引的 buffer 资源。
-    buffers: Vec<Option<D3d11RhiBuffer>>,
+    buffers: RhiResourceTable<BufferHandle, D3d11RhiBuffer>,
     // 保存按不透明 id 索引的 texture 资源。
-    textures: Vec<Option<D3d11RhiTexture>>,
+    textures: RhiResourceTable<TextureHandle, D3d11RhiTexture>,
     // 保存按不透明 id 索引的有限 pipeline 资源。
-    pipelines: Vec<Option<D3d11RhiPipeline>>,
+    pipelines: RhiResourceTable<PipelineHandle, D3d11RhiPipeline>,
     // 保存按不透明 id 索引的 sampler 资源。
-    samplers: Vec<Option<D3d11RhiSampler>>,
+    samplers: RhiResourceTable<SamplerHandle, D3d11RhiSampler>,
     // 保存两个 Adapter 共用的 pass 生命周期、目标、几何与采样绑定事实。
     pass: RhiPassState,
     // 只保存 D3D11 编码当前 pass 所需的原生 render target view。
@@ -111,10 +111,10 @@ impl D3d11RhiDevice {
     pub(super) const fn new() -> Self {
         // 返回可安全嵌入 D3D11 context 的空状态。
         Self {
-            buffers: Vec::new(),
-            textures: Vec::new(),
-            pipelines: Vec::new(),
-            samplers: Vec::new(),
+            buffers: RhiResourceTable::new(),
+            textures: RhiResourceTable::new(),
+            pipelines: RhiResourceTable::new(),
+            samplers: RhiResourceTable::new(),
             // 使用 API 无关状态机初始化 pass 生命周期。
             pass: RhiPassState::new(),
             active_target: None,
@@ -125,72 +125,32 @@ impl D3d11RhiDevice {
 
     // 通过一开始从 1 分配的句柄读取 buffer。
     fn buffer(&self, handle: BufferHandle) -> Result<&D3d11RhiBuffer> {
-        // 零句柄和越界句柄都表示调用方没有完成资源绑定。
-        let Some(index) = handle.raw().checked_sub(1) else {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("buffer handle is null"));
-        };
-        // 读取资源槽并检查已销毁状态。
-        self.buffers
-            .get(index as usize)
-            .and_then(Option::as_ref)
-            .ok_or_else(|| rhi_invalid("buffer handle is stale"))
+        // 由共享类型化资源表统一解析零值、越界与已销毁身份。
+        self.buffers.get(handle)
     }
 
     // 通过一开始从 1 分配的句柄读取可变 buffer。
     fn buffer_mut(&mut self, handle: BufferHandle) -> Result<&mut D3d11RhiBuffer> {
-        // 零句柄和越界句柄都表示调用方没有完成资源绑定。
-        let Some(index) = handle.raw().checked_sub(1) else {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("buffer handle is null"));
-        };
-        // 读取可变资源槽并检查已销毁状态。
-        self.buffers
-            .get_mut(index as usize)
-            .and_then(Option::as_mut)
-            .ok_or_else(|| rhi_invalid("buffer handle is stale"))
+        // 可变查询与只读查询共享同一资源身份门禁。
+        self.buffers.get_mut(handle)
     }
 
     // 通过不透明句柄读取已创建的 pipeline。
     fn pipeline(&self, handle: PipelineHandle) -> Result<&D3d11RhiPipeline> {
-        // 零句柄和越界句柄都表示调用方没有完成 pipeline 绑定。
-        let Some(index) = handle.raw().checked_sub(1) else {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("pipeline handle is null"));
-        };
-        // 读取资源槽并检查已销毁状态。
-        self.pipelines
-            .get(index as usize)
-            .and_then(Option::as_ref)
-            .ok_or_else(|| rhi_invalid("pipeline handle is stale"))
+        // 由共享类型化资源表统一解析 pipeline 身份。
+        self.pipelines.get(handle)
     }
 
     // 通过不透明句柄读取已创建的 sampler。
     fn sampler(&self, handle: SamplerHandle) -> Result<&D3d11RhiSampler> {
-        // 零句柄和越界句柄都表示调用方没有完成 sampler 绑定。
-        let Some(index) = handle.raw().checked_sub(1) else {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("sampler handle is null"));
-        };
-        // 读取资源槽并检查已销毁状态。
-        self.samplers
-            .get(index as usize)
-            .and_then(Option::as_ref)
-            .ok_or_else(|| rhi_invalid("sampler handle is stale"))
+        // 由共享类型化资源表统一解析 sampler 身份。
+        self.samplers.get(handle)
     }
 
     // 通过一开始从 1 分配的句柄读取 texture。
     fn texture(&self, handle: TextureHandle) -> Result<&D3d11RhiTexture> {
-        // 零句柄和越界句柄都表示调用方没有完成资源绑定。
-        let Some(index) = handle.raw().checked_sub(1) else {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("texture handle is null"));
-        };
-        // 读取资源槽并检查已销毁状态。
-        self.textures
-            .get(index as usize)
-            .and_then(Option::as_ref)
-            .ok_or_else(|| rhi_invalid("texture handle is stale"))
+        // 由共享类型化资源表统一解析 texture 身份。
+        self.textures.get(handle)
     }
 
     // 通过 render target 句柄读取对应 texture。
@@ -287,16 +247,12 @@ impl GraphicsDevice for D3d11Context {
         // 拒绝驱动返回的空资源。
         let native =
             native.ok_or_else(|| rhi_platform("D3d11 RHI CreateBuffer returned no buffer"))?;
-        // 分配从 1 开始的不透明资源身份。
-        self.rhi_device.buffers.push(Some(D3d11RhiBuffer {
+        // 由共享资源表原子登记原生对象与完整描述。
+        Ok(self.rhi_device.buffers.insert(D3d11RhiBuffer {
             native,
             // Adapter 只保存唯一共享描述，不再复制三个可漂移字段。
             desc,
-        }));
-        // 计算刚刚追加的资源句柄。
-        let raw = self.rhi_device.buffers.len() as u64;
-        // 返回 opaque buffer handle。
-        Ok(BufferHandle::from_raw(raw))
+        }))
     }
 
     // 将紧密排列的数据写入已有 D3D11 buffer。
@@ -420,34 +376,14 @@ impl GraphicsDevice for D3d11Context {
 
     // 销毁 buffer 资源槽。
     fn destroy_buffer(&mut self, buffer: BufferHandle) -> Result<()> {
-        // 解析资源身份并检查是否已销毁。
-        let index = buffer
-            .raw()
-            .checked_sub(1)
-            .ok_or_else(|| rhi_invalid("buffer handle is null"))? as usize;
-        // 读取资源槽。
-        let Some(slot) = self.rhi_device.buffers.get_mut(index) else {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("buffer handle is stale"));
-        };
-        // 拒绝重复销毁。
-        if slot.is_none() {
-            // 返回稳定的状态错误。
-            return Err(rhi_invalid("buffer handle was already destroyed"));
-        }
-        // 清空资源槽，让旧句柄立即失效。
-        *slot = None;
+        // 由共享资源表检查式取出资源，离开作用域时释放 COM 对象。
+        self.rhi_device.buffers.take(buffer)?;
         // 返回成功。
         Ok(())
     }
 
     // 销毁 texture 资源槽。
     fn destroy_texture(&mut self, texture: TextureHandle) -> Result<()> {
-        // 解析资源身份并检查是否已销毁。
-        let index = texture
-            .raw()
-            .checked_sub(1)
-            .ok_or_else(|| rhi_invalid("texture handle is null"))? as usize;
         // 不能在当前 pass 仍引用资源时销毁它。
         if self.rhi_device.pass.references_target(texture) {
             // 返回稳定的状态错误。
@@ -456,18 +392,8 @@ impl GraphicsDevice for D3d11Context {
                 "D3d11 RHI cannot destroy the active render target",
             ));
         }
-        // 读取资源槽。
-        let Some(slot) = self.rhi_device.textures.get_mut(index) else {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("texture handle is stale"));
-        };
-        // 拒绝重复销毁。
-        if slot.is_none() {
-            // 返回稳定的状态错误。
-            return Err(rhi_invalid("texture handle was already destroyed"));
-        }
-        // 清空资源槽，让旧句柄立即失效。
-        *slot = None;
+        // 由共享资源表检查式取出资源，离开作用域时释放 texture 与 views。
+        self.rhi_device.textures.take(texture)?;
         // 清理当前 pass 可能持有的 sampled texture 身份。
         self.rhi_device.pass.unbind_texture(texture);
         // 返回成功。
