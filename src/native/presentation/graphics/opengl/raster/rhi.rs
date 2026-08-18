@@ -7,7 +7,7 @@ use crate::core::PresentCoherency;
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDeviceCapabilities, LoadAction, PipelineBinding,
     PipelineDesc, RenderTargetHandle, RhiBufferUpload, RhiBufferUploadPreflight, RhiExtent,
-    RhiPresentTransaction, RhiScissor, RhiTextureUpload, RhiViewport, SamplerDesc, SamplerHandle,
+    RhiPresentTransaction, RhiScissor, RhiTextureUpload, SamplerDesc, SamplerHandle,
     SubmissionHandle, SurfaceToken, TextureCopy, TextureDesc, TextureHandle, TextureMove,
     ValidatedRhiPresent,
 };
@@ -33,7 +33,7 @@ impl OpenGlRasterPipeline {
         let mut capabilities = GraphicsDeviceCapabilities::full_gpu_baseline();
         // scratch texture 使同纹理重叠移动具有确定的 memmove 语义。
         capabilities.texture_region_move = true;
-        // OpenGL scissor clear 已由 RHI owner 执行并恢复状态。
+        // OpenGL scissor clear 已由 RHI owner 按显式矩形执行。
         capabilities.clear_rect = true;
         // 返回只包含资源、pass 与 pipeline 原语的 Device 事实快照。
         capabilities
@@ -154,25 +154,13 @@ impl OpenGlRasterPipeline {
         self.with_rhi(|gl, rhi| rhi.begin_render_pass(gl, target, load, surface_extent))
     }
 
-    // 设置当前 pass 的 viewport。
-    pub(crate) fn rhi_set_viewport(&mut self, viewport: RhiViewport) -> Result<()> {
-        // viewport 的逻辑和 Y 翻转由 RHI device 统一处理。
-        self.with_rhi(|gl, rhi| rhi.set_viewport(gl, viewport))
-    }
-
-    // 设置当前 pass 的 scissor。
-    pub(crate) fn rhi_set_scissor(&mut self, scissor: Option<RhiScissor>) -> Result<()> {
-        // 将左上原点 scissor 转换为 GLES bottom-left 原点。
-        self.with_rhi(|gl, rhi| rhi.set_scissor(gl, scissor))
-    }
-
     // 在当前 pass 内清理一个物理矩形。
     pub(crate) fn rhi_clear_rect(
         &mut self,
         color: crate::native::present::rhi::RhiColor,
         scissor: RhiScissor,
     ) -> Result<()> {
-        // 让 OpenGL RHI helper 临时覆盖并恢复当前 scissor。
+        // 让 OpenGL RHI helper 仅按本命令的显式矩形执行清理。
         self.with_rhi(|gl, rhi| rhi.clear_rect(gl, color, scissor))
     }
 

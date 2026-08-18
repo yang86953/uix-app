@@ -5,9 +5,10 @@ use std::sync::Arc;
 
 // 引入 RHI 计划执行所需的资源描述与句柄。
 use crate::native::present::rhi::{
-    BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawSamplingBinding, GraphicsDevice,
-    LoadAction, PipelineBinding, PipelineDesc, PipelineKind, RhiExtent, RhiTextureUpload,
-    SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat,
+    BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState, DrawSamplingBinding,
+    GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc, PipelineKind, RhiExtent,
+    RhiTextureUpload, SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc,
+    TextureFormat,
 };
 
 // 复用 renderer 主模块的计划类型和 coverage payload。
@@ -229,14 +230,10 @@ impl RhiRenderer {
         let target = frame.render_target();
         // 创建 Surface 或 Offscreen pass，并保留调用方的 load/clear 语义。
         let mut pass = RenderPassPlan::new(target, load);
-        // 所有 coverage quad 共享同一个物理 viewport。
-        pass.push(FramePlanCommand::SetViewport(viewport));
         // 每个 glyph 以独立 texture binding 和 scissor 保留 painter order。
         for (quad, texture) in quads.iter().zip(textures.iter().copied()) {
             // 生成当前 glyph 的顶点数据。
             let vertices = Self::coverage_quad_vertices(quad);
-            // 在 draw 前设置当前 glyph 的裁剪。
-            pass.push(FramePlanCommand::SetScissor(quad.scissor));
             // 上传当前 glyph 的类型化 float8 顶点数据。
             pass.push(FramePlanCommand::UploadVertex {
                 buffer: vertex_buffer,
@@ -255,6 +252,8 @@ impl RhiRenderer {
                 DrawSamplingBinding::sampled(SampledTextureBinding::for_pipeline(
                     texture, sampler, pipeline,
                 )),
+                // Coverage quad 固化当前 viewport 与对应 scissor。
+                DrawRasterState::new(viewport, quad.scissor),
                 // Coverage quad 使用封闭的六顶点非索引范围。
                 DrawRange::vertices(6),
             )));

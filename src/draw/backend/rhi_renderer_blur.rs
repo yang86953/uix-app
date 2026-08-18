@@ -3,10 +3,10 @@
 // 引入稳定错误类型。
 use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
-    BLUR_WEIGHT_COUNT, BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange,
+    BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState,
     DrawSamplingBinding, GraphicsDevice, LoadAction, PipelineDesc, PipelineKind,
     RhiBlurRasterParams, RhiColor, RhiExtent, RhiScissor, RhiViewport, SampledTextureBinding,
-    SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
+    SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle, BLUR_WEIGHT_COUNT,
 };
 
 // 引入父 renderer 已导入的有序 FramePlan 类型和资源缓存。
@@ -255,10 +255,6 @@ impl RhiRenderer {
         // 水平 pass 读取源 texture，写入 scratch texture。
         let mut horizontal =
             RenderPassPlan::new(scratch_target, LoadAction::Clear(RhiColor::transparent()));
-        // 设置水平 pass 的完整 viewport。
-        horizontal.push(FramePlanCommand::SetViewport(viewport));
-        // 限制水平 pass 只覆盖请求区域。
-        horizontal.push(FramePlanCommand::SetScissor(Some(region)));
         // 上传当前区域的类型化 NDC 顶点。
         horizontal.push(FramePlanCommand::UploadVertex {
             buffer: vertex_buffer,
@@ -285,15 +281,13 @@ impl RhiRenderer {
             DrawSamplingBinding::sampled(SampledTextureBinding::for_pipeline(
                 source, sampler, pipeline,
             )),
+            // Horizontal blur 固化完整 viewport 与区域 scissor。
+            DrawRasterState::new(viewport, Some(region)),
             // Blur quad 使用封闭的六顶点非索引范围。
             DrawRange::vertices(6),
         )));
         // 垂直 pass 读取 scratch texture，写回原始 target。
         let mut vertical = RenderPassPlan::new(RenderTargetRef::Texture(target), LoadAction::Load);
-        // 设置垂直 pass 的完整 viewport。
-        vertical.push(FramePlanCommand::SetViewport(viewport));
-        // 限制垂直 pass 只覆盖请求区域。
-        vertical.push(FramePlanCommand::SetScissor(Some(region)));
         // 复用相同的类型化区域顶点。
         vertical.push(FramePlanCommand::UploadVertex {
             buffer: vertex_buffer,
@@ -320,6 +314,8 @@ impl RhiRenderer {
             DrawSamplingBinding::sampled(SampledTextureBinding::for_pipeline(
                 scratch, sampler, pipeline,
             )),
+            // Vertical blur 固化完整 viewport 与区域 scissor。
+            DrawRasterState::new(viewport, Some(region)),
             // Blur quad 使用封闭的六顶点非索引范围。
             DrawRange::vertices(6),
         )));

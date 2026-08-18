@@ -9,11 +9,11 @@ use crate::draw::backend::frame_plan::{
 };
 // 引入探针创建、绘制和销毁所需的共享薄 RHI 类型。
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawSamplingBinding,
-    GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc, PipelineKind, RhiColor, RhiExtent,
-    RhiMeshRasterParams, RhiScissor, RhiShapeRasterParams, RhiTextureRegion, RhiTextureTransfer,
-    RhiTextureUpload, RhiViewport, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat,
-    TextureHandle, TextureMove,
+    BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState,
+    DrawSamplingBinding, GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc, PipelineKind,
+    RhiColor, RhiExtent, RhiMeshRasterParams, RhiScissor, RhiShapeRasterParams, RhiTextureRegion,
+    RhiTextureTransfer, RhiTextureUpload, RhiViewport, SamplerDesc, SamplerHandle, TextureDesc,
+    TextureFormat, TextureHandle, TextureMove,
 };
 
 // 按创建顺序保存探针资源，并封闭检查式清理生命周期。
@@ -330,15 +330,13 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
             // 以透明色清空目标。
             LoadAction::Clear(RhiColor::transparent()),
         );
-        // 绑定最小正 viewport，验证 Adapter 的 viewport 状态编码。
-        pass.push(FramePlanCommand::SetViewport(RhiViewport {
+        // 定义每个 Probe DrawPacket 共同使用的最小正 viewport。
+        let viewport = RhiViewport {
             // 视口宽度。
             width: 1.0,
             // 视口高度。
             height: 1.0,
-        }));
-        // 清除显式 scissor，验证 pass 初始 raster 状态可用。
-        pass.push(FramePlanCommand::SetScissor(None));
+        };
         // 只有声明局部清理能力的 Adapter 才进入 ClearRect 探针。
         if capabilities.clear_rect {
             // 以完整 1x1 区域验证清理颜色和 scissor 代际。
@@ -380,6 +378,8 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
             DrawBufferBindings::new(vertex_buffer, solid_uniform_buffer),
             // Solid probe draw 不使用采样资源。
             DrawSamplingBinding::none(),
+            // Probe draw 明确携带完整 viewport 与无 scissor 栅格事实。
+            DrawRasterState::new(viewport, None),
             // 用封闭非索引范围绘制一个三角形。
             DrawRange::vertices(3),
         )));
@@ -398,6 +398,8 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
             DrawBufferBindings::new(vertex_buffer, shape_uniform_buffer),
             // Shape probe draw 不使用采样资源。
             DrawSamplingBinding::none(),
+            // Probe draw 明确携带完整 viewport 与无 scissor 栅格事实。
+            DrawRasterState::new(viewport, None),
             // 用封闭非索引范围绘制两个三角形组成的 quad。
             DrawRange::vertices(6),
         )));

@@ -207,26 +207,16 @@ impl GraphicsDevice for RecordingContext {
         Ok(())
     }
 
-    // 接收完整目标 viewport。
-    fn set_viewport(&mut self, viewport: RhiViewport) -> Result<()> {
-        // blur viewport 必须始终有效。
-        assert!(viewport.is_valid());
-        // 记录成功。
-        Ok(())
-    }
-
-    // 记录已经裁到纹理范围的 scissor。
-    fn set_scissor(&mut self, scissor: Option<RhiScissor>) -> Result<()> {
-        // 保存当前 pass 的可见区域。
-        self.scissors.push(scissor);
-        // 记录成功。
-        Ok(())
-    }
-
     // 记录固定六顶点 draw。
     fn draw(&mut self, packet: DrawPacket) -> Result<()> {
         // 每个方向都必须绘制同一矩形的两个三角形。
         assert_eq!(packet.range().vertex_count(), 6);
+        // 每个 blur Draw 必须从自身 packet 取得完整动态栅格事实。
+        let raster = packet.raster();
+        // 两个方向的 viewport 都必须保持共同原生值域。
+        assert!(raster.viewport().is_valid());
+        // 按 painter order 记录当前 Draw 自有的裁剪区域。
+        self.scissors.push(raster.scissor());
         // Blur packet 必须自身拥有本方向读取的完整采样资源。
         let binding = packet
             // 只读取得条件采样角色。

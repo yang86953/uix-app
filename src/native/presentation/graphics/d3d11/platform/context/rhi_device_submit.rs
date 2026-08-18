@@ -32,7 +32,7 @@ impl D3d11Context {
         }
         // 清除 Adapter 私有的原生目标引用。
         self.rhi_device.active_target = None;
-        // 由共享状态机原子清除目标、几何与采样绑定事实。
+        // 由共享状态机原子清除目标与物理范围事实。
         self.rhi_device.pass.end()?;
         // 返回成功。
         Ok(())

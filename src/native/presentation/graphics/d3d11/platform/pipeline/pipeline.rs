@@ -211,7 +211,7 @@ fn create_rhi_rasterizer_state(
         SlopeScaledDepthBias: 0.0,
         // 翻译与 OpenGL ES 对齐的共享深度裁剪语义。
         DepthClipEnable: d3d11_depth_clip_enabled(state.depth_clip),
-        // 动态 scissor 由共享 pass 状态控制，rasterizer 必须允许该状态生效。
+        // 动态 scissor 由当前 DrawPacket 控制，rasterizer 必须允许该状态生效。
         ScissorEnable: TRUE,
         // 翻译共享 rasterizer 多样本语义。
         MultisampleEnable: d3d11_raster_multisample_enabled(multisample),

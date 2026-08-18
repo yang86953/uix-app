@@ -180,6 +180,8 @@ impl OpenGlRhiDevice {
             // 使用统一门禁拒绝任何 pipeline 的漂移载荷。
             return Err(rhi_invalid("OpenGL RHI pipeline ABI is invalid"));
         }
+        // 每次 Draw 都必须从自身 packet 覆盖完整动态栅格状态。
+        self.apply_draw_raster(gl, packet.raster())?;
         // 绑定共享 VAO、顶点 buffer 和固定属性布局。
         // SAFETY: program、self.vao 与 vertex 均由本设备在当前上下文创建且存活；context 保持 current。
         unsafe {

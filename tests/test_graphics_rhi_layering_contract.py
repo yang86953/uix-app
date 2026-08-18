@@ -234,8 +234,10 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         self.assertIn("mod pass_state;", rhi)
         # 共享状态机必须拥有唯一活动 pass 事实。
         self.assertIn("pub(crate) struct RhiPassState", pass_state)
-        # 活动目标、extent、scissor 与绑定必须由一个原子值共同生灭。
+        # 活动目标与 extent 必须由一个原子值共同生灭。
         self.assertIn("active: Option<ActiveRhiPass>", pass_state)
+        # pass 状态不得保存可被后续 Draw 继承的 scissor 历史。
+        self.assertNotIn("scissor: Option<RhiScissor>", pass_state)
         # 目标反馈环必须只接收当前 packet 的纹理身份并在 API 无关层拒绝。
         self.assertIn("if target.texture() == Some(texture)", pass_state)
         # OpenGL 必须把 pass 开始委托给共享状态机。
@@ -788,6 +790,8 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         geometry = (ROOT / "src/native/present/rhi/geometry.rs").read_text(encoding="utf-8")
         # 读取唯一拥有目标范围门禁的共享 pass 状态机。
         pass_state = (ROOT / "src/native/present/rhi/pass_state.rs").read_text(encoding="utf-8")
+        # 读取 DrawPacket 独占的动态栅格值对象。
+        draw_raster = (ROOT / "src/native/present/rhi/draw_raster.rs").read_text(encoding="utf-8")
         # 读取 OpenGL ES 的 pass 状态翻译。
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs").read_text(encoding="utf-8")
         # 读取 D3D11 的 pass 状态翻译。
@@ -796,20 +800,21 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         self.assertEqual(geometry.count("fits_within(self, extent: RhiExtent) -> bool"), 2)
         # 物理 viewport 必须在共享层冻结为整像素，禁止 Adapter 各自量化。
         self.assertIn("value.fract() != 0.0", geometry)
-        # viewport 范围算法必须只由共享 pass 状态机调用。
-        self.assertIn("viewport.fits_within(extent)", pass_state)
-        # OpenGL ES 必须委托共享 viewport 门禁。
-        self.assertIn("self.pass.validate_viewport(viewport)?;", opengl)
+        # Draw 栅格值对象必须统一组合 viewport 与 scissor 的目标边界。
+        self.assertIn("self.viewport.fits_within(extent)", draw_raster)
+        self.assertIn("scissor.fits_within(extent)", draw_raster)
+        # pass 状态机必须一次验证当前 packet 的完整栅格事实。
+        self.assertIn("raster.fits_within(extent)", pass_state)
+        # OpenGL ES 必须委托共享 Draw 栅格门禁。
+        self.assertIn("self.pass.validate_draw_raster(raster)?;", opengl)
         # OpenGL ES 不得在 Adapter 内私自 round 成与 D3D11 不同的 viewport。
         self.assertNotIn("viewport.width.round()", opengl)
-        # D3D11 必须委托完全相同的共享 viewport 门禁。
-        self.assertIn("self.rhi_device.pass.validate_viewport(viewport)?;", d3d11)
-        # scissor 范围算法也必须只存在于共享状态机。
-        self.assertIn("value.fits_within(active.extent)", pass_state)
-        # OpenGL ES 的左下原点转换前必须先提交共享 scissor 事实。
-        self.assertIn("self.pass.set_scissor(scissor)?;", opengl)
-        # D3D11 的原生 RECT 编码前必须提交同一个共享事实。
-        self.assertIn("self.rhi_device.pass.set_scissor(scissor)?;", d3d11)
+        # D3D11 必须委托完全相同的共享 Draw 栅格门禁。
+        self.assertIn("self.rhi_device.pass.validate_draw_raster(raster)?;", d3d11)
+        # OpenGL ES 每次 Draw 都必须投影 packet 自有 scissor。
+        self.assertIn("self.apply_scissor(gl, raster.scissor())?;", opengl)
+        # D3D11 每次 Draw 也必须投影同一个 packet scissor。
+        self.assertIn("let scissor = raster.scissor();", d3d11)
         # 两套 Adapter 都不得恢复平行的目标范围算法。
         self.assertNotIn("fits_within(extent)", opengl + d3d11)
 
@@ -831,8 +836,9 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         self.assertNotIn("checked_add", opengl)
         # D3D11 不得自行用 checked_add 定义另一套边界语义。
         self.assertNotIn("checked_add", d3d11)
-        # OpenGL ES 的 API 限制要求临时设置并恢复调用方裁剪。
-        self.assertIn("self.set_scissor(gl, previous)?;", opengl)
+        # OpenGL ES 局部清理只编码本命令矩形，不恢复历史裁剪。
+        self.assertIn("self.apply_scissor(gl, Some(scissor))?;", opengl)
+        self.assertNotIn("previous", opengl)
         # D3D11 ClearView 接收独立矩形，不得修改 raster scissor 状态。
         self.assertNotIn("rhi_set_scissor", d3d11)
 

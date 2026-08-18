@@ -78,7 +78,7 @@ class GraphicsRhiFramePlanResourcePreflightContractTests(unittest.TestCase):
         self.assertIn("OffscreenOnly", preflight)
         # 提取唯一预检运行入口。
         run = function_body(preflight, "run")
-        # 预检必须按 target、transfer、upload、draw、sampled 的固定顺序执行。
+        # 预检必须按 target、transfer、upload、完整 DrawPacket 的固定顺序执行。
         validators = (
             # 首先验证目标身份和能力。
             "self.validate_targets(steps)?",
@@ -86,10 +86,8 @@ class GraphicsRhiFramePlanResourcePreflightContractTests(unittest.TestCase):
             "self.validate_transfers(steps)?",
             # 随后验证每条类型化 Buffer 上传。
             "self.validate_buffer_uploads(steps)?",
-            # 随后验证 Draw 的 pipeline 与 Buffer 资源。
-            "self.validate_draw_resources(steps)?",
-            # 最后验证 sampled texture 与 sampler。
-            "self.validate_sampled_bindings(steps)",
+            # 最后验证 DrawPacket 的全部真实资源并直接返回结果。
+            "self.validate_draw_resources(steps)",
         )
         # 保存前一验证阶段的位置以检查严格顺序。
         previous = -1
@@ -111,8 +109,8 @@ class GraphicsRhiFramePlanResourcePreflightContractTests(unittest.TestCase):
         self.assertEqual(preflight.count("self.device.preflight_buffer_upload("), 3)
         # Draw 预检必须进入共享 GraphicsDevice 只读入口。
         self.assertIn("self.device.preflight_draw_resources(*packet)?", preflight)
-        # sampled 预检必须进入共享 GraphicsDevice 只读入口。
-        self.assertIn("self.device.preflight_sampled_binding(*binding)?", preflight)
+        # sampled 资源必须由同一次完整 DrawPacket 预检覆盖，不得拆出第二入口。
+        self.assertNotIn("preflight_sampled_binding", preflight)
         # 只读 Component 不得激活 Device。
         self.assertNotIn(".activate()", preflight)
         # 只读 Component 不得取得或呈现 Surface。

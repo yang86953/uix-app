@@ -254,14 +254,11 @@ mod lifecycle_tests {
     // 引入统一错误类型和测试结果别名。
     use crate::core::error::{Errc, Result};
     // 引入 FramePlan 构造所需的最小类型化命令。
-    use crate::draw::backend::frame_plan::{
-        FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef,
-    };
+    use crate::draw::backend::frame_plan::{FramePlan, RenderPassPlan, RenderTargetRef};
     // 引入 RecordingDevice 所需的薄 RHI 原语。
     use crate::native::present::rhi::{
         DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, LoadAction, RenderTargetHandle,
-        RhiColor, RhiScissor, RhiViewport, SubmissionHandle, TextureCopy, TextureHandle,
-        TextureMove,
+        RhiColor, SubmissionHandle, TextureCopy, TextureHandle, TextureMove,
     };
     // 引入待验证的 Renderer 帧 Component。
     use super::RhiRendererFrame;
@@ -312,22 +309,6 @@ mod lifecycle_tests {
             // 记录 render pass 开始调用。
             self.record_operation();
             // 该测试只关注执行门禁，不记录 pass 细节。
-            Ok(())
-        }
-
-        // 接受有效 viewport。
-        fn set_viewport(&mut self, _viewport: RhiViewport) -> Result<()> {
-            // 记录 viewport 原语调用。
-            self.record_operation();
-            // 该测试只关注执行门禁，不记录 viewport 细节。
-            Ok(())
-        }
-
-        // 接受默认 scissor。
-        fn set_scissor(&mut self, _scissor: Option<RhiScissor>) -> Result<()> {
-            // 记录 scissor 原语调用。
-            self.record_operation();
-            // 该测试只关注执行门禁，不记录 scissor 细节。
             Ok(())
         }
 
@@ -401,13 +382,6 @@ mod lifecycle_tests {
             // 使用有限的透明清理颜色。
             LoadAction::Clear(RhiColor::from_premultiplied_rgba([0.0, 0.0, 0.0, 1.0])),
         );
-        // 追加有效正尺寸 viewport。
-        pass.push(FramePlanCommand::SetViewport(RhiViewport {
-            width: 1.0,
-            height: 1.0,
-        }));
-        // 追加默认 scissor，形成最小非空 pass。
-        pass.push(FramePlanCommand::SetScissor(None));
         // 把唯一 pass 交给离屏计划。
         plan.push_pass(pass);
         // 返回可执行计划。

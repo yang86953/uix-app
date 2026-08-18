@@ -96,11 +96,10 @@ class GraphicsRhiActiveLifecycleContractTest(unittest.TestCase):
             "preflight_texture_copy", "preflight_texture_move",
             # Draw 只读资源预检也必须先检查 OpenGL owner。
             "preflight_draw_resources",
-            # sampled 只读资源预检也必须先检查 OpenGL owner。
-            "preflight_sampled_binding", "update_texture", "create_sampler",
+            # DrawPacket 预检已经原子覆盖 sampled 资源角色。
+            "update_texture", "create_sampler",
             "create_pipeline", "destroy_buffer", "destroy_texture", "destroy_sampler",
-            "destroy_pipeline", "begin_render_pass", "set_viewport", "set_scissor",
-            "clear_rect", "bind_sampled_texture", "draw", "copy_texture",
+            "destroy_pipeline", "begin_render_pass", "clear_rect", "draw", "copy_texture",
             "move_texture_region", "end_render_pass", "submit",
         )
         # 逐一检查 Device 入口存在且先执行门禁。
@@ -225,8 +224,6 @@ class GraphicsRhiActiveLifecycleContractTest(unittest.TestCase):
             ("preflight_texture_move", "self.rhi_device.textures.validate_move("),
             # Draw 资源预检必须先门禁，再读取真实 pipeline 与 Buffer 表。
             ("preflight_draw_resources", "self.rhi_device.pipeline("),
-            # sampled 资源预检必须先门禁，再读取真实纹理与 sampler。
-            ("preflight_sampled_binding", "self.rhi_validate_sampled_binding("),
             ("create_pipeline", "self.rhi_create_pipeline("),
             ("create_sampler", "self.rhi_create_sampler("),
             ("update_texture", "self.rhi_device.texture("),
@@ -235,9 +232,6 @@ class GraphicsRhiActiveLifecycleContractTest(unittest.TestCase):
             ("destroy_pipeline", "self.rhi_destroy_pipeline("),
             ("destroy_sampler", "self.rhi_destroy_sampler("),
             ("begin_render_pass", "self.rhi_device.pass.require_closed("),
-            ("bind_sampled_texture", "self.rhi_bind_sampled_texture("),
-            ("set_viewport", "self.rhi_set_viewport("),
-            ("set_scissor", "self.rhi_set_scissor("),
             ("clear_rect", "self.rhi_clear_rect("),
             ("draw", "self.draw_rhi_packet("),
             ("copy_texture", "self.rhi_device.pass.require_closed("),

@@ -1,7 +1,9 @@
 //! FramePlan 与图形 Adapter 共享的类型化绘制包。
 
 // 引入绘制资源身份、条件采样角色和已经绑定语义的 pipeline 身份。
-use super::{BufferDesc, BufferHandle, BufferUsage, DrawSamplingBinding, PipelineBinding};
+use super::{
+    BufferDesc, BufferHandle, BufferUsage, DrawRasterState, DrawSamplingBinding, PipelineBinding,
+};
 // 引入共享错误分类和结果类型。
 use crate::core::error::{Errc, Error, Result};
 
@@ -305,7 +307,7 @@ impl DrawBufferBindings {
 }
 
 // 描述通用 renderer 已经完整绑定的 draw packet。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct DrawPacket {
     // 保存不可拆分的 pipeline 句柄与共享语义。
     pipeline: PipelineBinding,
@@ -313,6 +315,8 @@ pub(crate) struct DrawPacket {
     buffers: DrawBufferBindings,
     // 保存与 pipeline 采样语义一致的条件资源角色。
     sampling: DrawSamplingBinding,
+    // 保存当前 Draw 不依赖历史状态的完整动态栅格事实。
+    raster: DrawRasterState,
     // 保存不可表达矛盾字段组合的封闭绘制范围。
     range: DrawRange,
 }
@@ -327,10 +331,12 @@ impl DrawPacket {
         buffers: DrawBufferBindings,
         // 接收由当前 pipeline 决定的条件采样资源角色。
         sampling: DrawSamplingBinding,
+        // 接收当前 Draw 的完整 viewport 与裁剪选择。
+        raster: DrawRasterState,
         // 接收互斥的顶点或索引绘制范围。
         range: DrawRange,
     ) -> Self {
-        // 四项事实共同建立后才允许进入 FramePlan。
+        // 五项事实共同建立后才允许进入 FramePlan。
         Self {
             // 保存不可拆的 pipeline 身份。
             pipeline,
@@ -338,6 +344,8 @@ impl DrawPacket {
             buffers,
             // 保存明确无采样或完整采样资源事实。
             sampling,
+            // 保存完整且显式的动态栅格状态。
+            raster,
             // 保存互斥绘制范围。
             range,
         }
@@ -359,6 +367,12 @@ impl DrawPacket {
     pub(crate) const fn sampling(self) -> DrawSamplingBinding {
         // 复制完整值对象，不暴露内部 Option 改写能力。
         self.sampling
+    }
+
+    // 返回当前 packet 独占的动态栅格状态。
+    pub(crate) const fn raster(self) -> DrawRasterState {
+        // 复制完整值对象，不暴露 viewport 或 scissor 回填能力。
+        self.raster
     }
 
     // 返回当前 packet 已冻结的互斥绘制范围。
@@ -394,6 +408,12 @@ impl DrawPacket {
         self.sampling.matches_pipeline(self.pipeline)
     }
 
+    // 判断 packet 的动态栅格状态是否属于共同原生值域。
+    pub(crate) fn has_valid_raster(self) -> bool {
+        // 由 DrawRasterState 唯一验证 viewport 与显式 scissor。
+        self.raster.is_valid()
+    }
+
     // 判断 packet 是否包含两个 Adapter 都能执行的绘制范围。
     pub(crate) const fn has_valid_range(self) -> bool {
         // 委托给当前唯一范围变体的共同值域门禁。
@@ -416,6 +436,11 @@ impl DrawPacket {
             return Err(draw_resource_error(
                 "RHI draw sampling binding does not match pipeline contract",
             ));
+        }
+        // 直接 Device 调用也必须拒绝不可机械编码的动态栅格状态。
+        if !self.has_valid_raster() {
+            // 禁止 Adapter 各自量化 viewport 或修正 scissor。
+            return Err(draw_resource_error("RHI draw raster state is invalid"));
         }
         // 直接 Device 调用也必须先服从共同 DrawRange 值域门禁。
         if !self.has_valid_range() {
@@ -530,7 +555,7 @@ mod tests {
     // 引入当前模块私有值对象。
     use super::*;
     // 引入测试 packet 使用的共享 pipeline kind。
-    use crate::native::present::rhi::PipelineKind;
+    use crate::native::present::rhi::{PipelineKind, RhiViewport};
 
     // 构造使用固定测试资源身份和调用方范围的完整 packet。
     fn packet(range: DrawRange) -> DrawPacket {
@@ -547,6 +572,18 @@ mod tests {
             DrawBufferBindings::new(BufferHandle::from_raw(2), BufferHandle::from_raw(3)),
             // SolidMesh 不读取纹理，必须显式选择无采样角色。
             DrawSamplingBinding::none(),
+            // 当前测试 Draw 显式拥有完整目标 viewport 且不裁剪。
+            DrawRasterState::new(
+                // 使用稳定正整像素范围。
+                RhiViewport {
+                    // 固定测试宽度。
+                    width: 20.0,
+                    // 固定测试高度。
+                    height: 10.0,
+                },
+                // 明确关闭额外裁剪。
+                None,
+            ),
             // 保留调用方指定的互斥绘制范围。
             range,
         )

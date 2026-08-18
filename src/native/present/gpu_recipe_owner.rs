@@ -205,18 +205,6 @@ mod tests {
             Ok(())
         }
 
-        // 测试不设置真实 viewport。
-        fn set_viewport(&mut self, _viewport: RhiViewport) -> crate::core::Result<()> {
-            // 返回无原生副作用的成功结果。
-            Ok(())
-        }
-
-        // 测试不设置真实 scissor。
-        fn set_scissor(&mut self, _scissor: Option<RhiScissor>) -> crate::core::Result<()> {
-            // 返回无原生副作用的成功结果。
-            Ok(())
-        }
-
         // 测试不执行真实 draw。
         fn draw(&mut self, _packet: DrawPacket) -> crate::core::Result<()> {
             // 返回无原生副作用的成功结果。

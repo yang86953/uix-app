@@ -6,8 +6,9 @@ use crate::core::error::Result;
 use crate::core::PresentDamage;
 // 引入薄 RHI 的采样与执行类型。
 use crate::native::present::rhi::{
-    DrawBufferBindings, DrawPacket, DrawRange, DrawSamplingBinding, GraphicsContextRhi,
-    GraphicsDevice, GraphicsSurface, LoadAction, RhiViewport, SampledTextureBinding, TextureHandle,
+    DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState, DrawSamplingBinding,
+    GraphicsContextRhi, GraphicsDevice, GraphicsSurface, LoadAction, RhiViewport,
+    SampledTextureBinding, TextureHandle,
 };
 
 // 引入父 renderer 的计划、target、资源载荷和执行器。
@@ -145,10 +146,6 @@ impl RhiRenderer {
         };
         // 创建不触发 present 的显式纹理 pass。
         let mut pass = RenderPassPlan::new(RenderTargetRef::Texture(target), load);
-        // 设置当前目标的物理 viewport。
-        pass.push(FramePlanCommand::SetViewport(viewport));
-        // 选择当前 sampled quad 的裁剪。
-        pass.push(FramePlanCommand::SetScissor(quad.scissor));
         // 上传已经存在纹理的类型化 sampled quad 顶点。
         pass.push(FramePlanCommand::UploadVertex {
             buffer: vertex_buffer,
@@ -169,6 +166,8 @@ impl RhiRenderer {
                 sampler,
                 pipeline,
             )),
+            // Sampled quad 固化当前 viewport 与对应 scissor。
+            DrawRasterState::new(viewport, quad.scissor),
             // Sampled quad 使用封闭的六顶点非索引范围。
             DrawRange::vertices(6),
         )));

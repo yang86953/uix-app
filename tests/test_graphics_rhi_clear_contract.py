@@ -58,8 +58,10 @@ class GraphicsRhiClearContractTests(unittest.TestCase):
         self.assertIn("PipelineColorWriteMask::All => gl.color_mask(true, true, true, true)", rect)
         # OpenGL 必须穷尽映射禁用抖动状态。
         self.assertIn("PipelineDitherState::Disabled => gl.disable(glow::DITHER)", rect)
-        # 局部清理必须继续恢复调用方原有 scissor。
-        self.assertIn("self.set_scissor(gl, previous)?", rect)
+        # 局部清理必须只编码自身显式 scissor。
+        self.assertIn("self.apply_scissor(gl, Some(scissor))?", rect)
+        # 清理不得保存或恢复前一条 Draw 的裁剪历史。
+        self.assertNotIn("previous", rect)
 
     # D3D11 的两个原生清理入口必须验收同一共享状态。
     def test_d3d11_accepts_contract_for_full_and_rect_clear(self) -> None:
