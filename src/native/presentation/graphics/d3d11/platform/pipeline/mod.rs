@@ -205,7 +205,8 @@ struct VSOut {
 float4 PSMain(VSOut input) : SV_Target
 {
     float4 sample = u_tex.Sample(u_samp, input.uv);
-    float4 tint = saturate(input.color);
+    // FramePlan 已验证顶点颜色属于单位域，D3D11 不再私自饱和输入。
+    float4 tint = input.color;
     return float4(sample.rgb * tint.rgb, sample.a * tint.a);
 }
 "#;

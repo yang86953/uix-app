@@ -61,12 +61,32 @@ impl FrameVertexPayload {
         let floats_per_vertex = self.layout().stride_bytes() as usize / std::mem::size_of::<f32>();
         // 读取唯一浮点序列。
         let values = self.values();
-        // 空载荷或残缺顶点都不能进入 Adapter。
-        !values.is_empty()
+        // 空载荷、残缺顶点或非有限值都不能进入 Adapter。
+        if values.is_empty()
             // 每个顶点必须严格匹配共享 stride。
-            && values.len() % floats_per_vertex == 0
+            || values.len() % floats_per_vertex != 0
             // 非有限几何会让不同 rasterizer 产生未定义差异。
-            && values.iter().all(|value| value.is_finite())
+            || !values.iter().all(|value| value.is_finite())
+        {
+            // 在共享边界统一拒绝基础载荷错误。
+            return false;
+        }
+        // 只有带颜色的 sampled 顶点需要额外的单位颜色域约束。
+        match self {
+            // position-float2 不携带颜色，保持原有有限值行为。
+            Self::PositionF32x2(_) => true,
+            // sampled float8 的每个完整顶点都必须携带单位颜色。
+            Self::PositionUvColorF32(_) => values.chunks_exact(floats_per_vertex).all(
+                // 逐顶点检查颜色字段而不影响位置与 UV 的值域。
+                |vertex| {
+                    // 颜色字段固定位于 float8 的索引 4 到 7。
+                    vertex[4..8].iter().all(
+                        // 共享契约只接受闭区间 [0,1] 的颜色通道。
+                        |color| *color >= 0.0 && *color <= 1.0,
+                    )
+                },
+            ),
+        }
     }
 
     // 返回编码后的确定字节数量。
@@ -209,6 +229,62 @@ mod tests {
         assert!(!FrameVertexPayload::position_uv_color_f32([0.0; 7]).is_valid());
         // 非有限 position 顶点必须在进入 Adapter 前被拒绝。
         assert!(!FrameVertexPayload::position_f32x2([f32::NAN, 0.0]).is_valid());
+    }
+
+    // sampled 顶点颜色必须在共享 FramePlan 的单位域内。
+    #[test]
+    fn vertex_payload_rejects_non_unit_sampled_colors() {
+        // 单位颜色域的两个边界值必须通过。
+        assert!(
+            FrameVertexPayload::position_uv_color_f32([0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.5, 1.0,])
+                .is_valid()
+        );
+        // 负颜色通道必须在进入任一 Adapter 前被拒绝。
+        assert!(
+            !FrameVertexPayload::position_uv_color_f32([0.0, 0.0, 0.0, 0.0, -0.01, 0.5, 0.5, 1.0,])
+                .is_valid()
+        );
+        // 超过单位上界的颜色通道必须被拒绝。
+        assert!(
+            !FrameVertexPayload::position_uv_color_f32([0.0, 0.0, 0.0, 0.0, 0.5, 1.01, 0.5, 1.0,])
+                .is_valid()
+        );
+        // 构造两个完整顶点，证明门禁会逐顶点检查而不是只看首项。
+        let mut second_vertex_invalid = [0.0; 16];
+        // 首个顶点使用完整合法颜色。
+        second_vertex_invalid[4..8].copy_from_slice(&[0.0, 0.5, 1.0, 1.0]);
+        // 第二个顶点在蓝通道越过单位上界。
+        second_vertex_invalid[14] = 1.01;
+        // 任一后续顶点越界都必须拒绝整个类型化载荷。
+        assert!(!FrameVertexPayload::position_uv_color_f32(second_vertex_invalid).is_valid());
+        // NaN 颜色必须被通用有限值门禁拒绝。
+        assert!(
+            !FrameVertexPayload::position_uv_color_f32([
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                f32::NAN,
+                0.5,
+                0.5,
+                1.0,
+            ])
+            .is_valid()
+        );
+        // 无穷颜色必须被通用有限值门禁拒绝。
+        assert!(
+            !FrameVertexPayload::position_uv_color_f32([
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.5,
+                f32::INFINITY,
+                0.5,
+                1.0,
+            ])
+            .is_valid()
+        );
     }
 
     // Uniform 载荷布局和编码长度必须由同一闭集映射拥有。
