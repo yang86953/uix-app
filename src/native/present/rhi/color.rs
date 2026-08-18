@@ -2,6 +2,8 @@
 
 // 引入同一 RHI 边界拥有的 surface、texture 与 capability 值。
 use super::{SurfaceToken, TextureFormat};
+// 引入清理输出必须复用的封闭写掩码与抖动语义。
+use super::pipeline::{PipelineColorWriteMask, PipelineDitherState};
 
 // 定义颜色纹理与 surface 中 RGB 数值的唯一编码。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -26,12 +28,29 @@ pub(crate) struct RhiColorContract {
     pub(crate) blend_domain: RhiBlendDomain,
 }
 
+// 保存整目标与局部颜色清理必须共同实现的输出状态。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct RhiColorClearContract {
+    // 保存清理必须写入的颜色通道集合。
+    pub(crate) write_mask: PipelineColorWriteMask,
+    // 保存清理量化八位目标时的抖动语义。
+    pub(crate) dither: PipelineDitherState,
+}
+
 // 定义 UIX 当前唯一允许的颜色路径。
 pub(crate) const UIX_COLOR_CONTRACT: RhiColorContract = RhiColorContract {
     // CPU 颜色、shader 值、颜色纹理和 surface 保持同一 sRGB 编码数值。
     rgb_encoding: RhiRgbEncoding::SrgbEncoded,
     // OpenGL 与 D3D11 都必须在编码值域执行相同混合公式。
     blend_domain: RhiBlendDomain::EncodedRgb,
+};
+
+// 定义 UIX 当前唯一允许的颜色清理输出状态。
+pub(crate) const UIX_COLOR_CLEAR_CONTRACT: RhiColorClearContract = RhiColorClearContract {
+    // 清理必须像 D3D11 ClearView 一样覆盖全部 RGBA 通道。
+    write_mask: PipelineColorWriteMask::All,
+    // 清理不得让 OpenGL ES 默认 dither 改写八位颜色最低位。
+    dither: PipelineDitherState::Disabled,
 };
 
 // 为常量 capability 检查提供不依赖派生 PartialEq 的契约判定。
@@ -42,6 +61,17 @@ impl RhiColorContract {
         matches!(self.rgb_encoding, RhiRgbEncoding::SrgbEncoded)
             // 混合域同样必须保持编码 RGB。
             && matches!(self.blend_domain, RhiBlendDomain::EncodedRgb)
+    }
+}
+
+// 为 Adapter 验收提供不依赖原生 API 的清理契约判定。
+impl RhiColorClearContract {
+    // 判断当前值是否精确符合 UIX 唯一允许的颜色清理状态。
+    pub(crate) const fn is_uix_contract(self) -> bool {
+        // 清理必须完整覆盖 RGBA 通道。
+        matches!(self.write_mask, PipelineColorWriteMask::All)
+            // 所有 Adapter 都必须关闭颜色抖动。
+            && matches!(self.dither, PipelineDitherState::Disabled)
     }
 }
 
@@ -112,5 +142,17 @@ mod tests {
         );
         // 统一颜色契约必须进入设备基线的运行时准入条件。
         assert!(GraphicsDeviceCapabilities::full_gpu_baseline().has_gpu_baseline());
+        // 整目标与局部清理必须共享同一输出状态常量。
+        assert!(UIX_COLOR_CLEAR_CONTRACT.is_uix_contract());
+        // 清理必须完整写入全部颜色通道。
+        assert_eq!(
+            UIX_COLOR_CLEAR_CONTRACT.write_mask,
+            PipelineColorWriteMask::All
+        );
+        // 清理必须关闭会改变八位颜色最低位的抖动。
+        assert_eq!(
+            UIX_COLOR_CLEAR_CONTRACT.dither,
+            PipelineDitherState::Disabled
+        );
     }
 }
