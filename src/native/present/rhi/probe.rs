@@ -4,7 +4,8 @@
 use super::{
     BufferDesc, BufferUsage, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineDesc,
     PipelineKind, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, RhiShapeRasterParams,
-    RhiViewport, SamplerDesc, TextureDesc, TextureFormat, TextureMove,
+    RhiTextureRegion, RhiTextureTransfer, RhiViewport, SamplerDesc, TextureDesc, TextureFormat,
+    TextureMove,
 };
 // 引入统一结果类型。
 use crate::core::Result;
@@ -126,28 +127,25 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
         format: TextureFormat::Rgba8Unorm,
     })?;
     // 把一个像素写入右下角，避免零偏移整块上传冒充 region 能力。
-    device.update_texture_region(region_texture, 1, 1, RhiExtent::new(1, 1), &[0, 0, 0, 0])?;
+    device.update_texture_region(
+        // 更新探针纹理。
+        region_texture,
+        // 把右下偏移与单位尺寸封闭为一个区域。
+        RhiTextureRegion::from_xy(1, 1, RhiExtent::new(1, 1)),
+        // 上传单个透明像素。
+        &[0, 0, 0, 0],
+    )?;
     // 只有声明区域移动能力的 adapter 才进入 retained framebuffer 探针。
     if device.device_capabilities().texture_region_move {
         // 以同一纹理的重叠区域移动验证 memmove 语义。
-        device.move_texture_region(TextureMove {
+        device.move_texture_region(TextureMove::new(
             // 从 region texture 读取。
-            source: region_texture,
+            region_texture,
             // 写回同一个 region texture。
-            destination: region_texture,
-            // 源区域左侧。
-            source_x: 1,
-            // 源区域顶部。
-            source_y: 1,
-            // 目标区域左侧。
-            destination_x: 0,
-            // 目标区域顶部。
-            destination_y: 0,
-            // 移动宽度。
-            width: 1,
-            // 移动高度。
-            height: 1,
-        })?;
+            region_texture,
+            // 将两个原点与单位尺寸封闭为共享传输。
+            RhiTextureTransfer::from_xy(1, 1, 0, 0, RhiExtent::new(1, 1)),
+        ))?;
     }
     // 创建真实 sampler，验证纹理绑定所需的过滤状态。
     let sampler = device.create_sampler(

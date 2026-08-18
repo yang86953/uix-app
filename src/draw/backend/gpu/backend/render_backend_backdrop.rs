@@ -15,6 +15,8 @@ use crate::native::present::rhi::{
     RhiExtent,
     // 物理 scissor 保存主 surface DPR lowering 结果。
     RhiScissor,
+    // 类型化传输保持两个全幅区域共享同一尺寸。
+    RhiTextureTransfer,
     // 提交句柄保留恢复事务的 typed 结果。
     SubmissionHandle,
     // 复制载荷只携带底层资源事实。
@@ -125,25 +127,8 @@ fn full_texture_copy(
     // 使用二者共同的物理尺寸。
     extent: RhiExtent,
 ) -> TextureCopy {
-    // 返回零偏移的全幅复制命令。
-    TextureCopy {
-        // 保留源资源身份。
-        source,
-        // 保留目标资源身份。
-        destination,
-        // 全幅复制从源左上角开始。
-        source_x: 0,
-        // 全幅复制从源顶边开始。
-        source_y: 0,
-        // 全幅复制写到目标左上角。
-        destination_x: 0,
-        // 全幅复制写到目标顶边。
-        destination_y: 0,
-        // 宽度严格采用 surface token 的物理宽度。
-        width: extent.width,
-        // 高度严格采用 surface token 的物理高度。
-        height: extent.height,
-    }
+    // 返回两个零原点共享同一尺寸的全幅复制命令。
+    TextureCopy::new(source, destination, RhiTextureTransfer::full(extent))
 }
 
 // 创建一次 overlay backdrop，并在提交失败时检查式回收新纹理。

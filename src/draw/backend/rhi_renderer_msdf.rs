@@ -6,8 +6,8 @@ use std::sync::Arc;
 // 引入最终执行计划所需的 viewport、资源和 context 类型。
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, BufferUsage, GraphicsDevice, PipelineBinding, PipelineDesc,
-    PipelineKind, RhiExtent, RhiMsdfRasterParams, RhiScissor, RhiViewport, SamplerDesc,
-    SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
+    PipelineKind, RhiExtent, RhiMsdfRasterParams, RhiScissor, RhiTextureRegion, RhiViewport,
+    SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
 };
 
 // 固定单页尺寸，让 atlas 的资源预算和 adapter 上传粒度保持稳定。
@@ -277,12 +277,8 @@ impl RhiRenderer {
         if let Err(error) = device.update_texture_region(
             // 更新当前 Device 拥有的 atlas 页。
             page_texture,
-            // 使用分配器返回的目标 X 偏移。
-            slot_x,
-            // 使用分配器返回的目标 Y 偏移。
-            slot_y,
-            // 上传范围包含 atlas padding。
-            upload_extent,
+            // 把 atlas 槽位原点与补边范围封闭为一个区域。
+            RhiTextureRegion::from_xy(slot_x, slot_y, upload_extent),
             // 上传已经补边的 MSDF 像素。
             &padded,
         ) {

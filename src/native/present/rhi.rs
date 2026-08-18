@@ -72,9 +72,12 @@ pub(crate) use draw_packet::{DrawPacket, DrawRange, IndexBufferBinding, IndexFor
 // 向各原生 Adapter 暴露唯一的 render-pass 状态事实。
 #[allow(unused_imports)]
 pub(crate) use pass_state::{RhiPassState, SampledTextureBinding};
-// 向各原生 Adapter 暴露共享纹理传输边界结果。
+// 向 Drawing、FramePlan 与各 Adapter 暴露唯一类型化纹理区域和传输契约。
 #[allow(unused_imports)]
-pub(crate) use transfer::RhiTextureTransferBounds;
+pub(crate) use transfer::{
+    RhiTextureOrigin, RhiTextureRegion, RhiTextureRegionBounds, RhiTextureTransfer,
+    RhiTextureTransferBounds, TextureCopy, TextureMove,
+};
 // 向 Drawing System 暴露唯一 Gradient 常量构造器和固定字节数。
 pub(crate) use gradient::{GRADIENT_UNIFORM_BYTES, RhiGradientRasterParams};
 // 只有 OpenGL Adapter 需要把共享 Gradient 字节 ABI 映射为逐个原生 uniform。
@@ -445,48 +448,6 @@ pub(crate) enum LoadAction {
     Load,
 }
 
-// 描述纹理之间的一次有限复制。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TextureCopy {
-    // 保存源纹理句柄。
-    pub(crate) source: TextureHandle,
-    // 保存目标纹理句柄。
-    pub(crate) destination: TextureHandle,
-    // 保存源区域左侧。
-    pub(crate) source_x: u32,
-    // 保存源区域顶部。
-    pub(crate) source_y: u32,
-    // 保存目标区域左侧。
-    pub(crate) destination_x: u32,
-    // 保存目标区域顶部。
-    pub(crate) destination_y: u32,
-    // 保存复制区域宽度。
-    pub(crate) width: u32,
-    // 保存复制区域高度。
-    pub(crate) height: u32,
-}
-
-// 描述一次具有重叠安全语义的纹理区域移动。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TextureMove {
-    // 保存源纹理句柄。
-    pub(crate) source: TextureHandle,
-    // 保存目标纹理句柄；与 source 相同时仍必须支持重叠移动。
-    pub(crate) destination: TextureHandle,
-    // 保存源区域左侧。
-    pub(crate) source_x: u32,
-    // 保存源区域顶部。
-    pub(crate) source_y: u32,
-    // 保存目标区域左侧。
-    pub(crate) destination_x: u32,
-    // 保存目标区域顶部。
-    pub(crate) destination_y: u32,
-    // 保存移动区域宽度。
-    pub(crate) width: u32,
-    // 保存移动区域高度。
-    pub(crate) height: u32,
-}
-
 // 描述一次 acquire 得到的 surface image。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SurfaceFrame {
@@ -553,9 +514,7 @@ pub(crate) trait GraphicsDevice {
     fn update_texture_region(
         &mut self,
         _texture: TextureHandle,
-        _destination_x: u32,
-        _destination_y: u32,
-        _extent: RhiExtent,
+        _region: RhiTextureRegion,
         _data: &[u8],
     ) -> Result<()> {
         // 默认实现只允许 adapter 明确声明 atlas 子区域上传能力。
@@ -628,18 +587,9 @@ pub(crate) trait GraphicsDevice {
     // 在 pass 外移动纹理区域，并保证同一纹理的重叠区域按 memmove 语义执行。
     fn move_texture_region(&mut self, movement: TextureMove) -> Result<()> {
         // 不同纹理可以复用普通 copy；同一纹理必须由 adapter 提供重叠安全实现。
-        if movement.source != movement.destination {
-            // 将不同纹理的区域移动降级为已有的无重叠 copy 原语。
-            return self.copy_texture(TextureCopy {
-                source: movement.source,
-                destination: movement.destination,
-                source_x: movement.source_x,
-                source_y: movement.source_y,
-                destination_x: movement.destination_x,
-                destination_y: movement.destination_y,
-                width: movement.width,
-                height: movement.height,
-            });
+        if movement.source() != movement.destination() {
+            // 将不同纹理的完整类型化传输降级为已有 copy 原语。
+            return self.copy_texture(movement.into_copy());
         }
         // 同一纹理的重叠移动不能交给普通 copy 猜测覆盖顺序。
         Err(rhi_not_implemented("move_texture_region"))

@@ -8,16 +8,14 @@ fn executes_texture_move_in_order() {
     // 构造带最小绘制 pass 的计划。
     let mut plan = test_plan(token);
     // 在 pass 后追加一个同纹理重叠移动，模拟 retained framebuffer scroll。
-    plan.push_move(TextureMove {
-        source: TextureHandle::from_raw(11),
-        destination: TextureHandle::from_raw(11),
-        source_x: 0,
-        source_y: 0,
-        destination_x: 1,
-        destination_y: 0,
-        width: 2,
-        height: 2,
-    });
+    plan.push_move(TextureMove::new(
+        // 从稳定测试纹理读取。
+        TextureHandle::from_raw(11),
+        // 写回同一个稳定测试纹理。
+        TextureHandle::from_raw(11),
+        // 使用不可拆分的源、目标与尺寸传输。
+        RhiTextureTransfer::from_xy(0, 0, 1, 0, RhiExtent::new(2, 2)),
+    ));
     // 创建原子拥有 device 与 surface 的记录型 context。
     let mut context = recording_context(token);
     // 执行计划并要求最终提交成功。

@@ -8,7 +8,7 @@ use crate::draw::backend::frame_plan::{
 };
 // 引入薄 RHI 的组合 context、目标和搬移原语。
 use crate::native::present::rhi::{
-    LoadAction, RenderTargetHandle, RhiExtent, TextureHandle, TextureMove,
+    LoadAction, RenderTargetHandle, RhiExtent, RhiTextureTransfer, TextureHandle, TextureMove,
 };
 
 // 引入当前 GPU backend 和待处理的逻辑搬移记录。
@@ -177,16 +177,25 @@ pub(crate) fn lower_scroll_copy(
         ));
     }
     // 返回同一纹理上的重叠安全搬移。
-    Ok(Some(TextureMove {
-        source: target,
-        destination: target,
-        source_x,
-        source_y,
-        destination_x,
-        destination_y,
-        width,
-        height,
-    }))
+    Ok(Some(TextureMove::new(
+        // 从 retained 目标读取。
+        target,
+        // 写回同一个 retained 目标。
+        target,
+        // 将已裁剪的两端原点与唯一尺寸封闭为传输。
+        RhiTextureTransfer::from_xy(
+            // 保存源横坐标。
+            source_x,
+            // 保存源纵坐标。
+            source_y,
+            // 保存目标横坐标。
+            destination_x,
+            // 保存目标纵坐标。
+            destination_y,
+            // 保存共同物理尺寸。
+            RhiExtent::new(width, height),
+        ),
+    )))
 }
 
 // 为 GpuBackend 提供 retained surface 的 scroll TextureMove 计划。

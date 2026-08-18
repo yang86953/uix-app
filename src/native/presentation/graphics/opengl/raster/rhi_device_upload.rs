@@ -41,8 +41,8 @@ impl OpenGlRhiDevice {
         if extent != texture.extent {
             return Err(rhi_invalid("OpenGL RHI texture update extent differs"));
         }
-        // 复用子区域实现，避免两条上传路径产生不同的长度检查。
-        self.update_texture_region(gl, handle, 0, 0, extent, data)
+        // 复用零原点类型化区域，避免两条上传路径产生不同的长度检查。
+        self.update_texture_region(gl, handle, RhiTextureRegion::full(extent), data)
     }
 
     // 上传 texture 中任意合法的紧密排列子区域。
@@ -50,41 +50,22 @@ impl OpenGlRhiDevice {
         &mut self,
         gl: &glow::Context,
         handle: TextureHandle,
-        destination_x: u32,
-        destination_y: u32,
-        extent: RhiExtent,
+        region: RhiTextureRegion,
         data: &[u8],
     ) -> Result<()> {
-        // 读取 texture 描述并校验目标矩形不越过资源边界。
+        // 读取 texture 描述并通过共享 Component 校验目标区域。
         let texture = self.texture(handle)?;
-        let end_x = destination_x
-            .checked_add(extent.width)
-            .ok_or_else(|| rhi_invalid("OpenGL RHI texture region x overflows"))?;
-        let end_y = destination_y
-            .checked_add(extent.height)
-            .ok_or_else(|| rhi_invalid("OpenGL RHI texture region y overflows"))?;
-        if !extent.is_valid() || end_x > texture.extent.width || end_y > texture.extent.height {
-            return Err(rhi_invalid("OpenGL RHI texture region is out of range"));
-        }
-        // 读取共享几何 Component 已验证的子区域有符号尺寸。
-        let (native_width, native_height) = extent
-            // Adapter 不得自行强转共享 extent。
-            .native_size_i32()
-            // 理论上已由上方 is_valid 证明，仍保留稳定错误。
-            .ok_or_else(|| rhi_invalid("OpenGL RHI texture region extent is invalid"))?;
-        // 目标 X 必须能被 OpenGL GLint 无损接收。
-        let native_x = i32::try_from(destination_x)
-            // 越界坐标不得通过强转改变符号。
-            .map_err(|_| rhi_invalid("OpenGL RHI texture region x is invalid"))?;
-        // 目标 Y 必须服从相同有符号值域。
-        let native_y = i32::try_from(destination_y)
-            // 越界坐标不得通过强转改变符号。
-            .map_err(|_| rhi_invalid("OpenGL RHI texture region y is invalid"))?;
+        // 共享门禁返回唯一可机械投影的原点、尺寸与远端边界。
+        let bounds = region.validate_within(texture.extent)?;
+        // 读取共享区域已经证明安全的 OpenGL 原点与尺寸。
+        let ((native_x, native_y), (native_width, native_height)) =
+            bounds.native_origin_and_size_i32();
         // 取得格式对应的外部 GL 通道和字节宽度。
         let (_, upload_format, bytes_per_pixel) = Self::texture_format(texture.format);
-        let expected = (extent.width as usize)
-            .checked_mul(extent.height as usize)
-            .and_then(|value| value.checked_mul(bytes_per_pixel))
+        // 共享区域同时拥有紧密载荷长度与行跨度算法。
+        let (expected, _) = bounds
+            // 使用当前格式的字节宽度投影布局。
+            .tight_payload_layout(bytes_per_pixel)
             .ok_or_else(|| rhi_invalid("OpenGL RHI texture region payload overflows"))?;
         if data.len() != expected {
             return Err(rhi_invalid(

@@ -716,8 +716,8 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs").read_text(encoding="utf-8")
         # RHI 必须显式装配唯一传输契约。
         self.assertIn("mod transfer;", rhi)
-        # 共享层必须拥有 checked_add 边界算法。
-        self.assertIn(".checked_add(self.width)", transfer)
+        # 共享类型化区域必须拥有唯一 checked_add 边界算法。
+        self.assertIn(".checked_add(self.extent.width)", transfer)
         # 普通 copy 必须拒绝同资源并引导到 move 语义。
         self.assertIn("RHI texture copy requires different resources", transfer)
         # R8 必须在两个 Adapter 都没有共同 render-target copy 基线时被统一拒绝。
@@ -729,11 +729,11 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         # D3D11 copy 与 move 都必须调用共享门禁。
         self.assertEqual(d3d11.count("validate_transfer("), 2)
         # Adapter 不得恢复会隐藏整数溢出的饱和边界算法。
-        self.assertNotIn("saturating_add(copy.width)", opengl_copy + d3d11)
-        # OpenGL 离屏 copy 必须直接使用左上原点目标 Y。
-        self.assertIn("copy.destination_y as i32", opengl_copy)
-        # OpenGL 离屏 copy 必须直接使用左上原点源 Y。
-        self.assertIn("copy.source_y as i32", opengl_copy)
+        self.assertNotIn("saturating_add", opengl_copy + d3d11)
+        # OpenGL 离屏 copy 必须消费共享类型化原生投影。
+        self.assertEqual(opengl_copy.count("native_origin_and_size_i32()"), 2)
+        # OpenGL Adapter 不得再直接强转拆散的 copy 字段。
+        self.assertNotIn("copy.source_", opengl_copy)
         # OpenGL 不得再把目标离屏 Y 当作 window surface 行序翻转。
         self.assertNotIn("destination.extent.height as i32 -", opengl_copy)
         # OpenGL 不得再把源离屏 Y 当作 window surface 行序翻转。
