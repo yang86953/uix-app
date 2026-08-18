@@ -517,6 +517,51 @@ fn sampled_draw_validates_the_latest_binding_before_device() {
     assert!(error.what().contains("sampled binding does not match"));
 }
 
+// FramePlan 必须在 Device 前拒绝离屏目标与采样纹理相同的反馈环。
+#[test]
+fn sampled_binding_rejects_feedback_loop_before_device() {
+    // 创建稳定的测试 Surface token 以复用完整计划 fixture。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 构造绑定纹理为三十的完整 sampled plan。
+    let mut invalid = coverage_plan_with_binding_kinds(token, &[PipelineKind::GlyphCoverageQuad]);
+    // 把计划作用域切换为只允许显式离屏目标的 Device 事务。
+    invalid.scope = FramePlanScope::Offscreen;
+    // 让目标与 BindSampledTexture 使用同一个纹理身份。
+    {
+        // 只在本作用域内借用计划中的 render pass。
+        let FramePlanStep::Pass(pass) = &mut invalid.steps[0] else {
+            // 测试 fixture 漂移时立即失败。
+            panic!("sampled plan must start with a render pass");
+        };
+        // 目标纹理三十与 fixture 绑定纹理相同，形成确定反馈环。
+        pass.target = RenderTargetRef::Texture(TextureHandle::from_raw(30));
+    }
+    // 创建不会触碰真实图形 API 的记录 context。
+    let mut context = recording_context(token);
+    // 执行入口必须在 activate 前返回共享参数错误。
+    let error = invalid
+        .execute_offscreen_on_device(&mut context.device)
+        .expect_err("feedback loop must fail before device execution");
+    // 反馈环属于稳定 InvalidArgument。
+    assert_eq!(error.code(), Errc::InvalidArgument);
+    // 诊断必须明确指出反馈环。
+    assert!(error.what().contains("feedback loop"));
+    // 任何 Device 原语都不得在 FramePlan 失败后被触碰。
+    assert!(context.device.log.is_empty());
+    // 使用不同目标纹理的同类计划必须通过共享验证。
+    {
+        // 重新取得独立的短期 pass 借用，构造合法目标反例。
+        let FramePlanStep::Pass(pass) = &mut invalid.steps[0] else {
+            // 测试 fixture 漂移时立即失败。
+            panic!("sampled plan must start with a render pass");
+        };
+        // 不同目标与绑定纹理不构成反馈环。
+        pass.target = RenderTargetRef::Texture(TextureHandle::from_raw(31));
+    }
+    // 不同目标与绑定纹理不构成反馈环。
+    assert!(invalid.validate().is_ok());
+}
+
 // 验证 submit 失败时不会进入最终 present。
 #[test]
 fn failed_submit_does_not_present() {

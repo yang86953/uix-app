@@ -240,6 +240,11 @@ impl FramePlan {
                     }
                     // 验证 pass 内的命令顺序元素。
                     for (command_index, command) in pass.commands.iter().enumerate() {
+                        // 每条采样命令都必须立即通过当前 pass 目标反馈环门禁。
+                        if let FramePlanCommand::BindSampledTexture(binding) = command {
+                            // 不等待后续覆盖绑定，保持 painter order 的失败语义。
+                            validation::validate_sampled_binding_target(pass.target, *binding)?;
+                        }
                         // 拒绝空范围或超过两个原生 ABI 共同值域的 draw packet。
                         if let FramePlanCommand::Draw(packet) = command {
                             // 统一范围门禁避免 Adapter 对同一个 u32 产生不同解释。
@@ -404,8 +409,8 @@ mod tests {
     };
     // 引入当前文件的计划类型。
     use super::{
-        FramePlan, FramePlanCommand, FramePlanStep, FrameUniformPayload, FrameVertexPayload,
-        RenderPassPlan, RenderTargetRef,
+        FramePlan, FramePlanCommand, FramePlanScope, FramePlanStep, FrameUniformPayload,
+        FrameVertexPayload, RenderPassPlan, RenderTargetRef,
     };
 
     // 记录一个不会触碰真实图形 API 的 mock device。

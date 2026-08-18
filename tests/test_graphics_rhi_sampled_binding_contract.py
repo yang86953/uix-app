@@ -52,6 +52,8 @@ class GraphicsRhiSampledBindingContractTests(unittest.TestCase):
     def test_pass_state_owns_one_atomic_binding(self) -> None:
         # 读取共享 pass 状态源码。
         pass_state = PASS_STATE.read_text(encoding="utf-8")
+        # 读取 FramePlan 的共享反馈环验证源码。
+        validation = VALIDATION.read_text(encoding="utf-8")
         # 共享层必须定义采样绑定值对象。
         self.assertIn("pub(crate) struct SampledTextureBinding", pass_state)
         # 值对象必须拥有纹理身份。
@@ -74,6 +76,15 @@ class GraphicsRhiSampledBindingContractTests(unittest.TestCase):
         self.assertIn("binding.texture() == texture", pass_state)
         # 任一 sampler 销毁也必须清除整个绑定。
         self.assertIn("binding.sampler() == sampler", pass_state)
+        # Adapter 状态机必须继续保留同一纹理反馈环防线。
+        self.assertIn("active.target.texture() == Some(binding.texture())", pass_state)
+        # FramePlan helper 必须接收目标与完整采样绑定。
+        self.assertIn("validate_sampled_binding_target(", validation)
+        # helper 只能对离屏 Texture target 执行身份比较。
+        self.assertIn("if let RenderTargetRef::Texture(target_texture) = target", validation)
+        self.assertIn("target_texture == binding.texture()", validation)
+        # 反馈环必须返回稳定参数错误。
+        self.assertIn('"FramePlan texture feedback loop is invalid"', validation)
 
     # FramePlan 与 Device 接口不得再暴露裸槽位或拆分资源。
     def test_frame_plan_and_device_are_slot_free(self) -> None:
@@ -100,6 +111,8 @@ class GraphicsRhiSampledBindingContractTests(unittest.TestCase):
     def test_all_producers_use_the_typed_binding(self) -> None:
         # 合并全部生产采样命令的源码。
         producers = "\n".join(path.read_text(encoding="utf-8") for path in PRODUCERS)
+        # 读取 FramePlan 的完整命令顺序验证入口。
+        frame_plan = FRAME_PLAN.read_text(encoding="utf-8")
         # 当前九个生产点必须全部构造原子绑定。
         self.assertEqual(producers.count("SampledTextureBinding::for_pipeline("), 9)
         # 当前九个生产点必须全部使用类型化 FramePlan 命令。
@@ -114,6 +127,8 @@ class GraphicsRhiSampledBindingContractTests(unittest.TestCase):
         self.assertIn("FramePlanCommand::BindSampledTexture(binding) => Some(*binding)", validation)
         # 绑定语义必须与当前 Draw pipeline 契约匹配。
         self.assertIn("binding.matches_pipeline(packet.pipeline)", validation)
+        # 每条绑定命令都必须在 FramePlan 顺序遍历中立即检查反馈环。
+        self.assertIn("validation::validate_sampled_binding_target(pass.target, *binding)?", frame_plan)
         # 验证器不得继续匹配裸槽位。
         self.assertNotIn("slot: 0", validation)
 

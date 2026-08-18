@@ -3,10 +3,32 @@
 // 引入稳定错误类型和结果别名。
 use crate::core::error::{Errc, Error, Result};
 // 引入绘制包与采样语义闭集。
-use crate::native::present::rhi::{DrawPacket, PipelineSampling};
+use crate::native::present::rhi::{DrawPacket, PipelineSampling, SampledTextureBinding};
 
 // 引入同层计划命令与 pass。
-use super::{FramePlanCommand, RenderPassPlan};
+use super::{FramePlanCommand, RenderPassPlan, RenderTargetRef};
+
+// 验证采样绑定不会把当前离屏输出纹理重新作为采样输入。
+pub(super) fn validate_sampled_binding_target(
+    // 接收当前 pass 已冻结的逻辑目标。
+    target: RenderTargetRef,
+    // 接收当前命令即将建立的原子采样绑定。
+    binding: SampledTextureBinding,
+) -> Result<()> {
+    // 只有离屏 texture target 才可能形成纹理反馈环。
+    if let RenderTargetRef::Texture(target_texture) = target {
+        // 同一纹理同时读写会依赖原生 API 的未定义反馈行为。
+        if target_texture == binding.texture() {
+            // 在进入 Device 前统一拒绝反馈环参数。
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "FramePlan texture feedback loop is invalid",
+            ));
+        }
+    }
+    // Surface target 或不同纹理绑定不构成反馈环。
+    Ok(())
+}
 
 // 验证一次 draw 前已经建立完整的 pass-local raster state。
 fn validate_raster_state(preceding: &[FramePlanCommand]) -> Result<()> {
