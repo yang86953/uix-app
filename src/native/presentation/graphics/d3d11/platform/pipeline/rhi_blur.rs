@@ -61,7 +61,7 @@ impl D3d11Pipeline {
             context.PSSetShaderResources(0, Some(&[Some(texture.clone())]));
             context.PSSetSamplers(0, Some(&[Some(sampler.clone())]));
             // blur 是覆盖写入，不能把高斯 taps 再按 alpha 混合叠加。
-            context.OMSetBlendState(self.rhi_blend_state(blend), None, 0xffff_ffff);
+            context.OMSetBlendState(self.rhi_blend_state(blend), None, self.rhi_sample_mask());
             // 按 packet 的索引形态执行 draw。
             if index.is_some() {
                 // 索引 ABI 固定为 uint32。

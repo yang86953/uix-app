@@ -96,12 +96,38 @@ fn d3d11_stencil_enabled(stencil: PipelineStencilState) -> BOOL {
     }
 }
 
+// 把 API 无关采样覆盖状态翻译为 D3D11 alpha-to-coverage 开关。
+fn d3d11_alpha_to_coverage_enabled(state: PipelineMultisampleState) -> BOOL {
+    // 共享值对象已经穷尽定义每个变体的 coverage 事实。
+    if state.alpha_to_coverage_enabled() {
+        // 启用值映射为 D3D11 TRUE。
+        TRUE
+    } else {
+        // 关闭值映射为 D3D11 FALSE。
+        FALSE
+    }
+}
+
+// 把 API 无关采样覆盖状态翻译为 D3D11 rasterizer 多样本开关。
+fn d3d11_raster_multisample_enabled(state: PipelineMultisampleState) -> BOOL {
+    // 共享值对象已经穷尽定义每个变体的 rasterizer 事实。
+    if state.raster_multisample_enabled() {
+        // 启用值映射为 D3D11 TRUE。
+        TRUE
+    } else {
+        // 关闭值映射为 D3D11 FALSE。
+        FALSE
+    }
+}
+
 // 从共享二维状态创建一个 D3D11 rasterizer 对象。
 fn create_rhi_rasterizer_state(
     // 借用当前 pipeline 所属的 D3D11 device。
     device: &ID3D11Device,
     // 接收 API 无关二维光栅状态。
     state: PipelineRasterState,
+    // 接收 API 无关采样覆盖状态。
+    multisample: PipelineMultisampleState,
 ) -> Result<ID3D11RasterizerState> {
     // 构造只做机械枚举翻译的原生描述。
     let desc = D3D11_RASTERIZER_DESC {
@@ -121,8 +147,8 @@ fn create_rhi_rasterizer_state(
         DepthClipEnable: d3d11_depth_clip_enabled(state.depth_clip),
         // 动态 scissor 由共享 pass 状态控制，rasterizer 必须允许该状态生效。
         ScissorEnable: TRUE,
-        // 当前 render target 与 texture 都是单样本资源。
-        MultisampleEnable: FALSE,
+        // 翻译共享 rasterizer 多样本语义。
+        MultisampleEnable: d3d11_raster_multisample_enabled(multisample),
         // RHI 只提交三角形，不启用线抗锯齿。
         AntialiasedLineEnable: FALSE,
     };
@@ -215,6 +241,8 @@ fn create_rhi_blend_state(
     device: &ID3D11Device,
     // 接收 API 无关混合语义。
     blend: PipelineBlend,
+    // 接收 API 无关采样覆盖状态。
+    multisample: PipelineMultisampleState,
     // 接收稳定的原生错误操作名。
     operation: &'static str,
 ) -> Result<ID3D11BlendState> {
@@ -222,8 +250,8 @@ fn create_rhi_blend_state(
     let state = blend.state();
     // 构造只做机械枚举翻译的原生描述。
     let desc = D3D11_BLEND_DESC {
-        // 通用 pipeline 不使用 alpha-to-coverage。
-        AlphaToCoverageEnable: FALSE,
+        // 翻译共享 alpha-to-coverage 语义。
+        AlphaToCoverageEnable: d3d11_alpha_to_coverage_enabled(multisample),
         // 所有 render target 使用相同状态。
         IndependentBlendEnable: FALSE,
         // 设置第一目标以及 D3D11 要求的其余固定槽位。
@@ -639,12 +667,16 @@ impl D3d11Pipeline {
             Error::new(Errc::PlatformError, "D3d11Pipeline: no glyph input layout")
         })?;
 
+        // 冻结 blend、rasterizer 与输出合并阶段共用的单样本覆盖语义。
+        let multisample_state = PipelineMultisampleState::SingleSample;
         // 由共享 straight-alpha 因子创建 D3D11 状态对象。
         let blend_alpha = create_rhi_blend_state(
             // 使用当前 pipeline device。
             device,
             // 选择 straight-alpha 语义。
             PipelineBlend::StraightAlpha,
+            // 使用同一个共享单样本覆盖语义。
+            multisample_state,
             // 保留稳定诊断名。
             "CreateBlendState(straight-alpha)",
         )?;
@@ -654,6 +686,8 @@ impl D3d11Pipeline {
             device,
             // 选择 premultiplied-alpha 语义。
             PipelineBlend::PremultipliedAlpha,
+            // 使用同一个共享单样本覆盖语义。
+            multisample_state,
             // 保留稳定诊断名。
             "CreateBlendState(premultiplied-alpha)",
         )?;
@@ -663,6 +697,8 @@ impl D3d11Pipeline {
             device,
             // 选择 Additive 语义。
             PipelineBlend::Additive,
+            // 使用同一个共享单样本覆盖语义。
+            multisample_state,
             // 保留稳定诊断名。
             "CreateBlendState(additive)",
         )?;
@@ -672,6 +708,8 @@ impl D3d11Pipeline {
             device,
             // 选择 Replace 语义。
             PipelineBlend::Replace,
+            // 使用同一个共享单样本覆盖语义。
+            multisample_state,
             // 保留稳定诊断名。
             "CreateBlendState(replace)",
         )?;
@@ -679,7 +717,7 @@ impl D3d11Pipeline {
         // 冻结全部现有 pipeline 共用的共享二维光栅语义。
         let raster_state = PIPELINE_RASTER_2D;
         // 由共享二维状态创建唯一 D3D11 rasterizer 对象。
-        let rasterizer = create_rhi_rasterizer_state(device, raster_state)?;
+        let rasterizer = create_rhi_rasterizer_state(device, raster_state, multisample_state)?;
         // 冻结全部现有 pipeline 共用的共享关闭深度模板语义。
         let depth_stencil_state = PIPELINE_DEPTH_STENCIL_DISABLED;
         // 由共享关闭状态创建唯一 D3D11 depth-stencil 对象。
@@ -709,6 +747,8 @@ impl D3d11Pipeline {
             blend_premultiplied,
             blend_additive,
             blend_replace,
+            // 保留三个 D3D11 固定状态阶段共同使用的共享采样覆盖身份。
+            multisample_state,
             rasterizer,
             // 保留原生 rasterizer 的共享创建身份。
             raster_state,

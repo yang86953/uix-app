@@ -3,8 +3,8 @@
 // 引入同层纹理格式与固定 uniform 字节数。
 use super::{
     BLUR_UNIFORM_BYTES, GRADIENT_UNIFORM_BYTES, MESH_UNIFORM_BYTES, MSDF_UNIFORM_BYTES,
-    PipelineHandle, SAMPLED_UNIFORM_BYTES, SECTOR_UNIFORM_BYTES, SHADOW_UNIFORM_BYTES,
-    SHAPE_UNIFORM_BYTES, SamplerDesc, TextureFormat,
+    PipelineHandle, PipelineMultisampleState, SAMPLED_UNIFORM_BYTES, SECTOR_UNIFORM_BYTES,
+    SHADOW_UNIFORM_BYTES, SHAPE_UNIFORM_BYTES, SamplerDesc, TextureFormat,
 };
 
 // 定义通用 renderer 与 native Adapter 共享的封闭 pipeline 语义。
@@ -426,6 +426,8 @@ pub(crate) struct PipelineContract {
     pub(crate) blend: PipelineBlend,
     // 保存固定原语拓扑。
     pub(crate) topology: PipelinePrimitiveTopology,
+    // 保存固定采样覆盖状态。
+    pub(crate) multisample: PipelineMultisampleState,
     // 保存固定二维光栅状态。
     pub(crate) raster: PipelineRasterState,
     // 保存固定深度模板状态。
@@ -455,6 +457,8 @@ const fn ui_2d_pipeline_contract(
         blend,
         // 全部现有 UI draw 使用独立三角形列表。
         topology: PipelinePrimitiveTopology::TriangleList,
+        // 全部现有 UI draw 使用单样本且关闭 coverage 转换。
+        multisample: PipelineMultisampleState::SingleSample,
         // 全部现有 UI draw 使用同一二维光栅状态。
         raster: PIPELINE_RASTER_2D,
         // 全部现有 UI draw 显式关闭深度与模板。
@@ -806,6 +810,8 @@ mod tests {
             let contract = kind.contract();
             // 全部二维图元必须使用独立三角形列表。
             assert_eq!(contract.topology, PipelinePrimitiveTopology::TriangleList);
+            // 全部二维图元必须冻结为同一单样本覆盖语义。
+            assert_eq!(contract.multisample, PipelineMultisampleState::SingleSample);
             // 全部二维图元必须使用相同光栅状态。
             assert_eq!(contract.raster, PIPELINE_RASTER_2D);
             // 全部二维图元必须显式关闭深度与模板。

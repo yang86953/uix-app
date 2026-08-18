@@ -60,7 +60,7 @@ impl D3d11Pipeline {
             // 绑定当前 sampler。
             context.PSSetSamplers(0, Some(&[Some(sampler.clone())]));
             // 根据 pipeline 语义选择 SrcOver 或 Additive blend。
-            context.OMSetBlendState(blend_state, None, 0xffff_ffff);
+            context.OMSetBlendState(blend_state, None, self.rhi_sample_mask());
             // 按 packet 的索引形态编码实际 draw。
             if index.is_some() {
                 // 索引 ABI 固定为 uint32，base vertex 保留 D3D11 原生语义。

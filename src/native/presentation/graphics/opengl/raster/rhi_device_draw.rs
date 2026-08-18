@@ -16,10 +16,10 @@ use crate::native::present::rhi::{
     MSDF_RANGE_FLOAT_OFFSET, MSDF_TEXTURE_SIZE_FLOAT_OFFSET, MSDF_VIEWPORT_FLOAT_OFFSET,
     PipelineBlend, PipelineBlendFactor, PipelineBlendOperation, PipelineColorWriteMask,
     PipelineCullMode, PipelineDepthClip, PipelineDepthState, PipelineDepthStencilState,
-    PipelineFrontFace, PipelineKind, PipelinePrimitiveTopology, PipelineRasterState,
-    PipelineStencilState, SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET,
-    SECTOR_COLOR_FLOAT_OFFSET, SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET,
-    SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET, SHADOW_COLOR_FLOAT_OFFSET,
+    PipelineFrontFace, PipelineKind, PipelineMultisampleState, PipelinePrimitiveTopology,
+    PipelineRasterState, PipelineStencilState, SAMPLED_VIEWPORT_FLOAT_OFFSET,
+    SECTOR_ANGLES_FLOAT_OFFSET, SECTOR_COLOR_FLOAT_OFFSET, SECTOR_RECT_FLOAT_OFFSET,
+    SECTOR_VIEWPORT_FLOAT_OFFSET, SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET, SHADOW_COLOR_FLOAT_OFFSET,
     SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET, SHADOW_RADIUS_FLOAT_OFFSET,
     SHADOW_VIEWPORT_FLOAT_OFFSET, SHAPE_COLOR_FLOAT_OFFSET, SHAPE_DRAW_RECT_FLOAT_OFFSET,
     SHAPE_RADIUS_FLOAT_OFFSET, SHAPE_RECT_FLOAT_OFFSET, SHAPE_STROKE_FLOAT_OFFSET,
@@ -561,6 +561,8 @@ impl OpenGlRhiDevice {
         };
         // 记录 sampled_format 只用于保持每类 ABI 的显式门禁。
         let _ = sampled_format;
+        // SAFETY: contract 只包含固定 GL 采样覆盖映射，当前 owner thread 的 context 保持 current。
+        unsafe { apply_pipeline_multisample(gl, contract.multisample) };
         // SAFETY: contract 只包含固定 GL 光栅与深度模板映射，当前 owner thread 的 context 保持 current。
         unsafe { apply_pipeline_fixed_state(gl, contract.raster, contract.depth_stencil) };
         // SAFETY: contract 只包含固定 GL blend 映射，当前 owner thread 的 context 保持 current。
@@ -685,6 +687,26 @@ fn gl_primitive_topology(topology: PipelinePrimitiveTopology) -> u32 {
     match topology {
         // TriangleList 对应每三个顶点形成独立三角形的 GL_TRIANGLES。
         PipelinePrimitiveTopology::TriangleList => glow::TRIANGLES,
+    }
+}
+
+/// 按共享 pipeline 状态恢复采样覆盖状态。
+///
+/// # Safety
+/// 调用者必须保证当前 owner thread 的 GL context current。
+unsafe fn apply_pipeline_multisample(gl: &glow::Context, state: PipelineMultisampleState) {
+    // SAFETY：调用者保证当前 owner thread 的 GL context current。
+    unsafe {
+        // 穷尽映射共享采样覆盖集合。
+        match state {
+            // 单样本路径显式关闭两种可能改变覆盖率的兼容 context 状态。
+            PipelineMultisampleState::SingleSample => {
+                // 关闭按 alpha 生成样本覆盖率。
+                gl.disable(glow::SAMPLE_ALPHA_TO_COVERAGE);
+                // 关闭按 sample coverage 值裁剪覆盖率。
+                gl.disable(glow::SAMPLE_COVERAGE);
+            }
+        }
     }
 }
 

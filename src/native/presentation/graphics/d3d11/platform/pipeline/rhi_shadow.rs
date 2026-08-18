@@ -50,7 +50,7 @@ impl D3d11Pipeline {
             context.VSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
             context.PSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
             // 使用共享 straight-alpha blend。
-            context.OMSetBlendState(self.rhi_blend_state(blend), None, 0xffff_ffff);
+            context.OMSetBlendState(self.rhi_blend_state(blend), None, self.rhi_sample_mask());
             // 按 packet 的索引形态编码实际 draw。
             if index.is_some() {
                 // 索引 ABI 固定为 uint32，base vertex 保留 D3D11 原生语义。

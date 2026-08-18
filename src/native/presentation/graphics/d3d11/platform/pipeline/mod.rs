@@ -16,8 +16,8 @@ use crate::core::{Errc, Error, Result};
 use crate::native::present::rhi::{
     PIPELINE_DEPTH_STENCIL_DISABLED, PIPELINE_RASTER_2D, PipelineBlend, PipelineBlendFactor,
     PipelineBlendOperation, PipelineColorWriteMask, PipelineCullMode, PipelineDepthClip,
-    PipelineDepthState, PipelineDepthStencilState, PipelineFrontFace, PipelinePrimitiveTopology,
-    PipelineRasterState, PipelineStencilState,
+    PipelineDepthState, PipelineDepthStencilState, PipelineFrontFace, PipelineMultisampleState,
+    PipelinePrimitiveTopology, PipelineRasterState, PipelineStencilState,
 };
 use ::windows::Win32::Foundation::{FALSE, TRUE};
 use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
@@ -547,6 +547,8 @@ pub(crate) struct D3d11Pipeline {
     // sampled Additive quad 使用源与目标都为 ONE 的 blend 状态。
     blend_additive: ID3D11BlendState,
     blend_replace: ID3D11BlendState,
+    // 保存 blend、rasterizer 与输出合并阶段共同使用的共享采样覆盖语义。
+    multisample_state: PipelineMultisampleState,
     // 保存由共享二维光栅状态创建的原生对象。
     rasterizer: ID3D11RasterizerState,
     // 保存 rasterizer 对象对应的共享创建语义。
@@ -566,6 +568,12 @@ fn d3d11_primitive_topology(topology: PipelinePrimitiveTopology) -> D3D_PRIMITIV
     }
 }
 
+// 把 API 无关采样覆盖状态翻译为 D3D11 输出掩码。
+fn d3d11_sample_mask(state: PipelineMultisampleState) -> u32 {
+    // 共享值对象已经穷尽定义每个变体的输出位集合。
+    state.sample_mask()
+}
+
 // 为所有 D3D11 draw 原语集中映射共享混合语义。
 impl D3d11Pipeline {
     // 返回当前 pipeline 契约对应的原生 blend state。
@@ -583,6 +591,12 @@ impl D3d11Pipeline {
         }
     }
 
+    // 返回当前共享采样覆盖状态对应的 D3D11 输出掩码。
+    fn rhi_sample_mask(&self) -> u32 {
+        // 禁止 shader helper 继续写死全位掩码。
+        d3d11_sample_mask(self.multisample_state)
+    }
+
     // 在统一 draw 边界绑定由共享契约创建的二维固定状态。
     pub(crate) fn apply_rhi_fixed_state(
         // 借用当前 owner-thread immediate context。
@@ -591,13 +605,18 @@ impl D3d11Pipeline {
         context: &ID3D11DeviceContext,
         // 接收 FramePlan pipeline 的共享原语拓扑。
         topology: PipelinePrimitiveTopology,
+        // 接收 FramePlan pipeline 的共享采样覆盖状态。
+        multisample: PipelineMultisampleState,
         // 接收 FramePlan pipeline 的共享光栅状态。
         raster: PipelineRasterState,
         // 接收 FramePlan pipeline 的共享深度模板状态。
         depth_stencil: PipelineDepthStencilState,
     ) -> Result<()> {
         // 原生状态对象必须仍与 pipeline 创建时的共享语义一致。
-        if raster != self.raster_state || depth_stencil != self.depth_stencil_state {
+        if multisample != self.multisample_state
+            || raster != self.raster_state
+            || depth_stencil != self.depth_stencil_state
+        {
             // 拒绝把未来新增状态错误映射为当前唯一二维对象。
             return Err(Error::new(
                 // 状态身份错配属于稳定参数错误。

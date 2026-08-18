@@ -80,6 +80,8 @@ impl D3d11Context {
             &self.context,
             // 传入 FramePlan pipeline 的共享原语拓扑。
             contract.topology,
+            // 传入 FramePlan pipeline 的共享采样覆盖状态。
+            contract.multisample,
             // 传入 FramePlan pipeline 的共享光栅状态。
             contract.raster,
             // 传入 FramePlan pipeline 的共享深度模板状态。

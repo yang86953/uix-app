@@ -43,7 +43,7 @@ impl D3d11Pipeline {
             context.PSSetShader(&self.ps_mesh, None);
             context.VSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
             context.PSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
-            context.OMSetBlendState(self.rhi_blend_state(blend), None, 0xffff_ffff);
+            context.OMSetBlendState(self.rhi_blend_state(blend), None, self.rhi_sample_mask());
             if index.is_some() {
                 // 索引 ABI 固定为 uint32，base vertex 保留 D3D11 原生语义。
                 context.DrawIndexed(index_count, first_index, base_vertex);
