@@ -11,8 +11,8 @@ use crate::native::present::rhi::{
     BufferDesc, BufferHandle, BufferUsage, LoadAction, PipelineColorWriteMask, PipelineDesc,
     PipelineDitherState, PipelineHandle, PipelineKind, RenderTargetHandle, RhiColor,
     RhiColorClearContract, RhiExtent, RhiPassState, RhiScissor, RhiSubmissionSequence, RhiViewport,
-    SamplerDesc, SamplerHandle, SubmissionHandle, TextureCopy, TextureDesc, TextureFormat,
-    TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
+    SampledTextureBinding, SamplerDesc, SamplerHandle, SubmissionHandle, TextureCopy, TextureDesc,
+    TextureFormat, TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
 };
 
 // 将 retained 区域移动拆出，保持资源设备文件低于行数上限。
@@ -560,17 +560,12 @@ impl OpenGlRhiDevice {
     }
 
     // 记录 texture/sampler 绑定，实际 GL 绑定在 draw 时完成。
-    pub(super) fn bind_texture(
-        &mut self,
-        slot: u32,
-        texture: TextureHandle,
-        sampler: SamplerHandle,
-    ) -> Result<()> {
+    pub(super) fn bind_sampled_texture(&mut self, binding: SampledTextureBinding) -> Result<()> {
         // 先验证资源仍然存在。
-        self.texture(texture)?;
-        self.sampler(sampler)?;
-        // 由共享状态机统一验证 pass、槽位和目标反馈环后原子记录绑定。
-        self.pass.bind_texture(slot, texture, sampler)?;
+        self.texture(binding.texture())?;
+        self.sampler(binding.sampler())?;
+        // 由共享状态机统一验证 pass 和目标反馈环后原子记录绑定。
+        self.pass.bind_sampled_texture(binding)?;
         // 返回统一成功结果。
         Ok(())
     }

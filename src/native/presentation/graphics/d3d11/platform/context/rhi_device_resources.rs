@@ -207,17 +207,15 @@ impl D3d11Context {
     }
 
     // 绑定当前 pass 的采样纹理和 sampler。
-    pub(super) fn rhi_bind_texture(
+    pub(super) fn rhi_bind_sampled_texture(
         &mut self,
-        slot: u32,
-        texture: TextureHandle,
-        sampler: SamplerHandle,
+        binding: SampledTextureBinding,
     ) -> Result<()> {
         // 验证纹理和 sampler 句柄仍然有效。
-        self.rhi_device.texture(texture)?;
-        self.rhi_device.sampler(sampler)?;
-        // 由共享状态机统一验证 pass、槽位和目标反馈环后原子记录绑定。
-        self.rhi_device.pass.bind_texture(slot, texture, sampler)?;
+        self.rhi_device.texture(binding.texture())?;
+        self.rhi_device.sampler(binding.sampler())?;
+        // 由共享状态机统一验证 pass 和目标反馈环后原子记录绑定。
+        self.rhi_device.pass.bind_sampled_texture(binding)?;
         // 返回绑定成功。
         Ok(())
     }

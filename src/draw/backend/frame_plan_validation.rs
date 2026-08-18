@@ -89,12 +89,12 @@ pub(super) fn validate_draw_uploads(
             "FramePlan uniform upload layout does not match pipeline contract",
         ));
     }
-    // 需要采样的 pipeline 必须在 draw 前已经绑定统一 t0/s0 资源。
+    // 需要采样的 pipeline 必须在 draw 前已经绑定统一原子资源。
     if contract.sampling != PipelineSampling::None
-        // 查找当前 pass 中已经生效的零号纹理绑定。
+        // 查找当前 pass 中已经生效的类型化采样绑定。
         && !preceding.iter().any(|command| {
-            // 只有共享 ABI 开放的零号槽满足当前采样契约。
-            matches!(command, FramePlanCommand::BindTexture { slot: 0, .. })
+            // 只有完整值对象满足当前固定 t0/s0 采样契约。
+            matches!(command, FramePlanCommand::BindSampledTexture(_))
         })
     {
         // 禁止不同 API 复用各自残留的纹理状态。

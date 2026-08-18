@@ -10,8 +10,8 @@ use crate::core::error::{Errc, Error, Result};
 // 引入薄 RHI 的资源、能力和执行类型。
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, BufferUsage, DrawPacket, DrawRange, GraphicsDevice, LoadAction,
-    PipelineDesc, PipelineKind, RhiExtent, RhiScissor, RhiViewport, SamplerDesc, SamplerHandle,
-    TextureDesc, TextureFormat, TextureHandle,
+    PipelineDesc, PipelineKind, RhiExtent, RhiScissor, RhiViewport, SampledTextureBinding,
+    SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
 };
 
 // 引入当前目录中的有序帧计划类型。
@@ -811,12 +811,11 @@ impl RhiRenderer {
                 buffer: uniform_buffer,
                 data: FrameUniformPayload::Sampled(Self::sampled_uniform(viewport)),
             });
-            // 绑定当前纹理和共享 sampler。
-            pass.push(FramePlanCommand::BindTexture {
-                slot: 0,
-                texture,
-                sampler,
-            });
+            // 原子绑定当前纹理和共享 sampler。
+            pass.push(FramePlanCommand::BindSampledTexture(
+                // 固定 t0/s0 ABI 不再向 FramePlan 暴露槽位。
+                SampledTextureBinding::new(texture, sampler),
+            ));
             // 追加六顶点的非索引采样 quad draw packet。
             pass.push(FramePlanCommand::Draw(DrawPacket {
                 pipeline: quad_pipeline,

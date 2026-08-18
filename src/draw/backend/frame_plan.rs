@@ -11,7 +11,7 @@ use crate::core::PresentDamage;
 // 引入 platform 私有的薄 RHI 原语。
 use crate::native::present::rhi::{
     DrawPacket, GraphicsContextRhi, GraphicsDevice, LoadAction, RenderTargetHandle, RhiColor,
-    RhiScissor, RhiViewport, SubmissionHandle, SurfaceToken, TextureCopy, TextureHandle,
+    RhiScissor, RhiViewport, SampledTextureBinding, SubmissionHandle, SurfaceToken, TextureCopy,
     TextureMove,
 };
 // 将不触发 surface present 的离屏执行边界拆到独立文件。
@@ -48,15 +48,8 @@ pub(crate) enum FramePlanCommand {
         // 保存左上原点的物理清理区域。
         scissor: RhiScissor,
     },
-    // 绑定一个通用采样资源。
-    BindTexture {
-        // 保存 shader binding slot。
-        slot: u32,
-        // 保存被采样纹理。
-        texture: TextureHandle,
-        // 保存采样器。
-        sampler: crate::native::present::rhi::SamplerHandle,
-    },
+    // 绑定固定 t0/s0 ABI 的原子采样资源。
+    BindSampledTexture(SampledTextureBinding),
     // 在 pass 内按 painter order 上传一个类型化顶点流。
     UploadVertex {
         // 保存目标顶点 buffer。
@@ -296,17 +289,6 @@ impl FramePlan {
                                 ));
                             }
                         }
-                        // 验证 binding slot 不超过 UIX 预留的有限范围。
-                        if let FramePlanCommand::BindTexture { slot, .. } = command {
-                            // 统一限制避免 adapter 依赖 API 的 slot 上限。
-                            if *slot >= 32 {
-                                // 返回稳定的参数错误。
-                                return Err(Error::new(
-                                    Errc::InvalidArgument,
-                                    "FramePlan texture binding slot is out of range",
-                                ));
-                            }
-                        }
                         // 验证类型化顶点不会把空、残缺或非有限几何交给 Adapter。
                         if let FramePlanCommand::UploadVertex { data, .. } = command {
                             // 顶点布局与浮点值必须同时满足 FramePlan 契约。
@@ -419,7 +401,8 @@ mod tests {
         BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, GraphicsSurface,
         LoadAction, PipelineBinding, PipelineHandle, PipelineKind, RenderTargetHandle, RhiColor,
         RhiExtent, RhiMeshRasterParams, RhiSampledRasterParams, RhiScissor, RhiViewport,
-        SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy, TextureHandle, TextureMove,
+        SampledTextureBinding, SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy,
+        TextureHandle, TextureMove,
     };
     // 引入当前文件的计划类型。
     use super::{
@@ -498,14 +481,9 @@ mod tests {
         }
 
         // 记录纹理绑定。
-        fn bind_texture(
-            &mut self,
-            _slot: u32,
-            _texture: TextureHandle,
-            _sampler: crate::native::present::rhi::SamplerHandle,
-        ) -> Result<()> {
+        fn bind_sampled_texture(&mut self, _binding: SampledTextureBinding) -> Result<()> {
             // 记录调用事件。
-            self.log.push_back("bind_texture");
+            self.log.push_back("bind_sampled_texture");
             // 返回成功。
             Ok(())
         }
@@ -685,14 +663,9 @@ mod tests {
         }
 
         // 把采样资源绑定委托给内嵌记录 device。
-        fn bind_texture(
-            &mut self,
-            slot: u32,
-            texture: TextureHandle,
-            sampler: crate::native::present::rhi::SamplerHandle,
-        ) -> Result<()> {
+        fn bind_sampled_texture(&mut self, binding: SampledTextureBinding) -> Result<()> {
             // 复用唯一测试记录路径。
-            self.device.bind_texture(slot, texture, sampler)
+            self.device.bind_sampled_texture(binding)
         }
 
         // 把不可变上传载荷委托给内嵌记录 device。

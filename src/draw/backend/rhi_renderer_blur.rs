@@ -5,8 +5,8 @@ use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
     BLUR_WEIGHT_COUNT, BufferDesc, BufferHandle, BufferUsage, DrawPacket, DrawRange,
     GraphicsDevice, LoadAction, PipelineDesc, PipelineKind, RenderTargetHandle,
-    RhiBlurRasterParams, RhiColor, RhiExtent, RhiScissor, RhiViewport, SamplerDesc, SamplerHandle,
-    TextureDesc, TextureFormat, TextureHandle,
+    RhiBlurRasterParams, RhiColor, RhiExtent, RhiScissor, RhiViewport, SampledTextureBinding,
+    SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
 };
 
 // 引入父 renderer 已导入的有序 FramePlan 类型和资源缓存。
@@ -275,12 +275,11 @@ impl RhiRenderer {
                 &weights,
             )),
         });
-        // 绑定原始 source texture。
-        horizontal.push(FramePlanCommand::BindTexture {
-            slot: 0,
-            texture: source,
-            sampler,
-        });
+        // 原子绑定原始 source texture 与共享 sampler。
+        horizontal.push(FramePlanCommand::BindSampledTexture(
+            // 固定 t0/s0 ABI 不向 blur lowering 暴露槽位。
+            SampledTextureBinding::new(source, sampler),
+        ));
         // 追加固定六顶点 blur draw packet。
         horizontal.push(FramePlanCommand::Draw(DrawPacket {
             pipeline,
@@ -313,12 +312,11 @@ impl RhiRenderer {
                 &weights,
             )),
         });
-        // 绑定水平 pass 生成的 scratch texture。
-        vertical.push(FramePlanCommand::BindTexture {
-            slot: 0,
-            texture: scratch,
-            sampler,
-        });
+        // 原子绑定水平 pass 生成的 scratch texture 与共享 sampler。
+        vertical.push(FramePlanCommand::BindSampledTexture(
+            // 垂直 pass 复用同一个完整采样绑定类型。
+            SampledTextureBinding::new(scratch, sampler),
+        ));
         // 追加固定六顶点 blur draw packet。
         vertical.push(FramePlanCommand::Draw(DrawPacket {
             pipeline,

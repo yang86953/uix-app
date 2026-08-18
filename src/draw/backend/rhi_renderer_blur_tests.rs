@@ -200,20 +200,14 @@ impl GraphicsDevice for RecordingContext {
     }
 
     // 记录两个 pass 的输入纹理顺序。
-    fn bind_texture(
+    fn bind_sampled_texture(
         // 修改记录器。
         &mut self,
-        // blur 固定使用 slot zero。
-        slot: u32,
-        // 保存被采样纹理。
-        texture: TextureHandle,
-        // sampler 已由资源创建事实覆盖。
-        _sampler: SamplerHandle,
+        // 保存不可拆分的采样纹理与 sampler。
+        binding: SampledTextureBinding,
     ) -> Result<()> {
-        // blur ABI 只能绑定 slot zero。
-        assert_eq!(slot, 0);
         // 保存 source→scratch 顺序。
-        self.bound_textures.push(texture.raw());
+        self.bound_textures.push(binding.texture().raw());
         // 记录成功。
         Ok(())
     }

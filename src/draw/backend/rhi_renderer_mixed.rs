@@ -3,8 +3,8 @@
 use crate::core::error::Result;
 // 引入薄 RHI 的 command、resource 和 target 类型。
 use crate::native::present::rhi::{
-    DrawPacket, DrawRange, GraphicsDevice, LoadAction, RhiExtent, RhiViewport, TextureDesc,
-    TextureFormat,
+    DrawPacket, DrawRange, GraphicsDevice, LoadAction, RhiExtent, RhiViewport,
+    SampledTextureBinding, TextureDesc, TextureFormat,
 };
 // 引入父 renderer 的帧计划和已完成 lowering 的 payload。
 use super::{
@@ -495,12 +495,11 @@ impl RhiRenderer {
                         buffer: uniform_buffer,
                         data: FrameUniformPayload::Sampled(RhiRenderer::sampled_uniform(viewport)),
                     });
-                    // 绑定当前颜色纹理。
-                    pass.push(FramePlanCommand::BindTexture {
-                        slot: 0,
-                        texture,
-                        sampler,
-                    });
+                    // 原子绑定当前颜色纹理与共享 sampler。
+                    pass.push(FramePlanCommand::BindSampledTexture(
+                        // 图片路径使用固定 t0/s0 绑定值对象。
+                        SampledTextureBinding::new(texture, sampler),
+                    ));
                     // 追加当前图片 draw packet。
                     pass.push(FramePlanCommand::Draw(DrawPacket {
                         pipeline,
@@ -539,12 +538,11 @@ impl RhiRenderer {
                         buffer: uniform_buffer,
                         data: FrameUniformPayload::Sampled(RhiRenderer::sampled_uniform(viewport)),
                     });
-                    // 绑定已经存在的 Picture texture。
-                    pass.push(FramePlanCommand::BindTexture {
-                        slot: 0,
-                        texture: quad.texture,
-                        sampler,
-                    });
+                    // 原子绑定已经存在的 Picture texture 与共享 sampler。
+                    pass.push(FramePlanCommand::BindSampledTexture(
+                        // sampled quad 不再重复声明裸槽位。
+                        SampledTextureBinding::new(quad.texture, sampler),
+                    ));
                     // 追加当前 Picture draw packet。
                     pass.push(FramePlanCommand::Draw(DrawPacket {
                         pipeline,
@@ -581,12 +579,11 @@ impl RhiRenderer {
                         buffer: uniform_buffer,
                         data: FrameUniformPayload::Sampled(RhiRenderer::sampled_uniform(viewport)),
                     });
-                    // 绑定当前 R8 coverage texture。
-                    pass.push(FramePlanCommand::BindTexture {
-                        slot: 0,
-                        texture,
-                        sampler,
-                    });
+                    // 原子绑定当前 R8 coverage texture 与点采样 sampler。
+                    pass.push(FramePlanCommand::BindSampledTexture(
+                        // coverage 路径只传递完整采样事实。
+                        SampledTextureBinding::new(texture, sampler),
+                    ));
                     // 追加当前 glyph draw packet。
                     pass.push(FramePlanCommand::Draw(DrawPacket {
                         pipeline,
@@ -625,12 +622,11 @@ impl RhiRenderer {
                             msdf_texture_extents[index],
                         )),
                     });
-                    // 绑定当前 RGBA8 MSDF texture 和线性 sampler。
-                    pass.push(FramePlanCommand::BindTexture {
-                        slot: 0,
-                        texture,
-                        sampler,
-                    });
+                    // 原子绑定当前 RGBA8 MSDF texture 和线性 sampler。
+                    pass.push(FramePlanCommand::BindSampledTexture(
+                        // MSDF 路径只传递完整采样事实。
+                        SampledTextureBinding::new(texture, sampler),
+                    ));
                     // 追加当前 MSDF 字形 draw packet。
                     pass.push(FramePlanCommand::Draw(DrawPacket {
                         pipeline,

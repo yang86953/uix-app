@@ -62,7 +62,7 @@ pub(crate) use capabilities::{GraphicsDeviceCapabilities, GraphicsSurfaceCapabil
 pub(crate) use draw_packet::{DrawPacket, DrawRange, IndexBufferBinding, IndexFormat};
 // 向各原生 Adapter 暴露唯一的 render-pass 状态事实。
 #[allow(unused_imports)]
-pub(crate) use pass_state::RhiPassState;
+pub(crate) use pass_state::{RhiPassState, SampledTextureBinding};
 // 向各原生 Adapter 暴露共享纹理传输边界结果。
 #[allow(unused_imports)]
 pub(crate) use transfer::RhiTextureTransferBounds;
@@ -725,15 +725,10 @@ pub(crate) trait GraphicsDevice {
         Err(rhi_not_implemented("clear_rect"))
     }
 
-    // 绑定通用采样资源。
-    fn bind_texture(
-        &mut self,
-        _slot: u32,
-        _texture: TextureHandle,
-        _sampler: SamplerHandle,
-    ) -> Result<()> {
+    // 绑定当前固定 shader ABI 的完整采样资源。
+    fn bind_sampled_texture(&mut self, _binding: SampledTextureBinding) -> Result<()> {
         // 默认实现显式拒绝，避免纹理命令被忽略。
-        Err(rhi_not_implemented("bind_texture"))
+        Err(rhi_not_implemented("bind_sampled_texture"))
     }
 
     // 执行一个已经完成高层降级的 draw packet。
