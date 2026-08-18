@@ -126,6 +126,14 @@ where
         self.rhi_pipeline().rhi_preflight_texture_move(movement)
     }
 
+    // 在共享资源表上只读预检完整 sampled 绑定事实。
+    fn preflight_sampled_binding(&self, binding: SampledTextureBinding) -> Result<()> {
+        // 先拒绝已关闭 owner，不恢复 native context。
+        self.rhi_ensure_active()?;
+        // 只读转发不产生 OpenGL 状态或资源副作用。
+        self.rhi_pipeline().rhi_preflight_sampled_binding(binding)
+    }
+
     // 上传 texture payload。
     fn update_texture(&mut self, upload: RhiTextureUpload<'_>) -> Result<()> {
         // 在上传 native texture 前先拒绝已关闭 owner。

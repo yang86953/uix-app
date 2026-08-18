@@ -70,6 +70,8 @@ where
         self.validate_transfers(steps)?;
         // 在 Device activate 前预检所有 pass 内 Draw 的真实 Buffer 资源。
         self.validate_draw_resources(steps)?;
+        // 在 Device activate 前预检所有 pass 内 sampled binding 资源。
+        self.validate_sampled_bindings(steps)?;
         // 在第一条原生命令前激活当前 owner；OpenGL 在此恢复正确 context。
         self.device.activate()?;
         // 激活成功后再执行设备健康 preflight，失败计划不得进入任何命令。
@@ -162,6 +164,26 @@ where
             }
         }
         // 所有 Draw 的真实 Buffer 描述都已通过共享预检。
+        Ok(())
+    }
+
+    // 预检所有 pass 内 sampled binding，保持资源失败发生在任何 Device 副作用前。
+    fn validate_sampled_bindings(&self, steps: &[FramePlanStep]) -> Result<()> {
+        // 按 FramePlan 顶层顺序逐个观察 render pass。
+        for step in steps {
+            // 只有 render pass 包含 sampled binding 命令。
+            if let FramePlanStep::Pass(pass) = step {
+                // 保持 pass 内命令顺序扫描，不跨 pass 借用绑定事实。
+                for command in &pass.commands {
+                    // 只预检实际 sampled binding。
+                    if let super::FramePlanCommand::BindSampledTexture(binding) = command {
+                        // 共享资源表必须在任何 native side effect 前证明真实 sampled 资源。
+                        self.device.preflight_sampled_binding(*binding)?;
+                    }
+                }
+            }
+        }
+        // 所有 sampled binding 的真实资源都已通过共享预检。
         Ok(())
     }
 

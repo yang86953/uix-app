@@ -27,6 +27,39 @@ fn before_present_hook_receives_only_surface_role() {
     assert_eq!(context.surface.present_count, 1);
 }
 
+// 验证低层命令保持顺序且只触发一次最终 present。
+#[test]
+fn executes_in_order_and_presents_once() {
+    // 创建第一代 surface。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 创建原子拥有 device 与 surface 的记录型 context。
+    let mut context = recording_context(token);
+    // 执行计划并要求最终提交成功。
+    let commit = test_plan(token).execute_on_context(&mut context);
+    // 验证得到可消费 damage 的 commit。
+    assert!(commit.is_ok());
+    // 验证底层顺序以一次 submit 结束。
+    assert_eq!(
+        context.device.log.into_iter().collect::<Vec<_>>(),
+        vec![
+            // 所有 FramePlan 命令前必须先激活 owner context。
+            "activate",
+            // 激活后必须完成统一设备健康预检。
+            "maintain",
+            "begin_pass",
+            "viewport",
+            "scissor",
+            "update_buffer",
+            "update_buffer",
+            "draw",
+            "end_pass",
+            "submit"
+        ]
+    );
+    // 验证 surface 只收到一次最终 present。
+    assert_eq!(context.surface.present_count, 1);
+}
+
 // 验证纹理区域移动位于 pass 顺序中且仍只触发一次 submit/present。
 #[test]
 fn executes_texture_move_in_order() {
@@ -641,6 +674,35 @@ fn sampled_binding_rejects_feedback_loop_before_device() {
     }
     // 不同目标与绑定纹理不构成反馈环。
     assert!(invalid.validate().is_ok());
+}
+
+// sampled 真实资源预检失败必须发生在 Device activate 前且不留下日志。
+#[test]
+fn sampled_resource_preflight_rejects_before_device() {
+    // 创建稳定的第一代 Surface token。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 构造完整的 coverage sampled 计划。
+    let plan = coverage_plan_with_binding_kinds(token, &[PipelineKind::GlyphCoverageQuad]);
+    // 注入 sampled 资源预检失败。
+    let mut rejected = recording_context(token);
+    // 只影响 shared sampled 资源预检，不改变其它 Device 行为。
+    rejected.device.fail_sampled_preflight = true;
+    // 失败必须发生在任何 Device 原语之前。
+    let error = plan
+        // 通过普通 surface 入口验证 acquire 后的前置执行边界。
+        .execute_on_context(&mut rejected)
+        // sampled 资源预检必须在 activate 前失败。
+        .expect_err("sampled resource preflight must fail before device activation");
+    // 失败分类必须是共享参数错误。
+    assert_eq!(error.code(), Errc::InvalidArgument);
+    // preflight 失败不得留下 activate、pass 或 submit 日志。
+    assert!(rejected.device.log.is_empty());
+    // preflight 失败不得触发 present。
+    assert_eq!(rejected.surface.present_count, 0);
+    // 关闭失败注入后，同一合法计划必须通过预检并完成执行。
+    let mut accepted = recording_context(token);
+    // 合法 sampled binding 由测试 Device 预检放行。
+    assert!(plan.execute_on_context(&mut accepted).is_ok());
 }
 
 // 验证 submit 失败时不会进入最终 present。

@@ -86,6 +86,17 @@ impl OpenGlRasterPipeline {
         self.rhi.preflight_texture_move(movement)
     }
 
+    // 只读预检 sampled texture 与 sampler 的真实资源语义。
+    pub(crate) fn rhi_preflight_sampled_binding(
+        // 只读借用 owner，避免预检产生 native 副作用。
+        &self,
+        // 接收共享 sampled 绑定事实。
+        binding: SampledTextureBinding,
+    ) -> Result<()> {
+        // 直接委托 OpenGL 设备的共享资源预检。
+        self.rhi.preflight_sampled_binding(binding)
+    }
+
     // 上传通用 texture payload。
     pub(crate) fn rhi_update_texture(&mut self, upload: RhiTextureUpload<'_>) -> Result<()> {
         // 保持目标身份、区域与载荷绑定到 owner-thread Adapter 边界。

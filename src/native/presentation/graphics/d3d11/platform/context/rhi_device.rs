@@ -403,6 +403,14 @@ impl GraphicsDevice for D3d11Context {
         self.rhi_device.buffers.validate_draw(packet)
     }
 
+    // 在执行 sampled bind 前只读预检真实纹理与 sampler 资源。
+    fn preflight_sampled_binding(&self, binding: SampledTextureBinding) -> Result<()> {
+        // 关闭后的 owner 必须先于资源表查询拒绝 sampled 预检。
+        self.ensure_active()?;
+        // 共享资源 helper 只读取冻结描述并验证采样语义，不触碰 native 状态。
+        self.rhi_validate_sampled_binding(binding)
+    }
+
     // 创建当前 D3D11 适配器已经具备 shader ABI 的有限 pipeline。
     fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineBinding> {
         // 关闭后的 owner 必须先于资源 helper 拒绝 pipeline 创建。
