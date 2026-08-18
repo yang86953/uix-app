@@ -88,22 +88,22 @@ class GraphicsRhiSampledValueDomainContractTests(unittest.TestCase):
         self.assertIn("if !data.is_valid()", plan_vertex_gate)
         # Coverage 必须固定 R8Unorm 与最近点过滤。
         self.assertIn("Self::Coverage => matches!(format, TextureFormat::R8Unorm)", sampling_gate)
-        # Coverage 必须拒绝线性过滤。
-        self.assertIn("Self::Coverage => !sampler.uses_linear_filter()", sampling_gate)
+        # Coverage 必须通过封闭枚举只接受最近点过滤。
+        self.assertIn("matches!(sampler.filter(), SamplerFilter::Nearest)", sampling_gate)
         # MSDF 必须固定 Rgba8Unorm 与线性过滤。
         self.assertIn("Self::Msdf => matches!(format, TextureFormat::Rgba8Unorm)", sampling_gate)
-        # MSDF 必须固定线性过滤。
-        self.assertIn("Self::Msdf => sampler.uses_linear_filter()", sampling_gate)
+        # MSDF 必须与颜色采样共同通过封闭枚举只接受线性过滤。
+        self.assertIn("matches!(sampler.filter(), SamplerFilter::Linear)", sampling_gate)
         # OpenGL 共享 helper 必须取得与 pipeline 匹配的绑定。
         self.assertIn("sampled_binding_for(pipeline)", opengl_draw_source)
         # OpenGL Coverage draw 必须把当前 pipeline 交给共享 helper。
-        self.assertIn("bind_sampled(gl, self, program, packet.pipeline)", gl_coverage_draw)
+        self.assertIn("bind_sampled(gl, self, program, packet.pipeline())", gl_coverage_draw)
         # OpenGL MSDF draw 必须复用同一共享 helper。
-        self.assertIn("bind_sampled(gl, self, program, packet.pipeline)", gl_msdf_draw)
+        self.assertIn("bind_sampled(gl, self, program, packet.pipeline())", gl_msdf_draw)
         # D3D11 Coverage draw 必须取得与 packet pipeline 匹配的绑定。
-        self.assertIn("sampled_binding_for(packet.pipeline)", d3d_coverage_draw)
+        self.assertIn("sampled_binding_for(packet.pipeline())", d3d_coverage_draw)
         # D3D11 MSDF draw 复用同一共享绑定门禁。
-        self.assertIn("sampled_binding_for(packet.pipeline)", d3d_msdf_draw)
+        self.assertIn("sampled_binding_for(packet.pipeline())", d3d_msdf_draw)
         # OpenGL Coverage 必须直接量化已验证的 sample 与 tint。
         self.assertIn("floor(texture(u_tex, v_uv).r * 255.0 + 0.5)", gl_coverage)
         # OpenGL Coverage 必须直接量化已验证的 tint。

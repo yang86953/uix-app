@@ -60,20 +60,18 @@ impl<T: RhiBufferResource> RhiBufferResourceTable<T> {
 
     // 解析 DrawPacket 的真实 Buffer 描述并执行共享角色验证。
     pub(crate) fn validate_draw(&self, packet: DrawPacket) -> Result<()> {
+        // 一次取得不可拆的顶点与 Uniform 资源身份。
+        let buffers = packet.buffers();
         // 先解析 DrawPacket 指定的顶点资源句柄。
-        let vertex = self.get(packet.vertex_buffer)?;
+        let vertex = self.get(buffers.vertex())?;
         // 复制真实顶点描述，结束资源表借用后继续解析其它角色。
         let vertex_desc = vertex.desc();
-        // 解析 DrawPacket 指定的可选 Uniform 资源句柄。
-        let uniform_desc = packet
-            .uniform_buffer
-            // 有 Uniform 身份时必须解析其真实描述。
-            .map(|buffer| self.get(buffer).map(|resource| resource.desc()))
-            // 把缺失 Uniform 保留为 None 交给 DrawPacket 共享门禁。
-            .transpose()?;
+        // 解析 DrawPacket 必需的 Uniform 资源句柄。
+        let uniform_desc = self.get(buffers.uniform())?.desc();
         // 解析索引范围实际绑定的可选资源句柄。
         let index_desc = packet
-            .range
+            // 只读取得不可变 DrawRange。
+            .range()
             .index_binding()
             // 有索引绑定时必须解析其真实描述。
             .map(|binding| self.get(binding.buffer()).map(|resource| resource.desc()))
@@ -101,8 +99,8 @@ mod tests {
     use crate::core::Errc;
     // 引入 DrawPacket 与 Buffer 共享值对象。
     use crate::native::present::rhi::{
-        BufferDesc, BufferHandle, DrawPacket, IndexBufferBinding, IndexFormat, PipelineBinding,
-        PipelineHandle, PipelineKind, RhiBufferUploadPreflight,
+        BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, IndexBufferBinding,
+        IndexFormat, PipelineBinding, PipelineHandle, PipelineKind, RhiBufferUploadPreflight,
     };
 
     // 保存测试资源的共享描述事实。
@@ -122,19 +120,15 @@ mod tests {
 
     // 创建使用 SolidMesh ABI 的最小 DrawPacket。
     fn packet(vertex: BufferHandle, uniform: BufferHandle) -> DrawPacket {
-        // 构造从零开始的两个顶点非索引 draw。
-        let mut packet = DrawPacket::triangles(
+        // 一次构造完整 pipeline、Buffer 角色与两个顶点范围。
+        DrawPacket::new(
             // 使用测试专用的共享 SolidMesh pipeline 身份。
             PipelineBinding::for_test(PipelineHandle::from_raw(1), PipelineKind::SolidMesh),
+            // 原子绑定真实顶点与 Uniform 句柄。
+            DrawBufferBindings::new(vertex, uniform),
             // 固定两个 float2 顶点。
-            2,
-        );
-        // 绑定真实顶点句柄。
-        packet.vertex_buffer = vertex;
-        // 绑定真实 Uniform 句柄。
-        packet.uniform_buffer = Some(uniform);
-        // 返回最小合法 packet。
-        packet
+            DrawRange::vertices(2),
+        )
     }
 
     // 验证资源表覆盖角色、stride、容量、索引和陈旧句柄。
@@ -168,10 +162,15 @@ mod tests {
         });
         // stride 错配必须在共享表中失败。
         assert!(table.validate_draw(packet(wrong_stride, uniform)).is_err());
-        // 构造读取三个顶点但只有两个顶点容量的 packet。
-        let mut overflow = packet(vertex, uniform);
-        // 使用共享非索引范围表达容量越界。
-        overflow.range = crate::native::present::rhi::DrawRange::vertices(3);
+        // 构造读取三个顶点但只有两个顶点容量的完整 packet。
+        let overflow = DrawPacket::new(
+            // 使用与有效路径相同的 SolidMesh pipeline。
+            PipelineBinding::for_test(PipelineHandle::from_raw(1), PipelineKind::SolidMesh),
+            // 复用两个存活 Buffer 角色。
+            DrawBufferBindings::new(vertex, uniform),
+            // 使用共享非索引范围表达容量越界。
+            DrawRange::vertices(3),
+        );
         // 顶点容量越界必须拒绝。
         assert!(table.validate_draw(overflow).is_err());
         // 登记合法索引资源。
@@ -179,13 +178,14 @@ mod tests {
             // 四个 uint32 索引共十六字节。
             desc: BufferDesc::index(16, 4),
         });
-        // 构造索引读取 packet。
-        let mut indexed = packet(vertex, uniform);
-        // 绑定两个索引并从第一个索引开始读取。
-        indexed.range = crate::native::present::rhi::DrawRange::indices(
-            IndexBufferBinding::new(index, IndexFormat::Uint32),
-            2,
-            1,
+        // 构造索引读取完整 packet。
+        let indexed = DrawPacket::new(
+            // 使用与有效路径相同的 SolidMesh pipeline。
+            PipelineBinding::for_test(PipelineHandle::from_raw(1), PipelineKind::SolidMesh),
+            // 复用两个存活 Buffer 角色。
+            DrawBufferBindings::new(vertex, uniform),
+            // 绑定两个索引并从第一个索引开始读取。
+            DrawRange::indices(IndexBufferBinding::new(index, IndexFormat::Uint32), 2, 1),
         );
         // 合法索引读取必须通过，不猜测顶点最大索引。
         assert!(table.validate_draw(indexed).is_ok());

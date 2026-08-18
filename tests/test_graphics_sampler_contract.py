@@ -107,7 +107,7 @@ class GraphicsSamplerContractTests(unittest.TestCase):
         # D3D11 绑定必须把实际描述交给共享绑定门禁。
         self.assertIn("binding.validate_resources(format, sampler_desc)", d3d11_resources)
         # D3D11 四类 draw 必须按当前 pipeline 取得匹配绑定。
-        self.assertEqual(d3d11_draw.count(".sampled_binding_for(packet.pipeline)"), 4)
+        self.assertEqual(d3d11_draw.count(".sampled_binding_for(packet.pipeline())"), 4)
         # Adapter draw 不得重复解释共享采样契约。
         self.assertNotIn("contract.sampling.accepts", opengl_draw + d3d11_draw)
 

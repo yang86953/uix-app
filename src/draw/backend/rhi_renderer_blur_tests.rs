@@ -245,7 +245,7 @@ impl GraphicsDevice for RecordingContext {
     // 记录固定六顶点 draw。
     fn draw(&mut self, packet: DrawPacket) -> Result<()> {
         // 每个方向都必须绘制同一矩形的两个三角形。
-        assert_eq!(packet.range.vertex_count(), 6);
+        assert_eq!(packet.range().vertex_count(), 6);
         // 累加 draw 事实。
         self.draw_count += 1;
         // 记录成功。

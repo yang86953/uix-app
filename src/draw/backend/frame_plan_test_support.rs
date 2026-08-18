@@ -63,17 +63,15 @@ fn test_plan_for_target(mut plan: FramePlan, target: RenderTargetRef) -> FramePl
             [1.0, 1.0, 1.0, 1.0],
         )),
     });
-    // 构造绑定 SolidMesh 语义的非空三角形 packet。
-    let mut packet = DrawPacket::triangles(
+    // 一次构造绑定 SolidMesh、完整 Buffer 角色与非空范围的 packet。
+    let packet = DrawPacket::new(
         // 测试句柄必须与共享 pipeline kind 一起进入 FramePlan。
         PipelineBinding::for_test(PipelineHandle::from_raw(1), PipelineKind::SolidMesh),
+        // 原子绑定刚刚类型化上传的顶点与 Uniform buffer。
+        DrawBufferBindings::new(BufferHandle::from_raw(3), BufferHandle::from_raw(4)),
         // 当前载荷包含三个顶点。
-        3,
+        DrawRange::vertices(3),
     );
-    // 让 draw 引用刚刚类型化上传的顶点 buffer。
-    packet.vertex_buffer = BufferHandle::from_raw(3);
-    // 让 draw 引用刚刚类型化上传的 Uniform buffer。
-    packet.uniform_buffer = Some(BufferHandle::from_raw(4));
     // 追加完整绑定后的 draw packet。
     pass.push(FramePlanCommand::Draw(packet));
     // 追加唯一 render pass。
@@ -129,15 +127,15 @@ fn test_indexed_plan<const N: usize>(
         // 插入不得改变基线 Draw 的相对位置。
         panic!("typed index upload must precede the draw");
     };
-    // 用同一 Buffer 身份和 Uint32 格式替换非索引范围。
-    packet.range = DrawRange::indices(
+    // 保留完整 pipeline 与 Buffer bindings，只替换索引范围。
+    *packet = packet.with_range(DrawRange::indices(
         // 索引资源与元素格式始终作为不可拆事实。
         IndexBufferBinding::new(index_buffer, IndexFormat::Uint32),
         // 保留调用方指定的有符号范围长度。
         count,
         // 保留调用方指定的首索引位置。
         first,
-    );
+    ));
     // 返回可以继续变异或执行的索引计划。
     plan
 }

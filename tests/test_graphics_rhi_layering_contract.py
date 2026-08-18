@@ -662,31 +662,32 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs").read_text(encoding="utf-8") + (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs").read_text(encoding="utf-8")
         # 读取 D3D11 最终资源表核对。
         d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs").read_text(encoding="utf-8") + (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_draw.rs").read_text(encoding="utf-8")
-        # 共享层必须拥有不可拆的 pipeline 绑定类型。
-        self.assertIn("pub(crate) struct PipelineBinding", pipeline)
-        # 绑定必须同时私有保存 opaque handle。
-        self.assertIn("handle: PipelineHandle", pipeline)
-        # 绑定必须同时私有保存共享 PipelineKind。
-        self.assertIn("kind: PipelineKind", pipeline)
-        # DrawPacket 不得退回只携带裸 pipeline 句柄。
-        self.assertIn("pub(crate) pipeline: PipelineBinding", draw_packet)
+        # PipelineBinding 必须原子保存类型本身、opaque handle 与共享 kind。
+        self.assertTrue(all(marker in pipeline for marker in ("pub(crate) struct PipelineBinding", "handle: PipelineHandle", "kind: PipelineKind")))
+        # DrawPacket 必须私有保存完整绑定并只提供只读投影。
+        self.assertTrue(all(marker in draw_packet for marker in ("pipeline: PipelineBinding", "buffers: DrawBufferBindings", "pub(crate) const fn pipeline(self) -> PipelineBinding", "pub(crate) const fn buffers(self) -> DrawBufferBindings")))
+        # DrawPacket 不得重新暴露 crate 内字段写权限。
+        self.assertTrue(all(marker not in draw_packet for marker in ("pub(crate) pipeline: PipelineBinding", "pub(crate) buffers: DrawBufferBindings")))
         # Device 创建边界必须直接返回绑定身份。
         self.assertIn("fn create_pipeline(&mut self, _desc: PipelineDesc) -> Result<PipelineBinding>", rhi)
         # FramePlan 必须在结构验证阶段调用布局核对。
         self.assertIn("validation::validate_draw_uploads(pass, command_index, *packet)?", frame_plan)
         # 布局验证必须读取绑定身份的唯一共享契约。
-        self.assertIn("let contract = packet.pipeline.contract()", validation)
+        self.assertIn("let contract = packet.pipeline().contract()", validation)
         # 顶点上传必须与 pipeline 顶点布局比较。
         self.assertIn("data.layout() != contract.vertex", validation)
         # Uniform 上传必须与 pipeline 常量布局比较。
         self.assertIn("uniform.layout() != contract.uniform", validation)
         # OpenGL 必须持有共享表并用完整 binding 解析 draw 身份。
-        self.assertTrue(all(marker in opengl for marker in ("RhiPipelineResourceTable", "self.pipeline(packet.pipeline)?")))
+        self.assertTrue(all(marker in opengl for marker in ("RhiPipelineResourceTable", "self.pipeline(packet.pipeline())?")))
         # D3D11 必须持有同一共享表并用完整 binding 解析 draw 身份。
-        self.assertTrue(all(marker in d3d11 for marker in ("RhiPipelineResourceTable", "self.rhi_device.pipeline(packet.pipeline)?")))
-        # Adapter 不得重新拥有带平台名称的 kind 错配错误。
-        self.assertNotIn("pipeline binding kind is stale", opengl)
-        self.assertNotIn("pipeline binding kind is stale", d3d11)
+        self.assertTrue(all(marker in d3d11 for marker in ("RhiPipelineResourceTable", "self.rhi_device.pipeline(packet.pipeline())?")))
+        # 两个 Adapter 必须原子取得 DrawPacket 的 Buffer 角色。
+        self.assertIn("packet.buffers()", opengl + d3d11)
+        # 两个 Adapter 都不得恢复任何 DrawPacket 私有字段直读模式。
+        self.assertTrue(all(marker not in opengl + d3d11 for marker in ("packet.pipeline.contract", "packet.pipeline.kind", "packet.pipeline;", "packet.buffers;", "packet.range;", "packet.range.index_binding")))
+        # 两个 Adapter 都不得重新拥有带平台名称的 kind 错配错误。
+        self.assertTrue(all("pipeline binding kind is stale" not in adapter for adapter in (opengl, d3d11)))
 
     # 颜色纹理在进入 shader 前必须由 Adapter 归一化为同一逻辑 RGBA 语义。
     def test_color_texture_channels_are_normalized_at_adapter_boundary(self) -> None:

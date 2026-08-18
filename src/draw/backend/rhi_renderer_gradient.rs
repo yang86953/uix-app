@@ -4,7 +4,7 @@
 use crate::core::error::Result;
 // 引入薄 RHI 的设备、命令和 pass 类型。
 use crate::native::present::rhi::{
-    DrawPacket, DrawRange, LoadAction, RhiGradientRasterParams, RhiViewport,
+    DrawBufferBindings, DrawPacket, DrawRange, LoadAction, RhiGradientRasterParams, RhiViewport,
 };
 
 // 引入父 renderer 的帧计划、target 和渐变载荷。
@@ -135,13 +135,12 @@ impl RhiRenderer {
                 data: FrameUniformPayload::Gradient(Self::gradient_uniform(viewport, gradient)),
             });
             // 追加单位 quad 的非索引渐变 draw packet。
-            pass.push(FramePlanCommand::Draw(DrawPacket {
+            pass.push(FramePlanCommand::Draw(DrawPacket::new(
                 pipeline,
-                vertex_buffer,
-                uniform_buffer: Some(uniform_buffer),
+                DrawBufferBindings::new(vertex_buffer, uniform_buffer),
                 // 单位 quad 使用封闭的六顶点非索引范围。
-                range: DrawRange::vertices(6),
-            }));
+                DrawRange::vertices(6),
+            )));
         }
         // 创建计划并追加唯一 pass。
         let mut plan = frame.plan();

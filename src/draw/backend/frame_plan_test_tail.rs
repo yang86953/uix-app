@@ -1,5 +1,4 @@
 // 帧计划契约测试的外部载荷，由 frame_plan.rs 的 mod tests include 引入。
-// 覆盖纹理移动/清理顺序、提交失败、代际拒绝与能力缺口分类。
 // 验证 submit-before-present 观察器只能取得 Surface 角色。
 #[test]
 fn before_present_hook_receives_only_surface_role() {
@@ -151,17 +150,15 @@ fn executes_clear_rect_in_order() {
             [1.0, 1.0, 1.0, 1.0],
         )),
     });
-    // 构造一个最小非空 draw packet。
-    let mut packet = DrawPacket::triangles(
+    // 一次构造完整 pipeline、Buffer 角色与非空范围的 draw packet。
+    let packet = DrawPacket::new(
         // 句柄与 SolidMesh 共享语义必须不可拆地进入计划。
         PipelineBinding::for_test(PipelineHandle::from_raw(1), PipelineKind::SolidMesh),
+        // 原子绑定前序类型化上传的顶点与 Uniform buffer。
+        DrawBufferBindings::new(BufferHandle::from_raw(3), BufferHandle::from_raw(4)),
         // 保留三个顶点的最小非空范围。
-        3,
+        DrawRange::vertices(3),
     );
-    // 绑定稳定的静态顶点 buffer 身份。
-    packet.vertex_buffer = BufferHandle::from_raw(3);
-    // 绑定前序类型化上传的 Uniform buffer。
-    packet.uniform_buffer = Some(BufferHandle::from_raw(4));
     // 追加完整绘制包。
     pass.push(FramePlanCommand::Draw(packet));
     // 创建并追加唯一 surface pass。
@@ -251,8 +248,8 @@ fn rejects_draw_range_beyond_typed_upload_before_adapter() {
             })
             // 有效测试基线必须包含 draw。
             .expect("test plan must contain a draw");
-        // 使用共享 DrawRange 构造器表达四顶点读取。
-        packet.range = crate::native::present::rhi::DrawRange::vertices(4);
+        // 保留完整 pipeline 与 Buffer bindings，只替换四顶点范围。
+        *packet = packet.with_range(DrawRange::vertices(4));
     }
     // 创建独立记录 context，观察验证前是否触碰 Adapter。
     let mut invalid_context = recording_context(token);
@@ -273,7 +270,11 @@ fn rejects_draw_range_beyond_typed_upload_before_adapter() {
     // 创建第二个记录 context，证明原始合法计划仍可执行。
     let mut valid_context = recording_context(token);
     // 合法的三顶点计划必须通过同一验证入口。
-    assert!(test_plan(token).execute_on_context(&mut valid_context).is_ok());
+    assert!(
+        test_plan(token)
+            .execute_on_context(&mut valid_context)
+            .is_ok()
+    );
 }
 
 // 验证 Draw 缺失 viewport 或 scissor 时均在 Adapter 前拒绝。
@@ -471,13 +472,13 @@ fn gradient_plan_with_outer_radius(token: SurfaceToken, outer_radius: f32) -> Fr
         }
         // 只替换测试计划中唯一 Draw 的 pipeline 语义。
         if let FramePlanCommand::Draw(packet) = command {
-            // 让 draw 与新上传的 Gradient ABI 成为不可拆的共享事实。
-            packet.pipeline = PipelineBinding::for_test(
+            // 保留完整 Buffer bindings 与范围，只替换 Gradient pipeline。
+            *packet = packet.with_pipeline(PipelineBinding::for_test(
                 // 保留测试用的 opaque pipeline handle。
                 PipelineHandle::from_raw(1),
                 // 选择共享 GradientRect 契约。
                 PipelineKind::GradientRect,
-            );
+            ));
         }
     }
     // 返回已经绑定 Gradient 语义的完整计划。
@@ -548,13 +549,13 @@ fn coverage_plan_with_binding_kinds(
             }
             // draw 必须冻结 coverage pipeline 语义。
             FramePlanCommand::Draw(packet) => {
-                // 保留不透明句柄并替换为 coverage ABI。
-                packet.pipeline = PipelineBinding::for_test(
+                // 保留完整 Buffer bindings 与范围，只替换 coverage pipeline。
+                *packet = packet.with_pipeline(PipelineBinding::for_test(
                     // 使用稳定且独立的 draw pipeline 句柄。
                     PipelineHandle::from_raw(10),
                     // 选择 R8 最近点采样语义。
                     PipelineKind::GlyphCoverageQuad,
-                );
+                ));
             }
             // viewport 与 scissor 不参与本测试的采样语义。
             _ => {}

@@ -73,7 +73,7 @@ class GraphicsRhiBufferContractTests(unittest.TestCase):
         # pipeline 身份校验必须早于 Buffer 角色与容量校验。
         self.assertLess(
             # 定位共享 pipeline 身份校验。
-            opengl.index("self.pipelines.get(packet.pipeline)?"),
+            opengl.index("self.pipelines.get(packet.pipeline())?"),
             # 定位共享 Buffer 角色与容量校验。
             opengl.index("self.buffers.validate_draw(packet)"),
         )
@@ -94,7 +94,7 @@ class GraphicsRhiBufferContractTests(unittest.TestCase):
         # D3D11 的 pipeline 身份校验同样必须早于 Buffer 预检。
         self.assertLess(
             # 定位 D3D11 的共享 pipeline 查询。
-            d3d11.index("self.rhi_device.pipeline(packet.pipeline)?"),
+            d3d11.index("self.rhi_device.pipeline(packet.pipeline())?"),
             # 定位 D3D11 的共享 Buffer 表委托。
             d3d11.index("self.rhi_device.buffers.validate_draw(packet)"),
         )

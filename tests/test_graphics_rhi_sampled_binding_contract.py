@@ -213,7 +213,7 @@ class GraphicsRhiSampledBindingContractTests(unittest.TestCase):
         # 固定 t0/s0 语义必须作为完整绑定值读取。
         self.assertIn("FramePlanCommand::BindSampledTexture(binding) => Some(*binding)", validation)
         # 绑定语义必须与当前 Draw pipeline 契约匹配。
-        self.assertIn("binding.matches_pipeline(packet.pipeline)", validation)
+        self.assertIn("binding.matches_pipeline(packet.pipeline())", validation)
         # 每条绑定命令都必须在 FramePlan 顺序遍历中立即检查反馈环。
         self.assertIn("validation::validate_sampled_binding_target(pass.target, *binding)?", frame_plan)
         # 验证器不得继续匹配裸槽位。
@@ -238,7 +238,7 @@ class GraphicsRhiSampledBindingContractTests(unittest.TestCase):
         # OpenGL draw 必须一次取得完整绑定。
         self.assertIn("sampled_binding_for(pipeline)", opengl_draw)
         # D3D11 四类 sampled pipeline 都必须一次取得完整绑定。
-        self.assertEqual(d3d11_draw.count(".sampled_binding_for(packet.pipeline)"), 4)
+        self.assertEqual(d3d11_draw.count(".sampled_binding_for(packet.pipeline())"), 4)
         # 两个 draw Adapter 不得重复解释 sampling.accepts。
         self.assertNotIn("contract.sampling.accepts", opengl_draw + d3d11_draw)
         # 两个 Adapter 都不得读取拆分纹理状态。

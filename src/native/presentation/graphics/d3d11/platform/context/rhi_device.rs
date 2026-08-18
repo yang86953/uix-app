@@ -399,7 +399,7 @@ impl GraphicsDevice for D3d11Context {
         // 关闭后的 owner 必须先于资源表查询拒绝 draw 预检。
         self.ensure_active()?;
         // 共享 pipeline 表先验证句柄仍存活且 kind 与身份一致。
-        self.rhi_device.pipeline(packet.pipeline)?;
+        self.rhi_device.pipeline(packet.pipeline())?;
         // 共享 Buffer 表读取冻结描述并统一验证 draw 资源关系。
         self.rhi_device.buffers.validate_draw(packet)
     }

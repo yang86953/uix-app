@@ -3,8 +3,8 @@
 use crate::core::error::Result;
 // 引入薄 RHI 的 command、resource 和 target 类型。
 use crate::native::present::rhi::{
-    DrawPacket, DrawRange, GraphicsDevice, LoadAction, RhiExtent, RhiTextureUpload, RhiViewport,
-    SampledTextureBinding, TextureDesc, TextureFormat,
+    DrawBufferBindings, DrawPacket, DrawRange, GraphicsDevice, LoadAction, RhiExtent,
+    RhiTextureUpload, RhiViewport, SampledTextureBinding, TextureDesc, TextureFormat,
 };
 // 引入父 renderer 的帧计划和已完成 lowering 的 payload。
 use super::{
@@ -491,13 +491,13 @@ impl RhiRenderer {
                         )),
                     });
                     // 追加当前 mesh draw packet。
-                    pass.push(FramePlanCommand::Draw(DrawPacket {
+                    pass.push(FramePlanCommand::Draw(DrawPacket::new(
                         pipeline,
-                        vertex_buffer,
-                        uniform_buffer: Some(uniform_buffer),
+                        // 绑定当前 mesh 的顶点与 uniform 资源。
+                        DrawBufferBindings::new(vertex_buffer, uniform_buffer),
                         // Mesh 使用封闭的非索引顶点范围。
-                        range: DrawRange::vertices((mesh.vertices.len() / 2) as u32),
-                    }));
+                        DrawRange::vertices((mesh.vertices.len() / 2) as u32),
+                    )));
                 }
                 // 编码颜色纹理 quad。
                 RhiOp::Textured(quad) => {
@@ -544,13 +544,13 @@ impl RhiRenderer {
                         ),
                     ));
                     // 追加当前图片 draw packet。
-                    pass.push(FramePlanCommand::Draw(DrawPacket {
+                    pass.push(FramePlanCommand::Draw(DrawPacket::new(
                         pipeline,
-                        vertex_buffer,
-                        uniform_buffer: Some(uniform_buffer),
+                        // 绑定当前图片 quad 的顶点与 uniform 资源。
+                        DrawBufferBindings::new(vertex_buffer, uniform_buffer),
                         // 图片 quad 使用封闭的六顶点非索引范围。
-                        range: DrawRange::vertices(6),
-                    }));
+                        DrawRange::vertices(6),
+                    )));
                 }
                 // 编码已经存在的 sampled texture quad。
                 RhiOp::Sampled(quad) => {
@@ -593,13 +593,13 @@ impl RhiRenderer {
                         ),
                     ));
                     // 追加当前 Picture draw packet。
-                    pass.push(FramePlanCommand::Draw(DrawPacket {
+                    pass.push(FramePlanCommand::Draw(DrawPacket::new(
                         pipeline,
-                        vertex_buffer,
-                        uniform_buffer: Some(uniform_buffer),
+                        // 绑定当前 Sampled quad 的顶点与 uniform 资源。
+                        DrawBufferBindings::new(vertex_buffer, uniform_buffer),
                         // Sampled quad 使用封闭的六顶点非索引范围。
-                        range: DrawRange::vertices(6),
-                    }));
+                        DrawRange::vertices(6),
+                    )));
                 }
                 // 编码 R8 glyph coverage quad。
                 RhiOp::Coverage(quad) => {
@@ -639,13 +639,13 @@ impl RhiRenderer {
                         ),
                     ));
                     // 追加当前 glyph draw packet。
-                    pass.push(FramePlanCommand::Draw(DrawPacket {
+                    pass.push(FramePlanCommand::Draw(DrawPacket::new(
                         pipeline,
-                        vertex_buffer,
-                        uniform_buffer: Some(uniform_buffer),
+                        // 绑定当前 Coverage quad 的顶点与 uniform 资源。
+                        DrawBufferBindings::new(vertex_buffer, uniform_buffer),
                         // Coverage quad 使用封闭的六顶点非索引范围。
-                        range: DrawRange::vertices(6),
-                    }));
+                        DrawRange::vertices(6),
+                    )));
                 }
                 // 编码 RGBA8 MSDF 字形 quad。
                 RhiOp::Msdf(quad) => {
@@ -687,13 +687,13 @@ impl RhiRenderer {
                         ),
                     ));
                     // 追加当前 MSDF 字形 draw packet。
-                    pass.push(FramePlanCommand::Draw(DrawPacket {
+                    pass.push(FramePlanCommand::Draw(DrawPacket::new(
                         pipeline,
-                        vertex_buffer,
-                        uniform_buffer: Some(uniform_buffer),
+                        // 绑定当前 MSDF quad 的顶点与 uniform 资源。
+                        DrawBufferBindings::new(vertex_buffer, uniform_buffer),
                         // MSDF quad 使用封闭的六顶点非索引范围。
-                        range: DrawRange::vertices(6),
-                    }));
+                        DrawRange::vertices(6),
+                    )));
                 }
                 // 编码渐变矩形。
                 RhiOp::Gradient(gradient) => {
@@ -712,13 +712,13 @@ impl RhiRenderer {
                         )),
                     });
                     // 追加当前渐变 draw packet。
-                    pass.push(FramePlanCommand::Draw(DrawPacket {
+                    pass.push(FramePlanCommand::Draw(DrawPacket::new(
                         pipeline,
-                        vertex_buffer,
-                        uniform_buffer: Some(uniform_buffer),
+                        // 绑定当前 Gradient quad 的顶点与 uniform 资源。
+                        DrawBufferBindings::new(vertex_buffer, uniform_buffer),
                         // Gradient quad 使用封闭的六顶点非索引范围。
-                        range: DrawRange::vertices(6),
-                    }));
+                        DrawRange::vertices(6),
+                    )));
                 }
                 // 编码圆角/描边矩形。
                 RhiOp::Shape(rect) | RhiOp::AdditiveShape(rect) => {
@@ -764,13 +764,13 @@ impl RhiRenderer {
                         )),
                     });
                     // 追加当前扇形 draw packet。
-                    pass.push(FramePlanCommand::Draw(DrawPacket {
+                    pass.push(FramePlanCommand::Draw(DrawPacket::new(
                         pipeline,
-                        vertex_buffer,
-                        uniform_buffer: Some(uniform_buffer),
+                        // 绑定当前 Sector quad 的顶点与 uniform 资源。
+                        DrawBufferBindings::new(vertex_buffer, uniform_buffer),
                         // Sector quad 使用封闭的六顶点非索引范围。
-                        range: DrawRange::vertices(6),
-                    }));
+                        DrawRange::vertices(6),
+                    )));
                 }
                 // 编码保留设备四角的仿射阴影。
                 RhiOp::Shadow(shadow) => {
