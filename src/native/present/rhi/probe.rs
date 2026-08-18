@@ -2,9 +2,9 @@
 
 // 引入探针创建、绘制、提交和销毁所需的共享 RHI 类型。
 use super::{
-    BufferDesc, BufferUsage, DrawPacket, GraphicsDevice, LoadAction, PipelineDesc, PipelineKind,
-    RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, RhiShapeRasterParams, RhiViewport,
-    SamplerDesc, TextureDesc, TextureFormat, TextureMove,
+    BufferDesc, BufferUsage, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineDesc,
+    PipelineKind, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, RhiShapeRasterParams,
+    RhiViewport, SamplerDesc, TextureDesc, TextureFormat, TextureMove,
 };
 // 引入统一结果类型。
 use crate::core::Result;
@@ -227,20 +227,10 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
         pipeline: pipelines[0],
         // 复用单位 quad 前三个顶点。
         vertex_buffer,
-        // Solid 不使用索引。
-        index_buffer: None,
         // 绑定 Solid uniform。
         uniform_buffer: Some(solid_uniform_buffer),
-        // 绘制一个三角形。
-        vertex_count: 3,
-        // 禁用索引绘制。
-        index_count: 0,
-        // 从首个顶点开始。
-        first_vertex: 0,
-        // 不使用索引偏移。
-        first_index: 0,
-        // 不使用基顶点偏移。
-        base_vertex: 0,
+        // 用封闭非索引范围绘制一个三角形。
+        range: DrawRange::vertices(3),
     })?;
     // 使用共享 pipeline 顺序中的 Shape 执行一次真实描边 draw。
     device.draw(DrawPacket {
@@ -248,20 +238,10 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
         pipeline: pipelines[4],
         // Shape 使用完整单位 quad。
         vertex_buffer,
-        // Shape 不使用索引。
-        index_buffer: None,
         // 绑定共享 Shape ABI uniform。
         uniform_buffer: Some(shape_uniform_buffer),
-        // 绘制两个三角形组成的 quad。
-        vertex_count: 6,
-        // 禁用索引绘制。
-        index_count: 0,
-        // 从首个顶点开始。
-        first_vertex: 0,
-        // 不使用索引偏移。
-        first_index: 0,
-        // 不使用基顶点偏移。
-        base_vertex: 0,
+        // 用封闭非索引范围绘制两个三角形组成的 quad。
+        range: DrawRange::vertices(6),
     })?;
     // 关闭 probe pass，防止资源销毁跨过打开的 render pass。
     device.end_render_pass()?;

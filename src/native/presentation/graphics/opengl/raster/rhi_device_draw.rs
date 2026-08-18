@@ -167,16 +167,14 @@ impl OpenGlRhiDevice {
             }
             buffer.data.clone()
         };
-        // 当前 ABI 不支持非零 base vertex 的 GLES fallback。
-        if packet.base_vertex != 0 {
-            return Err(rhi_invalid("OpenGL RHI nonzero base vertex is unsupported"));
-        }
+        // 复制 FramePlan 已经封闭为顶点或索引变体的绘制范围。
+        let range = packet.range;
         // 从唯一共享契约读取当前 pipeline 的顶点、uniform、采样与混合语义。
         let contract = packet.pipeline.contract();
         // Drawing 生产端与 OpenGL 消费端必须严格使用同一个 ABI。
         if vertex_stride != contract.vertex.stride_bytes()
             || uniform.len() != contract.uniform.size_bytes()
-            || packet.vertex_count == 0
+            || !range.is_non_empty()
         {
             // 使用统一门禁拒绝任何 pipeline 的漂移载荷。
             return Err(rhi_invalid("OpenGL RHI pipeline ABI is invalid"));
@@ -574,7 +572,7 @@ impl OpenGlRhiDevice {
         // Indexed draw 从 FramePlan 绑定读取格式，非 indexed draw 使用顶点范围。
         // SAFETY: index buffer 已按共享格式校验用途、步长和 checked 偏移；index_count/vertex_count 已校验非零；program/vao/vertex 存活；context 保持 current。
         unsafe {
-            if let Some(index_binding) = packet.index_buffer {
+            if let Some(index_binding) = range.index_binding() {
                 // 解析 FramePlan 已绑定格式的索引资源。
                 let index = self.buffer(index_binding.buffer())?;
                 // 读取共享格式，后续步长、原生枚举和偏移都只从该值派生。
@@ -586,14 +584,10 @@ impl OpenGlRhiDevice {
                     // 返回不泄漏原生枚举的稳定格式错误。
                     return Err(rhi_invalid("OpenGL RHI index buffer format is invalid"));
                 }
-                // 索引绘制必须携带非空元素范围。
-                if packet.index_count == 0 {
-                    return Err(rhi_invalid("OpenGL RHI indexed draw range is empty"));
-                }
                 // 首索引偏移必须落在两个 Adapter 共用的可表达范围内。
                 let index_offset = index_format
                     // 复用共享 checked 字节偏移算法。
-                    .byte_offset(packet.first_index)
+                    .byte_offset(range.first_index())
                     // 拒绝旧实现的饱和或截断行为。
                     .ok_or_else(|| rhi_invalid("OpenGL RHI index offset is invalid"))?;
                 // 绑定已经验证的原生索引资源。
@@ -601,7 +595,7 @@ impl OpenGlRhiDevice {
                 // 使用共享拓扑、格式和范围编码索引绘制。
                 gl.draw_elements(
                     primitive_topology,
-                    packet.index_count as i32,
+                    range.index_count() as i32,
                     gl_index_type(index_format),
                     index_offset,
                 );
@@ -609,8 +603,8 @@ impl OpenGlRhiDevice {
                 gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, None);
                 gl.draw_arrays(
                     primitive_topology,
-                    packet.first_vertex as i32,
-                    packet.vertex_count as i32,
+                    range.first_vertex() as i32,
+                    range.vertex_count() as i32,
                 );
             }
             // 清理本次 sampled draw 的绑定，避免下一 packet 继承错误资源。

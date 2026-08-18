@@ -22,7 +22,6 @@ impl D3d11Pipeline {
         index_count: u32,
         first_vertex: u32,
         first_index: u32,
-        base_vertex: i32,
     ) -> Result<()> {
         // 非索引和索引绘制必须恰好选择一种范围。
         if (index.is_some() && index_count == 0) || (index.is_none() && vertex_count == 0) {
@@ -63,8 +62,8 @@ impl D3d11Pipeline {
             context.OMSetBlendState(blend_state, None, self.rhi_sample_mask());
             // 按 packet 的索引形态编码实际 draw。
             if index.is_some() {
-                // 索引格式已由共享绑定映射，base vertex 继续使用 packet 值。
-                context.DrawIndexed(index_count, first_index, base_vertex);
+                // 共同 DrawRange 不暴露 base vertex，D3D11 固定使用零偏移。
+                context.DrawIndexed(index_count, first_index, 0);
             } else {
                 // 非索引 packet 直接使用顶点范围。
                 context.Draw(vertex_count, first_vertex);
@@ -95,7 +94,6 @@ impl D3d11Pipeline {
         index_count: u32,
         first_vertex: u32,
         first_index: u32,
-        base_vertex: i32,
     ) -> Result<()> {
         // 从共享 pipeline 契约映射唯一 blend state。
         let blend_state = self.rhi_blend_state(blend);
@@ -115,7 +113,6 @@ impl D3d11Pipeline {
             index_count,
             first_vertex,
             first_index,
-            base_vertex,
         )
     }
 
@@ -134,7 +131,6 @@ impl D3d11Pipeline {
         index_count: u32,
         first_vertex: u32,
         first_index: u32,
-        base_vertex: i32,
     ) -> Result<()> {
         // 选择已有的 coverage quantization 与 premultiply shader。
         self.draw_rhi_sampled_quad(
@@ -152,7 +148,6 @@ impl D3d11Pipeline {
             index_count,
             first_vertex,
             first_index,
-            base_vertex,
         )
     }
 
@@ -171,7 +166,6 @@ impl D3d11Pipeline {
         index_count: u32,
         first_vertex: u32,
         first_index: u32,
-        base_vertex: i32,
     ) -> Result<()> {
         // 选择 MSDF median/fwidth coverage shader 和 premultiplied blend。
         self.draw_rhi_sampled_quad(
@@ -189,7 +183,6 @@ impl D3d11Pipeline {
             index_count,
             first_vertex,
             first_index,
-            base_vertex,
         )
     }
 }

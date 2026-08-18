@@ -37,8 +37,10 @@ class GraphicsRhiIndexFormatContractTests(unittest.TestCase):
         self.assertIn("Uint32", shared)
         # 索引绑定必须同时保存资源与格式。
         self.assertIn("pub(crate) struct IndexBufferBinding", shared)
-        # DrawPacket 不得继续暴露裸索引 BufferHandle。
-        self.assertIn("pub(crate) index_buffer: Option<IndexBufferBinding>", shared)
+        # 索引范围必须原子保存类型化绑定。
+        self.assertIn("binding: IndexBufferBinding", shared)
+        # DrawPacket 不得继续暴露可与范围矛盾的独立索引字段。
+        self.assertNotIn("pub(crate) index_buffer:", shared)
         # 共享格式必须拥有唯一步长算法。
         self.assertIn("pub(crate) const fn stride_bytes", shared)
         # 共享格式必须拥有 checked 字节偏移算法。
@@ -59,7 +61,7 @@ class GraphicsRhiIndexFormatContractTests(unittest.TestCase):
         # OpenGL 必须穷尽映射当前 Uint32 格式。
         self.assertIn("IndexFormat::Uint32 => glow::UNSIGNED_INT", opengl)
         # 首索引偏移必须调用共享 checked 算法。
-        self.assertIn(".byte_offset(packet.first_index)", opengl)
+        self.assertIn(".byte_offset(range.first_index())", opengl)
         # Adapter 不得继续使用饱和乘法掩盖偏移溢出。
         self.assertNotIn("saturating_mul", opengl)
 
