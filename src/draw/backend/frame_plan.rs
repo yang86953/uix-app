@@ -425,6 +425,10 @@ mod tests {
         fail_draw: bool,
         // 保存是否强制目标能力解析失败。
         fail_target_resolution: bool,
+        // 保存是否强制普通 texture copy 预检失败。
+        fail_copy_preflight: bool,
+        // 保存是否强制 texture move 预检失败。
+        fail_move_preflight: bool,
     }
 
     // 为记录型 device 实现薄 RHI 的执行原语。
@@ -449,6 +453,34 @@ mod tests {
             }
             // 测试入口不模拟真实资源表，只提供稳定的可渲染 mock 事实。
             Ok(RenderTargetHandle::for_test(texture))
+        }
+
+        // 在任何 Device 原语前预检普通 texture copy。
+        fn preflight_texture_copy(&self, _copy: TextureCopy) -> Result<()> {
+            // 注入失败时保持 Device 日志为空。
+            if self.fail_copy_preflight {
+                // 返回共享参数错误，模拟资源表或传输契约拒绝。
+                return Err(Error::new(
+                    Errc::InvalidArgument,
+                    "recording copy preflight failed",
+                ));
+            }
+            // 关闭注入后允许合法 copy 继续执行。
+            Ok(())
+        }
+
+        // 在任何 Device 原语前预检 texture move。
+        fn preflight_texture_move(&self, _movement: TextureMove) -> Result<()> {
+            // 注入失败时保持 Device 日志为空。
+            if self.fail_move_preflight {
+                // 返回共享参数错误，模拟资源表或传输契约拒绝。
+                return Err(Error::new(
+                    Errc::InvalidArgument,
+                    "recording move preflight failed",
+                ));
+            }
+            // 关闭注入后允许合法 move 继续执行。
+            Ok(())
         }
 
         // 记录任何原生命令前必须发生的 owner-context 激活。
@@ -638,6 +670,18 @@ mod tests {
             self.device.device_capabilities()
         }
 
+        // 把普通 texture copy 预检委托给内嵌记录 device。
+        fn preflight_texture_copy(&self, copy: TextureCopy) -> Result<()> {
+            // 复用唯一测试资源预检路径。
+            self.device.preflight_texture_copy(copy)
+        }
+
+        // 把 texture move 预检委托给内嵌记录 device。
+        fn preflight_texture_move(&self, movement: TextureMove) -> Result<()> {
+            // 复用唯一测试资源预检路径。
+            self.device.preflight_texture_move(movement)
+        }
+
         // 把 owner-context 激活委托给内嵌记录 device。
         fn activate(&mut self) -> Result<()> {
             // surface 与 offscreen 模式必须观察同一激活边界。
@@ -764,6 +808,10 @@ mod tests {
                 fail_draw: false,
                 // 默认允许目标能力解析成功。
                 fail_target_resolution: false,
+                // 默认允许普通 copy 预检成功。
+                fail_copy_preflight: false,
+                // 默认允许 texture move 预检成功。
+                fail_move_preflight: false,
             },
             // 创建与计划代际一致的 surface。
             surface: RecordingSurface {

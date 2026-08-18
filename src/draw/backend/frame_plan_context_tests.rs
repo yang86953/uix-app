@@ -94,3 +94,71 @@ fn context_execution_modes_share_one_ordered_device_path() {
     // 目标解析失败也不得触发 Surface present。
     assert_eq!(unsupported_context.surface.present_count, 0);
 }
+
+// Copy preflight 失败必须发生在 Device activate 前且不留下日志。
+#[test]
+fn texture_copy_preflight_rejects_before_device() {
+    // 创建稳定的 Surface generation。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 构造包含完整 render pass 与普通 copy 的计划。
+    let mut plan = test_plan(token);
+    // 追加两个不同纹理之间的合法传输几何。
+    plan.push_copy(TextureCopy::new(
+        // 使用稳定的源纹理句柄。
+        TextureHandle::from_raw(11),
+        // 使用稳定的目标纹理句柄。
+        TextureHandle::from_raw(12),
+        // 使用四乘四的完整传输区域。
+        RhiTextureTransfer::from_xy(0, 0, 0, 0, RhiExtent::new(4, 4)),
+    ));
+    // 注入 copy 预检失败但不改变其它 Device 行为。
+    let mut rejected = recording_context(token);
+    rejected.device.fail_copy_preflight = true;
+    // 失败必须发生在任何 Device 原语之前。
+    let error = plan
+        .execute_on_context(&mut rejected)
+        .expect_err("copy preflight must fail before device activation");
+    // 失败分类必须是共享参数错误。
+    assert_eq!(error.code(), Errc::InvalidArgument);
+    // preflight 失败不得留下 activate、pass 或 submit 日志。
+    assert!(rejected.device.log.is_empty());
+    // preflight 失败不得触发 present。
+    assert_eq!(rejected.surface.present_count, 0);
+    // 关闭失败注入后，同一合法计划的 preflight 必须放行。
+    let mut accepted = recording_context(token);
+    assert!(plan.execute_on_context(&mut accepted).is_ok());
+}
+
+// Move preflight 失败必须发生在 Device activate 前且不留下日志。
+#[test]
+fn texture_move_preflight_rejects_before_device() {
+    // 创建稳定的 Surface generation。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 构造包含完整 render pass 与重叠安全 move 的计划。
+    let mut plan = test_plan(token);
+    // 追加同一纹理上的合法移动区域。
+    plan.push_move(TextureMove::new(
+        // 使用稳定的源纹理句柄。
+        TextureHandle::from_raw(13),
+        // 使用相同句柄表达 memmove 语义。
+        TextureHandle::from_raw(13),
+        // 使用四乘四的完整移动区域。
+        RhiTextureTransfer::from_xy(0, 0, 0, 0, RhiExtent::new(4, 4)),
+    ));
+    // 注入 move 预检失败但不改变其它 Device 行为。
+    let mut rejected = recording_context(token);
+    rejected.device.fail_move_preflight = true;
+    // 失败必须发生在任何 Device 原语之前。
+    let error = plan
+        .execute_on_context(&mut rejected)
+        .expect_err("move preflight must fail before device activation");
+    // 失败分类必须是共享参数错误。
+    assert_eq!(error.code(), Errc::InvalidArgument);
+    // preflight 失败不得留下 activate、pass 或 submit 日志。
+    assert!(rejected.device.log.is_empty());
+    // preflight 失败不得触发 present。
+    assert_eq!(rejected.surface.present_count, 0);
+    // 关闭失败注入后，同一合法计划的 preflight 必须放行。
+    let mut accepted = recording_context(token);
+    assert!(plan.execute_on_context(&mut accepted).is_ok());
+}

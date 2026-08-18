@@ -172,6 +172,18 @@ impl OpenGlRhiDevice {
         self.textures.resolve_render_target(texture)
     }
 
+    // 只读预检普通 texture copy 的资源与传输关系。
+    pub(super) fn preflight_texture_copy(&self, copy: TextureCopy) -> Result<()> {
+        // 共享 texture 表验证真实描述，不访问 OpenGL context。
+        self.textures.validate_copy(copy)
+    }
+
+    // 只读预检 texture move 的资源与传输关系。
+    pub(super) fn preflight_texture_move(&self, movement: TextureMove) -> Result<()> {
+        // 共享 texture 表验证真实描述，不访问 OpenGL context。
+        self.textures.validate_move(movement)
+    }
+
     // 创建动态 buffer 并登记其 CPU 镜像。
     pub(super) fn create_buffer(
         &mut self,

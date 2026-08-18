@@ -66,6 +66,8 @@ where
     pub(super) fn execute(mut self, steps: &[FramePlanStep]) -> Result<()> {
         // 先完成执行模式专属校验，避免离屏错误产生部分 native 副作用。
         self.validate_targets(steps)?;
+        // 在 Device activate 前预检所有顶层 texture copy/move。
+        self.validate_transfers(steps)?;
         // 在第一条原生命令前激活当前 owner；OpenGL 在此恢复正确 context。
         self.device.activate()?;
         // 激活成功后再执行设备健康 preflight，失败计划不得进入任何命令。
@@ -119,6 +121,25 @@ where
             }
         }
         // 所有 pass 都显式指向离屏 texture。
+        Ok(())
+    }
+
+    // 预检所有 pass 外纹理传输，保持失败发生在任何 Device 副作用前。
+    fn validate_transfers(&self, steps: &[FramePlanStep]) -> Result<()> {
+        // 按 FramePlan 顶层顺序逐项观察纹理传输命令。
+        for step in steps {
+            // 复制命令必须由 Device 的共享资源表预检。
+            if let FramePlanStep::Copy(copy) = step {
+                // 只调用只读 preflight，不激活或写入原生状态。
+                self.device.preflight_texture_copy(*copy)?;
+            }
+            // 移动命令必须由 Device 的共享资源表预检。
+            if let FramePlanStep::Move(movement) = step {
+                // 只调用只读 preflight，不激活或写入原生状态。
+                self.device.preflight_texture_move(*movement)?;
+            }
+        }
+        // 所有顶层传输都已通过共享资源与几何门禁。
         Ok(())
     }
 

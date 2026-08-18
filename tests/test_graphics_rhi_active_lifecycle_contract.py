@@ -53,7 +53,12 @@ def assert_gate_precedes_native(test_case: unittest.TestCase, body: str) -> None
     # 定位共享 active 门禁调用。
     gate = body.index("rhi_ensure_active()")
     # 收集所有可能触碰 native 或 pipeline 的入口。
-    native_markers = ("rhi_pipeline_mut(", "rhi_make_current(", "rhi_swap_buffers(")
+    native_markers = (
+        "rhi_pipeline_mut(",
+        "rhi_pipeline()",
+        "rhi_make_current(",
+        "rhi_swap_buffers(",
+    )
     # 逐一检查每个实际存在的 native 入口。
     for marker in native_markers:
         # 只比较函数体中存在的调用。
@@ -87,7 +92,8 @@ class GraphicsRhiActiveLifecycleContractTest(unittest.TestCase):
         # 列出所有必须先门禁的 Device 入口。
         device_entries = (
             "activate", "maintain", "inject_device_lost_for_test", "create_buffer",
-            "update_buffer", "create_texture", "update_texture", "create_sampler",
+            "update_buffer", "create_texture", "resolve_render_target",
+            "preflight_texture_copy", "preflight_texture_move", "update_texture", "create_sampler",
             "create_pipeline", "destroy_buffer", "destroy_texture", "destroy_sampler",
             "destroy_pipeline", "begin_render_pass", "set_viewport", "set_scissor",
             "clear_rect", "bind_sampled_texture", "draw", "copy_texture",
@@ -210,6 +216,9 @@ class GraphicsRhiActiveLifecycleContractTest(unittest.TestCase):
             ("create_buffer", "desc.validate()?"),
             ("update_buffer", "self.rhi_device.buffer("),
             ("create_texture", "self.rhi_create_texture("),
+            ("resolve_render_target", "self.rhi_device.textures.resolve_render_target("),
+            ("preflight_texture_copy", "self.rhi_device.textures.validate_copy("),
+            ("preflight_texture_move", "self.rhi_device.textures.validate_move("),
             ("create_pipeline", "self.rhi_create_pipeline("),
             ("create_sampler", "self.rhi_create_sampler("),
             ("update_texture", "self.rhi_device.texture("),
