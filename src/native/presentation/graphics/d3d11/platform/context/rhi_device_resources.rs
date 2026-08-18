@@ -83,30 +83,23 @@ impl D3d11Context {
                 // 覆盖率纹理保持 sampled-only。
                 None
             };
-        // 记录资源及其通用描述。
-        self.rhi_device.textures.push(Some(D3d11RhiTexture {
+        // 由共享资源表原子登记原生对象、视图与通用描述。
+        Ok(self.rhi_device.textures.insert(D3d11RhiTexture {
             native,
             rtv,
             srv,
             // Adapter 只保存唯一共享描述，不再复制尺寸和格式字段。
             desc,
-        }));
-        // 计算刚刚追加的资源句柄。
-        let raw = self.rhi_device.textures.len() as u64;
-        // 返回 opaque texture handle。
-        Ok(TextureHandle::from_raw(raw))
+        }))
     }
 
     // 创建当前 D3D11 Adapter 已经具备 shader ABI 的封闭 pipeline。
     pub(super) fn rhi_create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineHandle> {
         // 保存封闭通用语义，不把原生 shader 对象暴露给通用层。
-        self.rhi_device
+        Ok(self
+            .rhi_device
             .pipelines
-            .push(Some(D3d11RhiPipeline { kind: desc.kind }));
-        // 计算刚刚追加的 pipeline 句柄。
-        let raw = self.rhi_device.pipelines.len() as u64;
-        // 返回 opaque pipeline handle。
-        Ok(PipelineHandle::from_raw(raw))
+            .insert(D3d11RhiPipeline { kind: desc.kind }))
     }
 
     // 创建带 clamp 地址模式的 D3D11 sampler。
@@ -144,61 +137,27 @@ impl D3d11Context {
         // 拒绝驱动返回的空 sampler。
         let native = native
             .ok_or_else(|| rhi_platform("D3d11 RHI CreateSamplerState returned no sampler"))?;
-        // 保存 sampler 资源。
-        self.rhi_device.samplers.push(Some(D3d11RhiSampler {
+        // 由共享资源表原子登记 sampler 资源。
+        Ok(self.rhi_device.samplers.insert(D3d11RhiSampler {
             // 保持原生 sampler state 生命周期。
             native,
             // 保留创建描述供共享 PipelineSampling 在 draw 前核对。
             desc,
-        }));
-        // 计算刚刚追加的 sampler 句柄。
-        let raw = self.rhi_device.samplers.len() as u64;
-        // 返回 opaque sampler handle。
-        Ok(SamplerHandle::from_raw(raw))
+        }))
     }
 
     // 销毁 pipeline 资源槽。
     pub(super) fn rhi_destroy_pipeline(&mut self, pipeline: PipelineHandle) -> Result<()> {
-        // 解析资源身份并检查是否已销毁。
-        let index = pipeline
-            .raw()
-            .checked_sub(1)
-            .ok_or_else(|| rhi_invalid("pipeline handle is null"))? as usize;
-        // 读取资源槽。
-        let Some(slot) = self.rhi_device.pipelines.get_mut(index) else {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("pipeline handle is stale"));
-        };
-        // 拒绝重复销毁。
-        if slot.is_none() {
-            // 返回稳定的状态错误。
-            return Err(rhi_invalid("pipeline handle was already destroyed"));
-        }
-        // 清空资源槽，让旧句柄立即失效。
-        *slot = None;
+        // 由共享资源表检查式取出 pipeline 语义资源。
+        self.rhi_device.pipelines.take(pipeline)?;
         // 返回成功。
         Ok(())
     }
 
     // 销毁 sampler 资源槽。
     pub(super) fn rhi_destroy_sampler(&mut self, sampler: SamplerHandle) -> Result<()> {
-        // 解析资源身份并检查是否已销毁。
-        let index = sampler
-            .raw()
-            .checked_sub(1)
-            .ok_or_else(|| rhi_invalid("sampler handle is null"))? as usize;
-        // 读取资源槽。
-        let Some(slot) = self.rhi_device.samplers.get_mut(index) else {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("sampler handle is stale"));
-        };
-        // 拒绝重复销毁。
-        if slot.is_none() {
-            // 返回稳定的状态错误。
-            return Err(rhi_invalid("sampler handle was already destroyed"));
-        }
-        // 清空资源槽，让旧句柄立即失效。
-        *slot = None;
+        // 由共享资源表检查式取出 sampler 及其原生状态。
+        self.rhi_device.samplers.take(sampler)?;
         // 清理共享 pass 中可能残留的 sampler 绑定身份。
         self.rhi_device.pass.unbind_sampler(sampler);
         // 返回成功。

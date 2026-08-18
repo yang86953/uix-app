@@ -5,67 +5,34 @@ use super::*;
 
 // 为 OpenGL RHI 设备补充资源表内部操作，不建立第二份资源 owner。
 impl OpenGlRhiDevice {
-    // 把从 1 开始的 opaque handle 转换为资源表索引。
-    pub(super) fn index(raw: u64, kind: &'static str) -> Result<usize> {
-        // 零句柄不能代表已经创建的资源。
-        raw.checked_sub(1)
-            .map(|value| value as usize)
-            .ok_or_else(|| rhi_invalid(format!("OpenGL RHI {kind} handle is null")))
-    }
-
     // 读取一个已经存在的 buffer。
     pub(super) fn buffer(&self, handle: BufferHandle) -> Result<&OpenGlRhiBuffer> {
-        // 先校验句柄的零值和索引转换。
-        let index = Self::index(handle.raw(), "buffer")?;
-        // 拒绝越界或已经销毁的槽位。
-        self.buffers
-            .get(index)
-            .and_then(Option::as_ref)
-            .ok_or_else(|| rhi_invalid("OpenGL RHI buffer handle is stale"))
+        // 由共享类型化资源表统一解析零值、越界与已销毁身份。
+        self.buffers.get(handle)
     }
 
     // 读取一个可变 buffer。
     pub(super) fn buffer_mut(&mut self, handle: BufferHandle) -> Result<&mut OpenGlRhiBuffer> {
-        // 先校验句柄的零值和索引转换。
-        let index = Self::index(handle.raw(), "buffer")?;
-        // 拒绝越界或已经销毁的槽位。
-        self.buffers
-            .get_mut(index)
-            .and_then(Option::as_mut)
-            .ok_or_else(|| rhi_invalid("OpenGL RHI buffer handle is stale"))
+        // 可变查询与只读查询共享同一资源身份门禁。
+        self.buffers.get_mut(handle)
     }
 
     // 读取一个已经存在的 texture。
     pub(super) fn texture(&self, handle: TextureHandle) -> Result<&OpenGlRhiTexture> {
-        // 先校验句柄的零值和索引转换。
-        let index = Self::index(handle.raw(), "texture")?;
-        // 拒绝越界或已经销毁的槽位。
-        self.textures
-            .get(index)
-            .and_then(Option::as_ref)
-            .ok_or_else(|| rhi_invalid("OpenGL RHI texture handle is stale"))
+        // 由共享类型化资源表统一解析 texture 身份。
+        self.textures.get(handle)
     }
 
     // 读取一个已经存在的 pipeline。
     pub(super) fn pipeline(&self, handle: PipelineHandle) -> Result<&OpenGlRhiPipeline> {
-        // 先校验句柄的零值和索引转换。
-        let index = Self::index(handle.raw(), "pipeline")?;
-        // 拒绝越界或已经销毁的槽位。
-        self.pipelines
-            .get(index)
-            .and_then(Option::as_ref)
-            .ok_or_else(|| rhi_invalid("OpenGL RHI pipeline handle is stale"))
+        // 由共享类型化资源表统一解析 pipeline 身份。
+        self.pipelines.get(handle)
     }
 
     // 读取一个已经存在的 sampler。
     pub(super) fn sampler(&self, handle: SamplerHandle) -> Result<&OpenGlRhiSampler> {
-        // 先校验句柄的零值和索引转换。
-        let index = Self::index(handle.raw(), "sampler")?;
-        // 拒绝越界或已经销毁的槽位。
-        self.samplers
-            .get(index)
-            .and_then(Option::as_ref)
-            .ok_or_else(|| rhi_invalid("OpenGL RHI sampler handle is stale"))
+        // 由共享类型化资源表统一解析 sampler 身份。
+        self.samplers.get(handle)
     }
 
     // 将通用 texture format 转换为 GLES 3.0 的内部格式和上传格式。

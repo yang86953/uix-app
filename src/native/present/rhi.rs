@@ -45,6 +45,8 @@ mod transfer;
 mod buffer;
 // Texture Component 统一格式布局、资源描述和共同原生尺寸投影。
 mod texture;
+// ResourceTable Component 统一不透明资源句柄的分配、查询与检查式销毁语义。
+mod resource_table;
 // 向 Drawing System 与各原生 Adapter 暴露同一份类型化 pipeline 契约。
 #[allow(unused_imports)]
 pub(crate) use pipeline::{
@@ -87,6 +89,8 @@ pub(crate) use transfer::{
 pub(crate) use buffer::{BufferDesc, BufferUsage, RhiBufferUpload};
 // 重新导出薄 RHI 消费的封闭纹理描述与格式契约。
 pub(crate) use texture::{TextureDesc, TextureFormat};
+// 向两个 Adapter 暴露唯一类型化资源槽位状态机。
+pub(crate) use resource_table::{RhiResourceHandle, RhiResourceTable};
 // 向 Drawing System 暴露唯一 Gradient 常量构造器和固定字节数。
 pub(crate) use gradient::{GRADIENT_UNIFORM_BYTES, RhiGradientRasterParams};
 // 只有 OpenGL Adapter 需要把共享 Gradient 字节 ABI 映射为逐个原生 uniform。
@@ -189,14 +193,40 @@ macro_rules! opaque_handle {
     };
 }
 
+// 为真正拥有 Adapter 资源槽位的句柄补充共享表身份。
+macro_rules! opaque_resource_handle {
+    ($name:ident, $kind:literal) => {
+        // 先生成与其它不透明身份一致的公开形状。
+        opaque_handle!($name);
+
+        // 只允许共享资源表解释该句柄的槽位数值。
+        impl RhiResourceHandle for $name {
+            // 保存稳定的资源种类诊断名称。
+            const KIND: &'static str = $kind;
+
+            // 由共享资源表签发从一开始递增的身份。
+            fn from_resource_raw(raw: u64) -> Self {
+                // 复用同一不透明句柄构造入口。
+                Self::from_raw(raw)
+            }
+
+            // 只向共享资源表暴露槽位身份。
+            fn resource_raw(self) -> u64 {
+                // 复用同一只读原始值投影。
+                self.raw()
+            }
+        }
+    };
+}
+
 // 声明动态 buffer 句柄。
-opaque_handle!(BufferHandle);
+opaque_resource_handle!(BufferHandle, "buffer");
 // 声明采样纹理句柄。
-opaque_handle!(TextureHandle);
+opaque_resource_handle!(TextureHandle, "texture");
 // 声明采样器句柄。
-opaque_handle!(SamplerHandle);
+opaque_resource_handle!(SamplerHandle, "sampler");
 // 声明固定 pipeline 句柄。
-opaque_handle!(PipelineHandle);
+opaque_resource_handle!(PipelineHandle, "pipeline");
 // 声明 render target 句柄。
 opaque_handle!(RenderTargetHandle);
 // 声明一次 submit 返回的提交序号。
