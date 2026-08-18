@@ -3,8 +3,8 @@
 use crate::core::error::Result;
 // 引入薄 RHI 的 command、resource 和 target 类型。
 use crate::native::present::rhi::{
-    DrawPacket, DrawRange, GraphicsDevice, LoadAction, RhiBufferUpload, RhiExtent,
-    RhiTextureUpload, RhiViewport, SampledTextureBinding, TextureDesc, TextureFormat,
+    DrawPacket, DrawRange, GraphicsDevice, LoadAction, RhiExtent, RhiTextureUpload, RhiViewport,
+    SampledTextureBinding, TextureDesc, TextureFormat,
 };
 // 引入父 renderer 的帧计划和已完成 lowering 的 payload。
 use super::{
@@ -162,10 +162,8 @@ impl RhiRenderer {
             self.sector_pipeline = Some(pipeline);
             pipeline
         };
-        // 单位 quad 使用六个 float2 顶点。
-        let unit_vertices = [
-            0.0f32, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-        ];
+        // 静态单位 quad 的内容由每个 FramePlan pass 显式上传。
+        let unit_vertices = RhiRenderer::unit_quad_vertex_payload();
         // 首次使用时创建单位 quad buffer。
         let vertex_buffer = if let Some(buffer) = self.sector_vertex_buffer {
             // 复用已有单位 quad buffer。
@@ -173,22 +171,15 @@ impl RhiRenderer {
         } else {
             // 创建 position float2 ABI 的 vertex buffer。
             let buffer = device.create_buffer(crate::native::present::rhi::BufferDesc::vertex(
-                // 保存六个 float2 顶点的精确容量。
-                unit_vertices.len() * std::mem::size_of::<f32>(),
+                // 保存共享类型化 payload 的精确容量。
+                unit_vertices.size_bytes(),
                 // 步长只来自共享 Sector 顶点 ABI。
                 crate::native::present::rhi::PipelineKind::Sector
                     .contract()
                     .vertex
                     .stride_bytes(),
             ))?;
-            // 首次绑定前上传单位 quad。
-            device.update_buffer(RhiBufferUpload::new(
-                // 绑定刚创建的资源身份。
-                buffer,
-                // 上传完整且元素对齐的单位 quad。
-                &RhiRenderer::encode_f32s(&unit_vertices),
-            ))?;
-            // 缓存单位 quad 句柄。
+            // 缓存尚未写入本帧内容的单位 quad 句柄。
             self.sector_vertex_buffer = Some(buffer);
             buffer
         };
@@ -434,6 +425,46 @@ impl RhiRenderer {
         let mut pass = RenderPassPlan::new(target, load);
         // 所有操作共享同一物理 viewport。
         pass.push(FramePlanCommand::SetViewport(viewport));
+        // 只为本 pass 实际需要的 Gradient 建立一次静态顶点事实。
+        if let Some((_, vertex_buffer, _)) = gradient_resources {
+            // 先行上传共享类型化 unit quad。
+            pass.push(FramePlanCommand::UploadVertex {
+                // 绑定 Gradient 静态 vertex buffer。
+                buffer: vertex_buffer,
+                // 使用统一 float2 payload 工厂。
+                data: RhiRenderer::unit_quad_vertex_payload(),
+            });
+        }
+        // 只为本 pass 实际需要的 Shape 建立一次静态顶点事实。
+        if let Some((_, _, vertex_buffer, _)) = shape_resources {
+            // 先行上传共享类型化 unit quad。
+            pass.push(FramePlanCommand::UploadVertex {
+                // 绑定 Shape 静态 vertex buffer。
+                buffer: vertex_buffer,
+                // 使用统一 float2 payload 工厂。
+                data: RhiRenderer::unit_quad_vertex_payload(),
+            });
+        }
+        // 只为本 pass 实际需要的 Shadow 建立一次静态顶点事实。
+        if let Some((_, vertex_buffer, _)) = shadow_resources {
+            // 先行上传共享类型化 unit quad。
+            pass.push(FramePlanCommand::UploadVertex {
+                // 绑定 Shadow 静态 vertex buffer。
+                buffer: vertex_buffer,
+                // 使用统一 float2 payload 工厂。
+                data: RhiRenderer::unit_quad_vertex_payload(),
+            });
+        }
+        // 只为本 pass 实际需要的 Sector 建立一次静态顶点事实。
+        if let Some((_, vertex_buffer, _)) = sector_resources {
+            // 先行上传共享类型化 unit quad。
+            pass.push(FramePlanCommand::UploadVertex {
+                // 绑定 Sector 静态 vertex buffer。
+                buffer: vertex_buffer,
+                // 使用统一 float2 payload 工厂。
+                data: RhiRenderer::unit_quad_vertex_payload(),
+            });
+        }
         // 按原始操作顺序追加 command，不能按 pipeline 类型重排。
         for (index, operation) in operations.iter().enumerate() {
             // 逐类取得对应资源并编码固定 ABI。

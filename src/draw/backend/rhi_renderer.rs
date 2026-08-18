@@ -10,8 +10,8 @@ use crate::core::error::{Errc, Error, Result};
 // 引入薄 RHI 的资源、能力和执行类型。
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineDesc,
-    PipelineKind, RhiBufferUpload, RhiExtent, RhiScissor, RhiTextureUpload, RhiViewport,
-    SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
+    PipelineKind, RhiExtent, RhiScissor, RhiTextureUpload, RhiViewport, SampledTextureBinding,
+    SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
 };
 
 // 引入当前目录中的有序帧计划类型。
@@ -463,10 +463,8 @@ impl RhiRenderer {
             self.gradient_pipeline = Some(pipeline);
             pipeline
         };
-        // 单位 quad 使用六个 float2 顶点。
-        let unit_vertices = [
-            0.0f32, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-        ];
+        // 静态单位 quad 的内容由每个 FramePlan pass 显式上传。
+        let unit_vertices = Self::unit_quad_vertex_payload();
         // 首次使用时创建单位 quad buffer。
         let gradient_vertex_buffer = if let Some(buffer) = self.gradient_vertex_buffer {
             // 复用已有 vertex buffer。
@@ -474,19 +472,12 @@ impl RhiRenderer {
         } else {
             // 创建位置 float2 ABI 的默认 vertex buffer。
             let buffer = device.create_buffer(BufferDesc::vertex(
-                // 保存六个 float2 顶点的精确容量。
-                unit_vertices.len() * std::mem::size_of::<f32>(),
+                // 保存共享类型化 payload 的精确容量。
+                unit_vertices.size_bytes(),
                 // 步长只来自共享 pipeline 顶点 ABI。
                 PipelineKind::GradientRect.contract().vertex.stride_bytes(),
             ))?;
-            // 首次绑定前上传单位 quad。
-            device.update_buffer(RhiBufferUpload::new(
-                // 绑定刚创建的资源身份。
-                buffer,
-                // 上传完整且元素对齐的单位 quad。
-                &Self::encode_f32s(&unit_vertices),
-            ))?;
-            // 缓存单位 quad 句柄。
+            // 缓存尚未写入本帧内容的单位 quad 句柄。
             self.gradient_vertex_buffer = Some(buffer);
             buffer
         };
@@ -508,17 +499,12 @@ impl RhiRenderer {
         Ok((gradient_pipeline, gradient_vertex_buffer, gradient_uniform))
     }
 
-    // 把 f32 切片编码为当前 host 的紧密字节载荷。
-    fn encode_f32s(values: &[f32]) -> Arc<[u8]> {
-        // 预留精确容量，避免资源上传前再次扩容。
-        let mut bytes = Vec::with_capacity(std::mem::size_of_val(values));
-        // 使用 native endian，adapter 与 CPU 在同一 host 上解释 uniform/vertex。
-        for value in values {
-            // 保持每个 float 的原始 IEEE 字节表示。
-            bytes.extend_from_slice(&value.to_ne_bytes());
-        }
-        // 转为不可变共享载荷交给 FramePlan。
-        Arc::from(bytes)
+    // 构造所有静态 float2 unit quad 共用的类型化顶点 payload。
+    pub(super) fn unit_quad_vertex_payload() -> FrameVertexPayload {
+        // 固定左上、右上、右下、左上、右下、左下六顶点顺序。
+        FrameVertexPayload::position_f32x2([
+            0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0,
+        ])
     }
 
     // 把 u32 BGRA 像素编码成纹理上传所需的原生字节序列。

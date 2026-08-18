@@ -3,7 +3,7 @@
 // 引入 RHI 计划执行所需的资源描述与句柄。
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineBinding,
-    PipelineDesc, PipelineKind, RhiBufferUpload, RhiShapeRasterParams, RhiViewport,
+    PipelineDesc, PipelineKind, RhiShapeRasterParams, RhiViewport,
 };
 
 // 复用 renderer 主模块的计划类型和 shape payload。
@@ -52,10 +52,8 @@ impl RhiRenderer {
                 self.shape_pipeline = Some((pipeline, additive_pipeline));
                 (pipeline, additive_pipeline)
             };
-        // 单位 quad 使用六个 float2 顶点。
-        let unit_vertices = [
-            0.0f32, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-        ];
+        // 静态单位 quad 的内容由每个 FramePlan pass 显式上传。
+        let unit_vertices = RhiRenderer::unit_quad_vertex_payload();
         // 首次使用时创建单位 quad buffer。
         let vertex_buffer = if let Some(buffer) = self.shape_vertex_buffer {
             // 复用已有 vertex buffer。
@@ -63,19 +61,12 @@ impl RhiRenderer {
         } else {
             // 创建位置 float2 ABI 的默认 vertex buffer。
             let buffer = device.create_buffer(BufferDesc::vertex(
-                // 保存六个 float2 顶点的精确容量。
-                unit_vertices.len() * std::mem::size_of::<f32>(),
+                // 保存共享类型化 payload 的精确容量。
+                unit_vertices.size_bytes(),
                 // 步长只来自共享 Shape 顶点 ABI。
                 PipelineKind::ShapeRect.contract().vertex.stride_bytes(),
             ))?;
-            // 首次绑定前上传单位 quad。
-            device.update_buffer(RhiBufferUpload::new(
-                // 绑定刚创建的资源身份。
-                buffer,
-                // 上传完整且元素对齐的单位 quad。
-                &RhiRenderer::encode_f32s(&unit_vertices),
-            ))?;
-            // 缓存单位 quad 句柄。
+            // 缓存尚未写入本帧内容的单位 quad 句柄。
             self.shape_vertex_buffer = Some(buffer);
             buffer
         };
@@ -186,6 +177,13 @@ impl RhiRenderer {
         let mut pass = RenderPassPlan::new(target, load);
         // 所有 shape 共享同一个物理 viewport。
         pass.push(FramePlanCommand::SetViewport(viewport));
+        // 在第一个 Shape draw 前建立静态单位 quad 的类型化内容事实。
+        pass.push(FramePlanCommand::UploadVertex {
+            // 绑定本次 Shape 资源创建的静态 vertex buffer。
+            buffer: vertex_buffer,
+            // 使用共享 renderer 工厂提供固定 float2 payload。
+            data: RhiRenderer::unit_quad_vertex_payload(),
+        });
         // 每个矩形只更新常量并保留 painter order。
         for rect in rects {
             // 在 draw 前设置当前矩形的裁剪。
