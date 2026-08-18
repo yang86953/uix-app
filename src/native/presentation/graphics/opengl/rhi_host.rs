@@ -113,10 +113,8 @@ where
     fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineBinding> {
         // 在创建 native pipeline 前先拒绝已关闭 owner。
         self.rhi_ensure_active()?;
-        // Adapter 内部仍登记 opaque handle，门面把它与同一创建语义绑定。
-        let handle = self.rhi_pipeline_mut().rhi_create_pipeline(desc)?;
-        // 返回 FramePlan 无法拆开的通用 pipeline 身份。
-        Ok(PipelineBinding::new(handle, desc.kind))
+        // 让 OpenGL raster owner 直接返回共享表签发的完整身份。
+        self.rhi_pipeline_mut().rhi_create_pipeline(desc)
     }
 
     // 销毁 buffer。
@@ -144,9 +142,8 @@ where
     fn destroy_pipeline(&mut self, pipeline: PipelineBinding) -> Result<()> {
         // 在释放 native pipeline 前先拒绝已关闭 owner。
         self.rhi_ensure_active()?;
-        // 原生资源表只消费绑定中保存的不透明句柄。
-        self.rhi_pipeline_mut()
-            .rhi_destroy_pipeline(pipeline.handle())
+        // 让 OpenGL raster owner 校验完整绑定后销毁原生 program。
+        self.rhi_pipeline_mut().rhi_destroy_pipeline(pipeline)
     }
 
     // 开始 render pass。

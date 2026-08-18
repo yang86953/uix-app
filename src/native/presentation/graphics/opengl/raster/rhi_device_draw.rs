@@ -127,19 +127,10 @@ impl OpenGlRhiDevice {
         let active_target = self.pass.target()?;
         // texture target 保持 top-left 存储，原生 surface 映射到窗口顶部。
         let y_sign = target_y_sign(active_target);
-        // 读取 FramePlan 绑定的共享 pipeline 语义。
-        let bound_kind = packet.pipeline.kind();
-        // 复制 Adapter 资源表中的实际语义和 program，结束资源表借用。
-        let (kind, program) = {
-            // 原生资源表只按不透明句柄定位 pipeline。
-            let pipeline = self.pipeline(packet.pipeline.handle())?;
-            (pipeline.kind, pipeline.program)
-        };
-        // 句柄资源与 FramePlan 语义必须仍是创建时的同一绑定。
-        if kind != bound_kind {
-            // 拒绝可能让不同 Adapter 解释不同 shader ABI 的错配。
-            return Err(rhi_invalid("OpenGL RHI pipeline binding kind is stale"));
-        }
+        // 通过共享资源表解析 FramePlan 的完整 pipeline 绑定。
+        let program = self.pipeline(packet.pipeline)?.program;
+        // 分派只读取 FramePlan 已冻结的共享 pipeline kind。
+        let kind = packet.pipeline.kind();
         // 解析 vertex buffer 并保留其 ABI 描述。
         let (vertex, vertex_stride, vertex_usage) = {
             let buffer = self.buffer(packet.vertex_buffer)?;

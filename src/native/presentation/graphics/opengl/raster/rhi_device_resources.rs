@@ -24,9 +24,13 @@ impl OpenGlRhiDevice {
     }
 
     // 读取一个已经存在的 pipeline。
-    pub(super) fn pipeline(&self, handle: PipelineHandle) -> Result<&OpenGlRhiPipeline> {
+    pub(super) fn pipeline(
+        &self,
+        // 接收共享表签发的完整 pipeline 身份。
+        binding: PipelineBinding,
+    ) -> Result<&OpenGlRhiPipeline> {
         // 由共享类型化资源表统一解析 pipeline 身份。
-        self.pipelines.get(handle)
+        self.pipelines.get(binding)
     }
 
     // 读取一个已经存在的 sampler。

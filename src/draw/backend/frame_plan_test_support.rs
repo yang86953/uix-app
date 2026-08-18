@@ -66,7 +66,7 @@ fn test_plan_for_target(mut plan: FramePlan, target: RenderTargetRef) -> FramePl
     // 构造绑定 SolidMesh 语义的非空三角形 packet。
     let mut packet = DrawPacket::triangles(
         // 测试句柄必须与共享 pipeline kind 一起进入 FramePlan。
-        PipelineBinding::new(PipelineHandle::from_raw(1), PipelineKind::SolidMesh),
+        PipelineBinding::for_test(PipelineHandle::from_raw(1), PipelineKind::SolidMesh),
         // 当前载荷包含三个顶点。
         3,
     );

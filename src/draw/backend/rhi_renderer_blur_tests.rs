@@ -159,7 +159,7 @@ impl GraphicsDevice for RecordingContext {
         // pipeline 语义必须指向唯一 blur ABI。
         assert_eq!(desc.kind, PipelineKind::BlurPass);
         // 把稳定测试句柄与同一 blur 语义绑定后返回。
-        Ok(PipelineBinding::new(
+        Ok(PipelineBinding::for_test(
             // 分配 mock 原生句柄。
             PipelineHandle::from_raw(self.allocate()),
             // 保留调用方已经验证的创建语义。

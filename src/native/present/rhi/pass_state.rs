@@ -426,14 +426,14 @@ mod tests {
     // 创建稳定的采样器身份。
     const SAMPLER: SamplerHandle = SamplerHandle::from_raw(9);
     // 创建 coverage pipeline 身份，绑定语义必须从此处派生。
-    const COVERAGE_PIPELINE: PipelineBinding = PipelineBinding::new(
+    const COVERAGE_PIPELINE: PipelineBinding = PipelineBinding::for_test(
         // 使用稳定的测试 pipeline 句柄。
         PipelineHandle::from_raw(10),
         // 使用 R8 最近点 coverage 语义。
         PipelineKind::GlyphCoverageQuad,
     );
     // 创建普通颜色 pipeline 身份，用于错配测试。
-    const TEXTURED_PIPELINE: PipelineBinding = PipelineBinding::new(
+    const TEXTURED_PIPELINE: PipelineBinding = PipelineBinding::for_test(
         // 使用另一稳定的测试 pipeline 句柄。
         PipelineHandle::from_raw(11),
         // 使用 RGBA/BGRA 线性颜色语义。

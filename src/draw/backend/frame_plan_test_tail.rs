@@ -94,7 +94,7 @@ fn executes_clear_rect_in_order() {
     // 构造一个最小非空 draw packet。
     let mut packet = DrawPacket::triangles(
         // 句柄与 SolidMesh 共享语义必须不可拆地进入计划。
-        PipelineBinding::new(PipelineHandle::from_raw(1), PipelineKind::SolidMesh),
+        PipelineBinding::for_test(PipelineHandle::from_raw(1), PipelineKind::SolidMesh),
         // 保留三个顶点的最小非空范围。
         3,
     );
@@ -358,7 +358,7 @@ fn gradient_plan_with_outer_radius(token: SurfaceToken, outer_radius: f32) -> Fr
         // 只替换测试计划中唯一 Draw 的 pipeline 语义。
         if let FramePlanCommand::Draw(packet) = command {
             // 让 draw 与新上传的 Gradient ABI 成为不可拆的共享事实。
-            packet.pipeline = PipelineBinding::new(
+            packet.pipeline = PipelineBinding::for_test(
                 // 保留测试用的 opaque pipeline handle。
                 PipelineHandle::from_raw(1),
                 // 选择共享 GradientRect 契约。
@@ -435,7 +435,7 @@ fn coverage_plan_with_binding_kinds(
             // draw 必须冻结 coverage pipeline 语义。
             FramePlanCommand::Draw(packet) => {
                 // 保留不透明句柄并替换为 coverage ABI。
-                packet.pipeline = PipelineBinding::new(
+                packet.pipeline = PipelineBinding::for_test(
                     // 使用稳定且独立的 draw pipeline 句柄。
                     PipelineHandle::from_raw(10),
                     // 选择 R8 最近点采样语义。
@@ -459,7 +459,7 @@ fn coverage_plan_with_binding_kinds(
     // 按调用方顺序插入全部采样绑定。
     for (offset, kind) in binding_kinds.iter().copied().enumerate() {
         // 每个测试 pipeline 使用独立不透明句柄，避免伪造陈旧身份。
-        let pipeline = PipelineBinding::new(
+        let pipeline = PipelineBinding::for_test(
             // 从稳定基值生成互不重复的句柄。
             PipelineHandle::from_raw(20 + offset as u64),
             // 使用调用方指定的封闭采样语义。

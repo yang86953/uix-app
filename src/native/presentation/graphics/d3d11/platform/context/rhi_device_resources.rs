@@ -94,12 +94,9 @@ impl D3d11Context {
     }
 
     // 创建当前 D3D11 Adapter 已经具备 shader ABI 的封闭 pipeline。
-    pub(super) fn rhi_create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineHandle> {
-        // 保存封闭通用语义，不把原生 shader 对象暴露给通用层。
-        Ok(self
-            .rhi_device
-            .pipelines
-            .insert(D3d11RhiPipeline { kind: desc.kind }))
+    pub(super) fn rhi_create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineBinding> {
+        // 由共享 pipeline 表登记空的 D3D11 资源占位并签发 binding。
+        Ok(self.rhi_device.pipelines.insert(desc.kind, ()))
     }
 
     // 创建带 clamp 地址模式的 D3D11 sampler。
@@ -147,8 +144,8 @@ impl D3d11Context {
     }
 
     // 销毁 pipeline 资源槽。
-    pub(super) fn rhi_destroy_pipeline(&mut self, pipeline: PipelineHandle) -> Result<()> {
-        // 由共享资源表检查式取出 pipeline 语义资源。
+    pub(super) fn rhi_destroy_pipeline(&mut self, pipeline: PipelineBinding) -> Result<()> {
+        // 由共享 pipeline 表检查 kind 后检查式取出占位资源。
         self.rhi_device.pipelines.take(pipeline)?;
         // 返回成功。
         Ok(())
