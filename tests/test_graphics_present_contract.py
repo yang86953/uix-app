@@ -148,10 +148,10 @@ class GraphicsPresentContractTests(unittest.TestCase):
         shaders = OPENGL_RHI_SHADERS.read_text(encoding="utf-8")
         # 读取固定 shader 选择，防止恢复平台字符串改写。
         pipelines = OPENGL_RHI_PIPELINES.read_text(encoding="utf-8")
-        # target 方向必须由 surface sentinel 与 texture 句柄直接推导。
+        # target 方向必须由封闭 Surface 变体与 texture 句柄直接推导。
         self.assertIn("fn target_y_sign(target: RenderTargetHandle) -> f32", rhi_device)
         # scissor 必须复用同一 surface target 判断。
-        self.assertIn("if is_surface_target(target)", rhi_device)
+        self.assertIn("if target.is_surface()", rhi_device)
         # draw 必须把目标方向绑定到当前 program，而不是固化在构造期。
         self.assertIn('set_f32(gl, program, "u_target_y_sign", y_sign)', rhi_draw)
         # 所有常规位置 shader 必须声明目标方向 uniform。

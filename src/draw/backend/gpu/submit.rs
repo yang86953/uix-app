@@ -12,7 +12,7 @@ use crate::draw::backend::rhi_renderer::{
 use crate::draw::geometry::types::BlendMode;
 // 引入 Device-only lowering 所需的目标、extent、load 和 viewport 类型。
 use crate::native::present::rhi::{
-    GraphicsDevice, LoadAction, RenderTargetHandle, RhiExtent, RhiScissor, RhiViewport,
+    GraphicsDevice, LoadAction, RhiExtent, RhiScissor, RhiViewport, TextureHandle,
 };
 
 // 将保序混合 RHI lowering 拆到独立文件，避免继续膨胀提交模块。
@@ -231,7 +231,7 @@ impl NativeGpuCanvas2D {
         extent: RhiExtent,
         load: LoadAction,
         // 指定本次 solid 计划唯一允许写入的离屏纹理。
-        target: RenderTargetHandle,
+        target: TextureHandle,
     ) -> Result<bool, Error> {
         // soft 内容与 RHI native 几何不能在这条纵切中交错提交。
         if self.soft_has_content || self.pending_native.is_empty() {
@@ -317,7 +317,7 @@ impl NativeGpuCanvas2D {
         extent: RhiExtent,
         load: LoadAction,
         // 指定本次 shape 计划唯一允许写入的离屏纹理。
-        target: RenderTargetHandle,
+        target: TextureHandle,
     ) -> Result<bool, Error> {
         // soft 内容与 RHI shape 不能在这条纵切中交错提交。
         if self.soft_has_content || self.pending_native.is_empty() {
@@ -417,7 +417,7 @@ impl NativeGpuCanvas2D {
         extent: RhiExtent,
         load: LoadAction,
         // 指定本次 shadow 计划唯一允许写入的离屏纹理。
-        target: RenderTargetHandle,
+        target: TextureHandle,
     ) -> Result<bool, Error> {
         // soft 内容与 RHI shadow 不能在这条纵切中交错提交。
         if self.soft_has_content || self.pending_native.is_empty() {
@@ -511,7 +511,7 @@ impl NativeGpuCanvas2D {
         extent: RhiExtent,
         load: LoadAction,
         // 指定本次 glyph 计划唯一允许写入的离屏纹理。
-        target: RenderTargetHandle,
+        target: TextureHandle,
     ) -> Result<bool, Error> {
         // soft 内容与 RHI coverage 不能在这条纵切中交错提交。
         if self.soft_has_content || self.pending_native.is_empty() {
@@ -600,7 +600,7 @@ impl NativeGpuCanvas2D {
         extent: RhiExtent,
         load: LoadAction,
         // 指定本次图片计划唯一允许写入的离屏纹理。
-        target: RenderTargetHandle,
+        target: TextureHandle,
     ) -> Result<bool, Error> {
         // soft 内容与 RHI texture 不能在这条纵切中交错提交。
         if self.soft_has_content || self.pending_native.is_empty() {

@@ -227,8 +227,8 @@ impl GraphicsSurface for RecordingBackdropContext {
         self.acquires += 1;
         // 返回有效 frame 以免错误路径因 mock 本身中断。
         Ok(SurfaceFrame::new(
+            // 使用当前 token，目标种类由类型固定为 Surface。
             self.token,
-            RenderTargetHandle::from_raw(900),
         ))
     }
 

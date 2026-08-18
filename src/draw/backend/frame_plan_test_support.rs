@@ -10,12 +10,12 @@ fn test_plan(token: SurfaceToken) -> FramePlan {
 }
 
 // 构造一个完全不依赖 SurfaceToken 的离屏测试计划。
-fn test_offscreen_plan(target: RenderTargetHandle) -> FramePlan {
+fn test_offscreen_plan(target: TextureHandle) -> FramePlan {
     // Device-only 作用域与显式 texture pass 必须同时构造。
     test_plan_for_target(
         // 离屏计划从类型上不持有任何 Surface 生命周期或 present damage。
         FramePlan::offscreen(),
-        // 把调用方给出的不透明纹理句柄固定为 pass 目标。
+        // 把调用方给出的类型化纹理句柄固定为 pass 目标。
         RenderTargetRef::Texture(target),
     )
 }

@@ -596,8 +596,8 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertIn("renderer.execute_overlay_backdrop_blur", backdrop)
         # wrapper 必须复用唯一通用双 pass 实现。
         self.assertIn("self.execute_blur_without_present(", blur_renderer)
-        # overlay blur 的最终 target 必须保持同一 backdrop 资源身份。
-        self.assertIn("RenderTargetHandle::from_raw(backdrop.raw())", blur_renderer)
+        # overlay blur 的最终 target 必须直接保持同一 backdrop texture 身份。
+        self.assertIn("// 最终写回目标保留同一类型化 texture 身份。\n            backdrop,", blur_renderer)
         # 恢复 copy/submit 事务不得只记录日志后返回 false。
         self.assertIn("result?;", backdrop)
         # 显式 release 必须直接返回检查式销毁结果。

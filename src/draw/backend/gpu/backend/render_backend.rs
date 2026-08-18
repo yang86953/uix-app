@@ -19,7 +19,7 @@ use crate::draw::painting::{
 use crate::native::present::PresentTestResult;
 // 引入迁移期 RHI 的离屏纹理描述。
 use crate::native::present::rhi::{
-    LoadAction, RenderTargetHandle, RhiColor, RhiExtent, RhiViewport, TextureDesc, TextureFormat,
+    LoadAction, RhiColor, RhiExtent, RhiViewport, TextureDesc, TextureFormat,
 };
 
 use super::super::canvas::NativeGpuCanvas2D;
@@ -306,14 +306,12 @@ impl RenderBackend for GpuBackend {
             // 新建纹理先清为透明色，防止未初始化采样。
             LoadAction::Clear(RhiColor::transparent())
         };
-        // 把唯一纹理句柄转换为 FramePlan 的 render-target 身份。
-        let rhi_target = RenderTargetHandle::from_raw(rhi_texture.raw());
         // Picture encoder 必须整条无损 lower 到通用 RHI，不能触碰 adapter 绘制接口。
         let submitted = self.try_execute_frame_encoder_rhi(
             // 传入待执行的完整 Picture encoder。
             encoder,
             // 指定唯一 RHI texture 为本次 FramePlan 目标。
-            crate::draw::backend::frame_plan::RenderTargetRef::Texture(rhi_target),
+            crate::draw::backend::frame_plan::RenderTargetRef::Texture(rhi_texture),
             // 使用由初始化状态推导出的 load action。
             load,
         )?;
@@ -379,10 +377,8 @@ impl RenderBackend for GpuBackend {
             {
                 // 确保局部清理与后续 encoder 写入同一代 retained texture。
                 let retained_texture = self.ensure_rhi_surface_texture()?;
-                // 将纹理身份转换为局部 ClearRect 计划使用的 render target。
-                let clear_target = RenderTargetHandle::from_raw(retained_texture.raw());
                 // 清理必须完整 lower，不能在提交一半后切换到 legacy swapchain。
-                let cleared = self.try_clear_rhi_surface_rects(clear_target)?;
+                let cleared = self.try_clear_rhi_surface_rects(retained_texture)?;
                 // 缺少 ClearRect 能力或几何无法证明时保持 typed failure。
                 require_lossless_rhi_submission(
                     cleared,
@@ -478,8 +474,6 @@ impl RenderBackend for GpuBackend {
         // Picture 纹理必须仍由创建它的 owner-thread RHI context 管理。
         // 已验证 owner 丢失时终止当前帧并保留 typed failure。
         let context = self.gpu_ctx.rhi_context()?;
-        // 使用离屏 texture 的同一不透明身份作为 render target。
-        let rhi_target = RenderTargetHandle::from_raw(rhi_texture.raw());
         // 冻结 Picture 纹理自己的物理范围，禁止借用主 Surface extent。
         let rhi_extent = RhiExtent::new(off.width.max(1) as u32, off.height.max(1) as u32);
         // 离屏 target 使用自身物理尺寸，不借用主窗口 drawable 的 DPR。
@@ -506,7 +500,7 @@ impl RenderBackend for GpuBackend {
                 // 采用由初始化状态推导出的 load action。
                 load,
                 // 指定唯一离屏纹理作为目标。
-                rhi_target,
+                rhi_texture,
                 // 使用 Picture 自身 viewport。
                 viewport,
                 // Picture 逻辑坐标不额外缩放横轴。
@@ -547,7 +541,7 @@ impl RenderBackend for GpuBackend {
                 // Picture 纵轴不额外应用 DPR。
                 1.0,
                 // 继续写入唯一离屏纹理。
-                rhi_target,
+                rhi_texture,
                 // native pass 后必须保留已经提交的像素。
                 if has_native { LoadAction::Load } else { load },
                 // soft 离屏合成只取得同一 owner-thread Device 角色。
@@ -754,7 +748,7 @@ impl RenderBackend for GpuBackend {
             rhi_region,
             radius,
             TextureFormat::Bgra8Unorm,
-            RenderTargetHandle::from_raw(texture.raw()),
+            texture,
         )
     }
 

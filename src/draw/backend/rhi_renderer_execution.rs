@@ -6,7 +6,7 @@ use crate::core::error::{Errc, Error, Result};
 use crate::core::PresentDamage;
 // 引入组合 context、正交 Device/Surface 角色与显式纹理目标。
 use crate::native::present::rhi::{
-    GraphicsContextRhi, GraphicsDevice, GraphicsSurface, RenderTargetHandle,
+    GraphicsContextRhi, GraphicsDevice, GraphicsSurface, TextureHandle,
 };
 
 // 引入已经完成 lowering 且自有执行作用域的帧计划与目标引用。
@@ -27,8 +27,8 @@ pub(crate) enum RhiRendererFrame<'a> {
     Offscreen {
         // 借用资源、命令与 submit 所需的 Device 角色。
         device: &'a mut dyn GraphicsDevice,
-        // 保存无法表示主 Surface 的不透明纹理目标。
-        target: RenderTargetHandle,
+        // 保存无法表示主 Surface 的类型化纹理目标。
+        target: TextureHandle,
     },
 }
 
@@ -59,8 +59,8 @@ impl<'a> RhiRendererFrame<'a> {
     pub(crate) fn offscreen(
         // 借用独立 Device 角色。
         device: &'a mut dyn GraphicsDevice,
-        // 接收不透明纹理目标。
-        target: RenderTargetHandle,
+        // 接收类型化纹理目标。
+        target: TextureHandle,
         // 返回不含任何 Surface 能力或 damage 的帧。
     ) -> Self {
         // 原子建立 Device-only 生命周期。

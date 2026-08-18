@@ -87,6 +87,3 @@ mod rhi_device;
 // 将 OpenGlRasterPipeline 的 RHI bridge 暴露给 WGL/EGL context。
 #[path = "rhi.rs"]
 mod rhi;
-
-// 将 surface target sentinel 暴露给 OpenGL host，而不暴露内部资源表。
-pub(crate) use rhi::OPENGL_RHI_SURFACE_TARGET_RAW;

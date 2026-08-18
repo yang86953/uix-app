@@ -4,9 +4,8 @@
 use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
     BLUR_WEIGHT_COUNT, BufferDesc, BufferHandle, DrawPacket, DrawRange, GraphicsDevice, LoadAction,
-    PipelineDesc, PipelineKind, RenderTargetHandle, RhiBlurRasterParams, RhiColor, RhiExtent,
-    RhiScissor, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc,
-    TextureFormat, TextureHandle,
+    PipelineDesc, PipelineKind, RhiBlurRasterParams, RhiColor, RhiExtent, RhiScissor, RhiViewport,
+    SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
 };
 
 // 引入父 renderer 已导入的有序 FramePlan 类型和资源缓存。
@@ -89,8 +88,8 @@ impl RhiRenderer {
             radius,
             // retained surface 与 backdrop 统一使用预乘 BGRA。
             TextureFormat::Bgra8Unorm,
-            // opaque texture 与 render-target 句柄保持同一资源身份。
-            RenderTargetHandle::from_raw(backdrop.raw()),
+            // 最终写回目标保留同一类型化 texture 身份。
+            backdrop,
         )
     }
 
@@ -171,7 +170,7 @@ impl RhiRenderer {
         region: RhiScissor,
         radius: f32,
         format: TextureFormat,
-        target: RenderTargetHandle,
+        target: TextureHandle,
     ) -> Result<()> {
         // 先拒绝无法形成有效纹理和高斯核的参数。
         if source.raw() == 0 || !extent.is_valid() || !radius.is_finite() || radius < 0.5 {
@@ -237,9 +236,7 @@ impl RhiRenderer {
         // 创建本次两个 pass 使用的临时颜色 render target。
         let scratch = device.create_texture(TextureDesc::new(extent, format))?;
         // 将临时 texture 映射为通用 render target 身份。
-        let scratch_target = RenderTargetRef::Texture(
-            crate::native::present::rhi::RenderTargetHandle::from_raw(scratch.raw()),
-        );
+        let scratch_target = RenderTargetRef::Texture(scratch);
         // 将原始区域规整为经过边界验证的整数 scissor。
         let region = RhiScissor {
             x,

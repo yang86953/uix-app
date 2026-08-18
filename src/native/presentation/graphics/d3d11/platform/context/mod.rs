@@ -171,6 +171,3 @@ mod rhi_health;
 
 // 导入 D3D11 薄 RHI 的 device 状态。
 use self::rhi_device::D3d11RhiDevice;
-
-// 为 D3D11 backbuffer 保留一个不会与 RHI texture id 冲突的 target 身份。
-pub(super) const RHI_SURFACE_TARGET_RAW: u64 = u64::MAX;

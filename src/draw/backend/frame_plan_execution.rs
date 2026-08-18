@@ -181,8 +181,8 @@ where
                 // 返回 acquire 交付的不透明 target。
                 Ok(surface)
             }
-            // 显式 texture target 在所有执行模式下保持原句柄。
-            (_, RenderTargetRef::Texture(texture)) => Ok(texture),
+            // 显式 texture target 在唯一 Device 边界提升为 render target。
+            (_, RenderTargetRef::Texture(texture)) => Ok(RenderTargetHandle::for_texture(texture)),
             // offscreen 模式的 Surface 已由前置校验拒绝，此分支保留防御。
             (FramePlanTargetMode::OffscreenOnly, RenderTargetRef::Surface) => Err(Error::new(
                 Errc::InvalidArgument,

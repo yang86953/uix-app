@@ -57,19 +57,10 @@ struct OpenGlRhiSampler {
     desc: SamplerDesc,
 }
 
-// OpenGL ES 的 swapchain target 身份不占用 texture 句柄空间。
-pub(super) const RHI_SURFACE_TARGET_RAW: u64 = u64::MAX;
-
-// 判断 opaque render target 是否代表原生窗口 surface。
-fn is_surface_target(target: RenderTargetHandle) -> bool {
-    // surface sentinel 由同一 adapter 独占，不与 texture 句柄重叠。
-    target.raw() == RHI_SURFACE_TARGET_RAW
-}
-
 // 返回左上逻辑坐标映射到当前 OpenGL 目标所需的 NDC Y 符号。
 fn target_y_sign(target: RenderTargetHandle) -> f32 {
     // 原生 surface 的顶部位于 GL framebuffer 高 Y，texture 的 top-left 行位于低 Y。
-    if is_surface_target(target) { -1.0 } else { 1.0 }
+    if target.is_surface() { -1.0 } else { 1.0 }
 }
 
 // 持有 OpenGL ES RHI 的资源表、pass 状态和 VAO。
@@ -430,14 +421,22 @@ impl OpenGlRhiDevice {
         // 禁止 pass 嵌套，确保 FramePlan 顺序有唯一 owner。
         self.pass.require_closed()?;
         // 解析 surface 或离屏 texture target。
-        let (framebuffer, extent) = if target.raw() == RHI_SURFACE_TARGET_RAW {
-            (None, surface_extent)
-        } else {
-            let texture = self.texture(TextureHandle::from_raw(target.raw()))?;
-            let framebuffer = texture
-                .framebuffer
-                .ok_or_else(|| rhi_invalid("OpenGL RHI target texture is not renderable"))?;
-            (Some(framebuffer), texture.desc.extent())
+        let (framebuffer, extent) = match target.texture() {
+            // Surface 目标直接写入当前默认 framebuffer。
+            None => (None, surface_extent),
+            // Texture 目标从资源表解析其 framebuffer 与物理范围。
+            Some(texture_handle) => {
+                // 查询同一类型化 texture 身份，不执行裸数值重建。
+                let texture = self.texture(texture_handle)?;
+                // 只有可渲染颜色纹理拥有 framebuffer。
+                let framebuffer = texture
+                    // 拒绝 sampled-only texture 误作输出目标。
+                    .framebuffer
+                    // 保留稳定 Adapter 完整性错误。
+                    .ok_or_else(|| rhi_invalid("OpenGL RHI target texture is not renderable"))?;
+                // 返回存活原生 framebuffer 与共享描述范围。
+                (Some(framebuffer), texture.desc.extent())
+            }
         };
         // 由共享状态机统一验证目标范围、清屏颜色并建立 pass 事实。
         self.pass.begin(target, extent, load)?;
@@ -495,7 +494,7 @@ impl OpenGlRhiDevice {
         // 仅对显式 scissor 计算原生坐标。
         if let Some(scissor) = scissor {
             // surface 使用底部原点，texture target 保持共享顶部原点。
-            let native_y = if is_surface_target(target) {
+            let native_y = if target.is_surface() {
                 // 由共享几何 Component 完成 checked 目标高度翻转。
                 scissor
                     // 消费同一 pass 的已验证 extent。
@@ -646,15 +645,11 @@ impl OpenGlRhiDevice {
         transaction: RhiPresentTransaction,
         // 接收当前 drawable token。
         current_token: SurfaceToken,
-        // 接收 acquire 发布的唯一目标身份。
-        expected_target: RenderTargetHandle,
     ) -> Result<ValidatedRhiPresent> {
         // OpenGL 只提供动态事实，三项规则由共享 RHI Component 解释。
         transaction.validate(
             // 传入当前 Surface 代际与 extent。
             current_token,
-            // 传入当前 Surface target。
-            expected_target,
             // 传入同一组合 context 的 Device 提交序列。
             &self.submission_sequence,
         )

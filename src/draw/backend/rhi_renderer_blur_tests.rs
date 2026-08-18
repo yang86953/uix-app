@@ -43,7 +43,7 @@ struct RecordingContext {
     // 保存当前 surface 代际，供无 present 提交校验。
     token: SurfaceToken,
     // 记录 render pass 目标和是否使用 Clear。
-    passes: Vec<(u64, bool)>,
+    passes: Vec<(RenderTargetHandle, bool)>,
     // 记录两个 pass 下发的 scissor。
     scissors: Vec<Option<RhiScissor>>,
     // 保存所有 buffer 更新载荷以检查方向和高斯核。
@@ -179,8 +179,8 @@ impl GraphicsDevice for RecordingContext {
     fn begin_render_pass(&mut self, target: RenderTargetHandle, load: LoadAction) -> Result<()> {
         // 记录目标和 Clear/Load 边界。
         self.passes
-            // Clear 为 true，Load 为 false。
-            .push((target.raw(), matches!(load, LoadAction::Clear(_))));
+            // Clear 为 true，Load 为 false；目标身份保持封闭类型。
+            .push((target, matches!(load, LoadAction::Clear(_))));
         // 记录成功。
         Ok(())
     }
@@ -271,10 +271,8 @@ impl GraphicsSurface for RecordingContext {
         self.acquire_count += 1;
         // 返回合法 frame，让断言而非伪错误识别误调用。
         Ok(SurfaceFrame::new(
-            // 使用当前 token。
+            // 使用当前 token，目标种类由类型固定为 Surface。
             self.token,
-            // 使用稳定 surface 目标。
-            RenderTargetHandle::from_raw(91),
         ))
     }
 
@@ -347,7 +345,7 @@ fn blur_executes_two_clipped_passes_without_surface_present() {
             // Picture texture 使用预乘 BGRA。
             TextureFormat::Bgra8Unorm,
             // 垂直 pass 写回同一 Picture texture。
-            RenderTargetHandle::from_raw(source.raw()),
+            source,
         )
         // 合法计划必须完整执行。
         .expect("blur plan should execute");
@@ -361,7 +359,12 @@ fn blur_executes_two_clipped_passes_without_surface_present() {
         // 比较完整 pass 目标顺序。
         context.passes,
         // 保留 source→scratch→source 的写入事实。
-        vec![(scratch.raw(), true), (source.raw(), false)]
+        vec![
+            // 水平 pass 写入 scratch texture。
+            (RenderTargetHandle::for_texture(scratch), true),
+            // 垂直 pass 写回 source texture。
+            (RenderTargetHandle::for_texture(source), false),
+        ]
     );
     // 两个 pass 都必须使用裁到 texture 的同一区域。
     assert_eq!(
@@ -499,7 +502,12 @@ fn overlay_backdrop_blur_writes_back_to_captured_texture_without_present() {
         // 比较两个 pass 的 target 和 load 动作。
         context.passes,
         // 保持 backdrop→scratch→backdrop 的严格顺序。
-        vec![(scratch.raw(), true), (backdrop.raw(), false)],
+        vec![
+            // 水平 pass 写入 scratch texture。
+            (RenderTargetHandle::for_texture(scratch), true),
+            // 垂直 pass 写回 backdrop texture。
+            (RenderTargetHandle::for_texture(backdrop), false),
+        ],
     );
     // 两个 pass 共享唯一 device submit。
     assert_eq!(context.submit_count, 1);
@@ -546,7 +554,7 @@ fn blur_submit_failure_still_destroys_scratch() {
             // 使用 Picture BGRA 格式。
             TextureFormat::Bgra8Unorm,
             // 写回源 texture。
-            RenderTargetHandle::from_raw(source.raw()),
+            source,
         )
         // submit 失败不得伪装成功。
         .expect_err("submit failure should surface");
@@ -597,7 +605,7 @@ fn empty_blur_region_is_a_resource_free_noop() {
             // 使用 Picture BGRA 格式。
             TextureFormat::Bgra8Unorm,
             // 指定原 Picture 目标。
-            RenderTargetHandle::from_raw(source.raw()),
+            source,
         )
         // 空区域必须安全成功。
         .expect("empty region should be a no-op");

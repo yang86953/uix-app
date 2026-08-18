@@ -5,7 +5,7 @@ use crate::core::error::{Error, Result};
 // 引入 FramePlan 的纹理 target 引用。
 use crate::draw::backend::frame_plan::RenderTargetRef;
 // 引入薄 RHI 的 surface token、纹理描述和颜色格式。
-use crate::native::present::rhi::{RenderTargetHandle, TextureDesc, TextureFormat, TextureHandle};
+use crate::native::present::rhi::{TextureDesc, TextureFormat, TextureHandle};
 
 // 引入当前 GPU backend owner。
 use super::GpuBackend;
@@ -24,10 +24,8 @@ impl GpuBackend {
         self.gpu_ctx.rhi_device()?;
         // 按当前 surface generation 确保纹理身份和 extent 一致。
         let texture = self.ensure_rhi_surface_texture()?;
-        // 把同一 opaque texture 同时作为 render target 和 sampled source 使用。
-        Ok(Some(RenderTargetRef::Texture(
-            RenderTargetHandle::from_raw(texture.raw()),
-        )))
+        // 把同一类型化 texture 同时作为 render target 和 sampled source 使用。
+        Ok(Some(RenderTargetRef::Texture(texture)))
     }
 
     // 确保 retained texture 与当前 surface token 同代且尺寸一致。

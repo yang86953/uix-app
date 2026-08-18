@@ -5,7 +5,7 @@ use crate::core::Error;
 // 引入通用渐变 payload、renderer 与封闭帧角色。
 use crate::draw::backend::rhi_renderer::{RhiGradientRect, RhiRenderer, RhiRendererFrame};
 // 引入 Device-only lowering 所需的目标、extent 与 pass load 语义。
-use crate::native::present::rhi::{GraphicsDevice, LoadAction, RenderTargetHandle, RhiExtent};
+use crate::native::present::rhi::{GraphicsDevice, LoadAction, RhiExtent, TextureHandle};
 
 // 引入 pending 操作和 submit 模块的物理 lowering helper。
 use super::super::pending::PendingNativeOp;
@@ -25,7 +25,7 @@ impl NativeGpuCanvas2D {
         extent: RhiExtent,
         load: LoadAction,
         // 指定本次 gradient 计划唯一允许写入的离屏纹理。
-        target: RenderTargetHandle,
+        target: TextureHandle,
     ) -> Result<bool, Error> {
         // soft 内容与 RHI gradient 不能在这条纵切中交错提交。
         if self.soft_has_content || self.pending_native.is_empty() {

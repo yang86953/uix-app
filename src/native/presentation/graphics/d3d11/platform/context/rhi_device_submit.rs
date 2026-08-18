@@ -7,7 +7,7 @@
 use crate::core::error::Result;
 // 引入薄 RHI 的提交句柄和类型化呈现门禁类型。
 use crate::native::present::rhi::{
-    RenderTargetHandle, RhiPresentTransaction, SubmissionHandle, SurfaceToken, ValidatedRhiPresent,
+    RhiPresentTransaction, SubmissionHandle, SurfaceToken, ValidatedRhiPresent,
 };
 
 // 引入 context 父模块的 D3D11 状态。
@@ -51,15 +51,11 @@ impl D3d11Context {
         transaction: RhiPresentTransaction,
         // 接收当前 swapchain token。
         current_token: SurfaceToken,
-        // 接收 acquire 发布的唯一目标身份。
-        expected_target: RenderTargetHandle,
     ) -> Result<ValidatedRhiPresent> {
         // D3D11 只提供动态事实，三项规则由共享 RHI Component 解释。
         transaction.validate(
             // 传入当前 Surface 代际与 extent。
             current_token,
-            // 传入当前 Surface target。
-            expected_target,
             // 传入同一组合 context 的 Device 提交序列。
             &self.rhi_device.submission_sequence,
         )

@@ -58,7 +58,7 @@ class GraphicsRhiPresentTransactionContractTests(unittest.TestCase):
         # 只有共享门禁可以发布已验证原生输入。
         self.assertIn("pub(crate) struct ValidatedRhiPresent", transaction)
 
-    # 共享门禁必须唯一解释代际、目标和最新提交三项规则。
+    # 共享门禁必须唯一解释代际和最新提交，Surface 目标由类型固定。
     def test_shared_gate_owns_all_cross_backend_validation(self) -> None:
         # 读取共享呈现事务实现。
         transaction = TRANSACTION.read_text(encoding="utf-8")
@@ -66,8 +66,10 @@ class GraphicsRhiPresentTransactionContractTests(unittest.TestCase):
         submission = SUBMISSION.read_text(encoding="utf-8")
         # 旧代际必须统一映射为 Surface lost。
         self.assertIn("Errc::GraphicsSurfaceLost", transaction)
-        # 错误目标必须统一映射为参数错误。
-        self.assertIn('"RHI present requires the acquired surface target"', transaction)
+        # SurfaceFrame 不得再保存可伪造的 target 字段。
+        self.assertNotIn("    target: RenderTargetHandle,", transaction)
+        # SurfaceFrame 只允许投影共享 Surface 目标。
+        self.assertIn("RenderTargetHandle::surface()", transaction)
         # 提交序列必须提供稳定的检查式入口。
         self.assertIn(
             "pub(crate) fn validate(&self, submission: SubmissionHandle) -> Result<()>",
@@ -75,8 +77,8 @@ class GraphicsRhiPresentTransactionContractTests(unittest.TestCase):
         )
         # 迟到提交诊断不得包含原生 API 名称。
         self.assertIn('"RHI present submission is stale"', submission)
-        # 事务门禁必须组合 frame 与提交序列校验。
-        self.assertIn(".validate_current(current_token, expected_target)?;", transaction)
+        # 事务门禁必须组合 frame 代际与提交序列校验。
+        self.assertIn(".validate_current(current_token)?;", transaction)
         # 事务门禁必须调用共享最新提交规则。
         self.assertIn("submissions.validate(self.submission)?;", transaction)
 
@@ -107,7 +109,7 @@ class GraphicsRhiPresentTransactionContractTests(unittest.TestCase):
         # OpenGL Device 必须调用同一共享门禁。
         self.assertIn("transaction.validate(", opengl_device)
         # OpenGL bridge 只做 owner-thread 转发。
-        self.assertIn(".validate_present(transaction, current_token, expected_target)", opengl_bridge)
+        self.assertIn(".validate_present(transaction, current_token)", opengl_bridge)
         # D3D11 只能把已验证 damage 交给 DXGI 路径。
         self.assertIn("self.present_result(present.damage())", d3d11_surface)
         # OpenGL 只能把已验证 damage 交给 swap 路径。

@@ -207,10 +207,7 @@ where
                 "OpenGL RHI test surface lost before acquire",
             ));
         }
-        Ok(SurfaceFrame::new(
-            self.token(),
-            RenderTargetHandle::from_raw(super::raster::OPENGL_RHI_SURFACE_TARGET_RAW),
-        ))
+        Ok(SurfaceFrame::new(self.token()))
     }
 
     // 按物理 extent 重建宿主 surface 并返回新代际 token。
@@ -268,8 +265,6 @@ where
             transaction,
             // 传入当前宿主 Surface token。
             current_token,
-            // 传入 acquire 发布的唯一保留目标。
-            RenderTargetHandle::from_raw(super::raster::OPENGL_RHI_SURFACE_TARGET_RAW),
         )?;
         // Adapter 只消费门禁发布的 damage 执行原生交换。
         self.rhi_swap_buffers(present.into_damage())

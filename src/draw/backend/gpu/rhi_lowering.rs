@@ -14,8 +14,7 @@ use crate::draw::backend::rhi_renderer::{
 };
 // 引入 GPU native 队列的几何载荷和 TextureMove 资源类型。
 use crate::native::present::rhi::{
-    GraphicsDevice, LoadAction, RenderTargetHandle, RhiExtent, RhiViewport, TextureHandle,
-    TextureMove,
+    GraphicsDevice, LoadAction, RhiExtent, RhiViewport, TextureHandle, TextureMove,
 };
 
 // 引入待决操作的完整枚举和 scroll boundary 载荷。
@@ -573,7 +572,7 @@ fn lower_native_scroll_move(
 // 在不触发 swapchain present 的前提下执行一条纹理搬移 boundary。
 fn execute_texture_move(
     device: &mut dyn GraphicsDevice,
-    target: RenderTargetHandle,
+    target: TextureHandle,
     viewport: RhiViewport,
     movement: TextureMove,
 ) -> Result<()> {
@@ -632,7 +631,7 @@ impl NativeGpuCanvas2D {
         // 接收必须为 Clear 的首段 load action。
         load: LoadAction,
         // 接收唯一 retained texture target。
-        target: RenderTargetHandle,
+        target: TextureHandle,
         // 返回资源、pass 或 submit 的真实 typed 结果。
     ) -> Result<(), Error> {
         // 使用显式纹理范围和逻辑画布尺寸计算物理 viewport。
@@ -664,7 +663,7 @@ impl NativeGpuCanvas2D {
         extent: RhiExtent,
         load: LoadAction,
         // 接收唯一 retained texture target。
-        target: RenderTargetHandle,
+        target: TextureHandle,
     ) -> Result<bool, Error> {
         // retained texture 使用显式 extent 计算物理几何。
         let (viewport, scale_x, scale_y) =
@@ -685,7 +684,7 @@ impl NativeGpuCanvas2D {
         extent: RhiExtent,
         load: LoadAction,
         // 接收唯一 retained texture target。
-        target: RenderTargetHandle,
+        target: TextureHandle,
     ) -> Result<bool, Error> {
         // retained texture 与普通 Picture 共用同一套物理 lowering 几何。
         let (viewport, scale_x, scale_y) =
@@ -706,7 +705,7 @@ impl NativeGpuCanvas2D {
         extent: RhiExtent,
         load: LoadAction,
         // 接收唯一离屏纹理目标。
-        target: RenderTargetHandle,
+        target: TextureHandle,
         viewport: crate::native::present::rhi::RhiViewport,
         scale_x: f32,
         scale_y: f32,
@@ -770,8 +769,8 @@ impl NativeGpuCanvas2D {
                 movements.push(None);
                 continue;
             };
-            // submit 契约已经保证 target 是显式纹理句柄。
-            let target_texture = TextureHandle::from_raw(target.raw());
+            // submit 契约已经直接提供显式纹理句柄。
+            let target_texture = target;
             match lower_native_scroll_move(
                 *scroll,
                 target_texture,
