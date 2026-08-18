@@ -43,7 +43,8 @@ float median3(float a, float b, float c)
 
 float4 PSMain(VSOut input) : SV_Target
 {
-    float3 encoded = saturate(u_atlas.Sample(u_samp, input.uv).rgb);
+    // 共享 Rgba8Unorm 与 linear 契约已保证 encoded 位于单位域。
+    float3 encoded = u_atlas.Sample(u_samp, input.uv).rgb;
     float signed_distance = median3(encoded.r, encoded.g, encoded.b) - 0.5;
     float2 uv_derivative = abs(ddx(input.uv)) + abs(ddy(input.uv));
     float2 texture_size = max(u_tex_size, float2(1.0, 1.0));
@@ -52,7 +53,8 @@ float4 PSMain(VSOut input) : SV_Target
     float screen_pixel_range = max(0.5 * dot(unit_range, screen_texture_size), 1.0);
     float coverage = saturate(0.5 - signed_distance * screen_pixel_range);
     float coverage_byte = floor(coverage * 255.0 + 0.5);
-    float4 color = floor(saturate(input.color) * 255.0 + 0.5);
+    // 共享 FramePlan 顶点契约已保证 MSDF tint 位于单位域。
+    float4 color = floor(input.color * 255.0 + 0.5);
     float alpha = floor(color.a * coverage_byte / 255.0);
     float3 premul = floor(color.rgb * color.a / 255.0);
     float3 rgb = floor(premul * coverage_byte / 255.0);

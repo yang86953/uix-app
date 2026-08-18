@@ -67,8 +67,10 @@ in vec2 v_uv;
 in vec4 v_color;
 out vec4 fragColor;
 void main() {
-    float coverage = floor(clamp(texture(u_tex, v_uv).r, 0.0, 1.0) * 255.0 + 0.5);
-    vec4 color = floor(clamp(v_color, 0.0, 1.0) * 255.0 + 0.5);
+    // 共享 R8Unorm 与 nearest 契约已保证 coverage 位于单位域。
+    float coverage = floor(texture(u_tex, v_uv).r * 255.0 + 0.5);
+    // 共享 FramePlan 顶点契约已保证 tint 位于单位域。
+    vec4 color = floor(v_color * 255.0 + 0.5);
     float alpha = floor(color.a * coverage / 255.0);
     vec3 premul = floor(color.rgb * color.a / 255.0);
     vec3 rgb = floor(premul * coverage / 255.0);
@@ -98,7 +100,8 @@ void main() {
     float coverage = clamp(0.5 - signed_distance * screen_pixel_range, 0.0, 1.0);
     // 先把解析覆盖率量化为字节，固定与 D3D11 相同的舍入顺序。
     float coverage_byte = floor(coverage * 255.0 + 0.5);
-    vec4 color = floor(clamp(v_color, 0.0, 1.0) * 255.0 + 0.5);
+    // 共享 FramePlan 顶点契约已保证 MSDF tint 位于单位域。
+    vec4 color = floor(v_color * 255.0 + 0.5);
     // 颜色已经位于字节域，alpha 只按量化覆盖率缩放一次。
     float alpha = floor(color.a * coverage_byte / 255.0);
     vec3 premul = floor(color.rgb * color.a / 255.0);

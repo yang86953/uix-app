@@ -182,8 +182,10 @@ float4 PSMain(VSOut input) : SV_Target
     // Match the CPU glyph path's two integer truncation steps before the
     // premultiplied SrcOver blend. Keeping this quantization in the shader
     // avoids the 2-channel drift caused by a straight-alpha hardware multiply.
-    float coverage = floor(saturate(u_atlas.Sample(u_samp, input.uv)) * 255.0 + 0.5);
-    float4 color = floor(saturate(input.color) * 255.0 + 0.5);
+    // 共享 R8Unorm 与 nearest 契约已保证 coverage 位于单位域。
+    float coverage = floor(u_atlas.Sample(u_samp, input.uv) * 255.0 + 0.5);
+    // 共享 FramePlan 顶点契约已保证 tint 位于单位域。
+    float4 color = floor(input.color * 255.0 + 0.5);
     float alpha = floor(color.a * coverage / 255.0);
     float3 premul = floor(color.rgb * color.a / 255.0);
     float3 rgb = floor(premul * coverage / 255.0);

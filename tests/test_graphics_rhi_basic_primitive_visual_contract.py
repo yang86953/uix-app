@@ -4,6 +4,8 @@
 
 # 引入标准单元测试框架。
 import unittest
+# 引入有限值检查，模拟共享值域拒绝非有限输入。
+import math
 # 引入路径解析工具。
 from pathlib import Path
 
@@ -52,10 +54,18 @@ def hlsl_range(source: str, declaration: str, next_declaration: str) -> str:
 
 # 对 shader 使用的八位量化公式提供独立的小型参考实现。
 def quantize_coverage(rgba: tuple[float, float, float, float], coverage: float) -> tuple[int, int, int, int]:
-    # 先按 shader 的 saturate/clamp 语义量化 coverage。
-    coverage_byte = int(max(0.0, min(1.0, coverage)) * 255.0 + 0.5)
-    # 再按 shader 的 saturate/clamp 语义量化 straight-alpha 颜色。
-    color = [int(max(0.0, min(1.0, channel)) * 255.0 + 0.5) for channel in rgba]
+    # 共享值域要求 coverage 必须是有限单位值。
+    if not math.isfinite(coverage) or not 0.0 <= coverage <= 1.0:
+        # 适配器不再替共享契约修正越界 coverage。
+        raise ValueError("coverage is outside the shared unit domain")
+    # 共享值域要求每个颜色通道必须是有限单位值。
+    if any(not math.isfinite(channel) or not 0.0 <= channel <= 1.0 for channel in rgba):
+        # 适配器不再替共享契约修正越界颜色。
+        raise ValueError("rgba is outside the shared unit domain")
+    # 直接按受保护的 coverage 值量化字节。
+    coverage_byte = int(coverage * 255.0 + 0.5)
+    # 直接按受保护的颜色值量化字节。
+    color = [int(channel * 255.0 + 0.5) for channel in rgba]
     # 先用量化后的 alpha 对颜色做 premultiply。
     premul = [int(channel * color[3] / 255.0) for channel in color[:3]]
     # 最后把 coverage 同时应用到 premultiplied RGB 与 alpha。
@@ -175,11 +185,22 @@ class GraphicsRhiBasicPrimitiveVisualContractTests(unittest.TestCase):
         self.assertIn("texture(u_tex, v_uv).r", opengl_fragment)
         self.assertIn("Texture2D<float> u_atlas", glyph_hlsl)
         self.assertIn("u_atlas.Sample(u_samp, input.uv)", glyph_hlsl)
-        # 两端必须进行相同的 clamp/saturate 与八位四舍五入量化。
-        self.assertIn("floor(clamp(texture(u_tex, v_uv).r, 0.0, 1.0) * 255.0 + 0.5)", opengl_fragment)
-        self.assertIn("floor(saturate(u_atlas.Sample(u_samp, input.uv)) * 255.0 + 0.5)", glyph_hlsl)
-        self.assertIn("floor(clamp(v_color, 0.0, 1.0) * 255.0 + 0.5)", opengl_fragment)
-        self.assertIn("floor(saturate(input.color) * 255.0 + 0.5)", glyph_hlsl)
+        # 两端必须直接量化共享契约保护的 coverage 输入。
+        self.assertIn("floor(texture(u_tex, v_uv).r * 255.0 + 0.5)", opengl_fragment)
+        # D3D11 必须使用同一直接 coverage 量化公式。
+        self.assertIn("floor(u_atlas.Sample(u_samp, input.uv) * 255.0 + 0.5)", glyph_hlsl)
+        # 两端必须直接量化共享契约保护的 tint 输入。
+        self.assertIn("floor(v_color * 255.0 + 0.5)", opengl_fragment)
+        # D3D11 必须使用同一直接 tint 量化公式。
+        self.assertIn("floor(input.color * 255.0 + 0.5)", glyph_hlsl)
+        # OpenGL Adapter 不得重新引入 coverage 的私有归一化。
+        self.assertNotIn("clamp(texture(u_tex, v_uv).r", opengl_fragment)
+        # D3D11 Adapter 不得重新引入 coverage 的私有归一化。
+        self.assertNotIn("saturate(u_atlas.Sample(u_samp, input.uv))", glyph_hlsl)
+        # OpenGL Adapter 不得重新引入 tint 的私有归一化。
+        self.assertNotIn("clamp(v_color", opengl_fragment)
+        # D3D11 Adapter 不得重新引入 tint 的私有归一化。
+        self.assertNotIn("saturate(input.color)", glyph_hlsl)
         # 两端必须先按量化 alpha premultiply，再乘 coverage。
         self.assertIn("floor(premul * coverage / 255.0)", opengl_fragment)
         self.assertIn("floor(premul * coverage / 255.0)", glyph_hlsl)
@@ -205,6 +226,22 @@ class GraphicsRhiBasicPrimitiveVisualContractTests(unittest.TestCase):
         self.assertEqual(quantize_coverage((1.0, 0.5, 0.25, 1.0), 1.0), (255, 128, 64, 255))
         # 半 coverage 与半 alpha 必须体现先 alpha premultiply 再 coverage 的顺序。
         self.assertEqual(quantize_coverage((1.0, 0.5, 0.25, 0.5), 0.5), (64, 32, 16, 64))
+        # 越界 coverage 必须由共享参考边界拒绝。
+        with self.assertRaises(ValueError):
+            # 负 coverage 不得再由 Adapter 风格的隐式归一化修正。
+            quantize_coverage((1.0, 0.5, 0.25, 0.5), -0.1)
+        # 非有限 coverage 必须由共享参考边界拒绝。
+        with self.assertRaises(ValueError):
+            # NaN coverage 不得进入字节量化。
+            quantize_coverage((1.0, 0.5, 0.25, 0.5), float("nan"))
+        # 越界 tint 必须由共享参考边界拒绝。
+        with self.assertRaises(ValueError):
+            # 超出单位域的颜色通道不得由 Adapter 修正。
+            quantize_coverage((1.1, 0.5, 0.25, 0.5), 1.0)
+        # 非有限 tint 必须由共享参考边界拒绝。
+        with self.assertRaises(ValueError):
+            # 无穷颜色通道不得进入字节量化。
+            quantize_coverage((float("inf"), 0.5, 0.25, 0.5), 1.0)
 
 
 # 支持直接执行本文件定义的精确契约测试。
