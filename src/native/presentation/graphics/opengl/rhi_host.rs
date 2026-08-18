@@ -1,18 +1,18 @@
 //! WGL/EGL context 到 OpenGL ES 薄 RHI 的共享 host 实现。
 
-// 引入最终 present damage、保留证明和通用 typed error。
-use crate::core::{Error, PresentCoherency, PresentDamage, Result};
-// 仅 test-harness surface lost 注入需要专用错误分类。
+// 引入最终 present damage、保留证明和通用结果类型。
+use crate::core::{PresentCoherency, PresentDamage, Result};
+// 仅 test-harness surface lost 注入需要专用错误分类和构造器。
 #[cfg(feature = "test-harness")]
-use crate::core::Errc;
+use crate::core::{Errc, Error};
 // 引入薄 RHI 的所有组合 trait 与命令类型。
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
     GraphicsSurface, GraphicsSurfaceCapabilities, LoadAction, PipelineBinding, PipelineDesc,
     RenderTargetHandle, RhiBufferUpload, RhiColor, RhiExtent, RhiPresentTransaction, RhiScissor,
-    RhiSurfaceReadback, RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc,
-    SamplerHandle, SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy, TextureDesc,
-    TextureHandle, TextureMove,
+    RhiSurfaceReadback, RhiSurfaceResizeTransaction, RhiTextureUpload, RhiViewport,
+    SampledTextureBinding, SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceFrame,
+    SurfaceToken, TextureCopy, TextureDesc, TextureHandle, TextureMove,
 };
 // 引入 OpenGL raster pipeline 的 RHI bridge。
 use super::raster::OpenGlRasterPipeline;
@@ -27,8 +27,8 @@ pub(crate) trait OpenGlRhiHost {
     fn rhi_make_current(&mut self) -> Result<()>;
     // 读取当前 surface generation。
     fn rhi_generation(&self) -> u64;
-    // 按物理 extent 重建宿主 surface。
-    fn rhi_resize_surface(&mut self, extent: RhiExtent) -> Result<()>;
+    // 消费已验证事务并按物理 extent 重建宿主 surface。
+    fn rhi_resize_surface(&mut self, resize: RhiSurfaceResizeTransaction) -> Result<()>;
     // 将最近一次 RHI submit 交换到原生窗口。
     fn rhi_swap_buffers(&mut self, damage: PresentDamage) -> Result<()>;
 }
@@ -212,14 +212,12 @@ where
 
     // 按物理 extent 重建宿主 surface 并返回新代际 token。
     fn resize(&mut self, extent: RhiExtent) -> Result<SurfaceToken> {
-        if !extent.is_valid() {
-            return Err(Error::new(
-                crate::core::error::Errc::InvalidArgument,
-                "OpenGL RHI surface extent is outside the shared native domain",
-            ));
-        }
-        self.rhi_resize_surface(extent)?;
-        Ok(self.token())
+        // 在进入 EGL 或 WGL 前冻结旧 token 并执行唯一共同值域验证。
+        let resize = RhiSurfaceResizeTransaction::validate(extent, self.token())?;
+        // 原生 host 只能消费字段封闭的已验证事务。
+        self.rhi_resize_surface(resize)?;
+        // 发布前统一验证请求 extent 与 generation 后置条件。
+        resize.complete(self.token())
     }
 
     // 读取当前 OpenGL drawable 并返回左上原点 0xAARRGGBB 规范结果。

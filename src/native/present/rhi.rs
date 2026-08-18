@@ -47,6 +47,8 @@ mod texture;
 mod resource_table;
 // PresentTransaction Component 绑定 acquire、submit 与 damage 并统一 Surface 门禁。
 mod present_transaction;
+// SurfaceResizeTransaction Component 统一 resize 前置值域与成功后的 token 门禁。
+mod resize_transaction;
 // RenderTarget Component 封闭 Surface 与 texture 两种互斥目标身份。
 mod render_target;
 // 向 Drawing System 与各原生 Adapter 暴露同一份类型化 pipeline 契约。
@@ -95,6 +97,8 @@ pub(crate) use texture::{TextureDesc, TextureFormat};
 pub(crate) use resource_table::{RhiResourceHandle, RhiResourceTable};
 // 向 FramePlan 与两个 Adapter 暴露不可拆的 Surface 呈现事务。
 pub(crate) use present_transaction::{RhiPresentTransaction, SurfaceFrame, ValidatedRhiPresent};
+// 向两个 Surface Adapter 暴露唯一的类型化 resize 事务。
+pub(crate) use resize_transaction::RhiSurfaceResizeTransaction;
 // 向 FramePlan、pass 状态与 Adapter 暴露不含裸哨兵的目标身份。
 pub(crate) use render_target::RenderTargetHandle;
 // 向 Drawing System 暴露唯一 Gradient 常量构造器和固定字节数。

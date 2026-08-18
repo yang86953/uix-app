@@ -20,8 +20,8 @@ use crate::native::present::{GraphicsContextLifecycle, PresentDamage};
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
 use crate::native::presentation::graphics::opengl::rhi_host::OpenGlRhiHost;
 use crate::native::{Errc, Error};
-// 引入 surface resize 使用的物理 extent 类型。
-use crate::native::present::rhi::RhiExtent;
+// 引入已经通过共享门禁的 surface resize 事务。
+use crate::native::present::rhi::RhiSurfaceResizeTransaction;
 
 use crate::native::presentation::graphics::platform::linux::{
     WaylandSurfaceHandle, WaylandSurfaceMetrics,
@@ -832,8 +832,15 @@ impl OpenGlRhiHost for EglContext {
         self.surface_generation
     }
 
-    // 按物理 extent 进入 EGL 原生 surface resize helper。
-    fn rhi_resize_surface(&mut self, extent: RhiExtent) -> Result<(), Error> {
+    // 消费已验证事务并进入 EGL 原生 surface resize helper。
+    fn rhi_resize_surface(
+        // 借用当前 EGL owner。
+        &mut self,
+        // 接收共享门禁冻结的目标 extent 与原生投影。
+        resize: RhiSurfaceResizeTransaction,
+    ) -> Result<(), Error> {
+        // 读取事务中不可替换的请求 extent。
+        let extent = resize.extent();
         // 物理 extent 相同但 logical extent 或 DPR 改变时仍须同步 pipeline。
         let snapshot = self.metrics.snapshot()?;
         // 只有四项 surface 事实全都一致才可跳过。
@@ -846,14 +853,8 @@ impl OpenGlRhiHost for EglContext {
             return Ok(());
         }
         self.rhi_make_current()?;
-        // 读取共享 extent 已验证的原生有符号尺寸。
-        let (width, height) = extent
-            // surface host 不得自行截断无符号输入。
-            .native_size_i32()
-            // RHI surface 入口应已拒绝，仍保留稳定防御错误。
-            .ok_or_else(|| {
-                Error::new(Errc::InvalidArgument, "EGL RHI surface extent is invalid")
-            })?;
+        // 读取共享事务已经证明安全的原生有符号尺寸。
+        let (width, height) = resize.native_size_i32();
         // 使用唯一投影重建原生 surface。
         self.resize_surface_extent(width, height)
     }

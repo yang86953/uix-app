@@ -3,14 +3,17 @@
 //! 本文件只接入 surface 生命周期；低层 device/pass/draw 由同级 RHI device
 //! 模块实现，UI 语义通过类型化 GPU recipe owner 消费。
 
-// 引入统一错误和结果类型。
-use crate::core::error::{Errc, Error, Result};
+// 引入统一结果类型。
+use crate::core::error::Result;
+// 仅 test-harness surface lost 注入需要错误分类和构造器。
+#[cfg(feature = "test-harness")]
+use crate::core::error::{Errc, Error};
 // 引入 context 上已有的 DPR 快照与无帧探测结果。
 use crate::native::present::{GraphicsContextLifecycle, PresentTestResult};
 // 引入薄 RHI 的 surface 原语。
 use crate::native::present::rhi::{
     GraphicsSurface, GraphicsSurfaceCapabilities, RhiExtent, RhiPresentTransaction, RhiScissor,
-    RhiSurfaceReadback, SurfaceFrame, SurfaceToken,
+    RhiSurfaceReadback, RhiSurfaceResizeTransaction, SurfaceFrame, SurfaceToken,
 };
 
 // 为 D3D11 context 实现 surface acquire/resize/present。
@@ -57,31 +60,21 @@ impl GraphicsSurface for super::D3d11Context {
     fn resize(&mut self, extent: RhiExtent) -> Result<SurfaceToken> {
         // checked shutdown 后不得进入 surface resize 事务。
         self.ensure_active()?;
-        // 读取全部现有 Adapter 共用的有符号 surface 尺寸。
-        let Some((native_width, native_height)) = extent.native_size_i32() else {
-            // 拒绝零尺寸或超过共同原生值域的输入。
-            // 返回稳定的参数错误。
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                "D3d11 RHI surface extent is invalid",
-            ));
-        };
-        // 已经是目标代际和尺寸时不重复重建 swapchain。
-        if self.width as u32 == extent.width && self.height as u32 == extent.height {
-            // 返回当前 surface token。
-            return Ok(self.token());
-        }
+        // 在触碰 DXGI 前冻结旧 token 并执行唯一共同值域验证。
+        let resize = RhiSurfaceResizeTransaction::validate(extent, self.token())?;
+        // 读取共享事务已经证明安全的原生有符号尺寸。
+        let (native_width, native_height) = resize.native_size_i32();
         // 使用当前 DPR 把物理尺寸转换为兼容 context 的逻辑尺寸。
         // 从单一 surface 快照读取 DPR，避免分离元数据发生撕裂。
         let dpr = self.present_surface().device_pixel_ratio.max(0.0001);
         // 计算传给 Win32 drawable 查询的逻辑宽度。
-        let logical_width = (extent.width as f32 / dpr).round().max(1.0) as i32;
+        let logical_width = (resize.extent().width as f32 / dpr).round().max(1.0) as i32;
         // 计算传给 Win32 drawable 查询的逻辑高度。
-        let logical_height = (extent.height as f32 / dpr).round().max(1.0) as i32;
+        let logical_height = (resize.extent().height as f32 / dpr).round().max(1.0) as i32;
         // 直接进入 D3D11 surface 的物理重建路径，避免 RHI 反向依赖兼容入口。
         self.resize_surface_extent(native_width, native_height, logical_width, logical_height)?;
-        // 返回 ResizeBuffers 成功后推进的 surface token。
-        Ok(self.token())
+        // 发布前统一验证请求 extent 与 generation 后置条件。
+        resize.complete(self.token())
     }
 
     // 读取当前 D3D11 swapchain surface 并规范化为左上原点 0xAARRGGBB 像素。
