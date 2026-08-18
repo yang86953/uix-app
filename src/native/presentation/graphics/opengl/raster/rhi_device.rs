@@ -229,7 +229,7 @@ impl OpenGlRhiDevice {
         // 接收共享层冻结的 Buffer 上传预检事实。
         upload: RhiBufferUploadPreflight,
     ) -> Result<()> {
-        // 由共享 Buffer 资源表解析真实句柄并统一验证用途、容量与范围。
+        // 由共享 Buffer 资源表解析真实句柄并统一验证用途、元素 ABI、容量与范围。
         self.buffers.validate_upload(upload)
     }
 

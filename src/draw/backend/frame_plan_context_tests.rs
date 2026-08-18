@@ -156,8 +156,13 @@ fn unused_buffer_upload_preflight_wins_before_acquire() {
     });
     // 创建同时能够注入资源错误和 Surface lost 的组合 context。
     let mut context = recording_context(token);
-    // 只让尾部未消费上传的真实资源预检失败。
-    context.device.fail_upload_preflight = Some(unused_buffer);
+    // 为未消费顶点上传提供用途相同但步长为四的真实资源描述。
+    context.device.upload_preflight_desc = Some((
+        // 只让尾部未消费上传消费本次描述。
+        unused_buffer,
+        // 十六字节容量能被四字节步长整除，失败必须来自类型化 float2 步长错配。
+        BufferDesc::vertex(16, 4),
+    ));
     // 同时安排 acquire 失败，锁定共享参数错误的优先级。
     context.surface.fail_acquire = true;
     // 执行必须在取得 Surface image 前发现未消费上传的资源错误。
@@ -166,8 +171,10 @@ fn unused_buffer_upload_preflight_wins_before_acquire() {
         .execute_on_context(&mut context)
         // 未消费上传不得逃过只读预检。
         .expect_err("unused buffer upload must fail before acquire");
-    // Buffer 身份或容量错误必须优先返回稳定共享参数分类。
+    // 顶点元素 ABI 错配必须优先返回稳定共享参数分类。
     assert_eq!(error.code(), Errc::InvalidArgument);
+    // 诊断必须证明失败来自元素 ABI，而非后续 Surface lost。
+    assert!(error.what().contains("element stride"));
     // 上传预检失败不得触发 Surface acquire。
     assert_eq!(context.surface.acquire_count, 0);
     // 上传预检失败不得进入 activate、pass 或 submit。
@@ -284,8 +291,13 @@ fn indexed_upload_executes_and_preflights_before_acquire() {
 
     // 创建同时注入索引资源错误和 Surface acquire 错误的 context。
     let mut rejected = recording_context(token);
-    // 只拒绝测试 fixture 中身份五的索引 Buffer。
-    rejected.device.fail_upload_preflight = Some(BufferHandle::from_raw(5));
+    // 为身份五的索引上传提供用途相同但两字节步长的真实描述。
+    rejected.device.upload_preflight_desc = Some((
+        // 匹配索引 fixture 的 Buffer 身份。
+        BufferHandle::from_raw(5),
+        // 十二字节容量对两字节步长仍然对齐，但与 Uint32 格式不一致。
+        BufferDesc::index(12, 2),
+    ));
     // 同时让 Surface acquire 失败，锁定资源预检的优先级。
     rejected.surface.fail_acquire = true;
     // 索引资源错误必须在取得 Surface image 前返回。
@@ -294,8 +306,10 @@ fn indexed_upload_executes_and_preflights_before_acquire() {
         .execute_on_context(&mut rejected)
         // 真实索引 Buffer 不满足契约时必须失败。
         .expect_err("index upload preflight must fail before acquire");
-    // 索引 Buffer 身份或容量错误必须优先于 Surface lost。
+    // 索引元素 ABI 错配必须优先于 Surface lost。
     assert_eq!(error.code(), Errc::InvalidArgument);
+    // 诊断必须证明 Uint32 payload 与真实索引资源的元素 ABI 错配。
+    assert!(error.what().contains("element stride"));
     // 预检失败后不得调用 acquire。
     assert_eq!(rejected.surface.acquire_count, 0);
     // 预检失败后不得激活 Device 或执行原生命令。

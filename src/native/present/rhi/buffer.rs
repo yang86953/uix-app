@@ -183,31 +183,83 @@ pub(crate) struct RhiBufferUploadPreflight {
     size_bytes: usize,
     // 保存类型化命令要求的 Buffer 用途。
     usage: BufferUsage,
+    // 保存类型化命令已经冻结的元素步长，Uniform 固定为零。
+    element_stride_bytes: u32,
 }
 
 // 为只读上传预检提供封闭构造、投影和真实描述验证。
 impl RhiBufferUploadPreflight {
     // 创建只允许写入顶点 Buffer 的类型化预检值。
-    pub(crate) const fn vertex(buffer: BufferHandle, size_bytes: usize) -> Self {
-        // 通过封闭构造器冻结顶点用途。
-        Self::new(buffer, size_bytes, BufferUsage::Vertex)
+    pub(crate) const fn vertex(
+        // 保存目标顶点 Buffer 身份。
+        buffer: BufferHandle,
+        // 保存本次类型化载荷的精确字节数。
+        size_bytes: usize,
+        // 保存顶点布局派生的唯一元素步长。
+        element_stride_bytes: u32,
+    ) -> Self {
+        // 通过封闭构造器冻结顶点用途与元素 ABI。
+        Self::new(
+            // 传递不透明顶点 Buffer 身份。
+            buffer,
+            // 传递类型化载荷长度。
+            size_bytes,
+            // 固定顶点资源角色。
+            BufferUsage::Vertex,
+            // 传递由顶点布局权威派生的步长。
+            element_stride_bytes,
+        )
     }
 
     // 创建只允许写入索引 Buffer 的类型化预检值。
-    pub(crate) const fn index(buffer: BufferHandle, size_bytes: usize) -> Self {
-        // 通过封闭构造器冻结索引用途。
-        Self::new(buffer, size_bytes, BufferUsage::Index)
+    pub(crate) const fn index(
+        // 保存目标索引 Buffer 身份。
+        buffer: BufferHandle,
+        // 保存本次类型化载荷的精确字节数。
+        size_bytes: usize,
+        // 保存索引格式派生的唯一元素步长。
+        element_stride_bytes: u32,
+    ) -> Self {
+        // 通过封闭构造器冻结索引用途与元素 ABI。
+        Self::new(
+            // 传递不透明索引 Buffer 身份。
+            buffer,
+            // 传递类型化载荷长度。
+            size_bytes,
+            // 固定索引资源角色。
+            BufferUsage::Index,
+            // 传递由索引格式权威派生的步长。
+            element_stride_bytes,
+        )
     }
 
     // 创建只允许写入 Uniform Buffer 的类型化预检值。
     pub(crate) const fn uniform(buffer: BufferHandle, size_bytes: usize) -> Self {
-        // 通过封闭构造器冻结 Uniform 用途。
-        Self::new(buffer, size_bytes, BufferUsage::Uniform)
+        // 通过封闭构造器冻结 Uniform 用途与零步长 ABI。
+        Self::new(
+            // 传递不透明 Uniform Buffer 身份。
+            buffer,
+            // 传递固定布局载荷长度。
+            size_bytes,
+            // 固定 Uniform 资源角色。
+            BufferUsage::Uniform,
+            // Uniform 描述不使用元素步长。
+            0,
+        )
     }
 
-    // 创建不持有字节借用且冻结期望用途的内部预检值。
-    const fn new(buffer: BufferHandle, size_bytes: usize, usage: BufferUsage) -> Self {
-        // 把目标身份、载荷长度与用途绑定成一个不可拆值对象。
+    // 创建不持有字节借用且冻结期望用途和元素 ABI 的内部预检值。
+    const fn new(
+        // 接收由资源表解析的目标身份。
+        buffer: BufferHandle,
+        // 接收不需要字节分配的载荷长度。
+        size_bytes: usize,
+        // 接收类型化命令已经冻结的资源角色。
+        usage: BufferUsage,
+        // 接收由上层类型化布局派生的元素步长。
+        element_stride_bytes: u32,
+    ) -> Self {
+        // 把目标身份、载荷长度、用途与元素 ABI 绑定成一个不可拆值对象。
         Self {
             // 保存目标 Buffer 身份。
             buffer,
@@ -215,6 +267,8 @@ impl RhiBufferUploadPreflight {
             size_bytes,
             // 保存类型化调用方要求的用途。
             usage,
+            // 保存调用方值对象已冻结的元素步长。
+            element_stride_bytes,
         }
     }
 
@@ -230,7 +284,7 @@ impl RhiBufferUploadPreflight {
         self.size_bytes
     }
 
-    // 按真实 Buffer 描述验证上传范围和用途语义。
+    // 按真实 Buffer 描述验证上传范围、用途和元素 ABI 语义。
     pub(crate) fn validate(self, desc: BufferDesc) -> Result<()> {
         // 类型化 FramePlan 角色必须与资源创建时冻结的真实用途一致。
         if self.usage != desc.usage {
@@ -239,7 +293,14 @@ impl RhiBufferUploadPreflight {
                 "RHI buffer upload usage does not match its target",
             ));
         }
-        // 角色一致后复用原始上传也消费的唯一范围验证函数。
+        // 用途一致后还必须比较载荷布局与真实资源的元素 ABI。
+        if self.element_stride_bytes != desc.stride_bytes {
+            // 禁止 Adapter 按真实资源的另一步长重新解释类型化载荷。
+            return Err(invalid_buffer(
+                "RHI buffer upload element stride does not match its target",
+            ));
+        }
+        // 用途与元素 ABI 一致后复用原始上传也消费的唯一范围验证函数。
         validate_upload_size(self.size_bytes, desc)
     }
 }
@@ -418,26 +479,36 @@ mod tests {
         assert_eq!(validated.size_bytes_u32(), 16);
     }
 
-    // 验证只读上传预检值冻结目标身份、字节数与类型化用途。
+    // 验证只读上传预检值冻结目标身份、字节数、用途与元素 ABI。
     #[test]
     fn upload_preflight_projects_identity_and_size() {
-        // 创建携带稳定句柄和十六字节范围的顶点预检。
-        let preflight = RhiBufferUploadPreflight::vertex(BufferHandle::from_raw(8), 16);
+        // 创建携带稳定句柄、十六字节范围与 float2 步长的顶点预检。
+        let preflight = RhiBufferUploadPreflight::vertex(BufferHandle::from_raw(8), 16, 8);
         // 预检值必须保留目标句柄。
         assert_eq!(preflight.buffer(), BufferHandle::from_raw(8));
         // 预检值必须保留原始字节数。
         assert_eq!(preflight.size_bytes(), 16);
         // 真实顶点描述必须接受同一预检值。
         assert!(preflight.validate(BufferDesc::vertex(16, 8)).is_ok());
+        // 用途与容量相同但步长不匹配的顶点资源必须拒绝。
+        assert!(preflight.validate(BufferDesc::vertex(16, 4)).is_err());
         // 同尺寸 Uniform 目标也必须因类型化用途不匹配而拒绝。
         assert!(preflight.validate(BufferDesc::uniform(16)).is_err());
         // 索引用途化构造器必须接受匹配的真实索引描述。
         assert!(
-            RhiBufferUploadPreflight::index(BufferHandle::from_raw(9), 8)
+            RhiBufferUploadPreflight::index(BufferHandle::from_raw(9), 8, 4)
                 // 使用两个四字节索引的真实描述完成验证。
                 .validate(BufferDesc::index(8, 4))
                 // 匹配身份、范围与用途必须通过。
                 .is_ok()
+        );
+        // 索引用途相同但元素步长不一致时也必须共享拒绝。
+        assert!(
+            RhiBufferUploadPreflight::index(BufferHandle::from_raw(9), 8, 4)
+                // 故意提供两字节索引资源描述。
+                .validate(BufferDesc::index(8, 2))
+                // 预检不得仅因为载荷长度偶然对齐而放行。
+                .is_err()
         );
     }
 

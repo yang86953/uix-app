@@ -418,9 +418,9 @@ mod tests {
     use crate::core::error::{Errc, Error, Result};
     // 引入测试计划依赖的薄 RHI 类型。
     use crate::native::present::rhi::{
-        BufferHandle, DrawPacket, DrawRange, GraphicsDevice, GraphicsDeviceCapabilities,
-        GraphicsSurface, IndexBufferBinding, IndexFormat, LoadAction, PipelineBinding,
-        PipelineHandle, PipelineKind, RenderTargetHandle, RhiBufferUpload,
+        BufferDesc, BufferHandle, DrawPacket, DrawRange, GraphicsDevice,
+        GraphicsDeviceCapabilities, GraphicsSurface, IndexBufferBinding, IndexFormat, LoadAction,
+        PipelineBinding, PipelineHandle, PipelineKind, RenderTargetHandle, RhiBufferUpload,
         RhiBufferUploadPreflight, RhiColor, RhiExtent, RhiGradientRasterParams,
         RhiMeshRasterParams, RhiPresentTransaction, RhiSampledRasterParams, RhiScissor,
         RhiTextureTransfer, RhiViewport, SampledTextureBinding, SamplerHandle, SubmissionHandle,
@@ -448,8 +448,8 @@ mod tests {
         fail_copy_preflight: bool,
         // 保存是否强制 texture move 预检失败。
         fail_move_preflight: bool,
-        // 保存需要强制上传预检失败的可选 Buffer 身份。
-        fail_upload_preflight: Option<BufferHandle>,
+        // 保存可选真实 Buffer 描述，用于验证类型化上传预检。
+        upload_preflight_desc: Option<(BufferHandle, BufferDesc)>,
         // 保存是否强制 Draw 资源预检失败。
         fail_draw_preflight: bool,
         // 保存是否强制 sampled 资源预检失败。
@@ -510,15 +510,15 @@ mod tests {
 
         // 在任何 Device 原语前预检类型化 Buffer 上传。
         fn preflight_buffer_upload(&self, upload: RhiBufferUploadPreflight) -> Result<()> {
-            // 只有指定身份的上传才触发失败，允许测试证明未被 Draw 消费的命令也会扫描。
-            if self.fail_upload_preflight == Some(upload.buffer()) {
-                // 返回共享参数错误，模拟真实 Buffer 身份或容量拒绝。
-                return Err(Error::new(
-                    Errc::InvalidArgument,
-                    "recording buffer upload preflight failed",
-                ));
+            // 只有指定身份的上传才消费 fixture 提供的真实描述。
+            if let Some((buffer, desc)) = self.upload_preflight_desc {
+                // 同一资源身份必须进入共享用途、元素 ABI 与范围门禁。
+                if buffer == upload.buffer() {
+                    // 直接返回共享预检结果，不在 mock Device 复制判断。
+                    return upload.validate(desc);
+                }
             }
-            // 关闭注入后允许合法类型化上传继续执行。
+            // 未配置描述或身份不同时允许其它合法 fixture 继续。
             Ok(())
         }
 
@@ -857,8 +857,8 @@ mod tests {
                 fail_copy_preflight: false,
                 // 默认允许 texture move 预检成功。
                 fail_move_preflight: false,
-                // 默认允许全部 Buffer 上传预检成功。
-                fail_upload_preflight: None,
+                // 默认不为任何 Buffer 注入额外真实描述。
+                upload_preflight_desc: None,
                 // 默认允许 Draw 资源预检成功。
                 fail_draw_preflight: false,
                 // 默认允许 sampled 资源预检成功。

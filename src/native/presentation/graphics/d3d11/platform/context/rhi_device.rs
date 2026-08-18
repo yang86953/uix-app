@@ -403,7 +403,7 @@ impl GraphicsDevice for D3d11Context {
         self.rhi_device.buffers.validate_draw(packet)
     }
 
-    // 在执行 Buffer 上传前只读预检真实句柄与共享描述规则。
+    // 在执行 Buffer 上传前只读预检真实句柄、用途、元素 ABI 与范围。
     fn preflight_buffer_upload(&self, upload: RhiBufferUploadPreflight) -> Result<()> {
         // 关闭后的 owner 必须先于资源表查询拒绝上传预检。
         self.ensure_active()?;
