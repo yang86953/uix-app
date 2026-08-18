@@ -156,7 +156,9 @@ fn rejects_vertex_upload_layout_mismatch_before_adapter() {
     // 保存一个有限且 stride 完整、但语义错误的 float8 顶点。
     *data = FrameVertexPayload::position_uv_color_f32([0.0; 8]);
     // 验证必须在触碰 mock Adapter 前失败。
-    let error = plan.validate().expect_err("vertex layout mismatch must fail");
+    let error = plan
+        .validate()
+        .expect_err("vertex layout mismatch must fail");
     // 错配属于稳定计划参数错误。
     assert_eq!(error.code(), Errc::InvalidArgument);
     // 诊断必须指向 pipeline 布局错配而不是泛化资源失败。
@@ -198,11 +200,89 @@ fn rejects_uniform_upload_layout_mismatch_before_adapter() {
         height: 64.0,
     }));
     // 验证必须在字节编码和 Adapter 调用前失败。
-    let error = plan.validate().expect_err("uniform layout mismatch must fail");
+    let error = plan
+        .validate()
+        .expect_err("uniform layout mismatch must fail");
     // 错配属于稳定计划参数错误。
     assert_eq!(error.code(), Errc::InvalidArgument);
     // 诊断必须指向 Uniform pipeline 布局错配。
     assert!(error.what().contains("uniform upload layout"));
+}
+
+// 构造只改变 Gradient radial outer radius 的完整 FramePlan。
+fn gradient_plan_with_outer_radius(token: SurfaceToken, outer_radius: f32) -> FramePlan {
+    // 复用包含完整 viewport、顶点上传和 draw 的最小计划。
+    let mut plan = test_plan(token);
+    // 取得唯一 render pass 以替换其共享 Gradient 事实。
+    let FramePlanStep::Pass(pass) = &mut plan.steps[0] else {
+        // 测试基线漂移时立即失败。
+        panic!("test plan must start with a render pass");
+    };
+    // 遍历 pass 内命令并同时替换 Uniform 与 pipeline 身份。
+    for command in &mut pass.commands {
+        // 只替换测试计划中唯一的 Mesh Uniform。
+        if let FramePlanCommand::UploadUniform { data, .. } = command {
+            // 构造共享 Gradient 的径向参数。
+            *data = FrameUniformPayload::Gradient(RhiGradientRasterParams::new(
+                // 使用与测试 viewport 一致的物理尺寸。
+                RhiViewport {
+                    // 保存测试宽度。
+                    width: 64.0,
+                    // 保存测试高度。
+                    height: 64.0,
+                },
+                // 使用非退化轴对齐四角。
+                [[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]],
+                // 使用有限起始颜色。
+                [0.0; 4],
+                // 使用有限结束颜色。
+                [1.0; 4],
+                // 使用当前测试的径向模式、内半径和外半径。
+                [1.0, 0.1, outer_radius, 0.0],
+            ));
+        }
+        // 只替换测试计划中唯一 Draw 的 pipeline 语义。
+        if let FramePlanCommand::Draw(packet) = command {
+            // 让 draw 与新上传的 Gradient ABI 成为不可拆的共享事实。
+            packet.pipeline = PipelineBinding::new(
+                // 保留测试用的 opaque pipeline handle。
+                PipelineHandle::from_raw(1),
+                // 选择共享 GradientRect 契约。
+                PipelineKind::GradientRect,
+            );
+        }
+    }
+    // 返回已经绑定 Gradient 语义的完整计划。
+    plan
+}
+
+// FramePlan 必须在 Adapter 前拒绝非正径向外半径并接受正值。
+#[test]
+fn gradient_frame_plan_validates_radial_outer_radius_before_adapter() {
+    // 创建稳定的第一代 Surface token。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 正径向外半径必须通过完整 FramePlan 验证。
+    assert!(
+        gradient_plan_with_outer_radius(token, 0.5)
+            .validate()
+            .is_ok()
+    );
+    // 零外半径必须在 Adapter 前被统一拒绝。
+    let zero_error = gradient_plan_with_outer_radius(token, 0.0)
+        // 执行共享计划门禁。
+        .validate()
+        // 测试必须观察到参数错误而不是成功。
+        .expect_err("zero radial outer radius must fail");
+    // 零半径失败必须分类为 InvalidArgument。
+    assert_eq!(zero_error.code(), Errc::InvalidArgument);
+    // 负外半径必须在 Adapter 前被统一拒绝。
+    let negative_error = gradient_plan_with_outer_radius(token, -0.5)
+        // 执行共享计划门禁。
+        .validate()
+        // 测试必须观察到参数错误而不是成功。
+        .expect_err("negative radial outer radius must fail");
+    // 负半径失败必须分类为 InvalidArgument。
+    assert_eq!(negative_error.code(), Errc::InvalidArgument);
 }
 
 // 验证 submit 失败时不会进入最终 present。
