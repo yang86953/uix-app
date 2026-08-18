@@ -26,6 +26,8 @@ mod msdf;
 mod primitive;
 // 将 pipeline ABI 拆到独立共享契约文件，禁止 Drawing 与 Adapter 各自维护状态。
 mod pipeline;
+// 将 sample coverage 状态拆到独立共享契约，禁止 Surface 与 Adapter 各自选择。
+mod multisample;
 // 将颜色编码与混合值域拆到独立契约，禁止 Adapter 启用隐藏颜色转换。
 mod color;
 // 将 Device 与 Surface 能力拆到独立契约，禁止两种角色反向读取彼此状态。
@@ -48,6 +50,8 @@ pub(crate) use pipeline::{
     PipelinePrimitiveTopology, PipelineRasterState, PipelineSampling, PipelineStencilState,
     PipelineUniformLayout, PipelineVertexLayout,
 };
+// 向 pipeline、Surface 配方和两个 Adapter 暴露同一采样覆盖事实。
+pub(crate) use multisample::PipelineMultisampleState;
 // 向 Drawing、Surface 与原生 Adapter 暴露唯一颜色解释。
 pub(crate) use color::{RhiColorContract, UIX_COLOR_CONTRACT};
 // 向组合根和 Adapter 暴露两个正交的事实快照。

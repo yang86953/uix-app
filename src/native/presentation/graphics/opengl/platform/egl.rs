@@ -397,6 +397,12 @@ impl EglContext {
                 24,
                 egl::STENCIL_SIZE,
                 8,
+                // 与共享 PipelineMultisampleState::SingleSample 保持一致。
+                egl::SAMPLE_BUFFERS,
+                0,
+                // 禁止驱动为窗口 surface 私自选择多样本 config。
+                egl::SAMPLES,
+                0,
                 egl::NONE,
             ];
             egl.choose_first_config(display, &config_attribs)
