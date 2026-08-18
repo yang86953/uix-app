@@ -3,8 +3,8 @@
 use crate::core::error::Result;
 // 引入薄 RHI 的 command、resource 和 target 类型。
 use crate::native::present::rhi::{
-    DrawBufferBindings, DrawPacket, DrawRange, GraphicsDevice, LoadAction, RhiExtent,
-    RhiTextureUpload, RhiViewport, SampledTextureBinding, TextureDesc, TextureFormat,
+    DrawBufferBindings, DrawPacket, DrawRange, DrawSamplingBinding, GraphicsDevice, LoadAction,
+    RhiExtent, RhiTextureUpload, RhiViewport, SampledTextureBinding, TextureDesc, TextureFormat,
 };
 // 引入父 renderer 的帧计划和已完成 lowering 的 payload。
 use super::{
@@ -495,6 +495,8 @@ impl RhiRenderer {
                         pipeline,
                         // 绑定当前 mesh 的顶点与 uniform 资源。
                         DrawBufferBindings::new(vertex_buffer, uniform_buffer),
+                        // Mesh draw 不使用采样资源。
+                        DrawSamplingBinding::none(),
                         // Mesh 使用封闭的非索引顶点范围。
                         DrawRange::vertices((mesh.vertices.len() / 2) as u32),
                     )));
@@ -533,21 +535,15 @@ impl RhiRenderer {
                         data: FrameUniformPayload::Sampled(RhiRenderer::sampled_uniform(viewport)),
                     });
                     // 原子绑定当前颜色纹理与共享 sampler。
-                    pass.push(FramePlanCommand::BindSampledTexture(
-                        // 图片路径使用固定 t0/s0 绑定值对象。
-                        SampledTextureBinding::for_pipeline(
-                            // 传递当前图片纹理身份。
-                            texture, // 传递共享图片采样器身份。
-                            sampler,
-                            // 图片绑定与后续 DrawPacket 使用同一个 pipeline。
-                            pipeline,
-                        ),
-                    ));
                     // 追加当前图片 draw packet。
                     pass.push(FramePlanCommand::Draw(DrawPacket::new(
                         pipeline,
                         // 绑定当前图片 quad 的顶点与 uniform 资源。
                         DrawBufferBindings::new(vertex_buffer, uniform_buffer),
+                        // DrawPacket 直接拥有当前图片的采样绑定。
+                        DrawSamplingBinding::sampled(SampledTextureBinding::for_pipeline(
+                            texture, sampler, pipeline,
+                        )),
                         // 图片 quad 使用封闭的六顶点非索引范围。
                         DrawRange::vertices(6),
                     )));
@@ -581,22 +577,17 @@ impl RhiRenderer {
                         data: FrameUniformPayload::Sampled(RhiRenderer::sampled_uniform(viewport)),
                     });
                     // 原子绑定已经存在的 Picture texture 与共享 sampler。
-                    pass.push(FramePlanCommand::BindSampledTexture(
-                        // sampled quad 不再重复声明裸槽位。
-                        SampledTextureBinding::for_pipeline(
-                            // 传递当前 Picture 纹理身份。
-                            quad.texture,
-                            // 传递共享 Picture 采样器身份。
-                            sampler,
-                            // Picture 绑定与后续 DrawPacket 使用同一个 pipeline。
-                            pipeline,
-                        ),
-                    ));
                     // 追加当前 Picture draw packet。
                     pass.push(FramePlanCommand::Draw(DrawPacket::new(
                         pipeline,
                         // 绑定当前 Sampled quad 的顶点与 uniform 资源。
                         DrawBufferBindings::new(vertex_buffer, uniform_buffer),
+                        // DrawPacket 直接拥有当前 Picture 的采样绑定。
+                        DrawSamplingBinding::sampled(SampledTextureBinding::for_pipeline(
+                            quad.texture,
+                            sampler,
+                            pipeline,
+                        )),
                         // Sampled quad 使用封闭的六顶点非索引范围。
                         DrawRange::vertices(6),
                     )));
@@ -628,21 +619,15 @@ impl RhiRenderer {
                         data: FrameUniformPayload::Sampled(RhiRenderer::sampled_uniform(viewport)),
                     });
                     // 原子绑定当前 R8 coverage texture 与点采样 sampler。
-                    pass.push(FramePlanCommand::BindSampledTexture(
-                        // coverage 路径只传递完整采样事实。
-                        SampledTextureBinding::for_pipeline(
-                            // 传递当前 coverage 纹理身份。
-                            texture, // 传递 coverage 点采样器身份。
-                            sampler,
-                            // coverage 绑定与后续 DrawPacket 使用同一个 pipeline。
-                            pipeline,
-                        ),
-                    ));
                     // 追加当前 glyph draw packet。
                     pass.push(FramePlanCommand::Draw(DrawPacket::new(
                         pipeline,
                         // 绑定当前 Coverage quad 的顶点与 uniform 资源。
                         DrawBufferBindings::new(vertex_buffer, uniform_buffer),
+                        // DrawPacket 直接拥有当前 coverage 的采样绑定。
+                        DrawSamplingBinding::sampled(SampledTextureBinding::for_pipeline(
+                            texture, sampler, pipeline,
+                        )),
                         // Coverage quad 使用封闭的六顶点非索引范围。
                         DrawRange::vertices(6),
                     )));
@@ -676,21 +661,15 @@ impl RhiRenderer {
                         )),
                     });
                     // 原子绑定当前 RGBA8 MSDF texture 和线性 sampler。
-                    pass.push(FramePlanCommand::BindSampledTexture(
-                        // MSDF 路径只传递完整采样事实。
-                        SampledTextureBinding::for_pipeline(
-                            // 传递当前 MSDF 纹理身份。
-                            texture, // 传递 MSDF 线性采样器身份。
-                            sampler,
-                            // MSDF 绑定与后续 DrawPacket 使用同一个 pipeline。
-                            pipeline,
-                        ),
-                    ));
                     // 追加当前 MSDF 字形 draw packet。
                     pass.push(FramePlanCommand::Draw(DrawPacket::new(
                         pipeline,
                         // 绑定当前 MSDF quad 的顶点与 uniform 资源。
                         DrawBufferBindings::new(vertex_buffer, uniform_buffer),
+                        // DrawPacket 直接拥有当前 MSDF 的采样绑定。
+                        DrawSamplingBinding::sampled(SampledTextureBinding::for_pipeline(
+                            texture, sampler, pipeline,
+                        )),
                         // MSDF quad 使用封闭的六顶点非索引范围。
                         DrawRange::vertices(6),
                     )));
@@ -716,6 +695,8 @@ impl RhiRenderer {
                         pipeline,
                         // 绑定当前 Gradient quad 的顶点与 uniform 资源。
                         DrawBufferBindings::new(vertex_buffer, uniform_buffer),
+                        // Gradient draw 不使用采样资源。
+                        DrawSamplingBinding::none(),
                         // Gradient quad 使用封闭的六顶点非索引范围。
                         DrawRange::vertices(6),
                     )));
@@ -768,6 +749,8 @@ impl RhiRenderer {
                         pipeline,
                         // 绑定当前 Sector quad 的顶点与 uniform 资源。
                         DrawBufferBindings::new(vertex_buffer, uniform_buffer),
+                        // Sector draw 不使用采样资源。
+                        DrawSamplingBinding::none(),
                         // Sector quad 使用封闭的六顶点非索引范围。
                         DrawRange::vertices(6),
                     )));

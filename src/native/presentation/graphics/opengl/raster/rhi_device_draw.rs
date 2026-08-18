@@ -9,22 +9,21 @@ use glow::HasContext as _;
 use crate::core::error::Result;
 use crate::native::present::rhi::{
     BLUR_DIRECTION_TAPS_FLOAT_OFFSET, BLUR_REGION_FLOAT_OFFSET, BLUR_SIZES_FLOAT_OFFSET,
-    BLUR_WEIGHT_COUNT, BLUR_WEIGHTS_FLOAT_OFFSET, BufferUsage, DrawPacket,
+    BLUR_WEIGHT_COUNT, BLUR_WEIGHTS_FLOAT_OFFSET, BufferUsage, DrawPacket, DrawSamplingBinding,
     GRADIENT_COLOR_A_FLOAT_OFFSET, GRADIENT_COLOR_B_FLOAT_OFFSET, GRADIENT_EDGE_Y_FLOAT_OFFSET,
     GRADIENT_ORIGIN_EDGE_X_FLOAT_OFFSET, GRADIENT_PARAMS_FLOAT_OFFSET,
     GRADIENT_VIEWPORT_FLOAT_OFFSET, IndexFormat, MESH_COLOR_FLOAT_OFFSET,
     MESH_VIEWPORT_FLOAT_OFFSET, MSDF_RANGE_FLOAT_OFFSET, MSDF_TEXTURE_SIZE_FLOAT_OFFSET,
-    MSDF_VIEWPORT_FLOAT_OFFSET, PipelineBinding, PipelineBlend, PipelineBlendFactor,
-    PipelineBlendOperation, PipelineColorWriteMask, PipelineCullMode, PipelineDepthClip,
-    PipelineDepthState, PipelineDepthStencilState, PipelineDitherState, PipelineFrontFace,
-    PipelineKind, PipelineMultisampleState, PipelinePrimitiveTopology, PipelineRasterState,
-    PipelineStencilState, SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET,
-    SECTOR_COLOR_FLOAT_OFFSET, SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET,
-    SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET, SHADOW_COLOR_FLOAT_OFFSET,
-    SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET, SHADOW_RADIUS_FLOAT_OFFSET,
-    SHADOW_VIEWPORT_FLOAT_OFFSET, SHAPE_COLOR_FLOAT_OFFSET, SHAPE_DRAW_RECT_FLOAT_OFFSET,
-    SHAPE_RADIUS_FLOAT_OFFSET, SHAPE_RECT_FLOAT_OFFSET, SHAPE_STROKE_FLOAT_OFFSET,
-    SHAPE_VIEWPORT_FLOAT_OFFSET,
+    MSDF_VIEWPORT_FLOAT_OFFSET, PipelineBlend, PipelineBlendFactor, PipelineBlendOperation,
+    PipelineColorWriteMask, PipelineCullMode, PipelineDepthClip, PipelineDepthState,
+    PipelineDepthStencilState, PipelineDitherState, PipelineFrontFace, PipelineKind,
+    PipelineMultisampleState, PipelinePrimitiveTopology, PipelineRasterState, PipelineStencilState,
+    SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET, SECTOR_COLOR_FLOAT_OFFSET,
+    SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET, SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET,
+    SHADOW_COLOR_FLOAT_OFFSET, SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET,
+    SHADOW_RADIUS_FLOAT_OFFSET, SHADOW_VIEWPORT_FLOAT_OFFSET, SHAPE_COLOR_FLOAT_OFFSET,
+    SHAPE_DRAW_RECT_FLOAT_OFFSET, SHAPE_RADIUS_FLOAT_OFFSET, SHAPE_RECT_FLOAT_OFFSET,
+    SHAPE_STROKE_FLOAT_OFFSET, SHAPE_VIEWPORT_FLOAT_OFFSET,
 };
 // 复用父资源表、目标方向、类型化 shader 语义和错误辅助。
 use super::{OpenGlRhiDevice, rhi_invalid, target_y_sign};
@@ -96,13 +95,21 @@ unsafe fn bind_sampled(
     gl: &glow::Context,
     device: &OpenGlRhiDevice,
     program: glow::Program,
-    pipeline: PipelineBinding,
+    sampling: DrawSamplingBinding,
 ) -> Result<()> {
-    // 先由共享 pass 校验绑定语义与当前 draw pipeline 一致。
-    let binding = device.pass.sampled_binding_for(pipeline)?;
+    // 当前 sampled pipeline 必须由同一个 DrawPacket 携带完整绑定。
+    let binding = sampling
+        // 只读投影纹理、sampler 与采样语义的原子事实。
+        .sampled_texture()
+        // 防御直接 Device 调用绕过 FramePlan 结构门禁。
+        .ok_or_else(|| rhi_invalid("OpenGL RHI sampled draw binding is missing"))?;
+    // 共享 pass 只验证当前输出与 packet 输入不会形成反馈环。
+    device.pass.validate_sampled_texture(binding.texture())?;
     // 解析 texture 和 sampler 的原生对象。
     let texture = device.texture(binding.texture())?;
     let sampler = device.sampler(binding.sampler())?;
+    // 最终 Adapter 防御必须复用绑定时冻结的共享资源语义。
+    binding.validate_resources(texture.desc.format(), sampler.desc)?;
     // SAFETY：调用者保证当前 owner thread 已绑定有效 GL 上下文。
     unsafe { gl.active_texture(glow::TEXTURE0) };
     // SAFETY：纹理句柄来自当前设备资源表，且仍由该设备拥有。
@@ -123,6 +130,11 @@ impl OpenGlRhiDevice {
     pub(crate) fn draw(&mut self, gl: &glow::Context, packet: DrawPacket) -> Result<()> {
         // draw 必须位于显式 render pass 内。
         self.pass.require_open()?;
+        // 直接 Device 调用也不得用历史原生状态补齐残缺采样角色。
+        if !packet.has_valid_sampling() {
+            // 使用 API 无关之前的稳定参数错误分类。
+            return Err(rhi_invalid("OpenGL RHI draw sampling binding is invalid"));
+        }
         // draw 的 Y 方向只能来自当前 pass 已冻结的 render target 身份。
         let active_target = self.pass.target()?;
         // texture target 保持 top-left 存储，原生 surface 映射到窗口顶部。
@@ -222,7 +234,7 @@ impl OpenGlRhiDevice {
                         ],
                     );
                     // 在 sampled 原生绑定前校验当前 pipeline 语义。
-                    bind_sampled(gl, self, program, packet.pipeline())?;
+                    bind_sampled(gl, self, program, packet.sampling())?;
                 }
             }
             // 线性/径向渐变使用单位 float2 quad 和 24-float affine constants。
@@ -293,7 +305,7 @@ impl OpenGlRhiDevice {
                         ],
                     );
                     // 在 sampled 原生绑定前校验当前 pipeline 语义。
-                    bind_sampled(gl, self, program, packet.pipeline())?;
+                    bind_sampled(gl, self, program, packet.sampling())?;
                 }
             }
             // RGBA8 MSDF 使用 float8 vertex、线性 sampler 和 32-byte constants。
@@ -325,7 +337,7 @@ impl OpenGlRhiDevice {
                         read_f32(&uniform, MSDF_RANGE_FLOAT_OFFSET)?,
                     );
                     // 在 sampled 原生绑定前校验当前 pipeline 语义。
-                    bind_sampled(gl, self, program, packet.pipeline())?;
+                    bind_sampled(gl, self, program, packet.sampling())?;
                 }
             }
             // 普通与 Additive 圆角/描边矩形使用同一 RectConstants ABI。
@@ -507,7 +519,7 @@ impl OpenGlRhiDevice {
                     // 一次上传完整共享权重区间。
                     gl.uniform_4_f32_slice(location.as_ref(), &weights);
                     // 在 sampled 原生绑定前校验当前 pipeline 语义。
-                    bind_sampled(gl, self, program, packet.pipeline())?;
+                    bind_sampled(gl, self, program, packet.sampling())?;
                 }
             }
         };

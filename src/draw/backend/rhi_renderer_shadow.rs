@@ -2,8 +2,8 @@
 
 // 引入 RHI 计划执行所需的资源描述与句柄。
 use crate::native::present::rhi::{
-    BufferDesc, DrawBufferBindings, DrawPacket, DrawRange, GraphicsDevice, LoadAction,
-    PipelineBinding, PipelineDesc, PipelineKind, RhiShadowRasterParams, RhiViewport,
+    BufferDesc, DrawBufferBindings, DrawPacket, DrawRange, DrawSamplingBinding, GraphicsDevice,
+    LoadAction, PipelineBinding, PipelineDesc, PipelineKind, RhiShadowRasterParams, RhiViewport,
 };
 
 // 复用 renderer 主模块的计划类型和 shape 单位 quad 资源。
@@ -169,6 +169,8 @@ impl RhiRenderer {
             pipeline,
             // 绑定 Shadow 自己的单位 quad 与当前常量资源。
             DrawBufferBindings::new(vertex_buffer, uniform_buffer),
+            // Shadow quad 不使用采样纹理。
+            DrawSamplingBinding::none(),
             // 单位 quad 使用封闭的六顶点非索引范围。
             DrawRange::vertices(6),
         )));

@@ -4,9 +4,9 @@
 use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
     BLUR_WEIGHT_COUNT, BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange,
-    GraphicsDevice, LoadAction, PipelineDesc, PipelineKind, RhiBlurRasterParams, RhiColor,
-    RhiExtent, RhiScissor, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle,
-    TextureDesc, TextureFormat, TextureHandle,
+    DrawSamplingBinding, GraphicsDevice, LoadAction, PipelineDesc, PipelineKind,
+    RhiBlurRasterParams, RhiColor, RhiExtent, RhiScissor, RhiViewport, SampledTextureBinding,
+    SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
 };
 
 // 引入父 renderer 已导入的有序 FramePlan 类型和资源缓存。
@@ -277,20 +277,14 @@ impl RhiRenderer {
             )),
         });
         // 原子绑定原始 source texture 与共享 sampler。
-        horizontal.push(FramePlanCommand::BindSampledTexture(
-            // 固定 t0/s0 ABI 不向 blur lowering 暴露槽位。
-            SampledTextureBinding::for_pipeline(
-                // 传递水平 blur 的源纹理身份。
-                source, // 传递共享 blur 采样器身份。
-                sampler,
-                // 水平 blur 绑定与后续 DrawPacket 使用同一个 pipeline。
-                pipeline,
-            ),
-        ));
         // 追加固定六顶点 blur draw packet。
         horizontal.push(FramePlanCommand::Draw(DrawPacket::new(
             pipeline,
             DrawBufferBindings::new(vertex_buffer, uniform_buffer),
+            // DrawPacket 直接拥有水平 blur 的采样绑定。
+            DrawSamplingBinding::sampled(SampledTextureBinding::for_pipeline(
+                source, sampler, pipeline,
+            )),
             // Blur quad 使用封闭的六顶点非索引范围。
             DrawRange::vertices(6),
         )));
@@ -318,20 +312,14 @@ impl RhiRenderer {
             )),
         });
         // 原子绑定水平 pass 生成的 scratch texture 与共享 sampler。
-        vertical.push(FramePlanCommand::BindSampledTexture(
-            // 垂直 pass 复用同一个完整采样绑定类型。
-            SampledTextureBinding::for_pipeline(
-                // 传递垂直 blur 的 scratch 纹理身份。
-                scratch, // 传递共享 blur 采样器身份。
-                sampler,
-                // 垂直 blur 绑定与后续 DrawPacket 使用同一个 pipeline。
-                pipeline,
-            ),
-        ));
         // 追加固定六顶点 blur draw packet。
         vertical.push(FramePlanCommand::Draw(DrawPacket::new(
             pipeline,
             DrawBufferBindings::new(vertex_buffer, uniform_buffer),
+            // DrawPacket 直接拥有垂直 blur 的采样绑定。
+            DrawSamplingBinding::sampled(SampledTextureBinding::for_pipeline(
+                scratch, sampler, pipeline,
+            )),
             // Blur quad 使用封闭的六顶点非索引范围。
             DrawRange::vertices(6),
         )));

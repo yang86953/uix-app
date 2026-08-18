@@ -24,7 +24,7 @@ use crate::native::present::rhi::{
     RenderTargetHandle,
     // Buffer 上传值对象用于记录类型化载荷。
     RhiBufferUpload,
-    // Buffer 预检值对象用于放行 FramePlan 资源预检。
+    // Buffer 上传预检值用于证明资源检查仍发生在执行前。
     RhiBufferUploadPreflight,
     // 不可拆呈现事务用于补齐 Surface 契约。
     RhiPresentTransaction,
@@ -146,12 +146,6 @@ impl GraphicsDevice for RecordingContext {
         Ok(())
     }
 
-    // blur fixture 不重复验证共享契约，只放行 sampled 资源预检。
-    fn preflight_sampled_binding(&self, _binding: SampledTextureBinding) -> Result<()> {
-        // 资源预检事实由共享 FramePlan/RHI 测试覆盖。
-        Ok(())
-    }
-
     // 创建 renderer 缓存使用的动态 buffer。
     fn create_buffer(&mut self, _desc: BufferDesc) -> Result<BufferHandle> {
         // 返回稳定测试句柄。
@@ -229,23 +223,20 @@ impl GraphicsDevice for RecordingContext {
         Ok(())
     }
 
-    // 记录两个 pass 的输入纹理顺序。
-    fn bind_sampled_texture(
-        // 修改记录器。
-        &mut self,
-        // 保存不可拆分的采样纹理与 sampler。
-        binding: SampledTextureBinding,
-    ) -> Result<()> {
-        // 保存 source→scratch 顺序。
-        self.bound_textures.push(binding.texture().raw());
-        // 记录成功。
-        Ok(())
-    }
-
     // 记录固定六顶点 draw。
     fn draw(&mut self, packet: DrawPacket) -> Result<()> {
         // 每个方向都必须绘制同一矩形的两个三角形。
         assert_eq!(packet.range().vertex_count(), 6);
+        // Blur packet 必须自身拥有本方向读取的完整采样资源。
+        let binding = packet
+            // 只读取得条件采样角色。
+            .sampling()
+            // BlurPass 不允许依赖任何 pass-local 历史绑定。
+            .sampled_texture()
+            // 测试 fixture 若漏绑必须立即失败。
+            .expect("blur draw must own sampled resources");
+        // 按 draw painter order 记录 source 与 scratch 纹理身份。
+        self.bound_textures.push(binding.texture().raw());
         // 累加 draw 事实。
         self.draw_count += 1;
         // 记录成功。

@@ -1,91 +1,15 @@
 //! 图形 API 无关的 RHI render-pass 状态机。
 //!
-//! Device Adapter 只负责把这里已经验证的目标、几何与绑定事实机械编码到
-//! 原生 API；pass 生命周期、反馈环和命令位置不得由各 Adapter 重复解释。
+//! Device Adapter 只负责把这里已经验证的目标与几何事实机械编码到原生 API；
+//! pass 生命周期、反馈环和命令位置不得由各 Adapter 重复解释。
 
 // 引入统一错误码、错误值和结果类型。
 use crate::core::error::{Errc, Error, Result};
 
 // 引入共享的 pass 输入值和不透明资源句柄。
 use super::{
-    LoadAction, PipelineBinding, PipelineSampling, RenderTargetHandle, RhiColor, RhiExtent,
-    RhiScissor, RhiViewport, SamplerDesc, SamplerHandle, TextureFormat, TextureHandle,
+    LoadAction, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, RhiViewport, TextureHandle,
 };
-
-// 原子保存共享 shader ABI 唯一开放的采样纹理、sampler 与 pipeline 语义。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct SampledTextureBinding {
-    // 保存被采样纹理的不透明身份。
-    texture: TextureHandle,
-    // 保存与纹理同时生效的 sampler 身份。
-    sampler: SamplerHandle,
-    // 保存只由绑定时 pipeline 契约派生的采样语义。
-    sampling: PipelineSampling,
-}
-
-// 为 FramePlan、Device 和 Adapter 提供不暴露槽位的绑定构造与投影。
-impl SampledTextureBinding {
-    // 从完整 pipeline 身份构造采样绑定，禁止调用方另造采样语义。
-    pub(crate) const fn for_pipeline(
-        // 保存不透明纹理身份。
-        texture: TextureHandle,
-        // 保存不透明 sampler 身份。
-        sampler: SamplerHandle,
-        // 从已绑定的 pipeline 派生唯一采样语义。
-        pipeline: PipelineBinding,
-    ) -> Self {
-        // 两个资源身份与 pipeline 语义必须作为一个事实共同传递。
-        Self {
-            texture,
-            sampler,
-            // 采样语义只能从 pipeline 的共享 contract 派生。
-            sampling: pipeline.contract().sampling,
-        }
-    }
-
-    // 返回供 Adapter 资源表解析的纹理身份。
-    pub(crate) const fn texture(self) -> TextureHandle {
-        // 复制轻量句柄，不拆开保存状态。
-        self.texture
-    }
-
-    // 返回供 Adapter 资源表解析的 sampler 身份。
-    pub(crate) const fn sampler(self) -> SamplerHandle {
-        // 复制轻量句柄，不拆开保存状态。
-        self.sampler
-    }
-
-    // 返回由 pipeline contract 冻结的采样语义。
-    pub(crate) const fn sampling(self) -> PipelineSampling {
-        // 复制轻量的共享枚举值。
-        self.sampling
-    }
-
-    // 验证真实资源描述是否满足绑定时冻结的采样契约。
-    pub(crate) fn validate_resources(
-        // 接收资源表提供的实际纹理格式。
-        self,
-        format: TextureFormat,
-        // 接收资源表提供的实际 sampler 描述。
-        sampler: SamplerDesc,
-    ) -> Result<()> {
-        // 统一调用保存的 PipelineSampling 门禁。
-        if !self.sampling.accepts(format, sampler) {
-            // 返回不携带 Adapter 名称的共享参数错误。
-            return Err(invalid_argument(
-                "sampled binding resources do not match pipeline sampling contract",
-            ));
-        }
-        // 资源描述与绑定语义一致。
-        Ok(())
-    }
-
-    // 判断绑定语义是否与当前 Draw pipeline 完全一致。
-    pub(crate) fn matches_pipeline(self, pipeline: PipelineBinding) -> bool {
-        // 只比较共享采样语义，不重新解释原生句柄。
-        self.sampling == pipeline.contract().sampling
-    }
-}
 
 // 保存一个已经开始且尚未结束的 render pass 事实。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -96,8 +20,6 @@ struct ActiveRhiPass {
     extent: RhiExtent,
     // 保存当前左上原点 scissor；None 表示完整目标。
     scissor: Option<RhiScissor>,
-    // 原子保存最近一次成功绑定的采样纹理与 sampler。
-    sampled_binding: Option<SampledTextureBinding>,
 }
 
 // 保存单一 Device 当前唯一 render-pass 生命周期。
@@ -109,7 +31,7 @@ pub(crate) struct RhiPassState {
 
 // 为两个 Adapter 提供唯一的 pass 状态转换和校验实现。
 impl RhiPassState {
-    // 创建没有活动 pass、目标或采样绑定的初始状态。
+    // 创建没有活动 pass 或目标的初始状态。
     pub(crate) const fn new() -> Self {
         // 返回可嵌入任意原生 Device owner 的空状态。
         Self { active: None }
@@ -158,8 +80,6 @@ impl RhiPassState {
             extent,
             // 每个 pass 都从完整目标开始。
             scissor: None,
-            // 每个 pass 都必须重新建立完整采样绑定。
-            sampled_binding: None,
         });
         // 返回状态建立成功。
         Ok(())
@@ -273,58 +193,17 @@ impl RhiPassState {
         Ok(())
     }
 
-    // 验证并记录当前 pass 的唯一 sampled texture/sampler 绑定。
-    pub(crate) fn bind_sampled_texture(
-        // 独占借用状态机以提交绑定事实。
-        &mut self,
-        // 接收已经由 Adapter 资源表验证存活的原子绑定。
-        binding: SampledTextureBinding,
-    ) -> Result<()> {
-        // 取得可变活动事实，pass 外不能留下下一帧可见绑定。
-        let active = self
-            // 独占借用当前 pass。
-            .active
-            // 把缺失状态映射为统一顺序错误。
-            .as_mut()
-            // 延迟构造错误。
-            .ok_or_else(|| invalid_state("RHI texture binding has no active pass"))?;
+    // 验证当前 Draw 的采样纹理不会与活动输出目标形成反馈环。
+    pub(crate) fn validate_sampled_texture(&self, texture: TextureHandle) -> Result<()> {
+        // 当前目标查询同时证明 Draw 位于活动 pass 内。
+        let target = self.target()?;
         // 禁止同一离屏纹理同时作为当前输出与采样输入。
-        if active.target.texture() == Some(binding.texture()) {
+        if target.texture() == Some(texture) {
             // 返回共享反馈环错误，避免依赖驱动隐式解绑行为。
             return Err(invalid_argument("RHI texture feedback loop is invalid"));
         }
-        // 只有全部门禁通过后才原子记录纹理与 sampler。
-        active.sampled_binding = Some(binding);
-        // 返回绑定事实建立成功。
+        // 当前 Draw 的采样输入与输出目标没有资源冲突。
         Ok(())
-    }
-
-    // 返回当前 pass 最近一次完整 sampled texture 绑定。
-    pub(crate) fn sampled_binding(&self) -> Option<SampledTextureBinding> {
-        // 关闭状态不暴露任何陈旧或拆分绑定。
-        self.active.and_then(|active| active.sampled_binding)
-    }
-
-    // 返回与当前 Draw pipeline 语义匹配的最近采样绑定。
-    pub(crate) fn sampled_binding_for(
-        // 只读查询当前 pass 的原子绑定事实。
-        &self,
-        // 接收当前 Draw 已冻结的 pipeline 身份。
-        pipeline: PipelineBinding,
-    ) -> Result<SampledTextureBinding> {
-        // 当前 pass 必须先建立完整采样绑定。
-        let binding = self
-            .sampled_binding()
-            .ok_or_else(|| invalid_argument("RHI sampled draw has no complete binding"))?;
-        // 绑定语义必须与当前 pipeline contract 完全一致。
-        if !binding.matches_pipeline(pipeline) {
-            // 统一拒绝 pipeline 与绑定语义错配。
-            return Err(invalid_argument(
-                "RHI sampled binding does not match pipeline contract",
-            ));
-        }
-        // 返回已匹配的原子绑定事实。
-        Ok(binding)
     }
 
     // 验证指定纹理可以从 Device 资源表中销毁。
@@ -346,41 +225,11 @@ impl RhiPassState {
         Ok(())
     }
 
-    // 清除被销毁纹理留下的采样绑定身份。
-    pub(crate) fn unbind_texture(&mut self, texture: TextureHandle) {
-        // 只有活动 pass 可能拥有采样绑定。
-        if let Some(active) = self.active.as_mut() {
-            // 任一成员失效都必须清除整个原子绑定。
-            if active
-                .sampled_binding
-                .is_some_and(|binding| binding.texture() == texture)
-            {
-                // 让后续 sampled draw 显式报告缺失完整绑定。
-                active.sampled_binding = None;
-            }
-        }
-    }
-
-    // 清除被销毁 sampler 留下的绑定身份。
-    pub(crate) fn unbind_sampler(&mut self, sampler: SamplerHandle) {
-        // 只有活动 pass 可能拥有 sampler 绑定。
-        if let Some(active) = self.active.as_mut() {
-            // 任一成员失效都必须清除整个原子绑定。
-            if active
-                .sampled_binding
-                .is_some_and(|binding| binding.sampler() == sampler)
-            {
-                // 让后续 sampled draw 显式报告缺失完整绑定。
-                active.sampled_binding = None;
-            }
-        }
-    }
-
     // 结束当前 pass 并原子丢弃全部 pass 级状态。
     pub(crate) fn end(&mut self) -> Result<()> {
         // 没有活动事实时拒绝重复结束。
         self.require_open()?;
-        // 一次清除目标、extent、scissor 和采样绑定。
+        // 一次清除目标、extent 和 scissor。
         self.active = None;
         // 返回生命周期转换成功。
         Ok(())
@@ -411,34 +260,16 @@ mod tests {
     // 引入统一错误分类。
     use crate::core::Errc;
     // 引入被测共享状态机。
-    use super::{RhiPassState, SampledTextureBinding};
+    use super::RhiPassState;
     // 引入构造 pass 输入与资源身份所需的共享值。
     use crate::native::present::rhi::{
-        LoadAction, PipelineBinding, PipelineHandle, PipelineKind, PipelineSampling,
-        RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, RhiViewport, SamplerDesc,
-        SamplerHandle, TextureFormat, TextureHandle,
+        LoadAction, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, RhiViewport, TextureHandle,
     };
 
     // 创建稳定的测试目标身份。
     const TARGET: RenderTargetHandle = RenderTargetHandle::for_test(TextureHandle::from_raw(7));
     // 创建与目标不同的采样纹理身份。
     const TEXTURE: TextureHandle = TextureHandle::from_raw(8);
-    // 创建稳定的采样器身份。
-    const SAMPLER: SamplerHandle = SamplerHandle::from_raw(9);
-    // 创建 coverage pipeline 身份，绑定语义必须从此处派生。
-    const COVERAGE_PIPELINE: PipelineBinding = PipelineBinding::for_test(
-        // 使用稳定的测试 pipeline 句柄。
-        PipelineHandle::from_raw(10),
-        // 使用 R8 最近点 coverage 语义。
-        PipelineKind::GlyphCoverageQuad,
-    );
-    // 创建普通颜色 pipeline 身份，用于错配测试。
-    const TEXTURED_PIPELINE: PipelineBinding = PipelineBinding::for_test(
-        // 使用另一稳定的测试 pipeline 句柄。
-        PipelineHandle::from_raw(11),
-        // 使用 RGBA/BGRA 线性颜色语义。
-        PipelineKind::TexturedQuad,
-    );
 
     // 验证非法 begin 不会留下半打开状态。
     #[test]
@@ -533,9 +364,9 @@ mod tests {
             .expect("clear should fit");
     }
 
-    // 验证 pass 内绑定拒绝目标反馈环且只能保存完整事实。
+    // 验证 pass 只核对当前 Draw 的采样输入与活动输出关系。
     #[test]
-    fn sampled_binding_rejects_feedback_and_stays_atomic() {
+    fn sampled_texture_rejects_feedback_without_storing_binding() {
         // 创建并开始一个测试 pass。
         let mut state = RhiPassState::new();
         // 建立稳定目标范围。
@@ -546,50 +377,14 @@ mod tests {
             .expect("pass should begin");
         // 从封闭目标中取得同一纹理身份以模拟反馈环。
         let target_texture = TARGET.texture().expect("target should be a texture");
-        // 组装一个输入纹理与当前目标相同的完整绑定。
-        let feedback_binding = SampledTextureBinding::for_pipeline(
-            // 绑定当前目标纹理以触发反馈环门禁。
-            target_texture,
-            // 使用稳定 sampler 身份。
-            SAMPLER,
-            // 从 coverage pipeline 派生采样语义。
-            COVERAGE_PIPELINE,
-        );
         // 当前 render target 不能同时作为 sampled source。
-        assert!(state.bind_sampled_texture(feedback_binding).is_err());
-        // 失败不能提交半绑定状态。
-        assert_eq!(state.sampled_binding(), None);
-        // 合法的完整绑定必须成功。
-        let binding = SampledTextureBinding::for_pipeline(
-            // 使用与目标不同的采样纹理。
-            TEXTURE,
-            // 使用稳定 sampler 身份。
-            SAMPLER,
-            // 绑定 coverage pipeline 语义。
-            COVERAGE_PIPELINE,
-        );
-        // 把原子绑定交给共享状态机。
+        assert!(state.validate_sampled_texture(target_texture).is_err());
+        // 与输出不同的 packet 采样纹理必须通过共享关系门禁。
         state
-            // 绑定与目标不同的纹理和 sampler。
-            .bind_sampled_texture(binding)
-            // 共享门禁必须接收。
-            .expect("binding should succeed");
-        // 状态机必须原样返回完整绑定。
-        assert_eq!(state.sampled_binding(), Some(binding));
-        // 销毁 sampler 时必须同时清除纹理身份。
-        state.unbind_sampler(SAMPLER);
-        // 不允许留下只有纹理的半绑定状态。
-        assert_eq!(state.sampled_binding(), None);
-        // 重新建立完整绑定以验证纹理销毁路径。
-        state
-            // 第二次绑定使用相同稳定身份。
-            .bind_sampled_texture(binding)
-            // 共享状态机必须允许覆盖空绑定。
-            .expect("binding should succeed again");
-        // 销毁纹理时必须同时清除 sampler 身份。
-        state.unbind_texture(TEXTURE);
-        // 不允许留下只有 sampler 的半绑定状态。
-        assert_eq!(state.sampled_binding(), None);
+            // 只交付当前 Draw 自身携带的纹理身份。
+            .validate_sampled_texture(TEXTURE)
+            // 不同资源不得被 pass-local 历史状态影响。
+            .expect("distinct sampled texture should pass");
     }
 
     // 验证活动目标销毁在两个 Adapter 之前共享同一生命周期错误。
@@ -629,9 +424,9 @@ mod tests {
             .expect("closed-pass target destroy should pass");
     }
 
-    // 验证 end 原子清除所有 pass 级事实。
+    // 验证 end 原子清除所有 pass 级目标与几何事实。
     #[test]
-    fn end_clears_target_geometry_and_bindings() {
+    fn end_clears_target_and_geometry() {
         // 创建并开始一个测试 pass。
         let mut state = RhiPassState::new();
         // 建立稳定目标范围。
@@ -640,19 +435,6 @@ mod tests {
             .begin(TARGET, RhiExtent::new(20, 10), LoadAction::Load)
             // 测试设置必须成功。
             .expect("pass should begin");
-        // 写入一个合法 sampled binding。
-        state
-            // 使用不暴露槽位的原子绑定。
-            .bind_sampled_texture(SampledTextureBinding::for_pipeline(
-                // 使用稳定采样纹理身份。
-                TEXTURE,
-                // 使用稳定 sampler 身份。
-                SAMPLER,
-                // 从 coverage pipeline 派生绑定语义。
-                COVERAGE_PIPELINE,
-            ))
-            // 测试绑定必须成功。
-            .expect("binding should succeed");
         // 结束活动 pass。
         state.end().expect("pass should end");
         // end 后必须允许 pass 外命令。
@@ -663,65 +445,7 @@ mod tests {
             .expect("state should be closed");
         // end 后不能再读取陈旧目标。
         assert!(state.target().is_err());
-        // end 后不能再读取陈旧纹理绑定。
-        assert_eq!(state.sampled_binding(), None);
         // 重复 end 必须作为顺序错误被拒绝。
         assert!(state.end().is_err());
-    }
-
-    // 验证采样语义派生、资源格式过滤与 pipeline 匹配均由共享层封闭。
-    #[test]
-    fn sampled_binding_owns_pipeline_and_resource_contract() {
-        // 从 coverage pipeline 构造完整绑定。
-        let binding = SampledTextureBinding::for_pipeline(
-            // 使用稳定采样纹理身份。
-            TEXTURE,
-            // 使用稳定 sampler 身份。
-            SAMPLER,
-            // 绑定 coverage pipeline。
-            COVERAGE_PIPELINE,
-        );
-        // 绑定语义必须等于 pipeline contract 的采样语义。
-        assert_eq!(binding.sampling(), PipelineSampling::Coverage);
-        // 正确的 R8 与最近点资源必须被接受。
-        binding
-            .validate_resources(TextureFormat::R8Unorm, SamplerDesc::nearest_clamp())
-            .expect("coverage resources should match");
-        // 错误的纹理格式必须被共享门禁拒绝。
-        assert!(
-            binding
-                .validate_resources(TextureFormat::Rgba8Unorm, SamplerDesc::nearest_clamp())
-                .is_err()
-        );
-        // 错误的过滤方式必须被共享门禁拒绝。
-        assert!(
-            binding
-                .validate_resources(TextureFormat::R8Unorm, SamplerDesc::linear_clamp())
-                .is_err()
-        );
-        // 相同 pipeline 必须返回绑定，语义错配 pipeline 必须拒绝。
-        assert!(binding.matches_pipeline(COVERAGE_PIPELINE));
-        assert!(!binding.matches_pipeline(TEXTURED_PIPELINE));
-        // 开始 pass 以验证状态机的 pipeline 关联查询。
-        let mut state = RhiPassState::new();
-        // 建立稳定的离屏目标范围。
-        state
-            .begin(TARGET, RhiExtent::new(20, 10), LoadAction::Load)
-            .expect("pass should begin");
-        // 记录完整的 coverage 绑定。
-        state
-            .bind_sampled_texture(binding)
-            .expect("binding should be recorded");
-        // 相同 pipeline 查询必须返回原子绑定。
-        assert_eq!(
-            // 读取同一 pipeline 的完整绑定结果。
-            state
-                .sampled_binding_for(COVERAGE_PIPELINE)
-                .expect("matching pipeline should return binding"),
-            // 绑定值必须保持原子事实不变。
-            binding
-        );
-        // 错配 pipeline 查询必须在共享状态机拒绝。
-        assert!(state.sampled_binding_for(TEXTURED_PIPELINE).is_err());
     }
 }

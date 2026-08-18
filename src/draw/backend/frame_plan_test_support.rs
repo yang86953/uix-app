@@ -69,6 +69,8 @@ fn test_plan_for_target(mut plan: FramePlan, target: RenderTargetRef) -> FramePl
         PipelineBinding::for_test(PipelineHandle::from_raw(1), PipelineKind::SolidMesh),
         // 原子绑定刚刚类型化上传的顶点与 Uniform buffer。
         DrawBufferBindings::new(BufferHandle::from_raw(3), BufferHandle::from_raw(4)),
+        // SolidMesh 不读取纹理，显式选择无采样角色。
+        DrawSamplingBinding::none(),
         // 当前载荷包含三个顶点。
         DrawRange::vertices(3),
     );

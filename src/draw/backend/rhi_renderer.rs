@@ -9,9 +9,10 @@ use std::sync::Arc;
 use crate::core::error::{Errc, Error, Result};
 // 引入薄 RHI 的资源、能力和执行类型。
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, GraphicsDevice,
-    LoadAction, PipelineDesc, PipelineKind, RhiExtent, RhiScissor, RhiTextureUpload, RhiViewport,
-    SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
+    BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawSamplingBinding,
+    GraphicsDevice, LoadAction, PipelineDesc, PipelineKind, RhiExtent, RhiScissor,
+    RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc,
+    TextureFormat, TextureHandle,
 };
 
 // 引入当前目录中的有序帧计划类型。
@@ -584,6 +585,8 @@ impl RhiRenderer {
             pass.push(FramePlanCommand::Draw(DrawPacket::new(
                 pipeline,
                 DrawBufferBindings::new(vertex_buffer, uniform_buffer),
+                // Solid mesh 不使用采样纹理。
+                DrawSamplingBinding::none(),
                 // Mesh 使用封闭的非索引顶点范围。
                 DrawRange::vertices(vertex_count),
             )));
@@ -801,22 +804,16 @@ impl RhiRenderer {
                 buffer: uniform_buffer,
                 data: FrameUniformPayload::Sampled(Self::sampled_uniform(viewport)),
             });
-            // 原子绑定当前纹理和共享 sampler。
-            pass.push(FramePlanCommand::BindSampledTexture(
-                // 固定 t0/s0 ABI 不再向 FramePlan 暴露槽位。
-                SampledTextureBinding::for_pipeline(
-                    // 传递当前图片纹理身份。
-                    texture,
-                    // 传递共享采样器身份。
-                    sampler,
-                    // 绑定与后续 DrawPacket 使用完全相同的 pipeline 身份。
-                    quad_pipeline,
-                ),
-            ));
             // 追加六顶点的非索引采样 quad draw packet。
             pass.push(FramePlanCommand::Draw(DrawPacket::new(
                 quad_pipeline,
                 DrawBufferBindings::new(vertex_buffer, uniform_buffer),
+                // 将当前图片采样绑定封装进完整绘制包。
+                DrawSamplingBinding::sampled(SampledTextureBinding::for_pipeline(
+                    texture,
+                    sampler,
+                    quad_pipeline,
+                )),
                 // Sampled quad 使用封闭的六顶点非索引范围。
                 DrawRange::vertices(6),
             )));

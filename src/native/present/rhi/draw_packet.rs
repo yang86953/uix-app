@@ -1,7 +1,7 @@
 //! FramePlan 与图形 Adapter 共享的类型化绘制包。
 
-// 引入不透明 buffer 句柄和已经绑定语义的 pipeline 身份。
-use super::{BufferDesc, BufferHandle, BufferUsage, PipelineBinding};
+// 引入绘制资源身份、条件采样角色和已经绑定语义的 pipeline 身份。
+use super::{BufferDesc, BufferHandle, BufferUsage, DrawSamplingBinding, PipelineBinding};
 // 引入共享错误分类和结果类型。
 use crate::core::error::{Errc, Error, Result};
 
@@ -311,27 +311,33 @@ pub(crate) struct DrawPacket {
     pipeline: PipelineBinding,
     // 保存不可缺失的顶点与 Uniform 资源角色。
     buffers: DrawBufferBindings,
+    // 保存与 pipeline 采样语义一致的条件资源角色。
+    sampling: DrawSamplingBinding,
     // 保存不可表达矛盾字段组合的封闭绘制范围。
     range: DrawRange,
 }
 
 // 为 draw packet 提供完整构造、只读投影与共享资源门禁。
 impl DrawPacket {
-    // 一次创建已经绑定 pipeline、Buffer 角色与绘制范围的 packet。
+    // 一次创建已经绑定 pipeline、全部资源角色与绘制范围的 packet。
     pub(crate) const fn new(
         // 接收不可拆分的 pipeline 身份与共享语义。
         pipeline: PipelineBinding,
         // 接收当前所有固定 pipeline 都必需的 Buffer 角色。
         buffers: DrawBufferBindings,
+        // 接收由当前 pipeline 决定的条件采样资源角色。
+        sampling: DrawSamplingBinding,
         // 接收互斥的顶点或索引绘制范围。
         range: DrawRange,
     ) -> Self {
-        // 三项事实共同建立后才允许进入 FramePlan。
+        // 四项事实共同建立后才允许进入 FramePlan。
         Self {
             // 保存不可拆的 pipeline 身份。
             pipeline,
             // 保存完整 Buffer 角色绑定。
             buffers,
+            // 保存明确无采样或完整采样资源事实。
+            sampling,
             // 保存互斥绘制范围。
             range,
         }
@@ -349,6 +355,12 @@ impl DrawPacket {
         self.buffers
     }
 
+    // 返回当前 packet 封闭的条件采样资源角色。
+    pub(crate) const fn sampling(self) -> DrawSamplingBinding {
+        // 复制完整值对象，不暴露内部 Option 改写能力。
+        self.sampling
+    }
+
     // 返回当前 packet 已冻结的互斥绘制范围。
     pub(crate) const fn range(self) -> DrawRange {
         // 复制封闭枚举，不暴露字段改写能力。
@@ -358,15 +370,28 @@ impl DrawPacket {
     // 仅为共享契约测试保留完整 Buffer 角色并替换 pipeline 事实。
     #[cfg(test)]
     pub(crate) const fn with_pipeline(self, pipeline: PipelineBinding) -> Self {
-        // 测试变体仍只能产生三个字段都完整的 packet。
+        // 测试变体仍保留全部资源与范围事实。
         Self { pipeline, ..self }
+    }
+
+    // 仅为共享契约测试保留其它事实并替换条件采样角色。
+    #[cfg(test)]
+    pub(crate) const fn with_sampling(self, sampling: DrawSamplingBinding) -> Self {
+        // 测试变体仍只能产生字段完整、但可由门禁判定组合关系的 packet。
+        Self { sampling, ..self }
     }
 
     // 仅为共享契约测试保留 pipeline 与 Buffer 角色并替换范围事实。
     #[cfg(test)]
     pub(crate) const fn with_range(self, range: DrawRange) -> Self {
-        // 测试变体仍只能产生三个字段都完整的 packet。
+        // 测试变体仍保留 pipeline 与全部资源事实。
         Self { range, ..self }
+    }
+
+    // 判断 packet 的条件采样资源是否与 pipeline 契约一致。
+    pub(crate) fn has_valid_sampling(self) -> bool {
+        // 由 DrawSamplingBinding 唯一解释无采样与有采样组合。
+        self.sampling.matches_pipeline(self.pipeline)
     }
 
     // 判断 packet 是否包含两个 Adapter 都能执行的绘制范围。
@@ -385,6 +410,13 @@ impl DrawPacket {
         // 接收可选的真实索引资源描述。
         index_desc: Option<BufferDesc>,
     ) -> Result<()> {
+        // 直接 Device 调用也必须拒绝缺失、多余或语义错配的采样角色。
+        if !self.has_valid_sampling() {
+            // 不允许 Adapter 用历史绑定补齐残缺 packet。
+            return Err(draw_resource_error(
+                "RHI draw sampling binding does not match pipeline contract",
+            ));
+        }
         // 直接 Device 调用也必须先服从共同 DrawRange 值域门禁。
         if !self.has_valid_range() {
             // 统一拒绝零数量、原生溢出和无效索引偏移。
@@ -513,6 +545,8 @@ mod tests {
             ),
             // 原子绑定稳定顶点与 Uniform 资源身份。
             DrawBufferBindings::new(BufferHandle::from_raw(2), BufferHandle::from_raw(3)),
+            // SolidMesh 不读取纹理，必须显式选择无采样角色。
+            DrawSamplingBinding::none(),
             // 保留调用方指定的互斥绘制范围。
             range,
         )

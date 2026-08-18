@@ -7,9 +7,9 @@ use crate::core::PresentCoherency;
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDeviceCapabilities, LoadAction, PipelineBinding,
     PipelineDesc, RenderTargetHandle, RhiBufferUpload, RhiBufferUploadPreflight, RhiExtent,
-    RhiPresentTransaction, RhiScissor, RhiTextureUpload, RhiViewport, SampledTextureBinding,
-    SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceToken, TextureCopy, TextureDesc,
-    TextureHandle, TextureMove, ValidatedRhiPresent,
+    RhiPresentTransaction, RhiScissor, RhiTextureUpload, RhiViewport, SamplerDesc, SamplerHandle,
+    SubmissionHandle, SurfaceToken, TextureCopy, TextureDesc, TextureHandle, TextureMove,
+    ValidatedRhiPresent,
 };
 // 复用父模块中的 OpenGL pipeline 和资源设备类型。
 use super::{OpenGlRasterPipeline, rhi_device::OpenGlRhiDevice};
@@ -68,7 +68,7 @@ impl OpenGlRasterPipeline {
         self.rhi.resolve_render_target(texture)
     }
 
-    // 只读预检 DrawPacket 的真实 Buffer 资源。
+    // 只读预检 DrawPacket 的全部真实资源。
     pub(crate) fn rhi_preflight_draw_resources(&self, packet: DrawPacket) -> Result<()> {
         // 直接委托 OpenGL 设备的共享资源表预检。
         self.rhi.preflight_draw_resources(packet)
@@ -84,17 +84,6 @@ impl OpenGlRasterPipeline {
     pub(crate) fn rhi_preflight_texture_move(&self, movement: TextureMove) -> Result<()> {
         // 直接委托 OpenGL 设备的共享资源表预检。
         self.rhi.preflight_texture_move(movement)
-    }
-
-    // 只读预检 sampled texture 与 sampler 的真实资源语义。
-    pub(crate) fn rhi_preflight_sampled_binding(
-        // 只读借用 owner，避免预检产生 native 副作用。
-        &self,
-        // 接收共享 sampled 绑定事实。
-        binding: SampledTextureBinding,
-    ) -> Result<()> {
-        // 直接委托 OpenGL 设备的共享资源预检。
-        self.rhi.preflight_sampled_binding(binding)
     }
 
     // 只读预检 Buffer 上传的真实资源身份与载荷契约。
@@ -185,15 +174,6 @@ impl OpenGlRasterPipeline {
     ) -> Result<()> {
         // 让 OpenGL RHI helper 临时覆盖并恢复当前 scissor。
         self.with_rhi(|gl, rhi| rhi.clear_rect(gl, color, scissor))
-    }
-
-    // 绑定当前 pass 的 sampled texture。
-    pub(crate) fn rhi_bind_sampled_texture(
-        &mut self,
-        binding: SampledTextureBinding,
-    ) -> Result<()> {
-        // 纹理和 sampler 的真实 GL 绑定延迟到 draw，保留 command order。
-        self.with_rhi(|_, rhi| rhi.bind_sampled_texture(binding))
     }
 
     // 执行一个通用 draw packet。

@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 // 引入 RHI 计划执行所需的资源描述与句柄。
 use crate::native::present::rhi::{
-    BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, GraphicsDevice, LoadAction,
-    PipelineBinding, PipelineDesc, PipelineKind, RhiExtent, RhiTextureUpload,
+    BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawSamplingBinding, GraphicsDevice,
+    LoadAction, PipelineBinding, PipelineDesc, PipelineKind, RhiExtent, RhiTextureUpload,
     SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat,
 };
 
@@ -247,21 +247,14 @@ impl RhiRenderer {
                 buffer: uniform_buffer,
                 data: FrameUniformPayload::Sampled(super::RhiRenderer::sampled_uniform(viewport)),
             });
-            // 原子绑定当前 R8 coverage texture 和点采样 sampler。
-            pass.push(FramePlanCommand::BindSampledTexture(
-                // coverage 与颜色 pipeline 复用同一固定槽位值对象。
-                SampledTextureBinding::for_pipeline(
-                    // 传递当前 coverage 纹理身份。
-                    texture, // 传递 coverage 点采样器身份。
-                    sampler,
-                    // coverage 绑定与后续 DrawPacket 使用同一个 pipeline。
-                    pipeline,
-                ),
-            ));
             // 追加六顶点的非索引 coverage quad draw packet。
             pass.push(FramePlanCommand::Draw(DrawPacket::new(
                 pipeline,
                 DrawBufferBindings::new(vertex_buffer, uniform_buffer),
+                // 将当前 coverage 采样绑定封装进完整绘制包。
+                DrawSamplingBinding::sampled(SampledTextureBinding::for_pipeline(
+                    texture, sampler, pipeline,
+                )),
                 // Coverage quad 使用封闭的六顶点非索引范围。
                 DrawRange::vertices(6),
             )));

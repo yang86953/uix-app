@@ -6,8 +6,8 @@ use crate::core::error::Result;
 use crate::core::PresentDamage;
 // 引入薄 RHI 的采样与执行类型。
 use crate::native::present::rhi::{
-    DrawBufferBindings, DrawPacket, DrawRange, GraphicsContextRhi, GraphicsDevice, GraphicsSurface,
-    LoadAction, RhiViewport, SampledTextureBinding, TextureHandle,
+    DrawBufferBindings, DrawPacket, DrawRange, DrawSamplingBinding, GraphicsContextRhi,
+    GraphicsDevice, GraphicsSurface, LoadAction, RhiViewport, SampledTextureBinding, TextureHandle,
 };
 
 // 引入父 renderer 的计划、target、资源载荷和执行器。
@@ -159,22 +159,16 @@ impl RhiRenderer {
             buffer: uniform_buffer,
             data: FrameUniformPayload::Sampled(Self::sampled_uniform(viewport)),
         });
-        // 原子绑定已经存在的 Picture texture 和共享 sampler。
-        pass.push(FramePlanCommand::BindSampledTexture(
-            // 离屏路径与 surface 路径共享同一个固定槽位契约。
-            SampledTextureBinding::for_pipeline(
-                // 传递当前 sampled 纹理身份。
-                quad.texture,
-                // 传递共享 sampled 采样器身份。
-                sampler,
-                // sampled 绑定与后续 DrawPacket 使用同一个 pipeline。
-                pipeline,
-            ),
-        ));
         // 追加六顶点的非索引 sampled draw packet。
         pass.push(FramePlanCommand::Draw(DrawPacket::new(
             pipeline,
             DrawBufferBindings::new(vertex_buffer, uniform_buffer),
+            // 将当前 sampled 采样绑定封装进完整绘制包。
+            DrawSamplingBinding::sampled(SampledTextureBinding::for_pipeline(
+                quad.texture,
+                sampler,
+                pipeline,
+            )),
             // Sampled quad 使用封闭的六顶点非索引范围。
             DrawRange::vertices(6),
         )));
