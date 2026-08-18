@@ -15,7 +15,7 @@ void main() {
 }
 "#;
 
-// 实心 mesh 的 premultiplied-alpha 颜色输出。
+// 实心 mesh 直出共享契约声明的 straight-alpha 颜色。
 pub(super) const SOLID_FRAGMENT: &str = r#"#version 300 es
 precision highp float;
 uniform vec4 u_color;
