@@ -34,6 +34,8 @@ use crate::native::present::rhi::{
     SurfaceToken,
     // texture copy 原语用于拒绝意外计划变化。
     TextureCopy,
+    // texture 句柄用于测试目标能力解析。
+    TextureHandle,
 };
 
 // 保存 blur 执行期间可审计的底层命令事实。
@@ -122,6 +124,12 @@ impl GraphicsDevice for RecordingContext {
     fn device_capabilities(&self) -> GraphicsDeviceCapabilities {
         // 返回包含 render-to-texture、sampling 与 scissor 的能力集合。
         GraphicsDeviceCapabilities::full_gpu_baseline()
+    }
+
+    // 测试设备把 blur fixture texture 提升为已验证目标。
+    fn resolve_render_target(&self, texture: TextureHandle) -> Result<RenderTargetHandle> {
+        // 测试 mock 直接返回稳定的可渲染目标身份。
+        Ok(RenderTargetHandle::for_test(texture))
     }
 
     // 创建 renderer 缓存使用的动态 buffer。
@@ -361,9 +369,9 @@ fn blur_executes_two_clipped_passes_without_surface_present() {
         // 保留 source→scratch→source 的写入事实。
         vec![
             // 水平 pass 写入 scratch texture。
-            (RenderTargetHandle::for_texture(scratch), true),
+            (RenderTargetHandle::for_test(scratch), true),
             // 垂直 pass 写回 source texture。
-            (RenderTargetHandle::for_texture(source), false),
+            (RenderTargetHandle::for_test(source), false),
         ]
     );
     // 两个 pass 都必须使用裁到 texture 的同一区域。
@@ -504,9 +512,9 @@ fn overlay_backdrop_blur_writes_back_to_captured_texture_without_present() {
         // 保持 backdrop→scratch→backdrop 的严格顺序。
         vec![
             // 水平 pass 写入 scratch texture。
-            (RenderTargetHandle::for_texture(scratch), true),
+            (RenderTargetHandle::for_test(scratch), true),
             // 垂直 pass 写回 backdrop texture。
-            (RenderTargetHandle::for_texture(backdrop), false),
+            (RenderTargetHandle::for_test(backdrop), false),
         ],
     );
     // 两个 pass 共享唯一 device submit。

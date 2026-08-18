@@ -418,6 +418,8 @@ mod tests {
         fail_submit: bool,
         // 保存是否强制 draw 失败以验证 pass 中途收尾。
         fail_draw: bool,
+        // 保存是否强制目标能力解析失败。
+        fail_target_resolution: bool,
     }
 
     // 为记录型 device 实现薄 RHI 的执行原语。
@@ -426,6 +428,22 @@ mod tests {
         fn device_capabilities(&self) -> GraphicsDeviceCapabilities {
             // 返回测试实例配置的能力快照。
             self.capabilities
+        }
+
+        // 测试设备把 fixture texture 提升为已验证的目标身份。
+        fn resolve_render_target(&self, texture: TextureHandle) -> Result<RenderTargetHandle> {
+            // 在失败模式下模拟共享资源表拒绝不可渲染目标。
+            if self.fail_target_resolution {
+                // 返回稳定参数错误，证明失败发生在激活前。
+                return Err(Error::new(
+                    // 目标格式或身份不满足共享契约。
+                    Errc::InvalidArgument,
+                    // 测试诊断不泄漏具体图形 API。
+                    "recording texture is not renderable",
+                ));
+            }
+            // 测试入口不模拟真实资源表，只提供稳定的可渲染 mock 事实。
+            Ok(RenderTargetHandle::for_test(texture))
         }
 
         // 记录任何原生命令前必须发生的 owner-context 激活。
@@ -739,6 +757,8 @@ mod tests {
                 fail_submit: false,
                 // 默认允许 pass 内 draw 成功。
                 fail_draw: false,
+                // 默认允许目标能力解析成功。
+                fail_target_resolution: false,
             },
             // 创建与计划代际一致的 surface。
             surface: RecordingSurface {

@@ -260,7 +260,8 @@ mod lifecycle_tests {
     // 引入 RecordingDevice 所需的薄 RHI 原语。
     use crate::native::present::rhi::{
         DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, LoadAction, RenderTargetHandle,
-        RhiColor, RhiScissor, RhiViewport, SubmissionHandle, TextureCopy, TextureMove,
+        RhiColor, RhiScissor, RhiViewport, SubmissionHandle, TextureCopy, TextureHandle,
+        TextureMove,
     };
     // 引入待验证的 Renderer 帧 Component。
     use super::RhiRendererFrame;
@@ -292,6 +293,14 @@ mod lifecycle_tests {
             self.record_operation();
             // 返回构造时冻结的能力快照。
             self.capabilities
+        }
+
+        // 测试设备把离屏 fixture texture 提升为已验证目标。
+        fn resolve_render_target(&self, texture: TextureHandle) -> Result<RenderTargetHandle> {
+            // 记录这次执行前的目标能力解析。
+            self.record_operation();
+            // 测试 mock 直接返回稳定的可渲染目标身份。
+            Ok(RenderTargetHandle::for_test(texture))
         }
 
         // 接受离屏 render pass 开始。

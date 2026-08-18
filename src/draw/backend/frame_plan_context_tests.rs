@@ -74,4 +74,23 @@ fn context_execution_modes_share_one_ordered_device_path() {
     assert!(rejected_context.device.log.is_empty());
     // 被拒绝的离屏计划也不得触发 present。
     assert_eq!(rejected_context.surface.present_count, 0);
+
+    // 创建用于验证 texture 目标能力前置拒绝的组合 context。
+    let mut unsupported_context = recording_context(token);
+    // 安排共享资源表在目标解析阶段返回稳定失败。
+    unsupported_context.device.fail_target_resolution = true;
+    // 构造携带显式 texture target 的离屏计划。
+    let unsupported_plan = test_offscreen_plan(TextureHandle::from_raw(10));
+    // 执行必须把目标能力错误直接返回调用方。
+    let unsupported_result =
+        unsupported_plan.execute_offscreen_on_device(&mut unsupported_context.device);
+    // 不可渲染 texture 必须在进入任何原生命令前失败。
+    assert_eq!(
+        unsupported_result.expect_err("unsupported target must fail before activation").code(),
+        Errc::InvalidArgument,
+    );
+    // 目标解析失败不得触发 activate、maintain 或任何 pass 命令。
+    assert!(unsupported_context.device.log.is_empty());
+    // 目标解析失败也不得触发 Surface present。
+    assert_eq!(unsupported_context.surface.present_count, 0);
 }

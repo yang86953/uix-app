@@ -45,6 +45,8 @@ mod buffer;
 mod texture;
 // ResourceTable Component 统一不透明资源句柄的分配、查询与检查式销毁语义。
 mod resource_table;
+// 将 texture 资源描述与 render-target 能力提升收归共享资源表。
+mod texture_resource_table;
 // 将 pipeline 资源与共享 kind 绑定，禁止 Adapter 私自组合句柄语义。
 mod pipeline_resource_table;
 // PresentTransaction Component 绑定 acquire、submit 与 damage 并统一 Surface 门禁。
@@ -97,6 +99,8 @@ pub(crate) use buffer::{BufferDesc, BufferUsage, RhiBufferUpload};
 pub(crate) use texture::{TextureDesc, TextureFormat};
 // 向两个 Adapter 暴露唯一类型化资源槽位状态机。
 pub(crate) use resource_table::{RhiResourceHandle, RhiResourceTable};
+// 向 Adapter 与 FramePlan 暴露唯一 texture 资源表及描述投影。
+pub(crate) use texture_resource_table::{RhiTextureResource, RhiTextureResourceTable};
 // 向两个 Adapter 暴露唯一的 pipeline 资源表组件。
 pub(crate) use pipeline_resource_table::RhiPipelineResourceTable;
 // 向 FramePlan 与两个 Adapter 暴露不可拆的 Surface 呈现事务。
@@ -486,6 +490,12 @@ pub(crate) trait GraphicsDevice {
     fn create_texture(&mut self, _desc: TextureDesc) -> Result<TextureHandle> {
         // 默认实现显式拒绝，防止能力声明和实现脱节。
         Err(rhi_not_implemented("create_texture"))
+    }
+
+    // 在共享资源描述证明后提升 texture 为 render-target 身份。
+    fn resolve_render_target(&self, _texture: TextureHandle) -> Result<RenderTargetHandle> {
+        // 默认实现拒绝未声明资源表能力的 Adapter。
+        Err(rhi_not_implemented("resolve_render_target"))
     }
 
     // 上传一个已经绑定纹理身份、区域与紧密像素载荷的命令。

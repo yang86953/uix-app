@@ -795,7 +795,7 @@ mod target_direction_tests {
     #[test]
     fn texture_target_uses_top_left_storage_direction() {
         // 构造普通非零 texture render target 身份。
-        let texture = RenderTargetHandle::for_texture(TextureHandle::from_raw(1));
+        let texture = RenderTargetHandle::for_test(TextureHandle::from_raw(1));
         // texture 目标必须保留正符号，让逻辑顶部写入 GL 第零行。
         assert_eq!(target_y_sign(texture), 1.0);
     }

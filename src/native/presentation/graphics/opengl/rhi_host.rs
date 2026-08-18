@@ -94,6 +94,14 @@ where
         self.rhi_pipeline_mut().rhi_create_texture(desc)
     }
 
+    // 在共享资源表上提升 texture 为 render-target 身份。
+    fn resolve_render_target(&self, texture: TextureHandle) -> Result<RenderTargetHandle> {
+        // 先拒绝已关闭 owner，不恢复 native context。
+        self.rhi_ensure_active()?;
+        // 只读转发不产生 OpenGL 状态或资源副作用。
+        self.rhi_pipeline().rhi_resolve_render_target(texture)
+    }
+
     // 上传 texture payload。
     fn update_texture(&mut self, upload: RhiTextureUpload<'_>) -> Result<()> {
         // 在上传 native texture 前先拒绝已关闭 owner。

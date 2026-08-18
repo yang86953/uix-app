@@ -57,6 +57,17 @@ impl OpenGlRasterPipeline {
         self.with_rhi(|gl, rhi| rhi.create_texture(gl, desc))
     }
 
+    // 只读提升共享 texture 的 render-target 身份。
+    pub(crate) fn rhi_resolve_render_target(
+        // 只读借用 owner，避免 resolver 产生 native 副作用。
+        &self,
+        // 接收共享资源表签发的 texture 句柄。
+        texture: TextureHandle,
+    ) -> Result<RenderTargetHandle> {
+        // 直接委托 OpenGL 设备的共享资源表 resolver。
+        self.rhi.resolve_render_target(texture)
+    }
+
     // 上传通用 texture payload。
     pub(crate) fn rhi_update_texture(&mut self, upload: RhiTextureUpload<'_>) -> Result<()> {
         // 保持目标身份、区域与载荷绑定到 owner-thread Adapter 边界。
