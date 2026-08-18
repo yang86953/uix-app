@@ -56,7 +56,7 @@ impl D3d11Context {
         // Drawing 生产端与 D3D11 消费端必须严格使用同一个 ABI。
         if vertex_stride != contract.vertex.stride_bytes()
             || uniform_size != contract.uniform.size_bytes()
-            || !range.is_non_empty()
+            || !range.is_valid()
         {
             // 使用统一门禁拒绝任何 pipeline 的漂移载荷。
             return Err(rhi_invalid("D3d11 RHI pipeline ABI is invalid"));

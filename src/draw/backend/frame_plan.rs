@@ -243,14 +243,14 @@ impl FramePlan {
                     }
                     // 验证 pass 内的命令顺序元素。
                     for (command_index, command) in pass.commands.iter().enumerate() {
-                        // 只拒绝不能产生任何几何的 draw packet。
+                        // 拒绝空范围或超过两个原生 ABI 共同值域的 draw packet。
                         if let FramePlanCommand::Draw(packet) = command {
-                            // 空 draw packet 会掩盖 renderer 的 lowering 缺口。
-                            if !packet.is_non_empty() {
+                            // 统一范围门禁避免 Adapter 对同一个 u32 产生不同解释。
+                            if !packet.has_valid_range() {
                                 // 返回稳定的参数错误。
                                 return Err(Error::new(
                                     Errc::InvalidArgument,
-                                    "FramePlan draw packet must be non-empty",
+                                    "FramePlan draw packet range is invalid",
                                 ));
                             }
                             // 句柄绑定、前序上传布局和采样状态必须匹配共享 pipeline 契约。

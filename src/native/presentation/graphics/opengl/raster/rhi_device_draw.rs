@@ -168,7 +168,7 @@ impl OpenGlRhiDevice {
         // Drawing 生产端与 OpenGL 消费端必须严格使用同一个 ABI。
         if vertex_stride != contract.vertex.stride_bytes()
             || uniform.len() != contract.uniform.size_bytes()
-            || !range.is_non_empty()
+            || !range.is_valid()
         {
             // 使用统一门禁拒绝任何 pipeline 的漂移载荷。
             return Err(rhi_invalid("OpenGL RHI pipeline ABI is invalid"));
@@ -584,22 +584,37 @@ impl OpenGlRhiDevice {
                     .byte_offset(range.first_index())
                     // 拒绝旧实现的饱和或截断行为。
                     .ok_or_else(|| rhi_invalid("OpenGL RHI index offset is invalid"))?;
+                // 索引数量必须已经落在共享 GLsizei 值域内。
+                let index_count = range
+                    // 只允许索引变体投影有符号数量。
+                    .index_count_i32()
+                    // 防止任何绕过 FramePlan 的直接 Device 调用触发截断。
+                    .ok_or_else(|| rhi_invalid("OpenGL RHI index count is invalid"))?;
                 // 绑定已经验证的原生索引资源。
                 gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(index.native));
                 // 使用共享拓扑、格式和范围编码索引绘制。
                 gl.draw_elements(
                     primitive_topology,
-                    range.index_count() as i32,
+                    index_count,
                     gl_index_type(index_format),
                     index_offset,
                 );
             } else {
+                // 非索引数量必须已经落在共享 GLsizei 值域内。
+                let vertex_count = range
+                    // 只允许顶点变体投影有符号数量。
+                    .vertex_count_i32()
+                    // 防止任何绕过 FramePlan 的直接 Device 调用触发截断。
+                    .ok_or_else(|| rhi_invalid("OpenGL RHI vertex count is invalid"))?;
+                // 首顶点必须已经落在共享 GLint 值域内。
+                let first_vertex = range
+                    // 只允许顶点变体投影有符号起点。
+                    .first_vertex_i32()
+                    // 防止 u32 直接转换后改变符号。
+                    .ok_or_else(|| rhi_invalid("OpenGL RHI first vertex is invalid"))?;
+                // 非索引绘制不应继承旧 element array binding。
                 gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, None);
-                gl.draw_arrays(
-                    primitive_topology,
-                    range.first_vertex() as i32,
-                    range.vertex_count() as i32,
-                );
+                gl.draw_arrays(primitive_topology, first_vertex, vertex_count);
             }
             // 清理本次 sampled draw 的绑定，避免下一 packet 继承错误资源。
             gl.bind_sampler(0, None);

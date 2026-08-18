@@ -91,6 +91,28 @@ pub(crate) enum DrawRange {
 
 // 为两个 Adapter 提供不暴露矛盾组合的范围构造与投影。
 impl DrawRange {
+    // 把非零元素数量收敛到 OpenGL GLsizei 与 D3D11 UINT 的共同值域。
+    const fn count_i32(count: u32) -> Option<i32> {
+        // 零数量不可执行，超过 i32 上限会在 OpenGL 转换时改变含义。
+        if count == 0 || count > i32::MAX as u32 {
+            // 使用空值表达共享原生 ABI 无法表示。
+            return None;
+        }
+        // 已验证值允许无损转换为 OpenGL 有符号参数。
+        Some(count as i32)
+    }
+
+    // 把顶点起点收敛到 OpenGL GLint 与 D3D11 UINT 的共同值域。
+    const fn vertex_first_i32(first: u32) -> Option<i32> {
+        // 超过 i32 上限时禁止截断符号位。
+        if first > i32::MAX as u32 {
+            // 使用空值表达两个 Adapter 的共同子集之外。
+            return None;
+        }
+        // 已验证值允许无损转换。
+        Some(first as i32)
+    }
+
     // 创建从第零个顶点开始的非索引范围。
     pub(crate) const fn vertices(count: u32) -> Self {
         // 非索引构造器不接受任何索引字段。
@@ -107,14 +129,20 @@ impl DrawRange {
         }
     }
 
-    // 判断当前封闭范围是否包含至少一个元素。
-    pub(crate) const fn is_non_empty(self) -> bool {
-        // 两个变体都只需验证自己唯一拥有的 count。
+    // 判断当前范围是否完整落在两个原生 draw ABI 的共同值域。
+    pub(crate) const fn is_valid(self) -> bool {
+        // 两个变体分别验证自己的数量和起点编码。
         match self {
-            // 非索引范围读取顶点数量。
-            Self::Vertices { count, .. } => count != 0,
-            // 索引范围读取索引数量。
-            Self::Indices { count, .. } => count != 0,
+            // 非索引范围的 count 与 first 都必须可无损转为有符号参数。
+            Self::Vertices { count, first } => {
+                Self::count_i32(count).is_some() && Self::vertex_first_i32(first).is_some()
+            }
+            // 索引 count 使用 GLsizei，first 还必须形成有效字节偏移。
+            Self::Indices {
+                binding,
+                count,
+                first,
+            } => Self::count_i32(count).is_some() && binding.format().byte_offset(first).is_some(),
         }
     }
 
@@ -140,6 +168,17 @@ impl DrawRange {
         }
     }
 
+    // 返回 OpenGL 可无损接收的非索引顶点数量。
+    pub(crate) const fn vertex_count_i32(self) -> Option<i32> {
+        // 只从顶点变体执行共同值域转换。
+        match self {
+            // 顶点数量必须为正且不超过 GLsizei 上限。
+            Self::Vertices { count, .. } => Self::count_i32(count),
+            // 索引变体不使用非索引数量。
+            Self::Indices { .. } => None,
+        }
+    }
+
     // 返回供索引原生命令使用的索引数量。
     pub(crate) const fn index_count(self) -> u32 {
         // 非索引范围不得伪造索引 count。
@@ -151,6 +190,17 @@ impl DrawRange {
         }
     }
 
+    // 返回 OpenGL 可无损接收的索引元素数量。
+    pub(crate) const fn index_count_i32(self) -> Option<i32> {
+        // 只从索引变体执行共同值域转换。
+        match self {
+            // 非索引变体不使用索引数量。
+            Self::Vertices { .. } => None,
+            // 索引数量必须为正且不超过 GLsizei 上限。
+            Self::Indices { count, .. } => Self::count_i32(count),
+        }
+    }
+
     // 返回非索引范围的首顶点位置。
     pub(crate) const fn first_vertex(self) -> u32 {
         // 索引范围不会携带无效的首顶点字段。
@@ -159,6 +209,17 @@ impl DrawRange {
             Self::Vertices { first, .. } => first,
             // 索引变体不使用首顶点。
             Self::Indices { .. } => 0,
+        }
+    }
+
+    // 返回 OpenGL 可无损接收的非索引首顶点位置。
+    pub(crate) const fn first_vertex_i32(self) -> Option<i32> {
+        // 只从顶点变体执行共同值域转换。
+        match self {
+            // 首顶点必须不超过 GLint 上限。
+            Self::Vertices { first, .. } => Self::vertex_first_i32(first),
+            // 索引变体不使用首顶点。
+            Self::Indices { .. } => None,
         }
     }
 
@@ -204,10 +265,10 @@ impl DrawPacket {
         }
     }
 
-    // 判断 packet 是否包含可执行的顶点或索引范围。
-    pub(crate) const fn is_non_empty(self) -> bool {
-        // 委托给当前唯一范围变体的 count。
-        self.range.is_non_empty()
+    // 判断 packet 是否包含两个 Adapter 都能执行的绘制范围。
+    pub(crate) const fn has_valid_range(self) -> bool {
+        // 委托给当前唯一范围变体的共同值域门禁。
+        self.range.is_valid()
     }
 }
 
@@ -234,8 +295,8 @@ mod tests {
         assert_eq!(binding.format(), IndexFormat::Uint32);
         // 非索引范围只能投影顶点字段。
         let vertices = DrawRange::vertices(6);
-        // 非索引范围必须保持非空。
-        assert!(vertices.is_non_empty());
+        // 非索引范围必须保持有效。
+        assert!(vertices.is_valid());
         // 非索引范围只暴露顶点数量。
         assert_eq!(vertices.vertex_count(), 6);
         // 非索引范围不得伪造索引绑定或数量。
@@ -250,5 +311,35 @@ mod tests {
         assert_eq!(indices.vertex_count(), 0);
         // 索引范围必须保留完整绑定。
         assert_eq!(indices.index_binding(), Some(binding));
+    }
+
+    // 锁定 OpenGL 有符号参数与 D3D11 无符号参数的共同值域。
+    #[test]
+    fn draw_range_rejects_native_value_overflow() {
+        // 最大有符号元素数量仍属于共同值域。
+        let maximum = DrawRange::vertices(i32::MAX as u32);
+        // 最大值必须保持有效且可无损投影。
+        assert!(maximum.is_valid());
+        // OpenGL 投影必须保留原值。
+        assert_eq!(maximum.vertex_count_i32(), Some(i32::MAX));
+        // 多一个元素会在旧 OpenGL cast 中变成负数。
+        let overflow_count = DrawRange::vertices(i32::MAX as u32 + 1);
+        // 共享层必须在进入任一 Adapter 前拒绝。
+        assert!(!overflow_count.is_valid());
+        // 手工构造超出 GLint 的首顶点以覆盖完整值域门禁。
+        let overflow_first = DrawRange::Vertices {
+            // 保持数量合法以隔离起点失败。
+            count: 1,
+            // 使用无法无损转成 i32 的起点。
+            first: u32::MAX,
+        };
+        // 首顶点溢出必须由同一门禁拒绝。
+        assert!(!overflow_first.is_valid());
+        // 构造稳定的 uint32 索引绑定。
+        let binding = IndexBufferBinding::new(BufferHandle::from_raw(9), IndexFormat::Uint32);
+        // 超大首索引会形成无法由 OpenGL 指针偏移表示的字节位置。
+        let overflow_index = DrawRange::indices(binding, 1, i32::MAX as u32);
+        // D3D11 也必须服从同一个索引偏移共同子集。
+        assert!(!overflow_index.is_valid());
     }
 }
