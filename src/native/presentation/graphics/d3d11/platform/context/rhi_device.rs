@@ -367,6 +367,22 @@ impl GraphicsDevice for D3d11Context {
         self.rhi_device.textures.resolve_render_target(texture)
     }
 
+    // 在执行 copy 前只读预检真实 texture 资源和共享传输契约。
+    fn preflight_texture_copy(&self, copy: TextureCopy) -> Result<()> {
+        // 关闭后的 owner 必须先于资源表查询拒绝 copy 预检。
+        self.ensure_active()?;
+        // 共享 texture 表读取冻结描述并统一验证 copy 关系，不触碰原生状态。
+        self.rhi_device.textures.validate_copy(copy)
+    }
+
+    // 在执行 move 前只读预检真实 texture 资源和共享传输契约。
+    fn preflight_texture_move(&self, movement: TextureMove) -> Result<()> {
+        // 关闭后的 owner 必须先于资源表查询拒绝 move 预检。
+        self.ensure_active()?;
+        // 共享 texture 表读取冻结描述并统一验证 move 关系，不触碰原生状态。
+        self.rhi_device.textures.validate_move(movement)
+    }
+
     // 创建当前 D3D11 适配器已经具备 shader ABI 的有限 pipeline。
     fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineBinding> {
         // 关闭后的 owner 必须先于资源 helper 拒绝 pipeline 创建。

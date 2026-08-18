@@ -23,12 +23,20 @@ TRANSFER = ROOT / "src/native/present/rhi/transfer.rs"
 OPENGL_UPLOAD = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_upload.rs"
 # 定位 OpenGL 普通复制 Adapter。
 OPENGL_COPY = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs"
+# 定位 OpenGL 只读 preflight bridge。
+OPENGL_RASTER = ROOT / "src/native/presentation/graphics/opengl/raster/rhi.rs"
+# 定位 OpenGL GraphicsDevice host。
+OPENGL_HOST = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
 # 定位 OpenGL 重叠安全移动 Adapter。
 OPENGL_MOVE = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_copy.rs"
 # 定位 D3D11 上传、复制与移动 Adapter。
 D3D11 = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs"
 # 定位 FramePlan 的类型化传输门禁。
 FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
+# 定位 FramePlan 到 GraphicsDevice 的唯一执行器。
+FRAME_PLAN_EXECUTION = ROOT / "src/draw/backend/frame_plan_execution.rs"
+# 定位共享 texture 资源表与真实描述预检。
+TEXTURE_TABLE = ROOT / "src/native/present/rhi/texture_resource_table.rs"
 
 
 # 集中锁定纹理传输几何的所有权与跨后端机械映射。
@@ -91,10 +99,20 @@ class GraphicsRhiTextureTransferContractTests(unittest.TestCase):
         opengl_copy = OPENGL_COPY.read_text(encoding="utf-8")
         # 读取 OpenGL 移动实现。
         opengl_move = OPENGL_MOVE.read_text(encoding="utf-8")
+        # 读取 OpenGL 只读 preflight bridge。
+        opengl_raster = OPENGL_RASTER.read_text(encoding="utf-8")
+        # 读取 OpenGL GraphicsDevice host。
+        opengl_host = OPENGL_HOST.read_text(encoding="utf-8")
         # 读取 D3D11 复制与移动实现。
         d3d11 = D3D11.read_text(encoding="utf-8")
         # 读取 FramePlan 验证实现。
         frame_plan = FRAME_PLAN.read_text(encoding="utf-8")
+        # 读取 FramePlan 的 activate 前传输预检执行器。
+        execution = FRAME_PLAN_EXECUTION.read_text(encoding="utf-8")
+        # 读取共享 texture 资源表。
+        texture_table = TEXTURE_TABLE.read_text(encoding="utf-8")
+        # 读取薄 RHI 的只读 preflight 入口。
+        rhi = RHI.read_text(encoding="utf-8")
         # 两个普通复制 Adapter 都必须消费共享验证边界。
         self.assertIn("let bounds = copy.validate_transfer", opengl_copy)
         # D3D11 普通复制必须消费同一个验证入口。
@@ -105,6 +123,48 @@ class GraphicsRhiTextureTransferContractTests(unittest.TestCase):
         self.assertIn("movement.through_scratch(scratch)", d3d11)
         # FramePlan 只能从完整传输对象读取唯一尺寸。
         self.assertEqual(frame_plan.count("transfer().extent().is_valid()"), 2)
+        # 共享 texture 资源表必须先解析真实描述再调用 copy/move 校验。
+        self.assertIn("pub(crate) fn validate_copy(&self, copy: TextureCopy)", texture_table)
+        self.assertIn("pub(crate) fn validate_move(&self, movement: TextureMove)", texture_table)
+        self.assertIn("copy.validate_transfer(source, destination)", texture_table)
+        self.assertIn("movement.validate_transfer(source, destination)", texture_table)
+        # GraphicsDevice 必须提供两个只读传输 preflight 入口。
+        self.assertIn("fn preflight_texture_copy(&self, _copy: TextureCopy)", rhi)
+        self.assertIn("fn preflight_texture_move(&self, _movement: TextureMove)", rhi)
+        # 执行器必须在 activate 前调用独立的传输验证阶段。
+        self.assertIn("self.validate_transfers(steps)?;", execution)
+        self.assertIn("self.device.preflight_texture_copy(*copy)?;", execution)
+        self.assertIn("self.device.preflight_texture_move(*movement)?;", execution)
+        # 两类资源 preflight 都必须早于 Device 激活。
+        self.assertLess(
+            execution.index("self.validate_transfers(steps)?;"),
+            execution.index("self.device.activate()?;"),
+        )
+        # OpenGL Device 必须把两种 preflight 机械委托给共享资源表。
+        self.assertIn("self.textures.validate_copy(copy)", opengl_copy)
+        self.assertIn("self.textures.validate_move(movement)", opengl_copy)
+        # D3D11 Device 必须委托同一个共享资源表。
+        self.assertIn("self.rhi_device.textures.validate_copy(copy)", d3d11)
+        self.assertIn("self.rhi_device.textures.validate_move(movement)", d3d11)
+        # OpenGL raster bridge 必须保持两个只读入口。
+        self.assertIn("pub(crate) fn rhi_preflight_texture_copy(&self", opengl_raster)
+        self.assertIn("pub(crate) fn rhi_preflight_texture_move(&self", opengl_raster)
+        # OpenGL host 必须先检查 owner，再只读访问 pipeline。
+        copy_preflight = opengl_host.split("fn preflight_texture_copy", maxsplit=1)[1]
+        # 截取 copy preflight 函数体。
+        copy_preflight = copy_preflight.split("    }", maxsplit=1)[0]
+        # copy preflight 不得恢复 native context。
+        self.assertIn("self.rhi_ensure_active()?", copy_preflight)
+        self.assertIn("self.rhi_pipeline().rhi_preflight_texture_copy(copy)", copy_preflight)
+        self.assertNotIn("rhi_make_current", copy_preflight)
+        # move preflight 使用独立的只读函数体。
+        move_preflight = opengl_host.split("fn preflight_texture_move", maxsplit=1)[1]
+        # 截取 move preflight 函数体。
+        move_preflight = move_preflight.split("    }", maxsplit=1)[0]
+        # move preflight 同样不得触碰 native context。
+        self.assertIn("self.rhi_ensure_active()?", move_preflight)
+        self.assertIn("self.rhi_pipeline().rhi_preflight_texture_move(movement)", move_preflight)
+        self.assertNotIn("rhi_make_current", move_preflight)
         # Adapter 中不得再次读取旧的松散传输字段。
         old_fields = re.compile(
             # 匹配 copy 或 movement 后的任意旧坐标和尺寸字段。

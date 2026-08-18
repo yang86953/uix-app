@@ -1,7 +1,9 @@
 //! 共享 RHI texture 资源表与 render-target 能力提升。
 
 // 引入统一资源表和 texture/render-target 类型。
-use super::{RenderTargetHandle, RhiResourceTable, TextureDesc, TextureHandle};
+use super::{
+    RenderTargetHandle, RhiResourceTable, TextureCopy, TextureDesc, TextureHandle, TextureMove,
+};
 // 引入共享资源结果类型。
 use crate::core::Result;
 
@@ -68,6 +70,26 @@ impl<T: RhiTextureResource> RhiTextureResourceTable<T> {
         // 共享目标构造器统一执行格式能力门禁。
         RenderTargetHandle::for_texture(texture, resource.desc())
     }
+
+    // 预检普通复制的真实资源描述与共享传输关系。
+    pub(crate) fn validate_copy(&self, copy: TextureCopy) -> Result<()> {
+        // 先解析源纹理并复制其共享描述事实。
+        let source = self.entries.get(copy.source())?.desc();
+        // 再解析目标纹理并复制其共享描述事实。
+        let destination = self.entries.get(copy.destination())?.desc();
+        // 只保留共享验证成功或失败，不向调用方泄漏资源描述。
+        copy.validate_transfer(source, destination).map(|_| ())
+    }
+
+    // 预检重叠安全移动的真实资源描述与共享传输关系。
+    pub(crate) fn validate_move(&self, movement: TextureMove) -> Result<()> {
+        // 先解析源纹理并复制其共享描述事实。
+        let source = self.entries.get(movement.source())?.desc();
+        // 再解析目标纹理并复制其共享描述事实。
+        let destination = self.entries.get(movement.destination())?.desc();
+        // 只保留共享验证成功或失败，不向调用方泄漏资源描述。
+        movement.validate_transfer(source, destination).map(|_| ())
+    }
 }
 
 // 验证真实 texture 描述决定 render-target 能力，而不是句柄数值。
@@ -78,7 +100,10 @@ mod tests {
     // 引入稳定错误分类。
     use crate::core::Errc;
     // 引入测试资源描述所需的共享 RHI 值对象。
-    use crate::native::present::rhi::{RhiExtent, TextureDesc, TextureFormat, TextureHandle};
+    use crate::native::present::rhi::{
+        RhiExtent, RhiTextureTransfer, TextureCopy, TextureDesc, TextureFormat, TextureHandle,
+        TextureMove,
+    };
 
     // 保存测试资源的共享描述事实。
     struct TestTexture {
@@ -138,5 +163,63 @@ mod tests {
             .expect_err("stale texture must fail");
         // 共享资源表保持统一参数错误分类。
         assert_eq!(error.code(), Errc::InvalidArgument);
+    }
+
+    // 验证资源表在 copy/move 前统一解析描述并执行传输契约。
+    #[test]
+    fn validates_copy_and_move_against_shared_texture_descriptions() {
+        // 创建空的测试 texture 资源表。
+        let mut table = RhiTextureResourceTable::new();
+        // 登记普通 BGRA 源纹理。
+        let source = table.insert(TestTexture {
+            // 使用四乘四的共享颜色描述。
+            desc: TextureDesc::new(RhiExtent::new(4, 4), TextureFormat::Bgra8Unorm),
+        });
+        // 登记同格式目标纹理。
+        let destination = table.insert(TestTexture {
+            // 使用相同格式证明合法 copy。
+            desc: TextureDesc::new(RhiExtent::new(4, 4), TextureFormat::Bgra8Unorm),
+        });
+        // 登记格式不同的目标纹理。
+        let mismatched = table.insert(TestTexture {
+            // 使用 RGBA 格式触发共享格式拒绝。
+            desc: TextureDesc::new(RhiExtent::new(4, 4), TextureFormat::Rgba8Unorm),
+        });
+        // 构造四乘四的完整传输区域。
+        let transfer = RhiTextureTransfer::from_xy(0, 0, 0, 0, RhiExtent::new(4, 4));
+        // 不同同格式纹理的 copy 必须通过。
+        assert!(
+            table
+                .validate_copy(TextureCopy::new(source, destination, transfer))
+                .is_ok()
+        );
+        // 同一纹理的 move 必须通过共享移动语义。
+        assert!(
+            table
+                .validate_move(TextureMove::new(source, source, transfer))
+                .is_ok()
+        );
+        // 普通 copy 不得接受同一资源。
+        assert!(
+            table
+                .validate_copy(TextureCopy::new(source, source, transfer))
+                .is_err()
+        );
+        // 不同格式的 copy 必须在共享表中拒绝。
+        assert!(
+            table
+                .validate_copy(TextureCopy::new(source, mismatched, transfer))
+                .is_err()
+        );
+        // 陈旧源句柄必须在传输契约前被拒绝。
+        assert!(
+            table
+                .validate_copy(TextureCopy::new(
+                    TextureHandle::from_raw(99),
+                    destination,
+                    transfer,
+                ))
+                .is_err()
+        );
     }
 }

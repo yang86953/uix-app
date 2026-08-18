@@ -498,6 +498,18 @@ pub(crate) trait GraphicsDevice {
         Err(rhi_not_implemented("resolve_render_target"))
     }
 
+    // 在激活 Device 前预检普通 texture copy 的资源与传输契约。
+    fn preflight_texture_copy(&self, _copy: TextureCopy) -> Result<()> {
+        // 默认实现拒绝未声明共享 texture 资源表能力的 Adapter。
+        Err(rhi_not_implemented("preflight_texture_copy"))
+    }
+
+    // 在激活 Device 前预检 texture move 的资源与传输契约。
+    fn preflight_texture_move(&self, _movement: TextureMove) -> Result<()> {
+        // 默认实现拒绝未声明共享 texture 资源表能力的 Adapter。
+        Err(rhi_not_implemented("preflight_texture_move"))
+    }
+
     // 上传一个已经绑定纹理身份、区域与紧密像素载荷的命令。
     fn update_texture(&mut self, _upload: RhiTextureUpload<'_>) -> Result<()> {
         // 默认实现显式拒绝，避免把空上传当作成功。

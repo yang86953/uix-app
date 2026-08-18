@@ -68,6 +68,18 @@ impl OpenGlRasterPipeline {
         self.rhi.resolve_render_target(texture)
     }
 
+    // 只读预检普通 texture copy。
+    pub(crate) fn rhi_preflight_texture_copy(&self, copy: TextureCopy) -> Result<()> {
+        // 直接委托 OpenGL 设备的共享资源表预检。
+        self.rhi.preflight_texture_copy(copy)
+    }
+
+    // 只读预检 texture move。
+    pub(crate) fn rhi_preflight_texture_move(&self, movement: TextureMove) -> Result<()> {
+        // 直接委托 OpenGL 设备的共享资源表预检。
+        self.rhi.preflight_texture_move(movement)
+    }
+
     // 上传通用 texture payload。
     pub(crate) fn rhi_update_texture(&mut self, upload: RhiTextureUpload<'_>) -> Result<()> {
         // 保持目标身份、区域与载荷绑定到 owner-thread Adapter 边界。

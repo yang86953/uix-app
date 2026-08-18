@@ -102,6 +102,22 @@ where
         self.rhi_pipeline().rhi_resolve_render_target(texture)
     }
 
+    // 在共享资源表上只读预检普通 texture copy。
+    fn preflight_texture_copy(&self, copy: TextureCopy) -> Result<()> {
+        // 先拒绝已关闭 owner，不恢复 native context。
+        self.rhi_ensure_active()?;
+        // 只读转发不产生 OpenGL 状态或资源副作用。
+        self.rhi_pipeline().rhi_preflight_texture_copy(copy)
+    }
+
+    // 在共享资源表上只读预检 texture move。
+    fn preflight_texture_move(&self, movement: TextureMove) -> Result<()> {
+        // 先拒绝已关闭 owner，不恢复 native context。
+        self.rhi_ensure_active()?;
+        // 只读转发不产生 OpenGL 状态或资源副作用。
+        self.rhi_pipeline().rhi_preflight_texture_move(movement)
+    }
+
     // 上传 texture payload。
     fn update_texture(&mut self, upload: RhiTextureUpload<'_>) -> Result<()> {
         // 在上传 native texture 前先拒绝已关闭 owner。
