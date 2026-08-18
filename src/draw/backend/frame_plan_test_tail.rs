@@ -687,9 +687,11 @@ fn sampled_resource_preflight_rejects_before_device() {
     let mut rejected = recording_context(token);
     // 只影响 shared sampled 资源预检，不改变其它 Device 行为。
     rejected.device.fail_sampled_preflight = true;
+    // 同时安排 Surface acquire 环境失败以验证错误优先级。
+    rejected.surface.fail_acquire = true;
     // 失败必须发生在任何 Device 原语之前。
     let error = plan
-        // 通过普通 surface 入口验证 acquire 后的前置执行边界。
+        // 通过普通 Surface 入口验证 acquire 前的资源边界。
         .execute_on_context(&mut rejected)
         // sampled 资源预检必须在 activate 前失败。
         .expect_err("sampled resource preflight must fail before device activation");
@@ -699,10 +701,32 @@ fn sampled_resource_preflight_rejects_before_device() {
     assert!(rejected.device.log.is_empty());
     // preflight 失败不得触发 present。
     assert_eq!(rejected.surface.present_count, 0);
+    // Surface sampled 资源预检失败必须早于 acquire。
+    assert_eq!(rejected.surface.acquire_count, 0);
     // 关闭失败注入后，同一合法计划必须通过预检并完成执行。
     let mut accepted = recording_context(token);
     // 合法 sampled binding 由测试 Device 预检放行。
     assert!(plan.execute_on_context(&mut accepted).is_ok());
+    // 合法资源计划必须只 acquire 一次。
+    assert_eq!(accepted.surface.acquire_count, 1);
+    // 安排只有 Surface acquire 失败的环境故障。
+    let mut acquire_failed = recording_context(token);
+    // 保持资源预检成功，只注入 acquire 故障。
+    acquire_failed.surface.fail_acquire = true;
+    // 合法资源遇到 acquire 故障必须返回 Surface 生命周期错误。
+    let acquire_error = plan
+        // 执行入口必须保留 acquire 的环境错误分类。
+        .execute_on_context(&mut acquire_failed)
+        // acquire 故障必须被观察到。
+        .expect_err("acquire failure must remain a surface error");
+    // 环境故障分类必须是 GraphicsSurfaceLost。
+    assert_eq!(acquire_error.code(), Errc::GraphicsSurfaceLost);
+    // acquire 故障必须记录一次 acquire 尝试。
+    assert_eq!(acquire_failed.surface.acquire_count, 1);
+    // acquire 失败不得进入任何 Device 原生命令。
+    assert!(acquire_failed.device.log.is_empty());
+    // acquire 失败不得进入最终 present。
+    assert_eq!(acquire_failed.surface.present_count, 0);
 }
 
 // 验证 submit 失败时不会进入最终 present。
@@ -868,6 +892,8 @@ fn missing_gpu_baseline_is_rejected_before_acquire() {
     assert_eq!(error.code(), Errc::NotImplemented);
     // 验证缺口发生在 acquire 之前。
     assert!(context.device.log.is_empty());
+    // capability 缺口不得取得 Surface image。
+    assert_eq!(context.surface.acquire_count, 0);
     // 验证没有产生最终 present。
     assert_eq!(context.surface.present_count, 0);
 }

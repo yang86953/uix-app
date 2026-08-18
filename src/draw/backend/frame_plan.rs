@@ -637,54 +637,8 @@ mod tests {
         }
     }
 
-    // 记录一个不会触碰真实窗口的 mock surface。
-    struct RecordingSurface {
-        // 保存当前 surface token。
-        token: SurfaceToken,
-        // 保存最终 present 次数。
-        present_count: usize,
-        // 保存是否强制最终 present 失败。
-        fail_present: bool,
-    }
-
-    // 为记录型 surface 实现 acquire/resize/present。
-    impl GraphicsSurface for RecordingSurface {
-        // 返回当前代际。
-        fn token(&self) -> SurfaceToken {
-            // 返回 surface token。
-            self.token
-        }
-
-        // 返回当前 acquired image。
-        fn acquire(&mut self) -> Result<SurfaceFrame> {
-            // 构造与当前 token 匹配的 frame。
-            Ok(SurfaceFrame::new(self.token))
-        }
-
-        // 推进代际并更新 extent。
-        fn resize(&mut self, extent: RhiExtent) -> Result<SurfaceToken> {
-            // 递增代际，模拟真实 surface 重建。
-            self.token = SurfaceToken::new(self.token.generation + 1, extent);
-            // 返回新 token。
-            Ok(self.token)
-        }
-
-        // 记录最终 present，并在失败模式下返回 surface 错误。
-        fn present(&mut self, _transaction: RhiPresentTransaction) -> Result<()> {
-            // 记录到达最终 present 边界。
-            self.present_count += 1;
-            // 在失败模式下返回 surface lost。
-            if self.fail_present {
-                // 返回 typed surface error，调用方不会得到 FrameCommit。
-                return Err(Error::new(
-                    Errc::GraphicsSurfaceLost,
-                    "recording present failed",
-                ));
-            }
-            // 返回成功。
-            Ok(())
-        }
-    }
+    // 将记录型 Surface fixture 拆出，保持 FramePlan 核心文件低于上限。
+    include!("frame_plan_recording_surface.rs");
 
     // 组合记录型 device 与 surface，覆盖迁移期 context 执行入口。
     struct RecordingContext {
@@ -700,6 +654,12 @@ mod tests {
         fn device_capabilities(&self) -> GraphicsDeviceCapabilities {
             // 不建立第二份测试能力来源。
             self.device.device_capabilities()
+        }
+
+        // 把 texture target 能力解析委托给内嵌记录 Device。
+        fn resolve_render_target(&self, texture: TextureHandle) -> Result<RenderTargetHandle> {
+            // Surface 事务的只读预检必须观察同一 Device 资源事实。
+            self.device.resolve_render_target(texture)
         }
 
         // 把普通 texture copy 预检委托给内嵌记录 device。
@@ -867,18 +827,20 @@ mod tests {
                 token,
                 // 初始尚未发生最终 present。
                 present_count: 0,
+                // 初始尚未取得任何 Surface image。
+                acquire_count: 0,
                 // 默认允许 present 成功。
                 fail_present: false,
+                // 默认允许 acquire 成功。
+                fail_acquire: false,
             },
         }
     }
 
     // 将 Surface 与 Offscreen 共用的最小计划构造器拆到独立测试支持文件。
     include!("frame_plan_test_support.rs");
-
     // 将组合 context 的多执行模式回归测试拆到独立载荷，保持核心文件小于上限。
     include!("frame_plan_context_tests.rs");
-
     // 将资源移动与 submit 失败边界拆到独立测试载荷，保持计划核心文件短小。
     include!("frame_plan_test_tail.rs");
 }

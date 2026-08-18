@@ -27,6 +27,8 @@ fn context_execution_modes_share_one_ordered_device_path() {
     );
     // 只有最终模式允许触发一次 present。
     assert_eq!(final_context.surface.present_count, 1);
+    // 合法 Surface 计划必须只 acquire 一次。
+    assert_eq!(final_context.surface.acquire_count, 1);
 
     // 创建只提交离屏纹理计划的组合 context。
     let mut offscreen_context = recording_context(token);
@@ -74,6 +76,8 @@ fn context_execution_modes_share_one_ordered_device_path() {
     assert!(rejected_context.device.log.is_empty());
     // 被拒绝的离屏计划也不得触发 present。
     assert_eq!(rejected_context.surface.present_count, 0);
+    // 离屏目标作用域拒绝不应取得 Surface image。
+    assert_eq!(rejected_context.surface.acquire_count, 0);
 
     // 创建用于验证 texture 目标能力前置拒绝的组合 context。
     let mut unsupported_context = recording_context(token);
@@ -93,6 +97,40 @@ fn context_execution_modes_share_one_ordered_device_path() {
     assert!(unsupported_context.device.log.is_empty());
     // 目标解析失败也不得触发 Surface present。
     assert_eq!(unsupported_context.surface.present_count, 0);
+    // 离屏目标解析失败不应取得 Surface image。
+    assert_eq!(unsupported_context.surface.acquire_count, 0);
+}
+
+// Surface scope 的 texture target 解析失败也必须发生在 acquire 前。
+#[test]
+fn surface_target_preflight_rejects_before_acquire() {
+    // 创建稳定的 Surface generation。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 构造 Surface scope 下显式 texture target 的完整计划。
+    let plan = test_plan_for_target(
+        // 保留 Surface 代际和最终 damage 事务。
+        FramePlan::new(token, crate::core::PresentDamage::Full),
+        // 让资源预检必须解析真实 texture target。
+        RenderTargetRef::Texture(TextureHandle::from_raw(21)),
+    );
+    // 注入 texture target 能力解析失败。
+    let mut context = recording_context(token);
+    // 只影响 target 资源预检，不改变 Surface 生命周期。
+    context.device.fail_target_resolution = true;
+    // 失败必须发生在 acquire 前。
+    let error = plan
+        // 通过 Surface 入口验证完整 scope 语义。
+        .execute_on_context(&mut context)
+        // target 预检必须拒绝不可渲染 texture。
+        .expect_err("surface target preflight must fail before acquire");
+    // 失败分类必须是共享参数错误。
+    assert_eq!(error.code(), Errc::InvalidArgument);
+    // 目标预检失败不得触碰 Device 原生命令。
+    assert!(context.device.log.is_empty());
+    // 目标预检失败必须保持 acquire 次数为零。
+    assert_eq!(context.surface.acquire_count, 0);
+    // 目标预检失败不得触发 present。
+    assert_eq!(context.surface.present_count, 0);
 }
 
 // Copy preflight 失败必须发生在 Device activate 前且不留下日志。
@@ -124,6 +162,8 @@ fn texture_copy_preflight_rejects_before_device() {
     assert!(rejected.device.log.is_empty());
     // preflight 失败不得触发 present。
     assert_eq!(rejected.surface.present_count, 0);
+    // Surface 资源预检失败必须早于 acquire。
+    assert_eq!(rejected.surface.acquire_count, 0);
     // 关闭失败注入后，同一合法计划的 preflight 必须放行。
     let mut accepted = recording_context(token);
     assert!(plan.execute_on_context(&mut accepted).is_ok());
@@ -158,6 +198,8 @@ fn texture_move_preflight_rejects_before_device() {
     assert!(rejected.device.log.is_empty());
     // preflight 失败不得触发 present。
     assert_eq!(rejected.surface.present_count, 0);
+    // Surface 资源预检失败必须早于 acquire。
+    assert_eq!(rejected.surface.acquire_count, 0);
     // 关闭失败注入后，同一合法计划的 preflight 必须放行。
     let mut accepted = recording_context(token);
     assert!(plan.execute_on_context(&mut accepted).is_ok());
@@ -176,7 +218,7 @@ fn draw_resource_preflight_rejects_before_device() {
     rejected.device.fail_draw_preflight = true;
     // 失败必须发生在任何 Device 原语之前。
     let error = plan
-        // 通过普通 surface 入口验证 acquire 后的前置执行边界。
+        // 通过普通 Surface 入口验证 acquire 前的资源边界。
         .execute_on_context(&mut rejected)
         // Draw 资源预检必须在 activate 前失败。
         .expect_err("draw resource preflight must fail before device activation");
@@ -186,6 +228,8 @@ fn draw_resource_preflight_rejects_before_device() {
     assert!(rejected.device.log.is_empty());
     // preflight 失败不得触发 present。
     assert_eq!(rejected.surface.present_count, 0);
+    // Surface 资源预检失败必须早于 acquire。
+    assert_eq!(rejected.surface.acquire_count, 0);
     // 关闭失败注入后，同一合法计划必须通过预检并完成执行。
     let mut accepted = recording_context(token);
     // 合法资源描述由测试 Device 预检放行。
