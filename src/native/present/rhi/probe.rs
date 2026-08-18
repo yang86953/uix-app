@@ -2,287 +2,431 @@
 
 // 引入探针创建、绘制、提交和销毁所需的共享 RHI 类型。
 use super::{
-    BufferDesc, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineDesc, PipelineKind,
-    RhiBufferUpload, RhiColor, RhiExtent, RhiScissor, RhiShapeRasterParams, RhiTextureRegion,
-    RhiTextureTransfer, RhiTextureUpload, RhiViewport, SamplerDesc, TextureDesc, TextureFormat,
+    BufferDesc, BufferHandle, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineBinding,
+    PipelineDesc, PipelineKind, RhiBufferUpload, RhiColor, RhiExtent, RhiMeshRasterParams,
+    RhiScissor, RhiShapeRasterParams, RhiTextureRegion, RhiTextureTransfer, RhiTextureUpload,
+    RhiViewport, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
     TextureMove,
 };
 // 引入统一结果类型。
-use crate::core::Result;
+use crate::core::{Error, Result};
+
+// 按创建顺序保存探针资源，并封闭 pass 与清理生命周期。
+struct ProbeScope {
+    // 保存已经创建的 buffer。
+    buffers: Vec<BufferHandle>,
+    // 保存已经创建的 texture。
+    textures: Vec<TextureHandle>,
+    // 保存已经创建的 sampler。
+    samplers: Vec<SamplerHandle>,
+    // 保存已经创建的 pipeline。
+    pipelines: Vec<PipelineBinding>,
+    // 记录 begin_render_pass 是否成功完成。
+    pass_open: bool,
+}
+
+// 为探针提供资源登记、pass 状态和全局逆序清理。
+impl ProbeScope {
+    // 创建一个尚未持有资源且没有打开 pass 的作用域。
+    fn new() -> Self {
+        // 返回空的资源登记表。
+        Self {
+            // 初始没有 buffer。
+            buffers: Vec::new(),
+            // 初始没有 texture。
+            textures: Vec::new(),
+            // 初始没有 sampler。
+            samplers: Vec::new(),
+            // 初始没有 pipeline。
+            pipelines: Vec::new(),
+            // 初始没有打开 pass。
+            pass_open: false,
+        }
+    }
+
+    // 记录一个已经成功创建的 buffer 并返回其句柄。
+    fn track_buffer(&mut self, buffer: BufferHandle) -> BufferHandle {
+        // 按创建顺序登记资源。
+        self.buffers.push(buffer);
+        // 返回句柄供后续探针命令使用。
+        buffer
+    }
+
+    // 记录一个已经成功创建的 texture 并返回其句柄。
+    fn track_texture(&mut self, texture: TextureHandle) -> TextureHandle {
+        // 按创建顺序登记资源。
+        self.textures.push(texture);
+        // 返回句柄供后续探针命令使用。
+        texture
+    }
+
+    // 记录一个已经成功创建的 sampler 并返回其句柄。
+    fn track_sampler(&mut self, sampler: SamplerHandle) -> SamplerHandle {
+        // 按创建顺序登记资源。
+        self.samplers.push(sampler);
+        // 返回句柄供后续探针命令使用。
+        sampler
+    }
+
+    // 记录一个已经成功创建的 pipeline 并返回其绑定身份。
+    fn track_pipeline(&mut self, pipeline: PipelineBinding) -> PipelineBinding {
+        // 按创建顺序登记资源。
+        self.pipelines.push(pipeline);
+        // 返回绑定身份供后续探针命令使用。
+        pipeline
+    }
+
+    // 先结束打开的 pass，再按资源全局创建逆序持续销毁并保留首错。
+    fn cleanup<D: GraphicsDevice + ?Sized>(&mut self, device: &mut D) -> Result<()> {
+        // 记录第一个清理失败，后续失败不能阻断剩余资源销毁。
+        let mut first_error: Option<Error> = None;
+        // 打开 pass 必须先尝试结束，避免资源销毁跨越 pass 生命周期。
+        if self.pass_open {
+            // 即使 end 失败也继续后续资源清理。
+            if let Err(error) = device.end_render_pass() {
+                // 保留首个清理错误。
+                first_error = Some(error);
+            } else {
+                // 只有成功结束后才关闭本地 pass 状态。
+                self.pass_open = false;
+            }
+        }
+        // 按 pipeline 创建逆序销毁全部 pipeline。
+        while let Some(pipeline) = self.pipelines.pop() {
+            // 记录 pipeline 销毁失败但继续清理。
+            if let Err(error) = device.destroy_pipeline(pipeline) {
+                // 只保留最早的清理错误。
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+        }
+        // 按 sampler 创建逆序销毁全部 sampler。
+        while let Some(sampler) = self.samplers.pop() {
+            // 记录 sampler 销毁失败但继续清理。
+            if let Err(error) = device.destroy_sampler(sampler) {
+                // 只保留最早的清理错误。
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+        }
+        // 按 texture 创建逆序销毁全部 texture。
+        while let Some(texture) = self.textures.pop() {
+            // 记录 texture 销毁失败但继续清理。
+            if let Err(error) = device.destroy_texture(texture) {
+                // 只保留最早的清理错误。
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+        }
+        // 按 buffer 创建逆序销毁全部 buffer。
+        while let Some(buffer) = self.buffers.pop() {
+            // 记录 buffer 销毁失败但继续清理。
+            if let Err(error) = device.destroy_buffer(buffer) {
+                // 只保留最早的清理错误。
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+        }
+        // 返回首个清理错误或成功。
+        first_error.map_or(Ok(()), Err)
+    }
+}
 
 // 在 bootstrap 阶段执行最小资源、固定 pipeline、Solid 和 Shape 命令探针。
 pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result<()> {
-    // 单位 quad 前三个顶点同时形成 solid 探针所需的最小三角形。
-    let unit_vertices = [
-        // 左上。
-        0.0f32, // 左上。
-        0.0,    // 右上。
-        1.0,    // 右上。
-        0.0,    // 右下。
-        1.0,    // 右下。
-        1.0,    // 左上。
-        0.0,    // 左上。
-        0.0,    // 右下。
-        1.0,    // 右下。
-        1.0,    // 左下。
-        0.0,    // 左下。
-        1.0,
-    ];
-    // 把单位 quad 编码为共享 host 上的紧密 float 字节。
-    let mut vertex_bytes = Vec::with_capacity(unit_vertices.len() * std::mem::size_of::<f32>());
-    // 逐个保持顶点 IEEE float 表示。
-    for value in unit_vertices {
-        // adapter 与 probe 在同一 host，使用 native-endian ABI。
-        vertex_bytes.extend_from_slice(&value.to_ne_bytes());
-    }
-    // 创建 Solid 与 Shape 共用的真实单位 quad 顶点 buffer。
-    let vertex_buffer = device.create_buffer(BufferDesc::vertex(
-        // 六个 float2 顶点占四十八字节。
-        vertex_bytes.len(),
-        // 两个 float 组成一个 position。
-        PipelineKind::SolidMesh.contract().vertex.stride_bytes(),
-    ))?;
-    // 上传单位 quad，避免零顶点只能验证命令而不能覆盖 Shape 插值。
-    device.update_buffer(RhiBufferUpload::new(vertex_buffer, &vertex_bytes))?;
-    // 创建 Solid mesh 所需的 32 字节 uniform ABI。
-    let solid_uniform_buffer = device.create_buffer(BufferDesc::uniform(
-        // MeshConstants 固定占三十二字节。
-        PipelineKind::SolidMesh.contract().uniform.size_bytes(),
-    ))?;
-    // 上传有限 viewport、padding 和透明颜色常量。
-    device.update_buffer(RhiBufferUpload::new(
-        // 绑定刚创建的 Solid Uniform。
-        solid_uniform_buffer,
-        // 上传完整的零初始化常量块。
-        &vec![0; PipelineKind::SolidMesh.contract().uniform.size_bytes()],
-    ))?;
-    // 使用共享 Shape 值对象构造一个真实描边探针。
-    let shape_params = RhiShapeRasterParams::new(
-        // 使用最小 render target 的物理视口。
-        RhiViewport {
+    // 创建共享作用域，使主体任意失败都进入统一清理路径。
+    let mut scope = ProbeScope::new();
+    // 执行探针主体，保留原始主错误直到清理完成。
+    let probe_result = (|| -> Result<()> {
+        // 单位 quad 前三个顶点同时形成 solid 探针所需的最小三角形。
+        let unit_vertices = [
+            // 左上。
+            0.0f32, // 左上。
+            0.0,    // 右上。
+            1.0,    // 右上。
+            0.0,    // 右下。
+            1.0,    // 右下。
+            1.0,    // 左上。
+            0.0,    // 左上。
+            0.0,    // 右下。
+            1.0,    // 右下。
+            1.0,    // 左下。
+            0.0,    // 左下。
+            1.0,
+        ];
+        // 把单位 quad 编码为共享 host 上的紧密 float 字节。
+        let mut vertex_bytes = Vec::with_capacity(unit_vertices.len() * std::mem::size_of::<f32>());
+        // 逐个保持顶点 IEEE float 表示。
+        for value in unit_vertices {
+            // adapter 与 probe 在同一 host，使用 native-endian ABI。
+            vertex_bytes.extend_from_slice(&value.to_ne_bytes());
+        }
+        // 创建 Solid 与 Shape 共用的真实单位 quad 顶点 buffer。
+        let vertex_buffer = scope.track_buffer(device.create_buffer(BufferDesc::vertex(
+            // 六个 float2 顶点占四十八字节。
+            vertex_bytes.len(),
+            // 两个 float 组成一个 position。
+            PipelineKind::SolidMesh.contract().vertex.stride_bytes(),
+        ))?);
+        // 上传单位 quad，避免零顶点只能验证命令而不能覆盖 Shape 插值。
+        device.update_buffer(RhiBufferUpload::new(vertex_buffer, &vertex_bytes))?;
+        // 创建 Solid mesh 所需的 32 字节 uniform ABI。
+        let solid_uniform_buffer =
+            scope.track_buffer(device.create_buffer(BufferDesc::uniform(
+                // MeshConstants 固定占三十二字节。
+                PipelineKind::SolidMesh.contract().uniform.size_bytes(),
+            ))?);
+        // 构造 1x1 viewport、padding 和透明颜色的共享 Solid 常量。
+        let solid_params = RhiMeshRasterParams::new(
+            // 使用最小 render target 的物理视口。
+            RhiViewport {
+                // 视口宽度。
+                width: 1.0,
+                // 视口高度。
+                height: 1.0,
+            },
+            // 使用透明颜色填充 Solid 探针。
+            [0.0; 4],
+        );
+        // 编码共享 Solid ABI 为紧密 native-endian 字节。
+        let solid_uniform_bytes = solid_params.encode_ne_bytes();
+        // 上传有限 viewport、padding 和透明颜色常量。
+        device.update_buffer(RhiBufferUpload::new(
+            // 绑定刚创建的 Solid Uniform。
+            solid_uniform_buffer,
+            // 上传共享 Solid ABI 字节。
+            &solid_uniform_bytes,
+        ))?;
+        // 使用共享 Shape 值对象构造一个真实描边探针。
+        let shape_params = RhiShapeRasterParams::new(
+            // 使用最小 render target 的物理视口。
+            RhiViewport {
+                // 视口宽度。
+                width: 1.0,
+                // 视口高度。
+                height: 1.0,
+            },
+            // 在目标中心放置一个半像素矩形。
+            [0.25, 0.25, 0.5, 0.5],
+            // 使用透明颜色，探针不污染目标内容语义。
+            [0.0; 4],
+            // 使用可进入圆角 SDF 的非零半径。
+            [0.2; 4],
+            // 使用非零半宽确保执行描边与同心双 SDF 分支。
+            0.125,
+        );
+        // 编码完整共享 Shape ABI。
+        let shape_uniform_bytes = shape_params.encode_ne_bytes();
+        // 创建 Shape 固定 ABI uniform buffer。
+        let shape_uniform_buffer =
+            scope.track_buffer(device.create_buffer(BufferDesc::uniform(
+                // 使用共享常量，禁止 probe 与 renderer 产生布局分叉。
+                PipelineKind::ShapeRect.contract().uniform.size_bytes(),
+            ))?);
+        // 上传会真实触发描边分支的 Shape 参数。
+        device.update_buffer(RhiBufferUpload::new(
+            // 绑定 Shape Uniform 身份。
+            shape_uniform_buffer,
+            // 上传共享值对象编码的完整常量块。
+            &shape_uniform_bytes,
+        ))?;
+        // 使用最小的 RGBA texture 验证 render target 颜色格式。
+        let rgba_texture = scope.track_texture(device.create_texture(TextureDesc::new(
+            // 使用一像素离屏目标。
+            RhiExtent::new(1, 1),
+            // 使用通用 RGBA8 格式。
+            TextureFormat::Rgba8Unorm,
+        ))?);
+        // 使用最小的 BGRA texture 验证主 surface/Picture 采样格式。
+        let bgra_texture = scope.track_texture(device.create_texture(TextureDesc::new(
+            // 使用一像素采样目标。
+            RhiExtent::new(1, 1),
+            // 使用通用 BGRA8 格式。
+            TextureFormat::Bgra8Unorm,
+        ))?);
+        // 使用最小的 R8 texture 验证 coverage 采样格式。
+        let coverage_texture = scope.track_texture(device.create_texture(TextureDesc::new(
+            // 使用一像素 coverage 目标。
+            RhiExtent::new(1, 1),
+            // 使用通用 R8 格式。
+            TextureFormat::R8Unorm,
+        ))?);
+        // 上传 RGBA 纹理的一个 premultiplied 像素。
+        device.update_texture(RhiTextureUpload::full(
+            // 绑定 RGBA 探针纹理。
+            rgba_texture,
+            // 上传范围覆盖完整一像素资源。
+            RhiExtent::new(1, 1),
+            // 使用透明 premultiplied 像素。
+            &[0, 0, 0, 0],
+        ))?;
+        // 上传 BGRA 纹理的一个 premultiplied 像素。
+        device.update_texture(RhiTextureUpload::full(
+            // 绑定 BGRA 探针纹理。
+            bgra_texture,
+            // 上传范围覆盖完整一像素资源。
+            RhiExtent::new(1, 1),
+            // 使用透明 premultiplied 像素。
+            &[0, 0, 0, 0],
+        ))?;
+        // 上传 coverage 纹理的一个覆盖率像素。
+        device.update_texture(RhiTextureUpload::full(
+            // 绑定 coverage 探针纹理。
+            coverage_texture,
+            // 上传范围覆盖完整一像素资源。
+            RhiExtent::new(1, 1),
+            // 使用零覆盖率像素。
+            &[0],
+        ))?;
+        // 创建 2x2 RGBA texture，验证 atlas 所需的带偏移子区域上传。
+        let region_texture = scope.track_texture(device.create_texture(TextureDesc::new(
+            // 使用可容纳右下角子区域的两像素目标。
+            RhiExtent::new(2, 2),
+            // 使用通用 RGBA8 格式。
+            TextureFormat::Rgba8Unorm,
+        ))?);
+        // 把一个像素写入右下角，避免零偏移整块上传冒充 region 能力。
+        device.update_texture(RhiTextureUpload::new(
+            // 更新探针纹理。
+            region_texture,
+            // 把右下偏移与单位尺寸封闭为一个区域。
+            RhiTextureRegion::from_xy(1, 1, RhiExtent::new(1, 1)),
+            // 上传单个透明像素。
+            &[0, 0, 0, 0],
+        ))?;
+        // 只有声明区域移动能力的 adapter 才进入 retained framebuffer 探针。
+        if device.device_capabilities().texture_region_move {
+            // 以同一纹理的重叠区域移动验证 memmove 语义。
+            device.move_texture_region(TextureMove::new(
+                // 从 region texture 读取。
+                region_texture,
+                // 写回同一个 region texture。
+                region_texture,
+                // 将两个原点与单位尺寸封闭为共享传输。
+                RhiTextureTransfer::from_xy(1, 1, 0, 0, RhiExtent::new(1, 1)),
+            ))?;
+        }
+        // 登记真实 sampler，验证纹理绑定所需的过滤状态。
+        scope.track_sampler(device.create_sampler(
+            // 使用命名的线性 clamp 语义覆盖生产采样状态。
+            SamplerDesc::linear_clamp(),
+        )?);
+        // 枚举通用 renderer 当前使用的全部固定 pipeline。
+        let pipeline_kinds = [
+            // Solid mesh。
+            PipelineKind::SolidMesh,
+            // 普通纹理 quad。
+            PipelineKind::TexturedQuad,
+            // 渐变矩形。
+            PipelineKind::GradientRect,
+            // coverage 字形 quad。
+            PipelineKind::GlyphCoverageQuad,
+            // 普通 Shape。
+            PipelineKind::ShapeRect,
+            // Additive Shape。
+            PipelineKind::ShapeRectAdditive,
+            // 阴影。
+            PipelineKind::BoxShadow,
+            // Additive 纹理 quad。
+            PipelineKind::TexturedQuadAdditive,
+            // 模糊 pass。
+            PipelineKind::BlurPass,
+            // MSDF 字形 quad。
+            PipelineKind::MsdfGlyphQuad,
+            // 扇形。
+            PipelineKind::Sector,
+        ];
+        // 逐个创建 pipeline，让 adapter 在首帧前暴露 shader/layout 失败。
+        let mut pipelines = Vec::with_capacity(pipeline_kinds.len());
+        // 保留固定顺序以便随后选择 Solid 与 Shape pipeline。
+        for kind in pipeline_kinds {
+            // 创建当前固定 pipeline。
+            pipelines.push(scope.track_pipeline(device.create_pipeline(PipelineDesc { kind })?));
+        }
+        // 在 1x1 离屏颜色 target 上执行真实的 pass、draw 和 submit。
+        device.begin_render_pass(
+            // 把探针 texture 解释为 render target 句柄。
+            device.resolve_render_target(rgba_texture)?,
+            // 以透明色清空目标。
+            LoadAction::Clear(RhiColor::transparent()),
+        )?;
+        // begin_render_pass 成功后登记打开状态，确保后续失败仍会尝试关闭。
+        scope.pass_open = true;
+        // 绑定最小正 viewport，验证 adapter 的 viewport 状态编码。
+        device.set_viewport(RhiViewport {
             // 视口宽度。
             width: 1.0,
             // 视口高度。
             height: 1.0,
-        },
-        // 在目标中心放置一个半像素矩形。
-        [0.25, 0.25, 0.5, 0.5],
-        // 使用透明颜色，探针不污染目标内容语义。
-        [0.0; 4],
-        // 使用可进入圆角 SDF 的非零半径。
-        [0.2; 4],
-        // 使用非零半宽确保执行描边与同心双 SDF 分支。
-        0.125,
-    );
-    // 编码完整共享 Shape ABI。
-    let shape_uniform_bytes = shape_params.encode_ne_bytes();
-    // 创建 Shape 固定 ABI uniform buffer。
-    let shape_uniform_buffer = device.create_buffer(BufferDesc::uniform(
-        // 使用共享常量，禁止 probe 与 renderer 产生布局分叉。
-        PipelineKind::ShapeRect.contract().uniform.size_bytes(),
-    ))?;
-    // 上传会真实触发描边分支的 Shape 参数。
-    device.update_buffer(RhiBufferUpload::new(
-        // 绑定 Shape Uniform 身份。
-        shape_uniform_buffer,
-        // 上传共享值对象编码的完整常量块。
-        &shape_uniform_bytes,
-    ))?;
-    // 使用最小的 RGBA texture 验证 render target 颜色格式。
-    let rgba_texture = device.create_texture(TextureDesc::new(
-        // 使用一像素离屏目标。
-        RhiExtent::new(1, 1),
-        // 使用通用 RGBA8 格式。
-        TextureFormat::Rgba8Unorm,
-    ))?;
-    // 使用最小的 BGRA texture 验证主 surface/Picture 采样格式。
-    let bgra_texture = device.create_texture(TextureDesc::new(
-        // 使用一像素采样目标。
-        RhiExtent::new(1, 1),
-        // 使用通用 BGRA8 格式。
-        TextureFormat::Bgra8Unorm,
-    ))?;
-    // 使用最小的 R8 texture 验证 coverage 采样格式。
-    let coverage_texture = device.create_texture(TextureDesc::new(
-        // 使用一像素 coverage 目标。
-        RhiExtent::new(1, 1),
-        // 使用通用 R8 格式。
-        TextureFormat::R8Unorm,
-    ))?;
-    // 上传 RGBA 纹理的一个 premultiplied 像素。
-    device.update_texture(RhiTextureUpload::full(
-        // 绑定 RGBA 探针纹理。
-        rgba_texture,
-        // 上传范围覆盖完整一像素资源。
-        RhiExtent::new(1, 1),
-        // 使用透明 premultiplied 像素。
-        &[0, 0, 0, 0],
-    ))?;
-    // 上传 BGRA 纹理的一个 premultiplied 像素。
-    device.update_texture(RhiTextureUpload::full(
-        // 绑定 BGRA 探针纹理。
-        bgra_texture,
-        // 上传范围覆盖完整一像素资源。
-        RhiExtent::new(1, 1),
-        // 使用透明 premultiplied 像素。
-        &[0, 0, 0, 0],
-    ))?;
-    // 上传 coverage 纹理的一个覆盖率像素。
-    device.update_texture(RhiTextureUpload::full(
-        // 绑定 coverage 探针纹理。
-        coverage_texture,
-        // 上传范围覆盖完整一像素资源。
-        RhiExtent::new(1, 1),
-        // 使用零覆盖率像素。
-        &[0],
-    ))?;
-    // 创建 2x2 RGBA texture，验证 atlas 所需的带偏移子区域上传。
-    let region_texture = device.create_texture(TextureDesc::new(
-        // 使用可容纳右下角子区域的两像素目标。
-        RhiExtent::new(2, 2),
-        // 使用通用 RGBA8 格式。
-        TextureFormat::Rgba8Unorm,
-    ))?;
-    // 把一个像素写入右下角，避免零偏移整块上传冒充 region 能力。
-    device.update_texture(RhiTextureUpload::new(
-        // 更新探针纹理。
-        region_texture,
-        // 把右下偏移与单位尺寸封闭为一个区域。
-        RhiTextureRegion::from_xy(1, 1, RhiExtent::new(1, 1)),
-        // 上传单个透明像素。
-        &[0, 0, 0, 0],
-    ))?;
-    // 只有声明区域移动能力的 adapter 才进入 retained framebuffer 探针。
-    if device.device_capabilities().texture_region_move {
-        // 以同一纹理的重叠区域移动验证 memmove 语义。
-        device.move_texture_region(TextureMove::new(
-            // 从 region texture 读取。
-            region_texture,
-            // 写回同一个 region texture。
-            region_texture,
-            // 将两个原点与单位尺寸封闭为共享传输。
-            RhiTextureTransfer::from_xy(1, 1, 0, 0, RhiExtent::new(1, 1)),
-        ))?;
+        })?;
+        // 清除显式 scissor，验证 pass 初始 raster 状态可用。
+        device.set_scissor(None)?;
+        // 只有声明局部清理能力的 adapter 才进入 ClearRect 探针。
+        if device.device_capabilities().clear_rect {
+            // 以完整 1x1 区域验证清理颜色和 scissor 代际。
+            device.clear_rect(
+                // 使用透明清理色。
+                RhiColor::transparent(),
+                // 覆盖完整探针目标。
+                RhiScissor {
+                    // 左侧。
+                    x: 0,
+                    // 顶部。
+                    y: 0,
+                    // 宽度。
+                    width: 1,
+                    // 高度。
+                    height: 1,
+                },
+            )?;
+        }
+        // 使用第一个固定 pipeline 执行最小 solid draw。
+        device.draw(DrawPacket {
+            // 选择 Solid pipeline。
+            pipeline: pipelines[0],
+            // 复用单位 quad 前三个顶点。
+            vertex_buffer,
+            // 绑定 Solid uniform。
+            uniform_buffer: Some(solid_uniform_buffer),
+            // 用封闭非索引范围绘制一个三角形。
+            range: DrawRange::vertices(3),
+        })?;
+        // 使用共享 pipeline 顺序中的 Shape 执行一次真实描边 draw。
+        device.draw(DrawPacket {
+            // 第五个固定 pipeline 是普通 Shape。
+            pipeline: pipelines[4],
+            // Shape 使用完整单位 quad。
+            vertex_buffer,
+            // 绑定共享 Shape ABI uniform。
+            uniform_buffer: Some(shape_uniform_buffer),
+            // 用封闭非索引范围绘制两个三角形组成的 quad。
+            range: DrawRange::vertices(6),
+        })?;
+        // 关闭 probe pass，防止资源销毁跨过打开的 render pass。
+        device.end_render_pass()?;
+        // 主体已成功结束 pass，清理阶段无需重复结束。
+        scope.pass_open = false;
+        // 提交 probe 命令，验证 adapter 的提交边界和状态清理。
+        device.submit()?;
+        // 所有固定资源、Shape shader ABI 和真实命令均通过首帧前探针。
+        Ok(())
+    })();
+    // 主体完成后无论成功失败都执行统一清理。
+    let cleanup_result = scope.cleanup(device);
+    // 主体失败时保留原始错误，并记录清理失败的附加诊断。
+    if let Err(main_error) = probe_result {
+        // 清理失败不能覆盖导致探针失败的主错误。
+        if let Err(cleanup_error) = cleanup_result {
+            // 同时记录主错误和清理错误，便于定位双重故障。
+            tracing::error!(main_error = ?main_error, cleanup_error = ?cleanup_error, "RHI bootstrap probe failed during cleanup");
+        }
+        // 返回原始主错误。
+        return Err(main_error);
     }
-    // 创建真实 sampler，验证纹理绑定所需的过滤状态。
-    let sampler = device.create_sampler(
-        // 使用命名的线性 clamp 语义覆盖生产采样状态。
-        SamplerDesc::linear_clamp(),
-    )?;
-    // 枚举通用 renderer 当前使用的全部固定 pipeline。
-    let pipeline_kinds = [
-        // Solid mesh。
-        PipelineKind::SolidMesh,
-        // 普通纹理 quad。
-        PipelineKind::TexturedQuad,
-        // 渐变矩形。
-        PipelineKind::GradientRect,
-        // coverage 字形 quad。
-        PipelineKind::GlyphCoverageQuad,
-        // 普通 Shape。
-        PipelineKind::ShapeRect,
-        // Additive Shape。
-        PipelineKind::ShapeRectAdditive,
-        // 阴影。
-        PipelineKind::BoxShadow,
-        // Additive 纹理 quad。
-        PipelineKind::TexturedQuadAdditive,
-        // 模糊 pass。
-        PipelineKind::BlurPass,
-        // MSDF 字形 quad。
-        PipelineKind::MsdfGlyphQuad,
-        // 扇形。
-        PipelineKind::Sector,
-    ];
-    // 逐个创建 pipeline，让 adapter 在首帧前暴露 shader/layout 失败。
-    let mut pipelines = Vec::with_capacity(pipeline_kinds.len());
-    // 保留固定顺序以便随后选择 Solid 与 Shape pipeline。
-    for kind in pipeline_kinds {
-        // 创建当前固定 pipeline。
-        pipelines.push(device.create_pipeline(PipelineDesc { kind })?);
-    }
-    // 在 1x1 离屏颜色 target 上执行真实的 pass、draw 和 submit。
-    device.begin_render_pass(
-        // 把探针 texture 解释为 render target 句柄。
-        device.resolve_render_target(rgba_texture)?,
-        // 以透明色清空目标。
-        LoadAction::Clear(RhiColor::transparent()),
-    )?;
-    // 绑定最小正 viewport，验证 adapter 的 viewport 状态编码。
-    device.set_viewport(RhiViewport {
-        // 视口宽度。
-        width: 1.0,
-        // 视口高度。
-        height: 1.0,
-    })?;
-    // 清除显式 scissor，验证 pass 初始 raster 状态可用。
-    device.set_scissor(None)?;
-    // 只有声明局部清理能力的 adapter 才进入 ClearRect 探针。
-    if device.device_capabilities().clear_rect {
-        // 以完整 1x1 区域验证清理颜色和 scissor 代际。
-        device.clear_rect(
-            // 使用透明清理色。
-            RhiColor::transparent(),
-            // 覆盖完整探针目标。
-            RhiScissor {
-                // 左侧。
-                x: 0,
-                // 顶部。
-                y: 0,
-                // 宽度。
-                width: 1,
-                // 高度。
-                height: 1,
-            },
-        )?;
-    }
-    // 使用第一个固定 pipeline 执行最小 solid draw。
-    device.draw(DrawPacket {
-        // 选择 Solid pipeline。
-        pipeline: pipelines[0],
-        // 复用单位 quad 前三个顶点。
-        vertex_buffer,
-        // 绑定 Solid uniform。
-        uniform_buffer: Some(solid_uniform_buffer),
-        // 用封闭非索引范围绘制一个三角形。
-        range: DrawRange::vertices(3),
-    })?;
-    // 使用共享 pipeline 顺序中的 Shape 执行一次真实描边 draw。
-    device.draw(DrawPacket {
-        // 第五个固定 pipeline 是普通 Shape。
-        pipeline: pipelines[4],
-        // Shape 使用完整单位 quad。
-        vertex_buffer,
-        // 绑定共享 Shape ABI uniform。
-        uniform_buffer: Some(shape_uniform_buffer),
-        // 用封闭非索引范围绘制两个三角形组成的 quad。
-        range: DrawRange::vertices(6),
-    })?;
-    // 关闭 probe pass，防止资源销毁跨过打开的 render pass。
-    device.end_render_pass()?;
-    // 提交 probe 命令，验证 adapter 的提交边界和状态清理。
-    device.submit()?;
-    // 释放 probe 创建的固定 pipeline，资源生命周期仍由 adapter 检查。
-    for pipeline in pipelines {
-        // 逐个销毁 adapter pipeline。
-        device.destroy_pipeline(pipeline)?;
-    }
-    // 释放 probe 创建的 sampler。
-    device.destroy_sampler(sampler)?;
-    // 释放 probe 创建的 coverage texture。
-    device.destroy_texture(coverage_texture)?;
-    // 释放 probe 创建的 region texture。
-    device.destroy_texture(region_texture)?;
-    // 释放 probe 创建的 BGRA texture。
-    device.destroy_texture(bgra_texture)?;
-    // 释放 probe 创建的 RGBA texture。
-    device.destroy_texture(rgba_texture)?;
-    // 释放 probe 创建的共用顶点 buffer。
-    device.destroy_buffer(vertex_buffer)?;
-    // 释放 probe 创建的 Solid uniform buffer。
-    device.destroy_buffer(solid_uniform_buffer)?;
-    // 释放 probe 创建的 Shape uniform buffer。
-    device.destroy_buffer(shape_uniform_buffer)?;
-    // 所有固定资源、Shape shader ABI 和真实命令均通过首帧前探针。
-    Ok(())
+    // 主体成功时清理失败必须成为探针结果。
+    cleanup_result
 }
