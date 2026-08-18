@@ -3,7 +3,9 @@
 // 引入共享错误结果类型。
 use crate::core::error::Result;
 // 引入薄 RHI 的设备、命令和 pass 类型。
-use crate::native::present::rhi::{DrawPacket, LoadAction, RhiGradientRasterParams, RhiViewport};
+use crate::native::present::rhi::{
+    DrawPacket, DrawRange, LoadAction, RhiGradientRasterParams, RhiViewport,
+};
 
 // 引入父 renderer 的帧计划、target 和渐变载荷。
 use super::{FramePlanCommand, FrameUniformPayload, RenderPassPlan, RhiGradientRect, RhiRenderer};
@@ -129,13 +131,9 @@ impl RhiRenderer {
             pass.push(FramePlanCommand::Draw(DrawPacket {
                 pipeline,
                 vertex_buffer,
-                index_buffer: None,
                 uniform_buffer: Some(uniform_buffer),
-                vertex_count: 6,
-                index_count: 0,
-                first_vertex: 0,
-                first_index: 0,
-                base_vertex: 0,
+                // 单位 quad 使用封闭的六顶点非索引范围。
+                range: DrawRange::vertices(6),
             }));
         }
         // 创建计划并追加唯一 pass。

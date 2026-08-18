@@ -124,7 +124,6 @@ impl D3d11Pipeline {
         index_count: u32,
         first_vertex: u32,
         first_index: u32,
-        base_vertex: i32,
     ) -> Result<()> {
         // 非索引和索引绘制必须恰好选择一种范围。
         if (index.is_some() && index_count == 0) || (index.is_none() && vertex_count == 0) {
@@ -151,7 +150,8 @@ impl D3d11Pipeline {
             context.PSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
             context.OMSetBlendState(self.rhi_blend_state(blend), None, self.rhi_sample_mask());
             if index.is_some() {
-                context.DrawIndexed(index_count, first_index, base_vertex);
+                // 共同 DrawRange 不暴露 base vertex，D3D11 固定使用零偏移。
+                context.DrawIndexed(index_count, first_index, 0);
             } else {
                 context.Draw(vertex_count, first_vertex);
             }

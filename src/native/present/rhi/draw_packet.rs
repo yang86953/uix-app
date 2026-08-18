@@ -68,6 +68,112 @@ impl IndexBufferBinding {
     }
 }
 
+// 封闭描述一次 draw 恰好选择的顶点或索引范围。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum DrawRange {
+    // 描述不依赖索引资源的连续顶点范围。
+    Vertices {
+        // 保存实际提交的顶点数量。
+        count: u32,
+        // 保存首个顶点位置。
+        first: u32,
+    },
+    // 描述绑定格式后按元素读取的索引范围。
+    Indices {
+        // 保存不可拆分的索引资源与格式。
+        binding: IndexBufferBinding,
+        // 保存实际提交的索引数量。
+        count: u32,
+        // 保存首个索引位置。
+        first: u32,
+    },
+}
+
+// 为两个 Adapter 提供不暴露矛盾组合的范围构造与投影。
+impl DrawRange {
+    // 创建从第零个顶点开始的非索引范围。
+    pub(crate) const fn vertices(count: u32) -> Self {
+        // 非索引构造器不接受任何索引字段。
+        Self::Vertices { count, first: 0 }
+    }
+
+    // 创建一个已经绑定索引资源与格式的索引范围。
+    pub(crate) const fn indices(binding: IndexBufferBinding, count: u32, first: u32) -> Self {
+        // 共同契约不暴露 OpenGL ES 不支持的 base vertex。
+        Self::Indices {
+            binding,
+            count,
+            first,
+        }
+    }
+
+    // 判断当前封闭范围是否包含至少一个元素。
+    pub(crate) const fn is_non_empty(self) -> bool {
+        // 两个变体都只需验证自己唯一拥有的 count。
+        match self {
+            // 非索引范围读取顶点数量。
+            Self::Vertices { count, .. } => count != 0,
+            // 索引范围读取索引数量。
+            Self::Indices { count, .. } => count != 0,
+        }
+    }
+
+    // 返回索引范围绑定；非索引范围显式返回空。
+    pub(crate) const fn index_binding(self) -> Option<IndexBufferBinding> {
+        // 只从 Indices 变体投影索引资源。
+        match self {
+            // 顶点范围不拥有索引资源。
+            Self::Vertices { .. } => None,
+            // 索引范围原子返回资源与格式。
+            Self::Indices { binding, .. } => Some(binding),
+        }
+    }
+
+    // 返回供非索引原生命令使用的顶点数量。
+    pub(crate) const fn vertex_count(self) -> u32 {
+        // 索引范围不得伪造独立顶点 count。
+        match self {
+            // 顶点变体返回自身数量。
+            Self::Vertices { count, .. } => count,
+            // 索引变体不使用 Draw 的顶点数量。
+            Self::Indices { .. } => 0,
+        }
+    }
+
+    // 返回供索引原生命令使用的索引数量。
+    pub(crate) const fn index_count(self) -> u32 {
+        // 非索引范围不得伪造索引 count。
+        match self {
+            // 顶点变体不使用 DrawIndexed 的索引数量。
+            Self::Vertices { .. } => 0,
+            // 索引变体返回自身数量。
+            Self::Indices { count, .. } => count,
+        }
+    }
+
+    // 返回非索引范围的首顶点位置。
+    pub(crate) const fn first_vertex(self) -> u32 {
+        // 索引范围不会携带无效的首顶点字段。
+        match self {
+            // 顶点变体返回自身起点。
+            Self::Vertices { first, .. } => first,
+            // 索引变体不使用首顶点。
+            Self::Indices { .. } => 0,
+        }
+    }
+
+    // 返回索引范围的首索引位置。
+    pub(crate) const fn first_index(self) -> u32 {
+        // 非索引范围不会携带无效的首索引字段。
+        match self {
+            // 顶点变体不使用首索引。
+            Self::Vertices { .. } => 0,
+            // 索引变体返回自身起点。
+            Self::Indices { first, .. } => first,
+        }
+    }
+}
+
 // 描述通用 renderer 已经选定的 draw packet。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DrawPacket {
@@ -75,20 +181,10 @@ pub(crate) struct DrawPacket {
     pub(crate) pipeline: PipelineBinding,
     // 保存顶点 buffer 句柄。
     pub(crate) vertex_buffer: BufferHandle,
-    // 保存可选且已经绑定元素格式的索引 buffer。
-    pub(crate) index_buffer: Option<IndexBufferBinding>,
     // 保存可选的 pipeline uniform buffer 句柄。
     pub(crate) uniform_buffer: Option<BufferHandle>,
-    // 保存顶点数量。
-    pub(crate) vertex_count: u32,
-    // 保存索引数量；零表示非索引绘制。
-    pub(crate) index_count: u32,
-    // 保存首个顶点位置。
-    pub(crate) first_vertex: u32,
-    // 保存首个索引位置。
-    pub(crate) first_index: u32,
-    // 保存索引绘制的基顶点。
-    pub(crate) base_vertex: i32,
+    // 保存不可表达矛盾字段组合的封闭绘制范围。
+    pub(crate) range: DrawRange,
 }
 
 // 为 draw packet 提供常用的非索引三角形构造器。
@@ -101,27 +197,17 @@ impl DrawPacket {
             pipeline,
             // 测试或调用方可在构造后绑定实际顶点 buffer。
             vertex_buffer: BufferHandle::from_raw(0),
-            // 默认不使用索引 buffer。
-            index_buffer: None,
             // 默认不使用 Uniform buffer。
             uniform_buffer: None,
-            // 保存调用方声明的顶点数量。
-            vertex_count,
-            // 非索引绘制不包含索引。
-            index_count: 0,
-            // 默认从首个顶点开始。
-            first_vertex: 0,
-            // 非索引绘制不使用首个索引。
-            first_index: 0,
-            // 非索引绘制不使用基顶点偏移。
-            base_vertex: 0,
+            // 使用只能表示非索引范围的封闭变体。
+            range: DrawRange::vertices(vertex_count),
         }
     }
 
     // 判断 packet 是否包含可执行的顶点或索引范围。
     pub(crate) const fn is_non_empty(self) -> bool {
-        // 索引绘制优先检查 index_count，否则检查 vertex_count。
-        self.vertex_count != 0 || self.index_count != 0
+        // 委托给当前唯一范围变体的 count。
+        self.range.is_non_empty()
     }
 }
 
@@ -146,5 +232,23 @@ mod tests {
         assert_eq!(binding.buffer().raw(), 7);
         // 绑定必须保留元素格式。
         assert_eq!(binding.format(), IndexFormat::Uint32);
+        // 非索引范围只能投影顶点字段。
+        let vertices = DrawRange::vertices(6);
+        // 非索引范围必须保持非空。
+        assert!(vertices.is_non_empty());
+        // 非索引范围只暴露顶点数量。
+        assert_eq!(vertices.vertex_count(), 6);
+        // 非索引范围不得伪造索引绑定或数量。
+        assert_eq!(vertices.index_binding(), None);
+        // 索引范围必须原子拥有绑定、数量与起点。
+        let indices = DrawRange::indices(binding, 3, 2);
+        // 索引范围只暴露索引数量。
+        assert_eq!(indices.index_count(), 3);
+        // 索引范围必须保留首索引位置。
+        assert_eq!(indices.first_index(), 2);
+        // 索引范围不得伪造非索引顶点数量。
+        assert_eq!(indices.vertex_count(), 0);
+        // 索引范围必须保留完整绑定。
+        assert_eq!(indices.index_binding(), Some(binding));
     }
 }

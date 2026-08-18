@@ -6,7 +6,7 @@ use crate::core::error::Result;
 use crate::core::PresentDamage;
 // 引入薄 RHI 的采样与执行类型。
 use crate::native::present::rhi::{
-    DrawPacket, GraphicsContextRhi, GraphicsDevice, GraphicsSurface, LoadAction,
+    DrawPacket, DrawRange, GraphicsContextRhi, GraphicsDevice, GraphicsSurface, LoadAction,
     RenderTargetHandle, RhiViewport,
 };
 
@@ -170,13 +170,9 @@ impl RhiRenderer {
         pass.push(FramePlanCommand::Draw(DrawPacket {
             pipeline,
             vertex_buffer,
-            index_buffer: None,
             uniform_buffer: Some(uniform_buffer),
-            vertex_count: 6,
-            index_count: 0,
-            first_vertex: 0,
-            first_index: 0,
-            base_vertex: 0,
+            // Sampled quad 使用封闭的六顶点非索引范围。
+            range: DrawRange::vertices(6),
         }));
         // 创建只拥有 Device 与纹理目标的封闭帧。
         let mut frame = super::RhiRendererFrame::offscreen(device, target);

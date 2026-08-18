@@ -3,10 +3,10 @@
 // 引入稳定错误类型。
 use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
-    BLUR_WEIGHT_COUNT, BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsDevice,
-    LoadAction, PipelineDesc, PipelineKind, RenderTargetHandle, RhiBlurRasterParams, RhiColor,
-    RhiExtent, RhiScissor, RhiViewport, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat,
-    TextureHandle,
+    BLUR_WEIGHT_COUNT, BufferDesc, BufferHandle, BufferUsage, DrawPacket, DrawRange,
+    GraphicsDevice, LoadAction, PipelineDesc, PipelineKind, RenderTargetHandle,
+    RhiBlurRasterParams, RhiColor, RhiExtent, RhiScissor, RhiViewport, SamplerDesc, SamplerHandle,
+    TextureDesc, TextureFormat, TextureHandle,
 };
 
 // 引入父 renderer 已导入的有序 FramePlan 类型和资源缓存。
@@ -285,13 +285,9 @@ impl RhiRenderer {
         horizontal.push(FramePlanCommand::Draw(DrawPacket {
             pipeline,
             vertex_buffer,
-            index_buffer: None,
             uniform_buffer: Some(uniform_buffer),
-            vertex_count: 6,
-            index_count: 0,
-            first_vertex: 0,
-            first_index: 0,
-            base_vertex: 0,
+            // Blur quad 使用封闭的六顶点非索引范围。
+            range: DrawRange::vertices(6),
         }));
         // 垂直 pass 读取 scratch texture，写回原始 target。
         let mut vertical = RenderPassPlan::new(RenderTargetRef::Texture(target), LoadAction::Load);
@@ -327,13 +323,9 @@ impl RhiRenderer {
         vertical.push(FramePlanCommand::Draw(DrawPacket {
             pipeline,
             vertex_buffer,
-            index_buffer: None,
             uniform_buffer: Some(uniform_buffer),
-            vertex_count: 6,
-            index_count: 0,
-            first_vertex: 0,
-            first_index: 0,
-            base_vertex: 0,
+            // Blur quad 使用封闭的六顶点非索引范围。
+            range: DrawRange::vertices(6),
         }));
         // 以严格顺序组装水平和垂直两个 pass。
         let mut plan = super::FramePlan::offscreen();

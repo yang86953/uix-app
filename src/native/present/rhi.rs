@@ -59,7 +59,7 @@ pub(crate) use color::{
 pub(crate) use capabilities::{GraphicsDeviceCapabilities, GraphicsSurfaceCapabilities};
 // 向 FramePlan 与 Adapter 暴露类型化 pipeline 与索引格式绑定的绘制包。
 #[allow(unused_imports)]
-pub(crate) use draw_packet::{DrawPacket, IndexBufferBinding, IndexFormat};
+pub(crate) use draw_packet::{DrawPacket, DrawRange, IndexBufferBinding, IndexFormat};
 // 向各原生 Adapter 暴露唯一的 render-pass 状态事实。
 #[allow(unused_imports)]
 pub(crate) use pass_state::RhiPassState;

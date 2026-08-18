@@ -3,7 +3,8 @@
 use crate::core::error::Result;
 // 引入薄 RHI 的 command、resource 和 target 类型。
 use crate::native::present::rhi::{
-    DrawPacket, GraphicsDevice, LoadAction, RhiExtent, RhiViewport, TextureDesc, TextureFormat,
+    DrawPacket, DrawRange, GraphicsDevice, LoadAction, RhiExtent, RhiViewport, TextureDesc,
+    TextureFormat,
 };
 // 引入父 renderer 的帧计划和已完成 lowering 的 payload。
 use super::{
@@ -455,13 +456,9 @@ impl RhiRenderer {
                     pass.push(FramePlanCommand::Draw(DrawPacket {
                         pipeline,
                         vertex_buffer,
-                        index_buffer: None,
                         uniform_buffer: Some(uniform_buffer),
-                        vertex_count: (mesh.vertices.len() / 2) as u32,
-                        index_count: 0,
-                        first_vertex: 0,
-                        first_index: 0,
-                        base_vertex: 0,
+                        // Mesh 使用封闭的非索引顶点范围。
+                        range: DrawRange::vertices((mesh.vertices.len() / 2) as u32),
                     }));
                 }
                 // 编码颜色纹理 quad。
@@ -508,13 +505,9 @@ impl RhiRenderer {
                     pass.push(FramePlanCommand::Draw(DrawPacket {
                         pipeline,
                         vertex_buffer,
-                        index_buffer: None,
                         uniform_buffer: Some(uniform_buffer),
-                        vertex_count: 6,
-                        index_count: 0,
-                        first_vertex: 0,
-                        first_index: 0,
-                        base_vertex: 0,
+                        // 图片 quad 使用封闭的六顶点非索引范围。
+                        range: DrawRange::vertices(6),
                     }));
                 }
                 // 编码已经存在的 sampled texture quad。
@@ -556,13 +549,9 @@ impl RhiRenderer {
                     pass.push(FramePlanCommand::Draw(DrawPacket {
                         pipeline,
                         vertex_buffer,
-                        index_buffer: None,
                         uniform_buffer: Some(uniform_buffer),
-                        vertex_count: 6,
-                        index_count: 0,
-                        first_vertex: 0,
-                        first_index: 0,
-                        base_vertex: 0,
+                        // Sampled quad 使用封闭的六顶点非索引范围。
+                        range: DrawRange::vertices(6),
                     }));
                 }
                 // 编码 R8 glyph coverage quad。
@@ -602,13 +591,9 @@ impl RhiRenderer {
                     pass.push(FramePlanCommand::Draw(DrawPacket {
                         pipeline,
                         vertex_buffer,
-                        index_buffer: None,
                         uniform_buffer: Some(uniform_buffer),
-                        vertex_count: 6,
-                        index_count: 0,
-                        first_vertex: 0,
-                        first_index: 0,
-                        base_vertex: 0,
+                        // Coverage quad 使用封闭的六顶点非索引范围。
+                        range: DrawRange::vertices(6),
                     }));
                 }
                 // 编码 RGBA8 MSDF 字形 quad。
@@ -650,13 +635,9 @@ impl RhiRenderer {
                     pass.push(FramePlanCommand::Draw(DrawPacket {
                         pipeline,
                         vertex_buffer,
-                        index_buffer: None,
                         uniform_buffer: Some(uniform_buffer),
-                        vertex_count: 6,
-                        index_count: 0,
-                        first_vertex: 0,
-                        first_index: 0,
-                        base_vertex: 0,
+                        // MSDF quad 使用封闭的六顶点非索引范围。
+                        range: DrawRange::vertices(6),
                     }));
                 }
                 // 编码渐变矩形。
@@ -679,13 +660,9 @@ impl RhiRenderer {
                     pass.push(FramePlanCommand::Draw(DrawPacket {
                         pipeline,
                         vertex_buffer,
-                        index_buffer: None,
                         uniform_buffer: Some(uniform_buffer),
-                        vertex_count: 6,
-                        index_count: 0,
-                        first_vertex: 0,
-                        first_index: 0,
-                        base_vertex: 0,
+                        // Gradient quad 使用封闭的六顶点非索引范围。
+                        range: DrawRange::vertices(6),
                     }));
                 }
                 // 编码圆角/描边矩形。
@@ -735,13 +712,9 @@ impl RhiRenderer {
                     pass.push(FramePlanCommand::Draw(DrawPacket {
                         pipeline,
                         vertex_buffer,
-                        index_buffer: None,
                         uniform_buffer: Some(uniform_buffer),
-                        vertex_count: 6,
-                        index_count: 0,
-                        first_vertex: 0,
-                        first_index: 0,
-                        base_vertex: 0,
+                        // Sector quad 使用封闭的六顶点非索引范围。
+                        range: DrawRange::vertices(6),
                     }));
                 }
                 // 编码保留设备四角的仿射阴影。

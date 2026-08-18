@@ -49,18 +49,20 @@ impl D3d11Context {
         let uniform_native = uniform.native.clone();
         // 复制 uniform 总字节数供共享 pipeline 契约统一校验。
         let uniform_size = uniform.size_bytes;
+        // 复制 FramePlan 已经封闭为顶点或索引变体的绘制范围。
+        let range = packet.range;
         // 从唯一共享契约读取当前 pipeline 的资源与混合语义。
         let contract = packet.pipeline.contract();
         // Drawing 生产端与 D3D11 消费端必须严格使用同一个 ABI。
         if vertex_stride != contract.vertex.stride_bytes()
             || uniform_size != contract.uniform.size_bytes()
-            || packet.vertex_count == 0
+            || !range.is_non_empty()
         {
             // 使用统一门禁拒绝任何 pipeline 的漂移载荷。
             return Err(rhi_invalid("D3d11 RHI pipeline ABI is invalid"));
         }
         // 索引 buffer 如存在必须与 FramePlan 绑定的共享格式一致。
-        let index_binding = if let Some(binding) = packet.index_buffer {
+        let index_binding = if let Some(binding) = range.index_binding() {
             // 解析绑定中保存的不透明索引资源。
             let index = self.rhi_device.buffer(binding.buffer())?;
             // 读取后续步长与原生格式映射的唯一共享格式。
@@ -76,6 +78,14 @@ impl D3d11Context {
             // 非索引 packet 不绑定 index buffer。
             None
         };
+        // 统一投影两个原生命令需要的互斥数量与起点。
+        let vertex_count = range.vertex_count();
+        // 索引变体只在该投影中返回非零索引数量。
+        let index_count = range.index_count();
+        // 非索引变体只在该投影中返回首顶点。
+        let first_vertex = range.first_vertex();
+        // 索引变体只在该投影中返回首索引。
+        let first_index = range.first_index();
         // 在 shader helper 分派前统一绑定共享二维光栅与深度模板状态。
         self.pipeline.apply_rhi_fixed_state(
             // 使用当前 owner-thread immediate context。
@@ -103,11 +113,10 @@ impl D3d11Context {
                     index_binding.as_ref(),
                     &uniform_native,
                     contract.blend,
-                    packet.vertex_count,
-                    packet.index_count,
-                    packet.first_vertex,
-                    packet.first_index,
-                    packet.base_vertex,
+                    vertex_count,
+                    index_count,
+                    first_vertex,
+                    first_index,
                 )
             }
             // 采样 quad 使用 16 字节 viewport uniform 和 t0/s0 绑定。
@@ -149,11 +158,10 @@ impl D3d11Context {
                     &texture_srv,
                     &sampler_native,
                     contract.blend,
-                    packet.vertex_count,
-                    packet.index_count,
-                    packet.first_vertex,
-                    packet.first_index,
-                    packet.base_vertex,
+                    vertex_count,
+                    index_count,
+                    first_vertex,
+                    first_index,
                 )
             }
             // R8 字形覆盖率 quad 复用 16 字节 viewport uniform 和 t0/s0 绑定。
@@ -195,11 +203,10 @@ impl D3d11Context {
                     &texture_srv,
                     &sampler_native,
                     contract.blend,
-                    packet.vertex_count,
-                    packet.index_count,
-                    packet.first_vertex,
-                    packet.first_index,
-                    packet.base_vertex,
+                    vertex_count,
+                    index_count,
+                    first_vertex,
+                    first_index,
                 )
             }
             // RGBA8 MSDF 字形 quad 使用 32 字节 viewport/extent/range uniform。
@@ -241,11 +248,10 @@ impl D3d11Context {
                     &texture_srv,
                     &sampler_native,
                     contract.blend,
-                    packet.vertex_count,
-                    packet.index_count,
-                    packet.first_vertex,
-                    packet.first_index,
-                    packet.base_vertex,
+                    vertex_count,
+                    index_count,
+                    first_vertex,
+                    first_index,
                 )
             }
             // 圆角/描边矩形使用包含共享 draw rect 的固定 ShapeConstants。
@@ -258,11 +264,10 @@ impl D3d11Context {
                     index_binding.as_ref(),
                     &uniform_native,
                     contract.blend,
-                    packet.vertex_count,
-                    packet.index_count,
-                    packet.first_vertex,
-                    packet.first_index,
-                    packet.base_vertex,
+                    vertex_count,
+                    index_count,
+                    first_vertex,
+                    first_index,
                 )
             }
             // 原生扇形使用 64 字节 SectorConstants 和 position float2 quad。
@@ -275,11 +280,10 @@ impl D3d11Context {
                     index_binding.as_ref(),
                     &uniform_native,
                     contract.blend,
-                    packet.vertex_count,
-                    packet.index_count,
-                    packet.first_vertex,
-                    packet.first_index,
-                    packet.base_vertex,
+                    vertex_count,
+                    index_count,
+                    first_vertex,
+                    first_index,
                 )
             }
             // 仿射阴影使用 96 字节 AffineShadowConstants。
@@ -292,11 +296,10 @@ impl D3d11Context {
                     index_binding.as_ref(),
                     &uniform_native,
                     contract.blend,
-                    packet.vertex_count,
-                    packet.index_count,
-                    packet.first_vertex,
-                    packet.first_index,
-                    packet.base_vertex,
+                    vertex_count,
+                    index_count,
+                    first_vertex,
+                    first_index,
                 )
             }
             // 线性/径向渐变使用 96 字节 affine GradientConstants。
@@ -309,11 +312,10 @@ impl D3d11Context {
                     index_binding.as_ref(),
                     &uniform_native,
                     contract.blend,
-                    packet.vertex_count,
-                    packet.index_count,
-                    packet.first_vertex,
-                    packet.first_index,
-                    packet.base_vertex,
+                    vertex_count,
+                    index_count,
+                    first_vertex,
+                    first_index,
                 )
             }
             // 单方向 blur 使用 304 字节 BlurConstants 和 float2 区域 quad。
@@ -363,11 +365,10 @@ impl D3d11Context {
                     &sampler_native,
                     &target,
                     contract.blend,
-                    packet.vertex_count,
-                    packet.index_count,
-                    packet.first_vertex,
-                    packet.first_index,
-                    packet.base_vertex,
+                    vertex_count,
+                    index_count,
+                    first_vertex,
+                    first_index,
                 )
             }
         }

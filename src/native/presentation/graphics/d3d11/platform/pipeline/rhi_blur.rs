@@ -23,7 +23,6 @@ impl D3d11Pipeline {
         index_count: u32,
         first_vertex: u32,
         first_index: u32,
-        base_vertex: i32,
     ) -> Result<()> {
         // 非索引和索引 draw 必须恰好选择一种范围。
         if (index.is_some() && index_count == 0) || (index.is_none() && vertex_count == 0) {
@@ -65,7 +64,8 @@ impl D3d11Pipeline {
             // 按 packet 的索引形态执行 draw。
             if index.is_some() {
                 // 索引格式已由共享绑定完成映射。
-                context.DrawIndexed(index_count, first_index, base_vertex);
+                // 共同 DrawRange 不暴露 base vertex，D3D11 固定使用零偏移。
+                context.DrawIndexed(index_count, first_index, 0);
             } else {
                 // 非索引 packet 使用六顶点区域 quad。
                 context.Draw(vertex_count, first_vertex);
