@@ -141,12 +141,12 @@ pub(super) fn create_rhi_overlay_backdrop(
     extent: RhiExtent,
 ) -> Result<TextureHandle> {
     // 创建与 retained surface 相同格式和尺寸的独立纹理。
-    let backdrop = device.create_texture(TextureDesc {
+    let backdrop = device.create_texture(TextureDesc::new(
         // 快照覆盖完整 drawable。
         extent,
         // retained surface 当前统一使用 premultiplied BGRA。
-        format: TextureFormat::Bgra8Unorm,
-    })?;
+        TextureFormat::Bgra8Unorm,
+    ))?;
     // 复制并提交形成可跨帧读取的确定边界。
     let submitted = device
         // 第一步只编码 retained 到 backdrop 的全幅复制。

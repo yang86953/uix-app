@@ -43,8 +43,8 @@ class GraphicsRhiTextureTransferContractTests(unittest.TestCase):
         self.assertIn("RhiTextureRegion, RhiTextureRegionBounds", rhi)
         # 组合入口必须重导出类型化传输几何。
         self.assertIn("RhiTextureTransfer,", rhi)
-        # 子区域上传 trait 只能接收完整区域对象。
-        self.assertIn("_region: RhiTextureRegion", rhi)
+        # 纹理上传 trait 只能接收绑定资源、区域与载荷的完整命令。
+        self.assertIn("_upload: RhiTextureUpload<'_>", rhi)
         # 旧的横纵偏移参数不得留在 trait。
         self.assertNotIn("_destination_x: u32", rhi)
         # 共享 Component 必须定义类型化原点。
@@ -72,14 +72,14 @@ class GraphicsRhiTextureTransferContractTests(unittest.TestCase):
         self.assertIn(".checked_add(self.extent.width)", transfer)
         # 紧密载荷布局也必须由共享已验证区域拥有。
         self.assertIn("pub(crate) fn tight_payload_layout(", transfer)
-        # OpenGL 必须先验证类型化区域。
-        self.assertIn("region.validate_within(texture.extent)?", opengl)
+        # OpenGL 必须先用资源描述验证完整上传命令。
+        self.assertIn("upload.validate(texture.desc)?", opengl)
         # OpenGL 必须消费共享有符号投影。
         self.assertIn("bounds.native_origin_and_size_i32()", opengl)
         # OpenGL 不得维护私有区域加法。
         self.assertNotIn("checked_add", opengl)
-        # D3D11 必须先验证同一种类型化区域。
-        self.assertIn("region.validate_within(resource.extent)?", d3d11)
+        # D3D11 必须先用资源描述验证同一种完整上传命令。
+        self.assertIn("upload.validate(resource.desc)?", d3d11)
         # D3D11 必须消费共享无符号矩形。
         self.assertIn("bounds.native_rect_u32()", d3d11)
         # D3D11 不得维护私有上传区域加法。

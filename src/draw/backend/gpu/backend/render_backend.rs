@@ -202,13 +202,13 @@ impl RenderBackend for GpuBackend {
         // 创建唯一一份同时可渲染和可采样的通用纹理。
         let rhi_texture = context
             // 把已经验证的 extent 和统一像素格式交给薄 RHI。
-            .create_texture(TextureDesc {
+            .create_texture(TextureDesc::new(
                 // 使用 Picture 自身的逻辑尺寸，不重复应用主 surface DPR。
                 extent,
                 // 与 retained surface 和 Picture 合成保持同一颜色格式。
-                format: TextureFormat::Bgra8Unorm,
+                TextureFormat::Bgra8Unorm,
                 // RHI DeviceLost/OOM 等错误必须保持原分类。
-            })?;
+            ))?;
         let id = if let Some(id) = self.free_offscreen_ids.pop() {
             id
         } else {

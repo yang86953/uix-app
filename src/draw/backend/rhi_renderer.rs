@@ -10,8 +10,8 @@ use crate::core::error::{Errc, Error, Result};
 // 引入薄 RHI 的资源、能力和执行类型。
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineDesc,
-    PipelineKind, RhiBufferUpload, RhiExtent, RhiScissor, RhiViewport, SampledTextureBinding,
-    SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
+    PipelineKind, RhiBufferUpload, RhiExtent, RhiScissor, RhiTextureUpload, RhiViewport,
+    SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
 };
 
 // 引入当前目录中的有序帧计划类型。
@@ -701,10 +701,12 @@ impl RhiRenderer {
         let mut textures = Vec::with_capacity(quads.len());
         for quad in quads {
             // 创建与源像素布局一致的 BGRA texture。
-            let texture = match frame.device().create_texture(TextureDesc {
-                extent: RhiExtent::new(quad.pixel_w, quad.pixel_h),
-                format: TextureFormat::Bgra8Unorm,
-            }) {
+            let texture = match frame.device().create_texture(TextureDesc::new(
+                // 图片资源采用源像素的实际范围。
+                RhiExtent::new(quad.pixel_w, quad.pixel_h),
+                // packed UI 像素保持 BGRA8 共享语义。
+                TextureFormat::Bgra8Unorm,
+            )) {
                 // 资源成功创建后进入统一清理列表。
                 Ok(texture) => texture,
                 // 创建失败时先释放已创建资源，再返回原始错误。
@@ -716,14 +718,14 @@ impl RhiRenderer {
             // 上传纹理前把 packed pixels 转为紧密字节载荷。
             let upload = Self::encode_u32s(quad.pixels.as_ref());
             // 资源上传失败时不能把半成品 texture 留在 adapter。
-            if let Err(error) = frame.device().update_texture(
+            if let Err(error) = frame.device().update_texture(RhiTextureUpload::full(
                 // 更新刚由同一 Device 创建的纹理。
                 texture,
                 // 上传范围使用已验证的物理像素尺寸。
                 RhiExtent::new(quad.pixel_w, quad.pixel_h),
                 // 上传规范化后的 premultiplied 像素。
                 &upload,
-            ) {
+            )) {
                 // 把当前失败资源加入清理列表。
                 textures.push(texture);
                 // 尝试释放所有已经创建的图片资源。

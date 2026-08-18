@@ -135,7 +135,10 @@ impl D3d11Context {
                 // 解析 sampler 描述与原生状态。
                 let sampler = self.rhi_device.sampler(binding.sampler())?;
                 // 颜色 pipeline 只接受共享契约声明的四通道格式与线性过滤。
-                if !contract.sampling.accepts(texture.format, sampler.desc) {
+                if !contract
+                    .sampling
+                    .accepts(texture.desc.format(), sampler.desc)
+                {
                     // 拒绝把 coverage 纹理解释为 premultiplied color。
                     return Err(rhi_invalid("D3d11 RHI textured source format is invalid"));
                 }
@@ -173,7 +176,10 @@ impl D3d11Context {
                 // 解析 coverage sampler 描述与原生状态。
                 let sampler = self.rhi_device.sampler(binding.sampler())?;
                 // 强制 coverage ABI 使用单通道纹理与最近点过滤。
-                if !contract.sampling.accepts(texture.format, sampler.desc) {
+                if !contract
+                    .sampling
+                    .accepts(texture.desc.format(), sampler.desc)
+                {
                     // 返回稳定的资源类型错误。
                     return Err(rhi_invalid("D3d11 RHI glyph texture must be R8Unorm"));
                 }
@@ -211,7 +217,10 @@ impl D3d11Context {
                 // 解析 MSDF sampler 描述与原生状态。
                 let sampler = self.rhi_device.sampler(binding.sampler())?;
                 // 共享契约同时要求 RGBA8 距离纹理与线性过滤。
-                if !contract.sampling.accepts(texture.format, sampler.desc) {
+                if !contract
+                    .sampling
+                    .accepts(texture.desc.format(), sampler.desc)
+                {
                     // 返回稳定的资源类型错误。
                     return Err(rhi_invalid("D3d11 RHI MSDF texture must be Rgba8Unorm"));
                 }
@@ -313,7 +322,10 @@ impl D3d11Context {
                 // 解析 Blur sampler 描述与原生状态。
                 let sampler = self.rhi_device.sampler(binding.sampler())?;
                 // 共享契约同时要求颜色纹理与线性过滤。
-                if !contract.sampling.accepts(texture.format, sampler.desc) {
+                if !contract
+                    .sampling
+                    .accepts(texture.desc.format(), sampler.desc)
+                {
                     // blur 只接受颜色纹理，避免单通道格式被解释为 premultiplied color。
                     return Err(rhi_invalid("D3d11 RHI blur source must be a color texture"));
                 }

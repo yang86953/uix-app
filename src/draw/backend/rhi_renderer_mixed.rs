@@ -3,8 +3,8 @@
 use crate::core::error::Result;
 // 引入薄 RHI 的 command、resource 和 target 类型。
 use crate::native::present::rhi::{
-    DrawPacket, DrawRange, GraphicsDevice, LoadAction, RhiBufferUpload, RhiExtent, RhiViewport,
-    SampledTextureBinding, TextureDesc, TextureFormat,
+    DrawPacket, DrawRange, GraphicsDevice, LoadAction, RhiBufferUpload, RhiExtent,
+    RhiTextureUpload, RhiViewport, SampledTextureBinding, TextureDesc, TextureFormat,
 };
 // 引入父 renderer 的帧计划和已完成 lowering 的 payload。
 use super::{
@@ -404,7 +404,7 @@ impl RhiRenderer {
             // 创建对应格式的临时纹理。
             let texture = match frame
                 .device()
-                .create_texture(TextureDesc { extent, format })
+                .create_texture(TextureDesc::new(extent, format))
             {
                 // 记录成功创建的资源。
                 Ok(texture) => texture,
@@ -418,8 +418,10 @@ impl RhiRenderer {
             textures[index] = Some(texture);
             // 本帧结束后释放颜色或 coverage 临时 texture。
             transient_textures.push(texture);
+            // 把资源、完整范围与载荷封闭成一次不可拆纹理上传。
+            let upload = RhiTextureUpload::full(texture, extent, &payload);
             // 上传紧密排列的 source payload。
-            if let Err(error) = frame.device().update_texture(texture, extent, &payload) {
+            if let Err(error) = frame.device().update_texture(upload) {
                 // 释放当前帧已经创建的全部临时资源。
                 let _ = RhiRenderer::destroy_textures(frame.device(), &transient_textures);
                 // 保留上传失败的原始错误。

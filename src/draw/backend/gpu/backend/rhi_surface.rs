@@ -72,12 +72,12 @@ impl GpuBackend {
             .gpu_ctx
             .rhi_device()?
             // 已验证 owner 丢失时由统一 typed error 阻止创建。
-            .create_texture(TextureDesc {
+            .create_texture(TextureDesc::new(
                 // retained image 必须覆盖整个当前 drawable。
-                extent: token.extent,
+                token.extent,
                 // BGRA 与 Windows swapchain/native image 的字节布局一致。
-                format: TextureFormat::Bgra8Unorm,
-            })?;
+                TextureFormat::Bgra8Unorm,
+            ))?;
         // 登记新代际 texture，后续 FramePlan 只复用这一身份。
         self.rhi_surface_texture = Some(texture);
         // 登记 generation 和 extent，resize/lost 时强制重建。

@@ -4,7 +4,7 @@
 use crate::core::error::Result;
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDeviceCapabilities, LoadAction, PipelineDesc,
-    PipelineHandle, RenderTargetHandle, RhiBufferUpload, RhiExtent, RhiScissor, RhiTextureRegion,
+    PipelineHandle, RenderTargetHandle, RhiBufferUpload, RhiExtent, RhiScissor, RhiTextureUpload,
     RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle, SubmissionHandle, TextureCopy,
     TextureDesc, TextureHandle, TextureMove,
 };
@@ -61,25 +61,9 @@ impl OpenGlRasterPipeline {
     }
 
     // 上传通用 texture payload。
-    pub(crate) fn rhi_update_texture(
-        &mut self,
-        texture: TextureHandle,
-        extent: RhiExtent,
-        data: &[u8],
-    ) -> Result<()> {
-        // 保持 payload 尺寸验证在 adapter 内完成。
-        self.with_rhi(|gl, rhi| rhi.update_texture(gl, texture, extent, data))
-    }
-
-    // 上传通用 texture 的带偏移子区域。
-    pub(crate) fn rhi_update_texture_region(
-        &mut self,
-        texture: TextureHandle,
-        region: RhiTextureRegion,
-        data: &[u8],
-    ) -> Result<()> {
-        // 子区域上传仍由当前 GL context 和 RHI 资源表共同完成。
-        self.with_rhi(|gl, rhi| rhi.update_texture_region(gl, texture, region, data))
+    pub(crate) fn rhi_update_texture(&mut self, upload: RhiTextureUpload<'_>) -> Result<()> {
+        // 保持目标身份、区域与载荷绑定到 owner-thread Adapter 边界。
+        self.with_rhi(|gl, rhi| rhi.update_texture(gl, upload))
     }
 
     // 创建通用 sampler。

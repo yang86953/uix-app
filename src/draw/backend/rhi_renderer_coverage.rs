@@ -6,8 +6,8 @@ use std::sync::Arc;
 // 引入 RHI 计划执行所需的资源描述与句柄。
 use crate::native::present::rhi::{
     BufferHandle, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc,
-    PipelineKind, RhiExtent, SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc,
-    TextureFormat,
+    PipelineKind, RhiExtent, RhiTextureUpload, SampledTextureBinding, SamplerDesc, SamplerHandle,
+    TextureDesc, TextureFormat,
 };
 
 // 复用 renderer 主模块的计划类型和 coverage payload。
@@ -190,10 +190,12 @@ impl RhiRenderer {
         let mut textures = Vec::with_capacity(quads.len());
         for quad in quads {
             // 创建只含 shader resource view 的 R8 coverage texture。
-            let texture = match frame.device().create_texture(TextureDesc {
-                extent: RhiExtent::new(quad.pixel_w, quad.pixel_h),
-                format: TextureFormat::R8Unorm,
-            }) {
+            let texture = match frame.device().create_texture(TextureDesc::new(
+                // coverage 资源采用字形实际像素范围。
+                RhiExtent::new(quad.pixel_w, quad.pixel_h),
+                // coverage 使用单通道 R8 格式。
+                TextureFormat::R8Unorm,
+            )) {
                 // 资源成功创建后进入统一清理列表。
                 Ok(texture) => texture,
                 // 创建失败时先释放已创建资源，再返回原始错误。
@@ -205,14 +207,14 @@ impl RhiRenderer {
             // 上传紧密的 R8 coverage 字节。
             let upload = Self::encode_coverage(quad.coverage.as_ref());
             // 资源上传失败时不能把半成品 texture 留在 adapter。
-            if let Err(error) = frame.device().update_texture(
+            if let Err(error) = frame.device().update_texture(RhiTextureUpload::full(
                 // 更新刚由同一 Device 创建的 coverage 纹理。
                 texture,
                 // 上传范围使用 coverage 的物理像素尺寸。
                 RhiExtent::new(quad.pixel_w, quad.pixel_h),
                 // 保留单通道 coverage 载荷。
                 &upload,
-            ) {
+            )) {
                 // 把当前失败资源加入清理列表。
                 textures.push(texture);
                 // 尝试释放所有已经创建的 coverage 资源。

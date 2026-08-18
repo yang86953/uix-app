@@ -6,8 +6,8 @@ use std::sync::Arc;
 // 引入最终执行计划所需的 viewport、资源和 context 类型。
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, GraphicsDevice, PipelineBinding, PipelineDesc, PipelineKind,
-    RhiExtent, RhiMsdfRasterParams, RhiScissor, RhiTextureRegion, RhiViewport, SamplerDesc,
-    SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
+    RhiExtent, RhiMsdfRasterParams, RhiScissor, RhiTextureRegion, RhiTextureUpload, RhiViewport,
+    SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
 };
 
 // 固定单页尺寸，让 atlas 的资源预算和 adapter 上传粒度保持稳定。
@@ -273,14 +273,14 @@ impl RhiRenderer {
             .get(page_index)
             .ok_or_else(|| super::rhi_invalid("RhiRenderer MSDF atlas page is missing"))?
             .texture;
-        if let Err(error) = device.update_texture_region(
+        if let Err(error) = device.update_texture(RhiTextureUpload::new(
             // 更新当前 Device 拥有的 atlas 页。
             page_texture,
             // 把 atlas 槽位原点与补边范围封闭为一个区域。
             RhiTextureRegion::from_xy(slot_x, slot_y, upload_extent),
             // 上传已经补边的 MSDF 像素。
             &padded,
-        ) {
+        )) {
             // 新 page 上传失败时立即回收其纹理；已有 page 的槽位则留作失败诊断。
             if created_page {
                 let page = self.msdf_atlas_pages.pop();
@@ -324,10 +324,12 @@ impl RhiRenderer {
     ) -> crate::core::Result<MsdfAtlasPage> {
         // atlas page 只承担 sampled texture，不把字形资源伪装成 render target。
         let extent = RhiExtent::new(MSDF_ATLAS_PAGE_SIZE, MSDF_ATLAS_PAGE_SIZE);
-        let texture = device.create_texture(TextureDesc {
+        let texture = device.create_texture(TextureDesc::new(
+            // atlas page 使用固定物理尺寸。
             extent,
-            format: TextureFormat::Rgba8Unorm,
-        })?;
+            // atlas page 保存 RGBA8 距离场。
+            TextureFormat::Rgba8Unorm,
+        ))?;
         // 返回从左上角开始的空 shelf。
         Ok(MsdfAtlasPage {
             texture,
@@ -412,12 +414,16 @@ impl RhiRenderer {
     ) -> crate::core::Result<(TextureHandle, [f32; 4], RhiExtent, bool)> {
         // 临时资源使用原始字形 extent 和完整 UV。
         let extent = RhiExtent::new(quad.pixel_w, quad.pixel_h);
-        let texture = device.create_texture(TextureDesc {
+        let texture = device.create_texture(TextureDesc::new(
+            // 临时纹理采用字形实际物理尺寸。
             extent,
-            format: TextureFormat::Rgba8Unorm,
-        })?;
+            // 临时纹理保存 RGBA8 距离场。
+            TextureFormat::Rgba8Unorm,
+        ))?;
+        // 把临时资源、完整字形范围与距离场载荷封闭成上传命令。
+        let upload = RhiTextureUpload::full(texture, extent, payload);
         // 上传失败时立即回收半成品 texture。
-        if let Err(error) = device.update_texture(texture, extent, payload) {
+        if let Err(error) = device.update_texture(upload) {
             let _ = device.destroy_texture(texture);
             return Err(error);
         }

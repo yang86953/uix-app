@@ -110,14 +110,14 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 通用 device 必须声明首帧前固定 pipeline/resource probe。
         self.assertIn("fn probe(&mut self)", rhi)
         # registry 必须在 owner thread 绑定前执行 probe 并记录成功事实。
-        self.assertIn("rhi.probe()", registry)
+        self.assertIn("rhi.device().probe()", registry)
         self.assertIn("atomic GPU recipe probe passed", registry)
         # MSDF atlas 必须有 renderer 状态、混合 lowering 入口和 shutdown 释放边界。
         self.assertIn("msdf_atlas_pages", renderer)
         self.assertIn("msdf_atlas_cache", renderer)
         self.assertIn("ensure_msdf_texture", msdf)
-        self.assertIn("ensure_msdf_texture(context, quad)", mixed)
-        self.assertIn("update_texture_region", rhi)
+        self.assertIn("ensure_msdf_texture(frame.device(), quad)", mixed)
+        self.assertIn("RhiTextureUpload", rhi)
         self.assertIn("pad_msdf_payload", msdf)
         self.assertIn("release_msdf_atlas", backend)
 
@@ -803,9 +803,9 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # GPU backend 不得回退兼容 context readback。
         self.assertNotIn("self.gpu_ctx.read_pixels", backend)
         # GPU backend 必须通过最终呈现事务的当前 context 检查 capability 事实。
-        self.assertIn("context.surface_ref().surface_capabilities().readback", backend)
+        self.assertIn("surface.surface_capabilities().readback", backend)
         # GPU backend 必须通过同一个 thin RHI surface 角色执行类型化区域回读。
-        self.assertIn("context.surface().read_surface_pixels(RhiScissor {", backend)
+        self.assertIn("surface.read_surface_pixels(RhiScissor {", backend)
         # Vulkan pixel-upload readback 必须保留显式诊断名称。
         self.assertIn("pub(crate) fn readback_pixels(", vulkan)
         # GFX-R5 证据必须调用显式诊断辅助。

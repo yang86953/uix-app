@@ -4,8 +4,8 @@
 use super::{
     BufferDesc, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineDesc, PipelineKind,
     RenderTargetHandle, RhiBufferUpload, RhiColor, RhiExtent, RhiScissor, RhiShapeRasterParams,
-    RhiTextureRegion, RhiTextureTransfer, RhiViewport, SamplerDesc, TextureDesc, TextureFormat,
-    TextureMove,
+    RhiTextureRegion, RhiTextureTransfer, RhiTextureUpload, RhiViewport, SamplerDesc, TextureDesc,
+    TextureFormat, TextureMove,
 };
 // 引入统一结果类型。
 use crate::core::Result;
@@ -89,48 +89,69 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
         &shape_uniform_bytes,
     ))?;
     // 使用最小的 RGBA texture 验证 render target 颜色格式。
-    let rgba_texture = device.create_texture(TextureDesc {
+    let rgba_texture = device.create_texture(TextureDesc::new(
         // 使用一像素离屏目标。
-        extent: RhiExtent::new(1, 1),
+        RhiExtent::new(1, 1),
         // 使用通用 RGBA8 格式。
-        format: TextureFormat::Rgba8Unorm,
-    })?;
+        TextureFormat::Rgba8Unorm,
+    ))?;
     // 使用最小的 BGRA texture 验证主 surface/Picture 采样格式。
-    let bgra_texture = device.create_texture(TextureDesc {
+    let bgra_texture = device.create_texture(TextureDesc::new(
         // 使用一像素采样目标。
-        extent: RhiExtent::new(1, 1),
+        RhiExtent::new(1, 1),
         // 使用通用 BGRA8 格式。
-        format: TextureFormat::Bgra8Unorm,
-    })?;
+        TextureFormat::Bgra8Unorm,
+    ))?;
     // 使用最小的 R8 texture 验证 coverage 采样格式。
-    let coverage_texture = device.create_texture(TextureDesc {
+    let coverage_texture = device.create_texture(TextureDesc::new(
         // 使用一像素 coverage 目标。
-        extent: RhiExtent::new(1, 1),
+        RhiExtent::new(1, 1),
         // 使用通用 R8 格式。
-        format: TextureFormat::R8Unorm,
-    })?;
+        TextureFormat::R8Unorm,
+    ))?;
     // 上传 RGBA 纹理的一个 premultiplied 像素。
-    device.update_texture(rgba_texture, RhiExtent::new(1, 1), &[0, 0, 0, 0])?;
+    device.update_texture(RhiTextureUpload::full(
+        // 绑定 RGBA 探针纹理。
+        rgba_texture,
+        // 上传范围覆盖完整一像素资源。
+        RhiExtent::new(1, 1),
+        // 使用透明 premultiplied 像素。
+        &[0, 0, 0, 0],
+    ))?;
     // 上传 BGRA 纹理的一个 premultiplied 像素。
-    device.update_texture(bgra_texture, RhiExtent::new(1, 1), &[0, 0, 0, 0])?;
+    device.update_texture(RhiTextureUpload::full(
+        // 绑定 BGRA 探针纹理。
+        bgra_texture,
+        // 上传范围覆盖完整一像素资源。
+        RhiExtent::new(1, 1),
+        // 使用透明 premultiplied 像素。
+        &[0, 0, 0, 0],
+    ))?;
     // 上传 coverage 纹理的一个覆盖率像素。
-    device.update_texture(coverage_texture, RhiExtent::new(1, 1), &[0])?;
+    device.update_texture(RhiTextureUpload::full(
+        // 绑定 coverage 探针纹理。
+        coverage_texture,
+        // 上传范围覆盖完整一像素资源。
+        RhiExtent::new(1, 1),
+        // 使用零覆盖率像素。
+        &[0],
+    ))?;
     // 创建 2x2 RGBA texture，验证 atlas 所需的带偏移子区域上传。
-    let region_texture = device.create_texture(TextureDesc {
+    let region_texture = device.create_texture(TextureDesc::new(
         // 使用可容纳右下角子区域的两像素目标。
-        extent: RhiExtent::new(2, 2),
+        RhiExtent::new(2, 2),
         // 使用通用 RGBA8 格式。
-        format: TextureFormat::Rgba8Unorm,
-    })?;
+        TextureFormat::Rgba8Unorm,
+    ))?;
     // 把一个像素写入右下角，避免零偏移整块上传冒充 region 能力。
-    device.update_texture_region(
+    device.update_texture(RhiTextureUpload::new(
         // 更新探针纹理。
         region_texture,
         // 把右下偏移与单位尺寸封闭为一个区域。
         RhiTextureRegion::from_xy(1, 1, RhiExtent::new(1, 1)),
         // 上传单个透明像素。
         &[0, 0, 0, 0],
-    )?;
+    ))?;
     // 只有声明区域移动能力的 adapter 才进入 retained framebuffer 探针。
     if device.device_capabilities().texture_region_move {
         // 以同一纹理的重叠区域移动验证 memmove 语义。

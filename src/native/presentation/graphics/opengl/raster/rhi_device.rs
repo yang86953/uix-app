@@ -11,7 +11,7 @@ use crate::native::present::rhi::{
     BufferDesc, BufferHandle, LoadAction, PipelineColorWriteMask, PipelineDesc,
     PipelineDitherState, PipelineHandle, PipelineKind, RenderTargetHandle, RhiBufferUpload,
     RhiColor, RhiColorClearContract, RhiExtent, RhiPassState, RhiScissor, RhiSubmissionSequence,
-    RhiTextureRegion, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle,
+    RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle,
     SubmissionHandle, TextureCopy, TextureDesc, TextureFormat, TextureHandle, TextureMove,
     UIX_COLOR_CLEAR_CONTRACT,
 };
@@ -36,10 +36,8 @@ struct OpenGlRhiTexture {
     native: glow::Texture,
     // 保存颜色 texture 对应的 framebuffer，R8 coverage 不创建它。
     framebuffer: Option<glow::Framebuffer>,
-    // 保存通用 texture extent。
-    extent: RhiExtent,
-    // 保存通用 texture 格式。
-    format: TextureFormat,
+    // 保存已经通过共同门禁的完整纹理描述。
+    desc: TextureDesc,
 }
 
 // 保存封闭 pipeline 语义与编译后的 GL program。
@@ -229,12 +227,9 @@ impl OpenGlRhiDevice {
         desc: TextureDesc,
     ) -> Result<TextureHandle> {
         // 取得两个 Adapter 共用的有符号原生尺寸。
-        let Some((native_width, native_height)) = desc.extent.native_size_i32() else {
-            // 拒绝空尺寸或超出共同有符号值域的资源。
-            return Err(rhi_invalid("OpenGL RHI texture extent is invalid"));
-        };
-        // 取得 GL 内部格式、上传格式和每像素字节数。
-        let (internal, upload_format, _) = Self::texture_format(desc.format);
+        let (native_width, native_height) = desc.validate()?.size_i32();
+        // 取得只包含原生枚举映射的 GL 内部格式与上传格式。
+        let (internal, upload_format) = Self::texture_format(desc.format());
         // 创建底层 texture。
         // SAFETY: 调用时 GL context current；create_texture 无指针参数，失败走错误返回。
         let native = unsafe {
@@ -280,17 +275,17 @@ impl OpenGlRhiDevice {
             gl.bind_texture(glow::TEXTURE_2D, None);
         }
         // R8 coverage 只作为 sampled texture，颜色格式才可作为目标。
-        let framebuffer = if desc.format == TextureFormat::R8Unorm {
-            None
-        } else {
+        let framebuffer = if desc.format().supports_render_target() {
             Some(Self::create_framebuffer(gl, native)?)
+        } else {
+            None
         };
         // 保存资源并返回新的 opaque texture 句柄。
         self.textures.push(Some(OpenGlRhiTexture {
             native,
             framebuffer,
-            extent: desc.extent,
-            format: desc.format,
+            // Adapter 只保存唯一共享描述，不再复制尺寸和格式字段。
+            desc,
         }));
         Ok(TextureHandle::from_raw(self.textures.len() as u64))
     }
@@ -476,7 +471,7 @@ impl OpenGlRhiDevice {
             let framebuffer = texture
                 .framebuffer
                 .ok_or_else(|| rhi_invalid("OpenGL RHI target texture is not renderable"))?;
-            (Some(framebuffer), texture.extent)
+            (Some(framebuffer), texture.desc.extent())
         };
         // 由共享状态机统一验证目标范围、清屏颜色并建立 pass 事实。
         self.pass.begin(target, extent, load)?;
@@ -604,13 +599,8 @@ impl OpenGlRhiDevice {
             (
                 // 颜色源纹理必须拥有 framebuffer。
                 source.framebuffer,
-                // 只向共享门禁交付 extent 与 format。
-                TextureDesc {
-                    // 保存源纹理物理尺寸。
-                    extent: source.extent,
-                    // 保存源纹理格式。
-                    format: source.format,
-                },
+                // 向共享门禁交付资源创建时保存的同一描述。
+                source.desc,
             )
         };
         // 复制目标原生对象与 API 无关描述。
@@ -621,13 +611,8 @@ impl OpenGlRhiDevice {
             (
                 // 保存目标原生 texture。
                 destination.native,
-                // 只向共享门禁交付 extent 与 format。
-                TextureDesc {
-                    // 保存目标纹理物理尺寸。
-                    extent: destination.extent,
-                    // 保存目标纹理格式。
-                    format: destination.format,
-                },
+                // 向共享门禁交付资源创建时保存的同一描述。
+                destination.desc,
             )
         };
         // 格式、非空、范围与资源关系全部由共享传输契约验证。

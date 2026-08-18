@@ -235,7 +235,7 @@ impl RhiRenderer {
         let (pipeline, vertex_buffer, uniform_buffer, sampler) =
             self.ensure_blur_resources(device)?;
         // 创建本次两个 pass 使用的临时颜色 render target。
-        let scratch = device.create_texture(TextureDesc { extent, format })?;
+        let scratch = device.create_texture(TextureDesc::new(extent, format))?;
         // 将临时 texture 映射为通用 render target 身份。
         let scratch_target = RenderTargetRef::Texture(
             crate::native::present::rhi::RenderTargetHandle::from_raw(scratch.raw()),

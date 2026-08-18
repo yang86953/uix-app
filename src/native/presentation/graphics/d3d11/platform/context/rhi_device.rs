@@ -14,7 +14,7 @@ use crate::native::present::rhi::{
     BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
     LoadAction, PipelineBinding, PipelineDesc, PipelineHandle, PipelineKind, RenderTargetHandle,
     RhiBufferUpload, RhiColor, RhiColorClearContract, RhiExtent, RhiPassState, RhiScissor,
-    RhiSubmissionSequence, RhiTextureRegion, RhiViewport, SampledTextureBinding, SamplerDesc,
+    RhiSubmissionSequence, RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc,
     SamplerHandle, TextureCopy, TextureDesc, TextureFormat, TextureHandle, TextureMove,
     UIX_COLOR_CLEAR_CONTRACT,
 };
@@ -69,10 +69,8 @@ struct D3d11RhiTexture {
     rtv: Option<::windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView>,
     // 保存 sampled shader resource view。
     srv: ::windows::Win32::Graphics::Direct3D11::ID3D11ShaderResourceView,
-    // 保存通用资源尺寸。
-    extent: RhiExtent,
-    // 保存通用资源格式。
-    format: TextureFormat,
+    // 保存已经通过共同门禁的完整纹理描述。
+    desc: TextureDesc,
 }
 
 // 保存一个 RHI pipeline 的封闭通用语义。
@@ -201,16 +199,16 @@ impl D3d11RhiDevice {
         self.texture(TextureHandle::from_raw(raw))
     }
 
-    // 保存纹理格式对应的 DXGI 格式、每像素字节数和是否可作为 RTV。
-    fn texture_format(format: TextureFormat) -> (i32, usize, bool) {
-        // 把有限的通用格式映射到 D3D11 事实格式。
+    // 将共享纹理格式机械映射为唯一 DXGI 格式。
+    fn texture_format(format: TextureFormat) -> i32 {
+        // 每像素字节数和目标能力已经由共享 TextureFormat 拥有。
         match format {
             // 映射 BGRA 八位格式。
-            TextureFormat::Bgra8Unorm => (DXGI_FORMAT_B8G8R8A8_UNORM.0, 4, true),
+            TextureFormat::Bgra8Unorm => DXGI_FORMAT_B8G8R8A8_UNORM.0,
             // 映射 RGBA 八位格式。
-            TextureFormat::Rgba8Unorm => (DXGI_FORMAT_R8G8B8A8_UNORM.0, 4, true),
+            TextureFormat::Rgba8Unorm => DXGI_FORMAT_R8G8B8A8_UNORM.0,
             // 映射单通道覆盖率格式。
-            TextureFormat::R8Unorm => (DXGI_FORMAT_R8_UNORM.0, 1, false),
+            TextureFormat::R8Unorm => DXGI_FORMAT_R8_UNORM.0,
         }
     }
 }
@@ -379,42 +377,16 @@ impl GraphicsDevice for D3d11Context {
         self.rhi_create_sampler(desc)
     }
 
-    // 上传 texture 的紧密排列像素。
-    fn update_texture(
-        &mut self,
-        texture: TextureHandle,
-        extent: RhiExtent,
-        data: &[u8],
-    ) -> Result<()> {
-        // 整块上传是从左上角开始的类型化完整区域。
-        self.update_texture_region(texture, RhiTextureRegion::full(extent), data)
-    }
-
-    // 上传 texture 中任意合法的紧密排列子区域。
-    fn update_texture_region(
-        &mut self,
-        texture: TextureHandle,
-        region: RhiTextureRegion,
-        data: &[u8],
-    ) -> Result<()> {
-        // 读取目标纹理的格式和尺寸事实。
-        let resource = self.rhi_device.texture(texture)?;
-        // 共享区域门禁统一验证原点、尺寸、溢出与资源边界。
-        let bounds = region.validate_within(resource.extent)?;
-        // 计算当前格式的每像素字节数。
-        let (_, bytes_per_pixel, _) = D3d11RhiDevice::texture_format(resource.format);
-        // 从共享区域读取紧密载荷长度和 D3D11 行跨度。
-        let (required, row_pitch) = bounds
-            // 使用当前格式的字节宽度投影布局。
-            .tight_payload_layout(bytes_per_pixel)
-            .ok_or_else(|| rhi_invalid("D3d11 RHI texture region size overflows"))?;
-        // 拒绝短 payload，避免驱动读取未初始化内存。
-        if data.len() != required {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid(
-                "D3d11 RHI texture region payload length is invalid",
-            ));
-        }
+    // 上传已经绑定目标身份、区域与紧密像素载荷的纹理命令。
+    fn update_texture(&mut self, upload: RhiTextureUpload<'_>) -> Result<()> {
+        // 先解析目标身份，空载荷也不能绕过陈旧句柄门禁。
+        let resource = self.rhi_device.texture(upload.texture())?;
+        // 由共享 Transfer Component 统一验证描述、区域、载荷和行跨度。
+        let validated = upload.validate(resource.desc)?;
+        // 原生调用只消费已经验证的像素字节。
+        let data = validated.data();
+        // 读取共享区域已经验证的原生边界。
+        let bounds = validated.bounds();
         // 读取共享区域已经验证的四条无符号边。
         let (left, top, right, bottom) = bounds.native_rect_u32();
         // 构造覆盖目标区域的 texture box。
@@ -438,7 +410,7 @@ impl GraphicsDevice for D3d11Context {
                 0,
                 Some(&dst_box),
                 data.as_ptr().cast(),
-                row_pitch,
+                validated.row_pitch(),
                 0,
             );
         }
@@ -544,7 +516,7 @@ impl GraphicsDevice for D3d11Context {
                     texture.rtv.as_ref().cloned().ok_or_else(|| {
                         rhi_not_implemented("D3d11 RHI target texture render view")
                     })?;
-                (rtv, texture.extent)
+                (rtv, texture.desc.extent())
             };
         // 由共享状态机统一验证目标范围、清屏颜色并建立 pass 事实。
         self.rhi_device.pass.begin(target, extent, load)?;
@@ -607,22 +579,7 @@ impl GraphicsDevice for D3d11Context {
         let source = self.rhi_device.texture(copy.source())?;
         let destination = self.rhi_device.texture(copy.destination())?;
         // 格式、非空、范围与资源关系全部由共享传输契约验证。
-        let bounds = copy.validate_transfer(
-            // 构造源纹理的 API 无关描述。
-            TextureDesc {
-                // 保存源物理尺寸。
-                extent: source.extent,
-                // 保存源格式。
-                format: source.format,
-            },
-            // 构造目标纹理的 API 无关描述。
-            TextureDesc {
-                // 保存目标物理尺寸。
-                extent: destination.extent,
-                // 保存目标格式。
-                format: destination.format,
-            },
-        )?;
+        let bounds = copy.validate_transfer(source.desc, destination.desc)?;
         // 读取共享源区域已经验证的四条无符号边。
         let (source_left, source_top, source_right, source_bottom) =
             bounds.source().native_rect_u32();
@@ -666,45 +623,31 @@ impl GraphicsDevice for D3d11Context {
         // 移动必须发生在显式 pass 之外。
         self.rhi_device.pass.require_closed()?;
         // 先复制资源描述，避免后续 scratch 操作持有资源表借用。
-        let (source_extent, source_format) = {
-            // 读取源纹理的尺寸和格式事实。
+        let source_desc = {
+            // 读取源纹理的完整描述事实。
             let source = self.rhi_device.texture(movement.source())?;
-            (source.extent, source.format)
+            source.desc
         };
-        // 读取目标纹理的尺寸和格式事实。
-        let (destination_extent, destination_format) = {
-            // 读取目标纹理的尺寸和格式事实。
+        // 读取目标纹理的完整描述事实。
+        let destination_desc = {
+            // 读取目标纹理的统一创建契约。
             let destination = self.rhi_device.texture(movement.destination())?;
-            (destination.extent, destination.format)
+            destination.desc
         };
         // 格式、非空、范围和溢出统一委托共享 move 契约。
-        movement.validate_transfer(
-            // 构造源纹理的 API 无关描述。
-            TextureDesc {
-                // 保存源物理尺寸。
-                extent: source_extent,
-                // 保存源格式。
-                format: source_format,
-            },
-            // 构造目标纹理的 API 无关描述。
-            TextureDesc {
-                // 保存目标物理尺寸。
-                extent: destination_extent,
-                // 保存目标格式。
-                format: destination_format,
-            },
-        )?;
+        movement.validate_transfer(source_desc, destination_desc)?;
         // 不同纹理没有重叠风险，复用已验证的 copy 原语。
         if movement.source() != movement.destination() {
             // 将完整类型化移动无损转换为普通纹理复制。
             return self.copy_texture(movement.into_copy());
         }
         // 同一纹理必须先复制到 scratch，不能依赖 CopySubresourceRegion 的重叠行为。
-        let scratch = self.rhi_create_texture(TextureDesc {
+        let scratch = self.rhi_create_texture(TextureDesc::new(
             // scratch 精确采用传输 Component 的唯一尺寸。
-            extent: movement.transfer().extent(),
-            format: source_format,
-        })?;
+            movement.transfer().extent(),
+            // scratch 继承源纹理的共享格式事实。
+            source_desc.format(),
+        ))?;
         // 由共享传输 Component 唯一拆分保存与恢复两段 copy。
         let (to_scratch, from_scratch) = movement.through_scratch(scratch);
         // 先保存源区域，再写回目标区域，形成明确的 memmove 顺序。
