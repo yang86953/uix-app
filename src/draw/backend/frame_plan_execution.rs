@@ -5,7 +5,7 @@ use crate::core::error::{Errc, Error, Result};
 // 引入薄 RHI 的 Device、Surface、组合 context、目标句柄与提交句柄。
 use crate::native::present::rhi::{
     GraphicsContextRhi, GraphicsDevice, GraphicsSurface, RenderTargetHandle, RhiBufferUpload,
-    RhiPresentTransaction, SubmissionHandle,
+    RhiBufferUploadPreflight, RhiPresentTransaction, SubmissionHandle,
 };
 
 // 引入父模块的计划私有结构。
@@ -71,12 +71,14 @@ where
         }
     }
 
-    // 按统一顺序完成 target、transfer、draw 和 sampled 资源预检。
+    // 按统一顺序完成 target、transfer、upload、draw 和 sampled 资源预检。
     fn run(&self, steps: &[FramePlanStep]) -> Result<()> {
         // 先完成 scope 专属 target 校验。
         self.validate_targets(steps)?;
         // 再预检所有顶层 texture copy/move。
         self.validate_transfers(steps)?;
+        // 再预检所有 pass 内类型化 Buffer 上传。
+        self.validate_buffer_uploads(steps)?;
         // 再预检所有 pass 内 Draw 的真实 Buffer 资源。
         self.validate_draw_resources(steps)?;
         // 最后预检所有 pass 内 sampled binding 资源。
@@ -113,6 +115,37 @@ where
             }
         }
         // 所有 target 都已满足当前 FramePlan scope。
+        Ok(())
+    }
+
+    // 预检所有 pass 内类型化 Buffer 上传的真实资源与精确范围。
+    fn validate_buffer_uploads(&self, steps: &[FramePlanStep]) -> Result<()> {
+        // 按 FramePlan 顶层顺序逐个观察 render pass。
+        for step in steps {
+            // 只有 render pass 包含 Buffer 上传命令。
+            if let FramePlanStep::Pass(pass) = step {
+                // 保持 pass 内上传命令的 painter order。
+                for command in &pass.commands {
+                    // 顶点上传必须用类型化载荷的精确编码长度预检真实 Buffer。
+                    if let FramePlanCommand::UploadVertex { buffer, data } = command {
+                        // 预检值不编码或借用裸字节，因此不会产生 Device 副作用。
+                        self.device.preflight_buffer_upload(
+                            // 将句柄与类型化载荷已经确定的字节数绑定为共享查询值。
+                            RhiBufferUploadPreflight::vertex(*buffer, data.size_bytes()),
+                        )?;
+                    }
+                    // Uniform 上传必须在编码前证明完整替换真实 Buffer。
+                    if let FramePlanCommand::UploadUniform { buffer, data } = command {
+                        // 复用同一共享预检值，不在 FramePlan 复制用途或容量规则。
+                        self.device.preflight_buffer_upload(
+                            // 固定 Uniform ABI 已经能无分配地给出精确编码长度。
+                            RhiBufferUploadPreflight::uniform(*buffer, data.size_bytes()),
+                        )?;
+                    }
+                }
+            }
+        }
+        // 每一条类型化 Buffer 上传都已由真实资源描述证明。
         Ok(())
     }
 

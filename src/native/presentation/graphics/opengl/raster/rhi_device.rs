@@ -12,12 +12,12 @@ use crate::core::PresentCoherency;
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, LoadAction, PipelineBinding, PipelineColorWriteMask,
     PipelineDesc, PipelineDitherState, PipelineKind, RenderTargetHandle, RhiBufferResource,
-    RhiBufferResourceTable, RhiBufferUpload, RhiColor, RhiColorClearContract, RhiExtent,
-    RhiPassState, RhiPipelineResourceTable, RhiPresentTransaction, RhiResourceTable, RhiScissor,
-    RhiSubmissionSequence, RhiTextureResource, RhiTextureResourceTable, RhiTextureUpload,
-    SampledTextureBinding, SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceToken, TextureCopy,
-    TextureDesc, TextureFormat, TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
-    ValidatedRhiPresent,
+    RhiBufferResourceTable, RhiBufferUpload, RhiBufferUploadPreflight, RhiColor,
+    RhiColorClearContract, RhiExtent, RhiPassState, RhiPipelineResourceTable,
+    RhiPresentTransaction, RhiResourceTable, RhiScissor, RhiSubmissionSequence, RhiTextureResource,
+    RhiTextureResourceTable, RhiTextureUpload, SampledTextureBinding, SamplerDesc, SamplerHandle,
+    SubmissionHandle, SurfaceToken, TextureCopy, TextureDesc, TextureFormat, TextureHandle,
+    TextureMove, UIX_COLOR_CLEAR_CONTRACT, ValidatedRhiPresent,
 };
 
 // 将 retained 区域移动拆出，保持资源设备文件低于行数上限。
@@ -220,6 +220,17 @@ impl OpenGlRhiDevice {
         let sampler_desc = sampler.desc;
         // 只执行资源语义预检，不建立 pass 绑定状态。
         binding.validate_resources(format, sampler_desc)
+    }
+
+    // 只读预检 Buffer 上传的真实资源身份与载荷契约。
+    pub(super) fn preflight_buffer_upload(
+        // 只读借用 OpenGL 设备，不触碰 GL context 或 native 状态。
+        &self,
+        // 接收共享层冻结的 Buffer 上传预检事实。
+        upload: RhiBufferUploadPreflight,
+    ) -> Result<()> {
+        // 由共享 Buffer 资源表解析真实句柄并统一验证用途、容量与范围。
+        self.buffers.validate_upload(upload)
     }
 
     // 创建动态 buffer 并登记其 CPU 镜像。

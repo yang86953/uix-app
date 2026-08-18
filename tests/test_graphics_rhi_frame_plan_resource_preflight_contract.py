@@ -68,12 +68,14 @@ class GraphicsRhiFramePlanResourcePreflightContractTests(unittest.TestCase):
         self.assertIn("OffscreenOnly", preflight)
         # 提取唯一预检运行入口。
         run = function_body(preflight, "run")
-        # 预检必须按 target、transfer、draw、sampled 的固定顺序执行。
+        # 预检必须按 target、transfer、upload、draw、sampled 的固定顺序执行。
         validators = (
             # 首先验证目标身份和能力。
             "self.validate_targets(steps)?",
             # 随后验证 pass 外纹理传输。
             "self.validate_transfers(steps)?",
+            # 随后验证每条类型化 Buffer 上传。
+            "self.validate_buffer_uploads(steps)?",
             # 随后验证 Draw 的 pipeline 与 Buffer 资源。
             "self.validate_draw_resources(steps)?",
             # 最后验证 sampled texture 与 sampler。
@@ -95,6 +97,8 @@ class GraphicsRhiFramePlanResourcePreflightContractTests(unittest.TestCase):
         self.assertIn("self.device.preflight_texture_copy(*copy)?", preflight)
         # move 预检必须进入共享 GraphicsDevice 只读入口。
         self.assertIn("self.device.preflight_texture_move(*movement)?", preflight)
+        # 顶点与 Uniform 上传都必须进入共享只读预检入口。
+        self.assertEqual(preflight.count("self.device.preflight_buffer_upload("), 2)
         # Draw 预检必须进入共享 GraphicsDevice 只读入口。
         self.assertIn("self.device.preflight_draw_resources(*packet)?", preflight)
         # sampled 预检必须进入共享 GraphicsDevice 只读入口。
@@ -182,6 +186,8 @@ class GraphicsRhiFramePlanResourcePreflightContractTests(unittest.TestCase):
             "validate_targets",
             # 传输资源预检归属只读 Component。
             "validate_transfers",
+            # Buffer 上传资源预检归属只读 Component。
+            "validate_buffer_uploads",
             # Draw 资源预检归属只读 Component。
             "validate_draw_resources",
             # sampled 资源预检归属只读 Component。

@@ -402,10 +402,10 @@ mod tests {
     use crate::native::present::rhi::{
         BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, GraphicsSurface,
         LoadAction, PipelineBinding, PipelineHandle, PipelineKind, RenderTargetHandle,
-        RhiBufferUpload, RhiColor, RhiExtent, RhiGradientRasterParams, RhiMeshRasterParams,
-        RhiPresentTransaction, RhiSampledRasterParams, RhiScissor, RhiTextureTransfer, RhiViewport,
-        SampledTextureBinding, SamplerHandle, SubmissionHandle, SurfaceFrame, SurfaceToken,
-        TextureCopy, TextureHandle, TextureMove,
+        RhiBufferUpload, RhiBufferUploadPreflight, RhiColor, RhiExtent, RhiGradientRasterParams,
+        RhiMeshRasterParams, RhiPresentTransaction, RhiSampledRasterParams, RhiScissor,
+        RhiTextureTransfer, RhiViewport, SampledTextureBinding, SamplerHandle, SubmissionHandle,
+        SurfaceFrame, SurfaceToken, TextureCopy, TextureHandle, TextureMove,
     };
     // 引入当前文件的计划类型。
     use super::{
@@ -429,6 +429,8 @@ mod tests {
         fail_copy_preflight: bool,
         // 保存是否强制 texture move 预检失败。
         fail_move_preflight: bool,
+        // 保存需要强制上传预检失败的可选 Buffer 身份。
+        fail_upload_preflight: Option<BufferHandle>,
         // 保存是否强制 Draw 资源预检失败。
         fail_draw_preflight: bool,
         // 保存是否强制 sampled 资源预检失败。
@@ -484,6 +486,20 @@ mod tests {
                 ));
             }
             // 关闭注入后允许合法 move 继续执行。
+            Ok(())
+        }
+
+        // 在任何 Device 原语前预检类型化 Buffer 上传。
+        fn preflight_buffer_upload(&self, upload: RhiBufferUploadPreflight) -> Result<()> {
+            // 只有指定身份的上传才触发失败，允许测试证明未被 Draw 消费的命令也会扫描。
+            if self.fail_upload_preflight == Some(upload.buffer()) {
+                // 返回共享参数错误，模拟真实 Buffer 身份或容量拒绝。
+                return Err(Error::new(
+                    Errc::InvalidArgument,
+                    "recording buffer upload preflight failed",
+                ));
+            }
+            // 关闭注入后允许合法类型化上传继续执行。
             Ok(())
         }
 
@@ -674,6 +690,12 @@ mod tests {
             self.device.preflight_texture_move(movement)
         }
 
+        // 把 Buffer 上传预检委托给内嵌记录 device。
+        fn preflight_buffer_upload(&self, upload: RhiBufferUploadPreflight) -> Result<()> {
+            // 复用唯一测试上传资源预检路径。
+            self.device.preflight_buffer_upload(upload)
+        }
+
         // 把 Draw 资源预检委托给内嵌记录 device。
         fn preflight_draw_resources(&self, packet: DrawPacket) -> Result<()> {
             // 复用唯一测试资源预检路径。
@@ -816,6 +838,8 @@ mod tests {
                 fail_copy_preflight: false,
                 // 默认允许 texture move 预检成功。
                 fail_move_preflight: false,
+                // 默认允许全部 Buffer 上传预检成功。
+                fail_upload_preflight: None,
                 // 默认允许 Draw 资源预检成功。
                 fail_draw_preflight: false,
                 // 默认允许 sampled 资源预检成功。

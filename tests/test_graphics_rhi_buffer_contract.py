@@ -174,11 +174,11 @@ class GraphicsRhiBufferContractTests(unittest.TestCase):
         # 读取 D3D11 Adapter。
         d3d11 = D3D11.read_text(encoding="utf-8")
         # 空上传拒绝必须由共享门禁拥有。
-        self.assertIn("if self.data.is_empty()", buffer)
+        self.assertIn("if size_bytes == 0", buffer)
         # 上传验证必须独立复用描述门禁，禁止非法描述参与原生窄化。
         self.assertEqual(buffer.count("desc.validate()?;"), 1)
         # Uniform 整块替换规则必须由共享门禁拥有。
-        self.assertIn("self.data.len() != desc.size_bytes", buffer)
+        self.assertIn("size_bytes != desc.size_bytes", buffer)
         # OpenGL 必须先解析句柄再验证同一上传值对象。
         self.assertIn("upload.validate(buffer.desc)?", opengl)
         # D3D11 必须消费相同验证入口。
@@ -195,6 +195,59 @@ class GraphicsRhiBufferContractTests(unittest.TestCase):
         self.assertNotIn("end as u32", d3d11)
         # owner-thread bridge 必须保持上传命令原子性。
         self.assertIn("rhi.update_buffer(gl, upload)", opengl_bridge)
+
+    # 类型化 FramePlan 上传必须在编码和 Surface acquire 前证明真实 Buffer 角色与范围。
+    def test_typed_uploads_share_read_only_resource_preflight(self) -> None:
+        # 读取共享 Buffer 值对象与资源表。
+        buffer = BUFFER.read_text(encoding="utf-8")
+        # 读取共享 Buffer 资源表。
+        table = BUFFER_TABLE.read_text(encoding="utf-8")
+        # 读取薄 RHI Device 契约。
+        rhi = RHI.read_text(encoding="utf-8")
+        # 读取 FramePlan 预检执行边界。
+        execution = FRAME_EXECUTION.read_text(encoding="utf-8")
+        # 读取 OpenGL Device、bridge 与 host。
+        opengl = OPENGL.read_text(encoding="utf-8")
+        # 读取 OpenGL 只读 bridge。
+        opengl_bridge = OPENGL_BRIDGE.read_text(encoding="utf-8")
+        # 读取 OpenGL owner-thread host。
+        opengl_host = OPENGL_HOST.read_text(encoding="utf-8")
+        # 读取 D3D11 Device Adapter。
+        d3d11 = D3D11.read_text(encoding="utf-8")
+        # 预检值必须原子保存身份、长度与期望用途。
+        self.assertIn("pub(crate) struct RhiBufferUploadPreflight", buffer)
+        # 期望用途不得由 Adapter 或 FramePlan 另存散字段。
+        self.assertIn("usage: BufferUsage", buffer)
+        # 顶点、索引和 Uniform 只能通过用途化构造器冻结角色。
+        for constructor in ("fn vertex(", "fn index(", "fn uniform("):
+            # 每一种 Buffer 角色都必须有独立封闭入口。
+            self.assertIn(constructor, buffer)
+        # 真实资源用途必须与类型化上传要求完全一致。
+        self.assertIn("if self.usage != desc.usage", buffer)
+        # 原始上传和只读预检必须复用唯一范围函数。
+        self.assertEqual(buffer.count("validate_upload_size("), 3)
+        # 资源表必须先解析句柄，再委托共享上传预检。
+        self.assertIn("pub(crate) fn validate_upload", table)
+        # 资源描述只能由共享资源表交给预检值。
+        self.assertIn("upload.validate(resource.desc())", table)
+        # GraphicsDevice 必须公开无副作用的只读上传预检入口。
+        self.assertIn("fn preflight_buffer_upload(&self", rhi)
+        # FramePlan 顶点上传必须冻结 Vertex 用途和精确编码长度。
+        self.assertIn("RhiBufferUploadPreflight::vertex(*buffer, data.size_bytes())", execution)
+        # FramePlan Uniform 上传必须冻结 Uniform 用途和固定 ABI 长度。
+        self.assertIn("RhiBufferUploadPreflight::uniform(*buffer, data.size_bytes())", execution)
+        # OpenGL Adapter 必须只读委托共享 Buffer 资源表。
+        self.assertIn("self.buffers.validate_upload(upload)", opengl)
+        # OpenGL bridge 必须保持只读上传预检调用链。
+        self.assertIn("pub(crate) fn rhi_preflight_buffer_upload", opengl_bridge)
+        # OpenGL host 必须在只读转发前检查 owner 生命周期。
+        opengl_preflight = opengl_host.split("fn preflight_buffer_upload", maxsplit=1)[1].split("    }", maxsplit=1)[0]
+        # host 必须首先检查 owner 生命周期。
+        self.assertIn("self.rhi_ensure_active()?", opengl_preflight)
+        # 只读上传预检不得恢复原生 OpenGL context。
+        self.assertNotIn("rhi_make_current", opengl_preflight)
+        # D3D11 必须同样只读委托共享 Buffer 资源表。
+        self.assertIn("self.rhi_device.buffers.validate_upload(upload)", d3d11)
 
 
 # 支持直接执行该精确契约测试。

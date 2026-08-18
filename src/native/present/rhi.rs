@@ -96,7 +96,7 @@ pub(crate) use transfer::{
 };
 // 重新导出薄 RHI 消费的类型化 Buffer 契约。
 #[allow(unused_imports)]
-pub(crate) use buffer::{BufferDesc, BufferUsage, RhiBufferUpload};
+pub(crate) use buffer::{BufferDesc, BufferUsage, RhiBufferUpload, RhiBufferUploadPreflight};
 // 重新导出薄 RHI 消费的封闭纹理描述与格式契约。
 pub(crate) use texture::{TextureDesc, TextureFormat};
 // 向两个 Adapter 暴露唯一类型化资源槽位状态机。
@@ -488,6 +488,12 @@ pub(crate) trait GraphicsDevice {
     fn update_buffer(&mut self, _upload: RhiBufferUpload<'_>) -> Result<()> {
         // 默认实现显式拒绝，要求真实 adapter 提供上传能力。
         Err(rhi_not_implemented("update_buffer"))
+    }
+
+    // 在激活 Device 前预检 Buffer 上传的真实句柄与描述。
+    fn preflight_buffer_upload(&self, _upload: RhiBufferUploadPreflight) -> Result<()> {
+        // 默认实现显式拒绝未声明共享 Buffer 资源表能力的 Adapter。
+        Err(rhi_not_implemented("preflight_buffer_upload"))
     }
 
     // 创建 sampled texture 或 render target texture。

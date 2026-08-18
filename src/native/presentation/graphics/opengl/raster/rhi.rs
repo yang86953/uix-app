@@ -6,10 +6,10 @@ use crate::core::error::Result;
 use crate::core::PresentCoherency;
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDeviceCapabilities, LoadAction, PipelineBinding,
-    PipelineDesc, RenderTargetHandle, RhiBufferUpload, RhiExtent, RhiPresentTransaction,
-    RhiScissor, RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle,
-    SubmissionHandle, SurfaceToken, TextureCopy, TextureDesc, TextureHandle, TextureMove,
-    ValidatedRhiPresent,
+    PipelineDesc, RenderTargetHandle, RhiBufferUpload, RhiBufferUploadPreflight, RhiExtent,
+    RhiPresentTransaction, RhiScissor, RhiTextureUpload, RhiViewport, SampledTextureBinding,
+    SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceToken, TextureCopy, TextureDesc,
+    TextureHandle, TextureMove, ValidatedRhiPresent,
 };
 // 复用父模块中的 OpenGL pipeline 和资源设备类型。
 use super::{OpenGlRasterPipeline, rhi_device::OpenGlRhiDevice};
@@ -95,6 +95,17 @@ impl OpenGlRasterPipeline {
     ) -> Result<()> {
         // 直接委托 OpenGL 设备的共享资源预检。
         self.rhi.preflight_sampled_binding(binding)
+    }
+
+    // 只读预检 Buffer 上传的真实资源身份与载荷契约。
+    pub(crate) fn rhi_preflight_buffer_upload(
+        // 只读借用 owner，避免预检产生 native 副作用。
+        &self,
+        // 接收共享层冻结的 Buffer 上传预检事实。
+        upload: RhiBufferUploadPreflight,
+    ) -> Result<()> {
+        // 直接委托 OpenGL 设备的共享 Buffer 资源表预检。
+        self.rhi.preflight_buffer_upload(upload)
     }
 
     // 上传通用 texture payload。
