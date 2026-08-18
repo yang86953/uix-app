@@ -399,8 +399,8 @@ mod tests {
         LoadAction, PipelineBinding, PipelineHandle, PipelineKind, RenderTargetHandle,
         RhiBufferUpload, RhiColor, RhiExtent, RhiGradientRasterParams, RhiMeshRasterParams,
         RhiPresentTransaction, RhiSampledRasterParams, RhiScissor, RhiTextureTransfer, RhiViewport,
-        SampledTextureBinding, SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy,
-        TextureHandle, TextureMove,
+        SampledTextureBinding, SamplerHandle, SubmissionHandle, SurfaceFrame, SurfaceToken,
+        TextureCopy, TextureHandle, TextureMove,
     };
     // 引入当前文件的计划类型。
     use super::{

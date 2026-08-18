@@ -170,8 +170,16 @@ impl D3d11Context {
         binding: SampledTextureBinding,
     ) -> Result<()> {
         // 验证纹理和 sampler 句柄仍然有效。
-        self.rhi_device.texture(binding.texture())?;
-        self.rhi_device.sampler(binding.sampler())?;
+        // 复制纹理描述并结束资源表借用。
+        let texture = self.rhi_device.texture(binding.texture())?;
+        // 复制 sampler 描述并结束资源表借用。
+        let sampler = self.rhi_device.sampler(binding.sampler())?;
+        // 复制共享纹理格式值，避免校验持有资源表借用。
+        let format = texture.desc.format();
+        // 复制共享 sampler 描述值，避免校验持有资源表借用。
+        let sampler_desc = sampler.desc;
+        // 在共享 pass 写入前验证实际资源描述与绑定语义一致。
+        binding.validate_resources(format, sampler_desc)?;
         // 由共享状态机统一验证 pass 和目标反馈环后原子记录绑定。
         self.rhi_device.pass.bind_sampled_texture(binding)?;
         // 返回绑定成功。

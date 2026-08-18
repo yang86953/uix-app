@@ -805,7 +805,14 @@ impl RhiRenderer {
             // 原子绑定当前纹理和共享 sampler。
             pass.push(FramePlanCommand::BindSampledTexture(
                 // 固定 t0/s0 ABI 不再向 FramePlan 暴露槽位。
-                SampledTextureBinding::new(texture, sampler),
+                SampledTextureBinding::for_pipeline(
+                    // 传递当前图片纹理身份。
+                    texture,
+                    // 传递共享采样器身份。
+                    sampler,
+                    // 绑定与后续 DrawPacket 使用完全相同的 pipeline 身份。
+                    quad_pipeline,
+                ),
             ));
             // 追加六顶点的非索引采样 quad draw packet。
             pass.push(FramePlanCommand::Draw(DrawPacket {

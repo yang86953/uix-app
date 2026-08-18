@@ -539,9 +539,16 @@ impl OpenGlRhiDevice {
 
     // 记录 texture/sampler 绑定，实际 GL 绑定在 draw 时完成。
     pub(super) fn bind_sampled_texture(&mut self, binding: SampledTextureBinding) -> Result<()> {
-        // 先验证资源仍然存在。
-        self.texture(binding.texture())?;
-        self.sampler(binding.sampler())?;
+        // 复制纹理描述并结束资源表借用。
+        let texture = self.texture(binding.texture())?;
+        // 复制 sampler 描述并结束资源表借用。
+        let sampler = self.sampler(binding.sampler())?;
+        // 复制共享纹理格式值，避免校验持有资源表借用。
+        let format = texture.desc.format();
+        // 复制共享 sampler 描述值，避免校验持有资源表借用。
+        let sampler_desc = sampler.desc;
+        // 在共享 pass 写入前验证实际资源描述与绑定语义一致。
+        binding.validate_resources(format, sampler_desc)?;
         // 由共享状态机统一验证 pass 和目标反馈环后原子记录绑定。
         self.pass.bind_sampled_texture(binding)?;
         // 返回统一成功结果。

@@ -399,6 +399,124 @@ fn gradient_frame_plan_validates_radial_outer_radius_before_adapter() {
     assert_eq!(negative_error.code(), Errc::InvalidArgument);
 }
 
+// 构造由多个采样绑定依次覆盖的 coverage FramePlan。
+fn coverage_plan_with_binding_kinds(
+    // 冻结测试 Surface 的代际与物理范围。
+    token: SurfaceToken,
+    // 按命令顺序提供每次绑定的 pipeline 语义。
+    binding_kinds: &[PipelineKind],
+) -> FramePlan {
+    // 复用具备完整 viewport、上传和 draw 的最小计划。
+    let mut plan = test_plan(token);
+    // 取得唯一 render pass 以替换为 coverage ABI。
+    let FramePlanStep::Pass(pass) = &mut plan.steps[0] else {
+        // 测试基线漂移时立即失败。
+        panic!("test plan must start with a render pass");
+    };
+    // 遍历命令并把 SolidMesh 载荷收敛为 coverage 共享契约。
+    for command in &mut pass.commands {
+        // 按命令类型替换唯一相关事实。
+        match command {
+            // coverage 使用 position/uv/color float8 顶点。
+            FramePlanCommand::UploadVertex { data, .. } => {
+                // 三个完整顶点足以验证布局，不依赖真实光栅结果。
+                *data = FrameVertexPayload::position_uv_color_f32([0.0; 24]);
+            }
+            // coverage 与普通 sampled quad 共用 viewport uniform。
+            FramePlanCommand::UploadUniform { data, .. } => {
+                // 构造与 pass viewport 一致的 sampled 常量。
+                *data = FrameUniformPayload::Sampled(RhiSampledRasterParams::new(RhiViewport {
+                    // 保存测试宽度。
+                    width: 64.0,
+                    // 保存测试高度。
+                    height: 64.0,
+                }));
+            }
+            // draw 必须冻结 coverage pipeline 语义。
+            FramePlanCommand::Draw(packet) => {
+                // 保留不透明句柄并替换为 coverage ABI。
+                packet.pipeline = PipelineBinding::new(
+                    // 使用稳定且独立的 draw pipeline 句柄。
+                    PipelineHandle::from_raw(10),
+                    // 选择 R8 最近点采样语义。
+                    PipelineKind::GlyphCoverageQuad,
+                );
+            }
+            // viewport 与 scissor 不参与本测试的采样语义。
+            _ => {}
+        }
+    }
+    // 定位唯一 draw，使全部测试绑定严格位于其前方。
+    let draw_index = pass
+        // 只读遍历当前命令顺序。
+        .commands
+        // 查找唯一 draw 命令。
+        .iter()
+        // 返回命令索引供稳定插入。
+        .position(|command| matches!(command, FramePlanCommand::Draw(_)))
+        // 测试基线必须继续包含 draw。
+        .expect("test plan must contain a draw");
+    // 按调用方顺序插入全部采样绑定。
+    for (offset, kind) in binding_kinds.iter().copied().enumerate() {
+        // 每个测试 pipeline 使用独立不透明句柄，避免伪造陈旧身份。
+        let pipeline = PipelineBinding::new(
+            // 从稳定基值生成互不重复的句柄。
+            PipelineHandle::from_raw(20 + offset as u64),
+            // 使用调用方指定的封闭采样语义。
+            kind,
+        );
+        // 把绑定插入 draw 前，并保持调用方提供的先后顺序。
+        pass.commands.insert(
+            // 后续插入点随已插入命令向后移动。
+            draw_index + offset,
+            // 构造完整的类型化采样绑定命令。
+            FramePlanCommand::BindSampledTexture(SampledTextureBinding::for_pipeline(
+                // 使用稳定的非目标纹理身份。
+                TextureHandle::from_raw(30),
+                // 使用稳定 sampler 身份，实际描述由 Device 边界验证。
+                SamplerHandle::from_raw(31),
+                // 采样语义只能从本次 pipeline 身份派生。
+                pipeline,
+            )),
+        );
+    }
+    // 返回已经按顺序冻结采样绑定的完整计划。
+    plan
+}
+
+// FramePlan 必须只接受 draw 前最近且语义匹配的采样绑定。
+#[test]
+fn sampled_draw_validates_the_latest_binding_before_device() {
+    // 创建稳定的第一代 Surface token。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 较旧错配绑定被后续 coverage 绑定覆盖时计划必须有效。
+    let valid = coverage_plan_with_binding_kinds(
+        // 复用同一 Surface 事实。
+        token,
+        // 最近绑定使用 coverage 语义。
+        &[PipelineKind::TexturedQuad, PipelineKind::GlyphCoverageQuad],
+    );
+    // 完整共享门禁必须接受最近绑定匹配的计划。
+    assert!(valid.validate().is_ok());
+    // 最近绑定被颜色语义覆盖时必须在 Device 前失败。
+    let invalid = coverage_plan_with_binding_kinds(
+        // 复用同一 Surface 事实。
+        token,
+        // 最近绑定故意使用 premultiplied color 语义。
+        &[PipelineKind::GlyphCoverageQuad, PipelineKind::TexturedQuad],
+    );
+    // 执行共享 FramePlan 门禁并取得稳定错误。
+    let error = invalid
+        // 不进入任何 RecordingDevice 方法。
+        .validate()
+        // 错配必须显式失败。
+        .expect_err("latest sampled binding mismatch must fail");
+    // 采样语义错配属于共享参数错误。
+    assert_eq!(error.code(), Errc::InvalidArgument);
+    // 诊断必须明确指向绑定与 pipeline contract。
+    assert!(error.what().contains("sampled binding does not match"));
+}
+
 // 验证 submit 失败时不会进入最终 present。
 #[test]
 fn failed_submit_does_not_present() {
