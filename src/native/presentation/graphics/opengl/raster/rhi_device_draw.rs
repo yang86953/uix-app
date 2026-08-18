@@ -27,6 +27,8 @@ use crate::native::present::rhi::{
 };
 // 复用父资源表、目标方向、类型化 shader 语义和错误辅助。
 use super::{OpenGlRhiDevice, rhi_invalid, target_y_sign};
+// 复用独立 Adapter Component 的共享顶点布局映射。
+use super::vertex_layout::configure_vertex_attributes;
 
 // 为字节镜像读取一个 native-endian float。
 fn read_f32(data: &[u8], index: usize) -> Result<f32> {
@@ -182,13 +184,15 @@ impl OpenGlRhiDevice {
             gl.bind_vertex_array(Some(self.vao));
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(vertex));
         }
+        // 由共享布局一次配置全部属性，禁止各 pipeline 分支维护布局副本。
+        // SAFETY: 当前 VAO 与顶点 buffer 已绑定；共享布局已通过上方 ABI 门禁。
+        unsafe { configure_vertex_attributes(gl, contract.vertex)? };
         // 按封闭 pipeline 语义检查 stride、uniform 大小并设置 uniforms/blend。
         let sampled_format = match kind {
             // solid mesh 使用 float2 vertex 和 MeshConstants。
             PipelineKind::SolidMesh => {
                 // SAFETY: 该分支已校验 stride=8、uniform=32 字节且 vertex_count>0；program/vao/vertex 存活；uniform 解码由 read_f32 的边界检查兜底；context 保持 current。
                 unsafe {
-                    configure_float2_attributes(gl, vertex_stride);
                     set_vec2(
                         gl,
                         program,
@@ -214,7 +218,6 @@ impl OpenGlRhiDevice {
             PipelineKind::TexturedQuad | PipelineKind::TexturedQuadAdditive => {
                 // SAFETY: 该分支已校验 stride=32、uniform=16 字节且 vertex_count>0；program/vao/vertex/texture/sampler 均存活；源格式由随后的门禁检查兜底；context 保持 current。
                 let format = unsafe {
-                    configure_float8_attributes(gl, vertex_stride);
                     set_vec2(
                         gl,
                         program,
@@ -240,7 +243,6 @@ impl OpenGlRhiDevice {
             PipelineKind::GradientRect => {
                 // SAFETY: 该分支已校验 stride=8、uniform=96 字节且 vertex_count>0；program/vao/vertex 存活；uniform 解码有边界检查；context 保持 current。
                 unsafe {
-                    configure_float2_attributes(gl, vertex_stride);
                     set_vec2(
                         gl,
                         program,
@@ -294,7 +296,6 @@ impl OpenGlRhiDevice {
             PipelineKind::GlyphCoverageQuad => {
                 // SAFETY: 该分支已校验 stride=32、uniform=16 字节且 vertex_count>0；program/vao/vertex/texture/sampler 均存活；R8 源格式由随后的门禁检查兜底；context 保持 current。
                 let format = unsafe {
-                    configure_float8_attributes(gl, vertex_stride);
                     set_vec2(
                         gl,
                         program,
@@ -320,7 +321,6 @@ impl OpenGlRhiDevice {
             PipelineKind::MsdfGlyphQuad => {
                 // SAFETY: 该分支已校验 stride=32、uniform=32 字节且 vertex_count>0；program/vao/vertex/texture/sampler 均存活；RGBA8 源格式由随后的门禁检查兜底；context 保持 current。
                 let format = unsafe {
-                    configure_float8_attributes(gl, vertex_stride);
                     set_vec2(
                         gl,
                         program,
@@ -359,7 +359,6 @@ impl OpenGlRhiDevice {
             PipelineKind::ShapeRect | PipelineKind::ShapeRectAdditive => {
                 // SAFETY: 该分支已校验 stride=8、uniform 为固定 Shape ABI 且 vertex_count>0；program/vao/vertex 存活；uniform 解码有边界检查；context 保持 current。
                 unsafe {
-                    configure_float2_attributes(gl, vertex_stride);
                     set_vec2(
                         gl,
                         program,
@@ -413,7 +412,6 @@ impl OpenGlRhiDevice {
             PipelineKind::Sector => {
                 // SAFETY: 该分支已校验 stride=8、uniform 为固定字节数且 vertex_count>0；program/vao/vertex 存活；uniform 解码有边界检查；context 保持 current。
                 unsafe {
-                    configure_float2_attributes(gl, vertex_stride);
                     set_vec2(
                         gl,
                         program,
@@ -453,7 +451,6 @@ impl OpenGlRhiDevice {
             PipelineKind::BoxShadow => {
                 // SAFETY: 该分支已校验 stride=8、uniform=96 字节且 vertex_count>0；program/vao/vertex 存活；uniform 解码有边界检查；context 保持 current。
                 unsafe {
-                    configure_float2_attributes(gl, vertex_stride);
                     set_vec2(
                         gl,
                         program,
@@ -507,7 +504,6 @@ impl OpenGlRhiDevice {
             PipelineKind::BlurPass => {
                 // SAFETY: 该分支已校验共享 Blur ABI、stride=8 且 vertex_count>0；program/vao/vertex/texture/sampler 均存活；weights 使用共享固定容量；颜色源格式由随后的门禁检查兜底；context 保持 current。
                 let format = unsafe {
-                    configure_float2_attributes(gl, vertex_stride);
                     // 按共享字段索引映射目标与 source texture 尺寸。
                     set_vec4(
                         gl,
@@ -624,40 +620,6 @@ impl OpenGlRhiDevice {
         // 返回统一成功结果。
         Ok(())
     }
-}
-
-/// 配置 position float2 顶点属性。
-///
-/// # Safety
-/// 调用者必须保证当前绑定的是与 float2 ABI 匹配的 VAO 和顶点 buffer，且 context current。
-unsafe fn configure_float2_attributes(gl: &glow::Context, stride: u32) {
-    // SAFETY：调用者已绑定与 float2 ABI 匹配的 VAO 和顶点缓冲。
-    unsafe { gl.vertex_attrib_pointer_f32(0, 2, glow::FLOAT, false, stride as i32, 0) };
-    // SAFETY：属性零属于当前绑定 VAO 的 position 槽位。
-    unsafe { gl.enable_vertex_attrib_array(0) };
-    // SAFETY：关闭旧属性只修改当前绑定 VAO 的状态。
-    unsafe { gl.disable_vertex_attrib_array(1) };
-    // SAFETY：关闭旧属性只修改当前绑定 VAO 的状态。
-    unsafe { gl.disable_vertex_attrib_array(2) };
-}
-
-/// 配置 position/uv/color float8 顶点属性。
-///
-/// # Safety
-/// 调用者必须保证当前绑定的是与 float8 ABI 匹配的 VAO 和顶点 buffer，且 context current。
-unsafe fn configure_float8_attributes(gl: &glow::Context, stride: u32) {
-    // SAFETY：调用者已绑定与 float8 ABI 匹配的 VAO 和顶点缓冲。
-    unsafe { gl.vertex_attrib_pointer_f32(0, 2, glow::FLOAT, false, stride as i32, 0) };
-    // SAFETY：属性零属于当前绑定 VAO 的 position 槽位。
-    unsafe { gl.enable_vertex_attrib_array(0) };
-    // SAFETY：八字节偏移与通用 float8 顶点 ABI 的 uv 槽位一致。
-    unsafe { gl.vertex_attrib_pointer_f32(1, 2, glow::FLOAT, false, stride as i32, 8) };
-    // SAFETY：属性一属于当前绑定 VAO 的 uv 槽位。
-    unsafe { gl.enable_vertex_attrib_array(1) };
-    // SAFETY：十六字节偏移与通用 float8 顶点 ABI 的 color 槽位一致。
-    unsafe { gl.vertex_attrib_pointer_f32(2, 4, glow::FLOAT, false, stride as i32, 16) };
-    // SAFETY：属性二属于当前绑定 VAO 的 color 槽位。
-    unsafe { gl.enable_vertex_attrib_array(2) };
 }
 
 // 把 API 无关混合因子翻译为 OpenGL ES 枚举。

@@ -1,5 +1,71 @@
 use super::*;
 
+// 把共享顶点语义翻译为 D3D11 shader 输入名称。
+fn d3d11_vertex_semantic(semantic: PipelineVertexSemantic) -> PCSTR {
+    // 穷尽共享语义闭集，新增语义时必须显式映射。
+    match semantic {
+        // position 对应 HLSL POSITION。
+        PipelineVertexSemantic::Position => PCSTR::from_raw(c"POSITION".as_ptr().cast()),
+        // texture coordinate 对应 HLSL TEXCOORD。
+        PipelineVertexSemantic::TextureCoordinate => PCSTR::from_raw(c"TEXCOORD".as_ptr().cast()),
+        // color 对应 HLSL COLOR。
+        PipelineVertexSemantic::Color => PCSTR::from_raw(c"COLOR".as_ptr().cast()),
+    }
+}
+
+// 把共享顶点格式翻译为 D3D11 DXGI 格式。
+fn d3d11_vertex_format(format: PipelineVertexFormat) -> DXGI_FORMAT {
+    // 穷尽共享格式闭集，新增格式时必须显式映射。
+    match format {
+        // float2 对应两个三十二位浮点通道。
+        PipelineVertexFormat::Float32x2 => DXGI_FORMAT_R32G32_FLOAT,
+        // float4 对应四个三十二位浮点通道。
+        PipelineVertexFormat::Float32x4 => DXGI_FORMAT_R32G32B32A32_FLOAT,
+    }
+}
+
+// 从共享属性序列机械构造 D3D11 输入布局描述。
+fn d3d11_vertex_elements(
+    // 接收 pipeline 选择的唯一共享布局。
+    layout: PipelineVertexLayout,
+) -> Result<Vec<D3D11_INPUT_ELEMENT_DESC>> {
+    // 共享布局必须在进入 Adapter 前满足槽位、偏移与步长边界。
+    if !layout.is_valid() {
+        // 返回稳定的类型化参数错误，禁止 D3D11 接受 OpenGL 拒绝的布局。
+        return Err(Error::new(
+            // 无效共享布局属于 RHI 参数契约错误。
+            Errc::InvalidArgument,
+            // 诊断不泄漏任何原生枚举。
+            "D3d11 RHI vertex layout is invalid",
+        ));
+    }
+    // 按共享顺序逐项翻译原生描述符。
+    Ok(layout
+        // 读取唯一属性序列。
+        .attributes()
+        // 以只读方式遍历共享事实。
+        .iter()
+        // 为每项创建一个 D3D11 描述符。
+        .map(|attribute| D3D11_INPUT_ELEMENT_DESC {
+            // 从共享语义机械选择 HLSL 名称。
+            SemanticName: d3d11_vertex_semantic(attribute.semantic()),
+            // 当前共享语义都使用零号语义索引。
+            SemanticIndex: 0,
+            // 从共享格式机械选择 DXGI 枚举。
+            Format: d3d11_vertex_format(attribute.format()),
+            // 当前薄 RHI 只暴露一个顶点输入槽。
+            InputSlot: 0,
+            // 直接使用共享属性字节偏移。
+            AlignedByteOffset: attribute.offset_bytes(),
+            // 所有共享属性都按顶点推进。
+            InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
+            // 非实例化属性不使用步进率。
+            InstanceDataStepRate: 0,
+        })
+        // 物化为 CreateInputLayout 使用的连续描述符数组。
+        .collect())
+}
+
 // 把 API 无关混合因子翻译为 D3D11 枚举。
 fn d3d11_blend_factor(factor: PipelineBlendFactor) -> D3D11_BLEND {
     // 只映射共享层允许的封闭因子集合。
@@ -594,15 +660,8 @@ impl D3d11Pipeline {
         let ps_shadow = ps_shadow
             .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no shadow PS"))?;
 
-        let input_elems = [D3D11_INPUT_ELEMENT_DESC {
-            SemanticName: PCSTR::from_raw(c"POSITION".as_ptr().cast()),
-            SemanticIndex: 0,
-            Format: DXGI_FORMAT_R32G32_FLOAT,
-            InputSlot: 0,
-            AlignedByteOffset: 0,
-            InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
-            InstanceDataStepRate: 0,
-        }];
+        // 从共享 position float2 属性序列创建基础输入布局。
+        let input_elems = d3d11_vertex_elements(PipelineVertexLayout::PositionF32x2)?;
         let mut layout = None;
         // SAFETY: input_elems 为栈上完整初始化的描述数组；vs_blob 字节码指针与长度在调用期间有效；输出指针指向栈上 Option。
         unsafe {
@@ -620,35 +679,8 @@ impl D3d11Pipeline {
         let layout = layout
             .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no input layout"))?;
 
-        let glyph_elems = [
-            D3D11_INPUT_ELEMENT_DESC {
-                SemanticName: PCSTR::from_raw(c"POSITION".as_ptr().cast()),
-                SemanticIndex: 0,
-                Format: DXGI_FORMAT_R32G32_FLOAT,
-                InputSlot: 0,
-                AlignedByteOffset: 0,
-                InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
-                InstanceDataStepRate: 0,
-            },
-            D3D11_INPUT_ELEMENT_DESC {
-                SemanticName: PCSTR::from_raw(c"TEXCOORD".as_ptr().cast()),
-                SemanticIndex: 0,
-                Format: DXGI_FORMAT_R32G32_FLOAT,
-                InputSlot: 0,
-                AlignedByteOffset: 8,
-                InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
-                InstanceDataStepRate: 0,
-            },
-            D3D11_INPUT_ELEMENT_DESC {
-                SemanticName: PCSTR::from_raw(c"COLOR".as_ptr().cast()),
-                SemanticIndex: 0,
-                Format: DXGI_FORMAT_R32G32B32A32_FLOAT,
-                InputSlot: 0,
-                AlignedByteOffset: 16,
-                InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
-                InstanceDataStepRate: 0,
-            },
-        ];
+        // 从共享 position/uv/color 属性序列创建采样输入布局。
+        let glyph_elems = d3d11_vertex_elements(PipelineVertexLayout::PositionUvColorF32)?;
         let mut layout_glyph = None;
         // SAFETY: glyph_elems 为栈上完整初始化的描述数组；glyph_vs_blob 字节码指针与长度在调用期间有效；输出指针指向栈上 Option。
         unsafe {

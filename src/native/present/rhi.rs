@@ -2,7 +2,6 @@
 //!
 //! 本模块只描述 UIX 通用 GPU Renderer 需要的底层事实，不携带任何
 //! `draw_glyphs`、`draw_rounded_rect` 或其他 UI 高层操作。
-
 #![allow(dead_code)]
 // 使用框架统一错误类型，保证 surface、device 和资源失败保持 typed error。
 use crate::core::error::{Errc, Error, Result};
@@ -10,7 +9,6 @@ use crate::core::error::{Errc, Error, Result};
 use crate::core::PresentDamage;
 // 引入无帧 surface 探测的统一结果类型。
 use super::PresentTestResult;
-
 // 将 Shape 像素语义拆到独立共享契约文件，避免主 RHI 文件越过行数边界。
 mod shape;
 // 将 Gradient 仿射几何、颜色和模式参数收归共享 ABI 值对象。
@@ -25,6 +23,8 @@ mod msdf;
 mod primitive;
 // 将 pipeline ABI 拆到独立共享契约文件，禁止 Drawing 与 Adapter 各自维护状态。
 mod pipeline;
+// 将顶点属性语义、格式、位置和偏移拆到独立共享 ABI 值对象。
+mod vertex_layout;
 // 将 sample coverage 状态拆到独立共享契约，禁止 Surface 与 Adapter 各自选择。
 mod multisample;
 // 将颜色编码与混合值域拆到独立契约，禁止 Adapter 启用隐藏颜色转换。
@@ -47,7 +47,12 @@ pub(crate) use pipeline::{
     PipelineContract, PipelineCullMode, PipelineDepthClip, PipelineDepthState,
     PipelineDepthStencilState, PipelineDesc, PipelineDitherState, PipelineFrontFace, PipelineKind,
     PipelinePrimitiveTopology, PipelineRasterState, PipelineSampling, PipelineStencilState,
-    PipelineUniformLayout, PipelineVertexLayout,
+    PipelineUniformLayout,
+};
+// 向 pipeline 与两个 Adapter 暴露唯一类型化顶点输入布局。
+pub(crate) use vertex_layout::{
+    PIPELINE_VERTEX_ATTRIBUTE_SLOT_COUNT, PipelineVertexFormat, PipelineVertexLayout,
+    PipelineVertexSemantic,
 };
 // 向 pipeline、Surface 配方和两个 Adapter 暴露同一采样覆盖事实。
 pub(crate) use multisample::PipelineMultisampleState;
