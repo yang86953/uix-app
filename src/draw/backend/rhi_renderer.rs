@@ -9,9 +9,9 @@ use std::sync::Arc;
 use crate::core::error::{Errc, Error, Result};
 // 引入薄 RHI 的资源、能力和执行类型。
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineDesc,
-    PipelineKind, RhiExtent, RhiScissor, RhiTextureUpload, RhiViewport, SampledTextureBinding,
-    SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
+    BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, GraphicsDevice,
+    LoadAction, PipelineDesc, PipelineKind, RhiExtent, RhiScissor, RhiTextureUpload, RhiViewport,
+    SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
 };
 
 // 引入当前目录中的有序帧计划类型。
@@ -581,13 +581,12 @@ impl RhiRenderer {
                 data: FrameUniformPayload::Mesh(Self::mesh_uniform(viewport, mesh.rgba)),
             });
             // 追加一个非索引 solid mesh draw packet。
-            pass.push(FramePlanCommand::Draw(DrawPacket {
+            pass.push(FramePlanCommand::Draw(DrawPacket::new(
                 pipeline,
-                vertex_buffer,
-                uniform_buffer: Some(uniform_buffer),
+                DrawBufferBindings::new(vertex_buffer, uniform_buffer),
                 // Mesh 使用封闭的非索引顶点范围。
-                range: DrawRange::vertices(vertex_count),
-            }));
+                DrawRange::vertices(vertex_count),
+            )));
         }
         // 交给唯一的 FramePlan present 边界执行。
         let plan = {
@@ -815,13 +814,12 @@ impl RhiRenderer {
                 ),
             ));
             // 追加六顶点的非索引采样 quad draw packet。
-            pass.push(FramePlanCommand::Draw(DrawPacket {
-                pipeline: quad_pipeline,
-                vertex_buffer,
-                uniform_buffer: Some(uniform_buffer),
+            pass.push(FramePlanCommand::Draw(DrawPacket::new(
+                quad_pipeline,
+                DrawBufferBindings::new(vertex_buffer, uniform_buffer),
                 // Sampled quad 使用封闭的六顶点非索引范围。
-                range: DrawRange::vertices(6),
-            }));
+                DrawRange::vertices(6),
+            )));
         }
         // 从封闭 Renderer 帧创建匹配的计划。
         let mut plan = frame.plan();

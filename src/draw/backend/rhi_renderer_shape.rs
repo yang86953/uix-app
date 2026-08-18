@@ -2,8 +2,8 @@
 
 // 引入 RHI 计划执行所需的资源描述与句柄。
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineBinding,
-    PipelineDesc, PipelineKind, RhiShapeRasterParams, RhiViewport,
+    BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, GraphicsDevice,
+    LoadAction, PipelineBinding, PipelineDesc, PipelineKind, RhiShapeRasterParams, RhiViewport,
 };
 
 // 复用 renderer 主模块的计划类型和 shape payload。
@@ -106,13 +106,13 @@ impl RhiRenderer {
             data: FrameUniformPayload::Shape(shape_uniform(viewport, rect)),
         });
         // 追加当前矩形的单位 quad draw packet。
-        pass.push(FramePlanCommand::Draw(DrawPacket {
+        pass.push(FramePlanCommand::Draw(DrawPacket::new(
             pipeline,
-            vertex_buffer,
-            uniform_buffer: Some(uniform_buffer),
+            // 绑定当前 draw 的顶点与 uniform 资源。
+            DrawBufferBindings::new(vertex_buffer, uniform_buffer),
             // 单位 quad 使用封闭的六顶点非索引范围。
-            range: DrawRange::vertices(6),
-        }));
+            DrawRange::vertices(6),
+        )));
     }
 
     // 执行一帧圆角/描边矩形 RHI 计划。
@@ -195,13 +195,13 @@ impl RhiRenderer {
                 data: FrameUniformPayload::Shape(shape_uniform(viewport, rect)),
             });
             // 追加单位 quad 的非索引 shape draw packet。
-            pass.push(FramePlanCommand::Draw(DrawPacket {
+            pass.push(FramePlanCommand::Draw(DrawPacket::new(
                 pipeline,
-                vertex_buffer,
-                uniform_buffer: Some(uniform_buffer),
+                // 绑定当前 draw 的顶点与 uniform 资源。
+                DrawBufferBindings::new(vertex_buffer, uniform_buffer),
                 // 单位 quad 使用封闭的六顶点非索引范围。
-                range: DrawRange::vertices(6),
-            }));
+                DrawRange::vertices(6),
+            )));
         }
         // 创建计划并追加唯一 surface pass。
         let mut plan = frame.plan();

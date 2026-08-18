@@ -69,16 +69,28 @@ pub(super) fn validate_draw_uploads(
     // 接收已经绑定句柄与 PipelineKind 的绘制包。
     packet: DrawPacket,
 ) -> Result<()> {
+    // 一次取得 DrawPacket 不可拆的顶点与 Uniform 资源身份。
+    let buffers = packet.buffers();
+    // 一次取得 DrawPacket 已冻结的互斥绘制范围。
+    let range = packet.range();
     // 空顶点句柄不能进入不同 Adapter 的资源表解释。
-    if packet.vertex_buffer.raw() == 0 {
+    if buffers.vertex().raw() == 0 {
         // 使用计划参数错误而不是让后端各自返回不同状态。
         return Err(Error::new(
             Errc::InvalidArgument,
             "FramePlan draw vertex buffer must be bound",
         ));
     }
+    // 空 Uniform 句柄也不能作为 typed bindings 的有效资源身份。
+    if buffers.uniform().raw() == 0 {
+        // 使用计划参数错误保持两个 Adapter 的拒绝分类一致。
+        return Err(Error::new(
+            Errc::InvalidArgument,
+            "FramePlan draw uniform buffer must be bound",
+        ));
+    }
     // 读取绑定身份唯一允许的顶点、Uniform、采样和混合事实。
-    let contract = packet.pipeline.contract();
+    let contract = packet.pipeline().contract();
     // 只检查 draw 之前已经生效的命令。
     let preceding = &pass.commands[..command_index];
     // FramePlan 必须在进入 Adapter 前拥有完整的 raster state。
@@ -88,9 +100,7 @@ pub(super) fn validate_draw_uploads(
         // 只有句柄匹配的顶点上传才影响当前 draw。
         match command {
             // 返回最近一次匹配的类型化顶点载荷。
-            FramePlanCommand::UploadVertex { buffer, data, .. }
-                if *buffer == packet.vertex_buffer =>
-            {
+            FramePlanCommand::UploadVertex { buffer, data, .. } if *buffer == buffers.vertex() => {
                 // 借出载荷供共享布局比较。
                 Some(data)
             }
@@ -115,7 +125,7 @@ pub(super) fn validate_draw_uploads(
         ));
     }
     // 索引 DrawRange 必须消费同一 buffer 的最近一次类型化索引上传。
-    if let Some(index_binding) = packet.range.index_binding() {
+    if let Some(index_binding) = range.index_binding() {
         // 只观察 draw 前且句柄匹配的索引上传。
         let latest_index = preceding.iter().rev().find_map(|command| {
             // 只有类型化索引上传才建立可读取的索引内容事实。
@@ -149,7 +159,7 @@ pub(super) fn validate_draw_uploads(
         }
         // 索引范围必须完整落在本次类型化索引上传内。
         let selected_max = index_data
-            .max_index_in_range(packet.range.first_index(), packet.range.index_count())
+            .max_index_in_range(range.first_index(), range.index_count())
             .ok_or_else(|| {
                 // 使用稳定参数错误明确范围越过 typed index upload。
                 Error::new(
@@ -175,9 +185,9 @@ pub(super) fn validate_draw_uploads(
         }
     }
     // 非索引 DrawRange 必须完整落在最近一次类型化顶点上传内。
-    if packet.range.index_binding().is_none() {
+    if range.index_binding().is_none() {
         // checked 末端溢出必须在进入任一 Adapter 前拒绝。
-        let vertex_end = packet.range.checked_vertex_end().ok_or_else(|| {
+        let vertex_end = range.checked_vertex_end().ok_or_else(|| {
             // 使用稳定参数错误表达共享 u32 末端无法表示。
             Error::new(
                 Errc::InvalidArgument,
@@ -201,14 +211,8 @@ pub(super) fn validate_draw_uploads(
             ));
         }
     }
-    // 当前固定 pipeline 都要求一个完整类型化 Uniform buffer。
-    let uniform_buffer = packet.uniform_buffer.ok_or_else(|| {
-        // 缺失常量不能由 Adapter 用零值或旧帧数据猜测。
-        Error::new(
-            Errc::InvalidArgument,
-            "FramePlan draw uniform buffer must be bound",
-        )
-    })?;
+    // 当前固定 pipeline 的完整 Uniform 身份已经由 typed bindings 保证存在。
+    let uniform_buffer = buffers.uniform();
     // 查找同一 Uniform buffer 在 draw 前最近一次完整上传。
     let latest_uniform = preceding.iter().rev().find_map(|command| {
         // 只接受类型化 Uniform 命令。
@@ -259,7 +263,7 @@ pub(super) fn validate_draw_uploads(
             )
         })?;
         // 绑定语义必须与当前 Draw pipeline contract 完全一致。
-        if !binding.matches_pipeline(packet.pipeline) {
+        if !binding.matches_pipeline(packet.pipeline()) {
             // 禁止错误 pipeline 继续把资源兼容性推迟给 Adapter。
             return Err(Error::new(
                 Errc::InvalidArgument,

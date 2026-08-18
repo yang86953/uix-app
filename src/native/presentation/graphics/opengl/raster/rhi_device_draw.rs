@@ -128,12 +128,14 @@ impl OpenGlRhiDevice {
         // texture target 保持 top-left 存储，原生 surface 映射到窗口顶部。
         let y_sign = target_y_sign(active_target);
         // 通过共享资源表解析 FramePlan 的完整 pipeline 绑定。
-        let program = self.pipeline(packet.pipeline)?.program;
+        let program = self.pipeline(packet.pipeline())?.program;
         // 分派只读取 FramePlan 已冻结的共享 pipeline kind。
-        let kind = packet.pipeline.kind();
+        let kind = packet.pipeline().kind();
+        // 一次取得不可拆的顶点与 Uniform 资源身份。
+        let buffers = packet.buffers();
         // 解析 vertex buffer 并保留其 ABI 描述。
         let (vertex, vertex_stride, vertex_usage) = {
-            let buffer = self.buffer(packet.vertex_buffer)?;
+            let buffer = self.buffer(buffers.vertex())?;
             (
                 buffer.native,
                 buffer.desc.stride_bytes(),
@@ -145,9 +147,7 @@ impl OpenGlRhiDevice {
             return Err(rhi_invalid("OpenGL RHI draw vertex buffer has wrong usage"));
         }
         // 所有当前固定 pipeline 都使用 uniform buffer。
-        let uniform_handle = packet
-            .uniform_buffer
-            .ok_or_else(|| rhi_invalid("OpenGL RHI draw uniform is missing"))?;
+        let uniform_handle = buffers.uniform();
         // 复制 uniform CPU 镜像，避免后续 GL 状态调用持有资源表借用。
         let uniform = {
             let buffer = self.buffer(uniform_handle)?;
@@ -157,9 +157,9 @@ impl OpenGlRhiDevice {
             buffer.data.clone()
         };
         // 复制 FramePlan 已经封闭为顶点或索引变体的绘制范围。
-        let range = packet.range;
+        let range = packet.range();
         // 从唯一共享契约读取当前 pipeline 的顶点、uniform、采样与混合语义。
-        let contract = packet.pipeline.contract();
+        let contract = packet.pipeline().contract();
         // Drawing 生产端与 OpenGL 消费端必须严格使用同一个 ABI。
         if vertex_stride != contract.vertex.stride_bytes()
             || uniform.len() != contract.uniform.size_bytes()
@@ -222,7 +222,7 @@ impl OpenGlRhiDevice {
                         ],
                     );
                     // 在 sampled 原生绑定前校验当前 pipeline 语义。
-                    bind_sampled(gl, self, program, packet.pipeline)?;
+                    bind_sampled(gl, self, program, packet.pipeline())?;
                 }
             }
             // 线性/径向渐变使用单位 float2 quad 和 24-float affine constants。
@@ -293,7 +293,7 @@ impl OpenGlRhiDevice {
                         ],
                     );
                     // 在 sampled 原生绑定前校验当前 pipeline 语义。
-                    bind_sampled(gl, self, program, packet.pipeline)?;
+                    bind_sampled(gl, self, program, packet.pipeline())?;
                 }
             }
             // RGBA8 MSDF 使用 float8 vertex、线性 sampler 和 32-byte constants。
@@ -325,7 +325,7 @@ impl OpenGlRhiDevice {
                         read_f32(&uniform, MSDF_RANGE_FLOAT_OFFSET)?,
                     );
                     // 在 sampled 原生绑定前校验当前 pipeline 语义。
-                    bind_sampled(gl, self, program, packet.pipeline)?;
+                    bind_sampled(gl, self, program, packet.pipeline())?;
                 }
             }
             // 普通与 Additive 圆角/描边矩形使用同一 RectConstants ABI。
@@ -507,7 +507,7 @@ impl OpenGlRhiDevice {
                     // 一次上传完整共享权重区间。
                     gl.uniform_4_f32_slice(location.as_ref(), &weights);
                     // 在 sampled 原生绑定前校验当前 pipeline 语义。
-                    bind_sampled(gl, self, program, packet.pipeline)?;
+                    bind_sampled(gl, self, program, packet.pipeline())?;
                 }
             }
         };

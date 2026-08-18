@@ -9,10 +9,11 @@ use crate::draw::backend::frame_plan::{
 };
 // 引入探针创建、绘制和销毁所需的共享薄 RHI 类型。
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineBinding,
-    PipelineDesc, PipelineKind, RhiColor, RhiExtent, RhiMeshRasterParams, RhiScissor,
-    RhiShapeRasterParams, RhiTextureRegion, RhiTextureTransfer, RhiTextureUpload, RhiViewport,
-    SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle, TextureMove,
+    BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, GraphicsDevice,
+    LoadAction, PipelineBinding, PipelineDesc, PipelineKind, RhiColor, RhiExtent,
+    RhiMeshRasterParams, RhiScissor, RhiShapeRasterParams, RhiTextureRegion, RhiTextureTransfer,
+    RhiTextureUpload, RhiViewport, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat,
+    TextureHandle, TextureMove,
 };
 
 // 按创建顺序保存探针资源，并封闭检查式清理生命周期。
@@ -372,16 +373,14 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
             data: FrameUniformPayload::Mesh(solid_params),
         });
         // 使用第一个固定 pipeline 执行最小 solid draw。
-        pass.push(FramePlanCommand::Draw(DrawPacket {
+        pass.push(FramePlanCommand::Draw(DrawPacket::new(
             // 选择 Solid pipeline。
-            pipeline: pipelines[0],
-            // 复用单位 quad 前三个顶点。
-            vertex_buffer,
-            // 绑定 Solid uniform。
-            uniform_buffer: Some(solid_uniform_buffer),
+            pipelines[0],
+            // 复用单位 quad 前三个顶点并绑定 Solid uniform。
+            DrawBufferBindings::new(vertex_buffer, solid_uniform_buffer),
             // 用封闭非索引范围绘制一个三角形。
-            range: DrawRange::vertices(3),
-        }));
+            DrawRange::vertices(3),
+        )));
         // 在 Shape draw 前交付完整 Shape uniform 值对象。
         pass.push(FramePlanCommand::UploadUniform {
             // 绑定 Shape 专用 uniform 资源。
@@ -390,16 +389,14 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
             data: FrameUniformPayload::Shape(shape_params),
         });
         // 使用共享 pipeline 顺序中的 Shape 执行一次真实描边 draw。
-        pass.push(FramePlanCommand::Draw(DrawPacket {
+        pass.push(FramePlanCommand::Draw(DrawPacket::new(
             // 第五个固定 pipeline 是普通 Shape。
-            pipeline: pipelines[4],
-            // Shape 使用完整单位 quad。
-            vertex_buffer,
-            // 绑定共享 Shape ABI uniform。
-            uniform_buffer: Some(shape_uniform_buffer),
+            pipelines[4],
+            // Shape 使用完整单位 quad 并绑定共享 Shape ABI uniform。
+            DrawBufferBindings::new(vertex_buffer, shape_uniform_buffer),
             // 用封闭非索引范围绘制两个三角形组成的 quad。
-            range: DrawRange::vertices(6),
-        }));
+            DrawRange::vertices(6),
+        )));
         // 把完整 probe pass 追加到唯一离屏计划。
         plan.push_pass(pass);
         // 由 FramePlan 统一预检、激活、执行、收尾和提交，禁止第二套命令路径。

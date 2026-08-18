@@ -187,7 +187,7 @@ impl OpenGlRhiDevice {
     // 只读预检 DrawPacket 的真实 Buffer 角色与容量。
     pub(super) fn preflight_draw_resources(&self, packet: DrawPacket) -> Result<()> {
         // 先由共享 pipeline 表验证句柄存活及真实 kind 语义。
-        self.pipelines.get(packet.pipeline)?;
+        self.pipelines.get(packet.pipeline())?;
         // 再由共享 Buffer 表验证所有资源角色和范围关系。
         self.buffers.validate_draw(packet)
     }

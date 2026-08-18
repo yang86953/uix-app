@@ -274,34 +274,99 @@ impl DrawRange {
     }
 }
 
-// 描述通用 renderer 已经选定的 draw packet。
+// 原子保存每次固定 pipeline draw 必需的两个 Buffer 角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct DrawBufferBindings {
+    // 保存唯一顶点输入资源身份。
+    vertex: BufferHandle,
+    // 保存唯一完整 Uniform 常量资源身份。
+    uniform: BufferHandle,
+}
+
+// 为 Draw Buffer 角色提供完整构造与只读投影。
+impl DrawBufferBindings {
+    // 一次绑定当前所有固定 pipeline 都必需的两个 Buffer 角色。
+    pub(crate) const fn new(vertex: BufferHandle, uniform: BufferHandle) -> Self {
+        // 两个身份必须共同建立，禁止缺失 Uniform 的中间 packet。
+        Self { vertex, uniform }
+    }
+
+    // 返回供 FramePlan 与 Adapter 解析的顶点资源身份。
+    pub(crate) const fn vertex(self) -> BufferHandle {
+        // 复制轻量不透明句柄，不暴露字段改写能力。
+        self.vertex
+    }
+
+    // 返回供 FramePlan 与 Adapter 解析的 Uniform 资源身份。
+    pub(crate) const fn uniform(self) -> BufferHandle {
+        // 复制轻量不透明句柄，不暴露字段改写能力。
+        self.uniform
+    }
+}
+
+// 描述通用 renderer 已经完整绑定的 draw packet。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DrawPacket {
     // 保存不可拆分的 pipeline 句柄与共享语义。
-    pub(crate) pipeline: PipelineBinding,
-    // 保存顶点 buffer 句柄。
-    pub(crate) vertex_buffer: BufferHandle,
-    // 保存可选的 pipeline uniform buffer 句柄。
-    pub(crate) uniform_buffer: Option<BufferHandle>,
+    pipeline: PipelineBinding,
+    // 保存不可缺失的顶点与 Uniform 资源角色。
+    buffers: DrawBufferBindings,
     // 保存不可表达矛盾字段组合的封闭绘制范围。
-    pub(crate) range: DrawRange,
+    range: DrawRange,
 }
 
-// 为 draw packet 提供常用的非索引三角形构造器。
+// 为 draw packet 提供完整构造、只读投影与共享资源门禁。
 impl DrawPacket {
-    // 创建一个使用类型化 pipeline 的非索引 draw packet。
-    pub(crate) const fn triangles(pipeline: PipelineBinding, vertex_count: u32) -> Self {
-        // 返回从零开始的非索引绘制范围。
+    // 一次创建已经绑定 pipeline、Buffer 角色与绘制范围的 packet。
+    pub(crate) const fn new(
+        // 接收不可拆分的 pipeline 身份与共享语义。
+        pipeline: PipelineBinding,
+        // 接收当前所有固定 pipeline 都必需的 Buffer 角色。
+        buffers: DrawBufferBindings,
+        // 接收互斥的顶点或索引绘制范围。
+        range: DrawRange,
+    ) -> Self {
+        // 三项事实共同建立后才允许进入 FramePlan。
         Self {
-            // 保留创建时已经冻结的 pipeline 身份。
+            // 保存不可拆的 pipeline 身份。
             pipeline,
-            // 测试或调用方可在构造后绑定实际顶点 buffer。
-            vertex_buffer: BufferHandle::from_raw(0),
-            // 默认不使用 Uniform buffer。
-            uniform_buffer: None,
-            // 使用只能表示非索引范围的封闭变体。
-            range: DrawRange::vertices(vertex_count),
+            // 保存完整 Buffer 角色绑定。
+            buffers,
+            // 保存互斥绘制范围。
+            range,
         }
+    }
+
+    // 返回当前 packet 已冻结的 pipeline 身份。
+    pub(crate) const fn pipeline(self) -> PipelineBinding {
+        // 复制轻量绑定，不暴露字段改写能力。
+        self.pipeline
+    }
+
+    // 返回当前 packet 不可拆的两个 Buffer 角色。
+    pub(crate) const fn buffers(self) -> DrawBufferBindings {
+        // 复制完整值对象，保持两个身份共同传播。
+        self.buffers
+    }
+
+    // 返回当前 packet 已冻结的互斥绘制范围。
+    pub(crate) const fn range(self) -> DrawRange {
+        // 复制封闭枚举，不暴露字段改写能力。
+        self.range
+    }
+
+    // 仅为共享契约测试保留完整 Buffer 角色并替换 pipeline 事实。
+    #[cfg(test)]
+    pub(crate) const fn with_pipeline(self, pipeline: PipelineBinding) -> Self {
+        // 测试变体仍只能产生三个字段都完整的 packet。
+        Self { pipeline, ..self }
+    }
+
+    // 仅为共享契约测试保留 pipeline 与 Buffer 角色并替换范围事实。
+    #[cfg(test)]
+    pub(crate) const fn with_range(self, range: DrawRange) -> Self {
+        // 测试变体仍只能产生三个字段都完整的 packet。
+        Self { range, ..self }
     }
 
     // 判断 packet 是否包含两个 Adapter 都能执行的绘制范围。
@@ -315,8 +380,8 @@ impl DrawPacket {
         // 接收真实顶点资源描述。
         self,
         vertex_desc: BufferDesc,
-        // 接收可选的真实 Uniform 资源描述。
-        uniform_desc: Option<BufferDesc>,
+        // 接收必需的真实 Uniform 资源描述。
+        uniform_desc: BufferDesc,
         // 接收可选的真实索引资源描述。
         index_desc: Option<BufferDesc>,
     ) -> Result<()> {
@@ -357,9 +422,6 @@ impl DrawPacket {
                 return Err(draw_resource_error("RHI draw vertex range exceeds buffer"));
             }
         }
-        // 当前固定 pipeline 必须绑定完整 Uniform 资源。
-        let uniform_desc = uniform_desc
-            .ok_or_else(|| draw_resource_error("RHI draw uniform buffer is missing"))?;
         // Uniform 描述必须通过共同资源值域门禁。
         uniform_desc.validate()?;
         // Uniform 资源用途必须与 DrawPacket 角色一致。
@@ -437,6 +499,24 @@ mod tests {
     use super::*;
     // 引入测试 packet 使用的共享 pipeline kind。
     use crate::native::present::rhi::PipelineKind;
+
+    // 构造使用固定测试资源身份和调用方范围的完整 packet。
+    fn packet(range: DrawRange) -> DrawPacket {
+        // 一次建立不可拆的 pipeline、Buffer 角色与范围事实。
+        DrawPacket::new(
+            // 使用测试专用的 SolidMesh pipeline 身份。
+            PipelineBinding::for_test(
+                // 使用稳定非零 pipeline 句柄。
+                crate::native::present::rhi::PipelineHandle::from_raw(1),
+                // 选择具有八字节顶点和三十二字节 Uniform 的契约。
+                PipelineKind::SolidMesh,
+            ),
+            // 原子绑定稳定顶点与 Uniform 资源身份。
+            DrawBufferBindings::new(BufferHandle::from_raw(2), BufferHandle::from_raw(3)),
+            // 保留调用方指定的互斥绘制范围。
+            range,
+        )
+    }
 
     // 锁定 uint32 索引格式的步长、绑定与 checked 偏移。
     #[test]
@@ -519,143 +599,128 @@ mod tests {
     // 验证 DrawPacket 共享资源门禁覆盖顶点、Uniform 和索引容量。
     #[test]
     fn draw_packet_validates_real_buffer_roles_and_capacity() {
-        // 构造使用 SolidMesh 共享 ABI 的 packet。
-        let mut packet = DrawPacket::triangles(
-            // 使用测试专用的 SolidMesh pipeline 身份。
-            PipelineBinding::for_test(
-                crate::native::present::rhi::PipelineHandle::from_raw(1),
-                PipelineKind::SolidMesh,
-            ),
-            // 读取两个 float2 顶点。
-            2,
-        );
-        // 绑定真实顶点资源身份。
-        packet.vertex_buffer = BufferHandle::from_raw(2);
-        // 绑定真实 Uniform 资源身份。
-        packet.uniform_buffer = Some(BufferHandle::from_raw(3));
+        // 构造读取两个 float2 顶点的完整 packet。
+        let valid = packet(DrawRange::vertices(2));
+        // packet 必须只读暴露创建时冻结的 pipeline 身份。
+        assert_eq!(valid.pipeline().kind(), PipelineKind::SolidMesh);
+        // packet 必须原子保留顶点与 Uniform 绑定。
+        assert_eq!(valid.buffers().vertex().raw(), 2);
+        // Uniform 身份不得通过 Option 或字段回填出现。
+        assert_eq!(valid.buffers().uniform().raw(), 3);
+        // packet 必须只读保留创建时冻结的范围。
+        assert_eq!(valid.range(), DrawRange::vertices(2));
         // 合法 vertex/uniform 描述必须通过。
         assert!(
-            packet
-                .validate_resources(
-                    BufferDesc::vertex(16, 8),
-                    Some(BufferDesc::uniform(32)),
-                    None,
-                )
+            valid
+                .validate_resources(BufferDesc::vertex(16, 8), BufferDesc::uniform(32), None,)
                 .is_ok()
         );
         // Uniform 角色错配必须拒绝。
         assert!(
-            packet
-                .validate_resources(
-                    BufferDesc::vertex(16, 8),
-                    Some(BufferDesc::vertex(32, 8)),
-                    None,
-                )
+            valid
+                .validate_resources(BufferDesc::vertex(16, 8), BufferDesc::vertex(32, 8), None,)
                 .is_err()
         );
         // Uniform 容量不匹配必须拒绝。
         assert!(
-            packet
-                .validate_resources(
-                    BufferDesc::vertex(16, 8),
-                    Some(BufferDesc::uniform(16)),
-                    None,
-                )
+            valid
+                .validate_resources(BufferDesc::vertex(16, 8), BufferDesc::uniform(16), None,)
                 .is_err()
         );
         // 顶点资源用途错配必须拒绝。
         assert!(
-            packet
-                .validate_resources(BufferDesc::uniform(32), Some(BufferDesc::uniform(32)), None,)
+            valid
+                .validate_resources(BufferDesc::uniform(32), BufferDesc::uniform(32), None)
                 .is_err()
         );
         // 顶点 stride 错配必须拒绝。
         assert!(
-            packet
-                .validate_resources(
-                    BufferDesc::vertex(16, 16),
-                    Some(BufferDesc::uniform(32)),
-                    None,
-                )
+            valid
+                .validate_resources(BufferDesc::vertex(16, 16), BufferDesc::uniform(32), None,)
                 .is_err()
         );
         // 无效零数量范围必须由 DrawPacket 自身门禁拒绝。
-        packet.range = DrawRange::vertices(0);
+        let empty = packet(DrawRange::vertices(0));
+        // 零数量不能越过共享范围门禁。
         assert!(
-            packet
-                .validate_resources(
-                    BufferDesc::vertex(16, 8),
-                    Some(BufferDesc::uniform(32)),
-                    None,
-                )
+            empty
+                .validate_resources(BufferDesc::vertex(16, 8), BufferDesc::uniform(32), None,)
                 .is_err()
         );
         // 非索引范围越过真实顶点容量必须拒绝。
-        packet.range = DrawRange::vertices(3);
+        let vertex_overflow = packet(DrawRange::vertices(3));
+        // 三个顶点不能读取只有两个元素的资源。
         assert!(
-            packet
-                .validate_resources(
-                    BufferDesc::vertex(16, 8),
-                    Some(BufferDesc::uniform(32)),
-                    None,
-                )
+            vertex_overflow
+                .validate_resources(BufferDesc::vertex(16, 8), BufferDesc::uniform(32), None,)
                 .is_err()
         );
         // 构造合法索引资源与索引范围。
         let index = BufferHandle::from_raw(4);
-        packet.range =
-            DrawRange::indices(IndexBufferBinding::new(index, IndexFormat::Uint32), 2, 1);
+        // 一次构造完整索引 packet，不回填任何字段。
+        let indexed = packet(DrawRange::indices(
+            // 绑定稳定 uint32 索引资源。
+            IndexBufferBinding::new(index, IndexFormat::Uint32),
+            // 从索引上传中读取两个元素。
+            2,
+            // 跳过第零个索引元素。
+            1,
+        ));
         // 索引容量只验证索引读取范围，不推测顶点最大索引。
         assert!(
-            packet
+            indexed
                 .validate_resources(
                     BufferDesc::vertex(16, 8),
-                    Some(BufferDesc::uniform(32)),
+                    BufferDesc::uniform(32),
                     Some(BufferDesc::index(16, 4)),
                 )
                 .is_ok()
         );
         // 错误索引资源用途必须拒绝。
         assert!(
-            packet
+            indexed
                 .validate_resources(
                     BufferDesc::vertex(16, 8),
-                    Some(BufferDesc::uniform(32)),
+                    BufferDesc::uniform(32),
                     Some(BufferDesc::vertex(16, 4)),
                 )
                 .is_err()
         );
         // 错误索引资源 stride 必须拒绝。
         assert!(
-            packet
+            indexed
                 .validate_resources(
                     BufferDesc::vertex(16, 8),
-                    Some(BufferDesc::uniform(32)),
+                    BufferDesc::uniform(32),
                     Some(BufferDesc::index(16, 8)),
                 )
                 .is_err()
         );
         // 索引读取越过真实索引容量必须拒绝。
         assert!(
-            packet
+            indexed
                 .validate_resources(
                     BufferDesc::vertex(16, 8),
-                    Some(BufferDesc::uniform(32)),
+                    BufferDesc::uniform(32),
                     Some(BufferDesc::index(8, 4)),
                 )
                 .is_err()
         );
         // 索引首项与数量越过 u32 末端必须拒绝。
-        packet.range = DrawRange::indices(
+        let index_overflow = packet(DrawRange::indices(
+            // 复用同一索引资源和格式事实。
             IndexBufferBinding::new(index, IndexFormat::Uint32),
+            // 保持单独数量有效。
             2,
+            // 让首项与数量发生 checked 溢出。
             u32::MAX,
-        );
+        ));
+        // checked 溢出的索引范围必须在资源验证阶段失败。
         assert!(
-            packet
+            index_overflow
                 .validate_resources(
                     BufferDesc::vertex(16, 8),
-                    Some(BufferDesc::uniform(32)),
+                    BufferDesc::uniform(32),
                     Some(BufferDesc::index(16, 4)),
                 )
                 .is_err()

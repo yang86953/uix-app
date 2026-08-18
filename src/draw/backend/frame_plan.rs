@@ -428,7 +428,7 @@ mod tests {
     use crate::core::error::{Errc, Error, Result};
     // 引入测试计划依赖的薄 RHI 类型。
     use crate::native::present::rhi::{
-        BufferDesc, BufferHandle, DrawPacket, DrawRange, GraphicsDevice,
+        BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, GraphicsDevice,
         GraphicsDeviceCapabilities, GraphicsSurface, IndexBufferBinding, IndexFormat, LoadAction,
         PipelineBinding, PipelineHandle, PipelineKind, RenderTargetHandle, RhiBufferUpload,
         RhiBufferUploadPreflight, RhiColor, RhiExtent, RhiGradientRasterParams,

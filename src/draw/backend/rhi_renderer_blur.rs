@@ -3,9 +3,10 @@
 // 引入稳定错误类型。
 use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
-    BLUR_WEIGHT_COUNT, BufferDesc, BufferHandle, DrawPacket, DrawRange, GraphicsDevice, LoadAction,
-    PipelineDesc, PipelineKind, RhiBlurRasterParams, RhiColor, RhiExtent, RhiScissor, RhiViewport,
-    SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
+    BLUR_WEIGHT_COUNT, BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange,
+    GraphicsDevice, LoadAction, PipelineDesc, PipelineKind, RhiBlurRasterParams, RhiColor,
+    RhiExtent, RhiScissor, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle,
+    TextureDesc, TextureFormat, TextureHandle,
 };
 
 // 引入父 renderer 已导入的有序 FramePlan 类型和资源缓存。
@@ -287,13 +288,12 @@ impl RhiRenderer {
             ),
         ));
         // 追加固定六顶点 blur draw packet。
-        horizontal.push(FramePlanCommand::Draw(DrawPacket {
+        horizontal.push(FramePlanCommand::Draw(DrawPacket::new(
             pipeline,
-            vertex_buffer,
-            uniform_buffer: Some(uniform_buffer),
+            DrawBufferBindings::new(vertex_buffer, uniform_buffer),
             // Blur quad 使用封闭的六顶点非索引范围。
-            range: DrawRange::vertices(6),
-        }));
+            DrawRange::vertices(6),
+        )));
         // 垂直 pass 读取 scratch texture，写回原始 target。
         let mut vertical = RenderPassPlan::new(RenderTargetRef::Texture(target), LoadAction::Load);
         // 设置垂直 pass 的完整 viewport。
@@ -329,13 +329,12 @@ impl RhiRenderer {
             ),
         ));
         // 追加固定六顶点 blur draw packet。
-        vertical.push(FramePlanCommand::Draw(DrawPacket {
+        vertical.push(FramePlanCommand::Draw(DrawPacket::new(
             pipeline,
-            vertex_buffer,
-            uniform_buffer: Some(uniform_buffer),
+            DrawBufferBindings::new(vertex_buffer, uniform_buffer),
             // Blur quad 使用封闭的六顶点非索引范围。
-            range: DrawRange::vertices(6),
-        }));
+            DrawRange::vertices(6),
+        )));
         // 以严格顺序组装水平和垂直两个 pass。
         let mut plan = super::FramePlan::offscreen();
         // 保留 source → scratch 的先后关系。

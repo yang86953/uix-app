@@ -2,8 +2,8 @@
 
 // 引入 RHI 计划执行所需的资源描述与句柄。
 use crate::native::present::rhi::{
-    BufferDesc, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc,
-    PipelineKind, RhiShadowRasterParams, RhiViewport,
+    BufferDesc, DrawBufferBindings, DrawPacket, DrawRange, GraphicsDevice, LoadAction,
+    PipelineBinding, PipelineDesc, PipelineKind, RhiShadowRasterParams, RhiViewport,
 };
 
 // 复用 renderer 主模块的计划类型和 shape 单位 quad 资源。
@@ -164,16 +164,14 @@ impl RhiRenderer {
             data: FrameUniformPayload::Shadow(shadow_uniform(viewport, shadow)),
         });
         // 追加当前阴影的单位 quad draw packet。
-        pass.push(FramePlanCommand::Draw(DrawPacket {
+        pass.push(FramePlanCommand::Draw(DrawPacket::new(
             // 选择固定 BoxShadow pipeline。
             pipeline,
-            // 绑定 Shadow 自己的单位 quad。
-            vertex_buffer,
-            // 绑定当前 Shadow 常量资源。
-            uniform_buffer: Some(uniform_buffer),
+            // 绑定 Shadow 自己的单位 quad 与当前常量资源。
+            DrawBufferBindings::new(vertex_buffer, uniform_buffer),
             // 单位 quad 使用封闭的六顶点非索引范围。
-            range: DrawRange::vertices(6),
-        }));
+            DrawRange::vertices(6),
+        )));
     }
 
     // 执行一帧仿射阴影 RHI 计划。

@@ -61,7 +61,40 @@ class GraphicsRhiDrawRangeContractTests(unittest.TestCase):
         # 索引资源与格式只能由索引变体拥有。
         self.assertIn("binding: IndexBufferBinding", shared)
         # DrawPacket 必须只引用封闭范围。
-        self.assertIn("pub(crate) range: DrawRange", shared)
+        self.assertIn("range: DrawRange", shared)
+        # DrawBufferBindings 必须把顶点与 uniform 绑定封装为不可拆的私有值。
+        self.assertIn("pub(crate) struct DrawBufferBindings", shared)
+        # 两个 buffer 绑定字段必须保持非可选且对外只读。
+        self.assertIn("vertex: BufferHandle", shared)
+        # Uniform 字段必须与顶点字段一样保持非可选。
+        self.assertIn("uniform: BufferHandle", shared)
+        # 绑定值必须提供一次接收两个身份的完整构造器。
+        self.assertIn("pub(crate) const fn new(vertex: BufferHandle, uniform: BufferHandle) -> Self", shared)
+        # 顶点资源只能通过只读投影取得。
+        self.assertIn("pub(crate) const fn vertex(self) -> BufferHandle", shared)
+        # Uniform 资源只能通过只读投影取得。
+        self.assertIn("pub(crate) const fn uniform(self) -> BufferHandle", shared)
+        # DrawPacket 必须私有保存不可拆的 pipeline 身份。
+        self.assertIn("pipeline: PipelineBinding", shared)
+        # DrawPacket 必须私有保存完整 Buffer 角色。
+        self.assertIn("buffers: DrawBufferBindings", shared)
+        # DrawPacket 必须私有保存互斥绘制范围。
+        self.assertIn("range: DrawRange", shared)
+        # DrawPacket 必须由完整三参数构造器一次冻结全部事实。
+        self.assertIn("pub(crate) const fn new(\n        // 接收不可拆分的 pipeline 身份与共享语义。", shared)
+        # pipeline 身份只能通过只读投影消费。
+        self.assertIn("pub(crate) const fn pipeline(self) -> PipelineBinding", shared)
+        # Buffer 角色只能通过只读投影消费。
+        self.assertIn("pub(crate) const fn buffers(self) -> DrawBufferBindings", shared)
+        # 绘制范围只能通过只读投影消费。
+        self.assertIn("pub(crate) const fn range(self) -> DrawRange", shared)
+        # 三项 packet 字段不得重新暴露 crate 内写权限。
+        for field in ("pipeline: PipelineBinding", "buffers: DrawBufferBindings", "range: DrawRange"):
+            # 每项公开字段写法都必须从 DrawPacket 消失。
+            self.assertNotIn(f"pub(crate) {field}", shared)
+        # 半成品 triangles 构造器和可选 uniform 必须永久退出契约。
+        self.assertNotIn("fn triangles(", shared)
+        self.assertNotIn("uniform_buffer: Option<BufferHandle>", shared)
         # DrawPacket 不得保留任何可形成矛盾组合的松散字段。
         for field in (
             # 独立索引资源字段。
@@ -91,7 +124,12 @@ class GraphicsRhiDrawRangeContractTests(unittest.TestCase):
         # 合并全部生产 DrawPacket 的源码。
         producers = "\n".join(path.read_text(encoding="utf-8") for path in PRODUCERS)
         # 当前十九个 packet 必须全部显式构造顶点范围。
-        self.assertEqual(producers.count("range: DrawRange::vertices("), 19)
+        self.assertEqual(producers.count("DrawPacket::new("), 19)
+        # 当前十九个 packet 必须显式构造完整 typed buffer bindings。
+        self.assertEqual(producers.count("DrawBufferBindings::new("), 19)
+        # 生产端不得退回结构字面量或可选 uniform 绑定。
+        self.assertNotIn("DrawPacket {", producers)
+        self.assertNotIn("uniform_buffer: Some", producers)
         # 生产 packet 不得再回填独立索引资源字段。
         self.assertNotIn("index_buffer:", producers)
         # 生产 packet 不得再回填独立基顶点字段。
@@ -104,9 +142,9 @@ class GraphicsRhiDrawRangeContractTests(unittest.TestCase):
         # 读取 D3D11 Adapter 源码。
         d3d11 = D3D11_DRAW.read_text(encoding="utf-8")
         # 两个 Adapter 都必须先取得共享范围。
-        self.assertIn("let range = packet.range;", opengl)
+        self.assertIn("let range = packet.range();", opengl)
         # D3D11 也必须取得同一个共享范围。
-        self.assertIn("let range = packet.range;", d3d11)
+        self.assertIn("let range = packet.range();", d3d11)
         # OpenGL 必须从范围取得索引绑定与两类计数。
         self.assertIn("range.index_binding()", opengl)
         # OpenGL 必须从范围取得 checked 有符号索引数量。
@@ -123,6 +161,14 @@ class GraphicsRhiDrawRangeContractTests(unittest.TestCase):
         self.assertNotIn("packet.base_vertex", opengl + d3d11)
         # OpenGL 不得保留后端特有的非零基顶点失败分支。
         self.assertNotIn("nonzero base vertex", opengl)
+        # 两个 Adapter 必须通过 packet 的只读 pipeline 与 buffer 投影消费绑定。
+        self.assertIn("packet.pipeline()", opengl + d3d11)
+        # 两个 Adapter 必须原子取得顶点与 Uniform 绑定。
+        self.assertIn("packet.buffers()", opengl + d3d11)
+        # Adapter 不得恢复旧的直接字段读取模式。
+        for marker in ("packet.pipeline.contract", "packet.pipeline.kind", "packet.pipeline;", "packet.buffers;", "packet.range;", "packet.range.index_binding"):
+            # 只拒绝明确旧模式，保留合法 accessor 调用。
+            self.assertNotIn(marker, opengl + d3d11)
 
     # D3D11 helper 必须把共同子集映射为固定零基顶点。
     def test_d3d11_helpers_encode_zero_base_vertex(self) -> None:

@@ -104,7 +104,7 @@ class GraphicsRhiIndexFormatContractTests(unittest.TestCase):
         # DrawRange 格式必须与类型化内容格式一致。
         self.assertIn("index_data.format() != index_binding.format()", validation)
         # DrawRange 只能选择已交付的索引值。
-        self.assertIn(".max_index_in_range(packet.range.first_index(), packet.range.index_count())", validation)
+        self.assertIn(".max_index_in_range(range.first_index(), range.index_count())", validation)
         # 选中的最大索引必须小于已交付顶点数量。
         self.assertIn("selected_max >= uploaded_vertex_count", validation)
         # 真实索引 Buffer 角色、容量和格式步长必须在 Surface acquire 前预检。

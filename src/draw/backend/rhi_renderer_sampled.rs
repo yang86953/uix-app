@@ -6,8 +6,8 @@ use crate::core::error::Result;
 use crate::core::PresentDamage;
 // 引入薄 RHI 的采样与执行类型。
 use crate::native::present::rhi::{
-    DrawPacket, DrawRange, GraphicsContextRhi, GraphicsDevice, GraphicsSurface, LoadAction,
-    RhiViewport, SampledTextureBinding, TextureHandle,
+    DrawBufferBindings, DrawPacket, DrawRange, GraphicsContextRhi, GraphicsDevice, GraphicsSurface,
+    LoadAction, RhiViewport, SampledTextureBinding, TextureHandle,
 };
 
 // 引入父 renderer 的计划、target、资源载荷和执行器。
@@ -172,13 +172,12 @@ impl RhiRenderer {
             ),
         ));
         // 追加六顶点的非索引 sampled draw packet。
-        pass.push(FramePlanCommand::Draw(DrawPacket {
+        pass.push(FramePlanCommand::Draw(DrawPacket::new(
             pipeline,
-            vertex_buffer,
-            uniform_buffer: Some(uniform_buffer),
+            DrawBufferBindings::new(vertex_buffer, uniform_buffer),
             // Sampled quad 使用封闭的六顶点非索引范围。
-            range: DrawRange::vertices(6),
-        }));
+            DrawRange::vertices(6),
+        )));
         // 创建只拥有 Device 与纹理目标的封闭帧。
         let mut frame = super::RhiRendererFrame::offscreen(device, target);
         // 创建不含任何 Surface 生命周期的计划。

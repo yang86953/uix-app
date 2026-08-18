@@ -15,11 +15,13 @@ impl D3d11Context {
         // draw 必须发生在显式 render pass 内。
         self.rhi_device.pass.require_open()?;
         // 先由共享 pipeline 表验证句柄仍存活且 kind 与资源一致。
-        self.rhi_device.pipeline(packet.pipeline)?;
+        self.rhi_device.pipeline(packet.pipeline())?;
         // 读取 FramePlan 绑定的共享 pipeline 语义。
-        let pipeline_kind = packet.pipeline.kind();
+        let pipeline_kind = packet.pipeline().kind();
+        // 一次取得不可拆的顶点与 Uniform 资源身份。
+        let buffers = packet.buffers();
         // 解析顶点 buffer 并保留通用 ABI 所需的步长。
-        let vertex = self.rhi_device.buffer(packet.vertex_buffer)?;
+        let vertex = self.rhi_device.buffer(buffers.vertex())?;
         // 拒绝错误用途的顶点资源。
         if vertex.desc.usage() != BufferUsage::Vertex {
             // 返回稳定的资源类型错误。
@@ -29,10 +31,8 @@ impl D3d11Context {
         let vertex_native = vertex.native.clone();
         // 复制通用顶点步长。
         let vertex_stride = vertex.desc.stride_bytes();
-        // 解析 packet 的 uniform buffer。
-        let uniform_handle = packet
-            .uniform_buffer
-            .ok_or_else(|| rhi_invalid("D3d11 RHI draw uniform is missing"))?;
+        // 解析 packet 已由 typed bindings 保证存在的 uniform buffer。
+        let uniform_handle = buffers.uniform();
         // 读取 uniform 资源事实。
         let uniform = self.rhi_device.buffer(uniform_handle)?;
         // 拒绝错误用途的 uniform 资源。
@@ -45,9 +45,9 @@ impl D3d11Context {
         // 复制 uniform 总字节数供共享 pipeline 契约统一校验。
         let uniform_size = uniform.desc.size_bytes();
         // 复制 FramePlan 已经封闭为顶点或索引变体的绘制范围。
-        let range = packet.range;
+        let range = packet.range();
         // 从唯一共享契约读取当前 pipeline 的资源与混合语义。
-        let contract = packet.pipeline.contract();
+        let contract = packet.pipeline().contract();
         // Drawing 生产端与 D3D11 消费端必须严格使用同一个 ABI。
         if vertex_stride != contract.vertex.stride_bytes()
             || uniform_size != contract.uniform.size_bytes()
@@ -123,7 +123,7 @@ impl D3d11Context {
                     .rhi_device
                     .pass
                     // 从共享状态取得与当前 pipeline 匹配的原子绑定。
-                    .sampled_binding_for(packet.pipeline)?;
+                    .sampled_binding_for(packet.pipeline())?;
                 // 解析 SRV 并复制 COM 句柄，结束资源表借用。
                 let texture = self.rhi_device.texture(binding.texture())?;
                 // 解析已经在 bind 边界验证的 sampler 原生状态。
@@ -155,7 +155,7 @@ impl D3d11Context {
                     .rhi_device
                     .pass
                     // 从共享状态取得与当前 pipeline 匹配的原子绑定。
-                    .sampled_binding_for(packet.pipeline)?;
+                    .sampled_binding_for(packet.pipeline())?;
                 // 解析已经在 bind 边界验证为 R8 的 coverage 纹理。
                 let texture = self.rhi_device.texture(binding.texture())?;
                 // 解析已经在 bind 边界验证的最近点 sampler 原生状态。
@@ -187,7 +187,7 @@ impl D3d11Context {
                     .rhi_device
                     .pass
                     // 从共享状态取得与当前 pipeline 匹配的原子绑定。
-                    .sampled_binding_for(packet.pipeline)?;
+                    .sampled_binding_for(packet.pipeline())?;
                 // 解析已经在 bind 边界验证为 RGBA8 的 MSDF 距离纹理。
                 let texture = self.rhi_device.texture(binding.texture())?;
                 // 解析已经在 bind 边界验证的线性 sampler 原生状态。
@@ -283,7 +283,7 @@ impl D3d11Context {
                     .rhi_device
                     .pass
                     // 从共享状态取得与当前 pipeline 匹配的原子绑定。
-                    .sampled_binding_for(packet.pipeline)?;
+                    .sampled_binding_for(packet.pipeline())?;
                 // 解析已经在 bind 边界验证的 Blur 颜色源纹理。
                 let texture = self.rhi_device.texture(binding.texture())?;
                 // 解析已经在 bind 边界验证的线性 sampler 原生状态。

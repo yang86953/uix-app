@@ -5,9 +5,9 @@ use std::sync::Arc;
 
 // 引入 RHI 计划执行所需的资源描述与句柄。
 use crate::native::present::rhi::{
-    BufferHandle, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc,
-    PipelineKind, RhiExtent, RhiTextureUpload, SampledTextureBinding, SamplerDesc, SamplerHandle,
-    TextureDesc, TextureFormat,
+    BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, GraphicsDevice, LoadAction,
+    PipelineBinding, PipelineDesc, PipelineKind, RhiExtent, RhiTextureUpload,
+    SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat,
 };
 
 // 复用 renderer 主模块的计划类型和 coverage payload。
@@ -259,13 +259,12 @@ impl RhiRenderer {
                 ),
             ));
             // 追加六顶点的非索引 coverage quad draw packet。
-            pass.push(FramePlanCommand::Draw(DrawPacket {
+            pass.push(FramePlanCommand::Draw(DrawPacket::new(
                 pipeline,
-                vertex_buffer,
-                uniform_buffer: Some(uniform_buffer),
+                DrawBufferBindings::new(vertex_buffer, uniform_buffer),
                 // Coverage quad 使用封闭的六顶点非索引范围。
-                range: DrawRange::vertices(6),
-            }));
+                DrawRange::vertices(6),
+            )));
         }
         // 从封闭 Renderer 帧创建匹配的计划。
         let mut plan = frame.plan();
