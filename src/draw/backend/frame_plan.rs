@@ -415,6 +415,8 @@ mod tests {
         capabilities: GraphicsDeviceCapabilities,
         // 保存是否强制 submit 失败。
         fail_submit: bool,
+        // 保存是否强制 draw 失败以验证 pass 中途收尾。
+        fail_draw: bool,
     }
 
     // 为记录型 device 实现薄 RHI 的执行原语。
@@ -497,6 +499,11 @@ mod tests {
         fn draw(&mut self, _packet: DrawPacket) -> Result<()> {
             // 记录调用事件。
             self.log.push_back("draw");
+            // 在失败模式下模拟 Adapter 于 pass 内拒绝 draw。
+            if self.fail_draw {
+                // 返回稳定平台错误，供执行器证明主错误不会被 cleanup 覆盖。
+                return Err(Error::new(Errc::PlatformError, "recording draw failed"));
+            }
             // 返回成功。
             Ok(())
         }
@@ -729,6 +736,8 @@ mod tests {
                 capabilities: GraphicsDeviceCapabilities::full_gpu_baseline(),
                 // 默认允许 submit 成功。
                 fail_submit: false,
+                // 默认允许 pass 内 draw 成功。
+                fail_draw: false,
             },
             // 创建与计划代际一致的 surface。
             surface: RecordingSurface {
@@ -760,6 +769,10 @@ mod tests {
         assert_eq!(
             context.device.log.into_iter().collect::<Vec<_>>(),
             vec![
+                // 所有 FramePlan 命令前必须先激活 owner context。
+                "activate",
+                // 激活后必须完成统一设备健康预检。
+                "maintain",
                 "begin_pass",
                 "viewport",
                 "scissor",
