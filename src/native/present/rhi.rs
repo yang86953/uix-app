@@ -454,6 +454,11 @@ impl RhiSurfaceReadback {
 #[path = "rhi/readback_tests.rs"]
 mod surface_readback_tests;
 
+// 将 GPU bootstrap 探针的动态生命周期契约测试拆到独立文件。
+#[cfg(test)]
+#[path = "rhi/probe_tests.rs"]
+mod probe_tests;
+
 // 描述一次 render pass 的加载动作。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum LoadAction {
