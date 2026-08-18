@@ -787,12 +787,10 @@ impl RhiRenderer {
                 }
             }
         }
-        // 从封闭 Renderer 帧创建保留操作顺序的单 pass 计划。
-        let mut plan = frame.plan();
-        // 追加当前 target pass。
-        plan.push_pass(pass);
+        // 将当前 target pass 追加到封闭帧唯一拥有的计划中并保留操作顺序。
+        frame.plan_mut().push_pass(pass);
         // 封闭帧决定 Surface present 或 Offscreen submit，调用方不再传布尔选择器。
-        let execution = frame.execute(&plan);
+        let execution = frame.execute();
         // 计划结束后只释放本次混合 lowering 创建的临时纹理。
         let cleanup = RhiRenderer::destroy_textures(frame.device(), &transient_textures);
         // 优先保留执行错误，再报告资源清理错误。
