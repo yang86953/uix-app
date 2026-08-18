@@ -90,6 +90,45 @@ class GraphicsRhiPresentDamageContractTests(unittest.TestCase):
         self.assertNotIn("validated_dirty_rects", swapchain)
         self.assertNotIn("checked_add", swapchain)
 
+    # 两个 Surface Adapter 都必须在共享校验成功后才改变原生呈现状态。
+    def test_shared_present_gate_precedes_native_state_changes(self) -> None:
+        # 读取 OpenGL 与 D3D11 的最终 Surface 呈现入口。
+        opengl = OPENGL_SURFACE.read_text(encoding="utf-8")
+        # D3D11 作为同一共享事务的跨后端时序对照。
+        d3d11 = D3D11_SURFACE.read_text(encoding="utf-8")
+        # 截取 OpenGL 的单次 present 实现，避免其它生命周期入口干扰顺序断言。
+        opengl_start = opengl.index("fn present(&mut self, transaction: RhiPresentTransaction)")
+        # OpenGL present 在 test_present 前结束。
+        opengl_present = opengl[
+            opengl_start : opengl.index("fn test_present", opengl_start)
+        ]
+        # 共享事务校验必须早于 native current context 切换。
+        self.assertLess(
+            opengl_present.index("rhi_validate_present("),
+            opengl_present.index("rhi_make_current()?"),
+        )
+        # native 交换只能消费共享门禁发布的结果。
+        self.assertLess(
+            opengl_present.index("rhi_make_current()?"),
+            opengl_present.index("rhi_swap_buffers("),
+        )
+        # 截取 D3D11 的单次 present 实现作为同一失败时序对照。
+        d3d11_start = d3d11.index("fn present(&mut self, transaction: RhiPresentTransaction)")
+        # D3D11 present 同样在 test_present 前结束。
+        d3d11_present = d3d11[
+            d3d11_start : d3d11.index("fn test_present", d3d11_start)
+        ]
+        # D3D11 必须继续先校验事务再恢复 swapchain target。
+        self.assertLess(
+            d3d11_present.index("validate_present_impl("),
+            d3d11_present.index("bind_swapchain_target()?"),
+        )
+        # 原生 Present 只接收共享校验后的封闭值。
+        self.assertLess(
+            d3d11_present.index("bind_swapchain_target()?"),
+            d3d11_present.index("present_result(&present)"),
+        )
+
 
 # 支持直接执行该精确契约测试。
 if __name__ == "__main__":

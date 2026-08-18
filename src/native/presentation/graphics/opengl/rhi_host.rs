@@ -298,8 +298,6 @@ where
     fn present(&mut self, transaction: RhiPresentTransaction) -> Result<()> {
         // 在执行 native present 前先拒绝已关闭 owner。
         self.rhi_ensure_active()?;
-        // 交换前再次 current，防止宿主的 legacy 操作改变 current context。
-        self.rhi_make_current()?;
         // surface lost 必须在共享 adapter present 前消费，而不是静默交换。
         #[cfg(feature = "test-harness")]
         if self.rhi_pipeline_mut().rhi_take_surface_lost_for_test() {
@@ -323,6 +321,8 @@ where
             // 传入同一 Surface profile 的 FullOnly 事实。
             present_coherency,
         )?;
+        // 共享门禁成功后才恢复 owner-thread current context，失败事务不得产生原生副作用。
+        self.rhi_make_current()?;
         // Adapter 只消费门禁发布的 damage 执行原生交换。
         self.rhi_swap_buffers(present.into_damage())
     }
