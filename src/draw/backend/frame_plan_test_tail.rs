@@ -24,6 +24,10 @@ fn executes_texture_move_in_order() {
     assert_eq!(
         context.device.log.into_iter().collect::<Vec<_>>(),
         vec![
+            // 所有 FramePlan 命令前必须先激活 owner context。
+            "activate",
+            // 激活后必须完成统一设备健康预检。
+            "maintain",
             "begin_pass",
             "viewport",
             "scissor",
@@ -105,6 +109,10 @@ fn executes_clear_rect_in_order() {
     assert_eq!(
         context.device.log.into_iter().collect::<Vec<_>>(),
         vec![
+            // 所有 FramePlan 命令前必须先激活 owner context。
+            "activate",
+            // 激活后必须完成统一设备健康预检。
+            "maintain",
             "begin_pass",
             "viewport",
             "clear_rect",
@@ -217,6 +225,55 @@ fn failed_submit_does_not_present() {
     };
     assert_eq!(error.code(), Errc::GraphicsDeviceLost);
     // 验证失败 submit 没有触发 present。
+    assert_eq!(context.surface.present_count, 0);
+}
+
+// 验证 pass 内命令失败时仍会收尾且不会进入 submit 或 present。
+#[test]
+fn failed_draw_ends_the_render_pass_before_returning() {
+    // 创建第一代 surface。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 创建会记录全部薄 RHI 命令的组合 context。
+    let mut context = recording_context(token);
+    // 安排 pass 内唯一 draw 返回主错误。
+    context.device.fail_draw = true;
+    // 执行完整 Surface 计划并取得失败。
+    let result = test_plan(token).execute_on_context(&mut context);
+    // 提取执行器必须原样返回的 draw 错误。
+    let error = match result {
+        // 失败值必须保持原始 Adapter 错误。
+        Err(error) => error,
+        // draw 失败不得被 cleanup 伪装成成功提交。
+        Ok(_) => panic!("draw must fail"),
+    };
+    // cleanup 不得覆盖主错误分类。
+    assert_eq!(error.code(), Errc::PlatformError);
+    // 主错误诊断必须仍包含最初失败的 draw 文本。
+    assert!(error.what().contains("recording draw failed"));
+    // pass 开始后必须确实到达失败 draw。
+    assert!(context.device.log.contains(&"draw"));
+    // 失败路径最后一条 Device 命令必须是 pass 收尾。
+    assert_eq!(context.device.log.back().copied(), Some("end_pass"));
+    // 共同收尾只能执行一次，禁止正常路径再次结束。
+    assert_eq!(
+        // 统计记录中的 pass 结束次数。
+        context
+            // 访问记录型 Device。
+            .device
+            // 借用完整命令日志。
+            .log
+            // 遍历全部记录项。
+            .iter()
+            // 只保留 pass 结束记录。
+            .filter(|entry| **entry == "end_pass")
+            // 计算收尾调用次数。
+            .count(),
+        // 失败路径必须且只能收尾一次。
+        1,
+    );
+    // 中途失败后不得提交任何 Device 命令。
+    assert!(!context.device.log.contains(&"submit"));
+    // 没有成功 submit 时 Surface 不得进入 present。
     assert_eq!(context.surface.present_count, 0);
 }
 

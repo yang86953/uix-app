@@ -124,8 +124,23 @@ where
         self.device.begin_render_pass(target, pass.load)?;
         // 严格保持 pass 内命令的 painter order。
         for command in &pass.commands {
-            // 所有提交模式复用同一个命令分派函数。
-            self.execute_command(command)?;
+            // 所有提交模式复用同一个命令分派函数，并在失败时进入共同收尾。
+            if let Err(command_error) = self.execute_command(command) {
+                // pass 已成功开始，任何中途错误都必须尝试清除共享和原生状态。
+                if let Err(cleanup_error) = self.device.end_render_pass() {
+                    // cleanup 失败不能覆盖最初的命令根因，但必须留下明确诊断。
+                    tracing::error!(
+                        // 同时记录主错误和收尾错误，便于判断 Device 是否需要重建。
+                        "FramePlan render pass cleanup failed after command error: primary={}; cleanup={}",
+                        // 保留最初失败命令的稳定诊断。
+                        command_error.what(),
+                        // 保留 Adapter 收尾失败诊断。
+                        cleanup_error.what(),
+                    );
+                }
+                // 返回最初的命令错误，禁止 cleanup 结果改变恢复分类。
+                return Err(command_error);
+            }
         }
         // 显式结束 pass，禁止后续 copy 或 pass 嵌套。
         self.device.end_render_pass()?;
