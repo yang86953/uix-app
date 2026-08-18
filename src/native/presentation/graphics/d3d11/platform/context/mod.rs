@@ -13,7 +13,7 @@
 
 use std::ffi::c_void;
 
-use super::pipeline::D3d11Pipeline;
+use super::pipeline::{D3d11IndexBinding, D3d11Pipeline};
 use super::swapchain::d3d_error;
 // 向 context 子模块公开 D3D11 swapchain 的冻结实例与创建入口。
 pub(crate) use super::swapchain::{D3d11SwapChain, create_swap_chain};

@@ -4,7 +4,6 @@
 //! `draw_glyphs`、`draw_rounded_rect` 或其他 UI 高层操作。
 
 #![allow(dead_code)]
-
 // 使用框架统一错误类型，保证 surface、device 和资源失败保持 typed error。
 use crate::core::error::{Errc, Error, Result};
 // 使用统一的最终呈现 damage 值，RHI 不重新定义呈现损坏语义。
@@ -58,8 +57,9 @@ pub(crate) use color::{
 };
 // 向组合根和 Adapter 暴露两个正交的事实快照。
 pub(crate) use capabilities::{GraphicsDeviceCapabilities, GraphicsSurfaceCapabilities};
-// 向 FramePlan 与 Adapter 暴露只接受类型化 pipeline 的绘制包。
-pub(crate) use draw_packet::DrawPacket;
+// 向 FramePlan 与 Adapter 暴露类型化 pipeline 与索引格式绑定的绘制包。
+#[allow(unused_imports)]
+pub(crate) use draw_packet::{DrawPacket, IndexBufferBinding, IndexFormat};
 // 向各原生 Adapter 暴露唯一的 render-pass 状态事实。
 #[allow(unused_imports)]
 pub(crate) use pass_state::RhiPassState;

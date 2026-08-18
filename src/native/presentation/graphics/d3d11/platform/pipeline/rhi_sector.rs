@@ -117,7 +117,7 @@ impl D3d11Pipeline {
         context: &ID3D11DeviceContext,
         vertex: &ID3D11Buffer,
         vertex_stride: u32,
-        index: Option<&ID3D11Buffer>,
+        index: Option<&D3d11IndexBinding>,
         uniform: &ID3D11Buffer,
         blend: PipelineBlend,
         vertex_count: u32,
@@ -144,7 +144,7 @@ impl D3d11Pipeline {
                 Some(&vertex_stride),
                 Some(&0),
             );
-            context.IASetIndexBuffer(index, DXGI_FORMAT_R32_UINT, 0);
+            bind_rhi_index_buffer(context, index);
             context.VSSetShader(&self.vs_sector, None);
             context.PSSetShader(&self.ps_sector, None);
             context.VSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));

@@ -13,7 +13,7 @@ impl D3d11Pipeline {
         context: &ID3D11DeviceContext,
         vertex: &ID3D11Buffer,
         vertex_stride: u32,
-        index: Option<&ID3D11Buffer>,
+        index: Option<&D3d11IndexBinding>,
         uniform: &ID3D11Buffer,
         texture: &ID3D11ShaderResourceView,
         sampler: &ID3D11SamplerState,
@@ -47,7 +47,7 @@ impl D3d11Pipeline {
                 Some(&0),
             );
             // 清理可能遗留的 index binding。
-            context.IASetIndexBuffer(index, DXGI_FORMAT_R32_UINT, 0);
+            bind_rhi_index_buffer(context, index);
             // 绑定当前 pass 的目标 RTV。
             context.OMSetRenderTargets(Some(&[Some(target.clone())]), None);
             // 绑定读取 BlurCB 的专用 vertex shader，避免把尺寸误解成 UV 矩形。
@@ -64,7 +64,7 @@ impl D3d11Pipeline {
             context.OMSetBlendState(self.rhi_blend_state(blend), None, self.rhi_sample_mask());
             // 按 packet 的索引形态执行 draw。
             if index.is_some() {
-                // 索引 ABI 固定为 uint32。
+                // 索引格式已由共享绑定完成映射。
                 context.DrawIndexed(index_count, first_index, base_vertex);
             } else {
                 // 非索引 packet 使用六顶点区域 quad。

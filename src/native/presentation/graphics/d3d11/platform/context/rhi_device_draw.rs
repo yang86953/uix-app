@@ -6,7 +6,7 @@ use crate::core::error::Result;
 use crate::native::present::rhi::{BufferUsage, DrawPacket, PipelineKind};
 
 // 引入父模块的 D3D11 context、资源状态和错误辅助。
-use super::{D3d11Context, rhi_invalid};
+use super::{D3d11Context, D3d11IndexBinding, rhi_invalid};
 
 // 为 D3D11 context 编码通用 draw packet。
 impl D3d11Context {
@@ -59,17 +59,19 @@ impl D3d11Context {
             // 使用统一门禁拒绝任何 pipeline 的漂移载荷。
             return Err(rhi_invalid("D3d11 RHI pipeline ABI is invalid"));
         }
-        // 索引 buffer 如存在必须使用固定 uint32 ABI。
-        let index_native = if let Some(index_handle) = packet.index_buffer {
-            // 解析索引资源。
-            let index = self.rhi_device.buffer(index_handle)?;
-            // 校验索引资源用途和固定步长。
-            if index.usage != BufferUsage::Index || index.stride_bytes != 4 {
-                // 返回稳定的资源类型错误。
-                return Err(rhi_invalid("D3d11 RHI draw index buffer ABI is not uint32"));
+        // 索引 buffer 如存在必须与 FramePlan 绑定的共享格式一致。
+        let index_binding = if let Some(binding) = packet.index_buffer {
+            // 解析绑定中保存的不透明索引资源。
+            let index = self.rhi_device.buffer(binding.buffer())?;
+            // 读取后续步长与原生格式映射的唯一共享格式。
+            let format = binding.format();
+            // 校验资源用途和创建步长精确符合共享格式。
+            if index.usage != BufferUsage::Index || index.stride_bytes != format.stride_bytes() {
+                // 返回稳定且不泄漏 DXGI 枚举的格式错误。
+                return Err(rhi_invalid("D3d11 RHI draw index buffer format is invalid"));
             }
-            // 复制索引 COM 对象，结束资源表借用。
-            Some(index.native.clone())
+            // 一次完成共享格式到 DXGI 格式的封闭映射。
+            Some(D3d11IndexBinding::new(index.native.clone(), format))
         } else {
             // 非索引 packet 不绑定 index buffer。
             None
@@ -98,7 +100,7 @@ impl D3d11Context {
                     &self.context,
                     &vertex_native,
                     vertex_stride,
-                    index_native.as_ref(),
+                    index_binding.as_ref(),
                     &uniform_native,
                     contract.blend,
                     packet.vertex_count,
@@ -142,7 +144,7 @@ impl D3d11Context {
                     &self.context,
                     &vertex_native,
                     vertex_stride,
-                    index_native.as_ref(),
+                    index_binding.as_ref(),
                     &uniform_native,
                     &texture_srv,
                     &sampler_native,
@@ -188,7 +190,7 @@ impl D3d11Context {
                     &self.context,
                     &vertex_native,
                     vertex_stride,
-                    index_native.as_ref(),
+                    index_binding.as_ref(),
                     &uniform_native,
                     &texture_srv,
                     &sampler_native,
@@ -234,7 +236,7 @@ impl D3d11Context {
                     &self.context,
                     &vertex_native,
                     vertex_stride,
-                    index_native.as_ref(),
+                    index_binding.as_ref(),
                     &uniform_native,
                     &texture_srv,
                     &sampler_native,
@@ -253,7 +255,7 @@ impl D3d11Context {
                     &self.context,
                     &vertex_native,
                     vertex_stride,
-                    index_native.as_ref(),
+                    index_binding.as_ref(),
                     &uniform_native,
                     contract.blend,
                     packet.vertex_count,
@@ -270,7 +272,7 @@ impl D3d11Context {
                     &self.context,
                     &vertex_native,
                     vertex_stride,
-                    index_native.as_ref(),
+                    index_binding.as_ref(),
                     &uniform_native,
                     contract.blend,
                     packet.vertex_count,
@@ -287,7 +289,7 @@ impl D3d11Context {
                     &self.context,
                     &vertex_native,
                     vertex_stride,
-                    index_native.as_ref(),
+                    index_binding.as_ref(),
                     &uniform_native,
                     contract.blend,
                     packet.vertex_count,
@@ -304,7 +306,7 @@ impl D3d11Context {
                     &self.context,
                     &vertex_native,
                     vertex_stride,
-                    index_native.as_ref(),
+                    index_binding.as_ref(),
                     &uniform_native,
                     contract.blend,
                     packet.vertex_count,
@@ -355,7 +357,7 @@ impl D3d11Context {
                     &self.context,
                     &vertex_native,
                     vertex_stride,
-                    index_native.as_ref(),
+                    index_binding.as_ref(),
                     &uniform_native,
                     &texture_srv,
                     &sampler_native,

@@ -34,7 +34,7 @@ use ::windows::Win32::Graphics::Dxgi::Common::{
 };
 
 // 引入 context 父模块的 D3D11 状态、swapchain 事实和 surface target 身份。
-use super::{D3d11Context, RHI_SURFACE_TARGET_RAW};
+use super::{D3d11Context, D3d11IndexBinding, RHI_SURFACE_TARGET_RAW};
 
 // 把资源生命周期拆到独立文件，保持每个代码文件处于可审阅的尺寸内。
 #[path = "rhi_device_resources.rs"]
