@@ -82,6 +82,8 @@ impl D3d11Context {
             contract.topology,
             // 传入 FramePlan pipeline 的共享采样覆盖状态。
             contract.multisample,
+            // 传入 FramePlan pipeline 的共享颜色抖动状态。
+            contract.dither,
             // 传入 FramePlan pipeline 的共享光栅状态。
             contract.raster,
             // 传入 FramePlan pipeline 的共享深度模板状态。

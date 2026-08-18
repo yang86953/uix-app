@@ -16,14 +16,14 @@ use crate::native::present::rhi::{
     MSDF_RANGE_FLOAT_OFFSET, MSDF_TEXTURE_SIZE_FLOAT_OFFSET, MSDF_VIEWPORT_FLOAT_OFFSET,
     PipelineBlend, PipelineBlendFactor, PipelineBlendOperation, PipelineColorWriteMask,
     PipelineCullMode, PipelineDepthClip, PipelineDepthState, PipelineDepthStencilState,
-    PipelineFrontFace, PipelineKind, PipelineMultisampleState, PipelinePrimitiveTopology,
-    PipelineRasterState, PipelineStencilState, SAMPLED_VIEWPORT_FLOAT_OFFSET,
-    SECTOR_ANGLES_FLOAT_OFFSET, SECTOR_COLOR_FLOAT_OFFSET, SECTOR_RECT_FLOAT_OFFSET,
-    SECTOR_VIEWPORT_FLOAT_OFFSET, SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET, SHADOW_COLOR_FLOAT_OFFSET,
-    SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET, SHADOW_RADIUS_FLOAT_OFFSET,
-    SHADOW_VIEWPORT_FLOAT_OFFSET, SHAPE_COLOR_FLOAT_OFFSET, SHAPE_DRAW_RECT_FLOAT_OFFSET,
-    SHAPE_RADIUS_FLOAT_OFFSET, SHAPE_RECT_FLOAT_OFFSET, SHAPE_STROKE_FLOAT_OFFSET,
-    SHAPE_VIEWPORT_FLOAT_OFFSET, SamplerDesc, TextureFormat,
+    PipelineDitherState, PipelineFrontFace, PipelineKind, PipelineMultisampleState,
+    PipelinePrimitiveTopology, PipelineRasterState, PipelineStencilState,
+    SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET, SECTOR_COLOR_FLOAT_OFFSET,
+    SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET, SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET,
+    SHADOW_COLOR_FLOAT_OFFSET, SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET,
+    SHADOW_RADIUS_FLOAT_OFFSET, SHADOW_VIEWPORT_FLOAT_OFFSET, SHAPE_COLOR_FLOAT_OFFSET,
+    SHAPE_DRAW_RECT_FLOAT_OFFSET, SHAPE_RADIUS_FLOAT_OFFSET, SHAPE_RECT_FLOAT_OFFSET,
+    SHAPE_STROKE_FLOAT_OFFSET, SHAPE_VIEWPORT_FLOAT_OFFSET, SamplerDesc, TextureFormat,
 };
 // 复用父资源表、目标方向、类型化 shader 语义和错误辅助。
 use super::{OpenGlRhiDevice, rhi_invalid, target_y_sign};
@@ -563,6 +563,8 @@ impl OpenGlRhiDevice {
         let _ = sampled_format;
         // SAFETY: contract 只包含固定 GL 采样覆盖映射，当前 owner thread 的 context 保持 current。
         unsafe { apply_pipeline_multisample(gl, contract.multisample) };
+        // SAFETY: contract 只包含固定 GL 颜色抖动映射，当前 owner thread 的 context 保持 current。
+        unsafe { apply_pipeline_dither(gl, contract.dither) };
         // SAFETY: contract 只包含固定 GL 光栅与深度模板映射，当前 owner thread 的 context 保持 current。
         unsafe { apply_pipeline_fixed_state(gl, contract.raster, contract.depth_stencil) };
         // SAFETY: contract 只包含固定 GL blend 映射，当前 owner thread 的 context 保持 current。
@@ -706,6 +708,21 @@ unsafe fn apply_pipeline_multisample(gl: &glow::Context, state: PipelineMultisam
                 // 关闭按 sample coverage 值裁剪覆盖率。
                 gl.disable(glow::SAMPLE_COVERAGE);
             }
+        }
+    }
+}
+
+/// 按共享 pipeline 状态恢复颜色抖动状态。
+///
+/// # Safety
+/// 调用者必须保证当前 owner thread 的 GL context current。
+unsafe fn apply_pipeline_dither(gl: &glow::Context, state: PipelineDitherState) {
+    // SAFETY：调用者保证当前 owner thread 的 GL context current。
+    unsafe {
+        // 穷尽映射共享颜色抖动集合。
+        match state {
+            // 禁止 OpenGL ES 默认 dither 修改八位颜色输出。
+            PipelineDitherState::Disabled => gl.disable(glow::DITHER),
         }
     }
 }

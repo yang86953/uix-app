@@ -413,6 +413,12 @@ pub(crate) enum PipelinePrimitiveTopology {
     TriangleList,
 }
 
+// 定义两个 Adapter 必须共同实现的颜色抖动语义。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum PipelineDitherState {
+    // 禁止原生 API 在八位颜色目标上修改最低位。
+    Disabled,
+}
 // 汇总一个 pipeline 在所有图形 API 上必须相同的 ABI 事实。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct PipelineContract {
@@ -426,6 +432,8 @@ pub(crate) struct PipelineContract {
     pub(crate) blend: PipelineBlend,
     // 保存固定原语拓扑。
     pub(crate) topology: PipelinePrimitiveTopology,
+    // 保存固定颜色抖动语义。
+    pub(crate) dither: PipelineDitherState,
     // 保存固定采样覆盖状态。
     pub(crate) multisample: PipelineMultisampleState,
     // 保存固定二维光栅状态。
@@ -457,6 +465,8 @@ const fn ui_2d_pipeline_contract(
         blend,
         // 全部现有 UI draw 使用独立三角形列表。
         topology: PipelinePrimitiveTopology::TriangleList,
+        // 全部现有 UI draw 禁止原生颜色抖动。
+        dither: PipelineDitherState::Disabled,
         // 全部现有 UI draw 使用单样本且关闭 coverage 转换。
         multisample: PipelineMultisampleState::SingleSample,
         // 全部现有 UI draw 使用同一二维光栅状态。
@@ -810,6 +820,8 @@ mod tests {
             let contract = kind.contract();
             // 全部二维图元必须使用独立三角形列表。
             assert_eq!(contract.topology, PipelinePrimitiveTopology::TriangleList);
+            // 全部二维图元必须关闭会改变八位输出最低位的颜色抖动。
+            assert_eq!(contract.dither, PipelineDitherState::Disabled);
             // 全部二维图元必须冻结为同一单样本覆盖语义。
             assert_eq!(contract.multisample, PipelineMultisampleState::SingleSample);
             // 全部二维图元必须使用相同光栅状态。
