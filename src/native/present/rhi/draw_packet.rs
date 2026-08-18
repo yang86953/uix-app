@@ -179,6 +179,17 @@ impl DrawRange {
         }
     }
 
+    // 返回非索引范围首顶点加数量的 checked 末端。
+    pub(crate) const fn checked_vertex_end(self) -> Option<u32> {
+        // 只有非索引范围拥有可与顶点载荷比较的末端。
+        match self {
+            // 使用 checked_add 拒绝 u32 末端溢出。
+            Self::Vertices { count, first } => first.checked_add(count),
+            // 索引范围不伪造独立的顶点末端。
+            Self::Indices { .. } => None,
+        }
+    }
+
     // 返回供索引原生命令使用的索引数量。
     pub(crate) const fn index_count(self) -> u32 {
         // 非索引范围不得伪造索引 count。
@@ -311,6 +322,10 @@ mod tests {
         assert_eq!(indices.vertex_count(), 0);
         // 索引范围必须保留完整绑定。
         assert_eq!(indices.index_binding(), Some(binding));
+        // 从零开始的非索引范围末端必须等于数量。
+        assert_eq!(vertices.checked_vertex_end(), Some(6));
+        // 索引范围不得伪造非索引顶点末端。
+        assert_eq!(indices.checked_vertex_end(), None);
     }
 
     // 锁定 OpenGL 有符号参数与 D3D11 无符号参数的共同值域。
@@ -335,6 +350,15 @@ mod tests {
         };
         // 首顶点溢出必须由同一门禁拒绝。
         assert!(!overflow_first.is_valid());
+        // 构造首顶点与数量相加溢出的非索引范围。
+        let overflow_end = DrawRange::Vertices {
+            // 保持单个顶点数量本身合法。
+            count: 2,
+            // 让 checked 末端超过 u32 最大值。
+            first: u32::MAX,
+        };
+        // 末端溢出必须返回空而不是回绕。
+        assert_eq!(overflow_end.checked_vertex_end(), None);
         // 构造稳定的 uint32 索引绑定。
         let binding = IndexBufferBinding::new(BufferHandle::from_raw(9), IndexFormat::Uint32);
         // 超大首索引会形成无法由 OpenGL 指针偏移表示的字节位置。

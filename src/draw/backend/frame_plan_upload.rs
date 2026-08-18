@@ -55,6 +55,21 @@ impl FrameVertexPayload {
         }
     }
 
+    // 从唯一布局和浮点序列派生完整顶点数量。
+    pub(crate) fn vertex_count(&self) -> Option<u32> {
+        // 读取本布局每个顶点包含的浮点数量。
+        let floats_per_vertex = self.layout().stride_bytes() as usize / std::mem::size_of::<f32>();
+        // 读取唯一浮点序列。
+        let values = self.values();
+        // 不为残缺载荷伪造完整顶点数量。
+        if values.len() % floats_per_vertex != 0 {
+            // 残缺顶点没有可供 DrawRange 比较的数量。
+            return None;
+        }
+        // 将完整顶点数量收敛到 DrawRange 的 u32 值域。
+        u32::try_from(values.len() / floats_per_vertex).ok()
+    }
+
     // 验证载荷非空、有限并包含完整顶点。
     pub(crate) fn is_valid(&self) -> bool {
         // 读取本布局每个顶点包含的浮点数量。
@@ -229,6 +244,22 @@ mod tests {
         assert!(!FrameVertexPayload::position_uv_color_f32([0.0; 7]).is_valid());
         // 非有限 position 顶点必须在进入 Adapter 前被拒绝。
         assert!(!FrameVertexPayload::position_f32x2([f32::NAN, 0.0]).is_valid());
+        // position-float2 的六个浮点必须派生三个完整顶点。
+        assert_eq!(valid.vertex_count(), Some(3));
+        // 残缺 float8 载荷不得派生顶点数量。
+        assert_eq!(
+            FrameVertexPayload::position_uv_color_f32([0.0; 7]).vertex_count(),
+            None
+        );
+    }
+
+    // float8 顶点载荷必须按完整布局派生顶点数量。
+    #[test]
+    fn vertex_payload_derives_float8_vertex_count() {
+        // 构造两个完整的 position/uv/color 顶点。
+        let payload = FrameVertexPayload::position_uv_color_f32([0.0; 16]);
+        // 每八个浮点必须派生一个顶点。
+        assert_eq!(payload.vertex_count(), Some(2));
     }
 
     // sampled 顶点颜色必须在共享 FramePlan 的单位域内。
