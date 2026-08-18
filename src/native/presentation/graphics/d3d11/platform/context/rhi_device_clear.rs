@@ -7,6 +7,15 @@ use ::windows::core::Interface;
 // 引入支持矩形清理的 D3D11.1 context 接口。
 use ::windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext1;
 
+// 在 Device 构造边界查询并冻结 D3D11.1 局部清理接口。
+pub(super) fn query_clear_context(
+    // 借用 D3D11CreateDevice 返回的 immediate context。
+    context: &::windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext,
+) -> Option<ID3D11DeviceContext1> {
+    // COM QueryInterface 的成功结果同时成为 capability 与执行 owner。
+    context.cast::<ID3D11DeviceContext1>().ok()
+}
+
 // 验证 D3D11 固有 ClearView 行为能够满足共享颜色清理输出状态。
 pub(super) fn validate_color_clear_contract(contract: RhiColorClearContract) -> Result<()> {
     // D3D11 清理固有地覆盖全部通道且不提供 dither，只接受当前唯一语义。
@@ -42,9 +51,12 @@ impl D3d11Context {
         };
         // D3D11.0 的 immediate context 没有 ClearView，能力不足时安全回退。
         let context = self
-            .context
-            .cast::<ID3D11DeviceContext1>()
-            .map_err(|_| rhi_not_implemented("clear_rect requires ID3D11DeviceContext1"))?;
+            // 读取构造期 capability 使用的同一可选 COM 接口。
+            .rhi_device
+            // 禁止执行路径重新查询并产生另一份能力事实。
+            .clear_rect_context()
+            // 直接误调用仍保留 typed 未实现错误。
+            .ok_or_else(|| rhi_not_implemented("clear_rect requires ID3D11DeviceContext1"))?;
         // 把 RHI 左上原点矩形直接交给 ClearView，避免改变 raster scissor 状态。
         let rect = RECT {
             left,

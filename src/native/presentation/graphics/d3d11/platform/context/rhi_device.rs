@@ -99,6 +99,11 @@ pub(super) struct D3d11RhiDevice {
     samplers: RhiResourceTable<SamplerHandle, D3d11RhiSampler>,
     // 保存两个 Adapter 共用的 pass 生命周期、目标、几何与采样绑定事实。
     pass: RhiPassState,
+    // 冻结构造期实际可用的 D3D11.1 局部清理接口和能力事实。
+    clear_context: Option<
+        // 接口存在时 capability 与执行路径必须共同消费这一份 COM owner。
+        ::windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext1,
+    >,
     // 只保存 D3D11 编码当前 pass 所需的原生 render target view。
     active_target: Option<::windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView>,
     // 保存共享的提交身份状态机，禁止 D3D11 绕过 Surface present 校验。
@@ -107,8 +112,11 @@ pub(super) struct D3d11RhiDevice {
 
 // 为 D3D11 RHI 状态提供初始化和资源查找辅助。
 impl D3d11RhiDevice {
-    // 创建没有资源和打开 pass 的初始状态。
-    pub(super) const fn new() -> Self {
+    // 创建没有资源和打开 pass，并冻结可选原生接口的初始状态。
+    pub(super) fn new(
+        // 借用构造成功的 immediate context 查询稳定 COM 能力。
+        context: &::windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext,
+    ) -> Self {
         // 返回可安全嵌入 D3D11 context 的空状态。
         Self {
             buffers: RhiResourceTable::new(),
@@ -117,10 +125,21 @@ impl D3d11RhiDevice {
             samplers: RhiResourceTable::new(),
             // 使用 API 无关状态机初始化 pass 生命周期。
             pass: RhiPassState::new(),
+            // 查询一次 D3D11.1 接口，避免能力声明与执行时二次查询分叉。
+            clear_context: rhi_device_clear::query_clear_context(context),
             active_target: None,
             // 使用 API 无关状态机初始化提交序列。
             submission_sequence: RhiSubmissionSequence::new(),
         }
+    }
+
+    // 返回构造时冻结的 D3D11.1 局部清理接口。
+    fn clear_rect_context(
+        // 只读借用当前 Device owner。
+        &self,
+    ) -> Option<&::windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext1> {
+        // capability 与 ClearView 执行必须读取同一个可选接口事实。
+        self.clear_context.as_ref()
     }
 
     // 通过一开始从 1 分配的句柄读取 buffer。
@@ -181,8 +200,8 @@ impl GraphicsDevice for D3d11Context {
         let mut capabilities = GraphicsDeviceCapabilities::full_gpu_baseline();
         // D3D11 scratch texture 提供重叠安全的区域移动。
         capabilities.texture_region_move = true;
-        // D3D11 scissor clear 已接入 FramePlan 局部清理。
-        capabilities.clear_rect = true;
+        // 只在构造期真实取得 D3D11.1 ClearView 接口时声明局部清理。
+        capabilities.clear_rect = self.rhi_device.clear_rect_context().is_some();
         // 返回不再读取 swapchain 或 Surface 状态的 Device 能力快照。
         capabilities
     }

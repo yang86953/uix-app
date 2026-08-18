@@ -326,6 +326,8 @@ pub(crate) fn create_with_driver(
         D3d11AdapterInfo::unavailable(driver)
     });
     let pipeline = D3d11Pipeline::new(&device)?;
+    // 在 context 移入 owner 前冻结薄 RHI 使用的可选原生接口能力。
+    let rhi_device = D3d11RhiDevice::new(&context);
     let mut ctx = D3d11Context {
         device,
         context,
@@ -341,8 +343,8 @@ pub(crate) fn create_with_driver(
         surface_generation: 0,
         // 构造成功后 context 立即处于可工作状态。
         shutdown: false,
-        // 初始化尚未创建资源的薄 RHI 状态。
-        rhi_device: D3d11RhiDevice::new(),
+        // 接管已经冻结原生能力且尚未创建资源的薄 RHI 状态。
+        rhi_device,
         // 默认不安排测试设备丢失。
         #[cfg(feature = "test-harness")]
         rhi_device_lost_for_test: false,
