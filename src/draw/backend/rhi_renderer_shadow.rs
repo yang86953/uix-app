@@ -7,8 +7,8 @@ use crate::native::present::rhi::{
     RhiViewport,
 };
 
-// 复用 renderer 主模块的计划类型和 shape 单位 quad 资源。
-use super::{BufferHandle, FramePlanCommand, FrameUniformPayload, RenderPassPlan, RhiRenderer};
+// 复用 renderer 主模块的无目标 pass 和 shape 单位 quad 资源。
+use super::{BufferHandle, FramePlanCommand, FrameUniformPayload, RhiRenderer, RhiRendererPass};
 
 // 保存一个已经完成几何 lowering 的仿射阴影。
 #[derive(Debug, Clone, Copy)]
@@ -148,7 +148,7 @@ impl RhiRenderer {
 
     // 将一个 Shadow 的固定常量和 draw packet 追加到既有 pass。
     pub(super) fn append_shadow_commands(
-        pass: &mut RenderPassPlan,
+        pass: &mut RhiRendererPass,
         viewport: RhiViewport,
         shadow: &RhiShadow,
         pipeline: PipelineBinding,
@@ -232,10 +232,8 @@ impl RhiRenderer {
         // 准备阴影 pipeline、单位 quad 和常量 buffer。
         let (pipeline, vertex_buffer, uniform_buffer) =
             self.ensure_shadow_resources(frame.device())?;
-        // 从封闭帧作用域取得唯一计划目标。
-        let target = frame.render_target();
-        // 创建 Surface 或 Offscreen pass，并保留调用方的 load/clear 语义。
-        let mut pass = RenderPassPlan::new(target, load);
+        // 创建由封闭帧绑定目标与 load 语义的无目标 pass。
+        let mut pass = frame.new_pass();
         // 所有阴影共享同一个物理 viewport。
         // 在第一个 Shadow draw 前建立静态单位 quad 的类型化内容事实。
         pass.push(FramePlanCommand::UploadVertex {
@@ -263,7 +261,7 @@ impl RhiRenderer {
             );
         }
         // 将阴影 painter pass 写入封闭帧唯一拥有的计划。
-        frame.plan_mut().push_pass(pass);
+        frame.push_pass(load, pass);
         // surface 计划最终 present，texture 计划只执行离屏 submit。
         frame.execute()?;
         // 资源由 renderer 跨帧复用，不能在这里销毁。

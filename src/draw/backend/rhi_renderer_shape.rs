@@ -7,8 +7,8 @@ use crate::native::present::rhi::{
     RhiShapeRasterParams, RhiViewport,
 };
 
-// 复用 renderer 主模块的计划类型和 shape payload。
-use super::{FramePlanCommand, FrameUniformPayload, RenderPassPlan, RhiRenderer, RhiShapeRect};
+// 复用 renderer 主模块的无目标 pass 和 shape payload。
+use super::{FramePlanCommand, FrameUniformPayload, RhiRenderer, RhiRendererPass, RhiShapeRect};
 
 // 把 renderer 的 Shape 载荷映射为共享 RHI 像素契约值对象。
 fn shape_uniform(viewport: RhiViewport, rect: &RhiShapeRect) -> RhiShapeRasterParams {
@@ -91,7 +91,7 @@ impl RhiRenderer {
 
     // 将一个 shape 的固定常量和 draw packet 追加到既有 pass。
     pub(super) fn append_shape_commands(
-        pass: &mut RenderPassPlan,
+        pass: &mut RhiRendererPass,
         viewport: RhiViewport,
         rect: &RhiShapeRect,
         pipeline: PipelineBinding,
@@ -175,10 +175,8 @@ impl RhiRenderer {
         // 准备 shape pipeline、单位 quad 和常量 buffer。
         let (pipeline, _, vertex_buffer, uniform_buffer) =
             self.ensure_shape_resources(frame.device())?;
-        // 从封闭帧作用域取得唯一计划目标。
-        let target = frame.render_target();
-        // 创建 Surface 或 Offscreen pass，并保留调用方的 load/clear 语义。
-        let mut pass = RenderPassPlan::new(target, load);
+        // 创建由封闭帧绑定目标与 load 语义的无目标 pass。
+        let mut pass = frame.new_pass();
         // 所有 shape 共享同一个物理 viewport。
         // 在第一个 Shape draw 前建立静态单位 quad 的类型化内容事实。
         pass.push(FramePlanCommand::UploadVertex {
@@ -210,7 +208,7 @@ impl RhiRenderer {
             )));
         }
         // 将 shape painter pass 写入封闭帧唯一拥有的计划。
-        frame.plan_mut().push_pass(pass);
+        frame.push_pass(load, pass);
         // surface 计划最终 present，texture 计划只执行离屏 submit。
         frame.execute()?;
         // 资源由 renderer 跨帧复用，不能在这里销毁。

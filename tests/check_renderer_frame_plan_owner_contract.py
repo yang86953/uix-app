@@ -16,15 +16,21 @@ EXECUTION = ROOT / "src/draw/backend/rhi_renderer_execution.rs"
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
 # 定位 D3D11 统一 RHI device。
 D3D11 = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs"
-# 定位核心 producer 源码集合。
+# 定位使用 RhiRendererFrame 的核心 producer 源码集合；独立 blur 事务不属于该边界。
 PRODUCERS = (
+    # 覆盖实体与纹理 quad producer。
     ROOT / "src/draw/backend/rhi_renderer.rs",
-    ROOT / "src/draw/backend/rhi_renderer_execution.rs",
+    # 覆盖 coverage producer。
     ROOT / "src/draw/backend/rhi_renderer_coverage.rs",
+    # 覆盖 gradient producer。
     ROOT / "src/draw/backend/rhi_renderer_gradient.rs",
+    # 覆盖混合 painter-order producer。
     ROOT / "src/draw/backend/rhi_renderer_mixed.rs",
+    # 覆盖已有纹理采样 producer。
     ROOT / "src/draw/backend/rhi_renderer_sampled.rs",
+    # 覆盖 shape producer。
     ROOT / "src/draw/backend/rhi_renderer_shape.rs",
+    # 覆盖 shadow producer。
     ROOT / "src/draw/backend/rhi_renderer_shadow.rs",
 )
 
@@ -42,14 +48,28 @@ class RendererFramePlanOwnerContractTests(unittest.TestCase):
         # Offscreen 构造必须建立 Device-only 计划。
         self.assertIn("plan: FramePlan::offscreen()", source)
 
-    # 帧只暴露当前计划的可变窄入口，不泄露独立计划副本。
-    def test_plan_mut_is_the_only_plan_accessor(self) -> None:
+    # pass 只暂存命令，target 与独立 load 状态必须由 Frame owner 绑定。
+    def test_frame_owns_pass_target_and_load_binding(self) -> None:
         # 读取执行组件源码。
         source = EXECUTION.read_text(encoding="utf-8")
-        # 必须存在返回内部可变计划的入口。
-        self.assertRegex(source, r"fn\s+plan_mut\s*\([^)]*\)\s*->\s*&mut\s+FramePlan")
-        # 不得存在返回独立或只读计划的同名 accessor。
-        self.assertNotRegex(source, r"fn\s+plan\s*\(")
+        # pass 结构只能拥有命令序列，不得保存目标或 load。
+        pass_start = source.index("struct RhiRendererPass")
+        pass_end = source.index("impl RhiRendererPass", pass_start)
+        pass_region = source[pass_start:pass_end]
+        self.assertRegex(pass_region, r"commands\s*:\s*Vec<FramePlanCommand>")
+        self.assertNotIn("RenderTargetRef", pass_region)
+        self.assertNotIn("LoadAction", pass_region)
+        # Frame 必须提供无目标的命令包构造器。
+        self.assertRegex(source, r"fn\s+new_pass\s*\([^)]*\)\s*->\s*RhiRendererPass")
+        # push_pass 必须在 owner 内绑定目标与 load。
+        push_start = source.index("pub(crate) fn push_pass")
+        push_region = source[push_start : push_start + 700]
+        self.assertIn("RenderPassPlan::new(self.render_target(), load)", push_region)
+        self.assertIn("self.plan.push_pass", push_region)
+        # 旧计划 accessor 必须彻底删除。
+        self.assertNotIn("plan_mut", source)
+        # render_target 只能是 Frame 内部绑定实现，不能成为 producer 入口。
+        self.assertNotRegex(source, r"pub\(crate\)\s+const\s+fn\s+render_target")
 
     # execute 必须从 self.plan 借用，且签名不得接收外部计划。
     def test_execute_consumes_self_plan(self) -> None:
@@ -71,8 +91,13 @@ class RendererFramePlanOwnerContractTests(unittest.TestCase):
             source = path.read_text(encoding="utf-8")
             # 文件名必须出现在失败消息中，便于定位回归。
             self.assertNotIn(".plan()", source, msg=f"旧 plan accessor remains in {path}")
-            # 禁止旧的 execute(&plan) 调用形态。
-            self.assertNotRegex(source, r"\.execute\s*\(\s*&\s*plan\s*\)", msg=f"旧 execute(&plan) remains in {path}")
+            # producer 不得自行构造携带 target/load 的真实 RenderPassPlan。
+            self.assertNotIn(".plan_mut()", source, msg=f"旧 plan_mut remains in {path}")
+            self.assertNotIn("RenderPassPlan::new", source, msg=f"producer owns pass target in {path}")
+            self.assertNotIn("frame.render_target()", source, msg=f"producer owns target selection in {path}")
+            # producer 必须通过 Frame owner 的新 pass API 交付命令包。
+            self.assertIn("new_pass", source, msg=f"producer lacks new_pass in {path}")
+            self.assertIn("push_pass", source, msg=f"producer lacks push_pass in {path}")
 
     # 两类 Adapter 都必须只实现统一 DrawPacket 消费入口。
     def test_adapters_consume_draw_packet_without_frame_dependency(self) -> None:

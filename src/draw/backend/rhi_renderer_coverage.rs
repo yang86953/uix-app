@@ -13,8 +13,7 @@ use crate::native::present::rhi::{
 
 // 复用 renderer 主模块的计划类型和 coverage payload。
 use super::{
-    FramePlanCommand, FrameUniformPayload, FrameVertexPayload, RenderPassPlan, RhiCoverageQuad,
-    RhiRenderer,
+    FramePlanCommand, FrameUniformPayload, FrameVertexPayload, RhiCoverageQuad, RhiRenderer,
 };
 
 // 为 coverage shader 创建或复用 R8 专用的 pipeline、buffer 和 sampler。
@@ -226,10 +225,8 @@ impl RhiRenderer {
             // 记录上传完成且可以进入 FramePlan 的 coverage texture。
             textures.push(texture);
         }
-        // 从封闭帧作用域取得唯一计划目标。
-        let target = frame.render_target();
-        // 创建 Surface 或 Offscreen pass，并保留调用方的 load/clear 语义。
-        let mut pass = RenderPassPlan::new(target, load);
+        // 创建不携带 target/load 的 coverage pass 命令包。
+        let mut pass = frame.new_pass();
         // 每个 glyph 以独立 texture binding 和 scissor 保留 painter order。
         for (quad, texture) in quads.iter().zip(textures.iter().copied()) {
             // 生成当前 glyph 的顶点数据。
@@ -259,7 +256,7 @@ impl RhiRenderer {
             )));
         }
         // 将 pass 追加到封闭帧唯一拥有的计划中并保留 glyph painter order。
-        frame.plan_mut().push_pass(pass);
+        frame.push_pass(load, pass);
         // 封闭帧决定最终 Surface present 或 Offscreen submit。
         let execution = frame.execute();
         // 计划结束后释放本次 glyph 的临时 texture。
