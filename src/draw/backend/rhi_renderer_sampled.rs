@@ -152,7 +152,6 @@ impl RhiRenderer {
         // 上传已经存在纹理的类型化 sampled quad 顶点。
         pass.push(FramePlanCommand::UploadVertex {
             buffer: vertex_buffer,
-            offset: 0,
             data: FrameVertexPayload::position_uv_color_f32(super::mixed::sampled_vertices(&quad)),
         });
         // 上传当前目标的类型化 viewport uniform。

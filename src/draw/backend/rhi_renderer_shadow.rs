@@ -2,8 +2,8 @@
 
 // 引入 RHI 计划执行所需的资源描述与句柄。
 use crate::native::present::rhi::{
-    BufferDesc, BufferUsage, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineBinding,
-    PipelineDesc, PipelineKind, RhiShadowRasterParams, RhiViewport,
+    BufferDesc, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc,
+    PipelineKind, RhiBufferUpload, RhiShadowRasterParams, RhiViewport,
 };
 
 // 复用 renderer 主模块的计划类型和 shape 单位 quad 资源。
@@ -129,16 +129,19 @@ impl RhiRenderer {
             buffer
         } else {
             // 按共享 pipeline 顶点布局创建精确容量。
-            let buffer = device.create_buffer(BufferDesc {
+            let buffer = device.create_buffer(BufferDesc::vertex(
                 // 保存六个 float2 顶点的总字节数。
-                size_bytes: unit_vertices.len() * std::mem::size_of::<f32>(),
+                unit_vertices.len() * std::mem::size_of::<f32>(),
                 // 使用 BoxShadow 契约声明的唯一顶点步长。
-                stride_bytes: PipelineKind::BoxShadow.contract().vertex.stride_bytes(),
-                // 声明资源只能作为顶点输入。
-                usage: BufferUsage::Vertex,
-            })?;
+                PipelineKind::BoxShadow.contract().vertex.stride_bytes(),
+            ))?;
             // 首次绑定前上传单位 quad。
-            device.update_buffer(buffer, 0, &RhiRenderer::encode_f32s(&unit_vertices))?;
+            device.update_buffer(RhiBufferUpload::new(
+                // 绑定刚创建的资源身份。
+                buffer,
+                // 上传完整且元素对齐的单位 quad。
+                &RhiRenderer::encode_f32s(&unit_vertices),
+            ))?;
             // 缓存 Shadow vertex buffer 句柄。
             self.shadow_vertex_buffer = Some(buffer);
             // 返回刚创建的顶点资源。
@@ -150,14 +153,10 @@ impl RhiRenderer {
             uniform
         } else {
             // 使用 BoxShadow 契约声明的精确常量容量。
-            let uniform = device.create_buffer(BufferDesc {
+            let uniform = device.create_buffer(BufferDesc::uniform(
                 // 禁止借用 Shape 的同尺寸常量资源形成隐式耦合。
-                size_bytes: PipelineKind::BoxShadow.contract().uniform.size_bytes(),
-                // uniform buffer 不使用顶点步长。
-                stride_bytes: 0,
-                // 声明资源只能作为常量输入。
-                usage: BufferUsage::Uniform,
-            })?;
+                PipelineKind::BoxShadow.contract().uniform.size_bytes(),
+            ))?;
             // 缓存 Shadow uniform buffer 句柄。
             self.shadow_uniform = Some(uniform);
             // 返回刚创建的常量资源。

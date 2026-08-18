@@ -5,9 +5,9 @@ use std::sync::Arc;
 
 // 引入最终执行计划所需的 viewport、资源和 context 类型。
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, BufferUsage, GraphicsDevice, PipelineBinding, PipelineDesc,
-    PipelineKind, RhiExtent, RhiMsdfRasterParams, RhiScissor, RhiTextureRegion, RhiViewport,
-    SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
+    BufferDesc, BufferHandle, GraphicsDevice, PipelineBinding, PipelineDesc, PipelineKind,
+    RhiExtent, RhiMsdfRasterParams, RhiScissor, RhiTextureRegion, RhiViewport, SamplerDesc,
+    SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
 };
 
 // 固定单页尺寸，让 atlas 的资源预算和 adapter 上传粒度保持稳定。
@@ -122,11 +122,10 @@ impl RhiRenderer {
             uniform
         } else {
             // MSDFConstants = viewport、source extent、range 和 padding。
-            let uniform = device.create_buffer(BufferDesc {
-                size_bytes: PipelineKind::MsdfGlyphQuad.contract().uniform.size_bytes(),
-                stride_bytes: 0,
-                usage: BufferUsage::Uniform,
-            })?;
+            let uniform = device.create_buffer(BufferDesc::uniform(
+                // 常量容量只来自共享 MSDF Uniform ABI。
+                PipelineKind::MsdfGlyphQuad.contract().uniform.size_bytes(),
+            ))?;
             // 缓存 MSDF uniform 句柄。
             self.msdf_uniform = Some(uniform);
             // 返回新创建的 MSDF uniform。

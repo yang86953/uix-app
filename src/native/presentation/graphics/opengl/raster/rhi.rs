@@ -4,9 +4,9 @@
 use crate::core::error::Result;
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDeviceCapabilities, LoadAction, PipelineDesc,
-    PipelineHandle, RenderTargetHandle, RhiExtent, RhiScissor, RhiTextureRegion, RhiViewport,
-    SampledTextureBinding, SamplerDesc, SamplerHandle, SubmissionHandle, TextureCopy, TextureDesc,
-    TextureHandle, TextureMove,
+    PipelineHandle, RenderTargetHandle, RhiBufferUpload, RhiExtent, RhiScissor, RhiTextureRegion,
+    RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle, SubmissionHandle, TextureCopy,
+    TextureDesc, TextureHandle, TextureMove,
 };
 // 复用父模块中的 OpenGL pipeline 和资源设备类型。
 use super::{
@@ -49,14 +49,9 @@ impl OpenGlRasterPipeline {
     }
 
     // 更新通用 buffer。
-    pub(crate) fn rhi_update_buffer(
-        &mut self,
-        buffer: BufferHandle,
-        offset: usize,
-        data: &[u8],
-    ) -> Result<()> {
+    pub(crate) fn rhi_update_buffer(&mut self, upload: RhiBufferUpload<'_>) -> Result<()> {
         // 上传与 CPU uniform 镜像由同一个 RHI owner 完成。
-        self.with_rhi(|gl, rhi| rhi.update_buffer(gl, buffer, offset, data))
+        self.with_rhi(|gl, rhi| rhi.update_buffer(gl, upload))
     }
 
     // 创建通用 texture。

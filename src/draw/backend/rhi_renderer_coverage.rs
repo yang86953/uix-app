@@ -238,7 +238,6 @@ impl RhiRenderer {
             // 上传当前 glyph 的类型化 float8 顶点数据。
             pass.push(FramePlanCommand::UploadVertex {
                 buffer: vertex_buffer,
-                offset: 0,
                 data: FrameVertexPayload::position_uv_color_f32(vertices),
             });
             // 上传当前 pass 的类型化物理 viewport uniform。

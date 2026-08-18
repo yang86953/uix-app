@@ -9,8 +9,8 @@ use std::sync::Arc;
 use crate::core::error::{Errc, Error, Result};
 // 引入薄 RHI 的资源、能力和执行类型。
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, BufferUsage, DrawPacket, DrawRange, GraphicsDevice, LoadAction,
-    PipelineDesc, PipelineKind, RhiExtent, RhiScissor, RhiViewport, SampledTextureBinding,
+    BufferDesc, BufferHandle, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineDesc,
+    PipelineKind, RhiBufferUpload, RhiExtent, RhiScissor, RhiViewport, SampledTextureBinding,
     SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
 };
 
@@ -315,11 +315,12 @@ impl RhiRenderer {
                 device.destroy_buffer(previous)?;
             }
             // 创建按 float2 顶点 ABI 绑定的 vertex buffer。
-            let buffer = device.create_buffer(BufferDesc {
-                size_bytes: vertex_bytes.max(8),
-                stride_bytes: PipelineKind::SolidMesh.contract().vertex.stride_bytes(),
-                usage: BufferUsage::Vertex,
-            })?;
+            let buffer = device.create_buffer(BufferDesc::vertex(
+                // 至少保留一个完整 float2 顶点容量。
+                vertex_bytes.max(8),
+                // 步长只来自共享 pipeline 顶点 ABI。
+                PipelineKind::SolidMesh.contract().vertex.stride_bytes(),
+            ))?;
             // 记录新容量和句柄。
             self.vertex_capacity = vertex_bytes.max(8);
             self.vertex_buffer = Some(buffer);
@@ -331,11 +332,10 @@ impl RhiRenderer {
             uniform
         } else {
             // D3D11 及其他 adapter 都按 16 字节常量布局对齐。
-            let uniform = device.create_buffer(BufferDesc {
-                size_bytes: PipelineKind::SolidMesh.contract().uniform.size_bytes(),
-                stride_bytes: 0,
-                usage: BufferUsage::Uniform,
-            })?;
+            let uniform = device.create_buffer(BufferDesc::uniform(
+                // 常量容量只来自共享 pipeline Uniform ABI。
+                PipelineKind::SolidMesh.contract().uniform.size_bytes(),
+            ))?;
             // 缓存 uniform 句柄。
             self.solid_uniform = Some(uniform);
             uniform
@@ -376,11 +376,12 @@ impl RhiRenderer {
                 .ok_or_else(|| rhi_state("textured vertex buffer cache is empty"))?
         } else {
             // 创建按 position/uv/color float8 ABI 绑定的 vertex buffer。
-            let buffer = device.create_buffer(BufferDesc {
-                size_bytes: quad_bytes,
-                stride_bytes: PipelineKind::TexturedQuad.contract().vertex.stride_bytes(),
-                usage: BufferUsage::Vertex,
-            })?;
+            let buffer = device.create_buffer(BufferDesc::vertex(
+                // 固定六顶点 quad 的总容量。
+                quad_bytes,
+                // 步长只来自共享 pipeline 顶点 ABI。
+                PipelineKind::TexturedQuad.contract().vertex.stride_bytes(),
+            ))?;
             // 记录容量和句柄。
             self.textured_vertex_capacity = quad_bytes;
             self.textured_vertex_buffer = Some(buffer);
@@ -392,11 +393,10 @@ impl RhiRenderer {
             uniform
         } else {
             // sampled quad 的 VS 只读取 viewport.xy 和 padding.xy。
-            let uniform = device.create_buffer(BufferDesc {
-                size_bytes: PipelineKind::TexturedQuad.contract().uniform.size_bytes(),
-                stride_bytes: 0,
-                usage: BufferUsage::Uniform,
-            })?;
+            let uniform = device.create_buffer(BufferDesc::uniform(
+                // 常量容量只来自共享 pipeline Uniform ABI。
+                PipelineKind::TexturedQuad.contract().uniform.size_bytes(),
+            ))?;
             // 缓存 uniform 句柄。
             self.textured_uniform = Some(uniform);
             uniform
@@ -473,13 +473,19 @@ impl RhiRenderer {
             buffer
         } else {
             // 创建位置 float2 ABI 的默认 vertex buffer。
-            let buffer = device.create_buffer(BufferDesc {
-                size_bytes: unit_vertices.len() * std::mem::size_of::<f32>(),
-                stride_bytes: PipelineKind::GradientRect.contract().vertex.stride_bytes(),
-                usage: BufferUsage::Vertex,
-            })?;
+            let buffer = device.create_buffer(BufferDesc::vertex(
+                // 保存六个 float2 顶点的精确容量。
+                unit_vertices.len() * std::mem::size_of::<f32>(),
+                // 步长只来自共享 pipeline 顶点 ABI。
+                PipelineKind::GradientRect.contract().vertex.stride_bytes(),
+            ))?;
             // 首次绑定前上传单位 quad。
-            device.update_buffer(buffer, 0, &Self::encode_f32s(&unit_vertices))?;
+            device.update_buffer(RhiBufferUpload::new(
+                // 绑定刚创建的资源身份。
+                buffer,
+                // 上传完整且元素对齐的单位 quad。
+                &Self::encode_f32s(&unit_vertices),
+            ))?;
             // 缓存单位 quad 句柄。
             self.gradient_vertex_buffer = Some(buffer);
             buffer
@@ -490,11 +496,10 @@ impl RhiRenderer {
             uniform
         } else {
             // GradientConstants = viewport、origin/edge_x、edge_y、两色与参数。
-            let uniform = device.create_buffer(BufferDesc {
-                size_bytes: PipelineKind::GradientRect.contract().uniform.size_bytes(),
-                stride_bytes: 0,
-                usage: BufferUsage::Uniform,
-            })?;
+            let uniform = device.create_buffer(BufferDesc::uniform(
+                // 常量容量只来自共享 pipeline Uniform ABI。
+                PipelineKind::GradientRect.contract().uniform.size_bytes(),
+            ))?;
             // 缓存渐变 uniform 句柄。
             self.gradient_uniform = Some(uniform);
             uniform
@@ -582,7 +587,6 @@ impl RhiRenderer {
             // 上传当前 mesh 的类型化 position-float2 顶点。
             pass.push(FramePlanCommand::UploadVertex {
                 buffer: vertex_buffer,
-                offset: 0,
                 data: FrameVertexPayload::position_f32x2(mesh.vertices.clone()),
             });
             // 类型化 MeshConstants = viewport.xy、padding.xy、color.rgba。
@@ -803,7 +807,6 @@ impl RhiRenderer {
             // 上传当前 quad 的类型化 float8 顶点数据。
             pass.push(FramePlanCommand::UploadVertex {
                 buffer: vertex_buffer,
-                offset: 0,
                 data: FrameVertexPayload::position_uv_color_f32(vertices),
             });
             // 上传当前 pass 的类型化物理 viewport uniform。

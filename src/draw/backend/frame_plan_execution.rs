@@ -4,7 +4,8 @@
 use crate::core::error::{Errc, Error, Result};
 // 引入薄 RHI 的 Device、Surface、组合 context、目标句柄与提交句柄。
 use crate::native::present::rhi::{
-    GraphicsContextRhi, GraphicsDevice, GraphicsSurface, RenderTargetHandle, SubmissionHandle,
+    GraphicsContextRhi, GraphicsDevice, GraphicsSurface, RenderTargetHandle, RhiBufferUpload,
+    SubmissionHandle,
 };
 
 // 引入父模块的计划私有结构。
@@ -151,22 +152,20 @@ where
                 self.device.bind_sampled_texture(*binding)
             }
             // 在唯一执行边界把类型化顶点编码为 Device 原语所需字节。
-            FramePlanCommand::UploadVertex {
-                buffer,
-                offset,
-                data,
-            } => {
+            FramePlanCommand::UploadVertex { buffer, data } => {
                 // 字节表示不再进入 FramePlan 存储或上层 renderer。
                 let bytes = data.encode_ne_bytes();
-                // 保持 buffer、offset 和类型化载荷的计划顺序。
-                self.device.update_buffer(*buffer, *offset, &bytes)
+                // 将资源身份与从零开始的类型化载荷绑定成唯一上传命令。
+                self.device
+                    .update_buffer(RhiBufferUpload::new(*buffer, &bytes))
             }
             // 在唯一执行边界把类型化 Uniform 编码为固定 ABI 字节。
             FramePlanCommand::UploadUniform { buffer, data } => {
                 // 每个 Uniform 变体只调用共享值对象拥有的编码器。
                 let bytes = data.encode_ne_bytes();
-                // Uniform 更新始终完整覆盖从零开始的固定常量 buffer。
-                self.device.update_buffer(*buffer, 0, &bytes)
+                // Uniform 更新通过同一上传值对象进入完整替换门禁。
+                self.device
+                    .update_buffer(RhiBufferUpload::new(*buffer, &bytes))
             }
             // 执行已经完成高层语义 lowering 的 draw packet。
             FramePlanCommand::Draw(packet) => self.device.draw(*packet),

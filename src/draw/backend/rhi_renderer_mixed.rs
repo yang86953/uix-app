@@ -3,7 +3,7 @@
 use crate::core::error::Result;
 // 引入薄 RHI 的 command、resource 和 target 类型。
 use crate::native::present::rhi::{
-    DrawPacket, DrawRange, GraphicsDevice, LoadAction, RhiExtent, RhiViewport,
+    DrawPacket, DrawRange, GraphicsDevice, LoadAction, RhiBufferUpload, RhiExtent, RhiViewport,
     SampledTextureBinding, TextureDesc, TextureFormat,
 };
 // 引入父 renderer 的帧计划和已完成 lowering 的 payload。
@@ -172,16 +172,22 @@ impl RhiRenderer {
             buffer
         } else {
             // 创建 position float2 ABI 的 vertex buffer。
-            let buffer = device.create_buffer(crate::native::present::rhi::BufferDesc {
-                size_bytes: unit_vertices.len() * std::mem::size_of::<f32>(),
-                stride_bytes: crate::native::present::rhi::PipelineKind::Sector
+            let buffer = device.create_buffer(crate::native::present::rhi::BufferDesc::vertex(
+                // 保存六个 float2 顶点的精确容量。
+                unit_vertices.len() * std::mem::size_of::<f32>(),
+                // 步长只来自共享 Sector 顶点 ABI。
+                crate::native::present::rhi::PipelineKind::Sector
                     .contract()
                     .vertex
                     .stride_bytes(),
-                usage: crate::native::present::rhi::BufferUsage::Vertex,
-            })?;
+            ))?;
             // 首次绑定前上传单位 quad。
-            device.update_buffer(buffer, 0, &RhiRenderer::encode_f32s(&unit_vertices))?;
+            device.update_buffer(RhiBufferUpload::new(
+                // 绑定刚创建的资源身份。
+                buffer,
+                // 上传完整且元素对齐的单位 quad。
+                &RhiRenderer::encode_f32s(&unit_vertices),
+            ))?;
             // 缓存单位 quad 句柄。
             self.sector_vertex_buffer = Some(buffer);
             buffer
@@ -192,14 +198,14 @@ impl RhiRenderer {
             uniform
         } else {
             // D3D11 常量布局由 viewport、矩形、颜色和角度四个 float4 组成。
-            let uniform = device.create_buffer(crate::native::present::rhi::BufferDesc {
-                size_bytes: crate::native::present::rhi::PipelineKind::Sector
-                    .contract()
-                    .uniform
-                    .size_bytes(),
-                stride_bytes: 0,
-                usage: crate::native::present::rhi::BufferUsage::Uniform,
-            })?;
+            let uniform =
+                device.create_buffer(crate::native::present::rhi::BufferDesc::uniform(
+                    // 常量容量只来自共享 Sector Uniform ABI。
+                    crate::native::present::rhi::PipelineKind::Sector
+                        .contract()
+                        .uniform
+                        .size_bytes(),
+                ))?;
             // 缓存扇形常量句柄。
             self.sector_uniform = Some(uniform);
             uniform
@@ -442,7 +448,6 @@ impl RhiRenderer {
                     // 上传当前 mesh 的类型化 position-float2 顶点。
                     pass.push(FramePlanCommand::UploadVertex {
                         buffer: vertex_buffer,
-                        offset: 0,
                         data: FrameVertexPayload::position_f32x2(mesh.vertices.clone()),
                     });
                     // 上传类型化 MeshConstants。
@@ -487,7 +492,6 @@ impl RhiRenderer {
                     // 上传类型化 float8 quad 顶点。
                     pass.push(FramePlanCommand::UploadVertex {
                         buffer: vertex_buffer,
-                        offset: 0,
                         data: FrameVertexPayload::position_uv_color_f32(textured_vertices(quad)),
                     });
                     // 上传类型化 viewport uniform。
@@ -530,7 +534,6 @@ impl RhiRenderer {
                     // 上传类型化 float8 quad 顶点。
                     pass.push(FramePlanCommand::UploadVertex {
                         buffer: vertex_buffer,
-                        offset: 0,
                         data: FrameVertexPayload::position_uv_color_f32(sampled_vertices(quad)),
                     });
                     // 上传类型化 viewport uniform。
@@ -569,7 +572,6 @@ impl RhiRenderer {
                     // 上传类型化 coverage quad 顶点。
                     pass.push(FramePlanCommand::UploadVertex {
                         buffer: vertex_buffer,
-                        offset: 0,
                         data: FrameVertexPayload::position_uv_color_f32(
                             RhiRenderer::coverage_quad_vertices(quad),
                         ),
@@ -608,7 +610,6 @@ impl RhiRenderer {
                     // 上传支持旋转和剪切以及 atlas UV 的类型化 MSDF quad 顶点。
                     pass.push(FramePlanCommand::UploadVertex {
                         buffer: vertex_buffer,
-                        offset: 0,
                         data: FrameVertexPayload::position_uv_color_f32(
                             RhiRenderer::msdf_quad_vertices_with_uv(quad, msdf_uvs[index]),
                         ),

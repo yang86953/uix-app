@@ -3,10 +3,10 @@
 // 引入稳定错误类型。
 use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
-    BLUR_WEIGHT_COUNT, BufferDesc, BufferHandle, BufferUsage, DrawPacket, DrawRange,
-    GraphicsDevice, LoadAction, PipelineDesc, PipelineKind, RenderTargetHandle,
-    RhiBlurRasterParams, RhiColor, RhiExtent, RhiScissor, RhiViewport, SampledTextureBinding,
-    SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
+    BLUR_WEIGHT_COUNT, BufferDesc, BufferHandle, DrawPacket, DrawRange, GraphicsDevice, LoadAction,
+    PipelineDesc, PipelineKind, RenderTargetHandle, RhiBlurRasterParams, RhiColor, RhiExtent,
+    RhiScissor, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc,
+    TextureFormat, TextureHandle,
 };
 
 // 引入父 renderer 已导入的有序 FramePlan 类型和资源缓存。
@@ -123,11 +123,12 @@ impl RhiRenderer {
             buffer
         } else {
             // 创建动态位置 buffer，区域坐标由每次 blur 的物理 region 决定。
-            let buffer = device.create_buffer(BufferDesc {
-                size_bytes: 6 * 2 * std::mem::size_of::<f32>(),
-                stride_bytes: PipelineKind::BlurPass.contract().vertex.stride_bytes(),
-                usage: BufferUsage::Vertex,
-            })?;
+            let buffer = device.create_buffer(BufferDesc::vertex(
+                // 保存六个 float2 顶点的精确容量。
+                6 * 2 * std::mem::size_of::<f32>(),
+                // 步长只来自共享 Blur 顶点 ABI。
+                PipelineKind::BlurPass.contract().vertex.stride_bytes(),
+            ))?;
             // 缓存区域 vertex buffer 句柄。
             self.blur_vertex_buffer = Some(buffer);
             buffer
@@ -138,11 +139,10 @@ impl RhiRenderer {
             uniform
         } else {
             // 按 D3D11 和其他 adapter 的 16-byte cbuffer ABI 创建资源。
-            let uniform = device.create_buffer(BufferDesc {
-                size_bytes: PipelineKind::BlurPass.contract().uniform.size_bytes(),
-                stride_bytes: 0,
-                usage: BufferUsage::Uniform,
-            })?;
+            let uniform = device.create_buffer(BufferDesc::uniform(
+                // 常量容量只来自共享 Blur Uniform ABI。
+                PipelineKind::BlurPass.contract().uniform.size_bytes(),
+            ))?;
             // 缓存 blur uniform 句柄。
             self.blur_uniform = Some(uniform);
             uniform
@@ -264,7 +264,6 @@ impl RhiRenderer {
         // 上传当前区域的类型化 NDC 顶点。
         horizontal.push(FramePlanCommand::UploadVertex {
             buffer: vertex_buffer,
-            offset: 0,
             data: vertices.clone(),
         });
         // 上传水平采样方向和类型化高斯常量。
@@ -301,7 +300,6 @@ impl RhiRenderer {
         // 复用相同的类型化区域顶点。
         vertical.push(FramePlanCommand::UploadVertex {
             buffer: vertex_buffer,
-            offset: 0,
             data: vertices,
         });
         // 上传垂直采样方向和类型化高斯常量。

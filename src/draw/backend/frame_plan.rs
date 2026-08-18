@@ -54,8 +54,6 @@ pub(crate) enum FramePlanCommand {
     UploadVertex {
         // 保存目标顶点 buffer。
         buffer: crate::native::present::rhi::BufferHandle,
-        // 保存字节偏移。
-        offset: usize,
         // 保存声明布局和有限浮点值组成的顶点载荷。
         data: FrameVertexPayload,
     },
@@ -399,10 +397,10 @@ mod tests {
     // 引入测试计划依赖的薄 RHI 类型。
     use crate::native::present::rhi::{
         BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, GraphicsSurface,
-        LoadAction, PipelineBinding, PipelineHandle, PipelineKind, RenderTargetHandle, RhiColor,
-        RhiExtent, RhiMeshRasterParams, RhiSampledRasterParams, RhiScissor, RhiTextureTransfer,
-        RhiViewport, SampledTextureBinding, SubmissionHandle, SurfaceFrame, SurfaceToken,
-        TextureCopy, TextureHandle, TextureMove,
+        LoadAction, PipelineBinding, PipelineHandle, PipelineKind, RenderTargetHandle,
+        RhiBufferUpload, RhiColor, RhiExtent, RhiMeshRasterParams, RhiSampledRasterParams,
+        RhiScissor, RhiTextureTransfer, RhiViewport, SampledTextureBinding, SubmissionHandle,
+        SurfaceFrame, SurfaceToken, TextureCopy, TextureHandle, TextureMove,
     };
     // 引入当前文件的计划类型。
     use super::{
@@ -489,12 +487,7 @@ mod tests {
         }
 
         // 记录 buffer 上传，验证它位于 draw 前且不会被 adapter 忽略。
-        fn update_buffer(
-            &mut self,
-            _buffer: BufferHandle,
-            _offset: usize,
-            _data: &[u8],
-        ) -> Result<()> {
+        fn update_buffer(&mut self, _upload: RhiBufferUpload<'_>) -> Result<()> {
             // 记录调用事件。
             self.log.push_back("update_buffer");
             // 返回成功。
@@ -669,14 +662,9 @@ mod tests {
         }
 
         // 把不可变上传载荷委托给内嵌记录 device。
-        fn update_buffer(
-            &mut self,
-            buffer: BufferHandle,
-            offset: usize,
-            data: &[u8],
-        ) -> Result<()> {
+        fn update_buffer(&mut self, upload: RhiBufferUpload<'_>) -> Result<()> {
             // 复用唯一测试记录路径。
-            self.device.update_buffer(buffer, offset, data)
+            self.device.update_buffer(upload)
         }
 
         // 把 draw packet 委托给内嵌记录 device。

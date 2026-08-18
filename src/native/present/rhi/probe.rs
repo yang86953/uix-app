@@ -2,8 +2,8 @@
 
 // 引入探针创建、绘制、提交和销毁所需的共享 RHI 类型。
 use super::{
-    BufferDesc, BufferUsage, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineDesc,
-    PipelineKind, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, RhiShapeRasterParams,
+    BufferDesc, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineDesc, PipelineKind,
+    RenderTargetHandle, RhiBufferUpload, RhiColor, RhiExtent, RhiScissor, RhiShapeRasterParams,
     RhiTextureRegion, RhiTextureTransfer, RhiViewport, SamplerDesc, TextureDesc, TextureFormat,
     TextureMove,
 };
@@ -36,31 +36,26 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
         vertex_bytes.extend_from_slice(&value.to_ne_bytes());
     }
     // 创建 Solid 与 Shape 共用的真实单位 quad 顶点 buffer。
-    let vertex_buffer = device.create_buffer(BufferDesc {
+    let vertex_buffer = device.create_buffer(BufferDesc::vertex(
         // 六个 float2 顶点占四十八字节。
-        size_bytes: vertex_bytes.len(),
+        vertex_bytes.len(),
         // 两个 float 组成一个 position。
-        stride_bytes: PipelineKind::SolidMesh.contract().vertex.stride_bytes(),
-        // 声明顶点用途。
-        usage: BufferUsage::Vertex,
-    })?;
+        PipelineKind::SolidMesh.contract().vertex.stride_bytes(),
+    ))?;
     // 上传单位 quad，避免零顶点只能验证命令而不能覆盖 Shape 插值。
-    device.update_buffer(vertex_buffer, 0, &vertex_bytes)?;
+    device.update_buffer(RhiBufferUpload::new(vertex_buffer, &vertex_bytes))?;
     // 创建 Solid mesh 所需的 32 字节 uniform ABI。
-    let solid_uniform_buffer = device.create_buffer(BufferDesc {
+    let solid_uniform_buffer = device.create_buffer(BufferDesc::uniform(
         // MeshConstants 固定占三十二字节。
-        size_bytes: PipelineKind::SolidMesh.contract().uniform.size_bytes(),
-        // uniform 不使用顶点步长。
-        stride_bytes: 0,
-        // 声明 uniform 用途。
-        usage: BufferUsage::Uniform,
-    })?;
+        PipelineKind::SolidMesh.contract().uniform.size_bytes(),
+    ))?;
     // 上传有限 viewport、padding 和透明颜色常量。
-    device.update_buffer(
+    device.update_buffer(RhiBufferUpload::new(
+        // 绑定刚创建的 Solid Uniform。
         solid_uniform_buffer,
-        0,
+        // 上传完整的零初始化常量块。
         &vec![0; PipelineKind::SolidMesh.contract().uniform.size_bytes()],
-    )?;
+    ))?;
     // 使用共享 Shape 值对象构造一个真实描边探针。
     let shape_params = RhiShapeRasterParams::new(
         // 使用最小 render target 的物理视口。
@@ -82,16 +77,17 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
     // 编码完整共享 Shape ABI。
     let shape_uniform_bytes = shape_params.encode_ne_bytes();
     // 创建 Shape 固定 ABI uniform buffer。
-    let shape_uniform_buffer = device.create_buffer(BufferDesc {
+    let shape_uniform_buffer = device.create_buffer(BufferDesc::uniform(
         // 使用共享常量，禁止 probe 与 renderer 产生布局分叉。
-        size_bytes: PipelineKind::ShapeRect.contract().uniform.size_bytes(),
-        // uniform 不使用顶点步长。
-        stride_bytes: 0,
-        // 声明 uniform 用途。
-        usage: BufferUsage::Uniform,
-    })?;
+        PipelineKind::ShapeRect.contract().uniform.size_bytes(),
+    ))?;
     // 上传会真实触发描边分支的 Shape 参数。
-    device.update_buffer(shape_uniform_buffer, 0, &shape_uniform_bytes)?;
+    device.update_buffer(RhiBufferUpload::new(
+        // 绑定 Shape Uniform 身份。
+        shape_uniform_buffer,
+        // 上传共享值对象编码的完整常量块。
+        &shape_uniform_bytes,
+    ))?;
     // 使用最小的 RGBA texture 验证 render target 颜色格式。
     let rgba_texture = device.create_texture(TextureDesc {
         // 使用一像素离屏目标。

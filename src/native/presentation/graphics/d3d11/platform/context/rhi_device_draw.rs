@@ -26,14 +26,14 @@ impl D3d11Context {
         // 解析顶点 buffer 并保留通用 ABI 所需的步长。
         let vertex = self.rhi_device.buffer(packet.vertex_buffer)?;
         // 拒绝错误用途的顶点资源。
-        if vertex.usage != BufferUsage::Vertex {
+        if vertex.desc.usage() != BufferUsage::Vertex {
             // 返回稳定的资源类型错误。
             return Err(rhi_invalid("D3d11 RHI draw vertex buffer has wrong usage"));
         }
         // 复制顶点 COM 对象，结束资源表借用。
         let vertex_native = vertex.native.clone();
         // 复制通用顶点步长。
-        let vertex_stride = vertex.stride_bytes;
+        let vertex_stride = vertex.desc.stride_bytes();
         // 解析 packet 的 uniform buffer。
         let uniform_handle = packet
             .uniform_buffer
@@ -41,14 +41,14 @@ impl D3d11Context {
         // 读取 uniform 资源事实。
         let uniform = self.rhi_device.buffer(uniform_handle)?;
         // 拒绝错误用途的 uniform 资源。
-        if uniform.usage != BufferUsage::Uniform {
+        if uniform.desc.usage() != BufferUsage::Uniform {
             // 返回稳定的资源类型错误。
             return Err(rhi_invalid("D3d11 RHI draw uniform buffer has wrong usage"));
         }
         // 复制 uniform COM 对象，结束资源表借用。
         let uniform_native = uniform.native.clone();
         // 复制 uniform 总字节数供共享 pipeline 契约统一校验。
-        let uniform_size = uniform.size_bytes;
+        let uniform_size = uniform.desc.size_bytes();
         // 复制 FramePlan 已经封闭为顶点或索引变体的绘制范围。
         let range = packet.range;
         // 从唯一共享契约读取当前 pipeline 的资源与混合语义。
@@ -68,7 +68,9 @@ impl D3d11Context {
             // 读取后续步长与原生格式映射的唯一共享格式。
             let format = binding.format();
             // 校验资源用途和创建步长精确符合共享格式。
-            if index.usage != BufferUsage::Index || index.stride_bytes != format.stride_bytes() {
+            if index.desc.usage() != BufferUsage::Index
+                || index.desc.stride_bytes() != format.stride_bytes()
+            {
                 // 返回稳定且不泄漏 DXGI 枚举的格式错误。
                 return Err(rhi_invalid("D3d11 RHI draw index buffer format is invalid"));
             }

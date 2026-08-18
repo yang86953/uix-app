@@ -13,9 +13,10 @@ use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
     LoadAction, PipelineBinding, PipelineDesc, PipelineHandle, PipelineKind, RenderTargetHandle,
-    RhiColor, RhiColorClearContract, RhiExtent, RhiPassState, RhiScissor, RhiSubmissionSequence,
-    RhiTextureRegion, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle, TextureCopy,
-    TextureDesc, TextureFormat, TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
+    RhiBufferUpload, RhiColor, RhiColorClearContract, RhiExtent, RhiPassState, RhiScissor,
+    RhiSubmissionSequence, RhiTextureRegion, RhiViewport, SampledTextureBinding, SamplerDesc,
+    SamplerHandle, TextureCopy, TextureDesc, TextureFormat, TextureHandle, TextureMove,
+    UIX_COLOR_CLEAR_CONTRACT,
 };
 // 引入 D3D11 的基础资源和绑定类型。
 use ::windows::Win32::Graphics::Direct3D11::{
@@ -56,12 +57,8 @@ mod rhi_device_submit;
 struct D3d11RhiBuffer {
     // 保持 D3D11 buffer 的生命周期。
     native: ::windows::Win32::Graphics::Direct3D11::ID3D11Buffer,
-    // 保存可验证的容量。
-    size_bytes: usize,
-    // 保存顶点或索引步长。
-    stride_bytes: u32,
-    // 保存 buffer 用途，便于资源审计。
-    usage: BufferUsage,
+    // 保存已经通过共同门禁的完整 Buffer 描述。
+    desc: BufferDesc,
 }
 
 // 保存一个 RHI texture 的原生对象和可选 view。
@@ -245,45 +242,35 @@ impl GraphicsDevice for D3d11Context {
 
     // 创建 D3D11 默认 buffer。
     fn create_buffer(&mut self, desc: BufferDesc) -> Result<BufferHandle> {
-        // 拒绝零容量或超过 D3D11 字段范围的描述。
-        if desc.size_bytes == 0 || desc.size_bytes > u32::MAX as usize {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("D3d11 RHI buffer size is invalid"));
-        }
+        // 先通过两个 Adapter 共用的容量、步长与 Uniform ABI 门禁。
+        let native = desc.validate()?;
         // 选择底层绑定类型、更新方式和 CPU 写入权限。
-        let (bind_flags, usage, cpu_access, stride_bytes) = match desc.usage {
+        let (bind_flags, usage, cpu_access, stride_bytes) = match desc.usage() {
             // 顶点 buffer 使用默认显存资源并按 stride 绑定。
             BufferUsage::Vertex => (
                 D3D11_BIND_VERTEX_BUFFER.0 as u32,
                 D3D11_USAGE_DEFAULT,
                 0,
-                desc.stride_bytes,
+                desc.stride_bytes(),
             ),
             // 索引 buffer 使用默认显存资源，索引格式由 draw ABI 固定。
             BufferUsage::Index => (
                 D3D11_BIND_INDEX_BUFFER.0 as u32,
                 D3D11_USAGE_DEFAULT,
                 0,
-                desc.stride_bytes,
+                desc.stride_bytes(),
             ),
-            // uniform buffer 使用 16 字节对齐的动态常量资源。
-            BufferUsage::Uniform => {
-                // D3D11 常量 buffer 的容量必须是 16 字节的整数倍。
-                if desc.size_bytes % 16 != 0 {
-                    // 返回稳定的参数错误。
-                    return Err(rhi_invalid("D3d11 RHI uniform buffer size is not aligned"));
-                }
-                (
-                    D3D11_BIND_CONSTANT_BUFFER.0 as u32,
-                    D3D11_USAGE_DYNAMIC,
-                    D3D11_CPU_ACCESS_WRITE.0 as u32,
-                    0,
-                )
-            }
+            // Uniform Buffer 使用共享门禁已经验证的动态常量资源。
+            BufferUsage::Uniform => (
+                D3D11_BIND_CONSTANT_BUFFER.0 as u32,
+                D3D11_USAGE_DYNAMIC,
+                D3D11_CPU_ACCESS_WRITE.0 as u32,
+                0,
+            ),
         };
         // 准备 D3D11 buffer 描述。
         let native_desc = D3D11_BUFFER_DESC {
-            ByteWidth: desc.size_bytes as u32,
+            ByteWidth: native.size_bytes_u32(),
             Usage: usage,
             BindFlags: bind_flags,
             CPUAccessFlags: cpu_access,
@@ -305,9 +292,8 @@ impl GraphicsDevice for D3d11Context {
         // 分配从 1 开始的不透明资源身份。
         self.rhi_device.buffers.push(Some(D3d11RhiBuffer {
             native,
-            size_bytes: desc.size_bytes,
-            stride_bytes: desc.stride_bytes,
-            usage: desc.usage,
+            // Adapter 只保存唯一共享描述，不再复制三个可漂移字段。
+            desc,
         }));
         // 计算刚刚追加的资源句柄。
         let raw = self.rhi_device.buffers.len() as u64;
@@ -316,41 +302,16 @@ impl GraphicsDevice for D3d11Context {
     }
 
     // 将紧密排列的数据写入已有 D3D11 buffer。
-    fn update_buffer(&mut self, buffer: BufferHandle, offset: usize, data: &[u8]) -> Result<()> {
-        // 空更新没有任何可观察语义，直接保持成功。
-        if data.is_empty() {
-            // 返回成功，不触碰 native context。
-            return Ok(());
-        }
-        // 检查 offset 和 payload 是否落在已分配容量内。
-        let resource = self.rhi_device.buffer(buffer)?;
-        let end = offset
-            .checked_add(data.len())
-            .ok_or_else(|| rhi_invalid("D3d11 RHI buffer update overflows"))?;
-        // 拒绝越界写入。
-        if end > resource.size_bytes {
-            // 返回携带句柄、用途和容量的参数错误，便于定位跨帧资源 ABI 漂移。
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                format!(
-                    "D3d11 RHI buffer update exceeds capacity: buffer={:?}; usage={:?}; offset={offset}; data_bytes={}; capacity_bytes={}",
-                    buffer,
-                    resource.usage,
-                    data.len(),
-                    resource.size_bytes,
-                ),
-            ));
-        }
+    fn update_buffer(&mut self, upload: RhiBufferUpload<'_>) -> Result<()> {
+        // 先解析目标身份，空载荷也不能绕过陈旧句柄门禁。
+        let resource = self.rhi_device.buffer(upload.buffer())?;
+        // 由共享 Component 验证前缀范围、元素边界和 Uniform 完整替换。
+        let validated = upload.validate(resource.desc)?;
+        // 原生调用只消费已经验证的不可变字节。
+        let data = validated.data();
         // 动态 uniform 通过 Map/WRITE_DISCARD 完整更新，避免把 default buffer
         // 的 UpdateSubresource 语义错误地套到 CPU 可写资源上。
-        if resource.usage == BufferUsage::Uniform {
-            // 本阶段的 uniform ABI 要求一次更新覆盖整个常量块。
-            if offset != 0 || data.len() != resource.size_bytes {
-                // 返回稳定的参数错误。
-                return Err(rhi_invalid(
-                    "D3d11 RHI uniform update must replace the full buffer",
-                ));
-            }
+        if resource.desc.usage() == BufferUsage::Uniform {
             // 准备动态映射输出。
             let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
             // SAFETY: uniform resource 由当前 device 以 DYNAMIC 创建，data 在
@@ -373,8 +334,10 @@ impl GraphicsDevice for D3d11Context {
         }
         // 构造只覆盖本次更新的 D3D11 buffer box。
         let dst_box = D3D11_BOX {
-            left: offset as u32,
-            right: end as u32,
+            // 类型化上传固定从 Buffer 起点开始。
+            left: 0,
+            // 右边界由共享上传门禁完成无损投影。
+            right: validated.size_bytes_u32(),
             top: 0,
             bottom: 1,
             front: 0,
