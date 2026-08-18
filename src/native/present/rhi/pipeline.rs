@@ -6,6 +6,8 @@ use super::{
     PipelineHandle, PipelineMultisampleState, SAMPLED_UNIFORM_BYTES, SECTOR_UNIFORM_BYTES,
     SHADOW_UNIFORM_BYTES, SHAPE_UNIFORM_BYTES, SamplerDesc, TextureFormat,
 };
+// 引入独立共享 Component 拥有的顶点布局值对象。
+use super::vertex_layout::PipelineVertexLayout;
 
 // 定义通用 renderer 与 native Adapter 共享的封闭 pipeline 语义。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -67,29 +69,6 @@ impl PipelineBinding {
     pub(crate) const fn contract(self) -> PipelineContract {
         // 委托 PipelineKind 的闭集映射，禁止另存布局副本。
         self.kind.contract()
-    }
-}
-
-// 定义 Adapter 必须映射的有限顶点布局。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum PipelineVertexLayout {
-    // 只包含 position float2。
-    PositionF32x2,
-    // 包含 position float2、uv float2 与 color float4。
-    PositionUvColorF32,
-}
-
-// 为顶点布局集中提供字节步长。
-impl PipelineVertexLayout {
-    // 返回一个顶点的固定字节数。
-    pub(crate) const fn stride_bytes(self) -> u32 {
-        // 逐个封闭布局返回唯一 ABI。
-        match self {
-            // 两个 f32 固定占八字节。
-            Self::PositionF32x2 => 2 * std::mem::size_of::<f32>() as u32,
-            // 八个 f32 固定占三十二字节。
-            Self::PositionUvColorF32 => 8 * std::mem::size_of::<f32>() as u32,
-        }
     }
 }
 

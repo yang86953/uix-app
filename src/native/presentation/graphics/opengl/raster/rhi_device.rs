@@ -105,6 +105,9 @@ pub(super) struct OpenGlRhiDevice {
 // 引入固定 draw ABI 的 OpenGL ES 分派实现。
 #[path = "rhi_device_draw.rs"]
 mod draw;
+// 将共享顶点布局的原生映射拆成独立 Adapter Component。
+#[path = "rhi_device_vertex_layout.rs"]
+mod vertex_layout;
 
 // 将 shader 选择与 program 编译拆到独立文件，保持资源表文件的行数边界。
 #[path = "rhi_device_pipeline.rs"]

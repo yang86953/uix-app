@@ -18,7 +18,7 @@ use crate::native::present::rhi::{
     PipelineBlendFactor, PipelineBlendOperation, PipelineColorWriteMask, PipelineCullMode,
     PipelineDepthClip, PipelineDepthState, PipelineDepthStencilState, PipelineDitherState,
     PipelineFrontFace, PipelineMultisampleState, PipelinePrimitiveTopology, PipelineRasterState,
-    PipelineStencilState,
+    PipelineStencilState, PipelineVertexFormat, PipelineVertexLayout, PipelineVertexSemantic,
 };
 use ::windows::Win32::Foundation::{FALSE, TRUE};
 use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
