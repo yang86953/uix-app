@@ -9,18 +9,20 @@
 
 #![allow(nonstandard_style)]
 
-use std::{ffi::CStr, mem::size_of};
+use std::ffi::CStr;
 
 use crate::core::{Errc, Error, Result};
+// 引入跨 Adapter 共享的颜色混合语义。
+use crate::native::present::rhi::{PipelineBlend, PipelineBlendFactor, PipelineBlendOperation};
 use ::windows::Win32::Foundation::{FALSE, TRUE};
 use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use ::windows::Win32::Graphics::Direct3D::{D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST, ID3DBlob};
 use ::windows::Win32::Graphics::Direct3D11::{
-    D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD,
-    D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO, D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_CULL_NONE,
-    D3D11_FILL_SOLID, D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC,
-    D3D11_RENDER_TARGET_BLEND_DESC, ID3D11BlendState, ID3D11Buffer, ID3D11Device,
-    ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
+    D3D11_BLEND, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_ONE, D3D11_BLEND_OP,
+    D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO, D3D11_COLOR_WRITE_ENABLE_ALL,
+    D3D11_CULL_NONE, D3D11_FILL_SOLID, D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA,
+    D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, ID3D11BlendState, ID3D11Buffer,
+    ID3D11Device, ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
     ID3D11RenderTargetView, ID3D11SamplerState, ID3D11ShaderResourceView, ID3D11VertexShader,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{
@@ -36,8 +38,10 @@ cbuffer RectCB : register(b0)
     float4 u_rect;
     float4 u_color;
     float4 u_radius;
-    // x = half stroke width (0 = fill); yzw unused
+    // x 保存半描边宽度，y 保存 fringe，z/w 保存共享 outer/inner 原点偏移。
     float4 u_stroke;
+    // 共享 GPU Raster Module 已经计算完成的实际绘制边界。
+    float4 u_draw_rect;
 };
 
 struct VSIn {
@@ -53,15 +57,13 @@ struct VSOut {
 VSOut VSMain(VSIn input)
 {
     VSOut o;
-    // Stroke expands the draw quad by half_lw + 1px AA fringe (matches CPU SDF).
-    float expand = u_stroke.x > 0.0 ? (u_stroke.x + 1.0) : 0.0;
-    float2 draw_xy = u_rect.xy - expand;
-    float2 draw_wh = u_rect.zw + expand * 2.0;
-    float2 pos = draw_xy + input.pos * draw_wh;
+    // 平台 shader 只消费共享层冻结的绘制边界，不再自行推导描边外扩。
+    float2 pos = u_draw_rect.xy + input.pos * u_draw_rect.zw;
     float2 ndc = (pos / u_viewport) * 2.0 - 1.0;
     ndc.y = -ndc.y;
     o.pos = float4(ndc, 0.0, 1.0);
-    o.local = input.pos * draw_wh;
+    // 局部坐标覆盖共享 draw rect，供片元阶段恢复同心双 SDF。
+    o.local = input.pos * u_draw_rect.zw;
     o.rect_size = u_rect.zw;
     return o;
 }
@@ -87,11 +89,10 @@ float4 PSMain(VSOut input) : SV_Target
     float mask;
     if (u_stroke.x > 0.0)
     {
-        float expand = u_stroke.x + 1.0;
-        // Quad 由 VS 外扩 expand，原点在 rect.xy - (h+1)；减去 1px 后原点
-        // 落在 rect.xy - h，即 outer 矩形左上角（outer/inner 中心与 rect
-        // 中心重合），避免双 SDF 中心错位。
-        float2 shape_local = input.local - float2(1.0, 1.0);
+        // 使用共享 outer 偏移把 draw rect 局部坐标转换到 outer SDF 原点。
+        float2 outer_local = input.local - float2(u_stroke.z, u_stroke.z);
+        // 使用共享 inner 偏移保持 inner 与 outer SDF 严格同心。
+        float2 inner_local = input.local - float2(u_stroke.w, u_stroke.w);
         // 双 SDF（与 CPU 一致）：外扩/内缩 half 使弧线端点对齐像素
         // 中心，消除整数坐标下顶/底圆角起点偏差；中心行 coverage 与 CPU 相同。
         float h = u_stroke.x;
@@ -99,11 +100,12 @@ float4 PSMain(VSOut input) : SV_Target
         float4 outer_rad = u_radius + h;
         float2 inner_size = max(input.rect_size - 2.0 * h, 0.0);
         float4 inner_rad = max(u_radius - h, 0.0);
-        float outer_sd = rounded_rect_sdf(shape_local, outer_size, outer_rad);
-        float mask;
+        // 计算外边界有符号距离。
+        float outer_sd = rounded_rect_sdf(outer_local, outer_size, outer_rad);
         if (inner_size.x > 0.0 && inner_size.y > 0.0)
         {
-            float inner_sd = rounded_rect_sdf(shape_local, inner_size, inner_rad);
+            // 以内缩后的独立局部原点计算同心内边界距离。
+            float inner_sd = rounded_rect_sdf(inner_local, inner_size, inner_rad);
             // Matches CPU `sdf_to_coverage(outer) * sdf_to_coverage(-inner)`.
             mask = saturate(0.5 - outer_sd) * saturate(0.5 + inner_sd);
         }
@@ -303,7 +305,7 @@ float4 PSMain(VSOut input) : SV_Target
 }
 "#;
 
-// Box / ambient shadow — ports CPU `shadow_coverage` / `shadow_coverage_ambient`.
+// Blur pass 使用与共享 Blur ABI 对齐的可分离高斯采样 shader。
 const BLUR_HLSL: &str = r#"
 Texture2D u_tex : register(t0);
 SamplerState u_samp : register(s0);
@@ -536,6 +538,24 @@ pub(crate) struct D3d11Pipeline {
     blend_additive: ID3D11BlendState,
     blend_replace: ID3D11BlendState,
     rasterizer: ID3D11RasterizerState,
+}
+
+// 为所有 D3D11 draw 原语集中映射共享混合语义。
+impl D3d11Pipeline {
+    // 返回当前 pipeline 契约对应的原生 blend state。
+    fn rhi_blend_state(&self, blend: PipelineBlend) -> &ID3D11BlendState {
+        // 禁止各 shader helper 再维护一份状态选择逻辑。
+        match blend {
+            // straight-alpha 映射到 SRC_ALPHA SrcOver。
+            PipelineBlend::StraightAlpha => &self.blend_alpha,
+            // premultiplied-alpha 映射到 ONE SrcOver。
+            PipelineBlend::PremultipliedAlpha => &self.blend_premultiplied,
+            // Additive 映射到源目标均为 ONE。
+            PipelineBlend::Additive => &self.blend_additive,
+            // Replace 映射到关闭颜色混合的覆盖状态。
+            PipelineBlend::Replace => &self.blend_replace,
+        }
+    }
 }
 
 mod pipeline;

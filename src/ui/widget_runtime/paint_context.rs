@@ -31,19 +31,28 @@ const TEXT_ELLIPSIS: &str = "…";
 // 合并真实字体宽度与无字体估算宽度，始终返回更保守的结果。
 fn conservative_width_from_measurement(measured_width: f32, text: &str, font_size: f32) -> f32 {
     // 计算不依赖已加载字体的稳定后备宽度。
-    let estimated_width = crate::draw::resources::font::text_backend::estimate_text_metrics(text, f32::INFINITY, font_size).max_line_width;
+    let estimated_width = crate::draw::resources::font::text_backend::estimate_text_metrics(
+        text,
+        f32::INFINITY,
+        font_size,
+    )
+    .max_line_width;
     // 防止真实字体缺失或低估时压缩组件内容。
     measured_width.max(estimated_width)
-// 结束保守宽度合并。
+    // 结束保守宽度合并。
 }
 
 // 使用调用方提供的保守度量函数执行 Unicode 安全的单行省略。
-fn elide_single_line_by(text: &str, max_width: f32, mut text_width: impl FnMut(&str) -> f32) -> Option<String> {
+fn elide_single_line_by(
+    text: &str,
+    max_width: f32,
+    mut text_width: impl FnMut(&str) -> f32,
+) -> Option<String> {
     // 非有限或非正可用宽度无法显示任何文本。
     if !max_width.is_finite() || max_width <= 0.0 {
         // 返回空值让组件保持自身的不绘制策略。
         return None;
-    // 结束无可用宽度分支。
+        // 结束无可用宽度分支。
     }
     // 将换行规范化为空格以维持既有单行语义。
     let text = text.replace(['\r', '\n'], " ");
@@ -51,13 +60,13 @@ fn elide_single_line_by(text: &str, max_width: f32, mut text_width: impl FnMut(&
     if text_width(&text) <= max_width {
         // 返回规范化后的完整单行文本。
         return Some(text);
-    // 结束完整文本分支。
+        // 结束完整文本分支。
     }
     // 极窄宽度连省略号也无法容纳时不绘制文本。
     if text_width(TEXT_ELLIPSIS) > max_width {
         // 返回空值避免绘制越界省略号。
         return None;
-    // 结束省略号宽度门禁。
+        // 结束省略号宽度门禁。
     }
     // 按 Unicode 标量逐步构建可见前缀。
     let mut visible = String::new();
@@ -77,15 +86,15 @@ fn elide_single_line_by(text: &str, max_width: f32, mut text_width: impl FnMut(&
             visible.pop();
             // 后续字符不可能恢复单调宽度，停止搜索。
             break;
-        // 结束当前字符无法容纳分支。
+            // 结束当前字符无法容纳分支。
         }
-    // 结束 Unicode 前缀搜索。
+        // 结束 Unicode 前缀搜索。
     }
     // 为最终可见前缀追加唯一省略号。
     visible.push_str(TEXT_ELLIPSIS);
     // 返回保持在宽度边界内的单行结果。
     Some(visible)
-// 结束共享单行省略算法。
+    // 结束共享单行省略算法。
 }
 
 /// 转发 `&mut self` 绘制方法（固有方法享受二段式借用）。
@@ -178,14 +187,21 @@ impl<'a, 'b> PaintContext<'a, 'b> {
         let measured_width = self.measure_text(text, font_size).w;
         // 与稳定后备估算合并，保留字体缺失时的布局语义。
         conservative_width_from_measurement(measured_width, text, font_size)
-    // 结束 UI 保守文本宽度查询。
+        // 结束 UI 保守文本宽度查询。
     }
 
     /// 将换行规范化为空格，并按保守宽度生成可选的单行省略文本。
-    pub(crate) fn elide_single_line(&mut self, text: &str, font_size: f32, max_width: f32) -> Option<String> {
+    pub(crate) fn elide_single_line(
+        &mut self,
+        text: &str,
+        font_size: f32,
+        max_width: f32,
+    ) -> Option<String> {
         // 复用当前上下文的真实字体与后备估算组合度量。
-        elide_single_line_by(text, max_width, |candidate| self.conservative_text_width(candidate, font_size))
-    // 结束 UI 单行省略入口。
+        elide_single_line_by(text, max_width, |candidate| {
+            self.conservative_text_width(candidate, font_size)
+        })
+        // 结束 UI 单行省略入口。
     }
 
     delegate_shared! {
@@ -298,7 +314,7 @@ mod text_measure_tests {
         let width = conservative_width_from_measurement(0.0, "界", 16.0);
         // 后备估算必须保持非零布局宽度。
         assert!(width > 0.0);
-    // 结束字体缺失后备测试。
+        // 结束字体缺失后备测试。
     }
 
     // 注册 Unicode 前缀截断测试。
@@ -306,10 +322,12 @@ mod text_measure_tests {
     // 验证省略算法不会切断多字节 Unicode 字符。
     fn elision_preserves_unicode_character_boundaries() {
         // 使用字符数模拟单调且可预测的保守宽度。
-        let value = elide_single_line_by("你🙂好", 2.0, |candidate| candidate.chars().count() as f32);
+        let value = elide_single_line_by("你🙂好", 2.0, |candidate| {
+            candidate.chars().count() as f32
+        });
         // 两个可用字符宽度应保留首字符和完整省略号。
         assert_eq!(value.as_deref(), Some("你…"));
-    // 结束 Unicode 截断测试。
+        // 结束 Unicode 截断测试。
     }
 
     // 注册换行与完整文本语义测试。
@@ -317,10 +335,12 @@ mod text_measure_tests {
     // 验证可容纳文本只规范化换行而不添加省略号。
     fn elision_normalizes_newlines_without_truncating_fitting_text() {
         // 为完整规范化字符串提供足够宽度。
-        let value = elide_single_line_by("甲\n乙", 3.0, |candidate| candidate.chars().count() as f32);
+        let value = elide_single_line_by("甲\n乙", 3.0, |candidate| {
+            candidate.chars().count() as f32
+        });
         // 换行必须按既有契约替换为单个空格。
         assert_eq!(value.as_deref(), Some("甲 乙"));
-    // 结束换行规范化测试。
+        // 结束换行规范化测试。
     }
 
     // 注册极窄宽度门禁测试。
@@ -331,7 +351,7 @@ mod text_measure_tests {
         let value = elide_single_line_by("text", 0.5, |candidate| candidate.chars().count() as f32);
         // 不得返回会越界绘制的省略号。
         assert_eq!(value, None);
-    // 结束极窄宽度测试。
+        // 结束极窄宽度测试。
     }
 
     // 注册仅能容纳省略号的边界测试。
@@ -342,7 +362,7 @@ mod text_measure_tests {
         let value = elide_single_line_by("text", 1.0, |candidate| candidate.chars().count() as f32);
         // 最终结果必须恰好是一个完整省略号。
         assert_eq!(value.as_deref(), Some("…"));
-    // 结束省略号边界测试。
+        // 结束省略号边界测试。
     }
-// 结束共享文本度量测试模块。
+    // 结束共享文本度量测试模块。
 }

@@ -817,5 +817,4 @@ impl Message {
         ctx.text_center(&value, frame, color, font_size);
         ctx.pop_clip();
     }
-
 }

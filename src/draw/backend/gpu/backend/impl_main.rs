@@ -11,9 +11,15 @@ use super::logical_metadata_from_surface;
 use super::surface::NativeGpuDrawSurface;
 use crate::core::{Errc, Error, PresentDamageTracker};
 use crate::draw::backend::contract::RenderBackend;
+// 测试读回只返回 Drawing 层的 API 无关快照。
+#[cfg(feature = "test-harness")]
+use crate::draw::backend::contract::SurfaceReadback;
 use crate::draw::geometry::types::ImageHandle;
 // 使用薄 RHI 的设备维护入口承接每帧 owner-context 准备。
 use crate::native::present::rhi::GraphicsDevice;
+// 测试读回能力启用时才引入窄 Surface 角色与统一区域描述。
+#[cfg(feature = "test-harness")]
+use crate::native::present::rhi::{GraphicsSurface, RhiScissor};
 // 引入 platform 构造期验证的 context recipe owner。
 use crate::native::present::GpuRecipeOwner;
 // 引入所属 graphics backend Module 的 renderer 能力投影。
@@ -23,9 +29,9 @@ impl GpuBackend {
     // 在通用 renderer 不感知平台 current API 的前提下准备本帧 RHI device。
     pub(super) fn prepare_rhi_device(&mut self) -> Result<(), Error> {
         // 生产 GPU backend 的构造门禁已经要求组合 thin RHI 始终存在。
-        // 已验证 owner 将运行期状态破坏直接映射为 typed error。
-        let context = self.gpu_ctx.rhi_context()?;
-        // adapter 在这里完成设备健康检查；OpenGL 同时恢复 owner context current。
+        // 已验证 owner 借用会先激活对应原生 context。
+        let context = self.gpu_ctx.rhi_device()?;
+        // 激活后再完成设备健康检查，保持两类失败语义正交。
         GraphicsDevice::maintain(context)
     }
 
@@ -34,7 +40,7 @@ impl GpuBackend {
     pub(crate) fn inject_graphics_device_lost_for_test(&mut self) -> Result<(), Error> {
         // 缺少薄 RHI 属于构造后状态破坏，测试注入必须返回 typed failure。
         // 测试注入沿用已验证 owner 的 typed 借用边界。
-        let context = self.gpu_ctx.rhi_context()?;
+        let context = self.gpu_ctx.rhi_device()?;
         // 由 adapter 自己保存一次性注入状态，最终 present 才报告 typed failure。
         context.inject_device_lost_for_test()
     }
@@ -44,7 +50,7 @@ impl GpuBackend {
     pub(crate) fn inject_graphics_surface_lost_for_test(&mut self) -> Result<(), Error> {
         // 缺少薄 RHI 属于构造后状态破坏，测试注入必须返回 typed failure。
         // 测试注入沿用已验证 owner 的 typed 借用边界。
-        let context = self.gpu_ctx.rhi_context()?;
+        let context = self.gpu_ctx.rhi_surface()?;
         // 由 adapter 自己保存一次性注入状态，下一次 acquire 才报告 typed failure。
         context.inject_surface_lost_for_test()
     }
@@ -55,11 +61,11 @@ impl GpuBackend {
         let caps = gpu_ctx.caps();
         // 从组合 thin RHI 一次取得已由 factory probe 验证的事实快照。
         // 只在这个局部借用已验证 owner，随后保存可复制的能力值。
-        let rhi_capabilities = Some(gpu_ctx.rhi_context()?.capabilities());
+        let rhi_capabilities = Some(gpu_ctx.rhi_device()?.device_capabilities());
         // 从同一快照派生通用 renderer 真正消费的窄能力投影。
         let native_caps = rhi_capabilities
             // 保留 retained 与 Additive 两项绘制事实。
-            .map(NativeRasterCaps::from_rhi_capabilities)
+            .map(NativeRasterCaps::from_device_capabilities)
             // 缺少薄 RHI 时使用空投影进入统一 typed failure。
             .unwrap_or_default();
         // 构造门禁同时要求完整 GPU 原语基线和 retained 主颜色目标。
@@ -121,6 +127,15 @@ impl GpuBackend {
             rhi_surface_token: None,
             // 首帧还没有 FrameEncoder 写入 retained target。
             rhi_surface_frame_pending_present: false,
+            // 默认不执行任何 surface 回读。
+            #[cfg(feature = "test-harness")]
+            surface_readback_requested: false,
+            // 默认不存在上一帧测试结果。
+            #[cfg(feature = "test-harness")]
+            surface_readback_result: None,
+            // 首帧尚未通过共享 FramePlan 执行主表面纹理移动。
+            #[cfg(feature = "test-harness")]
+            executed_texture_moves_in_frame: 0,
             // 启动时尚未捕获 overlay 干净背景。
             rhi_overlay_backdrop_texture: None,
             // 启动时不存在派生的 overlay effect 纹理。
@@ -139,31 +154,17 @@ impl GpuBackend {
         })
     }
 
-    /// Flushes the current ordered segment without presenting, then reads the
-    /// native drawable. This is a crate-local diagnostic/test boundary; it
-    /// deliberately uses the same command ordering as a final present.
-    // 测试目标保留原生回读诊断入口，供启用具体 GPU feature 的契约测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(all(test, any(feature = "opengles", feature = "d3d11", feature = "d3d12")))]
-    pub(crate) fn try_readback(&mut self) -> Result<Vec<u32>, Error> {
-        if self.active_offscreen.is_some() {
-            return Err(Error::new(
-                Errc::InvalidState,
-                "cannot read the swapchain while an offscreen target is active",
-            ));
-        }
-        self.flush_main_segment_before_ordered_boundary()?;
-        // 在借用组合 RHI 前一次读取完整 drawable 元数据。
-        let present_surface = self.gpu_ctx.present_surface();
-        // 从同一快照保存当前 drawable 宽度。
-        let width = present_surface.drawable_width.max(1);
-        // 从同一快照保存当前 drawable 高度。
-        let height = present_surface.drawable_height.max(1);
-        // 构造后丢失组合 RHI 属于生命周期状态破坏。
-        // 已验证 owner 将运行期 context 状态破坏收敛为 typed error。
-        let context = self.gpu_ctx.rhi_context()?;
+    // 在最终 FramePlan 已 submit、尚未 present 的窄 Surface 上读取真实像素。
+    #[cfg(feature = "test-harness")]
+    pub(super) fn try_readback(
+        // 借用正在执行唯一最终呈现事务的 Surface 角色。
+        surface: &mut dyn GraphicsSurface,
+        // 返回不携带原生类型的 Drawing 快照。
+    ) -> Result<SurfaceReadback, Error> {
+        // 从同一个 Surface 读取回读能力，避免另一份 capability 快照漂移。
+        let supports_readback = surface.surface_capabilities().readback;
         // 只调用 adapter 事实声明支持的可选能力。
-        if !context.capabilities().surface_readback {
+        if !supports_readback {
             // 缺少可选能力必须返回 typed 错误，不能伪造空结果。
             return Err(Error::new(
                 // 使用未实现错误区分 adapter 能力缺口。
@@ -172,8 +173,38 @@ impl GpuBackend {
                 "GPU backend thin RHI does not support surface readback",
             ));
         }
-        // 通过组合 RHI surface 执行 owner-thread 回读。
-        context.read_surface_pixels(0, 0, width, height)
+        // 冻结最终 composite 使用的 surface token 与物理 extent。
+        let token = surface.token();
+        // 公共 Drawing 尺寸使用有符号值，超大 surface 必须显式拒绝。
+        let width = i32::try_from(token.extent.width).map_err(|_| {
+            // 无法表示的物理宽度属于无效 surface 状态。
+            Error::new(Errc::InvalidState, "surface readback width exceeds i32")
+        })?;
+        // 对物理高度执行相同的有界转换。
+        let height = i32::try_from(token.extent.height).map_err(|_| {
+            // 无法表示的物理高度属于无效 surface 状态。
+            Error::new(Errc::InvalidState, "surface readback height exceeds i32")
+        })?;
+        // 通过同一个窄 Surface 角色执行 owner-thread 回读。
+        let readback = surface.read_surface_pixels(RhiScissor {
+            // 从 drawable 左边界开始。
+            x: 0,
+            // 从 drawable 顶部开始。
+            y: 0,
+            // 读取完整物理宽度。
+            width,
+            // 读取完整物理高度。
+            height,
+        })?;
+        // RHI 已统一校验行序、通道与长度，此处只转移规范像素所有权。
+        Ok(SurfaceReadback::from_argb(
+            // 保存读取时观察到的完整物理宽度。
+            width,
+            // 保存读取时观察到的完整物理高度。
+            height,
+            // 隐藏 RHI 结果类型，只把规范像素提升到 Drawing 契约。
+            readback.into_pixels(),
+        ))
     }
 
     // 测试目标保留 soft upload 字节数观测入口，供 GPU 诊断测试按需调用。

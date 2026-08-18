@@ -76,6 +76,11 @@ component! {
         Size::new(w, h)
     }
 
+    measure_natural => (&self, constraints: Constraints) -> Size {
+        // 自然测量显式绕过 flex-grow 的零 basis 策略。
+        constraints.clamp(self.natural_intrinsic_size())
+    }
+
     flex_grow => (&self) -> f32 { self.style.flex_grow }
 
     flex_shrink => (&self) -> f32 { self.style.flex_shrink }
@@ -176,6 +181,21 @@ component! {
                 s.flex_direction,
                 crate::ui::theme::style::FlexDirection::Row | crate::ui::theme::style::FlexDirection::RowReverse
             ) && s.width.is_none_or(|w| w <= 0.0);
+        // Row 的未定高度或 Column 的未定宽度必须由子项自然交叉尺寸撑开。
+        let cross_axis_indefinite = matches!(
+            // 水平布局的交叉轴是高度。
+            s.flex_direction,
+            // Row 与 RowReverse 共享相同交叉轴。
+            crate::ui::theme::style::FlexDirection::Row
+                | crate::ui::theme::style::FlexDirection::RowReverse
+        ) && s.height.is_none_or(|height| height <= 0.0)
+            || matches!(
+                // 垂直布局的交叉轴是宽度。
+                s.flex_direction,
+                // Column 与 ColumnReverse 共享相同交叉轴。
+                crate::ui::theme::style::FlexDirection::Column
+                    | crate::ui::theme::style::FlexDirection::ColumnReverse
+            ) && s.width.is_none_or(|width| width <= 0.0);
 
         // 委托给统一的 FlexLayout 布局引擎
         let engine = FlexLayout {
@@ -186,6 +206,8 @@ component! {
             wrap: s.flex_wrap,
             overflow_content: s.overflow_content,
             intrinsic_main: main_axis_indefinite,
+            // 交叉轴固有性不得由当前暂存 frame 推断。
+            intrinsic_cross: cross_axis_indefinite,
         };
         // 与 Space 对齐：禁止子项 flex-shrink。定高 Card 若压缩 Label/wrap，
         // Phase 1 写回矮 frame，与 Phase 2 扩展振荡（106↔121）。
@@ -505,6 +527,54 @@ impl Container {
         };
         Size::new(effective_w + bh, effective_h + bv)
     }
+
+    // 返回不受 flex-grow basis 归零影响的内容固有尺寸。
+    fn natural_intrinsic_size(&self) -> Size {
+        // 边框属于 Container 的 border-box 自然宽度。
+        let border_width = self.style.border_width.horizontal();
+        // 边框属于 Container 的 border-box 自然高度。
+        let border_height = self.style.border_width.vertical();
+        // 子布局缓存是当前组件拥有的内容尺寸事实。
+        let cached = self.cached_content_size.get();
+        // 有内容时把水平内边距计入自然 border-box。
+        let content_width = if cached.w > 0.0 {
+            // 缓存不含 Container 自己的内边距。
+            cached.w + self.style.padding.horizontal()
+        } else {
+            // 尚无内容缓存时保持稳定零宽 bootstrap。
+            0.0
+        };
+        // 有内容时把垂直内边距计入自然 border-box。
+        let content_height = if cached.h > 0.0 {
+            // 缓存不含 Container 自己的内边距。
+            cached.h + self.style.padding.vertical()
+        } else {
+            // 尚无内容缓存时保持稳定零高 bootstrap。
+            0.0
+        };
+        // 显式正宽仍优先于子树自然宽度。
+        let width = self
+            // 读取可选的声明宽度。
+            .style
+            // 选择严格为正的有效宽度。
+            .width
+            // 零值仍代表未指定轴。
+            .filter(|width| *width > 0.0)
+            // 未指定宽度时采用真实内容宽度。
+            .unwrap_or(content_width);
+        // 显式正高仍优先于子树自然高度。
+        let height = self
+            // 读取可选的声明高度。
+            .style
+            // 选择严格为正的有效高度。
+            .height
+            // 零值仍代表未指定轴。
+            .filter(|height| *height > 0.0)
+            // 未指定高度时采用真实内容高度。
+            .unwrap_or(content_height);
+        // 返回包含边框的完整自然 border-box 尺寸。
+        Size::new(width + border_width, height + border_height)
+    }
 }
 
 // 容器布局缓存的内部回归测试。
@@ -538,6 +608,33 @@ mod tests {
         assert_eq!(positions[0].1, Rect::new(2.0, 3.0, 20.0, 10.0));
         // 缓存必须记录包含右下 margin 的完整外尺寸。
         assert_eq!(container.cached_content_size.get(), Size::new(30.0, 20.0));
+    }
+
+    // 验证自然测量与 flex-grow 零 basis 是两个独立契约。
+    #[test]
+    fn natural_measure_preserves_grow_container_content() {
+        // 构造默认 Column 采用的增长型容器。
+        let container = Container::new()
+            // 使用垂直主轴复现 Card 内的 Column。
+            .dir(FlexDirection::Column)
+            // 普通父 Flex 应把它作为零 basis 增长项。
+            .flex_grow(1.0);
+        // 注入已经由子布局计算出的自然内容尺寸。
+        container.cached_content_size.set(Size::new(188.0, 102.0));
+        // 普通测量继续保留历史零 basis 行为。
+        assert_eq!(
+            // 通过普通布局入口读取父 Flex basis。
+            WidgetLayout::measure(&container, Constraints::unconstrained()),
+            // 增长型容器的普通 basis 为零。
+            Size::zero(),
+        );
+        // 固有尺寸父容器必须能读取同一子树的真实内容尺寸。
+        assert_eq!(
+            // 通过新拆分的自然测量窄契约读取内容。
+            WidgetLayout::measure_natural(&container, Constraints::unconstrained()),
+            // 自然结果不受 flex-grow 归零影响。
+            Size::new(188.0, 102.0),
+        );
     }
 
     // 验证默认可见溢出与显式隐藏裁剪具有不同运行时结果。

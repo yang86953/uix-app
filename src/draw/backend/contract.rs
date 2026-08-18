@@ -38,6 +38,56 @@ pub struct BackendCapabilities {
     pub scroll_memmove: bool,
 }
 
+/// `test-harness` 可观察的规范 surface 像素快照。
+///
+/// 像素按左上原点、从上到下逐行紧密排列，每个值使用 `0xAARRGGBB`。
+#[cfg(feature = "test-harness")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SurfaceReadback {
+    /// 快照的物理像素宽度。
+    pub width: i32,
+    /// 快照的物理像素高度。
+    pub height: i32,
+    /// 规范化后的 `0xAARRGGBB` 像素。
+    pub pixels: Vec<u32>,
+    /// 当前回读帧在共享 FramePlan 中实际执行的重叠安全纹理移动次数。
+    pub executed_texture_moves: usize,
+}
+
+// 只允许 Drawing backend 从已经验证的规范载荷构造快照。
+#[cfg(feature = "test-harness")]
+impl SurfaceReadback {
+    // 保存 owner-thread backend 已验证的完整 surface 结果。
+    pub(crate) fn from_argb(width: i32, height: i32, pixels: Vec<u32>) -> Self {
+        // RHI 已在进入本契约前验证正尺寸与精确载荷长度。
+        debug_assert!(width > 0 && height > 0);
+        // 载荷必须与紧密排列的完整 surface 尺寸一致。
+        debug_assert_eq!(
+            pixels.len(),
+            (width as usize).saturating_mul(height as usize)
+        );
+        // 返回不携带任何原生 API 类型的 Drawing 快照。
+        Self {
+            // 保留物理像素宽度。
+            width,
+            // 保留物理像素高度。
+            height,
+            // 转移规范像素所有权。
+            pixels,
+            // 普通构造尚未附加当前帧执行证据。
+            executed_texture_moves: 0,
+        }
+    }
+
+    // 附加 API 无关的当前帧执行证据，不暴露任何原生对象或命令类型。
+    pub(crate) fn with_executed_texture_moves(mut self, count: usize) -> Self {
+        // 保存由通用 GPU backend 在成功 FramePlan 后统计的真实移动次数。
+        self.executed_texture_moves = count;
+        // 返回仍只包含 Drawing 规范值的完整快照。
+        self
+    }
+}
+
 impl BackendCapabilities {
     /// 返回软件栅格后端支持的默认能力集合。
     pub fn cpu() -> Self {
@@ -407,6 +457,30 @@ pub trait RenderBackend {
         Err(Error::new(
             crate::core::Errc::NotImplemented,
             "render backend does not support idle present tests",
+        ))
+    }
+
+    /// 安排在本次最终 surface composite 提交后、present 前执行一次回读。
+    #[cfg(feature = "test-harness")]
+    fn request_surface_readback_for_test(&mut self) -> Result<(), Error> {
+        // 未接入可选能力的 backend 必须明确失败，不能保留悬挂请求。
+        Err(Error::new(
+            // 使用稳定的能力缺失分类。
+            crate::core::Errc::NotImplemented,
+            // 诊断不泄漏任何具体图形 API。
+            "render backend does not support surface readback",
+        ))
+    }
+
+    /// 在最终 present 返回后消费同一事务产生的规范回读结果。
+    #[cfg(feature = "test-harness")]
+    fn take_surface_readback_for_test(&mut self) -> Result<SurfaceReadback, Error> {
+        // 未接入可选能力的 backend 不得伪造空快照。
+        Err(Error::new(
+            // 使用稳定的能力缺失分类。
+            crate::core::Errc::NotImplemented,
+            // 诊断不泄漏任何具体图形 API。
+            "render backend does not expose a completed surface readback",
         ))
     }
 

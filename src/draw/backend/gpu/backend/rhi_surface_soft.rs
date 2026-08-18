@@ -1,16 +1,16 @@
 //! retained surface 与 Picture texture 的 CPU soft segment 合成。
 
-// 引入统一错误、最终 damage 和透明清理颜色。
-use crate::core::{Error, PresentDamage};
+// 引入统一错误和透明清理颜色。
+use crate::core::Error;
 // 引入 retained target 的 FramePlan 类型。
 use crate::draw::backend::frame_plan::{
     FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef,
 };
-// 引入通用图片 quad 载荷和 RHI renderer。
-use crate::draw::backend::rhi_renderer::{RhiRenderer, RhiTexturedQuad};
-// 引入薄 RHI 的 load、target、context 和 viewport 类型。
+// 引入通用图片 quad 载荷、RHI renderer 与封闭帧角色。
+use crate::draw::backend::rhi_renderer::{RhiRenderer, RhiRendererFrame, RhiTexturedQuad};
+// 引入薄 RHI 的 Device、load、target 与 viewport 类型。
 use crate::native::present::rhi::{
-    GraphicsContextRhi, LoadAction, RenderTargetHandle, RhiColor, RhiViewport,
+    GraphicsDevice, LoadAction, RenderTargetHandle, RhiColor, RhiViewport,
 };
 
 // 引入 soft staging 的 owner canvas。
@@ -26,23 +26,23 @@ fn supports_soft_upload(scale_x: f32, scale_y: f32) -> bool {
 
 // 为尚无可见 soft 像素的新 retained target 执行透明初始化 pass。
 pub(super) fn clear_empty_soft_target(
-    context: &mut dyn GraphicsContextRhi,
+    device: &mut dyn GraphicsDevice,
     viewport: RhiViewport,
     target: RenderTargetHandle,
 ) -> Result<(), Error> {
     // 使用 Clear load action 使没有可见 tile 的首帧仍拥有确定像素。
     let mut pass = RenderPassPlan::new(
         RenderTargetRef::Texture(target),
-        LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0])),
+        LoadAction::Clear(RhiColor::transparent()),
     );
     // 非空 viewport 命令满足 FramePlan pass 契约并固定 adapter 状态。
     pass.push(FramePlanCommand::SetViewport(viewport));
-    // 计划代际必须来自同一个 owner context。
-    let mut plan = FramePlan::new(context.token(), PresentDamage::Full);
+    // retained texture 初始化只属于 device，不依赖 swapchain generation。
+    let mut plan = FramePlan::offscreen();
     // 追加只写 retained texture 的清理 pass。
     plan.push_pass(pass);
     // 只执行离屏 target，不获取或呈现 swapchain。
-    plan.execute_offscreen_on_context(context)?;
+    plan.execute_offscreen_on_device(device)?;
     // 初始化提交句柄已由 owner context 接收，helper 只返回成功状态。
     Ok(())
 }
@@ -57,7 +57,8 @@ pub(super) fn try_upload_rhi_canvas_soft(
     scale_y: f32,
     target: RenderTargetHandle,
     load: LoadAction,
-    context: &mut dyn GraphicsContextRhi,
+    // 借用只允许资源、命令与 submit 的 Device 角色。
+    device: &mut dyn GraphicsDevice,
     renderer: &mut RhiRenderer,
 ) -> Result<bool, Error> {
     // 当前实现只接受有限正比例，避免把异常 DPR 转换为无效顶点。
@@ -69,7 +70,7 @@ pub(super) fn try_upload_rhi_canvas_soft(
     // 没有可见像素时只在首个 Clear pass 执行透明初始化。
     if segments.is_empty() {
         if matches!(load, LoadAction::Clear(_)) {
-            clear_empty_soft_target(context, viewport, target)?;
+            clear_empty_soft_target(device, viewport, target)?;
         }
         // 没有可上传像素时不制造临时纹理资源。
         canvas.last_soft_upload_bytes = 0;
@@ -153,15 +154,10 @@ pub(super) fn try_upload_rhi_canvas_soft(
             scissor: None,
         });
     }
-    // 在同一个 owner-thread context 上按顺序创建临时纹理并采样到 target。
-    let result = renderer.execute_textured_quads(
-        context,
-        PresentDamage::Full,
-        viewport,
-        load,
-        RenderTargetRef::Texture(target),
-        &quads,
-    );
+    // retained soft 合成只把 Device 与纹理目标交给 Renderer。
+    let frame = RhiRendererFrame::offscreen(device, target);
+    // 按顺序创建临时纹理并采样到明确的 Offscreen target。
+    let result = renderer.execute_textured_quads(frame, viewport, load, &quads);
     // 只有真实提交成功才更新诊断计数。
     if result.is_ok() {
         // 记录所有有序 soft 段的总上传字节数。
@@ -184,9 +180,11 @@ impl GpuBackend {
             // 缺少组合 RHI 时不能让 soft staging 跳过 retained owner。
             // 已验证 owner 丢失时返回 typed failure，不能绕过 retained owner。
             let context = self.gpu_ctx.rhi_context()?;
+            // 冻结本次 retained texture 对应的 drawable 范围。
+            let extent = context.surface_ref().token().extent;
             // 复用 native queue 使用的 surface geometry 证明。
             super::super::submit::rhi_physical_geometry(
-                context,
+                extent,
                 self.surface.width,
                 self.surface.height,
             )
@@ -201,9 +199,8 @@ impl GpuBackend {
         let Some(renderer) = rhi_renderer.as_mut() else {
             return Ok(false);
         };
-        // 当前 adapter 必须暴露组合 RHI context。
-        // 当前 adapter 的组合 RHI 已在构造期验证。
-        let context = gpu_ctx.rhi_context()?;
+        // 当前 adapter 的组合 owner 已在构造期验证，helper 只取得 Device。
+        let device = gpu_ctx.rhi_device()?;
         // 主 surface 按自身逻辑尺寸与物理 viewport 执行 SrcOver 上传。
         try_upload_rhi_canvas_soft(
             canvas,
@@ -214,7 +211,7 @@ impl GpuBackend {
             scale_y,
             target,
             load,
-            context,
+            device,
             renderer,
         )
     }

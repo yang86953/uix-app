@@ -34,7 +34,7 @@ platform window owner
 | `GpuRecipeContext` | internal interface | 不可拆分的 thin RHI、GPU surface 与当前 image 身份 |
 | `PixelUploadSurface` | internal interface | CPU 像素 resize、上传与最终提交 |
 | `GraphicsDevice` / `GraphicsSurface` | thin RHI interfaces | GPU 资源、pass、submit、resize、probe、present 与可选 readback |
-| `GraphicsCapabilities` | value | 由实际原语和 probe 支撑的事实能力 |
+| `GraphicsDeviceCapabilities` / `GraphicsSurfaceCapabilities` | values | 分别陈述设备原语，以及 Surface 的呈现一致性与可选原语事实 |
 | `Presenter` | submit interface | 建立本帧最终 OS present 结果 |
 | `SurfaceToken` / `PresentSurface` | generation/snapshot values | 隔离重建、迟到 callback，并原子描述 extent、DPR 与 transform |
 
@@ -42,7 +42,7 @@ platform window owner
 
 registry 只陈述可构造候选；graphics System 决定使用、恢复和 fallback 策略。显式 API 请求只尝试该 API 的完整 recipe，不偷换其他 API；Automatic 按固定候选顺序选择已启用且通过验证的 recipe，GPU 候选耗尽后才由上层决定是否整体使用 CPU。
 
-`GraphicsContextCandidate` 必须在一次构造事务中选择 GPU 或 PixelUpload 分支，并交付同源 capabilities。registry 在发布前核对平台、feature、API、raster/present 轴和分支：错配执行 checked shutdown 并返回 typed error。GPU baseline/probe 只对 GPU 分支运行；PixelUpload 不查询或伪造 RHI。
+`GraphicsContextCandidate` 必须在一次构造事务中选择 GPU 或 PixelUpload 分支，并交付同源 capabilities。GPU recipe 中的 `PresentCoherency` 只能从实际 `GraphicsSurfaceCapabilities` 冻结，owner 在发布前再次核对两者；任何漂移都执行 checked shutdown 并返回 typed error。registry 还要核对平台、feature、API、raster/present 轴和分支。GPU baseline/probe 只对 GPU 分支运行；PixelUpload 不查询或伪造 RHI。
 
 构造成功表示 context 已绑定 surface、处于 owner thread 且可进入第一帧。recipe 身份和构造期静态能力在 owner 内冻结；恢复仍使用相同类型化构造流程，不从 backend 名称或临时布尔查询重新拼装 recipe。
 
@@ -60,15 +60,23 @@ registry 只陈述可构造候选；graphics System 决定使用、恢复和 fal
 
 `GraphicsSurface` 独立持有窗口 surface、swapchain、物理 extent、generation、当前 present image 和不提交帧数据的可呈现探测。device 与 surface 可以在同一 Adapter owner 中组合，但资源寿命、错误分类和重建范围必须可区分；首版不要求跨窗口共享 device。
 
+组合 owner 通过共享 `RhiSubmissionSequence` 关联两个角色：Device 只从该状态机签发非零 `SubmissionHandle`，Surface 在触碰原生 Present 前只接受同一 owner 最近一次成功提交。OpenGL、D3D11 及后续 Adapter 只调用该共享规则，不得各自维护或跳过提交身份语义。
+
+Device 内部通过共享 `RhiPassState` 管理 API 无关的 render-pass 生命周期。活动目标身份、物理 extent、scissor 和采样绑定必须原子建立与清除；pass 外绑定、非零槽位、目标自采样反馈环和未结束 pass 的 submit 必须在共享层得到同一拒绝结果。Adapter 只保存当前 framebuffer、RTV 等原生对象，并在 end 时显式解除输入与输出绑定，不依赖驱动替调用方解决资源冲突。
+
+每次 `FramePlan` 执行都在目标和结构验证成功后、第一条原生命令前依次调用 `GraphicsDevice::activate` 与 `GraphicsDevice::maintain`。`activate` 只建立原生 owner-context 可用性，OpenGL 在这里恢复对应 current context；`maintain` 只检查设备健康，D3D11 在这里映射 device-removed 状态。资源借用和 checked teardown 同样先 activate，但不得因健康检查失败而失去释放机会；离屏计划不得借用另一个窗口或前一事务遗留的隐式上下文。
+
 GPU resize、present 和 readback 只经 `GraphicsSurface`；CPU 像素 resize/提交只经 `PixelUploadSurface`。共享 lifecycle 不提交帧 payload，也不暴露 external swapchain 视图。
 
 ## 静态能力与动态事实
 
-- `GraphicsContextCaps` 只描述构造期稳定的 backend、recipe、交换链 coherency 与支持轴。
+- `GraphicsContextCaps` 只描述构造期稳定的 backend、recipe、支持轴，以及从实际 Surface 冻结的 coherency 快照；它不是第二个能力权威。
 - drawable extent、DPR、transform、surface generation 与当前 image 都是动态事实，只能来自一次原子 `PresentSurface` / owner 查询。
-- `GraphicsCapabilities` 只陈述 sampled texture、render-to-texture、scissor、copy、retained framebuffer、partial present、occlusion、readback 等可验证原语。
+- `GraphicsDeviceCapabilities` 只陈述 buffer、texture、sampler、pipeline、pass、scissor、copy、blend 等可执行设备原语；不得夹带 Renderer 派生策略或 Surface 状态。
+- `GraphicsSurfaceCapabilities` 是 Surface 呈现事实的权威来源，直接陈述 `PresentCoherency` 与同步 readback 等可选原语。局部提交不能再复制为 `partial_present` 布尔值；candidate 中的静态 recipe 只能复制并校验这一事实。
+- 遮挡退出探测由正常 Present 的 `GraphicsOccluded` 结果进入，并以 `PresentTestResult` 返回动态状态；窗口生命周期遮挡依赖原生可见性事件恢复，两者都不需要静态 `occlusion` 布尔值。
 - UI 操作支持由 graphics System 从这些事实推导；Adapter 不维护平行 `draw_*` 能力表。
-- `retained_framebuffer` 不等于 `partial_redraw`。局部提交还要求全部绘制经过 retained target，并且交换链能证明 per-image coherency；条件不足时固定为 FullOnly。
+- Drawing 从 render-to-texture、sampled texture 与 copy 原语共同推导 `retained_color_target`，并只依据该保留事实与 `texture_region_move` 决定局部重绘和滚动搬移。最终 Surface 是否接收局部 damage 由 `PresentCoherency` 独立决定；`FullOnly` 只把最终呈现升级为完整 surface，不得反向关闭 retained texture 的局部复用。
 
 能力在构造/恢复边界探测，不能在同一 generation 的帧内漂移。运行中真实失败仍由 typed error 表达，不用临时降级改写已发布能力含义。
 
@@ -81,7 +89,8 @@ thin RHI 输入统一使用左上原点：viewport、scissor、顶点、UV、rea
 - texture target 与 window target 分别选择正确的 Y 映射，不修改通用 shader/场景语义；
 - readback 在 Adapter 内换算区域并按需翻转行；
 - CPU upload 数据保持 top-left 直通；
-- texture copy 和滚动搬移逐 texel 对位，不通过重复翻转偶然抵消。
+- texture copy 和滚动搬移先经过共享格式、非空区域、checked 边界与资源关系门禁，再逐 texel 对位；同资源重叠区域只走 scratch/memmove 语义；
+- OpenGL 离屏 texture 的逻辑顶部就是原生第零行，copy 两端直接使用 top-left Y；只有 window surface 边界执行所需的原点转换，不通过重复翻转偶然抵消。
 
 graphics/backend 只消费这一规范契约，不按 D3D、OpenGL、Vulkan 或 Metal 名称叠加平台特例。
 
@@ -100,7 +109,7 @@ device submit 成功、像素上传成功、present 调用已发起和画面实�
 
 ## 验证责任
 
-presentation 变更至少按风险验证：recipe/registry 分支一致性、错误线程调用拒绝、resize 原子发布、旧 generation 隔离、capability 与实际 probe 一致、一次最终 present、失败帧不消费 damage、readback 行序、checked shutdown，以及多个原生 Adapter 复用同一 thin RHI。真实 GPU、DPI、resize、遮挡和驱动矩阵的实时结果由 Gitea 持有；缺少环境时标为未验证。
+presentation 变更至少按风险验证：recipe/registry 分支一致性、错误线程调用拒绝、resize 原子发布、旧 generation 隔离、capability 与实际 probe 一致、一次最终 present、失败帧不消费 damage、readback 行序、局部 retained `TextureMove` 的真实执行与像素结果、checked shutdown，以及多个原生 Adapter 复用同一 thin RHI。执行证据由共享 FramePlan 统计，Adapter 不维护平台私有成功计数。真实 GPU、DPI、resize、遮挡和驱动矩阵的实时结果由 Gitea 持有；缺少环境时标为未验证。
 
 ## 模块不变量
 

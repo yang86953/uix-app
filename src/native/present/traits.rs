@@ -114,7 +114,7 @@ pub(crate) fn resize_native_rhi_surface(
     // 原子 GPU recipe 视图直接返回唯一 thin RHI owner 或 typed failure。
     let rhi = context.rhi_context()?;
     // 将逻辑窗口尺寸转换后的物理 extent 交给唯一 GraphicsSurface 生命周期。
-    rhi.resize(extent)?;
+    rhi.surface().resize(extent)?;
     // 只报告 RHI surface 重建成功，不在此处触碰最终 present。
     Ok(())
 }

@@ -483,7 +483,7 @@ impl Drawer {
         let Some(visible) = ctx.elide_single_line(value, font_size, frame.w) else {
             // 保持组件原有的无可见文本早退策略。
             return;
-        // 结束极窄宽度分支。
+            // 结束极窄宽度分支。
         };
         ctx.push_clip(frame);
         let y = ctx.visual_center_y(frame, font_size);

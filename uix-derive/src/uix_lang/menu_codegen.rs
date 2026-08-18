@@ -7,8 +7,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Menu 属性、表达式、事件、布尔值与诊断契约。
 use super::{
-    boolean_value, generate_event_handler_expression, generate_expression, Attribute,
-    AttributeValue, Diagnostic, Element,
+    Attribute, AttributeValue, Diagnostic, Element, boolean_value,
+    generate_event_handler_expression, generate_expression,
 };
 
 // 生成拥有 typed MenuItem 树与双受控状态的 Menu。

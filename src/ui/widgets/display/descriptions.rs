@@ -377,4 +377,3 @@ fn draw_wrapped_cell_text(
     ctx.draw_text_wrapped(text, text_rect, color, ITEM_FONT_SIZE);
     ctx.pop_clip();
 }
-

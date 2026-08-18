@@ -1,7 +1,7 @@
 //! RHI Picture texture 的有序 sampled blit。
 
-// 引入 blit 几何、错误和 ordered damage 类型。
-use crate::core::{Errc, Error, PresentDamage, Rect};
+// 引入 blit 几何与统一错误类型。
+use crate::core::{Errc, Error, Rect};
 // 引入 FramePlan 的明确 render target 引用。
 use crate::draw::backend::frame_plan::RenderTargetRef;
 // 引入通用 sampled quad 和薄 RHI 的 pass/load 类型。
@@ -300,7 +300,7 @@ impl GpuBackend {
                 // 主 surface 的 pass load action 必须继承当前 retained 代际。
                 let load = if self.surface.needs_gpu_clear {
                     // 新 retained target 先透明初始化，再叠加当前 Picture source。
-                    LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0]))
+                    LoadAction::Clear(RhiColor::transparent())
                 } else {
                     // 已有 retained 内容时保留前序 painter-order 结果。
                     LoadAction::Load
@@ -308,6 +308,21 @@ impl GpuBackend {
                 // 返回主 retained target 的几何尺寸和写入标记。
                 (target, self.surface.width, self.surface.height, load, true)
             };
+        // 已验证两条分支都只能交付显式纹理目标。
+        let target = match target {
+            // 提取 Device-only Renderer 需要的不透明纹理句柄。
+            RenderTargetRef::Texture(target) => target,
+            // 防御组合边界重新返回主 Surface sentinel。
+            RenderTargetRef::Surface => {
+                // 使用稳定状态错误拒绝无 present Surface 写入。
+                return Err(Error::new(
+                    // 目标角色漂移属于内部状态错误。
+                    Errc::InvalidState,
+                    // 指明本入口只允许显式纹理。
+                    "RHI sampled segment requires an offscreen texture target",
+                ));
+            }
+        };
         // 只有通用 renderer 和组合 RHI context 都存在时才进入无 present segment。
         let Some(renderer) = self.rhi_renderer.as_mut() else {
             // 当前 backend 没有 RHI cache，不能使用 RHI source。
@@ -331,7 +346,8 @@ impl GpuBackend {
         } else {
             // 复用主 surface native lowering 的 mixed-DPI 几何规则。
             super::super::submit::rhi_physical_geometry(
-                context,
+                // 冻结当前 drawable 的物理范围。
+                context.surface_ref().token().extent,
                 self.surface.width,
                 self.surface.height,
             )
@@ -355,8 +371,8 @@ impl GpuBackend {
         );
         // 无 present segment 只提交当前 ordered boundary，最终 present 仍由外层负责。
         let result = renderer.execute_sampled_quad_without_present(
-            context,
-            PresentDamage::Full,
+            // 只把资源、命令与 submit 所需的 Device 角色交给 Renderer。
+            context.device(),
             viewport,
             target_load,
             target,

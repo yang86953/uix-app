@@ -7,8 +7,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Anchor 属性、表达式、事件、数值与诊断契约。
 use super::{
-    boolean_value, generate_event_handler_expression, generate_expression, numeric_value,
-    Attribute, AttributeValue, Diagnostic, Element,
+    Attribute, AttributeValue, Diagnostic, Element, boolean_value,
+    generate_event_handler_expression, generate_expression, numeric_value,
 };
 
 // 生成拥有类型化滚动目标并由运行时保持选择生命周期的 Anchor。

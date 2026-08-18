@@ -6,13 +6,13 @@ use crate::core::{ComponentId, Constraints, EdgeInsets, Rect, Size};
 use crate::platform::windowing::{CursorType, KeyCode, MouseButton};
 // 从平台公开值契约再导出缩放方向，保持 UI 与 prelude 使用路径集中。
 pub use crate::platform::windowing::WindowResizeEdge;
+use crate::ui::component_snapshot::SnapshotFields;
+use crate::ui::event::WindowAction;
+use crate::ui::layout::engine::BoxModel;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::traits::{
     EventHandler, WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender,
 };
-use crate::ui::component_snapshot::SnapshotFields;
-use crate::ui::event::WindowAction;
-use crate::ui::layout::engine::BoxModel;
 // 引入标准窗口控件组合使用的对齐契约。
 use crate::ui::layout::{AlignItems, JustifyContent, LayoutChild};
 // 引入主题中性颜色角色。

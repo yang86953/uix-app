@@ -29,9 +29,9 @@ use crate::native::present::PresentTestResult;
 use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::windowing::window::{NativeFrameRequest, PlatformWindow, WindowOcclusionState};
 use crate::ui::adapter::ViewAdapter;
+use crate::ui::theme::Theme;
 use crate::ui::widget_runtime::clipboard;
 use crate::ui::widget_runtime::widget::WidgetCore;
-use crate::ui::theme::Theme;
 use crate::ui::{EventResult, WidgetTree};
 use std::cell::{Cell, RefCell};
 use std::time::{Duration, Instant};
@@ -184,3 +184,5 @@ pub(crate) fn sync_animation_registrations(
 
 mod driver;
 mod frame;
+// 将永久失败后的调度资源收敛隔离为独立组件。
+mod frame_fail_stop;

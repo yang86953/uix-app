@@ -4,15 +4,16 @@
 use super::{NativeGpuCanvas2D, SOFT_FALLBACK_IDLE_PRESENT_GRACE};
 
 use crate::core::{Errc, Error};
-// 引入 FramePlan 的显式 render target 引用。
-use crate::draw::backend::frame_plan::RenderTargetRef;
 // 引入通用 RHI lowering 的 mesh 载荷和 renderer。
 use crate::draw::backend::rhi_renderer::{
-    RhiCoverageQuad, RhiRenderer, RhiShadow, RhiShapeRect, RhiSolidMesh, RhiTexturedQuad,
+    RhiCoverageQuad, RhiRenderer, RhiRendererFrame, RhiShadow, RhiShapeRect, RhiSolidMesh,
+    RhiTexturedQuad,
 };
 use crate::draw::geometry::types::BlendMode;
-// 引入薄 RHI 的组合 context、load 和 viewport 类型。
-use crate::native::present::rhi::{GraphicsContextRhi, LoadAction, RhiScissor, RhiViewport};
+// 引入 Device-only lowering 所需的目标、extent、load 和 viewport 类型。
+use crate::native::present::rhi::{
+    GraphicsDevice, LoadAction, RenderTargetHandle, RhiExtent, RhiScissor, RhiViewport,
+};
 
 // 将保序混合 RHI lowering 拆到独立文件，避免继续膨胀提交模块。
 #[path = "rhi_lowering.rs"]
@@ -22,14 +23,15 @@ mod lowering;
 #[path = "rhi_gradient_submit.rs"]
 mod gradient_submit;
 
-// 由逻辑 canvas 尺寸和 RHI surface extent 推导物理 lowering 比例。
+// 由逻辑 canvas 尺寸和显式目标 extent 推导物理 lowering 比例。
 pub(crate) fn rhi_physical_geometry(
-    context: &dyn GraphicsContextRhi,
+    // 接收本次 Drawing 目标的物理范围，不取得 Surface 生命周期。
+    extent: RhiExtent,
+    // 接收 Drawing 语义中的逻辑宽度。
     logical_width: i32,
+    // 接收 Drawing 语义中的逻辑高度。
     logical_height: i32,
 ) -> (RhiViewport, f32, f32) {
-    // 读取当前 surface 的物理 drawable 尺寸，不依赖兼容 context 的高层单位。
-    let extent = context.token().extent;
     // 计算 x/y 两个轴的逻辑到物理比例，覆盖 mixed-DPI 的非对称变化。
     let scale_x = extent.width as f32 / logical_width.max(1) as f32;
     let scale_y = extent.height as f32 / logical_height.max(1) as f32;
@@ -44,20 +46,68 @@ pub(crate) fn rhi_physical_geometry(
     )
 }
 
+// 只在本模块验证统一物理几何换算，不接触任何原生 Surface。
+#[cfg(test)]
+mod tests {
+    // 引入本模块的显式 extent 几何与裁剪换算。
+    use super::{rhi_physical_geometry, rhi_physical_scissor};
+    // 引入 API 无关的物理范围与裁剪值。
+    use crate::native::present::rhi::{RhiExtent, RhiScissor};
+
+    // 证明 Drawing 只凭显式目标 extent 就能统一计算 viewport、DPI 与裁剪。
+    #[test]
+    fn explicit_extent_drives_geometry_and_scissor_without_surface() {
+        // 构造与任何 swapchain 代际无关的纹理范围。
+        let extent = RhiExtent::new(300, 200);
+        // 用非对称逻辑尺寸覆盖 X/Y 不同缩放比例。
+        let (viewport, scale_x, scale_y) = rhi_physical_geometry(extent, 100, 50);
+        // viewport 必须完整覆盖显式纹理宽度。
+        assert_eq!(viewport.width, 300.0);
+        // viewport 必须完整覆盖显式纹理高度。
+        assert_eq!(viewport.height, 200.0);
+        // 水平比例只能由 extent 与逻辑宽度推导。
+        assert_eq!(scale_x, 3.0);
+        // 垂直比例只能由 extent 与逻辑高度推导。
+        assert_eq!(scale_y, 4.0);
+        // 将逻辑矩形换算为同一物理范围内的整数裁剪。
+        let scissor = rhi_physical_scissor((10, 5, 20, 10), scale_x, scale_y, extent)
+            // 测试输入完全可见，缺少裁剪说明契约被破坏。
+            .expect("explicit extent should produce a visible scissor");
+        // 两轴缩放后的裁剪必须保持同一 Drawing 语义。
+        assert_eq!(
+            // 比较 API 无关的整数物理矩形。
+            scissor,
+            // 期望坐标与尺寸分别使用 X/Y 比例。
+            RhiScissor {
+                // 水平原点按三倍缩放。
+                x: 30,
+                // 垂直原点按四倍缩放。
+                y: 20,
+                // 水平宽度按三倍缩放。
+                width: 60,
+                // 垂直高度按四倍缩放。
+                height: 40,
+            }
+        );
+    }
+}
+
 // 把逻辑 scissor 转成已经裁到 surface 范围内的物理 scissor。
 fn rhi_physical_scissor(
+    // 接收 Drawing 已经计算的逻辑裁剪。
     scissor: (i32, i32, i32, i32),
+    // 接收当前目标的水平逻辑到物理比例。
     scale_x: f32,
+    // 接收当前目标的垂直逻辑到物理比例。
     scale_y: f32,
-    context: &dyn GraphicsContextRhi,
+    // 接收本次目标的物理范围，禁止从组合 Surface 隐式读取。
+    extent: RhiExtent,
 ) -> Option<RhiScissor> {
     // 逻辑裁剪已经由 canvas 计算，此处只拒绝异常输入。
     if scissor.2 <= 0 || scissor.3 <= 0 || !scale_x.is_finite() || !scale_y.is_finite() {
         // 空裁剪不能被误译成“无裁剪”。
         return None;
     }
-    // 读取物理 surface 边界。
-    let extent = context.token().extent;
     // 用绝对远端换算并夹到 drawable，避免缩放后的宽高少一列。
     let x0 = (scissor.0 as f32 * scale_x)
         .floor()
@@ -175,11 +225,13 @@ impl NativeGpuCanvas2D {
     pub(crate) fn submit_rhi_solid(
         &self,
         renderer: &mut RhiRenderer,
-        context: &mut dyn GraphicsContextRhi,
+        // 借用只允许资源、命令与 submit 的 Device 角色。
+        device: &mut dyn GraphicsDevice,
+        // 接收 retained texture 的物理范围。
+        extent: RhiExtent,
         load: LoadAction,
-        // 指定本次 solid 计划写入的 surface 或 retained texture。
-        target: RenderTargetRef,
-        damage: crate::core::PresentDamage,
+        // 指定本次 solid 计划唯一允许写入的离屏纹理。
+        target: RenderTargetHandle,
     ) -> Result<bool, Error> {
         // soft 内容与 RHI native 几何不能在这条纵切中交错提交。
         if self.soft_has_content || self.pending_native.is_empty() {
@@ -188,14 +240,13 @@ impl NativeGpuCanvas2D {
         }
         // 预先分配同一顺序的 RHI mesh 载荷。
         let mut meshes = Vec::with_capacity(self.pending_native.len());
-        // 读取当前 surface 的物理 viewport 和两轴缩放。
+        // 从显式纹理范围推导物理 viewport 和两轴缩放。
         let (viewport, scale_x, scale_y) =
-            rhi_physical_geometry(context, self.surface_w, self.surface_h);
+            rhi_physical_geometry(extent, self.surface_w, self.surface_h);
         // 逐项检查当前队列是否属于已经迁移的几何子集。
         for operation in &self.pending_native {
             // 把现有逻辑 scissor 转成薄 RHI 的物理矩形。
-            let Some(scissor) =
-                rhi_physical_scissor(operation.scissor(), scale_x, scale_y, context)
+            let Some(scissor) = rhi_physical_scissor(operation.scissor(), scale_x, scale_y, extent)
             else {
                 // 返回 false 而不是伪造一帧成功。
                 return Ok(false);
@@ -248,8 +299,10 @@ impl NativeGpuCanvas2D {
             // 保持 pending queue 的 painter order。
             meshes.push(mesh);
         }
-        // 由通用 renderer 生成 FramePlan 并完成唯一最终 present。
-        renderer.execute_solid_meshes(context, damage, viewport, load, target, &meshes)?;
+        // Device-only lowering 只能构造显式纹理 Offscreen 帧。
+        let frame = RhiRendererFrame::offscreen(device, target);
+        // 由通用 renderer 生成并执行离屏 FramePlan。
+        renderer.execute_solid_meshes(frame, viewport, load, &meshes)?;
         // 告知调用方本次队列已经通过 RHI present 成功。
         Ok(true)
     }
@@ -258,27 +311,28 @@ impl NativeGpuCanvas2D {
     pub(crate) fn submit_rhi_shapes(
         &self,
         renderer: &mut RhiRenderer,
-        context: &mut dyn GraphicsContextRhi,
+        // 借用只允许资源、命令与 submit 的 Device 角色。
+        device: &mut dyn GraphicsDevice,
+        // 接收 retained texture 的物理范围。
+        extent: RhiExtent,
         load: LoadAction,
-        // 指定本次 shape 计划写入的 surface 或 retained texture。
-        target: RenderTargetRef,
-        damage: crate::core::PresentDamage,
+        // 指定本次 shape 计划唯一允许写入的离屏纹理。
+        target: RenderTargetHandle,
     ) -> Result<bool, Error> {
         // soft 内容与 RHI shape 不能在这条纵切中交错提交。
         if self.soft_has_content || self.pending_native.is_empty() {
             // 返回 false 让兼容路径保持原有 painter-order 语义。
             return Ok(false);
         }
-        // 读取当前 surface 的物理 viewport 和两轴缩放。
+        // 从显式纹理范围推导物理 viewport 和两轴缩放。
         let (viewport, scale_x, scale_y) =
-            rhi_physical_geometry(context, self.surface_w, self.surface_h);
+            rhi_physical_geometry(extent, self.surface_w, self.surface_h);
         // 预先分配同一顺序的 shape 载荷。
         let mut rects = Vec::with_capacity(self.pending_native.len());
         // 逐项确认当前队列只包含 shape rect/stroke rect。
         for operation in &self.pending_native {
             // 把逻辑裁剪转换为物理裁剪。
-            let Some(scissor) =
-                rhi_physical_scissor(operation.scissor(), scale_x, scale_y, context)
+            let Some(scissor) = rhi_physical_scissor(operation.scissor(), scale_x, scale_y, extent)
             else {
                 // 空裁剪保留原有 no-op 语义。
                 return Ok(false);
@@ -345,8 +399,10 @@ impl NativeGpuCanvas2D {
             // 保持 pending queue 的 painter order。
             rects.push(rect);
         }
-        // 由通用 renderer 生成 FramePlan 并完成唯一最终 present。
-        renderer.execute_shape_rects(context, damage, viewport, load, target, &rects)?;
+        // Device-only lowering 只能构造显式纹理 Offscreen 帧。
+        let frame = RhiRendererFrame::offscreen(device, target);
+        // 由通用 renderer 生成并执行离屏 FramePlan。
+        renderer.execute_shape_rects(frame, viewport, load, &rects)?;
         // 告知调用方本次队列已经通过 RHI present 成功。
         Ok(true)
     }
@@ -355,20 +411,22 @@ impl NativeGpuCanvas2D {
     pub(crate) fn submit_rhi_shadows(
         &self,
         renderer: &mut RhiRenderer,
-        context: &mut dyn GraphicsContextRhi,
+        // 借用只允许资源、命令与 submit 的 Device 角色。
+        device: &mut dyn GraphicsDevice,
+        // 接收 retained texture 的物理范围。
+        extent: RhiExtent,
         load: LoadAction,
-        // 指定本次 shadow 计划写入的 surface 或 retained texture。
-        target: RenderTargetRef,
-        damage: crate::core::PresentDamage,
+        // 指定本次 shadow 计划唯一允许写入的离屏纹理。
+        target: RenderTargetHandle,
     ) -> Result<bool, Error> {
         // soft 内容与 RHI shadow 不能在这条纵切中交错提交。
         if self.soft_has_content || self.pending_native.is_empty() {
             // 返回 false 让兼容路径保持原有 painter-order 语义。
             return Ok(false);
         }
-        // 读取当前 surface 的物理 viewport 和两轴缩放。
+        // 从显式纹理范围推导物理 viewport 和两轴缩放。
         let (viewport, scale_x, scale_y) =
-            rhi_physical_geometry(context, self.surface_w, self.surface_h);
+            rhi_physical_geometry(extent, self.surface_w, self.surface_h);
         // 预先分配同一顺序的 shadow 载荷。
         let mut shadows = Vec::with_capacity(self.pending_native.len());
         // 逐项确认当前队列只包含 box shadow。
@@ -389,7 +447,7 @@ impl NativeGpuCanvas2D {
                 }
             };
             // 把逻辑裁剪转换为物理裁剪。
-            let Some(scissor) = rhi_physical_scissor(shadow.scissor, scale_x, scale_y, context)
+            let Some(scissor) = rhi_physical_scissor(shadow.scissor, scale_x, scale_y, extent)
             else {
                 // 空裁剪保留原有 no-op 语义。
                 return Ok(false);
@@ -415,23 +473,30 @@ impl NativeGpuCanvas2D {
             }
             // 组装保留仿射四角的物理 shadow。
             shadows.push(RhiShadow {
-                x: value.x * scale_x,
-                y: value.y * scale_y,
+                // 保存物理本体宽度，原点已经冻结在扩展四角中。
                 w: value.w * scale_x,
+                // 保存物理本体高度。
                 h: value.h * scale_y,
+                // 保存已经包含 offset 与 blur 的设备四角。
                 corners,
-                offset_x,
-                offset_y,
+                // 保存物理 X 轴模糊量。
                 blur_x,
+                // 保存物理 Y 轴模糊量。
                 blur_y,
+                // 保存直通阴影颜色。
                 rgba: value.rgba,
+                // 保存物理四角半径。
                 radius,
+                // 保存覆盖曲线身份。
                 ambient: value.ambient,
+                // 保存物理裁剪。
                 scissor: Some(scissor),
             });
         }
-        // 由通用 renderer 生成 FramePlan 并完成唯一最终 present。
-        renderer.execute_shadows(context, damage, viewport, load, target, &shadows)?;
+        // Device-only lowering 只能构造显式纹理 Offscreen 帧。
+        let frame = RhiRendererFrame::offscreen(device, target);
+        // 由通用 renderer 生成并执行离屏 FramePlan。
+        renderer.execute_shadows(frame, viewport, load, &shadows)?;
         // 告知调用方本次队列已经通过 RHI present 成功。
         Ok(true)
     }
@@ -440,20 +505,22 @@ impl NativeGpuCanvas2D {
     pub(crate) fn submit_rhi_glyphs(
         &self,
         renderer: &mut RhiRenderer,
-        context: &mut dyn GraphicsContextRhi,
+        // 借用只允许资源、命令与 submit 的 Device 角色。
+        device: &mut dyn GraphicsDevice,
+        // 接收 retained texture 的物理范围。
+        extent: RhiExtent,
         load: LoadAction,
-        // 指定本次 glyph 计划写入的 surface 或 retained texture。
-        target: RenderTargetRef,
-        damage: crate::core::PresentDamage,
+        // 指定本次 glyph 计划唯一允许写入的离屏纹理。
+        target: RenderTargetHandle,
     ) -> Result<bool, Error> {
         // soft 内容与 RHI coverage 不能在这条纵切中交错提交。
         if self.soft_has_content || self.pending_native.is_empty() {
             // 返回 false 让兼容路径保持原有 painter-order 语义。
             return Ok(false);
         }
-        // 读取当前 surface 的物理 viewport 和两轴缩放。
+        // 从显式纹理范围推导物理 viewport 和两轴缩放。
         let (viewport, scale_x, scale_y) =
-            rhi_physical_geometry(context, self.surface_w, self.surface_h);
+            rhi_physical_geometry(extent, self.surface_w, self.surface_h);
         // 预先分配同一顺序的 coverage quad 载荷。
         let mut quads = Vec::with_capacity(self.pending_native.len());
         // 逐项确认当前队列是轴对齐 R8 coverage 子集。
@@ -469,7 +536,7 @@ impl NativeGpuCanvas2D {
                 return Ok(false);
             }
             // 把逻辑裁剪转换为物理裁剪。
-            let Some(scissor) = rhi_physical_scissor(glyph.scissor, scale_x, scale_y, context)
+            let Some(scissor) = rhi_physical_scissor(glyph.scissor, scale_x, scale_y, extent)
             else {
                 // 空裁剪保留原有 no-op 语义。
                 return Ok(false);
@@ -515,8 +582,10 @@ impl NativeGpuCanvas2D {
                 scissor: Some(scissor),
             });
         }
-        // 由通用 renderer 生成 FramePlan 并完成唯一最终 present。
-        renderer.execute_coverage_quads(context, damage, viewport, load, target, &quads)?;
+        // Device-only lowering 只能构造显式纹理 Offscreen 帧。
+        let frame = RhiRendererFrame::offscreen(device, target);
+        // 由通用 renderer 生成并执行离屏 FramePlan。
+        renderer.execute_coverage_quads(frame, viewport, load, &quads)?;
         // 告知调用方本次队列已经通过 RHI present 成功。
         Ok(true)
     }
@@ -525,20 +594,22 @@ impl NativeGpuCanvas2D {
     pub(crate) fn submit_rhi_textured(
         &self,
         renderer: &mut RhiRenderer,
-        context: &mut dyn GraphicsContextRhi,
+        // 借用只允许资源、命令与 submit 的 Device 角色。
+        device: &mut dyn GraphicsDevice,
+        // 接收 retained texture 的物理范围。
+        extent: RhiExtent,
         load: LoadAction,
-        // 指定本次图片计划写入的 surface 或 retained texture。
-        target: RenderTargetRef,
-        damage: crate::core::PresentDamage,
+        // 指定本次图片计划唯一允许写入的离屏纹理。
+        target: RenderTargetHandle,
     ) -> Result<bool, Error> {
         // soft 内容与 RHI texture 不能在这条纵切中交错提交。
         if self.soft_has_content || self.pending_native.is_empty() {
             // 返回 false 让兼容路径保持原有 painter-order 语义。
             return Ok(false);
         }
-        // 读取当前 surface 的物理 viewport 和两轴缩放。
+        // 从显式纹理范围推导物理 viewport 和两轴缩放。
         let (viewport, scale_x, scale_y) =
-            rhi_physical_geometry(context, self.surface_w, self.surface_h);
+            rhi_physical_geometry(extent, self.surface_w, self.surface_h);
         // 预先分配同一顺序的 sampled quad 载荷。
         let mut quads = Vec::with_capacity(self.pending_native.len());
         // 逐项确认当前队列是可迁移的 SrcOver image blit 子集。
@@ -548,12 +619,15 @@ impl NativeGpuCanvas2D {
                 return Ok(false);
             };
             // 缺少可选 Additive 能力时回到兼容路径，不能伪造 SrcOver 结果。
-            if image.blit.additive && !context.capabilities().additive_blend {
+            if image.blit.additive
+                // Additive 能力只能从显式 Device 角色读取。
+                && !device.device_capabilities().additive_blend
+            {
                 // 保持旧 adapter 的能力分流和 painter-order 语义。
                 return Ok(false);
             }
             // 把逻辑裁剪转换为物理裁剪。
-            let Some(scissor) = rhi_physical_scissor(image.scissor, scale_x, scale_y, context)
+            let Some(scissor) = rhi_physical_scissor(image.scissor, scale_x, scale_y, extent)
             else {
                 // 空裁剪保留原有 no-op 语义。
                 return Ok(false);
@@ -592,8 +666,10 @@ impl NativeGpuCanvas2D {
                 scissor: Some(scissor),
             });
         }
-        // 由通用 renderer 生成 FramePlan 并完成唯一最终 present。
-        renderer.execute_textured_quads(context, damage, viewport, load, target, &quads)?;
+        // Device-only lowering 只能构造显式纹理 Offscreen 帧。
+        let frame = RhiRendererFrame::offscreen(device, target);
+        // 由通用 renderer 生成并执行离屏 FramePlan。
+        renderer.execute_textured_quads(frame, viewport, load, &quads)?;
         // 告知调用方本次队列已经通过 RHI present 成功。
         Ok(true)
     }

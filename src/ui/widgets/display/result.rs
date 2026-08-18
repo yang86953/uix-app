@@ -474,8 +474,7 @@ impl ResultView {
         // 在借用可变上下文前先解析当前主题字号。
         let font_size = ctx.tokens().font_size();
         // 复用共享省略算法生成结果描述的可见文本。
-        if let Some(value) = ctx.elide_single_line(value, font_size, content.w)
-        {
+        if let Some(value) = ctx.elide_single_line(value, font_size, content.w) {
             ctx.push_clip(content);
             // 结果描述文本：白色 token。
             ctx.text_center(

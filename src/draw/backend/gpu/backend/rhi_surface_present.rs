@@ -41,7 +41,7 @@ impl GpuBackend {
         // 只有需要全清时才能把旧 clear 语义映射为 pass load action。
         let load = if self.surface.needs_gpu_clear {
             // 首帧主 surface 的透明初始化。
-            LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0]))
+            LoadAction::Clear(RhiColor::transparent())
         } else {
             // 保留 retained texture 的已有像素。
             LoadAction::Load
@@ -72,13 +72,18 @@ impl GpuBackend {
             // 只有 native context 暴露组合 RHI 才能执行 FramePlan。
             // 已验证 owner 丢失时返回 typed failure，不能回退 legacy 路径。
             let context = gpu_ctx.rhi_context()?;
+            // 冻结 retained texture 与主 drawable 共用的物理范围。
+            let extent = context.surface_ref().token().extent;
             // 将混合 pending queue lowering 为保序 FramePlan。
             surface.canvas.submit_rhi_mixed(
                 renderer,
-                context,
+                // 离屏 lowering 只取得 Device 角色。
+                context.device(),
+                // 使用冻结的 retained texture 物理范围。
+                extent,
                 load,
-                RenderTargetRef::Texture(retained_texture),
-                damage_plan.present_damage.clone(),
+                // 只允许写入显式 retained texture。
+                retained_texture,
             )?
         };
         // 不支持的队列没有触碰 present 状态，继续兼容路径。
@@ -143,7 +148,7 @@ impl GpuBackend {
         // 只有需要全清时才能把旧 clear 语义等价映射为 pass load action。
         let load = if self.surface.needs_gpu_clear {
             // 首帧主 surface 的透明初始化。
-            LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0]))
+            LoadAction::Clear(RhiColor::transparent())
         } else {
             // 保留 retained texture 的已有像素。
             LoadAction::Load
@@ -174,13 +179,18 @@ impl GpuBackend {
             // 只有 native context 暴露组合 RHI 才能执行 FramePlan。
             // 已验证 owner 丢失时返回 typed failure，不能回退 legacy 路径。
             let context = gpu_ctx.rhi_context()?;
+            // 冻结 retained texture 与主 drawable 共用的物理范围。
+            let extent = context.surface_ref().token().extent;
             // 将纯 solid 队列 lowering 为 FramePlan；不支持的操作返回 false。
             surface.canvas.submit_rhi_solid(
                 renderer,
-                context,
+                // 离屏 lowering 只取得 Device 角色。
+                context.device(),
+                // 使用冻结的 retained texture 物理范围。
+                extent,
                 load,
-                RenderTargetRef::Texture(retained_texture),
-                damage_plan.present_damage.clone(),
+                // 只允许写入显式 retained texture。
+                retained_texture,
             )?
         };
         // 不支持的队列没有触碰 present 状态，继续兼容路径。

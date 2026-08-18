@@ -248,9 +248,7 @@ impl<'a> PendingEglContext<'a> {
                     // 构造回滚失败属于平台资源错误。
                     Errc::PlatformError,
                     // 记录精确 native 操作。
-                    format!(
-                        "EglContext: construction rollback eglTerminate failed: {error:?}"
-                    ),
+                    format!("EglContext: construction rollback eglTerminate failed: {error:?}"),
                 )
             })?;
         // EGL display 终止后再销毁唯一持有的 Wayland native window。

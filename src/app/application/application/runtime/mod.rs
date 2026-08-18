@@ -53,6 +53,24 @@ pub(crate) fn resolve_graphics_backend(
     GraphicsSelection::Automatic
 }
 
+// 让图形启动策略解析靠近它消费的环境变量、设置与优先级规则。
+impl App {
+    /// 按 builder、环境变量与设置的优先级解析私有启动策略。
+    pub(crate) fn configured_graphics_backend(&self) -> GraphicsSelection {
+        // 环境变量只在 builder 未显式选择时参与策略解析。
+        let env_value = std::env::var(GRAPHICS_BACKEND_ENV).ok();
+        // 把三种配置来源交给唯一优先级函数。
+        resolve_graphics_backend(
+            // 公开 builder 拥有最高优先级。
+            self.graphics_backend,
+            // 环境值保持借用直到本次解析结束。
+            env_value.as_deref(),
+            // 设置服务不存在时自然进入自动策略。
+            self.container.resolve::<SettingsService>(),
+        )
+    }
+}
+
 fn parse_graphics_backend_config(source: &str, value: &str) -> Option<GraphicsSelection> {
     // 环境变量与设置值共享同一个私有策略解析器。
     match value.parse::<GraphicsSelection>() {

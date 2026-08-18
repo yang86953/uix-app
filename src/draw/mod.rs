@@ -63,6 +63,9 @@ pub mod target;
 
 pub use crate::core::{DamageRegion, DirtyRegion};
 pub use backend::{BackendCapabilities, BackendKind, RenderBackend};
+// test-harness 公开统一像素快照，不导出原生 RHI 类型。
+#[cfg(feature = "test-harness")]
+pub use backend::SurfaceReadback;
 pub use geometry::color::{Color, colors};
 pub use geometry::path::{FillRule, LineCap, LineJoin, Path, PathBuilder, PathSegment};
 pub use geometry::spatial::unit::AngleExt;
@@ -78,6 +81,9 @@ pub use geometry::types::{
 pub use geometry::{color, flattener, path, stroker, tessellator, types};
 pub use painting::Canvas2D;
 pub use renderer::Renderer;
+// test-harness 公开有界等待票据，与规范像素快照组成完整测试端口。
+#[cfg(feature = "test-harness")]
+pub use renderer::SurfaceReadbackTicket;
 pub use renderer::{
     AnimationRegistry, Invalidation, InvalidationQueue, InvalidationSource, RenderMetrics,
     RenderOutcome, ScrollDelta,
@@ -88,8 +94,8 @@ pub use renderer::{
 };
 pub use resources::font::TextBackend;
 pub use resources::{
-    BitmapFont, BitmapHandle, FontService, GlyphRaster, ImageService, ImageSlot, LineInfo,
-    LineMetrics, PositionedGlyph, TextLayout,
+    BitmapFont, BitmapHandle, FontBundle, FontService, GlyphRaster, ImageService, ImageSlot,
+    LineInfo, LineMetrics, PositionedGlyph, TextLayout,
 };
 // 导出公开的场景节点身份与已解析 overlay effect 值。
 pub use scene::{NodeId, OverlayBackdropEffect};

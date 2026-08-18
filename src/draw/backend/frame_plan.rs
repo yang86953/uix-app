@@ -4,21 +4,27 @@
 //! 原生 adapter 不能从这里取得 widget、字体或路径算法。
 
 #![allow(dead_code)]
-// 使用共享字节载荷表达帧内资源更新，并保持计划可克隆审计。
-use std::sync::Arc;
 // 引入框架错误类型，保证执行失败不会被当作成功帧。
 use crate::core::error::{Errc, Error, Result};
 // 引入最终呈现的 damage 值。
 use crate::core::PresentDamage;
 // 引入 platform 私有的薄 RHI 原语。
 use crate::native::present::rhi::{
-    DrawPacket, GraphicsContextRhi, GraphicsDevice, GraphicsSurface, LoadAction,
-    RenderTargetHandle, RhiColor, RhiScissor, RhiViewport, SubmissionHandle, SurfaceToken,
-    TextureCopy, TextureHandle, TextureMove,
+    DrawPacket, GraphicsContextRhi, GraphicsDevice, LoadAction, RenderTargetHandle, RhiColor,
+    RhiScissor, RhiViewport, SubmissionHandle, SurfaceToken, TextureCopy, TextureHandle,
+    TextureMove,
 };
 // 将不触发 surface present 的离屏执行边界拆到独立文件。
 #[path = "frame_plan_execution.rs"]
 mod execution;
+// 将顶点与 Uniform 类型化载荷拆到独立契约文件。
+#[path = "frame_plan_upload.rs"]
+mod upload;
+// 将 draw 与前序类型化上传的布局核对拆到独立验证组件。
+#[path = "frame_plan_validation.rs"]
+mod validation;
+// 让通用 renderer 只能构造 FramePlan 明确允许的上传闭集。
+pub(crate) use upload::{FrameUniformPayload, FrameVertexPayload};
 // 描述 render pass 目标，surface 目标在 acquire 后才绑定具体句柄。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RenderTargetRef {
@@ -51,14 +57,21 @@ pub(crate) enum FramePlanCommand {
         // 保存采样器。
         sampler: crate::native::present::rhi::SamplerHandle,
     },
-    // 在 pass 内按 painter order 更新一个已创建的 buffer。
-    UpdateBuffer {
-        // 保存目标 buffer。
+    // 在 pass 内按 painter order 上传一个类型化顶点流。
+    UploadVertex {
+        // 保存目标顶点 buffer。
         buffer: crate::native::present::rhi::BufferHandle,
         // 保存字节偏移。
         offset: usize,
-        // 保存紧密排列的上传数据。
-        data: Arc<[u8]>,
+        // 保存声明布局和有限浮点值组成的顶点载荷。
+        data: FrameVertexPayload,
+    },
+    // 在 pass 内完整上传一个类型化 Uniform 值对象。
+    UploadUniform {
+        // 保存目标 Uniform buffer。
+        buffer: crate::native::present::rhi::BufferHandle,
+        // 保存与 PipelineContract 闭集一致的 Uniform 载荷。
+        data: FrameUniformPayload,
     },
     // 执行一个已完成几何降级的 draw packet。
     Draw(DrawPacket),
@@ -114,13 +127,25 @@ pub(crate) struct FrameCommit {
     pub(crate) submission: SubmissionHandle,
 }
 
+// 描述 FramePlan 唯一拥有的 Device 或 Surface 执行作用域。
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FramePlanScope {
+    // 原子保存最终呈现所需的 Surface 代际与 damage。
+    Surface {
+        // 冻结计划创建时观察到的 Surface 代际。
+        surface: SurfaceToken,
+        // 保存仅由最终 Surface present 消费的 damage。
+        damage: PresentDamage,
+    },
+    // 表示计划只允许进入 Device 离屏执行边界。
+    Offscreen,
+}
+
 // 持有一帧有限且有序的 GPU 执行计划。
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FramePlan {
-    // 保存计划生成时观察到的 surface token。
-    surface: SurfaceToken,
-    // 保存最终呈现时提交的 damage。
-    damage: PresentDamage,
+    // 以封闭类型保存唯一执行作用域，禁止外部目标选择器与计划互相矛盾。
+    scope: FramePlanScope,
     // 保存 pass 和 copy 的严格执行顺序。
     steps: Vec<FramePlanStep>,
 }
@@ -131,10 +156,26 @@ impl FramePlan {
     pub(crate) fn new(surface: SurfaceToken, damage: PresentDamage) -> Self {
         // 返回等待通用 renderer 追加步骤的计划。
         Self {
-            surface,
-            damage,
+            // Surface 计划把代际、damage 与执行作用域绑定为一个事实。
+            scope: FramePlanScope::Surface { surface, damage },
             steps: Vec::new(),
         }
+    }
+
+    // 创建一个只属于 device 的离屏计划。
+    pub(crate) fn offscreen() -> Self {
+        // 离屏资源不依赖 swapchain generation。
+        Self {
+            // Device-only 计划不保存或伪造任何 SurfaceToken 与 PresentDamage。
+            scope: FramePlanScope::Offscreen,
+            steps: Vec::new(),
+        }
+    }
+
+    // 判断唯一作用域是否要求完整 Surface 事务。
+    pub(super) const fn targets_surface(&self) -> bool {
+        // 只读取计划自有的封闭作用域，不接受调用方的重复选择器。
+        matches!(&self.scope, FramePlanScope::Surface { .. })
     }
 
     // 追加一个 render pass。
@@ -157,8 +198,13 @@ impl FramePlan {
 
     // 验证计划是否可以进入 native adapter。
     pub(crate) fn validate(&self) -> Result<()> {
-        // 拒绝无效 surface extent，避免 adapter 接受零尺寸 target。
-        if !self.surface.extent.is_positive() {
+        // Surface 计划拒绝无效 extent；离屏计划没有窗口 extent。
+        if matches!(
+            // 只检查封闭作用域内真实存在的 SurfaceToken。
+            &self.scope,
+            // Device-only 计划没有可被误判的窗口 extent。
+            FramePlanScope::Surface { surface, .. } if !surface.extent.is_positive()
+        ) {
             // 返回稳定的参数错误。
             return Err(Error::new(
                 Errc::InvalidArgument,
@@ -194,7 +240,7 @@ impl FramePlan {
                     // 检查 pass 的清理颜色和每个低层命令。
                     if let LoadAction::Clear(color) = pass.load {
                         // 清理颜色必须保持有限。
-                        if !color.is_finite() {
+                        if !color.is_valid() {
                             // 返回稳定的参数错误。
                             return Err(Error::new(
                                 Errc::InvalidArgument,
@@ -203,7 +249,7 @@ impl FramePlan {
                         }
                     }
                     // 验证 pass 内的命令顺序元素。
-                    for command in &pass.commands {
+                    for (command_index, command) in pass.commands.iter().enumerate() {
                         // 只拒绝不能产生任何几何的 draw packet。
                         if let FramePlanCommand::Draw(packet) = command {
                             // 空 draw packet 会掩盖 renderer 的 lowering 缺口。
@@ -214,6 +260,8 @@ impl FramePlan {
                                     "FramePlan draw packet must be non-empty",
                                 ));
                             }
+                            // 句柄绑定、前序上传布局和采样状态必须匹配共享 pipeline 契约。
+                            validation::validate_draw_uploads(pass, command_index, *packet)?;
                         }
                         // 验证 viewport 不携带非有限或零尺寸。
                         if let FramePlanCommand::SetViewport(viewport) = command {
@@ -240,7 +288,7 @@ impl FramePlan {
                         // 验证局部清理的颜色和物理矩形。
                         if let FramePlanCommand::ClearRect { color, scissor } = command {
                             // 局部清理必须保持有限颜色和正数区域。
-                            if !color.is_finite() || !scissor.is_valid() {
+                            if !color.is_valid() || !scissor.is_valid() {
                                 // 返回稳定的参数错误，避免 adapter 产生未定义清理范围。
                                 return Err(Error::new(
                                     Errc::InvalidArgument,
@@ -259,14 +307,25 @@ impl FramePlan {
                                 ));
                             }
                         }
-                        // 验证 buffer 更新不会把空载荷交给 adapter。
-                        if let FramePlanCommand::UpdateBuffer { data, .. } = command {
-                            // 空更新通常意味着 renderer 没有生成完整 uniform/vertex 数据。
-                            if data.is_empty() {
+                        // 验证类型化顶点不会把空、残缺或非有限几何交给 Adapter。
+                        if let FramePlanCommand::UploadVertex { data, .. } = command {
+                            // 顶点布局与浮点值必须同时满足 FramePlan 契约。
+                            if !data.is_valid() {
                                 // 返回稳定的参数错误。
                                 return Err(Error::new(
                                     Errc::InvalidArgument,
-                                    "FramePlan buffer update payload must be non-empty",
+                                    "FramePlan vertex upload must contain complete finite vertices",
+                                ));
+                            }
+                        }
+                        // 验证类型化 Uniform 不含跨 Adapter 未定义的非有限值。
+                        if let FramePlanCommand::UploadUniform { data, .. } = command {
+                            // 固定值对象已经从类型上保证大小，这里只需验证数值域。
+                            if !data.is_finite() {
+                                // 返回稳定的参数错误。
+                                return Err(Error::new(
+                                    Errc::InvalidArgument,
+                                    "FramePlan uniform upload must contain finite fields",
                                 ));
                             }
                         }
@@ -299,257 +358,53 @@ impl FramePlan {
         // 所有计划不变量通过。
         Ok(())
     }
-    // 在一个 device 和一个 surface 上执行计划，并隐含唯一最终 present。
-    pub(crate) fn execute(
-        &self,
-        device: &mut dyn GraphicsDevice,
-        surface: &mut dyn GraphicsSurface,
-    ) -> Result<FrameCommit> {
-        // 先验证计划，保证失败不会触碰 native 资源。
+
+    // 读取 surface 执行入口必须拥有的窗口代际。
+    fn required_surface(&self) -> Result<(SurfaceToken, PresentDamage)> {
+        // 只允许 Surface 作用域原子交付其冻结代际与 present damage。
+        match &self.scope {
+            // 返回与计划作用域原子绑定的 Surface 事务事实。
+            FramePlanScope::Surface { surface, damage } => Ok((*surface, damage.clone())),
+            // Device-only 计划不能越权进入 acquire 或 present。
+            FramePlanScope::Offscreen => Err(Error::new(
+                // 使用稳定参数错误标记计划作用域错配。
+                Errc::InvalidArgument,
+                // 保持跨 Adapter 一致的拒绝诊断。
+                "offscreen FramePlan cannot enter a surface execution boundary",
+            )),
+        }
+    }
+    // 在进入任何 native 操作前统一验证计划与 device 基线。
+    fn validate_for_device<D>(&self, device: &D) -> Result<()>
+    where
+        // 接受独立 device 或组合 context，而不要求发生 trait-object 上转型。
+        D: GraphicsDevice + ?Sized,
+    {
+        // 先验证 FramePlan 自身的结构与数值不变量。
         self.validate()?;
-        // 检查 device 是否满足进入正常 GPU 流程的底层基线。
-        let capabilities = device.capabilities();
-        if let Some(missing) = capabilities.first_missing_gpu_baseline() {
+        // 读取本次执行实际借用的 device 能力事实。
+        if let Some(missing) = device
+            // FramePlan validation only reads resource/pass/pipeline capabilities from Device。
+            .device_capabilities()
+            // 返回第一个缺失的 Device 基线事实。
+            .first_missing_gpu_baseline()
+        {
             // 用 NotImplemented 表示 adapter 缺少 RHI 基线，而不是 UI 操作缺失。
             return Err(Error::new(
                 Errc::NotImplemented,
                 format!("GPU adapter is missing required capability: {missing}"),
             ));
         }
-        // 检查计划生成时的 surface 代际。
-        if surface.token() != self.surface {
-            // 旧计划不能写入新一代 surface。
-            return Err(Error::new(
-                Errc::GraphicsSurfaceLost,
-                "FramePlan surface generation is stale before acquire",
-            ));
-        }
-        // 获取唯一的本帧 surface image。
-        let frame = surface.acquire()?;
-        // 检查 acquire 返回的 image 代际。
-        if frame.token != self.surface {
-            // 迟到或错误代际的 image 不得接收当前计划。
-            return Err(Error::new(
-                Errc::GraphicsSurfaceLost,
-                "acquired surface frame does not match FramePlan generation",
-            ));
-        }
-        // 按计划顺序执行所有 pass 和 copy。
-        for step in &self.steps {
-            // 分派当前步骤到薄 RHI。
-            match step {
-                // 执行一个完整 render pass。
-                FramePlanStep::Pass(pass) => {
-                    // 把逻辑 surface 目标解析为本次 acquire 的 opaque target。
-                    let target = match pass.target {
-                        // surface target 只绑定当前 acquired image。
-                        RenderTargetRef::Surface => frame.target,
-                        // 离屏 target 直接沿用通用句柄。
-                        RenderTargetRef::Texture(target) => target,
-                    };
-                    // 开始 pass，并保留 load action 语义。
-                    device.begin_render_pass(target, pass.load)?;
-                    // 逐条执行 pass 内命令。
-                    for command in &pass.commands {
-                        // 分派每个低层命令。
-                        match command {
-                            // 设置 viewport。
-                            FramePlanCommand::SetViewport(viewport) => {
-                                // 将 viewport 交给 adapter。
-                                device.set_viewport(*viewport)?;
-                            }
-                            // 设置 scissor。
-                            FramePlanCommand::SetScissor(scissor) => {
-                                // 将 scissor 交给 adapter。
-                                device.set_scissor(*scissor)?;
-                            }
-                            // 执行一个不改变其它 pass 状态的局部清理。
-                            FramePlanCommand::ClearRect { color, scissor } => {
-                                // adapter 负责把清理颜色和矩形编码为原生命令。
-                                device.clear_rect(*color, *scissor)?;
-                            }
-                            // 绑定纹理和采样器。
-                            FramePlanCommand::BindTexture {
-                                slot,
-                                texture,
-                                sampler,
-                            } => {
-                                // 将通用资源绑定交给 adapter。
-                                device.bind_texture(*slot, *texture, *sampler)?;
-                            }
-                            // 更新当前 pass 需要的 vertex/uniform 数据。
-                            FramePlanCommand::UpdateBuffer {
-                                buffer,
-                                offset,
-                                data,
-                            } => {
-                                // 上传载荷由通用 renderer 预先生成并保持不可变。
-                                device.update_buffer(*buffer, *offset, data)?;
-                            }
-                            // 执行 draw packet。
-                            FramePlanCommand::Draw(packet) => {
-                                // adapter 只接收已经完成语义降级的 packet。
-                                device.draw(*packet)?;
-                            }
-                        }
-                    }
-                    // 结束 pass，确保后续 copy 或 pass 不发生嵌套。
-                    device.end_render_pass()?;
-                }
-                // 执行 pass 外纹理复制。
-                FramePlanStep::Copy(copy) => {
-                    // 将复制原语交给 adapter。
-                    device.copy_texture(*copy)?;
-                }
-                // 执行一个重叠安全的纹理区域移动。
-                FramePlanStep::Move(movement) => {
-                    // 将 retained framebuffer 移动原语交给 adapter。
-                    device.move_texture_region(*movement)?;
-                }
-            }
-        }
-        // 所有内部工作完成后只允许一次 device submit。
-        let submission = device.submit()?;
-        // 检查执行期间 surface 是否被重建。
-        if surface.token() != frame.token {
-            // 不把旧 image 的 submit 当作当前 surface 的成功 present。
-            return Err(Error::new(
-                Errc::GraphicsSurfaceLost,
-                "surface generation changed before final present",
-            ));
-        }
-        // 最终 present 是唯一提交成功边界。
-        surface.present(frame, submission, self.damage.clone())?;
-        // 只有 present 成功后才返回可消费 damage 的 commit。
-        Ok(FrameCommit {
-            surface: self.surface,
-            submission,
-        })
+        // 计划与 device 都满足进入唯一执行器的前置条件。
+        Ok(())
     }
     // 在一个同时拥有 device 与 surface 的原生 context 上执行计划。
     pub(crate) fn execute_on_context(
         &self,
         context: &mut dyn GraphicsContextRhi,
     ) -> Result<FrameCommit> {
-        // 先验证计划，保证失败不会触碰 native 资源。
-        self.validate()?;
-        // 检查 context 是否满足进入正常 GPU 流程的底层基线。
-        if let Some(missing) = context.capabilities().first_missing_gpu_baseline() {
-            // 用 NotImplemented 表示 adapter 缺少 RHI 基线。
-            return Err(Error::new(
-                Errc::NotImplemented,
-                format!("GPU adapter is missing required capability: {missing}"),
-            ));
-        }
-        // 检查计划生成时观察到的 surface 代际。
-        if context.token() != self.surface {
-            // 旧计划不能写入新一代 surface。
-            return Err(Error::new(
-                Errc::GraphicsSurfaceLost,
-                "FramePlan surface generation is stale before acquire",
-            ));
-        }
-        // 获取唯一的本帧 surface image。
-        let frame = context.acquire()?;
-        // 检查 acquire 返回的 image 代际。
-        if frame.token != self.surface {
-            // 迟到或错误代际的 image 不得接收当前计划。
-            return Err(Error::new(
-                Errc::GraphicsSurfaceLost,
-                "acquired surface frame does not match FramePlan generation",
-            ));
-        }
-        // 按计划顺序执行所有 pass 和 copy。
-        for step in &self.steps {
-            // 分派当前顶层步骤的验证逻辑。
-            match step {
-                // 执行一个完整 render pass。
-                FramePlanStep::Pass(pass) => {
-                    // 把 surface 目标解析为本次 acquire 的 opaque target。
-                    let target = match pass.target {
-                        // surface target 只绑定当前 acquired image。
-                        RenderTargetRef::Surface => frame.target,
-                        // 离屏 target 直接沿用通用句柄。
-                        RenderTargetRef::Texture(target) => target,
-                    };
-                    // 开始 pass，并保留 load action 语义。
-                    context.begin_render_pass(target, pass.load)?;
-                    // 逐条执行 pass 内命令。
-                    for command in &pass.commands {
-                        // 分派每个低层命令。
-                        match command {
-                            // 设置 viewport。
-                            FramePlanCommand::SetViewport(viewport) => {
-                                // 将 viewport 交给 adapter。
-                                context.set_viewport(*viewport)?;
-                            }
-                            // 设置 scissor。
-                            FramePlanCommand::SetScissor(scissor) => {
-                                // 将 scissor 交给 adapter。
-                                context.set_scissor(*scissor)?;
-                            }
-                            // 执行一个不改变其它 pass 状态的局部清理。
-                            FramePlanCommand::ClearRect { color, scissor } => {
-                                // adapter 负责把清理颜色和矩形编码为原生命令。
-                                context.clear_rect(*color, *scissor)?;
-                            }
-                            // 绑定纹理和采样器。
-                            FramePlanCommand::BindTexture {
-                                slot,
-                                texture,
-                                sampler,
-                            } => {
-                                // 将通用资源绑定交给 adapter。
-                                context.bind_texture(*slot, *texture, *sampler)?;
-                            }
-                            // 更新当前 pass 需要的 vertex/uniform 数据。
-                            FramePlanCommand::UpdateBuffer {
-                                buffer,
-                                offset,
-                                data,
-                            } => {
-                                // 上传载荷由通用 renderer 预先生成并保持不可变。
-                                context.update_buffer(*buffer, *offset, data)?;
-                            }
-                            // 执行一个已经完成语义降级的 draw packet。
-                            FramePlanCommand::Draw(packet) => {
-                                // adapter 只接收已经完成高层降级的 packet。
-                                context.draw(*packet)?;
-                            }
-                        }
-                    }
-                    // 结束 pass，确保后续 copy 或 pass 不发生嵌套。
-                    context.end_render_pass()?;
-                }
-                // 执行 pass 外纹理复制。
-                FramePlanStep::Copy(copy) => {
-                    // 将复制原语交给 adapter。
-                    context.copy_texture(*copy)?;
-                }
-                // 执行一个重叠安全的纹理区域移动。
-                FramePlanStep::Move(movement) => {
-                    // 将 retained framebuffer 移动原语交给 adapter。
-                    context.move_texture_region(*movement)?;
-                }
-            }
-        }
-        // 所有内部工作完成后只允许一次 device submit。
-        let submission = context.submit()?;
-        // 检查执行期间 surface 是否被重建。
-        if context.token() != frame.token {
-            // 不把旧 image 的 submit 当作当前 surface 的成功 present。
-            return Err(Error::new(
-                Errc::GraphicsSurfaceLost,
-                "surface generation changed before final present",
-            ));
-        }
-        // 最终 present 是唯一提交成功边界。
-        context.present(frame, submission, self.damage.clone())?;
-        // 只有 present 成功后才返回可消费 damage 的 commit。
-        Ok(FrameCommit {
-            surface: self.surface,
-            submission,
-        })
+        // 普通执行路径不插入额外的 submit/present 观察动作。
+        self.execute_on_context_with_before_present(context, &mut |_| {})
     }
 }
 
@@ -557,27 +412,27 @@ impl FramePlan {
 mod tests {
     // 引入测试用集合，记录 RHI 的执行顺序。
     use std::collections::VecDeque;
-    // 引入测试用共享上传载荷。
-    use std::sync::Arc;
-
     // 引入框架错误类型和最终 damage。
     use crate::core::error::{Errc, Error, Result};
     // 引入测试计划依赖的薄 RHI 类型。
     use crate::native::present::rhi::{
-        BufferHandle, DrawPacket, GraphicsCapabilities, GraphicsDevice, GraphicsSurface,
-        LoadAction, PipelineHandle, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor,
-        RhiViewport, SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy, TextureHandle,
-        TextureMove,
+        BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, GraphicsSurface,
+        LoadAction, PipelineBinding, PipelineHandle, PipelineKind, RenderTargetHandle, RhiColor,
+        RhiExtent, RhiMeshRasterParams, RhiSampledRasterParams, RhiScissor, RhiViewport,
+        SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy, TextureHandle, TextureMove,
     };
     // 引入当前文件的计划类型。
-    use super::{FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef};
+    use super::{
+        FramePlan, FramePlanCommand, FramePlanStep, FrameUniformPayload, FrameVertexPayload,
+        RenderPassPlan, RenderTargetRef,
+    };
 
     // 记录一个不会触碰真实图形 API 的 mock device。
     struct RecordingDevice {
         // 保存薄 RHI 调用顺序。
         log: VecDeque<&'static str>,
         // 保存测试适配器报告的底层能力。
-        capabilities: GraphicsCapabilities,
+        capabilities: GraphicsDeviceCapabilities,
         // 保存是否强制 submit 失败。
         fail_submit: bool,
     }
@@ -585,9 +440,25 @@ mod tests {
     // 为记录型 device 实现薄 RHI 的执行原语。
     impl GraphicsDevice for RecordingDevice {
         // 返回完整 GPU 基线，测试重点放在顺序而不是能力拒绝。
-        fn capabilities(&self) -> GraphicsCapabilities {
+        fn device_capabilities(&self) -> GraphicsDeviceCapabilities {
             // 返回测试实例配置的能力快照。
             self.capabilities
+        }
+
+        // 记录任何原生命令前必须发生的 owner-context 激活。
+        fn activate(&mut self) -> Result<()> {
+            // 记录统一计划执行器触发的激活边界。
+            self.log.push_back("activate");
+            // 返回成功，让测试继续观察健康检查与后续命令顺序。
+            Ok(())
+        }
+
+        // 记录激活后必须发生的设备健康检查。
+        fn maintain(&mut self) -> Result<()> {
+            // 记录统一计划执行器触发的 health preflight。
+            self.log.push_back("maintain");
+            // 返回成功，让测试继续观察后续命令顺序。
+            Ok(())
         }
 
         // 记录 render pass 开始。
@@ -757,68 +628,196 @@ mod tests {
         }
     }
 
-    // 构造一个包含 viewport、scissor 和 draw 的最小计划。
-    fn test_plan(token: SurfaceToken) -> FramePlan {
-        // 创建带完整清理的 surface pass。
-        let mut pass = RenderPassPlan::new(
-            RenderTargetRef::Surface,
-            LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 1.0])),
-        );
-        // 追加 viewport 设置。
-        pass.push(FramePlanCommand::SetViewport(RhiViewport {
-            width: 64.0,
-            height: 64.0,
-        }));
-        // 追加 scissor 设置。
-        pass.push(FramePlanCommand::SetScissor(None));
-        // 追加一个非空 buffer 上传，覆盖真实 renderer 的 vertex/uniform 顺序。
-        pass.push(FramePlanCommand::UpdateBuffer {
-            buffer: BufferHandle::from_raw(3),
-            offset: 0,
-            data: Arc::<[u8]>::from(vec![1, 2, 3, 4]),
-        });
-        // 追加一个非空三角形 packet。
-        pass.push(FramePlanCommand::Draw(DrawPacket::triangles(
-            PipelineHandle::from_raw(1),
-            3,
-        )));
-        // 创建带完整 damage 的帧计划。
-        let mut plan = FramePlan::new(token, crate::core::PresentDamage::Full);
-        // 追加唯一 render pass。
-        plan.push_pass(pass);
-        // 返回测试计划。
-        plan
+    // 组合记录型 device 与 surface，覆盖迁移期 context 执行入口。
+    struct RecordingContext {
+        // 保存所有 device 命令及提交结果。
+        device: RecordingDevice,
+        // 保存 acquire、generation 与最终 present 状态。
+        surface: RecordingSurface,
     }
+
+    // 让组合记录 context 通过同一个 GraphicsDevice 契约接收命令。
+    impl GraphicsDevice for RecordingContext {
+        // 返回内嵌 device 的事实能力。
+        fn device_capabilities(&self) -> GraphicsDeviceCapabilities {
+            // 不建立第二份测试能力来源。
+            self.device.device_capabilities()
+        }
+
+        // 把 owner-context 激活委托给内嵌记录 device。
+        fn activate(&mut self) -> Result<()> {
+            // surface 与 offscreen 模式必须观察同一激活边界。
+            self.device.activate()
+        }
+
+        // 把设备健康检查委托给内嵌记录 device。
+        fn maintain(&mut self) -> Result<()> {
+            // surface 与 offscreen 模式必须观察同一 health preflight。
+            self.device.maintain()
+        }
+
+        // 把 pass 开始委托给内嵌记录 device。
+        fn begin_render_pass(
+            &mut self,
+            target: RenderTargetHandle,
+            load: LoadAction,
+        ) -> Result<()> {
+            // 保持独立 device 与组合 context 的记录行为相同。
+            self.device.begin_render_pass(target, load)
+        }
+
+        // 把 viewport 设置委托给内嵌记录 device。
+        fn set_viewport(&mut self, viewport: RhiViewport) -> Result<()> {
+            // 复用唯一测试记录路径。
+            self.device.set_viewport(viewport)
+        }
+
+        // 把 scissor 设置委托给内嵌记录 device。
+        fn set_scissor(&mut self, scissor: Option<RhiScissor>) -> Result<()> {
+            // 复用唯一测试记录路径。
+            self.device.set_scissor(scissor)
+        }
+
+        // 把局部清理委托给内嵌记录 device。
+        fn clear_rect(&mut self, color: RhiColor, scissor: RhiScissor) -> Result<()> {
+            // 复用唯一测试记录路径。
+            self.device.clear_rect(color, scissor)
+        }
+
+        // 把采样资源绑定委托给内嵌记录 device。
+        fn bind_texture(
+            &mut self,
+            slot: u32,
+            texture: TextureHandle,
+            sampler: crate::native::present::rhi::SamplerHandle,
+        ) -> Result<()> {
+            // 复用唯一测试记录路径。
+            self.device.bind_texture(slot, texture, sampler)
+        }
+
+        // 把不可变上传载荷委托给内嵌记录 device。
+        fn update_buffer(
+            &mut self,
+            buffer: BufferHandle,
+            offset: usize,
+            data: &[u8],
+        ) -> Result<()> {
+            // 复用唯一测试记录路径。
+            self.device.update_buffer(buffer, offset, data)
+        }
+
+        // 把 draw packet 委托给内嵌记录 device。
+        fn draw(&mut self, packet: DrawPacket) -> Result<()> {
+            // 复用唯一测试记录路径。
+            self.device.draw(packet)
+        }
+
+        // 把纹理复制委托给内嵌记录 device。
+        fn copy_texture(&mut self, copy: TextureCopy) -> Result<()> {
+            // 复用唯一测试记录路径。
+            self.device.copy_texture(copy)
+        }
+
+        // 把重叠安全移动委托给内嵌记录 device。
+        fn move_texture_region(&mut self, movement: TextureMove) -> Result<()> {
+            // 复用唯一测试记录路径。
+            self.device.move_texture_region(movement)
+        }
+
+        // 把 pass 结束委托给内嵌记录 device。
+        fn end_render_pass(&mut self) -> Result<()> {
+            // 复用唯一测试记录路径。
+            self.device.end_render_pass()
+        }
+
+        // 把唯一提交委托给内嵌记录 device。
+        fn submit(&mut self) -> Result<SubmissionHandle> {
+            // 复用唯一测试记录路径。
+            self.device.submit()
+        }
+    }
+
+    // 让组合记录 context 通过同一个 GraphicsSurface 契约管理呈现状态。
+    impl GraphicsSurface for RecordingContext {
+        // 返回内嵌 surface 的当前代际。
+        fn token(&self) -> SurfaceToken {
+            // 不缓存或复制动态 surface 事实。
+            self.surface.token()
+        }
+
+        // 从内嵌 surface 获取当前 image。
+        fn acquire(&mut self) -> Result<SurfaceFrame> {
+            // 复用独立 surface 的 acquire 语义。
+            self.surface.acquire()
+        }
+
+        // 通过内嵌 surface 原子推进代际。
+        fn resize(&mut self, extent: RhiExtent) -> Result<SurfaceToken> {
+            // 复用独立 surface 的 resize 语义。
+            self.surface.resize(extent)
+        }
+
+        // 把最终 present 委托给内嵌 surface。
+        fn present(
+            &mut self,
+            frame: SurfaceFrame,
+            submission: SubmissionHandle,
+            damage: crate::core::PresentDamage,
+        ) -> Result<()> {
+            // 复用独立 surface 的成功与失败边界。
+            self.surface.present(frame, submission, damage)
+        }
+    }
+
+    // 创建具备完整 GPU 基线的组合记录 context。
+    fn recording_context(token: SurfaceToken) -> RecordingContext {
+        // 组合唯一 device 与唯一 surface owner。
+        RecordingContext {
+            // 创建可记录全部命令的 device。
+            device: RecordingDevice {
+                // 初始尚未执行任何 native 原语。
+                log: VecDeque::new(),
+                // 允许计划进入正常 GPU 执行路径。
+                capabilities: GraphicsDeviceCapabilities::full_gpu_baseline(),
+                // 默认允许 submit 成功。
+                fail_submit: false,
+            },
+            // 创建与计划代际一致的 surface。
+            surface: RecordingSurface {
+                // 保存调用方提供的 surface token。
+                token,
+                // 使用稳定的不透明测试目标。
+                target: RenderTargetHandle::from_raw(2),
+                // 初始尚未发生最终 present。
+                present_count: 0,
+                // 默认允许 present 成功。
+                fail_present: false,
+            },
+        }
+    }
+
+    // 将 Surface 与 Offscreen 共用的最小计划构造器拆到独立测试支持文件。
+    include!("frame_plan_test_support.rs");
 
     // 验证低层命令保持顺序且只触发一次最终 present。
     #[test]
     fn executes_in_order_and_presents_once() {
         // 创建第一代 surface。
         let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
-        // 创建记录型 device。
-        let mut device = RecordingDevice {
-            log: VecDeque::new(),
-            capabilities: GraphicsCapabilities::full_gpu_baseline(),
-            fail_submit: false,
-        };
-        // 创建记录型 surface。
-        let mut surface = RecordingSurface {
-            token,
-            target: RenderTargetHandle::from_raw(2),
-            present_count: 0,
-            fail_present: false,
-        };
+        // 创建原子拥有 device 与 surface 的记录型 context。
+        let mut context = recording_context(token);
         // 执行计划并要求最终提交成功。
-        let commit = test_plan(token).execute(&mut device, &mut surface);
+        let commit = test_plan(token).execute_on_context(&mut context);
         // 验证得到可消费 damage 的 commit。
         assert!(commit.is_ok());
         // 验证底层顺序以一次 submit 结束。
         assert_eq!(
-            device.log.into_iter().collect::<Vec<_>>(),
+            context.device.log.into_iter().collect::<Vec<_>>(),
             vec![
                 "begin_pass",
                 "viewport",
                 "scissor",
+                "update_buffer",
                 "update_buffer",
                 "draw",
                 "end_pass",
@@ -826,8 +825,38 @@ mod tests {
             ]
         );
         // 验证 surface 只收到一次最终 present。
-        assert_eq!(surface.present_count, 1);
+        assert_eq!(context.surface.present_count, 1);
     }
+
+    // 验证 submit-before-present 观察器只能取得 Surface 角色。
+    #[test]
+    fn before_present_hook_receives_only_surface_role() {
+        // 创建稳定的一代 Surface。
+        let token = SurfaceToken::new(3, RhiExtent::new(48, 32));
+        // 创建同时拥有记录型 Device 与 Surface 的组合根。
+        let mut context = recording_context(token);
+        // 记录钩子是否观察到当前 Surface 代际。
+        let mut observed_surface = false;
+        // 执行计划并在唯一 submit 与 present 之间观察窄 Surface。
+        let commit = test_plan(token).execute_on_context_with_before_present(
+            // 完整事务仍由组合 context 驱动。
+            &mut context,
+            // 回调参数由类型系统限制为 GraphicsSurface。
+            &mut |surface| {
+                // 观察当前代际，不取得任何 Device 命令能力。
+                observed_surface = surface.token() == token;
+            },
+        );
+        // 观察动作不得改变最终提交成功语义。
+        assert!(commit.is_ok());
+        // 钩子必须在同一 Surface 上真实执行一次。
+        assert!(observed_surface);
+        // 最终 present 仍只能发生一次。
+        assert_eq!(context.surface.present_count, 1);
+    }
+
+    // 将组合 context 的多执行模式回归测试拆到独立载荷，保持核心文件小于上限。
+    include!("frame_plan_context_tests.rs");
 
     // 将资源移动与 submit 失败边界拆到独立测试载荷，保持计划核心文件短小。
     include!("frame_plan_test_tail.rs");

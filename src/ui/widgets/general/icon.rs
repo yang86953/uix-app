@@ -14,7 +14,8 @@ use crate::draw::{Color, FontHandle};
 use crate::ui::SnapshotFields;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
-use crate::ui::widgets::general::icon_map::ICON_MAP;
+// 引入图标映射组件的封装查找入口。
+use crate::ui::widgets::general::icon_map::find_icon;
 
 /// 全局 Lucide 字体句柄（由 app 启动时加载）。
 /// FontHandle 为 Copy 类型，无需 Mutex 保护——OnceLock 本身保证线程安全初始化。
@@ -44,10 +45,12 @@ pub fn lucide_handle() -> Option<FontHandle> {
 /// Map icon name → Lucide PUA codepoint character.
 /// 全量映射表见 icon_map 模块（生成自 lucide-static v1.31.0 codepoints.json）。
 pub(crate) fn icon_char(name: &str) -> &'static str {
-    // 表按名称升序排列，使用二分查找避免手写 match 的维护成本。
-    match ICON_MAP.binary_search_by_key(&name, |entry| entry.0) {
-        Ok(idx) => ICON_MAP[idx].1,
-        Err(_) => {
+    // 映射组件负责跨有序分片查找，Icon 只拥有未知名称的可见兜底。
+    match find_icon(name) {
+        // 命中时直接返回静态 PUA 字符。
+        Some(character) => character,
+        // 未命中时记录诊断并使用稳定的搜索图标。
+        None => {
             // 未知图标名落入 search 兜底字形，记录一次以便诊断拼写错误。
             tracing::warn!(
                 "icon_char: unknown icon name {:?}, falling back to search",

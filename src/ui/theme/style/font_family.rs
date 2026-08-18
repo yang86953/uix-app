@@ -65,7 +65,10 @@ mod tests {
             // 三项都合法时必须成功。
             .expect("有效字体族列表必须构造成功");
         // 外围空白应去除且源码顺序保持不变。
-        assert_eq!(family.iter().collect::<Vec<_>>(), ["Segoe UI", "Arial", "sans-serif"]);
+        assert_eq!(
+            family.iter().collect::<Vec<_>>(),
+            ["Segoe UI", "Arial", "sans-serif"]
+        );
         // 空列表不能形成显式字体族声明。
         assert!(FontFamily::from_names::<[&str; 0], &str>([]).is_none());
         // 空名称不能被静默删除。
@@ -90,6 +93,13 @@ mod tests {
         // 合并必须使用覆盖列表。
         let merged = base.apply(overlay);
         // 不得把基础回退项拼接到覆盖列表后。
-        assert_eq!(merged.font_family.expect("显式列表存在").iter().collect::<Vec<_>>(), ["Segoe UI"]);
+        assert_eq!(
+            merged
+                .font_family
+                .expect("显式列表存在")
+                .iter()
+                .collect::<Vec<_>>(),
+            ["Segoe UI"]
+        );
     }
 }

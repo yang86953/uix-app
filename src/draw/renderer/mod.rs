@@ -28,5 +28,8 @@ pub use recovery::{GraphicsRecovery, GraphicsRecoveryAction};
 pub(crate) use recovery_driver::RebuildRequest;
 pub use recovery_driver::{RecoveryDriver, RenderTargetRebuilder};
 pub use runtime::Renderer;
+// 公开一次性票据类型，应用测试无需访问 renderer 私有控制信号。
 pub use scene_pipeline::{FrameRenderInput, FrameRenderOutput, ScenePipeline};
 pub use session::RenderSession;
+#[cfg(feature = "test-harness")]
+pub use test_harness::SurfaceReadbackTicket;

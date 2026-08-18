@@ -625,10 +625,7 @@ mod slow_frame_tests {
     use super::*;
 
     // 构造一次带默认现场的检测调用。
-    fn detect(
-        diag: &mut super::super::FrameDiagnostics,
-        frame_us: Duration,
-    ) {
+    fn detect(diag: &mut super::super::FrameDiagnostics, frame_us: Duration) {
         // 只有总耗时参与判定，阶段耗时与现场字段不进入状态机。
         record_slow_frame(
             diag,

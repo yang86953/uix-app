@@ -103,7 +103,10 @@ pub(super) fn generate_conditional_chain(
                     // 指向重复尾部分支。
                     element.span,
                     // 陈述条件链已存在 Else。
-                    format!("<{}> 出现在 Else 之后，条件链只能有一个尾部分支", element.name),
+                    format!(
+                        "<{}> 出现在 Else 之后，条件链只能有一个尾部分支",
+                        element.name
+                    ),
                     // 给出删除或前移建议。
                     "删除重复分支，或把有条件分支移动到 Else 之前",
                 ));
@@ -170,7 +173,7 @@ fn branch_condition<'a>(
         // 陈述缺少条件。
         format!("<{}> 缺少匹配的条件绑定", element.name),
         // 给出规范结构。
-        format!("使用 <{expected} {{condition}}>...</{expected}>")
+        format!("使用 <{expected} {{condition}}>...</{expected}>"),
     ))
 }
 

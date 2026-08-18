@@ -24,7 +24,9 @@ pub(super) fn font_weight_field(
         // 其他值必须解析为文档闭区间内的整数。
         _ => {
             // 小数、负数、单位和未知关键字都会在这里拒绝。
-            let value = source.parse::<u16>().map_err(|_| font_weight_diagnostic(property))?;
+            let value = source
+                .parse::<u16>()
+                .map_err(|_| font_weight_diagnostic(property))?;
             // 不允许运行时构造器承担宏期范围错误。
             if !(100..=900).contains(&value) {
                 // 返回同一闭合支持边界诊断。

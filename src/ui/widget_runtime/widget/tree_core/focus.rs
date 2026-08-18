@@ -1,7 +1,7 @@
 use super::*;
+use crate::ui::event::HandlerTable;
 use crate::ui::widget_runtime::focus_handle::FocusHandle;
 use crate::ui::widget_runtime::focus_trap::next_focus_in_order;
-use crate::ui::event::HandlerTable;
 
 impl WidgetTree {
     /// 聚焦遍历中首个指定组件类型的节点，并返回其身份。

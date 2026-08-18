@@ -7,8 +7,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, generate_node_view, is_renderable_node};
 // 引入 Dropdown 属性、表达式、事件与诊断契约。
 use super::{
-    Attribute, AttributeValue, Diagnostic, Element, Node, generate_expression,
-    generate_event_handler_expression, literal_string,
+    Attribute, AttributeValue, Diagnostic, Element, Node, generate_event_handler_expression,
+    generate_expression, literal_string,
 };
 
 // 生成拥有唯一静态 trigger View 与 keyed 选项树的 Dropdown。

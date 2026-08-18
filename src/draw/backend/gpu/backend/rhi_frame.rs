@@ -1,9 +1,8 @@
 //! FrameEncoder 到通用 RHI 的整帧 lowering。
 // 引入共享引用计数载荷，避免临时图片跨计划生命周期失效。
 use std::sync::Arc;
-// 引入统一错误和提交 damage 类型。
 // 引入统一错误、几何和提交 damage 类型。
-use crate::core::{Errc, Error, Point, PresentDamage, Rect};
+use crate::core::{Errc, Error, Point, Rect};
 // 引入绘制层颜色值。
 use crate::draw::geometry::color::Color;
 // 引入 FramePlan 的目标类型。
@@ -13,7 +12,7 @@ use crate::draw::backend::frame_plan::{
 };
 // 引入通用 RHI renderer 的固定语义载荷。
 use crate::draw::backend::rhi_renderer::{
-    RhiCoverageQuad, RhiOp, RhiShapeRect, RhiSolidMesh, RhiTexturedQuad,
+    RhiCoverageQuad, RhiOp, RhiRendererFrame, RhiShapeRect, RhiSolidMesh, RhiTexturedQuad,
 };
 // 引入 FrameEncoder 的有序命令和值类型。
 use crate::draw::painting::{
@@ -22,8 +21,8 @@ use crate::draw::painting::{
 // 引入薄 RHI 的执行类型。
 // 引入薄 RHI 的执行、目标和纹理搬移类型。
 use crate::native::present::rhi::{
-    GraphicsContextRhi, LoadAction, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor,
-    RhiViewport, TextureHandle, TextureMove,
+    GraphicsDevice, LoadAction, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, RhiViewport,
+    TextureHandle, TextureMove,
 };
 // 引入当前 GPU backend。
 use super::GpuBackend;
@@ -84,8 +83,8 @@ fn color_rgba(color: Color) -> [f32; 4] {
 
 // 将清理颜色转换为 FramePlan 的浮点清理值。
 fn clear_color(color: Color) -> RhiColor {
-    // 保持与普通颜色 lowering 相同的 8-bit 通道边界。
-    RhiColor(color_rgba(color))
+    // 清屏不经过硬件混合，因此必须在共享边界显式得到预乘目标颜色。
+    RhiColor::from_straight_rgba(color_rgba(color))
 }
 
 // 验证并缩放一个逻辑矩形的坐标和尺寸。
@@ -667,7 +666,7 @@ fn lower_frame_scroll_move(
 
 // 在不触发 swapchain present 的前提下执行一条纹理搬移 boundary。
 fn execute_frame_texture_move(
-    context: &mut dyn GraphicsContextRhi,
+    device: &mut dyn GraphicsDevice,
     target: RenderTargetHandle,
     viewport: RhiViewport,
     movement: TextureMove,
@@ -676,14 +675,14 @@ fn execute_frame_texture_move(
     let mut pass = RenderPassPlan::new(RenderTargetRef::Texture(target), LoadAction::Load);
     // 明确设置当前目标的物理 viewport，避免 adapter 沿用上一 pass 状态。
     pass.push(FramePlanCommand::SetViewport(viewport));
-    // 计划使用当前 owner context 的 surface generation。
-    let mut plan = FramePlan::new(context.token(), PresentDamage::Full);
+    // Picture texture 搬移只属于 device，不依赖 swapchain generation。
+    let mut plan = FramePlan::offscreen();
     // 先执行重叠安全的 TextureMove，再进入空 load pass。
     plan.push_move(movement);
     // 追加 move boundary 的 target pass。
     plan.push_pass(pass);
     // 只提交离屏命令，不获取或呈现 swapchain image。
-    plan.execute_offscreen_on_context(context)?;
+    plan.execute_offscreen_on_device(device)?;
     // 返回已完成的 move boundary。
     Ok(())
 }
@@ -695,7 +694,6 @@ impl GpuBackend {
         encoder: &FrameEncoder,
         target: RenderTargetRef,
         load: LoadAction,
-        present: bool,
     ) -> Result<bool, Error> {
         // 没有通用 renderer 时不能只迁移其中一部分命令。
         if self.rhi_renderer.is_none() {
@@ -707,7 +705,12 @@ impl GpuBackend {
         let (viewport, scale_x, scale_y) = if target_is_surface {
             // 已验证 owner 丢失时返回 typed failure，不能伪造 lowering 不支持。
             let context = self.gpu_ctx.rhi_context()?;
-            super::super::submit::rhi_physical_geometry(context, encoder.width(), encoder.height())
+            // 只把冻结的 drawable extent 交给 Drawing 几何换算。
+            super::super::submit::rhi_physical_geometry(
+                context.surface_ref().token().extent,
+                encoder.width(),
+                encoder.height(),
+            )
         } else {
             (
                 RhiViewport {
@@ -762,7 +765,7 @@ impl GpuBackend {
         let target_extent = if target_is_surface {
             // 主 surface 的 extent 来自当前组合 context 代际。
             // context 丢失时直接返回 typed lowering failure。
-            let context = self.gpu_ctx.rhi_context()?;
+            let context = self.gpu_ctx.rhi_surface()?;
             context.token().extent
         } else {
             // Picture texture 在进入 encoder 前已由调用方验证尺寸匹配。
@@ -808,8 +811,8 @@ impl GpuBackend {
             })
         {
             // Additive 能力只从已验证组合 RHI 查询。
-            let context = self.gpu_ctx.rhi_context()?;
-            if !context.capabilities().additive_blend {
+            let context = self.gpu_ctx.rhi_device()?;
+            if !context.device_capabilities().additive_blend {
                 return Ok(false);
             }
         }
@@ -834,7 +837,7 @@ impl GpuBackend {
         let context = gpu_ctx.rhi_context()?;
         // 记录 FrameEncoder 已经实际进入通用 RHI 的调试信息。
         tracing::debug!(
-            "Graphics RHI FrameEncoder submit: target={target:?}, surface_retained={}, operations={}, present={present}",
+            "Graphics RHI FrameEncoder submit: target={target:?}, surface_retained={}, operations={}",
             target_is_surface,
             lowered
                 .segments
@@ -847,7 +850,7 @@ impl GpuBackend {
             // scroll 必须发生在后续 segment pass 之前。
             if let Some(movement) = movement {
                 // move boundary 只提交 retained texture，不获取或呈现 swapchain。
-                execute_frame_texture_move(context, target_handle, viewport, *movement)?;
+                execute_frame_texture_move(context.device(), target_handle, viewport, *movement)?;
             }
             // 每个显式 clear 都成为本段 load；否则首段使用调用方 load，后段保留颜色。
             let segment_load = segment
@@ -863,18 +866,10 @@ impl GpuBackend {
                         LoadAction::Load
                     }
                 });
-            // 最终 present 语义只传给最后一个 segment；主 surface 当前仍由外层 present。
-            let segment_present = present && index + 1 == lowered.segments.len();
+            // 每个 FrameEncoder segment 都只写入显式 retained/Picture texture。
+            let frame = RhiRendererFrame::offscreen(context.device(), target_handle);
             // 提交当前连续 RHI 操作并保持其内部顺序。
-            renderer.execute_ops(
-                context,
-                PresentDamage::Full,
-                viewport,
-                segment_load,
-                target,
-                &segment.operations,
-                segment_present,
-            )?;
+            renderer.execute_ops(frame, viewport, segment_load, &segment.operations)?;
         }
         // FrameEncoder 已落入 retained texture，最终 swapchain 合成交由 present 边界完成。
         if target_is_surface {

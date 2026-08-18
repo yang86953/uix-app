@@ -2,8 +2,20 @@
 
 UIX itself remains proprietary, confidential, and restricted to authorized
 internal use under [`LICENSE`](LICENSE). The third-party terms reproduced below
-apply only to the identified third-party asset; they do not grant any license
+apply only to the identified third-party assets; they do not grant any license
 to UIX source code, binaries, documentation, or other assets.
+
+## Noto Sans CJK SC Regular
+
+- Component: Noto Sans CJK SC Regular
+- Bundled asset: `assets/fonts/NotoSansCJKsc-Regular.otf`
+- Source: <https://github.com/notofonts/noto-cjk/blob/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf>
+- Source commit: `f8d157532fbfaeda587e826d4cd5b21a49186f7c`
+- Bundled font SHA-256: `2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b`
+- License: SIL Open Font License 1.1
+
+The exact upstream license text is distributed with the font at
+[`assets/fonts/OFL-NotoSansCJK.txt`](assets/fonts/OFL-NotoSansCJK.txt).
 
 ## Lucide Static 1.17.0
 

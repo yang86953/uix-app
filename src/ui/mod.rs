@@ -53,7 +53,6 @@ pub(crate) mod adapter;
 pub(crate) mod animation;
 #[cfg(feature = "test-harness")]
 pub(crate) mod automation;
-pub(crate) mod widget_runtime;
 pub(crate) mod component_patch;
 pub(crate) mod component_snapshot;
 pub(crate) mod event;
@@ -64,6 +63,7 @@ pub(crate) mod i18n;
 pub(crate) mod layout;
 pub mod macros;
 pub(crate) mod overlay;
+pub(crate) mod widget_runtime;
 // 公开 UI System 自有的布局定位模式与四边值契约。
 mod position;
 pub(crate) mod reactive;
@@ -98,6 +98,11 @@ pub use animation::{
     Easing, Keyframe, KeyframeAnimation, KeyframeDirection, KeyframeError, KeyframeFillMode,
     KeyframePlayback, Spring, SpringAnimation, Transition,
 };
+pub use component_snapshot::{
+    AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute,
+    ComponentConfigSnapshot, SelectionSnapshot, SnapshotCollapsePanel, SnapshotField,
+    SnapshotFields, SnapshotSource, SnapshotTransferItem, SnapshotValue,
+};
 pub(crate) use widget_runtime::children;
 pub use widget_runtime::clipboard::{copy_to_clipboard, read_text_from_clipboard};
 pub use widget_runtime::config::{
@@ -112,11 +117,6 @@ pub use widget_runtime::traits::{
 pub(crate) use widget_runtime::widget::WidgetTree;
 pub use widget_runtime::{
     AppState, ComponentHandle, FocusHandle, FocusHandleError, PaintContext, WidgetChildren,
-};
-pub use component_snapshot::{
-    AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute,
-    ComponentConfigSnapshot, SelectionSnapshot, SnapshotCollapsePanel, SnapshotField,
-    SnapshotFields, SnapshotSource, SnapshotTransferItem, SnapshotValue,
 };
 // 树组件 capability 启用时才从 UI 门面导出树节点快照模型。
 #[cfg(feature = "tree-widgets")]
@@ -194,6 +194,9 @@ pub use widgets::*;
 
 // 保持既有公开模块路径（公开面收口前的兼容层）：组件配置 / i18n / 剪贴板 /
 // 焦点陷阱 / 响应式状态 / 样式 / 虚拟滚动。
+pub use reactive::state;
+pub use theme::style;
+pub use virtualization::virtual_scroll;
 pub use widget_runtime::clipboard;
 pub use widget_runtime::config;
 pub use widget_runtime::focus_trap;
@@ -201,9 +204,6 @@ pub use widget_runtime::locale;
 pub use widget_runtime::managers::{
     DragManager, FocusManager, InteractionManager, StateManager, TextManager, WidgetManagers,
 };
-pub use reactive::state;
-pub use theme::style;
-pub use virtualization::virtual_scroll;
 // 为内联组件宏提供窗口私有状态的隐藏运行时实现。
 #[doc(hidden)]
 pub mod component_state;

@@ -1,35 +1,23 @@
 //! 通用 GPU Renderer 的仿射阴影 lowering。
 
-// 引入最终 damage。
-use crate::core::PresentDamage;
 // 引入 RHI 计划执行所需的资源描述与句柄。
 use crate::native::present::rhi::{
-    DrawPacket, GraphicsContextRhi, LoadAction, PipelineDesc, PipelineHandle, RhiViewport,
-    pipeline_keys,
+    BufferDesc, BufferUsage, DrawPacket, GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc,
+    PipelineKind, RhiShadowRasterParams, RhiViewport,
 };
 
 // 复用 renderer 主模块的计划类型和 shape 单位 quad 资源。
-use super::{
-    BufferHandle, FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef, RhiRenderer,
-};
+use super::{BufferHandle, FramePlanCommand, FrameUniformPayload, RenderPassPlan, RhiRenderer};
 
 // 保存一个已经完成几何 lowering 的仿射阴影。
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RhiShadow {
-    // 保存阴影本体左上角物理坐标。
-    pub(crate) x: f32,
-    // 保存阴影本体左上角物理坐标。
-    pub(crate) y: f32,
     // 保存阴影本体物理宽度。
     pub(crate) w: f32,
     // 保存阴影本体物理高度。
     pub(crate) h: f32,
     // 保存包含 blur 与 offset 的设备四边形，顺序为 TL/TR/BR/BL。
     pub(crate) corners: [[f32; 2]; 4],
-    // 保存阴影偏移物理量。
-    pub(crate) offset_x: f32,
-    // 保存阴影偏移物理量。
-    pub(crate) offset_y: f32,
     // 保存 x 方向 blur 物理量。
     pub(crate) blur_x: f32,
     // 保存 y 方向 blur 物理量。
@@ -42,6 +30,27 @@ pub(crate) struct RhiShadow {
     pub(crate) ambient: bool,
     // 保存当前阴影的物理裁剪矩形。
     pub(crate) scissor: Option<super::RhiScissor>,
+}
+
+// 把 renderer 的 Shadow 载荷映射为共享 RHI 像素契约值对象。
+fn shadow_uniform(viewport: RhiViewport, shadow: &RhiShadow) -> RhiShadowRasterParams {
+    // 由共享值对象唯一派生两条仿射边、环境标记和固定 ABI。
+    RhiShadowRasterParams::new(
+        // 传入当前物理视口。
+        viewport,
+        // 传入已经包含 offset 与 blur 的设备四角。
+        shadow.corners,
+        // 传入已经规整的直通颜色。
+        shadow.rgba,
+        // 传入固定四角顺序的本体圆角。
+        shadow.radius,
+        // 传入两个物理轴上的模糊量。
+        [shadow.blur_x, shadow.blur_y],
+        // 传入不含模糊扩展的本体尺寸。
+        [shadow.w, shadow.h],
+        // 传入覆盖曲线身份。
+        shadow.ambient,
+    )
 }
 
 // 校验阴影四边形是有限、非退化且保持凸顶点顺序的仿射四边形。
@@ -78,40 +87,133 @@ fn valid_shadow_corners(corners: &[[f32; 2]; 4]) -> bool {
     true
 }
 
-// 为阴影 shader 创建或复用 pipeline 与 shape ABI 资源。
+// 为阴影 shader 创建或复用独立 pipeline、顶点与常量资源。
 impl RhiRenderer {
-    // 准备 ShadowConstants 所需的 pipeline、单位 quad 和 uniform。
+    // 准备 ShadowConstants 所需的独立 pipeline、单位 quad 和 uniform。
     pub(super) fn ensure_shadow_resources(
         &mut self,
-        context: &mut dyn GraphicsContextRhi,
-    ) -> Result<(PipelineHandle, BufferHandle, BufferHandle), crate::core::Error> {
-        // 复用 shape 的 float2 单位 quad 和 96 字节 uniform 资源。
-        let (_, _, vertex_buffer, uniform_buffer) = self.ensure_shape_resources(context)?;
+        device: &mut dyn GraphicsDevice,
+    ) -> Result<(PipelineBinding, BufferHandle, BufferHandle), crate::core::Error> {
         // 首次使用时创建固定的阴影 pipeline。
         let pipeline = if let Some(pipeline) = self.shadow_pipeline {
             // 复用已经登记的阴影 pipeline。
             pipeline
         } else {
-            // 选择只由 RHI 契约定义的阴影 pipeline key。
-            let pipeline = context.create_pipeline(PipelineDesc {
-                key: pipeline_keys::BOX_SHADOW,
+            // 选择只由 RHI 契约定义的阴影 pipeline 语义。
+            let pipeline = device.create_pipeline(PipelineDesc {
+                kind: PipelineKind::BoxShadow,
             })?;
             // 缓存阴影 pipeline 句柄。
             self.shadow_pipeline = Some(pipeline);
             pipeline
         };
+        // 阴影单位 quad 使用六个 float2 顶点。
+        let unit_vertices = [
+            // 第一组三角形左上角的 X 坐标。
+            0.0f32, // 第一组三角形左上角的 Y 坐标。
+            0.0,    // 第一组三角形右上角的 X 坐标。
+            1.0,    // 第一组三角形右上角的 Y 坐标。
+            0.0,    // 第一组三角形右下角的 X 坐标。
+            1.0,    // 第一组三角形右下角的 Y 坐标。
+            1.0,    // 第二组三角形左上角的 X 坐标。
+            0.0,    // 第二组三角形左上角的 Y 坐标。
+            0.0,    // 第二组三角形右下角的 X 坐标。
+            1.0,    // 第二组三角形右下角的 Y 坐标。
+            1.0,    // 第二组三角形左下角的 X 坐标。
+            0.0,    // 第二组三角形左下角的 Y 坐标。
+            1.0,
+        ];
+        // 首次使用时创建 Shadow 自己的单位 quad buffer。
+        let vertex_buffer = if let Some(buffer) = self.shadow_vertex_buffer {
+            // 复用已经登记的 Shadow vertex buffer。
+            buffer
+        } else {
+            // 按共享 pipeline 顶点布局创建精确容量。
+            let buffer = device.create_buffer(BufferDesc {
+                // 保存六个 float2 顶点的总字节数。
+                size_bytes: unit_vertices.len() * std::mem::size_of::<f32>(),
+                // 使用 BoxShadow 契约声明的唯一顶点步长。
+                stride_bytes: PipelineKind::BoxShadow.contract().vertex.stride_bytes(),
+                // 声明资源只能作为顶点输入。
+                usage: BufferUsage::Vertex,
+            })?;
+            // 首次绑定前上传单位 quad。
+            device.update_buffer(buffer, 0, &RhiRenderer::encode_f32s(&unit_vertices))?;
+            // 缓存 Shadow vertex buffer 句柄。
+            self.shadow_vertex_buffer = Some(buffer);
+            // 返回刚创建的顶点资源。
+            buffer
+        };
+        // 首次使用时创建只服从 Shadow ABI 的 uniform buffer。
+        let uniform_buffer = if let Some(uniform) = self.shadow_uniform {
+            // 复用已经登记的 Shadow uniform buffer。
+            uniform
+        } else {
+            // 使用 BoxShadow 契约声明的精确常量容量。
+            let uniform = device.create_buffer(BufferDesc {
+                // 禁止借用 Shape 的同尺寸常量资源形成隐式耦合。
+                size_bytes: PipelineKind::BoxShadow.contract().uniform.size_bytes(),
+                // uniform buffer 不使用顶点步长。
+                stride_bytes: 0,
+                // 声明资源只能作为常量输入。
+                usage: BufferUsage::Uniform,
+            })?;
+            // 缓存 Shadow uniform buffer 句柄。
+            self.shadow_uniform = Some(uniform);
+            // 返回刚创建的常量资源。
+            uniform
+        };
         // 返回阴影 draw 所需的固定资源。
         Ok((pipeline, vertex_buffer, uniform_buffer))
+    }
+
+    // 将一个 Shadow 的固定常量和 draw packet 追加到既有 pass。
+    pub(super) fn append_shadow_commands(
+        pass: &mut RenderPassPlan,
+        viewport: RhiViewport,
+        shadow: &RhiShadow,
+        pipeline: PipelineBinding,
+        vertex_buffer: BufferHandle,
+        uniform_buffer: BufferHandle,
+    ) {
+        // 选择当前阴影的物理裁剪。
+        pass.push(FramePlanCommand::SetScissor(shadow.scissor));
+        // 上传由共享层完整类型化且保持 16-byte 对齐的 ShadowConstants。
+        pass.push(FramePlanCommand::UploadUniform {
+            // 选择 Shadow 自己的 uniform 资源。
+            buffer: uniform_buffer,
+            // Adapter 只接收冻结 ABI，不再拥有仿射边和环境标记公式。
+            data: FrameUniformPayload::Shadow(shadow_uniform(viewport, shadow)),
+        });
+        // 追加当前阴影的单位 quad draw packet。
+        pass.push(FramePlanCommand::Draw(DrawPacket {
+            // 选择固定 BoxShadow pipeline。
+            pipeline,
+            // 绑定 Shadow 自己的单位 quad。
+            vertex_buffer,
+            // Shadow 使用非索引绘制。
+            index_buffer: None,
+            // 绑定当前 Shadow 常量资源。
+            uniform_buffer: Some(uniform_buffer),
+            // 单位 quad 固定包含六个顶点。
+            vertex_count: 6,
+            // 非索引绘制不携带索引数量。
+            index_count: 0,
+            // 从第一个顶点开始绘制。
+            first_vertex: 0,
+            // 非索引绘制不携带起始索引。
+            first_index: 0,
+            // 非索引绘制不使用基顶点偏移。
+            base_vertex: 0,
+        }));
     }
 
     // 执行一帧仿射阴影 RHI 计划。
     pub(crate) fn execute_shadows(
         &mut self,
-        context: &mut dyn GraphicsContextRhi,
-        damage: PresentDamage,
+        mut frame: super::RhiRendererFrame<'_>,
         viewport: RhiViewport,
         load: LoadAction,
-        target: RenderTargetRef,
         shadows: &[RhiShadow],
     ) -> Result<(), crate::core::Error> {
         // 空列表不应伪造一次 present。
@@ -128,21 +230,14 @@ impl RhiRenderer {
         }
         // 在创建资源前验证所有阴影的固定 shader 常量。
         for shadow in shadows {
-            // 阴影本体几何必须是有限正值。
-            if !shadow.x.is_finite()
-                || !shadow.y.is_finite()
-                || !shadow.w.is_finite()
-                || !shadow.h.is_finite()
-                || shadow.w <= 0.0
-                || shadow.h <= 0.0
+            // 阴影本体尺寸必须是有限正值。
+            if !shadow.w.is_finite() || !shadow.h.is_finite() || shadow.w <= 0.0 || shadow.h <= 0.0
             {
                 // 返回稳定的参数错误。
                 return Err(super::rhi_invalid("RhiRenderer shadow geometry is invalid"));
             }
-            // 阴影四边形、偏移、blur、颜色和圆角必须有限，blur/圆角不能为负。
-            if !shadow.offset_x.is_finite()
-                || !shadow.offset_y.is_finite()
-                || !shadow.blur_x.is_finite()
+            // 阴影四边形、blur、颜色和圆角必须有限，blur/圆角不能为负。
+            if !shadow.blur_x.is_finite()
                 || !shadow.blur_y.is_finite()
                 || shadow.blur_x < 0.0
                 || shadow.blur_y < 0.0
@@ -165,68 +260,38 @@ impl RhiRenderer {
             }
         }
         // 准备阴影 pipeline、单位 quad 和常量 buffer。
-        let (pipeline, vertex_buffer, uniform_buffer) = self.ensure_shadow_resources(context)?;
-        // 计划使用当前 context 的 surface 代际。
-        let surface = context.token();
-        // 创建 surface pass，并保留调用方的 load/clear 语义。
+        let (pipeline, vertex_buffer, uniform_buffer) =
+            self.ensure_shadow_resources(frame.device())?;
+        // 从封闭帧作用域取得唯一计划目标。
+        let target = frame.render_target();
+        // 创建 Surface 或 Offscreen pass，并保留调用方的 load/clear 语义。
         let mut pass = RenderPassPlan::new(target, load);
         // 所有阴影共享同一个物理 viewport。
         pass.push(FramePlanCommand::SetViewport(viewport));
         // 每个阴影只更新常量并保留 painter order。
         for shadow in shadows {
-            // 阴影 shader 使用两个方向 blur 的物理值，并以较大值控制软边曲线。
-            // 在 draw 前设置当前阴影的裁剪。
-            pass.push(FramePlanCommand::SetScissor(shadow.scissor));
-            // 上传完整 AffineShadowConstants，保持 D3D11 16-byte 对齐布局。
-            pass.push(FramePlanCommand::UpdateBuffer {
-                buffer: uniform_buffer,
-                offset: 0,
-                data: RhiRenderer::encode_f32s(&[
-                    viewport.width,
-                    viewport.height,
-                    0.0,
-                    0.0,
-                    shadow.corners[0][0],
-                    shadow.corners[0][1],
-                    shadow.corners[1][0] - shadow.corners[0][0],
-                    shadow.corners[1][1] - shadow.corners[0][1],
-                    shadow.rgba[0],
-                    shadow.rgba[1],
-                    shadow.rgba[2],
-                    shadow.rgba[3],
-                    shadow.radius[0],
-                    shadow.radius[1],
-                    shadow.radius[2],
-                    shadow.radius[3],
-                    shadow.corners[3][0] - shadow.corners[0][0],
-                    shadow.corners[3][1] - shadow.corners[0][1],
-                    shadow.blur_x,
-                    shadow.blur_y,
-                    shadow.w,
-                    shadow.h,
-                    if shadow.ambient { 1.0 } else { 0.0 },
-                    0.0,
-                ]),
-            });
-            // 追加单位 quad 的非索引阴影 draw packet。
-            pass.push(FramePlanCommand::Draw(DrawPacket {
+            // 复用独立与混合路径共享的唯一 Shadow command lowering。
+            RhiRenderer::append_shadow_commands(
+                // 追加到当前 surface 或 retained texture pass。
+                &mut pass,
+                // 传入当前物理视口。
+                viewport,
+                // 传入已经验证的 Shadow 载荷。
+                shadow,
+                // 传入固定 BoxShadow pipeline。
                 pipeline,
+                // 传入 Shadow 自己的单位 quad。
                 vertex_buffer,
-                index_buffer: None,
-                uniform_buffer: Some(uniform_buffer),
-                vertex_count: 6,
-                index_count: 0,
-                first_vertex: 0,
-                first_index: 0,
-                base_vertex: 0,
-            }));
+                // 传入 Shadow 自己的常量资源。
+                uniform_buffer,
+            );
         }
         // 创建计划并追加唯一 surface pass。
-        let mut plan = FramePlan::new(surface, damage);
+        let mut plan = frame.plan();
         // 保留阴影 painter order。
         plan.push_pass(pass);
         // surface 计划最终 present，texture 计划只执行离屏 submit。
-        super::execute_plan_for_target(context, &plan, target)?;
+        frame.execute(&plan)?;
         // 资源由 renderer 跨帧复用，不能在这里销毁。
         Ok(())
     }

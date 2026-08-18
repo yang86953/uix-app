@@ -7,8 +7,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 ImageGroup 属性、表达式、事件与诊断契约。
 use super::{
-    Attribute, AttributeValue, Diagnostic, Element, generate_expression,
-    generate_event_handler_expression,
+    Attribute, AttributeValue, Diagnostic, Element, generate_event_handler_expression,
+    generate_expression,
 };
 
 // 生成只声明图片集合、初始索引与变化观察器的 ImageGroup 叶节点。

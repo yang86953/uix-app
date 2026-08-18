@@ -72,7 +72,7 @@ pub(super) fn plan_surface_composite(
         // native adapter 以 DirtyRectsCount=0 编码完整提交。
         damage: PresentDamage::Full,
         // 完整帧可以安全清理整个当前 back buffer。
-        load: LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0])),
+        load: LoadAction::Clear(RhiColor::transparent()),
         // 单个无 scissor sampled quad 更新全部像素。
         quads: vec![RhiSampledQuad {
             // 全帧绘制显式移除调用方可能携带的旧 scissor。

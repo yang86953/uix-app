@@ -4,9 +4,17 @@ use std::time::Duration;
 
 use uix::prelude::*;
 
+// 把主演示正文与中文统一到随应用分发的同一字体字节。
+const DETERMINISTIC_UI_FONT: &[u8] =
+    // 固定仓库资产路径，禁止 Windows 与 Linux 各自发现系统字体。
+    include_bytes!("../../../assets/fonts/NotoSansCJKsc-Regular.otf");
+
 // 仅在显式测试能力存在时编译专用图形恢复验收组合模块。
 #[cfg(feature = "test-harness")]
 mod graphics_recovery;
+// 仅在显式测试能力存在时编译主演示 surface 像素验收。
+#[cfg(feature = "test-harness")]
+mod graphics_readback;
 // 编译普通主演示的 Rust 多窗口组合边界。
 mod multi_window;
 
@@ -17,6 +25,8 @@ struct LaunchOptions {
     agent_control: bool,
     // 记录调用方是否请求进入专用图形恢复验收页面。
     graphics_recovery_test: bool,
+    // 记录调用方是否请求对主演示首帧执行真实 surface 像素验收。
+    graphics_readback_test: bool,
     // 记录普通主演示是否跟随 Windows 系统明暗主题。
     follow_system_theme: bool,
 }
@@ -36,6 +46,11 @@ fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions
         if argument == "--test-graphics-recovery" {
             // 记录 test-harness 的运行时第二道启用门禁。
             options.graphics_recovery_test = true;
+        }
+        // 识别主演示真实 surface 像素验收开关。
+        if argument == "--test-graphics-readback" {
+            // 记录 test-harness 的像素验收运行时门禁。
+            options.graphics_readback_test = true;
         }
         // 识别 App System 已登记的系统主题跟随开关。
         if argument == "--follow-system-theme" {
@@ -415,6 +430,16 @@ fn main() {
         // 返回参数错误，禁止无测试能力的普通主演示静默降级。
         std::process::exit(2);
     }
+    // 未编译测试能力时，surface 回读请求必须在创建窗口前定向失败。
+    #[cfg(not(feature = "test-harness"))]
+    if options.graphics_readback_test {
+        // 输出可直接执行的 feature 与参数双门禁命令。
+        eprintln!(
+            "--test-graphics-readback 需要同时启用 Cargo feature：\n  cargo run --manifest-path demo/Cargo.toml --features test-harness --bin uix-lang-demo -- --test-graphics-readback"
+        );
+        // 返回参数错误，禁止无测试能力的普通主演示静默降级。
+        std::process::exit(2);
+    }
     // 创建窗口级持久状态槽与演示数据。
     let states = DemoStates::new();
     // 克隆 tick 句柄供 on_start 秒级计时器更新。
@@ -427,6 +452,8 @@ fn main() {
             tick,
             options.agent_control,
             options.graphics_recovery_test,
+            // 传入主演示真实 surface 像素验收开关。
+            options.graphics_readback_test,
             options.follow_system_theme,
         )
     });
@@ -443,6 +470,8 @@ fn run_gui(
     agent_control: bool,
     // 接收已经通过启动参数选择的图形恢复验收开关。
     graphics_recovery_test: bool,
+    // 接收已经通过启动参数选择的 surface 像素验收开关。
+    graphics_readback_test: bool,
     // 接收普通主演示的系统主题跟随策略。
     follow_system_theme: bool,
 ) {
@@ -454,28 +483,25 @@ fn run_gui(
     let app = if graphics_recovery_test {
         // 使用狭窄的图形恢复验收页面，不把测试控件混入产品演示文档。
         graphics_recovery::build_app()
+    } else if graphics_readback_test {
+        // 使用独立像素参考页同时验收 Shape 与半透明径向 Gradient。
+        graphics_readback::build_app()
     } else {
         // 普通启动继续使用原有主演示组合。
-        build_demo_app(
-            states,
-            tick,
-            follow_system_theme,
-            agent_handle_slot.clone(),
-        )
+        build_demo_app(states, tick, follow_system_theme, agent_handle_slot.clone())
     };
     // 测试能力缺失时锁定前置门禁已经拒绝图形恢复请求。
     #[cfg(not(feature = "test-harness"))]
     let app = {
         // 调试构建核对参数 Gate 没有被后续改动绕过。
         debug_assert!(!graphics_recovery_test);
+        // 缺少 feature 时前置门禁也必须拒绝像素验收请求。
+        debug_assert!(!graphics_readback_test);
         // 保留唯一普通主演示组合路径。
-        build_demo_app(
-            states,
-            tick,
-            follow_system_theme,
-            agent_handle_slot.clone(),
-        )
+        build_demo_app(states, tick, follow_system_theme, agent_handle_slot.clone())
     };
+    // 所有普通与测试启动模式都必须在窗口创建前安装同一正文/CJK 字体包。
+    let app = with_deterministic_fonts(app);
     // feature 存在且启动参数显式请求时才开放 Agent Bridge。
     #[cfg(feature = "agent-control")]
     let app = if agent_control {
@@ -517,6 +543,17 @@ fn run_gui(
     };
     // 进入并由同一个现有 App 持有原生窗口事件循环。
     app.run();
+}
+
+// 将确定性正文资源注入 Application 组合根，不让具体页面接触字体句柄。
+fn with_deterministic_fonts(app: App) -> App {
+    // 单一 SC 字体同时覆盖 Latin 与简体中文，避免回退链再次使用平台字体。
+    app.font_bundle(uix::draw::FontBundle::new(
+        // 族名与字体内部规范名称保持一致。
+        "Noto Sans CJK SC",
+        // 字体包复用编译期静态字节，不产生第二份堆内存复制。
+        DETERMINISTIC_UI_FONT,
+    ))
 }
 
 // 组装普通主演示的窗口配置与秒级生命周期回调。
@@ -577,10 +614,10 @@ mod tests {
     // 导入当前模块的私有启动解析入口。
     use super::*;
 
-    // 验证两项运行时门禁可以同时被显式选择。
+    // 验证全部运行时门禁可以同时被显式选择。
     #[test]
     fn parses_agent_graphics_recovery_and_system_theme_gates_together() {
-        // 按真实命令行顺序解析三项已登记参数与一个无关参数。
+        // 按真实命令行顺序解析四项已登记参数与一个无关参数。
         let options = parse_launch_options([
             // 选择 Agent Bridge。
             "--agent-control".to_string(),
@@ -588,6 +625,8 @@ mod tests {
             "--unknown".to_string(),
             // 选择专用图形恢复页面。
             "--test-graphics-recovery".to_string(),
+            // 选择主演示真实 surface 回读验收。
+            "--test-graphics-readback".to_string(),
             // 选择普通主演示系统主题跟随策略。
             "--follow-system-theme".to_string(),
         ]);
@@ -595,6 +634,8 @@ mod tests {
         assert!(options.agent_control);
         // 图形恢复运行时门禁必须同时开启。
         assert!(options.graphics_recovery_test);
+        // surface 像素验收门禁必须同时开启。
+        assert!(options.graphics_readback_test);
         // 系统主题跟随策略必须同时开启。
         assert!(options.follow_system_theme);
     }

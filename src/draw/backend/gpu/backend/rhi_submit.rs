@@ -1,117 +1,16 @@
 //! GpuBackend 的迁移期 FramePlan 提交边界。
 
-// 引入当前 backend 的错误、damage 和类型。
-use crate::core::{DamageRegion, Errc, Error, PresentDamage};
+// 引入当前 backend 的错误、逻辑 damage 和类型。
+use crate::core::{DamageRegion, Errc, Error};
 // 引入 FramePlan 的 surface/texture target 引用。
 use crate::draw::backend::frame_plan::RenderTargetRef;
 // 引入薄 RHI 的 load/color 类型。
-use crate::native::present::rhi::{LoadAction, RhiColor, RhiViewport, TextureHandle};
-// 引入已有纹理 sampled quad 的通用 RHI 载荷。
-use crate::draw::backend::rhi_renderer::RhiSampledQuad;
+use crate::native::present::rhi::{LoadAction, RhiColor, TextureHandle};
 
 // 引入当前 GpuBackend 类型。
 use super::GpuBackend;
-// 引入最终 retained-to-swapchain 的统一 damage/scissor 规划。
-use super::rhi_surface_composite::plan_surface_composite;
 // 引入 native queue 的 scroll 变体，保证 soft 后的目标搬移不被重排。
 use super::super::pending::PendingNativeOp;
-
-// 为主 surface retained texture 提供统一的最终采样合成与 present 边界。
-impl GpuBackend {
-    // 把 retained texture 全幅采样到当前 swapchain，并完成唯一最终 present。
-    pub(super) fn present_rhi_surface_texture(
-        &mut self,
-        texture: TextureHandle,
-        damage: PresentDamage,
-    ) -> Result<(), Error> {
-        // 读取当前 surface 的物理 extent，避免用逻辑尺寸猜测 drawable。
-        let extent = self
-            .gpu_ctx
-            .rhi_context()
-            // retained target 必须由同一个已验证组合 RHI 完成最终合成。
-            .map(|context| context.token().extent)?;
-        // 构造全幅 sampled quad，保持 retained image 的原始 premultiplied 像素。
-        let viewport = RhiViewport {
-            // 采样目标宽度使用物理 drawable extent。
-            width: extent.width as f32,
-            // 采样目标高度使用物理 drawable extent。
-            height: extent.height as f32,
-        };
-        // 为最终合成准备覆盖整个 swapchain 的四角几何。
-        let quad = RhiSampledQuad {
-            // 全幅合成从物理左上角开始。
-            x: 0.0,
-            // 全幅合成从物理顶部开始。
-            y: 0.0,
-            // 覆盖当前 drawable 宽度。
-            w: viewport.width,
-            // 覆盖当前 drawable 高度。
-            h: viewport.height,
-            // 采样四角保持左上原点约定。
-            corners: super::super::GpuGlyphBlit::axis_aligned_corners(
-                0.0,
-                0.0,
-                viewport.width,
-                viewport.height,
-            ),
-            // retained texture 已经包含最终颜色，不再额外改变 tint。
-            rgba: [1.0; 4],
-            // 主 surface 合成固定使用 SrcOver。
-            additive: false,
-            // 绑定本代际 retained texture 作为 sampled source。
-            texture,
-            // 采样完整纹理的左侧 UV。
-            u0: 0.0,
-            // 采样完整纹理的顶部 UV。
-            v0: 0.0,
-            // 采样完整纹理的右侧 UV。
-            u1: 1.0,
-            // 采样完整纹理的底部 UV。
-            v1: 1.0,
-            // 最终合成不额外裁剪。
-            scissor: None,
-        };
-        // 用同一份验证结果生成逐矩形绘制与最终 present damage。
-        let composite = plan_surface_composite(damage, extent, quad);
-        // 只在 owner-thread 借用范围内执行最终 swapchain pass。
-        let result = {
-            // 同时借用 context 与 renderer，保持资源和执行在同一 owner thread。
-            let (gpu_ctx, rhi_renderer) = (&mut self.gpu_ctx, &mut self.rhi_renderer);
-            // retained target 只由已经准备好的通用 renderer 负责采样。
-            let Some(renderer) = rhi_renderer.as_mut() else {
-                // 缺少 renderer 时不把合成当成成功。
-                return Err(Error::new(
-                    Errc::InvalidState,
-                    "retained RHI surface has no renderer cache",
-                ));
-            };
-            // 只有组合 RHI context 能执行 surface acquire/submit/present。
-            // 已验证 owner 丢失时保留 typed state error，禁止绕过 RHI 合成。
-            let context = gpu_ctx.rhi_context()?;
-            // 用一次 acquire/submit/present 执行全部 damage rect 的 sampled draw。
-            renderer.execute_sampled_quads(
-                context,
-                // native present 消费与 quad scissor 同源的 damage。
-                composite.damage.clone(),
-                viewport,
-                // partial 使用 Load，Full 使用透明 Clear。
-                composite.load,
-                RenderTargetRef::Surface,
-                // 每个 partial rect 对应一个裁剪 quad。
-                &composite.quads,
-            )
-        };
-        // 最终合成失败时保留下一帧的全量重试边界。
-        if result.is_err() {
-            // 失败帧不能继续把当前 retained 内容当成已交付帧。
-            self.surface.needs_gpu_clear = true;
-            // 失败后等待 present 的标记必须重新进入明确状态。
-            self.rhi_surface_frame_pending_present = false;
-        }
-        // 返回底层执行或 present 的真实结果。
-        result
-    }
-}
 
 // 为 GpuBackend 提供 FrameEncoder retained target 的最终合成提交。
 impl GpuBackend {
@@ -185,7 +84,7 @@ impl GpuBackend {
         // 根据 retained target 当前代际选择首帧清理或保留旧像素。
         let load = if self.surface.needs_gpu_clear {
             // 新代际必须先透明初始化再写 native queue。
-            LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0]))
+            LoadAction::Clear(RhiColor::transparent())
         } else {
             // 同一代际继续保留之前已经交付的内容。
             LoadAction::Load
@@ -209,18 +108,20 @@ impl GpuBackend {
             // retained target 只能由当前组合 RHI context 初始化。
             // 缺失已验证 owner 时返回 typed failure，不触碰 adapter 高层入口。
             let context = gpu_ctx.rhi_context()?;
+            // 冻结 retained texture 与主 drawable 共用的物理范围。
+            let extent = context.surface_ref().token().extent;
             // 透明 clear 只提交到 retained texture，不获取或呈现 swapchain。
             surface.canvas.submit_rhi_clear_only(
                 // 复用当前通用 renderer cache。
                 renderer,
-                // 在当前 owner-thread context 上执行。
-                context,
+                // 离屏初始化只取得 Device 角色。
+                context.device(),
+                // 使用冻结的 retained texture 物理范围。
+                extent,
                 // 使用前面计算出的透明 Clear load。
                 load,
                 // 写入唯一 retained target。
-                target,
-                // 内部初始化使用完整 damage，不改变最终 damage tracker。
-                PresentDamage::Full,
+                retained_texture,
             )?;
         }
         // 在短借用范围内完成 ordered native lowering；soft 段稍后独立合成。
@@ -239,13 +140,18 @@ impl GpuBackend {
             // 只有组合 RHI context 能执行 retained texture pass。
             // 当前 adapter 的组合 RHI 已在构造期验证。
             let context = gpu_ctx.rhi_context()?;
+            // 冻结 retained texture 与主 drawable 共用的物理范围。
+            let extent = context.surface_ref().token().extent;
             // 保留 native queue 内部的 painter order，并且不触发 swapchain present。
             surface.canvas.submit_rhi_native_prefix(
                 renderer,
-                context,
+                // 离屏 lowering 只取得 Device 角色。
+                context.device(),
+                // 使用冻结的 retained texture 物理范围。
+                extent,
                 load,
-                RenderTargetRef::Texture(retained_texture),
-                PresentDamage::Full,
+                // 只允许写入显式 retained texture。
+                retained_texture,
             )?
         };
         // 未覆盖的 queue 不应被伪装成 retained 提交成功。
@@ -262,7 +168,7 @@ impl GpuBackend {
         if self.surface.canvas.soft_has_content {
             // 非 1:1 DPR、空目标和 adapter 不支持时保持原子失败边界。
             let soft_load = if self.surface.needs_gpu_clear {
-                LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0]))
+                LoadAction::Clear(RhiColor::transparent())
             } else {
                 LoadAction::Load
             };
@@ -392,7 +298,7 @@ impl GpuBackend {
         // 只有需要全清时才能把旧 clear 语义映射为 pass load action。
         let load = if self.surface.needs_gpu_clear {
             // 首帧主 surface 的透明初始化。
-            LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0]))
+            LoadAction::Clear(RhiColor::transparent())
         } else {
             // 保留 D3D11 backbuffer 的已有像素。
             LoadAction::Load
@@ -422,13 +328,18 @@ impl GpuBackend {
             // 只有 native context 暴露组合 RHI 才能执行 FramePlan。
             // 已验证 owner 丢失时返回 typed failure，不能恢复旧路径。
             let context = gpu_ctx.rhi_context()?;
+            // 冻结 retained texture 与主 drawable 共用的物理范围。
+            let extent = context.surface_ref().token().extent;
             // 将纯 shape 队列 lowering 为 FramePlan；不支持的操作返回 false。
             surface.canvas.submit_rhi_shapes(
                 renderer,
-                context,
+                // 离屏 lowering 只取得 Device 角色。
+                context.device(),
+                // 使用冻结的 retained texture 物理范围。
+                extent,
                 load,
-                RenderTargetRef::Texture(retained_texture),
-                damage_plan.present_damage.clone(),
+                // 只允许写入显式 retained texture。
+                retained_texture,
             )?
         };
         // 不支持的队列没有触碰 present 状态，继续兼容路径。
@@ -498,7 +409,7 @@ impl GpuBackend {
         // 只有需要全清时才能把旧 clear 语义映射为 pass load action。
         let load = if self.surface.needs_gpu_clear {
             // 首帧主 surface 的透明初始化。
-            LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0]))
+            LoadAction::Clear(RhiColor::transparent())
         } else {
             // 保留 D3D11 backbuffer 的已有像素。
             LoadAction::Load
@@ -528,13 +439,18 @@ impl GpuBackend {
             // 只有 native context 暴露组合 RHI 才能执行 FramePlan。
             // 已验证 owner 丢失时返回 typed failure，不能恢复旧路径。
             let context = gpu_ctx.rhi_context()?;
+            // 冻结 retained texture 与主 drawable 共用的物理范围。
+            let extent = context.surface_ref().token().extent;
             // 将纯阴影队列 lowering 为 FramePlan；不支持的队列返回 false。
             surface.canvas.submit_rhi_shadows(
                 renderer,
-                context,
+                // 离屏 lowering 只取得 Device 角色。
+                context.device(),
+                // 使用冻结的 retained texture 物理范围。
+                extent,
                 load,
-                RenderTargetRef::Texture(retained_texture),
-                damage_plan.present_damage.clone(),
+                // 只允许写入显式 retained texture。
+                retained_texture,
             )?
         };
         // 不支持的队列没有触碰 present 状态，继续兼容路径。
@@ -600,7 +516,7 @@ impl GpuBackend {
         // 只有需要全清时才能把旧 clear 语义映射为 pass load action。
         let load = if self.surface.needs_gpu_clear {
             // 首帧主 surface 的透明初始化。
-            LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0]))
+            LoadAction::Clear(RhiColor::transparent())
         } else {
             // 保留 D3D11 backbuffer 的已有像素。
             LoadAction::Load
@@ -630,13 +546,18 @@ impl GpuBackend {
             // 只有 native context 暴露组合 RHI 才能执行 FramePlan。
             // 已验证 owner 丢失时返回 typed failure，不能恢复旧路径。
             let context = gpu_ctx.rhi_context()?;
+            // 冻结 retained texture 与主 drawable 共用的物理范围。
+            let extent = context.surface_ref().token().extent;
             // 将纯 glyph 队列 lowering 为 FramePlan；不支持的操作返回 false。
             surface.canvas.submit_rhi_glyphs(
                 renderer,
-                context,
+                // 离屏 lowering 只取得 Device 角色。
+                context.device(),
+                // 使用冻结的 retained texture 物理范围。
+                extent,
                 load,
-                RenderTargetRef::Texture(retained_texture),
-                damage_plan.present_damage.clone(),
+                // 只允许写入显式 retained texture。
+                retained_texture,
             )?
         };
         // 不支持的队列没有触碰 present 状态，继续兼容路径。
@@ -705,7 +626,7 @@ impl GpuBackend {
         // 只有需要全清时才能把旧 clear 语义映射为 pass load action。
         let load = if self.surface.needs_gpu_clear {
             // 首帧主 surface 的透明初始化。
-            LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0]))
+            LoadAction::Clear(RhiColor::transparent())
         } else {
             // 保留 D3D11 backbuffer 的已有像素。
             LoadAction::Load
@@ -734,13 +655,18 @@ impl GpuBackend {
             // 只有 native context 暴露组合 RHI 才能执行 FramePlan。
             // 已验证 owner 丢失时返回 typed failure，不能恢复旧路径。
             let context = gpu_ctx.rhi_context()?;
+            // 冻结 retained texture 与主 drawable 共用的物理范围。
+            let extent = context.surface_ref().token().extent;
             // 将纯图片队列 lowering 为 FramePlan；不支持的操作返回 false。
             surface.canvas.submit_rhi_textured(
                 renderer,
-                context,
+                // 离屏 lowering 只取得 Device 角色。
+                context.device(),
+                // 使用冻结的 retained texture 物理范围。
+                extent,
                 load,
-                RenderTargetRef::Texture(retained_texture),
-                damage_plan.present_damage.clone(),
+                // 只允许写入显式 retained texture。
+                retained_texture,
             )?
         };
         // 不支持的队列没有触碰 present 状态，继续兼容路径。
@@ -805,7 +731,7 @@ impl GpuBackend {
         // 只有需要全清时才能把旧 clear 语义映射为 pass load action。
         let load = if self.surface.needs_gpu_clear {
             // 首帧主 surface 的透明初始化。
-            LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0]))
+            LoadAction::Clear(RhiColor::transparent())
         } else {
             // 保留 D3D11 backbuffer 的已有像素。
             LoadAction::Load
@@ -834,13 +760,18 @@ impl GpuBackend {
             // 只有 native context 暴露组合 RHI 才能执行 FramePlan。
             // 已验证 owner 丢失时返回 typed failure，不能恢复旧路径。
             let context = gpu_ctx.rhi_context()?;
+            // 冻结 retained texture 与主 drawable 共用的物理范围。
+            let extent = context.surface_ref().token().extent;
             // 将纯渐变队列 lowering 为 FramePlan；不支持的操作返回 false。
             surface.canvas.submit_rhi_gradients(
                 renderer,
-                context,
+                // 离屏 lowering 只取得 Device 角色。
+                context.device(),
+                // 使用冻结的 retained texture 物理范围。
+                extent,
                 load,
-                RenderTargetRef::Texture(retained_texture),
-                damage_plan.present_damage.clone(),
+                // 只允许写入显式 retained texture。
+                retained_texture,
             )?
         };
         // 不支持的队列没有触碰 present 状态，继续兼容路径。

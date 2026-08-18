@@ -235,7 +235,6 @@ impl Popconfirm {
         }
         ctx.pop_clip();
     }
-
 }
 
 #[derive(Debug, Clone, Copy)]

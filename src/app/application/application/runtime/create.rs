@@ -201,22 +201,33 @@ pub(super) fn recreate_exact_graphics_recipe(
     height: i32,
     recipe: GraphicsRecipe,
     pending_failures: &PendingFailureQueue,
+    // test-harness 恢复后继续绑定同一个逐窗测试信号。
+    #[cfg(feature = "test-harness")] graphics_tests: GraphicsFaultSignal,
 ) -> Result<Box<dyn RenderTarget>, Error> {
     // native factory 在返回前已经把兼容 context 收敛为 recipe owner。
     let owner =
         try_create_gpu_recipe_with_queue(recipe, surface, width, height, pending_failures.clone())?;
     // 恢复路径与首次 bootstrap 复用同一个 owner 装配入口。
-    assemble_renderer(owner, width, height)
-        .map(|renderer| Box::new(renderer) as Box<dyn RenderTarget>)
-        .map_err(|failure| failure.into_error())
+    let renderer =
+        assemble_renderer(owner, width, height).map_err(|failure| failure.into_error())?;
+    // 新 GPU Renderer 必须重新连接逐窗回读消费者。
+    #[cfg(feature = "test-harness")]
+    let renderer = renderer.with_test_graphics_signal(graphics_tests);
+    // 把已初始化且已连接测试端口的唯一 owner 交给恢复驱动。
+    Ok(Box::new(renderer))
 }
 
 pub(super) fn create_software_recovery_engine(
     width: i32,
     height: i32,
+    // test-harness 的软件降级仍需完成待处理票据并返回未支持结果。
+    #[cfg(feature = "test-harness")] graphics_tests: GraphicsFaultSignal,
 ) -> Result<Box<dyn RenderTarget>, Error> {
     let mut renderer = Renderer::cpu();
     renderer.initialize(width, height)?;
+    // 软件 Renderer 连接相同信号，确保请求不会在恢复降级后悬挂。
+    #[cfg(feature = "test-harness")]
+    let renderer = renderer.with_test_graphics_signal(graphics_tests);
     Ok(Box::new(renderer))
 }
 
@@ -225,6 +236,8 @@ pub(crate) fn graphics_recovery_rebuilder_with_pending(
     requested: GraphicsSelection,
     selected_recipe: GraphicsRecipe,
     pending_failures: PendingFailureQueue,
+    // test-harness 在所有重建 recipe 间复用同一个窗口信号。
+    #[cfg(feature = "test-harness")] graphics_tests: GraphicsFaultSignal,
 ) -> RenderTargetRebuilder {
     let candidates = gpu_recipe_candidates(requested);
     let mut current_recipe = selected_recipe;
@@ -236,6 +249,9 @@ pub(crate) fn graphics_recovery_rebuilder_with_pending(
                 height,
                 current_recipe,
                 &pending_failures,
+                // 为重建后的 Renderer 重新接通测试读回端口。
+                #[cfg(feature = "test-harness")]
+                graphics_tests.clone(),
             )
         }
         GraphicsRecoveryAction::TryNextRecipe => {
@@ -255,6 +271,9 @@ pub(crate) fn graphics_recovery_rebuilder_with_pending(
                     height,
                     candidate,
                     &pending_failures,
+                    // 尝试下一个 recipe 时仍保持同一逐窗信号。
+                    #[cfg(feature = "test-harness")]
+                    graphics_tests.clone(),
                 ) {
                     Ok(engine) => {
                         current_recipe = candidate;
@@ -265,7 +284,15 @@ pub(crate) fn graphics_recovery_rebuilder_with_pending(
             }
             Err(last_error)
         }
-        GraphicsRecoveryAction::UseSoftware => create_software_recovery_engine(width, height),
+        GraphicsRecoveryAction::UseSoftware => create_software_recovery_engine(
+            // 保留恢复请求的物理宽度。
+            width,
+            // 保留恢复请求的物理高度。
+            height,
+            // 软件降级也消费同一个测试信号。
+            #[cfg(feature = "test-harness")]
+            graphics_tests.clone(),
+        ),
         GraphicsRecoveryAction::Abort | GraphicsRecoveryAction::AbortOutOfMemory => {
             Err(Error::new(
                 Errc::InvalidState,
@@ -305,13 +332,28 @@ pub(crate) fn create_preferred_engine(
                     format_probe_failures(&gpu.report)
                 );
             }
+            // 保存恢复闭包需要的已选择 recipe，避免测试装配改变探测事实。
+            let selected_recipe = gpu.selected_recipe;
+            // test-harness 把应用信号接到最终 present 前的 Renderer 边界。
+            #[cfg(feature = "test-harness")]
+            let renderer = gpu
+                // 取得启动期已经初始化的唯一 Renderer。
+                .renderer
+                // 连接像素读回消费者。
+                .with_test_graphics_signal(graphics_faults.clone());
+            // 普通构建不携带任何测试控制状态。
+            #[cfg(not(feature = "test-harness"))]
+            let renderer = gpu.renderer;
             let engine = RecoveryDriver::new(
-                Box::new(gpu.renderer),
+                Box::new(renderer),
                 graphics_recovery_rebuilder_with_pending(
                     surface,
                     graphics_backend,
-                    gpu.selected_recipe,
+                    selected_recipe,
                     pending_failures,
+                    // 恢复路径必须能为每个新 Renderer 重连同一信号。
+                    #[cfg(feature = "test-harness")]
+                    graphics_faults.clone(),
                 ),
             )
             .with_extent(width, height)
@@ -328,12 +370,17 @@ pub(crate) fn create_preferred_engine(
             match renderer.initialize(width, height) {
                 Ok(()) => {
                     tracing::info!("CPU renderer initialized");
+                    // CPU fallback 同样完成票据并返回明确的能力缺失。
+                    #[cfg(feature = "test-harness")]
+                    let renderer = renderer.with_test_graphics_signal(graphics_faults);
                     // CPU fallback 成功后把同一个 renderer owner 交给窗口会话。
                     Ok(Box::new(renderer))
                 }
                 Err(e) => {
                     // 初始化失败的候选必须在离开创建事务前执行检查式关闭。
-                    Err(finish_failed_graphics_candidate(e, || renderer.try_shutdown()))
+                    Err(finish_failed_graphics_candidate(e, || {
+                        renderer.try_shutdown()
+                    }))
                 }
             }
         }
@@ -401,7 +448,10 @@ mod tests {
             // 记录唯一一次清理调用。
             calls.set(calls.get() + 1);
             // 模拟 backend 仍未完成 teardown。
-            Err(Error::new(Errc::PlatformError, "cpu fallback cleanup failed"))
+            Err(Error::new(
+                Errc::PlatformError,
+                "cpu fallback cleanup failed",
+            ))
         });
         // 失败事务同样不得重复清理同一候选。
         assert_eq!(calls.get(), 1);

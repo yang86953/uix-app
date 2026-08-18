@@ -21,6 +21,25 @@
 
 布局按实际字体覆盖拆段，再统一应用换行和垂直对齐；CRLF/CR/LF、末尾空行、Tab、软断点和不可断空白保留源字符索引语义。
 
+### 跨平台字体一致性边界
+
+文本布局、字形选择、光栅化与绘制必须消费同一个 `FontService` 结果，图形 Adapter 不得重新选择系统字体或修改字形度量。`system-ui` 与平台默认字体表达原生外观偏好，Windows、Linux 和 macOS 可能解析到不同字体文件，因此不提供像素级一致性保证。
+
+要求跨系统保持文字宽度、换行、基线和像素外观一致的产品，必须随应用分发同一组已授权的正文与 CJK 字体数据，并在首次布局前按固定顺序加载；平台字体发现只能作为明确允许原生差异的兼容策略。验收证据必须记录字体文件身份、回退顺序、shaping 结果和关键文本快照，不能只比较字体族字符串。
+
+`FontBundle` 是该约束的公开配置值：主字体与 fallback 均保存字体文件数据，fallback 声明顺序就是缺字选择顺序。`App::font_bundle` 在创建首个窗口前把完整字体包安装到唯一 `FontService`；配置存在时不得调用平台字体发现，任一字体无法解析时启动失败，不能静默改用系统字体。安装后组合根释放配置字节引用，字体数据生命周期只归 `FontService`。
+
+```rust
+use uix::prelude::*;
+
+let fonts = FontBundle::new("Product Sans", include_bytes!("assets/ProductSans.ttf"))
+    .with_fallback("Product CJK", include_bytes!("assets/ProductCJK.otf"));
+
+let app = App::new().font_bundle(fonts);
+```
+
+示例名称不指定具体字体产品；仓库或应用必须另行核验所选字体的再分发许可、字形覆盖和包体预算。
+
 ## 组件：ImageService
 
 组件保存 handle 而非 texture；解码失败返回 typed error，释放或设备重建使旧 generation 失效。UI `Style` 的本地背景路径复用同一 `ImageService` 路径缓存与固有尺寸，不建立第二套图片资源所有权；加载失败由 UI 绘制适配降级为不绘制图片，同时保留已有背景色和可观察失败。

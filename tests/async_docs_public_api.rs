@@ -245,7 +245,8 @@ mod async_optional_state {
                 // 把用户名称纵向组合。
                 column(
                     // 遍历已加载的数据。
-                    items.iter()
+                    items
+                        .iter()
                         // 为每个用户创建标签。
                         .map(|user| label(&user.name))
                         // 收集为 column 接受的公开节点集合。

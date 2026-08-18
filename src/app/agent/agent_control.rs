@@ -10,11 +10,9 @@ use crate::app::agent::agent_policy::{AgentPolicy, PolicyDecision};
 use crate::app::queues::agent_command_queue::AgentCommandError;
 #[cfg(any(test, feature = "agent-control"))]
 use crate::app::queues::agent_command_queue::AgentWindowAction;
-use crate::app::queues::window_agent_state::{
-    AgentCommandExecutor, AgentWindowOpsError,
-};
 #[cfg(any(test, feature = "agent-control"))]
 use crate::app::queues::window_agent_state::AgentWindowOps;
+use crate::app::queues::window_agent_state::{AgentCommandExecutor, AgentWindowOpsError};
 use crate::app::window_semantics::{WindowSemanticSnapshot, WindowSemanticState};
 use crate::core::ComponentId;
 use crate::ui::WidgetTree;
@@ -169,10 +167,12 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
                 )?;
             }
             // 窗口管理动作：经平台窗口操作契约执行，失败映射为命令失败。
-            AgentWindowAction::Resize { width, height } => window
-                .resize(width, height)
-                .map_err(map_window_ops_error)?,
-            AgentWindowAction::Move { x, y } => window.move_to(x, y).map_err(map_window_ops_error)?,
+            AgentWindowAction::Resize { width, height } => {
+                window.resize(width, height).map_err(map_window_ops_error)?
+            }
+            AgentWindowAction::Move { x, y } => {
+                window.move_to(x, y).map_err(map_window_ops_error)?
+            }
             AgentWindowAction::Maximize => window.maximize().map_err(map_window_ops_error)?,
             AgentWindowAction::Minimize => window.minimize().map_err(map_window_ops_error)?,
             AgentWindowAction::Restore => window.restore().map_err(map_window_ops_error)?,

@@ -3,20 +3,19 @@
 // 引入当前错误类型、几何和结果别名。
 use crate::core::error::{Error, Result};
 use crate::core::{Point, Rect};
-// 引入当前帧需要提交的 damage 语义。
-use crate::core::PresentDamage;
 // 引入显式 FramePlan render target、pass 和命令类型。
 use crate::draw::backend::frame_plan::{
     FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef,
 };
 // 引入通用 renderer 的混合载荷和执行器。
 use crate::draw::backend::rhi_renderer::{
-    RhiCoverageQuad, RhiGradientRect, RhiMsdfQuad, RhiOp, RhiRenderer, RhiSector, RhiShadow,
-    RhiShapeRect, RhiSolidMesh, RhiTexturedQuad,
+    RhiCoverageQuad, RhiGradientRect, RhiMsdfQuad, RhiOp, RhiRenderer, RhiRendererFrame, RhiSector,
+    RhiShadow, RhiShapeRect, RhiSolidMesh, RhiTexturedQuad,
 };
 // 引入 GPU native 队列的几何载荷和 TextureMove 资源类型。
 use crate::native::present::rhi::{
-    GraphicsContextRhi, LoadAction, RenderTargetHandle, RhiViewport, TextureHandle, TextureMove,
+    GraphicsDevice, LoadAction, RenderTargetHandle, RhiExtent, RhiViewport, TextureHandle,
+    TextureMove,
 };
 
 // 引入待决操作的完整枚举和 scroll boundary 载荷。
@@ -50,12 +49,15 @@ fn shape_rhi_op(shape: RhiShapeRect, additive: bool, additive_supported: bool) -
 // 把单个待决操作降低为保序混合 RHI 载荷。
 fn lower_operation(
     operation: &PendingNativeOp,
-    context: &dyn GraphicsContextRhi,
+    // 借用只读 Device 能力，禁止 lowering 取得 Surface 生命周期。
+    device: &dyn GraphicsDevice,
+    // 接收当前显式纹理目标的物理范围。
+    extent: RhiExtent,
     scale_x: f32,
     scale_y: f32,
 ) -> Option<RhiOp> {
     // 所有 native 操作共享一份经过物理缩放和边界裁剪的 scissor。
-    let scissor = super::rhi_physical_scissor(operation.scissor(), scale_x, scale_y, context)?;
+    let scissor = super::rhi_physical_scissor(operation.scissor(), scale_x, scale_y, extent)?;
     // 按原始 pending queue 顺序逐项选择对应的 RHI 语义。
     match operation {
         // 将已完成 tessellation 的 mesh 只做坐标缩放。
@@ -105,7 +107,11 @@ fn lower_operation(
                 scissor: Some(scissor),
             };
             // 依据 pending 语义与当前 RHI 事实能力选择固定 pipeline。
-            shape_rhi_op(shape, rect.additive, context.capabilities().additive_blend)
+            shape_rhi_op(
+                shape,
+                rect.additive,
+                device.device_capabilities().additive_blend,
+            )
         }
         // 将圆角或直角描边矩形降低为 shape SDF。
         PendingNativeOp::StrokeRect(rect) => {
@@ -141,7 +147,11 @@ fn lower_operation(
                 scissor: Some(scissor),
             };
             // 依据描边事实与当前 RHI 能力选择固定 pipeline。
-            shape_rhi_op(shape, rect.additive, context.capabilities().additive_blend)
+            shape_rhi_op(
+                shape,
+                rect.additive,
+                device.device_capabilities().additive_blend,
+            )
         }
         // 将已完成仿射 lowering 的 box shadow 降低为保留 painter order 的 shadow draw。
         PendingNativeOp::BoxShadow(shadow) => {
@@ -180,18 +190,23 @@ fn lower_operation(
             }
             // 返回保留设备四角的 shadow lowering 结果。
             Some(RhiOp::Shadow(RhiShadow {
-                x: value.x * scale_x,
-                y: value.y * scale_y,
+                // 保存物理本体宽度，原点已经冻结在扩展四角中。
                 w: value.w * scale_x,
+                // 保存物理本体高度。
                 h: value.h * scale_y,
+                // 保存已经包含 offset 与 blur 的设备四角。
                 corners,
-                offset_x,
-                offset_y,
+                // 保存物理 X 轴模糊量。
                 blur_x,
+                // 保存物理 Y 轴模糊量。
                 blur_y,
+                // 保存直通阴影颜色。
                 rgba: value.rgba,
+                // 保存物理四角半径。
                 radius,
+                // 保存覆盖曲线身份。
                 ambient: value.ambient,
+                // 保存物理裁剪。
                 scissor: Some(scissor),
             }))
         }
@@ -270,7 +285,10 @@ fn lower_operation(
         // 将纯 SrcOver/Additive 图片 blit 降低为采样 quad。
         PendingNativeOp::ImageBlit(image) => {
             // Additive 必须由当前 adapter 明确声明支持。
-            if image.blit.additive && !context.capabilities().additive_blend {
+            if image.blit.additive
+                // Additive 能力只能从组合上下文的 Device 角色读取。
+                && !device.device_capabilities().additive_blend
+            {
                 // 不伪造 Additive 的 blending 结果。
                 return None;
             }
@@ -533,7 +551,8 @@ fn native_scroll_to_pending(
 fn lower_native_scroll_move(
     scroll: PendingNativeScroll,
     target: TextureHandle,
-    context: &dyn GraphicsContextRhi,
+    // 接收显式 retained texture 的物理范围。
+    extent: RhiExtent,
     logical_width: i32,
     logical_height: i32,
     scale_x: f32,
@@ -547,13 +566,13 @@ fn lower_native_scroll_move(
         logical_height,
         scale_x,
         scale_y,
-        context.token().extent,
+        extent,
     )
 }
 
 // 在不触发 swapchain present 的前提下执行一条纹理搬移 boundary。
 fn execute_texture_move(
-    context: &mut dyn GraphicsContextRhi,
+    device: &mut dyn GraphicsDevice,
     target: RenderTargetHandle,
     viewport: RhiViewport,
     movement: TextureMove,
@@ -562,14 +581,14 @@ fn execute_texture_move(
     let mut pass = RenderPassPlan::new(RenderTargetRef::Texture(target), LoadAction::Load);
     // 明确设置当前目标的物理 viewport，避免 adapter 沿用上一 pass 状态。
     pass.push(FramePlanCommand::SetViewport(viewport));
-    // 计划使用当前 owner context 的 surface generation。
-    let mut plan = FramePlan::new(context.token(), PresentDamage::Full);
+    // 纹理搬移只属于 device，不依赖 swapchain generation。
+    let mut plan = FramePlan::offscreen();
     // 先执行重叠安全的 TextureMove，再进入空 load pass。
     plan.push_move(movement);
     // 追加 move boundary 的 target pass。
     plan.push_pass(pass);
     // 只提交离屏命令，不获取或呈现 swapchain image。
-    plan.execute_offscreen_on_context(context)?;
+    plan.execute_offscreen_on_device(device)?;
     // 丢弃只用于提交追踪的 handle，保留 typed Result 语义。
     Ok(())
 }
@@ -606,37 +625,32 @@ impl NativeGpuCanvas2D {
         &self,
         // 接收通用 renderer cache。
         renderer: &mut RhiRenderer,
-        // 接收当前 owner-thread 的组合 RHI context。
-        context: &mut dyn GraphicsContextRhi,
+        // 接收只允许资源、命令与 submit 的 Device 角色。
+        device: &mut dyn GraphicsDevice,
+        // 接收 retained texture 的物理范围。
+        extent: RhiExtent,
         // 接收必须为 Clear 的首段 load action。
         load: LoadAction,
         // 接收唯一 retained texture target。
-        target: RenderTargetRef,
-        // 接收内部提交使用的 damage 语义。
-        damage: PresentDamage,
+        target: RenderTargetHandle,
         // 返回资源、pass 或 submit 的真实 typed 结果。
     ) -> Result<(), Error> {
-        // 使用 context token 和逻辑画布尺寸计算物理 viewport。
-        let (viewport, _, _) =
-            super::rhi_physical_geometry(context, self.surface_w, self.surface_h);
+        // 使用显式纹理范围和逻辑画布尺寸计算物理 viewport。
+        let (viewport, _, _) = super::rhi_physical_geometry(extent, self.surface_w, self.surface_h);
         // 透明 SrcOver dummy 只触发 load clear，不改变初始化后的颜色。
         let operations = [empty_mixed_draw(viewport)];
+        // retained 初始化只把 Device 与显式纹理交给 Renderer。
+        let frame = RhiRendererFrame::offscreen(device, target);
         // 复用通用混合计划执行器，禁止为清空重新引入 adapter 高层入口。
         renderer.execute_ops(
-            // 在当前组合 context 上创建并提交 pass。
-            context,
-            // 内部 retained 初始化不自行 present。
-            damage,
+            // 传入无法携带 present damage 的 Offscreen 帧。
+            frame,
             // 使用当前 drawable 的物理 viewport。
             viewport,
             // 由调用方固定透明清空颜色。
             load,
-            // 写入同一代 retained texture。
-            target,
             // 透明 dummy 保证计划具有一个合法 draw packet。
             &operations,
-            // 最终 swapchain present 仍由 backend 统一边界完成。
-            false,
         )
     }
 
@@ -644,17 +658,20 @@ impl NativeGpuCanvas2D {
     pub(crate) fn submit_rhi_mixed(
         &self,
         renderer: &mut RhiRenderer,
-        context: &mut dyn GraphicsContextRhi,
+        // 借用只允许资源、命令与 submit 的 Device 角色。
+        device: &mut dyn GraphicsDevice,
+        // 接收 retained texture 的物理范围。
+        extent: RhiExtent,
         load: LoadAction,
-        target: RenderTargetRef,
-        damage: PresentDamage,
+        // 接收唯一 retained texture target。
+        target: RenderTargetHandle,
     ) -> Result<bool, Error> {
-        // 主 surface 使用 context token 的 drawable extent 计算物理几何。
+        // retained texture 使用显式 extent 计算物理几何。
         let (viewport, scale_x, scale_y) =
-            super::rhi_physical_geometry(context, self.surface_w, self.surface_h);
+            super::rhi_physical_geometry(extent, self.surface_w, self.surface_h);
         // 复用显式 geometry 入口完成真正的保序 lowering。
         self.submit_rhi_mixed_for_geometry(
-            renderer, context, load, target, damage, viewport, scale_x, scale_y, false,
+            renderer, device, extent, load, target, viewport, scale_x, scale_y, false,
         )
     }
 
@@ -662,17 +679,20 @@ impl NativeGpuCanvas2D {
     pub(crate) fn submit_rhi_native_prefix(
         &self,
         renderer: &mut RhiRenderer,
-        context: &mut dyn GraphicsContextRhi,
+        // 借用只允许资源、命令与 submit 的 Device 角色。
+        device: &mut dyn GraphicsDevice,
+        // 接收 retained texture 的物理范围。
+        extent: RhiExtent,
         load: LoadAction,
-        target: RenderTargetRef,
-        damage: PresentDamage,
+        // 接收唯一 retained texture target。
+        target: RenderTargetHandle,
     ) -> Result<bool, Error> {
-        // 主 surface 与普通 Picture 共用同一套物理 lowering 几何。
+        // retained texture 与普通 Picture 共用同一套物理 lowering 几何。
         let (viewport, scale_x, scale_y) =
-            super::rhi_physical_geometry(context, self.surface_w, self.surface_h);
+            super::rhi_physical_geometry(extent, self.surface_w, self.surface_h);
         // 只放宽 soft 前缀检查，不放宽 scroll/未验证操作的原子回退。
         self.submit_rhi_mixed_for_geometry(
-            renderer, context, load, target, damage, viewport, scale_x, scale_y, true,
+            renderer, device, extent, load, target, viewport, scale_x, scale_y, true,
         )
     }
 
@@ -680,10 +700,13 @@ impl NativeGpuCanvas2D {
     pub(crate) fn submit_rhi_mixed_for_geometry(
         &self,
         renderer: &mut RhiRenderer,
-        context: &mut dyn GraphicsContextRhi,
+        // 借用只允许资源、命令与 submit 的 Device 角色。
+        device: &mut dyn GraphicsDevice,
+        // 接收当前显式纹理目标的物理范围。
+        extent: RhiExtent,
         load: LoadAction,
-        target: RenderTargetRef,
-        damage: PresentDamage,
+        // 接收唯一离屏纹理目标。
+        target: RenderTargetHandle,
         viewport: crate::native::present::rhi::RhiViewport,
         scale_x: f32,
         scale_y: f32,
@@ -725,7 +748,8 @@ impl NativeGpuCanvas2D {
                 continue;
             }
             // 保留原始 pending queue 的 painter order。
-            let Some(operation) = lower_operation(operation, context, scale_x, scale_y) else {
+            let Some(operation) = lower_operation(operation, device, extent, scale_x, scale_y)
+            else {
                 // 不在未验证的混合 pass 中伪造成功。
                 return Ok(false);
             };
@@ -739,21 +763,6 @@ impl NativeGpuCanvas2D {
             };
             ops.push(operation);
         }
-        // TextureMove 只能写入显式 retained texture，不能作用于易失 surface sentinel。
-        let target_handle =
-            segments
-                .iter()
-                .any(|(scroll, _)| scroll.is_some())
-                .then(|| match target {
-                    RenderTargetRef::Texture(handle) => handle,
-                    RenderTargetRef::Surface => RenderTargetHandle::from_raw(0),
-                });
-        if segments.iter().any(|(scroll, _)| scroll.is_some())
-            && matches!(target, RenderTargetRef::Surface)
-        {
-            // 调用方没有 retained target 时交回安全兼容边界。
-            return Ok(false);
-        }
         // 预先降低所有 scroll，任何一条失败都不触碰后续 draw submit。
         let mut movements = Vec::with_capacity(segments.len());
         for (scroll, _) in &segments {
@@ -761,15 +770,12 @@ impl NativeGpuCanvas2D {
                 movements.push(None);
                 continue;
             };
-            // scroll path 已确认 target 是 texture；句柄只在当前 owner context 使用。
-            let Some(target_handle) = target_handle else {
-                return Ok(false);
-            };
-            let target_texture = TextureHandle::from_raw(target_handle.raw());
+            // submit 契约已经保证 target 是显式纹理句柄。
+            let target_texture = TextureHandle::from_raw(target.raw());
             match lower_native_scroll_move(
                 *scroll,
                 target_texture,
-                context,
+                extent,
                 self.surface_w,
                 self.surface_h,
                 scale_x,
@@ -798,11 +804,8 @@ impl NativeGpuCanvas2D {
         for ((_, operations), movement) in segments.iter().zip(movements.iter()) {
             // scroll boundary 必须发生在后续 segment draw 之前。
             if let Some(movement) = movement {
-                // scroll path 已确认 target 是 retained texture。
-                let Some(target_handle) = target_handle else {
-                    return Ok(false);
-                };
-                execute_texture_move(context, target_handle, viewport, *movement)?;
+                // scroll path 只使用显式 Device 与 retained texture。
+                execute_texture_move(device, target, viewport, *movement)?;
                 // move 本身已经建立了后续 pass 的 Load 基线。
                 target_initialized = true;
             }
@@ -816,16 +819,10 @@ impl NativeGpuCanvas2D {
             } else {
                 load
             };
+            // mixed lowering 只能构造显式纹理 Offscreen 帧。
+            let frame = RhiRendererFrame::offscreen(device, target);
             // 当前 segment 仍由通用 renderer 负责 resource/pass/draw ABI。
-            renderer.execute_ops(
-                context,
-                damage.clone(),
-                viewport,
-                segment_load,
-                target,
-                operations,
-                true,
-            )?;
+            renderer.execute_ops(frame, viewport, segment_load, operations)?;
             // 后续 draw 只能 Load，不能再次清除 retained target。
             target_initialized = true;
         }

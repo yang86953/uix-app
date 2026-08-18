@@ -357,6 +357,8 @@ pub struct FlexLayout {
     pub overflow_content: bool,
     /// 主轴无显式尺寸时由子项撑开，仍走标准 flex-grow 路径。
     pub intrinsic_main: bool,
+    /// 交叉轴无显式尺寸时由子项自然外尺寸撑开。
+    pub intrinsic_cross: bool,
 }
 
 impl FlexLayout {
@@ -370,6 +372,8 @@ impl FlexLayout {
             wrap: false,
             overflow_content: false,
             intrinsic_main: false,
+            // 默认保持父级已确定交叉轴的兼容语义。
+            intrinsic_cross: false,
         }
     }
 
@@ -493,6 +497,8 @@ impl LayoutEngine for FlexLayout {
             align_items: self.align,
             // 溢出换行与显式固有主轴都用最长自然行记录内容尺寸。
             intrinsic_main: self.intrinsic_main || self.overflow_content,
+            // 交叉轴固有性独立于主轴溢出策略。
+            intrinsic_cross: self.intrinsic_cross,
         };
 
         let output = compute_flex_layout(&input);

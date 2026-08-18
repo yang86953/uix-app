@@ -147,31 +147,37 @@ impl Default for WaylandSurfaceMetrics {
 // 从同一锁 guard 计算带溢出检查的物理 drawable 快照。
 fn snapshot_from_state(state: &WaylandSurfaceMetricsState) -> Result<WaylandSurfaceSnapshot> {
     // 逻辑宽度乘整数 scale 得到物理宽度。
-    let drawable_width = state.logical_width.checked_mul(state.scale).ok_or_else(|| {
-        // 尺寸溢出不得传入 EGL、SHM 或驱动。
-        Error::new(
-            // 物理 extent 超出 i32 属于资源尺寸不足。
-            Errc::InsufficientResources,
-            // 保留逻辑宽度和缩放用于诊断。
-            format!(
-                "Wayland drawable width overflow: {} * {}",
-                state.logical_width, state.scale
-            ),
-        )
-    })?;
+    let drawable_width = state
+        .logical_width
+        .checked_mul(state.scale)
+        .ok_or_else(|| {
+            // 尺寸溢出不得传入 EGL、SHM 或驱动。
+            Error::new(
+                // 物理 extent 超出 i32 属于资源尺寸不足。
+                Errc::InsufficientResources,
+                // 保留逻辑宽度和缩放用于诊断。
+                format!(
+                    "Wayland drawable width overflow: {} * {}",
+                    state.logical_width, state.scale
+                ),
+            )
+        })?;
     // 逻辑高度使用相同受检换算。
-    let drawable_height = state.logical_height.checked_mul(state.scale).ok_or_else(|| {
-        // 高度溢出也不得形成部分 surface 快照。
-        Error::new(
-            // 保持同一资源错误分类。
-            Errc::InsufficientResources,
-            // 保留逻辑高度和缩放用于诊断。
-            format!(
-                "Wayland drawable height overflow: {} * {}",
-                state.logical_height, state.scale
-            ),
-        )
-    })?;
+    let drawable_height = state
+        .logical_height
+        .checked_mul(state.scale)
+        .ok_or_else(|| {
+            // 高度溢出也不得形成部分 surface 快照。
+            Error::new(
+                // 保持同一资源错误分类。
+                Errc::InsufficientResources,
+                // 保留逻辑高度和缩放用于诊断。
+                format!(
+                    "Wayland drawable height overflow: {} * {}",
+                    state.logical_height, state.scale
+                ),
+            )
+        })?;
     // 返回不可拆分的完整 surface 事实。
     Ok(WaylandSurfaceSnapshot {
         // 复制逻辑宽度。

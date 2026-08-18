@@ -109,6 +109,8 @@ pub(crate) struct FlexInput<'a> {
     pub align_items: AlignItems,
     /// 主轴无显式尺寸时由子项撑开（Web 式 intrinsic），仍保留 flex-grow 分配。
     pub intrinsic_main: bool,
+    /// 交叉轴无显式尺寸时由最宽或最高子项撑开，禁止暂存 frame 反向压缩子项。
+    pub intrinsic_cross: bool,
 }
 
 impl Default for FlexInput<'_> {
@@ -123,6 +125,8 @@ impl Default for FlexInput<'_> {
             justify_content: JustifyContent::Start,
             align_items: AlignItems::Stretch,
             intrinsic_main: false,
+            // 默认调用方把容器交叉轴视为父级已经确定。
+            intrinsic_cross: false,
         }
     }
 }

@@ -5,11 +5,6 @@ use crate::draw::geometry::spatial::{Ray3D, SpatialContext};
 use crate::draw::scene::PicturePolicy;
 pub(crate) use crate::platform::windowing::{KeyCode, KeyMod, MouseButton};
 use crate::ui::accessibility::accessibility_override::AccessibilityOverride;
-use crate::ui::widget_runtime::focus_handle::FocusHandle;
-use crate::ui::widget_runtime::provider_context::{
-    ProviderContext, current_provider_context, with_provider_context,
-};
-use crate::ui::widget_runtime::view_transform::ViewTransform;
 use crate::ui::component_snapshot::{
     AccessibilitySnapshot, ComponentConfigSnapshot, SnapshotFields,
 };
@@ -17,6 +12,11 @@ pub(crate) use crate::ui::event::SystemEvent;
 use crate::ui::event::system_event_handler::SystemEventHandlerRegistration;
 use crate::ui::event::{HandlerRegistration, HandlerSignature};
 use crate::ui::render_handler::RenderHandlerRegistration;
+use crate::ui::widget_runtime::focus_handle::FocusHandle;
+use crate::ui::widget_runtime::provider_context::{
+    ProviderContext, current_provider_context, with_provider_context,
+};
+use crate::ui::widget_runtime::view_transform::ViewTransform;
 
 pub(crate) type WidgetId = ComponentId;
 

@@ -1,25 +1,38 @@
 //! 通用 GPU Renderer 的圆角与描边矩形 lowering。
 
-// 引入最终 damage 和薄 RHI 资源类型。
-use crate::core::PresentDamage;
 // 引入 RHI 计划执行所需的资源描述与句柄。
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsContextRhi, LoadAction,
-    PipelineDesc, PipelineHandle, RhiViewport, pipeline_keys,
+    BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsDevice, LoadAction, PipelineBinding,
+    PipelineDesc, PipelineKind, RhiShapeRasterParams, RhiViewport,
 };
 
 // 复用 renderer 主模块的计划类型和 shape payload。
-use super::{
-    FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef, RhiRenderer, RhiShapeRect,
-};
+use super::{FramePlanCommand, FrameUniformPayload, RenderPassPlan, RhiRenderer, RhiShapeRect};
+
+// 把 renderer 的 Shape 载荷映射为共享 RHI 像素契约值对象。
+fn shape_uniform(viewport: RhiViewport, rect: &RhiShapeRect) -> RhiShapeRasterParams {
+    // 由共享值对象唯一计算描边外扩、同心 SDF 原点和固定 ABI。
+    RhiShapeRasterParams::new(
+        // 传入当前物理视口。
+        viewport,
+        // 传入原始 Shape 左上角和尺寸。
+        [rect.x, rect.y, rect.w, rect.h],
+        // 传入已经规整的直通颜色。
+        rect.rgba,
+        // 传入固定四角顺序的圆角半径。
+        rect.radius,
+        // 传入描边半宽，零表示填充。
+        rect.half_stroke,
+    )
+}
 
 // 为 shape shader 创建或复用单位 quad、pipeline 和常量 buffer。
 impl RhiRenderer {
     // 准备固定 position float2 ABI 的 shape 资源。
     pub(super) fn ensure_shape_resources(
         &mut self,
-        context: &mut dyn GraphicsContextRhi,
-    ) -> Result<(PipelineHandle, PipelineHandle, BufferHandle, BufferHandle), crate::core::Error>
+        device: &mut dyn GraphicsDevice,
+    ) -> Result<(PipelineBinding, PipelineBinding, BufferHandle, BufferHandle), crate::core::Error>
     {
         // 首次使用时创建 SrcOver 与 Additive 两个固定 shape pipeline。
         let (pipeline, additive_pipeline) =
@@ -27,13 +40,13 @@ impl RhiRenderer {
                 // 复用已经登记的 shape pipeline。
                 (pipeline, additive_pipeline)
             } else {
-                // 只选择通用层定义的 shape pipeline key。
-                let pipeline = context.create_pipeline(PipelineDesc {
-                    key: pipeline_keys::SHAPE_RECT,
+                // 只选择通用层定义的 Shape pipeline 语义。
+                let pipeline = device.create_pipeline(PipelineDesc {
+                    kind: PipelineKind::ShapeRect,
                 })?;
                 // 创建同 ABI 但使用 Additive blend 的 shape pipeline。
-                let additive_pipeline = context.create_pipeline(PipelineDesc {
-                    key: pipeline_keys::SHAPE_RECT_ADDITIVE,
+                let additive_pipeline = device.create_pipeline(PipelineDesc {
+                    kind: PipelineKind::ShapeRectAdditive,
                 })?;
                 // 缓存两个 shape pipeline 句柄。
                 self.shape_pipeline = Some((pipeline, additive_pipeline));
@@ -49,25 +62,26 @@ impl RhiRenderer {
             buffer
         } else {
             // 创建位置 float2 ABI 的默认 vertex buffer。
-            let buffer = context.create_buffer(BufferDesc {
+            let buffer = device.create_buffer(BufferDesc {
                 size_bytes: unit_vertices.len() * std::mem::size_of::<f32>(),
-                stride_bytes: (2 * std::mem::size_of::<f32>()) as u32,
+                stride_bytes: PipelineKind::ShapeRect.contract().vertex.stride_bytes(),
                 usage: BufferUsage::Vertex,
             })?;
             // 首次绑定前上传单位 quad。
-            context.update_buffer(buffer, 0, &RhiRenderer::encode_f32s(&unit_vertices))?;
+            device.update_buffer(buffer, 0, &RhiRenderer::encode_f32s(&unit_vertices))?;
             // 缓存单位 quad 句柄。
             self.shape_vertex_buffer = Some(buffer);
             buffer
         };
-        // 首次使用时创建可被 shape 与 affine shadow 共用的 96 字节 uniform buffer。
+        // 首次使用时创建只服从 Shape ABI 的固定 uniform buffer。
         let uniform_buffer = if let Some(uniform) = self.shape_uniform {
             // 复用已有 uniform buffer。
             uniform
         } else {
-            // RectConstants 占前五个 float4，末一个 float4 供 affine shadow 共用。
-            let uniform = context.create_buffer(BufferDesc {
-                size_bytes: 96,
+            // Shape 独立拥有六个 float4，禁止与同尺寸的其它语义管线暗中耦合。
+            let uniform = device.create_buffer(BufferDesc {
+                // 使用共享 RHI 常量，禁止 adapter 私自接受旧 Shape 布局。
+                size_bytes: PipelineKind::ShapeRect.contract().uniform.size_bytes(),
                 stride_bytes: 0,
                 usage: BufferUsage::Uniform,
             })?;
@@ -84,43 +98,17 @@ impl RhiRenderer {
         pass: &mut RenderPassPlan,
         viewport: RhiViewport,
         rect: &RhiShapeRect,
-        pipeline: PipelineHandle,
+        pipeline: PipelineBinding,
         vertex_buffer: BufferHandle,
         uniform_buffer: BufferHandle,
     ) {
         // 选择当前矩形的物理裁剪。
         pass.push(FramePlanCommand::SetScissor(rect.scissor));
-        // 上传保持 D3D11 16-byte 对齐的 RectConstants。
-        pass.push(FramePlanCommand::UpdateBuffer {
+        // 上传由共享层完整类型化且保持 16-byte 对齐的 ShapeConstants。
+        pass.push(FramePlanCommand::UploadUniform {
             buffer: uniform_buffer,
-            offset: 0,
-            data: RhiRenderer::encode_f32s(&[
-                viewport.width,
-                viewport.height,
-                0.0,
-                0.0,
-                rect.x,
-                rect.y,
-                rect.w,
-                rect.h,
-                rect.rgba[0],
-                rect.rgba[1],
-                rect.rgba[2],
-                rect.rgba[3],
-                rect.radius[0],
-                rect.radius[1],
-                rect.radius[2],
-                rect.radius[3],
-                rect.half_stroke,
-                0.0,
-                0.0,
-                0.0,
-                // 保留 affine shadow 共用常量块的末尾 float4。
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-            ]),
+            // adapter 只接收冻结后的 Shape ABI，不再拥有描边外扩策略。
+            data: FrameUniformPayload::Shape(shape_uniform(viewport, rect)),
         });
         // 追加当前矩形的单位 quad draw packet。
         pass.push(FramePlanCommand::Draw(DrawPacket {
@@ -139,11 +127,9 @@ impl RhiRenderer {
     // 执行一帧圆角/描边矩形 RHI 计划。
     pub(crate) fn execute_shape_rects(
         &mut self,
-        context: &mut dyn GraphicsContextRhi,
-        damage: PresentDamage,
+        mut frame: super::RhiRendererFrame<'_>,
         viewport: RhiViewport,
         load: LoadAction,
-        target: RenderTargetRef,
         rects: &[RhiShapeRect],
     ) -> Result<(), crate::core::Error> {
         // 空列表不应伪造一次 present。
@@ -192,10 +178,11 @@ impl RhiRenderer {
             }
         }
         // 准备 shape pipeline、单位 quad 和常量 buffer。
-        let (pipeline, _, vertex_buffer, uniform_buffer) = self.ensure_shape_resources(context)?;
-        // 计划使用当前 context 的 surface 代际。
-        let surface = context.token();
-        // 创建 surface pass，并保留调用方的 load/clear 语义。
+        let (pipeline, _, vertex_buffer, uniform_buffer) =
+            self.ensure_shape_resources(frame.device())?;
+        // 从封闭帧作用域取得唯一计划目标。
+        let target = frame.render_target();
+        // 创建 Surface 或 Offscreen pass，并保留调用方的 load/clear 语义。
         let mut pass = RenderPassPlan::new(target, load);
         // 所有 shape 共享同一个物理 viewport。
         pass.push(FramePlanCommand::SetViewport(viewport));
@@ -203,37 +190,11 @@ impl RhiRenderer {
         for rect in rects {
             // 在 draw 前设置当前矩形的裁剪。
             pass.push(FramePlanCommand::SetScissor(rect.scissor));
-            // 上传完整 RectConstants，保持 D3D11 16-byte 对齐布局。
-            pass.push(FramePlanCommand::UpdateBuffer {
+            // 上传共享类型化 ShapeConstants，保持两个 adapter 使用同一绘制边界。
+            pass.push(FramePlanCommand::UploadUniform {
                 buffer: uniform_buffer,
-                offset: 0,
-                data: RhiRenderer::encode_f32s(&[
-                    viewport.width,
-                    viewport.height,
-                    0.0,
-                    0.0,
-                    rect.x,
-                    rect.y,
-                    rect.w,
-                    rect.h,
-                    rect.rgba[0],
-                    rect.rgba[1],
-                    rect.rgba[2],
-                    rect.rgba[3],
-                    rect.radius[0],
-                    rect.radius[1],
-                    rect.radius[2],
-                    rect.radius[3],
-                    rect.half_stroke,
-                    0.0,
-                    0.0,
-                    0.0,
-                    // 保留 affine shadow 共用常量块的末尾 float4。
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                ]),
+                // 复用唯一编码入口，避免独立提交与混合计划的 ABI 漂移。
+                data: FrameUniformPayload::Shape(shape_uniform(viewport, rect)),
             });
             // 追加单位 quad 的非索引 shape draw packet。
             pass.push(FramePlanCommand::Draw(DrawPacket {
@@ -249,11 +210,11 @@ impl RhiRenderer {
             }));
         }
         // 创建计划并追加唯一 surface pass。
-        let mut plan = FramePlan::new(surface, damage);
+        let mut plan = frame.plan();
         // 保留 shape painter order。
         plan.push_pass(pass);
         // surface 计划最终 present，texture 计划只执行离屏 submit。
-        super::execute_plan_for_target(context, &plan, target)?;
+        frame.execute(&plan)?;
         // 资源由 renderer 跨帧复用，不能在这里销毁。
         Ok(())
     }

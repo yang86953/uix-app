@@ -9,11 +9,8 @@ use super::*;
 impl D3d11Context {
     // 设置当前 pass viewport。
     pub(super) fn rhi_set_viewport(&mut self, viewport: RhiViewport) -> Result<()> {
-        // 拒绝直接调用传入的非有限 viewport。
-        if !viewport.is_valid() {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("D3d11 RHI viewport is invalid"));
-        }
+        // 由共享状态机验证 pass 顺序和物理目标边界。
+        self.rhi_device.pass.validate_viewport(viewport)?;
         // SAFETY: viewport 是本函数验证过的值，context 属于 owner thread。
         unsafe {
             self.context.RSSetViewports(Some(&[D3D11_VIEWPORT {
@@ -31,13 +28,12 @@ impl D3d11Context {
 
     // 设置当前 pass scissor。
     pub(super) fn rhi_set_scissor(&mut self, scissor: Option<RhiScissor>) -> Result<()> {
-        // 仅对显式 scissor 做输入校验。
+        // 读取共享状态机冻结的物理目标范围。
+        let extent = self.rhi_device.pass.extent()?;
+        // 先由共享状态机统一验证并记录左上原点区域。
+        self.rhi_device.pass.set_scissor(scissor)?;
+        // 仅对显式 scissor 编码有限原生矩形。
         if let Some(scissor) = scissor {
-            // 拒绝负坐标和非正尺寸。
-            if !scissor.is_valid() {
-                // 返回稳定的参数错误。
-                return Err(rhi_invalid("D3d11 RHI scissor is invalid"));
-            }
             // SAFETY: scissor 是本函数验证过的值，context 属于 owner thread。
             unsafe {
                 self.context.RSSetScissorRects(Some(&[RECT {
@@ -48,14 +44,7 @@ impl D3d11Context {
                 }]));
             }
         } else {
-            // 使用当前 target 的完整 extent 清除历史 scissor。
-            let Some(extent) = self.rhi_device.active_extent else {
-                // 没有 pass 时不能猜测 viewport。
-                return Err(Error::new(
-                    Errc::InvalidState,
-                    "D3d11 RHI scissor without active pass",
-                ));
-            };
+            // 使用已经在入口验证的完整 target extent 清除历史 scissor。
             // SAFETY: extent 来自已绑定的 surface 或 RHI texture，context 属于 owner thread。
             unsafe {
                 self.context.RSSetScissorRects(Some(&[RECT {

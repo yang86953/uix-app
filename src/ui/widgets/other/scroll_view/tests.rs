@@ -153,3 +153,41 @@ fn pathological_geometry_is_normalized_before_layout_output() {
     // 纵向最大滚动距离不得传播病理值。
     assert!(scroll.max_scroll_y().is_finite());
 }
+
+// 验证受控偏移同步会产生一次可由树级合成器消费的滚动增量。
+#[test]
+// 使用稳定测试名锁定声明式 State 与局部纹理搬移之间的组件契约。
+fn controlled_offset_sync_records_one_scroll_delta() {
+    // 构造已经完成首帧布局的纵向滚动视口。
+    let mut current = ScrollView::new(ScrollDirection::Vertical);
+    // 固定一百乘八十的真实视口，使最大滚动范围可确定。
+    current
+        // 写入渲染阶段保存的局部视口。
+        .last_frame
+        // 模拟首帧已经完成布局。
+        .set(Some(Rect::new(0.0, 0.0, 100.0, 80.0)));
+    // 模拟一百六十像素高的内容，允许向下滚动八十像素。
+    current.content_bounds.set(Some(Size::new(100.0, 160.0)));
+    // 创建由声明式视图拥有的受控滚动位置。
+    let offset = State::new(Point::new(0.0, 40.0));
+    // 构造下一轮声明组件并绑定新的受控偏移。
+    let next = ScrollView::new(ScrollDirection::Vertical).scroll_offset(&offset);
+    // 执行与 ViewAdapter 原位协调相同的组件同步入口。
+    current.sync_from(next);
+    // live 组件必须接纳经过内容范围夹取的受控垂直偏移。
+    assert_eq!(current.scroll_y(), 40.0);
+    // 第一次消费必须得到从旧位置到新位置的精确增量。
+    assert_eq!(
+        // 通过事件能力契约读取树级脏区合成将要消费的位移。
+        crate::ui::EventHandler::scroll_delta_for_dirty(&current),
+        // 垂直向下四十像素对应同值逻辑增量。
+        Some((0.0, 40.0)),
+    );
+    // 增量是一次性事务事实，不能在下一帧重复搬移旧像素。
+    assert_eq!(
+        // 再次读取同一能力必须已经为空。
+        crate::ui::EventHandler::scroll_delta_for_dirty(&current),
+        // 已消费状态不再产生滚动记录。
+        None,
+    );
+}

@@ -3,7 +3,7 @@
 // 引入统一错误和 RHI 原语。
 use crate::core::error::Result;
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, DrawPacket, GraphicsCapabilities, LoadAction, PipelineDesc,
+    BufferDesc, BufferHandle, DrawPacket, GraphicsDeviceCapabilities, LoadAction, PipelineDesc,
     PipelineHandle, RenderTargetHandle, RhiExtent, RhiScissor, RhiViewport, SamplerDesc,
     SamplerHandle, SubmissionHandle, TextureCopy, TextureDesc, TextureHandle, TextureMove,
 };
@@ -30,16 +30,14 @@ impl OpenGlRasterPipeline {
     }
 
     // 返回 OpenGL ES RHI 的事实能力快照。
-    pub(crate) fn rhi_capabilities(&self) -> GraphicsCapabilities {
-        // GLES 3.0 已实现跨帧颜色纹理与最终 sampled composite，采用 retained 基线。
-        let mut capabilities = GraphicsCapabilities::retained_gpu_baseline();
+    pub(crate) fn rhi_device_capabilities(&self) -> GraphicsDeviceCapabilities {
+        // GLES 3.0 已实现通用 Renderer 需要的完整 Device 原语基线。
+        let mut capabilities = GraphicsDeviceCapabilities::full_gpu_baseline();
         // scratch texture 使同纹理重叠移动具有确定的 memmove 语义。
         capabilities.texture_region_move = true;
         // OpenGL scissor clear 已由 RHI owner 执行并恢复状态。
         capabilities.clear_rect = true;
-        // OpenGL raster owner 已实现当前 framebuffer 的同步回读。
-        capabilities.surface_readback = true;
-        // 返回包含可选 retained framebuffer 原语的事实快照。
+        // 返回只包含资源、pass 与 pipeline 原语的 Device 事实快照。
         capabilities
     }
 
@@ -98,7 +96,7 @@ impl OpenGlRasterPipeline {
         self.with_rhi(|gl, rhi| rhi.create_sampler(gl, desc))
     }
 
-    // 创建固定 key 的通用 pipeline。
+    // 创建封闭语义的通用 pipeline。
     pub(crate) fn rhi_create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineHandle> {
         // shader 编译失败必须在首次 frame 前返回 typed error。
         self.with_rhi(|gl, rhi| rhi.create_pipeline(gl, desc))

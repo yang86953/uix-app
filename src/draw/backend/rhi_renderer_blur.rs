@@ -1,52 +1,47 @@
 //! 通用 GPU Renderer 的可分离 blur lowering。
 
-// 引入共享字节载荷，保证两个 blur pass 复用同一份不可变计划数据。
-use std::sync::Arc;
-
-// 引入错误、damage 和有限的 RHI 执行类型。
-use crate::core::PresentDamage;
+// 引入稳定错误类型。
 use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsContextRhi, LoadAction,
-    PipelineDesc, RhiColor, RhiExtent, RhiScissor, RhiViewport, SamplerDesc, SamplerHandle,
-    TextureDesc, TextureFormat, TextureHandle, pipeline_keys,
+    BLUR_WEIGHT_COUNT, BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsDevice,
+    LoadAction, PipelineDesc, PipelineKind, RenderTargetHandle, RhiBlurRasterParams, RhiColor,
+    RhiExtent, RhiScissor, RhiViewport, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat,
+    TextureHandle,
 };
 
 // 引入父 renderer 已导入的有序 FramePlan 类型和资源缓存。
-use super::{FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef, RhiRenderer};
+use super::{
+    FramePlanCommand, FrameUniformPayload, FrameVertexPayload, RenderPassPlan, RenderTargetRef,
+    RhiRenderer,
+};
 
-// 为 blur 常量生成稳定的 76-float ABI：三组 float4 加 64 个高斯权重。
-fn encode_blur_constants(
+// 把 Drawing 的 Blur 事实映射为共享 RHI 常量值对象。
+fn blur_uniform(
+    // 接收当前 target 与 source 共用的物理尺寸。
     extent: RhiExtent,
+    // 接收已经裁到 source 范围的物理区域。
     region: RhiScissor,
+    // 接收本次 pass 的水平或垂直像素方向。
     direction: [f32; 2],
-    tap_radius: i32,
-    weights: &[f32; 64],
-) -> Arc<[u8]> {
-    // 复用 D3D11 BlurCB 的 16-byte 对齐布局。
-    let mut values = [0.0f32; 76];
-    // 保存目标和源纹理的物理尺寸。
-    values[0] = extent.width as f32;
-    values[1] = extent.height as f32;
-    values[2] = extent.width as f32;
-    values[3] = extent.height as f32;
-    // 保存本次 pass 的源区域。
-    values[4] = region.x as f32;
-    values[5] = region.y as f32;
-    values[6] = region.width as f32;
-    values[7] = region.height as f32;
-    // 保存像素采样方向和 tap 半径。
-    values[8] = direction[0];
-    values[9] = direction[1];
-    values[10] = tap_radius as f32;
-    // 复制最多 64 个已经归一化的高斯权重。
-    values[12..].copy_from_slice(weights);
-    // 通过通用 renderer 的统一编码入口生成上传载荷。
-    RhiRenderer::encode_f32s(&values)
+    // 接收高斯核中心两侧的 tap 半径。
+    tap_radius: u32,
+    // 接收由 Drawing Blur Module 计算并归一化的完整权重槽。
+    weights: &[f32; BLUR_WEIGHT_COUNT],
+) -> RhiBlurRasterParams {
+    // 由共享值对象唯一排列目标、source、区域、方向和全部权重。
+    RhiBlurRasterParams::new(
+        // 当前实现的两个 pass 都写入完整同尺寸 target。
+        extent,     // 当前 source 与 target 使用同一物理 extent。
+        extent,     // 传入已经裁到纹理范围的物理区域。
+        region,     // 传入本次水平或垂直像素方向。
+        direction,  // 传入高斯核中心两侧的 tap 半径。
+        tap_radius, // 传入已经归一化并零终止的完整权重槽。
+        weights,
+    )
 }
 
 // 为当前物理区域生成 blur shader 使用的 NDC 全屏子矩形。
-fn blur_region_vertices(extent: RhiExtent, region: RhiScissor) -> Arc<[u8]> {
+fn blur_region_vertices(extent: RhiExtent, region: RhiScissor) -> FrameVertexPayload {
     // 将左上角坐标转换到 D3D11 的 NDC 横坐标。
     let left = region.x as f32 / extent.width as f32 * 2.0 - 1.0;
     // 将右下边界转换到 D3D11 的 NDC 横坐标。
@@ -59,8 +54,8 @@ fn blur_region_vertices(extent: RhiExtent, region: RhiScissor) -> Arc<[u8]> {
     let vertices = [
         left, bottom, right, bottom, right, top, left, bottom, right, top, left, top,
     ];
-    // 复用 renderer 的 host-endian float 编码。
-    RhiRenderer::encode_f32s(&vertices)
+    // FramePlan 保存类型化 position-float2，而不是过早编码的字节。
+    FrameVertexPayload::position_f32x2(vertices)
 }
 
 // 为 RhiRenderer 增加 blur 资源缓存和两阶段执行入口。
@@ -69,8 +64,8 @@ impl RhiRenderer {
     pub(crate) fn execute_overlay_backdrop_blur(
         // 复用 renderer 内唯一的 blur 资源缓存。
         &mut self,
-        // 通过组合 RHI owner 执行全部资源与提交命令。
-        context: &mut dyn GraphicsContextRhi,
+        // 只借用资源、命令与 submit 所需的 Device 角色。
+        device: &mut dyn GraphicsDevice,
         // backdrop texture 同时是第一 pass 的源和最终写回目标。
         backdrop: TextureHandle,
         // 使用创建快照时登记的物理 extent。
@@ -82,10 +77,8 @@ impl RhiRenderer {
     ) -> Result<()> {
         // 复用唯一通用双 pass 实现，避免 overlay 形成平行 shader 路径。
         self.execute_blur_without_present(
-            // 传递 owner-thread 组合 context。
-            context,
-            // 无帧离屏事务不消费最终 present damage。
-            PresentDamage::Full,
+            // 传递 owner-thread Device 角色。
+            device,
             // 水平 pass 从已捕获 backdrop 采样。
             backdrop,
             // 两个 pass 都使用快照的完整物理尺寸。
@@ -96,20 +89,17 @@ impl RhiRenderer {
             radius,
             // retained surface 与 backdrop 统一使用预乘 BGRA。
             TextureFormat::Bgra8Unorm,
-            // 垂直 pass 原位写回同一 backdrop texture。
-            RenderTargetRef::Texture(
-                // opaque texture 与 render-target 句柄保持同一资源身份。
-                crate::native::present::rhi::RenderTargetHandle::from_raw(backdrop.raw()),
-            ),
+            // opaque texture 与 render-target 句柄保持同一资源身份。
+            RenderTargetHandle::from_raw(backdrop.raw()),
         )
     }
 
     // 确保 blur pipeline、区域 quad、uniform 和 sampler 已存在。
     fn ensure_blur_resources(
         &mut self,
-        context: &mut dyn GraphicsContextRhi,
+        device: &mut dyn GraphicsDevice,
     ) -> Result<(
-        crate::native::present::rhi::PipelineHandle,
+        crate::native::present::rhi::PipelineBinding,
         BufferHandle,
         BufferHandle,
         SamplerHandle,
@@ -120,8 +110,8 @@ impl RhiRenderer {
             pipeline
         } else {
             // 只选择通用层定义的 blur ABI。
-            let pipeline = context.create_pipeline(PipelineDesc {
-                key: pipeline_keys::BLUR_PASS,
+            let pipeline = device.create_pipeline(PipelineDesc {
+                kind: PipelineKind::BlurPass,
             })?;
             // 缓存 blur pipeline 句柄。
             self.blur_pipeline = Some(pipeline);
@@ -133,23 +123,23 @@ impl RhiRenderer {
             buffer
         } else {
             // 创建动态位置 buffer，区域坐标由每次 blur 的物理 region 决定。
-            let buffer = context.create_buffer(BufferDesc {
+            let buffer = device.create_buffer(BufferDesc {
                 size_bytes: 6 * 2 * std::mem::size_of::<f32>(),
-                stride_bytes: (2 * std::mem::size_of::<f32>()) as u32,
+                stride_bytes: PipelineKind::BlurPass.contract().vertex.stride_bytes(),
                 usage: BufferUsage::Vertex,
             })?;
             // 缓存区域 vertex buffer 句柄。
             self.blur_vertex_buffer = Some(buffer);
             buffer
         };
-        // BlurConstants 固定为 76 个 float，即 304 字节。
+        // BlurConstants 容量完全服从共享 RHI 值对象。
         let uniform_buffer = if let Some(uniform) = self.blur_uniform {
             // 复用已有 blur uniform。
             uniform
         } else {
             // 按 D3D11 和其他 adapter 的 16-byte cbuffer ABI 创建资源。
-            let uniform = context.create_buffer(BufferDesc {
-                size_bytes: 76 * std::mem::size_of::<f32>(),
+            let uniform = device.create_buffer(BufferDesc {
+                size_bytes: PipelineKind::BlurPass.contract().uniform.size_bytes(),
                 stride_bytes: 0,
                 usage: BufferUsage::Uniform,
             })?;
@@ -163,7 +153,7 @@ impl RhiRenderer {
             sampler
         } else {
             // 高斯采样需要线性过滤，边界保持 clamp。
-            let sampler = context.create_sampler(SamplerDesc { linear: true })?;
+            let sampler = device.create_sampler(SamplerDesc::linear_clamp())?;
             // 缓存 blur sampler 句柄。
             self.blur_sampler = Some(sampler);
             sampler
@@ -175,14 +165,13 @@ impl RhiRenderer {
     // 执行两个有序 blur pass，且不触发 surface present。
     pub(crate) fn execute_blur_without_present(
         &mut self,
-        context: &mut dyn GraphicsContextRhi,
-        damage: PresentDamage,
+        device: &mut dyn GraphicsDevice,
         source: TextureHandle,
         extent: RhiExtent,
         region: RhiScissor,
         radius: f32,
         format: TextureFormat,
-        target: RenderTargetRef,
+        target: RenderTargetHandle,
     ) -> Result<()> {
         // 先拒绝无法形成有效纹理和高斯核的参数。
         if source.raw() == 0 || !extent.is_positive() || !radius.is_finite() || radius < 0.5 {
@@ -213,7 +202,7 @@ impl RhiRenderer {
             return Ok(());
         }
         // 构造归一化的一维高斯核，未使用槽位保持零终止。
-        let mut weights = [0.0f32; 64];
+        let mut weights = [0.0f32; BLUR_WEIGHT_COUNT];
         let tap_count = (2 * tap_radius + 1) as usize;
         let mut sum = 0.0f32;
         // 只遍历有效核槽位，并同时保留中心距离所需的索引。
@@ -240,9 +229,9 @@ impl RhiRenderer {
         }
         // 准备通用 blur 资源，失败时不创建临时纹理。
         let (pipeline, vertex_buffer, uniform_buffer, sampler) =
-            self.ensure_blur_resources(context)?;
+            self.ensure_blur_resources(device)?;
         // 创建本次两个 pass 使用的临时颜色 render target。
-        let scratch = context.create_texture(TextureDesc { extent, format })?;
+        let scratch = device.create_texture(TextureDesc { extent, format })?;
         // 将临时 texture 映射为通用 render target 身份。
         let scratch_target = RenderTargetRef::Texture(
             crate::native::present::rhi::RenderTargetHandle::from_raw(scratch.raw()),
@@ -262,25 +251,29 @@ impl RhiRenderer {
         // 区域 quad 的 NDC 顶点确保 shader 在局部区域内生成正确 UV。
         let vertices = blur_region_vertices(extent, region);
         // 水平 pass 读取源 texture，写入 scratch texture。
-        let mut horizontal = RenderPassPlan::new(
-            scratch_target,
-            LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0])),
-        );
+        let mut horizontal =
+            RenderPassPlan::new(scratch_target, LoadAction::Clear(RhiColor::transparent()));
         // 设置水平 pass 的完整 viewport。
         horizontal.push(FramePlanCommand::SetViewport(viewport));
         // 限制水平 pass 只覆盖请求区域。
         horizontal.push(FramePlanCommand::SetScissor(Some(region)));
-        // 上传当前区域的 NDC 顶点。
-        horizontal.push(FramePlanCommand::UpdateBuffer {
+        // 上传当前区域的类型化 NDC 顶点。
+        horizontal.push(FramePlanCommand::UploadVertex {
             buffer: vertex_buffer,
             offset: 0,
             data: vertices.clone(),
         });
-        // 上传水平采样方向和高斯常量。
-        horizontal.push(FramePlanCommand::UpdateBuffer {
+        // 上传水平采样方向和类型化高斯常量。
+        horizontal.push(FramePlanCommand::UploadUniform {
             buffer: uniform_buffer,
-            offset: 0,
-            data: encode_blur_constants(extent, region, [1.0, 0.0], tap_radius, &weights),
+            // 共享 RHI 值对象拥有完整 Blur 字段排列。
+            data: FrameUniformPayload::Blur(blur_uniform(
+                extent,
+                region,
+                [1.0, 0.0],
+                tap_radius as u32,
+                &weights,
+            )),
         });
         // 绑定原始 source texture。
         horizontal.push(FramePlanCommand::BindTexture {
@@ -301,22 +294,28 @@ impl RhiRenderer {
             base_vertex: 0,
         }));
         // 垂直 pass 读取 scratch texture，写回原始 target。
-        let mut vertical = RenderPassPlan::new(target, LoadAction::Load);
+        let mut vertical = RenderPassPlan::new(RenderTargetRef::Texture(target), LoadAction::Load);
         // 设置垂直 pass 的完整 viewport。
         vertical.push(FramePlanCommand::SetViewport(viewport));
         // 限制垂直 pass 只覆盖请求区域。
         vertical.push(FramePlanCommand::SetScissor(Some(region)));
-        // 复用相同的区域顶点。
-        vertical.push(FramePlanCommand::UpdateBuffer {
+        // 复用相同的类型化区域顶点。
+        vertical.push(FramePlanCommand::UploadVertex {
             buffer: vertex_buffer,
             offset: 0,
             data: vertices,
         });
-        // 上传垂直采样方向和高斯常量。
-        vertical.push(FramePlanCommand::UpdateBuffer {
+        // 上传垂直采样方向和类型化高斯常量。
+        vertical.push(FramePlanCommand::UploadUniform {
             buffer: uniform_buffer,
-            offset: 0,
-            data: encode_blur_constants(extent, region, [0.0, 1.0], tap_radius, &weights),
+            // 垂直 pass 只改变方向，其余共享字段与高斯核保持相同。
+            data: FrameUniformPayload::Blur(blur_uniform(
+                extent,
+                region,
+                [0.0, 1.0],
+                tap_radius as u32,
+                &weights,
+            )),
         });
         // 绑定水平 pass 生成的 scratch texture。
         vertical.push(FramePlanCommand::BindTexture {
@@ -337,15 +336,15 @@ impl RhiRenderer {
             base_vertex: 0,
         }));
         // 以严格顺序组装水平和垂直两个 pass。
-        let mut plan = FramePlan::new(context.token(), damage);
+        let mut plan = super::FramePlan::offscreen();
         // 保留 source → scratch 的先后关系。
         plan.push_pass(horizontal);
         // 保留 scratch → target 的先后关系。
         plan.push_pass(vertical);
         // 只执行离屏或 no-present surface segment，不提前交换主窗口。
-        let execution = super::execute_plan_without_present(context, &plan, target);
+        let execution = super::execute_plan_without_present(device, &plan);
         // 两个 pass 结束后立即检查式释放 scratch texture。
-        let cleanup = context.destroy_texture(scratch);
+        let cleanup = device.destroy_texture(scratch);
         // 优先保留执行失败；清理失败同样不能被当作完整成功。
         match (execution, cleanup) {
             // pass 失败时返回原始执行错误。

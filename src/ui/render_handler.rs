@@ -365,9 +365,9 @@ impl RenderHandlerTable {
 // `EmptyRenderer` 由 ComponentConfig（component）持有、widgets 消费、
 // 用户闭包产出 ViewNode（view）：跨 Module 契约归本边界（SMC-04）。
 
+use crate::ui::view::View;
 use crate::ui::widget_runtime::config::{ComponentConfig, use_config};
 use crate::ui::widget_runtime::traits::WidgetComponent;
-use crate::ui::view::View;
 
 /// 标识正在请求空态 View 的数据组件。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -43,7 +43,9 @@ where
     // 把闭包封装为运行时动态标签节点。
     fn into_label_node(self) -> ViewNode {
         // 复用组件运行时持有的动态标签实现。
-        ViewNode::leaf(crate::ui::widget_runtime::dynamic_label::DynamicLabel::new(self))
+        ViewNode::leaf(crate::ui::widget_runtime::dynamic_label::DynamicLabel::new(
+            self,
+        ))
     }
 }
 

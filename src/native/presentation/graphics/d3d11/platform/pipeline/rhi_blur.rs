@@ -18,20 +18,13 @@ impl D3d11Pipeline {
         texture: &ID3D11ShaderResourceView,
         sampler: &ID3D11SamplerState,
         target: &ID3D11RenderTargetView,
+        blend: PipelineBlend,
         vertex_count: u32,
         index_count: u32,
         first_vertex: u32,
         first_index: u32,
         base_vertex: i32,
     ) -> Result<()> {
-        // blur 区域顶点固定为 position float2。
-        if vertex_stride != (2 * size_of::<f32>()) as u32 {
-            // 阻止 adapter 以错误 stride 读取 NDC 顶点。
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                "D3d11 RHI blur vertex stride must be float2",
-            ));
-        }
         // 非索引和索引 draw 必须恰好选择一种范围。
         if (index.is_some() && index_count == 0) || (index.is_none() && vertex_count == 0) {
             // 返回稳定的空 draw 错误。
@@ -72,7 +65,7 @@ impl D3d11Pipeline {
             // 复用无剔除 rasterizer，保留 RHI 设置的 viewport/scissor。
             context.RSSetState(&self.rasterizer);
             // blur 是覆盖写入，不能把高斯 taps 再按 alpha 混合叠加。
-            context.OMSetBlendState(&self.blend_replace, None, 0xffff_ffff);
+            context.OMSetBlendState(self.rhi_blend_state(blend), None, 0xffff_ffff);
             // 按 packet 的索引形态执行 draw。
             if index.is_some() {
                 // 索引 ABI 固定为 uint32。

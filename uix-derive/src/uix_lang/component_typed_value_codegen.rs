@@ -135,13 +135,15 @@ impl ComponentExpander {
                 quote! { ::std::string::String::from(#value) }
             }
             // 组件表达式降低会把字符串字面量包装为拥有型零参函数。
-            ExpressionKind::Call { callee, arguments: inner_arguments }
-                if inner_arguments.len() == 1
-                    && matches!(
-                        &callee.kind,
-                        ExpressionKind::Identifier(name)
-                            if name.starts_with("__uix_owned_string_")
-                    ) =>
+            ExpressionKind::Call {
+                callee,
+                arguments: inner_arguments,
+            } if inner_arguments.len() == 1
+                && matches!(
+                    &callee.kind,
+                    ExpressionKind::Identifier(name)
+                        if name.starts_with("__uix_owned_string_")
+                ) =>
             {
                 // 复用已生成的拥有型字符串包装调用。
                 generate_expression(&arguments[0].value, None)?

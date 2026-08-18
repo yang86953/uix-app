@@ -12,12 +12,7 @@ impl OpenGlRhiDevice {
         movement: TextureMove,
     ) -> Result<()> {
         // 移动必须发生在显式 pass 之外。
-        if self.pass_open {
-            // 返回稳定的状态错误。
-            return Err(rhi_invalid(
-                "OpenGL RHI texture move is inside a render pass",
-            ));
-        }
+        self.pass.require_closed()?;
         // 先复制源纹理描述，避免后续 scratch 操作持有资源表借用。
         let (source_extent, source_format) = {
             // 读取源纹理尺寸和格式。
@@ -30,45 +25,23 @@ impl OpenGlRhiDevice {
             let destination = self.texture(movement.destination)?;
             (destination.extent, destination.format)
         };
-        // 只有同格式颜色纹理可以安全移动。
-        if source_format != destination_format {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("OpenGL RHI texture move formats differ"));
-        }
-        // 零尺寸移动没有可定义的 copy 区域。
-        if movement.width == 0 || movement.height == 0 {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("OpenGL RHI texture move extent is empty"));
-        }
-        // 使用 checked_add 防止异常坐标回绕。
-        let source_right = movement
-            .source_x
-            .checked_add(movement.width)
-            .ok_or_else(|| rhi_invalid("OpenGL RHI texture move source x overflows"))?;
-        // 检查源区域底边。
-        let source_bottom = movement
-            .source_y
-            .checked_add(movement.height)
-            .ok_or_else(|| rhi_invalid("OpenGL RHI texture move source y overflows"))?;
-        // 检查目标区域右边。
-        let destination_right = movement
-            .destination_x
-            .checked_add(movement.width)
-            .ok_or_else(|| rhi_invalid("OpenGL RHI texture move destination x overflows"))?;
-        // 检查目标区域底边。
-        let destination_bottom = movement
-            .destination_y
-            .checked_add(movement.height)
-            .ok_or_else(|| rhi_invalid("OpenGL RHI texture move destination y overflows"))?;
-        // 同时检查源、目标范围。
-        if source_right > source_extent.width
-            || source_bottom > source_extent.height
-            || destination_right > destination_extent.width
-            || destination_bottom > destination_extent.height
-        {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("OpenGL RHI texture move is out of range"));
-        }
+        // 格式、非空、范围和溢出统一委托共享 move 契约。
+        movement.validate_transfer(
+            // 构造源纹理的 API 无关描述。
+            TextureDesc {
+                // 保存源物理尺寸。
+                extent: source_extent,
+                // 保存源格式。
+                format: source_format,
+            },
+            // 构造目标纹理的 API 无关描述。
+            TextureDesc {
+                // 保存目标物理尺寸。
+                extent: destination_extent,
+                // 保存目标格式。
+                format: destination_format,
+            },
+        )?;
         // 不同纹理不需要额外 scratch，直接复用已验证 copy。
         if movement.source != movement.destination {
             // 转换为普通 texture copy。
@@ -125,16 +98,9 @@ impl OpenGlRhiDevice {
                     },
                 )
             });
-        // 无论移动结果如何都回收 scratch 资源。
-        let cleanup = self.destroy_texture(gl, scratch);
-        // 优先返回移动错误，再报告临时资源清理错误。
-        match (operation, cleanup) {
-            // 移动失败时保留原始错误。
-            (Err(error), _) => Err(error),
-            // 清理失败不能被忽略。
-            (Ok(()), Err(error)) => Err(error),
-            // 移动和清理都成功。
-            (Ok(()), Ok(())) => Ok(()),
-        }
+        // OpenGL 临时复制源必须活到所属离屏计划完成原生 submit。
+        self.texture_move_scratch_after_submit.push(scratch);
+        // 复制失败仍保留 typed error；临时资源由后续 submit 或设备 teardown 回收。
+        operation
     }
 }

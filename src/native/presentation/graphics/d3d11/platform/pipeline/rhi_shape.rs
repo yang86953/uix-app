@@ -13,21 +13,13 @@ impl D3d11Pipeline {
         vertex_stride: u32,
         index: Option<&ID3D11Buffer>,
         uniform: &ID3D11Buffer,
+        blend: PipelineBlend,
         vertex_count: u32,
         index_count: u32,
         first_vertex: u32,
         first_index: u32,
         base_vertex: i32,
-        additive: bool,
     ) -> Result<()> {
-        // shape quad 的顶点 ABI 是 position float2。
-        if vertex_stride != (2 * size_of::<f32>()) as u32 {
-            // 把错误留在 RHI adapter，不让 D3D11 读错属性布局。
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                "D3d11 RHI shape rect stride must be float2",
-            ));
-        }
         // 非索引和索引绘制必须恰好选择一种范围。
         if (index.is_some() && index_count == 0) || (index.is_none() && vertex_count == 0) {
             // 返回稳定的参数错误。
@@ -56,20 +48,12 @@ impl D3d11Pipeline {
             // 绑定已有的矩形 SDF vertex/pixel shader。
             context.VSSetShader(&self.vs_rect, None);
             context.PSSetShader(&self.ps_rect, None);
-            // 两个 shader stage 读取同一个 80 字节常量 buffer。
+            // 两个 shader stage 读取包含共享绘制边界的固定 Shape 常量 buffer。
             context.VSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
             context.PSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
             // 复用无剔除 rasterizer 和当前 shape pipeline 的 blend 语义。
             context.RSSetState(&self.rasterizer);
-            context.OMSetBlendState(
-                if additive {
-                    &self.blend_additive
-                } else {
-                    &self.blend_premultiplied
-                },
-                None,
-                0xffff_ffff,
-            );
+            context.OMSetBlendState(self.rhi_blend_state(blend), None, 0xffff_ffff);
             // 按 packet 的索引形态编码实际 draw。
             if index.is_some() {
                 // 索引 ABI 固定为 uint32，base vertex 保留 D3D11 原生语义。

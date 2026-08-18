@@ -22,11 +22,11 @@ use crate::ui::{ComponentId, WidgetComponent, WidgetTree};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpaceSize {
     /// 八逻辑像素的紧凑间距。
-    Small,  // 8px
+    Small, // 8px
     /// 十六逻辑像素的标准间距。
     Middle, // 16px
     /// 二十四逻辑像素的宽松间距。
-    Large,  // 24px
+    Large, // 24px
     /// 调用方提供的自定义逻辑像素间距。
     Custom(f32),
 }
@@ -139,6 +139,13 @@ component! {
             FlexDirection::Row | FlexDirection::RowReverse => self.fixed_width.is_none(),
             FlexDirection::Column | FlexDirection::ColumnReverse => self.fixed_height.is_none(),
         };
+        // 交叉轴未显式指定时由最宽或最高子项撑开。
+        let intrinsic_cross = match self.direction {
+            // 水平排列的交叉轴是高度。
+            FlexDirection::Row | FlexDirection::RowReverse => self.fixed_height.is_none(),
+            // 垂直排列的交叉轴是宽度。
+            FlexDirection::Column | FlexDirection::ColumnReverse => self.fixed_width.is_none(),
+        };
 
         let input = FlexInput {
             direction: self.direction,
@@ -150,6 +157,8 @@ component! {
             justify_content: self.justify,
             align_items: self.align,
             intrinsic_main,
+            // 把独立的交叉轴固有性传给共享 Flex 求解器。
+            intrinsic_cross,
         };
 
         let output = compute_flex_layout(&input);

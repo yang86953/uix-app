@@ -2,15 +2,25 @@
 
 // 引入被测 blur 模块可见的 renderer、目标和 RHI 类型。
 use super::*;
+// 引入 mock Surface present 签名仍需的最终 damage 类型。
+use crate::core::PresentDamage;
 // 引入测试 recording context 需要的 device/surface 契约。
 use crate::native::present::rhi::{
-    // 动态能力事实由 mock 显式声明。
-    GraphicsCapabilities,
+    // Blur 方向与 tap 字段位置由共享 RHI 契约唯一声明。
+    BLUR_DIRECTION_TAPS_FLOAT_OFFSET,
+    // Blur ABI 字节数由共享 RHI 契约唯一声明。
+    BLUR_UNIFORM_BYTES,
+    // Blur 权重区间位置由共享 RHI 契约唯一声明。
+    BLUR_WEIGHTS_FLOAT_OFFSET,
     // device 原语由 mock 显式记录。
     GraphicsDevice,
+    // 动态能力事实由 mock 显式声明。
+    GraphicsDeviceCapabilities,
     // surface 原语用于证明离屏路径不 acquire/present。
     GraphicsSurface,
-    // pipeline 句柄用于返回缓存资源。
+    // pipeline 绑定用于同时返回缓存资源与共享语义。
+    PipelineBinding,
+    // 原始句柄只在 mock 组合绑定时创建。
     PipelineHandle,
     // render target 句柄用于记录两个 pass 的写入顺序。
     RenderTargetHandle,
@@ -107,9 +117,9 @@ impl RecordingContext {
 // 实现 blur 计划实际使用的薄 RHI device 原语。
 impl GraphicsDevice for RecordingContext {
     // 声明完整 GPU 基线，使测试只聚焦 blur lowering。
-    fn capabilities(&self) -> GraphicsCapabilities {
+    fn device_capabilities(&self) -> GraphicsDeviceCapabilities {
         // 返回包含 render-to-texture、sampling 与 scissor 的能力集合。
-        GraphicsCapabilities::full_gpu_baseline()
+        GraphicsDeviceCapabilities::full_gpu_baseline()
     }
 
     // 创建 renderer 缓存使用的动态 buffer。
@@ -143,11 +153,16 @@ impl GraphicsDevice for RecordingContext {
     }
 
     // 创建固定 blur pipeline。
-    fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineHandle> {
-        // pipeline key 必须指向唯一 blur ABI。
-        assert_eq!(desc.key, pipeline_keys::BLUR_PASS);
-        // 返回稳定测试句柄。
-        Ok(PipelineHandle::from_raw(self.allocate()))
+    fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineBinding> {
+        // pipeline 语义必须指向唯一 blur ABI。
+        assert_eq!(desc.kind, PipelineKind::BlurPass);
+        // 把稳定测试句柄与同一 blur 语义绑定后返回。
+        Ok(PipelineBinding::new(
+            // 分配 mock 原生句柄。
+            PipelineHandle::from_raw(self.allocate()),
+            // 保留调用方已经验证的创建语义。
+            desc.kind,
+        ))
     }
 
     // 检查式销毁 scratch texture。
@@ -320,8 +335,6 @@ fn blur_executes_two_clipped_passes_without_surface_present() {
         .execute_blur_without_present(
             // 记录全部 RHI 事实。
             &mut context,
-            // blur 不改变最终 damage 所有权。
-            PresentDamage::Full,
             // 水平 pass 从原 Picture 采样。
             source,
             // Picture texture 的实际 extent。
@@ -342,7 +355,7 @@ fn blur_executes_two_clipped_passes_without_surface_present() {
             // Picture texture 使用预乘 BGRA。
             TextureFormat::Bgra8Unorm,
             // 垂直 pass 写回同一 Picture texture。
-            RenderTargetRef::Texture(RenderTargetHandle::from_raw(source.raw())),
+            RenderTargetHandle::from_raw(source.raw()),
         )
         // 合法计划必须完整执行。
         .expect("blur plan should execute");
@@ -409,8 +422,8 @@ fn blur_executes_two_clipped_passes_without_surface_present() {
         .updates
         // 只借用载荷。
         .iter()
-        // BlurConstants 固定包含 76 个 f32。
-        .filter(|bytes| bytes.len() == 76 * std::mem::size_of::<f32>())
+        // BlurConstants 必须匹配共享值对象的固定总字节数。
+        .filter(|bytes| bytes.len() == BLUR_UNIFORM_BYTES)
         // 还原浮点常量。
         .map(|bytes| decode_f32s(bytes))
         // 收集两个方向。
@@ -418,13 +431,34 @@ fn blur_executes_two_clipped_passes_without_surface_present() {
     // 必须恰好存在水平和垂直两个 uniform。
     assert_eq!(uniforms.len(), 2);
     // 第一组方向为水平且 tap 半径等于 ceil(radius)。
-    assert_eq!(&uniforms[0][8..11], &[1.0, 0.0, 2.0]);
+    assert_eq!(
+        // 读取共享方向与 tap 半径三项。
+        &uniforms[0][BLUR_DIRECTION_TAPS_FLOAT_OFFSET..BLUR_DIRECTION_TAPS_FLOAT_OFFSET + 3],
+        // 比较水平像素方向与半径。
+        &[1.0, 0.0, 2.0]
+    );
     // 第二组方向为垂直且复用同一 tap 半径。
-    assert_eq!(&uniforms[1][8..11], &[0.0, 1.0, 2.0]);
+    assert_eq!(
+        // 读取共享方向与 tap 半径三项。
+        &uniforms[1][BLUR_DIRECTION_TAPS_FLOAT_OFFSET..BLUR_DIRECTION_TAPS_FLOAT_OFFSET + 3],
+        // 比较垂直像素方向与半径。
+        &[0.0, 1.0, 2.0]
+    );
     // 两个方向必须复用完全相同的归一化高斯核。
-    assert_eq!(&uniforms[0][12..], &uniforms[1][12..]);
+    assert_eq!(
+        // 读取水平 pass 的完整共享权重区间。
+        &uniforms[0][BLUR_WEIGHTS_FLOAT_OFFSET..],
+        // 比较垂直 pass 的完整共享权重区间。
+        &uniforms[1][BLUR_WEIGHTS_FLOAT_OFFSET..]
+    );
     // 计算使用槽位的权重总和。
-    let weight_sum: f32 = uniforms[0][12..17].iter().sum();
+    let weight_sum: f32 = uniforms[0]
+        // 只截取五个有效 tap。
+        [BLUR_WEIGHTS_FLOAT_OFFSET..BLUR_WEIGHTS_FLOAT_OFFSET + 5]
+        // 遍历共享权重值。
+        .iter()
+        // 累加当前高斯核能量。
+        .sum();
     // 五个有效 tap 的能量必须归一化为一。
     assert!((weight_sum - 1.0).abs() < 1.0e-6);
 }
@@ -500,8 +534,6 @@ fn blur_submit_failure_still_destroys_scratch() {
         .execute_blur_without_present(
             // 记录失败路径事实。
             &mut context,
-            // 使用完整 damage。
-            PresentDamage::Full,
             // 指定源 texture。
             source,
             // 使用小型合法 extent。
@@ -522,7 +554,7 @@ fn blur_submit_failure_still_destroys_scratch() {
             // 使用 Picture BGRA 格式。
             TextureFormat::Bgra8Unorm,
             // 写回源 texture。
-            RenderTargetRef::Texture(RenderTargetHandle::from_raw(source.raw())),
+            RenderTargetHandle::from_raw(source.raw()),
         )
         // submit 失败不得伪装成功。
         .expect_err("submit failure should surface");
@@ -553,8 +585,6 @@ fn empty_blur_region_is_a_resource_free_noop() {
         .execute_blur_without_present(
             // 记录所有潜在副作用。
             &mut context,
-            // 使用完整 damage。
-            PresentDamage::Full,
             // 指定源 texture。
             source,
             // 使用四像素 extent。
@@ -575,7 +605,7 @@ fn empty_blur_region_is_a_resource_free_noop() {
             // 使用 Picture BGRA 格式。
             TextureFormat::Bgra8Unorm,
             // 指定原 Picture 目标。
-            RenderTargetRef::Texture(RenderTargetHandle::from_raw(source.raw())),
+            RenderTargetHandle::from_raw(source.raw()),
         )
         // 空区域必须安全成功。
         .expect("empty region should be a no-op");

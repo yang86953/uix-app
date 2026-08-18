@@ -21,7 +21,8 @@ fn compile_example() {
     let max_upload_size = 10_u64 * 1024 * 1024;
 
     // 把内嵌 UIX 文档生成的 Upload 节点接入公开 View。
-    let _upload = embed(uix!(r#"
+    let _upload = embed(uix!(
+        r#"
 <Upload
     files={upload_files}
     accept=".png,*.jpg"
@@ -31,7 +32,8 @@ fn compile_example() {
     drag
     @change="on_upload_change($event)"
 />
-"#));
+"#
+    ));
 }
 
 // 运行无文件系统副作用的标记测试，让 Cargo 显式执行本编译消费者。

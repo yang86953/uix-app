@@ -7,11 +7,6 @@ use crate::native::present::{
     GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps, PresentCoherency,
 };
 
-/// The damage extension alone does not prove buffer preservation or buffer-age
-/// semantics, so EGL must not advertise partial present yet.
-#[cfg(all(unix, not(target_os = "macos")))]
-pub(crate) const EGL_PARTIAL_PRESENT: bool = false;
-
 #[cfg(all(unix, not(target_os = "macos")))]
 pub mod egl;
 #[cfg(windows)]
@@ -22,10 +17,13 @@ pub use egl::EglContext;
 #[cfg(windows)]
 pub use wgl::WglContext;
 
-// 组装 WGL/EGL 共用的 OpenGL ES 静态 recipe 能力。
-fn context_caps() -> GraphicsContextCaps {
-    // 两个平台当前都只承诺完整 swapchain 提交。
-    GraphicsContextCaps::gpu_native_swapchain(GraphicsApi::OpenGlEs, PresentCoherency::FullOnly)
+// 从实际 Surface 事实组装 WGL/EGL 共用的 OpenGL ES 静态 recipe 能力。
+fn context_caps(
+    // 接收 Surface Adapter 已经声明的呈现一致性。
+    present_coherency: PresentCoherency,
+) -> GraphicsContextCaps {
+    // registry 快照只能复制 Surface 权威事实，不再自行解释平台能力。
+    GraphicsContextCaps::gpu_native_swapchain(GraphicsApi::OpenGlEs, present_coherency)
 }
 
 #[cfg(windows)]
@@ -38,8 +36,13 @@ pub(crate) fn create(
 ) -> Result<GraphicsContextCandidate, Error> {
     // 创建具体 WGL context 后在静态 adapter 边界组装 capability。
     WglContext::new(surface, width, height).map(|ctx| {
-        // 从 adapter 创建模块的唯一事实函数组装静态 capability。
-        let caps = context_caps();
+        // 从实际 WGL Surface capability 冻结静态 recipe 快照。
+        let caps = context_caps(
+            // 只复制 Surface 角色拥有的呈现一致性事实。
+            crate::native::present::rhi::GraphicsSurface::surface_capabilities(&ctx)
+                // registry 只消费选择与门禁需要的字段。
+                .present_coherency,
+        );
         // 把 context 与同源快照封装为 registry candidate。
         GraphicsContextCandidate::gpu(Box::new(ctx), caps)
     })
@@ -54,8 +57,13 @@ pub(crate) fn create(
 ) -> Result<GraphicsContextCandidate, Error> {
     // 创建具体 EGL context 后在静态 adapter 边界组装 capability。
     EglContext::new(surface, width, height).map(|ctx| {
-        // 从 adapter 创建模块的唯一事实函数组装静态 capability。
-        let caps = context_caps();
+        // 从实际 EGL Surface capability 冻结静态 recipe 快照。
+        let caps = context_caps(
+            // 只复制 Surface 角色拥有的呈现一致性事实。
+            crate::native::present::rhi::GraphicsSurface::surface_capabilities(&ctx)
+                // registry 只消费选择与门禁需要的字段。
+                .present_coherency,
+        );
         // 把 context 与同源快照封装为 registry candidate。
         GraphicsContextCandidate::gpu(Box::new(ctx), caps)
     })

@@ -3,9 +3,7 @@
 use std::ffi::c_void;
 
 use crate::core::{Error, Result};
-use crate::native::present::{
-    GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps, PresentOcclusionSupport,
-};
+use crate::native::present::{GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps};
 // WARP 测试入口返回类型化 GPU context trait object。
 #[cfg(all(test, feature = "d3d11"))]
 use crate::native::present::GpuRecipeContext;
@@ -26,10 +24,8 @@ pub(crate) use context::D3d11Context;
 fn context_caps(
     present_coherency: crate::native::present::PresentCoherency,
 ) -> GraphicsContextCaps {
-    // 返回包含遮挡状态与无数据探测支持的完整 adapter 快照。
+    // 返回由实际 swapchain 一致性证明构成的 adapter 快照。
     GraphicsContextCaps::gpu_native_swapchain(GraphicsApi::D3d11, present_coherency)
-        // D3D11 surface 同时实现 present status 与 DXGI_PRESENT_TEST。
-        .with_present_occlusion(PresentOcclusionSupport::PresentStatusAndTest)
 }
 
 #[cfg(windows)]
@@ -42,8 +38,13 @@ pub(crate) fn create(
 ) -> Result<GraphicsContextCandidate, Error> {
     // 创建具体 D3D11 context 后在仍可静态分派的边界组装 capability。
     D3d11Context::new(surface, width, height).map(|ctx| {
-        // 从实际创建的 tracked 或 legacy swapchain 冻结构造期 capability。
-        let caps = context_caps(ctx.present_coherency());
+        // 从实际 Surface capability 冻结 registry 需要的构造期 recipe 快照。
+        let caps = context_caps(
+            // 只读取 Surface 角色拥有的同源 swapchain 保留证明。
+            crate::native::present::rhi::GraphicsSurface::surface_capabilities(&ctx)
+                // recipe 只复制选择与门禁所需的静态字段。
+                .present_coherency,
+        );
         // 把 context 与同源快照封装为 registry candidate。
         GraphicsContextCandidate::gpu(Box::new(ctx), caps)
     })

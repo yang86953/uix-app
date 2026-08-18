@@ -1,5 +1,7 @@
 use uix::app::{App, Container, WindowConfig};
 use uix::diagnostics::{Diagnostics, DiagnosticsConfig};
+// 引入跨平台确定性字体包公开值。
+use uix::draw::FontBundle;
 use uix::ui::label;
 // 引入应用默认注册和 builder 覆盖所需的 UI 服务类型。
 use uix::ui::{ComponentConfig, Locale, en_us};
@@ -61,5 +63,29 @@ fn app_registers_default_ui_services_and_preserves_builder_overrides() {
     assert!(configured.container().resolve_clone::<Locale>() == Some(locale));
     // 显式组件配置必须替换而不是并存于默认配置。
     assert!(configured.container().resolve_clone::<ComponentConfig>() == Some(config));
-// 结束应用默认 DI 服务测试。
+    // 结束应用默认 DI 服务测试。
+}
+
+// 将确定性字体包的 App builder 注入登记为公开契约。
+#[test]
+fn app_font_bundle_registers_one_consumable_startup_configuration() {
+    // 构造无需宿主字体路径的主字体配置。
+    let bundle = FontBundle::new("UIX Primary", b"primary font fixture")
+        // 声明一个顺序稳定的 CJK 回退占位资产。
+        .with_fallback("UIX CJK", b"cjk font fixture");
+    // 通过专用 builder 把配置交给 Application 组合根。
+    let app = App::new().font_bundle(bundle);
+    // 组合根必须按类型保存唯一字体包，而不是拆成字符串或平台路径。
+    let configured = app.container().resolve::<FontBundle>();
+    // 专用 builder 必须完成配置注入。
+    assert!(configured.is_some());
+    // 安全取得上方已经确认存在的字体包借用。
+    let Some(configured) = configured else {
+        // 断言失败时无需继续执行后续字段检查。
+        return;
+    };
+    // 主字体族名称必须原样保留到首次 GUI 启动。
+    assert_eq!(configured.primary_family(), "UIX Primary");
+    // 回退字体数量必须保留调用方声明的完整顺序长度。
+    assert_eq!(configured.fallback_count(), 1);
 }

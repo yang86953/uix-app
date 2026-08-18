@@ -306,15 +306,11 @@ pub(super) fn check_op(operation: &RhiOp) -> Result<()> {
         }
         // 校验仿射阴影常量。
         RhiOp::Shadow(shadow) => {
-            // 阴影几何和 blur/offset 必须是有限值。
-            if !shadow.x.is_finite()
-                || !shadow.y.is_finite()
-                || !shadow.w.is_finite()
+            // 阴影本体尺寸和 blur 必须是有限值。
+            if !shadow.w.is_finite()
                 || !shadow.h.is_finite()
                 || shadow.w <= 0.0
                 || shadow.h <= 0.0
-                || !shadow.offset_x.is_finite()
-                || !shadow.offset_y.is_finite()
                 || !shadow.blur_x.is_finite()
                 || !shadow.blur_y.is_finite()
                 || shadow.blur_x < 0.0

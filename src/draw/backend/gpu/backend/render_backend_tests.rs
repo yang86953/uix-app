@@ -10,26 +10,35 @@ use super::{
     rhi_offscreen_extent,
 };
 
-// 验证局部重绘只由 retained 主目标与 tracked swapchain 的合取事实开启。
+// 验证 Drawing 局部复用只由 retained 主目标决定，不依赖最终 Surface damage 能力。
 #[test]
-// 锁定 tracked 与 legacy 两种能力投影。
-fn retained_capabilities_gate_partial_redraw_from_present_proof() {
-    // 构造同时具备 Picture owner 和完整窄提交证明的生产能力。
-    let tracked = retained_gpu_capabilities(true, true);
-    // tracked swapchain 可以向场景层开放局部重绘。
+// 锁定 retained 绘制、TextureMove 与缺失 owner 三种能力组合。
+fn retained_capabilities_separate_drawing_reuse_from_present_damage() {
+    // 构造同时具备 Picture owner、retained 绘制和纹理移动的生产能力。
+    let tracked = retained_gpu_capabilities(true, true, true);
+    // retained 主目标可以向场景层开放局部重绘。
     assert!(tracked.partial_redraw);
     // 独立离屏能力仍应透传给 Picture 与效果管线。
     assert!(tracked.offscreen);
+    // retained 绘制与共享 TextureMove 同时存在时开放滚动复用。
+    assert!(tracked.scroll_memmove);
 
-    // 构造 retained renderer 存在但 swapchain 只能 FullOnly 的回退能力。
-    let legacy = retained_gpu_capabilities(true, false);
-    // legacy DISCARD 不得开放局部重绘。
+    // 构造 retained 绘制完整但 Adapter 未实现 TextureMove 的能力组合。
+    let tracked_without_move = retained_gpu_capabilities(true, true, false);
+    // 缺少底层原语时不得把局部重绘冒充滚动 memmove。
+    assert!(!tracked_without_move.scroll_memmove);
+
+    // 构造 RHI owner 存在但 retained 主颜色目标不可用的回退能力。
+    let legacy = retained_gpu_capabilities(true, false, true);
+    // 缺少 retained 像素证明时不得开放局部重绘。
     assert!(!legacy.partial_redraw);
-    // present 回退不应关闭独立的 Picture 能力。
+    // 主表面回退不应关闭独立的 Picture 能力。
     assert!(legacy.offscreen);
+    // 缺少 retained 历史证明时即使 Device 支持移动也必须关闭滚动复用。
+    assert!(!legacy.scroll_memmove);
 
     // 构造没有通用 RHI owner 的防御性组合。
-    let without_rhi = retained_gpu_capabilities(false, false);
+    let without_rhi = retained_gpu_capabilities(false, false, false);
     // 缺少 retained renderer 时不得开放 partial。
     assert!(!without_rhi.partial_redraw);
     // 没有通用 RHI owner 时不得虚构 Picture 支持。

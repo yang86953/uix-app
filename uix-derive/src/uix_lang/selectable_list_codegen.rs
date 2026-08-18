@@ -7,8 +7,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 SelectableList 属性、表达式、事件与诊断契约。
 use super::{
-    Attribute, AttributeValue, Diagnostic, Element, generate_expression,
-    generate_event_handler_expression,
+    Attribute, AttributeValue, Diagnostic, Element, generate_event_handler_expression,
+    generate_expression,
 };
 
 // 生成拥有类型化条目并可绑定稳定活动 id 的可选中列表。

@@ -11,6 +11,9 @@ pub mod gpu;
 
 pub use crate::core::DamageRegion;
 pub use contract::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
+// test-harness 只导出 API 无关的规范像素快照。
+#[cfg(feature = "test-harness")]
+pub use contract::SurfaceReadback;
 pub use cpu::CpuBackend;
 pub use gpu::GpuBackend;
 

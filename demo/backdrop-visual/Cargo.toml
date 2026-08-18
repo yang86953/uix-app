@@ -13,8 +13,15 @@ license-file = "../../LICENSE"
 
 # 声明真窗运行所需的最小依赖。
 [dependencies]
-# 只启用 Windows D3D11、反馈组件与 Agent 控制能力。
-uix = { path = "../..", default-features = false, features = ["d3d11", "feedback", "agent-control"] }
+# 同一上层验收程序同时交给 Windows D3D11 与 Linux OpenGL ES Adapter。
+uix = { path = "../..", default-features = false, features = ["d3d11", "opengles", "feedback", "agent-control"] }
+
+# 声明真窗程序自己的可选验收能力。
+[features]
+# 默认只保留手工视觉验收，不携带测试控制面。
+default = []
+# 自动像素模式显式透传根库 test-harness capability。
+test-harness = ["uix/test-harness"]
 
 # 登记唯一验收二进制入口。
 [[bin]]

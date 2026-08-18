@@ -1,42 +1,27 @@
 //! D3D11 薄 RHI 的固定 draw ABI 分派。
 
-// 引入统一错误和结果类型。
-use crate::core::error::{Errc, Error, Result};
+// 引入统一结果类型。
+use crate::core::error::Result;
 // 引入 draw packet 与有限资源语义。
-use crate::native::present::rhi::{BufferUsage, DrawPacket, TextureFormat};
+use crate::native::present::rhi::{BufferUsage, DrawPacket, PipelineKind};
 
 // 引入父模块的 D3D11 context、资源状态和错误辅助。
-use super::{D3d11Context, rhi_invalid, rhi_not_implemented};
+use super::{D3d11Context, rhi_invalid};
 
 // 为 D3D11 context 编码通用 draw packet。
 impl D3d11Context {
     // 执行一个已经选择固定 pipeline 与资源句柄的通用 draw packet。
     pub(super) fn draw_rhi_packet(&mut self, packet: DrawPacket) -> Result<()> {
         // draw 必须发生在显式 render pass 内。
-        if !self.rhi_device.pass_open {
-            // 返回稳定的状态错误。
-            return Err(Error::new(
-                Errc::InvalidState,
-                "D3d11 RHI draw without active render pass",
-            ));
-        }
-        // 先解析 pipeline，随后把 COM 句柄复制出来以结束资源表借用。
-        let pipeline_key = self.rhi_device.pipeline(packet.pipeline)?.key;
-        // 只允许已经登记的有限 pipeline key，禁止静默落到旧 UI draw_* 路径。
-        if pipeline_key != crate::native::present::rhi::pipeline_keys::SOLID_MESH
-            && pipeline_key != crate::native::present::rhi::pipeline_keys::TEXTURED_QUAD
-            && pipeline_key != crate::native::present::rhi::pipeline_keys::TEXTURED_QUAD_ADDITIVE
-            && pipeline_key != crate::native::present::rhi::pipeline_keys::GRADIENT_RECT
-            && pipeline_key != crate::native::present::rhi::pipeline_keys::GLYPH_COVERAGE_QUAD
-            && pipeline_key != crate::native::present::rhi::pipeline_keys::SHAPE_RECT
-            && pipeline_key != crate::native::present::rhi::pipeline_keys::SHAPE_RECT_ADDITIVE
-            && pipeline_key != crate::native::present::rhi::pipeline_keys::BOX_SHADOW
-            && pipeline_key != crate::native::present::rhi::pipeline_keys::BLUR_PASS
-            && pipeline_key != crate::native::present::rhi::pipeline_keys::MSDF_GLYPH_QUAD
-            && pipeline_key != crate::native::present::rhi::pipeline_keys::SECTOR
-        {
-            // 返回稳定的未实现错误。
-            return Err(rhi_not_implemented("D3d11 RHI pipeline draw key"));
+        self.rhi_device.pass.require_open()?;
+        // 读取 FramePlan 绑定的共享 pipeline 语义。
+        let pipeline_kind = packet.pipeline.kind();
+        // 按不透明句柄读取 Adapter 资源表中的实际创建语义。
+        let resource_kind = self.rhi_device.pipeline(packet.pipeline.handle())?.kind;
+        // 两个事实必须仍是创建时形成的同一绑定。
+        if resource_kind != pipeline_kind {
+            // 拒绝让 D3D11 与其它 Adapter 选择不同 shader ABI 的陈旧绑定。
+            return Err(rhi_invalid("D3d11 RHI pipeline binding kind is stale"));
         }
         // 解析顶点 buffer 并保留通用 ABI 所需的步长。
         let vertex = self.rhi_device.buffer(packet.vertex_buffer)?;
@@ -62,6 +47,18 @@ impl D3d11Context {
         }
         // 复制 uniform COM 对象，结束资源表借用。
         let uniform_native = uniform.native.clone();
+        // 复制 uniform 总字节数供共享 pipeline 契约统一校验。
+        let uniform_size = uniform.size_bytes;
+        // 从唯一共享契约读取当前 pipeline 的资源与混合语义。
+        let contract = packet.pipeline.contract();
+        // Drawing 生产端与 D3D11 消费端必须严格使用同一个 ABI。
+        if vertex_stride != contract.vertex.stride_bytes()
+            || uniform_size != contract.uniform.size_bytes()
+            || packet.vertex_count == 0
+        {
+            // 使用统一门禁拒绝任何 pipeline 的漂移载荷。
+            return Err(rhi_invalid("D3d11 RHI pipeline ABI is invalid"));
+        }
         // 索引 buffer 如存在必须使用固定 uint32 ABI。
         let index_native = if let Some(index_handle) = packet.index_buffer {
             // 解析索引资源。
@@ -77,15 +74,10 @@ impl D3d11Context {
             // 非索引 packet 不绑定 index buffer。
             None
         };
-        // 按通用 pipeline key 选择已经验证过的 D3D11 shader ABI。
-        match pipeline_key {
+        // 按封闭 pipeline 语义选择已经验证过的 D3D11 shader ABI。
+        match pipeline_kind {
             // 实心 mesh 使用 32 字节 MeshConstants（viewport、padding、颜色）。
-            key if key == crate::native::present::rhi::pipeline_keys::SOLID_MESH => {
-                // 拒绝不匹配的 solid uniform 布局。
-                if uniform.size_bytes != 32 {
-                    // 返回稳定的参数错误。
-                    return Err(rhi_invalid("D3d11 RHI solid mesh uniform size is invalid"));
-                }
+            PipelineKind::SolidMesh => {
                 // 把已解析的低层对象交给 D3D11 pipeline 编码 draw。
                 self.pipeline.draw_rhi_solid_mesh(
                     &self.context,
@@ -93,6 +85,7 @@ impl D3d11Context {
                     vertex_stride,
                     index_native.as_ref(),
                     &uniform_native,
+                    contract.blend,
                     packet.vertex_count,
                     packet.index_count,
                     packet.first_vertex,
@@ -101,35 +94,34 @@ impl D3d11Context {
                 )
             }
             // 采样 quad 使用 16 字节 viewport uniform 和 t0/s0 绑定。
-            key if key == crate::native::present::rhi::pipeline_keys::TEXTURED_QUAD
-                || key == crate::native::present::rhi::pipeline_keys::TEXTURED_QUAD_ADDITIVE =>
-            {
-                // 拒绝不匹配的 textured uniform 布局。
-                if uniform.size_bytes != 16 {
-                    // 返回稳定的参数错误。
-                    return Err(rhi_invalid("D3d11 RHI textured uniform size is invalid"));
-                }
+            PipelineKind::TexturedQuad | PipelineKind::TexturedQuadAdditive => {
                 // 读取 draw 前由 BindTexture 写入的纹理身份。
                 let texture_handle = self
                     .rhi_device
-                    .bound_texture
+                    .pass
+                    // 从共享 pass 状态读取 sampled texture 身份。
+                    .bound_texture()
                     .ok_or_else(|| rhi_invalid("D3d11 RHI textured draw has no texture"))?;
                 // 读取 draw 前由 BindTexture 写入的 sampler 身份。
                 let sampler_handle = self
                     .rhi_device
-                    .bound_sampler
+                    .pass
+                    // 从共享 pass 状态读取 sampler 身份。
+                    .bound_sampler()
                     .ok_or_else(|| rhi_invalid("D3d11 RHI textured draw has no sampler"))?;
                 // 解析 SRV 并复制 COM 句柄，结束资源表借用。
                 let texture = self.rhi_device.texture(texture_handle)?;
+                // 解析 sampler 描述与原生状态。
+                let sampler = self.rhi_device.sampler(sampler_handle)?;
+                // 颜色 pipeline 只接受共享契约声明的四通道格式与线性过滤。
+                if !contract.sampling.accepts(texture.format, sampler.desc) {
+                    // 拒绝把 coverage 纹理解释为 premultiplied color。
+                    return Err(rhi_invalid("D3d11 RHI textured source format is invalid"));
+                }
                 // 复制 sampled texture view。
                 let texture_srv = texture.srv.clone();
-                // 解析 sampler state 并复制 COM 句柄。
-                let sampler = self.rhi_device.sampler(sampler_handle)?;
                 // 复制 sampler state。
                 let sampler_native = sampler.native.clone();
-                // 只有 Additive key 才切换到加法 blend。
-                let additive =
-                    key == crate::native::present::rhi::pipeline_keys::TEXTURED_QUAD_ADDITIVE;
                 // 把已解析的低层对象交给 D3D11 pipeline 编码 draw。
                 self.pipeline.draw_rhi_textured_quad(
                     &self.context,
@@ -139,7 +131,7 @@ impl D3d11Context {
                     &uniform_native,
                     &texture_srv,
                     &sampler_native,
-                    additive,
+                    contract.blend,
                     packet.vertex_count,
                     packet.index_count,
                     packet.first_vertex,
@@ -148,33 +140,32 @@ impl D3d11Context {
                 )
             }
             // R8 字形覆盖率 quad 复用 16 字节 viewport uniform 和 t0/s0 绑定。
-            key if key == crate::native::present::rhi::pipeline_keys::GLYPH_COVERAGE_QUAD => {
-                // 拒绝不匹配的 glyph uniform 布局。
-                if uniform.size_bytes != 16 {
-                    // 返回稳定的参数错误。
-                    return Err(rhi_invalid("D3d11 RHI glyph uniform size is invalid"));
-                }
+            PipelineKind::GlyphCoverageQuad => {
                 // 读取 draw 前由 BindTexture 写入的纹理身份。
                 let texture_handle = self
                     .rhi_device
-                    .bound_texture
+                    .pass
+                    // 从共享 pass 状态读取 glyph texture 身份。
+                    .bound_texture()
                     .ok_or_else(|| rhi_invalid("D3d11 RHI glyph draw has no texture"))?;
                 // 读取 draw 前由 BindTexture 写入的 sampler 身份。
                 let sampler_handle = self
                     .rhi_device
-                    .bound_sampler
+                    .pass
+                    // 从共享 pass 状态读取 glyph sampler 身份。
+                    .bound_sampler()
                     .ok_or_else(|| rhi_invalid("D3d11 RHI glyph draw has no sampler"))?;
                 // 解析纹理格式，防止 R8 pipeline 误采样颜色纹理。
                 let texture = self.rhi_device.texture(texture_handle)?;
-                // 强制 coverage ABI 使用单通道纹理。
-                if texture.format != TextureFormat::R8Unorm {
+                // 解析 coverage sampler 描述与原生状态。
+                let sampler = self.rhi_device.sampler(sampler_handle)?;
+                // 强制 coverage ABI 使用单通道纹理与最近点过滤。
+                if !contract.sampling.accepts(texture.format, sampler.desc) {
                     // 返回稳定的资源类型错误。
                     return Err(rhi_invalid("D3d11 RHI glyph texture must be R8Unorm"));
                 }
                 // 复制 R8 SRV，结束资源表借用。
                 let texture_srv = texture.srv.clone();
-                // 解析 sampler state 并复制 COM 句柄。
-                let sampler = self.rhi_device.sampler(sampler_handle)?;
                 // 复制 sampler state。
                 let sampler_native = sampler.native.clone();
                 // 把已解析的低层对象交给 glyph coverage shader 编码 draw。
@@ -186,6 +177,7 @@ impl D3d11Context {
                     &uniform_native,
                     &texture_srv,
                     &sampler_native,
+                    contract.blend,
                     packet.vertex_count,
                     packet.index_count,
                     packet.first_vertex,
@@ -194,32 +186,32 @@ impl D3d11Context {
                 )
             }
             // RGBA8 MSDF 字形 quad 使用 32 字节 viewport/extent/range uniform。
-            key if key == crate::native::present::rhi::pipeline_keys::MSDF_GLYPH_QUAD => {
-                // 拒绝不匹配的 MSDF uniform 布局。
-                if uniform.size_bytes != 32 {
-                    // 返回稳定的参数错误。
-                    return Err(rhi_invalid("D3d11 RHI MSDF uniform size is invalid"));
-                }
+            PipelineKind::MsdfGlyphQuad => {
                 // 读取 draw 前由 BindTexture 写入的纹理身份。
                 let texture_handle = self
                     .rhi_device
-                    .bound_texture
+                    .pass
+                    // 从共享 pass 状态读取 MSDF texture 身份。
+                    .bound_texture()
                     .ok_or_else(|| rhi_invalid("D3d11 RHI MSDF draw has no texture"))?;
                 // 读取 draw 前由 BindTexture 写入的 sampler 身份。
                 let sampler_handle = self
                     .rhi_device
-                    .bound_sampler
+                    .pass
+                    // 从共享 pass 状态读取 MSDF sampler 身份。
+                    .bound_sampler()
                     .ok_or_else(|| rhi_invalid("D3d11 RHI MSDF draw has no sampler"))?;
                 // MSDF shader 只接受 RGBA8 距离纹理。
                 let texture = self.rhi_device.texture(texture_handle)?;
-                if texture.format != TextureFormat::Rgba8Unorm {
+                // 解析 MSDF sampler 描述与原生状态。
+                let sampler = self.rhi_device.sampler(sampler_handle)?;
+                // 共享契约同时要求 RGBA8 距离纹理与线性过滤。
+                if !contract.sampling.accepts(texture.format, sampler.desc) {
                     // 返回稳定的资源类型错误。
                     return Err(rhi_invalid("D3d11 RHI MSDF texture must be Rgba8Unorm"));
                 }
                 // 复制 RGBA8 SRV，结束资源表借用。
                 let texture_srv = texture.srv.clone();
-                // 解析 sampler state 并复制 COM 句柄。
-                let sampler = self.rhi_device.sampler(sampler_handle)?;
                 // 复制 sampler state。
                 let sampler_native = sampler.native.clone();
                 // 把已解析的低层对象交给 D3D11 MSDF shader 编码 draw。
@@ -231,6 +223,7 @@ impl D3d11Context {
                     &uniform_native,
                     &texture_srv,
                     &sampler_native,
+                    contract.blend,
                     packet.vertex_count,
                     packet.index_count,
                     packet.first_vertex,
@@ -238,15 +231,8 @@ impl D3d11Context {
                     packet.base_vertex,
                 )
             }
-            // 圆角/描边矩形使用前 80 字节 RectConstants，共用 96 字节资源。
-            key if key == crate::native::present::rhi::pipeline_keys::SHAPE_RECT
-                || key == crate::native::present::rhi::pipeline_keys::SHAPE_RECT_ADDITIVE =>
-            {
-                // 拒绝不匹配的 shape uniform 布局。
-                if uniform.size_bytes != 80 && uniform.size_bytes != 96 {
-                    // 返回稳定的参数错误。
-                    return Err(rhi_invalid("D3d11 RHI shape rect uniform size is invalid"));
-                }
+            // 圆角/描边矩形使用包含共享 draw rect 的固定 ShapeConstants。
+            PipelineKind::ShapeRect | PipelineKind::ShapeRectAdditive => {
                 // 把已经由通用 renderer 验证的常量交给矩形 SDF shader。
                 self.pipeline.draw_rhi_shape_rect(
                     &self.context,
@@ -254,20 +240,16 @@ impl D3d11Context {
                     vertex_stride,
                     index_native.as_ref(),
                     &uniform_native,
+                    contract.blend,
                     packet.vertex_count,
                     packet.index_count,
                     packet.first_vertex,
                     packet.first_index,
                     packet.base_vertex,
-                    key == crate::native::present::rhi::pipeline_keys::SHAPE_RECT_ADDITIVE,
                 )
             }
             // 原生扇形使用 64 字节 SectorConstants 和 position float2 quad。
-            key if key == crate::native::present::rhi::pipeline_keys::SECTOR => {
-                // 拒绝不匹配的 sector uniform 布局。
-                if uniform.size_bytes != crate::native::present::rhi::SECTOR_UNIFORM_BYTES {
-                    return Err(rhi_invalid("D3d11 RHI sector uniform size is invalid"));
-                }
+            PipelineKind::Sector => {
                 // 把固定扇形 ABI 交给 D3D11 sector shader 编码。
                 self.pipeline.draw_rhi_sector(
                     &self.context,
@@ -275,6 +257,7 @@ impl D3d11Context {
                     vertex_stride,
                     index_native.as_ref(),
                     &uniform_native,
+                    contract.blend,
                     packet.vertex_count,
                     packet.index_count,
                     packet.first_vertex,
@@ -283,12 +266,7 @@ impl D3d11Context {
                 )
             }
             // 仿射阴影使用 96 字节 AffineShadowConstants。
-            key if key == crate::native::present::rhi::pipeline_keys::BOX_SHADOW => {
-                // 拒绝不匹配的 shadow uniform 布局。
-                if uniform.size_bytes != 96 {
-                    // 返回稳定的参数错误。
-                    return Err(rhi_invalid("D3d11 RHI shadow uniform size is invalid"));
-                }
+            PipelineKind::BoxShadow => {
                 // 把已经由通用 renderer 验证的常量交给阴影 SDF shader。
                 self.pipeline.draw_rhi_shadow(
                     &self.context,
@@ -296,6 +274,7 @@ impl D3d11Context {
                     vertex_stride,
                     index_native.as_ref(),
                     &uniform_native,
+                    contract.blend,
                     packet.vertex_count,
                     packet.index_count,
                     packet.first_vertex,
@@ -304,12 +283,7 @@ impl D3d11Context {
                 )
             }
             // 线性/径向渐变使用 96 字节 affine GradientConstants。
-            key if key == crate::native::present::rhi::pipeline_keys::GRADIENT_RECT => {
-                // 拒绝不匹配的 gradient uniform 布局。
-                if uniform.size_bytes != 96 {
-                    // 返回稳定的参数错误。
-                    return Err(rhi_invalid("D3d11 RHI gradient uniform size is invalid"));
-                }
+            PipelineKind::GradientRect => {
                 // 把已经由通用 renderer 验证的常量交给渐变 shader。
                 self.pipeline.draw_rhi_gradient_rect(
                     &self.context,
@@ -317,6 +291,7 @@ impl D3d11Context {
                     vertex_stride,
                     index_native.as_ref(),
                     &uniform_native,
+                    contract.blend,
                     packet.vertex_count,
                     packet.index_count,
                     packet.first_vertex,
@@ -325,32 +300,32 @@ impl D3d11Context {
                 )
             }
             // 单方向 blur 使用 304 字节 BlurConstants 和 float2 区域 quad。
-            key if key == crate::native::present::rhi::pipeline_keys::BLUR_PASS => {
-                // 拒绝不匹配的 blur uniform 布局。
-                if uniform.size_bytes != 76 * std::mem::size_of::<f32>() {
-                    // 返回稳定的参数错误。
-                    return Err(rhi_invalid("D3d11 RHI blur uniform size is invalid"));
-                }
+            PipelineKind::BlurPass => {
                 // 读取 draw 前由 BindTexture 写入的纹理身份。
                 let texture_handle = self
                     .rhi_device
-                    .bound_texture
+                    .pass
+                    // 从共享 pass 状态读取 blur texture 身份。
+                    .bound_texture()
                     .ok_or_else(|| rhi_invalid("D3d11 RHI blur draw has no texture"))?;
                 // 读取 draw 前由 BindTexture 写入的 sampler 身份。
                 let sampler_handle = self
                     .rhi_device
-                    .bound_sampler
+                    .pass
+                    // 从共享 pass 状态读取 blur sampler 身份。
+                    .bound_sampler()
                     .ok_or_else(|| rhi_invalid("D3d11 RHI blur draw has no sampler"))?;
                 // 解析 source texture 并拒绝 R8 coverage 误用 blur ABI。
                 let texture = self.rhi_device.texture(texture_handle)?;
-                if texture.format == TextureFormat::R8Unorm {
+                // 解析 Blur sampler 描述与原生状态。
+                let sampler = self.rhi_device.sampler(sampler_handle)?;
+                // 共享契约同时要求颜色纹理与线性过滤。
+                if !contract.sampling.accepts(texture.format, sampler.desc) {
                     // blur 只接受颜色纹理，避免单通道格式被解释为 premultiplied color。
                     return Err(rhi_invalid("D3d11 RHI blur source must be a color texture"));
                 }
                 // 复制 source SRV，结束资源表借用。
                 let texture_srv = texture.srv.clone();
-                // 解析 sampler state 并复制 COM 句柄。
-                let sampler = self.rhi_device.sampler(sampler_handle)?;
                 // 复制 sampler state。
                 let sampler_native = sampler.native.clone();
                 // 复制当前 pass 已绑定的 RTV。
@@ -370,6 +345,7 @@ impl D3d11Context {
                     &texture_srv,
                     &sampler_native,
                     &target,
+                    contract.blend,
                     packet.vertex_count,
                     packet.index_count,
                     packet.first_vertex,
@@ -377,8 +353,6 @@ impl D3d11Context {
                     packet.base_vertex,
                 )
             }
-            // 前置条件已经排除了其他 key，这里只为穷尽匹配保留 typed error。
-            _ => Err(rhi_not_implemented("D3d11 RHI pipeline draw key")),
         }
     }
 }

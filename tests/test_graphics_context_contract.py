@@ -118,8 +118,10 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertNotIn("gpu_ctx.width()", gpu_lifecycle)
         # GPU backend 不得重新读取分离的 context height。
         self.assertNotIn("gpu_ctx.height()", gpu_lifecycle)
-        # 构造与 surface 采纳都必须显式读取完整快照。
-        self.assertGreaterEqual(gpu_lifecycle.count("gpu_ctx.present_surface()"), 3)
+        # 构造路径必须一次读取传入 owner 的完整快照。
+        self.assertIn("let present_surface = gpu_ctx.present_surface();", gpu_lifecycle)
+        # surface 采纳路径必须一次读取当前 owner 的完整快照。
+        self.assertIn("let present_surface = self.gpu_ctx.present_surface();", gpu_lifecycle)
         # 读取 PixelUpload runtime。
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
         # PixelUpload runtime 必须从单一 surface 快照读取物理宽度。

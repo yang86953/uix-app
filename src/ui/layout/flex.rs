@@ -4,6 +4,10 @@ use super::*;
 mod justify;
 // 继续向公开布局适配层暴露原有 crate 内共享入口。
 pub(super) use justify::compute_justify;
+// 把尺寸边界归一规则收敛到独立模块，保持求解主流程聚焦。
+mod sizing;
+// 在当前求解器内复用统一的尺寸边界归一入口。
+use sizing::normalized_axis_bounds;
 
 /// Compute flex layout from input constraints.
 ///
@@ -93,22 +97,6 @@ pub(crate) fn compute_flex_layout(input: &FlexInput<'_>) -> FlexOutput {
             &mut cross_sizes,
         )
     }
-}
-
-// 把一个轴的 min/max 收敛为有序且可用于实际布局的区间。
-fn normalized_axis_bounds(minimum: f32, maximum: f32) -> (f32, f32) {
-    // 最小值只接受有限非负实际尺寸。
-    let minimum = finite_non_negative(minimum);
-    // 有限且不是无界哨兵的最大值继续参与钳制。
-    let maximum = if maximum.is_finite() && maximum.abs() < f32::MAX {
-        // 最大值不得低于零或已经归一的最小值。
-        maximum.max(0.0).max(minimum)
-    } else {
-        // 无界或非法最大值统一回退为内部无界上限。
-        f32::MAX
-    };
-    // 返回不会触发反向区间的上下限。
-    (minimum, maximum)
 }
 
 // 读取子项在当前主轴上的尺寸上下限。
@@ -373,12 +361,14 @@ fn compute_single_line(
     let max_child_cross = (0..count)
         .map(|index| cross_sizes[index] + margin_cross(child_margin(input, index), is_row))
         .fold(0.0, f32::max);
-    let effective_cross = if container_cross > 0.0 {
-        container_cross
+    // 自动交叉轴把子项自然外尺寸作为下限，同时保留父级已经分配的更大空间。
+    let effective_cross = if input.intrinsic_cross || container_cross <= 0.0 {
+        // 父级分配与自然内容取大，避免自动轴既裁内容又反向收缩拉伸区域。
+        container_cross.max(max_child_cross)
     } else {
-        max_child_cross
+        // 确定交叉轴继续占满父级分配空间。
+        container_cross
     };
-
     // Phase 2: distribute flex-grow/shrink
     let total_margin_main: f32 = (0..count)
         .map(|i| margin_main(child_margin(input, i), is_row))
@@ -709,18 +699,20 @@ fn compute_wrapped(
         .map(|(&start, &size)| finite_or_zero(start + size))
         // 取所有行末端最大值，并把完全位于原点前的范围收敛为零。
         .fold(0.0, f32::max);
+    // 自动交叉轴同样保留父级分配值，后续行账本再以自然尺寸作为下限。
+    let layout_cross = container_cross;
     // 容器级 Stretch 同时承担多行交叉轴分布，让 wrap 开关不改变单行填充语义。
     let cross_align = input.align_items;
     // 实际未换行时应与非换行路径共享完整容器交叉轴行盒。
-    let single_line_uses_container_cross = lines.len() == 1 && container_cross > 1.0;
+    let single_line_uses_container_cross = lines.len() == 1 && layout_cross > 1.0;
     // 单行直接采用真实行盒，让逐项 align_self 也能相对容器定位。
     if single_line_uses_container_cross {
         // 唯一行覆盖为容器交叉轴，子项最终尺寸仍会服从各自 min/max。
-        line_max_cross[0] = container_cross;
+        line_max_cross[0] = layout_cross;
     // 只有实际容器还存在正交叉轴剩余空间时才扩展行盒。
-    } else if cross_align == AlignItems::Stretch && container_cross > natural_total_cross {
+    } else if cross_align == AlignItems::Stretch && layout_cross > natural_total_cross {
         // 扣除自然行高与固定 gap 后，把剩余空间等分到每一行。
-        let extra_per_line = (container_cross - natural_total_cross) / lines.len() as f32;
+        let extra_per_line = (layout_cross - natural_total_cross) / lines.len() as f32;
         // 原位同步每行起点与行高，不复制子项或新增第二套行账本。
         for (line_index, line_cross_size) in line_max_cross.iter_mut().enumerate() {
             // 前置行获得的扩展量会共同推后当前行起点。
@@ -732,7 +724,7 @@ fn compute_wrapped(
     // Stretch 与真实单行都覆盖容器交叉尺寸，报告账本仍保留自然溢出。
     let total_cross = if cross_align == AlignItems::Stretch || single_line_uses_container_cross {
         // 容器较小或 bootstrap 时不得压低自然行组尺寸。
-        natural_total_cross.max(container_cross)
+        natural_total_cross.max(layout_cross)
     } else {
         // Center/End/Start 保留既有自然行组范围。
         natural_total_cross
@@ -746,9 +738,9 @@ fn compute_wrapped(
         // 根据容器级对齐计算整组行盒偏移。
         match cross_align {
             // 只有获得实际交叉轴后才应用 Center，bootstrap 继续从自然起点开始。
-            AlignItems::Center if container_cross > 1.0 => (container_cross - total_cross) * 0.5,
+            AlignItems::Center if layout_cross > 1.0 => (layout_cross - total_cross) * 0.5,
             // 获得实际交叉轴后 End 保留负剩余空间，使自然行组末端贴住容器末端。
-            AlignItems::End if container_cross > 1.0 => container_cross - total_cross,
+            AlignItems::End if layout_cross > 1.0 => layout_cross - total_cross,
             // Start 与 Stretch 从自然交叉轴起点开始。
             _ => 0.0,
         }
@@ -872,14 +864,14 @@ fn compute_wrapped(
     });
     let (total_w, total_h) = if is_row {
         // 水平布局的交叉轴总量统一使用行账本，单行也包含 margin。
-        let resolved_cross = total_cross.max(container_cross).max(visible_cross_end);
+        let resolved_cross = total_cross.max(layout_cross).max(visible_cross_end);
         (
             resolved_main + input.padding.horizontal(),
             resolved_cross + input.padding.vertical(),
         )
     } else {
         // 垂直布局的交叉轴总量采用相同行账本语义。
-        let resolved_cross = total_cross.max(container_cross).max(visible_cross_end);
+        let resolved_cross = total_cross.max(layout_cross).max(visible_cross_end);
         (
             resolved_cross + input.padding.horizontal(),
             resolved_main + input.padding.vertical(),

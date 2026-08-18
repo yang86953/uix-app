@@ -4,12 +4,19 @@ use std::io::ErrorKind;
 // 引入核心公开值类型以从使用方视角锁定基础契约。
 use uix::core::{
     // 引入组件身份和尺寸约束类型。
-    ComponentId, Constraints,
+    ComponentId,
+    Constraints,
     // 引入边距、错误码、错误值与严重度类型。
-    EdgeInsets, Errc, Error, ErrorSeverity,
+    EdgeInsets,
+    Errc,
+    Error,
+    ErrorSeverity,
     // 引入二维几何和窗口身份类型。
-    Point, Rect, Size, WindowId,
-// 结束核心公开值类型导入。
+    Point,
+    Rect,
+    Size,
+    WindowId,
+    // 结束核心公开值类型导入。
 };
 
 // 将公开身份值的构造、读取、比较和显示约束注册为测试。
@@ -44,7 +51,7 @@ fn identity_values_preserve_public_parts_and_ordering() {
     assert_eq!(WindowId::new(42).raw(), 42);
     // 窗口身份应按原始值提供稳定顺序。
     assert!(WindowId::ROOT < WindowId::new(1));
-// 结束身份值语义测试。
+    // 结束身份值语义测试。
 }
 
 // 将尺寸规范化与约束裁剪契约注册为测试。
@@ -75,7 +82,7 @@ fn size_and_constraints_preserve_normalization_contracts() {
     assert_eq!(loose.definite, None);
     // 默认约束应与无约束构造结果一致。
     assert_eq!(Constraints::default(), Constraints::unconstrained());
-// 结束尺寸和约束契约测试。
+    // 结束尺寸和约束契约测试。
 }
 
 // 将矩形空间运算契约注册为测试。
@@ -99,12 +106,15 @@ fn rect_operations_preserve_closed_and_positive_area_boundaries() {
     // 创建与基准矩形部分重叠的矩形。
     let overlapping = Rect::new(30.0, 50.0, 20.0, 20.0);
     // 正面积重叠应返回精确交集。
-    assert_eq!(rect.intersect(&overlapping), Some(Rect::new(30.0, 50.0, 10.0, 10.0)));
+    assert_eq!(
+        rect.intersect(&overlapping),
+        Some(Rect::new(30.0, 50.0, 10.0, 10.0))
+    );
     // 并集应返回包围两个矩形的最小矩形。
     assert_eq!(rect.union(&overlapping), Rect::new(10.0, 20.0, 40.0, 50.0));
     // 仅边界接触不构成正面积交集。
     assert_eq!(rect.intersect(&Rect::new(40.0, 20.0, 5.0, 5.0)), None);
-// 结束矩形空间运算测试。
+    // 结束矩形空间运算测试。
 }
 
 // 将边距构造和聚合契约注册为测试。
@@ -127,7 +137,7 @@ fn edge_insets_preserve_directional_mapping() {
     assert_eq!(edges.vertical(), 4.0);
     // 标量转换应为四个方向应用同一数值。
     assert_eq!(EdgeInsets::from(2.5), EdgeInsets::uniform(2.5));
-// 结束边距方向语义测试。
+    // 结束边距方向语义测试。
 }
 
 // 将错误码分类、显示与标准库映射契约注册为测试。
@@ -154,7 +164,7 @@ fn error_codes_preserve_categories_display_and_io_mapping() {
     assert_eq!(Errc::FileNotFound.to_io_kind(), Some(ErrorKind::NotFound));
     // 无直接标准库对应项的框架错误码应返回空值。
     assert_eq!(Errc::GraphicsDeviceLost.to_io_kind(), None);
-// 结束错误码契约测试。
+    // 结束错误码契约测试。
 }
 
 // 将错误严重度的顺序和显示契约注册为测试。
@@ -171,7 +181,7 @@ fn error_severity_preserves_ordering_and_abort_threshold() {
     assert!(ErrorSeverity::Fatal.should_abort());
     // 警告显示值应保持稳定缩写。
     assert_eq!(ErrorSeverity::Warning.to_string(), "WARN");
-// 结束错误严重度测试。
+    // 结束错误严重度测试。
 }
 
 // 将错误值、调用位置和原因链契约注册为测试。
@@ -181,7 +191,8 @@ fn error_values_preserve_factories_location_and_source_chain() {
     // 创建具有显式位置的根因。
     let root = Error::with_location(Errc::IoError, "disk unavailable", "storage.rs", 41);
     // 创建位于原因链中间的错误。
-    let middle = Error::with_location(Errc::ParseError, "invalid document", "parser.rs", 12).with_source(root);
+    let middle = Error::with_location(Errc::ParseError, "invalid document", "parser.rs", 12)
+        .with_source(root);
     // 创建顶层致命错误并附加现有原因链。
     let error = Error::fatal(Errc::InvalidState, "settings load failed").with_source(middle);
 
@@ -210,5 +221,5 @@ fn error_values_preserve_factories_location_and_source_chain() {
     assert!(!empty.has_value());
     // 便利工厂应生成对应的稳定错误码。
     assert!(Error::not_found("missing").is(Errc::NotFound));
-// 结束错误值和原因链测试。
+    // 结束错误值和原因链测试。
 }

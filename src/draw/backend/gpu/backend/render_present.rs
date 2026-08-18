@@ -43,7 +43,7 @@ impl GpuBackend {
         }
         // 在任何 RHI lowering 或最终提交前执行 owner-thread device preflight。
         // 已验证 owner 必须在最终 present 前完成 owner-thread device preflight。
-        let context = self.gpu_ctx.rhi_context()?;
+        let context = self.gpu_ctx.rhi_device()?;
         // device lost 必须在最终 present 前按 typed error 暴露给恢复 FSM。
         GraphicsDevice::maintain(context)?;
         // 读取 draw-time deferred error，并保持当前帧 dirty。

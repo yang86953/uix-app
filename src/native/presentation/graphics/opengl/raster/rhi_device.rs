@@ -8,9 +8,10 @@ use glow::HasContext as _;
 // 引入统一错误、结果和 RHI 原语。
 use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, BufferUsage, LoadAction, PipelineDesc, PipelineHandle,
-    RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, RhiViewport, SamplerDesc, SamplerHandle,
-    SubmissionHandle, TextureCopy, TextureDesc, TextureFormat, TextureHandle, TextureMove,
+    BufferDesc, BufferHandle, BufferUsage, LoadAction, PipelineDesc, PipelineHandle, PipelineKind,
+    RenderTargetHandle, RhiColor, RhiExtent, RhiPassState, RhiScissor, RhiSubmissionSequence,
+    RhiViewport, SamplerDesc, SamplerHandle, SubmissionHandle, TextureCopy, TextureDesc,
+    TextureFormat, TextureHandle, TextureMove,
 };
 
 // 将 retained 区域移动拆出，保持资源设备文件低于行数上限。
@@ -43,10 +44,10 @@ struct OpenGlRhiTexture {
     format: TextureFormat,
 }
 
-// 保存固定 pipeline key 与编译后的 GL program。
+// 保存封闭 pipeline 语义与编译后的 GL program。
 struct OpenGlRhiPipeline {
-    // 保存通用 renderer 选择的稳定 key。
-    key: u64,
+    // 保存通用 renderer 选择的类型化语义。
+    kind: PipelineKind,
     // 保存 OpenGL ES program 对象。
     program: glow::Program,
 }
@@ -55,6 +56,8 @@ struct OpenGlRhiPipeline {
 struct OpenGlRhiSampler {
     // 保存 OpenGL ES sampler 对象。
     native: glow::Sampler,
+    // 保存共享 pipeline draw 门禁需要的 API 无关过滤事实。
+    desc: SamplerDesc,
 }
 
 // OpenGL ES 的 swapchain target 身份不占用 texture 句柄空间。
@@ -78,28 +81,18 @@ pub(super) struct OpenGlRhiDevice {
     buffers: Vec<Option<OpenGlRhiBuffer>>,
     // 保存按一开始从 1 分配的 texture 句柄索引的资源表。
     textures: Vec<Option<OpenGlRhiTexture>>,
+    // 保存必须活到下一次原生 submit 之后才能删除的临时移动纹理。
+    texture_move_scratch_after_submit: Vec<TextureHandle>,
     // 保存按一开始从 1 分配的 pipeline 句柄索引的资源表。
     pipelines: Vec<Option<OpenGlRhiPipeline>>,
     // 保存按一开始从 1 分配的 sampler 句柄索引的资源表。
     samplers: Vec<Option<OpenGlRhiSampler>>,
     // 保存所有 RHI draw 共用的 VAO。
     vao: glow::VertexArray,
-    // 保存是否已经打开一个 render pass。
-    pass_open: bool,
-    // 保存当前 pass 的 target 句柄。
-    active_target: Option<RenderTargetHandle>,
-    // 保存当前 pass 的物理 extent。
-    active_extent: Option<RhiExtent>,
-    // 保存当前 pass 的 RHI scissor，供局部清理后恢复原状态。
-    scissor: Option<RhiScissor>,
-    // 保存当前 pass 最近绑定的 texture。
-    bound_texture: Option<TextureHandle>,
-    // 保存当前 pass 最近绑定的 sampler。
-    bound_sampler: Option<SamplerHandle>,
-    // 保存下一个 submit 的不透明序号。
-    next_submission: u64,
-    // 保存最近一次成功 submit 的序号，供 surface present 校验。
-    last_submission: Option<SubmissionHandle>,
+    // 保存两个 Adapter 共用的 pass 生命周期、目标、几何与采样绑定事实。
+    pass: RhiPassState,
+    // 保存共享的提交身份状态机，禁止 OpenGL 自行解释 submit/present 关联。
+    submission_sequence: RhiSubmissionSequence,
     // 保存 test-harness 安排的一次设备丢失。
     #[cfg(feature = "test-harness")]
     device_lost_for_test: bool,
@@ -148,18 +141,15 @@ impl OpenGlRhiDevice {
         Ok(Self {
             buffers: Vec::new(),
             textures: Vec::new(),
+            // 新设备尚未产生等待提交的临时移动资源。
+            texture_move_scratch_after_submit: Vec::new(),
             pipelines: Vec::new(),
             samplers: Vec::new(),
             vao,
-            pass_open: false,
-            active_target: None,
-            active_extent: None,
-            // 初始没有启用任何 scissor。
-            scissor: None,
-            bound_texture: None,
-            bound_sampler: None,
-            next_submission: 1,
-            last_submission: None,
+            // 使用 API 无关状态机初始化 pass 生命周期。
+            pass: RhiPassState::new(),
+            // 使用 API 无关状态机初始化提交序列。
+            submission_sequence: RhiSubmissionSequence::new(),
             // 默认不安排测试设备丢失。
             #[cfg(feature = "test-harness")]
             device_lost_for_test: false,
@@ -328,7 +318,7 @@ impl OpenGlRhiDevice {
         // 让 sampler 的过滤与 texture 的边界策略可被 draw 复用。
         // SAFETY: native 刚创建且存活；参数均为有效 GL 枚举且无指针；context 保持 current。
         unsafe {
-            let filter = if desc.linear {
+            let filter = if desc.uses_linear_filter() {
                 glow::LINEAR as i32
             } else {
                 glow::NEAREST as i32
@@ -339,7 +329,12 @@ impl OpenGlRhiDevice {
             gl.sampler_parameter_i32(native, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
         }
         // 记录 sampler 资源。
-        self.samplers.push(Some(OpenGlRhiSampler { native }));
+        self.samplers.push(Some(OpenGlRhiSampler {
+            // 保持原生 sampler 的 owner-thread 生命周期。
+            native,
+            // 保留创建描述供共享 PipelineSampling 在 draw 前核对。
+            desc,
+        }));
         // 返回从一开始递增的 sampler 句柄。
         Ok(SamplerHandle::from_raw(self.samplers.len() as u64))
     }
@@ -350,15 +345,14 @@ impl OpenGlRhiDevice {
         gl: &glow::Context,
         desc: PipelineDesc,
     ) -> Result<PipelineHandle> {
-        // 为 key 选择不再按平台改写的固定 GLES 3.0 shader ABI。
-        let (vertex, fragment) = shader_sources(desc.key)
-            .ok_or_else(|| rhi_not_implemented("OpenGL RHI pipeline key"))?;
+        // 为封闭语义选择不再按平台改写的固定 GLES 3.0 shader ABI。
+        let (vertex, fragment) = shader_sources(desc.kind);
         // 编译 program；shader 失败时不登记半成品资源。
         // SAFETY: 编译期间 context 保持 current（compile_program 自身的前置条件），shader 源码为存活且静态的生命周期字符串。
         let program = unsafe { compile_program(gl, vertex, fragment, "RHI pipeline")? };
-        // 保存 key 和 program 的 owner-thread 生命周期。
+        // 保存类型化语义和 program 的 owner-thread 生命周期。
         self.pipelines.push(Some(OpenGlRhiPipeline {
-            key: desc.key,
+            kind: desc.kind,
             program,
         }));
         // 返回新的 pipeline 句柄。
@@ -396,10 +390,7 @@ impl OpenGlRhiDevice {
         handle: TextureHandle,
     ) -> Result<()> {
         // 当前 pass 不能销毁正在绑定的目标。
-        if self
-            .active_target
-            .is_some_and(|target| target.raw() == handle.raw())
-        {
+        if self.pass.references_target(handle) {
             return Err(rhi_invalid("OpenGL RHI cannot destroy active target"));
         }
         // 取得目标槽位。
@@ -419,10 +410,8 @@ impl OpenGlRhiDevice {
             }
             gl.delete_texture(texture.native);
         }
-        // 清理可能残留的采样绑定。
-        if self.bound_texture == Some(handle) {
-            self.bound_texture = None;
-        }
+        // 清理可能残留的共享采样绑定。
+        self.pass.unbind_texture(handle);
         // 返回统一成功结果。
         Ok(())
     }
@@ -447,10 +436,8 @@ impl OpenGlRhiDevice {
         unsafe {
             gl.delete_sampler(sampler.native);
         }
-        // 清理可能残留的采样绑定。
-        if self.bound_sampler == Some(handle) {
-            self.bound_sampler = None;
-        }
+        // 清理可能残留的共享采样绑定。
+        self.pass.unbind_sampler(handle);
         // 返回统一成功结果。
         Ok(())
     }
@@ -488,9 +475,7 @@ impl OpenGlRhiDevice {
         surface_extent: RhiExtent,
     ) -> Result<()> {
         // 禁止 pass 嵌套，确保 FramePlan 顺序有唯一 owner。
-        if self.pass_open {
-            return Err(rhi_invalid("OpenGL RHI render pass is already open"));
-        }
+        self.pass.require_closed()?;
         // 解析 surface 或离屏 texture target。
         let (framebuffer, extent) = if target.raw() == RHI_SURFACE_TARGET_RAW {
             (None, surface_extent)
@@ -501,49 +486,33 @@ impl OpenGlRhiDevice {
                 .ok_or_else(|| rhi_invalid("OpenGL RHI target texture is not renderable"))?;
             (Some(framebuffer), texture.extent)
         };
-        // target 的 extent 必须为正。
-        if !extent.is_positive() {
-            return Err(rhi_invalid("OpenGL RHI render target extent is invalid"));
-        }
+        // 由共享状态机统一验证目标范围、清屏颜色并建立 pass 事实。
+        self.pass.begin(target, extent, load)?;
         // 绑定 framebuffer 并清理按 pass 指定的颜色。
         // SAFETY: framebuffer 取自存活 texture（surface 时为 None，解绑合法）；RhiColor 为固定四元素数组，颜色参数有效；context 保持 current。
         unsafe {
             gl.bind_framebuffer(glow::FRAMEBUFFER, framebuffer);
-            if let LoadAction::Clear(RhiColor(color)) = load {
+            if let LoadAction::Clear(color) = load {
+                // Adapter 只读取共享层已经验证并预乘的目标颜色。
+                let [red, green, blue, alpha] = color.components();
                 gl.disable(glow::SCISSOR_TEST);
-                gl.clear_color(color[0], color[1], color[2], color[3]);
+                // 清屏直接写目标，不执行任何额外 alpha 转换。
+                gl.clear_color(red, green, blue, alpha);
                 gl.clear(glow::COLOR_BUFFER_BIT);
             }
         }
-        // 保存 pass 状态并清掉上一个 pass 的采样绑定。
-        self.pass_open = true;
-        self.active_target = Some(target);
-        self.active_extent = Some(extent);
-        // 每个 pass 从未启用 scissor 开始，避免跨 pass 泄漏裁剪状态。
-        self.scissor = None;
-        self.bound_texture = None;
-        self.bound_sampler = None;
         // 返回统一成功结果。
         Ok(())
     }
 
     // 设置物理 viewport。
     pub(super) fn set_viewport(&self, gl: &glow::Context, viewport: RhiViewport) -> Result<()> {
-        // 先验证跨 adapter 的 viewport 合约。
-        if !self.pass_open || !viewport.is_valid() {
-            return Err(rhi_invalid(
-                "OpenGL RHI viewport is invalid or pass is closed",
-            ));
-        }
+        // 由共享状态机验证 pass 顺序和物理目标边界。
+        self.pass.validate_viewport(viewport)?;
         // OpenGL viewport 保持正尺寸，Y 方向由 draw 时的目标身份决定。
-        // SAFETY: viewport 已在上方验证为正且 pass 已打开，宽高经 i32 转换后仍为正；无指针参数；context 保持 current。
+        // SAFETY: viewport 已由共享值对象验证为正整像素且可精确转换为 i32；无指针参数；context 保持 current。
         unsafe {
-            gl.viewport(
-                0,
-                0,
-                viewport.width.round() as i32,
-                viewport.height.round() as i32,
-            );
+            gl.viewport(0, 0, viewport.width as i32, viewport.height as i32);
         }
         // 返回统一成功结果。
         Ok(())
@@ -555,24 +524,16 @@ impl OpenGlRhiDevice {
         gl: &glow::Context,
         scissor: Option<RhiScissor>,
     ) -> Result<()> {
-        // scissor 只能在具有明确 target 的 active pass 内设置。
-        let target = self
-            .active_target
-            .ok_or_else(|| rhi_invalid("OpenGL RHI scissor has no active target"))?;
-        // 使用同一 pass 的物理 extent 校验范围。
-        let extent = self
-            .active_extent
-            .ok_or_else(|| rhi_invalid("OpenGL RHI scissor has no active target"))?;
+        // 读取共享状态机冻结的活动目标身份。
+        let target = self.pass.target()?;
+        // 使用同一 pass 的物理 extent 完成原生坐标转换。
+        let extent = self.pass.extent()?;
+        // 先由共享状态机统一验证并记录左上原点区域。
+        self.pass.set_scissor(scissor)?;
         // 按 RHI 的左上原点 ABI 校验并转换坐标。
         // SAFETY: scissor 坐标与尺寸均为非负整数，且已按 active target 的物理 extent 校验不越界；无指针参数；context 保持 current。
         unsafe {
             if let Some(scissor) = scissor {
-                if !scissor.is_valid()
-                    || scissor.x.saturating_add(scissor.width) > extent.width as i32
-                    || scissor.y.saturating_add(scissor.height) > extent.height as i32
-                {
-                    return Err(rhi_invalid("OpenGL RHI scissor is outside target"));
-                }
                 gl.enable(glow::SCISSOR_TEST);
                 if is_surface_target(target) {
                     // 原生 surface 的顶部位于 GL 高 Y，需从左上原点换算。
@@ -590,8 +551,6 @@ impl OpenGlRhiDevice {
                 gl.disable(glow::SCISSOR_TEST);
             }
         }
-        // 只有原生状态设置成功后才更新可恢复的 RHI 状态。
-        self.scissor = scissor;
         // 返回统一成功结果。
         Ok(())
     }
@@ -603,23 +562,11 @@ impl OpenGlRhiDevice {
         texture: TextureHandle,
         sampler: SamplerHandle,
     ) -> Result<()> {
-        // 当前跨 adapter ABI 只开放 t0/s0。
-        if !self.pass_open || slot != 0 {
-            return Err(rhi_invalid("OpenGL RHI only supports texture slot zero"));
-        }
         // 先验证资源仍然存在。
         self.texture(texture)?;
         self.sampler(sampler)?;
-        // 禁止当前 render target 同时作为 sampled source，避免反馈环。
-        if self
-            .active_target
-            .is_some_and(|target| target.raw() == texture.raw())
-        {
-            return Err(rhi_invalid("OpenGL RHI texture feedback loop is invalid"));
-        }
-        // 保存绑定身份。
-        self.bound_texture = Some(texture);
-        self.bound_sampler = Some(sampler);
+        // 由共享状态机统一验证 pass、槽位和目标反馈环后原子记录绑定。
+        self.pass.bind_texture(slot, texture, sampler)?;
         // 返回统一成功结果。
         Ok(())
     }
@@ -627,9 +574,7 @@ impl OpenGlRhiDevice {
     // 结束当前 pass 并解除 framebuffer 绑定。
     pub(super) fn end_render_pass(&mut self, gl: &glow::Context) -> Result<()> {
         // 禁止在没有 pass 时结束。
-        if !self.pass_open {
-            return Err(rhi_invalid("OpenGL RHI render pass is not open"));
-        }
+        self.pass.require_open()?;
         // 解除 texture/sampler 和 framebuffer 状态。
         // SAFETY: 全部为解绑/关闭操作，不引用任何已销毁对象；bind_sampler 的 0 号单元在 GLES3 中存在；context 保持 current。
         unsafe {
@@ -640,14 +585,8 @@ impl OpenGlRhiDevice {
             gl.bind_framebuffer(glow::FRAMEBUFFER, None);
             gl.bind_vertex_array(None);
         }
-        // 清理 pass 状态。
-        self.pass_open = false;
-        self.active_target = None;
-        self.active_extent = None;
-        // 清理 pass 级 scissor，避免下一 pass 继承旧裁剪。
-        self.scissor = None;
-        self.bound_texture = None;
-        self.bound_sampler = None;
+        // 由共享状态机原子清除目标、几何与采样绑定事实。
+        self.pass.end()?;
         // 返回统一成功结果。
         Ok(())
     }
@@ -655,47 +594,68 @@ impl OpenGlRhiDevice {
     // 执行一次 source texture 到 destination texture 的像素复制。
     pub(super) fn copy_texture(&mut self, gl: &glow::Context, copy: TextureCopy) -> Result<()> {
         // copy 必须发生在 pass 外。
-        if self.pass_open {
-            return Err(rhi_invalid(
-                "OpenGL RHI texture copy is inside a render pass",
-            ));
-        }
-        // 读取源和目标的描述，均必须为颜色 render target。
-        let source = self.texture(copy.source)?;
-        let destination = self.texture(copy.destination)?;
-        if source.framebuffer.is_none() || destination.format == TextureFormat::R8Unorm {
-            return Err(rhi_invalid(
-                "OpenGL RHI texture copy requires color textures",
-            ));
-        }
-        // 校验复制范围在两个 texture 内。
-        let source_right = copy.source_x.saturating_add(copy.width);
-        let source_bottom = copy.source_y.saturating_add(copy.height);
-        let destination_right = copy.destination_x.saturating_add(copy.width);
-        let destination_bottom = copy.destination_y.saturating_add(copy.height);
-        if source_right > source.extent.width
-            || source_bottom > source.extent.height
-            || destination_right > destination.extent.width
-            || destination_bottom > destination.extent.height
-        {
-            return Err(rhi_invalid("OpenGL RHI texture copy is outside extent"));
-        }
+        self.pass.require_closed()?;
+        // 复制源原生对象与 API 无关描述，避免把资源表借用带入原生命令。
+        let (source_framebuffer, source_desc) = {
+            // 读取源纹理事实。
+            let source = self.texture(copy.source)?;
+            // 返回原生 framebuffer 和共享资源描述。
+            (
+                // 颜色源纹理必须拥有 framebuffer。
+                source.framebuffer,
+                // 只向共享门禁交付 extent 与 format。
+                TextureDesc {
+                    // 保存源纹理物理尺寸。
+                    extent: source.extent,
+                    // 保存源纹理格式。
+                    format: source.format,
+                },
+            )
+        };
+        // 复制目标原生对象与 API 无关描述。
+        let (destination_native, destination_desc) = {
+            // 读取目标纹理事实。
+            let destination = self.texture(copy.destination)?;
+            // 返回原生 texture 和共享资源描述。
+            (
+                // 保存目标原生 texture。
+                destination.native,
+                // 只向共享门禁交付 extent 与 format。
+                TextureDesc {
+                    // 保存目标纹理物理尺寸。
+                    extent: destination.extent,
+                    // 保存目标纹理格式。
+                    format: destination.format,
+                },
+            )
+        };
+        // 格式、非空、范围与资源关系全部由共享传输契约验证。
+        copy.validate_transfer(source_desc, destination_desc)?;
+        // OpenGL 颜色源必须有可读 framebuffer，这只是原生资源完整性事实。
+        let source_framebuffer = source_framebuffer
+            // 把缺失 framebuffer 转换成稳定参数错误。
+            .ok_or_else(|| rhi_invalid("OpenGL RHI color texture has no framebuffer"))?;
         // 复制前绑定源 framebuffer 作为 READ_FRAMEBUFFER，并绑定目标 texture。
-        // SAFETY: source/destination 为存活 texture，source.framebuffer 已确认存在；复制矩形已按两边 extent 校验不越界；context 保持 current。
+        // SAFETY: source/destination 为存活颜色 texture，source framebuffer 已确认存在；复制矩形由共享契约验证；context 保持 current。
         unsafe {
-            gl.bind_framebuffer(glow::READ_FRAMEBUFFER, source.framebuffer);
-            gl.bind_texture(glow::TEXTURE_2D, Some(destination.native));
+            // 绑定已验证源纹理的只读 framebuffer。
+            gl.bind_framebuffer(glow::READ_FRAMEBUFFER, Some(source_framebuffer));
+            // 绑定已验证目标纹理。
+            gl.bind_texture(glow::TEXTURE_2D, Some(destination_native));
+            // 离屏纹理把逻辑顶部存于原生第零行，因此 copy 的两端都直接使用 top-left Y。
             gl.copy_tex_sub_image_2d(
                 glow::TEXTURE_2D,
                 0,
                 copy.destination_x as i32,
-                destination.extent.height as i32 - destination_bottom as i32,
+                copy.destination_y as i32,
                 copy.source_x as i32,
-                source.extent.height as i32 - source_bottom as i32,
+                copy.source_y as i32,
                 copy.width as i32,
                 copy.height as i32,
             );
+            // 清除目标纹理绑定，避免后续 pass 继承隐式状态。
             gl.bind_texture(glow::TEXTURE_2D, None);
+            // 清除只读 framebuffer 绑定。
             gl.bind_framebuffer(glow::READ_FRAMEBUFFER, None);
         }
         // 返回统一成功结果。
@@ -705,27 +665,27 @@ impl OpenGlRhiDevice {
     // 提交当前 owner-thread GL 命令并生成提交身份。
     pub(super) fn submit(&mut self, gl: &glow::Context) -> Result<SubmissionHandle> {
         // pass 必须已经关闭才能提交。
-        if self.pass_open {
-            return Err(rhi_invalid("OpenGL RHI submit has an open render pass"));
-        }
+        self.pass.require_closed()?;
         // 令驱动在最终 swap 前观察到当前命令序列。
         // SAFETY: flush 不接收对象或指针参数，只需 context current。
         unsafe {
             gl.flush();
         }
-        // 生成不透明提交序号并避免零值回绕。
-        let raw = self.next_submission.max(1);
-        self.next_submission = self.next_submission.saturating_add(1).max(1);
-        let submission = SubmissionHandle::from_raw(raw);
-        self.last_submission = Some(submission);
-        // 返回提交身份。
-        Ok(submission)
+        // 原生命令已经进入驱动队列后再释放 TextureMove 临时资源，保证复制源生命周期。
+        let scratch_textures = std::mem::take(&mut self.texture_move_scratch_after_submit);
+        // 每个临时资源只在所属离屏计划成功到达 submit 后删除一次。
+        for scratch in scratch_textures {
+            // 检查式删除仍由当前 owner-thread 设备完成。
+            self.destroy_texture(gl, scratch)?;
+        }
+        // 由共享状态机签发提交身份，OpenGL 不再维护私有序号规则。
+        self.submission_sequence.issue()
     }
 
     // 校验 surface present 使用的是最近一次成功 submit。
     pub(super) fn validate_submission(&self, submission: SubmissionHandle) -> Result<()> {
         // 零值和迟到提交都不能触发原生交换。
-        if submission.raw() == 0 || self.last_submission != Some(submission) {
+        if !self.submission_sequence.is_latest(submission) {
             return Err(rhi_invalid("OpenGL RHI present submission is stale"));
         }
         // 返回统一成功结果。
@@ -777,15 +737,10 @@ impl OpenGlRhiDevice {
         unsafe {
             gl.delete_vertex_array(self.vao);
         }
-        // 清理所有逻辑状态。
-        self.pass_open = false;
-        self.active_target = None;
-        self.active_extent = None;
-        // 资源释放时同步清理 scissor 的逻辑镜像。
-        self.scissor = None;
-        self.bound_texture = None;
-        self.bound_sampler = None;
-        self.last_submission = None;
+        // 清理共享 pass 状态并切断所有原生资源身份。
+        self.pass.reset();
+        // 释放 context 时让所有尚未 present 的迟到提交失效。
+        self.submission_sequence.invalidate();
     }
 }
 
@@ -793,13 +748,4 @@ impl OpenGlRhiDevice {
 fn rhi_invalid(message: impl Into<String>) -> Error {
     // 统一使用 InvalidArgument，保持 adapter 错误分类稳定。
     Error::new(Errc::InvalidArgument, message)
-}
-
-// 生成 OpenGL RHI 的未实现错误。
-fn rhi_not_implemented(operation: &'static str) -> Error {
-    // 让 bootstrap 和诊断能区分缺失 shader key 与平台故障。
-    Error::new(
-        Errc::NotImplemented,
-        format!("OpenGL RHI operation is not implemented: {operation}"),
-    )
 }

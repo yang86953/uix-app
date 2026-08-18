@@ -21,7 +21,7 @@ impl GpuBackend {
         }
         // 只有暴露组合 RHI 的 adapter 才能创建并提交 retained texture。
         // 构造期已验证 owner；运行期丢失时不能伪装成不支持。
-        self.gpu_ctx.rhi_context()?;
+        self.gpu_ctx.rhi_device()?;
         // 按当前 surface generation 确保纹理身份和 extent 一致。
         let texture = self.ensure_rhi_surface_texture()?;
         // 把同一 opaque texture 同时作为 render target 和 sampled source 使用。
@@ -35,7 +35,7 @@ impl GpuBackend {
         // 读取 owner-thread context 的当前 surface 身份。
         let token = self
             .gpu_ctx
-            .rhi_context()
+            .rhi_surface()
             // 从已验证组合 RHI 读取唯一 surface token。
             .map(|context| context.token())?;
         // 同一代际和 extent 可以安全复用现有颜色纹理。
@@ -55,7 +55,7 @@ impl GpuBackend {
             // 借用 context 只覆盖一次 native destroy 调用。
             let destroy_result = self
                 .gpu_ctx
-                .rhi_context()
+                .rhi_device()
                 .and_then(|context| context.destroy_texture(texture));
             // 资源销毁失败不能伪造新 target 已准备好。
             if let Err(error) = destroy_result {
@@ -70,7 +70,7 @@ impl GpuBackend {
         // 创建与 drawable 物理 extent 完全一致的 BGRA retained target。
         let texture = self
             .gpu_ctx
-            .rhi_context()?
+            .rhi_device()?
             // 已验证 owner 丢失时由统一 typed error 阻止创建。
             .create_texture(TextureDesc {
                 // retained image 必须覆盖整个当前 drawable。
@@ -108,7 +108,7 @@ impl GpuBackend {
         // 资源必须在创建它的组合 context 上检查式销毁。
         let result = self
             .gpu_ctx
-            .rhi_context()
+            .rhi_device()
             .and_then(|context| context.destroy_texture(texture));
         // 销毁失败时恢复 owner 状态，禁止资源泄漏被隐藏。
         if let Err(error) = result {

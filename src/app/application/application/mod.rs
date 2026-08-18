@@ -5,8 +5,8 @@ use std::rc::Rc;
 use std::sync::{Arc, atomic::AtomicBool};
 use std::time::{Duration, Instant};
 
-use crate::app::app_events::ThemeApplied;
 use crate::app::agent::agent_policy::AgentPolicy;
+use crate::app::app_events::ThemeApplied;
 use crate::app::application::app_handle::{AppHandle, prepare_app_root};
 use crate::app::application::cli::Cli;
 use crate::app::application::di::Container;
@@ -15,8 +15,8 @@ use crate::app::application::feedback_state::AppFeedbackState;
 // 引入 App 作用域的 UIX 具名主题表。
 use crate::app::application::named_themes::NamedThemes;
 use crate::app::event_loop::run_window_session_loop_with_system_theme_and_tasks;
-use crate::app::queues::app_timer::{AppTimerQueue, TimerHandle};
 use crate::app::queues::agent_command_queue::AgentConfirmationRequest;
+use crate::app::queues::app_timer::{AppTimerQueue, TimerHandle};
 use crate::app::queues::clock::{AppClock, system_clock};
 // Application 组合根只保留创建窗口队列所需的 MainThreadQueue 类型。
 use crate::app::queues::main_thread_queue::MainThreadQueue;
@@ -29,8 +29,8 @@ use crate::app::window::window_actions::{
     report_center_on_screen_result,
 };
 // 统一主窗、次窗与公开 Window 的 FileDrop 创建策略。
-use crate::app::window::window_creation::create_app_window;
 use crate::app::window::window_config::WindowConfig;
+use crate::app::window::window_creation::create_app_window;
 use crate::app::window::window_driver::{WindowDriver, WindowFrameContext};
 use crate::app::window::window_session::WindowSession;
 use crate::bus::EventBus;
@@ -43,6 +43,7 @@ use crate::draw::renderer::bootstrap::{
 #[cfg(feature = "test-harness")]
 use crate::draw::renderer::test_harness::GraphicsFaultSignal;
 use crate::draw::renderer::{RebuildRequest, RecoveryDriver, RenderTargetRebuilder};
+// 子模块通过父边界复用所有窗口共享的字体服务类型。
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
 use crate::draw::target::RenderTarget;
@@ -56,11 +57,13 @@ use crate::platform::presentation::{
     GraphicsApi, GraphicsRecipe, GraphicsSelection, NativeSurfaceHandle, gpu_recipe_candidates,
     graphics_runtime_platform, try_create_gpu_recipe_with_queue,
 };
+use crate::ui::semantic_action::SemanticActionKind;
 use crate::ui::theme::traits::TokenProvider;
 use crate::ui::theme::{DesignTokens, DynTokens, Theme};
 use crate::ui::view::ViewNode;
-use crate::ui::{AppState, ComponentConfig, Locale, SystemEvent, WidgetTree, with_config, with_locale};
-use crate::ui::semantic_action::SemanticActionKind;
+use crate::ui::{
+    AppState, ComponentConfig, Locale, SystemEvent, WidgetTree, with_config, with_locale,
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 应用模式
@@ -83,6 +86,10 @@ const GRAPHICS_BACKEND_SETTING_KEYS: [&str; 2] = ["graphics_backend", "uix.graph
 mod defaults;
 // 组合根与运行时子模块复用同一检查式窗口错误边界。
 use self::defaults::{initially_agent_presentable, report_window_operation_error};
+// 字体配置注入和资源服务组装保持在独立组合根边界。
+mod typography;
+// GUI 启动只消费已验证的完整字体服务。
+use self::typography::initialize_font_service;
 
 /// 应用入口：GUI（View 根节点）或 CLI 模式。
 pub struct App {
@@ -333,16 +340,6 @@ impl App {
         self
     }
 
-    /// 按 builder、环境变量与设置的优先级解析私有启动策略。
-    pub(crate) fn configured_graphics_backend(&self) -> GraphicsSelection {
-        let env_value = std::env::var(GRAPHICS_BACKEND_ENV).ok();
-        resolve_graphics_backend(
-            self.graphics_backend,
-            env_value.as_deref(),
-            self.container.resolve::<SettingsService>(),
-        )
-    }
-
     // 测试目标保留根窗口句柄快捷入口，供外部 GUI 测试按需调用。
     #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
@@ -483,6 +480,19 @@ impl App {
             }
         };
         drain_platform_pending_failures(&mut *platform, &diagnostics);
+        // 在创建窗口和图形设备前建立唯一字体服务，配置错误无需清理原生资源。
+        let font_service =
+            match initialize_font_service(&mut self.container, platform.system_info()) {
+                // 成功后所有窗口共享同一字体句柄和 fallback 顺序。
+                Ok(font_service) => font_service,
+                // 确定性字体包失败必须终止启动，不能偷偷恢复平台字体。
+                Err(error) => {
+                    // 在最终责任边界记录不含字体数据的 typed 原因。
+                    tracing::error!("startup font initialization failed: {}", error.what());
+                    // 此时尚未创建窗口或图形资源，可直接返回失败退出码。
+                    return 1;
+                }
+            };
         let mut platform_window =
             match create_app_window(platform.window_manager(), &self.title, w, h) {
                 Ok(win) => win,
@@ -547,25 +557,14 @@ impl App {
             .set_agent_policy(std::mem::take(&mut self.agent_policy));
         // 组装期注入 Agent 确认 UI 回调（授权第三层），窗口创建前生效。
         if let Some(handler) = self.agent_confirm_ui.take() {
-            self.runtime.set_agent_confirm_ui(move |request| handler(request));
+            self.runtime
+                .set_agent_confirm_ui(move |request| handler(request));
         }
         // 推迟 ShowWindow 到首帧 present 成功：否则 Vulkan/字体/首 layout 期间用户看到白屏。
         let event_loop_waker = platform.event_loop().waker();
         self.runtime.set_event_loop_waker(event_loop_waker.clone());
         self.app_state.set_event_loop_waker(event_loop_waker);
 
-        let mut font_service = FontService::new();
-        let font_t0 = std::time::Instant::now();
-        font_service.load_default_system_font(14.0, platform.system_info());
-        // Icon 依赖 Lucide PUA 字形；未加载时会回退为首字母。
-        crate::ui::widgets::icon::init_lucide_font(
-            include_bytes!("../../../../assets/fonts/lucide.ttf"),
-            &mut font_service,
-        );
-        tracing::info!(
-            "startup fonts ready in {}ms (primary+CJK only; show deferred)",
-            font_t0.elapsed().as_millis()
-        );
         let image_service = ImageService::new();
 
         let system_theme_tokens = if self.follow_system_theme {
@@ -890,7 +889,7 @@ pub use runtime::map_ui_event;
 pub(crate) use runtime::{
     apply_runtime_theme_change, dispatch_secondary_system_theme_changed,
     dispatch_secondary_window_event, drain_pending_open_windows_with_backend,
-    resolve_graphics_backend, secondary_windows_next_deadline,
+    secondary_windows_next_deadline,
 };
 use runtime::{
     create_preferred_engine, drain_platform_pending_failures,

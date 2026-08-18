@@ -8,47 +8,42 @@ use super::super::{gl_error, rhi_shaders};
 // 引入 glow 的上下文扩展方法。
 use glow::HasContext as _;
 
-// 引入统一错误、结果和 pipeline key。
+// 引入统一错误、结果和封闭 pipeline 语义。
 use crate::core::error::{Errc, Error, Result};
-use crate::native::present::rhi::pipeline_keys;
+use crate::native::present::rhi::PipelineKind;
 
-// 按通用 pipeline key 选择 OpenGL ES shader 对。
-pub(super) fn shader_sources(key: u64) -> Option<(&'static str, &'static str)> {
+// 按封闭 pipeline 语义选择 OpenGL ES shader 对。
+pub(super) fn shader_sources(kind: PipelineKind) -> (&'static str, &'static str) {
     // 把固定的通用 ABI 映射到具体 GLSL 源。
-    let (vertex, fragment): (&'static str, &'static str) = match key {
+    match kind {
         // 位置 mesh 使用独立的 solid shader。
-        pipeline_keys::SOLID_MESH => (rhi_shaders::SOLID_VERTEX, rhi_shaders::SOLID_FRAGMENT),
+        PipelineKind::SolidMesh => (rhi_shaders::SOLID_VERTEX, rhi_shaders::SOLID_FRAGMENT),
         // 普通颜色纹理和 Additive 纹理共用 shader，blend 在 draw 状态选择。
-        pipeline_keys::TEXTURED_QUAD | pipeline_keys::TEXTURED_QUAD_ADDITIVE => {
+        PipelineKind::TexturedQuad | PipelineKind::TexturedQuadAdditive => {
             (rhi_shaders::TEXTURED_VERTEX, rhi_shaders::TEXTURED_FRAGMENT)
         }
         // 线性和径向渐变使用矩形顶点与独立 fragment。
-        pipeline_keys::GRADIENT_RECT => {
+        PipelineKind::GradientRect => {
             (rhi_shaders::GRADIENT_VERTEX, rhi_shaders::GRADIENT_FRAGMENT)
         }
         // R8 coverage 复用 float8 顶点阶段。
-        pipeline_keys::GLYPH_COVERAGE_QUAD => {
+        PipelineKind::GlyphCoverageQuad => {
             (rhi_shaders::TEXTURED_VERTEX, rhi_shaders::COVERAGE_FRAGMENT)
         }
         // 普通与 Additive 圆角/描边矩形共用矩形顶点和 shape fragment。
-        pipeline_keys::SHAPE_RECT | pipeline_keys::SHAPE_RECT_ADDITIVE => {
-            (rhi_shaders::RECT_VERTEX, rhi_shaders::SHAPE_FRAGMENT)
+        PipelineKind::ShapeRect | PipelineKind::ShapeRectAdditive => {
+            // Shape 顶点阶段只消费共享层提供的实际绘制边界。
+            (rhi_shaders::SHAPE_VERTEX, rhi_shaders::SHAPE_FRAGMENT)
         }
-        // 扇形复用单位矩形顶点阶段，并由独立 fragment 执行角度/半径裁剪。
-        pipeline_keys::SECTOR => (rhi_shaders::RECT_VERTEX, rhi_shaders::SECTOR_FRAGMENT),
+        // 扇形使用独立单位矩形顶点阶段，并由 fragment 执行角度/半径裁剪。
+        PipelineKind::Sector => (rhi_shaders::SECTOR_VERTEX, rhi_shaders::SECTOR_FRAGMENT),
         // 阴影使用扩张的单位 quad。
-        pipeline_keys::BOX_SHADOW => (rhi_shaders::SHADOW_VERTEX, rhi_shaders::SHADOW_FRAGMENT),
+        PipelineKind::BoxShadow => (rhi_shaders::SHADOW_VERTEX, rhi_shaders::SHADOW_FRAGMENT),
         // blur 使用 NDC 区域顶点和 64 tap fragment。
-        pipeline_keys::BLUR_PASS => (rhi_shaders::BLUR_VERTEX, rhi_shaders::BLUR_FRAGMENT),
+        PipelineKind::BlurPass => (rhi_shaders::BLUR_VERTEX, rhi_shaders::BLUR_FRAGMENT),
         // MSDF 复用 float8 顶点阶段并使用 RGBA8 距离 fragment。
-        pipeline_keys::MSDF_GLYPH_QUAD => {
-            (rhi_shaders::TEXTURED_VERTEX, rhi_shaders::MSDF_FRAGMENT)
-        }
-        // 未登记的 key 不进入 OpenGL shader 编译。
-        _ => return None,
-    };
-    // 目标相关 Y 方向由 draw 阶段的私有 uniform 决定，shader 源不再按平台改写。
-    Some((vertex, fragment))
+        PipelineKind::MsdfGlyphQuad => (rhi_shaders::TEXTURED_VERTEX, rhi_shaders::MSDF_FRAGMENT),
+    }
 }
 
 // 编译并链接一个 GLES 3.0 shader program。

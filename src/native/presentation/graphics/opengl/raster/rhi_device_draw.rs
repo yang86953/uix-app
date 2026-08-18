@@ -7,8 +7,22 @@
 use glow::HasContext as _;
 // 引入统一结果和 draw packet 语义。
 use crate::core::error::Result;
-use crate::native::present::rhi::{BufferUsage, DrawPacket, TextureFormat, pipeline_keys};
-// 复用父资源表、目标方向、shader key 和错误辅助。
+use crate::native::present::rhi::{
+    BLUR_DIRECTION_TAPS_FLOAT_OFFSET, BLUR_REGION_FLOAT_OFFSET, BLUR_SIZES_FLOAT_OFFSET,
+    BLUR_WEIGHT_COUNT, BLUR_WEIGHTS_FLOAT_OFFSET, BufferUsage, DrawPacket,
+    GRADIENT_COLOR_A_FLOAT_OFFSET, GRADIENT_COLOR_B_FLOAT_OFFSET, GRADIENT_EDGE_Y_FLOAT_OFFSET,
+    GRADIENT_ORIGIN_EDGE_X_FLOAT_OFFSET, GRADIENT_PARAMS_FLOAT_OFFSET,
+    GRADIENT_VIEWPORT_FLOAT_OFFSET, MESH_COLOR_FLOAT_OFFSET, MESH_VIEWPORT_FLOAT_OFFSET,
+    MSDF_RANGE_FLOAT_OFFSET, MSDF_TEXTURE_SIZE_FLOAT_OFFSET, MSDF_VIEWPORT_FLOAT_OFFSET,
+    PipelineBlend, PipelineBlendFactor, PipelineBlendOperation, PipelineKind,
+    SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET, SECTOR_COLOR_FLOAT_OFFSET,
+    SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET, SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET,
+    SHADOW_COLOR_FLOAT_OFFSET, SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET,
+    SHADOW_RADIUS_FLOAT_OFFSET, SHADOW_VIEWPORT_FLOAT_OFFSET, SHAPE_COLOR_FLOAT_OFFSET,
+    SHAPE_DRAW_RECT_FLOAT_OFFSET, SHAPE_RADIUS_FLOAT_OFFSET, SHAPE_RECT_FLOAT_OFFSET,
+    SHAPE_STROKE_FLOAT_OFFSET, SHAPE_VIEWPORT_FLOAT_OFFSET, SamplerDesc, TextureFormat,
+};
+// 复用父资源表、目标方向、类型化 shader 语义和错误辅助。
 use super::{OpenGlRhiDevice, rhi_invalid, target_y_sign};
 
 // 为字节镜像读取一个 native-endian float。
@@ -76,14 +90,18 @@ unsafe fn bind_sampled(
     gl: &glow::Context,
     device: &OpenGlRhiDevice,
     program: glow::Program,
-) -> Result<TextureFormat> {
+) -> Result<(TextureFormat, SamplerDesc)> {
     // draw 前必须已经由 FramePlan 发出 BindTexture。
     let texture_handle = device
-        .bound_texture
+        .pass
+        // 从共享 pass 状态读取 sampled texture 身份。
+        .bound_texture()
         .ok_or_else(|| rhi_invalid("OpenGL RHI sampled draw has no texture"))?;
     // draw 前必须已经由 FramePlan 发出 sampler 绑定。
     let sampler_handle = device
-        .bound_sampler
+        .pass
+        // 从共享 pass 状态读取 sampler 身份。
+        .bound_sampler()
         .ok_or_else(|| rhi_invalid("OpenGL RHI sampled draw has no sampler"))?;
     // 解析 texture 和 sampler 的原生对象。
     let texture = device.texture(texture_handle)?;
@@ -98,29 +116,33 @@ unsafe fn bind_sampled(
     let location = unsafe { gl.get_uniform_location(program, "u_tex") };
     // SAFETY：位置来自同一 program；None 会由 GL 安全忽略。
     unsafe { gl.uniform_1_i32(location.as_ref(), 0) };
-    // 返回格式给 pipeline ABI 门禁使用。
-    Ok(texture.format)
+    // 返回格式与创建时的 sampler 描述给共享 pipeline 门禁共同验证。
+    Ok((texture.format, sampler.desc))
 }
 
 // 在 OpenGL ES 中执行一个已经 lowering 的 draw packet。
 impl OpenGlRhiDevice {
-    // 执行固定 pipeline key 对应的 non-indexed 或 uint32 indexed draw。
+    // 执行固定 pipeline 语义对应的 non-indexed 或 uint32 indexed draw。
     pub(crate) fn draw(&mut self, gl: &glow::Context, packet: DrawPacket) -> Result<()> {
         // draw 必须位于显式 render pass 内。
-        if !self.pass_open {
-            return Err(rhi_invalid("OpenGL RHI draw without active render pass"));
-        }
+        self.pass.require_open()?;
         // draw 的 Y 方向只能来自当前 pass 已冻结的 render target 身份。
-        let active_target = self
-            .active_target
-            .ok_or_else(|| rhi_invalid("OpenGL RHI draw has no active render target"))?;
+        let active_target = self.pass.target()?;
         // texture target 保持 top-left 存储，原生 surface 映射到窗口顶部。
         let y_sign = target_y_sign(active_target);
-        // 复制 pipeline 的 key 和 program，结束资源表借用。
-        let (key, program) = {
-            let pipeline = self.pipeline(packet.pipeline)?;
-            (pipeline.key, pipeline.program)
+        // 读取 FramePlan 绑定的共享 pipeline 语义。
+        let bound_kind = packet.pipeline.kind();
+        // 复制 Adapter 资源表中的实际语义和 program，结束资源表借用。
+        let (kind, program) = {
+            // 原生资源表只按不透明句柄定位 pipeline。
+            let pipeline = self.pipeline(packet.pipeline.handle())?;
+            (pipeline.kind, pipeline.program)
         };
+        // 句柄资源与 FramePlan 语义必须仍是创建时的同一绑定。
+        if kind != bound_kind {
+            // 拒绝可能让不同 Adapter 解释不同 shader ABI 的错配。
+            return Err(rhi_invalid("OpenGL RHI pipeline binding kind is stale"));
+        }
         // 解析 vertex buffer 并保留其 ABI 描述。
         let (vertex, vertex_stride, vertex_usage) = {
             let buffer = self.buffer(packet.vertex_buffer)?;
@@ -146,6 +168,16 @@ impl OpenGlRhiDevice {
         if packet.base_vertex != 0 {
             return Err(rhi_invalid("OpenGL RHI nonzero base vertex is unsupported"));
         }
+        // 从唯一共享契约读取当前 pipeline 的顶点、uniform、采样与混合语义。
+        let contract = packet.pipeline.contract();
+        // Drawing 生产端与 OpenGL 消费端必须严格使用同一个 ABI。
+        if vertex_stride != contract.vertex.stride_bytes()
+            || uniform.len() != contract.uniform.size_bytes()
+            || packet.vertex_count == 0
+        {
+            // 使用统一门禁拒绝任何 pipeline 的漂移载荷。
+            return Err(rhi_invalid("OpenGL RHI pipeline ABI is invalid"));
+        }
         // 绑定共享 VAO、顶点 buffer 和固定属性布局。
         // SAFETY: program、self.vao 与 vertex 均由本设备在当前上下文创建且存活；context 保持 current。
         unsafe {
@@ -155,13 +187,10 @@ impl OpenGlRhiDevice {
             gl.bind_vertex_array(Some(self.vao));
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(vertex));
         }
-        // 按 pipeline key 检查 stride、uniform 大小并设置 uniforms/blend。
-        let sampled_format = match key {
+        // 按封闭 pipeline 语义检查 stride、uniform 大小并设置 uniforms/blend。
+        let sampled_format = match kind {
             // solid mesh 使用 float2 vertex 和 MeshConstants。
-            pipeline_keys::SOLID_MESH => {
-                if vertex_stride != 8 || uniform.len() != 32 || packet.vertex_count == 0 {
-                    return Err(rhi_invalid("OpenGL RHI solid ABI is invalid"));
-                }
+            PipelineKind::SolidMesh => {
                 // SAFETY: 该分支已校验 stride=8、uniform=32 字节且 vertex_count>0；program/vao/vertex 存活；uniform 解码由 read_f32 的边界检查兜底；context 保持 current。
                 unsafe {
                     configure_float2_attributes(gl, vertex_stride);
@@ -169,18 +198,25 @@ impl OpenGlRhiDevice {
                         gl,
                         program,
                         "u_viewport",
-                        [read_f32(&uniform, 0)?, read_f32(&uniform, 1)?],
+                        [
+                            // 读取共享 Mesh viewport.width 字段。
+                            read_f32(&uniform, MESH_VIEWPORT_FLOAT_OFFSET)?,
+                            // 读取共享 Mesh viewport.height 字段。
+                            read_f32(&uniform, MESH_VIEWPORT_FLOAT_OFFSET + 1)?,
+                        ],
                     );
-                    set_vec4(gl, program, "u_color", read_vec4(&uniform, 4)?);
-                    set_premultiplied_blend(gl);
+                    // 按共享字段索引映射 straight-alpha Mesh 颜色。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_color",
+                        read_vec4(&uniform, MESH_COLOR_FLOAT_OFFSET)?,
+                    );
                 }
                 None
             }
             // BGRA sampled quad 和 additive sampled quad 共用 float8 vertex ABI。
-            pipeline_keys::TEXTURED_QUAD | pipeline_keys::TEXTURED_QUAD_ADDITIVE => {
-                if vertex_stride != 32 || uniform.len() != 16 || packet.vertex_count == 0 {
-                    return Err(rhi_invalid("OpenGL RHI textured ABI is invalid"));
-                }
+            PipelineKind::TexturedQuad | PipelineKind::TexturedQuadAdditive => {
                 // SAFETY: 该分支已校验 stride=32、uniform=16 字节且 vertex_count>0；program/vao/vertex/texture/sampler 均存活；源格式由随后的门禁检查兜底；context 保持 current。
                 let format = unsafe {
                     configure_float8_attributes(gl, vertex_stride);
@@ -188,26 +224,25 @@ impl OpenGlRhiDevice {
                         gl,
                         program,
                         "u_viewport",
-                        [read_f32(&uniform, 0)?, read_f32(&uniform, 1)?],
+                        [
+                            // 读取 sampled viewport.width 字段。
+                            read_f32(&uniform, SAMPLED_VIEWPORT_FLOAT_OFFSET)?,
+                            // 读取 sampled viewport.height 字段。
+                            read_f32(&uniform, SAMPLED_VIEWPORT_FLOAT_OFFSET + 1)?,
+                        ],
                     );
-                    let format = bind_sampled(gl, self, program)?;
-                    if format != TextureFormat::Bgra8Unorm && format != TextureFormat::Rgba8Unorm {
+                    // 同时取得纹理格式与创建时冻结的 sampler 描述。
+                    let (format, sampler) = bind_sampled(gl, self, program)?;
+                    // 共享采样契约必须同时接受颜色格式与线性过滤。
+                    if !contract.sampling.accepts(format, sampler) {
                         return Err(rhi_invalid("OpenGL RHI textured source format is invalid"));
-                    }
-                    if key == pipeline_keys::TEXTURED_QUAD_ADDITIVE {
-                        set_additive_blend(gl);
-                    } else {
-                        set_premultiplied_blend(gl);
                     }
                     format
                 };
                 Some(format)
             }
             // 线性/径向渐变使用单位 float2 quad 和 24-float affine constants。
-            pipeline_keys::GRADIENT_RECT => {
-                if vertex_stride != 8 || uniform.len() != 96 || packet.vertex_count == 0 {
-                    return Err(rhi_invalid("OpenGL RHI gradient ABI is invalid"));
-                }
+            PipelineKind::GradientRect => {
                 // SAFETY: 该分支已校验 stride=8、uniform=96 字节且 vertex_count>0；program/vao/vertex 存活；uniform 解码有边界检查；context 保持 current。
                 unsafe {
                     configure_float2_attributes(gl, vertex_stride);
@@ -215,22 +250,53 @@ impl OpenGlRhiDevice {
                         gl,
                         program,
                         "u_viewport",
-                        [read_f32(&uniform, 0)?, read_f32(&uniform, 1)?],
+                        [
+                            // 读取共享 viewport.width 字段。
+                            read_f32(&uniform, GRADIENT_VIEWPORT_FLOAT_OFFSET)?,
+                            // 读取共享 viewport.height 字段。
+                            read_f32(&uniform, GRADIENT_VIEWPORT_FLOAT_OFFSET + 1)?,
+                        ],
                     );
-                    set_vec4(gl, program, "u_quad_origin_edge_x", read_vec4(&uniform, 4)?);
-                    set_vec4(gl, program, "u_quad_edge_y", read_vec4(&uniform, 8)?);
-                    set_vec4(gl, program, "u_color_a", read_vec4(&uniform, 12)?);
-                    set_vec4(gl, program, "u_color_b", read_vec4(&uniform, 16)?);
-                    set_vec4(gl, program, "u_params", read_vec4(&uniform, 20)?);
-                    set_premultiplied_blend(gl);
+                    // 按共享字段索引映射仿射原点与 X 边。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_quad_origin_edge_x",
+                        read_vec4(&uniform, GRADIENT_ORIGIN_EDGE_X_FLOAT_OFFSET)?,
+                    );
+                    // 按共享字段索引映射仿射 Y 边。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_quad_edge_y",
+                        read_vec4(&uniform, GRADIENT_EDGE_Y_FLOAT_OFFSET)?,
+                    );
+                    // 按共享字段索引映射起始 straight-alpha 颜色。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_color_a",
+                        read_vec4(&uniform, GRADIENT_COLOR_A_FLOAT_OFFSET)?,
+                    );
+                    // 按共享字段索引映射结束 straight-alpha 颜色。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_color_b",
+                        read_vec4(&uniform, GRADIENT_COLOR_B_FLOAT_OFFSET)?,
+                    );
+                    // 按共享字段索引映射模式、方向或半径参数。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_params",
+                        read_vec4(&uniform, GRADIENT_PARAMS_FLOAT_OFFSET)?,
+                    );
                 }
                 None
             }
             // R8 coverage 使用 float8 vertex、点采样和固定量化 shader。
-            pipeline_keys::GLYPH_COVERAGE_QUAD => {
-                if vertex_stride != 32 || uniform.len() != 16 || packet.vertex_count == 0 {
-                    return Err(rhi_invalid("OpenGL RHI coverage ABI is invalid"));
-                }
+            PipelineKind::GlyphCoverageQuad => {
                 // SAFETY: 该分支已校验 stride=32、uniform=16 字节且 vertex_count>0；program/vao/vertex/texture/sampler 均存活；R8 源格式由随后的门禁检查兜底；context 保持 current。
                 let format = unsafe {
                     configure_float8_attributes(gl, vertex_stride);
@@ -238,22 +304,25 @@ impl OpenGlRhiDevice {
                         gl,
                         program,
                         "u_viewport",
-                        [read_f32(&uniform, 0)?, read_f32(&uniform, 1)?],
+                        [
+                            // 读取 coverage 共用的 viewport.width 字段。
+                            read_f32(&uniform, SAMPLED_VIEWPORT_FLOAT_OFFSET)?,
+                            // 读取 coverage 共用的 viewport.height 字段。
+                            read_f32(&uniform, SAMPLED_VIEWPORT_FLOAT_OFFSET + 1)?,
+                        ],
                     );
-                    let format = bind_sampled(gl, self, program)?;
-                    if format != TextureFormat::R8Unorm {
+                    // 同时取得 coverage 格式与创建时冻结的 sampler 描述。
+                    let (format, sampler) = bind_sampled(gl, self, program)?;
+                    // 共享采样契约必须同时接受 R8 与最近点过滤。
+                    if !contract.sampling.accepts(format, sampler) {
                         return Err(rhi_invalid("OpenGL RHI coverage source is not R8"));
                     }
-                    set_premultiplied_blend(gl);
                     format
                 };
                 Some(format)
             }
             // RGBA8 MSDF 使用 float8 vertex、线性 sampler 和 32-byte constants。
-            pipeline_keys::MSDF_GLYPH_QUAD => {
-                if vertex_stride != 32 || uniform.len() != 32 || packet.vertex_count == 0 {
-                    return Err(rhi_invalid("OpenGL RHI MSDF ABI is invalid"));
-                }
+            PipelineKind::MsdfGlyphQuad => {
                 // SAFETY: 该分支已校验 stride=32、uniform=32 字节且 vertex_count>0；program/vao/vertex/texture/sampler 均存活；RGBA8 源格式由随后的门禁检查兜底；context 保持 current。
                 let format = unsafe {
                     configure_float8_attributes(gl, vertex_stride);
@@ -261,62 +330,92 @@ impl OpenGlRhiDevice {
                         gl,
                         program,
                         "u_viewport",
-                        [read_f32(&uniform, 0)?, read_f32(&uniform, 1)?],
+                        [
+                            read_f32(&uniform, MSDF_VIEWPORT_FLOAT_OFFSET)?,
+                            read_f32(&uniform, MSDF_VIEWPORT_FLOAT_OFFSET + 1)?,
+                        ],
                     );
                     set_vec2(
                         gl,
                         program,
                         "u_tex_size",
-                        [read_f32(&uniform, 2)?, read_f32(&uniform, 3)?],
+                        [
+                            read_f32(&uniform, MSDF_TEXTURE_SIZE_FLOAT_OFFSET)?,
+                            read_f32(&uniform, MSDF_TEXTURE_SIZE_FLOAT_OFFSET + 1)?,
+                        ],
                     );
-                    set_f32(gl, program, "u_range", read_f32(&uniform, 4)?);
-                    let format = bind_sampled(gl, self, program)?;
-                    if format != TextureFormat::Rgba8Unorm {
+                    set_f32(
+                        gl,
+                        program,
+                        "u_range",
+                        read_f32(&uniform, MSDF_RANGE_FLOAT_OFFSET)?,
+                    );
+                    // 同时取得 MSDF 格式与创建时冻结的 sampler 描述。
+                    let (format, sampler) = bind_sampled(gl, self, program)?;
+                    // 共享采样契约必须同时接受 RGBA8 与线性过滤。
+                    if !contract.sampling.accepts(format, sampler) {
                         return Err(rhi_invalid("OpenGL RHI MSDF source is not RGBA8"));
                     }
-                    set_premultiplied_blend(gl);
                     format
                 };
                 Some(format)
             }
             // 普通与 Additive 圆角/描边矩形使用同一 RectConstants ABI。
-            pipeline_keys::SHAPE_RECT | pipeline_keys::SHAPE_RECT_ADDITIVE => {
-                if vertex_stride != 8
-                    || (uniform.len() != 80 && uniform.len() != 96)
-                    || packet.vertex_count == 0
-                {
-                    return Err(rhi_invalid("OpenGL RHI shape ABI is invalid"));
-                }
-                // SAFETY: 该分支已校验 stride=8、uniform 为 80/96 字节且 vertex_count>0；program/vao/vertex 存活；uniform 解码有边界检查；context 保持 current。
+            PipelineKind::ShapeRect | PipelineKind::ShapeRectAdditive => {
+                // SAFETY: 该分支已校验 stride=8、uniform 为固定 Shape ABI 且 vertex_count>0；program/vao/vertex 存活；uniform 解码有边界检查；context 保持 current。
                 unsafe {
                     configure_float2_attributes(gl, vertex_stride);
                     set_vec2(
                         gl,
                         program,
                         "u_viewport",
-                        [read_f32(&uniform, 0)?, read_f32(&uniform, 1)?],
+                        [
+                            // 读取共享 viewport.width 字段。
+                            read_f32(&uniform, SHAPE_VIEWPORT_FLOAT_OFFSET)?,
+                            // 读取共享 viewport.height 字段。
+                            read_f32(&uniform, SHAPE_VIEWPORT_FLOAT_OFFSET + 1)?,
+                        ],
                     );
-                    set_vec4(gl, program, "u_rect", read_vec4(&uniform, 4)?);
-                    set_vec4(gl, program, "u_color", read_vec4(&uniform, 8)?);
-                    set_vec4(gl, program, "u_radius", read_vec4(&uniform, 12)?);
-                    set_f32(gl, program, "u_stroke", read_f32(&uniform, 16)?);
-                    // Additive pipeline 只切换目标混合，shader 与常量保持不变。
-                    if key == pipeline_keys::SHAPE_RECT_ADDITIVE {
-                        set_additive_blend(gl);
-                    } else {
-                        set_premultiplied_blend(gl);
-                    }
+                    // 按共享字段索引编码原始 Shape 矩形。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_rect",
+                        read_vec4(&uniform, SHAPE_RECT_FLOAT_OFFSET)?,
+                    );
+                    // 按共享字段索引编码直通颜色。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_color",
+                        read_vec4(&uniform, SHAPE_COLOR_FLOAT_OFFSET)?,
+                    );
+                    // 按共享字段索引编码四角半径。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_radius",
+                        read_vec4(&uniform, SHAPE_RADIUS_FLOAT_OFFSET)?,
+                    );
+                    // 一次交付半描边宽度与共享分析抗锯齿 fringe。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_stroke",
+                        read_vec4(&uniform, SHAPE_STROKE_FLOAT_OFFSET)?,
+                    );
+                    // 直接交付共享 GPU Raster Module 计算的实际绘制边界。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_draw_rect",
+                        read_vec4(&uniform, SHAPE_DRAW_RECT_FLOAT_OFFSET)?,
+                    );
                 }
                 None
             }
             // 原生扇形使用 64 字节 SectorConstants 和矩形单位 quad。
-            pipeline_keys::SECTOR => {
-                if vertex_stride != 8
-                    || uniform.len() != crate::native::present::rhi::SECTOR_UNIFORM_BYTES
-                    || packet.vertex_count == 0
-                {
-                    return Err(rhi_invalid("OpenGL RHI sector ABI is invalid"));
-                }
+            PipelineKind::Sector => {
                 // SAFETY: 该分支已校验 stride=8、uniform 为固定字节数且 vertex_count>0；program/vao/vertex 存活；uniform 解码有边界检查；context 保持 current。
                 unsafe {
                     configure_float2_attributes(gl, vertex_stride);
@@ -324,20 +423,39 @@ impl OpenGlRhiDevice {
                         gl,
                         program,
                         "u_viewport",
-                        [read_f32(&uniform, 0)?, read_f32(&uniform, 1)?],
+                        [
+                            // 读取共享 Sector viewport.width 字段。
+                            read_f32(&uniform, SECTOR_VIEWPORT_FLOAT_OFFSET)?,
+                            // 读取共享 Sector viewport.height 字段。
+                            read_f32(&uniform, SECTOR_VIEWPORT_FLOAT_OFFSET + 1)?,
+                        ],
                     );
-                    set_vec4(gl, program, "u_rect", read_vec4(&uniform, 4)?);
-                    set_vec4(gl, program, "u_color", read_vec4(&uniform, 8)?);
-                    set_vec4(gl, program, "u_angles", read_vec4(&uniform, 12)?);
-                    set_premultiplied_blend(gl);
+                    // 按共享字段索引映射扇形外接矩形。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_rect",
+                        read_vec4(&uniform, SECTOR_RECT_FLOAT_OFFSET)?,
+                    );
+                    // 按共享字段索引映射 straight-alpha 扇形颜色。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_color",
+                        read_vec4(&uniform, SECTOR_COLOR_FLOAT_OFFSET)?,
+                    );
+                    // 按共享字段索引映射起始角与扫过角。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_angles",
+                        read_vec4(&uniform, SECTOR_ANGLES_FLOAT_OFFSET)?,
+                    );
                 }
                 None
             }
             // 仿射阴影使用 96 字节 AffineShadowConstants 和 straight-alpha blend。
-            pipeline_keys::BOX_SHADOW => {
-                if vertex_stride != 8 || uniform.len() != 96 || packet.vertex_count == 0 {
-                    return Err(rhi_invalid("OpenGL RHI shadow ABI is invalid"));
-                }
+            PipelineKind::BoxShadow => {
                 // SAFETY: 该分支已校验 stride=8、uniform=96 字节且 vertex_count>0；program/vao/vertex 存活；uniform 解码有边界检查；context 保持 current。
                 unsafe {
                     configure_float2_attributes(gl, vertex_stride);
@@ -345,48 +463,103 @@ impl OpenGlRhiDevice {
                         gl,
                         program,
                         "u_viewport",
-                        [read_f32(&uniform, 0)?, read_f32(&uniform, 1)?],
+                        [
+                            // 读取共享 viewport.width 字段。
+                            read_f32(&uniform, SHADOW_VIEWPORT_FLOAT_OFFSET)?,
+                            // 读取共享 viewport.height 字段。
+                            read_f32(&uniform, SHADOW_VIEWPORT_FLOAT_OFFSET + 1)?,
+                        ],
                     );
-                    set_vec4(gl, program, "u_rect", read_vec4(&uniform, 4)?);
-                    set_vec4(gl, program, "u_color", read_vec4(&uniform, 8)?);
-                    set_vec4(gl, program, "u_radius", read_vec4(&uniform, 12)?);
-                    set_vec4(gl, program, "u_params", read_vec4(&uniform, 16)?);
-                    set_vec4(gl, program, "u_size", read_vec4(&uniform, 20)?);
-                    set_straight_alpha_blend(gl);
+                    // 按共享字段索引映射仿射原点与 X 边。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_rect",
+                        read_vec4(&uniform, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET)?,
+                    );
+                    // 按共享字段索引映射 straight-alpha 阴影颜色。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_color",
+                        read_vec4(&uniform, SHADOW_COLOR_FLOAT_OFFSET)?,
+                    );
+                    // 按共享字段索引映射四角半径。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_radius",
+                        read_vec4(&uniform, SHADOW_RADIUS_FLOAT_OFFSET)?,
+                    );
+                    // 按共享字段索引映射仿射 Y 边与两轴模糊量。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_params",
+                        read_vec4(&uniform, SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET)?,
+                    );
+                    // 按共享字段索引映射本体尺寸与环境曲线标记。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_size",
+                        read_vec4(&uniform, SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET)?,
+                    );
                 }
                 None
             }
-            // blur 使用 NDC float2 区域和 76-float BlurConstants。
-            pipeline_keys::BLUR_PASS => {
-                if vertex_stride != 8 || uniform.len() != 304 || packet.vertex_count == 0 {
-                    return Err(rhi_invalid("OpenGL RHI blur ABI is invalid"));
-                }
-                // SAFETY: 该分支已校验 stride=8、uniform=304 字节且 vertex_count>0；program/vao/vertex/texture/sampler 均存活；weights 为 64 元素栈上数组，指向有效内存；颜色源格式由随后的门禁检查兜底；context 保持 current。
+            // blur 使用 NDC float2 区域和共享 BlurConstants。
+            PipelineKind::BlurPass => {
+                // SAFETY: 该分支已校验共享 Blur ABI、stride=8 且 vertex_count>0；program/vao/vertex/texture/sampler 均存活；weights 使用共享固定容量；颜色源格式由随后的门禁检查兜底；context 保持 current。
                 let format = unsafe {
                     configure_float2_attributes(gl, vertex_stride);
-                    set_vec4(gl, program, "u_sizes", read_vec4(&uniform, 0)?);
-                    set_vec4(gl, program, "u_region", read_vec4(&uniform, 4)?);
-                    set_vec4(gl, program, "u_dir_taps", read_vec4(&uniform, 8)?);
-                    let mut weights = [0.0f32; 64];
+                    // 按共享字段索引映射目标与 source texture 尺寸。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_sizes",
+                        read_vec4(&uniform, BLUR_SIZES_FLOAT_OFFSET)?,
+                    );
+                    // 按共享字段索引映射采样区域原点与尺寸。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_region",
+                        read_vec4(&uniform, BLUR_REGION_FLOAT_OFFSET)?,
+                    );
+                    // 按共享字段索引映射像素方向与 tap 半径。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_dir_taps",
+                        read_vec4(&uniform, BLUR_DIRECTION_TAPS_FLOAT_OFFSET)?,
+                    );
+                    // 使用共享权重数量创建精确的 Adapter 临时映射。
+                    let mut weights = [0.0f32; BLUR_WEIGHT_COUNT];
+                    // 逐项读取共享权重区间，不在 Adapter 重新定义起始槽。
                     for (index, weight) in weights.iter_mut().enumerate() {
-                        *weight = read_f32(&uniform, 12 + index)?;
+                        // 保持 Drawing 已经归一化的权重顺序。
+                        *weight = read_f32(&uniform, BLUR_WEIGHTS_FLOAT_OFFSET + index)?;
                     }
+                    // 查找固定十六个 float4 权重数组的位置。
                     let location = gl.get_uniform_location(program, "u_weights");
+                    // 一次上传完整共享权重区间。
                     gl.uniform_4_f32_slice(location.as_ref(), &weights);
-                    let format = bind_sampled(gl, self, program)?;
-                    if format == TextureFormat::R8Unorm {
+                    // 同时取得 Blur 源格式与创建时冻结的 sampler 描述。
+                    let (format, sampler) = bind_sampled(gl, self, program)?;
+                    // 共享采样契约必须同时接受颜色格式与线性过滤。
+                    if !contract.sampling.accepts(format, sampler) {
                         return Err(rhi_invalid("OpenGL RHI blur source is not a color texture"));
                     }
-                    gl.disable(glow::BLEND);
                     format
                 };
                 Some(format)
             }
-            // create_pipeline 已经拒绝未知 key；此分支保持匹配穷尽。
-            _ => return Err(rhi_invalid("OpenGL RHI draw pipeline key is unknown")),
         };
         // 记录 sampled_format 只用于保持每类 ABI 的显式门禁。
         let _ = sampled_format;
+        // SAFETY: contract 只包含固定 GL blend 映射，当前 owner thread 的 context 保持 current。
+        unsafe { apply_pipeline_blend(gl, contract.blend) };
         // Indexed draw 需要固定 uint32 index ABI，非 indexed draw 使用顶点范围。
         // SAFETY: index buffer 已校验为 Index usage 且 stride=4；first_index.saturating_mul(4) 防止偏移溢出；index_count/vertex_count 已校验非零；program/vao/vertex 存活；context 保持 current。
         unsafe {
@@ -457,51 +630,67 @@ unsafe fn configure_float8_attributes(gl: &glow::Context, stride: u32) {
     unsafe { gl.enable_vertex_attrib_array(2) };
 }
 
-/// 设置 premultiplied SrcOver blend。
-///
-/// # Safety
-/// 调用者必须保证当前 owner thread 的 GL context current。
-unsafe fn set_premultiplied_blend(gl: &glow::Context) {
-    // SAFETY：调用者保证当前 owner thread 已绑定有效 GL 上下文。
-    unsafe { gl.enable(glow::BLEND) };
-    // SAFETY：固定枚举组合只更新当前上下文的 premultiplied SrcOver 状态。
-    unsafe {
-        gl.blend_func_separate(
-            glow::ONE,
-            glow::ONE_MINUS_SRC_ALPHA,
-            glow::ONE,
-            glow::ONE_MINUS_SRC_ALPHA,
-        )
-    };
+// 把 API 无关混合因子翻译为 OpenGL ES 枚举。
+fn gl_blend_factor(factor: PipelineBlendFactor) -> u32 {
+    // 只映射共享层允许的封闭因子集合。
+    match factor {
+        // Zero 对应 GL_ZERO。
+        PipelineBlendFactor::Zero => glow::ZERO,
+        // One 对应 GL_ONE。
+        PipelineBlendFactor::One => glow::ONE,
+        // SourceAlpha 对应 GL_SRC_ALPHA。
+        PipelineBlendFactor::SourceAlpha => glow::SRC_ALPHA,
+        // OneMinusSourceAlpha 对应 GL_ONE_MINUS_SRC_ALPHA。
+        PipelineBlendFactor::OneMinusSourceAlpha => glow::ONE_MINUS_SRC_ALPHA,
+    }
 }
 
-/// 设置 sampled additive blend。
-///
-/// # Safety
-/// 调用者必须保证当前 owner thread 的 GL context current。
-unsafe fn set_additive_blend(gl: &glow::Context) {
-    // SAFETY：调用者保证当前 owner thread 已绑定有效 GL 上下文。
-    unsafe { gl.enable(glow::BLEND) };
-    // SAFETY：固定枚举组合只更新当前上下文的 Additive 混合状态。
-    unsafe { gl.blend_func_separate(glow::ONE, glow::ONE, glow::ONE, glow::ONE) };
+// 把 API 无关混合运算翻译为 OpenGL ES 枚举。
+fn gl_blend_operation(operation: PipelineBlendOperation) -> u32 {
+    // 只映射共享层允许的封闭运算集合。
+    match operation {
+        // Add 对应 GL_FUNC_ADD。
+        PipelineBlendOperation::Add => glow::FUNC_ADD,
+    }
 }
 
-/// 设置 straight-alpha SrcOver blend。
+/// 按共享 pipeline 状态设置唯一颜色混合公式。
 ///
 /// # Safety
 /// 调用者必须保证当前 owner thread 的 GL context current。
-unsafe fn set_straight_alpha_blend(gl: &glow::Context) {
-    // SAFETY：调用者保证当前 owner thread 已绑定有效 GL 上下文。
+unsafe fn apply_pipeline_blend(gl: &glow::Context, blend: PipelineBlend) {
+    // 从共享层读取完整颜色与 alpha 因子。
+    let state = blend.state();
+    // Replace 等语义关闭硬件混合并直接覆盖目标。
+    if !state.enabled {
+        // SAFETY：调用者保证当前 owner thread 的 GL context current。
+        unsafe { gl.disable(glow::BLEND) };
+        // 禁用后无需设置不会生效的因子。
+        return;
+    }
+    // SAFETY：调用者保证当前 owner thread 的 GL context current。
     unsafe { gl.enable(glow::BLEND) };
-    // SAFETY：固定枚举组合只更新当前上下文的 straight-alpha SrcOver 状态。
+    // SAFETY：共享因子和运算全部映射为当前 OpenGL ES 支持的固定枚举。
     unsafe {
+        // 显式恢复 RGB 与 alpha 运算，禁止继承兼容 context 的遗留 equation。
+        gl.blend_equation_separate(
+            // 翻译 RGB 混合运算。
+            gl_blend_operation(state.color_operation),
+            // 翻译 alpha 混合运算。
+            gl_blend_operation(state.alpha_operation),
+        );
+        // 一次设置 RGB 与 alpha 的四个共享因子。
         gl.blend_func_separate(
-            glow::SRC_ALPHA,
-            glow::ONE_MINUS_SRC_ALPHA,
-            glow::ONE,
-            glow::ONE_MINUS_SRC_ALPHA,
-        )
-    };
+            // 翻译源 RGB 因子。
+            gl_blend_factor(state.source_color),
+            // 翻译目标 RGB 因子。
+            gl_blend_factor(state.destination_color),
+            // 翻译源 alpha 因子。
+            gl_blend_factor(state.source_alpha),
+            // 翻译目标 alpha 因子。
+            gl_blend_factor(state.destination_alpha),
+        );
+    }
 }
 
 // 验证 render target 身份到 NDC Y 方向的纯映射。

@@ -1,5 +1,5 @@
 // 引入文档解析与普通 View 生成入口。
-use super::{generate_view, parse_document, Diagnostic};
+use super::{Diagnostic, generate_view, parse_document};
 
 // 把 UIX 源码生成 Rust 令牌字符串快照。
 fn generate(source: &str) -> Result<String, Diagnostic> {

@@ -11,7 +11,6 @@ pub use crate::ui::accessibility::semantic_snapshot::{
     SemanticNode as AutomationNode, SemanticTarget as AutomationTarget,
 };
 use crate::ui::adapter::ViewAdapter;
-use crate::ui::widget_runtime::widget::{EventResult, WidgetCore, WidgetTree};
 use crate::ui::component_snapshot::{AccessibilityRole, AccessibilityState};
 use crate::ui::event::SystemEvent;
 use crate::ui::semantic_action::SemanticActionError;
@@ -19,6 +18,7 @@ pub use crate::ui::semantic_action::{
     SemanticAction as AutomationAction, SemanticActionKind as AutomationActionKind,
 };
 use crate::ui::view::ViewNode;
+use crate::ui::widget_runtime::widget::{EventResult, WidgetCore, WidgetTree};
 
 pub const AUTOMATION_DIR_ENV: &str = "UIX_AUTOMATION_DIR";
 pub const AUTOMATION_SCHEMA: &str = "uix.automation.v1";
