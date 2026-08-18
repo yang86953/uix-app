@@ -268,7 +268,23 @@ impl OpenGlRhiDevice {
         }
         // R8 coverage 只作为 sampled texture，颜色格式才可作为目标。
         let framebuffer = if desc.format().supports_render_target() {
-            Some(Self::create_framebuffer(gl, native)?)
+            // framebuffer 是 texture 登记前最后一个可能失败的原生创建步骤。
+            let framebuffer = match Self::create_framebuffer(gl, native) {
+                // 成功对象将与 texture 一起移交资源表。
+                Ok(framebuffer) => framebuffer,
+                // 失败时 texture 尚无资源表 owner，必须在返回前显式回收。
+                Err(error) => {
+                    // SAFETY: native 由本函数刚创建且尚未登记；framebuffer helper 已只回收自己的对象；context 保持 current。
+                    unsafe {
+                        // 删除本创建事务唯一拥有的未登记 texture。
+                        gl.delete_texture(native);
+                    }
+                    // 保留 framebuffer 创建或完整性检查的原始错误。
+                    return Err(error);
+                }
+            };
+            // 成功 framebuffer 与 texture 作为一个颜色目标资源共同登记。
+            Some(framebuffer)
         } else {
             None
         };
