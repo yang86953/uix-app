@@ -24,6 +24,8 @@ use crate::native::present::rhi::{
     PipelineHandle,
     // render target 句柄用于记录两个 pass 的写入顺序。
     RenderTargetHandle,
+    // Buffer 上传值对象用于记录类型化载荷。
+    RhiBufferUpload,
     // submission 句柄用于建立唯一提交边界。
     SubmissionHandle,
     // surface frame 只供意外 acquire 的可观察路径使用。
@@ -129,9 +131,9 @@ impl GraphicsDevice for RecordingContext {
     }
 
     // 记录顶点和 uniform 更新载荷。
-    fn update_buffer(&mut self, _buffer: BufferHandle, _offset: usize, data: &[u8]) -> Result<()> {
+    fn update_buffer(&mut self, upload: RhiBufferUpload<'_>) -> Result<()> {
         // 复制载荷，保证计划释放后仍可审计。
-        self.updates.push(data.to_vec());
+        self.updates.push(upload.data().to_vec());
         // 记录成功。
         Ok(())
     }

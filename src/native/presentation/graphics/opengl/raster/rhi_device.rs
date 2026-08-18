@@ -8,9 +8,9 @@ use glow::HasContext as _;
 // 引入统一错误、结果和 RHI 原语。
 use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, BufferUsage, LoadAction, PipelineColorWriteMask, PipelineDesc,
-    PipelineDitherState, PipelineHandle, PipelineKind, RenderTargetHandle, RhiColor,
-    RhiColorClearContract, RhiExtent, RhiPassState, RhiScissor, RhiSubmissionSequence,
+    BufferDesc, BufferHandle, LoadAction, PipelineColorWriteMask, PipelineDesc,
+    PipelineDitherState, PipelineHandle, PipelineKind, RenderTargetHandle, RhiBufferUpload,
+    RhiColor, RhiColorClearContract, RhiExtent, RhiPassState, RhiScissor, RhiSubmissionSequence,
     RhiTextureRegion, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle,
     SubmissionHandle, TextureCopy, TextureDesc, TextureFormat, TextureHandle, TextureMove,
     UIX_COLOR_CLEAR_CONTRACT,
@@ -24,12 +24,8 @@ mod rhi_device_copy;
 struct OpenGlRhiBuffer {
     // 保存底层 GL buffer 对象。
     native: glow::Buffer,
-    // 保存通用 buffer 容量。
-    size_bytes: usize,
-    // 保存顶点或索引步长。
-    stride_bytes: u32,
-    // 保存资源用途，draw 阶段据此校验 ABI。
-    usage: BufferUsage,
+    // 保存已经通过共同门禁的完整 Buffer 描述。
+    desc: BufferDesc,
     // 保存最近一次上传的数据，uniform 通过它解码为 GL uniforms。
     data: Vec<u8>,
 }
@@ -170,14 +166,8 @@ impl OpenGlRhiDevice {
         gl: &glow::Context,
         desc: BufferDesc,
     ) -> Result<BufferHandle> {
-        // 拒绝零容量和超过 GL 可表达范围的 buffer。
-        if desc.size_bytes == 0 || desc.size_bytes > i32::MAX as usize {
-            return Err(rhi_invalid("OpenGL RHI buffer size is invalid"));
-        }
-        // 顶点和索引步长必须能被 draw ABI 使用。
-        if desc.usage != BufferUsage::Uniform && desc.stride_bytes == 0 {
-            return Err(rhi_invalid("OpenGL RHI vertex/index stride is invalid"));
-        }
+        // 先通过两个 Adapter 共用的容量、步长与 Uniform ABI 门禁。
+        let native_desc = desc.validate()?;
         // 创建底层 buffer。
         // SAFETY: 本设备方法约定调用时 GL context current；create_buffer 无指针参数，失败走错误返回。
         let native = unsafe {
@@ -190,7 +180,7 @@ impl OpenGlRhiDevice {
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(native));
             gl.buffer_data_size(
                 glow::ARRAY_BUFFER,
-                desc.size_bytes as i32,
+                native_desc.size_bytes_i32(),
                 glow::DYNAMIC_DRAW,
             );
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
@@ -198,38 +188,34 @@ impl OpenGlRhiDevice {
         // 保存资源事实和初始化为零的 CPU 镜像。
         self.buffers.push(Some(OpenGlRhiBuffer {
             native,
-            size_bytes: desc.size_bytes,
-            stride_bytes: desc.stride_bytes,
-            usage: desc.usage,
-            data: vec![0; desc.size_bytes],
+            // Adapter 只保存唯一共享描述，不再复制三个可漂移字段。
+            desc,
+            // CPU 镜像与已经验证的资源容量精确一致。
+            data: vec![0; desc.size_bytes()],
         }));
         // 句柄从一开始递增，零值永远表示无资源。
         Ok(BufferHandle::from_raw(self.buffers.len() as u64))
     }
 
-    // 更新 buffer 的指定字节范围，并同步 CPU uniform 镜像。
+    // 更新 Buffer 从零开始的已验证元素前缀，并同步 CPU Uniform 镜像。
     pub(super) fn update_buffer(
         &mut self,
         gl: &glow::Context,
-        handle: BufferHandle,
-        offset: usize,
-        data: &[u8],
+        upload: RhiBufferUpload<'_>,
     ) -> Result<()> {
-        // 先验证目标范围不会越过资源容量。
-        let buffer = self.buffer_mut(handle)?;
-        let end = offset
-            .checked_add(data.len())
-            .ok_or_else(|| rhi_invalid("OpenGL RHI buffer update overflows"))?;
-        if end > buffer.size_bytes {
-            return Err(rhi_invalid("OpenGL RHI buffer update is out of bounds"));
-        }
-        // 写入 CPU 镜像，供随后 draw 的 uniform 解码使用。
-        buffer.data[offset..end].copy_from_slice(data);
+        // 先解析目标身份，空载荷也不能绕过陈旧句柄门禁。
+        let buffer = self.buffer_mut(upload.buffer())?;
+        // 由共享 Component 验证前缀范围、元素边界和 Uniform 完整替换。
+        let validated = upload.validate(buffer.desc)?;
+        // 原生调用只消费已经验证的不可变字节。
+        let data = validated.data();
+        // 写入 CPU 镜像的同一前缀，供随后 draw 的 Uniform 解码使用。
+        buffer.data[..data.len()].copy_from_slice(data);
         // 上传同一范围到 GLES buffer。
-        // SAFETY: buffer.native 存活；offset+len 已在上方验证不越过资源容量；data 切片指向的有效内存贯穿整个同步调用；context 保持 current。
+        // SAFETY: buffer.native 存活；共享上传门禁已验证前缀不越过资源容量；data 切片指向的有效内存贯穿整个同步调用；context 保持 current。
         unsafe {
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(buffer.native));
-            gl.buffer_sub_data_u8_slice(glow::ARRAY_BUFFER, offset as i32, data);
+            gl.buffer_sub_data_u8_slice(glow::ARRAY_BUFFER, 0, data);
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
         }
         // 返回统一成功结果。

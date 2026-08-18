@@ -2,8 +2,8 @@
 
 // 引入 RHI 计划执行所需的资源描述与句柄。
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, BufferUsage, DrawPacket, DrawRange, GraphicsDevice, LoadAction,
-    PipelineBinding, PipelineDesc, PipelineKind, RhiShapeRasterParams, RhiViewport,
+    BufferDesc, BufferHandle, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineBinding,
+    PipelineDesc, PipelineKind, RhiBufferUpload, RhiShapeRasterParams, RhiViewport,
 };
 
 // 复用 renderer 主模块的计划类型和 shape payload。
@@ -62,13 +62,19 @@ impl RhiRenderer {
             buffer
         } else {
             // 创建位置 float2 ABI 的默认 vertex buffer。
-            let buffer = device.create_buffer(BufferDesc {
-                size_bytes: unit_vertices.len() * std::mem::size_of::<f32>(),
-                stride_bytes: PipelineKind::ShapeRect.contract().vertex.stride_bytes(),
-                usage: BufferUsage::Vertex,
-            })?;
+            let buffer = device.create_buffer(BufferDesc::vertex(
+                // 保存六个 float2 顶点的精确容量。
+                unit_vertices.len() * std::mem::size_of::<f32>(),
+                // 步长只来自共享 Shape 顶点 ABI。
+                PipelineKind::ShapeRect.contract().vertex.stride_bytes(),
+            ))?;
             // 首次绑定前上传单位 quad。
-            device.update_buffer(buffer, 0, &RhiRenderer::encode_f32s(&unit_vertices))?;
+            device.update_buffer(RhiBufferUpload::new(
+                // 绑定刚创建的资源身份。
+                buffer,
+                // 上传完整且元素对齐的单位 quad。
+                &RhiRenderer::encode_f32s(&unit_vertices),
+            ))?;
             // 缓存单位 quad 句柄。
             self.shape_vertex_buffer = Some(buffer);
             buffer
@@ -79,12 +85,10 @@ impl RhiRenderer {
             uniform
         } else {
             // Shape 独立拥有六个 float4，禁止与同尺寸的其它语义管线暗中耦合。
-            let uniform = device.create_buffer(BufferDesc {
+            let uniform = device.create_buffer(BufferDesc::uniform(
                 // 使用共享 RHI 常量，禁止 adapter 私自接受旧 Shape 布局。
-                size_bytes: PipelineKind::ShapeRect.contract().uniform.size_bytes(),
-                stride_bytes: 0,
-                usage: BufferUsage::Uniform,
-            })?;
+                PipelineKind::ShapeRect.contract().uniform.size_bytes(),
+            ))?;
             // 缓存 shape uniform 句柄。
             self.shape_uniform = Some(uniform);
             uniform

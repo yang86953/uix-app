@@ -51,7 +51,7 @@ class GraphicsRhiPrimitiveTopologyContractTests(unittest.TestCase):
         # indexed draw 必须使用翻译后的同一枚举。
         self.assertIn("gl.draw_elements(\n                    primitive_topology,", opengl)
         # non-indexed draw 必须使用翻译后的同一枚举。
-        self.assertIn("gl.draw_arrays(\n                    primitive_topology,", opengl)
+        self.assertIn("gl.draw_arrays(primitive_topology, first_vertex, vertex_count)", opengl)
         # GL_TRIANGLES 只能存在于共享拓扑翻译函数中。
         self.assertEqual(opengl.count("glow::TRIANGLES"), 1)
 

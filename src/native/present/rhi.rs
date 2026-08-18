@@ -41,6 +41,8 @@ mod probe;
 mod pass_state;
 // 将纹理复制与移动的格式、范围和同资源规则收归共享契约。
 mod transfer;
+// Buffer Component 统一描述、上传语义与两个原生 API 的值域投影。
+mod buffer;
 // 向 Drawing System 与各原生 Adapter 暴露同一份类型化 pipeline 契约。
 #[allow(unused_imports)]
 pub(crate) use pipeline::{
@@ -78,6 +80,9 @@ pub(crate) use transfer::{
     RhiTextureOrigin, RhiTextureRegion, RhiTextureRegionBounds, RhiTextureTransfer,
     RhiTextureTransferBounds, TextureCopy, TextureMove,
 };
+// 重新导出薄 RHI 消费的类型化 Buffer 契约。
+#[allow(unused_imports)]
+pub(crate) use buffer::{BufferDesc, BufferUsage, RhiBufferUpload};
 // 向 Drawing System 暴露唯一 Gradient 常量构造器和固定字节数。
 pub(crate) use gradient::{GRADIENT_UNIFORM_BYTES, RhiGradientRasterParams};
 // 只有 OpenGL Adapter 需要把共享 Gradient 字节 ABI 映射为逐个原生 uniform。
@@ -209,28 +214,6 @@ pub(crate) enum TextureFormat {
     Rgba8Unorm,
     // 定义单通道覆盖率格式。
     R8Unorm,
-}
-
-// 定义 buffer 的底层用途，adapter 只需据此选择绑定旗标。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum BufferUsage {
-    // 声明顶点 buffer。
-    Vertex,
-    // 声明索引 buffer。
-    Index,
-    // 声明常量或动态 uniform buffer。
-    Uniform,
-}
-
-// 定义 buffer 创建描述。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct BufferDesc {
-    // 保存 buffer 的字节容量。
-    pub(crate) size_bytes: usize,
-    // 保存 buffer 的单元素步长，供通用 draw packet 绑定。
-    pub(crate) stride_bytes: u32,
-    // 保存 buffer 的底层用途。
-    pub(crate) usage: BufferUsage,
 }
 
 // 定义 texture 创建描述。
@@ -488,7 +471,7 @@ pub(crate) trait GraphicsDevice {
     }
 
     // 上传 buffer 内容，不暴露映射指针或 API 状态。
-    fn update_buffer(&mut self, _buffer: BufferHandle, _offset: usize, _data: &[u8]) -> Result<()> {
+    fn update_buffer(&mut self, _upload: RhiBufferUpload<'_>) -> Result<()> {
         // 默认实现显式拒绝，要求真实 adapter 提供上传能力。
         Err(rhi_not_implemented("update_buffer"))
     }

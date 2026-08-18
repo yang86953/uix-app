@@ -145,7 +145,11 @@ impl OpenGlRhiDevice {
         // 解析 vertex buffer 并保留其 ABI 描述。
         let (vertex, vertex_stride, vertex_usage) = {
             let buffer = self.buffer(packet.vertex_buffer)?;
-            (buffer.native, buffer.stride_bytes, buffer.usage)
+            (
+                buffer.native,
+                buffer.desc.stride_bytes(),
+                buffer.desc.usage(),
+            )
         };
         // 顶点资源必须声明为 Vertex。
         if vertex_usage != BufferUsage::Vertex {
@@ -158,7 +162,7 @@ impl OpenGlRhiDevice {
         // 复制 uniform CPU 镜像，避免后续 GL 状态调用持有资源表借用。
         let uniform = {
             let buffer = self.buffer(uniform_handle)?;
-            if buffer.usage != BufferUsage::Uniform {
+            if buffer.desc.usage() != BufferUsage::Uniform {
                 return Err(rhi_invalid("OpenGL RHI draw uniform has wrong usage"));
             }
             buffer.data.clone()
@@ -568,8 +572,8 @@ impl OpenGlRhiDevice {
                 // 读取共享格式，后续步长、原生枚举和偏移都只从该值派生。
                 let index_format = index_binding.format();
                 // 资源用途与创建步长必须精确符合共享格式。
-                if index.usage != BufferUsage::Index
-                    || index.stride_bytes != index_format.stride_bytes()
+                if index.desc.usage() != BufferUsage::Index
+                    || index.desc.stride_bytes() != index_format.stride_bytes()
                 {
                     // 返回不泄漏原生枚举的稳定格式错误。
                     return Err(rhi_invalid("OpenGL RHI index buffer format is invalid"));

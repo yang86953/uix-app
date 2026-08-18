@@ -43,7 +43,6 @@ fn test_plan_for_target(mut plan: FramePlan, target: RenderTargetRef) -> FramePl
         // 使用稳定的不透明顶点 buffer。
         buffer: BufferHandle::from_raw(3),
         // 从 buffer 起始位置完整覆盖。
-        offset: 0,
         // 构造三个完整 position-float2 顶点。
         data: FrameVertexPayload::position_f32x2([0.0, 0.0, 1.0, 0.0, 0.0, 1.0]),
     });

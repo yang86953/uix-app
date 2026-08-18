@@ -643,8 +643,8 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         self.assertNotIn("FramePlanCommand::UpdateBuffer", drawing)
         # 顶点只允许在唯一执行器中编码。
         self.assertIn("data.encode_ne_bytes()", execution)
-        # 编码后的短生命期字节只能进入 Device 原语。
-        self.assertIn("device.update_buffer", execution)
+        # 编码后的短生命期字节只能进入不可拆的 Device 上传值对象。
+        self.assertIn("RhiBufferUpload::new(*buffer, &bytes)", execution)
 
     # Pipeline 原生句柄与共享语义必须不可拆，并在 FramePlan 前置核对上传布局。
     def test_pipeline_binding_closes_frame_plan_layout_contract(self) -> None:

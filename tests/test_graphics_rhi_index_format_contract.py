@@ -55,7 +55,7 @@ class GraphicsRhiIndexFormatContractTests(unittest.TestCase):
         # 资源解析必须从类型化绑定取得句柄。
         self.assertIn("self.buffer(index_binding.buffer())?", opengl)
         # 资源步长必须与共享格式一致。
-        self.assertIn("index.stride_bytes != index_format.stride_bytes()", opengl)
+        self.assertIn("index.desc.stride_bytes() != index_format.stride_bytes()", opengl)
         # 原生元素类型必须通过封闭格式翻译入口取得。
         self.assertIn("gl_index_type(index_format)", opengl)
         # OpenGL 必须穷尽映射当前 Uint32 格式。
@@ -74,7 +74,7 @@ class GraphicsRhiIndexFormatContractTests(unittest.TestCase):
         # D3D11 资源解析必须从类型化绑定取得句柄。
         self.assertIn("self.rhi_device.buffer(binding.buffer())?", draw)
         # D3D11 资源步长必须与共享格式一致。
-        self.assertIn("index.stride_bytes != format.stride_bytes()", draw)
+        self.assertIn("index.desc.stride_bytes() != format.stride_bytes()", draw)
         # 分派层必须构造一次已经完成原生格式映射的绑定。
         self.assertIn("D3d11IndexBinding::new(index.native.clone(), format)", draw)
         # D3D11 必须穷尽映射当前 Uint32 格式。
