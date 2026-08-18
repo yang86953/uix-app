@@ -10,9 +10,10 @@ use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, BufferUsage, LoadAction, PipelineColorWriteMask, PipelineDesc,
     PipelineDitherState, PipelineHandle, PipelineKind, RenderTargetHandle, RhiColor,
-    RhiColorClearContract, RhiExtent, RhiPassState, RhiScissor, RhiSubmissionSequence, RhiViewport,
-    SampledTextureBinding, SamplerDesc, SamplerHandle, SubmissionHandle, TextureCopy, TextureDesc,
-    TextureFormat, TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
+    RhiColorClearContract, RhiExtent, RhiPassState, RhiScissor, RhiSubmissionSequence,
+    RhiTextureRegion, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle,
+    SubmissionHandle, TextureCopy, TextureDesc, TextureFormat, TextureHandle, TextureMove,
+    UIX_COLOR_CLEAR_CONTRACT,
 };
 
 // 将 retained 区域移动拆出，保持资源设备文件低于行数上限。
@@ -612,7 +613,7 @@ impl OpenGlRhiDevice {
         // 复制源原生对象与 API 无关描述，避免把资源表借用带入原生命令。
         let (source_framebuffer, source_desc) = {
             // 读取源纹理事实。
-            let source = self.texture(copy.source)?;
+            let source = self.texture(copy.source())?;
             // 返回原生 framebuffer 和共享资源描述。
             (
                 // 颜色源纹理必须拥有 framebuffer。
@@ -629,7 +630,7 @@ impl OpenGlRhiDevice {
         // 复制目标原生对象与 API 无关描述。
         let (destination_native, destination_desc) = {
             // 读取目标纹理事实。
-            let destination = self.texture(copy.destination)?;
+            let destination = self.texture(copy.destination())?;
             // 返回原生 texture 和共享资源描述。
             (
                 // 保存目标原生 texture。
@@ -644,7 +645,11 @@ impl OpenGlRhiDevice {
             )
         };
         // 格式、非空、范围与资源关系全部由共享传输契约验证。
-        copy.validate_transfer(source_desc, destination_desc)?;
+        let bounds = copy.validate_transfer(source_desc, destination_desc)?;
+        // 把源区域投影为共享验证过的 OpenGL 原点与尺寸。
+        let ((source_x, source_y), (width, height)) = bounds.source().native_origin_and_size_i32();
+        // 目标区域使用同一投影，只消费其左上原点。
+        let ((destination_x, destination_y), _) = bounds.destination().native_origin_and_size_i32();
         // OpenGL 颜色源必须有可读 framebuffer，这只是原生资源完整性事实。
         let source_framebuffer = source_framebuffer
             // 把缺失 framebuffer 转换成稳定参数错误。
@@ -660,12 +665,12 @@ impl OpenGlRhiDevice {
             gl.copy_tex_sub_image_2d(
                 glow::TEXTURE_2D,
                 0,
-                copy.destination_x as i32,
-                copy.destination_y as i32,
-                copy.source_x as i32,
-                copy.source_y as i32,
-                copy.width as i32,
-                copy.height as i32,
+                destination_x,
+                destination_y,
+                source_x,
+                source_y,
+                width,
+                height,
             );
             // 清除目标纹理绑定，避免后续 pass 继承隐式状态。
             gl.bind_texture(glow::TEXTURE_2D, None);

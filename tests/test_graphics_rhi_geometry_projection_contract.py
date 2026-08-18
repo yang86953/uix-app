@@ -83,8 +83,8 @@ class GraphicsRhiGeometryProjectionContractTests(unittest.TestCase):
         self.assertIn(".bottom_origin_y(extent)", opengl)
         # OpenGL 不得自行执行未检查的目标高度减法。
         self.assertNotIn("extent.height as i32 -", opengl)
-        # OpenGL texture region extent 必须消费共享尺寸投影。
-        self.assertIn(".native_size_i32()", upload)
+        # OpenGL texture region 必须消费共享区域原点与尺寸投影。
+        self.assertIn(".native_origin_and_size_i32()", upload)
         # D3D11 状态与 clear 都必须消费相同完整矩形。
         self.assertIn(".native_rect()", d3d11)
         # 局部 clear 必须复用同一投影。

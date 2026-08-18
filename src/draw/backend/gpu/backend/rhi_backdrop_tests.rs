@@ -280,16 +280,19 @@ fn snapshot_creates_and_submits_full_retained_copy_without_present() {
         panic!("expected one snapshot copy");
     };
     // 复制方向必须从 retained 指向新 backdrop。
-    assert_eq!((copy.source, copy.destination), (retained, backdrop));
+    assert_eq!((copy.source(), copy.destination()), (retained, backdrop));
     // 偏移和尺寸必须覆盖完整 80×50 surface。
+    let source_region = copy.transfer().source();
+    // 目标区域必须由同一传输尺寸派生。
+    let destination_region = copy.transfer().destination();
     assert_eq!(
         (
-            copy.source_x,
-            copy.source_y,
-            copy.destination_x,
-            copy.destination_y,
-            copy.width,
-            copy.height,
+            source_region.origin().x(),
+            source_region.origin().y(),
+            destination_region.origin().x(),
+            destination_region.origin().y(),
+            copy.transfer().extent().width,
+            copy.transfer().extent().height,
         ),
         (0, 0, 0, 0, 80, 50)
     );
@@ -322,9 +325,15 @@ fn restore_submits_full_backdrop_copy_without_present() {
         panic!("expected one restore copy");
     };
     // 复制方向必须从 backdrop 指向 retained。
-    assert_eq!((copy.source, copy.destination), (backdrop, retained));
+    assert_eq!((copy.source(), copy.destination()), (backdrop, retained));
     // 恢复同样覆盖完整物理尺寸。
-    assert_eq!((copy.width, copy.height), (80, 50));
+    assert_eq!(
+        (
+            copy.transfer().extent().width,
+            copy.transfer().extent().height
+        ),
+        (80, 50)
+    );
     // 恢复只提交一次且不触碰 surface present。
     assert_eq!(
         (context.submits, context.acquires, context.presents),

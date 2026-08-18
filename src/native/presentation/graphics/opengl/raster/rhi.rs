@@ -4,9 +4,9 @@
 use crate::core::error::Result;
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDeviceCapabilities, LoadAction, PipelineDesc,
-    PipelineHandle, RenderTargetHandle, RhiExtent, RhiScissor, RhiViewport, SampledTextureBinding,
-    SamplerDesc, SamplerHandle, SubmissionHandle, TextureCopy, TextureDesc, TextureHandle,
-    TextureMove,
+    PipelineHandle, RenderTargetHandle, RhiExtent, RhiScissor, RhiTextureRegion, RhiViewport,
+    SampledTextureBinding, SamplerDesc, SamplerHandle, SubmissionHandle, TextureCopy, TextureDesc,
+    TextureHandle, TextureMove,
 };
 // 复用父模块中的 OpenGL pipeline 和资源设备类型。
 use super::{
@@ -80,15 +80,11 @@ impl OpenGlRasterPipeline {
     pub(crate) fn rhi_update_texture_region(
         &mut self,
         texture: TextureHandle,
-        destination_x: u32,
-        destination_y: u32,
-        extent: RhiExtent,
+        region: RhiTextureRegion,
         data: &[u8],
     ) -> Result<()> {
         // 子区域上传仍由当前 GL context 和 RHI 资源表共同完成。
-        self.with_rhi(|gl, rhi| {
-            rhi.update_texture_region(gl, texture, destination_x, destination_y, extent, data)
-        })
+        self.with_rhi(|gl, rhi| rhi.update_texture_region(gl, texture, region, data))
     }
 
     // 创建通用 sampler。

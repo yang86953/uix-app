@@ -14,8 +14,8 @@ use crate::native::present::rhi::{
     BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
     LoadAction, PipelineBinding, PipelineDesc, PipelineHandle, PipelineKind, RenderTargetHandle,
     RhiColor, RhiColorClearContract, RhiExtent, RhiPassState, RhiScissor, RhiSubmissionSequence,
-    RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle, TextureCopy, TextureDesc,
-    TextureFormat, TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
+    RhiTextureRegion, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle, TextureCopy,
+    TextureDesc, TextureFormat, TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
 };
 // 引入 D3D11 的基础资源和绑定类型。
 use ::windows::Win32::Graphics::Direct3D11::{
@@ -423,39 +423,28 @@ impl GraphicsDevice for D3d11Context {
         extent: RhiExtent,
         data: &[u8],
     ) -> Result<()> {
-        // 整块上传是从左上角开始的零偏移子区域。
-        self.update_texture_region(texture, 0, 0, extent, data)
+        // 整块上传是从左上角开始的类型化完整区域。
+        self.update_texture_region(texture, RhiTextureRegion::full(extent), data)
     }
 
     // 上传 texture 中任意合法的紧密排列子区域。
     fn update_texture_region(
         &mut self,
         texture: TextureHandle,
-        destination_x: u32,
-        destination_y: u32,
-        extent: RhiExtent,
+        region: RhiTextureRegion,
         data: &[u8],
     ) -> Result<()> {
         // 读取目标纹理的格式和尺寸事实。
         let resource = self.rhi_device.texture(texture)?;
+        // 共享区域门禁统一验证原点、尺寸、溢出与资源边界。
+        let bounds = region.validate_within(resource.extent)?;
         // 计算当前格式的每像素字节数。
         let (_, bytes_per_pixel, _) = D3d11RhiDevice::texture_format(resource.format);
-        // 计算上传所需字节数并拒绝溢出。
-        let required = (extent.width as usize)
-            .checked_mul(extent.height as usize)
-            .and_then(|pixels| pixels.checked_mul(bytes_per_pixel))
+        // 从共享区域读取紧密载荷长度和 D3D11 行跨度。
+        let (required, row_pitch) = bounds
+            // 使用当前格式的字节宽度投影布局。
+            .tight_payload_layout(bytes_per_pixel)
             .ok_or_else(|| rhi_invalid("D3d11 RHI texture region size overflows"))?;
-        // 计算目标矩形右下角并拒绝越过纹理边界。
-        let end_x = destination_x
-            .checked_add(extent.width)
-            .ok_or_else(|| rhi_invalid("D3d11 RHI texture region x overflows"))?;
-        let end_y = destination_y
-            .checked_add(extent.height)
-            .ok_or_else(|| rhi_invalid("D3d11 RHI texture region y overflows"))?;
-        if !extent.is_valid() || end_x > resource.extent.width || end_y > resource.extent.height {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("D3d11 RHI texture region is out of range"));
-        }
         // 拒绝短 payload，避免驱动读取未初始化内存。
         if data.len() != required {
             // 返回稳定的参数错误。
@@ -463,12 +452,18 @@ impl GraphicsDevice for D3d11Context {
                 "D3d11 RHI texture region payload length is invalid",
             ));
         }
-        // 构造覆盖目标偏移区域的 texture box。
+        // 读取共享区域已经验证的四条无符号边。
+        let (left, top, right, bottom) = bounds.native_rect_u32();
+        // 构造覆盖目标区域的 texture box。
         let dst_box = D3D11_BOX {
-            left: destination_x,
-            right: end_x,
-            top: destination_y,
-            bottom: end_y,
+            // 左边界来自共享类型化区域。
+            left,
+            // 右边界来自共享 checked 加法。
+            right,
+            // 顶边界来自共享类型化区域。
+            top,
+            // 底边界来自共享 checked 加法。
+            bottom,
             front: 0,
             back: 1,
         };
@@ -480,7 +475,7 @@ impl GraphicsDevice for D3d11Context {
                 0,
                 Some(&dst_box),
                 data.as_ptr().cast(),
-                (extent.width as usize * bytes_per_pixel) as u32,
+                row_pitch,
                 0,
             );
         }
@@ -646,8 +641,8 @@ impl GraphicsDevice for D3d11Context {
         // 复制必须位于显式 pass 之外，避免 render target 和 copy source 重叠。
         self.rhi_device.pass.require_closed()?;
         // 读取源和目标资源。
-        let source = self.rhi_device.texture(copy.source)?;
-        let destination = self.rhi_device.texture(copy.destination)?;
+        let source = self.rhi_device.texture(copy.source())?;
+        let destination = self.rhi_device.texture(copy.destination())?;
         // 格式、非空、范围与资源关系全部由共享传输契约验证。
         let bounds = copy.validate_transfer(
             // 构造源纹理的 API 无关描述。
@@ -665,16 +660,21 @@ impl GraphicsDevice for D3d11Context {
                 format: destination.format,
             },
         )?;
+        // 读取共享源区域已经验证的四条无符号边。
+        let (source_left, source_top, source_right, source_bottom) =
+            bounds.source().native_rect_u32();
+        // 读取共享目标区域的左上原点。
+        let destination_origin = bounds.destination().region().origin();
         // 构造源纹理复制区域。
         let source_box = D3D11_BOX {
-            // 左边界直接使用共享 top-left 横坐标。
-            left: copy.source_x,
-            // 右边界使用共享 checked_add 的结果。
-            right: bounds.source_right(),
-            // 顶边界直接使用共享 top-left 纵坐标。
-            top: copy.source_y,
-            // 底边界使用共享 checked_add 的结果。
-            bottom: bounds.source_bottom(),
+            // 左边界来自类型化源区域。
+            left: source_left,
+            // 右边界来自共享 checked 加法。
+            right: source_right,
+            // 顶边界来自类型化源区域。
+            top: source_top,
+            // 底边界来自共享 checked 加法。
+            bottom: source_bottom,
             // 二维纹理从唯一深度切片开始。
             front: 0,
             // 二维纹理只复制一个深度切片。
@@ -686,8 +686,8 @@ impl GraphicsDevice for D3d11Context {
             self.context.CopySubresourceRegion(
                 &destination.native,
                 0,
-                copy.destination_x,
-                copy.destination_y,
+                destination_origin.x(),
+                destination_origin.y(),
                 0,
                 &source.native,
                 0,
@@ -705,13 +705,13 @@ impl GraphicsDevice for D3d11Context {
         // 先复制资源描述，避免后续 scratch 操作持有资源表借用。
         let (source_extent, source_format) = {
             // 读取源纹理的尺寸和格式事实。
-            let source = self.rhi_device.texture(movement.source)?;
+            let source = self.rhi_device.texture(movement.source())?;
             (source.extent, source.format)
         };
         // 读取目标纹理的尺寸和格式事实。
         let (destination_extent, destination_format) = {
             // 读取目标纹理的尺寸和格式事实。
-            let destination = self.rhi_device.texture(movement.destination)?;
+            let destination = self.rhi_device.texture(movement.destination())?;
             (destination.extent, destination.format)
         };
         // 格式、非空、范围和溢出统一委托共享 move 契约。
@@ -732,49 +732,23 @@ impl GraphicsDevice for D3d11Context {
             },
         )?;
         // 不同纹理没有重叠风险，复用已验证的 copy 原语。
-        if movement.source != movement.destination {
-            // 将移动转换为普通纹理复制。
-            return self.copy_texture(TextureCopy {
-                source: movement.source,
-                destination: movement.destination,
-                source_x: movement.source_x,
-                source_y: movement.source_y,
-                destination_x: movement.destination_x,
-                destination_y: movement.destination_y,
-                width: movement.width,
-                height: movement.height,
-            });
+        if movement.source() != movement.destination() {
+            // 将完整类型化移动无损转换为普通纹理复制。
+            return self.copy_texture(movement.into_copy());
         }
         // 同一纹理必须先复制到 scratch，不能依赖 CopySubresourceRegion 的重叠行为。
         let scratch = self.rhi_create_texture(TextureDesc {
-            extent: RhiExtent::new(movement.width, movement.height),
+            // scratch 精确采用传输 Component 的唯一尺寸。
+            extent: movement.transfer().extent(),
             format: source_format,
         })?;
+        // 由共享传输 Component 唯一拆分保存与恢复两段 copy。
+        let (to_scratch, from_scratch) = movement.through_scratch(scratch);
         // 先保存源区域，再写回目标区域，形成明确的 memmove 顺序。
-        let operation = self
-            .copy_texture(TextureCopy {
-                source: movement.source,
-                destination: scratch,
-                source_x: movement.source_x,
-                source_y: movement.source_y,
-                destination_x: 0,
-                destination_y: 0,
-                width: movement.width,
-                height: movement.height,
-            })
-            .and_then(|()| {
-                // 将 scratch 的完整区域写入目标位置。
-                self.copy_texture(TextureCopy {
-                    source: scratch,
-                    destination: movement.destination,
-                    source_x: 0,
-                    source_y: 0,
-                    destination_x: movement.destination_x,
-                    destination_y: movement.destination_y,
-                    width: movement.width,
-                    height: movement.height,
-                })
-            });
+        let operation = self.copy_texture(to_scratch).and_then(|()| {
+            // 将 scratch 的完整区域写入目标位置。
+            self.copy_texture(from_scratch)
+        });
         // 无论第二次 copy 是否失败，都尝试销毁 scratch，避免隐藏资源泄漏。
         let cleanup = self.destroy_texture(scratch);
         // 优先返回移动错误，再返回 scratch 清理错误。

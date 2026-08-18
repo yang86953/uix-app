@@ -167,10 +167,17 @@ fn lower_frame_scroll_move_clips_and_scales() {
         Err(error) => panic!("integral scroll should lower: {error:?}"),
     };
     // source 起点是 viewport + delta，destination 起点保持 viewport 原点。
-    assert_eq!(movement.source_x, 2);
-    assert_eq!(movement.destination_x, 1);
+    assert_eq!(movement.transfer().source().origin().x(), 2);
+    // 目标横坐标必须由同一传输几何派生。
+    assert_eq!(movement.transfer().destination().origin().x(), 1);
     // 共同可见区域宽高应保持 viewport 尺寸。
-    assert_eq!((movement.width, movement.height), (4, 3));
+    assert_eq!(
+        (
+            movement.transfer().extent().width,
+            movement.transfer().extent().height
+        ),
+        (4, 3)
+    );
     // 非整数 DPR 不能伪造整数纹理搬移。
     let result = super::lower_frame_scroll_move(
         super::FrameScrollCopy {

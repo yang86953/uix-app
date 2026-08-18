@@ -9,8 +9,8 @@ use crate::core::Errc;
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
     GraphicsSurface, GraphicsSurfaceCapabilities, LoadAction, PipelineBinding, PipelineDesc,
-    RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, RhiSurfaceReadback, RhiViewport,
-    SampledTextureBinding, SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceFrame,
+    RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, RhiSurfaceReadback, RhiTextureRegion,
+    RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceFrame,
     SurfaceToken, TextureCopy, TextureDesc, TextureHandle, TextureMove,
 };
 // 引入 OpenGL raster pipeline 的 RHI bridge。
@@ -92,19 +92,12 @@ where
     fn update_texture_region(
         &mut self,
         texture: TextureHandle,
-        destination_x: u32,
-        destination_y: u32,
-        extent: RhiExtent,
+        region: RhiTextureRegion,
         data: &[u8],
     ) -> Result<()> {
         // 让 OpenGL host 继续把资源操作交给 owner-thread raster pipeline。
-        self.rhi_pipeline_mut().rhi_update_texture_region(
-            texture,
-            destination_x,
-            destination_y,
-            extent,
-            data,
-        )
+        self.rhi_pipeline_mut()
+            .rhi_update_texture_region(texture, region, data)
     }
 
     // 创建 sampler。

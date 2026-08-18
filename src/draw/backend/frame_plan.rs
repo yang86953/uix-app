@@ -315,8 +315,8 @@ impl FramePlan {
                 }
                 // 检查纹理复制区域。
                 FramePlanStep::Copy(copy) => {
-                    // 复制宽高必须严格大于零。
-                    if copy.width == 0 || copy.height == 0 {
+                    // 类型化复制尺寸必须属于两个 Adapter 的共同原生值域。
+                    if !copy.transfer().extent().is_valid() {
                         // 返回稳定的参数错误。
                         return Err(Error::new(
                             Errc::InvalidArgument,
@@ -326,8 +326,8 @@ impl FramePlan {
                 }
                 // 检查重叠安全的纹理区域移动。
                 FramePlanStep::Move(movement) => {
-                    // 移动宽高必须严格大于零。
-                    if movement.width == 0 || movement.height == 0 {
+                    // 类型化移动尺寸必须属于两个 Adapter 的共同原生值域。
+                    if !movement.transfer().extent().is_valid() {
                         // 返回稳定的参数错误。
                         return Err(Error::new(
                             Errc::InvalidArgument,
@@ -400,9 +400,9 @@ mod tests {
     use crate::native::present::rhi::{
         BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, GraphicsSurface,
         LoadAction, PipelineBinding, PipelineHandle, PipelineKind, RenderTargetHandle, RhiColor,
-        RhiExtent, RhiMeshRasterParams, RhiSampledRasterParams, RhiScissor, RhiViewport,
-        SampledTextureBinding, SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy,
-        TextureHandle, TextureMove,
+        RhiExtent, RhiMeshRasterParams, RhiSampledRasterParams, RhiScissor, RhiTextureTransfer,
+        RhiViewport, SampledTextureBinding, SubmissionHandle, SurfaceFrame, SurfaceToken,
+        TextureCopy, TextureHandle, TextureMove,
     };
     // 引入当前文件的计划类型。
     use super::{
