@@ -218,6 +218,13 @@ pub(crate) enum PipelineBlendOperation {
     Add,
 }
 
+// 定义两个 Adapter 都必须显式编码的颜色通道写掩码。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum PipelineColorWriteMask {
+    // 写入红、绿、蓝与 alpha 全部通道。
+    All,
+}
+
 // 保存两个 Adapter 必须逐项映射的完整混合状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct PipelineBlendState {
@@ -235,6 +242,8 @@ pub(crate) struct PipelineBlendState {
     pub(crate) destination_alpha: PipelineBlendFactor,
     // 保存 alpha 通道的混合运算。
     pub(crate) alpha_operation: PipelineBlendOperation,
+    // 保存 render target 的颜色通道写掩码。
+    pub(crate) write_mask: PipelineColorWriteMask,
 }
 
 // 为封闭混合语义提供唯一的 API 无关状态公式。
@@ -259,6 +268,8 @@ impl PipelineBlend {
                 destination_alpha: PipelineBlendFactor::OneMinusSourceAlpha,
                 // alpha 使用共享加法运算。
                 alpha_operation: PipelineBlendOperation::Add,
+                // 所有现有颜色 pipeline 都写入完整 RGBA。
+                write_mask: PipelineColorWriteMask::All,
             },
             // premultiplied-alpha 的 RGB 已被源 alpha 缩放。
             Self::PremultipliedAlpha => PipelineBlendState {
@@ -276,6 +287,8 @@ impl PipelineBlend {
                 destination_alpha: PipelineBlendFactor::OneMinusSourceAlpha,
                 // alpha 使用共享加法运算。
                 alpha_operation: PipelineBlendOperation::Add,
+                // 所有现有颜色 pipeline 都写入完整 RGBA。
+                write_mask: PipelineColorWriteMask::All,
             },
             // Additive 对颜色和 alpha 都执行 source + destination。
             Self::Additive => PipelineBlendState {
@@ -293,6 +306,8 @@ impl PipelineBlend {
                 destination_alpha: PipelineBlendFactor::One,
                 // alpha 使用共享加法运算。
                 alpha_operation: PipelineBlendOperation::Add,
+                // 所有现有颜色 pipeline 都写入完整 RGBA。
+                write_mask: PipelineColorWriteMask::All,
             },
             // Replace 关闭混合；因子仍描述等价的 source 覆盖公式。
             Self::Replace => PipelineBlendState {
@@ -310,6 +325,8 @@ impl PipelineBlend {
                 destination_alpha: PipelineBlendFactor::Zero,
                 // 禁用混合时仍保留等价的共享 alpha 运算。
                 alpha_operation: PipelineBlendOperation::Add,
+                // Replace 同样必须完整覆盖 RGBA。
+                write_mask: PipelineColorWriteMask::All,
             },
         }
     }
@@ -615,9 +632,9 @@ mod tests {
         );
     }
 
-    // 所有现有混合语义必须显式拥有 RGB 与 alpha 运算。
+    // 所有现有混合语义必须显式拥有运算与颜色写掩码。
     #[test]
-    fn blend_semantics_own_both_channel_operations() {
+    fn blend_semantics_own_complete_output_state() {
         // 遍历当前封闭混合集合，避免任何变体继续依赖 Adapter 默认状态。
         for blend in [
             // 验证 straight-alpha 语义。
@@ -635,6 +652,8 @@ mod tests {
             assert_eq!(state.color_operation, PipelineBlendOperation::Add);
             // alpha 运算必须由共享契约明确指定。
             assert_eq!(state.alpha_operation, PipelineBlendOperation::Add);
+            // 全部现有 pipeline 必须显式写入完整 RGBA。
+            assert_eq!(state.write_mask, PipelineColorWriteMask::All);
         }
     }
 

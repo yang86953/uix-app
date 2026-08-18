@@ -24,6 +24,15 @@ fn d3d11_blend_operation(operation: PipelineBlendOperation) -> D3D11_BLEND_OP {
     }
 }
 
+// 把 API 无关颜色写掩码翻译为 D3D11 位集合。
+fn d3d11_color_write_mask(mask: PipelineColorWriteMask) -> u8 {
+    // 只映射共享层允许的封闭写掩码集合。
+    match mask {
+        // All 对应 D3D11 的完整 RGBA 写入位。
+        PipelineColorWriteMask::All => D3D11_COLOR_WRITE_ENABLE_ALL.0 as u8,
+    }
+}
+
 // 从共享状态创建一个 D3D11 blend 对象。
 fn create_rhi_blend_state(
     // 借用当前 pipeline 所属的 D3D11 device。
@@ -57,8 +66,8 @@ fn create_rhi_blend_state(
             DestBlendAlpha: d3d11_blend_factor(state.destination_alpha),
             // 翻译共享 alpha 混合运算。
             BlendOpAlpha: d3d11_blend_operation(state.alpha_operation),
-            // 始终写入全部 RGBA 通道。
-            RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as u8,
+            // 翻译共享颜色通道写掩码。
+            RenderTargetWriteMask: d3d11_color_write_mask(state.write_mask),
         }; 8],
     };
     // 保存 D3D11 返回的状态对象。

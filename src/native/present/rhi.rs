@@ -42,8 +42,8 @@ mod transfer;
 #[allow(unused_imports)]
 pub(crate) use pipeline::{
     PipelineBinding, PipelineBlend, PipelineBlendFactor, PipelineBlendOperation,
-    PipelineBlendState, PipelineContract, PipelineDesc, PipelineKind, PipelineSampling,
-    PipelineUniformLayout, PipelineVertexLayout,
+    PipelineBlendState, PipelineColorWriteMask, PipelineContract, PipelineDesc, PipelineKind,
+    PipelineSampling, PipelineUniformLayout, PipelineVertexLayout,
 };
 // 向 Drawing、Surface 与原生 Adapter 暴露唯一颜色解释。
 pub(crate) use color::{RhiColorContract, UIX_COLOR_CONTRACT};
