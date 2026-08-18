@@ -22,6 +22,160 @@ enum FramePlanTargetMode {
     OffscreenOnly,
 }
 
+// 封闭只读资源预检的 FramePlan scope，禁止 Surface 与离屏语义混用。
+#[derive(Debug, Clone, Copy)]
+enum FramePlanResourceScope {
+    // Surface 计划允许逻辑 Surface target，但不获取 acquired image。
+    SurfaceAllowed,
+    // 离屏计划只允许显式 texture target。
+    OffscreenOnly,
+}
+
+// 在任何 Surface acquire 或 Device activate 前完成全部只读资源预检。
+struct FramePlanResourcePreflight<'device, D>
+where
+    // 只借用 GraphicsDevice 的只读预检能力，不取得执行所有权。
+    D: GraphicsDevice + ?Sized,
+{
+    // 保存当前 owner 的只读 Device 借用。
+    device: &'device D,
+    // 保存本次 FramePlan 的封闭执行 scope。
+    scope: FramePlanResourceScope,
+}
+
+// 为唯一资源预检 Component 提供 Surface 与离屏两种构造和运行入口。
+impl<'device, D> FramePlanResourcePreflight<'device, D>
+where
+    // Component 只依赖共享 GraphicsDevice 查询契约。
+    D: GraphicsDevice + ?Sized,
+{
+    // 创建允许逻辑 Surface target 的只读预检器。
+    fn surface(device: &'device D) -> Self {
+        // 保存 SurfaceAllowed scope，不触碰 acquired image。
+        Self {
+            // 保存只读 Device 借用。
+            device,
+            // 固定 Surface 目标语义。
+            scope: FramePlanResourceScope::SurfaceAllowed,
+        }
+    }
+
+    // 创建只允许显式 texture target 的只读预检器。
+    fn offscreen(device: &'device D) -> Self {
+        // 保存 OffscreenOnly scope，不取得 Surface 能力。
+        Self {
+            // 保存只读 Device 借用。
+            device,
+            // 固定离屏目标语义。
+            scope: FramePlanResourceScope::OffscreenOnly,
+        }
+    }
+
+    // 按统一顺序完成 target、transfer、draw 和 sampled 资源预检。
+    fn run(&self, steps: &[FramePlanStep]) -> Result<()> {
+        // 先完成 scope 专属 target 校验。
+        self.validate_targets(steps)?;
+        // 再预检所有顶层 texture copy/move。
+        self.validate_transfers(steps)?;
+        // 再预检所有 pass 内 Draw 的真实 Buffer 资源。
+        self.validate_draw_resources(steps)?;
+        // 最后预检所有 pass 内 sampled binding 资源。
+        self.validate_sampled_bindings(steps)
+    }
+
+    // 校验 scope 与所有 render pass target 的组合关系。
+    fn validate_targets(&self, steps: &[FramePlanStep]) -> Result<()> {
+        // 检查任一 pass 是否请求逻辑 Surface target。
+        let contains_surface = steps.iter().any(|step| {
+            // 只匹配 render pass 中的逻辑 Surface target。
+            matches!(
+                step,
+                FramePlanStep::Pass(pass) if matches!(pass.target, RenderTargetRef::Surface)
+            )
+        });
+        // 离屏执行不得隐含 acquire 或主 surface 写入。
+        if matches!(self.scope, FramePlanResourceScope::OffscreenOnly) && contains_surface {
+            // 在任何 Device 或 Surface 副作用前返回稳定参数错误。
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "offscreen FramePlan cannot target the presentation surface",
+            ));
+        }
+        // Surface scope 中逻辑 Surface 由 acquire 后解析，texture target 仍需预检。
+        for step in steps {
+            // 只读取 render pass 的逻辑目标。
+            if let FramePlanStep::Pass(pass) = step {
+                // 只有 texture target 需要向资源 owner 查询真实描述。
+                if let RenderTargetRef::Texture(texture) = pass.target {
+                    // 共享资源表必须在任何 native side effect 前证明目标能力。
+                    self.device.resolve_render_target(texture)?;
+                }
+            }
+        }
+        // 所有 target 都已满足当前 FramePlan scope。
+        Ok(())
+    }
+
+    // 预检所有 pass 外纹理传输。
+    fn validate_transfers(&self, steps: &[FramePlanStep]) -> Result<()> {
+        // 按 FramePlan 顶层顺序逐项观察纹理传输命令。
+        for step in steps {
+            // 复制命令必须由 Device 的共享资源表预检。
+            if let FramePlanStep::Copy(copy) = step {
+                // 只调用只读 preflight，不激活或写入原生状态。
+                self.device.preflight_texture_copy(*copy)?;
+            }
+            // 移动命令必须由 Device 的共享资源表预检。
+            if let FramePlanStep::Move(movement) = step {
+                // 只调用只读 preflight，不激活或写入原生状态。
+                self.device.preflight_texture_move(*movement)?;
+            }
+        }
+        // 所有顶层传输都已通过共享资源与几何门禁。
+        Ok(())
+    }
+
+    // 预检所有 pass 内 Draw 的真实 Buffer 资源。
+    fn validate_draw_resources(&self, steps: &[FramePlanStep]) -> Result<()> {
+        // 按 FramePlan 顶层顺序逐个观察 render pass。
+        for step in steps {
+            // 只有 render pass 包含 Draw 资源引用。
+            if let FramePlanStep::Pass(pass) = step {
+                // 保持 pass 内命令顺序扫描。
+                for command in &pass.commands {
+                    // 只预检实际 Draw packet。
+                    if let FramePlanCommand::Draw(packet) = command {
+                        // 共享资源表必须在任何 native side effect 前证明真实 Buffer 角色。
+                        self.device.preflight_draw_resources(*packet)?;
+                    }
+                }
+            }
+        }
+        // 所有 Draw 的真实 Buffer 描述都已通过共享预检。
+        Ok(())
+    }
+
+    // 预检所有 pass 内 sampled binding 的真实资源。
+    fn validate_sampled_bindings(&self, steps: &[FramePlanStep]) -> Result<()> {
+        // 按 FramePlan 顶层顺序逐个观察 render pass。
+        for step in steps {
+            // 只有 render pass 包含 sampled binding 命令。
+            if let FramePlanStep::Pass(pass) = step {
+                // 保持 pass 内命令顺序扫描。
+                for command in &pass.commands {
+                    // 只预检实际 sampled binding。
+                    if let FramePlanCommand::BindSampledTexture(binding) = command {
+                        // 共享资源表必须在任何 native side effect 前证明真实 sampled 资源。
+                        self.device.preflight_sampled_binding(*binding)?;
+                    }
+                }
+            }
+        }
+        // 所有 sampled binding 的真实资源都已通过共享预检。
+        Ok(())
+    }
+}
+
 // 把已经验证的 FramePlan 步骤唯一映射到一个薄 RHI device。
 pub(super) struct FramePlanExecutor<'device, D>
 where
@@ -34,7 +188,7 @@ where
     target_mode: FramePlanTargetMode,
 }
 
-// 为唯一 FramePlan 命令执行组件提供目标校验与有序分派。
+// 为唯一 FramePlan 命令执行组件提供原生准备与有序分派。
 impl<'device, D> FramePlanExecutor<'device, D>
 where
     // 只依赖 GraphicsDevice 窄契约，不依赖 surface 或原生 Adapter。
@@ -62,16 +216,8 @@ where
         }
     }
 
-    // 在触碰 device 前校验目标模式，再按计划顺序执行全部步骤。
+    // 在资源预检完成后激活 Device，再按计划顺序执行全部步骤。
     pub(super) fn execute(mut self, steps: &[FramePlanStep]) -> Result<()> {
-        // 先完成执行模式专属校验，避免离屏错误产生部分 native 副作用。
-        self.validate_targets(steps)?;
-        // 在 Device activate 前预检所有顶层 texture copy/move。
-        self.validate_transfers(steps)?;
-        // 在 Device activate 前预检所有 pass 内 Draw 的真实 Buffer 资源。
-        self.validate_draw_resources(steps)?;
-        // 在 Device activate 前预检所有 pass 内 sampled binding 资源。
-        self.validate_sampled_bindings(steps)?;
         // 在第一条原生命令前激活当前 owner；OpenGL 在此恢复正确 context。
         self.device.activate()?;
         // 激活成功后再执行设备健康 preflight，失败计划不得进入任何命令。
@@ -92,98 +238,6 @@ where
             }
         }
         // 全部步骤均已按顺序交付 device。
-        Ok(())
-    }
-
-    // 校验 offscreen 模式不会在执行中途遇到逻辑 Surface target。
-    fn validate_targets(&self, steps: &[FramePlanStep]) -> Result<()> {
-        // 检查任一 pass 是否错误地请求主 surface。
-        let contains_surface = steps.iter().any(|step| {
-            // 只匹配 render pass 中的逻辑 Surface target。
-            matches!(
-                step,
-                FramePlanStep::Pass(pass) if matches!(pass.target, RenderTargetRef::Surface)
-            )
-        });
-        // 离屏执行不得隐含 acquire 或主 surface 写入。
-        if matches!(self.target_mode, FramePlanTargetMode::OffscreenOnly) && contains_surface {
-            // 在任何 device 调用前返回稳定参数错误。
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                "offscreen FramePlan cannot target the presentation surface",
-            ));
-        }
-        // 在激活 device 前解析所有离屏 texture target 的共享能力。
-        for step in steps {
-            // 只读取 render pass 的逻辑目标，不触碰其它顶层命令。
-            if let FramePlanStep::Pass(pass) = step {
-                // 只有 texture target 需要向资源 owner 查询真实描述。
-                if let RenderTargetRef::Texture(texture) = pass.target {
-                    // 共享资源表必须在任何 native side effect 前证明目标能力。
-                    self.device.resolve_render_target(texture)?;
-                }
-            }
-        }
-        // 所有 pass 都显式指向离屏 texture。
-        Ok(())
-    }
-
-    // 预检所有 pass 外纹理传输，保持失败发生在任何 Device 副作用前。
-    fn validate_transfers(&self, steps: &[FramePlanStep]) -> Result<()> {
-        // 按 FramePlan 顶层顺序逐项观察纹理传输命令。
-        for step in steps {
-            // 复制命令必须由 Device 的共享资源表预检。
-            if let FramePlanStep::Copy(copy) = step {
-                // 只调用只读 preflight，不激活或写入原生状态。
-                self.device.preflight_texture_copy(*copy)?;
-            }
-            // 移动命令必须由 Device 的共享资源表预检。
-            if let FramePlanStep::Move(movement) = step {
-                // 只调用只读 preflight，不激活或写入原生状态。
-                self.device.preflight_texture_move(*movement)?;
-            }
-        }
-        // 所有顶层传输都已通过共享资源与几何门禁。
-        Ok(())
-    }
-
-    // 预检所有 pass 内 Draw，保持资源失败发生在任何 Device 副作用前。
-    fn validate_draw_resources(&self, steps: &[FramePlanStep]) -> Result<()> {
-        // 按 FramePlan 顶层顺序逐个观察 render pass。
-        for step in steps {
-            // 只有 render pass 包含 Draw 资源引用。
-            if let FramePlanStep::Pass(pass) = step {
-                // 保持 pass 内命令顺序扫描，不跨 pass 借用资源事实。
-                for command in &pass.commands {
-                    // 只预检实际 Draw packet。
-                    if let super::FramePlanCommand::Draw(packet) = command {
-                        // 共享资源表必须在任何 native side effect 前证明真实 Buffer 角色。
-                        self.device.preflight_draw_resources(*packet)?;
-                    }
-                }
-            }
-        }
-        // 所有 Draw 的真实 Buffer 描述都已通过共享预检。
-        Ok(())
-    }
-
-    // 预检所有 pass 内 sampled binding，保持资源失败发生在任何 Device 副作用前。
-    fn validate_sampled_bindings(&self, steps: &[FramePlanStep]) -> Result<()> {
-        // 按 FramePlan 顶层顺序逐个观察 render pass。
-        for step in steps {
-            // 只有 render pass 包含 sampled binding 命令。
-            if let FramePlanStep::Pass(pass) = step {
-                // 保持 pass 内命令顺序扫描，不跨 pass 借用绑定事实。
-                for command in &pass.commands {
-                    // 只预检实际 sampled binding。
-                    if let super::FramePlanCommand::BindSampledTexture(binding) = command {
-                        // 共享资源表必须在任何 native side effect 前证明真实 sampled 资源。
-                        self.device.preflight_sampled_binding(*binding)?;
-                    }
-                }
-            }
-        }
-        // 所有 sampled binding 的真实资源都已通过共享预检。
         Ok(())
     }
 
@@ -302,6 +356,8 @@ impl FramePlan {
                 "FramePlan surface generation is stale before acquire",
             ));
         }
+        // 在 acquire 前完成全部只读资源预检，避免 Surface 副作用后才失败。
+        FramePlanResourcePreflight::surface(context.device_ref()).run(&self.steps)?;
         // 获取唯一的本帧 surface image。
         let frame = context.surface().acquire()?;
         // 检查 acquire 返回的 image 代际。
@@ -377,7 +433,9 @@ impl FramePlan {
                 "surface FramePlan cannot enter the offscreen device boundary",
             ));
         }
-        // 唯一执行组件在任何 device 调用前拒绝逻辑 Surface target。
+        // 离屏入口复用同一只读 Component 且不取得 Surface 能力。
+        FramePlanResourcePreflight::offscreen(device).run(&self.steps)?;
+        // 资源预检已经拒绝逻辑 Surface target，执行器只消费离屏计划。
         FramePlanExecutor::offscreen(device).execute(&self.steps)?;
         // 离屏计划只提交命令，不获取或呈现主 surface。
         let submission = device.submit()?;

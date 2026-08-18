@@ -121,12 +121,12 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         self.assertIn("RhiRendererFrameRole::Offscreen { .. } => FramePlan::offscreen()", renderer_execution)
         # Surface 执行边界必须显式拒绝 Offscreen 计划。
         self.assertIn("if !plan.targets_surface()", renderer_execution)
-        # 截取唯一命令执行器，验证所有 surface/offscreen 命令共享同一设备准备边界。
+        # 截取唯一命令执行器，验证所有 surface/offscreen 命令共享同一原生执行边界。
         executor = execution[
             # 从统一执行方法开始。
             execution.index("pub(super) fn execute(mut self, steps: &[FramePlanStep])") :
-            # 到目标校验方法结束。
-            execution.index("fn validate_targets", execution.index("pub(super) fn execute(mut self, steps: &[FramePlanStep])"))
+            # 到 pass 执行方法结束。
+            execution.index("fn execute_pass", execution.index("pub(super) fn execute(mut self, steps: &[FramePlanStep])"))
         ]
         # Device 激活必须由计划执行器自身调用，不能依赖上层碰巧留下正确 context。
         self.assertIn("self.device.activate()?;", executor)

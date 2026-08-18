@@ -82,11 +82,11 @@ class GraphicsRhiSampledBindingContractTests(unittest.TestCase):
         # sampled 预检必须位于 Draw 预检之后。
         self.assertLess(
             execution.index("self.validate_draw_resources(steps)?"),
-            execution.index("self.validate_sampled_bindings(steps)?"),
+            execution.index("self.validate_sampled_bindings(steps)"),
         )
         # 所有资源预检必须位于 activate 之前。
         self.assertLess(
-            execution.index("self.validate_sampled_bindings(steps)?"),
+            execution.index("self.validate_sampled_bindings(steps)"),
             execution.index("self.device.activate()?"),
         )
         # OpenGL Device 必须从真实资源表解析纹理与 sampler。
