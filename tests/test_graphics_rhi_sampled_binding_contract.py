@@ -25,8 +25,14 @@ VALIDATION = ROOT / "src/draw/backend/frame_plan_validation.rs"
 EXECUTION = ROOT / "src/draw/backend/frame_plan_execution.rs"
 # 定位 OpenGL Adapter 的共享状态写入与读取路径。
 OPENGL_DEVICE = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs"
+# 定位 OpenGL raster owner 的只读预检桥接路径。
+OPENGL_RASTER = ROOT / "src/native/presentation/graphics/opengl/raster/rhi.rs"
+# 定位 OpenGL host 的生命周期门禁与只读转发路径。
+OPENGL_HOST = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
 # 定位 OpenGL draw 的完整绑定读取路径。
 OPENGL_DRAW = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs"
+# 定位 D3D11 Device 的生命周期门禁与只读预检入口。
+D3D11_DEVICE = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs"
 # 定位 D3D11 Adapter 的共享状态写入路径。
 D3D11_RESOURCES = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_resources.rs"
 # 定位 D3D11 draw 的完整绑定读取路径。
@@ -48,6 +54,87 @@ PRODUCERS = (
 
 # 集中验证共享值对象、FramePlan、生产端和两个 Adapter 的同一契约。
 class GraphicsRhiSampledBindingContractTests(unittest.TestCase):
+    # sampled binding 资源必须由共享 Device 在 activate 前预检。
+    def test_sampled_binding_is_preflighted_before_activation(self) -> None:
+        # 读取薄 RHI Device 契约。
+        rhi = RHI.read_text(encoding="utf-8")
+        # 读取 FramePlan 执行器顺序。
+        execution = EXECUTION.read_text(encoding="utf-8")
+        # 读取 OpenGL 真实资源预检实现。
+        opengl_device = OPENGL_DEVICE.read_text(encoding="utf-8")
+        # 读取 OpenGL raster owner 的只读桥接实现。
+        opengl_raster = OPENGL_RASTER.read_text(encoding="utf-8")
+        # 读取 OpenGL host 的生命周期门禁实现。
+        opengl_host = OPENGL_HOST.read_text(encoding="utf-8")
+        # 读取 D3D11 Device 的生命周期门禁实现。
+        d3d11_device = D3D11_DEVICE.read_text(encoding="utf-8")
+        # 读取 D3D11 真实资源预检实现。
+        d3d11_resources = D3D11_RESOURCES.read_text(encoding="utf-8")
+        # GraphicsDevice 必须公开只读 sampled 资源预检入口。
+        self.assertIn(
+            "fn preflight_sampled_binding(&self, _binding: SampledTextureBinding)",
+            rhi,
+        )
+        # 执行器必须定义 sampled binding 预检扫描。
+        self.assertIn("fn validate_sampled_bindings", execution)
+        # 扫描必须调用共享 Device 入口。
+        self.assertIn("self.device.preflight_sampled_binding(*binding)?", execution)
+        # sampled 预检必须位于 Draw 预检之后。
+        self.assertLess(
+            execution.index("self.validate_draw_resources(steps)?"),
+            execution.index("self.validate_sampled_bindings(steps)?"),
+        )
+        # 所有资源预检必须位于 activate 之前。
+        self.assertLess(
+            execution.index("self.validate_sampled_bindings(steps)?"),
+            execution.index("self.device.activate()?"),
+        )
+        # OpenGL Device 必须从真实资源表解析纹理与 sampler。
+        self.assertIn("let texture = self.texture(binding.texture())?;", opengl_device)
+        self.assertIn("let sampler = self.sampler(binding.sampler())?;", opengl_device)
+        # OpenGL Device 必须复用共享采样语义校验。
+        self.assertIn(
+            "binding.validate_resources(format, sampler_desc)",
+            opengl_device,
+        )
+        # OpenGL raster owner 必须只读委托同一预检实现。
+        self.assertIn("rhi_preflight_sampled_binding", opengl_raster)
+        self.assertIn("self.rhi.preflight_sampled_binding(binding)", opengl_raster)
+        # OpenGL host 必须先门禁，再通过只读 pipeline 借用转发。
+        opengl_host_preflight = opengl_host[
+            opengl_host.index("fn preflight_sampled_binding(") :
+            opengl_host.index("fn update_texture(")
+        ]
+        self.assertLess(
+            opengl_host_preflight.index("self.rhi_ensure_active()?"),
+            opengl_host_preflight.index("self.rhi_pipeline()"),
+        )
+        # 只读预检不得恢复或触碰 native context。
+        self.assertNotIn("rhi_make_current", opengl_host_preflight)
+        # D3D11 Device 必须先门禁，再委托只读资源 helper。
+        d3d11_device_preflight = d3d11_device[
+            d3d11_device.index("fn preflight_sampled_binding(") :
+            d3d11_device.index("fn create_pipeline(")
+        ]
+        self.assertLess(
+            d3d11_device_preflight.index("self.ensure_active()?"),
+            d3d11_device_preflight.index("self.rhi_validate_sampled_binding(binding)"),
+        )
+        # D3D11 helper 必须从真实资源表解析纹理与 sampler。
+        self.assertIn(
+            "let texture = self.rhi_device.texture(binding.texture())?;",
+            d3d11_resources,
+        )
+        self.assertIn(
+            "let sampler = self.rhi_device.sampler(binding.sampler())?;",
+            d3d11_resources,
+        )
+        # D3D11 helper 必须复用共享采样语义校验。
+        self.assertIn(
+            "binding.validate_resources(format, sampler_desc)",
+            d3d11_resources,
+        )
+
     # 共享 pass 状态只能保存一个完整采样绑定。
     def test_pass_state_owns_one_atomic_binding(self) -> None:
         # 读取共享 pass 状态源码。
@@ -143,10 +230,10 @@ class GraphicsRhiSampledBindingContractTests(unittest.TestCase):
         # 读取 D3D11 draw 路径。
         d3d11_draw = D3D11_DRAW.read_text(encoding="utf-8")
         # OpenGL 必须把完整绑定交给共享状态机。
-        self.assertIn("binding.validate_resources(format, sampler_desc)?;", opengl_device)
+        self.assertIn("binding.validate_resources(format, sampler_desc)", opengl_device)
         self.assertIn("self.pass.bind_sampled_texture(binding)?;", opengl_device)
         # D3D11 必须把同一个类型交给共享状态机。
-        self.assertIn("binding.validate_resources(format, sampler_desc)?;", d3d11_resources)
+        self.assertIn("binding.validate_resources(format, sampler_desc)", d3d11_resources)
         self.assertIn("self.rhi_device.pass.bind_sampled_texture(binding)?;", d3d11_resources)
         # OpenGL draw 必须一次取得完整绑定。
         self.assertIn("sampled_binding_for(pipeline)", opengl_draw)
@@ -159,30 +246,37 @@ class GraphicsRhiSampledBindingContractTests(unittest.TestCase):
         # 两个 Adapter 都不得读取拆分 sampler 状态。
         self.assertNotIn(".bound_sampler()", opengl_draw + d3d11_draw)
 
-    # 两端必须在共享 pass 写入前验证实际资源描述。
-    def test_adapters_validate_resources_before_pass_write(self) -> None:
-        # 读取两个 Adapter 的绑定实现。
+    # 两端执行期绑定必须复用预检，并在共享 pass 写入前完成。
+    def test_adapters_reuse_preflight_before_pass_write(self) -> None:
+        # 读取 OpenGL Adapter 的绑定实现。
         opengl = OPENGL_DEVICE.read_text(encoding="utf-8")
         # 读取 D3D11 的绑定实现。
         d3d11 = D3D11_RESOURCES.read_text(encoding="utf-8")
-        # 逐个检查绑定函数内部的共享状态写入顺序。
-        # 保留每个 Adapter 对应的共享 pass 写入标记。
+        # 保留每个 Adapter 的预检调用与共享 pass 写入标记。
         adapter_markers = (
-            # OpenGL 共享 pass 写入标记。
-            (opengl, "self.pass.bind_sampled_texture(binding)?;"),
-            # D3D11 共享 pass 写入标记。
-            (d3d11, "self.rhi_device.pass.bind_sampled_texture(binding)?;"),
+            # OpenGL 执行期防御标记。
+            (
+                opengl,
+                "self.preflight_sampled_binding(binding)?;",
+                "self.pass.bind_sampled_texture(binding)?;",
+            ),
+            # D3D11 执行期防御标记。
+            (
+                d3d11,
+                "self.rhi_validate_sampled_binding(binding)?;",
+                "self.rhi_device.pass.bind_sampled_texture(binding)?;",
+            ),
         )
         # 分别检查两个 Adapter 的绑定函数。
-        for source, marker in adapter_markers:
+        for source, preflight, pass_write in adapter_markers:
             # 只截取绑定函数，避免其它资源路径偶然满足断言。
             body = source[source.index("bind_sampled_texture("):]
-            # 资源描述校验必须存在于绑定函数中。
-            self.assertIn("binding.validate_resources(format, sampler_desc)?;", body)
+            # 执行期绑定必须保留同一资源预检防线。
+            self.assertIn(preflight, body)
             # pass 写入必须存在于绑定函数中。
-            self.assertIn(marker, body)
-            # 资源描述校验必须早于共享 pass 写入。
-            self.assertLess(body.index("binding.validate_resources"), body.index(marker))
+            self.assertIn(pass_write, body)
+            # 真实资源预检必须早于共享 pass 写入。
+            self.assertLess(body.index(preflight), body.index(pass_write))
 
 
 # 支持直接执行该精确契约测试。

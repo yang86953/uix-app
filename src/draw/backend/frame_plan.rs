@@ -431,6 +431,8 @@ mod tests {
         fail_move_preflight: bool,
         // 保存是否强制 Draw 资源预检失败。
         fail_draw_preflight: bool,
+        // 保存是否强制 sampled 资源预检失败。
+        fail_sampled_preflight: bool,
     }
 
     // 为记录型 device 实现薄 RHI 的执行原语。
@@ -496,6 +498,20 @@ mod tests {
                 ));
             }
             // 关闭注入后允许合法 Draw 继续执行。
+            Ok(())
+        }
+
+        // 在任何 Device 原语前预检 sampled binding 真实资源。
+        fn preflight_sampled_binding(&self, _binding: SampledTextureBinding) -> Result<()> {
+            // 注入失败时保持 Device 日志为空。
+            if self.fail_sampled_preflight {
+                // 返回共享参数错误，模拟纹理格式或 sampler 过滤拒绝。
+                return Err(Error::new(
+                    Errc::InvalidArgument,
+                    "recording sampled resource preflight failed",
+                ));
+            }
+            // 关闭注入后允许合法 sampled binding 继续执行。
             Ok(())
         }
 
@@ -704,6 +720,12 @@ mod tests {
             self.device.preflight_draw_resources(packet)
         }
 
+        // 把 sampled 资源预检委托给内嵌记录 device。
+        fn preflight_sampled_binding(&self, binding: SampledTextureBinding) -> Result<()> {
+            // 复用唯一测试资源预检路径。
+            self.device.preflight_sampled_binding(binding)
+        }
+
         // 把 owner-context 激活委托给内嵌记录 device。
         fn activate(&mut self) -> Result<()> {
             // surface 与 offscreen 模式必须观察同一激活边界。
@@ -836,6 +858,8 @@ mod tests {
                 fail_move_preflight: false,
                 // 默认允许 Draw 资源预检成功。
                 fail_draw_preflight: false,
+                // 默认允许 sampled 资源预检成功。
+                fail_sampled_preflight: false,
             },
             // 创建与计划代际一致的 surface。
             surface: RecordingSurface {
@@ -851,39 +875,6 @@ mod tests {
 
     // 将 Surface 与 Offscreen 共用的最小计划构造器拆到独立测试支持文件。
     include!("frame_plan_test_support.rs");
-
-    // 验证低层命令保持顺序且只触发一次最终 present。
-    #[test]
-    fn executes_in_order_and_presents_once() {
-        // 创建第一代 surface。
-        let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
-        // 创建原子拥有 device 与 surface 的记录型 context。
-        let mut context = recording_context(token);
-        // 执行计划并要求最终提交成功。
-        let commit = test_plan(token).execute_on_context(&mut context);
-        // 验证得到可消费 damage 的 commit。
-        assert!(commit.is_ok());
-        // 验证底层顺序以一次 submit 结束。
-        assert_eq!(
-            context.device.log.into_iter().collect::<Vec<_>>(),
-            vec![
-                // 所有 FramePlan 命令前必须先激活 owner context。
-                "activate",
-                // 激活后必须完成统一设备健康预检。
-                "maintain",
-                "begin_pass",
-                "viewport",
-                "scissor",
-                "update_buffer",
-                "update_buffer",
-                "draw",
-                "end_pass",
-                "submit"
-            ]
-        );
-        // 验证 surface 只收到一次最终 present。
-        assert_eq!(context.surface.present_count, 1);
-    }
 
     // 将组合 context 的多执行模式回归测试拆到独立载荷，保持核心文件小于上限。
     include!("frame_plan_context_tests.rs");

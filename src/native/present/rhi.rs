@@ -520,6 +520,12 @@ pub(crate) trait GraphicsDevice {
         Err(rhi_not_implemented("preflight_draw_resources"))
     }
 
+    // 在激活 Device 前预检 sampled binding 的真实纹理与 sampler 资源。
+    fn preflight_sampled_binding(&self, _binding: SampledTextureBinding) -> Result<()> {
+        // 默认实现显式拒绝未声明共享 sampled 资源表能力的 Adapter。
+        Err(rhi_not_implemented("preflight_sampled_binding"))
+    }
+
     // 上传一个已经绑定纹理身份、区域与紧密像素载荷的命令。
     fn update_texture(&mut self, _upload: RhiTextureUpload<'_>) -> Result<()> {
         // 默认实现显式拒绝，避免把空上传当作成功。

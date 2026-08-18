@@ -161,22 +161,32 @@ impl D3d11Context {
         Ok(())
     }
 
-    // 绑定当前 pass 的采样纹理和 sampler。
-    pub(super) fn rhi_bind_sampled_texture(
-        &mut self,
+    // 只读验证 sampled binding 指向的真实纹理与 sampler 资源。
+    pub(super) fn rhi_validate_sampled_binding(
+        // 只读借用 D3D11 owner，避免预检触碰原生状态。
+        &self,
+        // 接收共享 pipeline 语义绑定。
         binding: SampledTextureBinding,
     ) -> Result<()> {
-        // 验证纹理和 sampler 句柄仍然有效。
-        // 复制纹理描述并结束资源表借用。
+        // 解析真实 texture 资源并结束资源表借用。
         let texture = self.rhi_device.texture(binding.texture())?;
-        // 复制 sampler 描述并结束资源表借用。
+        // 解析真实 sampler 资源并结束资源表借用。
         let sampler = self.rhi_device.sampler(binding.sampler())?;
         // 复制共享纹理格式值，避免校验持有资源表借用。
         let format = texture.desc.format();
         // 复制共享 sampler 描述值，避免校验持有资源表借用。
         let sampler_desc = sampler.desc;
-        // 在共享 pass 写入前验证实际资源描述与绑定语义一致。
-        binding.validate_resources(format, sampler_desc)?;
+        // 委托共享绑定契约验证资源描述与 pipeline sampling 语义。
+        binding.validate_resources(format, sampler_desc)
+    }
+
+    // 绑定当前 pass 的采样纹理和 sampler。
+    pub(super) fn rhi_bind_sampled_texture(
+        &mut self,
+        binding: SampledTextureBinding,
+    ) -> Result<()> {
+        // 先复用只读资源真实性与采样语义预检。
+        self.rhi_validate_sampled_binding(binding)?;
         // 由共享状态机统一验证 pass 和目标反馈环后原子记录绑定。
         self.rhi_device.pass.bind_sampled_texture(binding)?;
         // 返回绑定成功。

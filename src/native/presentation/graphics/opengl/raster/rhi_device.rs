@@ -203,6 +203,25 @@ impl OpenGlRhiDevice {
         self.textures.validate_move(movement)
     }
 
+    // 只读预检 sampled texture 与 sampler 的真实资源语义。
+    pub(super) fn preflight_sampled_binding(
+        // 只读借用 OpenGL 设备，不触碰 pass 或 native 状态。
+        &self,
+        // 接收不可拆分的共享 sampled 绑定事实。
+        binding: SampledTextureBinding,
+    ) -> Result<()> {
+        // 解析真实 texture 资源并结束资源表借用。
+        let texture = self.texture(binding.texture())?;
+        // 解析真实 sampler 资源并结束资源表借用。
+        let sampler = self.sampler(binding.sampler())?;
+        // 复制共享纹理格式，供绑定契约统一校验。
+        let format = texture.desc.format();
+        // 复制 sampler 描述，供绑定契约统一校验。
+        let sampler_desc = sampler.desc;
+        // 只执行资源语义预检，不建立 pass 绑定状态。
+        binding.validate_resources(format, sampler_desc)
+    }
+
     // 创建动态 buffer 并登记其 CPU 镜像。
     pub(super) fn create_buffer(
         &mut self,
@@ -596,16 +615,8 @@ impl OpenGlRhiDevice {
 
     // 记录 texture/sampler 绑定，实际 GL 绑定在 draw 时完成。
     pub(super) fn bind_sampled_texture(&mut self, binding: SampledTextureBinding) -> Result<()> {
-        // 复制纹理描述并结束资源表借用。
-        let texture = self.texture(binding.texture())?;
-        // 复制 sampler 描述并结束资源表借用。
-        let sampler = self.sampler(binding.sampler())?;
-        // 复制共享纹理格式值，避免校验持有资源表借用。
-        let format = texture.desc.format();
-        // 复制共享 sampler 描述值，避免校验持有资源表借用。
-        let sampler_desc = sampler.desc;
-        // 在共享 pass 写入前验证实际资源描述与绑定语义一致。
-        binding.validate_resources(format, sampler_desc)?;
+        // 复用只读资源预检，保持执行期绑定的最后一道防御。
+        self.preflight_sampled_binding(binding)?;
         // 由共享状态机统一验证 pass 和目标反馈环后原子记录绑定。
         self.pass.bind_sampled_texture(binding)?;
         // 返回统一成功结果。
