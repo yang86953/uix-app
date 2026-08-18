@@ -94,7 +94,7 @@ class GraphicsContextContractTests(unittest.TestCase):
             # WGL 生产 context。
             ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
             # EGL 生产 context。
-            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+            ROOT / "src/native/presentation/graphics/opengl/platform/egl_rhi.rs",
             # Vulkan PixelUpload context。
             ROOT / "src/native/presentation/graphics/vulkan/platform/context/graphics.rs",
             # Metal PixelUpload context。
@@ -154,7 +154,7 @@ class GraphicsContextContractTests(unittest.TestCase):
             # WGL 生产 context。
             ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
             # EGL 生产 context。
-            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+            ROOT / "src/native/presentation/graphics/opengl/platform/egl_rhi.rs",
             # Vulkan PixelUpload context。
             ROOT / "src/native/presentation/graphics/vulkan/platform/context/graphics.rs",
             # GPU-native 测试 fake。
@@ -296,7 +296,7 @@ class GraphicsContextContractTests(unittest.TestCase):
             # WGL 生产 context。
             ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
             # EGL 生产 context。
-            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+            ROOT / "src/native/presentation/graphics/opengl/platform/egl_rhi.rs",
         ):
             # 读取当前 native adapter 的完整 recipe 实现。
             adapter_source = adapter.read_text(encoding="utf-8")

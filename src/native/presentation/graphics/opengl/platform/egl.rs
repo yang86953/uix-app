@@ -15,17 +15,19 @@ use std::ptr;
 // EGL context 与 Wayland windowing 共享逐窗 surface metrics owner。
 use std::sync::Arc;
 
-use crate::native::present::{GraphicsContextLifecycle, PresentDamage};
 // 引入共享的 OpenGL RHI host 生命周期实现。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
-use crate::native::presentation::graphics::opengl::rhi_host::OpenGlRhiHost;
+// 引入 Drop 中调用的 checked shutdown 生命周期契约。
+use crate::native::present::GraphicsContextLifecycle;
 use crate::native::{Errc, Error};
-// 引入已经通过共享门禁的 surface resize 事务。
-use crate::native::present::rhi::RhiSurfaceResizeTransaction;
 
 use crate::native::presentation::graphics::platform::linux::{
     WaylandSurfaceHandle, WaylandSurfaceMetrics,
 };
+
+// 将 EGL 的 RHI 与 recipe 生命周期实现拆到独立平台组件。
+#[path = "egl_rhi.rs"]
+mod egl_rhi;
 
 // 将 EGL 交换错误映射为恢复 FSM 可消费的 surface/device typed failure。
 fn map_egl_swap_error(error: khronos_egl::Error) -> Error {
@@ -313,6 +315,8 @@ pub struct EglContext {
     // surface 重建代际，用于拒绝迟到 FramePlan。
     surface_generation: u64,
     pipeline: OpenGlRasterPipeline,
+    // 关闭事务一旦开始便禁止新的业务 RHI 借用，但允许 cleanup 重试。
+    shutdown_started: bool,
     shutdown: bool,
     context_destroyed: bool,
     surface_destroyed: bool,
@@ -587,6 +591,8 @@ impl EglContext {
             // 初始 EGL swapchain 使用 metrics 当前 revision。
             surface_generation: initial_surface.revision,
             pipeline,
+            // 初始 owner 尚未进入关闭事务。
+            shutdown_started: false,
             shutdown: false,
             context_destroyed: false,
             surface_destroyed: false,
@@ -595,9 +601,12 @@ impl EglContext {
     }
 
     pub(crate) fn shutdown_result(&mut self) -> Result<(), Error> {
+        // 已完整关闭的 owner 保持幂等返回，不重复触碰 native 句柄。
         if self.shutdown {
             return Ok(());
         }
+        // 在任何 native cleanup 或 pipeline release 前发布关闭事实。
+        self.shutdown_started = true;
         if !self.context_destroyed {
             self.egl
                 .make_current(
@@ -664,6 +673,8 @@ impl EglContext {
 
     // 在 EGL adapter 内部恢复 owner-thread 的原生 current context。
     fn make_current_result(&self) -> Result<(), Error> {
+        // 在任何 EGL 调用前拒绝已开始关闭或句柄不完整的 owner。
+        self.ensure_rhi_active()?;
         // 委托给 EGL 实例并保留 typed platform error。
         self.egl
             // 同时绑定 draw 与 read surface，供 RHI device 和 present 共用。
@@ -687,6 +698,26 @@ impl EglContext {
                     format!("EglContext: eglMakeCurrent failed: {err:?}"),
                 )
             })
+    }
+
+    // 检查 EGL owner 是否仍可被业务 RHI 使用。
+    pub(crate) fn ensure_rhi_active(&self) -> Result<(), Error> {
+        // 关闭事务、原生对象销毁或 display/window 失效都统一为 InvalidState。
+        if self.shutdown_started
+            || self.shutdown
+            || self.context_destroyed
+            || self.surface_destroyed
+            || self.display_terminated
+            || self.egl_window.is_null()
+        {
+            // 在触碰任何 EGL API 前返回稳定生命周期错误。
+            return Err(Error::new(
+                Errc::InvalidState,
+                "EglContext: operation requested after shutdown",
+            ));
+        }
+        // owner 的 EGL context、surface、display 与 window 仍完整存活。
+        Ok(())
     }
 
     // 直接更新 EGL surface、Wayland window 和 OpenGL RHI 的 drawable 状态。
@@ -747,126 +778,6 @@ impl EglContext {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 共享 graphics context 生命周期实现
-// ════════════════════════════════════════════════════════════════════════════
-
-impl GraphicsContextLifecycle for EglContext {
-    // 返回 EGL drawable 的完整 live surface 快照。
-    fn present_surface(&self) -> crate::native::present::PresentSurface {
-        // resize 事务开始前必须能读取 windowing 刚发布的新 DPR。
-        match self.metrics.snapshot() {
-            // 健康快照直接报告同代 drawable 与 DPR。
-            Ok(snapshot) => crate::native::present::PresentSurface::identity(
-                // 报告目标物理 drawable 宽度。
-                snapshot.drawable_width,
-                // 报告目标物理 drawable 高度。
-                snapshot.drawable_height,
-                // Wayland core scale 是当前设备像素比。
-                snapshot.scale as f32,
-                // native 与 metrics 两侧代次取最大值拒绝旧帧。
-                self.surface_generation.max(snapshot.revision),
-            ),
-            // trait 无错误通道时回退到最后一次成功应用的 EGL 状态。
-            Err(_) => crate::native::present::PresentSurface::identity(
-                // 最后成功物理宽度。
-                self.width,
-                // 最后成功物理高度。
-                self.height,
-                // 最后成功应用的 DPR。
-                self.device_pixel_ratio,
-                // 最后成功 native surface 代次。
-                self.surface_generation,
-            ),
-        }
-    }
-
-    fn try_shutdown(&mut self) -> Result<(), Error> {
-        self.shutdown_result()
-    }
-}
-
-// 把 EGL thin RHI 与逻辑 surface resize 收敛到同一 recipe owner。
-impl crate::native::present::GpuRecipeContext for EglContext {
-    // 借用 EGL owner 已实现的组合 thin RHI。
-    fn rhi_context(
-        // 借用当前 EGL owner。
-        &mut self,
-    ) -> Result<&mut dyn crate::native::present::rhi::GraphicsContextRhi, Error> {
-        // 同一实例完整实现 GraphicsDevice 与 GraphicsSurface。
-        Ok(self)
-    }
-
-    // 复用统一 DPR、范围检查与 GraphicsSurface::resize 调用。
-    fn resize_surface(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        // 在可变借用前取得当前完整 surface 快照。
-        let present_surface = GraphicsContextLifecycle::present_surface(self);
-        // 直接借用当前原子 recipe owner，不经过分裂兼容视图。
-        crate::native::present::resize_native_rhi_surface(self, present_surface, width, height)
-    }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// Drop — 确保 GPU 资源释放
-// ════════════════════════════════════════════════════════════════════════════
-
-// 将 EGL 原生生命周期接入共享 OpenGL RHI host。
-impl OpenGlRhiHost for EglContext {
-    // 借用可变 raster/RHI owner。
-    fn rhi_pipeline_mut(&mut self) -> &mut OpenGlRasterPipeline {
-        &mut self.pipeline
-    }
-
-    // 借用只读 raster/RHI owner。
-    fn rhi_pipeline(&self) -> &OpenGlRasterPipeline {
-        &self.pipeline
-    }
-
-    // 切换到 EGL owner-thread context。
-    fn rhi_make_current(&mut self) -> Result<(), Error> {
-        // current 只作为 adapter 私有 RHI host 操作存在。
-        self.make_current_result()
-    }
-
-    // 返回 EGL surface generation。
-    fn rhi_generation(&self) -> u64 {
-        self.surface_generation
-    }
-
-    // 消费已验证事务并进入 EGL 原生 surface resize helper。
-    fn rhi_resize_surface(
-        // 借用当前 EGL owner。
-        &mut self,
-        // 接收共享门禁冻结的目标 extent 与原生投影。
-        resize: RhiSurfaceResizeTransaction,
-    ) -> Result<(), Error> {
-        // 读取事务中不可替换的请求 extent。
-        let extent = resize.extent();
-        // 物理 extent 相同但 logical extent 或 DPR 改变时仍须同步 pipeline。
-        let snapshot = self.metrics.snapshot()?;
-        // 只有四项 surface 事实全都一致才可跳过。
-        if self.pipeline.rhi_surface_extent() == extent
-            && self.logical_width == snapshot.logical_width
-            && self.logical_height == snapshot.logical_height
-            && self.device_pixel_ratio == snapshot.scale as f32
-        {
-            // 当前 EGL 与 pipeline 已满足完整请求。
-            return Ok(());
-        }
-        self.rhi_make_current()?;
-        // 读取共享事务已经证明安全的原生有符号尺寸。
-        let (width, height) = resize.native_size_i32();
-        // 使用唯一投影重建原生 surface。
-        self.resize_surface_extent(width, height)
-    }
-
-    // 交换 EGL window surface。
-    fn rhi_swap_buffers(&mut self, _damage: PresentDamage) -> Result<(), Error> {
-        self.egl
-            .swap_buffers(self.display, self.surface)
-            .map_err(map_egl_swap_error)
-    }
-}
-
 // 释放 EGL owner-thread 的所有 GPU 资源。
 impl Drop for EglContext {
     fn drop(&mut self) {

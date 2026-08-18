@@ -35,7 +35,8 @@ LEGACY_CONTEXTS = {
         True,
     ),
     "egl": (
-        ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+        # EGL 原生 owner 与拆分后的 lifecycle/RHI 组合共同构成完整模块。
+        (ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs", ROOT / "src/native/presentation/graphics/opengl/platform/egl_rhi.rs"),
         True,
     ),
     "wgl": (
@@ -47,12 +48,11 @@ LEGACY_CONTEXTS = {
 
 
 # 读取单文件或目录 module 的全部 Rust 源码。
-def read_rust_module(path: Path) -> str:
-    # 单文件模块直接读取 UTF-8 内容。
-    if path.is_file():
-        return path.read_text(encoding="utf-8")
-    # 目录模块按文件名排序后拼接，保证审计稳定。
-    return "\n".join(child.read_text(encoding="utf-8") for child in sorted(path.glob("*.rs")))
+def read_rust_module(path: Path | tuple[Path, ...]) -> str:
+    # 单文件也标准化为显式序列，支持拆分模块而不误读相邻 Adapter。
+    paths = path if isinstance(path, tuple) else (path,)
+    # 单文件直接读取，目录模块按文件名排序后拼接，保证审计稳定。
+    return "\n".join(child.read_text(encoding="utf-8") for source in paths for child in ([source] if source.is_file() else sorted(source.glob("*.rs"))))
 
 
 class GraphicsTeardownContractTests(unittest.TestCase):

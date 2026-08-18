@@ -20,6 +20,8 @@ D3D11_SURFACE = ROOT / "src/native/presentation/graphics/d3d11/platform/context/
 OPENGL_SURFACE = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
 # 定位 EGL 原生 host。
 EGL_HOST = ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs"
+# 定位拆分后的 EGL RHI host 实现。
+EGL_RHI_HOST = ROOT / "src/native/presentation/graphics/opengl/platform/egl_rhi.rs"
 # 定位 WGL 原生 host。
 WGL_HOST = ROOT / "src/native/presentation/graphics/opengl/platform/wgl_rhi.rs"
 
@@ -90,8 +92,8 @@ class GraphicsRhiSurfaceResizeContractTests(unittest.TestCase):
     def test_opengl_hosts_only_consume_validated_resize(self) -> None:
         # 读取 OpenGL host trait。
         opengl = OPENGL_SURFACE.read_text(encoding="utf-8")
-        # 读取 EGL 实现。
-        egl = EGL_HOST.read_text(encoding="utf-8")
+        # 读取 EGL owner 与拆分后的 RHI host 实现。
+        egl = EGL_HOST.read_text(encoding="utf-8") + EGL_RHI_HOST.read_text(encoding="utf-8")
         # 读取 WGL 实现。
         wgl = WGL_HOST.read_text(encoding="utf-8")
         # host trait 必须接收封闭事务而非裸 extent。

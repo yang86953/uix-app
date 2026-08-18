@@ -16,6 +16,12 @@ use crate::native::{Error, Result};
 
 // 将 WGL 原生生命周期接入共享 OpenGL RHI host。
 impl OpenGlRhiHost for WglContext {
+    // 检查 WGL owner 的统一 active 状态。
+    fn rhi_ensure_active(&self) -> Result<()> {
+        // 复用 WGL inherent helper，避免 shared host 猜测句柄状态。
+        self.ensure_rhi_active()
+    }
+
     // 借用可变 raster/RHI owner。
     fn rhi_pipeline_mut(&mut self) -> &mut OpenGlRasterPipeline {
         // 返回 WGL context 持有的唯一 pipeline。
