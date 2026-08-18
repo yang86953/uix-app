@@ -78,10 +78,25 @@ class GraphicsRhiResourceTableContractTests(unittest.TestCase):
         opengl = OPENGL_DEVICE.read_text(encoding="utf-8")
         # 读取 OpenGL 资源查询实现。
         opengl_resources = OPENGL_RESOURCES.read_text(encoding="utf-8")
-        # 四类 D3D11 资源必须各自由类型化共享表持有。
-        self.assertEqual(d3d11.count("RhiResourceTable<"), 4)
-        # 四类 OpenGL 资源也必须各自由类型化共享表持有。
-        self.assertEqual(opengl.count("RhiResourceTable<"), 4)
+        # Buffer、Texture、Pipeline 与 Sampler 必须各自由对应共享表持有。
+        table_types = (
+            # Buffer 表额外拥有真实描述验证。
+            "RhiBufferResourceTable<",
+            # Texture 表额外拥有格式、目标与传输验证。
+            "RhiTextureResourceTable<",
+            # Pipeline 表额外拥有句柄与 kind 绑定验证。
+            "RhiPipelineResourceTable<",
+            # Sampler 尚无额外描述关系，直接复用通用类型化表。
+            "RhiResourceTable<SamplerHandle",
+        )
+        # 两个 Adapter 必须装配完全相同的四类资源表角色。
+        for table_type in table_types:
+            # 每种类型化资源表在每个 Adapter 中必须只有一个 owner。
+            with self.subTest(table_type=table_type):
+                # D3D11 不得缺失或复制任何资源表角色。
+                self.assertEqual(d3d11.count(table_type), 1)
+                # OpenGL 必须保持与 D3D11 相同的资源表分层。
+                self.assertEqual(opengl.count(table_type), 1)
         # 两个 Adapter 不得直接保存可漂移的 Option 槽位向量。
         self.assertNotIn("Vec<Option<", d3d11 + opengl)
         # 两个 Adapter 不得自行执行一基到零基的身份投影。

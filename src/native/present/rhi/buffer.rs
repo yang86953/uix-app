@@ -174,6 +174,120 @@ pub(crate) struct RhiBufferUpload<'a> {
     data: &'a [u8],
 }
 
+// 描述一次只读 Buffer 上传预检，隔离资源句柄与字节载荷生命周期。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RhiBufferUploadPreflight {
+    // 保存目标 Buffer 身份。
+    buffer: BufferHandle,
+    // 保存待验证的上传字节数。
+    size_bytes: usize,
+    // 保存类型化命令要求的 Buffer 用途。
+    usage: BufferUsage,
+}
+
+// 为只读上传预检提供封闭构造、投影和真实描述验证。
+impl RhiBufferUploadPreflight {
+    // 创建只允许写入顶点 Buffer 的类型化预检值。
+    pub(crate) const fn vertex(buffer: BufferHandle, size_bytes: usize) -> Self {
+        // 通过封闭构造器冻结顶点用途。
+        Self::new(buffer, size_bytes, BufferUsage::Vertex)
+    }
+
+    // 创建只允许写入索引 Buffer 的类型化预检值。
+    pub(crate) const fn index(buffer: BufferHandle, size_bytes: usize) -> Self {
+        // 通过封闭构造器冻结索引用途。
+        Self::new(buffer, size_bytes, BufferUsage::Index)
+    }
+
+    // 创建只允许写入 Uniform Buffer 的类型化预检值。
+    pub(crate) const fn uniform(buffer: BufferHandle, size_bytes: usize) -> Self {
+        // 通过封闭构造器冻结 Uniform 用途。
+        Self::new(buffer, size_bytes, BufferUsage::Uniform)
+    }
+
+    // 创建不持有字节借用且冻结期望用途的内部预检值。
+    const fn new(buffer: BufferHandle, size_bytes: usize, usage: BufferUsage) -> Self {
+        // 把目标身份、载荷长度与用途绑定成一个不可拆值对象。
+        Self {
+            // 保存目标 Buffer 身份。
+            buffer,
+            // 保存待验证的上传字节数。
+            size_bytes,
+            // 保存类型化调用方要求的用途。
+            usage,
+        }
+    }
+
+    // 返回目标 Buffer 身份。
+    pub(crate) const fn buffer(self) -> BufferHandle {
+        // 句柄按值安全复制。
+        self.buffer
+    }
+
+    // 返回待验证的上传字节数。
+    pub(crate) const fn size_bytes(self) -> usize {
+        // 长度按值安全复制。
+        self.size_bytes
+    }
+
+    // 按真实 Buffer 描述验证上传范围和用途语义。
+    pub(crate) fn validate(self, desc: BufferDesc) -> Result<()> {
+        // 类型化 FramePlan 角色必须与资源创建时冻结的真实用途一致。
+        if self.usage != desc.usage {
+            // 禁止 Adapter 把顶点、索引或 Uniform 上传解释成另一种角色。
+            return Err(invalid_buffer(
+                "RHI buffer upload usage does not match its target",
+            ));
+        }
+        // 角色一致后复用原始上传也消费的唯一范围验证函数。
+        validate_upload_size(self.size_bytes, desc)
+    }
+}
+
+// 统一验证原始上传和类型化预检共用的容量、元素与完整替换语义。
+fn validate_upload_size(size_bytes: usize, desc: BufferDesc) -> Result<()> {
+    // 复用唯一 Buffer 描述创建门禁。
+    desc.validate()?;
+    // 空上传不能绕过句柄解析或伪装成资源更新成功。
+    if size_bytes == 0 {
+        // 统一拒绝两个 Adapter 原先不同的空上传行为。
+        return Err(invalid_buffer("RHI buffer upload payload is empty"));
+    }
+    // 上传前缀必须完整落在资源容量内。
+    if size_bytes > desc.size_bytes {
+        // 拒绝越过目标 Buffer 尾部。
+        return Err(invalid_buffer("RHI buffer upload exceeds its capacity"));
+    }
+    // 按用途验证上传元素边界与 Uniform 替换粒度。
+    match desc.usage {
+        // 顶点和索引 Buffer 只能接收完整元素。
+        BufferUsage::Vertex | BufferUsage::Index => {
+            // 描述先由创建门禁验证，仍防止错误描述导致除零。
+            if desc.stride_bytes == 0
+                // 载荷必须包含整数个元素。
+                || size_bytes % desc.stride_bytes as usize != 0
+            {
+                // 拒绝由 Adapter 各自补齐或截断元素。
+                return Err(invalid_buffer(
+                    "RHI buffer upload is not aligned to its element stride",
+                ));
+            }
+        }
+        // Uniform 只能通过完整常量块替换更新。
+        BufferUsage::Uniform => {
+            // 两个 Adapter 都必须覆盖整个 Uniform Buffer。
+            if size_bytes != desc.size_bytes {
+                // 禁止 OpenGL 私自接受局部 Uniform 更新。
+                return Err(invalid_buffer(
+                    "RHI uniform upload must replace the full buffer",
+                ));
+            }
+        }
+    }
+    // 真实描述已经证明该上传范围可交付 Adapter。
+    Ok(())
+}
+
 // 为 Buffer 上传提供封闭构造、只读身份与共享范围验证。
 impl<'a> RhiBufferUpload<'a> {
     // 创建一次从 Buffer 起点开始的上传。
@@ -201,44 +315,8 @@ impl<'a> RhiBufferUpload<'a> {
 
     // 按目标描述验证非空范围、元素边界和 Uniform 完整替换语义。
     pub(crate) fn validate(self, desc: BufferDesc) -> Result<ValidatedRhiBufferUpload<'a>> {
-        // 上传值对象独立复用创建门禁，防止未经 Adapter 创建路径的非法描述被窄化。
-        desc.validate()?;
-        // 空上传不能绕过句柄解析或伪装成资源更新成功。
-        if self.data.is_empty() {
-            // 统一拒绝两个 Adapter 原先不同的空上传行为。
-            return Err(invalid_buffer("RHI buffer upload payload is empty"));
-        }
-        // 上传前缀必须完整落在资源容量内。
-        if self.data.len() > desc.size_bytes {
-            // 拒绝越过目标 Buffer 尾部。
-            return Err(invalid_buffer("RHI buffer upload exceeds its capacity"));
-        }
-        // 按用途验证上传元素边界与 Uniform 替换粒度。
-        match desc.usage {
-            // 顶点和索引上传不能留下半个元素。
-            BufferUsage::Vertex | BufferUsage::Index => {
-                // 描述先由创建门禁验证，上传仍防止错误描述导致除零。
-                if desc.stride_bytes == 0
-                    // 载荷必须包含整数个元素。
-                    || self.data.len() % desc.stride_bytes as usize != 0
-                {
-                    // 拒绝由 Adapter 各自补齐或截断元素。
-                    return Err(invalid_buffer(
-                        "RHI buffer upload is not aligned to its element stride",
-                    ));
-                }
-            }
-            // Uniform 只能通过完整常量块替换更新。
-            BufferUsage::Uniform => {
-                // 两个 Adapter 都必须覆盖整个 Uniform Buffer。
-                if self.data.len() != desc.size_bytes {
-                    // 禁止 OpenGL 私自接受局部 Uniform 更新。
-                    return Err(invalid_buffer(
-                        "RHI uniform upload must replace the full buffer",
-                    ));
-                }
-            }
-        }
+        // 与类型化预检复用同一唯一范围验证函数。
+        validate_upload_size(self.data.len(), desc)?;
         // 载荷长度不超过共同容量，因此可安全投影到 D3D11 box。
         Ok(ValidatedRhiBufferUpload {
             // 保留调用期间有效的字节切片。
@@ -338,6 +416,29 @@ mod tests {
         assert_eq!(validated.data(), bytes);
         // 前缀右边界来自共享投影而非 Adapter 窄化。
         assert_eq!(validated.size_bytes_u32(), 16);
+    }
+
+    // 验证只读上传预检值冻结目标身份、字节数与类型化用途。
+    #[test]
+    fn upload_preflight_projects_identity_and_size() {
+        // 创建携带稳定句柄和十六字节范围的顶点预检。
+        let preflight = RhiBufferUploadPreflight::vertex(BufferHandle::from_raw(8), 16);
+        // 预检值必须保留目标句柄。
+        assert_eq!(preflight.buffer(), BufferHandle::from_raw(8));
+        // 预检值必须保留原始字节数。
+        assert_eq!(preflight.size_bytes(), 16);
+        // 真实顶点描述必须接受同一预检值。
+        assert!(preflight.validate(BufferDesc::vertex(16, 8)).is_ok());
+        // 同尺寸 Uniform 目标也必须因类型化用途不匹配而拒绝。
+        assert!(preflight.validate(BufferDesc::uniform(16)).is_err());
+        // 索引用途化构造器必须接受匹配的真实索引描述。
+        assert!(
+            RhiBufferUploadPreflight::index(BufferHandle::from_raw(9), 8)
+                // 使用两个四字节索引的真实描述完成验证。
+                .validate(BufferDesc::index(8, 4))
+                // 匹配身份、范围与用途必须通过。
+                .is_ok()
+        );
     }
 
     // 验证上传门禁统一拒绝空载荷、半元素、越界与局部 Uniform。

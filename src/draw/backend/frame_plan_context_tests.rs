@@ -133,6 +133,49 @@ fn surface_target_preflight_rejects_before_acquire() {
     assert_eq!(context.surface.present_count, 0);
 }
 
+// 未被 Draw 消费的 Buffer 上传也必须在 Surface acquire 前完成真实资源预检。
+#[test]
+fn unused_buffer_upload_preflight_wins_before_acquire() {
+    // 创建稳定的 Surface generation。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 从包含完整有效 Draw 的计划开始，避免失败来自计划结构验证。
+    let mut plan = test_plan(token);
+    // 取得唯一 render pass 以追加一个不会被后续 Draw 消费的上传。
+    let FramePlanStep::Pass(pass) = &mut plan.steps[0] else {
+        // 测试基线漂移时立即失败。
+        panic!("test plan must start with a render pass");
+    };
+    // 使用独立身份标记必须被资源预检扫描的尾部上传。
+    let unused_buffer = BufferHandle::from_raw(99);
+    // 在 Draw 之后追加合法类型化载荷，证明预检覆盖所有上传而非只覆盖 Draw 依赖。
+    pass.push(FramePlanCommand::UploadVertex {
+        // 使用不会出现在任何 DrawPacket 中的 Buffer 句柄。
+        buffer: unused_buffer,
+        // 载荷本身保持完整且有限，让失败唯一来自真实资源查询。
+        data: FrameVertexPayload::position_f32x2([0.0, 0.0, 1.0, 1.0]),
+    });
+    // 创建同时能够注入资源错误和 Surface lost 的组合 context。
+    let mut context = recording_context(token);
+    // 只让尾部未消费上传的真实资源预检失败。
+    context.device.fail_upload_preflight = Some(unused_buffer);
+    // 同时安排 acquire 失败，锁定共享参数错误的优先级。
+    context.surface.fail_acquire = true;
+    // 执行必须在取得 Surface image 前发现未消费上传的资源错误。
+    let error = plan
+        // 使用完整 Surface 入口覆盖 acquire 与 Device 激活边界。
+        .execute_on_context(&mut context)
+        // 未消费上传不得逃过只读预检。
+        .expect_err("unused buffer upload must fail before acquire");
+    // Buffer 身份或容量错误必须优先返回稳定共享参数分类。
+    assert_eq!(error.code(), Errc::InvalidArgument);
+    // 上传预检失败不得触发 Surface acquire。
+    assert_eq!(context.surface.acquire_count, 0);
+    // 上传预检失败不得进入 activate、pass 或 submit。
+    assert!(context.device.log.is_empty());
+    // 失败计划不得触发最终 present。
+    assert_eq!(context.surface.present_count, 0);
+}
+
 // Copy preflight 失败必须发生在 Device activate 前且不留下日志。
 #[test]
 fn texture_copy_preflight_rejects_before_device() {

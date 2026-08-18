@@ -1,7 +1,7 @@
 //! 共享 RHI Buffer 资源表与 Draw 真实资源描述预检。
 
-// 引入 DrawPacket、通用资源表和 Buffer 句柄契约。
-use super::{BufferDesc, BufferHandle, DrawPacket, RhiResourceTable};
+// 引入 DrawPacket、上传预检、通用资源表和 Buffer 句柄契约。
+use super::{BufferDesc, BufferHandle, DrawPacket, RhiBufferUploadPreflight, RhiResourceTable};
 // 引入共享资源结果类型。
 use crate::core::Result;
 
@@ -82,6 +82,14 @@ impl<T: RhiBufferResource> RhiBufferResourceTable<T> {
         // 由 DrawPacket 唯一拥有角色、stride、ABI 和容量关系验证。
         packet.validate_resources(vertex_desc, uniform_desc, index_desc)
     }
+
+    // 解析真实 Buffer 描述并验证一次只读上传预检。
+    pub(crate) fn validate_upload(&self, upload: RhiBufferUploadPreflight) -> Result<()> {
+        // 先解析真实句柄，陈旧身份不得进入描述验证。
+        let resource = self.get(upload.buffer())?;
+        // 只把资源创建时冻结的描述交给共享预检值对象。
+        upload.validate(resource.desc())
+    }
 }
 
 // 验证 Buffer 资源表只把真实描述交给共享 Draw 门禁。
@@ -94,7 +102,7 @@ mod tests {
     // 引入 DrawPacket 与 Buffer 共享值对象。
     use crate::native::present::rhi::{
         BufferDesc, BufferHandle, DrawPacket, IndexBufferBinding, IndexFormat, PipelineBinding,
-        PipelineHandle, PipelineKind,
+        PipelineHandle, PipelineKind, RhiBufferUploadPreflight,
     };
 
     // 保存测试资源的共享描述事实。
@@ -190,6 +198,68 @@ mod tests {
                 .unwrap_err()
                 .code(),
             Errc::InvalidArgument
+        );
+    }
+
+    // 验证资源表上传预检覆盖陈旧句柄、容量和错误用途。
+    #[test]
+    fn validates_upload_against_real_buffer_description() {
+        // 创建空的共享 Buffer 资源表。
+        let mut table = RhiBufferResourceTable::new();
+        // 登记一个十六字节顶点 Buffer。
+        let vertex = table.insert(TestBuffer {
+            // 顶点 stride 固定为八字节。
+            desc: BufferDesc::vertex(16, 8),
+        });
+        // 合法的两个顶点上传必须通过。
+        assert!(
+            table
+                .validate_upload(RhiBufferUploadPreflight::vertex(vertex, 16))
+                .is_ok()
+        );
+        // 半个顶点元素必须拒绝。
+        assert!(
+            table
+                .validate_upload(RhiBufferUploadPreflight::vertex(vertex, 4))
+                .is_err()
+        );
+        // 超过 Buffer 容量必须拒绝。
+        assert!(
+            table
+                .validate_upload(RhiBufferUploadPreflight::vertex(vertex, 24))
+                .is_err()
+        );
+        // 同尺寸 Uniform 上传也不得写入真实顶点 Buffer。
+        assert!(
+            table
+                .validate_upload(RhiBufferUploadPreflight::uniform(vertex, 16))
+                .is_err()
+        );
+        // 陈旧句柄必须在真实描述解析前拒绝。
+        assert!(
+            table
+                .validate_upload(RhiBufferUploadPreflight::vertex(
+                    BufferHandle::from_raw(99),
+                    16,
+                ))
+                .is_err()
+        );
+        // 登记一个 Uniform Buffer 以验证完整替换语义。
+        let uniform = table.insert(TestBuffer {
+            // Uniform 描述固定为三十二字节。
+            desc: BufferDesc::uniform(32),
+        });
+        // 局部 Uniform 上传必须拒绝。
+        assert!(
+            table
+                .validate_upload(RhiBufferUploadPreflight::uniform(uniform, 16))
+                .is_err()
+        );
+        // 完整 Uniform 上传必须通过。
+        assert!(
+            table
+                .validate_upload(RhiBufferUploadPreflight::uniform(uniform, 32))
+                .is_ok()
         );
     }
 }

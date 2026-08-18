@@ -13,11 +13,11 @@ use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
     LoadAction, PipelineBinding, PipelineDesc, RenderTargetHandle, RhiBufferResource,
-    RhiBufferResourceTable, RhiBufferUpload, RhiColor, RhiColorClearContract, RhiExtent,
-    RhiPassState, RhiPipelineResourceTable, RhiResourceTable, RhiScissor, RhiSubmissionSequence,
-    RhiTextureResource, RhiTextureResourceTable, RhiTextureUpload, RhiViewport,
-    SampledTextureBinding, SamplerDesc, SamplerHandle, TextureCopy, TextureDesc, TextureFormat,
-    TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
+    RhiBufferResourceTable, RhiBufferUpload, RhiBufferUploadPreflight, RhiColor,
+    RhiColorClearContract, RhiExtent, RhiPassState, RhiPipelineResourceTable, RhiResourceTable,
+    RhiScissor, RhiSubmissionSequence, RhiTextureResource, RhiTextureResourceTable,
+    RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle, TextureCopy,
+    TextureDesc, TextureFormat, TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
 };
 // 引入 D3D11 的基础资源和绑定类型。
 use ::windows::Win32::Graphics::Direct3D11::{
@@ -401,6 +401,14 @@ impl GraphicsDevice for D3d11Context {
         self.rhi_device.pipeline(packet.pipeline)?;
         // 共享 Buffer 表读取冻结描述并统一验证 draw 资源关系。
         self.rhi_device.buffers.validate_draw(packet)
+    }
+
+    // 在执行 Buffer 上传前只读预检真实句柄与共享描述规则。
+    fn preflight_buffer_upload(&self, upload: RhiBufferUploadPreflight) -> Result<()> {
+        // 关闭后的 owner 必须先于资源表查询拒绝上传预检。
+        self.ensure_active()?;
+        // 共享 Buffer 表读取冻结描述并统一验证上传关系。
+        self.rhi_device.buffers.validate_upload(upload)
     }
 
     // 在执行 sampled bind 前只读预检真实纹理与 sampler 资源。

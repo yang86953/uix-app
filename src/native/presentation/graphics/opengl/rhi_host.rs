@@ -9,10 +9,11 @@ use crate::core::{Errc, Error};
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
     GraphicsSurface, GraphicsSurfaceCapabilities, LoadAction, PipelineBinding, PipelineDesc,
-    RenderTargetHandle, RhiBufferUpload, RhiColor, RhiExtent, RhiPresentTransaction, RhiScissor,
-    RhiSurfaceReadback, RhiSurfaceResizeTransaction, RhiTextureUpload, RhiViewport,
-    SampledTextureBinding, SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceFrame,
-    SurfaceToken, TextureCopy, TextureDesc, TextureHandle, TextureMove,
+    RenderTargetHandle, RhiBufferUpload, RhiBufferUploadPreflight, RhiColor, RhiExtent,
+    RhiPresentTransaction, RhiScissor, RhiSurfaceReadback, RhiSurfaceResizeTransaction,
+    RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle,
+    SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy, TextureDesc, TextureHandle,
+    TextureMove,
 };
 // 引入 OpenGL surface test_present 的共享结果类型。
 use crate::native::present::PresentTestResult;
@@ -132,6 +133,14 @@ where
         self.rhi_ensure_active()?;
         // 只读转发不产生 OpenGL 状态或资源副作用。
         self.rhi_pipeline().rhi_preflight_sampled_binding(binding)
+    }
+
+    // 在共享资源表上只读预检 Buffer 上传的资源身份与载荷。
+    fn preflight_buffer_upload(&self, upload: RhiBufferUploadPreflight) -> Result<()> {
+        // 先拒绝已关闭 owner，不恢复 native context。
+        self.rhi_ensure_active()?;
+        // 只读转发不产生 OpenGL 状态或资源副作用。
+        self.rhi_pipeline().rhi_preflight_buffer_upload(upload)
     }
 
     // 上传 texture payload。
