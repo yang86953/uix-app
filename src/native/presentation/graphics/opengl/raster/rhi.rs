@@ -2,6 +2,8 @@
 
 // 引入统一错误和 RHI 原语。
 use crate::core::error::Result;
+// 引入 Surface 冻结的跨呈现像素保留语义。
+use crate::core::PresentCoherency;
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDeviceCapabilities, LoadAction, PipelineDesc,
     PipelineHandle, RenderTargetHandle, RhiBufferUpload, RhiExtent, RhiPresentTransaction,
@@ -210,11 +212,13 @@ impl OpenGlRasterPipeline {
         transaction: RhiPresentTransaction,
         // 接收宿主当前 drawable token。
         current_token: SurfaceToken,
+        // 接收宿主 Surface capability 的保留事实。
+        present_coherency: PresentCoherency,
     ) -> Result<ValidatedRhiPresent> {
         // 只向 Device Component 传递动态事实，不在 bridge 重复解释规则。
         self.rhi
             // 共享门禁同时核对 frame、目标和最近提交。
-            .validate_present(transaction, current_token)
+            .validate_present(transaction, current_token, present_coherency)
     }
 
     // 返回当前 swapchain 的物理 extent。

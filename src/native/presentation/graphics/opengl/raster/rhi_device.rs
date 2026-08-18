@@ -7,6 +7,8 @@ use glow::HasContext as _;
 
 // 引入统一错误、结果和 RHI 原语。
 use crate::core::error::{Errc, Error, Result};
+// 引入 Surface 提供的跨呈现像素保留语义。
+use crate::core::PresentCoherency;
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, LoadAction, PipelineColorWriteMask, PipelineDesc,
     PipelineDitherState, PipelineHandle, PipelineKind, RenderTargetHandle, RhiBufferUpload,
@@ -645,11 +647,15 @@ impl OpenGlRhiDevice {
         transaction: RhiPresentTransaction,
         // 接收当前 drawable token。
         current_token: SurfaceToken,
+        // 接收当前 OpenGL Surface 冻结的保留能力。
+        present_coherency: PresentCoherency,
     ) -> Result<ValidatedRhiPresent> {
-        // OpenGL 只提供动态事实，三项规则由共享 RHI Component 解释。
+        // OpenGL 只提供动态事实，完整呈现规则由共享 RHI Component 解释。
         transaction.validate(
             // 传入当前 Surface 代际与 extent。
             current_token,
+            // 传入 Surface capability 对窄呈现的承诺。
+            present_coherency,
             // 传入同一组合 context 的 Device 提交序列。
             &self.submission_sequence,
         )

@@ -109,9 +109,12 @@ class GraphicsRhiPresentTransactionContractTests(unittest.TestCase):
         # OpenGL Device 必须调用同一共享门禁。
         self.assertIn("transaction.validate(", opengl_device)
         # OpenGL bridge 只做 owner-thread 转发。
-        self.assertIn(".validate_present(transaction, current_token)", opengl_bridge)
+        self.assertIn(
+            ".validate_present(transaction, current_token, present_coherency)",
+            opengl_bridge,
+        )
         # D3D11 只能把已验证 damage 交给 DXGI 路径。
-        self.assertIn("self.present_result(present.damage())", d3d11_surface)
+        self.assertIn("self.present_result(&present)", d3d11_surface)
         # OpenGL 只能把已验证 damage 交给 swap 路径。
         self.assertIn("self.rhi_swap_buffers(present.into_damage())", opengl_surface)
 
