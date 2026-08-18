@@ -79,12 +79,12 @@ class GraphicsRhiDrawRangeContractTests(unittest.TestCase):
         ):
             # 每个旧字段都必须从共享 packet 消失。
             self.assertNotIn(field, shared)
-        # packet 非空门禁必须委托给唯一范围。
-        self.assertIn("self.range.is_non_empty()", shared)
-        # FramePlan 必须继续通过 packet 门禁拒绝空 draw。
+        # packet 值域门禁必须委托给唯一范围。
+        self.assertIn("self.range.is_valid()", shared)
+        # FramePlan 必须继续通过 packet 门禁拒绝空或溢出 draw。
         frame_plan = FRAME_PLAN.read_text(encoding="utf-8")
         # 锁定 FramePlan 到共享门禁的调用关系。
-        self.assertIn("packet.is_non_empty()", frame_plan)
+        self.assertIn("packet.has_valid_range()", frame_plan)
 
     # 所有既有生产端必须通过类型化构造器建立非索引范围。
     def test_all_current_producers_construct_typed_ranges(self) -> None:
@@ -109,10 +109,10 @@ class GraphicsRhiDrawRangeContractTests(unittest.TestCase):
         self.assertIn("let range = packet.range;", d3d11)
         # OpenGL 必须从范围取得索引绑定与两类计数。
         self.assertIn("range.index_binding()", opengl)
-        # OpenGL 必须从范围取得索引数量。
-        self.assertIn("range.index_count()", opengl)
-        # OpenGL 必须从范围取得顶点数量。
-        self.assertIn("range.vertex_count()", opengl)
+        # OpenGL 必须从范围取得 checked 有符号索引数量。
+        self.assertIn(".index_count_i32()", opengl)
+        # OpenGL 必须从范围取得 checked 有符号顶点数量。
+        self.assertIn(".vertex_count_i32()", opengl)
         # D3D11 必须从范围取得索引绑定。
         self.assertIn("range.index_binding()", d3d11)
         # D3D11 必须从范围取得索引数量。
