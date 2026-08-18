@@ -114,6 +114,33 @@ pub(super) fn validate_draw_uploads(
             "FramePlan vertex upload layout does not match pipeline contract",
         ));
     }
+    // 非索引 DrawRange 必须完整落在最近一次类型化顶点上传内。
+    if packet.range.index_binding().is_none() {
+        // checked 末端溢出必须在进入任一 Adapter 前拒绝。
+        let vertex_end = packet.range.checked_vertex_end().ok_or_else(|| {
+            // 使用稳定参数错误表达共享 u32 末端无法表示。
+            Error::new(
+                Errc::InvalidArgument,
+                "FramePlan draw vertex range end is invalid",
+            )
+        })?;
+        // 从同一类型化 payload 派生完整顶点数量。
+        let uploaded_vertex_count = data.vertex_count().ok_or_else(|| {
+            // 残缺 payload 不得成为范围比较的隐式依据。
+            Error::new(
+                Errc::InvalidArgument,
+                "FramePlan vertex upload vertex count is invalid",
+            )
+        })?;
+        // DrawRange 末端不得超过最近上传的完整顶点数量。
+        if vertex_end > uploaded_vertex_count {
+            // 在 Device 执行前统一拒绝越界读取。
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "FramePlan draw vertex range exceeds typed upload",
+            ));
+        }
+    }
     // 当前固定 pipeline 都要求一个完整类型化 Uniform buffer。
     let uniform_buffer = packet.uniform_buffer.ok_or_else(|| {
         // 缺失常量不能由 Adapter 用零值或旧帧数据猜测。

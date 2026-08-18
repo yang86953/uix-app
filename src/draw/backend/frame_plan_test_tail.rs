@@ -162,6 +162,60 @@ fn rejects_draw_without_typed_vertex_upload_before_adapter() {
     assert!(error.what().contains("typed vertex upload"));
 }
 
+// 验证非索引 DrawRange 越过类型化顶点上传时必须在 Adapter 前拒绝。
+#[test]
+fn rejects_draw_range_beyond_typed_upload_before_adapter() {
+    // 创建可验证的第一代 surface。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 复用包含三个顶点的有效计划作为越界基线。
+    let mut invalid_plan = test_plan(token);
+    // 只在作用域内借用 pass，确保执行调用前借用已经结束。
+    {
+        // 取得唯一 render pass 以修改其 draw range。
+        let FramePlanStep::Pass(pass) = &mut invalid_plan.steps[0] else {
+            // 测试基线漂移时立即失败。
+            panic!("test plan must start with a render pass");
+        };
+        // 找到唯一 draw packet 并注入超过三个顶点的非索引范围。
+        let packet = pass
+            // 遍历当前 pass 内的命令。
+            .commands
+            // 借出可变命令以修改封闭 draw packet。
+            .iter_mut()
+            // 只选择 Draw 命令。
+            .find_map(|command| match command {
+                // 返回 draw packet 的可变借用。
+                FramePlanCommand::Draw(packet) => Some(packet),
+                // 其它命令不拥有 DrawRange。
+                _ => None,
+            })
+            // 有效测试基线必须包含 draw。
+            .expect("test plan must contain a draw");
+        // 使用共享 DrawRange 构造器表达四顶点读取。
+        packet.range = crate::native::present::rhi::DrawRange::vertices(4);
+    }
+    // 创建独立记录 context，观察验证前是否触碰 Adapter。
+    let mut invalid_context = recording_context(token);
+    // 执行越界计划并要求稳定失败。
+    let error = invalid_plan
+        // 执行入口必须在 activate 前完成范围验证。
+        .execute_on_context(&mut invalid_context)
+        // 越界范围必须返回错误而不是截断。
+        .expect_err("draw range beyond typed upload must fail");
+    // 越界范围属于稳定计划参数错误。
+    assert_eq!(error.code(), Errc::InvalidArgument);
+    // 诊断必须明确指出类型化上传范围越界。
+    assert!(error.what().contains("exceeds typed upload"));
+    // 验证失败发生在 activate 之前，设备日志应保持为空。
+    assert!(invalid_context.device.log.is_empty());
+    // 验证失败计划不得进入最终 present。
+    assert_eq!(invalid_context.surface.present_count, 0);
+    // 创建第二个记录 context，证明原始合法计划仍可执行。
+    let mut valid_context = recording_context(token);
+    // 合法的三顶点计划必须通过同一验证入口。
+    assert!(test_plan(token).execute_on_context(&mut valid_context).is_ok());
+}
+
 // 验证 Draw 缺失 viewport 或 scissor 时均在 Adapter 前拒绝。
 #[test]
 fn rejects_draw_without_explicit_raster_state_before_adapter() {

@@ -12,6 +12,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 FramePlan 顶点顺序验证。
 VALIDATION = ROOT / "src/draw/backend/frame_plan_validation.rs"
+# 定位共享顶点 payload 值对象。
+UPLOAD = ROOT / "src/draw/backend/frame_plan_upload.rs"
+# 定位共享 DrawRange 值对象。
+DRAW_PACKET = ROOT / "src/native/present/rhi/draw_packet.rs"
 # 定位共享顶点 payload 工厂。
 RENDERER = ROOT / "src/draw/backend/rhi_renderer.rs"
 # 定位独立 Gradient lowering。
@@ -54,6 +58,28 @@ class GraphicsRhiVertexUploadOwnershipContractTests(unittest.TestCase):
         self.assertIn("data.layout() != contract.vertex", validator)
         # 错误必须明确要求类型化顶点上传。
         self.assertIn("FramePlan draw must follow a typed vertex upload", validator)
+
+    # 非索引范围末端必须由共享 DrawRange 与 payload 数量共同约束。
+    def test_non_indexed_range_is_bounded_by_typed_payload(self) -> None:
+        # 读取共享范围值对象源码。
+        draw_packet = DRAW_PACKET.read_text(encoding="utf-8")
+        # 读取类型化顶点 payload 源码。
+        upload = UPLOAD.read_text(encoding="utf-8")
+        # 读取 FramePlan draw 验证源码。
+        validation = VALIDATION.read_text(encoding="utf-8")
+        # DrawRange 必须提供 checked 顶点末端且索引变体返回空投影。
+        draw_range = function_range(draw_packet, "impl DrawRange", "// 描述通用 renderer")
+        self.assertIn("checked_vertex_end", draw_range)
+        self.assertIn("Self::Indices { .. } => None", draw_range)
+        # FrameVertexPayload 必须从自身布局和 values 派生顶点数量。
+        payload = function_range(upload, "impl FrameVertexPayload", "// 保存 FramePlan 允许上传的封闭 Uniform")
+        self.assertIn("pub(crate) fn vertex_count", payload)
+        self.assertIn("values.len() / floats_per_vertex", payload)
+        # 验证器必须在布局匹配后比较末端与最近上传数量。
+        validator = function_range(validation, "pub(super) fn validate_draw_uploads", "    // 当前 draw 的所有类型化资源事实")
+        self.assertLess(validator.index("data.layout() != contract.vertex"), validator.index("checked_vertex_end"))
+        self.assertIn("data.vertex_count()", validator)
+        self.assertIn("FramePlan draw vertex range exceeds typed upload", validator)
 
     # 静态 unit quad 必须由共享类型化工厂提供并按 payload 大小创建 buffer。
     def test_static_resources_create_without_direct_upload(self) -> None:
