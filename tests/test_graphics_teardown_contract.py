@@ -98,20 +98,21 @@ class GraphicsTeardownContractTests(unittest.TestCase):
 
     # 校验薄 RHI 在首帧前完成能力探针，并拥有 MSDF atlas 的显式释放边界。
     def test_rhi_probe_and_msdf_atlas_contract(self) -> None:
-        # 读取通用 RHI、registry、renderer 和 backend shutdown 的实现。
+        # 读取通用 RHI、Drawing probe、renderer 和 backend shutdown 的实现。
         rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
         registry = (ROOT / "src/native/factory/registry.rs").read_text(encoding="utf-8")
+        probe = (ROOT / "src/draw/backend/gpu/device_probe.rs").read_text(encoding="utf-8")
         renderer = (ROOT / "src/draw/backend/rhi_renderer.rs").read_text(encoding="utf-8")
         msdf = (ROOT / "src/draw/backend/rhi_renderer_msdf.rs").read_text(encoding="utf-8")
         mixed = (ROOT / "src/draw/backend/rhi_renderer_mixed.rs").read_text(encoding="utf-8")
-        backend = (ROOT / "src/draw/backend/gpu/backend/render_backend.rs").read_text(
-            encoding="utf-8"
-        )
-        # 通用 device 必须声明首帧前固定 pipeline/resource probe。
-        self.assertIn("fn probe(&mut self)", rhi)
-        # registry 必须在 owner thread 绑定前执行 probe 并记录成功事实。
-        self.assertIn("rhi.device().probe()", registry)
-        self.assertIn("atomic GPU recipe probe passed", registry)
+        backend = (ROOT / "src/draw/backend/gpu/backend/render_backend.rs").read_text(encoding="utf-8")
+        trait_start = rhi.index("pub(crate) trait GraphicsDevice")
+        trait_end = rhi.index("pub(crate) trait GraphicsSurface", trait_start)
+        self.assertNotIn("fn probe(", rhi[trait_start:trait_end])
+        for fragment in ("rhi.device().probe()", "probe_device"):
+            self.assertNotIn(fragment, registry)
+        for fragment in ("FramePlan::offscreen()", "FrameVertexPayload", "FrameUniformPayload::Mesh", "FrameUniformPayload::Shape", "push_pass", "execute_offscreen_on_device"):
+            self.assertIn(fragment, probe)
         # MSDF atlas 必须有 renderer 状态、混合 lowering 入口和 shutdown 释放边界。
         self.assertIn("msdf_atlas_pages", renderer)
         self.assertIn("msdf_atlas_cache", renderer)
@@ -346,7 +347,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 读取 retained surface 生命周期，确认 legacy 放弃 helper 不会复活。
         retained = (ROOT / "src/draw/backend/gpu/backend/rhi_surface.rs").read_text(encoding="utf-8")
         # 生产 backend 构造必须以能力快照存在性拒绝缺少组合 thin RHI 的 context。
-        self.assertIn(".is_some_and(|capabilities| capabilities.has_gpu_baseline())", lifecycle)
+        self.assertIn("has_gpu_baseline()", lifecycle)
         # 最终状态机必须以统一 typed 门禁拒绝未覆盖语义。
         self.assertIn("require_lossless_main_surface_submission", present)
         # 读取 retained RHI 主 surface 提交状态机。
@@ -460,7 +461,6 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("present after shutdown", metal)
         # 陈旧的二阶段初始化诊断不得复活。
         self.assertNotIn("present before initialize", metal)
-
     # 校验平台 current 语义只存在于 adapter 私有 RHI host，不再穿透通用 renderer。
     def test_make_current_compatibility_entry_leaves_renderer_and_graphics_context(self) -> None:
         # 读取公共图形上下文 trait。
@@ -734,11 +734,11 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # Additive 事实必须直接复制自同一薄 RHI 快照。
         self.assertIn("rhi_additive_blend: capabilities.additive_blend", raster_caps)
         # 构造门禁必须从已验证的 device 角色读取唯一能力来源。
-        self.assertIn("Some(gpu_ctx.rhi_device()?.device_capabilities())", backend)
+        self.assertIn("rhi_capabilities.has_gpu_baseline()", backend)
         # 构造门禁必须验证完整 GPU 原语基线。
         self.assertIn("capabilities.has_gpu_baseline()", backend)
         # 构造门禁必须从同一快照派生 renderer 投影。
-        self.assertIn(".map(NativeRasterCaps::from_device_capabilities)", backend)
+        self.assertIn("NativeRasterCaps::from_device_capabilities(rhi_capabilities)", backend)
 
     # 校验 surface readback 已成为事实声明的可选 thin RHI 能力。
     def test_surface_readback_is_an_optional_thin_rhi_capability(self) -> None:

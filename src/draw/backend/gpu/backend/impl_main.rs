@@ -6,6 +6,8 @@ use std::time::Instant;
 
 use super::super::SOFT_FALLBACK_IDLE_TIME_GRACE;
 use super::super::canvas::NativeGpuCanvas2D;
+// 引入 Drawing GPU Module 私有的统一 FramePlan 启动探针。
+use super::super::device_probe::probe_device;
 use super::GpuBackend;
 use super::logical_metadata_from_surface;
 use super::surface::NativeGpuDrawSurface;
@@ -24,6 +26,23 @@ use crate::native::present::rhi::{GraphicsSurface, RhiScissor};
 use crate::native::present::GpuRecipeOwner;
 // 引入所属 graphics backend Module 的 renderer 能力投影。
 use super::super::NativeRasterCaps;
+
+// GPU backend 构造失败时检查式关闭 native owner，并保留主失败因果。
+fn shutdown_gpu_owner_with_error(
+    // 借用尚未进入 GpuBackend 所有权的 recipe owner。
+    gpu_ctx: &mut GpuRecipeOwner,
+    // 接收导致当前候选被拒绝的主错误。
+    primary_error: Error,
+    // 返回主错误或以主错误为原因的 shutdown 失败。
+) -> Error {
+    // 所有构造拒绝都必须尝试释放当前候选的原生资源。
+    match gpu_ctx.try_shutdown() {
+        // shutdown 成功时保持原始拒绝语义。
+        Ok(()) => primary_error,
+        // shutdown 失败时让生命周期错误成为主错误并链接原始原因。
+        Err(cleanup_error) => cleanup_error.with_source(primary_error),
+    }
+}
 
 impl GpuBackend {
     // 在通用 renderer 不感知平台 current API 的前提下准备本帧 RHI device。
@@ -59,19 +78,17 @@ impl GpuBackend {
     pub(crate) fn new_gpu_only(mut gpu_ctx: GpuRecipeOwner) -> Result<Self, Error> {
         // 一次读取静态 recipe 事实，供构造门禁和 typed error 复用。
         let caps = gpu_ctx.caps();
-        // 从组合 thin RHI 一次取得已由 factory probe 验证的事实快照。
-        // 只在这个局部借用已验证 owner，随后保存可复制的能力值。
-        let rhi_capabilities = Some(gpu_ctx.rhi_device()?.device_capabilities());
+        // 从组合 thin RHI 一次取得 native factory 已验证形状的 Device 能力快照。
+        let rhi_capabilities = match gpu_ctx.rhi_device() {
+            // 只在这个局部借用 owner，随后保存可复制的能力值。
+            Ok(device) => device.device_capabilities(),
+            // 借用失败也必须检查式关闭尚未交付给 backend 的 owner。
+            Err(error) => return Err(shutdown_gpu_owner_with_error(&mut gpu_ctx, error)),
+        };
         // 从同一快照派生通用 renderer 真正消费的窄能力投影。
-        let native_caps = rhi_capabilities
-            // 保留 retained 与 Additive 两项绘制事实。
-            .map(NativeRasterCaps::from_device_capabilities)
-            // 缺少薄 RHI 时使用空投影进入统一 typed failure。
-            .unwrap_or_default();
+        let native_caps = NativeRasterCaps::from_device_capabilities(rhi_capabilities);
         // 构造门禁同时要求完整 GPU 原语基线和 retained 主颜色目标。
-        let raster_baseline = rhi_capabilities
-            // 缺少薄 RHI 或任一 GPU 基线原语都不能构造生产 backend。
-            .is_some_and(|capabilities| capabilities.has_gpu_baseline())
+        let raster_baseline = rhi_capabilities.has_gpu_baseline()
             // GPU-only canvas 还必须持有跨帧 retained 事实。
             && native_caps.has_gpu_only_baseline();
         if !raster_baseline {
@@ -81,27 +98,39 @@ impl GpuBackend {
             let raster = caps.raster;
             // 保存诊断所需的 present recipe。
             let present = caps.present;
-            // 构造失败前检查式关闭已经创建的 native owner。
-            gpu_ctx.try_shutdown()?;
-            // 返回稳定参数错误，交由上层选择其它 recipe。
-            return Err(Error::new(
+            // 构造稳定参数错误，交由上层选择其它 recipe。
+            let error = Error::new(
                 // 能力不完整属于构造参数与 recipe 不匹配。
                 Errc::InvalidArgument,
                 // 同时记录唯一 RHI 快照与 renderer 投影，避免平行声明掩盖差异。
                 format!(
                     "GpuBackend requires a complete GPU-only retained RHI baseline, got {backend} raster={raster} present={present} rhi={rhi_capabilities:?} renderer={native_caps:?}"
                 ),
-            ));
+            );
+            // 拒绝当前候选前检查式关闭 owner 并保留失败因果。
+            return Err(shutdown_gpu_owner_with_error(&mut gpu_ctx, error));
         }
+        // 在 Drawing System 内通过共享 FramePlan 验证固定 pipeline、Shape ABI 与 Device 命令。
+        let probe_result = match gpu_ctx.rhi_device() {
+            // 探针只取得 Device 角色，不能触碰 Surface 生命周期。
+            Ok(device) => probe_device(device),
+            // owner-thread 激活或借用失败保持原始 typed error。
+            Err(error) => Err(error),
+        };
+        // probe 失败时由 probe 先清理临时资源，再关闭整个候选 owner。
+        if let Err(error) = probe_result {
+            // 当前候选不得带着部分初始化资源进入后续 recipe 回退。
+            return Err(shutdown_gpu_owner_with_error(&mut gpu_ctx, error));
+        }
+        // 只有共享 FramePlan 真正提交通过后才建立 GPU backend。
+        tracing::info!("Drawing GPU FramePlan startup probe passed");
         // 一次读取 live surface，避免 extent 与 DPR 来自不同生命周期时刻。
         let present_surface = gpu_ctx.present_surface();
         // 从同一快照派生逻辑 canvas 元数据。
         let ((logical_w, logical_h), device_pixel_ratio) =
             logical_metadata_from_surface(present_surface);
         // 只有已取得完整薄 RHI 能力快照的参考 adapter 创建 lowering cache。
-        let rhi_renderer = rhi_capabilities
-            // 能力值只作为已存在组合 RHI 的构造证明。
-            .map(|_| super::super::super::rhi_renderer::RhiRenderer::default());
+        let rhi_renderer = Some(super::super::super::rhi_renderer::RhiRenderer::default());
         // 生产主 surface 固定使用禁止 legacy soft upload 的 GPU-only canvas。
         let mut canvas = NativeGpuCanvas2D::new_gpu_only(logical_w, logical_h, native_caps);
         canvas.set_device_pixel_ratio(device_pixel_ratio);

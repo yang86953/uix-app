@@ -33,8 +33,6 @@ mod color;
 mod capabilities;
 // 将 draw packet 拆到独立类型化契约文件，保持 pipeline 身份不可拆分。
 mod draw_packet;
-// 将 bootstrap 探针拆到独立流程文件，保持 RHI trait 聚焦薄原语契约。
-mod probe;
 // 将 render-pass 生命周期和资源冲突门禁收归共享状态机，禁止 Adapter 各自解释顺序。
 mod pass_state;
 // 将纹理复制与移动的格式、范围和同资源规则收归共享契约。
@@ -454,11 +452,6 @@ impl RhiSurfaceReadback {
 #[path = "rhi/readback_tests.rs"]
 mod surface_readback_tests;
 
-// 将 GPU bootstrap 探针的动态生命周期契约测试拆到独立文件。
-#[cfg(test)]
-#[path = "rhi/probe_tests.rs"]
-mod probe_tests;
-
 // 描述一次 render pass 的加载动作。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum LoadAction {
@@ -472,16 +465,6 @@ pub(crate) enum LoadAction {
 pub(crate) trait GraphicsDevice {
     // 返回本 device 的事实型能力快照。
     fn device_capabilities(&self) -> GraphicsDeviceCapabilities;
-
-    // 在 bootstrap 阶段执行最小资源与固定 pipeline 探针。
-    fn probe(&mut self) -> Result<()> {
-        // 探针会直接创建资源和提交命令，必须先激活当前 owner 的原生 context。
-        self.activate()?;
-        // bootstrap 只允许在设备健康时建立能力事实。
-        self.maintain()?;
-        // 委托共享 probe 流程真实执行 Solid 与 Shape draw。
-        probe::probe_device(self)
-    }
 
     // 创建动态 buffer，具体内存类型由 adapter 选择。
     fn create_buffer(&mut self, _desc: BufferDesc) -> Result<BufferHandle> {
