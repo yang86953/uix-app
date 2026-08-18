@@ -10,10 +10,11 @@ use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, LoadAction, PipelineColorWriteMask, PipelineDesc,
     PipelineDitherState, PipelineHandle, PipelineKind, RenderTargetHandle, RhiBufferUpload,
-    RhiColor, RhiColorClearContract, RhiExtent, RhiPassState, RhiResourceTable, RhiScissor,
-    RhiSubmissionSequence, RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc,
-    SamplerHandle, SubmissionHandle, TextureCopy, TextureDesc, TextureFormat, TextureHandle,
-    TextureMove, UIX_COLOR_CLEAR_CONTRACT,
+    RhiColor, RhiColorClearContract, RhiExtent, RhiPassState, RhiPresentTransaction,
+    RhiResourceTable, RhiScissor, RhiSubmissionSequence, RhiTextureUpload, RhiViewport,
+    SampledTextureBinding, SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceToken, TextureCopy,
+    TextureDesc, TextureFormat, TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
+    ValidatedRhiPresent,
 };
 
 // 将 retained 区域移动拆出，保持资源设备文件低于行数上限。
@@ -637,14 +638,26 @@ impl OpenGlRhiDevice {
         self.submission_sequence.issue()
     }
 
-    // 校验 surface present 使用的是最近一次成功 submit。
-    pub(super) fn validate_submission(&self, submission: SubmissionHandle) -> Result<()> {
-        // 零值和迟到提交都不能触发原生交换。
-        if !self.submission_sequence.is_latest(submission) {
-            return Err(rhi_invalid("OpenGL RHI present submission is stale"));
-        }
-        // 返回统一成功结果。
-        Ok(())
+    // 通过共享门禁校验不可拆的 Surface 呈现事务。
+    pub(super) fn validate_present(
+        // 只读借用 Device 资源与提交状态。
+        &self,
+        // 接收 FramePlan 构造的完整呈现事务。
+        transaction: RhiPresentTransaction,
+        // 接收当前 drawable token。
+        current_token: SurfaceToken,
+        // 接收 acquire 发布的唯一目标身份。
+        expected_target: RenderTargetHandle,
+    ) -> Result<ValidatedRhiPresent> {
+        // OpenGL 只提供动态事实，三项规则由共享 RHI Component 解释。
+        transaction.validate(
+            // 传入当前 Surface 代际与 extent。
+            current_token,
+            // 传入当前 Surface target。
+            expected_target,
+            // 传入同一组合 context 的 Device 提交序列。
+            &self.submission_sequence,
+        )
     }
 
     // 释放所有 RHI 资源；调用方必须保证 GL context current。

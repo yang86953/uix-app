@@ -66,14 +66,18 @@ class GraphicsReadbackContractTests(unittest.TestCase):
             # 到后续 offscreen 执行入口前结束。
             plan.index("pub(crate) fn execute_offscreen_on_device")
         ]
+        # 定位唯一 Device submit。
+        submit_index = method.index("let submission = context.device().submit()?")
+        # 只在 submit 之后定位观察钩子调用，排除函数名和参数声明。
+        hook_index = method.index("\n        before_present(", submit_index)
         # device submit 必须先于观察钩子。
-        self.assertLess(method.index("let submission = context.device().submit()?"), method.index("before_present(context)"))
+        self.assertLess(submit_index, hook_index)
         # 观察钩子必须先于最终 surface present。
-        self.assertLess(method.index("before_present(context)"), method.index(".present(frame, submission"))
+        self.assertLess(hook_index, method.index(".present(RhiPresentTransaction::new"))
         # 最终 retained composite 必须使用该精确钩子入口。
         self.assertIn("execute_sampled_quads_with_present_hook", submit)
-        # 回读必须消费当前组合 context，而非另行获取兼容 context。
-        self.assertIn("GpuBackend::try_readback(context)", submit)
+        # 回读钩子必须只消费窄 Surface 角色，而非重新取得组合 context。
+        self.assertIn("GpuBackend::try_readback(surface)", submit)
 
     # 校验应用只取得 Drawing 快照票据，不接触任何原生图形对象。
     def test_public_test_port_and_demo_assert_all_header_edges(self) -> None:

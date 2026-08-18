@@ -5,7 +5,7 @@ use crate::core::error::{Errc, Error, Result};
 // 引入薄 RHI 的 Device、Surface、组合 context、目标句柄与提交句柄。
 use crate::native::present::rhi::{
     GraphicsContextRhi, GraphicsDevice, GraphicsSurface, RenderTargetHandle, RhiBufferUpload,
-    SubmissionHandle,
+    RhiPresentTransaction, SubmissionHandle,
 };
 
 // 引入父模块的计划私有结构。
@@ -219,7 +219,7 @@ impl FramePlan {
         // 获取唯一的本帧 surface image。
         let frame = context.surface().acquire()?;
         // 检查 acquire 返回的 image 代际。
-        if frame.token != plan_surface {
+        if frame.token() != plan_surface {
             // 迟到或错误代际的 image 不得接收当前计划。
             return Err(Error::new(
                 Errc::GraphicsSurfaceLost,
@@ -227,11 +227,11 @@ impl FramePlan {
             ));
         }
         // 组合 context 只把窄 device 角色交给唯一命令执行组件。
-        FramePlanExecutor::for_surface(context.device(), frame.target).execute(&self.steps)?;
+        FramePlanExecutor::for_surface(context.device(), frame.target()).execute(&self.steps)?;
         // 所有内部工作完成后只允许一次 device submit。
         let submission = context.device().submit()?;
         // 检查执行期间 surface 是否被重建。
-        if context.surface_ref().token() != frame.token {
+        if context.surface_ref().token() != frame.token() {
             // 不把旧 image 的 submit 当作当前 surface 的成功 present。
             return Err(Error::new(
                 Errc::GraphicsSurfaceLost,
@@ -244,7 +244,7 @@ impl FramePlan {
             context.surface(),
         );
         // 观察钩子不得使当前 surface 代际失效。
-        if context.surface_ref().token() != frame.token {
+        if context.surface_ref().token() != frame.token() {
             // 代际变化仍按 surface lost 进入统一恢复层。
             return Err(Error::new(
                 // 使用稳定的 surface 生命周期分类。
@@ -257,8 +257,15 @@ impl FramePlan {
         context
             // 最终阶段只借用 Surface 角色消费 frame 与 submission。
             .surface()
-            // Surface Adapter 负责将同代际 image 呈现到原生窗口。
-            .present(frame, submission, present_damage)?;
+            // Surface Adapter 只接收绑定 frame、submit 与 damage 的完整事务。
+            .present(RhiPresentTransaction::new(
+                // 绑定 acquire 返回的同代际 image。
+                frame,
+                // 绑定 Device 刚签发的提交身份。
+                submission,
+                // 绑定本帧唯一最终 damage。
+                present_damage,
+            ))?;
         // 只有 present 成功后才返回可消费 damage 的 commit。
         Ok(FrameCommit {
             // 保存已经成功呈现的 surface 代际。

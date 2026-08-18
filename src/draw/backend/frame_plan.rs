@@ -398,9 +398,9 @@ mod tests {
     use crate::native::present::rhi::{
         BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, GraphicsSurface,
         LoadAction, PipelineBinding, PipelineHandle, PipelineKind, RenderTargetHandle,
-        RhiBufferUpload, RhiColor, RhiExtent, RhiMeshRasterParams, RhiSampledRasterParams,
-        RhiScissor, RhiTextureTransfer, RhiViewport, SampledTextureBinding, SubmissionHandle,
-        SurfaceFrame, SurfaceToken, TextureCopy, TextureHandle, TextureMove,
+        RhiBufferUpload, RhiColor, RhiExtent, RhiMeshRasterParams, RhiPresentTransaction,
+        RhiSampledRasterParams, RhiScissor, RhiTextureTransfer, RhiViewport, SampledTextureBinding,
+        SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy, TextureHandle, TextureMove,
     };
     // 引入当前文件的计划类型。
     use super::{
@@ -578,12 +578,7 @@ mod tests {
         }
 
         // 记录最终 present，并在失败模式下返回 surface 错误。
-        fn present(
-            &mut self,
-            _frame: SurfaceFrame,
-            _submission: SubmissionHandle,
-            _damage: crate::core::PresentDamage,
-        ) -> Result<()> {
+        fn present(&mut self, _transaction: RhiPresentTransaction) -> Result<()> {
             // 记录到达最终 present 边界。
             self.present_count += 1;
             // 在失败模式下返回 surface lost。
@@ -719,14 +714,9 @@ mod tests {
         }
 
         // 把最终 present 委托给内嵌 surface。
-        fn present(
-            &mut self,
-            frame: SurfaceFrame,
-            submission: SubmissionHandle,
-            damage: crate::core::PresentDamage,
-        ) -> Result<()> {
+        fn present(&mut self, transaction: RhiPresentTransaction) -> Result<()> {
             // 复用独立 surface 的成功与失败边界。
-            self.surface.present(frame, submission, damage)
+            self.surface.present(transaction)
         }
     }
 

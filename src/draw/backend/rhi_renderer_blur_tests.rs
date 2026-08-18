@@ -2,8 +2,6 @@
 
 // 引入被测 blur 模块可见的 renderer、目标和 RHI 类型。
 use super::*;
-// 引入 mock Surface present 签名仍需的最终 damage 类型。
-use crate::core::PresentDamage;
 // 引入测试 recording context 需要的 device/surface 契约。
 use crate::native::present::rhi::{
     // Blur 方向与 tap 字段位置由共享 RHI 契约唯一声明。
@@ -26,6 +24,8 @@ use crate::native::present::rhi::{
     RenderTargetHandle,
     // Buffer 上传值对象用于记录类型化载荷。
     RhiBufferUpload,
+    // 不可拆呈现事务用于补齐 Surface 契约。
+    RhiPresentTransaction,
     // submission 句柄用于建立唯一提交边界。
     SubmissionHandle,
     // surface frame 只供意外 acquire 的可观察路径使用。
@@ -290,12 +290,8 @@ impl GraphicsSurface for RecordingContext {
     fn present(
         // 修改记录器。
         &mut self,
-        // frame 内容不影响计数。
-        _frame: SurfaceFrame,
-        // submission 内容不影响计数。
-        _submission: SubmissionHandle,
-        // damage 内容不影响计数。
-        _damage: PresentDamage,
+        // 完整事务内容不影响负面计数。
+        _transaction: RhiPresentTransaction,
     ) -> Result<()> {
         // 累加可见副作用。
         self.present_count += 1;

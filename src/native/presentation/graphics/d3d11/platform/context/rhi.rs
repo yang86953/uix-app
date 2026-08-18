@@ -5,14 +5,12 @@
 
 // 引入统一错误和结果类型。
 use crate::core::error::{Errc, Error, Result};
-// 引入最终提交 damage 类型。
-use crate::core::PresentDamage;
 // 引入 context 上已有的 DPR 快照与无帧探测结果。
 use crate::native::present::{GraphicsContextLifecycle, PresentTestResult};
 // 引入薄 RHI 的 surface 原语。
 use crate::native::present::rhi::{
-    GraphicsSurface, GraphicsSurfaceCapabilities, RenderTargetHandle, RhiExtent, RhiScissor,
-    RhiSurfaceReadback, SurfaceFrame, SurfaceToken,
+    GraphicsSurface, GraphicsSurfaceCapabilities, RenderTargetHandle, RhiExtent,
+    RhiPresentTransaction, RhiScissor, RhiSurfaceReadback, SurfaceFrame, SurfaceToken,
 };
 
 // 为 D3D11 context 实现 surface acquire/resize/present。
@@ -110,37 +108,23 @@ impl GraphicsSurface for super::D3d11Context {
         RhiSurfaceReadback::try_new(region, self.token().extent, pixels)
     }
 
-    // 只接受当前代际的 surface frame，并把提交交给 D3D11 Present。
-    fn present(
-        &mut self,
-        frame: SurfaceFrame,
-        submission: crate::native::present::rhi::SubmissionHandle,
-        damage: PresentDamage,
-    ) -> Result<()> {
+    // 只接受通过共享门禁的 Surface 呈现事务。
+    fn present(&mut self, transaction: RhiPresentTransaction) -> Result<()> {
         // checked shutdown 后不得提交旧 frame 或触碰 swapchain。
         self.ensure_active()?;
-        // 拒绝旧代际 frame，避免旧 swapchain 的提交伪装成成功。
-        if frame.token != self.token() {
-            // 返回 surface lost，让上层保留 dirty 并进入恢复 FSM。
-            return Err(Error::new(
-                Errc::GraphicsSurfaceLost,
-                "D3d11 RHI surface frame generation is stale",
-            ));
-        }
-        // 拒绝不是当前 swapchain 的 render target。
-        if frame.target.raw() != super::RHI_SURFACE_TARGET_RAW {
-            // 返回参数错误，阻止离屏 target 误走最终 present。
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                "D3d11 RHI present requires the acquired surface target",
-            ));
-        }
-        // 在触碰 DXGI 前验证 Device submit 与 Surface present 属于同一最新事务。
-        self.validate_submission_impl(submission)?;
+        // 在触碰 DXGI 前通过共享门禁验证 frame、目标和最新提交关联。
+        let present = self.validate_present_impl(
+            // 交付不可拆的 FramePlan 呈现事务。
+            transaction,
+            // 使用当前 swapchain 的代际与 extent。
+            self.token(),
+            // 使用 acquire 发布的唯一保留目标。
+            RenderTargetHandle::from_raw(super::RHI_SURFACE_TARGET_RAW),
+        )?;
         // 重新绑定 swapchain target，恢复兼容 context 的 owner 状态和 RTV 绑定。
         self.bind_swapchain_target()?;
         // 复用现有的 Present 前后 RTV 生命周期和 DXGI 错误映射。
-        self.present_result(&damage)
+        self.present_result(present.damage())
     }
 
     // 探测已经因遮挡进入 idle 的 D3D11 swapchain 是否恢复可呈现。

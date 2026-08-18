@@ -51,15 +51,15 @@ class GraphicsContextRoleContractTests(unittest.TestCase):
         # acquire 只能经 Surface 角色发生。
         self.assertIn("let frame = context.surface().acquire()?;", transaction)
         # 命令执行器只能取得 Device 角色。
-        self.assertIn("FramePlanExecutor::for_surface(context.device(), frame.target)", transaction)
+        self.assertIn("FramePlanExecutor::for_surface(context.device(), frame.target())", transaction)
         # submit 只能经 Device 角色发生。
         self.assertIn("let submission = context.device().submit()?;", transaction)
         # present 前后的代际检查只能读取 Surface 角色。
         self.assertGreaterEqual(transaction.count("context.surface_ref().token()"), 3)
         # 最终 present 必须显式取得 Surface 角色。
         self.assertIn(".surface()", transaction)
-        # 最终 present 必须消费同一 frame 与 submission。
-        self.assertIn(".present(frame, submission, present_damage)?;", transaction)
+        # 最终 present 必须消费绑定同一 frame、submission 与 damage 的事务。
+        self.assertIn(".present(RhiPresentTransaction::new(", transaction)
         # submit-before-present 观察器只能取得窄 Surface 角色。
         self.assertIn("context.surface(),", transaction)
         # 观察器不得重新取得完整组合 context。

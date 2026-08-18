@@ -9,10 +9,10 @@ use crate::core::Errc;
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
     GraphicsSurface, GraphicsSurfaceCapabilities, LoadAction, PipelineBinding, PipelineDesc,
-    RenderTargetHandle, RhiBufferUpload, RhiColor, RhiExtent, RhiScissor, RhiSurfaceReadback,
-    RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle,
-    SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy, TextureDesc, TextureHandle,
-    TextureMove,
+    RenderTargetHandle, RhiBufferUpload, RhiColor, RhiExtent, RhiPresentTransaction, RhiScissor,
+    RhiSurfaceReadback, RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc,
+    SamplerHandle, SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy, TextureDesc,
+    TextureHandle, TextureMove,
 };
 // 引入 OpenGL raster pipeline 的 RHI bridge。
 use super::raster::OpenGlRasterPipeline;
@@ -246,13 +246,8 @@ where
         RhiSurfaceReadback::try_new(region, self.token().extent, pixels)
     }
 
-    // 只接受当前代际、当前 surface target 和最近一次提交。
-    fn present(
-        &mut self,
-        frame: SurfaceFrame,
-        submission: SubmissionHandle,
-        damage: PresentDamage,
-    ) -> Result<()> {
+    // 只接受通过共享门禁的 Surface 呈现事务。
+    fn present(&mut self, transaction: RhiPresentTransaction) -> Result<()> {
         // 交换前再次 current，防止宿主的 legacy 操作改变 current context。
         self.rhi_make_current()?;
         // surface lost 必须在共享 adapter present 前消费，而不是静默交换。
@@ -265,20 +260,19 @@ where
                 "OpenGL RHI test surface lost before present",
             ));
         }
-        if frame.token != self.token() {
-            return Err(Error::new(
-                crate::core::error::Errc::GraphicsSurfaceLost,
-                "OpenGL RHI surface frame generation is stale",
-            ));
-        }
-        if frame.target.raw() != super::raster::OPENGL_RHI_SURFACE_TARGET_RAW {
-            return Err(Error::new(
-                crate::core::error::Errc::InvalidArgument,
-                "OpenGL RHI present requires the acquired surface target",
-            ));
-        }
-        self.rhi_pipeline().rhi_validate_submission(submission)?;
-        self.rhi_swap_buffers(damage)
+        // 在原生交换前读取当前 drawable 的代际与 extent。
+        let current_token = self.token();
+        // 通过共享门禁验证 frame、目标和最新提交关联。
+        let present = self.rhi_pipeline().rhi_validate_present(
+            // 交付不可拆的 FramePlan 呈现事务。
+            transaction,
+            // 传入当前宿主 Surface token。
+            current_token,
+            // 传入 acquire 发布的唯一保留目标。
+            RenderTargetHandle::from_raw(super::raster::OPENGL_RHI_SURFACE_TARGET_RAW),
+        )?;
+        // Adapter 只消费门禁发布的 damage 执行原生交换。
+        self.rhi_swap_buffers(present.into_damage())
     }
 
     // 安排一次真实 OpenGL adapter 边界上的 test-harness surface lost。
