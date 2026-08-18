@@ -134,6 +134,14 @@ where
                             RhiBufferUploadPreflight::vertex(*buffer, data.size_bytes()),
                         )?;
                     }
+                    // 索引上传必须用类型化载荷的精确编码长度预检真实 Buffer。
+                    if let FramePlanCommand::UploadIndex { buffer, data } = command {
+                        // 复用共享索引用途预检，不在 FramePlan 复制格式或容量规则。
+                        self.device.preflight_buffer_upload(
+                            // 将句柄与类型化索引载荷的字节数绑定为共享查询值。
+                            RhiBufferUploadPreflight::index(*buffer, data.size_bytes()),
+                        )?;
+                    }
                     // Uniform 上传必须在编码前证明完整替换真实 Buffer。
                     if let FramePlanCommand::UploadUniform { buffer, data } = command {
                         // 复用同一共享预检值，不在 FramePlan 复制用途或容量规则。
@@ -329,6 +337,14 @@ where
                 // 字节表示不再进入 FramePlan 存储或上层 renderer。
                 let bytes = data.encode_ne_bytes();
                 // 将资源身份与从零开始的类型化载荷绑定成唯一上传命令。
+                self.device
+                    .update_buffer(RhiBufferUpload::new(*buffer, &bytes))
+            }
+            // 在唯一执行边界把类型化索引编码为 Device 原语所需字节。
+            FramePlanCommand::UploadIndex { buffer, data } => {
+                // 索引载荷只在执行边界编码为 host-order u32 字节。
+                let bytes = data.encode_ne_bytes();
+                // 索引更新通过同一上传值对象进入完整替换门禁。
                 self.device
                     .update_buffer(RhiBufferUpload::new(*buffer, &bytes))
             }

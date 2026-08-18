@@ -125,8 +125,8 @@ class GraphicsRhiBufferContractTests(unittest.TestCase):
         self.assertIn("pub(crate) struct RhiBufferUpload<'a>", buffer)
         # FramePlan 顶点命令不再暴露从未使用的裸字节偏移。
         self.assertNotIn("offset: usize", frame_plan)
-        # 顶点与 Uniform 都只能在唯一执行边界组装上传值对象。
-        self.assertEqual(execution.count("RhiBufferUpload::new(*buffer, &bytes)"), 2)
+        # 顶点、索引与 Uniform 都只能在唯一执行边界组装上传值对象。
+        self.assertEqual(execution.count("RhiBufferUpload::new(*buffer, &bytes)"), 3)
 
     # 两个 Adapter 创建资源前必须消费同一描述门禁与原生投影。
     def test_adapters_share_buffer_creation_domain(self) -> None:

@@ -176,6 +176,134 @@ fn unused_buffer_upload_preflight_wins_before_acquire() {
     assert_eq!(context.surface.present_count, 0);
 }
 
+// indexed Draw 必须拥有当前 pass 的同 Buffer 类型化内容与完整范围。
+#[test]
+fn indexed_draw_requires_owned_index_upload_and_range() {
+    // 创建稳定的 Surface generation。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 先构造一个内容和范围都合法的索引计划。
+    let mut missing_upload = test_indexed_plan(token, [0, 1, 2], 3, 0);
+    // 取得唯一 pass 以模拟只绑定索引 Buffer 却不交付内容的旧路径。
+    let FramePlanStep::Pass(pass) = &mut missing_upload.steps[0] else {
+        // fixture 结构漂移时立即失败。
+        panic!("indexed test plan must contain a render pass");
+    };
+    // 移除类型化索引上传，保留 DrawRange 绑定。
+    pass.commands
+        // 只过滤新的索引内容命令。
+        .retain(|command| !matches!(command, FramePlanCommand::UploadIndex { .. }));
+    // 计划验证必须在进入 Device 前拒绝无内容的 indexed Draw。
+    let missing_error = missing_upload
+        // 直接调用共享 FramePlan 门禁。
+        .validate()
+        // 无类型化索引上传不得通过。
+        .expect_err("indexed draw without typed upload must fail");
+    // 错误分类保持为跨 Adapter 共享的参数错误。
+    assert_eq!(missing_error.code(), Errc::InvalidArgument);
+    // 诊断必须明确指向缺失的类型化索引内容。
+    assert!(missing_error.what().contains("typed index upload"));
+
+    // 构造 DrawRange 比已交付索引序列多读一项的计划。
+    let range_overflow = test_indexed_plan(token, [0, 1, 2], 4, 0);
+    // 越过类型化载荷的索引范围必须被拒绝。
+    let range_error = range_overflow
+        // 只使用共享计划验证，不进入任一 Adapter。
+        .validate()
+        // 越界范围必须生成稳定错误。
+        .expect_err("indexed draw range beyond typed upload must fail");
+    // 范围错误同样属于共享参数契约。
+    assert_eq!(range_error.code(), Errc::InvalidArgument);
+    // 诊断必须区分索引序列越界与顶点内容越界。
+    assert!(range_error.what().contains("index range exceeds typed upload"));
+}
+
+// indexed Draw 选中的每个值都必须落在当前类型化顶点载荷内。
+#[test]
+fn indexed_draw_rejects_vertex_content_overflow() {
+    // 创建稳定的 Surface generation。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 基线只有三个顶点，索引值三将读取第四个顶点。
+    let vertex_overflow = test_indexed_plan(token, [0, 1, 3], 3, 0);
+    // 计划验证必须从类型化顶点内容派生可访问上界。
+    let error = vertex_overflow
+        // 不借助 Adapter 资源表判断内容范围。
+        .validate()
+        // 越界顶点访问必须在 Device 前失败。
+        .expect_err("indexed draw vertex beyond typed upload must fail");
+    // 内容范围错误使用稳定参数分类。
+    assert_eq!(error.code(), Errc::InvalidArgument);
+    // 诊断必须指向 indexed Draw 的顶点越界。
+    assert!(error.what().contains("indexed draw vertex exceeds typed upload"));
+}
+
+// 合法索引内容必须且只能在 Device 边界编码，并在 acquire 前完成资源预检。
+#[test]
+fn indexed_upload_executes_and_preflights_before_acquire() {
+    // 创建稳定的 Surface generation。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 构造只读取三个已交付顶点的合法索引计划。
+    let plan = test_indexed_plan(token, [0, 1, 2], 3, 0);
+    // 创建允许所有资源查询与执行的组合 context。
+    let mut accepted = recording_context(token);
+    // 合法计划必须完成唯一 Surface 事务。
+    assert!(plan.execute_on_context(&mut accepted).is_ok());
+    // 顶点、索引与 Uniform 三次上传必须保持 FramePlan 命令顺序。
+    assert_eq!(
+        // 收集记录型 Device 的完整原语执行轨迹。
+        accepted.device.log.iter().copied().collect::<Vec<_>>(),
+        // 索引上传必须位于 Draw 之前的第二个 Buffer 更新位置。
+        vec![
+            // 先激活唯一 Device owner。
+            "activate",
+            // 激活后执行设备健康检查。
+            "maintain",
+            // 只在资源预检完成后开始 pass。
+            "begin_pass",
+            // 先交付已冻结的 viewport。
+            "viewport",
+            // 再交付已冻结的 scissor。
+            "scissor",
+            // 第一次更新交付类型化顶点。
+            "update_buffer",
+            // 第二次更新交付类型化索引。
+            "update_buffer",
+            // 第三次更新交付类型化 Uniform。
+            "update_buffer",
+            // 三类内容都生效后才允许 Draw。
+            "draw",
+            // Draw 完成后收束当前 pass。
+            "end_pass",
+            // 全部步骤完成后唯一提交。
+            "submit"
+        ]
+    );
+    // 合法索引帧必须只取得一次 Surface image。
+    assert_eq!(accepted.surface.acquire_count, 1);
+    // 合法索引帧必须只呈现一次。
+    assert_eq!(accepted.surface.present_count, 1);
+
+    // 创建同时注入索引资源错误和 Surface acquire 错误的 context。
+    let mut rejected = recording_context(token);
+    // 只拒绝测试 fixture 中身份五的索引 Buffer。
+    rejected.device.fail_upload_preflight = Some(BufferHandle::from_raw(5));
+    // 同时让 Surface acquire 失败，锁定资源预检的优先级。
+    rejected.surface.fail_acquire = true;
+    // 索引资源错误必须在取得 Surface image 前返回。
+    let error = plan
+        // 通过完整 Surface 入口覆盖只读预检和生命周期边界。
+        .execute_on_context(&mut rejected)
+        // 真实索引 Buffer 不满足契约时必须失败。
+        .expect_err("index upload preflight must fail before acquire");
+    // 索引 Buffer 身份或容量错误必须优先于 Surface lost。
+    assert_eq!(error.code(), Errc::InvalidArgument);
+    // 预检失败后不得调用 acquire。
+    assert_eq!(rejected.surface.acquire_count, 0);
+    // 预检失败后不得激活 Device 或执行原生命令。
+    assert!(rejected.device.log.is_empty());
+    // 预检失败后不得呈现任何帧。
+    assert_eq!(rejected.surface.present_count, 0);
+}
+
 // Copy preflight 失败必须发生在 Device activate 前且不留下日志。
 #[test]
 fn texture_copy_preflight_rejects_before_device() {
