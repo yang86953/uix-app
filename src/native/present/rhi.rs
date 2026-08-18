@@ -46,7 +46,7 @@ pub(crate) use pipeline::{
     PIPELINE_DEPTH_STENCIL_DISABLED, PIPELINE_RASTER_2D, PipelineBinding, PipelineBlend,
     PipelineBlendFactor, PipelineBlendOperation, PipelineBlendState, PipelineColorWriteMask,
     PipelineContract, PipelineCullMode, PipelineDepthClip, PipelineDepthState,
-    PipelineDepthStencilState, PipelineDesc, PipelineFrontFace, PipelineKind,
+    PipelineDepthStencilState, PipelineDesc, PipelineDitherState, PipelineFrontFace, PipelineKind,
     PipelinePrimitiveTopology, PipelineRasterState, PipelineSampling, PipelineStencilState,
     PipelineUniformLayout, PipelineVertexLayout,
 };

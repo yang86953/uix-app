@@ -16,8 +16,8 @@ use crate::core::{Errc, Error, Result};
 use crate::native::present::rhi::{
     PIPELINE_DEPTH_STENCIL_DISABLED, PIPELINE_RASTER_2D, PipelineBlend, PipelineBlendFactor,
     PipelineBlendOperation, PipelineColorWriteMask, PipelineCullMode, PipelineDepthClip,
-    PipelineDepthState, PipelineDepthStencilState, PipelineFrontFace, PipelineMultisampleState,
-    PipelinePrimitiveTopology, PipelineRasterState, PipelineStencilState,
+    PipelineDepthState, PipelineDepthStencilState, PipelineDitherState, PipelineFrontFace,
+    PipelineMultisampleState, PipelinePrimitiveTopology, PipelineRasterState, PipelineStencilState,
 };
 use ::windows::Win32::Foundation::{FALSE, TRUE};
 use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
@@ -574,6 +574,12 @@ fn d3d11_sample_mask(state: PipelineMultisampleState) -> u32 {
     state.sample_mask()
 }
 
+// 验证 D3D11 固有颜色输出行为能够满足共享抖动语义。
+fn d3d11_supports_dither_state(state: PipelineDitherState) -> bool {
+    // D3D11 没有可配置 dither 开关，只接受共享层的禁用语义。
+    matches!(state, PipelineDitherState::Disabled)
+}
+
 // 为所有 D3D11 draw 原语集中映射共享混合语义。
 impl D3d11Pipeline {
     // 返回当前 pipeline 契约对应的原生 blend state。
@@ -607,13 +613,16 @@ impl D3d11Pipeline {
         topology: PipelinePrimitiveTopology,
         // 接收 FramePlan pipeline 的共享采样覆盖状态。
         multisample: PipelineMultisampleState,
+        // 接收 FramePlan pipeline 的共享颜色抖动状态。
+        dither: PipelineDitherState,
         // 接收 FramePlan pipeline 的共享光栅状态。
         raster: PipelineRasterState,
         // 接收 FramePlan pipeline 的共享深度模板状态。
         depth_stencil: PipelineDepthStencilState,
     ) -> Result<()> {
         // 原生状态对象必须仍与 pipeline 创建时的共享语义一致。
-        if multisample != self.multisample_state
+        if !d3d11_supports_dither_state(dither)
+            || multisample != self.multisample_state
             || raster != self.raster_state
             || depth_stencil != self.depth_stencil_state
         {
