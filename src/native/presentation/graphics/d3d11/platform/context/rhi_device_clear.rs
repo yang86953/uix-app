@@ -7,12 +7,25 @@ use ::windows::core::Interface;
 // 引入支持矩形清理的 D3D11.1 context 接口。
 use ::windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext1;
 
+// 验证 D3D11 固有 ClearView 行为能够满足共享颜色清理输出状态。
+pub(super) fn validate_color_clear_contract(contract: RhiColorClearContract) -> Result<()> {
+    // D3D11 清理固有地覆盖全部通道且不提供 dither，只接受当前唯一语义。
+    if !contract.is_uix_contract() {
+        // 未来扩展无法机械映射时必须返回稳定错误。
+        return Err(rhi_invalid("D3d11 RHI color clear contract is unsupported"));
+    }
+    // 当前共享清理状态可由 ClearRenderTargetView 与 ClearView 精确表达。
+    Ok(())
+}
+
 // 为 D3D11 context 提供保持矩形语义的局部清理原语。
 impl D3d11Context {
     // 在当前 pass 的目标上清理一个左上原点物理矩形。
     pub(super) fn rhi_clear_rect(&mut self, color: RhiColor, scissor: RhiScissor) -> Result<()> {
         // 由共享状态机统一验证 pass、预乘颜色和左上原点区域。
         self.rhi_device.pass.validate_clear(color, scissor)?;
+        // D3D11 局部清理必须与整目标清理验收同一共享输出状态。
+        validate_color_clear_contract(UIX_COLOR_CLEAR_CONTRACT)?;
         // 读取已由共享契约证明可被 D3D11 RECT 精确表达的远端边界。
         let (right, bottom) = scissor
             // Adapter 只消费共享几何值，不重新决定溢出规则。

@@ -52,8 +52,10 @@ pub(crate) use pipeline::{
 };
 // 向 pipeline、Surface 配方和两个 Adapter 暴露同一采样覆盖事实。
 pub(crate) use multisample::PipelineMultisampleState;
-// 向 Drawing、Surface 与原生 Adapter 暴露唯一颜色解释。
-pub(crate) use color::{RhiColorContract, UIX_COLOR_CONTRACT};
+// 向 Drawing、Surface 与原生 Adapter 暴露唯一颜色与清理输出解释。
+pub(crate) use color::{
+    RhiColorClearContract, RhiColorContract, UIX_COLOR_CLEAR_CONTRACT, UIX_COLOR_CONTRACT,
+};
 // 向组合根和 Adapter 暴露两个正交的事实快照。
 pub(crate) use capabilities::{GraphicsDeviceCapabilities, GraphicsSurfaceCapabilities};
 // 向 FramePlan 与 Adapter 暴露只接受类型化 pipeline 的绘制包。

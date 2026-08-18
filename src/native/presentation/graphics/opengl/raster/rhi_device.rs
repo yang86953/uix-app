@@ -8,10 +8,11 @@ use glow::HasContext as _;
 // 引入统一错误、结果和 RHI 原语。
 use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, BufferUsage, LoadAction, PipelineDesc, PipelineHandle, PipelineKind,
-    RenderTargetHandle, RhiColor, RhiExtent, RhiPassState, RhiScissor, RhiSubmissionSequence,
-    RhiViewport, SamplerDesc, SamplerHandle, SubmissionHandle, TextureCopy, TextureDesc,
-    TextureFormat, TextureHandle, TextureMove,
+    BufferDesc, BufferHandle, BufferUsage, LoadAction, PipelineColorWriteMask, PipelineDesc,
+    PipelineDitherState, PipelineHandle, PipelineKind, RenderTargetHandle, RhiColor,
+    RhiColorClearContract, RhiExtent, RhiPassState, RhiScissor, RhiSubmissionSequence, RhiViewport,
+    SamplerDesc, SamplerHandle, SubmissionHandle, TextureCopy, TextureDesc, TextureFormat,
+    TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
 };
 
 // 将 retained 区域移动拆出，保持资源设备文件低于行数上限。
@@ -495,6 +496,9 @@ impl OpenGlRhiDevice {
             if let LoadAction::Clear(color) = load {
                 // Adapter 只读取共享层已经验证并预乘的目标颜色。
                 let [red, green, blue, alpha] = color.components();
+                // SAFETY: 共享清理契约只包含可由当前 GL context 机械编码的封闭状态。
+                clear::apply_color_clear_contract(gl, UIX_COLOR_CLEAR_CONTRACT);
+                // 整目标清理必须覆盖上一个 pass 可能留下的裁剪区域。
                 gl.disable(glow::SCISSOR_TEST);
                 // 清屏直接写目标，不执行任何额外 alpha 转换。
                 gl.clear_color(red, green, blue, alpha);

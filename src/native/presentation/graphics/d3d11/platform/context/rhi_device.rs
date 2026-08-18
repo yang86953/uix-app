@@ -13,8 +13,9 @@ use crate::core::error::{Errc, Error, Result};
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
     LoadAction, PipelineBinding, PipelineDesc, PipelineHandle, PipelineKind, RenderTargetHandle,
-    RhiColor, RhiExtent, RhiPassState, RhiScissor, RhiSubmissionSequence, RhiViewport, SamplerDesc,
-    SamplerHandle, TextureCopy, TextureDesc, TextureFormat, TextureHandle, TextureMove,
+    RhiColor, RhiColorClearContract, RhiExtent, RhiPassState, RhiScissor, RhiSubmissionSequence,
+    RhiViewport, SamplerDesc, SamplerHandle, TextureCopy, TextureDesc, TextureFormat,
+    TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
 };
 // 引入 D3D11 的基础资源和绑定类型。
 use ::windows::Win32::Graphics::Direct3D11::{
@@ -560,6 +561,11 @@ impl GraphicsDevice for D3d11Context {
     fn begin_render_pass(&mut self, target: RenderTargetHandle, load: LoadAction) -> Result<()> {
         // 拒绝嵌套 pass，保持 FramePlan 的显式边界。
         self.rhi_device.pass.require_closed()?;
+        // 清理契约必须在建立 pass 或绑定原生目标前完成 fail-stop 验收。
+        if matches!(load, LoadAction::Clear(_)) {
+            // D3D11 整目标清理只接受其固有行为能够精确表达的共享状态。
+            rhi_device_clear::validate_color_clear_contract(UIX_COLOR_CLEAR_CONTRACT)?;
+        }
         // 解析 surface 或离屏纹理目标，同时复制 COM view 避免借用跨越状态更新。
         let (rtv, extent) =
             if target.raw() == RHI_SURFACE_TARGET_RAW {
