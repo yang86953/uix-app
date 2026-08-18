@@ -3,10 +3,12 @@
 //! 结束显式 render pass 与提交 immediate context 命令序列；二者都拒绝在
 //! 错误状态下执行，保持 FramePlan 的显式边界语义。
 
-// 引入统一错误和结果类型。
-use crate::core::error::{Errc, Error, Result};
-// 引入薄 RHI 的提交句柄类型。
-use crate::native::present::rhi::SubmissionHandle;
+// 引入统一结果类型。
+use crate::core::error::Result;
+// 引入薄 RHI 的提交句柄和类型化呈现门禁类型。
+use crate::native::present::rhi::{
+    RenderTargetHandle, RhiPresentTransaction, SubmissionHandle, SurfaceToken, ValidatedRhiPresent,
+};
 
 // 引入 context 父模块的 D3D11 状态。
 use super::D3d11Context;
@@ -41,24 +43,25 @@ impl D3d11Context {
         self.rhi_device.submission_sequence.issue()
     }
 
-    // 校验 Surface present 使用的是同一组合 context 最近一次成功 submit。
-    pub(in super::super) fn validate_submission_impl(
+    // 通过共享门禁校验不可拆的 Surface 呈现事务。
+    pub(in super::super) fn validate_present_impl(
         // 只读借用 context，校验不得改变 Device 或 Surface 状态。
         &self,
-        // 接收 FramePlan 从 submit 原样传递的类型化身份。
-        submission: SubmissionHandle,
-    ) -> Result<()> {
-        // D3D11 必须执行与 OpenGL 相同的共享最新值规则。
-        if !self.rhi_device.submission_sequence.is_latest(submission) {
-            // 在进入 DXGI Present 前返回稳定的参数错误。
-            return Err(Error::new(
-                // 外部或迟到身份属于调用契约错误，而不是设备丢失。
-                Errc::InvalidArgument,
-                // 保留 Adapter 名称便于定位原生边界。
-                "D3d11 RHI present submission is stale",
-            ));
-        }
-        // 返回统一成功结果。
-        Ok(())
+        // 接收 FramePlan 构造的完整呈现事务。
+        transaction: RhiPresentTransaction,
+        // 接收当前 swapchain token。
+        current_token: SurfaceToken,
+        // 接收 acquire 发布的唯一目标身份。
+        expected_target: RenderTargetHandle,
+    ) -> Result<ValidatedRhiPresent> {
+        // D3D11 只提供动态事实，三项规则由共享 RHI Component 解释。
+        transaction.validate(
+            // 传入当前 Surface 代际与 extent。
+            current_token,
+            // 传入当前 Surface target。
+            expected_target,
+            // 传入同一组合 context 的 Device 提交序列。
+            &self.rhi_device.submission_sequence,
+        )
     }
 }

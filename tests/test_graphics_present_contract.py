@@ -134,7 +134,7 @@ class GraphicsPresentContractTests(unittest.TestCase):
         # 最终提交必须继续由 GraphicsSurface::present 持有。
         self.assertIn("fn present(", rhi_host)
         # 唯一 thin RHI present 必须继续调用同一原生 swap_buffers。
-        self.assertIn("self.rhi_swap_buffers(damage)", rhi_host)
+        self.assertIn("self.rhi_swap_buffers(present.into_damage())", rhi_host)
         # EGL 不得重新引入统一 payload。
         self.assertNotIn("PresentFrame", egl)
 

@@ -59,6 +59,22 @@ impl RhiSubmissionSequence {
         submission.raw() != 0 && self.last == Some(submission)
     }
 
+    // 验证 Surface present 使用的是同一组合 context 的最新提交。
+    pub(crate) fn validate(&self, submission: SubmissionHandle) -> Result<()> {
+        // 零值、迟到值和其它 context 的身份都不能进入原生呈现。
+        if !self.is_latest(submission) {
+            // 返回跨后端稳定的调用契约错误。
+            return Err(Error::new(
+                // 外部或迟到身份不表示设备或 Surface 丢失。
+                Errc::InvalidArgument,
+                // 诊断文本不携带具体图形 API 名称。
+                "RHI present submission is stale",
+            ));
+        }
+        // 当前最新提交可以继续进入 Surface 门禁。
+        Ok(())
+    }
+
     // 使当前提交身份失效，供 context 释放或重建时切断迟到呈现。
     pub(crate) fn invalidate(&mut self) {
         // 清除最近提交，但保留单调序号以免复用旧身份。

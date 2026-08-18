@@ -4,9 +4,10 @@
 use crate::core::error::Result;
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDeviceCapabilities, LoadAction, PipelineDesc,
-    PipelineHandle, RenderTargetHandle, RhiBufferUpload, RhiExtent, RhiScissor, RhiTextureUpload,
-    RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle, SubmissionHandle, TextureCopy,
-    TextureDesc, TextureHandle, TextureMove,
+    PipelineHandle, RenderTargetHandle, RhiBufferUpload, RhiExtent, RhiPresentTransaction,
+    RhiScissor, RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle,
+    SubmissionHandle, SurfaceToken, TextureCopy, TextureDesc, TextureHandle, TextureMove,
+    ValidatedRhiPresent,
 };
 // 复用父模块中的 OpenGL pipeline 和资源设备类型。
 use super::{
@@ -207,10 +208,21 @@ impl OpenGlRasterPipeline {
         self.rhi.take_surface_lost_for_test()
     }
 
-    // 检查一次 surface present 使用的 submit identity。
-    pub(crate) fn rhi_validate_submission(&self, submission: SubmissionHandle) -> Result<()> {
-        // 只允许最近一次同 owner-thread submit 进入交换。
-        self.rhi.validate_submission(submission)
+    // 通过共享门禁检查一次不可拆的 Surface 呈现事务。
+    pub(crate) fn rhi_validate_present(
+        // 只读借用 owner-thread pipeline。
+        &self,
+        // 接收 FramePlan 构造的完整呈现事务。
+        transaction: RhiPresentTransaction,
+        // 接收宿主当前 drawable token。
+        current_token: SurfaceToken,
+        // 接收 acquire 发布的唯一目标身份。
+        expected_target: RenderTargetHandle,
+    ) -> Result<ValidatedRhiPresent> {
+        // 只向 Device Component 传递动态事实，不在 bridge 重复解释规则。
+        self.rhi
+            // 共享门禁同时核对 frame、目标和最近提交。
+            .validate_present(transaction, current_token, expected_target)
     }
 
     // 返回当前 swapchain 的物理 extent。

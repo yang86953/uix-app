@@ -102,8 +102,8 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         self.assertIn("let frame = context.surface().acquire()?;", surface_transaction)
         # 事务必须通过同一 context 提交 device 工作。
         self.assertIn("let submission = context.device().submit()?;", surface_transaction)
-        # 事务必须通过同一 context 完成最终 present。
-        self.assertIn(".present(frame, submission, present_damage)?;", surface_transaction)
+        # 事务必须通过同一 context 完成不可拆的最终 present。
+        self.assertIn(".present(RhiPresentTransaction::new(", surface_transaction)
         # 禁止恢复丢弃 acquired frame 却延后 present 的 surface segment 入口。
         self.assertNotIn("execute_surface_segment_on_context", execution)
         # Renderer 必须用封闭类型原子保存 Surface 或 Offscreen 角色。
@@ -200,14 +200,14 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         self.assertIn("submission_sequence.issue()", opengl_device)
         # D3D11 不得再只返回一个未被 Surface 追踪的计数值。
         self.assertIn("submission_sequence.issue()", d3d11_submit)
-        # OpenGL Surface 必须在原生交换前验证提交身份。
-        self.assertIn("rhi_validate_submission(submission)?;", opengl_surface)
-        # D3D11 Surface 必须在 DXGI Present 前执行相同校验。
-        self.assertIn("validate_submission_impl(submission)?;", d3d11_surface)
-        # OpenGL Device 校验必须调用共享最新值规则。
-        self.assertIn("submission_sequence.is_latest(submission)", opengl_device)
-        # D3D11 Device 校验必须调用同一共享最新值规则。
-        self.assertIn("submission_sequence.is_latest(submission)", d3d11_submit)
+        # OpenGL Surface 必须在原生交换前验证完整事务。
+        self.assertIn("rhi_validate_present(", opengl_surface)
+        # D3D11 Surface 必须在 DXGI Present 前执行相同门禁。
+        self.assertIn("validate_present_impl(", d3d11_surface)
+        # OpenGL Device 必须把完整事务交给共享门禁。
+        self.assertIn("transaction.validate(", opengl_device)
+        # D3D11 Device 必须调用同一共享门禁。
+        self.assertIn("transaction.validate(", d3d11_submit)
         # Adapter 不得继续维护历史私有字段。
         for source in (opengl_device, d3d11_device, d3d11_submit):
             # 禁止私有下一提交计数器重新出现。

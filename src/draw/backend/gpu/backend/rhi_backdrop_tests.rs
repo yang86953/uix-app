@@ -1,7 +1,7 @@
 //! overlay backdrop 薄 RHI 复制与失败清理测试。
 
 // 引入统一错误和结果类型。
-use crate::core::{Errc, Error, PresentDamage, Rect, Result};
+use crate::core::{Errc, Error, Rect, Result};
 // 引入被测 helper。
 use super::render_backend_backdrop::{
     // 快照 helper 负责创建、复制、提交和失败清理。
@@ -27,6 +27,8 @@ use crate::native::present::rhi::{
     RenderTargetHandle,
     // extent 保存固定物理尺寸。
     RhiExtent,
+    // 不可拆呈现事务用于补齐 Surface 契约。
+    RhiPresentTransaction,
     // scissor 与 viewport 只用于拒绝意外 raster 状态。
     RhiScissor,
     // viewport 类型补齐 device trait。
@@ -240,12 +242,8 @@ impl GraphicsSurface for RecordingBackdropContext {
     fn present(
         // 借用记录器。
         &mut self,
-        // 忽略不应出现的 frame。
-        _frame: SurfaceFrame,
-        // 忽略不应出现的 submission。
-        _submission: SubmissionHandle,
-        // 忽略不应出现的 damage。
-        _damage: PresentDamage,
+        // 忽略不应出现的完整呈现事务。
+        _transaction: RhiPresentTransaction,
     ) -> Result<()> {
         // 增加可观察计数。
         self.presents += 1;

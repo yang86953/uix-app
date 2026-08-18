@@ -154,12 +154,12 @@ mod tests {
     // 引入被测 owner。
     use super::GpuRecipeOwner;
     // 引入错误分类、coherency 与 surface 值。
-    use crate::core::{Errc, PresentCoherency, PresentDamage, PresentSurface};
+    use crate::core::{Errc, PresentCoherency, PresentSurface};
     // 引入最小记录型 Device/Surface 实现需要的薄 RHI 值和契约。
     use crate::native::present::rhi::{
         DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, GraphicsSurface, LoadAction,
-        RenderTargetHandle, RhiExtent, RhiScissor, RhiViewport, SubmissionHandle, SurfaceFrame,
-        SurfaceToken, TextureCopy,
+        RenderTargetHandle, RhiExtent, RhiPresentTransaction, RhiScissor, RhiViewport,
+        SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy,
     };
     // 引入类型化 GPU context 与 capability。
     use crate::native::present::{
@@ -271,12 +271,8 @@ mod tests {
         fn present(
             // 借用测试 surface。
             &mut self,
-            // 忽略测试 frame。
-            _frame: SurfaceFrame,
-            // 忽略测试提交身份。
-            _submission: SubmissionHandle,
-            // 忽略测试 damage。
-            _damage: PresentDamage,
+            // 忽略不可拆的测试呈现事务。
+            _transaction: RhiPresentTransaction,
         ) -> crate::core::Result<()> {
             // 返回无原生副作用的成功结果。
             Ok(())

@@ -5,8 +5,6 @@
 #![allow(dead_code)]
 // 使用框架统一错误类型，保证 surface、device 和资源失败保持 typed error。
 use crate::core::error::{Errc, Error, Result};
-// 使用统一的最终呈现 damage 值，RHI 不重新定义呈现损坏语义。
-use crate::core::PresentDamage;
 // 引入无帧 surface 探测的统一结果类型。
 use super::PresentTestResult;
 // 将 Shape 像素语义拆到独立共享契约文件，避免主 RHI 文件越过行数边界。
@@ -47,6 +45,8 @@ mod buffer;
 mod texture;
 // ResourceTable Component 统一不透明资源句柄的分配、查询与检查式销毁语义。
 mod resource_table;
+// PresentTransaction Component 绑定 acquire、submit 与 damage 并统一 Surface 门禁。
+mod present_transaction;
 // 向 Drawing System 与各原生 Adapter 暴露同一份类型化 pipeline 契约。
 #[allow(unused_imports)]
 pub(crate) use pipeline::{
@@ -91,6 +91,8 @@ pub(crate) use buffer::{BufferDesc, BufferUsage, RhiBufferUpload};
 pub(crate) use texture::{TextureDesc, TextureFormat};
 // 向两个 Adapter 暴露唯一类型化资源槽位状态机。
 pub(crate) use resource_table::{RhiResourceHandle, RhiResourceTable};
+// 向 FramePlan 与两个 Adapter 暴露不可拆的 Surface 呈现事务。
+pub(crate) use present_transaction::{RhiPresentTransaction, SurfaceFrame, ValidatedRhiPresent};
 // 向 Drawing System 暴露唯一 Gradient 常量构造器和固定字节数。
 pub(crate) use gradient::{GRADIENT_UNIFORM_BYTES, RhiGradientRasterParams};
 // 只有 OpenGL Adapter 需要把共享 Gradient 字节 ABI 映射为逐个原生 uniform。
@@ -443,24 +445,6 @@ pub(crate) enum LoadAction {
     Load,
 }
 
-// 描述一次 acquire 得到的 surface image。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SurfaceFrame {
-    // 保存 acquire 时的 surface token。
-    pub(crate) token: SurfaceToken,
-    // 保存 adapter 绑定的 surface render target。
-    pub(crate) target: RenderTargetHandle,
-}
-
-// 为 surface frame 提供构造入口。
-impl SurfaceFrame {
-    // 创建一个带代际和目标句柄的 acquired frame。
-    pub(crate) const fn new(token: SurfaceToken, target: RenderTargetHandle) -> Self {
-        // 返回不可变的 acquired image 身份。
-        Self { token, target }
-    }
-}
-
 // 定义 GPU device 的薄原语接口。
 pub(crate) trait GraphicsDevice {
     // 返回本 device 的事实型能力快照。
@@ -628,13 +612,8 @@ pub(crate) trait GraphicsSurface {
         Err(rhi_not_implemented("read_surface_pixels"))
     }
 
-    // 将一次 device submit 最终呈现到原生窗口。
-    fn present(
-        &mut self,
-        frame: SurfaceFrame,
-        submission: SubmissionHandle,
-        damage: PresentDamage,
-    ) -> Result<()>;
+    // 将一次不可拆的 Device submit 事务最终呈现到原生窗口。
+    fn present(&mut self, transaction: RhiPresentTransaction) -> Result<()>;
 
     // 探测已经遮挡的 surface 是否可恢复呈现，不提交任何帧数据。
     fn test_present(&mut self) -> Result<PresentTestResult> {
