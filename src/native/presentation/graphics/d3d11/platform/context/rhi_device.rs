@@ -213,7 +213,11 @@ impl GraphicsDevice for D3d11Context {
     }
     #[cfg(feature = "test-harness")]
     fn inject_device_lost_for_test(&mut self) -> Result<()> {
+        // 只有仍存活的 D3D11 owner 才能登记测试设备故障。
+        self.ensure_active()?;
+        // 通过既有 owner 组件保存一次性设备故障标志。
         self.arm_rhi_device_lost_for_test();
+        // 返回注入成功结果，不改变真实故障映射路径。
         Ok(())
     }
 

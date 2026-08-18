@@ -173,10 +173,32 @@ class GraphicsRhiActiveLifecycleContractTest(unittest.TestCase):
     def test_d3d11_active_gate_remains_cross_backend_baseline(self) -> None:
         # 读取 D3D11 context 生命周期实现。
         d3d = source("src/native/presentation/graphics/d3d11/platform/context/graphics.rs")
+        # 读取 D3D11 Device 注入实现。
+        d3d_device = source("src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs")
+        # 读取 D3D11 Surface 注入实现。
+        d3d_surface = source("src/native/presentation/graphics/d3d11/platform/context/rhi.rs")
         # D3D11 rhi_context 必须先执行既有 active 门禁。
         context = function_body(d3d, "rhi_context")
         # 共享跨后端契约要求门禁早于借出 self。
         self.assertLess(context.index("self.ensure_active()?"), context.index("Ok(self)"))
+        # Device 故障注入必须先通过 active owner 门禁。
+        device_injection = function_body(d3d_device, "inject_device_lost_for_test")
+        # Device 门禁必须存在。
+        self.assertIn("self.ensure_active()?", device_injection)
+        # Device 门禁必须早于故障标志写入组件。
+        self.assertLess(
+            device_injection.index("self.ensure_active()?"),
+            device_injection.index("arm_rhi_device_lost_for_test()"),
+        )
+        # Surface 故障注入必须先通过 active owner 门禁。
+        surface_injection = function_body(d3d_surface, "inject_surface_lost_for_test")
+        # Surface 门禁必须存在。
+        self.assertIn("self.ensure_active()?", surface_injection)
+        # Surface 门禁必须早于故障标志写入。
+        self.assertLess(
+            surface_injection.index("self.ensure_active()?"),
+            surface_injection.index("self.rhi_surface_lost_for_test = true"),
+        )
         # 读取 D3D11 Surface 实现作为 native 调用前门禁对照。
         surface = source("src/native/presentation/graphics/d3d11/platform/context/rhi.rs")
         # 当前 D3D11 的全部 native Surface 入口都必须保持 active 门禁。
