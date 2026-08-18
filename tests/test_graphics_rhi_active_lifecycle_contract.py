@@ -93,7 +93,9 @@ class GraphicsRhiActiveLifecycleContractTest(unittest.TestCase):
         device_entries = (
             "activate", "maintain", "inject_device_lost_for_test", "create_buffer",
             "update_buffer", "create_texture", "resolve_render_target",
-            "preflight_texture_copy", "preflight_texture_move", "update_texture", "create_sampler",
+            "preflight_texture_copy", "preflight_texture_move",
+            # Draw 只读资源预检也必须先检查 OpenGL owner。
+            "preflight_draw_resources", "update_texture", "create_sampler",
             "create_pipeline", "destroy_buffer", "destroy_texture", "destroy_sampler",
             "destroy_pipeline", "begin_render_pass", "set_viewport", "set_scissor",
             "clear_rect", "bind_sampled_texture", "draw", "copy_texture",
@@ -219,6 +221,8 @@ class GraphicsRhiActiveLifecycleContractTest(unittest.TestCase):
             ("resolve_render_target", "self.rhi_device.textures.resolve_render_target("),
             ("preflight_texture_copy", "self.rhi_device.textures.validate_copy("),
             ("preflight_texture_move", "self.rhi_device.textures.validate_move("),
+            # Draw 资源预检必须先门禁，再读取真实 pipeline 与 Buffer 表。
+            ("preflight_draw_resources", "self.rhi_device.pipeline("),
             ("create_pipeline", "self.rhi_create_pipeline("),
             ("create_sampler", "self.rhi_create_sampler("),
             ("update_texture", "self.rhi_device.texture("),

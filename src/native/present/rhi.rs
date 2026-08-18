@@ -49,6 +49,8 @@ mod resource_table;
 mod texture_resource_table;
 // 将 pipeline 资源与共享 kind 绑定，禁止 Adapter 私自组合句柄语义。
 mod pipeline_resource_table;
+// 将 Buffer 资源描述与 Draw 角色验证收归共享资源表。
+mod buffer_resource_table;
 // PresentTransaction Component 绑定 acquire、submit 与 damage 并统一 Surface 门禁。
 mod present_transaction;
 // SurfaceResizeTransaction Component 统一 resize 前置值域与成功后的 token 门禁。
@@ -103,6 +105,8 @@ pub(crate) use resource_table::{RhiResourceHandle, RhiResourceTable};
 pub(crate) use texture_resource_table::{RhiTextureResource, RhiTextureResourceTable};
 // 向两个 Adapter 暴露唯一的 pipeline 资源表组件。
 pub(crate) use pipeline_resource_table::RhiPipelineResourceTable;
+// 向两个 Adapter 与 FramePlan 执行器暴露唯一的 Buffer 资源表组件。
+pub(crate) use buffer_resource_table::{RhiBufferResource, RhiBufferResourceTable};
 // 向 FramePlan 与两个 Adapter 暴露不可拆的 Surface 呈现事务。
 pub(crate) use present_transaction::{RhiPresentTransaction, SurfaceFrame, ValidatedRhiPresent};
 // 向两个 Surface Adapter 暴露唯一的类型化 resize 事务。
@@ -508,6 +512,12 @@ pub(crate) trait GraphicsDevice {
     fn preflight_texture_move(&self, _movement: TextureMove) -> Result<()> {
         // 默认实现拒绝未声明共享 texture 资源表能力的 Adapter。
         Err(rhi_not_implemented("preflight_texture_move"))
+    }
+
+    // 在激活 Device 前预检 DrawPacket 所有真实 Buffer 角色与容量。
+    fn preflight_draw_resources(&self, _packet: DrawPacket) -> Result<()> {
+        // 默认实现显式拒绝未声明共享 Buffer 资源表能力的 Adapter。
+        Err(rhi_not_implemented("preflight_draw_resources"))
     }
 
     // 上传一个已经绑定纹理身份、区域与紧密像素载荷的命令。

@@ -17,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 RHI = ROOT / "src/native/present/rhi.rs"
 # 定位共享 Buffer Component。
 BUFFER = ROOT / "src/native/present/rhi/buffer.rs"
+# 定位共享 Buffer 资源表 Component。
+BUFFER_TABLE = ROOT / "src/native/present/rhi/buffer_resource_table.rs"
 # 定位 FramePlan 命令闭集。
 FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
 # 定位 FramePlan 到 Device 的唯一执行边界。
@@ -25,12 +27,78 @@ FRAME_EXECUTION = ROOT / "src/draw/backend/frame_plan_execution.rs"
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs"
 # 定位 OpenGL owner-thread bridge。
 OPENGL_BRIDGE = ROOT / "src/native/presentation/graphics/opengl/raster/rhi.rs"
+# 定位 OpenGL GraphicsDevice host。
+OPENGL_HOST = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
 # 定位 D3D11 Buffer Adapter。
 D3D11 = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs"
 
 
 # 集中锁定 Buffer 事实所有权、共同值域与跨后端机械映射。
 class GraphicsRhiBufferContractTests(unittest.TestCase):
+    # Draw 真实 Buffer 角色必须由共享表在 Device activate 前预检。
+    def test_draw_resources_are_preflighted_before_activation(self) -> None:
+        # 读取共享 Buffer 资源表。
+        table = BUFFER_TABLE.read_text(encoding="utf-8")
+        # 读取薄 RHI Device 契约。
+        rhi = RHI.read_text(encoding="utf-8")
+        # 读取 FramePlan 执行器顺序。
+        execution = FRAME_EXECUTION.read_text(encoding="utf-8")
+        # 读取 OpenGL Device、bridge 与 host。
+        opengl = OPENGL.read_text(encoding="utf-8")
+        # 读取 OpenGL 只读 bridge。
+        opengl_bridge = OPENGL_BRIDGE.read_text(encoding="utf-8")
+        # 读取 OpenGL owner-thread host。
+        opengl_host = OPENGL_HOST.read_text(encoding="utf-8")
+        # 读取 D3D11 Device Adapter。
+        d3d11 = D3D11.read_text(encoding="utf-8")
+        # 资源表必须拥有真实描述读取和 Draw 委托入口。
+        self.assertIn("pub(crate) trait RhiBufferResource", table)
+        self.assertIn("pub(crate) struct RhiBufferResourceTable", table)
+        self.assertIn("pub(crate) fn validate_draw", table)
+        self.assertIn("packet.validate_resources", table)
+        # GraphicsDevice 必须公开只读 Draw 资源预检入口。
+        self.assertIn("fn preflight_draw_resources(&self, _packet: DrawPacket)", rhi)
+        # 执行器必须定义 Draw 预检函数并在 activate 前调用。
+        self.assertIn("fn validate_draw_resources", execution)
+        self.assertIn("self.device.preflight_draw_resources(*packet)?", execution)
+        # Draw 资源预检必须严格早于 Device 激活。
+        self.assertLess(
+            # 定位 FramePlan 的共享 Draw 资源预检阶段。
+            execution.index("self.validate_draw_resources(steps)?"),
+            # 定位首个允许原生副作用的 Device 激活入口。
+            execution.index("self.device.activate()?"),
+        )
+        # OpenGL 必须保存共享 Buffer 表并先验证真实 pipeline 绑定。
+        self.assertIn("RhiBufferResourceTable<OpenGlRhiBuffer>", opengl)
+        # pipeline 身份校验必须早于 Buffer 角色与容量校验。
+        self.assertLess(
+            # 定位共享 pipeline 身份校验。
+            opengl.index("self.pipelines.get(packet.pipeline)?"),
+            # 定位共享 Buffer 角色与容量校验。
+            opengl.index("self.buffers.validate_draw(packet)"),
+        )
+        # OpenGL bridge 必须保持只读 preflight 调用链。
+        self.assertIn("pub(crate) fn rhi_preflight_draw_resources(&self", opengl_bridge)
+        # bridge 只能机械委托共享 Device。
+        self.assertIn("self.rhi.preflight_draw_resources(packet)", opengl_bridge)
+        # OpenGL host 必须先检查 owner 且不得为只读预检恢复 context。
+        opengl_preflight = opengl_host.split("fn preflight_draw_resources", maxsplit=1)[1].split("    }", maxsplit=1)[0]
+        # host 必须首先检查 owner 生命周期。
+        self.assertIn("self.rhi_ensure_active()?", opengl_preflight)
+        # host 只能通过只读 pipeline bridge 进入资源预检。
+        self.assertIn("self.rhi_pipeline().rhi_preflight_draw_resources(packet)", opengl_preflight)
+        # 只读资源检查不得恢复原生 OpenGL context。
+        self.assertNotIn("rhi_make_current", opengl_preflight)
+        # D3D11 必须使用同一共享表并先验证真实 pipeline 绑定。
+        self.assertIn("RhiBufferResourceTable<D3d11RhiBuffer>", d3d11)
+        # D3D11 的 pipeline 身份校验同样必须早于 Buffer 预检。
+        self.assertLess(
+            # 定位 D3D11 的共享 pipeline 查询。
+            d3d11.index("self.rhi_device.pipeline(packet.pipeline)?"),
+            # 定位 D3D11 的共享 Buffer 表委托。
+            d3d11.index("self.rhi_device.buffers.validate_draw(packet)"),
+        )
+
     # RHI 必须用封闭描述与上传值对象替代松散字段和参数。
     def test_rhi_owns_typed_buffer_description_and_upload(self) -> None:
         # 读取薄 RHI 组合入口。

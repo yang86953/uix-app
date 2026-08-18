@@ -68,6 +68,12 @@ impl OpenGlRasterPipeline {
         self.rhi.resolve_render_target(texture)
     }
 
+    // 只读预检 DrawPacket 的真实 Buffer 资源。
+    pub(crate) fn rhi_preflight_draw_resources(&self, packet: DrawPacket) -> Result<()> {
+        // 直接委托 OpenGL 设备的共享资源表预检。
+        self.rhi.preflight_draw_resources(packet)
+    }
+
     // 只读预检普通 texture copy。
     pub(crate) fn rhi_preflight_texture_copy(&self, copy: TextureCopy) -> Result<()> {
         // 直接委托 OpenGL 设备的共享资源表预检。
