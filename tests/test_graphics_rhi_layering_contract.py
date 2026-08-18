@@ -106,10 +106,10 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         self.assertIn(".present(RhiPresentTransaction::new(", surface_transaction)
         # 禁止恢复丢弃 acquired frame 却延后 present 的 surface segment 入口。
         self.assertNotIn("execute_surface_segment_on_context", execution)
-        # Renderer 必须用封闭类型原子保存 Surface 或 Offscreen 角色。
-        self.assertIn("pub(crate) enum RhiRendererFrame", renderer_execution)
+        # Renderer 门面必须原子保存私有封闭角色与自身生命周期。
+        self.assertIn("pub(crate) struct RhiRendererFrame", renderer_execution)
         # 截取 Renderer 帧角色定义，核对 Offscreen 不持有 Surface 能力。
-        frame_contract = renderer_execution[renderer_execution.index("pub(crate) enum RhiRendererFrame") : renderer_execution.index("impl<'a> RhiRendererFrame")]
+        frame_contract = renderer_execution[renderer_execution.index("enum RhiRendererFrameRole") : renderer_execution.index("enum RhiRendererFrameExecutionState")]
         # Offscreen 变体必须显式拥有 Device 与纹理目标。
         offscreen_contract = frame_contract[frame_contract.index("Offscreen {") :]
         # Device-only 变体不能携带 present damage。
@@ -118,7 +118,7 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         self.assertNotIn("GraphicsContextRhi", offscreen_contract)
         # Renderer 帧必须从自身变体构造匹配的 Surface/Offscreen 计划。
         self.assertIn("FramePlan::new(context.surface_ref().token(), damage.clone())", renderer_execution)
-        self.assertIn("Self::Offscreen { .. } => FramePlan::offscreen()", renderer_execution)
+        self.assertIn("RhiRendererFrameRole::Offscreen { .. } => FramePlan::offscreen()", renderer_execution)
         # Surface 执行边界必须显式拒绝 Offscreen 计划。
         self.assertIn("if !plan.targets_surface()", renderer_execution)
         # 截取唯一命令执行器，验证所有 surface/offscreen 命令共享同一设备准备边界。

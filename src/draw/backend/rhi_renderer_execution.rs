@@ -12,8 +12,8 @@ use crate::native::present::rhi::{
 // 引入已经完成 lowering 且自有执行作用域的帧计划与目标引用。
 use super::super::frame_plan::{FramePlan, RenderTargetRef};
 
-// 封闭 Renderer 一次执行所能拥有的 Surface 或 Offscreen 生命周期。
-pub(crate) enum RhiRendererFrame<'a> {
+// 封闭 Renderer 帧可进入的 Surface 或 Offscreen 角色。
+enum RhiRendererFrameRole<'a> {
     // 完整 Surface 帧原子拥有组合 context、damage 与可选观察钩子。
     Surface {
         // 借用唯一原生 context owner。
@@ -32,6 +32,23 @@ pub(crate) enum RhiRendererFrame<'a> {
     },
 }
 
+// 描述 Renderer 帧是否仍可进入唯一执行边界。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RhiRendererFrameExecutionState {
+    // 新建帧尚未触碰任何 Device 或 Surface 原语。
+    Pending,
+    // 执行尝试已经消费帧，即使后续验证或 Adapter 调用失败。
+    Consumed,
+}
+
+// 原子持有封闭帧角色与唯一执行生命周期。
+pub(crate) struct RhiRendererFrame<'a> {
+    // 保存 Surface 或 Offscreen 的不可拆角色事实。
+    role: RhiRendererFrameRole<'a>,
+    // 保存本帧一次性执行状态，不影响执行后的 Device 清理借用。
+    execution_state: RhiRendererFrameExecutionState,
+}
+
 // 为封闭 Renderer 帧提供唯一组合与分阶段执行入口。
 impl<'a> RhiRendererFrame<'a> {
     // 创建带 submit-before-present 观察钩子的 Surface 帧。
@@ -45,13 +62,18 @@ impl<'a> RhiRendererFrame<'a> {
         // 返回仍由同一 context 完成最终 present 的 Surface 帧。
     ) -> Self {
         // 原子建立带观察边界的完整 Surface 生命周期。
-        Self::Surface {
-            // 保存组合 context 的唯一可变借用。
-            context,
-            // 保存最终 present damage。
-            damage,
-            // 观察钩子只能存在于 Surface 变体。
-            before_present: Some(before_present),
+        Self {
+            // 原子保存完整 Surface 生命周期角色。
+            role: RhiRendererFrameRole::Surface {
+                // 保存组合 context 的唯一可变借用。
+                context,
+                // 保存最终 present damage。
+                damage,
+                // 观察钩子只能存在于 Surface 角色。
+                before_present: Some(before_present),
+            },
+            // 新建 Surface 帧必须从 Pending 状态开始。
+            execution_state: RhiRendererFrameExecutionState::Pending,
         }
     }
 
@@ -64,55 +86,80 @@ impl<'a> RhiRendererFrame<'a> {
         // 返回不含任何 Surface 能力或 damage 的帧。
     ) -> Self {
         // 原子建立 Device-only 生命周期。
-        Self::Offscreen {
-            // 保存 Device 独占借用。
-            device,
-            // 保存显式纹理目标。
-            target,
+        Self {
+            // 原子保存 Device-only 离屏角色。
+            role: RhiRendererFrameRole::Offscreen {
+                // 保存 Device 独占借用。
+                device,
+                // 保存显式纹理目标。
+                target,
+            },
+            // 新建 Offscreen 帧必须从 Pending 状态开始。
+            execution_state: RhiRendererFrameExecutionState::Pending,
         }
     }
 
     // 返回当前帧唯一允许写入的计划目标。
     pub(crate) const fn render_target(&self) -> RenderTargetRef {
         // 从封闭变体投影目标，不接收第二个选择器。
-        match self {
+        match &self.role {
             // Surface 帧只能写入本次 acquire 的 image。
-            Self::Surface { .. } => RenderTargetRef::Surface,
+            RhiRendererFrameRole::Surface { .. } => RenderTargetRef::Surface,
             // Offscreen 帧只能写入自己保存的纹理目标。
-            Self::Offscreen { target, .. } => RenderTargetRef::Texture(*target),
+            RhiRendererFrameRole::Offscreen { target, .. } => RenderTargetRef::Texture(*target),
         }
     }
 
     // 可变借用当前帧允许使用的 Device 角色。
     pub(crate) fn device(&mut self) -> &mut dyn GraphicsDevice {
         // 两个变体都只暴露 Device 窄视图。
-        match self {
+        match &mut self.role {
             // Surface 帧经组合 context 取得可变 Device。
-            Self::Surface { context, .. } => context.device(),
+            RhiRendererFrameRole::Surface { context, .. } => context.device(),
             // Offscreen 帧直接返回独立 Device。
-            Self::Offscreen { device, .. } => &mut **device,
+            RhiRendererFrameRole::Offscreen { device, .. } => &mut **device,
         }
     }
 
     // 由封闭帧事实构造匹配的类型化 FramePlan。
     pub(crate) fn plan(&self) -> FramePlan {
         // 计划作用域只能由当前帧变体决定。
-        match self {
+        match &self.role {
             // Surface 计划冻结当前代际与最终 damage。
-            Self::Surface {
+            RhiRendererFrameRole::Surface {
                 context, damage, ..
             } => FramePlan::new(context.surface_ref().token(), damage.clone()),
             // Offscreen 计划不保存 SurfaceToken 或 PresentDamage。
-            Self::Offscreen { .. } => FramePlan::offscreen(),
+            RhiRendererFrameRole::Offscreen { .. } => FramePlan::offscreen(),
         }
+    }
+
+    // 在任何 Device 或 Surface 调用前消费一次性执行资格。
+    fn begin_execution(&mut self) -> Result<()> {
+        // 第二次执行必须在任何原生调用前稳定拒绝。
+        if self.execution_state == RhiRendererFrameExecutionState::Consumed {
+            // 返回生命周期错误而不是重复提交同一帧。
+            return Err(Error::new(
+                // 已消费帧属于当前执行状态错误。
+                Errc::InvalidState,
+                // 保持跨 Surface 与 Offscreen 的稳定诊断。
+                "RhiRendererFrame can only be executed once",
+            ));
+        }
+        // 首次执行尝试立即消费资格，失败后也不得重试。
+        self.execution_state = RhiRendererFrameExecutionState::Consumed;
+        // 执行资格已成功转移到当前调用。
+        Ok(())
     }
 
     // 按封闭帧角色执行已经完成 lowering 的计划。
     pub(crate) fn execute(&mut self, plan: &FramePlan) -> Result<()> {
+        // 先消费一次性资格，再进入 Surface/Offscreen 角色分派。
+        self.begin_execution()?;
         // Surface 与 Offscreen 进入互不重叠的执行边界。
-        match self {
+        match &mut self.role {
             // Surface 帧消费可选观察钩子并完成唯一最终 present。
-            Self::Surface {
+            RhiRendererFrameRole::Surface {
                 context,
                 before_present,
                 ..
@@ -130,7 +177,7 @@ impl<'a> RhiRendererFrame<'a> {
                 )
             }
             // Offscreen 帧只提交 Device 命令。
-            Self::Offscreen { device, .. } => {
+            RhiRendererFrameRole::Offscreen { device, .. } => {
                 // 进入拒绝 Surface 计划的 Device-only 边界。
                 execute_plan_without_present(&mut **device, plan)
             }
@@ -194,4 +241,259 @@ pub(super) fn execute_plan_without_present(
     plan.execute_offscreen_on_device(device)?;
     // 返回统一的 lowering 成功结果。
     Ok(())
+}
+
+// 验证 Renderer 帧执行资格在失败或重复调用时都保持一次性。
+#[cfg(test)]
+mod lifecycle_tests {
+    // 引入单线程共享计数器的可变单元。
+    use std::cell::Cell;
+    // 引入测试与记录设备共享计数器所有权。
+    use std::rc::Rc;
+
+    // 引入统一错误类型和测试结果别名。
+    use crate::core::error::{Errc, Result};
+    // 引入 FramePlan 构造所需的最小类型化命令。
+    use crate::draw::backend::frame_plan::{
+        FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef,
+    };
+    // 引入 RecordingDevice 所需的薄 RHI 原语。
+    use crate::native::present::rhi::{
+        DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, LoadAction, RenderTargetHandle,
+        RhiColor, RhiScissor, RhiViewport, SubmissionHandle, TextureCopy, TextureMove,
+    };
+    // 引入待验证的 Renderer 帧 Component。
+    use super::RhiRendererFrame;
+
+    // 记录最小离屏执行器的 submit 次数。
+    struct RecordingDevice {
+        // 保存设备能力以允许计划进入执行器。
+        capabilities: GraphicsDeviceCapabilities,
+        // 与测试共享全部 Device 原语调用次数。
+        operation_count: Rc<Cell<usize>>,
+        // 保存真实提交次数以检测重复执行。
+        submit_count: usize,
+    }
+
+    // 为 RecordingDevice 提供统一调用计数入口。
+    impl RecordingDevice {
+        // 记录一次 Device 契约访问。
+        fn record_operation(&self) {
+            // 单线程测试直接推进共享调用计数。
+            self.operation_count.set(self.operation_count.get() + 1);
+        }
+    }
+
+    // 提供测试所需的最小 GraphicsDevice 实现。
+    impl GraphicsDevice for RecordingDevice {
+        // 返回完整 GPU 基线，隔离本测试的生命周期断言。
+        fn device_capabilities(&self) -> GraphicsDeviceCapabilities {
+            // 能力读取也属于不得在第二次执行发生的 Device 调用。
+            self.record_operation();
+            // 返回构造时冻结的能力快照。
+            self.capabilities
+        }
+
+        // 接受离屏 render pass 开始。
+        fn begin_render_pass(
+            &mut self,
+            _target: RenderTargetHandle,
+            _load: LoadAction,
+        ) -> Result<()> {
+            // 记录 render pass 开始调用。
+            self.record_operation();
+            // 该测试只关注执行门禁，不记录 pass 细节。
+            Ok(())
+        }
+
+        // 接受有效 viewport。
+        fn set_viewport(&mut self, _viewport: RhiViewport) -> Result<()> {
+            // 记录 viewport 原语调用。
+            self.record_operation();
+            // 该测试只关注执行门禁，不记录 viewport 细节。
+            Ok(())
+        }
+
+        // 接受默认 scissor。
+        fn set_scissor(&mut self, _scissor: Option<RhiScissor>) -> Result<()> {
+            // 记录 scissor 原语调用。
+            self.record_operation();
+            // 该测试只关注执行门禁，不记录 scissor 细节。
+            Ok(())
+        }
+
+        // 接受计划中的 draw 原语。
+        fn draw(&mut self, _packet: DrawPacket) -> Result<()> {
+            // 记录意外 draw 调用。
+            self.record_operation();
+            // 本测试计划不包含 draw，此实现满足薄 Device 契约。
+            Ok(())
+        }
+
+        // 接受 pass 外纹理复制。
+        fn copy_texture(&mut self, _copy: TextureCopy) -> Result<()> {
+            // 记录意外 copy 调用。
+            self.record_operation();
+            // 本测试计划不包含 copy。
+            Ok(())
+        }
+
+        // 接受纹理区域移动。
+        fn move_texture_region(&mut self, _movement: TextureMove) -> Result<()> {
+            // 记录意外 move 调用。
+            self.record_operation();
+            // 本测试计划不包含 move。
+            Ok(())
+        }
+
+        // 接受 render pass 结束。
+        fn end_render_pass(&mut self) -> Result<()> {
+            // 记录 render pass 收尾调用。
+            self.record_operation();
+            // 本测试只关注最终提交次数。
+            Ok(())
+        }
+
+        // 记录一次成功 submit。
+        fn submit(&mut self) -> Result<SubmissionHandle> {
+            // 记录提交原语调用。
+            self.record_operation();
+            // 每次真实进入提交边界都递增计数。
+            self.submit_count += 1;
+            // 返回非零测试提交身份。
+            Ok(SubmissionHandle::from_raw(self.submit_count as u64))
+        }
+
+        // 记录 owner-thread context 激活。
+        fn activate(&mut self) -> Result<()> {
+            // 第二次执行不得再次进入激活边界。
+            self.record_operation();
+            // RecordingDevice 不需要真实原生 context。
+            Ok(())
+        }
+
+        // 记录设备健康维护。
+        fn maintain(&mut self) -> Result<()> {
+            // 第二次执行不得再次进入健康门禁。
+            self.record_operation();
+            // RecordingDevice 始终保持健康。
+            Ok(())
+        }
+    }
+
+    // 构造只包含一个有效离屏 pass 的最小 FramePlan。
+    fn offscreen_plan() -> FramePlan {
+        // 创建离屏计划，避免测试依赖 Surface 生命周期。
+        let mut plan = FramePlan::offscreen();
+        // 创建显式纹理目标的 render pass。
+        let mut pass = RenderPassPlan::new(
+            // 使用类型化 texture 目标。
+            RenderTargetRef::Texture(crate::native::present::rhi::TextureHandle::from_raw(9)),
+            // 使用有限的透明清理颜色。
+            LoadAction::Clear(RhiColor::from_premultiplied_rgba([0.0, 0.0, 0.0, 1.0])),
+        );
+        // 追加有效正尺寸 viewport。
+        pass.push(FramePlanCommand::SetViewport(RhiViewport {
+            width: 1.0,
+            height: 1.0,
+        }));
+        // 追加默认 scissor，形成最小非空 pass。
+        pass.push(FramePlanCommand::SetScissor(None));
+        // 把唯一 pass 交给离屏计划。
+        plan.push_pass(pass);
+        // 返回可执行计划。
+        plan
+    }
+
+    // 第二次 Renderer 帧执行必须拒绝且不得再次 submit。
+    #[test]
+    fn renderer_frame_rejects_second_execution_without_resubmit() {
+        // 创建可在帧借用期间独立观察的 Device 调用计数。
+        let operation_count = Rc::new(Cell::new(0));
+        // 创建具备完整 GPU 基线的 recording device。
+        let mut device = RecordingDevice {
+            // 使用共享基线能力，避免能力错误干扰生命周期断言。
+            capabilities: GraphicsDeviceCapabilities::full_gpu_baseline(),
+            // 与测试共享全部 Device 调用计数。
+            operation_count: Rc::clone(&operation_count),
+            // 初始尚未发生任何提交。
+            submit_count: 0,
+        };
+        // 创建只允许写入显式纹理的 Renderer 帧。
+        let mut frame = RhiRendererFrame::offscreen(
+            // 借用唯一 recording device owner。
+            &mut device,
+            // 传入与计划匹配的纹理身份。
+            crate::native::present::rhi::TextureHandle::from_raw(9),
+        );
+        // 创建第一次执行使用的有效计划。
+        let plan = offscreen_plan();
+        // 第一次执行必须成功并产生一次提交。
+        assert!(frame.execute(&plan).is_ok());
+        // 保存首轮执行完成后的全部 Device 调用次数。
+        let operations_after_first_execution = operation_count.get();
+        // 首轮有效计划必须真实进入 Device 执行边界。
+        assert!(operations_after_first_execution > 0);
+        // 第二次执行必须在 Device 调用前返回 InvalidState。
+        let error = frame
+            .execute(&plan)
+            .expect_err("second execution must fail");
+        // 第二次执行必须使用稳定的生命周期错误分类。
+        assert_eq!(error.code(), Errc::InvalidState);
+        // 第二次执行不得新增任何 Device 契约访问。
+        assert_eq!(operation_count.get(), operations_after_first_execution);
+        // 丢弃帧后重新取得 Device 统计，验证执行后清理借用仍可用。
+        drop(frame);
+        // 重复执行不得增加提交次数。
+        assert_eq!(device.submit_count, 1);
+    }
+
+    // 首次失败的执行尝试也必须消费帧且不允许重试。
+    #[test]
+    fn failed_renderer_frame_execution_is_also_consumed() {
+        // 创建可在帧借用期间独立观察的 Device 调用计数。
+        let operation_count = Rc::new(Cell::new(0));
+        // 创建具备完整 GPU 基线的 recording device。
+        let mut device = RecordingDevice {
+            // 能力事实保持有效，确保失败只来自空计划。
+            capabilities: GraphicsDeviceCapabilities::full_gpu_baseline(),
+            // 与测试共享全部 Device 调用计数。
+            operation_count: Rc::clone(&operation_count),
+            // 初始尚未发生任何提交。
+            submit_count: 0,
+        };
+        // 创建只允许写入显式纹理的 Renderer 帧。
+        let mut frame = RhiRendererFrame::offscreen(
+            // 借用唯一 recording device owner。
+            &mut device,
+            // 传入稳定的离屏纹理身份。
+            crate::native::present::rhi::TextureHandle::from_raw(9),
+        );
+        // 空离屏计划会在任何 Device 访问前稳定验证失败。
+        let invalid_plan = FramePlan::offscreen();
+        // 首轮失败必须保留计划参数错误。
+        let first_error = frame
+            // 尝试执行缺少 render pass 的计划。
+            .execute(&invalid_plan)
+            // 空计划必须失败而不是伪造提交。
+            .expect_err("empty FramePlan must fail");
+        // 首轮错误仍来自 FramePlan 自身验证。
+        assert_eq!(first_error.code(), Errc::InvalidArgument);
+        // 参数验证失败不得触碰任何 Device 原语。
+        assert_eq!(operation_count.get(), 0);
+        // 同一帧的第二次尝试必须被生命周期门禁拒绝。
+        let second_error = frame
+            // 即使计划仍然无效，也应先命中 Consumed 状态。
+            .execute(&invalid_plan)
+            // 第二次执行必须失败。
+            .expect_err("failed execution must still consume the frame");
+        // 第二次错误必须稳定升级为生命周期状态错误。
+        assert_eq!(second_error.code(), Errc::InvalidState);
+        // 第二次尝试同样不得触碰任何 Device 原语。
+        assert_eq!(operation_count.get(), 0);
+        // 丢弃帧后重新检查提交事实。
+        drop(frame);
+        // 两次失败均不得产生 submit。
+        assert_eq!(device.submit_count, 0);
+    }
 }
