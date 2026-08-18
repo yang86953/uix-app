@@ -47,9 +47,16 @@ pub(crate) struct PipelineBinding {
 
 // 为绑定后的 pipeline 身份提供只读访问和共享契约查询。
 impl PipelineBinding {
-    // 由 GraphicsDevice 创建成功后绑定原生句柄与同一个描述语义。
-    pub(crate) const fn new(handle: PipelineHandle, kind: PipelineKind) -> Self {
+    // 仅由共享 pipeline 资源表把新句柄与其真实描述语义绑定。
+    pub(super) const fn new(handle: PipelineHandle, kind: PipelineKind) -> Self {
         // 两个事实必须同时构造，禁止 FramePlan 只持有裸句柄。
+        Self { handle, kind }
+    }
+
+    // 仅为共享 RHI 单元测试构造可控的句柄与语义组合。
+    #[cfg(test)]
+    pub(crate) const fn for_test(handle: PipelineHandle, kind: PipelineKind) -> Self {
+        // 测试伪造入口不向生产 Module 暴露资源创建能力。
         Self { handle, kind }
     }
 

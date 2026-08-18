@@ -12,8 +12,8 @@ use crate::core::error::{Errc, Error, Result};
 // 引入薄 RHI 的资源、命令和能力类型。
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
-    LoadAction, PipelineBinding, PipelineDesc, PipelineHandle, PipelineKind, RenderTargetHandle,
-    RhiBufferUpload, RhiColor, RhiColorClearContract, RhiExtent, RhiPassState, RhiResourceTable,
+    LoadAction, PipelineBinding, PipelineDesc, RenderTargetHandle, RhiBufferUpload, RhiColor,
+    RhiColorClearContract, RhiExtent, RhiPassState, RhiPipelineResourceTable, RhiResourceTable,
     RhiScissor, RhiSubmissionSequence, RhiTextureUpload, RhiViewport, SampledTextureBinding,
     SamplerDesc, SamplerHandle, TextureCopy, TextureDesc, TextureFormat, TextureHandle,
     TextureMove, UIX_COLOR_CLEAR_CONTRACT,
@@ -73,12 +73,6 @@ struct D3d11RhiTexture {
     desc: TextureDesc,
 }
 
-// 保存一个 RHI pipeline 的封闭通用语义。
-struct D3d11RhiPipeline {
-    // 保存由通用 renderer 选择的类型化 pipeline 语义。
-    kind: PipelineKind,
-}
-
 // 保存一个 RHI sampler 的原生状态对象。
 struct D3d11RhiSampler {
     // 保持 D3D11 sampler state 的生命周期。
@@ -94,7 +88,7 @@ pub(super) struct D3d11RhiDevice {
     // 保存按不透明 id 索引的 texture 资源。
     textures: RhiResourceTable<TextureHandle, D3d11RhiTexture>,
     // 保存按不透明 id 索引的有限 pipeline 资源。
-    pipelines: RhiResourceTable<PipelineHandle, D3d11RhiPipeline>,
+    pipelines: RhiPipelineResourceTable<()>,
     // 保存按不透明 id 索引的 sampler 资源。
     samplers: RhiResourceTable<SamplerHandle, D3d11RhiSampler>,
     // 保存两个 Adapter 共用的 pass 生命周期、目标、几何与采样绑定事实。
@@ -121,7 +115,8 @@ impl D3d11RhiDevice {
         Self {
             buffers: RhiResourceTable::new(),
             textures: RhiResourceTable::new(),
-            pipelines: RhiResourceTable::new(),
+            // Pipeline 必须由保存真实 kind 的专用共享资源表签发身份。
+            pipelines: RhiPipelineResourceTable::new(),
             samplers: RhiResourceTable::new(),
             // 使用 API 无关状态机初始化 pass 生命周期。
             pass: RhiPassState::new(),
@@ -154,10 +149,10 @@ impl D3d11RhiDevice {
         self.buffers.get_mut(handle)
     }
 
-    // 通过不透明句柄读取已创建的 pipeline。
-    fn pipeline(&self, handle: PipelineHandle) -> Result<&D3d11RhiPipeline> {
-        // 由共享类型化资源表统一解析 pipeline 身份。
-        self.pipelines.get(handle)
+    // 通过共享完整绑定读取已创建的 pipeline。
+    fn pipeline(&self, binding: PipelineBinding) -> Result<&()> {
+        // 由共享 pipeline 表统一解析句柄并验证 kind 语义。
+        self.pipelines.get(binding)
     }
 
     // 通过不透明句柄读取已创建的 sampler。
@@ -344,10 +339,8 @@ impl GraphicsDevice for D3d11Context {
 
     // 创建当前 D3D11 适配器已经具备 shader ABI 的有限 pipeline。
     fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineBinding> {
-        // 把原生 pipeline 资源登记委托给 resource helper。
-        let handle = self.rhi_create_pipeline(desc)?;
-        // 让上层只取得句柄与同一创建语义组成的不可拆身份。
-        Ok(PipelineBinding::new(handle, desc.kind))
+        // 让资源表直接签发与创建语义一致的不可拆 pipeline 身份。
+        self.rhi_create_pipeline(desc)
     }
 
     // 创建带 clamp 地址模式的 D3D11 sampler。
@@ -419,8 +412,8 @@ impl GraphicsDevice for D3d11Context {
 
     // 销毁 pipeline 资源槽。
     fn destroy_pipeline(&mut self, pipeline: PipelineBinding) -> Result<()> {
-        // 把绑定中不透明句柄的检查式销毁委托给 resource helper。
-        self.rhi_destroy_pipeline(pipeline.handle())
+        // 把完整 binding 的语义校验与检查式销毁委托给 resource helper。
+        self.rhi_destroy_pipeline(pipeline)
     }
 
     // 销毁 sampler 资源槽。

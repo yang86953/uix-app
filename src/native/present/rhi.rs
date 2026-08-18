@@ -45,6 +45,8 @@ mod buffer;
 mod texture;
 // ResourceTable Component 统一不透明资源句柄的分配、查询与检查式销毁语义。
 mod resource_table;
+// 将 pipeline 资源与共享 kind 绑定，禁止 Adapter 私自组合句柄语义。
+mod pipeline_resource_table;
 // PresentTransaction Component 绑定 acquire、submit 与 damage 并统一 Surface 门禁。
 mod present_transaction;
 // SurfaceResizeTransaction Component 统一 resize 前置值域与成功后的 token 门禁。
@@ -95,6 +97,8 @@ pub(crate) use buffer::{BufferDesc, BufferUsage, RhiBufferUpload};
 pub(crate) use texture::{TextureDesc, TextureFormat};
 // 向两个 Adapter 暴露唯一类型化资源槽位状态机。
 pub(crate) use resource_table::{RhiResourceHandle, RhiResourceTable};
+// 向两个 Adapter 暴露唯一的 pipeline 资源表组件。
+pub(crate) use pipeline_resource_table::RhiPipelineResourceTable;
 // 向 FramePlan 与两个 Adapter 暴露不可拆的 Surface 呈现事务。
 pub(crate) use present_transaction::{RhiPresentTransaction, SurfaceFrame, ValidatedRhiPresent};
 // 向两个 Surface Adapter 暴露唯一的类型化 resize 事务。

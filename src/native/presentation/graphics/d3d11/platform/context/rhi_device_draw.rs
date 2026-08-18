@@ -14,15 +14,10 @@ impl D3d11Context {
     pub(super) fn draw_rhi_packet(&mut self, packet: DrawPacket) -> Result<()> {
         // draw 必须发生在显式 render pass 内。
         self.rhi_device.pass.require_open()?;
+        // 先由共享 pipeline 表验证句柄仍存活且 kind 与资源一致。
+        self.rhi_device.pipeline(packet.pipeline)?;
         // 读取 FramePlan 绑定的共享 pipeline 语义。
         let pipeline_kind = packet.pipeline.kind();
-        // 按不透明句柄读取 Adapter 资源表中的实际创建语义。
-        let resource_kind = self.rhi_device.pipeline(packet.pipeline.handle())?.kind;
-        // 两个事实必须仍是创建时形成的同一绑定。
-        if resource_kind != pipeline_kind {
-            // 拒绝让 D3D11 与其它 Adapter 选择不同 shader ABI 的陈旧绑定。
-            return Err(rhi_invalid("D3d11 RHI pipeline binding kind is stale"));
-        }
         // 解析顶点 buffer 并保留通用 ABI 所需的步长。
         let vertex = self.rhi_device.buffer(packet.vertex_buffer)?;
         // 拒绝错误用途的顶点资源。

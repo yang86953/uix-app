@@ -5,8 +5,8 @@ use crate::core::error::Result;
 // 引入 Surface 冻结的跨呈现像素保留语义。
 use crate::core::PresentCoherency;
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, DrawPacket, GraphicsDeviceCapabilities, LoadAction, PipelineDesc,
-    PipelineHandle, RenderTargetHandle, RhiBufferUpload, RhiExtent, RhiPresentTransaction,
+    BufferDesc, BufferHandle, DrawPacket, GraphicsDeviceCapabilities, LoadAction, PipelineBinding,
+    PipelineDesc, RenderTargetHandle, RhiBufferUpload, RhiExtent, RhiPresentTransaction,
     RhiScissor, RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle,
     SubmissionHandle, SurfaceToken, TextureCopy, TextureDesc, TextureHandle, TextureMove,
     ValidatedRhiPresent,
@@ -70,7 +70,7 @@ impl OpenGlRasterPipeline {
     }
 
     // 创建封闭语义的通用 pipeline。
-    pub(crate) fn rhi_create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineHandle> {
+    pub(crate) fn rhi_create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineBinding> {
         // shader 编译失败必须在首次 frame 前返回 typed error。
         self.with_rhi(|gl, rhi| rhi.create_pipeline(gl, desc))
     }
@@ -94,7 +94,7 @@ impl OpenGlRasterPipeline {
     }
 
     // 销毁通用 pipeline。
-    pub(crate) fn rhi_destroy_pipeline(&mut self, pipeline: PipelineHandle) -> Result<()> {
+    pub(crate) fn rhi_destroy_pipeline(&mut self, pipeline: PipelineBinding) -> Result<()> {
         // 删除已经编译的 GLES program。
         self.with_rhi(|gl, rhi| rhi.destroy_pipeline(gl, pipeline))
     }

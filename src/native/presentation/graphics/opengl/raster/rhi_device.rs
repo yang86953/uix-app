@@ -10,10 +10,10 @@ use crate::core::error::{Errc, Error, Result};
 // 引入 Surface 提供的跨呈现像素保留语义。
 use crate::core::PresentCoherency;
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, LoadAction, PipelineColorWriteMask, PipelineDesc,
-    PipelineDitherState, PipelineHandle, PipelineKind, RenderTargetHandle, RhiBufferUpload,
-    RhiColor, RhiColorClearContract, RhiExtent, RhiPassState, RhiPresentTransaction,
-    RhiResourceTable, RhiScissor, RhiSubmissionSequence, RhiTextureUpload, RhiViewport,
+    BufferDesc, BufferHandle, LoadAction, PipelineBinding, PipelineColorWriteMask, PipelineDesc,
+    PipelineDitherState, PipelineKind, RenderTargetHandle, RhiBufferUpload, RhiColor,
+    RhiColorClearContract, RhiExtent, RhiPassState, RhiPipelineResourceTable,
+    RhiPresentTransaction, RhiResourceTable, RhiScissor, RhiSubmissionSequence, RhiTextureUpload,
     SampledTextureBinding, SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceToken, TextureCopy,
     TextureDesc, TextureFormat, TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
     ValidatedRhiPresent,
@@ -43,10 +43,8 @@ struct OpenGlRhiTexture {
     desc: TextureDesc,
 }
 
-// 保存封闭 pipeline 语义与编译后的 GL program。
+// 保存编译后的 GL program。
 struct OpenGlRhiPipeline {
-    // 保存通用 renderer 选择的类型化语义。
-    kind: PipelineKind,
     // 保存 OpenGL ES program 对象。
     program: glow::Program,
 }
@@ -73,8 +71,8 @@ pub(super) struct OpenGlRhiDevice {
     textures: RhiResourceTable<TextureHandle, OpenGlRhiTexture>,
     // 保存必须活到下一次原生 submit 之后才能删除的临时移动纹理。
     texture_move_scratch_after_submit: Vec<TextureHandle>,
-    // 保存按一开始从 1 分配的 pipeline 句柄索引的资源表。
-    pipelines: RhiResourceTable<PipelineHandle, OpenGlRhiPipeline>,
+    // 保存按共享 pipeline 语义索引的原生 program 资源表。
+    pipelines: RhiPipelineResourceTable<OpenGlRhiPipeline>,
     // 保存按一开始从 1 分配的 sampler 句柄索引的资源表。
     samplers: RhiResourceTable<SamplerHandle, OpenGlRhiSampler>,
     // 保存所有 RHI draw 共用的 VAO。
@@ -136,7 +134,8 @@ impl OpenGlRhiDevice {
             textures: RhiResourceTable::new(),
             // 新设备尚未产生等待提交的临时移动资源。
             texture_move_scratch_after_submit: Vec::new(),
-            pipelines: RhiResourceTable::new(),
+            // 由共享表统一保存 pipeline 句柄与 kind。
+            pipelines: RhiPipelineResourceTable::new(),
             samplers: RhiResourceTable::new(),
             vao,
             // 使用 API 无关状态机初始化 pass 生命周期。
@@ -336,17 +335,18 @@ impl OpenGlRhiDevice {
         &mut self,
         gl: &glow::Context,
         desc: PipelineDesc,
-    ) -> Result<PipelineHandle> {
+    ) -> Result<PipelineBinding> {
         // 为封闭语义选择不再按平台改写的固定 GLES 3.0 shader ABI。
         let (vertex, fragment) = shader_sources(desc.kind);
         // 编译 program；shader 失败时不登记半成品资源。
         // SAFETY: 编译期间 context 保持 current（compile_program 自身的前置条件），shader 源码为存活且静态的生命周期字符串。
         let program = unsafe { compile_program(gl, vertex, fragment, "RHI pipeline")? };
-        // 由共享资源表保存类型化语义和 program 的 owner-thread 生命周期。
-        Ok(self.pipelines.insert(OpenGlRhiPipeline {
-            kind: desc.kind,
-            program,
-        }))
+        // 由共享资源表保存 program 并签发不可拆 pipeline 身份。
+        let binding = self
+            .pipelines
+            .insert(desc.kind, OpenGlRhiPipeline { program });
+        // 返回与资源表真实语义一致的完整绑定。
+        Ok(binding)
     }
 
     // 销毁 buffer 资源。
@@ -413,10 +413,10 @@ impl OpenGlRhiDevice {
     pub(super) fn destroy_pipeline(
         &mut self,
         gl: &glow::Context,
-        handle: PipelineHandle,
+        binding: PipelineBinding,
     ) -> Result<()> {
-        // 由共享资源表检查式取出仍然存活的 pipeline。
-        let pipeline = self.pipelines.take(handle)?;
+        // 由共享资源表检查完整绑定后取出仍然存活的 pipeline。
+        let pipeline = self.pipelines.take(binding)?;
         // 删除底层 program。
         // SAFETY: pipeline 刚被取出、仍存活且此后不再引用，只在销毁路径删除一次；context 保持 current。
         unsafe {

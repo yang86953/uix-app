@@ -476,8 +476,8 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         opengl_blur = opengl_draw[
             # 从类型化 Blur 分派开始。
             opengl_draw.index("PipelineKind::BlurPass =>") :
-            # 到整个 pipeline match 后的记录边界结束。
-            opengl_draw.index("// 记录 sampled_format", opengl_draw.index("PipelineKind::BlurPass =>"))
+            # 到共享固定状态开始编码的边界结束。
+            opengl_draw.index("// SAFETY: contract 只包含固定 GL 采样覆盖映射", opengl_draw.index("PipelineKind::BlurPass =>"))
         ]
         # OpenGL 必须读取共享字段常量，不得保留数字偏移与独立权重数量。
         for field in (
@@ -659,9 +659,9 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         # 读取 FramePlan 验证入口。
         frame_plan = (ROOT / "src/draw/backend/frame_plan.rs").read_text(encoding="utf-8")
         # 读取 OpenGL 最终资源表核对。
-        opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs").read_text(encoding="utf-8")
+        opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs").read_text(encoding="utf-8") + (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs").read_text(encoding="utf-8")
         # 读取 D3D11 最终资源表核对。
-        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_draw.rs").read_text(encoding="utf-8")
+        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs").read_text(encoding="utf-8") + (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_draw.rs").read_text(encoding="utf-8")
         # 共享层必须拥有不可拆的 pipeline 绑定类型。
         self.assertIn("pub(crate) struct PipelineBinding", pipeline)
         # 绑定必须同时私有保存 opaque handle。
@@ -680,14 +680,13 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         self.assertIn("data.layout() != contract.vertex", validation)
         # Uniform 上传必须与 pipeline 常量布局比较。
         self.assertIn("uniform.layout() != contract.uniform", validation)
-        # OpenGL 必须用裸句柄查资源并核对绑定语义。
-        self.assertIn("self.pipeline(packet.pipeline.handle())?", opengl)
-        # OpenGL 资源表错配必须稳定失败。
-        self.assertIn("OpenGL RHI pipeline binding kind is stale", opengl)
-        # D3D11 必须用同一绑定语义核对原生资源表。
-        self.assertIn("self.rhi_device.pipeline(packet.pipeline.handle())?.kind", d3d11)
-        # D3D11 资源表错配必须稳定失败。
-        self.assertIn("D3d11 RHI pipeline binding kind is stale", d3d11)
+        # OpenGL 必须持有共享表并用完整 binding 解析 draw 身份。
+        self.assertTrue(all(marker in opengl for marker in ("RhiPipelineResourceTable", "self.pipeline(packet.pipeline)?")))
+        # D3D11 必须持有同一共享表并用完整 binding 解析 draw 身份。
+        self.assertTrue(all(marker in d3d11 for marker in ("RhiPipelineResourceTable", "self.rhi_device.pipeline(packet.pipeline)?")))
+        # Adapter 不得重新拥有带平台名称的 kind 错配错误。
+        self.assertNotIn("pipeline binding kind is stale", opengl)
+        self.assertNotIn("pipeline binding kind is stale", d3d11)
 
     # 颜色纹理在进入 shader 前必须由 Adapter 归一化为同一逻辑 RGBA 语义。
     def test_color_texture_channels_are_normalized_at_adapter_boundary(self) -> None:
