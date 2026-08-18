@@ -10,8 +10,8 @@ use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
     GraphicsSurface, GraphicsSurfaceCapabilities, LoadAction, PipelineBinding, PipelineDesc,
     RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, RhiSurfaceReadback, RhiViewport,
-    SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy,
-    TextureDesc, TextureHandle, TextureMove,
+    SampledTextureBinding, SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceFrame,
+    SurfaceToken, TextureCopy, TextureDesc, TextureHandle, TextureMove,
 };
 // 引入 OpenGL raster pipeline 的 RHI bridge。
 use super::raster::OpenGlRasterPipeline;
@@ -163,15 +163,9 @@ where
         self.rhi_pipeline_mut().rhi_clear_rect(color, scissor)
     }
 
-    // 绑定 sampled texture。
-    fn bind_texture(
-        &mut self,
-        slot: u32,
-        texture: TextureHandle,
-        sampler: SamplerHandle,
-    ) -> Result<()> {
-        self.rhi_pipeline_mut()
-            .rhi_bind_texture(slot, texture, sampler)
+    // 绑定完整 sampled texture 事实。
+    fn bind_sampled_texture(&mut self, binding: SampledTextureBinding) -> Result<()> {
+        self.rhi_pipeline_mut().rhi_bind_sampled_texture(binding)
     }
 
     // 执行 draw packet。

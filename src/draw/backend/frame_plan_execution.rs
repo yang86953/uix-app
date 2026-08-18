@@ -145,14 +145,10 @@ where
                 // 将规范颜色和物理矩形一起交给 Adapter。
                 self.device.clear_rect(*color, *scissor)
             }
-            // 绑定已经由计划冻结的 sampled resource。
-            FramePlanCommand::BindTexture {
-                slot,
-                texture,
-                sampler,
-            } => {
-                // Adapter 只解释统一槽位与不透明资源句柄。
-                self.device.bind_texture(*slot, *texture, *sampler)
+            // 绑定已经由计划冻结的原子 sampled resource。
+            FramePlanCommand::BindSampledTexture(binding) => {
+                // Adapter 只解析值对象中的两个不透明资源句柄。
+                self.device.bind_sampled_texture(*binding)
             }
             // 在唯一执行边界把类型化顶点编码为 Device 原语所需字节。
             FramePlanCommand::UploadVertex {

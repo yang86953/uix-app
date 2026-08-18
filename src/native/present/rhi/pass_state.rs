@@ -12,6 +12,36 @@ use super::{
     TextureHandle,
 };
 
+// 原子保存共享 shader ABI 唯一开放的采样纹理与 sampler 绑定。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct SampledTextureBinding {
+    // 保存被采样纹理的不透明身份。
+    texture: TextureHandle,
+    // 保存与纹理同时生效的 sampler 身份。
+    sampler: SamplerHandle,
+}
+
+// 为 FramePlan、Device 和 Adapter 提供不暴露槽位的绑定构造与投影。
+impl SampledTextureBinding {
+    // 创建当前固定 t0/s0 ABI 的完整采样绑定。
+    pub(crate) const fn new(texture: TextureHandle, sampler: SamplerHandle) -> Self {
+        // 两个资源身份必须作为一个事实共同传递。
+        Self { texture, sampler }
+    }
+
+    // 返回供 Adapter 资源表解析的纹理身份。
+    pub(crate) const fn texture(self) -> TextureHandle {
+        // 复制轻量句柄，不拆开保存状态。
+        self.texture
+    }
+
+    // 返回供 Adapter 资源表解析的 sampler 身份。
+    pub(crate) const fn sampler(self) -> SamplerHandle {
+        // 复制轻量句柄，不拆开保存状态。
+        self.sampler
+    }
+}
+
 // 保存一个已经开始且尚未结束的 render pass 事实。
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct ActiveRhiPass {
@@ -21,10 +51,8 @@ struct ActiveRhiPass {
     extent: RhiExtent,
     // 保存当前左上原点 scissor；None 表示完整目标。
     scissor: Option<RhiScissor>,
-    // 保存最近一次成功绑定的采样纹理。
-    bound_texture: Option<TextureHandle>,
-    // 保存最近一次成功绑定的采样器。
-    bound_sampler: Option<SamplerHandle>,
+    // 原子保存最近一次成功绑定的采样纹理与 sampler。
+    sampled_binding: Option<SampledTextureBinding>,
 }
 
 // 保存单一 Device 当前唯一 render-pass 生命周期。
@@ -85,10 +113,8 @@ impl RhiPassState {
             extent,
             // 每个 pass 都从完整目标开始。
             scissor: None,
-            // 每个 pass 都必须重新绑定采样纹理。
-            bound_texture: None,
-            // 每个 pass 都必须重新绑定采样器。
-            bound_sampler: None,
+            // 每个 pass 都必须重新建立完整采样绑定。
+            sampled_binding: None,
         });
         // 返回状态建立成功。
         Ok(())
@@ -203,15 +229,11 @@ impl RhiPassState {
     }
 
     // 验证并记录当前 pass 的唯一 sampled texture/sampler 绑定。
-    pub(crate) fn bind_texture(
+    pub(crate) fn bind_sampled_texture(
         // 独占借用状态机以提交绑定事实。
         &mut self,
-        // 接收当前封闭 ABI 唯一允许的槽位。
-        slot: u32,
-        // 接收已经由 Adapter 资源表验证存活的纹理身份。
-        texture: TextureHandle,
-        // 接收已经由 Adapter 资源表验证存活的采样器身份。
-        sampler: SamplerHandle,
+        // 接收已经由 Adapter 资源表验证存活的原子绑定。
+        binding: SampledTextureBinding,
     ) -> Result<()> {
         // 取得可变活动事实，pass 外不能留下下一帧可见绑定。
         let active = self
@@ -221,36 +243,21 @@ impl RhiPassState {
             .as_mut()
             // 延迟构造错误。
             .ok_or_else(|| invalid_state("RHI texture binding has no active pass"))?;
-        // 当前共享 shader ABI 只开放纹理和 sampler 的零号槽。
-        if slot != 0 {
-            // 返回稳定槽位参数错误。
-            return Err(invalid_argument(
-                "RHI only supports texture binding slot zero",
-            ));
-        }
         // 禁止同一离屏纹理同时作为当前输出与采样输入。
-        if active.target.raw() == texture.raw() {
+        if active.target.raw() == binding.texture().raw() {
             // 返回共享反馈环错误，避免依赖驱动隐式解绑行为。
             return Err(invalid_argument("RHI texture feedback loop is invalid"));
         }
-        // 只有全部门禁通过后才记录纹理绑定。
-        active.bound_texture = Some(texture);
-        // 同一次命令原子记录配套 sampler。
-        active.bound_sampler = Some(sampler);
+        // 只有全部门禁通过后才原子记录纹理与 sampler。
+        active.sampled_binding = Some(binding);
         // 返回绑定事实建立成功。
         Ok(())
     }
 
-    // 返回当前 pass 最近绑定的 sampled texture。
-    pub(crate) fn bound_texture(&self) -> Option<TextureHandle> {
-        // 关闭状态不暴露任何陈旧绑定。
-        self.active.and_then(|active| active.bound_texture)
-    }
-
-    // 返回当前 pass 最近绑定的 sampler。
-    pub(crate) fn bound_sampler(&self) -> Option<SamplerHandle> {
-        // 关闭状态不暴露任何陈旧绑定。
-        self.active.and_then(|active| active.bound_sampler)
+    // 返回当前 pass 最近一次完整 sampled texture 绑定。
+    pub(crate) fn sampled_binding(&self) -> Option<SampledTextureBinding> {
+        // 关闭状态不暴露任何陈旧或拆分绑定。
+        self.active.and_then(|active| active.sampled_binding)
     }
 
     // 判断指定纹理是否正作为活动 render target。
@@ -265,10 +272,13 @@ impl RhiPassState {
     pub(crate) fn unbind_texture(&mut self, texture: TextureHandle) {
         // 只有活动 pass 可能拥有采样绑定。
         if let Some(active) = self.active.as_mut() {
-            // 仅清除与被销毁资源相同的身份。
-            if active.bound_texture == Some(texture) {
-                // 让后续 sampled draw 显式报告缺失绑定。
-                active.bound_texture = None;
+            // 任一成员失效都必须清除整个原子绑定。
+            if active
+                .sampled_binding
+                .is_some_and(|binding| binding.texture() == texture)
+            {
+                // 让后续 sampled draw 显式报告缺失完整绑定。
+                active.sampled_binding = None;
             }
         }
     }
@@ -277,10 +287,13 @@ impl RhiPassState {
     pub(crate) fn unbind_sampler(&mut self, sampler: SamplerHandle) {
         // 只有活动 pass 可能拥有 sampler 绑定。
         if let Some(active) = self.active.as_mut() {
-            // 仅清除与被销毁资源相同的身份。
-            if active.bound_sampler == Some(sampler) {
-                // 让后续 sampled draw 显式报告缺失绑定。
-                active.bound_sampler = None;
+            // 任一成员失效都必须清除整个原子绑定。
+            if active
+                .sampled_binding
+                .is_some_and(|binding| binding.sampler() == sampler)
+            {
+                // 让后续 sampled draw 显式报告缺失完整绑定。
+                active.sampled_binding = None;
             }
         }
     }
@@ -310,7 +323,7 @@ fn invalid_state(message: &'static str) -> Error {
 
 // 构造 API 无关的输入参数错误。
 fn invalid_argument(message: &'static str) -> Error {
-    // 使用统一 InvalidArgument 分类表达几何、颜色或槽位违例。
+    // 使用统一 InvalidArgument 分类表达几何、颜色或资源冲突违例。
     Error::new(Errc::InvalidArgument, message)
 }
 
@@ -318,7 +331,7 @@ fn invalid_argument(message: &'static str) -> Error {
 #[cfg(test)]
 mod tests {
     // 引入被测共享状态机。
-    use super::RhiPassState;
+    use super::{RhiPassState, SampledTextureBinding};
     // 引入构造 pass 输入与资源身份所需的共享值。
     use crate::native::present::rhi::{
         LoadAction, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, RhiViewport,
@@ -425,9 +438,9 @@ mod tests {
             .expect("clear should fit");
     }
 
-    // 验证 pass 内绑定拒绝槽位漂移和目标反馈环。
+    // 验证 pass 内绑定拒绝目标反馈环且只能保存完整事实。
     #[test]
-    fn texture_binding_rejects_feedback_and_nonzero_slots() {
+    fn sampled_binding_rejects_feedback_and_stays_atomic() {
         // 创建并开始一个测试 pass。
         let mut state = RhiPassState::new();
         // 建立稳定目标范围。
@@ -436,24 +449,38 @@ mod tests {
             .begin(TARGET, RhiExtent::new(20, 10), LoadAction::Load)
             // 测试设置必须成功。
             .expect("pass should begin");
-        // 非零槽位必须失败。
-        assert!(state.bind_texture(1, TEXTURE, SAMPLER).is_err());
         // 把目标自身转换成纹理身份以模拟反馈环。
         let target_texture = TextureHandle::from_raw(TARGET.raw());
+        // 组装一个输入纹理与当前目标相同的完整绑定。
+        let feedback_binding = SampledTextureBinding::new(target_texture, SAMPLER);
         // 当前 render target 不能同时作为 sampled source。
-        assert!(state.bind_texture(0, target_texture, SAMPLER).is_err());
-        // 两次失败都不能提交半绑定状态。
-        assert_eq!(state.bound_texture(), None);
-        // 合法的零槽绑定必须成功。
+        assert!(state.bind_sampled_texture(feedback_binding).is_err());
+        // 失败不能提交半绑定状态。
+        assert_eq!(state.sampled_binding(), None);
+        // 合法的完整绑定必须成功。
+        let binding = SampledTextureBinding::new(TEXTURE, SAMPLER);
+        // 把原子绑定交给共享状态机。
         state
             // 绑定与目标不同的纹理和 sampler。
-            .bind_texture(0, TEXTURE, SAMPLER)
+            .bind_sampled_texture(binding)
             // 共享门禁必须接收。
             .expect("binding should succeed");
-        // 返回的纹理身份必须与输入一致。
-        assert_eq!(state.bound_texture(), Some(TEXTURE));
-        // 返回的 sampler 身份必须与输入一致。
-        assert_eq!(state.bound_sampler(), Some(SAMPLER));
+        // 状态机必须原样返回完整绑定。
+        assert_eq!(state.sampled_binding(), Some(binding));
+        // 销毁 sampler 时必须同时清除纹理身份。
+        state.unbind_sampler(SAMPLER);
+        // 不允许留下只有纹理的半绑定状态。
+        assert_eq!(state.sampled_binding(), None);
+        // 重新建立完整绑定以验证纹理销毁路径。
+        state
+            // 第二次绑定使用相同稳定身份。
+            .bind_sampled_texture(binding)
+            // 共享状态机必须允许覆盖空绑定。
+            .expect("binding should succeed again");
+        // 销毁纹理时必须同时清除 sampler 身份。
+        state.unbind_texture(TEXTURE);
+        // 不允许留下只有 sampler 的半绑定状态。
+        assert_eq!(state.sampled_binding(), None);
     }
 
     // 验证 end 原子清除所有 pass 级事实。
@@ -469,8 +496,8 @@ mod tests {
             .expect("pass should begin");
         // 写入一个合法 sampled binding。
         state
-            // 使用唯一开放的零号槽。
-            .bind_texture(0, TEXTURE, SAMPLER)
+            // 使用不暴露槽位的原子绑定。
+            .bind_sampled_texture(SampledTextureBinding::new(TEXTURE, SAMPLER))
             // 测试绑定必须成功。
             .expect("binding should succeed");
         // 结束活动 pass。
@@ -484,7 +511,7 @@ mod tests {
         // end 后不能再读取陈旧目标。
         assert!(state.target().is_err());
         // end 后不能再读取陈旧纹理绑定。
-        assert_eq!(state.bound_texture(), None);
+        assert_eq!(state.sampled_binding(), None);
         // 重复 end 必须作为顺序错误被拒绝。
         assert!(state.end().is_err());
     }

@@ -14,8 +14,8 @@ use crate::native::present::rhi::{
     BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
     LoadAction, PipelineBinding, PipelineDesc, PipelineHandle, PipelineKind, RenderTargetHandle,
     RhiColor, RhiColorClearContract, RhiExtent, RhiPassState, RhiScissor, RhiSubmissionSequence,
-    RhiViewport, SamplerDesc, SamplerHandle, TextureCopy, TextureDesc, TextureFormat,
-    TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
+    RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle, TextureCopy, TextureDesc,
+    TextureFormat, TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
 };
 // 引入 D3D11 的基础资源和绑定类型。
 use ::windows::Win32::Graphics::Direct3D11::{
@@ -613,14 +613,9 @@ impl GraphicsDevice for D3d11Context {
     }
 
     // 绑定当前 pass 的采样纹理和 sampler。
-    fn bind_texture(
-        &mut self,
-        slot: u32,
-        texture: TextureHandle,
-        sampler: SamplerHandle,
-    ) -> Result<()> {
+    fn bind_sampled_texture(&mut self, binding: SampledTextureBinding) -> Result<()> {
         // 把绑定校验和状态保存委托给 resource helper。
-        self.rhi_bind_texture(slot, texture, sampler)
+        self.rhi_bind_sampled_texture(binding)
     }
 
     // 设置当前 pass viewport。

@@ -94,21 +94,15 @@ unsafe fn bind_sampled(
     device: &OpenGlRhiDevice,
     program: glow::Program,
 ) -> Result<(TextureFormat, SamplerDesc)> {
-    // draw 前必须已经由 FramePlan 发出 BindTexture。
-    let texture_handle = device
+    // draw 前必须已经由 FramePlan 发出完整采样绑定。
+    let binding = device
         .pass
-        // 从共享 pass 状态读取 sampled texture 身份。
-        .bound_texture()
-        .ok_or_else(|| rhi_invalid("OpenGL RHI sampled draw has no texture"))?;
-    // draw 前必须已经由 FramePlan 发出 sampler 绑定。
-    let sampler_handle = device
-        .pass
-        // 从共享 pass 状态读取 sampler 身份。
-        .bound_sampler()
-        .ok_or_else(|| rhi_invalid("OpenGL RHI sampled draw has no sampler"))?;
+        // 从共享 pass 状态原子读取 texture 与 sampler 身份。
+        .sampled_binding()
+        .ok_or_else(|| rhi_invalid("OpenGL RHI sampled draw has no binding"))?;
     // 解析 texture 和 sampler 的原生对象。
-    let texture = device.texture(texture_handle)?;
-    let sampler = device.sampler(sampler_handle)?;
+    let texture = device.texture(binding.texture())?;
+    let sampler = device.sampler(binding.sampler())?;
     // SAFETY：调用者保证当前 owner thread 已绑定有效 GL 上下文。
     unsafe { gl.active_texture(glow::TEXTURE0) };
     // SAFETY：纹理句柄来自当前设备资源表，且仍由该设备拥有。

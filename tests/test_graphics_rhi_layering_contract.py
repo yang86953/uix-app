@@ -157,7 +157,7 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         # 组合 owner 借用必须激活当前原生 context。
         context_borrow = owner[owner.index("pub(crate) fn rhi_context(") : owner.index("pub(crate) fn resize_surface(")]
         # 激活责任必须由唯一 owner 承担，不泄漏给 Drawing 调用方。
-        self.assertIn("GraphicsDevice::activate(context)?;", context_borrow)
+        self.assertIn("GraphicsDevice::activate(context.device())?;", context_borrow)
         # 窄 Device 借用必须复用同一个组合激活边界。
         device_borrow = owner[owner.index("pub(crate) fn rhi_device(") : owner.index("pub(crate) fn rhi_surface(")]
         # 禁止 Device 借用绕过组合 owner 直接暴露未激活 context。
@@ -236,16 +236,16 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         self.assertIn("pub(crate) struct RhiPassState", pass_state)
         # 活动目标、extent、scissor 与绑定必须由一个原子值共同生灭。
         self.assertIn("active: Option<ActiveRhiPass>", pass_state)
-        # 目标反馈环必须在 API 无关层被拒绝。
-        self.assertIn("if active.target.raw() == texture.raw()", pass_state)
+        # 目标反馈环必须从原子绑定读取纹理并在 API 无关层拒绝。
+        self.assertIn("if active.target.raw() == binding.texture().raw()", pass_state)
         # OpenGL 必须把 pass 开始委托给共享状态机。
         self.assertIn("self.pass.begin(target, extent, load)?;", opengl)
         # D3D11 必须把同一转换委托给共享状态机。
         self.assertIn("self.rhi_device.pass.begin(target, extent, load)?;", d3d11)
-        # OpenGL 的采样绑定必须使用共享槽位和反馈环门禁。
-        self.assertIn("self.pass.bind_texture(slot, texture, sampler)?;", opengl)
+        # OpenGL 的采样绑定必须使用共享原子绑定与反馈环门禁。
+        self.assertIn("self.pass.bind_sampled_texture(binding)?;", opengl)
         # D3D11 的采样绑定必须使用完全相同的共享门禁。
-        self.assertIn("self.rhi_device.pass.bind_texture(slot, texture, sampler)?;", d3d11_resources)
+        self.assertIn("self.rhi_device.pass.bind_sampled_texture(binding)?;", d3d11_resources)
         # 两个 Adapter 不得保留会再次漂移的平行状态字段。
         for adapter, source in (("opengl", opengl), ("d3d11", d3d11)):
             # 逐个拒绝旧的重复事实来源。

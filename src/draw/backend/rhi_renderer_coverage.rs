@@ -6,7 +6,8 @@ use std::sync::Arc;
 // 引入 RHI 计划执行所需的资源描述与句柄。
 use crate::native::present::rhi::{
     BufferHandle, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc,
-    PipelineKind, RhiExtent, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat,
+    PipelineKind, RhiExtent, SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc,
+    TextureFormat,
 };
 
 // 复用 renderer 主模块的计划类型和 coverage payload。
@@ -245,12 +246,11 @@ impl RhiRenderer {
                 buffer: uniform_buffer,
                 data: FrameUniformPayload::Sampled(super::RhiRenderer::sampled_uniform(viewport)),
             });
-            // 绑定当前 R8 coverage texture 和点采样 sampler。
-            pass.push(FramePlanCommand::BindTexture {
-                slot: 0,
-                texture,
-                sampler,
-            });
+            // 原子绑定当前 R8 coverage texture 和点采样 sampler。
+            pass.push(FramePlanCommand::BindSampledTexture(
+                // coverage 与颜色 pipeline 复用同一固定槽位值对象。
+                SampledTextureBinding::new(texture, sampler),
+            ));
             // 追加六顶点的非索引 coverage quad draw packet。
             pass.push(FramePlanCommand::Draw(DrawPacket {
                 pipeline,

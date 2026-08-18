@@ -4,8 +4,9 @@
 use crate::core::error::Result;
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDeviceCapabilities, LoadAction, PipelineDesc,
-    PipelineHandle, RenderTargetHandle, RhiExtent, RhiScissor, RhiViewport, SamplerDesc,
-    SamplerHandle, SubmissionHandle, TextureCopy, TextureDesc, TextureHandle, TextureMove,
+    PipelineHandle, RenderTargetHandle, RhiExtent, RhiScissor, RhiViewport, SampledTextureBinding,
+    SamplerDesc, SamplerHandle, SubmissionHandle, TextureCopy, TextureDesc, TextureHandle,
+    TextureMove,
 };
 // 复用父模块中的 OpenGL pipeline 和资源设备类型。
 use super::{
@@ -164,14 +165,12 @@ impl OpenGlRasterPipeline {
     }
 
     // 绑定当前 pass 的 sampled texture。
-    pub(crate) fn rhi_bind_texture(
+    pub(crate) fn rhi_bind_sampled_texture(
         &mut self,
-        slot: u32,
-        texture: TextureHandle,
-        sampler: SamplerHandle,
+        binding: SampledTextureBinding,
     ) -> Result<()> {
         // 纹理和 sampler 的真实 GL 绑定延迟到 draw，保留 command order。
-        self.with_rhi(|_, rhi| rhi.bind_texture(slot, texture, sampler))
+        self.with_rhi(|_, rhi| rhi.bind_sampled_texture(binding))
     }
 
     // 执行一个通用 draw packet。

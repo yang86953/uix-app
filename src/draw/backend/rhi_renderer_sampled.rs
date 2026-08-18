@@ -7,7 +7,7 @@ use crate::core::PresentDamage;
 // 引入薄 RHI 的采样与执行类型。
 use crate::native::present::rhi::{
     DrawPacket, DrawRange, GraphicsContextRhi, GraphicsDevice, GraphicsSurface, LoadAction,
-    RenderTargetHandle, RhiViewport,
+    RenderTargetHandle, RhiViewport, SampledTextureBinding,
 };
 
 // 引入父 renderer 的计划、target、资源载荷和执行器。
@@ -160,12 +160,11 @@ impl RhiRenderer {
             buffer: uniform_buffer,
             data: FrameUniformPayload::Sampled(Self::sampled_uniform(viewport)),
         });
-        // 绑定已经存在的 Picture texture 和共享 sampler。
-        pass.push(FramePlanCommand::BindTexture {
-            slot: 0,
-            texture: quad.texture,
-            sampler,
-        });
+        // 原子绑定已经存在的 Picture texture 和共享 sampler。
+        pass.push(FramePlanCommand::BindSampledTexture(
+            // 离屏路径与 surface 路径共享同一个固定槽位契约。
+            SampledTextureBinding::new(quad.texture, sampler),
+        ));
         // 追加六顶点的非索引 sampled draw packet。
         pass.push(FramePlanCommand::Draw(DrawPacket {
             pipeline,
