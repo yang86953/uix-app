@@ -215,6 +215,13 @@ impl GraphicsDevice for D3d11Context {
         // 统一沿用 context 健康维护实现和 DXGI typed mapping。
         self.maintain_rhi_device()
     }
+    // D3D11 immediate context 不需要 OpenGL 式 current 切换，但仍须检查 owner 生命周期。
+    fn activate(&mut self) -> Result<()> {
+        // 关闭后的 owner 必须在任何后续 Device 工作前返回 InvalidState。
+        self.ensure_active()?;
+        // D3D11 的 COM/context 绑定由创建期 owner 固定，不在此处触碰原生状态。
+        Ok(())
+    }
     #[cfg(feature = "test-harness")]
     fn inject_device_lost_for_test(&mut self) -> Result<()> {
         // 只有仍存活的 D3D11 owner 才能登记测试设备故障。
@@ -227,6 +234,8 @@ impl GraphicsDevice for D3d11Context {
 
     // 创建 D3D11 默认 buffer。
     fn create_buffer(&mut self, desc: BufferDesc) -> Result<BufferHandle> {
+        // 关闭后的 owner 必须先于描述校验拒绝资源创建。
+        self.ensure_active()?;
         // 先通过两个 Adapter 共用的容量、步长与 Uniform ABI 门禁。
         let native = desc.validate()?;
         // 选择底层绑定类型、更新方式和 CPU 写入权限。
@@ -284,6 +293,8 @@ impl GraphicsDevice for D3d11Context {
 
     // 将紧密排列的数据写入已有 D3D11 buffer。
     fn update_buffer(&mut self, upload: RhiBufferUpload<'_>) -> Result<()> {
+        // 关闭后的 owner 必须先于资源解析拒绝 buffer 更新。
+        self.ensure_active()?;
         // 先解析目标身份，空载荷也不能绕过陈旧句柄门禁。
         let resource = self.rhi_device.buffer(upload.buffer())?;
         // 由共享 Component 验证前缀范围、元素边界和 Uniform 完整替换。
@@ -342,6 +353,8 @@ impl GraphicsDevice for D3d11Context {
 
     // 创建可采样且尽可能可作为 render target 的 D3D11 texture。
     fn create_texture(&mut self, desc: TextureDesc) -> Result<TextureHandle> {
+        // 关闭后的 owner 必须先于资源 helper 拒绝 texture 创建。
+        self.ensure_active()?;
         // 把资源创建细节委托给按文件拆分的 RHI resource helper。
         self.rhi_create_texture(desc)
     }
@@ -356,18 +369,24 @@ impl GraphicsDevice for D3d11Context {
 
     // 创建当前 D3D11 适配器已经具备 shader ABI 的有限 pipeline。
     fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineBinding> {
+        // 关闭后的 owner 必须先于资源 helper 拒绝 pipeline 创建。
+        self.ensure_active()?;
         // 让资源表直接签发与创建语义一致的不可拆 pipeline 身份。
         self.rhi_create_pipeline(desc)
     }
 
     // 创建带 clamp 地址模式的 D3D11 sampler。
     fn create_sampler(&mut self, desc: SamplerDesc) -> Result<SamplerHandle> {
+        // 关闭后的 owner 必须先于资源 helper 拒绝 sampler 创建。
+        self.ensure_active()?;
         // 把 sampler state 创建委托给 resource helper。
         self.rhi_create_sampler(desc)
     }
 
     // 上传已经绑定目标身份、区域与紧密像素载荷的纹理命令。
     fn update_texture(&mut self, upload: RhiTextureUpload<'_>) -> Result<()> {
+        // 关闭后的 owner 必须先于资源解析拒绝 texture 更新。
+        self.ensure_active()?;
         // 先解析目标身份，空载荷也不能绕过陈旧句柄门禁。
         let resource = self.rhi_device.texture(upload.texture())?;
         // 由共享 Transfer Component 统一验证描述、区域、载荷和行跨度。
@@ -409,6 +428,8 @@ impl GraphicsDevice for D3d11Context {
 
     // 销毁 buffer 资源槽。
     fn destroy_buffer(&mut self, buffer: BufferHandle) -> Result<()> {
+        // 关闭后的 owner 必须先于资源表修改拒绝 buffer 销毁。
+        self.ensure_active()?;
         // 由共享资源表检查式取出资源，离开作用域时释放 COM 对象。
         self.rhi_device.buffers.take(buffer)?;
         // 返回成功。
@@ -417,6 +438,8 @@ impl GraphicsDevice for D3d11Context {
 
     // 销毁 texture 资源槽。
     fn destroy_texture(&mut self, texture: TextureHandle) -> Result<()> {
+        // 关闭后的 owner 必须先于 pass/resource 状态修改拒绝 texture 销毁。
+        self.ensure_active()?;
         // 由共享 pass 状态统一拒绝当前活动 render target。
         self.rhi_device.pass.validate_texture_destroy(texture)?;
         // 由共享资源表检查式取出资源，离开作用域时释放 texture 与 views。
@@ -429,18 +452,24 @@ impl GraphicsDevice for D3d11Context {
 
     // 销毁 pipeline 资源槽。
     fn destroy_pipeline(&mut self, pipeline: PipelineBinding) -> Result<()> {
+        // 关闭后的 owner 必须先于资源 helper 拒绝 pipeline 销毁。
+        self.ensure_active()?;
         // 把完整 binding 的语义校验与检查式销毁委托给 resource helper。
         self.rhi_destroy_pipeline(pipeline)
     }
 
     // 销毁 sampler 资源槽。
     fn destroy_sampler(&mut self, sampler: SamplerHandle) -> Result<()> {
+        // 关闭后的 owner 必须先于资源 helper 拒绝 sampler 销毁。
+        self.ensure_active()?;
         // 把检查式销毁委托给 resource helper。
         self.rhi_destroy_sampler(sampler)
     }
 
     // 开始一个 D3D11 render pass，并绑定 surface 或 RHI texture target。
     fn begin_render_pass(&mut self, target: RenderTargetHandle, load: LoadAction) -> Result<()> {
+        // 关闭后的 owner 必须先于 pass 状态和目标解析拒绝 begin。
+        self.ensure_active()?;
         // 拒绝嵌套 pass，保持 FramePlan 的显式边界。
         self.rhi_device.pass.require_closed()?;
         // 清理契约必须在建立 pass 或绑定原生目标前完成 fail-stop 验收。
@@ -501,36 +530,48 @@ impl GraphicsDevice for D3d11Context {
 
     // 绑定当前 pass 的采样纹理和 sampler。
     fn bind_sampled_texture(&mut self, binding: SampledTextureBinding) -> Result<()> {
+        // 关闭后的 owner 必须先于共享 pass 或原生绑定拒绝采样绑定。
+        self.ensure_active()?;
         // 把绑定校验和状态保存委托给 resource helper。
         self.rhi_bind_sampled_texture(binding)
     }
 
     // 设置当前 pass viewport。
     fn set_viewport(&mut self, viewport: RhiViewport) -> Result<()> {
+        // 关闭后的 owner 必须先于状态 helper 拒绝 viewport 设置。
+        self.ensure_active()?;
         // 把状态编码委托给按文件拆分的 RHI state helper。
         self.rhi_set_viewport(viewport)
     }
 
     // 设置当前 pass scissor。
     fn set_scissor(&mut self, scissor: Option<RhiScissor>) -> Result<()> {
+        // 关闭后的 owner 必须先于状态 helper 拒绝 scissor 设置。
+        self.ensure_active()?;
         // 把状态编码委托给按文件拆分的 RHI state helper。
         self.rhi_set_scissor(scissor)
     }
 
     // 在当前 D3D11 render pass 内清理一个物理矩形。
     fn clear_rect(&mut self, color: RhiColor, scissor: RhiScissor) -> Result<()> {
+        // 关闭后的 owner 必须先于 ClearView helper 拒绝局部清理。
+        self.ensure_active()?;
         // 把 API 细节委托给独立的 ClearView helper。
         self.rhi_clear_rect(color, scissor)
     }
 
     // 执行一个已经选择固定 pipeline 与资源句柄的通用 draw packet。
     fn draw(&mut self, packet: DrawPacket) -> Result<()> {
+        // 关闭后的 owner 必须先于 draw packet 校验或原生状态拒绝绘制。
+        self.ensure_active()?;
         // 把固定 ABI 分派委托给独立模块，保持资源主文件短小。
         self.draw_rhi_packet(packet)
     }
 
     // 在 pass 外复制两个 RHI texture。
     fn copy_texture(&mut self, copy: TextureCopy) -> Result<()> {
+        // 关闭后的 owner 必须先于 pass 状态和资源解析拒绝复制。
+        self.ensure_active()?;
         // 复制必须位于显式 pass 之外，避免 render target 和 copy source 重叠。
         self.rhi_device.pass.require_closed()?;
         // 读取源和目标资源。
@@ -578,6 +619,8 @@ impl GraphicsDevice for D3d11Context {
 
     // 在 D3D11 上执行同纹理重叠安全的区域移动。
     fn move_texture_region(&mut self, movement: TextureMove) -> Result<()> {
+        // 关闭后的 owner 必须先于 pass 状态和资源解析拒绝移动。
+        self.ensure_active()?;
         // 移动必须发生在显式 pass 之外。
         self.rhi_device.pass.require_closed()?;
         // 先复制资源描述，避免后续 scratch 操作持有资源表借用。
@@ -628,12 +671,16 @@ impl GraphicsDevice for D3d11Context {
 
     // 结束当前 D3D11 render pass。
     fn end_render_pass(&mut self) -> Result<()> {
+        // 关闭后的 owner 必须先于 pass 收尾 helper 拒绝结束操作。
+        self.ensure_active()?;
         // 收尾实现拆在独立 submit 模块，保持本文件处于行数上限内。
         self.end_render_pass_impl()
     }
 
     // 提交 D3D11 immediate context 当前命令序列。
     fn submit(&mut self) -> Result<crate::native::present::rhi::SubmissionHandle> {
+        // 关闭后的 owner 必须先于提交 helper 拒绝命令提交。
+        self.ensure_active()?;
         // 提交实现拆在独立 submit 模块，保持本文件处于行数上限内。
         self.submit_impl()
     }

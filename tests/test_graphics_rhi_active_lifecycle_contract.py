@@ -20,7 +20,7 @@ def source(relative_path: str) -> str:
 # 提取一个 Rust 函数的完整花括号范围。
 def function_body(text: str, function_name: str, occurrence: int = 0) -> str:
     # 定位函数签名，避免只按关键词数量判断。
-    marker = f"fn {function_name}"
+    marker = f"fn {function_name}("
     # 找到指定序号的函数签名起点。
     start = -1
     # 逐次搜索同名函数以区分 Device 与 Surface 默认实现。
@@ -60,6 +60,18 @@ def assert_gate_precedes_native(test_case: unittest.TestCase, body: str) -> None
         if marker in body:
             # 门禁必须早于该 native/pipeline 调用。
             test_case.assertLess(gate, body.index(marker))
+
+
+# 断言 D3D11 owner 门禁早于该入口的第一项资源、状态或原生工作。
+def assert_d3d_gate_precedes_work(
+    test_case: unittest.TestCase, body: str, first_work: str
+) -> None:
+    # 定位 D3D11 共享 owner 的生命周期门禁。
+    gate = body.index("self.ensure_active()?")
+    # 定位该入口约定的第一项可失败工作。
+    work = body.index(first_work)
+    # 关闭错误必须早于所有资源、状态和原生副作用。
+    test_case.assertLess(gate, work)
 
 
 # 声明生命周期门禁契约测试集合。
@@ -175,6 +187,8 @@ class GraphicsRhiActiveLifecycleContractTest(unittest.TestCase):
         d3d = source("src/native/presentation/graphics/d3d11/platform/context/graphics.rs")
         # 读取 D3D11 Device 注入实现。
         d3d_device = source("src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs")
+        # 读取 D3D11 健康维护 helper，保持门禁责任集中在 owner helper。
+        d3d_health = source("src/native/presentation/graphics/d3d11/platform/context/rhi_health.rs")
         # 读取 D3D11 Surface 注入实现。
         d3d_surface = source("src/native/presentation/graphics/d3d11/platform/context/rhi.rs")
         # D3D11 rhi_context 必须先执行既有 active 门禁。
@@ -189,6 +203,45 @@ class GraphicsRhiActiveLifecycleContractTest(unittest.TestCase):
         self.assertLess(
             device_injection.index("self.ensure_active()?"),
             device_injection.index("arm_rhi_device_lost_for_test()"),
+        )
+        # 列出必须在任何资源、状态或 native 工作前检查 owner 的 Device 入口。
+        d3d_device_entries = (
+            ("activate", "Ok(())"),
+            ("create_buffer", "desc.validate()?"),
+            ("update_buffer", "self.rhi_device.buffer("),
+            ("create_texture", "self.rhi_create_texture("),
+            ("create_pipeline", "self.rhi_create_pipeline("),
+            ("create_sampler", "self.rhi_create_sampler("),
+            ("update_texture", "self.rhi_device.texture("),
+            ("destroy_buffer", "self.rhi_device.buffers.take("),
+            ("destroy_texture", "self.rhi_device.pass.validate_texture_destroy("),
+            ("destroy_pipeline", "self.rhi_destroy_pipeline("),
+            ("destroy_sampler", "self.rhi_destroy_sampler("),
+            ("begin_render_pass", "self.rhi_device.pass.require_closed("),
+            ("bind_sampled_texture", "self.rhi_bind_sampled_texture("),
+            ("set_viewport", "self.rhi_set_viewport("),
+            ("set_scissor", "self.rhi_set_scissor("),
+            ("clear_rect", "self.rhi_clear_rect("),
+            ("draw", "self.draw_rhi_packet("),
+            ("copy_texture", "self.rhi_device.pass.require_closed("),
+            ("move_texture_region", "self.rhi_device.pass.require_closed("),
+            ("end_render_pass", "self.end_render_pass_impl("),
+            ("submit", "self.submit_impl("),
+        )
+        # 逐一验证 D3D11 Device 入口均先执行 active 门禁。
+        for entry, first_work in d3d_device_entries:
+            # 提取当前 D3D11 Device 入口函数体。
+            body = function_body(d3d_device, entry)
+            # 检查门禁存在且早于该入口的第一项实际工作。
+            assert_d3d_gate_precedes_work(self, body, first_work)
+        # 提取 D3D11 健康维护 helper 的函数体。
+        health = function_body(d3d_health, "maintain_rhi_device")
+        # 健康维护仍由 helper 自己拥有 active 门禁，避免 Device 重复实现。
+        self.assertIn("self.ensure_active()?", health)
+        # helper 门禁必须早于后续健康查询或 native 工作。
+        self.assertLess(
+            health.index("self.ensure_active()?"),
+            health.index("self.device.GetDeviceRemovedReason"),
         )
         # Surface 故障注入必须先通过 active owner 门禁。
         surface_injection = function_body(d3d_surface, "inject_surface_lost_for_test")
