@@ -13,6 +13,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 FramePlan 资源预检与原生命令执行边界。
 FRAME_EXECUTION = ROOT / "src/draw/backend/frame_plan_execution.rs"
+# 定位 overlay backdrop 快照与恢复的统一计划边界。
+BACKDROP_EXECUTION = ROOT / "src/draw/backend/gpu/backend/render_backend_backdrop.rs"
+# 定位 FramePlan scope 与顶层步骤校验实现。
+FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
+# 定位原生 lowering 的 move-only 执行 helper。
+RHI_LOWERING = ROOT / "src/draw/backend/gpu/rhi_lowering.rs"
+# 定位 FrameEncoder 的 move-only 执行 helper。
+RHI_FRAME = ROOT / "src/draw/backend/gpu/backend/rhi_frame.rs"
+# 定位 Surface scroll 的 move-only 执行入口。
+RHI_SURFACE_SCROLL = ROOT / "src/draw/backend/gpu/backend/rhi_surface_scroll.rs"
 
 
 # 提取指定 Rust 函数的完整花括号范围。
@@ -159,6 +169,125 @@ class GraphicsRhiFramePlanResourcePreflightContractTests(unittest.TestCase):
         self.assertNotIn(".acquire()", offscreen)
         # 离屏入口不得调用 Surface present。
         self.assertNotIn(".present(", offscreen)
+
+    # overlay backdrop 快照与恢复必须复用离屏 FramePlan 执行边界。
+    def test_overlay_backdrop_reuses_offscreen_frame_plan_boundary(self) -> None:
+        # 读取 GPU backend backdrop helper 的当前源码。
+        backdrop = BACKDROP_EXECUTION.read_text(encoding="utf-8")
+        # 分别提取快照和恢复 helper 的完整函数体。
+        functions = {
+            # 快照复制必须走离屏计划。
+            "create_rhi_overlay_backdrop": function_body(
+                backdrop, "create_rhi_overlay_backdrop"
+            ),
+            # 恢复复制必须走离屏计划。
+            "restore_rhi_overlay_backdrop": function_body(
+                backdrop, "restore_rhi_overlay_backdrop"
+            ),
+        }
+        # 两个 helper 都必须共享同一组计划构造、复制和执行契约。
+        required_fragments = (
+            # 计划必须明确声明离屏作用域。
+            "FramePlan::offscreen()",
+            # 复制命令必须进入类型化计划。
+            "push_copy(",
+            # 计划必须通过唯一离屏设备执行边界提交。
+            "execute_offscreen_on_device(device)",
+        )
+        # 直接设备命令和 Surface 事务命令不得泄漏到 helper。
+        forbidden_fragments = (
+            # 禁止绕过 FramePlan 直接复制纹理。
+            "device.copy_texture(",
+            # 禁止绕过 FramePlan 直接提交。
+            "device.submit(",
+            # 禁止取得 Surface。
+            ".acquire(",
+            # 禁止呈现 Surface。
+            ".present(",
+        )
+        # 分别锁定两个 helper 的复用与越权调用边界。
+        for function_name, body in functions.items():
+            # 每个 helper 都必须包含全部离屏计划片段。
+            with self.subTest(function_name=function_name):
+                # 逐项断言计划构造、复制和执行均存在。
+                for fragment in required_fragments:
+                    # 任何缺失都表示 helper 绕过了统一执行边界。
+                    self.assertIn(fragment, body)
+                # 每个 helper 都不得直接触碰设备或 Surface 事务命令。
+                for fragment in forbidden_fragments:
+                    # 防止快照或恢复形成第二套执行路径。
+                    self.assertNotIn(fragment, body)
+
+    # FramePlan 必须区分空计划、Surface 计划与非空离屏资源计划。
+    def test_frame_plan_validate_scopes_empty_and_resource_only_rules(self) -> None:
+        # 读取 FramePlan scope 与 validate Component 的当前源码。
+        frame_plan = FRAME_PLAN.read_text(encoding="utf-8")
+        # 截取唯一顶层 validate 函数，避免锁定局部变量名。
+        validate = function_body(frame_plan, "validate")
+        # 空计划必须在任何 scope 下被拒绝。
+        self.assertIn("self.steps.is_empty()", validate)
+        # Surface scope 必须单独保留至少一个 render pass 的约束。
+        self.assertIn("FramePlanScope::Surface", validate)
+        # Surface 规则必须检查顶层 Pass 步骤。
+        self.assertIn("FramePlanStep::Pass", validate)
+        # 资源步骤必须覆盖 copy 与 move 两种纯离屏计划。
+        self.assertIn("FramePlanStep::Copy", validate)
+        self.assertIn("FramePlanStep::Move", validate)
+        # 压缩空白后检查 Surface 分支而非全局无条件 pass 门禁。
+        compact_validate = "".join(validate.split())
+        # Surface 规则必须在 scope 条件内检查 render pass。
+        self.assertIn("FramePlanScope::Surface", compact_validate)
+        # 禁止恢复对所有 scope 无条件要求 pass 的旧规则。
+        self.assertNotIn("if!self.steps.iter().any", compact_validate)
+
+    # 三个 move-only lowering helper 必须只复用离屏 FramePlan 资源边界。
+    def test_move_only_helpers_avoid_placeholder_render_pass(self) -> None:
+        # 按文件和函数名读取三个独立 lowering Component 的源码。
+        helpers = {
+            # Canvas2D 原生 scroll lowering 的 move 提交 helper。
+            "rhi_lowering::execute_texture_move": function_body(
+                RHI_LOWERING.read_text(encoding="utf-8"), "execute_texture_move"
+            ),
+            # FrameEncoder scroll lowering 的 move 提交 helper。
+            "rhi_frame::execute_frame_texture_move": function_body(
+                RHI_FRAME.read_text(encoding="utf-8"), "execute_frame_texture_move"
+            ),
+            # Surface scroll 批量移动的执行入口。
+            "rhi_surface_scroll::try_apply_rhi_surface_scroll_copies": function_body(
+                RHI_SURFACE_SCROLL.read_text(encoding="utf-8"),
+                "try_apply_rhi_surface_scroll_copies",
+            ),
+        }
+        # 每个 helper 都必须声明、追加并执行离屏 move 计划。
+        required_fragments = (
+            # move-only 操作必须使用离屏 scope。
+            "FramePlan::offscreen()",
+            # 每条纹理移动必须进入类型化计划。
+            "push_move(",
+            # 计划必须通过统一离屏设备边界执行。
+            "execute_offscreen_on_device(",
+        )
+        # move-only helper 不得伪造 render pass 或 viewport 占位。
+        forbidden_fragments = (
+            # 禁止引入 RenderPassPlan 占位目标。
+            "RenderPassPlan",
+            # 禁止追加空 pass 满足旧校验。
+            "push_pass",
+            # 禁止追加仅用于占位的 viewport。
+            "SetViewport",
+        )
+        # 逐个锁定 helper 的纯资源步骤契约。
+        for function_name, body in helpers.items():
+            # 每个 helper 都必须满足相同的离屏边界。
+            with self.subTest(function_name=function_name):
+                # 断言离屏计划构造、move 追加和执行均存在。
+                for fragment in required_fragments:
+                    # 缺失任一片段都表示绕过统一资源执行路径。
+                    self.assertIn(fragment, body)
+                # 断言没有遗留的 render pass 占位实现。
+                for fragment in forbidden_fragments:
+                    # 防止 move-only 计划重新引入无意义的绘制步骤。
+                    self.assertNotIn(fragment, body)
 
     # Executor 只能拥有 activate 后的原生命令责任。
     def test_executor_does_not_repeat_resource_preflight(self) -> None:

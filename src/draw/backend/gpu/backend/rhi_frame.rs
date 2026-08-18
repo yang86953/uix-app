@@ -5,11 +5,8 @@ use std::sync::Arc;
 use crate::core::{Errc, Error, Point, Rect};
 // 引入绘制层颜色值。
 use crate::draw::geometry::color::Color;
-// 引入 FramePlan 的目标类型。
-// 引入 FramePlan 的有序 pass、命令和目标类型。
-use crate::draw::backend::frame_plan::{
-    FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef,
-};
+// 引入 FramePlan 与 Surface target 类型。
+use crate::draw::backend::frame_plan::{FramePlan, RenderTargetRef};
 // 引入通用 RHI renderer 的固定语义载荷。
 use crate::draw::backend::rhi_renderer::{
     RhiCoverageQuad, RhiOp, RhiRendererFrame, RhiShapeRect, RhiSolidMesh, RhiTexturedQuad,
@@ -667,20 +664,12 @@ fn lower_frame_scroll_move(
 // 在不触发 swapchain present 的前提下执行一条纹理搬移 boundary。
 fn execute_frame_texture_move(
     device: &mut dyn GraphicsDevice,
-    target: TextureHandle,
-    viewport: RhiViewport,
     movement: TextureMove,
 ) -> Result<(), Error> {
-    // move 后的空 pass 保留 target 状态并满足 FramePlan 的非空 pass 契约。
-    let mut pass = RenderPassPlan::new(RenderTargetRef::Texture(target), LoadAction::Load);
-    // 明确设置当前目标的物理 viewport，避免 adapter 沿用上一 pass 状态。
-    pass.push(FramePlanCommand::SetViewport(viewport));
     // Picture texture 搬移只属于 device，不依赖 swapchain generation。
     let mut plan = FramePlan::offscreen();
-    // 先执行重叠安全的 TextureMove，再进入空 load pass。
+    // 按 lowering 顺序追加重叠安全的 TextureMove。
     plan.push_move(movement);
-    // 追加 move boundary 的 target pass。
-    plan.push_pass(pass);
     // 只提交离屏命令，不获取或呈现 swapchain image。
     plan.execute_offscreen_on_device(device)?;
     // 返回已完成的 move boundary。
@@ -850,7 +839,7 @@ impl GpuBackend {
             // scroll 必须发生在后续 segment pass 之前。
             if let Some(movement) = movement {
                 // move boundary 只提交 retained texture，不获取或呈现 swapchain。
-                execute_frame_texture_move(context.device(), target_handle, viewport, *movement)?;
+                execute_frame_texture_move(context.device(), *movement)?;
             }
             // 每个显式 clear 都成为本段 load；否则首段使用调用方 load，后段保留颜色。
             let segment_load = segment

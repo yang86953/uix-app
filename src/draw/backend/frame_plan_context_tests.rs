@@ -101,6 +101,127 @@ fn context_execution_modes_share_one_ordered_device_path() {
     assert_eq!(unsupported_context.surface.acquire_count, 0);
 }
 
+// 非空离屏纯传输计划必须复用预检、执行器与唯一 submit，不能附加伪 pass。
+#[test]
+fn offscreen_transfer_only_plans_execute_without_synthetic_pass() {
+    // 创建只用于观察 Device 日志的稳定 Surface fixture。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 构造只包含普通纹理复制的离屏计划。
+    let mut copy_plan = FramePlan::offscreen();
+    // 登记两个不同纹理之间的完整类型化传输。
+    copy_plan.push_copy(TextureCopy::new(
+        // 使用稳定源纹理身份。
+        TextureHandle::from_raw(31),
+        // 使用不同的稳定目标纹理身份。
+        TextureHandle::from_raw(32),
+        // 使用合法正尺寸复制区域。
+        RhiTextureTransfer::from_xy(0, 0, 0, 0, RhiExtent::new(4, 4)),
+    ));
+    // 创建允许复制预检与执行的记录型 context。
+    let mut copy_context = recording_context(token);
+    // 纯复制计划必须通过 Device-only 边界返回提交身份。
+    assert!(
+        copy_plan
+            .execute_offscreen_on_device(&mut copy_context.device)
+            .is_ok()
+    );
+    // 计划只能激活、维护、复制和提交，不能开始任何 render pass。
+    assert_eq!(
+        copy_context.device.log.iter().copied().collect::<Vec<_>>(),
+        vec!["activate", "maintain", "copy", "submit"]
+    );
+    // Device-only 复制不得取得或呈现 Surface image。
+    assert_eq!(
+        (
+            copy_context.surface.acquire_count,
+            copy_context.surface.present_count
+        ),
+        (0, 0)
+    );
+
+    // 构造只包含重叠安全纹理移动的离屏计划。
+    let mut move_plan = FramePlan::offscreen();
+    // 登记同一纹理内的有向区域移动。
+    move_plan.push_move(TextureMove::new(
+        // 源纹理使用稳定身份。
+        TextureHandle::from_raw(41),
+        // 目标复用同一纹理以验证 memmove 语义路径。
+        TextureHandle::from_raw(41),
+        // 使用合法正尺寸移动区域。
+        RhiTextureTransfer::from_xy(0, 0, 1, 0, RhiExtent::new(4, 4)),
+    ));
+    // 创建允许 move 预检与执行的独立记录型 context。
+    let mut move_context = recording_context(token);
+    // 纯移动计划必须通过同一 Device-only 边界提交。
+    assert!(
+        move_plan
+            .execute_offscreen_on_device(&mut move_context.device)
+            .is_ok()
+    );
+    // 计划只能激活、维护、移动和提交，不能开始任何 render pass。
+    assert_eq!(
+        move_context.device.log.iter().copied().collect::<Vec<_>>(),
+        vec!["activate", "maintain", "move", "submit"]
+    );
+    // Device-only 移动同样不得取得或呈现 Surface image。
+    assert_eq!(
+        (
+            move_context.surface.acquire_count,
+            move_context.surface.present_count
+        ),
+        (0, 0)
+    );
+}
+
+// 空计划和缺少 pass 的 Surface 计划必须在任何副作用前被共享验证拒绝。
+#[test]
+fn empty_and_surface_transfer_only_plans_are_rejected_before_side_effects() {
+    // 创建离屏与 Surface 计划共享的稳定代际。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 构造没有任何显式命令的离屏计划。
+    let empty_plan = FramePlan::offscreen();
+    // 创建记录型 Device 以证明拒绝发生在激活前。
+    let mut empty_context = recording_context(token);
+    // 空计划必须返回稳定参数错误。
+    let empty_error = empty_plan
+        .execute_offscreen_on_device(&mut empty_context.device)
+        .expect_err("empty offscreen plan must fail before device activation");
+    // 空计划违反共享命令存在性契约。
+    assert_eq!(empty_error.code(), Errc::InvalidArgument);
+    // 验证失败不得留下任何 Device 命令。
+    assert!(empty_context.device.log.is_empty());
+
+    // 构造拥有 Surface 代际但只包含纹理复制的计划。
+    let mut surface_plan = FramePlan::new(token, crate::core::PresentDamage::Full);
+    // 添加合法复制，证明拒绝原因是缺少可呈现 pass 而非空计划。
+    surface_plan.push_copy(TextureCopy::new(
+        // 使用稳定源纹理身份。
+        TextureHandle::from_raw(51),
+        // 使用不同的稳定目标纹理身份。
+        TextureHandle::from_raw(52),
+        // 使用合法正尺寸复制区域。
+        RhiTextureTransfer::from_xy(0, 0, 0, 0, RhiExtent::new(4, 4)),
+    ));
+    // 创建同时记录 Device 与 Surface 生命周期的 context。
+    let mut surface_context = recording_context(token);
+    // 缺少 pass 的 Surface 计划必须在 acquire 前失败。
+    let surface_error = surface_plan
+        .execute_on_context(&mut surface_context)
+        .expect_err("surface transfer-only plan must require a render pass");
+    // Surface scope 违例保持稳定参数错误。
+    assert_eq!(surface_error.code(), Errc::InvalidArgument);
+    // 共享验证必须早于 Device 激活和传输执行。
+    assert!(surface_context.device.log.is_empty());
+    // 被拒绝的 Surface 计划不得 acquire 或 present。
+    assert_eq!(
+        (
+            surface_context.surface.acquire_count,
+            surface_context.surface.present_count
+        ),
+        (0, 0)
+    );
+}
+
 // Surface scope 的 texture target 解析失败也必须发生在 acquire 前。
 #[test]
 fn surface_target_preflight_rejects_before_acquire() {
