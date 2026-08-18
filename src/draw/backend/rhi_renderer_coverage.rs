@@ -258,12 +258,10 @@ impl RhiRenderer {
                 DrawRange::vertices(6),
             )));
         }
-        // 从封闭 Renderer 帧创建匹配的计划。
-        let mut plan = frame.plan();
-        // 保留 glyph painter order。
-        plan.push_pass(pass);
+        // 将 pass 追加到封闭帧唯一拥有的计划中并保留 glyph painter order。
+        frame.plan_mut().push_pass(pass);
         // 封闭帧决定最终 Surface present 或 Offscreen submit。
-        let execution = frame.execute(&plan);
+        let execution = frame.execute();
         // 计划结束后释放本次 glyph 的临时 texture。
         let cleanup = Self::destroy_textures(frame.device(), &textures);
         // 优先返回绘制或 present 失败；否则报告资源清理失败。

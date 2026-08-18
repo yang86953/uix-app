@@ -589,16 +589,10 @@ impl RhiRenderer {
                 DrawRange::vertices(vertex_count),
             )));
         }
-        // 交给唯一的 FramePlan present 边界执行。
-        let plan = {
-            // 从封闭 Renderer 帧创建匹配的 Surface 或 Offscreen 计划。
-            let mut plan = frame.plan();
-            // 保留 pass 的严格 painter order。
-            plan.push_pass(pass);
-            plan
-        };
+        // 将 pass 追加到封闭帧唯一拥有的计划中。
+        frame.plan_mut().push_pass(pass);
         // 封闭帧决定最终 Surface present 或 Offscreen submit。
-        frame.execute(&plan)?;
+        frame.execute()?;
         // 资源由 renderer 跨帧复用，不能在这里销毁。
         Ok(())
     }
@@ -814,12 +808,10 @@ impl RhiRenderer {
                 DrawRange::vertices(6),
             )));
         }
-        // 从封闭 Renderer 帧创建匹配的计划。
-        let mut plan = frame.plan();
-        // 保留图片 painter order。
-        plan.push_pass(pass);
+        // 将 pass 追加到封闭帧唯一拥有的计划中并保留图片 painter order。
+        frame.plan_mut().push_pass(pass);
         // 封闭帧决定最终 Surface present 或 Offscreen submit。
-        let execution = frame.execute(&plan);
+        let execution = frame.execute();
         // 计划结束后释放本次图片的临时 texture。
         let cleanup = Self::destroy_textures(frame.device(), &textures);
         // 优先返回绘制或 present 失败；否则报告资源清理失败。

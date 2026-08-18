@@ -14,12 +14,10 @@ use super::super::frame_plan::{FramePlan, RenderTargetRef};
 
 // 封闭 Renderer 帧可进入的 Surface 或 Offscreen 角色。
 enum RhiRendererFrameRole<'a> {
-    // 完整 Surface 帧原子拥有组合 context、damage 与可选观察钩子。
+    // 完整 Surface 帧原子拥有组合 context 与可选观察钩子。
     Surface {
         // 借用唯一原生 context owner。
         context: &'a mut dyn GraphicsContextRhi,
-        // 保存只由最终 present 消费的 damage。
-        damage: PresentDamage,
         // 保存 submit 后、present 前只能取得 Surface 的观察钩子。
         before_present: Option<&'a mut dyn FnMut(&mut dyn GraphicsSurface)>,
     },
@@ -45,6 +43,8 @@ enum RhiRendererFrameExecutionState {
 pub(crate) struct RhiRendererFrame<'a> {
     // 保存 Surface 或 Offscreen 的不可拆角色事实。
     role: RhiRendererFrameRole<'a>,
+    // 保存由当前帧作用域唯一创建并执行的类型化计划。
+    plan: FramePlan,
     // 保存本帧一次性执行状态，不影响执行后的 Device 清理借用。
     execution_state: RhiRendererFrameExecutionState,
 }
@@ -61,17 +61,19 @@ impl<'a> RhiRendererFrame<'a> {
         before_present: &'a mut dyn FnMut(&mut dyn GraphicsSurface),
         // 返回仍由同一 context 完成最终 present 的 Surface 帧。
     ) -> Self {
+        // 在借入组合 context 前冻结当前 Surface 代际与最终 damage。
+        let plan = FramePlan::new(context.surface_ref().token(), damage);
         // 原子建立带观察边界的完整 Surface 生命周期。
         Self {
             // 原子保存完整 Surface 生命周期角色。
             role: RhiRendererFrameRole::Surface {
                 // 保存组合 context 的唯一可变借用。
                 context,
-                // 保存最终 present damage。
-                damage,
                 // 观察钩子只能存在于 Surface 角色。
                 before_present: Some(before_present),
             },
+            // 保存与 Surface 角色同时建立的唯一计划。
+            plan,
             // 新建 Surface 帧必须从 Pending 状态开始。
             execution_state: RhiRendererFrameExecutionState::Pending,
         }
@@ -94,6 +96,8 @@ impl<'a> RhiRendererFrame<'a> {
                 // 保存显式纹理目标。
                 target,
             },
+            // 保存不含任何 Surface 生命周期的唯一离屏计划。
+            plan: FramePlan::offscreen(),
             // 新建 Offscreen 帧必须从 Pending 状态开始。
             execution_state: RhiRendererFrameExecutionState::Pending,
         }
@@ -121,17 +125,10 @@ impl<'a> RhiRendererFrame<'a> {
         }
     }
 
-    // 由封闭帧事实构造匹配的类型化 FramePlan。
-    pub(crate) fn plan(&self) -> FramePlan {
-        // 计划作用域只能由当前帧变体决定。
-        match &self.role {
-            // Surface 计划冻结当前代际与最终 damage。
-            RhiRendererFrameRole::Surface {
-                context, damage, ..
-            } => FramePlan::new(context.surface_ref().token(), damage.clone()),
-            // Offscreen 计划不保存 SurfaceToken 或 PresentDamage。
-            RhiRendererFrameRole::Offscreen { .. } => FramePlan::offscreen(),
-        }
+    // 可变借用由当前帧唯一拥有的类型化计划。
+    pub(crate) fn plan_mut(&mut self) -> &mut FramePlan {
+        // 调用方只能追加当前帧最终会执行的同一份计划。
+        &mut self.plan
     }
 
     // 在任何 Device 或 Surface 调用前消费一次性执行资格。
@@ -152,10 +149,12 @@ impl<'a> RhiRendererFrame<'a> {
         Ok(())
     }
 
-    // 按封闭帧角色执行已经完成 lowering 的计划。
-    pub(crate) fn execute(&mut self, plan: &FramePlan) -> Result<()> {
+    // 按封闭帧角色执行自己唯一拥有的计划。
+    pub(crate) fn execute(&mut self) -> Result<()> {
         // 先消费一次性资格，再进入 Surface/Offscreen 角色分派。
         self.begin_execution()?;
+        // 只读借用当前帧内部计划，禁止执行入口接收第二份选择器。
+        let plan = &self.plan;
         // Surface 与 Offscreen 进入互不重叠的执行边界。
         match &mut self.role {
             // Surface 帧消费可选观察钩子并完成唯一最终 present。
@@ -254,11 +253,13 @@ mod lifecycle_tests {
     // 引入统一错误类型和测试结果别名。
     use crate::core::error::{Errc, Result};
     // 引入 FramePlan 构造所需的最小类型化命令。
-    use crate::draw::backend::frame_plan::{FramePlan, RenderPassPlan, RenderTargetRef};
+    use crate::draw::backend::frame_plan::{
+        FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef,
+    };
     // 引入 RecordingDevice 所需的薄 RHI 原语。
     use crate::native::present::rhi::{
         DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, LoadAction, RenderTargetHandle,
-        RhiColor, SubmissionHandle, TextureCopy, TextureHandle, TextureMove,
+        RhiColor, RhiScissor, SubmissionHandle, TextureCopy, TextureHandle, TextureMove,
     };
     // 引入待验证的 Renderer 帧 Component。
     use super::RhiRendererFrame;
@@ -309,6 +310,14 @@ mod lifecycle_tests {
             // 记录 render pass 开始调用。
             self.record_operation();
             // 该测试只关注执行门禁，不记录 pass 细节。
+            Ok(())
+        }
+
+        // 接受计划中的局部清理原语。
+        fn clear_rect(&mut self, _color: RhiColor, _scissor: RhiScissor) -> Result<()> {
+            // 记录真实进入 pass 命令边界的调用。
+            self.record_operation();
+            // 测试设备不保存像素，只验证计划生命周期。
             Ok(())
         }
 
@@ -371,21 +380,33 @@ mod lifecycle_tests {
         }
     }
 
-    // 构造只包含一个有效离屏 pass 的最小 FramePlan。
-    fn offscreen_plan() -> FramePlan {
-        // 创建离屏计划，避免测试依赖 Surface 生命周期。
-        let mut plan = FramePlan::offscreen();
+    // 向 Renderer 帧唯一拥有的计划追加一个有效离屏 pass。
+    fn append_offscreen_pass(frame: &mut RhiRendererFrame<'_>) {
         // 创建显式纹理目标的 render pass。
         let mut pass = RenderPassPlan::new(
-            // 使用类型化 texture 目标。
-            RenderTargetRef::Texture(crate::native::present::rhi::TextureHandle::from_raw(9)),
+            // 使用当前帧唯一投影出的类型化 texture 目标。
+            frame.render_target(),
             // 使用有限的透明清理颜色。
             LoadAction::Clear(RhiColor::from_premultiplied_rgba([0.0, 0.0, 0.0, 1.0])),
         );
-        // 把唯一 pass 交给离屏计划。
-        plan.push_pass(pass);
-        // 返回可执行计划。
-        plan
+        // 追加一条最小合法命令，满足 FramePlan 不接受空 pass 的共享契约。
+        pass.push(FramePlanCommand::ClearRect {
+            // 使用有限的预乘颜色执行局部清理。
+            color: RhiColor::from_premultiplied_rgba([0.0, 0.0, 0.0, 1.0]),
+            // 使用非空且全部为有限整数的测试矩形。
+            scissor: RhiScissor {
+                // 从目标左上角开始。
+                x: 0,
+                // 从目标顶边开始。
+                y: 0,
+                // 清理一个像素宽度。
+                width: 1,
+                // 清理一个像素高度。
+                height: 1,
+            },
+        });
+        // 把唯一 pass 交给当前帧内部计划。
+        frame.plan_mut().push_pass(pass);
     }
 
     // 第二次 Renderer 帧执行必须拒绝且不得再次 submit。
@@ -409,17 +430,22 @@ mod lifecycle_tests {
             // 传入与计划匹配的纹理身份。
             crate::native::present::rhi::TextureHandle::from_raw(9),
         );
-        // 创建第一次执行使用的有效计划。
-        let plan = offscreen_plan();
+        // 向当前帧内部计划追加第一次执行使用的有效 pass。
+        append_offscreen_pass(&mut frame);
         // 第一次执行必须成功并产生一次提交。
-        assert!(frame.execute(&plan).is_ok());
+        frame
+            // 执行当前帧唯一拥有的有效计划。
+            .execute()
+            // 失败时保留 typed error 作为测试诊断。
+            .expect("owned offscreen FramePlan must execute");
         // 保存首轮执行完成后的全部 Device 调用次数。
         let operations_after_first_execution = operation_count.get();
         // 首轮有效计划必须真实进入 Device 执行边界。
         assert!(operations_after_first_execution > 0);
         // 第二次执行必须在 Device 调用前返回 InvalidState。
         let error = frame
-            .execute(&plan)
+            // 执行入口只能再次尝试同一帧内部计划。
+            .execute()
             .expect_err("second execution must fail");
         // 第二次执行必须使用稳定的生命周期错误分类。
         assert_eq!(error.code(), Errc::InvalidState);
@@ -452,12 +478,11 @@ mod lifecycle_tests {
             // 传入稳定的离屏纹理身份。
             crate::native::present::rhi::TextureHandle::from_raw(9),
         );
-        // 空离屏计划会在任何 Device 访问前稳定验证失败。
-        let invalid_plan = FramePlan::offscreen();
+        // 新建帧内部的空离屏计划会在任何 Device 访问前稳定验证失败。
         // 首轮失败必须保留计划参数错误。
         let first_error = frame
-            // 尝试执行缺少 render pass 的计划。
-            .execute(&invalid_plan)
+            // 尝试执行内部缺少 render pass 的计划。
+            .execute()
             // 空计划必须失败而不是伪造提交。
             .expect_err("empty FramePlan must fail");
         // 首轮错误仍来自 FramePlan 自身验证。
@@ -466,8 +491,8 @@ mod lifecycle_tests {
         assert_eq!(operation_count.get(), 0);
         // 同一帧的第二次尝试必须被生命周期门禁拒绝。
         let second_error = frame
-            // 即使计划仍然无效，也应先命中 Consumed 状态。
-            .execute(&invalid_plan)
+            // 即使内部计划仍然无效，也应先命中 Consumed 状态。
+            .execute()
             // 第二次执行必须失败。
             .expect_err("failed execution must still consume the frame");
         // 第二次错误必须稳定升级为生命周期状态错误。

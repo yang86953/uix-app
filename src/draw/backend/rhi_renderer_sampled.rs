@@ -173,11 +173,9 @@ impl RhiRenderer {
         )));
         // 创建只拥有 Device 与纹理目标的封闭帧。
         let mut frame = super::RhiRendererFrame::offscreen(device, target);
-        // 创建不含任何 Surface 生命周期的计划。
-        let mut plan = frame.plan();
-        // 追加唯一 sampled pass。
-        plan.push_pass(pass);
+        // 将唯一 sampled pass 写入封闭帧唯一拥有的计划。
+        frame.plan_mut().push_pass(pass);
         // 只 submit 当前 segment，最终 present 由外层帧边界负责。
-        frame.execute(&plan)
+        frame.execute()
     }
 }

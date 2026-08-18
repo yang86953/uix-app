@@ -143,12 +143,10 @@ impl RhiRenderer {
                 DrawRange::vertices(6),
             )));
         }
-        // 创建计划并追加唯一 pass。
-        let mut plan = frame.plan();
-        // 保留渐变 painter order。
-        plan.push_pass(pass);
+        // 将渐变 painter pass 写入封闭帧唯一拥有的计划。
+        frame.plan_mut().push_pass(pass);
         // surface 计划最终 present，texture 计划只执行离屏 submit。
-        frame.execute(&plan)?;
+        frame.execute()?;
         // 资源由 renderer 跨帧复用，不能在这里销毁。
         Ok(())
     }
