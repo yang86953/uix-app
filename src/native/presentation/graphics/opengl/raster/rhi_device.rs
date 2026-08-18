@@ -13,10 +13,10 @@ use crate::native::present::rhi::{
     BufferDesc, BufferHandle, LoadAction, PipelineBinding, PipelineColorWriteMask, PipelineDesc,
     PipelineDitherState, PipelineKind, RenderTargetHandle, RhiBufferUpload, RhiColor,
     RhiColorClearContract, RhiExtent, RhiPassState, RhiPipelineResourceTable,
-    RhiPresentTransaction, RhiResourceTable, RhiScissor, RhiSubmissionSequence, RhiTextureUpload,
-    SampledTextureBinding, SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceToken, TextureCopy,
-    TextureDesc, TextureFormat, TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
-    ValidatedRhiPresent,
+    RhiPresentTransaction, RhiResourceTable, RhiScissor, RhiSubmissionSequence, RhiTextureResource,
+    RhiTextureResourceTable, RhiTextureUpload, SampledTextureBinding, SamplerDesc, SamplerHandle,
+    SubmissionHandle, SurfaceToken, TextureCopy, TextureDesc, TextureFormat, TextureHandle,
+    TextureMove, UIX_COLOR_CLEAR_CONTRACT, ValidatedRhiPresent,
 };
 
 // 将 retained 区域移动拆出，保持资源设备文件低于行数上限。
@@ -43,6 +43,15 @@ struct OpenGlRhiTexture {
     desc: TextureDesc,
 }
 
+// 让 OpenGL texture 资源向共享目标 resolver 提供创建时冻结的描述。
+impl RhiTextureResource for OpenGlRhiTexture {
+    // 返回唯一共享纹理描述，不重新解释原生格式能力。
+    fn desc(&self) -> TextureDesc {
+        // 复制资源创建时保存的不可变描述。
+        self.desc
+    }
+}
+
 // 保存编译后的 GL program。
 struct OpenGlRhiPipeline {
     // 保存 OpenGL ES program 对象。
@@ -67,8 +76,8 @@ fn target_y_sign(target: RenderTargetHandle) -> f32 {
 pub(super) struct OpenGlRhiDevice {
     // 保存按一开始从 1 分配的 buffer 句柄索引的资源表。
     buffers: RhiResourceTable<BufferHandle, OpenGlRhiBuffer>,
-    // 保存按一开始从 1 分配的 texture 句柄索引的资源表。
-    textures: RhiResourceTable<TextureHandle, OpenGlRhiTexture>,
+    // 保存按共享 texture 语义管理的原生 texture 资源表。
+    textures: RhiTextureResourceTable<OpenGlRhiTexture>,
     // 保存必须活到下一次原生 submit 之后才能删除的临时移动纹理。
     texture_move_scratch_after_submit: Vec<TextureHandle>,
     // 保存按共享 pipeline 语义索引的原生 program 资源表。
@@ -131,7 +140,8 @@ impl OpenGlRhiDevice {
         // 返回没有打开 pass 的 owner-thread 状态。
         Ok(Self {
             buffers: RhiResourceTable::new(),
-            textures: RhiResourceTable::new(),
+            // 由共享表统一管理 texture 句柄与冻结描述。
+            textures: RhiTextureResourceTable::new(),
             // 新设备尚未产生等待提交的临时移动资源。
             texture_move_scratch_after_submit: Vec::new(),
             // 由共享表统一保存 pipeline 句柄与 kind。
@@ -149,6 +159,17 @@ impl OpenGlRhiDevice {
             #[cfg(feature = "test-harness")]
             surface_lost_for_test: false,
         })
+    }
+
+    // 从共享 texture 资源表提升一个已证明可渲染的目标身份。
+    pub(super) fn resolve_render_target(
+        // 只读借用 OpenGL 设备，不触碰 native GL 状态。
+        &self,
+        // 接收 GraphicsDevice 创建返回的 texture 句柄。
+        texture: TextureHandle,
+    ) -> Result<RenderTargetHandle> {
+        // 共享表依据真实 texture 描述执行唯一能力门禁。
+        self.textures.resolve_render_target(texture)
     }
 
     // 创建动态 buffer 并登记其 CPU 镜像。
@@ -287,7 +308,7 @@ impl OpenGlRhiDevice {
         } else {
             None
         };
-        // 由共享资源表登记资源并返回新的 opaque texture 句柄。
+        // 由共享 texture 表登记资源并返回新的 opaque texture 句柄。
         Ok(self.textures.insert(OpenGlRhiTexture {
             native,
             framebuffer,
@@ -444,12 +465,17 @@ impl OpenGlRhiDevice {
             Some(texture_handle) => {
                 // 查询同一类型化 texture 身份，不执行裸数值重建。
                 let texture = self.texture(texture_handle)?;
-                // 只有可渲染颜色纹理拥有 framebuffer。
+                // 已签发的目标身份必须对应已创建的颜色 framebuffer。
                 let framebuffer = texture
-                    // 拒绝 sampled-only texture 误作输出目标。
+                    // 防御原生资源状态与共享目标身份不一致。
                     .framebuffer
-                    // 保留稳定 Adapter 完整性错误。
-                    .ok_or_else(|| rhi_invalid("OpenGL RHI target texture is not renderable"))?;
+                    // 将 Adapter 资源不完整归类为平台错误。
+                    .ok_or_else(|| {
+                        Error::new(
+                            Errc::PlatformError,
+                            "OpenGL RHI target texture resource is incomplete",
+                        )
+                    })?;
                 // 返回存活原生 framebuffer 与共享描述范围。
                 (Some(framebuffer), texture.desc.extent())
             }

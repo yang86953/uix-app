@@ -91,11 +91,6 @@ where
 
     // 校验 offscreen 模式不会在执行中途遇到逻辑 Surface target。
     fn validate_targets(&self, steps: &[FramePlanStep]) -> Result<()> {
-        // 允许 acquired-surface 模式同时处理 surface 与 texture pass。
-        if matches!(self.target_mode, FramePlanTargetMode::AcquiredSurface(_)) {
-            // 当前模式不需要额外拒绝目标。
-            return Ok(());
-        }
         // 检查任一 pass 是否错误地请求主 surface。
         let contains_surface = steps.iter().any(|step| {
             // 只匹配 render pass 中的逻辑 Surface target。
@@ -105,12 +100,23 @@ where
             )
         });
         // 离屏执行不得隐含 acquire 或主 surface 写入。
-        if contains_surface {
+        if matches!(self.target_mode, FramePlanTargetMode::OffscreenOnly) && contains_surface {
             // 在任何 device 调用前返回稳定参数错误。
             return Err(Error::new(
                 Errc::InvalidArgument,
                 "offscreen FramePlan cannot target the presentation surface",
             ));
+        }
+        // 在激活 device 前解析所有离屏 texture target 的共享能力。
+        for step in steps {
+            // 只读取 render pass 的逻辑目标，不触碰其它顶层命令。
+            if let FramePlanStep::Pass(pass) = step {
+                // 只有 texture target 需要向资源 owner 查询真实描述。
+                if let RenderTargetRef::Texture(texture) = pass.target {
+                    // 共享资源表必须在任何 native side effect 前证明目标能力。
+                    self.device.resolve_render_target(texture)?;
+                }
+            }
         }
         // 所有 pass 都显式指向离屏 texture。
         Ok(())
@@ -197,7 +203,7 @@ where
                 Ok(surface)
             }
             // 显式 texture target 在唯一 Device 边界提升为 render target。
-            (_, RenderTargetRef::Texture(texture)) => Ok(RenderTargetHandle::for_texture(texture)),
+            (_, RenderTargetRef::Texture(texture)) => self.device.resolve_render_target(texture),
             // offscreen 模式的 Surface 已由前置校验拒绝，此分支保留防御。
             (FramePlanTargetMode::OffscreenOnly, RenderTargetRef::Surface) => Err(Error::new(
                 Errc::InvalidArgument,

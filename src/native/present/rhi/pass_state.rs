@@ -420,7 +420,7 @@ mod tests {
     };
 
     // 创建稳定的测试目标身份。
-    const TARGET: RenderTargetHandle = RenderTargetHandle::for_texture(TextureHandle::from_raw(7));
+    const TARGET: RenderTargetHandle = RenderTargetHandle::for_test(TextureHandle::from_raw(7));
     // 创建与目标不同的采样纹理身份。
     const TEXTURE: TextureHandle = TextureHandle::from_raw(8);
     // 创建稳定的采样器身份。

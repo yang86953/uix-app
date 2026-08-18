@@ -14,9 +14,9 @@ use crate::native::present::rhi::{
     BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
     LoadAction, PipelineBinding, PipelineDesc, RenderTargetHandle, RhiBufferUpload, RhiColor,
     RhiColorClearContract, RhiExtent, RhiPassState, RhiPipelineResourceTable, RhiResourceTable,
-    RhiScissor, RhiSubmissionSequence, RhiTextureUpload, RhiViewport, SampledTextureBinding,
-    SamplerDesc, SamplerHandle, TextureCopy, TextureDesc, TextureFormat, TextureHandle,
-    TextureMove, UIX_COLOR_CLEAR_CONTRACT,
+    RhiScissor, RhiSubmissionSequence, RhiTextureResource, RhiTextureResourceTable,
+    RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle, TextureCopy,
+    TextureDesc, TextureFormat, TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
 };
 // 引入 D3D11 的基础资源和绑定类型。
 use ::windows::Win32::Graphics::Direct3D11::{
@@ -73,6 +73,15 @@ struct D3d11RhiTexture {
     desc: TextureDesc,
 }
 
+// 让共享 texture 表读取 D3D11 创建时冻结的描述。
+impl RhiTextureResource for D3d11RhiTexture {
+    // 返回不含原生句柄的共享 texture 描述快照。
+    fn desc(&self) -> TextureDesc {
+        // 复制资源创建时已经验证的描述值。
+        self.desc
+    }
+}
+
 // 保存一个 RHI sampler 的原生状态对象。
 struct D3d11RhiSampler {
     // 保持 D3D11 sampler state 的生命周期。
@@ -86,7 +95,7 @@ pub(super) struct D3d11RhiDevice {
     // 保存按不透明 id 索引的 buffer 资源。
     buffers: RhiResourceTable<BufferHandle, D3d11RhiBuffer>,
     // 保存按不透明 id 索引的 texture 资源。
-    textures: RhiResourceTable<TextureHandle, D3d11RhiTexture>,
+    textures: RhiTextureResourceTable<D3d11RhiTexture>,
     // 保存按不透明 id 索引的有限 pipeline 资源。
     pipelines: RhiPipelineResourceTable<()>,
     // 保存按不透明 id 索引的 sampler 资源。
@@ -114,7 +123,7 @@ impl D3d11RhiDevice {
         // 返回可安全嵌入 D3D11 context 的空状态。
         Self {
             buffers: RhiResourceTable::new(),
-            textures: RhiResourceTable::new(),
+            textures: RhiTextureResourceTable::new(),
             // Pipeline 必须由保存真实 kind 的专用共享资源表签发身份。
             pipelines: RhiPipelineResourceTable::new(),
             samplers: RhiResourceTable::new(),
@@ -337,6 +346,14 @@ impl GraphicsDevice for D3d11Context {
         self.rhi_create_texture(desc)
     }
 
+    // 从共享 texture 表提升 render-target 身份而不触碰原生 context。
+    fn resolve_render_target(&self, texture: TextureHandle) -> Result<RenderTargetHandle> {
+        // 关闭后的 owner 不得继续解析资源能力。
+        self.ensure_active()?;
+        // 共享表根据冻结描述验证格式能力并签发目标身份。
+        self.rhi_device.textures.resolve_render_target(texture)
+    }
+
     // 创建当前 D3D11 适配器已经具备 shader ABI 的有限 pipeline。
     fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineBinding> {
         // 让资源表直接签发与创建语义一致的不可拆 pipeline 身份。
@@ -454,10 +471,9 @@ impl GraphicsDevice for D3d11Context {
                 // 从资源表查询同一类型化 texture 身份。
                 let texture = self.rhi_device.target_texture(texture_handle)?;
                 // 复制 texture 的 RTV 和尺寸后再修改 pass 状态。
-                let rtv =
-                    texture.rtv.as_ref().cloned().ok_or_else(|| {
-                        rhi_not_implemented("D3d11 RHI target texture render view")
-                    })?;
+                let rtv = texture.rtv.as_ref().cloned().ok_or_else(|| {
+                    rhi_platform("D3d11 RHI target texture render view is missing")
+                })?;
                 (rtv, texture.desc.extent())
             };
         // 由共享状态机统一验证目标范围、清屏颜色并建立 pass 事实。

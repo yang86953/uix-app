@@ -3,9 +3,9 @@
 // 引入探针创建、绘制、提交和销毁所需的共享 RHI 类型。
 use super::{
     BufferDesc, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineDesc, PipelineKind,
-    RenderTargetHandle, RhiBufferUpload, RhiColor, RhiExtent, RhiScissor, RhiShapeRasterParams,
-    RhiTextureRegion, RhiTextureTransfer, RhiTextureUpload, RhiViewport, SamplerDesc, TextureDesc,
-    TextureFormat, TextureMove,
+    RhiBufferUpload, RhiColor, RhiExtent, RhiScissor, RhiShapeRasterParams, RhiTextureRegion,
+    RhiTextureTransfer, RhiTextureUpload, RhiViewport, SamplerDesc, TextureDesc, TextureFormat,
+    TextureMove,
 };
 // 引入统一结果类型。
 use crate::core::Result;
@@ -204,7 +204,7 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
     // 在 1x1 离屏颜色 target 上执行真实的 pass、draw 和 submit。
     device.begin_render_pass(
         // 把探针 texture 解释为 render target 句柄。
-        RenderTargetHandle::for_texture(rgba_texture),
+        device.resolve_render_target(rgba_texture)?,
         // 以透明色清空目标。
         LoadAction::Clear(RhiColor::transparent()),
     )?;

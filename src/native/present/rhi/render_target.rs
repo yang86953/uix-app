@@ -3,8 +3,10 @@
 //! Surface 与 device texture 是互斥变体，不共享裸整数值域；只有该值对象
 //! 可以把 TextureHandle 提升为 pass target，Adapter 不再维护 Surface 哨兵。
 
-// 引入共享纹理资源身份。
-use super::TextureHandle;
+// 引入统一纹理描述与共享纹理资源身份。
+use super::{TextureDesc, TextureHandle};
+// 引入共享参数错误类型。
+use crate::core::error::{Errc, Error, Result};
 
 // 描述一个 render pass 可以写入的封闭目标种类。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -24,8 +26,23 @@ impl RenderTargetHandle {
     }
 
     // 把存活 texture 身份提升为离屏 render target。
-    pub(crate) const fn for_texture(texture: TextureHandle) -> Self {
-        // 保留完整资源身份，不执行数值转换。
+    pub(super) fn for_texture(texture: TextureHandle, desc: TextureDesc) -> Result<Self> {
+        // 只有共享纹理描述证明可渲染时才能提升目标身份。
+        if !desc.format().supports_render_target() {
+            // sampled-only 纹理统一在共享边界拒绝为输出目标。
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "RHI texture format is not renderable",
+            ));
+        }
+        // 保存已经由真实资源描述证明的纹理身份。
+        Ok(Self::Texture(texture))
+    }
+
+    // 测试 fixture 使用显式入口构造稳定目标身份。
+    #[cfg(test)]
+    pub(crate) const fn for_test(texture: TextureHandle) -> Self {
+        // 测试不代表真实资源表的可渲染能力证明。
         Self::Texture(texture)
     }
 
@@ -70,7 +87,7 @@ mod tests {
         // 创建稳定测试 texture 身份。
         let texture = TextureHandle::from_raw(7);
         // 把 texture 提升为 render target。
-        let target = RenderTargetHandle::for_texture(texture);
+        let target = RenderTargetHandle::for_test(texture);
         // Texture 目标不得被误判为 Surface。
         assert!(!target.is_surface());
         // 资源投影必须返回同一类型化 texture 身份。

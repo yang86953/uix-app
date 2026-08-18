@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 RHI = ROOT / "src/native/present/rhi.rs"
 # 定位封闭 render target Component。
 TARGET = ROOT / "src/native/present/rhi/render_target.rs"
+# 定位共享 texture 资源表。
+TEXTURE_TABLE = ROOT / "src/native/present/rhi/texture_resource_table.rs"
 # 定位 acquired Surface frame 契约。
 PRESENT = ROOT / "src/native/present/rhi/present_transaction.rs"
 # 定位共享 pass 状态机。
@@ -28,6 +30,8 @@ D3D11 = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_devi
 D3D11_CONTEXT = ROOT / "src/native/presentation/graphics/d3d11/platform/context/mod.rs"
 # 定位 OpenGL Device Adapter。
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs"
+# 定位 OpenGL raster bridge。
+OPENGL_RASTER = ROOT / "src/native/presentation/graphics/opengl/raster/rhi.rs"
 # 定位 OpenGL host bridge。
 OPENGL_HOST = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
 
@@ -50,8 +54,13 @@ class GraphicsRhiRenderTargetContractTests(unittest.TestCase):
         self.assertIn("    Texture(TextureHandle),", target)
         # 共享构造器必须提供明确 Surface 身份。
         self.assertIn("pub(crate) const fn surface() -> Self", target)
-        # texture 提升不得经过裸数值。
-        self.assertIn("pub(crate) const fn for_texture(texture: TextureHandle) -> Self", target)
+        # texture 提升必须接收共享 TextureDesc 并返回可失败结果。
+        self.assertIn(
+            "pub(super) fn for_texture(texture: TextureHandle, desc: TextureDesc) -> Result<Self>",
+            target,
+        )
+        # 测试 fixture 必须使用显式测试入口。
+        self.assertIn("pub(crate) const fn for_test(texture: TextureHandle) -> Self", target)
         # 目标 Component 不得恢复裸值构造入口。
         self.assertNotIn("pub(crate) const fn from_raw", target)
         # 目标 Component 不得定义跨资源值域的 raw 投影。
@@ -81,8 +90,23 @@ class GraphicsRhiRenderTargetContractTests(unittest.TestCase):
             ROOT / "src/draw/backend/frame_plan_execution.rs"
             # 读取当前源码。
         ).read_text(encoding="utf-8")
-        # 提升必须调用共享类型化构造器。
-        self.assertIn("RenderTargetHandle::for_texture(texture)", execution)
+        # FramePlan 执行器必须先向 Device 查询已验证目标身份。
+        self.assertIn("self.device.resolve_render_target(texture)?", execution)
+        # 目标校验必须先于任何 owner-context 激活。
+        self.assertLess(
+            execution.index("self.validate_targets(steps)?"),
+            execution.index("self.device.activate()?"),
+        )
+        # 执行目标解析也必须复用 Device 的共享能力入口。
+        self.assertIn("self.device.resolve_render_target(texture)", execution)
+        # 共享资源表必须在真实 TextureDesc 上执行目标能力提升。
+        resource_table = TEXTURE_TABLE.read_text(encoding="utf-8")
+        self.assertIn("pub(crate) trait RhiTextureResource", resource_table)
+        self.assertIn("resolve_render_target", resource_table)
+        self.assertIn("resource.desc()", resource_table)
+        # GraphicsDevice 必须声明目标解析而非让 FramePlan 构造裸目标。
+        rhi = RHI.read_text(encoding="utf-8")
+        self.assertIn("fn resolve_render_target(&self, _texture: TextureHandle)", rhi)
 
     # 共享 pass 状态必须通过类型投影判断反馈环。
     def test_pass_state_compares_texture_identity_without_raw_values(self) -> None:
@@ -103,6 +127,8 @@ class GraphicsRhiRenderTargetContractTests(unittest.TestCase):
         d3d11_context = D3D11_CONTEXT.read_text(encoding="utf-8")
         # 读取 OpenGL Adapter 与 host。
         opengl = OPENGL.read_text(encoding="utf-8")
+        # 读取 OpenGL raster bridge。
+        opengl_raster = OPENGL_RASTER.read_text(encoding="utf-8")
         # 读取 OpenGL host bridge。
         opengl_host = OPENGL_HOST.read_text(encoding="utf-8")
         # 两个 Adapter 和 host 都不得定义旧 Surface 裸值常量。
@@ -122,6 +148,41 @@ class GraphicsRhiRenderTargetContractTests(unittest.TestCase):
         self.assertNotIn("TextureHandle::from_raw(target", d3d11 + opengl)
         # 两个 Adapter 不得读取 render target 裸值。
         self.assertNotIn("target.raw()", d3d11 + opengl)
+
+    # 两个 Adapter 必须复用共享 texture 资源表签发目标身份。
+    def test_adapters_delegate_render_target_capability_to_shared_table(self) -> None:
+        # 读取 D3D11 Adapter。
+        d3d11 = D3D11.read_text(encoding="utf-8")
+        # 读取 OpenGL Device Adapter。
+        opengl = OPENGL.read_text(encoding="utf-8")
+        # 读取 OpenGL raster bridge。
+        opengl_raster = OPENGL_RASTER.read_text(encoding="utf-8")
+        # 读取 OpenGL host bridge。
+        opengl_host = OPENGL_HOST.read_text(encoding="utf-8")
+        # 两个 Adapter 都必须使用唯一的类型化 texture 资源表。
+        self.assertIn("RhiTextureResourceTable<D3d11RhiTexture>", d3d11)
+        # OpenGL 也不得保留平行 texture 资源表。
+        self.assertIn("RhiTextureResourceTable<OpenGlRhiTexture>", opengl)
+        # 两个原生 texture 资源都必须投影冻结的共享描述。
+        self.assertIn("impl RhiTextureResource for D3d11RhiTexture", d3d11)
+        # OpenGL 资源必须满足相同的共享描述契约。
+        self.assertIn("impl RhiTextureResource for OpenGlRhiTexture", opengl)
+        # D3D11 resolver 必须直接委托其共享表。
+        self.assertIn("self.rhi_device.textures.resolve_render_target(texture)", d3d11)
+        # OpenGL Device resolver 也必须直接委托共享表。
+        self.assertIn("self.textures.resolve_render_target(texture)", opengl)
+        # OpenGL raster bridge 必须保持只读 resolver。
+        self.assertIn("pub(crate) fn rhi_resolve_render_target", opengl_raster)
+        # OpenGL host 必须先检查 owner 生命周期。
+        resolver = opengl_host.split("fn resolve_render_target", maxsplit=1)[1]
+        # 截取 resolver 函数，避免后续有副作用的方法干扰断言。
+        resolver = resolver.split("    }", maxsplit=1)[0]
+        # resolver 必须拒绝已关闭 owner。
+        self.assertIn("self.rhi_ensure_active()?", resolver)
+        # resolver 只能经过只读 raster bridge。
+        self.assertIn("self.rhi_pipeline().rhi_resolve_render_target(texture)", resolver)
+        # 目标能力查询不得隐式激活原生 OpenGL context。
+        self.assertNotIn("rhi_make_current", resolver)
 
 
 # 支持直接执行这一精确契约测试。
