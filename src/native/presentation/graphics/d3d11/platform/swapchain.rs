@@ -7,6 +7,8 @@ use std::ffi::c_void;
 use crate::core::{Errc, Error, PresentDamage, Result};
 // 引入跨后端共享的 present image 与保留性证明。
 use crate::native::present::{PresentCoherency, PresentImage, PresentTestResult};
+// 引入已经通过 Surface capability 与范围门禁的呈现输入。
+use crate::native::present::rhi::ValidatedRhiPresent;
 // 引入 Windows COM 接口转换能力。
 use ::windows::core::Interface;
 // 引入 Windows 基础状态、矩形与窗口句柄。
@@ -28,9 +30,6 @@ use ::windows::Win32::Graphics::Dxgi::{
     DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL, DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice,
     IDXGIFactory, IDXGIFactory2, IDXGIOutput, IDXGISwapChain, IDXGISwapChain3,
 };
-
-// 与 core damage 归一化上限保持一致，拒绝外部伪造的超量窄提交。
-const MAX_D3D11_PRESENT_RECTS: usize = 64;
 
 // 集中保存实际 D3D11 swapchain 与上层 present 能力之间的冻结事实。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,14 +162,13 @@ impl D3d11SwapChain {
     }
 
     // 提交本帧，并仅在跟踪式主路径消费经过验证的 dirty rect。
-    pub(crate) fn present(&self, damage: &PresentDamage, width: i32, height: i32) -> Result<()> {
+    pub(crate) fn present(&self, present: &ValidatedRhiPresent) -> Result<()> {
         // 按冻结形态选择 Present1 或 legacy Present。
         match self {
             // 主路径必须让最终绘制与 compositor 消费同一 damage 集合。
             Self::Tracked(swap_chain) => {
-                // 非法、空或超量 partial damage 保守降级为 DirtyRectsCount=0 的全帧提交。
-                let mut dirty_rects =
-                    validated_dirty_rects(damage, width, height).unwrap_or_default();
+                // 只把共享门禁已发布的矩形机械投影为 DXGI RECT。
+                let mut dirty_rects = native_dirty_rects(present.damage());
                 // 构造只在本次调用期间借用 dirty rect 数组的参数。
                 let parameters = DXGI_PRESENT_PARAMETERS {
                     // 零表示应用更新了完整帧。
@@ -194,7 +192,7 @@ impl D3d11SwapChain {
                     swap_chain.Present1(1, DXGI_PRESENT(0), &parameters)
                 })
             }
-            // 回退路径忽略上层误传的 partial 值并完整提交。
+            // FullOnly 回退路径只会收到共享门禁发布的完整 damage。
             Self::Legacy(swap_chain) => map_dxgi_present_result(unsafe {
                 // SAFETY: swapchain 只在其 owner UI thread 使用。
                 swap_chain.Present(1, DXGI_PRESENT(0))
@@ -399,57 +397,30 @@ pub(crate) fn legacy_swap_chain_desc(
     }
 }
 
-// 把经过归一化的 damage 转换为 Present1 使用的物理 RECT 数组。
-fn validated_dirty_rects(damage: &PresentDamage, width: i32, height: i32) -> Option<Vec<RECT>> {
-    // surface extent 无效时只能执行全帧回退。
-    if width <= 0 || height <= 0 {
-        // None 由调用方编码为 DirtyRectsCount=0。
-        return None;
-    }
-    // 只有非空且数量受控的 partial 列表可以进入窄提交。
+// 把共享门禁已经规范化的 damage 机械转换为 Present1 RECT 数组。
+fn native_dirty_rects(damage: &PresentDamage) -> Vec<RECT> {
+    // Full damage 使用空数组编码为 DXGI 完整提交。
     let PresentDamage::Partial(rects) = damage else {
-        // Full damage 直接使用全帧参数。
-        return None;
+        // 零个 dirty rect 是 Present1 的完整帧信号。
+        return Vec::new();
     };
-    // 拒绝空集合和超过归一化上限的外部输入。
-    if rects.is_empty() || rects.len() > MAX_D3D11_PRESENT_RECTS {
-        // 保守降级为完整帧。
-        return None;
-    }
-    // 为每个物理 damage rect 分配一个 RECT。
-    let mut native = Vec::with_capacity(rects.len());
-    // 逐项验证范围和加法溢出。
-    for &(x, y, rect_width, rect_height) in rects {
-        // 计算右下边界并拒绝负数、空矩形或溢出。
-        let Some(right) = x.checked_add(rect_width) else {
-            // 溢出输入不能进入原生 API。
-            return None;
-        };
-        // 计算下边界并拒绝溢出。
-        let Some(bottom) = y.checked_add(rect_height) else {
-            // 溢出输入不能进入原生 API。
-            return None;
-        };
-        // 所有 dirty rect 必须完整位于当前 drawable 内。
-        if x < 0 || y < 0 || rect_width <= 0 || rect_height <= 0 || right > width || bottom > height
-        {
-            // 任一非法项使整次提交降级为全帧。
-            return None;
-        }
-        // 保存 DXGI 使用的 left/top/right/bottom 表示。
-        native.push(RECT {
-            // 横向起点保持左上原点。
+    // 只做元组到 Win32 RECT 的同值投影，不再解释范围规则。
+    rects
+        // 逐个借用共享物理矩形。
+        .iter()
+        // 映射为 DXGI left/top/right/bottom 表示。
+        .map(|&(x, y, width, height)| RECT {
+            // 横向起点保持共享左上原点。
             left: x,
-            // 纵向起点保持左上原点。
+            // 纵向起点保持共享左上原点。
             top: y,
-            // 右边界使用开区间坐标。
-            right,
-            // 下边界使用开区间坐标。
-            bottom,
-        });
-    }
-    // 返回完整验证过的原生矩形数组。
-    Some(native)
+            // 右边界由已验证的正宽度无损生成。
+            right: x + width,
+            // 下边界由已验证的正高度无损生成。
+            bottom: y + height,
+        })
+        // 固定为同步 Present1 调用期间存活的连续数组。
+        .collect()
 }
 
 // 把 D3D/DXGI HRESULT 归一到 UIX typed error。
@@ -543,8 +514,8 @@ mod tests {
     use super::{
         DXGI_SWAP_EFFECT_DISCARD, DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL, legacy_swap_chain_contract,
         legacy_swap_chain_desc, map_dxgi_device_removed_reason, map_dxgi_present_result,
-        map_dxgi_present_test_result, tracked_swap_chain_contract, tracked_swap_chain_desc,
-        validated_dirty_rects,
+        map_dxgi_present_test_result, native_dirty_rects, tracked_swap_chain_contract,
+        tracked_swap_chain_desc,
     };
     // 引入共享 damage、错误码与 coherency 类型。
     use crate::core::{Errc, PresentCoherency, PresentDamage};
@@ -647,32 +618,20 @@ mod tests {
     fn dirty_rect_conversion_preserves_physical_region() {
         // 构造一个位于 surface 内部的物理矩形。
         let damage = PresentDamage::Partial(vec![(10, 20, 30, 40)]);
-        // 转换必须产生一个合法 RECT。
-        let rects = validated_dirty_rects(&damage, 100, 100)
-            // 合法输入不应降级为全帧。
-            .expect("valid physical damage must remain partial");
+        // Adapter 只做一次原生 RECT 机械投影。
+        let rects = native_dirty_rects(&damage);
         // 断言左上坐标不变。
         assert_eq!((rects[0].left, rects[0].top), (10, 20));
         // 断言宽高被转换为开区间右下坐标。
         assert_eq!((rects[0].right, rects[0].bottom), (40, 60));
     }
 
-    // 验证非法、越界和空 partial damage 均降级为全帧参数。
+    // 验证共享门禁发布的 Full damage 被机械编码为全帧参数。
     #[test]
-    fn invalid_dirty_rects_fall_back_to_full_present() {
-        // 越过 drawable 右边界的矩形不能进入 Present1。
-        let out_of_bounds = PresentDamage::Partial(vec![(90, 0, 20, 10)]);
-        // 越界输入必须返回全帧信号。
-        assert!(validated_dirty_rects(&out_of_bounds, 100, 100).is_none());
-        // 空 partial 集合不能伪装成没有更新的成功帧。
-        let empty = PresentDamage::Partial(Vec::new());
-        // 空集合必须返回全帧信号。
-        assert!(validated_dirty_rects(&empty, 100, 100).is_none());
-        // 构造超过 adapter 上限的互不相关矩形集合。
-        let too_many = PresentDamage::Partial(vec![(0, 0, 1, 1); 65]);
-        // 超量集合必须在进入 DXGI 前降级为全帧。
-        assert!(validated_dirty_rects(&too_many, 100, 100).is_none());
-        // 显式 Full damage 同样编码为 DirtyRectsCount=0。
-        assert!(validated_dirty_rects(&PresentDamage::Full, 100, 100).is_none());
+    fn full_damage_maps_to_zero_dirty_rects() {
+        // 显式 Full damage 不携带任何 DXGI 私有矩形。
+        let rects = native_dirty_rects(&PresentDamage::Full);
+        // Present1 以零矩形表示完整提交。
+        assert!(rects.is_empty());
     }
 }

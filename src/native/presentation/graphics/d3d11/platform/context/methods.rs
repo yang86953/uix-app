@@ -1,4 +1,6 @@
 use super::*;
+// 引入共享 Surface 门禁发布的封闭呈现输入。
+use crate::native::present::rhi::ValidatedRhiPresent;
 
 impl D3d11Context {
     pub(crate) fn new(native_window: *mut c_void, width: i32, height: i32) -> Result<Self> {
@@ -240,7 +242,7 @@ impl D3d11Context {
         self.bind_current_draw_target()
     }
 
-    pub(super) fn present_result(&mut self, damage: &crate::core::PresentDamage) -> Result<()> {
+    pub(super) fn present_result(&mut self, present: &ValidatedRhiPresent) -> Result<()> {
         // checked shutdown 后不得继续提交 swapchain present。
         self.ensure_active()?;
         // 兼容 presenter 也必须消费同一 lower surface-lost 注入，避免故障
@@ -262,7 +264,7 @@ impl D3d11Context {
         // DISCARD 还可能分配额外 buffer。Present 后必须为当前 buffer 重建 RTV。
         self.release_rtv();
         // swapchain adapter 按冻结形态选择 Present1 dirty rect 或 legacy 全帧 Present。
-        self.swap_chain.present(damage, self.width, self.height)?;
+        self.swap_chain.present(present)?;
         self.create_rtv()?;
         Ok(())
     }

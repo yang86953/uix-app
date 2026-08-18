@@ -259,12 +259,16 @@ where
         }
         // 在原生交换前读取当前 drawable 的代际与 extent。
         let current_token = self.token();
+        // 从当前 OpenGL Surface profile 冻结完整交换能力。
+        let present_coherency = self.surface_capabilities().present_coherency;
         // 通过共享门禁验证 frame、目标和最新提交关联。
         let present = self.rhi_pipeline().rhi_validate_present(
             // 交付不可拆的 FramePlan 呈现事务。
             transaction,
             // 传入当前宿主 Surface token。
             current_token,
+            // 传入同一 Surface profile 的 FullOnly 事实。
+            present_coherency,
         )?;
         // Adapter 只消费门禁发布的 damage 执行原生交换。
         self.rhi_swap_buffers(present.into_damage())

@@ -109,17 +109,23 @@ impl GraphicsSurface for super::D3d11Context {
     fn present(&mut self, transaction: RhiPresentTransaction) -> Result<()> {
         // checked shutdown 后不得提交旧 frame 或触碰 swapchain。
         self.ensure_active()?;
+        // 在同一 Surface 边界冻结当前 swapchain token。
+        let current_token = self.token();
+        // 从实际 swapchain 形态投影本次 damage 的保留能力。
+        let present_coherency = self.surface_capabilities().present_coherency;
         // 在触碰 DXGI 前通过共享门禁验证 frame、目标和最新提交关联。
         let present = self.validate_present_impl(
             // 交付不可拆的 FramePlan 呈现事务。
             transaction,
             // 使用当前 swapchain 的代际与 extent。
-            self.token(),
+            current_token,
+            // 使用同一 Surface capability 决定 partial 是否可发布。
+            present_coherency,
         )?;
         // 重新绑定 swapchain target，恢复兼容 context 的 owner 状态和 RTV 绑定。
         self.bind_swapchain_target()?;
         // 复用现有的 Present 前后 RTV 生命周期和 DXGI 错误映射。
-        self.present_result(present.damage())
+        self.present_result(&present)
     }
 
     // 探测已经因遮挡进入 idle 的 D3D11 swapchain 是否恢复可呈现。

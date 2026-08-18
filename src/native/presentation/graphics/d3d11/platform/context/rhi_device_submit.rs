@@ -5,6 +5,8 @@
 
 // 引入统一结果类型。
 use crate::core::error::Result;
+// 引入 Surface 提供的跨呈现像素保留语义。
+use crate::core::PresentCoherency;
 // 引入薄 RHI 的提交句柄和类型化呈现门禁类型。
 use crate::native::present::rhi::{
     RhiPresentTransaction, SubmissionHandle, SurfaceToken, ValidatedRhiPresent,
@@ -51,11 +53,15 @@ impl D3d11Context {
         transaction: RhiPresentTransaction,
         // 接收当前 swapchain token。
         current_token: SurfaceToken,
+        // 接收当前 swapchain 形态冻结的保留能力。
+        present_coherency: PresentCoherency,
     ) -> Result<ValidatedRhiPresent> {
-        // D3D11 只提供动态事实，三项规则由共享 RHI Component 解释。
+        // D3D11 只提供动态事实，完整呈现规则由共享 RHI Component 解释。
         transaction.validate(
             // 传入当前 Surface 代际与 extent。
             current_token,
+            // 传入同一 Surface capability 对窄呈现的承诺。
+            present_coherency,
             // 传入同一组合 context 的 Device 提交序列。
             &self.rhi_device.submission_sequence,
         )

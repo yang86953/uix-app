@@ -227,6 +227,62 @@ impl PresentDamage {
         matches!(self, Self::Full)
     }
 
+    // 按当前 Surface 保留能力与物理范围规范化最终呈现损伤。
+    pub(crate) fn normalize_for_surface(
+        // 消费不再允许 Adapter 替换的 damage 值。
+        self,
+        // 接收 Surface 实际承诺的跨呈现保留语义。
+        coherency: PresentCoherency,
+        // 接收当前 drawable 的物理宽度。
+        width: u32,
+        // 接收当前 drawable 的物理高度。
+        height: u32,
+    ) -> Self {
+        // 不保留像素的 Surface 与无效尺寸都只能完整呈现。
+        if coherency == PresentCoherency::FullOnly || width == 0 || height == 0 {
+            // 保守回退不会丢失任何已绘制像素。
+            return Self::Full;
+        }
+        // 完整 damage 不需要矩形投影。
+        let Self::Partial(rects) = self else {
+            // 保留显式完整呈现。
+            return Self::Full;
+        };
+        // 复用唯一矩形数量、空区域与合并规则。
+        let Some(rects) = normalize_present_rects(rects) else {
+            // 超量或无法规范化的输入降级为完整呈现。
+            return Self::Full;
+        };
+        // 使用 i64 计算边界，避免任意公开枚举输入触发 i32 溢出。
+        let surface_width = i64::from(width);
+        // 高度使用同一无损投影。
+        let surface_height = i64::from(height);
+        // 每个规范化矩形都必须完整位于当前 drawable 内。
+        let all_inside = rects.iter().all(|&(x, y, rect_width, rect_height)| {
+            // 先投影为足以容纳两个 i32 和的边界值。
+            let (x, y, rect_width, rect_height) = (
+                i64::from(x),
+                i64::from(y),
+                i64::from(rect_width),
+                i64::from(rect_height),
+            );
+            // 统一使用左上原点、正尺寸和右下开区间边界。
+            x >= 0
+                && y >= 0
+                && rect_width > 0
+                && rect_height > 0
+                && x + rect_width <= surface_width
+                && y + rect_height <= surface_height
+        });
+        // 空集或任一越界项都不能装作窄呈现成功。
+        if rects.is_empty() || !all_inside {
+            // 不把平台私有裁切规则带入共享语义。
+            return Self::Full;
+        }
+        // 只发布数量受控且完整位于当前 Surface 的规范矩形。
+        Self::Partial(rects)
+    }
+
     /// Conservative union used by swapchain-history repair planning.
     pub fn union(&self, other: &Self) -> Self {
         match (self, other) {
