@@ -46,7 +46,6 @@ impl D3d11Pipeline {
             context.PSSetShader(&self.ps_grad, None);
             context.VSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
             context.PSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
-            context.RSSetState(&self.rasterizer);
             context.OMSetBlendState(self.rhi_blend_state(blend), None, 0xffff_ffff);
             if index.is_some() {
                 // 索引 ABI 固定为 uint32，base vertex 保留 D3D11 原生语义。

@@ -150,7 +150,6 @@ impl D3d11Pipeline {
             context.PSSetShader(&self.ps_sector, None);
             context.VSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
             context.PSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
-            context.RSSetState(&self.rasterizer);
             context.OMSetBlendState(self.rhi_blend_state(blend), None, 0xffff_ffff);
             if index.is_some() {
                 context.DrawIndexed(index_count, first_index, base_vertex);

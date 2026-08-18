@@ -51,8 +51,7 @@ impl D3d11Pipeline {
             // 两个 shader stage 读取包含共享绘制边界的固定 Shape 常量 buffer。
             context.VSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
             context.PSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
-            // 复用无剔除 rasterizer 和当前 shape pipeline 的 blend 语义。
-            context.RSSetState(&self.rasterizer);
+            // 使用当前 shape pipeline 的共享 blend 语义。
             context.OMSetBlendState(self.rhi_blend_state(blend), None, 0xffff_ffff);
             // 按 packet 的索引形态编码实际 draw。
             if index.is_some() {

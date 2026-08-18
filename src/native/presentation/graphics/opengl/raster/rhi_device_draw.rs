@@ -15,13 +15,14 @@ use crate::native::present::rhi::{
     GRADIENT_VIEWPORT_FLOAT_OFFSET, MESH_COLOR_FLOAT_OFFSET, MESH_VIEWPORT_FLOAT_OFFSET,
     MSDF_RANGE_FLOAT_OFFSET, MSDF_TEXTURE_SIZE_FLOAT_OFFSET, MSDF_VIEWPORT_FLOAT_OFFSET,
     PipelineBlend, PipelineBlendFactor, PipelineBlendOperation, PipelineColorWriteMask,
-    PipelineKind, SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET,
-    SECTOR_COLOR_FLOAT_OFFSET, SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET,
-    SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET, SHADOW_COLOR_FLOAT_OFFSET,
-    SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET, SHADOW_RADIUS_FLOAT_OFFSET,
-    SHADOW_VIEWPORT_FLOAT_OFFSET, SHAPE_COLOR_FLOAT_OFFSET, SHAPE_DRAW_RECT_FLOAT_OFFSET,
-    SHAPE_RADIUS_FLOAT_OFFSET, SHAPE_RECT_FLOAT_OFFSET, SHAPE_STROKE_FLOAT_OFFSET,
-    SHAPE_VIEWPORT_FLOAT_OFFSET, SamplerDesc, TextureFormat,
+    PipelineCullMode, PipelineDepthClip, PipelineDepthState, PipelineDepthStencilState,
+    PipelineFrontFace, PipelineKind, PipelineRasterState, PipelineStencilState,
+    SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET, SECTOR_COLOR_FLOAT_OFFSET,
+    SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET, SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET,
+    SHADOW_COLOR_FLOAT_OFFSET, SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET,
+    SHADOW_RADIUS_FLOAT_OFFSET, SHADOW_VIEWPORT_FLOAT_OFFSET, SHAPE_COLOR_FLOAT_OFFSET,
+    SHAPE_DRAW_RECT_FLOAT_OFFSET, SHAPE_RADIUS_FLOAT_OFFSET, SHAPE_RECT_FLOAT_OFFSET,
+    SHAPE_STROKE_FLOAT_OFFSET, SHAPE_VIEWPORT_FLOAT_OFFSET, SamplerDesc, TextureFormat,
 };
 // 复用父资源表、目标方向、类型化 shader 语义和错误辅助。
 use super::{OpenGlRhiDevice, rhi_invalid, target_y_sign};
@@ -559,6 +560,8 @@ impl OpenGlRhiDevice {
         };
         // 记录 sampled_format 只用于保持每类 ABI 的显式门禁。
         let _ = sampled_format;
+        // SAFETY: contract 只包含固定 GL 光栅与深度模板映射，当前 owner thread 的 context 保持 current。
+        unsafe { apply_pipeline_fixed_state(gl, contract.raster, contract.depth_stencil) };
         // SAFETY: contract 只包含固定 GL blend 映射，当前 owner thread 的 context 保持 current。
         unsafe { apply_pipeline_blend(gl, contract.blend) };
         // Indexed draw 需要固定 uint32 index ABI，非 indexed draw 使用顶点范围。
@@ -661,6 +664,64 @@ fn gl_color_write_mask(mask: PipelineColorWriteMask) -> [bool; 4] {
     match mask {
         // All 对应完整 RGBA 写入。
         PipelineColorWriteMask::All => [true, true, true, true],
+    }
+}
+
+// 把 API 无关正面绕序翻译为 OpenGL ES 枚举。
+fn gl_front_face(front_face: PipelineFrontFace) -> u32 {
+    // 只映射共享层允许的封闭绕序集合。
+    match front_face {
+        // CounterClockwise 对应 GL_CCW。
+        PipelineFrontFace::CounterClockwise => glow::CCW,
+    }
+}
+
+/// 按共享 pipeline 状态恢复二维光栅与深度模板状态。
+///
+/// # Safety
+/// 调用者必须保证当前 owner thread 的 GL context current。
+unsafe fn apply_pipeline_fixed_state(
+    // 借用当前 OpenGL ES 上下文。
+    gl: &glow::Context,
+    // 接收共享二维光栅状态。
+    raster: PipelineRasterState,
+    // 接收共享深度模板状态。
+    depth_stencil: PipelineDepthStencilState,
+) {
+    // SAFETY：调用者保证当前 owner thread 的 GL context current。
+    unsafe {
+        // 穷尽映射共享面剔除语义。
+        match raster.cull_mode {
+            // UIX 二维图元显式关闭面剔除。
+            PipelineCullMode::None => gl.disable(glow::CULL_FACE),
+        }
+        // 显式恢复共享正面绕序，禁止继承兼容 context 状态。
+        gl.front_face(gl_front_face(raster.front_face));
+        // OpenGL ES 固定启用裁剪体，只接受与该事实相同的共享语义。
+        match raster.depth_clip {
+            // Enabled 由 OpenGL ES 固定裁剪体直接满足。
+            PipelineDepthClip::Enabled => {}
+        }
+        // 穷尽映射共享深度状态。
+        match depth_stencil.depth {
+            // 禁用深度测试与写入，禁止继承兼容 context 状态。
+            PipelineDepthState::Disabled => {
+                // 关闭深度测试。
+                gl.disable(glow::DEPTH_TEST);
+                // 关闭深度写入。
+                gl.depth_mask(false);
+            }
+        }
+        // 穷尽映射共享模板状态。
+        match depth_stencil.stencil {
+            // 禁用模板测试与写入，禁止继承兼容 context 状态。
+            PipelineStencilState::Disabled => {
+                // 关闭模板测试。
+                gl.disable(glow::STENCIL_TEST);
+                // 关闭模板写入。
+                gl.stencil_mask(0);
+            }
+        }
     }
 }
 

@@ -12,9 +12,12 @@
 use std::ffi::CStr;
 
 use crate::core::{Errc, Error, Result};
-// 引入跨 Adapter 共享的颜色混合语义。
+// 引入跨 Adapter 共享的 pipeline 固定状态语义。
 use crate::native::present::rhi::{
-    PipelineBlend, PipelineBlendFactor, PipelineBlendOperation, PipelineColorWriteMask,
+    PIPELINE_DEPTH_STENCIL_DISABLED, PIPELINE_RASTER_2D, PipelineBlend, PipelineBlendFactor,
+    PipelineBlendOperation, PipelineColorWriteMask, PipelineCullMode, PipelineDepthClip,
+    PipelineDepthState, PipelineDepthStencilState, PipelineFrontFace, PipelineRasterState,
+    PipelineStencilState,
 };
 use ::windows::Win32::Foundation::{FALSE, TRUE};
 use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
@@ -22,15 +25,18 @@ use ::windows::Win32::Graphics::Direct3D::{D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 
 use ::windows::Win32::Graphics::Direct3D11::{
     D3D11_BLEND, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_ONE, D3D11_BLEND_OP,
     D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO, D3D11_COLOR_WRITE_ENABLE_ALL,
-    D3D11_CULL_NONE, D3D11_FILL_SOLID, D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA,
-    D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, ID3D11BlendState, ID3D11Buffer,
-    ID3D11Device, ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
+    D3D11_COMPARISON_ALWAYS, D3D11_COMPARISON_FUNC, D3D11_CULL_MODE, D3D11_CULL_NONE,
+    D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_STENCILOP_DESC, D3D11_DEPTH_WRITE_MASK,
+    D3D11_DEPTH_WRITE_MASK_ZERO, D3D11_FILL_SOLID, D3D11_INPUT_ELEMENT_DESC,
+    D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC,
+    D3D11_STENCIL_OP_KEEP, ID3D11BlendState, ID3D11Buffer, ID3D11DepthStencilState, ID3D11Device,
+    ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
     ID3D11RenderTargetView, ID3D11SamplerState, ID3D11ShaderResourceView, ID3D11VertexShader,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_R32_UINT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32G32B32A32_FLOAT,
 };
-use ::windows::core::PCSTR;
+use ::windows::core::{BOOL, PCSTR};
 
 const RECT_HLSL: &str = r#"
 cbuffer RectCB : register(b0)
@@ -539,7 +545,14 @@ pub(crate) struct D3d11Pipeline {
     // sampled Additive quad 使用源与目标都为 ONE 的 blend 状态。
     blend_additive: ID3D11BlendState,
     blend_replace: ID3D11BlendState,
+    // 保存由共享二维光栅状态创建的原生对象。
     rasterizer: ID3D11RasterizerState,
+    // 保存 rasterizer 对象对应的共享创建语义。
+    raster_state: PipelineRasterState,
+    // 保存由共享关闭深度模板状态创建的原生对象。
+    depth_stencil: ID3D11DepthStencilState,
+    // 保存 depth-stencil 对象对应的共享创建语义。
+    depth_stencil_state: PipelineDepthStencilState,
 }
 
 // 为所有 D3D11 draw 原语集中映射共享混合语义。
@@ -557,6 +570,38 @@ impl D3d11Pipeline {
             // Replace 映射到关闭颜色混合的覆盖状态。
             PipelineBlend::Replace => &self.blend_replace,
         }
+    }
+
+    // 在统一 draw 边界绑定由共享契约创建的二维固定状态。
+    pub(crate) fn apply_rhi_fixed_state(
+        // 借用当前 owner-thread immediate context。
+        &self,
+        // 借用当前 pipeline 所属的 D3D11 context。
+        context: &ID3D11DeviceContext,
+        // 接收 FramePlan pipeline 的共享光栅状态。
+        raster: PipelineRasterState,
+        // 接收 FramePlan pipeline 的共享深度模板状态。
+        depth_stencil: PipelineDepthStencilState,
+    ) -> Result<()> {
+        // 原生状态对象必须仍与 pipeline 创建时的共享语义一致。
+        if raster != self.raster_state || depth_stencil != self.depth_stencil_state {
+            // 拒绝把未来新增状态错误映射为当前唯一二维对象。
+            return Err(Error::new(
+                // 状态身份错配属于稳定参数错误。
+                Errc::InvalidArgument,
+                // 保留不暴露平台对象的稳定诊断。
+                "D3d11Pipeline: fixed state is not created",
+            ));
+        }
+        // SAFETY：两个状态对象由同一 device 创建并在当前 owner thread 存活。
+        unsafe {
+            // 在所有 shader helper 之前统一绑定共享 rasterizer。
+            context.RSSetState(&self.rasterizer);
+            // 显式覆盖 D3D11 的默认深度开启状态。
+            context.OMSetDepthStencilState(&self.depth_stencil, 0);
+        }
+        // 固定状态绑定成功。
+        Ok(())
     }
 }
 
