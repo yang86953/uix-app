@@ -16,12 +16,14 @@ use crate::core::{Errc, Error, Result};
 use crate::native::present::rhi::{
     PIPELINE_DEPTH_STENCIL_DISABLED, PIPELINE_RASTER_2D, PipelineBlend, PipelineBlendFactor,
     PipelineBlendOperation, PipelineColorWriteMask, PipelineCullMode, PipelineDepthClip,
-    PipelineDepthState, PipelineDepthStencilState, PipelineFrontFace, PipelineRasterState,
-    PipelineStencilState,
+    PipelineDepthState, PipelineDepthStencilState, PipelineFrontFace, PipelinePrimitiveTopology,
+    PipelineRasterState, PipelineStencilState,
 };
 use ::windows::Win32::Foundation::{FALSE, TRUE};
 use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
-use ::windows::Win32::Graphics::Direct3D::{D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST, ID3DBlob};
+use ::windows::Win32::Graphics::Direct3D::{
+    D3D_PRIMITIVE_TOPOLOGY, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST, ID3DBlob,
+};
 use ::windows::Win32::Graphics::Direct3D11::{
     D3D11_BLEND, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_ONE, D3D11_BLEND_OP,
     D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO, D3D11_COLOR_WRITE_ENABLE_ALL,
@@ -555,6 +557,15 @@ pub(crate) struct D3d11Pipeline {
     depth_stencil_state: PipelineDepthStencilState,
 }
 
+// 把 API 无关原语拓扑翻译为 D3D11 枚举。
+fn d3d11_primitive_topology(topology: PipelinePrimitiveTopology) -> D3D_PRIMITIVE_TOPOLOGY {
+    // 只映射共享层允许的封闭拓扑集合。
+    match topology {
+        // TriangleList 对应 D3D11 的独立三角形列表。
+        PipelinePrimitiveTopology::TriangleList => D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
+    }
+}
+
 // 为所有 D3D11 draw 原语集中映射共享混合语义。
 impl D3d11Pipeline {
     // 返回当前 pipeline 契约对应的原生 blend state。
@@ -578,6 +589,8 @@ impl D3d11Pipeline {
         &self,
         // 借用当前 pipeline 所属的 D3D11 context。
         context: &ID3D11DeviceContext,
+        // 接收 FramePlan pipeline 的共享原语拓扑。
+        topology: PipelinePrimitiveTopology,
         // 接收 FramePlan pipeline 的共享光栅状态。
         raster: PipelineRasterState,
         // 接收 FramePlan pipeline 的共享深度模板状态。
@@ -595,6 +608,8 @@ impl D3d11Pipeline {
         }
         // SAFETY：两个状态对象由同一 device 创建并在当前 owner thread 存活。
         unsafe {
+            // 在所有 shader helper 之前统一绑定共享原语拓扑。
+            context.IASetPrimitiveTopology(d3d11_primitive_topology(topology));
             // 在所有 shader helper 之前统一绑定共享 rasterizer。
             context.RSSetState(&self.rasterizer);
             // 显式覆盖 D3D11 的默认深度开启状态。

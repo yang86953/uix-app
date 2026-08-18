@@ -30,7 +30,6 @@ impl D3d11Pipeline {
         // SAFETY: mesh 资源与 pipeline 状态由当前 device 创建并存活，绑定和 Draw 在 immediate context owner thread 执行。
         unsafe {
             context.IASetInputLayout(&self.layout);
-            context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             context.IASetVertexBuffers(
                 0,
                 1,

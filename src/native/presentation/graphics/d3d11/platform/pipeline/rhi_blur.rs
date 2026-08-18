@@ -38,8 +38,6 @@ impl D3d11Pipeline {
         unsafe {
             // Blur VS 输入与 RECT position layout 相同。
             context.IASetInputLayout(&self.layout);
-            // 区域 quad 固定由两个三角形组成。
-            context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             // 绑定本次 blur 的 NDC vertex buffer。
             context.IASetVertexBuffers(
                 0,

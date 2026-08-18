@@ -47,10 +47,12 @@ class GraphicsRhiFixedStateContractTests(unittest.TestCase):
         self.assertIn("pub(crate) raster: PipelineRasterState", shared)
         # 完整 pipeline 契约必须拥有深度模板状态。
         self.assertIn("pub(crate) depth_stencil: PipelineDepthStencilState", shared)
-        # 每个现有 pipeline 都必须显式选择共享二维状态。
-        self.assertEqual(shared.count("raster: PIPELINE_RASTER_2D"), 11)
-        # 每个现有 pipeline 都必须显式关闭深度与模板。
-        self.assertEqual(shared.count("depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED"), 11)
+        # 每个现有 pipeline 都必须进入唯一二维公共构造边界。
+        self.assertEqual(shared.count("=> ui_2d_pipeline_contract("), 11)
+        # 公共构造边界必须选择共享二维状态。
+        self.assertIn("raster: PIPELINE_RASTER_2D", shared)
+        # 公共构造边界必须显式关闭深度与模板。
+        self.assertIn("depth_stencil: PIPELINE_DEPTH_STENCIL_DISABLED", shared)
 
     # OpenGL 必须在每次 draw 前恢复共享固定状态。
     def test_opengl_explicitly_restores_fixed_state(self) -> None:

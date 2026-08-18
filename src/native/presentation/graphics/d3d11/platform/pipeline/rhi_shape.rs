@@ -33,8 +33,6 @@ impl D3d11Pipeline {
         unsafe {
             // 输入布局与单位 quad 的 float2 ABI 一致。
             context.IASetInputLayout(&self.layout);
-            // 所有 shape 都由两个三角形组成。
-            context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             // 绑定本次 packet 的顶点 buffer。
             context.IASetVertexBuffers(
                 0,
