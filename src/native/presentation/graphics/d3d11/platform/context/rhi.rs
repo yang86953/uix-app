@@ -62,14 +62,15 @@ impl GraphicsSurface for super::D3d11Context {
     fn resize(&mut self, extent: RhiExtent) -> Result<SurfaceToken> {
         // checked shutdown 后不得进入 surface resize 事务。
         self.ensure_active()?;
-        // 拒绝零尺寸，避免把无效 surface 交给 DXGI。
-        if !extent.is_positive() {
+        // 读取全部现有 Adapter 共用的有符号 surface 尺寸。
+        let Some((native_width, native_height)) = extent.native_size_i32() else {
+            // 拒绝零尺寸或超过共同原生值域的输入。
             // 返回稳定的参数错误。
             return Err(Error::new(
                 Errc::InvalidArgument,
-                "D3d11 RHI surface extent must be positive",
+                "D3d11 RHI surface extent is invalid",
             ));
-        }
+        };
         // 已经是目标代际和尺寸时不重复重建 swapchain。
         if self.width as u32 == extent.width && self.height as u32 == extent.height {
             // 返回当前 surface token。
@@ -83,12 +84,7 @@ impl GraphicsSurface for super::D3d11Context {
         // 计算传给 Win32 drawable 查询的逻辑高度。
         let logical_height = (extent.height as f32 / dpr).round().max(1.0) as i32;
         // 直接进入 D3D11 surface 的物理重建路径，避免 RHI 反向依赖兼容入口。
-        self.resize_surface_extent(
-            extent.width as i32,
-            extent.height as i32,
-            logical_width,
-            logical_height,
-        )?;
+        self.resize_surface_extent(native_width, native_height, logical_width, logical_height)?;
         // 返回 ResizeBuffers 成功后推进的 surface token。
         Ok(self.token())
     }

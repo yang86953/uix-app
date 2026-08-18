@@ -174,16 +174,20 @@ impl RhiRenderer {
         target: RenderTargetHandle,
     ) -> Result<()> {
         // 先拒绝无法形成有效纹理和高斯核的参数。
-        if source.raw() == 0 || !extent.is_positive() || !radius.is_finite() || radius < 0.5 {
+        if source.raw() == 0 || !extent.is_valid() || !radius.is_finite() || radius < 0.5 {
             // 返回稳定的参数错误，不让 adapter 猜测空 blur。
             return Err(Error::new(
                 Errc::InvalidArgument,
                 "RHI blur source, extent or radius is invalid",
             ));
         }
+        // 读取共享几何 Component 已验证的原生裁剪边界。
+        let (max_x, max_y) = extent
+            // blur 不得在 Drawing 层饱和修正目标尺寸。
+            .native_size_i32()
+            // 理论上已由入口 is_valid 证明，仍保留稳定错误。
+            .ok_or_else(|| super::rhi_invalid("RHI blur extent is outside native domain"))?;
         // 将请求区域裁到源纹理范围，避免 NDC 和 scissor 溢出。
-        let max_x = extent.width.min(i32::MAX as u32) as i32;
-        let max_y = extent.height.min(i32::MAX as u32) as i32;
         let x = region.x.clamp(0, max_x);
         let y = region.y.clamp(0, max_y);
         let width = region.width.clamp(0, max_x.saturating_sub(x));

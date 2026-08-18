@@ -452,8 +452,7 @@ impl GraphicsDevice for D3d11Context {
         let end_y = destination_y
             .checked_add(extent.height)
             .ok_or_else(|| rhi_invalid("D3d11 RHI texture region y overflows"))?;
-        if !extent.is_positive() || end_x > resource.extent.width || end_y > resource.extent.height
-        {
+        if !extent.is_valid() || end_x > resource.extent.width || end_y > resource.extent.height {
             // 返回稳定的参数错误。
             return Err(rhi_invalid("D3d11 RHI texture region is out of range"));
         }

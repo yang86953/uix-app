@@ -9,8 +9,8 @@ use super::*;
 impl D3d11Context {
     // 创建可采样且尽可能可作为 render target 的 D3D11 texture。
     pub(super) fn rhi_create_texture(&mut self, desc: TextureDesc) -> Result<TextureHandle> {
-        // 拒绝零尺寸资源。
-        if !desc.extent.is_positive() {
+        // 拒绝零尺寸或超过共同原生值域的资源。
+        if !desc.extent.is_valid() {
             // 返回稳定的参数错误。
             return Err(rhi_invalid("D3d11 RHI texture extent is invalid"));
         }

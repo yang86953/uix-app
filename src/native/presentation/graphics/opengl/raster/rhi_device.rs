@@ -241,10 +241,11 @@ impl OpenGlRhiDevice {
         gl: &glow::Context,
         desc: TextureDesc,
     ) -> Result<TextureHandle> {
-        // 拒绝空 extent。
-        if !desc.extent.is_positive() {
+        // 取得两个 Adapter 共用的有符号原生尺寸。
+        let Some((native_width, native_height)) = desc.extent.native_size_i32() else {
+            // 拒绝空尺寸或超出共同有符号值域的资源。
             return Err(rhi_invalid("OpenGL RHI texture extent is invalid"));
-        }
+        };
         // 取得 GL 内部格式、上传格式和每像素字节数。
         let (internal, upload_format, _) = Self::texture_format(desc.format);
         // 创建底层 texture。
@@ -254,7 +255,7 @@ impl OpenGlRhiDevice {
                 .map_err(|error| gl_error("create RHI texture", error))?
         };
         // 分配紧密排列的二维 texture 存储并设置 clamp sampler 默认值。
-        // SAFETY: native 刚创建且存活；extent 已验证为正（宽高非零）；PixelUnpackData::Slice(None) 不传递 CPU 指针；其余均为有效 GLES3 常量；context 保持 current。
+        // SAFETY: native 刚创建且存活；extent 已投影为共同有符号正尺寸；PixelUnpackData::Slice(None) 不传递 CPU 指针；其余均为有效 GLES3 常量；context 保持 current。
         unsafe {
             gl.bind_texture(glow::TEXTURE_2D, Some(native));
             gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, 1);
@@ -262,8 +263,8 @@ impl OpenGlRhiDevice {
                 glow::TEXTURE_2D,
                 0,
                 internal,
-                desc.extent.width as i32,
-                desc.extent.height as i32,
+                native_width,
+                native_height,
                 0,
                 upload_format,
                 glow::UNSIGNED_BYTE,
@@ -516,10 +517,16 @@ impl OpenGlRhiDevice {
     pub(super) fn set_viewport(&self, gl: &glow::Context, viewport: RhiViewport) -> Result<()> {
         // 由共享状态机验证 pass 顺序和物理目标边界。
         self.pass.validate_viewport(viewport)?;
+        // 读取共享几何 Component 已验证的唯一有符号投影。
+        let (width, height) = viewport
+            // Adapter 不得自行截断浮点 viewport。
+            .native_size_i32()
+            // 防御绕过 pass 状态机的未来调用路径。
+            .ok_or_else(|| rhi_invalid("OpenGL RHI viewport is invalid"))?;
         // OpenGL viewport 保持正尺寸，Y 方向由 draw 时的目标身份决定。
         // SAFETY: viewport 已由共享值对象验证为正整像素且可精确转换为 i32；无指针参数；context 保持 current。
         unsafe {
-            gl.viewport(0, 0, viewport.width as i32, viewport.height as i32);
+            gl.viewport(0, 0, width, height);
         }
         // 返回统一成功结果。
         Ok(())
@@ -537,24 +544,29 @@ impl OpenGlRhiDevice {
         let extent = self.pass.extent()?;
         // 先由共享状态机统一验证并记录左上原点区域。
         self.pass.set_scissor(scissor)?;
-        // 按 RHI 的左上原点 ABI 校验并转换坐标。
-        // SAFETY: scissor 坐标与尺寸均为非负整数，且已按 active target 的物理 extent 校验不越界；无指针参数；context 保持 current。
-        unsafe {
-            if let Some(scissor) = scissor {
-                gl.enable(glow::SCISSOR_TEST);
-                if is_surface_target(target) {
-                    // 原生 surface 的顶部位于 GL 高 Y，需从左上原点换算。
-                    gl.scissor(
-                        scissor.x,
-                        extent.height as i32 - scissor.y - scissor.height,
-                        scissor.width,
-                        scissor.height,
-                    );
-                } else {
-                    // texture target 把逻辑顶部存到 v=0，scissor 可直接使用 RHI 坐标。
-                    gl.scissor(scissor.x, scissor.y, scissor.width, scissor.height);
-                }
+        // 仅对显式 scissor 计算原生坐标。
+        if let Some(scissor) = scissor {
+            // surface 使用底部原点，texture target 保持共享顶部原点。
+            let native_y = if is_surface_target(target) {
+                // 由共享几何 Component 完成 checked 目标高度翻转。
+                scissor
+                    // 消费同一 pass 的已验证 extent。
+                    .bottom_origin_y(extent)
+                    // 防御未来调用绕过共享状态机。
+                    .ok_or_else(|| rhi_invalid("OpenGL RHI scissor origin is invalid"))?
             } else {
+                // texture target 把逻辑顶部存到 v=0，可直接使用共享 Y。
+                scissor.y
+            };
+            // SAFETY: scissor 坐标、尺寸和 native_y 都来自共享 checked 几何投影；context 保持 current。
+            unsafe {
+                gl.enable(glow::SCISSOR_TEST);
+                // 机械编码共享矩形与目标方向投影。
+                gl.scissor(scissor.x, native_y, scissor.width, scissor.height);
+            }
+        } else {
+            // SAFETY: 关闭 scissor 不读取任何坐标或指针；context 保持 current。
+            unsafe {
                 gl.disable(glow::SCISSOR_TEST);
             }
         }

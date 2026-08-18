@@ -26,12 +26,12 @@ impl D3d11Context {
         self.rhi_device.pass.validate_clear(color, scissor)?;
         // D3D11 局部清理必须与整目标清理验收同一共享输出状态。
         validate_color_clear_contract(UIX_COLOR_CLEAR_CONTRACT)?;
-        // 读取已由共享契约证明可被 D3D11 RECT 精确表达的远端边界。
-        let (right, bottom) = scissor
+        // 读取已由共享契约证明可被 D3D11 RECT 精确表达的完整矩形。
+        let (left, top, right, bottom) = scissor
             // Adapter 只消费共享几何值，不重新决定溢出规则。
-            .far_edges()
+            .native_rect()
             // 理论上不可达的失败仍转换成稳定的类型化错误。
-            .ok_or_else(|| rhi_invalid("D3d11 RHI clear rect edges are invalid"))?;
+            .ok_or_else(|| rhi_invalid("D3d11 RHI clear rect is invalid"))?;
         // 读取当前 render target view，禁止对空目标执行清理。
         let Some(target) = self.rhi_device.active_target.as_ref() else {
             // 保持 pass 状态和目标句柄的一致性要求。
@@ -47,8 +47,8 @@ impl D3d11Context {
             .map_err(|_| rhi_not_implemented("clear_rect requires ID3D11DeviceContext1"))?;
         // 把 RHI 左上原点矩形直接交给 ClearView，避免改变 raster scissor 状态。
         let rect = RECT {
-            left: scissor.x,
-            top: scissor.y,
+            left,
+            top,
             right,
             bottom,
         };

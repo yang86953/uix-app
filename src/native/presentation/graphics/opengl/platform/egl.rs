@@ -846,7 +846,16 @@ impl OpenGlRhiHost for EglContext {
             return Ok(());
         }
         self.rhi_make_current()?;
-        self.resize_surface_extent(extent.width as i32, extent.height as i32)
+        // 读取共享 extent 已验证的原生有符号尺寸。
+        let (width, height) = extent
+            // surface host 不得自行截断无符号输入。
+            .native_size_i32()
+            // RHI surface 入口应已拒绝，仍保留稳定防御错误。
+            .ok_or_else(|| {
+                Error::new(Errc::InvalidArgument, "EGL RHI surface extent is invalid")
+            })?;
+        // 使用唯一投影重建原生 surface。
+        self.resize_surface_extent(width, height)
     }
 
     // 交换 EGL window surface。
