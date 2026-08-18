@@ -250,7 +250,13 @@ impl RhiRenderer {
             // 原子绑定当前 R8 coverage texture 和点采样 sampler。
             pass.push(FramePlanCommand::BindSampledTexture(
                 // coverage 与颜色 pipeline 复用同一固定槽位值对象。
-                SampledTextureBinding::new(texture, sampler),
+                SampledTextureBinding::for_pipeline(
+                    // 传递当前 coverage 纹理身份。
+                    texture, // 传递 coverage 点采样器身份。
+                    sampler,
+                    // coverage 绑定与后续 DrawPacket 使用同一个 pipeline。
+                    pipeline,
+                ),
             ));
             // 追加六顶点的非索引 coverage quad draw packet。
             pass.push(FramePlanCommand::Draw(DrawPacket {

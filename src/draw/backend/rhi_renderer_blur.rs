@@ -278,7 +278,13 @@ impl RhiRenderer {
         // 原子绑定原始 source texture 与共享 sampler。
         horizontal.push(FramePlanCommand::BindSampledTexture(
             // 固定 t0/s0 ABI 不向 blur lowering 暴露槽位。
-            SampledTextureBinding::new(source, sampler),
+            SampledTextureBinding::for_pipeline(
+                // 传递水平 blur 的源纹理身份。
+                source, // 传递共享 blur 采样器身份。
+                sampler,
+                // 水平 blur 绑定与后续 DrawPacket 使用同一个 pipeline。
+                pipeline,
+            ),
         ));
         // 追加固定六顶点 blur draw packet。
         horizontal.push(FramePlanCommand::Draw(DrawPacket {
@@ -314,7 +320,13 @@ impl RhiRenderer {
         // 原子绑定水平 pass 生成的 scratch texture 与共享 sampler。
         vertical.push(FramePlanCommand::BindSampledTexture(
             // 垂直 pass 复用同一个完整采样绑定类型。
-            SampledTextureBinding::new(scratch, sampler),
+            SampledTextureBinding::for_pipeline(
+                // 传递垂直 blur 的 scratch 纹理身份。
+                scratch, // 传递共享 blur 采样器身份。
+                sampler,
+                // 垂直 blur 绑定与后续 DrawPacket 使用同一个 pipeline。
+                pipeline,
+            ),
         ));
         // 追加固定六顶点 blur draw packet。
         vertical.push(FramePlanCommand::Draw(DrawPacket {

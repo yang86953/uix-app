@@ -64,18 +64,22 @@ class GraphicsSamplerContractTests(unittest.TestCase):
         self.assertIn("struct OpenGlRhiSampler", opengl_device)
         # OpenGL 资源表必须保存创建时的 SamplerDesc。
         self.assertIn("desc: SamplerDesc", opengl_device)
-        # OpenGL draw 必须把格式与 sampler 描述一起交给共享门禁。
-        self.assertIn("Ok((texture.desc.format(), sampler.desc))", opengl_draw)
-        # 四类 OpenGL sampled pipeline 都必须调用同一个二参数门禁。
-        self.assertEqual(opengl_draw.count("contract.sampling.accepts(format, sampler)"), 4)
+        # OpenGL 绑定必须把实际描述交给共享绑定门禁。
+        self.assertIn("binding.validate_resources(format, sampler_desc)?;", opengl_device)
+        # OpenGL draw 必须按当前 pipeline 取得匹配绑定。
+        self.assertIn("sampled_binding_for(pipeline)", opengl_draw)
         # D3D11 sampler 资源必须保留共享描述。
         self.assertIn("struct D3d11RhiSampler", d3d11_device)
         # D3D11 资源表必须保存创建时的 SamplerDesc。
         self.assertIn("desc: SamplerDesc", d3d11_device)
         # D3D11 创建实现必须把同一描述写入资源槽。
         self.assertIn("D3d11RhiSampler {", d3d11_resources)
-        # 四类 D3D11 sampled pipeline 都必须调用同一个二参数门禁。
-        self.assertEqual(d3d11_draw.count(".accepts(texture.desc.format(), sampler.desc)"), 4)
+        # D3D11 绑定必须把实际描述交给共享绑定门禁。
+        self.assertIn("binding.validate_resources(format, sampler_desc)?;", d3d11_resources)
+        # D3D11 四类 draw 必须按当前 pipeline 取得匹配绑定。
+        self.assertEqual(d3d11_draw.count(".sampled_binding_for(packet.pipeline)"), 4)
+        # Adapter draw 不得重复解释共享采样契约。
+        self.assertNotIn("contract.sampling.accepts", opengl_draw + d3d11_draw)
 
     # 原生映射必须保持同一无 mip 的 min/mag 过滤与 clamp 语义。
     def test_native_filter_mapping_has_no_hidden_mip_difference(self) -> None:

@@ -58,6 +58,10 @@ class GraphicsRhiSampledBindingContractTests(unittest.TestCase):
         self.assertIn("texture: TextureHandle", pass_state)
         # 值对象必须同时拥有 sampler 身份。
         self.assertIn("sampler: SamplerHandle", pass_state)
+        # 值对象必须保存由 pipeline 派生的采样语义。
+        self.assertIn("sampling: PipelineSampling", pass_state)
+        # 构造入口必须从完整 pipeline 派生采样语义。
+        self.assertIn("pub(crate) const fn for_pipeline(", pass_state)
         # 活动 pass 只能保存一个可选完整绑定。
         self.assertIn("sampled_binding: Option<SampledTextureBinding>", pass_state)
         # 状态不得继续拆分纹理身份。
@@ -97,15 +101,19 @@ class GraphicsRhiSampledBindingContractTests(unittest.TestCase):
         # 合并全部生产采样命令的源码。
         producers = "\n".join(path.read_text(encoding="utf-8") for path in PRODUCERS)
         # 当前九个生产点必须全部构造原子绑定。
-        self.assertEqual(producers.count("SampledTextureBinding::new("), 9)
+        self.assertEqual(producers.count("SampledTextureBinding::for_pipeline("), 9)
         # 当前九个生产点必须全部使用类型化 FramePlan 命令。
         self.assertEqual(producers.count("FramePlanCommand::BindSampledTexture("), 9)
         # 生产端不得继续声明零号槽位。
         self.assertNotIn("slot: 0", producers)
-        # 验证器只需判断完整绑定是否已经生效。
+        # 验证器必须读取最近一次完整绑定。
         validation = VALIDATION.read_text(encoding="utf-8")
-        # 固定 t0/s0 语义必须由类型表达而不是数值判断。
-        self.assertIn("FramePlanCommand::BindSampledTexture(_)", validation)
+        # 最近绑定必须按 painter order 逆向查找。
+        self.assertIn("preceding.iter().rev().find_map", validation)
+        # 固定 t0/s0 语义必须作为完整绑定值读取。
+        self.assertIn("FramePlanCommand::BindSampledTexture(binding) => Some(*binding)", validation)
+        # 绑定语义必须与当前 Draw pipeline 契约匹配。
+        self.assertIn("binding.matches_pipeline(packet.pipeline)", validation)
         # 验证器不得继续匹配裸槽位。
         self.assertNotIn("slot: 0", validation)
 
@@ -120,17 +128,46 @@ class GraphicsRhiSampledBindingContractTests(unittest.TestCase):
         # 读取 D3D11 draw 路径。
         d3d11_draw = D3D11_DRAW.read_text(encoding="utf-8")
         # OpenGL 必须把完整绑定交给共享状态机。
+        self.assertIn("binding.validate_resources(format, sampler_desc)?;", opengl_device)
         self.assertIn("self.pass.bind_sampled_texture(binding)?;", opengl_device)
         # D3D11 必须把同一个类型交给共享状态机。
+        self.assertIn("binding.validate_resources(format, sampler_desc)?;", d3d11_resources)
         self.assertIn("self.rhi_device.pass.bind_sampled_texture(binding)?;", d3d11_resources)
         # OpenGL draw 必须一次取得完整绑定。
-        self.assertIn(".sampled_binding()", opengl_draw)
+        self.assertIn("sampled_binding_for(pipeline)", opengl_draw)
         # D3D11 四类 sampled pipeline 都必须一次取得完整绑定。
-        self.assertEqual(d3d11_draw.count(".sampled_binding()"), 4)
+        self.assertEqual(d3d11_draw.count(".sampled_binding_for(packet.pipeline)"), 4)
+        # 两个 draw Adapter 不得重复解释 sampling.accepts。
+        self.assertNotIn("contract.sampling.accepts", opengl_draw + d3d11_draw)
         # 两个 Adapter 都不得读取拆分纹理状态。
         self.assertNotIn(".bound_texture()", opengl_draw + d3d11_draw)
         # 两个 Adapter 都不得读取拆分 sampler 状态。
         self.assertNotIn(".bound_sampler()", opengl_draw + d3d11_draw)
+
+    # 两端必须在共享 pass 写入前验证实际资源描述。
+    def test_adapters_validate_resources_before_pass_write(self) -> None:
+        # 读取两个 Adapter 的绑定实现。
+        opengl = OPENGL_DEVICE.read_text(encoding="utf-8")
+        # 读取 D3D11 的绑定实现。
+        d3d11 = D3D11_RESOURCES.read_text(encoding="utf-8")
+        # 逐个检查绑定函数内部的共享状态写入顺序。
+        # 保留每个 Adapter 对应的共享 pass 写入标记。
+        adapter_markers = (
+            # OpenGL 共享 pass 写入标记。
+            (opengl, "self.pass.bind_sampled_texture(binding)?;"),
+            # D3D11 共享 pass 写入标记。
+            (d3d11, "self.rhi_device.pass.bind_sampled_texture(binding)?;"),
+        )
+        # 分别检查两个 Adapter 的绑定函数。
+        for source, marker in adapter_markers:
+            # 只截取绑定函数，避免其它资源路径偶然满足断言。
+            body = source[source.index("bind_sampled_texture("):]
+            # 资源描述校验必须存在于绑定函数中。
+            self.assertIn("binding.validate_resources(format, sampler_desc)?;", body)
+            # pass 写入必须存在于绑定函数中。
+            self.assertIn(marker, body)
+            # 资源描述校验必须早于共享 pass 写入。
+            self.assertLess(body.index("binding.validate_resources"), body.index(marker))
 
 
 # 支持直接执行该精确契约测试。

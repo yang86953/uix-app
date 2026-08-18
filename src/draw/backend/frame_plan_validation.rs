@@ -129,19 +129,34 @@ pub(super) fn validate_draw_uploads(
             "FramePlan uniform upload layout does not match pipeline contract",
         ));
     }
-    // 需要采样的 pipeline 必须在 draw 前已经绑定统一原子资源。
-    if contract.sampling != PipelineSampling::None
-        // 查找当前 pass 中已经生效的类型化采样绑定。
-        && !preceding.iter().any(|command| {
-            // 只有完整值对象满足当前固定 t0/s0 采样契约。
-            matches!(command, FramePlanCommand::BindSampledTexture(_))
-        })
-    {
-        // 禁止不同 API 复用各自残留的纹理状态。
-        return Err(Error::new(
-            Errc::InvalidArgument,
-            "FramePlan sampled draw must follow a texture binding",
-        ));
+    // 查找 draw 前最近一次完整的类型化采样绑定。
+    let latest_sampled = preceding.iter().rev().find_map(|command| {
+        // 只有采样绑定命令才更新当前 pipeline 的资源事实。
+        match command {
+            // 返回最近一次原子采样绑定。
+            FramePlanCommand::BindSampledTexture(binding) => Some(*binding),
+            // 其它命令不改变采样绑定事实。
+            _ => None,
+        }
+    });
+    // 需要采样的 pipeline 必须拥有与自身语义匹配的最近绑定。
+    if contract.sampling != PipelineSampling::None {
+        // 缺少绑定必须在进入 Device 前被共享层拒绝。
+        let binding = latest_sampled.ok_or_else(|| {
+            // 禁止不同 API 复用各自残留的纹理状态。
+            Error::new(
+                Errc::InvalidArgument,
+                "FramePlan sampled draw must follow a texture binding",
+            )
+        })?;
+        // 绑定语义必须与当前 Draw pipeline contract 完全一致。
+        if !binding.matches_pipeline(packet.pipeline) {
+            // 禁止错误 pipeline 继续把资源兼容性推迟给 Adapter。
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "FramePlan sampled binding does not match pipeline contract",
+            ));
+        }
     }
     // 当前 draw 的所有类型化资源事实与共享 pipeline 契约一致。
     Ok(())

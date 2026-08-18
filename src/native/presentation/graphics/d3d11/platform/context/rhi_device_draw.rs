@@ -127,21 +127,12 @@ impl D3d11Context {
                 let binding = self
                     .rhi_device
                     .pass
-                    // 从共享状态原子取得 texture 与 sampler 身份。
-                    .sampled_binding()
-                    .ok_or_else(|| rhi_invalid("D3d11 RHI textured draw has no binding"))?;
+                    // 从共享状态取得与当前 pipeline 匹配的原子绑定。
+                    .sampled_binding_for(packet.pipeline)?;
                 // 解析 SRV 并复制 COM 句柄，结束资源表借用。
                 let texture = self.rhi_device.texture(binding.texture())?;
-                // 解析 sampler 描述与原生状态。
+                // 解析已经在 bind 边界验证的 sampler 原生状态。
                 let sampler = self.rhi_device.sampler(binding.sampler())?;
-                // 颜色 pipeline 只接受共享契约声明的四通道格式与线性过滤。
-                if !contract
-                    .sampling
-                    .accepts(texture.desc.format(), sampler.desc)
-                {
-                    // 拒绝把 coverage 纹理解释为 premultiplied color。
-                    return Err(rhi_invalid("D3d11 RHI textured source format is invalid"));
-                }
                 // 复制 sampled texture view。
                 let texture_srv = texture.srv.clone();
                 // 复制 sampler state。
@@ -168,21 +159,12 @@ impl D3d11Context {
                 let binding = self
                     .rhi_device
                     .pass
-                    // 从共享状态原子取得 glyph texture 与 sampler 身份。
-                    .sampled_binding()
-                    .ok_or_else(|| rhi_invalid("D3d11 RHI glyph draw has no binding"))?;
-                // 解析纹理格式，防止 R8 pipeline 误采样颜色纹理。
+                    // 从共享状态取得与当前 pipeline 匹配的原子绑定。
+                    .sampled_binding_for(packet.pipeline)?;
+                // 解析已经在 bind 边界验证为 R8 的 coverage 纹理。
                 let texture = self.rhi_device.texture(binding.texture())?;
-                // 解析 coverage sampler 描述与原生状态。
+                // 解析已经在 bind 边界验证的最近点 sampler 原生状态。
                 let sampler = self.rhi_device.sampler(binding.sampler())?;
-                // 强制 coverage ABI 使用单通道纹理与最近点过滤。
-                if !contract
-                    .sampling
-                    .accepts(texture.desc.format(), sampler.desc)
-                {
-                    // 返回稳定的资源类型错误。
-                    return Err(rhi_invalid("D3d11 RHI glyph texture must be R8Unorm"));
-                }
                 // 复制 R8 SRV，结束资源表借用。
                 let texture_srv = texture.srv.clone();
                 // 复制 sampler state。
@@ -209,21 +191,12 @@ impl D3d11Context {
                 let binding = self
                     .rhi_device
                     .pass
-                    // 从共享状态原子取得 MSDF texture 与 sampler 身份。
-                    .sampled_binding()
-                    .ok_or_else(|| rhi_invalid("D3d11 RHI MSDF draw has no binding"))?;
-                // MSDF shader 只接受 RGBA8 距离纹理。
+                    // 从共享状态取得与当前 pipeline 匹配的原子绑定。
+                    .sampled_binding_for(packet.pipeline)?;
+                // 解析已经在 bind 边界验证为 RGBA8 的 MSDF 距离纹理。
                 let texture = self.rhi_device.texture(binding.texture())?;
-                // 解析 MSDF sampler 描述与原生状态。
+                // 解析已经在 bind 边界验证的线性 sampler 原生状态。
                 let sampler = self.rhi_device.sampler(binding.sampler())?;
-                // 共享契约同时要求 RGBA8 距离纹理与线性过滤。
-                if !contract
-                    .sampling
-                    .accepts(texture.desc.format(), sampler.desc)
-                {
-                    // 返回稳定的资源类型错误。
-                    return Err(rhi_invalid("D3d11 RHI MSDF texture must be Rgba8Unorm"));
-                }
                 // 复制 RGBA8 SRV，结束资源表借用。
                 let texture_srv = texture.srv.clone();
                 // 复制 sampler state。
@@ -314,21 +287,12 @@ impl D3d11Context {
                 let binding = self
                     .rhi_device
                     .pass
-                    // 从共享状态原子取得 blur texture 与 sampler 身份。
-                    .sampled_binding()
-                    .ok_or_else(|| rhi_invalid("D3d11 RHI blur draw has no binding"))?;
-                // 解析 source texture 并拒绝 R8 coverage 误用 blur ABI。
+                    // 从共享状态取得与当前 pipeline 匹配的原子绑定。
+                    .sampled_binding_for(packet.pipeline)?;
+                // 解析已经在 bind 边界验证的 Blur 颜色源纹理。
                 let texture = self.rhi_device.texture(binding.texture())?;
-                // 解析 Blur sampler 描述与原生状态。
+                // 解析已经在 bind 边界验证的线性 sampler 原生状态。
                 let sampler = self.rhi_device.sampler(binding.sampler())?;
-                // 共享契约同时要求颜色纹理与线性过滤。
-                if !contract
-                    .sampling
-                    .accepts(texture.desc.format(), sampler.desc)
-                {
-                    // blur 只接受颜色纹理，避免单通道格式被解释为 premultiplied color。
-                    return Err(rhi_invalid("D3d11 RHI blur source must be a color texture"));
-                }
                 // 复制 source SRV，结束资源表借用。
                 let texture_srv = texture.srv.clone();
                 // 复制 sampler state。
