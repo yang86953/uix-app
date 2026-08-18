@@ -7,6 +7,8 @@
 use crate::core::error::{Errc, Error, Result};
 // 引入无帧 blur 的逻辑区域值。
 use crate::core::Rect;
+// 引入统一的离屏 GPU 命令计划边界。
+use crate::draw::backend::frame_plan::FramePlan;
 // 引入薄 RHI 的资源、复制与代际值。
 use crate::native::present::rhi::{
     // device 原语用于执行资源事务。
@@ -147,12 +149,12 @@ pub(super) fn create_rhi_overlay_backdrop(
         // retained surface 当前统一使用 premultiplied BGRA。
         TextureFormat::Bgra8Unorm,
     ))?;
-    // 复制并提交形成可跨帧读取的确定边界。
-    let submitted = device
-        // 第一步只编码 retained 到 backdrop 的全幅复制。
-        .copy_texture(full_texture_copy(retained, backdrop, extent))
-        // 第二步提交 device 命令，但不获取或呈现 surface image。
-        .and_then(|()| device.submit().map(|_| ()));
+    // 创建只包含离屏资源复制的统一类型化计划。
+    let mut plan = FramePlan::offscreen();
+    // 将 retained 到 backdrop 的全幅复制追加到计划。
+    plan.push_copy(full_texture_copy(retained, backdrop, extent));
+    // 通过唯一离屏边界执行计划并将提交身份映射为创建成功。
+    let submitted = plan.execute_offscreen_on_device(device).map(|_| ());
     // 任一步失败都不能把半成品纹理登记为有效快照。
     if let Err(error) = submitted {
         // 新纹理必须检查式销毁，避免失败帧泄漏 GPU 资源。
@@ -178,10 +180,12 @@ pub(super) fn restore_rhi_overlay_backdrop(
     // 复制范围来自已经验证相等的 token。
     extent: RhiExtent,
 ) -> Result<SubmissionHandle> {
-    // 先编码 backdrop 到 retained 的全幅复制。
-    device.copy_texture(full_texture_copy(backdrop, retained, extent))?;
-    // 单独提交复制，最终 swapchain present 仍由统一帧边界负责。
-    device.submit()
+    // 创建只包含离屏资源复制的统一类型化计划。
+    let mut plan = FramePlan::offscreen();
+    // 将 backdrop 到 retained 的全幅复制追加到计划。
+    plan.push_copy(full_texture_copy(backdrop, retained, extent));
+    // 通过唯一离屏边界执行计划并返回类型化提交身份。
+    plan.execute_offscreen_on_device(device)
 }
 
 // 为 GpuBackend 提供 backdrop owner 生命周期。

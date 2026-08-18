@@ -3,10 +3,8 @@
 // 引入当前错误类型、几何和结果别名。
 use crate::core::error::{Error, Result};
 use crate::core::{Point, Rect};
-// 引入显式 FramePlan render target、pass 和命令类型。
-use crate::draw::backend::frame_plan::{
-    FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef,
-};
+// 引入统一的 FramePlan 离屏执行类型。
+use crate::draw::backend::frame_plan::FramePlan;
 // 引入通用 renderer 的混合载荷和执行器。
 use crate::draw::backend::rhi_renderer::{
     RhiCoverageQuad, RhiGradientRect, RhiMsdfQuad, RhiOp, RhiRenderer, RhiRendererFrame, RhiSector,
@@ -572,20 +570,12 @@ fn lower_native_scroll_move(
 // 在不触发 swapchain present 的前提下执行一条纹理搬移 boundary。
 fn execute_texture_move(
     device: &mut dyn GraphicsDevice,
-    target: TextureHandle,
-    viewport: RhiViewport,
     movement: TextureMove,
 ) -> Result<()> {
-    // move 后的空 pass 保留 target 状态并满足 FramePlan 的非空 pass 契约。
-    let mut pass = RenderPassPlan::new(RenderTargetRef::Texture(target), LoadAction::Load);
-    // 明确设置当前目标的物理 viewport，避免 adapter 沿用上一 pass 状态。
-    pass.push(FramePlanCommand::SetViewport(viewport));
     // 纹理搬移只属于 device，不依赖 swapchain generation。
     let mut plan = FramePlan::offscreen();
-    // 先执行重叠安全的 TextureMove，再进入空 load pass。
+    // 按 lowering 顺序追加重叠安全的 TextureMove。
     plan.push_move(movement);
-    // 追加 move boundary 的 target pass。
-    plan.push_pass(pass);
     // 只提交离屏命令，不获取或呈现 swapchain image。
     plan.execute_offscreen_on_device(device)?;
     // 丢弃只用于提交追踪的 handle，保留 typed Result 语义。
@@ -804,7 +794,7 @@ impl NativeGpuCanvas2D {
             // scroll boundary 必须发生在后续 segment draw 之前。
             if let Some(movement) = movement {
                 // scroll path 只使用显式 Device 与 retained texture。
-                execute_texture_move(device, target, viewport, *movement)?;
+                execute_texture_move(device, *movement)?;
                 // move 本身已经建立了后续 pass 的 Load 基线。
                 target_initialized = true;
             }

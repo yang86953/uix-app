@@ -24,6 +24,8 @@ use crate::native::present::rhi::{
     RenderTargetHandle,
     // Buffer 上传值对象用于记录类型化载荷。
     RhiBufferUpload,
+    // Buffer 预检值对象用于放行 FramePlan 资源预检。
+    RhiBufferUploadPreflight,
     // 不可拆呈现事务用于补齐 Surface 契约。
     RhiPresentTransaction,
     // submission 句柄用于建立唯一提交边界。
@@ -130,6 +132,24 @@ impl GraphicsDevice for RecordingContext {
     fn resolve_render_target(&self, texture: TextureHandle) -> Result<RenderTargetHandle> {
         // 测试 mock 直接返回稳定的可渲染目标身份。
         Ok(RenderTargetHandle::for_test(texture))
+    }
+
+    // blur fixture 不重复验证共享契约，只放行 buffer 预检。
+    fn preflight_buffer_upload(&self, _upload: RhiBufferUploadPreflight) -> Result<()> {
+        // 资源预检事实由共享 FramePlan/RHI 测试覆盖。
+        Ok(())
+    }
+
+    // blur fixture 不重复验证共享契约，只放行 draw 资源预检。
+    fn preflight_draw_resources(&self, _packet: DrawPacket) -> Result<()> {
+        // 资源预检事实由共享 FramePlan/RHI 测试覆盖。
+        Ok(())
+    }
+
+    // blur fixture 不重复验证共享契约，只放行 sampled 资源预检。
+    fn preflight_sampled_binding(&self, _binding: SampledTextureBinding) -> Result<()> {
+        // 资源预检事实由共享 FramePlan/RHI 测试覆盖。
+        Ok(())
     }
 
     // 创建 renderer 缓存使用的动态 buffer。

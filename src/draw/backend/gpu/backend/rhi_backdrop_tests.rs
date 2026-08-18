@@ -1,5 +1,8 @@
 //! overlay backdrop 薄 RHI 复制与失败清理测试。
 
+// 引入零副作用记录所需的单线程内部可变计数器。
+use std::cell::Cell;
+
 // 引入统一错误和结果类型。
 use crate::core::{Errc, Error, Rect, Result};
 // 引入被测 helper。
@@ -61,6 +64,8 @@ struct RecordingBackdropContext {
     destroyed: Vec<TextureHandle>,
     // 记录所有有向纹理复制。
     copies: Vec<TextureCopy>,
+    // 记录 FramePlan 执行前的纹理复制预检次数。
+    preflight_copies: Cell<usize>,
     // 记录 device submit 次数。
     submits: usize,
     // 记录意外 surface acquire 次数。
@@ -71,6 +76,8 @@ struct RecordingBackdropContext {
     fail_create: bool,
     // 允许测试在 submit 边界注入设备丢失。
     fail_submit: bool,
+    // 允许测试在 copy preflight 边界注入参数失败。
+    fail_preflight: bool,
 }
 
 // 为 recording context 提供可读构造器。
@@ -89,6 +96,8 @@ impl RecordingBackdropContext {
             destroyed: Vec::new(),
             // 初始没有复制命令。
             copies: Vec::new(),
+            // 初始没有发生复制预检。
+            preflight_copies: Cell::new(0),
             // 初始没有提交。
             submits: 0,
             // 初始没有获取 surface image。
@@ -99,7 +108,19 @@ impl RecordingBackdropContext {
             fail_create,
             // 保存提交失败模式。
             fail_submit,
+            // 默认允许复制预检通过。
+            fail_preflight: false,
         }
+    }
+
+    // 创建指定复制预检失败模式的 recording context。
+    fn with_preflight_failure() -> Self {
+        // 创建可修改失败开关的基础记录器。
+        let mut context = Self::new(false, false);
+        // 注入唯一的 copy preflight 失败点。
+        context.fail_preflight = true;
+        // 返回可观测的失败记录器。
+        context
     }
 
     // 分配下一个 opaque 资源身份。
@@ -141,6 +162,23 @@ impl GraphicsDevice for RecordingBackdropContext {
         self.created.push(texture);
         // 返回新纹理。
         Ok(texture)
+    }
+
+    // 在 FramePlan 激活 device 前记录并可注入纹理复制预检失败。
+    fn preflight_texture_copy(&self, _copy: TextureCopy) -> Result<()> {
+        // 预检只增加独立计数，不污染真实 copy 记录。
+        self.preflight_copies
+            .set(self.preflight_copies.get().saturating_add(1));
+        // 按测试配置返回共享参数错误。
+        if self.fail_preflight {
+            // 保留预检主错误，供 helper 直接传播。
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "recorded backdrop copy preflight failed",
+            ));
+        }
+        // 正常预检不产生任何 device 命令。
+        Ok(())
     }
 
     // 检查式销毁失败事务创建的纹理。
@@ -296,6 +334,8 @@ fn snapshot_creates_and_submits_full_retained_copy_without_present() {
     );
     // 快照只产生一次 device submit。
     assert_eq!(context.submits, 1);
+    // 成功快照必须恰好预检一次复制计划。
+    assert_eq!(context.preflight_copies.get(), 1);
     // 快照不得获取或呈现 swapchain image。
     assert_eq!((context.acquires, context.presents), (0, 0));
 }
@@ -337,6 +377,8 @@ fn restore_submits_full_backdrop_copy_without_present() {
         (context.submits, context.acquires, context.presents),
         (1, 0, 0)
     );
+    // 成功恢复必须恰好预检一次复制计划。
+    assert_eq!(context.preflight_copies.get(), 1);
 }
 
 // 验证创建失败不会产生半成品命令或伪造清理。
@@ -354,6 +396,8 @@ fn snapshot_create_failure_leaves_no_resource_or_commands() {
     assert!(context.created.is_empty() && context.destroyed.is_empty());
     // 没有资源时不能继续复制或提交。
     assert!(context.copies.is_empty() && context.submits == 0);
+    // 创建失败发生在计划构造前，复制预检必须为零。
+    assert_eq!(context.preflight_copies.get(), 0);
     // surface 生命周期同样保持未触碰。
     assert_eq!((context.acquires, context.presents), (0, 0));
 }
@@ -373,7 +417,56 @@ fn snapshot_submit_failure_destroys_new_texture_without_present() {
     assert_eq!(context.destroyed, context.created);
     // 复制已编码且 submit 只尝试一次。
     assert_eq!((context.copies.len(), context.submits), (1, 1));
+    // submit 失败前必须已经完成一次复制预检。
+    assert_eq!(context.preflight_copies.get(), 1);
     // 失败清理仍不得 acquire 或 present。
+    assert_eq!((context.acquires, context.presents), (0, 0));
+}
+
+// 验证快照预检失败仍检查式销毁已创建 backdrop 且不执行复制提交。
+#[test]
+fn snapshot_preflight_failure_destroys_created_texture_without_commands() {
+    // 注入唯一的 copy preflight 失败。
+    let mut context = RecordingBackdropContext::with_preflight_failure();
+    // 保存固定 surface extent，避免跨越可变借用。
+    let extent = context.token.extent;
+    // 执行必然在 device 激活前失败的快照事务。
+    let result = create_rhi_overlay_backdrop(&mut context, TextureHandle::from_raw(41), extent);
+    // 失败必须保留预检主错误。
+    assert!(matches!(result, Err(error) if error.code() == Errc::InvalidArgument));
+    // 已创建的 backdrop 必须被检查式销毁且身份完全配对。
+    assert_eq!(context.destroyed, context.created);
+    // 预检失败不得编码真实 copy 或尝试 submit。
+    assert!(context.copies.is_empty() && context.submits == 0);
+    // 快照预检必须恰好发生一次。
+    assert_eq!(context.preflight_copies.get(), 1);
+    // 失败路径不得 acquire 或 present surface。
+    assert_eq!((context.acquires, context.presents), (0, 0));
+}
+
+// 验证恢复预检失败不创建销毁资源且不触碰任何 device 或 surface 命令。
+#[test]
+fn restore_preflight_failure_has_no_resource_or_commands() {
+    // 注入唯一的 copy preflight 失败。
+    let mut context = RecordingBackdropContext::with_preflight_failure();
+    // 保存固定 surface extent，避免跨越可变借用。
+    let extent = context.token.extent;
+    // 执行必然在 device 激活前失败的恢复事务。
+    let result = restore_rhi_overlay_backdrop(
+        &mut context,
+        TextureHandle::from_raw(51),
+        TextureHandle::from_raw(52),
+        extent,
+    );
+    // 失败必须保留预检主错误。
+    assert!(matches!(result, Err(error) if error.code() == Errc::InvalidArgument));
+    // 恢复预检失败不得创建或销毁任何资源。
+    assert!(context.created.is_empty() && context.destroyed.is_empty());
+    // 恢复预检失败不得编码真实 copy 或尝试 submit。
+    assert!(context.copies.is_empty() && context.submits == 0);
+    // 恢复预检必须恰好发生一次。
+    assert_eq!(context.preflight_copies.get(), 1);
+    // 失败路径不得 acquire 或 present surface。
     assert_eq!((context.acquires, context.presents), (0, 0));
 }
 

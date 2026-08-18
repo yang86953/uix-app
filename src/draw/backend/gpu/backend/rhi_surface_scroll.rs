@@ -3,12 +3,10 @@
 // 引入统一错误类型。
 use crate::core::{Errc, Error};
 // 引入只写入 retained texture 的 FramePlan 类型。
-use crate::draw::backend::frame_plan::{
-    FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef,
-};
+use crate::draw::backend::frame_plan::FramePlan;
 // 引入薄 RHI 的组合 context、目标和搬移原语。
 use crate::native::present::rhi::{
-    LoadAction, RhiExtent, RhiTextureTransfer, TextureHandle, TextureMove,
+    RhiExtent, RhiTextureTransfer, TextureHandle, TextureMove,
 };
 
 // 引入当前 GPU backend 和待处理的逻辑搬移记录。
@@ -217,20 +215,20 @@ impl GpuBackend {
             return Ok(true);
         }
         // 读取当前 RHI context 的物理几何和 surface token。
-        let (surface, viewport, scale_x, scale_y) = {
+        let (surface, scale_x, scale_y) = {
             // 只有组合 RHI context 能写入 owner-thread retained texture。
             // 已验证 owner 丢失时返回 typed failure，不伪造搬移成功。
             let context = self.gpu_ctx.rhi_context()?;
             // 冻结计划必须匹配的 Surface 代际与物理范围。
             let surface = context.surface_ref().token();
             // 复用主 surface 的 mixed-DPI 几何规则。
-            let (viewport, scale_x, scale_y) = super::super::submit::rhi_physical_geometry(
+            let (_, scale_x, scale_y) = super::super::submit::rhi_physical_geometry(
                 surface.extent,
                 self.surface.width,
                 self.surface.height,
             );
             // 返回同一快照导出的代际与物理几何。
-            (surface, viewport, scale_x, scale_y)
+            (surface, scale_x, scale_y)
         };
         // 预先降低所有搬移，任何一条不安全都不消费原始记录。
         let mut movements = Vec::with_capacity(self.surface.pending_scroll_copies.len());
@@ -263,20 +261,13 @@ impl GpuBackend {
         }
         // 在移动集合被按序转入 FramePlan 前保存本次可验证命令数量。
         let movement_count = movements.len();
-        // 创建一个保留旧颜色的 retained target pass。
-        // 同一类型化 texture 同时承担 move source/destination 和 pass target。
-        let mut pass = RenderPassPlan::new(RenderTargetRef::Texture(target), LoadAction::Load);
-        // 加入非破坏性的 viewport 命令，使 move-only 计划满足 FramePlan 的 pass 契约。
-        pass.push(FramePlanCommand::SetViewport(viewport));
         // retained texture 移动只属于 device，不依赖 swapchain generation。
         let mut plan = FramePlan::offscreen();
-        // 先移动 retained pixels，再执行空 draw pass 结束边界。
+        // 按 lowering 顺序追加 retained pixels 的移动。
         for movement in movements {
             // 保留调用方已经确定的 scroll 顺序。
             plan.push_move(movement);
         }
-        // 追加唯一 retained target pass。
-        plan.push_pass(pass);
         // 通过 device 窄视图执行，不获取也不呈现 swapchain image。
         // device 在计划构造后失效时返回 typed failure。
         let context = self.gpu_ctx.rhi_device()?;

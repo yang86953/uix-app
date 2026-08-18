@@ -208,16 +208,26 @@ impl FramePlan {
                 "FramePlan surface extent is outside the shared native domain",
             ));
         }
-        // 计划必须至少包含一个 render pass。
-        if !self
-            .steps
-            .iter()
-            .any(|step| matches!(step, FramePlanStep::Pass(_)))
-        {
-            // 没有 pass 的计划不能形成可呈现帧。
+        // 真正空计划不能伪造一次 Device submit 或 Surface present。
+        if self.steps.is_empty() {
+            // 调用方必须至少显式交付一个 pass、copy 或 move。
             return Err(Error::new(
                 Errc::InvalidArgument,
-                "FramePlan must contain at least one render pass",
+                "FramePlan must contain at least one command",
+            ));
+        }
+        // Surface 计划必须包含可呈现 pass；离屏计划允许纯 Copy/Move 事务。
+        if matches!(&self.scope, FramePlanScope::Surface { .. })
+            // 只读扫描封闭步骤，不建立任何 Device 状态。
+            && !self
+                .steps
+                .iter()
+                .any(|step| matches!(step, FramePlanStep::Pass(_)))
+        {
+            // 没有 pass 的 Surface 计划不得 acquire 并呈现未写入 image。
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "surface FramePlan must contain at least one render pass",
             ));
         }
         // 逐项检查 pass 和 copy 的通用不变量。
