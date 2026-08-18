@@ -55,6 +55,8 @@ fn executes_clear_rect_in_order() {
         width: 64.0,
         height: 64.0,
     }));
+    // 显式关闭裁剪，避免 ClearRect 测试依赖 Adapter 历史状态。
+    pass.push(FramePlanCommand::SetScissor(None));
     // 追加透明局部清理。
     pass.push(FramePlanCommand::ClearRect {
         color: RhiColor::transparent(),
@@ -122,6 +124,7 @@ fn executes_clear_rect_in_order() {
             "maintain",
             "begin_pass",
             "viewport",
+            "scissor",
             "clear_rect",
             "update_buffer",
             "update_buffer",
@@ -157,6 +160,84 @@ fn rejects_draw_without_typed_vertex_upload_before_adapter() {
     assert_eq!(error.code(), Errc::InvalidArgument);
     // 诊断必须明确指出类型化顶点上传缺失。
     assert!(error.what().contains("typed vertex upload"));
+}
+
+// 验证 Draw 缺失 viewport 或 scissor 时均在 Adapter 前拒绝。
+#[test]
+fn rejects_draw_without_explicit_raster_state_before_adapter() {
+    // 创建可验证的第一代 surface。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 复用有效计划并删除 viewport 命令。
+    let mut viewport_plan = test_plan(token);
+    // 取得 viewport 变异计划的唯一 render pass。
+    let FramePlanStep::Pass(pass) = &mut viewport_plan.steps[0] else {
+        // 测试基线漂移时立即失败。
+        panic!("test plan must start with a render pass");
+    };
+    // 找到唯一 viewport 命令，准备证明 Draw 后状态不能反向满足。
+    let viewport_index = pass
+        // 遍历当前 pass 的完整命令顺序。
+        .commands
+        // 查找显式 viewport 的原始位置。
+        .iter()
+        // 只匹配 raster viewport 命令。
+        .position(|command| matches!(command, FramePlanCommand::SetViewport(_)))
+        // 有效测试基线必须显式建立 viewport。
+        .expect("test plan must set a viewport");
+    // 从 Draw 前移除 viewport，但保留命令本身供后置反例使用。
+    let viewport = pass.commands.remove(viewport_index);
+    // 把 viewport 放到 Draw 后，禁止全 pass 搜索伪造前序状态。
+    pass.commands.push(viewport);
+    // 创建独立记录 context，观察验证前是否触碰 Adapter。
+    let mut viewport_context = recording_context(token);
+    // 执行缺失 viewport 的计划并要求稳定失败。
+    let viewport_error = viewport_plan
+        .execute_on_context(&mut viewport_context)
+        .expect_err("missing viewport must fail before adapter");
+    // 缺失 viewport 属于稳定计划参数错误。
+    assert_eq!(viewport_error.code(), Errc::InvalidArgument);
+    // 诊断必须明确指出 viewport 缺失。
+    assert!(viewport_error.what().contains("viewport"));
+    // 验证失败发生在 activate 之前，设备日志应保持为空。
+    assert!(viewport_context.device.log.is_empty());
+    // 验证失败计划不得进入最终 present。
+    assert_eq!(viewport_context.surface.present_count, 0);
+
+    // 复用有效计划并删除 scissor 命令。
+    let mut scissor_plan = test_plan(token);
+    // 取得 scissor 变异计划的唯一 render pass。
+    let FramePlanStep::Pass(pass) = &mut scissor_plan.steps[0] else {
+        // 测试基线漂移时立即失败。
+        panic!("test plan must start with a render pass");
+    };
+    // 找到唯一 scissor 命令，准备证明 Draw 后状态不能反向满足。
+    let scissor_index = pass
+        // 遍历当前 pass 的完整命令顺序。
+        .commands
+        // 查找显式 scissor 的原始位置。
+        .iter()
+        // Some 与 None 都属于明确的 scissor 状态命令。
+        .position(|command| matches!(command, FramePlanCommand::SetScissor(_)))
+        // 有效测试基线必须显式建立 scissor。
+        .expect("test plan must set a scissor");
+    // 从 Draw 前移除 scissor，但保留命令本身供后置反例使用。
+    let scissor = pass.commands.remove(scissor_index);
+    // 把 scissor 放到 Draw 后，禁止全 pass 搜索伪造前序状态。
+    pass.commands.push(scissor);
+    // 创建独立记录 context，观察验证前是否触碰 Adapter。
+    let mut scissor_context = recording_context(token);
+    // 执行缺失 scissor 的计划并要求稳定失败。
+    let scissor_error = scissor_plan
+        .execute_on_context(&mut scissor_context)
+        .expect_err("missing scissor must fail before adapter");
+    // 缺失 scissor 属于稳定计划参数错误。
+    assert_eq!(scissor_error.code(), Errc::InvalidArgument);
+    // 诊断必须明确指出 scissor 缺失。
+    assert!(scissor_error.what().contains("scissor"));
+    // 验证失败发生在 activate 之前，设备日志应保持为空。
+    assert!(scissor_context.device.log.is_empty());
+    // 验证失败计划不得进入最终 present。
+    assert_eq!(scissor_context.surface.present_count, 0);
 }
 
 // 验证类型化顶点上传不能进入不匹配的 pipeline 顶点 ABI。

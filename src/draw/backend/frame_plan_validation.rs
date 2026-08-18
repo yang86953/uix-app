@@ -1,4 +1,4 @@
-//! FramePlan 内类型化上传与 pipeline 资源契约的顺序验证。
+//! FramePlan 内类型化资源与 pass-local raster state 的顺序验证。
 
 // 引入稳定错误类型和结果别名。
 use crate::core::error::{Errc, Error, Result};
@@ -7,6 +7,36 @@ use crate::native::present::rhi::{DrawPacket, PipelineSampling};
 
 // 引入同层计划命令与 pass。
 use super::{FramePlanCommand, RenderPassPlan};
+
+// 验证一次 draw 前已经建立完整的 pass-local raster state。
+fn validate_raster_state(preceding: &[FramePlanCommand]) -> Result<()> {
+    // viewport 必须由当前 FramePlan 显式建立，Adapter 不得继承历史状态。
+    if !preceding
+        .iter()
+        // 只接受当前 draw 之前出现的 viewport 命令。
+        .any(|command| matches!(command, FramePlanCommand::SetViewport(_)))
+    {
+        // 缺失 viewport 属于计划参数错误而不是 Adapter 默认值选择。
+        return Err(Error::new(
+            Errc::InvalidArgument,
+            "FramePlan draw must follow an explicit viewport",
+        ));
+    }
+    // scissor 必须由当前 FramePlan 显式建立，None 也代表明确关闭裁剪。
+    if !preceding
+        .iter()
+        // 只接受当前 draw 之前出现的 Some 或 None scissor 命令。
+        .any(|command| matches!(command, FramePlanCommand::SetScissor(_)))
+    {
+        // 缺失 scissor 属于计划参数错误而不是 Adapter 默认值选择。
+        return Err(Error::new(
+            Errc::InvalidArgument,
+            "FramePlan draw must follow an explicit scissor",
+        ));
+    }
+    // 当前 draw 已拥有完整的 pass-local raster state。
+    Ok(())
+}
 
 // 验证一次 draw 只能消费前序命令中与其 pipeline 匹配的类型化资源事实。
 pub(super) fn validate_draw_uploads(
@@ -29,6 +59,8 @@ pub(super) fn validate_draw_uploads(
     let contract = packet.pipeline.contract();
     // 只检查 draw 之前已经生效的命令。
     let preceding = &pass.commands[..command_index];
+    // FramePlan 必须在进入 Adapter 前拥有完整的 raster state。
+    validate_raster_state(preceding)?;
     // 查找同一顶点 buffer 最近一次类型化上传。
     let latest_vertex = preceding.iter().rev().find_map(|command| {
         // 只有句柄匹配的顶点上传才影响当前 draw。
