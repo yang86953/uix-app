@@ -66,6 +66,18 @@ class GraphicsRhiIndexFormatContractTests(unittest.TestCase):
         validation = FRAME_VALIDATION.read_text(encoding="utf-8")
         # 读取上传只读预检和唯一执行边界。
         execution = FRAME_EXECUTION.read_text(encoding="utf-8")
+        # 截取索引上传的 acquire 前只读预检分支。
+        index_preflight = execution.split(
+            # 以索引命令匹配作为左边界。
+            "if let FramePlanCommand::UploadIndex { buffer, data } = command",
+            # 只截断第一个索引预检分支。
+            maxsplit=1,
+        )[1].split(
+            # 以后续 Uniform 命令匹配作为右边界。
+            "if let FramePlanCommand::UploadUniform { buffer, data } = command",
+            # 只截断第一个 Uniform 分支标记。
+            maxsplit=1,
+        )[0]
         # 截取索引命令的唯一 Device 执行分支。
         index_execution = execution.split("FramePlanCommand::UploadIndex { buffer, data } =>", maxsplit=1)[1].split(
             # 以后续 Uniform 分支作为索引分支的稳定右边界。
@@ -95,8 +107,12 @@ class GraphicsRhiIndexFormatContractTests(unittest.TestCase):
         self.assertIn(".max_index_in_range(packet.range.first_index(), packet.range.index_count())", validation)
         # 选中的最大索引必须小于已交付顶点数量。
         self.assertIn("selected_max >= uploaded_vertex_count", validation)
-        # 真实索引 Buffer 角色与容量必须在 Surface acquire 前预检。
-        self.assertIn("RhiBufferUploadPreflight::index(*buffer, data.size_bytes())", execution)
+        # 真实索引 Buffer 角色、容量和格式步长必须在 Surface acquire 前预检。
+        self.assertIn("RhiBufferUploadPreflight::index(", index_preflight)
+        # 索引预检必须携带类型化载荷的精确编码长度。
+        self.assertIn("data.size_bytes()", index_preflight)
+        # 索引预检必须携带共享 IndexFormat 派生的元素步长。
+        self.assertIn("data.format().stride_bytes()", index_preflight)
 
     # OpenGL 必须只从共享格式派生步长、原生类型和偏移。
     def test_opengl_maps_shared_index_format(self) -> None:

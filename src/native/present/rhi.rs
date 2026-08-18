@@ -490,7 +490,7 @@ pub(crate) trait GraphicsDevice {
         Err(rhi_not_implemented("update_buffer"))
     }
 
-    // 在激活 Device 前预检 Buffer 上传的真实句柄与描述。
+    // 在激活 Device 前预检 Buffer 上传的真实句柄、用途、元素 ABI 与范围。
     fn preflight_buffer_upload(&self, _upload: RhiBufferUploadPreflight) -> Result<()> {
         // 默认实现显式拒绝未声明共享 Buffer 资源表能力的 Adapter。
         Err(rhi_not_implemented("preflight_buffer_upload"))

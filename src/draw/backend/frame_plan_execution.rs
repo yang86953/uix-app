@@ -130,16 +130,30 @@ where
                     if let FramePlanCommand::UploadVertex { buffer, data } = command {
                         // 预检值不编码或借用裸字节，因此不会产生 Device 副作用。
                         self.device.preflight_buffer_upload(
-                            // 将句柄与类型化载荷已经确定的字节数绑定为共享查询值。
-                            RhiBufferUploadPreflight::vertex(*buffer, data.size_bytes()),
+                            // 将句柄、字节数与类型化布局的唯一步长绑定为共享查询值。
+                            RhiBufferUploadPreflight::vertex(
+                                // 直接读取载荷布局拥有的共享元素步长。
+                                *buffer,
+                                // 读取类型化顶点载荷的精确编码长度。
+                                data.size_bytes(),
+                                // 读取布局值对象的唯一元素步长。
+                                data.layout().stride_bytes(),
+                            ),
                         )?;
                     }
                     // 索引上传必须用类型化载荷的精确编码长度预检真实 Buffer。
                     if let FramePlanCommand::UploadIndex { buffer, data } = command {
                         // 复用共享索引用途预检，不在 FramePlan 复制格式或容量规则。
                         self.device.preflight_buffer_upload(
-                            // 将句柄与类型化索引载荷的字节数绑定为共享查询值。
-                            RhiBufferUploadPreflight::index(*buffer, data.size_bytes()),
+                            // 将句柄、字节数与类型化格式的唯一步长绑定为共享查询值。
+                            RhiBufferUploadPreflight::index(
+                                // 直接读取目标索引 Buffer 身份。
+                                *buffer,
+                                // 读取类型化索引载荷的精确编码长度。
+                                data.size_bytes(),
+                                // 读取索引格式值对象的唯一元素步长。
+                                data.format().stride_bytes(),
+                            ),
                         )?;
                     }
                     // Uniform 上传必须在编码前证明完整替换真实 Buffer。

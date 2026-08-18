@@ -214,19 +214,25 @@ mod tests {
         // 合法的两个顶点上传必须通过。
         assert!(
             table
-                .validate_upload(RhiBufferUploadPreflight::vertex(vertex, 16))
+                .validate_upload(RhiBufferUploadPreflight::vertex(vertex, 16, 8))
                 .is_ok()
         );
         // 半个顶点元素必须拒绝。
         assert!(
             table
-                .validate_upload(RhiBufferUploadPreflight::vertex(vertex, 4))
+                .validate_upload(RhiBufferUploadPreflight::vertex(vertex, 4, 8))
+                .is_err()
+        );
+        // 用途和容量都匹配但 stride 错误的顶点上传必须拒绝。
+        assert!(
+            table
+                .validate_upload(RhiBufferUploadPreflight::vertex(vertex, 16, 16))
                 .is_err()
         );
         // 超过 Buffer 容量必须拒绝。
         assert!(
             table
-                .validate_upload(RhiBufferUploadPreflight::vertex(vertex, 24))
+                .validate_upload(RhiBufferUploadPreflight::vertex(vertex, 24, 8))
                 .is_err()
         );
         // 同尺寸 Uniform 上传也不得写入真实顶点 Buffer。
@@ -241,7 +247,25 @@ mod tests {
                 .validate_upload(RhiBufferUploadPreflight::vertex(
                     BufferHandle::from_raw(99),
                     16,
+                    8,
                 ))
+                .is_err()
+        );
+        // 登记一个真实索引 Buffer，冻结四字节索引元素 ABI。
+        let index = table.insert(TestBuffer {
+            // 索引资源容量与 stride 均来自真实 Buffer 描述。
+            desc: BufferDesc::index(16, 4),
+        });
+        // 匹配真实索引 stride 的上传必须通过。
+        assert!(
+            table
+                .validate_upload(RhiBufferUploadPreflight::index(index, 16, 4))
+                .is_ok()
+        );
+        // 用途和容量匹配但索引 stride 错误的上传必须拒绝。
+        assert!(
+            table
+                .validate_upload(RhiBufferUploadPreflight::index(index, 16, 2))
                 .is_err()
         );
         // 登记一个 Uniform Buffer 以验证完整替换语义。
