@@ -6,11 +6,11 @@ use crate::core::error::{Errc, Error, Result};
 use crate::core::PresentDamage;
 // 引入组合 context、正交 Device/Surface 角色与显式纹理目标。
 use crate::native::present::rhi::{
-    GraphicsContextRhi, GraphicsDevice, GraphicsSurface, TextureHandle,
+    GraphicsContextRhi, GraphicsDevice, GraphicsSurface, LoadAction, TextureHandle,
 };
 
 // 引入已经完成 lowering 且自有执行作用域的帧计划与目标引用。
-use super::super::frame_plan::{FramePlan, RenderTargetRef};
+use super::super::frame_plan::{FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef};
 
 // 封闭 Renderer 帧可进入的 Surface 或 Offscreen 角色。
 enum RhiRendererFrameRole<'a> {
@@ -37,6 +37,30 @@ enum RhiRendererFrameExecutionState {
     Pending,
     // 执行尝试已经消费帧，即使后续验证或 Adapter 调用失败。
     Consumed,
+}
+
+// 保存尚未绑定 target 与 load 的 Renderer pass 命令包。
+pub(crate) struct RhiRendererPass {
+    // 保存 producer 已经按 painter order lower 的命令。
+    commands: Vec<FramePlanCommand>,
+}
+
+// 为目标无关的 Renderer pass 提供封闭构造与有序追加入口。
+impl RhiRendererPass {
+    // 创建不携带任何 target 或 load 选择器的空命令包。
+    fn new() -> Self {
+        // 返回等待 producer 追加命令的私有载荷。
+        Self {
+            // 新建命令包保持空顺序。
+            commands: Vec::new(),
+        }
+    }
+
+    // 追加一个已经完成 Drawing lowering 的类型化命令。
+    pub(crate) fn push(&mut self, command: FramePlanCommand) {
+        // 只保存命令顺序，不允许 producer 绑定执行目标。
+        self.commands.push(command);
+    }
 }
 
 // 原子持有封闭帧角色与唯一执行生命周期。
@@ -104,7 +128,7 @@ impl<'a> RhiRendererFrame<'a> {
     }
 
     // 返回当前帧唯一允许写入的计划目标。
-    pub(crate) const fn render_target(&self) -> RenderTargetRef {
+    const fn render_target(&self) -> RenderTargetRef {
         // 从封闭变体投影目标，不接收第二个选择器。
         match &self.role {
             // Surface 帧只能写入本次 acquire 的 image。
@@ -125,10 +149,23 @@ impl<'a> RhiRendererFrame<'a> {
         }
     }
 
-    // 可变借用由当前帧唯一拥有的类型化计划。
-    pub(crate) fn plan_mut(&mut self) -> &mut FramePlan {
-        // 调用方只能追加当前帧最终会执行的同一份计划。
-        &mut self.plan
+    // 创建一个不携带 target 与 load 的 Renderer pass 命令包。
+    pub(crate) fn new_pass(&self) -> RhiRendererPass {
+        // 只有当前帧入口可以创建 producer 使用的命令包。
+        RhiRendererPass::new()
+    }
+
+    // 接管命令包并绑定当前帧唯一 target 与本次 load。
+    pub(crate) fn push_pass(&mut self, load: LoadAction, pass: RhiRendererPass) {
+        // 只在 Frame owner 内部创建携带目标的真实 RenderPassPlan。
+        let mut plan = RenderPassPlan::new(self.render_target(), load);
+        // 保持 producer 已经确定的命令顺序。
+        for command in pass.commands {
+            // 将目标无关命令逐项转移到当前帧 pass。
+            plan.push(command);
+        }
+        // 把已经绑定当前帧 target 的 pass 追加到唯一计划。
+        self.plan.push_pass(plan);
     }
 
     // 在任何 Device 或 Surface 调用前消费一次性执行资格。
@@ -252,10 +289,8 @@ mod lifecycle_tests {
 
     // 引入统一错误类型和测试结果别名。
     use crate::core::error::{Errc, Result};
-    // 引入 FramePlan 构造所需的最小类型化命令。
-    use crate::draw::backend::frame_plan::{
-        FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef,
-    };
+    // 引入 Renderer pass 夹具所需的最小类型化命令。
+    use crate::draw::backend::frame_plan::FramePlanCommand;
     // 引入 RecordingDevice 所需的薄 RHI 原语。
     use crate::native::present::rhi::{
         DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, LoadAction, RenderTargetHandle,
@@ -382,13 +417,8 @@ mod lifecycle_tests {
 
     // 向 Renderer 帧唯一拥有的计划追加一个有效离屏 pass。
     fn append_offscreen_pass(frame: &mut RhiRendererFrame<'_>) {
-        // 创建显式纹理目标的 render pass。
-        let mut pass = RenderPassPlan::new(
-            // 使用当前帧唯一投影出的类型化 texture 目标。
-            frame.render_target(),
-            // 使用有限的透明清理颜色。
-            LoadAction::Clear(RhiColor::from_premultiplied_rgba([0.0, 0.0, 0.0, 1.0])),
-        );
+        // 创建不携带纹理目标或加载动作的 Renderer pass 命令包。
+        let mut pass = frame.new_pass();
         // 追加一条最小合法命令，满足 FramePlan 不接受空 pass 的共享契约。
         pass.push(FramePlanCommand::ClearRect {
             // 使用有限的预乘颜色执行局部清理。
@@ -405,8 +435,13 @@ mod lifecycle_tests {
                 height: 1,
             },
         });
-        // 把唯一 pass 交给当前帧内部计划。
-        frame.plan_mut().push_pass(pass);
+        // 由当前 Frame owner 绑定唯一纹理目标与加载动作。
+        frame.push_pass(
+            // 使用有限的透明清理颜色。
+            LoadAction::Clear(RhiColor::from_premultiplied_rgba([0.0, 0.0, 0.0, 1.0])),
+            // 转移目标无关的命令包。
+            pass,
+        );
     }
 
     // 第二次 Renderer 帧执行必须拒绝且不得再次 submit。

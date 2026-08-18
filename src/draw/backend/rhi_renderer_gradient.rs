@@ -8,8 +8,8 @@ use crate::native::present::rhi::{
     RhiGradientRasterParams, RhiViewport,
 };
 
-// 引入父 renderer 的帧计划、target 和渐变载荷。
-use super::{FramePlanCommand, FrameUniformPayload, RenderPassPlan, RhiGradientRect, RhiRenderer};
+// 引入父 renderer 的帧命令和渐变载荷。
+use super::{FramePlanCommand, FrameUniformPayload, RhiGradientRect, RhiRenderer};
 
 // 检查渐变 quad 是否保持有限、凸且非退化。
 pub(super) fn valid_gradient_corners(corners: &[[f32; 2]; 4]) -> bool {
@@ -113,10 +113,8 @@ impl RhiRenderer {
         // 准备渐变的固定 RHI 资源。
         let (pipeline, vertex_buffer, uniform_buffer) =
             self.ensure_gradient_resources(frame.device())?;
-        // 从封闭帧作用域取得唯一计划目标。
-        let target = frame.render_target();
-        // 创建 surface 或离屏 pass，并保留调用方的 load/clear 语义。
-        let mut pass = RenderPassPlan::new(target, load);
+        // 创建由封闭帧绑定目标与 load 语义的无目标 pass。
+        let mut pass = frame.new_pass();
         // 在第一个 Gradient draw 前建立静态单位 quad 的类型化内容事实。
         pass.push(FramePlanCommand::UploadVertex {
             // 绑定本次 Gradient 资源创建的静态 vertex buffer。
@@ -144,7 +142,7 @@ impl RhiRenderer {
             )));
         }
         // 将渐变 painter pass 写入封闭帧唯一拥有的计划。
-        frame.plan_mut().push_pass(pass);
+        frame.push_pass(load, pass);
         // surface 计划最终 present，texture 计划只执行离屏 submit。
         frame.execute()?;
         // 资源由 renderer 跨帧复用，不能在这里销毁。

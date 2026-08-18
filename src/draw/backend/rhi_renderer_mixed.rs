@@ -9,9 +9,9 @@ use crate::native::present::rhi::{
 };
 // 引入父 renderer 的帧计划和已完成 lowering 的 payload。
 use super::{
-    FramePlanCommand, FrameUniformPayload, FrameVertexPayload, RenderPassPlan, RhiCoverageQuad,
-    RhiGradientRect, RhiMsdfQuad, RhiRenderer, RhiSampledQuad, RhiShadow, RhiShapeRect,
-    RhiSolidMesh, RhiTexturedQuad,
+    FramePlanCommand, FrameUniformPayload, FrameVertexPayload, RhiCoverageQuad, RhiGradientRect,
+    RhiMsdfQuad, RhiRenderer, RhiSampledQuad, RhiShadow, RhiShapeRect, RhiSolidMesh,
+    RhiTexturedQuad,
 };
 // 将混合操作 ABI 约束检查拆到独立文件，保持执行器文件边界清晰。
 #[path = "rhi_renderer_mixed_contract.rs"]
@@ -420,10 +420,8 @@ impl RhiRenderer {
                 return Err(error);
             }
         }
-        // 从封闭帧作用域取得唯一计划目标。
-        let target = frame.render_target();
-        // 创建一个显式 Surface 或 Offscreen pass。
-        let mut pass = RenderPassPlan::new(target, load);
+        // 创建不携带 target/load 的混合 pass 命令包。
+        let mut pass = frame.new_pass();
         // 所有操作共享同一物理 viewport。
         // 只为本 pass 实际需要的 Gradient 建立一次静态顶点事实。
         if let Some((_, vertex_buffer, _)) = gradient_resources {
@@ -788,7 +786,7 @@ impl RhiRenderer {
             }
         }
         // 将当前 target pass 追加到封闭帧唯一拥有的计划中并保留操作顺序。
-        frame.plan_mut().push_pass(pass);
+        frame.push_pass(load, pass);
         // 封闭帧决定 Surface present 或 Offscreen submit，调用方不再传布尔选择器。
         let execution = frame.execute();
         // 计划结束后只释放本次混合 lowering 创建的临时纹理。

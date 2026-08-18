@@ -11,10 +11,9 @@ use crate::native::present::rhi::{
     SampledTextureBinding, TextureHandle,
 };
 
-// 引入父 renderer 的计划、target、资源载荷和执行器。
+// 引入父 renderer 的帧命令、资源载荷和执行器。
 use super::{
-    FramePlanCommand, FrameUniformPayload, FrameVertexPayload, RenderPassPlan, RenderTargetRef,
-    RhiOp, RhiRenderer, RhiSampledQuad,
+    FramePlanCommand, FrameUniformPayload, FrameVertexPayload, RhiOp, RhiRenderer, RhiSampledQuad,
 };
 
 // 为 RhiRenderer 提供不触发 present 的已有纹理合成入口。
@@ -144,8 +143,10 @@ impl RhiRenderer {
             // 默认 Picture source 使用 premultiplied SrcOver。
             pipeline
         };
-        // 创建不触发 present 的显式纹理 pass。
-        let mut pass = RenderPassPlan::new(RenderTargetRef::Texture(target), load);
+        // 创建只拥有 Device 与纹理目标的封闭帧。
+        let mut frame = super::RhiRendererFrame::offscreen(device, target);
+        // 创建由封闭帧绑定纹理目标与 load 语义的无目标 pass。
+        let mut pass = frame.new_pass();
         // 上传已经存在纹理的类型化 sampled quad 顶点。
         pass.push(FramePlanCommand::UploadVertex {
             buffer: vertex_buffer,
@@ -171,10 +172,8 @@ impl RhiRenderer {
             // Sampled quad 使用封闭的六顶点非索引范围。
             DrawRange::vertices(6),
         )));
-        // 创建只拥有 Device 与纹理目标的封闭帧。
-        let mut frame = super::RhiRendererFrame::offscreen(device, target);
         // 将唯一 sampled pass 写入封闭帧唯一拥有的计划。
-        frame.plan_mut().push_pass(pass);
+        frame.push_pass(load, pass);
         // 只 submit 当前 segment，最终 present 由外层帧边界负责。
         frame.execute()
     }

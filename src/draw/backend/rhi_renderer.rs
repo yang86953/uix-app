@@ -24,8 +24,8 @@ use super::frame_plan::{
 // 将 FramePlan 的 surface/offscreen 执行边界拆到独立文件，保持 renderer 主文件聚焦资源 lowering。
 #[path = "rhi_renderer_execution.rs"]
 mod execution;
-// 向 GPU 组合边界公开封闭的 Surface/Offscreen Renderer 帧。
-pub(crate) use execution::RhiRendererFrame;
+// 向 GPU 组合边界公开封闭 Renderer 帧与无目标 pass 命令包。
+pub(crate) use execution::{RhiRendererFrame, RhiRendererPass};
 // 在离屏多阶段 renderer 中复用 Device-only 执行入口。
 use execution::execute_plan_without_present;
 
@@ -548,10 +548,8 @@ impl RhiRenderer {
         // 准备可复用的 RHI 资源。
         let (pipeline, vertex_buffer, uniform_buffer) =
             self.ensure_solid_resources(frame.device(), max_vertex_bytes)?;
-        // 从封闭帧作用域取得唯一计划目标。
-        let target = frame.render_target();
-        // 创建 surface pass，并保留调用方的 load/clear 语义。
-        let mut pass = RenderPassPlan::new(target, load);
+        // 创建不携带 target/load 的 surface pass 命令包。
+        let mut pass = frame.new_pass();
         // 为每个 mesh 保留 painter order 和独立 scissor。
         for mesh in meshes {
             // 顶点必须是完整的 xy 三角列表。
@@ -590,7 +588,7 @@ impl RhiRenderer {
             )));
         }
         // 将 pass 追加到封闭帧唯一拥有的计划中。
-        frame.plan_mut().push_pass(pass);
+        frame.push_pass(load, pass);
         // 封闭帧决定最终 Surface present 或 Offscreen submit。
         frame.execute()?;
         // 资源由 renderer 跨帧复用，不能在这里销毁。
@@ -716,10 +714,8 @@ impl RhiRenderer {
             // 记录上传完成且可以进入 FramePlan 的 texture。
             textures.push(texture);
         }
-        // 从封闭帧作用域取得唯一计划目标。
-        let target = frame.render_target();
-        // 创建 Surface 或 Offscreen pass，并保留调用方的 load/clear 语义。
-        let mut pass = RenderPassPlan::new(target, load);
+        // 创建不携带 target/load 的纹理 pass 命令包。
+        let mut pass = frame.new_pass();
         // 每个 quad 以独立的 texture binding 和 scissor 保留 painter order。
         for (quad, texture) in quads.iter().zip(textures.iter().copied()) {
             // 每个 quad 根据其 blend 事实选择固定 pipeline。
@@ -809,7 +805,7 @@ impl RhiRenderer {
             )));
         }
         // 将 pass 追加到封闭帧唯一拥有的计划中并保留图片 painter order。
-        frame.plan_mut().push_pass(pass);
+        frame.push_pass(load, pass);
         // 封闭帧决定最终 Surface present 或 Offscreen submit。
         let execution = frame.execute();
         // 计划结束后释放本次图片的临时 texture。
