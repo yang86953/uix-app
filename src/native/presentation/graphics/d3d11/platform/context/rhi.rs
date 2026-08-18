@@ -133,7 +133,11 @@ impl GraphicsSurface for super::D3d11Context {
     // 安排下一次 surface acquire 的 typed surface-lost 结果。
     #[cfg(feature = "test-harness")]
     fn inject_surface_lost_for_test(&mut self) -> Result<()> {
+        // 只有仍存活的 D3D11 owner 才能登记测试 surface 故障。
+        self.ensure_active()?;
+        // 在 owner 状态有效时发布下一次 surface lost 标志。
         self.rhi_surface_lost_for_test = true;
+        // 返回注入成功结果，不触碰真实 Surface 错误映射。
         Ok(())
     }
 }
