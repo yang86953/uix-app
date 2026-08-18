@@ -7,7 +7,7 @@ use crate::core::PresentDamage;
 // 引入薄 RHI 的采样与执行类型。
 use crate::native::present::rhi::{
     DrawPacket, DrawRange, GraphicsContextRhi, GraphicsDevice, GraphicsSurface, LoadAction,
-    RenderTargetHandle, RhiViewport, SampledTextureBinding,
+    RhiViewport, SampledTextureBinding, TextureHandle,
 };
 
 // 引入父 renderer 的计划、target、资源载荷和执行器。
@@ -107,7 +107,7 @@ impl RhiRenderer {
         device: &mut dyn GraphicsDevice,
         viewport: RhiViewport,
         load: LoadAction,
-        target: RenderTargetHandle,
+        target: TextureHandle,
         quad: RhiSampledQuad,
     ) -> Result<()> {
         // sampled quad 必须具有有效的物理 viewport 和目标 geometry。

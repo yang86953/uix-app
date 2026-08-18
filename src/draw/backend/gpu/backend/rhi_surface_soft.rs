@@ -10,7 +10,7 @@ use crate::draw::backend::frame_plan::{
 use crate::draw::backend::rhi_renderer::{RhiRenderer, RhiRendererFrame, RhiTexturedQuad};
 // 引入薄 RHI 的 Device、load、target 与 viewport 类型。
 use crate::native::present::rhi::{
-    GraphicsDevice, LoadAction, RenderTargetHandle, RhiColor, RhiViewport,
+    GraphicsDevice, LoadAction, RhiColor, RhiViewport, TextureHandle,
 };
 
 // 引入 soft staging 的 owner canvas。
@@ -28,7 +28,7 @@ fn supports_soft_upload(scale_x: f32, scale_y: f32) -> bool {
 pub(super) fn clear_empty_soft_target(
     device: &mut dyn GraphicsDevice,
     viewport: RhiViewport,
-    target: RenderTargetHandle,
+    target: TextureHandle,
 ) -> Result<(), Error> {
     // 使用 Clear load action 使没有可见 tile 的首帧仍拥有确定像素。
     let mut pass = RenderPassPlan::new(
@@ -55,7 +55,7 @@ pub(super) fn try_upload_rhi_canvas_soft(
     viewport: RhiViewport,
     scale_x: f32,
     scale_y: f32,
-    target: RenderTargetHandle,
+    target: TextureHandle,
     load: LoadAction,
     // 借用只允许资源、命令与 submit 的 Device 角色。
     device: &mut dyn GraphicsDevice,
@@ -172,7 +172,7 @@ impl GpuBackend {
     // 把主 surface 的透明 soft staging 作为 SrcOver tile 写入 retained texture。
     pub(super) fn try_upload_rhi_surface_soft(
         &mut self,
-        target: RenderTargetHandle,
+        target: TextureHandle,
         load: LoadAction,
     ) -> Result<bool, Error> {
         // 读取当前组合 context 的物理 viewport 与逻辑到物理比例。

@@ -6,9 +6,7 @@ use crate::core::{Errc, Error, Rect};
 use crate::draw::backend::frame_plan::RenderTargetRef;
 // 引入通用 sampled quad 和薄 RHI 的 pass/load 类型。
 use crate::draw::backend::rhi_renderer::RhiSampledQuad;
-use crate::native::present::rhi::{
-    LoadAction, RenderTargetHandle, RhiColor, RhiScissor, RhiViewport, TextureHandle,
-};
+use crate::native::present::rhi::{LoadAction, RhiColor, RhiScissor, RhiViewport, TextureHandle};
 
 // 引入当前 GPU backend owner。
 use super::GpuBackend;
@@ -258,7 +256,7 @@ impl GpuBackend {
                 let target_texture = offscreen.rhi_texture;
                 // 将当前 Picture texture 转成通用 render target 身份。
                 (
-                    RenderTargetRef::Texture(RenderTargetHandle::from_raw(target_texture.raw())),
+                    RenderTargetRef::Texture(target_texture),
                     offscreen.width,
                     offscreen.height,
                     LoadAction::Load,
@@ -310,7 +308,7 @@ impl GpuBackend {
             };
         // 已验证两条分支都只能交付显式纹理目标。
         let target = match target {
-            // 提取 Device-only Renderer 需要的不透明纹理句柄。
+            // 提取 Device-only Renderer 需要的类型化纹理句柄。
             RenderTargetRef::Texture(target) => target,
             // 防御组合边界重新返回主 Surface sentinel。
             RenderTargetRef::Surface => {

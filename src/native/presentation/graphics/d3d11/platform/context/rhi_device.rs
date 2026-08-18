@@ -35,7 +35,7 @@ use ::windows::Win32::Graphics::Dxgi::Common::{
 };
 
 // 引入 context 父模块的 D3D11 状态、swapchain 事实和 surface target 身份。
-use super::{D3d11Context, D3d11IndexBinding, RHI_SURFACE_TARGET_RAW};
+use super::{D3d11Context, D3d11IndexBinding};
 
 // 把资源生命周期拆到独立文件，保持每个代码文件处于可审阅的尺寸内。
 #[path = "rhi_device_resources.rs"]
@@ -153,10 +153,10 @@ impl D3d11RhiDevice {
         self.textures.get(handle)
     }
 
-    // 通过 render target 句柄读取对应 texture。
-    fn target_texture(&self, raw: u64) -> Result<&D3d11RhiTexture> {
-        // RHI target 和 texture 共用同一个不透明资源身份。
-        self.texture(TextureHandle::from_raw(raw))
+    // 通过封闭 render target 携带的 texture 身份读取资源。
+    fn target_texture(&self, texture: TextureHandle) -> Result<&D3d11RhiTexture> {
+        // 直接查询同一类型化资源身份，不执行裸数值重建。
+        self.texture(texture)
     }
 
     // 将共享纹理格式机械映射为唯一 DXGI 格式。
@@ -423,7 +423,7 @@ impl GraphicsDevice for D3d11Context {
         }
         // 解析 surface 或离屏纹理目标，同时复制 COM view 避免借用跨越状态更新。
         let (rtv, extent) =
-            if target.raw() == RHI_SURFACE_TARGET_RAW {
+            if target.is_surface() {
                 // surface target 使用当前 swapchain backbuffer。
                 self.ensure_rtv()?;
                 // 没有 RTV 就不能开始 surface pass。
@@ -436,7 +436,13 @@ impl GraphicsDevice for D3d11Context {
                 (rtv, extent)
             } else {
                 // 离屏 target 必须指向已创建且可渲染的 RHI texture。
-                let texture = self.rhi_device.target_texture(target.raw())?;
+                let texture_handle = target
+                    // 该分支已经排除 Surface，必须携带 texture 身份。
+                    .texture()
+                    // 封闭枚举保证此错误只防御未来错误重构。
+                    .ok_or_else(|| rhi_platform("D3d11 RHI target kind is invalid"))?;
+                // 从资源表查询同一类型化 texture 身份。
+                let texture = self.rhi_device.target_texture(texture_handle)?;
                 // 复制 texture 的 RTV 和尺寸后再修改 pass 状态。
                 let rtv =
                     texture.rtv.as_ref().cloned().ok_or_else(|| {

@@ -31,7 +31,7 @@ fn context_execution_modes_share_one_ordered_device_path() {
     // 创建只提交离屏纹理计划的组合 context。
     let mut offscreen_context = recording_context(token);
     // 构造不接收 SurfaceToken 的显式 texture 计划。
-    let offscreen_plan = test_offscreen_plan(RenderTargetHandle::from_raw(9));
+    let offscreen_plan = test_offscreen_plan(TextureHandle::from_raw(9));
     // 计划自身必须证明它不会进入 acquire 或 present。
     assert!(!offscreen_plan.targets_surface());
     // 执行离屏计划并仅取得 submission。

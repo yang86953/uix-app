@@ -9,8 +9,8 @@ use crate::core::error::{Errc, Error, Result};
 use crate::native::present::{GraphicsContextLifecycle, PresentTestResult};
 // 引入薄 RHI 的 surface 原语。
 use crate::native::present::rhi::{
-    GraphicsSurface, GraphicsSurfaceCapabilities, RenderTargetHandle, RhiExtent,
-    RhiPresentTransaction, RhiScissor, RhiSurfaceReadback, SurfaceFrame, SurfaceToken,
+    GraphicsSurface, GraphicsSurfaceCapabilities, RhiExtent, RhiPresentTransaction, RhiScissor,
+    RhiSurfaceReadback, SurfaceFrame, SurfaceToken,
 };
 
 // 为 D3D11 context 实现 surface acquire/resize/present。
@@ -50,10 +50,7 @@ impl GraphicsSurface for super::D3d11Context {
         // 确保 backbuffer RTV 已经创建，避免 plan 在第一条 pass 才失败。
         self.ensure_rtv()?;
         // 返回当前代际和保留的 surface target 身份。
-        Ok(SurfaceFrame::new(
-            self.token(),
-            RenderTargetHandle::from_raw(super::RHI_SURFACE_TARGET_RAW),
-        ))
+        Ok(SurfaceFrame::new(self.token()))
     }
 
     // 按物理 extent 重建 swapchain，并把输入转换回窗口逻辑尺寸。
@@ -118,8 +115,6 @@ impl GraphicsSurface for super::D3d11Context {
             transaction,
             // 使用当前 swapchain 的代际与 extent。
             self.token(),
-            // 使用 acquire 发布的唯一保留目标。
-            RenderTargetHandle::from_raw(super::RHI_SURFACE_TARGET_RAW),
         )?;
         // 重新绑定 swapchain target，恢复兼容 context 的 owner 状态和 RTV 绑定。
         self.bind_swapchain_target()?;

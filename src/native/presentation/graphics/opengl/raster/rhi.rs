@@ -10,13 +10,7 @@ use crate::native::present::rhi::{
     ValidatedRhiPresent,
 };
 // 复用父模块中的 OpenGL pipeline 和资源设备类型。
-use super::{
-    OpenGlRasterPipeline,
-    rhi_device::{OpenGlRhiDevice, RHI_SURFACE_TARGET_RAW},
-};
-
-// 将 surface target 身份重新导出给 WGL/EGL surface bridge。
-pub(crate) const OPENGL_RHI_SURFACE_TARGET_RAW: u64 = RHI_SURFACE_TARGET_RAW;
+use super::{OpenGlRasterPipeline, rhi_device::OpenGlRhiDevice};
 
 // 为 OpenGlRasterPipeline 提供通用 RHI 资源和命令转发。
 impl OpenGlRasterPipeline {
@@ -216,13 +210,11 @@ impl OpenGlRasterPipeline {
         transaction: RhiPresentTransaction,
         // 接收宿主当前 drawable token。
         current_token: SurfaceToken,
-        // 接收 acquire 发布的唯一目标身份。
-        expected_target: RenderTargetHandle,
     ) -> Result<ValidatedRhiPresent> {
         // 只向 Device Component 传递动态事实，不在 bridge 重复解释规则。
         self.rhi
             // 共享门禁同时核对 frame、目标和最近提交。
-            .validate_present(transaction, current_token, expected_target)
+            .validate_present(transaction, current_token)
     }
 
     // 返回当前 swapchain 的物理 extent。

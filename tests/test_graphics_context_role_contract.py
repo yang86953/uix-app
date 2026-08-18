@@ -114,8 +114,8 @@ class GraphicsContextRoleContractTests(unittest.TestCase):
         blur = (ROOT / "src/draw/backend/rhi_renderer_blur.rs").read_text(encoding="utf-8")
         # Blur 模块不得依赖组合上下文类型。
         self.assertNotIn("GraphicsContextRhi", blur)
-        # Blur 最终目标必须是无法表示 Surface 的不透明 Device handle。
-        self.assertIn("target: RenderTargetHandle", blur)
+        # Blur 最终目标必须是无法表示 Surface 的类型化 texture handle。
+        self.assertIn("target: TextureHandle", blur)
         # Blur 计划必须直接建立 Offscreen 作用域。
         self.assertIn("let mut plan = super::FramePlan::offscreen();", blur)
         # 离屏 Blur helper 不得再接收或伪造最终 present damage。
@@ -126,8 +126,8 @@ class GraphicsContextRoleContractTests(unittest.TestCase):
         sampled_offscreen = sampled[sampled.index("pub(crate) fn execute_sampled_quad_without_present(") :]
         # sampled 离屏 helper 必须直接取得 Device 角色。
         self.assertIn("device: &mut dyn GraphicsDevice", sampled_offscreen)
-        # sampled 离屏 helper 必须取得无法表示 Surface 的目标句柄。
-        self.assertIn("target: RenderTargetHandle", sampled_offscreen)
+        # sampled 离屏 helper 必须取得无法表示 Surface 的 texture 句柄。
+        self.assertIn("target: TextureHandle", sampled_offscreen)
         # sampled 离屏 helper 不得重新取得组合 context。
         self.assertNotIn("context: &mut dyn GraphicsContextRhi", sampled_offscreen)
         # sampled 离屏 helper 不得接收最终 present damage。
@@ -234,8 +234,8 @@ class GraphicsContextRoleContractTests(unittest.TestCase):
             self.assertIn("device: &mut dyn GraphicsDevice", source)
             # extent 是统一物理几何的唯一范围事实。
             self.assertIn("extent: RhiExtent", source)
-            # RenderTargetHandle 从类型上排除主 Surface sentinel。
-            self.assertIn("target: RenderTargetHandle", source)
+            # TextureHandle 从签名上排除主 Surface 目标。
+            self.assertIn("target: TextureHandle", source)
         # 物理几何 helper 必须直接接收 API 无关的 extent。
         geometry = submit[submit.index("pub(crate) fn rhi_physical_geometry(") : submit.index("fn rhi_physical_scissor(")]
         # 几何换算不得隐式读取组合 Surface。

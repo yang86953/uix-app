@@ -8,7 +8,7 @@ use crate::draw::backend::frame_plan::{
 };
 // 引入薄 RHI 的组合 context、目标和搬移原语。
 use crate::native::present::rhi::{
-    LoadAction, RenderTargetHandle, RhiExtent, RhiTextureTransfer, TextureHandle, TextureMove,
+    LoadAction, RhiExtent, RhiTextureTransfer, TextureHandle, TextureMove,
 };
 
 // 引入当前 GPU backend 和待处理的逻辑搬移记录。
@@ -264,11 +264,8 @@ impl GpuBackend {
         // 在移动集合被按序转入 FramePlan 前保存本次可验证命令数量。
         let movement_count = movements.len();
         // 创建一个保留旧颜色的 retained target pass。
-        // 同一 opaque texture 同时承担 move source/destination 和 pass target。
-        let render_target = RenderTargetHandle::from_raw(target.raw());
-        // 创建一个保留旧颜色的 retained target pass。
-        let mut pass =
-            RenderPassPlan::new(RenderTargetRef::Texture(render_target), LoadAction::Load);
+        // 同一类型化 texture 同时承担 move source/destination 和 pass target。
+        let mut pass = RenderPassPlan::new(RenderTargetRef::Texture(target), LoadAction::Load);
         // 加入非破坏性的 viewport 命令，使 move-only 计划满足 FramePlan 的 pass 契约。
         pass.push(FramePlanCommand::SetViewport(viewport));
         // retained texture 移动只属于 device，不依赖 swapchain generation。

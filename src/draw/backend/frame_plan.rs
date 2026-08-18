@@ -10,9 +10,8 @@ use crate::core::error::{Errc, Error, Result};
 use crate::core::PresentDamage;
 // 引入 platform 私有的薄 RHI 原语。
 use crate::native::present::rhi::{
-    DrawPacket, GraphicsContextRhi, GraphicsDevice, LoadAction, RenderTargetHandle, RhiColor,
-    RhiScissor, RhiViewport, SampledTextureBinding, SubmissionHandle, SurfaceToken, TextureCopy,
-    TextureMove,
+    DrawPacket, GraphicsContextRhi, GraphicsDevice, LoadAction, RhiColor, RhiScissor, RhiViewport,
+    SampledTextureBinding, SubmissionHandle, SurfaceToken, TextureCopy, TextureHandle, TextureMove,
 };
 // 将不触发 surface present 的离屏执行边界拆到独立文件。
 #[path = "frame_plan_execution.rs"]
@@ -31,7 +30,7 @@ pub(crate) enum RenderTargetRef {
     // 指向当前 acquired surface image。
     Surface,
     // 指向 device 管理的离屏 render target。
-    Texture(RenderTargetHandle),
+    Texture(TextureHandle),
 }
 
 // 描述 pass 内已经排序的低层命令。
@@ -547,8 +546,6 @@ mod tests {
     struct RecordingSurface {
         // 保存当前 surface token。
         token: SurfaceToken,
-        // 保存 surface render target。
-        target: RenderTargetHandle,
         // 保存最终 present 次数。
         present_count: usize,
         // 保存是否强制最终 present 失败。
@@ -566,7 +563,7 @@ mod tests {
         // 返回当前 acquired image。
         fn acquire(&mut self) -> Result<SurfaceFrame> {
             // 构造与当前 token 匹配的 frame。
-            Ok(SurfaceFrame::new(self.token, self.target))
+            Ok(SurfaceFrame::new(self.token))
         }
 
         // 推进代际并更新 extent。
@@ -737,8 +734,6 @@ mod tests {
             surface: RecordingSurface {
                 // 保存调用方提供的 surface token。
                 token,
-                // 使用稳定的不透明测试目标。
-                target: RenderTargetHandle::from_raw(2),
                 // 初始尚未发生最终 present。
                 present_count: 0,
                 // 默认允许 present 成功。

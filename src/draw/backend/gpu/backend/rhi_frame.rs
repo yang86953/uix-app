@@ -21,8 +21,8 @@ use crate::draw::painting::{
 // 引入薄 RHI 的执行类型。
 // 引入薄 RHI 的执行、目标和纹理搬移类型。
 use crate::native::present::rhi::{
-    GraphicsDevice, LoadAction, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, RhiViewport,
-    TextureHandle, TextureMove,
+    GraphicsDevice, LoadAction, RhiColor, RhiExtent, RhiScissor, RhiViewport, TextureHandle,
+    TextureMove,
 };
 // 引入当前 GPU backend。
 use super::GpuBackend;
@@ -667,7 +667,7 @@ fn lower_frame_scroll_move(
 // 在不触发 swapchain present 的前提下执行一条纹理搬移 boundary。
 fn execute_frame_texture_move(
     device: &mut dyn GraphicsDevice,
-    target: RenderTargetHandle,
+    target: TextureHandle,
     viewport: RhiViewport,
     movement: TextureMove,
 ) -> Result<(), Error> {
@@ -725,8 +725,8 @@ impl GpuBackend {
         let target = if target_is_surface {
             // 在当前 owner-thread context 上确保本代际 retained texture 存在。
             let texture = self.ensure_rhi_surface_texture()?;
-            // 通过通用 render target handle 把 texture 交给离屏 FramePlan。
-            RenderTargetRef::Texture(RenderTargetHandle::from_raw(texture.raw()))
+            // 直接把类型化 texture 交给离屏 FramePlan。
+            RenderTargetRef::Texture(texture)
         } else {
             // Picture target 已经由调用方提供其专属 RHI texture。
             target
@@ -759,8 +759,8 @@ impl GpuBackend {
                 "FrameEncoder RHI lowering requires a texture target",
             ));
         };
-        // 将 render target 身份转换为 TextureMove 所需的纹理身份。
-        let target_texture = TextureHandle::from_raw(target_handle.raw());
+        // FramePlan 已直接保存 TextureMove 所需的同一纹理身份。
+        let target_texture = target_handle;
         // 读取 scroll 边界校验所需的物理纹理 extent。
         let target_extent = if target_is_surface {
             // 主 surface 的 extent 来自当前组合 context 代际。

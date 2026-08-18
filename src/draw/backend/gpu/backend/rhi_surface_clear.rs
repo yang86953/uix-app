@@ -7,9 +7,7 @@ use crate::draw::backend::frame_plan::{
     FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef,
 };
 // 引入薄 RHI 的颜色、目标、viewport 和 surface 代际类型。
-use crate::native::present::rhi::{
-    LoadAction, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor,
-};
+use crate::native::present::rhi::{LoadAction, RhiColor, RhiExtent, RhiScissor, TextureHandle};
 // 引入所属 graphics backend Module 的主 surface 清理原语。
 use super::super::GpuSolidRect;
 
@@ -83,7 +81,7 @@ impl GpuBackend {
     // 将 pending clear rects 写入 retained texture，但不触发 swapchain present。
     pub(super) fn try_clear_rhi_surface_rects(
         &mut self,
-        target: RenderTargetHandle,
+        target: TextureHandle,
     ) -> Result<bool, Error> {
         // 没有局部清理时不改变当前 RHI 状态。
         if self.surface.pending_clear_rects.is_empty() {

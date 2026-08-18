@@ -237,7 +237,7 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         # 活动目标、extent、scissor 与绑定必须由一个原子值共同生灭。
         self.assertIn("active: Option<ActiveRhiPass>", pass_state)
         # 目标反馈环必须从原子绑定读取纹理并在 API 无关层拒绝。
-        self.assertIn("if active.target.raw() == binding.texture().raw()", pass_state)
+        self.assertIn("if active.target.texture() == Some(binding.texture())", pass_state)
         # OpenGL 必须把 pass 开始委托给共享状态机。
         self.assertIn("self.pass.begin(target, extent, load)?;", opengl)
         # D3D11 必须把同一转换委托给共享状态机。

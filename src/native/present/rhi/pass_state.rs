@@ -244,7 +244,7 @@ impl RhiPassState {
             // 延迟构造错误。
             .ok_or_else(|| invalid_state("RHI texture binding has no active pass"))?;
         // 禁止同一离屏纹理同时作为当前输出与采样输入。
-        if active.target.raw() == binding.texture().raw() {
+        if active.target.texture() == Some(binding.texture()) {
             // 返回共享反馈环错误，避免依赖驱动隐式解绑行为。
             return Err(invalid_argument("RHI texture feedback loop is invalid"));
         }
@@ -265,7 +265,7 @@ impl RhiPassState {
         // 只比较 API 无关身份，不借用或解释原生 view。
         self.active
             // 取得可能存在的活动目标。
-            .is_some_and(|active| active.target.raw() == texture.raw())
+            .is_some_and(|active| active.target.texture() == Some(texture))
     }
 
     // 清除被销毁纹理留下的采样绑定身份。
@@ -339,7 +339,7 @@ mod tests {
     };
 
     // 创建稳定的测试目标身份。
-    const TARGET: RenderTargetHandle = RenderTargetHandle::from_raw(7);
+    const TARGET: RenderTargetHandle = RenderTargetHandle::for_texture(TextureHandle::from_raw(7));
     // 创建与目标不同的采样纹理身份。
     const TEXTURE: TextureHandle = TextureHandle::from_raw(8);
     // 创建稳定的采样器身份。
@@ -449,8 +449,8 @@ mod tests {
             .begin(TARGET, RhiExtent::new(20, 10), LoadAction::Load)
             // 测试设置必须成功。
             .expect("pass should begin");
-        // 把目标自身转换成纹理身份以模拟反馈环。
-        let target_texture = TextureHandle::from_raw(TARGET.raw());
+        // 从封闭目标中取得同一纹理身份以模拟反馈环。
+        let target_texture = TARGET.texture().expect("target should be a texture");
         // 组装一个输入纹理与当前目标相同的完整绑定。
         let feedback_binding = SampledTextureBinding::new(target_texture, SAMPLER);
         // 当前 render target 不能同时作为 sampled source。

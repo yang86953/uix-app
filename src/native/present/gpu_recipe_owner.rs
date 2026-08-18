@@ -254,10 +254,8 @@ mod tests {
         fn acquire(&mut self) -> crate::core::Result<SurfaceFrame> {
             // 使用非零目标身份模拟成功 acquire。
             Ok(SurfaceFrame::new(
-                // 保持 frame 与当前 surface 同代。
+                // 保持 frame 与当前 surface 同代，目标种类由类型固定为 Surface。
                 self.token(),
-                // 测试 target 不映射任何原生对象。
-                RenderTargetHandle::from_raw(1),
             ))
         }
 

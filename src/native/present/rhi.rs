@@ -47,6 +47,8 @@ mod texture;
 mod resource_table;
 // PresentTransaction Component 绑定 acquire、submit 与 damage 并统一 Surface 门禁。
 mod present_transaction;
+// RenderTarget Component 封闭 Surface 与 texture 两种互斥目标身份。
+mod render_target;
 // 向 Drawing System 与各原生 Adapter 暴露同一份类型化 pipeline 契约。
 #[allow(unused_imports)]
 pub(crate) use pipeline::{
@@ -93,6 +95,8 @@ pub(crate) use texture::{TextureDesc, TextureFormat};
 pub(crate) use resource_table::{RhiResourceHandle, RhiResourceTable};
 // 向 FramePlan 与两个 Adapter 暴露不可拆的 Surface 呈现事务。
 pub(crate) use present_transaction::{RhiPresentTransaction, SurfaceFrame, ValidatedRhiPresent};
+// 向 FramePlan、pass 状态与 Adapter 暴露不含裸哨兵的目标身份。
+pub(crate) use render_target::RenderTargetHandle;
 // 向 Drawing System 暴露唯一 Gradient 常量构造器和固定字节数。
 pub(crate) use gradient::{GRADIENT_UNIFORM_BYTES, RhiGradientRasterParams};
 // 只有 OpenGL Adapter 需要把共享 Gradient 字节 ABI 映射为逐个原生 uniform。
@@ -229,8 +233,6 @@ opaque_resource_handle!(TextureHandle, "texture");
 opaque_resource_handle!(SamplerHandle, "sampler");
 // 声明固定 pipeline 句柄。
 opaque_resource_handle!(PipelineHandle, "pipeline");
-// 声明 render target 句柄。
-opaque_handle!(RenderTargetHandle);
 // 声明一次 submit 返回的提交序号。
 opaque_handle!(SubmissionHandle);
 // 将提交身份签发和最新值校验收归 API 无关的共享状态机。

@@ -204,7 +204,7 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
     // 在 1x1 离屏颜色 target 上执行真实的 pass、draw 和 submit。
     device.begin_render_pass(
         // 把探针 texture 解释为 render target 句柄。
-        RenderTargetHandle::from_raw(rgba_texture.raw()),
+        RenderTargetHandle::for_texture(rgba_texture),
         // 以透明色清空目标。
         LoadAction::Clear(RhiColor::transparent()),
     )?;
