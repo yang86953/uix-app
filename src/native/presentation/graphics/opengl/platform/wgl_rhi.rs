@@ -5,8 +5,8 @@ use super::WglContext;
 use crate::native::presentation::graphics::opengl::rhi_host::OpenGlRhiHost;
 // 引入 WGL owner 持有的 raster pipeline 类型。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
-// 引入 surface resize 使用的物理 extent 类型。
-use crate::native::present::rhi::RhiExtent;
+// 引入已经通过共享门禁的 surface resize 事务。
+use crate::native::present::rhi::RhiSurfaceResizeTransaction;
 // 引入共享 present damage 类型。
 use crate::native::present::{GraphicsContextLifecycle, PresentDamage};
 // 引入窗口 drawable 尺寸换算辅助函数。
@@ -40,8 +40,15 @@ impl OpenGlRhiHost for WglContext {
         self.surface_generation
     }
 
-    // 将物理 extent 转回窗口逻辑尺寸并进入原生 drawable resize helper。
-    fn rhi_resize_surface(&mut self, extent: RhiExtent) -> Result<(), Error> {
+    // 将已验证物理 extent 转回窗口逻辑尺寸并进入原生 drawable resize helper。
+    fn rhi_resize_surface(
+        // 借用当前 WGL owner。
+        &mut self,
+        // 接收共享门禁冻结的目标 extent。
+        resize: RhiSurfaceResizeTransaction,
+    ) -> Result<(), Error> {
+        // 读取事务中不可替换的请求 extent。
+        let extent = resize.extent();
         // 相同物理尺寸无需重复重建 drawable。
         if self.pipeline.rhi_surface_extent() == extent {
             // 把已满足的 resize 请求视为成功。
