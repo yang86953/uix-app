@@ -14,7 +14,9 @@ use std::time::Duration;
 
 const SOFT_FALLBACK_IDLE_PRESENT_GRACE: u8 = 2;
 pub(crate) const SOFT_FALLBACK_IDLE_TIME_GRACE: Duration = Duration::from_millis(250);
+// Drawing GPU Module 私有拥有固定 pipeline 的 FramePlan 启动探针。
 pub(crate) mod backend;
+mod device_probe;
 // 隐藏 graphics backend 私有的 renderer 能力投影实现。
 pub(crate) mod canvas;
 pub(crate) mod canvas2d;
@@ -38,3 +40,7 @@ pub(crate) use primitives::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect,
 };
+
+// 将 GPU 启动探针的动态资源与 FramePlan 生命周期测试归属 Drawing GPU Module。
+#[cfg(test)]
+mod device_probe_tests;

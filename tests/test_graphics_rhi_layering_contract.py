@@ -142,18 +142,18 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
         # 读取唯一生产 GPU recipe owner。
         owner = (ROOT / "src/native/present/gpu_recipe_owner.rs").read_text(encoding="utf-8")
+        # 读取 Drawing GPU Module 私有的 FramePlan 启动探针。
+        probe = (ROOT / "src/draw/backend/gpu/device_probe.rs").read_text(encoding="utf-8")
         # 读取 OpenGL Device Adapter 门面。
         opengl = (ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs").read_text(encoding="utf-8")
         # Device 必须分别声明原生 context 激活和健康维护。
         self.assertIn("fn activate(&mut self) -> Result<()>", rhi)
         # 健康维护不得被删除或重新混入 Surface。
         self.assertIn("fn maintain(&mut self) -> Result<()>", rhi)
-        # bootstrap probe 必须先激活再检查健康。
-        probe = rhi[rhi.index("fn probe(&mut self)") : rhi.index("fn create_buffer", rhi.index("fn probe(&mut self)"))]
-        # 探针必须自行建立 owner-context 可用性。
-        self.assertIn("self.activate()?;", probe)
-        # 探针必须在创建资源前检查设备健康。
-        self.assertIn("self.maintain()?;", probe)
+        # Drawing probe 只接收 owner 已激活的 Device，并在创建资源前检查健康。
+        self.assertIn("GraphicsDevice::maintain(device)?;", probe)
+        # 健康检查必须先于探针资源事务。
+        self.assertLess(probe.index("GraphicsDevice::maintain(device)?;"), probe.index("ProbeScope::new()"))
         # 组合 owner 借用必须激活当前原生 context。
         context_borrow = owner[owner.index("pub(crate) fn rhi_context(") : owner.index("pub(crate) fn resize_surface(")]
         # 激活责任必须由唯一 owner 承担，不泄漏给 Drawing 调用方。

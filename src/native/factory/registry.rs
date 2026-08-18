@@ -200,7 +200,7 @@ fn try_create_context(
         // 所有交叉组合都表示 adapter 构造契约破坏。
         _ => false,
     };
-    // 在进入 probe 或 renderer 前拒绝 context 类型与 recipe 轴不一致。
+    // 在进入 Drawing renderer 前拒绝 context 类型与 recipe 轴不一致。
     if !context_matches_recipe {
         // 构造稳定错误，禁止把类型错配伪装成运行期能力缺失。
         let error = Error::new(
@@ -243,20 +243,8 @@ fn try_create_context(
             // 检查式关闭类型化 owner，并保留可能的双重失败。
             return shutdown_context_with_error(&mut context, error);
         }
-        // 首帧前从同一类型化 owner 执行真实资源与固定 pipeline probe。
-        let probe_result = match gpu_context.rhi_context() {
-            // 在同一借用内执行真实资源与 pipeline probe。
-            Ok(rhi) => rhi.device().probe(),
-            // 保留 owner-thread 或设备状态的 typed failure。
-            Err(error) => Err(error),
-        };
-        // probe 失败时保持原始 typed error，并先释放已经创建的 owner 资源。
-        if let Err(error) = probe_result {
-            // 检查式关闭已创建的原生资源，并保留原始 probe 失败。
-            return shutdown_context_with_error(&mut context, error);
-        }
-        // 记录首帧前已经通过真实资源与固定 pipeline 编译的 adapter。
-        tracing::info!("Graphics recipe {expected}: atomic GPU recipe probe passed");
+        // native factory 到此只建立薄 RHI 能力事实；Drawing 固定 pipeline 探针由上层 GPU Module 执行。
+        tracing::info!("Graphics recipe {expected}: native Device and Surface contract passed");
     }
     // 把 context 绑定到 owner thread；静态快照继续由验证记录独立持有。
     let context = bind_to_current_thread(context);
@@ -359,7 +347,7 @@ pub(crate) fn try_create_gpu_recipe_with_queue(
     })?;
     // Only the native factory bridge unwraps the opaque surface handle before
     // it reaches an API/platform constructor.
-    // 先通过精确 registry 行创建并 probe 迁移期 context 与静态快照。
+    // 先通过精确 registry 行创建并验证 native context 与静态快照。
     let ValidatedGraphicsContext { context, caps } = try_create_context(
         entry,
         native_surface.as_raw(),

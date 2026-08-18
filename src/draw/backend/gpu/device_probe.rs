@@ -1,17 +1,21 @@
-//! GPU bootstrap 阶段对共享 RHI 基线和 Shape ABI 的真实命令探针。
+//! Drawing GPU Module 对共享 FramePlan、固定 pipeline 与 Shape ABI 的启动探针。
 
-// 引入探针创建、绘制、提交和销毁所需的共享 RHI 类型。
-use super::{
-    BufferDesc, BufferHandle, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineBinding,
-    PipelineDesc, PipelineKind, RhiBufferUpload, RhiColor, RhiExtent, RhiMeshRasterParams,
-    RhiScissor, RhiShapeRasterParams, RhiTextureRegion, RhiTextureTransfer, RhiTextureUpload,
-    RhiViewport, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
-    TextureMove,
-};
 // 引入统一结果类型。
 use crate::core::{Error, Result};
+// 引入 Drawing 唯一拥有的类型化 FramePlan 及其离屏 pass 命令。
+use crate::draw::backend::frame_plan::{
+    FramePlan, FramePlanCommand, FrameUniformPayload, FrameVertexPayload, RenderPassPlan,
+    RenderTargetRef,
+};
+// 引入探针创建、绘制和销毁所需的共享薄 RHI 类型。
+use crate::native::present::rhi::{
+    BufferDesc, BufferHandle, DrawPacket, DrawRange, GraphicsDevice, LoadAction, PipelineBinding,
+    PipelineDesc, PipelineKind, RhiColor, RhiExtent, RhiMeshRasterParams, RhiScissor,
+    RhiShapeRasterParams, RhiTextureRegion, RhiTextureTransfer, RhiTextureUpload, RhiViewport,
+    SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle, TextureMove,
+};
 
-// 按创建顺序保存探针资源，并封闭 pass 与清理生命周期。
+// 按创建顺序保存探针资源，并封闭检查式清理生命周期。
 struct ProbeScope {
     // 保存已经创建的 buffer。
     buffers: Vec<BufferHandle>,
@@ -21,13 +25,11 @@ struct ProbeScope {
     samplers: Vec<SamplerHandle>,
     // 保存已经创建的 pipeline。
     pipelines: Vec<PipelineBinding>,
-    // 记录 begin_render_pass 是否成功完成。
-    pass_open: bool,
 }
 
-// 为探针提供资源登记、pass 状态和全局逆序清理。
+// 为探针提供资源登记和全局逆序清理。
 impl ProbeScope {
-    // 创建一个尚未持有资源且没有打开 pass 的作用域。
+    // 创建一个尚未持有资源的作用域。
     fn new() -> Self {
         // 返回空的资源登记表。
         Self {
@@ -39,8 +41,6 @@ impl ProbeScope {
             samplers: Vec::new(),
             // 初始没有 pipeline。
             pipelines: Vec::new(),
-            // 初始没有打开 pass。
-            pass_open: false,
         }
     }
 
@@ -76,21 +76,10 @@ impl ProbeScope {
         pipeline
     }
 
-    // 先结束打开的 pass，再按资源全局创建逆序持续销毁并保留首错。
+    // 按资源全局创建逆序持续销毁并保留首错。
     fn cleanup<D: GraphicsDevice + ?Sized>(&mut self, device: &mut D) -> Result<()> {
         // 记录第一个清理失败，后续失败不能阻断剩余资源销毁。
         let mut first_error: Option<Error> = None;
-        // 打开 pass 必须先尝试结束，避免资源销毁跨越 pass 生命周期。
-        if self.pass_open {
-            // 即使 end 失败也继续后续资源清理。
-            if let Err(error) = device.end_render_pass() {
-                // 保留首个清理错误。
-                first_error = Some(error);
-            } else {
-                // 只有成功结束后才关闭本地 pass 状态。
-                self.pass_open = false;
-            }
-        }
         // 按 pipeline 创建逆序销毁全部 pipeline。
         while let Some(pipeline) = self.pipelines.pop() {
             // 记录 pipeline 销毁失败但继续清理。
@@ -138,8 +127,12 @@ impl ProbeScope {
 
 // 在 bootstrap 阶段执行最小资源、固定 pipeline、Solid 和 Shape 命令探针。
 pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result<()> {
+    // 资源创建前先确认已经激活的 Device 仍保持健康。
+    GraphicsDevice::maintain(device)?;
     // 创建共享作用域，使主体任意失败都进入统一清理路径。
     let mut scope = ProbeScope::new();
+    // 冻结本次探针使用的 Device 能力，禁止资源创建期间改变可选命令集合。
+    let capabilities = device.device_capabilities();
     // 执行探针主体，保留原始主错误直到清理完成。
     let probe_result = (|| -> Result<()> {
         // 单位 quad 前三个顶点同时形成 solid 探针所需的最小三角形。
@@ -158,22 +151,15 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
             0.0,    // 左下。
             1.0,
         ];
-        // 把单位 quad 编码为共享 host 上的紧密 float 字节。
-        let mut vertex_bytes = Vec::with_capacity(unit_vertices.len() * std::mem::size_of::<f32>());
-        // 逐个保持顶点 IEEE float 表示。
-        for value in unit_vertices {
-            // adapter 与 probe 在同一 host，使用 native-endian ABI。
-            vertex_bytes.extend_from_slice(&value.to_ne_bytes());
-        }
+        // 将单位 quad 收归 FramePlan 的封闭 position-float2 载荷。
+        let vertex_payload = FrameVertexPayload::position_f32x2(unit_vertices);
         // 创建 Solid 与 Shape 共用的真实单位 quad 顶点 buffer。
         let vertex_buffer = scope.track_buffer(device.create_buffer(BufferDesc::vertex(
-            // 六个 float2 顶点占四十八字节。
-            vertex_bytes.len(),
-            // 两个 float 组成一个 position。
-            PipelineKind::SolidMesh.contract().vertex.stride_bytes(),
+            // 字节容量只从类型化顶点载荷派生。
+            vertex_payload.size_bytes(),
+            // stride 只从同一载荷声明的共享布局派生。
+            vertex_payload.layout().stride_bytes(),
         ))?);
-        // 上传单位 quad，避免零顶点只能验证命令而不能覆盖 Shape 插值。
-        device.update_buffer(RhiBufferUpload::new(vertex_buffer, &vertex_bytes))?;
         // 创建 Solid mesh 所需的 32 字节 uniform ABI。
         let solid_uniform_buffer =
             scope.track_buffer(device.create_buffer(BufferDesc::uniform(
@@ -192,15 +178,6 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
             // 使用透明颜色填充 Solid 探针。
             [0.0; 4],
         );
-        // 编码共享 Solid ABI 为紧密 native-endian 字节。
-        let solid_uniform_bytes = solid_params.encode_ne_bytes();
-        // 上传有限 viewport、padding 和透明颜色常量。
-        device.update_buffer(RhiBufferUpload::new(
-            // 绑定刚创建的 Solid Uniform。
-            solid_uniform_buffer,
-            // 上传共享 Solid ABI 字节。
-            &solid_uniform_bytes,
-        ))?;
         // 使用共享 Shape 值对象构造一个真实描边探针。
         let shape_params = RhiShapeRasterParams::new(
             // 使用最小 render target 的物理视口。
@@ -219,21 +196,12 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
             // 使用非零半宽确保执行描边与同心双 SDF 分支。
             0.125,
         );
-        // 编码完整共享 Shape ABI。
-        let shape_uniform_bytes = shape_params.encode_ne_bytes();
         // 创建 Shape 固定 ABI uniform buffer。
         let shape_uniform_buffer =
             scope.track_buffer(device.create_buffer(BufferDesc::uniform(
                 // 使用共享常量，禁止 probe 与 renderer 产生布局分叉。
                 PipelineKind::ShapeRect.contract().uniform.size_bytes(),
             ))?);
-        // 上传会真实触发描边分支的 Shape 参数。
-        device.update_buffer(RhiBufferUpload::new(
-            // 绑定 Shape Uniform 身份。
-            shape_uniform_buffer,
-            // 上传共享值对象编码的完整常量块。
-            &shape_uniform_bytes,
-        ))?;
         // 使用最小的 RGBA texture 验证 render target 颜色格式。
         let rgba_texture = scope.track_texture(device.create_texture(TextureDesc::new(
             // 使用一像素离屏目标。
@@ -298,18 +266,18 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
             // 上传单个透明像素。
             &[0, 0, 0, 0],
         ))?;
-        // 只有声明区域移动能力的 adapter 才进入 retained framebuffer 探针。
-        if device.device_capabilities().texture_region_move {
+        // 只为声明区域移动能力的 Adapter 构造 retained framebuffer 探针步骤。
+        let texture_move = capabilities.texture_region_move.then(|| {
             // 以同一纹理的重叠区域移动验证 memmove 语义。
-            device.move_texture_region(TextureMove::new(
+            TextureMove::new(
                 // 从 region texture 读取。
                 region_texture,
                 // 写回同一个 region texture。
                 region_texture,
                 // 将两个原点与单位尺寸封闭为共享传输。
                 RhiTextureTransfer::from_xy(1, 1, 0, 0, RhiExtent::new(1, 1)),
-            ))?;
-        }
+            )
+        });
         // 登记真实 sampler，验证纹理绑定所需的过滤状态。
         scope.track_sampler(device.create_sampler(
             // 使用命名的线性 clamp 语义覆盖生产采样状态。
@@ -347,32 +315,37 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
             // 创建当前固定 pipeline。
             pipelines.push(scope.track_pipeline(device.create_pipeline(PipelineDesc { kind })?));
         }
-        // 在 1x1 离屏颜色 target 上执行真实的 pass、draw 和 submit。
-        device.begin_render_pass(
-            // 把探针 texture 解释为 render target 句柄。
-            device.resolve_render_target(rgba_texture)?,
+        // 创建只允许 Device 命令与唯一 submit 的离屏计划。
+        let mut plan = FramePlan::offscreen();
+        // 可选区域移动必须和后续 probe pass 共享同一次提交边界。
+        if let Some(movement) = texture_move {
+            // 将重叠安全移动纳入 FramePlan 的统一预检与执行顺序。
+            plan.push_move(movement);
+        }
+        // 创建 1x1 离屏颜色 target 的真实 probe pass。
+        let mut pass = RenderPassPlan::new(
+            // 目标只能是显式 probe texture，不能取得 Surface image。
+            RenderTargetRef::Texture(rgba_texture),
             // 以透明色清空目标。
             LoadAction::Clear(RhiColor::transparent()),
-        )?;
-        // begin_render_pass 成功后登记打开状态，确保后续失败仍会尝试关闭。
-        scope.pass_open = true;
-        // 绑定最小正 viewport，验证 adapter 的 viewport 状态编码。
-        device.set_viewport(RhiViewport {
+        );
+        // 绑定最小正 viewport，验证 Adapter 的 viewport 状态编码。
+        pass.push(FramePlanCommand::SetViewport(RhiViewport {
             // 视口宽度。
             width: 1.0,
             // 视口高度。
             height: 1.0,
-        })?;
+        }));
         // 清除显式 scissor，验证 pass 初始 raster 状态可用。
-        device.set_scissor(None)?;
-        // 只有声明局部清理能力的 adapter 才进入 ClearRect 探针。
-        if device.device_capabilities().clear_rect {
+        pass.push(FramePlanCommand::SetScissor(None));
+        // 只有声明局部清理能力的 Adapter 才进入 ClearRect 探针。
+        if capabilities.clear_rect {
             // 以完整 1x1 区域验证清理颜色和 scissor 代际。
-            device.clear_rect(
-                // 使用透明清理色。
-                RhiColor::transparent(),
+            pass.push(FramePlanCommand::ClearRect {
+                // 使用透明 premultiplied-alpha 清理色。
+                color: RhiColor::transparent(),
                 // 覆盖完整探针目标。
-                RhiScissor {
+                scissor: RhiScissor {
                     // 左侧。
                     x: 0,
                     // 顶部。
@@ -382,10 +355,24 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
                     // 高度。
                     height: 1,
                 },
-            )?;
+            });
         }
+        // 在首个 draw 前建立单位 quad 的类型化内容事实。
+        pass.push(FramePlanCommand::UploadVertex {
+            // 绑定 Solid 与 Shape 共用的顶点资源。
+            buffer: vertex_buffer,
+            // 交付唯一 position-float2 载荷，禁止 probe 自行编码字节。
+            data: vertex_payload,
+        });
+        // 在 Solid draw 前交付完整 Mesh uniform 值对象。
+        pass.push(FramePlanCommand::UploadUniform {
+            // 绑定刚创建的 Solid uniform 资源。
+            buffer: solid_uniform_buffer,
+            // 复用 Drawing 与两个 Adapter 共享的 Mesh ABI。
+            data: FrameUniformPayload::Mesh(solid_params),
+        });
         // 使用第一个固定 pipeline 执行最小 solid draw。
-        device.draw(DrawPacket {
+        pass.push(FramePlanCommand::Draw(DrawPacket {
             // 选择 Solid pipeline。
             pipeline: pipelines[0],
             // 复用单位 quad 前三个顶点。
@@ -394,9 +381,16 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
             uniform_buffer: Some(solid_uniform_buffer),
             // 用封闭非索引范围绘制一个三角形。
             range: DrawRange::vertices(3),
-        })?;
+        }));
+        // 在 Shape draw 前交付完整 Shape uniform 值对象。
+        pass.push(FramePlanCommand::UploadUniform {
+            // 绑定 Shape 专用 uniform 资源。
+            buffer: shape_uniform_buffer,
+            // 复用 Drawing 与两个 Adapter 共享的 Shape ABI。
+            data: FrameUniformPayload::Shape(shape_params),
+        });
         // 使用共享 pipeline 顺序中的 Shape 执行一次真实描边 draw。
-        device.draw(DrawPacket {
+        pass.push(FramePlanCommand::Draw(DrawPacket {
             // 第五个固定 pipeline 是普通 Shape。
             pipeline: pipelines[4],
             // Shape 使用完整单位 quad。
@@ -405,13 +399,11 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
             uniform_buffer: Some(shape_uniform_buffer),
             // 用封闭非索引范围绘制两个三角形组成的 quad。
             range: DrawRange::vertices(6),
-        })?;
-        // 关闭 probe pass，防止资源销毁跨过打开的 render pass。
-        device.end_render_pass()?;
-        // 主体已成功结束 pass，清理阶段无需重复结束。
-        scope.pass_open = false;
-        // 提交 probe 命令，验证 adapter 的提交边界和状态清理。
-        device.submit()?;
+        }));
+        // 把完整 probe pass 追加到唯一离屏计划。
+        plan.push_pass(pass);
+        // 由 FramePlan 统一预检、激活、执行、收尾和提交，禁止第二套命令路径。
+        plan.execute_offscreen_on_device(device)?;
         // 所有固定资源、Shape shader ABI 和真实命令均通过首帧前探针。
         Ok(())
     })();
@@ -422,7 +414,7 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
         // 清理失败不能覆盖导致探针失败的主错误。
         if let Err(cleanup_error) = cleanup_result {
             // 同时记录主错误和清理错误，便于定位双重故障。
-            tracing::error!(main_error = ?main_error, cleanup_error = ?cleanup_error, "RHI bootstrap probe failed during cleanup");
+            tracing::error!(main_error = ?main_error, cleanup_error = ?cleanup_error, "Drawing GPU FramePlan startup probe failed during cleanup");
         }
         // 返回原始主错误。
         return Err(main_error);

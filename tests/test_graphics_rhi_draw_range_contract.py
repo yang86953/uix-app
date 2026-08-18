@@ -41,8 +41,8 @@ PRODUCERS = (
     ROOT / "src/draw/backend/rhi_renderer_shadow.rs",
     # shape 路径。
     ROOT / "src/draw/backend/rhi_renderer_shape.rs",
-    # 原生 RHI 探针路径。
-    ROOT / "src/native/present/rhi/probe.rs",
+    # Drawing GPU Module 探针路径。
+    ROOT / "src/draw/backend/gpu/device_probe.rs",
 )
 
 

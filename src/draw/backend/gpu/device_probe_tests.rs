@@ -1,24 +1,28 @@
-//! GPU bootstrap 探针的动态资源、命令和失败回滚契约测试。
+//! Drawing GPU 启动探针的动态资源、FramePlan 命令和失败回滚契约测试。
 
 // 引入测试 fixture 所需的错误类型与结果类型。
 use crate::core::error::{Errc, Error, Result};
 // 引入探针直接依赖的 RHI 契约。
-use super::{
-    probe::probe_device, BufferDesc, BufferHandle, DrawPacket, GraphicsDevice,
-    GraphicsDeviceCapabilities, LoadAction, PipelineBinding, PipelineDesc, PipelineHandle,
-    RenderTargetHandle, RhiBufferUpload, RhiScissor, RhiTextureUpload, RhiViewport, SamplerDesc,
-    SubmissionHandle, TextureDesc, TextureHandle, TextureMove,
+use super::device_probe::probe_device;
+// 引入启动探针测试所需的共享薄 RHI 契约。
+use crate::native::present::rhi::{
+    BufferDesc, BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, LoadAction,
+    PipelineBinding, PipelineDesc, PipelineHandle, PipelineKind, RenderTargetHandle,
+    RhiBufferUpload, RhiBufferUploadPreflight, RhiScissor, RhiTextureUpload, RhiViewport,
+    SamplerDesc, SamplerHandle, SubmissionHandle, TextureCopy, TextureDesc, TextureHandle,
+    TextureMove,
 };
-// 引入探针使用的绘制与纹理传输值对象。
-use super::PipelineKind;
-
 // 描述 fixture 需要注入的单点故障。
 #[derive(Clone, Copy)]
 enum Failure {
+    // 在任何资源创建前的 Device 健康检查处失败。
+    Maintain,
     // 在指定序号的 buffer 创建处失败。
     CreateBuffer(usize),
     // 在指定序号的 buffer 上传处失败。
     UpdateBuffer(usize),
+    // 在 FramePlan Draw 资源预检处失败。
+    DrawPreflight,
     // 在首次 draw 处失败。
     Draw,
     // 在指定原始 texture 句柄销毁处失败。
@@ -37,9 +41,6 @@ enum Resource {
     // 记录 pipeline 资源。
     Pipeline(PipelineBinding),
 }
-
-// 为 sampler 使用独立的资源身份类型别名，避免日志丢失资源类别。
-type SamplerHandle = super::SamplerHandle;
 
 // 记录探针与 fixture 交互的最小动态事实。
 #[derive(Default)]
@@ -127,6 +128,17 @@ impl GraphicsDevice for RecordingDevice {
         GraphicsDeviceCapabilities::full_gpu_baseline()
     }
 
+    // 在任何资源创建前执行可注入失败的 Device 健康检查。
+    fn maintain(&mut self) -> Result<()> {
+        // 按故障策略拒绝尚未开始资源事务的探针。
+        if matches!(self.failure, Some(Failure::Maintain)) {
+            // 返回稳定平台错误供早期失败测试断言。
+            return Err(Self::injected_error("maintain"));
+        }
+        // 健康 Device 允许 probe 继续建立资源。
+        Ok(())
+    }
+
     // 记录 buffer 创建并按故障策略拒绝指定序号。
     fn create_buffer(&mut self, _desc: BufferDesc) -> Result<BufferHandle> {
         // 统计本次 buffer 创建序号。
@@ -161,6 +173,29 @@ impl GraphicsDevice for RecordingDevice {
             self.solid_uniform_uploads.push(upload.data().to_vec());
         }
         // 报告上传成功。
+        Ok(())
+    }
+
+    // 在任何 FramePlan 原生命令前预检类型化 Buffer 上传。
+    fn preflight_buffer_upload(&self, _upload: RhiBufferUploadPreflight) -> Result<()> {
+        // 预检阶段不改变 fixture 的命令与资源记录。
+        Ok(())
+    }
+
+    // 在任何 FramePlan 原生命令前预检 Draw 的真实 Buffer 资源。
+    fn preflight_draw_resources(&self, _packet: DrawPacket) -> Result<()> {
+        // 按故障策略在 begin、draw、submit 前拒绝计划。
+        if matches!(self.failure, Some(Failure::DrawPreflight)) {
+            // 返回稳定的预检错误，证明资源仍由 probe scope 清理。
+            return Err(Self::injected_error("draw preflight"));
+        }
+        // 健康路径允许 FramePlan 继续执行。
+        Ok(())
+    }
+
+    // 在任何 FramePlan 原生移动命令前预检纹理移动。
+    fn preflight_texture_move(&self, _movement: TextureMove) -> Result<()> {
+        // 记录型 fixture 接受能力开启时的合法移动计划。
         Ok(())
     }
 
@@ -289,7 +324,7 @@ impl GraphicsDevice for RecordingDevice {
     }
 
     // 记录不应在 probe 中发生的 texture copy。
-    fn copy_texture(&mut self, _copy: super::TextureCopy) -> Result<()> {
+    fn copy_texture(&mut self, _copy: TextureCopy) -> Result<()> {
         // 记录不应出现的 copy 命令。
         self.commands.push("copy");
         // 报告命令成功。
@@ -375,6 +410,25 @@ fn successful_probe_has_reverse_resource_lifecycle() {
     assert_eq!((first, second), (1.0, 1.0));
 }
 
+// 验证 Device 健康检查失败发生在任何资源、FramePlan 命令与提交之前。
+#[test]
+fn maintain_failure_precedes_probe_resource_transaction() {
+    // 在 probe 的首个健康门禁注入失败。
+    let mut device = RecordingDevice::failing(Failure::Maintain);
+    // 执行不得进入资源事务的 probe。
+    let error = probe_device(&mut device).expect_err("maintain must fail before resources");
+    // 健康检查失败必须保留稳定平台错误。
+    assert_eq!(error.code(), Errc::PlatformError);
+    // 失败文本必须保留真实生命周期阶段。
+    assert_eq!(error.message(), "probe injected maintain failure");
+    // 早期失败不得创建或销毁任何探针资源。
+    assert!(device.created.is_empty());
+    // 没有资源时销毁记录也必须为空。
+    assert!(device.destroyed.is_empty());
+    // FramePlan 尚未构造执行，不能出现任何原生命令。
+    assert!(device.commands.is_empty());
+}
+
 // 验证资源创建中途失败只逆序清理此前创建的第一个 Buffer。
 #[test]
 fn create_failure_rolls_back_prior_resources_without_submit() {
@@ -401,23 +455,51 @@ fn create_failure_rolls_back_prior_resources_without_submit() {
     assert!(!device.commands.contains(&"submit"));
 }
 
-// 验证资源上传中途失败只清理此前已创建资源且不进入 pass。
+// 验证 FramePlan pass 内资源上传失败仍结束 pass 且不提交。
 #[test]
-fn upload_failure_rolls_back_prior_resources_without_submit() {
+fn upload_failure_ends_pass_without_submit_and_rolls_back_resources() {
     // 在第一次 buffer 上传点注入故障。
     let mut device = RecordingDevice::failing(Failure::UpdateBuffer(1));
     // 执行应当失败并回滚的探针流程。
     let error = probe_device(&mut device).expect_err("upload must fail");
     // 上传失败必须保留平台错误码。
     assert_eq!(error.code(), Errc::PlatformError);
-    // 上传失败发生在 pass 前，不得开始任何命令。
-    assert!(device.commands.is_empty());
+    // 上传失败发生在 pass 内，必须已经开始 pass。
+    assert!(device.commands.contains(&"begin"));
+    // FramePlan 必须在上传失败后结束已经打开的 pass。
+    assert!(device.commands.contains(&"end"));
+    // pass 内主错误不得继续提交。
+    assert!(!device.commands.contains(&"submit"));
     // 所有销毁资源都必须属于此前创建资源。
-    assert!(device
-        .destroyed
-        .iter()
-        .all(|resource| device.created.contains(resource)));
+    assert!(
+        device
+            .destroyed
+            .iter()
+            .all(|resource| device.created.contains(resource))
+    );
     // 回滚顺序必须是此前创建资源的逆序。
+    assert_eq!(
+        device.destroyed,
+        device.created.iter().rev().copied().collect::<Vec<_>>()
+    );
+}
+
+// 验证 Draw 资源预检失败发生在 begin、draw、submit 前并完整回滚资源。
+#[test]
+fn draw_preflight_failure_happens_before_pass_and_submit() {
+    // 在 FramePlan 的 Draw 资源预检处注入故障。
+    let mut device = RecordingDevice::failing(Failure::DrawPreflight);
+    // 执行应当在任何原生命令前失败的探针流程。
+    let error = probe_device(&mut device).expect_err("draw preflight must fail");
+    // 预检失败必须保留平台错误码。
+    assert_eq!(error.code(), Errc::PlatformError);
+    // 预检失败不得开始任何 pass。
+    assert!(!device.commands.contains(&"begin"));
+    // 预检失败不得执行 draw。
+    assert!(!device.commands.contains(&"draw"));
+    // 预检失败不得提交。
+    assert!(!device.commands.contains(&"submit"));
+    // 已创建资源必须仍按严格逆序完整销毁。
     assert_eq!(
         device.destroyed,
         device.created.iter().rev().copied().collect::<Vec<_>>()
