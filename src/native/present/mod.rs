@@ -15,31 +15,6 @@ pub(crate) enum PresentTestResult {
     Occluded,
 }
 
-/// 呈现侧可提供的逐窗遮挡进入与退出能力。
-///
-/// 该能力不包含隐藏、最小化或 zero extent；这些状态始终由窗口生命周期管理。
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum PresentOcclusionSupport {
-    /// 当前 recipe 无可靠逐窗遮挡 API，只能依赖窗口生命周期休眠。
-    #[default]
-    Unsupported,
-    /// 正常 present 报告进入遮挡，并支持无帧数据的 `test_present` 退出探测。
-    // 只有 Windows D3D11 adapter 当前实现了 status 与无数据退出探测。
-    #[cfg(all(windows, feature = "d3d11"))]
-    PresentStatusAndTest,
-}
-
-impl fmt::Display for PresentOcclusionSupport {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Unsupported => "unsupported",
-            // 与变体使用同一构建边界，避免无 D3D11 时保留不可达分支。
-            #[cfg(all(windows, feature = "d3d11"))]
-            Self::PresentStatusAndTest => "present_status_and_test",
-        })
-    }
-}
-
 /// Validates a CPU pixel payload before it crosses a native presentation
 /// boundary.  A short slice must be a typed error: native image constructors
 /// cannot infer the intended row layout safely from missing pixels.
@@ -155,8 +130,6 @@ pub(crate) struct GraphicsContextCaps {
     pub(crate) backend: GraphicsApi,
     pub(crate) raster: RasterMode,
     pub(crate) present: PresentMode,
-    /// 当前 live recipe 的逐窗呈现遮挡能力。
-    pub(crate) present_occlusion: PresentOcclusionSupport,
     /// Typed proof controlling partial redraw and present damage.
     pub(crate) present_coherency: PresentCoherency,
 }
@@ -178,7 +151,6 @@ impl GraphicsContextCaps {
             backend,
             raster: RasterMode::GpuNative,
             present: PresentMode::Swapchain,
-            present_occlusion: PresentOcclusionSupport::Unsupported,
             present_coherency,
         }
     }
@@ -191,17 +163,8 @@ impl GraphicsContextCaps {
             backend,
             raster: RasterMode::Cpu,
             present: PresentMode::PixelUpload,
-            present_occlusion: PresentOcclusionSupport::Unsupported,
             present_coherency: PresentCoherency::FullOnly,
         }
-    }
-
-    /// 为具备可靠 present-status 入口与无数据退出探测的 context 提升能力。
-    // 只有 Windows D3D11 可把默认遮挡能力提升为 status-and-test。
-    #[cfg(all(windows, feature = "d3d11"))]
-    pub(crate) const fn with_present_occlusion(mut self, support: PresentOcclusionSupport) -> Self {
-        self.present_occlusion = support;
-        self
     }
 }
 

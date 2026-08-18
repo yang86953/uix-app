@@ -8,8 +8,7 @@ use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Alert 属性、表达式、值映射与诊断契约。
 use super::{
     Attribute, AttributeValue, Diagnostic, Element, boolean_value,
-    generate_event_handler_expression,
-    literal_string, string_value,
+    generate_event_handler_expression, literal_string, string_value,
 };
 
 // 生成只接线声明配置与关闭处理器的 Alert 叶节点。

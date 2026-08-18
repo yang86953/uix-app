@@ -6,6 +6,8 @@
 
 mod font_cache;
 mod font_layout;
+// 确定性字体包的原子安装事务独立实现，保持 FontService 主文件体积边界。
+mod bundle_install;
 // 保存中性文本布局的两端对齐空白扩展算法。
 mod text_justify;
 // 帧诊断：向窗口驱动暴露文本布局调用计数器。
@@ -772,11 +774,18 @@ fn is_generic_family(family: &str) -> bool {
     // 去除调用边界可能保留的外围空白。
     let family = family.trim();
     // 对固定小集合执行零分配大小写不敏感匹配。
-    ["system-ui", "sans-serif", "serif", "monospace", "cursive", "fantasy"]
-        // 遍历全部系统 UI 与 CSS 传统通用字体族。
-        .iter()
-        // 任一名称匹配即保留平台当前字体。
-        .any(|generic| family.eq_ignore_ascii_case(generic))
+    [
+        "system-ui",
+        "sans-serif",
+        "serif",
+        "monospace",
+        "cursive",
+        "fantasy",
+    ]
+    // 遍历全部系统 UI 与 CSS 传统通用字体族。
+    .iter()
+    // 任一名称匹配即保留平台当前字体。
+    .any(|generic| family.eq_ignore_ascii_case(generic))
 }
 
 impl Default for FontService {
@@ -843,10 +852,19 @@ mod tests {
         // 定义调用方当前字体句柄。
         let fallback = FontHandle::new(9);
         // 缺失项后的小写名称必须命中首选注册字体。
-        assert_eq!(service.resolve_font_families(["Missing", "segoe ui"], fallback), preferred);
+        assert_eq!(
+            service.resolve_font_families(["Missing", "segoe ui"], fallback),
+            preferred
+        );
         // 首项 generic family 必须立即保留当前字体，不继续选择后项。
-        assert_eq!(service.resolve_font_families(["sans-serif", "Arial"], fallback), fallback);
+        assert_eq!(
+            service.resolve_font_families(["sans-serif", "Arial"], fallback),
+            fallback
+        );
         // 全部缺失时必须返回调用方当前字体。
-        assert_eq!(service.resolve_font_families(["Missing"], fallback), fallback);
+        assert_eq!(
+            service.resolve_font_families(["Missing"], fallback),
+            fallback
+        );
     }
 }

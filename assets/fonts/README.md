@@ -1,5 +1,14 @@
 # Fonts
 
+- `NotoSansCJKsc-Regular.otf` — the unmodified Simplified Chinese Regular OTF
+  from the official [`notofonts/noto-cjk`](https://github.com/notofonts/noto-cjk)
+  repository at commit `f8d157532fbfaeda587e826d4cd5b21a49186f7c`.
+  SHA-256:
+  `2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b`.
+  It is installed by `demo/uix-lang-demo` through `App::font_bundle`, so Latin
+  and Simplified Chinese layout no longer depend on host font discovery. The
+  font is licensed under SIL OFL 1.1; see [`OFL-NotoSansCJK.txt`](OFL-NotoSansCJK.txt).
+
 - `lucide.ttf` — the unmodified `font/Lucide.ttf` asset from the official
   [`lucide-static` 1.17.0](https://www.npmjs.com/package/lucide-static/v/1.17.0)
   npm package. SHA-256:

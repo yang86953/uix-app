@@ -14,6 +14,9 @@ use crate::draw::geometry::types::ImageHandle;
 use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::renderer::RenderSession;
 use crate::draw::renderer::{GraphicsFailure, RenderOutcome};
+// test-harness 使用共享信号安排 owner-thread 帧回读。
+#[cfg(feature = "test-harness")]
+use crate::draw::renderer::test_harness::{GraphicsFaultSignal, SurfaceReadbackRequest};
 use crate::draw::{Canvas2D, GraphicsCapabilities, RasterPipeline, RenderTarget, UpdateStrategy};
 // 引入 factory 已验证的正交 recipe owner。
 use crate::native::present::GraphicsRecipeOwner;
@@ -108,6 +111,9 @@ pub struct Renderer {
     /// 脏区清除时使用的背景色；仅 CPU 光栅后端消费。
     pub clear_color: Color,
     shutdown: bool,
+    // 仅在显式测试 feature 下保存应用与当前 Renderer 共用的回读信号。
+    #[cfg(feature = "test-harness")]
+    test_graphics: Option<GraphicsFaultSignal>,
 }
 
 impl Renderer {
@@ -186,7 +192,47 @@ impl Renderer {
             presentation,
             clear_color: Color::from_rgba(0, 0, 0, 0),
             shutdown: false,
+            // 普通构造不隐式开放测试控制面，由应用组合根显式注入。
+            #[cfg(feature = "test-harness")]
+            test_graphics: None,
         }
+    }
+
+    // 将应用级测试信号绑定到当前 Renderer 帧边界。
+    #[cfg(feature = "test-harness")]
+    pub(crate) fn with_test_graphics_signal(mut self, signal: GraphicsFaultSignal) -> Self {
+        // 先声明已有消费者，随后应用请求才能获得票据。
+        signal.attach_surface_readback();
+        // Renderer 保存同一信号并在 present 前消费请求。
+        self.test_graphics = Some(signal);
+        // 返回仍由当前 composition root 唯一拥有的 Renderer。
+        self
+    }
+
+    // 在最终 present 前把一次应用回读请求下沉到当前 backend 事务。
+    #[cfg(feature = "test-harness")]
+    fn arm_surface_readback_for_test(
+        // 借用当前唯一 Renderer owner。
+        &mut self,
+        // 返回请求和安排结果，最终 present 后再消费真正的像素结果。
+    ) -> Option<(SurfaceReadbackRequest, crate::core::Result<()>)> {
+        // 没有注入测试信号时不产生任何生产路径开销。
+        let request = self.test_graphics.as_ref()?.take_surface_readback()?;
+        // 只有 backend-managed GPU 能在最终 composite 内部提供准确时序。
+        let result = if matches!(self.presentation.kind(), PresentationKind::BackendManaged) {
+            // RenderSession 保持 owner-thread 门禁并安排下一次 composite 观察点。
+            self.session.request_surface_readback_for_test()
+        } else {
+            // 外部 presenter 与 PixelUpload 不得冒充 GPU surface 验收。
+            Err(Error::new(
+                // 当前 recipe 不支持该测试能力。
+                Errc::NotImplemented,
+                // 明确限制到 backend-managed surface。
+                "surface readback requires a backend-managed renderer",
+            ))
+        };
+        // 延迟完成，最终 present 返回后才能消费像素或失败。
+        Some((request, result))
     }
 
     fn sync_clear_color(&mut self) {
@@ -337,7 +383,11 @@ impl RenderTarget for Renderer {
         if !matches!(outcome, RenderOutcome::Present(_)) {
             return outcome;
         }
-        match self.presentation.kind() {
+        // test-harness 在 present 前安排由最终 composite 精确消费的回读请求。
+        #[cfg(feature = "test-harness")]
+        let pending_readback = self.arm_surface_readback_for_test();
+        // 保存最终呈现结果，回读票据只接受同一帧的最终状态。
+        let final_outcome = match self.presentation.kind() {
             PresentationKind::External => match outcome {
                 RenderOutcome::Present(damage) => RenderOutcome::PresentPending(damage),
                 other => other,
@@ -353,7 +403,44 @@ impl RenderTarget for Renderer {
                 Ok(()) => outcome,
                 Err(error) => RenderOutcome::Failed(GraphicsFailure::from_error(error)),
             },
+        };
+        // test-harness 在最终呈现结果确定后完成一次性票据。
+        #[cfg(feature = "test-harness")]
+        if let Some((request, armed)) = pending_readback {
+            // 安排成功时按最终呈现状态消费或清理 backend 事务。
+            let completion = match (armed, &final_outcome) {
+                // backend-managed present 成功后取得同一事务保存的规范像素。
+                (Ok(()), RenderOutcome::Present(_)) => {
+                    // 结果消费同时清理 backend 的单槽请求状态。
+                    self.session.take_surface_readback_for_test()
+                }
+                // present 失败时先清理 backend 请求，再返回真正提交失败。
+                (Ok(()), RenderOutcome::Failed(failure)) => {
+                    // 忽略未到达或已产生的诊断结果，允许后续重新请求。
+                    let _ = self.session.take_surface_readback_for_test();
+                    // 最终提交失败优先成为该帧票据的原因。
+                    Err(failure.error().clone())
+                }
+                // 成功安排却没有到达 backend-managed 最终状态属于内部不一致。
+                (Ok(()), _) => {
+                    // 清理 backend 单槽，避免一次异常状态永久阻塞后续测试。
+                    let _ = self.session.take_surface_readback_for_test();
+                    // 返回稳定的渲染状态错误。
+                    Err(Error::new(
+                        // 这是 Renderer 与 presentation recipe 的状态不一致。
+                        Errc::InvalidState,
+                        // 提供不依赖平台文本的稳定诊断。
+                        "surface readback frame did not reach a backend-managed present",
+                    ))
+                }
+                // 安排阶段的能力或状态错误无需触碰 backend 结果槽。
+                (Err(error), _) => Err(error),
+            };
+            // 消费请求并向非 UI 测试线程交付结果。
+            request.complete(completion);
         }
+        // 返回原有渲染结果，不让测试观测改变生产状态机。
+        final_outcome
     }
 
     fn test_present(&mut self) -> Result<PresentTestResult, Error> {

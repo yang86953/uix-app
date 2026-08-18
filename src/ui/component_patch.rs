@@ -170,6 +170,60 @@ pub(crate) fn builtin_widget_config_changed(
                 ..
             },
         ) => Some(current_images != next_images || current_start != next_start),
+        // ScrollView 快照同时含作者布局配置和 live 滚动位置，配置比较必须排除偏移。
+        (
+            // 解构当前声明配置并忽略运行态滚动坐标。
+            SnapshotFields::ScrollView {
+                // 当前允许滚动的轴向。
+                direction: current_direction,
+                // 当前显式视口宽度。
+                fixed_width: current_width,
+                // 当前显式视口高度。
+                fixed_height: current_height,
+                // 当前父级弹性增长权重。
+                flex_grow: current_flex_grow,
+                // 当前父级弹性收缩权重。
+                flex_shrink: current_flex_shrink,
+                // 当前滚动条可见配置。
+                show_scrollbar: current_show_scrollbar,
+                // live 横向偏移不属于作者静态配置。
+                scroll_x: _,
+                // live 纵向偏移不属于作者静态配置。
+                scroll_y: _,
+            },
+            // 解构下一声明配置并忽略最新受控滚动坐标。
+            SnapshotFields::ScrollView {
+                // 下一声明允许滚动的轴向。
+                direction: next_direction,
+                // 下一声明显式视口宽度。
+                fixed_width: next_width,
+                // 下一声明显式视口高度。
+                fixed_height: next_height,
+                // 下一声明父级弹性增长权重。
+                flex_grow: next_flex_grow,
+                // 下一声明父级弹性收缩权重。
+                flex_shrink: next_flex_shrink,
+                // 下一声明滚动条可见配置。
+                show_scrollbar: next_show_scrollbar,
+                // 受控横向偏移由运行态比较负责。
+                scroll_x: _,
+                // 受控纵向偏移由运行态比较负责。
+                scroll_y: _,
+            },
+        ) => Some(
+            // 轴向变化会改变滚动、裁剪和滚动条布局。
+            current_direction != next_direction
+                // 固定宽度变化会改变视口几何。
+                || current_width != next_width
+                // 固定高度变化会改变视口几何。
+                || current_height != next_height
+                // 父级增长权重变化会改变分配尺寸。
+                || current_flex_grow != next_flex_grow
+                // 父级收缩权重变化会改变分配尺寸。
+                || current_flex_shrink != next_flex_shrink
+                // 滚动条可见配置会改变内容沟槽。
+                || current_show_scrollbar != next_show_scrollbar,
+        ),
         _ => None,
     }
 }
@@ -285,6 +339,60 @@ pub(crate) fn builtin_widget_layout_changed(
                 || current_breakpoints != next_breakpoints
                 || current_cols != next_cols,
         ),
+        // ScrollView 的偏移是局部合成运行态，只有视口配置变化才请求布局。
+        (
+            // 解构当前视口配置并忽略 live 偏移。
+            SnapshotFields::ScrollView {
+                // 当前滚动轴向。
+                direction: current_direction,
+                // 当前固定宽度。
+                fixed_width: current_width,
+                // 当前固定高度。
+                fixed_height: current_height,
+                // 当前增长权重。
+                flex_grow: current_flex_grow,
+                // 当前收缩权重。
+                flex_shrink: current_flex_shrink,
+                // 当前滚动条可见配置。
+                show_scrollbar: current_show_scrollbar,
+                // 横向偏移不参与布局分类。
+                scroll_x: _,
+                // 纵向偏移不参与布局分类。
+                scroll_y: _,
+            },
+            // 解构下一视口配置并忽略受控偏移。
+            SnapshotFields::ScrollView {
+                // 下一滚动轴向。
+                direction: next_direction,
+                // 下一固定宽度。
+                fixed_width: next_width,
+                // 下一固定高度。
+                fixed_height: next_height,
+                // 下一增长权重。
+                flex_grow: next_flex_grow,
+                // 下一收缩权重。
+                flex_shrink: next_flex_shrink,
+                // 下一滚动条可见配置。
+                show_scrollbar: next_show_scrollbar,
+                // 受控横向偏移只触发 Paint 或 Composite。
+                scroll_x: _,
+                // 受控纵向偏移只触发 Paint 或 Composite。
+                scroll_y: _,
+            },
+        ) => Some(
+            // 轴向会改变内容测量与滚动条放置。
+            current_direction != next_direction
+                // 固定宽度属于视口盒模型。
+                || current_width != next_width
+                // 固定高度属于视口盒模型。
+                || current_height != next_height
+                // 增长权重参与父级 Flex 求解。
+                || current_flex_grow != next_flex_grow
+                // 收缩权重参与父级 Flex 求解。
+                || current_flex_shrink != next_flex_shrink
+                // 滚动条沟槽会改变可用内容范围。
+                || current_show_scrollbar != next_show_scrollbar,
+        ),
         // 其余所有快照类型显式归入保守布局，避免新增组件静默漏掉几何失效。
         _ => Some(true),
     }
@@ -311,6 +419,16 @@ pub(crate) fn builtin_widget_runtime_changed(
     ) {
         // 由稳定 key 差异触发统一 Layout 失效。
         return current.controlled_expansion_changed(next);
+    }
+    // ScrollView 的受控偏移变化属于运行态局部合成，不是作者布局配置变化。
+    if let (Some(current), Some(next)) = (
+        // 读取当前 live ScrollView。
+        current.as_any().downcast_ref::<ScrollView>(),
+        // 读取已经采样最新外部偏移的下一声明。
+        next.as_any().downcast_ref::<ScrollView>(),
+    ) {
+        // 由专属契约判断下一声明是否确实控制并改变偏移。
+        return current.controlled_offset_changed(next);
     }
     // 其余内建组件当前没有独立于声明配置的受控运行态差异。
     false
@@ -613,6 +731,44 @@ mod tests {
         assert_eq!(
             builtin_widget_layout_changed(&current.snapshot_fields(), &next.snapshot_fields()),
             Some(true)
+        );
+    }
+
+    // 验证 ScrollView 受控偏移只进入运行态绘制，不触发布局失效。
+    #[test]
+    // 测试名称陈述滚动位置与视口配置的分层边界。
+    fn scroll_view_controlled_offset_is_runtime_paint_change() {
+        // 创建初始位于原点的外部滚动状态。
+        let offset = State::new(crate::core::Point::new(0.0, 0.0));
+        // 构造保存当前 live 坐标的等价声明。
+        let current = ScrollView::new(crate::platform::windowing::ScrollDirection::Vertical)
+            // 固定视口尺寸以覆盖布局字段稳定性。
+            .size(360.0, 80.0)
+            // 绑定初始外部滚动位置。
+            .scroll_offset(&offset);
+        // 把外部运行态向下移动四十逻辑像素。
+        offset.set(crate::core::Point::new(0.0, 40.0));
+        // 构造已经采样最新外部坐标的下一声明。
+        let next = ScrollView::new(crate::platform::windowing::ScrollDirection::Vertical)
+            // 保持视口尺寸不变。
+            .size(360.0, 80.0)
+            // 复用同一个受控状态句柄。
+            .scroll_offset(&offset);
+        // 作者视口配置没有变化，运行态坐标必须被排除。
+        assert_eq!(
+            // 比较两份快照的作者配置部分。
+            builtin_widget_config_changed(&current.snapshot_fields(), &next.snapshot_fields()),
+            // 明确报告无作者配置变化。
+            Some(false)
+        );
+        // 受控坐标变化必须让协调器执行原位同步和绘制失效。
+        assert!(builtin_widget_runtime_changed(&current, &next));
+        // 只改变偏移不得重新测量或放置视口。
+        assert_eq!(
+            // 使用统一内建布局分类入口。
+            builtin_widget_layout_changed(&current.snapshot_fields(), &next.snapshot_fields()),
+            // 精细分类为无布局变化。
+            Some(false)
         );
     }
 

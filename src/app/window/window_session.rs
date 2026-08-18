@@ -8,8 +8,8 @@ use crate::core::{Error, Rect, WindowId};
 use crate::draw::scene::NodeId;
 use crate::draw::target::RenderTarget;
 use crate::ui::adapter::ViewAdapter;
-use crate::ui::widget_runtime::widget::WidgetCore;
 use crate::ui::view::ViewNode;
+use crate::ui::widget_runtime::widget::WidgetCore;
 use crate::ui::{AppState, WidgetTree};
 use std::sync::{Arc, Mutex};
 

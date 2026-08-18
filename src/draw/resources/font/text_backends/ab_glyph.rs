@@ -159,6 +159,25 @@ impl TextBackend for AbGlyphBackend {
         Ok(FontHandle::new(id))
     }
 
+    // 从应用字体包的共享只读数据零复制创建后端字体槽位。
+    fn load_font_shared(&mut self, data: Arc<[u8]>) -> Result<FontHandle, Error> {
+        // 新句柄严格对应即将追加的后端槽位。
+        let id = self.fonts.len() as u32;
+        // 解析器借用 Arc 稳定堆数据，并固定选择集合中的首个 face。
+        let font = FontRef::try_from_slice_and_index(&data, 0)
+            // 解析失败保持统一字体格式错误分类。
+            .map_err(|error| Error::new(Errc::FormatError, format!("ab_glyph: {error:?}")))?;
+        // SAFETY: font 借用 data；data 随 FontData::Owned 进入同一槽位并晚于 font 释放。
+        let font = unsafe { std::mem::transmute::<FontRef<'_>, FontRef<'static>>(font) };
+        // 保存共享字节本身，不制造大型字体副本。
+        self.fonts.push(unsafe {
+            // 槽位维持字体借用与数据 owner 的既有析构顺序。
+            FontSlot::new_borrowed(FontHandle::new(id), font, FontData::Owned(data))
+        });
+        // 返回与追加槽位编号一致的稳定句柄。
+        Ok(FontHandle::new(id))
+    }
+
     fn load_font_mapped(&mut self, mmap: memmap2::Mmap) -> Result<FontHandle, Error> {
         let boxed = Box::new(mmap);
         let f = FontRef::try_from_slice_and_index(boxed.as_ref(), 0)

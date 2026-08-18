@@ -6,8 +6,8 @@ use std::sync::Arc;
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::platform::windowing::ControlSize;
-use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::reactive::state::State;
+use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widgets::input::date_calendar::{
     CalendarPanelState, MonthNavigation, draw_calendar_panel_in_rect, hit_calendar_date_in_rect,
     hit_month_navigation_in_rect,

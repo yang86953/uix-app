@@ -23,11 +23,11 @@
 use crate::core::{ComponentId, Constraints, EdgeInsets, Rect, Size};
 use crate::draw::geometry::spatial::{Ray3D, SpatialContext};
 use crate::draw::scene::PicturePolicy;
-use crate::ui::widget_runtime::paint_context::PaintContext;
-use crate::ui::widget_runtime::widget::{EventResult, SystemEvent, WidgetNode, WidgetTree};
 use crate::ui::event::{SemanticEvent, WindowAction};
 use crate::ui::layout::{AlignItems, LayoutChild};
 use crate::ui::overlay::OverlayEntry;
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::widget::{EventResult, SystemEvent, WidgetNode, WidgetTree};
 use std::any::Any;
 use std::time::Duration;
 
@@ -198,6 +198,11 @@ pub trait WidgetLayout: WidgetComponent {
     /// 在给定约束下测量组件固有尺寸。
     fn measure(&self, constraints: Constraints) -> Size {
         constraints.clamp(Size::zero())
+    }
+    /// 在不应用父级 Flex basis 策略时测量组件的自然内容尺寸。
+    fn measure_natural(&self, constraints: Constraints) -> Size {
+        // 默认组件没有独立的 Flex basis 策略，直接复用普通测量。
+        self.measure(constraints)
     }
     /// 允许透明包装组件在同一测量轮次内由直接子节点决定自身尺寸。
     fn measure_from_children(

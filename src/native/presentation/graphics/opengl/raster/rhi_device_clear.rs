@@ -13,45 +13,20 @@ impl OpenGlRhiDevice {
         color: RhiColor,
         scissor: RhiScissor,
     ) -> Result<()> {
-        // 局部清理只能发生在已经绑定目标的 render pass 内。
-        if !self.pass_open {
-            // 返回状态错误，避免对未知 framebuffer 发出清理。
-            return Err(rhi_invalid("OpenGL RHI clear rect without active pass"));
-        }
-        // 统一验证颜色和矩形的基本契约。
-        if !color.is_finite() || !scissor.is_valid() {
-            // 返回参数错误，避免负坐标或非有限颜色进入原生 API。
-            return Err(rhi_invalid("OpenGL RHI clear rect is invalid"));
-        }
-        // 当前 pass 必须有可用于边界检查的物理 extent。
-        let extent = self
-            .active_extent
-            .ok_or_else(|| rhi_invalid("OpenGL RHI clear rect has no active extent"))?;
-        // 检查清理矩形的右边界不会整数回绕。
-        let right = scissor
-            .x
-            .checked_add(scissor.width)
-            .ok_or_else(|| rhi_invalid("OpenGL RHI clear rect right edge overflow"))?;
-        // 检查清理矩形的底边界不会整数回绕。
-        let bottom = scissor
-            .y
-            .checked_add(scissor.height)
-            .ok_or_else(|| rhi_invalid("OpenGL RHI clear rect bottom edge overflow"))?;
-        // 矩形必须完全落在当前 render target 内。
-        if right as u32 > extent.width || bottom as u32 > extent.height {
-            // 返回稳定的越界参数错误。
-            return Err(rhi_invalid("OpenGL RHI clear rect is outside target"));
-        }
+        // 由共享状态机统一验证 pass、预乘颜色和左上原点区域。
+        self.pass.validate_clear(color, scissor)?;
         // 保存调用方的 scissor，保证局部清理不破坏后续 draw 状态。
-        let previous = self.scissor;
+        let previous = self.pass.scissor();
         // 暂时把原生 scissor 切换到待清理区域。
         self.set_scissor(gl, Some(scissor))?;
         // 发出透明或指定 premultiplied-alpha 颜色的矩形清理。
         // SAFETY：调用者保证当前线程绑定有效 GL 上下文（与同设备其他 GL 调用一致）；
-        // 颜色分量已通过 is_finite 校验；scissor 由上方 set_scissor 成功切换；
-        // pass_open 保证 framebuffer 已绑定，清理只影响该 framebuffer 的 color buffer。
+        // 颜色分量已通过共享预乘值校验；scissor 由上方 set_scissor 成功切换；
+        // 共享 pass 状态保证 framebuffer 已绑定，清理只影响该 framebuffer 的 color buffer。
         unsafe {
-            gl.clear_color(color.0[0], color.0[1], color.0[2], color.0[3]);
+            let [red, green, blue, alpha] = color.components();
+            // 将共享预乘通道逐项传给 OpenGL，不执行 Adapter 私有转换。
+            gl.clear_color(red, green, blue, alpha);
             gl.clear(glow::COLOR_BUFFER_BIT);
         }
         // 恢复调用方原先的 scissor 状态。

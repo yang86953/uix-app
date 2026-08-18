@@ -23,10 +23,10 @@ use super::input_proxy_owner::{
     install_pointer_proxy,
     // pointer callback 创建前检查 activation generation。
     pointer_generation_checked,
-    // pointer capability loss 事务化清理授权、焦点与代理。
-    release_pointer_proxy_checked,
     // keyboard capability loss 事务化清理焦点、输入状态与代理。
     release_keyboard_proxy_checked,
+    // pointer capability loss 事务化清理授权、焦点与代理。
+    release_pointer_proxy_checked,
     // transition 决策前同时读取 pointer/keyboard 槽快照。
     snapshot_input_proxy_slots,
 };
@@ -56,6 +56,7 @@ use super::pointer_button_owner::{
     handle_pointer_button_released,
 };
 // pointer callback 把焦点与移动事件委托给多 owner 事务 Component。
+use super::WaylandBackend;
 use super::pointer_focus_owner::{
     // Axis 原子读取路由与位置并投递 Wheel。
     handle_pointer_axis,
@@ -66,7 +67,6 @@ use super::pointer_focus_owner::{
     // Motion 原子提交 position 与 PointerMove。
     handle_pointer_motion,
 };
-use super::WaylandBackend;
 // seat owner 保留几何与 capability 收敛的 typed failure。
 use crate::core::{Errc, Error, Point};
 // seat adapter 只把 Linux 键码转换为平台中立键码。

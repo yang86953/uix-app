@@ -9,9 +9,11 @@ use crate::draw::geometry::path::{FillRule, Path, PathBuilder};
 use crate::impl_widget_component;
 use crate::platform::windowing::{ControlSize, KeyCode, MouseButton};
 use crate::ui::animation::{Animation, Easing};
-use crate::ui::widget_runtime::paint_context::PaintContext;
-use crate::ui::widget_runtime::traits::{EventHandler, WidgetAnimation, WidgetLayout, WidgetRender};
 use crate::ui::theme::style::{ColorValue, PaletteColor, Style, StyleSet, StyleState, apply_style};
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::traits::{
+    EventHandler, WidgetAnimation, WidgetLayout, WidgetRender,
+};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
 

@@ -8,8 +8,6 @@ use crate::draw::Color;
 use crate::ui::accessibility::accessibility_override::AccessibilityOverride;
 use crate::ui::widget_runtime::provider_context::{ProviderContext, current_provider_context};
 // 让声明节点携带内联组件的非视觉状态作用域标记。
-use crate::ui::widget_runtime::traits::WidgetComponent;
-use crate::ui::widget_runtime::view_transform::ViewTransform;
 use crate::ui::component_state::{
     // 引入随声明根延迟提交的私有状态写入回执。
     ComponentStateCaptureReceipt,
@@ -21,6 +19,8 @@ use crate::ui::component_state::{
 use crate::ui::event::system_event_handler::{SystemEventFilter, SystemEventHandlerRegistration};
 use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};
 use crate::ui::render_handler::RenderHandlerRegistration;
+use crate::ui::widget_runtime::traits::WidgetComponent;
+use crate::ui::widget_runtime::view_transform::ViewTransform;
 // 引入声明根显式交接的 State 绑定与 Effect 类型。
 use crate::ui::reactive::state::{Effect, StatePaintBind};
 use crate::ui::theme::style::{BoxShadowDef, ColorValue, Style, TypographyToken};

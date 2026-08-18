@@ -2,6 +2,8 @@
 
 pub mod backend;
 pub mod bitmap_font;
+// 公开随应用分发的确定性字体包值契约。
+pub mod bundle;
 pub mod font_service;
 pub(crate) mod glyph_outline;
 // 在普通文本与富文本布局之间共享段落级 UAX #9 双向分析。
@@ -15,3 +17,5 @@ pub mod text_backends;
 pub mod text_index;
 
 pub use backend::TextBackend;
+// 通过 font Module 公开确定性字体配置值。
+pub use bundle::FontBundle;

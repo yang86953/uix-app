@@ -69,7 +69,10 @@ mod tests {
             // 转为测试拥有的向量。
             .to_vec();
         // 未声明的第一个子节点继承根手形。
-        assert_eq!(tree.cursor_for_component(Some(children[0])), CursorType::Hand);
+        assert_eq!(
+            tree.cursor_for_component(Some(children[0])),
+            CursorType::Hand
+        );
         // 显式 Arrow 必须覆盖根手形，不能被当作无声明。
         assert_eq!(
             // 查询第二个子节点的有效光标。

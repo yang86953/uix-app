@@ -6,14 +6,14 @@ use std::cell::RefCell;
 use std::rc::{Rc, Weak as RcWeak};
 
 use crate::core::ComponentId;
-use crate::ui::widget_runtime::app_state::AppStateInner;
-use crate::ui::widget_runtime::widget::EventResult;
-#[cfg(test)]
-use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::component_snapshot::{
     AccessibilitySnapshot, AriaAttribute, ComponentConfigSnapshot, SnapshotFields,
 };
 use crate::ui::event::SemanticEvent;
+use crate::ui::widget_runtime::app_state::AppStateInner;
+use crate::ui::widget_runtime::widget::EventResult;
+#[cfg(test)]
+use crate::ui::widget_runtime::widget::WidgetTree;
 
 #[derive(Clone)]
 /// 不延长组件树或应用状态生命周期的弱组件访问句柄。

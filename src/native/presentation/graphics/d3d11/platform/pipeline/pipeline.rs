@@ -1,5 +1,89 @@
 use super::*;
 
+// 把 API 无关混合因子翻译为 D3D11 枚举。
+fn d3d11_blend_factor(factor: PipelineBlendFactor) -> D3D11_BLEND {
+    // 只映射共享层允许的封闭因子集合。
+    match factor {
+        // Zero 对应 D3D11_BLEND_ZERO。
+        PipelineBlendFactor::Zero => D3D11_BLEND_ZERO,
+        // One 对应 D3D11_BLEND_ONE。
+        PipelineBlendFactor::One => D3D11_BLEND_ONE,
+        // SourceAlpha 对应 D3D11_BLEND_SRC_ALPHA。
+        PipelineBlendFactor::SourceAlpha => D3D11_BLEND_SRC_ALPHA,
+        // OneMinusSourceAlpha 对应 D3D11_BLEND_INV_SRC_ALPHA。
+        PipelineBlendFactor::OneMinusSourceAlpha => D3D11_BLEND_INV_SRC_ALPHA,
+    }
+}
+
+// 把 API 无关混合运算翻译为 D3D11 枚举。
+fn d3d11_blend_operation(operation: PipelineBlendOperation) -> D3D11_BLEND_OP {
+    // 只映射共享层允许的封闭运算集合。
+    match operation {
+        // Add 对应 D3D11_BLEND_OP_ADD。
+        PipelineBlendOperation::Add => D3D11_BLEND_OP_ADD,
+    }
+}
+
+// 从共享状态创建一个 D3D11 blend 对象。
+fn create_rhi_blend_state(
+    // 借用当前 pipeline 所属的 D3D11 device。
+    device: &ID3D11Device,
+    // 接收 API 无关混合语义。
+    blend: PipelineBlend,
+    // 接收稳定的原生错误操作名。
+    operation: &'static str,
+) -> Result<ID3D11BlendState> {
+    // 从共享层读取完整颜色与 alpha 因子。
+    let state = blend.state();
+    // 构造只做机械枚举翻译的原生描述。
+    let desc = D3D11_BLEND_DESC {
+        // 通用 pipeline 不使用 alpha-to-coverage。
+        AlphaToCoverageEnable: FALSE,
+        // 所有 render target 使用相同状态。
+        IndependentBlendEnable: FALSE,
+        // 设置第一目标以及 D3D11 要求的其余固定槽位。
+        RenderTarget: [D3D11_RENDER_TARGET_BLEND_DESC {
+            // 直接采用共享 enable 事实。
+            BlendEnable: if state.enabled { TRUE } else { FALSE },
+            // 翻译源 RGB 因子。
+            SrcBlend: d3d11_blend_factor(state.source_color),
+            // 翻译目标 RGB 因子。
+            DestBlend: d3d11_blend_factor(state.destination_color),
+            // 翻译共享 RGB 混合运算。
+            BlendOp: d3d11_blend_operation(state.color_operation),
+            // 翻译源 alpha 因子。
+            SrcBlendAlpha: d3d11_blend_factor(state.source_alpha),
+            // 翻译目标 alpha 因子。
+            DestBlendAlpha: d3d11_blend_factor(state.destination_alpha),
+            // 翻译共享 alpha 混合运算。
+            BlendOpAlpha: d3d11_blend_operation(state.alpha_operation),
+            // 始终写入全部 RGBA 通道。
+            RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as u8,
+        }; 8],
+    };
+    // 保存 D3D11 返回的状态对象。
+    let mut native = None;
+    // SAFETY: desc 完整初始化且输出指针指向当前栈帧中的 Option。
+    unsafe {
+        // 让 D3D11 device 创建不可变状态对象。
+        device
+            // 传入共享状态机械翻译后的描述。
+            .CreateBlendState(&desc, Some(&mut native))
+            // 保留调用点对应的稳定原生操作名。
+            .map_err(|error| d3d_error(operation, error))?;
+    }
+    // 驱动成功但没有返回对象仍属于平台错误。
+    native.ok_or_else(|| {
+        // 返回包含操作名的稳定错误。
+        Error::new(
+            // 状态对象缺失属于平台失败。
+            Errc::PlatformError,
+            // 记录具体混合状态身份。
+            format!("D3d11Pipeline: {operation} returned no blend state"),
+        )
+    })
+}
+
 impl D3d11Pipeline {
     pub(crate) fn new(device: &ID3D11Device) -> Result<Self> {
         let vs_blob = compile_shader(RECT_HLSL, c"VSMain", c"vs_4_0")?;
@@ -370,120 +454,42 @@ impl D3d11Pipeline {
             Error::new(Errc::PlatformError, "D3d11Pipeline: no glyph input layout")
         })?;
 
-        let mut blend_alpha = None;
-        let alpha_desc = D3D11_BLEND_DESC {
-            AlphaToCoverageEnable: FALSE,
-            IndependentBlendEnable: FALSE,
-            RenderTarget: [D3D11_RENDER_TARGET_BLEND_DESC {
-                BlendEnable: TRUE,
-                SrcBlend: D3D11_BLEND_SRC_ALPHA,
-                DestBlend: D3D11_BLEND_INV_SRC_ALPHA,
-                BlendOp: D3D11_BLEND_OP_ADD,
-                SrcBlendAlpha: D3D11_BLEND_ONE,
-                DestBlendAlpha: D3D11_BLEND_INV_SRC_ALPHA,
-                BlendOpAlpha: D3D11_BLEND_OP_ADD,
-                RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as u8,
-            }; 8],
-        };
-        // SAFETY: alpha_desc 为栈上完整初始化的混合描述；输出指针指向栈上 Option。
-        unsafe {
-            device
-                .CreateBlendState(&alpha_desc, Some(&mut blend_alpha))
-                .map_err(|e| d3d_error("CreateBlendState", e))?;
-        }
-        let blend_alpha = blend_alpha
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blend state"))?;
-
-        let mut blend_premultiplied = None;
-        let premultiplied_desc = D3D11_BLEND_DESC {
-            AlphaToCoverageEnable: FALSE,
-            IndependentBlendEnable: FALSE,
-            RenderTarget: [D3D11_RENDER_TARGET_BLEND_DESC {
-                BlendEnable: TRUE,
-                SrcBlend: D3D11_BLEND_ONE,
-                DestBlend: D3D11_BLEND_INV_SRC_ALPHA,
-                BlendOp: D3D11_BLEND_OP_ADD,
-                SrcBlendAlpha: D3D11_BLEND_ONE,
-                DestBlendAlpha: D3D11_BLEND_INV_SRC_ALPHA,
-                BlendOpAlpha: D3D11_BLEND_OP_ADD,
-                RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as u8,
-            }; 8],
-        };
-        // SAFETY: premultiplied_desc 为栈上完整初始化的混合描述；输出指针指向栈上 Option。
-        unsafe {
-            device
-                .CreateBlendState(&premultiplied_desc, Some(&mut blend_premultiplied))
-                .map_err(|e| d3d_error("CreateBlendState(premultiplied)", e))?;
-        }
-        let blend_premultiplied = blend_premultiplied.ok_or_else(|| {
-            Error::new(
-                Errc::PlatformError,
-                "D3d11Pipeline: no premultiplied blend state",
-            )
-        })?;
-
-        // 为 sampled Additive quad 创建源目标均为 ONE 的加法 blend。
-        let mut blend_additive = None;
-        // 描述颜色与 alpha 都执行 source + destination。
-        let additive_desc = D3D11_BLEND_DESC {
-            // Additive 不使用 alpha-to-coverage。
-            AlphaToCoverageEnable: FALSE,
-            // 所有 render target 使用相同的固定状态。
-            IndependentBlendEnable: FALSE,
-            // 设置第一个 render target 的加法因子。
-            RenderTarget: [D3D11_RENDER_TARGET_BLEND_DESC {
-                // 打开硬件 blend。
-                BlendEnable: TRUE,
-                // 累加源颜色。
-                SrcBlend: D3D11_BLEND_ONE,
-                // 累加目标颜色。
-                DestBlend: D3D11_BLEND_ONE,
-                // 颜色执行加法。
-                BlendOp: D3D11_BLEND_OP_ADD,
-                // 累加源 alpha。
-                SrcBlendAlpha: D3D11_BLEND_ONE,
-                // 累加目标 alpha。
-                DestBlendAlpha: D3D11_BLEND_ONE,
-                // alpha 执行加法。
-                BlendOpAlpha: D3D11_BLEND_OP_ADD,
-                // 保留四个颜色通道。
-                RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as u8,
-            }; 8],
-        };
-        // 在当前 D3D11 device 上创建加法状态对象。
-        // SAFETY: additive_desc 为栈上完整初始化的混合描述；输出指针指向栈上 Option。
-        unsafe {
-            device
-                .CreateBlendState(&additive_desc, Some(&mut blend_additive))
-                .map_err(|e| d3d_error("CreateBlendState(additive)", e))?;
-        }
-        // 驱动必须返回有效的加法状态对象。
-        let blend_additive = blend_additive
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no additive blend"))?;
-
-        let mut blend_replace = None;
-        let replace_desc = D3D11_BLEND_DESC {
-            AlphaToCoverageEnable: FALSE,
-            IndependentBlendEnable: FALSE,
-            RenderTarget: [D3D11_RENDER_TARGET_BLEND_DESC {
-                BlendEnable: FALSE,
-                SrcBlend: D3D11_BLEND_ONE,
-                DestBlend: D3D11_BLEND_ZERO,
-                BlendOp: D3D11_BLEND_OP_ADD,
-                SrcBlendAlpha: D3D11_BLEND_ONE,
-                DestBlendAlpha: D3D11_BLEND_ZERO,
-                BlendOpAlpha: D3D11_BLEND_OP_ADD,
-                RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as u8,
-            }; 8],
-        };
-        // SAFETY: replace_desc 为栈上完整初始化的混合描述；输出指针指向栈上 Option。
-        unsafe {
-            device
-                .CreateBlendState(&replace_desc, Some(&mut blend_replace))
-                .map_err(|e| d3d_error("CreateBlendState(replace)", e))?;
-        }
-        let blend_replace = blend_replace
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no replace blend"))?;
+        // 由共享 straight-alpha 因子创建 D3D11 状态对象。
+        let blend_alpha = create_rhi_blend_state(
+            // 使用当前 pipeline device。
+            device,
+            // 选择 straight-alpha 语义。
+            PipelineBlend::StraightAlpha,
+            // 保留稳定诊断名。
+            "CreateBlendState(straight-alpha)",
+        )?;
+        // 由共享 premultiplied-alpha 因子创建 D3D11 状态对象。
+        let blend_premultiplied = create_rhi_blend_state(
+            // 使用当前 pipeline device。
+            device,
+            // 选择 premultiplied-alpha 语义。
+            PipelineBlend::PremultipliedAlpha,
+            // 保留稳定诊断名。
+            "CreateBlendState(premultiplied-alpha)",
+        )?;
+        // 由共享 Additive 因子创建 D3D11 状态对象。
+        let blend_additive = create_rhi_blend_state(
+            // 使用当前 pipeline device。
+            device,
+            // 选择 Additive 语义。
+            PipelineBlend::Additive,
+            // 保留稳定诊断名。
+            "CreateBlendState(additive)",
+        )?;
+        // 由共享 Replace 状态创建关闭混合的 D3D11 对象。
+        let blend_replace = create_rhi_blend_state(
+            // 使用当前 pipeline device。
+            device,
+            // 选择 Replace 语义。
+            PipelineBlend::Replace,
+            // 保留稳定诊断名。
+            "CreateBlendState(replace)",
+        )?;
 
         let mut rasterizer = None;
         let rs_desc = D3D11_RASTERIZER_DESC {

@@ -56,7 +56,11 @@ impl AgentPolicy {
     /// 指定 automation_id 的组件需要用户确认：AI 执行写动作前进入确认流程。
     pub(crate) fn require_confirm(mut self, automation_id: impl Into<String>) -> Self {
         let automation_id = automation_id.into();
-        if !self.require_confirm_ids.iter().any(|id| *id == automation_id) {
+        if !self
+            .require_confirm_ids
+            .iter()
+            .any(|id| *id == automation_id)
+        {
             self.require_confirm_ids.push(automation_id);
         }
         self
@@ -81,7 +85,11 @@ impl AgentPolicy {
             {
                 return PolicyDecision::Forbidden;
             }
-            if self.require_confirm_ids.iter().any(|confirmed| confirmed == id) {
+            if self
+                .require_confirm_ids
+                .iter()
+                .any(|confirmed| confirmed == id)
+            {
                 return PolicyDecision::RequiresConfirmation;
             }
         }

@@ -41,7 +41,7 @@ impl NativeGpuCanvas2D {
             matches!(self.blend_mode, BlendMode::Additive) && self.native_caps.rhi_additive_blend;
         // 统一决定轴对齐矩形是否可以进入 native pending queue。
         let native_blend = native_src_over || native_additive;
-        if self.soft_has_content || !self.native_caps.retained_framebuffer || !native_blend {
+        if self.soft_has_content || !self.native_caps.retained_color_target || !native_blend {
             self.with_soft_clip(|soft| soft.fill_rect(rect, color, radius));
             self.mark_soft();
             return;
@@ -91,7 +91,7 @@ impl NativeGpuCanvas2D {
             return;
         }
         // 一般仿射：直角矩形走三角形网格；圆角 SDF 不支持旋转/剪切。
-        if !has_radius && self.native_caps.retained_framebuffer {
+        if !has_radius && self.native_caps.retained_color_target {
             let mesh = solid_mesh_from_affine_rect(
                 rect,
                 self.transform,
@@ -107,7 +107,7 @@ impl NativeGpuCanvas2D {
             return;
         }
         // 变换圆角矩形使用共享路径 tessellation，保留真实圆角轮廓而不是压平为 AABB。
-        if has_radius && self.native_caps.retained_framebuffer {
+        if has_radius && self.native_caps.retained_color_target {
             // 路径保留逻辑空间半径，再由 queue_path_mesh 统一应用当前 affine transform。
             let path = rounded_rect_path(rect, radius);
             self.queue_path_mesh(&path, color, FillRule::NonZero, None);
@@ -138,7 +138,7 @@ impl NativeGpuCanvas2D {
             matches!(self.blend_mode, BlendMode::Additive) && self.native_caps.rhi_additive_blend;
         // 统一决定轴对齐描边是否可以进入 native pending queue。
         let native_blend = native_src_over || native_additive;
-        if self.soft_has_content || !self.native_caps.retained_framebuffer || !native_blend {
+        if self.soft_has_content || !self.native_caps.retained_color_target || !native_blend {
             self.with_soft_clip(|soft| soft.stroke_rect(rect, color, lw, radius));
             self.mark_soft();
             return;
@@ -154,7 +154,7 @@ impl NativeGpuCanvas2D {
                 return;
             }
             // 任意仿射描边矩形转为闭合圆角路径，复用 solid mesh 与共享 stroker。
-            if self.native_caps.retained_framebuffer {
+            if self.native_caps.retained_color_target {
                 // 描边宽度保持逻辑值，由 queue_path_mesh 按当前 transform 处理。
                 let path = rounded_rect_path(rect, radius);
                 let options = StrokeOptions {
@@ -214,7 +214,7 @@ impl NativeGpuCanvas2D {
             return;
         }
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        if self.soft_has_content || !self.native_caps.retained_framebuffer || !native_blend {
+        if self.soft_has_content || !self.native_caps.retained_color_target || !native_blend {
             self.with_soft_clip(|soft| soft.fill_linear_gradient(rect, ca, cb, dir));
             self.mark_soft();
             return;
@@ -271,7 +271,7 @@ impl NativeGpuCanvas2D {
             return;
         }
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        if self.soft_has_content || !self.native_caps.retained_framebuffer || !native_blend {
+        if self.soft_has_content || !self.native_caps.retained_color_target || !native_blend {
             self.with_soft_clip(|soft| soft.fill_radial_gradient(cx, cy, ir, or, ic, oc));
             self.mark_soft();
             return;
@@ -320,7 +320,7 @@ impl NativeGpuCanvas2D {
         stroke: Option<&StrokeOptions>,
     ) {
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        if self.soft_has_content || !self.native_caps.retained_framebuffer || !native_blend {
+        if self.soft_has_content || !self.native_caps.retained_color_target || !native_blend {
             if self.gpu_only {
                 self.reject_unsupported("transformed path or destination-dependent path blend");
                 return;
@@ -446,7 +446,7 @@ impl NativeGpuCanvas2D {
         // an ever-increasing animation angle.
         let start = start_angle.rem_euclid(std::f32::consts::TAU);
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        if !self.soft_has_content && self.native_caps.retained_framebuffer && native_blend {
+        if !self.soft_has_content && self.native_caps.retained_color_target && native_blend {
             let bounds = Rect::new(cx - radius, cy - radius, radius * 2.0, radius * 2.0);
             if let Some((_, scale)) = self.try_axis_aligned_device_rect(bounds) {
                 if scales_are_uniform(scale) {
@@ -469,7 +469,7 @@ impl NativeGpuCanvas2D {
                 }
             }
         }
-        if self.soft_has_content || !self.native_caps.retained_framebuffer || !native_blend {
+        if self.soft_has_content || !self.native_caps.retained_color_target || !native_blend {
             if self.gpu_only {
                 self.reject_unsupported("sector GPU primitive or destination-dependent blend");
                 return;
@@ -511,7 +511,7 @@ impl NativeGpuCanvas2D {
             return;
         }
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        if self.soft_has_content || !self.native_caps.retained_framebuffer || !native_blend {
+        if self.soft_has_content || !self.native_caps.retained_color_target || !native_blend {
             if self.gpu_only {
                 self.reject_unsupported("destination-dependent shadow blend");
                 return;
@@ -715,7 +715,7 @@ mod tests {
         // 启用 retained RHI 与 Additive 事实能力。
         let native_caps = NativeRasterCaps {
             // retained surface 允许固定 probe 覆盖的图元进入 native queue。
-            retained_framebuffer: true,
+            retained_color_target: true,
             // 声明通用 RHI 可以执行 Additive shape pipeline。
             rhi_additive_blend: true,
             // 其余能力保持关闭，避免测试依赖无关图元。
@@ -741,7 +741,7 @@ mod tests {
         // 仅声明 retained surface，刻意缺少 Additive RHI 事实。
         let fallback_caps = NativeRasterCaps {
             // 证明分流失败不是因为缺少 retained surface。
-            retained_framebuffer: true,
+            retained_color_target: true,
             // 其余能力包括 rhi_additive_blend 保持默认 false。
             ..NativeRasterCaps::default()
         };
@@ -765,7 +765,7 @@ mod tests {
         // 启用 retained surface，验证 Additive 仿射描边仍不会误入 SrcOver tessellation。
         let transformed_caps = NativeRasterCaps {
             // 固定 probe 已覆盖描边与 mesh pipeline。
-            retained_framebuffer: true,
+            retained_color_target: true,
             // Additive pipeline 能力本身存在。
             rhi_additive_blend: true,
             // 其余能力保持默认。

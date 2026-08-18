@@ -41,8 +41,6 @@ pub(crate) struct D3d11SwapChainContract {
     pub(crate) swap_effect: DXGI_SWAP_EFFECT,
     // 保存 GraphicsContext 对外声明的跨帧保留性证明。
     pub(crate) present_coherency: PresentCoherency,
-    // 保存薄 RHI 是否允许向 compositor 提交窄损伤区域。
-    pub(crate) partial_present: bool,
 }
 
 // 返回具备真实 image 身份的 flip-model 交换链事实。
@@ -55,8 +53,6 @@ pub(crate) const fn tracked_swap_chain_contract() -> D3d11SwapChainContract {
         swap_effect: DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
         // 上层必须按真实 image index 修复错过的历史 damage。
         present_coherency: PresentCoherency::TrackedSwapchain,
-        // Present1 可以消费同一组物理 dirty rect。
-        partial_present: true,
     }
 }
 
@@ -70,8 +66,6 @@ pub(crate) const fn legacy_swap_chain_contract() -> D3d11SwapChainContract {
         swap_effect: DXGI_SWAP_EFFECT_DISCARD,
         // DISCARD 无法为上层提供可证明的窄 present coherency。
         present_coherency: PresentCoherency::FullOnly,
-        // legacy Present 不接收 compositor 脏矩形。
-        partial_present: false,
     }
 }
 
@@ -617,7 +611,7 @@ mod tests {
 
     // 验证 flip descriptor 与 tracked coherency 来自同一事实。
     #[test]
-    fn flip_sequential_descriptor_exposes_tracked_partial_present() {
+    fn flip_sequential_descriptor_exposes_tracked_present_coherency() {
         // 读取主路径能力事实。
         let contract = tracked_swap_chain_contract();
         // 构造纯数据 descriptor；测试不调用 DXGI。
@@ -631,11 +625,9 @@ mod tests {
             contract.present_coherency,
             PresentCoherency::TrackedSwapchain
         );
-        // 主路径必须宣告 compositor 窄提交。
-        assert!(contract.partial_present);
     }
 
-    // 验证 legacy descriptor 不会误报窄 present 能力。
+    // 验证 legacy descriptor 保持完整提交一致性。
     #[test]
     fn discard_fallback_keeps_full_only_present_contract() {
         // 读取回退能力事实。
@@ -648,8 +640,6 @@ mod tests {
         assert_eq!(descriptor.SwapEffect, DXGI_SWAP_EFFECT_DISCARD);
         // DISCARD 模型只能向 Graphics System 提供完整提交证明。
         assert_eq!(contract.present_coherency, PresentCoherency::FullOnly);
-        // DISCARD 模型不得宣称支持 compositor 脏矩形。
-        assert!(!contract.partial_present);
     }
 
     // 验证物理 damage 按 DXGI left/top/right/bottom 形态转换。

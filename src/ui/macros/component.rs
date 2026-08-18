@@ -86,7 +86,7 @@ macro_rules! component {
                 let mut c = $crate::ui::__private::traits::WidgetCapabilities::new();
                 $(
                     match stringify!($method) {
-                        "measure" | "measure_from_children" | "flex_grow" | "flex_shrink" | "align_self" | "grid_cell" | "grid_column_span" | "grid_row_span" | "layout_margin" | "child_overflow_expands_parent" | "child_visible" | "measure_children" | "layout_children" | "build" | "build_view_children" =>
+                        "measure" | "measure_natural" | "measure_from_children" | "flex_grow" | "flex_shrink" | "align_self" | "grid_cell" | "grid_column_span" | "grid_row_span" | "layout_margin" | "child_overflow_expands_parent" | "child_visible" | "measure_children" | "layout_children" | "build" | "build_view_children" =>
                             c.insert($crate::ui::__private::traits::WidgetCapabilities::LAYOUT),
                         "render" | "uses_palette" | "dirty_rect" | "children_clip" | "paint_after_children" | "overlay_entry" | "draw_margin" =>
                             c.insert($crate::ui::__private::traits::WidgetCapabilities::RENDER),
@@ -120,7 +120,7 @@ macro_rules! component {
         $crate::__component_grouped_impl! {
             WidgetLayout,
             $name,
-            [measure measure_from_children flex_grow flex_shrink align_self grid_cell grid_column_span grid_row_span layout_margin child_overflow_expands_parent child_visible measure_children layout_children],
+            [measure measure_natural measure_from_children flex_grow flex_shrink align_self grid_cell grid_column_span grid_row_span layout_margin child_overflow_expands_parent child_visible measure_children layout_children],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -325,6 +325,11 @@ macro_rules! __component_method_builder {
     (measure; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn measure($($p)*) -> $ret $body
     };
+    // 生成组件独立声明的自然内容测量实现。
+    (measure_natural; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
+        // 保留组件声明提供的自然测量窄契约签名。
+        fn measure_natural($($p)*) -> $ret $body
+    };
     // 生成透明包装组件的同轮直接子节点测量实现。
     (measure_from_children; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
         // 保留组件声明提供的完整窄契约签名。
@@ -487,6 +492,11 @@ macro_rules! __match_trait_method {
     // ── WidgetLayout ──
     (WidgetLayout, measure, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn measure($($p)*) -> $ret $body
+    };
+    // 将自然内容测量声明归入 WidgetLayout 实现。
+    (WidgetLayout, measure_natural, ($($p:tt)*) -> $ret:ty $body:block) => {
+        // 原样生成组件提供的自然尺寸实现。
+        fn measure_natural($($p)*) -> $ret $body
     };
     // 将透明包装测量声明归入 WidgetLayout 实现。
     (WidgetLayout, measure_from_children, ($($p:tt)*) -> $ret:ty $body:block) => {

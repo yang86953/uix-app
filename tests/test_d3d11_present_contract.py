@@ -17,8 +17,8 @@ class D3d11PresentContractTests(unittest.TestCase):
         platform = (ROOT / "src/native/presentation/graphics/d3d11/platform/mod.rs").read_text(encoding="utf-8")
         # 读取 coherency 投影所在的 context 方法模块。
         methods = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/methods.rs").read_text(encoding="utf-8")
-        # 读取薄 RHI 能力投影。
-        rhi_device = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs").read_text(encoding="utf-8")
+        # 读取薄 RHI Surface 能力投影。
+        rhi_surface = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi.rs").read_text(encoding="utf-8")
         # 唯一事实必须由 swapchain 模块提供，按 tracked 与 legacy 两个形态固化。
         self.assertIn("pub(crate) const fn tracked_swap_chain_contract()", swapchain)
         self.assertIn("pub(crate) const fn legacy_swap_chain_contract()", swapchain)
@@ -29,20 +29,22 @@ class D3d11PresentContractTests(unittest.TestCase):
         self.assertIn("swap_effect: DXGI_SWAP_EFFECT_DISCARD", swapchain)
         # DISCARD 只能提供完整提交 coherency。
         self.assertIn("present_coherency: PresentCoherency::FullOnly", swapchain)
-        # DISCARD 不得宣称 compositor 脏矩形能力。
-        self.assertIn("partial_present: false", swapchain)
+        # 局部提交不得再以重复布尔值旁路类型化 coherency 契约。
+        self.assertNotIn("partial_present", swapchain)
         # descriptor 缓冲数量必须消费同一事实。
         self.assertIn("BufferCount: contract.buffer_count", swapchain)
         # descriptor 交换效果必须消费同一事实。
         self.assertIn("SwapEffect: contract.swap_effect", swapchain)
-        # context 的 coherency 投影必须读取同一 swapchain 契约。
+        # Surface 的 coherency 投影必须读取同一 swapchain 契约。
         self.assertIn("self.swap_chain.contract().present_coherency", methods)
-        # 静态 recipe 能力必须消费同一 swapchain 事实。
-        self.assertIn("let caps = context_caps(ctx.present_coherency());", platform)
+        # 静态 recipe 能力必须从 Surface capability 消费同一 swapchain 事实。
+        self.assertIn("GraphicsSurface::surface_capabilities(&ctx)", platform)
         # 平台适配不得保留第二份 FullOnly 硬编码。
         self.assertNotIn("PresentCoherency::FullOnly", platform)
-        # 薄 RHI 必须从同一事实投影 partial-present 能力。
-        self.assertIn("capabilities.partial_present = self.swap_chain.contract().partial_present;", rhi_device)
+        # Surface 能力必须同时陈述 coherency 与同步回读原语。
+        self.assertIn("GraphicsSurfaceCapabilities::with_readback(", rhi_surface)
+        # coherency 必须来自当前 D3D11 Surface 的实际 swapchain 契约。
+        self.assertIn("self.present_coherency()", rhi_surface)
 
 
 # 支持直接执行本测试文件。

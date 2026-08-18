@@ -8,8 +8,8 @@
 // queue-guard 窄端口需要显式事件队列类型。
 use std::collections::VecDeque;
 // owner 检查 helper 固定 composition→events 的 guard 类型与顺序。
-use std::sync::{Mutex, MutexGuard};
 use std::sync::atomic::Ordering;
+use std::sync::{Mutex, MutexGuard};
 use wayland_client::Proxy;
 use wayland_protocols::wp::text_input::zv3::client::zwp_text_input_v3;
 

@@ -72,7 +72,9 @@ fn generates_registered_keyboard_payload_fields() {
     // 键盘登记字段必须生成成功。
     .expect("keyDown key/code 应生成成功");
     // 生成物必须筛选 KeyDown 并继续返回 NotHandled。
-    assert!(tokens.contains("on_key") && tokens.contains("KeyDown") && tokens.contains("NotHandled"));
+    assert!(
+        tokens.contains("on_key") && tokens.contains("KeyDown") && tokens.contains("NotHandled")
+    );
     // code 使用公开 KeyCode 的稳定调试文本。
     assert!(tokens.contains("format !") && tokens.contains("key_payload"));
     // 未知键盘字段必须失败。
@@ -83,5 +85,7 @@ fn generates_registered_keyboard_payload_fields() {
     // 提取预期诊断。
     .expect_err("keyDown mods 未登记时必须失败");
     // 修复建议必须列出 key 和 code。
-    assert!(unknown.suggestion.contains("$event.key") && unknown.suggestion.contains("$event.code"));
+    assert!(
+        unknown.suggestion.contains("$event.key") && unknown.suggestion.contains("$event.code")
+    );
 }

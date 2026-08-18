@@ -88,6 +88,23 @@ fn reverse_readback_rows(pixels: &mut [u32], row_width: usize) {
     }
 }
 
+// 把 glReadPixels 的 RGBA 字节载荷规范化为 UIX 统一的 0xAARRGGBB 像素。
+fn normalize_rgba_readback_pixels(pixels: &mut [u32]) {
+    // 逐像素解码原生内存字节，避免依赖主机 u32 的通道解释。
+    for pixel in pixels {
+        // 固定 RGBA/UNSIGNED_BYTE 请求依次写入 R、G、B、A 四个字节。
+        let [red, green, blue, alpha] = pixel.to_ne_bytes();
+        // 以数值位移构造跨 Adapter 统一的 AARRGGBB packed 值。
+        *pixel = ((alpha as u32) << 24)
+            // 红色进入 16 到 23 位。
+            | ((red as u32) << 16)
+            // 绿色进入 8 到 15 位。
+            | ((green as u32) << 8)
+            // 蓝色进入最低八位。
+            | blue as u32;
+    }
+}
+
 // 复用主 raster 类型承载状态恢复与 readback 操作。
 impl OpenGlRasterPipeline {
     pub(crate) fn bind_swapchain_target(&mut self) {
@@ -151,6 +168,7 @@ impl OpenGlRasterPipeline {
                 read_y,
                 width,
                 height,
+                // 固定请求 RGBA 字节顺序，避免实现偏好改变公共像素语义。
                 glow::RGBA,
                 glow::UNSIGNED_BYTE,
                 glow::PixelPackData::Slice(Some(std::slice::from_raw_parts_mut(
@@ -167,6 +185,8 @@ impl OpenGlRasterPipeline {
                 ));
             }
         }
+        // 先把 RGBA 字节通道规范化为与 D3D11/CPU 一致的 0xAARRGGBB。
+        normalize_rgba_readback_pixels(&mut pixels);
         // OpenGL read_pixels 从低 Y 到高 Y 返回，统一反转为 top-left 行序。
         reverse_readback_rows(&mut pixels, width as usize);
         // EGL 与 WGL 都已在 adapter 内规范化为同一输出契约。
@@ -210,7 +230,10 @@ impl OpenGlRasterPipeline {
 #[cfg(test)]
 mod readback_contract_tests {
     // 引入同一私有 adapter 的待测辅助函数。
-    use super::{gl_readback_y_from_top, reverse_readback_rows, validate_readback_region};
+    use super::{
+        gl_readback_y_from_top, normalize_rgba_readback_pixels, reverse_readback_rows,
+        validate_readback_region,
+    };
     // 引入稳定错误分类。
     use crate::core::Errc;
 
@@ -230,6 +253,17 @@ mod readback_contract_tests {
         reverse_readback_rows(&mut pixels, 2);
         // 最底行应移到末尾，同时每行左右像素保持原顺序。
         assert_eq!(pixels, [5, 6, 3, 4, 1, 2]);
+    }
+
+    // 锁定 OpenGL RGBA 字节与 D3D11 BGRA backbuffer 产生同一 packed 像素。
+    #[test]
+    fn normalizes_rgba_bytes_to_argb_pixel_values() {
+        // 模拟驱动按内存顺序写入 R=11、G=22、B=33、A=44。
+        let mut pixels = [u32::from_ne_bytes([0x11, 0x22, 0x33, 0x44])];
+        // 执行 Adapter 私有的通道规范化。
+        normalize_rgba_readback_pixels(&mut pixels);
+        // 公共 readback 必须得到数值 0xAARRGGBB。
+        assert_eq!(pixels, [0x4411_2233]);
     }
 
     // 锁定越界区域在调用 OpenGL 前返回 typed 参数错误。

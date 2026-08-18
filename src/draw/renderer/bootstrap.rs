@@ -222,7 +222,6 @@ where
         // 从专用 owner 的构造期快照读取稳定 recipe 事实。
         let caps = owner.caps();
         let selected = GraphicsRecipe::new(caps.backend, caps.raster, caps.present);
-        let present_occlusion = caps.present_occlusion;
 
         let renderer = match assemble_renderer(owner, width, height) {
             Ok(renderer) => renderer,
@@ -240,9 +239,7 @@ where
                 continue;
             }
         };
-        tracing::info!(
-            "Graphics bootstrap: selected recipe {selected}; present_occlusion={present_occlusion}"
-        );
+        tracing::info!("Graphics bootstrap: selected recipe {selected}");
         return Ok(GpuBootstrap {
             renderer,
             selected: selected.backend,

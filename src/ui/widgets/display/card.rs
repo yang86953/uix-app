@@ -9,12 +9,17 @@ use crate::draw::painting::PaintPass;
 use crate::draw::{Color, Radius};
 use crate::ui::SnapshotFields;
 use crate::ui::children::WidgetChildren;
-use crate::ui::widget_runtime::paint_context::PaintContext;
-use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
 use crate::ui::layout::{
     AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent, LayoutChild,
     flex::compute_flex_layout,
 };
+// 导入共享的子项物理内容尺寸计算，避免 Card 自行复制 Flex 边距语义。
+use crate::ui::layout::engine::content_size_from_children;
+use crate::ui::widget_runtime::paint_context::PaintContext;
+// Card 的自动高度必须读取子树自然尺寸，而不是 flex-grow 的零 basis。
+use crate::ui::widget_runtime::tree_measure::child_from_tree_with_natural_constraints;
+// 接收 ViewAdapter 传入的通用尺寸样式窄契约。
+use crate::ui::theme::style::Style;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetComponent,
     WidgetTree,
@@ -39,6 +44,8 @@ component! {
         hovered_action: Cell<Option<usize>>,
         last_frame: Cell<Option<Rect>>,
         pending_submit: RefCell<Option<String>>,
+        // 缓存 body 子树的真实内容尺寸，供未指定高度时撑开卡片。
+        cached_content_size: Cell<Size>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -51,6 +58,13 @@ component! {
 
     build => (&self) -> Vec<Box<dyn WidgetComponent>> {
         self.children.take()
+    }
+
+    on_children_changed => (&mut self, child_count: usize) {
+        // 直接子树结构变化后旧内容尺寸失效，下一轮布局会写入新事实。
+        self.cached_content_size.set(Size::zero());
+        // 当前只需结构变化信号，不依赖变化后的子项数量。
+        let _ = child_count;
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -292,12 +306,22 @@ component! {
     measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
+        // 先按当前卡片几何计算 body 可用宽度与纵向起点。
         let inner = self.body_rect(frame);
-        let constraints = Constraints::loose(Size::new(inner.w, inner.h));
+        // 自动高度必须允许子树暴露自然高度，固定高度仍以 body 高度为上限。
+        let max_height = if self.fixed_height.is_none() {
+            // 无界哨兵只参与测量，不会写入最终布局 frame。
+            f32::INFINITY
+        } else {
+            // 显式定高继续保留原有裁剪与收缩语义。
+            inner.h
+        };
+        // 横向仍受 body 宽度约束，避免文本按无限宽度测量后跨平台换行漂移。
+        let constraints = Constraints::loose(Size::new(inner.w, max_height));
         children
             .iter()
             .map(|&id| {
-                let mut child = child_from_tree_with_constraints(id, tree, constraints);
+                let mut child = child_from_tree_with_natural_constraints(id, tree, constraints);
                 child.measured_size = constraints.clamp(child.measured_size);
                 if tree.get(id).and_then(|node| node.as_layout()).is_none() {
                     child.flex_shrink = 0.0;
@@ -310,10 +334,19 @@ component! {
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
-        if children.is_empty() { return Vec::new(); }
+        // 空子树没有可缓存的内容范围。
+        if children.is_empty() {
+            // 清除已移除内容留下的旧测量结果。
+            self.cached_content_size.set(Size::zero());
+            // 空布局不产生子节点位置。
+            return Vec::new();
+        }
 
+        // body 同时决定子项起点和内容尺寸的相对原点。
         let inner = self.body_rect(frame);
-        if inner.w <= 0.0 || inner.h <= 0.0 {
+        // 零宽或显式零高无法产生有效的可见子布局。
+        if inner.w <= 0.0 || (inner.h <= 0.0 && self.fixed_height.is_some()) {
+            // 固定退化几何继续返回稳定的零尺寸子 frame。
             return children
                 .iter()
                 .map(|child| (child.id, Rect::new(inner.x, inner.y, 0.0, 0.0)))
@@ -341,10 +374,18 @@ component! {
             children: &flex_children,
             justify_content: JustifyContent::Start,
             align_items: AlignItems::Stretch,
+            // 未指定高度时由子项自然高度撑开主轴，禁止压入默认 body 高度。
+            intrinsic_main: self.fixed_height.is_none(),
             ..FlexInput::default()
         };
 
+        // 使用共享 Flex 实现完成 Card body 的垂直正常流布局。
         let output = compute_flex_layout(&input);
+        // 记录包含子项尾侧 margin 的真实内容范围，供下一轮 Card 测量使用。
+        let content_size = content_size_from_children(inner, &output.child_rects, children);
+        // 缓存只属于 Card 组件实例，不泄漏到图形后端或平台 Surface。
+        self.cached_content_size.set(content_size);
+        // 把共享 Flex 结果重新关联到稳定组件标识。
         children
             .iter()
             .zip(output.child_rects)
@@ -539,9 +580,37 @@ impl Card {
     }
 
     fn intrinsic_size(&self) -> Size {
+        // 读取上一轮由真实子树布局得到的 body 内容尺寸。
+        let cached = self.cached_content_size.get();
+        // 标题存在时占用固定标题区，否则 body 从顶部内边距后开始。
+        let top = if self.title.is_some() {
+            // 标题块高度包含标题文本与分隔线区域。
+            Self::TITLE_BLOCK_HEIGHT
+        } else {
+            // 无标题卡片保留顶部内容内边距。
+            self.padding
+        };
+        // 只有真实内容高度可用时才替换兼容的默认高度。
+        let content_height = if cached.h > 0.0 {
+            // 自然高度包含顶部区域、body、底部内边距和可选动作区。
+            top + cached.h
+                + self.padding
+                + if self.actions.is_empty() {
+                    // 无动作时不预留页尾操作区。
+                    0.0
+                } else {
+                    // 有动作时把固定操作区完整计入 Card border-box。
+                    Self::ACTION_HEIGHT
+                }
+        } else {
+            // 首轮尚无子树缓存时沿用原有默认高度完成 bootstrap。
+            Self::DEFAULT_HEIGHT
+        };
+        // 固有尺寸保留原有默认宽度，并只让未显式指定的高度由内容撑开。
         Size::new(
             self.fixed_width.unwrap_or(Self::DEFAULT_WIDTH),
-            self.fixed_height.unwrap_or(Self::DEFAULT_HEIGHT),
+            self.fixed_height
+                .unwrap_or(Self::DEFAULT_HEIGHT.max(content_height)),
         )
     }
 
@@ -564,6 +633,8 @@ impl Card {
             hovered_action: Cell::new(None),
             last_frame: Cell::new(None),
             pending_submit: RefCell::new(None),
+            // 新卡片在首次子树布局前没有可复用的内容尺寸事实。
+            cached_content_size: Cell::new(Size::zero()),
         }
     }
 
@@ -602,6 +673,24 @@ impl Card {
     pub fn flex_grow(mut self, v: f32) -> Self {
         self.flex_grow_val = if v.is_finite() { v.max(0.0) } else { 0.0 };
         self
+    }
+    // 把 View 声明的显式尺寸与 Flex 覆盖应用到 Card 私有布局状态。
+    pub(crate) fn apply_view_layout_style(&mut self, style: &Style, flex_grow: Option<f32>) {
+        // 只消费显式宽度，未声明轴继续由 Card 默认尺寸负责。
+        if let Some(width) = style.width {
+            // 复用 Card 的尺寸有效值规则。
+            self.fixed_width = Self::optional_dimension(width);
+        }
+        // 只消费显式高度，未声明轴继续保持内容自适应。
+        if let Some(height) = style.height {
+            // 复用 Card 的尺寸有效值规则。
+            self.fixed_height = Self::optional_dimension(height);
+        }
+        // 只有 ViewNode 明确覆盖时才替换组件构建器已有的增长因子。
+        if let Some(grow) = flex_grow {
+            // 非有限值与负值继续按 Card 公共构建器规则归零。
+            self.flex_grow_val = if grow.is_finite() { grow.max(0.0) } else { 0.0 };
+        }
     }
     /// 设置操作标签，并移除仅含空白的项目。
     pub fn actions(mut self, list: Vec<impl Into<String>>) -> Self {
@@ -756,3 +845,8 @@ fn conservative_text_height(ctx: &mut PaintContext, text: &str, font_size: f32) 
         .h
         .max(ctx.line_box_height(font_size))
 }
+
+// 把 Card 组件级回归测试拆分到独立文件，保持实现文件低于规模上限。
+#[cfg(test)]
+#[path = "card_tests.rs"]
+mod tests;

@@ -119,19 +119,13 @@ impl D3d11Pipeline {
         vertex_stride: u32,
         index: Option<&ID3D11Buffer>,
         uniform: &ID3D11Buffer,
+        blend: PipelineBlend,
         vertex_count: u32,
         index_count: u32,
         first_vertex: u32,
         first_index: u32,
         base_vertex: i32,
     ) -> Result<()> {
-        // 扇形单位 quad 的顶点 ABI 是 position float2。
-        if vertex_stride != (2 * size_of::<f32>()) as u32 {
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                "D3d11 RHI sector stride must be float2",
-            ));
-        }
         // 非索引和索引绘制必须恰好选择一种范围。
         if (index.is_some() && index_count == 0) || (index.is_none() && vertex_count == 0) {
             return Err(Error::new(
@@ -157,7 +151,7 @@ impl D3d11Pipeline {
             context.VSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
             context.PSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
             context.RSSetState(&self.rasterizer);
-            context.OMSetBlendState(&self.blend_premultiplied, None, 0xffff_ffff);
+            context.OMSetBlendState(self.rhi_blend_state(blend), None, 0xffff_ffff);
             if index.is_some() {
                 context.DrawIndexed(index_count, first_index, base_vertex);
             } else {

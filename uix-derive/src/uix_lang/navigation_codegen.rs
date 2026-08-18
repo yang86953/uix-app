@@ -7,8 +7,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Navigation 属性、表达式、事件、字符串与诊断契约。
 use super::{
-    Attribute, AttributeValue, Diagnostic, Element, generate_expression,
-    generate_event_handler_expression, string_value,
+    Attribute, AttributeValue, Diagnostic, Element, generate_event_handler_expression,
+    generate_expression, string_value,
 };
 
 // 生成只拥有侧栏外壳并复用受控 Menu 的 Navigation。

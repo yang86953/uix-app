@@ -8,8 +8,8 @@
 //! `widgets → component → layout`。
 
 use crate::core::{ComponentId, Constraints};
-use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::layout::LayoutChild;
+use crate::ui::widget_runtime::widget::WidgetTree;
 
 // ── 辅助：从 WidgetTree 构建 LayoutChild ──────────────────────────
 
@@ -19,13 +19,50 @@ pub(crate) fn child_from_tree_with_constraints(
     tree: &WidgetTree,
     constraints: Constraints,
 ) -> LayoutChild {
+    // 普通父布局使用组件声明的 Flex basis 测量策略。
+    child_from_tree_with_measure_mode(component_id, tree, constraints, false)
+}
+
+/// 从 WidgetTree 节点构建自然尺寸子项，忽略子组件的 Flex basis 归零策略。
+pub(crate) fn child_from_tree_with_natural_constraints(
+    component_id: ComponentId,
+    tree: &WidgetTree,
+    constraints: Constraints,
+) -> LayoutChild {
+    // 固有尺寸父容器显式请求子树自然内容尺寸。
+    child_from_tree_with_measure_mode(component_id, tree, constraints, true)
+}
+
+// 用单一分发路径构造 LayoutChild，避免普通测量与自然测量的元数据发生漂移。
+fn child_from_tree_with_measure_mode(
+    // 接收需要测量的稳定组件标识。
+    component_id: ComponentId,
+    // 接收当前布局事实所属的组件树。
+    tree: &WidgetTree,
+    // 接收父级提供的尺寸约束。
+    constraints: Constraints,
+    // 标记是否绕过子组件的 Flex basis 策略。
+    natural: bool,
+) -> LayoutChild {
     let node = tree.get(component_id);
     // 透明包装节点可在同一轮读取直接子测量，避免用上一帧缓存猜测固有尺寸。
     let pref = node
         // 优先请求组件明确声明的直接子节点代理测量。
         .and_then(|component| component.measure_from_children(constraints, tree))
         // 普通组件继续使用原有阶段无关测量入口。
-        .or_else(|| node.map(|component| component.measure(constraints)))
+        .or_else(|| {
+            // 普通路径保留 Flex basis，自然路径只读取内容固有尺寸。
+            node.map(|component| {
+                // 根据调用方声明选择唯一测量语义。
+                if natural {
+                    // 固有尺寸容器需要子树真实内容尺寸。
+                    component.measure_natural(constraints)
+                } else {
+                    // 普通父布局继续使用组件的 Flex basis。
+                    component.measure(constraints)
+                }
+            })
+        })
         // 节点已经失效时保持有限零尺寸。
         .unwrap_or_default();
     let layout = node.and_then(|component| component.as_layout());

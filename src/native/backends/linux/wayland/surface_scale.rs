@@ -554,7 +554,10 @@ mod tests {
             (800, 600)
         );
         // 物理尺寸精确乘当前 scale。
-        assert_eq!((snapshot.drawable_width, snapshot.drawable_height), (1600, 1200));
+        assert_eq!(
+            (snapshot.drawable_width, snapshot.drawable_height),
+            (1600, 1200)
+        );
         // DPR 事实为整数 2。
         assert_eq!(snapshot.scale, 2);
 
@@ -563,12 +566,18 @@ mod tests {
         // 读取更新后的同代快照。
         let snapshot = surface.metrics().snapshot().expect("读取 scale=3 快照");
         // drawable 随目标 output 更新为 2400x1800。
-        assert_eq!((snapshot.drawable_width, snapshot.drawable_height), (2400, 1800));
+        assert_eq!(
+            (snapshot.drawable_width, snapshot.drawable_height),
+            (2400, 1800)
+        );
         // scale 同步更新为 3。
         assert_eq!(snapshot.scale, 3);
 
         // 离开 HiDPI output 后回到默认 output scale=1。
-        assert_eq!(surface.leave_output(20, registry.preferred_scale()), Some(1));
+        assert_eq!(
+            surface.leave_output(20, registry.preferred_scale()),
+            Some(1)
+        );
         // 读取返回路径快照。
         let snapshot = surface.metrics().snapshot().expect("读取返回 scale=1 快照");
         // logical extent 保持不变。
@@ -577,7 +586,10 @@ mod tests {
             (800, 600)
         );
         // drawable 回到 800x600。
-        assert_eq!((snapshot.drawable_width, snapshot.drawable_height), (800, 600));
+        assert_eq!(
+            (snapshot.drawable_width, snapshot.drawable_height),
+            (800, 600)
+        );
         // 有效 scale 回到 1。
         assert_eq!(snapshot.scale, 1);
 
@@ -586,7 +598,11 @@ mod tests {
         // enter、动态更新、leave 共三条。
         assert_eq!(events.len(), 3);
         // 所有事件都严格路由到窗口 7。
-        assert!(events.iter().all(|event| event.window_id == Some(WindowId::new(7))));
+        assert!(
+            events
+                .iter()
+                .all(|event| event.window_id == Some(WindowId::new(7)))
+        );
         // 健康状态序列不得产生 pending failure。
         assert!(failure_source.take().is_none());
     }

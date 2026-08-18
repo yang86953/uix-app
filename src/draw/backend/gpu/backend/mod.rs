@@ -26,6 +26,8 @@ pub(crate) mod rhi_surface_scroll;
 pub(crate) mod rhi_surface_present;
 // 最终 retained-to-swapchain 合成集中校验 damage 并生成逐矩形 scissor。
 pub(crate) mod rhi_surface_composite;
+// retained texture 到真实 surface 的最终合成与测试观察时序独立管理。
+pub(crate) mod rhi_surface_final;
 // 主 surface 的 CPU soft segment RHI 合成独立管理，保持 retained 组合边界清晰。
 pub(crate) mod rhi_surface_soft;
 // Picture texture 的 RHI sampled blit 独立管理，保持目标切换边界清晰。
@@ -38,6 +40,9 @@ use std::time::Instant;
 
 use crate::core::{Error, PresentDamageTracker, PresentSurface};
 use crate::draw::backend::rhi_renderer::RhiRenderer;
+// test-harness 在 backend 内暂存最终合成后的规范像素结果。
+#[cfg(feature = "test-harness")]
+use crate::draw::backend::SurfaceReadback;
 use crate::native::present::GpuRecipeOwner;
 // 引入迁移期 RHI 的离屏纹理句柄。
 use crate::native::present::rhi::TextureHandle;
@@ -79,6 +84,15 @@ pub struct GpuBackend {
     pub(crate) rhi_surface_token: Option<crate::native::present::rhi::SurfaceToken>,
     /// 标记 FrameEncoder 已写入 retained texture、等待最终合成 present。
     pub(crate) rhi_surface_frame_pending_present: bool,
+    // 标记下一次最终合成需要在 present 前读取真实 surface。
+    #[cfg(feature = "test-harness")]
+    pub(crate) surface_readback_requested: bool,
+    // 保存同一最终呈现事务产生的规范像素或 typed failure。
+    #[cfg(feature = "test-harness")]
+    pub(crate) surface_readback_result: Option<Result<SurfaceReadback, Error>>,
+    // 记录当前帧由共享 FramePlan 成功执行的主表面 TextureMove 数量。
+    #[cfg(feature = "test-harness")]
+    pub(crate) executed_texture_moves_in_frame: usize,
     /// 保存 overlay 干净背景的通用 RHI 纹理。
     pub(crate) rhi_overlay_backdrop_texture: Option<TextureHandle>,
     /// 保存从干净背景复制并应用当前 blur 策略的 RHI 纹理。

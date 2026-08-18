@@ -29,7 +29,7 @@ use crate::app::window::window_session::TextInputCoordinator;
 use crate::core::WindowId;
 use crate::diagnostics::{Diagnostics, DiagnosticsConfig};
 #[cfg(feature = "test-harness")]
-use crate::draw::renderer::test_harness::GraphicsFaultSignal;
+use crate::draw::renderer::test_harness::{GraphicsFaultSignal, SurfaceReadbackTicket};
 use crate::platform::windowing::EventLoopWaker;
 use crate::ui::Theme;
 use std::collections::VecDeque;
@@ -509,6 +509,33 @@ impl AppRuntime {
         // 唤醒事件循环，让下一帧及时消费测试信号。
         self.wake_event_loop();
         Ok(())
+    }
+
+    // 为目标窗口安排下一次成功 GPU 帧的规范 surface 回读。
+    #[cfg(feature = "test-harness")]
+    pub(crate) fn request_surface_readback_for_test(
+        // 借用应用运行时控制面。
+        &self,
+        // 指定持有真实图形 owner 的窗口。
+        window_id: WindowId,
+        // 返回可由非 UI 线程有界等待的一次性票据。
+    ) -> crate::core::Result<SurfaceReadbackTicket> {
+        // 关闭窗口后不得向已经释放的 Renderer 投递请求。
+        let session = self.session(window_id).ok_or_else(|| {
+            // 使用稳定的窗口不存在错误。
+            crate::core::Error::new(
+                // 会话已经不存在。
+                crate::core::Errc::NotFound,
+                // 诊断不暴露内部会话表。
+                "cannot read back a closed window session",
+            )
+        })?;
+        // 在共享图形测试信号上保留唯一待处理请求。
+        let ticket = session.graphics_faults.request_surface_readback()?;
+        // 唤醒事件循环，让已有脏帧及时进入 owner-thread 绘制边界。
+        self.wake_event_loop();
+        // 把接收端交给调用方，发送端继续由 Renderer 持有。
+        Ok(ticket)
     }
 
     fn session(&self, window_id: WindowId) -> Option<SessionRuntime> {

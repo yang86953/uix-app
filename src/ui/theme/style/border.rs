@@ -18,7 +18,7 @@ pub enum BorderStyle {
 #[cfg(test)]
 mod tests {
     // 引入当前线型和统一样式契约。
-    use super::{BorderStyle, super::Style};
+    use super::{super::Style, BorderStyle};
     // 引入边框颜色与盒模型宽度所需值。
     use crate::core::EdgeInsets;
     // 引入可直接构造的绘制颜色。

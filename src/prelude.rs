@@ -29,8 +29,8 @@ pub use crate::platform::windowing::{
 // draw
 
 pub use crate::draw::{
-    BlendMode, Color, FillRule, FontService, ImageService, Path, PathBuilder, Radius, Renderer,
-    StrokeOptions, colors,
+    BlendMode, Color, FillRule, FontBundle, FontService, ImageService, Path, PathBuilder, Radius,
+    Renderer, StrokeOptions, colors,
 };
 
 // data
@@ -46,7 +46,6 @@ pub use crate::semantic_handler;
 pub use crate::t;
 pub use crate::t_fmt_arg;
 pub use crate::tree;
-pub use crate::ui::widget_runtime::focus_trap::FocusTrap;
 pub use crate::ui::i18n::{register_translations, set_translations, t_lookup, t_lookup_fmt};
 pub use crate::ui::layout::{
     AlignItems, BoxModel, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent,
@@ -57,6 +56,7 @@ pub use crate::ui::theme::style::{
     BoxShadowDef, ColorValue, DisplayMode, PaletteColor, Style, StyleSet, StyleState,
     TypographyToken,
 };
+pub use crate::ui::widget_runtime::focus_trap::FocusTrap;
 // 公开 UIX 生成代码与手写消费者共享的背景图层值契约。
 pub use crate::ui::theme::style::{
     BackgroundAxisPosition, BackgroundImage, BackgroundPosition, BackgroundRepeat,

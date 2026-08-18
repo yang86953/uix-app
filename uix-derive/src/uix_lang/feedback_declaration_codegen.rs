@@ -8,8 +8,7 @@ use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入属性值、表达式与诊断辅助。
 use super::{
     Attribute, AttributeValue, Diagnostic, Element, boolean_value,
-    generate_event_handler_expression,
-    literal_string, numeric_value, string_value,
+    generate_event_handler_expression, literal_string, numeric_value, string_value,
 };
 
 // 生成 Message 的零布局 keyed 声明组件。

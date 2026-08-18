@@ -5,18 +5,28 @@
 // 引入共享字节载荷和三角 mesh 的所有权类型。
 use std::sync::Arc;
 
-// 引入统一错误和最终 damage。
-use crate::core::PresentDamage;
+// 引入统一错误类型。
 use crate::core::error::{Errc, Error, Result};
 // 引入薄 RHI 的资源、能力和执行类型。
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsContextRhi, LoadAction,
-    PipelineDesc, RhiExtent, RhiScissor, RhiViewport, SamplerDesc, SamplerHandle, TextureDesc,
-    TextureFormat, TextureHandle, pipeline_keys,
+    BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsDevice, LoadAction, PipelineDesc,
+    PipelineKind, RhiExtent, RhiScissor, RhiViewport, SamplerDesc, SamplerHandle, TextureDesc,
+    TextureFormat, TextureHandle,
 };
 
 // 引入当前目录中的有序帧计划类型。
-use super::frame_plan::{FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef};
+use super::frame_plan::{
+    FramePlan, FramePlanCommand, FrameUniformPayload, FrameVertexPayload, RenderPassPlan,
+    RenderTargetRef,
+};
+
+// 将 FramePlan 的 surface/offscreen 执行边界拆到独立文件，保持 renderer 主文件聚焦资源 lowering。
+#[path = "rhi_renderer_execution.rs"]
+mod execution;
+// 向 GPU 组合边界公开封闭的 Surface/Offscreen Renderer 帧。
+pub(crate) use execution::RhiRendererFrame;
+// 在离屏多阶段 renderer 中复用 Device-only 执行入口。
+use execution::execute_plan_without_present;
 
 // 将覆盖率 lowering 拆到独立文件，保持通用 renderer 主文件在单文件行数边界内。
 #[path = "rhi_renderer_coverage.rs"]
@@ -49,6 +59,10 @@ mod blur;
 // 将 MSDF 字形 lowering 拆到独立文件，保持公共 renderer 的资源边界清晰。
 #[path = "rhi_renderer_msdf.rs"]
 mod msdf;
+
+// 将基础图元的共享 uniform 映射拆到独立文件，禁止各执行入口重复拼数组。
+#[path = "rhi_renderer_uniform.rs"]
+mod uniform;
 
 // 重新导出阴影 quad，使 GPU submit 只依赖 renderer 的迁移载荷。
 pub(crate) use shadow::RhiShadow;
@@ -196,7 +210,7 @@ pub(crate) struct RhiShapeRect {
 #[derive(Debug, Default)]
 pub(crate) struct RhiRenderer {
     // 缓存 solid mesh pipeline。
-    solid_pipeline: Option<crate::native::present::rhi::PipelineHandle>,
+    solid_pipeline: Option<crate::native::present::rhi::PipelineBinding>,
     // 缓存可写 vertex buffer。
     vertex_buffer: Option<BufferHandle>,
     // 保存 vertex buffer 当前容量。
@@ -204,11 +218,11 @@ pub(crate) struct RhiRenderer {
     // 缓存 MeshConstants uniform buffer。
     solid_uniform: Option<BufferHandle>,
     // 缓存采样 quad pipeline。
-    textured_pipeline: Option<crate::native::present::rhi::PipelineHandle>,
+    textured_pipeline: Option<crate::native::present::rhi::PipelineBinding>,
     // 缓存采样 quad 的 Additive pipeline。
-    additive_textured_pipeline: Option<crate::native::present::rhi::PipelineHandle>,
+    additive_textured_pipeline: Option<crate::native::present::rhi::PipelineBinding>,
     // 缓存 R8 glyph coverage pipeline。
-    coverage_pipeline: Option<crate::native::present::rhi::PipelineHandle>,
+    coverage_pipeline: Option<crate::native::present::rhi::PipelineBinding>,
     // 缓存可写采样 quad vertex buffer。
     textured_vertex_buffer: Option<BufferHandle>,
     // 保存采样 quad vertex buffer 当前容量。
@@ -220,7 +234,7 @@ pub(crate) struct RhiRenderer {
     // 缓存点采样 sampler，保持 R8 glyph coverage 的旧像素语义。
     coverage_sampler: Option<SamplerHandle>,
     // 缓存 MSDF 字形 pipeline。
-    msdf_pipeline: Option<crate::native::present::rhi::PipelineHandle>,
+    msdf_pipeline: Option<crate::native::present::rhi::PipelineBinding>,
     // 缓存 MSDF 字形常量 uniform buffer。
     msdf_uniform: Option<BufferHandle>,
     // 缓存 MSDF 字形的线性 clamp sampler。
@@ -230,28 +244,32 @@ pub(crate) struct RhiRenderer {
     // 保存 MSDF atlas 的内容索引，避免每帧重复创建和上传字形纹理。
     msdf_atlas_cache: std::collections::HashMap<msdf::MsdfCacheKey, msdf::MsdfAtlasEntry>,
     // 缓存渐变 pipeline。
-    gradient_pipeline: Option<crate::native::present::rhi::PipelineHandle>,
+    gradient_pipeline: Option<crate::native::present::rhi::PipelineBinding>,
     // 缓存单位 quad vertex buffer。
     gradient_vertex_buffer: Option<BufferHandle>,
     // 缓存渐变常量 uniform buffer。
     gradient_uniform: Option<BufferHandle>,
     // 缓存 SrcOver 与 Additive 圆角/描边矩形 pipeline。
     shape_pipeline: Option<(
-        crate::native::present::rhi::PipelineHandle,
-        crate::native::present::rhi::PipelineHandle,
+        crate::native::present::rhi::PipelineBinding,
+        crate::native::present::rhi::PipelineBinding,
     )>,
     // 缓存圆角/描边矩形单位 quad vertex buffer。
     shape_vertex_buffer: Option<BufferHandle>,
     // 缓存圆角/描边矩形常量 uniform buffer。
     shape_uniform: Option<BufferHandle>,
     // 缓存阴影 pipeline。
-    shadow_pipeline: Option<crate::native::present::rhi::PipelineHandle>,
+    shadow_pipeline: Option<crate::native::present::rhi::PipelineBinding>,
+    // 缓存阴影单位 quad vertex buffer，生命周期不再依附 Shape 模块。
+    shadow_vertex_buffer: Option<BufferHandle>,
+    // 缓存阴影常量 uniform buffer，容量由 Shadow 自身契约决定。
+    shadow_uniform: Option<BufferHandle>,
     // 缓存原生扇形 pipeline、单位 quad 和常量 uniform。
-    sector_pipeline: Option<crate::native::present::rhi::PipelineHandle>,
+    sector_pipeline: Option<crate::native::present::rhi::PipelineBinding>,
     sector_vertex_buffer: Option<BufferHandle>,
     sector_uniform: Option<BufferHandle>,
     // 缓存 separable blur pipeline。
-    blur_pipeline: Option<crate::native::present::rhi::PipelineHandle>,
+    blur_pipeline: Option<crate::native::present::rhi::PipelineBinding>,
     // 缓存 blur 区域 quad 的 float2 vertex buffer。
     blur_vertex_buffer: Option<BufferHandle>,
     // 缓存 BlurConstants uniform buffer。
@@ -265,10 +283,10 @@ impl RhiRenderer {
     // 确保 solid mesh 的 pipeline、vertex buffer 和 uniform buffer 已存在。
     fn ensure_solid_resources(
         &mut self,
-        context: &mut dyn GraphicsContextRhi,
+        device: &mut dyn GraphicsDevice,
         vertex_bytes: usize,
     ) -> Result<(
-        crate::native::present::rhi::PipelineHandle,
+        crate::native::present::rhi::PipelineBinding,
         BufferHandle,
         BufferHandle,
     )> {
@@ -277,9 +295,9 @@ impl RhiRenderer {
             // 复用已登记的 pipeline。
             pipeline
         } else {
-            // 只选择通用层定义的有限 pipeline key。
-            let pipeline = context.create_pipeline(PipelineDesc {
-                key: pipeline_keys::SOLID_MESH,
+            // 只选择通用层定义的封闭 pipeline 语义。
+            let pipeline = device.create_pipeline(PipelineDesc {
+                kind: PipelineKind::SolidMesh,
             })?;
             // 缓存 pipeline 句柄。
             self.solid_pipeline = Some(pipeline);
@@ -294,12 +312,12 @@ impl RhiRenderer {
             // 旧帧已经在进入本函数前结束，扩容前可以检查式销毁旧 buffer。
             if let Some(previous) = self.vertex_buffer.take() {
                 // 失败时保留 typed error，不把旧资源静默泄漏为成功。
-                context.destroy_buffer(previous)?;
+                device.destroy_buffer(previous)?;
             }
             // 创建按 float2 顶点 ABI 绑定的 vertex buffer。
-            let buffer = context.create_buffer(BufferDesc {
+            let buffer = device.create_buffer(BufferDesc {
                 size_bytes: vertex_bytes.max(8),
-                stride_bytes: (2 * std::mem::size_of::<f32>()) as u32,
+                stride_bytes: PipelineKind::SolidMesh.contract().vertex.stride_bytes(),
                 usage: BufferUsage::Vertex,
             })?;
             // 记录新容量和句柄。
@@ -313,8 +331,8 @@ impl RhiRenderer {
             uniform
         } else {
             // D3D11 及其他 adapter 都按 16 字节常量布局对齐。
-            let uniform = context.create_buffer(BufferDesc {
-                size_bytes: 32,
+            let uniform = device.create_buffer(BufferDesc {
+                size_bytes: PipelineKind::SolidMesh.contract().uniform.size_bytes(),
                 stride_bytes: 0,
                 usage: BufferUsage::Uniform,
             })?;
@@ -329,9 +347,9 @@ impl RhiRenderer {
     // 确保采样 quad 的 pipeline、vertex/uniform buffer 和 sampler 已存在。
     fn ensure_textured_resources(
         &mut self,
-        context: &mut dyn GraphicsContextRhi,
+        device: &mut dyn GraphicsDevice,
     ) -> Result<(
-        crate::native::present::rhi::PipelineHandle,
+        crate::native::present::rhi::PipelineBinding,
         BufferHandle,
         BufferHandle,
         SamplerHandle,
@@ -342,8 +360,8 @@ impl RhiRenderer {
             pipeline
         } else {
             // 只选择通用层定义的有限 sampled quad key。
-            let pipeline = context.create_pipeline(PipelineDesc {
-                key: pipeline_keys::TEXTURED_QUAD,
+            let pipeline = device.create_pipeline(PipelineDesc {
+                kind: PipelineKind::TexturedQuad,
             })?;
             // 缓存 pipeline 句柄。
             self.textured_pipeline = Some(pipeline);
@@ -358,9 +376,9 @@ impl RhiRenderer {
                 .ok_or_else(|| rhi_state("textured vertex buffer cache is empty"))?
         } else {
             // 创建按 position/uv/color float8 ABI 绑定的 vertex buffer。
-            let buffer = context.create_buffer(BufferDesc {
+            let buffer = device.create_buffer(BufferDesc {
                 size_bytes: quad_bytes,
-                stride_bytes: (8 * std::mem::size_of::<f32>()) as u32,
+                stride_bytes: PipelineKind::TexturedQuad.contract().vertex.stride_bytes(),
                 usage: BufferUsage::Vertex,
             })?;
             // 记录容量和句柄。
@@ -374,8 +392,8 @@ impl RhiRenderer {
             uniform
         } else {
             // sampled quad 的 VS 只读取 viewport.xy 和 padding.xy。
-            let uniform = context.create_buffer(BufferDesc {
-                size_bytes: 16,
+            let uniform = device.create_buffer(BufferDesc {
+                size_bytes: PipelineKind::TexturedQuad.contract().uniform.size_bytes(),
                 stride_bytes: 0,
                 usage: BufferUsage::Uniform,
             })?;
@@ -389,7 +407,7 @@ impl RhiRenderer {
             sampler
         } else {
             // 图片缩放需要线性过滤，边缘不能采样到邻接资源。
-            let sampler = context.create_sampler(SamplerDesc { linear: true })?;
+            let sampler = device.create_sampler(SamplerDesc::linear_clamp())?;
             // 缓存 sampler 句柄。
             self.textured_sampler = Some(sampler);
             sampler
@@ -406,16 +424,16 @@ impl RhiRenderer {
     // 确保 Additive sampled quad 复用同一顶点资源但使用独立 blend pipeline。
     fn ensure_additive_textured_pipeline(
         &mut self,
-        context: &mut dyn GraphicsContextRhi,
-    ) -> Result<crate::native::present::rhi::PipelineHandle> {
+        device: &mut dyn GraphicsDevice,
+    ) -> Result<crate::native::present::rhi::PipelineBinding> {
         // 已有 pipeline 时直接复用，避免每个图片 quad 重复登记资源。
         if let Some(pipeline) = self.additive_textured_pipeline {
             // 返回已经创建的加法 pipeline。
             return Ok(pipeline);
         }
         // 只选择通用层定义的 Additive sampled quad key。
-        let pipeline = context.create_pipeline(PipelineDesc {
-            key: pipeline_keys::TEXTURED_QUAD_ADDITIVE,
+        let pipeline = device.create_pipeline(PipelineDesc {
+            kind: PipelineKind::TexturedQuadAdditive,
         })?;
         // 缓存 pipeline 句柄，后续帧保持同一资源身份。
         self.additive_textured_pipeline = Some(pipeline);
@@ -426,9 +444,9 @@ impl RhiRenderer {
     // 确保渐变 pipeline、单位 quad vertex buffer 和常量 buffer 已存在。
     fn ensure_gradient_resources(
         &mut self,
-        context: &mut dyn GraphicsContextRhi,
+        device: &mut dyn GraphicsDevice,
     ) -> Result<(
-        crate::native::present::rhi::PipelineHandle,
+        crate::native::present::rhi::PipelineBinding,
         BufferHandle,
         BufferHandle,
     )> {
@@ -438,8 +456,8 @@ impl RhiRenderer {
             pipeline
         } else {
             // 只选择通用层定义的有限 gradient key。
-            let pipeline = context.create_pipeline(PipelineDesc {
-                key: pipeline_keys::GRADIENT_RECT,
+            let pipeline = device.create_pipeline(PipelineDesc {
+                kind: PipelineKind::GradientRect,
             })?;
             // 缓存 pipeline 句柄。
             self.gradient_pipeline = Some(pipeline);
@@ -455,13 +473,13 @@ impl RhiRenderer {
             buffer
         } else {
             // 创建位置 float2 ABI 的默认 vertex buffer。
-            let buffer = context.create_buffer(BufferDesc {
+            let buffer = device.create_buffer(BufferDesc {
                 size_bytes: unit_vertices.len() * std::mem::size_of::<f32>(),
-                stride_bytes: (2 * std::mem::size_of::<f32>()) as u32,
+                stride_bytes: PipelineKind::GradientRect.contract().vertex.stride_bytes(),
                 usage: BufferUsage::Vertex,
             })?;
             // 首次绑定前上传单位 quad。
-            context.update_buffer(buffer, 0, &Self::encode_f32s(&unit_vertices))?;
+            device.update_buffer(buffer, 0, &Self::encode_f32s(&unit_vertices))?;
             // 缓存单位 quad 句柄。
             self.gradient_vertex_buffer = Some(buffer);
             buffer
@@ -472,8 +490,8 @@ impl RhiRenderer {
             uniform
         } else {
             // GradientConstants = viewport、origin/edge_x、edge_y、两色与参数。
-            let uniform = context.create_buffer(BufferDesc {
-                size_bytes: 96,
+            let uniform = device.create_buffer(BufferDesc {
+                size_bytes: PipelineKind::GradientRect.contract().uniform.size_bytes(),
                 stride_bytes: 0,
                 usage: BufferUsage::Uniform,
             })?;
@@ -514,11 +532,9 @@ impl RhiRenderer {
     // 构造并执行一帧 solid mesh RHI 计划。
     pub(crate) fn execute_solid_meshes(
         &mut self,
-        context: &mut dyn GraphicsContextRhi,
-        damage: PresentDamage,
+        mut frame: RhiRendererFrame<'_>,
         viewport: RhiViewport,
         load: LoadAction,
-        target: RenderTargetRef,
         meshes: &[RhiSolidMesh],
     ) -> Result<()> {
         // 空列表不应伪造一次 present。
@@ -539,9 +555,9 @@ impl RhiRenderer {
             .unwrap_or(0);
         // 准备可复用的 RHI 资源。
         let (pipeline, vertex_buffer, uniform_buffer) =
-            self.ensure_solid_resources(context, max_vertex_bytes)?;
-        // 计划使用当前 context 的 surface 代际。
-        let surface = context.token();
+            self.ensure_solid_resources(frame.device(), max_vertex_bytes)?;
+        // 从封闭帧作用域取得唯一计划目标。
+        let target = frame.render_target();
         // 创建 surface pass，并保留调用方的 load/clear 语义。
         let mut pass = RenderPassPlan::new(target, load);
         // 统一设置物理 viewport。
@@ -563,26 +579,16 @@ impl RhiRenderer {
             }
             // 在 draw 前设置当前 mesh 的 clip。
             pass.push(FramePlanCommand::SetScissor(mesh.scissor));
-            // 上传当前 mesh 的 vertex 数据。
-            pass.push(FramePlanCommand::UpdateBuffer {
+            // 上传当前 mesh 的类型化 position-float2 顶点。
+            pass.push(FramePlanCommand::UploadVertex {
                 buffer: vertex_buffer,
                 offset: 0,
-                data: Self::encode_f32s(mesh.vertices.as_ref()),
+                data: FrameVertexPayload::position_f32x2(mesh.vertices.clone()),
             });
-            // MeshConstants = viewport.xy、padding.xy、color.rgba。
-            pass.push(FramePlanCommand::UpdateBuffer {
+            // 类型化 MeshConstants = viewport.xy、padding.xy、color.rgba。
+            pass.push(FramePlanCommand::UploadUniform {
                 buffer: uniform_buffer,
-                offset: 0,
-                data: Self::encode_f32s(&[
-                    viewport.width,
-                    viewport.height,
-                    0.0,
-                    0.0,
-                    mesh.rgba[0],
-                    mesh.rgba[1],
-                    mesh.rgba[2],
-                    mesh.rgba[3],
-                ]),
+                data: FrameUniformPayload::Mesh(Self::mesh_uniform(viewport, mesh.rgba)),
             });
             // 追加一个非索引 solid mesh draw packet。
             pass.push(FramePlanCommand::Draw(DrawPacket {
@@ -599,29 +605,26 @@ impl RhiRenderer {
         }
         // 交给唯一的 FramePlan present 边界执行。
         let plan = {
-            // 创建计划并追加唯一 surface pass。
-            let mut plan = FramePlan::new(surface, damage);
+            // 从封闭 Renderer 帧创建匹配的 Surface 或 Offscreen 计划。
+            let mut plan = frame.plan();
             // 保留 pass 的严格 painter order。
             plan.push_pass(pass);
             plan
         };
-        // surface 计划最终 present，texture 计划只执行离屏 submit。
-        execute_plan_for_target(context, &plan, target)?;
+        // 封闭帧决定最终 Surface present 或 Offscreen submit。
+        frame.execute(&plan)?;
         // 资源由 renderer 跨帧复用，不能在这里销毁。
         Ok(())
     }
 
     // 清理本次图片帧临时创建的 texture，并保留第一个资源错误。
-    fn destroy_textures(
-        context: &mut dyn GraphicsContextRhi,
-        textures: &[TextureHandle],
-    ) -> Result<()> {
+    fn destroy_textures(device: &mut dyn GraphicsDevice, textures: &[TextureHandle]) -> Result<()> {
         // 逐个销毁资源，不能因一个失败而留下后续资源。
         let mut first_error = None;
         // 只在计划已经结束后释放本帧 texture。
         for texture in textures {
             // 保留首个错误，同时继续尝试释放剩余资源。
-            if let Err(error) = context.destroy_texture(*texture) {
+            if let Err(error) = device.destroy_texture(*texture) {
                 // 不把后续错误覆盖掉导致定位困难。
                 first_error.get_or_insert(error);
             }
@@ -633,11 +636,9 @@ impl RhiRenderer {
     // 构造并执行一帧 BGRA premultiplied 图片 quad RHI 计划。
     pub(crate) fn execute_textured_quads(
         &mut self,
-        context: &mut dyn GraphicsContextRhi,
-        damage: PresentDamage,
+        mut frame: RhiRendererFrame<'_>,
         viewport: RhiViewport,
         load: LoadAction,
-        target: RenderTargetRef,
         quads: &[RhiTexturedQuad],
     ) -> Result<()> {
         // 空列表不应伪造一次 present。
@@ -687,11 +688,11 @@ impl RhiRenderer {
         }
         // 准备采样 quad 的固定 RHI 资源。
         let (pipeline, vertex_buffer, uniform_buffer, sampler) =
-            self.ensure_textured_resources(context)?;
+            self.ensure_textured_resources(frame.device())?;
         // 只有当前帧出现 Additive quad 时才创建对应的 blend pipeline。
         let additive_pipeline = if quads.iter().any(|quad| quad.additive) {
             // 为加法图片建立独立 pipeline，保持 SrcOver 与 Additive 不混淆。
-            Some(self.ensure_additive_textured_pipeline(context)?)
+            Some(self.ensure_additive_textured_pipeline(frame.device())?)
         } else {
             // 纯 SrcOver 帧不需要额外的 pipeline。
             None
@@ -700,7 +701,7 @@ impl RhiRenderer {
         let mut textures = Vec::with_capacity(quads.len());
         for quad in quads {
             // 创建与源像素布局一致的 BGRA texture。
-            let texture = match context.create_texture(TextureDesc {
+            let texture = match frame.device().create_texture(TextureDesc {
                 extent: RhiExtent::new(quad.pixel_w, quad.pixel_h),
                 format: TextureFormat::Bgra8Unorm,
             }) {
@@ -708,29 +709,34 @@ impl RhiRenderer {
                 Ok(texture) => texture,
                 // 创建失败时先释放已创建资源，再返回原始错误。
                 Err(error) => {
-                    let _ = Self::destroy_textures(context, &textures);
+                    let _ = Self::destroy_textures(frame.device(), &textures);
                     return Err(error);
                 }
             };
             // 上传纹理前把 packed pixels 转为紧密字节载荷。
             let upload = Self::encode_u32s(quad.pixels.as_ref());
             // 资源上传失败时不能把半成品 texture 留在 adapter。
-            if let Err(error) =
-                context.update_texture(texture, RhiExtent::new(quad.pixel_w, quad.pixel_h), &upload)
-            {
+            if let Err(error) = frame.device().update_texture(
+                // 更新刚由同一 Device 创建的纹理。
+                texture,
+                // 上传范围使用已验证的物理像素尺寸。
+                RhiExtent::new(quad.pixel_w, quad.pixel_h),
+                // 上传规范化后的 premultiplied 像素。
+                &upload,
+            ) {
                 // 把当前失败资源加入清理列表。
                 textures.push(texture);
                 // 尝试释放所有已经创建的图片资源。
-                let _ = Self::destroy_textures(context, &textures);
+                let _ = Self::destroy_textures(frame.device(), &textures);
                 // 保留上传失败的真实错误。
                 return Err(error);
             }
             // 记录上传完成且可以进入 FramePlan 的 texture。
             textures.push(texture);
         }
-        // 计划使用当前 context 的 surface 代际。
-        let surface = context.token();
-        // 创建 surface pass，并保留调用方的 load/clear 语义。
+        // 从封闭帧作用域取得唯一计划目标。
+        let target = frame.render_target();
+        // 创建 Surface 或 Offscreen pass，并保留调用方的 load/clear 语义。
         let mut pass = RenderPassPlan::new(target, load);
         // 所有图片共享同一个物理 viewport。
         pass.push(FramePlanCommand::SetViewport(viewport));
@@ -798,17 +804,16 @@ impl RhiRenderer {
             ];
             // 在 draw 前设置当前图片的裁剪。
             pass.push(FramePlanCommand::SetScissor(quad.scissor));
-            // 上传当前 quad 的顶点数据。
-            pass.push(FramePlanCommand::UpdateBuffer {
+            // 上传当前 quad 的类型化 float8 顶点数据。
+            pass.push(FramePlanCommand::UploadVertex {
                 buffer: vertex_buffer,
                 offset: 0,
-                data: Self::encode_f32s(&vertices),
+                data: FrameVertexPayload::position_uv_color_f32(vertices),
             });
-            // 上传当前 pass 的物理 viewport uniform。
-            pass.push(FramePlanCommand::UpdateBuffer {
+            // 上传当前 pass 的类型化物理 viewport uniform。
+            pass.push(FramePlanCommand::UploadUniform {
                 buffer: uniform_buffer,
-                offset: 0,
-                data: Self::encode_f32s(&[viewport.width, viewport.height, 0.0, 0.0]),
+                data: FrameUniformPayload::Sampled(Self::sampled_uniform(viewport)),
             });
             // 绑定当前纹理和共享 sampler。
             pass.push(FramePlanCommand::BindTexture {
@@ -829,14 +834,14 @@ impl RhiRenderer {
                 base_vertex: 0,
             }));
         }
-        // 创建计划并追加唯一 surface pass。
-        let mut plan = FramePlan::new(surface, damage);
+        // 从封闭 Renderer 帧创建匹配的计划。
+        let mut plan = frame.plan();
         // 保留图片 painter order。
         plan.push_pass(pass);
-        // surface 计划最终 present，texture 计划只执行离屏 submit。
-        let execution = execute_plan_for_target(context, &plan, target);
+        // 封闭帧决定最终 Surface present 或 Offscreen submit。
+        let execution = frame.execute(&plan);
         // 计划结束后释放本次图片的临时 texture。
-        let cleanup = Self::destroy_textures(context, &textures);
+        let cleanup = Self::destroy_textures(frame.device(), &textures);
         // 优先返回绘制或 present 失败；否则报告资源清理失败。
         match (execution, cleanup) {
             // 计划失败时保留原始执行错误。
@@ -848,45 +853,6 @@ impl RhiRenderer {
         }
     }
 }
-// 按目标类型选择最终 present 或离屏 submit 执行边界。
-fn execute_plan_for_target(
-    context: &mut dyn GraphicsContextRhi,
-    plan: &FramePlan,
-    target: RenderTargetRef,
-) -> Result<()> {
-    // surface 计划必须保留唯一 acquire/submit/present 语义。
-    if matches!(target, RenderTargetRef::Surface) {
-        // 该日志只在已经取得组合 RHI context 后触发，可用于区分真实 RHI 提交与兼容路径。
-        tracing::debug!("Graphics RHI FramePlan submit: target={target:?}");
-        // 丢弃成功提交的 FrameCommit，调用方只关心 lowering 是否成功。
-        plan.execute_on_context(context)?;
-    } else {
-        // 离屏计划同样经过组合 RHI context，但不触发主 surface present。
-        tracing::debug!("Graphics RHI FramePlan submit: target={target:?}");
-        // 离屏计划只执行 render pass 与 submit，不触发主 surface present。
-        plan.execute_offscreen_on_context(context)?;
-    }
-    // 返回统一的 lowering 成功结果。
-    Ok(())
-}
-// 按目标类型选择不触发 present 的 surface segment 或离屏 submit 边界。
-fn execute_plan_without_present(
-    context: &mut dyn GraphicsContextRhi,
-    plan: &FramePlan,
-    target: RenderTargetRef,
-) -> Result<()> {
-    // surface segment 只 acquire/submit，最终 present 由外层帧边界统一完成。
-    if matches!(target, RenderTargetRef::Surface) {
-        // 丢弃 segment 的提交身份，调用方只关心 command 是否落入当前 surface。
-        plan.execute_surface_segment_on_context(context)?;
-    } else {
-        // texture target 仍使用无 present 的离屏执行边界。
-        plan.execute_offscreen_on_context(context)?;
-    }
-    // 返回统一的 lowering 成功结果。
-    Ok(())
-}
-
 // 生成 lowering 阶段的参数错误。
 fn rhi_invalid(message: &'static str) -> Error {
     // 统一使用 InvalidArgument，避免与 native platform failure 混淆。

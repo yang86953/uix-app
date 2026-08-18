@@ -220,7 +220,11 @@ fn try_create_context(
             match gpu_context.rhi_context() {
                 // 真实 adapter 需要满足文档冻结的 GPU 原语基线。
                 Ok(rhi) => rhi
-                    .capabilities()
+                    // Registry 只借用组合 owner 的只读 Device 角色。
+                    .device_ref()
+                    // 只验证资源、pass 与 pipeline 的 Device 能力。
+                    .device_capabilities()
+                    // Surface 可选能力不得参与 Device 构造门禁。
                     .first_missing_gpu_baseline()
                     .map(str::to_string),
                 // 构造期借用失败视为必需 RHI owner 不可用。
@@ -242,7 +246,7 @@ fn try_create_context(
         // 首帧前从同一类型化 owner 执行真实资源与固定 pipeline probe。
         let probe_result = match gpu_context.rhi_context() {
             // 在同一借用内执行真实资源与 pipeline probe。
-            Ok(rhi) => rhi.probe(),
+            Ok(rhi) => rhi.device().probe(),
             // 保留 owner-thread 或设备状态的 typed failure。
             Err(error) => Err(error),
         };

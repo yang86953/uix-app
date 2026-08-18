@@ -204,8 +204,8 @@ fn lower_frame_encoder_splits_mid_frame_clear_boundary() {
         // 使用可区分的红色。
         color: Color::red(),
     });
-    // 在帧中途清为蓝色。
-    encoder.clear(Color::blue());
+    // 在帧中途清为半透明蓝色，覆盖不会经过硬件混合的预乘边界。
+    encoder.clear(Color::from_rgba(0, 0, 255, 128));
     // 记录 clear 之后的普通 shape。
     encoder.native(FrameRasterOp::FillRect {
         // 使用右下区域小矩形。
@@ -242,12 +242,15 @@ fn lower_frame_encoder_splits_mid_frame_clear_boundary() {
     assert!(lowered.segments[0].clear_before.is_none());
     // 首段只保留 clear 前的 shape。
     assert_eq!(lowered.segments[0].operations.len(), 1);
-    // 第二段必须以蓝色 clear 初始化目标。
+    // 计算与 8-bit alpha 相同的规范浮点值。
+    let alpha = 128.0 / 255.0;
+    // 第二段必须以预乘蓝色 clear 初始化目标。
     assert_eq!(
         // 读取第二段的显式清理颜色。
         lowered.segments[1].clear_before,
-        // 蓝色使用直通 RGBA 浮点值。
-        Some(RhiColor([0.0, 0.0, 1.0, 1.0]))
+        // 蓝色 RGB 必须在共享 RHI 边界乘一次 alpha。
+        // 红绿为零，蓝色乘 alpha 后与 alpha 通道相同。
+        Some(RhiColor::from_premultiplied_rgba([0.0, 0.0, alpha, alpha]))
     );
     // 第二段只保留 clear 后的 shape。
     assert_eq!(lowered.segments[1].operations.len(), 1);

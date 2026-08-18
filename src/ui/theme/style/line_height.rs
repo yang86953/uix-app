@@ -73,7 +73,7 @@ impl LineHeight {
 #[cfg(test)]
 mod tests {
     // 引入当前模块公开值和 Style。
-    use super::{LineHeight, super::Style};
+    use super::{super::Style, LineHeight};
 
     // 验证倍率与像素值按各自单位解析。
     #[test]

@@ -6,7 +6,7 @@ use quote::quote;
 // 引入公共属性与叶节点形状判定。
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Breadcrumb 属性、表达式、字符串与诊断契约。
-use super::{generate_expression, string_value, Attribute, AttributeValue, Diagnostic, Element};
+use super::{Attribute, AttributeValue, Diagnostic, Element, generate_expression, string_value};
 
 // 生成拥有类型化路径数据并由运行时保持选择生命周期的 Breadcrumb。
 pub(crate) fn generate_breadcrumb(element: &Element) -> Result<TokenStream, Diagnostic> {

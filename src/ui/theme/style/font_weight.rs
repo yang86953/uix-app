@@ -66,7 +66,10 @@ mod tests {
         // 最小值必须有效。
         assert_eq!(FontWeight::from_numeric(100), Some(FontWeight::THIN));
         // 区间内非百位步进值也必须精确保留。
-        assert_eq!(FontWeight::from_numeric(550).map(FontWeight::value), Some(550));
+        assert_eq!(
+            FontWeight::from_numeric(550).map(FontWeight::value),
+            Some(550)
+        );
         // 最大值必须有效。
         assert_eq!(FontWeight::from_numeric(900), Some(FontWeight::BLACK));
         // 下界外数值必须拒绝。

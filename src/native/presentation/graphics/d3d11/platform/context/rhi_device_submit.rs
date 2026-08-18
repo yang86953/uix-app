@@ -15,42 +15,50 @@ use super::D3d11Context;
 impl D3d11Context {
     pub(super) fn end_render_pass_impl(&mut self) -> Result<()> {
         // 拒绝没有开始 pass 的结束调用。
-        if !self.rhi_device.pass_open {
-            // 返回稳定的状态错误。
-            return Err(Error::new(
-                Errc::InvalidState,
-                "D3d11 RHI render pass is not open",
-            ));
+        self.rhi_device.pass.require_open()?;
+        // 显式解除可能残留的采样输入和输出目标，禁止依赖 D3D11 隐式冲突处理。
+        // SAFETY: 三个调用只清除当前 owner-thread immediate context 的绑定槽，不借用或销毁资源。
+        unsafe {
+            // 清除零号 shader resource view。
+            self.context.PSSetShaderResources(0, Some(&[None]));
+            // 清除零号 sampler state。
+            self.context.PSSetSamplers(0, Some(&[None]));
+            // 清除当前 render target view。
+            self.context.OMSetRenderTargets(None, None);
         }
-        // 释放 pass 级状态，不销毁底层资源。
-        self.rhi_device.pass_open = false;
-        // 清除当前目标引用。
+        // 清除 Adapter 私有的原生目标引用。
         self.rhi_device.active_target = None;
-        // 清除当前目标句柄。
-        self.rhi_device.active_target_handle = None;
-        // 清除当前 extent。
-        self.rhi_device.active_extent = None;
-        // 清除 pass 内资源绑定，下一 pass 必须显式重新绑定。
-        self.rhi_device.bound_texture = None;
-        self.rhi_device.bound_sampler = None;
+        // 由共享状态机原子清除目标、几何与采样绑定事实。
+        self.rhi_device.pass.end()?;
         // 返回成功。
         Ok(())
     }
 
     pub(super) fn submit_impl(&mut self) -> Result<SubmissionHandle> {
         // 未结束的 pass 不能提交，避免隐含结束语义。
-        if self.rhi_device.pass_open {
-            // 返回稳定的状态错误。
+        self.rhi_device.pass.require_closed()?;
+        // D3D11 immediate context 的命令顺序已经由 owner thread 建立，再由共享状态机签发身份。
+        self.rhi_device.submission_sequence.issue()
+    }
+
+    // 校验 Surface present 使用的是同一组合 context 最近一次成功 submit。
+    pub(in super::super) fn validate_submission_impl(
+        // 只读借用 context，校验不得改变 Device 或 Surface 状态。
+        &self,
+        // 接收 FramePlan 从 submit 原样传递的类型化身份。
+        submission: SubmissionHandle,
+    ) -> Result<()> {
+        // D3D11 必须执行与 OpenGL 相同的共享最新值规则。
+        if !self.rhi_device.submission_sequence.is_latest(submission) {
+            // 在进入 DXGI Present 前返回稳定的参数错误。
             return Err(Error::new(
-                Errc::InvalidState,
-                "D3d11 RHI submit with open render pass",
+                // 外部或迟到身份属于调用契约错误，而不是设备丢失。
+                Errc::InvalidArgument,
+                // 保留 Adapter 名称便于定位原生边界。
+                "D3d11 RHI present submission is stale",
             ));
         }
-        // 取出本次提交序号。
-        let serial = self.rhi_device.next_submission;
-        // 推进提交序号并防止回绕到零句柄。
-        self.rhi_device.next_submission = serial.saturating_add(1).max(1);
-        // D3D11 immediate context 的命令顺序已经由 owner thread 建立。
-        Ok(SubmissionHandle::from_raw(serial))
+        // 返回统一成功结果。
+        Ok(())
     }
 }

@@ -123,8 +123,8 @@ class GraphicsTeardownContractTests(unittest.TestCase):
 
     # 校验原生扇形已经进入统一 RHI，而不是继续走 legacy draw_sectors。
     def test_native_sector_rhi_contract(self) -> None:
-        # 读取扇形 lowering、通用 renderer 和两套 adapter 的固定 ABI。
-        rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        # 读取扇形 lowering、共享 pipeline 契约和两套 adapter 的类型化实现。
+        pipeline = (ROOT / "src/native/present/rhi/pipeline.rs").read_text(encoding="utf-8")
         lowering = (ROOT / "src/draw/backend/gpu/rhi_lowering.rs").read_text(encoding="utf-8")
         mixed = (ROOT / "src/draw/backend/rhi_renderer_mixed.rs").read_text(encoding="utf-8")
         d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_draw.rs").read_text(encoding="utf-8")
@@ -132,22 +132,21 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         gl_pipeline = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_pipeline.rs").read_text(encoding="utf-8")
         gl_shaders = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_shaders.rs").read_text(encoding="utf-8")
         d3d_shader = (ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline/rhi_sector.rs").read_text(encoding="utf-8")
-        # 通用 probe 必须在首帧前创建 sector pipeline。
-        self.assertIn("pub(crate) const SECTOR", rhi)
-        self.assertIn("pipeline_keys::SECTOR", rhi)
+        # 共享契约必须拥有 Sector 身份与唯一 uniform 布局。
+        self.assertIn("Sector,", pipeline)
+        self.assertIn("Self::Sector => SECTOR_UNIFORM_BYTES", pipeline)
         # lowering 和 mixed executor 必须保留 sector 的 painter order。
         self.assertIn("PendingNativeOp::Sector(sector)", lowering)
         self.assertIn("RhiOp::Sector(RhiSector", lowering)
         self.assertIn("RhiOp::Sector(sector)", mixed)
-        self.assertIn("SECTOR_UNIFORM_BYTES", rhi)
-        self.assertIn("SECTOR_UNIFORM_BYTES", mixed)
-        # 两套 adapter 必须接受同一 64 字节常量 ABI 和 sector shader。
-        self.assertIn("SECTOR_UNIFORM_BYTES", d3d11)
-        self.assertIn("SECTOR_UNIFORM_BYTES", opengl)
-        self.assertIn("pipeline_keys::SECTOR", gl_pipeline)
+        self.assertIn("PipelineUniformLayout::Sector", pipeline)
+        self.assertIn("PipelineKind::Sector", mixed)
+        # 两套 adapter 必须通过共享契约校验 ABI 并映射同一 Sector 身份。
+        self.assertIn("uniform_size != contract.uniform.size_bytes()", d3d11)
+        self.assertIn("uniform.len() != contract.uniform.size_bytes()", opengl)
+        self.assertIn("PipelineKind::Sector", gl_pipeline)
         self.assertIn("SECTOR_FRAGMENT", gl_shaders)
         self.assertIn("SECTOR_HLSL", d3d_shader)
-
     # 校验 FrameEncoder 已能整条降低到 RHI，并把最终 present 留给外层。
     def test_frame_encoder_rhi_segment_contract(self) -> None:
         # 读取编码帧 lowering、调用边界和不触发 present 的 FramePlan 执行器。
@@ -155,8 +154,8 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         backend = (ROOT / "src/draw/backend/gpu/backend/render_backend.rs").read_text(encoding="utf-8")
         mixed = (ROOT / "src/draw/backend/rhi_renderer_mixed.rs").read_text(encoding="utf-8")
         plan = (ROOT / "src/draw/backend/frame_plan_execution.rs").read_text(encoding="utf-8")
-        # 读取 shape pipeline 与两套 adapter 的 Additive ABI。
-        rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        # 读取共享 pipeline 与两套 adapter 的 Additive 类型化实现。
+        pipeline = (ROOT / "src/native/present/rhi/pipeline.rs").read_text(encoding="utf-8")
         d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_draw.rs").read_text(encoding="utf-8")
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs").read_text(encoding="utf-8")
         # 主要 FrameEncoder 命令必须进入同一个 lowering，而不是逐操作兼容门面。
@@ -165,19 +164,21 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("FrameRasterOp::BlitGlyphs", lowering)
         self.assertIn("FrameRasterOp::FillRoundedRect", lowering)
         self.assertIn("FrameRasterOp::ScrollCopy", lowering)
-        # Additive 矩形必须复用统一 shape lowering，并由 adapter 切换 blend。
-        self.assertIn("SHAPE_RECT_ADDITIVE", rhi)
+        # Additive 矩形必须复用统一 shape lowering，并由 adapter 映射共享身份。
+        self.assertIn("ShapeRectAdditive", pipeline)
         self.assertIn("RhiOp::AdditiveShape", lowering)
         self.assertIn("RhiOp::AdditiveShape", mixed)
-        self.assertIn("SHAPE_RECT_ADDITIVE", d3d11)
-        self.assertIn("SHAPE_RECT_ADDITIVE", opengl)
-        # 主 surface 与 Picture 都必须经过统一入口，且显式使用无 present 模式。
+        self.assertIn("PipelineKind::ShapeRect | PipelineKind::ShapeRectAdditive", d3d11)
+        self.assertIn("PipelineKind::ShapeRect | PipelineKind::ShapeRectAdditive", opengl)
+        # 主 surface 与 Picture 都必须经过统一入口，并只写显式 retained/Picture texture。
         self.assertIn("try_execute_frame_encoder_rhi", backend)
-        self.assertIn("present: bool", lowering)
+        self.assertNotIn("present: bool", lowering)
+        self.assertIn("RhiRendererFrame::offscreen", lowering)
         self.assertIn("execute_ops", lowering)
-        self.assertIn("execute_surface_segment_on_context", plan)
-        self.assertIn("execute_plan_without_present", mixed)
-
+        self.assertIn("execute_offscreen_on_device", plan)
+        self.assertNotIn("execute_surface_segment_on_context", plan)
+        self.assertNotIn("GraphicsContextRhi", mixed)
+        self.assertIn("frame.execute(&plan)", mixed)
     # 校验变换圆角矩形已回收到共享路径 tessellation，而不是继续静默回退。
     def test_affine_rounded_rect_uses_shared_mesh_lowering(self) -> None:
         # 读取 GPU 几何 helper 与入队实现。
@@ -200,7 +201,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("textured_vertices_values", mixed)
         self.assertIn("quad.corners", mixed)
 
-    # 校验阴影 RHI 已经复用真实设备四角和 96 字节跨 adapter ABI。
+    # 校验阴影 RHI 已经复用真实设备四角和共享的跨 adapter ABI。
     def test_affine_shadow_contract(self) -> None:
         # 读取阴影 lowering、renderer 和两套 adapter 的固定布局。
         shadow = (ROOT / "src/draw/backend/rhi_renderer_shadow.rs").read_text(encoding="utf-8")
@@ -210,12 +211,11 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs").read_text(encoding="utf-8")
         # lowering 必须缩放并保留 corners，不能恢复轴对齐拒绝门禁。
         self.assertIn("scale_rhi_corners(value.corners", lowering)
-        self.assertIn("corners,", lowering)
         self.assertIn("convex_quad_is_valid", submit)
-        # renderer 与两套 adapter 必须识别同一 96 字节 shadow ABI。
-        self.assertIn("pub(crate) corners: [[f32; 2]; 4]", shadow)
-        self.assertIn("uniform.size_bytes != 96", d3d11)
-        self.assertIn("uniform.len() != 96", opengl)
+        # renderer 必须选择阴影语义，两套 adapter 必须从共享契约读取 ABI。
+        self.assertIn("PipelineKind::BoxShadow", shadow)
+        self.assertIn("uniform_size != contract.uniform.size_bytes()", d3d11)
+        self.assertIn("uniform.len() != contract.uniform.size_bytes()", opengl)
 
     # 校验线性/径向渐变已经从轴对齐 AABB ABI 扩展为共享 affine quad ABI。
     def test_affine_gradient_contract(self) -> None:
@@ -232,9 +232,10 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("pub(crate) corners: [[f32; 2]; 4]", renderer)
         self.assertIn("glyph_device_corners", queue)
         self.assertIn("scale_rhi_corners(value.corners", lowering)
-        # 两套 adapter 必须接受同一个 96 字节 ABI，并使用独立 gradient vertex shader。
-        self.assertIn("uniform.size_bytes != 96", d3d11)
-        self.assertIn("uniform.len() != 96", opengl)
+        # renderer 必须选择渐变语义，两套 adapter 必须从共享契约读取 ABI。
+        self.assertIn("PipelineKind::GradientRect", renderer)
+        self.assertIn("uniform_size != contract.uniform.size_bytes()", d3d11)
+        self.assertIn("uniform.len() != contract.uniform.size_bytes()", opengl)
         self.assertIn("GRADIENT_VERTEX", shaders)
 
     # 校验 Picture 离屏只保留一个 RHI owner，旧资源族不会复活。
@@ -520,13 +521,15 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # snapshot 与 restore 都必须复用 thin RHI 设备准备。
         # snapshot、blur 与 restore 各自必须通过唯一 device maintenance 入口。
         self.assertEqual(overlay.count("self.prepare_rhi_device()"), 3)
-        # 定位 OpenGL 设备维护实现。
-        maintain = opengl_host.index("fn maintain(&mut self)")
-        # current 必须先于设备健康检查执行。
-        current = opengl_host.index("self.rhi_make_current()?", maintain)
-        # 设备健康检查必须位于同一维护方法内。
-        health = opengl_host.index("self.rhi_pipeline_mut().rhi_maintain()", current)
-        # 明确锁定 owner context 准备顺序。
+        # 定位 OpenGL owner-context 激活实现。
+        activate = opengl_host.index("fn activate(&mut self)")
+        # 定位与激活正交的设备健康维护实现。
+        maintain = opengl_host.index("fn maintain(&mut self)", activate)
+        # current 恢复必须只出现在 activate 区间。
+        current = opengl_host.index("self.rhi_make_current()", activate, maintain)
+        # 健康检查必须位于随后独立的 maintain 方法内。
+        health = opengl_host.index("self.rhi_pipeline_mut().rhi_maintain()", maintain)
+        # 明确锁定统一执行器调用所依赖的两阶段源码顺序。
         self.assertLess(current, health)
         # 所有类型化 context wrapper 均不得复活 current 方法。
         for context in contexts:
@@ -542,7 +545,6 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("fn make_current_result(&self)", wgl_native)
         # EGL 同样保留 adapter 私有 helper。
         self.assertIn("fn make_current_result(&self)", contexts[6].read_text(encoding="utf-8"))
-
     # 校验生产 GPU backend 不再保留 hybrid 构造和 native resize 兼容回退。
     def test_gpu_resize_only_uses_factory_prepared_thin_rhi_surface(self) -> None:
         # 读取 GPU backend 的状态字段。
@@ -692,7 +694,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
             # capability profile 不得重新导出对应布尔字段。
             self.assertNotIn(f"pub {capability}: bool", present)
         # capability profile 必须保留 retained surface 事实。
-        self.assertIn("retained_framebuffer: bool", raster_caps)
+        self.assertIn("retained_color_target: bool", raster_caps)
         # capability profile 必须保留 Additive RHI 事实。
         self.assertIn("rhi_additive_blend: bool", raster_caps)
         # platform presentation 不得重新取得 renderer 能力投影所有权。
@@ -726,17 +728,17 @@ class GraphicsTeardownContractTests(unittest.TestCase):
             # adapter wrapper 不得重新声明 renderer 能力查询。
             self.assertNotIn("native_raster_caps", adapter.read_text(encoding="utf-8"))
         # renderer 投影必须显式接收薄 RHI capability 快照。
-        self.assertIn("from_rhi_capabilities(capabilities: GraphicsCapabilities)", raster_caps)
-        # retained 事实必须直接复制自同一薄 RHI 快照。
-        self.assertIn("retained_framebuffer: capabilities.retained_framebuffer", raster_caps)
+        self.assertIn("from_device_capabilities(", raster_caps)
+        # retained 事实必须由 Drawing 从底层 Device 原语推导。
+        self.assertIn("retained_color_target: capabilities.render_to_texture", raster_caps)
         # Additive 事实必须直接复制自同一薄 RHI 快照。
         self.assertIn("rhi_additive_blend: capabilities.additive_blend", raster_caps)
-        # 构造门禁必须从已验证组合 RHI 读取唯一能力来源。
-        self.assertIn("Some(gpu_ctx.rhi_context()?.capabilities())", backend)
+        # 构造门禁必须从已验证的 device 角色读取唯一能力来源。
+        self.assertIn("Some(gpu_ctx.rhi_device()?.device_capabilities())", backend)
         # 构造门禁必须验证完整 GPU 原语基线。
         self.assertIn("capabilities.has_gpu_baseline()", backend)
         # 构造门禁必须从同一快照派生 renderer 投影。
-        self.assertIn(".map(NativeRasterCaps::from_rhi_capabilities)", backend)
+        self.assertIn(".map(NativeRasterCaps::from_device_capabilities)", backend)
 
     # 校验 surface readback 已成为事实声明的可选 thin RHI 能力。
     def test_surface_readback_is_an_optional_thin_rhi_capability(self) -> None:
@@ -744,16 +746,14 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         facade = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
         # 读取 owner-thread 兼容转发门面。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
-        # 读取 thin RHI 契约。
+        # 读取 thin RHI 角色契约。
         rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        # 读取已经按 Device 与 Surface 拆开的能力契约。
+        capabilities = (ROOT / "src/native/present/rhi/capabilities.rs").read_text(encoding="utf-8")
         # 读取 D3D11 surface 与 capability 实现。
         d3d11_surface = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi.rs").read_text(encoding="utf-8")
-        # 读取 D3D11 device capability 实现。
-        d3d11_device = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs").read_text(encoding="utf-8")
         # 读取共享 OpenGL surface bridge。
         opengl_surface = (ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs").read_text(encoding="utf-8")
-        # 读取共享 OpenGL capability profile。
-        opengl_rhi = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi.rs").read_text(encoding="utf-8")
         # 读取 GPU backend 的测试诊断入口。
         backend = (ROOT / "src/draw/backend/gpu/backend/impl_main.rs").read_text(encoding="utf-8")
         # 读取 Vulkan 的显式 GFX-R5 诊断辅助。
@@ -783,28 +783,29 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         ):
             # 兼容实现不得私自复活旧 trait 方法。
             self.assertNotIn("fn read_pixels(", adapter.read_text(encoding="utf-8"))
-        # capability 必须显式陈述可选 surface 回读事实。
-        self.assertIn("pub(crate) surface_readback: bool", rhi)
-        # 通用 GPU 基线默认不能宣称可回读。
-        self.assertIn("surface_readback: false", rhi)
+        # Surface capability 必须显式陈述可选回读事实。
+        self.assertIn("pub(crate) readback: bool", capabilities)
+        # Device capability 不得再夹带 Surface 回读事实。
+        device_section = capabilities[:capabilities.index("pub(crate) struct GraphicsSurfaceCapabilities")]
+        self.assertNotIn("surface_readback", device_section)
         # surface trait 必须提供 typed 可选操作。
         self.assertIn("fn read_surface_pixels(", rhi)
-        # D3D11 必须如实启用 capability。
-        self.assertIn("capabilities.surface_readback = true;", d3d11_device)
-        # OpenGL 必须如实启用 capability。
-        self.assertIn("capabilities.surface_readback = true;", opengl_rhi)
-        # D3D11 surface 必须委托私有 staging 实现。
-        self.assertIn("self.read_surface_pixels_result(x, y, width, height)", d3d11_surface)
+        # D3D11 必须由 Surface 角色如实启用回读 capability。
+        self.assertIn("GraphicsSurfaceCapabilities::with_readback(", d3d11_surface)
+        # OpenGL 必须由 Surface 角色如实启用回读 capability。
+        self.assertIn("GraphicsSurfaceCapabilities::with_readback(", opengl_surface)
+        # D3D11 surface 必须先执行共享范围验证再委托私有 staging 实现。
+        self.assertIn("RhiSurfaceReadback::validate_region(region, self.token().extent)?", d3d11_surface)
         # 截取 OpenGL surface 回读方法。
         opengl_readback = opengl_surface[opengl_surface.index("fn read_surface_pixels(") : opengl_surface.index("fn present(")]
         # OpenGL 回读必须先恢复 current context。
         self.assertLess(opengl_readback.index("self.rhi_make_current()?"), opengl_readback.index("self.rhi_pipeline_mut().read_pixels"))
         # GPU backend 不得回退兼容 context readback。
         self.assertNotIn("self.gpu_ctx.read_pixels", backend)
-        # GPU backend 必须检查 capability 事实。
-        self.assertIn("context.capabilities().surface_readback", backend)
-        # GPU backend 必须通过 thin RHI surface 执行回读。
-        self.assertIn("context.read_surface_pixels(0, 0, width, height)", backend)
+        # GPU backend 必须通过最终呈现事务的当前 context 检查 capability 事实。
+        self.assertIn("context.surface_ref().surface_capabilities().readback", backend)
+        # GPU backend 必须通过同一个 thin RHI surface 角色执行类型化区域回读。
+        self.assertIn("context.surface().read_surface_pixels(RhiScissor {", backend)
         # Vulkan pixel-upload readback 必须保留显式诊断名称。
         self.assertIn("pub(crate) fn readback_pixels(", vulkan)
         # GFX-R5 证据必须调用显式诊断辅助。

@@ -5,9 +5,9 @@
 //! capabilities cannot drift between control surfaces.
 
 use crate::core::{ComponentId, Point, Rect};
-use crate::ui::widget_runtime::widget::{WidgetCore, WidgetTree};
 use crate::ui::component_snapshot::{AccessibilitySnapshot, SelectionSnapshot};
 use crate::ui::semantic_action::SemanticActionKind;
+use crate::ui::widget_runtime::widget::{WidgetCore, WidgetTree};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// 自动化与 Agent 共享的稳定语义目标。

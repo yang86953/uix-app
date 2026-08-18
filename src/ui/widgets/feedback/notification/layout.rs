@@ -380,7 +380,6 @@ impl Notification {
         ctx.text_center(&value, frame, color, font_size);
         ctx.pop_clip();
     }
-
 }
 
 #[derive(Debug, Clone, Copy)]

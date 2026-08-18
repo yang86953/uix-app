@@ -70,9 +70,9 @@ impl OpenGlRhiDevice {
 
     // 将通用 texture format 转换为 GLES 3.0 的内部格式和上传格式。
     pub(super) fn texture_format(format: TextureFormat) -> (i32, u32, usize) {
-        // 颜色 texture 统一用 RGBA8 存储，BGRA 由 shader 做通道交换。
+        // 颜色 texture 统一用 RGBA8 存储，BGRA 上传载荷在 Adapter 边界完成规范化。
         match format {
-            // BGRA payload 按四字节紧密排列上传到 RGBA8。
+            // BGRA payload 会先转换为 RGBA，再按四字节紧密排列上传。
             TextureFormat::Bgra8Unorm => (glow::RGBA8 as i32, glow::RGBA, 4),
             // RGBA MSDF 和离屏颜色 texture 保持通道原序。
             TextureFormat::Rgba8Unorm => (glow::RGBA8 as i32, glow::RGBA, 4),

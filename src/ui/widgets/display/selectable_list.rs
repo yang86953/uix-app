@@ -418,7 +418,6 @@ impl SelectableList {
         ctx.draw_text_in_frame(&value, frame, color, font_size);
         ctx.pop_clip();
     }
-
 }
 
 component! {

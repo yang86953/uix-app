@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 // 引入与公开 uix!、uix_app! 一致的完整文档解析和生成测试入口。
-use super::{generate_document_app, generate_test_document_view, parse_document, Diagnostic};
+use super::{Diagnostic, generate_document_app, generate_test_document_view, parse_document};
 
 // 返回按路径排序的 Markdown 文件。
 fn markdown_paths(markdown_root: &Path) -> Vec<PathBuf> {

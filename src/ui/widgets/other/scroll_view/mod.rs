@@ -2,6 +2,8 @@
 
 use crate::ui::widget_runtime::widget::WidgetCore;
 pub mod scrollbar;
+// 将声明式 View 样式适配与核心滚动状态拆分，保持组件文件规模边界。
+mod view_style;
 #[allow(unused_imports)]
 pub(crate) use scrollbar::*;
 
@@ -715,25 +717,6 @@ impl ScrollView {
             show_scrollbar: self.scrollbar_v.show || self.scrollbar_h.show,
             scroll_x: self.scroll_x,
             scroll_y: self.scroll_y,
-        }
-    }
-
-    pub(crate) fn sync_from(&mut self, next: Self) {
-        let controlled_offset = next
-            .scroll_binding
-            .as_ref()
-            .map(|_| (next.scroll_x, next.scroll_y));
-        self.scroll_binding = next.scroll_binding;
-        self.direction = next.direction;
-        self.fixed_width = next.fixed_width;
-        self.fixed_height = next.fixed_height;
-        self.flex_grow_val = next.flex_grow_val;
-        self.flex_shrink_val = next.flex_shrink_val;
-        self.scrollbar_v.show = next.scrollbar_v.show;
-        self.scrollbar_h.show = next.scrollbar_h.show;
-        if let Some((scroll_x, scroll_y)) = controlled_offset {
-            self.scroll_x = self.clamp_bound_axis(scroll_x, true);
-            self.scroll_y = self.clamp_bound_axis(scroll_y, false);
         }
     }
 

@@ -28,7 +28,7 @@ renderer、scene、painting、UI 和应用不得取得 raw GPU/native handle。p
 | `GpuBackend` | struct | 把规范图形语义降低为统一 `FramePlan` 并驱动 thin RHI |
 | `SoftwareRasterizer` | struct | 以同一规范语义产生 CPU 像素 |
 | `FramePlan` / pass / draw packet | values | 有序、backend-neutral 的设备执行计划 |
-| `NativeRasterCaps` | value | 从一次实际 `GraphicsCapabilities` 快照投影的 renderer 能力 |
+| `NativeRasterCaps` | value | 从一次实际 `GraphicsDeviceCapabilities` 快照派生的 renderer 能力 |
 | `SoftFallbackTile` | staging value | 语义等价且有界的局部 CPU fallback 输入 |
 | Picture/effect planner | internal components | 编排离屏资源、采样合成、blur 和清理事务 |
 
@@ -40,13 +40,13 @@ renderer、scene、painting、UI 和应用不得取得 raw GPU/native handle。p
 | `GpuRecipeContext` / `PixelUploadSurface` | 分离 GPU RHI 与 CPU 像素上传生命周期 |
 | `GraphicsDevice` / `GraphicsSurface` | 资源、pass、submit、resize、present 与可选 readback 原语 |
 | `PresentSurface` | 同一时点的 extent、DPR、transform 与 generation 原子快照 |
-| `GraphicsCapabilities` | 由可执行原语和 probe 支撑的事实能力，不是平台名称推断 |
+| `GraphicsDeviceCapabilities` / `GraphicsSurfaceCapabilities` | 分别陈述设备原语，以及 Surface 呈现一致性与可选原语，不从平台名称推断 |
 
 这些是跨 System 公开契约。backend 不取得 platform 私有 Adapter、registry 或原生句柄。
 
 ## 构造与能力协商
 
-Adapter 创建事务直接交付 GPU 或 PixelUpload candidate，并保证 recipe 类型、能力快照和 surface 来源一致。registry 与 backend 在发布 owner 前完成以下检查：
+Adapter 创建事务直接交付 GPU 或 PixelUpload candidate，并保证 recipe 类型、能力快照和 surface 来源一致。GPU recipe 的呈现一致性只能从实际 `GraphicsSurfaceCapabilities` 冻结；owner 会在交付 Drawing 前拒绝静态快照与实际 Surface 漂移。registry 与 backend 在发布 owner 前完成以下检查：
 
 1. candidate 类型与静态 recipe 轴一致；
 2. GPU candidate 满足统一 retained RHI 基线和固定 pipeline probe；
@@ -75,8 +75,12 @@ WindowSession
 ## 帧执行与提交
 
 - 同窗一帧只有一条有序计划、至多一次主 surface acquire 和一次最终 present。Picture、快照、blur 与资源维护可以 submit device 命令，但不得自行 acquire/present 主 surface。
+- `GraphicsDevice::submit` 返回的 `SubmissionHandle` 是组合 context 的类型化事务身份；最终 `GraphicsSurface::present` 只接受同一 context 最近一次成功提交。身份签发与校验由共享 RHI 状态机定义，Adapter 不得忽略参数或维护另一套计数规则。
+- render-pass 生命周期由共享 `RhiPassState` 原子拥有：活动目标、物理 extent、scissor 与 sampled texture/sampler 绑定随 begin/end 共同建立和清除。槽位限制、pass 内外命令位置及 render target 反馈环在这里统一拒绝；Adapter 只保留 framebuffer/RTV 等原生编码对象，不得维护平行 `pass_open` 或绑定镜像。
+- texture copy/move 的格式、非空区域、checked 边界和资源关系由共享传输契约一次验证；普通 copy 只允许不同的同格式可渲染颜色纹理，同资源区域搬移必须走具有 scratch/memmove 语义的 move。两端坐标始终是左上原点，Adapter 不得通过私有翻转或饱和运算改写它。
+- 唯一 `FramePlan` 执行器在任何原生命令前依次调用 `GraphicsDevice::activate` 与 `GraphicsDevice::maintain`。前者只建立 owner-context 可用性，OpenGL 在此恢复 current context；后者只检查设备健康。surface 与 offscreen 路径都不能依赖上层调用顺序或另一个窗口遗留的 current 状态。
 - painter order、clip、transform、opacity 和 blend 切换形成明确 barrier；优化、合批与 fallback 不能跨越目标相关操作重排。
-- retained 主颜色目标与 swapchain image 身份都可靠时才允许 partial present；否则完整重绘。dirty rect、draw scissor 和平台提交区域从同一 damage 真相派生。
+- retained 主颜色目标可靠时，Drawing 可以只更新 dirty rect，并在 Device 明确实现 `texture_region_move` 时执行滚动搬移；该能力不依赖 swapchain image 历史。最终 partial present 仍要求 Surface 证明 per-image coherency，否则 presenter 把同一 damage 真相升级为完整 surface 提交，不能反向迫使 retained 内容整帧重绘。
 - device submit 成功、CPU 像素已写入、帧已编码或 present 已调用都不等于画面已呈现；只有平台返回最终 present 成功才消费 damage、推进成功历史和发布 presented revision。
 - 空帧、不可呈现、遮挡、would-block 与失败是不同结果。不可呈现状态保留 dirty，但不得由 retained dirty 形成 busy loop。
 
@@ -128,7 +132,7 @@ backend 变更需要按风险提供以下证据；实时环境矩阵、结果和
 - 资源事务：创建/替换/销毁、generation、resize、晚到 callback、OOM 与 checked shutdown；
 - 提交真相：一次最终 present、失败帧不消费 damage、partial/full 策略和不可呈现休眠；
 - 恢复：SurfaceLost、DeviceLost、teardown/rebuild、fallback 与重试上限；
-- Adapter：至少两个原生 API 复用同一 FramePlan 和 effect 编排，不复制逐 UI raster 算法；
+- Adapter：至少两个原生 API 复用同一 FramePlan 和 effect 编排，不复制逐 UI raster 算法；局部 retained 验收必须同时证明最终像素和共享计划实际执行 `TextureMove`，不能用整帧重绘后的相同像素代替；
 - 真实环境：DPI、resize、遮挡、多 swapchain image、GPU/驱动差异和人工可见效果；缺少环境时明确标为未验证，不以 mock 结果代替。
 
 ## 模块不变量

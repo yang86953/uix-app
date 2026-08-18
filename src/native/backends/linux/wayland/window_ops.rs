@@ -48,7 +48,9 @@ use crate::diagnostics::PendingFailureSource;
 use crate::native::presentation::graphics::platform::linux::WaylandSurfaceHandle;
 // 引入帧事件、UI 事件与不可解释的指针激活身份。
 use crate::native::windowing::event::{FrameRequestToken, PointerActivationId, UiEvent};
-use crate::native::windowing::shared::window_mode::{NativeMaximizeTransition, NativeWindowModeState};
+use crate::native::windowing::shared::window_mode::{
+    NativeMaximizeTransition, NativeWindowModeState,
+};
 use crate::native::windowing::shared::window_target::SurfaceWindowTargets;
 // 直接从共享窗口模块引入 Wayland 需要的未实现操作，避免其他目标产生未使用重导出。
 use crate::native::windowing::shared::window::{WindowOps, unimpl};

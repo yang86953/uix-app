@@ -1,5 +1,8 @@
 //! 文本后端契约。
 
+// 使用共享只读字体字节，避免随包 CJK 字体在组合根交接时重复复制。
+use std::sync::Arc;
+
 use crate::core::Error;
 use crate::draw::geometry::types::FontHandle;
 use crate::draw::resources::font::text_backend::{
@@ -13,6 +16,11 @@ pub trait TextBackend: std::fmt::Debug + Send + Sync {
     /// 消费所有权的字体加载：内部路径（fs::read 已持有 Vec）避免二次复制。
     fn load_font_owned(&mut self, data: Vec<u8>) -> Result<FontHandle, Error> {
         self.load_font(&data)
+    }
+    /// 从共享只读字节加载字体；默认后端可沿用借用加载语义。
+    fn load_font_shared(&mut self, data: Arc<[u8]>) -> Result<FontHandle, Error> {
+        // 默认实现保持第三方文本后端兼容，专用后端可覆盖以取得零复制所有权。
+        self.load_font(data.as_ref())
     }
     /// 内存映射字体加载：字体文件按需分页，未触达字形不驻留 working set。
     /// 默认实现退化为拷贝（后端不支持映射时保底正确）。

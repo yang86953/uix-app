@@ -607,7 +607,7 @@ mod value_codegen;
 // 向后续转换 Gate 暴露核心语法树类型。
 pub(crate) use ast::*;
 // 向核心 View 生成器暴露规划中内置组件诊断与完整支持标签提示。
-pub(crate) use builtin_matrix::{planned_builtin_diagnostic, SUPPORTED_BUILTIN_TAGS};
+pub(crate) use builtin_matrix::{SUPPORTED_BUILTIN_TAGS, planned_builtin_diagnostic};
 // 向核心元素生成器暴露 ButtonGroup 专用映射。
 pub(crate) use button_group_codegen::generate_button_group;
 // 向过程宏入口暴露核心 View 生成函数。

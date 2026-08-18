@@ -1,12 +1,11 @@
 //! GPU-native 渐变队列的 RHI 提交 lowering。
 
-// 引入统一错误与显式 surface target。
+// 引入统一错误。
 use crate::core::Error;
-use crate::draw::backend::frame_plan::RenderTargetRef;
-// 引入通用渐变 payload 与 renderer。
-use crate::draw::backend::rhi_renderer::{RhiGradientRect, RhiRenderer};
-// 引入薄 RHI context 与 pass load 语义。
-use crate::native::present::rhi::{GraphicsContextRhi, LoadAction};
+// 引入通用渐变 payload、renderer 与封闭帧角色。
+use crate::draw::backend::rhi_renderer::{RhiGradientRect, RhiRenderer, RhiRendererFrame};
+// 引入 Device-only lowering 所需的目标、extent 与 pass load 语义。
+use crate::native::present::rhi::{GraphicsDevice, LoadAction, RenderTargetHandle, RhiExtent};
 
 // 引入 pending 操作和 submit 模块的物理 lowering helper。
 use super::super::pending::PendingNativeOp;
@@ -20,27 +19,28 @@ impl NativeGpuCanvas2D {
     pub(crate) fn submit_rhi_gradients(
         &self,
         renderer: &mut RhiRenderer,
-        context: &mut dyn GraphicsContextRhi,
+        // 借用只允许资源、命令与 submit 的 Device 角色。
+        device: &mut dyn GraphicsDevice,
+        // 接收 retained texture 的物理范围。
+        extent: RhiExtent,
         load: LoadAction,
-        // 指定本次 gradient 计划写入的 surface 或 retained texture。
-        target: RenderTargetRef,
-        damage: crate::core::PresentDamage,
+        // 指定本次 gradient 计划唯一允许写入的离屏纹理。
+        target: RenderTargetHandle,
     ) -> Result<bool, Error> {
         // soft 内容与 RHI gradient 不能在这条纵切中交错提交。
         if self.soft_has_content || self.pending_native.is_empty() {
             // 返回 false 让兼容路径保持原有 painter-order 语义。
             return Ok(false);
         }
-        // 读取当前 surface 的物理 viewport 和两轴缩放。
+        // 从显式纹理范围推导物理 viewport 和两轴缩放。
         let (viewport, scale_x, scale_y) =
-            rhi_physical_geometry(context, self.surface_w, self.surface_h);
+            rhi_physical_geometry(extent, self.surface_w, self.surface_h);
         // 预先分配同一顺序的渐变载荷。
         let mut gradients = Vec::with_capacity(self.pending_native.len());
         // 逐项确认当前队列是可迁移的渐变子集。
         for operation in &self.pending_native {
             // 把逻辑裁剪转换为物理裁剪。
-            let Some(scissor) =
-                rhi_physical_scissor(operation.scissor(), scale_x, scale_y, context)
+            let Some(scissor) = rhi_physical_scissor(operation.scissor(), scale_x, scale_y, extent)
             else {
                 // 空裁剪保留原有 no-op 语义。
                 return Ok(false);
@@ -120,8 +120,10 @@ impl NativeGpuCanvas2D {
             // 保持 pending queue 的 painter order。
             gradients.push(gradient);
         }
-        // 由通用 renderer 生成 FramePlan 并完成唯一最终 present。
-        renderer.execute_gradients(context, damage, viewport, load, target, &gradients)?;
+        // Device-only lowering 只能构造显式纹理 Offscreen 帧。
+        let frame = RhiRendererFrame::offscreen(device, target);
+        // 由通用 renderer 生成并执行离屏 FramePlan。
+        renderer.execute_gradients(frame, viewport, load, &gradients)?;
         // 告知调用方本次队列已经通过 RHI present 成功。
         Ok(true)
     }

@@ -11,11 +11,21 @@ use crate::core::PresentDamage;
 use crate::native::present::{GraphicsContextLifecycle, PresentTestResult};
 // 引入薄 RHI 的 surface 原语。
 use crate::native::present::rhi::{
-    GraphicsSurface, RenderTargetHandle, RhiExtent, SurfaceFrame, SurfaceToken,
+    GraphicsSurface, GraphicsSurfaceCapabilities, RenderTargetHandle, RhiExtent, RhiScissor,
+    RhiSurfaceReadback, SurfaceFrame, SurfaceToken,
 };
 
 // 为 D3D11 context 实现 surface acquire/resize/present。
 impl GraphicsSurface for super::D3d11Context {
+    // 返回从实际 swapchain 形态投影的 Surface 可选能力。
+    fn surface_capabilities(&self) -> GraphicsSurfaceCapabilities {
+        // D3D11 Surface 同时报告真实 swapchain 保留证明与同步回读原语。
+        GraphicsSurfaceCapabilities::with_readback(
+            // 直接读取当前 Surface 自己拥有的冻结 swapchain 契约。
+            self.present_coherency(),
+        )
+    }
+
     // 返回当前 D3D11 swapchain 的 surface 代际和物理 extent。
     fn token(&self) -> SurfaceToken {
         // 把 context 当前 drawable 尺寸映射为 RHI extent。
@@ -83,19 +93,32 @@ impl GraphicsSurface for super::D3d11Context {
         Ok(self.token())
     }
 
-    // 读取当前 D3D11 swapchain surface 的 BGRA 像素。
-    fn read_surface_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
+    // 读取当前 D3D11 swapchain surface 并规范化为左上原点 0xAARRGGBB 像素。
+    fn read_surface_pixels(&mut self, region: RhiScissor) -> Result<RhiSurfaceReadback> {
         // checked shutdown 后不得访问 swapchain backbuffer。
         self.ensure_active()?;
+        // 在进入 D3D11 前执行共享范围验证，禁止旧实现静默裁切。
+        RhiSurfaceReadback::validate_region(region, self.token().extent)?;
         // 复用 context 私有的 staging texture 实现。
-        self.read_surface_pixels_result(x, y, width, height)
+        let pixels = self.read_surface_pixels_result(
+            // 传入共享契约已验证的横坐标。
+            region.x,
+            // 传入共享契约已验证的纵坐标。
+            region.y,
+            // 传入共享契约已验证的宽度。
+            region.width,
+            // 传入共享契约已验证的高度。
+            region.height,
+        )?;
+        // D3D11 BGRA8 小端载荷已经对应规范 0xAARRGGBB，集中验证长度后返回。
+        RhiSurfaceReadback::try_new(region, self.token().extent, pixels)
     }
 
     // 只接受当前代际的 surface frame，并把提交交给 D3D11 Present。
     fn present(
         &mut self,
         frame: SurfaceFrame,
-        _submission: crate::native::present::rhi::SubmissionHandle,
+        submission: crate::native::present::rhi::SubmissionHandle,
         damage: PresentDamage,
     ) -> Result<()> {
         // checked shutdown 后不得提交旧 frame 或触碰 swapchain。
@@ -116,6 +139,8 @@ impl GraphicsSurface for super::D3d11Context {
                 "D3d11 RHI present requires the acquired surface target",
             ));
         }
+        // 在触碰 DXGI 前验证 Device submit 与 Surface present 属于同一最新事务。
+        self.validate_submission_impl(submission)?;
         // 重新绑定 swapchain target，恢复兼容 context 的 owner 状态和 RTV 绑定。
         self.bind_swapchain_target()?;
         // 复用现有的 Present 前后 RTV 生命周期和 DXGI 错误映射。

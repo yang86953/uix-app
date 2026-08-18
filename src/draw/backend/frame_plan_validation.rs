@@ -1,0 +1,108 @@
+//! FramePlan 内类型化上传与 pipeline 资源契约的顺序验证。
+
+// 引入稳定错误类型和结果别名。
+use crate::core::error::{Errc, Error, Result};
+// 引入绘制包与采样语义闭集。
+use crate::native::present::rhi::{DrawPacket, PipelineSampling};
+
+// 引入同层计划命令与 pass。
+use super::{FramePlanCommand, RenderPassPlan};
+
+// 验证一次 draw 只能消费前序命令中与其 pipeline 匹配的类型化资源事实。
+pub(super) fn validate_draw_uploads(
+    // 接收当前完整 pass 以保留 painter order。
+    pass: &RenderPassPlan,
+    // 接收 draw 在 pass 中的位置，只允许观察已经执行的前序命令。
+    command_index: usize,
+    // 接收已经绑定句柄与 PipelineKind 的绘制包。
+    packet: DrawPacket,
+) -> Result<()> {
+    // 空顶点句柄不能进入不同 Adapter 的资源表解释。
+    if packet.vertex_buffer.raw() == 0 {
+        // 使用计划参数错误而不是让后端各自返回不同状态。
+        return Err(Error::new(
+            Errc::InvalidArgument,
+            "FramePlan draw vertex buffer must be bound",
+        ));
+    }
+    // 读取绑定身份唯一允许的顶点、Uniform、采样和混合事实。
+    let contract = packet.pipeline.contract();
+    // 只检查 draw 之前已经生效的命令。
+    let preceding = &pass.commands[..command_index];
+    // 查找同一顶点 buffer 最近一次类型化上传。
+    let latest_vertex = preceding.iter().rev().find_map(|command| {
+        // 只有句柄匹配的顶点上传才影响当前 draw。
+        match command {
+            // 返回最近一次匹配的类型化顶点载荷。
+            FramePlanCommand::UploadVertex { buffer, data, .. }
+                if *buffer == packet.vertex_buffer =>
+            {
+                // 借出载荷供共享布局比较。
+                Some(data)
+            }
+            // 其它命令不改变当前顶点 buffer 的布局事实。
+            _ => None,
+        }
+    });
+    // 动态上传存在时必须与 pipeline 的共享顶点布局完全一致。
+    if latest_vertex.is_some_and(|data| data.layout() != contract.vertex) {
+        // 在进入 Adapter 前拒绝布局错配。
+        return Err(Error::new(
+            Errc::InvalidArgument,
+            "FramePlan vertex upload layout does not match pipeline contract",
+        ));
+    }
+    // 当前固定 pipeline 都要求一个完整类型化 Uniform buffer。
+    let uniform_buffer = packet.uniform_buffer.ok_or_else(|| {
+        // 缺失常量不能由 Adapter 用零值或旧帧数据猜测。
+        Error::new(
+            Errc::InvalidArgument,
+            "FramePlan draw uniform buffer must be bound",
+        )
+    })?;
+    // 查找同一 Uniform buffer 在 draw 前最近一次完整上传。
+    let latest_uniform = preceding.iter().rev().find_map(|command| {
+        // 只接受类型化 Uniform 命令。
+        match command {
+            // 返回最近一次匹配的共享值对象。
+            FramePlanCommand::UploadUniform { buffer, data } if *buffer == uniform_buffer => {
+                // 借出 Copy 载荷供布局比较。
+                Some(*data)
+            }
+            // 其它命令不改变当前 Uniform buffer 的语义事实。
+            _ => None,
+        }
+    });
+    // 每次 draw 都必须显式刷新其依赖的 viewport 与图元常量。
+    let uniform = latest_uniform.ok_or_else(|| {
+        // 禁止复用不可审计的旧帧 Uniform 内容。
+        Error::new(
+            Errc::InvalidArgument,
+            "FramePlan draw must follow a typed uniform upload",
+        )
+    })?;
+    // 类型化值对象必须与 pipeline 的唯一 Uniform ABI 匹配。
+    if uniform.layout() != contract.uniform {
+        // 在字节编码前拒绝任何语义错位。
+        return Err(Error::new(
+            Errc::InvalidArgument,
+            "FramePlan uniform upload layout does not match pipeline contract",
+        ));
+    }
+    // 需要采样的 pipeline 必须在 draw 前已经绑定统一 t0/s0 资源。
+    if contract.sampling != PipelineSampling::None
+        // 查找当前 pass 中已经生效的零号纹理绑定。
+        && !preceding.iter().any(|command| {
+            // 只有共享 ABI 开放的零号槽满足当前采样契约。
+            matches!(command, FramePlanCommand::BindTexture { slot: 0, .. })
+        })
+    {
+        // 禁止不同 API 复用各自残留的纹理状态。
+        return Err(Error::new(
+            Errc::InvalidArgument,
+            "FramePlan sampled draw must follow a texture binding",
+        ));
+    }
+    // 当前 draw 的所有类型化资源事实与共享 pipeline 契约一致。
+    Ok(())
+}

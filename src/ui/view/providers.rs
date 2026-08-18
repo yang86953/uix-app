@@ -9,14 +9,14 @@
 //! 私有边界（`render_handler`）。
 
 use crate::platform::windowing::ControlSize;
+use crate::ui::render_handler::{EmptyContext, EmptyRenderer};
+use crate::ui::theme::{Theme, TokenPatch};
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::config::{
     ComponentConfig, ComponentOverrides, ComponentTokenOverrides, use_config, with_config,
 };
 use crate::ui::widget_runtime::locale::{Locale, en_us, with_locale, zh_cn};
 use crate::ui::widget_runtime::traits::WidgetComponent;
-use crate::ui::render_handler::{EmptyContext, EmptyRenderer};
-use crate::ui::theme::{Theme, TokenPatch};
-use crate::ui::view::{View, ViewNode};
 
 #[derive(Clone, Default)]
 struct ConfigPatch {

@@ -5,9 +5,9 @@ use std::sync::Arc;
 
 // 引入最终执行计划所需的 viewport、资源和 context 类型。
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, BufferUsage, GraphicsContextRhi, PipelineDesc, PipelineHandle,
-    RhiScissor, RhiViewport, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
-    pipeline_keys,
+    BufferDesc, BufferHandle, BufferUsage, GraphicsDevice, PipelineBinding, PipelineDesc,
+    PipelineKind, RhiExtent, RhiMsdfRasterParams, RhiScissor, RhiViewport, SamplerDesc,
+    SamplerHandle, TextureDesc, TextureFormat, TextureHandle,
 };
 
 // 固定单页尺寸，让 atlas 的资源预算和 adapter 上传粒度保持稳定。
@@ -97,19 +97,19 @@ impl RhiRenderer {
     // 准备 MSDF 字形的固定资源槽。
     pub(super) fn ensure_msdf_resources(
         &mut self,
-        context: &mut dyn GraphicsContextRhi,
-    ) -> Result<(PipelineHandle, BufferHandle, BufferHandle, SamplerHandle), crate::core::Error>
+        device: &mut dyn GraphicsDevice,
+    ) -> Result<(PipelineBinding, BufferHandle, BufferHandle, SamplerHandle), crate::core::Error>
     {
         // 复用普通 sampled quad 的 float8 顶点 ABI 和 buffer 容量管理。
-        let (_, vertex_buffer, _, _) = self.ensure_textured_resources(context)?;
+        let (_, vertex_buffer, _, _) = self.ensure_textured_resources(device)?;
         // 首次使用时创建 MSDF 专用 pipeline。
         let pipeline = if let Some(pipeline) = self.msdf_pipeline {
             // 复用已经登记的 MSDF pipeline。
             pipeline
         } else {
-            // 选择跨 adapter 固定的 MSDF pipeline key。
-            let pipeline = context.create_pipeline(PipelineDesc {
-                key: pipeline_keys::MSDF_GLYPH_QUAD,
+            // 选择跨 Adapter 固定的 MSDF pipeline 语义。
+            let pipeline = device.create_pipeline(PipelineDesc {
+                kind: PipelineKind::MsdfGlyphQuad,
             })?;
             // 缓存 MSDF pipeline 句柄。
             self.msdf_pipeline = Some(pipeline);
@@ -122,8 +122,8 @@ impl RhiRenderer {
             uniform
         } else {
             // MSDFConstants = viewport、source extent、range 和 padding。
-            let uniform = context.create_buffer(BufferDesc {
-                size_bytes: 32,
+            let uniform = device.create_buffer(BufferDesc {
+                size_bytes: PipelineKind::MsdfGlyphQuad.contract().uniform.size_bytes(),
                 stride_bytes: 0,
                 usage: BufferUsage::Uniform,
             })?;
@@ -138,7 +138,7 @@ impl RhiRenderer {
             sampler
         } else {
             // 线性采样使 MSDF 在缩放与仿射变换时保持距离场连续。
-            let sampler = context.create_sampler(SamplerDesc { linear: true })?;
+            let sampler = device.create_sampler(SamplerDesc::linear_clamp())?;
             // 缓存 MSDF sampler 句柄。
             self.msdf_sampler = Some(sampler);
             // 返回新创建的 MSDF sampler。
@@ -196,9 +196,9 @@ impl RhiRenderer {
     // 获取或创建一个跨帧复用的 MSDF atlas placement；无空间时返回本帧临时资源。
     pub(super) fn ensure_msdf_texture(
         &mut self,
-        context: &mut dyn GraphicsContextRhi,
+        device: &mut dyn GraphicsDevice,
         quad: &RhiMsdfQuad,
-    ) -> crate::core::Result<(TextureHandle, [f32; 4], [f32; 2], bool)> {
+    ) -> crate::core::Result<(TextureHandle, [f32; 4], RhiExtent, bool)> {
         // 先查找同一轮廓和尺寸的持久 atlas placement。
         let key = Self::msdf_cache_key(quad);
         if let Some(entry) = self.msdf_atlas_cache.get(&key) {
@@ -213,7 +213,7 @@ impl RhiRenderer {
                 return Ok((
                     page.texture,
                     entry.placement.uv,
-                    [MSDF_ATLAS_PAGE_SIZE as f32, MSDF_ATLAS_PAGE_SIZE as f32],
+                    RhiExtent::new(MSDF_ATLAS_PAGE_SIZE, MSDF_ATLAS_PAGE_SIZE),
                     true,
                 ));
             }
@@ -234,7 +234,7 @@ impl RhiRenderer {
             .ok_or_else(|| super::rhi_invalid("RhiRenderer MSDF atlas height overflows"))?;
         if alloc_width > MSDF_ATLAS_PAGE_SIZE || alloc_height > MSDF_ATLAS_PAGE_SIZE {
             // 单个超大字形不能破坏固定 atlas 的预算，保留本帧临时资源。
-            return Self::create_transient_msdf_texture(context, quad, payload.as_ref());
+            return Self::create_transient_msdf_texture(device, quad, payload.as_ref());
         }
         // 先在已有 page 中寻找可容纳当前字形的 shelf。
         let mut packed = None;
@@ -248,7 +248,7 @@ impl RhiRenderer {
         }
         // 无空槽时按预算创建下一个 page。
         if packed.is_none() && self.msdf_atlas_pages.len() < MSDF_ATLAS_MAX_PAGES {
-            let page = Self::create_msdf_atlas_page(context)?;
+            let page = Self::create_msdf_atlas_page(device)?;
             self.msdf_atlas_pages.push(page);
             created_page = true;
             let page_index = self.msdf_atlas_pages.len() - 1;
@@ -264,24 +264,33 @@ impl RhiRenderer {
         // 四页均没有空间时仍保证当前绘制可完成，但不继续扩大常驻预算。
         let Some((page_index, slot_x, slot_y)) = packed else {
             // atlas 满载时返回本帧临时 texture，不让旧 placement 被重排破坏。
-            return Self::create_transient_msdf_texture(context, quad, payload.as_ref());
+            return Self::create_transient_msdf_texture(device, quad, payload.as_ref());
         };
         // 生成带四周 gutter 的 RGBA8 子区域，阻断相邻字形的线性采样污染。
         let padded = Self::pad_msdf_payload(payload.as_ref(), quad.pixel_w, quad.pixel_h)?;
-        let upload_extent = crate::native::present::rhi::RhiExtent::new(alloc_width, alloc_height);
+        let upload_extent = RhiExtent::new(alloc_width, alloc_height);
         let page_texture = self
             .msdf_atlas_pages
             .get(page_index)
             .ok_or_else(|| super::rhi_invalid("RhiRenderer MSDF atlas page is missing"))?
             .texture;
-        if let Err(error) =
-            context.update_texture_region(page_texture, slot_x, slot_y, upload_extent, &padded)
-        {
+        if let Err(error) = device.update_texture_region(
+            // 更新当前 Device 拥有的 atlas 页。
+            page_texture,
+            // 使用分配器返回的目标 X 偏移。
+            slot_x,
+            // 使用分配器返回的目标 Y 偏移。
+            slot_y,
+            // 上传范围包含 atlas padding。
+            upload_extent,
+            // 上传已经补边的 MSDF 像素。
+            &padded,
+        ) {
             // 新 page 上传失败时立即回收其纹理；已有 page 的槽位则留作失败诊断。
             if created_page {
                 let page = self.msdf_atlas_pages.pop();
                 if let Some(page) = page {
-                    let _ = context.destroy_texture(page.texture);
+                    let _ = device.destroy_texture(page.texture);
                 }
             }
             return Err(error);
@@ -309,19 +318,18 @@ impl RhiRenderer {
         Ok((
             page_texture,
             placement.uv,
-            [MSDF_ATLAS_PAGE_SIZE as f32, MSDF_ATLAS_PAGE_SIZE as f32],
+            RhiExtent::new(MSDF_ATLAS_PAGE_SIZE, MSDF_ATLAS_PAGE_SIZE),
             true,
         ))
     }
 
     // 创建固定尺寸的 RGBA8 MSDF atlas page。
     fn create_msdf_atlas_page(
-        context: &mut dyn GraphicsContextRhi,
+        device: &mut dyn GraphicsDevice,
     ) -> crate::core::Result<MsdfAtlasPage> {
         // atlas page 只承担 sampled texture，不把字形资源伪装成 render target。
-        let extent =
-            crate::native::present::rhi::RhiExtent::new(MSDF_ATLAS_PAGE_SIZE, MSDF_ATLAS_PAGE_SIZE);
-        let texture = context.create_texture(TextureDesc {
+        let extent = RhiExtent::new(MSDF_ATLAS_PAGE_SIZE, MSDF_ATLAS_PAGE_SIZE);
+        let texture = device.create_texture(TextureDesc {
             extent,
             format: TextureFormat::Rgba8Unorm,
         })?;
@@ -403,34 +411,29 @@ impl RhiRenderer {
 
     // 为无法进入固定 atlas 的单个字形创建本帧临时 texture。
     fn create_transient_msdf_texture(
-        context: &mut dyn GraphicsContextRhi,
+        device: &mut dyn GraphicsDevice,
         quad: &RhiMsdfQuad,
         payload: &[u8],
-    ) -> crate::core::Result<(TextureHandle, [f32; 4], [f32; 2], bool)> {
+    ) -> crate::core::Result<(TextureHandle, [f32; 4], RhiExtent, bool)> {
         // 临时资源使用原始字形 extent 和完整 UV。
-        let extent = crate::native::present::rhi::RhiExtent::new(quad.pixel_w, quad.pixel_h);
-        let texture = context.create_texture(TextureDesc {
+        let extent = RhiExtent::new(quad.pixel_w, quad.pixel_h);
+        let texture = device.create_texture(TextureDesc {
             extent,
             format: TextureFormat::Rgba8Unorm,
         })?;
         // 上传失败时立即回收半成品 texture。
-        if let Err(error) = context.update_texture(texture, extent, payload) {
-            let _ = context.destroy_texture(texture);
+        if let Err(error) = device.update_texture(texture, extent, payload) {
+            let _ = device.destroy_texture(texture);
             return Err(error);
         }
         // false 表示 mixed executor 要在本帧结束时销毁该 texture。
-        Ok((
-            texture,
-            [0.0, 0.0, 1.0, 1.0],
-            [quad.pixel_w as f32, quad.pixel_h as f32],
-            false,
-        ))
+        Ok((texture, [0.0, 0.0, 1.0, 1.0], extent, false))
     }
 
     // 在 graphics context 关闭前释放跨帧 MSDF atlas pages。
     pub(crate) fn release_msdf_atlas(
         &mut self,
-        context: &mut dyn GraphicsContextRhi,
+        context: &mut dyn GraphicsDevice,
     ) -> crate::core::Result<()> {
         // 先移出 entry，确保即使某个 destroy 失败也不会重复使用旧句柄。
         let _entries = std::mem::take(&mut self.msdf_atlas_cache);
@@ -506,23 +509,14 @@ impl RhiRenderer {
         ]
     }
 
-    // 编码 MSDF shader 的 viewport、纹理尺寸和距离范围常量。
-    pub(super) fn encode_msdf_constants(
+    // 把 MSDF shader 事实映射为共享 RHI 常量值对象。
+    pub(super) fn msdf_uniform(
         viewport: RhiViewport,
         quad: &RhiMsdfQuad,
-        texture_size: [f32; 2],
-    ) -> Arc<[u8]> {
-        // MSDFConstants 使用四个 float4 对齐寄存器。
-        Self::encode_f32s(&[
-            viewport.width,
-            viewport.height,
-            texture_size[0],
-            texture_size[1],
-            quad.range,
-            0.0,
-            0.0,
-            0.0,
-        ])
+        texture_extent: RhiExtent,
+    ) -> RhiMsdfRasterParams {
+        // 由共享值对象唯一排列 viewport、atlas extent、range 和 padding。
+        RhiMsdfRasterParams::new(viewport, texture_extent, quad.range)
     }
 }
 

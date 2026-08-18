@@ -6,8 +6,8 @@
 //! 提供执行实现（`AgentCommandExecutor`），由组合根 `session_runtime` 组装
 //! 期注入。
 
-use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
+use std::sync::mpsc::SyncSender;
 use std::time::Instant;
 
 #[cfg(any(test, feature = "agent-control"))]
@@ -428,12 +428,14 @@ impl WindowAgentState {
             return;
         };
         let request = AgentConfirmationRequest {
-            window_id: self
-                .window_id
-                .unwrap_or(crate::core::WindowId::ROOT),
+            window_id: self.window_id.unwrap_or(crate::core::WindowId::ROOT),
             confirm_id,
             target: self.confirm_pending[index].target.label(),
-            action: self.confirm_pending[index].action.kind().as_str().to_owned(),
+            action: self.confirm_pending[index]
+                .action
+                .kind()
+                .as_str()
+                .to_owned(),
         };
         self.confirm_pending[index].response = Some(response);
         handler(request);
@@ -583,7 +585,9 @@ mod tests {
         }
     }
 
-    fn recv_result(rx: mpsc::Receiver<AgentCommandResult>) -> Result<AgentCommandResult, RecvTimeoutError> {
+    fn recv_result(
+        rx: mpsc::Receiver<AgentCommandResult>,
+    ) -> Result<AgentCommandResult, RecvTimeoutError> {
         rx.recv_timeout(Duration::from_millis(100))
     }
 
@@ -598,7 +602,9 @@ mod tests {
     fn expire_confirmations_completes_pending_ticket() {
         let mut state = WindowAgentState::new();
         let (tx, rx) = mpsc::sync_channel(1);
-        state.confirm_pending.push(pending(7, Instant::now() - Duration::from_secs(120)));
+        state
+            .confirm_pending
+            .push(pending(7, Instant::now() - Duration::from_secs(120)));
         state.confirm_pending[0].response = Some(tx);
         state.expire_confirmations();
         assert!(state.confirm_pending.is_empty());

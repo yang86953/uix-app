@@ -15,9 +15,6 @@
 //! - render 期读取的 State / Computed 绑定窄 Paint；DynamicLabel 还会在 layout 后
 //!   主动探测闭包依赖。
 use crate::ui::accessibility::accessibility_override::AccessibilityOverride;
-use crate::ui::widget_runtime::focus_handle::FocusHandle;
-use crate::ui::widget_runtime::traits::WidgetComponent;
-use crate::ui::widget_runtime::widget::{WidgetCore, WidgetNode};
 use crate::ui::component_patch::{
     builtin_widget_config_changed, builtin_widget_layout_changed, builtin_widget_runtime_changed,
     patch_builtin_widget,
@@ -28,6 +25,9 @@ use crate::ui::event::{HandlerRegistration, HandlerSignature, SemanticKind};
 use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::theme::style::Style;
 use crate::ui::view::ViewNode;
+use crate::ui::widget_runtime::focus_handle::FocusHandle;
+use crate::ui::widget_runtime::traits::WidgetComponent;
+use crate::ui::widget_runtime::widget::{WidgetCore, WidgetNode};
 // 引入动态子树组件以识别各自的私有协调边界。
 use crate::ui::widgets::{Calendar, Carousel, Image, Transfer};
 // 导航 capability 启用时才识别 Anchor 的专属动态容器协调边界。

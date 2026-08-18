@@ -5,9 +5,9 @@ use std::thread::ThreadId;
 use crate::core::{ComponentId, Rect};
 use crate::draw::renderer::{InvalidationQueueHandle, invalidate_paint_handle};
 use crate::platform::windowing::EventLoopWaker;
-use crate::ui::widget_runtime::component_handle::ComponentHandle;
 use crate::ui::component_snapshot::ComponentConfigSnapshot;
 use crate::ui::event::SemanticEvent;
+use crate::ui::widget_runtime::component_handle::ComponentHandle;
 
 #[derive(Clone, Default)]
 /// 可克隆的应用级组件快照与受控句柄注册表。

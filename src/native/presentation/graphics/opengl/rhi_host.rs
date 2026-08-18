@@ -1,16 +1,17 @@
 //! WGL/EGL context 到 OpenGL ES 薄 RHI 的共享 host 实现。
 
-// 引入最终 present damage 和通用 typed error。
-use crate::core::{Error, PresentDamage, Result};
+// 引入最终 present damage、保留证明和通用 typed error。
+use crate::core::{Error, PresentCoherency, PresentDamage, Result};
 // 仅 test-harness surface lost 注入需要专用错误分类。
 #[cfg(feature = "test-harness")]
 use crate::core::Errc;
 // 引入薄 RHI 的所有组合 trait 与命令类型。
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, DrawPacket, GraphicsCapabilities, GraphicsDevice, GraphicsSurface,
-    LoadAction, PipelineDesc, PipelineHandle, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor,
-    RhiViewport, SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceFrame, SurfaceToken,
-    TextureCopy, TextureDesc, TextureHandle, TextureMove,
+    BufferDesc, BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
+    GraphicsSurface, GraphicsSurfaceCapabilities, LoadAction, PipelineBinding, PipelineDesc,
+    RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, RhiSurfaceReadback, RhiViewport,
+    SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy,
+    TextureDesc, TextureHandle, TextureMove,
 };
 // 引入 OpenGL raster pipeline 的 RHI bridge。
 use super::raster::OpenGlRasterPipeline;
@@ -37,15 +38,19 @@ where
     T: OpenGlRhiHost,
 {
     // 返回 OpenGL ES RHI 的事实能力。
-    fn capabilities(&self) -> GraphicsCapabilities {
-        self.rhi_pipeline().rhi_capabilities()
+    fn device_capabilities(&self) -> GraphicsDeviceCapabilities {
+        self.rhi_pipeline().rhi_device_capabilities()
     }
 
-    // 在最终提交前消费 OpenGL RHI 的 owner-thread 健康检查。
+    // 激活当前 OpenGL owner 的原生 context，不把 thread-current 事实泄漏给 Drawing。
+    fn activate(&mut self) -> Result<()> {
+        // 所有资源、命令和释放操作都通过同一 Adapter 入口恢复 current context。
+        self.rhi_make_current()
+    }
+
+    // 在已经 current 的 OpenGL context 上消费设备健康检查。
     fn maintain(&mut self) -> Result<()> {
-        // 所有无 acquire 的设备操作先恢复创建线程上的原生 GL context。
-        self.rhi_make_current()?;
-        // current 成功后再消费设备健康状态，不进入高层兼容绘制入口。
+        // 健康检查不再承担隐式 context 激活，避免 checked teardown 被 DeviceLost 阻断。
         self.rhi_pipeline_mut().rhi_maintain()
     }
 
@@ -108,8 +113,11 @@ where
     }
 
     // 创建固定 pipeline。
-    fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineHandle> {
-        self.rhi_pipeline_mut().rhi_create_pipeline(desc)
+    fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineBinding> {
+        // Adapter 内部仍登记 opaque handle，门面把它与同一创建语义绑定。
+        let handle = self.rhi_pipeline_mut().rhi_create_pipeline(desc)?;
+        // 返回 FramePlan 无法拆开的通用 pipeline 身份。
+        Ok(PipelineBinding::new(handle, desc.kind))
     }
 
     // 销毁 buffer。
@@ -128,8 +136,10 @@ where
     }
 
     // 销毁 pipeline。
-    fn destroy_pipeline(&mut self, pipeline: PipelineHandle) -> Result<()> {
-        self.rhi_pipeline_mut().rhi_destroy_pipeline(pipeline)
+    fn destroy_pipeline(&mut self, pipeline: PipelineBinding) -> Result<()> {
+        // 原生资源表只消费绑定中保存的不透明句柄。
+        self.rhi_pipeline_mut()
+            .rhi_destroy_pipeline(pipeline.handle())
     }
 
     // 开始 render pass。
@@ -196,6 +206,15 @@ impl<T> GraphicsSurface for T
 where
     T: OpenGlRhiHost,
 {
+    // 返回 OpenGL window surface 实际实现的可选能力。
+    fn surface_capabilities(&self) -> GraphicsSurfaceCapabilities {
+        // WGL 与 EGL 当前都只承诺完整交换，同时实现同步回读原语。
+        GraphicsSurfaceCapabilities::with_readback(
+            // 没有 buffer-age 或 swap-with-damage 证明时必须保守保持 FullOnly。
+            PresentCoherency::FullOnly,
+        )
+    }
+
     // 返回当前代际和物理 surface extent。
     fn token(&self) -> SurfaceToken {
         SurfaceToken::new(
@@ -235,12 +254,25 @@ where
         Ok(self.token())
     }
 
-    // 读取当前 OpenGL drawable 的 RGBA 像素。
-    fn read_surface_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
+    // 读取当前 OpenGL drawable 并返回左上原点 0xAARRGGBB 规范结果。
+    fn read_surface_pixels(&mut self, region: RhiScissor) -> Result<RhiSurfaceReadback> {
+        // 在进入 OpenGL 前使用共享范围规则拒绝越界或空请求。
+        RhiSurfaceReadback::validate_region(region, self.token().extent)?;
         // 回读前恢复 owner-thread current context。
         self.rhi_make_current()?;
         // 委托给共享 OpenGL raster owner。
-        self.rhi_pipeline_mut().read_pixels(x, y, width, height)
+        let pixels = self.rhi_pipeline_mut().read_pixels(
+            // 传入共享契约已验证的横坐标。
+            region.x,
+            // 传入共享契约已验证的纵坐标。
+            region.y,
+            // 传入共享契约已验证的宽度。
+            region.width,
+            // 传入共享契约已验证的高度。
+            region.height,
+        )?;
+        // OpenGL raster 已完成行序与通道规范化，集中验证载荷后返回。
+        RhiSurfaceReadback::try_new(region, self.token().extent, pixels)
     }
 
     // 只接受当前代际、当前 surface target 和最近一次提交。

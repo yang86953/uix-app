@@ -153,21 +153,23 @@ mod layout_app_shell {
                 // 嵌入带标题的固定高度 Header。
                 embed(Header::new(48.0).title("工作台")),
                 // 嵌入持有响应式网格子树的 Content。
-                embed(Content::new().child(
-                    // 创建公开响应式网格。
-                    Grid::responsive()
-                        // 声明三个从全宽收敛到四分之一宽的卡片列。
-                        .cols(vec![
-                            // 声明第一列断点跨度。
-                            Col::new().span(24).sm(12).md(8).lg(6),
-                            // 声明第二列断点跨度。
-                            Col::new().span(24).sm(12).md(8).lg(6),
-                            // 声明第三列断点跨度。
-                            Col::new().span(24).sm(12).md(8).lg(6),
-                        ])
-                        // 把业务卡片集合交给 Grid 拥有。
-                        .children(cards()),
-                )),
+                embed(
+                    Content::new().child(
+                        // 创建公开响应式网格。
+                        Grid::responsive()
+                            // 声明三个从全宽收敛到四分之一宽的卡片列。
+                            .cols(vec![
+                                // 声明第一列断点跨度。
+                                Col::new().span(24).sm(12).md(8).lg(6),
+                                // 声明第二列断点跨度。
+                                Col::new().span(24).sm(12).md(8).lg(6),
+                                // 声明第三列断点跨度。
+                                Col::new().span(24).sm(12).md(8).lg(6),
+                            ])
+                            // 把业务卡片集合交给 Grid 拥有。
+                            .children(cards()),
+                    ),
+                ),
             ))
             // 让主内容区域消费侧栏之外的剩余横向空间。
             .flex_grow(1.0),

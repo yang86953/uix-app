@@ -7,7 +7,7 @@ use crate::ui::theme::style::Style;
 // 引入窗口交互区域的专用样式适配入口。
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
 // 引入当前已登记消费统一样式的具体组件。
-use crate::ui::widgets::{Button, Container, Grid, Label, Typography};
+use crate::ui::widgets::{Button, Card, Container, Grid, Label, ScrollView, Typography};
 
 // 引入所属适配器类型。
 use super::ViewAdapter;
@@ -70,6 +70,25 @@ impl ViewAdapter {
                 }
                 b.style = button_style.into();
             }
+        } else if tid == std::any::TypeId::of::<Card>() {
+            // Card 自己拥有默认尺寸与内容自适应语义，Adapter 只传递显式 View 覆盖。
+            if let Some(card) = widget.as_any_mut().downcast_mut::<Card>() {
+                // 避免把 Style 默认值误写成 Card 的显式高度。
+                card.apply_view_layout_style(style, flex_grow_override);
+            }
+        } else if tid == std::any::TypeId::of::<ScrollView>() {
+            // ScrollView 的 ViewNode 尺寸必须进入组件私有视口配置，不能只停留在声明快照。
+            if let Some(scroll_view) = widget.as_any_mut().downcast_mut::<ScrollView>() {
+                // 通过窄入口同步尺寸和可表达零值的 Flex 覆盖。
+                scroll_view.apply_view_layout_style(
+                    // 传递当前声明的统一样式。
+                    style,
+                    // 传递显式扩张覆盖。
+                    flex_grow_override,
+                    // 传递显式收缩覆盖。
+                    flex_shrink_override,
+                );
+            }
         // Typography 只取得自己消费的文本排版字段，不取得 View 生命周期。
         } else if let Some(typography) = widget.as_any_mut().downcast_mut::<Typography>() {
             // 把公开 Style 中排版组件消费的文本字段交给组件。
@@ -78,12 +97,13 @@ impl ViewAdapter {
             if let Some(g) = widget.as_any_mut().downcast_mut::<Grid>() {
                 g.apply_style(style);
             }
-        } else if tid == std::any::TypeId::of::<crate::ui::widget_runtime::dynamic_label::DynamicLabel>()
+        } else if tid
+            == std::any::TypeId::of::<crate::ui::widget_runtime::dynamic_label::DynamicLabel>()
         {
             if let Some(dl) = widget
                 .as_any_mut()
-                .downcast_mut::<crate::ui::widget_runtime::dynamic_label::DynamicLabel>()
-            {
+                .downcast_mut::<crate::ui::widget_runtime::dynamic_label::DynamicLabel>(
+            ) {
                 dl.set_style(style.clone());
             }
         } else if tid == std::any::TypeId::of::<WindowInteractionRegion>() {

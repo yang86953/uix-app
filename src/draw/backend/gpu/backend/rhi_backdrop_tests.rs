@@ -15,10 +15,10 @@ use super::render_backend_backdrop::{
 use crate::native::present::rhi::{
     // draw packet 只用于拒绝意外绘制调用。
     DrawPacket,
-    // 能力 profile 声明 recording device 基线。
-    GraphicsCapabilities,
     // device trait 提供被测资源原语。
     GraphicsDevice,
+    // 能力 profile 声明 recording device 基线。
+    GraphicsDeviceCapabilities,
     // surface trait 提供 acquire/present 负面观测。
     GraphicsSurface,
     // load action 只用于拒绝意外 render pass。
@@ -114,9 +114,9 @@ impl RecordingBackdropContext {
 // 实现 backdrop helper 实际使用的 device 原语。
 impl GraphicsDevice for RecordingBackdropContext {
     // 声明完整 GPU 基线，聚焦资源与命令顺序。
-    fn capabilities(&self) -> GraphicsCapabilities {
+    fn device_capabilities(&self) -> GraphicsDeviceCapabilities {
         // 返回带纹理复制能力的稳定 profile。
-        GraphicsCapabilities::full_gpu_baseline()
+        GraphicsDeviceCapabilities::full_gpu_baseline()
     }
 
     // 创建独立 backdrop texture。

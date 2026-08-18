@@ -91,12 +91,18 @@ impl WaylandPresenter {
         // 受检计算物理宽度，拒绝整数溢出。
         let drawable_width = width.checked_mul(scale).ok_or_else(|| {
             // 过大 drawable 属于资源尺寸不足。
-            Error::new(Errc::InsufficientResources, "Wayland SHM scaled width overflow")
+            Error::new(
+                Errc::InsufficientResources,
+                "Wayland SHM scaled width overflow",
+            )
         })?;
         // 受检计算物理高度，拒绝整数溢出。
         let drawable_height = height.checked_mul(scale).ok_or_else(|| {
             // 过大 drawable 属于资源尺寸不足。
-            Error::new(Errc::InsufficientResources, "Wayland SHM scaled height overflow")
+            Error::new(
+                Errc::InsufficientResources,
+                "Wayland SHM scaled height overflow",
+            )
         })?;
         // 受检计算目标像素总数。
         let output_len = (drawable_width as usize)
@@ -124,7 +130,8 @@ impl WaylandPresenter {
                     // 计算当前目标行起点。
                     let target_y = source_y * scale as usize + offset_y;
                     // 计算当前像素块目标起点。
-                    let target_start = target_y * drawable_width as usize + source_x * scale as usize;
+                    let target_start =
+                        target_y * drawable_width as usize + source_x * scale as usize;
                     // 整块物理列填入同一像素。
                     output[target_start..target_start + scale as usize].fill(pixel);
                 }
@@ -381,7 +388,8 @@ impl IPresenter for WaylandPresenter {
         // 读取当前整数 scale，与新 logical extent 一次提交。
         let current = self.metrics.snapshot()?;
         // SHM buffer 仍在下次 present 时按新物理 extent 惰性重建。
-        self.metrics.update(width.max(1), height.max(1), current.scale)?;
+        self.metrics
+            .update(width.max(1), height.max(1), current.scale)?;
         // metrics 更新成功。
         Ok(())
     }
@@ -407,9 +415,6 @@ mod tests {
             // 有效小尺寸不应失败。
             .expect("scale=2 像素映射必须成功");
         // 物理 4×4 行列应各复制两次。
-        assert_eq!(
-            output,
-            vec![1, 1, 2, 2, 1, 1, 2, 2, 3, 3, 4, 4, 3, 3, 4, 4]
-        );
+        assert_eq!(output, vec![1, 1, 2, 2, 1, 1, 2, 2, 3, 3, 4, 4, 3, 3, 4, 4]);
     }
 }

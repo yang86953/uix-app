@@ -110,8 +110,12 @@ pub(super) fn paint_background(
             let center_y = rect.y + rect.h * 0.5;
             // 使用半宽和半高的斜边覆盖四个角。
             let radius = (rect.w * 0.5).hypot(rect.h * 0.5);
+            // 径向原语是完整圆形，必须先限制到当前组件的背景盒。
+            ctx.push_clip(rect);
             // 使用当前 draw System 的径向渐变原语。
             ctx.fill_radial_gradient(center_x, center_y, 0.0, radius, inner, outer);
+            // 恢复调用方进入背景绘制前的裁剪栈。
+            ctx.pop_clip();
         }
     }
 }

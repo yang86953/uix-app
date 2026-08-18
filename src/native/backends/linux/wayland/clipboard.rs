@@ -27,8 +27,8 @@ use crate::native::windowing::shared::nonblocking_write::{
 use crate::native::{Errc, Error, Result};
 
 // callback disposition 允许 data-source 在 Cancelled 后消费 registry owner。
-use super::compat::CallbackDisposition;
 use super::WaylandBackend;
+use super::compat::CallbackDisposition;
 
 pub(crate) const CLIPBOARD_READ_BUDGET: usize = 64 * 1024;
 pub(crate) const CLIPBOARD_WRITE_BUDGET: usize = 64 * 1024;

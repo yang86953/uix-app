@@ -12,6 +12,111 @@ use crate::core::PresentDamage;
 // 引入无帧 surface 探测的统一结果类型。
 use super::PresentTestResult;
 
+// 将 Shape 像素语义拆到独立共享契约文件，避免主 RHI 文件越过行数边界。
+mod shape;
+// 将 Gradient 仿射几何、颜色和模式参数收归共享 ABI 值对象。
+mod gradient;
+// 将 Shadow 仿射几何、颜色和软边参数收归共享 ABI 值对象。
+mod shadow;
+// 将 Blur 尺寸、区域、方向和高斯权重收归共享 ABI 值对象。
+mod blur;
+// 将 MSDF viewport、atlas extent 与距离范围收归共享 ABI 值对象。
+mod msdf;
+// 将 Mesh、sampled/coverage 与 Sector 固定常量收归共享基础图元 ABI。
+mod primitive;
+// 将 pipeline ABI 拆到独立共享契约文件，禁止 Drawing 与 Adapter 各自维护状态。
+mod pipeline;
+// 将颜色编码与混合值域拆到独立契约，禁止 Adapter 启用隐藏颜色转换。
+mod color;
+// 将 Device 与 Surface 能力拆到独立契约，禁止两种角色反向读取彼此状态。
+mod capabilities;
+// 将 draw packet 拆到独立类型化契约文件，保持 pipeline 身份不可拆分。
+mod draw_packet;
+// 将 bootstrap 探针拆到独立流程文件，保持 RHI trait 聚焦薄原语契约。
+mod probe;
+// 将 render-pass 生命周期和资源冲突门禁收归共享状态机，禁止 Adapter 各自解释顺序。
+mod pass_state;
+// 将纹理复制与移动的格式、范围和同资源规则收归共享契约。
+mod transfer;
+// 向 Drawing System 与各原生 Adapter 暴露同一份类型化 pipeline 契约。
+#[allow(unused_imports)]
+pub(crate) use pipeline::{
+    PipelineBinding, PipelineBlend, PipelineBlendFactor, PipelineBlendOperation,
+    PipelineBlendState, PipelineContract, PipelineDesc, PipelineKind, PipelineSampling,
+    PipelineUniformLayout, PipelineVertexLayout,
+};
+// 向 Drawing、Surface 与原生 Adapter 暴露唯一颜色解释。
+pub(crate) use color::{RhiColorContract, UIX_COLOR_CONTRACT};
+// 向组合根和 Adapter 暴露两个正交的事实快照。
+pub(crate) use capabilities::{GraphicsDeviceCapabilities, GraphicsSurfaceCapabilities};
+// 向 FramePlan 与 Adapter 暴露只接受类型化 pipeline 的绘制包。
+pub(crate) use draw_packet::DrawPacket;
+// 向各原生 Adapter 暴露唯一的 render-pass 状态事实。
+#[allow(unused_imports)]
+pub(crate) use pass_state::RhiPassState;
+// 向各原生 Adapter 暴露共享纹理传输边界结果。
+#[allow(unused_imports)]
+pub(crate) use transfer::RhiTextureTransferBounds;
+// 向 Drawing System 暴露唯一 Gradient 常量构造器和固定字节数。
+pub(crate) use gradient::{GRADIENT_UNIFORM_BYTES, RhiGradientRasterParams};
+// 只有 OpenGL Adapter 需要把共享 Gradient 字节 ABI 映射为逐个原生 uniform。
+#[cfg(feature = "opengles")]
+pub(crate) use gradient::{
+    GRADIENT_COLOR_A_FLOAT_OFFSET, GRADIENT_COLOR_B_FLOAT_OFFSET, GRADIENT_EDGE_Y_FLOAT_OFFSET,
+    GRADIENT_ORIGIN_EDGE_X_FLOAT_OFFSET, GRADIENT_PARAMS_FLOAT_OFFSET,
+    GRADIENT_VIEWPORT_FLOAT_OFFSET,
+};
+// 向 Drawing System 与 probe 暴露同一 Shape ABI 值对象和总尺寸。
+pub(crate) use shape::{RhiShapeRasterParams, SHAPE_UNIFORM_BYTES};
+// 向 Drawing System 暴露唯一 Shadow 常量构造器和固定字节数。
+pub(crate) use shadow::{RhiShadowRasterParams, SHADOW_UNIFORM_BYTES};
+// 只有 OpenGL Adapter 需要把共享 Shadow 字节 ABI 映射为逐个原生 uniform。
+#[cfg(feature = "opengles")]
+pub(crate) use shadow::{
+    SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET, SHADOW_COLOR_FLOAT_OFFSET,
+    SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET, SHADOW_RADIUS_FLOAT_OFFSET,
+    SHADOW_VIEWPORT_FLOAT_OFFSET,
+};
+// 向 Drawing System 暴露唯一 Blur 常量构造器、权重数量和固定字节数。
+pub(crate) use blur::{BLUR_UNIFORM_BYTES, BLUR_WEIGHT_COUNT, RhiBlurRasterParams};
+// OpenGL Adapter 与共享契约测试需要按字段核对 Blur 字节 ABI。
+#[cfg(any(feature = "opengles", test))]
+// 不同构建只消费当前 Adapter 需要的字段，统一重导出仍保留完整共享契约。
+#[allow(unused_imports)]
+pub(crate) use blur::{
+    BLUR_DIRECTION_TAPS_FLOAT_OFFSET, BLUR_REGION_FLOAT_OFFSET, BLUR_SIZES_FLOAT_OFFSET,
+    BLUR_WEIGHTS_FLOAT_OFFSET,
+};
+// 向 Drawing System 暴露唯一 MSDF 常量构造器和固定字节数。
+pub(crate) use msdf::{MSDF_UNIFORM_BYTES, RhiMsdfRasterParams};
+// OpenGL Adapter 与共享契约测试需要按字段核对 MSDF 字节 ABI。
+#[cfg(any(feature = "opengles", test))]
+// 不同构建只消费当前 Adapter 需要的字段，统一重导出仍保留完整共享契约。
+#[allow(unused_imports)]
+pub(crate) use msdf::{
+    MSDF_RANGE_FLOAT_OFFSET, MSDF_TEXTURE_SIZE_FLOAT_OFFSET, MSDF_VIEWPORT_FLOAT_OFFSET,
+};
+// 向 Drawing System 暴露基础图元值对象和各自固定字节数。
+pub(crate) use primitive::{
+    MESH_UNIFORM_BYTES, RhiMeshRasterParams, RhiSampledRasterParams, RhiSectorRasterParams,
+    SAMPLED_UNIFORM_BYTES, SECTOR_UNIFORM_BYTES,
+};
+// OpenGL Adapter 与共享契约测试需要按字段核对基础图元字节 ABI。
+#[cfg(any(feature = "opengles", test))]
+// 不同构建只消费当前 Adapter 需要的字段，统一重导出仍保留完整共享契约。
+#[allow(unused_imports)]
+pub(crate) use primitive::{
+    MESH_COLOR_FLOAT_OFFSET, MESH_VIEWPORT_FLOAT_OFFSET, SAMPLED_VIEWPORT_FLOAT_OFFSET,
+    SECTOR_ANGLES_FLOAT_OFFSET, SECTOR_COLOR_FLOAT_OFFSET, SECTOR_RECT_FLOAT_OFFSET,
+    SECTOR_VIEWPORT_FLOAT_OFFSET,
+};
+// 只有 OpenGL Adapter 需要把字节 ABI 解码为逐个原生 uniform 字段。
+#[cfg(feature = "opengles")]
+pub(crate) use shape::{
+    SHAPE_COLOR_FLOAT_OFFSET, SHAPE_DRAW_RECT_FLOAT_OFFSET, SHAPE_RADIUS_FLOAT_OFFSET,
+    SHAPE_RECT_FLOAT_OFFSET, SHAPE_STROKE_FLOAT_OFFSET, SHAPE_VIEWPORT_FLOAT_OFFSET,
+};
+
 // 定义 GPU 资源尺寸，避免把平台 API 的 extent 类型泄漏到通用层。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct RhiExtent {
@@ -90,9 +195,11 @@ opaque_handle!(PipelineHandle);
 opaque_handle!(RenderTargetHandle);
 // 声明一次 submit 返回的提交序号。
 opaque_handle!(SubmissionHandle);
-
-// 固定扇形 uniform 的四个 float4 ABI 总字节数。
-pub(crate) const SECTOR_UNIFORM_BYTES: usize = 64;
+// 将提交身份签发和最新值校验收归 API 无关的共享状态机。
+mod submission;
+// 向各原生 Adapter 暴露同一份 Device submit 与 Surface present 关联契约。
+#[allow(unused_imports)]
+pub(crate) use submission::RhiSubmissionSequence;
 
 // 定义 RHI 资源格式，只保留 UIX 当前需要的有限集合。
 // 三个变体必须显式保留 Unorm 采样语义，避免后续加入 Srgb 或浮点格式时产生歧义。
@@ -105,32 +212,6 @@ pub(crate) enum TextureFormat {
     Rgba8Unorm,
     // 定义单通道覆盖率格式。
     R8Unorm,
-}
-
-// 定义通用 renderer 与 native adapter 共享的有限 pipeline key。
-pub(crate) mod pipeline_keys {
-    // 使用位置 float2 与 MeshConstants uniform 绘制实心三角形。
-    pub(crate) const SOLID_MESH: u64 = 1;
-    // 使用位置 float2、纹理坐标 float2 与颜色 float4 绘制采样图元。
-    pub(crate) const TEXTURED_QUAD: u64 = 2;
-    // 使用单位 quad 与 GradientConstants uniform 绘制线性/径向渐变。
-    pub(crate) const GRADIENT_RECT: u64 = 3;
-    // 使用 R8 coverage 与 glyph shader 绘制覆盖率 quad。
-    pub(crate) const GLYPH_COVERAGE_QUAD: u64 = 4;
-    // 使用 RectConstants 与 SDF shader 绘制圆角或描边矩形。
-    pub(crate) const SHAPE_RECT: u64 = 5;
-    // 使用同一 RectConstants 与 SDF shader 执行饱和加法矩形。
-    pub(crate) const SHAPE_RECT_ADDITIVE: u64 = 11;
-    // 使用 ShadowConstants 与 SDF shader 绘制软阴影。
-    pub(crate) const BOX_SHADOW: u64 = 6;
-    // Additive sampled quad 复用采样 ABI，但使用独立加法 blend。
-    pub(crate) const TEXTURED_QUAD_ADDITIVE: u64 = 7;
-    // 使用 BlurConstants 与全屏区域 quad 执行一个方向的高斯 blur pass。
-    pub(crate) const BLUR_PASS: u64 = 8;
-    // 使用 RGBA8 MSDF 与仿射 quad 绘制可缩放字形。
-    pub(crate) const MSDF_GLYPH_QUAD: u64 = 9;
-    // 使用单位 quad 与 SectorConstants 绘制分析抗锯齿扇形。
-    pub(crate) const SECTOR: u64 = 10;
 }
 
 // 定义 buffer 的底层用途，adapter 只需据此选择绑定旗标。
@@ -167,176 +248,95 @@ pub(crate) struct TextureDesc {
 // 定义 sampler 创建描述。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SamplerDesc {
-    // 记录是否使用线性过滤。
-    pub(crate) linear: bool,
+    // 记录 clamp sampler 使用线性还是最近点过滤。
+    linear: bool,
 }
 
-// 定义 pipeline 创建描述，具体 shader 和 layout 由 adapter 解释。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct PipelineDesc {
-    // 使用稳定 key 标识通用 renderer 选定的 pipeline 语义。
-    pub(crate) key: u64,
-}
-
-// 定义事实型 GPU 能力，不列举任何 UI 操作。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct GraphicsCapabilities {
-    // 记录是否支持动态 buffer 创建和更新。
-    pub(crate) dynamic_buffers: bool,
-    // 记录是否支持纹理上传。
-    pub(crate) texture_upload: bool,
-    // 记录是否支持纹理复制。
-    pub(crate) texture_copy: bool,
-    // 记录是否支持带重叠安全语义的纹理区域移动。
-    pub(crate) texture_region_move: bool,
-    // 记录是否支持 render pass 内的局部颜色清理。
-    pub(crate) clear_rect: bool,
-    // 记录是否支持采样纹理绑定。
-    pub(crate) sampled_textures: bool,
-    // 记录是否支持 render-to-texture。
-    pub(crate) render_to_texture: bool,
-    // 记录是否支持 scissor。
-    pub(crate) scissor: bool,
-    // 记录是否支持 premultiplied-alpha blend。
-    pub(crate) premultiplied_alpha_blend: bool,
-    // 记录是否支持 sampled Additive blend；这是可选绘制能力而非 GPU 基线。
-    pub(crate) additive_blend: bool,
-    // 记录主 framebuffer 是否在提交间保留。
-    pub(crate) retained_framebuffer: bool,
-    // 记录 surface 是否支持同步像素回读。
-    pub(crate) surface_readback: bool,
-    // 记录 surface 是否支持窄 partial present。
-    pub(crate) partial_present: bool,
-    // 记录 surface 是否能提供可靠的遮挡状态。
-    pub(crate) occlusion: bool,
-}
-
-// 为能力快照提供 GPU 基线和缺口检查。
-impl GraphicsCapabilities {
-    // 创建文档要求的完整 GPU 基线能力。
-    pub(crate) const fn full_gpu_baseline() -> Self {
-        // 返回不依赖具体 API 的底层能力集合。
-        Self {
-            dynamic_buffers: true,
-            texture_upload: true,
-            texture_copy: true,
-            texture_region_move: false,
-            clear_rect: false,
-            sampled_textures: true,
-            render_to_texture: true,
-            scissor: true,
-            premultiplied_alpha_blend: true,
-            additive_blend: true,
-            retained_framebuffer: false,
-            // 可选 surface 回读必须由具体 adapter 显式开启。
-            surface_readback: false,
-            partial_present: false,
-            occlusion: false,
-        }
+// 为有限 sampler 契约提供不含裸布尔值的命名构造器。
+impl SamplerDesc {
+    // 创建不使用 mip 过滤的线性 clamp sampler。
+    pub(crate) const fn linear_clamp() -> Self {
+        // 线性事实由共享采样契约和两个 Adapter 共同读取。
+        Self { linear: true }
     }
 
-    // 创建已经具备跨帧主颜色目标的生产 GPU 基线能力。
-    pub(crate) const fn retained_gpu_baseline() -> Self {
-        // 从不依赖具体 API 的完整低层基线开始。
-        let mut capabilities = Self::full_gpu_baseline();
-        // retained 只在 adapter 已实现纹理持有和最终合成时显式开启。
-        capabilities.retained_framebuffer = true;
-        // 返回供生产 adapter 继续补充 API 特定事实的能力快照。
-        capabilities
+    // 创建不使用 mip 过滤的最近点 clamp sampler。
+    pub(crate) const fn nearest_clamp() -> Self {
+        // 最近点事实保持 coverage atlas 的离散像素语义。
+        Self { linear: false }
     }
 
-    // 判断通用 GPU Renderer 的最小原语是否全部存在。
-    pub(crate) const fn has_gpu_baseline(self) -> bool {
-        // 基线缺一项就不能进入正常 GPU 渲染流程。
-        self.dynamic_buffers
-            && self.texture_upload
-            && self.texture_copy
-            && self.sampled_textures
-            && self.render_to_texture
-            && self.scissor
-            && self.premultiplied_alpha_blend
-    }
-
-    // 返回第一个缺失的基线能力，便于 bootstrap 产生稳定诊断。
-    pub(crate) const fn first_missing_gpu_baseline(self) -> Option<&'static str> {
-        // 检查动态 buffer 能力。
-        if !self.dynamic_buffers {
-            // 返回稳定的 capability 名称。
-            return Some("dynamic_buffers");
-        }
-        // 检查纹理上传能力。
-        if !self.texture_upload {
-            // 返回稳定的 capability 名称。
-            return Some("texture_upload");
-        }
-        // 检查纹理复制能力。
-        if !self.texture_copy {
-            // 返回稳定的 capability 名称。
-            return Some("texture_copy");
-        }
-        // 检查采样纹理能力。
-        if !self.sampled_textures {
-            // 返回稳定的 capability 名称。
-            return Some("sampled_textures");
-        }
-        // 检查 render-to-texture 能力。
-        if !self.render_to_texture {
-            // 返回稳定的 capability 名称。
-            return Some("render_to_texture");
-        }
-        // 检查 scissor 能力。
-        if !self.scissor {
-            // 返回稳定的 capability 名称。
-            return Some("scissor");
-        }
-        // 检查 premultiplied-alpha blend 能力。
-        if !self.premultiplied_alpha_blend {
-            // 返回稳定的 capability 名称。
-            return Some("premultiplied_alpha_blend");
-        }
-        // 所有 GPU 基线能力都存在。
-        None
-    }
-}
-
-// 覆盖通用 RHI capability profile 的自动化契约。
-#[cfg(test)]
-mod capability_profile_tests {
-    // 导入当前模块的事实型能力快照。
-    use super::GraphicsCapabilities;
-
-    // 验证 retained 必须由生产 profile 显式开启且不改变 GPU 基线。
-    #[test]
-    fn retained_profile_is_an_explicit_gpu_baseline_extension() {
-        // 通用最低基线不能假定 adapter 保存跨帧颜色。
-        let baseline = GraphicsCapabilities::full_gpu_baseline();
-        // 默认基线必须保持 retained 关闭。
-        assert!(!baseline.retained_framebuffer);
-        // 默认基线不能假定 adapter 支持 surface 回读。
-        assert!(!baseline.surface_readback);
-        // 构造已实现跨帧目标的生产 profile。
-        let retained = GraphicsCapabilities::retained_gpu_baseline();
-        // 生产 profile 必须明确宣告 retained 能力。
-        assert!(retained.retained_framebuffer);
-        // 开启呈现能力不能破坏底层 GPU 基线。
-        assert!(retained.has_gpu_baseline());
-        // retained profile 不应制造新的基线缺口。
-        assert_eq!(retained.first_missing_gpu_baseline(), None);
+    // 判断原生 Adapter 是否应映射为线性 min/mag 过滤。
+    pub(crate) const fn uses_linear_filter(self) -> bool {
+        // 返回构造时冻结的 API 无关过滤事实。
+        self.linear
     }
 }
 
 // 定义 premultiplied-alpha 颜色值。
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct RhiColor(pub(crate) [f32; 4]);
+pub(crate) struct RhiColor([f32; 4]);
 
-// 为颜色值提供有限性校验。
+// 为颜色值提供唯一构造、读取与不变量校验。
 impl RhiColor {
-    // 判断四个通道是否都是有限数。
-    pub(crate) fn is_finite(self) -> bool {
-        // 任何 NaN 或无穷值都会破坏跨 API 的像素语义。
-        self.0.iter().all(|channel| channel.is_finite())
+    // 构造不依赖任何颜色输入的透明预乘黑色。
+    pub(crate) const fn transparent() -> Self {
+        // alpha 为零时 RGB 也必须为零。
+        Self([0.0, 0.0, 0.0, 0.0])
+    }
+
+    // 把 straight-alpha RGBA 转换成 render target 使用的预乘值。
+    pub(crate) fn from_straight_rgba(rgba: [f32; 4]) -> Self {
+        // alpha 保持直通，三个颜色通道只在共享契约层乘一次。
+        let alpha = rgba[3];
+        // 不裁剪非法输入，后续 FramePlan 校验必须显式拒绝。
+        Self([
+            // 红色进入目标前乘源透明度。
+            rgba[0] * alpha,
+            // 绿色进入目标前乘源透明度。
+            rgba[1] * alpha,
+            // 蓝色进入目标前乘源透明度。
+            rgba[2] * alpha,
+            // alpha 自身保持不变。
+            alpha,
+        ])
+    }
+
+    // 接收已经由上层证明为预乘值的内部颜色。
+    pub(crate) const fn from_premultiplied_rgba(rgba: [f32; 4]) -> Self {
+        // 值仍必须在 FramePlan 或 Adapter 边界通过 is_valid。
+        Self(rgba)
+    }
+
+    // 返回供原生 Adapter 机械编码的预乘通道副本。
+    pub(crate) const fn components(self) -> [f32; 4] {
+        // 数组只有四个浮点，复制不会建立跨边界借用。
+        self.0
+    }
+
+    // 判断四通道是否满足有限、规范范围和预乘 alpha 不变量。
+    pub(crate) fn is_valid(self) -> bool {
+        // 解构稳定通道顺序供范围与 alpha 关系检查。
+        let [red, green, blue, alpha] = self.0;
+        // 所有通道必须落在规范 Unorm 范围。
+        [red, green, blue, alpha]
+            // 逐通道检查有限性与闭区间。
+            .iter()
+            // NaN、无穷、负值和大于一都必须拒绝。
+            .all(|channel| channel.is_finite() && (0.0..=1.0).contains(channel))
+            // 预乘颜色的任一 RGB 都不得大于 alpha。
+            && red <= alpha
+            // 绿色遵循同一预乘约束。
+            && green <= alpha
+            // 蓝色遵循同一预乘约束。
+            && blue <= alpha
     }
 }
+
+// 将预乘颜色值对象测试拆到独立文件，保持主 RHI 聚焦契约。
+#[cfg(test)]
+#[path = "rhi/color_value_tests.rs"]
+mod color_value_tests;
 
 // 定义 viewport 的物理尺寸。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -349,10 +349,34 @@ pub(crate) struct RhiViewport {
 
 // 为 viewport 提供跨 adapter 一致的输入检查。
 impl RhiViewport {
-    // 判断 viewport 尺寸是否为有限正数。
+    // 判断 viewport 尺寸是否为两套原生 API 都能精确表达的正整像素。
     pub(crate) fn is_valid(self) -> bool {
         // 零、负数、NaN 和无穷值都不能进入原生 viewport。
-        self.width.is_finite() && self.height.is_finite() && self.width > 0.0 && self.height > 0.0
+        self.width.is_finite()
+            // 高度必须同样是有限值。
+            && self.height.is_finite()
+            // 两个轴都必须严格为正。
+            && self.width > 0.0
+            // 高度不能退化为零或负数。
+            && self.height > 0.0
+            // 物理像素 viewport 不允许由 OpenGL round 而 D3D11 保留小数。
+            && self.width.fract() == 0.0
+            // 两个轴必须服从同一整像素规则。
+            && self.height.fract() == 0.0
+            // OpenGL ES 的 GLsizei 和 D3D11 原生范围都必须能精确接收宽度。
+            && self.width as f64 <= i32::MAX as f64
+            // 高度也不得越过共享有符号原生值域。
+            && self.height as f64 <= i32::MAX as f64
+    }
+
+    // 判断 viewport 是否完整落在当前 render target 物理范围内。
+    pub(crate) fn fits_within(self, extent: RhiExtent) -> bool {
+        // 两个 Adapter 必须共用同一有限性、正尺寸和目标边界规则。
+        self.is_valid()
+            // viewport 当前固定从左上角零点开始，宽度不得越过目标。
+            && self.width as f64 <= extent.width as f64
+            // viewport 高度同样不得越过目标。
+            && self.height as f64 <= extent.height as f64
     }
 }
 
@@ -376,7 +400,144 @@ impl RhiScissor {
         // RHI 使用物理 surface 坐标，禁止负尺寸和负起点。
         self.x >= 0 && self.y >= 0 && self.width > 0 && self.height > 0
     }
+
+    // 计算可被两套原生矩形 ABI 精确表达的右侧与下侧边界。
+    pub(crate) fn far_edges(self) -> Option<(i32, i32)> {
+        // 基础输入无效时不允许进入边界加法。
+        if !self.is_valid() {
+            // 使用空值表达共享几何契约拒绝。
+            return None;
+        }
+        // 水平边界必须保持在原生 API 共用的有符号整数值域内。
+        let right = self.x.checked_add(self.width)?;
+        // 垂直边界必须保持在同一个有符号整数值域内。
+        let bottom = self.y.checked_add(self.height)?;
+        // 返回 Adapter 可机械编码的中立边界。
+        Some((right, bottom))
+    }
+
+    // 判断左上原点裁剪矩形是否完整落在当前 render target 内。
+    pub(crate) fn fits_within(self, extent: RhiExtent) -> bool {
+        // 只接受可以被所有已支持原生矩形 ABI 精确表达的边界。
+        let Some((right, bottom)) = self.far_edges() else {
+            // 负值、非正尺寸或有符号边界溢出都统一拒绝。
+            return false;
+        };
+        // 右边界允许恰好等于目标宽度。
+        right as u32 <= extent.width
+            // 下边界允许恰好等于目标高度。
+            && bottom as u32 <= extent.height
+    }
 }
+
+// 将 viewport 与 scissor 的共享目标边界测试拆到独立文件。
+#[cfg(test)]
+#[path = "rhi/geometry_tests.rs"]
+mod geometry_tests;
+
+// 保存已经规范化为左上原点与 0xAARRGGBB 的 surface 回读结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RhiSurfaceReadback {
+    // 保存回读区域在当前 surface 中的物理坐标。
+    pub(crate) region: RhiScissor,
+    // 保存按顶部到底部、每行从左到右紧密排列的规范像素。
+    pixels: Vec<u32>,
+}
+
+// 为跨 Adapter 回读结果集中验证范围、长度与像素布局边界。
+impl RhiSurfaceReadback {
+    // 在进入原生 API 前验证区域完整落在当前 surface 内。
+    pub(crate) fn validate_region(region: RhiScissor, surface: RhiExtent) -> Result<()> {
+        // 负坐标、空区域和负尺寸不得交给各 Adapter 自行裁切。
+        if !region.is_valid() {
+            // 使用统一参数错误避免 OpenGL 与 D3D11 产生不同结果。
+            return Err(Error::new(
+                // 回读请求由调用方构造，因此使用无效参数分类。
+                Errc::InvalidArgument,
+                // 保留稳定的 RHI 层诊断文本。
+                "RHI surface readback region must be positive",
+            ));
+        }
+        // 已验证非负后把横坐标转换为无符号物理坐标。
+        let x = region.x as u32;
+        // 已验证非负后把纵坐标转换为无符号物理坐标。
+        let y = region.y as u32;
+        // 已验证为正后把宽度转换为无符号物理尺寸。
+        let width = region.width as u32;
+        // 已验证为正后把高度转换为无符号物理尺寸。
+        let height = region.height as u32;
+        // 使用检查式加法拒绝横向坐标溢出。
+        let right = x.checked_add(width).ok_or_else(|| {
+            // 溢出仍属于无效回读区域。
+            Error::new(Errc::InvalidArgument, "RHI surface readback x overflows")
+        })?;
+        // 使用检查式加法拒绝纵向坐标溢出。
+        let bottom = y.checked_add(height).ok_or_else(|| {
+            // 溢出仍属于无效回读区域。
+            Error::new(Errc::InvalidArgument, "RHI surface readback y overflows")
+        })?;
+        // 两个轴都必须完整落在当前 surface extent 内。
+        if right > surface.width || bottom > surface.height {
+            // 禁止 Adapter 静默裁切或依赖驱动未定义行为。
+            return Err(Error::new(
+                // 越界请求由调用方修正。
+                Errc::InvalidArgument,
+                // 使用 API 无关的稳定诊断。
+                "RHI surface readback region is out of range",
+            ));
+        }
+        // 区域满足跨 Adapter 统一前置条件。
+        Ok(())
+    }
+
+    // 从 Adapter 已规范化的像素构造完整回读结果。
+    pub(crate) fn try_new(
+        // 接收已经请求的左上原点区域。
+        region: RhiScissor,
+        // 接收读取时观察到的 surface extent。
+        surface: RhiExtent,
+        // 接收按 0xAARRGGBB 编码的紧密像素。
+        pixels: Vec<u32>,
+    ) -> Result<Self> {
+        // 先复用唯一范围验证，禁止结果描述越过 surface。
+        Self::validate_region(region, surface)?;
+        // 使用检查式乘法计算契约要求的像素总数。
+        let expected = (region.width as usize)
+            // 乘以正数高度得到紧密载荷长度。
+            .checked_mul(region.height as usize)
+            // 极端尺寸溢出必须保持 typed failure。
+            .ok_or_else(|| {
+                // 载荷尺寸由请求决定，归类为无效参数。
+                Error::new(
+                    Errc::InvalidArgument,
+                    "RHI surface readback payload length overflows",
+                )
+            })?;
+        // Adapter 不得返回空载荷、裁切载荷或带行距载荷。
+        if pixels.len() != expected {
+            // 长度不匹配属于 Adapter 契约破坏而非成功的部分结果。
+            return Err(Error::new(
+                // 使用平台错误标记下层实现违约。
+                Errc::PlatformError,
+                // 保留不携带具体 API 名称的稳定诊断。
+                "RHI surface readback payload length does not match its region",
+            ));
+        }
+        // 返回已经满足统一行序、通道和长度约束的结果。
+        Ok(Self { region, pixels })
+    }
+
+    // 消耗回读结果并交付规范像素所有权。
+    pub(crate) fn into_pixels(self) -> Vec<u32> {
+        // 不复制全帧载荷地返回像素。
+        self.pixels
+    }
+}
+
+// 将 surface 回读契约测试拆到独立文件，保持主 RHI 契约低于文件上限。
+#[cfg(test)]
+#[path = "rhi/readback_tests.rs"]
+mod surface_readback_tests;
 
 // 描述一次 render pass 的加载动作。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -385,54 +546,6 @@ pub(crate) enum LoadAction {
     Clear(RhiColor),
     // 保留目标已有内容。
     Load,
-}
-
-// 描述通用 renderer 已经选定的 draw packet。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct DrawPacket {
-    // 保存通用 pipeline 句柄。
-    pub(crate) pipeline: PipelineHandle,
-    // 保存顶点 buffer 句柄。
-    pub(crate) vertex_buffer: BufferHandle,
-    // 保存可选索引 buffer 句柄。
-    pub(crate) index_buffer: Option<BufferHandle>,
-    // 保存可选的 pipeline uniform buffer 句柄。
-    pub(crate) uniform_buffer: Option<BufferHandle>,
-    // 保存顶点数量。
-    pub(crate) vertex_count: u32,
-    // 保存索引数量；零表示非索引绘制。
-    pub(crate) index_count: u32,
-    // 保存首个顶点位置。
-    pub(crate) first_vertex: u32,
-    // 保存首个索引位置。
-    pub(crate) first_index: u32,
-    // 保存索引绘制的基顶点。
-    pub(crate) base_vertex: i32,
-}
-
-// 为 draw packet 提供常用的非索引三角形构造器。
-impl DrawPacket {
-    // 创建一个使用指定 pipeline 的非索引 draw packet。
-    pub(crate) const fn triangles(pipeline: PipelineHandle, vertex_count: u32) -> Self {
-        // 返回从零开始的非索引绘制范围。
-        Self {
-            pipeline,
-            vertex_buffer: BufferHandle::from_raw(0),
-            index_buffer: None,
-            uniform_buffer: None,
-            vertex_count,
-            index_count: 0,
-            first_vertex: 0,
-            first_index: 0,
-            base_vertex: 0,
-        }
-    }
-
-    // 判断 packet 是否包含可执行的顶点或索引范围。
-    pub(crate) const fn is_non_empty(self) -> bool {
-        // 索引绘制优先检查 index_count，否则检查 vertex_count。
-        self.vertex_count != 0 || self.index_count != 0
-    }
 }
 
 // 描述纹理之间的一次有限复制。
@@ -498,150 +611,16 @@ impl SurfaceFrame {
 // 定义 GPU device 的薄原语接口。
 pub(crate) trait GraphicsDevice {
     // 返回本 device 的事实型能力快照。
-    fn capabilities(&self) -> GraphicsCapabilities;
+    fn device_capabilities(&self) -> GraphicsDeviceCapabilities;
 
     // 在 bootstrap 阶段执行最小资源与固定 pipeline 探针。
     fn probe(&mut self) -> Result<()> {
-        // 使用一个真实顶点 buffer 验证动态 buffer 创建和上传。
-        let vertex_buffer = self.create_buffer(BufferDesc {
-            size_bytes: 24,
-            stride_bytes: 8,
-            usage: BufferUsage::Vertex,
-        })?;
-        // 上传三个 float2 顶点，形成最小可执行三角形 draw packet。
-        self.update_buffer(vertex_buffer, 0, &[0; 24])?;
-        // 创建 Solid mesh 所需的 32 字节 uniform ABI。
-        let uniform_buffer = self.create_buffer(BufferDesc {
-            size_bytes: 32,
-            stride_bytes: 0,
-            usage: BufferUsage::Uniform,
-        })?;
-        // 上传有限 viewport、padding 和透明颜色常量。
-        self.update_buffer(uniform_buffer, 0, &[0; 32])?;
-        // 使用最小的 RGBA texture 验证 render target 颜色格式。
-        let rgba_texture = self.create_texture(TextureDesc {
-            extent: RhiExtent::new(1, 1),
-            format: TextureFormat::Rgba8Unorm,
-        })?;
-        // 使用最小的 BGRA texture 验证主 surface/Picture 采样格式。
-        let bgra_texture = self.create_texture(TextureDesc {
-            extent: RhiExtent::new(1, 1),
-            format: TextureFormat::Bgra8Unorm,
-        })?;
-        // 使用最小的 R8 texture 验证 coverage 采样格式。
-        let coverage_texture = self.create_texture(TextureDesc {
-            extent: RhiExtent::new(1, 1),
-            format: TextureFormat::R8Unorm,
-        })?;
-        // 上传 RGBA 纹理的一个 premultiplied 像素。
-        self.update_texture(rgba_texture, RhiExtent::new(1, 1), &[0, 0, 0, 0])?;
-        // 上传 BGRA 纹理的一个 premultiplied 像素。
-        self.update_texture(bgra_texture, RhiExtent::new(1, 1), &[0, 0, 0, 0])?;
-        // 上传 coverage 纹理的一个覆盖率像素。
-        self.update_texture(coverage_texture, RhiExtent::new(1, 1), &[0])?;
-        // 创建 2x2 RGBA texture，验证 atlas 所需的带偏移子区域上传。
-        let region_texture = self.create_texture(TextureDesc {
-            extent: RhiExtent::new(2, 2),
-            format: TextureFormat::Rgba8Unorm,
-        })?;
-        // 把一个像素写入右下角，避免零偏移整块上传冒充 region 能力。
-        self.update_texture_region(region_texture, 1, 1, RhiExtent::new(1, 1), &[0, 0, 0, 0])?;
-        // 只有声明区域移动能力的 adapter 才进入 retained framebuffer 探针。
-        if self.capabilities().texture_region_move {
-            // 以同一纹理的重叠区域移动验证 memmove 语义，而不是普通 copy。
-            self.move_texture_region(TextureMove {
-                source: region_texture,
-                destination: region_texture,
-                source_x: 1,
-                source_y: 1,
-                destination_x: 0,
-                destination_y: 0,
-                width: 1,
-                height: 1,
-            })?;
-        }
-        // 创建真实 sampler，验证纹理绑定所需的过滤状态。
-        let sampler = self.create_sampler(SamplerDesc { linear: true })?;
-        // 编译通用 renderer 当前使用的全部固定 pipeline。
-        let pipeline_keys = [
-            pipeline_keys::SOLID_MESH,
-            pipeline_keys::TEXTURED_QUAD,
-            pipeline_keys::GRADIENT_RECT,
-            pipeline_keys::GLYPH_COVERAGE_QUAD,
-            pipeline_keys::SHAPE_RECT,
-            pipeline_keys::SHAPE_RECT_ADDITIVE,
-            pipeline_keys::BOX_SHADOW,
-            pipeline_keys::TEXTURED_QUAD_ADDITIVE,
-            pipeline_keys::BLUR_PASS,
-            pipeline_keys::MSDF_GLYPH_QUAD,
-            pipeline_keys::SECTOR,
-        ];
-        // 逐个创建 pipeline，让 adapter 在首帧前暴露 shader/layout 失败。
-        let mut pipelines = Vec::with_capacity(pipeline_keys.len());
-        for key in pipeline_keys {
-            pipelines.push(self.create_pipeline(PipelineDesc { key })?);
-        }
-        // 在 1x1 离屏颜色 target 上执行真实的 pass、draw 和 submit。
-        self.begin_render_pass(
-            RenderTargetHandle::from_raw(rgba_texture.raw()),
-            LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0])),
-        )?;
-        // 绑定最小正 viewport，验证 adapter 的 viewport 状态编码。
-        self.set_viewport(RhiViewport {
-            width: 1.0,
-            height: 1.0,
-        })?;
-        // 清除显式 scissor，验证 pass 初始 raster 状态可用。
-        self.set_scissor(None)?;
-        // 只有声明局部清理能力的 adapter 才进入 ClearRect 探针。
-        if self.capabilities().clear_rect {
-            // 以完整 1x1 区域验证清理颜色和 scissor 代际。
-            self.clear_rect(
-                RhiColor([0.0, 0.0, 0.0, 0.0]),
-                RhiScissor {
-                    x: 0,
-                    y: 0,
-                    width: 1,
-                    height: 1,
-                },
-            )?;
-        }
-        // 使用第一个固定 pipeline 执行最小 solid draw。
-        self.draw(DrawPacket {
-            pipeline: pipelines[0],
-            vertex_buffer,
-            index_buffer: None,
-            uniform_buffer: Some(uniform_buffer),
-            vertex_count: 3,
-            index_count: 0,
-            first_vertex: 0,
-            first_index: 0,
-            base_vertex: 0,
-        })?;
-        // 关闭 probe pass，防止资源销毁跨过打开的 render pass。
-        self.end_render_pass()?;
-        // 提交 probe 命令，验证 adapter 的提交边界和状态清理。
-        self.submit()?;
-        // 释放 probe 创建的固定 pipeline，资源生命周期仍由 adapter 检查。
-        for pipeline in pipelines {
-            self.destroy_pipeline(pipeline)?;
-        }
-        // 释放 probe 创建的 sampler。
-        self.destroy_sampler(sampler)?;
-        // 释放 probe 创建的 coverage texture。
-        self.destroy_texture(coverage_texture)?;
-        // 释放 probe 创建的 region texture。
-        self.destroy_texture(region_texture)?;
-        // 释放 probe 创建的 BGRA texture。
-        self.destroy_texture(bgra_texture)?;
-        // 释放 probe 创建的 RGBA texture。
-        self.destroy_texture(rgba_texture)?;
-        // 释放 probe 创建的 vertex buffer。
-        self.destroy_buffer(vertex_buffer)?;
-        // 释放 probe 创建的 uniform buffer。
-        self.destroy_buffer(uniform_buffer)?;
-        // 所有固定资源和 shader ABI 均通过首帧前探针。
-        Ok(())
+        // 探针会直接创建资源和提交命令，必须先激活当前 owner 的原生 context。
+        self.activate()?;
+        // bootstrap 只允许在设备健康时建立能力事实。
+        self.maintain()?;
+        // 委托共享 probe 流程真实执行 Solid 与 Shape draw。
+        probe::probe_device(self)
     }
 
     // 创建动态 buffer，具体内存类型由 adapter 选择。
@@ -693,7 +672,7 @@ pub(crate) trait GraphicsDevice {
     }
 
     // 创建通用 pipeline。
-    fn create_pipeline(&mut self, _desc: PipelineDesc) -> Result<PipelineHandle> {
+    fn create_pipeline(&mut self, _desc: PipelineDesc) -> Result<PipelineBinding> {
         // 默认实现显式拒绝，具体 shader 二进制仍留在 adapter。
         Err(rhi_not_implemented("create_pipeline"))
     }
@@ -717,7 +696,7 @@ pub(crate) trait GraphicsDevice {
     }
 
     // 销毁 pipeline，并把失败保留为 typed error。
-    fn destroy_pipeline(&mut self, _pipeline: PipelineHandle) -> Result<()> {
+    fn destroy_pipeline(&mut self, _pipeline: PipelineBinding) -> Result<()> {
         // 默认实现显式拒绝，保证 adapter 明确声明生命周期。
         Err(rhi_not_implemented("destroy_pipeline"))
     }
@@ -780,7 +759,13 @@ pub(crate) trait GraphicsDevice {
     // 提交当前 device 命令并返回提交身份。
     fn submit(&mut self) -> Result<SubmissionHandle>;
 
-    // 进行非破坏性的设备维护。
+    // 激活当前 owner-thread 的原生 device context，但不检查设备健康或提交命令。
+    fn activate(&mut self) -> Result<()> {
+        // 不依赖隐式线程 current 状态的 adapter 可以安全保持无操作。
+        Ok(())
+    }
+
+    // 在已经激活的 device context 上进行非破坏性健康维护。
     fn maintain(&mut self) -> Result<()> {
         // 没有维护工作的 adapter 可以安全返回成功。
         Ok(())
@@ -796,6 +781,12 @@ pub(crate) trait GraphicsDevice {
 
 // 定义 surface 的薄 acquire/resize/present 接口。
 pub(crate) trait GraphicsSurface {
+    // 返回只属于 acquire、readback 与 present 的 Surface 能力快照。
+    fn surface_capabilities(&self) -> GraphicsSurfaceCapabilities {
+        // 未声明可选操作的 Surface 默认不伪造任何能力。
+        GraphicsSurfaceCapabilities::default()
+    }
+
     // 返回当前 surface 的代际和 extent。
     fn token(&self) -> SurfaceToken;
 
@@ -809,15 +800,9 @@ pub(crate) trait GraphicsSurface {
     fn read_surface_pixels(
         // 借用 owner-thread surface。
         &mut self,
-        // 接收回读区域左上角横坐标。
-        _x: i32,
-        // 接收回读区域左上角纵坐标。
-        _y: i32,
-        // 接收回读区域宽度。
-        _width: i32,
-        // 接收回读区域高度。
-        _height: i32,
-    ) -> Result<Vec<u32>> {
+        // 接收已经使用左上原点表达的物理区域。
+        _region: RhiScissor,
+    ) -> Result<RhiSurfaceReadback> {
         // 未声明能力的 adapter 不得伪造空像素结果。
         Err(rhi_not_implemented("read_surface_pixels"))
     }
@@ -850,11 +835,51 @@ pub(crate) trait GraphicsSurface {
     }
 }
 
-// 组合 owner-thread device 与 surface，供迁移期 renderer 以单个借用执行 FramePlan。
-pub(crate) trait GraphicsContextRhi: GraphicsDevice + GraphicsSurface {}
+// 组合 owner-thread device 与 surface，只供完整帧事务在 composition root 借用。
+pub(crate) trait GraphicsContextRhi {
+    // 返回只允许读取资源、命令与提交能力的 device 视图。
+    fn device_ref(&self) -> &dyn GraphicsDevice;
+
+    // 返回只允许资源、命令和 submit 操作的 device 视图。
+    fn device(&mut self) -> &mut dyn GraphicsDevice;
+
+    // 返回只允许读取 acquire、resize 与 present 状态的 surface 视图。
+    fn surface_ref(&self) -> &dyn GraphicsSurface;
+
+    // 返回只允许 acquire、resize 和 present 操作的 surface 视图。
+    fn surface(&mut self) -> &mut dyn GraphicsSurface;
+}
 
 // 任何同时实现 device 和 surface 原语的原生 context 都自动获得组合视图。
-impl<T> GraphicsContextRhi for T where T: GraphicsDevice + GraphicsSurface {}
+impl<T> GraphicsContextRhi for T
+where
+    // 真实 Adapter context 在 owner thread 同时实现两个正交角色。
+    T: GraphicsDevice + GraphicsSurface,
+{
+    // 把组合 owner 收窄为只读 device 角色。
+    fn device_ref(&self) -> &dyn GraphicsDevice {
+        // 不复制资源表或原生 context，只限制只读调用能力。
+        self
+    }
+
+    // 把组合 owner 收窄为 device 角色。
+    fn device(&mut self) -> &mut dyn GraphicsDevice {
+        // 不复制资源表或原生 context，只限制调用能力。
+        self
+    }
+
+    // 把组合 owner 收窄为只读 surface 角色。
+    fn surface_ref(&self) -> &dyn GraphicsSurface {
+        // 不复制 swapchain 状态，只限制只读调用能力。
+        self
+    }
+
+    // 把组合 owner 收窄为 surface 角色。
+    fn surface(&mut self) -> &mut dyn GraphicsSurface {
+        // 不复制 swapchain 状态，只限制调用能力。
+        self
+    }
+}
 
 // 统一生成 RHI 尚未实现的 typed error。
 fn rhi_not_implemented(operation: &'static str) -> Error {

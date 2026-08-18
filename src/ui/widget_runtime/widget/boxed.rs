@@ -404,8 +404,8 @@ impl BoxedWidget {
         let mut accessibility = fields.accessibility();
         if let Some(label) = component
             .as_any()
-            .downcast_ref::<crate::ui::widget_runtime::dynamic_label::DynamicLabel>()
-        {
+            .downcast_ref::<crate::ui::widget_runtime::dynamic_label::DynamicLabel>(
+        ) {
             let text = label.semantic_text();
             accessibility.role = crate::ui::AccessibilityRole::Text;
             accessibility.name = (!text.is_empty()).then_some(text);
@@ -469,6 +469,23 @@ impl BoxedWidget {
                 .unwrap_or_default()
         });
         // 在统一组件边界清除无界哨兵、非有限值和负尺寸。
+        crate::ui::layout::engine::normalize_layout_size(measured)
+    }
+
+    // 在固有尺寸容器内读取组件不受 Flex basis 归零影响的自然内容尺寸。
+    pub(crate) fn measure_natural(&self, constraints: Constraints) -> Size {
+        // 在组件 ProviderContext 中调用布局能力的自然测量窄契约。
+        let measured = self.with_component_context(|component| {
+            // 无布局能力的节点继续返回稳定零尺寸。
+            component
+                // 通过能力上转型隔离具体组件类型。
+                .as_layout()
+                // 自然测量只改变尺寸语义，不改变父子所有权。
+                .map(|layout| layout.measure_natural(constraints))
+                // 无布局能力时采用默认零尺寸。
+                .unwrap_or_default()
+        });
+        // 与普通测量相同，在统一边界清除无界哨兵和非法尺寸。
         crate::ui::layout::engine::normalize_layout_size(measured)
     }
 

@@ -487,7 +487,11 @@ impl AgentProtocolSession {
     /// 用户确认流程：确认执行先前命中 `requires_confirmation` 的动作。
     /// 请求携带 confirm_id；命令在 UI turn 内弹起应用确认 UI，ticket 挂起
     /// 直到用户决定（resolve）或确认失效。
-    fn handle_confirm(&self, object: &Map<String, Value>, request_id: String) -> AgentProtocolReply {
+    fn handle_confirm(
+        &self,
+        object: &Map<String, Value>,
+        request_id: String,
+    ) -> AgentProtocolReply {
         let window_id = match parse_window_id(object) {
             Ok(window_id) => window_id,
             Err(error) => return error.into_reply(Some(request_id), false),

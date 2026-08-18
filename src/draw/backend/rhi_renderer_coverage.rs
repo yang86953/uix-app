@@ -3,17 +3,16 @@
 // 引入共享字节载荷。
 use std::sync::Arc;
 
-// 引入最终 damage 和薄 RHI 资源类型。
-use crate::core::PresentDamage;
 // 引入 RHI 计划执行所需的资源描述与句柄。
 use crate::native::present::rhi::{
-    BufferHandle, DrawPacket, GraphicsContextRhi, LoadAction, PipelineDesc, PipelineHandle,
-    RhiExtent, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, pipeline_keys,
+    BufferHandle, DrawPacket, GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc,
+    PipelineKind, RhiExtent, SamplerDesc, SamplerHandle, TextureDesc, TextureFormat,
 };
 
 // 复用 renderer 主模块的计划类型和 coverage payload。
 use super::{
-    FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef, RhiCoverageQuad, RhiRenderer,
+    FramePlanCommand, FrameUniformPayload, FrameVertexPayload, RenderPassPlan, RhiCoverageQuad,
+    RhiRenderer,
 };
 
 // 为 coverage shader 创建或复用 R8 专用的 pipeline、buffer 和 sampler。
@@ -21,19 +20,19 @@ impl RhiRenderer {
     // 准备与普通 sampled quad 共用顶点/viewport ABI 的 coverage 资源。
     pub(super) fn ensure_coverage_resources(
         &mut self,
-        context: &mut dyn GraphicsContextRhi,
-    ) -> Result<(PipelineHandle, BufferHandle, BufferHandle, SamplerHandle), crate::core::Error>
+        device: &mut dyn GraphicsDevice,
+    ) -> Result<(PipelineBinding, BufferHandle, BufferHandle, SamplerHandle), crate::core::Error>
     {
         // 复用普通 sampled quad 的 float8 顶点 buffer 和 viewport uniform。
-        let (_, vertex_buffer, uniform_buffer, _) = self.ensure_textured_resources(context)?;
+        let (_, vertex_buffer, uniform_buffer, _) = self.ensure_textured_resources(device)?;
         // 首次使用时创建 R8 coverage 专用 pipeline。
         let pipeline = if let Some(pipeline) = self.coverage_pipeline {
             // 复用已经登记的 coverage pipeline。
             pipeline
         } else {
-            // 选择只由 RHI 契约定义的 coverage pipeline key。
-            let pipeline = context.create_pipeline(PipelineDesc {
-                key: pipeline_keys::GLYPH_COVERAGE_QUAD,
+            // 选择只由 RHI 契约定义的 coverage pipeline 语义。
+            let pipeline = device.create_pipeline(PipelineDesc {
+                kind: PipelineKind::GlyphCoverageQuad,
             })?;
             // 缓存 coverage pipeline 句柄。
             self.coverage_pipeline = Some(pipeline);
@@ -45,7 +44,7 @@ impl RhiRenderer {
             sampler
         } else {
             // coverage 采样不跨 glyph 像素做线性插值。
-            let sampler = context.create_sampler(SamplerDesc { linear: false })?;
+            let sampler = device.create_sampler(SamplerDesc::nearest_clamp())?;
             // 缓存 coverage sampler 句柄。
             self.coverage_sampler = Some(sampler);
             sampler
@@ -120,11 +119,9 @@ impl RhiRenderer {
     // 执行一帧 R8 字形 coverage quad RHI 计划。
     pub(crate) fn execute_coverage_quads(
         &mut self,
-        context: &mut dyn GraphicsContextRhi,
-        damage: PresentDamage,
+        mut frame: super::RhiRendererFrame<'_>,
         viewport: super::RhiViewport,
         load: LoadAction,
-        target: RenderTargetRef,
         quads: &[RhiCoverageQuad],
     ) -> Result<(), crate::core::Error> {
         // 空列表不应伪造一次 present。
@@ -187,12 +184,12 @@ impl RhiRenderer {
         }
         // 准备 coverage pipeline、共享 vertex/uniform 和点采样 sampler。
         let (pipeline, vertex_buffer, uniform_buffer, sampler) =
-            self.ensure_coverage_resources(context)?;
+            self.ensure_coverage_resources(frame.device())?;
         // 为本次帧逐项创建、上传并记录临时 R8 texture。
         let mut textures = Vec::with_capacity(quads.len());
         for quad in quads {
             // 创建只含 shader resource view 的 R8 coverage texture。
-            let texture = match context.create_texture(TextureDesc {
+            let texture = match frame.device().create_texture(TextureDesc {
                 extent: RhiExtent::new(quad.pixel_w, quad.pixel_h),
                 format: TextureFormat::R8Unorm,
             }) {
@@ -200,29 +197,34 @@ impl RhiRenderer {
                 Ok(texture) => texture,
                 // 创建失败时先释放已创建资源，再返回原始错误。
                 Err(error) => {
-                    let _ = Self::destroy_textures(context, &textures);
+                    let _ = Self::destroy_textures(frame.device(), &textures);
                     return Err(error);
                 }
             };
             // 上传紧密的 R8 coverage 字节。
             let upload = Self::encode_coverage(quad.coverage.as_ref());
             // 资源上传失败时不能把半成品 texture 留在 adapter。
-            if let Err(error) =
-                context.update_texture(texture, RhiExtent::new(quad.pixel_w, quad.pixel_h), &upload)
-            {
+            if let Err(error) = frame.device().update_texture(
+                // 更新刚由同一 Device 创建的 coverage 纹理。
+                texture,
+                // 上传范围使用 coverage 的物理像素尺寸。
+                RhiExtent::new(quad.pixel_w, quad.pixel_h),
+                // 保留单通道 coverage 载荷。
+                &upload,
+            ) {
                 // 把当前失败资源加入清理列表。
                 textures.push(texture);
                 // 尝试释放所有已经创建的 coverage 资源。
-                let _ = Self::destroy_textures(context, &textures);
+                let _ = Self::destroy_textures(frame.device(), &textures);
                 // 保留上传失败的真实错误。
                 return Err(error);
             }
             // 记录上传完成且可以进入 FramePlan 的 coverage texture。
             textures.push(texture);
         }
-        // 计划使用当前 context 的 surface 代际。
-        let surface = context.token();
-        // 创建 surface pass，并保留调用方的 load/clear 语义。
+        // 从封闭帧作用域取得唯一计划目标。
+        let target = frame.render_target();
+        // 创建 Surface 或 Offscreen pass，并保留调用方的 load/clear 语义。
         let mut pass = RenderPassPlan::new(target, load);
         // 所有 coverage quad 共享同一个物理 viewport。
         pass.push(FramePlanCommand::SetViewport(viewport));
@@ -232,17 +234,16 @@ impl RhiRenderer {
             let vertices = Self::coverage_quad_vertices(quad);
             // 在 draw 前设置当前 glyph 的裁剪。
             pass.push(FramePlanCommand::SetScissor(quad.scissor));
-            // 上传当前 glyph 的顶点数据。
-            pass.push(FramePlanCommand::UpdateBuffer {
+            // 上传当前 glyph 的类型化 float8 顶点数据。
+            pass.push(FramePlanCommand::UploadVertex {
                 buffer: vertex_buffer,
                 offset: 0,
-                data: super::RhiRenderer::encode_f32s(&vertices),
+                data: FrameVertexPayload::position_uv_color_f32(vertices),
             });
-            // 上传当前 pass 的物理 viewport uniform。
-            pass.push(FramePlanCommand::UpdateBuffer {
+            // 上传当前 pass 的类型化物理 viewport uniform。
+            pass.push(FramePlanCommand::UploadUniform {
                 buffer: uniform_buffer,
-                offset: 0,
-                data: super::RhiRenderer::encode_f32s(&[viewport.width, viewport.height, 0.0, 0.0]),
+                data: FrameUniformPayload::Sampled(super::RhiRenderer::sampled_uniform(viewport)),
             });
             // 绑定当前 R8 coverage texture 和点采样 sampler。
             pass.push(FramePlanCommand::BindTexture {
@@ -263,14 +264,14 @@ impl RhiRenderer {
                 base_vertex: 0,
             }));
         }
-        // 创建计划并追加唯一 surface pass。
-        let mut plan = FramePlan::new(surface, damage);
+        // 从封闭 Renderer 帧创建匹配的计划。
+        let mut plan = frame.plan();
         // 保留 glyph painter order。
         plan.push_pass(pass);
-        // surface 计划最终 present，texture 计划只执行离屏 submit。
-        let execution = super::execute_plan_for_target(context, &plan, target);
+        // 封闭帧决定最终 Surface present 或 Offscreen submit。
+        let execution = frame.execute(&plan);
         // 计划结束后释放本次 glyph 的临时 texture。
-        let cleanup = Self::destroy_textures(context, &textures);
+        let cleanup = Self::destroy_textures(frame.device(), &textures);
         // 优先返回绘制或 present 失败；否则报告资源清理失败。
         match (execution, cleanup) {
             // 计划失败时保留原始执行错误。

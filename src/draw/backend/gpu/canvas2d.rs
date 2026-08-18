@@ -95,7 +95,7 @@ impl Canvas2D for NativeGpuCanvas2D {
         let axis_aligned_horizontal = (p1.y - p2.y).abs() < 1e-6;
         if (axis_aligned_vertical || axis_aligned_horizontal)
             && !self.soft_has_content
-            && self.native_caps.retained_framebuffer
+            && self.native_caps.retained_color_target
             && native_blend
         {
             let half = stroke_w * 0.5;
@@ -123,7 +123,7 @@ impl Canvas2D for NativeGpuCanvas2D {
             }
         }
         // 对角线：以设备坐标线段为中轴构造描边四边形网格。
-        if !self.soft_has_content && self.native_caps.retained_framebuffer && native_blend {
+        if !self.soft_has_content && self.native_caps.retained_color_target && native_blend {
             let dx = p2.x - p1.x;
             let dy = p2.y - p1.y;
             let len = (dx * dx + dy * dy).sqrt();
@@ -243,7 +243,7 @@ impl Canvas2D for NativeGpuCanvas2D {
         }
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
         // Soft path for exotic blend；任意仿射仍可走 atlas 纹理四边形。
-        if self.soft_has_content || !self.native_caps.retained_framebuffer || !native_blend {
+        if self.soft_has_content || !self.native_caps.retained_color_target || !native_blend {
             if self.gpu_only {
                 self.reject_unsupported("destination-dependent glyph blend");
                 return;
@@ -312,7 +312,7 @@ impl Canvas2D for NativeGpuCanvas2D {
             return;
         }
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        if self.soft_has_content || !self.native_caps.retained_framebuffer || !native_blend {
+        if self.soft_has_content || !self.native_caps.retained_color_target || !native_blend {
             if self.gpu_only {
                 self.reject_unsupported("destination-dependent glyph blend");
                 return;
@@ -625,7 +625,7 @@ mod tests {
         // 只打开固定 probe 依赖的 retained surface 事实，保持测试边界最小。
         let caps = NativeRasterCaps {
             // retained surface 表示共享 mesh pipeline 已在构造前通过 probe。
-            retained_framebuffer: true,
+            retained_color_target: true,
             ..NativeRasterCaps::default()
         };
         // 使用 hybrid canvas 验证非 GPU-only 入口也能复用相同 lowering。
@@ -647,7 +647,7 @@ mod tests {
         // 启用当前纵切需要的 retained 与 Additive RHI 事实能力。
         let caps = NativeRasterCaps {
             // retained surface 表示固定 shape pipeline 已通过 probe。
-            retained_framebuffer: true,
+            retained_color_target: true,
             // 声明 retained RHI 可以执行 Additive pipeline。
             rhi_additive_blend: true,
             // 其余能力保持关闭，避免测试依赖无关图元。
@@ -683,7 +683,7 @@ mod tests {
         // 仅打开 retained surface，刻意不声明 Additive RHI 能力。
         let caps = NativeRasterCaps {
             // 证明分流只受可选 blend 能力控制，而不是缺少 retained surface。
-            retained_framebuffer: true,
+            retained_color_target: true,
             // 其余能力包括 rhi_additive_blend 保持默认 false。
             ..NativeRasterCaps::default()
         };

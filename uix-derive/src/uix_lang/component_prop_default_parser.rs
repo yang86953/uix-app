@@ -1,7 +1,6 @@
 // 引入表达式 AST、诊断、源码跨度与解析辅助。
 use super::{
-    Diagnostic, Expression, ExpressionKind, SourceSpan, is_data_constructor_chain,
-    parse_expression,
+    Diagnostic, Expression, ExpressionKind, SourceSpan, is_data_constructor_chain, parse_expression,
 };
 
 // 切分 prop 类型和可选默认表达式，并验证默认值仅为字面量或数据构造链。

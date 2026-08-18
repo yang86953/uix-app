@@ -24,14 +24,6 @@ impl D3d11Pipeline {
         first_index: u32,
         base_vertex: i32,
     ) -> Result<()> {
-        // 采样 quad 的顶点 ABI 是 position float2、uv float2、color float4。
-        if vertex_stride != (8 * size_of::<f32>()) as u32 {
-            // 把错误留在 RHI adapter，不让 D3D11 读错属性布局。
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                format!("D3d11 RHI {shader_name} quad stride must be float8"),
-            ));
-        }
         // 非索引和索引绘制必须恰好选择一种范围。
         if (index.is_some() && index_count == 0) || (index.is_none() && vertex_count == 0) {
             // 返回稳定的参数错误。
@@ -59,7 +51,7 @@ impl D3d11Pipeline {
             context.IASetIndexBuffer(index, DXGI_FORMAT_R32_UINT, 0);
             // 复用按 viewport uniform 计算位置的 glyph vertex shader。
             context.VSSetShader(&self.vs_glyph, None);
-            // 根据 RHI pipeline key 选择颜色纹理或 R8 coverage pixel shader。
+            // 根据 RHI pipeline 语义选择颜色纹理或 R8 coverage pixel shader。
             context.PSSetShader(pixel_shader, None);
             // 绑定通用 viewport uniform。
             context.VSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
@@ -71,7 +63,7 @@ impl D3d11Pipeline {
             context.PSSetSamplers(0, Some(&[Some(sampler.clone())]));
             // 复用无剔除 rasterizer。
             context.RSSetState(&self.rasterizer);
-            // 根据 pipeline key 选择 SrcOver 或 Additive blend。
+            // 根据 pipeline 语义选择 SrcOver 或 Additive blend。
             context.OMSetBlendState(blend_state, None, 0xffff_ffff);
             // 按 packet 的索引形态编码实际 draw。
             if index.is_some() {
@@ -102,22 +94,15 @@ impl D3d11Pipeline {
         uniform: &ID3D11Buffer,
         texture: &ID3D11ShaderResourceView,
         sampler: &ID3D11SamplerState,
-        additive: bool,
+        blend: PipelineBlend,
         vertex_count: u32,
         index_count: u32,
         first_vertex: u32,
         first_index: u32,
         base_vertex: i32,
     ) -> Result<()> {
-        // 选择通用颜色纹理像素 shader。
-        // Additive 只改变 blend 状态，不改变 sampled quad 的 shader ABI。
-        let blend_state = if additive {
-            // 使用源目标均为 ONE 的加法状态。
-            &self.blend_additive
-        } else {
-            // 默认使用 premultiplied SrcOver 状态。
-            &self.blend_premultiplied
-        };
+        // 从共享 pipeline 契约映射唯一 blend state。
+        let blend_state = self.rhi_blend_state(blend);
         // 把颜色纹理 draw 委托给共享 sampled quad 编码器。
         self.draw_rhi_sampled_quad(
             context,
@@ -148,6 +133,7 @@ impl D3d11Pipeline {
         uniform: &ID3D11Buffer,
         texture: &ID3D11ShaderResourceView,
         sampler: &ID3D11SamplerState,
+        blend: PipelineBlend,
         vertex_count: u32,
         index_count: u32,
         first_vertex: u32,
@@ -165,7 +151,7 @@ impl D3d11Pipeline {
             sampler,
             &self.ps_glyph,
             "glyph",
-            &self.blend_premultiplied,
+            self.rhi_blend_state(blend),
             vertex_count,
             index_count,
             first_vertex,
@@ -184,6 +170,7 @@ impl D3d11Pipeline {
         uniform: &ID3D11Buffer,
         texture: &ID3D11ShaderResourceView,
         sampler: &ID3D11SamplerState,
+        blend: PipelineBlend,
         vertex_count: u32,
         index_count: u32,
         first_vertex: u32,
@@ -201,7 +188,7 @@ impl D3d11Pipeline {
             sampler,
             &self.ps_msdf,
             "msdf",
-            &self.blend_premultiplied,
+            self.rhi_blend_state(blend),
             vertex_count,
             index_count,
             first_vertex,

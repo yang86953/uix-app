@@ -13,6 +13,9 @@ use crate::core::{Errc, Error, Result};
 #[cfg(feature = "feedback")]
 use crate::core::{ComponentId, Constraints, Rect, Size};
 use crate::diagnostics::Diagnostics;
+// test-harness 只把一次性规范像素票据暴露给应用。
+#[cfg(feature = "test-harness")]
+use crate::draw::SurfaceReadbackTicket;
 // 反馈 capability 启用时才生成反馈浮层根组件实现。
 #[cfg(feature = "feedback")]
 use crate::impl_widget_component;
@@ -282,6 +285,27 @@ impl AppHandle {
         // 把 surface 故障交给窗口会话的恢复信号。
         self.runtime
             .inject_graphics_surface_lost_for_test(self.window_id)
+    }
+
+    /// 请求目标窗口下一次成功 GPU 帧的规范 surface 像素快照。
+    ///
+    /// 返回票据应在非 UI 线程通过 `recv_timeout` 等待；调用方仍需通过状态更新
+    /// 触发一帧实际绘制。结果采用左上原点与 `0xAARRGGBB` 像素格式。
+    #[cfg(feature = "test-harness")]
+    pub fn request_surface_readback_for_test(&self) -> Result<SurfaceReadbackTicket> {
+        // 关闭后的 AppHandle 不得产生永远无人完成的票据。
+        if !self.alive.load(Ordering::Acquire) {
+            // 返回稳定的生命周期错误。
+            return Err(Error::new(
+                // 当前句柄已经不可用。
+                Errc::InvalidState,
+                // 诊断说明请求目标已经关闭。
+                "cannot request surface readback from a closed AppHandle",
+            ));
+        }
+        // 投递到目标窗口共享信号，实际回读仍在图形 owner thread 执行。
+        self.runtime
+            .request_surface_readback_for_test(self.window_id)
     }
 
     // 反馈 capability 启用时统一检查窗口存活与 Application owner 可用性。

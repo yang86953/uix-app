@@ -1,7 +1,7 @@
 //! 主 surface retained texture 的局部清理 lowering。
 
-// 引入统一错误和最终提交 damage。
-use crate::core::{Errc, Error, PresentDamage};
+// 引入统一错误类型。
+use crate::core::{Errc, Error};
 // 引入可执行的局部清理计划类型。
 use crate::draw::backend::frame_plan::{
     FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef,
@@ -96,18 +96,20 @@ impl GpuBackend {
             // 已验证 owner 丢失时返回 typed failure，不能伪造可回退能力。
             let context = self.gpu_ctx.rhi_context()?;
             // adapter 未声明 ClearRect 时不得把可选原语当成已执行。
-            if !context.capabilities().clear_rect {
+            if !context.device_ref().device_capabilities().clear_rect {
                 // 调用方继续使用兼容 clear_rects 路径。
                 return Ok(false);
             }
+            // 冻结计划必须匹配的 Surface 代际与物理范围。
+            let surface = context.surface_ref().token();
             // 复用主 surface 的 mixed-DPI 几何规则。
             let (viewport, scale_x, scale_y) = super::super::submit::rhi_physical_geometry(
-                context,
+                surface.extent,
                 self.surface.width,
                 self.surface.height,
             );
-            // 保存计划必须匹配的 surface generation。
-            (context.token(), viewport, scale_x, scale_y)
+            // 返回同一快照导出的代际与物理几何。
+            (surface, viewport, scale_x, scale_y)
         };
         // 创建只针对 retained texture 的 load pass。
         let mut pass = RenderPassPlan::new(RenderTargetRef::Texture(target), LoadAction::Load);
@@ -123,19 +125,19 @@ impl GpuBackend {
             };
             // 使用 pending 记录中的颜色，当前生产路径为透明 premultiplied black。
             pass.push(FramePlanCommand::ClearRect {
-                color: RhiColor(rect.rgba),
+                color: RhiColor::from_premultiplied_rgba(rect.rgba),
                 scissor,
             });
         }
-        // 创建只写入 retained texture 的局部清理计划。
-        let mut plan = FramePlan::new(surface, PresentDamage::Full);
+        // retained texture 清理只属于 device，不依赖 swapchain generation。
+        let mut plan = FramePlan::offscreen();
         // 追加唯一离屏 pass，保持同一 owner-thread 的顺序提交。
         plan.push_pass(pass);
-        // 在同一个组合 context 上执行计划，不获取也不呈现 swapchain image。
-        // context 在计划构造后失效时返回 typed failure。
-        let context = self.gpu_ctx.rhi_context()?;
+        // 通过 device 窄视图执行计划，不获取也不呈现 swapchain image。
+        // device 在计划构造后失效时返回 typed failure。
+        let context = self.gpu_ctx.rhi_device()?;
         // 返回底层执行的真实结果，禁止吞掉平台错误。
-        match plan.execute_offscreen_on_context(context) {
+        match plan.execute_offscreen_on_device(context) {
             // 局部清理成功落入 retained texture。
             Ok(_) => Ok(true),
             // adapter 明确不支持 ClearRect 时安全回退到 legacy。

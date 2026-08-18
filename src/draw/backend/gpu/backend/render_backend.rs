@@ -4,11 +4,14 @@
 
 use std::any::Any;
 
-use crate::core::{DamageRegion, Errc, Error, PresentDamage, Rect};
+use crate::core::{DamageRegion, Errc, Error, Rect};
 use crate::draw::Canvas2D;
 use crate::draw::backend::contract::{
     BackendCapabilities, BackendKind, DrawSurface, RenderBackend,
 };
+// test-harness 实现只暴露 API 无关的规范 surface 快照。
+#[cfg(feature = "test-harness")]
+use crate::draw::backend::contract::SurfaceReadback;
 use crate::draw::geometry::types::{BlendMode, ImageHandle};
 use crate::draw::painting::{
     EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder,
@@ -24,14 +27,17 @@ use super::super::canvas::NativeGpuCanvas2D;
 use super::rhi_surface_soft::try_upload_rhi_canvas_soft;
 use super::{GpuBackend, NativeGpuOffscreen, device_pixel_ratio_from_surface};
 
-// 从 retained 主颜色目标与冻结 present coherency 组装场景层能力。
+// 从 retained 主颜色目标与 Device 可选原语组装场景层能力。
 fn retained_gpu_capabilities(
     has_rhi_offscreen_owner: bool,
-    supports_partial_redraw: bool,
+    // 接收 Drawing retained target 是否能够跨帧保留未损坏像素。
+    supports_retained_redraw: bool,
+    // 接收当前 Device Adapter 是否实现共享 TextureMove 原语。
+    supports_texture_region_move: bool,
 ) -> BackendCapabilities {
-    // 只有绘制保留与 swapchain 历史都可证明时才开放局部重绘。
-    let mut capabilities = if supports_partial_redraw {
-        // tracked present 可以安全消费局部场景 damage。
+    // 只有 Drawing 自己能够跨帧保留主颜色目标时才开放局部重绘。
+    let mut capabilities = if supports_retained_redraw {
+        // retained texture 可以安全消费局部场景 damage。
         BackendCapabilities::gpu()
     } else {
         // 任一证明缺失时保持完整重绘回退。
@@ -39,6 +45,8 @@ fn retained_gpu_capabilities(
     };
     // 只有通用 renderer 拥有离屏纹理时才向场景层开放 Picture 能力。
     capabilities.offscreen = has_rhi_offscreen_owner;
+    // 滚动 memmove 同时依赖跨帧保留证明与底层重叠移动原语。
+    capabilities.scroll_memmove = supports_retained_redraw && supports_texture_region_move;
     // 返回供场景管线消费的迁移期能力快照。
     capabilities
 }
@@ -90,21 +98,25 @@ impl RenderBackend for GpuBackend {
     }
 
     fn capabilities(&self) -> BackendCapabilities {
-        // retained texture owner 与 tracked swapchain 必须同时存在才允许局部重绘。
-        let supports_partial_redraw = self.rhi_renderer.is_some()
+        // Drawing 局部重绘只依赖 retained texture；最终 present damage 由 Surface 独立收敛。
+        let supports_retained_redraw = self.rhi_renderer.is_some()
             // 主颜色目标必须在帧间保留未受 damage 影响的像素。
-            && self.surface.native_caps.retained_framebuffer
-            // swapchain 必须提供真实 per-image history 证明。
-            && self.gpu_ctx.caps().present_coherency
-                == crate::native::present::PresentCoherency::TrackedSwapchain;
+            && self.surface.native_caps.retained_color_target;
         // Picture 与主 surface 能力分别从各自事实投影。
-        retained_gpu_capabilities(self.rhi_renderer.is_some(), supports_partial_redraw)
+        retained_gpu_capabilities(
+            // 通用 renderer 是否拥有离屏资源。
+            self.rhi_renderer.is_some(),
+            // retained target 的跨帧像素保留证明。
+            supports_retained_redraw,
+            // 纹理重叠移动必须由选中的 Device Adapter 明确声明。
+            self.surface.native_caps.rhi_texture_region_move,
+        )
     }
 
     // 从 retained RHI owner 事实投影真实 backdrop blur 能力。
     fn supports_backdrop_blur(&self) -> bool {
         // 通用 renderer、保留 framebuffer 与纹理复制缺一不可。
-        self.rhi_renderer.is_some() && self.surface.native_caps.retained_framebuffer
+        self.rhi_renderer.is_some() && self.surface.native_caps.retained_color_target
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
@@ -139,7 +151,7 @@ impl RenderBackend for GpuBackend {
         // 在 owner-thread context 关闭前释放 RHI renderer 持有的跨帧 MSDF atlas pages。
         if let Some(renderer) = self.rhi_renderer.as_mut() {
             // 已验证 owner 丢失时必须返回 typed error，不能跳过资源释放。
-            let context = self.gpu_ctx.rhi_context()?;
+            let context = self.gpu_ctx.rhi_device()?;
             // 失败时保留 typed error，禁止在资源仍存活时伪造 shutdown 成功。
             renderer.release_msdf_atlas(context)?;
         }
@@ -154,6 +166,12 @@ impl RenderBackend for GpuBackend {
 
     // 每帧准备只通过 thin RHI 设备维护，不把平台 current 语义泄露给 renderer。
     fn prepare_frame(&mut self) -> Result<(), Error> {
+        // 每个测试帧从空执行证据开始，禁止把上一帧移动计入本次回读。
+        #[cfg(feature = "test-harness")]
+        {
+            // 只有随后成功提交的共享 FramePlan 才能推进该计数。
+            self.executed_texture_moves_in_frame = 0;
+        }
         // 复用 GPU backend 的单一 owner-context 准备入口。
         self.prepare_rhi_device()
     }
@@ -180,7 +198,7 @@ impl RenderBackend for GpuBackend {
         };
         // 离屏资源必须由当前 owner-thread 的薄 RHI context 创建。
         // owner-thread 或 context 状态失败原样进入 renderer recovery。
-        let context = self.gpu_ctx.rhi_context()?;
+        let context = self.gpu_ctx.rhi_device()?;
         // 创建唯一一份同时可渲染和可采样的通用纹理。
         let rhi_texture = context
             // 把已经验证的 extent 和统一像素格式交给薄 RHI。
@@ -223,7 +241,7 @@ impl RenderBackend for GpuBackend {
         let rhi_texture = off.rhi_texture;
         // 离屏纹理必须仍由同一 owner-thread context 管理。
         // 已验证 owner 丢失时直接返回 typed 状态错误。
-        let context = self.gpu_ctx.rhi_context()?;
+        let context = self.gpu_ctx.rhi_device()?;
         // 只有 RHI 销毁成功后才释放 backend 槽位。
         context.destroy_texture(rhi_texture)?;
         // 清除已完成资源回收的 Picture slot。
@@ -286,7 +304,7 @@ impl RenderBackend for GpuBackend {
             LoadAction::Load
         } else {
             // 新建纹理先清为透明色，防止未初始化采样。
-            LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0]))
+            LoadAction::Clear(RhiColor::transparent())
         };
         // 把唯一纹理句柄转换为 FramePlan 的 render-target 身份。
         let rhi_target = RenderTargetHandle::from_raw(rhi_texture.raw());
@@ -298,8 +316,6 @@ impl RenderBackend for GpuBackend {
             crate::draw::backend::frame_plan::RenderTargetRef::Texture(rhi_target),
             // 使用由初始化状态推导出的 load action。
             load,
-            // Picture 路径不写回主 surface retained 状态。
-            false,
         )?;
         // 对未覆盖操作返回 typed failure，禁止静默降级到 legacy target。
         require_lossless_rhi_submission(
@@ -351,7 +367,7 @@ impl RenderBackend for GpuBackend {
                 LoadAction::Load
             } else if self.surface.needs_gpu_clear {
                 // 无显式 Clear 时沿用 begin_frame 的透明初始化。
-                LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0]))
+                LoadAction::Clear(RhiColor::transparent())
             } else {
                 // 保留 retained surface 的前序像素。
                 LoadAction::Load
@@ -378,7 +394,6 @@ impl RenderBackend for GpuBackend {
                 encoder,
                 crate::draw::backend::frame_plan::RenderTargetRef::Surface,
                 rhi_load,
-                false,
             )?;
             // 未覆盖命令必须交给恢复层，不能复活整面 readback/replace 分叉。
             require_lossless_rhi_submission(
@@ -448,7 +463,7 @@ impl RenderBackend for GpuBackend {
             LoadAction::Load
         } else {
             // 以透明色初始化 Picture target。
-            LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0]))
+            LoadAction::Clear(RhiColor::transparent())
         };
         // Picture 离屏不再允许缺少 renderer cache 的 adapter 兼容分叉。
         let Some(renderer) = self.rhi_renderer.as_mut() else {
@@ -465,12 +480,14 @@ impl RenderBackend for GpuBackend {
         let context = self.gpu_ctx.rhi_context()?;
         // 使用离屏 texture 的同一不透明身份作为 render target。
         let rhi_target = RenderTargetHandle::from_raw(rhi_texture.raw());
+        // 冻结 Picture 纹理自己的物理范围，禁止借用主 Surface extent。
+        let rhi_extent = RhiExtent::new(off.width.max(1) as u32, off.height.max(1) as u32);
         // 离屏 target 使用自身物理尺寸，不借用主窗口 drawable 的 DPR。
         let viewport = RhiViewport {
             // 纹理创建已验证正宽度，此处保持防御式下限。
-            width: off.width.max(1) as f32,
+            width: rhi_extent.width as f32,
             // 纹理创建已验证正高度，此处保持防御式下限。
-            height: off.height.max(1) as f32,
+            height: rhi_extent.height as f32,
         };
         // 记录当前 Picture 是否含有 native staging。
         let has_native = !off.canvas.pending_native.is_empty();
@@ -482,14 +499,14 @@ impl RenderBackend for GpuBackend {
             off.canvas.submit_rhi_mixed_for_geometry(
                 // 使用 backend 持有的通用 renderer cache。
                 renderer,
-                // 使用 owner-thread 薄 RHI context。
-                context,
+                // Picture lowering 只取得 owner-thread Device 角色。
+                context.device(),
+                // 使用 Picture 纹理自身的物理范围。
+                rhi_extent,
                 // 采用由初始化状态推导出的 load action。
                 load,
                 // 指定唯一离屏纹理作为目标。
-                crate::draw::backend::frame_plan::RenderTargetRef::Texture(rhi_target),
-                // Picture flush 总是覆盖自身完整提交边界。
-                PresentDamage::Full,
+                rhi_target,
                 // 使用 Picture 自身 viewport。
                 viewport,
                 // Picture 逻辑坐标不额外缩放横轴。
@@ -533,8 +550,8 @@ impl RenderBackend for GpuBackend {
                 rhi_target,
                 // native pass 后必须保留已经提交的像素。
                 if has_native { LoadAction::Load } else { load },
-                // 使用同一 owner-thread context。
-                context,
+                // soft 离屏合成只取得同一 owner-thread Device 角色。
+                context.device(),
                 // 复用同一 renderer cache。
                 renderer,
             )?
@@ -727,21 +744,17 @@ impl RenderBackend for GpuBackend {
                 "RHI offscreen blur requires the RHI renderer cache",
             ));
         };
-        // 只有组合 RHI context 能执行 texture target 的多阶段计划。
-        // 已验证 owner 保证多阶段计划只借用组合 RHI。
-        let context = gpu_ctx.rhi_context()?;
+        // Picture 离屏 blur 只借用资源、命令与 submit 所需的 Device 角色。
+        let device = gpu_ctx.rhi_device()?;
         // 当前 Picture texture 同时作为 source 和最终 target，scratch 由 renderer 管理。
         renderer.execute_blur_without_present(
-            context,
-            PresentDamage::Full,
+            device,
             texture,
             RhiExtent::new(offscreen_width as u32, offscreen_height as u32),
             rhi_region,
             radius,
             TextureFormat::Bgra8Unorm,
-            crate::draw::backend::frame_plan::RenderTargetRef::Texture(
-                RenderTargetHandle::from_raw(texture.raw()),
-            ),
+            RenderTargetHandle::from_raw(texture.raw()),
         )
     }
 
@@ -778,9 +791,45 @@ impl RenderBackend for GpuBackend {
     fn test_present(&mut self) -> Result<PresentTestResult, Error> {
         // 构造门禁已经要求 backend-managed GPU 始终提供组合 thin RHI。
         // 已验证 owner 丢失时由统一 typed 状态错误进入恢复层。
-        let context = self.gpu_ctx.rhi_context()?;
+        let context = self.gpu_ctx.rhi_surface()?;
         // 只通过 surface 生命周期契约执行无帧遮挡退出探测。
         context.test_present()
+    }
+
+    // 安排下一次最终 composite 在 submit 与 present 之间读取真实 surface。
+    #[cfg(feature = "test-harness")]
+    fn request_surface_readback_for_test(&mut self) -> Result<(), Error> {
+        // 同一 backend 同时只允许一个请求，禁止覆盖尚未消费的结果。
+        if self.surface_readback_requested || self.surface_readback_result.is_some() {
+            // 返回可重试的稳定状态冲突。
+            return Err(Error::new(
+                // 重复请求属于当前状态不允许的操作。
+                Errc::InvalidState,
+                // 诊断不依赖具体 Adapter。
+                "GPU surface readback is already pending",
+            ));
+        }
+        // 最终 present 路径将在准确的 FramePlan 边界消费该标记。
+        self.surface_readback_requested = true;
+        // 请求已被唯一 backend owner 接受。
+        Ok(())
+    }
+
+    // 消费最终 present 事务产生的回读结果，并始终清理请求状态。
+    #[cfg(feature = "test-harness")]
+    fn take_surface_readback_for_test(&mut self) -> Result<SurfaceReadback, Error> {
+        // 无论 present 是否到达 composite，都允许下一次请求重新开始。
+        self.surface_readback_requested = false;
+        // 已执行 composite 时返回 Adapter 的真实规范结果。
+        self.surface_readback_result.take().unwrap_or_else(|| {
+            // 未到达回读边界通常意味着本帧在更早阶段失败。
+            Err(Error::new(
+                // 当前事务没有可消费结果。
+                Errc::InvalidState,
+                // 诊断固定在最终 composite 时序。
+                "GPU frame ended before the surface readback boundary",
+            ))
+        })
     }
 
     fn as_any(&self) -> &dyn Any {

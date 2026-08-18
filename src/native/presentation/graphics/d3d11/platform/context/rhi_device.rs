@@ -11,16 +11,16 @@
 use crate::core::error::{Errc, Error, Result};
 // 引入薄 RHI 的资源、命令和能力类型。
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsCapabilities, GraphicsDevice,
-    LoadAction, PipelineDesc, PipelineHandle, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor,
-    RhiViewport, SamplerDesc, SamplerHandle, TextureCopy, TextureDesc, TextureFormat,
-    TextureHandle, TextureMove,
+    BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
+    LoadAction, PipelineBinding, PipelineDesc, PipelineHandle, PipelineKind, RenderTargetHandle,
+    RhiColor, RhiExtent, RhiPassState, RhiScissor, RhiSubmissionSequence, RhiViewport, SamplerDesc,
+    SamplerHandle, TextureCopy, TextureDesc, TextureFormat, TextureHandle, TextureMove,
 };
 // 引入 D3D11 的基础资源和绑定类型。
 use ::windows::Win32::Graphics::Direct3D11::{
     D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_INDEX_BUFFER, D3D11_BIND_RENDER_TARGET,
     D3D11_BIND_SHADER_RESOURCE, D3D11_BIND_VERTEX_BUFFER, D3D11_BOX, D3D11_BUFFER_DESC,
-    D3D11_COMPARISON_NEVER, D3D11_CPU_ACCESS_WRITE, D3D11_FILTER_MIN_MAG_MIP_LINEAR,
+    D3D11_COMPARISON_NEVER, D3D11_CPU_ACCESS_WRITE, D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT,
     D3D11_FILTER_MIN_MAG_MIP_POINT, D3D11_MAP_WRITE_DISCARD, D3D11_MAPPED_SUBRESOURCE,
     D3D11_SAMPLER_DESC, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT,
     D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
@@ -77,16 +77,18 @@ struct D3d11RhiTexture {
     format: TextureFormat,
 }
 
-// 保存一个 RHI pipeline 的稳定通用 key。
+// 保存一个 RHI pipeline 的封闭通用语义。
 struct D3d11RhiPipeline {
-    // 保存由通用 renderer 选择的有限 pipeline 语义。
-    key: u64,
+    // 保存由通用 renderer 选择的类型化 pipeline 语义。
+    kind: PipelineKind,
 }
 
 // 保存一个 RHI sampler 的原生状态对象。
 struct D3d11RhiSampler {
     // 保持 D3D11 sampler state 的生命周期。
     native: ::windows::Win32::Graphics::Direct3D11::ID3D11SamplerState,
+    // 保存共享 pipeline draw 门禁需要的 API 无关过滤事实。
+    desc: SamplerDesc,
 }
 
 // 持有 D3D11 RHI 资源表与 owner-thread pass 状态。
@@ -99,20 +101,12 @@ pub(super) struct D3d11RhiDevice {
     pipelines: Vec<Option<D3d11RhiPipeline>>,
     // 保存按不透明 id 索引的 sampler 资源。
     samplers: Vec<Option<D3d11RhiSampler>>,
-    // 保存当前是否已经打开一个 RHI pass。
-    pass_open: bool,
-    // 保存当前 pass 绑定的目标。
+    // 保存两个 Adapter 共用的 pass 生命周期、目标、几何与采样绑定事实。
+    pass: RhiPassState,
+    // 只保存 D3D11 编码当前 pass 所需的原生 render target view。
     active_target: Option<::windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView>,
-    // 保存当前 pass 绑定的通用目标句柄。
-    active_target_handle: Option<RenderTargetHandle>,
-    // 保存当前 pass 最近一次绑定的采样纹理。
-    bound_texture: Option<TextureHandle>,
-    // 保存当前 pass 最近一次绑定的采样器。
-    bound_sampler: Option<crate::native::present::rhi::SamplerHandle>,
-    // 保存当前 pass 的物理尺寸。
-    active_extent: Option<RhiExtent>,
-    // 保存提交序号，D3D11 immediate context 以 owner-thread 顺序完成提交。
-    next_submission: u64,
+    // 保存共享的提交身份状态机，禁止 D3D11 绕过 Surface present 校验。
+    submission_sequence: RhiSubmissionSequence,
 }
 
 // 为 D3D11 RHI 状态提供初始化和资源查找辅助。
@@ -125,13 +119,11 @@ impl D3d11RhiDevice {
             textures: Vec::new(),
             pipelines: Vec::new(),
             samplers: Vec::new(),
-            pass_open: false,
+            // 使用 API 无关状态机初始化 pass 生命周期。
+            pass: RhiPassState::new(),
             active_target: None,
-            active_target_handle: None,
-            bound_texture: None,
-            bound_sampler: None,
-            active_extent: None,
-            next_submission: 1,
+            // 使用 API 无关状态机初始化提交序列。
+            submission_sequence: RhiSubmissionSequence::new(),
         }
     }
 
@@ -228,20 +220,14 @@ impl D3d11RhiDevice {
 // 为 D3D11 context 实现 buffer、texture、pass、copy 和 submit 原语。
 impl GraphicsDevice for D3d11Context {
     // 返回当前迁移期 device 的事实能力，能力只描述低层原语而非 UI 操作。
-    fn capabilities(&self) -> GraphicsCapabilities {
-        // D3D11 已实现跨帧颜色纹理与最终 sampled composite，采用 retained 基线。
-        let mut capabilities = GraphicsCapabilities::retained_gpu_baseline();
+    fn device_capabilities(&self) -> GraphicsDeviceCapabilities {
+        // D3D11 已实现通用 Renderer 需要的完整 Device 原语基线。
+        let mut capabilities = GraphicsDeviceCapabilities::full_gpu_baseline();
         // D3D11 scratch texture 提供重叠安全的区域移动。
         capabilities.texture_region_move = true;
         // D3D11 scissor clear 已接入 FramePlan 局部清理。
         capabilities.clear_rect = true;
-        // D3D11 staging texture 已实现同步 surface 回读。
-        capabilities.surface_readback = true;
-        // 从 swapchain 创建事实投影 compositor 窄提交能力。
-        capabilities.partial_present = self.swap_chain.contract().partial_present;
-        // DXGI surface 能提供可靠的遮挡状态。
-        capabilities.occlusion = true;
-        // 返回与实际 swapchain 契约一致的薄 RHI 能力快照。
+        // 返回不再读取 swapchain 或 Surface 状态的 Device 能力快照。
         capabilities
     }
 
@@ -416,9 +402,11 @@ impl GraphicsDevice for D3d11Context {
     }
 
     // 创建当前 D3D11 适配器已经具备 shader ABI 的有限 pipeline。
-    fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineHandle> {
-        // 把 pipeline key 校验和资源登记委托给 resource helper。
-        self.rhi_create_pipeline(desc)
+    fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineBinding> {
+        // 把原生 pipeline 资源登记委托给 resource helper。
+        let handle = self.rhi_create_pipeline(desc)?;
+        // 让上层只取得句柄与同一创建语义组成的不可拆身份。
+        Ok(PipelineBinding::new(handle, desc.kind))
     }
 
     // 创建带 clamp 地址模式的 D3D11 sampler。
@@ -531,8 +519,7 @@ impl GraphicsDevice for D3d11Context {
             .checked_sub(1)
             .ok_or_else(|| rhi_invalid("texture handle is null"))? as usize;
         // 不能在当前 pass 仍引用资源时销毁它。
-        if self.rhi_device.active_target_handle == Some(RenderTargetHandle::from_raw(texture.raw()))
-        {
+        if self.rhi_device.pass.references_target(texture) {
             // 返回稳定的状态错误。
             return Err(Error::new(
                 Errc::InvalidState,
@@ -551,14 +538,16 @@ impl GraphicsDevice for D3d11Context {
         }
         // 清空资源槽，让旧句柄立即失效。
         *slot = None;
+        // 清理当前 pass 可能持有的 sampled texture 身份。
+        self.rhi_device.pass.unbind_texture(texture);
         // 返回成功。
         Ok(())
     }
 
     // 销毁 pipeline 资源槽。
-    fn destroy_pipeline(&mut self, pipeline: PipelineHandle) -> Result<()> {
-        // 把检查式销毁委托给 resource helper。
-        self.rhi_destroy_pipeline(pipeline)
+    fn destroy_pipeline(&mut self, pipeline: PipelineBinding) -> Result<()> {
+        // 把绑定中不透明句柄的检查式销毁委托给 resource helper。
+        self.rhi_destroy_pipeline(pipeline.handle())
     }
 
     // 销毁 sampler 资源槽。
@@ -570,13 +559,7 @@ impl GraphicsDevice for D3d11Context {
     // 开始一个 D3D11 render pass，并绑定 surface 或 RHI texture target。
     fn begin_render_pass(&mut self, target: RenderTargetHandle, load: LoadAction) -> Result<()> {
         // 拒绝嵌套 pass，保持 FramePlan 的显式边界。
-        if self.rhi_device.pass_open {
-            // 返回稳定的状态错误。
-            return Err(Error::new(
-                Errc::InvalidState,
-                "D3d11 RHI render pass is already open",
-            ));
-        }
+        self.rhi_device.pass.require_closed()?;
         // 解析 surface 或离屏纹理目标，同时复制 COM view 避免借用跨越状态更新。
         let (rtv, extent) =
             if target.raw() == RHI_SURFACE_TARGET_RAW {
@@ -600,6 +583,8 @@ impl GraphicsDevice for D3d11Context {
                     })?;
                 (rtv, texture.extent)
             };
+        // 由共享状态机统一验证目标范围、清屏颜色并建立 pass 事实。
+        self.rhi_device.pass.begin(target, extent, load)?;
         // 绑定本 pass 的唯一 render target。
         // SAFETY: rtv 来自当前 device 的 swapchain 或 texture，数组在同步调用期间存活且 context 位于 owner thread。
         unsafe {
@@ -608,16 +593,15 @@ impl GraphicsDevice for D3d11Context {
         }
         // 只在明确要求时清理目标，Load 保留底层既有内容。
         if let LoadAction::Clear(color) = load {
+            // Adapter 只读取共享层已经验证并预乘的目标颜色。
+            let components = color.components();
             // SAFETY: rtv 属于当前 D3D11 device，颜色值已由 FramePlan 验证有限。
             unsafe {
-                self.context.ClearRenderTargetView(&rtv, &color.0);
+                self.context.ClearRenderTargetView(&rtv, &components);
             }
         }
-        // 记录 pass 状态和目标身份。
-        self.rhi_device.pass_open = true;
+        // 只记录 Adapter 编码后续 clear/blur 所需的原生目标 view。
         self.rhi_device.active_target = Some(rtv);
-        self.rhi_device.active_target_handle = Some(target);
-        self.rhi_device.active_extent = Some(extent);
         // 返回 pass 开始成功。
         Ok(())
     }
@@ -660,42 +644,40 @@ impl GraphicsDevice for D3d11Context {
     // 在 pass 外复制两个 RHI texture。
     fn copy_texture(&mut self, copy: TextureCopy) -> Result<()> {
         // 复制必须位于显式 pass 之外，避免 render target 和 copy source 重叠。
-        if self.rhi_device.pass_open {
-            // 返回稳定的状态错误。
-            return Err(Error::new(
-                Errc::InvalidState,
-                "D3d11 RHI texture copy inside render pass",
-            ));
-        }
+        self.rhi_device.pass.require_closed()?;
         // 读取源和目标资源。
         let source = self.rhi_device.texture(copy.source)?;
         let destination = self.rhi_device.texture(copy.destination)?;
-        // 当前 adapter 只允许同格式 copy，避免驱动隐式转换造成像素漂移。
-        if source.format != destination.format {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("D3d11 RHI texture copy formats differ"));
-        }
-        // 零尺寸 copy 没有合法的 D3D11_BOX。
-        if copy.width == 0 || copy.height == 0 {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("D3d11 RHI texture copy extent is empty"));
-        }
-        // 检查复制区域没有超出任何一方资源。
-        if copy.source_x.saturating_add(copy.width) > source.extent.width
-            || copy.source_y.saturating_add(copy.height) > source.extent.height
-            || copy.destination_x.saturating_add(copy.width) > destination.extent.width
-            || copy.destination_y.saturating_add(copy.height) > destination.extent.height
-        {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("D3d11 RHI texture copy is out of range"));
-        }
+        // 格式、非空、范围与资源关系全部由共享传输契约验证。
+        let bounds = copy.validate_transfer(
+            // 构造源纹理的 API 无关描述。
+            TextureDesc {
+                // 保存源物理尺寸。
+                extent: source.extent,
+                // 保存源格式。
+                format: source.format,
+            },
+            // 构造目标纹理的 API 无关描述。
+            TextureDesc {
+                // 保存目标物理尺寸。
+                extent: destination.extent,
+                // 保存目标格式。
+                format: destination.format,
+            },
+        )?;
         // 构造源纹理复制区域。
         let source_box = D3D11_BOX {
+            // 左边界直接使用共享 top-left 横坐标。
             left: copy.source_x,
-            right: copy.source_x + copy.width,
+            // 右边界使用共享 checked_add 的结果。
+            right: bounds.source_right(),
+            // 顶边界直接使用共享 top-left 纵坐标。
             top: copy.source_y,
-            bottom: copy.source_y + copy.height,
+            // 底边界使用共享 checked_add 的结果。
+            bottom: bounds.source_bottom(),
+            // 二维纹理从唯一深度切片开始。
             front: 0,
+            // 二维纹理只复制一个深度切片。
             back: 1,
         };
         // SAFETY: 两个 texture 均由同一 D3D11 device 创建，区域经过边界验证，
@@ -719,13 +701,7 @@ impl GraphicsDevice for D3d11Context {
     // 在 D3D11 上执行同纹理重叠安全的区域移动。
     fn move_texture_region(&mut self, movement: TextureMove) -> Result<()> {
         // 移动必须发生在显式 pass 之外。
-        if self.rhi_device.pass_open {
-            // 返回稳定的状态错误。
-            return Err(Error::new(
-                Errc::InvalidState,
-                "D3d11 RHI texture move inside render pass",
-            ));
-        }
+        self.rhi_device.pass.require_closed()?;
         // 先复制资源描述，避免后续 scratch 操作持有资源表借用。
         let (source_extent, source_format) = {
             // 读取源纹理的尺寸和格式事实。
@@ -738,45 +714,23 @@ impl GraphicsDevice for D3d11Context {
             let destination = self.rhi_device.texture(movement.destination)?;
             (destination.extent, destination.format)
         };
-        // 移动必须使用相同格式，避免隐式转换破坏像素语义。
-        if source_format != destination_format {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("D3d11 RHI texture move formats differ"));
-        }
-        // 零尺寸移动没有可定义的区域。
-        if movement.width == 0 || movement.height == 0 {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("D3d11 RHI texture move extent is empty"));
-        }
-        // 使用 checked_add 防止异常坐标在边界检查前回绕。
-        let source_right = movement
-            .source_x
-            .checked_add(movement.width)
-            .ok_or_else(|| rhi_invalid("D3d11 RHI texture move source x overflows"))?;
-        // 检查源区域底边不会回绕。
-        let source_bottom = movement
-            .source_y
-            .checked_add(movement.height)
-            .ok_or_else(|| rhi_invalid("D3d11 RHI texture move source y overflows"))?;
-        // 检查目标区域右边不会回绕。
-        let destination_right = movement
-            .destination_x
-            .checked_add(movement.width)
-            .ok_or_else(|| rhi_invalid("D3d11 RHI texture move destination x overflows"))?;
-        // 检查目标区域底边不会回绕。
-        let destination_bottom = movement
-            .destination_y
-            .checked_add(movement.height)
-            .ok_or_else(|| rhi_invalid("D3d11 RHI texture move destination y overflows"))?;
-        // 同时检查源和目标范围。
-        if source_right > source_extent.width
-            || source_bottom > source_extent.height
-            || destination_right > destination_extent.width
-            || destination_bottom > destination_extent.height
-        {
-            // 返回稳定的参数错误。
-            return Err(rhi_invalid("D3d11 RHI texture move is out of range"));
-        }
+        // 格式、非空、范围和溢出统一委托共享 move 契约。
+        movement.validate_transfer(
+            // 构造源纹理的 API 无关描述。
+            TextureDesc {
+                // 保存源物理尺寸。
+                extent: source_extent,
+                // 保存源格式。
+                format: source_format,
+            },
+            // 构造目标纹理的 API 无关描述。
+            TextureDesc {
+                // 保存目标物理尺寸。
+                extent: destination_extent,
+                // 保存目标格式。
+                format: destination_format,
+            },
+        )?;
         // 不同纹理没有重叠风险，复用已验证的 copy 原语。
         if movement.source != movement.destination {
             // 将移动转换为普通纹理复制。

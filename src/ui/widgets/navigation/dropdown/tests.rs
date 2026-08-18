@@ -236,7 +236,9 @@ fn open_dropdown_registers_popover_overlay_with_outside_dismiss() {
     // 关闭后不再登记浮层：等离场动画结束后验证。
     dropdown.close();
     // 驱动关闭动画直到完全离场。
-    while crate::ui::widget_runtime::traits::WidgetAnimation::update_animation(&mut dropdown, 0.05) {}
+    while crate::ui::widget_runtime::traits::WidgetAnimation::update_animation(&mut dropdown, 0.05)
+    {
+    }
     assert!(
         WidgetRender::overlay_entry(
             &dropdown,
