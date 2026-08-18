@@ -10,9 +10,9 @@ use crate::core::error::{Errc, Error, Result};
 // 引入 Surface 提供的跨呈现像素保留语义。
 use crate::core::PresentCoherency;
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, DrawPacket, LoadAction, PipelineBinding, PipelineColorWriteMask,
-    PipelineDesc, PipelineDitherState, PipelineKind, RenderTargetHandle, RhiBufferResource,
-    RhiBufferResourceTable, RhiBufferUpload, RhiBufferUploadPreflight, RhiColor,
+    BufferDesc, BufferHandle, DrawPacket, DrawRasterState, LoadAction, PipelineBinding,
+    PipelineColorWriteMask, PipelineDesc, PipelineDitherState, PipelineKind, RenderTargetHandle,
+    RhiBufferResource, RhiBufferResourceTable, RhiBufferUpload, RhiBufferUploadPreflight, RhiColor,
     RhiColorClearContract, RhiExtent, RhiPassState, RhiPipelineResourceTable,
     RhiPresentTransaction, RhiResourceTable, RhiScissor, RhiSubmissionSequence, RhiTextureResource,
     RhiTextureResourceTable, RhiTextureUpload, SampledTextureBinding, SamplerAddressMode,
@@ -97,7 +97,7 @@ pub(super) struct OpenGlRhiDevice {
     samplers: RhiResourceTable<SamplerHandle, OpenGlRhiSampler>,
     // 保存所有 RHI draw 共用的 VAO。
     vao: glow::VertexArray,
-    // 保存两个 Adapter 共用的 pass 生命周期、目标、几何与采样绑定事实。
+    // 保存两个 Adapter 共用的 pass 生命周期、目标与物理范围事实。
     pass: RhiPassState,
     // 保存共享的提交身份状态机，禁止 OpenGL 自行解释 submit/present 关联。
     submission_sequence: RhiSubmissionSequence,
@@ -587,10 +587,19 @@ impl OpenGlRhiDevice {
         Ok(())
     }
 
-    // 设置物理 viewport。
-    pub(super) fn set_viewport(&self, gl: &glow::Context, viewport: RhiViewport) -> Result<()> {
-        // 由共享状态机验证 pass 顺序和物理目标边界。
-        self.pass.validate_viewport(viewport)?;
+    // 把当前 DrawPacket 独占的完整动态栅格状态机械编码到 OpenGL。
+    pub(super) fn apply_draw_raster(
+        // 只读借用设备，栅格状态不再保存为 pass 历史。
+        &self,
+        // 借用当前 owner-thread OpenGL context。
+        gl: &glow::Context,
+        // 接收已经与当前 Draw 原子绑定的栅格事实。
+        raster: DrawRasterState,
+    ) -> Result<()> {
+        // 由共享状态机一次验证 viewport、scissor、pass 与目标关系。
+        self.pass.validate_draw_raster(raster)?;
+        // 只读投影当前 Draw 的 viewport。
+        let viewport = raster.viewport();
         // 读取共享几何 Component 已验证的唯一有符号投影。
         let (width, height) = viewport
             // Adapter 不得自行截断浮点 viewport。
@@ -602,13 +611,15 @@ impl OpenGlRhiDevice {
         unsafe {
             gl.viewport(0, 0, width, height);
         }
+        // 同一次 Draw 必须覆盖原生 scissor 状态，禁止继承前一命令。
+        self.apply_scissor(gl, raster.scissor())?;
         // 返回统一成功结果。
         Ok(())
     }
 
-    // 设置或关闭左上原点 scissor。
-    pub(super) fn set_scissor(
-        &mut self,
+    // 把已经由当前命令验证的左上原点 scissor 机械编码到 OpenGL。
+    pub(super) fn apply_scissor(
+        &self,
         gl: &glow::Context,
         scissor: Option<RhiScissor>,
     ) -> Result<()> {
@@ -616,8 +627,6 @@ impl OpenGlRhiDevice {
         let target = self.pass.target()?;
         // 使用同一 pass 的物理 extent 完成原生坐标转换。
         let extent = self.pass.extent()?;
-        // 先由共享状态机统一验证并记录左上原点区域。
-        self.pass.set_scissor(scissor)?;
         // 仅对显式 scissor 计算原生坐标。
         if let Some(scissor) = scissor {
             // surface 使用底部原点，texture target 保持共享顶部原点。
@@ -662,7 +671,7 @@ impl OpenGlRhiDevice {
             gl.bind_framebuffer(glow::FRAMEBUFFER, None);
             gl.bind_vertex_array(None);
         }
-        // 由共享状态机原子清除目标、几何与采样绑定事实。
+        // 由共享状态机原子清除目标与物理范围事实。
         self.pass.end()?;
         // 返回统一成功结果。
         Ok(())

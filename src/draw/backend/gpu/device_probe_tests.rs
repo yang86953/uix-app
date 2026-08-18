@@ -8,9 +8,8 @@ use super::device_probe::probe_device;
 use crate::native::present::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, LoadAction,
     PipelineBinding, PipelineDesc, PipelineHandle, PipelineKind, RenderTargetHandle,
-    RhiBufferUpload, RhiBufferUploadPreflight, RhiScissor, RhiTextureUpload, RhiViewport,
-    SamplerDesc, SamplerHandle, SubmissionHandle, TextureCopy, TextureDesc, TextureHandle,
-    TextureMove,
+    RhiBufferUpload, RhiBufferUploadPreflight, RhiTextureUpload, SamplerDesc, SamplerHandle,
+    SubmissionHandle, TextureCopy, TextureDesc, TextureHandle, TextureMove,
 };
 // 描述 fixture 需要注入的单点故障。
 #[derive(Clone, Copy)]
@@ -287,22 +286,6 @@ impl GraphicsDevice for RecordingDevice {
     fn begin_render_pass(&mut self, _target: RenderTargetHandle, _load: LoadAction) -> Result<()> {
         // 记录 pass 开始边界。
         self.commands.push("begin");
-        // 报告命令成功。
-        Ok(())
-    }
-
-    // 记录 viewport 设置。
-    fn set_viewport(&mut self, _viewport: RhiViewport) -> Result<()> {
-        // 记录 viewport 状态命令。
-        self.commands.push("viewport");
-        // 报告命令成功。
-        Ok(())
-    }
-
-    // 记录 scissor 设置。
-    fn set_scissor(&mut self, _scissor: Option<RhiScissor>) -> Result<()> {
-        // 记录 scissor 状态命令。
-        self.commands.push("scissor");
         // 报告命令成功。
         Ok(())
     }

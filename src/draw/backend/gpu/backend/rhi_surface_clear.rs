@@ -89,7 +89,7 @@ impl GpuBackend {
             return Ok(true);
         }
         // 读取当前 RHI context 的 surface 代际和物理几何。
-        let (surface, viewport, scale_x, scale_y) = {
+        let (surface, scale_x, scale_y) = {
             // 只有组合 RHI context 能写入 owner-thread retained texture。
             // 已验证 owner 丢失时返回 typed failure，不能伪造可回退能力。
             let context = self.gpu_ctx.rhi_context()?;
@@ -101,18 +101,16 @@ impl GpuBackend {
             // 冻结计划必须匹配的 Surface 代际与物理范围。
             let surface = context.surface_ref().token();
             // 复用主 surface 的 mixed-DPI 几何规则。
-            let (viewport, scale_x, scale_y) = super::super::submit::rhi_physical_geometry(
+            let (_, scale_x, scale_y) = super::super::submit::rhi_physical_geometry(
                 surface.extent,
                 self.surface.width,
                 self.surface.height,
             );
-            // 返回同一快照导出的代际与物理几何。
-            (surface, viewport, scale_x, scale_y)
+            // 返回同一快照导出的代际与物理缩放事实。
+            (surface, scale_x, scale_y)
         };
         // 创建只针对 retained texture 的 load pass。
         let mut pass = RenderPassPlan::new(RenderTargetRef::Texture(target), LoadAction::Load);
-        // 先设置完整物理 viewport，后续 ClearView/scissor 使用同一 extent。
-        pass.push(FramePlanCommand::SetViewport(viewport));
         // 以原始记录顺序追加局部清理命令。
         for rect in &self.surface.pending_clear_rects {
             // 将逻辑清理矩形转换成当前 drawable 的物理区域。

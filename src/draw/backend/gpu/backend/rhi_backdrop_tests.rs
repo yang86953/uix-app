@@ -35,7 +35,6 @@ use crate::native::present::rhi::{
     // scissor 与 viewport 只用于拒绝意外 raster 状态。
     RhiScissor,
     // viewport 类型补齐 device trait。
-    RhiViewport,
     // submission 建立唯一提交证据。
     SubmissionHandle,
     // surface frame 补齐 acquire/present 契约。
@@ -200,18 +199,6 @@ impl GraphicsDevice for RecordingBackdropContext {
     ) -> Result<()> {
         // backdrop 纹理复制不允许开启 render pass。
         panic!("backdrop copy must not begin a render pass")
-    }
-
-    // 未使用的 viewport 入口显式拒绝意外调用。
-    fn set_viewport(&mut self, _viewport: RhiViewport) -> Result<()> {
-        // 纯复制事务不设置 viewport。
-        panic!("backdrop copy must not set a viewport")
-    }
-
-    // 未使用的 scissor 入口显式拒绝意外调用。
-    fn set_scissor(&mut self, _scissor: Option<RhiScissor>) -> Result<()> {
-        // 全幅 texture copy 不通过 raster scissor 裁剪。
-        panic!("backdrop copy must not set a scissor")
     }
 
     // 未使用的 draw 入口显式拒绝意外调用。

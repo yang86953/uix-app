@@ -8,7 +8,7 @@ use crate::core::error::{Errc, Error, Result};
 
 // 引入共享的 pass 输入值和不透明资源句柄。
 use super::{
-    LoadAction, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, RhiViewport, TextureHandle,
+    DrawRasterState, LoadAction, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, TextureHandle,
 };
 
 // 保存一个已经开始且尚未结束的 render pass 事实。
@@ -18,8 +18,6 @@ struct ActiveRhiPass {
     target: RenderTargetHandle,
     // 保存当前目标的物理像素范围。
     extent: RhiExtent,
-    // 保存当前左上原点 scissor；None 表示完整目标。
-    scissor: Option<RhiScissor>,
 }
 
 // 保存单一 Device 当前唯一 render-pass 生命周期。
@@ -78,8 +76,6 @@ impl RhiPassState {
             target,
             // 冻结本 pass 的目标范围。
             extent,
-            // 每个 pass 都从完整目标开始。
-            scissor: None,
         });
         // 返回状态建立成功。
         Ok(())
@@ -131,46 +127,19 @@ impl RhiPassState {
         Ok(active.extent)
     }
 
-    // 验证 viewport 是当前目标内的正整数物理范围。
-    pub(crate) fn validate_viewport(&self, viewport: RhiViewport) -> Result<()> {
+    // 验证当前 Draw 独占的动态栅格状态完整落在活动目标内。
+    pub(crate) fn validate_draw_raster(&self, raster: DrawRasterState) -> Result<()> {
         // 当前目标范围同时证明命令位于活动 pass 内。
         let extent = self.extent()?;
-        // 复用共享几何值对象的唯一边界算法。
-        if !viewport.fits_within(extent) {
+        // 复用 DrawRasterState 的唯一共同边界算法。
+        if !raster.fits_within(extent) {
             // 返回不依赖原生 API 的参数错误。
             return Err(invalid_argument(
-                "RHI viewport is invalid or outside target",
+                "RHI draw raster state is invalid or outside target",
             ));
         }
-        // 返回 viewport 合法。
+        // 返回当前 packet 的完整栅格状态合法。
         Ok(())
-    }
-
-    // 验证并记录当前 pass 的左上原点 scissor。
-    pub(crate) fn set_scissor(&mut self, scissor: Option<RhiScissor>) -> Result<()> {
-        // 取得可变活动事实，关闭状态不能保存悬空裁剪。
-        let active = self
-            // 独占借用当前 pass。
-            .active
-            // 把缺失状态映射为统一顺序错误。
-            .as_mut()
-            // 延迟构造错误，避免成功路径分配。
-            .ok_or_else(|| invalid_state("RHI scissor has no active target"))?;
-        // 显式 scissor 必须完整落在当前目标内。
-        if scissor.is_some_and(|value| !value.fits_within(active.extent)) {
-            // 返回统一几何参数错误。
-            return Err(invalid_argument("RHI scissor is invalid or outside target"));
-        }
-        // 只有校验成功后才更新可恢复的状态镜像。
-        active.scissor = scissor;
-        // 返回 scissor 状态更新成功。
-        Ok(())
-    }
-
-    // 返回当前 pass 已验证的 scissor 镜像。
-    pub(crate) fn scissor(&self) -> Option<RhiScissor> {
-        // 关闭状态与完整目标都使用 None，调用者必须在 pass 内使用该方法。
-        self.active.and_then(|active| active.scissor)
     }
 
     // 验证一次局部清理的颜色和目标区域。
@@ -229,7 +198,7 @@ impl RhiPassState {
     pub(crate) fn end(&mut self) -> Result<()> {
         // 没有活动事实时拒绝重复结束。
         self.require_open()?;
-        // 一次清除目标、extent 和 scissor。
+        // 一次清除目标与 extent。
         self.active = None;
         // 返回生命周期转换成功。
         Ok(())
@@ -263,7 +232,8 @@ mod tests {
     use super::RhiPassState;
     // 引入构造 pass 输入与资源身份所需的共享值。
     use crate::native::present::rhi::{
-        LoadAction, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, RhiViewport, TextureHandle,
+        DrawRasterState, LoadAction, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor,
+        RhiViewport, TextureHandle,
     };
 
     // 创建稳定的测试目标身份。
@@ -313,31 +283,43 @@ mod tests {
             .begin(TARGET, RhiExtent::new(20, 10), LoadAction::Load)
             // 测试设置必须成功。
             .expect("pass should begin");
-        // 完整 viewport 必须合法。
-        state
-            // 验证与目标完全一致的物理范围。
-            .validate_viewport(RhiViewport {
+        // 完整 viewport 和裁剪必须组成当前 Draw 的单一栅格状态。
+        let raster = DrawRasterState::new(
+            // 使用与目标完全一致的物理范围。
+            RhiViewport {
                 // 使用完整目标宽度。
                 width: 20.0,
                 // 使用完整目标高度。
                 height: 10.0,
-            })
+            },
+            // 当前 Draw 使用完整目标，不额外裁剪。
+            None,
+        );
+        // 完整栅格状态必须合法。
+        state
+            // 验证当前 Draw 自带的完整物理事实。
+            .validate_draw_raster(raster)
             // 共享几何门禁必须接收。
-            .expect("viewport should fit");
+            .expect("raster should fit");
         // 越过目标的 viewport 必须失败。
         assert!(
             state
-                // 验证超出一个像素的范围。
-                .validate_viewport(RhiViewport {
-                    // 宽度越过目标。
-                    width: 21.0,
-                    // 高度保持合法。
-                    height: 10.0,
-                })
+                // 验证 viewport 超出一个像素的 packet 状态。
+                .validate_draw_raster(DrawRasterState::new(
+                    // 创建越过目标的 viewport。
+                    RhiViewport {
+                        // 宽度越过目标。
+                        width: 21.0,
+                        // 高度保持合法。
+                        height: 10.0,
+                    },
+                    // 不追加 scissor 干扰本次边界验证。
+                    None,
+                ))
                 // 要求返回失败。
                 .is_err()
         );
-        // 合法 scissor 必须写入唯一状态镜像。
+        // 创建一个合法的显式 scissor。
         let scissor = RhiScissor {
             // 从第二个像素开始。
             x: 1,
@@ -348,14 +330,12 @@ mod tests {
             // 覆盖五个像素高度。
             height: 5,
         };
-        // 设置共享 scissor。
+        // 带 scissor 的完整 packet 栅格状态必须通过。
         state
-            // 传入显式区域。
-            .set_scissor(Some(scissor))
+            // 把 viewport 与 scissor 作为同一不可拆事实验证。
+            .validate_draw_raster(DrawRasterState::new(raster.viewport(), Some(scissor)))
             // 合法区域必须被接受。
             .expect("scissor should fit");
-        // 状态机必须原样保存左上原点区域。
-        assert_eq!(state.scissor(), Some(scissor));
         // 同一范围也必须通过局部清理门禁。
         state
             // 使用规范透明色验证区域。

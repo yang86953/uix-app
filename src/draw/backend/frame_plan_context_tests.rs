@@ -16,8 +16,6 @@ fn context_execution_modes_share_one_ordered_device_path() {
             "activate",
             "maintain",
             "begin_pass",
-            "viewport",
-            "scissor",
             "update_buffer",
             "update_buffer",
             "draw",
@@ -53,8 +51,6 @@ fn context_execution_modes_share_one_ordered_device_path() {
             "activate",
             "maintain",
             "begin_pass",
-            "viewport",
-            "scissor",
             "update_buffer",
             "update_buffer",
             "draw",
@@ -90,7 +86,9 @@ fn context_execution_modes_share_one_ordered_device_path() {
         unsupported_plan.execute_offscreen_on_device(&mut unsupported_context.device);
     // 不可渲染 texture 必须在进入任何原生命令前失败。
     assert_eq!(
-        unsupported_result.expect_err("unsupported target must fail before activation").code(),
+        unsupported_result
+            .expect_err("unsupported target must fail before activation")
+            .code(),
         Errc::InvalidArgument,
     );
     // 目标解析失败不得触发 activate、maintain 或任何 pass 命令。
@@ -342,7 +340,11 @@ fn indexed_draw_requires_owned_index_upload_and_range() {
     // 范围错误同样属于共享参数契约。
     assert_eq!(range_error.code(), Errc::InvalidArgument);
     // 诊断必须区分索引序列越界与顶点内容越界。
-    assert!(range_error.what().contains("index range exceeds typed upload"));
+    assert!(
+        range_error
+            .what()
+            .contains("index range exceeds typed upload")
+    );
 }
 
 // indexed Draw 选中的每个值都必须落在当前类型化顶点载荷内。
@@ -361,7 +363,11 @@ fn indexed_draw_rejects_vertex_content_overflow() {
     // 内容范围错误使用稳定参数分类。
     assert_eq!(error.code(), Errc::InvalidArgument);
     // 诊断必须指向 indexed Draw 的顶点越界。
-    assert!(error.what().contains("indexed draw vertex exceeds typed upload"));
+    assert!(
+        error
+            .what()
+            .contains("indexed draw vertex exceeds typed upload")
+    );
 }
 
 // 合法索引内容必须且只能在 Device 边界编码，并在 acquire 前完成资源预检。
@@ -387,11 +393,7 @@ fn indexed_upload_executes_and_preflights_before_acquire() {
             "maintain",
             // 只在资源预检完成后开始 pass。
             "begin_pass",
-            // 先交付已冻结的 viewport。
-            "viewport",
-            // 再交付已冻结的 scissor。
-            "scissor",
-            // 第一次更新交付类型化顶点。
+            // 第一次 pass 内命令交付类型化顶点。
             "update_buffer",
             // 第二次更新交付类型化索引。
             "update_buffer",

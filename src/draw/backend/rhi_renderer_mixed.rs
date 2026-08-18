@@ -3,8 +3,9 @@
 use crate::core::error::Result;
 // 引入薄 RHI 的 command、resource 和 target 类型。
 use crate::native::present::rhi::{
-    DrawBufferBindings, DrawPacket, DrawRange, DrawSamplingBinding, GraphicsDevice, LoadAction,
-    RhiExtent, RhiTextureUpload, RhiViewport, SampledTextureBinding, TextureDesc, TextureFormat,
+    DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState, DrawSamplingBinding,
+    GraphicsDevice, LoadAction, RhiExtent, RhiTextureUpload, RhiViewport, SampledTextureBinding,
+    TextureDesc, TextureFormat,
 };
 // 引入父 renderer 的帧计划和已完成 lowering 的 payload。
 use super::{
@@ -424,7 +425,6 @@ impl RhiRenderer {
         // 创建一个显式 Surface 或 Offscreen pass。
         let mut pass = RenderPassPlan::new(target, load);
         // 所有操作共享同一物理 viewport。
-        pass.push(FramePlanCommand::SetViewport(viewport));
         // 只为本 pass 实际需要的 Gradient 建立一次静态顶点事实。
         if let Some((_, vertex_buffer, _)) = gradient_resources {
             // 先行上传共享类型化 unit quad。
@@ -477,7 +477,6 @@ impl RhiRenderer {
                         "RhiRenderer mixed solid resources are missing",
                     )?;
                     // 选择当前 mesh 的裁剪。
-                    pass.push(FramePlanCommand::SetScissor(mesh.scissor));
                     // 上传当前 mesh 的类型化 position-float2 顶点。
                     pass.push(FramePlanCommand::UploadVertex {
                         buffer: vertex_buffer,
@@ -497,6 +496,8 @@ impl RhiRenderer {
                         DrawBufferBindings::new(vertex_buffer, uniform_buffer),
                         // Mesh draw 不使用采样资源。
                         DrawSamplingBinding::none(),
+                        // Draw 自有当前 mesh 的 viewport 与 scissor 栅格事实。
+                        DrawRasterState::new(viewport, mesh.scissor),
                         // Mesh 使用封闭的非索引顶点范围。
                         DrawRange::vertices((mesh.vertices.len() / 2) as u32),
                     )));
@@ -523,7 +524,6 @@ impl RhiRenderer {
                         src_pipeline
                     };
                     // 选择当前图片的裁剪。
-                    pass.push(FramePlanCommand::SetScissor(quad.scissor));
                     // 上传类型化 float8 quad 顶点。
                     pass.push(FramePlanCommand::UploadVertex {
                         buffer: vertex_buffer,
@@ -544,6 +544,8 @@ impl RhiRenderer {
                         DrawSamplingBinding::sampled(SampledTextureBinding::for_pipeline(
                             texture, sampler, pipeline,
                         )),
+                        // Draw 自有当前 textured quad 的 viewport 与 scissor 栅格事实。
+                        DrawRasterState::new(viewport, quad.scissor),
                         // 图片 quad 使用封闭的六顶点非索引范围。
                         DrawRange::vertices(6),
                     )));
@@ -565,7 +567,6 @@ impl RhiRenderer {
                         src_pipeline
                     };
                     // 选择当前 Picture quad 的裁剪。
-                    pass.push(FramePlanCommand::SetScissor(quad.scissor));
                     // 上传类型化 float8 quad 顶点。
                     pass.push(FramePlanCommand::UploadVertex {
                         buffer: vertex_buffer,
@@ -588,6 +589,8 @@ impl RhiRenderer {
                             sampler,
                             pipeline,
                         )),
+                        // Draw 自有当前 sampled quad 的 viewport 与 scissor 栅格事实。
+                        DrawRasterState::new(viewport, quad.scissor),
                         // Sampled quad 使用封闭的六顶点非索引范围。
                         DrawRange::vertices(6),
                     )));
@@ -605,7 +608,6 @@ impl RhiRenderer {
                         "RhiRenderer mixed coverage source is missing",
                     )?;
                     // 选择当前 glyph 的裁剪。
-                    pass.push(FramePlanCommand::SetScissor(quad.scissor));
                     // 上传类型化 coverage quad 顶点。
                     pass.push(FramePlanCommand::UploadVertex {
                         buffer: vertex_buffer,
@@ -628,6 +630,8 @@ impl RhiRenderer {
                         DrawSamplingBinding::sampled(SampledTextureBinding::for_pipeline(
                             texture, sampler, pipeline,
                         )),
+                        // Draw 自有当前 coverage quad 的 viewport 与 scissor 栅格事实。
+                        DrawRasterState::new(viewport, quad.scissor),
                         // Coverage quad 使用封闭的六顶点非索引范围。
                         DrawRange::vertices(6),
                     )));
@@ -643,7 +647,6 @@ impl RhiRenderer {
                     let texture =
                         required(textures[index], "RhiRenderer mixed MSDF source is missing")?;
                     // 选择当前 MSDF 字形的裁剪。
-                    pass.push(FramePlanCommand::SetScissor(quad.scissor));
                     // 上传支持旋转和剪切以及 atlas UV 的类型化 MSDF quad 顶点。
                     pass.push(FramePlanCommand::UploadVertex {
                         buffer: vertex_buffer,
@@ -670,6 +673,8 @@ impl RhiRenderer {
                         DrawSamplingBinding::sampled(SampledTextureBinding::for_pipeline(
                             texture, sampler, pipeline,
                         )),
+                        // Draw 自有当前 MSDF quad 的 viewport 与 scissor 栅格事实。
+                        DrawRasterState::new(viewport, quad.scissor),
                         // MSDF quad 使用封闭的六顶点非索引范围。
                         DrawRange::vertices(6),
                     )));
@@ -682,7 +687,6 @@ impl RhiRenderer {
                         "RhiRenderer mixed gradient resources are missing",
                     )?;
                     // 选择当前渐变的裁剪。
-                    pass.push(FramePlanCommand::SetScissor(gradient.scissor));
                     // 上传类型化仿射 GradientConstants。
                     pass.push(FramePlanCommand::UploadUniform {
                         buffer: uniform_buffer,
@@ -697,6 +701,8 @@ impl RhiRenderer {
                         DrawBufferBindings::new(vertex_buffer, uniform_buffer),
                         // Gradient draw 不使用采样资源。
                         DrawSamplingBinding::none(),
+                        // Draw 自有当前 gradient 的 viewport 与 scissor 栅格事实。
+                        DrawRasterState::new(viewport, gradient.scissor),
                         // Gradient quad 使用封闭的六顶点非索引范围。
                         DrawRange::vertices(6),
                     )));
@@ -733,7 +739,6 @@ impl RhiRenderer {
                         "RhiRenderer mixed sector resources are missing",
                     )?;
                     // 选择当前扇形的裁剪。
-                    pass.push(FramePlanCommand::SetScissor(sector.scissor));
                     // 上传类型化 SectorConstants。
                     pass.push(FramePlanCommand::UploadUniform {
                         buffer: uniform_buffer,
@@ -751,6 +756,8 @@ impl RhiRenderer {
                         DrawBufferBindings::new(vertex_buffer, uniform_buffer),
                         // Sector draw 不使用采样资源。
                         DrawSamplingBinding::none(),
+                        // Draw 自有当前 sector 的 viewport 与 scissor 栅格事实。
+                        DrawRasterState::new(viewport, sector.scissor),
                         // Sector quad 使用封闭的六顶点非索引范围。
                         DrawRange::vertices(6),
                     )));

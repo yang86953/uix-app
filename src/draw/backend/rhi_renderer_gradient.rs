@@ -4,7 +4,7 @@
 use crate::core::error::Result;
 // 引入薄 RHI 的设备、命令和 pass 类型。
 use crate::native::present::rhi::{
-    DrawBufferBindings, DrawPacket, DrawRange, DrawSamplingBinding, LoadAction,
+    DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState, DrawSamplingBinding, LoadAction,
     RhiGradientRasterParams, RhiViewport,
 };
 
@@ -117,8 +117,6 @@ impl RhiRenderer {
         let target = frame.render_target();
         // 创建 surface 或离屏 pass，并保留调用方的 load/clear 语义。
         let mut pass = RenderPassPlan::new(target, load);
-        // 所有渐变共享同一个物理 viewport。
-        pass.push(FramePlanCommand::SetViewport(viewport));
         // 在第一个 Gradient draw 前建立静态单位 quad 的类型化内容事实。
         pass.push(FramePlanCommand::UploadVertex {
             // 绑定本次 Gradient 资源创建的静态 vertex buffer。
@@ -128,8 +126,6 @@ impl RhiRenderer {
         });
         // 每个渐变只更新常量并保留 painter order。
         for gradient in gradients {
-            // 在 draw 前设置当前渐变的裁剪。
-            pass.push(FramePlanCommand::SetScissor(gradient.scissor));
             // 上传类型化 GradientConstants，保持 D3D11 16-byte 对齐布局。
             pass.push(FramePlanCommand::UploadUniform {
                 buffer: uniform_buffer,
@@ -141,6 +137,8 @@ impl RhiRenderer {
                 DrawBufferBindings::new(vertex_buffer, uniform_buffer),
                 // Gradient quad 不使用采样纹理。
                 DrawSamplingBinding::none(),
+                // Gradient quad 固化当前 viewport 与对应 scissor。
+                DrawRasterState::new(viewport, gradient.scissor),
                 // 单位 quad 使用封闭的六顶点非索引范围。
                 DrawRange::vertices(6),
             )));

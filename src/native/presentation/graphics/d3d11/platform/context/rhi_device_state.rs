@@ -1,16 +1,18 @@
-//! D3D11 薄 RHI 的 viewport 与 scissor 状态编码。
+//! D3D11 薄 RHI 的 DrawPacket 动态栅格状态编码。
 
 #![allow(dead_code)]
 
 // 复用父模块的 D3D11 context、RHI 状态和错误辅助。
 use super::*;
 
-// 为 D3D11 context 提供 pass 状态设置的 inherent helper。
+// 为 D3D11 context 提供当前 Draw 原子栅格状态的 inherent helper。
 impl D3d11Context {
-    // 设置当前 pass viewport。
-    pub(super) fn rhi_set_viewport(&mut self, viewport: RhiViewport) -> Result<()> {
-        // 由共享状态机验证 pass 顺序和物理目标边界。
-        self.rhi_device.pass.validate_viewport(viewport)?;
+    // 一次编码当前 DrawPacket 独占的 viewport 与 scissor。
+    pub(super) fn rhi_apply_draw_raster(&mut self, raster: DrawRasterState) -> Result<()> {
+        // 由共享状态机统一验证 pass、目标和完整栅格关系。
+        self.rhi_device.pass.validate_draw_raster(raster)?;
+        // 只读投影当前 Draw 的 viewport。
+        let viewport = raster.viewport();
         // SAFETY: viewport 是本函数验证过的值，context 属于 owner thread。
         unsafe {
             self.context.RSSetViewports(Some(&[D3D11_VIEWPORT {
@@ -22,16 +24,10 @@ impl D3d11Context {
                 MaxDepth: 1.0,
             }]));
         }
-        // 返回设置成功。
-        Ok(())
-    }
-
-    // 设置当前 pass scissor。
-    pub(super) fn rhi_set_scissor(&mut self, scissor: Option<RhiScissor>) -> Result<()> {
+        // 只读投影当前 Draw 明确选择的裁剪状态。
+        let scissor = raster.scissor();
         // 读取共享状态机冻结的物理目标范围。
         let extent = self.rhi_device.pass.extent()?;
-        // 先由共享状态机统一验证并记录左上原点区域。
-        self.rhi_device.pass.set_scissor(scissor)?;
         // 仅对显式 scissor 编码有限原生矩形。
         if let Some(scissor) = scissor {
             // 读取共享几何 Component 的唯一 checked 矩形投影。
@@ -67,7 +63,7 @@ impl D3d11Context {
                 }]));
             }
         }
-        // 返回设置成功。
+        // 返回完整栅格状态编码成功。
         Ok(())
     }
 }

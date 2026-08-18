@@ -2,8 +2,9 @@
 
 // 引入 RHI 计划执行所需的资源描述与句柄。
 use crate::native::present::rhi::{
-    BufferDesc, DrawBufferBindings, DrawPacket, DrawRange, DrawSamplingBinding, GraphicsDevice,
-    LoadAction, PipelineBinding, PipelineDesc, PipelineKind, RhiShadowRasterParams, RhiViewport,
+    BufferDesc, DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState, DrawSamplingBinding,
+    GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc, PipelineKind, RhiShadowRasterParams,
+    RhiViewport,
 };
 
 // 复用 renderer 主模块的计划类型和 shape 单位 quad 资源。
@@ -155,7 +156,6 @@ impl RhiRenderer {
         uniform_buffer: BufferHandle,
     ) {
         // 选择当前阴影的物理裁剪。
-        pass.push(FramePlanCommand::SetScissor(shadow.scissor));
         // 上传由共享层完整类型化且保持 16-byte 对齐的 ShadowConstants。
         pass.push(FramePlanCommand::UploadUniform {
             // 选择 Shadow 自己的 uniform 资源。
@@ -171,6 +171,8 @@ impl RhiRenderer {
             DrawBufferBindings::new(vertex_buffer, uniform_buffer),
             // Shadow quad 不使用采样纹理。
             DrawSamplingBinding::none(),
+            // Draw 自有当前 shadow 的 viewport 与 scissor 栅格事实。
+            DrawRasterState::new(viewport, shadow.scissor),
             // 单位 quad 使用封闭的六顶点非索引范围。
             DrawRange::vertices(6),
         )));
@@ -235,7 +237,6 @@ impl RhiRenderer {
         // 创建 Surface 或 Offscreen pass，并保留调用方的 load/clear 语义。
         let mut pass = RenderPassPlan::new(target, load);
         // 所有阴影共享同一个物理 viewport。
-        pass.push(FramePlanCommand::SetViewport(viewport));
         // 在第一个 Shadow draw 前建立静态单位 quad 的类型化内容事实。
         pass.push(FramePlanCommand::UploadVertex {
             // 绑定本次 Shadow 资源创建的静态 vertex buffer。

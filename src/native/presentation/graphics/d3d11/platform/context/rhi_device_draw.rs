@@ -114,6 +114,8 @@ impl D3d11Context {
         let first_vertex = range.first_vertex();
         // 索引变体只在该投影中返回首索引。
         let first_index = range.first_index();
+        // 每次 Draw 都必须从自身 packet 覆盖完整动态栅格状态。
+        self.rhi_apply_draw_raster(packet.raster())?;
         // 在 shader helper 分派前统一绑定共享二维光栅与深度模板状态。
         self.pipeline.apply_rhi_fixed_state(
             // 使用当前 owner-thread immediate context。

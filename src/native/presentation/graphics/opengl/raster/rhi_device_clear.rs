@@ -28,7 +28,7 @@ pub(super) unsafe fn apply_color_clear_contract(
     }
 }
 
-// 为 OpenGL ES RHI 提供保持 scissor 状态的局部清理原语。
+// 为 OpenGL ES RHI 提供不依赖栅格历史的局部清理原语。
 impl OpenGlRhiDevice {
     // 在当前 pass 的目标上清理一个左上原点物理矩形。
     // 供同一 raster owner 的薄 RHI bridge 调用局部清理。
@@ -40,10 +40,8 @@ impl OpenGlRhiDevice {
     ) -> Result<()> {
         // 由共享状态机统一验证 pass、预乘颜色和左上原点区域。
         self.pass.validate_clear(color, scissor)?;
-        // 保存调用方的 scissor，保证局部清理不破坏后续 draw 状态。
-        let previous = self.pass.scissor();
-        // 暂时把原生 scissor 切换到待清理区域。
-        self.set_scissor(gl, Some(scissor))?;
+        // 当前命令只编码自身显式区域，不读取或保存上一条 Draw 的状态。
+        self.apply_scissor(gl, Some(scissor))?;
         // SAFETY：共享清理契约只包含可由当前 GL context 机械编码的封闭状态。
         unsafe { apply_color_clear_contract(gl, UIX_COLOR_CLEAR_CONTRACT) };
         // 发出透明或指定 premultiplied-alpha 颜色的矩形清理。
@@ -56,8 +54,7 @@ impl OpenGlRhiDevice {
             gl.clear_color(red, green, blue, alpha);
             gl.clear(glow::COLOR_BUFFER_BIT);
         }
-        // 恢复调用方原先的 scissor 状态。
-        self.set_scissor(gl, previous)?;
+        // 后续 Draw 会从自身 DrawRasterState 重新覆盖全部动态栅格状态。
         // 返回局部清理成功。
         Ok(())
     }

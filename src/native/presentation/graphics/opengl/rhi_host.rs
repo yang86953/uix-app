@@ -11,8 +11,8 @@ use crate::native::present::rhi::{
     GraphicsSurface, GraphicsSurfaceCapabilities, LoadAction, PipelineBinding, PipelineDesc,
     RenderTargetHandle, RhiBufferUpload, RhiBufferUploadPreflight, RhiColor, RhiExtent,
     RhiPresentTransaction, RhiScissor, RhiSurfaceReadback, RhiSurfaceResizeTransaction,
-    RhiTextureUpload, RhiViewport, SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceFrame,
-    SurfaceToken, TextureCopy, TextureDesc, TextureHandle, TextureMove,
+    RhiTextureUpload, SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceFrame, SurfaceToken,
+    TextureCopy, TextureDesc, TextureHandle, TextureMove,
 };
 // 引入 OpenGL surface test_present 的共享结果类型。
 use crate::native::present::PresentTestResult;
@@ -191,20 +191,6 @@ where
         // 在打开 native pass 前先拒绝已关闭 owner。
         self.rhi_ensure_active()?;
         self.rhi_pipeline_mut().rhi_begin_render_pass(target, load)
-    }
-
-    // 设置 viewport。
-    fn set_viewport(&mut self, viewport: RhiViewport) -> Result<()> {
-        // 在写入 native viewport 前先拒绝已关闭 owner。
-        self.rhi_ensure_active()?;
-        self.rhi_pipeline_mut().rhi_set_viewport(viewport)
-    }
-
-    // 设置 scissor。
-    fn set_scissor(&mut self, scissor: Option<RhiScissor>) -> Result<()> {
-        // 在写入 native scissor 前先拒绝已关闭 owner。
-        self.rhi_ensure_active()?;
-        self.rhi_pipeline_mut().rhi_set_scissor(scissor)
     }
 
     // 在当前 OpenGL pass 内清理一个物理矩形。

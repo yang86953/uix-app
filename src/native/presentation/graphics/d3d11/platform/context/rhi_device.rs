@@ -11,14 +11,14 @@
 use crate::core::error::{Errc, Error, Result};
 // 引入薄 RHI 的资源、命令和能力类型。
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
-    LoadAction, PipelineBinding, PipelineDesc, RenderTargetHandle, RhiBufferResource,
-    RhiBufferResourceTable, RhiBufferUpload, RhiBufferUploadPreflight, RhiColor,
+    BufferDesc, BufferHandle, BufferUsage, DrawPacket, DrawRasterState, GraphicsDevice,
+    GraphicsDeviceCapabilities, LoadAction, PipelineBinding, PipelineDesc, RenderTargetHandle,
+    RhiBufferResource, RhiBufferResourceTable, RhiBufferUpload, RhiBufferUploadPreflight, RhiColor,
     RhiColorClearContract, RhiExtent, RhiPassState, RhiPipelineResourceTable, RhiResourceTable,
     RhiScissor, RhiSubmissionSequence, RhiTextureResource, RhiTextureResourceTable,
-    RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerAddressMode, SamplerDesc,
-    SamplerFilter, SamplerHandle, SamplerMipMode, TextureCopy, TextureDesc, TextureFormat,
-    TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
+    RhiTextureUpload, SampledTextureBinding, SamplerAddressMode, SamplerDesc, SamplerFilter,
+    SamplerHandle, SamplerMipMode, TextureCopy, TextureDesc, TextureFormat, TextureHandle,
+    TextureMove, UIX_COLOR_CLEAR_CONTRACT,
 };
 // 引入 D3D11 的基础资源和绑定类型。
 use ::windows::Win32::Graphics::Direct3D11::{
@@ -111,7 +111,7 @@ pub(super) struct D3d11RhiDevice {
     pipelines: RhiPipelineResourceTable<()>,
     // 保存按不透明 id 索引的 sampler 资源。
     samplers: RhiResourceTable<SamplerHandle, D3d11RhiSampler>,
-    // 保存两个 Adapter 共用的 pass 生命周期、目标、几何与采样绑定事实。
+    // 保存两个 Adapter 共用的 pass 生命周期、目标与物理范围事实。
     pass: RhiPassState,
     // 冻结构造期实际可用的 D3D11.1 局部清理接口和能力事实。
     clear_context: Option<
@@ -576,22 +576,6 @@ impl GraphicsDevice for D3d11Context {
         self.rhi_device.active_target = Some(rtv);
         // 返回 pass 开始成功。
         Ok(())
-    }
-
-    // 设置当前 pass viewport。
-    fn set_viewport(&mut self, viewport: RhiViewport) -> Result<()> {
-        // 关闭后的 owner 必须先于状态 helper 拒绝 viewport 设置。
-        self.ensure_active()?;
-        // 把状态编码委托给按文件拆分的 RHI state helper。
-        self.rhi_set_viewport(viewport)
-    }
-
-    // 设置当前 pass scissor。
-    fn set_scissor(&mut self, scissor: Option<RhiScissor>) -> Result<()> {
-        // 关闭后的 owner 必须先于状态 helper 拒绝 scissor 设置。
-        self.ensure_active()?;
-        // 把状态编码委托给按文件拆分的 RHI state helper。
-        self.rhi_set_scissor(scissor)
     }
 
     // 在当前 D3D11 render pass 内清理一个物理矩形。

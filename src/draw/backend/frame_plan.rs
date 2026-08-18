@@ -10,7 +10,7 @@ use crate::core::error::{Errc, Error, Result};
 use crate::core::PresentDamage;
 // 引入 platform 私有的薄 RHI 原语。
 use crate::native::present::rhi::{
-    DrawPacket, GraphicsContextRhi, GraphicsDevice, LoadAction, RhiColor, RhiScissor, RhiViewport,
+    DrawPacket, GraphicsContextRhi, GraphicsDevice, LoadAction, RhiColor, RhiScissor,
     SubmissionHandle, SurfaceToken, TextureCopy, TextureHandle, TextureMove,
 };
 // 将不触发 surface present 的离屏执行边界拆到独立文件。
@@ -36,10 +36,6 @@ pub(crate) enum RenderTargetRef {
 // 描述 pass 内已经排序的低层命令。
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum FramePlanCommand {
-    // 设置 pass 的 viewport。
-    SetViewport(RhiViewport),
-    // 设置 pass 的 scissor。
-    SetScissor(Option<RhiScissor>),
     // 在 pass 内按明确物理矩形清理 premultiplied-alpha 颜色。
     ClearRect {
         // 保存局部清理颜色。
@@ -274,28 +270,6 @@ impl FramePlan {
                             )?;
                             // 句柄绑定、前序上传布局和采样角色必须匹配共享 pipeline 契约。
                             validation::validate_draw_uploads(pass, command_index, *packet)?;
-                        }
-                        // 验证 viewport 不携带非有限或零尺寸。
-                        if let FramePlanCommand::SetViewport(viewport) = command {
-                            // 无效 viewport 会让不同 adapter 产生不同裁剪结果。
-                            if !viewport.is_valid() {
-                                // 返回稳定的参数错误。
-                                return Err(Error::new(
-                                    Errc::InvalidArgument,
-                                    "FramePlan viewport must be finite and positive",
-                                ));
-                            }
-                        }
-                        // 验证显式 scissor 的坐标和尺寸。
-                        if let FramePlanCommand::SetScissor(Some(scissor)) = command {
-                            // 无效 scissor 不能交给原生 rasterizer 猜测。
-                            if !scissor.is_valid() {
-                                // 返回稳定的参数错误。
-                                return Err(Error::new(
-                                    Errc::InvalidArgument,
-                                    "FramePlan scissor must have a non-negative positive extent",
-                                ));
-                            }
                         }
                         // 验证局部清理的颜色和物理矩形。
                         if let FramePlanCommand::ClearRect { color, scissor } = command {
@@ -582,22 +556,6 @@ mod tests {
             Ok(())
         }
 
-        // 记录 viewport 设置。
-        fn set_viewport(&mut self, _viewport: RhiViewport) -> Result<()> {
-            // 记录调用事件。
-            self.log.push_back("viewport");
-            // 返回成功。
-            Ok(())
-        }
-
-        // 记录 scissor 设置。
-        fn set_scissor(&mut self, _scissor: Option<RhiScissor>) -> Result<()> {
-            // 记录调用事件。
-            self.log.push_back("scissor");
-            // 返回成功。
-            Ok(())
-        }
-
         // 记录局部清理，验证 retained damage 不会被 adapter 静默丢弃。
         fn clear_rect(&mut self, _color: RhiColor, _scissor: RhiScissor) -> Result<()> {
             // 记录调用事件。
@@ -739,18 +697,6 @@ mod tests {
             self.device.begin_render_pass(target, load)
         }
 
-        // 把 viewport 设置委托给内嵌记录 device。
-        fn set_viewport(&mut self, viewport: RhiViewport) -> Result<()> {
-            // 复用唯一测试记录路径。
-            self.device.set_viewport(viewport)
-        }
-
-        // 把 scissor 设置委托给内嵌记录 device。
-        fn set_scissor(&mut self, scissor: Option<RhiScissor>) -> Result<()> {
-            // 复用唯一测试记录路径。
-            self.device.set_scissor(scissor)
-        }
-
         // 把局部清理委托给内嵌记录 device。
         fn clear_rect(&mut self, color: RhiColor, scissor: RhiScissor) -> Result<()> {
             // 复用唯一测试记录路径。
@@ -870,4 +816,6 @@ mod tests {
     include!("frame_plan_context_tests.rs");
     // 将资源移动与 submit 失败边界拆到独立测试载荷，保持计划核心文件短小。
     include!("frame_plan_test_tail.rs");
+    // 将 DrawPacket 动态栅格拒绝边界拆到独立测试载荷，保持各文件低于上限。
+    include!("frame_plan_raster_tests.rs");
 }

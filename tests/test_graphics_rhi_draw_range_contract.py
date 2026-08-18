@@ -15,6 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 DrawPacket 与 DrawRange 契约。
 SHARED = ROOT / "src/native/present/rhi/draw_packet.rs"
+# 定位 DrawPacket 独占的动态栅格契约。
+RASTER = ROOT / "src/native/present/rhi/draw_raster.rs"
 # 定位 FramePlan 绘制命令门禁。
 FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
 # 定位 OpenGL 绘制 Adapter。
@@ -65,6 +67,9 @@ class GraphicsRhiDrawRangeContractTests(unittest.TestCase):
         # DrawPacket 必须原子拥有采样选择。
         self.assertIn("sampling: DrawSamplingBinding", shared)
         self.assertIn("pub(crate) const fn sampling(self)", shared)
+        # DrawPacket 必须原子拥有动态栅格状态。
+        self.assertIn("raster: DrawRasterState", shared)
+        self.assertIn("pub(crate) const fn raster(self)", shared)
         # DrawBufferBindings 必须把顶点与 uniform 绑定封装为不可拆的私有值。
         self.assertIn("pub(crate) struct DrawBufferBindings", shared)
         # 两个 buffer 绑定字段必须保持非可选且对外只读。
@@ -83,7 +88,7 @@ class GraphicsRhiDrawRangeContractTests(unittest.TestCase):
         self.assertIn("buffers: DrawBufferBindings", shared)
         # DrawPacket 必须私有保存互斥绘制范围。
         self.assertIn("range: DrawRange", shared)
-        # DrawPacket 必须由完整三参数构造器一次冻结全部事实。
+        # DrawPacket 必须由完整构造器一次冻结全部五项事实。
         self.assertIn("pub(crate) const fn new(\n        // 接收不可拆分的 pipeline 身份与共享语义。", shared)
         # pipeline 身份只能通过只读投影消费。
         self.assertIn("pub(crate) const fn pipeline(self) -> PipelineBinding", shared)
@@ -91,8 +96,8 @@ class GraphicsRhiDrawRangeContractTests(unittest.TestCase):
         self.assertIn("pub(crate) const fn buffers(self) -> DrawBufferBindings", shared)
         # 绘制范围只能通过只读投影消费。
         self.assertIn("pub(crate) const fn range(self) -> DrawRange", shared)
-        # 三项 packet 字段不得重新暴露 crate 内写权限。
-        for field in ("pipeline: PipelineBinding", "buffers: DrawBufferBindings", "range: DrawRange"):
+        # 四项核心 packet 字段不得重新暴露 crate 内写权限。
+        for field in ("pipeline: PipelineBinding", "buffers: DrawBufferBindings", "raster: DrawRasterState", "range: DrawRange"):
             # 每项公开字段写法都必须从 DrawPacket 消失。
             self.assertNotIn(f"pub(crate) {field}", shared)
         # 半成品 triangles 构造器和可选 uniform 必须永久退出契约。
@@ -132,6 +137,8 @@ class GraphicsRhiDrawRangeContractTests(unittest.TestCase):
         self.assertEqual(producers.count("DrawBufferBindings::new("), 19)
         # 全部生产 packet 必须显式选择采样绑定。
         self.assertEqual(producers.count("DrawSamplingBinding::"), 19)
+        # 全部生产 packet 必须显式冻结 viewport 与 scissor。
+        self.assertEqual(producers.count("DrawRasterState::new("), 19)
         # 生产端不得退回结构字面量或可选 uniform 绑定。
         self.assertNotIn("DrawPacket {", producers)
         self.assertNotIn("uniform_buffer: Some", producers)
@@ -139,6 +146,27 @@ class GraphicsRhiDrawRangeContractTests(unittest.TestCase):
         self.assertNotIn("index_buffer:", producers)
         # 生产 packet 不得再回填独立基顶点字段。
         self.assertNotIn("base_vertex:", producers)
+
+    # DrawRasterState 必须在共享层组合两项动态状态并由 Adapter 逐 Draw 消费。
+    def test_draw_packet_owns_cross_adapter_raster_state(self) -> None:
+        # 读取共享 DrawPacket 组合契约。
+        shared = SHARED.read_text(encoding="utf-8")
+        # 读取独立动态栅格值对象。
+        raster = RASTER.read_text(encoding="utf-8")
+        # 读取薄 Device 公共边界。
+        device = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        # 读取两个 Adapter 的最终 Draw 编码入口。
+        adapters = OPENGL.read_text(encoding="utf-8") + D3D11_DRAW.read_text(encoding="utf-8")
+        # 共享值对象必须私有保存 viewport 与显式 scissor。
+        self.assertIn("viewport: RhiViewport", raster)
+        self.assertIn("scissor: Option<RhiScissor>", raster)
+        # DrawPacket 的共同资源门禁必须拒绝非法栅格状态。
+        self.assertIn("if !self.has_valid_raster()", shared)
+        # 薄 Device 不得再暴露可与 DrawPacket 分离的动态状态入口。
+        self.assertNotIn("fn set_viewport", device)
+        self.assertNotIn("fn set_scissor", device)
+        # 两个 Adapter 都必须从当前 packet 取得完整栅格事实。
+        self.assertEqual(adapters.count("packet.raster()"), 2)
 
     # OpenGL 与 D3D11 必须只投影共享范围且不再分歧处理基顶点。
     def test_adapters_project_the_same_range_contract(self) -> None:

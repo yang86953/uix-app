@@ -2,9 +2,9 @@
 
 // 引入 RHI 计划执行所需的资源描述与句柄。
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawSamplingBinding,
-    GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc, PipelineKind, RhiShapeRasterParams,
-    RhiViewport,
+    BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState,
+    DrawSamplingBinding, GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc, PipelineKind,
+    RhiShapeRasterParams, RhiViewport,
 };
 
 // 复用 renderer 主模块的计划类型和 shape payload。
@@ -99,7 +99,6 @@ impl RhiRenderer {
         uniform_buffer: BufferHandle,
     ) {
         // 选择当前矩形的物理裁剪。
-        pass.push(FramePlanCommand::SetScissor(rect.scissor));
         // 上传由共享层完整类型化且保持 16-byte 对齐的 ShapeConstants。
         pass.push(FramePlanCommand::UploadUniform {
             buffer: uniform_buffer,
@@ -113,6 +112,8 @@ impl RhiRenderer {
             DrawBufferBindings::new(vertex_buffer, uniform_buffer),
             // Shape draw 不使用采样资源。
             DrawSamplingBinding::none(),
+            // Draw 自有当前 shape 的 viewport 与 scissor 栅格事实。
+            DrawRasterState::new(viewport, rect.scissor),
             // 单位 quad 使用封闭的六顶点非索引范围。
             DrawRange::vertices(6),
         )));
@@ -179,7 +180,6 @@ impl RhiRenderer {
         // 创建 Surface 或 Offscreen pass，并保留调用方的 load/clear 语义。
         let mut pass = RenderPassPlan::new(target, load);
         // 所有 shape 共享同一个物理 viewport。
-        pass.push(FramePlanCommand::SetViewport(viewport));
         // 在第一个 Shape draw 前建立静态单位 quad 的类型化内容事实。
         pass.push(FramePlanCommand::UploadVertex {
             // 绑定本次 Shape 资源创建的静态 vertex buffer。
@@ -190,7 +190,6 @@ impl RhiRenderer {
         // 每个矩形只更新常量并保留 painter order。
         for rect in rects {
             // 在 draw 前设置当前矩形的裁剪。
-            pass.push(FramePlanCommand::SetScissor(rect.scissor));
             // 上传共享类型化 ShapeConstants，保持两个 adapter 使用同一绘制边界。
             pass.push(FramePlanCommand::UploadUniform {
                 buffer: uniform_buffer,
@@ -204,6 +203,8 @@ impl RhiRenderer {
                 DrawBufferBindings::new(vertex_buffer, uniform_buffer),
                 // Shape draw 不使用采样资源。
                 DrawSamplingBinding::none(),
+                // Draw 自有当前 shape 的 viewport 与 scissor 栅格事实。
+                DrawRasterState::new(viewport, rect.scissor),
                 // 单位 quad 使用封闭的六顶点非索引范围。
                 DrawRange::vertices(6),
             )));

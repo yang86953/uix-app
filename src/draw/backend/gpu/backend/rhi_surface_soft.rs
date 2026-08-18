@@ -3,9 +3,7 @@
 // 引入统一错误和透明清理颜色。
 use crate::core::Error;
 // 引入 retained target 的 FramePlan 类型。
-use crate::draw::backend::frame_plan::{
-    FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef,
-};
+use crate::draw::backend::frame_plan::{FramePlan, RenderPassPlan, RenderTargetRef};
 // 引入通用图片 quad 载荷、RHI renderer 与封闭帧角色。
 use crate::draw::backend::rhi_renderer::{RhiRenderer, RhiRendererFrame, RhiTexturedQuad};
 // 引入薄 RHI 的 Device、load、target 与 viewport 类型。
@@ -27,16 +25,13 @@ fn supports_soft_upload(scale_x: f32, scale_y: f32) -> bool {
 // 为尚无可见 soft 像素的新 retained target 执行透明初始化 pass。
 pub(super) fn clear_empty_soft_target(
     device: &mut dyn GraphicsDevice,
-    viewport: RhiViewport,
     target: TextureHandle,
 ) -> Result<(), Error> {
     // 使用 Clear load action 使没有可见 tile 的首帧仍拥有确定像素。
-    let mut pass = RenderPassPlan::new(
+    let pass = RenderPassPlan::new(
         RenderTargetRef::Texture(target),
         LoadAction::Clear(RhiColor::transparent()),
     );
-    // 非空 viewport 命令满足 FramePlan pass 契约并固定 adapter 状态。
-    pass.push(FramePlanCommand::SetViewport(viewport));
     // retained texture 初始化只属于 device，不依赖 swapchain generation。
     let mut plan = FramePlan::offscreen();
     // 追加只写 retained texture 的清理 pass。
@@ -70,7 +65,7 @@ pub(super) fn try_upload_rhi_canvas_soft(
     // 没有可见像素时只在首个 Clear pass 执行透明初始化。
     if segments.is_empty() {
         if matches!(load, LoadAction::Clear(_)) {
-            clear_empty_soft_target(device, viewport, target)?;
+            clear_empty_soft_target(device, target)?;
         }
         // 没有可上传像素时不制造临时纹理资源。
         canvas.last_soft_upload_bytes = 0;

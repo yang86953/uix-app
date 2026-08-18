@@ -29,15 +29,6 @@ fn test_plan_for_target(mut plan: FramePlan, target: RenderTargetRef) -> FramePl
         // 使用确定的预乘透明黑清理初始内容。
         LoadAction::Clear(RhiColor::from_premultiplied_rgba([0.0, 0.0, 0.0, 1.0])),
     );
-    // 追加 viewport 设置。
-    pass.push(FramePlanCommand::SetViewport(RhiViewport {
-        // 固定测试物理宽度。
-        width: 64.0,
-        // 固定测试物理高度。
-        height: 64.0,
-    }));
-    // 追加 scissor 设置。
-    pass.push(FramePlanCommand::SetScissor(None));
     // 追加一个完整类型化顶点上传，覆盖真实 renderer 的 vertex 顺序。
     pass.push(FramePlanCommand::UploadVertex {
         // 使用稳定的不透明顶点 buffer。
@@ -71,6 +62,16 @@ fn test_plan_for_target(mut plan: FramePlan, target: RenderTargetRef) -> FramePl
         DrawBufferBindings::new(BufferHandle::from_raw(3), BufferHandle::from_raw(4)),
         // SolidMesh 不读取纹理，显式选择无采样角色。
         DrawSamplingBinding::none(),
+        // 将动态栅格事实与 Draw 一起冻结。
+        crate::native::present::rhi::DrawRasterState::new(
+            // 使用与目标一致的物理 viewport。
+            RhiViewport {
+                width: 64.0,
+                height: 64.0,
+            },
+            // 明确选择完整 viewport。
+            None,
+        ),
         // 当前载荷包含三个顶点。
         DrawRange::vertices(3),
     );

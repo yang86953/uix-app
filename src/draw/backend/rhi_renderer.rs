@@ -9,10 +9,10 @@ use std::sync::Arc;
 use crate::core::error::{Errc, Error, Result};
 // 引入薄 RHI 的资源、能力和执行类型。
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawSamplingBinding,
-    GraphicsDevice, LoadAction, PipelineDesc, PipelineKind, RhiExtent, RhiScissor,
-    RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc,
-    TextureFormat, TextureHandle,
+    BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState,
+    DrawSamplingBinding, GraphicsDevice, LoadAction, PipelineDesc, PipelineKind, RhiExtent,
+    RhiScissor, RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle,
+    TextureDesc, TextureFormat, TextureHandle,
 };
 
 // 引入当前目录中的有序帧计划类型。
@@ -552,8 +552,6 @@ impl RhiRenderer {
         let target = frame.render_target();
         // 创建 surface pass，并保留调用方的 load/clear 语义。
         let mut pass = RenderPassPlan::new(target, load);
-        // 统一设置物理 viewport。
-        pass.push(FramePlanCommand::SetViewport(viewport));
         // 为每个 mesh 保留 painter order 和独立 scissor。
         for mesh in meshes {
             // 顶点必须是完整的 xy 三角列表。
@@ -569,8 +567,6 @@ impl RhiRenderer {
                     "RhiRenderer solid mesh is not triangle-aligned",
                 ));
             }
-            // 在 draw 前设置当前 mesh 的 clip。
-            pass.push(FramePlanCommand::SetScissor(mesh.scissor));
             // 上传当前 mesh 的类型化 position-float2 顶点。
             pass.push(FramePlanCommand::UploadVertex {
                 buffer: vertex_buffer,
@@ -587,6 +583,8 @@ impl RhiRenderer {
                 DrawBufferBindings::new(vertex_buffer, uniform_buffer),
                 // Solid mesh 不使用采样纹理。
                 DrawSamplingBinding::none(),
+                // Solid mesh 固化当前 viewport 与对应 scissor。
+                DrawRasterState::new(viewport, mesh.scissor),
                 // Mesh 使用封闭的非索引顶点范围。
                 DrawRange::vertices(vertex_count),
             )));
@@ -728,8 +726,6 @@ impl RhiRenderer {
         let target = frame.render_target();
         // 创建 Surface 或 Offscreen pass，并保留调用方的 load/clear 语义。
         let mut pass = RenderPassPlan::new(target, load);
-        // 所有图片共享同一个物理 viewport。
-        pass.push(FramePlanCommand::SetViewport(viewport));
         // 每个 quad 以独立的 texture binding 和 scissor 保留 painter order。
         for (quad, texture) in quads.iter().zip(textures.iter().copied()) {
             // 每个 quad 根据其 blend 事实选择固定 pipeline。
@@ -792,8 +788,6 @@ impl RhiRenderer {
                 quad.rgba[2],
                 quad.rgba[3],
             ];
-            // 在 draw 前设置当前图片的裁剪。
-            pass.push(FramePlanCommand::SetScissor(quad.scissor));
             // 上传当前 quad 的类型化 float8 顶点数据。
             pass.push(FramePlanCommand::UploadVertex {
                 buffer: vertex_buffer,
@@ -814,6 +808,8 @@ impl RhiRenderer {
                     sampler,
                     quad_pipeline,
                 )),
+                // Sampled quad 固化当前 viewport 与对应 scissor。
+                DrawRasterState::new(viewport, quad.scissor),
                 // Sampled quad 使用封闭的六顶点非索引范围。
                 DrawRange::vertices(6),
             )));

@@ -310,10 +310,6 @@ where
     fn execute_command(&mut self, command: &FramePlanCommand) -> Result<()> {
         // 分派当前命令而不引入任何 API 或平台判断。
         match command {
-            // 设置统一的 top-left viewport。
-            FramePlanCommand::SetViewport(viewport) => self.device.set_viewport(*viewport),
-            // 设置或清除统一的 top-left scissor。
-            FramePlanCommand::SetScissor(scissor) => self.device.set_scissor(*scissor),
             // 执行不改变其它 pass 状态的局部清理。
             FramePlanCommand::ClearRect { color, scissor } => {
                 // 将规范颜色和物理矩形一起交给 Adapter。

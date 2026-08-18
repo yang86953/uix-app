@@ -35,6 +35,8 @@ mod capabilities;
 mod draw_packet;
 // 将 Draw 的条件采样资源从 pass 状态中独立为共享值对象。
 mod draw_sampling;
+// 将每次 Draw 的 viewport 与 scissor 独立为共享动态栅格值对象。
+mod draw_raster;
 // 将 render-pass 生命周期和资源冲突门禁收归共享状态机，禁止 Adapter 各自解释顺序。
 mod pass_state;
 // 将纹理复制与移动的格式、范围和同资源规则收归共享契约。
@@ -89,6 +91,8 @@ pub(crate) use draw_packet::{
 };
 // 向 Drawing、FramePlan 与 Adapter 暴露唯一条件采样资源契约。
 pub(crate) use draw_sampling::{DrawSamplingBinding, SampledTextureBinding};
+// 向 Drawing、FramePlan 与 Adapter 暴露唯一 Draw 动态栅格状态。
+pub(crate) use draw_raster::DrawRasterState;
 // 向各原生 Adapter 暴露唯一的 render-pass 状态事实。
 #[allow(unused_imports)]
 pub(crate) use pass_state::RhiPassState;
@@ -623,13 +627,7 @@ pub(crate) trait GraphicsDevice {
     // 开始一个有序 render pass。
     fn begin_render_pass(&mut self, target: RenderTargetHandle, load: LoadAction) -> Result<()>;
 
-    // 设置当前 pass 的 viewport。
-    fn set_viewport(&mut self, viewport: RhiViewport) -> Result<()>;
-
-    // 设置或清除当前 pass 的 scissor。
-    fn set_scissor(&mut self, scissor: Option<RhiScissor>) -> Result<()>;
-
-    // 在当前 pass 的指定整数区域内清理颜色，并保持其它 pass 状态不变。
+    // 在当前 pass 的指定整数区域内清理颜色，不建立后续 Draw 状态。
     fn clear_rect(&mut self, _color: RhiColor, _scissor: RhiScissor) -> Result<()> {
         // 默认 adapter 必须显式声明局部清理原语，不能静默忽略 damage。
         Err(rhi_not_implemented("clear_rect"))
