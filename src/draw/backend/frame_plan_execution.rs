@@ -68,6 +68,8 @@ where
         self.validate_targets(steps)?;
         // 在 Device activate 前预检所有顶层 texture copy/move。
         self.validate_transfers(steps)?;
+        // 在 Device activate 前预检所有 pass 内 Draw 的真实 Buffer 资源。
+        self.validate_draw_resources(steps)?;
         // 在第一条原生命令前激活当前 owner；OpenGL 在此恢复正确 context。
         self.device.activate()?;
         // 激活成功后再执行设备健康 preflight，失败计划不得进入任何命令。
@@ -140,6 +142,26 @@ where
             }
         }
         // 所有顶层传输都已通过共享资源与几何门禁。
+        Ok(())
+    }
+
+    // 预检所有 pass 内 Draw，保持资源失败发生在任何 Device 副作用前。
+    fn validate_draw_resources(&self, steps: &[FramePlanStep]) -> Result<()> {
+        // 按 FramePlan 顶层顺序逐个观察 render pass。
+        for step in steps {
+            // 只有 render pass 包含 Draw 资源引用。
+            if let FramePlanStep::Pass(pass) = step {
+                // 保持 pass 内命令顺序扫描，不跨 pass 借用资源事实。
+                for command in &pass.commands {
+                    // 只预检实际 Draw packet。
+                    if let super::FramePlanCommand::Draw(packet) = command {
+                        // 共享资源表必须在任何 native side effect 前证明真实 Buffer 角色。
+                        self.device.preflight_draw_resources(*packet)?;
+                    }
+                }
+            }
+        }
+        // 所有 Draw 的真实 Buffer 描述都已通过共享预检。
         Ok(())
     }
 

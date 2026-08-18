@@ -429,6 +429,8 @@ mod tests {
         fail_copy_preflight: bool,
         // 保存是否强制 texture move 预检失败。
         fail_move_preflight: bool,
+        // 保存是否强制 Draw 资源预检失败。
+        fail_draw_preflight: bool,
     }
 
     // 为记录型 device 实现薄 RHI 的执行原语。
@@ -480,6 +482,20 @@ mod tests {
                 ));
             }
             // 关闭注入后允许合法 move 继续执行。
+            Ok(())
+        }
+
+        // 在任何 Device 原语前预检 Draw 真实 Buffer 资源。
+        fn preflight_draw_resources(&self, _packet: DrawPacket) -> Result<()> {
+            // 注入失败时保持 Device 日志为空。
+            if self.fail_draw_preflight {
+                // 返回共享参数错误，模拟资源表角色或容量拒绝。
+                return Err(Error::new(
+                    Errc::InvalidArgument,
+                    "recording draw resource preflight failed",
+                ));
+            }
+            // 关闭注入后允许合法 Draw 继续执行。
             Ok(())
         }
 
@@ -682,6 +698,12 @@ mod tests {
             self.device.preflight_texture_move(movement)
         }
 
+        // 把 Draw 资源预检委托给内嵌记录 device。
+        fn preflight_draw_resources(&self, packet: DrawPacket) -> Result<()> {
+            // 复用唯一测试资源预检路径。
+            self.device.preflight_draw_resources(packet)
+        }
+
         // 把 owner-context 激活委托给内嵌记录 device。
         fn activate(&mut self) -> Result<()> {
             // surface 与 offscreen 模式必须观察同一激活边界。
@@ -812,6 +834,8 @@ mod tests {
                 fail_copy_preflight: false,
                 // 默认允许 texture move 预检成功。
                 fail_move_preflight: false,
+                // 默认允许 Draw 资源预检成功。
+                fail_draw_preflight: false,
             },
             // 创建与计划代际一致的 surface。
             surface: RecordingSurface {
@@ -858,33 +882,6 @@ mod tests {
             ]
         );
         // 验证 surface 只收到一次最终 present。
-        assert_eq!(context.surface.present_count, 1);
-    }
-
-    // 验证 submit-before-present 观察器只能取得 Surface 角色。
-    #[test]
-    fn before_present_hook_receives_only_surface_role() {
-        // 创建稳定的一代 Surface。
-        let token = SurfaceToken::new(3, RhiExtent::new(48, 32));
-        // 创建同时拥有记录型 Device 与 Surface 的组合根。
-        let mut context = recording_context(token);
-        // 记录钩子是否观察到当前 Surface 代际。
-        let mut observed_surface = false;
-        // 执行计划并在唯一 submit 与 present 之间观察窄 Surface。
-        let commit = test_plan(token).execute_on_context_with_before_present(
-            // 完整事务仍由组合 context 驱动。
-            &mut context,
-            // 回调参数由类型系统限制为 GraphicsSurface。
-            &mut |surface| {
-                // 观察当前代际，不取得任何 Device 命令能力。
-                observed_surface = surface.token() == token;
-            },
-        );
-        // 观察动作不得改变最终提交成功语义。
-        assert!(commit.is_ok());
-        // 钩子必须在同一 Surface 上真实执行一次。
-        assert!(observed_surface);
-        // 最终 present 仍只能发生一次。
         assert_eq!(context.surface.present_count, 1);
     }
 

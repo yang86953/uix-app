@@ -162,3 +162,32 @@ fn texture_move_preflight_rejects_before_device() {
     let mut accepted = recording_context(token);
     assert!(plan.execute_on_context(&mut accepted).is_ok());
 }
+
+// Draw 资源预检失败必须发生在 Device activate 前且不留下日志。
+#[test]
+fn draw_resource_preflight_rejects_before_device() {
+    // 创建稳定的 Surface generation。
+    let token = SurfaceToken::new(1, RhiExtent::new(64, 64));
+    // 构造包含完整 Draw 的合法计划。
+    let plan = test_plan(token);
+    // 注入 Draw 真实资源预检失败。
+    let mut rejected = recording_context(token);
+    // 只影响共享资源预检，不改变其它 Device 行为。
+    rejected.device.fail_draw_preflight = true;
+    // 失败必须发生在任何 Device 原语之前。
+    let error = plan
+        // 通过普通 surface 入口验证 acquire 后的前置执行边界。
+        .execute_on_context(&mut rejected)
+        // Draw 资源预检必须在 activate 前失败。
+        .expect_err("draw resource preflight must fail before device activation");
+    // 失败分类必须是共享参数错误。
+    assert_eq!(error.code(), Errc::InvalidArgument);
+    // preflight 失败不得留下 activate、pass 或 submit 日志。
+    assert!(rejected.device.log.is_empty());
+    // preflight 失败不得触发 present。
+    assert_eq!(rejected.surface.present_count, 0);
+    // 关闭失败注入后，同一合法计划必须通过预检并完成执行。
+    let mut accepted = recording_context(token);
+    // 合法资源描述由测试 Device 预检放行。
+    assert!(plan.execute_on_context(&mut accepted).is_ok());
+}

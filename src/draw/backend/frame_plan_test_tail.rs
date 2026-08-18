@@ -1,5 +1,32 @@
 // 帧计划契约测试的外部载荷，由 frame_plan.rs 的 mod tests include 引入。
 // 覆盖纹理移动/清理顺序、提交失败、代际拒绝与能力缺口分类。
+// 验证 submit-before-present 观察器只能取得 Surface 角色。
+#[test]
+fn before_present_hook_receives_only_surface_role() {
+    // 创建稳定的一代 Surface。
+    let token = SurfaceToken::new(3, RhiExtent::new(48, 32));
+    // 创建同时拥有记录型 Device 与 Surface 的组合根。
+    let mut context = recording_context(token);
+    // 记录钩子是否观察到当前 Surface 代际。
+    let mut observed_surface = false;
+    // 执行计划并在唯一 submit 与 present 之间观察窄 Surface。
+    let commit = test_plan(token).execute_on_context_with_before_present(
+        // 完整事务仍由组合 context 驱动。
+        &mut context,
+        // 回调参数由类型系统限制为 GraphicsSurface。
+        &mut |surface| {
+            // 观察当前代际，不取得任何 Device 命令能力。
+            observed_surface = surface.token() == token;
+        },
+    );
+    // 观察动作不得改变最终提交成功语义。
+    assert!(commit.is_ok());
+    // 钩子必须在同一 Surface 上真实执行一次。
+    assert!(observed_surface);
+    // 最终 present 仍只能发生一次。
+    assert_eq!(context.surface.present_count, 1);
+}
+
 // 验证纹理区域移动位于 pass 顺序中且仍只触发一次 submit/present。
 #[test]
 fn executes_texture_move_in_order() {

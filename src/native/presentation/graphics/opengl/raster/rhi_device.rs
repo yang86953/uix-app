@@ -10,13 +10,14 @@ use crate::core::error::{Errc, Error, Result};
 // 引入 Surface 提供的跨呈现像素保留语义。
 use crate::core::PresentCoherency;
 use crate::native::present::rhi::{
-    BufferDesc, BufferHandle, LoadAction, PipelineBinding, PipelineColorWriteMask, PipelineDesc,
-    PipelineDitherState, PipelineKind, RenderTargetHandle, RhiBufferUpload, RhiColor,
-    RhiColorClearContract, RhiExtent, RhiPassState, RhiPipelineResourceTable,
-    RhiPresentTransaction, RhiResourceTable, RhiScissor, RhiSubmissionSequence, RhiTextureResource,
-    RhiTextureResourceTable, RhiTextureUpload, SampledTextureBinding, SamplerDesc, SamplerHandle,
-    SubmissionHandle, SurfaceToken, TextureCopy, TextureDesc, TextureFormat, TextureHandle,
-    TextureMove, UIX_COLOR_CLEAR_CONTRACT, ValidatedRhiPresent,
+    BufferDesc, BufferHandle, DrawPacket, LoadAction, PipelineBinding, PipelineColorWriteMask,
+    PipelineDesc, PipelineDitherState, PipelineKind, RenderTargetHandle, RhiBufferResource,
+    RhiBufferResourceTable, RhiBufferUpload, RhiColor, RhiColorClearContract, RhiExtent,
+    RhiPassState, RhiPipelineResourceTable, RhiPresentTransaction, RhiResourceTable, RhiScissor,
+    RhiSubmissionSequence, RhiTextureResource, RhiTextureResourceTable, RhiTextureUpload,
+    SampledTextureBinding, SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceToken, TextureCopy,
+    TextureDesc, TextureFormat, TextureHandle, TextureMove, UIX_COLOR_CLEAR_CONTRACT,
+    ValidatedRhiPresent,
 };
 
 // 将 retained 区域移动拆出，保持资源设备文件低于行数上限。
@@ -31,6 +32,15 @@ struct OpenGlRhiBuffer {
     desc: BufferDesc,
     // 保存最近一次上传的数据，uniform 通过它解码为 GL uniforms。
     data: Vec<u8>,
+}
+
+// 让 OpenGL Buffer 资源向共享 Draw 预检提供创建时冻结的描述。
+impl RhiBufferResource for OpenGlRhiBuffer {
+    // 返回唯一共享 Buffer 描述，不重新解释用途或步长。
+    fn desc(&self) -> BufferDesc {
+        // 复制资源创建时保存的不可变描述。
+        self.desc
+    }
 }
 
 // 保存 OpenGL ES texture 及其可选 render target framebuffer。
@@ -74,8 +84,8 @@ fn target_y_sign(target: RenderTargetHandle) -> f32 {
 
 // 持有 OpenGL ES RHI 的资源表、pass 状态和 VAO。
 pub(super) struct OpenGlRhiDevice {
-    // 保存按一开始从 1 分配的 buffer 句柄索引的资源表。
-    buffers: RhiResourceTable<BufferHandle, OpenGlRhiBuffer>,
+    // 保存按共享 Buffer 语义管理的原生资源表。
+    buffers: RhiBufferResourceTable<OpenGlRhiBuffer>,
     // 保存按共享 texture 语义管理的原生 texture 资源表。
     textures: RhiTextureResourceTable<OpenGlRhiTexture>,
     // 保存必须活到下一次原生 submit 之后才能删除的临时移动纹理。
@@ -139,7 +149,8 @@ impl OpenGlRhiDevice {
         };
         // 返回没有打开 pass 的 owner-thread 状态。
         Ok(Self {
-            buffers: RhiResourceTable::new(),
+            // 由共享表统一管理 Buffer 句柄与冻结描述。
+            buffers: RhiBufferResourceTable::new(),
             // 由共享表统一管理 texture 句柄与冻结描述。
             textures: RhiTextureResourceTable::new(),
             // 新设备尚未产生等待提交的临时移动资源。
@@ -170,6 +181,14 @@ impl OpenGlRhiDevice {
     ) -> Result<RenderTargetHandle> {
         // 共享表依据真实 texture 描述执行唯一能力门禁。
         self.textures.resolve_render_target(texture)
+    }
+
+    // 只读预检 DrawPacket 的真实 Buffer 角色与容量。
+    pub(super) fn preflight_draw_resources(&self, packet: DrawPacket) -> Result<()> {
+        // 先由共享 pipeline 表验证句柄存活及真实 kind 语义。
+        self.pipelines.get(packet.pipeline)?;
+        // 再由共享 Buffer 表验证所有资源角色和范围关系。
+        self.buffers.validate_draw(packet)
     }
 
     // 只读预检普通 texture copy 的资源与传输关系。
