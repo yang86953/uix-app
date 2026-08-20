@@ -76,6 +76,8 @@ fn rewrite_captures(
 ) {
     // 按表达式形状递归改写。
     match &mut expression.kind {
+        // action 只允许事件位置，动态文本路径不会接收该内部形状。
+        ExpressionKind::LoweredAction(_) => {}
         // 自由标识符取得独立 Clone 捕获。
         ExpressionKind::Identifier(name) => {
             // 保留事件专用标识符，让共享表达式生成器返回原有作用域诊断。

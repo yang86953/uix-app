@@ -175,6 +175,8 @@ fn validate_closure_position(
 ) -> Result<(), Diagnostic> {
     // 按表达式结构递归检查闭包位置。
     match &expression.kind {
+        // 普通表达式解析器不会构造 action 内联桥接节点。
+        ExpressionKind::LoweredAction(_) => Ok(()),
         // 闭包只允许位于明确开放的位置。
         ExpressionKind::Closure { body, .. } => {
             // 非开放位置返回定向诊断。

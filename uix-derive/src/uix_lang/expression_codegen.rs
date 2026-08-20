@@ -68,6 +68,10 @@ pub(super) fn generate_expression_inner(
 ) -> Result<TokenStream, Diagnostic> {
     // 按表达式结构生成等价 Rust 代码。
     match &expression.kind {
+        // action 独立语句 AST 在事件位置生成为局部 Rust 标签块。
+        ExpressionKind::LoweredAction(action) => {
+            super::action_codegen::generate_lowered_action(action)
+        }
         // 普通标识符直接映射为 Rust 标识符。
         ExpressionKind::Identifier(name) => generate_identifier(name, expression.span, event),
         // 数字保持经过验证的源码表示。
@@ -232,6 +236,18 @@ pub(crate) fn generate_handler_expression(
 pub(crate) fn expression_uses_event(expression: &Expression) -> bool {
     // 递归检查全部表达式结构。
     match &expression.kind {
+        // action 不允许捕获事件，防御性检查块内全部表达式。
+        ExpressionKind::LoweredAction(action) => {
+            let mut uses_event = false;
+            let _ = super::action_semantic::visit_action_block_expressions(
+                &action.block,
+                &mut |expression| {
+                    uses_event |= expression_uses_event(expression);
+                    Ok(())
+                },
+            );
+            uses_event
+        }
         // 只有事件保留标识符直接命中。
         ExpressionKind::Identifier(name) => name == "$event",
         // 一元表达式递归检查操作数。

@@ -200,6 +200,12 @@ fn validate_virtual_key_expression(
 ) -> Result<(), Diagnostic> {
     // 递归检查表达式树中的所有自由变量和调用节点。
     match &expression.kind {
+        // action 语句块不属于 VirtualScroll 稳定 key 子语言。
+        ExpressionKind::LoweredAction(_) => Err(Diagnostic::new(
+            expression.span,
+            "VirtualScroll 的 For key 不能调用 action",
+            "使用 key={item.id} 或 item/index 的纯成员与算术表达式",
+        )),
         // 当前行绑定与显式索引绑定是唯一允许的标识符根。
         ExpressionKind::Identifier(name)
             if name == binding || index_binding.is_some_and(|index| index == name) =>

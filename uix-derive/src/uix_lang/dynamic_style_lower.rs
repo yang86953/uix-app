@@ -47,6 +47,18 @@ pub(super) fn expression_uses_set_style(expression: &Expression) -> bool {
     }
     // 递归检查全部复合表达式分支。
     match &expression.kind {
+        // action 内联块中的全部表达式仍归当前实际事件 View。
+        ExpressionKind::LoweredAction(action) => {
+            let mut found = false;
+            let _ = super::action_semantic::visit_action_block_expressions(
+                &action.block,
+                &mut |expression| {
+                    found |= expression_uses_set_style(expression);
+                    Ok(())
+                },
+            );
+            found
+        }
         // 一元表达式检查操作数。
         ExpressionKind::Unary { operand, .. } => expression_uses_set_style(operand),
         // 二元表达式检查任一操作数。
@@ -473,6 +485,13 @@ fn visit_expression_children(
 ) -> Result<(), Diagnostic> {
     // 按表达式形状访问直接子节点。
     match &expression.kind {
+        // action 独立语句块按源码顺序暴露全部直接表达式根。
+        ExpressionKind::LoweredAction(action) => {
+            super::action_semantic::visit_action_block_expressions(
+                &action.block,
+                &mut |expression| visitor(expression),
+            )?;
+        }
         ExpressionKind::Unary { operand, .. } => visitor(operand)?,
         ExpressionKind::Binary { left, right, .. } => {
             visitor(left)?;
@@ -528,6 +547,13 @@ fn visit_expression_children_mut(
 ) -> Result<(), Diagnostic> {
     // 按表达式形状访问直接子节点。
     match &mut expression.kind {
+        // action 语句块中的调用按源码顺序参与同一 setter 队列。
+        ExpressionKind::LoweredAction(action) => {
+            super::action_semantic::visit_action_block_expressions_mut(
+                &mut action.block,
+                &mut |expression| visitor(expression),
+            )?;
+        }
         ExpressionKind::Unary { operand, .. } => visitor(operand)?,
         ExpressionKind::Binary { left, right, .. } => {
             visitor(left)?;
