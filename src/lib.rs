@@ -328,10 +328,6 @@ pub mod core;
 pub mod data;
 pub mod diagnostics;
 pub mod draw;
-// Vulkan 真机辅助仅随显式测试支撑 feature 编译。
-#[cfg(all(windows, feature = "vulkan", feature = "test-harness"))]
-#[doc(hidden)]
-pub mod gfx_r5_support;
 pub(crate) mod native;
 pub mod platform;
 pub mod prelude;

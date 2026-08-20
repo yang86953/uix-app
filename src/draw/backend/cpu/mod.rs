@@ -1,7 +1,7 @@
 //! CPU 渲染后端 — PixelSurface + CpuCanvas2D。
 
 pub(crate) mod canvas_2d;
-// 与 gfx_r5_support 的三重门控对齐，非 test-harness 生产构建不编译空实现。
+// 仅 Windows Vulkan 测试支撑构建需要空实现，避免普通生产构建编译它。
 #[cfg(any(test, all(windows, feature = "vulkan", feature = "test-harness")))]
 pub(crate) mod noop_canvas_2d;
 pub(crate) mod offscreen;

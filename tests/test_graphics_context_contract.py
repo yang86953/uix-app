@@ -15,10 +15,6 @@ VULKAN_CONTEXT = ROOT / "src/native/presentation/graphics/vulkan/platform/contex
 VULKAN_DEVICE = ROOT / "src/native/presentation/graphics/vulkan/platform/device.rs"
 # 固定 Vulkan fault 映射实现位置。
 VULKAN_FAULT = ROOT / "src/native/presentation/graphics/vulkan/platform/fault.rs"
-# 固定 GFX-R5 诊断模块位置。
-GFX_R5 = ROOT / "src/gfx_r5_support"
-
-
 # 组合读取拆分目录中的 Rust 源码，保持稳定的路径顺序。
 def read_rust_module(path: Path) -> str:
     # 单文件模块直接按 UTF-8 读取。
@@ -836,8 +832,6 @@ class GraphicsContextContractTests(unittest.TestCase):
         device = VULKAN_DEVICE.read_text(encoding="utf-8")
         # 读取 Vulkan fault 映射实现。
         fault = VULKAN_FAULT.read_text(encoding="utf-8")
-        # 读取 GFX-R5 拆分目录。
-        gfx_r5 = read_rust_module(GFX_R5)
         # 定位 checked shutdown 实现。
         shutdown = context.index("fn shutdown_result")
         # 定位共享 device lease 释放点。
@@ -869,17 +863,6 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertIn("fn observe<T>", device)
         # Vulkan fault 必须映射为 typed device-lost 错误。
         self.assertIn("Errc::GraphicsDeviceLost", fault)
-        # GFX-R5 必须构造真实 Vulkan context。
-        self.assertGreaterEqual(gfx_r5.count("VulkanContext::new"), 1)
-        # engine recovery 必须通过专用 target 验证。
-        self.assertIn("impl RenderTarget for VulkanRecoveryTarget", gfx_r5)
-        # recovery target 必须暴露 checked shutdown。
-        self.assertIn("fn try_shutdown(&mut self)", gfx_r5)
-        # driver 必须显式执行 checked shutdown。
-        self.assertIn("driver.try_shutdown()", gfx_r5)
-        # context 必须显式执行 checked shutdown。
-        self.assertIn("context.try_shutdown()", gfx_r5)
-
 
 # 支持直接执行本测试模块。
 if __name__ == "__main__":

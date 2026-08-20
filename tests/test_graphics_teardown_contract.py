@@ -9,8 +9,6 @@ GRAPHICS = ROOT / "src/native/presentation/graphics/mod.rs"
 VULKAN_CONTEXT = ROOT / "src/native/presentation/graphics/vulkan/platform/context"
 VULKAN_DEVICE = ROOT / "src/native/presentation/graphics/vulkan/platform/device.rs"
 VULKAN_FAULT = ROOT / "src/native/presentation/graphics/vulkan/platform/fault.rs"
-# 读取拆分后的 GFX-R5 support module。
-GFX_R5 = ROOT / "src/gfx_r5_support"
 REGISTRIES = (
     ROOT / "src/native/factory/registry_linux.rs",
     ROOT / "src/native/factory/registry_macos.rs",
@@ -758,8 +756,6 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         backend = (ROOT / "src/draw/backend/gpu/backend/impl_main.rs").read_text(encoding="utf-8")
         # 读取 Vulkan 的显式 GFX-R5 诊断辅助。
         vulkan = (ROOT / "src/native/presentation/graphics/vulkan/platform/context/graphics.rs").read_text(encoding="utf-8")
-        # 读取 GFX-R5 证据调用点。
-        gfx_r5 = (ROOT / "src/gfx_r5_support/evidence.rs").read_text(encoding="utf-8")
         # 兼容 trait 不得重新声明 readback。
         self.assertNotIn("fn read_pixels(", facade)
         # owner-thread 兼容 wrapper 不得转发 readback。
@@ -808,10 +804,6 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("surface.read_surface_pixels(RhiScissor {", backend)
         # Vulkan pixel-upload readback 必须保留显式诊断名称。
         self.assertIn("pub(crate) fn readback_pixels(", vulkan)
-        # GFX-R5 证据必须调用显式诊断辅助。
-        self.assertIn(".readback_pixels(0, 0, 1, 1)", gfx_r5)
-        # GFX-R5 不得继续依赖兼容 trait 方法。
-        self.assertNotIn(".read_pixels(", gfx_r5)
 
     # 校验通用 context resize 已拆分为 GPU RHI 与 CPU PixelUpload 两条 typed 契约。
     def test_context_resize_is_split_by_surface_recipe(self) -> None:
@@ -823,10 +815,6 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
         # 读取离开 native factory 前的正交 recipe owner。
         recipe_owner = (ROOT / "src/native/present/recipe_owner.rs").read_text(encoding="utf-8")
-        # 读取 Vulkan GFX-R5 显式诊断调用点。
-        gfx_r5 = (ROOT / "src/gfx_r5_support/evidence.rs").read_text(encoding="utf-8")
-        # 读取 mixed-DPI GFX-R5 场景，避免 feature 隔离代码逃逸契约。
-        gfx_r5_mod = (ROOT / "src/gfx_r5_support/mod.rs").read_text(encoding="utf-8")
         # 读取 D3D11 context 私有生命周期实现。
         d3d11_methods = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/methods.rs").read_text(encoding="utf-8")
         # 通用 context trait 不得继续声明无 recipe 区分的 resize。
@@ -888,13 +876,5 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("upload.resize_surface(width, height)?", runtime)
         # runtime 不得调用已经删除的通用 context resize。
         self.assertNotIn("upload.context", runtime)
-        # Vulkan GFX-R5 必须显式使用 PixelUpload surface 契约。
-        self.assertGreaterEqual(gfx_r5.count(".resize_pixel_upload_surface("), 3)
-        # GFX-R5 不得再通过统一 context resize 驱动 Vulkan。
-        self.assertNotIn("context.resize(", gfx_r5)
-        # mixed-DPI 两段转换也必须显式使用 PixelUpload surface 契约。
-        self.assertGreaterEqual(gfx_r5_mod.count(".resize_pixel_upload_surface("), 2)
-        # feature 隔离场景不得保留无法编译的旧 resize 调用。
-        self.assertNotIn(".resize(LOGICAL_EXTENT", gfx_r5_mod)
 if __name__ == "__main__":
     unittest.main()
